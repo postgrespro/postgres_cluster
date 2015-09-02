@@ -16,6 +16,7 @@
 #define TQUAL_H
 
 #include "utils/snapshot.h"
+#include "access/transam.h"
 
 
 /* Static variables representing various special snapshot semantics */
@@ -100,4 +101,14 @@ extern bool ResolveCminCmaxDuringDecoding(struct HTAB *tuplecid_data,
 							  HeapTuple htup,
 							  Buffer buffer,
 							  CommandId *cmin, CommandId *cmax);
+
+typedef enum VisibilityCheckResult { 
+    XID_IN_DOUBT, XID_VISIBLE, XID_INVISIBLE
+} VisibilityCheckResult;
+
+typedef VisibilityCheckResult (*TransactionVisibilityCallback)(TransactionId xid);
+
+extern TransactionVisibilityCallback RegisterTransactionVisibilityCallback(TransactionVisibilityCallback callback);
+
+extern TransactionVisibilityCallback VisibilityCallback; 
 #endif   /* TQUAL_H */

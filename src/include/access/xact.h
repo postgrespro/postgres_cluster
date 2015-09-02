@@ -77,6 +77,7 @@ extern bool MyXactAccessedTempRel;
  */
 typedef enum
 {
+	XACT_EVENT_START,
 	XACT_EVENT_COMMIT,
 	XACT_EVENT_PARALLEL_COMMIT,
 	XACT_EVENT_ABORT,
@@ -84,7 +85,9 @@ typedef enum
 	XACT_EVENT_PREPARE,
 	XACT_EVENT_PRE_COMMIT,
 	XACT_EVENT_PARALLEL_PRE_COMMIT,
-	XACT_EVENT_PRE_PREPARE
+	XACT_EVENT_PRE_PREPARE,
+	XACT_EVENT_COMMIT_PREPARED,
+	XACT_EVENT_ABORT_PREPARED
 } XactEvent;
 
 typedef void (*XactCallback) (XactEvent event, void *arg);
@@ -99,6 +102,8 @@ typedef enum
 
 typedef void (*SubXactCallback) (SubXactEvent event, SubTransactionId mySubid,
 									SubTransactionId parentSubid, void *arg);
+
+void CallXactCallbacks(XactEvent event);
 
 
 /* ----------------

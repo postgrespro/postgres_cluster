@@ -58,6 +58,7 @@
 #include "storage/spin.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
+#include "utils/tqual.h"
 #include "utils/snapmgr.h"
 
 
@@ -979,6 +980,17 @@ TransactionIdIsInProgress(TransactionId xid)
 	TransactionId topxid;
 	int			i,
 				j;
+
+    if (VisibilityCallback) 
+    { 
+        VisibilityCheckResult result =  (*VisibilityCallback)(xid);
+        /*
+        if (result != XID_IN_DOUBT)  
+        {
+            return result == XID_INVISIBLE;
+        }
+        */    
+    }
 
 	/*
 	 * Don't bother checking a transaction older than RecentXmin; it could not

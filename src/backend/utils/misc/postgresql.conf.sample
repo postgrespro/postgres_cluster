@@ -117,7 +117,7 @@
 #huge_pages = try			# on, off, or try
 					# (change requires restart)
 #temp_buffers = 8MB			# min 800kB
-#max_prepared_transactions = 0		# zero disables the feature
+max_prepared_transactions = 20		# zero disables the feature
 					# (change requires restart)
 # Note:  Increasing max_prepared_transactions costs ~600 bytes of shared memory
 # per transaction slot, plus lock space (see max_locks_per_transaction).
@@ -144,7 +144,7 @@
 
 #max_files_per_process = 1000		# min 25
 					# (change requires restart)
-#shared_preload_libraries = ''		# (change requires restart)
+shared_preload_libraries = 'pg_dtm'		# (change requires restart)
 
 # - Cost-Based Vacuum Delay -
 

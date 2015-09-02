@@ -56,4 +56,6 @@ extern void CheckPointTwoPhase(XLogRecPtr redo_horizon);
 
 extern void FinishPreparedTransaction(const char *gid, bool isCommit);
 
+extern const char* GetLockedGlobalTransactionId();
+
 #endif   /* TWOPHASE_H */
