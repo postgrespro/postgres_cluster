@@ -45,6 +45,9 @@ extern int	GetMaxSnapshotSubxidCount(void);
 
 extern Snapshot GetSnapshotData(Snapshot snapshot);
 
+typedef Snapshot (*SnapshotProvider)(Snapshot snapshot);
+extern SnapshotProvider SetSnapshotProvider(SnapshotProvider provider);
+
 extern bool ProcArrayInstallImportedXmin(TransactionId xmin,
 							 TransactionId sourcexid);
 extern bool ProcArrayInstallRestoredXmin(TransactionId xmin, PGPROC *proc);

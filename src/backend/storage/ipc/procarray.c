@@ -95,6 +95,11 @@ typedef struct ProcArrayStruct
 	int			pgprocnos[FLEXIBLE_ARRAY_MEMBER];
 } ProcArrayStruct;
 
+static Snapshot
+GetCurrentSnapshotData(Snapshot snapshot);
+
+static SnapshotProvider GetSnapshotImpl = GetCurrentSnapshotData;
+
 static ProcArrayStruct *procArray;
 
 static PGPROC *allProcs;
@@ -1492,6 +1497,20 @@ GetMaxSnapshotSubxidCount(void)
  */
 Snapshot
 GetSnapshotData(Snapshot snapshot)
+{
+    return (*GetSnapshotImpl)(snapshot);
+}
+
+SnapshotProvider 
+SetSnapshotProvider(SnapshotProvider provider)
+{
+    SnapshotProvider old = GetSnapshotImpl;
+    GetSnapshotImpl = provider;
+    return old;
+}
+
+static Snapshot
+GetCurrentSnapshotData(Snapshot snapshot)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId xmin;

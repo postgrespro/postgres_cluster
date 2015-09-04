@@ -17,6 +17,8 @@
 #include "storage/lmgr.h"
 #include "storage/shmem.h"
 #include "storage/ipc.h"
+#include "storage/proc.h"
+#include "storage/procarray.h"
 #include "access/xlogdefs.h"
 #include "access/xact.h"
 #include "access/transam.h"
@@ -24,6 +26,7 @@
 #include "access/twophase.h"
 #include "utils/hsearch.h"
 #include "utils/tqual.h"
+#include "utils/snapmgr.h"
 
 #include "libdtm.h"
 #include "pg_dtm.h"
@@ -48,6 +51,8 @@ typedef struct
 {
     nodeid_t node_id;
 	cid_t last_cid;
+	TransactionId last_xid;
+	TransactionId first_xid;
 	volatile slock_t lock;
 } DtmNodeState;
 
@@ -66,7 +71,7 @@ typedef struct
 } DtmTransId;
               
 //#define DTM_TRACE(x) 
-#define DTM_TRACE(x) fprintf x
+#define DTM_TRACE(x) elog x
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB* xid2status;
@@ -74,6 +79,8 @@ static HTAB* gtid2xid;
 static DtmNodeState* local;
 static DtmTransState dtm_tx;
 static DTMConn dtm_conn;
+
+static SnapshotProvider DefaultSnapshotProvider;
 
 void _PG_init(void);
 void _PG_fini(void);
@@ -91,7 +98,7 @@ static void dtm_ensure_connection(void);
 void
 _PG_init(void)
 {
-	DTM_TRACE((stderr, "DTM_PG_init \n"));
+	DTM_TRACE((WARNING, "DTM_PG_init \n"));
 
 	/*
 	 * In order to create our shared memory area, we have to be loaded via
@@ -161,7 +168,7 @@ static GlobalTransactionId dtm_get_global_trans_id()
 static void
 dtm_xact_callback(XactEvent event, void *arg)
 {
-    DTM_TRACE((stderr, "Backend %d dtm_xact_callback %d\n", getpid(), event));
+    DTM_TRACE((WARNING, "Backend %d dtm_xact_callback %d\n", getpid(), event));
 	switch (event)
 	{
 		case XACT_EVENT_START:
@@ -220,7 +227,7 @@ dtm_extend(PG_FUNCTION_ARGS)
 {
     GlobalTransactionId gtid = PG_GETARG_CSTRING(0);
     cid_t cid = DtmLocalExtend(&dtm_tx, gtid);
-	DTM_TRACE((stderr, "Backend %d extends transaction %u(%s) to global with cid=%llu\n", getpid(), dtm_tx.xid, gtid, cid));
+	DTM_TRACE((WARNING, "Backend %d extends transaction %u(%s) to global with cid=%llu\n", getpid(), dtm_tx.xid, gtid, cid));
 	PG_RETURN_INT64(cid);
 }
 
@@ -229,7 +236,7 @@ dtm_access(PG_FUNCTION_ARGS)
 {
     cid_t cid = PG_GETARG_INT64(0);
     GlobalTransactionId gtid = PG_GETARG_CSTRING(1);
-	DTM_TRACE((stderr, "Backend %d joins transaction %u(%s) with cid=%llu\n", getpid(), dtm_tx.xid, gtid, cid));
+	DTM_TRACE((WARNING, "Backend %d joins transaction %u(%s) with cid=%llu\n", getpid(), dtm_tx.xid, gtid, cid));
 	cid = DtmLocalAccess(&dtm_tx, gtid, cid);
 	PG_RETURN_INT64(cid);
 }
@@ -240,7 +247,7 @@ dtm_begin_prepare(PG_FUNCTION_ARGS)
     GlobalTransactionId gtid = PG_GETARG_CSTRING(0);
     nodeid_t coordinator = PG_GETARG_INT32(1);
     DtmLocalBeginPrepare(gtid, coordinator);
-	DTM_TRACE((stderr, "Backend %d begins prepare of transaction '%s'\n", getpid(), gtid));
+	DTM_TRACE((WARNING, "Backend %d begins prepare of transaction '%s'\n", getpid(), gtid));
 	PG_RETURN_VOID();
 }
 
@@ -250,7 +257,7 @@ dtm_prepare(PG_FUNCTION_ARGS)
     GlobalTransactionId gtid = PG_GETARG_CSTRING(0);
     cid_t cid = PG_GETARG_INT64(1);
     cid = DtmLocalPrepare(gtid, cid);
-	DTM_TRACE((stderr, "Backend %d prepares transaction '%s' with cid=%llu\n", getpid(), gtid, cid));
+	DTM_TRACE((WARNING, "Backend %d prepares transaction '%s' with cid=%llu\n", getpid(), gtid, cid));
 	PG_RETURN_INT64(cid);
 }
 
@@ -259,7 +266,7 @@ dtm_end_prepare(PG_FUNCTION_ARGS)
 {
     GlobalTransactionId gtid = PG_GETARG_CSTRING(0);
     cid_t cid = PG_GETARG_INT64(1);
-	DTM_TRACE((stderr, "Backend %d ends prepare of transaction '%s' with cid=%llu\n", getpid(), gtid, cid));
+	DTM_TRACE((WARNING, "Backend %d ends prepare of transaction '%s' with cid=%llu\n", getpid(), gtid, cid));
 	DtmLocalEndPrepare(gtid, cid);
     PG_RETURN_VOID();
 }
@@ -324,12 +331,13 @@ static VisibilityCheckResult DtmVisibilityCheck(TransactionId xid)
         if (ts != NULL)
         {
             if (ts->cid > dtm_tx.snapshot) { 
+                DTM_TRACE((WARNING, "Backend %d xid %u=>%llu is not visible for snapshot %llu\n", getpid(), xid, ts->cid, dtm_tx.snapshot));
                 result = XID_INVISIBLE;
                 break;
             }
             if (ts->status == XID_INPROGRESS)
             {
-                DTM_TRACE((stderr, "Wait for in-doubt transaction %u\n", xid));
+                DTM_TRACE((WARNING, "Wait for in-doubt transaction %u\n", xid));
                 SpinLockRelease(&local->lock);
                 pg_usleep(delay);
                 if (delay*2 <= MAX_WAIT_TIMEOUT) {
@@ -339,19 +347,22 @@ static VisibilityCheckResult DtmVisibilityCheck(TransactionId xid)
             }
             else
             {
+                if (ts->status != XID_COMMITTED) { 
+                    DTM_TRACE((WARNING, "Backend %d xid %u=>%llu belongs to aborted transaction\n", getpid(), xid, ts->cid));
+                }
                 result = ts->status == XID_COMMITTED ? XID_VISIBLE : XID_INVISIBLE;
-                DTM_TRACE((stderr, "Backend %d visibility check for %u=%d\n", getpid(), xid, result));
                 break;
             }
         }
         else
         {
-            //DTM_TRACE((stderr, "Visibility check is skept for transaction %u\n", xid));
+            //DTM_TRACE((WARNING, "Visibility check is skept for transaction %u\n", xid));
             result = XID_IN_DOUBT;
             break;
         }
     }
-	SpinLockRelease(&local->lock);
+    DTM_TRACE((WARNING, "Backend %d visibility check for %u=%d\n", getpid(), xid, result));
+    SpinLockRelease(&local->lock);
 	return result;
 }
 
@@ -381,12 +392,15 @@ void DtmInitialize()
 		HASH_ELEM | HASH_FUNCTION | HASH_COMPARE | HASH_KEYCOPY);
 
 	RegisterTransactionVisibilityCallback(DtmVisibilityCheck);
+    DefaultSnapshotProvider = SetSnapshotProvider(DtmSnapshotProvider);
 
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
 	local = (DtmNodeState*)ShmemInitStruct("dtm", sizeof(DtmNodeState), &found);
 	if (!found)
 	{
         local->last_cid = INVALID_CID;
+        local->last_xid = InvalidTransactionId;
+        local->first_xid = InvalidTransactionId;
         local->node_id = -1;
 		SpinLockInit(&local->lock);
 	}
@@ -399,18 +413,38 @@ void DtmInitialize()
 }
 
 
+Snapshot DtmSnapshotProvider(Snapshot snapshot)
+{
+    if (dtm_tx.local_snapshot == NULL) {
+        dtm_tx.local_snapshot = DefaultSnapshotProvider(snapshot); 
+    }
+    if (local->last_xid != InvalidTransactionId &&  RecentGlobalDataXmin > local->last_xid) { 
+        RecentGlobalDataXmin = local->last_xid;
+    }
+    //if (local->first_xid  != InvalidTransactionId && RecentGlobalXmin > local->first_xid) { 
+    //    RecentGlobalXmin = local->first_xid;
+    //}
+    return dtm_tx.local_snapshot;
+}
+
 void DtmLocalBegin(DtmTransState* x)
 {
     if (x->xid == InvalidTransactionId) { 
-        // SpinLockAcquire(&local->lock);
+        SpinLockAcquire(&local->lock);
         x->xid = GetCurrentTransactionId();
         Assert(x->xid != InvalidTransactionId);
         x->cid = INVALID_CID;
         x->is_global = false;
         x->is_prepared = false;
         x->snapshot = local->last_cid;
-        // SpinLockRelease(&local->lock);
-        DTM_TRACE((stderr, "DtmLocalBegin: transaction %u uses local snapshot %llu\n", x->xid, x->snapshot));
+        if (RecentGlobalDataXmin > local->last_xid) { 
+            RecentGlobalDataXmin = local->last_xid;
+        }
+        //if (RecentGlobalXmin > local->first_xid) { 
+        //    RecentGlobalXmin = local->first_xid;
+        //}
+        SpinLockRelease(&local->lock);
+        DTM_TRACE((WARNING, "DtmLocalBegin: transaction %u uses local snapshot %llu\n", x->xid, x->snapshot));
     }
 }
 
@@ -487,7 +521,7 @@ void DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
         Assert(ts != NULL);
         ts->cid = cid;
         
-        DTM_TRACE((stderr, "Prepare transaction %u(%s) with CSN %llu\n", id->xid, gtid, cid));
+        DTM_TRACE((WARNING, "Prepare transaction %u(%s) with CSN %llu\n", id->xid, gtid, cid));
 	}
 	SpinLockRelease(&local->lock);
 }
@@ -503,7 +537,7 @@ void DtmLocalCommitPrepared(DtmTransState* x, GlobalTransactionId gtid)
 
         x->is_prepared = true;
         x->xid = id->xid;
-        DTM_TRACE((stderr, "Global transaction %u(%s) is prepared\n", x->xid, gtid));
+        DTM_TRACE((WARNING, "Global transaction %u(%s) is prepared\n", x->xid, gtid));
     }
     SpinLockRelease(&local->lock);
 }
@@ -519,12 +553,22 @@ void DtmLocalCommit(DtmTransState* x)
             Assert(ts);
             if (ts->cid > local->last_cid) { 
                 local->last_cid = ts->cid;
+                local->last_xid = x->xid;
+                if (local->first_xid == InvalidTransactionId) {
+                    local->first_xid = x->xid;
+                }
+                if (RecentGlobalDataXmin > local->last_xid) { 
+                    RecentGlobalDataXmin = local->last_xid;
+                }
+                //if (RecentGlobalXmin > local->first_xid) { 
+                //    RecentGlobalXmin = local->first_xid;
+                //}
             }
             if (ts->is_coordinator) { 
                 gcid = ts->cid;
             }
             ts->status = XID_COMMITTED;
-            DTM_TRACE((stderr, "Transaction %u is committed at %llu\n", x->xid, ts->cid));
+            DTM_TRACE((WARNING, "Transaction %u is committed at %llu\n", x->xid, ts->cid));
         }
         SpinLockRelease(&local->lock);
         
@@ -548,7 +592,7 @@ void DtmLocalAbortPrepared(DtmTransState* x, GlobalTransactionId gtid)
         x->is_prepared = true;
         x->xid = id->xid;
 
-        DTM_TRACE((stderr, "Global transaction %u(%s) is preaborted\n", x->xid, gtid));
+        DTM_TRACE((WARNING, "Global transaction %u(%s) is preaborted\n", x->xid, gtid));
     }
     SpinLockRelease(&local->lock);
 }
@@ -566,7 +610,7 @@ void DtmLocalAbort(DtmTransState* x)
                 gcid = ts->cid;
             }
             ts->status = XID_ABORTED;
-            DTM_TRACE((stderr, "Local transaction %u is aborted at %llu\n", x->xid, x->cid));
+            DTM_TRACE((WARNING, "Local transaction %u is aborted at %llu\n", x->xid, x->cid));
         }
         SpinLockRelease(&local->lock);
         
@@ -583,5 +627,6 @@ void DtmLocalEnd(DtmTransState* x)
     x->is_prepared = false;
     x->xid = InvalidTransactionId;
     x->cid = INVALID_CID;
+    x->local_snapshot = NULL;
 }
 

@@ -9,6 +9,7 @@ typedef struct {
     bool  is_prepared;
     cid_t cid;
     cid_t snapshot;
+    Snapshot local_snapshot;
 } DtmTransState;
 
 typedef char const* GlobalTransactionId;
@@ -37,5 +38,6 @@ void  DtmLocalCommit(DtmTransState* x);
 void  DtmLocalAbort(DtmTransState* x);
 /* Invoked at the end of any local or global transaction: free transaction state */
 void  DtmLocalEnd(DtmTransState* x);
+Snapshot DtmSnapshotProvider(Snapshot snashot);
 
 #endif
