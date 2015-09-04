@@ -1,0 +1,91 @@
+{
+
+package specparser
+
+import (
+  "fmt"
+  "io"
+  "strconv"
+  "unicode"
+  "reflect"
+)
+
+// FIXME: return structure instead of array
+
+type Step struct {
+  ConnNum int
+  Sql string
+  ResultRef string
+}
+
+type SqlBlock struct {
+  ConnNum int
+  Sql string
+  BlockType int
+}
+
+type Session struct {
+  Name string
+  Steps []interface{}
+}
+
+func SpecParse(fname string) []interface{} {
+  got, err := ParseFile(fname)
+  if err != nil {
+    fmt.Println(err)
+  }
+  return got.([]interface{})[0].([]interface{})[0].([]interface{})
+}
+
+}
+
+SpecRule <- blocks:BlockRule+ EOF {
+  return blocks, nil
+}
+
+BlockRule <- ( SetupBlockRule / TeardownBlockRule / SessionBlockRule )+ _
+
+SetupBlockRule <- _ "setup" '(' cnum:ConnectionNumberRule ')' _ '{' sql:SQLExprRule '}' _ {
+  return SqlBlock{ ConnNum:cnum.(int), Sql:sql.(string),  BlockType: 0 }, nil
+}
+
+TeardownBlockRule <- _ "teardown" '(' cnum:ConnectionNumberRule ')' _ '{' sql:SQLExprRule '}' _ {
+  return SqlBlock{ ConnNum:cnum.(int), Sql:sql.(string),  BlockType: 1 }, nil
+}
+
+SessionBlockRule <- _ "global_session" _ '"' name:BlockNameRule '"' _ s:(StepRule+) _ {
+  return Session{name.(string), s.([]interface{}) }, nil
+}
+
+BlockNameRule <- [a-z]+ {
+  return string(c.text) , nil
+}
+
+StepRule <- _ "step" '(' cnum:ConnectionNumberRule ')' _ '{' sql:SQLExprRule '}' _ ref:ResultReferenceRule? _ {
+  if ref != nil {
+    return Step{ ConnNum:cnum.(int), Sql:sql.(string), ResultRef: ref.(string) }, nil
+  } else {
+    return Step{ ConnNum:cnum.(int), Sql:sql.(string), ResultRef: "" }, nil
+  }
+}
+
+ResultReferenceRule <- '$'. {
+  return string(c.text) , nil
+}
+
+SQLExprRule <- [^}]+ {
+  return string(c.text), nil
+}
+
+ConnectionNumberRule <- [0-9] {
+  return strconv.Atoi(string(c.text))
+}
+
+_ "whitespace" <- [ \t\r\n]*
+
+EOF <- !.
+
+
+
+
+
