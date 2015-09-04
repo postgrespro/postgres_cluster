@@ -1,0 +1,90 @@
+===
+dtm
+===
+
+Distributed transaction management tools for PostgreSQL.
+
+--------------------
+Communication scheme
+--------------------
+
+      .- Backend -.
+     /             \
+    /               \
+DTM ---- Backend ---- Coordinator
+    \               /
+     \             /
+      `- Backend -´
+
+
+-----------------------
+Coordinator-Backend API
+-----------------------
+
+This API includes a set of postgres procedures that
+the coordinator can call with "select" statement.
+
+FIXME: document the API
+
+----------
+libdtm api
+----------
+
+typedef unsigned long long xid_t;
+
+// Connects to the specified DTM.
+DTMConn DtmConnect(char *host, int port);
+
+// Disconnects from the DTM. Do not use the 'dtm' pointer after this call, or
+// bad things will happen.
+void DtmDisconnect(DTMConn dtm);
+
+// Asks DTM for a fresh snapshot. Returns a snapshot on success, or NULL
+// otherwise. Please free the snapshot memory yourself after use.
+Snapshot DtmGlobalGetSnapshot(DTMConn dtm);
+
+// Starts a transaction. Returns the 'gxid' on success, or INVALID_GXID otherwise.
+xid_t DtmGlobalBegin(DTMConn dtm);
+
+// Marks a given transaction as 'committed'. Returns 'true' on success,
+// 'false' otherwise.
+bool DtmGlobalCommit(DTMConn dtm, xid_t gxid);
+
+// Marks a given transaction as 'aborted'.
+void DtmGlobalRollback(DTMConn dtm, xid_t gxid);
+
+// Gets the status of the transaction identified by 'gxid'. Returns the status
+// on success, or -1 otherwise.
+int DtmGlobalGetTransStatus(DTMConn dtm, xid_t gxid);
+
+--------------------
+Backend-DTM Protocol
+--------------------
+
+DTM <--> Backend:
+
+<-   'b'<hex16 self> - "begin"
+  -> '+'<hex16 gxid> - "transaction started"
+  -> '-'             - "something went wrong"
+
+<-   'c'<hex16 gxid> - "commit"
+  -> '+'             - "commit saved"
+  -> '-'             - "something went wrong"
+
+<-   'a'<hex16 gxid> - "abort"
+  -> '+'             - "abort saved"
+  -> '-'             - "something went wrong"
+
+<-   'h'             - "snapshot"
+  -> '+'<snapshot>   - "here is a fresh snapshot for you"
+  -> '-'             - "something went wrong"
+
+<-   's'<hex16 gxid> - "status"
+  -> '+''c|a|?'      - "here is the transaction status"
+                       (c)ommitted, (a)borted or (?)unknown
+  -> '-'             - "something went wrong"
+
+<snapshot> = <hex16 xmin><hex16 xmax><hex16 n><hex16 active[n]>
+
+Backend disconnection is considered as an abort of all incomplete transactions
+started by that backend.
