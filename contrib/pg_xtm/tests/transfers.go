@@ -31,9 +31,8 @@ var cfg2 = pgx.ConnConfig{
 var running = false
 
 func prepare_db() {
-    var snapshot int64
-    var csn int64
-    var gtid string = "init"
+    var xids [2]int
+    var csn int64a
 
     conn1, err := pgx.Connect(cfg1)
     checkErr(err)
@@ -53,34 +52,37 @@ func prepare_db() {
     exec(conn2, "drop table if exists t")
     exec(conn2, "create table t(u int primary key, v int)")
     
-    exec(conn1, "select dtm_register_node(1)")
-    exec(conn2, "select dtm_register_node(2)")
-
-    exec(conn1, "begin transaction")
-    exec(conn2, "begin transaction")
-
-    snapshot = execQuery(conn1, "select dtm_extend($1)", gtid)
-    snapshot = execQuery(conn2, "select dtm_access($1, $2)", snapshot, gtid)
-
+    // strt transaction
+    exec(conn1, "begin")
+    exec(conn2, "begin")
+    
+    // obtain XIDs of paticipants
+    xids[0] = execQuery(conn1, "select txid_current()")
+    xids[1] = execQuery(conn2, "select txid_current()")
+    
+    // register global transaction in DTMD
+    exec(conn1, "select dtm_global_transaction($1)", xids)
+    
+    // first global statement 
+    exec(conn1, "select dtm_get_snapshot()")
+    exec(conn2, "select dtm_get_snapshot()")
+    
     for i := 0; i < N_ACCOUNTS; i++ {
         exec(conn1, "insert into t values($1, $2)", i, INIT_AMOUNT)
         exec(conn2, "insert into t values($1, $2)", i, INIT_AMOUNT)
     }
-           
-    exec(conn1, "prepare transaction '" + gtid + "'")
-    exec(conn2, "prepare transaction '" + gtid + "'")
-
-    exec(conn1, "select dtm_begin_prepare($1, 2)", gtid)
-    exec(conn2, "select dtm_begin_prepare($1, 2)", gtid)
-
-    csn = execQuery(conn1, "select dtm_prepare($1, 0)", gtid)
-    csn = execQuery(conn2, "select dtm_prepare($1, $2)", gtid, csn)
-
-    exec(conn1, "select dtm_end_prepare($1, $2)", gtid, csn)
-    exec(conn2, "select dtm_end_prepare($1, $2)", gtid, csn)
-
-    exec(conn1, "commit prepared '" + gtid + "'")
-    exec(conn2, "commit prepared '" + gtid + "'")
+    
+    // second global statement 
+    exec(conn1, "select dtm_get_snapshot()")
+    exec(conn2, "select dtm_get_snapshot()")
+    
+    sum1 = execQuery(conn1, "select sum(v) from t")
+    sum2 = execQuery(conn2, "select sum(v) from t")
+    
+    // commit work
+    exec(conn1, "commit")
+    exec(conn2, "commit")
+    // at this moment transaction should be globally committed
 }
 
 func max(a, b int64) int64 {
@@ -92,8 +94,7 @@ func max(a, b int64) int64 {
 
 func transfer(id int, wg *sync.WaitGroup) {
     var err error
-    var snapshot int64
-    var csn int64
+    var xids [2]int
 
     conn1, err := pgx.Connect(cfg1)
     checkErr(err)
@@ -104,35 +105,40 @@ func transfer(id int, wg *sync.WaitGroup) {
     defer conn2.Close()
 
     for i := 0; i < N_ITERATIONS; i++ {
-        gtid := strconv.Itoa(id) + "." + strconv.Itoa(i)
         //amount := 2*rand.Intn(2) - 1
         amount := 1
         account1 := rand.Intn(N_ACCOUNTS) 
         account2 := rand.Intn(N_ACCOUNTS)
 
-        exec(conn1, "begin transaction")
-        exec(conn2, "begin transaction")
-
-        snapshot = execQuery(conn1, "select dtm_extend($1)", gtid)
-        snapshot = execQuery(conn2, "select dtm_access($1, $2)", snapshot, gtid)
-
+        // strt transaction
+        exec(conn1, "begin")
+        exec(conn2, "begin")
+        
+        // obtain XIDs of paticipants
+        xids[0] = execQuery(conn1, "select txid_current()")
+        xids[1] = execQuery(conn2, "select txid_current()")
+        
+        // register global transaction in DTMD
+        exec(conn1, "select dtm_global_transaction($1)", xids)
+        
+        // first global statement 
+        exec(conn1, "select dtm_get_snapshot()")
+        exec(conn2, "select dtm_get_snapshot()")
+        
         exec(conn1, "update t set v = v + $1 where u=$2", amount, account1)
         exec(conn2, "update t set v = v - $1 where u=$2", amount, account2)
-
-        exec(conn1, "prepare transaction '" + gtid + "'")
-        exec(conn2, "prepare transaction '" + gtid + "'")
-
-        exec(conn1, "select dtm_begin_prepare($1, 2)", gtid)
-        exec(conn2, "select dtm_begin_prepare($1, 2)", gtid)
-
-        csn = execQuery(conn1, "select dtm_prepare($1, 0)", gtid)
-        csn = execQuery(conn2, "select dtm_prepare($1, $2)", gtid, csn)
-
-        exec(conn1, "select dtm_end_prepare($1, $2)", gtid, csn)
-        exec(conn2, "select dtm_end_prepare($1, $2)", gtid, csn)
-
-        exec(conn1, "commit prepared '" + gtid + "'")
-        exec(conn2, "commit prepared '" + gtid + "'")
+        
+        // second global statement 
+        exec(conn1, "select dtm_get_snapshot()")
+        exec(conn2, "select dtm_get_snapshot()")
+        
+        sum1 = execQuery(conn1, "select sum(v) from t")
+        sum2 = execQuery(conn2, "select sum(v) from t")
+        
+        // commit work
+        exec(conn1, "commit")
+        exec(conn2, "commit")
+        // at this moment transaction should be globally committed
     }
 
     fmt.Println("Test completed")
@@ -143,7 +149,7 @@ func total() int64 {
     var err error
     var sum1 int64
     var sum2 int64
-    var snapshot int64
+    var xids [2]int
 
     conn1, err := pgx.Connect(cfg1)
     checkErr(err)
@@ -157,8 +163,12 @@ func total() int64 {
         exec(conn1, "begin transaction")
         exec(conn2, "begin transaction")
  
-        snapshot = execQuery(conn1, "select dtm_extend()")
-        snapshot = execQuery(conn2, "select dtm_access($1)", snapshot)
+        // obtain XIDs of paticipants
+        xids[0] = execQuery(conn1, "select txid_current()")
+        xids[1] = execQuery(conn2, "select txid_current()")
+        
+        // register global transaction in DTMD
+        exec(conn1, "select dtm_global_transaction($1)", xids)
 
         sum1 = execQuery(conn1, "select sum(v) from t")
         sum2 = execQuery(conn2, "select sum(v) from t")

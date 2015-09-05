@@ -21,6 +21,7 @@
 #include "storage/procarray.h"
 #include "access/xlogdefs.h"
 #include "access/xact.h"
+#include "access/xtm.h"
 #include "access/transam.h"
 #include "access/xlog.h"
 #include "access/twophase.h"
@@ -79,8 +80,6 @@ static HTAB* gtid2xid;
 static DtmNodeState* local;
 static DtmTransState dtm_tx;
 static DTMConn dtm_conn;
-
-static SnapshotProvider DefaultSnapshotProvider;
 
 void _PG_init(void);
 void _PG_fini(void);
@@ -392,7 +391,7 @@ void DtmInitialize()
 		HASH_ELEM | HASH_FUNCTION | HASH_COMPARE | HASH_KEYCOPY);
 
 	RegisterTransactionVisibilityCallback(DtmVisibilityCheck);
-    DefaultSnapshotProvider = SetSnapshotProvider(DtmSnapshotProvider);
+    TM->GetSnapshotData = DtmGetSnapshotData;
 
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
 	local = (DtmNodeState*)ShmemInitStruct("dtm", sizeof(DtmNodeState), &found);
@@ -413,10 +412,10 @@ void DtmInitialize()
 }
 
 
-Snapshot DtmSnapshotProvider(Snapshot snapshot)
+Snapshot DtmGetSnapshotData(Snapshot snapshot)
 {
     if (dtm_tx.local_snapshot == NULL) {
-        dtm_tx.local_snapshot = DefaultSnapshotProvider(snapshot); 
+        dtm_tx.local_snapshot = GetLocalSnapshotData(snapshot); 
     }
     if (local->last_xid != InvalidTransactionId &&  RecentGlobalDataXmin > local->last_xid) { 
         RecentGlobalDataXmin = local->last_xid;

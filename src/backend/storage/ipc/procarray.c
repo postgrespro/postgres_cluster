@@ -51,6 +51,7 @@
 #include "access/twophase.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#include "access/xtm.h"
 #include "catalog/catalog.h"
 #include "miscadmin.h"
 #include "storage/proc.h"
@@ -94,11 +95,6 @@ typedef struct ProcArrayStruct
 	/* indexes into allPgXact[], has PROCARRAY_MAXPROCS entries */
 	int			pgprocnos[FLEXIBLE_ARRAY_MEMBER];
 } ProcArrayStruct;
-
-static Snapshot
-GetCurrentSnapshotData(Snapshot snapshot);
-
-static SnapshotProvider GetSnapshotImpl = GetCurrentSnapshotData;
 
 static ProcArrayStruct *procArray;
 
@@ -1498,19 +1494,11 @@ GetMaxSnapshotSubxidCount(void)
 Snapshot
 GetSnapshotData(Snapshot snapshot)
 {
-    return (*GetSnapshotImpl)(snapshot);
+    return TM->GetSnapshot(snapshot);
 }
 
-SnapshotProvider 
-SetSnapshotProvider(SnapshotProvider provider)
-{
-    SnapshotProvider old = GetSnapshotImpl;
-    GetSnapshotImpl = provider;
-    return old;
-}
-
-static Snapshot
-GetCurrentSnapshotData(Snapshot snapshot)
+Snapshot
+GetLocalSnapshotData(Snapshot snapshot)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId xmin;

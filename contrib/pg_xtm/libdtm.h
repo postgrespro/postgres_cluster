@@ -20,22 +20,19 @@ DTMConn DtmConnect(char *host, int port);
 // bad things will happen.
 void DtmDisconnect(DTMConn dtm);
 
-// Asks DTM for a fresh snapshot. Returns a snapshot on success, or NULL
-// otherwise. Please free the snapshot memory yourself after use.
-Snapshot DtmGlobalGetSnapshot(DTMConn dtm);
 
-// Starts a transaction. Returns the 'gxid' on success, or INVALID_GXID otherwise.
-xid_t DtmGlobalBegin(DTMConn dtm);
+typedef struct {
+    TransasactionId* xids;
+    int nXids;
+} GlobalTransactionId;
 
-// Marks a given transaction as 'committed'. Returns 'true' on success,
-// 'false' otherwise.
-bool DtmGlobalCommit(DTMConn dtm, xid_t gxid);
+/* create entry for new global transaction */
+void DtmGlobalStartTransaction(DTMConn dtm, TransactionId* gitd); 
 
-// Marks a given transaction as 'aborted'.
-void DtmGlobalRollback(DTMConn dtm, xid_t gxid);
+void DtmGlobalGetSnapshot(DTMConn dtm, TransactionId xid, Snapshot snapshot);
 
-// Gets the status of the commit identified by 'gxid'. Returns the status on
-// success, or -1 otherwise.
-int DtmGlobalGetTransStatus(DTMConn dtm, xid_t gxid);
+void DtmGlobalSetTransStatus(DTMConn dtm, TransactionId xid, XidStatus status); /* commit transaction only once all participants are committed, before it do not change CLOG  */
+
+XidStatus DtmGlobalGetTransStatus(DTMConn dtm, TransactionId xid);
 
 #endif

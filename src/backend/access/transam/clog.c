@@ -38,8 +38,13 @@
 #include "access/xlog.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
+#include "access/xtm.h"
+#include "storage/procarray.h"
 #include "miscadmin.h"
 #include "pg_trace.h"
+
+TransactionManager DefaultTM = { CLOGTransactionIdSetTreeStatus, CLOGTransactionIdGetStatus, GetLocalSnapshotData };
+TransactionManager* TM = &DefaultTM;
 
 /*
  * Defines for CLOG page sizes.  A page is the same BLCKSZ as is used
@@ -92,6 +97,12 @@ static void TransactionIdSetStatusBit(TransactionId xid, XidStatus status,
 static void set_status_by_pages(int nsubxids, TransactionId *subxids,
 					XidStatus status, XLogRecPtr lsn);
 
+void
+TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
+					TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
+{
+    TM->SetTransactionStatus(xid, nsubxids, subxids, status, lsn);
+}
 
 /*
  * TransactionIdSetTreeStatus
@@ -145,7 +156,7 @@ static void set_status_by_pages(int nsubxids, TransactionId *subxids,
  * cache yet.
  */
 void
-TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
+CLOGTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
 					TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
 	int			pageno = TransactionIdToPage(xid);		/* get page of parent */
@@ -390,6 +401,12 @@ TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, i
  */
 XidStatus
 TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
+{
+    TM->GetTransactionStatus(xid, lsn);
+}
+
+XidStatus
+CLOGTransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
 {
 	int			pageno = TransactionIdToPage(xid);
 	int			byteno = TransactionIdToByte(xid);
