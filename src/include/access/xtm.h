@@ -11,11 +11,14 @@
 #ifndef XTM_H
 #define XTM_H
 
+#include "access/clog.h"
+#include "utils/snapmgr.h"
+
 typedef struct
 {
      XidStatus (*GetTransactionStatus)(TransactionId xid, XLogRecPtr *lsn);
      void (*SetTransactionStatus)(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
-     Snapshot (*GetSnapshot)(Snaphot);
+     Snapshot (*GetSnapshot)(Snapshot snapshot);
 } TransactionManager;
 
 extern TransactionManager* TM;

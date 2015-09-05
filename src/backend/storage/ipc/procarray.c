@@ -984,7 +984,8 @@ TransactionIdIsInProgress(TransactionId xid)
 
     if (VisibilityCallback) 
     { 
-        VisibilityCheckResult result =  (*VisibilityCallback)(xid);
+        /* Just wait for in-doubt transactions */
+        (*VisibilityCallback)(xid);
         /*
         if (result != XID_IN_DOUBT)  
         {

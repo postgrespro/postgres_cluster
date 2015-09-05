@@ -2,7 +2,8 @@
 #define LIBDTM_H
 
 #include "postgres.h"
-#include "utils/snapshot.h"
+#include "utils/snapmgr.h"
+#include "access/clog.h"
 
 #define INVALID_GXID 0
 #define COMMIT_UNKNOWN 0
@@ -22,14 +23,14 @@ void DtmDisconnect(DTMConn dtm);
 
 
 typedef struct {
-    TransasactionId* xids;
+    TransactionId* xids;
     int nXids;
 } GlobalTransactionId;
 
 /* create entry for new global transaction */
-void DtmGlobalStartTransaction(DTMConn dtm, TransactionId* gitd); 
+void DtmGlobalStartTransaction(DTMConn dtm, GlobalTransactionId* gitd); 
 
-void DtmGlobalGetSnapshot(DTMConn dtm, TransactionId xid, Snapshot snapshot);
+Snapshot DtmGlobalGetSnapshot(DTMConn dtm, TransactionId xid, Snapshot snapshot);
 
 void DtmGlobalSetTransStatus(DTMConn dtm, TransactionId xid, XidStatus status); /* commit transaction only once all participants are committed, before it do not change CLOG  */
 

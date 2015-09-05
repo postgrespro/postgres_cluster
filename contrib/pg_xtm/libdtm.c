@@ -121,7 +121,7 @@ void DtmDisconnect(DTMConn dtm) {
 
 // Asks DTM for a fresh snapshot. Returns a snapshot on success, or NULL
 // otherwise. Please free the snapshot memory yourself after use.
-Snapshot DtmGlobalGetSnapshot(DTMConn dtm) {
+Snapshot DtmGlobalGetSnapshot(DTMConn dtm, TransactionId xid, Snapshot s) {
 	bool ok;
 	int i;
 	xid_t number;
@@ -136,10 +136,6 @@ Snapshot DtmGlobalGetSnapshot(DTMConn dtm) {
 	if (!ok) {
 		return NULL;
 	}
-
-	// FIXME: We should not expose the postgres Snapshot here, should we?
-	// Can we use a custom structure?
-	Snapshot s = palloc(sizeof(SnapshotData));
 
 	if (!dtm_read_hex16(dtm, &number)) {
 		goto cleanup_snapshot;
@@ -239,7 +235,7 @@ void DtmGlobalRollback(DTMConn dtm, xid_t gxid) {
 
 // Gets the status of the transaction identified by 'gxid'. Returns the status
 // on success, or -1 otherwise.
-int DtmGlobalGetTransStatus(DTMConn dtm, xid_t gxid) {
+XidStatus DtmGlobalGetTransStatus(DTMConn dtm, TransactionId gxid) {
 	bool result;
 	char statuschar;
 

@@ -19,14 +19,17 @@
 #include "storage/ipc.h"
 #include "access/xlogdefs.h"
 #include "access/xact.h"
+#include "access/xtm.h"
 #include "access/transam.h"
 #include "access/xlog.h"
+#include "storage/procarray.h"
 #include "access/twophase.h"
 #include "utils/hsearch.h"
 #include "utils/tqual.h"
+#include "utils/array.h"
+#include "utils/builtins.h"
 
 #include "libdtm.h"
-#include "pg_dtm.h"
 
 void _PG_init(void);
 void _PG_fini(void);
@@ -66,7 +69,7 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
     if (status == TRANSACTION_STATUS_IN_PROGRESS) { 
         DtmEnsureConnection();    
         status = DtmGlobalGetTransStatus(DtmConn, xid);
-        CLOGTransactionIdSetTreeStatus(xid, 0, NULL, status, NULL);
+        CLOGTransactionIdSetTreeStatus(xid, 0, NULL, status, InvalidXLogRecPtr);
     }
     return status;
 }
@@ -76,7 +79,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 {
     DtmEnsureConnection();
     CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_IN_PROGRESS, lsn); 
-    DtmHasSnapshpt = false;
+    DtmHasSnapshot = false;
     return DtmGlobalSetTransStatus(DtmConn, xid, status);
 }
 
@@ -112,6 +115,9 @@ Datum
 dtm_global_transaction(PG_FUNCTION_ARGS)
 {
     GlobalTransactionId gtid;
+    ArrayType* a = PG_GETARG_ARRAYTYPE_P(0);
+    gtid.xids = (TransactionId*)ARR_DATA_PTR(a);
+    gtid.nXids = ArrayGetNItems( ARR_NDIM(a), ARR_DIMS(a));
     DtmEnsureConnection();
     DtmGlobalStartTransaction(DtmConn, &gtid);
 	PG_RETURN_VOID();
@@ -120,7 +126,7 @@ dtm_global_transaction(PG_FUNCTION_ARGS)
 Datum
 dtm_get_snapshot(PG_FUNCTION_ARGS)
 {
-    TransationIn xmin;
+    TransactionId xmin;
     DtmEnsureConnection();
     DtmGlobalGetSnapshot(DtmConn, GetCurrentTransactionId(), &DtmSnapshot);
     /* Move it to DtmGlobalGetSnapshot? */
@@ -138,7 +144,7 @@ dtm_get_snapshot(PG_FUNCTION_ARGS)
         }
         RecentXmin = xmin;
     }   
-	snapshot->curcid = GetCurrentCommandId(false);
+	DtmSnapshot.curcid = GetCurrentCommandId(false);
     DtmHasSnapshot = true;
 	PG_RETURN_VOID();
 }

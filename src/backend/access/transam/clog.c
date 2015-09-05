@@ -43,7 +43,7 @@
 #include "miscadmin.h"
 #include "pg_trace.h"
 
-TransactionManager DefaultTM = { CLOGTransactionIdSetTreeStatus, CLOGTransactionIdGetStatus, GetLocalSnapshotData };
+TransactionManager DefaultTM = { CLOGTransactionIdGetStatus, CLOGTransactionIdSetTreeStatus, GetLocalSnapshotData };
 TransactionManager* TM = &DefaultTM;
 
 /*
@@ -402,7 +402,7 @@ TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, i
 XidStatus
 TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
 {
-    TM->GetTransactionStatus(xid, lsn);
+    return TM->GetTransactionStatus(xid, lsn);
 }
 
 XidStatus
