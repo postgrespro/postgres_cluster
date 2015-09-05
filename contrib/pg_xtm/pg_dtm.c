@@ -120,8 +120,25 @@ dtm_global_transaction(PG_FUNCTION_ARGS)
 Datum
 dtm_get_snapshot(PG_FUNCTION_ARGS)
 {
+    TransationIn xmin;
     DtmEnsureConnection();
-    DtmGlobalGetSnapshot(DtmConn, GetCurrentTransactionId());
+    DtmGlobalGetSnapshot(DtmConn, GetCurrentTransactionId(), &DtmSnapshot);
+    /* Move it to DtmGlobalGetSnapshot? */
+    xmin = DtmSnapshot.xmin;
+    if (xmin != InvalidTransactionId) { 
+        xmin -= vacuum_defer_cleanup_age;
+        if (!TransactionIdIsNormal(xmin)) {
+            xmin = FirstNormalTransactionId;
+        }
+        if (RecentGlobalDataXmin > xmin) { 
+            RecentGlobalDataXmin = xmin;
+        }
+        if (RecentGlobalXmin > xmin) { 
+            RecentGlobalXmin = xmin;
+        }
+        RecentXmin = xmin;
+    }   
+	snapshot->curcid = GetCurrentCommandId(false);
     DtmHasSnapshot = true;
 	PG_RETURN_VOID();
 }
