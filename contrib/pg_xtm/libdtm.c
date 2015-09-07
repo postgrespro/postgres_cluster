@@ -121,7 +121,7 @@ void DtmDisconnect(DTMConn dtm) {
 
 // Asks DTM for a fresh snapshot. Returns a snapshot on success, or NULL
 // otherwise. Please free the snapshot memory yourself after use.
-Snapshot DtmGlobalGetSnapshot(DTMConn dtm, TransactionId xid, Snapshot s) {
+Snapshot DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapshot s) {
 	bool ok;
 	int i;
 	xid_t number;
@@ -173,6 +173,7 @@ cleanup_snapshot:
 	return NULL;
 }
 
+#if 0
 // Starts a transaction. Returns the 'gxid' on success, or INVALID_GXID otherwise.
 xid_t DtmGlobalBegin(DTMConn dtm) {
 	bool ok;
@@ -195,7 +196,12 @@ xid_t DtmGlobalBegin(DTMConn dtm) {
 
 	return gxid;
 }
+#endif
 
+void DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidStatus status)
+{
+}
+#if 0
 // Marks a given transaction as 'committed'. Returns 'true' on success,
 // 'false' otherwise.
 bool DtmGlobalCommit(DTMConn dtm, xid_t gxid) {
@@ -232,10 +238,11 @@ void DtmGlobalRollback(DTMConn dtm, xid_t gxid) {
 		return;
 	}
 }
+#endif
 
 // Gets the status of the transaction identified by 'gxid'. Returns the status
 // on success, or -1 otherwise.
-XidStatus DtmGlobalGetTransStatus(DTMConn dtm, TransactionId gxid) {
+XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId gxid) {
 	bool result;
 	char statuschar;
 

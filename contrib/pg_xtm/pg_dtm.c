@@ -24,6 +24,7 @@
 #include "access/xlog.h"
 #include "storage/procarray.h"
 #include "access/twophase.h"
+#include <utils/guc.h>
 #include "utils/hsearch.h"
 #include "utils/tqual.h"
 #include "utils/array.h"
@@ -38,6 +39,7 @@ static void DtmEnsureConnection(void);
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
+static NodeId DtmNodeId;
 
 static DTMConn DtmConn;
 static SnapshotData DtmSnapshot = {HeapTupleSatisfiesMVCC};
@@ -68,7 +70,7 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
     XidStatus status = CLOGTransactionIdGetStatus(xid, lsn);
     if (status == TRANSACTION_STATUS_IN_PROGRESS) { 
         DtmEnsureConnection();    
-        status = DtmGlobalGetTransStatus(DtmConn, xid);
+        status = DtmGlobalGetTransStatus(DtmConn, DtmNodeId, xid);
         CLOGTransactionIdSetTreeStatus(xid, 0, NULL, status, InvalidXLogRecPtr);
     }
     return status;
@@ -77,10 +79,10 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
-    DtmEnsureConnection();
     CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_IN_PROGRESS, lsn); 
     DtmHasSnapshot = false;
-    return DtmGlobalSetTransStatus(DtmConn, xid, status);
+    DtmEnsureConnection();
+    return DtmGlobalSetTransStatus(DtmConn, DtmNodeId, xid, status);
 }
 
 
@@ -92,6 +94,19 @@ void
 _PG_init(void)
 {
     TM = &DtmTM;
+
+	DefineCustomIntVariable("dtm.node.id",
+                            "Identifier of node in distributed cluster for DTM",
+							NULL,
+							&DtmNodeId,
+							0,
+							0, 
+                            INT_MAX,
+							PGC_POSTMASTER,
+							0,
+							NULL,
+							NULL,
+							NULL);
 }
 
 /*
@@ -115,9 +130,11 @@ Datum
 dtm_global_transaction(PG_FUNCTION_ARGS)
 {
     GlobalTransactionId gtid;
-    ArrayType* a = PG_GETARG_ARRAYTYPE_P(0);
-    gtid.xids = (TransactionId*)ARR_DATA_PTR(a);
-    gtid.nXids = ArrayGetNItems( ARR_NDIM(a), ARR_DIMS(a));
+    ArrayType* nodes = PG_GETARG_ARRAYTYPE_P(0);
+    ArrayType* xids = PG_GETARG_ARRAYTYPE_P(1);
+    gtid.xids = (TransactionId*)ARR_DATA_PTR(xids);
+    gtid.nodes = (NodeId*)ARR_DATA_PTR(nodes);
+    gtid.nNodes = ArrayGetNItems(ARR_NDIM(nodes), ARR_DIMS(nodes));    
     DtmEnsureConnection();
     DtmGlobalStartTransaction(DtmConn, &gtid);
 	PG_RETURN_VOID();
@@ -128,7 +145,7 @@ dtm_get_snapshot(PG_FUNCTION_ARGS)
 {
     TransactionId xmin;
     DtmEnsureConnection();
-    DtmGlobalGetSnapshot(DtmConn, GetCurrentTransactionId(), &DtmSnapshot);
+    DtmGlobalGetSnapshot(DtmConn, DtmNodeId, GetCurrentTransactionId(), &DtmSnapshot);
     /* Move it to DtmGlobalGetSnapshot? */
     xmin = DtmSnapshot.xmin;
     if (xmin != InvalidTransactionId) { 

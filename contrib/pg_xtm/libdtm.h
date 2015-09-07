@@ -10,6 +10,7 @@
 #define COMMIT_YES     1
 #define COMMIT_NO      2
 
+typedef int NodeId;
 typedef unsigned long long xid_t;
 
 typedef struct DTMConnData *DTMConn;
@@ -24,16 +25,17 @@ void DtmDisconnect(DTMConn dtm);
 
 typedef struct {
     TransactionId* xids;
-    int nXids;
+    NodeId* nodes;
+    int nNodes;
 } GlobalTransactionId;
 
 /* create entry for new global transaction */
 void DtmGlobalStartTransaction(DTMConn dtm, GlobalTransactionId* gitd); 
 
-Snapshot DtmGlobalGetSnapshot(DTMConn dtm, TransactionId xid, Snapshot snapshot);
+Snapshot DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapshot snapshot);
 
-void DtmGlobalSetTransStatus(DTMConn dtm, TransactionId xid, XidStatus status); /* commit transaction only once all participants are committed, before it do not change CLOG  */
+void DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidStatus status); /* commit transaction only once all participants are committed, before it do not change CLOG  */
 
-XidStatus DtmGlobalGetTransStatus(DTMConn dtm, TransactionId xid);
+XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid);
 
 #endif
