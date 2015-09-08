@@ -33,6 +33,7 @@ var running = false
 func prepare_db() {
     var xids [2]int
     var csn int64a
+    nodes := []int{0,1}
 
     conn1, err := pgx.Connect(cfg1)
     checkErr(err)
@@ -61,7 +62,7 @@ func prepare_db() {
     xids[1] = execQuery(conn2, "select txid_current()")
     
     // register global transaction in DTMD
-    exec(conn1, "select dtm_global_transaction($1)", xids)
+    exec(conn1, "select dtm_global_transaction($1)", nodes, xids)
     
     // first global statement 
     exec(conn1, "select dtm_get_snapshot()")
