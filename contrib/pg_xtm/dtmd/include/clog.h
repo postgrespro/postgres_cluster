@@ -12,9 +12,9 @@
 #define MIN_GXID 42
 #define MAX_GXID 0xdeadbeefcafebabe
 
-#define COMMIT_UNKNOWN 0
-#define COMMIT_YES     1
-#define COMMIT_NO      2
+#define NEUTRAL  0
+#define POSITIVE 1
+#define NEGATIVE 2
 
 typedef struct clog_data_t *clog_t;
 
@@ -29,13 +29,6 @@ int clog_read(clog_t clog, xid_t gxid);
 // Set the status of the specified global commit. Return 'true' on success,
 // 'false' otherwise.
 bool clog_write(clog_t clog, xid_t gxid, int status);
-
-// Allocate a fresh unused gxid. Return INVALID_GXID on error.
-xid_t clog_advance(clog_t clog);
-
-// Get the first unknown commit id (used as a snapshot). Return INVALID_GXID on
-// error.
-xid_t clog_horizon(clog_t clog);
 
 // Forget about the commits before the given one ('until'), and free the
 // occupied space if possible. Return 'true' on success, 'false' otherwise.

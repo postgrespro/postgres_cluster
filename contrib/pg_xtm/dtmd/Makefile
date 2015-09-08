@@ -15,23 +15,21 @@ all: bin/dtmd
 	@echo Done.
 	@echo Feel free to run the tests with \'make check\'.
 
-bin/dtmd: obj/intset.o obj/eventwrap.o obj/main.o obj/parser.o obj/clog.o obj/clogfile.o obj/util.o | bindir objdir
+bin/dtmd: obj/eventwrap.o obj/main.o obj/parser.o obj/clog.o obj/clogfile.o obj/util.o obj/transaction.o obj/snapshot.o | bindir objdir
 	$(CC) -o bin/dtmd $(CFLAGS) $(LIBUV_CFLAGS) \
-		obj/intset.o obj/eventwrap.o obj/main.o obj/parser.o \
-		obj/clog.o obj/clogfile.o obj/util.o \
+		obj/eventwrap.o obj/main.o obj/parser.o \
+		obj/clog.o obj/clogfile.o obj/util.o obj/transaction.o \
+		obj/snapshot.o \
 		$(LIBUV_LDFLAGS)
 
 obj/eventwrap.o: src/eventwrap.c | objdir
 	$(CC) -c -o obj/eventwrap.o $(CFLAGS) $(LIBUV_CFLAGS) src/eventwrap.c
 
-check: bin/intset-test bin/util-test bin/clog-test bin/parser-test
-	./check.sh intset util parser clog
+check: bin/util-test bin/clog-test bin/parser-test
+	./check.sh util parser clog
 
 obj/%.o: src/%.c | objdir
 	$(CC) $(CFLAGS) -c -o $@ $<
-
-bin/intset-test: obj/intset-test.o obj/intset.o | bindir
-	$(CC) -o bin/intset-test $(CFLAGS) obj/intset-test.o obj/intset.o
 
 bin/util-test: obj/util-test.o obj/util.o | bindir
 	$(CC) -o bin/util-test $(CFLAGS) obj/util-test.o obj/util.o

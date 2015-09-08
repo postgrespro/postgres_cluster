@@ -14,33 +14,15 @@ bool test_clog(char *datadir) {
 	clog_t clog;
 	if (!(clog = clog_open(datadir))) return false;
 
-	xid_t gxid;
-
-	if ((gxid = clog_horizon(clog)) == INVALID_GXID) return false;
-	printf("horizon = %llu\n", gxid);
-
-	int count = 2000;
-	printf("allocating %d gxids\n", count);
-	while (count-- > 0) {
-		if ((gxid = clog_advance(clog)) == INVALID_GXID) return false;
-	}
-
-	xid_t last_gxid = clog_advance(clog);
 	clog_close(clog);
 	if (!(clog = clog_open(datadir))) return false;
-	if ((gxid = clog_advance(clog)) == INVALID_GXID) return false;
-	if (gxid == last_gxid) {
-		printf("clog_advance() gave out the same value %llu twice because of clog reopening\n", gxid);
-		return false;
-	}
 
-	if ((gxid = clog_horizon(clog)) == INVALID_GXID) return false;
-	printf("horizon = %llu\n", gxid);
-
+	if (!clog_write(clog, 42, NEGATIVE)) return false;
+	if (!clog_write(clog, 1000, NEGATIVE)) return false;
 	printf("commit %d status %d\n", 42, clog_read(clog, 42));
 	printf("commit %d status %d\n", 1000, clog_read(clog, 1000));
-	if (!clog_write(clog, 1000, COMMIT_YES)) return false;
-	if (!clog_write(clog, 1500, COMMIT_NO)) return false;
+	if (!clog_write(clog, 1000, POSITIVE)) return false;
+	if (!clog_write(clog, 1500, NEGATIVE)) return false;
 
 	if (!clog_close(clog)) return false;
 	if (!(clog = clog_open(datadir))) return false;
@@ -48,16 +30,16 @@ bool test_clog(char *datadir) {
 	int status;
 
 	printf("commit %d status %d (should be 2)\n", 42, status = clog_read(clog, 42));
-	if (status != COMMIT_NO) return false;
+	if (status != NEGATIVE) return false;
 
 	printf("commit %d status %d (should be 1)\n", 1000, status = clog_read(clog, 1000));
-	if (status != COMMIT_YES) return false;
+	if (status != POSITIVE) return false;
 
 	printf("commit %d status %d (should be 2)\n", 1500, status = clog_read(clog, 1500));
-	if (status != COMMIT_NO) return false;
+	if (status != NEGATIVE) return false;
 
 	printf("commit %d status %d (should be 0)\n", 2044, status = clog_read(clog, 2044));
-	if (status != COMMIT_UNKNOWN) return false;
+	if (status != NEUTRAL) return false;
 
 	if (!clog_close(clog)) return false;
 

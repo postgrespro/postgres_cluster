@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include "int.h"
+#include "limits.h"
 
 #define CMD_BEGIN    'b'
 #define CMD_COMMIT   'c'
@@ -13,26 +14,27 @@
 
 typedef struct cmd_t {
 	char cmd;
-	xid_t arg;
+	int argc;
+	xid_t argv[MAX_NODES * 2];
 } cmd_t;
 
 // Do not rely on the inner structure, it may change tomorrow.
 typedef struct parser_data_t *parser_t;
 
-// Allocate and initialize a parser.
+// Allocates and initializes a parser.
 parser_t parser_create();
 
-// Destroy the parser. The 'p' handle becomes invalid, so do not refer to it
+// Destroys the parser. The 'p' handle becomes invalid, so do not refer to it
 // after destroying the parser.
 void parser_destroy(parser_t p);
 
-// Initialize the parser.
+// Initializes the parser.
 void parser_init(parser_t p);
 
-// Check if parser has failed.
+// Checks if parser has failed.
 bool parser_failed(parser_t p);
 
-// Get the error message for the parser.
+// Gets the error message for the parser.
 char *parser_errormsg(parser_t p);
 
 // Feeds a character to the parser, and returns a parsed command if it is

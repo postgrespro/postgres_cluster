@@ -4,20 +4,16 @@
 #include "parser.h"
 
 char *input = 
-	"b"
-	"cdeadbeefcafebabe"
-	"adeadbeefcafebabe"
-	"h"
-	"sdeadbeefcafebabe"
+	"a0000000000000001000000000000002a"
+	"b0000000000000002000000000000002b000000000000002c"
+	"z0000000000000003000000000000002d000000000000002e000000000000002f"
 ;
 
-#define NUM_EXPECTED 5
+#define NUM_EXPECTED 3
 cmd_t expected[NUM_EXPECTED] = {
-	{CMD_BEGIN, 0UL},
-	{CMD_COMMIT, 0xdeadbeefcafebabeUL},
-	{CMD_ABORT, 0xdeadbeefcafebabeUL},
-	{CMD_SNAPSHOT, 0UL},
-	{CMD_STATUS, 0xdeadbeefcafebabeUL},
+	{'a', 1, {42}},
+	{'b', 2, {43, 44}},
+	{'z', 3, {45, 46, 47}},
 };
 
 int main() {
@@ -45,9 +41,18 @@ int main() {
 				break;
 			}
 			printf("command: %c (%s)\n", cmd->cmd, cmd->cmd == expected[cmds].cmd ? "ok" : "FAILURE");
-			printf("    arg: %016llx (%s)\n", cmd->arg, cmd->arg == expected[cmds].arg ? "ok" : "FAILURE");
-			if ((cmd->cmd != expected[cmds].cmd) || (cmd->arg != expected[cmds].arg)) {
+			printf("   argc: %d (%s)\n", cmd->argc, cmd->argc == expected[cmds].argc ? "ok" : "FAILURE");
+
+			if ((cmd->cmd != expected[cmds].cmd) || (cmd->argc != expected[cmds].argc)) {
 				ok = false;
+			}
+
+			int i;
+			for (i = 0; (i < cmd->argc) && (i < expected[cmds].argc); i++) {
+				printf("argv[%d]: %llu (%s)\n", i, cmd->argv[i], cmd->argv[i] == expected[cmds].argv[i] ? "ok" : "FAILURE");
+				if (cmd->argv[i] != expected[cmds].argv[i]) {
+					ok = false;
+				}
 			}
 			cmds++;
 			free(cmd);

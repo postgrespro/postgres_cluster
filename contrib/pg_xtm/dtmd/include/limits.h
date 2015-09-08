@@ -1,0 +1,12 @@
+#ifndef LIMITS_H
+#define LIMITS_H
+
+#define MAX_TRANSACTIONS_PER_CLIENT 1024
+#define MAX_TRANSACTIONS 1024
+
+#define BITS_PER_NODE 4
+#define MAX_NODES (1 << BITS_PER_NODE)
+
+#define MUX_XID(NODE, XID) (((XID) << (BITS_PER_NODE)) + NODE)
+
+#endif

@@ -2,34 +2,32 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <assert.h>
 
 #include "clog.h"
 #include "parser.h"
 #include "eventwrap.h"
 #include "util.h"
 #include "intset.h"
+#include "transaction.h"
 
 #define DEFAULT_DATADIR "/tmp/clog"
 #define DEFAULT_LISTENHOST "0.0.0.0"
 #define DEFAULT_LISTENPORT 5431
 
-#define MAX_TRANSACTIONS 8192
-#define MAX_TRANSACTIONS_PER_CLIENT 1024
-
-static intset_t *active_transactions;
+GlobalTransaction transactions[MAX_TRANSACTIONS];
+int transactions_count;
+xid_t xmax[MAX_NODES];
 
 typedef struct client_data_t {
 	int id;
 	parser_t parser;
-	int begins_num;
-	xid_t begins[MAX_TRANSACTIONS_PER_CLIENT];
 } client_data_t;
 
 static client_data_t *create_client_data(int id) {
 	client_data_t *cd = malloc(sizeof(client_data_t));
 	cd->id = id;
 	cd->parser = parser_create();
-	cd->begins_num = 0;
 	return cd;
 }
 
@@ -37,8 +35,6 @@ clog_t clg;
 
 #define CLIENT_ID(X) (((client_data_t*)(X))->id)
 #define CLIENT_PARSER(X) (((client_data_t*)(X))->parser)
-#define CLIENT_TRANSACTIONS_NUM(X) (((client_data_t*)(X))->begins_num)
-#define CLIENT_TRANSACTIONS(X, Y) (((client_data_t*)(X))->begins[(Y)])
 
 static void free_client_data(client_data_t *cd) {
 	parser_destroy(cd->parser);
@@ -52,161 +48,299 @@ static void onconnect(void **client) {
 }
 
 static void ondisconnect(void *client) {
-	shout(
-		"[%d] disconnected, %d begins to abort\n",
-		CLIENT_ID(client), CLIENT_TRANSACTIONS_NUM(client)
-	);
-	int i;
-	for (i = 0; i < CLIENT_TRANSACTIONS_NUM(client); i++) {
-		xid_t gxid = CLIENT_TRANSACTIONS(client, i);
-		if (!clog_write(clg, gxid, COMMIT_NO)) {
-			shout(
-				"[%d] failed to abort gxid %016llx on disconnect\n",
-				CLIENT_ID(client), gxid
-			);
-		}
-		intset_remove(active_transactions, gxid);
-	}
+	shout("[%d] disconnected\n", CLIENT_ID(client));
 	free_client_data(client);
 }
 
-static void client_add_transaction(void *client, xid_t gxid) {
-	CLIENT_TRANSACTIONS(client, CLIENT_TRANSACTIONS_NUM(client)++) = gxid;
-}
-
-static bool client_remove_transaction(void *client, xid_t gxid) {
+static void clear_global_transaction(GlobalTransaction *t) {
 	int i;
-	for (i = 0; i < CLIENT_TRANSACTIONS_NUM(client); i++) {
-		if (CLIENT_TRANSACTIONS(client, i) == gxid) {
-			CLIENT_TRANSACTIONS(client, i) = CLIENT_TRANSACTIONS(
-				client, --CLIENT_TRANSACTIONS_NUM(client)
-			);
-			return true;
-		}
+	for (i = 0; i < MAX_NODES; i++) {
+		t->participants[i].active = false;
 	}
-	return false;
 }
 
 static char *onbegin(void *client, cmd_t *cmd) {
-	if (CLIENT_TRANSACTIONS_NUM(client) >= MAX_TRANSACTIONS_PER_CLIENT) {
-		shout(
-			"[%d] cannot begin any more transactions (for this client)\n",
-			CLIENT_ID(client)
-		);
-		return strdup("-");
-	}
-
-	if (intset_size(active_transactions) >= MAX_TRANSACTIONS) {
-		shout(
-			"[%d] cannot begin any more transactions (at all)\n",
-			CLIENT_ID(client)
-		);
-		return strdup("-");
-	}
-
-	xid_t gxid = clog_advance(clg);
-	if (gxid == INVALID_GXID) {
-		return strdup("-");
-	}
-
-	client_add_transaction(client, gxid);
-
-	char buf[18];
-	sprintf(buf, "+%016llx", gxid);
-
 	shout(
-		"[%d] begin gxid %llx\n",
-		CLIENT_ID(client), gxid
+		"[%d] BEGIN\n",
+		CLIENT_ID(client)
 	);
 
-	intset_add(active_transactions, gxid);
-	return strdup(buf);
+	if (transactions_count >= MAX_TRANSACTIONS) {
+		shout(
+			"[%d] BEGIN: transaction limit hit\n",
+			CLIENT_ID(client)
+		);
+		return strdup("-");
+	}
+
+	if (cmd->argc < 3) {
+		shout(
+			"[%d] BEGIN: wrong number of arguments\n",
+			CLIENT_ID(client)
+		);
+		return strdup("-");
+	}
+	int size = cmd->argv[0];
+	if (cmd->argc - 1 != size * 2) {
+		shout(
+			"[%d] BEGIN: wrong 'size'\n",
+			CLIENT_ID(client)
+		);
+		return strdup("-");
+	}
+	if (size > MAX_NODES) {
+		shout(
+			"[%d] BEGIN: 'size' > MAX_NODES (%d > %d)\n",
+			CLIENT_ID(client), size, MAX_NODES
+		);
+		return strdup("-");
+	}
+
+	GlobalTransaction *gt = transactions + transactions_count;
+	clear_global_transaction(gt);
+	int i;
+	for (i = 0; i < size; i++) {
+		int node = cmd->argv[i * 2 + 1];
+		xid_t xid = cmd->argv[i * 2 + 2];
+
+		if (node > MAX_NODES) {
+			shout(
+				"[%d] BEGIN: wrong 'node'\n",
+				CLIENT_ID(client)
+			);
+			return strdup("-");
+		}
+
+		Transaction *t = gt->participants + node;
+		if (t->active) {
+			shout(
+				"[%d] BEGIN: node %d mentioned twice\n",
+				CLIENT_ID(client), node
+			);
+			return strdup("-");
+		}
+		t->active = true;
+		t->node = node;
+		t->vote = NEUTRAL;
+		t->xid = xid;
+		t->snapshot.seqno = 0;
+		t->sent_seqno = 0;
+
+		if (xid > xmax[node]) {
+			xmax[node] = xid;
+		}
+	}
+	transactions_count++;
+	return strdup("+");
+}
+
+static char *onvote(void *client, cmd_t *cmd, int vote) {
+	if (cmd->argc != 2) {
+		shout(
+			"[%d] VOTE: wrong number of arguments\n",
+			CLIENT_ID(client)
+		);
+		return strdup("-");
+	}
+	int node = cmd->argv[0];
+	xid_t xid = cmd->argv[1];
+	if (node > MAX_NODES) {
+		shout(
+			"[%d] VOTE: voted about a wrong 'node' (%d)\n",
+			CLIENT_ID(client), node
+		);
+		return strdup("-");
+	}
+
+	int i;
+	for (i = 0; i < transactions_count; i++) {
+		Transaction *t = transactions[i].participants + node;
+		if ((t->active) && (t->node == node) && (t->xid == xid)) {
+			break;
+		}
+	}
+
+	if (i == transactions_count) {
+		shout(
+			"[%d] VOTE: node %d xid %llu not found\n",
+			CLIENT_ID(client), node, xid
+		);
+		return strdup("-");
+	}
+
+	if (transactions[i].participants[node].vote != NEUTRAL) {
+		shout(
+			"[%d] VOTE: node %d voting on xid %llu again\n",
+			CLIENT_ID(client), node, xid
+		);
+		return strdup("-");
+	}
+	transactions[i].participants[node].vote = vote;
+
+	switch (global_transaction_status(transactions + i)) {
+		case NEGATIVE:
+			if (global_transaction_mark(clg, transactions + i, NEGATIVE)) {
+				shout(
+					"[%d] VOTE: global transaction aborted\n",
+					CLIENT_ID(client)
+				);
+				transactions[i] = transactions[transactions_count - 1];
+				transactions_count--;
+				return strdup("+");
+			} else {
+				shout(
+					"[%d] VOTE: global transaction failed"
+					" to abort O_o\n",
+					CLIENT_ID(client)
+				);
+				return strdup("-");
+			}
+		case NEUTRAL:
+			shout("[%d] VOTE: vote counted\n", CLIENT_ID(client));
+			return strdup("+");
+		case POSITIVE:
+			if (global_transaction_mark(clg, transactions + i, POSITIVE)) {
+				shout(
+					"[%d] VOTE: global transaction committed\n",
+					CLIENT_ID(client)
+				);
+				transactions[i] = transactions[transactions_count - 1];
+				transactions_count--;
+				return strdup("+");
+			} else {
+				shout(
+					"[%d] VOTE: global transaction failed"
+					" to commit\n",
+					CLIENT_ID(client)
+				);
+				return strdup("-");
+			}
+	}
+
+	assert(false); // a case missed in the switch?
+	return strdup("-");
 }
 
 static char *oncommit(void *client, cmd_t *cmd) {
 	shout(
-		"[%d] commit %016llx\n",
-		CLIENT_ID(client),
-		cmd->arg
+		"[%d] COMMIT -> VOTE\n",
+		CLIENT_ID(client)
 	);
-	if (clog_write(clg, cmd->arg, COMMIT_YES)) {
-		if (client_remove_transaction(client, cmd->arg)) {
-			intset_remove(active_transactions, cmd->arg);
-			return strdup("+");
-		}
-		shout(
-			"[%d] tried to commit an unbeginned gxid %llu\n",
-			CLIENT_ID(client),
-			cmd->arg
-		);
-	}
-	return strdup("-");
+
+	return onvote(client, cmd, POSITIVE);
 }
 
 static char *onabort(void *client, cmd_t *cmd) {
 	shout(
-		"[%d] abort %016llx\n",
-		CLIENT_ID(client),
-		cmd->arg
+		"[%d] ABORT -> VOTE\n",
+		CLIENT_ID(client)
 	);
-	if (clog_write(clg, cmd->arg, COMMIT_NO)) {
-		if (client_remove_transaction(client, cmd->arg)) {
-			intset_remove(active_transactions, cmd->arg);
-			return strdup("+");
+
+	return onvote(client, cmd, NEGATIVE);
+}
+
+static void gen_snapshot(Snapshot *s, int node) {
+	s->nactive = 0;
+	s->xmin = s->xmax = xmax[node];
+	int i;
+	for (i = 0; i < transactions_count; i++) {
+		Transaction *t = transactions[i].participants + node;
+		if (t->active) {
+			if (t->xid < s->xmin) {
+				s->xmin = t->xid;
+			}
+			s->active[s->nactive++] = t->xid;
 		}
-		shout(
-			"[%d] tried to abort an unbeginned gxid %016llx\n",
-			CLIENT_ID(client),
-			cmd->arg
-		);
 	}
-	return strdup("-");
+	s->seqno++;
+}
+
+static void gen_snapshots(GlobalTransaction *gt) {
+	int n;
+	for (n = 0; n < MAX_NODES; n++) {
+		gen_snapshot(&gt->participants[n].snapshot, n);
+	}
 }
 
 static char *onsnapshot(void *client, cmd_t *cmd) {
 	shout(
-		"[%d] snapshot\n",
+		"[%d] SNAPSHOT\n",
 		CLIENT_ID(client)
 	);
-	xid_t xmin, xmax;
-	int active = intset_size(active_transactions);
-	if (active > 0) {
-		xmin = intset_get(active_transactions, 0);
-		xmax = intset_get(active_transactions, active - 1);
-	} else {
-		xmin = xmax = clog_horizon(clg);
+
+	if (cmd->argc != 2) {
+		shout(
+			"[%d] SNAPSHOT: wrong number of arguments\n",
+			CLIENT_ID(client)
+		);
+		return strdup("-");
+	}
+	int node = cmd->argv[0];
+	xid_t xid = cmd->argv[1];
+	if (node > MAX_NODES) {
+		shout(
+			"[%d] SNAPSHOT: wrong 'node' (%d)\n",
+			CLIENT_ID(client), node
+		);
+		return strdup("-");
 	}
 
-	int chars_per_number = 16;
-	int numbers = 3 + active;
-	int eol_size = 2;
-	char *buf = malloc(chars_per_number * numbers + eol_size);
-	char *cursor = buf;
-	*cursor = '+'; cursor++;
-	sprintf(cursor, "%016llx", xmin); cursor += chars_per_number;
-	sprintf(cursor, "%016llx", xmax); cursor += chars_per_number;
-	sprintf(cursor, "%016llx", active); cursor += chars_per_number;
 	int i;
-	for (i = 0; i < active; i++) {
-		sprintf(cursor, "%016llx", intset_get(active_transactions, i));
-		cursor += chars_per_number;
+	for (i = 0; i < transactions_count; i++) {
+		Transaction *t = transactions[i].participants + node;
+		if ((t->active) && (t->node == node) && (t->xid == xid)) {
+			break;
+		}
 	}
-	return strdup(buf);
+
+	if (i == transactions_count) {
+		shout(
+			"[%d] SNAPSHOT: node %d xid %llu not found\n",
+			CLIENT_ID(client), node, xid
+		);
+		return strdup("-");
+	}
+
+	GlobalTransaction *gt = transactions + i;
+	Transaction *t = gt->participants + node;
+	if (t->sent_seqno == t->snapshot.seqno) {
+		gen_snapshots(gt);
+	}
+	assert(t->sent_seqno < t->snapshot.seqno);
+
+	return snapshot_serialize(&t->snapshot);
 }
 
 static char *onstatus(void *client, cmd_t *cmd) {
 	shout(
-		"[%d] status %016llx\n",
-		CLIENT_ID(client),
-		cmd->arg
+		"[%d] STATUS\n",
+		CLIENT_ID(client)
 	);
-	int status = clog_read(clg, cmd->arg);
+
+	if (cmd->argc != 2) {
+		shout(
+			"[%d] STATUS: wrong number of arguments\n",
+			CLIENT_ID(client)
+		);
+		return strdup("-");
+	}
+	int node = cmd->argv[0];
+	xid_t xid = cmd->argv[1];
+	if (node > MAX_NODES) {
+		shout(
+			"[%d] STATUS: wrong 'node' (%d)\n",
+			CLIENT_ID(client), node
+		);
+		return strdup("-");
+	}
+
+	int status = clog_read(clg, MUX_XID(node, xid));
 	switch (status) {
-		case COMMIT_YES:
+		case POSITIVE:
 			return strdup("+c");
-		case COMMIT_NO:
+		case NEGATIVE:
 			return strdup("+a");
-		case COMMIT_UNKNOWN:
+		case NEUTRAL:
 			return strdup("+?");
 		default:
 			return strdup("-");
@@ -214,7 +348,11 @@ static char *onstatus(void *client, cmd_t *cmd) {
 }
 
 static char *onnoise(void *client, cmd_t *cmd) {
-	shout("unknown command '%c'\n", cmd->cmd);
+	shout(
+		"[%d] NOISE: unknown command '%c'\n",
+		CLIENT_ID(client),
+		cmd->cmd
+	);
 	return strdup("-");
 }
 
@@ -234,6 +372,7 @@ static char *oncmd(void *client, cmd_t *cmd) {
 			return onnoise(client, cmd);
 	}
 
+	assert(false); // the switch has holes in it?
 	return NULL;
 }
 
@@ -330,14 +469,17 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 
-	active_transactions = intset_create(MAX_TRANSACTIONS);
+	transactions_count = 0;
+	int i;
+	for (i = 0; i < MAX_NODES; i++) {
+		xmax[i] = 0;
+	}
 
 	int retcode = eventwrap(
 		listenhost, listenport,
 		ondata, onconnect, ondisconnect
 	);
 
-	intset_destroy(active_transactions);
 	clog_close(clg);
 	return retcode;
 }

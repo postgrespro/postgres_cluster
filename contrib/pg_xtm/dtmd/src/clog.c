@@ -14,7 +14,6 @@
 #include "clogfile.h"
 #include "util.h"
 
-#define FRESHFILE "fresh.gxid"
 #define MAX_CLOG_FILES 10 // FIXME: Enforce this limit.
 
 typedef struct clogfile_chain_t {
@@ -24,13 +23,6 @@ typedef struct clogfile_chain_t {
 
 typedef struct clog_data_t {
 	char *datadir;
-	int fresh_fd; // the file to keep the next fresh gxid
-	xid_t fresh_gxid;
-
-	// First commit with unknown status (used as a snapshot).
-	// This value is supposed to be initialized from 'fresh_gxid' on
-	// startup, and then be updated on each commit/abort.
-	xid_t horizon;
 
 	clogfile_chain_t *lastfile;
 } clog_data_t;
@@ -42,8 +34,34 @@ static clogfile_chain_t *new_clogfile_chain(clogfile_t* file) {
 	return chain;
 }
 
-static clogfile_chain_t *load_clogfile_chain(char *datadir, int fileid) {
+static int get_latest_fileid(char *datadir) {
+	DIR *d = opendir(datadir);
+
+	if (!d) {
+		shout("cannot open datadir\n");
+		return -1;
+	}
+
+	int latest = 0;
+	struct dirent *e;
+	while ((e = readdir(d)) != NULL) {
+		int len = strlen(e->d_name);
+		if (len != 20) continue;
+		int fileid;
+		char ext[4];
+		int r = sscanf(e->d_name, "%016x.%3s", &fileid, ext);
+		if (r != 2) continue;
+		if (strcmp(ext, "dat")) continue;
+		if (fileid > latest) latest = fileid;
+	}
+
+	closedir(d);
+	return latest;
+}
+
+static clogfile_chain_t *load_clogfile_chain(char *datadir) {
 	clogfile_t file;
+	int fileid = get_latest_fileid(datadir);
 	if (!clogfile_open_by_id(&file, datadir, fileid, false)) {
 		// This may be the first launch, so try to create the file.
 		if (!clogfile_open_by_id(&file, datadir, fileid, true)) {
@@ -69,58 +87,16 @@ static clogfile_chain_t *load_clogfile_chain(char *datadir, int fileid) {
 // otherwise.
 clog_t clog_open(char *datadir) {
 	clog_t clog = NULL;
-	char *path = join_path(datadir, FRESHFILE);
-	int fd = open(path, O_RDWR | O_CREAT, 0660);
-	if (fd == -1) {
-		shout("cannot open/create freshfile '%s': %s\n", path, strerror(errno));
-		goto cleanup_path;
-	}
 
-	int res = falloc(fd, sizeof(xid_t));
-	if (res) {
-		shout("cannot allocate freshfile '%s': %s\n", path, strerror(errno));
-		goto cleanup_fd;
-	}
-
-	xid_t fresh_gxid;
-	ssize_t r = pread(fd, &fresh_gxid, sizeof(xid_t), 0);
-	if (r == -1) {
-		shout("cannot read fresh gxid from freshfile: %s\n", strerror(errno));
-		goto cleanup_fd;
-	}
-	if (r != sizeof(xid_t)) {
-		// FIXME: It is not an error if read returns less than requested.
-		shout(
-			"cannot read fresh gxid from freshfile, "
-			"read %ld bytes instead of %lu\n",
-			r, sizeof(xid_t)
-		);
-		goto cleanup_fd;
-	}
-	if (fresh_gxid < MIN_GXID) {
-		fresh_gxid = MIN_GXID;
-	}
-
-	// Load the clog files starting from the most recent.
-	clogfile_chain_t *lastfile = load_clogfile_chain(
-		datadir, GXID_TO_FILEID(fresh_gxid)
-	);
+	clogfile_chain_t *lastfile = load_clogfile_chain(datadir);
 	if (lastfile == NULL) {
-		goto cleanup_fd;
+		return clog;
 	}
 
 	clog = malloc(sizeof(clog_data_t));
 	clog->datadir = datadir;
-	clog->fresh_fd = fd;
-	clog->fresh_gxid = fresh_gxid;
-	clog->horizon = fresh_gxid;
 	clog->lastfile = lastfile;
-	goto cleanup_path;
 
-cleanup_fd:
-	close(fd);
-cleanup_path:
-	free(path);
 	return clog;
 }
 
@@ -141,17 +117,6 @@ int clog_read(clog_t clog, xid_t gxid) {
 	clogfile_t *file = clog_gxid_to_file(clog, gxid);
 	if (file) {
 		int status = clogfile_get_status(file, gxid);
-		if ((status == COMMIT_UNKNOWN) && (gxid < clog->horizon)) {
-			// An unknown status that should be known. That means
-			// we have crashed between prepare and the
-			// corresponding commit/abort. Consider it aborted.
-			if (clogfile_set_status(file, gxid, COMMIT_NO)) {
-				shout("marked crashed prepare %016llx as aborted\n", gxid);
-			} else {
-				shout("couldn't mark crashed prepare %016llx as aborted!\n", gxid);
-			}
-			return COMMIT_NO;
-		}
 		return status;
 	} else {
 		shout(
@@ -159,13 +124,7 @@ int clog_read(clog_t clog, xid_t gxid) {
 			"you might be experiencing a bug in backend\n",
 			gxid
 		);
-		return COMMIT_UNKNOWN;
-	}
-}
-
-static void clog_move_horizon(clog_t clog) {
-	while (clog_read(clog, clog->horizon) != COMMIT_UNKNOWN) {
-		clog->horizon++;
+		return NEUTRAL;
 	}
 }
 
@@ -173,58 +132,28 @@ static void clog_move_horizon(clog_t clog) {
 // 'false' otherwise.
 bool clog_write(clog_t clog, xid_t gxid, int status) {
 	clogfile_t *file = clog_gxid_to_file(clog, gxid);
-	if (file) {
-		bool ok = clogfile_set_status(file, gxid, status);
-		clog_move_horizon(clog);
-		return ok;
-	} else {
-		shout(
-			"cannot set gxid %016llx status, out of range, "
-			"you might be experiencing a bug in backend\n",
-			gxid
-		);
-		return false;
-	}
-}
-
-// Allocate a fresh unused gxid. Return INVALID_GXID on error.
-xid_t clog_advance(clog_t clog) {
-	xid_t old_gxid = clog->fresh_gxid++;
-	ssize_t written = pwrite(
-		clog->fresh_fd, &clog->fresh_gxid,
-		sizeof(xid_t), 0
-	);
-	if (written != sizeof(xid_t)) {
-		shout("failed to store the fresh gxid value\n");
-		return INVALID_GXID;
-	}
-	fsync(clog->fresh_fd);
-
-	int oldf = GXID_TO_FILEID(old_gxid);
-	int newf = GXID_TO_FILEID(clog->fresh_gxid);
-	if (oldf != newf) {
-		// create new clogfile
-		clogfile_t file;
-		if (!clogfile_open_by_id(&file, clog->datadir, newf, true)) {
+	if (!file) {
+		shout("gxid %016llx out of range, creating the file\n", gxid);
+		clogfile_t newfile;
+		if (!clogfile_open_by_id(&newfile, clog->datadir, GXID_TO_FILEID(gxid), true)) {
 			shout(
 				"failed to create new clogfile "
-				"while advancing fresh gxid\n"
+				"while saving transaction status\n"
 			);
-			return INVALID_GXID;
+			return false;
 		}
 
-		clogfile_chain_t *lastfile = new_clogfile_chain(&file);
+		clogfile_chain_t *lastfile = new_clogfile_chain(&newfile);
 		lastfile->prev = clog->lastfile;
 		clog->lastfile = lastfile;
 	}
-
-	return old_gxid;
-}
-
-// Get the first unknown commit id (used as xmin). Return INVALID_GXID on
-// error.
-xid_t clog_horizon(clog_t clog) {
-	return clog->horizon;
+	file = clog_gxid_to_file(clog, gxid);
+	if (!file) {
+		shout("the file is absent despite out efforts\n");
+		return false;
+	}
+	bool ok = clogfile_set_status(file, gxid, status);
+	return ok;
 }
 
 // Forget about the commits before the given one ('until'), and free the

@@ -1,34 +1,24 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include "parser.h"
+#include "transaction.h"
 
-#define MAX_CMD_LEN 20
+// cmd(1), argc(16), argv[2*n](len * 16), null(1)
+#define MAX_CMD_LEN (1 + (1 + 2 * MAX_NODES) * 16 + 1)
 
 #define PARSER_STATE_ERROR   -1
 #define PARSER_STATE_INITIAL  0
-#define PARSER_STATE_BEGIN    1
-#define PARSER_STATE_COMMIT   2
-#define PARSER_STATE_ABORT    3
-#define PARSER_STATE_SNAPSHOT 4
-#define PARSER_STATE_STATUS   5
-
-#define PARSER_STATE_FIRST    1
-#define PARSER_STATE_LAST     5
-
-char *syntax[6] = {
-	"",                  // initial
-	"b",                 // begin
-	"chhhhhhhhhhhhhhhh", // commit
-	"ahhhhhhhhhhhhhhhh", // abort
-	"h",                 // snapshot
-	"shhhhhhhhhhhhhhhh", // status
-};
+#define PARSER_STATE_ARGC     1
+#define PARSER_STATE_ARGV     2
+#define PARSER_STATE_COMPLETE 3
 
 typedef struct parser_data_t {
 	int state;
-	char buf[MAX_CMD_LEN];
-	int bufusage;
+	cmd_t *cmd;
+	int args;
+	int digits;
 	char *errormsg;
 } parser_data_t;
 
@@ -42,13 +32,14 @@ parser_t parser_create() {
 // Destroy the parser. The 'p' handle becomes invalid, so do not refer to it
 // after destroying the parser.
 void parser_destroy(parser_t p) {
+	free(p->cmd);
 	free(p);
 }
 
 // Initialize the parser.
 void parser_init(parser_t p) {
 	p->state = PARSER_STATE_INITIAL;
-	p->bufusage = 0;
+	p->cmd = malloc(sizeof(cmd_t));
 	p->errormsg = NULL;
 }
 
@@ -72,32 +63,27 @@ static bool is_hex_digit(char c) {
 	return false;
 }
 
+static int unhex_digit(char c) {
+	assert(is_hex_digit(c));
+	if ((c >= '0') && (c <= '9')) {
+		return c - '0';
+	}
+	if ((c >= 'a') && (c <= 'f')) {
+		return c - 'a' + 10;
+	}
+	return -1;
+}
+
 // Checks if the command is complete. If it is, returns the command and
 // initializes the parser. Does nothing and returns NULL otherwise.
 static cmd_t *parser_finish_if_possible(parser_t p) {
-	if (p->state == PARSER_STATE_ERROR) {
-			return NULL;
-	}
-	if (p->state == PARSER_STATE_INITIAL) {
+	if (p->state != PARSER_STATE_COMPLETE) {
 			return NULL;
 	}
 
-	if (syntax[p->state][p->bufusage] == '\0') {
-		// finish the command
-		cmd_t *cmd = malloc(sizeof(cmd_t));
-
-		cmd->cmd = syntax[p->state][0];
-		if (p->bufusage > 16) {
-			sscanf(p->buf + 1, "%016llx", &(cmd->arg));
-		} else {
-			cmd->arg = 0;
-		}
-
-		parser_init(p);
-		return cmd;
-	}
-
-	return NULL;
+	cmd_t *cmd = p->cmd;
+	parser_init(p);
+	return cmd;
 }
 
 // Feeds a character to the parser, and returns a parsed command if it is
@@ -109,32 +95,59 @@ cmd_t *parser_feed(parser_t p, char c) {
 		return NULL;
 	}
 
-	if (p->state == PARSER_STATE_INITIAL) {
-		int next;
-		for (next = PARSER_STATE_FIRST; next <= PARSER_STATE_LAST; next++) {
-			if (syntax[next][0] == c) {
-				p->state = next;
-				p->buf[p->bufusage++] = c;
-				return parser_finish_if_possible(p);
-			}
-		}
+	if (p->state == PARSER_STATE_COMPLETE) {
 		p->state = PARSER_STATE_ERROR;
-		p->errormsg = "unsupported command";
+		p->errormsg = "unexpected data after a command";
 		return NULL;
 	}
 
-	if (syntax[p->state][p->bufusage] == 'h') { // check if input is a hex digit
+	if (p->state == PARSER_STATE_INITIAL) {
+		p->cmd->cmd = c;
+		p->state = PARSER_STATE_ARGC;
+		p->args = 0;
+		p->digits = 0;
+		return NULL;
+	}
+
+	if (p->state == PARSER_STATE_ARGC) {
 		if (!is_hex_digit(c)) {
 			p->state = PARSER_STATE_ERROR;
 			p->errormsg = "not a hex digit";
 			return NULL;
 		}
-	} else {
-		p->state = PARSER_STATE_ERROR;
-		p->errormsg = "internal error";
+		p->cmd->argc *= 16;
+		p->cmd->argc += unhex_digit(c);
+		if (++(p->digits) == 16) {
+			if (p->cmd->argc == 0) {
+				p->state = PARSER_STATE_COMPLETE;
+				return parser_finish_if_possible(p);
+			}
+			p->state = PARSER_STATE_ARGV;
+			p->args = 0;
+			p->digits = 0;
+		}
 		return NULL;
 	}
 
-	p->buf[p->bufusage++] = c;
+	if (p->state == PARSER_STATE_ARGV) {
+		if (!is_hex_digit(c)) {
+			p->state = PARSER_STATE_ERROR;
+			p->errormsg = "not a hex digit";
+			return NULL;
+		}
+		p->cmd->argv[p->args] *= 16;
+		p->cmd->argv[p->args] += unhex_digit(c);
+		if (++(p->digits) == 16) {
+			p->state = PARSER_STATE_ARGV;
+			p->args++;
+			p->digits = 0;
+			if (p->cmd->argc == p->args) {
+				p->state = PARSER_STATE_COMPLETE;
+				return parser_finish_if_possible(p);
+			}
+		}
+		return NULL;
+	}
+
 	return parser_finish_if_possible(p);
 }
