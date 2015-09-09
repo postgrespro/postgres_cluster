@@ -90,6 +90,8 @@ static Size dtm_memsize(void);
 static void dtm_xact_callback(XactEvent event, void *arg);
 static void dtm_ensure_connection(void);
 
+static Snapshot DtmGetSnapshotData(Snapshot snapshot);
+
 /*
  *  ***************************************************************************
  */
@@ -391,7 +393,7 @@ void DtmInitialize()
 		HASH_ELEM | HASH_FUNCTION | HASH_COMPARE | HASH_KEYCOPY);
 
 	RegisterTransactionVisibilityCallback(DtmVisibilityCheck);
-    TM->GetSnapshotData = DtmGetSnapshotData;
+    TM->GetSnapshot = DtmGetSnapshotData;
 
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
 	local = (DtmNodeState*)ShmemInitStruct("dtm", sizeof(DtmNodeState), &found);
