@@ -255,6 +255,7 @@ static void gen_snapshot(Snapshot *s, int node) {
 			s->active[s->nactive++] = t->xid;
 		}
 	}
+	snapshot_sort(s);
 	s->seqno++;
 }
 

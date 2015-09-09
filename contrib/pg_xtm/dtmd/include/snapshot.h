@@ -15,5 +15,6 @@ typedef struct Snapshot {
 } Snapshot;
 
 char *snapshot_serialize(Snapshot *s);
+void snapshot_sort(Snapshot *s);
 
 #endif
