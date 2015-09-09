@@ -141,6 +141,26 @@ static bool dtm_query(DTMConn dtm, char cmd, int argc, ...) {
 	return true;
 }
 
+// Creates an entry for a new global transaction. Returns 'true' on success, or
+// 'false' otherwise.
+bool DtmGlobalStartTransaction(DTMConn dtm, GlobalTransactionId *gtid) {
+	bool ok;
+	int i;
+
+	// query
+	if (!dtm_write_char(dtm, 'b')) return false;
+	if (!dtm_write_hex16(dtm, 1 + 2 * gtid->nNodes)) return false;
+	if (!dtm_write_hex16(dtm, gtid->nNodes)) return false;
+	for (i = 0; i < gtid->nNodes; i++) {
+		if (!dtm_write_hex16(dtm, gtid->nodes[i])) return false;
+		if (!dtm_write_hex16(dtm, gtid->xids[i])) return false;
+	}
+
+	// response
+	if (!dtm_read_bool(dtm, &ok)) return false;
+	return ok;
+}
+
 // Asks DTM for a fresh snapshot. Returns 'true' on success, or 'false'
 // otherwise.
 bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapshot s) {

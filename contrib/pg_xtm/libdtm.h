@@ -25,8 +25,9 @@ typedef struct {
     int nNodes;
 } GlobalTransactionId;
 
-// Creates an entry for a new global transaction.
-void DtmGlobalStartTransaction(DTMConn dtm, GlobalTransactionId* gtid);
+// Creates an entry for a new global transaction. Returns 'true' on success, or
+// 'false' otherwise.
+bool DtmGlobalStartTransaction(DTMConn dtm, GlobalTransactionId* gtid);
 
 // Asks DTM for a fresh snapshot. Returns 'true' on success, or 'false'
 // otherwise.
