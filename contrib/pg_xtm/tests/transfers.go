@@ -163,6 +163,9 @@ func total() int32 {
         // register global transaction in DTMD
         exec(conn1, "select dtm_global_transaction($1, $2)", nodes, xids)
 
+        exec(conn1, "select dtm_get_snapshot()")
+        exec(conn2, "select dtm_get_snapshot()")
+
         sum1 = execQuery(conn1, "select sum(v) from t")
         sum2 = execQuery(conn2, "select sum(v) from t")
 

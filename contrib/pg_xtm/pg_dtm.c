@@ -62,7 +62,7 @@ extern SnapshotData CatalogSnapshotData;
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
-    if (DtmHasSnapshot/* && snapshot != &CatalogSnapshotData*/) { 
+    if (DtmHasSnapshot && snapshot->satisfies == HeapTupleSatisfiesMVCC) { 
         return &DtmSnapshot;
     }
     return GetLocalSnapshotData(snapshot);
