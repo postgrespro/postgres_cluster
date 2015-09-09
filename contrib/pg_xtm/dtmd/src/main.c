@@ -59,12 +59,25 @@ static void clear_global_transaction(GlobalTransaction *t) {
 	}
 }
 
-static char *onbegin(void *client, cmd_t *cmd) {
-	shout(
-		"[%d] BEGIN\n",
-		CLIENT_ID(client)
-	);
+static void shout_cmd(void *client, cmd_t *cmd) {
+	char *cmdname;
+	switch (cmd->cmd) {
+		case CMD_BEGIN   : cmdname =    "BEGIN"; break;
+		case CMD_COMMIT  : cmdname =   "COMMIT"; break;
+		case CMD_ABORT   : cmdname =    "ABORT"; break;
+		case CMD_SNAPSHOT: cmdname = "SNAPSHOT"; break;
+		case CMD_STATUS  : cmdname =   "STATUS"; break;
+		default          : cmdname =  "unknown";
+	}
+	shout("[%d] %s", CLIENT_ID(client), cmdname);
+	int i;
+	for (i = 0; i < cmd->argc; i++) {
+		shout(" %#llx", cmd->argv[i]);
+	}
+	shout("\n");
+}
 
+static char *onbegin(void *client, cmd_t *cmd) {
 	if (transactions_count >= MAX_TRANSACTIONS) {
 		shout(
 			"[%d] BEGIN: transaction limit hit\n",
@@ -222,20 +235,10 @@ static char *onvote(void *client, cmd_t *cmd, int vote) {
 }
 
 static char *oncommit(void *client, cmd_t *cmd) {
-	shout(
-		"[%d] COMMIT -> VOTE\n",
-		CLIENT_ID(client)
-	);
-
 	return onvote(client, cmd, POSITIVE);
 }
 
 static char *onabort(void *client, cmd_t *cmd) {
-	shout(
-		"[%d] ABORT -> VOTE\n",
-		CLIENT_ID(client)
-	);
-
 	return onvote(client, cmd, NEGATIVE);
 }
 
@@ -263,11 +266,6 @@ static void gen_snapshots(GlobalTransaction *gt) {
 }
 
 static char *onsnapshot(void *client, cmd_t *cmd) {
-	shout(
-		"[%d] SNAPSHOT\n",
-		CLIENT_ID(client)
-	);
-
 	if (cmd->argc != 2) {
 		shout(
 			"[%d] SNAPSHOT: wrong number of arguments\n",
@@ -313,11 +311,6 @@ static char *onsnapshot(void *client, cmd_t *cmd) {
 }
 
 static char *onstatus(void *client, cmd_t *cmd) {
-	shout(
-		"[%d] STATUS\n",
-		CLIENT_ID(client)
-	);
-
 	if (cmd->argc != 2) {
 		shout(
 			"[%d] STATUS: wrong number of arguments\n",
@@ -358,6 +351,8 @@ static char *onnoise(void *client, cmd_t *cmd) {
 }
 
 static char *oncmd(void *client, cmd_t *cmd) {
+	shout_cmd(client, cmd);
+
 	switch (cmd->cmd) {
 		case CMD_BEGIN:
 			return onbegin(client, cmd);
