@@ -163,6 +163,30 @@ bool DtmGlobalStartTransaction(DTMConn dtm, GlobalTransactionId *gtid) {
 	return ok;
 }
 
+void DtmInitSnapshot(Snapshot snapshot)
+{
+	if (snapshot->xip == NULL)
+	{
+		/*
+		 * First call for this snapshot. Snapshot is same size whether or not
+		 * we are in recovery, see later comments.
+		 */
+		snapshot->xip = (TransactionId *)
+			malloc(GetMaxSnapshotXidCount() * sizeof(TransactionId));
+		if (snapshot->xip == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_OUT_OF_MEMORY),
+					 errmsg("out of memory")));
+		Assert(snapshot->subxip == NULL);
+		snapshot->subxip = (TransactionId *)
+			malloc(GetMaxSnapshotSubxidCount() * sizeof(TransactionId));
+		if (snapshot->subxip == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_OUT_OF_MEMORY),
+					 errmsg("out of memory")));
+	}
+}
+
 // Asks DTM for a fresh snapshot. Returns 'true' on success, or 'false'
 // otherwise.
 bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapshot s) {
@@ -191,8 +215,7 @@ bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapsho
 	s->xcnt = number;
 	Assert(s->xcnt == number); // the number should definitely fit into xcnt field size
 
-	if (s->xip) free(s->xip);
-	s->xip = malloc(s->xcnt * sizeof(TransactionId));
+	DtmInitSnapshot(s);
 	for (i = 0; i < s->xcnt; i++) {
 		if (!dtm_read_hex16(dtm, &number)) return false;
 		s->xip[i] = number;

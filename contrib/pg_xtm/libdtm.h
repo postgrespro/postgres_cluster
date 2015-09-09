@@ -3,6 +3,7 @@
 
 #include "postgres.h"
 #include "utils/snapmgr.h"
+#include "storage/procarray.h"
 #include "access/clog.h"
 
 #define INVALID_XID 0
@@ -18,6 +19,8 @@ DTMConn DtmConnect(char *host, int port);
 // Disconnects from the DTM. Do not use the 'dtm' pointer after this call, or
 // bad things will happen.
 void DtmDisconnect(DTMConn dtm);
+
+void DtmInitSnapshot(Snapshot snapshot);
 
 typedef struct {
     TransactionId* xids;
