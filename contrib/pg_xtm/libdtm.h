@@ -5,7 +5,7 @@
 #include "utils/snapmgr.h"
 #include "access/clog.h"
 
-#define INVALID_GXID 0
+#define INVALID_XID 0
 #define COMMIT_UNKNOWN 0
 #define COMMIT_YES     1
 #define COMMIT_NO      2
@@ -30,7 +30,7 @@ typedef struct {
 } GlobalTransactionId;
 
 /* create entry for new global transaction */
-void DtmGlobalStartTransaction(DTMConn dtm, GlobalTransactionId* gitd); 
+void DtmGlobalStartTransaction(DTMConn dtm, GlobalTransactionId* gtid);
 
 Snapshot DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapshot snapshot);
 
