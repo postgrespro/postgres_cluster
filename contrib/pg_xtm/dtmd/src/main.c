@@ -308,6 +308,7 @@ static char *onsnapshot(void *client, cmd_t *cmd) {
 	}
 	assert(t->sent_seqno < t->snapshot.seqno);
 
+	t->sent_seqno++;
 	return snapshot_serialize(&t->snapshot);
 }
 
