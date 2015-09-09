@@ -6,9 +6,6 @@
 #include "access/clog.h"
 
 #define INVALID_XID 0
-#define COMMIT_UNKNOWN 0
-#define COMMIT_YES     1
-#define COMMIT_NO      2
 
 typedef int NodeId;
 typedef unsigned long long xid_t;
@@ -22,20 +19,26 @@ DTMConn DtmConnect(char *host, int port);
 // bad things will happen.
 void DtmDisconnect(DTMConn dtm);
 
-
 typedef struct {
     TransactionId* xids;
     NodeId* nodes;
     int nNodes;
 } GlobalTransactionId;
 
-/* create entry for new global transaction */
+// Creates an entry for a new global transaction.
 void DtmGlobalStartTransaction(DTMConn dtm, GlobalTransactionId* gtid);
 
-Snapshot DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapshot snapshot);
+// Asks DTM for a fresh snapshot. Returns 'true' on success, or 'false'
+// otherwise.
+bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapshot snapshot);
 
-void DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidStatus status); /* commit transaction only once all participants are committed, before it do not change CLOG  */
+// Commits transaction only once all participants have called this function,
+// does not change CLOG otherwise. Returns 'true' on success, 'false' if
+// something failed on the daemon side.
+bool DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidStatus status);
 
+// Gets the status of the transaction identified by 'xid'. Returns the status
+// on success, or -1 otherwise.
 XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid);
 
 #endif

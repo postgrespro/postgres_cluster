@@ -3,6 +3,7 @@
 #include <assert.h>
 
 #include "snapshot.h"
+#include "util.h"
 
 static void append_char(char **cursorp, char c) {
 	*((*cursorp)++) = c;
@@ -18,22 +19,24 @@ char *snapshot_serialize(Snapshot *s) {
 	assert(s->seqno > 0);
 
 	int numberlen = 16;
-	int numbers = 3 + s->nactive;
-	int len = 1 + numberlen * numbers + 1;
-	char *data = malloc(len);
+	int numbers = 3 + s->nactive; // xmin, xmax, n, active...
+	int len = 1 + numberlen * numbers; // +1 for '+'
+	char *data = malloc(len + 1); // +1 for '\0'
 
 	char *cursor = data;
 
 	append_char(&cursor, '+');
 	append_hex16(&cursor, s->xmin);
 	append_hex16(&cursor, s->xmax);
+	append_hex16(&cursor, s->nactive);
 
 	int i;
 	for (i = 0; i < s->nactive; i++) {
 		append_hex16(&cursor, s->active[i]);
 	}
 
+	shout("cursor - data = %ld, len = %d\n", cursor - data, len);
 	assert(cursor - data == len);
-	assert(data[len - 1] == '\0');
+	assert(data[len] == '\0');
 	return data;
 }

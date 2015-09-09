@@ -4,10 +4,12 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include "libdtm.h"
 
-#if 0
+#ifdef TEST
+// standalone test without postgres functions
 #define palloc malloc
 #define pfree free
 #endif
@@ -119,159 +121,109 @@ void DtmDisconnect(DTMConn dtm) {
 	free(dtm);
 }
 
-// Asks DTM for a fresh snapshot. Returns a snapshot on success, or NULL
-// otherwise. Please free the snapshot memory yourself after use.
-Snapshot DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapshot s) {
+static bool dtm_query(DTMConn dtm, char cmd, int argc, ...) {
+	va_list argv;
+	int i;
+
+	if (!dtm_write_char(dtm, cmd)) return false;
+	if (!dtm_write_hex16(dtm, argc)) return false;
+
+	va_start(argv, argc);
+	for (i = 0; i < argc; i++) {
+		xid_t arg = va_arg(argv, xid_t);
+		if (!dtm_write_hex16(dtm, arg)) {
+			va_end(argv);
+			return false;
+		}
+	}
+	va_end(argv);
+
+	return true;
+}
+
+// Asks DTM for a fresh snapshot. Returns 'true' on success, or 'false'
+// otherwise.
+bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapshot s) {
 	bool ok;
 	int i;
 	xid_t number;
 
-	if (!dtm_write_char(dtm, 'h')) {
-		return NULL;
-	}
+	assert(s != NULL);
 
-	if (!dtm_read_bool(dtm, &ok)) {
-		return NULL;
-	}
-	if (!ok) {
-		return NULL;
-	}
+	// query
+	if (!dtm_query(dtm, 'h', 2, nodeid, xid)) return false;
 
-	if (!dtm_read_hex16(dtm, &number)) {
-		goto cleanup_snapshot;
-	}
+	// response
+	if (!dtm_read_bool(dtm, &ok)) return false;
+	if (!ok) return false;
+
+	if (!dtm_read_hex16(dtm, &number)) return false;
 	s->xmin = number;
 	Assert(s->xmin == number); // the number should fits into xmin field size
 
-	if (!dtm_read_hex16(dtm, &number)) {
-		goto cleanup_snapshot;
-	}
+	if (!dtm_read_hex16(dtm, &number)) return false;
 	s->xmax = number;
 	Assert(s->xmax == number); // the number should fit into xmax field size
 
-	if (!dtm_read_hex16(dtm, &number)) {
-		goto cleanup_snapshot;
-	}
+	if (!dtm_read_hex16(dtm, &number)) return false;
 	s->xcnt = number;
 	Assert(s->xcnt == number); // the number should definitely fit into xcnt field size
 
+	if (s->xip) pfree(s->xip);
 	s->xip = palloc(s->xcnt * sizeof(TransactionId));
 	for (i = 0; i < s->xcnt; i++) {
-		if (!dtm_read_hex16(dtm, &number)) {
-			goto cleanup_active_list;
-		}
+		if (!dtm_read_hex16(dtm, &number)) return false;
 		s->xip[i] = number;
 		Assert(s->xip[i] == number); // the number should fit into xip[i] size
 	}
 
-	return s;
-
-cleanup_active_list:
-	pfree(s->xip);
-cleanup_snapshot:
-	pfree(s);
-	return NULL;
+	return true;
 }
 
-#if 0
-// Starts a transaction. Returns the 'gxid' on success, or INVALID_GXID otherwise.
-xid_t DtmGlobalBegin(DTMConn dtm) {
-	bool ok;
-	xid_t gxid;
-
-	if (!dtm_write_char(dtm, 'b')) {
-		return INVALID_GXID;
-	}
-
-	if (!dtm_read_bool(dtm, &ok)) {
-		return INVALID_GXID;
-	}
-	if (!ok) {
-		return INVALID_GXID;
-	}
-
-	if (!dtm_read_hex16(dtm, &gxid)) {
-		return INVALID_GXID;
-	}
-
-	return gxid;
-}
-#endif
-
-void DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidStatus status)
+// Commits transaction only once all participants have called this function,
+// does not change CLOG otherwise. Returns 'true' on success, 'false' if
+// something failed on the daemon side.
+bool DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidStatus status)
 {
-}
-#if 0
-// Marks a given transaction as 'committed'. Returns 'true' on success,
-// 'false' otherwise.
-bool DtmGlobalCommit(DTMConn dtm, xid_t gxid) {
-	bool result;
-
-	if (!dtm_write_char(dtm, 'c')) {
-		return false;
+	bool ok;
+	switch (status) {
+		case TRANSACTION_STATUS_COMMITTED:
+			// query
+			if (!dtm_query(dtm, 'c', 2, nodeid, xid)) return false;
+			break;
+		case TRANSACTION_STATUS_ABORTED:
+			// query
+			if (!dtm_query(dtm, 'a', 2, nodeid, xid)) return false;
+			break;
+		default:
+			assert(false); // should not happen
+			return false;
 	}
 
-	if (!dtm_write_hex16(dtm, gxid)) {
-		return false;
-	}
+	if (!dtm_read_bool(dtm, &ok)) return false;
 
-	if (!dtm_read_bool(dtm, &result)) {
-		return false;
-	}
-
-	return result;
+	return ok;
 }
 
-// Marks a given transaction as 'aborted'.
-void DtmGlobalRollback(DTMConn dtm, xid_t gxid) {
-	bool result;
-
-	if (!dtm_write_char(dtm, 'a')) {
-		return;
-	}
-
-	if (!dtm_write_hex16(dtm, gxid)) {
-		return;
-	}
-
-	if (!dtm_read_bool(dtm, &result)) {
-		return;
-	}
-}
-#endif
-
-// Gets the status of the transaction identified by 'gxid'. Returns the status
+// Gets the status of the transaction identified by 'xid'. Returns the status
 // on success, or -1 otherwise.
-XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId gxid) {
+XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid) {
 	bool result;
 	char statuschar;
 
-	if (!dtm_write_char(dtm, 's')) {
-		return -1;
-	}
+	if (!dtm_query(dtm, 's', 2, nodeid, xid)) return -1;
 
-	if (!dtm_write_hex16(dtm, gxid)) {
-		return -1;
-	}
-
-	if (!dtm_read_bool(dtm, &result)) {
-		return -1;
-	}
-	if (!result) {
-		return -1;
-	}
-
-	if (!dtm_read_char(dtm, &statuschar)) {
-		return -1;
-	}
+	if (!dtm_read_bool(dtm, &result)) return -1;
+	if (!result) return -1;
+	if (!dtm_read_char(dtm, &statuschar)) return -1;
 
 	switch (statuschar) {
 		case 'c':
-			return COMMIT_YES;
+			return TRANSACTION_STATUS_COMMITTED;
 		case 'a':
-			return COMMIT_NO;
+			return TRANSACTION_STATUS_ABORTED;
 		case '?':
-			return COMMIT_UNKNOWN;
+			return TRANSACTION_STATUS_IN_PROGRESS;
 		default:
 			return -1;
 	}

@@ -1,4 +1,4 @@
-CC=clang
+CC=clang -DTEST
 CFLAGS=-g -Wall -I"../../../src/include"
 
 
