@@ -20,6 +20,7 @@ typedef struct DTMConnData {
 
 // Returns true if the write was successful.
 static bool dtm_write_char(DTMConn dtm, char c) {
+	printf("writing %c\n", c);
 	return write(dtm->sock, &c, 1) == 1;
 }
 
@@ -55,6 +56,7 @@ static bool dtm_write_hex16(DTMConn dtm, xid_t i) {
 	if (snprintf(buf, 17, "%016llx", i) != 16) {
 		return false;
 	}
+	printf("writing %s\n", buf);
 	return write(dtm->sock, buf, 16) == 16;
 }
 
@@ -189,13 +191,19 @@ bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapsho
 	s->xcnt = number;
 	Assert(s->xcnt == number); // the number should definitely fit into xcnt field size
 
-	if (s->xip) pfree(s->xip);
-	s->xip = palloc(s->xcnt * sizeof(TransactionId));
+	if (s->xip) free(s->xip);
+	s->xip = malloc(s->xcnt * sizeof(TransactionId));
 	for (i = 0; i < s->xcnt; i++) {
 		if (!dtm_read_hex16(dtm, &number)) return false;
 		s->xip[i] = number;
 		Assert(s->xip[i] == number); // the number should fit into xip[i] size
 	}
+
+	fprintf(stdout, "snapshot: xmin = %#x, xmax = %#x, active =", s->xmin, s->xmax);
+	for (i = 0; i < s->xcnt; i++) {
+		fprintf(stdout, " %#x", s->xip[i]);
+	}
+	fprintf(stdout, "\n");
 
 	return true;
 }

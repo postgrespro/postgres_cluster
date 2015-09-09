@@ -15,6 +15,13 @@ static void append_hex16(char **cursorp, xid_t value) {
 	*cursorp += written;
 }
 
+static int compare_xid(void const* x, void const* y, size_t size)
+{
+    xid_t xid1 = *(xid_t*)x; 
+    xid_t xid2 = *(xid_t*)y;
+    return xid1 < xid2 ? -1 : xid1 == xid2 ? 0 : 1;
+}
+   
 char *snapshot_serialize(Snapshot *s) {
 	assert(s->seqno > 0);
 
@@ -30,6 +37,7 @@ char *snapshot_serialize(Snapshot *s) {
 	append_hex16(&cursor, s->xmax);
 	append_hex16(&cursor, s->nactive);
 
+    qsort(s->active, s->nactive, sizeof(xid_t), compare_xid);
 	int i;
 	for (i = 0; i < s->nactive; i++) {
 		append_hex16(&cursor, s->active[i]);

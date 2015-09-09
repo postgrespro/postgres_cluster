@@ -33,14 +33,14 @@ static void on_write(uv_write_t *req, int status) {
 }
 
 static void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) { 
-	if (nread == -1) {
-		shout("read failed\n");
+	if (nread == UV_EOF) {
+		ondisconnect_cb(stream->data);
         uv_close((uv_handle_t*)stream, NULL);
 		return;
 	}
 
-	if (nread == UV_EOF) {
-		ondisconnect_cb(stream->data);
+	if (nread < 0) {
+		shout("read failed (error %d)\n", nread);
         uv_close((uv_handle_t*)stream, NULL);
 		return;
 	}

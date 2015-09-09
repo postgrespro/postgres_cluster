@@ -974,6 +974,7 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 			{
 				if (TransactionIdDidCommit(xvac))
 				{
+                    elog(WARNING, "Mark tuple %d as invalid 1", HeapTupleHeaderGetRawXmin(tuple));
 					SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
 								InvalidTransactionId);
 					return false;
@@ -996,6 +997,7 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 								InvalidTransactionId);
 				else
 				{
+                    elog(WARNING, "Mark tuple %d as invalid 2", HeapTupleHeaderGetRawXmin(tuple));
 					SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
 								InvalidTransactionId);
 					return false;
@@ -1052,6 +1054,7 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		else
 		{
 			/* it must have aborted or crashed */
+            elog(WARNING, "Mark tuple %d as invalid 3", HeapTupleHeaderGetRawXmin(tuple));
 			SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
 						InvalidTransactionId);
 			return false;

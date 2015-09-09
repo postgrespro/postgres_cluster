@@ -116,7 +116,7 @@ func transfer(id int, wg *sync.WaitGroup) {
         snapshot = execQuery(conn1, "select dtm_extend($1)", gtid)
         snapshot = execQuery(conn2, "select dtm_access($1, $2)", snapshot, gtid)
 
-        exec(conn1, "update t set v = v + $1 where u=$2", amount, account1)
+        exec(conn1, "update t set v = v + $1 - 1 where u=$2", amount, account1)
         exec(conn2, "update t set v = v - $1 where u=$2", amount, account2)
 
         exec(conn1, "prepare transaction '" + gtid + "'")

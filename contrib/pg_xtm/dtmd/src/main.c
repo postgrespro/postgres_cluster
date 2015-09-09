@@ -399,6 +399,12 @@ char *ondata(void *client, size_t len, char *data) {
 	parser_t parser = CLIENT_PARSER(client);
 	char *response = NULL;
 
+	shout(
+		"[%d] got some data[%lu] %s\n",
+		CLIENT_ID(client),
+		len, data
+	);
+
 	// The idea is to feed each character through
 	// the parser, which will return a cmd from
 	// time to time.
@@ -411,8 +417,9 @@ char *ondata(void *client, size_t len, char *data) {
 		cmd_t *cmd = parser_feed(parser, data[i]);
 		if (parser_failed(parser)) {
 			shout(
-				"[%d] parser failed: %s\n",
+				"[%d] parser failed on character '%c' (%d): %s\n",
 				CLIENT_ID(client),
+				data[i], data[i],
 				parser_errormsg(parser)
 			);
 			parser_init(parser);

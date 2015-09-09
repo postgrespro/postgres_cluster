@@ -39,12 +39,13 @@ static void DtmEnsureConnection(void);
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
+static bool DtmTransactionIsRunning(TransactionId xid);
 static NodeId DtmNodeId;
 
 static DTMConn DtmConn;
 static SnapshotData DtmSnapshot = {HeapTupleSatisfiesMVCC};
 static bool DtmHasSnapshot = false;
-static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot };
+static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmTransactionIsRunning };
 static DTMConn DtmConn;
 
 static void DtmEnsureConnection(void)
@@ -57,21 +58,33 @@ static void DtmEnsureConnection(void)
     }
 }
 
+extern SnapshotData CatalogSnapshotData;
+
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
-    if (DtmHasSnapshot) { 
+    if (DtmHasSnapshot/* && snapshot != &CatalogSnapshotData*/) { 
         return &DtmSnapshot;
     }
     return GetLocalSnapshotData(snapshot);
 }
 
+static bool DtmTransactionIsRunning(TransactionId xid)
+{
+    XLogRecPtr lsn;
+    return DtmHasSnapshot
+        ? DtmGetTransactionStatus(xid, &lsn) == TRANSACTION_STATUS_IN_PROGRESS
+        : TransactionIdIsRunning(xid);
+} 
+
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 {
     XidStatus status = CLOGTransactionIdGetStatus(xid, lsn);
-    if (status == TRANSACTION_STATUS_IN_PROGRESS) { 
+    if (status == TRANSACTION_STATUS_IN_PROGRESS && DtmHasSnapshot) { 
         DtmEnsureConnection();    
         status = DtmGlobalGetTransStatus(DtmConn, DtmNodeId, xid);
-        CLOGTransactionIdSetTreeStatus(xid, 0, NULL, status, InvalidXLogRecPtr);
+        if (status != TRANSACTION_STATUS_IN_PROGRESS) { 
+            CLOGTransactionIdSetTreeStatus(xid, 0, NULL, status, InvalidXLogRecPtr);
+        }
     }
     return status;
 }
@@ -79,11 +92,16 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
-    CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_IN_PROGRESS, lsn); 
-    DtmHasSnapshot = false;
-    DtmEnsureConnection();
-    if (DtmGlobalSetTransStatus(DtmConn, DtmNodeId, xid, status)) { 
-        elog(ERROR, "DTMD failed to set transaction status");
+    if (DtmHasSnapshot) { 
+        /* Already should be IN_PROGRESS */
+        /* CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_IN_PROGRESS, lsn); */
+        DtmHasSnapshot = false;
+        DtmEnsureConnection();
+        if (!DtmGlobalSetTransStatus(DtmConn, DtmNodeId, xid, status) && status != TRANSACTION_STATUS_ABORTED) { 
+            elog(ERROR, "DTMD failed to set transaction status");
+        }
+    } else {
+        CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
     }
 }
 
@@ -97,14 +115,14 @@ _PG_init(void)
 {
     TM = &DtmTM;
 
-	DefineCustomIntVariable("dtm.node.id",
+	DefineCustomIntVariable("dtm.node_id",
                             "Identifier of node in distributed cluster for DTM",
 							NULL,
 							&DtmNodeId,
 							0,
 							0, 
                             INT_MAX,
-							PGC_POSTMASTER,
+							PGC_BACKEND,
 							0,
 							NULL,
 							NULL,

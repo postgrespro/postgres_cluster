@@ -3,7 +3,6 @@ package main
 import (
     "fmt"
     "sync"
-    "strconv"
     "math/rand"
     "github.com/jackc/pgx"
 )
@@ -29,11 +28,10 @@ var cfg2 = pgx.ConnConfig{
     }
 
 var running = false
+var nodes []int32 = []int32{0,1}
 
 func prepare_db() {
-    var xids [2]int
-    var csn int64a
-    nodes := []int{0,1}
+    var xids []int32 = make([]int32, 2)
 
     conn1, err := pgx.Connect(cfg1)
     checkErr(err)
@@ -62,7 +60,7 @@ func prepare_db() {
     xids[1] = execQuery(conn2, "select txid_current()")
     
     // register global transaction in DTMD
-    exec(conn1, "select dtm_global_transaction($1)", nodes, xids)
+    exec(conn1, "select dtm_global_transaction($1, $2)", nodes, xids)
     
     // first global statement 
     exec(conn1, "select dtm_get_snapshot()")
@@ -76,9 +74,6 @@ func prepare_db() {
     // second global statement 
     exec(conn1, "select dtm_get_snapshot()")
     exec(conn2, "select dtm_get_snapshot()")
-    
-    sum1 = execQuery(conn1, "select sum(v) from t")
-    sum2 = execQuery(conn2, "select sum(v) from t")
     
     // commit work
     exec(conn1, "commit")
@@ -95,7 +90,7 @@ func max(a, b int64) int64 {
 
 func transfer(id int, wg *sync.WaitGroup) {
     var err error
-    var xids [2]int
+    var xids []int32 = make([]int32, 2)
 
     conn1, err := pgx.Connect(cfg1)
     checkErr(err)
@@ -120,7 +115,7 @@ func transfer(id int, wg *sync.WaitGroup) {
         xids[1] = execQuery(conn2, "select txid_current()")
         
         // register global transaction in DTMD
-        exec(conn1, "select dtm_global_transaction($1)", xids)
+        exec(conn1, "select dtm_global_transaction($1, $2)", nodes, xids)
         
         // first global statement 
         exec(conn1, "select dtm_get_snapshot()")
@@ -133,9 +128,6 @@ func transfer(id int, wg *sync.WaitGroup) {
         exec(conn1, "select dtm_get_snapshot()")
         exec(conn2, "select dtm_get_snapshot()")
         
-        sum1 = execQuery(conn1, "select sum(v) from t")
-        sum2 = execQuery(conn2, "select sum(v) from t")
-        
         // commit work
         exec(conn1, "commit")
         exec(conn2, "commit")
@@ -146,11 +138,11 @@ func transfer(id int, wg *sync.WaitGroup) {
     wg.Done()
 }
 
-func total() int64 {
+func total() int32 {
     var err error
-    var sum1 int64
-    var sum2 int64
-    var xids [2]int
+    var sum1 int32
+    var sum2 int32
+    var xids []int32 = make([]int32, 2)
 
     conn1, err := pgx.Connect(cfg1)
     checkErr(err)
@@ -169,7 +161,7 @@ func total() int64 {
         xids[1] = execQuery(conn2, "select txid_current()")
         
         // register global transaction in DTMD
-        exec(conn1, "select dtm_global_transaction($1)", xids)
+        exec(conn1, "select dtm_global_transaction($1, $2)", nodes, xids)
 
         sum1 = execQuery(conn1, "select sum(v) from t")
         sum2 = execQuery(conn2, "select sum(v) from t")
@@ -182,7 +174,7 @@ func total() int64 {
 }
 
 func totalrep(wg *sync.WaitGroup) {
-    var prevSum int64 = 0 
+    var prevSum int32 = 0 
     for running {
         sum := total()
         if (sum != prevSum) {
@@ -218,12 +210,12 @@ func exec(conn *pgx.Conn, stmt string, arguments ...interface{}) {
     checkErr(err)
 }
 
-func execQuery(conn *pgx.Conn, stmt string, arguments ...interface{}) int64 {
+func execQuery(conn *pgx.Conn, stmt string, arguments ...interface{}) int32 {
     var err error
     var result int64
     err = conn.QueryRow(stmt, arguments...).Scan(&result)
     checkErr(err)
-    return result
+    return int32(result)
 }
 
 func checkErr(err error) {
