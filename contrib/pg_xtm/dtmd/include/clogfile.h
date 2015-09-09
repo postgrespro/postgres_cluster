@@ -13,9 +13,9 @@
 #define COMMITS_PER_BYTE 4
 #define COMMITS_PER_FILE 1024 // 0x100000000
 #define BYTES_PER_FILE ((COMMITS_PER_FILE) / (COMMITS_PER_BYTE))
-#define GXID_TO_FILEID(GXID) ((GXID) / (COMMITS_PER_FILE))
-#define GXID_TO_OFFSET(GXID) (((GXID) % (COMMITS_PER_FILE)) / (COMMITS_PER_BYTE))
-#define GXID_TO_SUBOFFSET(GXID) (((GXID) % (COMMITS_PER_FILE)) % (COMMITS_PER_BYTE))
+#define XID_TO_FILEID(XID) ((XID) / (COMMITS_PER_FILE))
+#define XID_TO_OFFSET(XID) (((XID) % (COMMITS_PER_FILE)) / (COMMITS_PER_BYTE))
+#define XID_TO_SUBOFFSET(XID) (((XID) % (COMMITS_PER_FILE)) % (COMMITS_PER_BYTE))
 
 typedef struct clogfile_t {
 	char *path;
@@ -36,10 +36,10 @@ bool clogfile_remove(clogfile_t *clogfile);
 bool clogfile_close(clogfile_t *clogfile);
 
 // Get the status of the specified global commit from the clog file.
-int clogfile_get_status(clogfile_t *clogfile, xid_t gxid);
+int clogfile_get_status(clogfile_t *clogfile, xid_t xid);
 
 // Set the status of the specified global commit in the clog file. Return
 // 'true' on success, 'false' otherwise.
-bool clogfile_set_status(clogfile_t *clogfile, xid_t gxid, int status);
+bool clogfile_set_status(clogfile_t *clogfile, xid_t xid, int status);
 
 #endif

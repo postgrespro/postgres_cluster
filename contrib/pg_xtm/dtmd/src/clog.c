@@ -100,12 +100,12 @@ clog_t clog_open(char *datadir) {
 	return clog;
 }
 
-// Find a file containing info about the given 'gxid'. Return the clogfile
+// Find a file containing info about the given 'xid'. Return the clogfile
 // pointer, or NULL if not found.
-static clogfile_t *clog_gxid_to_file(clog_t clog, xid_t gxid) {
+static clogfile_t *clog_xid_to_file(clog_t clog, xid_t xid) {
 	clogfile_chain_t *cur;
 	for (cur = clog->lastfile; cur; cur = cur->prev) {
-		if (inrange(cur->file.min, gxid, cur->file.max)) {
+		if (inrange(cur->file.min, xid, cur->file.max)) {
 			return &cur->file;
 		}
 	}
@@ -113,16 +113,16 @@ static clogfile_t *clog_gxid_to_file(clog_t clog, xid_t gxid) {
 }
 
 // Get the status of the specified global commit.
-int clog_read(clog_t clog, xid_t gxid) {
-	clogfile_t *file = clog_gxid_to_file(clog, gxid);
+int clog_read(clog_t clog, xid_t xid) {
+	clogfile_t *file = clog_xid_to_file(clog, xid);
 	if (file) {
-		int status = clogfile_get_status(file, gxid);
+		int status = clogfile_get_status(file, xid);
 		return status;
 	} else {
 		shout(
-			"gxid %016llx status is out of range, "
+			"xid %016llx status is out of range, "
 			"you might be experiencing a bug in backend\n",
-			gxid
+			xid
 		);
 		return NEUTRAL;
 	}
@@ -130,12 +130,12 @@ int clog_read(clog_t clog, xid_t gxid) {
 
 // Set the status of the specified global commit. Return 'true' on success,
 // 'false' otherwise.
-bool clog_write(clog_t clog, xid_t gxid, int status) {
-	clogfile_t *file = clog_gxid_to_file(clog, gxid);
+bool clog_write(clog_t clog, xid_t xid, int status) {
+	clogfile_t *file = clog_xid_to_file(clog, xid);
 	if (!file) {
-		shout("gxid %016llx out of range, creating the file\n", gxid);
+		shout("xid %016llx out of range, creating the file\n", xid);
 		clogfile_t newfile;
-		if (!clogfile_open_by_id(&newfile, clog->datadir, GXID_TO_FILEID(gxid), true)) {
+		if (!clogfile_open_by_id(&newfile, clog->datadir, XID_TO_FILEID(xid), true)) {
 			shout(
 				"failed to create new clogfile "
 				"while saving transaction status\n"
@@ -147,12 +147,12 @@ bool clog_write(clog_t clog, xid_t gxid, int status) {
 		lastfile->prev = clog->lastfile;
 		clog->lastfile = lastfile;
 	}
-	file = clog_gxid_to_file(clog, gxid);
+	file = clog_xid_to_file(clog, xid);
 	if (!file) {
 		shout("the file is absent despite out efforts\n");
 		return false;
 	}
-	bool ok = clogfile_set_status(file, gxid, status);
+	bool ok = clogfile_set_status(file, xid, status);
 	return ok;
 }
 

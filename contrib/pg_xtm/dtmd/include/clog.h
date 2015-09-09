@@ -8,9 +8,9 @@
 #include <stdbool.h>
 #include "int.h"
 
-#define INVALID_GXID 0
-#define MIN_GXID 42
-#define MAX_GXID 0xdeadbeefcafebabe
+#define INVALID_XID 0
+#define MIN_XID 42
+#define MAX_XID 0xdeadbeefcafebabe
 
 #define NEUTRAL  0
 #define POSITIVE 1
@@ -24,11 +24,11 @@ typedef struct clog_data_t *clog_t;
 clog_t clog_open(char *datadir);
 
 // Get the status of the specified global commit.
-int clog_read(clog_t clog, xid_t gxid);
+int clog_read(clog_t clog, xid_t xid);
 
 // Set the status of the specified global commit. Return 'true' on success,
 // 'false' otherwise.
-bool clog_write(clog_t clog, xid_t gxid, int status);
+bool clog_write(clog_t clog, xid_t xid, int status);
 
 // Forget about the commits before the given one ('until'), and free the
 // occupied space if possible. Return 'true' on success, 'false' otherwise.

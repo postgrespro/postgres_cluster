@@ -85,18 +85,18 @@ bool clogfile_close(clogfile_t *clogfile) {
 }
 
 // Get the status of the specified global commit from the clog file.
-int clogfile_get_status(clogfile_t *clogfile, xid_t gxid) {
-	off64_t offset = GXID_TO_OFFSET(gxid);
-	int suboffset = GXID_TO_SUBOFFSET(gxid);
+int clogfile_get_status(clogfile_t *clogfile, xid_t xid) {
+	off64_t offset = XID_TO_OFFSET(xid);
+	int suboffset = XID_TO_SUBOFFSET(xid);
 	char *p = ((char*)clogfile->data + offset);
 	return ((*p) >> (BITS_PER_COMMIT * suboffset)) & COMMIT_MASK; // AND-out all other status
 }
 
 // Set the status of the specified global commit in the clog file. Return
 // 'true' on success, 'false' otherwise.
-bool clogfile_set_status(clogfile_t *clogfile, xid_t gxid, int status) {
-	off64_t offset = GXID_TO_OFFSET(gxid);
-	int suboffset = GXID_TO_SUBOFFSET(gxid);
+bool clogfile_set_status(clogfile_t *clogfile, xid_t xid, int status) {
+	off64_t offset = XID_TO_OFFSET(xid);
+	int suboffset = XID_TO_SUBOFFSET(xid);
 	char *p = ((char*)clogfile->data + offset);
 	*p &= ~(COMMIT_MASK << (BITS_PER_COMMIT * suboffset));   // AND-out the old status
 	*p |= status << (BITS_PER_COMMIT * suboffset); // OR-in the new status
