@@ -82,7 +82,9 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
     CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_IN_PROGRESS, lsn); 
     DtmHasSnapshot = false;
     DtmEnsureConnection();
-    return DtmGlobalSetTransStatus(DtmConn, DtmNodeId, xid, status);
+    if (DtmGlobalSetTransStatus(DtmConn, DtmNodeId, xid, status)) { 
+        elog(ERROR, "DTMD failed to set transaction status");
+    }
 }
 
 
