@@ -215,7 +215,9 @@ cid_t clog_advance(clog_t clog) {
 		shout("failed to store the fresh gcid value\n");
 		return INVALID_GCID;
 	}
+	#ifdef SYNC
 	fsync(clog->fresh_fd);
+	#endif
 
 	int oldf = GCID_TO_FILEID(old_gcid);
 	int newf = GCID_TO_FILEID(clog->fresh_gcid);

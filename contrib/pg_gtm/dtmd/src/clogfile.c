@@ -99,9 +99,11 @@ bool clogfile_set_status(clogfile_t *clogfile, cid_t gcid, int status) {
 	char *p = ((char*)clogfile->data + offset);
 	*p &= ~(COMMIT_MASK << (BITS_PER_COMMIT * suboffset));   // AND-out the old status
 	*p |= status << (BITS_PER_COMMIT * suboffset); // OR-in the new status
+	#ifdef SYNC
 	if (msync(clogfile->data, BYTES_PER_FILE, MS_SYNC)) {
 		shout("cannot msync clog file '%s': %s\n", clogfile->path, strerror(errno));
 		return false;
 	}
+	#endif
 	return true;
 }

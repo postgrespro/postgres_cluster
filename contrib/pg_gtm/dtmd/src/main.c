@@ -12,7 +12,7 @@
 #define DEFAULT_LISTENHOST "0.0.0.0"
 #define DEFAULT_LISTENPORT 5431
 
-#define MAX_PREPARES_PER_CLIENT 1024
+#define MAX_PREPARES_PER_CLIENT 1024*100
 
 typedef struct client_data_t {
 	int id;
@@ -83,13 +83,6 @@ static bool client_remove_prepare(void *client, cid_t gcid) {
 }
 
 static char *onprepare(void *client, cmd_t *cmd) {
-	if (CLIENT_PREPARES_NUM(client) >= MAX_PREPARES_PER_CLIENT) {
-		shout(
-			"[%d] cannot prepare any more commits\n",
-			CLIENT_ID(client)
-		);
-		return strdup("-");
-	}
 
 	cid_t gcid = clog_advance(clg);
 	if (gcid == INVALID_GCID) {
@@ -101,48 +94,60 @@ static char *onprepare(void *client, cmd_t *cmd) {
 	char buf[18];
 	sprintf(buf, "+%016llx", gcid);
 
+	#ifdef VERBOSE
 	shout(
 		"[%d] prepare gcid %llx\n",
 		CLIENT_ID(client), gcid
 	);
+	#endif
 
 	return strdup(buf);
 }
 
 static char *oncommit(void *client, cmd_t *cmd) {
+	#ifdef VERBOSE
 	shout(
 		"[%d] commit %016llx\n",
 		CLIENT_ID(client),
 		cmd->arg
 	);
+	#endif
+
 	if (clog_write(clg, cmd->arg, COMMIT_YES)) {
 		if (client_remove_prepare(client, cmd->arg)) {
 			return strdup("+");
 		}
+		#ifdef VERBOSE
 		shout(
 			"[%d] tried to commit an unprepared gcid %llu\n",
 			CLIENT_ID(client),
 			cmd->arg
 		);
+		#endif
 	}
 	return strdup("-");
 }
 
 static char *onabort(void *client, cmd_t *cmd) {
+	#ifdef VERBOSE
 	shout(
 		"[%d] abort %016llx\n",
 		CLIENT_ID(client),
 		cmd->arg
 	);
+	#endif
+
 	if (clog_write(clg, cmd->arg, COMMIT_NO)) {
 		if (client_remove_prepare(client, cmd->arg)) {
 			return strdup("+");
 		}
+		#ifdef VERBOSE
 		shout(
 			"[%d] tried to abort an unprepared gcid %016llx\n",
 			CLIENT_ID(client),
 			cmd->arg
 		);
+		#endif
 	}
 	return strdup("-");
 }

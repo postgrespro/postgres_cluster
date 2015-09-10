@@ -5,6 +5,10 @@
 #include <unistd.h>
 #include <stdlib.h>
 
+#ifdef __APPLE__
+#include <netinet/tcp.h>
+#endif
+
 #include "libdtm.h"
 
 typedef struct DTMConnData {
@@ -88,6 +92,9 @@ DTMConn DtmConnect(char *host, int port) {
 			perror("failed to create a socket");
 			continue;
 		}
+
+		int one = 1;
+		setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 
 		if (connect(sock, a->ai_addr, a->ai_addrlen) == -1) {
 			perror("failed to connect to an address");
