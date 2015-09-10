@@ -167,10 +167,11 @@ bool DtmGlobalStartTransaction(DTMConn dtm, GlobalTransactionId *gtid) {
 	return ok;
 }
 
-void DtmInitSnapshot(Snapshot snapshot, int nactive) {
+void DtmInitSnapshot(Snapshot snapshot) 
+{
 	#ifdef TEST
 	if (snapshot->xip == NULL) {
-		snapshot->xip = malloc(nactive * sizeof(TransactionId));
+		snapshot->xip = malloc(snapshot->xcnt * sizeof(TransactionId));
 		// FIXME: is this enough for tests?
 	}
 	#else
@@ -224,7 +225,8 @@ bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapsho
 	s->xcnt = number;
 	Assert(s->xcnt == number); // the number should definitely fit into xcnt field size
 
-	DtmInitSnapshot(s, s->xcnt);
+	DtmInitSnapshot(s);
+
 	for (i = 0; i < s->xcnt; i++) {
 		if (!dtm_read_hex16(dtm, &number)) return false;
 		s->xip[i] = number;

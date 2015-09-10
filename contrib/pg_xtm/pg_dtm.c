@@ -40,13 +40,12 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static void DtmCopySnapshot(Snapshot dst, Snapshot src);
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
-static bool DtmTransactionIsRunning(TransactionId xid);
 static NodeId DtmNodeId;
 
 static DTMConn DtmConn;
 static SnapshotData DtmSnapshot = {HeapTupleSatisfiesMVCC};
 static bool DtmHasSnapshot = false;
-static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmTransactionIsRunning };
+static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot };
 static DTMConn DtmConn;
 
 static void DtmEnsureConnection(void)
@@ -72,19 +71,11 @@ static void DtmCopySnapshot(Snapshot dst, Snapshot src)
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
     if (DtmHasSnapshot) { 
-        CopyDtmSnapshot(snapshot, &DtmSnapshot);
+        DtmCopySnapshot(snapshot, &DtmSnapshot);
         return snapshot;
     }
     return GetLocalSnapshotData(snapshot);
 }
-
-static bool DtmTransactionIsRunning(TransactionId xid)
-{
-    XLogRecPtr lsn;
-    return DtmHasSnapshot
-        ? DtmGetTransactionStatus(xid, &lsn) == TRANSACTION_STATUS_IN_PROGRESS
-        : TransactionIdIsRunning(xid);
-} 
 
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 {

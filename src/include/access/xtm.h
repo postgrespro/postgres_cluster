@@ -19,7 +19,6 @@ typedef struct
     XidStatus (*GetTransactionStatus)(TransactionId xid, XLogRecPtr *lsn);
     void (*SetTransactionStatus)(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
     Snapshot (*GetSnapshot)(Snapshot snapshot);
-    bool (*IsInProgress)(TransactionId xid);
 } TransactionManager;
 
 extern TransactionManager* TM;
