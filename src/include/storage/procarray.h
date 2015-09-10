@@ -53,7 +53,6 @@ extern bool ProcArrayInstallRestoredXmin(TransactionId xmin, PGPROC *proc);
 extern RunningTransactions GetRunningTransactionData(void);
 
 extern bool TransactionIdIsInProgress(TransactionId xid);
-extern bool TransactionIdIsRunning(TransactionId xid);
 extern bool TransactionIdIsActive(TransactionId xid);
 extern TransactionId GetOldestXmin(Relation rel, bool ignoreVacuum);
 extern TransactionId GetOldestActiveTransactionId(void);

@@ -738,7 +738,7 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
  * token is also returned in snapshot->speculativeToken.
  */
 bool
-HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
+HeapTupleSatisfiesDirtyVerbose(HeapTuple htup, Snapshot snapshot,
 						Buffer buffer)
 {
 	HeapTupleHeader tuple = htup->t_data;
@@ -905,9 +905,11 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
 
 	if (TransactionIdIsInProgress(HeapTupleHeaderGetRawXmax(tuple)))
 	{
-		if (!HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask))
+		if (!HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask)) {
 			snapshot->xmax = HeapTupleHeaderGetRawXmax(tuple);
-		return true;
+            return true;
+        }
+        return true;
 	}
 
 	if (!TransactionIdDidCommit(HeapTupleHeaderGetRawXmax(tuple)))

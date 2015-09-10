@@ -946,12 +946,6 @@ ProcArrayApplyXidAssignment(TransactionId topxid,
 	LWLockRelease(ProcArrayLock);
 }
 
-bool
-TransactionIdIsInProgress(TransactionId xid)
-{
-    return TM->IsInProgress(xid);
-}
-
 /*
  * TransactionIdIsInProgress -- is given transaction running in some backend
  *
@@ -979,7 +973,7 @@ TransactionIdIsInProgress(TransactionId xid)
  * PGXACT again anyway; see GetNewTransactionId).
  */
 bool
-TransactionIdIsRunning(TransactionId xid)
+TransactionIdIsInProgress(TransactionId xid)
 {
 	static TransactionId *xids = NULL;
 	int			nxids = 0;
