@@ -71,8 +71,8 @@ typedef struct
     TransactionId xid;
 } DtmTransId;
               
-// #define DTM_TRACE(x) 
-#define DTM_TRACE(x) elog x
+#define DTM_TRACE(x) 
+// #define DTM_TRACE(x) elog x
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB* xid2status;

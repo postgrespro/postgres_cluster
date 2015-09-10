@@ -21,7 +21,7 @@ cd ../..
 sed -i '' 's/#port =.*/port = 5433/' ./install/data2/postgresql.conf
 
 sed -i '' 's/#fsync =.*/fsync = off/' ./install/data1/postgresql.conf
-sed -i' ' 's/#fsync =.*/fsync = off/' ./install/data2/postgresql.conf
+sed -i '' 's/#fsync =.*/fsync = off/' ./install/data2/postgresql.conf
 
 
 ./install/bin/pg_ctl -D ./install/data1 -l ./install/data1/log start
