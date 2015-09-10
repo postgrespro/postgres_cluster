@@ -37,6 +37,7 @@ void _PG_fini(void);
 
 static void DtmEnsureConnection(void);
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
+static void DtmCopySnapshot(Snapshot dst, Snapshot src);
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 static bool DtmTransactionIsRunning(TransactionId xid);
@@ -58,12 +59,21 @@ static void DtmEnsureConnection(void)
     }
 }
 
-extern SnapshotData CatalogSnapshotData;
+static void DtmCopySnapshot(Snapshot dst, Snapshot src)
+{
+    DtmInitSnapshot(dst);
+    memcpy(dst->xip, src->xip, src->xcnt*sizeof(TransactionId));
+    dst->xmax = src->xmax;
+    dst->xmin = src->xmin;
+    dst->xcnt = src->xcnt;
+    dst->curcid = src->curcid;
+}
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
-    if (DtmHasSnapshot && snapshot->satisfies == HeapTupleSatisfiesMVCC) { 
-        return &DtmSnapshot;
+    if (DtmHasSnapshot) { 
+        CopyDtmSnapshot(snapshot, &DtmSnapshot);
+        return snapshot;
     }
     return GetLocalSnapshotData(snapshot);
 }
