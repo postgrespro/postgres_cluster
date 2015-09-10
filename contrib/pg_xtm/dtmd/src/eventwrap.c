@@ -70,6 +70,7 @@ static void on_connect(uv_stream_t *server, int status) {
 		free(client);
 		return;
 	}
+	uv_tcp_nodelay(client, 1);
 	onconnect_cb(&client->data);
 	uv_read_start((uv_stream_t*)client, on_alloc, on_read);
 }

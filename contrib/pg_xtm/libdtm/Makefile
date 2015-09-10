@@ -1,4 +1,4 @@
-CC=clang -DTEST
+CC=clang -DTEST -DNODELAY
 CFLAGS=-g -Wall -I"../../../src/include"
 
 
