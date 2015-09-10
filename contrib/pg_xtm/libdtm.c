@@ -1,4 +1,5 @@
 #include <sys/socket.h>
+#include <netinet/tcp.h>
 #include <netdb.h>
 #include <string.h>
 #include <stdio.h>
@@ -96,6 +97,11 @@ DTMConn DtmConnect(char *host, int port) {
 			continue;
 		}
 
+		#ifdef NODELAY
+		int one = 1;
+		setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+		#endif
+
 		if (connect(sock, a->ai_addr, a->ai_addrlen) == -1) {
 			perror("failed to connect to an address");
 			close(sock);
@@ -161,10 +167,15 @@ bool DtmGlobalStartTransaction(DTMConn dtm, GlobalTransactionId *gtid) {
 	return ok;
 }
 
-void DtmInitSnapshot(Snapshot snapshot)
+void DtmInitSnapshot(Snapshot snapshot) 
 {
-	if (snapshot->xip == NULL)
-	{
+	#ifdef TEST
+	if (snapshot->xip == NULL) {
+		snapshot->xip = malloc(snapshot->xcnt * sizeof(TransactionId));
+		// FIXME: is this enough for tests?
+	}
+	#else
+	if (snapshot->xip == NULL) {
 		/*
 		 * First call for this snapshot. Snapshot is same size whether or not
 		 * we are in recovery, see later comments.
@@ -183,6 +194,7 @@ void DtmInitSnapshot(Snapshot snapshot)
 					(errcode(ERRCODE_OUT_OF_MEMORY),
 					 errmsg("out of memory")));
 	}
+	#endif
 }
 
 // Asks DTM for a fresh snapshot. Returns 'true' on success, or 'false'
@@ -214,6 +226,7 @@ bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapsho
 	Assert(s->xcnt == number); // the number should definitely fit into xcnt field size
 
 	DtmInitSnapshot(s);
+
 	for (i = 0; i < s->xcnt; i++) {
 		if (!dtm_read_hex16(dtm, &number)) return false;
 		s->xip[i] = number;

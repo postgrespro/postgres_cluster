@@ -1,6 +1,5 @@
-CC=clang -DTEST
-CFLAGS=-g -Wall -I"../../../src/include" 
-
+CC=clang -DTEST -DNODELAY
+CFLAGS=-g -Wall -I"../../../src/include"
 
 all: lib/libdtm.a bin/example bin/bench bin/redbench
 
