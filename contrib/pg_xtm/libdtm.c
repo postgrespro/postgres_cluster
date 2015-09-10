@@ -20,7 +20,6 @@ typedef struct DTMConnData {
 
 // Returns true if the write was successful.
 static bool dtm_write_char(DTMConn dtm, char c) {
-	printf("writing %c\n", c);
 	return write(dtm->sock, &c, 1) == 1;
 }
 
@@ -56,7 +55,6 @@ static bool dtm_write_hex16(DTMConn dtm, xid_t i) {
 	if (snprintf(buf, 17, "%016llx", i) != 16) {
 		return false;
 	}
-	printf("writing %s\n", buf);
 	return write(dtm->sock, buf, 16) == 16;
 }
 

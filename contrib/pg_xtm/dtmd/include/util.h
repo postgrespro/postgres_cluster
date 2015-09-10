@@ -16,10 +16,15 @@ char *join_path(const char *dir, const char *file);
 bool inrange(xid_t min, xid_t x, xid_t max);
 int falloc(int fd, off64_t size);
 
+#if 0
+#define shout(...)
+#else
 #define shout(...) \
 	do { \
 		fprintf(stderr, __VA_ARGS__); \
 		fflush(stderr); \
 	} while (0)
+
+#endif
 
 #endif

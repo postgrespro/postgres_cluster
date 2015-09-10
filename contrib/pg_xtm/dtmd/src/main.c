@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <assert.h>
+#include <time.h>
 
 #include "clog.h"
 #include "parser.h"
@@ -44,11 +45,11 @@ static void free_client_data(client_data_t *cd) {
 int next_client_id = 0;
 static void onconnect(void **client) {
 	*client = create_client_data(next_client_id++);
-	shout("[%d] connected\n", CLIENT_ID(*client));
+	//shout("[%d] connected\n", CLIENT_ID(*client));
 }
 
 static void ondisconnect(void *client) {
-	shout("[%d] disconnected\n", CLIENT_ID(client));
+	//shout("[%d] disconnected\n", CLIENT_ID(client));
 	free_client_data(client);
 }
 
@@ -193,10 +194,10 @@ static char *onvote(void *client, cmd_t *cmd, int vote) {
 	switch (global_transaction_status(transactions + i)) {
 		case NEGATIVE:
 			if (global_transaction_mark(clg, transactions + i, NEGATIVE)) {
-				shout(
-					"[%d] VOTE: global transaction aborted\n",
-					CLIENT_ID(client)
-				);
+				//shout(
+				//	"[%d] VOTE: global transaction aborted\n",
+				//	CLIENT_ID(client)
+				//);
 				transactions[i] = transactions[transactions_count - 1];
 				transactions_count--;
 				return strdup("+");
@@ -209,14 +210,14 @@ static char *onvote(void *client, cmd_t *cmd, int vote) {
 				return strdup("-");
 			}
 		case NEUTRAL:
-			shout("[%d] VOTE: vote counted\n", CLIENT_ID(client));
+			//shout("[%d] VOTE: vote counted\n", CLIENT_ID(client));
 			return strdup("+");
 		case POSITIVE:
 			if (global_transaction_mark(clg, transactions + i, POSITIVE)) {
-				shout(
-					"[%d] VOTE: global transaction committed\n",
-					CLIENT_ID(client)
-				);
+				//shout(
+				//	"[%d] VOTE: global transaction committed\n",
+				//	CLIENT_ID(client)
+				//);
 				transactions[i] = transactions[transactions_count - 1];
 				transactions_count--;
 				return strdup("+");
@@ -351,26 +352,44 @@ static char *onnoise(void *client, cmd_t *cmd) {
 	return strdup("-");
 }
 
-static char *oncmd(void *client, cmd_t *cmd) {
-	shout_cmd(client, cmd);
+static float now_s() {
+	// current time in seconds
+	struct timespec t;
+	if (clock_gettime(CLOCK_MONOTONIC, &t) == 0) {
+		return t.tv_sec + t.tv_nsec * 1e-9;
+	} else {
+		printf("Error while clock_gettime()\n");
+		exit(0);
+	}
+}
 
+static char *oncmd(void *client, cmd_t *cmd) {
+	//shout_cmd(client, cmd);
+
+	float started = now_s();
+	char *result = NULL;
 	switch (cmd->cmd) {
 		case CMD_BEGIN:
-			return onbegin(client, cmd);
+			result = onbegin(client, cmd);
+			break;
 		case CMD_COMMIT:
-			return oncommit(client, cmd);
+			result = oncommit(client, cmd);
+			break;
 		case CMD_ABORT:
-			return onabort(client, cmd);
+			result = onabort(client, cmd);
+			break;
 		case CMD_SNAPSHOT:
-			return onsnapshot(client, cmd);
+			result = onsnapshot(client, cmd);
+			break;
 		case CMD_STATUS:
-			return onstatus(client, cmd);
+			result = onstatus(client, cmd);
+			break;
 		default:
 			return onnoise(client, cmd);
 	}
-
-	assert(false); // the switch has holes in it?
-	return NULL;
+	float elapsed = now_s() - started;
+	shout("cmd '%c' processed in %0.4f sec\n", cmd->cmd, elapsed);
+	return result;
 }
 
 char *destructive_concat(char *a, char *b) {
@@ -400,11 +419,11 @@ char *ondata(void *client, size_t len, char *data) {
 	parser_t parser = CLIENT_PARSER(client);
 	char *response = NULL;
 
-	shout(
-		"[%d] got some data[%lu] %s\n",
-		CLIENT_ID(client),
-		len, data
-	);
+	//shout(
+	//	"[%d] got some data[%lu] %s\n",
+	//	CLIENT_ID(client),
+	//	len, data
+	//);
 
 	// The idea is to feed each character through
 	// the parser, which will return a cmd from

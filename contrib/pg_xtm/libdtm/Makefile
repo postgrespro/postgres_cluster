@@ -2,7 +2,10 @@ CC=clang -DTEST
 CFLAGS=-g -Wall -I"../../../src/include"
 
 
-all: lib/libdtm.a bin/example
+all: lib/libdtm.a bin/example bin/bench
+
+bin/bench: bindir lib/libdtm.a src/bench.c
+	$(CC) $(CFLAGS) -o bin/bench -Iinclude -Llib src/bench.c -ldtm
 
 bin/example: bindir lib/libdtm.a src/example.c
 	$(CC) $(CFLAGS) -o bin/example -Iinclude -Llib src/example.c -ldtm
