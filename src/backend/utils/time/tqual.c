@@ -318,8 +318,10 @@ HeapTupleSatisfiesSelf(HeapTuple htup, Snapshot snapshot, Buffer buffer)
 	if (!TransactionIdDidCommit(HeapTupleHeaderGetRawXmax(tuple)))
 	{
 		/* it must have aborted or crashed */
+#if 1
 		SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
 					InvalidTransactionId);
+#endif
 		return true;
 	}
 
@@ -695,8 +697,10 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
 	if (!TransactionIdDidCommit(HeapTupleHeaderGetRawXmax(tuple)))
 	{
 		/* it must have aborted or crashed */
+#if 1
 		SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
 					InvalidTransactionId);
+#endif
 		return HeapTupleMayBeUpdated;
 	}
 
@@ -738,7 +742,7 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
  * token is also returned in snapshot->speculativeToken.
  */
 bool
-HeapTupleSatisfiesDirtyVerbose(HeapTuple htup, Snapshot snapshot,
+HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
 						Buffer buffer)
 {
 	HeapTupleHeader tuple = htup->t_data;
@@ -915,8 +919,10 @@ HeapTupleSatisfiesDirtyVerbose(HeapTuple htup, Snapshot snapshot,
 	if (!TransactionIdDidCommit(HeapTupleHeaderGetRawXmax(tuple)))
 	{
 		/* it must have aborted or crashed */
+#if 1
 		SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
 					InvalidTransactionId);
+#endif
 		return true;
 	}
 
@@ -1125,8 +1131,10 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		if (!TransactionIdDidCommit(HeapTupleHeaderGetRawXmax(tuple)))
 		{
 			/* it must have aborted or crashed */
+#if 1
 			SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
 						InvalidTransactionId);
+#endif
 			return true;
 		}
 
@@ -1296,8 +1304,10 @@ HeapTupleSatisfiesVacuum(HeapTuple htup, TransactionId OldestXmin,
 			{
 				if (TransactionIdIsInProgress(HeapTupleHeaderGetRawXmax(tuple)))
 					return HEAPTUPLE_LIVE;
+#if 1
 				SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
 							InvalidTransactionId);
+#endif
 			}
 		}
 
@@ -1354,7 +1364,9 @@ HeapTupleSatisfiesVacuum(HeapTuple htup, TransactionId OldestXmin,
 		 * Not in Progress, Not Committed, so either Aborted or crashed.
 		 * Remove the Xmax.
 		 */
+#if 1
 		SetHintBits(tuple, buffer, HEAP_XMAX_INVALID, InvalidTransactionId);
+#endif
 		return HEAPTUPLE_LIVE;
 	}
 
@@ -1370,8 +1382,10 @@ HeapTupleSatisfiesVacuum(HeapTuple htup, TransactionId OldestXmin,
 			/*
 			 * Not in Progress, Not Committed, so either Aborted or crashed
 			 */
+#if 1
 			SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
 						InvalidTransactionId);
+#endif
 			return HEAPTUPLE_LIVE;
 		}
 

@@ -80,12 +80,21 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 {
     XidStatus status = CLOGTransactionIdGetStatus(xid, lsn);
-    if (status == TRANSACTION_STATUS_IN_PROGRESS && DtmHasSnapshot) { 
-        DtmEnsureConnection();    
-        status = DtmGlobalGetTransStatus(DtmConn, DtmNodeId, xid);
-        if (status != TRANSACTION_STATUS_IN_PROGRESS) { 
-            CLOGTransactionIdSetTreeStatus(xid, 0, NULL, status, InvalidXLogRecPtr);
+    if (status == TRANSACTION_STATUS_IN_PROGRESS && DtmHasSnapshot && !TransactionIdIsInProgress(xid)) { 
+        unsigned delay = 1000;
+        while (true) { 
+            DtmEnsureConnection();    
+            status = DtmGlobalGetTransStatus(DtmConn, DtmNodeId, xid);
+            if (status == TRANSACTION_STATUS_IN_PROGRESS) { 
+                pg_usleep(delay);
+                if (delay < 100000)  { 
+                    delay *= 2;
+                }
+            } else { 
+                break;
+            }
         }
+        CLOGTransactionIdSetTreeStatus(xid, 0, NULL, status, InvalidXLogRecPtr);
     }
     return status;
 }
