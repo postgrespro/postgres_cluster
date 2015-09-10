@@ -352,21 +352,21 @@ static char *onnoise(void *client, cmd_t *cmd) {
 	return strdup("-");
 }
 
-static float now_s() {
-	// current time in seconds
-	struct timespec t;
-	if (clock_gettime(CLOCK_MONOTONIC, &t) == 0) {
-		return t.tv_sec + t.tv_nsec * 1e-9;
-	} else {
-		printf("Error while clock_gettime()\n");
-		exit(0);
-	}
-}
+// static float now_s() {
+// 	// current time in seconds
+// 	struct timespec t;
+// 	if (clock_gettime(CLOCK_MONOTONIC, &t) == 0) {
+// 		return t.tv_sec + t.tv_nsec * 1e-9;
+// 	} else {
+// 		printf("Error while clock_gettime()\n");
+// 		exit(0);
+// 	}
+// }
 
 static char *oncmd(void *client, cmd_t *cmd) {
 	//shout_cmd(client, cmd);
 
-	float started = now_s();
+	// float started = now_s();
 	char *result = NULL;
 	switch (cmd->cmd) {
 		case CMD_BEGIN:
@@ -387,8 +387,8 @@ static char *oncmd(void *client, cmd_t *cmd) {
 		default:
 			return onnoise(client, cmd);
 	}
-	float elapsed = now_s() - started;
-	shout("cmd '%c' processed in %0.4f sec\n", cmd->cmd, elapsed);
+	// float elapsed = now_s() - started;
+	// shout("cmd '%c' processed in %0.4f sec\n", cmd->cmd, elapsed);
 	return result;
 }
 

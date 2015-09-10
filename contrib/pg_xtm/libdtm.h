@@ -20,7 +20,7 @@ DTMConn DtmConnect(char *host, int port);
 // bad things will happen.
 void DtmDisconnect(DTMConn dtm);
 
-void DtmInitSnapshot(Snapshot snapshot);
+// void DtmInitSnapshot(Snapshot snapshot);
 
 typedef struct {
     TransactionId* xids;
