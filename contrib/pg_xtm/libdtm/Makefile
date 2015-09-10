@@ -1,11 +1,13 @@
 CC=clang -DTEST -DNODELAY
 CFLAGS=-g -Wall -I"../../../src/include"
 
-
-all: lib/libdtm.a bin/example bin/bench
+all: lib/libdtm.a bin/example bin/bench bin/redbench
 
 bin/bench: bindir lib/libdtm.a src/bench.c
 	$(CC) $(CFLAGS) -o bin/bench -Iinclude -Llib src/bench.c -ldtm
+
+bin/redbench: bindir lib/libdtm.a src/redbench.c
+	$(CC) $(CFLAGS) -o bin/redbench -Iinclude -Llib src/redbench.c -ldtm -lhiredis -I"/usr/local/include/hiredis/"
 
 bin/example: bindir lib/libdtm.a src/example.c
 	$(CC) $(CFLAGS) -o bin/example -Iinclude -Llib src/example.c -ldtm
