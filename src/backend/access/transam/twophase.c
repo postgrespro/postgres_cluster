@@ -576,6 +576,139 @@ RemoveGXact(GlobalTransaction gxact)
 	elog(ERROR, "failed to find %p in GlobalTransaction array", gxact);
 }
 
+int
+AllocGXid(TransactionId xid)
+{
+	GlobalTransaction gxact;
+	PGPROC	   *proc;
+	PGXACT	   *pgxact;
+	int			i;
+    char gid[GIDSIZE];
+    
+    sprintf(gid, "%u", xid);
+
+	/* fail immediately if feature is disabled */
+	if (max_prepared_xacts == 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("prepared transactions are disabled"),
+			  errhint("Set max_prepared_transactions to a nonzero value.")));
+
+	/* on first call, register the exit hook */
+	if (!twophaseExitRegistered)
+	{
+		before_shmem_exit(AtProcExit_Twophase, 0);
+		twophaseExitRegistered = true;
+	}
+
+	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
+
+	/* Check for conflicting GID */
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	{
+		gxact = TwoPhaseState->prepXacts[i];
+		if (strcmp(gxact->gid, gid) == 0)
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("transaction identifier \"%s\" is already in use",
+							gid)));
+		}
+	}
+
+	/* Get a free gxact from the freelist */
+	if (TwoPhaseState->freeGXacts == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_OUT_OF_MEMORY),
+				 errmsg("maximum number of prepared transactions reached"),
+				 errhint("Increase max_prepared_transactions (currently %d).",
+						 max_prepared_xacts)));
+	gxact = TwoPhaseState->freeGXacts;
+	TwoPhaseState->freeGXacts = gxact->next;
+
+	proc = &ProcGlobal->allProcs[gxact->pgprocno];
+	pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
+
+	/* Initialize the PGPROC entry */
+	MemSet(proc, 0, sizeof(PGPROC));
+	proc->pgprocno = gxact->pgprocno;
+	SHMQueueElemInit(&(proc->links));
+	proc->waitStatus = STATUS_OK;
+	/* We set up the gxact's VXID as InvalidBackendId/XID */
+	proc->lxid = (LocalTransactionId) xid;
+	pgxact->xid = xid;
+	pgxact->xmin = InvalidTransactionId;
+	pgxact->delayChkpt = false;
+	pgxact->vacuumFlags = 0;
+	proc->pid = 0;
+	proc->backendId = InvalidBackendId;
+	proc->databaseId = 0;
+	proc->roleId = 0;
+	proc->lwWaiting = false;
+	proc->lwWaitMode = 0;
+	proc->waitLock = NULL;
+	proc->waitProcLock = NULL;
+	for (i = 0; i < NUM_LOCK_PARTITIONS; i++)
+		SHMQueueInit(&(proc->myProcLocks[i]));
+	/* subxid data must be filled later by GXactLoadSubxactData */
+	pgxact->overflowed = false;
+	pgxact->nxids = 0;
+
+	gxact->prepared_at = 0;
+	/* initialize LSN to 0 (start of WAL) */
+	gxact->prepare_lsn = 0;
+	gxact->owner = 0;
+	gxact->locking_backend = MyBackendId;
+	gxact->valid = false;
+	strcpy(gxact->gid, gid);
+
+	/* And insert it into the active array */
+	Assert(TwoPhaseState->numPrepXacts < max_prepared_xacts);
+	TwoPhaseState->prepXacts[TwoPhaseState->numPrepXacts++] = gxact;
+
+	/*
+	 * Remember that we have this GlobalTransaction entry locked for us. If we
+	 * abort after this, we must release it.
+	 */
+	MyLockedGxact = gxact;
+
+	LWLockRelease(TwoPhaseStateLock);
+
+	return gxact->pgprocno;
+}
+
+void
+RemoveGXid(TransactionId xid)
+{
+	int			i;
+    char gid[GIDSIZE];
+    
+    sprintf(gid, "%u", xid);
+    
+	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
+
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	{
+		if (strcmp(TwoPhaseState->prepXacts[i]->gid, gid) == 0)
+		{
+			/* remove from the active array */
+			TwoPhaseState->numPrepXacts--;
+			TwoPhaseState->prepXacts[i] = TwoPhaseState->prepXacts[TwoPhaseState->numPrepXacts];
+
+			/* and put it back in the freelist */
+			TwoPhaseState->prepXacts[i]->next = TwoPhaseState->freeGXacts;
+			TwoPhaseState->freeGXacts = TwoPhaseState->prepXacts[i];
+
+			LWLockRelease(TwoPhaseStateLock);
+
+			return;
+		}
+	}
+
+	LWLockRelease(TwoPhaseStateLock);
+    
+}
+
 /*
  * TransactionIdIsPrepared
  *		True iff transaction associated with the identifier is prepared

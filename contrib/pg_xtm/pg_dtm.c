@@ -122,7 +122,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
         /* Already should be IN_PROGRESS */
         /* CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_IN_PROGRESS, lsn); */
         if (status == TRANSACTION_STATUS_COMMITTED) { 
-            ProcArrayAdd(&ProcGlobal->allProcs[MyProc->pgprocno]);
+            ProcArrayAdd(&ProcGlobal->allProcs[AllocGXid(xid)]);
         }
         DtmHasSnapshot = false;
         DtmEnsureConnection();

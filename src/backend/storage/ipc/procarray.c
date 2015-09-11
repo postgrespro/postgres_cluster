@@ -3902,10 +3902,11 @@ void VacuumProcArray(Snapshot snapshot)
 			continue;
         }
         if (TransactionIsStillInProgress(pxid, snapshot)) { 
-            elog(WARNING, "ProcArray: %d is in progress\n", pxid);
+            //elog(WARNING, "procArray[%d]=%d is in progress\n", i, pxid);
             nInProgress += 1;
             continue;
         }
+        RemoveGXid(pxid);
         nCompleted += 1;
         memmove(&arrayP->pgprocnos[i], &arrayP->pgprocnos[i + 1],
                 (arrayP->numProcs - i - 1) * sizeof(int));
@@ -3913,5 +3914,5 @@ void VacuumProcArray(Snapshot snapshot)
         arrayP->numProcs--;
     }
 	LWLockRelease(ProcArrayLock);
-    elog(WARNING, "ProcArray: %d in progress, %d completed, %d total\n", nInProgress, nCompleted, arrayP->numProcs);
+    elog(WARNING, "VacuumProcArray: %d in progress, %d completed, %d total\n", nInProgress, nCompleted, arrayP->numProcs);
 }
