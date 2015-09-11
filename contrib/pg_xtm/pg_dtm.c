@@ -108,14 +108,6 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
     return status;
 }
 
-static bool TransactionIsInDtmSnapshot(TransactionId xid)
-{
-    return bsearch(&xid, DtmSnapshot.xip, DtmSnapshot.xcnt,
-                   sizeof(TransactionId), xidComparator) != NULL;
-}
-
-
-
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
     if (DtmHasSnapshot) { 
@@ -138,8 +130,6 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 /*
  *  ***************************************************************************
  */
-
-extern bool (*TransactionIsInCurrentSnapshot)(TransactionId xid);
 
 void
 _PG_init(void)

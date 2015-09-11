@@ -699,9 +699,7 @@ RemoveGXid(TransactionId xid)
 			TwoPhaseState->prepXacts[i]->next = TwoPhaseState->freeGXacts;
 			TwoPhaseState->freeGXacts = TwoPhaseState->prepXacts[i];
 
-			LWLockRelease(TwoPhaseStateLock);
-
-			return;
+            break;
 		}
 	}
 

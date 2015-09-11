@@ -62,9 +62,6 @@
 #include "utils/tqual.h"
 #include "utils/snapmgr.h"
 
-static bool
-TransactionIdIsRunning(TransactionId xid);
-
 /* Our shared memory area */
 typedef struct ProcArrayStruct
 {
@@ -948,14 +945,6 @@ ProcArrayApplyXidAssignment(TransactionId topxid,
 	LWLockRelease(ProcArrayLock);
 }
 
-bool (*TransactionIsInCurrentSnapshot)(TransactionId xid);
-
-bool
-TransactionIdIsInProgress(TransactionId xid)
-{    
-    return TransactionIdIsRunning(xid) || (TransactionIsInCurrentSnapshot && TransactionIsInCurrentSnapshot(xid));
-}
-
 /*
  * TransactionIdIsInProgress -- is given transaction running in some backend
  *
@@ -983,7 +972,7 @@ TransactionIdIsInProgress(TransactionId xid)
  * PGXACT again anyway; see GetNewTransactionId).
  */
 bool
-TransactionIdIsRunning(TransactionId xid)
+TransactionIdIsInProgress(TransactionId xid)
 {
 	static TransactionId *xids = NULL;
 	int			nxids = 0;
@@ -3914,5 +3903,5 @@ void VacuumProcArray(Snapshot snapshot)
         arrayP->numProcs--;
     }
 	LWLockRelease(ProcArrayLock);
-    elog(WARNING, "VacuumProcArray: %d in progress, %d completed, %d total\n", nInProgress, nCompleted, arrayP->numProcs);
+    //elog(WARNING, "VacuumProcArray: %d in progress, %d completed, %d total\n", nInProgress, nCompleted, arrayP->numProcs);
 }
