@@ -542,9 +542,8 @@ XactLockTableWait(TransactionId xid, Relation rel, ItemPointer ctid,
 		error_context_stack = &callback;
 	}
 
-	for (;;)
-	{
-		Assert(TransactionIdIsValid(xid));
+	while (TransactionIdIsValid(xid))
+    {
 		Assert(!TransactionIdEquals(xid, GetTopTransactionIdIfAny()));
 
 		SET_LOCKTAG_TRANSACTION(tag, xid);

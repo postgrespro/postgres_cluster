@@ -2239,8 +2239,11 @@ EvalPlanQualFetch(EState *estate, Relation relation, int lockmode,
 			}
 
 			/* otherwise xmin should not be dirty... */
-			if (TransactionIdIsValid(SnapshotDirty.xmin))
+            #if 0
+			if (TransactionIdIsValid(SnapshotDirty.xmin)) { 
 				elog(ERROR, "t_xmin is uncommitted in tuple to be updated");
+            }
+            #endif
 
 			/*
 			 * If tuple is being updated by other transaction then we have to

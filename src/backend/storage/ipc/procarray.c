@@ -62,6 +62,8 @@
 #include "utils/tqual.h"
 #include "utils/snapmgr.h"
 
+static bool
+TransactionIdIsRunning(TransactionId xid);
 
 /* Our shared memory area */
 typedef struct ProcArrayStruct
@@ -946,6 +948,14 @@ ProcArrayApplyXidAssignment(TransactionId topxid,
 	LWLockRelease(ProcArrayLock);
 }
 
+bool (*TransactionIsInCurrentSnapshot)(TransactionId xid);
+
+bool
+TransactionIdIsInProgress(TransactionId xid)
+{    
+    return TransactionIdIsRunning(xid) || (TransactionIsInCurrentSnapshot && TransactionIsInCurrentSnapshot(xid));
+}
+
 /*
  * TransactionIdIsInProgress -- is given transaction running in some backend
  *
@@ -973,7 +983,7 @@ ProcArrayApplyXidAssignment(TransactionId topxid,
  * PGXACT again anyway; see GetNewTransactionId).
  */
 bool
-TransactionIdIsInProgress(TransactionId xid)
+TransactionIdIsRunning(TransactionId xid)
 {
 	static TransactionId *xids = NULL;
 	int			nxids = 0;
@@ -3866,4 +3876,42 @@ KnownAssignedXidsReset(void)
 	pArray->headKnownAssignedXids = 0;
 
 	LWLockRelease(ProcArrayLock);
+}
+
+static bool TransactionIsStillInProgress(TransactionId xid, Snapshot snapshot)
+{
+    return (bsearch(&xid, snapshot->xip, snapshot->xcnt, sizeof(TransactionId), xidComparator) != NULL) || (xid > snapshot->xmax);
+}
+
+
+void VacuumProcArray(Snapshot snapshot)
+{
+    int i;
+    int nInProgress = 0;
+    int nCompleted = 0;
+	ProcArrayStruct *arrayP = procArray;
+
+	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+	for (i = arrayP->numProcs; --i >= 0;)
+	{
+		int		pgprocno = arrayP->pgprocnos[i];
+		PGXACT *pgxact = &allPgXact[pgprocno];
+		TransactionId pxid = pgxact->xid;
+        
+ 		if (!TransactionIdIsValid(pxid)) {
+			continue;
+        }
+        if (TransactionIsStillInProgress(pxid, snapshot)) { 
+            elog(WARNING, "ProcArray: %d is in progress\n", pxid);
+            nInProgress += 1;
+            continue;
+        }
+        nCompleted += 1;
+        memmove(&arrayP->pgprocnos[i], &arrayP->pgprocnos[i + 1],
+                (arrayP->numProcs - i - 1) * sizeof(int));
+        arrayP->pgprocnos[arrayP->numProcs - 1] = -1;		/* for debugging */
+        arrayP->numProcs--;
+    }
+	LWLockRelease(ProcArrayLock);
+    elog(WARNING, "ProcArray: %d in progress, %d completed, %d total\n", nInProgress, nCompleted, arrayP->numProcs);
 }

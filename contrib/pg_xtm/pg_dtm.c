@@ -22,6 +22,7 @@
 #include "access/xtm.h"
 #include "access/transam.h"
 #include "access/xlog.h"
+#include "storage/proc.h"
 #include "storage/procarray.h"
 #include "access/twophase.h"
 #include <utils/guc.h>
@@ -40,6 +41,8 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static void DtmCopySnapshot(Snapshot dst, Snapshot src);
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
+static bool TransactionIsInDtmSnapshot(TransactionId xid);
+
 static NodeId DtmNodeId;
 
 static DTMConn DtmConn;
@@ -80,7 +83,9 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 {
     XidStatus status = CLOGTransactionIdGetStatus(xid, lsn);
-    if (status == TRANSACTION_STATUS_IN_PROGRESS && DtmHasSnapshot && !TransactionIdIsInProgress(xid)) { 
+    if (status == TRANSACTION_STATUS_IN_PROGRESS) { 
+#if 0
+        && DtmHasSnapshot && !TransactionIdIsInProgress(xid)) { 
         unsigned delay = 1000;
         while (true) { 
             DtmEnsureConnection();    
@@ -94,10 +99,21 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
                 break;
             }
         }
-        CLOGTransactionIdSetTreeStatus(xid, 0, NULL, status, InvalidXLogRecPtr);
+#endif
+        status = DtmGlobalGetTransStatus(DtmConn, DtmNodeId, xid);
+        if (status != TRANSACTION_STATUS_IN_PROGRESS) { 
+            CLOGTransactionIdSetTreeStatus(xid, 0, NULL, status, InvalidXLogRecPtr);
+        }
     }
     return status;
 }
+
+static bool TransactionIsInDtmSnapshot(TransactionId xid)
+{
+    return bsearch(&xid, DtmSnapshot.xip, DtmSnapshot.xcnt,
+                   sizeof(TransactionId), xidComparator) != NULL;
+}
+
 
 
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
@@ -105,6 +121,9 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
     if (DtmHasSnapshot) { 
         /* Already should be IN_PROGRESS */
         /* CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_IN_PROGRESS, lsn); */
+        if (status == TRANSACTION_STATUS_COMMITTED) { 
+            ProcArrayAdd(&ProcGlobal->allProcs[MyProc->pgprocno]);
+        }
         DtmHasSnapshot = false;
         DtmEnsureConnection();
         if (!DtmGlobalSetTransStatus(DtmConn, DtmNodeId, xid, status) && status != TRANSACTION_STATUS_ABORTED) { 
@@ -120,10 +139,13 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
  *  ***************************************************************************
  */
 
+extern bool (*TransactionIsInCurrentSnapshot)(TransactionId xid);
+
 void
 _PG_init(void)
 {
     TM = &DtmTM;
+    // TransactionIsInCurrentSnapshot = TransactionIsInDtmSnapshot;
 
 	DefineCustomIntVariable("dtm.node_id",
                             "Identifier of node in distributed cluster for DTM",
@@ -170,12 +192,21 @@ dtm_global_transaction(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
+        
+
+       
+
+    
+
 Datum
 dtm_get_snapshot(PG_FUNCTION_ARGS)
 {
     TransactionId xmin;
     DtmEnsureConnection();
     DtmGlobalGetSnapshot(DtmConn, DtmNodeId, GetCurrentTransactionId(), &DtmSnapshot);
+
+    VacuumProcArray(&DtmSnapshot);
+
     /* Move it to DtmGlobalGetSnapshot? */
     xmin = DtmSnapshot.xmin;
     if (xmin != InvalidTransactionId) { 

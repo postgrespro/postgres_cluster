@@ -848,6 +848,7 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
 			}
 
 			snapshot->xmin = HeapTupleHeaderGetRawXmin(tuple);
+            snapshot->xmax = HeapTupleHeaderGetRawXmax(tuple);
 			/* XXX shouldn't we fall through to look at xmax? */
 			return true;		/* in insertion by other */
 		}
@@ -1800,3 +1801,4 @@ HeapTupleSatisfiesHistoricMVCC(HeapTuple htup, Snapshot snapshot,
 	else
 		return true;
 }
+
