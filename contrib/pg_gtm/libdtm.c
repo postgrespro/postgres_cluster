@@ -4,10 +4,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
-
-#ifdef __APPLE__
 #include <netinet/tcp.h>
-#endif
+
 
 #include "libdtm.h"
 
