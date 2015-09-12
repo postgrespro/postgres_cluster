@@ -59,6 +59,6 @@ extern void FinishPreparedTransaction(const char *gid, bool isCommit);
 extern const char* GetLockedGlobalTransactionId(void);
 
 extern int  AllocGXid(TransactionId xid);
-extern void RemoveGXid(TransactionId xid);
+extern bool RemoveGXid(TransactionId xid);
 
 #endif   /* TWOPHASE_H */

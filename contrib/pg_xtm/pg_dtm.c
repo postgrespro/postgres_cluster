@@ -65,9 +65,11 @@ static void DtmCopySnapshot(Snapshot dst, Snapshot src)
 {
     DtmInitSnapshot(dst);
     memcpy(dst->xip, src->xip, src->xcnt*sizeof(TransactionId));
+    memcpy(dst->subxip, src->xip, src->xcnt*sizeof(TransactionId));
     dst->xmax = src->xmax;
     dst->xmin = src->xmin;
     dst->xcnt = src->xcnt;
+    dst->subxcnt = src->xcnt;
     dst->curcid = src->curcid;
 }
 

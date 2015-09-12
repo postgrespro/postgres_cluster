@@ -3869,7 +3869,7 @@ KnownAssignedXidsReset(void)
 
 static bool TransactionIsStillInProgress(TransactionId xid, Snapshot snapshot)
 {
-    return (bsearch(&xid, snapshot->xip, snapshot->xcnt, sizeof(TransactionId), xidComparator) != NULL) || (xid > snapshot->xmax);
+    return (xid > snapshot->xmax) || (bsearch(&xid, snapshot->xip, snapshot->xcnt, sizeof(TransactionId), xidComparator) != NULL);
 }
 
 
@@ -3895,13 +3895,14 @@ void VacuumProcArray(Snapshot snapshot)
             nInProgress += 1;
             continue;
         }
-        RemoveGXid(pxid);
-        nCompleted += 1;
-        memmove(&arrayP->pgprocnos[i], &arrayP->pgprocnos[i + 1],
-                (arrayP->numProcs - i - 1) * sizeof(int));
-        arrayP->pgprocnos[arrayP->numProcs - 1] = -1;		/* for debugging */
-        arrayP->numProcs--;
+        if (RemoveGXid(pxid)) { 
+            nCompleted += 1;
+            memmove(&arrayP->pgprocnos[i], &arrayP->pgprocnos[i + 1],
+                    (arrayP->numProcs - i - 1) * sizeof(int));
+            arrayP->pgprocnos[arrayP->numProcs - 1] = -1;		/* for debugging */
+            arrayP->numProcs--;
+        }
     }
 	LWLockRelease(ProcArrayLock);
-    //elog(WARNING, "VacuumProcArray: %d in progress, %d completed, %d total\n", nInProgress, nCompleted, arrayP->numProcs);
+    elog(WARNING, "VacuumProcArray: %d in progress, %d completed, %d total\n", nInProgress, nCompleted, arrayP->numProcs);
 }

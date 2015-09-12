@@ -659,7 +659,7 @@ AllocGXid(TransactionId xid)
 	gxact->prepare_lsn = 0;
 	gxact->owner = 0;
 	gxact->locking_backend = MyBackendId;
-	gxact->valid = false;
+	gxact->valid = true;
 	strcpy(gxact->gid, gid);
 
 	/* And insert it into the active array */
@@ -677,7 +677,7 @@ AllocGXid(TransactionId xid)
 	return gxact->pgprocno;
 }
 
-void
+bool
 RemoveGXid(TransactionId xid)
 {
 	int			i;
@@ -699,12 +699,13 @@ RemoveGXid(TransactionId xid)
 			TwoPhaseState->prepXacts[i]->next = TwoPhaseState->freeGXacts;
 			TwoPhaseState->freeGXacts = TwoPhaseState->prepXacts[i];
 
-            break;
+            LWLockRelease(TwoPhaseStateLock);
+            return true;
 		}
 	}
 
 	LWLockRelease(TwoPhaseStateLock);
-    
+    return false;
 }
 
 /*
