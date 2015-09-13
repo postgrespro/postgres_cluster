@@ -27,6 +27,7 @@ typedef int XidStatus;
 #define TRANSACTION_STATUS_COMMITTED		0x01
 #define TRANSACTION_STATUS_ABORTED			0x02
 #define TRANSACTION_STATUS_SUB_COMMITTED	0x03
+#define TRANSACTION_STATUS_UNKNOWN 	        0x03
 
 
 extern void TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,

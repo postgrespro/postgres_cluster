@@ -30,6 +30,19 @@ var cfg2 = pgx.ConnConfig{
 var running = false
 var nodes []int32 = []int32{0,1}
 
+func asyncCommit(conn *pgx.Conn, wg *sync.WaitGroup) {
+    exec(conn, "commit")    
+    wg.Done()
+}
+    
+func commit(conn1, conn2 *pgx.Conn) {
+    var wg sync.WaitGroup
+    wg.Add(2)
+    go asyncCommit(conn1, &wg)
+    go asyncCommit(conn2, &wg)
+    wg.Wait()
+}
+
 func prepare_db() {
     var xids []int32 = make([]int32, 2)
 
@@ -60,7 +73,7 @@ func prepare_db() {
     xids[1] = execQuery(conn2, "select txid_current()")
     
     // register global transaction in DTMD
-    exec(conn1, "select dtm_global_transaction($1, $2)", nodes, xids)
+    exec(conn1, "select dtm_begin_transaction($1, $2)", nodes, xids)
     
     // first global statement 
     exec(conn1, "select dtm_get_snapshot()")
@@ -71,14 +84,7 @@ func prepare_db() {
         exec(conn2, "insert into t values($1, $2)", i, INIT_AMOUNT)
     }
     
-    // second global statement 
-    exec(conn1, "select dtm_get_snapshot()")
-    exec(conn2, "select dtm_get_snapshot()")
-    
-    // commit work
-    exec(conn1, "commit")
-    exec(conn2, "commit")
-    // at this moment transaction should be globally committed
+    commit(conn1, conn2)
 }
 
 func max(a, b int64) int64 {
@@ -115,7 +121,7 @@ func transfer(id int, wg *sync.WaitGroup) {
         xids[1] = execQuery(conn2, "select txid_current()")
         
         // register global transaction in DTMD
-        exec(conn1, "select dtm_global_transaction($1, $2)", nodes, xids)
+        exec(conn1, "select dtm_begin_transaction($1, $2)", nodes, xids)
         
         // first global statement 
         exec(conn1, "select dtm_get_snapshot()")
@@ -123,15 +129,8 @@ func transfer(id int, wg *sync.WaitGroup) {
         
         exec(conn1, "update t set v = v + $1 where u=$2", amount, account1)
         exec(conn2, "update t set v = v - $1 where u=$2", amount, account2)
-        
-        // second global statement 
-        exec(conn1, "select dtm_get_snapshot()")
-        exec(conn2, "select dtm_get_snapshot()")
-        
-        // commit work
-        exec(conn1, "commit")
-        exec(conn2, "commit")
-        // at this moment transaction should be globally committed
+
+        commit(conn1, conn2)
     }
 
     fmt.Println("Test completed")
@@ -161,7 +160,7 @@ func total() int32 {
         xids[1] = execQuery(conn2, "select txid_current()")
         
         // register global transaction in DTMD
-        exec(conn1, "select dtm_global_transaction($1, $2)", nodes, xids)
+        exec(conn1, "select dtm_begin_transaction($1, $2)", nodes, xids)
 
         exec(conn1, "select dtm_get_snapshot()")
         exec(conn2, "select dtm_get_snapshot()")
@@ -169,8 +168,7 @@ func total() int32 {
         sum1 = execQuery(conn1, "select sum(v) from t")
         sum2 = execQuery(conn2, "select sum(v) from t")
 
-        exec(conn1, "commit")
-        exec(conn2, "commit")
+        commit(conn1, conn2)
 
         return sum1 + sum2
     }
