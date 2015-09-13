@@ -44,12 +44,13 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 static XidStatus DtmGetGloabalTransStatus(TransactionId xid);
 static void DtmUpdateRecentXmin(void);
 static bool IsInDtmSnapshot(TransactionId xid);
+static bool DtmTransactionIsInProgress(TransactionId xid);
 
 static NodeId DtmNodeId;
 static DTMConn DtmConn;
 static SnapshotData DtmSnapshot = {HeapTupleSatisfiesMVCC};
 static bool DtmHasSnapshot = false;
-static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot };
+static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmTransactionIsInProgress };
 static DTMConn DtmConn;
 
 static void DtmEnsureConnection(void)
@@ -78,7 +79,7 @@ static void DtmUpdateRecentXmin(void)
 {
     TransactionId xmin = DtmSnapshot.xmin;
     if (xmin != InvalidTransactionId) { 
-        xmin -= vacuum_defer_cleanup_age;
+        xmin -= vacuum_defer_cleanup_age;        
         if (!TransactionIdIsNormal(xmin)) {
             xmin = FirstNormalTransactionId;
         }
@@ -107,17 +108,22 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 static bool IsInDtmSnapshot(TransactionId xid)
 {
     return DtmHasSnapshot
-        && (xid > DtmSnapshot.xmax 
-            || bsearch(&xid, DtmSnapshot.xip, DtmSnapshot.xcnt, sizeof(TransactionId), xidComparator) != NULL);
+        && (/*xid > DtmSnapshot.xmax 
+              || */bsearch(&xid, DtmSnapshot.xip, DtmSnapshot.xcnt, sizeof(TransactionId), xidComparator) != NULL);
 }
         
+static bool DtmTransactionIsInProgress(TransactionId xid)
+{
+    return IsInDtmSnapshot(xid) || TransactionIdIsRunning(xid);
+}
 
 static XidStatus DtmGetGloabalTransStatus(TransactionId xid)
 {
     unsigned delay = 1000;
     while (true) { 
+        XidStatus status;
         DtmEnsureConnection();    
-        XidStatus status = DtmGlobalGetTransStatus(DtmConn, DtmNodeId, xid);
+        status = DtmGlobalGetTransStatus(DtmConn, DtmNodeId, xid);
         if (status == TRANSACTION_STATUS_IN_PROGRESS) { 
             pg_usleep(delay);
             if (delay < 100000)  { 

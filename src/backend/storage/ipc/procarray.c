@@ -945,6 +945,12 @@ ProcArrayApplyXidAssignment(TransactionId topxid,
 	LWLockRelease(ProcArrayLock);
 }
 
+bool
+TransactionIdIsInProgress(TransactionId xid)
+{
+    TM->IsInProgress(xid);
+}
+
 /*
  * TransactionIdIsInProgress -- is given transaction running in some backend
  *
@@ -972,7 +978,7 @@ ProcArrayApplyXidAssignment(TransactionId topxid,
  * PGXACT again anyway; see GetNewTransactionId).
  */
 bool
-TransactionIdIsInProgress(TransactionId xid)
+TransactionIdIsRunning(TransactionId xid)
 {
 	static TransactionId *xids = NULL;
 	int			nxids = 0;
@@ -3867,42 +3873,3 @@ KnownAssignedXidsReset(void)
 	LWLockRelease(ProcArrayLock);
 }
 
-static bool TransactionIsStillInProgress(TransactionId xid, Snapshot snapshot)
-{
-    return (xid > snapshot->xmax) || (bsearch(&xid, snapshot->xip, snapshot->xcnt, sizeof(TransactionId), xidComparator) != NULL);
-}
-
-
-void VacuumProcArray(Snapshot snapshot)
-{
-    int i;
-    int nInProgress = 0;
-    int nCompleted = 0;
-	ProcArrayStruct *arrayP = procArray;
-
-	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
-	for (i = arrayP->numProcs; --i >= 0;)
-	{
-		int		pgprocno = arrayP->pgprocnos[i];
-		PGXACT *pgxact = &allPgXact[pgprocno];
-		TransactionId pxid = pgxact->xid;
-        
- 		if (!TransactionIdIsValid(pxid)) {
-			continue;
-        }
-        if (TransactionIsStillInProgress(pxid, snapshot)) { 
-            //elog(WARNING, "procArray[%d]=%d is in progress\n", i, pxid);
-            nInProgress += 1;
-            continue;
-        }
-        if (RemoveGXid(pxid)) { 
-            nCompleted += 1;
-            memmove(&arrayP->pgprocnos[i], &arrayP->pgprocnos[i + 1],
-                    (arrayP->numProcs - i - 1) * sizeof(int));
-            arrayP->pgprocnos[arrayP->numProcs - 1] = -1;		/* for debugging */
-            arrayP->numProcs--;
-        }
-    }
-	LWLockRelease(ProcArrayLock);
-    elog(WARNING, "VacuumProcArray: %d in progress, %d completed, %d total\n", nInProgress, nCompleted, arrayP->numProcs);
-}
