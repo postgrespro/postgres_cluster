@@ -3399,6 +3399,8 @@ l2:
 			TransactionId update_xact;
 			int			remain;
 
+            *(int*)0 = 0;
+
 			if (DoesMultiXactIdConflict((MultiXactId) xwait, infomask,
 										*lockmode))
 			{
@@ -3630,6 +3632,22 @@ l2:
 	newtup->t_data->t_infomask2 |= infomask2_new_tuple;
 	HeapTupleHeaderSetXmax(newtup->t_data, xmax_new_tuple);
 
+    { 
+        char buf[256];
+        sprintf(buf, "backend-%d.trace", getpid());
+        FILE* f  = fopen(buf, "a");
+        Snapshot s = GetTransactionSnapshot();
+        fprintf(f, "xid=%d: old.ctid=[%x-%x,%x], old.xmin=%d, old.xmax=%d, old.mask=%x, new.xmin=%d, new.xmax=%d, new.flags=%x, snap.xmin=%d, snap.xmax=%d, xcnt=%d, xip={%d,%d,%d,%d,%d}\n", 
+                xid, 
+                oldtup.t_data->t_ctid.ip_blkid.bi_hi,
+                oldtup.t_data->t_ctid.ip_blkid.bi_lo,
+                oldtup.t_data->t_ctid.ip_posid,
+                HeapTupleHeaderGetRawXmin(oldtup.t_data), HeapTupleHeaderGetRawXmax(oldtup.t_data), oldtup.t_data->t_infomask, 	
+                xid, xmax_new_tuple, infomask_new_tuple,
+                s->xmin, s->xmax, s->xcnt, s->xip[0], s->xip[1], s->xip[2], s->xip[3], s->xip[4] 
+              );
+        fclose(f);
+    }
     Assert(xmax_new_tuple != xid || (newtup->t_data->t_infomask & HEAP_XMAX_LOCK_ONLY) != 0);
 
 	/*
