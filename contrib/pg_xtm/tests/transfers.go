@@ -65,8 +65,6 @@ func prepare_db() {
     exec(conn2, "create table t(u int primary key, v int)")
     
     // strt transaction
-    exec(conn1, "select dtm_lock()")
-    exec(conn2, "select dtm_lock()")
     exec(conn1, "begin")
     exec(conn2, "begin")
     
@@ -76,8 +74,6 @@ func prepare_db() {
     
     // register global transaction in DTMD
     exec(conn1, "select dtm_begin_transaction($1, $2)", nodes, xids)
-    exec(conn1, "select dtm_unlock()")
-    exec(conn2, "select dtm_unlock()")
     
     // first global statement 
     exec(conn1, "select dtm_get_snapshot()")
@@ -117,8 +113,6 @@ func transfer(id int, wg *sync.WaitGroup) {
         account2 := rand.Intn(N_ACCOUNTS)
 
         // strt transaction
-	exec(conn1, "select dtm_lock()")
-	exec(conn2, "select dtm_lock()")
         exec(conn1, "begin")
         exec(conn2, "begin")
         
@@ -128,8 +122,6 @@ func transfer(id int, wg *sync.WaitGroup) {
         
         // register global transaction in DTMD
         exec(conn1, "select dtm_begin_transaction($1, $2)", nodes, xids)
-	exec(conn1, "select dtm_unlock()")
-	exec(conn2, "select dtm_unlock()")
         
         // first global statement 
         exec(conn1, "select dtm_get_snapshot()")
@@ -160,8 +152,6 @@ func total() int32 {
     defer conn2.Close()
 
     for { 
-	exec(conn1, "select dtm_lock()")
-	exec(conn2, "select dtm_lock()")
         exec(conn1, "begin")
         exec(conn2, "begin")
  
@@ -171,8 +161,6 @@ func total() int32 {
         
         // register global transaction in DTMD
         exec(conn1, "select dtm_begin_transaction($1, $2)", nodes, xids)
-	exec(conn1, "select dtm_unlock()")
-	exec(conn2, "select dtm_unlock()")
 
         exec(conn1, "select dtm_get_snapshot()")
         exec(conn2, "select dtm_get_snapshot()")

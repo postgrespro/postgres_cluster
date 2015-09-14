@@ -8,11 +8,3 @@ LANGUAGE C;
 CREATE FUNCTION dtm_get_snapshot() RETURNS void
 AS 'MODULE_PATHNAME','dtm_get_snapshot'
 LANGUAGE C;
-
-CREATE FUNCTION dtm_lock() RETURNS void
-AS 'MODULE_PATHNAME','dtm_lock'
-LANGUAGE C;
-
-CREATE FUNCTION dtm_unlock() RETURNS void
-AS 'MODULE_PATHNAME','dtm_unlock'
-LANGUAGE C;
