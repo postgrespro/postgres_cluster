@@ -114,20 +114,21 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
     if (DtmHasSnapshot) { 
         DtmCopySnapshot(snapshot, &DtmSnapshot);
-        return snapshot;
+        DtmUpdateRecentXmin();
+    } else { 
+        snapshot = GetLocalSnapshotData(snapshot);
     }
-    snapshot = GetLocalSnapshotData(snapshot);
-//    DtmUpdateRecentXmin();
     return snapshot;
 }
 
-
+#if 0
 static bool IsInDtmSnapshot(TransactionId xid)
 {
     return DtmHasSnapshot
         && (/*xid > DtmSnapshot.xmax 
               || */bsearch(&xid, DtmSnapshot.xip, DtmSnapshot.xcnt, sizeof(TransactionId), xidComparator) != NULL);
 }
+#endif
         
 static bool DtmTransactionIsInProgress(TransactionId xid)
 {
@@ -254,11 +255,7 @@ dtm_get_snapshot(PG_FUNCTION_ARGS)
     DtmEnsureConnection();
     DtmGlobalGetSnapshot(DtmConn, DtmNodeId, GetCurrentTransactionId(), &DtmSnapshot);
 
-    //    VacuumProcArray(&DtmSnapshot);
-
     /* Move it to DtmGlobalGetSnapshot? */
-    DtmUpdateRecentXmin();
-	DtmSnapshot.curcid = GetCurrentCommandId(false);
     DtmHasSnapshot = true;
 	PG_RETURN_VOID();
 }
