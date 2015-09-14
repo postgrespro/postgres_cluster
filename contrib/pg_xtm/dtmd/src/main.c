@@ -245,7 +245,8 @@ static char *onabort(void *client, cmd_t *cmd) {
 
 static void gen_snapshot(Snapshot *s, int node) {
 	s->nactive = 0;
-	s->xmin = s->xmax = xmax[node];
+	s->xmin = xmax[node];
+    s->xmax = s->xmin + 1;
 	int i;
 	for (i = 0; i < transactions_count; i++) {
 		Transaction *t = transactions[i].participants + node;

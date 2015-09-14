@@ -65,14 +65,31 @@ static void DtmEnsureConnection(void)
 
 static void DtmCopySnapshot(Snapshot dst, Snapshot src)
 {
-    DtmInitSnapshot(dst);
-    memcpy(dst->xip, src->xip, src->xcnt*sizeof(TransactionId));
-    memcpy(dst->subxip, src->xip, src->xcnt*sizeof(TransactionId));
-    dst->xmax = src->xmax;
-    dst->xmin = src->xmin;
-    dst->xcnt = src->xcnt;
-    dst->subxcnt = src->xcnt;
-    dst->curcid = src->curcid;
+    int i, j, n;
+    static TransactionId* buf;
+    TransactionId prev = InvalidTransactionId;
+    if (buf == NULL) { 
+        buf = (TransactionId *)malloc(GetMaxSnapshotSubxidCount() * sizeof(TransactionId) * 2);
+    }    
+
+    GetLocalSnapshotData(dst);
+
+    if (dst->xmin > src->xmin) { 
+        dst->xmin = src->xmin;
+    }
+    if (dst->xmax > src->xmax) { 
+        dst->xmax = src->xmax;
+    }
+    
+    memcpy(buf, dst->xip, dst->xcnt*sizeof(TransactionId));
+    memcpy(buf + dst->xcnt, src->xip, src->xcnt*sizeof(TransactionId));
+    qsort(buf, dst->xcnt + src->xcnt, sizeof(TransactionId), xidComparator);    
+    for (i = 0, j = 0, n = dst->xcnt + src->xcnt; i < n && buf[i] < dst->xmax; i++) { 
+        if (buf[i] != prev) { 
+            dst->xip[j++] = prev = buf[i];
+        }
+    }
+    dst->xcnt = j;
 }
 
 static void DtmUpdateRecentXmin(void)
@@ -100,7 +117,7 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
         return snapshot;
     }
     snapshot = GetLocalSnapshotData(snapshot);
-    DtmUpdateRecentXmin();
+//    DtmUpdateRecentXmin();
     return snapshot;
 }
 
@@ -114,7 +131,7 @@ static bool IsInDtmSnapshot(TransactionId xid)
         
 static bool DtmTransactionIsInProgress(TransactionId xid)
 {
-    return IsInDtmSnapshot(xid) || TransactionIdIsRunning(xid);
+    return /*IsInDtmSnapshot(xid) || */ TransactionIdIsRunning(xid);
 }
 
 static XidStatus DtmGetGloabalTransStatus(TransactionId xid)
@@ -216,6 +233,8 @@ PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(dtm_begin_transaction);
 PG_FUNCTION_INFO_V1(dtm_get_snapshot);
+PG_FUNCTION_INFO_V1(dtm_lock);
+PG_FUNCTION_INFO_V1(dtm_unlock);
 
 Datum
 dtm_begin_transaction(PG_FUNCTION_ARGS)
@@ -235,7 +254,9 @@ Datum
 dtm_get_snapshot(PG_FUNCTION_ARGS)
 {
     DtmEnsureConnection();
+	LWLockAcquire(DtmLock, LW_EXCLUSIVE);
     DtmGlobalGetSnapshot(DtmConn, DtmNodeId, GetCurrentTransactionId(), &DtmSnapshot);
+	LWLockRelease(DtmLock);
 
     //    VacuumProcArray(&DtmSnapshot);
 
@@ -246,3 +267,16 @@ dtm_get_snapshot(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
+Datum
+dtm_lock(PG_FUNCTION_ARGS)
+{
+	LWLockAcquire(DtmLock, LW_EXCLUSIVE);
+	PG_RETURN_VOID();
+}
+
+Datum
+dtm_unlock(PG_FUNCTION_ARGS)
+{
+	LWLockRelease(DtmLock);
+	PG_RETURN_VOID();
+}

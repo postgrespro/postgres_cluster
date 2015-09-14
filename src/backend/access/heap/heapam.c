@@ -3270,7 +3270,7 @@ heap_update(Relation relation, ItemPointer otid, HeapTuple newtup,
 	oldtup.t_data = (HeapTupleHeader) PageGetItem(page, lp);
 	oldtup.t_len = ItemIdGetLength(lp);
 	oldtup.t_self = *otid;
-
+    
 	/* the new tuple is ready, except for this: */
 	newtup->t_tableOid = RelationGetRelid(relation);
 
@@ -3629,6 +3629,8 @@ l2:
 	newtup->t_data->t_infomask |= HEAP_UPDATED | infomask_new_tuple;
 	newtup->t_data->t_infomask2 |= infomask2_new_tuple;
 	HeapTupleHeaderSetXmax(newtup->t_data, xmax_new_tuple);
+
+    Assert(xmax_new_tuple != xid || (newtup->t_data->t_infomask & HEAP_XMAX_LOCK_ONLY) != 0);
 
 	/*
 	 * Replace cid with a combo cid if necessary.  Note that we already put

@@ -45,7 +45,7 @@ char *snapshot_serialize(Snapshot *s) {
 		append_hex16(&cursor, s->active[i]);
 	}
 
-	shout("cursor - data = %ld, len = %d\n", cursor - data, len);
+	//shout("cursor - data = %ld, len = %d\n", cursor - data, len);
 	assert(cursor - data == len);
 	assert(data[len] == '\0');
 	return data;
