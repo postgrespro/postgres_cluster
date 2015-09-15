@@ -11,10 +11,13 @@ int global_transaction_status(GlobalTransaction *gt) {
 		if (t->active) {
 			assert(t->node == node);
 			switch (t->vote) {
+				case BLANK:
+					shout("a blank vote, this should not happen");
+					return BLANK;
 				case NEGATIVE:
 					againstcount++;
 					break;
-				case NEUTRAL:
+				case DOUBT:
 					inprogresscount++;
 					break;
 				case POSITIVE:
@@ -26,7 +29,7 @@ int global_transaction_status(GlobalTransaction *gt) {
 	if (againstcount) {
 		return NEGATIVE;
 	} else if (inprogresscount) {
-		return NEUTRAL;
+		return DOUBT;
 	} else {
 		return POSITIVE;
 	}

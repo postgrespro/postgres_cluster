@@ -280,6 +280,8 @@ XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid)
 	if (!dtm_read_char(dtm, &statuschar)) return -1;
 
 	switch (statuschar) {
+		case '0':
+			return TRANSACTION_STATUS_UNKNOWN;
 		case 'c':
 			return TRANSACTION_STATUS_COMMITTED;
 		case 'a':

@@ -135,7 +135,7 @@ static char *onbegin(void *client, cmd_t *cmd) {
 		}
 		t->active = true;
 		t->node = node;
-		t->vote = NEUTRAL;
+		t->vote = DOUBT;
 		t->xid = xid;
 		t->snapshot.seqno = 0;
 		t->sent_seqno = 0;
@@ -144,11 +144,22 @@ static char *onbegin(void *client, cmd_t *cmd) {
 			xmax[node] = xid;
 		}
 	}
+	if (!global_transaction_mark(clg, transactions + i, DOUBT)) {
+		shout(
+			"[%d] VOTE: global transaction failed"
+			" to initialize clog bits O_o\n",
+			CLIENT_ID(client)
+		);
+		return strdup("-");
+	}
+
 	transactions_count++;
 	return strdup("+");
 }
 
 static char *onvote(void *client, cmd_t *cmd, int vote) {
+	assert((vote == POSITIVE) || (vote == NEGATIVE));
+
 	if (cmd->argc != 2) {
 		shout(
 			"[%d] VOTE: wrong number of arguments\n",
@@ -182,7 +193,7 @@ static char *onvote(void *client, cmd_t *cmd, int vote) {
 		return strdup("-");
 	}
 
-	if (transactions[i].participants[node].vote != NEUTRAL) {
+	if (transactions[i].participants[node].vote != DOUBT) {
 		shout(
 			"[%d] VOTE: node %d voting on xid %llu again\n",
 			CLIENT_ID(client), node, xid
@@ -209,7 +220,7 @@ static char *onvote(void *client, cmd_t *cmd, int vote) {
 				);
 				return strdup("-");
 			}
-		case NEUTRAL:
+		case DOUBT:
 			shout("[%d] VOTE: vote counted\n", CLIENT_ID(client));
 			return strdup("+");
 		case POSITIVE:
@@ -333,13 +344,16 @@ static char *onstatus(void *client, cmd_t *cmd) {
 
 	int status = clog_read(clg, MUX_XID(node, xid));
 	switch (status) {
+		case BLANK:
+			return strdup("+0");
 		case POSITIVE:
 			return strdup("+c");
 		case NEGATIVE:
 			return strdup("+a");
-		case NEUTRAL:
+		case DOUBT:
 			return strdup("+?");
 		default:
+			assert(false); // should not happen
 			return strdup("-");
 	}
 }
