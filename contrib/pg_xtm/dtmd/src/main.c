@@ -121,7 +121,7 @@ static char *onbegin(void *client, cmd_t *cmd) {
 		int node = cmd->argv[i * 2 + 1];
 		xid_t xid = cmd->argv[i * 2 + 2];
 
-		if (node > MAX_NODES) {
+		if (node >= MAX_NODES) {
 			shout(
 				"[%d] BEGIN: wrong 'node'\n",
 				CLIENT_ID(client)
@@ -171,9 +171,10 @@ static char *onvote(void *client, cmd_t *cmd, int vote) {
 		);
 		return strdup("-");
 	}
+
 	int node = cmd->argv[0];
 	xid_t xid = cmd->argv[1];
-	if (node > MAX_NODES) {
+	if (node >= MAX_NODES) {
 		shout(
 			"[%d] VOTE: voted about a wrong 'node' (%d)\n",
 			CLIENT_ID(client), node
