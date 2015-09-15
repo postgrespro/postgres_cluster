@@ -60,6 +60,9 @@ static void clear_global_transaction(GlobalTransaction *t) {
 	}
 }
 
+#ifdef NDEBUG
+#define shout_cmd(...)
+#else
 static void shout_cmd(void *client, cmd_t *cmd) {
 	char *cmdname;
 	switch (cmd->cmd) {
@@ -77,6 +80,7 @@ static void shout_cmd(void *client, cmd_t *cmd) {
 	}
 	shout("\n");
 }
+#endif
 
 static char *onbegin(void *client, cmd_t *cmd) {
 	if (transactions_count >= MAX_TRANSACTIONS) {
