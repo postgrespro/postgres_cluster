@@ -43,23 +43,30 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 static XidStatus DtmGetGloabalTransStatus(TransactionId xid);
 static void DtmUpdateRecentXmin(void);
-static bool IsInDtmSnapshot(TransactionId xid);
+// static bool IsInDtmSnapshot(TransactionId xid);
 static bool DtmTransactionIsInProgress(TransactionId xid);
 
 static NodeId DtmNodeId;
 static DTMConn DtmConn;
-static SnapshotData DtmSnapshot = {HeapTupleSatisfiesMVCC};
+static SnapshotData DtmSnapshot = { HeapTupleSatisfiesMVCC };
 static bool DtmHasSnapshot = false;
 static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmTransactionIsInProgress };
 static DTMConn DtmConn;
 
+#define XTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
+#define XTM_CONNECT_ATTEMPTS 10
+
 static void DtmEnsureConnection(void)
 {
-    while (true) { 
+    int attempt = 0;
+    XTM_TRACE("XTM: DtmEnsureConnection\n");
+    while (attempt < XTM_CONNECT_ATTEMPTS) { 
         if (DtmConn) {
             break;
-        }        
+        }
+        XTM_TRACE("XTM: DtmEnsureConnection, attempt #%u\n", attempt);
         DtmConn = DtmConnect("127.0.0.1", 5431);
+        attempt++;
     }
 }
 
@@ -68,6 +75,9 @@ static void DtmCopySnapshot(Snapshot dst, Snapshot src)
     int i, j, n;
     static TransactionId* buf;
     TransactionId prev = InvalidTransactionId;
+
+    XTM_TRACE("XTM: DtmCopySnapshot  \n");
+
     if (buf == NULL) { 
         buf = (TransactionId *)malloc(GetMaxSnapshotSubxidCount() * sizeof(TransactionId) * 2);
     }    
@@ -95,6 +105,9 @@ static void DtmCopySnapshot(Snapshot dst, Snapshot src)
 static void DtmUpdateRecentXmin(void)
 {
     TransactionId xmin = DtmSnapshot.xmin;
+
+    XTM_TRACE("XTM: DtmUpdateRecentXmin \n");
+
     if (xmin != InvalidTransactionId) { 
         xmin -= vacuum_defer_cleanup_age;        
         if (!TransactionIdIsNormal(xmin)) {
@@ -112,6 +125,8 @@ static void DtmUpdateRecentXmin(void)
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
+    XTM_TRACE("XTM: DtmGetSnapshot \n");
+
     if (DtmHasSnapshot) { 
         DtmCopySnapshot(snapshot, &DtmSnapshot);
         DtmUpdateRecentXmin();
@@ -132,12 +147,16 @@ static bool IsInDtmSnapshot(TransactionId xid)
         
 static bool DtmTransactionIsInProgress(TransactionId xid)
 {
+    XTM_TRACE("XTM: DtmTransactionIsInProgress \n");
     return /*IsInDtmSnapshot(xid) || */ TransactionIdIsRunning(xid);
 }
 
 static XidStatus DtmGetGloabalTransStatus(TransactionId xid)
 {
     unsigned delay = 1000;
+
+    XTM_TRACE("XTM: DtmGetGloabalTransStatus \n");
+
     while (true) { 
         XidStatus status;
         DtmEnsureConnection();    
@@ -155,6 +174,7 @@ static XidStatus DtmGetGloabalTransStatus(TransactionId xid)
 
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 {
+    XTM_TRACE("XTM: DtmGetTransactionStatus \n");
     XidStatus status = CLOGTransactionIdGetStatus(xid, lsn);
 #if 0
     if (status == TRANSACTION_STATUS_IN_PROGRESS) { 
@@ -170,6 +190,7 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
+    XTM_TRACE("XTM: DtmSetTransactionStatus %u = %u \n", xid, status);
     if (!RecoveryInProgress()) { 
         if (DtmHasSnapshot) { 
             /* Already should be IN_PROGRESS */
@@ -179,6 +200,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
             DtmEnsureConnection();
             if (!DtmGlobalSetTransStatus(DtmConn, DtmNodeId, xid, status) && status != TRANSACTION_STATUS_ABORTED) { 
                 elog(ERROR, "DTMD failed to set transaction status");
+                // elog(WARNING, "DTMD failed to set transaction status");
             }
             status = DtmGetGloabalTransStatus(xid);
             Assert(status == TRANSACTION_STATUS_ABORTED || status == TRANSACTION_STATUS_COMMITTED);
@@ -244,6 +266,9 @@ dtm_begin_transaction(PG_FUNCTION_ARGS)
     gtid.xids = (TransactionId*)ARR_DATA_PTR(xids);
     gtid.nodes = (NodeId*)ARR_DATA_PTR(nodes);
     gtid.nNodes = ArrayGetNItems(ARR_NDIM(nodes), ARR_DIMS(nodes));    
+
+    XTM_TRACE("XTM: dtm_begin_transaction \n");
+
     DtmEnsureConnection();
     DtmGlobalStartTransaction(DtmConn, &gtid);
 	PG_RETURN_VOID();
@@ -254,6 +279,8 @@ dtm_get_snapshot(PG_FUNCTION_ARGS)
 {
     DtmEnsureConnection();
     DtmGlobalGetSnapshot(DtmConn, DtmNodeId, GetCurrentTransactionId(), &DtmSnapshot);
+
+    XTM_TRACE("XTM: dtm_get_snapshot \n");
 
     /* Move it to DtmGlobalGetSnapshot? */
     DtmHasSnapshot = true;

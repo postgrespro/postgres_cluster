@@ -45,11 +45,11 @@ static void free_client_data(client_data_t *cd) {
 int next_client_id = 0;
 static void onconnect(void **client) {
 	*client = create_client_data(next_client_id++);
-	//shout("[%d] connected\n", CLIENT_ID(*client));
+	shout("[%d] connected\n", CLIENT_ID(*client));
 }
 
 static void ondisconnect(void *client) {
-	//shout("[%d] disconnected\n", CLIENT_ID(client));
+	shout("[%d] disconnected\n", CLIENT_ID(client));
 	free_client_data(client);
 }
 
@@ -194,10 +194,10 @@ static char *onvote(void *client, cmd_t *cmd, int vote) {
 	switch (global_transaction_status(transactions + i)) {
 		case NEGATIVE:
 			if (global_transaction_mark(clg, transactions + i, NEGATIVE)) {
-				//shout(
-				//	"[%d] VOTE: global transaction aborted\n",
-				//	CLIENT_ID(client)
-				//);
+				shout(
+					"[%d] VOTE: global transaction aborted\n",
+					CLIENT_ID(client)
+				);
 				transactions[i] = transactions[transactions_count - 1];
 				transactions_count--;
 				return strdup("+");
@@ -210,14 +210,14 @@ static char *onvote(void *client, cmd_t *cmd, int vote) {
 				return strdup("-");
 			}
 		case NEUTRAL:
-			//shout("[%d] VOTE: vote counted\n", CLIENT_ID(client));
+			shout("[%d] VOTE: vote counted\n", CLIENT_ID(client));
 			return strdup("+");
 		case POSITIVE:
 			if (global_transaction_mark(clg, transactions + i, POSITIVE)) {
-				//shout(
-				//	"[%d] VOTE: global transaction committed\n",
-				//	CLIENT_ID(client)
-				//);
+				shout(
+					"[%d] VOTE: global transaction committed\n",
+					CLIENT_ID(client)
+				);
 				transactions[i] = transactions[transactions_count - 1];
 				transactions_count--;
 				return strdup("+");
@@ -365,9 +365,8 @@ static char *onnoise(void *client, cmd_t *cmd) {
 // }
 
 static char *oncmd(void *client, cmd_t *cmd) {
-	//shout_cmd(client, cmd);
+	shout_cmd(client, cmd);
 
-	// float started = now_s();
 	char *result = NULL;
 	switch (cmd->cmd) {
 		case CMD_BEGIN:
@@ -388,8 +387,6 @@ static char *oncmd(void *client, cmd_t *cmd) {
 		default:
 			return onnoise(client, cmd);
 	}
-	// float elapsed = now_s() - started;
-	// shout("cmd '%c' processed in %0.4f sec\n", cmd->cmd, elapsed);
 	return result;
 }
 
@@ -420,11 +417,11 @@ char *ondata(void *client, size_t len, char *data) {
 	parser_t parser = CLIENT_PARSER(client);
 	char *response = NULL;
 
-	//shout(
-	//	"[%d] got some data[%lu] %s\n",
-	//	CLIENT_ID(client),
-	//	len, data
-	//);
+	shout(
+		"[%d] got some data[%lu] %s\n",
+		CLIENT_ID(client),
+		len, data
+	);
 
 	// The idea is to feed each character through
 	// the parser, which will return a cmd from
