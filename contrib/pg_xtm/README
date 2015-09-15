@@ -1,5 +1,5 @@
 ===
-dtm
+xtm
 ===
 
 Distributed transaction management tools for PostgreSQL.
@@ -32,6 +32,14 @@ libdtm api
 
 typedef unsigned long long xid_t;
 
+typedef int NodeId;
+
+typedef struct {
+    TransactionId* xids;
+    NodeId* nodes;
+    int nNodes;
+} GlobalTransactionId;
+
 // Connects to the specified DTM.
 DTMConn DtmConnect(char *host, int port);
 
@@ -39,23 +47,22 @@ DTMConn DtmConnect(char *host, int port);
 // bad things will happen.
 void DtmDisconnect(DTMConn dtm);
 
-// Asks DTM for a fresh snapshot. Returns a snapshot on success, or NULL
-// otherwise. Please free the snapshot memory yourself after use.
-Snapshot DtmGlobalGetSnapshot(DTMConn dtm);
-
-// Starts a transaction. Returns the 'gxid' on success, or INVALID_GXID otherwise.
-xid_t DtmGlobalBegin(DTMConn dtm);
-
-// Marks a given transaction as 'committed'. Returns 'true' on success,
+// Creates an entry for a new global transaction. Returns 'true' on success, or
 // 'false' otherwise.
-bool DtmGlobalCommit(DTMConn dtm, xid_t gxid);
+bool DtmGlobalStartTransaction(DTMConn dtm, GlobalTransactionId* gtid);
 
-// Marks a given transaction as 'aborted'.
-void DtmGlobalRollback(DTMConn dtm, xid_t gxid);
+// Asks DTM for a fresh snapshot. Returns 'true' on success, or 'false'
+// otherwise.
+bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapshot snapshot);
 
-// Gets the status of the transaction identified by 'gxid'. Returns the status
+// Commits transaction only once all participants have called this function,
+// does not change CLOG otherwise. Returns 'true' on success, 'false' if
+// something failed on the daemon side.
+bool DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidStatus status);
+
+// Gets the status of the transaction identified by 'xid'. Returns the status
 // on success, or -1 otherwise.
-int DtmGlobalGetTransStatus(DTMConn dtm, xid_t gxid);
+XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid);
 
 --------------------
 Backend-DTM Protocol
@@ -80,11 +87,8 @@ DTM <--> Backend:
   -> '-'             - "something went wrong"
 
 <-   's'<hex16 gxid> - "status"
-  -> '+''c|a|?'      - "here is the transaction status"
-                       (c)ommitted, (a)borted or (?)unknown
+  -> '+''0|c|a|?'    - "here is the transaction status"
+                       (0)unknown, (c)committed, (a)aborted, or (?)inprogress
   -> '-'             - "something went wrong"
 
 <snapshot> = <hex16 xmin><hex16 xmax><hex16 n><hex16 active[n]>
-
-Backend disconnection is considered as an abort of all incomplete transactions
-started by that backend.
