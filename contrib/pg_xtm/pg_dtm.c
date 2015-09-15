@@ -70,6 +70,27 @@ static void DtmEnsureConnection(void)
     }
 }
 
+static void DumpSnapshot(Snapshot s, char *name)
+{
+	int i;
+	char buf[10000];
+	char *cursor = buf;
+	cursor += sprintf(
+		cursor,
+		"snapshot %s: xmin=%d, xmax=%d, active=[",
+		name, s->xmin, s->xmax
+	);
+	for (i = 0; i < s->xcnt; i++) {
+		if (i == 0) {
+			cursor += sprintf(cursor, "%d", s->xip[i]);
+		} else {
+			cursor += sprintf(cursor, ", %d", s->xip[i]);
+		}
+	}
+	cursor += sprintf(cursor, "]");
+	XTM_TRACE("%s\n", buf);
+}
+
 static void DtmCopySnapshot(Snapshot dst, Snapshot src)
 {
     int i, j, n;

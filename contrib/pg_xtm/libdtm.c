@@ -233,11 +233,11 @@ bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapsho
 		Assert(s->xip[i] == number); // the number should fit into xip[i] size
 	}
 
-	fprintf(stdout, "snapshot: xmin = %#x, xmax = %#x, active =", s->xmin, s->xmax);
-	for (i = 0; i < s->xcnt; i++) {
-		fprintf(stdout, " %#x", s->xip[i]);
-	}
-	fprintf(stdout, "\n");
+	//fprintf(stdout, "snapshot: xmin = %#x, xmax = %#x, active =", s->xmin, s->xmax);
+	//for (i = 0; i < s->xcnt; i++) {
+	//	fprintf(stdout, " %#x", s->xip[i]);
+	//}
+	//fprintf(stdout, "\n");
 
 	return true;
 }
