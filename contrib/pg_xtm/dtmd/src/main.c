@@ -141,12 +141,7 @@ static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
 			xmax[node] = xid;
 		}
 	}
-	if (global_transaction_mark(clg, gt, DOUBT)) {
-		shout(
-			"[%d] BEGIN: global transaction marked as DOUBT",
-			CLIENT_ID(clientdata)
-		);
-	} else {
+	if (!global_transaction_mark(clg, gt, DOUBT)) {
 		shout(
 			"[%d] BEGIN: global transaction failed"
 			" to initialize clog bits O_o\n",
@@ -208,17 +203,17 @@ static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 	switch (global_transaction_status(transactions + i)) {
 		case NEGATIVE:
 			if (global_transaction_mark(clg, transactions + i, NEGATIVE)) {
-				shout(
-					"[%d] VOTE: global transaction aborted\n",
-					CLIENT_ID(clientdata)
-				);
+				//shout(
+				//	"[%d] VOTE: global transaction aborted\n",
+				//	CLIENT_ID(clientdata)
+				//);
 
 				void *listener;
 				while ((listener = global_transaction_pop_listener(transactions + i))) {
-					shout(
-						"[%d] VOTE: notifying a listener\n",
-						CLIENT_ID(clientdata)
-					);
+					//shout(
+					//	"[%d] VOTE: notifying a listener\n",
+					//	CLIENT_ID(clientdata)
+					//);
 					write_to_stream(listener, strdup("+a"));
 				}
 
@@ -234,21 +229,21 @@ static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 				return strdup("-");
 			}
 		case DOUBT:
-			shout("[%d] VOTE: vote counted\n", CLIENT_ID(clientdata));
+			//shout("[%d] VOTE: vote counted\n", CLIENT_ID(clientdata));
 			return strdup("+");
 		case POSITIVE:
 			if (global_transaction_mark(clg, transactions + i, POSITIVE)) {
-				shout(
-					"[%d] VOTE: global transaction committed\n",
-					CLIENT_ID(clientdata)
-				);
+				//shout(
+				//	"[%d] VOTE: global transaction committed\n",
+				//	CLIENT_ID(clientdata)
+				//);
 
 				void *listener;
 				while ((listener = global_transaction_pop_listener(transactions + i))) {
-					shout(
-						"[%d] VOTE: notifying a listener\n",
-						CLIENT_ID(clientdata)
-					);
+					//shout(
+					//	"[%d] VOTE: notifying a listener\n",
+					//	CLIENT_ID(clientdata)
+					//);
 					write_to_stream(listener, strdup("+c"));
 				}
 
@@ -390,18 +385,13 @@ static char *onstatus(void *stream, void *clientdata, cmd_t *cmd) {
 	int status = clog_read(clg, MUX_XID(node, xid));
 	switch (status) {
 		case BLANK:
-			shout("[%d] STATUS(%llu): BLANK\n", CLIENT_ID(clientdata), MUX_XID(node, xid));
 			return strdup("+0");
 		case POSITIVE:
-			shout("[%d] STATUS(%llu): POSITIVE\n", CLIENT_ID(clientdata), MUX_XID(node, xid));
 			return strdup("+c");
 		case NEGATIVE:
-			shout("[%d] STATUS(%llu): NEGATIVE\n", CLIENT_ID(clientdata), MUX_XID(node, xid));
 			return strdup("+a");
 		case DOUBT:
-			shout("[%d] STATUS(%llu): DOUBT\n", CLIENT_ID(clientdata), MUX_XID(node, xid));
 			if (wait) {
-				shout("[%d] STATUS: adding self to the wait queue\n", CLIENT_ID(clientdata));
 				if (!queue_for_transaction_finish(stream, clientdata, node, xid)) {
 					shout(
 						"[%d] STATUS: couldn't queue for transaction finish\n",
@@ -409,7 +399,6 @@ static char *onstatus(void *stream, void *clientdata, cmd_t *cmd) {
 					);
 					return strdup("-");
 				}
-				shout("[%d] STATUS: returning NULL\n", CLIENT_ID(clientdata));
 				return NULL;
 			} else {
 				return strdup("+?");
@@ -531,7 +520,7 @@ char *ondata(void *stream, void *clientdata, size_t len, char *data) {
 }
 
 void usage(char *prog) {
-	shout("Usage: %s [-d DATADIR] [-a HOST] [-p PORT]\n", prog);
+	printf("Usage: %s [-d DATADIR] [-a HOST] [-p PORT]\n", prog);
 }
 
 int main(int argc, char **argv) {

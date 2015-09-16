@@ -47,14 +47,10 @@ bool global_transaction_mark(clog_t clg, GlobalTransaction *gt, int status) {
 		Transaction *t = gt->participants + node;
 		if (t->active) {
 			assert(t->node == node);
-			if (clog_write(clg, MUX_XID(node, t->xid), status)) {
-				shout("clog write %llu, %d\n", MUX_XID(node, t->xid), status);
-			} else {
+			if (!clog_write(clg, MUX_XID(node, t->xid), status)) {
 				shout("clog write failed\n");
 				return false;
 			}
-		} else {
-			shout("node %d is not a participant\n", node);
 		}
 	}
 	return true;
