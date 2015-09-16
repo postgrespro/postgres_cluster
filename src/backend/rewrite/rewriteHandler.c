@@ -9,6 +9,13 @@
  * IDENTIFICATION
  *	  src/backend/rewrite/rewriteHandler.c
  *
+ * NOTES
+ *	  Some of the terms used in this file are of historic nature: "retrieve"
+ *	  was the PostQUEL keyword for what today is SELECT. "RIR" stands for
+ *	  "Retrieve-Instead-Retrieve", that is an ON SELECT DO INSTEAD SELECT rule
+ *	  (which has to be unconditional and where only one rule can exist on each
+ *	  relation).
+ *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
@@ -1787,6 +1794,8 @@ fireRIRrules(Query *parsetree, List *activeRIRs, bool forUpdatePushedDown)
 		{
 			if (hasSubLinks)
 			{
+				acquireLocksOnSubLinks_context context;
+
 				/*
 				 * Recursively process the new quals, checking for infinite
 				 * recursion.
@@ -1799,6 +1808,23 @@ fireRIRrules(Query *parsetree, List *activeRIRs, bool forUpdatePushedDown)
 
 				activeRIRs = lcons_oid(RelationGetRelid(rel), activeRIRs);
 
+				/*
+				 * get_row_security_policies just passed back securityQuals
+				 * and/or withCheckOptions, and there were SubLinks, make sure
+				 * we lock any relations which are referenced.
+				 *
+				 * These locks would normally be acquired by the parser, but
+				 * securityQuals and withCheckOptions are added post-parsing.
+				 */
+				context.for_execute = true;
+				(void) acquireLocksOnSubLinks((Node *) securityQuals, &context);
+				(void) acquireLocksOnSubLinks((Node *) withCheckOptions,
+											  &context);
+
+				/*
+				 * Now that we have the locks on anything added by
+				 * get_row_security_policies, fire any RIR rules for them.
+				 */
 				expression_tree_walker((Node *) securityQuals,
 									   fireRIRonSubLink, (void *) activeRIRs);
 
@@ -2737,6 +2763,21 @@ rewriteTargetView(Query *parsetree, Relation view)
 	base_rte->relkind = base_rel->rd_rel->relkind;
 
 	heap_close(base_rel, NoLock);
+
+	/*
+	 * If the view query contains any sublink subqueries then we need to also
+	 * acquire locks on any relations they refer to.  We know that there won't
+	 * be any subqueries in the range table or CTEs, so we can skip those, as
+	 * in AcquireRewriteLocks.
+	 */
+	if (viewquery->hasSubLinks)
+	{
+		acquireLocksOnSubLinks_context context;
+
+		context.for_execute = true;
+		query_tree_walker(viewquery, acquireLocksOnSubLinks, &context,
+						  QTW_IGNORE_RC_SUBQUERIES);
+	}
 
 	/*
 	 * Create a new target RTE describing the base relation, and add it to the

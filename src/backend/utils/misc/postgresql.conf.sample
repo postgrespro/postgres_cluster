@@ -425,6 +425,7 @@ shared_preload_libraries = 'pg_dtm'		# (change requires restart)
 					#   %p = process ID
 					#   %t = timestamp without milliseconds
 					#   %m = timestamp with milliseconds
+					#   %n = timestamp with milliseconds (as a Unix epoch)
 					#   %i = command tag
 					#   %e = SQL state
 					#   %c = session ID
@@ -526,6 +527,7 @@ shared_preload_libraries = 'pg_dtm'		# (change requires restart)
 #bytea_output = 'hex'			# hex, escape
 #xmlbinary = 'base64'
 #xmloption = 'content'
+#gin_fuzzy_search_limit = 0
 #gin_pending_list_limit = 4MB
 
 # - Locale and Formatting -

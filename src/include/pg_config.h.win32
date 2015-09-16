@@ -264,9 +264,6 @@
 /* Define to 1 if you have the <poll.h> header file. */
 /* #undef HAVE_POLL_H */
 
-/* Define to 1 if you have the POSIX signal interface. */
-/* #undef HAVE_POSIX_SIGNALS */
-
 /* Define to 1 if you have the `pstat' function. */
 /* #undef HAVE_PSTAT */
 
@@ -315,15 +312,6 @@
 
 /* Define to 1 if you have the `setsid' function. */
 /* #undef HAVE_SETSID */
-
-/* Define to 1 if you have the `sigprocmask' function. */
-/* #undef HAVE_SIGPROCMASK */
-
-/* Define to 1 if you have sigsetjmp(). */
-/* #undef HAVE_SIGSETJMP */
-
-/* Define to 1 if the system has the type `sig_atomic_t'. */
-#define HAVE_SIG_ATOMIC_T 1
 
 /* Define to 1 if you have the `snprintf' function. */
 /* #undef HAVE_SNPRINTF */
