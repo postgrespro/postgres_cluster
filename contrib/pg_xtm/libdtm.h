@@ -42,7 +42,8 @@ bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapsho
 bool DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidStatus status);
 
 // Gets the status of the transaction identified by 'xid'. Returns the status
-// on success, or -1 otherwise.
-XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid);
+// on success, or -1 otherwise. If 'wait' is true, then it does not return
+// until the transaction is finished.
+XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, bool wait);
 
 #endif

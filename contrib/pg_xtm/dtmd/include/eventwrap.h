@@ -10,9 +10,11 @@
 int eventwrap(
 	const char *host,
 	int port,
-	char *(*ondata)(void *client, size_t len, char *data),
-	void (*onconnect)(void **client),
-	void (*ondisconnect)(void *client)
+	char *(*ondata)(void *stream, void *clientdata, size_t len, char *data),
+	void (*onconnect)(void *stream, void **clientdata),
+	void (*ondisconnect)(void *stream, void *clientdata)
 );
+
+void write_to_stream(void *stream, char *data);
 
 #endif
