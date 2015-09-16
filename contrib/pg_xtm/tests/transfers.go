@@ -74,10 +74,11 @@ func prepare_db() {
     
     // register global transaction in DTMD
     exec(conn1, "select dtm_begin_transaction($1, $2)", nodes, xids)
+    exec(conn2, "select dtm_begin_transaction($1, $2)", nodes, xids)
     
     // first global statement 
-    exec(conn1, "select dtm_get_snapshot()")
-    exec(conn2, "select dtm_get_snapshot()")
+//    exec(conn1, "select dtm_get_snapshot()")
+//    exec(conn2, "select dtm_get_snapshot()")
     
     for i := 0; i < N_ACCOUNTS; i++ {
         exec(conn1, "insert into t values($1, $2)", i, INIT_AMOUNT)
@@ -122,10 +123,11 @@ func transfer(id int, wg *sync.WaitGroup) {
         
         // register global transaction in DTMD
         exec(conn1, "select dtm_begin_transaction($1, $2)", nodes, xids)
+        exec(conn2, "select dtm_begin_transaction($1, $2)", nodes, xids)
         
         // first global statement 
-        exec(conn1, "select dtm_get_snapshot()")
-        exec(conn2, "select dtm_get_snapshot()")
+//        exec(conn1, "select dtm_get_snapshot()")
+//        exec(conn2, "select dtm_get_snapshot()")
         
         exec(conn1, "update t set v = v + $1 where u=$2", amount, account1)
         exec(conn2, "update t set v = v - $1 where u=$2", amount, account2)
@@ -137,21 +139,18 @@ func transfer(id int, wg *sync.WaitGroup) {
     wg.Done()
 }
 
-func total() int32 {
-    var err error
-    var sum1 int32
-    var sum2 int32
+func inspect(wg *sync.WaitGroup) {
+    var sum1, sum2, sum int32
+    var prevSum int32 = 0 
     var xids []int32 = make([]int32, 2)
 
-    conn1, err := pgx.Connect(cfg1)
-    checkErr(err)
-    defer conn1.Close()
+        conn1, err := pgx.Connect(cfg1)
+        checkErr(err)
 
-    conn2, err := pgx.Connect(cfg2)
-    checkErr(err)
-    defer conn2.Close()
+        conn2, err := pgx.Connect(cfg2)
+        checkErr(err)
 
-    for { 
+    for running {
         exec(conn1, "begin")
         exec(conn2, "begin")
  
@@ -161,6 +160,7 @@ func total() int32 {
         
         // register global transaction in DTMD
         exec(conn1, "select dtm_begin_transaction($1, $2)", nodes, xids)
+        exec(conn2, "select dtm_begin_transaction($1, $2)", nodes, xids)
 
         exec(conn1, "select dtm_get_snapshot()")
         exec(conn2, "select dtm_get_snapshot()")
@@ -170,19 +170,14 @@ func total() int32 {
 
         commit(conn1, conn2)
 
-        return sum1 + sum2
-    }
-}
-
-func totalrep(wg *sync.WaitGroup) {
-    var prevSum int32 = 0 
-    for running {
-        sum := total()
+        sum = sum1 + sum2
         if (sum != prevSum) {
             fmt.Println("Total = ", sum)
             prevSum = sum
-        }
+        }        
     }
+        conn1.Close()
+        conn2.Close()
     wg.Done()
 }
 
@@ -198,7 +193,7 @@ func main() {
     }
     running = true
     inspectWg.Add(1)
-    go totalrep(&inspectWg)
+    go inspect(&inspectWg)
 
     transferWg.Wait()
     running = false
