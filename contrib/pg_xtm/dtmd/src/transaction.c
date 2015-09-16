@@ -1,7 +1,13 @@
 #include <assert.h>
+#include <stdlib.h>
 
 #include "util.h"
 #include "transaction.h"
+
+typedef struct list_node_t {
+	void *value;
+	struct list_node_t *next;
+} list_node_t;
 
 int global_transaction_status(GlobalTransaction *gt) {
 	int node;
@@ -41,11 +47,41 @@ bool global_transaction_mark(clog_t clg, GlobalTransaction *gt, int status) {
 		Transaction *t = gt->participants + node;
 		if (t->active) {
 			assert(t->node == node);
-			if (!clog_write(clg, MUX_XID(node, t->xid), status)) {
-				shout("clog write failed");
+			if (clog_write(clg, MUX_XID(node, t->xid), status)) {
+				shout("clog write %llu, %d\n", MUX_XID(node, t->xid), status);
+			} else {
+				shout("clog write failed\n");
 				return false;
 			}
+		} else {
+			shout("node %d is not a participant\n", node);
 		}
 	}
 	return true;
+}
+
+void global_transaction_clear(GlobalTransaction *gt) {
+	int i;
+	for (i = 0; i < MAX_NODES; i++) {
+		gt->participants[i].active = false;
+	}
+	gt->listener = NULL;
+}
+
+void global_transaction_push_listener(GlobalTransaction *gt, void *stream) {
+	list_node_t *n = malloc(sizeof(list_node_t));
+	n->value = stream;
+	n->next = gt->listener;
+	gt->listener = n;
+}
+
+void *global_transaction_pop_listener(GlobalTransaction *gt) {
+	if (!gt->listener) {
+		return NULL;
+	}
+	list_node_t *n = gt->listener;
+	gt->listener = n->next;
+	void *value = n->value;
+	free(n);
+	return value;
 }

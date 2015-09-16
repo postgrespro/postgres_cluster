@@ -165,7 +165,7 @@ static bool IsInDtmSnapshot(TransactionId xid)
               || */bsearch(&xid, DtmSnapshot.xip, DtmSnapshot.xcnt, sizeof(TransactionId), xidComparator) != NULL);
 }
 #endif
-        
+
 static bool DtmTransactionIsInProgress(TransactionId xid)
 {
     XTM_TRACE("XTM: DtmTransactionIsInProgress \n");
@@ -174,24 +174,19 @@ static bool DtmTransactionIsInProgress(TransactionId xid)
 
 static XidStatus DtmGetGloabalTransStatus(TransactionId xid)
 {
-    unsigned delay = 1000;
-
     XTM_TRACE("XTM: DtmGetGloabalTransStatus \n");
 
     while (true) { 
         XidStatus status;
-        DtmEnsureConnection();    
-        status = DtmGlobalGetTransStatus(DtmConn, DtmNodeId, xid);
-        if (status == TRANSACTION_STATUS_IN_PROGRESS) { 
-            pg_usleep(delay);
-            if (delay < 100000)  { 
-                delay *= 2;
-            }
+        DtmEnsureConnection();
+        status = DtmGlobalGetTransStatus(DtmConn, DtmNodeId, xid, true);
+        if (status == TRANSACTION_STATUS_IN_PROGRESS) {
+		elog(ERROR, "DTMD reported status in progress");
         } else { 
             return status;
         }
-    }            
-}    
+    }
+}
 
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 {

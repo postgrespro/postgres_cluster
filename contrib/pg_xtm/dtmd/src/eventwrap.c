@@ -15,9 +15,9 @@
 
 uv_loop_t *loop;
 
-char *(*ondata_cb)(void *client, size_t len, char *data);
-void (*onconnect_cb)(void **client);
-void (*ondisconnect_cb)(void *client);
+char *(*ondata_cb)(void *stream, void *clientdata, size_t len, char *data);
+void (*onconnect_cb)(void *stream, void **clientdata);
+void (*ondisconnect_cb)(void *stream, void *clientdata);
 
 static void on_alloc(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
 	buf->len = suggested_size;
@@ -34,18 +34,19 @@ static void on_write(uv_write_t *req, int status) {
 
 static void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) { 
 	if (nread == UV_EOF) {
-		ondisconnect_cb(stream->data);
-        uv_close((uv_handle_t*)stream, NULL);
+		ondisconnect_cb(stream, stream->data);
+		uv_close((uv_handle_t*)stream, NULL);
 		return;
 	}
 
 	if (nread < 0) {
-		shout("read failed (error %d)\n", nread);
-        uv_close((uv_handle_t*)stream, NULL);
+		shout("read failed (error %zd)\n", nread);
+		ondisconnect_cb(stream, stream->data);
+		uv_close((uv_handle_t*)stream, NULL);
 		return;
 	}
 
-	char *response = ondata_cb(stream->data, nread, buf->base);
+	char *response = ondata_cb(stream, stream->data, nread, buf->base);
 	free(buf->base);
 
 	if (response) {
@@ -71,16 +72,16 @@ static void on_connect(uv_stream_t *server, int status) {
 		return;
 	}
 	uv_tcp_nodelay(client, 1);
-	onconnect_cb(&client->data);
+	onconnect_cb(client, &client->data);
 	uv_read_start((uv_stream_t*)client, on_alloc, on_read);
 }
 
 int eventwrap(
 	const char *host,
 	int port,
-	char *(*ondata)(void *client, size_t len, char *data),
-	void (*onconnect)(void **client),
-	void (*ondisconnect)(void *client)
+	char *(*ondata)(void *stream, void *clientdata, size_t len, char *data),
+	void (*onconnect)(void *stream, void **clientdata),
+	void (*ondisconnect)(void *stream, void *clientdata)
 ) {
 	ondata_cb = ondata;
 	onconnect_cb = onconnect;
@@ -108,4 +109,11 @@ int eventwrap(
 	}
 
 	return uv_run(loop, UV_RUN_DEFAULT);
+}
+
+void write_to_stream(void *stream, char *data) {
+	uv_write_t *wreq = malloc(sizeof(uv_write_t));
+	uv_buf_t wbuf = uv_buf_init(data, strlen(data));
+	uv_write(wreq, (uv_stream_t*)stream, &wbuf, 1, on_write);
+	free(data);
 }

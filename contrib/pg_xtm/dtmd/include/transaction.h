@@ -23,9 +23,13 @@ typedef struct Transaction {
 
 typedef struct GlobalTransaction {
 	Transaction participants[MAX_NODES];
+	void *listener;
 } GlobalTransaction;
 
 int global_transaction_status(GlobalTransaction *gt);
 bool global_transaction_mark(clog_t clg, GlobalTransaction *gt, int status);
+void global_transaction_clear(GlobalTransaction *gt);
+void global_transaction_push_listener(GlobalTransaction *gt, void *listener);
+void *global_transaction_pop_listener(GlobalTransaction *gt);
 
 #endif

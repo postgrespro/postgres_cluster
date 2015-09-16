@@ -268,12 +268,13 @@ bool DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidS
 }
 
 // Gets the status of the transaction identified by 'xid'. Returns the status
-// on success, or -1 otherwise.
-XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid) {
+// on success, or -1 otherwise. If 'wait' is true, then it does not return
+// until the transaction is finished.
+XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, bool wait) {
 	bool result;
 	char statuschar;
 
-	if (!dtm_query(dtm, 's', 2, nodeid, xid)) return -1;
+	if (!dtm_query(dtm, 's', 3, nodeid, xid, wait)) return -1;
 
 	if (!dtm_read_bool(dtm, &result)) return -1;
 	if (!result) return -1;
