@@ -22,7 +22,7 @@ bool test_clog(char *datadir) {
 	printf("commit %d status %d\n", 42, clog_read(clog, 42));
 	printf("commit %d status %d\n", 1000, clog_read(clog, 1000));
 	if (!clog_write(clog, 1000, POSITIVE)) return false;
-	if (!clog_write(clog, 1500, NEGATIVE)) return false;
+	if (!clog_write(clog, 1500, DOUBT)) return false;
 
 	if (!clog_close(clog)) return false;
 	if (!(clog = clog_open(datadir))) return false;
@@ -35,11 +35,11 @@ bool test_clog(char *datadir) {
 	printf("commit %d status %d (should be 1)\n", 1000, status = clog_read(clog, 1000));
 	if (status != POSITIVE) return false;
 
-	printf("commit %d status %d (should be 2)\n", 1500, status = clog_read(clog, 1500));
-	if (status != NEGATIVE) return false;
+	printf("commit %d status %d (should be 3)\n", 1500, status = clog_read(clog, 1500));
+	if (status != DOUBT) return false;
 
 	printf("commit %d status %d (should be 0)\n", 2044, status = clog_read(clog, 2044));
-	if (status != NEUTRAL) return false;
+	if (status != BLANK) return false;
 
 	if (!clog_close(clog)) return false;
 

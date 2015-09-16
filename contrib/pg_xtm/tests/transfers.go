@@ -207,6 +207,7 @@ func main() {
 
 func exec(conn *pgx.Conn, stmt string, arguments ...interface{}) {
     var err error
+    // fmt.Println(stmt)
     _, _ = conn.Exec(stmt, arguments... )
     checkErr(err)
 }

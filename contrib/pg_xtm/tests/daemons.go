@@ -85,8 +85,13 @@ func initdb(bin string, datadir string) {
 	}
 }
 
-func postgres(bin string, datadir string, port int, wg *sync.WaitGroup) {
-	argv := []string{bin, "-D", datadir, "-p", strconv.Itoa(port)}
+func postgres(bin string, datadir string, port int, nodeid int, wg *sync.WaitGroup) {
+	argv := []string{
+		bin,
+		"-D", datadir,
+		"-p", strconv.Itoa(port),
+		"-c", "dtm.node_id=" + strconv.Itoa(nodeid),
+	}
 	name := "postgres " + datadir
 	c := make(chan string)
 
@@ -112,7 +117,7 @@ func check_bin(bin *map[string]string) {
 
 func main() {
 	bin := map[string]string{
-		"dtmd": "/home/kvap/postgrespro/contrib/pg_dtm/dtmd/bin/dtmd",
+		"dtmd": "/home/kvap/postgrespro/contrib/pg_xtm/dtmd/bin/dtmd",
 		"initdb": "/home/kvap/postgrespro-build/bin/initdb",
 		"postgres": "/home/kvap/postgrespro-build/bin/postgres",
 	}
@@ -132,7 +137,7 @@ func main() {
 
 	for i, datadir := range datadirs {
 		wg.Add(1)
-		go postgres(bin["postgres"], datadir, 5432 + i, &wg)
+		go postgres(bin["postgres"], datadir, 5432 + i, i, &wg)
 	}
 
 	wg.Wait()

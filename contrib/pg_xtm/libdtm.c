@@ -233,11 +233,11 @@ bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapsho
 		Assert(s->xip[i] == number); // the number should fit into xip[i] size
 	}
 
-	fprintf(stdout, "snapshot: xmin = %#x, xmax = %#x, active =", s->xmin, s->xmax);
-	for (i = 0; i < s->xcnt; i++) {
-		fprintf(stdout, " %#x", s->xip[i]);
-	}
-	fprintf(stdout, "\n");
+	//fprintf(stdout, "snapshot: xmin = %#x, xmax = %#x, active =", s->xmin, s->xmax);
+	//for (i = 0; i < s->xcnt; i++) {
+	//	fprintf(stdout, " %#x", s->xip[i]);
+	//}
+	//fprintf(stdout, "\n");
 
 	return true;
 }
@@ -280,6 +280,8 @@ XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid)
 	if (!dtm_read_char(dtm, &statuschar)) return -1;
 
 	switch (statuschar) {
+		case '0':
+			return TRANSACTION_STATUS_UNKNOWN;
 		case 'c':
 			return TRANSACTION_STATUS_COMMITTED;
 		case 'a':

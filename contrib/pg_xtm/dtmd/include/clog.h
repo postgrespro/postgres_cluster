@@ -12,9 +12,10 @@
 #define MIN_XID 42
 #define MAX_XID 0xdeadbeefcafebabe
 
-#define NEUTRAL  0
+#define BLANK    0
 #define POSITIVE 1
 #define NEGATIVE 2
+#define DOUBT    3
 
 typedef struct clog_data_t *clog_t;
 

@@ -124,7 +124,7 @@ int clog_read(clog_t clog, xid_t xid) {
 			"you might be experiencing a bug in backend\n",
 			xid
 		);
-		return NEUTRAL;
+		return BLANK;
 	}
 }
 
