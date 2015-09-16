@@ -144,13 +144,13 @@ func inspect(wg *sync.WaitGroup) {
     var prevSum int32 = 0 
     var xids []int32 = make([]int32, 2)
 
+    for running {
         conn1, err := pgx.Connect(cfg1)
         checkErr(err)
 
         conn2, err := pgx.Connect(cfg2)
         checkErr(err)
 
-    for running {
         exec(conn1, "begin")
         exec(conn2, "begin")
  
@@ -172,12 +172,12 @@ func inspect(wg *sync.WaitGroup) {
 
         sum = sum1 + sum2
         if (sum != prevSum) {
-            fmt.Println("Total = ", sum)
+            fmt.Println("Total = ", sum, "xids=", xids)
             prevSum = sum
         }        
-    }
         conn1.Close()
         conn2.Close()
+    }
     wg.Done()
 }
 

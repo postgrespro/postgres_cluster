@@ -57,7 +57,8 @@ static bool DtmGlobalTransaction = false;
 static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmTransactionIsInProgress };
 static DTMConn DtmConn;
 
-#define XTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
+#define XTM_TRACE(fmt, ...) 
+//#define XTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
 #define XTM_CONNECT_ATTEMPTS 10
 
 static void DtmEnsureConnection(void)
@@ -81,8 +82,8 @@ static void DumpSnapshot(Snapshot s, char *name)
 	char *cursor = buf;
 	cursor += sprintf(
 		cursor,
-		"snapshot %s: xmin=%d, xmax=%d, active=[",
-		name, s->xmin, s->xmax
+		"snapshot %s for transaction %d: xmin=%d, xmax=%d, active=[",
+		name, GetCurrentTransactionId(), s->xmin, s->xmax
 	);
 	for (i = 0; i < s->xcnt; i++) {
 		if (i == 0) {
@@ -92,7 +93,7 @@ static void DumpSnapshot(Snapshot s, char *name)
 		}
 	}
 	cursor += sprintf(cursor, "]");
-	XTM_TRACE("%s\n", buf);
+	printf("%s\n", buf);
 }
 
 static void DtmCopySnapshot(Snapshot dst, Snapshot src)
@@ -101,7 +102,6 @@ static void DtmCopySnapshot(Snapshot dst, Snapshot src)
     static TransactionId* buf;
     TransactionId prev = InvalidTransactionId;
 
-    XTM_TRACE("XTM: DtmCopySnapshot for transaction%u\n", GetCurrentTransactionId());
     DumpSnapshot(dst, "local");
     DumpSnapshot(src, "DTM");
 
@@ -127,7 +127,7 @@ static void DtmCopySnapshot(Snapshot dst, Snapshot src)
         }
     }
     dst->xcnt = j;
-    DumpSnapshot(dst, "Merged");
+    DumpSnapshot(dst, "merged");
 }
 
 static void DtmUpdateRecentXmin(void)
@@ -157,7 +157,7 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
     snapshot = GetLocalSnapshotData(snapshot);        
     if (DtmHasSnapshot) {  
         DtmCopySnapshot(snapshot, &DtmSnapshot);
-        //DtmUpdateRecentXmin();
+        DtmUpdateRecentXmin();
     }
     return snapshot;
 }
