@@ -3399,8 +3399,6 @@ l2:
 			TransactionId update_xact;
 			int			remain;
 
-            *(int*)0 = 0;
-
 			if (DoesMultiXactIdConflict((MultiXactId) xwait, infomask,
 										*lockmode))
 			{
@@ -3632,6 +3630,7 @@ l2:
 	newtup->t_data->t_infomask2 |= infomask2_new_tuple;
 	HeapTupleHeaderSetXmax(newtup->t_data, xmax_new_tuple);
 
+#if 0
     { 
         char buf[256];
         sprintf(buf, "backend-%d.trace", getpid());
@@ -3649,6 +3648,7 @@ l2:
         fclose(f);
     }
     Assert(xmax_new_tuple != xid || (newtup->t_data->t_infomask & HEAP_XMAX_LOCK_ONLY) != 0);
+#endif
 
 	/*
 	 * Replace cid with a combo cid if necessary.  Note that we already put

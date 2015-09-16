@@ -33,6 +33,9 @@
 
 #include "libdtm.h"
 
+#define MIN_DELAY  10000
+#define MAX_DELAY 100000
+
 void _PG_init(void);
 void _PG_fini(void);
 
@@ -121,30 +124,41 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
     return snapshot;
 }
 
-#if 0
 static bool IsInDtmSnapshot(TransactionId xid)
 {
     return DtmHasSnapshot
         && (/*xid > DtmSnapshot.xmax 
               || */bsearch(&xid, DtmSnapshot.xip, DtmSnapshot.xcnt, sizeof(TransactionId), xidComparator) != NULL);
 }
-#endif
         
 static bool DtmTransactionIsInProgress(TransactionId xid)
 {
-    return /*IsInDtmSnapshot(xid) || */ TransactionIdIsRunning(xid);
+#if 0
+    if (IsInDtmSnapshot(xid)) { 
+        unsigned delay = MIN_DELAY;
+        XLogRecPtr lsn;
+        while (CLOGTransactionIdGetStatus(xid, &lsn) == TRANSACTION_STATUS_IN_PROGRESS) { 
+            pg_usleep(delay);
+            if (delay < MAX_DELAY)  { 
+                delay *= 2;
+            }
+        }
+        return false;
+    }
+#endif
+    return TransactionIdIsRunning(xid) && !IsInDtmSnapshot(xid);
 }
 
 static XidStatus DtmGetGloabalTransStatus(TransactionId xid)
 {
-    unsigned delay = 1000;
+    unsigned delay = MIN_DELAY;
     while (true) { 
         XidStatus status;
         DtmEnsureConnection();    
         status = DtmGlobalGetTransStatus(DtmConn, DtmNodeId, xid);
         if (status == TRANSACTION_STATUS_IN_PROGRESS) { 
             pg_usleep(delay);
-            if (delay < 100000)  { 
+            if (delay < MAX_DELAY)  { 
                 delay *= 2;
             }
         } else { 
@@ -155,16 +169,17 @@ static XidStatus DtmGetGloabalTransStatus(TransactionId xid)
 
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 {
-    XidStatus status = CLOGTransactionIdGetStatus(xid, lsn);
-#if 0
-    if (status == TRANSACTION_STATUS_IN_PROGRESS) { 
-        status = DtmGetGloabalTransStatus(xid);
-        if (status == TRANSACTION_STATUS_UNKNOWN) { 
-            status = TRANSACTION_STATUS_IN_PROGRESS;
+    if (IsInDtmSnapshot(xid)) { 
+        unsigned delay = MIN_DELAY;
+        XLogRecPtr lsn;
+        while (CLOGTransactionIdGetStatus(xid, &lsn) == TRANSACTION_STATUS_IN_PROGRESS) { 
+            pg_usleep(delay);
+            if (delay < MAX_DELAY)  { 
+                delay *= 2;
+            }
         }
     }
-#endif
-    return status;
+    return CLOGTransactionIdGetStatus(xid, lsn);
 }
 
 
