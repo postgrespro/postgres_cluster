@@ -3399,8 +3399,6 @@ l2:
 			TransactionId update_xact;
 			int			remain;
 
-            *(int*)0 = 0;
-
 			if (DoesMultiXactIdConflict((MultiXactId) xwait, infomask,
 										*lockmode))
 			{
@@ -3632,6 +3630,7 @@ l2:
 	newtup->t_data->t_infomask2 |= infomask2_new_tuple;
 	HeapTupleHeaderSetXmax(newtup->t_data, xmax_new_tuple);
 
+#if 0
     { 
         char buf[256];
         sprintf(buf, "backend-%d.trace", getpid());
@@ -3649,6 +3648,7 @@ l2:
         fclose(f);
     }
     Assert(xmax_new_tuple != xid || (newtup->t_data->t_infomask & HEAP_XMAX_LOCK_ONLY) != 0);
+#endif
 
 	/*
 	 * Replace cid with a combo cid if necessary.  Note that we already put
@@ -5493,7 +5493,7 @@ l4:
  *
  * The initial tuple is assumed to be already locked.
  *
- * This function doesn't check visibility, it just inconditionally marks the
+ * This function doesn't check visibility, it just unconditionally marks the
  * tuple(s) as locked.  If any tuple in the updated chain is being deleted
  * concurrently (or updated with the key being modified), sleep until the
  * transaction doing it is finished.
@@ -6207,7 +6207,7 @@ heap_prepare_freeze_tuple(HeapTupleHeader tuple, TransactionId cutoff_xid,
 			/*
 			 * NB -- some of these transformations are only valid because we
 			 * know the return Xid is a tuple updater (i.e. not merely a
-			 * locker.) Also note that the only reason we don't explicitely
+			 * locker.) Also note that the only reason we don't explicitly
 			 * worry about HEAP_KEYS_UPDATED is because it lives in
 			 * t_infomask2 rather than t_infomask.
 			 */

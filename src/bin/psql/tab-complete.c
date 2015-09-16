@@ -576,7 +576,9 @@ static const SchemaQuery Query_for_list_of_matviews = {
 " SELECT pg_catalog.quote_ident(rolname) "\
 "   FROM pg_catalog.pg_roles "\
 "  WHERE substring(pg_catalog.quote_ident(rolname),1,%d)='%s'"\
-" UNION ALL SELECT 'PUBLIC'"
+" UNION ALL SELECT 'PUBLIC'"\
+" UNION ALL SELECT 'CURRENT_USER'"\
+" UNION ALL SELECT 'SESSION_USER'"
 
 /* the silly-looking length condition is just to eat up the current word */
 #define Query_for_table_owning_index \
@@ -757,6 +759,15 @@ static const SchemaQuery Query_for_list_of_matviews = {
 "       (SELECT polrelid FROM pg_catalog.pg_policy "\
 "         WHERE pg_catalog.quote_ident(polname)='%s')"
 
+#define Query_for_enum \
+" SELECT name FROM ( "\
+"   SELECT pg_catalog.quote_ident(pg_catalog.unnest(enumvals)) AS name "\
+"     FROM pg_catalog.pg_settings "\
+"    WHERE pg_catalog.lower(name)=pg_catalog.lower('%s') "\
+"    UNION ALL " \
+"   SELECT 'DEFAULT' ) ss "\
+"  WHERE pg_catalog.substring(name,1,%%d)='%%s'"
+
 /*
  * This is a list of all "things" in Pgsql, which can show up after CREATE or
  * DROP; and there is also a query to get a list of them.
@@ -843,9 +854,12 @@ static char **complete_from_variables(const char *text,
 static char *complete_from_files(const char *text, int state);
 
 static char *pg_strdup_keyword_case(const char *s, const char *ref);
+static char *escape_string(const char *text);
 static PGresult *exec_query(const char *query);
 
 static void get_previous_words(int point, char **previous_words, int nwords);
+
+static char *get_guctype(const char *varname);
 
 #ifdef NOT_USED
 static char *quote_file_name(char *text, int match_type, char *quote_pointer);
@@ -888,7 +902,7 @@ psql_completion(const char *text, int start, int end)
 	char	  **matches = NULL;
 
 	/* This array will contain some scannage of the input line. */
-	char	   *previous_words[6];
+	char	   *previous_words[9];
 
 	/* For compactness, we use these macros to reference previous_words[]. */
 #define prev_wd   (previous_words[0])
@@ -897,6 +911,9 @@ psql_completion(const char *text, int start, int end)
 #define prev4_wd  (previous_words[3])
 #define prev5_wd  (previous_words[4])
 #define prev6_wd  (previous_words[5])
+#define prev7_wd  (previous_words[6])
+#define prev8_wd  (previous_words[7])
+#define prev9_wd  (previous_words[8])
 
 	static const char *const sql_commands[] = {
 		"ABORT", "ALTER", "ANALYZE", "BEGIN", "CHECKPOINT", "CLOSE", "CLUSTER",
@@ -1885,7 +1902,7 @@ psql_completion(const char *text, int start, int end)
 			 pg_strcasecmp(prev_wd, "(") == 0)
 	{
 		static const char *const list_TABLESPACEOPTIONS[] =
-		{"seq_page_cost", "random_page_cost", NULL};
+		{"seq_page_cost", "random_page_cost", "effective_io_concurrency", NULL};
 
 		COMPLETE_WITH_LIST(list_TABLESPACEOPTIONS);
 	}
@@ -3065,6 +3082,11 @@ psql_completion(const char *text, int start, int end)
 			 pg_strcasecmp(prev_wd, "TABLE") == 0)
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_foreign_tables, NULL);
 
+/* FOREIGN SERVER */
+	else if (pg_strcasecmp(prev2_wd, "FOREIGN") == 0 &&
+			 pg_strcasecmp(prev_wd, "SERVER") == 0)
+		COMPLETE_WITH_QUERY(Query_for_list_of_servers);
+
 /* GRANT && REVOKE */
 	/* Complete GRANT/REVOKE with a list of roles and privileges */
 	else if (pg_strcasecmp(prev_wd, "GRANT") == 0 ||
@@ -3118,20 +3140,23 @@ psql_completion(const char *text, int start, int end)
 	}
 
 	/*
-	 * Complete GRANT/REVOKE <sth> ON with a list of tables, views, sequences,
-	 * and indexes
+	 * Complete GRANT/REVOKE <sth> ON with a list of tables, views, and
+	 * sequences.
 	 *
-	 * keywords DATABASE, FUNCTION, LANGUAGE, SCHEMA added to query result via
-	 * UNION; seems to work intuitively
+	 * Keywords like DATABASE, FUNCTION, LANGUAGE and SCHEMA added to
+	 * query result via UNION; seems to work intuitively.
 	 *
 	 * Note: GRANT/REVOKE can get quite complex; tab-completion as implemented
 	 * here will only work if the privilege list contains exactly one
-	 * privilege
+	 * privilege.
 	 */
 	else if ((pg_strcasecmp(prev3_wd, "GRANT") == 0 ||
 			  pg_strcasecmp(prev3_wd, "REVOKE") == 0) &&
 			 pg_strcasecmp(prev_wd, "ON") == 0)
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tsvmf,
+								   " UNION SELECT 'ALL FUNCTIONS IN SCHEMA'"
+								   " UNION SELECT 'ALL SEQUENCES IN SCHEMA'"
+								   " UNION SELECT 'ALL TABLES IN SCHEMA'"
 								   " UNION SELECT 'DATABASE'"
 								   " UNION SELECT 'DOMAIN'"
 								   " UNION SELECT 'FOREIGN DATA WRAPPER'"
@@ -3140,8 +3165,23 @@ psql_completion(const char *text, int start, int end)
 								   " UNION SELECT 'LANGUAGE'"
 								   " UNION SELECT 'LARGE OBJECT'"
 								   " UNION SELECT 'SCHEMA'"
+								   " UNION SELECT 'SEQUENCE'"
+								   " UNION SELECT 'TABLE'"
 								   " UNION SELECT 'TABLESPACE'"
 								   " UNION SELECT 'TYPE'");
+
+	else if ((pg_strcasecmp(prev4_wd, "GRANT") == 0 ||
+			  pg_strcasecmp(prev4_wd, "REVOKE") == 0) &&
+			 pg_strcasecmp(prev2_wd, "ON") == 0 &&
+			 pg_strcasecmp(prev_wd, "ALL") == 0)
+	{
+		static const char *const list_privilege_all[] =
+		{"FUNCTIONS IN SCHEMA", "SEQUENCES IN SCHEMA", "TABLES IN SCHEMA",
+		 NULL};
+
+		COMPLETE_WITH_LIST(list_privilege_all);
+	}
+
 	else if ((pg_strcasecmp(prev4_wd, "GRANT") == 0 ||
 			  pg_strcasecmp(prev4_wd, "REVOKE") == 0) &&
 			 pg_strcasecmp(prev2_wd, "ON") == 0 &&
@@ -3153,7 +3193,12 @@ psql_completion(const char *text, int start, int end)
 		COMPLETE_WITH_LIST(list_privilege_foreign);
 	}
 
-	/* Complete "GRANT/REVOKE * ON * " with "TO/FROM" */
+	/*
+	 * Complete "GRANT/REMOVE * ON DATABASE/DOMAIN/..." with a list of
+	 * appropriate objects.
+	 *
+	 * Complete "GRANT/REVOKE * ON * " with "TO/FROM".
+	 */
 	else if ((pg_strcasecmp(prev4_wd, "GRANT") == 0 ||
 			  pg_strcasecmp(prev4_wd, "REVOKE") == 0) &&
 			 pg_strcasecmp(prev2_wd, "ON") == 0)
@@ -3168,6 +3213,10 @@ psql_completion(const char *text, int start, int end)
 			COMPLETE_WITH_QUERY(Query_for_list_of_languages);
 		else if (pg_strcasecmp(prev_wd, "SCHEMA") == 0)
 			COMPLETE_WITH_QUERY(Query_for_list_of_schemas);
+		else if (pg_strcasecmp(prev_wd, "SEQUENCE") == 0)
+			COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_sequences, NULL);
+		else if (pg_strcasecmp(prev_wd, "TABLE") == 0)
+			COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tsvmf, NULL);
 		else if (pg_strcasecmp(prev_wd, "TABLESPACE") == 0)
 			COMPLETE_WITH_QUERY(Query_for_list_of_tablespaces);
 		else if (pg_strcasecmp(prev_wd, "TYPE") == 0)
@@ -3178,25 +3227,78 @@ psql_completion(const char *text, int start, int end)
 			COMPLETE_WITH_CONST("FROM");
 	}
 
-	/* Complete "GRANT/REVOKE * ON * TO/FROM" with username, GROUP, or PUBLIC */
+	/* Complete "GRANT/REVOKE * ON * *" with TO/FROM */
 	else if (pg_strcasecmp(prev5_wd, "GRANT") == 0 &&
 			 pg_strcasecmp(prev3_wd, "ON") == 0)
-	{
-		if (pg_strcasecmp(prev_wd, "TO") == 0)
-			COMPLETE_WITH_QUERY(Query_for_list_of_grant_roles);
-		else
-			COMPLETE_WITH_CONST("TO");
-	}
+		COMPLETE_WITH_CONST("TO");
+
 	else if (pg_strcasecmp(prev5_wd, "REVOKE") == 0 &&
 			 pg_strcasecmp(prev3_wd, "ON") == 0)
+		COMPLETE_WITH_CONST("FROM");
+
+	/* Complete "GRANT/REVOKE * ON ALL * IN SCHEMA *" with TO/FROM */
+	else if ((pg_strcasecmp(prev8_wd, "GRANT") == 0 ||
+			  pg_strcasecmp(prev8_wd, "REVOKE") == 0) &&
+			 pg_strcasecmp(prev6_wd, "ON") == 0 &&
+			 pg_strcasecmp(prev5_wd, "ALL") == 0 &&
+			 pg_strcasecmp(prev3_wd, "IN") == 0 &&
+			 pg_strcasecmp(prev2_wd, "SCHEMA") == 0)
 	{
-		if (pg_strcasecmp(prev_wd, "FROM") == 0)
-			COMPLETE_WITH_QUERY(Query_for_list_of_grant_roles);
+		if (pg_strcasecmp(prev8_wd, "GRANT") == 0)
+			COMPLETE_WITH_CONST("TO");
 		else
 			COMPLETE_WITH_CONST("FROM");
 	}
 
-	/* Complete "GRANT/REVOKE * TO/FROM" with username, GROUP, or PUBLIC */
+	/* Complete "GRANT/REVOKE * ON FOREIGN DATA WRAPPER *" with TO/FROM */
+	else if ((pg_strcasecmp(prev7_wd, "GRANT") == 0 ||
+			  pg_strcasecmp(prev7_wd, "REVOKE") == 0) &&
+			 pg_strcasecmp(prev5_wd, "ON") == 0 &&
+			 pg_strcasecmp(prev4_wd, "FOREIGN") == 0 &&
+			 pg_strcasecmp(prev3_wd, "DATA") == 0 &&
+			 pg_strcasecmp(prev2_wd, "WRAPPER") == 0)
+	{
+		if (pg_strcasecmp(prev7_wd, "GRANT") == 0)
+			COMPLETE_WITH_CONST("TO");
+		else
+			COMPLETE_WITH_CONST("FROM");
+	}
+
+	/* Complete "GRANT/REVOKE * ON FOREIGN SERVER *" with TO/FROM */
+	else if ((pg_strcasecmp(prev6_wd, "GRANT") == 0 ||
+			  pg_strcasecmp(prev6_wd, "REVOKE") == 0) &&
+			 pg_strcasecmp(prev4_wd, "ON") == 0 &&
+			 pg_strcasecmp(prev3_wd, "FOREIGN") == 0 &&
+			 pg_strcasecmp(prev2_wd, "SERVER") == 0)
+	{
+		if (pg_strcasecmp(prev6_wd, "GRANT") == 0)
+			COMPLETE_WITH_CONST("TO");
+		else
+			COMPLETE_WITH_CONST("FROM");
+	}
+
+	/*
+	 * Complete "GRANT/REVOKE ... TO/FROM" with username, PUBLIC,
+	 * CURRENT_USER, or SESSION_USER.
+	 */
+	else if (((pg_strcasecmp(prev9_wd, "GRANT") == 0 ||
+			   pg_strcasecmp(prev8_wd, "GRANT") == 0 ||
+			   pg_strcasecmp(prev7_wd, "GRANT") == 0 ||
+			   pg_strcasecmp(prev6_wd, "GRANT") == 0 ||
+			   pg_strcasecmp(prev5_wd, "GRANT") == 0) &&
+			  pg_strcasecmp(prev_wd, "TO") == 0) ||
+			 ((pg_strcasecmp(prev9_wd, "REVOKE") == 0 ||
+			   pg_strcasecmp(prev8_wd, "REVOKE") == 0 ||
+			   pg_strcasecmp(prev7_wd, "REVOKE") == 0 ||
+			   pg_strcasecmp(prev6_wd, "REVOKE") == 0 ||
+			   pg_strcasecmp(prev5_wd, "REVOKE") == 0) &&
+			  pg_strcasecmp(prev_wd, "FROM") == 0))
+		COMPLETE_WITH_QUERY(Query_for_list_of_grant_roles);
+
+	/*
+	 * Complete "GRANT/REVOKE * TO/FROM" with username, PUBLIC,
+	 * CURRENT_USER, or SESSION_USER.
+	 */
 	else if (pg_strcasecmp(prev3_wd, "GRANT") == 0 &&
 			 pg_strcasecmp(prev_wd, "TO") == 0)
 	{
@@ -3594,6 +3696,7 @@ psql_completion(const char *text, int start, int end)
 	else if (pg_strcasecmp(prev3_wd, "SET") == 0 &&
 			 (pg_strcasecmp(prev_wd, "TO") == 0 || strcmp(prev_wd, "=") == 0))
 	{
+		/* special cased code for individual GUCs */
 		if (pg_strcasecmp(prev2_wd, "DateStyle") == 0)
 		{
 			static const char *const my_list[] =
@@ -3601,20 +3704,6 @@ psql_completion(const char *text, int start, int end)
 				"YMD", "DMY", "MDY",
 				"US", "European", "NonEuropean",
 			"DEFAULT", NULL};
-
-			COMPLETE_WITH_LIST(my_list);
-		}
-		else if (pg_strcasecmp(prev2_wd, "IntervalStyle") == 0)
-		{
-			static const char *const my_list[] =
-			{"postgres", "postgres_verbose", "sql_standard", "iso_8601", NULL};
-
-			COMPLETE_WITH_LIST(my_list);
-		}
-		else if (pg_strcasecmp(prev2_wd, "GEQO") == 0)
-		{
-			static const char *const my_list[] =
-			{"ON", "OFF", "DEFAULT", NULL};
 
 			COMPLETE_WITH_LIST(my_list);
 		}
@@ -3627,10 +3716,34 @@ psql_completion(const char *text, int start, int end)
 		}
 		else
 		{
-			static const char *const my_list[] =
-			{"DEFAULT", NULL};
+			/* generic, type based, GUC support */
 
-			COMPLETE_WITH_LIST(my_list);
+			char	   *guctype = get_guctype(prev2_wd);
+
+			if (guctype && strcmp(guctype, "enum") == 0)
+			{
+				char		querybuf[1024];
+
+				snprintf(querybuf, 1024, Query_for_enum, prev2_wd);
+				COMPLETE_WITH_QUERY(querybuf);
+			}
+			else if (guctype && strcmp(guctype, "bool") == 0)
+			{
+				static const char *const my_list[] =
+				{"on", "off", "true", "false", "yes", "no", "1", "0", "DEFAULT", NULL};
+
+				COMPLETE_WITH_LIST(my_list);
+			}
+			else
+			{
+				static const char *const my_list[] =
+				{"DEFAULT", NULL};
+
+				COMPLETE_WITH_LIST(my_list);
+			}
+
+			if (guctype)
+				free(guctype);
 		}
 	}
 
@@ -3962,6 +4075,13 @@ psql_completion(const char *text, int start, int end)
 			COMPLETE_WITH_LIST_CS(boolean_value_list);
 		else if (strcmp(prev_wd, "QUIET") == 0)
 			COMPLETE_WITH_LIST_CS(boolean_value_list);
+		else if (strcmp(prev_wd, "SHOW_CONTEXT") == 0)
+		{
+			static const char *const my_list[] =
+			{"never", "errors", "always", NULL};
+
+			COMPLETE_WITH_LIST_CS(my_list);
+		}
 		else if (strcmp(prev_wd, "SINGLELINE") == 0)
 			COMPLETE_WITH_LIST_CS(boolean_value_list);
 		else if (strcmp(prev_wd, "SINGLESTEP") == 0)
@@ -4166,30 +4286,15 @@ _complete_from_query(int is_schema_query, const char *text, int state)
 		result = NULL;
 
 		/* Set up suitably-escaped copies of textual inputs */
-		e_text = pg_malloc(string_length * 2 + 1);
-		PQescapeString(e_text, text, string_length);
+		e_text = escape_string(text);
 
 		if (completion_info_charp)
-		{
-			size_t		charp_len;
-
-			charp_len = strlen(completion_info_charp);
-			e_info_charp = pg_malloc(charp_len * 2 + 1);
-			PQescapeString(e_info_charp, completion_info_charp,
-						   charp_len);
-		}
+			e_info_charp = escape_string(completion_info_charp);
 		else
 			e_info_charp = NULL;
 
 		if (completion_info_charp2)
-		{
-			size_t		charp_len;
-
-			charp_len = strlen(completion_info_charp2);
-			e_info_charp2 = pg_malloc(charp_len * 2 + 1);
-			PQescapeString(e_info_charp2, completion_info_charp2,
-						   charp_len);
-		}
+			e_info_charp2 = escape_string(completion_info_charp2);
 		else
 			e_info_charp2 = NULL;
 
@@ -4461,8 +4566,9 @@ complete_from_variables(const char *text, const char *prefix, const char *suffix
 		"AUTOCOMMIT", "COMP_KEYWORD_CASE", "DBNAME", "ECHO", "ECHO_HIDDEN",
 		"ENCODING", "FETCH_COUNT", "HISTCONTROL", "HISTFILE", "HISTSIZE",
 		"HOST", "IGNOREEOF", "LASTOID", "ON_ERROR_ROLLBACK", "ON_ERROR_STOP",
-		"PORT", "PROMPT1", "PROMPT2", "PROMPT3", "QUIET", "SINGLELINE",
-		"SINGLESTEP", "USER", "VERBOSITY", NULL
+		"PORT", "PROMPT1", "PROMPT2", "PROMPT3", "QUIET",
+		"SHOW_CONTEXT", "SINGLELINE", "SINGLESTEP",
+		"USER", "VERBOSITY", NULL
 	};
 
 	varnames = (char **) pg_malloc((maxvars + 1) * sizeof(char *));
@@ -4580,6 +4686,26 @@ pg_strdup_keyword_case(const char *s, const char *ref)
 
 
 /*
+ * escape_string - Escape argument for use as string literal.
+ *
+ * The returned value has to be freed.
+ */
+static char *
+escape_string(const char *text)
+{
+	size_t		text_length;
+	char	   *result;
+
+	text_length = strlen(text);
+
+	result = pg_malloc(text_length * 2 + 1);
+	PQescapeStringConn(pset.db, result, text, text_length, NULL);
+
+	return result;
+}
+
+
+/*
  * Execute a query and report any errors. This should be the preferred way of
  * talking to the database in this file.
  */
@@ -4690,6 +4816,40 @@ get_previous_words(int point, char **previous_words, int nwords)
 
 		*previous_words++ = s;
 	}
+}
+
+/*
+ * Look up the type for the GUC variable with the passed name.
+ *
+ * Returns NULL if the variable is unknown. Otherwise the returned string,
+ * containing the type, has to be freed.
+ */
+static char *
+get_guctype(const char *varname)
+{
+	PQExpBufferData query_buffer;
+	char	   *e_varname;
+	PGresult   *result;
+	char	   *guctype = NULL;
+
+	e_varname = escape_string(varname);
+
+	initPQExpBuffer(&query_buffer);
+	appendPQExpBuffer(&query_buffer,
+					  "SELECT vartype FROM pg_catalog.pg_settings "
+					  "WHERE pg_catalog.lower(name) = pg_catalog.lower('%s')",
+					  e_varname);
+
+	result = exec_query(query_buffer.data);
+	termPQExpBuffer(&query_buffer);
+	free(e_varname);
+
+	if (PQresultStatus(result) == PGRES_TUPLES_OK && PQntuples(result) > 0)
+		guctype = pg_strdup(PQgetvalue(result, 0, 0));
+
+	PQclear(result);
+
+	return guctype;
 }
 
 #ifdef NOT_USED

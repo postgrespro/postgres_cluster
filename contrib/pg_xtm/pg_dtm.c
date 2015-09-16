@@ -33,6 +33,9 @@
 
 #include "libdtm.h"
 
+#define MIN_DELAY  10000
+#define MAX_DELAY 100000
+
 void _PG_init(void);
 void _PG_fini(void);
 
@@ -50,6 +53,7 @@ static NodeId DtmNodeId;
 static DTMConn DtmConn;
 static SnapshotData DtmSnapshot = { HeapTupleSatisfiesMVCC };
 static bool DtmHasSnapshot = false;
+static bool DtmGlobalTransaction = false;
 static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmTransactionIsInProgress };
 static DTMConn DtmConn;
 
@@ -97,10 +101,12 @@ static void DtmCopySnapshot(Snapshot dst, Snapshot src)
     static TransactionId* buf;
     TransactionId prev = InvalidTransactionId;
 
-    XTM_TRACE("XTM: DtmCopySnapshot  \n");
+    XTM_TRACE("XTM: DtmCopySnapshot for transaction%u\n", GetCurrentTransactionId());
+    DumpSnapshot(dst, "local");
+    DumpSnapshot(src, "DTM");
 
     if (buf == NULL) { 
-        buf = (TransactionId *)malloc(GetMaxSnapshotSubxidCount() * sizeof(TransactionId) * 2);
+        buf = (TransactionId *)malloc(GetMaxSnapshotXidCount() * sizeof(TransactionId) * 2);
     }    
 
     GetLocalSnapshotData(dst);
@@ -121,6 +127,7 @@ static void DtmCopySnapshot(Snapshot dst, Snapshot src)
         }
     }
     dst->xcnt = j;
+    DumpSnapshot(dst, "Merged");
 }
 
 static void DtmUpdateRecentXmin(void)
@@ -140,42 +147,50 @@ static void DtmUpdateRecentXmin(void)
         if (RecentGlobalXmin > xmin) { 
             RecentGlobalXmin = xmin;
         }
-        RecentXmin = xmin;
+        //RecentXmin = xmin;
     }   
 }
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
     XTM_TRACE("XTM: DtmGetSnapshot \n");
-
-    if (DtmHasSnapshot) { 
+    snapshot = GetLocalSnapshotData(snapshot);        
+    if (DtmHasSnapshot) {  
         DtmCopySnapshot(snapshot, &DtmSnapshot);
-        DtmUpdateRecentXmin();
-    } else { 
-        snapshot = GetLocalSnapshotData(snapshot);
+        //DtmUpdateRecentXmin();
     }
     return snapshot;
 }
 
-#if 0
 static bool IsInDtmSnapshot(TransactionId xid)
 {
     return DtmHasSnapshot
-        && (/*xid > DtmSnapshot.xmax 
-              || */bsearch(&xid, DtmSnapshot.xip, DtmSnapshot.xcnt, sizeof(TransactionId), xidComparator) != NULL);
+        && (xid >= DtmSnapshot.xmax 
+            || bsearch(&xid, DtmSnapshot.xip, DtmSnapshot.xcnt, sizeof(TransactionId), xidComparator) != NULL);
 }
-#endif
 
 static bool DtmTransactionIsInProgress(TransactionId xid)
 {
+#if 0
+    if (IsInDtmSnapshot(xid)) { 
+        unsigned delay = MIN_DELAY;
+        XLogRecPtr lsn;
+        while (CLOGTransactionIdGetStatus(xid, &lsn) == TRANSACTION_STATUS_IN_PROGRESS) { 
+            pg_usleep(delay);
+            if (delay < MAX_DELAY)  { 
+                delay *= 2;
+            }
+        }
+        return false;
+    }
+#endif
     XTM_TRACE("XTM: DtmTransactionIsInProgress \n");
-    return /*IsInDtmSnapshot(xid) || */ TransactionIdIsRunning(xid);
+    return TransactionIdIsRunning(xid);// || IsInDtmSnapshot(xid);
 }
 
 static XidStatus DtmGetGloabalTransStatus(TransactionId xid)
 {
     XTM_TRACE("XTM: DtmGetGloabalTransStatus \n");
-
     while (true) { 
         XidStatus status;
         DtmEnsureConnection();
@@ -190,8 +205,13 @@ static XidStatus DtmGetGloabalTransStatus(TransactionId xid)
 
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 {
-    XTM_TRACE("XTM: DtmGetTransactionStatus \n");
+#if 0
+    if (IsInDtmSnapshot(xid)) {
+        return TRANSACTION_STATUS_IN_PROGRESS;
+    }
+#endif
     XidStatus status = CLOGTransactionIdGetStatus(xid, lsn);
+    XTM_TRACE("XTM: DtmGetTransactionStatus \n");
 #if 0
     if (status == TRANSACTION_STATUS_IN_PROGRESS) { 
         status = DtmGetGloabalTransStatus(xid);
@@ -208,15 +228,15 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 {
     XTM_TRACE("XTM: DtmSetTransactionStatus %u = %u \n", xid, status);
     if (!RecoveryInProgress()) { 
-        if (DtmHasSnapshot) { 
+        if (DtmGlobalTransaction) { 
             /* Already should be IN_PROGRESS */
             /* CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_IN_PROGRESS, lsn); */
 
             DtmHasSnapshot = false;
+            DtmGlobalTransaction = false;
             DtmEnsureConnection();
             if (!DtmGlobalSetTransStatus(DtmConn, DtmNodeId, xid, status) && status != TRANSACTION_STATUS_ABORTED) { 
                 elog(ERROR, "DTMD failed to set transaction status");
-                // elog(WARNING, "DTMD failed to set transaction status");
             }
             status = DtmGetGloabalTransStatus(xid);
             Assert(status == TRANSACTION_STATUS_ABORTED || status == TRANSACTION_STATUS_COMMITTED);
@@ -282,11 +302,12 @@ dtm_begin_transaction(PG_FUNCTION_ARGS)
     gtid.xids = (TransactionId*)ARR_DATA_PTR(xids);
     gtid.nodes = (NodeId*)ARR_DATA_PTR(nodes);
     gtid.nNodes = ArrayGetNItems(ARR_NDIM(nodes), ARR_DIMS(nodes));    
-
+    DtmGlobalTransaction = true;
     XTM_TRACE("XTM: dtm_begin_transaction \n");
-
-    DtmEnsureConnection();
-    DtmGlobalStartTransaction(DtmConn, &gtid);
+    if (DtmNodeId == gtid.nodes[0]) { 
+        DtmEnsureConnection();
+        DtmGlobalStartTransaction(DtmConn, &gtid);
+    }
 	PG_RETURN_VOID();
 }
 
@@ -299,7 +320,9 @@ dtm_get_snapshot(PG_FUNCTION_ARGS)
     XTM_TRACE("XTM: dtm_get_snapshot \n");
 
     /* Move it to DtmGlobalGetSnapshot? */
+    Assert(!DtmHasSnapshot);
     DtmHasSnapshot = true;
+    DtmGlobalTransaction = true;
 	PG_RETURN_VOID();
 }
 
