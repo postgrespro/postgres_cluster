@@ -77,8 +77,8 @@ func prepare_db() {
     exec(conn2, "select dtm_begin_transaction($1, $2)", nodes, xids)
     
     // first global statement 
-    exec(conn1, "select dtm_get_snapshot()")
-    exec(conn2, "select dtm_get_snapshot()")
+    //exec(conn1, "select dtm_get_snapshot()")
+    //exec(conn2, "select dtm_get_snapshot()")
     
     for i := 0; i < N_ACCOUNTS; i++ {
         exec(conn1, "insert into t values($1, $2)", i, INIT_AMOUNT)
@@ -126,8 +126,8 @@ func transfer(id int, wg *sync.WaitGroup) {
         exec(conn2, "select dtm_begin_transaction($1, $2)", nodes, xids)
         
         // first global statement 
-        exec(conn1, "select dtm_get_snapshot()")
-        exec(conn2, "select dtm_get_snapshot()")
+        // exec(conn1, "select dtm_get_snapshot()")
+        // exec(conn2, "select dtm_get_snapshot()")
         
         exec(conn1, "update t set v = v + $1 where u=$2", amount, account1)
         exec(conn2, "update t set v = v - $1 where u=$2", amount, account2)

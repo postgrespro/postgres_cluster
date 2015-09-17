@@ -45,8 +45,9 @@ static void DtmCopySnapshot(Snapshot dst, Snapshot src);
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 static void DtmUpdateRecentXmin(void);
-// static bool IsInDtmSnapshot(TransactionId xid);
 static bool DtmTransactionIsInProgress(TransactionId xid);
+static bool TransactionIdIsInDtmSnapshot(Snapshot s, TransactionId xid);
+static bool TransactionIdIsInDoubt(Snapshot s, TransactionId xid);
 
 static NodeId DtmNodeId;
 static DTMConn DtmConn;
@@ -58,7 +59,7 @@ static DTMConn DtmConn;
 
 #define XTM_TRACE(fmt, ...) 
 //#define XTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
-#define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
+#define XTM_INFO(fmt, ...) elog(WARNING, fmt, ## __VA_ARGS__)
 #define XTM_CONNECT_ATTEMPTS 10
 
 static void DtmEnsureConnection(void)
@@ -96,24 +97,26 @@ static void DumpSnapshot(Snapshot s, char *name)
 	XTM_INFO("%s\n", buf);
 }
 
-static bool IsInSnapshot(Snapshot s, TransactionId xid)
+static bool TransactionIdIsInDtmSnapshot(Snapshot s, TransactionId xid)
 {
-    int i;
-    if (xid < s->xmin) { 
-        return false;
-    }
-    if (xid >= s->xmax) { 
-        return true;
-    }
-    for (i = 0; i < s->xcnt; i++) {
-        if (s->xip[i] == xid) { 
+    return xid >= s->xmax 
+        || bsearch(&xid, s->xip, s->xcnt, sizeof(TransactionId), xidComparator) != NULL;
+}
+
+static bool TransactionIdIsInDoubt(Snapshot s, TransactionId xid)
+{
+    if (!TransactionIdIsInDtmSnapshot(s, xid)) {
+        XLogRecPtr lsn;
+        XidStatus status = CLOGTransactionIdGetStatus(xid, &lsn);
+        if (status != TRANSACTION_STATUS_IN_PROGRESS) { 
+            XTM_INFO("Wait for transaction %d to complete\n", xid);
+            XactLockTableWait(xid, NULL, NULL, XLTW_None);
             return true;
         }
     }
     return false;
 }
-
-
+ 
 static void DtmCopySnapshot(Snapshot dst, Snapshot src)
 {
     int i, j, n;
@@ -129,33 +132,21 @@ static void DtmCopySnapshot(Snapshot dst, Snapshot src)
 
     Assert(TransactionIdIsValid(src->xmin) && TransactionIdIsValid(src->xmax));
 
+    /* Check that globall competed transactions are not included in local snapshot */
   RefreshLocalSnapshot:
     GetLocalSnapshotData(dst);
-    xid = src->xmin < dst->xmin ? src->xmin : dst->xmin;
-    for (i = 0; i < src->xcnt; i++) { 
-        while (src->xip[i] > xid) { /* XID is completed according to global snapshot... */
-            if (IsInSnapshot(dst, xid)) { /* ...but still marked as running in local snapshot */
-                pg_usleep(MIN_DELAY);
-                goto RefreshLocalSnapshot;
-            } else {
-                xid += 1; /* XID is also marked completed in local snapshot */
-            }
-        } 
-        /* XID is considered as running in global snapshot */
-        /* doesn't matter what local snapshot thinks about it */
-        xid = src->xip[i]+1;
-    }
-    while (xid < src->xmax) { 
-        if (IsInSnapshot(dst, xid)) { /* ...but still marked as running in local snapshot */
-            pg_usleep(MIN_DELAY);
+    for (i = 0; i < dst->xcnt; i++) {
+        if (TransactionIdIsInDoubt(src, dst->xip[i])) {
             goto RefreshLocalSnapshot;
-        } else {
-            xid += 1; /* XID is also marked completed in local snapshot */
         }
-    } 
-    /* At this point we are sure that all transactions marked as completed in global snapshot are also finished locally */
+    }
+    for (xid = dst->xmax; xid < src->xmax; xid++) { 
+        if (TransactionIdIsInDoubt(src, xid)) {
+            goto RefreshLocalSnapshot;
+        }
+    }
 
-    /* merge two snapshots: produce most restrictive snapshots whihc includes running transactions from both of them */
+    /* Merge two snapshots: produce most restrictive snapshots whihc includes running transactions from both of them */
     if (dst->xmin > src->xmin) { 
         dst->xmin = src->xmin;
     }
@@ -233,6 +224,8 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
             DtmHasSnapshot = false;
             DtmGlobalTransaction = false;
             DtmEnsureConnection();
+            XTM_INFO("Begin commit transaction %d\n", xid);
+            CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_COMMITTED, lsn);
             if (!DtmGlobalSetTransStatus(DtmConn, DtmNodeId, xid, status, true) && status != TRANSACTION_STATUS_ABORTED) { 
                 elog(ERROR, "DTMD failed to set transaction status");
             }
