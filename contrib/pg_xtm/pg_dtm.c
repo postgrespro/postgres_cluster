@@ -233,12 +233,10 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
             DtmHasSnapshot = false;
             DtmGlobalTransaction = false;
             DtmEnsureConnection();
-            if (!DtmGlobalSetTransStatus(DtmConn, DtmNodeId, xid, status) && status != TRANSACTION_STATUS_ABORTED) { 
+            if (!DtmGlobalSetTransStatus(DtmConn, DtmNodeId, xid, status, true) && status != TRANSACTION_STATUS_ABORTED) { 
                 elog(ERROR, "DTMD failed to set transaction status");
             }
-            status = DtmGlobalGetTransStatus(DtmConn, DtmNodeId, xid, true);
             XTM_INFO("Commit transaction %d\n", xid);
-            Assert(status == TRANSACTION_STATUS_ABORTED || status == TRANSACTION_STATUS_COMMITTED);
         } else {
             elog(WARNING, "Set transaction %u status in local CLOG" , xid);
         }

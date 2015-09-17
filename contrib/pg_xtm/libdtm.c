@@ -245,16 +245,19 @@ bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapsho
 // Commits transaction only once all participants have called this function,
 // does not change CLOG otherwise. Returns 'true' on success, 'false' if
 // something failed on the daemon side.
-bool DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidStatus status)
+bool DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidStatus status, bool wait)
 {
 	bool ok;
 	switch (status) {
 		case TRANSACTION_STATUS_COMMITTED:
 			// query
-			if (!dtm_query(dtm, 'c', 2, nodeid, xid)) return false;
+			if (!dtm_query(dtm, 'c', 3, nodeid, xid, wait)) return false;
 			break;
 		case TRANSACTION_STATUS_ABORTED:
 			// query
+			if (wait) {
+				fprintf(stderr, "'wait' is ignored for aborts\n");
+			}
 			if (!dtm_query(dtm, 'a', 2, nodeid, xid)) return false;
 			break;
 		default:

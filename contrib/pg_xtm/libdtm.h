@@ -39,7 +39,7 @@ bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapsho
 // Commits transaction only once all participants have called this function,
 // does not change CLOG otherwise. Returns 'true' on success, 'false' if
 // something failed on the daemon side.
-bool DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidStatus status);
+bool DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidStatus status, bool wait);
 
 // Gets the status of the transaction identified by 'xid'. Returns the status
 // on success, or -1 otherwise. If 'wait' is true, then it does not return

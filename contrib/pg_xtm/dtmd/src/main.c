@@ -33,6 +33,24 @@ static client_data_t *create_client_data(int id) {
 }
 
 clog_t clg;
+static bool queue_for_transaction_finish(void *stream, void *clientdata, int node, xid_t xid, char cmd);
+static void free_client_data(client_data_t *cd);
+static void onconnect(void *stream, void **clientdata);
+static void ondisconnect(void *stream, void *clientdata);
+static char *onbegin(void *stream, void *clientdata, cmd_t *cmd);
+static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote);
+static char *oncommit(void *stream, void *clientdata, cmd_t *cmd);
+static char *onabort(void *stream, void *clientdata, cmd_t *cmd);
+static void gen_snapshot(Snapshot *s, int node);
+static void gen_snapshots(GlobalTransaction *gt);
+static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd);
+static bool queue_for_transaction_finish(void *stream, void *clientdata, int node, xid_t xid, char cmd);
+static char *onstatus(void *stream, void *clientdata, cmd_t *cmd);
+static char *onnoise(void *stream, void *clientdata, cmd_t *cmd);
+static char *oncmd(void *stream, void *clientdata, cmd_t *cmd);
+static char *destructive_concat(char *a, char *b);
+static char *ondata(void *stream, void *clientdata, size_t len, char *data);
+static void usage(char *prog);
 
 #define CLIENT_ID(X) (((client_data_t*)(X))->id)
 #define CLIENT_PARSER(X) (((client_data_t*)(X))->parser)
@@ -157,22 +175,22 @@ static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
 static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 	assert((vote == POSITIVE) || (vote == NEGATIVE));
 
-	if (cmd->argc != 2) {
-		shout(
-			"[%d] VOTE: wrong number of arguments\n",
-			CLIENT_ID(clientdata)
-		);
-		return strdup("-");
-	}
-
 	int node = cmd->argv[0];
 	xid_t xid = cmd->argv[1];
+	bool wait = (vote == POSITIVE) ? cmd->argv[2] : false;
 	if (node >= MAX_NODES) {
 		shout(
 			"[%d] VOTE: voted about a wrong 'node' (%d)\n",
 			CLIENT_ID(clientdata), node
 		);
 		return strdup("-");
+	}
+
+	if ((vote == NEGATIVE) && wait) {
+		shout(
+			"[%d] VOTE: 'wait' is ignored for NEGATIVE votes\n",
+			CLIENT_ID(clientdata)
+		);
 	}
 
 	int i;
@@ -203,18 +221,14 @@ static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 	switch (global_transaction_status(transactions + i)) {
 		case NEGATIVE:
 			if (global_transaction_mark(clg, transactions + i, NEGATIVE)) {
-				//shout(
-				//	"[%d] VOTE: global transaction aborted\n",
-				//	CLIENT_ID(clientdata)
-				//);
-
 				void *listener;
-				while ((listener = global_transaction_pop_listener(transactions + i))) {
-					//shout(
-					//	"[%d] VOTE: notifying a listener\n",
-					//	CLIENT_ID(clientdata)
-					//);
+				while ((listener = global_transaction_pop_listener(transactions + i, 's'))) {
+					// notify 'status' listeners about the aborted status
 					write_to_stream(listener, strdup("+a"));
+				}
+				while ((listener = global_transaction_pop_listener(transactions + i, 'c'))) {
+					// notify 'commit' listeners about the failure
+					write_to_stream(listener, strdup("-"));
 				}
 
 				transactions[i] = transactions[transactions_count - 1];
@@ -230,7 +244,18 @@ static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 			}
 		case DOUBT:
 			//shout("[%d] VOTE: vote counted\n", CLIENT_ID(clientdata));
-			return strdup("+");
+			if (wait) {
+				if (!queue_for_transaction_finish(stream, clientdata, node, xid, 'c')) {
+					shout(
+						"[%d] VOTE: couldn't queue for transaction finish\n",
+						CLIENT_ID(clientdata)
+					);
+					return strdup("-");
+				}
+				return NULL;
+			} else {
+				return strdup("+");
+			}
 		case POSITIVE:
 			if (global_transaction_mark(clg, transactions + i, POSITIVE)) {
 				//shout(
@@ -239,12 +264,13 @@ static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 				//);
 
 				void *listener;
-				while ((listener = global_transaction_pop_listener(transactions + i))) {
-					//shout(
-					//	"[%d] VOTE: notifying a listener\n",
-					//	CLIENT_ID(clientdata)
-					//);
+				while ((listener = global_transaction_pop_listener(transactions + i, 's'))) {
+					// notify 'status' listeners about the committed status
 					write_to_stream(listener, strdup("+c"));
+				}
+				while ((listener = global_transaction_pop_listener(transactions + i, 'c'))) {
+					// notify 'commit' listeners about the success
+					write_to_stream(listener, strdup("+"));
 				}
 
 				transactions[i] = transactions[transactions_count - 1];
@@ -265,10 +291,26 @@ static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 }
 
 static char *oncommit(void *stream, void *clientdata, cmd_t *cmd) {
+	if (cmd->argc != 3) {
+		shout(
+			"[%d] COMMIT: wrong number of arguments\n",
+			CLIENT_ID(clientdata)
+		);
+		return strdup("-");
+	}
+
 	return onvote(stream, clientdata, cmd, POSITIVE);
 }
 
 static char *onabort(void *stream, void *clientdata, cmd_t *cmd) {
+	if (cmd->argc != 2) {
+		shout(
+			"[%d] ABORT: wrong number of arguments\n",
+			CLIENT_ID(clientdata)
+		);
+		return strdup("-");
+	}
+
 	return onvote(stream, clientdata, cmd, NEGATIVE);
 }
 
@@ -342,7 +384,8 @@ static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd) {
 	return snapshot_serialize(&t->snapshot);
 }
 
-static bool queue_for_transaction_finish(void *stream, void *clientdata, int node, xid_t xid) {
+static bool queue_for_transaction_finish(void *stream, void *clientdata, int node, xid_t xid, char cmd) {
+	assert((cmd >= 'a') && (cmd <= 'z'));
 	int i;
 	for (i = 0; i < transactions_count; i++) {
 		Transaction *t = transactions[i].participants + node;
@@ -359,7 +402,7 @@ static bool queue_for_transaction_finish(void *stream, void *clientdata, int nod
 		return false;
 	}
 
-	global_transaction_push_listener(transactions + i, stream);
+	global_transaction_push_listener(transactions + i, cmd, stream);
 	return true;
 }
 
@@ -392,7 +435,7 @@ static char *onstatus(void *stream, void *clientdata, cmd_t *cmd) {
 			return strdup("+a");
 		case DOUBT:
 			if (wait) {
-				if (!queue_for_transaction_finish(stream, clientdata, node, xid)) {
+				if (!queue_for_transaction_finish(stream, clientdata, node, xid, 's')) {
 					shout(
 						"[%d] STATUS: couldn't queue for transaction finish\n",
 						CLIENT_ID(clientdata)
@@ -455,7 +498,7 @@ static char *oncmd(void *stream, void *clientdata, cmd_t *cmd) {
 	return result;
 }
 
-char *destructive_concat(char *a, char *b) {
+static char *destructive_concat(char *a, char *b) {
 	if ((a == NULL) && (b == NULL)) {
 		return NULL;
 	}
@@ -477,7 +520,7 @@ char *destructive_concat(char *a, char *b) {
 	return c;
 }
 
-char *ondata(void *stream, void *clientdata, size_t len, char *data) {
+static char *ondata(void *stream, void *clientdata, size_t len, char *data) {
 	int i;
 	parser_t parser = CLIENT_PARSER(clientdata);
 	char *response = NULL;
@@ -519,7 +562,7 @@ char *ondata(void *stream, void *clientdata, size_t len, char *data) {
 	return response;
 }
 
-void usage(char *prog) {
+static void usage(char *prog) {
 	printf("Usage: %s [-d DATADIR] [-a HOST] [-p PORT]\n", prog);
 }
 

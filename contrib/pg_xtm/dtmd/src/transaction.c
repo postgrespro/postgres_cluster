@@ -61,22 +61,26 @@ void global_transaction_clear(GlobalTransaction *gt) {
 	for (i = 0; i < MAX_NODES; i++) {
 		gt->participants[i].active = false;
 	}
-	gt->listener = NULL;
+	for (i = 'a'; i <= 'z'; i++) {
+		gt->listeners[CHAR_TO_INDEX(i)] = NULL;
+	}
 }
 
-void global_transaction_push_listener(GlobalTransaction *gt, void *stream) {
+void global_transaction_push_listener(GlobalTransaction *gt, char cmd, void *stream) {
+	assert((cmd >= 'a') && (cmd <= 'z'));
 	list_node_t *n = malloc(sizeof(list_node_t));
 	n->value = stream;
-	n->next = gt->listener;
-	gt->listener = n;
+	n->next = gt->listeners[CHAR_TO_INDEX(cmd)];
+	gt->listeners[CHAR_TO_INDEX(cmd)] = n;
 }
 
-void *global_transaction_pop_listener(GlobalTransaction *gt) {
-	if (!gt->listener) {
+void *global_transaction_pop_listener(GlobalTransaction *gt, char cmd) {
+	assert((cmd >= 'a') && (cmd <= 'z'));
+	if (!gt->listeners[CHAR_TO_INDEX(cmd)]) {
 		return NULL;
 	}
-	list_node_t *n = gt->listener;
-	gt->listener = n->next;
+	list_node_t *n = gt->listeners[CHAR_TO_INDEX(cmd)];
+	gt->listeners[CHAR_TO_INDEX(cmd)] = n->next;
 	void *value = n->value;
 	free(n);
 	return value;

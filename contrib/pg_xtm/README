@@ -24,7 +24,13 @@ Coordinator-Backend API
 This API includes a set of postgres procedures that
 the coordinator can call with "select" statement.
 
-FIXME: document the API
+-- Informs the DTM about a global transaction
+-- identified by the corresponding pairs of node:xid values.
+dtm_begin_transaction(nodes integer[], xids integer[]) RETURNS void
+
+-- Causes the backend to get a snapshot from the DTM
+-- and merge it with the local snapshot.
+dtm_get_snapshot() RETURNS void
 
 ----------
 libdtm api
@@ -69,27 +75,66 @@ XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid,
 Backend-DTM Protocol
 --------------------
 
-DTM <--> Backend:
+The queries from backend to DTM should be formatted according to this syntax.
 
-<-   'b'<hex16 self> - "begin"
-  -> '+'<hex16 gxid> - "transaction started"
-  -> '-'             - "something went wrong"
+	<char cmd><hex16 argc><hex16 argv[0]><hex16 argv[1]>...
 
-<-   'c'<hex16 gxid> - "commit"
-  -> '+'             - "commit saved"
-  -> '-'             - "something went wrong"
+<cmd> is a character representing a command.
+<argc> is the number of arguments.
+<argv[i]> are the arguments.
 
-<-   'a'<hex16 gxid> - "abort"
-  -> '+'             - "abort saved"
-  -> '-'             - "something went wrong"
+The commands:
 
-<-   'h'             - "snapshot"
-  -> '+'<snapshot>   - "here is a fresh snapshot for you"
-  -> '-'             - "something went wrong"
+'b': begin(size, node0, xid0, node1, xid1, ...)
+	Starts a global transaction using 'xid0' on 'node0', 'xid1' on 'node1'
+	and so on. The 'size' is the number of nodes, so for example if 'size'
+	== 3 there are 6 values expected after it.
+	
+	The DTM replies with '+' if transaction started, or '-' if failed.
 
-<-   's'<hex16 gxid> - "status"
-  -> '+''0|c|a|?'    - "here is the transaction status"
-                       (0)unknown, (c)committed, (a)aborted, or (?)inprogress
-  -> '-'             - "something went wrong"
+'c': commit(node, xid, wait)
+	Tells the DTM to vote for commit of the global transaction identified
+	by the given 'node:xid' pair.
 
-<snapshot> = <hex16 xmin><hex16 xmax><hex16 n><hex16 active[n]>
+	The DTM replies with '+' if committed, or '-' if aborted or failed.
+
+	If 'wait' is true, DTM will not reply until it considers the
+	transaction finished (all nodes committed, or at least one aborted).
+
+'a': abort(node, xid)
+	Tells the DTM to vote againts commit of the global transaction
+	identified by the given 'node:xid' pair. This query not have the 'wait'
+	parameter, because the DTM will not wait for all votes if one is
+	against the commit.
+
+	The DTM replies with '+' if aborted, or '-' if failed. The backend
+	probably should ignore this reply anyway :)
+
+'h': snapshot(node, xid)
+	Tells the DTM to give a snapshot for the global transaction identified
+	by the given 'node:xid' pair. The DTM will create a snapshot for every
+	participant, so when they ask for the snapshot it will reply with the
+	"same" snapshot. When a node asks for a snapshot once again, the DTM
+	generates a fresh version for every participant. So be careful not to
+	ask for a snapshot from the same node the second time, until all other
+	nodes also ask for that snapshot.
+
+	The DTM replies with '+' followed by a snapshot in the form:
+
+		<hex16 xmin><hex16 xmax><hex16 xcnt><hex16 xip[0]>...
+
+	In case of a failure, the DTM replies with '-'.
+
+'s': status(node, xid, wait)
+	Asks the DTM about the status of the global transaction identified
+	by the given 'node:xid' pair.
+
+	The DTM replies with:
+		"+0" if not started;
+		"+c" if committed;
+		"+a" if aborted;
+		"+?" if in progress;
+		'-' if failed.
+
+	If 'wait' is true, DTM will not reply until it considers the
+	transaction finished (all nodes committed, or at least one aborted).
