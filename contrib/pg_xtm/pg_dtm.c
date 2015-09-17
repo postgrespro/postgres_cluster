@@ -184,7 +184,7 @@ static void DtmUpdateRecentXmin(void)
         if (RecentGlobalXmin > xmin) { 
             RecentGlobalXmin = xmin;
         }
-        //RecentXmin = xmin;
+        RecentXmin = xmin;
     }   
 }
 
