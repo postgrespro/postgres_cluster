@@ -44,7 +44,7 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static void DtmCopySnapshot(Snapshot dst, Snapshot src);
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
-static XidStatus DtmGetGloabalTransStatus(TransactionId xid);
+static XidStatus DtmGetGlobalTransStatus(TransactionId xid);
 static void DtmUpdateRecentXmin(void);
 // static bool IsInDtmSnapshot(TransactionId xid);
 static bool DtmTransactionIsInProgress(TransactionId xid);
@@ -188,9 +188,9 @@ static bool DtmTransactionIsInProgress(TransactionId xid)
     return TransactionIdIsRunning(xid);// || IsInDtmSnapshot(xid);
 }
 
-static XidStatus DtmGetGloabalTransStatus(TransactionId xid)
+static XidStatus DtmGetGlobalTransStatus(TransactionId xid)
 {
-    XTM_TRACE("XTM: DtmGetGloabalTransStatus \n");
+    XTM_TRACE("XTM: DtmGetGlobalTransStatus \n");
     while (true) { 
         XidStatus status;
         DtmEnsureConnection();
@@ -214,7 +214,7 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
     XTM_TRACE("XTM: DtmGetTransactionStatus \n");
 #if 0
     if (status == TRANSACTION_STATUS_IN_PROGRESS) { 
-        status = DtmGetGloabalTransStatus(xid);
+        status = DtmGetGlobalTransStatus(xid);
         if (status == TRANSACTION_STATUS_UNKNOWN) { 
             status = TRANSACTION_STATUS_IN_PROGRESS;
         }
@@ -238,13 +238,13 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
             if (!DtmGlobalSetTransStatus(DtmConn, DtmNodeId, xid, status) && status != TRANSACTION_STATUS_ABORTED) { 
                 elog(ERROR, "DTMD failed to set transaction status");
             }
-            status = DtmGetGloabalTransStatus(xid);
+            status = DtmGetGlobalTransStatus(xid);
             Assert(status == TRANSACTION_STATUS_ABORTED || status == TRANSACTION_STATUS_COMMITTED);
         } else {
             elog(WARNING, "Set transaction %u status in local CLOG" , xid);
         }
     } else { 
-        XidStatus gs = DtmGetGloabalTransStatus(xid);
+        XidStatus gs = DtmGetGlobalTransStatus(xid);
         if (gs != TRANSACTION_STATUS_UNKNOWN) { 
             status = gs;
         }
