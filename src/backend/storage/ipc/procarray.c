@@ -965,7 +965,7 @@ ProcArrayApplyXidAssignment(TransactionId topxid,
 bool
 TransactionIdIsInProgress(TransactionId xid)
 {
-    TM->IsInProgress(xid);
+    return TM->IsInProgress(xid);
 }
 
 /*
