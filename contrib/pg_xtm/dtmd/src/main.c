@@ -25,15 +25,9 @@ typedef struct client_data_t {
 	parser_t parser;
 } client_data_t;
 
-static client_data_t *create_client_data(int id) {
-	client_data_t *cd = malloc(sizeof(client_data_t));
-	cd->id = id;
-	cd->parser = parser_create();
-	return cd;
-}
-
 clog_t clg;
 static bool queue_for_transaction_finish(void *stream, void *clientdata, int node, xid_t xid, char cmd);
+static client_data_t *create_client_data(int id);
 static void free_client_data(client_data_t *cd);
 static void onconnect(void *stream, void **clientdata);
 static void ondisconnect(void *stream, void *clientdata);
@@ -54,6 +48,13 @@ static void usage(char *prog);
 
 #define CLIENT_ID(X) (((client_data_t*)(X))->id)
 #define CLIENT_PARSER(X) (((client_data_t*)(X))->parser)
+
+static client_data_t *create_client_data(int id) {
+	client_data_t *cd = malloc(sizeof(client_data_t));
+	cd->id = id;
+	cd->parser = parser_create();
+	return cd;
+}
 
 static void free_client_data(client_data_t *cd) {
 	parser_destroy(cd->parser);
