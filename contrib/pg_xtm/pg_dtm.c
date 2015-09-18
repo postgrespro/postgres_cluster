@@ -33,8 +33,14 @@
 
 #include "libdtm.h"
 
-#define MIN_DELAY  10000
-#define MAX_DELAY 100000
+typedef struct  
+{	
+    LWLockId	lock; /* protect access to hash table */
+} DtmState;
+
+
+#define DTM_SHMEM_SIZE (1024*1024)
+#define DTM_HASH_SIZE  1003
 
 void _PG_init(void);
 void _PG_fini(void);
@@ -45,8 +51,18 @@ static void DtmCopySnapshot(Snapshot dst, Snapshot src);
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 static void DtmUpdateRecentXmin(void);
+static void DtmInitialize();
+static void DtmXactCallback(XactEvent event, void *arg);
+
 static bool TransactionIdIsInDtmSnapshot(Snapshot s, TransactionId xid);
 static bool TransactionIdIsInDoubt(Snapshot s, TransactionId xid);
+
+static void dtm_shmem_startup(void);
+
+static shmem_startup_hook_type prev_shmem_startup_hook;
+static HTAB* xid_in_doubt;
+static DtmState* dtm;
+static TransactionId DtmCurrentXid = InvalidTransactionId;
 
 static NodeId DtmNodeId;
 static DTMConn DtmConn;
@@ -105,10 +121,13 @@ static bool TransactionIdIsInDtmSnapshot(Snapshot s, TransactionId xid)
 
 static bool TransactionIdIsInDoubt(Snapshot s, TransactionId xid)
 {
+    bool inDoubt;
+
     if (!TransactionIdIsInDtmSnapshot(s, xid)) {
-        XLogRecPtr lsn;
-        XidStatus status = CLOGTransactionIdGetStatus(xid, &lsn);
-        if (status != TRANSACTION_STATUS_IN_PROGRESS) { 
+        LWLockAcquire(dtm->lock, LW_SHARED); 
+        inDoubt = hash_search(xid_in_doubt, &xid, HASH_FIND, NULL) != NULL;
+        LWLockRelease(dtm->lock);
+        if (inDoubt) {
             XTM_INFO("Wait for transaction %d to complete\n", xid);
             XactLockTableWait(xid, NULL, NULL, XLTW_None);
             return true;
@@ -191,7 +210,7 @@ static void DtmUpdateRecentXmin(void)
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
     XTM_TRACE("XTM: DtmGetSnapshot \n");
-    if (DtmGlobalTransaction && !DtmHasSnapshot) { 
+    if (DtmGlobalTransaction/* && !DtmHasSnapshot*/) { 
         DtmHasSnapshot = true;
         DtmEnsureConnection();
         DtmGlobalGetSnapshot(DtmConn, DtmNodeId, GetCurrentTransactionId(), &DtmSnapshot);
@@ -224,7 +243,12 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
             DtmGlobalTransaction = false;
             DtmEnsureConnection();
             XTM_INFO("Begin commit transaction %d\n", xid);
-            CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_COMMITTED, lsn);
+
+            DtmCurrentXid = xid;
+            LWLockAcquire(dtm->lock, LW_EXCLUSIVE);
+            hash_search(xid_in_doubt, &DtmCurrentXid, HASH_ENTER, NULL);
+            LWLockRelease(dtm->lock);
+
             if (!DtmGlobalSetTransStatus(DtmConn, DtmNodeId, xid, status, true) && status != TRANSACTION_STATUS_ABORTED) { 
                 elog(ERROR, "DTMD failed to set transaction status");
             }
@@ -243,6 +267,54 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
     CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
 }
 
+static uint32 dtm_xid_hash_fn(const void *key, Size keysize)
+{
+	return (uint32)*(TransactionId*)key;
+}
+
+static int dtm_xid_match_fn(const void *key1, const void *key2, Size keysize)
+{
+	return *(TransactionId*)key1 - *(TransactionId*)key2;
+}
+
+
+static void DtmInitialize()
+{
+	bool found;
+	static HASHCTL info;
+
+	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
+	dtm = ShmemInitStruct("dtm", sizeof(DtmState), &found);    
+	if (!found)
+	{ 
+        dtm->lock = LWLockAssign();
+    }
+	LWLockRelease(AddinShmemInitLock);
+
+	info.keysize = sizeof(TransactionId);
+	info.entrysize = sizeof(TransactionId);
+	info.hash = dtm_xid_hash_fn;
+	info.match = dtm_xid_match_fn;
+	xid_in_doubt = ShmemInitHash("xid_in_doubt", DTM_HASH_SIZE, DTM_HASH_SIZE,
+                                 &info,
+                                 HASH_ELEM | HASH_FUNCTION | HASH_COMPARE);
+    
+	RegisterXactCallback(DtmXactCallback, NULL);
+
+    TM = &DtmTM;
+}
+
+static void
+DtmXactCallback(XactEvent event, void *arg)
+{
+	if (event == XACT_EVENT_COMMIT && DtmCurrentXid != InvalidTransactionId) {
+        LWLockAcquire(dtm->lock, LW_EXCLUSIVE); 
+        hash_search(xid_in_doubt, &DtmCurrentXid, HASH_REMOVE, NULL);
+        LWLockRelease(dtm->lock);
+    }
+}
+
+
 /*
  *  ***************************************************************************
  */
@@ -250,8 +322,25 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 void
 _PG_init(void)
 {
-    TM = &DtmTM;
+	/*
+	 * In order to create our shared memory area, we have to be loaded via
+	 * shared_preload_libraries.  If not, fall out without hooking into any of
+	 * the main system.  (We don't throw error here because it seems useful to
+	 * allow the cs_* functions to be created even when the
+	 * module isn't active.  The functions must protect themselves against
+	 * being called then, however.)
+	 */
+	if (!process_shared_preload_libraries_in_progress)
+		return;
 
+	/*
+	 * Request additional shared resources.  (These are no-ops if we're not in
+	 * the postmaster process.)  We'll allocate or attach to the shared
+	 * resources in imcs_shmem_startup().
+	 */
+	RequestAddinShmemSpace(DTM_SHMEM_SIZE);
+	RequestAddinLWLocks(1);
+ 
 	DefineCustomIntVariable("dtm.node_id",
                             "Identifier of node in distributed cluster for DTM",
 							NULL,
@@ -264,6 +353,12 @@ _PG_init(void)
 							NULL,
 							NULL,
 							NULL);
+
+	/*
+	 * Install hooks.
+	 */
+	prev_shmem_startup_hook = shmem_startup_hook;
+	shmem_startup_hook = dtm_shmem_startup;
 }
 
 /*
@@ -272,6 +367,16 @@ _PG_init(void)
 void
 _PG_fini(void)
 {
+	shmem_startup_hook = prev_shmem_startup_hook;
+}
+
+
+static void dtm_shmem_startup(void)
+{
+	if (prev_shmem_startup_hook) {
+		prev_shmem_startup_hook();
+    }
+	DtmInitialize();
 }
 
 /*
