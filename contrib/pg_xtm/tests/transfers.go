@@ -3,7 +3,7 @@ package main
 import (
     "fmt"
     "sync"
-    "math/rand"
+//    "math/rand"
     "github.com/jackc/pgx"
 )
 
@@ -107,8 +107,8 @@ func transfer(id int, wg *sync.WaitGroup) {
     for i := 0; i < N_ITERATIONS; i++ {
         //amount := 2*rand.Intn(2) - 1
         amount := 1
-        account1 := rand.Intn(N_ACCOUNTS) 
-        account2 := rand.Intn(N_ACCOUNTS)
+        account1 := id//rand.Intn(N_ACCOUNTS) 
+        account2 := id//rand.Intn(N_ACCOUNTS)
 
         // strt transaction
         exec(conn1, "begin")

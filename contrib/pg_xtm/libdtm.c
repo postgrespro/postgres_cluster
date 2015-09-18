@@ -97,10 +97,8 @@ DTMConn DtmConnect(char *host, int port) {
 			continue;
 		}
 
-		#ifdef NODELAY
 		int one = 1;
 		setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
-		#endif
 
 		if (connect(sock, a->ai_addr, a->ai_addrlen) == -1) {
 			perror("failed to connect to an address");

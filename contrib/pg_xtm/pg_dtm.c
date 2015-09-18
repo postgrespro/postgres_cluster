@@ -45,7 +45,6 @@ static void DtmCopySnapshot(Snapshot dst, Snapshot src);
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 static void DtmUpdateRecentXmin(void);
-static bool DtmTransactionIsInProgress(TransactionId xid);
 static bool TransactionIdIsInDtmSnapshot(Snapshot s, TransactionId xid);
 static bool TransactionIdIsInDoubt(Snapshot s, TransactionId xid);
 
@@ -54,7 +53,7 @@ static DTMConn DtmConn;
 static SnapshotData DtmSnapshot = { HeapTupleSatisfiesMVCC };
 static bool DtmHasSnapshot = false;
 static bool DtmGlobalTransaction = false;
-static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmTransactionIsInProgress };
+static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot };
 static DTMConn DtmConn;
 
 #define XTM_TRACE(fmt, ...) 
@@ -206,12 +205,6 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 }
 
 
-static bool DtmTransactionIsInProgress(TransactionId xid)
-{
-    XTM_TRACE("XTM: DtmTransactionIsInProgress \n");
-    return TransactionIdIsRunning(xid);// || (DtmHasSnapshot && TransactionIdIsInDtmSnapshot(&DtmSnapshot, xid));
-}
-
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 {
     XidStatus status = CLOGTransactionIdGetStatus(xid, lsn);
@@ -288,7 +281,6 @@ _PG_fini(void)
 PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(dtm_begin_transaction);
-PG_FUNCTION_INFO_V1(dtm_get_snapshot);
 
 Datum
 dtm_begin_transaction(PG_FUNCTION_ARGS)
@@ -308,16 +300,3 @@ dtm_begin_transaction(PG_FUNCTION_ARGS)
     }
 	PG_RETURN_VOID();
 }
-
-Datum
-dtm_get_snapshot(PG_FUNCTION_ARGS)
-{
-    DtmEnsureConnection();
-    DtmGlobalGetSnapshot(DtmConn, DtmNodeId, GetCurrentTransactionId(), &DtmSnapshot);
-
-    XTM_TRACE("XTM: dtm_get_snapshot \n");
-    DtmHasSnapshot = true;
-    DtmGlobalTransaction = true;
-	PG_RETURN_VOID();
-}
-
