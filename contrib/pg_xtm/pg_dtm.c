@@ -59,7 +59,7 @@ static DTMConn DtmConn;
 
 #define XTM_TRACE(fmt, ...) 
 //#define XTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
-#define XTM_INFO(fmt, ...) elog(WARNING, fmt, ## __VA_ARGS__)
+#define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
 #define XTM_CONNECT_ATTEMPTS 10
 
 static void DtmEnsureConnection(void)
@@ -310,7 +310,6 @@ dtm_get_snapshot(PG_FUNCTION_ARGS)
     DtmGlobalGetSnapshot(DtmConn, DtmNodeId, GetCurrentTransactionId(), &DtmSnapshot);
 
     XTM_TRACE("XTM: dtm_get_snapshot \n");
-    Assert(!DtmHasSnapshot);
     DtmHasSnapshot = true;
     DtmGlobalTransaction = true;
 	PG_RETURN_VOID();

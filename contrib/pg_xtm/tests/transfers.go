@@ -77,8 +77,8 @@ func prepare_db() {
     exec(conn2, "select dtm_begin_transaction($1, $2)", nodes, xids)
     
     // first global statement 
-    //exec(conn1, "select dtm_get_snapshot()")
-    //exec(conn2, "select dtm_get_snapshot()")
+    exec(conn1, "select dtm_get_snapshot()")
+    exec(conn2, "select dtm_get_snapshot()")
     
     for i := 0; i < N_ACCOUNTS; i++ {
         exec(conn1, "insert into t values($1, $2)", i, INIT_AMOUNT)
@@ -97,6 +97,7 @@ func max(a, b int64) int64 {
 
 func transfer(id int, wg *sync.WaitGroup) {
     var err error
+    var sum1, sum2, sum int32
     var xids []int32 = make([]int32, 2)
 
     conn1, err := pgx.Connect(cfg1)
@@ -126,12 +127,29 @@ func transfer(id int, wg *sync.WaitGroup) {
         exec(conn2, "select dtm_begin_transaction($1, $2)", nodes, xids)
         
         // first global statement 
-        // exec(conn1, "select dtm_get_snapshot()")
-        // exec(conn2, "select dtm_get_snapshot()")
+        exec(conn1, "select dtm_get_snapshot()")
+        exec(conn2, "select dtm_get_snapshot()")
         
+        sum1 = execQuery(conn1, "select sum(v) from t")
+        sum2 = execQuery(conn2, "select sum(v) from t")
+        sum = sum1 + sum2
+        
+        exec(conn1, "select dtm_get_snapshot()")
+        exec(conn2, "select dtm_get_snapshot()")
+
         exec(conn1, "update t set v = v + $1 where u=$2", amount, account1)
         exec(conn2, "update t set v = v - $1 where u=$2", amount, account2)
+        
+        exec(conn1, "select dtm_get_snapshot()")
+        exec(conn2, "select dtm_get_snapshot()")
 
+        sum1 = execQuery(conn1, "select sum(v) from t")
+        sum2 = execQuery(conn2, "select sum(v) from t")
+                
+        if (sum1 + sum2 != sum) { 
+            fmt.Println("Before = ", sum, ", after=", sum1 + sum2, ", xids=", xids)        
+        }
+        
         commit(conn1, conn2)
     }
 
