@@ -192,6 +192,11 @@ static void DtmUpdateRecentXmin(void)
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
     XTM_TRACE("XTM: DtmGetSnapshot \n");
+    if (DtmGlobalTransaction && !DtmHasSnapshot) { 
+        DtmHasSnapshot = true;
+        DtmEnsureConnection();
+        DtmGlobalGetSnapshot(DtmConn, DtmNodeId, GetCurrentTransactionId(), &DtmSnapshot);
+    }
     snapshot = GetLocalSnapshotData(snapshot);        
     if (DtmHasSnapshot) {  
         DtmCopySnapshot(snapshot, &DtmSnapshot);
@@ -204,7 +209,7 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 static bool DtmTransactionIsInProgress(TransactionId xid)
 {
     XTM_TRACE("XTM: DtmTransactionIsInProgress \n");
-    return TransactionIdIsRunning(xid);
+    return TransactionIdIsRunning(xid);// || (DtmHasSnapshot && TransactionIdIsInDtmSnapshot(&DtmSnapshot, xid));
 }
 
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
