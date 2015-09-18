@@ -68,12 +68,13 @@ static void DtmEnsureConnection(void)
     XTM_TRACE("XTM: DtmEnsureConnection\n");
     while (attempt < XTM_CONNECT_ATTEMPTS) { 
         if (DtmConn) {
-            break;
+            return;
         }
         XTM_TRACE("XTM: DtmEnsureConnection, attempt #%u\n", attempt);
         DtmConn = DtmConnect("127.0.0.1", 5431);
         attempt++;
     }
+    elog(ERROR, "Failed to connect to DTMD");
 }
 
 static void DumpSnapshot(Snapshot s, char *name)

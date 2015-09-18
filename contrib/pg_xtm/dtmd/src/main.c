@@ -332,9 +332,8 @@ static void gen_snapshot(Snapshot *s, int node) {
 
 static void gen_snapshots(GlobalTransaction *gt) {
 	int n;
-    assert(gt->n_snapshots < MAX_SNAPSHOTS_PER_TRANS);
 	for (n = 0; n < MAX_NODES; n++) {
-		gen_snapshot(&gt->participants[n].snapshot[gt->n_snapshots], n);
+		gen_snapshot(&gt->participants[n].snapshot[gt->n_snapshots % MAX_SNAPSHOTS_PER_TRANS], n);
 	}
     gt->n_snapshots += 1;
 }
@@ -380,7 +379,7 @@ static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd) {
 	}
 	assert(t->snapshot_no < gt->n_snapshots);
 
-	return snapshot_serialize(&t->snapshot[t->snapshot_no++]);
+	return snapshot_serialize(&t->snapshot[t->snapshot_no++ % MAX_SNAPSHOTS_PER_TRANS]);
 }
 
 static bool queue_for_transaction_finish(void *stream, void *clientdata, int node, xid_t xid, char cmd) {
