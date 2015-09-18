@@ -152,8 +152,7 @@ static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
 		t->node = node;
 		t->vote = DOUBT;
 		t->xid = xid;
-		t->snapshot.seqno = 0;
-		t->sent_seqno = 0;
+		t->snapshot_no = 0;
 
 		if (xid > xmax[node]) {
 			xmax[node] = xid;
@@ -329,14 +328,15 @@ static void gen_snapshot(Snapshot *s, int node) {
 		}
 	}
 	snapshot_sort(s);
-	s->seqno++;
 }
 
 static void gen_snapshots(GlobalTransaction *gt) {
 	int n;
+    assert(gt->n_snapshots < MAX_SNAPSHOTS_PER_TRANS);
 	for (n = 0; n < MAX_NODES; n++) {
-		gen_snapshot(&gt->participants[n].snapshot, n);
+		gen_snapshot(&gt->participants[n].snapshot[gt->n_snapshots], n);
 	}
+    gt->n_snapshots += 1;
 }
 
 static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd) {
@@ -373,15 +373,14 @@ static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd) {
 		return strdup("-");
 	}
 
-	GlobalTransaction *gt = transactions + i;
-	Transaction *t = gt->participants + node;
-	if (t->sent_seqno == t->snapshot.seqno) {
+	GlobalTransaction *gt = &transactions[i];
+	Transaction *t = &gt->participants[node];
+	if (t->snapshot_no == gt->n_snapshots) {
 		gen_snapshots(gt);
 	}
-	assert(t->sent_seqno < t->snapshot.seqno);
+	assert(t->snapshot_no < gt->n_snapshots);
 
-	t->sent_seqno++;
-	return snapshot_serialize(&t->snapshot);
+	return snapshot_serialize(&t->snapshot[t->snapshot_no++]);
 }
 
 static bool queue_for_transaction_finish(void *stream, void *clientdata, int node, xid_t xid, char cmd) {
@@ -402,7 +401,7 @@ static bool queue_for_transaction_finish(void *stream, void *clientdata, int nod
 		return false;
 	}
 
-	global_transaction_push_listener(transactions + i, cmd, stream);
+	global_transaction_push_listener(&transactions[i], cmd, stream);
 	return true;
 }
 

@@ -7,6 +7,8 @@
 #include "snapshot.h"
 #include "limits.h"
 
+#define MAX_SNAPSHOTS_PER_TRANS 8
+
 typedef struct Transaction {
 	// true if the transaction was started on the node
 	bool active;
@@ -15,14 +17,15 @@ typedef struct Transaction {
 	int vote;
 
 	xid_t xid;
-	Snapshot snapshot;
+	Snapshot snapshot[MAX_SNAPSHOTS_PER_TRANS];
 
 	// if this is equal to seqno, we need to generate a new snapshot (for each node)
-	int sent_seqno;
+	int snapshot_no;
 } Transaction;
 
 #define CHAR_TO_INDEX(C) ((C) - 'a')
 typedef struct GlobalTransaction {
+    int n_snapshots;
 	Transaction participants[MAX_NODES];
 	void *listeners[CHAR_TO_INDEX('z')]; // we are going to use 'a' to 'z' for indexing
 } GlobalTransaction;

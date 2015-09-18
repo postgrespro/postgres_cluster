@@ -5,9 +5,6 @@
 #include "limits.h"
 
 typedef struct Snapshot {
-	// initially 0, which means 'invalid snapshot'
-	int seqno;
-
 	xid_t xmin;
 	xid_t xmax;
 	int nactive;

@@ -58,6 +58,7 @@ bool global_transaction_mark(clog_t clg, GlobalTransaction *gt, int status) {
 
 void global_transaction_clear(GlobalTransaction *gt) {
 	int i;
+    gt->n_snapshots = 0;
 	for (i = 0; i < MAX_NODES; i++) {
 		gt->participants[i].active = false;
 	}

@@ -26,8 +26,6 @@ void snapshot_sort(Snapshot *s) {
 }
    
 char *snapshot_serialize(Snapshot *s) {
-	assert(s->seqno > 0);
-
 	int numberlen = 16;
 	int numbers = 3 + s->nactive; // xmin, xmax, n, active...
 	int len = 1 + numberlen * numbers; // +1 for '+'
