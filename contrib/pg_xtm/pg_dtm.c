@@ -209,16 +209,20 @@ static void DtmUpdateRecentXmin(void)
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
-    XTM_TRACE("XTM: DtmGetSnapshot \n");
-    if (DtmGlobalTransaction/* && !DtmHasSnapshot*/) { 
-        DtmHasSnapshot = true;
-        DtmEnsureConnection();
-        DtmGlobalGetSnapshot(DtmConn, DtmNodeId, GetCurrentTransactionId(), &DtmSnapshot);
-    }
-    snapshot = GetLocalSnapshotData(snapshot);        
-    if (DtmHasSnapshot) {  
-        DtmCopySnapshot(snapshot, &DtmSnapshot);
-        DtmUpdateRecentXmin();
+    if (!IsMVCCSnapshot(snapshot) || snapshot == &CatalogSnapshotData) { 
+         snapshot = GetLocalSnapshotData(snapshot);        
+    } else { 
+        XTM_TRACE("XTM: DtmGetSnapshot \n");
+        if (DtmGlobalTransaction/* && !DtmHasSnapshot*/) { 
+            DtmHasSnapshot = true;
+            DtmEnsureConnection();
+            DtmGlobalGetSnapshot(DtmConn, DtmNodeId, GetCurrentTransactionId(), &DtmSnapshot);
+        }
+        snapshot = GetLocalSnapshotData(snapshot);        
+        if (DtmHasSnapshot) {  
+            DtmCopySnapshot(snapshot, &DtmSnapshot);
+            DtmUpdateRecentXmin();
+        }
     }
     return snapshot;
 }
