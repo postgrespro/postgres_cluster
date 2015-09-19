@@ -18,7 +18,8 @@ typedef struct
 {
     XidStatus (*GetTransactionStatus)(TransactionId xid, XLogRecPtr *lsn);
     void (*SetTransactionStatus)(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
-    Snapshot (*GetSnapshot)(Snapshot snapshot);
+    Snapshot (*GetSnapshot)();
+    Snapshot (*CopySnapshot)(Snapshot snapshot);
 } TransactionManager;
 
 extern TransactionManager* TM;
