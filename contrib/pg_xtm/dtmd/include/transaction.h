@@ -13,6 +13,7 @@ typedef struct Transaction {
 	// true if the transaction was started on the node
 	bool active;
 
+	int client_id;
 	int node;
 	int vote;
 
@@ -25,7 +26,7 @@ typedef struct Transaction {
 
 #define CHAR_TO_INDEX(C) ((C) - 'a')
 typedef struct GlobalTransaction {
-    int n_snapshots;
+	int n_snapshots;
 	Transaction participants[MAX_NODES];
 	void *listeners[CHAR_TO_INDEX('z')]; // we are going to use 'a' to 'z' for indexing
 } GlobalTransaction;

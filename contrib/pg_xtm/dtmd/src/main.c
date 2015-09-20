@@ -26,7 +26,6 @@ typedef struct client_data_t {
 } client_data_t;
 
 clog_t clg;
-static bool queue_for_transaction_finish(void *stream, void *clientdata, int node, xid_t xid, char cmd);
 static client_data_t *create_client_data(int id);
 static void free_client_data(client_data_t *cd);
 static void onconnect(void *stream, void **clientdata);
@@ -39,6 +38,7 @@ static void gen_snapshot(Snapshot *s, int node);
 static void gen_snapshots(GlobalTransaction *gt);
 static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd);
 static bool queue_for_transaction_finish(void *stream, void *clientdata, int node, xid_t xid, char cmd);
+static void notify_listeners(GlobalTransaction *gt, int status);
 static char *onstatus(void *stream, void *clientdata, cmd_t *cmd);
 static char *onnoise(void *stream, void *clientdata, cmd_t *cmd);
 static char *oncmd(void *stream, void *clientdata, cmd_t *cmd);
@@ -68,7 +68,33 @@ static void onconnect(void *stream, void **clientdata) {
 }
 
 static void ondisconnect(void *stream, void *clientdata) {
-	shout("[%d] disconnected\n", CLIENT_ID(clientdata));
+	int client_id = CLIENT_ID(clientdata);
+	shout("[%d] disconnected\n", client_id);
+
+	int i, n;
+	for (i = transactions_count - 1; i >= 0; i--) {
+		GlobalTransaction *gt = transactions + i;
+
+		for (n = 0; n < MAX_NODES; n++) {
+			Transaction *t = gt->participants + n;
+			if ((t->active) && (t->client_id == client_id)) {
+				if (global_transaction_mark(clg, gt, NEGATIVE)) {
+					notify_listeners(gt, NEGATIVE);
+
+					transactions[i] = transactions[transactions_count - 1];
+					transactions_count--;
+				} else {
+					shout(
+						"[%d] DISCONNECT: global transaction failed"
+						" to abort O_o\n",
+						client_id
+					);
+				}
+				break;
+			}
+		}
+	}
+
 	free_client_data(clientdata);
 }
 
@@ -149,6 +175,7 @@ static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
 			);
 			return strdup("-");
 		}
+		t->client_id = CLIENT_ID(clientdata);
 		t->active = true;
 		t->node = node;
 		t->vote = DOUBT;
@@ -170,6 +197,32 @@ static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
 
 	transactions_count++;
 	return strdup("+");
+}
+
+static void notify_listeners(GlobalTransaction *gt, int status) {
+	void *listener;
+	switch (status) {
+		case NEGATIVE:
+			while ((listener = global_transaction_pop_listener(gt, 's'))) {
+				// notify 'status' listeners about the aborted status
+				write_to_stream(listener, strdup("+a"));
+			}
+			while ((listener = global_transaction_pop_listener(gt, 'c'))) {
+				// notify 'commit' listeners about the failure
+				write_to_stream(listener, strdup("-"));
+			}
+			break;
+		case POSITIVE:
+			while ((listener = global_transaction_pop_listener(gt, 's'))) {
+				// notify 'status' listeners about the committed status
+				write_to_stream(listener, strdup("+c"));
+			}
+			while ((listener = global_transaction_pop_listener(gt, 'c'))) {
+				// notify 'commit' listeners about the success
+				write_to_stream(listener, strdup("+"));
+			}
+			break;
+	}
 }
 
 static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
@@ -218,18 +271,11 @@ static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 	}
 	transactions[i].participants[node].vote = vote;
 
-	switch (global_transaction_status(transactions + i)) {
+	GlobalTransaction *gt = transactions + i;
+	switch (global_transaction_status(gt)) {
 		case NEGATIVE:
-			if (global_transaction_mark(clg, transactions + i, NEGATIVE)) {
-				void *listener;
-				while ((listener = global_transaction_pop_listener(transactions + i, 's'))) {
-					// notify 'status' listeners about the aborted status
-					write_to_stream(listener, strdup("+a"));
-				}
-				while ((listener = global_transaction_pop_listener(transactions + i, 'c'))) {
-					// notify 'commit' listeners about the failure
-					write_to_stream(listener, strdup("-"));
-				}
+			if (global_transaction_mark(clg, gt, NEGATIVE)) {
+				notify_listeners(gt, NEGATIVE);
 
 				transactions[i] = transactions[transactions_count - 1];
 				transactions_count--;
@@ -258,20 +304,7 @@ static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 			}
 		case POSITIVE:
 			if (global_transaction_mark(clg, transactions + i, POSITIVE)) {
-				//shout(
-				//	"[%d] VOTE: global transaction committed\n",
-				//	CLIENT_ID(clientdata)
-				//);
-
-				void *listener;
-				while ((listener = global_transaction_pop_listener(transactions + i, 's'))) {
-					// notify 'status' listeners about the committed status
-					write_to_stream(listener, strdup("+c"));
-				}
-				while ((listener = global_transaction_pop_listener(transactions + i, 'c'))) {
-					// notify 'commit' listeners about the success
-					write_to_stream(listener, strdup("+"));
-				}
+				notify_listeners(gt, POSITIVE);
 
 				transactions[i] = transactions[transactions_count - 1];
 				transactions_count--;
