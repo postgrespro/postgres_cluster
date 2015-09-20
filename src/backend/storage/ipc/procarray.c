@@ -1511,12 +1511,6 @@ GetMaxSnapshotSubxidCount(void)
 Snapshot
 GetSnapshotData(Snapshot snapshot)
 {
-    return TM->GetSnapshot(snapshot);
-}
-
-Snapshot
-GetLocalSnapshotData(Snapshot snapshot)
-{
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId xmin;
 	TransactionId xmax;

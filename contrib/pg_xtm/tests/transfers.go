@@ -3,7 +3,7 @@ package main
 import (
     "fmt"
     "sync"
-//    "math/rand"
+    "math/rand"
     "github.com/jackc/pgx"
 )
 
@@ -65,8 +65,8 @@ func prepare_db() {
     exec(conn2, "create table t(u int primary key, v int)")
     
     // strt transaction
-    exec(conn1, "begin")
-    exec(conn2, "begin")
+    exec(conn1, "begin transaction isolation level repeatable read")
+    exec(conn2, "begin transaction isolation level repeatable read")
     
     // obtain XIDs of paticipants
     xids[0] = execQuery(conn1, "select txid_current()")
@@ -93,8 +93,8 @@ func max(a, b int64) int64 {
 
 func transfer(id int, wg *sync.WaitGroup) {
     var err error
- //   var sum1, sum2, sum int32
     var xids []int32 = make([]int32, 2)
+    var nConflicts = 0
 
     conn1, err := pgx.Connect(cfg1)
     checkErr(err)
@@ -107,12 +107,12 @@ func transfer(id int, wg *sync.WaitGroup) {
     for i := 0; i < N_ITERATIONS; i++ {
         //amount := 2*rand.Intn(2) - 1
         amount := 1
-        account1 := id//rand.Intn(N_ACCOUNTS) 
-        account2 := id//rand.Intn(N_ACCOUNTS)
+        account1 := rand.Intn(N_ACCOUNTS) 
+        account2 := rand.Intn(N_ACCOUNTS)
 
         // strt transaction
-        exec(conn1, "begin")
-        exec(conn2, "begin")
+        exec(conn1, "begin transaction isolation level repeatable read")
+        exec(conn2, "begin transaction isolation level repeatable read")
         
         // obtain XIDs of paticipants
         xids[0] = execQuery(conn1, "select txid_current()")
@@ -122,13 +122,17 @@ func transfer(id int, wg *sync.WaitGroup) {
         exec(conn1, "select dtm_begin_transaction($1, $2)", nodes, xids)
         exec(conn2, "select dtm_begin_transaction($1, $2)", nodes, xids)
 
-        exec(conn1, "update t set v = v + $1 where u=$2", amount, account1)
-        exec(conn2, "update t set v = v - $1 where u=$2", amount, account2)
-
-        commit(conn1, conn2)
+        if !execUpdate(conn1, "update t set v = v + $1 where u=$2", amount, account1) || 
+           !execUpdate(conn2, "update t set v = v - $1 where u=$2", amount, account2) {  
+            exec(conn1, "rollback")
+            exec(conn2, "rollback")
+            nConflicts += 1
+            i -= 1
+        } else { 
+            commit(conn1, conn2)
+        }       
     }
-
-    fmt.Println("Test completed")
+    fmt.Println("Test completed with ",nConflicts," conflicts")
     wg.Done()
 }
 
@@ -137,15 +141,16 @@ func inspect(wg *sync.WaitGroup) {
     var prevSum int32 = 0 
     var xids []int32 = make([]int32, 2)
 
-    for running {
+    {
         conn1, err := pgx.Connect(cfg1)
         checkErr(err)
 
         conn2, err := pgx.Connect(cfg2)
         checkErr(err)
 
-        exec(conn1, "begin")
-        exec(conn2, "begin")
+    for running {
+        exec(conn1, "begin transaction isolation level repeatable read")
+        exec(conn2, "begin transaction isolation level repeatable read")
  
         // obtain XIDs of paticipants
         xids[0] = execQuery(conn1, "select txid_current()")
@@ -158,15 +163,16 @@ func inspect(wg *sync.WaitGroup) {
         sum1 = execQuery(conn1, "select sum(v) from t")
         sum2 = execQuery(conn2, "select sum(v) from t")
 
-        commit(conn1, conn2)
-
         sum = sum1 + sum2
         if (sum != prevSum) {
-            fmt.Println("Total = ", sum, "xids=", xids)
+            fmt.Println("Total = ", sum, "xids=", xids, "snap1={", execQuery(conn1, "select dtm_get_current_snapshot_xmin()"), execQuery(conn1, "select dtm_get_current_snapshot_xmax()"), "}, snap2={",  execQuery(conn2, "select dtm_get_current_snapshot_xmin()"), execQuery(conn2, "select dtm_get_current_snapshot_xmax()"), "}")
             prevSum = sum
         }        
-        conn1.Close()
-        conn2.Close()
+
+        commit(conn1, conn2)
+    }
+         conn1.Close()
+         conn2.Close()
     }
     wg.Done()
 }
@@ -193,8 +199,15 @@ func main() {
 func exec(conn *pgx.Conn, stmt string, arguments ...interface{}) {
     var err error
     // fmt.Println(stmt)
-    _, _ = conn.Exec(stmt, arguments... )
+    _, err = conn.Exec(stmt, arguments... )
     checkErr(err)
+}
+
+func execUpdate(conn *pgx.Conn, stmt string, arguments ...interface{}) bool {
+    var err error
+    // fmt.Println(stmt)
+    _, err = conn.Exec(stmt, arguments... )
+    return err == nil
 }
 
 func execQuery(conn *pgx.Conn, stmt string, arguments ...interface{}) int32 {

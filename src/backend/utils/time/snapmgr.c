@@ -185,7 +185,7 @@ typedef struct SerializedSnapshotData
  * used very long.
  */
 Snapshot
-GetTransactionSnapshot(void)
+GetLocalTransactionSnapshot(void)
 {
 	/*
 	 * Return historic snapshot if doing logical decoding. We'll never need a
@@ -250,6 +250,13 @@ GetTransactionSnapshot(void)
 
 	return CurrentSnapshot;
 }
+
+Snapshot
+GetTransactionSnapshot()
+{
+    return TM->GetSnapshot();
+}
+
 
 /*
  * GetLatestSnapshot
@@ -459,6 +466,13 @@ SetTransactionSnapshot(Snapshot sourcesnap, TransactionId sourcexid,
 	FirstSnapshotSet = true;
 }
 
+Snapshot
+CopySnapshot(Snapshot snapshot)
+{
+    return TM->CopySnapshot(snapshot);
+}
+
+
 /*
  * CopySnapshot
  *		Copy the given snapshot.
@@ -466,8 +480,8 @@ SetTransactionSnapshot(Snapshot sourcesnap, TransactionId sourcexid,
  * The copy is palloc'd in TopTransactionContext and has initial refcounts set
  * to 0.  The returned snapshot has the copied flag set.
  */
-static Snapshot
-CopySnapshot(Snapshot snapshot)
+Snapshot
+CopyLocalSnapshot(Snapshot snapshot)
 {
 	Snapshot	newsnap;
 	Size		subxipoff;

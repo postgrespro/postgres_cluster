@@ -4,3 +4,11 @@
 CREATE FUNCTION dtm_begin_transaction(nodes integer[], xids integer[]) RETURNS void
 AS 'MODULE_PATHNAME','dtm_begin_transaction'
 LANGUAGE C;
+
+CREATE FUNCTION dtm_get_current_snapshot_xmin() RETURNS bigint
+AS 'MODULE_PATHNAME','dtm_get_current_snapshot_xmin'
+LANGUAGE C;
+
+CREATE FUNCTION dtm_get_current_snapshot_xmax() RETURNS bigint
+AS 'MODULE_PATHNAME','dtm_get_current_snapshot_xmax'
+LANGUAGE C;

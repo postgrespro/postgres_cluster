@@ -91,13 +91,12 @@ DTMConn DtmConnect(char *host, int port) {
 
 	for (a = addrs; a != NULL; a = a->ai_next) {
 		DTMConn dtm;
+		int one = 1;
 		int sock = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
 		if (sock == -1) {
 			perror("failed to create a socket");
 			continue;
 		}
-
-		int one = 1;
 		setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 
 		if (connect(sock, a->ai_addr, a->ai_addrlen) == -1) {

@@ -26,6 +26,7 @@ extern TransactionId RecentGlobalXmin;
 extern TransactionId RecentGlobalDataXmin;
 
 extern Snapshot GetTransactionSnapshot(void);
+extern Snapshot GetLocalTransactionSnapshot(void);
 extern Snapshot GetLatestSnapshot(void);
 extern void SnapshotSetCommandId(CommandId curcid);
 
@@ -40,6 +41,7 @@ extern void PopActiveSnapshot(void);
 extern Snapshot GetActiveSnapshot(void);
 extern bool ActiveSnapshotSet(void);
 
+extern Snapshot CopyLocalSnapshot(Snapshot snapshot);
 extern Snapshot RegisterSnapshot(Snapshot snapshot);
 extern void UnregisterSnapshot(Snapshot snapshot);
 extern Snapshot RegisterSnapshotOnOwner(Snapshot snapshot, ResourceOwner owner);

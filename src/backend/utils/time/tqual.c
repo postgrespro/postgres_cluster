@@ -970,7 +970,7 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
  * and more contention on the PGXACT array.
  */
 bool 
-HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
+_HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 					   Buffer buffer)
 {
 	HeapTupleHeader tuple = htup->t_data;
@@ -994,7 +994,6 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 			{
 				if (TransactionIdDidCommit(xvac))
 				{
-                    elog(WARNING, "Mark tuple %d as invalid 1", HeapTupleHeaderGetRawXmin(tuple));
 					SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
 								InvalidTransactionId);
 					return false;
@@ -1017,7 +1016,6 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 								InvalidTransactionId);
 				else
 				{
-                    elog(WARNING, "Mark tuple %d as invalid 2", HeapTupleHeaderGetRawXmin(tuple));
 					SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
 								InvalidTransactionId);
 					return false;
@@ -1074,7 +1072,6 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		else
 		{
 			/* it must have aborted or crashed */
-            elog(WARNING, "Mark tuple %d as invalid 3", HeapTupleHeaderGetRawXmin(tuple));
 			SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
 						InvalidTransactionId);
 			return false;
@@ -1158,6 +1155,16 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 	/* xmax transaction committed */
 
 	return false;
+}
+bool 
+HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
+					   Buffer buffer)
+{
+    bool result = _HeapTupleSatisfiesMVCC(htup, snapshot, buffer);
+	HeapTupleHeader tuple = htup->t_data;
+    fprintf(stderr, "Transaction %d, [%d,%d) visibility check for tuple {%d,%d) = %d\n", 
+            GetCurrentTransactionId(), snapshot->xmin, snapshot->xmax, HeapTupleHeaderGetRawXmin(tuple), HeapTupleHeaderGetRawXmax(tuple), result);
+    return result;
 }
 
 /*
