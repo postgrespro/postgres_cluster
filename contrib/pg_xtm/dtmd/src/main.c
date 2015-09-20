@@ -411,6 +411,7 @@ static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd) {
 
 	GlobalTransaction *gt = &transactions[i];
 	Transaction *t = &gt->participants[node];
+	t->client_id = CLIENT_ID(clientdata);
 	if (t->snapshot_no == gt->n_snapshots) {
 		gen_snapshots(gt);
 	}
