@@ -67,8 +67,8 @@ func prepare_db() {
     exec(conn2, "drop table if exists t")
     exec(conn2, "create table t(u int primary key, v int)")
     
-    xid = execQuery(conn1, "select dtm_begin_transaction(2))
-    exec(conn2, "select dtm_join_transaction(xid))
+    xid = execQuery(conn1, "select dtm_begin_transaction(2)")
+    exec(conn2, "select dtm_join_transaction(xid)")
 
     // strt transaction
     exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
@@ -108,8 +108,8 @@ func transfer(id int, wg *sync.WaitGroup) {
         account1 := rand.Intn(N_ACCOUNTS) 
         account2 := rand.Intn(N_ACCOUNTS)
 
-        xid = execQuery(conn1, "select dtm_begin_transaction(2))
-        exec(conn2, "select dtm_join_transaction(xid))
+        xid = execQuery(conn1, "select dtm_begin_transaction(2)")
+        exec(conn2, "select dtm_join_transaction(xid)")
 
         // start transaction
         exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
@@ -144,8 +144,8 @@ func inspect(wg *sync.WaitGroup) {
     for running {
 
        
-        xid = execQuery(conn1, "select dtm_begin_transaction(2))
-        exec(conn2, "select dtm_join_transaction(xid))
+        xid = execQuery(conn1, "select dtm_begin_transaction(2)")
+        exec(conn2, "select dtm_join_transaction(xid)")
         
         exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
         exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
