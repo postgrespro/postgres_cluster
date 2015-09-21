@@ -6,7 +6,7 @@ AS 'MODULE_PATHNAME','dtm_begin_transaction'
 LANGUAGE C;
 
 CREATE FUNCTION dtm_join_transaction(xid integer) RETURNS void
-AS 'MODULE_PATHNAME','dtm_get_snapshot'
+AS 'MODULE_PATHNAME','dtm_join_transaction'
 LANGUAGE C;
 
 CREATE FUNCTION dtm_get_current_snapshot_xmin() RETURNS integer

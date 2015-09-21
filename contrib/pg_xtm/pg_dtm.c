@@ -242,9 +242,10 @@ static TransactionId DtmGetNextXid()
     } else {        
         LWLockAcquire(dtm->xidLock, LW_EXCLUSIVE);
         if (dtm->nReservedXids == 0) { 
-            xid = DtmGlobalReserve(DtmLocalXidReserve);        
+            xid = DtmGlobalReserve(dtm->nextXid, DtmLocalXidReserve);        
             dtm->nReservedXids = DtmLocalXidReserve;
             ShmemVariableCache->nextXid = xid;
+            dtm->nextXid = xid;
         } 
         Assert(dtm->nextXid == ShmemVariableCache->nextXid);
         xid = ShmemVariableCache->nextXid;
@@ -452,13 +453,6 @@ PG_FUNCTION_INFO_V1(dtm_get_current_snapshot_xmin);
 Datum
 dtm_get_current_snapshot_xmin(PG_FUNCTION_ARGS)
 {
-    // if (IsolationUsesXactSnapshot()){ /* RR & S */
-    //     DtmEnsureConnection();
-    //     DtmGlobalGetSnapshot(DtmConn, DtmNodeId, gtid.xids[DtmNodeId], &DtmSnapshot);
-    //     Assert(CurrentTransactionSnapshot != NULL);
-    //     DtmMergeSnapshots(CurrentTransactionSnapshot, &DtmSnapshot);
-    //     DtmUpdateRecentXmin();
-    // }
     PG_RETURN_INT32(CurrentTransactionSnapshot->xmin);
 }
 
