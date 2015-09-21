@@ -33,6 +33,10 @@
 /* pointer to "variable cache" in shared memory (set up by shmem.c) */
 VariableCache ShmemVariableCache = NULL;
 
+TransactionId GetNextTransactionId()
+{
+    return ShmemVariableCache->nextXid;
+}
 
 /*
  * Allocate the next XID for a new transaction or subtransaction.
@@ -73,7 +77,7 @@ GetNewTransactionId(bool isSubXact)
 
 	LWLockAcquire(XidGenLock, LW_EXCLUSIVE);
 
-	xid = ShmemVariableCache->nextXid;
+    xid = TM->GetNextXid();
 
 	/*----------
 	 * Check to see if it's safe to assign another XID.  This protects against

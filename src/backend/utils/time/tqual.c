@@ -1156,6 +1156,7 @@ _HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 
 	return false;
 }
+#if 1
 bool 
 HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 					   Buffer buffer)
@@ -1166,7 +1167,7 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
             GetCurrentTransactionId(), snapshot->xmin, snapshot->xmax, HeapTupleHeaderGetRawXmin(tuple), HeapTupleHeaderGetRawXmax(tuple), result);
     return result;
 }
-
+#endif
 /*
  * HeapTupleSatisfiesVacuum
  *

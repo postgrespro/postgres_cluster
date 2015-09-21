@@ -1,14 +1,22 @@
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
 \echo Use "CREATE EXTENSION pg_dtm" to load this file. \quit
 
-CREATE FUNCTION dtm_begin_transaction(nodes integer[], xids integer[]) RETURNS void
+CREATE FUNCTION dtm_begin_transaction(n_participants integer) RETURNS integer
 AS 'MODULE_PATHNAME','dtm_begin_transaction'
 LANGUAGE C;
 
-CREATE FUNCTION dtm_get_current_snapshot_xmin() RETURNS bigint
+CREATE FUNCTION dtm_get_snapshot(xid integer) RETURNS void
+AS 'MODULE_PATHNAME','dtm_get_snapshot'
+LANGUAGE C;
+
+CREATE FUNCTION dtm_new_snapshot(xid integer) RETURNS void
+AS 'MODULE_PATHNAME','dtm_new_snapshot'
+LANGUAGE C;
+
+CREATE FUNCTION dtm_get_current_snapshot_xmin() RETURNS integer
 AS 'MODULE_PATHNAME','dtm_get_current_snapshot_xmin'
 LANGUAGE C;
 
-CREATE FUNCTION dtm_get_current_snapshot_xmax() RETURNS bigint
+CREATE FUNCTION dtm_get_current_snapshot_xmax() RETURNS integer
 AS 'MODULE_PATHNAME','dtm_get_current_snapshot_xmax'
 LANGUAGE C;
