@@ -251,6 +251,12 @@ static Snapshot DtmCopySnapshot(Snapshot snapshot)
 static Snapshot DtmGetSnapshot()
 {
     CurrentTransactionSnapshot = GetLocalTransactionSnapshot(); 
+    if (DtmGlobalTransaction && !IsolationUsesXactSnapshot()){ /* RU & RC */
+        DtmEnsureConnection();
+        DtmGlobalGetSnapshot(DtmConn, DtmNodeId, GetCurrentTransactionId(), &DtmSnapshot);
+        DtmMergeSnapshots(CurrentTransactionSnapshot, &DtmSnapshot);
+        DtmUpdateRecentXmin();
+    }
     return CurrentTransactionSnapshot;
 }
 
@@ -438,16 +444,20 @@ dtm_begin_transaction(PG_FUNCTION_ARGS)
     gtid.nNodes = ArrayGetNItems(ARR_NDIM(nodes), ARR_DIMS(nodes));    
     DtmGlobalTransaction = true;
     Assert(gtid.xids[DtmNodeId] == GetCurrentTransactionId());
-    XTM_INFO("Start transaction {%d,%d} at node %d\n", gtid.xids[0], gtid.xids[1], DtmNodeId);
+    XTM_INFO("Start transaction {%d,%d} at node %d, iso=%d\n", gtid.xids[0], gtid.xids[1], DtmNodeId, XactIsoLevel);
     if (DtmNodeId == gtid.nodes[0]) { 
         DtmEnsureConnection();
         DtmGlobalStartTransaction(DtmConn, &gtid);
     }
-    DtmEnsureConnection();    
-    DtmGlobalGetSnapshot(DtmConn, DtmNodeId, gtid.xids[DtmNodeId], &DtmSnapshot);    
-    Assert(CurrentTransactionSnapshot != NULL);
-    DtmMergeSnapshots(CurrentTransactionSnapshot, &DtmSnapshot);
-    DtmUpdateRecentXmin();
+
+    if (IsolationUsesXactSnapshot()){ /* RR & S */
+        DtmEnsureConnection();
+        DtmGlobalGetSnapshot(DtmConn, DtmNodeId, gtid.xids[DtmNodeId], &DtmSnapshot);
+        Assert(CurrentTransactionSnapshot != NULL);
+        DtmMergeSnapshots(CurrentTransactionSnapshot, &DtmSnapshot);
+        DtmUpdateRecentXmin();
+    }
+
 	PG_RETURN_VOID();
 }
 
