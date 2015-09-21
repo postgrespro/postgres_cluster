@@ -26,7 +26,7 @@ void DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait);
 XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait);
 
 // Reserve XIDs for local transaction
-TransactioinId DtmGlobalReserve(int nXids);   
+TransactionId DtmGlobalReserve(TransactionId xid, int nXids);   
 
 
 #endif

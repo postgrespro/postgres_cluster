@@ -1,4 +1,4 @@
-sisva/*
+/*
  * pg_dtm.c
  *
  * Pluggable distributed transaction manager
@@ -59,7 +59,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 static void DtmUpdateRecentXmin(void);
 static void DtmInitialize(void);
 static void DtmXactCallback(XactEvent event, void *arg);
-static void DtmGetNextXid(void);
+static TransactionId DtmGetNextXid(void);
 
 static bool TransactionIdIsInDtmSnapshot(TransactionId xid);
 static bool TransactionIdIsInDoubt(TransactionId xid);
@@ -115,9 +115,9 @@ static bool TransactionIdIsInDoubt(TransactionId xid)
     bool inDoubt;
 
     if (!TransactionIdIsInDtmSnapshot(xid)) {
-        LWLockAcquire(dtm->lock, LW_SHARED); 
+        LWLockAcquire(dtm->hashLock, LW_SHARED); 
         inDoubt = hash_search(xid_in_doubt, &xid, HASH_FIND, NULL) != NULL;
-        LWLockRelease(dtm->lock);
+        LWLockRelease(dtm->hashLock);
         if (!inDoubt) {
             XLogRecPtr lsn;
             inDoubt = CLOGTransactionIdGetStatus(xid, &lsn) != TRANSACTION_STATUS_IN_PROGRESS;
@@ -285,10 +285,9 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 {
     XTM_TRACE("XTM: DtmSetTransactionStatus %u = %u \n", xid, status);
     if (!RecoveryInProgress()) { 
-        if (DtmGlobalTransaction) { 
+        if (TransactionIdIsValid(DtmNextXid)) { 
             /* Already should be IN_PROGRESS */
             /* CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_IN_PROGRESS, lsn); */
-            DtmGlobalTransaction = false;
             CurrentTransactionSnapshot = NULL;
             if (status == TRANSACTION_STATUS_ABORTED) { 
                 CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
@@ -300,9 +299,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
                 LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
                 hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
                 LWLockRelease(dtm->hashLock);
-                if (!DtmGlobalSetTransStatus(xid, status, true)) { 
-                    elog(ERROR, "DTMD failed to set transaction status");
-                }
+                DtmGlobalSetTransStatus(xid, status, true);
                 XTM_INFO("Commit transaction %d\n", xid);
             }
         } else {
@@ -370,6 +367,9 @@ DtmXactCallback(XactEvent event, void *arg)
             /* no break */
           case XACT_EVENT_ABORT:
             DtmNextXid = InvalidTransactionId;
+            break;
+          default:
+            break;
         }
     }
 }
@@ -466,7 +466,7 @@ dtm_get_current_snapshot_xmax(PG_FUNCTION_ARGS)
 Datum
 dtm_begin_transaction(PG_FUNCTION_ARGS)
 {
-    int nPaticipants = PG_GETARG_INT32(0);    
+    int nParticipants = PG_GETARG_INT32(0);    
     Assert(!TransactionIdIsValid(DtmNextXid));
 
     DtmNextXid = DtmGlobalStartTransaction(nParticipants, &DtmSnapshot);
