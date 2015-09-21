@@ -12,6 +12,8 @@ const (
     INIT_AMOUNT = 10000
     N_ITERATIONS = 10000
     N_ACCOUNTS = TRANSFER_CONNECTIONS//100000
+    ISOLATION_LEVEL = "repeatable read"
+    //ISOLATION_LEVEL = "read committed"
 )
 
 
@@ -26,6 +28,7 @@ var cfg2 = pgx.ConnConfig{
         Port:     5433,
         Database: "postgres",
     }
+
 
 var running = false
 var nodes []int32 = []int32{0,1}
@@ -68,8 +71,8 @@ func prepare_db() {
     exec(conn2, "select dtm_join_transaction(xid))
 
     // strt transaction
-    exec(conn1, "begin transaction isolation level repeatable read")
-    exec(conn2, "begin transaction isolation level repeatable read")
+    exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
+    exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
         
     for i := 0; i < N_ACCOUNTS; i++ {
         exec(conn1, "insert into t values($1, $2)", i, INIT_AMOUNT)
@@ -109,8 +112,8 @@ func transfer(id int, wg *sync.WaitGroup) {
         exec(conn2, "select dtm_join_transaction(xid))
 
         // start transaction
-        exec(conn1, "begin transaction isolation level repeatable read")
-        exec(conn2, "begin transaction isolation level repeatable read")
+        exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
+        exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
         
         if !execUpdate(conn1, "update t set v = v + $1 where u=$2", amount, account1) || 
            !execUpdate(conn2, "update t set v = v - $1 where u=$2", amount, account2) {  
@@ -144,8 +147,8 @@ func inspect(wg *sync.WaitGroup) {
         xid = execQuery(conn1, "select dtm_begin_transaction(2))
         exec(conn2, "select dtm_join_transaction(xid))
         
-        exec(conn1, "begin transaction isolation level repeatable read")
-        exec(conn2, "begin transaction isolation level repeatable read")
+        exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
+        exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
  
         sum1 = execQuery(conn1, "select sum(v) from t")
         sum2 = execQuery(conn2, "select sum(v) from t")
