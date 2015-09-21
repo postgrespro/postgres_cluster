@@ -5,12 +5,8 @@ CREATE FUNCTION dtm_begin_transaction(n_participants integer) RETURNS integer
 AS 'MODULE_PATHNAME','dtm_begin_transaction'
 LANGUAGE C;
 
-CREATE FUNCTION dtm_get_snapshot(xid integer) RETURNS void
+CREATE FUNCTION dtm_join_transaction(xid integer) RETURNS void
 AS 'MODULE_PATHNAME','dtm_get_snapshot'
-LANGUAGE C;
-
-CREATE FUNCTION dtm_new_snapshot(xid integer) RETURNS void
-AS 'MODULE_PATHNAME','dtm_new_snapshot'
 LANGUAGE C;
 
 CREATE FUNCTION dtm_get_current_snapshot_xmin() RETURNS integer

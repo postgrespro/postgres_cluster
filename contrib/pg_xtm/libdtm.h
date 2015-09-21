@@ -14,9 +14,6 @@ void DtmInitSnapshot(Snapshot snapshot);
 TransactionId DtmGlobalStartTransaction(int nParticipants, Snapshot shaposhot);
 
 // Asks DTM for a fresh snapshot.
-void DtmGlobalNewSnapshot(TransactionId xid, Snapshot snapshot);
-
-// Get existed DTM snapshot.
 void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot);
 
 // Commits transaction only once all participants have called this function,
@@ -26,7 +23,7 @@ void DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait);
 // Gets the status of the transaction identified by 'xid'. Returns the status
 // on success, or -1 otherwise. If 'wait' is true, then it does not return
 // until the transaction is finished.
-XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, bool wait);
+XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait);
 
 // Reserve XIDs for local transaction
 TransactioinId DtmGlobalReserve(int nXids);   

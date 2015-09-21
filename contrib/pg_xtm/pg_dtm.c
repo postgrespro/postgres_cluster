@@ -69,13 +69,12 @@ static void dtm_shmem_startup(void);
 static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB* xid_in_doubt;
 static DtmState* dtm;
-static TransactionId DtmCurrentXid = InvalidTransactionId;
 static Snapshot CurrentTransactionSnapshot;
 
 static TransactionId DtmNextXid;
 static SnapshotData DtmSnapshot = { HeapTupleSatisfiesMVCC };
 static SnapshotData DtmLocalSnapshot = { HeapTupleSatisfiesMVCC };
-static bool DtmIsGlobalTransaction = false;
+static bool DtmHasGlobalSnapshot;
 static int DtmLocalXidReserve;
 static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmCopySnapshot, DtmGetNextXid };
 
@@ -185,7 +184,7 @@ static void DtmUpdateRecentXmin(void)
 
     XTM_TRACE("XTM: DtmUpdateRecentXmin \n");
 
-    if (xmin != InvalidTransactionId) { 
+    if (TransactionIdIsValid(xmin)) { 
         xmin -= vacuum_defer_cleanup_age;        
         if (!TransactionIdIsNormal(xmin)) {
             xmin = FirstNormalTransactionId;
@@ -238,9 +237,8 @@ static Snapshot DtmCopySnapshot(Snapshot snapshot)
 static TransactionId DtmGetNextXid()
 {
     TransactionId xid;
-    if (TransactionIdIsValid(DtmNextXid)) { 
+    if (TransactionIdIsValid(DtmNextXid)) {
         xid = DtmNextXid;
-        DtmNextXid = InvalidTransactionId;
     } else {        
         LWLockAcquire(dtm->xidLock, LW_EXCLUSIVE);
         if (dtm->nReservedXids == 0) { 
@@ -260,9 +258,14 @@ static TransactionId DtmGetNextXid()
 static Snapshot DtmGetSnapshot()
 {
     Snapshot snapshot = GetLocalTransactionSnapshot();
-    if (DtmIsGlobalTransaction) {
+    if (TransactionIdIsValid(DtmNextXid)) {
+        if (!DtmHasGlobalSnapshot) {
+            Assert(!IsolationUsesXactSnapshot());
+            DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot);
+        }
         DtmMergeSnapshots(snapshot, &DtmSnapshot);
         DtmUpdateRecentXmin();
+        DtmHasGlobalSnapshot = false;
     }
     CurrentTransactionSnapshot = snapshot;
     return snapshot;
@@ -293,9 +296,8 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
                 return;
             } else { 
                 XTM_INFO("Begin commit transaction %d\n", xid);
-                DtmCurrentXid = xid;
                 LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
-                hash_search(xid_in_doubt, &DtmCurrentXid, HASH_ENTER, NULL);
+                hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
                 LWLockRelease(dtm->hashLock);
                 if (!DtmGlobalSetTransStatus(xid, status, true)) { 
                     elog(ERROR, "DTMD failed to set transaction status");
@@ -358,10 +360,16 @@ static void DtmInitialize()
 static void
 DtmXactCallback(XactEvent event, void *arg)
 {
-	if (event == XACT_EVENT_COMMIT && DtmCurrentXid != InvalidTransactionId) {
-        LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE); 
-        hash_search(xid_in_doubt, &DtmCurrentXid, HASH_REMOVE, NULL);
-        LWLockRelease(dtm->hashLock);
+    if (TransactionIdIsValid(DtmNextXid)) {
+        switch (event) {
+          case XACT_EVENT_COMMIT:
+            LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE); 
+            hash_search(xid_in_doubt, &DtmNextXid, HASH_REMOVE, NULL);
+            LWLockRelease(dtm->hashLock);
+            /* no break */
+          case XACT_EVENT_ABORT:
+            DtmNextXid = InvalidTransactionId;
+        }
     }
 }
 
@@ -437,8 +445,7 @@ static void dtm_shmem_startup(void)
 PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(dtm_begin_transaction);
-PG_FUNCTION_INFO_V1(dtm_get_snapshot);
-PG_FUNCTION_INFO_V1(dtm_new_snapshot);
+PG_FUNCTION_INFO_V1(dtm_join_transaction);
 PG_FUNCTION_INFO_V1(dtm_get_current_snapshot_xmax);
 PG_FUNCTION_INFO_V1(dtm_get_current_snapshot_xmin);
 
@@ -464,32 +471,22 @@ dtm_begin_transaction(PG_FUNCTION_ARGS)
     DtmNextXid = DtmGlobalStartTransaction(nParticipants, &DtmSnapshot);
     Assert(TransactionIdIsValid(DtmNextXid));
 
-    DtmIsGlobalTransaction = true;
+    DtmHasGlobalSnapshot = true;
 
     PG_RETURN_INT32(DtmNextXid);
 }
 
-Datum dtm_get_snapshot(PG_FUNCTION_ARGS)
+Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 {
     Assert(!TransactionIdIsValid(DtmNextXid));
     DtmNextXid = PG_GETARG_INT32(0); 
     Assert(TransactionIdIsValid(DtmNextXid));
 
-    DtmNextXid = DtmGlobalGetSnapshot(DtmConn, DtmNextXid, &DtmSnapshot);
+    DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot);
 
-    DtmIsGlobalTransaction = true;
-
-	PG_RETURN_VOID();
-}
-    
-Datum dtm_new_snapshot(PG_FUNCTION_ARGS)
-{
-    Assert(!TransactionIdIsValid(DtmNextXid));
-    DtmNextXid = PG_GETARG_INT32(0); 
-    Assert(TransactionIdIsValid(DtmNextXid));
-
-    DtmNextXid = DtmGlobalNewSnapshot(DtmConn, DtmNextXid, &DtmSnapshot);
+    DtmHasGlobalSnapshot = true;
 
 	PG_RETURN_VOID();
 }
     
+

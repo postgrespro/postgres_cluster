@@ -44,7 +44,7 @@ func commit(conn1, conn2 *pgx.Conn) {
 }
 
 func prepare_db() {
-    var xids []int32 = make([]int32, 2)
+    var xid int32
 
     conn1, err := pgx.Connect(cfg1)
     checkErr(err)
@@ -64,18 +64,13 @@ func prepare_db() {
     exec(conn2, "drop table if exists t")
     exec(conn2, "create table t(u int primary key, v int)")
     
+    xid = execQuery(conn1, "select dtm_begin_transaction(2))
+    exec(conn2, "select dtm_join_transaction(xid))
+
     // strt transaction
     exec(conn1, "begin transaction isolation level repeatable read")
     exec(conn2, "begin transaction isolation level repeatable read")
-    
-    // obtain XIDs of paticipants
-    xids[0] = execQuery(conn1, "select txid_current()")
-    xids[1] = execQuery(conn2, "select txid_current()")
-    
-    // register global transaction in DTMD
-    exec(conn1, "select dtm_begin_transaction($1, $2)", nodes, xids)
-    exec(conn2, "select dtm_begin_transaction($1, $2)", nodes, xids)
-    
+        
     for i := 0; i < N_ACCOUNTS; i++ {
         exec(conn1, "insert into t values($1, $2)", i, INIT_AMOUNT)
         exec(conn2, "insert into t values($1, $2)", i, INIT_AMOUNT)
@@ -93,7 +88,7 @@ func max(a, b int64) int64 {
 
 func transfer(id int, wg *sync.WaitGroup) {
     var err error
-    var xids []int32 = make([]int32, 2)
+    var xid int32
     var nConflicts = 0
 
     conn1, err := pgx.Connect(cfg1)
@@ -110,18 +105,13 @@ func transfer(id int, wg *sync.WaitGroup) {
         account1 := rand.Intn(N_ACCOUNTS) 
         account2 := rand.Intn(N_ACCOUNTS)
 
-        // strt transaction
+        xid = execQuery(conn1, "select dtm_begin_transaction(2))
+        exec(conn2, "select dtm_join_transaction(xid))
+
+        // start transaction
         exec(conn1, "begin transaction isolation level repeatable read")
         exec(conn2, "begin transaction isolation level repeatable read")
         
-        // obtain XIDs of paticipants
-        xids[0] = execQuery(conn1, "select txid_current()")
-        xids[1] = execQuery(conn2, "select txid_current()")
-        
-        // register global transaction in DTMD
-        exec(conn1, "select dtm_begin_transaction($1, $2)", nodes, xids)
-        exec(conn2, "select dtm_begin_transaction($1, $2)", nodes, xids)
-
         if !execUpdate(conn1, "update t set v = v + $1 where u=$2", amount, account1) || 
            !execUpdate(conn2, "update t set v = v - $1 where u=$2", amount, account2) {  
             exec(conn1, "rollback")
@@ -139,7 +129,7 @@ func transfer(id int, wg *sync.WaitGroup) {
 func inspect(wg *sync.WaitGroup) {
     var sum1, sum2, sum int32
     var prevSum int32 = 0 
-    var xids []int32 = make([]int32, 2)
+    var xid int32
 
     {
         conn1, err := pgx.Connect(cfg1)
@@ -149,17 +139,14 @@ func inspect(wg *sync.WaitGroup) {
         checkErr(err)
 
     for running {
+
+       
+        xid = execQuery(conn1, "select dtm_begin_transaction(2))
+        exec(conn2, "select dtm_join_transaction(xid))
+        
         exec(conn1, "begin transaction isolation level repeatable read")
         exec(conn2, "begin transaction isolation level repeatable read")
  
-        // obtain XIDs of paticipants
-        xids[0] = execQuery(conn1, "select txid_current()")
-        xids[1] = execQuery(conn2, "select txid_current()")
-        
-        // register global transaction in DTMD
-        exec(conn1, "select dtm_begin_transaction($1, $2)", nodes, xids)
-        exec(conn2, "select dtm_begin_transaction($1, $2)", nodes, xids)
-
         sum1 = execQuery(conn1, "select sum(v) from t")
         sum2 = execQuery(conn2, "select sum(v) from t")
 
@@ -212,7 +199,7 @@ func execUpdate(conn *pgx.Conn, stmt string, arguments ...interface{}) bool {
 
 func execQuery(conn *pgx.Conn, stmt string, arguments ...interface{}) int32 {
     var err error
-    var result int64
+    var result int32
     err = conn.QueryRow(stmt, arguments...).Scan(&result)
     checkErr(err)
     return int32(result)
