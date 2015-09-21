@@ -364,6 +364,9 @@ static void gen_snapshot(Snapshot *s, int node) {
 			s->active[s->nactive++] = t->xid;
 		}
 	}
+    if (s->xmax == 0) { 
+        s->xmin = s->xmax + 1;
+    }
 	snapshot_sort(s);
 }
 
