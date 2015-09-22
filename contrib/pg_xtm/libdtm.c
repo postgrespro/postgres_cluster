@@ -122,19 +122,27 @@ static bool dtm_read_snapshot(DTMConn dtm, Snapshot s)
 static bool dtm_read_status(DTMConn dtm, XidStatus *s)
 {
 	char statuschar;
-	if (!dtm_read_char(dtm, &statuschar)) return false;
+	if (!dtm_read_char(dtm, &statuschar)) {
+		fprintf(stderr, "dtm_read_status: failed to get char\n");
+		return false;
+	}
 
 	switch (statuschar)
 	{
 		case '0':
 			*s =  TRANSACTION_STATUS_UNKNOWN;
+			break;
 		case 'c':
 			*s =  TRANSACTION_STATUS_COMMITTED;
+			break;
 		case 'a':
 			*s =  TRANSACTION_STATUS_ABORTED;
+			break;
 		case '?':
 			*s =  TRANSACTION_STATUS_IN_PROGRESS;
+			break;
 		default:
+			fprintf(stderr, "dtm_read_status: unexpected char '%c'\n", statuschar);
 			return false;
 	}
 	return true;
@@ -229,7 +237,10 @@ static DTMConn GetConnection()
 	if (dtm == NULL)
 	{
 		// FIXME: add API for setting the host and port for dtm connection
-		dtm = DtmConnect("localhost", 5431);
+		dtm = DtmConnect("127.0.0.1", 5431);
+        if (dtm == NULL) { 
+            elog(ERROR, "Failed to connect to DTMD");
+        }
 	}
 	return dtm;
 }
@@ -329,11 +340,11 @@ XidStatus DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait
 	{
 		case TRANSACTION_STATUS_COMMITTED:
 			// query
-			if (!dtm_query(dtm, 'c', 2, xid, wait)) goto failure;
+			if (!dtm_query(dtm, 'y', 2, xid, wait)) goto failure;
 			break;
 		case TRANSACTION_STATUS_ABORTED:
 			// query
-			if (!dtm_query(dtm, 'a', 2, xid, wait)) goto failure;
+			if (!dtm_query(dtm, 'n', 2, xid, wait)) goto failure;
 			break;
 		default:
 			assert(false); // should not happen

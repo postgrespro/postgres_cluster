@@ -8,7 +8,7 @@ import (
 )
 
 const (
-    TRANSFER_CONNECTIONS = 8
+    TRANSFER_CONNECTIONS = 2
     INIT_AMOUNT = 10000
     N_ITERATIONS = 10000
     N_ACCOUNTS = TRANSFER_CONNECTIONS//100000
@@ -47,7 +47,7 @@ func commit(conn1, conn2 *pgx.Conn) {
 }
 
 func prepare_db() {
-    var xid int32
+//    var xid int32
 
     conn1, err := pgx.Connect(cfg1)
     checkErr(err)
@@ -67,8 +67,8 @@ func prepare_db() {
     exec(conn2, "drop table if exists t")
     exec(conn2, "create table t(u int primary key, v int)")
     
-    xid = execQuery(conn1, "select dtm_begin_transaction(2)")
-    exec(conn2, "select dtm_join_transaction(xid)")
+//    xid = execQuery(conn1, "select dtm_begin_transaction(2)")
+//    exec(conn2, "select dtm_join_transaction($1)", xid)
 
     // strt transaction
     exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
@@ -109,14 +109,15 @@ func transfer(id int, wg *sync.WaitGroup) {
         account2 := rand.Intn(N_ACCOUNTS)
 
         xid = execQuery(conn1, "select dtm_begin_transaction(2)")
-        exec(conn2, "select dtm_join_transaction(xid)")
+        exec(conn2, "select dtm_join_transaction($1)", xid)
 
         // start transaction
         exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
         exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
         
-        if !execUpdate(conn1, "update t set v = v + $1 where u=$2", amount, account1) || 
-           !execUpdate(conn2, "update t set v = v - $1 where u=$2", amount, account2) {  
+        ok1 := execUpdate(conn1, "update t set v = v + $1 where u=$2", amount, account1)  
+        ok2 := execUpdate(conn2, "update t set v = v - $1 where u=$2", amount, account2) 
+        if !ok1 || !ok2 {  
             exec(conn1, "rollback")
             exec(conn2, "rollback")
             nConflicts += 1
@@ -130,8 +131,8 @@ func transfer(id int, wg *sync.WaitGroup) {
 }
 
 func inspect(wg *sync.WaitGroup) {
-    var sum1, sum2, sum int32
-    var prevSum int32 = 0 
+    var sum1, sum2, sum int64
+    var prevSum int64 = 0 
     var xid int32
 
     {
@@ -145,17 +146,17 @@ func inspect(wg *sync.WaitGroup) {
 
        
         xid = execQuery(conn1, "select dtm_begin_transaction(2)")
-        exec(conn2, "select dtm_join_transaction(xid)")
+        exec(conn2, "select dtm_join_transaction($1)", xid)
         
         exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
         exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
  
-        sum1 = execQuery(conn1, "select sum(v) from t")
-        sum2 = execQuery(conn2, "select sum(v) from t")
+        sum1 = execQuery64(conn1, "select sum(v) from t")
+        sum2 = execQuery64(conn2, "select sum(v) from t")
 
         sum = sum1 + sum2
         if (sum != prevSum) {
-            fmt.Println("Total = ", sum, "xids=", xids, "snap1={", execQuery(conn1, "select dtm_get_current_snapshot_xmin()"), execQuery(conn1, "select dtm_get_current_snapshot_xmax()"), "}, snap2={",  execQuery(conn2, "select dtm_get_current_snapshot_xmin()"), execQuery(conn2, "select dtm_get_current_snapshot_xmax()"), "}")
+            fmt.Println("Total = ", sum, "xid=", xid, "snap1={", execQuery(conn1, "select dtm_get_current_snapshot_xmin()"), execQuery(conn1, "select dtm_get_current_snapshot_xmax()"), "}, snap2={",  execQuery(conn2, "select dtm_get_current_snapshot_xmin()"), execQuery(conn2, "select dtm_get_current_snapshot_xmax()"), "}")
             prevSum = sum
         }        
 
@@ -205,9 +206,16 @@ func execQuery(conn *pgx.Conn, stmt string, arguments ...interface{}) int32 {
     var result int32
     err = conn.QueryRow(stmt, arguments...).Scan(&result)
     checkErr(err)
-    return int32(result)
+    return result
 }
 
+func execQuery64(conn *pgx.Conn, stmt string, arguments ...interface{}) int64 {
+    var err error
+    var result int64
+    err = conn.QueryRow(stmt, arguments...).Scan(&result)
+    checkErr(err)
+    return result
+}
 func checkErr(err error) {
     if err != nil {
         panic(err)
