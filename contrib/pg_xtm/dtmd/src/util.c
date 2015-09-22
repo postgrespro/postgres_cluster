@@ -70,3 +70,25 @@ int falloc(int fd, off64_t size) {
 #endif
 	return res;
 }
+
+char *destructive_concat(char *a, char *b) {
+	if ((a == NULL) && (b == NULL)) {
+		return NULL;
+	}
+
+	size_t lena = a ? strlen(a) : 0;
+	size_t lenb = b ? strlen(b) : 0;
+	size_t lenc = lena + lenb + 1;
+	char *c = malloc(lenc);
+
+	if (a) {
+		strcpy(c, a);
+		free(a);
+	}
+	if (b) {
+		strcpy(c + lena, b);
+		free(b);
+	}
+
+	return c;
+}

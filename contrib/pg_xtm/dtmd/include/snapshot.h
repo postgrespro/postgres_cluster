@@ -9,6 +9,7 @@ typedef struct Snapshot {
 	xid_t xmax;
 	int nactive;
 	xid_t active[MAX_TRANSACTIONS];
+	int times_sent;
 } Snapshot;
 
 char *snapshot_serialize(Snapshot *s);

@@ -16,43 +16,33 @@
 #define DEFAULT_LISTENHOST "0.0.0.0"
 #define DEFAULT_LISTENPORT 5431
 
-GlobalTransaction transactions[MAX_TRANSACTIONS];
+Transaction transactions[MAX_TRANSACTIONS];
 int transactions_count;
-xid_t xmax[MAX_NODES];
+
+// We reserve the local xids if they fit between (prev, next) range, and
+// reserve something in (next, x) range otherwise, moving 'next' after 'x'.
+xid_t prev_gxid, next_gxid;
 
 typedef struct client_data_t {
 	int id;
 	parser_t parser;
+	int snapshots_sent;
+	xid_t xid;
 } client_data_t;
 
 clog_t clg;
-static client_data_t *create_client_data(int id);
-static void free_client_data(client_data_t *cd);
-static void onconnect(void *stream, void **clientdata);
-static void ondisconnect(void *stream, void *clientdata);
-static char *onbegin(void *stream, void *clientdata, cmd_t *cmd);
-static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote);
-static char *oncommit(void *stream, void *clientdata, cmd_t *cmd);
-static char *onabort(void *stream, void *clientdata, cmd_t *cmd);
-static void gen_snapshot(Snapshot *s, int node);
-static void gen_snapshots(GlobalTransaction *gt);
-static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd);
-static bool queue_for_transaction_finish(void *stream, void *clientdata, int node, xid_t xid, char cmd);
-static void notify_listeners(GlobalTransaction *gt, int status);
-static char *onstatus(void *stream, void *clientdata, cmd_t *cmd);
-static char *onnoise(void *stream, void *clientdata, cmd_t *cmd);
-static char *oncmd(void *stream, void *clientdata, cmd_t *cmd);
-static char *destructive_concat(char *a, char *b);
-static char *ondata(void *stream, void *clientdata, size_t len, char *data);
-static void usage(char *prog);
 
 #define CLIENT_ID(X) (((client_data_t*)(X))->id)
 #define CLIENT_PARSER(X) (((client_data_t*)(X))->parser)
+#define CLIENT_SNAPSENT(X) (((client_data_t*)(X))->snapshots_sent)
+#define CLIENT_XID(X) (((client_data_t*)(X))->xid)
 
 static client_data_t *create_client_data(int id) {
 	client_data_t *cd = malloc(sizeof(client_data_t));
 	cd->id = id;
 	cd->parser = parser_create();
+	cd->snapshots_sent = 0;
+	cd->xid = INVALID_XID;
 	return cd;
 }
 
@@ -61,52 +51,88 @@ static void free_client_data(client_data_t *cd) {
 	free(cd);
 }
 
-int next_client_id = 0;
+static int next_client_id = 0;
 static void onconnect(void *stream, void **clientdata) {
 	*clientdata = create_client_data(next_client_id++);
 	shout("[%d] connected\n", CLIENT_ID(*clientdata));
 }
 
+static void notify_listeners(Transaction *t, int status) {
+	void *listener;
+	switch (status) {
+		case BLANK:
+			while ((listener = transaction_pop_listener(t, 's'))) {
+				// notify 'status' listeners about the committed status
+				write_to_stream(listener, strdup("+0"));
+			}
+			break;
+		case NEGATIVE:
+			while ((listener = transaction_pop_listener(t, 's'))) {
+				// notify 'status' listeners about the aborted status
+				write_to_stream(listener, strdup("+a"));
+			}
+			break;
+		case POSITIVE:
+			while ((listener = transaction_pop_listener(t, 's'))) {
+				// notify 'status' listeners about the committed status
+				write_to_stream(listener, strdup("+c"));
+			}
+			break;
+		case DOUBT:
+			while ((listener = transaction_pop_listener(t, 's'))) {
+				// notify 'status' listeners about the committed status
+				write_to_stream(listener, strdup("+?"));
+			}
+			break;
+	}
+}
+
 static void ondisconnect(void *stream, void *clientdata) {
-	int client_id = CLIENT_ID(clientdata);
-	shout("[%d] disconnected\n", client_id);
+	shout("[%d] disconnected\n", CLIENT_ID(clientdata));
 
-	int i, n;
-	for (i = transactions_count - 1; i >= 0; i--) {
-		GlobalTransaction *gt = transactions + i;
+	if (CLIENT_XID(clientdata) != INVALID_XID) {
+		int i;
 
-		for (n = 0; n < MAX_NODES; n++) {
-			Transaction *t = gt->participants + n;
-			if ((t->active) && (t->client_id == client_id)) {
-				if (global_transaction_mark(clg, gt, NEGATIVE)) {
-					notify_listeners(gt, NEGATIVE);
+		// need to abort the transaction this client is participating in
+		for (i = transactions_count - 1; i >= 0; i--) {
+			Transaction *t = transactions + i;
 
-					transactions[i] = transactions[transactions_count - 1];
+			if (t->xid == CLIENT_XID(clientdata)) {
+				if (clog_write(clg, t->xid, NEGATIVE)) {
+					notify_listeners(t, NEGATIVE);
+
+					*t = transactions[transactions_count - 1];
 					transactions_count--;
 				} else {
 					shout(
-						"[%d] DISCONNECT: global transaction failed"
-						" to abort O_o\n",
-						client_id
+						"[%d] DISCONNECT: transaction %llu"
+						" failed to abort O_o\n",
+						CLIENT_ID(clientdata), t->xid
 					);
 				}
 				break;
 			}
+		}
+
+		if (i < 0) {
+			shout(
+				"[%d] DISCONNECT: transaction %llu not found O_o\n",
+				CLIENT_ID(clientdata), CLIENT_XID(clientdata)
+			);
 		}
 	}
 
 	free_client_data(clientdata);
 }
 
-#ifdef NDEBUG
-#define shout_cmd(...)
-#else
+#ifdef DEBUG
 static void shout_cmd(void *clientdata, cmd_t *cmd) {
 	char *cmdname;
 	switch (cmd->cmd) {
+		case CMD_RESERVE : cmdname =  "RESERVE"; break;
 		case CMD_BEGIN   : cmdname =    "BEGIN"; break;
-		case CMD_COMMIT  : cmdname =   "COMMIT"; break;
-		case CMD_ABORT   : cmdname =    "ABORT"; break;
+		case CMD_FOR     : cmdname =      "FOR"; break;
+		case CMD_AGAINST : cmdname =  "AGAINST"; break;
 		case CMD_SNAPSHOT: cmdname = "SNAPSHOT"; break;
 		case CMD_STATUS  : cmdname =   "STATUS"; break;
 		default          : cmdname =  "unknown";
@@ -114,357 +140,315 @@ static void shout_cmd(void *clientdata, cmd_t *cmd) {
 	shout("[%d] %s", CLIENT_ID(clientdata), cmdname);
 	int i;
 	for (i = 0; i < cmd->argc; i++) {
-		shout(" %#llx", cmd->argv[i]);
+		shout(" %llu", cmd->argv[i]);
 	}
 	shout("\n");
 }
+#else
+#define shout_cmd(...)
 #endif
 
-static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
-	if (transactions_count >= MAX_TRANSACTIONS) {
-		shout(
-			"[%d] BEGIN: transaction limit hit\n",
-			CLIENT_ID(clientdata)
-		);
-		return strdup("-");
-	}
+#define CHECK(COND, CDATA, MSG) \
+	do { \
+		if (!(COND)) { \
+			shout("[%d] %s, returning '-'\n", CLIENT_ID(CDATA), MSG); \
+			return strdup("-"); \
+		} \
+	} while (0)
 
-	if (cmd->argc < 3) {
-		shout(
-			"[%d] BEGIN: wrong number of arguments\n",
-			CLIENT_ID(clientdata)
-		);
-		return strdup("-");
-	}
-	int size = cmd->argv[0];
-	if (cmd->argc - 1 != size * 2) {
-		shout(
-			"[%d] BEGIN: wrong 'size'\n",
-			CLIENT_ID(clientdata)
-		);
-		return strdup("-");
-	}
-	if (size > MAX_NODES) {
-		shout(
-			"[%d] BEGIN: 'size' > MAX_NODES (%d > %d)\n",
-			CLIENT_ID(clientdata), size, MAX_NODES
-		);
-		return strdup("-");
-	}
-
-	GlobalTransaction *gt = transactions + transactions_count;
-	global_transaction_clear(gt);
-	int i;
-	for (i = 0; i < size; i++) {
-		int node = cmd->argv[i * 2 + 1];
-		xid_t xid = cmd->argv[i * 2 + 2];
-
-		if (node >= MAX_NODES) {
-			shout(
-				"[%d] BEGIN: wrong 'node'\n",
-				CLIENT_ID(clientdata)
-			);
-			return strdup("-");
-		}
-
-		Transaction *t = gt->participants + node;
-		if (t->active) {
-			shout(
-				"[%d] BEGIN: node %d mentioned twice\n",
-				CLIENT_ID(clientdata), node
-			);
-			return strdup("-");
-		}
-		t->client_id = CLIENT_ID(clientdata);
-		t->active = true;
-		t->node = node;
-		t->vote = DOUBT;
-		t->xid = xid;
-		t->snapshot_no = 0;
-
-		if (xid > xmax[node]) {
-			xmax[node] = xid;
-		}
-	}
-	if (!global_transaction_mark(clg, gt, DOUBT)) {
-		shout(
-			"[%d] BEGIN: global transaction failed"
-			" to initialize clog bits O_o\n",
-			CLIENT_ID(clientdata)
-		);
-		return strdup("-");
-	}
-
-	transactions_count++;
-	return strdup("+");
+static xid_t max(xid_t a, xid_t b) {
+	return a > b ? a : b;
 }
 
-static void notify_listeners(GlobalTransaction *gt, int status) {
-	void *listener;
-	switch (status) {
-		case NEGATIVE:
-			while ((listener = global_transaction_pop_listener(gt, 's'))) {
-				// notify 'status' listeners about the aborted status
-				write_to_stream(listener, strdup("+a"));
-			}
-			while ((listener = global_transaction_pop_listener(gt, 'c'))) {
-				// notify 'commit' listeners about the failure
-				write_to_stream(listener, strdup("-"));
-			}
-			break;
-		case POSITIVE:
-			while ((listener = global_transaction_pop_listener(gt, 's'))) {
-				// notify 'status' listeners about the committed status
-				write_to_stream(listener, strdup("+c"));
-			}
-			while ((listener = global_transaction_pop_listener(gt, 'c'))) {
-				// notify 'commit' listeners about the success
-				write_to_stream(listener, strdup("+"));
-			}
-			break;
+static char *onreserve(void *stream, void *clientdata, cmd_t *cmd) {
+	CHECK(
+		cmd->argc == 2,
+		clientdata,
+		"RESERVE: wrong number of arguments"
+	);
+
+	xid_t minxid = cmd->argv[0];
+	int minsize = cmd->argv[1];
+	xid_t maxxid = minxid + minsize - 1;
+
+	shout(
+		"[%d] RESERVE: asked for range %llu-%llu\n",
+		CLIENT_ID(clientdata),
+		minxid, maxxid
+	);
+
+	if ((prev_gxid >= minxid) || (maxxid >= next_gxid)) {
+		shout(
+			"[%d] RESERVE: local range %llu-%llu is not between global range %llu-%llu\n",
+			CLIENT_ID(clientdata),
+			minxid, maxxid,
+			prev_gxid, next_gxid
+		);
+
+		minxid = max(minxid, next_gxid);
+		maxxid = max(maxxid, minxid + minsize - 1);
+		next_gxid = maxxid + 1;
 	}
+	shout(
+		"[%d] RESERVE: allocating range %llu-%llu\n",
+		CLIENT_ID(clientdata),
+		minxid, maxxid
+	);
+
+	char response[1+16+16+1];
+	sprintf(response, "+%016llx%016llx", minxid, maxxid);
+	return strdup(response);
+}
+
+static void gen_snapshot(Transaction *t) {
+	t->snapshots_count += 1;
+	Snapshot *s = transaction_latest_snapshot(t);
+
+	s->times_sent = 0;
+	s->nactive = 0;
+	s->xmin = MAX_XID;
+	s->xmax = MIN_XID;
+	int i;
+	for (i = 0; i < transactions_count; i++) {
+		Transaction *t = transactions + i;
+		if (t->xid < s->xmin) {
+			s->xmin = t->xid;
+		}
+		if (t->xid >= s->xmax) { 
+			s->xmax = t->xid + 1;
+		}
+		s->active[s->nactive++] = t->xid;
+	}
+	assert(s->xmin < MAX_XID);
+	assert(s->xmax > MIN_XID);
+	assert(s->xmin <= s->xmax);
+	snapshot_sort(s);
+}
+
+static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
+	CHECK(
+		transactions_count < MAX_TRANSACTIONS,
+		clientdata,
+		"BEGIN: transaction limit hit"
+	);
+
+	CHECK(
+		cmd->argc == 1,
+		clientdata,
+		"BEGIN: wrong number of arguments"
+	);
+
+	int size = cmd->argv[0];
+	CHECK(
+		size <= MAX_NODES,
+		clientdata,
+		"BEGIN: 'size' > MAX_NODES"
+	);
+
+	CHECK(
+		CLIENT_XID(clientdata) == INVALID_XID,
+		clientdata,
+		"BEGIN: already participating in another transaction"
+	);
+
+	Transaction *t = transactions + transactions_count;
+	transaction_clear(t);
+
+	prev_gxid = t->xid = next_gxid++;
+	t->snapshots_count = 0;
+	t->size = size;
+
+	CLIENT_SNAPSENT(clientdata) = 0;
+	CLIENT_XID(clientdata) = t->xid;
+
+	if (!clog_write(clg, t->xid, DOUBT)) {
+		shout(
+			"[%d] BEGIN: transaction %llu failed"
+			" to initialize clog bits O_o\n",
+			CLIENT_ID(clientdata), t->xid
+		);
+		return strdup("-");
+	}
+
+	char head[1+16+1];
+	sprintf(head, "+%016llx", t->xid);
+
+	transactions_count++;
+
+	gen_snapshot(t);
+	// will wrap around if exceeded max snapshots
+	Snapshot *snap = transaction_latest_snapshot(t);
+	char *snapser = snapshot_serialize(snap);
+
+	return destructive_concat(strdup(head), snapser);
+}
+
+static Transaction *find_transaction(xid_t xid) {
+	int i;
+	Transaction *t;
+	for (i = 0; i < transactions_count; i++) {
+		t = transactions + i;
+		if (t->xid == xid) {
+			return t;
+		}
+	}
+	return NULL;
+}
+
+static bool queue_for_transaction_finish(void *stream, void *clientdata, xid_t xid, char cmd) {
+	assert((cmd >= 'a') && (cmd <= 'z'));
+
+	Transaction *t = find_transaction(xid);
+	if (t == NULL) {
+		shout(
+			"[%d] QUEUE: xid %llu not found\n",
+			CLIENT_ID(clientdata), xid
+		);
+		return strdup("-");
+	}
+
+	// TODO: Implement deadlock detection here. We have
+	// CLIENT_XID(clientdata) and 'xid', i.e. we are able to tell which
+	// transaction waits which transaction.
+
+	transaction_push_listener(t, cmd, stream);
+	return true;
 }
 
 static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 	assert((vote == POSITIVE) || (vote == NEGATIVE));
 
-	int node = cmd->argv[0];
-	xid_t xid = cmd->argv[1];
-	bool wait = (vote == POSITIVE) ? cmd->argv[2] : false;
-	if (node >= MAX_NODES) {
+	// Check the arguments
+	xid_t xid = cmd->argv[0];
+	bool wait = cmd->argv[1];
+
+	CHECK(
+//		CLIENT_XID(clientdata) == INVALID_XID ||
+		CLIENT_XID(clientdata) == xid,
+		clientdata,
+		"VOTE: voting for a transaction not participated in"
+	);
+
+	Transaction *t = find_transaction(xid);
+	if (t == NULL) {
 		shout(
-			"[%d] VOTE: voted about a wrong 'node' (%d)\n",
-			CLIENT_ID(clientdata), node
+			"[%d] VOTE: xid %llu not found\n",
+			CLIENT_ID(clientdata), xid
 		);
 		return strdup("-");
 	}
 
-	if ((vote == NEGATIVE) && wait) {
-		shout(
-			"[%d] VOTE: 'wait' is ignored for NEGATIVE votes\n",
-			CLIENT_ID(clientdata)
-		);
+	if (vote == POSITIVE) {
+		t->votes_for += 1;
+	} else if (vote == NEGATIVE) {
+		t->votes_against += 1;
+	} else {
+		assert(false); // should not happen
 	}
+	assert(t->votes_for + t->votes_against <= t->size);
 
-	int i;
-	for (i = 0; i < transactions_count; i++) {
-		Transaction *t = transactions[i].participants + node;
-		if ((t->active) && (t->node == node) && (t->xid == xid)) {
-			break;
-		}
-	}
+	CLIENT_XID(clientdata) = INVALID_XID; // not participating any more
 
-	if (i == transactions_count) {
-		shout(
-			"[%d] VOTE: node %d xid %llu not found\n",
-			CLIENT_ID(clientdata), node, xid
-		);
-		return strdup("-");
-	}
-
-	if (transactions[i].participants[node].vote != DOUBT) {
-		shout(
-			"[%d] VOTE: node %d voting on xid %llu again\n",
-			CLIENT_ID(clientdata), node, xid
-		);
-		return strdup("-");
-	}
-	transactions[i].participants[node].vote = vote;
-
-	GlobalTransaction *gt = transactions + i;
-	switch (global_transaction_status(gt)) {
+	switch (transaction_status(t)) {
 		case NEGATIVE:
-			if (global_transaction_mark(clg, gt, NEGATIVE)) {
-				notify_listeners(gt, NEGATIVE);
+			CHECK(
+				clog_write(clg, t->xid, NEGATIVE),
+				clientdata,
+				"VOTE: transaction failed to abort O_o"
+			);
 
-				transactions[i] = transactions[transactions_count - 1];
-				transactions_count--;
-				return strdup("+");
-			} else {
-				shout(
-					"[%d] VOTE: global transaction failed"
-					" to abort O_o\n",
-					CLIENT_ID(clientdata)
-				);
-				return strdup("-");
-			}
+			notify_listeners(t, NEGATIVE);
+
+			*t = transactions[transactions_count - 1];
+			transactions_count--;
+			return strdup("+a");
 		case DOUBT:
-			//shout("[%d] VOTE: vote counted\n", CLIENT_ID(clientdata));
 			if (wait) {
-				if (!queue_for_transaction_finish(stream, clientdata, node, xid, 'c')) {
-					shout(
-						"[%d] VOTE: couldn't queue for transaction finish\n",
-						CLIENT_ID(clientdata)
-					);
-					return strdup("-");
-				}
+				CHECK(
+					queue_for_transaction_finish(stream, clientdata, xid, 's'),
+					clientdata,
+					"VOTE: couldn't queue for transaction finish"
+				);
 				return NULL;
 			} else {
-				return strdup("+");
+				return strdup("+?");
 			}
 		case POSITIVE:
-			if (global_transaction_mark(clg, transactions + i, POSITIVE)) {
-				notify_listeners(gt, POSITIVE);
+			CHECK(
+				clog_write(clg, t->xid, POSITIVE),
+				clientdata,
+				"VOTE: transaction failed to commit"
+			);
 
-				transactions[i] = transactions[transactions_count - 1];
-				transactions_count--;
-				return strdup("+");
-			} else {
-				shout(
-					"[%d] VOTE: global transaction failed"
-					" to commit\n",
-					CLIENT_ID(clientdata)
-				);
-				return strdup("-");
-			}
+			notify_listeners(t, POSITIVE);
+
+			*t = transactions[transactions_count - 1];
+			transactions_count--;
+			return strdup("+c");
 	}
 
 	assert(false); // a case missed in the switch?
 	return strdup("-");
 }
 
-static char *oncommit(void *stream, void *clientdata, cmd_t *cmd) {
-	if (cmd->argc != 3) {
-		shout(
-			"[%d] COMMIT: wrong number of arguments\n",
-			CLIENT_ID(clientdata)
-		);
-		return strdup("-");
-	}
-
-	return onvote(stream, clientdata, cmd, POSITIVE);
-}
-
-static char *onabort(void *stream, void *clientdata, cmd_t *cmd) {
-	if (cmd->argc != 2) {
-		shout(
-			"[%d] ABORT: wrong number of arguments\n",
-			CLIENT_ID(clientdata)
-		);
-		return strdup("-");
-	}
-
-	return onvote(stream, clientdata, cmd, NEGATIVE);
-}
-
-static void gen_snapshot(Snapshot *s, int node) {
-	s->nactive = 0;
-	s->xmin = xmax[node];
-    s->xmax = 0;
-	int i;
-	for (i = 0; i < transactions_count; i++) {
-		Transaction *t = transactions[i].participants + node;
-		if (t->active) {
-			if (t->xid < s->xmin) {
-				s->xmin = t->xid;
-			}
-            if (t->xid >= s->xmax) { 
-                s->xmax = t->xid + 1;
-            }
-			s->active[s->nactive++] = t->xid;
-		}
-	}
-    if (s->xmax == 0) { 
-        s->xmin = s->xmax + 1;
-    }
-	snapshot_sort(s);
-}
-
-static void gen_snapshots(GlobalTransaction *gt) {
-	int n;
-	for (n = 0; n < MAX_NODES; n++) {
-		gen_snapshot(&gt->participants[n].snapshot[gt->n_snapshots % MAX_SNAPSHOTS_PER_TRANS], n);
-	}
-    gt->n_snapshots += 1;
-}
-
 static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd) {
-	if (cmd->argc != 2) {
-		shout(
-			"[%d] SNAPSHOT: wrong number of arguments\n",
-			CLIENT_ID(clientdata)
-		);
-		return strdup("-");
-	}
-	int node = cmd->argv[0];
-	xid_t xid = cmd->argv[1];
-	if (node > MAX_NODES) {
-		shout(
-			"[%d] SNAPSHOT: wrong 'node' (%d)\n",
-			CLIENT_ID(clientdata), node
-		);
-		return strdup("-");
-	}
+	CHECK(
+		cmd->argc == 1,
+		clientdata,
+		"SNAPSHOT: wrong number of arguments"
+	);
 
-	int i;
-	for (i = 0; i < transactions_count; i++) {
-		Transaction *t = transactions[i].participants + node;
-		if ((t->active) && (t->node == node) && (t->xid == xid)) {
-			break;
-		}
-	}
+	xid_t xid = cmd->argv[0];
 
-	if (i == transactions_count) {
+	Transaction *t = find_transaction(xid);
+	if (t == NULL) {
 		shout(
-			"[%d] SNAPSHOT: node %d xid %llu not found\n",
-			CLIENT_ID(clientdata), node, xid
+			"[%d] SNAPSHOT: xid %llu not found\n",
+			CLIENT_ID(clientdata), xid
 		);
 		return strdup("-");
 	}
 
-	GlobalTransaction *gt = &transactions[i];
-	Transaction *t = &gt->participants[node];
-	t->client_id = CLIENT_ID(clientdata);
-	if (t->snapshot_no == gt->n_snapshots) {
-		gen_snapshots(gt);
-	}
-	assert(t->snapshot_no < gt->n_snapshots);
-
-	return snapshot_serialize(&t->snapshot[t->snapshot_no++ % MAX_SNAPSHOTS_PER_TRANS]);
-}
-
-static bool queue_for_transaction_finish(void *stream, void *clientdata, int node, xid_t xid, char cmd) {
-	assert((cmd >= 'a') && (cmd <= 'z'));
-	int i;
-	for (i = 0; i < transactions_count; i++) {
-		Transaction *t = transactions[i].participants + node;
-		if ((t->active) && (t->node == node) && (t->xid == xid)) {
-			break;
-		}
+	if (CLIENT_XID(clientdata) == INVALID_XID) {
+		CLIENT_SNAPSENT(clientdata) = 0;
+		CLIENT_XID(clientdata) = t->xid;
 	}
 
-	if (i == transactions_count) {
-		shout(
-			"[%d] QUEUE: node %d xid %llu not found\n",
-			CLIENT_ID(clientdata), node, xid
-		);
-		return false;
+	CHECK(
+		CLIENT_XID(clientdata) == t->xid,
+		clientdata,
+		"SNAPSHOT: getting snapshot for a transaction not participated in"
+	);
+
+	assert(CLIENT_SNAPSENT(clientdata) <= t->snapshots_count); // who sent an inexistent snapshot?!
+
+	if (CLIENT_SNAPSENT(clientdata) == t->snapshots_count) {
+		// a fresh snapshot is needed
+		gen_snapshot(t);
 	}
 
-	global_transaction_push_listener(&transactions[i], cmd, stream);
-	return true;
+	Snapshot *snap = transaction_snapshot(t, CLIENT_SNAPSENT(clientdata)++);
+	char *snapser = snapshot_serialize(snap);
+
+	// FIXME: Remote this assert if you do not have a barrier upon getting
+	// snapshot in backends. The assert should indicate that situation :)
+	assert(CLIENT_SNAPSENT(clientdata) == t->snapshots_count);
+
+	return destructive_concat(strdup("+"), snapser);
 }
 
 static char *onstatus(void *stream, void *clientdata, cmd_t *cmd) {
-	if (cmd->argc != 3) {
+	if (cmd->argc != 2) {
 		shout(
 			"[%d] STATUS: wrong number of arguments %d, expected %d\n",
 			CLIENT_ID(clientdata), cmd->argc, 3
 		);
 		return strdup("-");
 	}
-	int node = cmd->argv[0];
-	xid_t xid = cmd->argv[1];
-	bool wait = cmd->argv[2];
-	if (node > MAX_NODES) {
-		shout(
-			"[%d] STATUS: wrong 'node' (%d)\n",
-			CLIENT_ID(clientdata), node
-		);
-		return strdup("-");
-	}
+	xid_t xid = cmd->argv[0];
+	bool wait = cmd->argv[1];
 
-	int status = clog_read(clg, MUX_XID(node, xid));
+	int status = clog_read(clg, xid);
 	switch (status) {
 		case BLANK:
 			return strdup("+0");
@@ -474,7 +458,7 @@ static char *onstatus(void *stream, void *clientdata, cmd_t *cmd) {
 			return strdup("+a");
 		case DOUBT:
 			if (wait) {
-				if (!queue_for_transaction_finish(stream, clientdata, node, xid, 's')) {
+				if (!queue_for_transaction_finish(stream, clientdata, xid, 's')) {
 					shout(
 						"[%d] STATUS: couldn't queue for transaction finish\n",
 						CLIENT_ID(clientdata)
@@ -516,14 +500,17 @@ static char *oncmd(void *stream, void *clientdata, cmd_t *cmd) {
 
 	char *result = NULL;
 	switch (cmd->cmd) {
+		case CMD_RESERVE:
+			result = onreserve(stream, clientdata, cmd);
+			break;
 		case CMD_BEGIN:
 			result = onbegin(stream, clientdata, cmd);
 			break;
-		case CMD_COMMIT:
-			result = oncommit(stream, clientdata, cmd);
+		case CMD_FOR:
+			result = onvote(stream, clientdata, cmd, POSITIVE);
 			break;
-		case CMD_ABORT:
-			result = onabort(stream, clientdata, cmd);
+		case CMD_AGAINST:
+			result = onvote(stream, clientdata, cmd, NEGATIVE);
 			break;
 		case CMD_SNAPSHOT:
 			result = onsnapshot(stream, clientdata, cmd);
@@ -535,28 +522,6 @@ static char *oncmd(void *stream, void *clientdata, cmd_t *cmd) {
 			return onnoise(stream, clientdata, cmd);
 	}
 	return result;
-}
-
-static char *destructive_concat(char *a, char *b) {
-	if ((a == NULL) && (b == NULL)) {
-		return NULL;
-	}
-
-	size_t lena = a ? strlen(a) : 0;
-	size_t lenb = b ? strlen(b) : 0;
-	size_t lenc = lena + lenb + 1;
-	char *c = malloc(lenc);
-
-	if (a) {
-		strcpy(c, a);
-		free(a);
-	}
-	if (b) {
-		strcpy(c + lena, b);
-		free(b);
-	}
-
-	return c;
 }
 
 static char *ondata(void *stream, void *clientdata, size_t len, char *data) {
@@ -637,11 +602,9 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 
+	prev_gxid = MIN_XID;
+	next_gxid = MIN_XID;
 	transactions_count = 0;
-	int i;
-	for (i = 0; i < MAX_NODES; i++) {
-		xmax[i] = 0;
-	}
 
 	int retcode = eventwrap(
 		listenhost, listenport,

@@ -36,40 +36,25 @@ dtm_get_snapshot() RETURNS void
 libdtm api
 ----------
 
-typedef unsigned long long xid_t;
+void DtmInitSnapshot(Snapshot snapshot);
 
-typedef int NodeId;
+// Starts new global transaction
+TransactionId DtmGlobalStartTransaction(int nParticipants, Snapshot shaposhot);
 
-typedef struct {
-    TransactionId* xids;
-    NodeId* nodes;
-    int nNodes;
-} GlobalTransactionId;
-
-// Connects to the specified DTM.
-DTMConn DtmConnect(char *host, int port);
-
-// Disconnects from the DTM. Do not use the 'dtm' pointer after this call, or
-// bad things will happen.
-void DtmDisconnect(DTMConn dtm);
-
-// Creates an entry for a new global transaction. Returns 'true' on success, or
-// 'false' otherwise.
-bool DtmGlobalStartTransaction(DTMConn dtm, GlobalTransactionId* gtid);
-
-// Asks DTM for a fresh snapshot. Returns 'true' on success, or 'false'
-// otherwise.
-bool DtmGlobalGetSnapshot(DTMConn dtm, NodeId nodeid, TransactionId xid, Snapshot snapshot);
+// Get existed DTM snapshot.
+void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot);
 
 // Commits transaction only once all participants have called this function,
-// does not change CLOG otherwise. Returns 'true' on success, 'false' if
-// something failed on the daemon side.
-bool DtmGlobalSetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, XidStatus status);
+// does not change CLOG otherwise.
+void DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait);
 
 // Gets the status of the transaction identified by 'xid'. Returns the status
 // on success, or -1 otherwise. If 'wait' is true, then it does not return
 // until the transaction is finished.
-XidStatus DtmGlobalGetTransStatus(DTMConn dtm, NodeId nodeid, TransactionId xid, bool wait);
+XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait);
+
+// Reserve XIDs for local transaction
+TransactioinId DtmGlobalReserve(int nXids);
 
 --------------------
 Backend-DTM Protocol
@@ -85,56 +70,63 @@ The queries from backend to DTM should be formatted according to this syntax.
 
 The commands:
 
-'b': begin(size, node0, xid0, node1, xid1, ...)
-	Starts a global transaction using 'xid0' on 'node0', 'xid1' on 'node1'
-	and so on. The 'size' is the number of nodes, so for example if 'size'
-	== 3 there are 6 values expected after it.
-	
-	The DTM replies with '+' if transaction started, or '-' if failed.
+'r': reserve(minxid, minsize)
+	Claims a sequence ≥ minsize of xids ≥ minxid for local usage. This will
+	prevent DTM from using those values for global transactions.
 
-'c': commit(node, xid, wait)
-	Tells the DTM to vote for commit of the global transaction identified
-	by the given 'node:xid' pair.
+	The DTM replies with:
+		'+'<hex16 min><hex16 max> if reserved a range [min, max]
+		'-' on failure
 
-	The DTM replies with '+' if committed, or '-' if aborted or failed.
+'b': begin(size)
+	Starts a global transaction and assign a 'xid' to it. 'size' is used
+	for vote results calculation. The DTM also creates and returns the
+	snapshot.
+
+	The DTM replies with:
+		'+'<hex16 xid><snapshot> if transaction started successfully
+		'-' on failure
+
+	See the 'snapshot' command description for the snapshot format.
+
+'s': status(xid, wait)
+	Asks the DTM about the status of the global transaction identified
+	by the given 'xid'.
 
 	If 'wait' is true, DTM will not reply until it considers the
-	transaction finished (all nodes committed, or at least one aborted).
+	transaction finished (all nodes voted, or one dead).
 
-'a': abort(node, xid)
+	The DTM replies with:
+		"+0" if not started
+		"+c" if committed
+		"+a" if aborted
+		"+?" if in progress
+		'-' if failed
+
+'y': for(xid, wait)
+	Tells the DTM to vote for commit of the global transaction identified
+	by the given 'xid'.
+
+	The reply and 'wait' logic is the same as for the 'status' command.
+
+'n': against(xid, wait)
 	Tells the DTM to vote againts commit of the global transaction
-	identified by the given 'node:xid' pair. This query not have the 'wait'
-	parameter, because the DTM will not wait for all votes if one is
-	against the commit.
+	identified by the given 'xid'.
 
-	The DTM replies with '+' if aborted, or '-' if failed. The backend
-	probably should ignore this reply anyway :)
+	The reply and 'wait' logic is the same as for the 'status' command.
 
-'h': snapshot(node, xid)
-	Tells the DTM to give a snapshot for the global transaction identified
-	by the given 'node:xid' pair. The DTM will create a snapshot for every
-	participant, so when they ask for the snapshot it will reply with the
-	"same" snapshot. When a node asks for a snapshot once again, the DTM
-	generates a fresh version for every participant. So be careful not to
-	ask for a snapshot from the same node the second time, until all other
-	nodes also ask for that snapshot.
+'h': snapshot(xid)
+	Tells the DTM to generate a snapshot for the global transaction
+	identified by the given 'xid'. The DTM will create a snapshot for every
+	participant, so when each of them asks for the snapshot it will reply
+	with the same snapshot. The DTM generates a fresh version if the same
+	client asks for a snapshot again for the same transaction.
+
+	Joins the global transaction identified by the given 'xid', if not
+	joined already.
 
 	The DTM replies with '+' followed by a snapshot in the form:
 
 		<hex16 xmin><hex16 xmax><hex16 xcnt><hex16 xip[0]>...
 
 	In case of a failure, the DTM replies with '-'.
-
-'s': status(node, xid, wait)
-	Asks the DTM about the status of the global transaction identified
-	by the given 'node:xid' pair.
-
-	The DTM replies with:
-		"+0" if not started;
-		"+c" if committed;
-		"+a" if aborted;
-		"+?" if in progress;
-		'-' if failed.
-
-	If 'wait' is true, DTM will not reply until it considers the
-	transaction finished (all nodes committed, or at least one aborted).

@@ -5,9 +5,9 @@
 #include "snapshot.h"
 #include "util.h"
 
-static void append_char(char **cursorp, char c) {
-	*((*cursorp)++) = c;
-}
+//static void append_char(char **cursorp, char c) {
+//	*((*cursorp)++) = c;
+//}
 
 static void append_hex16(char **cursorp, xid_t value) {
 	int written = sprintf(*cursorp, "%016llx", value);
@@ -28,12 +28,11 @@ void snapshot_sort(Snapshot *s) {
 char *snapshot_serialize(Snapshot *s) {
 	int numberlen = 16;
 	int numbers = 3 + s->nactive; // xmin, xmax, n, active...
-	int len = 1 + numberlen * numbers; // +1 for '+'
+	int len = numberlen * numbers;
 	char *data = malloc(len + 1); // +1 for '\0'
 
 	char *cursor = data;
 
-	append_char(&cursor, '+');
 	append_hex16(&cursor, s->xmin);
 	append_hex16(&cursor, s->xmax);
 	append_hex16(&cursor, s->nactive);
