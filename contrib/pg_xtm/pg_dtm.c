@@ -34,12 +34,12 @@
 
 #include "libdtm.h"
 
-typedef struct  
-{	
-    LWLockId	  hashLock; 
-    LWLockId	  xidLock; 
-    TransactionId nextXid;
-    size_t        nReservedXids;    
+typedef struct
+{
+	LWLockId hashLock;
+	LWLockId xidLock;
+	TransactionId nextXid;
+	size_t nReservedXids;
 } DtmState;
 
 
@@ -79,9 +79,9 @@ static int DtmLocalXidReserve;
 static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmCopySnapshot, DtmGetNextXid };
 
 
-#define XTM_TRACE(fmt, ...) 
+#define XTM_TRACE(fmt, ...)
 #define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
-//#define XTM_INFO(fmt, ...) 
+//#define XTM_INFO(fmt, ...)
 
 static void DumpSnapshot(Snapshot s, char *name)
 {
@@ -106,213 +106,210 @@ static void DumpSnapshot(Snapshot s, char *name)
 
 static bool TransactionIdIsInDtmSnapshot(TransactionId xid)
 {
-    return xid >= DtmSnapshot.xmax 
-        || bsearch(&xid, DtmSnapshot.xip, DtmSnapshot.xcnt, sizeof(TransactionId), xidComparator) != NULL;
+	return xid >= DtmSnapshot.xmax
+		|| bsearch(&xid, DtmSnapshot.xip, DtmSnapshot.xcnt, sizeof(TransactionId), xidComparator) != NULL;
 }
 
 static bool TransactionIdIsInDoubt(TransactionId xid)
 {
-    bool inDoubt;
+	bool inDoubt;
 
-    if (!TransactionIdIsInDtmSnapshot(xid)) {
-        LWLockAcquire(dtm->hashLock, LW_SHARED); 
-        inDoubt = hash_search(xid_in_doubt, &xid, HASH_FIND, NULL) != NULL;
-        LWLockRelease(dtm->hashLock);
-        if (!inDoubt) {
-            XLogRecPtr lsn;
-            inDoubt = CLOGTransactionIdGetStatus(xid, &lsn) != TRANSACTION_STATUS_IN_PROGRESS;
-        }
-        if (inDoubt) {
-            XTM_INFO("Wait for transaction %d to complete\n", xid);
-            XactLockTableWait(xid, NULL, NULL, XLTW_None);
-            return true;
-        }
-    }
-    return false;
+	if (!TransactionIdIsInDtmSnapshot(xid)) {
+		LWLockAcquire(dtm->hashLock, LW_SHARED);
+		inDoubt = hash_search(xid_in_doubt, &xid, HASH_FIND, NULL) != NULL;
+		LWLockRelease(dtm->hashLock);
+		if (!inDoubt) {
+			XLogRecPtr lsn;
+			inDoubt = CLOGTransactionIdGetStatus(xid, &lsn) != TRANSACTION_STATUS_IN_PROGRESS;
+		}
+		if (inDoubt) {
+			XTM_INFO("Wait for transaction %d to complete\n", xid);
+			XactLockTableWait(xid, NULL, NULL, XLTW_None);
+			return true;
+		}
+	}
+	return false;
 }
- 
+
 static void DtmMergeSnapshots(Snapshot dst, Snapshot src)
 {
-    int i, j, n;
-    TransactionId xid;
-    Snapshot local;
+	int i, j, n;
+	TransactionId xid;
+	Snapshot local;
 
-    Assert(TransactionIdIsValid(src->xmin) && TransactionIdIsValid(src->xmax));
+	Assert(TransactionIdIsValid(src->xmin) && TransactionIdIsValid(src->xmax));
 
-  GetLocalSnapshot:
-    local = GetSnapshotData(&DtmLocalSnapshot);
-    for (i = 0; i < local->xcnt; i++) {
-        if (TransactionIdIsInDoubt(local->xip[i])) {
-            goto GetLocalSnapshot;
-        }   
-    }
-    for (xid = local->xmax; xid < src->xmax; xid++) { 
-        if (TransactionIdIsInDoubt(xid)) { 
-            goto GetLocalSnapshot;
-        }
-    }
-    DumpSnapshot(local, "local");
-    DumpSnapshot(src, "DTM");
+GetLocalSnapshot:
+	local = GetSnapshotData(&DtmLocalSnapshot);
+	for (i = 0; i < local->xcnt; i++) {
+		if (TransactionIdIsInDoubt(local->xip[i])) {
+			goto GetLocalSnapshot;
+		}
+	}
+	for (xid = local->xmax; xid < src->xmax; xid++) {
+		if (TransactionIdIsInDoubt(xid)) {
+			goto GetLocalSnapshot;
+		}
+	}
+	DumpSnapshot(local, "local");
+	DumpSnapshot(src, "DTM");
 
-    /* Merge two snapshots: produce most restrictive snapshots whihc includes running transactions from both of them */
-    dst->xmin = local->xmin < src->xmin ? local->xmin : src->xmin;
-    dst->xmax = local->xmax < src->xmax ? local->xmax : src->xmax;
-    
-    n = local->xcnt;
-    for (xid = local->xmax; xid <= src->xmin; xid++) { 
-        local->xip[n++] = xid;
-    }
-    memcpy(local->xip + n, src->xip, src->xcnt*sizeof(TransactionId));
-    n += src->xcnt;
-    Assert(n <= GetMaxSnapshotXidCount());
-    
-    qsort(local->xip, n, sizeof(TransactionId), xidComparator); 
-    xid = InvalidTransactionId;
-         
-    for (i = 0, j = 0; i < n && local->xip[i] < dst->xmax; i++) { 
-        if (local->xip[i] != xid) { 
-            dst->xip[j++] = xid = local->xip[i];
-        }
-    }
-    dst->xcnt = j;
-    DumpSnapshot(dst, "merged");
+	/* Merge two snapshots: produce most restrictive snapshots whihc includes running transactions from both of them */
+	dst->xmin = local->xmin < src->xmin ? local->xmin : src->xmin;
+	dst->xmax = local->xmax < src->xmax ? local->xmax : src->xmax;
+
+	n = local->xcnt;
+	for (xid = local->xmax; xid <= src->xmin; xid++) {
+		local->xip[n++] = xid;
+	}
+	memcpy(local->xip + n, src->xip, src->xcnt*sizeof(TransactionId));
+	n += src->xcnt;
+	Assert(n <= GetMaxSnapshotXidCount());
+
+	qsort(local->xip, n, sizeof(TransactionId), xidComparator);
+	xid = InvalidTransactionId;
+
+	for (i = 0, j = 0; i < n && local->xip[i] < dst->xmax; i++) {
+		if (local->xip[i] != xid) {
+			dst->xip[j++] = xid = local->xip[i];
+		}
+	}
+	dst->xcnt = j;
+	DumpSnapshot(dst, "merged");
 }
 
 static void DtmUpdateRecentXmin(void)
 {
-    TransactionId xmin = DtmSnapshot.xmin;
+	TransactionId xmin = DtmSnapshot.xmin;
 
-    XTM_TRACE("XTM: DtmUpdateRecentXmin \n");
+	XTM_TRACE("XTM: DtmUpdateRecentXmin \n");
 
-    if (TransactionIdIsValid(xmin)) { 
-        xmin -= vacuum_defer_cleanup_age;        
-        if (!TransactionIdIsNormal(xmin)) {
-            xmin = FirstNormalTransactionId;
-        }
-        if (RecentGlobalDataXmin > xmin) { 
-            RecentGlobalDataXmin = xmin;
-        }
-        if (RecentGlobalXmin > xmin) { 
-            RecentGlobalXmin = xmin;
-        }
-        if (RecentXmin > xmin) {
-            RecentXmin = xmin;
-        }
-    }   
+	if (TransactionIdIsValid(xmin)) {
+		xmin -= vacuum_defer_cleanup_age;
+		if (!TransactionIdIsNormal(xmin)) {
+			xmin = FirstNormalTransactionId;
+		}
+		if (RecentGlobalDataXmin > xmin) {
+			RecentGlobalDataXmin = xmin;
+		}
+		if (RecentGlobalXmin > xmin) {
+			RecentGlobalXmin = xmin;
+		}
+		if (RecentXmin > xmin) {
+			RecentXmin = xmin;
+		}
+	}
 }
 
 static Snapshot DtmCopySnapshot(Snapshot snapshot)
 {
-    Snapshot newsnap;
-    Size size = sizeof(SnapshotData) + GetMaxSnapshotXidCount() * sizeof(TransactionId);
-    Size subxipoff = size;
-    if (snapshot->subxcnt > 0) {
-        size += snapshot->subxcnt * sizeof(TransactionId);
-    }
-    newsnap = (Snapshot) MemoryContextAlloc(TopTransactionContext, size);
-    memcpy(newsnap, snapshot, sizeof(SnapshotData));
-    
-    newsnap->regd_count = 0;
-    newsnap->active_count = 0;
-    newsnap->copied = true;
-    
-    newsnap->xip = (TransactionId *) (newsnap + 1);
-    if (snapshot->xcnt > 0)
-    {
-        memcpy(newsnap->xip, snapshot->xip, snapshot->xcnt * sizeof(TransactionId));
-    }
-    if (snapshot->subxcnt > 0 &&
-        (!snapshot->suboverflowed || snapshot->takenDuringRecovery))
-    {
-        newsnap->subxip = (TransactionId *) ((char *) newsnap + subxipoff);
-        memcpy(newsnap->subxip, snapshot->subxip,
-               snapshot->subxcnt * sizeof(TransactionId));
-    }
-    else
-        newsnap->subxip = NULL;
-    
-    return newsnap;
+	Snapshot newsnap;
+	Size size = sizeof(SnapshotData) + GetMaxSnapshotXidCount() * sizeof(TransactionId);
+	Size subxipoff = size;
+	if (snapshot->subxcnt > 0) {
+		size += snapshot->subxcnt * sizeof(TransactionId);
+	}
+	newsnap = (Snapshot) MemoryContextAlloc(TopTransactionContext, size);
+	memcpy(newsnap, snapshot, sizeof(SnapshotData));
+
+	newsnap->regd_count = 0;
+	newsnap->active_count = 0;
+	newsnap->copied = true;
+
+	newsnap->xip = (TransactionId *) (newsnap + 1);
+	if (snapshot->xcnt > 0)
+	{
+		memcpy(newsnap->xip, snapshot->xip, snapshot->xcnt * sizeof(TransactionId));
+	}
+	if (snapshot->subxcnt > 0 &&
+			(!snapshot->suboverflowed || snapshot->takenDuringRecovery))
+	{
+		newsnap->subxip = (TransactionId *) ((char *) newsnap + subxipoff);
+		memcpy(newsnap->subxip, snapshot->subxip,
+				snapshot->subxcnt * sizeof(TransactionId));
+	}
+	else
+		newsnap->subxip = NULL;
+
+	return newsnap;
 }
-           
+
 static TransactionId DtmGetNextXid()
 {
-    TransactionId xid;
-    if (TransactionIdIsValid(DtmNextXid)) {
-        xid = DtmNextXid;
-    } else {        
-        LWLockAcquire(dtm->xidLock, LW_EXCLUSIVE);
-        if (dtm->nReservedXids == 0) { 
-            xid = DtmGlobalReserve(dtm->nextXid, DtmLocalXidReserve);        
-            dtm->nReservedXids = DtmLocalXidReserve;
-            ShmemVariableCache->nextXid = xid;
-            dtm->nextXid = xid;
-        } 
-        Assert(dtm->nextXid == ShmemVariableCache->nextXid);
-        xid = ShmemVariableCache->nextXid;
-        dtm->nextXid += 1;
-        dtm->nReservedXids -= 1;
-        LWLockRelease(dtm->xidLock);
-    }
-    return xid;
+	TransactionId xid;
+	if (TransactionIdIsValid(DtmNextXid)) {
+		xid = DtmNextXid;
+	} else {
+		LWLockAcquire(dtm->xidLock, LW_EXCLUSIVE);
+		if (dtm->nReservedXids == 0) {
+			dtm->nReservedXids = DtmGlobalReserve(dtm->nextXid, DtmLocalXidReserve, &xid);
+			ShmemVariableCache->nextXid = xid;
+			dtm->nextXid = xid;
+		}
+		Assert(dtm->nextXid == ShmemVariableCache->nextXid);
+		xid = ShmemVariableCache->nextXid;
+		dtm->nextXid += 1;
+		dtm->nReservedXids -= 1;
+		LWLockRelease(dtm->xidLock);
+	}
+	return xid;
 }
 
 static Snapshot DtmGetSnapshot()
 {
-    Snapshot snapshot = GetLocalTransactionSnapshot();
-    if (TransactionIdIsValid(DtmNextXid)) {
-        if (!DtmHasGlobalSnapshot) {
-            Assert(!IsolationUsesXactSnapshot());
-            DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot);
-        }
-        DtmMergeSnapshots(snapshot, &DtmSnapshot);
-        DtmUpdateRecentXmin();
-        DtmHasGlobalSnapshot = false;
-    }
-    CurrentTransactionSnapshot = snapshot;
-    return snapshot;
+	Snapshot snapshot = GetLocalTransactionSnapshot();
+	if (TransactionIdIsValid(DtmNextXid)) {
+		if (!DtmHasGlobalSnapshot) {
+			Assert(!IsolationUsesXactSnapshot());
+			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot);
+		}
+		DtmMergeSnapshots(snapshot, &DtmSnapshot);
+		DtmUpdateRecentXmin();
+		DtmHasGlobalSnapshot = false;
+	}
+	CurrentTransactionSnapshot = snapshot;
+	return snapshot;
 }
-
 
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 {
-    XidStatus status = CLOGTransactionIdGetStatus(xid, lsn);
-    XTM_TRACE("XTM: DtmGetTransactionStatus \n");
-    return status;
+	XidStatus status = CLOGTransactionIdGetStatus(xid, lsn);
+	XTM_TRACE("XTM: DtmGetTransactionStatus \n");
+	return status;
 }
-
 
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
-    XTM_TRACE("XTM: DtmSetTransactionStatus %u = %u \n", xid, status);
-    if (!RecoveryInProgress()) { 
-        if (TransactionIdIsValid(DtmNextXid)) { 
-            /* Already should be IN_PROGRESS */
-            /* CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_IN_PROGRESS, lsn); */
-            CurrentTransactionSnapshot = NULL;
-            if (status == TRANSACTION_STATUS_ABORTED) { 
-                CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
-                DtmGlobalSetTransStatus(xid, status, false);
-                XTM_INFO("Abort transaction %d\n", xid);
-                return;
-            } else { 
-                XTM_INFO("Begin commit transaction %d\n", xid);
-                LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
-                hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
-                LWLockRelease(dtm->hashLock);
-                DtmGlobalSetTransStatus(xid, status, true);
-                XTM_INFO("Commit transaction %d\n", xid);
-            }
-        } else {
-            XTM_INFO("Set transaction %u status in local CLOG" , xid);
-        }
-    } else { 
-        XidStatus gs;
-        gs = DtmGlobalGetTransStatus(xid, false);
-        if (gs != TRANSACTION_STATUS_UNKNOWN) { 
-            status = gs;
-        }
-    }
-    CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
+	XTM_TRACE("XTM: DtmSetTransactionStatus %u = %u \n", xid, status);
+	if (!RecoveryInProgress()) {
+		if (TransactionIdIsValid(DtmNextXid)) {
+			/* Already should be IN_PROGRESS */
+			/* CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_IN_PROGRESS, lsn); */
+			CurrentTransactionSnapshot = NULL;
+			if (status == TRANSACTION_STATUS_ABORTED) {
+				CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
+				DtmGlobalSetTransStatus(xid, status, false);
+				XTM_INFO("Abort transaction %d\n", xid);
+				return;
+			} else {
+				XTM_INFO("Begin commit transaction %d\n", xid);
+				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
+				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
+				LWLockRelease(dtm->hashLock);
+				DtmGlobalSetTransStatus(xid, status, true);
+				XTM_INFO("Commit transaction %d\n", xid);
+			}
+		} else {
+			XTM_INFO("Set transaction %u status in local CLOG" , xid);
+		}
+	} else {
+		XidStatus gs;
+		gs = DtmGlobalGetTransStatus(xid, false);
+		if (gs != TRANSACTION_STATUS_UNKNOWN) {
+			status = gs;
+		}
+	}
+	CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
 }
 
 static uint32 dtm_xid_hash_fn(const void *key, Size keysize)
@@ -332,46 +329,49 @@ static void DtmInitialize()
 	static HASHCTL info;
 
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
-	dtm = ShmemInitStruct("dtm", sizeof(DtmState), &found);    
+	dtm = ShmemInitStruct("dtm", sizeof(DtmState), &found);
 	if (!found)
-	{ 
-        dtm->hashLock = LWLockAssign();
-        dtm->xidLock = LWLockAssign();
-        dtm->nReservedXids = 0;
-    }
+	{
+		dtm->hashLock = LWLockAssign();
+		dtm->xidLock = LWLockAssign();
+		dtm->nReservedXids = 0;
+	}
 	LWLockRelease(AddinShmemInitLock);
 
 	info.keysize = sizeof(TransactionId);
 	info.entrysize = sizeof(TransactionId);
 	info.hash = dtm_xid_hash_fn;
 	info.match = dtm_xid_match_fn;
-	xid_in_doubt = ShmemInitHash("xid_in_doubt", DTM_HASH_SIZE, DTM_HASH_SIZE,
-                                 &info,
-                                 HASH_ELEM | HASH_FUNCTION | HASH_COMPARE);
-    
-	RegisterXactCallback(DtmXactCallback, NULL);
-    DtmInitSnapshot(&DtmLocalSnapshot);
+	xid_in_doubt = ShmemInitHash(
+		"xid_in_doubt",
+		DTM_HASH_SIZE, DTM_HASH_SIZE,
+		&info,
+		HASH_ELEM | HASH_FUNCTION | HASH_COMPARE
+	);
 
-    TM = &DtmTM;
+	RegisterXactCallback(DtmXactCallback, NULL);
+	DtmInitSnapshot(&DtmLocalSnapshot);
+
+	TM = &DtmTM;
 }
 
 static void
 DtmXactCallback(XactEvent event, void *arg)
 {
-    if (TransactionIdIsValid(DtmNextXid)) {
-        switch (event) {
-          case XACT_EVENT_COMMIT:
-            LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE); 
-            hash_search(xid_in_doubt, &DtmNextXid, HASH_REMOVE, NULL);
-            LWLockRelease(dtm->hashLock);
-            /* no break */
-          case XACT_EVENT_ABORT:
-            DtmNextXid = InvalidTransactionId;
-            break;
-          default:
-            break;
-        }
-    }
+	if (TransactionIdIsValid(DtmNextXid)) {
+		switch (event) {
+			case XACT_EVENT_COMMIT:
+				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
+				hash_search(xid_in_doubt, &DtmNextXid, HASH_REMOVE, NULL);
+				LWLockRelease(dtm->hashLock);
+				/* no break */
+			case XACT_EVENT_ABORT:
+				DtmNextXid = InvalidTransactionId;
+				break;
+			default:
+				break;
+		}
+	}
 }
 
 
@@ -401,18 +401,20 @@ _PG_init(void)
 	RequestAddinShmemSpace(DTM_SHMEM_SIZE);
 	RequestAddinLWLocks(2);
  
-	DefineCustomIntVariable("dtm.local_xid_reserve",
-                            "Number of XIDs reserved by node for local transactions",
-							NULL,
-							&DtmLocalXidReserve,
-							100,
-							1, 
-                            INT_MAX,
-							PGC_BACKEND,
-							0,
-							NULL,
-							NULL,
-							NULL);
+	DefineCustomIntVariable(
+		"dtm.local_xid_reserve",
+		"Number of XIDs reserved by node for local transactions",
+		NULL,
+		&DtmLocalXidReserve,
+		100,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
 
 	/*
 	 * Install hooks.
@@ -435,7 +437,7 @@ static void dtm_shmem_startup(void)
 {
 	if (prev_shmem_startup_hook) {
 		prev_shmem_startup_hook();
-    }
+	}
 	DtmInitialize();
 }
 
@@ -453,41 +455,39 @@ PG_FUNCTION_INFO_V1(dtm_get_current_snapshot_xmin);
 Datum
 dtm_get_current_snapshot_xmin(PG_FUNCTION_ARGS)
 {
-    PG_RETURN_INT32(CurrentTransactionSnapshot->xmin);
+	PG_RETURN_INT32(CurrentTransactionSnapshot->xmin);
 }
 
 Datum
 dtm_get_current_snapshot_xmax(PG_FUNCTION_ARGS)
 {
-    PG_RETURN_INT32(CurrentTransactionSnapshot->xmax);
+	PG_RETURN_INT32(CurrentTransactionSnapshot->xmax);
 }
-
 
 Datum
 dtm_begin_transaction(PG_FUNCTION_ARGS)
 {
-    int nParticipants = PG_GETARG_INT32(0);    
-    Assert(!TransactionIdIsValid(DtmNextXid));
+	int nParticipants = PG_GETARG_INT32(0);
+	Assert(!TransactionIdIsValid(DtmNextXid));
 
-    DtmNextXid = DtmGlobalStartTransaction(nParticipants, &DtmSnapshot);
-    Assert(TransactionIdIsValid(DtmNextXid));
+	DtmNextXid = DtmGlobalStartTransaction(nParticipants, &DtmSnapshot);
+	Assert(TransactionIdIsValid(DtmNextXid));
 
-    DtmHasGlobalSnapshot = true;
+	DtmHasGlobalSnapshot = true;
 
-    PG_RETURN_INT32(DtmNextXid);
+	PG_RETURN_INT32(DtmNextXid);
 }
 
 Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 {
-    Assert(!TransactionIdIsValid(DtmNextXid));
-    DtmNextXid = PG_GETARG_INT32(0); 
-    Assert(TransactionIdIsValid(DtmNextXid));
+	Assert(!TransactionIdIsValid(DtmNextXid));
+	DtmNextXid = PG_GETARG_INT32(0);
+	Assert(TransactionIdIsValid(DtmNextXid));
 
-    DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot);
+	DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot);
 
-    DtmHasGlobalSnapshot = true;
+	DtmHasGlobalSnapshot = true;
 
 	PG_RETURN_VOID();
 }
-    
 
