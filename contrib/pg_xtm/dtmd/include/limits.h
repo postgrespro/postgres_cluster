@@ -7,6 +7,4 @@
 #define BITS_PER_NODE 4
 #define MAX_NODES (1 << BITS_PER_NODE)
 
-#define MUX_XID(NODE, XID) (((XID) << (BITS_PER_NODE)) + NODE)
-
 #endif

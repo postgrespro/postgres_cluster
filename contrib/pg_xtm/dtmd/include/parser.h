@@ -6,9 +6,10 @@
 #include "int.h"
 #include "limits.h"
 
+#define CMD_RESERVE  'r'
 #define CMD_BEGIN    'b'
-#define CMD_COMMIT   'c'
-#define CMD_ABORT    'a'
+#define CMD_FOR      'y'
+#define CMD_AGAINST  'n'
 #define CMD_SNAPSHOT 'h'
 #define CMD_STATUS   's'
 
