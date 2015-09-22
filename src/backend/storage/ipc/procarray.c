@@ -1473,6 +1473,12 @@ GetMaxSnapshotSubxidCount(void)
 	return TOTAL_MAX_CACHED_SUBXIDS;
 }
 
+Snapshot
+GetSnapshotData(Snapshot snapshot)
+{
+    return TM->GetSnapshot(snapshot);
+}
+
 /*
  * GetSnapshotData -- returns information about running transactions.
  *
@@ -1509,7 +1515,7 @@ GetMaxSnapshotSubxidCount(void)
  * not statically allocated (see xip allocation below).
  */
 Snapshot
-GetSnapshotData(Snapshot snapshot)
+GetLocalSnapshotData(Snapshot snapshot)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId xmin;
