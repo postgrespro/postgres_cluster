@@ -63,7 +63,7 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static void DtmMergeSnapshots(Snapshot dst, Snapshot src);
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
-static void DtmUpdateRecentXmin(void);
+static void DtmUpdateRecentXmin(TransactionId xmin);
 static void DtmInitialize(void);
 static void DtmXactCallback(XactEvent event, void *arg);
 static TransactionId DtmGetNextXid(void);
@@ -186,10 +186,8 @@ GetLocalSnapshot:
 	DumpSnapshot(dst, "merged");
 }
 
-static void DtmUpdateRecentXmin(void)
+static void DtmUpdateRecentXmin(TransactionId xmin)
 {
-	TransactionId xmin = DtmSnapshot.xmin;
-
 	XTM_TRACE("XTM: DtmUpdateRecentXmin \n");
 
 	if (TransactionIdIsValid(xmin)) {
@@ -206,6 +204,9 @@ static void DtmUpdateRecentXmin(void)
 		}
 		if (TransactionIdFollows(RecentXmin, xmin)) {
 			RecentXmin = xmin;
+		}
+		if (TransactionIdFollows(MyPgXact->xmin, xmin)) {
+			MyPgXact->xmin = xmin;
 		}
 	}
 }
@@ -459,19 +460,21 @@ DtmGetNewTransactionId(bool isSubXact)
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
-    
 	if (TransactionIdIsValid(DtmNextXid)) {
 		if (!DtmHasGlobalSnapshot) {
-			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot);
+			TransactionId gxmin = InvalidTransactionId;
+			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &gxmin);
+			if (TransactionIdIsValid(gxmin)) {
+				DtmUpdateRecentXmin(gxmin);
+			}
 		}
 		DtmMergeSnapshots(snapshot, &DtmSnapshot);
-        if (!IsolationUsesXactSnapshot()) {
-            DtmHasGlobalSnapshot = false;
-        }
+		if (!IsolationUsesXactSnapshot()) {
+			DtmHasGlobalSnapshot = false;
+		}
 	} else { 
-        snapshot = GetLocalSnapshotData(snapshot);
-    }
-    DtmUpdateRecentXmin();
+		snapshot = GetLocalSnapshotData(snapshot);
+	}
 	CurrentTransactionSnapshot = snapshot;
 	return snapshot;
 }
@@ -672,10 +675,16 @@ dtm_get_current_snapshot_xmax(PG_FUNCTION_ARGS)
 Datum
 dtm_begin_transaction(PG_FUNCTION_ARGS)
 {
+	TransactionId gxmin;
 	int nParticipants = PG_GETARG_INT32(0);
 	Assert(!TransactionIdIsValid(DtmNextXid));
 
-	DtmNextXid = DtmGlobalStartTransaction(nParticipants, &DtmSnapshot);
+	gxmin = InvalidTransactionId;
+	DtmNextXid = DtmGlobalStartTransaction(nParticipants, &DtmSnapshot, &gxmin);
+	if (TransactionIdIsValid(gxmin)) {
+		DtmUpdateRecentXmin(gxmin);
+	}
+
 	Assert(TransactionIdIsValid(DtmNextXid));
     XTM_INFO("%d: Start global transaction %d\n", getpid(), DtmNextXid);
 
@@ -687,12 +696,17 @@ dtm_begin_transaction(PG_FUNCTION_ARGS)
 
 Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 {
+	TransactionId gxmin;
 	Assert(!TransactionIdIsValid(DtmNextXid));
 	DtmNextXid = PG_GETARG_INT32(0);
 	Assert(TransactionIdIsValid(DtmNextXid));
     XTM_INFO("%d: Join global transaction %d\n", getpid(), DtmNextXid);
 
-	DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot);
+	gxmin = InvalidTransactionId;
+	DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &gxmin);
+	if (TransactionIdIsValid(gxmin)) {
+		DtmUpdateRecentXmin(gxmin);
+	}
 
 	DtmHasGlobalSnapshot = true;
     DtmIsGlobalTransaction = true;

@@ -98,7 +98,7 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
 		OldestXmin = RecentGlobalXmin;
 	else
 		OldestXmin = RecentGlobalDataXmin;
-    fprintf(stderr, "PRUNEHEAP: xmin=%d\n", OldestXmin);
+	fprintf(stderr, "pid=%d PRUNEHEAP: xmin=%d\n", getpid(), OldestXmin);
 	Assert(TransactionIdIsValid(OldestXmin));
 
 	/*

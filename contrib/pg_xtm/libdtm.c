@@ -278,12 +278,14 @@ void DtmInitSnapshot(Snapshot snapshot)
 }
 
 // Starts a new global transaction of nParticipants size. Returns the
-// transaction id and fills the snapshot on success. Returns INVALID_XID
+// transaction id, fills the 'snapshot' and 'gxmin' on success. 'gxmin' is the
+// smallest xmin among all snapshots known to DTM. Returns INVALID_XID
 // otherwise.
-TransactionId DtmGlobalStartTransaction(int nParticipants, Snapshot snapshot)
+TransactionId DtmGlobalStartTransaction(int nParticipants, Snapshot snapshot, TransactionId *gxmin)
 {
 	bool ok;
 	xid_t xid;
+	xid_t number;
 	DTMConn dtm = GetConnection();
 
 	// query
@@ -293,6 +295,8 @@ TransactionId DtmGlobalStartTransaction(int nParticipants, Snapshot snapshot)
 	if (!dtm_read_bool(dtm, &ok)) goto failure;
 	if (!ok) goto failure;
 	if (!dtm_read_hex16(dtm, &xid)) goto failure;
+	if (!dtm_read_hex16(dtm, &number)) goto failure;
+	*gxmin = number;
 	if (!dtm_read_snapshot(dtm, snapshot)) goto failure;
 
 	return xid;
@@ -301,10 +305,12 @@ failure:
 	return INVALID_XID;
 }
 
-// Asks the DTM for a fresh snapshot.
-void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot)
+// Asks the DTM for a fresh snapshot. Fills the 'snapshot' and 'gxmin' on
+// success. 'gxmin' is the smallest xmin among all snapshots known to DTM.
+void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *gxmin)
 {
 	bool ok;
+	xid_t number;
 	DTMConn dtm = GetConnection();
 
 	assert(snapshot != NULL);
@@ -316,6 +322,8 @@ void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot)
 	if (!dtm_read_bool(dtm, &ok)) goto failure;
 	if (!ok) goto failure;
 
+	if (!dtm_read_hex16(dtm, &number)) goto failure;
+	*gxmin = number;
 	if (!dtm_read_snapshot(dtm, snapshot)) goto failure;
 	return;
 failure:
@@ -330,6 +338,7 @@ failure:
 // Commits transaction only once all participants have called this function,
 // does not change CLOG otherwise. Set 'wait' to 'true' if you want this call
 // to return only after the transaction is considered finished by the DTM.
+// Returns the status on success, or -1 otherwise.
 XidStatus DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait)
 {
 	bool ok;

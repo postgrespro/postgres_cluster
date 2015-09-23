@@ -1163,8 +1163,11 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 {
     bool result = _HeapTupleSatisfiesMVCC(htup, snapshot, buffer);
 	HeapTupleHeader tuple = htup->t_data;
-    fprintf(stderr, "Transaction %d, [%d,%d) visibility check for tuple {%d,%d) = %d\n", 
-            GetCurrentTransactionId(), snapshot->xmin, snapshot->xmax, HeapTupleHeaderGetRawXmin(tuple), HeapTupleHeaderGetRawXmax(tuple), result);
+	TransactionId curxid = GetCurrentTransactionId();
+	if (TransactionIdIsNormal(curxid)) {
+		fprintf(stderr, "pid=%d Transaction %d, [%d,%d) visibility check for tuple {%d,%d) = %d\n",
+				getpid(), curxid, snapshot->xmin, snapshot->xmax, HeapTupleHeaderGetRawXmin(tuple), HeapTupleHeaderGetRawXmax(tuple), result);
+	}
     return result;
 }
 #endif
