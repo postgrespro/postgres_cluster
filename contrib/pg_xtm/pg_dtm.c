@@ -68,6 +68,7 @@ static void DtmInitialize(void);
 static void DtmXactCallback(XactEvent event, void *arg);
 static TransactionId DtmGetNextXid(void);
 static TransactionId DtmGetNewTransactionId(bool isSubXact);
+static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 
 static bool TransactionIdIsInDtmSnapshot(TransactionId xid);
 static bool TransactionIdIsInDoubt(TransactionId xid);
@@ -81,10 +82,11 @@ static Snapshot CurrentTransactionSnapshot;
 
 static TransactionId DtmNextXid;
 static SnapshotData DtmSnapshot = { HeapTupleSatisfiesMVCC };
+static TransactionId DtmMinXid;
 static bool DtmHasGlobalSnapshot;
 static bool DtmIsGlobalTransaction;
 static int DtmLocalXidReserve;
-static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmGetNewTransactionId };
+static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmGetNewTransactionId, DtmGetOldestXmin };
 
 
 #define XTM_TRACE(fmt, ...)
@@ -163,9 +165,14 @@ GetLocalSnapshot:
 	DumpSnapshot(src, "DTM");
 
 	/* Merge two snapshots: produce most restrictive snapshots whihc includes running transactions from both of them */
-    if (src->xmin < dst->xmin) dst->xmin = src->xmin;
+    if (src->xmin < dst->xmin) {
+        dst->xmin = src->xmin;
+        ProcArrayInstallImportedXmin(src->xmin, DtmNextXid);
+        //MyPgXact->xmin = TransactionXmin = src->xmin;
+    }
     if (src->xmax < dst->xmax) dst->xmax = src->xmax;
 
+    
 	n = dst->xcnt;
 	for (xid = dst->xmax; xid <= src->xmin; xid++) {
 		dst->xip[n++] = xid;
@@ -186,9 +193,20 @@ GetLocalSnapshot:
 	DumpSnapshot(dst, "merged");
 }
 
+static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum)
+{
+    TransactionId xmin = GetOldestLocalXmin(rel, ignoreVacuum);
+#if 0
+    if (TransactionIdIsValid(DtmSnapshot.xmin) && TransactionIdPrecedes(DtmSnapshot.xmin, xmin)) { 
+        xmin = DtmSnapshot.xmin;
+    }
+#endif
+    return xmin;
+}
+
 static void DtmUpdateRecentXmin(void)
 {
-	TransactionId xmin = DtmSnapshot.xmin;
+	TransactionId xmin = DtmMinXid;//DtmSnapshot.xmin;
 
 	XTM_TRACE("XTM: DtmUpdateRecentXmin \n");
 
@@ -462,7 +480,7 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
     
 	if (TransactionIdIsValid(DtmNextXid)) {
 		if (!DtmHasGlobalSnapshot) {
-			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot);
+			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &DtmMinXid);
 		}
 		DtmMergeSnapshots(snapshot, &DtmSnapshot);
         if (!IsolationUsesXactSnapshot()) {
@@ -675,7 +693,7 @@ dtm_begin_transaction(PG_FUNCTION_ARGS)
 	int nParticipants = PG_GETARG_INT32(0);
 	Assert(!TransactionIdIsValid(DtmNextXid));
 
-	DtmNextXid = DtmGlobalStartTransaction(nParticipants, &DtmSnapshot);
+	DtmNextXid = DtmGlobalStartTransaction(nParticipants, &DtmSnapshot, &DtmMinXid);
 	Assert(TransactionIdIsValid(DtmNextXid));
     XTM_INFO("%d: Start global transaction %d\n", getpid(), DtmNextXid);
 

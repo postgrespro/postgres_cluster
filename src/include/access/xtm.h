@@ -13,6 +13,7 @@
 
 #include "access/clog.h"
 #include "utils/snapmgr.h"
+#include "utils/relcache.h"
 
 typedef struct
 {
@@ -20,6 +21,7 @@ typedef struct
     void (*SetTransactionStatus)(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
     Snapshot (*GetSnapshot)(Snapshot snapshot);
     TransactionId (*GetNewTransactionId)(bool isSubXact);
+    TransactionId (*GetOldestXmin)(Relation rel, bool ignoreVacuum);
 } TransactionManager;
 
 extern TransactionManager* TM;

@@ -44,7 +44,7 @@
 #include "miscadmin.h"
 #include "pg_trace.h"
 
-TransactionManager DefaultTM = { CLOGTransactionIdGetStatus, CLOGTransactionIdSetTreeStatus, GetLocalSnapshotData, GetNewLocalTransactionId };
+TransactionManager DefaultTM = { CLOGTransactionIdGetStatus, CLOGTransactionIdSetTreeStatus, GetLocalSnapshotData, GetNewLocalTransactionId, GetOldestLocalXmin };
 TransactionManager* TM = &DefaultTM;
 
 /*

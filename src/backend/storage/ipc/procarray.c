@@ -1262,6 +1262,12 @@ TransactionIdIsActive(TransactionId xid)
 }
 
 
+TransactionId
+GetOldestXmin(Relation rel, bool ignoreVacuum)
+{
+    return TM->GetOldestXmin(rel, ignoreVacuum);
+}
+
 /*
  * GetOldestXmin -- returns oldest transaction that was running
  *					when any current transaction was started.
@@ -1311,7 +1317,7 @@ TransactionIdIsActive(TransactionId xid)
  * GetOldestXmin() move backwards, with no consequences for data integrity.
  */
 TransactionId
-GetOldestXmin(Relation rel, bool ignoreVacuum)
+GetOldestLocalXmin(Relation rel, bool ignoreVacuum)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId result;
