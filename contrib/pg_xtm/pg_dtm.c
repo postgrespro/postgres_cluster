@@ -37,7 +37,7 @@
 typedef struct
 {
 	LWLockId hashLock;
-	LWLockId xidLock;
+	LWLockId xidLock;    
 	TransactionId nextXid;
 	size_t nReservedXids;
 } DtmState;
@@ -173,6 +173,9 @@ GetLocalSnapshot:
 		}
 	}
 	dst->xcnt = j;
+    if (RecentXmin > dst->xmin) { 
+        RecentXmin = dst->xmin;
+    }
 	DumpSnapshot(dst, "merged");
 }
 
@@ -187,14 +190,11 @@ static void DtmUpdateRecentXmin(void)
 		if (!TransactionIdIsNormal(xmin)) {
 			xmin = FirstNormalTransactionId;
 		}
-		if (RecentGlobalDataXmin > xmin) {
+		if (TransactionIdFollows(RecentGlobalDataXmin, xmin)) {
 			RecentGlobalDataXmin = xmin;
 		}
-		if (RecentGlobalXmin > xmin) {
+		if (TransactionIdFollows(RecentGlobalXmin, xmin)) {
 			RecentGlobalXmin = xmin;
-		}
-		if (RecentXmin > xmin) {
-			RecentXmin = xmin;
 		}
 	}
 }
@@ -202,25 +202,28 @@ static void DtmUpdateRecentXmin(void)
 static TransactionId DtmGetNextXid()
 {
 	TransactionId xid;
+    LWLockAcquire(dtm->xidLock, LW_EXCLUSIVE);
 	if (TransactionIdIsValid(DtmNextXid)) {
         XTM_INFO("Use global XID %d\n", DtmNextXid);
 		xid = DtmNextXid;
-        dtm->nReservedXids = 0;
-        ShmemVariableCache->nextXid = xid;
-	} else {
-		LWLockAcquire(dtm->xidLock, LW_EXCLUSIVE);
-		if (dtm->nReservedXids == 0) {
-			dtm->nReservedXids = DtmGlobalReserve(ShmemVariableCache->nextXid, DtmLocalXidReserve, &xid);
-			ShmemVariableCache->nextXid = dtm->nextXid = xid;
-		} else { 
-            Assert(dtm->nextXid == ShmemVariableCache->nextXid);
-            xid = ShmemVariableCache->nextXid;
+        if (ShmemVariableCache->nextXid <= xid) { 
+            dtm->nReservedXids = 0;
+            ShmemVariableCache->nextXid = xid;
         }
-        XTM_INFO("Obtain new local XID %d\n", xid);
-		dtm->nextXid += 1;
+	} else {
+		if (dtm->nReservedXids == 0) {
+			dtm->nReservedXids = DtmGlobalReserve(ShmemVariableCache->nextXid, DtmLocalXidReserve, &dtm->nextXid);
+            Assert(dtm->nReservedXids > 0);
+            Assert(TransactionIdFollowsOrEquals(dtm->nextXid, ShmemVariableCache->nextXid));
+            ShmemVariableCache->nextXid = dtm->nextXid;
+		} else { 
+            Assert(ShmemVariableCache->nextXid == dtm->nextXid);
+        }
+        xid = dtm->nextXid++;
 		dtm->nReservedXids -= 1;
-		LWLockRelease(dtm->xidLock);
+        XTM_INFO("Obtain new local XID %d\n", xid);
 	}
+    LWLockRelease(dtm->xidLock);
 	return xid;
 }
 
@@ -232,13 +235,13 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot);
 		}
 		DtmMergeSnapshots(snapshot, &DtmSnapshot);
-		DtmUpdateRecentXmin();
         if (!IsolationUsesXactSnapshot()) {
             DtmHasGlobalSnapshot = false;
         }
 	} else { 
         snapshot = GetLocalSnapshotData(snapshot);
     }
+    DtmUpdateRecentXmin();
 	CurrentTransactionSnapshot = snapshot;
 	return snapshot;
 }

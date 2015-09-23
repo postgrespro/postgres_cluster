@@ -161,7 +161,7 @@ GetNewTransactionId(bool isSubXact)
 
 		/* Re-acquire lock and start over */
 		LWLockAcquire(XidGenLock, LW_EXCLUSIVE);
-		xid = ShmemVariableCache->nextXid;
+		xid = TM->GetNextXid();
 	}
 
 	/*
@@ -183,7 +183,11 @@ GetNewTransactionId(bool isSubXact)
 	 * want the next incoming transaction to try it again.  We cannot assign
 	 * more XIDs until there is CLOG space for them.
 	 */
-	TransactionIdAdvance(ShmemVariableCache->nextXid);
+    if (xid == ShmemVariableCache->nextXid) { 
+        TransactionIdAdvance(ShmemVariableCache->nextXid);
+    } else { 
+        Assert(TransactionIdPrecedes(xid, ShmemVariableCache->nextXid));
+    }
 
 	/*
 	 * We must store the new XID into the shared ProcArray before releasing
