@@ -254,9 +254,10 @@ visibilitymap_set(Relation rel, BlockNumber heapBlk, Buffer heapBuf,
 	Page		page;
 	char	   *map;
 
+#if 0
     fprintf(stderr, "Visibilitymap cutoff %d, RecentLocalDataXmin=%d\n", cutoff_xid, RecentGlobalDataXmin);
-    return;
-
+//    return;
+#endif
 #ifdef TRACE_VISIBILITYMAP
 	elog(DEBUG1, "vm_set %s %d", RelationGetRelationName(rel), heapBlk);
 #endif

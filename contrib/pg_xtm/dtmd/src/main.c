@@ -225,6 +225,24 @@ static void gen_snapshot(Transaction *t) {
 	snapshot_sort(s);
 }
 
+static xid_t get_global_xmin() {
+	int i, j;
+	xid_t xmin = MAX_XID;
+	Transaction *t;
+	for (i = 0; i < transactions_count; i++) {
+		t = transactions + i;
+        j = t->snapshots_count > MAX_SNAPSHOTS_PER_TRANS ? MAX_SNAPSHOTS_PER_TRANS : t->snapshots_count; 
+        while (--j >= 0) { 
+            Snapshot* s = transaction_snapshot(t, j);
+            if (s->xmin < xmin) {
+                xmin = s->xmin;
+            }
+            // minor TODO: Use 'times_sent' to generate a bit greater xmin?
+		}
+	}
+	return xmin;
+}
+
 static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
 	CHECK(
 		transactions_count < MAX_TRANSACTIONS,
@@ -270,8 +288,8 @@ static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
 		return strdup("-");
 	}
 
-	char head[1+16+1];
-	sprintf(head, "+%016llx", t->xid);
+	char head[1+16+16+1];
+	sprintf(head, "+%016llx%016llx", t->xid, get_global_xmin());
 
 	transactions_count++;
 
@@ -427,14 +445,18 @@ static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd) {
 		gen_snapshot(t);
 	}
 
+	char head[1+16+1];
+	sprintf(head, "+%016llx", get_global_xmin());
+
 	Snapshot *snap = transaction_snapshot(t, CLIENT_SNAPSENT(clientdata)++);
+	snap->times_sent += 1;
 	char *snapser = snapshot_serialize(snap);
 
 	// FIXME: Remote this assert if you do not have a barrier upon getting
 	// snapshot in backends. The assert should indicate that situation :)
 	assert(CLIENT_SNAPSENT(clientdata) == t->snapshots_count);
 
-	return destructive_concat(strdup("+"), snapser);
+	return destructive_concat(strdup(head), snapser);
 }
 
 static char *onstatus(void *stream, void *clientdata, cmd_t *cmd) {

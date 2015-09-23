@@ -90,8 +90,8 @@ static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionSt
 
 
 #define XTM_TRACE(fmt, ...)
-#define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
-//#define XTM_INFO(fmt, ...)
+//#define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
+#define XTM_INFO(fmt, ...)
 
 static void DumpSnapshot(Snapshot s, char *name)
 {
@@ -195,20 +195,24 @@ GetLocalSnapshot:
 
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 {
-    TransactionId xmin = GetOldestLocalXmin(rel, ignoreVacuum);
-#if 0
-    if (TransactionIdIsValid(DtmSnapshot.xmin) && TransactionIdPrecedes(DtmSnapshot.xmin, xmin)) { 
-        xmin = DtmSnapshot.xmin;
+    TransactionId localXmin = GetOldestLocalXmin(rel, ignoreVacuum);
+    TransactionId globalXmin = DtmMinXid;
+    if (TransactionIdIsValid(globalXmin)) { 
+		globalXmin -= vacuum_defer_cleanup_age;
+		if (!TransactionIdIsNormal(globalXmin)) {
+			globalXmin = FirstNormalTransactionId;
+		}
+        if (TransactionIdPrecedes(globalXmin, localXmin)) { 
+            localXmin = globalXmin;
+        }
     }
-#endif
-    return xmin;
+    return localXmin;
 }
 
 static void DtmUpdateRecentXmin(void)
 {
 	TransactionId xmin = DtmMinXid;//DtmSnapshot.xmin;
-
-	XTM_TRACE("XTM: DtmUpdateRecentXmin \n");
+	XTM_INFO("XTM: DtmUpdateRecentXmin global xmin=%d, snapshot xmin %d\n", DtmMinXid, DtmSnapshot.xmin);
 
 	if (TransactionIdIsValid(xmin)) {
 		xmin -= vacuum_defer_cleanup_age;
@@ -394,7 +398,6 @@ DtmGetNewTransactionId(bool isSubXact)
 	 * Extend pg_subtrans and pg_commit_ts too.
 	 */
     if (TransactionIdFollowsOrEquals(xid, ShmemVariableCache->nextXid)) {
-        fprintf(stderr, "Extend CLOG to %d\n", xid);
         ExtendCLOG(xid);
         ExtendCommitTs(xid);
         ExtendSUBTRANS(xid);
@@ -477,18 +480,17 @@ DtmGetNewTransactionId(bool isSubXact)
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
-    
 	if (TransactionIdIsValid(DtmNextXid)) {
 		if (!DtmHasGlobalSnapshot) {
 			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &DtmMinXid);
 		}
 		DtmMergeSnapshots(snapshot, &DtmSnapshot);
-        if (!IsolationUsesXactSnapshot()) {
-            DtmHasGlobalSnapshot = false;
-        }
+		if (!IsolationUsesXactSnapshot()) {
+			DtmHasGlobalSnapshot = false;
+		}
 	} else { 
-        snapshot = GetLocalSnapshotData(snapshot);
-    }
+		snapshot = GetLocalSnapshotData(snapshot);
+	}
     DtmUpdateRecentXmin();
 	CurrentTransactionSnapshot = snapshot;
 	return snapshot;
@@ -710,7 +712,7 @@ Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 	Assert(TransactionIdIsValid(DtmNextXid));
     XTM_INFO("%d: Join global transaction %d\n", getpid(), DtmNextXid);
 
-	DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot);
+	DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &DtmMinXid);
 
 	DtmHasGlobalSnapshot = true;
     DtmIsGlobalTransaction = true;

@@ -970,7 +970,7 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
  * and more contention on the PGXACT array.
  */
 bool 
-_HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
+HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 					   Buffer buffer)
 {
 	HeapTupleHeader tuple = htup->t_data;
@@ -1156,15 +1156,18 @@ _HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 
 	return false;
 }
-#if 1
+#if 0
 bool 
 HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 					   Buffer buffer)
 {
     bool result = _HeapTupleSatisfiesMVCC(htup, snapshot, buffer);
 	HeapTupleHeader tuple = htup->t_data;
-    fprintf(stderr, "Transaction %d, [%d,%d) visibility check for tuple {%d,%d) = %d\n", 
-            GetCurrentTransactionId(), snapshot->xmin, snapshot->xmax, HeapTupleHeaderGetRawXmin(tuple), HeapTupleHeaderGetRawXmax(tuple), result);
+	TransactionId curxid = GetCurrentTransactionId();
+	if (TransactionIdIsNormal(curxid)) {
+		fprintf(stderr, "pid=%d Transaction %d, [%d,%d) visibility check for tuple {%d,%d) = %d\n",
+				getpid(), curxid, snapshot->xmin, snapshot->xmax, HeapTupleHeaderGetRawXmin(tuple), HeapTupleHeaderGetRawXmax(tuple), result);
+	}
     return result;
 }
 #endif

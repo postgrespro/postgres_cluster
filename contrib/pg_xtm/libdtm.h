@@ -11,12 +11,14 @@
 void DtmInitSnapshot(Snapshot snapshot);
 
 // Starts a new global transaction of nParticipants size. Returns the
-// transaction id and fills the snapshot on success. Returns INVALID_XID
+// transaction id, fills the 'snapshot' and 'gxmin' on success. 'gxmin' is the
+// smallest xmin among all snapshots known to DTM. Returns INVALID_XID
 // otherwise.
-TransactionId DtmGlobalStartTransaction(int nParticipants, Snapshot shapshot);
+TransactionId DtmGlobalStartTransaction(int nParticipants, Snapshot snapshot, TransactionId *gxmin);
 
-// Asks the DTM for a fresh snapshot.
-void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot);
+// Asks the DTM for a fresh snapshot. Fills the 'snapshot' and 'gxmin' on
+// success. 'gxmin' is the smallest xmin among all snapshots known to DTM.
+void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *gxmin);
 
 // Commits transaction only once all participants have called this function,
 // does not change CLOG otherwise. Set 'wait' to 'true' if you want this call
