@@ -454,7 +454,7 @@ static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd) {
 
 	// FIXME: Remote this assert if you do not have a barrier upon getting
 	// snapshot in backends. The assert should indicate that situation :)
-	assert(CLIENT_SNAPSENT(clientdata) == t->snapshots_count);
+	// assert(CLIENT_SNAPSENT(clientdata) == t->snapshots_count);
 
 	return destructive_concat(strdup(head), snapser);
 }
