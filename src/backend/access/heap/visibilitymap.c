@@ -85,6 +85,7 @@
 #include "access/heapam_xlog.h"
 #include "access/visibilitymap.h"
 #include "access/xlog.h"
+#include "utils/snapmgr.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
@@ -252,6 +253,9 @@ visibilitymap_set(Relation rel, BlockNumber heapBlk, Buffer heapBuf,
 	uint8		mapBit = HEAPBLK_TO_MAPBIT(heapBlk);
 	Page		page;
 	char	   *map;
+
+    fprintf(stderr, "Visibilitymap cutoff %d, RecentLocalDataXmin=%d\n", cutoff_xid, RecentGlobalDataXmin);
+    return;
 
 #ifdef TRACE_VISIBILITYMAP
 	elog(DEBUG1, "vm_set %s %d", RelationGetRelationName(rel), heapBlk);

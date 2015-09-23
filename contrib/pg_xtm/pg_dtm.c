@@ -183,9 +183,6 @@ GetLocalSnapshot:
 		}
 	}
 	dst->xcnt = j;
-    if (RecentXmin > dst->xmin) { 
-        RecentXmin = dst->xmin;
-    }
 	DumpSnapshot(dst, "merged");
 }
 
@@ -206,6 +203,9 @@ static void DtmUpdateRecentXmin(void)
 		}
 		if (TransactionIdFollows(RecentGlobalXmin, xmin)) {
 			RecentGlobalXmin = xmin;
+		}
+		if (TransactionIdFollows(RecentXmin, xmin)) {
+			RecentXmin = xmin;
 		}
 	}
 }

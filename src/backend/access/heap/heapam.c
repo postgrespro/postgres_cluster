@@ -7611,10 +7611,10 @@ heap_xlog_visible(XLogReaderState *record)
 		 * we did for the heap page.  If this results in a dropped bit, no
 		 * real harm is done; and the next VACUUM will fix it.
 		 */
-		if (lsn > PageGetLSN(vmpage))
+		if (lsn > PageGetLSN(vmpage)) { 
 			visibilitymap_set(reln, blkno, InvalidBuffer, lsn, vmbuffer,
 							  xlrec->cutoff_xid);
-
+        }
 		ReleaseBuffer(vmbuffer);
 		FreeFakeRelcacheEntry(reln);
 	}
