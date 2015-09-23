@@ -19,7 +19,7 @@ typedef struct
     XidStatus (*GetTransactionStatus)(TransactionId xid, XLogRecPtr *lsn);
     void (*SetTransactionStatus)(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
     Snapshot (*GetSnapshot)(Snapshot snapshot);
-    TransactionId (*GetNextXid)();
+    TransactionId (*GetNewTransactionId)(bool isSubXact);
 } TransactionManager;
 
 extern TransactionManager* TM;

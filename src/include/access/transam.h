@@ -169,7 +169,7 @@ extern TransactionId TransactionIdLatest(TransactionId mainxid,
 extern XLogRecPtr TransactionIdGetCommitLSN(TransactionId xid);
 
 /* in transam/varsup.c */
-extern TransactionId GetNextTransactionId(void);
+extern TransactionId GetNewLocalTransactionId(bool isSubXact);
 extern TransactionId GetNewTransactionId(bool isSubXact);
 extern TransactionId ReadNewTransactionId(void);
 extern void SetTransactionIdLimit(TransactionId oldest_datfrozenxid,

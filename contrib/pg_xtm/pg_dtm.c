@@ -21,6 +21,8 @@
 #include "access/xact.h"
 #include "access/xtm.h"
 #include "access/transam.h"
+#include "access/subtrans.h"
+#include "access/commit_ts.h"
 #include "access/xlog.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
@@ -109,6 +111,7 @@ static bool TransactionIdIsInDtmSnapshot(TransactionId xid)
 		|| bsearch(&xid, DtmSnapshot.xip, DtmSnapshot.xcnt, sizeof(TransactionId), xidComparator) != NULL;
 }
 
+
 static bool TransactionIdIsInDoubt(TransactionId xid)
 {
 	bool inDoubt;
@@ -118,8 +121,8 @@ static bool TransactionIdIsInDoubt(TransactionId xid)
 		inDoubt = hash_search(xid_in_doubt, &xid, HASH_FIND, NULL) != NULL;
 		LWLockRelease(dtm->hashLock);
 		if (!inDoubt) {
-			XLogRecPtr lsn;
-			inDoubt = CLOGTransactionIdGetStatus(xid, &lsn) != TRANSACTION_STATUS_IN_PROGRESS;
+            XLogRecPtr lsn;
+			inDoubt = DtmGetTransactionStatus(xid, &lsn) != TRANSACTION_STATUS_IN_PROGRESS;
 		}
 		if (inDoubt) {
 			XTM_INFO("Wait for transaction %d to complete\n", xid);
@@ -187,6 +190,7 @@ static void DtmUpdateRecentXmin(void)
 
 	if (TransactionIdIsValid(xmin)) {
 		xmin -= vacuum_defer_cleanup_age;
+        xmin =  FirstNormalTransactionId;
 		if (!TransactionIdIsNormal(xmin)) {
 			xmin = FirstNormalTransactionId;
 		}
@@ -206,16 +210,30 @@ static TransactionId DtmGetNextXid()
 	if (TransactionIdIsValid(DtmNextXid)) {
         XTM_INFO("Use global XID %d\n", DtmNextXid);
 		xid = DtmNextXid;
-        if (ShmemVariableCache->nextXid <= xid) { 
+        if (TransactionIdPrecedesOrEquals(ShmemVariableCache->nextXid, xid)) { 
+            while (TransactionIdPrecedes(ShmemVariableCache->nextXid, xid)) { 
+                XTM_INFO("Extend CLOG for global transaction to %d\n", ShmemVariableCache->nextXid);
+                ExtendCLOG(ShmemVariableCache->nextXid);
+                ExtendCommitTs(ShmemVariableCache->nextXid);
+                ExtendSUBTRANS(ShmemVariableCache->nextXid);
+                TransactionIdAdvance(ShmemVariableCache->nextXid);
+            }
             dtm->nReservedXids = 0;
-            ShmemVariableCache->nextXid = xid;
         }
 	} else {
 		if (dtm->nReservedXids == 0) {
 			dtm->nReservedXids = DtmGlobalReserve(ShmemVariableCache->nextXid, DtmLocalXidReserve, &dtm->nextXid);
             Assert(dtm->nReservedXids > 0);
             Assert(TransactionIdFollowsOrEquals(dtm->nextXid, ShmemVariableCache->nextXid));
-            ShmemVariableCache->nextXid = dtm->nextXid;
+ 
+            while (TransactionIdPrecedes(ShmemVariableCache->nextXid, dtm->nextXid)) { 
+                XTM_INFO("Extend CLOG for local transaction to %d\n", ShmemVariableCache->nextXid);
+                ExtendCLOG(ShmemVariableCache->nextXid);
+                ExtendCommitTs(ShmemVariableCache->nextXid);
+                ExtendSUBTRANS(ShmemVariableCache->nextXid);
+                TransactionIdAdvance(ShmemVariableCache->nextXid);
+            }
+            Assert(ShmemVariableCache->nextXid == dtm->nextXid);
 		} else { 
             Assert(ShmemVariableCache->nextXid == dtm->nextXid);
         }
@@ -248,8 +266,10 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 {
-	XidStatus status = CLOGTransactionIdGetStatus(xid, lsn);
-	XTM_TRACE("XTM: DtmGetTransactionStatus \n");
+	XidStatus status = xid >= ShmemVariableCache->nextXid 
+        ? TRANSACTION_STATUS_IN_PROGRESS
+        : CLOGTransactionIdGetStatus(xid, lsn);
+	XTM_TRACE("XTM: DtmGetTransactionStatus\n");
 	return status;
 }
 
