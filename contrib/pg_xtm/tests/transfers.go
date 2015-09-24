@@ -113,6 +113,7 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
     var xid int32
     var nAborts = 0
     var nCommits = 0
+    var myCommits = 0
 
     conn1, err := pgx.Connect(cfg1)
     checkErr(err)
@@ -123,7 +124,7 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
     defer conn2.Close()
 
     start := time.Now()
-    for nCommits < N_ITERATIONS {
+    for myCommits < N_ITERATIONS {
         amount := 2*rand.Intn(2000) - 1
         //amount := 1
         account1 := rand.Intn(N_ACCOUNTS)
@@ -145,6 +146,7 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
         } else {
             commit(conn1, conn2)
             nCommits += 1
+            myCommits += 1
         }
 
         if time.Since(start).Seconds() > 1 {
