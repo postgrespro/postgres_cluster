@@ -86,12 +86,14 @@ static TransactionId DtmMinXid;
 static bool DtmHasGlobalSnapshot;
 static bool DtmIsGlobalTransaction;
 static int DtmLocalXidReserve;
+static int DtmCurcid;
+static Snapshot DtmLastSnapshot;
 static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmGetNewTransactionId, DtmGetOldestXmin };
 
 
 #define XTM_TRACE(fmt, ...)
-//#define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
-#define XTM_INFO(fmt, ...)
+#define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
+//#define XTM_INFO(fmt, ...)
 
 static void DumpSnapshot(Snapshot s, char *name)
 {
@@ -100,8 +102,8 @@ static void DumpSnapshot(Snapshot s, char *name)
 	char *cursor = buf;
 	cursor += sprintf(
 		cursor,
-		"snapshot %s for transaction %d: xmin=%d, xmax=%d, active=[",
-		name, GetCurrentTransactionId(), s->xmin, s->xmax
+		"snapshot %s(%p) for transaction %d: xmin=%d, xmax=%d, active=[",
+		name, s, GetCurrentTransactionId(), s->xmin, s->xmax
 	);
 	for (i = 0; i < s->xcnt; i++) {
 		if (i == 0) {
@@ -480,10 +482,12 @@ DtmGetNewTransactionId(bool isSubXact)
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
-	if (TransactionIdIsValid(DtmNextXid)) {
-		if (!DtmHasGlobalSnapshot) {
+	if (TransactionIdIsValid(DtmNextXid) && IsMVCCSnapshot(snapshot) && snapshot != &CatalogSnapshotData) { 
+		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != snapshot->curcid)) {
 			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &DtmMinXid);
 		}
+        DtmCurcid = snapshot->curcid;
+        DtmLastSnapshot = snapshot;
 		DtmMergeSnapshots(snapshot, &DtmSnapshot);
 		if (!IsolationUsesXactSnapshot()) {
 			DtmHasGlobalSnapshot = false;
@@ -595,6 +599,7 @@ DtmXactCallback(XactEvent event, void *arg)
 				LWLockRelease(dtm->hashLock);
             }
             DtmNextXid = InvalidTransactionId;
+            DtmLastSnapshot = NULL;
 		}
 	}
 }
@@ -701,6 +706,7 @@ dtm_begin_transaction(PG_FUNCTION_ARGS)
 
 	DtmHasGlobalSnapshot = true;
     DtmIsGlobalTransaction = true;
+    DtmLastSnapshot = NULL;
 
 	PG_RETURN_INT32(DtmNextXid);
 }
@@ -716,6 +722,7 @@ Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 
 	DtmHasGlobalSnapshot = true;
     DtmIsGlobalTransaction = true;
+    DtmLastSnapshot = NULL;
 
 	PG_RETURN_VOID();
 }
