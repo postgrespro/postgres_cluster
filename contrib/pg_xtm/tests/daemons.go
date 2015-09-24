@@ -91,6 +91,9 @@ func postgres(bin string, datadir string, port int, nodeid int, wg *sync.WaitGro
 		"-D", datadir,
 		"-p", strconv.Itoa(port),
 		"-c", "dtm.node_id=" + strconv.Itoa(nodeid),
+		"-c", "autovacuum=off",
+		"-c", "fsync=off",
+		"-c", "synchronous_commit=off",
 	}
 	name := "postgres " + datadir
 	c := make(chan string)

@@ -4,6 +4,7 @@ import (
     "fmt"
     "sync"
     "math/rand"
+    "time"
     "github.com/jackc/pgx"
 )
 
@@ -34,10 +35,10 @@ var running = false
 var nodes []int32 = []int32{0,1}
 
 func asyncCommit(conn *pgx.Conn, wg *sync.WaitGroup) {
-    exec(conn, "commit")    
+    exec(conn, "commit")
     wg.Done()
 }
-    
+
 func commit(conn1, conn2 *pgx.Conn) {
     var wg sync.WaitGroup
     wg.Add(2)
@@ -66,33 +67,52 @@ func prepare_db() {
     exec(conn2, "create extension pg_dtm")
     exec(conn2, "drop table if exists t")
     exec(conn2, "create table t(u int primary key, v int)")
-    
+
 //    xid = execQuery(conn1, "select dtm_begin_transaction(2)")
 //    exec(conn2, "select dtm_join_transaction($1)", xid)
 
     // strt transaction
     exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
     exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
-        
+
     for i := 0; i < N_ACCOUNTS; i++ {
         exec(conn1, "insert into t values($1, $2)", i, INIT_AMOUNT)
         exec(conn2, "insert into t values($1, $2)", i, INIT_AMOUNT)
     }
-    
+
     commit(conn1, conn2)
 }
 
 func max(a, b int64) int64 {
     if a >= b {
         return a
-    } 
+    }
     return b
 }
 
-func transfer(id int, wg *sync.WaitGroup) {
+func progress(total int, cCommits chan int, cAborts chan int) {
+    commits := 0
+    aborts := 0
+    start := time.Now()
+    for newcommits := range cCommits {
+        newaborts := <-cAborts
+        commits += newcommits
+        aborts += newaborts
+        if time.Since(start).Seconds() > 1 {
+            fmt.Printf(
+                "progress %0.2f%%: %d commits, %d aborts\n",
+                float32(commits) * 100.0 / float32(total), commits, aborts,
+            )
+            start = time.Now()
+        }
+    }
+}
+
+func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
     var err error
     var xid int32
-    var nConflicts = 0
+    var nAborts = 0
+    var nCommits = 0
 
     conn1, err := pgx.Connect(cfg1)
     checkErr(err)
@@ -102,10 +122,11 @@ func transfer(id int, wg *sync.WaitGroup) {
     checkErr(err)
     defer conn2.Close()
 
-    for i := 0; i < N_ITERATIONS; i++ {
-        //amount := 2*rand.Intn(2) - 1
-        amount := 1
-        account1 := rand.Intn(N_ACCOUNTS) 
+    start := time.Now()
+    for nCommits < N_ITERATIONS {
+        amount := 2*rand.Intn(2000) - 1
+        //amount := 1
+        account1 := rand.Intn(N_ACCOUNTS)
         account2 := rand.Intn(N_ACCOUNTS)
 
         xid = execQuery(conn1, "select dtm_begin_transaction(2)")
@@ -114,25 +135,34 @@ func transfer(id int, wg *sync.WaitGroup) {
         // start transaction
         exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
         exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
-        
-        ok1 := execUpdate(conn1, "update t set v = v + $1 where u=$2", amount, account1)  
-        ok2 := execUpdate(conn2, "update t set v = v - $1 where u=$2", amount, account2) 
-        if !ok1 || !ok2 {  
+
+        ok1 := execUpdate(conn1, "update t set v = v + $1 where u=$2", amount, account1)
+        ok2 := execUpdate(conn2, "update t set v = v - $1 where u=$2", amount, account2)
+        if !ok1 || !ok2 {
             exec(conn1, "rollback")
             exec(conn2, "rollback")
-            nConflicts += 1
-            i -= 1
-        } else { 
+            nAborts += 1
+        } else {
             commit(conn1, conn2)
-        }       
+            nCommits += 1
+        }
+
+        if time.Since(start).Seconds() > 1 {
+            cCommits <- nCommits
+            cAborts <- nAborts
+            nCommits = 0
+            nAborts = 0
+            start = time.Now()
+        }
     }
-    fmt.Println("Test completed with ",nConflicts," conflicts")
+    cCommits <- nCommits
+    cAborts <- nAborts
     wg.Done()
 }
 
 func inspect(wg *sync.WaitGroup) {
     var sum1, sum2, sum int64
-    var prevSum int64 = 0 
+    var prevSum int64 = 0
     var xid int32
 
     {
@@ -142,28 +172,33 @@ func inspect(wg *sync.WaitGroup) {
         conn2, err := pgx.Connect(cfg2)
         checkErr(err)
 
-    for running {
+        for running {
+            xid = execQuery(conn1, "select dtm_begin_transaction(2)")
+            exec(conn2, "select dtm_join_transaction($1)", xid)
 
-       
-        xid = execQuery(conn1, "select dtm_begin_transaction(2)")
-        exec(conn2, "select dtm_join_transaction($1)", xid)
-        
-        exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
-        exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
- 
-        sum1 = execQuery64(conn1, "select sum(v) from t")
-        sum2 = execQuery64(conn2, "select sum(v) from t")
+            exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
+            exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
 
-        sum = sum1 + sum2
-        if (sum != prevSum) {
-            fmt.Println("Total = ", sum, "xid=", xid, "snap1={", execQuery(conn1, "select dtm_get_current_snapshot_xmin()"), execQuery(conn1, "select dtm_get_current_snapshot_xmax()"), "}, snap2={",  execQuery(conn2, "select dtm_get_current_snapshot_xmin()"), execQuery(conn2, "select dtm_get_current_snapshot_xmax()"), "}")
-            prevSum = sum
-        }        
+            sum1 = execQuery64(conn1, "select sum(v) from t")
+            sum2 = execQuery64(conn2, "select sum(v) from t")
 
-        commit(conn1, conn2)
-    }
-         conn1.Close()
-         conn2.Close()
+            sum = sum1 + sum2
+            if (sum != prevSum) {
+                xmin1 := execQuery(conn1, "select dtm_get_current_snapshot_xmin()")
+                xmax1 := execQuery(conn1, "select dtm_get_current_snapshot_xmax()")
+                xmin2 := execQuery(conn2, "select dtm_get_current_snapshot_xmin()")
+                xmax2 := execQuery(conn2, "select dtm_get_current_snapshot_xmax()")
+                fmt.Printf(
+                    "Total=%d xid=%d snap1=[%d, %d) snap2=[%d, %d)\n",
+                    sum, xid, xmin1, xmax1, xmin2, xmax2,
+                )
+                prevSum = sum
+            }
+
+            commit(conn1, conn2)
+        }
+        conn1.Close()
+        conn2.Close()
     }
     wg.Done()
 }
@@ -174,9 +209,13 @@ func main() {
 
     prepare_db()
 
+    cCommits := make(chan int)
+    cAborts := make(chan int)
+    go progress(TRANSFER_CONNECTIONS * N_ITERATIONS, cCommits, cAborts)
+
     transferWg.Add(TRANSFER_CONNECTIONS)
     for i:=0; i<TRANSFER_CONNECTIONS; i++ {
-        go transfer(i, &transferWg)
+        go transfer(i, cCommits, cAborts, &transferWg)
     }
     running = true
     inspectWg.Add(1)
@@ -185,6 +224,8 @@ func main() {
     transferWg.Wait()
     running = false
     inspectWg.Wait()
+
+    fmt.Printf("done\n")
 }
 
 func exec(conn *pgx.Conn, stmt string, arguments ...interface{}) {
@@ -216,10 +257,11 @@ func execQuery64(conn *pgx.Conn, stmt string, arguments ...interface{}) int64 {
     checkErr(err)
     return result
 }
+
 func checkErr(err error) {
     if err != nil {
         panic(err)
     }
 }
 
-
+// vim: expandtab ts=4 sts=4 sw=4
