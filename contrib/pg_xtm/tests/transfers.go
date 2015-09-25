@@ -15,6 +15,8 @@ const (
     N_ACCOUNTS = TRANSFER_CONNECTIONS//100000
     //ISOLATION_LEVEL = "repeatable read"
     ISOLATION_LEVEL = "read committed"
+    GLOBAL_UPDATES = true
+    LOCAL_UPDATES = false
 )
 
 
@@ -132,11 +134,20 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
         account1 := rand.Intn(N_ACCOUNTS)
         account2 := rand.Intn(N_ACCOUNTS)
 
+        if (account1 >= account2) {
+            continue
+        }
+
         src := conn[rand.Intn(2)]
         dst := conn[rand.Intn(2)]
 
         if src == dst {
-            // local transaction
+            // local update
+            if !LOCAL_UPDATES {
+                // which we do not want
+                continue
+            }
+
             exec(src, "begin transaction isolation level " + ISOLATION_LEVEL)
             ok1 := execUpdate(src, "update t set v = v - $1 where u=$2", amount, account1)
             ok2 := execUpdate(src, "update t set v = v + $1 where u=$2", amount, account2)
@@ -149,7 +160,12 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
                 myCommits += 1
             }
         } else {
-            // global transaction
+            // global update
+            if !GLOBAL_UPDATES {
+                // which we do not want
+                continue
+            }
+
             xid = execQuery(src, "select dtm_begin_transaction(2)")
             exec(dst, "select dtm_join_transaction($1)", xid)
 
@@ -263,6 +279,9 @@ func execUpdate(conn *pgx.Conn, stmt string, arguments ...interface{}) bool {
     var err error
     // fmt.Println(stmt)
     _, err = conn.Exec(stmt, arguments... )
+    if err != nil {
+        fmt.Println(err)
+    }
     return err == nil
 }
 
