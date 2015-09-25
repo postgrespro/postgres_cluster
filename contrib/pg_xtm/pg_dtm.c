@@ -482,7 +482,7 @@ DtmGetNewTransactionId(bool isSubXact)
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
-	if (TransactionIdIsValid(DtmNextXid) && IsMVCCSnapshot(snapshot) && snapshot != &CatalogSnapshotData) { 
+	if (TransactionIdIsValid(DtmNextXid) /*&& IsMVCCSnapshot(snapshot)*/ && snapshot != &CatalogSnapshotData) { 
 		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != snapshot->curcid)) {
 			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &DtmMinXid);
 		}
