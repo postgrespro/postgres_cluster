@@ -146,7 +146,7 @@ static bool TransactionIdIsInDoubt(TransactionId xid)
 
 static void DtmMergeSnapshots(Snapshot dst, Snapshot src)
 {
-	int i, j, n;
+	int i, j;
 	TransactionId xid;
 
 	Assert(TransactionIdIsValid(src->xmin) && TransactionIdIsValid(src->xmax));
@@ -173,20 +173,17 @@ GetLocalSnapshot:
         //MyPgXact->xmin = TransactionXmin = src->xmin;
     }
     if (src->xmax < dst->xmax) dst->xmax = src->xmax;
+	// concatenate two active lists
+	memcpy(dst->xip + dst->xcnt, src->xip, src->xcnt*sizeof(TransactionId));
+	dst->xcnt += src->xcnt;
+	Assert(dst->xcnt <= GetMaxSnapshotXidCount());
 
-    
-	n = dst->xcnt;
-	for (xid = dst->xmax; xid <= src->xmin; xid++) {
-		dst->xip[n++] = xid;
-	}
-	memcpy(dst->xip + n, src->xip, src->xcnt*sizeof(TransactionId));
-	n += src->xcnt;
-	Assert(n <= GetMaxSnapshotXidCount());
-
-	qsort(dst->xip, n, sizeof(TransactionId), xidComparator);
+	// sort the list
+	qsort(dst->xip, dst->xcnt, sizeof(TransactionId), xidComparator);
 	xid = InvalidTransactionId;
 
-	for (i = 0, j = 0; i < n && dst->xip[i] < dst->xmax; i++) {
+	// remove duplicates
+	for (i = 0, j = 0; i < dst->xcnt && dst->xip[i] < dst->xmax; i++) {
 		if (dst->xip[i] != xid) {
 			dst->xip[j++] = xid = dst->xip[i];
 		}
