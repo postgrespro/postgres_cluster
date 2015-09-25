@@ -175,9 +175,16 @@ static void DtmMergeSnapshots(Snapshot dst, Snapshot src)
 
 static void DtmMergeWithActiveSnapshot(Snapshot dst)
 {
-    LWLockAcquire(dtm->xidLock, LW_EXCLUSIVE);
-    DtmMergeSnapshots(dst, &dtm->activeSnapshot); 
-    LWLockRelease(dtm->xidLock);
+	LWLockAcquire(dtm->xidLock, LW_EXCLUSIVE);
+	if (dtm->activeSnapshot.xcnt > 0) {
+		Assert(dtm->activeSnapshot.xmin != 0);
+		Assert(dtm->activeSnapshot.xmax != 0);
+		DtmMergeSnapshots(dst, &dtm->activeSnapshot); 
+	} else {
+		Assert(dtm->activeSnapshot.xmin == 0);
+		Assert(dtm->activeSnapshot.xmax == 0);
+	}
+	LWLockRelease(dtm->xidLock);
 }
 
 static void DtmMergeWithGlobalSnapshot(Snapshot dst)

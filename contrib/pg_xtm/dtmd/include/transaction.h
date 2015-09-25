@@ -28,6 +28,7 @@ typedef struct Transaction {
 
 Snapshot *transaction_latest_snapshot(Transaction *t);
 Snapshot *transaction_snapshot(Transaction *t, int snapno);
+Snapshot *transaction_next_snapshot(Transaction *t);
 int transaction_status(Transaction *t);
 void transaction_clear(Transaction *t);
 void transaction_push_listener(Transaction *t, char cmd, void *listener);

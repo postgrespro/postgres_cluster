@@ -160,6 +160,32 @@ static xid_t max(xid_t a, xid_t b) {
 	return a > b ? a : b;
 }
 
+static void gen_snapshot(Snapshot *s) {
+	s->times_sent = 0;
+	s->nactive = 0;
+	s->xmin = MAX_XID;
+	s->xmax = MIN_XID;
+	int i;
+	for (i = 0; i < transactions_count; i++) {
+		Transaction *t = transactions + i;
+		if (t->xid < s->xmin) {
+			s->xmin = t->xid;
+		}
+		if (t->xid >= s->xmax) { 
+			s->xmax = t->xid + 1;
+		}
+		s->active[s->nactive++] = t->xid;
+	}
+	if (s->nactive > 0) {
+		assert(s->xmin < MAX_XID);
+		assert(s->xmax > MIN_XID);
+		assert(s->xmin <= s->xmax);
+		snapshot_sort(s);
+	} else {
+		s->xmin = s->xmax = 0;
+	}
+}
+
 static char *onreserve(void *stream, void *clientdata, cmd_t *cmd) {
 	CHECK(
 		cmd->argc == 2,
@@ -195,34 +221,14 @@ static char *onreserve(void *stream, void *clientdata, cmd_t *cmd) {
 		minxid, maxxid
 	);
 
-	char response[1+16+16+1];
-	sprintf(response, "+%016llx%016llx", minxid, maxxid);
-	return strdup(response);
-}
+	char head[1+16+16+1];
+	sprintf(head, "+%016llx%016llx", minxid, maxxid);
 
-static void gen_snapshot(Transaction *t) {
-	t->snapshots_count += 1;
-	Snapshot *s = transaction_latest_snapshot(t);
+	Snapshot s;
+	gen_snapshot(&s);
+	char *snapser = snapshot_serialize(&s);
 
-	s->times_sent = 0;
-	s->nactive = 0;
-	s->xmin = MAX_XID;
-	s->xmax = MIN_XID;
-	int i;
-	for (i = 0; i < transactions_count; i++) {
-		Transaction *t = transactions + i;
-		if (t->xid < s->xmin) {
-			s->xmin = t->xid;
-		}
-		if (t->xid >= s->xmax) { 
-			s->xmax = t->xid + 1;
-		}
-		s->active[s->nactive++] = t->xid;
-	}
-	assert(s->xmin < MAX_XID);
-	assert(s->xmax > MIN_XID);
-	assert(s->xmin <= s->xmax);
-	snapshot_sort(s);
+	return destructive_concat(strdup(head), snapser);
 }
 
 static xid_t get_global_xmin() {
@@ -293,7 +299,7 @@ static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
 
 	transactions_count++;
 
-	gen_snapshot(t);
+	gen_snapshot(transaction_next_snapshot(t));
 	// will wrap around if exceeded max snapshots
 	Snapshot *snap = transaction_latest_snapshot(t);
 	char *snapser = snapshot_serialize(snap);
@@ -442,7 +448,7 @@ static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd) {
 
 	if (CLIENT_SNAPSENT(clientdata) == t->snapshots_count) {
 		// a fresh snapshot is needed
-		gen_snapshot(t);
+		gen_snapshot(transaction_next_snapshot(t));
 	}
 
 	char head[1+16+1];
