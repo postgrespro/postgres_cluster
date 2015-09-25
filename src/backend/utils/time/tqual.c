@@ -1162,12 +1162,12 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 					   Buffer buffer)
 {
     bool result = _HeapTupleSatisfiesMVCC(htup, snapshot, buffer);
-	HeapTupleHeader tuple = htup->t_data;
-	TransactionId curxid = GetCurrentTransactionId();
-	if (TransactionIdIsNormal(curxid)) {
-		fprintf(stderr, "pid=%d Transaction %d, [%d,%d) visibility check for tuple {%d,%d) = %d\n",
-				getpid(), curxid, snapshot->xmin, snapshot->xmax, HeapTupleHeaderGetRawXmin(tuple), HeapTupleHeaderGetRawXmax(tuple), result);
-	}
+	// HeapTupleHeader tuple = htup->t_data;
+	// TransactionId curxid = GetCurrentTransactionId();
+	// if (TransactionIdIsNormal(curxid)) {
+		// fprintf(stderr, "pid=%d Transaction %d, [%d,%d) visibility check for tuple {%d,%d) = %d\n",
+				// getpid(), curxid, snapshot->xmin, snapshot->xmax, HeapTupleHeaderGetRawXmin(tuple), HeapTupleHeaderGetRawXmax(tuple), result);
+	// }
     return result;
 }
 #endif
