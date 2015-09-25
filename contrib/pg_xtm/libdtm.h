@@ -32,10 +32,12 @@ XidStatus DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait
 XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait);
 
 // Reserves at least 'nXids' successive xids for local transactions. The xids
-// reserved are not less than 'xid' in value. Returns the actual number
-// of xids reserved, and sets the 'first' xid accordingly. The number of xids
-// reserved is guaranteed to be at least nXids.
+// reserved are not less than 'xid' in value. Returns the actual number of xids
+// reserved, and sets the 'first' xid accordingly. The number of xids reserved
+// is guaranteed to be at least nXids.
 // In other words, *first ≥ xid and result ≥ nXids.
-int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first);
+// Also sets the 'active' snapshot, which is used as a container for the list
+// of active global transactions.
+int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first, Snapshot active);
 
 #endif

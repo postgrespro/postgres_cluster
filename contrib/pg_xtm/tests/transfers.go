@@ -15,6 +15,8 @@ const (
     N_ACCOUNTS = TRANSFER_CONNECTIONS//100000
     //ISOLATION_LEVEL = "repeatable read"
     ISOLATION_LEVEL = "read committed"
+    GLOBAL_UPDATES = true
+    LOCAL_UPDATES = false
 )
 
 
@@ -115,38 +117,74 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
     var nCommits = 0
     var myCommits = 0
 
-    conn1, err := pgx.Connect(cfg1)
-    checkErr(err)
-    defer conn1.Close()
+    var conn [2]*pgx.Conn
 
-    conn2, err := pgx.Connect(cfg2)
+    conn[0], err = pgx.Connect(cfg1)
     checkErr(err)
-    defer conn2.Close()
+    defer conn[0].Close()
+
+    conn[1], err = pgx.Connect(cfg2)
+    checkErr(err)
+    defer conn[1].Close()
 
     start := time.Now()
     for myCommits < N_ITERATIONS {
-        amount := 2*rand.Intn(2000) - 1
-        //amount := 1
+        //amount := 2*rand.Intn(2000) - 1
+        amount := 1
         account1 := rand.Intn(N_ACCOUNTS)
         account2 := rand.Intn(N_ACCOUNTS)
 
-        xid = execQuery(conn1, "select dtm_begin_transaction(2)")
-        exec(conn2, "select dtm_join_transaction($1)", xid)
+        if (account1 >= account2) {
+            continue
+        }
 
-        // start transaction
-        exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
-        exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
+        src := conn[rand.Intn(2)]
+        dst := conn[rand.Intn(2)]
 
-        ok1 := execUpdate(conn1, "update t set v = v + $1 where u=$2", amount, account1)
-        ok2 := execUpdate(conn2, "update t set v = v - $1 where u=$2", amount, account2)
-        if !ok1 || !ok2 {
-            exec(conn1, "rollback")
-            exec(conn2, "rollback")
-            nAborts += 1
+        if src == dst {
+            // local update
+            if !LOCAL_UPDATES {
+                // which we do not want
+                continue
+            }
+
+            exec(src, "begin transaction isolation level " + ISOLATION_LEVEL)
+            ok1 := execUpdate(src, "update t set v = v - $1 where u=$2", amount, account1)
+            ok2 := execUpdate(src, "update t set v = v + $1 where u=$2", amount, account2)
+            if !ok1 || !ok2 {
+                exec(src, "rollback")
+                nAborts += 1
+            } else {
+                exec(src, "commit")
+                nCommits += 1
+                myCommits += 1
+            }
         } else {
-            commit(conn1, conn2)
-            nCommits += 1
-            myCommits += 1
+            // global update
+            if !GLOBAL_UPDATES {
+                // which we do not want
+                continue
+            }
+
+            xid = execQuery(src, "select dtm_begin_transaction(2)")
+            exec(dst, "select dtm_join_transaction($1)", xid)
+
+            // start transaction
+            exec(src, "begin transaction isolation level " + ISOLATION_LEVEL)
+            exec(dst, "begin transaction isolation level " + ISOLATION_LEVEL)
+
+            ok1 := execUpdate(src, "update t set v = v - $1 where u=$2", amount, account1)
+            ok2 := execUpdate(dst, "update t set v = v + $1 where u=$2", amount, account2)
+
+            if !ok1 || !ok2 {
+                exec(src, "rollback")
+                exec(dst, "rollback")
+                nAborts += 1
+            } else {
+                commit(src, dst)
+                nCommits += 1
+                myCommits += 1
+            }
         }
 
         if time.Since(start).Seconds() > 1 {
@@ -241,6 +279,9 @@ func execUpdate(conn *pgx.Conn, stmt string, arguments ...interface{}) bool {
     var err error
     // fmt.Println(stmt)
     _, err = conn.Exec(stmt, arguments... )
+    if err != nil {
+        fmt.Println(err)
+    }
     return err == nil
 }
 

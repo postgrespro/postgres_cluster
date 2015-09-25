@@ -64,3 +64,7 @@ Snapshot *transaction_snapshot(Transaction *t, int snapno) {
 Snapshot *transaction_latest_snapshot(Transaction *t) {
 	return transaction_snapshot(t, t->snapshots_count - 1);
 }
+
+Snapshot *transaction_next_snapshot(Transaction *t) {
+	return transaction_snapshot(t, t->snapshots_count++);
+}
