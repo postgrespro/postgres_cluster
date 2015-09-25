@@ -13,9 +13,11 @@
  * NOTES
  *	  Every node type that can appear in stored rules' parsetrees *must*
  *	  have an output function defined here (as well as an input function
- *	  in readfuncs.c).  For use in debugging, we also provide output
- *	  functions for nodes that appear in raw parsetrees, path, and plan trees.
- *	  These nodes however need not have input functions.
+ *	  in readfuncs.c).  In addition, plan nodes should have input and
+ *	  output functions so that they can be sent to parallel workers.
+ *	  For use in debugging, we also provide output functions for nodes
+ *	  that appear in raw parsetrees and path.  These nodes however need
+ *	  not have input functions.
  *
  *-------------------------------------------------------------------------
  */
@@ -256,6 +258,7 @@ _outPlannedStmt(StringInfo str, const PlannedStmt *node)
 	WRITE_NODE_FIELD(invalItems);
 	WRITE_INT_FIELD(nParamExec);
 	WRITE_BOOL_FIELD(hasRowSecurity);
+	WRITE_BOOL_FIELD(parallelModeNeeded);
 }
 
 /*
@@ -648,7 +651,7 @@ _outMergeJoin(StringInfo str, const MergeJoin *node)
 
 	appendStringInfoString(str, " :mergeNullsFirst");
 	for (i = 0; i < numCols; i++)
-		appendStringInfo(str, " %d", (int) node->mergeNullsFirst[i]);
+		appendStringInfo(str, " %s", booltostr(node->mergeNullsFirst[i]));
 }
 
 static void
@@ -1787,6 +1790,8 @@ _outPlannerGlobal(StringInfo str, const PlannerGlobal *node)
 	WRITE_UINT_FIELD(lastRowMarkId);
 	WRITE_BOOL_FIELD(transientPlan);
 	WRITE_BOOL_FIELD(hasRowSecurity);
+	WRITE_BOOL_FIELD(parallelModeOK);
+	WRITE_BOOL_FIELD(parallelModeNeeded);
 }
 
 static void
@@ -2403,6 +2408,7 @@ _outWithCheckOption(StringInfo str, const WithCheckOption *node)
 
 	WRITE_ENUM_FIELD(kind, WCOKind);
 	WRITE_STRING_FIELD(relname);
+	WRITE_STRING_FIELD(polname);
 	WRITE_NODE_FIELD(qual);
 	WRITE_BOOL_FIELD(cascaded);
 }

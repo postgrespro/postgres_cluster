@@ -34,8 +34,9 @@ usage(const char *progname)
 {
 	printf(_("%s displays control information of a PostgreSQL database cluster.\n\n"), progname);
 	printf(_("Usage:\n"));
-	printf(_("  %s [OPTION] [[-D] DATADIR]\n"), progname);
+	printf(_("  %s [OPTION] [DATADIR]\n"), progname);
 	printf(_("\nOptions:\n"));
+	printf(_(" [-D] DATADIR    data directory\n"));
 	printf(_("  -V, --version  output version information, then exit\n"));
 	printf(_("  -?, --help     show this help, then exit\n"));
 	printf(_("\nIf no data directory (DATADIR) is specified, "
@@ -272,6 +273,8 @@ main(int argc, char *argv[])
 		   ControlFile.checkPointCopy.oldestMultiDB);
 	printf(_("Latest checkpoint's oldestCommitTs:   %u\n"),
 		   ControlFile.checkPointCopy.oldestCommitTs);
+	printf(_("Latest checkpoint's newestCommitTs:   %u\n"),
+		   ControlFile.checkPointCopy.newestCommitTs);
 	printf(_("Time of latest checkpoint:            %s\n"),
 		   ckpttime_str);
 	printf(_("Fake LSN counter for unlogged rels:   %X/%X\n"),

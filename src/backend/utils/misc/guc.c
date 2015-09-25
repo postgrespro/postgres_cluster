@@ -380,23 +380,6 @@ static const struct config_enum_entry huge_pages_options[] = {
 };
 
 /*
- * Although only "on", "off", and "force" are documented, we
- * accept all the likely variants of "on" and "off".
- */
-static const struct config_enum_entry row_security_options[] = {
-	{"on", ROW_SECURITY_ON, false},
-	{"off", ROW_SECURITY_OFF, false},
-	{"force", ROW_SECURITY_FORCE, false},
-	{"true", ROW_SECURITY_ON, true},
-	{"false", ROW_SECURITY_OFF, true},
-	{"yes", ROW_SECURITY_ON, true},
-	{"no", ROW_SECURITY_OFF, true},
-	{"1", ROW_SECURITY_ON, true},
-	{"0", ROW_SECURITY_OFF, true},
-	{NULL, 0, false}
-};
-
-/*
  * Options for enum values stored in other modules
  */
 extern const struct config_enum_entry wal_level_options[];
@@ -421,6 +404,7 @@ bool		log_statement_stats = false;		/* this is sort of all three
 bool		log_btree_build_stats = false;
 char	   *event_source;
 
+bool		row_security;
 bool		check_function_bodies = true;
 bool		default_with_oids = false;
 bool		SQL_inheritance = true;
@@ -451,8 +435,6 @@ char	   *application_name;
 int			tcp_keepalives_idle;
 int			tcp_keepalives_interval;
 int			tcp_keepalives_count;
-
-int			row_security;
 
 /*
  * This really belongs in pg_shmem.c, but is defined here so that it doesn't
@@ -1372,6 +1354,15 @@ static struct config_bool ConfigureNamesBool[] =
 		&XactDeferrable,
 		false,
 		check_transaction_deferrable, NULL, NULL
+	},
+	{
+		{"row_security", PGC_USERSET, CONN_AUTH_SECURITY,
+			gettext_noop("Enable row security."),
+			gettext_noop("When enabled, row security will be applied to all users.")
+		},
+		&row_security,
+		true,
+		NULL, NULL, NULL
 	},
 	{
 		{"check_function_bodies", PGC_USERSET, CLIENT_CONN_STATEMENT,
@@ -2519,17 +2510,17 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&autovacuum_freeze_max_age,
 		/* see pg_resetxlog if you change the upper-limit value */
-		200000000, 100000000, 2000000000,
+		200000000, 100000, 2000000000,
 		NULL, NULL, NULL
 	},
 	{
-		/* see varsup.c for why this is PGC_POSTMASTER not PGC_SIGHUP */
+		/* see multixact.c for why this is PGC_POSTMASTER not PGC_SIGHUP */
 		{"autovacuum_multixact_freeze_max_age", PGC_POSTMASTER, AUTOVACUUM,
 			gettext_noop("Multixact age at which to autovacuum a table to prevent multixact wraparound."),
 			NULL
 		},
 		&autovacuum_multixact_freeze_max_age,
-		400000000, 10000000, 2000000000,
+		400000000, 10000, 2000000000,
 		NULL, NULL, NULL
 	},
 	{
@@ -3627,16 +3618,6 @@ static struct config_enum ConfigureNamesEnum[] =
 		},
 		&huge_pages,
 		HUGE_PAGES_TRY, huge_pages_options,
-		NULL, NULL, NULL
-	},
-
-	{
-		{"row_security", PGC_USERSET, CONN_AUTH_SECURITY,
-			gettext_noop("Enable row security."),
-			gettext_noop("When enabled, row security will be applied to all users.")
-		},
-		&row_security,
-		ROW_SECURITY_ON, row_security_options,
 		NULL, NULL, NULL
 	},
 
