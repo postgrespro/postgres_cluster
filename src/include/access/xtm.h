@@ -22,6 +22,7 @@ typedef struct
     Snapshot (*GetSnapshot)(Snapshot snapshot);
     TransactionId (*GetNewTransactionId)(bool isSubXact);
     TransactionId (*GetOldestXmin)(Relation rel, bool ignoreVacuum);
+    bool (*IsInProgress)(TransactionId xid);
 } TransactionManager;
 
 extern TransactionManager* TM;

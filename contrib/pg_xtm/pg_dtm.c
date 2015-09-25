@@ -46,6 +46,7 @@ typedef struct
 {
 	LWLockId hashLock;
 	LWLockId xidLock;
+    TransactionId minXid;
 	TransactionId nextXid;
 	size_t nReservedXids;
 	SnapshotData activeSnapshot;
@@ -69,6 +70,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 static void DtmUpdateRecentXmin(Snapshot snapshot);
 static void DtmInitialize(void);
 static void DtmXactCallback(XactEvent event, void *arg);
+static bool DtmTransactionIdIsInProgress(TransactionId xid);
 static TransactionId DtmGetNextXid(void);
 static TransactionId DtmGetNewTransactionId(bool isSubXact);
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
@@ -85,13 +87,12 @@ static Snapshot CurrentTransactionSnapshot;
 
 static TransactionId DtmNextXid;
 static SnapshotData DtmSnapshot = { HeapTupleSatisfiesMVCC };
-static TransactionId DtmMinXid;
 static bool DtmHasGlobalSnapshot;
 static bool DtmIsGlobalTransaction;
 static int DtmLocalXidReserve;
 static int DtmCurcid;
 static Snapshot DtmLastSnapshot;
-static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmGetNewTransactionId, DtmGetOldestXmin };
+static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmGetNewTransactionId, DtmGetOldestXmin, DtmTransactionIdIsInProgress };
 
 
 #define XTM_TRACE(fmt, ...)
@@ -182,7 +183,7 @@ static void DtmMergeWithActiveSnapshot(Snapshot dst)
 	LWLockAcquire(dtm->xidLock, LW_EXCLUSIVE);
 	for (i = 0, j = 0; i < src->xcnt; i++) {
 		if (!TransactionIdIsInSnapshot(src->xip[i], dst)
-				&& DtmGetTransactionStatus(src->xip[i], &lsn) == TRANSACTION_STATUS_IN_PROGRESS)
+            && DtmGetTransactionStatus(src->xip[i], &lsn) == TRANSACTION_STATUS_IN_PROGRESS)
 		{
 			src->xip[j++] = src->xip[i];
 		}
@@ -228,7 +229,9 @@ GetLocalSnapshot:
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 {
 	TransactionId localXmin = GetOldestLocalXmin(rel, ignoreVacuum);
-	TransactionId globalXmin = DtmMinXid;
+	TransactionId globalXmin = dtm->minXid;
+    XTM_INFO("XTM: DtmGetOldestXmin localXmin=%d, globalXmin=%d\n", localXmin, globalXmin);
+
 	if (TransactionIdIsValid(globalXmin)) {
 		globalXmin -= vacuum_defer_cleanup_age;
 		if (!TransactionIdIsNormal(globalXmin)) {
@@ -237,14 +240,15 @@ static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 		if (TransactionIdPrecedes(globalXmin, localXmin)) {
 			localXmin = globalXmin;
 		}
+        XTM_INFO("XTM: DtmGetOldestXmin adjusted localXmin=%d, globalXmin=%d\n", localXmin, globalXmin);
 	}
 	return localXmin;
 }
 
 static void DtmUpdateRecentXmin(Snapshot snapshot)
 {
-	TransactionId xmin = DtmMinXid;//DtmSnapshot.xmin;
-	XTM_INFO("XTM: DtmUpdateRecentXmin global xmin=%d, snapshot xmin %d\n", DtmMinXid, DtmSnapshot.xmin);
+	TransactionId xmin = dtm->minXid;//DtmSnapshot.xmin;
+	XTM_INFO("XTM: DtmUpdateRecentXmin global xmin=%d, snapshot xmin %d\n", dtm->minXid, DtmSnapshot.xmin);
 
 	if (TransactionIdIsValid(xmin)) {
 		xmin -= vacuum_defer_cleanup_age;
@@ -272,6 +276,18 @@ static TransactionId DtmGetNextXid()
 	if (TransactionIdIsValid(DtmNextXid)) {
 		XTM_INFO("Use global XID %d\n", DtmNextXid);
 		xid = DtmNextXid;
+
+#ifdef SUPPORT_LOCAL_TRANSACTIONS
+        { 
+            TransactionId* p;
+            p = bsearch(&DtmNextXid, dtm->activeSnapshot.xip, dtm->activeSnapshot.xcnt, sizeof(TransactionId), xidComparator);
+            if (p != NULL) { 
+                dtm->activeSnapshot.xcnt -= 1;
+                memcpy(p, p+1, (dtm->activeSnapshot.xcnt - (p - dtm->activeSnapshot.xip))*sizeof(TransactionId));
+            }
+        }
+#endif
+
 		if (TransactionIdPrecedesOrEquals(ShmemVariableCache->nextXid, xid)) {
 			while (TransactionIdPrecedes(ShmemVariableCache->nextXid, xid)) {
 				XTM_INFO("Extend CLOG for global transaction to %d\n", ShmemVariableCache->nextXid);
@@ -307,7 +323,7 @@ static TransactionId DtmGetNextXid()
 	return xid;
 }
 
-	TransactionId
+TransactionId
 DtmGetNewTransactionId(bool isSubXact)
 {
 	TransactionId xid;
@@ -511,11 +527,30 @@ DtmGetNewTransactionId(bool isSubXact)
 }
 
 
+static bool DtmTransactionIdIsInProgress(TransactionId xid)
+{
+    XLogRecPtr lsn;    
+    if (TransactionIdIsRunning(xid)) { 
+        return true;
+    }
+#ifdef SUPPORT_LOCAL_TRANSACTIONS
+    else if (DtmGetTransactionStatus(xid, &lsn) == TRANSACTION_STATUS_IN_PROGRESS) { 
+        bool globallyStarted;
+        LWLockAcquire(dtm->xidLock, LW_SHARED);
+        globallyStarted = bsearch(&xid, dtm->activeSnapshot.xip, dtm->activeSnapshot.xcnt, sizeof(TransactionId), xidComparator) != NULL;
+        LWLockRelease(dtm->xidLock);
+        return globallyStarted;
+    }
+#endif
+    return false;
+}
+        
+
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
 	if (TransactionIdIsValid(DtmNextXid) /*&& IsMVCCSnapshot(snapshot)*/ && snapshot != &CatalogSnapshotData) {
 		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != snapshot->curcid)) {
-			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &DtmMinXid);
+			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
 		}
 		DtmCurcid = snapshot->curcid;
 		DtmLastSnapshot = snapshot;
@@ -526,7 +561,9 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 	} else {
 		snapshot = GetLocalSnapshotData(snapshot);
 	}
+#ifdef SUPPORT_LOCAL_TRANSACTIONS
 	DtmMergeWithActiveSnapshot(snapshot);
+#endif
 	DtmUpdateRecentXmin(snapshot);
 	CurrentTransactionSnapshot = snapshot;
 	return snapshot;
@@ -598,6 +635,7 @@ static void DtmInitialize()
 		dtm->hashLock = LWLockAssign();
 		dtm->xidLock = LWLockAssign();
 		dtm->nReservedXids = 0;
+        dtm->minXid = InvalidTransactionId;
 		dtm->activeSnapshot.xip = (TransactionId*)ShmemAlloc(GetMaxSnapshotXidCount() * sizeof(TransactionId));
 		dtm->activeSnapshot.subxip = (TransactionId*)ShmemAlloc(GetMaxSnapshotSubxidCount() * sizeof(TransactionId));
 	}
@@ -734,9 +772,9 @@ dtm_begin_transaction(PG_FUNCTION_ARGS)
 	int nParticipants = PG_GETARG_INT32(0);
 	Assert(!TransactionIdIsValid(DtmNextXid));
 
-	DtmNextXid = DtmGlobalStartTransaction(nParticipants, &DtmSnapshot, &DtmMinXid);
+	DtmNextXid = DtmGlobalStartTransaction(nParticipants, &DtmSnapshot, &dtm->minXid);
 	Assert(TransactionIdIsValid(DtmNextXid));
-	XTM_INFO("%d: Start global transaction %d\n", getpid(), DtmNextXid);
+	XTM_INFO("%d: Start global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
 
 	DtmHasGlobalSnapshot = true;
 	DtmIsGlobalTransaction = true;
@@ -750,9 +788,9 @@ Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 	Assert(!TransactionIdIsValid(DtmNextXid));
 	DtmNextXid = PG_GETARG_INT32(0);
 	Assert(TransactionIdIsValid(DtmNextXid));
-	XTM_INFO("%d: Join global transaction %d\n", getpid(), DtmNextXid);
 
-	DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &DtmMinXid);
+	DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
+	XTM_INFO("%d: Join global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
 
 	DtmHasGlobalSnapshot = true;
 	DtmIsGlobalTransaction = true;
