@@ -227,17 +227,17 @@ static void gen_snapshot(Transaction *t) {
 
 static xid_t get_global_xmin() {
 	int i, j;
-	xid_t xmin = MAX_XID;
+	xid_t xmin = INVALID_XID;
 	Transaction *t;
 	for (i = 0; i < transactions_count; i++) {
 		t = transactions + i;
-        j = t->snapshots_count > MAX_SNAPSHOTS_PER_TRANS ? MAX_SNAPSHOTS_PER_TRANS : t->snapshots_count; 
-        while (--j >= 0) { 
-            Snapshot* s = transaction_snapshot(t, j);
-            if (s->xmin < xmin) {
-                xmin = s->xmin;
-            }
-            // minor TODO: Use 'times_sent' to generate a bit greater xmin?
+		j = t->snapshots_count > MAX_SNAPSHOTS_PER_TRANS ? MAX_SNAPSHOTS_PER_TRANS : t->snapshots_count; 
+		while (--j >= 0) { 
+			Snapshot* s = transaction_snapshot(t, j);
+			if ((xmin == INVALID_XID) || (s->xmin < xmin)) {
+				xmin = s->xmin;
+			}
+			// minor TODO: Use 'times_sent' to generate a bit greater xmin?
 		}
 	}
 	return xmin;
