@@ -125,8 +125,8 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
 
     start := time.Now()
     for myCommits < N_ITERATIONS {
-        amount := 2*rand.Intn(2000) - 1
-        //amount := 1
+        //amount := 2*rand.Intn(2000) - 1
+        amount := 1
         account1 := rand.Intn(N_ACCOUNTS)
         account2 := rand.Intn(N_ACCOUNTS)
 
