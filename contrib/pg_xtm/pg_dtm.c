@@ -73,7 +73,7 @@ static TransactionId DtmGetNextXid(void);
 static TransactionId DtmGetNewTransactionId(bool isSubXact);
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 
-static bool TransactionIdIsInDtmSnapshot(TransactionId xid);
+static bool TransactionIdIsInSnapshot(TransactionId xid, Snapshot snapshot);
 static bool TransactionIdIsInDoubt(TransactionId xid);
 
 static void dtm_shmem_startup(void);
@@ -119,10 +119,10 @@ static void DumpSnapshot(Snapshot s, char *name)
 	XTM_INFO("%s\n", buf);
 }
 
-static bool TransactionIdIsInDtmSnapshot(TransactionId xid)
+static bool TransactionIdIsInSnapshot(TransactionId xid, Snapshot snapshot)
 {
-	return xid >= DtmSnapshot.xmax
-		|| bsearch(&xid, DtmSnapshot.xip, DtmSnapshot.xcnt, sizeof(TransactionId), xidComparator) != NULL;
+	return xid >= snapshot->xmax
+		|| bsearch(&xid, snapshot->xip, snapshot->xcnt, sizeof(TransactionId), xidComparator) != NULL;
 }
 
 
@@ -130,7 +130,7 @@ static bool TransactionIdIsInDoubt(TransactionId xid)
 {
 	bool inDoubt;
 
-	if (!TransactionIdIsInDtmSnapshot(xid)) {
+	if (!TransactionIdIsInSnapshot(xid, &DtmSnapshot)) {
 		LWLockAcquire(dtm->hashLock, LW_SHARED);
 		inDoubt = hash_search(xid_in_doubt, &xid, HASH_FIND, NULL) != NULL;
 		LWLockRelease(dtm->hashLock);
@@ -175,8 +175,23 @@ static void DtmMergeSnapshots(Snapshot dst, Snapshot src)
 
 static void DtmMergeWithActiveSnapshot(Snapshot dst)
 {
+    int i, j;
+    XLogRecPtr lsn;
+    Snapshot src = &dtm->activeSnapshot;
+
     LWLockAcquire(dtm->xidLock, LW_EXCLUSIVE);
-    DtmMergeSnapshots(dst, &dtm->activeSnapshot); 
+    for (i = 0, j = 0; i < src->xcnt; i++) { 
+        if (!TransactionIdIsInSnapshot(src->xip[i], dst)
+            && DtmGetTransactionStatus(src->xip[i], &lsn) == TRANSACTION_STATUS_IN_PROGRESS)
+        {
+            src->xip[j++] = src->xip[i];
+        }
+    }
+    src->xcnt = j;
+    if (j != 0) { 
+        src->xmin = src->xip[0];            
+        DtmMergeSnapshots(dst, src);
+    } 
     LWLockRelease(dtm->xidLock);
 }
 
