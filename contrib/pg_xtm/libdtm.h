@@ -36,6 +36,6 @@ XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait);
 // of xids reserved, and sets the 'first' xid accordingly. The number of xids
 // reserved is guaranteed to be at least nXids.
 // In other words, *first ≥ xid and result ≥ nXids.
-int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first);
+int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first, Snapshot active);
 
 #endif

@@ -48,6 +48,7 @@ typedef struct
 	LWLockId xidLock;    
 	TransactionId nextXid;
 	size_t nReservedXids;
+    SnapshotData activeSnapshot;
 } DtmState;
 
 
@@ -61,9 +62,11 @@ void _PG_fini(void);
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static void DtmMergeSnapshots(Snapshot dst, Snapshot src);
+static void DtmMergeWithActiveSnapshot(Snapshot snapshot);
+static void DtmMergeWithGlobalSnapshot(Snapshot snapshot);
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
-static void DtmUpdateRecentXmin(void);
+static void DtmUpdateRecentXmin(Snapshot snapshot);
 static void DtmInitialize(void);
 static void DtmXactCallback(XactEvent event, void *arg);
 static TransactionId DtmGetNextXid(void);
@@ -144,10 +147,44 @@ static bool TransactionIdIsInDoubt(TransactionId xid)
 	return false;
 }
 
+
 static void DtmMergeSnapshots(Snapshot dst, Snapshot src)
 {
 	int i, j, n;
+    TransactionId prev; 
+
+    if (src->xmin < dst->xmin) { 
+        dst->xmin = src->xmin;
+    }
+
+	n = dst->xcnt;
+	Assert(src->xcnt + n <= GetMaxSnapshotXidCount());
+	memcpy(dst->xip + n, src->xip, src->xcnt*sizeof(TransactionId));
+	n += src->xcnt;
+
+	qsort(dst->xip, n, sizeof(TransactionId), xidComparator);
+	prev = InvalidTransactionId;
+
+	for (i = 0, j = 0; i < n && dst->xip[i] < dst->xmax; i++) {
+		if (dst->xip[i] != prev) {
+			dst->xip[j++] = prev = dst->xip[i];
+		}
+	}
+	dst->xcnt = j;
+}
+
+static void DtmMergeWithActiveSnapshot(Snapshot dst)
+{
+    LWLockAcquire(dtm->xidLock, LW_EXCLUSIVE);
+    DtmMergeSnapshots(dst, &dtm->activeSnapshot); 
+    LWLockRelease(dtm->xidLock);
+}
+
+static void DtmMergeWithGlobalSnapshot(Snapshot dst)
+{
+	int i;
 	TransactionId xid;
+    Snapshot src = &DtmSnapshot;
 
 	Assert(TransactionIdIsValid(src->xmin) && TransactionIdIsValid(src->xmax));
 
@@ -166,34 +203,14 @@ GetLocalSnapshot:
 	DumpSnapshot(dst, "local");
 	DumpSnapshot(src, "DTM");
 
-	/* Merge two snapshots: produce most restrictive snapshots whihc includes running transactions from both of them */
-    if (src->xmin < dst->xmin) {
-        dst->xmin = src->xmin;
-        ProcArrayInstallImportedXmin(src->xmin, DtmNextXid);
-        //MyPgXact->xmin = TransactionXmin = src->xmin;
-    }
     if (src->xmax < dst->xmax) dst->xmax = src->xmax;
 
-    
-	n = dst->xcnt;
-	for (xid = dst->xmax; xid <= src->xmin; xid++) {
-		dst->xip[n++] = xid;
-	}
-	memcpy(dst->xip + n, src->xip, src->xcnt*sizeof(TransactionId));
-	n += src->xcnt;
-	Assert(n <= GetMaxSnapshotXidCount());
+    DtmMergeSnapshots(dst, src);
 
-	qsort(dst->xip, n, sizeof(TransactionId), xidComparator);
-	xid = InvalidTransactionId;
-
-	for (i = 0, j = 0; i < n && dst->xip[i] < dst->xmax; i++) {
-		if (dst->xip[i] != xid) {
-			dst->xip[j++] = xid = dst->xip[i];
-		}
-	}
-	dst->xcnt = j;
 	DumpSnapshot(dst, "merged");
 }
+
+    
 
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 {
@@ -211,7 +228,7 @@ static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum)
     return localXmin;
 }
 
-static void DtmUpdateRecentXmin(void)
+static void DtmUpdateRecentXmin(Snapshot snapshot)
 {
 	TransactionId xmin = DtmMinXid;//DtmSnapshot.xmin;
 	XTM_INFO("XTM: DtmUpdateRecentXmin global xmin=%d, snapshot xmin %d\n", DtmMinXid, DtmSnapshot.xmin);
@@ -228,9 +245,10 @@ static void DtmUpdateRecentXmin(void)
 		if (TransactionIdFollows(RecentGlobalXmin, xmin)) {
 			RecentGlobalXmin = xmin;
 		}
-		if (TransactionIdFollows(RecentXmin, xmin)) {
-			RecentXmin = xmin;
-		}
+    }    
+    if (TransactionIdFollows(RecentXmin, snapshot->xmin)) {
+        ProcArrayInstallImportedXmin(snapshot->xmin, GetCurrentTransactionId());
+        RecentXmin = snapshot->xmin;
 	}
 }
 
@@ -253,7 +271,7 @@ static TransactionId DtmGetNextXid()
         }
 	} else {
 		if (dtm->nReservedXids == 0) {
-			dtm->nReservedXids = DtmGlobalReserve(ShmemVariableCache->nextXid, DtmLocalXidReserve, &dtm->nextXid);
+			dtm->nReservedXids = DtmGlobalReserve(ShmemVariableCache->nextXid, DtmLocalXidReserve, &dtm->nextXid, &dtm->activeSnapshot);
             Assert(dtm->nReservedXids > 0);
             Assert(TransactionIdFollowsOrEquals(dtm->nextXid, ShmemVariableCache->nextXid));
  
@@ -488,14 +506,15 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 		}
         DtmCurcid = snapshot->curcid;
         DtmLastSnapshot = snapshot;
-		DtmMergeSnapshots(snapshot, &DtmSnapshot);
+		DtmMergeWithGlobalSnapshot(snapshot);
 		if (!IsolationUsesXactSnapshot()) {
 			DtmHasGlobalSnapshot = false;
 		}
 	} else { 
 		snapshot = GetLocalSnapshotData(snapshot);
 	}
-    DtmUpdateRecentXmin();
+    DtmMergeWithActiveSnapshot(snapshot);
+    DtmUpdateRecentXmin(snapshot);
 	CurrentTransactionSnapshot = snapshot;
 	return snapshot;
 }
@@ -566,6 +585,8 @@ static void DtmInitialize()
 		dtm->hashLock = LWLockAssign();
 		dtm->xidLock = LWLockAssign();
 		dtm->nReservedXids = 0;
+        dtm->activeSnapshot.xip = (TransactionId*)ShmemAlloc(GetMaxSnapshotXidCount() * sizeof(TransactionId));
+        dtm->activeSnapshot.subxip = (TransactionId*)ShmemAlloc(GetMaxSnapshotSubxidCount() * sizeof(TransactionId));
 	}
 	LWLockRelease(AddinShmemInitLock);
 
