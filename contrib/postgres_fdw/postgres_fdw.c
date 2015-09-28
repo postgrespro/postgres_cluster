@@ -230,6 +230,7 @@ typedef struct
  * SQL functions
  */
 PG_FUNCTION_INFO_V1(postgres_fdw_handler);
+PG_FUNCTION_INFO_V1(postgres_fdw_exec);
 
 /*
  * FDW callback routines
@@ -2993,4 +2994,20 @@ conversion_error_callback(void *arg)
 		errcontext("column \"%s\" of foreign table \"%s\"",
 				   NameStr(tupdesc->attrs[errpos->cur_attno - 1]->attname),
 				   RelationGetRelationName(errpos->rel));
+}
+
+Datum
+postgres_fdw_exec(PG_FUNCTION_ARGS)
+{
+    Oid relid = PG_GETARG_OID(0);
+    char const* sql = PG_GETARG_CSTRING(1);
+	Oid			userid = GetUserId();
+	ForeignTable *table = GetForeignTable(relid);
+	ForeignServer *server = GetForeignServer(table->serverid);
+	UserMapping *user = GetUserMapping(userid, server->serverid);
+    PGconn* conn =  GetConnection(server, user, false);
+    PGresult* res = PQexec(conn, sql);
+	PQclear(res);
+	ReleaseConnection(conn);
+    PG_RETURN_VOID();
 }

@@ -327,6 +327,8 @@ TransactionId
 DtmGetNewTransactionId(bool isSubXact)
 {
 	TransactionId xid;
+    
+    XTM_INFO("%d: GetNewTransactionId\n", getpid());
 
 	/*
 	 * Workers synchronize transaction state at the beginning of each parallel
@@ -580,9 +582,9 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
-	XTM_TRACE("XTM: DtmSetTransactionStatus %u = %u \n", xid, status);
+	XTM_INFO("%d: DtmSetTransactionStatus %u = %u\n", getpid(), xid, status);
 	if (!RecoveryInProgress()) {
-		if (TransactionIdIsValid(DtmNextXid)) {
+		if (!DtmIsGlobalTransaction && TransactionIdIsValid(DtmNextXid)) {
 			/* Already should be IN_PROGRESS */
 			/* CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_IN_PROGRESS, lsn); */
 			CurrentTransactionSnapshot = NULL;
@@ -638,6 +640,8 @@ static void DtmInitialize()
         dtm->minXid = InvalidTransactionId;
 		dtm->activeSnapshot.xip = (TransactionId*)ShmemAlloc(GetMaxSnapshotXidCount() * sizeof(TransactionId));
 		dtm->activeSnapshot.subxip = (TransactionId*)ShmemAlloc(GetMaxSnapshotSubxidCount() * sizeof(TransactionId));
+
+        RegisterXactCallback(DtmXactCallback, NULL);
 	}
 	LWLockRelease(AddinShmemInitLock);
 
@@ -652,7 +656,6 @@ static void DtmInitialize()
 		HASH_ELEM | HASH_FUNCTION | HASH_COMPARE
 	);
 
-	RegisterXactCallback(DtmXactCallback, NULL);
 
 	TM = &DtmTM;
 }
