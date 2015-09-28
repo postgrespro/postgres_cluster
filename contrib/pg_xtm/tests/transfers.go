@@ -138,8 +138,14 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
             continue
         }
 
-        src := conn[rand.Intn(2)]
-        dst := conn[rand.Intn(2)]
+        srci := rand.Intn(2)
+        dsti := rand.Intn(2)
+        if (srci > dsti) {
+            continue
+        }
+
+        src := conn[srci]
+        dst := conn[dsti]
 
         if src == dst {
             // local update
