@@ -88,7 +88,7 @@ static Snapshot CurrentTransactionSnapshot;
 static TransactionId DtmNextXid;
 static SnapshotData DtmSnapshot = { HeapTupleSatisfiesMVCC };
 static bool DtmHasGlobalSnapshot;
-static bool DtmIsGlobalTransaction;
+static bool DtmGlobalXidAssigned;
 static int DtmLocalXidReserve;
 static int DtmCurcid;
 static Snapshot DtmLastSnapshot;
@@ -329,6 +329,7 @@ DtmGetNewTransactionId(bool isSubXact)
 	TransactionId xid;
     
     XTM_INFO("%d: GetNewTransactionId\n", getpid());
+    Assert(!DtmGlobalXidAssigned);
 
 	/*
 	 * Workers synchronize transaction state at the beginning of each parallel
@@ -550,6 +551,9 @@ static bool DtmTransactionIdIsInProgress(TransactionId xid)
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
+    if (DtmGlobalXidAssigned) { 
+        return GetLocalSnapshotData(snapshot);
+	}
 	if (TransactionIdIsValid(DtmNextXid) /*&& IsMVCCSnapshot(snapshot)*/ && snapshot != &CatalogSnapshotData) {
 		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != snapshot->curcid)) {
 			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
@@ -584,7 +588,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 {
 	XTM_INFO("%d: DtmSetTransactionStatus %u = %u\n", getpid(), xid, status);
 	if (!RecoveryInProgress()) {
-		if (!DtmIsGlobalTransaction && TransactionIdIsValid(DtmNextXid)) {
+		if (!DtmGlobalXidAssigned && TransactionIdIsValid(DtmNextXid)) {
 			/* Already should be IN_PROGRESS */
 			/* CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_IN_PROGRESS, lsn); */
 			CurrentTransactionSnapshot = NULL;
@@ -664,15 +668,19 @@ static void
 DtmXactCallback(XactEvent event, void *arg)
 {
 	if (event == XACT_EVENT_COMMIT || event == XACT_EVENT_ABORT) {
-		XTM_INFO("%d: DtmXactCallbackevent=%d isGlobal=%d, nextxid=%d\n", getpid(), event, DtmIsGlobalTransaction, DtmNextXid);
-		if (DtmIsGlobalTransaction) {
-			DtmIsGlobalTransaction = false;
+		XTM_INFO("%d: DtmXactCallbackevent=%d isGlobal=%d, nextxid=%d\n", getpid(), event, DtmGlobalXidAssigned, DtmNextXid);
+		if (DtmGlobalXidAssigned) {
+			DtmGlobalXidAssigned = false;
 		} else if (TransactionIdIsValid(DtmNextXid)) {
 			if (event == XACT_EVENT_COMMIT) {
 				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_REMOVE, NULL);
 				LWLockRelease(dtm->hashLock);
-			}
+			} else { 
+                if (!TransactionIdIsValid(GetCurrentTransactionIdIfAny())) {
+                    DtmGlobalSetTransStatus(DtmNextXid, TRANSACTION_STATUS_ABORTED, false);
+                }
+            }
 			DtmNextXid = InvalidTransactionId;
 			DtmLastSnapshot = NULL;
 		}
@@ -780,7 +788,7 @@ dtm_begin_transaction(PG_FUNCTION_ARGS)
 	XTM_INFO("%d: Start global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
 
 	DtmHasGlobalSnapshot = true;
-	DtmIsGlobalTransaction = true;
+	DtmGlobalXidAssigned = true;
 	DtmLastSnapshot = NULL;
 
 	PG_RETURN_INT32(DtmNextXid);
@@ -796,7 +804,7 @@ Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 	XTM_INFO("%d: Join global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
 
 	DtmHasGlobalSnapshot = true;
-	DtmIsGlobalTransaction = true;
+	DtmGlobalXidAssigned = true;
 	DtmLastSnapshot = NULL;
 
 	PG_RETURN_VOID();
