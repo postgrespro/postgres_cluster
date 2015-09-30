@@ -775,6 +775,7 @@ PG_FUNCTION_INFO_V1(dtm_begin_transaction);
 PG_FUNCTION_INFO_V1(dtm_join_transaction);
 PG_FUNCTION_INFO_V1(dtm_get_current_snapshot_xmax);
 PG_FUNCTION_INFO_V1(dtm_get_current_snapshot_xmin);
+PG_FUNCTION_INFO_V1(dtm_get_current_snapshot_xcnt);
 
 Datum
 dtm_get_current_snapshot_xmin(PG_FUNCTION_ARGS)
@@ -786,6 +787,12 @@ Datum
 dtm_get_current_snapshot_xmax(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT32(CurrentTransactionSnapshot->xmax);
+}
+
+Datum
+dtm_get_current_snapshot_xcnt(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT32(CurrentTransactionSnapshot->xcnt);
 }
 
 Datum

@@ -15,6 +15,9 @@ const (
     N_ACCOUNTS = 100000
     //ISOLATION_LEVEL = "repeatable read"
     ISOLATION_LEVEL = "read committed"
+    GLOBAL_UPDATES = true
+    LOCAL_UPDATES = false
+    CURSORS = false
 )
 
 
@@ -134,28 +137,71 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
         amount := 1
         account1 := rand.Intn(N_ACCOUNTS)
         account2 := rand.Intn(N_ACCOUNTS)
+        srci := rand.Intn(2)
+        dsti := rand.Intn(2)
+        if (srci > dsti) {
+            srci, dsti = dsti, srci
+        }
 
-        src := conn[0]
-        dst := conn[1]
+        src := conn[srci]
+        dst := conn[dsti]
 
-        xid = execQuery(src, "select dtm_begin_transaction()")
-        exec(dst, "select dtm_join_transaction($1)", xid)
+        if src == dst {
+            // local update
+            if !LOCAL_UPDATES {
+                // which we do not want
+                continue
+            }
 
-        // start transaction
-        exec(src, "begin transaction isolation level " + ISOLATION_LEVEL)
-        exec(dst, "begin transaction isolation level " + ISOLATION_LEVEL)
-
-        ok1 := execUpdate(src, "update t set v = v - $1 where u=$2", amount, account1)
-        ok2 := execUpdate(dst, "update t set v = v + $1 where u=$2", amount, account2)
-
-        if !ok1 || !ok2 {
-            exec(src, "rollback")
-            exec(dst, "rollback")
-            nAborts += 1
+            exec(src, "begin transaction isolation level " + ISOLATION_LEVEL)
+            ok1 := execUpdate(src, "update t set v = v - $1 where u=$2", amount, account1)
+            ok2 := execUpdate(src, "update t set v = v + $1 where u=$2", amount, account2)
+            if !ok1 || !ok2 {
+                exec(src, "rollback")
+                nAborts += 1
+            } else {
+                exec(src, "commit")
+                nCommits += 1
+                myCommits += 1
+            }
         } else {
-            commit(src, dst)
-            nCommits += 1
-            myCommits += 1
+            // global update
+            if !GLOBAL_UPDATES {
+                // which we do not want
+                continue
+            }
+
+            xid = execQuery(src, "select dtm_begin_transaction()")
+            exec(dst, "select dtm_join_transaction($1)", xid)
+
+            // start transaction
+            exec(src, "begin transaction isolation level " + ISOLATION_LEVEL)
+            exec(dst, "begin transaction isolation level " + ISOLATION_LEVEL)
+
+            ok := true
+            if (CURSORS) {
+                exec(src, "declare cur0 cursor for select * from t where u=$1 for update", account1)
+                exec(dst, "declare cur0 cursor for select * from t where u=$1 for update", account2)
+
+                ok = execUpdate(src, "fetch from cur0") && ok
+                ok = execUpdate(dst, "fetch from cur0") && ok
+
+                ok = execUpdate(src, "update t set v = v - $1 where current of cur0", amount) && ok
+                ok = execUpdate(dst, "update t set v = v + $1 where current of cur0", amount) && ok
+            } else {
+                ok = execUpdate(src, "update t set v = v - $1 where u=$2", amount, account1) && ok
+                ok = execUpdate(dst, "update t set v = v + $1 where u=$2", amount, account2) && ok
+            }
+
+            if ok {
+                commit(src, dst)
+                nCommits += 1
+                myCommits += 1
+            } else {
+                exec(src, "rollback")
+                exec(dst, "rollback")
+                nAborts += 1
+            }
         }
 
         if time.Since(start).Seconds() > 1 {
@@ -197,11 +243,13 @@ func inspect(wg *sync.WaitGroup) {
             if (sum != prevSum) {
                 xmin1 := execQuery(conn1, "select dtm_get_current_snapshot_xmin()")
                 xmax1 := execQuery(conn1, "select dtm_get_current_snapshot_xmax()")
+                xcnt1 := execQuery(conn1, "select dtm_get_current_snapshot_xcnt()")
                 xmin2 := execQuery(conn2, "select dtm_get_current_snapshot_xmin()")
                 xmax2 := execQuery(conn2, "select dtm_get_current_snapshot_xmax()")
+                xcnt2 := execQuery(conn2, "select dtm_get_current_snapshot_xcnt()")
                 fmt.Printf(
-                    "Total=%d xid=%d snap1=[%d, %d) snap2=[%d, %d)\n",
-                    sum, xid, xmin1, xmax1, xmin2, xmax2,
+                    "Total=%d xid=%d snap1=[%d, %d){%d} snap2=[%d, %d){%d}\n",
+                    sum, xid, xmin1, xmax1, xcnt1, xmin2, xmax2, xcnt2,
                 )
                 prevSum = sum
             }
