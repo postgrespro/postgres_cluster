@@ -254,7 +254,7 @@ visibilitymap_set(Relation rel, BlockNumber heapBlk, Buffer heapBuf,
 	Page		page;
 	char	   *map;
 
-#if 1
+#if 0
     fprintf(stderr, "Visibilitymap cutoff %d, RecentLocalDataXmin=%d\n", cutoff_xid, RecentGlobalDataXmin);
 //    return;
 #endif

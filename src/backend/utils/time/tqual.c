@@ -970,7 +970,7 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
  * and more contention on the PGXACT array.
  */
 bool 
-_HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
+HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 					   Buffer buffer)
 {
 	HeapTupleHeader tuple = htup->t_data;
@@ -1156,7 +1156,7 @@ _HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 
 	return false;
 }
-#if 1
+#if 0
 bool 
 HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 					   Buffer buffer)
@@ -1166,8 +1166,12 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 	HeapTupleHeader tuple = htup->t_data;
 	TransactionId curxid = GetCurrentTransactionId();
 	if (TransactionIdIsNormal(curxid)) {
-		fprintf(stderr, "pid=%d Transaction %d, [%d,%d) visibility check for tuple {%d,%d} %x = %d\n",
-				getpid(), curxid, snapshot->xmin, snapshot->xmax, HeapTupleHeaderGetRawXmin(tuple), HeapTupleHeaderGetRawXmax(tuple), tuple->t_infomask, result);
+		fprintf(stderr, "pid=%d Transaction %d, [%d,%d) visibility check for tuple [%x-%x,%x]  {%d,%d} %x = %d\n",
+				getpid(), curxid, snapshot->xmin, snapshot->xmax, 
+                tuple->t_ctid.ip_blkid.bi_hi,
+                tuple->t_ctid.ip_blkid.bi_lo,
+                tuple->t_ctid.ip_posid,
+                HeapTupleHeaderGetRawXmin(tuple), HeapTupleHeaderGetRawXmax(tuple), tuple->t_infomask, result);
 	}
 
     return result;

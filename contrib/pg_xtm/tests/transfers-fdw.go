@@ -10,7 +10,7 @@ import (
 )
 
 const (
-    TRANSFER_CONNECTIONS = 2
+    TRANSFER_CONNECTIONS = 8
     INIT_AMOUNT = 10000
     N_ITERATIONS = 10000
     N_ACCOUNTS = TRANSFER_CONNECTIONS//100000
@@ -35,8 +35,6 @@ var cfg2 = pgx.ConnConfig{
 var running = false
 
 func prepare_db() {
-//    var xid int32
-
     conn1, err := pgx.Connect(cfg1)
     checkErr(err)
     defer conn1.Close()
@@ -66,7 +64,7 @@ func prepare_db() {
 
     for i := 0; i < N_ACCOUNTS; i++ {
         exec(conn1, "insert into t values($1, $2)", i, INIT_AMOUNT)
-        exec(conn2, "insert into t values($1, $2)", -i, INIT_AMOUNT)
+        exec(conn2, "insert into t values($1, $2)", ^i, INIT_AMOUNT)
     }
 
     exec(conn1, "commit")
@@ -106,7 +104,7 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
     for myCommits < N_ITERATIONS {
         amount := 1
         account1 := rand.Intn(N_ACCOUNTS)
-        account2 := -rand.Intn(N_ACCOUNTS)
+        account2 := ^rand.Intn(N_ACCOUNTS)
 
         exec(conn, "begin")
         xid = execQuery(conn, "select dtm_begin_transaction(2)")
@@ -150,6 +148,7 @@ func inspect(wg *sync.WaitGroup) {
         checkErr(err)
 
         for running {
+
             exec(conn, "begin")
             xid = execQuery(conn, "select dtm_begin_transaction(2)")
             exec(conn, "select postgres_fdw_exec('t_fdw'::regclass::oid, 'select public.dtm_join_transaction(" + strconv.Itoa(int(xid)) + ")')")
