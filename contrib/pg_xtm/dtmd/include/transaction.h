@@ -14,7 +14,8 @@
 typedef struct Transaction {
 	xid_t xid;
 
-	int size;
+	int size; // number of paritcipants
+	int max_size; // maximal number of participants
 
 	// for + against ≤ size
 	int votes_for;

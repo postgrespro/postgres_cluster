@@ -280,7 +280,8 @@ static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
 
 	prev_gxid = t->xid = next_gxid++;
 	t->snapshots_count = 0;
-	t->size = size;
+	t->max_size = size;
+    t->size = 1;
 
 	CLIENT_SNAPSENT(clientdata) = 0;
 	CLIENT_XID(clientdata) = t->xid;
@@ -436,6 +437,12 @@ static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd) {
 	if (CLIENT_XID(clientdata) == INVALID_XID) {
 		CLIENT_SNAPSENT(clientdata) = 0;
 		CLIENT_XID(clientdata) = t->xid;
+        t->size += 1;
+        CHECK(
+            t->size <= t->max_size,
+            clientdata,
+            "SNAPSHOT: too many participants"
+            );
 	}
 
 	CHECK(
