@@ -37,8 +37,8 @@ typedef struct
     int    max_fd;
     fd_set inset;
     char*  in_buffer;
-    int    in_buffer_used;
     char*  out_buffer;
+    int    in_buffer_used;
     int    out_buffer_used;
     ShubParams* params;
 } Shub;

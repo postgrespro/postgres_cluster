@@ -28,7 +28,7 @@ static void default_error_handler(char const* msg, ShubErrorSeverity severity)
 
 void ShubInitParams(ShubParams* params)
 {
-    memset(params, 0, sizeof params);
+    memset(params, 0, sizeof(*params));
     params->buffer_size = 64*1025;
     params->port = 54321;
     params->queue_size = 100;
@@ -65,22 +65,14 @@ static int resolve_host_by_name(const char *hostname, unsigned* addrs, unsigned*
 
 static void close_socket(Shub* shub, int fd)
 {
-    int i, max_fd;
-    fd_set copy;
-    FD_ZERO(&copy);
     close(fd);
-    for (i = 0, max_fd = shub->max_fd; i <= max_fd; i++) {
-        if (i != fd && FD_ISSET(i, &shub->inset)) { 
-            FD_SET(i, &copy);
-        }
-    }
-    FD_COPY(&copy, &shub->inset);
+    FD_CLR(fd, &shub->inset);
 }
 
 static int read_socket(int sd, char* buf, int size)
 {
     while (size != 0) { 
-        int n = recv(sd, buf, size , 0);
+        int n = recv(sd, buf, size, 0);
         if (n <= 0) { 
             return 0;
         } 
@@ -159,20 +151,18 @@ static void reconnect(Shub* shub)
 static void recovery(Shub* shub)
 {
     int i, max_fd;
-    fd_set okset;
-    fd_set tryset;
 
     for (i = 0, max_fd = shub->max_fd; i <= max_fd; i++) {
         if (FD_ISSET(i, &shub->inset)) { 
             struct timeval tm = {0,0};
+            fd_set tryset;
             FD_ZERO(&tryset);
             FD_SET(i, &tryset);
-            if (select(i+1, &tryset, NULL, NULL, &tm) >= 0) { 
-                FD_SET(i, &okset);
+            if (select(i+1, &tryset, NULL, NULL, &tm) < 0) { 
+                close_socket(shub, i);
             }
         }
     }
-    FD_COPY(&okset, &shub->inset);
 }
 
 void ShubInitialize(Shub* shub, ShubParams* params)
@@ -180,6 +170,7 @@ void ShubInitialize(Shub* shub, ShubParams* params)
     struct sockaddr sock;
 
     shub->params = params;
+
     sock.sa_family = AF_UNIX;
     strcpy(sock.sa_data, params->file);
     unlink(params->file);
@@ -203,6 +194,9 @@ void ShubInitialize(Shub* shub, ShubParams* params)
     if (shub->in_buffer == NULL || shub->out_buffer == NULL) { 
         shub->params->error_handler("Failed to allocate buffer", SHUB_FATAL_ERROR);
     }
+    shub->in_buffer_used = 0;
+    shub->out_buffer_used = 0;
+    shub->max_fd = -1;
 }
 
 
@@ -219,8 +213,7 @@ void ShubLoop(Shub* shub)
         tm.tv_sec = shub->params->delay/1000;
         tm.tv_usec = shub->params->delay % 1000 * 1000;
 
-
-        FD_COPY(&shub->inset, &events);
+        events = shub->inset;
         rc = select(shub->max_fd+1, &events, NULL, NULL, shub->in_buffer_used == 0 ? NULL : &tm);
         if (rc < 0) { 
             if (errno != EINTR) {                
@@ -250,15 +243,16 @@ void ShubLoop(Shub* shub)
                             }
                             shub->out_buffer_used += available;
                             while (pos + sizeof(ShubMessageHdr) <= shub->out_buffer_used) { 
-                                ShubMessageHdr* hdr = (ShubMessageHdr*)shub->out_buffer;
+                                ShubMessageHdr* hdr = (ShubMessageHdr*)(shub->out_buffer + pos);
                                 int chan = hdr->chan;
+                                n = pos + sizeof(ShubMessageHdr) + hdr->size <= shub->out_buffer_used ? hdr->size + sizeof(ShubMessageHdr) : shub->out_buffer_used - pos;
                                 pos += sizeof(ShubMessageHdr);
-                                n = pos + hdr->size <= shub->out_buffer_used ? hdr->size + sizeof(ShubMessageHdr) : shub->out_buffer_used - pos;
                                 if (!write_socket(chan, (char*)hdr, n)) { 
                                     shub->params->error_handler("Failed to write to local socket", SHUB_RECOVERABLE_ERROR);
                                     close_socket(shub, chan);
                                     chan = -1;
                                 }
+                                /* read rest of message if it doesn't fit in buffer */
                                 if (n != hdr->size + sizeof(ShubMessageHdr)) { 
                                     int tail = hdr->size + sizeof(ShubMessageHdr) - n;
                                     do {
@@ -275,6 +269,7 @@ void ShubLoop(Shub* shub)
                                         }                                       
                                         tail -= n;
                                     } while (tail != 0);
+                                    pos =;
                                 }
                             }
                             memcpy(shub->out_buffer, shub->out_buffer + pos, shub->out_buffer_used - pos);
