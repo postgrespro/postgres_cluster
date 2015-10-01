@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include "sockhub.h"
                    
 int main(int argc, char* argv[]) 
@@ -25,7 +26,7 @@ int main(int argc, char* argv[])
                 params.delay = atoi(argv[++i]);
                 continue;
               case 'b':
-                params.buf_size = atoi(argv[++i]);
+                params.buffer_size = atoi(argv[++i]);
                 continue;
               case 'r':
                 params.max_attempts = atoi(argv[++i]);

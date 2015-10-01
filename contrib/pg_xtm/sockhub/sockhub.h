@@ -28,7 +28,7 @@ typedef struct
     char const* file;
     char const* host;
     ShubErrorHandler error_handler;
-} ShubParms;
+} ShubParams;
    
 typedef struct
 {
@@ -44,7 +44,7 @@ typedef struct
 } Shub;
 
 void ShubInitParams(ShubParams* params);
-void ShubIntialize(Shub* shub, ShubParams* params);
+void ShubInitialize(Shub* shub, ShubParams* params);
 void ShubLoop(Shub* shub);
 
 #endif
