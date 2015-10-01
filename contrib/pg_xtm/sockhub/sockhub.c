@@ -269,7 +269,8 @@ void ShubLoop(Shub* shub)
                                         }                                       
                                         tail -= n;
                                     } while (tail != 0);
-                                    pos =;
+                                    pos = shub->out_buffer_used;
+                                    break;
                                 }
                             }
                             memcpy(shub->out_buffer, shub->out_buffer + pos, shub->out_buffer_used - pos);
