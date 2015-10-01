@@ -246,7 +246,6 @@ void ShubLoop(Shub* shub)
                                 ShubMessageHdr* hdr = (ShubMessageHdr*)(shub->out_buffer + pos);
                                 int chan = hdr->chan;
                                 n = pos + sizeof(ShubMessageHdr) + hdr->size <= shub->out_buffer_used ? hdr->size + sizeof(ShubMessageHdr) : shub->out_buffer_used - pos;
-                                pos += sizeof(ShubMessageHdr);
                                 if (!write_socket(chan, (char*)hdr, n)) { 
                                     shub->params->error_handler("Failed to write to local socket", SHUB_RECOVERABLE_ERROR);
                                     close_socket(shub, chan);
@@ -269,9 +268,11 @@ void ShubLoop(Shub* shub)
                                         }                                       
                                         tail -= n;
                                     } while (tail != 0);
+
                                     pos = shub->out_buffer_used;
                                     break;
                                 }
+                                pos += n;
                             }
                             memcpy(shub->out_buffer, shub->out_buffer + pos, shub->out_buffer_used - pos);
                             shub->out_buffer_used -= pos;
