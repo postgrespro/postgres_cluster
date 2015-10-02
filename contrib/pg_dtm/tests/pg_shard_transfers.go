@@ -6,6 +6,7 @@ import (
     _ "github.com/jgallagher/go-libpq"
     "database/sql"
     "strconv"
+    "math/rand"
 )
 
 const (
@@ -60,8 +61,8 @@ func transfer(id int, wg *sync.WaitGroup) {
 
     for i:=0; i < N_ITERATIONS; i++ {
         exec(conn, "begin")
-        exec(conn, "update t set v = v + 1 where u="+strconv.Itoa(uids1[id]))
-        exec(conn, "update t set v = v - 1 where u="+strconv.Itoa(uids2[id]))
+        exec(conn, "update t set v = v + 1 where u="+strconv.Itoa(uids1[rand.Intn(TRANSFER_CONNECTIONS)]))
+        exec(conn, "update t set v = v - 1 where u="+strconv.Itoa(uids2[rand.Intn(TRANSFER_CONNECTIONS)]))
         // exec(conn, "update t set v = v + 1 where u=1")
         // exec(conn, "update t set v = v - 1 where u=2")
         exec(conn, "commit")

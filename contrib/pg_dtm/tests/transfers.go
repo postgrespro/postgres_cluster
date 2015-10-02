@@ -12,9 +12,9 @@ const (
     TRANSFER_CONNECTIONS = 8
     INIT_AMOUNT = 10000
     N_ITERATIONS = 10000
-    N_ACCOUNTS = TRANSFER_CONNECTIONS//100000
-    ISOLATION_LEVEL = "repeatable read"
-    //ISOLATION_LEVEL = "read committed"
+    N_ACCOUNTS = 100000
+    //ISOLATION_LEVEL = "repeatable read"
+    ISOLATION_LEVEL = "read committed"
 )
 
 
