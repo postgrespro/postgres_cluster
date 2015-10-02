@@ -3,11 +3,13 @@
 ./install/bin/pg_ctl -D ./install/data1 stop
 ./install/bin/pg_ctl -D ./install/data2 stop
 
+killall dtmd
+
 rm -rf install
 
 make install
 
-cd contrib/pg_xtm/
+cd contrib/pg_dtm/
 
 make clean
 make
@@ -33,8 +35,9 @@ echo 'autovacuum = off' >> ./install/data2/postgresql.conf
 ./install/bin/pg_ctl -D ./install/data2 -l ./install/data2/log start
 
 
-cd contrib/pg_xtm/dtmd
+cd contrib/pg_dtm/dtmd
 make clean
 make
 rm -rf /tmp/clog/*
+mkdir -p /tmp/clog
 ./bin/dtmd
