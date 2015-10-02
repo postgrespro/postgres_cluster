@@ -1267,7 +1267,6 @@ ExecModifyTable(ModifyTableState *node)
 	ItemPointerData tuple_ctid;
 	HeapTupleData oldtupdata;
 	HeapTuple	oldtuple;
-    int n_tuples = 0;
 
 	/*
 	 * This should NOT get called during EvalPlanQual; we should have passed a

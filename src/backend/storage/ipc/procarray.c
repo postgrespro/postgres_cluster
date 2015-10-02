@@ -965,7 +965,7 @@ ProcArrayApplyXidAssignment(TransactionId topxid,
 bool
 TransactionIdIsInProgress(TransactionId xid)
 {
-    return TM->IsInProgress(xid);
+	return TM->IsInProgress(xid);
 }
 
 /*
@@ -1003,6 +1003,7 @@ TransactionIdIsRunning(TransactionId xid)
 	TransactionId topxid;
 	int			i,
 				j;
+
 	/*
 	 * Don't bother checking a transaction older than RecentXmin; it could not
 	 * possibly still be running.  (Note: in particular, this guarantees that
@@ -1258,7 +1259,7 @@ TransactionIdIsActive(TransactionId xid)
 TransactionId
 GetOldestXmin(Relation rel, bool ignoreVacuum)
 {
-    return TM->GetOldestXmin(rel, ignoreVacuum);
+	return TM->GetOldestXmin(rel, ignoreVacuum);
 }
 
 /*
@@ -1475,7 +1476,7 @@ GetMaxSnapshotSubxidCount(void)
 Snapshot
 GetSnapshotData(Snapshot snapshot)
 {
-    return TM->GetSnapshot(snapshot);
+	return TM->GetSnapshot(snapshot);
 }
 
 /*
@@ -3882,4 +3883,3 @@ KnownAssignedXidsReset(void)
 
 	LWLockRelease(ProcArrayLock);
 }
-

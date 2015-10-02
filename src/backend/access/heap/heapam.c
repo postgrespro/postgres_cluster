@@ -3270,7 +3270,7 @@ heap_update(Relation relation, ItemPointer otid, HeapTuple newtup,
 	oldtup.t_data = (HeapTupleHeader) PageGetItem(page, lp);
 	oldtup.t_len = ItemIdGetLength(lp);
 	oldtup.t_self = *otid;
-    
+
 	/* the new tuple is ready, except for this: */
 	newtup->t_tableOid = RelationGetRelid(relation);
 
@@ -3629,21 +3629,6 @@ l2:
 	newtup->t_data->t_infomask |= HEAP_UPDATED | infomask_new_tuple;
 	newtup->t_data->t_infomask2 |= infomask2_new_tuple;
 	HeapTupleHeaderSetXmax(newtup->t_data, xmax_new_tuple);
-
-#if 0
-    { 
-        Snapshot s = GetTransactionSnapshot();
-        fprintf(stderr, "pid=%d transaction %d update tuple: old.ctid=[%x-%x,%x], old.xmin=%d, old.xmax=%d, old.mask=%x, new.xmin=%d, new.xmax=%d, new.flags=%x, snap.xmin=%d, snap.xmax=%d\n", 
-                getpid(), xid, 
-                oldtup.t_data->t_ctid.ip_blkid.bi_hi,
-                oldtup.t_data->t_ctid.ip_blkid.bi_lo,
-                oldtup.t_data->t_ctid.ip_posid,
-                HeapTupleHeaderGetRawXmin(oldtup.t_data), HeapTupleHeaderGetRawXmax(oldtup.t_data), oldtup.t_data->t_infomask, 	
-                xid, xmax_new_tuple, infomask_new_tuple,
-                s->xmin, s->xmax);
-    }
-    Assert(xmax_new_tuple != xid || (newtup->t_data->t_infomask & HEAP_XMAX_LOCK_ONLY) != 0);
-#endif
 
 	/*
 	 * Replace cid with a combo cid if necessary.  Note that we already put
@@ -7606,10 +7591,10 @@ heap_xlog_visible(XLogReaderState *record)
 		 * we did for the heap page.  If this results in a dropped bit, no
 		 * real harm is done; and the next VACUUM will fix it.
 		 */
-		if (lsn > PageGetLSN(vmpage)) { 
+		if (lsn > PageGetLSN(vmpage))
 			visibilitymap_set(reln, blkno, InvalidBuffer, lsn, vmbuffer,
 							  xlrec->cutoff_xid);
-        }
+
 		ReleaseBuffer(vmbuffer);
 		FreeFakeRelcacheEntry(reln);
 	}

@@ -102,13 +102,13 @@ extern bool ResolveCminCmaxDuringDecoding(struct HTAB *tuplecid_data,
 							  Buffer buffer,
 							  CommandId *cmin, CommandId *cmax);
 
-typedef enum VisibilityCheckResult { 
-    XID_IN_DOUBT, XID_VISIBLE, XID_INVISIBLE
+typedef enum VisibilityCheckResult {
+	XID_IN_DOUBT, XID_VISIBLE, XID_INVISIBLE
 } VisibilityCheckResult;
 
 typedef VisibilityCheckResult (*TransactionVisibilityCallback)(TransactionId xid);
 
 extern TransactionVisibilityCallback RegisterTransactionVisibilityCallback(TransactionVisibilityCallback callback);
 
-extern TransactionVisibilityCallback VisibilityCallback; 
+extern TransactionVisibilityCallback VisibilityCallback;
 #endif   /* TQUAL_H */

@@ -48,15 +48,24 @@ static TransactionId GetGlobalTransactionId(void);
 
 TransactionId GetGlobalTransactionId(void)
 {
-    return InvalidTransactionId;
+	return InvalidTransactionId;
 }
 
-TransactionManager DefaultTM = { CLOGTransactionIdGetStatus, CLOGTransactionIdSetTreeStatus, GetLocalSnapshotData, GetNewLocalTransactionId, GetOldestLocalXmin, TransactionIdIsRunning, GetGlobalTransactionId };
+TransactionManager DefaultTM = {
+	CLOGTransactionIdGetStatus,
+	CLOGTransactionIdSetTreeStatus,
+	GetLocalSnapshotData,
+	GetNewLocalTransactionId,
+	GetOldestLocalXmin,
+	TransactionIdIsRunning,
+	GetGlobalTransactionId
+};
+
 TransactionManager* TM = &DefaultTM;
 
 TransactionManager* GetTransactionManager(void)
 {
-    return TM;
+	return TM;
 }
 
 /*
@@ -114,7 +123,7 @@ void
 TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
 					TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
-    TM->SetTransactionStatus(xid, nsubxids, subxids, status, lsn);
+	TM->SetTransactionStatus(xid, nsubxids, subxids, status, lsn);
 }
 
 /*
@@ -415,7 +424,7 @@ TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, i
 XidStatus
 TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
 {
-    return TM->GetTransactionStatus(xid, lsn);
+	return TM->GetTransactionStatus(xid, lsn);
 }
 
 XidStatus

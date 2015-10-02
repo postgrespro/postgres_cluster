@@ -87,9 +87,9 @@ TransactionVisibilityCallback VisibilityCallback;
 
 TransactionVisibilityCallback RegisterTransactionVisibilityCallback(TransactionVisibilityCallback callback)
 {
-    TransactionVisibilityCallback old = VisibilityCallback;
-    VisibilityCallback = callback; 
-    return old;
+	TransactionVisibilityCallback old = VisibilityCallback;
+	VisibilityCallback = callback;
+	return old;
 }
 
 /*
@@ -913,9 +913,9 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
 	{
 		if (!HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask)) {
 			snapshot->xmax = HeapTupleHeaderGetRawXmax(tuple);
-            return true;
-        }
-        return true;
+			return true;
+		}
+		return true;
 	}
 
 	if (!TransactionIdDidCommit(HeapTupleHeaderGetRawXmax(tuple)))
@@ -969,7 +969,7 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
  * inserting/deleting transaction was still running --- which was more cycles
  * and more contention on the PGXACT array.
  */
-bool 
+bool
 HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 					   Buffer buffer)
 {
@@ -1048,7 +1048,7 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 				else if (HeapTupleHeaderGetCmax(tuple) >= snapshot->curcid)
 					return true;	/* updated after scan started */
 				else
-					return false;	/* updated before scan started */
+					return false;		/* updated before scan started */
 			}
 
 			if (!TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetRawXmax(tuple)))
@@ -1156,27 +1156,7 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 
 	return false;
 }
-#if 0
-bool 
-HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
-					   Buffer buffer)
-{
-    bool result = _HeapTupleSatisfiesMVCC(htup, snapshot, buffer);
 
-	HeapTupleHeader tuple = htup->t_data;
-	TransactionId curxid = GetCurrentTransactionId();
-	if (TransactionIdIsNormal(curxid)) {
-		fprintf(stderr, "pid=%d Transaction %d, [%d,%d) visibility check for tuple [%x-%x,%x]  {%d,%d} %x = %d\n",
-				getpid(), curxid, snapshot->xmin, snapshot->xmax, 
-                tuple->t_ctid.ip_blkid.bi_hi,
-                tuple->t_ctid.ip_blkid.bi_lo,
-                tuple->t_ctid.ip_posid,
-                HeapTupleHeaderGetRawXmin(tuple), HeapTupleHeaderGetRawXmax(tuple), tuple->t_infomask, result);
-	}
-
-    return result;
-}
-#endif
 /*
  * HeapTupleSatisfiesVacuum
  *
@@ -1499,14 +1479,14 @@ XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 {
 	uint32		i;
 
-    if (VisibilityCallback) 
-    { 
-        VisibilityCheckResult result =  (*VisibilityCallback)(xid);
-        if (result != XID_IN_DOUBT)  
-        {
-            return result == XID_INVISIBLE;
-        }
-    }
+	if (VisibilityCallback) 
+	{ 
+		VisibilityCheckResult result =  (*VisibilityCallback)(xid);
+		if (result != XID_IN_DOUBT)  
+		{
+			return result == XID_INVISIBLE;
+		}
+	}
 
 	/*
 	 * Make a quick range check to eliminate most XIDs without looking at the
@@ -1773,6 +1753,7 @@ HeapTupleSatisfiesHistoricMVCC(HeapTuple htup, Snapshot snapshot,
 	/* locked tuples are always visible */
 	else if (HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask))
 		return true;
+
 	/*
 	 * We can see multis here if we're looking at user tables or if somebody
 	 * SELECT ... FOR SHARE/UPDATE a system table.

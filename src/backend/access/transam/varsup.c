@@ -37,7 +37,7 @@ VariableCache ShmemVariableCache = NULL;
 TransactionId
 GetNewTransactionId(bool isSubXact)
 {
-    return TM->GetNewTransactionId(isSubXact);
+	return TM->GetNewTransactionId(isSubXact);
 }
 
 /*
