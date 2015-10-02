@@ -12,7 +12,7 @@ const (
     TRANSFER_CONNECTIONS = 8
     INIT_AMOUNT = 10000
     N_ITERATIONS = 10000
-    N_ACCOUNTS = TRANSFER_CONNECTIONS//100000
+    N_ACCOUNTS = 100000//TRANSFER_CONNECTIONS
     ISOLATION_LEVEL = "repeatable read"
     //ISOLATION_LEVEL = "read committed"
 )
@@ -70,7 +70,7 @@ func prepare_db() {
     exec(conn2, "commit")
 }
 
-func progress(total int, cCommits chan int, cAborts chan int) {
+func progress(total int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
     commits := 0
     aborts := 0
     start := time.Now()
@@ -86,6 +86,8 @@ func progress(total int, cCommits chan int, cAborts chan int) {
             start = time.Now()
         }
     }
+    fmt.Printf("Done: %d commits, %d aborts\n", commits, aborts)
+    wg.Done()
 }
 
 func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
@@ -164,12 +166,14 @@ func inspect(wg *sync.WaitGroup) {
 func main() {
     var transferWg sync.WaitGroup
     var inspectWg sync.WaitGroup
+    var progressWg sync.WaitGroup
 
     prepare_db()
 
     cCommits := make(chan int)
     cAborts := make(chan int)
-    go progress(TRANSFER_CONNECTIONS * N_ITERATIONS, cCommits, cAborts)
+    progressWg.Add(1)
+    go progress(TRANSFER_CONNECTIONS * N_ITERATIONS, cCommits, cAborts, &progressWg)
 
     transferWg.Add(TRANSFER_CONNECTIONS)
     for i:=0; i<TRANSFER_CONNECTIONS; i++ {
@@ -183,7 +187,8 @@ func main() {
     running = false
     inspectWg.Wait()
 
-    fmt.Printf("done\n")
+    close(cCommits)
+    progressWg.Wait()
 }
 
 func exec(conn *pgx.Conn, stmt string, arguments ...interface{}) {
