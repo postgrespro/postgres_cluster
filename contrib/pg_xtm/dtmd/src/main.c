@@ -257,16 +257,9 @@ static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
 	);
 
 	CHECK(
-		cmd->argc == 1,
+		cmd->argc == 0,
 		clientdata,
 		"BEGIN: wrong number of arguments"
-	);
-
-	int size = cmd->argv[0];
-	CHECK(
-		size <= MAX_NODES,
-		clientdata,
-		"BEGIN: 'size' > MAX_NODES"
 	);
 
 	CHECK(
@@ -280,7 +273,6 @@ static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
 
 	prev_gxid = t->xid = next_gxid++;
 	t->snapshots_count = 0;
-	t->max_size = size;
     t->size = 1;
 
 	CLIENT_SNAPSENT(clientdata) = 0;
@@ -438,11 +430,6 @@ static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd) {
 		CLIENT_SNAPSENT(clientdata) = 0;
 		CLIENT_XID(clientdata) = t->xid;
         t->size += 1;
-        CHECK(
-            t->size <= t->max_size,
-            clientdata,
-            "SNAPSHOT: too many participants"
-            );
 	}
 
 	CHECK(

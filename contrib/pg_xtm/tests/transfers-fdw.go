@@ -3,7 +3,6 @@ package main
 import (
     "fmt"
     "sync"
-    "strconv"
     "math/rand"
     "time"
     "github.com/jackc/pgx"
@@ -91,7 +90,6 @@ func progress(total int, cCommits chan int, cAborts chan int) {
 
 func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
     var err error
-    var xid int32
     var nAborts = 0
     var nCommits = 0
     var myCommits = 0
@@ -106,10 +104,7 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
         account1 := rand.Intn(N_ACCOUNTS)
         account2 := ^rand.Intn(N_ACCOUNTS)
 
-        exec(conn, "begin")
-        xid = execQuery(conn, "select dtm_begin_transaction(2)")
-        exec(conn, "select postgres_fdw_exec('t_fdw'::regclass::oid, 'select public.dtm_join_transaction(" + strconv.Itoa(int(xid)) + ")')")
-        exec(conn, "commit")
+        exec(conn, "select dtm_begin_transaction()")
 
         exec(conn, "begin transaction isolation level " + ISOLATION_LEVEL)
 
@@ -141,7 +136,6 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
 func inspect(wg *sync.WaitGroup) {
     var sum int64
     var prevSum int64 = 0
-    var xid int32
 
     {
         conn, err := pgx.Connect(cfg1)
@@ -149,17 +143,14 @@ func inspect(wg *sync.WaitGroup) {
 
         for running {
 
-            exec(conn, "begin")
-            xid = execQuery(conn, "select dtm_begin_transaction(2)")
-            exec(conn, "select postgres_fdw_exec('t_fdw'::regclass::oid, 'select public.dtm_join_transaction(" + strconv.Itoa(int(xid)) + ")')")
-            exec(conn, "commit")
+            exec(conn, "select dtm_begin_transaction()")
 
             exec(conn, "begin transaction isolation level " + ISOLATION_LEVEL)
 
             sum = execQuery64(conn, "select sum(v) from t")
 
             if (sum != prevSum) {
-                fmt.Printf("Total=%d xid=%d\n", sum, xid)
+                fmt.Printf("Total=%d\n", sum)
                 prevSum = sum
             }
 

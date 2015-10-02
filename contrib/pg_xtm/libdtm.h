@@ -10,11 +10,11 @@
 
 void DtmInitSnapshot(Snapshot snapshot);
 
-// Starts a new global transaction of nParticipants size. Returns the
+// Starts a new global transaction. Returns the
 // transaction id, fills the 'snapshot' and 'gxmin' on success. 'gxmin' is the
 // smallest xmin among all snapshots known to DTM. Returns INVALID_XID
 // otherwise.
-TransactionId DtmGlobalStartTransaction(int nParticipants, Snapshot snapshot, TransactionId *gxmin);
+TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin);
 
 // Asks the DTM for a fresh snapshot. Fills the 'snapshot' and 'gxmin' on
 // success. 'gxmin' is the smallest xmin among all snapshots known to DTM.

@@ -28,7 +28,6 @@ void transaction_clear(Transaction *t) {
 
 	t->xid = INVALID_XID;
 	t->size = 0;
-	t->max_size = 0;
 	t->votes_for = 0;
 	t->votes_against = 0;
 	t->snapshots_count = 0;

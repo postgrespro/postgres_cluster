@@ -15,6 +15,8 @@
 #include "postgres_fdw.h"
 
 #include "access/xact.h"
+#include "access/xtm.h"
+#include "access/transam.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "utils/hsearch.h"
@@ -401,10 +403,20 @@ begin_remote_xact(ConnCacheEntry *entry)
 	/* Start main transaction if we haven't yet */
 	if (entry->xact_depth <= 0)
 	{
+        TransactionId gxid = GetTransactionManager()->GetGlobalTransactionId();
 		const char *sql;
 
 		elog(DEBUG3, "starting remote transaction on connection %p",
 			 entry->conn);
+
+        if (TransactionIdIsValid(gxid)) {
+            char stmt[64];
+            PGresult *res;
+
+            snprintf(stmt, sizeof(stmt), "select public.dtm_join_transaction(%d)", gxid);
+            res = PQexec(entry->conn, stmt);
+            PQclear(res);
+        }
 
 		if (IsolationIsSerializable())
 			sql = "START TRANSACTION ISOLATION LEVEL SERIALIZABLE";

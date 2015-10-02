@@ -44,8 +44,20 @@
 #include "miscadmin.h"
 #include "pg_trace.h"
 
-TransactionManager DefaultTM = { CLOGTransactionIdGetStatus, CLOGTransactionIdSetTreeStatus, GetLocalSnapshotData, GetNewLocalTransactionId, GetOldestLocalXmin, TransactionIdIsRunning };
+static TransactionId GetGlobalTransactionId(void);
+
+TransactionId GetGlobalTransactionId(void)
+{
+    return InvalidTransactionId;
+}
+
+TransactionManager DefaultTM = { CLOGTransactionIdGetStatus, CLOGTransactionIdSetTreeStatus, GetLocalSnapshotData, GetNewLocalTransactionId, GetOldestLocalXmin, TransactionIdIsRunning, GetGlobalTransactionId };
 TransactionManager* TM = &DefaultTM;
+
+TransactionManager* GetTransactionManager(void)
+{
+    return TM;
+}
 
 /*
  * Defines for CLOG page sizes.  A page is the same BLCKSZ as is used
