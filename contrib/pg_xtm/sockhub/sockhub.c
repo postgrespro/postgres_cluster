@@ -125,13 +125,11 @@ static void reconnect(Shub* shub)
             } while (rc < 0 && errno == EINTR);
             
             if (rc >= 0 || errno == EINPROGRESS) { 
-                if (rc >= 0) {
-                }
                 break;
             }
         }
         if (rc < 0) {             
-            if (errno != ENOENT && errno != ECONNREFUSED) {
+            if (errno != ENOENT && errno != ECONNREFUSED && errno != EINPROGRESS) {
                 shub->params->error_handler("Connection can not be establish", SHUB_FATAL_ERROR);
             }
             if (max_attempts-- != 0) {
@@ -187,6 +185,7 @@ void ShubInitialize(Shub* shub, ShubParams* params)
     FD_ZERO(&shub->inset);
     FD_SET(shub->input, &shub->inset);
     
+    shub->output = -1;
     reconnect(shub);
 
     shub->in_buffer = malloc(params->buffer_size);
@@ -207,14 +206,14 @@ void ShubLoop(Shub* shub)
     while (1) { 
         fd_set events;
         struct timeval tm;
-        int i, max_fd, rc;
-        unsigned int n, size;
+        int i, rc;
+        int max_fd = shub->max_fd;
 
         tm.tv_sec = shub->params->delay/1000;
         tm.tv_usec = shub->params->delay % 1000 * 1000;
 
         events = shub->inset;
-        rc = select(shub->max_fd+1, &events, NULL, NULL, shub->in_buffer_used == 0 ? NULL : &tm);
+        rc = select(max_fd+1, &events, NULL, NULL, shub->in_buffer_used == 0 ? NULL : &tm);
         if (rc < 0) { 
             if (errno != EINTR) {                
                 shub->params->error_handler("Select failed", SHUB_RECOVERABLE_ERROR);
@@ -222,37 +221,43 @@ void ShubLoop(Shub* shub)
             }
         } else {
             if (rc > 0) {
-                for (i = 0, max_fd = shub->max_fd; i <= max_fd; i++) { 
+                for (i = 0; i <= max_fd; i++) { 
                     if (FD_ISSET(i, &events)) { 
-                        if (i == shub->input) { 
+                        if (i == shub->input) { /* accept incomming connection */ 
                             int s = accept(i, NULL, NULL);
                             if (s < 0) { 
                                 shub->params->error_handler("Failed to accept socket", SHUB_RECOVERABLE_ERROR);
                             } else {
-                                if (s > max_fd) {
+                                if (s > shub->max_fd) {
                                     shub->max_fd = s;
                                 }
                                 FD_SET(s, &shub->inset);
                             }
-                        } else if (i == shub->output) {
+                        } else if (i == shub->output) { /* receive response from server */
+                            /* try to read as much as possible */
                             int available = recv(shub->output, shub->out_buffer + shub->out_buffer_used, buffer_size - shub->out_buffer_used, 0);
                             int pos = 0;
                             if (available <= 0) { 
                                 shub->params->error_handler("Failed to read inet socket", SHUB_RECOVERABLE_ERROR);
                                 reconnect(shub);
+                                continue;
                             }
                             shub->out_buffer_used += available;
+
+                            /* loop through all received responses */
                             while (pos + sizeof(ShubMessageHdr) <= shub->out_buffer_used) { 
-                                ShubMessageHdr* hdr = (ShubMessageHdr*)(shub->out_buffer + pos);
+                                ShubMessageHdr* hdr = (ShubMessageHdr*)&shub->out_buffer[pos];
                                 int chan = hdr->chan;
-                                n = pos + sizeof(ShubMessageHdr) + hdr->size <= shub->out_buffer_used ? hdr->size + sizeof(ShubMessageHdr) : shub->out_buffer_used - pos;
+                                unsigned int n = pos + sizeof(ShubMessageHdr) + hdr->size <= shub->out_buffer_used 
+                                    ? hdr->size + sizeof(ShubMessageHdr) 
+                                    : shub->out_buffer_used - pos;
                                 if (!write_socket(chan, (char*)hdr, n)) { 
                                     shub->params->error_handler("Failed to write to local socket", SHUB_RECOVERABLE_ERROR);
                                     close_socket(shub, chan);
                                     chan = -1;
                                 }
-                                /* read rest of message if it doesn't fit in buffer */
                                 if (n != hdr->size + sizeof(ShubMessageHdr)) { 
+                                    /* read rest of message if it doesn't fit in the buffer */
                                     int tail = hdr->size + sizeof(ShubMessageHdr) - n;
                                     do {
                                         n = tail < buffer_size ? tail : buffer_size;
@@ -274,56 +279,73 @@ void ShubLoop(Shub* shub)
                                 }
                                 pos += n;
                             }
+                            /* Move partly fetched message header (if any) to the beginning of byffer */
                             memcpy(shub->out_buffer, shub->out_buffer + pos, shub->out_buffer_used - pos);
                             shub->out_buffer_used -= pos;
-                        } else {
+                        } else { /* receive request from client */
                             ShubMessageHdr* hdr = (ShubMessageHdr*)&shub->in_buffer[shub->in_buffer_used];
-                            if (!read_socket(i, (char*)hdr, sizeof(ShubMessageHdr))) { 
+                            int chan = i;
+                            if (!read_socket(chan, (char*)hdr, sizeof(ShubMessageHdr))) { /* fetch message header */
                                 shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
                                 close_socket(shub, i);
                             } else { 
-                                size = hdr->size;
-                                hdr->chan = i;
+                                unsigned int size = hdr->size;
+                                hdr->chan = chan; /* remember socket descriptor from which this message was read */
                                 if (size + shub->in_buffer_used + sizeof(ShubMessageHdr) > buffer_size) { 
-                                    if (shub->in_buffer_used != 0) { 
+                                    /* message doesn't completely fit in buffer */
+                                    if (shub->in_buffer_used != 0) { /* if buffer is not empty...*/
+                                        /* ... then send it */
                                         while (!write_socket(shub->output, shub->in_buffer, shub->in_buffer_used)) {
                                             shub->params->error_handler("Failed to write to inet socket", SHUB_RECOVERABLE_ERROR);
                                             reconnect(shub);
                                         }
+                                        /* move received message header to the beginning of the buffer */
                                         memcpy(shub->in_buffer, shub->in_buffer + shub->in_buffer_used, sizeof(ShubMessageHdr));
                                         shub->in_buffer_used = 0;
                                     }
                                 } 
                                 shub->in_buffer_used += sizeof(ShubMessageHdr);
 
-                                while (1) { 
+                                do { 
                                     unsigned int n = size + shub->in_buffer_used > buffer_size ? buffer_size - shub->in_buffer_used : size;
-                                    if (!read_socket(i, shub->in_buffer + shub->in_buffer_used, n)) { 
+                                    /* fetch message body */
+                                    if (chan >= 0 && !read_socket(chan, shub->in_buffer + shub->in_buffer_used, n)) { 
                                         shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
-                                        close_socket(shub, i);
-                                        break;
-                                    } else { 
-                                        if (n != size) { 
-                                            while (!write_socket(shub->output, shub->in_buffer, n)) {
-                                                shub->params->error_handler("Failed to write to inet socket", SHUB_RECOVERABLE_ERROR);
-                                                reconnect(shub);
-                                            }
-                                            size -= n;
-                                            shub->in_buffer_used = 0;
-                                        } else { 
-                                            shub->in_buffer_used += n;
+                                        close_socket(shub, chan);
+                                        if (hdr != NULL) { /* if message header is not yet sent to the server... */
+                                            /* ... then skip this message */
+                                            shub->in_buffer_used = (char*)hdr - shub->in_buffer;
                                             break;
+                                        } else { /* if message was partly sent to the server, we can not skip it, so we have to send garbage to the server */
+                                            chan = -1; /* do not try to read rest of body of this message */
                                         }
+                                    } 
+                                    shub->in_buffer_used += n;
+                                    size -= n;
+                                    /* if there is no more free space in the buffer to receive new message header... */
+                                    if (shub->in_buffer_used + sizeof(ShubMessageHdr) > buffer_size) {
+                                        
+                                        /* ... then send buffer to the server */
+                                        while (!write_socket(shub->output, shub->in_buffer, shub->in_buffer_used)) {
+                                            shub->params->error_handler("Failed to write to inet socket", SHUB_RECOVERABLE_ERROR);
+                                            reconnect(shub);
+                                        }
+                                        hdr = NULL; /* message is partly sent to the server: can not skip it any more */
+                                        shub->in_buffer_used = 0;
                                     }
-                                }
+                                } while (size != 0); /* repeat until all message body is received */
                             }
                         }
                     }
                 }
-            } else if (shub->in_buffer_used != 0) { 
-                while (!write_socket(shub->output, shub->in_buffer, shub->in_buffer_used)) {
-                    shub->params->error_handler("Failed to write to inet socket", SHUB_RECOVERABLE_ERROR);
-                    reconnect(shub);
+            } else { /* timeout expired */
+                if (shub->in_buffer_used != 0) { /* if buffer is not empty... */
+                    /* ...then send it */
+                    while (!write_socket(shub->output, shub->in_buffer, shub->in_buffer_used)) {
+                        shub->params->error_handler("Failed to write to inet socket", SHUB_RECOVERABLE_ERROR);
+                        reconnect(shub);
+                    }
+                    shub->in_buffer_used = 0;
                 }                
             }    
         } 
