@@ -281,7 +281,7 @@ void DtmInitSnapshot(Snapshot snapshot)
 // transaction id, fills the 'snapshot' and 'gxmin' on success. 'gxmin' is the
 // smallest xmin among all snapshots known to DTM. Returns INVALID_XID
 // otherwise.
-TransactionId DtmGlobalStartTransaction(int nParticipants, Snapshot snapshot, TransactionId *gxmin)
+TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin)
 {
 	bool ok;
 	xid_t xid;
@@ -289,7 +289,7 @@ TransactionId DtmGlobalStartTransaction(int nParticipants, Snapshot snapshot, Tr
 	DTMConn dtm = GetConnection();
 
 	// query
-	if (!dtm_query(dtm, 'b', 1, nParticipants)) goto failure;
+	if (!dtm_query(dtm, 'b', 0)) goto failure;
 
 	// response
 	if (!dtm_read_bool(dtm, &ok)) goto failure;

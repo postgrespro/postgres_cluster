@@ -130,7 +130,7 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
         src := conn[0]
         dst := conn[1]
 
-        xid = execQuery(src, "select dtm_begin_transaction(2)")
+        xid = execQuery(src, "select dtm_begin_transaction()")
         exec(dst, "select dtm_join_transaction($1)", xid)
 
         // start transaction
@@ -176,7 +176,7 @@ func inspect(wg *sync.WaitGroup) {
         checkErr(err)
 
         for running {
-            xid = execQuery(conn1, "select dtm_begin_transaction(2)")
+            xid = execQuery(conn1, "select dtm_begin_transaction()")
             exec(conn2, "select dtm_join_transaction($1)", xid)
 
             exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)

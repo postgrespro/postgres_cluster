@@ -1,7 +1,7 @@
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
 \echo Use "CREATE EXTENSION pg_dtm" to load this file. \quit
 
-CREATE FUNCTION dtm_begin_transaction(n_participants integer) RETURNS integer
+CREATE FUNCTION dtm_begin_transaction() RETURNS integer
 AS 'MODULE_PATHNAME','dtm_begin_transaction'
 LANGUAGE C;
 

@@ -74,6 +74,7 @@ static bool DtmTransactionIdIsInProgress(TransactionId xid);
 static TransactionId DtmGetNextXid(void);
 static TransactionId DtmGetNewTransactionId(bool isSubXact);
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
+static TransactionId DtmGetGlobalTransactionId(void);
 
 static bool TransactionIdIsInSnapshot(TransactionId xid, Snapshot snapshot);
 static bool TransactionIdIsInDoubt(TransactionId xid);
@@ -92,7 +93,7 @@ static bool DtmGlobalXidAssigned;
 static int DtmLocalXidReserve;
 static int DtmCurcid;
 static Snapshot DtmLastSnapshot;
-static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmGetNewTransactionId, DtmGetOldestXmin, DtmTransactionIdIsInProgress };
+static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmGetNewTransactionId, DtmGetOldestXmin, DtmTransactionIdIsInProgress, DtmGetGlobalTransactionId };
 
 
 #define XTM_TRACE(fmt, ...)
@@ -321,6 +322,12 @@ static TransactionId DtmGetNextXid()
 	}
 	LWLockRelease(dtm->xidLock);
 	return xid;
+}
+
+TransactionId
+DtmGetGlobalTransactionId()
+{
+    return DtmNextXid;
 }
 
 TransactionId
@@ -667,8 +674,8 @@ static void DtmInitialize()
 static void
 DtmXactCallback(XactEvent event, void *arg)
 {
+    XTM_INFO("%d: DtmXactCallbackevent=%d isGlobal=%d, nextxid=%d\n", getpid(), event, DtmGlobalXidAssigned, DtmNextXid);
 	if (event == XACT_EVENT_COMMIT || event == XACT_EVENT_ABORT) {
-		XTM_INFO("%d: DtmXactCallbackevent=%d isGlobal=%d, nextxid=%d\n", getpid(), event, DtmGlobalXidAssigned, DtmNextXid);
 		if (DtmGlobalXidAssigned) {
 			DtmGlobalXidAssigned = false;
 		} else if (TransactionIdIsValid(DtmNextXid)) {
@@ -780,10 +787,9 @@ dtm_get_current_snapshot_xmax(PG_FUNCTION_ARGS)
 Datum
 dtm_begin_transaction(PG_FUNCTION_ARGS)
 {
-	int nParticipants = PG_GETARG_INT32(0);
 	Assert(!TransactionIdIsValid(DtmNextXid));
 
-	DtmNextXid = DtmGlobalStartTransaction(nParticipants, &DtmSnapshot, &dtm->minXid);
+	DtmNextXid = DtmGlobalStartTransaction(&DtmSnapshot, &dtm->minXid);
 	Assert(TransactionIdIsValid(DtmNextXid));
 	XTM_INFO("%d: Start global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
 
