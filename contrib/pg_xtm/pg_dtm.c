@@ -55,8 +55,6 @@ typedef struct
 
 #define DTM_SHMEM_SIZE (1024*1024)
 #define DTM_HASH_SIZE  1003
-#define XTM_CONNECT_ATTEMPTS 10
-
 
 void _PG_init(void);
 void _PG_fini(void);
@@ -79,7 +77,7 @@ static TransactionId DtmGetGlobalTransactionId(void);
 static bool TransactionIdIsInSnapshot(TransactionId xid, Snapshot snapshot);
 static bool TransactionIdIsInDoubt(TransactionId xid);
 
-static void dtm_shmem_startup(void);
+static void DtmShmemStartup(void);
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB* xid_in_doubt;
@@ -121,18 +119,27 @@ static void DumpSnapshot(Snapshot s, char *name)
 	XTM_INFO("%s\n", buf);
 }
 
+/* In snapshots provided by DTMD xip array is sorted, so we can use bsearch */
 static bool TransactionIdIsInSnapshot(TransactionId xid, Snapshot snapshot)
 {
 	return xid >= snapshot->xmax
 		|| bsearch(&xid, snapshot->xip, snapshot->xcnt, sizeof(TransactionId), xidComparator) != NULL;
 }
 
-
+/* Transaction is considered as in-doubt if it is globally committed by DTMD but local commit is not yet completed.
+ * It can happen because we report DTMD about transaction commit in SetTransactionStatus, which is called inside commit 
+ * after saving transaction state in WAL but before releasing locks. So DTMD can include this transaction in snapshot
+ * before local commit is completed and transaction is marked as completed in local CLOG.
+ *
+ * We use xid_in_doubt hash table to mark transactions which are "precommitted". Entry is inserted in hash table
+ * before seding status to DTMD and removed after receving response from DTMD and setting transaction status in local CLOG.
+ * So information about transaction should always present either in xid_in_doubt either in CLOG.
+ */
 static bool TransactionIdIsInDoubt(TransactionId xid)
 {
 	bool inDoubt;
 
-	if (!TransactionIdIsInSnapshot(xid, &DtmSnapshot)) {
+	if (!TransactionIdIsInSnapshot(xid, &DtmSnapshot)) { /* transaction is completed according to the snaphot */
 		LWLockAcquire(dtm->hashLock, LW_SHARED);
 		inDoubt = hash_search(xid_in_doubt, &xid, HASH_FIND, NULL) != NULL;
 		LWLockRelease(dtm->hashLock);
@@ -740,7 +747,7 @@ _PG_init(void)
 	 * Install hooks.
 	 */
 	prev_shmem_startup_hook = shmem_startup_hook;
-	shmem_startup_hook = dtm_shmem_startup;
+	shmem_startup_hook = DtmShmemStartup;
 }
 
 /*
@@ -753,7 +760,7 @@ _PG_fini(void)
 }
 
 
-static void dtm_shmem_startup(void)
+static void DtmShmemStartup(void)
 {
 	if (prev_shmem_startup_hook) {
 		prev_shmem_startup_hook();

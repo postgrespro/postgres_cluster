@@ -1003,19 +1003,6 @@ TransactionIdIsRunning(TransactionId xid)
 	TransactionId topxid;
 	int			i,
 				j;
-
-    if (VisibilityCallback) 
-    { 
-        /* Just wait for in-doubt transactions */
-        (*VisibilityCallback)(xid);
-        /*
-        if (result != XID_IN_DOUBT)  
-        {
-            return result == XID_INVISIBLE;
-        }
-        */    
-    }
-
 	/*
 	 * Don't bother checking a transaction older than RecentXmin; it could not
 	 * possibly still be running.  (Note: in particular, this guarantees that
