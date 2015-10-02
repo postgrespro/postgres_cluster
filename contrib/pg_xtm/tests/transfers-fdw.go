@@ -78,7 +78,7 @@ func progress(total int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup
         newaborts := <-cAborts
         commits += newcommits
         aborts += newaborts
-        if time.Since(start).Seconds() > 10 {
+        if time.Since(start).Seconds() > 1 {
             fmt.Printf(
                 "progress %0.2f%%: %d commits, %d aborts\n",
                 float32(commits) * 100.0 / float32(total), commits, aborts,
@@ -122,7 +122,7 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
            myCommits += 1
         }
 
-        if time.Since(start).Seconds() > 10 {
+        if time.Since(start).Seconds() > 1 {
             cCommits <- nCommits
             cAborts <- nAborts
             nCommits = 0

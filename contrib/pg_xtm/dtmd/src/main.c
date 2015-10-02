@@ -224,11 +224,7 @@ static char *onreserve(void *stream, void *clientdata, cmd_t *cmd) {
 	char head[1+16+16+1];
 	sprintf(head, "+%016llx%016llx", minxid, maxxid);
 
-	Snapshot s;
-	gen_snapshot(&s);
-	char *snapser = snapshot_serialize(&s);
-
-	return destructive_concat(strdup(head), snapser);
+	return strdup(head);
 }
 
 static xid_t get_global_xmin() {

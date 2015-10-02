@@ -407,9 +407,7 @@ failure:
 // reserved, and sets the 'first' xid accordingly. The number of xids reserved
 // is guaranteed to be at least nXids.
 // In other words, *first ≥ xid and result ≥ nXids.
-// Also sets the 'active' snapshot, which is used as a container for the list
-// of active global transactions.
-int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first, Snapshot active)
+int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first)
 {
 	bool ok;
 	xid_t xmin, xmax;
@@ -423,7 +421,6 @@ int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first, Snapsho
 
 	if (!dtm_read_hex16(dtm, &xmin)) goto failure;
 	if (!dtm_read_hex16(dtm, &xmax)) goto failure;
-	if (!dtm_read_snapshot(dtm, active)) goto failure;
 
 	*first = xmin;
 	count = xmax - xmin + 1;
