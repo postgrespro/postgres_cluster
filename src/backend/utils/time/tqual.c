@@ -1464,6 +1464,12 @@ HeapTupleIsSurelyDead(HeapTuple htup, TransactionId OldestXmin)
 	return TransactionIdPrecedes(HeapTupleHeaderGetRawXmax(tuple), OldestXmin);
 }
 
+bool 
+XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
+{
+    return TM->IsInSnapshot(xid, snapshot);
+}
+
 /*
  * XidInMVCCSnapshot
  *		Is the given XID still-in-progress according to the snapshot?
@@ -1474,8 +1480,8 @@ HeapTupleIsSurelyDead(HeapTuple htup, TransactionId OldestXmin)
  * TransactionIdIsCurrentTransactionId first, except for known-committed
  * XIDs which could not be ours anyway.
  */
-static bool
-XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
+bool
+PgXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 {
 	uint32		i;
 

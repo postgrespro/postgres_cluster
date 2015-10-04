@@ -713,6 +713,33 @@ _PG_init(void)
 		NULL
 	);
 
+	DefineCustomIntVariable(
+		"dtm.dtmd_port",
+		"DTMD port",
+		NULL,
+		&DtmdPort,
+		5431,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomStringVariable(
+        "dtm.dtmd_host",
+        "DTMD host name",
+        NULL,
+        &DtmdHost,
+        "localhost",
+        PGC_BACKEND,
+        0,
+        NULL,
+        NULL,
+        NULL);
+
 	/*
 	 * Install hooks.
 	 */

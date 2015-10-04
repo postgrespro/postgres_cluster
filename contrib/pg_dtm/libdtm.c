@@ -24,6 +24,10 @@ typedef struct DTMConnData
 
 typedef unsigned long long xid_t;
 
+int DtmdPort;
+char* DtmdHost;
+
+
 // Returns true if the write was successful.
 static bool dtm_write_char(DTMConn dtm, char c)
 {
@@ -237,7 +241,7 @@ static DTMConn GetConnection()
 	if (dtm == NULL)
 	{
 		// FIXME: add API for setting the host and port for dtm connection
-		dtm = DtmConnect("127.0.0.1", 5431);
+		dtm = DtmConnect(DtmdHost, DtmdPort);
         if (dtm == NULL) { 
             elog(ERROR, "Failed to connect to DTMD");
         }

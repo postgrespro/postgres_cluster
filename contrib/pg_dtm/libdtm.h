@@ -8,6 +8,9 @@
 
 #define INVALID_XID 0
 
+extern int DtmdPort;
+extern char* DtmdHost;
+
 void DtmInitSnapshot(Snapshot snapshot);
 
 // Starts a new global transaction. Returns the
