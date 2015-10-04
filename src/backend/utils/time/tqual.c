@@ -66,6 +66,7 @@
 #include "access/subtrans.h"
 #include "access/transam.h"
 #include "access/xact.h"
+#include "access/xtm.h"
 #include "access/xlog.h"
 #include "storage/bufmgr.h"
 #include "storage/procarray.h"
@@ -82,15 +83,6 @@ SnapshotData SnapshotToastData = {HeapTupleSatisfiesToast};
 
 /* local functions */
 static bool XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
-
-TransactionVisibilityCallback VisibilityCallback;
-
-TransactionVisibilityCallback RegisterTransactionVisibilityCallback(TransactionVisibilityCallback callback)
-{
-	TransactionVisibilityCallback old = VisibilityCallback;
-	VisibilityCallback = callback;
-	return old;
-}
 
 /*
  * SetHintBits()
@@ -1484,15 +1476,6 @@ bool
 PgXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 {
 	uint32		i;
-
-	if (VisibilityCallback) 
-	{ 
-		VisibilityCheckResult result =  (*VisibilityCallback)(xid);
-		if (result != XID_IN_DOUBT)  
-		{
-			return result == XID_INVISIBLE;
-		}
-	}
 
 	/*
 	 * Make a quick range check to eliminate most XIDs without looking at the

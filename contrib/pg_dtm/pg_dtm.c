@@ -87,7 +87,7 @@ static bool DtmGlobalXidAssigned;
 static int DtmLocalXidReserve;
 static int DtmCurcid;
 static Snapshot DtmLastSnapshot;
-static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmGetNewTransactionId, DtmGetOldestXmin, TransactionIdIsRunning, DtmGetGlobalTransactionId };
+static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmGetNewTransactionId, DtmGetOldestXmin, PgTransactionIdIsInProgress, DtmGetGlobalTransactionId, PgXidInMVCCSnapshot };
 
 
 #define XTM_TRACE(fmt, ...)
@@ -169,7 +169,7 @@ static void DtmMergeWithGlobalSnapshot(Snapshot dst)
      * Check that global and local snapshots are consistent: transactions marked as completed in global snapohsot 
      * should be completed locally 
      */
-	dst = GetLocalSnapshotData(dst);
+	dst = PgGetSnapshotData(dst);
 	for (i = 0; i < dst->xcnt; i++) {
 		if (TransactionIdIsInDoubt(dst->xip[i])) {
 			goto GetLocalSnapshot;
@@ -213,7 +213,7 @@ static void DtmMergeWithGlobalSnapshot(Snapshot dst)
  */
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 {
-	TransactionId localXmin = GetOldestLocalXmin(rel, ignoreVacuum);
+	TransactionId localXmin = PgGetOldestXmin(rel, ignoreVacuum);
 	TransactionId globalXmin = dtm->minXid;
     XTM_INFO("XTM: DtmGetOldestXmin localXmin=%d, globalXmin=%d\n", localXmin, globalXmin);
 
@@ -526,7 +526,7 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
          * which PRECEDS actual transaction for which Xid is received.
          * This transaction doesn't need to take in accountn global snapshot
          */
-        return GetLocalSnapshotData(snapshot);
+        return PgGetSnapshotData(snapshot);
 	}
 	if (TransactionIdIsValid(DtmNextXid) && snapshot != &CatalogSnapshotData) {
 		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != snapshot->curcid)) {
@@ -543,7 +543,7 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 		}
 	} else {
         /* For local transactions and catalog snapshots use default GetSnapshotData implementation */
-		snapshot = GetLocalSnapshotData(snapshot);
+		snapshot = PgGetSnapshotData(snapshot);
 	}
 	DtmUpdateRecentXmin(snapshot);
 	CurrentTransactionSnapshot = snapshot;
@@ -557,7 +557,7 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
      */
 	XidStatus status = xid >= ShmemVariableCache->nextXid
 		? TRANSACTION_STATUS_IN_PROGRESS
-		: CLOGTransactionIdGetStatus(xid, lsn);
+		: PgTransactionIdGetStatus(xid, lsn);
 	XTM_TRACE("XTM: DtmGetTransactionStatus\n");
 	return status;
 }
@@ -569,7 +569,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 		if (!DtmGlobalXidAssigned && TransactionIdIsValid(DtmNextXid)) {
 			CurrentTransactionSnapshot = NULL;
 			if (status == TRANSACTION_STATUS_ABORTED) {
-				CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
+				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
 				DtmGlobalSetTransStatus(xid, status, false);
 				XTM_INFO("Abort transaction %d\n", xid);
 				return;
@@ -592,7 +592,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 			status = gs;
 		}
 	}
-	CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
+	PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
 }
 
 static uint32 dtm_xid_hash_fn(const void *key, Size keysize)

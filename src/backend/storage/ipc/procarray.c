@@ -995,7 +995,7 @@ TransactionIdIsInProgress(TransactionId xid)
  * PGXACT again anyway; see GetNewTransactionId).
  */
 bool
-TransactionIdIsRunning(TransactionId xid)
+PgTransactionIdIsInProgress(TransactionId xid)
 {
 	static TransactionId *xids = NULL;
 	int			nxids = 0;
@@ -1311,7 +1311,7 @@ GetOldestXmin(Relation rel, bool ignoreVacuum)
  * GetOldestXmin() move backwards, with no consequences for data integrity.
  */
 TransactionId
-GetOldestLocalXmin(Relation rel, bool ignoreVacuum)
+PgGetOldestXmin(Relation rel, bool ignoreVacuum)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId result;
@@ -1515,7 +1515,7 @@ GetSnapshotData(Snapshot snapshot)
  * not statically allocated (see xip allocation below).
  */
 Snapshot
-GetLocalSnapshotData(Snapshot snapshot)
+PgGetSnapshotData(Snapshot snapshot)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId xmin;

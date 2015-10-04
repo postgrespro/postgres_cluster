@@ -44,30 +44,6 @@
 #include "miscadmin.h"
 #include "pg_trace.h"
 
-static TransactionId GetGlobalTransactionId(void);
-
-TransactionId GetGlobalTransactionId(void)
-{
-	return InvalidTransactionId;
-}
-
-TransactionManager DefaultTM = {
-	CLOGTransactionIdGetStatus,
-	CLOGTransactionIdSetTreeStatus,
-	GetLocalSnapshotData,
-	GetNewLocalTransactionId,
-	GetOldestLocalXmin,
-	TransactionIdIsRunning,
-	GetGlobalTransactionId
-};
-
-TransactionManager* TM = &DefaultTM;
-
-TransactionManager* GetTransactionManager(void)
-{
-	return TM;
-}
-
 /*
  * Defines for CLOG page sizes.  A page is the same BLCKSZ as is used
  * everywhere else in Postgres.
@@ -178,7 +154,7 @@ TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
  * cache yet.
  */
 void
-CLOGTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
+PgTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
 					TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
 	int			pageno = TransactionIdToPage(xid);		/* get page of parent */
@@ -428,7 +404,7 @@ TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
 }
 
 XidStatus
-CLOGTransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
+PgTransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
 {
 	int			pageno = TransactionIdToPage(xid);
 	int			byteno = TransactionIdToByte(xid);

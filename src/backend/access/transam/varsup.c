@@ -51,7 +51,7 @@ GetNewTransactionId(bool isSubXact)
  * issue a warning about XID wrap.
  */
 TransactionId
-GetNewLocalTransactionId(bool isSubXact)
+PgGetNewTransactionId(bool isSubXact)
 {
 	TransactionId xid;
 

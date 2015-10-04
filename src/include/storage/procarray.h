@@ -43,21 +43,15 @@ extern void ExpireOldKnownAssignedTransactionIds(TransactionId xid);
 extern int	GetMaxSnapshotXidCount(void);
 extern int	GetMaxSnapshotSubxidCount(void);
 
-extern Snapshot GetSnapshotData(Snapshot snapshot);
-extern Snapshot GetLocalSnapshotData(Snapshot snapshot);
-
 extern bool ProcArrayInstallImportedXmin(TransactionId xmin,
 							 TransactionId sourcexid);
 extern bool ProcArrayInstallRestoredXmin(TransactionId xmin, PGPROC *proc);
 
 extern RunningTransactions GetRunningTransactionData(void);
 
-extern bool TransactionIdIsRunning(TransactionId xid);
 extern bool TransactionIdIsInProgress(TransactionId xid);
-extern bool TransactionIdIsRunning(TransactionId xid);
 extern bool TransactionIdIsActive(TransactionId xid);
 extern TransactionId GetOldestXmin(Relation rel, bool ignoreVacuum);
-extern TransactionId GetOldestLocalXmin(Relation rel, bool ignoreVacuum);
 extern TransactionId GetOldestActiveTransactionId(void);
 extern TransactionId GetOldestSafeDecodingTransactionId(void);
 
