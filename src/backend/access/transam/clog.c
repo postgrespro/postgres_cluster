@@ -39,8 +39,6 @@
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
 #include "access/xtm.h"
-#include "access/xact.h"
-#include "storage/procarray.h"
 #include "miscadmin.h"
 #include "pg_trace.h"
 

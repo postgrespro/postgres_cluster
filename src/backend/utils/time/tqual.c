@@ -903,10 +903,8 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
 
 	if (TransactionIdIsInProgress(HeapTupleHeaderGetRawXmax(tuple)))
 	{
-		if (!HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask)) {
+		if (!HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask))
 			snapshot->xmax = HeapTupleHeaderGetRawXmax(tuple);
-			return true;
-		}
 		return true;
 	}
 
@@ -1148,6 +1146,7 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 
 	return false;
 }
+
 
 /*
  * HeapTupleSatisfiesVacuum
@@ -1456,10 +1455,10 @@ HeapTupleIsSurelyDead(HeapTuple htup, TransactionId OldestXmin)
 	return TransactionIdPrecedes(HeapTupleHeaderGetRawXmax(tuple), OldestXmin);
 }
 
-bool 
+bool
 XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 {
-    return TM->IsInSnapshot(xid, snapshot);
+	return TM->IsInSnapshot(xid, snapshot);
 }
 
 /*
@@ -1797,4 +1796,3 @@ HeapTupleSatisfiesHistoricMVCC(HeapTuple htup, Snapshot snapshot,
 	else
 		return true;
 }
-

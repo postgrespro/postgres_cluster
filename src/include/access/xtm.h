@@ -38,8 +38,8 @@ typedef struct
 	/* Get global transaction XID: returns XID of current transaction if it is global, InvalidTransactionId otherwise */
 	TransactionId (*GetGlobalTransactionId)(void);
 
-    /* Is the given XID still-in-progress according to the snapshot (encapsulation of XidInMVCCSnapshot in tqual.c) */
-    bool (*IsInSnapshot)(TransactionId xid, Snapshot snapshot); 
+	/* Is the given XID still-in-progress according to the snapshot (encapsulation of XidInMVCCSnapshot in tqual.c) */
+	bool (*IsInSnapshot)(TransactionId xid, Snapshot snapshot);
 } TransactionManager;
 
 /* Get pointer to transaction manager: actually returns content of TM variable */
@@ -52,7 +52,7 @@ extern TransactionManager PgTM; /* Standard PostgreSQL transaction manager */
 extern bool PgXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 
 extern void PgTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
-                                         TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
+										TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 extern XidStatus PgTransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn);
 
 extern Snapshot PgGetSnapshotData(Snapshot snapshot);

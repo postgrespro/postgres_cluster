@@ -2,13 +2,13 @@
  *
  * xtm.c
  *		PostgreSQL implementation of transaction manager protocol
- * 
+ *
  * This module defines default iplementaiton of PostgreSQL transaction manager protocol
- * 
+ *
  * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * src/backend/access/transam/clog.c
+ * src/backend/access/transam/xtm.c
  *
  *-------------------------------------------------------------------------
  */
@@ -31,7 +31,7 @@ TransactionManager PgTM = {
 	PgGetOldestXmin,
 	PgTransactionIdIsInProgress,
 	PgGetGlobalTransactionId,
-    PgXidInMVCCSnapshot
+	PgXidInMVCCSnapshot
 };
 
 TransactionManager* TM = &PgTM;

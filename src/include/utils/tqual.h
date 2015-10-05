@@ -16,7 +16,6 @@
 #define TQUAL_H
 
 #include "utils/snapshot.h"
-#include "access/transam.h"
 
 
 /* Static variables representing various special snapshot semantics */
@@ -101,5 +100,4 @@ extern bool ResolveCminCmaxDuringDecoding(struct HTAB *tuplecid_data,
 							  HeapTuple htup,
 							  Buffer buffer,
 							  CommandId *cmin, CommandId *cmax);
-
 #endif   /* TQUAL_H */
