@@ -31,6 +31,10 @@ echo 'dtm.node_id = 1' >> ./install/data2/postgresql.conf
 echo 'autovacuum = off' >> ./install/data1/postgresql.conf
 echo 'autovacuum = off' >> ./install/data2/postgresql.conf
 
+echo "shared_preload_libraries = 'pg_dtm'" >> ./install/data1/postgresql.conf
+echo "shared_preload_libraries = 'pg_dtm'" >> ./install/data2/postgresql.conf
+
+
 ./install/bin/pg_ctl -D ./install/data1 -l ./install/data1/log start
 ./install/bin/pg_ctl -D ./install/data2 -l ./install/data2/log start
 
