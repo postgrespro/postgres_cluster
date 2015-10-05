@@ -792,7 +792,9 @@ Datum
 dtm_begin_transaction(PG_FUNCTION_ARGS)
 {
 	Assert(!TransactionIdIsValid(DtmNextXid));
-
+    if (dtm == NULL) { 
+        elog(ERROR, "DTM is not properly initialized, please check that pg_dtm plugin was added to shared_preload_libraries list in postgresql.conf");
+    }
 	DtmNextXid = DtmGlobalStartTransaction(&DtmSnapshot, &dtm->minXid);
 	Assert(TransactionIdIsValid(DtmNextXid));
 	XTM_INFO("%d: Start global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);

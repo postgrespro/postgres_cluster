@@ -210,8 +210,9 @@ func main() {
     var transferWg sync.WaitGroup
     var inspectWg sync.WaitGroup
 
+    fmt.Printf("Initialing database...\n")
     prepare_db()
-
+    
     cCommits := make(chan int)
     cAborts := make(chan int)
     go progress(TRANSFER_CONNECTIONS * N_ITERATIONS, cCommits, cAborts)
