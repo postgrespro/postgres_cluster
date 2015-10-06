@@ -186,6 +186,7 @@ void ShubInitialize(Shub* shub, ShubParams* params)
     FD_SET(shub->input, &shub->inset);
     
     shub->output = -1;
+    shub->max_fd = shub->input;
     reconnect(shub);
 
     shub->in_buffer = malloc(params->buffer_size);
@@ -195,7 +196,6 @@ void ShubInitialize(Shub* shub, ShubParams* params)
     }
     shub->in_buffer_used = 0;
     shub->out_buffer_used = 0;
-    shub->max_fd = -1;
 }
 
 
