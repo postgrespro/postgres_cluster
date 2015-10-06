@@ -139,7 +139,7 @@ static void reconnect(Shub* shub)
             }                
         } else { 
             int optval = 1;
-            setsockopt(shub->output, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(int));
+            setsockopt(shub->output, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
             FD_SET(shub->output, &shub->inset);
             break;
         }

@@ -5,7 +5,11 @@ LDFLAGS = -g
 AR = ar
 ARFLAGS = -cru
 
-all: sockhub libsockhub.a
+all: sockhub library tests
+
+library: libsockhub.a 
+
+tests: test-client test-server
 
 sockhup.o: sockhub.c sockhub.h
 	$(CC) $(CFLAGS) sockhub.c
@@ -20,5 +24,20 @@ libsockhub.a: sockhub.o
 sockhub: sockhub_main.o libsockhub.a
 	$(LD) $(LDFLAGS) -o sockhub sockhub_main.o libsockhub.a
 
+test-client.o: test-client.c sockhub.h
+	$(CC) $(CFLAGS) test-client.c
+
+test-client: test-client.o libsockhub.a
+	$(LD) $(LDFLAGS) -o test-client test-client.o libsockhub.a
+
+test-server.o: test-server.c sockhub.h
+	$(CC) $(CFLAGS) test-server.c
+
+test-server: test-server.o libsockhub.a
+	$(LD) $(LDFLAGS) -o test-server test-server.o libsockhub.a
+
 clean:
-	rm *.o *.a
+	rm -f *.o *.a
+
+tgz: clean
+	cd .. ; tar cvzf sockhub.tgz sockhub 
