@@ -218,7 +218,9 @@ func main() {
     var transferWg sync.WaitGroup
     var inspectWg sync.WaitGroup
 
+    fmt.Printf("preparing the database...\n")
     prepare_db()
+    fmt.Printf("the database prepared\n")
 
     cCommits := make(chan int)
     cAborts := make(chan int)
