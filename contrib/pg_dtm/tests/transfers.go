@@ -2,98 +2,223 @@ package main
 
 import (
     "fmt"
+    "flag"
+    "os"
     "sync"
     "math/rand"
     "time"
     "github.com/jackc/pgx"
 )
 
-const (
-    TRANSFER_CONNECTIONS = 8
-    INIT_AMOUNT = 10000
-    N_ITERATIONS = 10000
-    N_ACCOUNTS = 100000
-    //ISOLATION_LEVEL = "repeatable read"
-    ISOLATION_LEVEL = "read committed"
-    GLOBAL_UPDATES = true
-    LOCAL_UPDATES = false
-    CURSORS = false
-)
+type ConnStrings []string
 
+// The first method of flag.Value interface
+func (c *ConnStrings) String() string {
+    if len(*c) > 0 {
+        return (*c)[0]
+    } else {
+        return ""
+    }
+}
 
-var cfg1 = pgx.ConnConfig{
-        Host:     "127.0.0.1",
-        Port:     5432,
-        Database: "postgres",
+// The second method of flag.Value interface
+func (c *ConnStrings) Set(value string) error {
+    *c = append(*c, value)
+    return nil
+}
+
+var cfg struct {
+    ConnStrs ConnStrings
+
+    Isolation string // "repeatable read" or "read committed"
+
+    Accounts struct {
+        Num int
+        Balance int
     }
 
-var cfg2 = pgx.ConnConfig{
-        Host:     "127.0.0.1",
-        Port:     5433,
-        Database: "postgres",
+    Readers struct {
+        Num int
     }
 
+    Writers struct {
+        Num int
+        Updates int
+        AllowGlobal bool
+        AllowLocal bool
+        PrivateRows bool
+        UseCursors bool
+    }
+}
+
+func append_with_comma(s *string, x string) {
+    if len(*s) > 0 {
+        *s = *s + ", " + x
+    } else {
+        *s = x
+    }
+}
+
+func dump_cfg() {
+    fmt.Printf("Connections: %d\n", len(cfg.ConnStrs))
+    for _, cs := range cfg.ConnStrs {
+        fmt.Printf("    %s\n", cs)
+    }
+    fmt.Printf("Isolation: %s\n", cfg.Isolation)
+    fmt.Printf(
+        "Accounts: %d × $%d\n",
+        cfg.Accounts.Num, cfg.Accounts.Balance,
+    )
+    fmt.Printf("Readers: %d\n", cfg.Readers.Num)
+
+    utypes := ""
+    if cfg.Writers.AllowGlobal {
+        append_with_comma(&utypes, "global")
+    }
+    if cfg.Writers.AllowLocal {
+        append_with_comma(&utypes, "local")
+    }
+    if cfg.Writers.PrivateRows {
+        append_with_comma(&utypes, "private")
+    }
+    if cfg.Writers.UseCursors {
+        append_with_comma(&utypes, "cursors")
+    }
+
+    fmt.Printf(
+        "Writers: %d × %d updates (%s)\n",
+        cfg.Writers.Num, cfg.Writers.Updates,
+        utypes,
+    )
+}
+
+func init() {
+    flag.Var(&cfg.ConnStrs, "d", "Connection string (repeat for multiple connections)")
+    repread := flag.Bool("i", false, "Use 'repeatable read' isolation level instead of 'read committed'")
+    flag.IntVar(&cfg.Accounts.Num, "a", 100000, "The number of bank accounts")
+    flag.IntVar(&cfg.Accounts.Balance, "b", 10000, "The initial balance of each bank account")
+    flag.IntVar(&cfg.Readers.Num, "r", 1, "The number of readers")
+    flag.IntVar(&cfg.Writers.Num, "w", 8, "The number of writers")
+    flag.IntVar(&cfg.Writers.Updates, "u", 10000, "The number updates each writer performs")
+    flag.BoolVar(&cfg.Writers.AllowGlobal, "g", false, "Allow global updates")
+    flag.BoolVar(&cfg.Writers.AllowLocal, "l", false, "Allow local updates")
+    flag.BoolVar(&cfg.Writers.PrivateRows, "p", false, "Private rows (avoid waits/aborts caused by concurrent updates of the same rows)")
+    flag.BoolVar(&cfg.Writers.UseCursors, "c", false, "Use cursors for updates")
+    flag.Parse()
+
+    if len(cfg.ConnStrs) == 0 {
+        flag.PrintDefaults()
+        os.Exit(1)
+    }
+
+    if !cfg.Writers.AllowGlobal && !cfg.Writers.AllowLocal {
+        fmt.Println(
+            "Both local and global updates disabled,\n" +
+            "please enable at least one of the types!",
+        )
+        os.Exit(1)
+    }
+
+    if cfg.Accounts.Num < 2 {
+        fmt.Println(
+            "There should be at least 2 accounts (to avoid deadlocks)",
+        )
+        os.Exit(1)
+    }
+
+    if *repread {
+        cfg.Isolation = "repeatable read"
+    } else {
+        cfg.Isolation = "read committed"
+    }
+
+    dump_cfg()
+}
+
+func main() {
+    prepare(cfg.ConnStrs)
+
+    var writerWg sync.WaitGroup
+    var readerWg sync.WaitGroup
+
+    cCommits := make(chan int)
+    cAborts := make(chan int)
+    go progress(cfg.Writers.Num * cfg.Writers.Updates, cCommits, cAborts)
+
+    writerWg.Add(cfg.Writers.Num)
+    for i := 0; i < cfg.Writers.Num; i++ {
+        go writer(i, cCommits, cAborts, &writerWg)
+    }
+    running = true
+
+    readerWg.Add(cfg.Readers.Num)
+    for i := 0; i < cfg.Readers.Num; i++ {
+        go reader(&readerWg)
+    }
+
+    writerWg.Wait()
+    running = false
+    readerWg.Wait()
+
+    fmt.Printf("done.\n")
+}
 
 var running = false
-var nodes []int32 = []int32{0,1}
 
 func asyncCommit(conn *pgx.Conn, wg *sync.WaitGroup) {
     exec(conn, "commit")
     wg.Done()
 }
 
-func commit(conn1, conn2 *pgx.Conn) {
+func commit(conns ...*pgx.Conn) {
     var wg sync.WaitGroup
-    wg.Add(2)
-    go asyncCommit(conn1, &wg)
-    go asyncCommit(conn2, &wg)
+    wg.Add(len(conns))
+    for _, conn := range conns {
+        go asyncCommit(conn, &wg)
+    }
     wg.Wait()
 }
 
-func prepare_db() {
-    conn1, err := pgx.Connect(cfg1)
+func prepare_one(connstr string, wg *sync.WaitGroup) {
+    dbconf, err := pgx.ParseDSN(connstr)
     checkErr(err)
-    defer conn1.Close()
 
-    conn2, err := pgx.Connect(cfg2)
+    conn, err := pgx.Connect(dbconf)
     checkErr(err)
-    defer conn2.Close()
 
-    exec(conn1, "drop extension if exists pg_dtm")
-    exec(conn1, "create extension pg_dtm")
-    exec(conn1, "drop table if exists t")
-    exec(conn1, "create table t(u int primary key, v int)")
+    defer conn.Close()
 
-    exec(conn2, "drop extension if exists pg_dtm")
-    exec(conn2, "create extension pg_dtm")
-    exec(conn2, "drop table if exists t")
-    exec(conn2, "create table t(u int primary key, v int)")
+    exec(conn, "drop extension if exists pg_dtm")
+    exec(conn, "create extension pg_dtm")
+    exec(conn, "drop table if exists t")
+    exec(conn, "create table t(u int primary key, v int)")
 
-    // strt transaction
-    exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
-    exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
+    exec(conn, "begin transaction isolation level " + cfg.Isolation)
+    exec(conn, "begin transaction isolation level " + cfg.Isolation)
 
     start := time.Now()
-    for i := 0; i < N_ACCOUNTS; i++ {
-        exec(conn1, "insert into t values($1, $2)", i, INIT_AMOUNT)
-        exec(conn2, "insert into t values($1, $2)", i, INIT_AMOUNT)
+    for i := 0; i < cfg.Accounts.Num; i++ {
+        exec(conn, "insert into t values ($1, $2)", i, cfg.Accounts.Balance)
         if time.Since(start).Seconds() > 1 {
             fmt.Printf(
                 "inserted %0.2f%%: %d of %d records\n",
-                float32(i + 1) * 100.0 / float32(N_ACCOUNTS), i + 1, N_ACCOUNTS,
+                float32(i + 1) * 100.0 / float32(cfg.Accounts.Num), i + 1, cfg.Accounts.Num,
             )
             start = time.Now()
         }
     }
 
-    commit(conn1, conn2)
+    exec(conn, "commit")
+    wg.Done()
 }
 
-func max(a, b int64) int64 {
-    if a >= b {
-        return a
+func prepare(connstrs []string) {
+    var wg sync.WaitGroup
+    wg.Add(len(connstrs))
+    for _, connstr := range connstrs {
+        go prepare_one(connstr, &wg)
     }
-    return b
+    wg.Wait()
 }
 
 func progress(total int, cCommits chan int, cAborts chan int) {
@@ -114,48 +239,51 @@ func progress(total int, cCommits chan int, cAborts chan int) {
     }
 }
 
-func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
-    var err error
-    var xid int32
+func writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
     var nAborts = 0
     var nCommits = 0
     var myCommits = 0
 
-    var conn [2]*pgx.Conn
+    var conns []*pgx.Conn
 
-    conn[0], err = pgx.Connect(cfg1)
-    checkErr(err)
-    defer conn[0].Close()
+    for _, connstr := range cfg.ConnStrs {
+        dbconf, err := pgx.ParseDSN(connstr)
+        checkErr(err)
 
-    conn[1], err = pgx.Connect(cfg2)
-    checkErr(err)
-    defer conn[1].Close()
+        conn, err := pgx.Connect(dbconf)
+        checkErr(err)
+
+        defer conn.Close()
+        conns = append(conns, conn)
+    }
 
     start := time.Now()
-    for myCommits < N_ITERATIONS {
-        //amount := 2*rand.Intn(2000) - 1
+    for myCommits < cfg.Writers.Updates {
         amount := 1
-        account1 := rand.Intn(N_ACCOUNTS)
-        account2 := rand.Intn(N_ACCOUNTS)
-        srci := rand.Intn(2)
-        dsti := rand.Intn(2)
-        if (srci > dsti) {
-            srci, dsti = dsti, srci
+        from_acc := rand.Intn(cfg.Accounts.Num)
+        to_acc := rand.Intn(cfg.Accounts.Num)
+
+        if (from_acc == to_acc) {
+            to_acc = (from_acc + 1) % cfg.Accounts.Num
         }
 
-        src := conn[srci]
-        dst := conn[dsti]
+        if (from_acc > to_acc) {
+            from_acc, to_acc = to_acc, from_acc
+        }
+
+        src := conns[rand.Intn(len(conns))]
+        dst := conns[rand.Intn(len(conns))]
 
         if src == dst {
             // local update
-            if !LOCAL_UPDATES {
+            if !cfg.Writers.AllowLocal {
                 // which we do not want
                 continue
             }
 
-            exec(src, "begin transaction isolation level " + ISOLATION_LEVEL)
-            ok1 := execUpdate(src, "update t set v = v - $1 where u=$2", amount, account1)
-            ok2 := execUpdate(src, "update t set v = v + $1 where u=$2", amount, account2)
+            exec(src, "begin transaction isolation level " + cfg.Isolation)
+            ok1 := execUpdate(src, "update t set v = v - $1 where u=$2", amount, from_acc)
+            ok2 := execUpdate(src, "update t set v = v + $1 where u=$2", amount, to_acc)
             if !ok1 || !ok2 {
                 exec(src, "rollback")
                 nAborts += 1
@@ -166,31 +294,51 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
             }
         } else {
             // global update
-            if !GLOBAL_UPDATES {
+            if !cfg.Writers.AllowGlobal {
                 // which we do not want
                 continue
             }
 
-            xid = execQuery(src, "select dtm_begin_transaction()")
+            xid := execQuery(src, "select dtm_begin_transaction()")
             exec(dst, "select dtm_join_transaction($1)", xid)
 
             // start transaction
-            exec(src, "begin transaction isolation level " + ISOLATION_LEVEL)
-            exec(dst, "begin transaction isolation level " + ISOLATION_LEVEL)
+            exec(src, "begin transaction isolation level " + cfg.Isolation)
+            exec(dst, "begin transaction isolation level " + cfg.Isolation)
 
             ok := true
-            if (CURSORS) {
-                exec(src, "declare cur0 cursor for select * from t where u=$1 for update", account1)
-                exec(dst, "declare cur0 cursor for select * from t where u=$1 for update", account2)
+            if (cfg.Writers.UseCursors) {
+                exec(
+                    src,
+                    "declare cur0 cursor for select * from t where u=$1 for update",
+                    from_acc,
+                )
+                exec(
+                    dst,
+                    "declare cur0 cursor for select * from t where u=$1 for update",
+                    to_acc,
+                )
 
                 ok = execUpdate(src, "fetch from cur0") && ok
                 ok = execUpdate(dst, "fetch from cur0") && ok
 
-                ok = execUpdate(src, "update t set v = v - $1 where current of cur0", amount) && ok
-                ok = execUpdate(dst, "update t set v = v + $1 where current of cur0", amount) && ok
+                ok = execUpdate(
+                    src, "update t set v = v - $1 where current of cur0",
+                    amount,
+                ) && ok
+                ok = execUpdate(
+                    dst, "update t set v = v + $1 where current of cur0",
+                    amount,
+                ) && ok
             } else {
-                ok = execUpdate(src, "update t set v = v - $1 where u=$2", amount, account1) && ok
-                ok = execUpdate(dst, "update t set v = v + $1 where u=$2", amount, account2) && ok
+                ok = execUpdate(
+                    src, "update t set v = v - $1 where u=$2",
+                    amount, from_acc,
+                ) && ok
+                ok = execUpdate(
+                    dst, "update t set v = v + $1 where u=$2",
+                    amount, to_acc,
+                ) && ok
             }
 
             if ok {
@@ -217,76 +365,44 @@ func transfer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
     wg.Done()
 }
 
-func inspect(wg *sync.WaitGroup) {
-    var sum1, sum2, sum int64
+func reader(wg *sync.WaitGroup) {
     var prevSum int64 = 0
-    var xid int32
 
-    {
-        conn1, err := pgx.Connect(cfg1)
+    var conns []*pgx.Conn
+
+    for _, connstr := range cfg.ConnStrs {
+        dbconf, err := pgx.ParseDSN(connstr)
         checkErr(err)
 
-        conn2, err := pgx.Connect(cfg2)
+        conn, err := pgx.Connect(dbconf)
         checkErr(err)
 
-        for running {
-            xid = execQuery(conn1, "select dtm_begin_transaction()")
-            exec(conn2, "select dtm_join_transaction($1)", xid)
+        defer conn.Close()
+        conns = append(conns, conn)
+    }
 
-            exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
-            exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
-
-            sum1 = execQuery64(conn1, "select sum(v) from t")
-            sum2 = execQuery64(conn2, "select sum(v) from t")
-
-            sum = sum1 + sum2
-            if (sum != prevSum) {
-                xmin1 := execQuery(conn1, "select dtm_get_current_snapshot_xmin()")
-                xmax1 := execQuery(conn1, "select dtm_get_current_snapshot_xmax()")
-                xcnt1 := execQuery(conn1, "select dtm_get_current_snapshot_xcnt()")
-                xmin2 := execQuery(conn2, "select dtm_get_current_snapshot_xmin()")
-                xmax2 := execQuery(conn2, "select dtm_get_current_snapshot_xmax()")
-                xcnt2 := execQuery(conn2, "select dtm_get_current_snapshot_xcnt()")
-                fmt.Printf(
-                    "Total=%d xid=%d snap1=[%d, %d){%d} snap2=[%d, %d){%d}\n",
-                    sum, xid, xmin1, xmax1, xcnt1, xmin2, xmax2, xcnt2,
-                )
-                prevSum = sum
+    for running {
+        var sum int64 = 0
+        var xid int32
+        for i, conn := range conns {
+            if i == 0 {
+                xid = execQuery(conn, "select dtm_begin_transaction()")
+            } else {
+                exec(conn, "select dtm_join_transaction($1)", xid)
             }
 
-            commit(conn1, conn2)
+            exec(conn, "begin transaction isolation level " + cfg.Isolation)
+            sum += execQuery64(conn, "select sum(v) from t")
         }
-        conn1.Close()
-        conn2.Close()
+        commit(conns...)
+
+        if (sum != prevSum) {
+            fmt.Printf("Total=%d xid=%d\n", sum, xid)
+            prevSum = sum
+        }
     }
+
     wg.Done()
-}
-
-func main() {
-    var transferWg sync.WaitGroup
-    var inspectWg sync.WaitGroup
-
-    fmt.Printf("preparing the database...\n")
-    prepare_db()
-    fmt.Printf("the database prepared\n")
-
-    cCommits := make(chan int)
-    cAborts := make(chan int)
-    go progress(TRANSFER_CONNECTIONS * N_ITERATIONS, cCommits, cAborts)
-
-    transferWg.Add(TRANSFER_CONNECTIONS)
-    for i:=0; i<TRANSFER_CONNECTIONS; i++ {
-        go transfer(i, cCommits, cAborts, &transferWg)
-    }
-    running = true
-    inspectWg.Add(1)
-    go inspect(&inspectWg)
-
-    transferWg.Wait()
-    running = false
-    inspectWg.Wait()
-
-    fmt.Printf("done\n")
 }
 
 func exec(conn *pgx.Conn, stmt string, arguments ...interface{}) {

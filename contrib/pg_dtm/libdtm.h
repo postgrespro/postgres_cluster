@@ -8,8 +8,9 @@
 
 #define INVALID_XID 0
 
-extern int DtmdPort;
-extern char* DtmdHost;
+// Sets up the host and port for DTM connection.
+// The defaults are "127.0.0.1" and 5431.
+void TuneToDtm(char *host, int port);
 
 void DtmInitSnapshot(Snapshot snapshot);
 

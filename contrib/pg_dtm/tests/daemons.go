@@ -92,6 +92,8 @@ func postgres(bin string, datadir string, port int, nodeid int, wg *sync.WaitGro
 		"-D", datadir,
 		"-p", strconv.Itoa(port),
 		"-c", "dtm.node_id=" + strconv.Itoa(nodeid),
+		"-c", "dtm.host=127.0.0.2",
+		"-c", "dtm.port=" + strconv.Itoa(5431),
 		"-c", "autovacuum=off",
 		"-c", "fsync=off",
 		"-c", "synchronous_commit=off",
@@ -146,7 +148,7 @@ func main() {
 		"postgres": prefix + "/bin/postgres",
 	}
 
-	datadirs := []string{"/tmp/data1", "/tmp/data2"}
+	datadirs := []string{"/tmp/data1", "/tmp/data2", "/tmp/data3"}
 
 	check_bin(&bin);
 

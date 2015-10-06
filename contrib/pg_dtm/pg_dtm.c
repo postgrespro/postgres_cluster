@@ -89,6 +89,9 @@ static int DtmCurcid;
 static Snapshot DtmLastSnapshot;
 static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmGetNewTransactionId, DtmGetOldestXmin, PgTransactionIdIsInProgress, DtmGetGlobalTransactionId, PgXidInMVCCSnapshot };
 
+static char *DtmHost;
+static int DtmPort;
+
 
 #define XTM_TRACE(fmt, ...)
 //#define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
@@ -713,11 +716,24 @@ _PG_init(void)
 		NULL
 	);
 
-	DefineCustomIntVariable(
-		"dtm.dtmd_port",
-		"DTMD port",
+	DefineCustomStringVariable(
+		"dtm.host",
+		"The host where DTM daemon resides",
 		NULL,
-		&DtmdPort,
+		&DtmHost,
+		"127.0.0.1",
+		PGC_BACKEND, // context
+		0, // flags,
+		NULL, // GucStringCheckHook check_hook,
+		NULL, // GucStringAssignHook assign_hook,
+		NULL // GucShowHook show_hook
+	);
+
+	DefineCustomIntVariable(
+		"dtm.port",
+		"The port DTM daemon is listening",
+		NULL,
+		&DtmPort,
 		5431,
 		1,
 		INT_MAX,
@@ -728,17 +744,7 @@ _PG_init(void)
 		NULL
 	);
 
-	DefineCustomStringVariable(
-        "dtm.dtmd_host",
-        "DTMD host name",
-        NULL,
-        &DtmdHost,
-        "localhost",
-        PGC_BACKEND,
-        0,
-        NULL,
-        NULL,
-        NULL);
+	TuneToDtm(DtmHost, DtmPort);
 
 	/*
 	 * Install hooks.
