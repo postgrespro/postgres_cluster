@@ -70,9 +70,17 @@ func prepare_db() {
     exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)
     exec(conn2, "begin transaction isolation level " + ISOLATION_LEVEL)
 
+    start := time.Now()
     for i := 0; i < N_ACCOUNTS; i++ {
         exec(conn1, "insert into t values($1, $2)", i, INIT_AMOUNT)
         exec(conn2, "insert into t values($1, $2)", i, INIT_AMOUNT)
+        if time.Since(start).Seconds() > 1 {
+            fmt.Printf(
+                "inserted %0.2f%%: %d of %d records\n",
+                float32(i + 1) * 100.0 / float32(N_ACCOUNTS), i + 1, N_ACCOUNTS,
+            )
+            start = time.Now()
+        }
     }
 
     commit(conn1, conn2)
