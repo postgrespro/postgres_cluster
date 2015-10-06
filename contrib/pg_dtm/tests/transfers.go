@@ -30,6 +30,7 @@ func (c *ConnStrings) Set(value string) error {
 var cfg struct {
     ConnStrs ConnStrings
 
+    Verbose bool
     Isolation string // "repeatable read" or "read committed"
 
     Accounts struct {
@@ -100,6 +101,7 @@ func init() {
     flag.IntVar(&cfg.Readers.Num, "r", 1, "The number of readers")
     flag.IntVar(&cfg.Writers.Num, "w", 8, "The number of writers")
     flag.IntVar(&cfg.Writers.Updates, "u", 10000, "The number updates each writer performs")
+    flag.BoolVar(&cfg.Verbose, "v", false, "Show progress and other stuff for mortals")
     flag.BoolVar(&cfg.Writers.AllowGlobal, "g", false, "Allow global updates")
     flag.BoolVar(&cfg.Writers.AllowLocal, "l", false, "Allow local updates")
     flag.BoolVar(&cfg.Writers.PrivateRows, "p", false, "Private rows (avoid waits/aborts caused by concurrent updates of the same rows)")
@@ -136,7 +138,9 @@ func init() {
 }
 
 func main() {
+    start := time.Now()
     prepare(cfg.ConnStrs)
+    fmt.Printf("database prepared in %0.2f seconds\n", time.Since(start).Seconds())
 
     var writerWg sync.WaitGroup
     var readerWg sync.WaitGroup
@@ -145,21 +149,28 @@ func main() {
     cAborts := make(chan int)
     go progress(cfg.Writers.Num * cfg.Writers.Updates, cCommits, cAborts)
 
+    start = time.Now()
     writerWg.Add(cfg.Writers.Num)
     for i := 0; i < cfg.Writers.Num; i++ {
         go writer(i, cCommits, cAborts, &writerWg)
     }
     running = true
 
+    inconsistency := false
     readerWg.Add(cfg.Readers.Num)
     for i := 0; i < cfg.Readers.Num; i++ {
-        go reader(&readerWg)
+        go reader(&readerWg, &inconsistency)
     }
 
     writerWg.Wait()
+    fmt.Printf("writers finished in %0.2f seconds\n", time.Since(start).Seconds())
+
     running = false
     readerWg.Wait()
 
+    if inconsistency {
+        fmt.Printf("INCONSISTENCY DETECTED\n")
+    }
     fmt.Printf("done.\n")
 }
 
@@ -200,10 +211,12 @@ func prepare_one(connstr string, wg *sync.WaitGroup) {
     for i := 0; i < cfg.Accounts.Num; i++ {
         exec(conn, "insert into t values ($1, $2)", i, cfg.Accounts.Balance)
         if time.Since(start).Seconds() > 1 {
-            fmt.Printf(
-                "inserted %0.2f%%: %d of %d records\n",
-                float32(i + 1) * 100.0 / float32(cfg.Accounts.Num), i + 1, cfg.Accounts.Num,
-            )
+            if cfg.Verbose {
+                fmt.Printf(
+                    "inserted %0.2f%%: %d of %d records\n",
+                    float32(i + 1) * 100.0 / float32(cfg.Accounts.Num), i + 1, cfg.Accounts.Num,
+                )
+            }
             start = time.Now()
         }
     }
@@ -230,10 +243,12 @@ func progress(total int, cCommits chan int, cAborts chan int) {
         commits += newcommits
         aborts += newaborts
         if time.Since(start).Seconds() > 1 {
-            fmt.Printf(
-                "progress %0.2f%%: %d commits, %d aborts\n",
-                float32(commits) * 100.0 / float32(total), commits, aborts,
-            )
+            if cfg.Verbose {
+                fmt.Printf(
+                    "progress %0.2f%%: %d commits, %d aborts\n",
+                    float32(commits) * 100.0 / float32(total), commits, aborts,
+                )
+            }
             start = time.Now()
         }
     }
@@ -365,7 +380,7 @@ func writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
     wg.Done()
 }
 
-func reader(wg *sync.WaitGroup) {
+func reader(wg *sync.WaitGroup, inconsistency *bool) {
     var prevSum int64 = 0
 
     var conns []*pgx.Conn
@@ -398,6 +413,10 @@ func reader(wg *sync.WaitGroup) {
 
         if (sum != prevSum) {
             fmt.Printf("Total=%d xid=%d\n", sum, xid)
+            if (prevSum != 0) {
+                fmt.Printf("inconsistency!\n")
+                *inconsistency = true
+            }
             prevSum = sum
         }
     }
