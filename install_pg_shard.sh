@@ -1,8 +1,8 @@
 #!/bin/sh
 
-PG_SHARD_DIR=~/code/pg_shard_master
-PG_DIR=~/code/postgresql
-PG_XTM_DIR=$PG_DIR/contrib/pg_xtm
+PG_SHARD_DIR=~/pg_shard
+PG_DIR=~/postgresql95
+PG_XTM_DIR=~/postgrespro/contrib/pg_dtm
 
 
 ########################################################################

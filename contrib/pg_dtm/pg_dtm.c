@@ -87,7 +87,10 @@ static bool DtmGlobalXidAssigned;
 static int DtmLocalXidReserve;
 static int DtmCurcid;
 static Snapshot DtmLastSnapshot;
-static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmGetNewTransactionId, DtmGetOldestXmin, TransactionIdIsRunning, DtmGetGlobalTransactionId };
+static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionStatus, DtmGetSnapshot, DtmGetNewTransactionId, DtmGetOldestXmin, PgTransactionIdIsInProgress, DtmGetGlobalTransactionId, PgXidInMVCCSnapshot };
+
+static char *DtmHost;
+static int DtmPort;
 
 
 #define XTM_TRACE(fmt, ...)
@@ -169,7 +172,7 @@ static void DtmMergeWithGlobalSnapshot(Snapshot dst)
      * Check that global and local snapshots are consistent: transactions marked as completed in global snapohsot 
      * should be completed locally 
      */
-	dst = GetLocalSnapshotData(dst);
+	dst = PgGetSnapshotData(dst);
 	for (i = 0; i < dst->xcnt; i++) {
 		if (TransactionIdIsInDoubt(dst->xip[i])) {
 			goto GetLocalSnapshot;
@@ -213,7 +216,7 @@ static void DtmMergeWithGlobalSnapshot(Snapshot dst)
  */
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 {
-	TransactionId localXmin = GetOldestLocalXmin(rel, ignoreVacuum);
+	TransactionId localXmin = PgGetOldestXmin(rel, ignoreVacuum);
 	TransactionId globalXmin = dtm->minXid;
     XTM_INFO("XTM: DtmGetOldestXmin localXmin=%d, globalXmin=%d\n", localXmin, globalXmin);
 
@@ -526,7 +529,7 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
          * which PRECEDS actual transaction for which Xid is received.
          * This transaction doesn't need to take in accountn global snapshot
          */
-        return GetLocalSnapshotData(snapshot);
+        return PgGetSnapshotData(snapshot);
 	}
 	if (TransactionIdIsValid(DtmNextXid) && snapshot != &CatalogSnapshotData) {
 		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != snapshot->curcid)) {
@@ -543,7 +546,7 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 		}
 	} else {
         /* For local transactions and catalog snapshots use default GetSnapshotData implementation */
-		snapshot = GetLocalSnapshotData(snapshot);
+		snapshot = PgGetSnapshotData(snapshot);
 	}
 	DtmUpdateRecentXmin(snapshot);
 	CurrentTransactionSnapshot = snapshot;
@@ -557,7 +560,7 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
      */
 	XidStatus status = xid >= ShmemVariableCache->nextXid
 		? TRANSACTION_STATUS_IN_PROGRESS
-		: CLOGTransactionIdGetStatus(xid, lsn);
+		: PgTransactionIdGetStatus(xid, lsn);
 	XTM_TRACE("XTM: DtmGetTransactionStatus\n");
 	return status;
 }
@@ -569,7 +572,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 		if (!DtmGlobalXidAssigned && TransactionIdIsValid(DtmNextXid)) {
 			CurrentTransactionSnapshot = NULL;
 			if (status == TRANSACTION_STATUS_ABORTED) {
-				CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
+				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
 				DtmGlobalSetTransStatus(xid, status, false);
 				XTM_INFO("Abort transaction %d\n", xid);
 				return;
@@ -592,7 +595,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 			status = gs;
 		}
 	}
-	CLOGTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
+	PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
 }
 
 static uint32 dtm_xid_hash_fn(const void *key, Size keysize)
@@ -713,6 +716,36 @@ _PG_init(void)
 		NULL
 	);
 
+	DefineCustomStringVariable(
+		"dtm.host",
+		"The host where DTM daemon resides",
+		NULL,
+		&DtmHost,
+		"127.0.0.1",
+		PGC_BACKEND, // context
+		0, // flags,
+		NULL, // GucStringCheckHook check_hook,
+		NULL, // GucStringAssignHook assign_hook,
+		NULL // GucShowHook show_hook
+	);
+
+	DefineCustomIntVariable(
+		"dtm.port",
+		"The port DTM daemon is listening",
+		NULL,
+		&DtmPort,
+		5431,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	TuneToDtm(DtmHost, DtmPort);
+
 	/*
 	 * Install hooks.
 	 */
@@ -748,6 +781,7 @@ PG_FUNCTION_INFO_V1(dtm_begin_transaction);
 PG_FUNCTION_INFO_V1(dtm_join_transaction);
 PG_FUNCTION_INFO_V1(dtm_get_current_snapshot_xmax);
 PG_FUNCTION_INFO_V1(dtm_get_current_snapshot_xmin);
+PG_FUNCTION_INFO_V1(dtm_get_current_snapshot_xcnt);
 
 Datum
 dtm_get_current_snapshot_xmin(PG_FUNCTION_ARGS)
@@ -762,10 +796,18 @@ dtm_get_current_snapshot_xmax(PG_FUNCTION_ARGS)
 }
 
 Datum
+dtm_get_current_snapshot_xcnt(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT32(CurrentTransactionSnapshot->xcnt);
+}
+
+Datum
 dtm_begin_transaction(PG_FUNCTION_ARGS)
 {
 	Assert(!TransactionIdIsValid(DtmNextXid));
-
+    if (dtm == NULL) { 
+        elog(ERROR, "DTM is not properly initialized, please check that pg_dtm plugin was added to shared_preload_libraries list in postgresql.conf");
+    }
 	DtmNextXid = DtmGlobalStartTransaction(&DtmSnapshot, &dtm->minXid);
 	Assert(TransactionIdIsValid(DtmNextXid));
 	XTM_INFO("%d: Start global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);

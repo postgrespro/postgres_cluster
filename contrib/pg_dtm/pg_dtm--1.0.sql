@@ -16,3 +16,7 @@ LANGUAGE C;
 CREATE FUNCTION dtm_get_current_snapshot_xmax() RETURNS integer
 AS 'MODULE_PATHNAME','dtm_get_current_snapshot_xmax'
 LANGUAGE C;
+
+CREATE FUNCTION dtm_get_current_snapshot_xcnt() RETURNS integer
+AS 'MODULE_PATHNAME','dtm_get_current_snapshot_xcnt'
+LANGUAGE C;

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"os"
 	"strconv"
+	"strings"
 )
 
 func read_to_channel(r io.Reader, c chan string, wg *sync.WaitGroup) {
@@ -91,9 +92,12 @@ func postgres(bin string, datadir string, port int, nodeid int, wg *sync.WaitGro
 		"-D", datadir,
 		"-p", strconv.Itoa(port),
 		"-c", "dtm.node_id=" + strconv.Itoa(nodeid),
+		"-c", "dtm.host=127.0.0.2",
+		"-c", "dtm.port=" + strconv.Itoa(5431),
 		"-c", "autovacuum=off",
 		"-c", "fsync=off",
 		"-c", "synchronous_commit=off",
+		"-c", "shared_preload_libraries=pg_dtm",
 	}
 	name := "postgres " + datadir
 	c := make(chan string)
@@ -118,14 +122,33 @@ func check_bin(bin *map[string]string) {
 	}
 }
 
-func main() {
-	bin := map[string]string{
-		"dtmd": "/home/kvap/postgrespro/contrib/pg_xtm/dtmd/bin/dtmd",
-		"initdb": "/home/kvap/postgrespro-build/bin/initdb",
-		"postgres": "/home/kvap/postgrespro-build/bin/postgres",
+func get_prefix(srcroot string) string {
+	makefile, err := os.Open(srcroot + "/src/Makefile.global")
+	if err != nil {
+		return "."
 	}
 
-	datadirs := []string{"/tmp/data1", "/tmp/data2"}
+	scanner := bufio.NewScanner(makefile)
+	for scanner.Scan() {
+		s := scanner.Text()
+		if strings.HasPrefix(s, "prefix := ") {
+			return strings.TrimPrefix(s, "prefix := ")
+		}
+	}
+	return "."
+}
+
+func main() {
+	srcroot := "../../.."
+	prefix := get_prefix(srcroot)
+
+	bin := map[string]string{
+		"dtmd": srcroot + "/contrib/pg_dtm/dtmd/bin/dtmd",
+		"initdb": prefix + "/bin/initdb",
+		"postgres": prefix + "/bin/postgres",
+	}
+
+	datadirs := []string{"/tmp/data1", "/tmp/data2", "/tmp/data3"}
 
 	check_bin(&bin);
 

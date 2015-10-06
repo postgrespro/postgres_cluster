@@ -37,7 +37,7 @@ VariableCache ShmemVariableCache = NULL;
 TransactionId
 GetNewTransactionId(bool isSubXact)
 {
-    return TM->GetNewTransactionId(isSubXact);
+	return TM->GetNewTransactionId(isSubXact);
 }
 
 /*
@@ -51,7 +51,7 @@ GetNewTransactionId(bool isSubXact)
  * issue a warning about XID wrap.
  */
 TransactionId
-GetNewLocalTransactionId(bool isSubXact)
+PgGetNewTransactionId(bool isSubXact)
 {
 	TransactionId xid;
 

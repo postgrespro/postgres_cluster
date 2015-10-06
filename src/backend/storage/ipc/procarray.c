@@ -59,8 +59,8 @@
 #include "storage/spin.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
-#include "utils/tqual.h"
 #include "utils/snapmgr.h"
+
 
 /* Our shared memory area */
 typedef struct ProcArrayStruct
@@ -965,7 +965,7 @@ ProcArrayApplyXidAssignment(TransactionId topxid,
 bool
 TransactionIdIsInProgress(TransactionId xid)
 {
-    return TM->IsInProgress(xid);
+	return TM->IsInProgress(xid);
 }
 
 /*
@@ -995,7 +995,7 @@ TransactionIdIsInProgress(TransactionId xid)
  * PGXACT again anyway; see GetNewTransactionId).
  */
 bool
-TransactionIdIsRunning(TransactionId xid)
+PgTransactionIdIsInProgress(TransactionId xid)
 {
 	static TransactionId *xids = NULL;
 	int			nxids = 0;
@@ -1003,6 +1003,7 @@ TransactionIdIsRunning(TransactionId xid)
 	TransactionId topxid;
 	int			i,
 				j;
+
 	/*
 	 * Don't bother checking a transaction older than RecentXmin; it could not
 	 * possibly still be running.  (Note: in particular, this guarantees that
@@ -1258,7 +1259,7 @@ TransactionIdIsActive(TransactionId xid)
 TransactionId
 GetOldestXmin(Relation rel, bool ignoreVacuum)
 {
-    return TM->GetOldestXmin(rel, ignoreVacuum);
+	return TM->GetOldestXmin(rel, ignoreVacuum);
 }
 
 /*
@@ -1310,7 +1311,7 @@ GetOldestXmin(Relation rel, bool ignoreVacuum)
  * GetOldestXmin() move backwards, with no consequences for data integrity.
  */
 TransactionId
-GetOldestLocalXmin(Relation rel, bool ignoreVacuum)
+PgGetOldestXmin(Relation rel, bool ignoreVacuum)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId result;
@@ -1475,7 +1476,7 @@ GetMaxSnapshotSubxidCount(void)
 Snapshot
 GetSnapshotData(Snapshot snapshot)
 {
-    return TM->GetSnapshot(snapshot);
+	return TM->GetSnapshot(snapshot);
 }
 
 /*
@@ -1514,7 +1515,7 @@ GetSnapshotData(Snapshot snapshot)
  * not statically allocated (see xip allocation below).
  */
 Snapshot
-GetLocalSnapshotData(Snapshot snapshot)
+PgGetSnapshotData(Snapshot snapshot)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId xmin;
@@ -3882,4 +3883,3 @@ KnownAssignedXidsReset(void)
 
 	LWLockRelease(ProcArrayLock);
 }
-

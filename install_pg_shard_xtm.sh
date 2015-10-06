@@ -1,9 +1,8 @@
 #!/bin/sh
 
-PG_SHARD_DIR=~/code/pg_shard_master
-PG_DIR=~/code/postgresql
-PG_XTM_DIR=$PG_DIR/contrib/pg_xtm
-
+PG_SHARD_DIR=~/pg_shard
+PG_DIR=~/postgresql95
+PG_XTM_DIR=$PG_DIR/contrib/pg_dtm
 
 ########################################################################
 #  Stop old stuff
@@ -18,7 +17,7 @@ rm -rf install
 ########################################################################
 #  Build and run dtm and postgres
 ########################################################################
-make install # assuming configured with --prefix=./install
+make -j 8 install # assuming configured with --prefix=./install
 
 cd $PG_SHARD_DIR
 make clean
