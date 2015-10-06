@@ -29,7 +29,7 @@ static void default_error_handler(char const* msg, ShubErrorSeverity severity)
 void ShubInitParams(ShubParams* params)
 {
     memset(params, 0, sizeof(*params));
-    params->buffer_size = 64*1025;
+    params->buffer_size = 64*1024;
     params->port = 54321;
     params->queue_size = 100;
     params->max_attempts = 10;
