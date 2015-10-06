@@ -212,6 +212,8 @@ func main() {
 
     prepare_db()
 
+    start := time.Now()
+
     cCommits := make(chan int)
     cAborts := make(chan int)
     go progress(TRANSFER_CONNECTIONS * N_ITERATIONS, cCommits, cAborts)
@@ -228,7 +230,7 @@ func main() {
     running = false
     inspectWg.Wait()
 
-    fmt.Printf("done\n")
+    fmt.Printf("Elapsed time %f seconds\n", time.Since(start).Seconds())
 }
 
 func exec(conn *pgx.Conn, stmt string, arguments ...interface{}) {

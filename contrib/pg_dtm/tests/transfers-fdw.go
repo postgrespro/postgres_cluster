@@ -12,7 +12,7 @@ const (
     TRANSFER_CONNECTIONS = 8
     INIT_AMOUNT = 10000
     N_ITERATIONS = 10000
-    N_ACCOUNTS = 100000//TRANSFER_CONNECTIONS
+    N_ACCOUNTS = 100000
     ISOLATION_LEVEL = "repeatable read"
     //ISOLATION_LEVEL = "read committed"
 )
@@ -170,6 +170,8 @@ func main() {
 
     prepare_db()
 
+    start := time.Now()
+
     cCommits := make(chan int)
     cAborts := make(chan int)
     progressWg.Add(1)
@@ -189,6 +191,8 @@ func main() {
 
     close(cCommits)
     progressWg.Wait()
+
+    fmt.Printf("Elapsed time %f seconds\n", time.Since(start).Seconds())
 }
 
 func exec(conn *pgx.Conn, stmt string, arguments ...interface{}) {

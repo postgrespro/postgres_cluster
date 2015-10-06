@@ -7,13 +7,14 @@ import (
     "database/sql"
     "strconv"
     "math/rand"
+    "time"
 )
 
 const (
     TRANSFER_CONNECTIONS = 8
     INIT_AMOUNT = 10000
     N_ITERATIONS = 10000
-    N_ACCOUNTS = 100 //2*TRANSFER_CONNECTIONS
+    N_ACCOUNTS = 2*100000 
 )
 
 var cfg = "host=127.0.0.1 port=5432 sslmode=disable"
@@ -40,7 +41,7 @@ func prepare_db() {
     exec(conn, "drop extension if exists pg_shard CASCADE")
     exec(conn, "create extension pg_shard")
     exec(conn, "drop table if exists t")
-    exec(conn, "create table t(u int, v int)")
+    exec(conn, "create table t(u int primary key, v int)")
     exec(conn, "select master_create_distributed_table(table_name := 't', partition_column := 'u')")
     exec(conn, "select master_create_worker_shards(table_name := 't', shard_count := 2, replication_factor := 1)")
 
@@ -56,19 +57,20 @@ func transfer(id int, wg *sync.WaitGroup) {
     checkErr(err)
     defer conn.Close()
 
-    uids1 := []int{1,3,4, 5, 7, 8,10,14}
-    uids2 := []int{2,6,9,11,12,13,18,21}
-
     for i:=0; i < N_ITERATIONS; i++ {
+        amount := 1
+        account1 := rand.Intn(N_ACCOUNTS)
+        account2 := rand.Intn(N_ACCOUNTS)
         exec(conn, "begin")
-        exec(conn, "update t set v = v + 1 where u="+strconv.Itoa(uids1[rand.Intn(TRANSFER_CONNECTIONS)]))
-        exec(conn, "update t set v = v - 1 where u="+strconv.Itoa(uids2[rand.Intn(TRANSFER_CONNECTIONS)]))
+        exec(conn, fmt.Sprintf("update t set v = v - %d where u=%d", amount, account1))
+        exec(conn, fmt.Sprintf("update t set v = v + %d where u=%d", amount, account2))
+
         // exec(conn, "update t set v = v + 1 where u=1")
         // exec(conn, "update t set v = v - 1 where u=2")
         exec(conn, "commit")
 
         if i%1000==0 {
-            fmt.Printf("%u tx processed.\n", i)
+            fmt.Printf("%d tx processed.\n", i)
         }
     }
 
@@ -100,6 +102,8 @@ func main() {
 
     prepare_db()
 
+    start := time.Now()
+
     transferWg.Add(TRANSFER_CONNECTIONS)
     for i:=0; i<TRANSFER_CONNECTIONS; i++ {
         go transfer(i, &transferWg)
@@ -123,7 +127,7 @@ func main() {
 
     // fmt.Println(sum)
 
-    fmt.Printf("done\n")
+    fmt.Printf("Elapsed time %f seconds\n", time.Since(start).Seconds())
 }
 
 func exec(conn *sql.DB, stmt string) {
