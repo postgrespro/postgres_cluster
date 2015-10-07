@@ -299,22 +299,67 @@ func writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
         dst := conns[rand.Intn(len(conns))]
 
         if src == dst {
-            // local update
-            if !cfg.Writers.AllowLocal {
-                // which we do not want
-                continue
-            }
-
-            exec(src, "begin transaction isolation level " + cfg.Isolation)
-            ok1 := execUpdate(src, "update t set v = v - $1 where u=$2", amount, from_acc)
-            ok2 := execUpdate(src, "update t set v = v + $1 where u=$2", amount, to_acc)
-            if !ok1 || !ok2 {
-                exec(src, "rollback")
-                nAborts += 1
+            if cfg.Writers.AllowLocal {
+                // local update
+                exec(src, "begin transaction isolation level " + cfg.Isolation)
+                ok1 := execUpdate(src, "update t set v = v - $1 where u=$2", amount, from_acc)
+                ok2 := execUpdate(src, "update t set v = v + $1 where u=$2", amount, to_acc)
+                if !ok1 || !ok2 {
+                    exec(src, "rollback")
+                    nAborts += 1
+                } else {
+                    exec(src, "commit")
+                    nCommits += 1
+                    myCommits += 1
+                }
             } else {
-                exec(src, "commit")
-                nCommits += 1
-                myCommits += 1
+                if len(conns) > 1 {
+                        continue
+                }
+
+                // global single-node update
+                execQuery(src, "select dtm_begin_transaction()")
+
+                // start transaction
+                exec(src, "begin transaction isolation level " + cfg.Isolation)
+
+                ok := true
+                if (cfg.Writers.UseCursors) {
+                    exec(
+                        src,
+                        "declare cur0 cursor for select * from t where u=$1 for update",
+                        from_acc,
+                    )
+
+                    ok = execUpdate(src, "fetch from cur0") && ok
+
+                    ok = execUpdate(
+                        src, "update t set v = v - $1 where current of cur0",
+                        amount,
+                    ) && ok
+                    ok = execUpdate(
+                        src, "update t set v = v + $1 where current of cur0",
+                        amount,
+                    ) && ok
+                } else {
+                    ok = execUpdate(
+                        src, "update t set v = v - $1 where u=$2",
+                        amount, from_acc,
+                    ) && ok
+                    ok = execUpdate(
+                        src, "update t set v = v + $1 where u=$2",
+                        amount, to_acc,
+                    ) && ok
+                }
+
+                if ok {
+                    commit(src)
+                    nCommits += 1
+                    myCommits += 1
+                } else {
+                    exec(src, "rollback")
+                    nAborts += 1
+                }
             }
         } else {
             // global update
