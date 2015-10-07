@@ -275,11 +275,20 @@ func writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
     start := time.Now()
     for myCommits < cfg.Writers.Updates {
         amount := 1
+
         from_acc := rand.Intn(cfg.Accounts.Num)
         to_acc := rand.Intn(cfg.Accounts.Num)
 
-        if (from_acc == to_acc) {
-            to_acc = (from_acc + 1) % cfg.Accounts.Num
+        if cfg.Writers.PrivateRows {
+            from_acc += id - (from_acc % cfg.Writers.Num)
+            to_acc += id - (to_acc % cfg.Writers.Num)
+            if (from_acc == to_acc) {
+                to_acc = (from_acc + cfg.Writers.Num) % cfg.Accounts.Num
+            }
+        } else {
+            if (from_acc == to_acc) {
+                to_acc = (from_acc + 1) % cfg.Accounts.Num
+            }
         }
 
         if (from_acc > to_acc) {
