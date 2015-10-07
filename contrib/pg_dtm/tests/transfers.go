@@ -31,6 +31,7 @@ var cfg struct {
     ConnStrs ConnStrings
 
     Verbose bool
+    UseDtm bool
     Isolation string // "repeatable read" or "read committed"
 
     Accounts struct {
@@ -102,6 +103,7 @@ func init() {
     flag.IntVar(&cfg.Writers.Num, "w", 8, "The number of writers")
     flag.IntVar(&cfg.Writers.Updates, "u", 10000, "The number updates each writer performs")
     flag.BoolVar(&cfg.Verbose, "v", false, "Show progress and other stuff for mortals")
+    flag.BoolVar(&cfg.UseDtm, "m", false, "Use DTM to keep global consistency")
     flag.BoolVar(&cfg.Writers.AllowGlobal, "g", false, "Allow global updates")
     flag.BoolVar(&cfg.Writers.AllowLocal, "l", false, "Allow local updates")
     flag.BoolVar(&cfg.Writers.PrivateRows, "p", false, "Private rows (avoid waits/aborts caused by concurrent updates of the same rows)")
@@ -199,8 +201,10 @@ func prepare_one(connstr string, wg *sync.WaitGroup) {
 
     defer conn.Close()
 
-    exec(conn, "drop extension if exists pg_dtm")
-    exec(conn, "create extension pg_dtm")
+    if cfg.UseDtm {
+        exec(conn, "drop extension if exists pg_dtm")
+        exec(conn, "create extension pg_dtm")
+    }
     exec(conn, "drop table if exists t")
     exec(conn, "create table t(u int primary key, v int)")
 
@@ -318,7 +322,9 @@ func writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
                 }
 
                 // global single-node update
-                execQuery(src, "select dtm_begin_transaction()")
+                if cfg.UseDtm {
+                    execQuery(src, "select dtm_begin_transaction()")
+                }
 
                 // start transaction
                 exec(src, "begin transaction isolation level " + cfg.Isolation)
@@ -368,8 +374,10 @@ func writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
                 continue
             }
 
-            xid := execQuery(src, "select dtm_begin_transaction()")
-            exec(dst, "select dtm_join_transaction($1)", xid)
+            if cfg.UseDtm {
+                xid := execQuery(src, "select dtm_begin_transaction()")
+                exec(dst, "select dtm_join_transaction($1)", xid)
+            }
 
             // start transaction
             exec(src, "begin transaction isolation level " + cfg.Isolation)
@@ -454,10 +462,12 @@ func reader(wg *sync.WaitGroup, inconsistency *bool) {
         var sum int64 = 0
         var xid int32
         for i, conn := range conns {
-            if i == 0 {
-                xid = execQuery(conn, "select dtm_begin_transaction()")
-            } else {
-                exec(conn, "select dtm_join_transaction($1)", xid)
+            if cfg.UseDtm {
+                if i == 0 {
+                    xid = execQuery(conn, "select dtm_begin_transaction()")
+                } else {
+                    exec(conn, "select dtm_join_transaction($1)", xid)
+                }
             }
 
             exec(conn, "begin transaction isolation level " + cfg.Isolation)
