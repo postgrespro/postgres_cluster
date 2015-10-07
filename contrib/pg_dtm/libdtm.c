@@ -24,10 +24,6 @@ typedef struct DTMConnData
 
 typedef unsigned long long xid_t;
 
-int DtmdPort;
-char* DtmdHost;
-
-
 // Returns true if the write was successful.
 static bool dtm_write_char(DTMConn dtm, char c)
 {
