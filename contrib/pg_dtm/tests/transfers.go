@@ -205,7 +205,6 @@ func prepare_one(connstr string, wg *sync.WaitGroup) {
     exec(conn, "create table t(u int primary key, v int)")
 
     exec(conn, "begin transaction isolation level " + cfg.Isolation)
-    exec(conn, "begin transaction isolation level " + cfg.Isolation)
 
     start := time.Now()
     for i := 0; i < cfg.Accounts.Num; i++ {
