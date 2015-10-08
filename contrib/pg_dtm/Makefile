@@ -1,5 +1,8 @@
 MODULE_big = pg_dtm
-OBJS = pg_dtm.o libdtm.o
+OBJS = pg_dtm.o libdtm.o sockhub/libsockhub.a
+
+sockhub/libsockhub.a:
+	make -C sockhub
 
 EXTENSION = pg_dtm
 DATA = pg_dtm--1.0.sql

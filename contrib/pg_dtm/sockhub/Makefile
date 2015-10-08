@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -c -I. -Wall -O2 -g
+CFLAGS = -c -I. -Wall -O2 -g -fPIC
 LD = $(CC)
 LDFLAGS = -g
 AR = ar

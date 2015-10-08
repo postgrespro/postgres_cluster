@@ -10,7 +10,7 @@
 
 // Sets up the host and port for DTM connection.
 // The defaults are "127.0.0.1" and 5431.
-void TuneToDtm(char *host, int port);
+void DtmGlobalConfig(char *host, int port, char* sock_dir);
 
 void DtmInitSnapshot(Snapshot snapshot);
 

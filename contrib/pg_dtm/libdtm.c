@@ -22,6 +22,10 @@ typedef struct DTMConnData
 	int sock;
 } DTMConnData;
 
+static char *dtmhost = NULL;
+static int dtmport = 0;
+static char* dtm_unix_sock_dir;
+
 typedef unsigned long long xid_t;
 
 // Returns true if the write was successful.
@@ -151,51 +155,73 @@ static bool dtm_read_status(DTMConn dtm, XidStatus *s)
 // Connects to the specified DTM.
 static DTMConn DtmConnect(char *host, int port)
 {
-	struct addrinfo *addrs = NULL;
-	struct addrinfo hint;
-	char portstr[6];
-	struct addrinfo *a;
+    DTMConn dtm;
+    int sd;
 
-	memset(&hint, 0, sizeof(hint));
-	hint.ai_socktype = SOCK_STREAM;
-	hint.ai_family = AF_INET;
-	snprintf(portstr, 6, "%d", port);
-	hint.ai_protocol = getprotobyname("tcp")->p_proto;
-	if (getaddrinfo(host, portstr, &hint, &addrs))
-	{
-		perror("resolve address");
-		return NULL;
-	}
-
-	for (a = addrs; a != NULL; a = a->ai_next)
-	{
-		DTMConn dtm;
-		int one = 1;
-		int sock = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
-		if (sock == -1)
-		{
-			perror("failed to create a socket");
-			continue;
-		}
-		setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
-
-		if (connect(sock, a->ai_addr, a->ai_addrlen) == -1)
-		{
-			perror("failed to connect to an address");
-			close(sock);
-			continue;
-		}
-
-		// success
-		freeaddrinfo(addrs);
-		dtm = malloc(sizeof(DTMConnData));
-		dtm->sock = sock;
-		return dtm;
-	}
-
-	freeaddrinfo(addrs);
-	fprintf(stderr, "could not connect\n");
-	return NULL;
+    if (strcmp(host, "localhost") == 0) { 
+        struct sockaddr sock;
+        int len = offsetof(struct sockaddr, sa_data) + snprintf(sock.sa_data, sizeof(sock.sa_data), "%s/p%u", dtm_unix_sock_dir, port);
+        sock.sa_family = AF_UNIX; 
+   
+        sd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (sd == -1)
+        {
+            perror("failed to create a unix socket");
+        }
+        if (connect(sd, &sock, len) == -1)
+        {
+            perror("failed to connect to an address");
+            close(sd);
+            return NULL;
+        }
+        dtm = malloc(sizeof(DTMConnData));
+        dtm->sock = sd;
+        return dtm;
+    } else { 
+        struct addrinfo *addrs = NULL;
+        struct addrinfo hint;
+        char portstr[6];
+        struct addrinfo *a;
+        
+        memset(&hint, 0, sizeof(hint));
+        hint.ai_socktype = SOCK_STREAM;
+        hint.ai_family = AF_INET;
+        snprintf(portstr, 6, "%d", port);
+        hint.ai_protocol = getprotobyname("tcp")->p_proto;
+        if (getaddrinfo(host, portstr, &hint, &addrs))
+        {
+            perror("resolve address");
+            return NULL;
+        }
+        
+        for (a = addrs; a != NULL; a = a->ai_next)
+        {
+            int one = 1;
+            sd = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+            if (sd == -1)
+            {
+                perror("failed to create a socket");
+                continue;
+            }
+            setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+            
+            if (connect(sd, a->ai_addr, a->ai_addrlen) == -1)
+            {
+                perror("failed to connect to an address");
+                close(sd);
+                continue;
+            }
+            
+            // success
+            freeaddrinfo(addrs);
+            dtm = malloc(sizeof(DTMConnData));
+            dtm->sock = sd;
+            return dtm;
+        }
+        freeaddrinfo(addrs);
+    }
+    fprintf(stderr, "could not connect\n");
+    return NULL;
 }
 
 /*
@@ -231,16 +257,14 @@ static bool dtm_query(DTMConn dtm, char cmd, int argc, ...)
 	return true;
 }
 
-static char *dtmhost = NULL;
-static int dtmport = 0;
-
-void TuneToDtm(char *host, int port) {
+void DtmGlobalConfig(char *host, int port, char* sock_dir) {
 	if (dtmhost) {
 		free(dtmhost);
 		dtmhost = NULL;
 	}
 	dtmhost = strdup(host);
 	dtmport = port;
+    dtm_unix_sock_dir = sock_dir;
 }
 
 static DTMConn GetConnection()
@@ -255,7 +279,7 @@ static DTMConn GetConnection()
 				elog(ERROR, "Failed to connect to DTMD %s:%d", dtmhost, dtmport);
 			}
 		} else {
-			elog(ERROR, "DTMD address not specified");
+			/* elog(ERROR, "DTMD address not specified"); */
 		}
 	}
 	return dtm;
