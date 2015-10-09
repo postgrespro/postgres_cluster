@@ -87,7 +87,7 @@ int eventwrap(
 	onconnect_cb = onconnect;
 	ondisconnect_cb = ondisconnect;
 
-	shout("libuv version: %s\n", uv_version_string());
+	debug("libuv version: %s\n", uv_version_string());
 
 	loop = uv_default_loop();
 
