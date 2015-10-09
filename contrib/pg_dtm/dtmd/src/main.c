@@ -4,6 +4,9 @@
 #include <unistd.h>
 #include <assert.h>
 #include <time.h>
+#include <signal.h>
+#include <errno.h>
+#include <sys/wait.h>
 
 #include "clog.h"
 #include "parser.h"
@@ -54,7 +57,7 @@ static void free_client_data(client_data_t *cd) {
 static int next_client_id = 0;
 static void onconnect(void *stream, void **clientdata) {
 	*clientdata = create_client_data(next_client_id++);
-	shout("[%d] connected\n", CLIENT_ID(*clientdata));
+	debug("[%d] connected\n", CLIENT_ID(*clientdata));
 }
 
 static void notify_listeners(Transaction *t, int status) {
@@ -88,7 +91,7 @@ static void notify_listeners(Transaction *t, int status) {
 }
 
 static void ondisconnect(void *stream, void *clientdata) {
-	shout("[%d] disconnected\n", CLIENT_ID(clientdata));
+	debug("[%d] disconnected\n", CLIENT_ID(clientdata));
 
 	if (CLIENT_XID(clientdata) != INVALID_XID) {
 		int i;
@@ -126,7 +129,7 @@ static void ondisconnect(void *stream, void *clientdata) {
 }
 
 #ifdef DEBUG
-static void shout_cmd(void *clientdata, cmd_t *cmd) {
+static void debug_cmd(void *clientdata, cmd_t *cmd) {
 	char *cmdname;
 	switch (cmd->cmd) {
 		case CMD_RESERVE : cmdname =  "RESERVE"; break;
@@ -137,15 +140,15 @@ static void shout_cmd(void *clientdata, cmd_t *cmd) {
 		case CMD_STATUS  : cmdname =   "STATUS"; break;
 		default          : cmdname =  "unknown";
 	}
-	shout("[%d] %s", CLIENT_ID(clientdata), cmdname);
+	debug("[%d] %s", CLIENT_ID(clientdata), cmdname);
 	int i;
 	for (i = 0; i < cmd->argc; i++) {
-		shout(" %llu", cmd->argv[i]);
+		debug(" %llu", cmd->argv[i]);
 	}
-	shout("\n");
+	debug("\n");
 }
 #else
-#define shout_cmd(...)
+#define debug_cmd(...)
 #endif
 
 #define CHECK(COND, CDATA, MSG) \
@@ -197,14 +200,14 @@ static char *onreserve(void *stream, void *clientdata, cmd_t *cmd) {
 	int minsize = cmd->argv[1];
 	xid_t maxxid = minxid + minsize - 1;
 
-	shout(
+	debug(
 		"[%d] RESERVE: asked for range %llu-%llu\n",
 		CLIENT_ID(clientdata),
 		minxid, maxxid
 	);
 
 	if ((prev_gxid >= minxid) || (maxxid >= next_gxid)) {
-		shout(
+		debug(
 			"[%d] RESERVE: local range %llu-%llu is not between global range %llu-%llu\n",
 			CLIENT_ID(clientdata),
 			minxid, maxxid,
@@ -215,7 +218,7 @@ static char *onreserve(void *stream, void *clientdata, cmd_t *cmd) {
 		maxxid = max(maxxid, minxid + minsize - 1);
 		next_gxid = maxxid + 1;
 	}
-	shout(
+	debug(
 		"[%d] RESERVE: allocating range %llu-%llu\n",
 		CLIENT_ID(clientdata),
 		minxid, maxxid
@@ -514,7 +517,7 @@ static char *onnoise(void *stream, void *clientdata, cmd_t *cmd) {
 // }
 
 static char *oncmd(void *stream, void *clientdata, cmd_t *cmd) {
-	shout_cmd(clientdata, cmd);
+	debug_cmd(clientdata, cmd);
 
 	char *result = NULL;
 	switch (cmd->cmd) {
@@ -546,12 +549,6 @@ static char *ondata(void *stream, void *clientdata, size_t len, char *data) {
 	int i;
 	parser_t parser = CLIENT_PARSER(clientdata);
 	char *response = NULL;
-
-//	shout(
-//		"[%d] got some data[%lu] %s\n",
-//		CLIENT_ID(clientdata),
-//		len, data
-//	);
 
 	// The idea is to feed each character through
 	// the parser, which will return a cmd from
@@ -585,16 +582,102 @@ static char *ondata(void *stream, void *clientdata, size_t len, char *data) {
 }
 
 static void usage(char *prog) {
-	printf("Usage: %s [-d DATADIR] [-a HOST] [-p PORT]\n", prog);
+	printf(
+		"Usage: %s [-d DATADIR] [-k] [-a HOST] [-p PORT] [-l LOGFILE]\n"
+		"   dtmd will try to kill the other one running at\n"
+		"   the same DATADIR.\n"
+		"   -l : Run as a daemon and write output to LOGFILE.\n"
+		"   -k : Just kill the other dtm and exit.\n",
+		prog
+	);
+}
+
+// Reads a pid from the file at 'pidpath'.
+// Returns the pid, or 0 in case of error.
+int read_pid(char *pidpath) {
+	FILE *f = fopen(pidpath, "r");
+	if (f == NULL) {
+		debug("failed to open pidfile for reading: %s\n", strerror(errno));
+		return 0;
+	}
+
+	int pid = 0;
+	if (fscanf(f, "%d", &pid) != 1) {
+		shout("failed to read pid from pidfile\n");
+		pid = 0;
+	}
+
+	if (fclose(f)) {
+		shout("failed to close pidfile O_o: %s\n", strerror(errno));
+	}
+	return pid;
+}
+
+// Returns the pid, or 0 in case of error.
+int write_pid(char *pidpath, int pid) {
+	FILE *f = fopen(pidpath, "w");
+	if (f == NULL) {
+		shout("failed to open pidfile for writing: %s\n", strerror(errno));
+		return 0;
+	}
+
+	if (fprintf(f, "%d\n", pid) < 0) {
+		shout("failed to write pid to pidfile\n");
+		pid = 0;
+	}
+
+	if (fclose(f)) {
+		shout("failed to close pidfile O_o: %s\n", strerror(errno));
+	}
+	return pid;
+}
+
+// If there is a pidfile in 'datadir',
+// sends TERM signal to the corresponding pid.
+void kill_the_elder(char *datadir) {
+	char *pidpath = join_path(datadir, "dtmd.pid");
+	int pid = read_pid(pidpath);
+	free(pidpath);
+
+	if (pid > 1) {
+		if (kill(pid, SIGTERM)) {
+			switch(errno) {
+				case EPERM:
+					shout("was not allowed to kill pid=%d\n", pid);
+					break;
+				case ESRCH:
+					shout("pid=%d not found for killing\n", pid);
+					break;
+			}
+		}
+		debug("SIGTERM sent to pid=%d\n" pid);
+		debug("waiting for pid=%d to die\n" pid);
+		waitpid(pid, NULL, 0);
+		debug("pid=%d died\n" pid);
+	} else {
+		debug("no elder to kill\n" pid);
+	}
+}
+
+char *pidpath;
+void die(int signum) {
+	shout("terminated\n");
+	if (unlink(pidpath) == -1) {
+		shout("could not remove pidfile: %s\n", strerror(errno));
+	}
+	exit(signum);
 }
 
 int main(int argc, char **argv) {
 	char *datadir = DEFAULT_DATADIR;
 	char *listenhost = DEFAULT_LISTENHOST;
+	char *logfilename = NULL;
+	bool daemonize = false;
+	bool assassin = false;
 	int listenport = DEFAULT_LISTENPORT;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "hd:a:p:")) != -1) {
+	while ((opt = getopt(argc, argv, "hd:a:p:l:k")) != -1) {
 		switch (opt) {
 			case 'd':
 				datadir = optarg;
@@ -605,13 +688,30 @@ int main(int argc, char **argv) {
 			case 'p':
 				listenport = atoi(optarg);
 				break;
+			case 'l':
+				logfilename = optarg;
+				daemonize = true;
+				break;
 			case 'h':
 				usage(argv[0]);
 				return EXIT_SUCCESS;
+			case 'k':
+				assassin = true;
+				break;
 			default:
 				usage(argv[0]);
 				return EXIT_FAILURE;
 		}
+	}
+
+	kill_the_elder(datadir);
+	if (assassin) {
+		return EXIT_SUCCESS;
+	}
+
+	if (logfilename) {
+		freopen(logfilename, "a", stdout);
+		freopen(logfilename, "a", stderr);
 	}
 
 	clg = clog_open(datadir);
@@ -619,6 +719,19 @@ int main(int argc, char **argv) {
 		shout("could not open clog at '%s'\n", datadir);
 		return EXIT_FAILURE;
 	}
+
+	if (daemonize) {
+		if (daemon(true, true) == -1) {
+			shout("could not daemonize: %s\n", strerror(errno));
+			return EXIT_FAILURE;
+		}
+	}
+
+	pidpath = join_path(datadir, "dtmd.pid");
+	signal(SIGTERM, die);
+	signal(SIGINT, die);
+
+	write_pid(pidpath, getpid());
 
 	prev_gxid = MIN_XID;
 	next_gxid = MIN_XID;
@@ -630,5 +743,6 @@ int main(int argc, char **argv) {
 	);
 
 	clog_close(clg);
+
 	return retcode;
 }

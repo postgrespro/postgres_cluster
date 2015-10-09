@@ -33,14 +33,14 @@ bool clogfile_open_by_id(clogfile_t *clogfile, char *datadir, int fileid, bool c
 			shout("cannot create clog file '%s': %s\n", clogfile->path, strerror(errno));
 			return false;
 		}
-		shout("created clog file '%s'\n", clogfile->path);
+		debug("created clog file '%s'\n", clogfile->path);
 	} else {
 		fd = open(clogfile->path, O_RDWR);
 		if (fd == -1) {
 			shout("cannot open clog file '%s': %s\n", clogfile->path, strerror(errno));
 			return false;
 		}
-		shout("opened clog file '%s'\n", clogfile->path);
+		debug("opened clog file '%s'\n", clogfile->path);
 	}
 
 	if (falloc(fd, BYTES_PER_FILE)) {

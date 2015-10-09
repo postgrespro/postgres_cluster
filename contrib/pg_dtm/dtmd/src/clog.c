@@ -133,7 +133,7 @@ int clog_read(clog_t clog, xid_t xid) {
 bool clog_write(clog_t clog, xid_t xid, int status) {
 	clogfile_t *file = clog_xid_to_file(clog, xid);
 	if (!file) {
-		shout("xid %016llx out of range, creating the file\n", xid);
+		debug("xid %016llx out of range, creating the file\n", xid);
 		clogfile_t newfile;
 		if (!clogfile_open_by_id(&newfile, clog->datadir, XID_TO_FILEID(xid), true)) {
 			shout(
@@ -149,7 +149,7 @@ bool clog_write(clog_t clog, xid_t xid, int status) {
 	}
 	file = clog_xid_to_file(clog, xid);
 	if (!file) {
-		shout("the file is absent despite out efforts\n");
+		shout("the file is absent despite our efforts\n");
 		return false;
 	}
 	bool ok = clogfile_set_status(file, xid, status);
