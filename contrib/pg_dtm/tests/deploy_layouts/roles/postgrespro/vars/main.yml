@@ -1,0 +1,34 @@
+---
+makejobs: 4
+
+deploy_postgres: false
+deploy_dtm: false
+deploy_pg_shard: false
+
+ppg_usedtm: false
+ppg_dtmhost: "localhost"
+ppg_configfile:
+- line: "shared_buffers = 1024MB" # 1/4 RAM
+  regexp: "^shared_buffers "
+
+ppg:
+  version: xtm
+  src: ./postgrespro
+  dst: "/tmp/postgrespro-build"
+  log: ./ppg1.log
+  datadir: ./postgrespro-data1
+  usedtm: true
+  node_id: 1
+
+libuv:
+  version: v1.7.5
+  src: ./libuv
+  dst: /tmp/libuv-build
+
+dtmd:
+  dst: ./dtmd
+  datadir: ./dtmd-data
+  log: ./dtmd.log
+
+
+# vim: ts=2 sts=2 sw=2 expandtab

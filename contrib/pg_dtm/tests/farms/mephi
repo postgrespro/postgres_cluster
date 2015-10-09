@@ -1,0 +1,13 @@
+[client]
+br.theor.mephi.ru
+
+[dtm]
+blade8 ansible_ssh_host=85.143.113.31 ansible_ssh_port=4208
+
+[workers]
+blade4 ansible_ssh_host=85.143.113.31 ansible_ssh_port=4204
+blade5 ansible_ssh_host=85.143.113.31 ansible_ssh_port=4205
+blade6 ansible_ssh_host=85.143.113.31 ansible_ssh_port=4206
+
+[master-workers]
+blade7 ansible_ssh_host=85.143.113.31 ansible_ssh_port=4207

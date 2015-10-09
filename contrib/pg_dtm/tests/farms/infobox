@@ -1,0 +1,8 @@
+[head]
+root@pgpro0
+
+[dtm]
+root@pgpro-dtm
+
+[datanodes]
+root@pgpro-data[0:5]

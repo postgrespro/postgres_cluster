@@ -1,0 +1,33 @@
+---
+
+- name: ensure we have checked out libuv-1.7.5
+  git: repo=https://github.com/libuv/libuv.git
+    dest={{libuv.src}}
+    version={{libuv.version}}
+    update=no
+
+- name: build libuv
+  shell: ./autogen.sh && ./configure --disable-shared --prefix={{libuv.dst}} && make && make install
+  args:
+    chdir: "{{libuv.src}}"
+    creates: "{{libuv.dst}}/lib/libuv.a"
+
+- name: compile dtmd
+  shell: make "LIBUV_PREFIX={{libuv.dst}}"
+  args:
+    chdir: "{{ppg.src}}/contrib/pg_dtm/dtmd"
+    creates: "{{ppg.src}}/contrib/pg_dtm/dtmd/bin/dtmd"
+
+- name: install dtmd
+  command: cp "{{ppg.src}}/contrib/pg_dtm/dtmd/bin/dtmd" "{{dtmd.dst}}"
+  args:
+    creates: "{{dtmd.dst}}"
+
+- name: ensure datadir for dtm exists
+  file: dest={{dtmd.datadir}} state=directory
+   
+- name: start dtm
+  shell: nohup {{dtmd.dst}} -d {{dtmd.datadir}} -a 0.0.0.0 -p 5431 > dtmd.log &
+
+- name: wait until dtm is available
+  wait_for: port=5431 delay=1
