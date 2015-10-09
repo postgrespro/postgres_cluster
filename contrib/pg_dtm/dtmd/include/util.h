@@ -18,14 +18,19 @@ int falloc(int fd, off64_t size);
 char *destructive_concat(char *a, char *b);
 
 #ifndef DEBUG
-#define shout(...)
+#define debug(...)
 #else
+#define debug(...) \
+	do { \
+		fprintf(stderr, __VA_ARGS__); \
+		fflush(stderr); \
+	} while (0)
+#endif
+
 #define shout(...) \
 	do { \
 		fprintf(stderr, __VA_ARGS__); \
 		fflush(stderr); \
 	} while (0)
-
-#endif
 
 #endif

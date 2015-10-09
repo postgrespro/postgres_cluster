@@ -12,6 +12,8 @@
 #include "postgres.h"
 #include "fmgr.h"
 #include "miscadmin.h"
+#include "postmaster/postmaster.h"
+#include "postmaster/bgworker.h"
 #include "storage/s_lock.h"
 #include "storage/spin.h"
 #include "storage/lmgr.h"
@@ -39,6 +41,7 @@
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "utils/syscache.h"
+#include "sockhub/sockhub.h"
 
 #include "libdtm.h"
 
@@ -74,6 +77,7 @@ static bool TransactionIdIsInSnapshot(TransactionId xid, Snapshot snapshot);
 static bool TransactionIdIsInDoubt(TransactionId xid);
 
 static void DtmShmemStartup(void);
+static void DtmBackgroundWorker(Datum arg);
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB* xid_in_doubt;
@@ -91,7 +95,17 @@ static TransactionManager DtmTM = { DtmGetTransactionStatus, DtmSetTransactionSt
 
 static char *DtmHost;
 static int DtmPort;
+static int DtmBufferSize;
 
+static BackgroundWorker DtmWorker = {
+    "DtmWorker",
+    0, /* do not need connection to the database */
+    BgWorkerStart_PostmasterStart,
+    1, /* restrart in one second (is it possible to restort immediately?) */
+    DtmBackgroundWorker
+};
+    
+    
 
 #define XTM_TRACE(fmt, ...)
 //#define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
@@ -191,22 +205,39 @@ static void DtmMergeWithGlobalSnapshot(Snapshot dst)
 	if (src->xmin < dst->xmin) {
 		dst->xmin = src->xmin;
 	}
+    Assert(src->subxcnt == 0);
 
-	n = dst->xcnt;
-	Assert(src->xcnt + n <= GetMaxSnapshotXidCount());
-	memcpy(dst->xip + n, src->xip, src->xcnt*sizeof(TransactionId));
-	n += src->xcnt;
+	if (src->xcnt + dst->subxcnt + dst->xcnt <= GetMaxSnapshotXidCount()) {
+        Assert(dst->subxcnt == 0);
+        memcpy(dst->xip + dst->xcnt, src->xip, src->xcnt*sizeof(TransactionId));
+        n = dst->xcnt + src->xcnt;
 
-	qsort(dst->xip, n, sizeof(TransactionId), xidComparator);
-	xid = InvalidTransactionId;
-
-	for (i = 0, j = 0; i < n && dst->xip[i] < dst->xmax; i++) {
-		if (dst->xip[i] != xid) {
-			dst->xip[j++] = xid = dst->xip[i];
-		}
-	}
-	dst->xcnt = j;
-
+        qsort(dst->xip, n, sizeof(TransactionId), xidComparator);
+        xid = InvalidTransactionId;
+        
+        for (i = 0, j = 0; i < n && dst->xip[i] < dst->xmax; i++) {
+            if (dst->xip[i] != xid) {
+                dst->xip[j++] = xid = dst->xip[i];
+            }
+        }
+        dst->xcnt = j;
+    } else { 
+        Assert(src->xcnt + dst->subxcnt + dst->xcnt <= GetMaxSnapshotSubxidCount());
+        memcpy(dst->subxip + dst->subxcnt, dst->xip, dst->xcnt*sizeof(TransactionId));
+        memcpy(dst->subxip + dst->subxcnt + dst->xcnt, src->xip, src->xcnt*sizeof(TransactionId));
+        n = dst->xcnt + dst->subxcnt + src->xcnt;
+        
+        qsort(dst->subxip, n, sizeof(TransactionId), xidComparator);
+        xid = InvalidTransactionId;
+        
+        for (i = 0, j = 0; i < n && dst->subxip[i] < dst->xmax; i++) {
+            if (dst->subxip[i] != xid) {
+                dst->subxip[j++] = xid = dst->subxip[i];
+            }
+        }
+        dst->subxcnt = j;
+        dst->xcnt = 0;
+    }
 	DumpSnapshot(dst, "merged");
 }
 
@@ -623,6 +654,9 @@ static void DtmInitialize()
 		dtm->nReservedXids = 0;
         dtm->minXid = InvalidTransactionId;
         RegisterXactCallback(DtmXactCallback, NULL);
+        if (DtmBufferSize != 0) { 
+            RegisterBackgroundWorker(&DtmWorker);
+        }
 	}
 	LWLockRelease(AddinShmemInitLock);
 
@@ -716,6 +750,21 @@ _PG_init(void)
 		NULL
 	);
 
+	DefineCustomIntVariable(
+		"dtm.buffer_size",
+		"Size of sockhub buffer for connection to DTM daemon, if 0, then direct connection will be used",
+		NULL,
+		&DtmBufferSize,
+		0,
+		0,
+		INT_MAX,
+		PGC_POSTMASTER,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
 	DefineCustomStringVariable(
 		"dtm.host",
 		"The host where DTM daemon resides",
@@ -744,7 +793,7 @@ _PG_init(void)
 		NULL
 	);
 
-	TuneToDtm(DtmHost, DtmPort);
+	DtmGlobalConfig(DtmHost, DtmPort, Unix_socket_directories);
 
 	/*
 	 * Install hooks.
@@ -835,3 +884,24 @@ Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
+void DtmBackgroundWorker(Datum arg)
+{
+    Shub shub;
+    ShubParams params;
+    char unix_sock_path[MAXPGPATH];
+    
+    snprintf(unix_sock_path, sizeof(unix_sock_path), "%s/p%d", Unix_socket_directories, DtmPort);
+
+    ShubInitParams(&params);
+
+    params.host = DtmHost;
+    params.port = DtmPort;
+    params.file = unix_sock_path;
+    params.buffer_size = DtmBufferSize;
+    
+	DtmGlobalConfig("localhost", DtmPort, Unix_socket_directories);
+
+    ShubInitialize(&shub, &params);
+    
+    ShubLoop(&shub);
+}

@@ -2,7 +2,7 @@ CC=gcc
 CFLAGS=-g -Wall -Iinclude -D_LARGEFILE64_SOURCE # -DDEBUG
 LIBUV_PREFIX=$(HOME)/libuv-build
 LIBUV_CFLAGS=-I"$(LIBUV_PREFIX)/include" -L"$(LIBUV_PREFIX)/lib"
-LIBUV_LDFLAGS=-luv -pthread
+LIBUV_LDFLAGS=-luv -pthread -lrt
 
 SYSTEM=$(shell uname -s)
 ifeq ($(SYSTEM),Darwin)
