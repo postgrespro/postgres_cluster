@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <assert.h>
 
 #include "sockhub.h"
 
@@ -151,6 +152,17 @@ static void reconnect(Shub* shub)
     }
 }
 
+static void notify_disconnect(Shub* shub, int chan)
+{
+    ShubMessageHdr* hdr;
+    assert(shub->in_buffer_used + sizeof(ShubMessageHdr) < shub->params->buffer_size);
+    hdr = (ShubMessageHdr*)&shub->in_buffer[shub->in_buffer_used];
+    hdr->size = 0;
+    hdr->chan = chan;
+    hdr->code = MSG_DISCONNECT;
+    shub->in_buffer_used += sizeof(ShubMessageHdr);
+}
+
 static void recovery(Shub* shub)
 {
     int i, max_fd;
@@ -162,6 +174,9 @@ static void recovery(Shub* shub)
             FD_ZERO(&tryset);
             FD_SET(i, &tryset);
             if (select(i+1, &tryset, NULL, NULL, &tm) < 0) { 
+                if (i != shub->input && i != shub->output) { 
+                    notify_disconnect(shub, i);
+                }
                 close_socket(shub, i);
             }
         }
@@ -259,6 +274,7 @@ void ShubLoop(Shub* shub)
                                 if (!write_socket(chan, (char*)hdr, n)) { 
                                     shub->params->error_handler("Failed to write to local socket", SHUB_RECOVERABLE_ERROR);
                                     close_socket(shub, chan);
+                                    notify_disconnect(shub, chan);
                                     chan = -1;
                                 }
                                 if (n != hdr->size + sizeof(ShubMessageHdr)) { 
@@ -274,6 +290,7 @@ void ShubLoop(Shub* shub)
                                         if (chan >= 0 && !write_socket(chan, shub->out_buffer, n)) { 
                                             shub->params->error_handler("Failed to write to local socket", SHUB_RECOVERABLE_ERROR);
                                             close_socket(shub, chan);
+                                            notify_disconnect(shub, chan);
                                             chan = -1;
                                         }                                       
                                         tail -= n;
@@ -295,6 +312,7 @@ void ShubLoop(Shub* shub)
                                 if (available < sizeof(ShubMessageHdr)) { 
                                     shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
                                     close_socket(shub, i);
+                                    notify_disconnect(shub, i);
                                 } else { 
                                     int pos = 0;
                                     /* loop through all fetched messages */
@@ -333,6 +351,7 @@ void ShubLoop(Shub* shub)
                                                 if (hdr != NULL) { /* if message header is not yet sent to the server... */
                                                     /* ... then skip this message */
                                                     shub->in_buffer_used = (char*)hdr - shub->in_buffer;
+                                                    notify_disconnect(shub, chan);
                                                     break;
                                                 } else { /* if message was partly sent to the server, we can not skip it, so we have to send garbage to the server */
                                                     chan = -1; /* do not try to read rest of body of this message */
@@ -351,6 +370,10 @@ void ShubLoop(Shub* shub)
                                                 shub->in_buffer_used = 0;
                                             }
                                         } while (size != 0); /* repeat until all message body is received */
+                                        
+                                        if (chan < 0) { 
+                                            notify_disconnect(shub, i);
+                                        }
 
                                         pos = available;
                                         break;
