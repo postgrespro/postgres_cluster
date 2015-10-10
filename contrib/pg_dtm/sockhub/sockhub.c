@@ -14,7 +14,6 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
-#include <assert.h>
 
 #include "sockhub.h"
 
@@ -155,12 +154,18 @@ static void reconnect(Shub* shub)
 static void notify_disconnect(Shub* shub, int chan)
 {
     ShubMessageHdr* hdr;
-    assert(shub->in_buffer_used + sizeof(ShubMessageHdr) < shub->params->buffer_size);
     hdr = (ShubMessageHdr*)&shub->in_buffer[shub->in_buffer_used];
     hdr->size = 0;
     hdr->chan = chan;
     hdr->code = MSG_DISCONNECT;
     shub->in_buffer_used += sizeof(ShubMessageHdr);
+    if (shub->in_buffer_used + sizeof(ShubMessageHdr) > shub->params->buffer_size) { 
+        while (!write_socket(shub->output, shub->in_buffer, shub->in_buffer_used)) {
+            shub->params->error_handler("Failed to write to inet socket", SHUB_RECOVERABLE_ERROR);
+            reconnect(shub);
+        }
+        shub->in_buffer_used = 0;
+    }
 }
 
 static void recovery(Shub* shub)
