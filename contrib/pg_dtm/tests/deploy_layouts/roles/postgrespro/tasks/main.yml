@@ -44,6 +44,13 @@
     depth=1
   register: pg_sources
 
+- name: remove binaries if sources have changed
+  file: dest={{item}} state=absent
+  with_items:
+    - "{{pg_dst}}"
+    - "{{dtmd.dst}}"
+  when: pg_sources.changed
+
 - include: postgres.yml
   when: deploy_postgres
 

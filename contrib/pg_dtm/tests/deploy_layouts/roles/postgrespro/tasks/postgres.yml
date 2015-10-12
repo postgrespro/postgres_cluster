@@ -1,10 +1,3 @@
-- name: remove binaries if sources have changed
-  file: dest={{item}} state=absent
-  with_items:
-    - "{{pg_dst}}"
-    - "{{dtmd.dst}}"
-  when: pg_sources.changed
-
 - name: build postgrespro
   shell: ./configure --prefix={{pg_dst}} --without-zlib && make clean && make -j {{makejobs}} && make install
   args:
