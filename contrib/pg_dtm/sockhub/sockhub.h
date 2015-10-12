@@ -9,6 +9,12 @@ typedef struct {
     unsigned int chan;      /* local socket: set by SockHUB */
 } ShubMessageHdr;
 
+enum ShubMessageCodes
+{
+    MSG_DISCONNECT,
+    MSG_FIRST_USER_CODE /* all codes >= 1 are user defined */
+};
+
 typedef enum 
 {
     SHUB_FATAL_ERROR,

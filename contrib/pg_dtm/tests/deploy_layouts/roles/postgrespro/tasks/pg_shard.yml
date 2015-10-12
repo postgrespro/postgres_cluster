@@ -1,0 +1,41 @@
+- name: checkout pg_shard
+  git: repo=git@gitlab.postgrespro.ru:s.kelvich/pg_shard.git
+    dest=./pg_shard
+    version=transaction_manager_integration
+    force=yes
+    update=yes
+    key_file=.ssh/banktest
+    accept_hostkey=yes
+    depth=1
+  register: pg_shard_source
+
+- name: build pg_shard extension
+  shell: "PATH={{ppg.dst}}/bin:$PATH make clean && PATH={{ppg.dst}}/bin:$PATH make && PATH={{ppg.dst}}/bin:$PATH make install"
+  args:
+    chdir: "~/pg_shard"
+    creates: "{{ppg.dst}}/lib/pg_shard.so"
+
+- name: enable pg_shard extension in postgresql.conf with dtm
+  lineinfile:
+    dest: "{{ppg.datadir}}/postgresql.conf"
+    regexp: "{{item.regexp}}"
+    line: "{{item.line}}"
+    state: present
+  with_items:
+  - line: "shared_preload_libraries = 'pg_dtm, pg_shard'"
+    regexp: "^shared_preload_libraries "
+  when: ppg.usedtm
+
+- name: enable pg_shard extension in postgresql.conf without dtm
+  lineinfile:
+    dest: "{{ppg.datadir}}/postgresql.conf"
+    regexp: "{{item.regexp}}"
+    line: "{{item.line}}"
+    state: present
+  with_items:
+  - line: "shared_preload_libraries = 'pg_shard'"
+    regexp: "^shared_preload_libraries "
+  when: not ppg.usedtm
+
+
+

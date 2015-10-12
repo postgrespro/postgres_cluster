@@ -205,22 +205,39 @@ static void DtmMergeWithGlobalSnapshot(Snapshot dst)
 	if (src->xmin < dst->xmin) {
 		dst->xmin = src->xmin;
 	}
+    Assert(src->subxcnt == 0);
 
-	n = dst->xcnt;
-	Assert(src->xcnt + n <= GetMaxSnapshotXidCount());
-	memcpy(dst->xip + n, src->xip, src->xcnt*sizeof(TransactionId));
-	n += src->xcnt;
+	if (src->xcnt + dst->subxcnt + dst->xcnt <= GetMaxSnapshotXidCount()) {
+        Assert(dst->subxcnt == 0);
+        memcpy(dst->xip + dst->xcnt, src->xip, src->xcnt*sizeof(TransactionId));
+        n = dst->xcnt + src->xcnt;
 
-	qsort(dst->xip, n, sizeof(TransactionId), xidComparator);
-	xid = InvalidTransactionId;
-
-	for (i = 0, j = 0; i < n && dst->xip[i] < dst->xmax; i++) {
-		if (dst->xip[i] != xid) {
-			dst->xip[j++] = xid = dst->xip[i];
-		}
-	}
-	dst->xcnt = j;
-
+        qsort(dst->xip, n, sizeof(TransactionId), xidComparator);
+        xid = InvalidTransactionId;
+        
+        for (i = 0, j = 0; i < n && dst->xip[i] < dst->xmax; i++) {
+            if (dst->xip[i] != xid) {
+                dst->xip[j++] = xid = dst->xip[i];
+            }
+        }
+        dst->xcnt = j;
+    } else { 
+        Assert(src->xcnt + dst->subxcnt + dst->xcnt <= GetMaxSnapshotSubxidCount());
+        memcpy(dst->subxip + dst->subxcnt, dst->xip, dst->xcnt*sizeof(TransactionId));
+        memcpy(dst->subxip + dst->subxcnt + dst->xcnt, src->xip, src->xcnt*sizeof(TransactionId));
+        n = dst->xcnt + dst->subxcnt + src->xcnt;
+        
+        qsort(dst->subxip, n, sizeof(TransactionId), xidComparator);
+        xid = InvalidTransactionId;
+        
+        for (i = 0, j = 0; i < n && dst->subxip[i] < dst->xmax; i++) {
+            if (dst->subxip[i] != xid) {
+                dst->subxip[j++] = xid = dst->subxip[i];
+            }
+        }
+        dst->subxcnt = j;
+        dst->xcnt = 0;
+    }
 	DumpSnapshot(dst, "merged");
 }
 

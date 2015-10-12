@@ -1,0 +1,9 @@
+[workers]
+astro4 ansible_ssh_host=158.250.29.4 ansible_ssh_user=s.kelvich
+astro5 ansible_ssh_host=158.250.29.5 ansible_ssh_user=s.kelvich
+astro6 ansible_ssh_host=158.250.29.6 ansible_ssh_user=s.kelvich
+astro8 ansible_ssh_host=158.250.29.8 ansible_ssh_user=s.kelvich
+astro9 ansible_ssh_host=158.250.29.9 ansible_ssh_user=s.kelvich
+
+[master-workers]
+astro10 ansible_ssh_host=158.250.29.10 ansible_ssh_user=s.kelvich

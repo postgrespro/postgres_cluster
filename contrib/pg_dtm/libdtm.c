@@ -301,7 +301,7 @@ void DtmInitSnapshot(Snapshot snapshot)
 		 * we are in recovery, see later comments.
 		 */
 		snapshot->xip = (TransactionId *)
-			malloc(GetMaxSnapshotXidCount() * sizeof(TransactionId));
+			malloc(GetMaxSnapshotSubxidCount() * sizeof(TransactionId));
 		if (snapshot->xip == NULL)
 			ereport(ERROR,
 					(errcode(ERRCODE_OUT_OF_MEMORY),

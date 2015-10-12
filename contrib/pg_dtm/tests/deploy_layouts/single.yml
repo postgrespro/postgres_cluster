@@ -1,0 +1,19 @@
+---
+- hosts: master-workers
+  roles:
+
+  - role: postgrespro
+    deploy_dtm: true
+
+  - role: postgrespro
+    deploy_postgres: true
+    pg_port: 5432
+    pg_dtm_enable: true
+    pg_datadir: ./postgrespro-data
+
+  - role: postgrespro
+    deploy_postgres: true
+    pg_port: 5433
+    pg_dtm_enable: true
+    pg_datadir: ./postgrespro-data2
+
