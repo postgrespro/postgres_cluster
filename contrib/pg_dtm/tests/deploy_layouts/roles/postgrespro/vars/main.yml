@@ -1,3 +1,4 @@
+# vim: ts=2 sts=2 sw=2 expandtab
 ---
 makejobs: 4
 
@@ -5,20 +6,21 @@ deploy_postgres: false
 deploy_dtm: false
 deploy_pg_shard: false
 
-ppg_usedtm: false
-ppg_dtmhost: "localhost"
-ppg_configfile:
-- line: "shared_buffers = 1024MB" # 1/4 RAM
-  regexp: "^shared_buffers "
-
-ppg:
-  version: xtm
-  src: ./postgrespro
-  dst: "/tmp/postgrespro-build"
-  log: ./ppg1.log
-  datadir: ./postgrespro-data1
-  usedtm: true
-  node_id: 1
+pg_version: xtm
+pg_port: 5432
+pg_dtm_enable: false
+pg_dtm_host: "127.0.0.1"
+pg_config:
+  - line: "shared_buffers = 3GB"
+  - line: "wal_keep_segments = 128"
+  - line: "fsync = off"
+  - line: "autovacuum = off"
+  - line: "listen_addresses = '*'"
+  - line: "max_connections = 512"
+  - line: "port = {{pg_port}}"
+pg_src: ./postgrespro
+pg_dst: /tmp/postgrespro-build
+pg_datadir: ./postgrespro-data
 
 libuv:
   version: v1.7.5
@@ -26,9 +28,8 @@ libuv:
   dst: /tmp/libuv-build
 
 dtmd:
+  port: 5431
   dst: ./dtmd
   datadir: ./dtmd-data
   log: ./dtmd.log
 
-
-# vim: ts=2 sts=2 sw=2 expandtab

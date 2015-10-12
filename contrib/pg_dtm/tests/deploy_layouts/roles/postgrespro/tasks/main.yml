@@ -11,6 +11,7 @@
   - flex
   - libreadline-dev
   when: ansible_os_family == "Debian"
+  sudo: yes
 
 - name: ensure dependencies (RedHat)
   yum: name="@Development tools" state=present
@@ -34,14 +35,14 @@
 
 - name: ensure we have checked out postgrespro (xtm)
   git: repo=git@gitlab.postgrespro.ru:pgpro-dev/postgrespro.git
-    dest={{ppg.src}}
-    version={{ppg.version}}
+    dest={{pg_src}}
+    version={{pg_version}}
     force=yes
     update=yes
     key_file=.ssh/ppg-deploy
     accept_hostkey=yes
     depth=1
-  register: ppgsources
+  register: pg_sources
 
 - include: postgres.yml
   when: deploy_postgres
@@ -49,5 +50,5 @@
 - include: dtm.yml
   when: deploy_dtm
 
-# - include: pg_shard.yml
-#   when: deploy_pg_shard == true
+- include: pg_shard.yml
+  when: deploy_pg_shard

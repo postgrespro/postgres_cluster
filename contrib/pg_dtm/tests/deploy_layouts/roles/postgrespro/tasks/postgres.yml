@@ -1,80 +1,67 @@
 - name: remove binaries if sources have changed
   file: dest={{item}} state=absent
   with_items:
-    - "{{ppg.dst}}"
+    - "{{pg_dst}}"
     - "{{dtmd.dst}}"
-  when: ppgsources.changed
+  when: pg_sources.changed
 
 - name: build postgrespro
-  shell: ./configure --prefix={{ppg.dst}} --without-zlib && make clean && make -j {{makejobs}} && make install
+  shell: ./configure --prefix={{pg_dst}} --without-zlib && make clean && make -j {{makejobs}} && make install
   args:
-    chdir: "{{ppg.src}}"
-    creates: "{{ppg.dst}}/bin/postgres"
+    chdir: "{{pg_src}}"
+    creates: "{{pg_dst}}/bin/postgres"
 
 - name: build dtm extension
   shell: make clean && make && make install
   args:
-    chdir: "{{ppg.src}}/contrib/pg_dtm"
-    creates: "{{ppg.dst}}/lib/pg_dtm.so"
+    chdir: "{{pg_src}}/contrib/pg_dtm"
+    creates: "{{pg_dst}}/lib/pg_dtm.so"
 
-- stat: path={{ppg.datadir}}/postmaster.pid
+- stat: path={{pg_datadir}}/postmaster.pid
   register: pg_pidfile
 
-- name: stop postgres if running
-  command: "{{ppg.dst}}/bin/pg_ctl stop -w -D {{ppg.datadir}}"
+- name: stop postgres if it was running
+  command: "{{pg_dst}}/bin/pg_ctl stop -w -D {{pg_datadir}}"
   when: pg_pidfile.stat.exists
 
 - name: remove datadirs on datanodes
-  command: "rm -rf {{ppg.datadir}}"
+  command: "rm -rf {{pg_datadir}}"
 
 - name: create datadirs on datanodes
-  command: "{{ppg.dst}}/bin/initdb {{ppg.datadir}}"
+  command: "{{pg_dst}}/bin/initdb {{pg_datadir}}"
   args:
-    creates: "{{ppg.datadir}}"
+    creates: "{{pg_datadir}}"
 
 - name: configure postgres on datanodes
   lineinfile:
-    dest: "{{ppg.datadir}}/postgresql.conf"
-    regexp: "{{item.regexp}}"
+    dest: "{{pg_datadir}}/postgresql.conf"
     line: "{{item.line}}"
     state: present
-  with_items: "{{ppg_configfile}}"
+  with_items: "{{pg_config}}"
 
 - name: enable dtm extension on datanodes
   lineinfile:
-    dest: "{{ppg.datadir}}/postgresql.conf"
+    dest: "{{pg_datadir}}/postgresql.conf"
     regexp: "{{item.regexp}}"
     line: "{{item.line}}"
     state: present
   with_items:
-  - line: "dtm.host = '{{ppg_dtmhost}}'"
+  - line: "dtm.host = '{{pg_dtm_host}}'"
     regexp: "^dtm.host "
   - line: "shared_preload_libraries = 'pg_dtm'"
     regexp: "^shared_preload_libraries "
-  - line: "dtm.node_id = {{ppg.node_id}}"
-    regexp: "^dtm.node_id "
-  when: ppg.usedtm
-
-- name: disable dtm extension on datanodes
-  lineinfile:
-    dest: "{{ppg.datadir}}/postgresql.conf"
-    regexp: "{{item}}"
-    state: absent
-  with_items:
-  - "^dtm.host "
-  - "^shared_preload_libraries "
-  when: not ppg_usedtm
+  when: pg_dtm_enable
 
 - name: enable blind trust on datanodes
   lineinfile:
-    dest: "{{ppg.datadir}}/pg_hba.conf"
+    dest: "{{pg_datadir}}/pg_hba.conf"
     line: "host all all 0.0.0.0/0 trust"
 
 - include: pg_shard.yml
   when: deploy_pg_shard
 
 - name: start postgrespro
-  command: "{{ppg.dst}}/bin/pg_ctl start -w -D {{ppg.datadir}} -l {{ppg.log}}"
+  command: "{{pg_dst}}/bin/pg_ctl start -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
 
 
 

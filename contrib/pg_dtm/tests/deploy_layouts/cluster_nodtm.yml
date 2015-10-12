@@ -1,0 +1,13 @@
+---
+- hosts: master-workers
+  roles:
+  - role: postgrespro
+    deploy_postgres: true
+    ppg_usedtm: false
+
+- hosts: workers
+  roles:
+  - role: postgrespro
+    deploy_postgres: true
+    ppg_usedtm: false
+
