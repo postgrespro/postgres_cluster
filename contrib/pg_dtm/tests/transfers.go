@@ -166,6 +166,7 @@ func main() {
 
     writerWg.Wait()
     fmt.Printf("writers finished in %0.2f seconds\n", time.Since(start).Seconds())
+    fmt.Printf("TPS = %0.2f\n", float64(cfg.Writers.Num*cfg.Writers.Updates)/time.Since(start).Seconds())
 
     running = false
     readerWg.Wait()
