@@ -9,7 +9,6 @@
 #include <sys/wait.h>
 
 #include "clog.h"
-#include "parser.h"
 #include "eventwrap.h"
 #include "util.h"
 #include "intset.h"
@@ -28,7 +27,6 @@ xid_t prev_gxid, next_gxid;
 
 typedef struct client_data_t {
 	int id;
-	parser_t parser;
 	int snapshots_sent;
 	xid_t xid;
 } client_data_t;
@@ -36,21 +34,18 @@ typedef struct client_data_t {
 clog_t clg;
 
 #define CLIENT_ID(X) (((client_data_t*)(X))->id)
-#define CLIENT_PARSER(X) (((client_data_t*)(X))->parser)
 #define CLIENT_SNAPSENT(X) (((client_data_t*)(X))->snapshots_sent)
 #define CLIENT_XID(X) (((client_data_t*)(X))->xid)
 
 static client_data_t *create_client_data(int id) {
 	client_data_t *cd = malloc(sizeof(client_data_t));
 	cd->id = id;
-	cd->parser = parser_create();
 	cd->snapshots_sent = 0;
 	cd->xid = INVALID_XID;
 	return cd;
 }
 
 static void free_client_data(client_data_t *cd) {
-	parser_destroy(cd->parser);
 	free(cd);
 }
 
@@ -547,30 +542,14 @@ static char *oncmd(void *stream, void *clientdata, cmd_t *cmd) {
 
 static char *ondata(void *stream, void *clientdata, size_t len, char *data) {
 	int i;
-	parser_t parser = CLIENT_PARSER(clientdata);
 	char *response = NULL;
 
-	// The idea is to feed each character through
-	// the parser, which will return a cmd from
-	// time to time.
 	for (i = 0; i < len; i++) {
 		if (data[i] == '\n') {
 			// ignore newlines (TODO: should we ignore them?)
 			continue;
 		}
 
-		cmd_t *cmd = parser_feed(parser, data[i]);
-		if (parser_failed(parser)) {
-			shout(
-				"[%d] parser failed on character '%c' (%d): %s\n",
-				CLIENT_ID(clientdata),
-				data[i], data[i],
-				parser_errormsg(parser)
-			);
-			parser_init(parser);
-			response = strdup("-");
-			break;
-		}
 		if (cmd) {
 			char *newresponse = oncmd(stream, clientdata, cmd);
 			response = destructive_concat(response, newresponse);

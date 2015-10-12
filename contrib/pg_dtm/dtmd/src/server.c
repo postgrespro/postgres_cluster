@@ -15,9 +15,8 @@
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 
-#define BUFFER_SIZE (64 * 1024)
-#define LISTEN_QUEUE_SIZE 100
-#define MAX_STREAMS 128
+#include "server.h"
+#include "limits.h"
 #include "util.h"
 #include "sockhub.h"
 
@@ -27,14 +26,24 @@ typedef struct buffer_t {
 	char *data; // dynamically allocated buffer
 } buffer_t;
 
-typedef struct stream_t {
+typedef struct stream_data_t {
 	int fd;
 	bool good; // 'false': stop serving this stream and disconnect when possible
 	buffer_t input;
 	buffer_t output;
-} stream_t;
 
-typedef struct server_t {
+	// a map: 'chan' -> client_data_t
+	// 'chan' is expected to be < MAX_FDS which is pretty low
+	client_data_t *clients; // dynamically allocated
+} stream_data_t;
+
+typedef struct client_data_t {
+	stream_t stream; // NULL: client value is empty
+	void *userdata;
+	unsigned int chan;
+}
+
+typedef struct server_data_t {
 	char *host;
 	int port;
 
@@ -43,12 +52,12 @@ typedef struct server_t {
 	int maxfd;
 
 	int streamsnum;
-	stream_t streams[MAX_STREAMS];
+	stream_data_t streams[MAX_STREAMS];
 
-	void (*onmessage)(void *stream, unsigned int chan, size_t len, char *data);
-	void (*onconnect)(void *stream, unsigned int chan);
-	void (*ondisconnect)(void *stream, unsigned int chan);
-} server_t;
+	on_message_callback_t onmessage;
+	on_connect_callback_t onconnect;
+	on_disconnect_callback_t ondisconnect;
+} server_data_t;
 
 // Returns the created socket, or -1 if failed.
 static int create_listening_socket(const char *host, int port) {
@@ -83,22 +92,24 @@ static int create_listening_socket(const char *host, int port) {
 	return s;
 }
 
-void server_configure(
-	server_t *server,
+server_t server_init(
 	char *host,
 	int port,
-	void (*onmessage)(void *stream, unsigned int chan, size_t len, char *data),
-	void (*onconnect)(void *stream, unsigned int chan),
-	void (*ondisconnect)(void *stream, unsigned int chan)
+	on_message_callback_t onmessage,
+	on_connect_callback_t onconnect,
+	on_disconnect_callback_t ondisconnect,
 ) {
+	server_t server = malloc(sizeof(server_t));
 	server->host = host;
 	server->port = port;
 	server->onmessage = onmessage;
 	server->onconnect = onconnect;
 	server->ondisconnect = ondisconnect;
+
+	return server;
 }
 
-bool server_start(server_t *server) {
+bool server_start(server_t server) {
 	debug("starting the server\n");
 	server->streamsnum = 0;
 
@@ -123,7 +134,7 @@ static void dumphex(int len, char *data) {
 	printf("\n");
 }
 
-bool stream_flush(stream_t *stream) {
+static bool stream_flush(stream_t stream) {
 	int tosend = stream->output.ready;
 	if (tosend == 0) {
 		// nothing to do
@@ -155,37 +166,60 @@ bool stream_flush(stream_t *stream) {
 	return true;
 }
 
-void server_flush(server_t *server) {
+static void server_flush(server_t server) {
 	debug("flushing the streams\n");
 	int i;
 	for (i = 0; i < server->streamsnum; i++) {
-		stream_t *stream = server->streams + i;
+		stream_t stream = server->streams + i;
 		stream_flush(stream);
 	}
 }
 
-static void stream_init(stream_t *stream, int fd) {
+static void stream_init(stream_t stream, int fd) {
+	int i;
 	stream->input.data = malloc(BUFFER_SIZE);
 	stream->input.ready = 0;
 	stream->output.data = malloc(BUFFER_SIZE);
 	stream->output.ready = 0;
 	stream->fd = fd;
 	stream->good = true;
+
+	stream->clients = malloc(MAX_TRANSACTIONS * sizeof(client_data_t));
+	// mark all clients as empty
+	for (i = 0; i < MAX_TRANSACTIONS; i++) {
+		stream->clients[i].stream = NULL;
+	}
+
 }
 
-static void stream_destroy(stream_t *stream) {
+static void server_stream_destroy(server_t server, stream_t stream) {
+	int c;
+	for (c = 0; c < MAX_TRANSACTIONS; c++) {
+		client_t client = stream->clients + i;
+		if (client->stream) {
+			server->ondisconnect(client);
+			if (client->userdata) {
+				shout(
+					"client still has userdata after 'ondisconnect' call,\n"
+					"please set it to NULL in 'ondisconnect' callback\n"
+				);
+			}
+		}
+	}
+
+	FD_CLR(stream->fd, &server->all);
 	close(stream->fd);
+	free(stream->clients);
 	free(stream->input.data);
 	free(stream->output.data);
 }
 
-void server_close_bad_streams(server_t *server) {
+static void server_close_bad_streams(server_t server) {
 	int i;
 	for (i = server->streamsnum - 1; i >= 0; i--) {
-		stream_t *stream = server->streams + i;
+		stream_t stream = server->streams + i;
 		if (!stream->good) {
-			FD_CLR(stream->fd, &server->all);
-			stream_destroy(stream);
+			server_stream_destroy(server, stream);
 			if (i != server->streamsnum - 1) {
 				// move the last one here
 				*stream = server->streams[server->streamsnum - 1];
@@ -195,7 +229,7 @@ void server_close_bad_streams(server_t *server) {
 	}
 }
 
-bool stream_message_start(stream_t *stream, char code, unsigned int chan) {
+static bool stream_message_start(stream_t stream, unsigned int chan) {
 	ShubMessageHdr *msg;
 
 	if (stream->output.curmessage) {
@@ -205,7 +239,7 @@ bool stream_message_start(stream_t *stream, char code, unsigned int chan) {
 	}
 
 	if (BUFFER_SIZE - stream->output.ready < sizeof(ShubMessageHdr)) {
-		if (!stream_flush(stream)) {
+		if (!stream_flush(s)) {
 			shout("failed to flush before starting new message\n");
 			stream->good = false;
 			return false;
@@ -214,13 +248,13 @@ bool stream_message_start(stream_t *stream, char code, unsigned int chan) {
 
 	msg = stream->output.curmessage = (ShubMessageHdr*)(stream->output.data + stream->output.ready);
 	msg->size = 0;
-	msg->code = code;
+	msg->code = 'r';
 	msg->chan = chan;
 
 	return true;
 }
 
-bool stream_message_append(stream_t *stream, int len, void *data) {
+static bool stream_message_append(void *stream, size_t len, void *data) {
 	ShubMessageHdr *msg;
 
 	debug("appending %d\n", *(int*)data);
@@ -240,7 +274,7 @@ bool stream_message_append(stream_t *stream, int len, void *data) {
 	}
 
 	if (stream->output.ready + newsize > BUFFER_SIZE) {
-		if (!stream_flush(stream)) {
+		if (!stream_flush(s)) {
 			shout("failed to flush before extending the message\n");
 			stream->good = false;
 			return false;
@@ -254,7 +288,7 @@ bool stream_message_append(stream_t *stream, int len, void *data) {
 	return true;
 }
 
-bool stream_message_finish(stream_t *stream) {
+static bool stream_message_finish(void *stream) {
 	if (stream->output.curmessage == NULL) {
 		shout("cannot finish, the message was not started\n");
 		stream->good = false;
@@ -268,7 +302,19 @@ bool stream_message_finish(stream_t *stream) {
 	return true;
 }
 
-bool server_accept(server_t *server) {
+bool client_message_start(client_t client) {
+	return stream_message_start(client->stream, client->chan);
+}
+
+bool client_message_append(client_t client, size_t len, void *data) {
+	return stream_message_append(client->stream, len, data);
+}
+
+bool client_message_finish(client_t client) {
+	return stream_message_finish(client->stream);
+}
+
+static bool server_accept(server_t server) {
 	debug("a new connection is queued\n");
 
 	int fd = accept(server->listener, NULL, NULL);
@@ -285,7 +331,7 @@ bool server_accept(server_t *server) {
 	}
 
 	// add new stream
-	stream_t *s = server->streams + server->streamsnum++;
+	stream_t s = server->streams + server->streamsnum++;
 	stream_init(s, fd);
 
 	FD_SET(fd, &server->all);
@@ -296,7 +342,24 @@ bool server_accept(server_t *server) {
 	return true;
 }
 
-bool server_stream_handle(server_t *server, stream_t *stream) {
+static client_t stream_get_client(stream_t stream, unsigned int chan, bool *isnew) {
+	assert(chan < MAX_TRANSACTIONS);
+	client_t client = stream->clients[stream];
+	if (client->stream == NULL) {
+		// client is new
+		client->stream = stream;
+		client->chan = chan;
+		*isnew = true;
+		client->userdata = NULL;
+	} else {
+		// collisions should not happen
+		assert(client->chan == msg->chan);
+		*isnew = false;
+	}
+	return client;
+}
+
+static bool server_stream_handle(server_t server, stream_t stream) {
 	debug("a stream ready to recv\n");
 
 	char *cursor = stream->input.data + stream->input.ready;
@@ -325,7 +388,12 @@ bool server_stream_handle(server_t *server, stream_t *stream) {
 		int header_and_data = sizeof(ShubMessageHdr) + msg->size;
 		if (header_and_data <= toprocess) {
 			// handle message
-			server->onmessage(stream, msg->chan, msg->size, (char*)msg + sizeof(ShubMessageHdr));
+			bool isnew;
+			client_t client = server_get_client(server, stream, msg->chan, &isnew);
+			if (isnew) {
+				server->onconnect(client);
+			}
+			server->onmessage(client, msg->size, (char*)msg + sizeof(ShubMessageHdr));
 			cursor += header_and_data;
 			toprocess -= header_and_data;
 		} else {
@@ -350,7 +418,7 @@ bool server_stream_handle(server_t *server, stream_t *stream) {
 	return true;
 }
 
-void server_loop(server_t *server) {
+void server_loop(server_t server) {
 	while (1) {
 		int i;
 		fd_set readfds = server->all;
@@ -367,7 +435,7 @@ void server_loop(server_t *server) {
 		}
 
 		for (i = 0; (i < server->streamsnum) && (numready > 0); i++) {
-			stream_t *stream = server->streams + i;
+			stream_t stream = server->streams + i;
 			if (FD_ISSET(stream->fd, &readfds)) {
 				server_stream_handle(server, stream);
 			}
@@ -378,8 +446,11 @@ void server_loop(server_t *server) {
 	}
 }
 
-void test_onmsg(void *stream, unsigned int chan, size_t len, char *data) {
-	stream_message_start(stream, 0, chan);
+#if 0
+// usage example
+
+void test_onmsg(client_t client, size_t len, char *data) {
+	client_message_start(client, 0, chan);
 	while (len >= sizeof(int)) {
 		int x = *(int*)data;
 		data += sizeof(int);
@@ -391,13 +462,12 @@ void test_onmsg(void *stream, unsigned int chan, size_t len, char *data) {
 	stream_message_finish(stream);
 }
 
-// usage example
 int main(int argc, char **argv) {
-	server_t srv;
-	server_configure(&srv, "0.0.0.0", 5431, test_onmsg, NULL, NULL);
+	server_t srv = server_init("0.0.0.0", 5431, test_onmsg, NULL, NULL);
 	if (!server_start(&srv)) {
 		return EXIT_FAILURE;
 	}
 	server_loop(&srv);
 	return EXIT_SUCCESS;
 }
+#endif
