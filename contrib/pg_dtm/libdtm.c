@@ -126,7 +126,8 @@ static bool dtm_read_snapshot(DTMConn dtm, Snapshot s)
 static bool dtm_read_status(DTMConn dtm, XidStatus *s)
 {
 	char statuschar;
-	if (!dtm_read_char(dtm, &statuschar)) {
+	if (!dtm_read_char(dtm, &statuschar))
+	{
 		fprintf(stderr, "dtm_read_status: failed to get char\n");
 		return false;
 	}
@@ -155,73 +156,76 @@ static bool dtm_read_status(DTMConn dtm, XidStatus *s)
 // Connects to the specified DTM.
 static DTMConn DtmConnect(char *host, int port)
 {
-    DTMConn dtm;
-    int sd;
+	DTMConn dtm;
+	int sd;
 
-    if (strcmp(host, "localhost") == 0) { 
-        struct sockaddr sock;
-        int len = offsetof(struct sockaddr, sa_data) + snprintf(sock.sa_data, sizeof(sock.sa_data), "%s/p%u", dtm_unix_sock_dir, port);
-        sock.sa_family = AF_UNIX; 
-   
-        sd = socket(AF_UNIX, SOCK_STREAM, 0);
-        if (sd == -1)
-        {
-            perror("failed to create a unix socket");
-        }
-        if (connect(sd, &sock, len) == -1)
-        {
-            perror("failed to connect to an address");
-            close(sd);
-            return NULL;
-        }
-        dtm = malloc(sizeof(DTMConnData));
-        dtm->sock = sd;
-        return dtm;
-    } else { 
-        struct addrinfo *addrs = NULL;
-        struct addrinfo hint;
-        char portstr[6];
-        struct addrinfo *a;
-        
-        memset(&hint, 0, sizeof(hint));
-        hint.ai_socktype = SOCK_STREAM;
-        hint.ai_family = AF_INET;
-        snprintf(portstr, 6, "%d", port);
-        hint.ai_protocol = getprotobyname("tcp")->p_proto;
-        if (getaddrinfo(host, portstr, &hint, &addrs))
-        {
-            perror("resolve address");
-            return NULL;
-        }
-        
-        for (a = addrs; a != NULL; a = a->ai_next)
-        {
-            int one = 1;
-            sd = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
-            if (sd == -1)
-            {
-                perror("failed to create a socket");
-                continue;
-            }
-            setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
-            
-            if (connect(sd, a->ai_addr, a->ai_addrlen) == -1)
-            {
-                perror("failed to connect to an address");
-                close(sd);
-                continue;
-            }
-            
-            // success
-            freeaddrinfo(addrs);
-            dtm = malloc(sizeof(DTMConnData));
-            dtm->sock = sd;
-            return dtm;
-        }
-        freeaddrinfo(addrs);
-    }
-    fprintf(stderr, "could not connect\n");
-    return NULL;
+	if (strcmp(host, "localhost") == 0)
+	{
+		struct sockaddr sock;
+		int len = offsetof(struct sockaddr, sa_data) + snprintf(sock.sa_data, sizeof(sock.sa_data), "%s/p%u", dtm_unix_sock_dir, port);
+		sock.sa_family = AF_UNIX;
+
+		sd = socket(AF_UNIX, SOCK_STREAM, 0);
+		if (sd == -1)
+		{
+			perror("failed to create a unix socket");
+		}
+		if (connect(sd, &sock, len) == -1)
+		{
+			perror("failed to connect to the address");
+			close(sd);
+			return NULL;
+		}
+		dtm = malloc(sizeof(DTMConnData));
+		dtm->sock = sd;
+		return dtm;
+	}
+	else
+	{
+		struct addrinfo *addrs = NULL;
+		struct addrinfo hint;
+		char portstr[6];
+		struct addrinfo *a;
+
+		memset(&hint, 0, sizeof(hint));
+		hint.ai_socktype = SOCK_STREAM;
+		hint.ai_family = AF_INET;
+		snprintf(portstr, 6, "%d", port);
+		hint.ai_protocol = getprotobyname("tcp")->p_proto;
+		if (getaddrinfo(host, portstr, &hint, &addrs))
+		{
+			perror("failed to resolve address");
+			return NULL;
+		}
+
+		for (a = addrs; a != NULL; a = a->ai_next)
+		{
+			int one = 1;
+			sd = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+			if (sd == -1)
+			{
+				perror("failed to create a socket");
+				continue;
+			}
+			setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+
+			if (connect(sd, a->ai_addr, a->ai_addrlen) == -1)
+			{
+				perror("failed to connect to an address");
+				close(sd);
+				continue;
+			}
+
+			// success
+			freeaddrinfo(addrs);
+			dtm = malloc(sizeof(DTMConnData));
+			dtm->sock = sd;
+			return dtm;
+		}
+		freeaddrinfo(addrs);
+	}
+	fprintf(stderr, "could not connect\n");
+	return NULL;
 }
 
 /*
@@ -264,7 +268,7 @@ void DtmGlobalConfig(char *host, int port, char* sock_dir) {
 	}
 	dtmhost = strdup(host);
 	dtmport = port;
-    dtm_unix_sock_dir = sock_dir;
+	dtm_unix_sock_dir = sock_dir;
 }
 
 static DTMConn GetConnection()
@@ -409,7 +413,7 @@ failure:
 	fprintf(
 		stderr,
 		"DtmGlobalSetTransStatus: failed to vote"
-		" %s the transaction status for xid = %d\n",
+		" %s the transaction xid = %d\n",
 		(status == TRANSACTION_STATUS_COMMITTED) ? "for" : "against",
 		xid
 	);
