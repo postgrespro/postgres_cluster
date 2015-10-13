@@ -16,7 +16,7 @@ Communication scheme
      │        ┏━━━━━━━━━┓          │
      └──┬─────┨ Backend ┠───────┬──┘
         ┆     ┗━━━━━━━━━┛       ┆
-    libarbiter            libpq + xtm procs
+ libdtm + libsockhub      libpq + xtm procs
 
 -----------------------
 Coordinator-Backend API
@@ -98,7 +98,7 @@ The commands:
 	Joins the global transaction identified by the given 'xid', if not
 	joined already.
 
-	The arbiter replies with [gxmin, xmin, xmax, xcnt, xip[0], xip[1]...],
+	The arbiter replies with [RES_OK, gxmin, xmin, xmax, xcnt, xip[0], xip[1]...],
 	where 'gxmin' is the smallest xmin among all available snapshots.
 
 	In case of a failure, the arbiter replies with [RES_FAILED].

@@ -8,12 +8,17 @@
 #include <assert.h>
 
 #include "libdtm.h"
+#include "dtmd/include/proto.h"
+#include "sockhub/sockhub.h"
 
 #ifdef TEST
 // standalone test without postgres functions
 #define palloc malloc
 #define pfree free
 #endif
+
+#define COMMAND_BUFFER_SIZE 1024
+#define RESULTS_SIZE 1024 // size in 64-bit numbers
 
 typedef struct DTMConnData *DTMConn;
 
@@ -27,131 +32,6 @@ static int dtmport = 0;
 static char* dtm_unix_sock_dir;
 
 typedef unsigned long long xid_t;
-
-// Returns true if the write was successful.
-static bool dtm_write_char(DTMConn dtm, char c)
-{
-	return write(dtm->sock, &c, 1) == 1;
-}
-
-// Returns true if the read was successful.
-static bool dtm_read_char(DTMConn dtm, char *c)
-{
-	return read(dtm->sock, c, 1) == 1;
-}
-
-// // Returns true if the write was successful.
-// static bool dtm_write_bool(DTMConn dtm, bool b)
-// {
-// 	return dtm_write_char(dtm, b ? '+' : '-');
-// }
-
-// Returns true if the read was successful.
-static bool dtm_read_bool(DTMConn dtm, bool *b)
-{
-	char c = '\0';
-	if (dtm_read_char(dtm, &c))
-	{
-		if (c == '+')
-		{
-			*b = true;
-			return true;
-		}
-		if (c == '-')
-		{
-			*b = false;
-			return true;
-		}
-	}
-	return false;
-}
-
-// Returns true if the write was successful.
-static bool dtm_write_hex16(DTMConn dtm, xid_t i)
-{
-	char buf[17];
-	if (snprintf(buf, 17, "%016llx", i) != 16)
-	{
-		return false;
-	}
-	return write(dtm->sock, buf, 16) == 16;
-}
-
-// Returns true if the read was successful.
-static bool dtm_read_hex16(DTMConn dtm, xid_t *i)
-{
-	char buf[16];
-	if (read(dtm->sock, buf, 16) != 16)
-	{
-		return false;
-	}
-	if (sscanf(buf, "%016llx", i) != 1)
-	{
-		return false;
-	}
-	return true;
-}
-
-// Returns true if the read was successful.
-static bool dtm_read_snapshot(DTMConn dtm, Snapshot s)
-{
-	int i;
-	xid_t number;
-
-	if (!dtm_read_hex16(dtm, &number)) return false;
-	s->xmin = number;
-	Assert(s->xmin == number); // the number should fits into xmin field size
-
-	if (!dtm_read_hex16(dtm, &number)) return false;
-	s->xmax = number;
-	Assert(s->xmax == number); // the number should fit into xmax field size
-
-	if (!dtm_read_hex16(dtm, &number)) return false;
-	s->xcnt = number;
-	Assert(s->xcnt == number); // the number should definitely fit into xcnt field size
-
-	DtmInitSnapshot(s);
-
-	for (i = 0; i < s->xcnt; i++)
-	{
-		if (!dtm_read_hex16(dtm, &number)) return false;
-		s->xip[i] = number;
-		Assert(s->xip[i] == number); // the number should fit into xip[i] size
-	}
-
-	return true;
-}
-
-// Returns true if the read was successful.
-static bool dtm_read_status(DTMConn dtm, XidStatus *s)
-{
-	char statuschar;
-	if (!dtm_read_char(dtm, &statuschar))
-	{
-		fprintf(stderr, "dtm_read_status: failed to get char\n");
-		return false;
-	}
-
-	switch (statuschar)
-	{
-		case '0':
-			*s =  TRANSACTION_STATUS_UNKNOWN;
-			break;
-		case 'c':
-			*s =  TRANSACTION_STATUS_COMMITTED;
-			break;
-		case 'a':
-			*s =  TRANSACTION_STATUS_ABORTED;
-			break;
-		case '?':
-			*s =  TRANSACTION_STATUS_IN_PROGRESS;
-			break;
-		default:
-			fprintf(stderr, "dtm_read_status: unexpected char '%c'\n", statuschar);
-			return false;
-	}
-	return true;
-}
 
 // Connects to the specified DTM.
 static DTMConn DtmConnect(char *host, int port)
@@ -238,27 +118,65 @@ static void DtmDisconnect(DTMConn dtm)
 }
 */
 
-static bool dtm_query(DTMConn dtm, char cmd, int argc, ...)
+static int dtm_recv_results(DTMConn dtm, int maxlen, xid_t *results) {
+	ShubMessageHdr msg;
+	int recved;
+	int needed;
+
+	recved = 0;
+	needed = sizeof(ShubMessageHdr);
+	while (recved < needed) {
+		int newbytes = read(dtm->sock, (char*)&msg + recved, needed - recved);
+		if (newbytes == -1) {
+			elog(ERROR, "Failed to recv results header from arbiter");
+			return 0;
+		}
+		recved += newbytes;
+	}
+
+	recved = 0;
+	needed = msg.size;
+	assert(needed % sizeof(xid_t) == 0);
+	if (needed > maxlen * sizeof(xid_t)) {
+		elog(ERROR, "The message body will not fit into the results array");
+		return 0;
+	}
+	while (recved < needed) {
+		int newbytes = read(dtm->sock, (char*)results + recved, needed - recved);
+		if (newbytes == -1) {
+			elog(ERROR, "Failed to recv results body from arbiter");
+			return 0;
+		}
+		recved += newbytes;
+	}
+	return needed / sizeof(xid_t);
+}
+
+static bool dtm_send_command(DTMConn dtm, xid_t cmd, int argc, ...)
 {
 	va_list argv;
 	int i;
+	char buf[COMMAND_BUFFER_SIZE];
+	int datasize;
+	char *cursor = buf;
 
-	if (!dtm_write_char(dtm, cmd)) return false;
-	if (!dtm_write_hex16(dtm, argc)) return false;
+	ShubMessageHdr *msg = (ShubMessageHdr*)cursor;
+	msg->code = MSG_FIRST_USER_CODE;
+	msg->size = sizeof(xid_t) * (argc + 1);
+	cursor += sizeof(ShubMessageHdr);
 
 	va_start(argv, argc);
 	for (i = 0; i < argc; i++)
 	{
-		xid_t arg = va_arg(argv, xid_t);
-		if (!dtm_write_hex16(dtm, arg))
-		{
-			va_end(argv);
-			return false;
-		}
+		*(xid_t*)cursor = va_arg(argv, xid_t);
 	}
 	va_end(argv);
 
-	return true;
+	datasize = cursor - buf;
+	assert(msg->size + sizeof(ShubMessageHdr) == datasize);
+	assert(datasize <= COMMAND_BUFFER_SIZE);
+
+	return write(dtm->sock, buf, datasize) == datasize;
 }
 
 void DtmGlobalConfig(char *host, int port, char* sock_dir) {
@@ -327,21 +245,33 @@ void DtmInitSnapshot(Snapshot snapshot)
 // otherwise.
 TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin)
 {
-	bool ok;
+	int i;
 	xid_t xid;
-	xid_t number;
+	int reslen;
+	xid_t results[RESULTS_SIZE];
 	DTMConn dtm = GetConnection();
 
-	// query
-	if (!dtm_query(dtm, 'b', 0)) goto failure;
+	assert(snapshot != NULL);
 
-	// response
-	if (!dtm_read_bool(dtm, &ok)) goto failure;
-	if (!ok) goto failure;
-	if (!dtm_read_hex16(dtm, &xid)) goto failure;
-	if (!dtm_read_hex16(dtm, &number)) goto failure;
-	*gxmin = number;
-	if (!dtm_read_snapshot(dtm, snapshot)) goto failure;
+	// command
+	if (!dtm_send_command(dtm, CMD_BEGIN, 0)) goto failure;
+
+	// results
+	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
+	if (reslen < 6) goto failure;
+	if (results[0] != RES_OK) goto failure;
+	xid = results[1];
+	*gxmin = results[2];
+	snapshot->xmin = results[3];
+	snapshot->xmax = results[4];
+	snapshot->xcnt = results[5];
+
+	if (reslen != 6 + snapshot->xcnt) goto failure;
+
+	for (i = 0; i < snapshot->xcnt; i++)
+	{
+		snapshot->xip[i] = results[6 + i];
+	}
 
 	return xid;
 failure:
@@ -353,22 +283,32 @@ failure:
 // success. 'gxmin' is the smallest xmin among all snapshots known to DTM.
 void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *gxmin)
 {
-	bool ok;
-	xid_t number;
+	int i;
+	int reslen;
+	xid_t results[RESULTS_SIZE];
 	DTMConn dtm = GetConnection();
 
 	assert(snapshot != NULL);
 
-	// query
-	if (!dtm_query(dtm, 'h', 1, xid)) goto failure;
+	// command
+	if (!dtm_send_command(dtm, CMD_SNAPSHOT, 1, xid)) goto failure;
 
 	// response
-	if (!dtm_read_bool(dtm, &ok)) goto failure;
-	if (!ok) goto failure;
+	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
+	if (reslen < 5) goto failure;
+	if (results[0] != RES_OK) goto failure;
+	*gxmin = results[1];
+	snapshot->xmin = results[2];
+	snapshot->xmax = results[3];
+	snapshot->xcnt = results[4];
 
-	if (!dtm_read_hex16(dtm, &number)) goto failure;
-	*gxmin = number;
-	if (!dtm_read_snapshot(dtm, snapshot)) goto failure;
+	if (reslen != 5 + snapshot->xcnt) goto failure;
+
+	for (i = 0; i < snapshot->xcnt; i++)
+	{
+		snapshot->xip[i] = results[5 + i];
+	}
+
 	return;
 failure:
 	fprintf(
@@ -385,30 +325,38 @@ failure:
 // Returns the status on success, or -1 otherwise.
 XidStatus DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait)
 {
-	bool ok;
-	XidStatus actual_status;
+	int reslen;
+	xid_t results[RESULTS_SIZE];
 	DTMConn dtm = GetConnection();
 
 	switch (status)
 	{
 		case TRANSACTION_STATUS_COMMITTED:
-			// query
-			if (!dtm_query(dtm, 'y', 2, xid, wait)) goto failure;
+			// command
+			if (!dtm_send_command(dtm, CMD_FOR, 2, xid, wait)) goto failure;
 			break;
 		case TRANSACTION_STATUS_ABORTED:
-			// query
-			if (!dtm_query(dtm, 'n', 2, xid, wait)) goto failure;
+			// command
+			if (!dtm_send_command(dtm, CMD_AGAINST, 2, xid, wait)) goto failure;
 			break;
 		default:
 			assert(false); // should not happen
 			goto failure;
 	}
 
-	if (!dtm_read_bool(dtm, &ok)) goto failure;
-	if (!ok) goto failure;
-
-	if (!dtm_read_status(dtm, &actual_status)) goto failure;
-	return actual_status;
+	// response
+	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
+	if (reslen != 1) goto failure;
+	switch (results[0]) {
+		case RES_TRANSACTION_COMMITTED:
+			return TRANSACTION_STATUS_COMMITTED;
+		case RES_TRANSACTION_ABORTED:
+			return TRANSACTION_STATUS_ABORTED;
+		case RES_TRANSACTION_INPROGRESS:
+			return TRANSACTION_STATUS_IN_PROGRESS;
+		default:
+			goto failure;
+	}
 failure:
 	fprintf(
 		stderr,
@@ -425,17 +373,28 @@ failure:
 // until the transaction is finished.
 XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait)
 {
-	bool ok;
-	XidStatus s;
+	int reslen;
+	xid_t results[RESULTS_SIZE];
 	DTMConn dtm = GetConnection();
 
-	if (!dtm_query(dtm, 's', 2, xid, wait)) goto failure;
+	// command
+	if (!dtm_send_command(dtm, CMD_STATUS, 2, xid, wait)) goto failure;
 
-	if (!dtm_read_bool(dtm, &ok)) goto failure;
-	if (!ok) return -1;
-
-	if (!dtm_read_status(dtm, &s)) goto failure;
-	return s;
+	// response
+	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
+	if (reslen != 1) goto failure;
+	switch (results[0]) {
+		case RES_TRANSACTION_COMMITTED:
+			return TRANSACTION_STATUS_COMMITTED;
+		case RES_TRANSACTION_ABORTED:
+			return TRANSACTION_STATUS_ABORTED;
+		case RES_TRANSACTION_INPROGRESS:
+			return TRANSACTION_STATUS_IN_PROGRESS;
+		case RES_TRANSACTION_UNKNOWN:
+			return TRANSACTION_STATUS_IN_PROGRESS;
+		default:
+			goto failure;
+	}
 failure:
 	fprintf(
 		stderr,
@@ -453,18 +412,21 @@ failure:
 // In other words, *first ≥ xid and result ≥ nXids.
 int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first)
 {
-	bool ok;
 	xid_t xmin, xmax;
 	int count;
+	int reslen;
+	xid_t results[RESULTS_SIZE];
 	DTMConn dtm = GetConnection();
 
-	if (!dtm_query(dtm, 'r', 2, xid, nXids)) goto failure;
+	// command
+	if (!dtm_send_command(dtm, CMD_RESERVE, 2, xid, nXids)) goto failure;
 
-	if (!dtm_read_bool(dtm, &ok)) goto failure;
-	if (!ok) goto failure;
-
-	if (!dtm_read_hex16(dtm, &xmin)) goto failure;
-	if (!dtm_read_hex16(dtm, &xmax)) goto failure;
+	// response
+	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
+	if (reslen != 3) goto failure;
+	if (results[0] != RES_OK) goto failure;
+	xmin = results[1];
+	xmax = results[2];
 
 	*first = xmin;
 	count = xmax - xmin + 1;
