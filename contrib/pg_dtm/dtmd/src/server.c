@@ -173,10 +173,14 @@ static void stream_init(stream_t stream, int fd) {
 	int i;
 	stream->input.data = malloc(BUFFER_SIZE);
 	assert(stream->input.data);
+	stream->input.curmessage = NULL;
 	stream->input.ready = 0;
+
 	stream->output.data = malloc(BUFFER_SIZE);
 	assert(stream->output.data);
+	stream->output.curmessage = NULL;
 	stream->output.ready = 0;
+
 	stream->fd = fd;
 	stream->good = true;
 
@@ -458,8 +462,8 @@ void server_loop(server_t server) {
 			stream_t stream = server->streams + i;
 			if (FD_ISSET(stream->fd, &readfds)) {
 				server_stream_handle(server, stream);
+				numready--;
 			}
-			numready--;
 		}
 
 		server_flush(server);

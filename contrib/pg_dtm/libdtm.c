@@ -161,14 +161,19 @@ static bool dtm_send_command(DTMConn dtm, xid_t cmd, int argc, ...)
 	char *cursor = buf;
 
 	ShubMessageHdr *msg = (ShubMessageHdr*)cursor;
+	msg->chan = 0;
 	msg->code = MSG_FIRST_USER_CODE;
 	msg->size = sizeof(xid_t) * (argc + 1);
 	cursor += sizeof(ShubMessageHdr);
+
+	*(xid_t*)cursor = cmd;
+	cursor += sizeof(xid_t);
 
 	va_start(argv, argc);
 	for (i = 0; i < argc; i++)
 	{
 		*(xid_t*)cursor = va_arg(argv, xid_t);
+		cursor += sizeof(xid_t);
 	}
 	va_end(argv);
 
@@ -258,19 +263,19 @@ TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin)
 
 	// results
 	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
-	if (reslen < 6) goto failure;
+	if (reslen < 5) goto failure;
 	if (results[0] != RES_OK) goto failure;
 	xid = results[1];
 	*gxmin = results[2];
+
+	DtmInitSnapshot(snapshot);
 	snapshot->xmin = results[3];
 	snapshot->xmax = results[4];
-	snapshot->xcnt = results[5];
-
-	if (reslen != 6 + snapshot->xcnt) goto failure;
+	snapshot->xcnt = reslen - 5;
 
 	for (i = 0; i < snapshot->xcnt; i++)
 	{
-		snapshot->xip[i] = results[6 + i];
+		snapshot->xip[i] = results[5 + i];
 	}
 
 	return xid;
@@ -295,18 +300,17 @@ void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *g
 
 	// response
 	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
-	if (reslen < 5) goto failure;
+	if (reslen < 4) goto failure;
 	if (results[0] != RES_OK) goto failure;
 	*gxmin = results[1];
+	DtmInitSnapshot(snapshot);
 	snapshot->xmin = results[2];
 	snapshot->xmax = results[3];
-	snapshot->xcnt = results[4];
-
-	if (reslen != 5 + snapshot->xcnt) goto failure;
+	snapshot->xcnt = reslen - 4;
 
 	for (i = 0; i < snapshot->xcnt; i++)
 	{
-		snapshot->xip[i] = results[5 + i];
+		snapshot->xip[i] = results[4 + i];
 	}
 
 	return;

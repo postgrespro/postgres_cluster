@@ -52,9 +52,9 @@ static void free_client_userdata(client_userdata_t *cd) {
 
 static int next_client_id = 0;
 static void onconnect(client_t client) {
-	debug("[%d] connected\n", CLIENT_ID(client));
 	client_userdata_t *cd = create_client_userdata(next_client_id++);
 	client_set_userdata(client, cd);
+	debug("[%d] connected\n", CLIENT_ID(client));
 }
 
 static void notify_listeners(Transaction *t, int status) {
@@ -266,7 +266,7 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 	);
 
 	CHECK(
-		argc == 0,
+		argc == 1,
 		client,
 		"BEGIN: wrong number of arguments"
 	);
@@ -643,12 +643,12 @@ void kill_the_elder(char *datadir) {
 					break;
 			}
 		}
-		debug("SIGTERM sent to pid=%d\n" pid);
-		debug("waiting for pid=%d to die\n" pid);
+		debug("SIGTERM sent to pid=%d\n", pid);
+		debug("waiting for pid=%d to die\n", pid);
 		waitpid(pid, NULL, 0);
-		debug("pid=%d died\n" pid);
+		debug("pid=%d died\n", pid);
 	} else {
-		debug("no elder to kill\n" pid);
+		debug("no elder to kill\n");
 	}
 }
 
