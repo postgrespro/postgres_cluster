@@ -232,7 +232,9 @@ static void onreserve(client_t client, int argc, xid_t *argv) {
 		minxid, maxxid
 	);
 
+	xid_t ok = RES_OK;
 	client_message_start(client);
+	client_message_append(client, sizeof(xid_t), &ok);
 	client_message_append(client, sizeof(minxid), &minxid);
 	client_message_append(client, sizeof(maxxid), &maxxid);
 	client_message_finish(client);
@@ -575,10 +577,10 @@ static void onmessage(client_t client, size_t len, char *data) {
 static void usage(char *prog) {
 	printf(
 		"Usage: %s [-d DATADIR] [-k] [-a HOST] [-p PORT] [-l LOGFILE]\n"
-		"   dtmd will try to kill the other one running at\n"
+		"   arbiter will try to kill the other one running at\n"
 		"   the same DATADIR.\n"
 		"   -l : Run as a daemon and write output to LOGFILE.\n"
-		"   -k : Just kill the other dtm and exit.\n",
+		"   -k : Just kill the other arbiter and exit.\n",
 		prog
 	);
 }
@@ -626,7 +628,7 @@ int write_pid(char *pidpath, int pid) {
 // If there is a pidfile in 'datadir',
 // sends TERM signal to the corresponding pid.
 void kill_the_elder(char *datadir) {
-	char *pidpath = join_path(datadir, "dtmd.pid");
+	char *pidpath = join_path(datadir, "arbiter.pid");
 	int pid = read_pid(pidpath);
 	free(pidpath);
 
@@ -724,7 +726,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	pidpath = join_path(datadir, "dtmd.pid");
+	pidpath = join_path(datadir, "arbiter.pid");
 	signal(SIGTERM, die);
 	signal(SIGINT, die);
 
