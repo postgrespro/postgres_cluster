@@ -9,10 +9,10 @@
 #include <sys/wait.h>
 
 #include "clog.h"
-#include "eventwrap.h"
+#include "server.h"
 #include "util.h"
-#include "intset.h"
 #include "transaction.h"
+#include "proto.h"
 
 #define DEFAULT_DATADIR "/tmp/clog"
 #define DEFAULT_LISTENHOST "0.0.0.0"
@@ -25,77 +25,91 @@ int transactions_count;
 // reserve something in (next, x) range otherwise, moving 'next' after 'x'.
 xid_t prev_gxid, next_gxid;
 
-typedef struct client_data_t {
+typedef struct client_userdata_t {
 	int id;
 	int snapshots_sent;
 	xid_t xid;
-} client_data_t;
+} client_userdata_t;
 
 clog_t clg;
 
-#define CLIENT_ID(X) (((client_data_t*)(X))->id)
-#define CLIENT_SNAPSENT(X) (((client_data_t*)(X))->snapshots_sent)
-#define CLIENT_XID(X) (((client_data_t*)(X))->xid)
+#define CLIENT_USERDATA(CLIENT) ((client_userdata_t*)client_get_userdata(CLIENT))
+#define CLIENT_ID(CLIENT) (CLIENT_USERDATA(CLIENT)->id)
+#define CLIENT_SNAPSENT(CLIENT) (CLIENT_USERDATA(CLIENT)->snapshots_sent)
+#define CLIENT_XID(CLIENT) (CLIENT_USERDATA(CLIENT)->xid)
 
-static client_data_t *create_client_data(int id) {
-	client_data_t *cd = malloc(sizeof(client_data_t));
+static client_userdata_t *create_client_userdata(int id) {
+	client_userdata_t *cd = malloc(sizeof(client_userdata_t));
 	cd->id = id;
 	cd->snapshots_sent = 0;
 	cd->xid = INVALID_XID;
 	return cd;
 }
 
-static void free_client_data(client_data_t *cd) {
+static void free_client_userdata(client_userdata_t *cd) {
 	free(cd);
 }
 
 static int next_client_id = 0;
-static void onconnect(void *stream, void **clientdata) {
-	*clientdata = create_client_data(next_client_id++);
-	debug("[%d] connected\n", CLIENT_ID(*clientdata));
+static void onconnect(client_t client) {
+	debug("[%d] connected\n", CLIENT_ID(client));
+	client_userdata_t *cd = create_client_userdata(next_client_id++);
+	client_set_userdata(client, cd);
 }
 
 static void notify_listeners(Transaction *t, int status) {
 	void *listener;
 	switch (status) {
+		// notify 'status' listeners about the transaction status
 		case BLANK:
 			while ((listener = transaction_pop_listener(t, 's'))) {
-				// notify 'status' listeners about the committed status
-				write_to_stream(listener, strdup("+0"));
+				client_message_shortcut(
+					(client_t)listener,
+					RES_TRANSACTION_UNKNOWN
+				);
 			}
 			break;
 		case NEGATIVE:
 			while ((listener = transaction_pop_listener(t, 's'))) {
-				// notify 'status' listeners about the aborted status
-				write_to_stream(listener, strdup("+a"));
+				// notify 'status' listeners about the transaction status
+				client_message_shortcut(
+					(client_t)listener,
+					RES_TRANSACTION_ABORTED
+				);
 			}
 			break;
 		case POSITIVE:
 			while ((listener = transaction_pop_listener(t, 's'))) {
-				// notify 'status' listeners about the committed status
-				write_to_stream(listener, strdup("+c"));
+				// notify 'status' listeners about the transaction status
+				client_message_shortcut(
+					(client_t)listener,
+					RES_TRANSACTION_COMMITTED
+				);
 			}
 			break;
 		case DOUBT:
 			while ((listener = transaction_pop_listener(t, 's'))) {
-				// notify 'status' listeners about the committed status
-				write_to_stream(listener, strdup("+?"));
+				// notify 'status' listeners about the transaction status
+				client_message_shortcut(
+					(client_t)listener,
+					RES_TRANSACTION_INPROGRESS
+				);
 			}
 			break;
 	}
 }
 
-static void ondisconnect(void *stream, void *clientdata) {
-	debug("[%d] disconnected\n", CLIENT_ID(clientdata));
+static void ondisconnect(client_t client) {
+	debug("[%d] disconnected\n", CLIENT_ID(client));
 
-	if (CLIENT_XID(clientdata) != INVALID_XID) {
+	if (CLIENT_XID(client) != INVALID_XID) {
 		int i;
 
 		// need to abort the transaction this client is participating in
 		for (i = transactions_count - 1; i >= 0; i--) {
 			Transaction *t = transactions + i;
 
-			if (t->xid == CLIENT_XID(clientdata)) {
+			if (t->xid == CLIENT_XID(client)) {
 				if (clog_write(clg, t->xid, NEGATIVE)) {
 					notify_listeners(t, NEGATIVE);
 
@@ -105,7 +119,7 @@ static void ondisconnect(void *stream, void *clientdata) {
 					shout(
 						"[%d] DISCONNECT: transaction %llu"
 						" failed to abort O_o\n",
-						CLIENT_ID(clientdata), t->xid
+						CLIENT_ID(client), t->xid
 					);
 				}
 				break;
@@ -115,18 +129,20 @@ static void ondisconnect(void *stream, void *clientdata) {
 		if (i < 0) {
 			shout(
 				"[%d] DISCONNECT: transaction %llu not found O_o\n",
-				CLIENT_ID(clientdata), CLIENT_XID(clientdata)
+				CLIENT_ID(client), CLIENT_XID(client)
 			);
 		}
 	}
 
-	free_client_data(clientdata);
+	free_client_userdata(CLIENT_USERDATA(client));
+	client_set_userdata(client, NULL);
 }
 
 #ifdef DEBUG
-static void debug_cmd(void *clientdata, cmd_t *cmd) {
+static void debug_cmd(client_t client, int argc, xid_t *argv) {
 	char *cmdname;
-	switch (cmd->cmd) {
+	assert(argc > 0);
+	switch (argv[0]) {
 		case CMD_RESERVE : cmdname =  "RESERVE"; break;
 		case CMD_BEGIN   : cmdname =    "BEGIN"; break;
 		case CMD_FOR     : cmdname =      "FOR"; break;
@@ -135,10 +151,10 @@ static void debug_cmd(void *clientdata, cmd_t *cmd) {
 		case CMD_STATUS  : cmdname =   "STATUS"; break;
 		default          : cmdname =  "unknown";
 	}
-	debug("[%d] %s", CLIENT_ID(clientdata), cmdname);
+	debug("[%d] %s", CLIENT_ID(client), cmdname);
 	int i;
-	for (i = 0; i < cmd->argc; i++) {
-		debug(" %llu", cmd->argv[i]);
+	for (i = 1; i < argc; i++) {
+		debug(" %llu", argv[i]);
 	}
 	debug("\n");
 }
@@ -146,11 +162,12 @@ static void debug_cmd(void *clientdata, cmd_t *cmd) {
 #define debug_cmd(...)
 #endif
 
-#define CHECK(COND, CDATA, MSG) \
+#define CHECK(COND, CLIENT, MSG) \
 	do { \
 		if (!(COND)) { \
-			shout("[%d] %s, returning '-'\n", CLIENT_ID(CDATA), MSG); \
-			return strdup("-"); \
+			shout("[%d] %s, returning '-'\n", CLIENT_ID(CLIENT), MSG); \
+			client_message_shortcut(CLIENT, RES_FAILED); \
+			return; \
 		} \
 	} while (0)
 
@@ -184,27 +201,23 @@ static void gen_snapshot(Snapshot *s) {
 	}
 }
 
-static char *onreserve(void *stream, void *clientdata, cmd_t *cmd) {
-	CHECK(
-		cmd->argc == 2,
-		clientdata,
-		"RESERVE: wrong number of arguments"
-	);
+static void onreserve(client_t client, int argc, xid_t *argv) {
+	CHECK(argc == 3, client, "RESERVE: wrong number of arguments");
 
-	xid_t minxid = cmd->argv[0];
-	int minsize = cmd->argv[1];
+	xid_t minxid = argv[1];
+	int minsize = argv[2];
 	xid_t maxxid = minxid + minsize - 1;
 
 	debug(
 		"[%d] RESERVE: asked for range %llu-%llu\n",
-		CLIENT_ID(clientdata),
+		CLIENT_ID(client),
 		minxid, maxxid
 	);
 
 	if ((prev_gxid >= minxid) || (maxxid >= next_gxid)) {
 		debug(
 			"[%d] RESERVE: local range %llu-%llu is not between global range %llu-%llu\n",
-			CLIENT_ID(clientdata),
+			CLIENT_ID(client),
 			minxid, maxxid,
 			prev_gxid, next_gxid
 		);
@@ -215,14 +228,14 @@ static char *onreserve(void *stream, void *clientdata, cmd_t *cmd) {
 	}
 	debug(
 		"[%d] RESERVE: allocating range %llu-%llu\n",
-		CLIENT_ID(clientdata),
+		CLIENT_ID(client),
 		minxid, maxxid
 	);
 
-	char head[1+16+16+1];
-	sprintf(head, "+%016llx%016llx", minxid, maxxid);
-
-	return strdup(head);
+	client_message_start(client);
+	client_message_append(client, sizeof(minxid), &minxid);
+	client_message_append(client, sizeof(maxxid), &maxxid);
+	client_message_finish(client);
 }
 
 static xid_t get_global_xmin() {
@@ -243,22 +256,22 @@ static xid_t get_global_xmin() {
 	return xmin;
 }
 
-static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
+static void onbegin(client_t client, int argc, xid_t *argv) {
 	CHECK(
 		transactions_count < MAX_TRANSACTIONS,
-		clientdata,
+		client,
 		"BEGIN: transaction limit hit"
 	);
 
 	CHECK(
-		cmd->argc == 0,
-		clientdata,
+		argc == 0,
+		client,
 		"BEGIN: wrong number of arguments"
 	);
 
 	CHECK(
-		CLIENT_XID(clientdata) == INVALID_XID,
-		clientdata,
+		CLIENT_XID(client) == INVALID_XID,
+		client,
 		"BEGIN: already participating in another transaction"
 	);
 
@@ -267,31 +280,39 @@ static char *onbegin(void *stream, void *clientdata, cmd_t *cmd) {
 
 	prev_gxid = t->xid = next_gxid++;
 	t->snapshots_count = 0;
-    t->size = 1;
+	t->size = 1;
 
-	CLIENT_SNAPSENT(clientdata) = 0;
-	CLIENT_XID(clientdata) = t->xid;
+	CLIENT_SNAPSENT(client) = 0;
+	CLIENT_XID(client) = t->xid;
 
 	if (!clog_write(clg, t->xid, DOUBT)) {
 		shout(
 			"[%d] BEGIN: transaction %llu failed"
 			" to initialize clog bits O_o\n",
-			CLIENT_ID(clientdata), t->xid
+			CLIENT_ID(client), t->xid
 		);
-		return strdup("-");
+		client_message_shortcut(client, RES_FAILED);
+		return;
 	}
 
-	char head[1+16+16+1];
-	sprintf(head, "+%016llx%016llx", t->xid, get_global_xmin());
+	xid_t gxmin = get_global_xmin();
 
 	transactions_count++;
 
 	gen_snapshot(transaction_next_snapshot(t));
 	// will wrap around if exceeded max snapshots
 	Snapshot *snap = transaction_latest_snapshot(t);
-	char *snapser = snapshot_serialize(snap);
+	// FIXME: increase 'times_sent' here? see also 4765234987
 
-	return destructive_concat(strdup(head), snapser);
+	xid_t ok = RES_OK;
+	client_message_start(client); {
+		client_message_append(client, sizeof(xid_t), &ok);
+		client_message_append(client, sizeof(xid_t), &t->xid);
+		client_message_append(client, sizeof(xid_t), &gxmin);
+		client_message_append(client, sizeof(xid_t), &snap->xmin);
+		client_message_append(client, sizeof(xid_t), &snap->xmax);
+		client_message_append(client, sizeof(xid_t) * snap->nactive, snap->active);
+	} client_message_finish(client);
 }
 
 static Transaction *find_transaction(xid_t xid) {
@@ -306,37 +327,37 @@ static Transaction *find_transaction(xid_t xid) {
 	return NULL;
 }
 
-static bool queue_for_transaction_finish(void *stream, void *clientdata, xid_t xid, char cmd) {
+static bool queue_for_transaction_finish(client_t client, xid_t xid, char cmd) {
 	assert((cmd >= 'a') && (cmd <= 'z'));
 
 	Transaction *t = find_transaction(xid);
 	if (t == NULL) {
 		shout(
 			"[%d] QUEUE: xid %llu not found\n",
-			CLIENT_ID(clientdata), xid
+			CLIENT_ID(client), xid
 		);
-		return strdup("-");
+		client_message_shortcut(client, RES_FAILED);
+		return false;
 	}
 
 	// TODO: Implement deadlock detection here. We have
-	// CLIENT_XID(clientdata) and 'xid', i.e. we are able to tell which
+	// CLIENT_XID(client) and 'xid', i.e. we are able to tell which
 	// transaction waits which transaction.
 
-	transaction_push_listener(t, cmd, stream);
+	transaction_push_listener(t, cmd, client);
 	return true;
 }
 
-static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
+static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 	assert((vote == POSITIVE) || (vote == NEGATIVE));
 
 	// Check the arguments
-	xid_t xid = cmd->argv[0];
-	bool wait = cmd->argv[1];
+	xid_t xid = argv[1];
+	bool wait = argv[2];
 
 	CHECK(
-//		CLIENT_XID(clientdata) == INVALID_XID ||
-		CLIENT_XID(clientdata) == xid,
-		clientdata,
+		CLIENT_XID(client) == xid,
+		client,
 		"VOTE: voting for a transaction not participated in"
 	);
 
@@ -344,9 +365,10 @@ static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 	if (t == NULL) {
 		shout(
 			"[%d] VOTE: xid %llu not found\n",
-			CLIENT_ID(clientdata), xid
+			CLIENT_ID(client), xid
 		);
-		return strdup("-");
+		client_message_shortcut(client, RES_FAILED);
+		return;
 	}
 
 	if (vote == POSITIVE) {
@@ -358,13 +380,13 @@ static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 	}
 	assert(t->votes_for + t->votes_against <= t->size);
 
-	CLIENT_XID(clientdata) = INVALID_XID; // not participating any more
+	CLIENT_XID(client) = INVALID_XID; // not participating any more
 
 	switch (transaction_status(t)) {
 		case NEGATIVE:
 			CHECK(
 				clog_write(clg, t->xid, NEGATIVE),
-				clientdata,
+				client,
 				"VOTE: transaction failed to abort O_o"
 			);
 
@@ -372,22 +394,24 @@ static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 
 			*t = transactions[transactions_count - 1];
 			transactions_count--;
-			return strdup("+a");
+			client_message_shortcut(client, RES_TRANSACTION_ABORTED);
+			return;
 		case DOUBT:
 			if (wait) {
 				CHECK(
-					queue_for_transaction_finish(stream, clientdata, xid, 's'),
-					clientdata,
+					queue_for_transaction_finish(client, xid, 's'),
+					client,
 					"VOTE: couldn't queue for transaction finish"
 				);
-				return NULL;
+				return;
 			} else {
-				return strdup("+?");
+				client_message_shortcut(client, RES_TRANSACTION_INPROGRESS);
+				return;
 			}
 		case POSITIVE:
 			CHECK(
 				clog_write(clg, t->xid, POSITIVE),
-				clientdata,
+				client,
 				"VOTE: transaction failed to commit"
 			);
 
@@ -395,169 +419,157 @@ static char *onvote(void *stream, void *clientdata, cmd_t *cmd, int vote) {
 
 			*t = transactions[transactions_count - 1];
 			transactions_count--;
-			return strdup("+c");
+			client_message_shortcut(client, RES_TRANSACTION_COMMITTED);
+			return;
 	}
 
 	assert(false); // a case missed in the switch?
-	return strdup("-");
+	client_message_shortcut(client, RES_FAILED);
 }
 
-static char *onsnapshot(void *stream, void *clientdata, cmd_t *cmd) {
+static void onsnapshot(client_t client, int argc, xid_t *argv) {
 	CHECK(
-		cmd->argc == 1,
-		clientdata,
+		argc == 2,
+		client,
 		"SNAPSHOT: wrong number of arguments"
 	);
 
-	xid_t xid = cmd->argv[0];
+	xid_t xid = argv[1];
 
 	Transaction *t = find_transaction(xid);
 	if (t == NULL) {
 		shout(
 			"[%d] SNAPSHOT: xid %llu not found\n",
-			CLIENT_ID(clientdata), xid
+			CLIENT_ID(client), xid
 		);
-		return strdup("-");
+		client_message_shortcut(client, RES_FAILED);
+		return;
 	}
 
-	if (CLIENT_XID(clientdata) == INVALID_XID) {
-		CLIENT_SNAPSENT(clientdata) = 0;
-		CLIENT_XID(clientdata) = t->xid;
-        t->size += 1;
+	if (CLIENT_XID(client) == INVALID_XID) {
+		CLIENT_SNAPSENT(client) = 0;
+		CLIENT_XID(client) = t->xid;
+		t->size += 1;
 	}
 
 	CHECK(
-		CLIENT_XID(clientdata) == t->xid,
-		clientdata,
+		CLIENT_XID(client) == t->xid,
+		client,
 		"SNAPSHOT: getting snapshot for a transaction not participated in"
 	);
 
-	assert(CLIENT_SNAPSENT(clientdata) <= t->snapshots_count); // who sent an inexistent snapshot?!
+	assert(CLIENT_SNAPSENT(client) <= t->snapshots_count); // who sent an inexistent snapshot?!
 
-	if (CLIENT_SNAPSENT(clientdata) == t->snapshots_count) {
+	if (CLIENT_SNAPSENT(client) == t->snapshots_count) {
 		// a fresh snapshot is needed
 		gen_snapshot(transaction_next_snapshot(t));
 	}
 
-	char head[1+16+1];
-	sprintf(head, "+%016llx", get_global_xmin());
+	xid_t gxmin = get_global_xmin();
 
-	Snapshot *snap = transaction_snapshot(t, CLIENT_SNAPSENT(clientdata)++);
-	snap->times_sent += 1;
-	char *snapser = snapshot_serialize(snap);
+	Snapshot *snap = transaction_snapshot(t, CLIENT_SNAPSENT(client)++);
+	snap->times_sent += 1; // FIXME: does times_sent get used anywhere? see also 4765234987
 
-	// FIXME: Remote this assert if you do not have a barrier upon getting
-	// snapshot in backends. The assert should indicate that situation :)
-	// assert(CLIENT_SNAPSENT(clientdata) == t->snapshots_count);
-
-	return destructive_concat(strdup(head), snapser);
+	xid_t ok = RES_OK;
+	client_message_start(client); {
+		client_message_append(client, sizeof(xid_t), &ok);
+		client_message_append(client, sizeof(xid_t), &gxmin);
+		client_message_append(client, sizeof(xid_t), &snap->xmin);
+		client_message_append(client, sizeof(xid_t), &snap->xmax);
+		client_message_append(client, sizeof(xid_t) * snap->nactive, snap->active);
+	} client_message_finish(client);
 }
 
-static char *onstatus(void *stream, void *clientdata, cmd_t *cmd) {
-	if (cmd->argc != 2) {
+static void onstatus(client_t client, int argc, xid_t *argv) {
+	if (argc != 3) {
 		shout(
 			"[%d] STATUS: wrong number of arguments %d, expected %d\n",
-			CLIENT_ID(clientdata), cmd->argc, 3
+			CLIENT_ID(client), argc, 3
 		);
-		return strdup("-");
+		client_message_shortcut(client, RES_FAILED);
+		return;
 	}
-	xid_t xid = cmd->argv[0];
-	bool wait = cmd->argv[1];
+	xid_t xid = argv[1];
+	bool wait = argv[2];
 
 	int status = clog_read(clg, xid);
 	switch (status) {
 		case BLANK:
-			return strdup("+0");
+			client_message_shortcut(client, RES_TRANSACTION_UNKNOWN);
+			return;
 		case POSITIVE:
-			return strdup("+c");
+			client_message_shortcut(client, RES_TRANSACTION_COMMITTED);
+			return;
 		case NEGATIVE:
-			return strdup("+a");
+			client_message_shortcut(client, RES_TRANSACTION_ABORTED);
+			return;
 		case DOUBT:
 			if (wait) {
-				if (!queue_for_transaction_finish(stream, clientdata, xid, 's')) {
+				if (!queue_for_transaction_finish(client, xid, 's')) {
 					shout(
 						"[%d] STATUS: couldn't queue for transaction finish\n",
-						CLIENT_ID(clientdata)
+						CLIENT_ID(client)
 					);
-					return strdup("-");
+					client_message_shortcut(client, RES_FAILED);
+					return;
 				}
-				return NULL;
+				return;
 			} else {
-				return strdup("+?");
+				client_message_shortcut(client, RES_TRANSACTION_INPROGRESS);
+				return;
 			}
 		default:
 			assert(false); // should not happen
-			return strdup("-");
+			client_message_shortcut(client, RES_FAILED);
+			return;
 	}
 }
 
-static char *onnoise(void *stream, void *clientdata, cmd_t *cmd) {
+static void onnoise(client_t client, int argc, xid_t *argv) {
 	shout(
-		"[%d] NOISE: unknown command '%c'\n",
-		CLIENT_ID(clientdata),
-		cmd->cmd
+		"[%d] NOISE: unknown command '%c' (%lld)\n",
+		CLIENT_ID(client),
+		(char)argv[0], argv[0]
 	);
-	return strdup("-");
+	client_message_shortcut(client, RES_FAILED);
 }
 
-// static float now_s() {
-// 	// current time in seconds
-// 	struct timespec t;
-// 	if (clock_gettime(CLOCK_MONOTONIC, &t) == 0) {
-// 		return t.tv_sec + t.tv_nsec * 1e-9;
-// 	} else {
-// 		printf("Error while clock_gettime()\n");
-// 		exit(0);
-// 	}
-// }
+static void oncmd(client_t client, int argc, xid_t *argv) {
+	debug_cmd(client, argc, argv);
 
-static char *oncmd(void *stream, void *clientdata, cmd_t *cmd) {
-	debug_cmd(clientdata, cmd);
-
-	char *result = NULL;
-	switch (cmd->cmd) {
+	assert(argc > 0);
+	switch (argv[0]) {
 		case CMD_RESERVE:
-			result = onreserve(stream, clientdata, cmd);
+			onreserve(client, argc, argv);
 			break;
 		case CMD_BEGIN:
-			result = onbegin(stream, clientdata, cmd);
+			onbegin(client, argc, argv);
 			break;
 		case CMD_FOR:
-			result = onvote(stream, clientdata, cmd, POSITIVE);
+			onvote(client, argc, argv, POSITIVE);
 			break;
 		case CMD_AGAINST:
-			result = onvote(stream, clientdata, cmd, NEGATIVE);
+			onvote(client, argc, argv, NEGATIVE);
 			break;
 		case CMD_SNAPSHOT:
-			result = onsnapshot(stream, clientdata, cmd);
+			onsnapshot(client, argc, argv);
 			break;
 		case CMD_STATUS:
-			result = onstatus(stream, clientdata, cmd);
+			onstatus(client, argc, argv);
 			break;
 		default:
-			return onnoise(stream, clientdata, cmd);
+			onnoise(client, argc, argv);
 	}
-	return result;
 }
 
-static char *ondata(void *stream, void *clientdata, size_t len, char *data) {
-	int i;
-	char *response = NULL;
+static void onmessage(client_t client, size_t len, char *data) {
+	assert(len % sizeof(xid_t) == 0);
 
-	for (i = 0; i < len; i++) {
-		if (data[i] == '\n') {
-			// ignore newlines (TODO: should we ignore them?)
-			continue;
-		}
+	int argc = len / sizeof(xid_t);
+	xid_t *argv = (xid_t*)data;
+	CHECK(argc > 0, client, "EMPTY: empty command?");
 
-		if (cmd) {
-			char *newresponse = oncmd(stream, clientdata, cmd);
-			response = destructive_concat(response, newresponse);
-			free(cmd);
-		}
-	}
-
-	return response;
+	oncmd(client, argc, argv);
 }
 
 static void usage(char *prog) {
@@ -689,8 +701,14 @@ int main(int argc, char **argv) {
 	}
 
 	if (logfilename) {
-		freopen(logfilename, "a", stdout);
-		freopen(logfilename, "a", stderr);
+		if (!freopen(logfilename, "a", stdout)) {
+			// nowhere to report this failure
+			return EXIT_FAILURE;
+		}
+		if (!freopen(logfilename, "a", stderr)) {
+			// nowhere to report this failure
+			return EXIT_FAILURE;
+		}
 	}
 
 	clg = clog_open(datadir);
@@ -716,12 +734,16 @@ int main(int argc, char **argv) {
 	next_gxid = MIN_XID;
 	transactions_count = 0;
 
-	int retcode = eventwrap(
+	server_t server = server_init(
 		listenhost, listenport,
-		ondata, onconnect, ondisconnect
+		onmessage, onconnect, ondisconnect
 	);
+	if (!server_start(server)) {
+		return EXIT_FAILURE;
+	}
+	server_loop(server);
 
 	clog_close(clg);
 
-	return retcode;
+	return EXIT_SUCCESS;
 }

@@ -1,6 +1,8 @@
 #ifndef SERVER_H
 #define SERVER_H
 
+#include <stdbool.h>
+
 /*
  * You should not want to know what is inside those structures.
  */
@@ -34,7 +36,7 @@ server_t server_init(
 	int port,
 	onmessage_callback_t onmessage,
 	onconnect_callback_t onconnect,
-	ondisconnect_callback_t ondisconnect,
+	ondisconnect_callback_t ondisconnect
 );
 
 /*
@@ -53,17 +55,17 @@ void server_loop(server_t server);
  * 'client'. The server does not care about this data and will not free it on
  * client disconnection.
  */
-void client_set_data(client_t client, void *userdata);
-void *client_get_data(client_t client);
+void client_set_userdata(client_t client, void *userdata);
+void *client_get_userdata(client_t client);
 
 /*
  * Puts an empty message header into the output buffer of the corresponding
  * socket. The message will not be sent until you call the _finish() method.
  * A call to this function may lead to a send() call if there is not enough
  * space in the buffer.
- * 
+ *
  * Returns 'true' on success, 'false' otherwise.
- * 
+ *
  * NOTE: Be careful not to call the _message_ methods for other clients until
  * you _finish() this message. This limitation is due to the fact that multiple
  * clients share the same socket.
@@ -74,7 +76,7 @@ bool client_message_start(client_t client);
  * Appends 'len' bytes of 'data' to the buffer of the corresponding socket.
  * A call to this function may lead to a send() call if there is not enough
  * space in the buffer.
- * 
+ *
  * Returns 'true' on success, 'false' otherwise.
  */
 bool client_message_append(client_t client, size_t len, void *data);
@@ -82,9 +84,17 @@ bool client_message_append(client_t client, size_t len, void *data);
 /*
  * Finalizes the message. After finalizing the message becomes ready to be sent
  * over the corresponding socket, and you may _start() another message.
- * 
+ *
  * Returns 'true' on success, 'false' otherwise.
  */
 bool client_message_finish(client_t client);
+
+/*
+ * A shortcut to perform all three steps in one, if you only have one number in
+ * the message.
+ *
+ * Returns 'true' on success, 'false' otherwise.
+ */
+bool client_message_shortcut(client_t client, long long arg);
 
 #endif

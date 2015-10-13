@@ -26,6 +26,14 @@ typedef struct buffer_t {
 	char *data; // dynamically allocated buffer
 } buffer_t;
 
+typedef struct stream_data_t *stream_t;
+
+typedef struct client_data_t {
+	stream_t stream; // NULL: client value is empty
+	void *userdata;
+	unsigned int chan;
+} client_data_t;
+
 typedef struct stream_data_t {
 	int fd;
 	bool good; // 'false': stop serving this stream and disconnect when possible
@@ -36,12 +44,6 @@ typedef struct stream_data_t {
 	// 'chan' is expected to be < MAX_FDS which is pretty low
 	client_data_t *clients; // dynamically allocated
 } stream_data_t;
-
-typedef struct client_data_t {
-	stream_t stream; // NULL: client value is empty
-	void *userdata;
-	unsigned int chan;
-}
 
 typedef struct server_data_t {
 	char *host;
@@ -54,9 +56,9 @@ typedef struct server_data_t {
 	int streamsnum;
 	stream_data_t streams[MAX_STREAMS];
 
-	on_message_callback_t onmessage;
-	on_connect_callback_t onconnect;
-	on_disconnect_callback_t ondisconnect;
+	onmessage_callback_t onmessage;
+	onconnect_callback_t onconnect;
+	ondisconnect_callback_t ondisconnect;
 } server_data_t;
 
 // Returns the created socket, or -1 if failed.
@@ -95,11 +97,12 @@ static int create_listening_socket(const char *host, int port) {
 server_t server_init(
 	char *host,
 	int port,
-	on_message_callback_t onmessage,
-	on_connect_callback_t onconnect,
-	on_disconnect_callback_t ondisconnect,
+	onmessage_callback_t onmessage,
+	onconnect_callback_t onconnect,
+	ondisconnect_callback_t ondisconnect
 ) {
-	server_t server = malloc(sizeof(server_t));
+	server_t server = malloc(sizeof(server_data_t));
+	assert(server);
 	server->host = host;
 	server->port = port;
 	server->onmessage = onmessage;
@@ -123,15 +126,6 @@ bool server_start(server_t server) {
 	server->maxfd = server->listener;
 
 	return true;
-}
-
-static void dumphex(int len, char *data) {
-	printf("hex:");
-	int i;
-	for (i = 0; i < len; i++) {
-		printf(" %02x", data[i]);
-	}
-	printf("\n");
 }
 
 static bool stream_flush(stream_t stream) {
@@ -178,24 +172,26 @@ static void server_flush(server_t server) {
 static void stream_init(stream_t stream, int fd) {
 	int i;
 	stream->input.data = malloc(BUFFER_SIZE);
+	assert(stream->input.data);
 	stream->input.ready = 0;
 	stream->output.data = malloc(BUFFER_SIZE);
+	assert(stream->output.data);
 	stream->output.ready = 0;
 	stream->fd = fd;
 	stream->good = true;
 
 	stream->clients = malloc(MAX_TRANSACTIONS * sizeof(client_data_t));
+	assert(stream->clients);
 	// mark all clients as empty
 	for (i = 0; i < MAX_TRANSACTIONS; i++) {
 		stream->clients[i].stream = NULL;
 	}
-
 }
 
 static void server_stream_destroy(server_t server, stream_t stream) {
 	int c;
 	for (c = 0; c < MAX_TRANSACTIONS; c++) {
-		client_t client = stream->clients + i;
+		client_t client = stream->clients + c;
 		if (client->stream) {
 			server->ondisconnect(client);
 			if (client->userdata) {
@@ -239,7 +235,7 @@ static bool stream_message_start(stream_t stream, unsigned int chan) {
 	}
 
 	if (BUFFER_SIZE - stream->output.ready < sizeof(ShubMessageHdr)) {
-		if (!stream_flush(s)) {
+		if (!stream_flush(stream)) {
 			shout("failed to flush before starting new message\n");
 			stream->good = false;
 			return false;
@@ -254,7 +250,7 @@ static bool stream_message_start(stream_t stream, unsigned int chan) {
 	return true;
 }
 
-static bool stream_message_append(void *stream, size_t len, void *data) {
+static bool stream_message_append(stream_t stream, size_t len, void *data) {
 	ShubMessageHdr *msg;
 
 	debug("appending %d\n", *(int*)data);
@@ -274,7 +270,7 @@ static bool stream_message_append(void *stream, size_t len, void *data) {
 	}
 
 	if (stream->output.ready + newsize > BUFFER_SIZE) {
-		if (!stream_flush(s)) {
+		if (!stream_flush(stream)) {
 			shout("failed to flush before extending the message\n");
 			stream->good = false;
 			return false;
@@ -288,7 +284,7 @@ static bool stream_message_append(void *stream, size_t len, void *data) {
 	return true;
 }
 
-static bool stream_message_finish(void *stream) {
+static bool stream_message_finish(stream_t stream) {
 	if (stream->output.curmessage == NULL) {
 		shout("cannot finish, the message was not started\n");
 		stream->good = false;
@@ -312,6 +308,19 @@ bool client_message_append(client_t client, size_t len, void *data) {
 
 bool client_message_finish(client_t client) {
 	return stream_message_finish(client->stream);
+}
+
+bool client_message_shortcut(client_t client, long long arg) {
+	if (!stream_message_start(client->stream, client->chan)) {
+		return false;
+	}
+	if (!stream_message_append(client->stream, sizeof(arg), &arg)) {
+		return false;
+	}
+	if (!stream_message_finish(client->stream)) {
+		return false;
+	}
+	return true;
 }
 
 static bool server_accept(server_t server) {
@@ -344,7 +353,7 @@ static bool server_accept(server_t server) {
 
 static client_t stream_get_client(stream_t stream, unsigned int chan, bool *isnew) {
 	assert(chan < MAX_TRANSACTIONS);
-	client_t client = stream->clients[stream];
+	client_t client = stream->clients + chan;
 	if (client->stream == NULL) {
 		// client is new
 		client->stream = stream;
@@ -353,7 +362,7 @@ static client_t stream_get_client(stream_t stream, unsigned int chan, bool *isne
 		client->userdata = NULL;
 	} else {
 		// collisions should not happen
-		assert(client->chan == msg->chan);
+		assert(client->chan == chan);
 		*isnew = false;
 	}
 	return client;
@@ -389,11 +398,22 @@ static bool server_stream_handle(server_t server, stream_t stream) {
 		if (header_and_data <= toprocess) {
 			// handle message
 			bool isnew;
-			client_t client = server_get_client(server, stream, msg->chan, &isnew);
+			client_t client = stream_get_client(stream, msg->chan, &isnew);
 			if (isnew) {
 				server->onconnect(client);
 			}
-			server->onmessage(client, msg->size, (char*)msg + sizeof(ShubMessageHdr));
+			if (msg->code == MSG_DISCONNECT) {
+				server->ondisconnect(client);
+				if (client->userdata) {
+					shout(
+						"client still has userdata after 'ondisconnect' call,\n"
+						"please set it to NULL in 'ondisconnect' callback\n"
+					);
+				}
+				client->stream = NULL;
+			} else {
+				server->onmessage(client, msg->size, (char*)msg + sizeof(ShubMessageHdr));
+			}
 			cursor += header_and_data;
 			toprocess -= header_and_data;
 		} else {
@@ -439,6 +459,7 @@ void server_loop(server_t server) {
 			if (FD_ISSET(stream->fd, &readfds)) {
 				server_stream_handle(server, stream);
 			}
+			numready--;
 		}
 
 		server_flush(server);
@@ -446,28 +467,48 @@ void server_loop(server_t server) {
 	}
 }
 
+void client_set_userdata(client_t client, void *userdata) {
+	client->userdata = userdata;
+}
+
+void *client_get_userdata(client_t client) {
+	return client->userdata;
+}
+
 #if 0
 // usage example
 
-void test_onmsg(client_t client, size_t len, char *data) {
-	client_message_start(client, 0, chan);
+void test_onconnect(client_t client) {
+	char *name = "hello";
+	client_set_userdata(client, name);
+	printf("===== a new client\n");
+}
+
+void test_ondisconnect(client_t client) {
+	printf("===== '%s' disconnected\n", (char*)client_get_userdata(client));
+	client_set_userdata(client, NULL);
+}
+
+void test_onmessage(client_t client, size_t len, char *data) {
+	printf("===== a message from '%s'\n", (char*)client_get_userdata(client));
+	client_message_start(client);
 	while (len >= sizeof(int)) {
 		int x = *(int*)data;
 		data += sizeof(int);
 		len -= sizeof(int);
 
 		x++;
-		stream_message_append(stream, sizeof(int), &x);
+		client_message_append(client, sizeof(int), &x);
 	}
-	stream_message_finish(stream);
+	client_message_finish(client);
 }
 
 int main(int argc, char **argv) {
-	server_t srv = server_init("0.0.0.0", 5431, test_onmsg, NULL, NULL);
-	if (!server_start(&srv)) {
+	server_t srv = server_init("0.0.0.0", 5431, test_onmessage, test_onconnect, test_ondisconnect);
+	if (!server_start(srv)) {
 		return EXIT_FAILURE;
 	}
-	server_loop(&srv);
+	server_loop(srv);
 	return EXIT_SUCCESS;
 }
 #endif
