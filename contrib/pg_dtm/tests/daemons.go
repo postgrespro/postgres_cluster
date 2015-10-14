@@ -91,6 +91,7 @@ func postgres(bin string, datadir string, port int, nodeid int, wg *sync.WaitGro
 		bin,
 		"-D", datadir,
 		"-p", strconv.Itoa(port),
+		"-c", "dtm.buffer_size=65536",
 		"-c", "dtm.host=127.0.0.1",
 		"-c", "dtm.port=" + strconv.Itoa(5431),
 		"-c", "autovacuum=off",

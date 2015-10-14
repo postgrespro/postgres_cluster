@@ -39,8 +39,9 @@ static DTMConn DtmConnect(char *host, int port)
 	DTMConn dtm;
 	int sd;
 
-	if (strcmp(host, "localhost") == 0)
+	if (host == NULL)
 	{
+		// use a UNIX socket
 		struct sockaddr sock;
 		int len = offsetof(struct sockaddr, sa_data) + snprintf(sock.sa_data, sizeof(sock.sa_data), "%s/p%u", dtm_unix_sock_dir, port);
 		sock.sa_family = AF_UNIX;
@@ -62,6 +63,7 @@ static DTMConn DtmConnect(char *host, int port)
 	}
 	else
 	{
+		// use an IP socket
 		struct addrinfo *addrs = NULL;
 		struct addrinfo hint;
 		char portstr[6];
@@ -207,7 +209,9 @@ void DtmGlobalConfig(char *host, int port, char* sock_dir) {
 		free(dtmhost);
 		dtmhost = NULL;
 	}
-	dtmhost = strdup(host);
+	if (host) {
+		dtmhost = strdup(host);
+	}
 	dtmport = port;
 	dtm_unix_sock_dir = sock_dir;
 }
@@ -217,14 +221,14 @@ static DTMConn GetConnection()
 	static DTMConn dtm = NULL;
 	if (dtm == NULL)
 	{
-		if (dtmhost) {
-			dtm = DtmConnect(dtmhost, dtmport);
-			if (dtm == NULL)
-			{
-				elog(ERROR, "Failed to connect to DTMD %s:%d", dtmhost, dtmport);
+		dtm = DtmConnect(dtmhost, dtmport);
+		if (dtm == NULL)
+		{
+			if (dtmhost) {
+				elog(ERROR, "Failed to connect to DTMD at tcp %s:%d", dtmhost, dtmport);
+			} else {
+				elog(ERROR, "Failed to connect to DTMD at unix %d", dtmport);
 			}
-		} else {
-			/* elog(ERROR, "DTMD address not specified"); */
 		}
 	}
 	return dtm;
