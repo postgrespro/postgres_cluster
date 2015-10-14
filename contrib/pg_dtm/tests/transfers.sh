@@ -5,6 +5,6 @@ go run transfers.go \
 	-d 'dbname=postgres port=5433' \
 	-v \
 	-m \
-	-u 1000 \
+	-u 10000 \
 	-w 10 \
 	-g
