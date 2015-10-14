@@ -131,6 +131,10 @@ static int dtm_recv_results(DTMConn dtm, int maxlen, xid_t *results) {
 			elog(ERROR, "Failed to recv results header from arbiter");
 			return 0;
 		}
+		if (newbytes == 0) {
+			elog(ERROR, "Arbiter closed connection during recv");
+			return 0;
+		}
 		recved += newbytes;
 	}
 
@@ -147,6 +151,10 @@ static int dtm_recv_results(DTMConn dtm, int maxlen, xid_t *results) {
 			elog(ERROR, "Failed to recv results body from arbiter");
 			return 0;
 		}
+		if (newbytes == 0) {
+			elog(ERROR, "Arbiter closed connection during recv");
+			return 0;
+		}
 		recved += newbytes;
 	}
 	return needed / sizeof(xid_t);
@@ -156,6 +164,7 @@ static bool dtm_send_command(DTMConn dtm, xid_t cmd, int argc, ...)
 {
 	va_list argv;
 	int i;
+	int sent;
 	char buf[COMMAND_BUFFER_SIZE];
 	int datasize;
 	char *cursor = buf;
@@ -181,7 +190,16 @@ static bool dtm_send_command(DTMConn dtm, xid_t cmd, int argc, ...)
 	assert(msg->size + sizeof(ShubMessageHdr) == datasize);
 	assert(datasize <= COMMAND_BUFFER_SIZE);
 
-	return write(dtm->sock, buf, datasize) == datasize;
+	sent = 0;
+	while (sent < datasize) {
+		int newbytes = write(dtm->sock, buf + sent, datasize - sent);
+		if (newbytes == -1) {
+			elog(ERROR, "Failed to send a command to arbiter");
+			return false;
+		}
+		sent += newbytes;
+	}
+	return true;
 }
 
 void DtmGlobalConfig(char *host, int port, char* sock_dir) {
@@ -395,7 +413,7 @@ XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait)
 		case RES_TRANSACTION_INPROGRESS:
 			return TRANSACTION_STATUS_IN_PROGRESS;
 		case RES_TRANSACTION_UNKNOWN:
-			return TRANSACTION_STATUS_IN_PROGRESS;
+			return TRANSACTION_STATUS_UNKNOWN;
 		default:
 			goto failure;
 	}

@@ -214,6 +214,16 @@ static void server_stream_destroy(server_t server, stream_t stream) {
 	free(stream->output.data);
 }
 
+static void stream_move(stream_t dst, stream_t src) {
+	int i;
+	*dst = *src;
+	for (i = 0; i < MAX_TRANSACTIONS; i++) {
+		if (dst->clients[i].stream) {
+			dst->clients[i].stream = dst;
+		}
+	}
+}
+
 static void server_close_bad_streams(server_t server) {
 	int i;
 	for (i = server->streamsnum - 1; i >= 0; i--) {
@@ -223,6 +233,7 @@ static void server_close_bad_streams(server_t server) {
 			if (i != server->streamsnum - 1) {
 				// move the last one here
 				*stream = server->streams[server->streamsnum - 1];
+				stream_move(stream, server->streams + server->streamsnum - 1);
 			}
 			server->streamsnum--;
 		}
@@ -372,6 +383,15 @@ static client_t stream_get_client(stream_t stream, unsigned int chan, bool *isne
 	return client;
 }
 
+static void hexdump(int len, char *data) {
+	fprintf(stderr, "hex:");
+	int i;
+	for (i = 0; i < len; i++) {
+		fprintf(stderr, " %02x", data[i]);
+	}
+	fprintf(stderr, "\n");
+}
+
 static bool server_stream_handle(server_t server, stream_t stream) {
 	debug("a stream ready to recv\n");
 
@@ -466,8 +486,8 @@ void server_loop(server_t server) {
 			}
 		}
 
-		server_flush(server);
 		server_close_bad_streams(server);
+		server_flush(server);
 	}
 }
 

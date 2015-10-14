@@ -165,7 +165,7 @@ static void debug_cmd(client_t client, int argc, xid_t *argv) {
 #define CHECK(COND, CLIENT, MSG) \
 	do { \
 		if (!(COND)) { \
-			shout("[%d] %s, returning '-'\n", CLIENT_ID(CLIENT), MSG); \
+			shout("[%d] %s, returning RES_FAILED\n", CLIENT_ID(CLIENT), MSG); \
 			client_message_shortcut(CLIENT, RES_FAILED); \
 			return; \
 		} \
