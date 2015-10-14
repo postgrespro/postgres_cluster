@@ -6,37 +6,31 @@
 
 #define unless(x) if (!(x))
 
-#define NODES 1
-
-
 int main(int argc, char **argv) {
-	GlobalTransactionId gtid;
-	TransactionId base = 42;
-	int transactions = 10000;
+	DtmGlobalConfig("localhost", 5002, "/tmp");
+
 	int i;
-	gtid.nNodes = NODES;
-	gtid.xids = malloc(sizeof(TransactionId) * gtid.nNodes);
-	gtid.nodes = malloc(sizeof(NodeId) * gtid.nNodes);
-
-	DTMConn conn = DtmConnect("localhost", 5431);
-	if (!conn) {
-		exit(1);
-	}
-
 	for (i = 0; i < transactions; i++) {
-
-		int n;
-		for (n = 0; n < gtid.nNodes; n++) {
-			gtid.xids[n] = base + n;
-			gtid.nodes[n] = n;
-		}
-
-		if (!DtmGlobalStartTransaction(conn, &gtid)) {
+		TransactionId xid, gxmin;
+		Snapshot snapshot;
+		xid = DtmGlobalStartTransaction(snapshot, &gxmin);
+		if (xid == INVALID_XID) {
 			fprintf(stdout, "global transaction not started\n");
 			exit(EXIT_FAILURE);
 		}
 
-		if (!DtmGlobalSetTransStatus(conn, 0, base + 0, TRANSACTION_STATUS_COMMITTED)) {
+		DtmGlobalGetSnapshot(xid, snapshot, &gxmin);
+
+		bool wait = true;
+
+		XidStatus s = DtmGlobalSetTransStatus(xid, TRANSACTION_STATUS_COMMITTED, wait);
+		if (s != TRANSACTION_STATUS_COMMITTED) {
+			fprintf(stdout, "global transaction not committed\n");
+			exit(EXIT_FAILURE);
+		}
+
+		s = DtmGlobalGetTransStatus(xid, wait);
+		if (s != TRANSACTION_STATUS_COMMITTED) {
 			fprintf(stdout, "global transaction not committed\n");
 			exit(EXIT_FAILURE);
 		}
@@ -48,7 +42,5 @@ int main(int argc, char **argv) {
 		base++;
 	}
 
-
-	DtmDisconnect(conn);
 	return EXIT_SUCCESS;
 }
