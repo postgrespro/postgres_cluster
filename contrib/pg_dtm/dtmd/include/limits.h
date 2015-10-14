@@ -1,7 +1,6 @@
 #ifndef LIMITS_H
 #define LIMITS_H
 
-#define MAX_TRANSACTIONS_PER_CLIENT 1024
 #define MAX_TRANSACTIONS 1024
 
 #define BUFFER_SIZE (64 * 1024)

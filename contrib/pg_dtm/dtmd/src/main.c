@@ -18,8 +18,8 @@
 #define DEFAULT_LISTENHOST "0.0.0.0"
 #define DEFAULT_LISTENPORT 5431
 
-Transaction transactions[MAX_TRANSACTIONS];
-int transactions_count;
+L2List active_transactions = {&active_transactions, &active_transactions};
+L2List* free_transactions;
 
 // We reserve the local xids if they fit between (prev, next) range, and
 // reserve something in (next, x) range otherwise, moving 'next' after 'x'.
@@ -49,6 +49,14 @@ static client_userdata_t *create_client_userdata(int id) {
 static void free_client_userdata(client_userdata_t *cd) {
 	free(cd);
 }
+
+inline static void free_transaction(Transaction* t)
+{
+    l2_list_unlink(&t->elem);
+    t->elem.next = free_transactions;
+    free_transactions = &t->elem;
+}
+
 
 static int next_client_id = 0;
 static void onconnect(client_t client) {
@@ -103,18 +111,15 @@ static void ondisconnect(client_t client) {
 	debug("[%d] disconnected\n", CLIENT_ID(client));
 
 	if (CLIENT_XID(client) != INVALID_XID) {
-		int i;
+        Transaction* t;
 
 		// need to abort the transaction this client is participating in
-		for (i = transactions_count - 1; i >= 0; i--) {
-			Transaction *t = transactions + i;
-
+        for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) 
+        { 
 			if (t->xid == CLIENT_XID(client)) {
 				if (clog_write(clg, t->xid, NEGATIVE)) {
 					notify_listeners(t, NEGATIVE);
-
-					*t = transactions[transactions_count - 1];
-					transactions_count--;
+                    free_transaction(t);
 				} else {
 					shout(
 						"[%d] DISCONNECT: transaction %u"
@@ -126,7 +131,7 @@ static void ondisconnect(client_t client) {
 			}
 		}
 
-		if (i < 0) {
+		if (t == (Transaction*)&active_transactions) {
 			shout(
 				"[%d] DISCONNECT: transaction %u not found O_o\n",
 				CLIENT_ID(client), CLIENT_XID(client)
@@ -176,13 +181,13 @@ static xid_t max(xid_t a, xid_t b) {
 }
 
 static void gen_snapshot(Snapshot *s) {
+    Transaction* t;
 	s->times_sent = 0;
 	s->nactive = 0;
 	s->xmin = MAX_XID;
 	s->xmax = MIN_XID;
-	int i;
-	for (i = 0; i < transactions_count; i++) {
-		Transaction *t = transactions + i;
+    for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) 
+    {
 		if (t->xid < s->xmin) {
 			s->xmin = t->xid;
 		}
@@ -241,11 +246,10 @@ static void onreserve(client_t client, int argc, xid_t *argv) {
 }
 
 static xid_t get_global_xmin() {
-	int i, j;
+	int j;
 	xid_t xmin = next_gxid;
 	Transaction *t;
-	for (i = 0; i < transactions_count; i++) {
-		t = transactions + i;
+    for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
 		j = t->snapshots_count > MAX_SNAPSHOTS_PER_TRANS ? MAX_SNAPSHOTS_PER_TRANS : t->snapshots_count; 
 		while (--j >= 0) { 
 			Snapshot* s = transaction_snapshot(t, j);
@@ -259,12 +263,7 @@ static xid_t get_global_xmin() {
 }
 
 static void onbegin(client_t client, int argc, xid_t *argv) {
-	CHECK(
-		transactions_count < MAX_TRANSACTIONS,
-		client,
-		"BEGIN: transaction limit hit"
-	);
-
+	Transaction *t;
 	CHECK(
 		argc == 1,
 		client,
@@ -277,8 +276,14 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 		"BEGIN: already participating in another transaction"
 	);
 
-	Transaction *t = transactions + transactions_count;
-	transaction_clear(t);
+    t = (Transaction*)free_transactions;
+    if (t == NULL) { 
+        t = (Transaction*)malloc(sizeof(Transaction));
+    } else { 
+        free_transactions = t->elem.next;
+    }
+
+    transaction_clear(t);
 
 	prev_gxid = t->xid = next_gxid++;
 	t->snapshots_count = 0;
@@ -299,8 +304,6 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 
 	xid_t gxmin = get_global_xmin();
 
-	transactions_count++;
-
 	gen_snapshot(transaction_next_snapshot(t));
 	// will wrap around if exceeded max snapshots
 	Snapshot *snap = transaction_latest_snapshot(t);
@@ -318,10 +321,9 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 }
 
 static Transaction *find_transaction(xid_t xid) {
-	int i;
 	Transaction *t;
-	for (i = 0; i < transactions_count; i++) {
-		t = transactions + i;
+
+    for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next)  {
 		if (t->xid == xid) {
 			return t;
 		}
@@ -393,9 +395,7 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 			);
 
 			notify_listeners(t, NEGATIVE);
-
-			*t = transactions[transactions_count - 1];
-			transactions_count--;
+            free_transaction(t);
 			client_message_shortcut(client, RES_TRANSACTION_ABORTED);
 			return;
 		case DOUBT:
@@ -418,9 +418,7 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 			);
 
 			notify_listeners(t, POSITIVE);
-
-			*t = transactions[transactions_count - 1];
-			transactions_count--;
+            free_transaction(t);
 			client_message_shortcut(client, RES_TRANSACTION_COMMITTED);
 			return;
 	}
@@ -734,7 +732,6 @@ int main(int argc, char **argv) {
 
 	prev_gxid = MIN_XID;
 	next_gxid = MIN_XID;
-	transactions_count = 0;
 
 	server_t server = server_init(
 		listenhost, listenport,
