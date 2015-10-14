@@ -6,6 +6,6 @@
 
 #define BUFFER_SIZE (64 * 1024)
 #define LISTEN_QUEUE_SIZE 100
-#define MAX_STREAMS 128
+#define MAX_STREAMS 1024
 
 #endif

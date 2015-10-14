@@ -2,6 +2,7 @@
 #define SERVER_H
 
 #include <stdbool.h>
+#include "int.h"
 
 /*
  * You should not want to know what is inside those structures.
@@ -95,6 +96,6 @@ bool client_message_finish(client_t client);
  *
  * Returns 'true' on success, 'false' otherwise.
  */
-bool client_message_shortcut(client_t client, long long arg);
+bool client_message_shortcut(client_t client, xid_t arg);
 
 #endif

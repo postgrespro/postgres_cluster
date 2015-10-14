@@ -1,0 +1,15 @@
+---
+- hosts: master-workers
+  roles:
+  - role: postgrespro
+    deploy_dtm: true
+
+- hosts: master-workers:workers
+  roles:
+  - role: postgrespro
+    pg_port: 15432
+    deploy_postgres: true
+    deploy_pg_shard: true
+    pg_dtm_enable: true
+    pg_dtm_host: "{{ groups['master-workers'][0] }}"
+

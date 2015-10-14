@@ -325,7 +325,7 @@ bool client_message_finish(client_t client) {
 	return stream_message_finish(client->stream);
 }
 
-bool client_message_shortcut(client_t client, long long arg) {
+bool client_message_shortcut(client_t client, xid_t arg) {
 	if (!stream_message_start(client->stream, client->chan)) {
 		return false;
 	}
