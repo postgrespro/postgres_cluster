@@ -282,9 +282,8 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
     } else { 
         free_transactions = t->elem.next;
     }
-    l2_list_link(&active_transactions, &t->elem);
-
     transaction_clear(t);
+    l2_list_link(&active_transactions, &t->elem);
 
 	prev_gxid = t->xid = next_gxid++;
 	t->snapshots_count = 0;
