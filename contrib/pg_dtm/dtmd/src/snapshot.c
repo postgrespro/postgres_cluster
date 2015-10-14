@@ -10,7 +10,7 @@
 //}
 
 static void append_hex16(char **cursorp, xid_t value) {
-	int written = sprintf(*cursorp, "%016llx", value);
+	int written = sprintf(*cursorp, "%016x", value);
 	assert(written == 16);
 	*cursorp += written;
 }

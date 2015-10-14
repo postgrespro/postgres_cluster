@@ -220,7 +220,7 @@ func prepare_one(connstr string, wg *sync.WaitGroup) {
     }
     exec(conn, "drop table if exists t")
     exec(conn, "create table t(u int primary key, v int)")
-    exec(conn, "insert into t (select generate_series(0,1000000), $1)", cfg.Accounts.Balance)
+    exec(conn, "insert into t (select generate_series(0,$1-1), $2)", cfg.Accounts.Num, cfg.Accounts.Balance)
 /*
     exec(conn, "begin transaction isolation level " + cfg.Isolation)
 

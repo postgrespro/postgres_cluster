@@ -654,9 +654,6 @@ static void DtmInitialize()
 		dtm->nReservedXids = 0;
         dtm->minXid = InvalidTransactionId;
         RegisterXactCallback(DtmXactCallback, NULL);
-        if (DtmBufferSize != 0) { 
-            RegisterBackgroundWorker(&DtmWorker);
-        }
 	}
 	LWLockRelease(AddinShmemInitLock);
 
@@ -793,7 +790,13 @@ _PG_init(void)
 		NULL
 	);
 
-	DtmGlobalConfig(DtmHost, DtmPort, Unix_socket_directories);
+
+	if (DtmBufferSize != 0) { 
+		DtmGlobalConfig(NULL, DtmPort, Unix_socket_directories);
+		RegisterBackgroundWorker(&DtmWorker);
+	} else {
+		DtmGlobalConfig(DtmHost, DtmPort, Unix_socket_directories);
+	}
 
 	/*
 	 * Install hooks.
@@ -899,9 +902,6 @@ void DtmBackgroundWorker(Datum arg)
     params.file = unix_sock_path;
     params.buffer_size = DtmBufferSize;
     
-	DtmGlobalConfig("localhost", DtmPort, Unix_socket_directories);
-
     ShubInitialize(&shub, &params);
-    
     ShubLoop(&shub);
 }

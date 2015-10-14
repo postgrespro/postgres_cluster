@@ -10,7 +10,7 @@
 
 #define INVALID_XID 0
 #define MIN_XID 42
-#define MAX_XID 0xdeadbeefcafebabe
+#define MAX_XID ~0
 
 #define BLANK    0
 #define POSITIVE 1

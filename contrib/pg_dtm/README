@@ -7,15 +7,16 @@ Distributed transaction management tools for PostgreSQL.
 --------------------
 Communication scheme
 --------------------
-
-      .- Backend -.
-     /             \
-    /               \
-DTM ---- Backend ---- Coordinator
-    \               /
-     \             /
-      `- Backend -´
-
+              ┏━━━━━━━━━┓
+     ┌────────┨ Backend ┠──────────┐
+     │        ┗━━━━━━━━━┛          │
+┏━━━━┷━━━━┓   ┏━━━━━━━━━┓   ┏━━━━━━┷━━━━━━┓
+┃ Arbiter ┠───┨ Backend ┠───┨ Coordinator ┃
+┗━━━━┯━━━━┛   ┗━━━━━━━━━┛   ┗━━━━━━┯━━━━━━┛
+     │        ┏━━━━━━━━━┓          │
+     └──┬─────┨ Backend ┠───────┬──┘
+        ┆     ┗━━━━━━━━━┛       ┆
+ libdtm + libsockhub      libpq + xtm procs
 
 -----------------------
 Coordinator-Backend API
@@ -24,128 +25,80 @@ Coordinator-Backend API
 This API includes a set of postgres procedures that
 the coordinator can call with "select" statement.
 
--- Informs the DTM about a global transaction
--- identified by the corresponding pairs of node:xid values.
-dtm_begin_transaction(nodes integer[], xids integer[]) RETURNS void
+FIXME: actualize the API
 
--- Causes the backend to get a snapshot from the DTM
--- and merge it with the local snapshot.
-dtm_get_snapshot() RETURNS void
+------------------------
+Backend-Arbiter Protocol
+------------------------
 
-----------
-libdtm api
-----------
+The underlying protocol (libsockhub) also transmits the message length, so
+there is no need in 'argc'. Every command or reply is a series of int64
+numbers.
 
-// Sets up the host and port for DTM connection.
-// The defaults are "127.0.0.1" and 5431.
-void TuneToDtm(char *host, int port);
+The format of all commands:
+	[cmd, argv[0], argv[1], ...]
 
-void DtmInitSnapshot(Snapshot snapshot);
-
-// Starts a new global transaction of nParticipants size. Returns the
-// transaction id, fills the 'snapshot' and 'gxmin' on success. 'gxmin' is the
-// smallest xmin among all snapshots known to DTM. Returns INVALID_XID
-// otherwise.
-TransactionId DtmGlobalStartTransaction(int nParticipants, Snapshot snapshot, TransactionId *gxmin);
-
-// Asks the DTM for a fresh snapshot. Fills the 'snapshot' and 'gxmin' on
-// success. 'gxmin' is the smallest xmin among all snapshots known to DTM.
-void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *gxmin);
-
-// Commits transaction only once all participants have called this function,
-// does not change CLOG otherwise. Set 'wait' to 'true' if you want this call
-// to return only after the transaction is considered finished by the DTM.
-// Returns the status on success, or -1 otherwise.
-XidStatus DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait);
-
-// Gets the status of the transaction identified by 'xid'. Returns the status
-// on success, or -1 otherwise. If 'wait' is true, then it does not return
-// until the transaction is finished.
-XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait);
-
-// Reserves at least 'nXids' successive xids for local transactions. The xids
-// reserved are not less than 'xid' in value. Returns the actual number of xids
-// reserved, and sets the 'first' xid accordingly. The number of xids reserved
-// is guaranteed to be at least nXids.
-// In other words, *first ≥ xid and result ≥ nXids.
-// Also sets the 'active' snapshot, which is used as a container for the list
-// of active global transactions.
-int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first, Snapshot active);
-
---------------------
-Backend-DTM Protocol
---------------------
-
-The queries from backend to DTM should be formatted according to this syntax.
-
-	<char cmd><hex16 argc><hex16 argv[0]><hex16 argv[1]>...
-
-<cmd> is a character representing a command.
-<argc> is the number of arguments.
-<argv[i]> are the arguments.
+'cmd' is a command.
+'argv[i]' are the arguments.
 
 The commands:
 
 'r': reserve(minxid, minsize)
 	Claims a sequence ≥ minsize of xids ≥ minxid for local usage. This will
-	prevent DTM from using those values for global transactions. The
-	'snapshot' represent the list of currently active global transactions.
+	prevent the arbiter from using those values for global transactions.
 
-	The DTM replies with:
-		'+'<hex16 min><hex16 max><snapshot> if reserved a range [min, max]
-		'-' on failure
+	The arbiter replies with:
+		[RES_OK, min, max] if reserved a range [min, max]
+		[RES_FAILED] on failure
 
 'b': begin(size)
 	Starts a global transaction and assign a 'xid' to it. 'size' is used
-	for vote results calculation. The DTM also creates and returns the
+	for vote results calculation. The arbiter also creates and returns the
 	snapshot.
 
-	The DTM replies with:
-		'+'<hex16 xid><snapshot> if transaction started successfully
-		'-' on failure
+	The arbiter replies with:
+		[RES_OK, xid, *snapshot] if transaction started successfully
+		[RES_FAILED] on failure
 
 	See the 'snapshot' command description for the snapshot format.
 
 's': status(xid, wait)
-	Asks the DTM about the status of the global transaction identified
+	Asks the arbiter about the status of the global transaction identified
 	by the given 'xid'.
 
-	If 'wait' is true, DTM will not reply until it considers the
+	If 'wait' is 1, the arbiter will not reply until it considers the
 	transaction finished (all nodes voted, or one dead).
 
-	The DTM replies with:
-		"+0" if not started
-		"+c" if committed
-		"+a" if aborted
-		"+?" if in progress
-		'-' if failed
+	The arbiter replies with:
+		[RES_TRANSACTION_UNKNOWN] if not started
+		[RES_TRANSACTION_COMMITTED] if committed
+		[RES_TRANSACTION_ABORTED] if aborted
+		[RES_TRANSACTION_INPROGRESS] if in progress
+		[RES_FAILED] if failed
 
 'y': for(xid, wait)
-	Tells the DTM to vote for commit of the global transaction identified
-	by the given 'xid'.
+	Tells the arbiter that this node votes for commit of the global
+	transaction identified by the given 'xid'.
 
 	The reply and 'wait' logic is the same as for the 'status' command.
 
 'n': against(xid, wait)
-	Tells the DTM to vote againts commit of the global transaction
-	identified by the given 'xid'.
+	Tells the arbiter that this node votes againts commit of the global
+	transaction identified by the given 'xid'.
 
 	The reply and 'wait' logic is the same as for the 'status' command.
 
 'h': snapshot(xid)
-	Tells the DTM to generate a snapshot for the global transaction
-	identified by the given 'xid'. The DTM will create a snapshot for every
-	participant, so when each of them asks for the snapshot it will reply
-	with the same snapshot. The DTM generates a fresh version if the same
-	client asks for a snapshot again for the same transaction.
+	Tells the arbiter to generate a snapshot for the global transaction
+	identified by the given 'xid'. The arbiter will create a snapshot for
+	every participant, so when each of them asks for the snapshot it will
+	reply with the same snapshot. The arbiter generates a fresh version if
+	the same client asks for a snapshot again for the same transaction.
 
 	Joins the global transaction identified by the given 'xid', if not
 	joined already.
 
-	The DTM replies with '+' followed by a snapshot in the form:
+	The arbiter replies with [RES_OK, gxmin, xmin, xmax, xcnt, xip[0], xip[1]...],
+	where 'gxmin' is the smallest xmin among all available snapshots.
 
-		<hex16 gxmin><hex16 xmin><hex16 xmax><hex16 xcnt><hex16 xip[0]>...
-
-	Where 'gxmin' is the smallest xmin among all available snapshots.
-
-	In case of a failure, the DTM replies with '-'.
+	In case of a failure, the arbiter replies with [RES_FAILED].

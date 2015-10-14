@@ -120,7 +120,7 @@ int clog_read(clog_t clog, xid_t xid) {
 		return status;
 	} else {
 		shout(
-			"xid %016llx status is out of range, "
+			"xid %016x status is out of range, "
 			"you might be experiencing a bug in backend\n",
 			xid
 		);
@@ -133,7 +133,7 @@ int clog_read(clog_t clog, xid_t xid) {
 bool clog_write(clog_t clog, xid_t xid, int status) {
 	clogfile_t *file = clog_xid_to_file(clog, xid);
 	if (!file) {
-		debug("xid %016llx out of range, creating the file\n", xid);
+		debug("xid %u out of range, creating the file\n", xid);
 		clogfile_t newfile;
 		if (!clogfile_open_by_id(&newfile, clog->datadir, XID_TO_FILEID(xid), true)) {
 			shout(
