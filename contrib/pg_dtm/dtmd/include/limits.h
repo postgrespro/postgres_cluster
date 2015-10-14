@@ -1,10 +1,10 @@
 #ifndef LIMITS_H
 #define LIMITS_H
 
-#define MAX_TRANSACTIONS 1024
+#define MAX_TRANSACTIONS 4096
 
 #define BUFFER_SIZE (64 * 1024)
 #define LISTEN_QUEUE_SIZE 100
-#define MAX_STREAMS 1024
+#define MAX_STREAMS 4096
 
 #endif
