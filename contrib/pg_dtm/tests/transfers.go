@@ -32,6 +32,9 @@ var cfg struct {
 
     Verbose bool
     UseDtm bool
+    InitOnly bool
+    SkipInit bool
+
     Isolation string // "repeatable read" or "read committed"
 
     Accounts struct {
@@ -108,6 +111,8 @@ func init() {
     flag.BoolVar(&cfg.Writers.AllowLocal, "l", false, "Allow local updates")
     flag.BoolVar(&cfg.Writers.PrivateRows, "p", false, "Private rows (avoid waits/aborts caused by concurrent updates of the same rows)")
     flag.BoolVar(&cfg.Writers.UseCursors, "c", false, "Use cursors for updates")
+    flag.BoolVar(&cfg.InitOnly, "f", false, "Only feed databses with data")
+    flag.BoolVar(&cfg.SkipInit, "s", false, "Skip init phase")
     flag.Parse()
 
     if len(cfg.ConnStrs) == 0 {
@@ -141,8 +146,15 @@ func init() {
 
 func main() {
     start := time.Now()
-    prepare(cfg.ConnStrs)
-    fmt.Printf("database prepared in %0.2f seconds\n", time.Since(start).Seconds())
+
+    if (!cfg.SkipInit){
+        prepare(cfg.ConnStrs)
+        fmt.Printf("database prepared in %0.2f seconds\n", time.Since(start).Seconds())
+    }
+
+    if (cfg.InitOnly) {
+        return
+    }
 
     var writerWg sync.WaitGroup
     var readerWg sync.WaitGroup
