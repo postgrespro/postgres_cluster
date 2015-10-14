@@ -74,37 +74,57 @@ static DTMConn DtmConnect(char *host, int port)
 		hint.ai_family = AF_INET;
 		snprintf(portstr, 6, "%d", port);
 		hint.ai_protocol = getprotobyname("tcp")->p_proto;
-		if (getaddrinfo(host, portstr, &hint, &addrs))
-		{
-			perror("failed to resolve address");
-			return NULL;
-		}
 
-		for (a = addrs; a != NULL; a = a->ai_next)
-		{
-			int one = 1;
-			sd = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
-			if (sd == -1)
-			{
-				perror("failed to create a socket");
-				continue;
-			}
-			setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        while (1) {
+            char* sep = strchr(host, ',');
+            if (sep != NULL) {
+                *sep = '\0';
+            }
+            if (getaddrinfo(host, portstr, &hint, &addrs))
+            {
+                perror("failed to resolve address");
+                if (sep == NULL) { 
+                    return NULL;
+                } else { 
+                    goto TryNextHost;
+                }
+            }
 
-			if (connect(sd, a->ai_addr, a->ai_addrlen) == -1)
-			{
-				perror("failed to connect to an address");
-				close(sd);
-				continue;
-			}
-
-			// success
-			freeaddrinfo(addrs);
-			dtm = malloc(sizeof(DTMConnData));
-			dtm->sock = sd;
-			return dtm;
-		}
-		freeaddrinfo(addrs);
+            for (a = addrs; a != NULL; a = a->ai_next)
+            {
+                int one = 1;
+                sd = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+                if (sd == -1)
+                {
+                    perror("failed to create a socket");
+                    goto TryNextHost;
+                }
+                setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+                
+                if (connect(sd, a->ai_addr, a->ai_addrlen) == -1)
+                {
+                    perror("failed to connect to an address");
+                    close(sd);
+                    goto TryNextHost;
+                }
+                
+                // success
+                freeaddrinfo(addrs);
+                dtm = malloc(sizeof(DTMConnData));
+                dtm->sock = sd;
+                if (sep != NULL) {
+                    *sep = ',';
+                }
+                return dtm;
+            }
+            freeaddrinfo(addrs);
+          TryNextHost:
+            if (sep == NULL) { 
+                break;
+            }
+            *sep = ',';
+            host = sep + 1;
+        }
 	}
 	fprintf(stderr, "could not connect\n");
 	return NULL;
