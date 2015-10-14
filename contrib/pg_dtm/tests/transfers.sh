@@ -6,5 +6,5 @@ go run transfers.go \
 	-v \
 	-m \
 	-u 10000 \
-	-w 10 \
+	-w 3 \
 	-g
