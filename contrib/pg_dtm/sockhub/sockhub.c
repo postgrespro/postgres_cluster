@@ -107,47 +107,66 @@ static void reconnect(Shub* shub)
     unsigned addrs[128];
     unsigned i, n_addrs = sizeof(addrs) / sizeof(addrs[0]);
     int max_attempts = shub->params->max_attempts;
-
+    char* host = (char*)shub->params->host;
     if (shub->output >= 0) { 
         close_socket(shub, shub->output);
     }
 
     sock_inet.sin_family = AF_INET;  
     sock_inet.sin_port = htons(shub->params->port);
-    if (!resolve_host_by_name(shub->params->host, addrs, &n_addrs)) { 
-        shub->params->error_handler("Failed to resolve host by name", SHUB_FATAL_ERROR);
-    }            
-    shub->output = socket(AF_INET, SOCK_STREAM, 0);
-    if (shub->output < 0) { 
-        shub->params->error_handler("Failed to create inet socket", SHUB_FATAL_ERROR);
-    }
+
     while (1) { 
-        int rc = -1;
-        for (i = 0; i < n_addrs; ++i) {
-            memcpy(&sock_inet.sin_addr, &addrs[i], sizeof sock_inet.sin_addr);
-            do { 
-                rc = connect(shub->output, (struct sockaddr*)&sock_inet, sizeof(sock_inet));
-            } while (rc < 0 && errno == EINTR);
-            
-            if (rc >= 0 || errno == EINPROGRESS) { 
-                break;
+        char* sep = strchr(host, ',');
+        ShubErrorSeverity severity = SHUB_FATAL_ERROR;
+        if (sep != NULL) {
+            *sep = '\0';
+            severity = SHUB_RECOVERABLE_ERROR;
+        }        
+        if (!resolve_host_by_name(host, addrs, &n_addrs)) { 
+            shub->params->error_handler("Failed to resolve host by name", severity);
+            goto TryNextHost;
+        }            
+        shub->output = socket(AF_INET, SOCK_STREAM, 0);
+        if (shub->output < 0) { 
+            shub->params->error_handler("Failed to create inet socket", severity);
+            goto TryNextHost;
+        }
+        while (1) { 
+            int rc = -1;
+            for (i = 0; i < n_addrs; ++i) {
+                memcpy(&sock_inet.sin_addr, &addrs[i], sizeof sock_inet.sin_addr);
+                do { 
+                    rc = connect(shub->output, (struct sockaddr*)&sock_inet, sizeof(sock_inet));
+                } while (rc < 0 && errno == EINTR);
+                
+                if (rc >= 0 || errno == EINPROGRESS) { 
+                    break;
+                }
+            }
+            if (rc < 0) {             
+                if (errno != ENOENT && errno != ECONNREFUSED && errno != EINPROGRESS) {
+                    shub->params->error_handler("Connection can not be establish", severity);
+                    goto TryNextHost;
+                }
+                if (max_attempts-- != 0) {
+                    sleep(1);
+                } else {
+                    shub->params->error_handler("Failed to connect to host", severity);
+                    goto TryNextHost;
+                }                
+            } else { 
+                int optval = 1;
+                setsockopt(shub->output, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
+                FD_SET(shub->output, &shub->inset);
+                if (sep != NULL) { 
+                    *sep = ',';
+                }
+                return;
             }
         }
-        if (rc < 0) {             
-            if (errno != ENOENT && errno != ECONNREFUSED && errno != EINPROGRESS) {
-                shub->params->error_handler("Connection can not be establish", SHUB_FATAL_ERROR);
-            }
-            if (max_attempts-- != 0) {
-                sleep(1);
-            } else {
-                shub->params->error_handler("Failed to connect to host", SHUB_FATAL_ERROR);
-            }                
-        } else { 
-            int optval = 1;
-            setsockopt(shub->output, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
-            FD_SET(shub->output, &shub->inset);
-            break;
-        }
+      TryNextHost:
+        *sep = ',';
+        host = sep + 1;
     }
 }
 
