@@ -282,6 +282,7 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
     } else { 
         free_transactions = t->elem.next;
     }
+    l2_list_link(&active_transactions, &t->elem);
 
     transaction_clear(t);
 
