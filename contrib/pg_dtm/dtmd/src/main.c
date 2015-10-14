@@ -117,7 +117,7 @@ static void ondisconnect(client_t client) {
 					transactions_count--;
 				} else {
 					shout(
-						"[%d] DISCONNECT: transaction %llu"
+						"[%d] DISCONNECT: transaction %u"
 						" failed to abort O_o\n",
 						CLIENT_ID(client), t->xid
 					);
@@ -128,7 +128,7 @@ static void ondisconnect(client_t client) {
 
 		if (i < 0) {
 			shout(
-				"[%d] DISCONNECT: transaction %llu not found O_o\n",
+				"[%d] DISCONNECT: transaction %u not found O_o\n",
 				CLIENT_ID(client), CLIENT_XID(client)
 			);
 		}
@@ -154,7 +154,7 @@ static void debug_cmd(client_t client, int argc, xid_t *argv) {
 	debug("[%d] %s", CLIENT_ID(client), cmdname);
 	int i;
 	for (i = 1; i < argc; i++) {
-		debug(" %llu", argv[i]);
+		debug(" %u", argv[i]);
 	}
 	debug("\n");
 }
@@ -209,14 +209,14 @@ static void onreserve(client_t client, int argc, xid_t *argv) {
 	xid_t maxxid = minxid + minsize - 1;
 
 	debug(
-		"[%d] RESERVE: asked for range %llu-%llu\n",
+		"[%d] RESERVE: asked for range %u-%u\n",
 		CLIENT_ID(client),
 		minxid, maxxid
 	);
 
 	if ((prev_gxid >= minxid) || (maxxid >= next_gxid)) {
 		debug(
-			"[%d] RESERVE: local range %llu-%llu is not between global range %llu-%llu\n",
+			"[%d] RESERVE: local range %u-%u is not between global range %u-%u\n",
 			CLIENT_ID(client),
 			minxid, maxxid,
 			prev_gxid, next_gxid
@@ -227,7 +227,7 @@ static void onreserve(client_t client, int argc, xid_t *argv) {
 		next_gxid = maxxid + 1;
 	}
 	debug(
-		"[%d] RESERVE: allocating range %llu-%llu\n",
+		"[%d] RESERVE: allocating range %u-%u\n",
 		CLIENT_ID(client),
 		minxid, maxxid
 	);
@@ -289,7 +289,7 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 
 	if (!clog_write(clg, t->xid, DOUBT)) {
 		shout(
-			"[%d] BEGIN: transaction %llu failed"
+			"[%d] BEGIN: transaction %u failed"
 			" to initialize clog bits O_o\n",
 			CLIENT_ID(client), t->xid
 		);
@@ -335,7 +335,7 @@ static bool queue_for_transaction_finish(client_t client, xid_t xid, char cmd) {
 	Transaction *t = find_transaction(xid);
 	if (t == NULL) {
 		shout(
-			"[%d] QUEUE: xid %llu not found\n",
+			"[%d] QUEUE: xid %u not found\n",
 			CLIENT_ID(client), xid
 		);
 		client_message_shortcut(client, RES_FAILED);
@@ -366,7 +366,7 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 	Transaction *t = find_transaction(xid);
 	if (t == NULL) {
 		shout(
-			"[%d] VOTE: xid %llu not found\n",
+			"[%d] VOTE: xid %u not found\n",
 			CLIENT_ID(client), xid
 		);
 		client_message_shortcut(client, RES_FAILED);
@@ -441,7 +441,7 @@ static void onsnapshot(client_t client, int argc, xid_t *argv) {
 	Transaction *t = find_transaction(xid);
 	if (t == NULL) {
 		shout(
-			"[%d] SNAPSHOT: xid %llu not found\n",
+			"[%d] SNAPSHOT: xid %u not found\n",
 			CLIENT_ID(client), xid
 		);
 		client_message_shortcut(client, RES_FAILED);
@@ -529,7 +529,7 @@ static void onstatus(client_t client, int argc, xid_t *argv) {
 
 static void onnoise(client_t client, int argc, xid_t *argv) {
 	shout(
-		"[%d] NOISE: unknown command '%c' (%lld)\n",
+		"[%d] NOISE: unknown command '%c' (%d)\n",
 		CLIENT_ID(client),
 		(char)argv[0], argv[0]
 	);

@@ -120,7 +120,7 @@ int clog_read(clog_t clog, xid_t xid) {
 		return status;
 	} else {
 		shout(
-			"xid %016llx status is out of range, "
+			"xid %016x status is out of range, "
 			"you might be experiencing a bug in backend\n",
 			xid
 		);

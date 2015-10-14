@@ -31,7 +31,7 @@ static char *dtmhost = NULL;
 static int dtmport = 0;
 static char* dtm_unix_sock_dir;
 
-typedef unsigned long long xid_t;
+typedef unsigned xid_t;
 
 // Connects to the specified DTM.
 static DTMConn DtmConnect(char *host, int port)
