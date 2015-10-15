@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <signal.h>
 #include <errno.h>
 
 #include "sockhub.h"
@@ -242,12 +243,23 @@ void ShubInitialize(Shub* shub, ShubParams* params)
     shub->out_buffer_used = 0;
 }
 
+static int stop = 0;
+static void die(int sig) {
+    stop = 1;
+}
 
 void ShubLoop(Shub* shub)
 {    
     int buffer_size = shub->params->buffer_size;
+    signal(SIGINT, die);
+    signal(SIGQUIT, die);
+    signal(SIGTERM, die);
+    signal(SIGHUP, die);
+    sigset_t sset;
+    sigfillset(&sset);
+    sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
-    while (1) { 
+    while (!stop) { 
         fd_set events;
         struct timeval tm;
         int i, rc;
