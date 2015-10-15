@@ -18,12 +18,15 @@
 #define DEFAULT_LISTENHOST "0.0.0.0"
 #define DEFAULT_LISTENPORT 5431
 
+static xid_t get_global_xmin();
+
 L2List active_transactions = {&active_transactions, &active_transactions};
 L2List* free_transactions;
 
 // We reserve the local xids if they fit between (prev, next) range, and
 // reserve something in (next, x) range otherwise, moving 'next' after 'x'.
 xid_t prev_gxid, next_gxid;
+xid_t global_xmin = INVALID_XID;
 
 typedef struct client_userdata_t {
 	int id;
@@ -55,6 +58,9 @@ inline static void free_transaction(Transaction* t)
     l2_list_unlink(&t->elem);
     t->elem.next = free_transactions;
     free_transactions = &t->elem;
+    if (t->xmin == global_xmin) { 
+        global_xmin = get_global_xmin();
+    }
 }
 
 
@@ -246,18 +252,12 @@ static void onreserve(client_t client, int argc, xid_t *argv) {
 }
 
 static xid_t get_global_xmin() {
-	int j;
 	xid_t xmin = next_gxid;
 	Transaction *t;
     for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
-		j = t->snapshots_count > MAX_SNAPSHOTS_PER_TRANS ? MAX_SNAPSHOTS_PER_TRANS : t->snapshots_count; 
-		while (--j >= 0) { 
-			Snapshot* s = transaction_snapshot(t, j);
-			if (s->xmin < xmin) {
-				xmin = s->xmin;
-			}
-			// minor TODO: Use 'times_sent' to generate a bit greater xmin?
-		}
+        if (t->xmin < xmin) { 
+            xmin = t->xmin;
+        }
 	}
 	return xmin;
 }
@@ -285,7 +285,7 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
     transaction_clear(t);
     l2_list_link(&active_transactions, &t->elem);
 
-	prev_gxid = t->xid = t->xmin = next_gxid++;
+	prev_gxid = t->xid = next_gxid++;
 	t->snapshots_count = 0;
 	t->size = 1;
 
@@ -303,16 +303,18 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 		return;
 	}
 
-	xid_t gxmin = get_global_xmin();
 	Snapshot *snap = transaction_next_snapshot(t);
 	gen_snapshot(snap); 	// FIXME: increase 'times_sent' here? see also 4765234987
     t->xmin = snap->xmin;
+    if (global_xmin == INVALID_XID) { 
+        global_xmin = snap->xmin;
+    }
 
 	xid_t ok = RES_OK;
 	client_message_start(client); {
 		client_message_append(client, sizeof(xid_t), &ok);
 		client_message_append(client, sizeof(xid_t), &t->xid);
-		client_message_append(client, sizeof(xid_t), &gxmin);
+		client_message_append(client, sizeof(xid_t), &global_xmin);
 		client_message_append(client, sizeof(xid_t), &snap->xmin);
 		client_message_append(client, sizeof(xid_t), &snap->xmax);
 		client_message_append(client, sizeof(xid_t) * snap->nactive, snap->active);
@@ -464,15 +466,13 @@ static void onsnapshot(client_t client, int argc, xid_t *argv) {
 		gen_snapshot(transaction_next_snapshot(t));
 	}
 
-	xid_t gxmin = get_global_xmin();
-
 	Snapshot *snap = transaction_snapshot(t, CLIENT_SNAPSENT(client)++);
 	snap->times_sent += 1; // FIXME: does times_sent get used anywhere? see also 4765234987
 
 	xid_t ok = RES_OK;
 	client_message_start(client); {
 		client_message_append(client, sizeof(xid_t), &ok);
-		client_message_append(client, sizeof(xid_t), &gxmin);
+		client_message_append(client, sizeof(xid_t), &global_xmin);
 		client_message_append(client, sizeof(xid_t), &snap->xmin);
 		client_message_append(client, sizeof(xid_t), &snap->xmax);
 		client_message_append(client, sizeof(xid_t) * snap->nactive, snap->active);
