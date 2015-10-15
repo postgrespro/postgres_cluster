@@ -278,7 +278,7 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
     }
     transaction_clear(t);
 
-	prev_gxid = t->xid = next_gxid++;
+	prev_gxid = t->xid = t->xmin = next_gxid++;
 	t->snapshots_count = 0;
 	t->size = 1;
 
@@ -295,12 +295,12 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
         free_transaction(t);
 		return;
 	}
+    l2_list_link(&active_transactions, &t->elem);
+
 	xid_t gxmin = get_global_xmin();
 	Snapshot *snap = transaction_next_snapshot(t);
 	gen_snapshot(snap); 	// FIXME: increase 'times_sent' here? see also 4765234987
-
     t->xmin = snap->xmin;
-    l2_list_link(&active_transactions, &t->elem);
 
 	xid_t ok = RES_OK;
 	client_message_start(client); {
