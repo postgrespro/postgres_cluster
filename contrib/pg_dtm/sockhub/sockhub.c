@@ -254,7 +254,7 @@ void ShubLoop(Shub* shub)
     signal(SIGINT, die);
     signal(SIGQUIT, die);
     signal(SIGTERM, die);
-    signal(SIGHUP, die);
+    // signal(SIGHUP, die);
     sigset_t sset;
     sigfillset(&sset);
     sigprocmask(SIG_UNBLOCK, &sset, NULL);
