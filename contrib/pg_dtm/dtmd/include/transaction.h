@@ -20,6 +20,7 @@ typedef struct L2List
 typedef struct Transaction {
     L2List elem;
 	xid_t xid;
+    xid_t xmin;
 
 	int size; // number of paritcipants
 

@@ -246,19 +246,13 @@ static void onreserve(client_t client, int argc, xid_t *argv) {
 }
 
 static xid_t get_global_xmin() {
-	int j;
 	xid_t xmin = next_gxid;
 	Transaction *t;
     for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
-		j = t->snapshots_count > MAX_SNAPSHOTS_PER_TRANS ? MAX_SNAPSHOTS_PER_TRANS : t->snapshots_count; 
-		while (--j >= 0) { 
-			Snapshot* s = transaction_snapshot(t, j);
-			if (s->xmin < xmin) {
-				xmin = s->xmin;
-			}
-			// minor TODO: Use 'times_sent' to generate a bit greater xmin?
-		}
-	}
+        if (t->xmin < xmin) { 
+            xmin = t->xmin;
+        }
+    }
 	return xmin;
 }
 
@@ -283,7 +277,6 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
         free_transactions = t->elem.next;
     }
     transaction_clear(t);
-    l2_list_link(&active_transactions, &t->elem);
 
 	prev_gxid = t->xid = next_gxid++;
 	t->snapshots_count = 0;
@@ -299,15 +292,15 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 			CLIENT_ID(client), t->xid
 		);
 		client_message_shortcut(client, RES_FAILED);
+        free_transaction(t);
 		return;
 	}
-
 	xid_t gxmin = get_global_xmin();
+	Snapshot *snap = transaction_next_snapshot(t);
+	gen_snapshot(snap); 	// FIXME: increase 'times_sent' here? see also 4765234987
 
-	gen_snapshot(transaction_next_snapshot(t));
-	// will wrap around if exceeded max snapshots
-	Snapshot *snap = transaction_latest_snapshot(t);
-	// FIXME: increase 'times_sent' here? see also 4765234987
+    t->xmin = snap->xmin;
+    l2_list_link(&active_transactions, &t->elem);
 
 	xid_t ok = RES_OK;
 	client_message_start(client); {
@@ -462,7 +455,11 @@ static void onsnapshot(client_t client, int argc, xid_t *argv) {
 
 	if (CLIENT_SNAPSENT(client) == t->snapshots_count) {
 		// a fresh snapshot is needed
-		gen_snapshot(transaction_next_snapshot(t));
+        Snapshot* snap = transaction_next_snapshot(t);
+		gen_snapshot(snap);
+        if (snap->xmin < t->xmin) { 
+            t->xmin = snap->xmin;
+        }
 	}
 
 	xid_t gxmin = get_global_xmin();
