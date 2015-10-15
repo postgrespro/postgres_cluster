@@ -1,6 +1,5 @@
 #include <assert.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "util.h"
 #include "transaction.h"
@@ -27,7 +26,6 @@ int transaction_status(Transaction *t) {
 void transaction_clear(Transaction *t) {
 	int i;
     
-    memset(t, 0, sizeof(*t));
 	t->xid = INVALID_XID;
 	t->size = 0;
 	t->votes_for = 0;
