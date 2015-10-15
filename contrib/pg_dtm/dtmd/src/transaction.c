@@ -27,7 +27,6 @@ void transaction_clear(Transaction *t) {
 	int i;
     
 	t->xid = INVALID_XID;
-	t->xmin = INVALID_XID;
 	t->size = 0;
 	t->votes_for = 0;
 	t->votes_against = 0;
