@@ -246,13 +246,19 @@ static void onreserve(client_t client, int argc, xid_t *argv) {
 }
 
 static xid_t get_global_xmin() {
+	int j;
 	xid_t xmin = next_gxid;
 	Transaction *t;
     for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
-        if (t->xmin < xmin) { 
-            xmin = t->xmin;
-        }
-    }
+		j = t->snapshots_count > MAX_SNAPSHOTS_PER_TRANS ? MAX_SNAPSHOTS_PER_TRANS : t->snapshots_count; 
+		while (--j >= 0) { 
+			Snapshot* s = transaction_snapshot(t, j);
+			if (s->xmin < xmin) {
+				xmin = s->xmin;
+			}
+			// minor TODO: Use 'times_sent' to generate a bit greater xmin?
+		}
+	}
 	return xmin;
 }
 
@@ -277,6 +283,7 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
         free_transactions = t->elem.next;
     }
     transaction_clear(t);
+    l2_list_link(&active_transactions, &t->elem);
 
 	prev_gxid = t->xid = t->xmin = next_gxid++;
 	t->snapshots_count = 0;
@@ -295,7 +302,6 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
         free_transaction(t);
 		return;
 	}
-    l2_list_link(&active_transactions, &t->elem);
 
 	xid_t gxmin = get_global_xmin();
 	Snapshot *snap = transaction_next_snapshot(t);
@@ -455,11 +461,7 @@ static void onsnapshot(client_t client, int argc, xid_t *argv) {
 
 	if (CLIENT_SNAPSENT(client) == t->snapshots_count) {
 		// a fresh snapshot is needed
-        Snapshot* snap = transaction_next_snapshot(t);
-		gen_snapshot(snap);
-        if (snap->xmin < t->xmin) { 
-            t->xmin = snap->xmin;
-        }
+		gen_snapshot(transaction_next_snapshot(t));
 	}
 
 	xid_t gxmin = get_global_xmin();
