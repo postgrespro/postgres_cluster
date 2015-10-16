@@ -59,8 +59,8 @@ func transfer(id int, wg *sync.WaitGroup) {
 
     for i:=0; i < N_ITERATIONS; i++ {
         amount := 1
-        account1 := rand.Intn(N_ACCOUNTS)
-        account2 := rand.Intn(N_ACCOUNTS)
+        account1 := rand.Intn(N_ACCOUNTS-1)+1
+        account2 := rand.Intn(N_ACCOUNTS-1)+1
         exec(conn, "begin")
         exec(conn, fmt.Sprintf("update t set v = v - %d where u=%d", amount, account1))
         exec(conn, fmt.Sprintf("update t set v = v + %d where u=%d", amount, account2))
