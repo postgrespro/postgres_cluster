@@ -1,12 +1,15 @@
 [clients]
-158.250.29.4 ansible_ssh_user=s.kelvich
 158.250.29.5 ansible_ssh_user=s.kelvich
 
 [workers]
-158.250.29.6 ansible_ssh_user=s.kelvich
+158.250.29.4 ansible_ssh_user=s.kelvich
 158.250.29.8 ansible_ssh_user=s.kelvich
 158.250.29.9 ansible_ssh_user=s.kelvich
+
+[masters]
 158.250.29.10 ansible_ssh_user=s.kelvich
 
 [dtm]
-158.250.29.10 ansible_ssh_user=s.kelvich
+158.250.29.6 ansible_ssh_user=s.kelvich
+
+

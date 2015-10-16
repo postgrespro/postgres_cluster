@@ -1,16 +1,61 @@
 ---
 
-- hosts: clients
-  gather_facts: no
-  tasks:
-  - name: copy transfers binary
-    copy: src=transfers.linux dest=~/transfers mode=a+x
+# - hosts: 158.250.29.4
+#   gather_facts: no
+#   tasks:
+#   # # - shell: echo "host={{item}} user=s.kelvich port=15432 dbname=postgres"
+  # #   register: source
+  # #   with_items: groups['workers']
+
+  # # - debug: var=source
+
+  # - set_fact: 
+  #     connstr: "{{ groups['workers'] | ~'=' }}"
+
+  # - debug: var=connstr
+
+#   - name: copy transfers binary
+#     copy: src=transfers.linux dest=~/transfers mode=a+x
+
+# - hosts: blade3
+#   gather_facts: no
+#   tasks:
+#   - name: setup the databases
+#     shell: "./transfers -d 'host=158.250.29.10 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.9 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.8 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.6 user=s.kelvich port=15432 dbname=postgres' -f -g -m -w 140 -r 0"
+#     register: transfers_result
+#   - debug: var=transfers_result
+
+# - hosts: blade3
+#   gather_facts: no
+#   tasks:
+#   - name: run transfers
+#     shell: "./transfers -d 'host=158.250.29.10 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.9 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.8 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.6 user=s.kelvich port=15432 dbname=postgres' -s -g -m -w 140 -u 14000 -r 0"
+#     register: transfers_result
+#   - debug: var=transfers_result
+
+
+# - hosts: blade3
+#   gather_facts: no
+#   tasks:
+#   - name: setup the databases
+#     shell: "./transfers -d 'host=blade8 user=stas port=15432 dbname=postgres' -d 'host=blade7 user=stas port=15432 dbname=postgres' -d 'host=blade6 user=stas port=15432 dbname=postgres' -d 'host=blade5 user=stas port=15432 dbname=postgres' -d 'host=blade4 user=stas port=15432 dbname=postgres'  -f -g -w 200 -r 0"
+#     register: transfers_result
+#   - debug: var=transfers_result
+
+# - hosts: blade3
+#   gather_facts: no
+#   tasks:
+#   - name: run transfers
+#     shell: "./transfers -d 'host=blade8 user=stas port=15432 dbname=postgres' -d 'host=blade7 user=stas port=15432 dbname=postgres' -d 'host=blade6 user=stas port=15432 dbname=postgres' -d 'host=blade5 user=stas port=15432 dbname=postgres' -d 'host=blade4 user=stas port=15432 dbname=postgres' -s -g -w 200 -u 2500 -r 0"
+#     register: transfers_result
+#   - debug: var=transfers_result
+
 
 - hosts: 158.250.29.4
   gather_facts: no
   tasks:
   - name: setup the databases
-    shell: "./transfers -d 'host=158.250.29.10 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.9 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.8 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.6 user=s.kelvich port=15432 dbname=postgres' -f -g -m -w 128 -r 0"
+    shell: "./transfers -d 'host=158.250.29.10 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.8 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.9 user=s.kelvich port=15432 dbname=postgres' -f -g -m -w 105 -r 0"
     register: transfers_result
   - debug: var=transfers_result
 
@@ -18,6 +63,19 @@
   gather_facts: no
   tasks:
   - name: run transfers
-    shell: "./transfers -d 'host=158.250.29.10 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.9 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.8 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.6 user=s.kelvich port=15432 dbname=postgres' -s -g -m -w 128 -u 5000"
+    shell: "./transfers -d 'host=158.250.29.10 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.8 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.9 user=s.kelvich port=15432 dbname=postgres' -s -g -m -w 105 -u 4000 -r 0"
     register: transfers_result
   - debug: var=transfers_result
+
+
+
+
+
+
+
+
+
+
+
+
+

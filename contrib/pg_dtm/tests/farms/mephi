@@ -12,4 +12,5 @@ blade8 ansible_ssh_host=85.143.113.31 ansible_ssh_port=4208
 [dtm]
 blade8 ansible_ssh_host=85.143.113.31 ansible_ssh_port=4208
 
-
+[master]
+blade7 ansible_ssh_host=85.143.113.31 ansible_ssh_port=4207

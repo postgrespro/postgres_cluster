@@ -18,6 +18,8 @@ pg_config:
   - line: "listen_addresses = '*'"
   - line: "max_connections = 512"
   - line: "port = {{pg_port}}"
+pg_config_role:
+  - line: "#pg_config_role"
 pg_src: ./postgrespro
 pg_dst: /tmp/postgrespro-build
 pg_datadir: ./postgrespro-data

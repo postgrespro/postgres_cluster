@@ -56,6 +56,3 @@
 
 - include: dtm.yml
   when: deploy_dtm
-
-- include: pg_shard.yml
-  when: deploy_pg_shard

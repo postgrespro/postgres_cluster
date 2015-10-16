@@ -10,5 +10,7 @@
     pg_port: 15432
     deploy_postgres: true
     pg_dtm_enable: true
+    pg_config_role:
+      - line: "dtm.buffer_size = 65536"
     pg_dtm_host: "{{ groups['dtm'][0] }}"
 
