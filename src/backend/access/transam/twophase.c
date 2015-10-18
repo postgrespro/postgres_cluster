@@ -2184,3 +2184,11 @@ RecordTransactionAbortPrepared(TransactionId xid,
 	 */
 	SyncRepWaitForLSN(recptr);
 }
+
+/*
+ * Return identified of current global transaction
+ */
+const char* GetLockedGlobalTransactionId()
+{
+    return MyLockedGxact ? MyLockedGxact->gid : NULL;
+}
