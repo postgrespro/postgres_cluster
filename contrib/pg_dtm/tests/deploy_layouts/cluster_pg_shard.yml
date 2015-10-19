@@ -1,15 +1,32 @@
 ---
-- hosts: master-workers
+
+- hosts: dtm
   roles:
   - role: postgrespro
     deploy_dtm: true
 
-- hosts: master-workers:workers
+- hosts: masters
   roles:
   - role: postgrespro
+    pg_src: ./postgrespro_pgshard
+    pg_version: xtm_pgshard
     pg_port: 15432
     deploy_postgres: true
-    deploy_pg_shard: true
     pg_dtm_enable: true
-    pg_dtm_host: "{{ groups['master-workers'][0] }}"
+    pg_dtm_host: "{{ groups['dtm'][0] }}"
+    deploy_pg_shard: true
+
+- hosts: workers
+  roles:
+  - role: postgrespro
+    pg_src: ./postgrespro_pgshard
+    pg_version: xtm_pgshard
+    pg_port: 15432
+    deploy_postgres: true
+    pg_dtm_enable: true
+    pg_dtm_host: "{{ groups['dtm'][0] }}"
+
+- hosts: clients
+  roles:
+    - role: postgrespro
 

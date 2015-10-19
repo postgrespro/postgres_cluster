@@ -1,19 +1,19 @@
 ---
 
-- name: ensure we have checked out libuv-1.7.5
-  git: repo=https://github.com/libuv/libuv.git
-    dest={{libuv.src}}
-    version={{libuv.version}}
-    update=no
+# - name: ensure we have checked out libuv-1.7.5
+#   git: repo=https://github.com/libuv/libuv.git
+#     dest={{libuv.src}}
+#     version={{libuv.version}}
+#     update=no
 
-- name: build libuv
-  shell: ./autogen.sh && ./configure --disable-shared --prefix={{libuv.dst}} && make && make install
-  args:
-    chdir: "{{libuv.src}}"
-    creates: "{{libuv.dst}}/lib/libuv.a"
+# - name: build libuv
+#   shell: ./autogen.sh && ./configure --disable-shared --prefix={{libuv.dst}} && make && make install
+#   args:
+#     chdir: "{{libuv.src}}"
+#     creates: "{{libuv.dst}}/lib/libuv.a"
 
 - name: compile dtmd
-  shell: make "LIBUV_PREFIX={{libuv.dst}}"
+  shell: "make clean && make"
   args:
     chdir: "{{pg_src}}/contrib/pg_dtm/dtmd"
     creates: "{{pg_src}}/contrib/pg_dtm/dtmd/bin/dtmd"
