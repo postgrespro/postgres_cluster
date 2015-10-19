@@ -111,6 +111,7 @@ typedef struct Plan
 	/*
 	 * Common structural data for all Plan types.
 	 */
+	int			plan_node_id;	/* unique across entire final plan tree */
 	List	   *targetlist;		/* target list to be computed at this node */
 	List	   *qual;			/* implicitly-ANDed qual conditions */
 	struct Plan *lefttree;		/* input plan tree(s) */
@@ -751,6 +752,17 @@ typedef struct Unique
 	AttrNumber *uniqColIdx;		/* their indexes in the target list */
 	Oid		   *uniqOperators;	/* equality operators to compare with */
 } Unique;
+
+/* ------------
+ *		gather node
+ * ------------
+ */
+typedef struct Gather
+{
+	Plan		plan;
+	int			num_workers;
+	bool		single_copy;
+} Gather;
 
 /* ----------------
  *		hash build node
