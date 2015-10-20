@@ -9,9 +9,9 @@ import (
 )
 
 const (
-    TRANSFER_CONNECTIONS = 2
+    TRANSFER_CONNECTIONS = 8
     INIT_AMOUNT = 10000
-    N_ITERATIONS = 10000
+    N_ITERATIONS = 100000
     N_ACCOUNTS = 2//100000
 )
 
@@ -53,9 +53,6 @@ func prepare_db() {
     exec(conn2, "drop table if exists t")
     exec(conn2, "create table t(u int primary key, v int)")
     
-    exec(conn1, "select dtm_register_node(1)")
-    exec(conn2, "select dtm_register_node(2)")
-
     exec(conn1, "begin transaction")
     exec(conn2, "begin transaction")
 
@@ -70,8 +67,8 @@ func prepare_db() {
     exec(conn1, "prepare transaction '" + gtid + "'")
     exec(conn2, "prepare transaction '" + gtid + "'")
 
-    exec(conn1, "select dtm_begin_prepare($1, 2)", gtid)
-    exec(conn2, "select dtm_begin_prepare($1, 2)", gtid)
+    exec(conn1, "select dtm_begin_prepare($1)", gtid)
+    exec(conn2, "select dtm_begin_prepare($1)", gtid)
 
     csn = execQuery(conn1, "select dtm_prepare($1, 0)", gtid)
     csn = execQuery(conn2, "select dtm_prepare($1, $2)", gtid, csn)
@@ -122,8 +119,8 @@ func transfer(id int, wg *sync.WaitGroup) {
         exec(conn1, "prepare transaction '" + gtid + "'")
         exec(conn2, "prepare transaction '" + gtid + "'")
 
-        exec(conn1, "select dtm_begin_prepare($1, 2)", gtid)
-        exec(conn2, "select dtm_begin_prepare($1, 2)", gtid)
+        exec(conn1, "select dtm_begin_prepare($1)", gtid)
+        exec(conn2, "select dtm_begin_prepare($1)", gtid)
 
         csn = execQuery(conn1, "select dtm_prepare($1, 0)", gtid)
         csn = execQuery(conn2, "select dtm_prepare($1, $2)", gtid, csn)

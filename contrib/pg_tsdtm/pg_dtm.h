@@ -2,7 +2,7 @@
 #define DTM_BACKEND_H
 
 typedef int nodeid_t;
-typedef unsigned long long cid_t;
+typedef uint64 cid_t;
 
 typedef struct { 
     TransactionId xid;
