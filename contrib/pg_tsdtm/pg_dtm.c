@@ -45,14 +45,12 @@ typedef struct DtmTransStatus
 {
     TransactionId xid;
     XidStatus status;
-    bool is_coordinator;
     cid_t cid;
     struct DtmTransStatus* next;
 } DtmTransStatus;
 
 typedef struct 
 {
-    nodeid_t node_id;
     cid_t cid;
 	volatile slock_t lock;
     DtmTransStatus* trans_list_head;
@@ -274,19 +272,11 @@ dtm_xact_callback(XactEvent event, void *arg)
 
 PG_MODULE_MAGIC;
 
-PG_FUNCTION_INFO_V1(dtm_register_node);
 PG_FUNCTION_INFO_V1(dtm_extend);
 PG_FUNCTION_INFO_V1(dtm_access);
 PG_FUNCTION_INFO_V1(dtm_begin_prepare);
 PG_FUNCTION_INFO_V1(dtm_prepare);
 PG_FUNCTION_INFO_V1(dtm_end_prepare);
-
-Datum
-dtm_register_node(PG_FUNCTION_ARGS)
-{
-    local->node_id = PG_GETARG_INT32(0);
-	PG_RETURN_VOID();
-}
 
 Datum
 dtm_extend(PG_FUNCTION_ARGS)
@@ -505,7 +495,6 @@ void DtmInitialize()
 	if (!found)
 	{
         local->cid = dtm_get_current_time();
-        local->node_id = -1;
         local->trans_list_head = NULL;
         local->trans_list_tail = &local->trans_list_head;
 		SpinLockInit(&local->lock);
@@ -563,7 +552,7 @@ cid_t DtmLocalAccess(DtmTransState* x, GlobalTransactionId gtid, cid_t global_ci
     return local_cid;
 }
 
-void DtmLocalBeginPrepare(GlobalTransactionId gtid, nodeid_t coordinator)
+void DtmLocalBeginPrepare(GlobalTransactionId gtid)
 {
     SpinLockAcquire(&local->lock);
     {
@@ -576,7 +565,6 @@ void DtmLocalBeginPrepare(GlobalTransactionId gtid, nodeid_t coordinator)
         ts = (DtmTransStatus*)hash_search(xid2status, &id->xid, HASH_ENTER, NULL);
         ts->status = TRANSACTION_STATUS_IN_PROGRESS;
         ts->cid = dtm_get_cid();
-        ts->is_coordinator = coordinator == local->node_id;
         IncludeInTransactionList(ts);
     }
     SpinLockRelease(&local->lock);
