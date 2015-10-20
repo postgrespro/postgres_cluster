@@ -301,8 +301,7 @@ Datum
 dtm_begin_prepare(PG_FUNCTION_ARGS)
 {
     GlobalTransactionId gtid = PG_GETARG_CSTRING(0);
-    nodeid_t coordinator = PG_GETARG_INT32(1);
-    DtmLocalBeginPrepare(gtid, coordinator);
+    DtmLocalBeginPrepare(gtid);
 	DTM_TRACE((stderr, "Backend %d begins prepare of transaction %s\n", getpid(), gtid));
 	PG_RETURN_VOID();
 }

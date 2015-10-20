@@ -23,7 +23,7 @@ cid_t DtmLocalExtend(DtmTransState* x, GlobalTransactionId gtid);
 /* Function called at first access to any datanode except first one involved in distributed transaction */
 cid_t DtmLocalAccess(DtmTransState* x, GlobalTransactionId gtid, cid_t snapshot);
 /* Mark transaction as in-doubt */
-void  DtmLocalBeginPrepare(GlobalTransactionId gtid, nodeid_t coordinator);
+void  DtmLocalBeginPrepare(GlobalTransactionId gtid);
 /* Choose CSN for global transaction */
 cid_t DtmLocalPrepare(GlobalTransactionId gtid, cid_t cid);
 /* Assign CSN to global transaction */
