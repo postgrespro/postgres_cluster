@@ -11,7 +11,7 @@ endif
 
 .PHONY: all clean check bindir objdir
 
-all: bin/dtmd
+all: bin/dtmd bin/heart
 	@echo Done.
 	@echo Feel free to run the tests with \'make check\'.
 
@@ -21,6 +21,10 @@ bin/dtmd: obj/server.o obj/main.o obj/clog.o obj/clogfile.o obj/util.o obj/trans
 		obj/clog.o obj/clogfile.o obj/util.o obj/transaction.o \
 		obj/snapshot.o \
 		$(SOCKHUB_LDFLAGS)
+
+bin/heart: obj/heart.o obj/util.o | bindir objdir
+	$(CC) -o bin/heart $(CFLAGS) \
+		obj/heart.o obj/util.o
 
 obj/server.o: src/server.c | objdir
 	$(CC) -c -o obj/server.o $(CFLAGS) $(SOCKHUB_CFLAGS) src/server.c
