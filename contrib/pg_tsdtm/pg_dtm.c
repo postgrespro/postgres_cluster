@@ -41,20 +41,23 @@
 
 typedef uint64 timestamp_t;
 
-typedef struct 
-{
-    nodeid_t node_id;
-    cid_t cid;
-	volatile slock_t lock;
-} DtmNodeState;
-
-typedef struct
+typedef struct DtmTransStatus
 {
     TransactionId xid;
     XidStatus status;
     bool is_coordinator;
     cid_t cid;
+    struct DtmTransStatus* next;
 } DtmTransStatus;
+
+typedef struct 
+{
+    nodeid_t node_id;
+    cid_t cid;
+	volatile slock_t lock;
+    DtmTransStatus* trans_list_head;
+    DtmTransStatus** trans_list_tail;
+} DtmNodeState;
 
 typedef struct
 {
@@ -72,8 +75,8 @@ static HTAB* gtid2xid;
 static DtmNodeState* local;
 static DtmTransState dtm_tx;
 
-static TransactionId DtmOldestXid = FirstNormalTransactionId;
-static cid_t DtmOldestCid = INVALID_CID;
+//static TransactionId DatmOldestXid = FirstNormalTransactionId;
+//static cid_t DtmOldestCid = INVALID_CID;
 static int DtmVacuumDelay;
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
@@ -369,11 +372,32 @@ static int dtm_gtid_match_fn(const void *key1, const void *key2, Size keysize)
 	return strcmp((GlobalTransactionId)key1, (GlobalTransactionId)key2);
 }
 
+static void IncludeInTransactionList(DtmTransStatus* ts)
+{
+    ts->next = NULL;
+    *local->trans_list_tail = ts;
+    local->trans_list_tail = &ts->next;
+}
+
 static TransactionId DtmAdjustOldestXid(TransactionId xid)
 {
     if (TransactionIdIsValid(xid)) { 
-        DtmTransStatus* ts;
+        DtmTransStatus *ts, *prev = NULL;
+        timestamp_t cutoff_time = dtm_get_current_time() - DtmVacuumDelay*USEC;
         SpinLockAcquire(&local->lock);
+#if 1
+        for (ts = local->trans_list_head; ts != NULL && ts->cid < cutoff_time; prev = ts, ts = ts->next) { 
+            if (prev != NULL) { 
+                hash_search(xid2status, &prev->xid, HASH_REMOVE, NULL);
+            }
+        }
+        if (prev != NULL) { 
+            local->trans_list_head = prev;
+            xid = prev->xid;
+        } else { 
+            xid = FirstNormalTransactionId;
+        }
+#else               
         ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_FIND, NULL);
         if (ts == NULL || ts->cid + DtmVacuumDelay*USEC > dtm_get_current_time()) { 
             xid = DtmOldestXid;
@@ -382,6 +406,7 @@ static TransactionId DtmAdjustOldestXid(TransactionId xid)
             DtmOldestXid = xid;
             DtmOldestCid = ts->cid;
         }
+#endif
         SpinLockRelease(&local->lock);
     }
     return xid;
@@ -481,6 +506,8 @@ void DtmInitialize()
 	{
         local->cid = dtm_get_current_time();
         local->node_id = -1;
+        local->trans_list_head = NULL;
+        local->trans_list_tail = &local->trans_list_head;
 		SpinLockInit(&local->lock);
         RegisterXactCallback(dtm_xact_callback, NULL);
 	}
@@ -548,8 +575,9 @@ void DtmLocalBeginPrepare(GlobalTransactionId gtid, nodeid_t coordinator)
 
         ts = (DtmTransStatus*)hash_search(xid2status, &id->xid, HASH_ENTER, NULL);
         ts->status = TRANSACTION_STATUS_IN_PROGRESS;
-        ts->cid = INVALID_CID;
+        ts->cid = dtm_get_cid();
         ts->is_coordinator = coordinator == local->node_id;
+        IncludeInTransactionList(ts);
     }
     SpinLockRelease(&local->lock);
 }
@@ -593,7 +621,7 @@ void DtmLocalCommitPrepared(DtmTransState* x, GlobalTransactionId gtid)
 
     SpinLockAcquire(&local->lock);
     {
-        DtmTransId* id = (DtmTransId*)hash_search(gtid2xid, gtid, HASH_FIND, NULL);
+        DtmTransId* id = (DtmTransId*)hash_search(gtid2xid, gtid, HASH_REMOVE, NULL);
         Assert(id != NULL);
 
         x->is_global = true;
@@ -616,6 +644,7 @@ void DtmLocalCommit(DtmTransState* x)
         } else { 
             Assert(!found);
             ts->cid = dtm_get_cid();
+            IncludeInTransactionList(ts);
         }
         x->cid = ts->cid;
         ts->status = TRANSACTION_STATUS_COMMITTED;
@@ -630,7 +659,7 @@ void DtmLocalAbortPrepared(DtmTransState* x, GlobalTransactionId gtid)
 
     SpinLockAcquire(&local->lock);
     { 
-        DtmTransId* id = (DtmTransId*)hash_search(gtid2xid, gtid, HASH_FIND, NULL);
+        DtmTransId* id = (DtmTransId*)hash_search(gtid2xid, gtid, HASH_REMOVE, NULL);
         Assert(id != NULL);
 
         x->is_global = true;
@@ -654,6 +683,7 @@ void DtmLocalAbort(DtmTransState* x)
         } else { 
             Assert(!found);
             ts->cid = dtm_get_cid();
+            IncludeInTransactionList(ts);
         }
         x->cid = ts->cid;
         ts->status = TRANSACTION_STATUS_ABORTED;
