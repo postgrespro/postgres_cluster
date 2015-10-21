@@ -73,8 +73,6 @@ static HTAB* gtid2xid;
 static DtmNodeState* local;
 static DtmTransState dtm_tx;
 
-//static TransactionId DatmOldestXid = FirstNormalTransactionId;
-//static cid_t DtmOldestCid = INVALID_CID;
 static int DtmVacuumDelay;
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
@@ -374,7 +372,6 @@ static TransactionId DtmAdjustOldestXid(TransactionId xid)
         DtmTransStatus *ts, *prev = NULL;
         timestamp_t cutoff_time = dtm_get_current_time() - DtmVacuumDelay*USEC;
         SpinLockAcquire(&local->lock);
-#if 1
         for (ts = local->trans_list_head; ts != NULL && ts->cid < cutoff_time; prev = ts, ts = ts->next) { 
             if (prev != NULL) { 
                 hash_search(xid2status, &prev->xid, HASH_REMOVE, NULL);
@@ -386,16 +383,6 @@ static TransactionId DtmAdjustOldestXid(TransactionId xid)
         } else { 
             xid = FirstNormalTransactionId;
         }
-#else               
-        ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_FIND, NULL);
-        if (ts == NULL || ts->cid + DtmVacuumDelay*USEC > dtm_get_current_time()) { 
-            xid = DtmOldestXid;
-        } else /*if (ts->cid > DtmOldestCid)*/ { 
-            DTM_TRACE(("Set new oldest xid=%u csn=%lu now=%lu\n", xid, ts->cid, dtm_get_current_time()));
-            DtmOldestXid = xid;
-            DtmOldestCid = ts->cid;
-        }
-#endif
         SpinLockRelease(&local->lock);
     }
     return xid;
@@ -418,7 +405,6 @@ TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 {
     timestamp_t delay = MIN_WAIT_TIMEOUT;
-
     Assert(xid != InvalidTransactionId);
 
     SpinLockAcquire(&local->lock);
