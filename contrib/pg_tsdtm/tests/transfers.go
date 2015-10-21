@@ -5,14 +5,15 @@ import (
     "sync"
     "strconv"
     "math/rand"
+    "time"
     "github.com/jackc/pgx"
 )
 
 const (
-    TRANSFER_CONNECTIONS = 8
+    TRANSFER_CONNECTIONS = 10
     INIT_AMOUNT = 10000
-    N_ITERATIONS = 10000//0
-    N_ACCOUNTS = 2//100000
+    N_ITERATIONS = 10000
+    N_ACCOUNTS = 100000
 )
 
 
@@ -201,7 +202,7 @@ func main() {
     var inspectWg sync.WaitGroup
 
     prepare_db()
-
+    start := time.Now()     
     transferWg.Add(TRANSFER_CONNECTIONS)
     for i:=0; i<TRANSFER_CONNECTIONS; i++ {
         go transfer(i, &transferWg)
@@ -213,6 +214,8 @@ func main() {
     transferWg.Wait()
     running = false
     inspectWg.Wait()
+
+    fmt.Printf("Elapsed time %f sec", time.Since(start).Seconds())
 }
 
 func exec(conn *pgx.Conn, stmt string, arguments ...interface{}) {
