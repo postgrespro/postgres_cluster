@@ -127,6 +127,12 @@ func transfer(id int, wg *sync.WaitGroup) {
         amount := 1
         account1 := rand.Intn(N_ACCOUNTS) 
         account2 := rand.Intn(N_ACCOUNTS)
+        
+        if account1 > account2 {
+           tmp := account1
+           account1 = account2
+           account2 = tmp
+        }
 
         exec(src, "update t set v = v - $1 where u=$2", amount, account1)
         exec(dst, "update t set v = v + $1 where u=$2", amount, account2)
@@ -152,7 +158,7 @@ func transfer(id int, wg *sync.WaitGroup) {
         } 
     } 
 
-    fmt.Println("Test completed, performed %d global transactions", nGlobalTrans)
+    fmt.Printf("Test completed, performed %d global transactions\n", nGlobalTrans)
     wg.Done()
 }
 
