@@ -13,22 +13,22 @@
   when: ansible_os_family == "Debian"
   sudo: yes
 
-- name: ensure dependencies (RedHat)
-  yum: name="@Development tools" state=present
-  when: ansible_os_family == "RedHat"
-  sudo: yes
+# - name: ensure dependencies (RedHat)
+#   yum: name="@Development tools" state=present
+#   when: ansible_os_family == "RedHat"
+#   sudo: yes
 
-- name: ensure dependencies (RedHat)
-  yum: name={{item}} state=installed
-  with_items:
-  - git
-  - automake
-  - libtool
-  - bison
-  - flex
-  - readline-devel
-  when: ansible_os_family == "RedHat"
-  sudo: yes
+# - name: ensure dependencies (RedHat)
+#   yum: name={{item}} state=installed
+#   with_items:
+#   - git
+#   - automake
+#   - libtool
+#   - bison
+#   - flex
+#   - readline-devel
+#   when: ansible_os_family == "RedHat"
+#   sudo: yes
 
 - name: setup the private key for postgrespro git access
   copy: dest=.ssh/ppg-deploy src=ppg-deploy.key mode=0600
