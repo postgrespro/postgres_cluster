@@ -46,5 +46,5 @@
 
 - name: create pg_worker_list.conf
   shell: echo "{{item}} 15432" >> {{pg_datadir}}/pg_worker_list.conf
-  with_items: groups['workers']
+  with_items: groups['nodes']
 
