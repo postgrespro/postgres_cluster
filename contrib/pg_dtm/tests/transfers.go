@@ -6,6 +6,7 @@ import (
     "os"
     "sync"
     "math/rand"
+    "strconv"
     "time"
     "github.com/jackc/pgx"
 )
@@ -306,7 +307,7 @@ func writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
         conns = append(conns, conn)
     }
 
-    start := time.Now()
+    // start := time.Now()
     for myCommits < cfg.Writers.Updates {
         amount := 1
 
@@ -320,43 +321,20 @@ func writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
         }
 
         if cfg.UseDtm {
-            xid := execQuery(src, "select dtm_begin_transaction()")
-            exec(dst, "select dtm_join_transaction($1)", xid)
+            xid := execQuery(src, "select dtm_begin_transaction(); begin transaction isolation level " + cfg.Isolation)
+            exec(dst, "select dtm_join_transaction(" + strconv.Itoa(xid) + "); begin transaction isolation level " + cfg.Isolation)
         }
 
-        parallel_exec([]*pgx.Conn{src,dst}, []string{"begin transaction isolation level " + cfg.Isolation, "begin transaction isolation level " + cfg.Isolation})
+        // parallel_exec([]*pgx.Conn{src,dst}, []string{"begin transaction isolation level " + cfg.Isolation, "begin transaction isolation level " + cfg.Isolation})
 
         ok := true
-        if (cfg.Writers.UseCursors) {
-            exec(
-                src,
-                "declare cur0 cursor for select * from t where u=$1 for update",
-                from_acc,
-            )
-            exec(
-                dst,
-                "declare cur0 cursor for select * from t where u=$1 for update",
-                to_acc,
-            )
 
-            ok = execUpdate(src, "fetch from cur0") && ok
-            ok = execUpdate(dst, "fetch from cur0") && ok
 
-            ok = execUpdate(
-                src, "update t set v = v - $1 where current of cur0",
-                amount,
-            ) && ok
-            ok = execUpdate(
-                dst, "update t set v = v + $1 where current of cur0",
-                amount,
-            ) && ok
-        } else {
+        sql1 := "update t set v = v - " + strconv.Itoa(amount) + " where u=" + strconv.Itoa(from_acc)
+        sql2 := "update t set v = v + " + strconv.Itoa(amount) + " where u=" + strconv.Itoa(to_acc)
 
-            sql1 := fmt.Sprintf("update t set v = v - %d where u=%d", amount, from_acc)
-            sql2 := fmt.Sprintf("update t set v = v + %d where u=%d", amount, to_acc)
+        ok = parallel_exec([]*pgx.Conn{src,dst}, []string{sql1,sql2})
 
-            ok = parallel_exec([]*pgx.Conn{src,dst}, []string{sql1,sql2})
-        }
 
         if ok {
             commit(src, dst)
@@ -368,13 +346,13 @@ func writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
             nAborts += 1
         }
 
-        if time.Since(start).Seconds() > 1 {
-            cCommits <- nCommits
-            cAborts <- nAborts
-            nCommits = 0
-            nAborts = 0
-            start = time.Now()
-        }
+        // if time.Since(start).Seconds() > 1 {
+        //     cCommits <- nCommits
+        //     cAborts <- nAborts
+        //     nCommits = 0
+        //     nAborts = 0
+        //     start = time.Now()
+        // }
     }
     cCommits <- nCommits
     cAborts <- nAborts
