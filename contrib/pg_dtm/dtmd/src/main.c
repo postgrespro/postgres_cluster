@@ -176,7 +176,7 @@ static void debug_cmd(client_t client, int argc, xid_t *argv) {
 		} \
 	} while (0)
 
-static xid_t max(xid_t a, xid_t b) {
+static xid_t max_of_xids(xid_t a, xid_t b) {
 	return a > b ? a : b;
 }
 
@@ -227,8 +227,8 @@ static void onreserve(client_t client, int argc, xid_t *argv) {
 			prev_gxid, next_gxid
 		);
 
-		minxid = max(minxid, next_gxid);
-		maxxid = max(maxxid, minxid + minsize - 1);
+		minxid = max_of_xids(minxid, next_gxid);
+		maxxid = max_of_xids(maxxid, minxid + minsize - 1);
 		next_gxid = maxxid + 1;
 	}
 	debug(

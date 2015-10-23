@@ -22,9 +22,9 @@ bin/dtmd: obj/server.o obj/main.o obj/clog.o obj/clogfile.o obj/util.o obj/trans
 		obj/snapshot.o \
 		$(SOCKHUB_LDFLAGS)
 
-bin/heart: obj/heart.o obj/util.o | bindir objdir
+bin/heart: obj/heart.o obj/raft.o obj/util.o | bindir objdir
 	$(CC) -o bin/heart $(CFLAGS) \
-		obj/heart.o obj/util.o
+		obj/heart.o obj/raft.o obj/util.o
 
 obj/server.o: src/server.c | objdir
 	$(CC) -c -o obj/server.o $(CFLAGS) $(SOCKHUB_CFLAGS) src/server.c

@@ -5,7 +5,7 @@
 #include "int.h"
 #include "clog.h"
 #include "snapshot.h"
-#include "limits.h"
+#include "dtmdlimits.h"
 
 #define MAX_SNAPSHOTS_PER_TRANS 8
 
