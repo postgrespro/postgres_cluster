@@ -12,6 +12,12 @@
 #     chdir: "{{libuv.src}}"
 #     creates: "{{libuv.dst}}/lib/libuv.a"
 
+- name: configure postgrespro to build dtmd
+  shell: ./configure --prefix={{pg_dst}} --without-zlib
+  args:
+    chdir: "{{pg_src}}"
+    creates: "{{pg_dst}}/src/Makefile.global"
+
 - name: compile dtmd
   shell: "make clean && make"
   args:
