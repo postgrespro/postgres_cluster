@@ -9,7 +9,8 @@ rm -rf install
 
 make install
 
-cd contrib/pg_dtm/
+# cd contrib/pg_dtm/
+cd contrib/pg_tsdtm/
 
 make clean
 make
@@ -34,14 +35,16 @@ echo 'autovacuum = off' >> ./install/data2/postgresql.conf
 echo "shared_preload_libraries = 'pg_dtm'" >> ./install/data1/postgresql.conf
 echo "shared_preload_libraries = 'pg_dtm'" >> ./install/data2/postgresql.conf
 
+echo "max_prepared_transactions = 400" >> ./install/data1/postgresql.conf
+echo "max_prepared_transactions = 400" >> ./install/data2/postgresql.conf
 
 ./install/bin/pg_ctl -D ./install/data1 -l ./install/data1/log start
 ./install/bin/pg_ctl -D ./install/data2 -l ./install/data2/log start
 
 
-cd contrib/pg_dtm/dtmd
-make clean
-make
-rm -rf /tmp/clog/*
-mkdir -p /tmp/clog
-./bin/dtmd
+# cd contrib/pg_dtm/dtmd
+# make clean
+# make
+# rm -rf /tmp/clog/*
+# mkdir -p /tmp/clog
+# ./bin/dtmd
