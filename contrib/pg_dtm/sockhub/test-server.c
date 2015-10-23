@@ -37,7 +37,7 @@ int main(int argc, char* argv[])
     fd_set inset;
     int port;
     int optval = 1;
-    char buf[BUFFER_SIZE];
+    char buf[BUFFER_SIZE/sizeof(Message)*sizeof(Message)];
 
     if (argc < 2) {
         fprintf(stderr, "Usage: ./test-server PORT\n");
@@ -85,18 +85,26 @@ int main(int argc, char* argv[])
                             }
                         }
                     } else { 
-                        rc = recv(i, buf, sizeof(buf), 0);
+                        rc = ShubReadSocketEx(i, buf, sizeof(Message), sizeof(buf));
                         if (rc > 0) { 
                             int pos;
-                            for (pos = 0; pos < rc; pos += sizeof(Message)) { 
+                            for (pos = 0; pos + sizeof(Message) <= rc; pos += sizeof(Message)) { 
                                 Message* msg = (Message*)&buf[pos];
                                 msg->data += 1;
                                 assert(sizeof(ShubMessageHdr) + msg->hdr.size == sizeof(Message));
                             }              
-                            assert(pos == rc);
-                            rc = send(i, buf, pos, 0);
-                            assert(rc == pos);
+                            if (pos < rc) {
+                                int ok = ShubReadSocket(i, buf + pos, sizeof(Message) - (rc - pos));
+                                assert(ok);
+                                Message* msg = (Message*)&buf[pos];
+                                msg->data += 1;
+                                assert(sizeof(ShubMessageHdr) + msg->hdr.size == sizeof(Message));
+                                pos += sizeof(Message);
+                            }              
+                            rc = ShubWriteSocket(i, buf, pos);
+                            assert(rc);
                         } else { 
+                            perror("Failed to read socket");
                             FD_CLR(i, &inset);
                         }
                     }

@@ -134,36 +134,70 @@ int main(int argc, char* argv[])
 {
     int sd;
     int rc;
-    int i;
+    int i, j;
     int n_iter = 10000;
+    int n_msgs;
     time_t start;
+    int buffer_size = 64*1024;
+    int port = 5001;
+    char const* host = NULL;
+    Message* msgs;
 
-    if (argc < 3) {
-        fprintf(stderr, "Usage: ./test-client HOST PORT [N_ITERATIONS]\n");
+    for (i = 1; i < argc; i++) { 
+        if (argv[i][0] == '-') { 
+            switch (argv[i][1]) { 
+              case 'h':
+                host = argv[++i];
+                break;
+              case 'p':
+                port = atoi(argv[++i]);
+                break;
+              case 'i':
+                n_iter = atoi(argv[++i]);
+                break;
+              case 'b':
+                buffer_size = atoi(argv[++i]);
+                break;
+              default:
+                goto Usage;
+            }
+        } else {
+            goto Usage;
+        }
+    }
+    if (host == NULL) { 
+      Usage:
+        fprintf(stderr, "Usage: ./test-async-client [options]\n"
+               "\t-h HOST server address\n"
+               "\t-p PORT server port\n"
+               "\t-i N number of iterations\n"
+               "\t-b SIZE buffer size\n");
         return 1;
     }
+    n_msgs = buffer_size / sizeof(Message);
+    buffer_size = n_msgs*sizeof(Message);
+    msgs = (Message*)malloc(buffer_size);
 
-    sd = connect_to_server(argv[1], atoi(argv[2]), MAX_CONNECT_ATTEMPTS);
+    sd = connect_to_server(host, port, MAX_CONNECT_ATTEMPTS);
     if (sd < 0) { 
         perror("Failed to connect to socket");
         return 1;
     }
-    
-    if (argc >= 3) {
-        n_iter = atoi(argv[3]);
-    }
-
     start = time(NULL);
 
     for (i = 0; i < n_iter; i++) {
-        Message msg;
-        msg.data = i;
-        msg.hdr.code = MSG_FIRST_USER_CODE;
-        msg.hdr.size = sizeof(Message) - sizeof(ShubMessageHdr);
-        rc = send(sd, &msg, sizeof(msg), 0);
-        assert(rc == sizeof(msg));
-        rc = recv(sd, &msg, sizeof(msg), 0);
-        assert(rc == sizeof(msg) && msg.data == i+1);
+        for (j = 0; j < n_msgs; j++) {
+            msgs[j].data = i;
+            msgs[j].hdr.size = sizeof(Message) - sizeof(ShubMessageHdr);
+            msgs[j].hdr.code = MSG_FIRST_USER_CODE;
+        }
+        rc = ShubWriteSocket(sd, msgs, buffer_size);
+        assert(rc);
+        rc = ShubReadSocket(sd, msgs, buffer_size);
+        assert(rc);
+        for (j = 0; j < n_msgs; j++) {
+            assert(msgs[j].data == i+1);
+        }
     }
     
     printf("Elapsed time for %d iterations: %d\n", n_iter, (int)(time(NULL) - start));

@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -c -I. -Wall -O2 -g -fPIC
+CFLAGS = -c -I. -Wall -O0 -g -fPIC
 LD = $(CC)
 LDFLAGS = -g
 AR = ar
@@ -9,7 +9,7 @@ all: sockhub library tests
 
 library: libsockhub.a 
 
-tests: test-client test-server
+tests: test-client test-async-client test-server
 
 sockhup.o: sockhub.c sockhub.h
 	$(CC) $(CFLAGS) sockhub.c
@@ -29,6 +29,12 @@ test-client.o: test-client.c sockhub.h
 
 test-client: test-client.o libsockhub.a
 	$(LD) $(LDFLAGS) -o test-client test-client.o libsockhub.a
+
+test-async-client.o: test-async-client.c sockhub.h
+	$(CC) $(CFLAGS) test-async-client.c
+
+test-async-client: test-async-client.o libsockhub.a
+	$(LD) $(LDFLAGS) -o test-async-client test-async-client.o libsockhub.a
 
 test-server.o: test-server.c sockhub.h
 	$(CC) $(CFLAGS) test-server.c
