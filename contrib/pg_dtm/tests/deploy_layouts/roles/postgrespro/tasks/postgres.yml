@@ -4,11 +4,20 @@
     chdir: "{{pg_src}}"
     creates: "{{pg_dst}}/bin/postgres"
 
+- name: remove dtm.so
+  shell: rm -f {{pg_dst}}/lib/pg_dtm.so
+
 - name: build dtm extension
   shell: make clean && make && make install
   args:
     chdir: "{{pg_src}}/contrib/pg_dtm"
     creates: "{{pg_dst}}/lib/pg_dtm.so"
+
+# - name: build ts-dtm extension
+#   shell: make clean && make && make install
+#   args:
+#     chdir: "{{pg_src}}/contrib/pg_tsdtm"
+#     creates: "{{pg_dst}}/lib/pg_dtm.so"
 
 - stat: path={{pg_datadir}}/postmaster.pid
   register: pg_pidfile
