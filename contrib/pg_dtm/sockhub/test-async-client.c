@@ -137,7 +137,7 @@ int main(int argc, char* argv[])
     int i, j;
     int n_iter = 10000;
     int n_msgs;
-    time_t start;
+    time_t start, elapsed;
     int buffer_size = 64*1024;
     int port = 5001;
     char const* host = NULL;
@@ -200,7 +200,8 @@ int main(int argc, char* argv[])
         }
     }
     
-    printf("Elapsed time for %d iterations: %d\n", n_iter, (int)(time(NULL) - start));
+    elapsed = time(NULL) - start;
+    printf("Elapsed time for %d iterations=%ld sec, TPS=%ld\n", n_iter, elapsed, (long)n_iter*n_msgs/elapsed);
     return 0;
 }
     

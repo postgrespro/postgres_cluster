@@ -1,5 +1,5 @@
 n_clients=10
-n_iters=1000
+n_iters=10000
 pkill -9 sockub
 pkill -9 test-async-client
 ./sockhub -h $1 -p 5001 -f /tmp/p5002 &

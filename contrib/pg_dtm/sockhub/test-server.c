@@ -85,21 +85,43 @@ int main(int argc, char* argv[])
                             }
                         }
                     } else { 
-                        rc = ShubReadSocketEx(i, buf, sizeof(Message), sizeof(buf));
-                        if (rc > 0) { 
-                            int pos;
-                            for (pos = 0; pos + sizeof(Message) <= rc; pos += sizeof(Message)) { 
+                        int available = ShubReadSocketEx(i, buf, sizeof(ShubMessageHdr), sizeof(buf));
+                        if (available >= sizeof(ShubMessageHdr)) {
+                            int pos = 0;
+                            while (pos + sizeof(Message) <= available) {
                                 Message* msg = (Message*)&buf[pos];
-                                msg->data += 1;
-                                assert(sizeof(ShubMessageHdr) + msg->hdr.size == sizeof(Message));
+                                if (msg->hdr.code == MSG_DISCONNECT) { 
+                                    assert(msg->hdr.size == 0);
+                                    printf("Disconnect client [%d:%d]\n", i, msg->hdr.chan);
+                                    memcpy(buf + pos, buf + pos + sizeof(ShubMessageHdr), available - pos - sizeof(ShubMessageHdr));
+                                    available -= sizeof(ShubMessageHdr);
+                                } else {                                     
+                                    assert(sizeof(ShubMessageHdr) + msg->hdr.size == sizeof(Message));
+                                    msg->data += 1;
+                                    pos += sizeof(Message); 
+                                }
                             }              
-                            if (pos < rc) {
-                                int ok = ShubReadSocket(i, buf + pos, sizeof(Message) - (rc - pos));
-                                assert(ok);
-                                Message* msg = (Message*)&buf[pos];
-                                msg->data += 1;
-                                assert(sizeof(ShubMessageHdr) + msg->hdr.size == sizeof(Message));
-                                pos += sizeof(Message);
+                            if (pos < available) {
+                                ShubMessageHdr* hdr;
+                                if (pos + sizeof(ShubMessageHdr) > available) {
+                                    rc = ShubReadSocket(i, buf + available, sizeof(ShubMessageHdr) - (available - pos));
+                                    assert(rc);
+                                    available = pos + sizeof(ShubMessageHdr);
+                                }
+                                hdr = (ShubMessageHdr*)&buf[pos];
+                                if (hdr->code == MSG_DISCONNECT) { 
+                                    assert(pos + sizeof(ShubMessageHdr) == available);
+                                    printf("Disconnect client [%d:%d]\n", i, hdr->chan);
+                                } else {
+                                    Message* msg = (Message*)hdr;
+                                    if (pos + sizeof(Message) > available) {
+                                        rc = ShubReadSocket(i, buf + available, sizeof(Message) - (available - pos));
+                                        assert(rc);
+                                    }                                    
+                                    assert(sizeof(ShubMessageHdr) + msg->hdr.size == sizeof(Message));
+                                    msg->data += 1;
+                                    pos += sizeof(Message);
+                                }
                             }              
                             rc = ShubWriteSocket(i, buf, pos);
                             assert(rc);
