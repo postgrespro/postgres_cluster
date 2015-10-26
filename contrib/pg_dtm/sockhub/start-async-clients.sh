@@ -1,4 +1,4 @@
-n_clients=10
+n_clients=8
 n_iters=10000
 pkill -9 sockub
 pkill -9 test-async-client

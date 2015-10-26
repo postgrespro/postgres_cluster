@@ -367,7 +367,7 @@ void ShubLoop(Shub* shub)
                                 }
                             }
                             /* Move partly fetched message header (if any) to the beginning of buffer */
-                            memcpy(shub->out_buffer, shub->out_buffer + pos, available - pos);
+                            memmove(shub->out_buffer, shub->out_buffer + pos, available - pos);
                             shub->out_buffer_used = available - pos;
                         } else { /* receive request from client */
                             int chan = i;
@@ -454,7 +454,7 @@ void ShubLoop(Shub* shub)
                                         shub->params->error_handler("Failed to write to inet socket", SHUB_RECOVERABLE_ERROR);
                                         reconnect(shub);
                                     }
-                                    memcpy(shub->in_buffer, shub->in_buffer + pos, available -= pos);
+                                    memmove(shub->in_buffer, shub->in_buffer + pos, available -= pos);
                                     pos = 0;
                                 } else {
                                     available -= pos;

@@ -93,7 +93,7 @@ int main(int argc, char* argv[])
                                 if (msg->hdr.code == MSG_DISCONNECT) { 
                                     assert(msg->hdr.size == 0);
                                     printf("Disconnect client [%d:%d]\n", i, msg->hdr.chan);
-                                    memcpy(buf + pos, buf + pos + sizeof(ShubMessageHdr), available - pos - sizeof(ShubMessageHdr));
+                                    memmove(buf + pos, buf + pos + sizeof(ShubMessageHdr), available - pos - sizeof(ShubMessageHdr));
                                     available -= sizeof(ShubMessageHdr);
                                 } else {                                     
                                     assert(sizeof(ShubMessageHdr) + msg->hdr.size == sizeof(Message));
