@@ -45,6 +45,6 @@
   when: not pg_dtm_enable
 
 - name: create pg_worker_list.conf
-  shell: echo "{{item}} 15432" >> {{pg_datadir}}/pg_worker_list.conf
+  shell: echo "{{item}} 25432" >> {{pg_datadir}}/pg_worker_list.conf
   with_items: groups['nodes']
 

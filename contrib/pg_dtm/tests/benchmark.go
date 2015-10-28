@@ -104,7 +104,7 @@ func init() {
 
 func main() {
     start := time.Now()
-
+    
     if (!cfg.SkipInit){
         prepare(cfg.ConnStrs)
         fmt.Printf("database prepared in %0.2f seconds\n", time.Since(start).Seconds())
@@ -144,7 +144,9 @@ func main() {
     }
 
     wg.Wait()    
-    fmt.Printf("Perform %d updates and %d fetches\n", totalUpdates, totalFetches)
+    fmt.Printf("Performed %d updates and %d fetches\n", totalUpdates, totalFetches)
+    fmt.Printf("WTPS = %f \n", float64(totalUpdates)/float64(cfg.Time) )
+    fmt.Printf("RTPS = %f \n", float64(totalFetches)/float64(cfg.Time) )
 }
 
 var running = false
@@ -179,7 +181,6 @@ func prepare_one(connstr string, wg *sync.WaitGroup) {
     exec(conn, "drop table if exists t")
     exec(conn, "create table t(u int primary key, v int)")
     exec(conn, "insert into t (select generate_series(0,$1-1), $2)", cfg.Accounts.Num, cfg.Accounts.Balance)
-    exec(conn, "commit")
     wg.Done()
 }
 

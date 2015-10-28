@@ -16,7 +16,7 @@ pg_config:
   - line: "fsync = off"
   - line: "autovacuum = off"
   - line: "listen_addresses = '*'"
-  - line: "max_connections = 512"
+  - line: "max_connections = 2048"
   - line: "max_prepared_transactions = 400"
   - line: "port = {{pg_port}}"
 pg_config_role:

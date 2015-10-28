@@ -321,11 +321,14 @@ func writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
         }
 
         if cfg.UseDtm {
-            xid := execQuery(src, "select dtm_begin_transaction(); begin transaction isolation level " + cfg.Isolation)
-            exec(dst, "select dtm_join_transaction(" + strconv.Itoa(xid) + "); begin transaction isolation level " + cfg.Isolation)
+            xid := execQuery(src, "select dtm_begin_transaction()")
+            exec(dst, "select dtm_join_transaction($1)", xid)
         }
 
-        // parallel_exec([]*pgx.Conn{src,dst}, []string{"begin transaction isolation level " + cfg.Isolation, "begin transaction isolation level " + cfg.Isolation})
+        parallel_exec(
+            []*pgx.Conn{src,dst},
+            []string{"begin transaction isolation level " + cfg.Isolation,
+            "begin transaction isolation level " + cfg.Isolation})
 
         ok := true
 

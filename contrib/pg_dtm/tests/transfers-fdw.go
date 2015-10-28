@@ -9,27 +9,26 @@ import (
 )
 
 const (
-    TRANSFER_CONNECTIONS = 8
+    TRANSFER_CONNECTIONS = 100
     INIT_AMOUNT = 10000
     N_ITERATIONS = 10000
     N_ACCOUNTS = 100000
-    ISOLATION_LEVEL = "repeatable read"
-    //ISOLATION_LEVEL = "read committed"
+    // ISOLATION_LEVEL = "repeatable read"
+    ISOLATION_LEVEL = "read committed"
 )
 
 
 var cfg1 = pgx.ConnConfig{
-        Host:     "127.0.0.1",
-        Port:     5432,
+        Host:     "astro10",
+        Port:     15432,
         Database: "postgres",
     }
 
 var cfg2 = pgx.ConnConfig{
-        Host:     "127.0.0.1",
-        Port:     5433,
+        Host:     "astro9",
+        Port:     15432,
         Database: "postgres",
     }
-
 
 var running = false
 
@@ -53,9 +52,9 @@ func prepare_db() {
     exec(conn2, "create table t(u int primary key, v int)")
 
     exec(conn1, "CREATE EXTENSION postgres_fdw");
-    exec(conn1, "CREATE SERVER dtm FOREIGN DATA WRAPPER postgres_fdw options (dbname 'postgres', host '127.0.0.1', port '5433')");
+    exec(conn1, "CREATE SERVER dtm FOREIGN DATA WRAPPER postgres_fdw options (dbname 'postgres', host 'astro9', port '15432')");
     exec(conn1, "CREATE FOREIGN TABLE t_fdw() inherits (t) server dtm options(table_name 't')");
-    exec(conn1, "CREATE USER MAPPING for knizhnik SERVER dtm options  (user 'knizhnik')");
+    exec(conn1, "CREATE USER MAPPING for cluster SERVER dtm options  (user 'cluster')");
 
     // start transaction
     exec(conn1, "begin transaction isolation level " + ISOLATION_LEVEL)

@@ -9,8 +9,8 @@ rm -rf install
 
 make install
 
-# cd contrib/pg_dtm/
-cd contrib/pg_tsdtm/
+cd contrib/pg_dtm/
+# cd contrib/pg_tsdtm/
 
 make clean
 make
@@ -42,9 +42,9 @@ echo "max_prepared_transactions = 400" >> ./install/data2/postgresql.conf
 ./install/bin/pg_ctl -D ./install/data2 -l ./install/data2/log start
 
 
-# cd contrib/pg_dtm/dtmd
-# make clean
-# make
-# rm -rf /tmp/clog/*
-# mkdir -p /tmp/clog
-# ./bin/dtmd
+cd contrib/pg_dtm/dtmd
+make clean
+make
+rm -rf /tmp/clog/*
+mkdir -p /tmp/clog
+./bin/dtmd
