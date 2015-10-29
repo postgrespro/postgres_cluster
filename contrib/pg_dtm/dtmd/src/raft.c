@@ -15,7 +15,7 @@ static void raft_server_init(raft_server_t *s) {
 	s->port = DEFAULT_LISTENPORT;
 }
 
-void raft_reset_timer(raft_t *r) {
+static void raft_reset_timer(raft_t *r) {
 	if (r->role == ROLE_LEADER) {
 		r->timer = HEARTBEAT_TIMEOUT_MS;
 	} else {
@@ -186,7 +186,7 @@ static void raft_send(raft_t *r, int dst, void *m, int mlen) {
 	}
 }
 
-void raft_beat(raft_t *r, int dst) {
+static void raft_beat(raft_t *r, int dst) {
 	if (dst == NOBODY) {
 		// send a beat/update to everybody
 		int i;
@@ -235,7 +235,7 @@ void raft_beat(raft_t *r, int dst) {
 	raft_send(r, dst, &m, sizeof(m));
 }
 
-void raft_claim(raft_t *r) {
+static void raft_claim(raft_t *r) {
 	assert(r->role == ROLE_CANDIDATE);
 	assert(r->leader == NOBODY);
 
@@ -414,7 +414,7 @@ static bool log_append(raft_log_t *l, int previndex, int prevterm, raft_entry_t 
 	return true;
 }
 
-void raft_handle_update(raft_t *r, raft_msg_update_t *m) {
+static void raft_handle_update(raft_t *r, raft_msg_update_t *m) {
 	int sender = m->msg.from;
 
 	raft_msg_done_t reply;
@@ -492,7 +492,7 @@ static void raft_refresh_acked(raft_t *r) {
 	}
 }
 
-void raft_handle_done(raft_t *r, raft_msg_done_t *m) {
+static void raft_handle_done(raft_t *r, raft_msg_done_t *m) {
 	if (r->role != ROLE_LEADER) {
 		return;
 	}
@@ -539,7 +539,7 @@ static void raft_set_term(raft_t *r, int term) {
 	r->votes = 0;
 }
 
-void raft_handle_claim(raft_t *r, raft_msg_claim_t *m) {
+static void raft_handle_claim(raft_t *r, raft_msg_claim_t *m) {
 	int candidate = m->msg.from;
 
 	if (m->msg.term >= r->term) {
@@ -579,7 +579,7 @@ finish:
 	raft_send(r, candidate, &reply, sizeof(reply));
 }
 
-void raft_handle_vote(raft_t *r, raft_msg_vote_t *m) {
+static void raft_handle_vote(raft_t *r, raft_msg_vote_t *m) {
 	int sender = m->msg.from;
 	raft_server_t *server = r->servers + sender;
 	if (m->msg.seqno != server->seqno) return;
