@@ -63,7 +63,7 @@ func (t Transfers) writer(id int, cCommits chan int, cAborts chan int, wg *sync.
     }
 
     start := time.Now()
-    for myCommits < cfg.Writers.Updates {
+    for myCommits < cfg.IterNum {
         amount := 1
 
         from_acc := cfg.Writers.StartId + 2*id + 1
@@ -119,7 +119,7 @@ func (t Transfers) writer(id int, cCommits chan int, cAborts chan int, wg *sync.
     wg.Done()
 }
 
-func (t Transfers) reader(wg *sync.WaitGroup, inconsistency *bool) {
+func (t Transfers) reader(wg *sync.WaitGroup, cFetches chan int, inconsistency *bool) {
     var prevSum int64 = 0
 
     var conns []*pgx.Conn

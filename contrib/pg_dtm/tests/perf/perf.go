@@ -14,7 +14,7 @@ type ConnStrings []string
 var backend interface{
     prepare(connstrs []string)
     writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup)
-    reader(wg *sync.WaitGroup, inconsistency *bool)
+    reader(wg *sync.WaitGroup, cFetches chan int, inconsistency *bool)
 }
 
 var cfg struct {
@@ -27,10 +27,10 @@ var cfg struct {
     Isolation string
     AccountsNum int
     ReadersNum int
+    IterNum int
 
     Writers struct {
         Num int
-        Updates int
         StartId int
     }
 }
@@ -72,7 +72,7 @@ func dump_cfg() {
 
     fmt.Printf(
         "Writers: %d × %d updates\n",
-        cfg.Writers.Num, cfg.Writers.Updates,
+        cfg.Writers.Num, cfg.IterNum,
     )
 }
 
@@ -89,8 +89,8 @@ func init() {
     	"The number of bank accounts")
     flag.IntVar(&cfg.Writers.StartId, "s", 0,
     	"StartID. Script will update rows starting from this value")
-    flag.IntVar(&cfg.Writers.Updates, "u", 10000,
-    	"The number updates each writer performs")
+    flag.IntVar(&cfg.IterNum, "n", 10000,
+    	"The number updates each writer (reader in case of Reades backend) performs")
     flag.IntVar(&cfg.ReadersNum, "r", 1,
     	"The number of readers")
     flag.IntVar(&cfg.Writers.Num, "w", 8,
@@ -125,12 +125,18 @@ func init() {
 }
 
 func main() {
+    if len(cfg.ConnStrs) < 2 {
+        fmt.Println("ERROR: This test needs at leas two connections")
+        os.Exit(1)
+    }
 
     switch cfg.Backend {
         case "transfers":
             backend = new(Transfers)
         case "fdw":
             backend = new(TransfersFDW)
+        case "readers":
+            backend = new(Readers)
         default:
             fmt.Println("No backend named: '%s'\n", cfg.Backend)
             return
@@ -148,9 +154,10 @@ func main() {
     var readerWg sync.WaitGroup
 
     cCommits := make(chan int)
+    cFetches:= make(chan int)
     cAborts := make(chan int)
 
-    go progress(cfg.Writers.Num * cfg.Writers.Updates, cCommits, cAborts)
+    go progress(cfg.Writers.Num * cfg.IterNum, cCommits, cAborts)
 
     start = time.Now()
     writerWg.Add(cfg.Writers.Num)
@@ -162,17 +169,17 @@ func main() {
     inconsistency := false
     readerWg.Add(cfg.ReadersNum)
     for i := 0; i < cfg.ReadersNum; i++ {
-        go backend.reader(&readerWg, &inconsistency)
+        go backend.reader(&readerWg, cFetches, &inconsistency)
     }
 
     writerWg.Wait()
+    running = false
+    readerWg.Wait()
+
     fmt.Printf("writers finished in %0.2f seconds\n",
     	time.Since(start).Seconds())
     fmt.Printf("TPS = %0.2f\n",
-    	float64(cfg.Writers.Num*cfg.Writers.Updates)/time.Since(start).Seconds())
-
-    running = false
-    readerWg.Wait()
+    	float64(cfg.Writers.Num*cfg.IterNum)/time.Since(start).Seconds())
 
     if inconsistency {
         fmt.Printf("INCONSISTENCY DETECTED\n")
