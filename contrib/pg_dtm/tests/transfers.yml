@@ -3,21 +3,34 @@
 - hosts: clients
   gather_facts: no
   tasks:
+
+  - name: generate connstrings
+    set_fact:
+      connstr: "-d 'host={{item}} user=cluster port=15432 dbname=postgres' "
+    with_items:
+      groups['nodes'] | reverse | batch(nnodes | d(2) | int) | first
+    register: connstrs
+
+  - name: make a list
+    set_fact:
+      connections: "{{ connstrs.results | map(attribute='ansible_facts.connstr') | join }}"
+
   - name: copy transfers binary
     copy: src=transfers.linux dest=~/transfers mode=a+x
 
-- hosts: 158.250.29.4
+- hosts: clients[0]
   gather_facts: no
   tasks:
-  - name: setup the databases
-    shell: "./transfers -d 'host=158.250.29.10 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.9 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.8 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.6 user=s.kelvich port=15432 dbname=postgres' -f -g -m -w 128 -r 0"
+  - name: fill the databases
+    shell: "./transfers {{connections}} -f -g"
     register: transfers_result
-  - debug: var=transfers_result
+  - debug: "var=transfers_result"
 
 - hosts: clients
   gather_facts: no
   tasks:
   - name: run transfers
-    shell: "./transfers -d 'host=158.250.29.10 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.9 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.8 user=s.kelvich port=15432 dbname=postgres' -d 'host=158.250.29.6 user=s.kelvich port=15432 dbname=postgres' -s -g -m -w 128 -u 5000"
+    shell: "./transfers {{connections}} -s {{runkeys | d('-g -w 60 -m -o -u 10000 -r 0')}} -k {{hostvars[inventory_hostname]['offset']}} "
     register: transfers_result
   - debug: var=transfers_result
+

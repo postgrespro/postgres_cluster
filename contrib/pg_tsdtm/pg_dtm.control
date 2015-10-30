@@ -1,0 +1,4 @@
+comment = 'Pluggable distributed transaction manager'
+default_version = '1.0'
+module_pathname = '$libdir/pg_dtm'
+relocatable = true

@@ -6,6 +6,7 @@ import (
     "os"
     "sync"
     "math/rand"
+    "strconv"
     "time"
     "github.com/jackc/pgx"
 )
@@ -34,6 +35,7 @@ var cfg struct {
     UseDtm bool
     InitOnly bool
     SkipInit bool
+    Parallel bool
 
     Isolation string // "repeatable read" or "read committed"
 
@@ -49,6 +51,7 @@ var cfg struct {
     Writers struct {
         Num int
         Updates int
+        StartId int
         AllowGlobal bool
         AllowLocal bool
         PrivateRows bool
@@ -105,14 +108,16 @@ func init() {
     flag.IntVar(&cfg.Readers.Num, "r", 1, "The number of readers")
     flag.IntVar(&cfg.Writers.Num, "w", 8, "The number of writers")
     flag.IntVar(&cfg.Writers.Updates, "u", 10000, "The number updates each writer performs")
+    flag.IntVar(&cfg.Writers.StartId, "k", 0, "Script will update rows starting from this value")
     flag.BoolVar(&cfg.Verbose, "v", false, "Show progress and other stuff for mortals")
     flag.BoolVar(&cfg.UseDtm, "m", false, "Use DTM to keep global consistency")
     flag.BoolVar(&cfg.Writers.AllowGlobal, "g", false, "Allow global updates")
     flag.BoolVar(&cfg.Writers.AllowLocal, "l", false, "Allow local updates")
     flag.BoolVar(&cfg.Writers.PrivateRows, "p", false, "Private rows (avoid waits/aborts caused by concurrent updates of the same rows)")
     flag.BoolVar(&cfg.Writers.UseCursors, "c", false, "Use cursors for updates")
-    flag.BoolVar(&cfg.InitOnly, "f", false, "Only feed databses with data")
+    flag.BoolVar(&cfg.InitOnly, "f", false, "Only feed databases with data")
     flag.BoolVar(&cfg.SkipInit, "s", false, "Skip init phase")
+    flag.BoolVar(&cfg.Parallel, "o", false, "Use parallel execs")
     flag.Parse()
 
     if len(cfg.ConnStrs) == 0 {
@@ -205,6 +210,31 @@ func commit(conns ...*pgx.Conn) {
     wg.Wait()
 }
 
+func parallel_exec(conns []*pgx.Conn, requests []string) bool {
+    var wg sync.WaitGroup
+    state := true
+    wg.Add(len(conns))
+    for i := range conns {
+        if cfg.Parallel {
+            go func(j int) {
+                _, err := conns[j].Exec(requests[j])
+                if err != nil {
+                    state = false
+                }
+                wg.Done()
+            }(i)
+        } else {
+            _, err := conns[i].Exec(requests[i])
+            if err != nil {
+                state = false
+            }
+            wg.Done()
+        }
+    }
+    wg.Wait()
+    return state
+}
+
 func prepare_one(connstr string, wg *sync.WaitGroup) {
     dbconf, err := pgx.ParseDSN(connstr)
     checkErr(err)
@@ -221,23 +251,7 @@ func prepare_one(connstr string, wg *sync.WaitGroup) {
     exec(conn, "drop table if exists t")
     exec(conn, "create table t(u int primary key, v int)")
     exec(conn, "insert into t (select generate_series(0,$1-1), $2)", cfg.Accounts.Num, cfg.Accounts.Balance)
-/*
-    exec(conn, "begin transaction isolation level " + cfg.Isolation)
 
-    start := time.Now()
-    for i := 0; i < cfg.Accounts.Num; i++ {
-        exec(conn, "insert into t values ($1, $2)", i, cfg.Accounts.Balance)
-        if time.Since(start).Seconds() > 1 {
-            if cfg.Verbose {
-                fmt.Printf(
-                    "inserted %0.2f%%: %d of %d records\n",
-                    float32(i + 1) * 100.0 / float32(cfg.Accounts.Num), i + 1, cfg.Accounts.Num,
-                )
-            }
-            start = time.Now()
-        }
-    }
-*/
     exec(conn, "commit")
     wg.Done()
 }
@@ -278,6 +292,10 @@ func writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
 
     var conns []*pgx.Conn
 
+    if len(cfg.ConnStrs) == 1 {
+        cfg.ConnStrs.Set(cfg.ConnStrs[0])
+    }
+
     for _, connstr := range cfg.ConnStrs {
         dbconf, err := pgx.ParseDSN(connstr)
         checkErr(err)
@@ -289,166 +307,55 @@ func writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
         conns = append(conns, conn)
     }
 
-    start := time.Now()
+    // start := time.Now()
     for myCommits < cfg.Writers.Updates {
         amount := 1
 
-        from_acc := rand.Intn(cfg.Accounts.Num)
-        to_acc := rand.Intn(cfg.Accounts.Num)
-
-        if cfg.Writers.PrivateRows {
-            from_acc += id - (from_acc % cfg.Writers.Num)
-            to_acc += id - (to_acc % cfg.Writers.Num)
-            if (from_acc == to_acc) {
-                to_acc = (from_acc + cfg.Writers.Num) % cfg.Accounts.Num
-            }
-        } else {
-            if (from_acc == to_acc) {
-                to_acc = (from_acc + 1) % cfg.Accounts.Num
-            }
-        }
-
-        if (from_acc > to_acc) {
-            from_acc, to_acc = to_acc, from_acc
-        }
+        from_acc := cfg.Writers.StartId + 2*id + 1
+        to_acc   := cfg.Writers.StartId + 2*id + 2
 
         src := conns[rand.Intn(len(conns))]
         dst := conns[rand.Intn(len(conns))]
-
         if src == dst {
-            if cfg.Writers.AllowLocal {
-                // local update
-                exec(src, "begin transaction isolation level " + cfg.Isolation)
-                ok1 := execUpdate(src, "update t set v = v - $1 where u=$2", amount, from_acc)
-                ok2 := execUpdate(src, "update t set v = v + $1 where u=$2", amount, to_acc)
-                if !ok1 || !ok2 {
-                    exec(src, "rollback")
-                    nAborts += 1
-                } else {
-                    exec(src, "commit")
-                    nCommits += 1
-                    myCommits += 1
-                }
-            } else {
-                if len(conns) > 1 {
-                        continue
-                }
+            continue
+        }
 
-                // global single-node update
-                if cfg.UseDtm {
-                    execQuery(src, "select dtm_begin_transaction()")
-                }
+        if cfg.UseDtm {
+            xid := execQuery(src, "select dtm_begin_transaction()")
+            exec(dst, "select dtm_join_transaction($1)", xid)
+        }
 
-                // start transaction
-                exec(src, "begin transaction isolation level " + cfg.Isolation)
+        parallel_exec(
+            []*pgx.Conn{src,dst},
+            []string{"begin transaction isolation level " + cfg.Isolation,
+            "begin transaction isolation level " + cfg.Isolation})
 
-                ok := true
-                if (cfg.Writers.UseCursors) {
-                    exec(
-                        src,
-                        "declare cur0 cursor for select * from t where u=$1 for update",
-                        from_acc,
-                    )
+        ok := true
 
-                    ok = execUpdate(src, "fetch from cur0") && ok
 
-                    ok = execUpdate(
-                        src, "update t set v = v - $1 where current of cur0",
-                        amount,
-                    ) && ok
-                    ok = execUpdate(
-                        src, "update t set v = v + $1 where current of cur0",
-                        amount,
-                    ) && ok
-                } else {
-                    ok = execUpdate(
-                        src, "update t set v = v - $1 where u=$2",
-                        amount, from_acc,
-                    ) && ok
-                    ok = execUpdate(
-                        src, "update t set v = v + $1 where u=$2",
-                        amount, to_acc,
-                    ) && ok
-                }
+        sql1 := "update t set v = v - " + strconv.Itoa(amount) + " where u=" + strconv.Itoa(from_acc)
+        sql2 := "update t set v = v + " + strconv.Itoa(amount) + " where u=" + strconv.Itoa(to_acc)
 
-                if ok {
-                    commit(src)
-                    nCommits += 1
-                    myCommits += 1
-                } else {
-                    exec(src, "rollback")
-                    nAborts += 1
-                }
-            }
+        ok = parallel_exec([]*pgx.Conn{src,dst}, []string{sql1,sql2})
+
+
+        if ok {
+            commit(src, dst)
+            nCommits += 1
+            myCommits += 1
         } else {
-            // global update
-            if !cfg.Writers.AllowGlobal {
-                // which we do not want
-                continue
-            }
-
-            if cfg.UseDtm {
-                xid := execQuery(src, "select dtm_begin_transaction()")
-                exec(dst, "select dtm_join_transaction($1)", xid)
-            }
-
-            // start transaction
-            exec(src, "begin transaction isolation level " + cfg.Isolation)
-            exec(dst, "begin transaction isolation level " + cfg.Isolation)
-
-            ok := true
-            if (cfg.Writers.UseCursors) {
-                exec(
-                    src,
-                    "declare cur0 cursor for select * from t where u=$1 for update",
-                    from_acc,
-                )
-                exec(
-                    dst,
-                    "declare cur0 cursor for select * from t where u=$1 for update",
-                    to_acc,
-                )
-
-                ok = execUpdate(src, "fetch from cur0") && ok
-                ok = execUpdate(dst, "fetch from cur0") && ok
-
-                ok = execUpdate(
-                    src, "update t set v = v - $1 where current of cur0",
-                    amount,
-                ) && ok
-                ok = execUpdate(
-                    dst, "update t set v = v + $1 where current of cur0",
-                    amount,
-                ) && ok
-            } else {
-                ok = execUpdate(
-                    src, "update t set v = v - $1 where u=$2",
-                    amount, from_acc,
-                ) && ok
-                ok = execUpdate(
-                    dst, "update t set v = v + $1 where u=$2",
-                    amount, to_acc,
-                ) && ok
-            }
-
-            if ok {
-                commit(src, dst)
-                nCommits += 1
-                myCommits += 1
-            } else {
-                exec(src, "rollback")
-                exec(dst, "rollback")
-                nAborts += 1
-            }
+            exec(src, "rollback")
+            exec(dst, "rollback")
+            nAborts += 1
         }
 
-        if time.Since(start).Seconds() > 1 {
-            cCommits <- nCommits
-            cAborts <- nAborts
-            nCommits = 0
-            nAborts = 0
-            start = time.Now()
-        }
+        // if time.Since(start).Seconds() > 1 {
+        //     cCommits <- nCommits
+        //     cAborts <- nAborts
+        //     nCommits = 0
+        //     nAborts = 0
+        //     start = time.Now()
+        // }
     }
     cCommits <- nCommits
     cAborts <- nAborts
@@ -470,6 +377,8 @@ func reader(wg *sync.WaitGroup, inconsistency *bool) {
         defer conn.Close()
         conns = append(conns, conn)
     }
+
+
 
     for running {
         var sum int64 = 0

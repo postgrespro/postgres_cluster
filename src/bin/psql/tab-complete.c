@@ -2264,7 +2264,12 @@ psql_completion(const char *text, int start, int end)
 	/* CREATE EXTENSION <name> */
 	else if (pg_strcasecmp(prev3_wd, "CREATE") == 0 &&
 			 pg_strcasecmp(prev2_wd, "EXTENSION") == 0)
-		COMPLETE_WITH_CONST("WITH SCHEMA");
+	{
+		static const char *const list_CREATE_EXTENSION[] =
+		{"WITH SCHEMA", "CASCADE", NULL};
+
+		COMPLETE_WITH_LIST(list_CREATE_EXTENSION);
+	}
 
 	/* CREATE FOREIGN */
 	else if (pg_strcasecmp(prev2_wd, "CREATE") == 0 &&
@@ -3227,15 +3232,6 @@ psql_completion(const char *text, int start, int end)
 			COMPLETE_WITH_CONST("FROM");
 	}
 
-	/* Complete "GRANT/REVOKE * ON * *" with TO/FROM */
-	else if (pg_strcasecmp(prev5_wd, "GRANT") == 0 &&
-			 pg_strcasecmp(prev3_wd, "ON") == 0)
-		COMPLETE_WITH_CONST("TO");
-
-	else if (pg_strcasecmp(prev5_wd, "REVOKE") == 0 &&
-			 pg_strcasecmp(prev3_wd, "ON") == 0)
-		COMPLETE_WITH_CONST("FROM");
-
 	/* Complete "GRANT/REVOKE * ON ALL * IN SCHEMA *" with TO/FROM */
 	else if ((pg_strcasecmp(prev8_wd, "GRANT") == 0 ||
 			  pg_strcasecmp(prev8_wd, "REVOKE") == 0) &&
@@ -3294,6 +3290,15 @@ psql_completion(const char *text, int start, int end)
 			   pg_strcasecmp(prev5_wd, "REVOKE") == 0) &&
 			  pg_strcasecmp(prev_wd, "FROM") == 0))
 		COMPLETE_WITH_QUERY(Query_for_list_of_grant_roles);
+
+	/* Complete "GRANT/REVOKE * ON * *" with TO/FROM */
+	else if (pg_strcasecmp(prev5_wd, "GRANT") == 0 &&
+			 pg_strcasecmp(prev3_wd, "ON") == 0)
+		COMPLETE_WITH_CONST("TO");
+
+	else if (pg_strcasecmp(prev5_wd, "REVOKE") == 0 &&
+			 pg_strcasecmp(prev3_wd, "ON") == 0)
+		COMPLETE_WITH_CONST("FROM");
 
 	/*
 	 * Complete "GRANT/REVOKE * TO/FROM" with username, PUBLIC,

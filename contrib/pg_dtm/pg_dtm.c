@@ -359,8 +359,11 @@ DtmGetNewTransactionId(bool isSubXact)
 	TransactionId xid;
 
 	XTM_INFO("%d: GetNewTransactionId\n", getpid());
-	Assert(!DtmGlobalXidAssigned); /* We should not assign new Xid if we do not use previous one */
-
+	if (DtmGlobalXidAssigned)
+	{
+		/* We should not assign new Xid if we do not use previous one */
+		elog(ERROR, "dtm_begin/join_transaction should be called prior to begin of global transaction");
+	}
 	/*
 	 * Workers synchronize transaction state at the beginning of each parallel
 	 * operation, so we can't account for new XIDs after that point.
@@ -887,11 +890,13 @@ dtm_get_current_snapshot_xcnt(PG_FUNCTION_ARGS)
 Datum
 dtm_begin_transaction(PG_FUNCTION_ARGS)
 {
-	Assert(!TransactionIdIsValid(DtmNextXid));
+	if (TransactionIdIsValid(DtmNextXid))
+		elog(ERROR, "dtm_begin/join_transaction should be called only once for global transaction");
 	if (dtm == NULL)
 		elog(ERROR, "DTM is not properly initialized, please check that pg_dtm plugin was added to shared_preload_libraries list in postgresql.conf");
 	DtmNextXid = DtmGlobalStartTransaction(&DtmSnapshot, &dtm->minXid);
-	Assert(TransactionIdIsValid(DtmNextXid));
+	if (!TransactionIdIsValid(DtmNextXid))
+		elog(ERROR, "Arbiter was not able to assign XID");
 	XTM_INFO("%d: Start global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
 
 	DtmHasGlobalSnapshot = true;
@@ -903,9 +908,11 @@ dtm_begin_transaction(PG_FUNCTION_ARGS)
 
 Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 {
-	Assert(!TransactionIdIsValid(DtmNextXid));
+	if (TransactionIdIsValid(DtmNextXid))
+		elog(ERROR, "dtm_begin/join_transaction should be called only once for global transaction");
 	DtmNextXid = PG_GETARG_INT32(0);
-	Assert(TransactionIdIsValid(DtmNextXid));
+	if (!TransactionIdIsValid(DtmNextXid))
+		elog(ERROR, "Arbiter was not able to assign XID");
 
 	DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
 	XTM_INFO("%d: Join global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
