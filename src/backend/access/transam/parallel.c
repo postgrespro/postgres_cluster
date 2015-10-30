@@ -28,6 +28,7 @@
 #include "tcop/tcopprot.h"
 #include "utils/combocid.h"
 #include "utils/guc.h"
+#include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/resowner.h"
 #include "utils/snapmgr.h"
@@ -95,6 +96,9 @@ int			ParallelWorkerNumber = -1;
 /* Is there a parallel message pending which we need to receive? */
 bool		ParallelMessagePending = false;
 
+/* Are we initializing a parallel worker? */
+bool		InitializingParallelWorker = false;
+
 /* Pointer to our fixed parallel state. */
 static FixedParallelState *MyFixedParallelState;
 
@@ -129,6 +133,14 @@ CreateParallelContext(parallel_worker_main_type entrypoint, int nworkers)
 	 * background workers.
 	 */
 	if (dynamic_shared_memory_type == DSM_IMPL_NONE)
+		nworkers = 0;
+
+	/*
+	 * If we are running under serializable isolation, we can't use
+	 * parallel workers, at least not until somebody enhances that mechanism
+	 * to be parallel-aware.
+	 */
+	if (IsolationIsSerializable())
 		nworkers = 0;
 
 	/* We might be running in a short-lived memory context. */
@@ -392,6 +404,52 @@ LaunchParallelWorkers(ParallelContext *pcxt)
 	/* We might be running in a short-lived memory context. */
 	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
 
+	/*
+	 * This function can be called for a parallel context for which it has
+	 * already been called previously, but only if all of the old workers
+	 * have already exited.  When this case arises, we need to do some extra
+	 * reinitialization.
+	 */
+	if (pcxt->nworkers_launched > 0)
+	{
+		FixedParallelState *fps;
+		char	   *error_queue_space;
+
+		/* Clean out old worker handles. */
+		for (i = 0; i < pcxt->nworkers; ++i)
+		{
+			if (pcxt->worker[i].error_mqh != NULL)
+				elog(ERROR, "previously launched worker still alive");
+			if (pcxt->worker[i].bgwhandle != NULL)
+			{
+				pfree(pcxt->worker[i].bgwhandle);
+				pcxt->worker[i].bgwhandle = NULL;
+			}
+		}
+
+		/* Reset a few bits of fixed parallel state to a clean state. */
+		fps = shm_toc_lookup(pcxt->toc, PARALLEL_KEY_FIXED);
+		fps->workers_attached = 0;
+		fps->last_xlog_end = 0;
+
+		/* Recreate error queues. */
+		error_queue_space =
+			shm_toc_lookup(pcxt->toc, PARALLEL_KEY_ERROR_QUEUE);
+		for (i = 0; i < pcxt->nworkers; ++i)
+		{
+			char	   *start;
+			shm_mq	   *mq;
+
+			start = error_queue_space + i * PARALLEL_ERROR_QUEUE_SIZE;
+			mq = shm_mq_create(start, PARALLEL_ERROR_QUEUE_SIZE);
+			shm_mq_set_receiver(mq, MyProc);
+			pcxt->worker[i].error_mqh = shm_mq_attach(mq, pcxt->seg, NULL);
+		}
+
+		/* Reset number of workers launched. */
+		pcxt->nworkers_launched = 0;
+	}
+
 	/* Configure a worker. */
 	snprintf(worker.bgw_name, BGW_MAXLEN, "parallel worker for PID %d",
 			 MyProcPid);
@@ -416,8 +474,11 @@ LaunchParallelWorkers(ParallelContext *pcxt)
 		if (!any_registrations_failed &&
 			RegisterDynamicBackgroundWorker(&worker,
 											&pcxt->worker[i].bgwhandle))
+		{
 			shm_mq_set_handle(pcxt->worker[i].error_mqh,
 							  pcxt->worker[i].bgwhandle);
+			pcxt->nworkers_launched++;
+		}
 		else
 		{
 			/*
@@ -814,6 +875,9 @@ ParallelWorkerMain(Datum main_arg)
 	char	   *tstatespace;
 	StringInfoData msgbuf;
 
+	/* Set flag to indicate that we're initializing a parallel worker. */
+	InitializingParallelWorker = true;
+
 	/* Establish signal handlers. */
 	pqsignal(SIGTERM, die);
 	BackgroundWorkerUnblockSignals();
@@ -867,7 +931,7 @@ ParallelWorkerMain(Datum main_arg)
 					 ParallelWorkerNumber * PARALLEL_ERROR_QUEUE_SIZE);
 	shm_mq_set_sender(mq, MyProc);
 	mqh = shm_mq_attach(mq, seg, NULL);
-	pq_redirect_to_shm_mq(mq, mqh);
+	pq_redirect_to_shm_mq(seg, mqh);
 	pq_set_parallel_master(fps->parallel_master_pid,
 						   fps->parallel_master_backend_id);
 
@@ -928,6 +992,12 @@ ParallelWorkerMain(Datum main_arg)
 	Assert(asnapspace != NULL);
 	PushActiveSnapshot(RestoreSnapshot(asnapspace));
 
+	/*
+	 * We've changed which tuples we can see, and must therefore invalidate
+	 * system caches.
+	 */
+	InvalidateSystemCaches();
+
 	/* Restore user ID and security context. */
 	SetUserIdAndSecContext(fps->current_user_id, fps->sec_context);
 
@@ -935,6 +1005,7 @@ ParallelWorkerMain(Datum main_arg)
 	 * We've initialized all of our state now; nothing should change
 	 * hereafter.
 	 */
+	InitializingParallelWorker = false;
 	EnterParallelMode();
 
 	/*
