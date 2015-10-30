@@ -20,7 +20,7 @@ bool check_inrange(xid_t min, xid_t x, xid_t max, bool check) {
 	bool result = inrange(min, x, max);
 	bool ok = result == check;
 	printf(
-		"%llu <= %llu <= %llu == %s (%s)\n",
+		"%u <= %u <= %u == %s (%s)\n",
 		min, x, max,
 		result ? "true" : "false",
 		ok ? "ok" : "FAILED"
