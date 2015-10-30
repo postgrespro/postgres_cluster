@@ -18,6 +18,14 @@ make install
 
 cd ../..
 
+cd contrib/postgres_fdw/
+
+make clean
+make
+make install
+
+cd ../..
+
 ./install/bin/initdb -D ./install/data1
 ./install/bin/initdb -D ./install/data2
 
