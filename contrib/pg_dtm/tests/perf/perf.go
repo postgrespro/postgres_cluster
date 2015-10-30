@@ -137,6 +137,8 @@ func main() {
             backend = new(TransfersFDW)
         case "readers":
             backend = new(Readers)
+        case "pgshard":
+            backend = new(TransfersPgShard)
         default:
             fmt.Println("No backend named: '%s'\n", cfg.Backend)
             return
