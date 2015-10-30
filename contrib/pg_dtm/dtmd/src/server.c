@@ -383,15 +383,6 @@ static client_t stream_get_client(stream_t stream, unsigned int chan, bool *isne
 	return client;
 }
 
-static void hexdump(int len, char *data) {
-	fprintf(stderr, "hex:");
-	int i;
-	for (i = 0; i < len; i++) {
-		fprintf(stderr, " %02x", data[i]);
-	}
-	fprintf(stderr, "\n");
-}
-
 static bool server_stream_handle(server_t server, stream_t stream) {
 	debug("a stream ready to recv\n");
 
