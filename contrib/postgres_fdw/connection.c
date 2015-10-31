@@ -368,21 +368,21 @@ static void
 do_sql_send_command(PGconn *conn, const char *sql)
 {
 	if (PQsendQuery(conn, sql) != PGRES_COMMAND_OK) {
-        PGresult *res = PQgetResult(conn);
+		PGresult *res = PQgetResult(conn);
 		pgfdw_report_error(ERROR, res, conn, true, sql);
-        PQclear(res);
-    }
+		PQclear(res);
+	}
 }
 
 static void
 do_sql_wait_command(PGconn *conn, const char *sql)
 {
-    PGresult *res;  
-    while ((res = PQgetResult(conn)) != NULL) { 
-        if (PQresultStatus(res) != PGRES_COMMAND_OK)
-            pgfdw_report_error(ERROR, res, conn, true, sql);
-        PQclear(res);
-    }
+	PGresult *res;
+	while ((res = PQgetResult(conn)) != NULL) {
+		if (PQresultStatus(res) != PGRES_COMMAND_OK)
+			pgfdw_report_error(ERROR, res, conn, true, sql);
+		PQclear(res);
+	}
 }
 
 /*
@@ -403,20 +403,20 @@ begin_remote_xact(ConnCacheEntry *entry)
 	/* Start main transaction if we haven't yet */
 	if (entry->xact_depth <= 0)
 	{
-        TransactionId gxid = GetTransactionManager()->GetGlobalTransactionId();
+		TransactionId gxid = GetTransactionManager()->GetGlobalTransactionId();
 		const char *sql;
 
 		elog(DEBUG3, "starting remote transaction on connection %p",
 			 entry->conn);
 
-        if (TransactionIdIsValid(gxid)) {
-            char stmt[64];
-            PGresult *res;
+		if (TransactionIdIsValid(gxid)) {
+			char stmt[64];
+			PGresult *res;
 
-            snprintf(stmt, sizeof(stmt), "select public.dtm_join_transaction(%d)", gxid);
-            res = PQexec(entry->conn, stmt);
-            PQclear(res);
-        }
+			snprintf(stmt, sizeof(stmt), "select public.dtm_join_transaction(%d)", gxid);
+			res = PQexec(entry->conn, stmt);
+			PQclear(res);
+		}
 
 		if (IsolationIsSerializable())
 			sql = "START TRANSACTION ISOLATION LEVEL SERIALIZABLE";
@@ -607,7 +607,7 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 				case XACT_EVENT_PARALLEL_COMMIT:
 				case XACT_EVENT_COMMIT:
 				case XACT_EVENT_PREPARE:
-                    do_sql_wait_command(entry->conn, "COMMIT TRANSACTION");
+					do_sql_wait_command(entry->conn, "COMMIT TRANSACTION");
 					/*
 					 * If there were any errors in subtransactions, and we
 					 * made prepared statements, do a DEALLOCATE ALL to make
@@ -680,17 +680,17 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 		}
 	}
 
-    if (event != XACT_EVENT_PARALLEL_PRE_COMMIT && event != XACT_EVENT_PRE_COMMIT) { 
-        /*
-         * Regardless of the event type, we can now mark ourselves as out of the
-         * transaction.  (Note: if we are here during PRE_COMMIT or PRE_PREPARE,
-         * this saves a useless scan of the hashtable during COMMIT or PREPARE.)
-         */
-        xact_got_connection = false;
-        
-        /* Also reset cursor numbering for next transaction */
-        cursor_number = 0;
-    }
+	if (event != XACT_EVENT_PARALLEL_PRE_COMMIT && event != XACT_EVENT_PRE_COMMIT) { 
+		/*
+		 * Regardless of the event type, we can now mark ourselves as out of the
+		 * transaction.  (Note: if we are here during PRE_COMMIT or PRE_PREPARE,
+		 * this saves a useless scan of the hashtable during COMMIT or PREPARE.)
+		 */
+		xact_got_connection = false;
+
+		/* Also reset cursor numbering for next transaction */
+		cursor_number = 0;
+	}
 }
 
 /*
