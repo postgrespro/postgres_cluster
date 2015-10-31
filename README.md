@@ -23,9 +23,10 @@ make && make install
 ```bash
 cd ~/code/pg_dtm/dtmd
 make
+mkdir /tmp/clog
 ./bin/dtmd &
 ```
-* To run something meaningful you need at leat two postgres instances. Also pg_dtm requires 
+* To run something meaningful you need at leat two postgres instances. Also pg_dtm requires presense in ```shared_preload_libraries```.
 ```bash
 initdb -D ./install/data1
 initdb -D ./install/data2
@@ -42,19 +43,22 @@ For a cluster-wide deploy we use ansible, more details in tests/deploy_layouts. 
 
 ### Usage
 
-Now cluster is running and you can use global tx between two nodes.
-
+Now cluster is running and you can use global tx between two nodes. Let's connect to postgres instances at different ports:
 
 ```sql
 create extension pg_dtm; -- node1
+create table accounts(user_id int, amount int); -- node1
+insert into accounts (select 2*generate_series(1,100)-1, 0); -- node1, odd user_id's
     create extension pg_dtm; -- node2
+    create table accounts(user_id int, amount int); -- node2
+    insert into accounts (select 2*generate_series(1,100), 0); -- node2, even user_id's
 select dtm_begin_transaction(); -- node1, returns global xid, e.g. 42
 	select dtm_join_transaction(42); -- node2, join global tx
 begin; -- node1
 	begin; -- node2
 update accounts set amount=amount-100 where user_id=1; -- node1, transfer money from user#1
 	update accounts set amount=amount+100 where user_id=2; -- node2, to user#2
-commit; -- node1
+commit; -- node1, blocks until second commit happend
 	commit; -- node2
 ```
 
@@ -63,7 +67,7 @@ commit; -- node1
 To ensure consistency we use simple bank test: perform a lot of simultaneous transfers between accounts on different servers, while constantly checking total amount of money on all accounts. This test can be found in tests/perf.
 
 ```bash
-> go run ./perf/*
+> go run ./tests/perf/*
   -C value
     	Connection string (repeat for multiple connections)
   -a int
@@ -87,14 +91,14 @@ To ensure consistency we use simple bank test: perform a lot of simultaneous tra
 
 So previous installation can be initialized with:
 ```
-go run ./perf/*.go  \
+go run ./tests/perf/*.go  \
 -C "dbname=postgres port=5432" \
 -C "dbname=postgres port=5433" \
 -g -i
 ```
 and tested with:
 ```
-go run ./perf/*.go  \
+go run ./tests/perf/*.go  \
 -C "dbname=postgres port=5432" \
 -C "dbname=postgres port=5433" \
 -g
