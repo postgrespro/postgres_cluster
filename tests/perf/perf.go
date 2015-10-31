@@ -78,7 +78,7 @@ func dump_cfg() {
 
 func init() {
     flag.StringVar(&cfg.Backend, "b", "transfers",
-        "Backend to use. Default to 'transfers'")
+        "Backend to use. Possible optinos: transfers, fdw, pgshard, readers.")
     flag.Var(&cfg.ConnStrs, "C",
     	"Connection string (repeat for multiple connections)")
     flag.BoolVar(&cfg.Init, "i", false,
