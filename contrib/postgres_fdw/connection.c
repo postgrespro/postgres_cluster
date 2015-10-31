@@ -588,8 +588,8 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					/* Commit all remote transactions during pre-commit */
 					do_sql_send_command(entry->conn, "COMMIT TRANSACTION");
 					continue;
-				case XACT_EVENT_PRE_PREPARE:
 
+				case XACT_EVENT_PRE_PREPARE:
 					/*
 					 * We disallow remote transactions that modified anything,
 					 * since it's not very reasonable to hold them open until
@@ -603,6 +603,7 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 							 errmsg("cannot prepare a transaction that modified remote tables")));
 					break;
+
 				case XACT_EVENT_PARALLEL_COMMIT:
 				case XACT_EVENT_COMMIT:
 				case XACT_EVENT_PREPARE:
@@ -630,6 +631,7 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					entry->have_prep_stmt = false;
 					entry->have_error = false;
 					break;
+
 				case XACT_EVENT_PARALLEL_ABORT:
 				case XACT_EVENT_ABORT:
 					/* Assume we might have lost track of prepared statements */
@@ -653,6 +655,12 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 						entry->have_error = false;
 					}
 					break;
+
+				case XACT_EVENT_START:
+				case XACT_EVENT_ABORT_PREPARED:
+				case XACT_EVENT_COMMIT_PREPARED:
+					break;
+
 			}
 		}
 
