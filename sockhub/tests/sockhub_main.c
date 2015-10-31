@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "../sockhub.h"
+#include "sockhub.h"
                    
 int main(int argc, char* argv[]) 
 {

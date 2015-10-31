@@ -16,7 +16,7 @@
 #include <errno.h>
 #include <assert.h>
 
-#include "../sockhub.h"
+#include "sockhub.h"
 
 #define BUFFER_SIZE 64*1024
 #define LISTEN_QUEUE_SIZE 100

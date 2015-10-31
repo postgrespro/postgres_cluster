@@ -18,7 +18,7 @@
 #include <stddef.h>
 #include <assert.h>
 
-#include "../sockhub.h"
+#include "sockhub.h"
 
 #define MAX_CONNECT_ATTEMPTS 10
 
