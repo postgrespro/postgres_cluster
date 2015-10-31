@@ -9,16 +9,14 @@ rm -rf install
 
 make install
 
-cd contrib/pg_dtm/
+cd ~/code/pg_dtm/
 # cd contrib/pg_tsdtm/
 
-make clean
-make
-make install
+PATH=~/code/postgrespro2/install/bin:$PATH make clean
+PATH=~/code/postgrespro2/install/bin:$PATH make
+PATH=~/code/postgrespro2/install/bin:$PATH make install
 
-cd ../..
-
-cd contrib/postgres_fdw/
+cd ~/code/postgrespro2/contrib/postgres_fdw/
 
 make clean
 make
