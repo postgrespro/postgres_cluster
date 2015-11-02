@@ -11,7 +11,7 @@
 #define HEARTBEAT_TIMEOUT_MS 20
 #define ELECTION_TIMEOUT_MS_MIN 150
 #define ELECTION_TIMEOUT_MS_MAX 300
-#define RAFT_LOGLEN 128
-#define RAFT_KEEP_APPLIED 16 // how many applied entries to keep during compaction
+#define RAFT_LOGLEN 10240
+#define RAFT_KEEP_APPLIED 4096 // how many applied entries to keep during compaction
 
 #endif

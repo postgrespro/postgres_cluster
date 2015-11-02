@@ -63,18 +63,6 @@ static int mstimer_reset(mstimer_t *t) {
 	return ms;
 }
 
-void usr1(int signum) {
-	static int arg = 0;
-	if (raft.role == ROLE_LEADER) {
-		int action = rand() % 9 + 1;
-		shout("got an USR1, state[%d] := %d\n", arg, action);
-		raft_emit(&raft, action, arg);
-		arg++;
-	} else {
-		shout("got an USR1 while not a leader, ignoring\n");
-	}
-}
-
 static void main_loop() {
 	mstimer_t t;
 	mstimer_reset(&t);
@@ -85,7 +73,7 @@ static void main_loop() {
 		die(EXIT_FAILURE);
 	}
 
-	//keep listening for data
+	int arg = 0;
 	while (true) {
 		int ms = mstimer_reset(&t);
 		raft_tick(&raft, ms);
@@ -97,6 +85,13 @@ static void main_loop() {
 		show_status();
 		if (m) {
 			raft_handle_message(&raft, m);
+		}
+
+		if ((raft.role == ROLE_LEADER) && (rand() % 10 == 0)) {
+			int action = rand() % 9 + 1;
+			shout("set state[%d] = %d\n", arg, action);
+			raft_emit(&raft, action, arg);
+			arg++;
 		}
 	}
 
@@ -172,7 +167,6 @@ int main(int argc, char **argv) {
 
 	signal(SIGTERM, die);
 	signal(SIGINT, die);
-	signal(SIGUSR1, usr1);
 
 	main_loop();
 

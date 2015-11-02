@@ -168,9 +168,12 @@ static bool msg_size_is(raft_msg_t *m, int mlen) {
 
 static void raft_send(raft_t *r, int dst, void *m, int mlen) {
 	assert(msg_size_is((raft_msg_t*)m, mlen));
+	assert(((raft_msg_t*)m)->msgtype >= 0);
+	assert(((raft_msg_t*)m)->msgtype < 4);
 	assert(dst >= 0);
 	assert(dst < r->servernum);
 	assert(dst != r->me);
+	assert(((raft_msg_t*)m)->from == r->me);
 
 	raft_server_t *server = r->servers + dst;
 
@@ -209,7 +212,12 @@ static void raft_beat(raft_t *r, int dst) {
 	m.msg.from = r->me;
 
 	if (s->tosend < r->log.first + r->log.size) {
-		// TODO: implement snapshot sending
+		raft_entry_t *e = &RAFT_LOG(r, s->tosend);
+		if (e->snapshot) {
+			// TODO: implement snapshot sending
+			shout("tosend = %d, first = %d, size = %d\n", s->tosend, r->log.first, r->log.size);
+			assert(false); // snapshot sending not implemented
+		}
 
 		// the follower is a bit behind: send an update
 		m.previndex = s->tosend - 1;
@@ -218,7 +226,7 @@ static void raft_beat(raft_t *r, int dst) {
 		} else {
 			m.prevterm = -1;
 		}
-		m.entry = RAFT_LOG(r, s->tosend);
+		m.entry = *e;
 		m.empty = false;
 	} else {
 		// the follower is up to date: send a heartbeat
@@ -313,6 +321,7 @@ static int raft_log_compact(raft_log_t *l, int keep_applied) {
 			snap.minarg = min(snap.minarg, e->argument);
 			snap.maxarg = max(snap.maxarg, e->argument);
 		}
+		e->snapshot = false; // FIXME: should not need this, find the code where it is not set on new entry insertion
 		compacted++;
 	}
 	if (compacted) {
@@ -331,7 +340,7 @@ bool raft_emit(raft_t *r, int action, int argument) {
 	if (r->log.size == RAFT_LOGLEN) {
 		int compacted = raft_log_compact(&r->log, RAFT_KEEP_APPLIED);
 		if (compacted) {
-			debug("compacted %d entries\n", compacted);
+			shout("compacted %d entries\n", compacted);
 		} else {
 			shout(
 				"cannot emit new entries, the log is"
@@ -355,7 +364,9 @@ bool raft_emit(raft_t *r, int action, int argument) {
 }
 
 static bool log_append(raft_log_t *l, int previndex, int prevterm, raft_entry_t *e) {
-	assert(!e->snapshot);
+	if (e->snapshot) {
+		assert(false);
+	}
 	debug(
 		"log_append(%p, previndex=%d, prevterm=%d,"
 		" term=%d, action=%d, argument=%d)\n",
@@ -470,11 +481,12 @@ finish:
 
 static void raft_refresh_acked(raft_t *r) {
 	// pick each server's acked and see if it is acked on the majority
+	// TODO: count 'acked' inside the entry itself to remove the nested loop here
 	int i, j;
 	for (i = 0; i < r->servernum; i++) {
 		if (i == r->me) continue;
 		int newacked = r->servers[i].acked;
-		if (newacked < r->log.acked) continue;
+		if (newacked <= r->log.acked) continue;
 
 		int replication = 1; // count self as yes
 		for (j = 0; j < r->servernum; j++) {
@@ -486,7 +498,12 @@ static void raft_refresh_acked(raft_t *r) {
 			}
 		}
 
+		assert(replication <= r->servernum);
+
 		if (replication * 2 > r->servernum) {
+			#ifdef MAJORITY_IS_NOT_ENOUGH
+			if (replication < r->servernum) continue;
+			#endif
 			r->log.acked = newacked;
 		}
 	}
@@ -524,6 +541,7 @@ static void raft_handle_done(raft_t *r, raft_msg_done_t *m) {
 			// the client should have specified the last index it had gotten
 			server->tosend = m->index + 1;
 		}
+		assert(server->tosend >= server->acked); // FIXME: remove this, because 'tosend' is actually allowed to be less than 'acked' if the follower has restarted
 	}
 
 	if (server->tosend < r->log.first + r->log.size) {
@@ -609,6 +627,8 @@ void raft_handle_message(raft_t *r, raft_msg_t *m) {
 		r->role = ROLE_FOLLOWER;
 	}
 
+	assert(m->msgtype >= 0);
+	assert(m->msgtype < 4);
 	switch (m->msgtype) {
 		case RAFT_MSG_UPDATE:
 			raft_handle_update(r, (raft_msg_update_t *)m);

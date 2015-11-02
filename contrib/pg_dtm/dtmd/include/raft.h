@@ -7,6 +7,8 @@
 
 #define NOBODY -1
 
+#define MAJORITY_IS_NOT_ENOUGH // wait for unanimous ack for applying a new entry
+
 #define DEFAULT_LISTENHOST "0.0.0.0"
 #define DEFAULT_LISTENPORT 5431
 
@@ -67,7 +69,7 @@ typedef struct raft_t {
 	int vote;   // who received our vote in current term
 	int role;
 	int me;     // my id
-	int votes;  // how votes are for me (if candidate)
+	int votes;  // how many votes are for me (if candidate)
 	int leader; // the id of the leader
 	raft_log_t log;
 
