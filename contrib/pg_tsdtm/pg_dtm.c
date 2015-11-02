@@ -130,7 +130,7 @@ static void dtm_sleep(timestamp_t interval)
         if (firstReportTime == 0) { 
             firstReportTime = now;
         } else { 
-            fprintf(stderr, "Sleep %lu of %lu usec (%f%%)\n", totalSleepTime, now - firstReportTime, totalSleepTime*100.0/firstReportTime);
+            fprintf(stderr, "Sleep %lu of %lu usec (%f%%)\n", totalSleepTime, now - firstReportTime, totalSleepTime*100.0/(now - firstReportTime));
         }
     }
 #endif
