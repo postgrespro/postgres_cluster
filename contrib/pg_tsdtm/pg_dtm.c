@@ -118,6 +118,9 @@ static void dtm_sleep(timestamp_t interval)
 #if TRACE_SLEEP_TIME
     timestamp_t now = dtm_get_current_time();
 #endif
+    ts.tv_sec = 0;
+    ts.tv_nsec = interval*1000;
+
     while (nanosleep(&ts, &rem) < 0) { 
         totalSleepInterrupts += 1;
         Assert(errno == EINTR);
