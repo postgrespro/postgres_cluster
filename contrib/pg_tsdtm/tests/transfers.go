@@ -18,14 +18,14 @@ const (
 
 
 var cfg1 = pgx.ConnConfig{
-        Host:     "127.0.0.1",
-        Port:     5432,
+        Host:     "astro9",
+        Port:     15432,
         Database: "postgres",
     }
 
 var cfg2 = pgx.ConnConfig{
-        Host:     "127.0.0.1",
-        Port:     5433,
+        Host:     "astro9",
+        Port:     15433,
         Database: "postgres",
     }
 
@@ -60,10 +60,12 @@ func prepare_db() {
     snapshot = execQuery(conn1, "select dtm_extend($1)", gtid)
     snapshot = execQuery(conn2, "select dtm_access($1, $2)", snapshot, gtid)
 
-    for i := 0; i < N_ACCOUNTS; i++ {
-        exec(conn1, "insert into t values($1, $2)", i, INIT_AMOUNT)
-        exec(conn2, "insert into t values($1, $2)", i, INIT_AMOUNT)
-    }
+    //for i := 0; i < N_ACCOUNTS; i++ {
+    //    exec(conn1, "insert into t values($1, $2)", i, INIT_AMOUNT)
+    //    exec(conn2, "insert into t values($1, $2)", i, INIT_AMOUNT)
+    //}
+    exec(conn1, "insert into t (select generate_series(0,$1-1), $2)",N_ACCOUNTS,0)
+    exec(conn2, "insert into t (select generate_series(0,$1-1), $2)",N_ACCOUNTS,0)
            
     exec(conn1, "prepare transaction '" + gtid + "'")
     exec(conn2, "prepare transaction '" + gtid + "'")
@@ -104,60 +106,38 @@ func transfer(id int, wg *sync.WaitGroup) {
     defer conn2.Close()
 
     for i := 0; i < N_ITERATIONS; i++ {
-        var dst *pgx.Conn
-        var src *pgx.Conn       
-        choice := rand.Intn(3)-1
+
         gtid := strconv.Itoa(id) + "." + strconv.Itoa(i)
-        if choice < 0 { 
-            src = conn1
-            dst = conn1
-            exec(conn1, "begin transaction")
-        } else if choice > 0 { 
-            src = conn2
-            dst = conn2
-            exec(conn2, "begin transaction")
-        } else { 
-            src = conn1
-            dst = conn2
-            exec(conn1, "begin transaction")
-            exec(conn2, "begin transaction")
-            snapshot = execQuery(conn1, "select dtm_extend($1)", gtid)
-            snapshot = execQuery(conn2, "select dtm_access($1, $2)", snapshot, gtid)
-        } 
-        //amount := 2*rand.Intn(2) - 1
-        amount := 1
-        account1 := rand.Intn(N_ACCOUNTS) 
-        account2 := rand.Intn(N_ACCOUNTS)
-        
-        if account1 > account2 {
-           tmp := account1
-           account1 = account2
-           account2 = tmp
-        }
+        amount := 2*rand.Intn(2) - 1
+        account1 := 2*id+1
+        account2 := 2*id+2
 
-        exec(src, "update t set v = v - $1 where u=$2", amount, account1)
-        exec(dst, "update t set v = v + $1 where u=$2", amount, account2)
+        exec(conn1, "begin transaction")
+        exec(conn2, "begin transaction")
+        snapshot = execQuery(conn1, "select dtm_extend($1)", gtid)
+        snapshot = execQuery(conn2, "select dtm_access($1, $2)", snapshot, gtid)
 
-        if (src != dst) {
-            exec(conn1, "prepare transaction '" + gtid + "'")
-            exec(conn2, "prepare transaction '" + gtid + "'")
 
-            exec(conn1, "select dtm_begin_prepare($1)", gtid)
-            exec(conn2, "select dtm_begin_prepare($1)", gtid)
+        exec(conn1, "update t set v = v - $1 where u=$2", amount, account1)
+        exec(conn2, "update t set v = v + $1 where u=$2", amount, account2)
 
-            csn = execQuery(conn1, "select dtm_prepare($1, 0)", gtid)
-            csn = execQuery(conn2, "select dtm_prepare($1, $2)", gtid, csn)
+        exec(conn1, "prepare transaction '" + gtid + "'")
+        exec(conn2, "prepare transaction '" + gtid + "'")
 
-            exec(conn1, "select dtm_end_prepare($1, $2)", gtid, csn)
-            exec(conn2, "select dtm_end_prepare($1, $2)", gtid, csn)
+        exec(conn1, "select dtm_begin_prepare($1)", gtid)
+        exec(conn2, "select dtm_begin_prepare($1)", gtid)
 
-            exec(conn1, "commit prepared '" + gtid + "'")
-            exec(conn2, "commit prepared '" + gtid + "'")
-            nGlobalTrans++
-        } else {
-            exec(dst, "commit")            
-        } 
-    } 
+        csn = execQuery(conn1, "select dtm_prepare($1, 0)", gtid)
+        csn = execQuery(conn2, "select dtm_prepare($1, $2)", gtid, csn)
+
+        exec(conn1, "select dtm_end_prepare($1, $2)", gtid, csn)
+        exec(conn2, "select dtm_end_prepare($1, $2)", gtid, csn)
+
+        exec(conn1, "commit prepared '" + gtid + "'")
+        exec(conn2, "commit prepared '" + gtid + "'")
+        nGlobalTrans++
+
+    }
 
     fmt.Printf("Test completed, performed %d global transactions\n", nGlobalTrans)
     wg.Done()
@@ -215,7 +195,8 @@ func main() {
     running = false
     inspectWg.Wait()
 
-    fmt.Printf("Elapsed time %f sec", time.Since(start).Seconds())
+    fmt.Printf("Elapsed time %f sec\n", time.Since(start).Seconds())
+    fmt.Printf("TPS = %f\n", float64(TRANSFER_CONNECTIONS*N_ITERATIONS)/time.Since(start).Seconds())
 }
 
 func exec(conn *pgx.Conn, stmt string, arguments ...interface{}) {
@@ -237,5 +218,4 @@ func checkErr(err error) {
         panic(err)
     }
 }
-
 
