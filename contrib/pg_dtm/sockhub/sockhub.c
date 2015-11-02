@@ -469,7 +469,7 @@ void ShubLoop(Shub* shub)
                 if (shub->params->delay != 0) { 
                     continue;
                 }
-            } 
+            }
             if (shub->in_buffer_used != 0) { /* if buffer is not empty... */
                 /* ...then send it */
 #if SHOW_SENT_STATISTIC

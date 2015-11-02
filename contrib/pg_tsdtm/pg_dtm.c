@@ -39,6 +39,8 @@
 
 #define USEC 1000000
 
+#define TRACE_SLEEP_TIME 1
+
 typedef uint64 timestamp_t;
 
 typedef struct DtmTransStatus
@@ -72,7 +74,10 @@ static HTAB* xid2status;
 static HTAB* gtid2xid;
 static DtmNodeState* local;
 static DtmTransState dtm_tx;
-
+static timestamp_t firstReportTime;
+static timestamp_t prevReportTime;
+static timestamp_t totalSleepTime;
+static uint64 totalSleepInterrupts;
 static int DtmVacuumDelay;
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
@@ -110,12 +115,25 @@ static void dtm_sleep(timestamp_t interval)
 {
     struct timespec ts;
     struct timespec rem;
-    ts.tv_sec = interval / USEC;
-    ts.tv_nsec = interval % USEC * 1000;
+#if TRACE_SLEEP_TIME
+    timestamp_t now = dtm_get_current_time();
+#endif
     while (nanosleep(&ts, &rem) < 0) { 
+        totalSleepInterrupts += 1;
         Assert(errno == EINTR);
         ts = rem;
     }
+#if TRACE_SLEEP_TIME
+    totalSleepTime += dtm_get_current_time() - now;
+    if (now > prevReportTime + USEC*10) { 
+        prevReportTime = now;
+        if (firstReportTime == 0) { 
+            firstReportTime = now;
+        } else { 
+            fprintf(stderr, "Sleep %lu of %lu usec (%f%%)\n", totalSleepTime, now - firstReportTime, totalSleepTime*100.0/firstReportTime);
+        }
+    }
+#endif
 }
     
 static cid_t dtm_get_cid()
