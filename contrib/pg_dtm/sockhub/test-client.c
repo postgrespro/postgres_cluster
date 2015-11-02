@@ -158,6 +158,7 @@ int main(int argc, char* argv[])
     for (i = 0; i < n_iter; i++) {
         Message msg;
         msg.data = i;
+        msg.hdr.code = MSG_FIRST_USER_CODE;
         msg.hdr.size = sizeof(Message) - sizeof(ShubMessageHdr);
         rc = send(sd, &msg, sizeof(msg), 0);
         assert(rc == sizeof(msg));

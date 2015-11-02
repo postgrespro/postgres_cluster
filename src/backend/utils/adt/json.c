@@ -32,9 +32,6 @@
 #include "utils/typcache.h"
 #include "utils/syscache.h"
 
-/* String to output for infinite dates and timestamps */
-#define DT_INFINITY "\"infinity\""
-
 /*
  * The context of the parser is maintained by the recursive descent
  * mechanism, but is passed explicitly to the error reporting routine
@@ -70,11 +67,11 @@ typedef enum					/* type categories for datum_to_json */
 
 typedef struct JsonAggState
 {
-	StringInfo         str;
-	JsonTypeCategory   key_category;
-	Oid                key_output_func;
-	JsonTypeCategory   val_category;
-	Oid                val_output_func;
+	StringInfo	str;
+	JsonTypeCategory key_category;
+	Oid			key_output_func;
+	JsonTypeCategory val_category;
+	Oid			val_output_func;
 } JsonAggState;
 
 static inline void json_lex(JsonLexContext *lex);
@@ -360,16 +357,16 @@ pg_parse_json(JsonLexContext *lex, JsonSemAction *sem)
 int
 json_count_array_elements(JsonLexContext *lex)
 {
-	JsonLexContext	copylex;
-	int				count;
+	JsonLexContext copylex;
+	int			count;
 
 	/*
 	 * It's safe to do this with a shallow copy because the lexical routines
-	 * don't scribble on the input. They do scribble on the other pointers etc,
-	 * so doing this with a copy makes that safe.
+	 * don't scribble on the input. They do scribble on the other pointers
+	 * etc, so doing this with a copy makes that safe.
 	 */
 	memcpy(&copylex, lex, sizeof(JsonLexContext));
-	copylex.strval = NULL; /* not interested in values here */
+	copylex.strval = NULL;		/* not interested in values here */
 	copylex.lex_level++;
 
 	count = 0;
@@ -490,6 +487,8 @@ parse_object(JsonLexContext *lex, JsonSemAction *sem)
 	json_struct_action oend = sem->object_end;
 	JsonTokenType tok;
 
+	check_stack_depth();
+
 	if (ostart != NULL)
 		(*ostart) (sem->semstate);
 
@@ -567,6 +566,8 @@ parse_array(JsonLexContext *lex, JsonSemAction *sem)
 	 */
 	json_struct_action astart = sem->array_start;
 	json_struct_action aend = sem->array_end;
+
+	check_stack_depth();
 
 	if (astart != NULL)
 		(*astart) (sem->semstate);
@@ -1433,6 +1434,8 @@ datum_to_json(Datum val, bool is_null, StringInfo result,
 	char	   *outputstr;
 	text	   *jsontext;
 
+	check_stack_depth();
+
 	/* callers are expected to ensure that null keys are not passed in */
 	Assert(!(key_scalar && is_null));
 
@@ -1486,19 +1489,16 @@ datum_to_json(Datum val, bool is_null, StringInfo result,
 				char		buf[MAXDATELEN + 1];
 
 				date = DatumGetDateADT(val);
-
+				/* Same as date_out(), but forcing DateStyle */
 				if (DATE_NOT_FINITE(date))
-				{
-					/* we have to format infinity ourselves */
-					appendStringInfoString(result, DT_INFINITY);
-				}
+					EncodeSpecialDate(date, buf);
 				else
 				{
 					j2date(date + POSTGRES_EPOCH_JDATE,
 						   &(tm.tm_year), &(tm.tm_mon), &(tm.tm_mday));
 					EncodeDateOnly(&tm, USE_XSD_DATES, buf);
-					appendStringInfo(result, "\"%s\"", buf);
 				}
+				appendStringInfo(result, "\"%s\"", buf);
 			}
 			break;
 		case JSONTYPE_TIMESTAMP:
@@ -1509,21 +1509,16 @@ datum_to_json(Datum val, bool is_null, StringInfo result,
 				char		buf[MAXDATELEN + 1];
 
 				timestamp = DatumGetTimestamp(val);
-
+				/* Same as timestamp_out(), but forcing DateStyle */
 				if (TIMESTAMP_NOT_FINITE(timestamp))
-				{
-					/* we have to format infinity ourselves */
-					appendStringInfoString(result, DT_INFINITY);
-				}
+					EncodeSpecialTimestamp(timestamp, buf);
 				else if (timestamp2tm(timestamp, NULL, &tm, &fsec, NULL, NULL) == 0)
-				{
 					EncodeDateTime(&tm, fsec, false, 0, NULL, USE_XSD_DATES, buf);
-					appendStringInfo(result, "\"%s\"", buf);
-				}
 				else
 					ereport(ERROR,
 							(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 							 errmsg("timestamp out of range")));
+				appendStringInfo(result, "\"%s\"", buf);
 			}
 			break;
 		case JSONTYPE_TIMESTAMPTZ:
@@ -1535,22 +1530,17 @@ datum_to_json(Datum val, bool is_null, StringInfo result,
 				const char *tzn = NULL;
 				char		buf[MAXDATELEN + 1];
 
-				timestamp = DatumGetTimestamp(val);
-
+				timestamp = DatumGetTimestampTz(val);
+				/* Same as timestamptz_out(), but forcing DateStyle */
 				if (TIMESTAMP_NOT_FINITE(timestamp))
-				{
-					/* we have to format infinity ourselves */
-					appendStringInfoString(result, DT_INFINITY);
-				}
+					EncodeSpecialTimestamp(timestamp, buf);
 				else if (timestamp2tm(timestamp, &tz, &tm, &fsec, &tzn, NULL) == 0)
-				{
 					EncodeDateTime(&tm, fsec, true, tz, tzn, USE_XSD_DATES, buf);
-					appendStringInfo(result, "\"%s\"", buf);
-				}
 				else
 					ereport(ERROR,
 							(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 							 errmsg("timestamp out of range")));
+				appendStringInfo(result, "\"%s\"", buf);
 			}
 			break;
 		case JSONTYPE_JSON:
@@ -1869,7 +1859,7 @@ json_agg_transfn(PG_FUNCTION_ARGS)
 {
 	MemoryContext aggcontext,
 				oldcontext;
-	JsonAggState	*state;
+	JsonAggState *state;
 	Datum		val;
 
 	if (!AggCheckCallContext(fcinfo, &aggcontext))
@@ -1880,7 +1870,7 @@ json_agg_transfn(PG_FUNCTION_ARGS)
 
 	if (PG_ARGISNULL(0))
 	{
-		Oid         arg_type = get_fn_expr_argtype(fcinfo->flinfo, 1);
+		Oid			arg_type = get_fn_expr_argtype(fcinfo->flinfo, 1);
 
 		if (arg_type == InvalidOid)
 			ereport(ERROR,
@@ -1899,7 +1889,7 @@ json_agg_transfn(PG_FUNCTION_ARGS)
 		MemoryContextSwitchTo(oldcontext);
 
 		appendStringInfoChar(state->str, '[');
-		json_categorize_type(arg_type,&state->val_category,
+		json_categorize_type(arg_type, &state->val_category,
 							 &state->val_output_func);
 	}
 	else
@@ -1943,7 +1933,7 @@ json_agg_transfn(PG_FUNCTION_ARGS)
 Datum
 json_agg_finalfn(PG_FUNCTION_ARGS)
 {
-	JsonAggState	*state;
+	JsonAggState *state;
 
 	/* cannot be called directly because of internal-type argument */
 	Assert(AggCheckCallContext(fcinfo, NULL));
@@ -1970,7 +1960,7 @@ json_object_agg_transfn(PG_FUNCTION_ARGS)
 {
 	MemoryContext aggcontext,
 				oldcontext;
-	JsonAggState	*state;
+	JsonAggState *state;
 	Datum		arg;
 
 	if (!AggCheckCallContext(fcinfo, &aggcontext))
@@ -2001,7 +1991,7 @@ json_object_agg_transfn(PG_FUNCTION_ARGS)
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("could not determine data type for argument 1")));
 
-		json_categorize_type(arg_type,&state->key_category,
+		json_categorize_type(arg_type, &state->key_category,
 							 &state->key_output_func);
 
 		arg_type = get_fn_expr_argtype(fcinfo->flinfo, 2);
@@ -2011,7 +2001,7 @@ json_object_agg_transfn(PG_FUNCTION_ARGS)
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("could not determine data type for argument 2")));
 
-		json_categorize_type(arg_type,&state->val_category,
+		json_categorize_type(arg_type, &state->val_category,
 							 &state->val_output_func);
 
 		appendStringInfoString(state->str, "{ ");
@@ -2059,7 +2049,7 @@ json_object_agg_transfn(PG_FUNCTION_ARGS)
 Datum
 json_object_agg_finalfn(PG_FUNCTION_ARGS)
 {
-	JsonAggState	*state;
+	JsonAggState *state;
 
 	/* cannot be called directly because of internal-type argument */
 	Assert(AggCheckCallContext(fcinfo, NULL));

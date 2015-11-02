@@ -271,6 +271,7 @@ _outPlanInfo(StringInfo str, const Plan *node)
 	WRITE_FLOAT_FIELD(total_cost, "%.2f");
 	WRITE_FLOAT_FIELD(plan_rows, "%.0f");
 	WRITE_INT_FIELD(plan_width);
+	WRITE_INT_FIELD(plan_node_id);
 	WRITE_NODE_FIELD(targetlist);
 	WRITE_NODE_FIELD(qual);
 	WRITE_NODE_FIELD(lefttree);
@@ -432,6 +433,17 @@ _outBitmapOr(StringInfo str, const BitmapOr *node)
 }
 
 static void
+_outGather(StringInfo str, const Gather *node)
+{
+	WRITE_NODE_TYPE("GATHER");
+
+	_outPlanInfo(str, (const Plan *) node);
+
+	WRITE_INT_FIELD(num_workers);
+	WRITE_BOOL_FIELD(single_copy);
+}
+
+static void
 _outScan(StringInfo str, const Scan *node)
 {
 	WRITE_NODE_TYPE("SCAN");
@@ -582,6 +594,7 @@ _outForeignScan(StringInfo str, const ForeignScan *node)
 	WRITE_NODE_FIELD(fdw_exprs);
 	WRITE_NODE_FIELD(fdw_private);
 	WRITE_NODE_FIELD(fdw_scan_tlist);
+	WRITE_NODE_FIELD(fdw_recheck_quals);
 	WRITE_BITMAPSET_FIELD(fs_relids);
 	WRITE_BOOL_FIELD(fsSystemCol);
 }
@@ -2385,7 +2398,6 @@ _outQuery(StringInfo str, const Query *node)
 	WRITE_NODE_FIELD(rtable);
 	WRITE_NODE_FIELD(jointree);
 	WRITE_NODE_FIELD(targetList);
-	WRITE_NODE_FIELD(withCheckOptions);
 	WRITE_NODE_FIELD(onConflict);
 	WRITE_NODE_FIELD(returningList);
 	WRITE_NODE_FIELD(groupClause);
@@ -2998,6 +3010,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_BitmapOr:
 				_outBitmapOr(str, obj);
+				break;
+			case T_Gather:
+				_outGather(str, obj);
 				break;
 			case T_Scan:
 				_outScan(str, obj);

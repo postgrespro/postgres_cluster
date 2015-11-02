@@ -112,6 +112,7 @@ CopyPlanFields(const Plan *from, Plan *newnode)
 	COPY_SCALAR_FIELD(total_cost);
 	COPY_SCALAR_FIELD(plan_rows);
 	COPY_SCALAR_FIELD(plan_width);
+	COPY_SCALAR_FIELD(plan_node_id);
 	COPY_NODE_FIELD(targetlist);
 	COPY_NODE_FIELD(qual);
 	COPY_NODE_FIELD(lefttree);
@@ -309,6 +310,28 @@ _copyBitmapOr(const BitmapOr *from)
 	 * copy remainder of node
 	 */
 	COPY_NODE_FIELD(bitmapplans);
+
+	return newnode;
+}
+
+/*
+ * _copyGather
+ */
+static Gather *
+_copyGather(const Gather *from)
+{
+	Gather	   *newnode = makeNode(Gather);
+
+	/*
+	 * copy node superclass fields
+	 */
+	CopyPlanFields((const Plan *) from, (Plan *) newnode);
+
+	/*
+	 * copy remainder of node
+	 */
+	COPY_SCALAR_FIELD(num_workers);
+	COPY_SCALAR_FIELD(single_copy);
 
 	return newnode;
 }
@@ -625,6 +648,7 @@ _copyForeignScan(const ForeignScan *from)
 	COPY_NODE_FIELD(fdw_exprs);
 	COPY_NODE_FIELD(fdw_private);
 	COPY_NODE_FIELD(fdw_scan_tlist);
+	COPY_NODE_FIELD(fdw_recheck_quals);
 	COPY_BITMAPSET_FIELD(fs_relids);
 	COPY_SCALAR_FIELD(fsSystemCol);
 
@@ -2702,7 +2726,6 @@ _copyQuery(const Query *from)
 	COPY_NODE_FIELD(rtable);
 	COPY_NODE_FIELD(jointree);
 	COPY_NODE_FIELD(targetList);
-	COPY_NODE_FIELD(withCheckOptions);
 	COPY_NODE_FIELD(onConflict);
 	COPY_NODE_FIELD(returningList);
 	COPY_NODE_FIELD(groupClause);
@@ -2716,6 +2739,7 @@ _copyQuery(const Query *from)
 	COPY_NODE_FIELD(rowMarks);
 	COPY_NODE_FIELD(setOperations);
 	COPY_NODE_FIELD(constraintDeps);
+	COPY_NODE_FIELD(withCheckOptions);
 
 	return newnode;
 }
@@ -4233,6 +4257,9 @@ copyObject(const void *from)
 			break;
 		case T_Scan:
 			retval = _copyScan(from);
+			break;
+		case T_Gather:
+			retval = _copyGather(from);
 			break;
 		case T_SeqScan:
 			retval = _copySeqScan(from);

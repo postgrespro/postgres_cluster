@@ -49,6 +49,10 @@ typedef struct
     ShubParams* params;
 } Shub;
 
+int ShubReadSocketEx(int sd, void* buf, int min_size, int max_size);
+int ShubReadSocket(int sd, void* buf, int size);
+int ShubWriteSocket(int sd, void const* buf, int size);
+
 void ShubInitParams(ShubParams* params);
 void ShubInitialize(Shub* shub, ShubParams* params);
 void ShubLoop(Shub* shub);

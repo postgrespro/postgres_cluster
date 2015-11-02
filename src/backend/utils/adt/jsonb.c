@@ -28,14 +28,6 @@
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
-/*
- * String to output for infinite dates and timestamps.
- * Note the we don't use embedded quotes, unlike for json, because
- * we store jsonb strings dequoted.
- */
-
-#define DT_INFINITY "infinity"
-
 typedef struct JsonbInState
 {
 	JsonbParseState *parseState;
@@ -61,11 +53,11 @@ typedef enum					/* type categories for datum_to_jsonb */
 
 typedef struct JsonbAggState
 {
-   JsonbInState      *res;
-   JsonbTypeCategory  key_category;
-   Oid                key_output_func;
-   JsonbTypeCategory  val_category;
-   Oid                val_output_func;
+	JsonbInState *res;
+	JsonbTypeCategory key_category;
+	Oid			key_output_func;
+	JsonbTypeCategory val_category;
+	Oid			val_output_func;
 } JsonbAggState;
 
 static inline Datum jsonb_from_cstring(char *json, int len);
@@ -455,8 +447,8 @@ JsonbToCStringWorker(StringInfo out, JsonbContainer *in, int estimated_len, bool
 {
 	bool		first = true;
 	JsonbIterator *it;
-	JsonbIteratorToken type = WJB_DONE;
 	JsonbValue	v;
+	JsonbIteratorToken type = WJB_DONE;
 	int			level = 0;
 	bool		redo_switch = false;
 
@@ -712,6 +704,9 @@ datum_to_jsonb(Datum val, bool is_null, JsonbInState *result,
 	JsonbValue	jb;
 	bool		scalar_jsonb = false;
 
+	check_stack_depth();
+
+	/* Convert val to a JsonbValue in jb (in most cases) */
 	if (is_null)
 	{
 		Assert(!key_scalar);
@@ -795,21 +790,18 @@ datum_to_jsonb(Datum val, bool is_null, JsonbInState *result,
 					char		buf[MAXDATELEN + 1];
 
 					date = DatumGetDateADT(val);
-					jb.type = jbvString;
-
+					/* Same as date_out(), but forcing DateStyle */
 					if (DATE_NOT_FINITE(date))
-					{
-						jb.val.string.len = strlen(DT_INFINITY);
-						jb.val.string.val = pstrdup(DT_INFINITY);
-					}
+						EncodeSpecialDate(date, buf);
 					else
 					{
 						j2date(date + POSTGRES_EPOCH_JDATE,
 							   &(tm.tm_year), &(tm.tm_mon), &(tm.tm_mday));
 						EncodeDateOnly(&tm, USE_XSD_DATES, buf);
-						jb.val.string.len = strlen(buf);
-						jb.val.string.val = pstrdup(buf);
 					}
+					jb.type = jbvString;
+					jb.val.string.len = strlen(buf);
+					jb.val.string.val = pstrdup(buf);
 				}
 				break;
 			case JSONBTYPE_TIMESTAMP:
@@ -820,24 +812,18 @@ datum_to_jsonb(Datum val, bool is_null, JsonbInState *result,
 					char		buf[MAXDATELEN + 1];
 
 					timestamp = DatumGetTimestamp(val);
-					jb.type = jbvString;
-
+					/* Same as timestamp_out(), but forcing DateStyle */
 					if (TIMESTAMP_NOT_FINITE(timestamp))
-					{
-						jb.val.string.len = strlen(DT_INFINITY);
-						jb.val.string.val = pstrdup(DT_INFINITY);
-					}
+						EncodeSpecialTimestamp(timestamp, buf);
 					else if (timestamp2tm(timestamp, NULL, &tm, &fsec, NULL, NULL) == 0)
-					{
-
 						EncodeDateTime(&tm, fsec, false, 0, NULL, USE_XSD_DATES, buf);
-						jb.val.string.len = strlen(buf);
-						jb.val.string.val = pstrdup(buf);
-					}
 					else
 						ereport(ERROR,
 								(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 								 errmsg("timestamp out of range")));
+					jb.type = jbvString;
+					jb.val.string.len = strlen(buf);
+					jb.val.string.val = pstrdup(buf);
 				}
 				break;
 			case JSONBTYPE_TIMESTAMPTZ:
@@ -849,24 +835,19 @@ datum_to_jsonb(Datum val, bool is_null, JsonbInState *result,
 					const char *tzn = NULL;
 					char		buf[MAXDATELEN + 1];
 
-					timestamp = DatumGetTimestamp(val);
-					jb.type = jbvString;
-
+					timestamp = DatumGetTimestampTz(val);
+					/* Same as timestamptz_out(), but forcing DateStyle */
 					if (TIMESTAMP_NOT_FINITE(timestamp))
-					{
-						jb.val.string.len = strlen(DT_INFINITY);
-						jb.val.string.val = pstrdup(DT_INFINITY);
-					}
+						EncodeSpecialTimestamp(timestamp, buf);
 					else if (timestamp2tm(timestamp, &tz, &tm, &fsec, &tzn, NULL) == 0)
-					{
 						EncodeDateTime(&tm, fsec, true, tz, tzn, USE_XSD_DATES, buf);
-						jb.val.string.len = strlen(buf);
-						jb.val.string.val = pstrdup(buf);
-					}
 					else
 						ereport(ERROR,
 								(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 								 errmsg("timestamp out of range")));
+					jb.type = jbvString;
+					jb.val.string.len = strlen(buf);
+					jb.val.string.val = pstrdup(buf);
 				}
 				break;
 			case JSONBTYPE_JSONCAST:
@@ -897,7 +878,6 @@ datum_to_jsonb(Datum val, bool is_null, JsonbInState *result,
 			case JSONBTYPE_JSONB:
 				{
 					Jsonb	   *jsonb = DatumGetJsonb(val);
-					JsonbIteratorToken type;
 					JsonbIterator *it;
 
 					it = JsonbIteratorInit(&jsonb->root);
@@ -911,6 +891,8 @@ datum_to_jsonb(Datum val, bool is_null, JsonbInState *result,
 					}
 					else
 					{
+						JsonbIteratorToken type;
+
 						while ((type = JsonbIteratorNext(&it, &jb, false))
 							   != WJB_DONE)
 						{
@@ -933,8 +915,10 @@ datum_to_jsonb(Datum val, bool is_null, JsonbInState *result,
 				break;
 		}
 	}
-	if (tcategory >= JSONBTYPE_JSON && tcategory <= JSONBTYPE_JSONCAST &&
-		!scalar_jsonb)
+
+	/* Now insert jb into result, unless we did it recursively */
+	if (!is_null && !scalar_jsonb &&
+		tcategory >= JSONBTYPE_JSON && tcategory <= JSONBTYPE_JSONCAST)
 	{
 		/* work has been done recursively */
 		return;
@@ -1604,8 +1588,7 @@ jsonb_agg_transfn(PG_FUNCTION_ARGS)
 
 	if (PG_ARGISNULL(0))
 	{
-
-		Oid         arg_type = get_fn_expr_argtype(fcinfo->flinfo, 1);
+		Oid			arg_type = get_fn_expr_argtype(fcinfo->flinfo, 1);
 
 		if (arg_type == InvalidOid)
 			ereport(ERROR,
@@ -1759,7 +1742,7 @@ jsonb_object_agg_transfn(PG_FUNCTION_ARGS)
 
 	if (PG_ARGISNULL(0))
 	{
-		Oid         arg_type;
+		Oid			arg_type;
 
 		oldcontext = MemoryContextSwitchTo(aggcontext);
 		state = palloc(sizeof(JsonbAggState));
@@ -1947,8 +1930,9 @@ jsonb_object_agg_finalfn(PG_FUNCTION_ARGS)
 	/*
 	 * We need to do a shallow clone of the argument's res field in case the
 	 * final function is called more than once, so we avoid changing the
-	 * it. A shallow clone is sufficient as we aren't going to change any of
-	 * the values, just add the final object end marker.
+	 * aggregate state value.  A shallow clone is sufficient as we aren't
+	 * going to change any of the values, just add the final object end
+	 * marker.
 	 */
 
 	result.parseState = clone_parse_state(arg->res->parseState);

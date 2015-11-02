@@ -16,7 +16,6 @@
 char *join_path(const char *dir, const char *file);
 bool inrange(xid_t min, xid_t x, xid_t max);
 int falloc(int fd, off64_t size);
-char *destructive_concat(char *a, char *b);
 
 static inline int min(int a, int b) {
 	return a < b ? a : b;

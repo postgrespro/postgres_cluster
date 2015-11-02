@@ -244,7 +244,6 @@ _readQuery(void)
 	READ_NODE_FIELD(rtable);
 	READ_NODE_FIELD(jointree);
 	READ_NODE_FIELD(targetList);
-	READ_NODE_FIELD(withCheckOptions);
 	READ_NODE_FIELD(onConflict);
 	READ_NODE_FIELD(returningList);
 	READ_NODE_FIELD(groupClause);
@@ -1413,6 +1412,7 @@ ReadCommonPlan(Plan *local_node)
 	READ_FLOAT_FIELD(total_cost);
 	READ_FLOAT_FIELD(plan_rows);
 	READ_INT_FIELD(plan_width);
+	READ_INT_FIELD(plan_node_id);
 	READ_NODE_FIELD(targetlist);
 	READ_NODE_FIELD(qual);
 	READ_NODE_FIELD(lefttree);
@@ -1798,6 +1798,7 @@ _readForeignScan(void)
 	READ_NODE_FIELD(fdw_exprs);
 	READ_NODE_FIELD(fdw_private);
 	READ_NODE_FIELD(fdw_scan_tlist);
+	READ_NODE_FIELD(fdw_recheck_quals);
 	READ_BITMAPSET_FIELD(fs_relids);
 	READ_BOOL_FIELD(fsSystemCol);
 
@@ -1993,6 +1994,22 @@ _readUnique(void)
 	READ_INT_FIELD(numCols);
 	READ_ATTRNUMBER_ARRAY(uniqColIdx, local_node->numCols);
 	READ_OID_ARRAY(uniqOperators, local_node->numCols);
+
+	READ_DONE();
+}
+
+/*
+ * _readGather
+ */
+static Gather *
+_readGather(void)
+{
+	READ_LOCALS(Gather);
+
+	ReadCommonPlan(&local_node->plan);
+
+	READ_INT_FIELD(num_workers);
+	READ_BOOL_FIELD(single_copy);
 
 	READ_DONE();
 }
@@ -2364,6 +2381,8 @@ parseNodeString(void)
 		return_value = _readWindowAgg();
 	else if (MATCH("UNIQUE", 6))
 		return_value = _readUnique();
+	else if (MATCH("GATHER", 6))
+		return_value = _readGather();
 	else if (MATCH("HASH", 4))
 		return_value = _readHash();
 	else if (MATCH("SETOP", 5))

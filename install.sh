@@ -9,7 +9,14 @@ rm -rf install
 
 make install
 
-cd contrib/pg_dtm/
+cd ~/code/pg_dtm/
+# cd contrib/pg_tsdtm/
+
+PATH=~/code/postgrespro2/install/bin:$PATH make clean
+PATH=~/code/postgrespro2/install/bin:$PATH make
+PATH=~/code/postgrespro2/install/bin:$PATH make install
+
+cd ~/code/postgrespro2/contrib/postgres_fdw/
 
 make clean
 make
@@ -34,6 +41,8 @@ echo 'autovacuum = off' >> ./install/data2/postgresql.conf
 echo "shared_preload_libraries = 'pg_dtm'" >> ./install/data1/postgresql.conf
 echo "shared_preload_libraries = 'pg_dtm'" >> ./install/data2/postgresql.conf
 
+echo "max_prepared_transactions = 400" >> ./install/data1/postgresql.conf
+echo "max_prepared_transactions = 400" >> ./install/data2/postgresql.conf
 
 ./install/bin/pg_ctl -D ./install/data1 -l ./install/data1/log start
 ./install/bin/pg_ctl -D ./install/data2 -l ./install/data2/log start

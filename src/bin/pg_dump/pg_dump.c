@@ -916,7 +916,7 @@ help(const char *progname)
 	printf(_("  --quote-all-identifiers      quote all identifiers, even if not key words\n"));
 	printf(_("  --section=SECTION            dump named section (pre-data, data, or post-data)\n"));
 	printf(_("  --serializable-deferrable    wait until the dump can run without anomalies\n"));
-	printf(_("  --snapshot=SNAPSHOT          use given synchronous snapshot for the dump\n"));
+	printf(_("  --snapshot=SNAPSHOT          use given snapshot for the dump\n"));
 	printf(_("  --strict-names               require table and/or schema include patterns to\n"
 			 "                               match at least one entity each\n"));
 	printf(_("  --use-set-session-authorization\n"
@@ -1455,7 +1455,7 @@ dumpTableData_copy(Archive *fout, DumpOptions *dopt, void *dcontext)
 	const char *column_list;
 
 	if (g_verbose)
-		write_msg(NULL, "dumping contents of table \"%s\".\"%s\"\n",
+		write_msg(NULL, "dumping contents of table \"%s.%s\"\n",
 				  tbinfo->dobj.namespace->dobj.name, classname);
 
 	/*
@@ -2852,7 +2852,7 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 			continue;
 
 		if (g_verbose)
-			write_msg(NULL, "reading row security enabled for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading row security enabled for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -2883,7 +2883,7 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 		}
 
 		if (g_verbose)
-			write_msg(NULL, "reading policies for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading policies for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -4540,6 +4540,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 	int			i_relhasindex;
 	int			i_relhasrules;
 	int			i_relrowsec;
+	int			i_relforcerowsec;
 	int			i_relhasoids;
 	int			i_relfrozenxid;
 	int			i_relminmxid;
@@ -4593,7 +4594,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "(%s c.relowner) AS rolname, "
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
-						  "c.relrowsecurity, "
+						  "c.relrowsecurity, c.relforcerowsecurity, "
 						  "c.relfrozenxid, c.relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "tc.relminmxid AS tminmxid, "
@@ -4635,6 +4636,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, c.relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "tc.relminmxid AS tminmxid, "
@@ -4676,6 +4678,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, c.relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "tc.relminmxid AS tminmxid, "
@@ -4717,6 +4720,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, 0 AS relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "0 AS tminmxid, "
@@ -4756,6 +4760,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, 0 AS relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "0 AS tminmxid, "
@@ -4794,6 +4799,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, 0 AS relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "0 AS tminmxid, "
@@ -4832,6 +4838,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 					  "c.relchecks, (c.reltriggers <> 0) AS relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, 0 AS relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "0 AS tminmxid, "
@@ -4870,6 +4877,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -4907,6 +4915,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -4940,6 +4949,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -4968,6 +4978,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relhasindex, relhasrules, "
 						  "'t'::bool AS relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -5006,6 +5017,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relhasindex, relhasrules, "
 						  "'t'::bool AS relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -5054,6 +5066,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 	i_relhasindex = PQfnumber(res, "relhasindex");
 	i_relhasrules = PQfnumber(res, "relhasrules");
 	i_relrowsec = PQfnumber(res, "relrowsecurity");
+	i_relforcerowsec = PQfnumber(res, "relforcerowsecurity");
 	i_relhasoids = PQfnumber(res, "relhasoids");
 	i_relfrozenxid = PQfnumber(res, "relfrozenxid");
 	i_relminmxid = PQfnumber(res, "relminmxid");
@@ -5106,6 +5119,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 		tblinfo[i].hasrules = (strcmp(PQgetvalue(res, i, i_relhasrules), "t") == 0);
 		tblinfo[i].hastriggers = (strcmp(PQgetvalue(res, i, i_relhastriggers), "t") == 0);
 		tblinfo[i].rowsec = (strcmp(PQgetvalue(res, i, i_relrowsec), "t") == 0);
+		tblinfo[i].forcerowsec = (strcmp(PQgetvalue(res, i, i_relforcerowsec), "t") == 0);
 		tblinfo[i].hasoids = (strcmp(PQgetvalue(res, i, i_relhasoids), "t") == 0);
 		tblinfo[i].relispopulated = (strcmp(PQgetvalue(res, i, i_relispopulated), "t") == 0);
 		tblinfo[i].relreplident = *(PQgetvalue(res, i, i_relreplident));
@@ -5327,7 +5341,7 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 			continue;
 
 		if (g_verbose)
-			write_msg(NULL, "reading indexes for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading indexes for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -5694,7 +5708,7 @@ getConstraints(Archive *fout, TableInfo tblinfo[], int numTables)
 			continue;
 
 		if (g_verbose)
-			write_msg(NULL, "reading foreign key constraints for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading foreign key constraints for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -6033,7 +6047,7 @@ getTriggers(Archive *fout, TableInfo tblinfo[], int numTables)
 			continue;
 
 		if (g_verbose)
-			write_msg(NULL, "reading triggers for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading triggers for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -6767,7 +6781,7 @@ getTableAttrs(Archive *fout, DumpOptions *dopt, TableInfo *tblinfo, int numTable
 		 * the output of an indexscan on pg_attribute_relid_attnum_index.
 		 */
 		if (g_verbose)
-			write_msg(NULL, "finding the columns and types of table \"%s\".\"%s\"\n",
+			write_msg(NULL, "finding the columns and types of table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -6980,7 +6994,7 @@ getTableAttrs(Archive *fout, DumpOptions *dopt, TableInfo *tblinfo, int numTable
 			int			numDefaults;
 
 			if (g_verbose)
-				write_msg(NULL, "finding default expressions of table \"%s\".\"%s\"\n",
+				write_msg(NULL, "finding default expressions of table \"%s.%s\"\n",
 						  tbinfo->dobj.namespace->dobj.name,
 						  tbinfo->dobj.name);
 
@@ -7105,7 +7119,7 @@ getTableAttrs(Archive *fout, DumpOptions *dopt, TableInfo *tblinfo, int numTable
 			int			numConstrs;
 
 			if (g_verbose)
-				write_msg(NULL, "finding check constraints for table \"%s\".\"%s\"\n",
+				write_msg(NULL, "finding check constraints for table \"%s.%s\"\n",
 						  tbinfo->dobj.namespace->dobj.name,
 						  tbinfo->dobj.name);
 
@@ -14412,6 +14426,10 @@ dumpTableSchema(Archive *fout, DumpOptions *dopt, TableInfo *tbinfo)
 		appendPQExpBuffer(q, "\nALTER TABLE ONLY %s SET WITH OIDS;\n",
 						  fmtId(tbinfo->dobj.name));
 
+	if (tbinfo->forcerowsec)
+		appendPQExpBuffer(q, "\nALTER TABLE ONLY %s FORCE ROW LEVEL SECURITY;\n",
+						  fmtId(tbinfo->dobj.name));
+
 	if (dopt->binary_upgrade)
 		binary_upgrade_extension_member(q, &tbinfo->dobj, labelq->data);
 
@@ -14772,8 +14790,8 @@ dumpConstraint(Archive *fout, DumpOptions *dopt, ConstraintInfo *coninfo)
 	{
 		/* CHECK constraint on a table */
 
-		/* Ignore if not to be dumped separately */
-		if (coninfo->separate)
+		/* Ignore if not to be dumped separately, or if it was inherited */
+		if (coninfo->separate && coninfo->conislocal)
 		{
 			/* not ONLY since we want it to propagate to children */
 			appendPQExpBuffer(q, "ALTER TABLE %s\n",

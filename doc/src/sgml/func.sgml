@@ -3600,6 +3600,28 @@ cast(-44 as bit(12))           <lineannotation>111111010100</lineannotation>
     </para>
    </tip>
 
+   <caution>
+    <para>
+     While most regular-expression searches can be executed very quickly,
+     regular expressions can be contrived that take arbitrary amounts of
+     time and memory to process.  Be wary of accepting regular-expression
+     search patterns from hostile sources.  If you must do so, it is
+     advisable to impose a statement timeout.
+    </para>
+
+    <para>
+     Searches using <function>SIMILAR TO</function> patterns have the same
+     security hazards, since <function>SIMILAR TO</function> provides many
+     of the same capabilities as <acronym>POSIX</acronym>-style regular
+     expressions.
+    </para>
+
+    <para>
+     <function>LIKE</function> searches, being much simpler than the other
+     two options, are safer to use with possibly-hostile pattern sources.
+    </para>
+   </caution>
+
   <sect2 id="functions-like">
    <title><function>LIKE</function></title>
 
@@ -6130,12 +6152,14 @@ SELECT regexp_matches('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
 
      <listitem>
       <para>
-       <literal>V</literal> effectively
+       <literal>V</literal> with <function>to_char</function>
        multiplies the input values by
        <literal>10^<replaceable>n</replaceable></literal>, where
        <replaceable>n</replaceable> is the number of digits following
-       <literal>V</literal>.
-       <function>to_char</function> does not support the use of
+       <literal>V</literal>.  <literal>V</literal> with
+       <function>to_number</function> divides in a similar manner.
+       <function>to_char</function> and <function>to_number</function>
+       do not support the use of
        <literal>V</literal> combined with a decimal point
        (e.g., <literal>99.9V99</literal> is not allowed).
       </para>
@@ -10309,32 +10333,36 @@ table2-mapping
        <row>
         <entry><literal>@&gt;</literal></entry>
         <entry><type>jsonb</type></entry>
-        <entry>Does the left JSON value contain within it the right value?</entry>
+        <entry>Does the left JSON value contain the right JSON
+        path/value entries at the top level?</entry>
         <entry><literal>'{"a":1, "b":2}'::jsonb &#64;&gt; '{"b":2}'::jsonb</literal></entry>
        </row>
        <row>
         <entry><literal>&lt;@</literal></entry>
         <entry><type>jsonb</type></entry>
-        <entry>Is the left JSON value contained within the right value?</entry>
+        <entry>Are the left JSON path/value entries contained at the top level within
+        the right JSON value?</entry>
         <entry><literal>'{"b":2}'::jsonb &lt;@ '{"a":1, "b":2}'::jsonb</literal></entry>
        </row>
        <row>
         <entry><literal>?</literal></entry>
         <entry><type>text</type></entry>
-        <entry>Does the key/element <emphasis>string</emphasis> exist within
-        the JSON value?</entry>
+        <entry>Does the <emphasis>string</emphasis> exist as a top-level
+        key within the JSON value?</entry>
         <entry><literal>'{"a":1, "b":2}'::jsonb ? 'b'</literal></entry>
        </row>
        <row>
         <entry><literal>?|</literal></entry>
         <entry><type>text[]</type></entry>
-        <entry>Do any of these key/element <emphasis>strings</emphasis> exist?</entry>
+        <entry>Do any of these array <emphasis>strings</emphasis>
+        exist as top-level keys?</entry>
         <entry><literal>'{"a":1, "b":2, "c":3}'::jsonb ?| array['b', 'c']</literal></entry>
        </row>
        <row>
         <entry><literal>?&amp;</literal></entry>
         <entry><type>text[]</type></entry>
-        <entry>Do all of these key/element <emphasis>strings</emphasis> exist?</entry>
+        <entry>Do all of these array <emphasis>strings</emphasis> exist
+        as top-level keys?</entry>
         <entry><literal>'["a", "b"]'::jsonb ?&amp; array['a', 'b']</literal></entry>
        </row>
        <row>
@@ -17414,7 +17442,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         <indexterm>
          <primary>pg_replication_origin_session_setup</primary>
         </indexterm>
-        <literal><function>pg_replication_origin_setup_session(<parameter>node_name</parameter> <type>text</type>)</function></literal>
+        <literal><function>pg_replication_origin_session_setup(<parameter>node_name</parameter> <type>text</type>)</function></literal>
        </entry>
        <entry>
         void

@@ -1579,6 +1579,7 @@ typedef struct WorkTableScanState
 typedef struct ForeignScanState
 {
 	ScanState	ss;				/* its first field is NodeTag */
+	List	   *fdw_recheck_quals;	/* original quals not in ss.ps.qual */
 	/* use struct pointer to avoid including fdwapi.h here */
 	struct FdwRoutine *fdwroutine;
 	void	   *fdw_state;		/* foreign-data wrapper can keep state here */
@@ -1949,6 +1950,22 @@ typedef struct UniqueState
 	FmgrInfo   *eqfunctions;	/* per-field lookup data for equality fns */
 	MemoryContext tempContext;	/* short-term context for comparisons */
 } UniqueState;
+
+/* ----------------
+ * GatherState information
+ *
+ *		Gather nodes launch 1 or more parallel workers, run a subplan
+ *		in those workers, and collect the results.
+ * ----------------
+ */
+typedef struct GatherState
+{
+	PlanState	ps;				/* its first field is NodeTag */
+	bool		initialized;
+	struct ParallelExecutorInfo *pei;
+	struct TupleQueueFunnel *funnel;
+	bool		need_to_scan_locally;
+} GatherState;
 
 /* ----------------
  *	 HashState information
