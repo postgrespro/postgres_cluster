@@ -76,8 +76,11 @@ COMMIT;
 select to_jsonb(date '2014-05-28');
 
 select to_jsonb(date 'Infinity');
+select to_jsonb(date '-Infinity');
 select to_jsonb(timestamp 'Infinity');
+select to_jsonb(timestamp '-Infinity');
 select to_jsonb(timestamptz 'Infinity');
+select to_jsonb(timestamptz '-Infinity');
 
 --jsonb_agg
 
@@ -329,6 +332,10 @@ SELECT jsonb_build_object(r,2) FROM (SELECT 1 AS a, 2 AS b) r;
 SELECT jsonb_build_object(json '{"a":1,"b":2}', 3);
 
 SELECT jsonb_build_object('{1,2,3}'::int[], 3);
+
+-- handling of NULL values
+SELECT jsonb_object_agg(1, NULL::jsonb);
+SELECT jsonb_object_agg(NULL, '{"a":1}');
 
 CREATE TEMP TABLE foo (serial_num int, name text, type text);
 INSERT INTO foo VALUES (847001,'t15','GE1043');

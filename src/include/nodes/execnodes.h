@@ -1579,6 +1579,7 @@ typedef struct WorkTableScanState
 typedef struct ForeignScanState
 {
 	ScanState	ss;				/* its first field is NodeTag */
+	List	   *fdw_recheck_quals;	/* original quals not in ss.ps.qual */
 	/* use struct pointer to avoid including fdwapi.h here */
 	struct FdwRoutine *fdwroutine;
 	void	   *fdw_state;		/* foreign-data wrapper can keep state here */
@@ -1960,9 +1961,9 @@ typedef struct UniqueState
 typedef struct GatherState
 {
 	PlanState	ps;				/* its first field is NodeTag */
+	bool		initialized;
 	struct ParallelExecutorInfo *pei;
 	struct TupleQueueFunnel *funnel;
-	bool		need_to_scan_workers;
 	bool		need_to_scan_locally;
 } GatherState;
 

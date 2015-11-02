@@ -2221,7 +2221,8 @@ RecordTransactionAbortPrepared(TransactionId xid,
 /*
  * Return identified of current global transaction
  */
-const char* GetLockedGlobalTransactionId()
+const char*
+GetLockedGlobalTransactionId(void)
 {
-    return MyLockedGxact ? MyLockedGxact->gid : NULL;
+	return MyLockedGxact ? MyLockedGxact->gid : NULL;
 }

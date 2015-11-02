@@ -24,13 +24,13 @@
   - name: fill the databases
     shell: "./transfers {{connections}} -f -g"
     register: transfers_result
-  - debug: var=transfers_result
+  - debug: "var=transfers_result"
 
 - hosts: clients
   gather_facts: no
   tasks:
   - name: run transfers
-    shell: "./transfers {{connections}} -s {{runkeys | d('-g -w 90 -o -u 10000 -r 0')}} -k {{hostvars[inventory_hostname]['offset']}} "
+    shell: "./transfers {{connections}} -s {{runkeys | d('-g -w 60 -m -o -u 10000 -r 0')}} -k {{hostvars[inventory_hostname]['offset']}} "
     register: transfers_result
   - debug: var=transfers_result
 

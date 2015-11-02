@@ -35,6 +35,7 @@ typedef struct ParallelContext
 	dlist_node	node;
 	SubTransactionId subid;
 	int			nworkers;
+	int			nworkers_launched;
 	parallel_worker_main_type entrypoint;
 	char	   *library_name;
 	char	   *function_name;
@@ -48,6 +49,7 @@ typedef struct ParallelContext
 
 extern bool ParallelMessagePending;
 extern int	ParallelWorkerNumber;
+extern bool InitializingParallelWorker;
 
 #define		IsParallelWorker()		(ParallelWorkerNumber >= 0)
 

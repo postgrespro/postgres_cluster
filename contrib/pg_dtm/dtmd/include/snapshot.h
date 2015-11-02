@@ -12,7 +12,6 @@ typedef struct Snapshot {
 	int times_sent;
 } Snapshot;
 
-char *snapshot_serialize(Snapshot *s);
 void snapshot_sort(Snapshot *s);
 
 #endif
