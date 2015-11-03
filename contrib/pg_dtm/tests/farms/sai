@@ -7,7 +7,7 @@
 158.250.29.6 ansible_ssh_user=cluster offset=4001
 158.250.29.8 ansible_ssh_user=cluster offset=2001
 158.250.29.9 ansible_ssh_user=cluster offset=1001
-158.250.29.10 ansible_ssh_user=cluster offset=1
+#158.250.29.10 ansible_ssh_user=cluster offset=1
 
 [master]
 158.250.29.10 ansible_ssh_user=cluster offset=1
