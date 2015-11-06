@@ -39,7 +39,6 @@ func (t TransfersTS) prepare_one(connstr string, wg *sync.WaitGroup) {
     exec(conn, "insert into t (select generate_series(0,$1-1), $2)",
         cfg.AccountsNum, 0)
 
-    exec(conn, "commit")
     wg.Done()
 }
 
@@ -134,9 +133,6 @@ func (t TransfersTS) reader(wg *sync.WaitGroup, cFetches chan int, inconsistency
                     snapshot = _execQuery(conn, "select dtm_access($1)", snapshot)
                 }
             }
-
-            exec(conn, "begin transaction isolation level " + cfg.Isolation)
-            sum += _execQuery(conn, "select sum(v) from t")
         }
 
         for _, conn := range conns {
