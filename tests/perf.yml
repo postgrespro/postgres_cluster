@@ -1,0 +1,36 @@
+---
+
+- hosts: clients
+  gather_facts: no
+  tasks:
+
+  - name: generate connstrings
+    set_fact:
+      connstr: "-C 'host={{item}} user=cluster port=15432 dbname=postgres' "
+    with_items:
+      groups['nodes'] | reverse | batch(nnodes | d(2) | int) | first
+    register: connstrs
+
+  - name: make a list
+    set_fact:
+      connections: "{{ connstrs.results | map(attribute='ansible_facts.connstr') | join }}"
+
+  - name: copy transfers binary
+    copy: src=perf/perf.linux dest=~/perf mode=a+x
+
+- hosts: clients[0]
+  gather_facts: no
+  tasks:
+  - name: fill the databases
+    shell: "./perf {{connections}} -g -i"
+    register: transfers_result
+  - debug: "var=transfers_result"
+
+- hosts: clients[0]
+  gather_facts: no
+  tasks:
+  - name: run transfers
+    shell: "./perf {{connections}} {{runkeys | d('-g -w 64 -r 1 -n 1000 -a 10000')}}"
+    register: transfers_result
+  - debug: var=transfers_result
+

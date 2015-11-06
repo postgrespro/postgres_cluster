@@ -1,0 +1,8 @@
+[clients]
+client1 ansible_ssh_user=cluster offset=6001
+
+[nodes]
+nodes1 ansible_ssh_user=cluster offset=2001
+
+[master]
+master1 ansible_ssh_user=cluster offset=1
