@@ -18,13 +18,6 @@
     pg_destroy_and_init: true
     pg_datadir: ~/postgrespro-data2
 
-  - role: postgres
-    pg_port: 5434
-    pg_repo: https://github.com/kelvich/postgresql.git
-    pg_version_tag: xtm_patched
-    pg_destroy_and_init: true
-    pg_datadir: ~/postgrespro-data3
-
   tasks:
 
   - name: clone dtm sources
@@ -54,19 +47,9 @@
       line: "shared_preload_libraries = 'pg_dtm'"
       state: present
 
-  - name: enable dtm extension on datanodes
-    lineinfile:
-      dest: "~/postgrespro-data3/postgresql.conf"
-      regexp: "^shared_preload_libraries "
-      line: "shared_preload_libraries = 'pg_dtm'"
-      state: present
-
   - name: restart postgrespro1
     command: "{{pg_dst}}/bin/pg_ctl restart -w -D ~/postgrespro-data -l ~/postgrespro-data/pg.log"
 
   - name: restart postgrespro2
-    command: "{{pg_dst}}/bin/pg_ctl restart -w -D ~/postgrespro-data2 -l ~/postgrespro-data/pg.log"
-
-  - name: restart postgrespro3
-    command: "{{pg_dst}}/bin/pg_ctl restart -w -D ~/postgrespro-data3 -l ~/postgrespro-data/pg.log"
+    command: "{{pg_dst}}/bin/pg_ctl restart -w -D ~/postgrespro-data2 -l ~/postgrespro-data2/pg.log"
 

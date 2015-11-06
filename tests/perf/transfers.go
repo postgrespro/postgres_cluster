@@ -67,13 +67,14 @@ func (t TransfersTS) writer(id int, cCommits chan int, cAborts chan int, wg *syn
 
         gtid := strconv.Itoa(id) + "." + strconv.Itoa(i)
         amount := 2*rand.Intn(2) - 1
-        from_acc := cfg.Writers.StartId + 2*id + 1
-        to_acc   := cfg.Writers.StartId + 2*id + 2
-
+        from_acc := rand.Intn(cfg.AccountsNum)//cfg.Writers.StartId + 2*id + 1
+        to_acc   := rand.Intn(cfg.AccountsNum)//cfg.Writers.StartId + 2*id + 2
+        
         conn1 := conns[rand.Intn(len(conns))]
         conn2 := conns[rand.Intn(len(conns))]
-        if conn1 == conn2 {
-            continue
+        for conn1 == conn2 {
+            conn1 = conns[rand.Intn(len(conns))]
+            conn2 = conns[rand.Intn(len(conns))]
         }
 
         exec(conn1, "begin transaction")
