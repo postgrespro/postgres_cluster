@@ -16,13 +16,13 @@
       connections: "{{ connstrs.results | map(attribute='ansible_facts.connstr') | join }}"
 
   - name: copy transfers binary
-    copy: src=perf/perf.linux dest=~/perf mode=a+x
+    copy: src=perf/perf.linux dest=~/perf mode=0755
 
 - hosts: clients[0]
   gather_facts: no
   tasks:
   - name: fill the databases
-    shell: "./perf {{connections}} -g -i"
+    shell: "~/perf {{connections}} -g -i"
     register: transfers_result
   - debug: "var=transfers_result"
 
@@ -30,7 +30,7 @@
   gather_facts: no
   tasks:
   - name: run transfers
-    shell: "./perf {{connections}} {{runkeys | d('-g -w 64 -r 1 -n 1000 -a 10000')}}"
+    shell: "~/perf {{connections}} {{runkeys | d('-g -w 64 -r 1 -n 1000 -a 10000')}}"
     register: transfers_result
   - debug: var=transfers_result
 
