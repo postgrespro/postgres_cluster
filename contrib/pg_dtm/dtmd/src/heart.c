@@ -46,23 +46,6 @@ static void show_status() {
 	shout("\n");
 }
 
-typedef struct mstimer_t {
-	struct timeval tv;
-} mstimer_t;
-
-static int mstimer_reset(mstimer_t *t) {
-	struct timeval newtime;
-	gettimeofday(&newtime, NULL);
-
-	int ms =
-		(newtime.tv_sec - t->tv.tv_sec) * 1000 +
-		(newtime.tv_usec - t->tv.tv_usec) / 1000;
-
-	t->tv = newtime;
-
-	return ms;
-}
-
 static void main_loop() {
 	mstimer_t t;
 	mstimer_reset(&t);

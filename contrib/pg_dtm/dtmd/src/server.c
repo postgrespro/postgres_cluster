@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
@@ -59,6 +60,10 @@ typedef struct server_data_t {
 	onmessage_callback_t onmessage;
 	onconnect_callback_t onconnect;
 	ondisconnect_callback_t ondisconnect;
+
+	bool enabled;
+
+	int raftsock; // the raft socket
 } server_data_t;
 
 // Returns the created socket, or -1 if failed.
@@ -108,22 +113,39 @@ server_t server_init(
 	server->onmessage = onmessage;
 	server->onconnect = onconnect;
 	server->ondisconnect = ondisconnect;
+	server->streamsnum = 0;
+	server->raftsock = -1;
+	FD_ZERO(&server->all);
+	server->maxfd = 0;
+	server->enabled = false;
 
 	return server;
 }
 
+static void server_add_socket(server_t server, int sock) {
+	FD_SET(sock, &server->all);
+	if (sock > server->maxfd) {
+		server->maxfd = sock;
+	}
+}
+
+static void server_remove_socket(server_t server, int sock) {
+	FD_CLR(sock, &server->all);
+}
+
+void server_set_raft_socket(server_t server, int sock) {
+	server->raftsock = sock;
+	server_add_socket(server, sock);
+}
+
 bool server_start(server_t server) {
 	debug("starting the server\n");
-	server->streamsnum = 0;
 
 	server->listener = create_listening_socket(server->host, server->port);
 	if (server->listener == -1) {
 		return false;
 	}
-
-	FD_ZERO(&server->all);
-	FD_SET(server->listener, &server->all);
-	server->maxfd = server->listener;
+	server_add_socket(server, server->listener);
 
 	return true;
 }
@@ -207,7 +229,7 @@ static void server_stream_destroy(server_t server, stream_t stream) {
 		}
 	}
 
-	FD_CLR(stream->fd, &server->all);
+	server_remove_socket(server, stream->fd);
 	close(stream->fd);
 	free(stream->clients);
 	free(stream->input.data);
@@ -338,6 +360,11 @@ bool client_message_shortcut(client_t client, xid_t arg) {
 	return true;
 }
 
+bool client_redirect(client_t client, unsigned addr, int port) {
+	assert(false); // FIXME: implement
+	return true;
+}
+
 static bool server_accept(server_t server) {
 	debug("a new connection is queued\n");
 
@@ -350,6 +377,13 @@ static bool server_accept(server_t server) {
 
 	if (server->streamsnum >= MAX_STREAMS) {
 		shout("streams limit hit, disconnecting the accepted connection\n");
+		close(fd);
+		return false;
+	}
+
+	if (!server->enabled) {
+		shout("server disabled, disconnecting the accepted connection\n");
+		// FIXME: redirect instead of disconnecting
 		close(fd);
 		return false;
 	}
@@ -436,7 +470,8 @@ static bool server_stream_handle(server_t server, stream_t stream) {
 			if (header_and_data > BUFFER_SIZE) {
 				shout(
 					"the message of size %d will never fit into recv buffer of size %d\n",
-					header_and_data, BUFFER_SIZE);
+					header_and_data, BUFFER_SIZE
+				);
 				stream->good = false;
 				return false;
 			}
@@ -453,32 +488,73 @@ static bool server_stream_handle(server_t server, stream_t stream) {
 	return true;
 }
 
-void server_loop(server_t server) {
-	while (1) {
-		int i;
-		fd_set readfds = server->all;
-		debug("selecting\n");
-		int numready = select(server->maxfd + 1, &readfds, NULL, NULL, NULL);
-		if (numready == -1) {
-			shout("failed to select: %s\n", strerror(errno));
-			return;
-		}
+bool server_tick(server_t server, int timeout_ms) {
+	int i;
+	debug("selecting\n");
+	fd_set readfds = server->all;
+	struct timeval timeout = ms2tv(timeout_ms);
+	int numready = select(server->maxfd + 1, &readfds, NULL, NULL, &timeout);
+	if (numready == -1) {
+		shout("failed to select: %s\n", strerror(errno));
+		return NULL;
+	}
 
-		if (FD_ISSET(server->listener, &readfds)) {
+	if (FD_ISSET(server->listener, &readfds)) {
+		numready--;
+		server_accept(server);
+	}
+
+	bool raft_ready = false;
+	if ((server->raftsock != -1) && FD_ISSET(server->raftsock, &readfds)) {
+		numready--;
+		raft_ready = true;
+	}
+
+	for (i = 0; (i < server->streamsnum) && (numready > 0); i++) {
+		stream_t stream = server->streams + i;
+		if (FD_ISSET(stream->fd, &readfds)) {
+			server_stream_handle(server, stream);
 			numready--;
-			server_accept(server);
 		}
+	}
 
-		for (i = 0; (i < server->streamsnum) && (numready > 0); i++) {
-			stream_t stream = server->streams + i;
-			if (FD_ISSET(stream->fd, &readfds)) {
-				server_stream_handle(server, stream);
-				numready--;
-			}
+	server_close_bad_streams(server);
+	server_flush(server);
+
+	return raft_ready;
+}
+
+static void server_close_all_streams(server_t server) {
+	int i;
+	for (i = 0; i < server->streamsnum; i++) {
+		stream_t stream = server->streams + i;
+		server_stream_destroy(server, stream);
+	}
+	server->streamsnum = 0;
+}
+
+void server_disable(server_t server) {
+	if (!server->enabled) return;
+	server->enabled = false;
+	shout("server disabled\n");
+
+	server_close_all_streams(server);
+	shout("client connections closed\n");
+}
+
+void server_enable(server_t server) {
+	if (server->enabled) return;
+	server->enabled = true;
+	shout("server enabled\n");
+}
+
+void server_set_enabled(server_t server, bool enable) {
+	if (server->enabled != enable) {
+		if (enable) {
+			server_enable(server);
+		} else {
+			server_disable(server);
 		}
-
-		server_close_bad_streams(server);
-		server_flush(server);
 	}
 }
 

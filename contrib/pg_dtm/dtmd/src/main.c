@@ -9,6 +9,7 @@
 #include <sys/wait.h>
 
 #include "clog.h"
+#include "raft.h"
 #include "server.h"
 #include "util.h"
 #include "transaction.h"
@@ -35,6 +36,8 @@ typedef struct client_userdata_t {
 } client_userdata_t;
 
 clog_t clg;
+raft_t raft;
+bool use_raft;
 
 #define CLIENT_USERDATA(CLIENT) ((client_userdata_t*)client_get_userdata(CLIENT))
 #define CLIENT_ID(CLIENT) (CLIENT_USERDATA(CLIENT)->id)
@@ -62,12 +65,15 @@ inline static void free_transaction(Transaction* t) {
 	}
 }
 
+static Transaction *find_transaction(xid_t xid) {
+	Transaction *t;
 
-static int next_client_id = 0;
-static void onconnect(client_t client) {
-	client_userdata_t *cd = create_client_userdata(next_client_id++);
-	client_set_userdata(client, cd);
-	debug("[%d] connected\n", CLIENT_ID(client));
+	for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
+		if (t->xid == xid) {
+			return t;
+		}
+	}
+	return NULL;
 }
 
 static void notify_listeners(Transaction *t, int status) {
@@ -112,6 +118,32 @@ static void notify_listeners(Transaction *t, int status) {
 	}
 }
 
+static void apply_clog_update(int action, int argument) {
+	int status = action;
+	xid_t xid = argument;
+	assert((status == NEGATIVE) || (status == POSITIVE));
+
+	if (!clog_write(clg, xid, status)) {
+		shout("APPLY: failed to write to clog, xid=%d\n", xid);
+	}
+
+	Transaction *t = find_transaction(xid);
+	if (t == NULL) {
+		debug("APPLY: xid %u is not active\n", xid);
+		return;
+	}
+
+	notify_listeners(t, status);
+	free_transaction(t);
+}
+
+static int next_client_id = 0;
+static void onconnect(client_t client) {
+	client_userdata_t *cd = create_client_userdata(next_client_id++);
+	client_set_userdata(client, cd);
+	debug("[%d] connected\n", CLIENT_ID(client));
+}
+
 static void ondisconnect(client_t client) {
 	debug("[%d] disconnected\n", CLIENT_ID(client));
 
@@ -121,16 +153,7 @@ static void ondisconnect(client_t client) {
 		// need to abort the transaction this client is participating in
 		for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
 			if (t->xid == CLIENT_XID(client)) {
-				if (clog_write(clg, t->xid, NEGATIVE)) {
-					notify_listeners(t, NEGATIVE);
-					free_transaction(t);
-				} else {
-					shout(
-						"[%d] DISCONNECT: transaction %u"
-						" failed to abort O_o\n",
-						CLIENT_ID(client), t->xid
-					);
-				}
+				raft_emit(&raft, NEGATIVE, t->xid);
 				break;
 			}
 		}
@@ -318,17 +341,6 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 	} client_message_finish(client);
 }
 
-static Transaction *find_transaction(xid_t xid) {
-	Transaction *t;
-
-	for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
-		if (t->xid == xid) {
-			return t;
-		}
-	}
-	return NULL;
-}
-
 static bool queue_for_transaction_finish(client_t client, xid_t xid, char cmd) {
 	assert((cmd >= 'a') && (cmd <= 'z'));
 
@@ -384,40 +396,30 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 
 	CLIENT_XID(client) = INVALID_XID; // not participating any more
 
-	switch (transaction_status(t)) {
+	int s = transaction_status(t);
+	switch (s) {
 		case NEGATIVE:
-			CHECK(
-				clog_write(clg, t->xid, NEGATIVE),
-				client,
-				"VOTE: transaction failed to abort O_o"
-			);
-
-			notify_listeners(t, NEGATIVE);
-			free_transaction(t);
-			client_message_shortcut(client, RES_TRANSACTION_ABORTED);
-			return;
-		case DOUBT:
-			if (wait) {
+		case POSITIVE:
+			if (use_raft) {
 				CHECK(
 					queue_for_transaction_finish(client, xid, 's'),
 					client,
 					"VOTE: couldn't queue for transaction finish"
 				);
-				return;
+				raft_emit(&raft, s, t->xid);
 			} else {
-				client_message_shortcut(client, RES_TRANSACTION_INPROGRESS);
-				return;
+				apply_clog_update(s, t->xid);
+				if (s == POSITIVE) {
+					client_message_shortcut(client, RES_TRANSACTION_COMMITTED);
+				} else {
+					client_message_shortcut(client, RES_TRANSACTION_ABORTED);
+				}
 			}
-		case POSITIVE:
-			CHECK(
-				clog_write(clg, t->xid, POSITIVE),
-				client,
-				"VOTE: transaction failed to commit"
-			);
-
-			notify_listeners(t, POSITIVE);
-			free_transaction(t);
-			client_message_shortcut(client, RES_TRANSACTION_COMMITTED);
+			return;
+		case DOUBT:
+			if (!wait) {
+				client_message_shortcut(client, RES_TRANSACTION_INPROGRESS);
+			}
 			return;
 	}
 
@@ -570,7 +572,7 @@ static void onmessage(client_t client, size_t len, char *data) {
 
 static void usage(char *prog) {
 	printf(
-		"Usage: %s [-d DATADIR] [-k] [-a HOST] [-p PORT] [-l LOGFILE]\n"
+		"Usage: %s -i ID -r HOST:PORT [-r HOST:PORT ...] [-d DATADIR] [-k] [-l LOGFILE]\n"
 		"   arbiter will try to kill the other one running at\n"
 		"   the same DATADIR.\n"
 		"   -l : Run as a daemon and write output to LOGFILE.\n"
@@ -655,25 +657,36 @@ void die(int signum) {
 	exit(signum);
 }
 
-int main(int argc, char **argv) {
-	char *datadir = DEFAULT_DATADIR;
-	char *listenhost = DEFAULT_LISTENHOST;
-	char *logfilename = NULL;
-	bool daemonize = false;
-	bool assassin = false;
-	int listenport = DEFAULT_LISTENPORT;
+char *datadir = DEFAULT_DATADIR;
+char *logfilename = NULL;
+bool daemonize = false;
+bool assassin = false;
+
+bool configure(int argc, char **argv) {
+	raft_init(&raft);
+	int myid = NOBODY;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "hd:a:p:l:k")) != -1) {
+	while ((opt = getopt(argc, argv, "hd:i:r:l:k")) != -1) {
+		char *host;
+		char *portstr;
+		int port;
 		switch (opt) {
+			case 'i':
+				myid = atoi(optarg);
+				break;
 			case 'd':
 				datadir = optarg;
 				break;
-			case 'a':
-				listenhost = optarg;
-				break;
-			case 'p':
-				listenport = atoi(optarg);
+			case 'r':
+				host = strtok(optarg, ":");
+				portstr = strtok(NULL, ":");
+				if (portstr) {
+					port = atoi(portstr);
+				} else {
+					port = DEFAULT_LISTENPORT;
+				}
+				raft_add_server(&raft, host, port);
 				break;
 			case 'l':
 				logfilename = optarg;
@@ -681,31 +694,52 @@ int main(int argc, char **argv) {
 				break;
 			case 'h':
 				usage(argv[0]);
-				return EXIT_SUCCESS;
+				return false;
 			case 'k':
 				assassin = true;
 				break;
 			default:
 				usage(argv[0]);
-				return EXIT_FAILURE;
+				return false;
 		}
 	}
 
-	kill_the_elder(datadir);
-	if (assassin) {
-		return EXIT_SUCCESS;
+	if (raft.servernum < 1) {
+		shout("please, specify -r HOST:PORT at least once\n");
+		usage(argv[0]);
+		return false;
+	}
+	use_raft = raft.servernum > 1;
+
+	if (!raft_set_myid(&raft, myid)) {
+		usage(argv[0]);
+		return false;
 	}
 
+	return true;
+}
+
+bool redirect_output() {
 	if (logfilename) {
 		if (!freopen(logfilename, "a", stdout)) {
 			// nowhere to report this failure
-			return EXIT_FAILURE;
+			return false;
 		}
 		if (!freopen(logfilename, "a", stderr)) {
 			// nowhere to report this failure
-			return EXIT_FAILURE;
+			return false;
 		}
 	}
+	return true;
+}
+
+int main(int argc, char **argv) {
+	if (!configure(argc, argv)) return EXIT_FAILURE;
+
+	kill_the_elder(datadir);
+	if (assassin) return EXIT_SUCCESS;
+
+	if (!redirect_output()) return EXIT_FAILURE;
 
 	clg = clog_open(datadir);
 	if (!clg) {
@@ -729,14 +763,46 @@ int main(int argc, char **argv) {
 	prev_gxid = MIN_XID;
 	next_gxid = MIN_XID;
 
+	int raftsock = raft_create_udp_socket(&raft);
+	if (raftsock == -1) {
+		die(EXIT_FAILURE);
+	}
+
 	server_t server = server_init(
-		listenhost, listenport,
+		raft.servers[raft.me].host, raft.servers[raft.me].port,
 		onmessage, onconnect, ondisconnect
 	);
+
+	server_set_raft_socket(server, raftsock);
+
 	if (!server_start(server)) {
 		return EXIT_FAILURE;
 	}
-	server_loop(server);
+
+	mstimer_t t;
+	mstimer_reset(&t);
+	while (true) {
+		int ms = mstimer_reset(&t);
+		raft_tick(&raft, ms);
+
+		// The client interaction is done in server_loop.
+		raft_msg_t *m = NULL;
+		if (server_tick(server, HEARTBEAT_TIMEOUT_MS)) {
+			m = raft_recv_message(&raft);
+			assert(m); // m should not be NULL, because the message should be ready to recv
+		}
+
+		int applied = raft_apply(&raft, apply_clog_update);
+		if (applied) {
+			shout("applied %d updates\n", applied);
+		}
+
+		if (m) {
+			raft_handle_message(&raft, m);
+		}
+
+		server_set_enabled(server, raft.role == ROLE_LEADER);
+	}
 
 	clog_close(clg);
 

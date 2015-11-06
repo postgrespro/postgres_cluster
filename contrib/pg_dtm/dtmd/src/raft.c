@@ -54,7 +54,7 @@ bool raft_add_server(raft_t *r, char *host, int port) {
 bool raft_set_myid(raft_t *r, int myid) {
 	if ((myid < 0) || (myid >= r->servernum)) {
 		shout(
-			"myid %d out of range [%d;%d]",
+			"myid %d out of range [%d;%d]\n",
 			myid, 0, r->servernum - 1
 		);
 		return false;
