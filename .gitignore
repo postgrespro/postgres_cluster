@@ -1,5 +1,3 @@
-**/*.o
-**/*.so
 tests/perf/pref
 tests/perf/pref.linux
 
