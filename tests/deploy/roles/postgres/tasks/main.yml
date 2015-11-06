@@ -31,79 +31,65 @@
   sudo: yes
 
 - name: clone postgres sources
-  git: repo=git://git.postgresql.org/git/postgresql.git
+  git: repo={{pg_repo}}
     dest={{pg_src}}
     version={{pg_version_tag}}
-    force=yes
-    update=yes
     depth=1
     accept_hostkey=True
   register: pg_sources
 
-- name: upload patches
-  get_url: "url={{pg_patch}} dest={{pg_src}}/p1.patch"
-  # when: pg_sources.before != pg_sources.after
-
-- name: patch postgres
-  patch: >
-    src={{pg_src}}/p1.patch
-    basedir={{pg_src}}
-    remote_src=True
-    strip=1
-
-
 #############################################################################
 
-# - stat: path={{pg_datadir}}/postmaster.pid
-#   register: pg_pidfile
+- stat: path={{pg_datadir}}/postmaster.pid
+  register: pg_pidfile
 
-# - name: stop postgres if it was running
-#   command: "{{pg_dst}}/bin/pg_ctl stop -w -D {{pg_datadir}}"
-#   when: pg_pidfile.stat.exists
+- name: stop postgres if it was running
+  command: "{{pg_dst}}/bin/pg_ctl stop -w -D {{pg_datadir}}"
+  when: pg_pidfile.stat.exists
 
-# - name: force rebuild on changed sources
-#   command: "rm {{pg_dst}}/bin/postgres"
-#   when: pg_sources.changed
+- name: force rebuild on changed sources
+  command: "rm {{pg_dst}}/bin/postgres"
+  when: pg_sources.changed
 
-# - name: build and install
-#   shell: ./configure --prefix={{pg_dst}} --without-zlib && make clean && make -j {{makejobs}} && make install
-#   args:
-#     chdir: "{{pg_src}}"
-#     creates: "{{pg_dst}}/bin/postgres"
+- name: build and install
+  shell: ./configure --prefix={{pg_dst}} --without-zlib && make clean && make -j {{makejobs}} && make install
+  args:
+    chdir: "{{pg_src}}"
+    creates: "{{pg_dst}}/bin/postgres"
 
-# - name: remove datadirs on datanodes
-#   command: "rm -rf {{pg_datadir}}"
-#   when: pg_destroy_and_init
+- name: remove datadirs on datanodes
+  command: "rm -rf {{pg_datadir}}"
+  when: pg_destroy_and_init
 
-# - name: create datadirs on datanodes
-#   command: "{{pg_dst}}/bin/initdb {{pg_datadir}}"
-#   args:
-#     creates: "{{pg_datadir}}"
+- name: create datadirs on datanodes
+  command: "{{pg_dst}}/bin/initdb {{pg_datadir}}"
+  args:
+    creates: "{{pg_datadir}}"
 
-# - name: configure postgres on datanodes
-#   lineinfile:
-#     dest: "{{pg_datadir}}/postgresql.conf"
-#     line: "{{item.line}}"
-#     state: present
-#   with_items: "{{pg_config}}"
+- name: configure postgres on datanodes
+  lineinfile:
+    dest: "{{pg_datadir}}/postgresql.conf"
+    line: "{{item.line}}"
+    state: present
+  with_items: "{{pg_config}}"
 
-# - name: configure postgres on datanodes -- 2
-#   lineinfile:
-#     dest: "{{pg_datadir}}/postgresql.conf"
-#     line: "{{item.line}}"
-#     state: present
-#   with_items: "{{pg_config_role}}"
+- name: configure postgres on datanodes -- 2
+  lineinfile:
+    dest: "{{pg_datadir}}/postgresql.conf"
+    line: "{{item.line}}"
+    state: present
+  with_items: "{{pg_config_role}}"
 
-# - name: enable blind trust on datanodes
-#   lineinfile:
-#     dest: "{{pg_datadir}}/pg_hba.conf"
-#     line: "host all all 0.0.0.0/0 trust"
+- name: enable blind trust on datanodes
+  lineinfile:
+    dest: "{{pg_datadir}}/pg_hba.conf"
+    line: "host all all 0.0.0.0/0 trust"
 
-# # - include: pg_shard.yml
-# #   when: deploy_pg_shard
+# - include: pg_shard.yml
+#   when: deploy_pg_shard
 
-# - name: start postgrespro
-#   command: "{{pg_dst}}/bin/pg_ctl start -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
+- name: start postgrespro
+  command: "{{pg_dst}}/bin/pg_ctl start -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
 
 
 

@@ -6,9 +6,13 @@ deploy_postgres: false
 deploy_dtm: false
 deploy_pg_shard: false
 
+pg_repo: git://git.postgresql.org/git/postgresql.git
+pg_version_tag: master
+
+
 pg_destroy_and_init: false
 
-pg_version_tag: master
+
 pg_port: 5432
 pg_dtm_enable: false
 pg_dtm_host: "127.0.0.1"
