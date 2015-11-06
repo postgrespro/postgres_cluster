@@ -35,7 +35,7 @@
     register: dtm_sources
 
   - name: build dtm
-    shell: "PG_CONFIG={{pg_dst}}/bin/pg_config make -j {{makejobs}} install"
+    shell: "PG_CONFIG={{pg_dst}}/bin/pg_config make clean && PG_CONFIG={{pg_dst}}/bin/pg_config make -j {{makejobs}} install"
     args:
       chdir: ./pg_tsdtm
     when: dtm_sources.changed
