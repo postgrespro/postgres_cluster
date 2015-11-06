@@ -393,6 +393,10 @@ static TransactionId DtmAdjustOldestXid(TransactionId xid)
         DtmTransStatus *ts, *prev = NULL;
         timestamp_t cutoff_time = dtm_get_current_time() - DtmVacuumDelay*USEC;
         SpinLockAcquire(&local->lock);
+        ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_FIND, NULL);
+        if (ts != NULL) { 
+            cutoff_time = ts->cid - DtmVacuumDelay*USEC;
+        }                
         for (ts = local->trans_list_head; ts != NULL && ts->cid < cutoff_time; prev = ts, ts = ts->next) { 
             if (prev != NULL) { 
                 hash_search(xid2status, &prev->xid, HASH_REMOVE, NULL);
