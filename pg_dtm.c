@@ -74,9 +74,6 @@ static HTAB* xid2status;
 static HTAB* gtid2xid;
 static DtmNodeState* local;
 static DtmTransState dtm_tx;
-static timestamp_t firstReportTime;
-static timestamp_t prevReportTime;
-static timestamp_t totalSleepTime;
 static uint64 totalSleepInterrupts;
 static int DtmVacuumDelay;
 
@@ -144,6 +141,9 @@ static cid_t dtm_sync(cid_t global_cid)
 #if TRACE_SLEEP_TIME
         {
         timestamp_t now = dtm_get_current_time();
+        static timestamp_t firstReportTime;
+        static timestamp_t prevReportTime;
+        static timestamp_t totalSleepTime;
 #endif
         dtm_sleep(global_cid - local_cid);
 #if TRACE_SLEEP_TIME
@@ -153,7 +153,7 @@ static cid_t dtm_sync(cid_t global_cid)
             if (firstReportTime == 0) { 
                 firstReportTime = now;
             } else { 
-                fprintf(stderr, "Sleep %lu of %lu usec (%f%%)\n", totalSleepTime, now - firstReportTime, totalSleepTime*100.0/(now - firstReportTime));
+                fprintf(stderr, "Sync sleep %lu of %lu usec (%f%%)\n", totalSleepTime, now - firstReportTime, totalSleepTime*100.0/(now - firstReportTime));
             }
         }
         }
@@ -405,8 +405,9 @@ static TransactionId DtmAdjustOldestXid(TransactionId xid)
             }
         }
         if (prev != NULL) { 
+            *(int*)0 = 0;
             local->trans_list_head = prev;
-            xid = prev->xid;
+            xid = prev->xid;            
         } else { 
             xid = FirstNormalTransactionId;
         }
@@ -454,6 +455,9 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 #if TRACE_SLEEP_TIME
                 {
                 timestamp_t now = dtm_get_current_time();
+                static timestamp_t firstReportTime;
+                static timestamp_t prevReportTime;
+                static timestamp_t totalSleepTime;
 #endif
                 dtm_sleep(delay);
 #if TRACE_SLEEP_TIME
@@ -463,7 +467,7 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
                     if (firstReportTime == 0) { 
                         firstReportTime = now;
                     } else { 
-                        fprintf(stderr, "Sleep %lu of %lu usec (%f%%)\n", totalSleepTime, now - firstReportTime, totalSleepTime*100.0/(now - firstReportTime));
+                        fprintf(stderr, "Snapshot sleep %lu of %lu usec (%f%%)\n", totalSleepTime, now - firstReportTime, totalSleepTime*100.0/(now - firstReportTime));
                     }
                 }
                 }
