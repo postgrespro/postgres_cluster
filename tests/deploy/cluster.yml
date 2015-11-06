@@ -11,7 +11,7 @@
     pg_destroy_and_init: true
     pg_datadir: ./postgrespro-data
     pg_config_role: 
-    - line: "dtm.vacuum_delay=10"
+    - line: "dtm.vacuum_delay=60"
 
   tasks:
 
