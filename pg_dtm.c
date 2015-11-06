@@ -115,9 +115,6 @@ static void dtm_sleep(timestamp_t interval)
 {
     struct timespec ts;
     struct timespec rem;
-#if TRACE_SLEEP_TIME
-    timestamp_t now = dtm_get_current_time();
-#endif
     ts.tv_sec = 0;
     ts.tv_nsec = interval*1000;
 
@@ -126,17 +123,6 @@ static void dtm_sleep(timestamp_t interval)
         Assert(errno == EINTR);
         ts = rem;
     }
-#if TRACE_SLEEP_TIME
-    totalSleepTime += dtm_get_current_time() - now;
-    if (now > prevReportTime + USEC*10) { 
-        prevReportTime = now;
-        if (firstReportTime == 0) { 
-            firstReportTime = now;
-        } else { 
-            fprintf(stderr, "Sleep %lu of %lu usec (%f%%)\n", totalSleepTime, now - firstReportTime, totalSleepTime*100.0/(now - firstReportTime));
-        }
-    }
-#endif
 }
     
 static cid_t dtm_get_cid()
@@ -155,7 +141,23 @@ static cid_t dtm_sync(cid_t global_cid)
     cid_t local_cid;
     while ((local_cid = dtm_get_cid()) < global_cid) { 
         SpinLockRelease(&local->lock);
+#if TRACE_SLEEP_TIME
+        {
+        timestamp_t now = dtm_get_current_time();
+#endif
         dtm_sleep(global_cid - local_cid);
+#if TRACE_SLEEP_TIME
+        totalSleepTime += dtm_get_current_time() - now;
+        if (now > prevReportTime + USEC*10) { 
+            prevReportTime = now;
+            if (firstReportTime == 0) { 
+                firstReportTime = now;
+            } else { 
+                fprintf(stderr, "Sleep %lu of %lu usec (%f%%)\n", totalSleepTime, now - firstReportTime, totalSleepTime*100.0/(now - firstReportTime));
+            }
+        }
+        }
+#endif
         SpinLockAcquire(&local->lock);
     }
     return global_cid;
@@ -449,7 +451,23 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
             {
                 DTM_TRACE((stderr, "%d: wait for in-doubt transaction %u in snapshot %lu\n", getpid(), xid, dtm_tx.snapshot));
                 SpinLockRelease(&local->lock);
+#if TRACE_SLEEP_TIME
+                {
+                timestamp_t now = dtm_get_current_time();
+#endif
                 dtm_sleep(delay);
+#if TRACE_SLEEP_TIME
+                totalSleepTime += dtm_get_current_time() - now;
+                if (now > prevReportTime + USEC*10) { 
+                    prevReportTime = now;
+                    if (firstReportTime == 0) { 
+                        firstReportTime = now;
+                    } else { 
+                        fprintf(stderr, "Sleep %lu of %lu usec (%f%%)\n", totalSleepTime, now - firstReportTime, totalSleepTime*100.0/(now - firstReportTime));
+                    }
+                }
+                }
+#endif
                 if (delay*2 <= MAX_WAIT_TIMEOUT) {
                     delay *= 2;
                 }
