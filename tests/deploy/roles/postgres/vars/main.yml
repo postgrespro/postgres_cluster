@@ -27,9 +27,9 @@ pg_config:
   - line: "port = {{pg_port}}"
 pg_config_role:
   - line: "#pg_config_role"
-pg_src: ./postgrespro
+pg_src: ~/postgrespro
 pg_dst: /tmp/postgrespro-build
-pg_datadir: ./postgrespro-data
+pg_datadir: ~/postgrespro-data
 
 libuv:
   version: v1.7.5

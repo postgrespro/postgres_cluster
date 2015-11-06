@@ -9,21 +9,21 @@
     pg_repo: https://github.com/kelvich/postgresql.git
     pg_version_tag: xtm_patched
     pg_destroy_and_init: true
-    pg_datadir: ./postgrespro-data
+    pg_datadir: ~/postgrespro-data
 
   - role: postgres
     pg_port: 5433
     pg_repo: https://github.com/kelvich/postgresql.git
     pg_version_tag: xtm_patched
     pg_destroy_and_init: true
-    pg_datadir: ./postgrespro-data2
+    pg_datadir: ~/postgrespro-data2
 
   - role: postgres
-    pg_port: 5433
+    pg_port: 5434
     pg_repo: https://github.com/kelvich/postgresql.git
     pg_version_tag: xtm_patched
     pg_destroy_and_init: true
-    pg_datadir: ./postgrespro-data3
+    pg_datadir: ~/postgrespro-data3
 
   tasks:
 
