@@ -417,7 +417,13 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 			}
 			return;
 		case DOUBT:
-			if (!wait) {
+			if (wait) {
+				CHECK(
+					queue_for_transaction_finish(client, xid, 's'),
+					client,
+					"VOTE: couldn't queue for transaction finish"
+				);
+			} else {
 				client_message_shortcut(client, RES_TRANSACTION_INPROGRESS);
 			}
 			return;
@@ -783,25 +789,32 @@ int main(int argc, char **argv) {
 	mstimer_reset(&t);
 	while (true) {
 		int ms = mstimer_reset(&t);
-		raft_tick(&raft, ms);
-
-		// The client interaction is done in server_loop.
 		raft_msg_t *m = NULL;
+
+		if (use_raft) {
+			raft_tick(&raft, ms);
+		}
+
+		// The client interaction is done in server_tick.
 		if (server_tick(server, HEARTBEAT_TIMEOUT_MS)) {
 			m = raft_recv_message(&raft);
 			assert(m); // m should not be NULL, because the message should be ready to recv
 		}
 
-		int applied = raft_apply(&raft, apply_clog_update);
-		if (applied) {
-			shout("applied %d updates\n", applied);
-		}
+		if (use_raft) {
+			int applied = raft_apply(&raft, apply_clog_update);
+			if (applied) {
+				shout("applied %d updates\n", applied);
+			}
 
-		if (m) {
-			raft_handle_message(&raft, m);
-		}
+			if (m) {
+				raft_handle_message(&raft, m);
+			}
 
-		server_set_enabled(server, raft.role == ROLE_LEADER);
+			server_set_enabled(server, raft.role == ROLE_LEADER);
+		} else {
+			server_set_enabled(server, true);
+		}
 	}
 
 	clog_close(clg);

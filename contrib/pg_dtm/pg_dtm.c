@@ -102,8 +102,7 @@ static TransactionManager DtmTM = {
 	PgXidInMVCCSnapshot
 };
 
-static char *DtmHost;
-static int DtmPort;
+static char *DtmServers;
 static int DtmBufferSize;
 
 static BackgroundWorker DtmWorker = {
@@ -428,7 +427,7 @@ DtmGetNewTransactionId(bool isSubXact)
 
 		if (IsUnderPostmaster && TransactionIdFollowsOrEquals(xid, xidStopLimit))
 		{
-			char oldest_datname = get_database_name(oldest_datoid);
+			char *oldest_datname = get_database_name(oldest_datoid);
 
 			/* complain even if that DB has disappeared */
 			if (oldest_datname)
@@ -449,7 +448,7 @@ DtmGetNewTransactionId(bool isSubXact)
 		else
 		if (TransactionIdFollowsOrEquals(xid, xidWarnLimit))
 		{
-			char oldest_datname = get_database_name(oldest_datoid);
+			char *oldest_datname = get_database_name(oldest_datoid);
 
 			/* complain even if that DB has disappeared */
 			if (oldest_datname)
@@ -797,11 +796,11 @@ _PG_init(void)
 	);
 
 	DefineCustomStringVariable(
-		"dtm.host",
-		"The host where DTM daemon resides",
+		"dtm.servers",
+		"The space separated host:port pairs where DTM daemons reside",
 		NULL,
-		&DtmHost,
-		"127.0.0.1",
+		&DtmServers,
+		"127.0.0.1:5431",
 		PGC_BACKEND, // context
 		0, // flags,
 		NULL, // GucStringCheckHook check_hook,
@@ -809,29 +808,13 @@ _PG_init(void)
 		NULL // GucShowHook show_hook
 	);
 
-	DefineCustomIntVariable(
-		"dtm.port",
-		"The port DTM daemon is listening",
-		NULL,
-		&DtmPort,
-		5431,
-		1,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
-
-
 	if (DtmBufferSize != 0)
 	{
-		DtmGlobalConfig(NULL, DtmPort, Unix_socket_directories);
+		DtmGlobalConfig(DtmServers, Unix_socket_directories);
 		RegisterBackgroundWorker(&DtmWorker);
 	}
 	else
-		DtmGlobalConfig(DtmHost, DtmPort, Unix_socket_directories);
+		DtmGlobalConfig(DtmServers, NULL);
 
 	/*
 	 * Install hooks.
@@ -926,6 +909,11 @@ Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 
 void DtmBackgroundWorker(Datum arg)
 {
+	elog(ERROR, "unix socket not supported yet");
+	// FIXME: implement switching between multiple connections
+	*(int*)0 = 0;
+
+	/*
 	Shub shub;
 	ShubParams params;
 	char unix_sock_path[MAXPGPATH];
@@ -941,4 +929,5 @@ void DtmBackgroundWorker(Datum arg)
 
 	ShubInitialize(&shub, &params);
 	ShubLoop(&shub);
+	*/
 }

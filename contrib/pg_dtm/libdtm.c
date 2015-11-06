@@ -6,9 +6,11 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <time.h>
 
 #include "libdtm.h"
 #include "dtmd/include/proto.h"
+#include "dtmd/include/dtmdlimits.h"
 #include "sockhub/sockhub.h"
 
 #ifdef TEST
@@ -24,23 +26,36 @@ typedef struct DTMConnData *DTMConn;
 
 typedef struct DTMConnData
 {
+	char *host; // use unix socket if host is NULL
+	int port;
 	int sock;
 } DTMConnData;
 
-static char *dtmhost = NULL;
-static int dtmport = 0;
-static char* dtm_unix_sock_dir;
+static bool connected = false;
+static int leader = 0;
+static int connum = 0;
+static DTMConnData conns[MAX_SERVERS];
+static char *dtm_unix_sock_dir;
 
 typedef unsigned xid_t;
 
-// Connects to the specified DTM.
-static DTMConn DtmConnect(char *host, int port)
+static void DiscardConnection()
 {
-	DTMConn dtm;
+	connected = false;
+	leader = (leader + 1) % connum;
+	fprintf(stderr, "next candidate is %s:%d\n", conns[leader].host, conns[leader].port);
+}
+
+// Connects to the specified DTM.
+static bool DtmConnect(DTMConn conn)
+{
 	int sd;
 
-	if (host == NULL)
+	if (conn->host == NULL)
 	{
+		perror("unix socket not supported yet");
+		*(int*)0 = 0;
+		/*
 		// use a UNIX socket
 		struct sockaddr sock;
 		int len = offsetof(struct sockaddr, sa_data) + snprintf(sock.sa_data, sizeof(sock.sa_data), "%s/p%u", dtm_unix_sock_dir, port);
@@ -49,17 +64,20 @@ static DTMConn DtmConnect(char *host, int port)
 		sd = socket(AF_UNIX, SOCK_STREAM, 0);
 		if (sd == -1)
 		{
+			DiscardConnection();
 			perror("failed to create a unix socket");
+			return false;
 		}
 		if (connect(sd, &sock, len) == -1)
 		{
+			DiscardConnection();
 			perror("failed to connect to the address");
 			close(sd);
-			return NULL;
+			return false;
 		}
-		dtm = malloc(sizeof(DTMConnData));
-		dtm->sock = sd;
-		return dtm;
+		conn->sock = sd;
+		return (connected = true);
+		*/
 	}
 	else
 	{
@@ -72,27 +90,16 @@ static DTMConn DtmConnect(char *host, int port)
 		memset(&hint, 0, sizeof(hint));
 		hint.ai_socktype = SOCK_STREAM;
 		hint.ai_family = AF_INET;
-		snprintf(portstr, 6, "%d", port);
+		snprintf(portstr, 6, "%d", conn->port);
 		hint.ai_protocol = getprotobyname("tcp")->p_proto;
 
-		while (1)
+		while (true)
 		{
-			char* sep = strchr(host, ',');
-			if (sep != NULL)
+			if (getaddrinfo(conn->host, portstr, &hint, &addrs))
 			{
-				*sep = '\0';
-			}
-			if (getaddrinfo(host, portstr, &hint, &addrs))
-			{
+				DiscardConnection();
 				perror("failed to resolve address");
-				if (sep == NULL)
-				{
-					return NULL;
-				}
-				else
-				{
-					goto TryNextHost;
-				}
+				return false;
 			}
 
 			for (a = addrs; a != NULL; a = a->ai_next)
@@ -102,7 +109,7 @@ static DTMConn DtmConnect(char *host, int port)
 				if (sd == -1)
 				{
 					perror("failed to create a socket");
-					goto TryNextHost;
+					continue;
 				}
 				setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 
@@ -110,31 +117,20 @@ static DTMConn DtmConnect(char *host, int port)
 				{
 					perror("failed to connect to an address");
 					close(sd);
-					goto TryNextHost;
+					continue;
 				}
 
 				// success
 				freeaddrinfo(addrs);
-				dtm = malloc(sizeof(DTMConnData));
-				dtm->sock = sd;
-				if (sep != NULL)
-				{
-					*sep = ',';
-				}
-				return dtm;
+				conn->sock = sd;
+				return (connected = true);
 			}
 			freeaddrinfo(addrs);
-		TryNextHost:
-			if (sep == NULL)
-			{
-				break;
-			}
-			*sep = ',';
-			host = sep + 1;
 		}
 	}
+	DiscardConnection();
 	fprintf(stderr, "could not connect\n");
-	return NULL;
+	return false;
 }
 
 static int dtm_recv_results(DTMConn dtm, int maxlen, xid_t *results)
@@ -150,11 +146,13 @@ static int dtm_recv_results(DTMConn dtm, int maxlen, xid_t *results)
 		int newbytes = read(dtm->sock, (char*)&msg + recved, needed - recved);
 		if (newbytes == -1)
 		{
+			DiscardConnection();
 			elog(ERROR, "Failed to recv results header from arbiter");
 			return 0;
 		}
 		if (newbytes == 0)
 		{
+			DiscardConnection();
 			elog(ERROR, "Arbiter closed connection during recv");
 			return 0;
 		}
@@ -174,11 +172,13 @@ static int dtm_recv_results(DTMConn dtm, int maxlen, xid_t *results)
 		int newbytes = read(dtm->sock, (char*)results + recved, needed - recved);
 		if (newbytes == -1)
 		{
+			DiscardConnection();
 			elog(ERROR, "Failed to recv results body from arbiter");
 			return 0;
 		}
 		if (newbytes == 0)
 		{
+			DiscardConnection();
 			elog(ERROR, "Arbiter closed connection during recv");
 			return 0;
 		}
@@ -223,6 +223,7 @@ static bool dtm_send_command(DTMConn dtm, xid_t cmd, int argc, ...)
 		int newbytes = write(dtm->sock, buf + sent, datasize - sent);
 		if (newbytes == -1)
 		{
+			DiscardConnection();
 			elog(ERROR, "Failed to send a command to arbiter");
 			return false;
 		}
@@ -231,39 +232,75 @@ static bool dtm_send_command(DTMConn dtm, xid_t cmd, int argc, ...)
 	return true;
 }
 
-void DtmGlobalConfig(char *host, int port, char* sock_dir) {
-	if (dtmhost)
-	{
-		free(dtmhost);
-		dtmhost = NULL;
+void DtmGlobalConfig(char *servers, char *sock_dir)
+{
+	char *hstate, *pstate;
+	char *hostport, *host, *portstr;
+	int port;
+
+	while (connum-- > 0) {
+		if (conns[connum].host)
+			free(conns[connum].host);
 	}
-	if (host)
+
+	hostport = strtok_r(servers, " ", &hstate);
+	while (hostport)
 	{
-		dtmhost = strdup(host);
+		//fprintf(stderr, "hostport = '%s'\n", hostport); sleep(1);
+		host = strtok_r(hostport, ":", &pstate);
+		//fprintf(stderr, "host = '%s'\n", hostport); sleep(1);
+		if (!host) break;
+
+		portstr = strtok_r(NULL, ":", &pstate);
+		//fprintf(stderr, "portstr = '%s'\n", portstr); sleep(1);
+		if (portstr)
+			port = atoi(portstr);
+		else
+			port = 5431;
+		//fprintf(stderr, "host = %d\n", port); sleep(1);
+
+		if (!sock_dir) {
+			conns[connum].host = strdup(host);
+		} else {
+			conns[connum].host = NULL;
+		}
+		conns[connum].port = port;
+		connum++;
+
+		hostport = strtok_r(NULL, " ", &hstate);
 	}
-	dtmport = port;
+
 	dtm_unix_sock_dir = sock_dir;
 }
 
 static DTMConn GetConnection()
 {
-	static DTMConn dtm = NULL;
-	if (dtm == NULL)
+	int tries = 3 * connum;
+	while (!connected && (tries > 0))
 	{
-		dtm = DtmConnect(dtmhost, dtmport);
-		if (dtm == NULL)
+		DTMConn c = conns + leader;
+		if (!DtmConnect(c))
 		{
-			if (dtmhost)
+			int timeout_ms = 100;
+			struct timespec timeout = {0, timeout_ms * 1000000};
+			nanosleep(&timeout, NULL);
+
+			tries--;
+			if (c->host)
 			{
-				elog(ERROR, "Failed to connect to DTMD at tcp %s:%d", dtmhost, dtmport);
+				elog(ERROR, "Failed to connect to DTMD at tcp %s:%d", c->host, c->port);
 			}
 			else
 			{
-				elog(ERROR, "Failed to connect to DTMD at unix %d", dtmport);
+				elog(ERROR, "Failed to connect to DTMD at unix %d", c->port);
 			}
 		}
 	}
-	return dtm;
+	if (!tries)
+	{
+		return NULL;
+	}
+	return conns + leader;
 }
 
 void DtmInitSnapshot(Snapshot snapshot)
@@ -333,6 +370,7 @@ TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin)
 
 	return xid;
 failure:
+	DiscardConnection();
 	fprintf(stderr, "DtmGlobalStartTransaction: transaction failed to start\n");
 	return INVALID_XID;
 }
@@ -368,6 +406,7 @@ void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *g
 
 	return;
 failure:
+	DiscardConnection();
 	fprintf(
 		stderr,
 		"DtmGlobalGetSnapshot: failed to"
@@ -414,6 +453,7 @@ XidStatus DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait
 			goto failure;
 	}
 failure:
+	DiscardConnection();
 	fprintf(
 		stderr,
 		"DtmGlobalSetTransStatus: failed to vote"
@@ -453,6 +493,7 @@ XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait)
 			goto failure;
 	}
 failure:
+	DiscardConnection();
 	fprintf(
 		stderr,
 		"DtmGlobalGetTransStatus: failed to get"
@@ -491,6 +532,7 @@ int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first)
 	Assert(count >= nXids);
 	return count;
 failure:
+	DiscardConnection();
 	fprintf(
 		stderr,
 		"DtmGlobalReserve: failed to reserve"

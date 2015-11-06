@@ -8,9 +8,8 @@
 
 #define INVALID_XID 0
 
-// Sets up the host and port for DTM connection.
-// The defaults are "127.0.0.1" and 5431.
-void DtmGlobalConfig(char *host, int port, char* sock_dir);
+// Sets up the servers and the unix sockdir for DTM connections.
+void DtmGlobalConfig(char *servers, char *sock_dir);
 
 void DtmInitSnapshot(Snapshot snapshot);
 
