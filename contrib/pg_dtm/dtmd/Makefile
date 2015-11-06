@@ -2,7 +2,6 @@ CC=gcc
 CFLAGS=-g -O2 -Wall -Iinclude -D_LARGEFILE64_SOURCE # -DDEBUG
 SOCKHUB_PREFIX=../sockhub
 SOCKHUB_CFLAGS=-I"$(SOCKHUB_PREFIX)"
-SOCKHUB_LDFLAGS=-lsockhub -L"$(SOCKHUB_PREFIX)"
 
 SYSTEM=$(shell uname -s)
 ifeq ($(SYSTEM),Darwin)
@@ -19,8 +18,7 @@ bin/dtmd: obj/server.o obj/raft.o obj/main.o obj/clog.o obj/clogfile.o obj/util.
 	$(CC) -o bin/dtmd $(CFLAGS) \
 		obj/server.o obj/raft.o obj/main.o \
 		obj/clog.o obj/clogfile.o obj/util.o obj/transaction.o \
-		obj/snapshot.o \
-		$(SOCKHUB_LDFLAGS)
+		obj/snapshot.o
 
 bin/heart: obj/heart.o obj/raft.o obj/util.o | bindir objdir
 	$(CC) -o bin/heart $(CFLAGS) \
