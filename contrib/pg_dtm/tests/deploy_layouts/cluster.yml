@@ -1,8 +1,8 @@
 ---
 - hosts: nodes[1]
-  roles:
-  - role: postgrespro
-    deploy_dtm: true
+  # roles:
+  # - role: postgrespro
+  #   deploy_dtm: true
 
 - hosts: nodes
   roles:
@@ -10,8 +10,8 @@
     pg_port: 15432
     deploy_postgres: true
     pg_dtm_enable: true
-    pg_dtm_enable: false
-    # pg_config_role:
-    #   - line: "dtm.buffer_size = 65536"
-    pg_dtm_host: "{{ groups['nodes'][0] }}"
+    pg_config_role:
+      - line: "dtm.vacuum_delay = 1"
+    # pg_dtm_host: "{{ groups['nodes'][0] }}"
+
 
