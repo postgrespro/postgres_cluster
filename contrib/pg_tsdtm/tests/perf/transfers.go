@@ -39,7 +39,6 @@ func (t TransfersTS) prepare_one(connstr string, wg *sync.WaitGroup) {
     exec(conn, "insert into t (select generate_series(0,$1-1), $2)",
         cfg.AccountsNum, 0)
 
-    exec(conn, "commit")
     wg.Done()
 }
 
@@ -68,14 +67,18 @@ func (t TransfersTS) writer(id int, cCommits chan int, cAborts chan int, wg *syn
 
         gtid := strconv.Itoa(id) + "." + strconv.Itoa(i)
         amount := 2*rand.Intn(2) - 1
-        from_acc := cfg.Writers.StartId + 2*id + 1
-        to_acc   := cfg.Writers.StartId + 2*id + 2
+        //from_acc := cfg.Writers.StartId + 2*id + 1
+        //to_acc   := cfg.Writers.StartId + 2*id + 2
+        from_acc := rand.Intn(cfg.AccountsNum) //cfg.Writers.StartId + 2*id + 1
+        to_acc   := rand.Intn(cfg.AccountsNum) //cfg.Writers.StartId + 2*id + 2
 
         conn1 := conns[rand.Intn(len(conns))]
         conn2 := conns[rand.Intn(len(conns))]
-        if conn1 == conn2 {
-            continue
-        }
+
+        for conn1 == conn2 {
+           conn1 = conns[rand.Intn(len(conns))]
+           conn2 = conns[rand.Intn(len(conns))]
+        } 
 
         exec(conn1, "begin transaction")
         exec(conn2, "begin transaction")
@@ -134,9 +137,6 @@ func (t TransfersTS) reader(wg *sync.WaitGroup, cFetches chan int, inconsistency
                     snapshot = _execQuery(conn, "select dtm_access($1)", snapshot)
                 }
             }
-
-            exec(conn, "begin transaction isolation level " + cfg.Isolation)
-            sum += _execQuery(conn, "select sum(v) from t")
         }
 
         for _, conn := range conns {
