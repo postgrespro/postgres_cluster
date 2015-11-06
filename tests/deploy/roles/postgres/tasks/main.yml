@@ -48,7 +48,7 @@
   when: pg_pidfile.stat.exists
 
 - name: force rebuild on changed sources
-  command: "rm {{pg_dst}}/bin/postgres"
+  command: "rm -f {{pg_dst}}/bin/postgres"
   when: pg_sources.changed
 
 - name: build and install

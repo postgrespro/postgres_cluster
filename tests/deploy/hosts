@@ -11,3 +11,6 @@
 
 [master]
 158.250.29.10 ansible_ssh_user=cluster offset=1
+
+[local]
+localhost

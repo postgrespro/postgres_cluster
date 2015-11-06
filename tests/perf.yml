@@ -1,6 +1,6 @@
 ---
 
-- hosts: clients
+- hosts: clients[0]
   gather_facts: no
   tasks:
 
@@ -30,7 +30,7 @@
   gather_facts: no
   tasks:
   - name: run transfers
-    shell: "~/perf {{connections}} {{runkeys | d('-g -w 64 -r 1 -n 1000 -a 10000')}}"
+    shell: "~/perf {{connections}} {{runkeys | d('-g -w 8 -r 1 -n 1000 -a 10000')}}"
     register: transfers_result
   - debug: var=transfers_result
 
