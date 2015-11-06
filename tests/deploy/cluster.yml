@@ -16,7 +16,7 @@
   tasks:
 
   - name: clone dtm sources
-    git: repo=https://github.com/kelvich/pg_tsdtm.git
+    git: repo=https://github.com/postgrespro/pg_tsdtm.git
       dest=./pg_tsdtm
       accept_hostkey=yes
       update=yes
