@@ -3,18 +3,22 @@
 ./install/bin/pg_ctl -D ./install/data1 stop
 ./install/bin/pg_ctl -D ./install/data2 stop
 
-killall dtmd
+# killall dtmd
 
 rm -rf install
 
 make install
 
-cd ~/code/pg_dtm/
-# cd contrib/pg_tsdtm/
+# cd ~/code/pg_dtm/
+cd contrib/pg_tsdtm/
 
-PATH=~/code/postgrespro2/install/bin:$PATH make clean
-PATH=~/code/postgrespro2/install/bin:$PATH make
-PATH=~/code/postgrespro2/install/bin:$PATH make install
+# PATH=~/code/postgrespro2/install/bin:$PATH make clean
+# PATH=~/code/postgrespro2/install/bin:$PATH make
+# PATH=~/code/postgrespro2/install/bin:$PATH make install
+
+make clean
+make
+make install
 
 cd ~/code/postgrespro2/contrib/postgres_fdw/
 
@@ -48,9 +52,9 @@ echo "max_prepared_transactions = 400" >> ./install/data2/postgresql.conf
 ./install/bin/pg_ctl -D ./install/data2 -l ./install/data2/log start
 
 
-cd contrib/pg_dtm/dtmd
-make clean
-make
-rm -rf /tmp/clog/*
-mkdir -p /tmp/clog
-./bin/dtmd
+# cd contrib/pg_dtm/dtmd
+# make clean
+# make
+# rm -rf /tmp/clog/*
+# mkdir -p /tmp/clog
+# ./bin/dtmd
