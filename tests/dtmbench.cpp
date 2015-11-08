@@ -196,7 +196,7 @@ void initializeDatabase()
         exec(txn, "create extension pg_dtm");
         exec(txn, "drop table if exists t");
         exec(txn, "create table t(u int primary key, v int)");
-        exec(txn, "insert into t (select generate_series(0,%d), %d)", cfg.nAccounts, 0);
+        exec(txn, "insert into t (select generate_series(0,%d), %d)", cfg.nAccounts-1, 0);
         txn.commit();
     }        
 }
@@ -264,7 +264,7 @@ int main (int argc, char* argv[])
 
     for (int i = 0; i < cfg.nReaders; i++) { 
         readers[i].wait();
-        nReads += writers[i].proceeded;
+        nReads += readers[i].proceeded;
     }
  
     time_t elapsed = getCurrentTime() - start;
