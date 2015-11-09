@@ -85,7 +85,7 @@ static int create_listening_socket(const char *host, int port) {
 		return -1;
 	}
 	addr.sin_port = htons(port);
-	debug("binding %s:%d\n", host, port);
+	debug("binding tcp %s:%d\n", host, port);
 	if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
 		shout("cannot bind the listening socket: %s\n", strerror(errno));
 		return -1;

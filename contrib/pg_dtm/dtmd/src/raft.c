@@ -143,7 +143,7 @@ int raft_create_udp_socket(raft_t *r) {
 		return -1;
 	}
 	me->addr.sin_port = htons(me->port);
-	debug("binding %s:%d\n", me->host, me->port);
+	debug("binding udp %s:%d\n", me->host, me->port);
 	if (bind(r->sock, (struct sockaddr*)&me->addr, sizeof(me->addr)) == -1) {
 		shout("cannot bind the socket: %s\n", strerror(errno));
 		return -1;
@@ -321,7 +321,6 @@ static int raft_log_compact(raft_log_t *l, int keep_applied) {
 			snap.minarg = min(snap.minarg, e->argument);
 			snap.maxarg = max(snap.maxarg, e->argument);
 		}
-		e->snapshot = false; // FIXME: should not need this, find the code where it is not set on new entry insertion
 		compacted++;
 	}
 	if (compacted) {
@@ -339,7 +338,7 @@ bool raft_emit(raft_t *r, int action, int argument) {
 
 	if (r->log.size == RAFT_LOGLEN) {
 		int compacted = raft_log_compact(&r->log, RAFT_KEEP_APPLIED);
-		if (compacted) {
+		if (compacted > 1) {
 			shout("compacted %d entries\n", compacted);
 		} else {
 			shout(
@@ -348,10 +347,9 @@ bool raft_emit(raft_t *r, int action, int argument) {
 			);
 			return false;
 		}
-		return false;
 	}
 
-	raft_entry_t *e = &RAFT_LOG(r, r->log.size);
+	raft_entry_t *e = &RAFT_LOG(r, r->log.first + r->log.size);
 	e->snapshot = false;
 	e->term = r->term;
 	e->action = action;

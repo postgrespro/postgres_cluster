@@ -41,9 +41,68 @@ typedef unsigned xid_t;
 
 static void DiscardConnection()
 {
-	connected = false;
+	if (connected)
+	{
+		close(conns[leader].sock);
+		conns[leader].sock = -1;
+		connected = false;
+	}
 	leader = (leader + 1) % connum;
-	fprintf(stderr, "next candidate is %s:%d\n", conns[leader].host, conns[leader].port);
+	fprintf(stderr, "next candidate is %s:%d (%d of %d)\n", conns[leader].host, conns[leader].port, leader, connum);
+}
+
+static int dtm_recv_results(DTMConn dtm, int maxlen, xid_t *results)
+{
+	ShubMessageHdr msg;
+	int recved;
+	int needed;
+
+	recved = 0;
+	needed = sizeof(ShubMessageHdr);
+	while (recved < needed)
+	{
+		int newbytes = read(dtm->sock, (char*)&msg + recved, needed - recved);
+		if (newbytes == -1)
+		{
+			DiscardConnection();
+			elog(WARNING, "Failed to recv results header from arbiter");
+			return 0;
+		}
+		if (newbytes == 0)
+		{
+			DiscardConnection();
+			elog(WARNING, "Arbiter closed connection during recv");
+			return 0;
+		}
+		recved += newbytes;
+	}
+
+	recved = 0;
+	needed = msg.size;
+	assert(needed % sizeof(xid_t) == 0);
+	if (needed > maxlen * sizeof(xid_t))
+	{
+		elog(ERROR, "The message body will not fit into the results array");
+		return 0;
+	}
+	while (recved < needed)
+	{
+		int newbytes = read(dtm->sock, (char*)results + recved, needed - recved);
+		if (newbytes == -1)
+		{
+			DiscardConnection();
+			elog(WARNING, "Failed to recv results body from arbiter");
+			return 0;
+		}
+		if (newbytes == 0)
+		{
+			DiscardConnection();
+			elog(WARNING, "Arbiter closed connection during recv");
+			return 0;
+		}
+		recved += newbytes;
+	}
+	return needed / sizeof(xid_t);
 }
 
 // Connects to the specified DTM.
@@ -133,60 +192,6 @@ static bool DtmConnect(DTMConn conn)
 	return false;
 }
 
-static int dtm_recv_results(DTMConn dtm, int maxlen, xid_t *results)
-{
-	ShubMessageHdr msg;
-	int recved;
-	int needed;
-
-	recved = 0;
-	needed = sizeof(ShubMessageHdr);
-	while (recved < needed)
-	{
-		int newbytes = read(dtm->sock, (char*)&msg + recved, needed - recved);
-		if (newbytes == -1)
-		{
-			DiscardConnection();
-			elog(ERROR, "Failed to recv results header from arbiter");
-			return 0;
-		}
-		if (newbytes == 0)
-		{
-			DiscardConnection();
-			elog(ERROR, "Arbiter closed connection during recv");
-			return 0;
-		}
-		recved += newbytes;
-	}
-
-	recved = 0;
-	needed = msg.size;
-	assert(needed % sizeof(xid_t) == 0);
-	if (needed > maxlen * sizeof(xid_t))
-	{
-		elog(ERROR, "The message body will not fit into the results array");
-		return 0;
-	}
-	while (recved < needed)
-	{
-		int newbytes = read(dtm->sock, (char*)results + recved, needed - recved);
-		if (newbytes == -1)
-		{
-			DiscardConnection();
-			elog(ERROR, "Failed to recv results body from arbiter");
-			return 0;
-		}
-		if (newbytes == 0)
-		{
-			DiscardConnection();
-			elog(ERROR, "Arbiter closed connection during recv");
-			return 0;
-		}
-		recved += newbytes;
-	}
-	return needed / sizeof(xid_t);
-}
-
 static bool dtm_send_command(DTMConn dtm, xid_t cmd, int argc, ...)
 {
 	va_list argv;
@@ -237,27 +242,29 @@ void DtmGlobalConfig(char *servers, char *sock_dir)
 	char *hstate, *pstate;
 	char *hostport, *host, *portstr;
 	int port;
+	int i;
 
-	while (connum-- > 0) {
-		if (conns[connum].host)
-			free(conns[connum].host);
-	}
+	for (i = 0; i < connum; i++)
+		if (conns[i].host)
+			free(conns[i].host);
+	connum = 0;
 
-	hostport = strtok_r(servers, " ", &hstate);
+	fprintf(stderr, "parsing '%s'\n", servers);
+	hostport = strtok_r(servers, ",", &hstate);
 	while (hostport)
 	{
-		//fprintf(stderr, "hostport = '%s'\n", hostport); sleep(1);
+		fprintf(stderr, "hostport = '%s'\n", hostport);
 		host = strtok_r(hostport, ":", &pstate);
-		//fprintf(stderr, "host = '%s'\n", hostport); sleep(1);
+		fprintf(stderr, "host = '%s'\n", hostport);
 		if (!host) break;
 
 		portstr = strtok_r(NULL, ":", &pstate);
-		//fprintf(stderr, "portstr = '%s'\n", portstr); sleep(1);
+		fprintf(stderr, "portstr = '%s'\n", portstr);
 		if (portstr)
 			port = atoi(portstr);
 		else
 			port = 5431;
-		//fprintf(stderr, "host = %d\n", port); sleep(1);
+		fprintf(stderr, "port = %d\n", port);
 
 		if (!sock_dir) {
 			conns[connum].host = strdup(host);
@@ -267,7 +274,7 @@ void DtmGlobalConfig(char *servers, char *sock_dir)
 		conns[connum].port = port;
 		connum++;
 
-		hostport = strtok_r(NULL, " ", &hstate);
+		hostport = strtok_r(NULL, ",", &hstate);
 	}
 
 	dtm_unix_sock_dir = sock_dir;
@@ -279,7 +286,23 @@ static DTMConn GetConnection()
 	while (!connected && (tries > 0))
 	{
 		DTMConn c = conns + leader;
-		if (!DtmConnect(c))
+		if (DtmConnect(c))
+		{
+			xid_t results[RESULTS_SIZE];
+			int reslen;
+			if (!dtm_send_command(c, CMD_HELLO, 0))
+			{
+				tries--;
+				continue;
+			}
+			reslen = dtm_recv_results(c, RESULTS_SIZE, results);
+			if ((reslen < 1) || (results[0] != RES_OK))
+			{
+				tries--;
+				continue;
+			}
+		}
+		else
 		{
 			int timeout_ms = 100;
 			struct timespec timeout = {0, timeout_ms * 1000000};
@@ -288,11 +311,11 @@ static DTMConn GetConnection()
 			tries--;
 			if (c->host)
 			{
-				elog(ERROR, "Failed to connect to DTMD at tcp %s:%d", c->host, c->port);
+				elog(WARNING, "Failed to connect to DTMD at tcp %s:%d", c->host, c->port);
 			}
 			else
 			{
-				elog(ERROR, "Failed to connect to DTMD at unix %d", c->port);
+				elog(WARNING, "Failed to connect to DTMD at unix %d", c->port);
 			}
 		}
 	}

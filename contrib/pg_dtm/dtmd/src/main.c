@@ -82,6 +82,7 @@ static void notify_listeners(Transaction *t, int status) {
 		// notify 'status' listeners about the transaction status
 		case BLANK:
 			while ((listener = transaction_pop_listener(t, 's'))) {
+				debug("[%d] notifying the client about xid=%u (unknown)\n", CLIENT_ID(listener), t->xid);
 				client_message_shortcut(
 					(client_t)listener,
 					RES_TRANSACTION_UNKNOWN
@@ -90,7 +91,7 @@ static void notify_listeners(Transaction *t, int status) {
 			break;
 		case NEGATIVE:
 			while ((listener = transaction_pop_listener(t, 's'))) {
-				// notify 'status' listeners about the transaction status
+				debug("[%d] notifying the client about xid=%u (aborted)\n", CLIENT_ID(listener), t->xid);
 				client_message_shortcut(
 					(client_t)listener,
 					RES_TRANSACTION_ABORTED
@@ -99,7 +100,7 @@ static void notify_listeners(Transaction *t, int status) {
 			break;
 		case POSITIVE:
 			while ((listener = transaction_pop_listener(t, 's'))) {
-				// notify 'status' listeners about the transaction status
+				debug("[%d] notifying the client about xid=%u (committed)\n", CLIENT_ID(listener), t->xid);
 				client_message_shortcut(
 					(client_t)listener,
 					RES_TRANSACTION_COMMITTED
@@ -108,7 +109,7 @@ static void notify_listeners(Transaction *t, int status) {
 			break;
 		case DOUBT:
 			while ((listener = transaction_pop_listener(t, 's'))) {
-				// notify 'status' listeners about the transaction status
+				debug("[%d] notifying the client about xid=%u (inprogress)\n", CLIENT_ID(listener), t->xid);
 				client_message_shortcut(
 					(client_t)listener,
 					RES_TRANSACTION_INPROGRESS
@@ -122,19 +123,22 @@ static void apply_clog_update(int action, int argument) {
 	int status = action;
 	xid_t xid = argument;
 	assert((status == NEGATIVE) || (status == POSITIVE));
+	debug("APPLYING: xid=%u, status=%d\n", xid, status);
 
 	if (!clog_write(clg, xid, status)) {
-		shout("APPLY: failed to write to clog, xid=%d\n", xid);
+		shout("APPLY: failed to write to clog, xid=%u\n", xid);
 	}
 
-	Transaction *t = find_transaction(xid);
-	if (t == NULL) {
-		debug("APPLY: xid %u is not active\n", xid);
-		return;
-	}
+	if (!use_raft || (raft.role == ROLE_LEADER)) {
+		Transaction *t = find_transaction(xid);
+		if (t == NULL) {
+			debug("APPLY: xid=%u is not active\n", xid);
+			return;
+		}
 
-	notify_listeners(t, status);
-	free_transaction(t);
+		notify_listeners(t, status);
+		free_transaction(t);
+	}
 }
 
 static int next_client_id = 0;
@@ -153,14 +157,16 @@ static void ondisconnect(client_t client) {
 		// need to abort the transaction this client is participating in
 		for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
 			if (t->xid == CLIENT_XID(client)) {
-				raft_emit(&raft, NEGATIVE, t->xid);
+				if (use_raft && (raft.role == ROLE_LEADER)) {
+					raft_emit(&raft, NEGATIVE, t->xid);
+				}
 				break;
 			}
 		}
 
 		if (t == (Transaction*)&active_transactions) {
 			shout(
-				"[%d] DISCONNECT: transaction %u not found O_o\n",
+				"[%d] DISCONNECT: transaction xid=%u not found O_o\n",
 				CLIENT_ID(client), CLIENT_XID(client)
 			);
 		}
@@ -175,6 +181,7 @@ static void debug_cmd(client_t client, int argc, xid_t *argv) {
 	char *cmdname;
 	assert(argc > 0);
 	switch (argv[0]) {
+		case CMD_HELLO   : cmdname =    "HELLO"; break;
 		case CMD_RESERVE : cmdname =  "RESERVE"; break;
 		case CMD_BEGIN   : cmdname =    "BEGIN"; break;
 		case CMD_FOR     : cmdname =      "FOR"; break;
@@ -203,6 +210,9 @@ static void debug_cmd(client_t client, int argc, xid_t *argv) {
 		} \
 	} while (0)
 
+#define CHECKLEADER(CLIENT) \
+	CHECK(raft.role == ROLE_LEADER, CLIENT, "not a leader")
+
 static xid_t max_of_xids(xid_t a, xid_t b) {
 	return a > b ? a : b;
 }
@@ -229,6 +239,17 @@ static void gen_snapshot(Snapshot *s) {
 		snapshot_sort(s);
 	} else {
 		s->xmin = s->xmax = 0;
+	}
+}
+
+static void onhello(client_t client, int argc, xid_t *argv) {
+	CHECK(argc == 1, client, "HELLO: wrong number of arguments");
+
+	debug("[%d] HELLO\n", CLIENT_ID(client));
+	if (raft.role == ROLE_LEADER) {
+		client_message_shortcut(client, RES_OK);
+	} else {
+		client_message_shortcut(client, RES_FAILED);
 	}
 }
 
@@ -344,10 +365,12 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 static bool queue_for_transaction_finish(client_t client, xid_t xid, char cmd) {
 	assert((cmd >= 'a') && (cmd <= 'z'));
 
+	debug("[%d] QUEUE for xid=%u status\n", CLIENT_ID(client), xid);
+
 	Transaction *t = find_transaction(xid);
 	if (t == NULL) {
 		shout(
-			"[%d] QUEUE: xid %u not found\n",
+			"[%d] QUEUE: xid=%u not found\n",
 			CLIENT_ID(client), xid
 		);
 		client_message_shortcut(client, RES_FAILED);
@@ -378,7 +401,7 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 	Transaction *t = find_transaction(xid);
 	if (t == NULL) {
 		shout(
-			"[%d] VOTE: xid %u not found\n",
+			"[%d] VOTE: xid=%u not found\n",
 			CLIENT_ID(client), xid
 		);
 		client_message_shortcut(client, RES_FAILED);
@@ -445,7 +468,7 @@ static void onsnapshot(client_t client, int argc, xid_t *argv) {
 	Transaction *t = find_transaction(xid);
 	if (t == NULL) {
 		shout(
-			"[%d] SNAPSHOT: xid %u not found\n",
+			"[%d] SNAPSHOT: xid=%u not found\n",
 			CLIENT_ID(client), xid
 		);
 		client_message_shortcut(client, RES_FAILED);
@@ -543,22 +566,31 @@ static void oncmd(client_t client, int argc, xid_t *argv) {
 
 	assert(argc > 0);
 	switch (argv[0]) {
+		case CMD_HELLO:
+			onhello(client, argc, argv);
+			break;
 		case CMD_RESERVE:
+			CHECKLEADER(client);
 			onreserve(client, argc, argv);
 			break;
 		case CMD_BEGIN:
+			CHECKLEADER(client);
 			onbegin(client, argc, argv);
 			break;
 		case CMD_FOR:
+			CHECKLEADER(client);
 			onvote(client, argc, argv, POSITIVE);
 			break;
 		case CMD_AGAINST:
+			CHECKLEADER(client);
 			onvote(client, argc, argv, NEGATIVE);
 			break;
 		case CMD_SNAPSHOT:
+			CHECKLEADER(client);
 			onsnapshot(client, argc, argv);
 			break;
 		case CMD_STATUS:
+			CHECKLEADER(client);
 			onstatus(client, argc, argv);
 			break;
 		default:

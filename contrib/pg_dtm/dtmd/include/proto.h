@@ -1,11 +1,12 @@
 #ifndef PROTO_H
 #define PROTO_H
 
+#define CMD_HELLO    'h'
 #define CMD_RESERVE  'r'
 #define CMD_BEGIN    'b'
 #define CMD_FOR      'y'
 #define CMD_AGAINST  'n'
-#define CMD_SNAPSHOT 'h'
+#define CMD_SNAPSHOT 't'
 #define CMD_STATUS   's'
 
 #define RES_FAILED 0xDEADBEEF
