@@ -91,6 +91,7 @@ static void DtmBackgroundWorker(Datum arg);
 
 static void ByteBufferAlloc(ByteBuffer* buf);
 static void ByteBufferAppend(ByteBuffer* buf, void* data, int len);
+static void ByteBufferAppendInt32(ByteBuffer* buf, int data);
 static void ByteBufferFree(ByteBuffer* buf);
 
 
@@ -976,21 +977,49 @@ static void ByteBufferAppend(ByteBuffer* buf, void* data, int len)
     buf->used += len;
 }
 
+static void ByteBufferAppendInt32(ByteBuffer* buf, int data)
+{
+    ByteBufferAppend(buf, &data, sizeof data);
+}
+
 static void ByteBufferFree(ByteBuffer* buf)
 {
     pfree(buf->data);
 }
 
-#define APPEND(buf, x) ByteBufferAppend(buf, &x, sizeof(x))
-
 static void DtmSerializeLock(PROCLOCK* proclock, void* arg)
 {
     ByteBuffer* buf = (ByteBuffer*)arg;
     LOCK* lock = proclock->tag.myLock;
+    PGPROC* proc = proclock->tag.myProc;
     if (lock != NULL) {
-        APPEND(buf, proclock->tag.myProc->lxid);
-        APPEND(buf, proclock->holdMask);
-        APPEND(buf, lock->tag.locktag_lockmethodid);
+        if (proc->waitLock == lock) { 
+            LockMethod lockMethodTable = GetLocksMethodTable(lock);
+            int numLockModes = lockMethodTable->numLockModes;
+            int conflictMask = lockMethodTable->conflictTab[proc->waitLockMode];
+            SHM_QUEUE *procLocks = &(lock->procLocks);
+            int lm;
+            
+            ByteBufferAppendInt32(buf, proc->lxid); /* waiting transaction */
+            proclock = (PROCLOCK *) SHMQueueNext(procLocks, procLocks,
+                                                 offsetof(PROCLOCK, lockLink));
+            while (proclock)
+            {
+                if (proc != proclock->tag.myProc) { 
+                    for (lm = 1; lm <= numLockModes; lm++)
+                    {
+                        if ((proclock->holdMask & LOCKBIT_ON(lm)) && (conflictMask & LOCKBIT_ON(lm)))
+                        {
+                            ByteBufferAppendInt32(buf, proclock->tag.myProc->lxid); /* transaction holding lock */
+                            break;
+                        }
+                    }
+                }
+                proclock = (PROCLOCK *) SHMQueueNext(procLocks, &proclock->lockLink,
+                                                     offsetof(PROCLOCK, lockLink));
+            }
+            ByteBufferAppendInt32(buf, 0); /* end of lock owners list */
+        }
     }
 }
 

@@ -34,6 +34,16 @@ typedef struct Transaction {
 	void *listeners[CHAR_TO_INDEX('z')]; // we are going to use 'a' to 'z' for indexing
 } Transaction;
 
+static inline void l2_list_is_empty(L2List* elem)
+{
+    return elem->next == elem;
+}
+
+static inline void l2_list_init(L2List* elem)
+{
+    elem->next = elem->prev = elem;
+}
+
 static inline void l2_list_link(L2List* after, L2List* elem)
 {
     elem->next = after->next;
