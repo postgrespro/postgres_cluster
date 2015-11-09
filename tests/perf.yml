@@ -33,7 +33,7 @@
   gather_facts: no
   tasks:
   - name: run transfers
-    shell: "go run ~/perf.go ~/transfers.go {{connections}} {{runkeys | d('-g -w 400 -r 1 -n 1000 -a 100000')}}"
+    shell: "go run ~/perf.go ~/transfers.go {{connections}} {{runkeys | d('-g -w 200 -r 1 -n 1000 -a 100000')}}"
     register: transfers_result
   - debug: var=transfers_result
 

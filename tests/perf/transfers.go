@@ -43,7 +43,6 @@ func (t TransfersTS) prepare_one(connstr string, wg *sync.WaitGroup) {
 }
 
 func (t TransfersTS) writer(id int, cCommits chan int, cAborts chan int, wg *sync.WaitGroup) {
-    var conns []*pgx.Conn
     var nGlobalTrans = 0
     var snapshot int64
     var csn int64
@@ -52,45 +51,64 @@ func (t TransfersTS) writer(id int, cCommits chan int, cAborts chan int, wg *syn
         cfg.ConnStrs.Set(cfg.ConnStrs[0])
     }
 
-    for _, connstr := range cfg.ConnStrs {
-        dbconf, err := pgx.ParseDSN(connstr)
-        checkErr(err)
-        conn, err := pgx.Connect(dbconf)
-        checkErr(err)
-        defer conn.Close()
-        conns = append(conns, conn)
-    }
+    // for _, connstr := range cfg.ConnStrs {
+    //     dbconf, err := pgx.ParseDSN(connstr)
+    //     checkErr(err)
+    //     conn, err := pgx.Connect(dbconf)
+    //     checkErr(err)
+    //     defer conn.Close()
+    //     conns = append(conns, conn)
+    // }
+
+    dbconf1, err := pgx.ParseDSN(cfg.ConnStrs[ id % len(cfg.ConnStrs) ])
+    checkErr(err)
+    conn1, err := pgx.Connect(dbconf1)
+    checkErr(err)
+    defer conn1.Close()
+
+    dbconf2, err := pgx.ParseDSN(cfg.ConnStrs[ (id + 1) % len(cfg.ConnStrs) ])
+    checkErr(err)
+    conn2, err := pgx.Connect(dbconf2)
+    checkErr(err)
+    defer conn2.Close()
 
     
     for i := 0; i < cfg.IterNum; i++ {
-
 
         gtid := strconv.Itoa(id) + "." + strconv.Itoa(i)
         amount := 2*rand.Intn(2) - 1
         from_acc := rand.Intn(cfg.AccountsNum)//cfg.Writers.StartId + 2*id + 1
         to_acc   := rand.Intn(cfg.AccountsNum)//cfg.Writers.StartId + 2*id + 2
         
-        conn1 := conns[rand.Intn(len(conns))]
-        conn2 := conns[rand.Intn(len(conns))]
-        for conn1 == conn2 {
-            conn1 = conns[rand.Intn(len(conns))]
-            conn2 = conns[rand.Intn(len(conns))]
-        }
+        // conn1 := conns[rand.Intn(len(conns))]
+        // conn2 := conns[rand.Intn(len(conns))]
+        // for conn1 == conn2 {
+        //     conn1 = conns[rand.Intn(len(conns))]
+        //     conn2 = conns[rand.Intn(len(conns))]
+        // }
 
         exec(conn1, "begin transaction")
         exec(conn2, "begin transaction")
-        snapshot = _execQuery(conn1, "select dtm_extend($1)", gtid)
-        snapshot = _execQuery(conn2, "select dtm_access($1, $2)", snapshot, gtid)
+
+        if cfg.UseDtm {
+            snapshot = _execQuery(conn1, "select dtm_extend($1)", gtid)
+            snapshot = _execQuery(conn2, "select dtm_access($1, $2)", snapshot, gtid)
+        }
+
         exec(conn1, "update t set v = v - $1 where u=$2", amount, from_acc)
         exec(conn2, "update t set v = v + $1 where u=$2", amount, to_acc)
         exec(conn1, "prepare transaction '" + gtid + "'")
         exec(conn2, "prepare transaction '" + gtid + "'")
-        exec(conn1, "select dtm_begin_prepare($1)", gtid)
-        exec(conn2, "select dtm_begin_prepare($1)", gtid)
-        csn = _execQuery(conn1, "select dtm_prepare($1, 0)", gtid)
-        csn = _execQuery(conn2, "select dtm_prepare($1, $2)", gtid, csn)
-        exec(conn1, "select dtm_end_prepare($1, $2)", gtid, csn)
-        exec(conn2, "select dtm_end_prepare($1, $2)", gtid, csn)
+
+        if cfg.UseDtm {
+            exec(conn1, "select dtm_begin_prepare($1)", gtid)
+            exec(conn2, "select dtm_begin_prepare($1)", gtid)
+            csn = _execQuery(conn1, "select dtm_prepare($1, 0)", gtid)
+            csn = _execQuery(conn2, "select dtm_prepare($1, $2)", gtid, csn)
+            exec(conn1, "select dtm_end_prepare($1, $2)", gtid, csn)
+            exec(conn2, "select dtm_end_prepare($1, $2)", gtid, csn)
+        }
+        
         exec(conn1, "commit prepared '" + gtid + "'")
         exec(conn2, "commit prepared '" + gtid + "'")
         nGlobalTrans++
