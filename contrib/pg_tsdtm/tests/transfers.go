@@ -10,22 +10,22 @@ import (
 )
 
 const (
-    TRANSFER_CONNECTIONS = 10
+    TRANSFER_CONNECTIONS = 100
     INIT_AMOUNT = 10000
-    N_ITERATIONS = 10000
-    N_ACCOUNTS = 100000
+    N_ITERATIONS = 1000
+    N_ACCOUNTS = 1000
 )
 
 
 var cfg1 = pgx.ConnConfig{
-        Host:     "astro9",
-        Port:     15432,
+        Host:     "localhost",
+        Port:     5432,
         Database: "postgres",
     }
 
 var cfg2 = pgx.ConnConfig{
-        Host:     "astro9",
-        Port:     15433,
+        Host:     "localhost",
+        Port:     5433,
         Database: "postgres",
     }
 
@@ -109,8 +109,8 @@ func transfer(id int, wg *sync.WaitGroup) {
 
         gtid := strconv.Itoa(id) + "." + strconv.Itoa(i)
         amount := 2*rand.Intn(2) - 1
-        account1 := 2*id+1
-        account2 := 2*id+2
+        account1 := rand.Intn(N_ACCOUNTS)
+        account2 := rand.Intn(N_ACCOUNTS)
 
         exec(conn1, "begin transaction")
         exec(conn2, "begin transaction")
