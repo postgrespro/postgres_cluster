@@ -54,6 +54,7 @@ typedef struct DtmTransStatus
 typedef struct 
 {
     cid_t cid;
+    long  time_shift;
 	volatile slock_t lock;
     DtmTransStatus* trans_list_head;
     DtmTransStatus** trans_list_tail;
@@ -105,7 +106,7 @@ static timestamp_t dtm_get_current_time()
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    return (timestamp_t)tv.tv_sec*USEC + tv.tv_usec;
+    return (timestamp_t)tv.tv_sec*USEC + tv.tv_usec + local->time_shift;
 }
 
 static void dtm_sleep(timestamp_t interval)
@@ -136,6 +137,11 @@ static cid_t dtm_get_cid()
 static cid_t dtm_sync(cid_t global_cid)
 {
     cid_t local_cid;
+#if 1
+    while ((local_cid = dtm_get_cid()) < global_cid) { 
+        local->time_shift += global_cid - local_cid;
+    }
+#else
     while ((local_cid = dtm_get_cid()) < global_cid) { 
         SpinLockRelease(&local->lock);
 #if TRACE_SLEEP_TIME
@@ -160,6 +166,7 @@ static cid_t dtm_sync(cid_t global_cid)
 #endif
         SpinLockAcquire(&local->lock);
     }
+#endif
     return global_cid;
 }
 
@@ -525,6 +532,7 @@ void DtmInitialize()
 	local = (DtmNodeState*)ShmemInitStruct("dtm", sizeof(DtmNodeState), &found);
 	if (!found)
 	{
+        local->time_shift = 0;
         local->cid = dtm_get_current_time();
         local->trans_list_head = NULL;
         local->trans_list_tail = &local->trans_list_head;
