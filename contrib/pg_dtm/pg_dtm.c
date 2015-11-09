@@ -54,6 +54,13 @@ typedef struct
 	size_t nReservedXids;  /* number of XIDs reserved for local transactions */
 } DtmState;
 
+typedef struct
+{
+    char* data;
+    int size;
+    int used;
+} ByteBuffer;
+
 
 #define DTM_SHMEM_SIZE (1024*1024)
 #define DTM_HASH_SIZE  1003
@@ -72,12 +79,20 @@ static TransactionId DtmGetNextXid(void);
 static TransactionId DtmGetNewTransactionId(bool isSubXact);
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static TransactionId DtmGetGlobalTransactionId(void);
+static bool DtmDetectGlobalDeadLock(void);
+
+static void DtmSerializeLock(PROCLOCK* lock, void* arg);
 
 static bool TransactionIdIsInSnapshot(TransactionId xid, Snapshot snapshot);
 static bool TransactionIdIsInDoubt(TransactionId xid);
 
 static void DtmShmemStartup(void);
 static void DtmBackgroundWorker(Datum arg);
+
+static void ByteBufferAlloc(ByteBuffer* buf);
+static void ByteBufferAppend(ByteBuffer* buf, void* data, int len);
+static void ByteBufferFree(ByteBuffer* buf);
+
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB* xid_in_doubt;
@@ -99,7 +114,8 @@ static TransactionManager DtmTM = {
 	DtmGetOldestXmin,
 	PgTransactionIdIsInProgress,
 	DtmGetGlobalTransactionId,
-	PgXidInMVCCSnapshot
+	PgXidInMVCCSnapshot,
+    DtmDetectGlobalDeadLock
 };
 
 static char *DtmHost;
@@ -941,4 +957,50 @@ void DtmBackgroundWorker(Datum arg)
 
 	ShubInitialize(&shub, &params);
 	ShubLoop(&shub);
+}
+
+static void ByteBufferAlloc(ByteBuffer* buf)
+{
+    buf->size = 1024;
+    buf->data = palloc(buf->size);
+    buf->used = 0;
+}
+
+static void ByteBufferAppend(ByteBuffer* buf, void* data, int len)
+{
+    if (buf->used + len > buf->size) { 
+        buf->size = buf->used + len > buf->size*2 ? buf->used + len : buf->size*2;
+        buf->data = (char*)repalloc(buf->data, buf->size);
+    }
+    memcpy(&buf->data[buf->used], data, len);
+    buf->used += len;
+}
+
+static void ByteBufferFree(ByteBuffer* buf)
+{
+    pfree(buf->data);
+}
+
+#define APPEND(buf, x) ByteBufferAppend(buf, &x, sizeof(x))
+
+static void DtmSerializeLock(PROCLOCK* proclock, void* arg)
+{
+    ByteBuffer* buf = (ByteBuffer*)arg;
+    LOCK* lock = proclock->tag.myLock;
+    if (lock != NULL) {
+        APPEND(buf, proclock->tag.myProc->lxid);
+        APPEND(buf, proclock->holdMask);
+        APPEND(buf, lock->tag.locktag_lockmethodid);
+    }
+}
+
+bool DtmDetectGlobalDeadLock(void)
+{
+    bool hasDeadlock;
+    ByteBuffer buf;
+    ByteBufferAlloc(&buf);
+    EnumerateLocks(DtmSerializeLock, &buf);
+    hasDeadlock = DtmGlobalDetectDeadLock(buf.data, buf.used);
+    ByteBufferFree(&buf);
+    return hasDeadlock;
 }

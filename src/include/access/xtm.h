@@ -40,6 +40,9 @@ typedef struct
 
 	/* Is the given XID still-in-progress according to the snapshot (encapsulation of XidInMVCCSnapshot in tqual.c) */
 	bool (*IsInSnapshot)(TransactionId xid, Snapshot snapshot);
+
+    /* Detect distributed deadlock */
+    bool (*DetectGlobalDeadLock)(void);
 } TransactionManager;
 
 /* Get pointer to transaction manager: actually returns content of TM variable */
@@ -64,5 +67,7 @@ extern bool PgTransactionIdIsInProgress(TransactionId xid);
 extern TransactionId PgGetGlobalTransactionId(void);
 
 extern TransactionId PgGetNewTransactionId(bool isSubXact);
+
+extern bool PgDetectGlobalDeadLock(void);
 
 #endif
