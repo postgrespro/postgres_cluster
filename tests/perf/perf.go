@@ -6,7 +6,9 @@ import (
     "os"
     "sync"
     "time"
+    // "runtime"
     "github.com/jackc/pgx"
+    // "runtime/pprof"
 )
 
 type ConnStrings []string
@@ -28,6 +30,7 @@ var cfg struct {
     AccountsNum int
     ReadersNum int
     IterNum int
+    Profile string
 
     Writers struct {
         Num int
@@ -99,6 +102,7 @@ func init() {
     	"Show progress and other stuff for mortals")
     flag.BoolVar(&cfg.Parallel, "p", false,
     	"Use parallel execs")
+    flag.StringVar(&cfg.Profile, "cpuprofile", "", "write cpu profile to file")
     repread := flag.Bool("l", false,
     	"Use 'repeatable read' isolation level instead of 'read committed'")
     flag.Parse()
@@ -129,6 +133,17 @@ func main() {
         fmt.Println("ERROR: This test needs at leas two connections")
         os.Exit(1)
     }
+    // runtime.GOMAXPROCS(100)
+
+    // if cfg.Profile != "" {
+    //     f, err := os.Create(cfg.Profile)
+    //     if err != nil {
+    //        fmt.Println("Failed to create profile file")
+    //        os.Exit(1)
+    //     }
+    //     // pprof.StartCPUProfile(f)
+    //     // defer pprof.StopCPUProfile()
+    // }
 
     // switch cfg.Backend {
     //     case "transfers":

@@ -16,24 +16,20 @@
       connections: "{{ connstrs.results | map(attribute='ansible_facts.connstr') | join }}"
 
   - name: copy transfers binary
-    copy: src=./perf/{{item}} dest=~/{{item}} mode=0755
+    copy: src=./{{item}} dest=~/{{item}} mode=0755
     with_items:
-      - "perf.go"
-      - "transfers.go"
+      - "dtmbench.cpp"
 
-- hosts: clients[0]
-  gather_facts: no
-  tasks:
-  - name: fill the databases
-    shell: "go run ~/perf.go ~/transfers.go {{connections}} -g -i"
-    register: transfers_result
-  - debug: "var=transfers_result"
+  - name: compile dtmbench
+    shell: "g++ -g -Wall -O2 -o dtmbench dtmbench.cpp -lpqxx -pthread "
 
 - hosts: clients[0]
   gather_facts: no
   tasks:
   - name: run transfers
-    shell: "go run ~/perf.go ~/transfers.go {{connections}} {{runkeys | d('-g -w 200 -r 1 -n 1000 -a 100000')}}"
+    shell: "./dtmbench {{connections}} -w {{item}} -r 1 -n 1000 -a 100000 -i "
     register: transfers_result
-  - debug: var=transfers_result
+    with_sequence: start=20 end=400 stride=20
+
+  - debug: msg={{transfers_result.results | map(attribute='stdout_lines') | join }}
 

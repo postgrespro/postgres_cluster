@@ -405,7 +405,6 @@ static TransactionId DtmAdjustOldestXid(TransactionId xid)
             }
         }
         if (prev != NULL) { 
-            *(int*)0 = 0;
             local->trans_list_head = prev;
             xid = prev->xid;            
         } else { 

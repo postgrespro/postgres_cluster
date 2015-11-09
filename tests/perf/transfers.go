@@ -38,6 +38,7 @@ func (t TransfersTS) prepare_one(connstr string, wg *sync.WaitGroup) {
     exec(conn, "create table t(u int primary key, v int)")
     exec(conn, "insert into t (select generate_series(0,$1-1), $2)",
         cfg.AccountsNum, 0)
+    exec(conn, "vacuum full")
 
     wg.Done()
 }
@@ -46,6 +47,7 @@ func (t TransfersTS) writer(id int, cCommits chan int, cAborts chan int, wg *syn
     var nGlobalTrans = 0
     var snapshot int64
     var csn int64
+    nWriters := cfg.Writers.Num
 
     if len(cfg.ConnStrs) == 1 {
         cfg.ConnStrs.Set(cfg.ConnStrs[0])
@@ -74,18 +76,10 @@ func (t TransfersTS) writer(id int, cCommits chan int, cAborts chan int, wg *syn
 
     
     for i := 0; i < cfg.IterNum; i++ {
-
-        gtid := strconv.Itoa(id) + "." + strconv.Itoa(i)
+        gtid := strconv.Itoa(cfg.Writers.StartId) + "." + strconv.Itoa(id) + "." + strconv.Itoa(i)
         amount := 2*rand.Intn(2) - 1
-        from_acc := rand.Intn(cfg.AccountsNum)//cfg.Writers.StartId + 2*id + 1
-        to_acc   := rand.Intn(cfg.AccountsNum)//cfg.Writers.StartId + 2*id + 2
-        
-        // conn1 := conns[rand.Intn(len(conns))]
-        // conn2 := conns[rand.Intn(len(conns))]
-        // for conn1 == conn2 {
-        //     conn1 = conns[rand.Intn(len(conns))]
-        //     conn2 = conns[rand.Intn(len(conns))]
-        // }
+        from_acc := rand.Intn((cfg.AccountsNum-nWriters)/nWriters)*nWriters+id
+        to_acc   := rand.Intn((cfg.AccountsNum-nWriters)/nWriters)*nWriters+id
 
         exec(conn1, "begin transaction")
         exec(conn2, "begin transaction")
@@ -111,6 +105,7 @@ func (t TransfersTS) writer(id int, cCommits chan int, cAborts chan int, wg *syn
         
         exec(conn1, "commit prepared '" + gtid + "'")
         exec(conn2, "commit prepared '" + gtid + "'")
+
         nGlobalTrans++
     }
 
