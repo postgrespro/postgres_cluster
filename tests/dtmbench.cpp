@@ -271,6 +271,19 @@ int main (int argc, char* argv[])
     }
  
     time_t elapsed = getCurrentTime() - start;
-    printf("TPS(updates)=%f, TPS(selects)=%f\n", (double)(nWrites*USEC)/elapsed, (double)(nReads*USEC)/elapsed);
+
+
+
+    printf(
+        "{\"update_tps\":%f, \"read_tps\":%f, \"readers\":%d, \"writers\":%d, \"accounts\":%d, \"iterations\":%d, \"hosts\":%d}\n", 
+        (double)(nWrites*USEC)/elapsed,
+        (double)(nReads*USEC)/elapsed,
+        cfg.nReaders,
+        cfg.nWriters,
+        cfg.nAccounts,
+        cfg.nIterations,
+        cfg.connections.size()
+        );
+
     return 0;
 }

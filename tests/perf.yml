@@ -1,6 +1,6 @@
 ---
 
-- hosts: clients[0]
+- hosts: clients
   gather_facts: no
   tasks:
 
@@ -15,21 +15,25 @@
     set_fact:
       connections: "{{ connstrs.results | map(attribute='ansible_facts.connstr') | join }}"
 
-  - name: copy transfers binary
+  # - name: copy transfers binary
+  #   copy: src=./{{item}} dest=~/{{item}} mode=0755
+  #   with_items:
+  #     - "dtmbench"
+  #     - "libpqxx-4.0.so"
+
+  - name: copy transfers source
     copy: src=./{{item}} dest=~/{{item}} mode=0755
     with_items:
       - "dtmbench.cpp"
 
   - name: compile dtmbench
-    shell: "g++ -g -Wall -O2 -o dtmbench dtmbench.cpp -lpqxx -pthread "
+    shell: "g++ -g -Wall -O2 -o dtmbench dtmbench.cpp -lpqxx -pthread"
 
-- hosts: clients[0]
-  gather_facts: no
-  tasks:
   - name: run transfers
-    shell: "./dtmbench {{connections}} -w {{item}} -r 1 -n 1000 -a 100000 -i "
+    shell: "./dtmbench {{connections}} -w {{item}} -r 1 -n 100 -a 100000 -i "
     register: transfers_result
-    with_sequence: start=20 end=400 stride=20
+    with_sequence: start=100 end=200 stride=100
 
-  - debug: msg={{transfers_result.results | map(attribute='stdout_lines') | join }}
+  - local_action: shell echo "{{transfers_result.results | map(attribute='stdout') | join('\n')}}" >> x.out
 
+  - debug: msg="{{ transfers_result.results | map(attribute='stdout') | join('\n') }}"

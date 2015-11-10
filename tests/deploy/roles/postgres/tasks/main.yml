@@ -30,6 +30,10 @@
   when: ansible_os_family == "RedHat"
   sudo: yes
 
+- name: increase semaphores
+  shell: sysctl kernel.sem='1000 128000 128 512'
+  sudo: yes
+
 - name: clone postgres sources
   git: repo={{pg_repo}}
     dest={{pg_src}}
