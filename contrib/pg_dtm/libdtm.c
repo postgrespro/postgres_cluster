@@ -502,5 +502,39 @@ failure:
 
 bool DtmGlobalDetectDeadLock(TransactionId xid, void* data, int size)
 {
-    return false;
+	int msg_size = size + sizeof(xid)*2;
+    int data_size = sizeof(ShubMessageHdr) + msg_size;
+    char* buf = (char*)malloc(data_size);
+	ShubMessageHdr* msg = (ShubMessageHdr*)buf;
+	xid_t* body = (xid_t*)(msg+1);
+    int sent;
+	int reslen;
+	xid_t results[RESULTS_SIZE];
+	DTMConn dtm = GetConnection();
+
+	msg->chan = 0;
+	msg->code = MSG_FIRST_USER_CODE;
+	msg->size = msg_size;
+
+	*body++ = CMD_DEADLOCK;
+    *body++ = xid;
+    memcpy(body, data, size);
+
+	sent = 0;
+	while (sent < data_size)
+	{
+		int new_bytes = write(dtm->sock, buf + sent, data_size - sent);
+		if (new_bytes == -1)
+		{
+			elog(ERROR, "Failed to send a command to arbiter");
+			return false;
+		}
+		sent += new_bytes;
+	}
+	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
+	if (reslen != 1 || (results[0] != RES_OK && results[0] != RES_DEADLOCK)) { 
+        fprintf(stderr, "DtmGlobalDetectDeadLock: failed to check deadlocks for transaction %u\n", xid);
+        return false;
+    }
+	return results[0] == RES_DEADLOCK;
 }

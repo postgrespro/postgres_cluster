@@ -31,7 +31,7 @@ char *join_path(const char *dir, const char *file) {
 		}
 	} else {
 		// 'file' is empty
-		return strndup(dir, dirlen);
+		return strdup(dir);
 	}
 
 	size_t pathlen = dirlen + 1 + filelen;

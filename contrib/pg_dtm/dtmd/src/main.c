@@ -13,6 +13,7 @@
 #include "util.h"
 #include "transaction.h"
 #include "proto.h"
+#include "ddd.h"
 
 #define DEFAULT_DATADIR "/tmp/clog"
 #define DEFAULT_LISTENHOST "0.0.0.0"
@@ -32,6 +33,7 @@ typedef struct client_userdata_t {
 	int id;
 	int snapshots_sent;
 	xid_t xid;
+    Instance instance; /* It has to be moved somewhere else, because this is per-backend structure */
 } client_userdata_t;
 
 clog_t clg;
@@ -158,6 +160,7 @@ static void debug_cmd(client_t client, int argc, xid_t *argv) {
 		case CMD_AGAINST : cmdname =  "AGAINST"; break;
 		case CMD_SNAPSHOT: cmdname = "SNAPSHOT"; break;
 		case CMD_STATUS  : cmdname =   "STATUS"; break;
+		case CMD_DEADLOCK: cmdname = "DEADLOCK"; break;
 		default          : cmdname =  "unknown";
 	}
 	debug("[%d] %s", CLIENT_ID(client), cmdname);
@@ -530,6 +533,25 @@ static void onnoise(client_t client, int argc, xid_t *argv) {
 	client_message_shortcut(client, RES_FAILED);
 }
 
+static Graph graph;
+
+static void ondeadlock(client_t client, int argc, xid_t *argv) {
+	if (argc < 3) {
+		shout(
+			"[%d] DEADLOCK: wrong number of arguments %d, expected > 3\n",
+			CLIENT_ID(client), argc
+		);        
+		client_message_shortcut(client, RES_FAILED);
+		return;
+	}
+    xid_t root = argv[1];
+    Instance* instance = &CLIENT_USERDATA(client)->instance;
+    addSubgraph(instance, &graph, argv+2, argc-2);
+    bool hasDeadLock = findLoop(&graph, root);
+    client_message_shortcut(client, hasDeadLock ? RES_DEADLOCK : RES_OK);
+}
+    
+
 static void oncmd(client_t client, int argc, xid_t *argv) {
 	debug_cmd(client, argc, argv);
 
@@ -552,6 +574,9 @@ static void oncmd(client_t client, int argc, xid_t *argv) {
 			break;
 		case CMD_STATUS:
 			onstatus(client, argc, argv);
+			break;
+		case CMD_DEADLOCK:
+			ondeadlock(client, argc, argv);
 			break;
 		default:
 			onnoise(client, argc, argv);
