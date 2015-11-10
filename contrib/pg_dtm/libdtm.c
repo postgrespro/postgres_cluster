@@ -33,7 +33,6 @@ static char* dtm_unix_sock_dir;
 
 typedef unsigned xid_t;
 
-// Connects to the specified DTM.
 static DTMConn DtmConnect(char *host, int port)
 {
 	DTMConn dtm;
@@ -297,10 +296,6 @@ void DtmInitSnapshot(Snapshot snapshot)
 	#endif
 }
 
-// Starts a new global transaction of nParticipants size. Returns the
-// transaction id, fills the 'snapshot' and 'gxmin' on success. 'gxmin' is the
-// smallest xmin among all snapshots known to DTM. Returns INVALID_XID
-// otherwise.
 TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin)
 {
 	int i;
@@ -337,8 +332,6 @@ failure:
 	return INVALID_XID;
 }
 
-// Asks the DTM for a fresh snapshot. Fills the 'snapshot' and 'gxmin' on
-// success. 'gxmin' is the smallest xmin among all snapshots known to DTM.
 void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *gxmin)
 {
 	int i;
@@ -376,10 +369,6 @@ failure:
 	);
 }
 
-// Commits transaction only once all participants have called this function,
-// does not change CLOG otherwise. Set 'wait' to 'true' if you want this call
-// to return only after the transaction is considered finished by the DTM.
-// Returns the status on success, or -1 otherwise.
 XidStatus DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait)
 {
 	int reslen;
@@ -424,9 +413,6 @@ failure:
 	return -1;
 }
 
-// Gets the status of the transaction identified by 'xid'. Returns the status
-// on success, or -1 otherwise. If 'wait' is true, then it does not return
-// until the transaction is finished.
 XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait)
 {
 	int reslen;
@@ -462,11 +448,6 @@ failure:
 	return -1;
 }
 
-// Reserves at least 'nXids' successive xids for local transactions. The xids
-// reserved are not less than 'xid' in value. Returns the actual number of xids
-// reserved, and sets the 'first' xid accordingly. The number of xids reserved
-// is guaranteed to be at least nXids.
-// In other words, *first ≥ xid and result ≥ nXids.
 int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first)
 {
 	xid_t xmin, xmax;
@@ -503,11 +484,11 @@ failure:
 bool DtmGlobalDetectDeadLock(TransactionId xid, void* data, int size)
 {
 	int msg_size = size + sizeof(xid)*2;
-    int data_size = sizeof(ShubMessageHdr) + msg_size;
-    char* buf = (char*)malloc(data_size);
+	int data_size = sizeof(ShubMessageHdr) + msg_size;
+	char* buf = (char*)malloc(data_size);
 	ShubMessageHdr* msg = (ShubMessageHdr*)buf;
 	xid_t* body = (xid_t*)(msg+1);
-    int sent;
+	int sent;
 	int reslen;
 	xid_t results[RESULTS_SIZE];
 	DTMConn dtm = GetConnection();
@@ -517,8 +498,8 @@ bool DtmGlobalDetectDeadLock(TransactionId xid, void* data, int size)
 	msg->size = msg_size;
 
 	*body++ = CMD_DEADLOCK;
-    *body++ = xid;
-    memcpy(body, data, size);
+	*body++ = xid;
+	memcpy(body, data, size);
 
 	sent = 0;
 	while (sent < data_size)
@@ -531,10 +512,17 @@ bool DtmGlobalDetectDeadLock(TransactionId xid, void* data, int size)
 		}
 		sent += new_bytes;
 	}
+
 	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
-	if (reslen != 1 || (results[0] != RES_OK && results[0] != RES_DEADLOCK)) { 
-        fprintf(stderr, "DtmGlobalDetectDeadLock: failed to check deadlocks for transaction %u\n", xid);
-        return false;
-    }
+	if (reslen != 1 || (results[0] != RES_OK && results[0] != RES_DEADLOCK))
+	{
+		fprintf(
+			stderr,
+			"DtmGlobalDetectDeadLock: failed"
+			" to check xid=%u for deadlock\n",
+			xid
+		);
+		return false;
+	}
 	return results[0] == RES_DEADLOCK;
 }

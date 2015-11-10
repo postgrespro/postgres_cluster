@@ -9,7 +9,7 @@
 #define INVALID_XID 0
 
 /**
- * Sets up the host and port for DTM connection.
+ * Sets up the host and port for arbiter connection.
  * The defaults are "127.0.0.1" and 5431.
  */
 void DtmGlobalConfig(char *host, int port, char* sock_dir);
@@ -19,21 +19,21 @@ void DtmInitSnapshot(Snapshot snapshot);
 /**
  * Starts a new global transaction. Returns the
  * transaction id, fills the 'snapshot' and 'gxmin' on success. 'gxmin' is the
- * smallest xmin among all snapshots known to DTM. Returns INVALID_XID
+ * smallest xmin among all snapshots known to arbiter. Returns INVALID_XID
  * otherwise.
  */
 TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin);
 
 /**
- * Asks the DTM for a fresh snapshot. Fills the 'snapshot' and 'gxmin' on
- * success. 'gxmin' is the smallest xmin among all snapshots known to DTM.
+ * Asks the arbiter for a fresh snapshot. Fills the 'snapshot' and 'gxmin' on
+ * success. 'gxmin' is the smallest xmin among all snapshots known to arbiter.
  */
 void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *gxmin);
 
 /**
  * Commits transaction only once all participants have called this function,
  * does not change CLOG otherwise. Set 'wait' to 'true' if you want this call
- * to return only after the transaction is considered finished by the DTM.
+ * to return only after the transaction is considered finished by the arbiter.
  * Returns the status on success, or -1 otherwise.
  */
 XidStatus DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait);
@@ -55,9 +55,12 @@ XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait);
 int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first);
 
 /**
- * Detect global deadlock. This funcions send serialized local resource graph to arbiter which appends them to global graph.
- * Once loop is detected in global resoruce graph, arbiter returns true. Otherwise false is returned.
- * Abiter should replace local part of resource graph if new graph is recevied from this cluster node (not backend).
+ * Detect global deadlock. This function sends serialized local resource graph
+ * to the arbiter which appends them to the global graph. Once a loop is
+ * detected in global resource graph, the arbiter returns true. Otherwise false
+ * is returned. Arbiter should replace the corresponding part of the global
+ * resource graph if a new local graph is received from this cluster node (not
+ * backend).
  */
 bool DtmGlobalDetectDeadLock(TransactionId xid, void* graph, int size);
 
