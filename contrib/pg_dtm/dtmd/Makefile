@@ -15,11 +15,11 @@ all: bin/dtmd
 	@echo Done.
 	@echo Feel free to run the tests with \'make check\'.
 
-bin/dtmd: obj/server.o obj/main.o obj/clog.o obj/clogfile.o obj/util.o obj/transaction.o obj/snapshot.o | bindir objdir
+bin/dtmd: obj/server.o obj/main.o obj/clog.o obj/clogfile.o obj/util.o obj/transaction.o obj/snapshot.o obj/ddd.o | bindir objdir
 	$(CC) -o bin/dtmd $(CFLAGS) \
 		obj/server.o obj/main.o \
 		obj/clog.o obj/clogfile.o obj/util.o obj/transaction.o \
-		obj/snapshot.o \
+		obj/snapshot.o obj/ddd.o \
 		$(SOCKHUB_LDFLAGS)
 
 obj/server.o: src/server.c | objdir

@@ -79,7 +79,7 @@ static TransactionId DtmGetNextXid(void);
 static TransactionId DtmGetNewTransactionId(bool isSubXact);
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static TransactionId DtmGetGlobalTransactionId(void);
-static bool DtmDetectGlobalDeadLock(void);
+static bool DtmDetectGlobalDeadLock(PGPROC* proc);
 
 static void DtmSerializeLock(PROCLOCK* lock, void* arg);
 
@@ -1023,13 +1023,13 @@ static void DtmSerializeLock(PROCLOCK* proclock, void* arg)
     }
 }
 
-bool DtmDetectGlobalDeadLock(void)
+bool DtmDetectGlobalDeadLock(PGPROC* proc)
 {
     bool hasDeadlock;
     ByteBuffer buf;
     ByteBufferAlloc(&buf);
     EnumerateLocks(DtmSerializeLock, &buf);
-    hasDeadlock = DtmGlobalDetectDeadLock(buf.data, buf.used);
+    hasDeadlock = DtmGlobalDetectDeadLock(proc->lxid, buf.data, buf.used);
     ByteBufferFree(&buf);
     return hasDeadlock;
 }

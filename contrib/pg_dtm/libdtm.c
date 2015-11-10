@@ -500,7 +500,7 @@ failure:
 	return 0;
 }
 
-bool DtmGlobalDetectDeadLock(void* data, int size)
+bool DtmGlobalDetectDeadLock(TransactionId xid, void* data, int size)
 {
     return false;
 }

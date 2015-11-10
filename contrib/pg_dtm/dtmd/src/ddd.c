@@ -1,39 +1,19 @@
-#include "transaction.h"
+#include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+#include "ddd.h"
 
-typedef struct Instance {
-    struct Edge* edges; /* local subgraph */    
-} Instance;
-
-typedef struct Edge {
-    L2List node; /* node of list of outgoing eedges */
-    struct Edge* next;  /* list of edges of local subgraph */  
-    struct Vertex* dst;
-    struct Vertex* src;
-} Edge;
-
-typedef struct Vertex
-{
-    L2List outgoingEdges;
-    xid_t xid;    
-    int nIncomingEdges;
-    bool visited;
-} Vertex;
-
-typedef struct Graph
-{
-    Vertex* hashtable[MAX_TRANSACTIONS];
-    Edge* freeEdges;
-    Vertex* freeVertexes;
-} Graph;
+static bool recursiveTraverseGraph(Vertex* root, Vertex* v, int marker);
 
 void initGraph(Graph* graph)
 {
-    memset(graph->hashtable, 0. sizeof(graph->hashtable));
+    memset(graph->hashtable, 0, sizeof(graph->hashtable));
     graph->freeEdges = NULL;
     graph->freeVertexes = NULL;
+    graph->marker = 0;
 }
 
-Edge* newEdge(Graph* graph)
+static inline Edge* newEdge(Graph* graph)
 {
     Edge* edge = graph->freeEdges;
     if (edge == NULL) { 
@@ -44,44 +24,51 @@ Edge* newEdge(Graph* graph)
     return edge;
 }
 
-void freeVertex(Graph* graph, Vertex* vertex)
+static inline void freeVertex(Graph* graph, Vertex* vertex)
 {
-    vertex->node.next = (L2List*)graph->freeVertexes;
+    int h = vertex->xid % MAX_TRANSACTIONS;
+    Vertex** vpp = &graph->hashtable[h];
+    while (*vpp != vertex) { 
+        vpp = &(*vpp)->next;
+    }
+    *vpp = vertex->next;
+    vertex->next = graph->freeVertexes;
     graph->freeVertexes = vertex;
+
 }
 
-void freeEdge(Graph* graph, Edge* edge)
+static inline void freeEdge(Graph* graph, Edge* edge)
 {
     edge->next = graph->freeEdges;
     graph->freeEdges = edge;
 }
 
-Vertex* newVertex(Graph* graph)
+static inline Vertex* newVertex(Graph* graph)
 {
     Vertex* v = graph->freeVertexes;
     if (v == NULL) { 
         v = (Vertex*)malloc(sizeof(Vertex));
     } else { 
-        graph->freeVertexes = (Vertex*)v.node.next;
+        graph->freeVertexes = v->next;
     }
     return v;
 }
 
-Vertex* findVertex(Graph* graph, xid_t xid)
+static inline Vertex* findVertex(Graph* graph, xid_t xid)
 {
-    xid_t h = xid;
+    xid_t h = xid % MAX_TRANSACTIONS;
     Vertex* v;
-    while ((v = graph->hashtable[h % MAX_TRANSACTIONS]) != NULL) { 
+    for (v = graph->hashtable[h]; v != NULL; v = v->next) { 
         if (v->xid == xid) { 
             return v;
         }
-        h += 1;
     }
     v = newVertex(graph);
-    l2_list_init(v->outgoingEdges);
+    l2_list_init(&v->outgoingEdges);
     v->xid = xid;
     v->nIncomingEdges = 0;
-    graph->hashtable[h % MAX_TRANSACTIONS] = v;
+    v->next = graph->hashtable[h];
+    graph->hashtable[h] = v;
     return v;
 }
 
@@ -107,15 +94,38 @@ void addSubgraph(Instance* instance, Graph* graph, xid_t* xids, int n_xids)
         next = e->next;
         l2_list_unlink(&e->node);
         if (--e->dst->nIncomingEdges == 0 && l2_list_is_empty(&e->dst->outgoingEdges)) {
-            freeVertex(e->dst);
+            freeVertex(graph, e->dst);
         }
         if (e->src->nIncomingEdges == 0 && l2_list_is_empty(&e->src->outgoingEdges)) {
-            freeVertex(e->src);
+            freeVertex(graph, e->src);
         }
-        freeEdge(e);
+        freeEdge(graph, e);
     }
 }
 
-bool findLoop(Graph* graph)
+static bool recursiveTraverseGraph(Vertex* root, Vertex* v, int marker)
 {
+    L2List* l;
+    Edge* e;
+    v->visited = marker;
+    for (l = v->outgoingEdges.next; l != &v->outgoingEdges; l = e->node.next) {
+        e = (Edge*)l;
+        if (e->dst == root) { 
+            return true;
+        } else if (e->dst->visited != marker && recursiveTraverseGraph(root, e->dst, marker)) { /* loop */
+            return true;
+        } 
+    }
+    return false;        
+}
+
+bool findLoop(Graph* graph, xid_t root)
+{
+    Vertex* v;
+    for (v = graph->hashtable[root % MAX_TRANSACTIONS]; v != NULL; v = v->next) { 
+        if (v->xid == root) { 
+            return recursiveTraverseGraph(v, v, ++graph->marker);
+        }
+    }
+    return false;        
 }

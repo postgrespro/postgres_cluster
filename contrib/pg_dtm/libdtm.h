@@ -59,6 +59,6 @@ int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first);
  * Once loop is detected in global resoruce graph, arbiter returns true. Otherwise false is returned.
  * Abiter should replace local part of resource graph if new graph is recevied from this cluster node (not backend).
  */
-bool DtmGlobalDetectDeadLock(void* graph, int size);
+bool DtmGlobalDetectDeadLock(TransactionId xid, void* graph, int size);
 
 #endif

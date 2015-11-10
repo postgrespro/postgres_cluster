@@ -23,7 +23,7 @@ TransactionId PgGetGlobalTransactionId(void)
 	return InvalidTransactionId;
 }
 
-bool PgDetectGlobalDeadLock()
+bool PgDetectGlobalDeadLock(PGPROC* proc)
 {
     return false;
 }

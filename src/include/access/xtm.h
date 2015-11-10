@@ -11,6 +11,7 @@
 #ifndef XTM_H
 #define XTM_H
 
+#include "storage/proc.h"
 #include "access/clog.h"
 #include "utils/snapmgr.h"
 #include "utils/relcache.h"
@@ -42,7 +43,7 @@ typedef struct
 	bool (*IsInSnapshot)(TransactionId xid, Snapshot snapshot);
 
     /* Detect distributed deadlock */
-    bool (*DetectGlobalDeadLock)(void);
+    bool (*DetectGlobalDeadLock)(PGPROC* proc);
 } TransactionManager;
 
 /* Get pointer to transaction manager: actually returns content of TM variable */
@@ -68,6 +69,6 @@ extern TransactionId PgGetGlobalTransactionId(void);
 
 extern TransactionId PgGetNewTransactionId(bool isSubXact);
 
-extern bool PgDetectGlobalDeadLock(void);
+extern bool PgDetectGlobalDeadLock(PGPROC* proc);
 
 #endif
