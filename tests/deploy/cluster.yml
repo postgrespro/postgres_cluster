@@ -1,34 +1,38 @@
 ---
 
 - hosts: nodes
+  # gather_facts: no
+  # pre_tasks:
+  # - name: make a list
+  #   set_fact:
+  #     ansible_os_family: "Debian"
 
   roles:
-
   - role: postgres
     pg_port: 15432
     pg_repo: https://github.com/kelvich/postgresql.git
     pg_version_tag: xtm_patched
     pg_destroy_and_init: true
+    pg_copydist: true
     pg_config_role: 
     - line: "dtm.vacuum_delay=60"
 
   tasks:
+  # - name: clone dtm sources
+  #   git: repo=https://github.com/postgrespro/pg_tsdtm.git
+  #     dest={{pg_prefix}}/pg_tsdtm
+  #     accept_hostkey=yes
+  #     update=yes
+  #     force=yes
+  #   register: dtm_sources
 
-  - name: clone dtm sources
-    git: repo=https://github.com/postgrespro/pg_tsdtm.git
-      dest={{pg_prefix}}/pg_tsdtm
-      accept_hostkey=yes
-      update=yes
-      force=yes
-    register: dtm_sources
-
-  - name: build dtm
-    shell: "make clean && make -j {{makejobs}} install"
-    args:
-      chdir: "{{pg_prefix}}/pg_tsdtm"
-    environment:
-      PG_CONFIG: "{{pg_dst}}/bin/pg_config"
-    when: dtm_sources.changed
+  # - name: build dtm
+  #   shell: "make clean && make -j {{makejobs}} install"
+  #   args:
+  #     chdir: "{{pg_prefix}}/pg_tsdtm"
+  #   environment:
+  #     PG_CONFIG: "{{pg_dst}}/bin/pg_config"
+  #   when: dtm_sources.changed
 
   - name: enable dtm extension on datanodes
     lineinfile:
