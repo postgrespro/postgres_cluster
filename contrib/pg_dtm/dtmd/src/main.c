@@ -547,7 +547,7 @@ static void ondeadlock(client_t client, int argc, xid_t *argv) {
     xid_t root = argv[1];
     Instance* instance = &CLIENT_USERDATA(client)->instance;
     addSubgraph(instance, &graph, argv+2, argc-2);
-    bool hasDeadLock = findCycle(&graph, root);
+    bool hasDeadLock = detectDeadLock(&graph, root);
     client_message_shortcut(client, hasDeadLock ? RES_DEADLOCK : RES_OK);
 }
     
@@ -595,7 +595,7 @@ static void onmessage(client_t client, size_t len, char *data) {
 
 static void usage(char *prog) {
 	printf(
-		"Usage: %s [-d DATADIR] [-k] [-a HOST] [-p PORT] [-l LOGFILE]\n"
+		"Usage: %s [-d DATADIR] [-k] [-a HOST] [-p PORT] [-l LOGFILE] [-m MIN_DEADLOCK_DURATION]\n"
 		"   arbiter will try to kill the other one running at\n"
 		"   the same DATADIR.\n"
 		"   -l : Run as a daemon and write output to LOGFILE.\n"
@@ -688,8 +688,10 @@ int main(int argc, char **argv) {
 	bool assassin = false;
 	int listenport = DEFAULT_LISTENPORT;
 
+    initGraph(&graph);
+
 	int opt;
-	while ((opt = getopt(argc, argv, "hd:a:p:l:k")) != -1) {
+	while ((opt = getopt(argc, argv, "hd:a:p:l:k:m:")) != -1) {
 		switch (opt) {
 			case 'd':
 				datadir = optarg;
@@ -710,6 +712,9 @@ int main(int argc, char **argv) {
 			case 'k':
 				assassin = true;
 				break;
+			case 'm':
+                graph.min_deadlock_duration = atoi(optarg);
+                break;
 			default:
 				usage(argv[0]);
 				return EXIT_FAILURE;

@@ -11,6 +11,7 @@ void initGraph(Graph* graph)
     graph->freeEdges = NULL;
     graph->freeVertexes = NULL;
     graph->marker = 0;
+    graph->min_deadlock_duration = 3;
 }
 
 static inline Edge* newEdge(Graph* graph)
@@ -51,6 +52,7 @@ static inline Vertex* newVertex(Graph* graph)
     } else { 
         graph->freeVertexes = v->next;
     }
+    v->deadlock_duration = 0;
     return v;
 }
 
@@ -120,12 +122,15 @@ static bool recursiveTraverseGraph(Vertex* root, Vertex* v, int marker)
     return false;        
 }
 
-bool findCycle(Graph* graph, xid_t root)
+bool detectDeadLock(Graph* graph, xid_t root)
 {
     Vertex* v;
     for (v = graph->hashtable[root % MAX_TRANSACTIONS]; v != NULL; v = v->next) { 
         if (v->xid == root) { 
-            return recursiveTraverseGraph(v, v, ++graph->marker);
+            if (recursiveTraverseGraph(v, v, ++graph->marker)) { 
+                return ++v->deadlock_duration >= graph->min_deadlock_duration;
+            }
+            v->deadlock_duration = 0;
         }
     }
     return false;        

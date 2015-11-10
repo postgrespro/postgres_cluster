@@ -21,6 +21,7 @@ typedef struct Vertex
     xid_t xid;    
     int nIncomingEdges;
     int visited;
+    int deadlock_duration;
 } Vertex;
 
 typedef struct Graph
@@ -29,11 +30,12 @@ typedef struct Graph
     Edge* freeEdges;
     Vertex* freeVertexes;
     int marker;
+    int min_deadlock_duration;
 } Graph;
 
 
 extern void initGraph(Graph* graph);
 extern void addSubgraph(Instance* instance, Graph* graph, xid_t* xids, int n_xids);
-extern bool findCycle(Graph* graph, xid_t root);
+extern bool detectDeadLock(Graph* graph, xid_t root);
 
 #endif
