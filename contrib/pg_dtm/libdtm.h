@@ -56,7 +56,7 @@ int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first);
 
 /**
  * Detect global deadlock. This function sends serialized local resource graph
- * to the arbiter which appends them to the global graph. Once a loop is
+ * to the arbiter which appends them to the global graph. Once a cycle is
  * detected in global resource graph, the arbiter returns true. Otherwise false
  * is returned. Arbiter should replace the corresponding part of the global
  * resource graph if a new local graph is received from this cluster node (not
