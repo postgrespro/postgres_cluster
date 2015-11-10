@@ -445,7 +445,7 @@ DtmGetNewTransactionId(bool isSubXact)
 
 		if (IsUnderPostmaster && TransactionIdFollowsOrEquals(xid, xidStopLimit))
 		{
-			char oldest_datname = get_database_name(oldest_datoid);
+			char *oldest_datname = get_database_name(oldest_datoid);
 
 			/* complain even if that DB has disappeared */
 			if (oldest_datname)
@@ -466,7 +466,7 @@ DtmGetNewTransactionId(bool isSubXact)
 		else
 		if (TransactionIdFollowsOrEquals(xid, xidWarnLimit))
 		{
-			char oldest_datname = get_database_name(oldest_datoid);
+			char *oldest_datname = get_database_name(oldest_datoid);
 
 			/* complain even if that DB has disappeared */
 			if (oldest_datname)

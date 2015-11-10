@@ -547,7 +547,7 @@ static void ondeadlock(client_t client, int argc, xid_t *argv) {
     xid_t root = argv[1];
     Instance* instance = &CLIENT_USERDATA(client)->instance;
     addSubgraph(instance, &graph, argv+2, argc-2);
-    bool hasDeadLock = findLoop(&graph, root);
+    bool hasDeadLock = findCycle(&graph, root);
     client_message_shortcut(client, hasDeadLock ? RES_DEADLOCK : RES_OK);
 }
     

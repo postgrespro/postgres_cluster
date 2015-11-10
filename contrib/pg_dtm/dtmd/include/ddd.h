@@ -34,6 +34,6 @@ typedef struct Graph
 
 extern void initGraph(Graph* graph);
 extern void addSubgraph(Instance* instance, Graph* graph, xid_t* xids, int n_xids);
-extern bool findLoop(Graph* graph, xid_t root);
+extern bool findCycle(Graph* graph, xid_t root);
 
 #endif

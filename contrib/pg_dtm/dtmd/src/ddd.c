@@ -119,7 +119,7 @@ static bool recursiveTraverseGraph(Vertex* root, Vertex* v, int marker)
     return false;        
 }
 
-bool findLoop(Graph* graph, xid_t root)
+bool findCycle(Graph* graph, xid_t root)
 {
     Vertex* v;
     for (v = graph->hashtable[root % MAX_TRANSACTIONS]; v != NULL; v = v->next) { 
