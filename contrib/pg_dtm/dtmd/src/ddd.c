@@ -101,6 +101,7 @@ void addSubgraph(Instance* instance, Graph* graph, xid_t* xids, int n_xids)
         }
         freeEdge(graph, e);
     }
+    instance->edges = edges;
 }
 
 static bool recursiveTraverseGraph(Vertex* root, Vertex* v, int marker)
