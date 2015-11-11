@@ -38,7 +38,7 @@
   gather_facts: no
   tasks:
   - name: run transfers
-    shell: "~/pg_cluster/install/bin/dtmbench {{connections}} -w {{item}} -s {{offset}} -d 100000 -r 1 -n 1000 -a 1000000"
+    shell: '~/pg_cluster/install/bin/dtmbench {{connections}} -w {{item}} -s {{offset}} -d 100000 -r 1 -n 1000 -a 1000000 | sed "s/^/`hostname`:/"'
     register: transfers_result
     environment:
       LD_LIBRARY_PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/lib"
