@@ -22,7 +22,7 @@ typedef struct
 	XidStatus (*GetTransactionStatus)(TransactionId xid, XLogRecPtr *lsn);
 
 	/* Set current transaction status (encapsulation of TransactionIdGetStatus in clog.c) */
-	void (*SetTransactionStatus)(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
+	bool (*SetTransactionStatus)(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 
 	/* Get current transaction snaphot (encapsulation of GetSnapshotData in procarray.c) */
 	Snapshot (*GetSnapshot)(Snapshot snapshot);
@@ -55,8 +55,8 @@ extern TransactionManager PgTM; /* Standard PostgreSQL transaction manager */
 /* Standard PostgreSQL function implementing TM interface */
 extern bool PgXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 
-extern void PgTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
-										TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
+extern bool PgTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
+                                         TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 extern XidStatus PgTransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn);
 
 extern Snapshot PgGetSnapshotData(Snapshot snapshot);

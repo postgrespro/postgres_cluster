@@ -1135,6 +1135,7 @@ RecordTransactionCommit(void)
 	SharedInvalidationMessage *invalMessages = NULL;
 	bool		RelcacheInitFileInval = false;
 	bool		wrote_xlog;
+    bool        committed = false;
 
 	/* Get data needed for commit record */
 	nrels = smgrGetPendingDeletes(true, &rels);
@@ -1273,8 +1274,9 @@ RecordTransactionCommit(void)
 		/*
 		 * Now we may update the CLOG, if we wrote a COMMIT record above
 		 */
-		if (markXidCommitted)
-			TransactionIdCommitTree(xid, nchildren, children);
+		if (markXidCommitted) {
+			committed = TransactionIdCommitTree(xid, nchildren, children);
+        }
 	}
 	else
 	{
@@ -1296,8 +1298,9 @@ RecordTransactionCommit(void)
 		 * XLOG. Instead, we store the LSN up to which the XLOG must be
 		 * flushed before the CLOG may be updated.
 		 */
-		if (markXidCommitted)
-			TransactionIdAsyncCommitTree(xid, nchildren, children, XactLastRecEnd);
+		if (markXidCommitted) {
+			committed = TransactionIdAsyncCommitTree(xid, nchildren, children, XactLastRecEnd);
+        }
 	}
 
 	/*
@@ -1308,6 +1311,9 @@ RecordTransactionCommit(void)
 	{
 		MyPgXact->delayChkpt = false;
 		END_CRIT_SECTION();
+        if (!committed) {
+            elog(ERROR, "Transaction commit rejected by XTM");
+        }
 	}
 
 	/* Compute latestXid while we have the child XIDs handy */
@@ -5310,6 +5316,7 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 	TransactionId max_xid;
 	int			i;
 	TimestampTz commit_time;
+    bool committed;
 
 	max_xid = TransactionIdLatest(xid, parsed->nsubxacts, parsed->subxacts);
 
@@ -5345,7 +5352,7 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 		/*
 		 * Mark the transaction committed in pg_clog.
 		 */
-		TransactionIdCommitTree(xid, parsed->nsubxacts, parsed->subxacts);
+		committed = TransactionIdCommitTree(xid, parsed->nsubxacts, parsed->subxacts);
 	}
 	else
 	{
@@ -5369,8 +5376,8 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 		 * bits set on changes made by transactions that haven't yet
 		 * recovered. It's unlikely but it's good to be safe.
 		 */
-		TransactionIdAsyncCommitTree(
-							  xid, parsed->nsubxacts, parsed->subxacts, lsn);
+		committed = TransactionIdAsyncCommitTree(
+            xid, parsed->nsubxacts, parsed->subxacts, lsn);
 
 		/*
 		 * We must mark clog before we update the ProcArray.
@@ -5397,7 +5404,9 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 		 */
 		StandbyReleaseLockTree(xid, 0, NULL);
 	}
-
+    if (!committed) {
+        elog(NOTICE, "XTM rejected recovert of tran saction %u", xid);
+    }
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
 	{
 		/* recover apply progress */

@@ -256,24 +256,24 @@ TransactionIdIsKnownCompleted(TransactionId transactionId)
  * This commit operation is not guaranteed to be atomic, but if not, subxids
  * are correctly marked subcommit first.
  */
-void
+bool 
 TransactionIdCommitTree(TransactionId xid, int nxids, TransactionId *xids)
 {
-	TransactionIdSetTreeStatus(xid, nxids, xids,
-							   TRANSACTION_STATUS_COMMITTED,
-							   InvalidXLogRecPtr);
+	return TransactionIdSetTreeStatus(xid, nxids, xids,
+                                      TRANSACTION_STATUS_COMMITTED,
+                                      InvalidXLogRecPtr);
 }
 
 /*
  * TransactionIdAsyncCommitTree
  *		Same as above, but for async commits.  The commit record LSN is needed.
  */
-void
+bool
 TransactionIdAsyncCommitTree(TransactionId xid, int nxids, TransactionId *xids,
 							 XLogRecPtr lsn)
 {
-	TransactionIdSetTreeStatus(xid, nxids, xids,
-							   TRANSACTION_STATUS_COMMITTED, lsn);
+	return TransactionIdSetTreeStatus(xid, nxids, xids,
+                                      TRANSACTION_STATUS_COMMITTED, lsn);
 }
 
 /*

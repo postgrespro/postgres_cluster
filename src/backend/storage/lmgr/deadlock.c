@@ -269,7 +269,7 @@ DeadLockCheck(PGPROC *proc)
 	else if (blocking_autovacuum_proc != NULL)
 		return DS_BLOCKED_BY_AUTOVACUUM;
 	else
-		return TM->DetectGlobalDeadLock() ? DS_DISTRIBUTED_DEADLOCK : DS_NO_DEADLOCK;
+		return TM->DetectGlobalDeadLock(proc) ? DS_DISTRIBUTED_DEADLOCK : DS_NO_DEADLOCK;
 }
 
 /*

@@ -1031,5 +1031,6 @@ bool DtmDetectGlobalDeadLock(PGPROC* proc)
     EnumerateLocks(DtmSerializeLock, &buf);
     hasDeadlock = DtmGlobalDetectDeadLock(PostPortNumber, proc->lxid, buf.data, buf.used);
     ByteBufferFree(&buf);
+    elog(NOTICE, "Deadlock detected for transaction %u", proc->lxid);
     return hasDeadlock;
 }
