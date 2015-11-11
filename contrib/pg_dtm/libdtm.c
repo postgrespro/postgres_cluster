@@ -487,7 +487,7 @@ bool DtmGlobalDetectDeadLock(int port, TransactionId xid, void* data, int size)
 	int data_size = sizeof(ShubMessageHdr) + msg_size;
 	char* buf = (char*)malloc(data_size);
 	ShubMessageHdr* msg = (ShubMessageHdr*)buf;
-	xid_t* body = (xid_t*)(msg+2);
+	xid_t* body = (xid_t*)(msg+1);
 	int sent;
 	int reslen;
 	xid_t results[RESULTS_SIZE];

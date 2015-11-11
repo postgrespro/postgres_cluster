@@ -151,6 +151,7 @@ bool detectDeadLock(Graph* graph, xid_t root)
                 return ++v->deadlock_duration >= graph->min_deadlock_duration;
             }
             v->deadlock_duration = 0;
+            break;
         }
     }
     return false;        
