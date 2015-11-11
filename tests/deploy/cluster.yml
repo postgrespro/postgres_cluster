@@ -49,6 +49,12 @@
 
 - hosts: clients
   tasks:
+  - name: increase open files
+    shell: "echo '{{ansible_ssh_user}}  soft  nofile  65535' > /etc/security/limits.d/cluster.conf"
+    args:
+      creates: "/etc/security/limits.d/cluster.conf"
+    sudo: yes
+
   - name: copy pg source
     copy: src=./{{item}} dest=~/{{item}} mode=0755
     with_items:

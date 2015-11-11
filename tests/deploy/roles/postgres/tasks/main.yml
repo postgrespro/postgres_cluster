@@ -34,6 +34,12 @@
   shell: sysctl kernel.sem='1000 128000 128 512'
   sudo: yes
 
+- name: increase open files
+  shell: "echo '{{ansible_ssh_user}}  soft  nofile  65535' > /etc/security/limits.d/cluster.conf"
+  args:
+    creates: "/etc/security/limits.d/cluster.conf"
+  sudo: yes
+
 #############################################################################
 
 - name: clone postgres sources
@@ -73,8 +79,14 @@
 - stat: path={{pg_datadir}}/postmaster.pid
   register: pg_pidfile
 
+# - name: stop postgres if it was running
+#   command: "{{pg_dst}}/bin/pg_ctl stop -w -D {{pg_datadir}}"
+#   environment:
+#     LD_LIBRARY_PATH: "{{pg_dst}}/lib"
+#   when: pg_pidfile.stat.exists
+
 - name: stop postgres if it was running
-  command: "{{pg_dst}}/bin/pg_ctl stop -w -D {{pg_datadir}}"
+  shell: "kill -9 `head -n 1 {{pg_datadir}}/postmaster.pid`"
   environment:
     LD_LIBRARY_PATH: "{{pg_dst}}/lib"
   when: pg_pidfile.stat.exists
