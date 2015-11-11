@@ -46,13 +46,16 @@
     environment:
       LD_LIBRARY_PATH: "{{pg_dst}}/lib/"
 
-
 - hosts: clients
   tasks:
-  - name: increase open files
-    shell: "echo '{{ansible_ssh_user}}  soft  nofile  65535' > /etc/security/limits.d/cluster.conf"
-    args:
-      creates: "/etc/security/limits.d/cluster.conf"
+  - name: increase max open files
+    lineinfile:
+      dest: /etc/security/limits.d/cluster.conf
+      line: "{{item}}"
+      state: present
+    with_items:
+    - '{{ansible_ssh_user}}  soft  nofile  65535'
+    - '{{ansible_ssh_user}}  hard  nofile  65535'
     sudo: yes
 
   - name: copy pg source
