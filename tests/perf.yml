@@ -30,7 +30,7 @@
   gather_facts: no
   tasks:
   - name: init database
-    shell: "~/pg_cluster/install/bin/dtmbench {{connections}} -a 1000000 -i"
+    shell: "~/pg_cluster/install/bin/dtmbench {{connections}} -a 2000000 -i"
     register: init_result
   - debug: var=init_result
 
@@ -38,13 +38,21 @@
   gather_facts: no
   tasks:
 
+  - local_action: shell echo "Bench started at `date`" >> perf.results
+
   - name: run transfers
-    shell: '~/pg_cluster/install/bin/dtmbench {{connections}} -w {{item}} -s {{offset}} -d 100000 -r 1 -n 1000 -a 2000000 | tee -a perf.results | sed "s/^/`hostname`:/"'
+    shell: >
+      ~/pg_cluster/install/bin/dtmbench {{connections}}
+      -w {{conns | d(200)}} -s {{offset}} -d 100000 -r 1 -n 1000 -a 2000000 |
+      tee -a perf.results |
+      sed "s/^/`hostname`:/"
     register: transfers_result
     environment:
       LD_LIBRARY_PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/lib"
-    with_sequence: start=100 end=400 stride=50
 
-  - local_action: shell echo "{{transfers_result.results | map(attribute='stdout') | join('\n')}}" >> perf.results
+  - debug: var=transfers_result
 
-  - debug: msg="{{ transfers_result.results | map(attribute='stdout') | join('\n') }}"
+  - local_action: 'shell echo "{{transfers_result.stdout }}" >> perf.results'
+
+  - local_action: shell echo "Bench finished at `date`" >> perf.results
+
