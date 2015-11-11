@@ -43,7 +43,7 @@
     register: transfers_result
     environment:
       LD_LIBRARY_PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/lib"
-    with_sequence: start=100 end=200 stride=50
+    with_sequence: start=100 end=400 stride=50
 
   - local_action: shell echo "{{transfers_result.results | map(attribute='stdout') | join('\n')}}" >> perf.results
 
