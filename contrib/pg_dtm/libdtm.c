@@ -481,13 +481,13 @@ failure:
 	return 0;
 }
 
-bool DtmGlobalDetectDeadLock(TransactionId xid, void* data, int size)
+bool DtmGlobalDetectDeadLock(int port, TransactionId xid, void* data, int size)
 {
-	int msg_size = size + sizeof(xid)*2;
+	int msg_size = size + sizeof(xid)*3;
 	int data_size = sizeof(ShubMessageHdr) + msg_size;
 	char* buf = (char*)malloc(data_size);
 	ShubMessageHdr* msg = (ShubMessageHdr*)buf;
-	xid_t* body = (xid_t*)(msg+1);
+	xid_t* body = (xid_t*)(msg+2);
 	int sent;
 	int reslen;
 	xid_t results[RESULTS_SIZE];
@@ -498,6 +498,7 @@ bool DtmGlobalDetectDeadLock(TransactionId xid, void* data, int size)
 	msg->size = msg_size;
 
 	*body++ = CMD_DEADLOCK;
+	*body++ = port;
 	*body++ = xid;
 	memcpy(body, data, size);
 

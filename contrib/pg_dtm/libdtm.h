@@ -62,6 +62,6 @@ int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first);
  * resource graph if a new local graph is received from this cluster node (not
  * backend).
  */
-bool DtmGlobalDetectDeadLock(TransactionId xid, void* graph, int size);
+bool DtmGlobalDetectDeadLock(int port, TransactionId xid, void* graph, int size);
 
 #endif

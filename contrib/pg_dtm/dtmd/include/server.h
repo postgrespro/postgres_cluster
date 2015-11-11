@@ -98,4 +98,6 @@ bool client_message_finish(client_t client);
  */
 bool client_message_shortcut(client_t client, xid_t arg);
 
+unsigned client_get_ip_addr(client_t client);
+
 #endif

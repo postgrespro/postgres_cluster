@@ -1029,7 +1029,7 @@ bool DtmDetectGlobalDeadLock(PGPROC* proc)
     ByteBuffer buf;
     ByteBufferAlloc(&buf);
     EnumerateLocks(DtmSerializeLock, &buf);
-    hasDeadlock = DtmGlobalDetectDeadLock(proc->lxid, buf.data, buf.used);
+    hasDeadlock = DtmGlobalDetectDeadLock(PostPortNumber, proc->lxid, buf.data, buf.used);
     ByteBufferFree(&buf);
     return hasDeadlock;
 }

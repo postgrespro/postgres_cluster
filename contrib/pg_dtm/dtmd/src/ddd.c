@@ -5,6 +5,8 @@
 
 static bool recursiveTraverseGraph(Vertex* root, Vertex* v, int marker);
 
+static Cluster cluster;
+
 void initGraph(Graph* graph)
 {
     memset(graph->hashtable, 0, sizeof(graph->hashtable));
@@ -74,10 +76,28 @@ static inline Vertex* findVertex(Graph* graph, xid_t xid)
     return v;
 }
 
-void addSubgraph(Instance* instance, Graph* graph, xid_t* xids, int n_xids)
+static inline Node* findNode(Cluster* cluster, nodeid_t node_id)
+{
+    size_t h = node_id % MAX_STREAMS;
+    Node* node;
+    for (node = cluster->hashtable[h]; node != NULL; node = node->collision) { 
+        if (node->node_id == node_id) { 
+            return node;
+        }
+    }
+    node = (Node*)malloc(sizeof(Node));
+    node->node_id = node_id;
+    node->edges = NULL;
+    node->collision = cluster->hashtable[h];
+    cluster->hashtable[h] = node;
+    return node;
+}
+
+void addSubgraph(Graph* graph, nodeid_t node_id, xid_t* xids, int n_xids)
 {
     xid_t *last = xids + n_xids;
     Edge *e, *next, *edges = NULL;
+    Node* node = findNode(&cluster, node_id);
     while (xids != last) { 
         Vertex* src = findVertex(graph, *xids++);
         xid_t xid;
@@ -92,7 +112,7 @@ void addSubgraph(Instance* instance, Graph* graph, xid_t* xids, int n_xids)
             l2_list_link(&src->outgoingEdges, &e->node);
         }
     }
-    for (e = instance->edges; e != NULL; e = next) { 
+    for (e = node->edges; e != NULL; e = next) { 
         next = e->next;
         l2_list_unlink(&e->node);
         if (--e->dst->nIncomingEdges == 0 && l2_list_is_empty(&e->dst->outgoingEdges)) {
@@ -103,7 +123,7 @@ void addSubgraph(Instance* instance, Graph* graph, xid_t* xids, int n_xids)
         }
         freeEdge(graph, e);
     }
-    instance->edges = edges;
+    node->edges = edges;
 }
 
 static bool recursiveTraverseGraph(Vertex* root, Vertex* v, int marker)

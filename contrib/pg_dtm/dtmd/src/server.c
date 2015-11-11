@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
+#include <netinet/in.h>
 
 #include "server.h"
 #include "limits.h"
@@ -490,6 +491,15 @@ void *client_get_userdata(client_t client) {
 	return client->userdata;
 }
 
+unsigned client_get_ip_addr(client_t client)
+{
+    struct sockaddr_in inet_addr;
+    socklen_t inet_addr_len = sizeof(inet_addr);
+    inet_addr.sin_addr.s_addr = 0;
+    getpeername(client->stream->fd, (struct sockaddr *)&inet_addr, &inet_addr_len);
+    return inet_addr.sin_addr.s_addr;
+}
+   
 #if 0
 // usage example
 

@@ -33,7 +33,6 @@ typedef struct client_userdata_t {
 	int id;
 	int snapshots_sent;
 	xid_t xid;
-    Instance instance; /* It has to be moved somewhere else, because this is per-backend structure */
 } client_userdata_t;
 
 clog_t clg;
@@ -536,17 +535,22 @@ static void onnoise(client_t client, int argc, xid_t *argv) {
 static Graph graph;
 
 static void ondeadlock(client_t client, int argc, xid_t *argv) {
-	if (argc < 3) {
+    int port;
+    xid_t root;
+    nodeid_t node_id;
+
+	if (argc < 4) {
 		shout(
-			"[%d] DEADLOCK: wrong number of arguments %d, expected > 3\n",
+			"[%d] DEADLOCK: wrong number of arguments %d, expected > 4\n",
 			CLIENT_ID(client), argc
 		);        
 		client_message_shortcut(client, RES_FAILED);
 		return;
 	}
-    xid_t root = argv[1];
-    Instance* instance = &CLIENT_USERDATA(client)->instance;
-    addSubgraph(instance, &graph, argv+2, argc-2);
+    port = argv[1];
+    root = argv[2];
+    node_id = ((nodeid_t)port << 32) | client_get_ip_addr(client);
+    addSubgraph(&graph, node_id, argv+3, argc-3);
     bool hasDeadLock = detectDeadLock(&graph, root);
     client_message_shortcut(client, hasDeadLock ? RES_DEADLOCK : RES_OK);
 }
