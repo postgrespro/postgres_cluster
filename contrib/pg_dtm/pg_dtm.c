@@ -295,7 +295,7 @@ static void DtmUpdateRecentXmin(Snapshot snapshot)
  */
 static TransactionId DtmGetNextXid()
 {
-	TransactionId xid;
+	TransactionId xid = InvalidTransactionId;
 	LWLockAcquire(dtm->xidLock, LW_EXCLUSIVE);
 	if (TransactionIdIsValid(DtmNextXid))
 	{
@@ -321,7 +321,12 @@ static TransactionId DtmGetNextXid()
 		if (dtm->nReservedXids == 0)
 		{
 			dtm->nReservedXids = DtmGlobalReserve(ShmemVariableCache->nextXid, DtmLocalXidReserve, &dtm->nextXid);
-			Assert(dtm->nReservedXids > 0);
+			if (dtm->nReservedXids < 1)
+			{
+				elog(WARNING, "failed to reserve a local range of xids on arbiter");
+				goto end;
+			}
+
 			Assert(TransactionIdFollowsOrEquals(dtm->nextXid, ShmemVariableCache->nextXid));
 
 			/* Advance ShmemVariableCache->nextXid formward until new Xid */
@@ -339,6 +344,7 @@ static TransactionId DtmGetNextXid()
 		dtm->nReservedXids -= 1;
 		XTM_INFO("Obtain new local XID %d\n", xid);
 	}
+end:
 	LWLockRelease(dtm->xidLock);
 	return xid;
 }
@@ -387,6 +393,8 @@ DtmGetNewTransactionId(bool isSubXact)
 
 	LWLockAcquire(XidGenLock, LW_EXCLUSIVE);
 	xid = DtmGetNextXid();
+	if (!TransactionIdIsValid(xid))
+		elog(ERROR, "failed to get next xid from XTM");
 
 	/*----------
 	 * Check to see if it's safe to assign another XID.  This protects against
@@ -620,7 +628,11 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 			if (status == TRANSACTION_STATUS_ABORTED)
 			{
 				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
-				DtmGlobalSetTransStatus(xid, status, false);
+				if (DtmGlobalSetTransStatus(xid, status, false) == -1)
+				{
+					elog(WARNING, "failed to set 'aborted' transaction status on arbiter");
+					return; // FIXME: return bool
+				}
 				XTM_INFO("Abort transaction %d\n", xid);
 				return;
 			}
@@ -631,7 +643,11 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
 				LWLockRelease(dtm->hashLock);
-				DtmGlobalSetTransStatus(xid, status, true);
+				if (DtmGlobalSetTransStatus(xid, status, true) == -1)
+				{
+					elog(WARNING, "failed to set 'committed' transaction status on arbiter");
+					return; // FIXME: return bool
+				}
 				XTM_INFO("Commit transaction %d\n", xid);
 			}
 		}
@@ -648,6 +664,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 			status = gs;
 	}
 	PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
+	// FIXME: return bool
 }
 
 static uint32 dtm_xid_hash_fn(const void *key, Size keysize)
