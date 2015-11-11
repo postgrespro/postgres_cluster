@@ -93,7 +93,7 @@
 - name: stop postgres if it was running
   shell: "kill -9 `head -n 1 {{pg_datadir}}/postmaster.pid`"
   environment:
-    LD_LIBRARY_PATH: "{{pg_dst}}/lib"
+    LD_LIBRARY_PATH: "$LD_LIBRARY_PATH:{{pg_dst}}/lib"
   when: pg_pidfile.stat.exists
 
 - name: remove datadirs on datanodes
@@ -103,7 +103,7 @@
 - name: create datadirs on datanodes
   command: "{{pg_dst}}/bin/initdb {{pg_datadir}}"
   environment:
-    LD_LIBRARY_PATH: "{{pg_dst}}/lib/"
+    LD_LIBRARY_PATH: "$LD_LIBRARY_PATH:{{pg_dst}}/lib/"
   args:
     creates: "{{pg_datadir}}"
 
@@ -129,5 +129,5 @@
 - name: start postgrespro
   shell: "{{pg_dst}}/bin/pg_ctl start -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
   environment:
-    LD_LIBRARY_PATH: "{{pg_dst}}/lib/"
+    LD_LIBRARY_PATH: "$LD_LIBRARY_PATH:{{pg_dst}}/lib"
 

@@ -44,7 +44,7 @@
   - name: restart postgrespro
     command: "{{pg_dst}}/bin/pg_ctl restart -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
     environment:
-      LD_LIBRARY_PATH: "{{pg_dst}}/lib/"
+      LD_LIBRARY_PATH: "$LD_LIBRARY_PATH:{{pg_dst}}/lib/"
 
 - hosts: clients
   tasks:

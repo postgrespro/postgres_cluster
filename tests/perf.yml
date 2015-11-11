@@ -30,6 +30,8 @@
   gather_facts: no
   tasks:
   - name: init database
+    environment:
+      LD_LIBRARY_PATH: "$LD_LIBRARY_PATH:/home/{{ansible_ssh_user}}/pg_cluster/install/lib"
     shell: "~/pg_cluster/install/bin/dtmbench {{connections}} -a 2000000 -i"
     register: init_result
   - debug: var=init_result
@@ -49,7 +51,7 @@
       sed "s/^/`hostname`:/"
     register: transfers_result
     environment:
-      LD_LIBRARY_PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/lib"
+      LD_LIBRARY_PATH: "$LD_LIBRARY_PATH:/home/{{ansible_ssh_user}}/pg_cluster/install/lib"
 
   - debug: var=transfers_result
 
