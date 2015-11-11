@@ -253,6 +253,10 @@ int main (int argc, char* argv[])
                "\t-i\tinitialize datanase\n");
         return 1;
     }
+    if (cfg.connections.size() < 2) { 
+        printf("At least two connections has to be specified\n");
+        return 1;
+    }
     if (initialize) { 
         initializeDatabase();
     }
@@ -287,6 +291,10 @@ int main (int argc, char* argv[])
     }
  
     time_t elapsed = getCurrentTime() - start;
-    printf("TPS(updates)=%f, TPS(selects)=%f, aborts=%ld\n", (double)(nWrites*USEC)/elapsed, (double)(nReads*USEC)/elapsed, nAborts);
+    if (elapsed == 0) { 
+        printf("Test is completed too fast\n");
+    } else { 
+        printf("TPS(updates)=%f, TPS(selects)=%f, aborts=%ld\n", (double)(nWrites*USEC)/elapsed, (double)(nReads*USEC)/elapsed, nAborts);
+    }
     return 0;
 }
