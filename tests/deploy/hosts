@@ -1,12 +1,12 @@
 [clients]
-158.250.29.4 ansible_ssh_user=cluster offset=6001
-158.250.29.7 ansible_ssh_user=cluster ansible_ssh_port=2299 offset=3001
+158.250.29.4 ansible_ssh_user=cluster offset=600001
+158.250.29.7 ansible_ssh_user=cluster ansible_ssh_port=2299 offset=300001
 
 [nodes]
-158.250.29.5 ansible_ssh_user=cluster offset=5001
-158.250.29.6 ansible_ssh_user=cluster offset=4001
-158.250.29.8 ansible_ssh_user=cluster offset=2001
-158.250.29.9 ansible_ssh_user=cluster offset=1001
+158.250.29.5 ansible_ssh_user=cluster offset=500001
+158.250.29.6 ansible_ssh_user=cluster offset=400001
+158.250.29.8 ansible_ssh_user=cluster offset=200001
+158.250.29.9 ansible_ssh_user=cluster offset=100001
 158.250.29.10 ansible_ssh_user=cluster offset=1
 
 [master]

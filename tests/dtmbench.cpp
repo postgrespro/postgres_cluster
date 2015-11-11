@@ -59,13 +59,17 @@ struct config
     int nWriters;
     int nIterations;
     int nAccounts;
+    int startId;
+    int diapason;
     vector<string> connections;
 
     config() {
         nReaders = 1;
         nWriters = 10;
         nIterations = 1000;
-        nAccounts = 1000;        
+        nAccounts = 100000;  
+        startId = 1;
+        diapason = 100000;
     }
 };
 
@@ -141,36 +145,41 @@ void* reader(void* arg)
 void* writer(void* arg)
 {
     thread& t = *(thread*)arg;
-    vector< unique_ptr<connection> > conns(cfg.connections.size());
-    for (size_t i = 0; i < conns.size(); i++) {
-        conns[i] = new connection(cfg.connections[i]);
-    }
+    connection *srcCon, *dstCon;
+
+    srcCon = new connection(cfg.connections[t.id % cfg.connections.size()]);
+    dstCon = new connection(cfg.connections[(t.id + 1) % cfg.connections.size()]);
+
     for (int i = 0; i < cfg.nIterations; i++)
     { 
         char gtid[32];
-        int srcCon, dstCon;
-        int srcAcc = (random() % ((cfg.nAccounts-cfg.nWriters)/cfg.nWriters))*cfg.nWriters + t.id;
-        int dstAcc = (random() % ((cfg.nAccounts-cfg.nWriters)/cfg.nWriters))*cfg.nWriters + t.id;
 
-        sprintf(gtid, "%d.%d", t.id, i);
+        // int srcAcc = (random() % ((cfg.nAccounts-cfg.nWriters)/cfg.nWriters))*cfg.nWriters + t.id;
+        // int dstAcc = (random() % ((cfg.nAccounts-cfg.nWriters)/cfg.nWriters))*cfg.nWriters + t.id;
 
-        do { 
-            srcCon = random() % cfg.connections.size();
-            dstCon = random() % cfg.connections.size();
-        } while (srcCon == dstCon);
-        
-        nontransaction srcTx(*conns[srcCon]);
-        nontransaction dstTx(*conns[dstCon]);
+        int srcAcc = cfg.startId + random() % cfg.diapason;
+        int dstAcc = cfg.startId + random() % cfg.diapason;
+
+        if (srcAcc > dstAcc) {
+            int tmpAcc = dstAcc;
+            dstAcc = srcAcc;
+            srcAcc = tmpAcc;
+        }
+
+        sprintf(gtid, "%d.%d.%d", cfg.startId, t.id, i);
+
+        nontransaction srcTx(*srcCon);
+        nontransaction dstTx(*dstCon);
         
         exec(srcTx, "begin transaction");
         exec(dstTx, "begin transaction");
 
         csn_t snapshot = execQuery(srcTx, "select dtm_extend('%s')", gtid);
         snapshot = execQuery(dstTx, "select dtm_access(%ld, '%s')", snapshot, gtid);
-            
+
         exec(srcTx, "update t set v = v - 1 where u=%d", srcAcc);
         exec(dstTx, "update t set v = v + 1 where u=%d", dstAcc);
-        
+
         exec(srcTx, "prepare transaction '%s'", gtid);
         exec(dstTx, "prepare transaction '%s'", gtid);
         exec(srcTx, "select dtm_begin_prepare('%s')", gtid);
@@ -196,17 +205,20 @@ void initializeDatabase()
         exec(txn, "create extension pg_dtm");
         exec(txn, "drop table if exists t");
         exec(txn, "create table t(u int primary key, v int)");
-        exec(txn, "insert into t (select generate_series(0,%d), %d)", cfg.nAccounts-1, 0);
+        exec(txn, "insert into t (select generate_series(0,%d), %d)", cfg.nAccounts, 0);
         txn.commit();
-
-        // nontransaction vacTx(conn);
-        // exec(vacTx, "vacuum full");
     }        
 }
 
 int main (int argc, char* argv[])
 {
     bool initialize = false;
+
+    if (argc == 1){
+        printf("Use -h to show usage options\n");
+        return 1;
+    }
+
     for (int i = 1; i < argc; i++) { 
         if (argv[i][0] == '-') { 
             switch (argv[i][1]) { 
@@ -222,6 +234,12 @@ int main (int argc, char* argv[])
             case 'n':
                 cfg.nIterations = atoi(argv[++i]);
                 continue;
+            case 's':
+                cfg.startId = atoi(argv[++i]);
+                continue;
+            case 'd':
+                cfg.diapason = atoi(argv[++i]);
+                continue;
             case 'C':
                 cfg.connections.push_back(string(argv[++i]));
                 continue;
@@ -233,14 +251,24 @@ int main (int argc, char* argv[])
         printf("Options:\n"
                "\t-r N\tnumber of readers (1)\n"
                "\t-w N\tnumber of writers (10)\n"
-               "\t-a N\tnumber of accounts (1000)\n"
+               "\t-a N\tnumber of accounts (100000)\n"
+               "\t-s N\tperform updates starting from this id (1)\n"
+               "\t-d N\tperform updates in this diapason (100000)\n"
                "\t-n N\tnumber of iterations (1000)\n"
-               "\t-c STR\tdatabase connection string\n"
+               "\t-C STR\tdatabase connection string\n"
                "\t-i\tinitialize datanase\n");
         return 1;
     }
+
+    if (cfg.startId + cfg.diapason - 1 > cfg.nAccounts) {
+        printf("startId + diapason should be less that nAccounts. Exiting.\n");
+        return 1;
+    }
+
     if (initialize) { 
         initializeDatabase();
+        printf("%d account inserted\n", cfg.nAccounts);
+        return 0;
     }
 
     time_t start = getCurrentTime();
@@ -275,7 +303,9 @@ int main (int argc, char* argv[])
 
 
     printf(
-        "{\"update_tps\":%f, \"read_tps\":%f, \"readers\":%d, \"writers\":%d, \"accounts\":%d, \"iterations\":%d, \"hosts\":%d}\n", 
+        "{\"update_tps\":%f, \"read_tps\":%f,"
+        " \"readers\":%d, \"writers\":%d,"
+        " \"accounts\":%d, \"iterations\":%d, \"hosts\":%d}\n",
         (double)(nWrites*USEC)/elapsed,
         (double)(nReads*USEC)/elapsed,
         cfg.nReaders,

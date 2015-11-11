@@ -8,8 +8,6 @@ pg_version_tag: master
 pg_destroy_and_init: false
 
 pg_port: 5432
-pg_dtm_enable: false
-pg_dtm_host: "127.0.0.1"
 pg_config:
   - line: "shared_buffers = 3GB"
   - line: "wal_keep_segments = 128"
@@ -26,4 +24,3 @@ pg_prefix: "{{ansible_env.HOME}}/pg_cluster"
 pg_src: "{{pg_prefix}}/src"
 pg_dst: "{{pg_prefix}}/install"
 pg_datadir: "{{pg_prefix}}/data_{{pg_port}}"
-
