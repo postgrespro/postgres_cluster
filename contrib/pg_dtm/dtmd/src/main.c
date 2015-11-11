@@ -599,7 +599,7 @@ static void onmessage(client_t client, size_t len, char *data) {
 
 static void usage(char *prog) {
 	printf(
-		"Usage: %s [-d DATADIR] [-k] [-a HOST] [-p PORT] [-l LOGFILE] [-m MIN_DEADLOCK_DURATION]\n"
+		"Usage: %s [-d DATADIR] [-k] [-a HOST] [-p PORT] [-l LOGFILE]\n"
 		"   arbiter will try to kill the other one running at\n"
 		"   the same DATADIR.\n"
 		"   -l : Run as a daemon and write output to LOGFILE.\n"
@@ -716,9 +716,6 @@ int main(int argc, char **argv) {
 			case 'k':
 				assassin = true;
 				break;
-			case 'm':
-                graph.min_deadlock_duration = atoi(optarg);
-                break;
 			default:
 				usage(argv[0]);
 				return EXIT_FAILURE;

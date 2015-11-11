@@ -13,7 +13,6 @@ void initGraph(Graph* graph)
     graph->freeEdges = NULL;
     graph->freeVertexes = NULL;
     graph->marker = 0;
-    graph->min_deadlock_duration = 3;
 }
 
 static inline Edge* newEdge(Graph* graph)
@@ -54,7 +53,6 @@ static inline Vertex* newVertex(Graph* graph)
     } else { 
         graph->freeVertexes = v->next;
     }
-    v->deadlock_duration = 0;
     return v;
 }
 
@@ -148,9 +146,8 @@ bool detectDeadLock(Graph* graph, xid_t root)
     for (v = graph->hashtable[root % MAX_TRANSACTIONS]; v != NULL; v = v->next) { 
         if (v->xid == root) { 
             if (recursiveTraverseGraph(v, v, ++graph->marker)) { 
-                return ++v->deadlock_duration >= graph->min_deadlock_duration;
+                return true;
             }
-            v->deadlock_duration = 0;
             break;
         }
     }

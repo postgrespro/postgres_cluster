@@ -161,8 +161,10 @@ void* writer(void* arg)
     for (int i = 0; i < cfg.nIterations; i++)
     { 
         int srcCon, dstCon;
-        int srcAcc = (random() % ((cfg.nAccounts-cfg.nWriters)/cfg.nWriters))*cfg.nWriters + t.id;
-        int dstAcc = (random() % ((cfg.nAccounts-cfg.nWriters)/cfg.nWriters))*cfg.nWriters + t.id;
+        //int srcAcc = (random() % ((cfg.nAccounts-cfg.nWriters)/cfg.nWriters))*cfg.nWriters + t.id;
+        //int dstAcc = (random() % ((cfg.nAccounts-cfg.nWriters)/cfg.nWriters))*cfg.nWriters + t.id;
+        int srcAcc = random() % cfg.nAccounts;
+        int dstAcc = random() % cfg.nAccounts;
 
         do { 
             srcCon = random() % cfg.connections.size();
@@ -183,7 +185,7 @@ void* writer(void* arg)
             exec(dstTx, "update t set v = v + 1 where u=%d", dstAcc);
         } catch (pqxx_exception const& x) { 
             exec(srcTx, "rollback");
-            exec(srcTx, "rollback");
+            exec(dstTx, "rollback");
             t.aborts += 1;
             i -= 1;
             continue;

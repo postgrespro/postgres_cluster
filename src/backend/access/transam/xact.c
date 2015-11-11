@@ -1312,6 +1312,7 @@ RecordTransactionCommit(void)
 		MyPgXact->delayChkpt = false;
 		END_CRIT_SECTION();
         if (!committed) {
+            CurrentTransactionState->state = TRANS_ABORT;
             elog(ERROR, "Transaction commit rejected by XTM");
         }
 	}
@@ -5405,7 +5406,7 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 		StandbyReleaseLockTree(xid, 0, NULL);
 	}
     if (!committed) {
-        elog(NOTICE, "XTM rejected recovert of tran saction %u", xid);
+        elog(WARNING, "XTM rejected recovery of transaction %u", xid);
     }
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
 	{
