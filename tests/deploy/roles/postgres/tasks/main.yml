@@ -39,6 +39,7 @@
     dest: /etc/security/limits.d/cluster.conf
     line: "{{item}}"
     state: present
+    create: true
   with_items:
   - '{{ansible_ssh_user}}  soft  nofile  65535'
   - '{{ansible_ssh_user}}  hard  nofile  65535'
