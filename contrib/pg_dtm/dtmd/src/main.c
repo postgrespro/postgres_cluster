@@ -288,12 +288,13 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 	}
 	transaction_clear(t);
 	l2_list_link(&active_transactions, &t->elem);
-    t->collision = transaction_hash[t->xid % MAX_TRANSACTIONS];
-    transaction_hash[t->xid % MAX_TRANSACTIONS] = t;
 
 	prev_gxid = t->xid = next_gxid++;
 	t->snapshots_count = 0;
 	t->size = 1;
+
+    t->collision = transaction_hash[t->xid % MAX_TRANSACTIONS];
+    transaction_hash[t->xid % MAX_TRANSACTIONS] = t;
 
 	CLIENT_SNAPSENT(client) = 0;
 	CLIENT_XID(client) = t->xid;
