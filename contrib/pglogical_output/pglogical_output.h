@@ -22,6 +22,8 @@
 
 #include "pglogical_output/hooks.h"
 
+#include "pglogical_proto.h"
+
 #define PG_LOGICAL_PROTO_VERSION_NUM 1
 #define PG_LOGICAL_PROTO_MIN_VERSION_NUM 1
 
@@ -43,23 +45,27 @@ typedef struct PGLogicalOutputData
 {
 	MemoryContext context;
 
+	PGLogicalProtoAPI *api;
+
 	/* protocol */
 	bool	allow_internal_basetypes;
 	bool	allow_binary_basetypes;
 	bool	forward_changesets;
 	bool	forward_changeset_origins;
+	int		field_datum_encoding;
 
 	/*
 	 * client info
 	 *
-	 * TODO: Lots of this should move to a separate
-	 * shorter-lived struct used only during parameter
-	 * reading.
+	 * Lots of this should move to a separate shorter-lived struct used only
+	 * during parameter reading, since it contains what the client asked for.
+	 * Once we've processed this during startup we don't refer to it again.
 	 */
 	uint32	client_pg_version;
 	uint32	client_max_proto_version;
 	uint32	client_min_proto_version;
 	const char *client_expected_encoding;
+	const char *client_protocol_format;
 	uint32  client_binary_basetypes_major_version;
 	bool	client_want_internal_basetypes_set;
 	bool	client_want_internal_basetypes;
@@ -78,6 +84,7 @@ typedef struct PGLogicalOutputData
 	bool	client_binary_intdatetimes;
 	bool	client_forward_changesets_set;
 	bool	client_forward_changesets;
+	bool	client_no_txinfo;
 
 	/* hooks */
 	List *hooks_setup_funcname;

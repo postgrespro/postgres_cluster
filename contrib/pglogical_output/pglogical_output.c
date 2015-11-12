@@ -40,6 +40,7 @@
 
 #include "utils/builtins.h"
 #include "utils/catcache.h"
+#include "utils/guc.h"
 #include "utils/int8.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
@@ -164,14 +165,8 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 	data->allow_internal_basetypes = false;
 	data->allow_binary_basetypes = false;
 
-	ctx->output_plugin_private = data;
 
-	/*
-	 * Tell logical decoding that we will be doing binary output. This is
-	 * not the same thing as the selection of binary or text format for
-	 * output of individual fields.
-	 */
-	opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
+	ctx->output_plugin_private = data;
 
 	/*
 	 * This is replication start and not slot initialization.
@@ -182,51 +177,140 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 	{
 		int		params_format;
 
+		 /*
+		 * Ideally we'd send the startup message immediately. That way
+		 * it'd arrive before any error we emit if we see incompatible
+		 * options sent by the client here. That way the client could
+		 * possibly adjust its options and reconnect. It'd also make
+		 * sure the client gets the startup message in a timely way if
+		 * the server is idle, since otherwise it could be a while
+		 * before the next callback.
+		 *
+		 * The decoding plugin API doesn't let us write to the stream
+		 * from here, though, so we have to delay the startup message
+		 * until the first change processed on the stream, in a begin
+		 * callback.
+		 *
+		 * If we ERROR there, the startup message is buffered but not
+		 * sent since the callback didn't finish. So we'd have to send
+		 * the startup message, finish the callback and check in the
+		 * next callback if we need to ERROR.
+		 *
+		 * That's a bit much hoop jumping, so for now ERRORs are
+		 * immediate. A way to emit a message from the startup callback
+		 * is really needed to change that.
+		 */
 		startup_message_sent = false;
 
 		/* Now parse the rest of the params and ERROR if we see any we don't recognise */
 		params_format = process_parameters(ctx->output_plugin_options, data);
 
-		/* TODO: delay until after sending startup reply */
 		if (params_format != 1)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("client sent startup parameters in format %d but we only support format 1",
 					params_format)));
 
-		/* TODO: Should delay our ERROR until sending startup reply */
 		if (data->client_min_proto_version > PG_LOGICAL_PROTO_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("client sent min_proto_version=%d but we only support protocol %d or lower",
 					 data->client_min_proto_version, PG_LOGICAL_PROTO_VERSION_NUM)));
 
-		/* TODO: Should delay our ERROR until sending startup reply */
 		if (data->client_max_proto_version < PG_LOGICAL_PROTO_MIN_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("client sent max_proto_version=%d but we only support protocol %d or higher",
 				 	data->client_max_proto_version, PG_LOGICAL_PROTO_MIN_VERSION_NUM)));
 
-		/* check for encoding match if specific encoding demanded by client */
-		/* TODO: Should parse encoding name and compare properly */
-		if (data->client_expected_encoding != NULL
-				&& strlen(data->client_expected_encoding) != 0
-				&& strcmp(data->client_expected_encoding, GetDatabaseEncodingName()) != 0)
+		/*
+		 * Set correct protocol format.
+		 *
+		 * This is the output plugin protocol format, this is different
+		 * from the individual fields binary vs textual format.
+		 */
+		if (data->client_protocol_format != NULL
+				&& strcmp(data->client_protocol_format, "json") == 0)
+		{
+			data->api = pglogical_init_api(PGLogicalProtoJson);
+			opt->output_type = OUTPUT_PLUGIN_TEXTUAL_OUTPUT;
+		}
+		else if ((data->client_protocol_format != NULL
+			     && strcmp(data->client_protocol_format, "native") == 0)
+				 || data->client_protocol_format == NULL)
+		{
+			data->api = pglogical_init_api(PGLogicalProtoNative);
+			opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
+
+			if (data->client_no_txinfo)
+			{
+				elog(WARNING, "no_txinfo option ignored for protocols other than json");
+				data->client_no_txinfo = false;
+			}
+		}
+		else
 		{
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("only \"%s\" encoding is supported by this server, client requested %s",
-				 	GetDatabaseEncodingName(), data->client_expected_encoding)));
+				 errmsg("client requested protocol %s but only \"json\" or \"native\" are supported",
+				 	data->client_protocol_format)));
 		}
 
-		if (data->client_want_internal_basetypes)
+		/* check for encoding match if specific encoding demanded by client */
+		if (data->client_expected_encoding != NULL
+				&& strlen(data->client_expected_encoding) != 0)
+		{
+			int wanted_encoding = pg_char_to_encoding(data->client_expected_encoding);
+
+			if (wanted_encoding == -1)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("unrecognised encoding name %s passed to expected_encoding",
+								data->client_expected_encoding)));
+
+			if (opt->output_type == OUTPUT_PLUGIN_TEXTUAL_OUTPUT)
+			{
+				/*
+				 * datum encoding must match assigned client_encoding in text
+				 * proto, since everything is subject to client_encoding
+				 * conversion.
+				 */
+				if (wanted_encoding != pg_get_client_encoding())
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+							 errmsg("expected_encoding must be unset or match client_encoding in text protocols")));
+			}
+			else
+			{
+				/*
+				 * currently in the binary protocol we can only emit encoded
+				 * datums in the server encoding. There's no support for encoding
+				 * conversion.
+				 */
+				if (wanted_encoding != GetDatabaseEncoding())
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("encoding conversion for binary datum not supported yet"),
+							 errdetail("expected_encoding %s must be unset or match server_encoding %s",
+								 data->client_expected_encoding, GetDatabaseEncodingName())));
+			}
+
+			data->field_datum_encoding = wanted_encoding;
+		}
+
+		/*
+		 * It's obviously not possible to send binary representatio of data
+		 * unless we use the binary output.
+		 */
+		if (opt->output_type == OUTPUT_PLUGIN_BINARY_OUTPUT &&
+			data->client_want_internal_basetypes)
 		{
 			data->allow_internal_basetypes =
 				check_binary_compatibility(data);
 		}
 
-		if (data->client_want_binary_basetypes &&
+		if (opt->output_type == OUTPUT_PLUGIN_BINARY_OUTPUT &&
+			data->client_want_binary_basetypes &&
 			data->client_binary_basetypes_major_version == PG_VERSION_NUM / 100)
 		{
 			data->allow_binary_basetypes = true;
@@ -293,7 +377,7 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 	bool send_replication_origin = data->forward_changeset_origins;
 
 	if (!startup_message_sent)
-		send_startup_message( ctx, data, false /* can't be last message */);
+		send_startup_message(ctx, data, false /* can't be last message */);
 
 #ifdef HAVE_REPLICATION_ORIGINS
 	/* If the record didn't originate locally, send origin info */
@@ -301,7 +385,7 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 #endif
 
 	OutputPluginPrepareWrite(ctx, !send_replication_origin);
-	pglogical_write_begin(ctx->out, txn);
+	data->api->write_begin(ctx->out, data, txn);
 
 #ifdef HAVE_REPLICATION_ORIGINS
 	if (send_replication_origin)
@@ -321,8 +405,9 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 		 *  - throw error - that will break replication, not good
 		 *  - send some special "unknown" origin
 		 */
-		if (replorigin_by_oid(txn->origin_id, true, &origin))
-			pglogical_write_origin(ctx->out, origin, txn->origin_lsn);
+		if (data->api->write_origin &&
+			replorigin_by_oid(txn->origin_id, true, &origin))
+			data->api->write_origin(ctx->out, origin, txn->origin_lsn);
 	}
 #endif
 
@@ -336,8 +421,10 @@ void
 pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					 XLogRecPtr commit_lsn)
 {
+	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
+
 	OutputPluginPrepareWrite(ctx, true);
-	pglogical_write_commit(ctx->out, txn, commit_lsn);
+	data->api->write_commit(ctx->out, data, txn, commit_lsn);
 	OutputPluginWrite(ctx, true);
 }
 
@@ -345,10 +432,8 @@ void
 pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 				 Relation relation, ReorderBufferChange *change)
 {
-	PGLogicalOutputData *data;
+	PGLogicalOutputData *data = ctx->output_plugin_private;
 	MemoryContext old;
-
-	data = ctx->output_plugin_private;
 
 	/* First check the table filter */
 	if (!call_row_filter_hook(data, txn, relation, change))
@@ -358,16 +443,19 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	old = MemoryContextSwitchTo(data->context);
 
 	/* TODO: add caching (send only if changed) */
-	OutputPluginPrepareWrite(ctx, false);
-	pglogical_write_rel(ctx->out, relation);
-	OutputPluginWrite(ctx, false);
+	if (data->api->write_rel)
+	{
+		OutputPluginPrepareWrite(ctx, false);
+		data->api->write_rel(ctx->out, relation);
+		OutputPluginWrite(ctx, false);
+	}
 
 	/* Send the data */
 	switch (change->action)
 	{
 		case REORDER_BUFFER_CHANGE_INSERT:
 			OutputPluginPrepareWrite(ctx, true);
-			pglogical_write_insert(ctx->out, data, relation,
+			data->api->write_insert(ctx->out, data, relation,
 									&change->data.tp.newtuple->tuple);
 			OutputPluginWrite(ctx, true);
 			break;
@@ -377,7 +465,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					&change->data.tp.oldtuple->tuple : NULL;
 
 				OutputPluginPrepareWrite(ctx, true);
-				pglogical_write_update(ctx->out, data, relation, oldtuple,
+				data->api->write_update(ctx->out, data, relation, oldtuple,
 										&change->data.tp.newtuple->tuple);
 				OutputPluginWrite(ctx, true);
 				break;
@@ -386,7 +474,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			if (change->data.tp.oldtuple)
 			{
 				OutputPluginPrepareWrite(ctx, true);
-				pglogical_write_delete(ctx->out, data, relation,
+				data->api->write_delete(ctx->out, data, relation,
 										&change->data.tp.oldtuple->tuple);
 				OutputPluginWrite(ctx, true);
 			}
@@ -426,12 +514,11 @@ static void
 send_startup_message(LogicalDecodingContext *ctx,
 		PGLogicalOutputData *data, bool last_message)
 {
-	char *msg;
-	int len;
+	List *msg;
 
 	Assert(!startup_message_sent);
 
-	prepare_startup_message(data, &msg, &len);
+	msg = prepare_startup_message(data);
 
 	/*
 	 * We could free the extra_startup_params DefElem list here, but it's
@@ -441,7 +528,7 @@ send_startup_message(LogicalDecodingContext *ctx,
 	 */
 
 	OutputPluginPrepareWrite(ctx, last_message);
-	write_startup_message(ctx->out, msg, len);
+	data->api->write_startup_message(ctx->out, msg);
 	OutputPluginWrite(ctx, last_message);
 
 	pfree(msg);

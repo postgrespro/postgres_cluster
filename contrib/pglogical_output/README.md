@@ -322,9 +322,9 @@ Each hook has its own C signature (defined below) and the pointers must be
 directly to the functions. Hooks that the client does not wish to set must be
 left null.
 
-An example is provided in `examples/hooks` and the argument structs are defined
-in `pglogical_output/hooks.h`, which is installed into the PostgreSQL source
-tree when the extension is installed.
+An example is provided in `contrib/pglogical_output_plhooks` and the argument
+structs are defined in `pglogical_output/hooks.h`, which is installed into the
+PostgreSQL source tree when the extension is installed.
 
 Each hook that is enabled results in a new startup parameter being emitted in
 the startup reply message. Clients must check for these and must not assume a
@@ -427,7 +427,7 @@ in the hook context will be automatically when the decoding session shuts down.
 ## Writing hooks in procedural languages
 
 You can write hooks in PL/PgSQL, etc, too, via the `pglogical_output_plhooks`
-adapter extension in `examples/hooks`. They won't perform very well though.
+adapter extension in `contrib`. They won't perform very well though.
 
 # Limitations
 
