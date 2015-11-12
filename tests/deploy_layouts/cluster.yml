@@ -47,8 +47,8 @@
     shell: "make clean && make -j 4"
     args:
       chdir: "~/pg_cluster/pg_dtm/dtmd"
-    environment:
-      PG_CONFIG: "~/pg_cluster/install/bin/pg_config"
+    # environment:
+    #   PG_CONFIG: "~/pg_cluster/install/bin/pg_config"
 
   - name: kill dtmd
     shell: kill -9 `cat ~/pg_cluster/dtm_data/arbiter.pid` || true
