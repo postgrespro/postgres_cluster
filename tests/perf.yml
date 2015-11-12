@@ -30,7 +30,7 @@
   gather_facts: no
   tasks:
   - name: init database
-    shell: "~/pg_cluster/install/bin/dtmbench {{connections}} -a 2000000 -i"
+    shell: "~/pg_cluster/install/bin/dtmbench {{connections}} -a 500000 -i"
     register: init_result
   - debug: var=init_result
 
@@ -44,7 +44,7 @@
     shell: >
       ~/pg_cluster/install/bin/dtmbench {{connections}}
       -w {{ (nconns | d(100)| int)*(nnodes | d(2) | int)/(2*( groups['clients'] | count))}}
-      -s {{offset}} -d 100000 -r 1 -n 20000 -a 500000 |
+      -s {{offset}} -d 100000 -r 1 -n 2000 -a 500000 |
       tee -a perf.results |
       sed "s/^/`hostname`:/"
     register: transfers_result
