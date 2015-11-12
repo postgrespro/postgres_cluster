@@ -6,7 +6,7 @@
 
   - name: generate connstrings
     set_fact:
-      connstr: "-d 'host={{item}} user=cluster port=15432 dbname=postgres' "
+      connstr: "-C 'host={{item}} user={{ansible_ssh_user}} port=15432 dbname=postgres' "
     with_items:
       groups['nodes'] | reverse | batch(nnodes | d(2) | int) | first
     register: connstrs
@@ -15,22 +15,44 @@
     set_fact:
       connections: "{{ connstrs.results | map(attribute='ansible_facts.connstr') | join }}"
 
-  - name: copy transfers binary
-    copy: src=transfers.linux dest=~/transfers mode=a+x
+  - name: copy transfers source
+    copy: src=./{{item}} dest=~/{{item}} mode=0755
+    with_items:
+      - "dtmbench.cpp"
+
+  - name: compile dtmbench
+    shell: "g++ -g -Wall -O2 -o dtmbench dtmbench.cpp -lpqxx -lpq -pthread"
+
+  - name: compile dtmbench
+    shell: "mv dtmbench ~/pg_cluster/install/bin/dtmbench"
 
 - hosts: clients[0]
   gather_facts: no
   tasks:
-  - name: fill the databases
-    shell: "./transfers {{connections}} -f -g"
-    register: transfers_result
-  - debug: "var=transfers_result"
+  - name: init database
+    shell: "~/pg_cluster/install/bin/dtmbench {{connections}} -a 2000000 -i"
+    register: init_result
+  - debug: var=init_result
 
 - hosts: clients
   gather_facts: no
   tasks:
+
+  - local_action: shell echo "Bench started at `date`" >> perf.results
+
   - name: run transfers
-    shell: "./transfers {{connections}} -s {{runkeys | d('-g -w 60 -m -o -u 10000 -r 0')}} -k {{hostvars[inventory_hostname]['offset']}} "
+    shell: >
+      ~/pg_cluster/install/bin/dtmbench {{connections}}
+      -w {{ (nconns | d(100)| int)*(nnodes | d(2) | int)/(2*( groups['clients'] | count))}}
+      -s {{offset}} -d 100000 -r 1 -n 20000 -a 500000 |
+      tee -a perf.results |
+      sed "s/^/`hostname`:/"
     register: transfers_result
+    environment:
+      LD_LIBRARY_PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/lib"
+
   - debug: var=transfers_result
 
+  - local_action: 'shell echo "{{transfers_result.stdout }}" >> perf.results'
+
+  - local_action: shell echo "Bench finished at `date`" >> perf.results
