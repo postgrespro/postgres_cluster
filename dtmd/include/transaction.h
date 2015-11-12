@@ -19,6 +19,7 @@ typedef struct L2List
 
 typedef struct Transaction {
     L2List elem;
+    struct Transaction* collision;
 	xid_t xid;
     xid_t xmin;
 
