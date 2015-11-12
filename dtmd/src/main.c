@@ -23,10 +23,19 @@ static xid_t get_global_xmin();
 L2List active_transactions = {&active_transactions, &active_transactions};
 L2List* free_transactions;
 
+Transaction* transaction_hash[MAX_TRANSACTIONS];
+
 // We reserve the local xids if they fit between (prev, next) range, and
 // reserve something in (next, x) range otherwise, moving 'next' after 'x'.
 xid_t prev_gxid, next_gxid;
 xid_t global_xmin = INVALID_XID;
+
+static Transaction *find_transaction(xid_t xid) {    
+	Transaction *t;    
+    for (t = transaction_hash[xid % MAX_TRANSACTIONS]; t != NULL && t->xid != xid; t = t->collision);
+    return t;
+
+}
 
 typedef struct client_userdata_t {
 	int id;
@@ -54,6 +63,9 @@ static void free_client_userdata(client_userdata_t *cd) {
 }
 
 inline static void free_transaction(Transaction* t) {
+    Transaction** tpp;
+    for (tpp = &transaction_hash[t->xid % MAX_TRANSACTIONS]; *tpp != t; tpp = &(*tpp)->collision);
+    *tpp = t->collision;
 	l2_list_unlink(&t->elem);
 	t->elem.next = free_transactions;
 	free_transactions = &t->elem;
@@ -116,26 +128,19 @@ static void ondisconnect(client_t client) {
 	debug("[%d] disconnected\n", CLIENT_ID(client));
 
 	if (CLIENT_XID(client) != INVALID_XID) {
-		Transaction* t;
-
-		// need to abort the transaction this client is participating in
-		for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
-			if (t->xid == CLIENT_XID(client)) {
-				if (clog_write(clg, t->xid, NEGATIVE)) {
-					notify_listeners(t, NEGATIVE);
-					free_transaction(t);
-				} else {
-					shout(
-						"[%d] DISCONNECT: transaction %u"
-						" failed to abort O_o\n",
-						CLIENT_ID(client), t->xid
+		Transaction* t = find_transaction(CLIENT_XID(client));
+        if (t != NULL) { 
+            if (clog_write(clg, t->xid, NEGATIVE)) {
+                notify_listeners(t, NEGATIVE);
+                free_transaction(t);
+            } else {
+                shout(
+                    "[%d] DISCONNECT: transaction %u"
+                    " failed to abort O_o\n",
+                    CLIENT_ID(client), t->xid
 					);
-				}
-				break;
-			}
-		}
-
-		if (t == (Transaction*)&active_transactions) {
+            }
+		} else { 
 			shout(
 				"[%d] DISCONNECT: transaction %u not found O_o\n",
 				CLIENT_ID(client), CLIENT_XID(client)
@@ -281,6 +286,8 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 	}
 	transaction_clear(t);
 	l2_list_link(&active_transactions, &t->elem);
+    t->collision = transaction_hash[t->xid % MAX_TRANSACTIONS];
+    transaction_hash[t->xid % MAX_TRANSACTIONS] = t;
 
 	prev_gxid = t->xid = next_gxid++;
 	t->snapshots_count = 0;
@@ -318,16 +325,6 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 	} client_message_finish(client);
 }
 
-static Transaction *find_transaction(xid_t xid) {
-	Transaction *t;
-
-	for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
-		if (t->xid == xid) {
-			return t;
-		}
-	}
-	return NULL;
-}
 
 static bool queue_for_transaction_finish(client_t client, xid_t xid, char cmd) {
 	assert((cmd >= 'a') && (cmd <= 'z'));
