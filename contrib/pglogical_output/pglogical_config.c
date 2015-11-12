@@ -12,7 +12,6 @@
  */
 #include "postgres.h"
 
-#include "pglogical_output/compat.h"
 #include "pglogical_config.h"
 #include "pglogical_output.h"
 

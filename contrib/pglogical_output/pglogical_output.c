@@ -12,7 +12,6 @@
  */
 #include "postgres.h"
 
-#include "pglogical_output/compat.h"
 #include "pglogical_config.h"
 #include "pglogical_output.h"
 #include "pglogical_proto.h"
@@ -34,9 +33,7 @@
 
 #include "replication/output_plugin.h"
 #include "replication/logical.h"
-#ifdef HAVE_REPLICATION_ORIGINS
 #include "replication/origin.h"
-#endif
 
 #include "utils/builtins.h"
 #include "utils/catcache.h"
@@ -66,10 +63,8 @@ static void pg_decode_change(LogicalDecodingContext *ctx,
 				 ReorderBufferTXN *txn, Relation rel,
 				 ReorderBufferChange *change);
 
-#ifdef HAVE_REPLICATION_ORIGINS
 static bool pg_decode_origin_filter(LogicalDecodingContext *ctx,
 						RepOriginId origin_id);
-#endif
 
 static void send_startup_message(LogicalDecodingContext *ctx,
 		PGLogicalOutputData *data, bool last_message);
@@ -86,9 +81,7 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	cb->begin_cb = pg_decode_begin_txn;
 	cb->change_cb = pg_decode_change;
 	cb->commit_cb = pg_decode_commit_txn;
-#ifdef HAVE_REPLICATION_ORIGINS
 	cb->filter_by_origin_cb = pg_decode_origin_filter;
-#endif
 	cb->shutdown_cb = pg_decode_shutdown;
 }
 
@@ -379,15 +372,12 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 	if (!startup_message_sent)
 		send_startup_message(ctx, data, false /* can't be last message */);
 
-#ifdef HAVE_REPLICATION_ORIGINS
 	/* If the record didn't originate locally, send origin info */
 	send_replication_origin &= txn->origin_id != InvalidRepOriginId;
-#endif
 
 	OutputPluginPrepareWrite(ctx, !send_replication_origin);
 	data->api->write_begin(ctx->out, data, txn);
 
-#ifdef HAVE_REPLICATION_ORIGINS
 	if (send_replication_origin)
 	{
 		char *origin;
@@ -409,7 +399,6 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 			replorigin_by_oid(txn->origin_id, true, &origin))
 			data->api->write_origin(ctx->out, origin, txn->origin_lsn);
 	}
-#endif
 
 	OutputPluginWrite(ctx, true);
 }
@@ -490,7 +479,6 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	MemoryContextReset(data->context);
 }
 
-#ifdef HAVE_REPLICATION_ORIGINS
 /*
  * Decide if the whole transaction with specific origin should be filtered out.
  */
@@ -508,7 +496,6 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 
 	return false;
 }
-#endif
 
 static void
 send_startup_message(LogicalDecodingContext *ctx,
