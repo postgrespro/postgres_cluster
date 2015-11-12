@@ -30,9 +30,11 @@
   - name: enable dtm extension on datanodes
     lineinfile:
       dest: "{{pg_datadir}}/postgresql.conf"
-      regexp: "^shared_preload_libraries"
-      line: "shared_preload_libraries = 'pg_dtm'"
+      line: "{{item}}"
       state: present
+    with_items:
+    - "shared_preload_libraries = 'pg_dtm'"
+    - "dtm.host = '{{ groups['nodes'][0] }}'"
 
   - name: restart postgrespro
     command: "{{pg_dst}}/bin/pg_ctl restart -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
