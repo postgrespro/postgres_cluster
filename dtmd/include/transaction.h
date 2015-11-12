@@ -32,7 +32,7 @@ typedef struct Transaction {
 	Snapshot snapshots[MAX_SNAPSHOTS_PER_TRANS];
 	int snapshots_count; // will wrap around if exceeds max snapshots
 
-	void *listeners[CHAR_TO_INDEX('z')]; // we are going to use 'a' to 'z' for indexing
+	void *listeners[CHAR_TO_INDEX('z')+1]; // we are going to use 'a' to 'z' for indexing
 } Transaction;
 
 static inline void l2_list_link(L2List* after, L2List* elem)
