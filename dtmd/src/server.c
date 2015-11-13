@@ -128,6 +128,9 @@ bool server_start(server_t server) {
 	return true;
 }
 
+long sent_messages;
+long sent_bytes;
+
 static bool stream_flush(stream_t stream) {
 	int tosend = stream->output.ready;
 	if (tosend == 0) {
@@ -138,12 +141,14 @@ static bool stream_flush(stream_t stream) {
 	char *cursor = stream->output.data;
 	while (tosend > 0) {
 		// repeat sending until we send everything
-		int sent = send(stream->fd, cursor, tosend, 0);
+		int sent = send(stream->fd, cursor, tosend, 0);        
 		if (sent == -1) {
 			shout("failed to flush the stream\n");
 			stream->good = false;
 			return false;
 		}
+        sent_messages += 1;
+        sent_bytes += sent;
 		cursor += sent;
 		tosend -= sent;
 		assert(tosend >= 0);

@@ -3,7 +3,7 @@
 
 #define MAX_TRANSACTIONS 4096
 
-#define BUFFER_SIZE (64 * 1024)
+#define BUFFER_SIZE (256 * 1024)
 #define LISTEN_QUEUE_SIZE 100
 #define MAX_STREAMS 4096
 
