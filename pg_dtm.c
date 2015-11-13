@@ -438,11 +438,21 @@ TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 
 bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 {
+#if TRACE_SLEEP_TIME
+    static timestamp_t firstReportTime;
+    static timestamp_t prevReportTime;
+    static timestamp_t totalSleepTime;
+#endif
     timestamp_t delay = MIN_WAIT_TIMEOUT;
     Assert(xid != InvalidTransactionId);
 
     SpinLockAcquire(&local->lock);
 
+#if TRACE_SLEEP_TIME
+    if (firstReportTime == 0) {
+        firstReportTime = dtm_get_current_time();
+    }
+#endif
     while (true)
     {
         DtmTransStatus* ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_FIND, NULL);
@@ -461,14 +471,11 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 #if TRACE_SLEEP_TIME
                 {
                 timestamp_t now = dtm_get_current_time();
-                static timestamp_t firstReportTime;
-                static timestamp_t prevReportTime;
-                static timestamp_t totalSleepTime;
 #endif
                 dtm_sleep(delay);
 #if TRACE_SLEEP_TIME
                 totalSleepTime += dtm_get_current_time() - now;
-                if (now > prevReportTime + USEC*10) { 
+                if (now > prevReportTime + USEC*1) { 
                     prevReportTime = now;
                     if (firstReportTime == 0) { 
                         firstReportTime = now;
