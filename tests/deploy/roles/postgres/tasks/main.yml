@@ -10,12 +10,12 @@
   - bison
   - flex
   - libreadline-dev
-  when: ansible_os_family == "Debian"
+  when: (pg_copydist is undefined) and ansible_os_family == "Debian"
   sudo: yes
 
 - name: ensure dependencies (RedHat)
   yum: name="@Development tools" state=present
-  when: ansible_os_family == "RedHat"
+  when: (pg_copydist is undefined) and ansible_os_family == "RedHat"
   sudo: yes
 
 - name: ensure dependencies (RedHat)
@@ -27,8 +27,25 @@
   - bison
   - flex
   - readline-devel
-  when: ansible_os_family == "RedHat"
+  when: (pg_copydist is undefined) and ansible_os_family == "RedHat"
   sudo: yes
+
+- name: increase semaphores
+  shell: sysctl kernel.sem='1000 128000 128 512'
+  sudo: yes
+
+- name: increase max open files
+  lineinfile:
+    dest: /etc/security/limits.d/cluster.conf
+    line: "{{item}}"
+    state: present
+    create: true
+  with_items:
+  - '{{ansible_ssh_user}}  soft  nofile  65535'
+  - '{{ansible_ssh_user}}  hard  nofile  65535'
+  sudo: yes
+
+#############################################################################
 
 - name: clone postgres sources
   git: repo={{pg_repo}}
@@ -37,25 +54,47 @@
     depth=1
     accept_hostkey=True
   register: pg_sources
-
-#############################################################################
-
-- stat: path={{pg_datadir}}/postmaster.pid
-  register: pg_pidfile
-
-- name: stop postgres if it was running
-  command: "{{pg_dst}}/bin/pg_ctl stop -w -D {{pg_datadir}}"
-  when: pg_pidfile.stat.exists
+  when: pg_copydist is undefined
 
 - name: force rebuild on changed sources
   command: "rm -f {{pg_dst}}/bin/postgres"
-  when: pg_sources.changed
+  when: (pg_copydist is undefined) and pg_sources.changed
 
 - name: build and install
   shell: ./configure --prefix={{pg_dst}} --without-zlib && make clean && make -j {{makejobs}} && make install
   args:
     chdir: "{{pg_src}}"
     creates: "{{pg_dst}}/bin/postgres"
+  when: pg_copydist is undefined
+
+#############################################################################
+
+- name: copy pg source
+  copy: src=./{{item}} dest=~/{{item}} mode=0755
+  with_items:
+    - "pg_cluster_install.tgz"
+  when: pg_copydist is defined
+
+- name: extract postgres
+  command: "tar xzf pg_cluster_install.tgz"
+  when: pg_copydist is defined
+
+#############################################################################
+
+- stat: path={{pg_datadir}}/postmaster.pid
+  register: pg_pidfile
+
+# - name: stop postgres if it was running
+#   command: "{{pg_dst}}/bin/pg_ctl stop -w -D {{pg_datadir}}"
+#   environment:
+#     LD_LIBRARY_PATH: "{{pg_dst}}/lib"
+#   when: pg_pidfile.stat.exists
+
+- name: stop postgres if it was running
+  shell: "kill -9 `head -n 1 {{pg_datadir}}/postmaster.pid`"
+  environment:
+    LD_LIBRARY_PATH: "$LD_LIBRARY_PATH:{{pg_dst}}/lib"
+  when: pg_pidfile.stat.exists
 
 - name: remove datadirs on datanodes
   command: "rm -rf {{pg_datadir}}"
@@ -63,6 +102,8 @@
 
 - name: create datadirs on datanodes
   command: "{{pg_dst}}/bin/initdb {{pg_datadir}}"
+  environment:
+    LD_LIBRARY_PATH: "$LD_LIBRARY_PATH:{{pg_dst}}/lib/"
   args:
     creates: "{{pg_datadir}}"
 
@@ -85,11 +126,8 @@
     dest: "{{pg_datadir}}/pg_hba.conf"
     line: "host all all 0.0.0.0/0 trust"
 
-# - include: pg_shard.yml
-#   when: deploy_pg_shard
-
 - name: start postgrespro
-  command: "{{pg_dst}}/bin/pg_ctl start -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
-
-
+  shell: "{{pg_dst}}/bin/pg_ctl start -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
+  environment:
+    LD_LIBRARY_PATH: "$LD_LIBRARY_PATH:{{pg_dst}}/lib"
 
