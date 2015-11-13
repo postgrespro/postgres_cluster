@@ -193,24 +193,25 @@ static xid_t max(xid_t a, xid_t b) {
 
 static void gen_snapshot(Snapshot *s) {
 	Transaction* t;
+    int n = 0;
 	s->times_sent = 0;
-	s->nactive = 0;
-	s->xmin = MAX_XID;
-	s->xmax = MIN_XID;
-	for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
+	for (t = (Transaction*)active_transactions.prev; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.prev) {
+        /*
 		if (t->xid < s->xmin) {
 			s->xmin = t->xid;
 		}
 		if (t->xid >= s->xmax) { 
 			s->xmax = t->xid + 1;
 		}
-		s->active[s->nactive++] = t->xid;
+        */
+		s->active[n++] = t->xid;
 	}
-	if (s->nactive > 0) {
-		assert(s->xmin < MAX_XID);
-		assert(s->xmax > MIN_XID);
+    s->nactive = n;
+	if (n > 0) {
+        s->xmin = s->active[0];
+        s->xmax = s->active[n-1];
 		assert(s->xmin <= s->xmax);
-		snapshot_sort(s);
+		// snapshot_sort(s);
 	} else {
 		s->xmin = s->xmax = 0;
 	}
