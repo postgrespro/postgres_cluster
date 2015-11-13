@@ -190,13 +190,21 @@ void* writer(void* arg)
             i -= 1;
             continue;
         }
-        pipeline srcPipe(srcTx);
-        pipeline dstPipe(dstTx);
-        srcPipe.insert("commit transaction");
-        dstPipe.insert("commit transaction");
-        srcPipe.complete();
-        dstPipe.complete();
-        
+        try { 
+            pipeline srcPipe(srcTx);
+            pipeline dstPipe(dstTx);
+            pipeline::query_id q1 = srcPipe.insert("commit transaction");
+            pipeline::query_id q2 = dstPipe.insert("commit transaction");
+            //srcPipe.complete();
+            //dstPipe.complete();
+            srcPipe.retrieve(q1);
+            dstPipe.retrieve(q2);
+        } catch (pqxx_exception const& x) { 
+            t.aborts += 1;
+            i -= 1;
+            continue;
+        }
+       
         t.proceeded += 1;
     }
     return NULL;

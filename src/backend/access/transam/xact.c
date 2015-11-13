@@ -1313,6 +1313,7 @@ RecordTransactionCommit(void)
 		END_CRIT_SECTION();
         if (!committed) {
             CurrentTransactionState->state = TRANS_ABORT;
+            CurrentTransactionState->blockState = TBLOCK_ABORT_PENDING;
             elog(ERROR, "Transaction commit rejected by XTM");
         }
 	}
