@@ -18,17 +18,17 @@ using namespace std;
 using namespace pqxx;
 
 template<class T>
-class unique_ptr
+class my_unique_ptr
 {
     T* ptr;
     
   public:
-    unique_ptr(T* p = NULL) : ptr(p) {}
-    ~unique_ptr() { delete ptr; }
+    my_unique_ptr(T* p = NULL) : ptr(p) {}
+    ~my_unique_ptr() { delete ptr; }
     T& operator*() { return *ptr; }
     T* operator->() { return ptr; }
     void operator=(T* p) { ptr = p; }
-    void operator=(unique_ptr& other) {
+    void operator=(my_unique_ptr& other) {
         ptr = other.ptr;
         other.ptr = NULL;
     }        
@@ -115,7 +115,7 @@ xid_t execQuery( transaction_base& txn, char const* sql, ...)
 void* reader(void* arg)
 {
     thread& t = *(thread*)arg;
-    vector< unique_ptr<connection> > conns(cfg.connections.size());
+    vector< my_unique_ptr<connection> > conns(cfg.connections.size());
     for (size_t i = 0; i < conns.size(); i++) {
         conns[i] = new connection(cfg.connections[i]);
     }
@@ -132,8 +132,8 @@ void* reader(void* arg)
             }
             txn.commit();
         }
-        vector< unique_ptr<nontransaction> > txns(conns.size());
-        vector< unique_ptr<pipeline> > pipes(conns.size());
+        vector< my_unique_ptr<nontransaction> > txns(conns.size());
+        vector< my_unique_ptr<pipeline> > pipes(conns.size());
         vector<pipeline::query_id> results(conns.size());
         for (size_t i = 0; i < conns.size(); i++) {        
             txns[i] = new nontransaction(*conns[i]);
@@ -196,8 +196,10 @@ void* writer(void* arg)
 
         pipeline srcPipe(srcTx);
         pipeline dstPipe(dstTx);
+
         srcPipe.insert("commit transaction");
         dstPipe.insert("commit transaction");
+
         srcPipe.complete();
         dstPipe.complete();
 
