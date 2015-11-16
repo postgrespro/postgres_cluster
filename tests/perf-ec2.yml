@@ -1,0 +1,92 @@
+---
+
+- hosts: tag_Name_dtmtest
+  user: ec2-user
+  gather_facts: yes
+  tasks:
+
+  - name: make a list
+    set_fact:
+      pip: "{{ ec2_private_ip_address }}"
+
+  - name: generate connstrings
+    set_fact:
+      connstr: "-C 'host={{hostvars[item].pip}} user={{ansible_ssh_user}} port=15432 dbname=postgres' "
+    with_items:
+      groups['tag_Name_dtmtest'] | reverse | batch(nnodes | d(2) | int) | first
+    register: connstrs
+
+  - name: make a list
+    set_fact:
+      connections: "{{ connstrs.results | map(attribute='ansible_facts.connstr') | join }}"
+
+  # - name: copy transfers source
+  #   copy: src=./{{item}} dest=~/{{item}} mode=0755
+  #   with_items:
+  #     - "dtmbench.cpp"
+
+  # - name: git clone https://github.com/Ambrosys/pqxx.git
+  #   copy: src=./{{item}} dest=~/{{item}} mode=0755
+  #   with_items:
+  #     - "dtmbench.cpp"
+
+  # - name: clone pqxx
+  #   git: repo=https://github.com/Ambrosys/pqxx.git
+  #     dest=~/pqxx
+  #     accept_hostkey=yes
+  #     update=no
+  #     force=yes
+  #   register: pqxx
+
+  # - name: build pqxx
+  #   shell: "./configure --prefix=/home/{{ansible_ssh_user}}/pg_cluster/install/ --enable-shared && make && make install"
+  #   args:
+  #     chdir: "~/pqxx"
+  #   environment:
+  #     PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/bin/:{{ansible_env.PATH}}"
+  #   when: pqxx.changed
+
+  # - name: compile dtmbench
+  #   shell: "g++ -g -Wall -O2 -o dtmbench dtmbench.cpp -lpqxx -lpq -pthread -L/home/{{ansible_ssh_user}}/pg_cluster/install/lib/ -I/home/{{ansible_ssh_user}}/pg_cluster/install/include/"
+
+  # - name: compile dtmbench
+  #   shell: "mv dtmbench ~/pg_cluster/install/bin/dtmbench"
+
+- hosts: tag_Name_dtmtest[1]
+  user: ec2-user
+  gather_facts: no
+  tasks:
+  - name: init database
+    shell: "~/pg_cluster/install/bin/dtmbench {{connections}} -a 100001 -i"
+    register: init_result
+    environment:
+      LD_LIBRARY_PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/lib"
+
+  - debug: var=init_result
+
+- hosts: tag_Name_dtmtest[1]
+  user: ec2-user
+  tasks:
+
+  - local_action: shell echo "Bench started at `date`" >> perf.results
+
+  - name: run transfers
+    shell: >
+      ~/pg_cluster/install/bin/dtmbench {{connections}}
+      -w {{ (nconns | d(100) | int) }}
+      -s 1 -d 100000 -r 0 -n 2000 -a 100001 |
+      tee -a perf.results |
+      sed "s/^/`hostname`:/"
+    register: transfers_result
+    environment:
+      LD_LIBRARY_PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/lib"
+
+  - debug: var=transfers_result
+
+  - local_action: 'shell echo "{{transfers_result.stdout }}" >> perf.results'
+
+  - local_action: shell echo "Bench finished at `date`" >> perf.results
+
+
+
+
