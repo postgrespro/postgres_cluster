@@ -1,5 +1,5 @@
 ---
-- hosts: nodes
+- hosts: nodes:clients
 
   roles:
   - role: postgres
@@ -25,7 +25,7 @@
       chdir: "{{pg_prefix}}/pg_dtm"
     environment:
       PG_CONFIG: "{{pg_dst}}/bin/pg_config"
-    # when: dtm_sources.changed
+    when: dtm_sources.changed
 
   - name: enable dtm extension on datanodes
     lineinfile:
