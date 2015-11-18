@@ -41,6 +41,33 @@
     environment:
       LD_LIBRARY_PATH: "{{pg_dst}}/lib/"
 
+  - name: copy transfers source
+    copy: src=../{{item}} dest=~/{{item}} mode=0755
+    with_items:
+      - "dtmbench.cpp"
+
+  - name: clone pqxx
+    git: repo=https://github.com/Ambrosys/pqxx.git
+      dest=~/pqxx
+      accept_hostkey=yes
+      update=no
+      force=yes
+    register: pqxx
+
+  - name: build pqxx
+    shell: "./configure --prefix=/home/{{ansible_ssh_user}}/pg_cluster/install/ --enable-shared && make -j4 && make install"
+    args:
+      chdir: "~/pqxx"
+    environment:
+      PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/bin/:{{ansible_env.PATH}}"
+    when: pqxx.changed
+
+  - name: compile dtmbench
+    shell: "g++ -g -Wall -O2 -o dtmbench dtmbench.cpp -lpqxx -lpq -pthread -L/home/{{ansible_ssh_user}}/pg_cluster/install/lib/ -I/home/{{ansible_ssh_user}}/pg_cluster/install/include/"
+
+  - name: move dtmbench to bin
+    shell: "mv dtmbench ~/pg_cluster/install/bin/dtmbench"
+
 - hosts: nodes[0]
   tasks:
   - name: build dtmd
