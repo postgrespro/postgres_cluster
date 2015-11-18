@@ -385,4 +385,6 @@ extern void EnterParallelMode(void);
 extern void ExitParallelMode(void);
 extern bool IsInParallelMode(void);
 
+extern void MarkAsAborted(void);
+
 #endif   /* XACT_H */
