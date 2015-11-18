@@ -632,7 +632,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
 				LWLockRelease(dtm->hashLock);
-				DtmGlobalSetTransStatus(xid, status, true);
+                while (DtmGlobalSetTransStatus(xid, status, false) < 0);
 				XTM_INFO("Commit transaction %d\n", xid);
 			}
 		}

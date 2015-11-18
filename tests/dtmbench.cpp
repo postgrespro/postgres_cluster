@@ -194,6 +194,12 @@ void* writer(void* arg)
             continue;
         }
 
+        #if 1
+        exec(srcTx, "prepare transaction '%u'", xid);
+        exec(dstTx, "prepare transaction '%u'", xid);
+        exec(srcTx, "commit prepared '%u'", xid);
+        exec(dstTx, "commit prepared '%u'", xid);
+        #else
         pipeline srcPipe(srcTx);
         pipeline dstPipe(dstTx);
 
@@ -202,7 +208,7 @@ void* writer(void* arg)
 
         srcPipe.complete();
         dstPipe.complete();
-
+        #endif
         t.proceeded += 1;
     }
     return NULL;
