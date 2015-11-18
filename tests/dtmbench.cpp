@@ -101,6 +101,16 @@ void exec(transaction_base& txn, char const* sql, ...)
     txn.exec(buf);
 }
 
+void insert(pipeline& pipe, char const* sql, ...)
+{
+    va_list args;
+    va_start(args, sql);
+    char buf[1024];
+    vsprintf(buf, sql, args);
+    va_end(args);
+    pipe.insert(buf);
+}
+
 xid_t execQuery( transaction_base& txn, char const* sql, ...)
 {
     va_list args;
@@ -194,15 +204,19 @@ void* writer(void* arg)
             continue;
         }
 
-        #if 1
-        exec(srcTx, "prepare transaction '%u'", xid);
-        exec(dstTx, "prepare transaction '%u'", xid);
-        exec(srcTx, "commit prepared '%u'", xid);
-        exec(dstTx, "commit prepared '%u'", xid);
-        #else
         pipeline srcPipe(srcTx);
         pipeline dstPipe(dstTx);
 
+        #if 1
+        insert(srcPipe, "prepare transaction '%u'", xid);
+        insert(dstPipe, "prepare transaction '%u'", xid);
+        srcPipe.complete();
+        dstPipe.complete();
+        insert(srcPipe, "commit prepared '%u'", xid);
+        insert(dstPipe, "commit prepared '%u'", xid);
+        srcPipe.complete();
+        dstPipe.complete();
+        #else
         srcPipe.insert("commit transaction");
         dstPipe.insert("commit transaction");
 
