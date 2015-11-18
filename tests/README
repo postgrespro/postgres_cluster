@@ -1,0 +1,50 @@
+For deploy and test postgres over a cluster we use ansible.
+
+
+
+Running tests on local cluster
+------------------------------
+
+To use it one need ansible hosts file with following groups:
+
+farms/cluster.example:
+
+	[clients] # benchmark will start simultaneously on that nodes
+
+	[nodes] # all that nodes will run postgres, dtmd will be deployed to first
+
+After you have proper hosts file you can deploy all stuff to servers:
+
+# cd pg_dtm/tests
+# ansible-playbook -i farms/sai deploy_layouts/cluster.yml
+
+To perform dtmbench run:
+
+# ansible-playbook -i farms/sai perf.yml -e nnodes=3 -e nconns=100
+
+here nnodes is number of nudes that will be used for that test, nconns is the
+number of connections to the backend.
+
+
+
+Running tests on Amazon ec2
+---------------------------
+
+In the case of amazon cloud there is no need in specific hosts file. Instead of it
+we use script farms/ec2.py to get current instances running on you account. To use 
+that script you need to specify you account key and access_key in ~/.boto.cfg (or in
+any other place that described at http://boto.cloudhackers.com/en/latest/boto_config_tut.html)
+
+To create VMs in cloud run:
+# ansible-playbook -i farms/ec2.py deploy_layouts/ec2.yml
+
+After that you should wait few minutes to have info about that instances in Amazon API. After 
+that you can deploy postgres as usual:
+
+# ansible-playbook -i farms/ec2.py deploy_layouts/cluster-ec2.yml
+
+And to run a benchmark:
+
+# ansible-playbook -i farms/sai perf-ec2.yml -e nnodes=3 -e nconns=100
+
+
