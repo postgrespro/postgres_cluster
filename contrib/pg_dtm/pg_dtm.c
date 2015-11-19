@@ -71,7 +71,7 @@ void _PG_fini(void);
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static void DtmMergeWithGlobalSnapshot(Snapshot snapshot);
 static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
-static bool DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
+static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 static void DtmUpdateRecentXmin(Snapshot snapshot);
 static void DtmInitialize(void);
 static void DtmXactCallback(XactEvent event, void *arg);
@@ -79,8 +79,8 @@ static TransactionId DtmGetNextXid(void);
 static TransactionId DtmGetNewTransactionId(bool isSubXact);
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static TransactionId DtmGetGlobalTransactionId(void);
-static bool DtmDetectGlobalDeadLock(PGPROC* proc);
 
+static bool DtmDetectGlobalDeadLock(PGPROC* proc);
 static void DtmSerializeLock(PROCLOCK* lock, void* arg);
 
 static bool TransactionIdIsInSnapshot(TransactionId xid, Snapshot snapshot);
@@ -627,9 +627,8 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn)
 	return status;
 }
 
-static bool DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
+static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
-    bool acknowledged = true;
 	XTM_INFO("%d: DtmSetTransactionStatus %u = %u\n", getpid(), xid, status);
 	if (!RecoveryInProgress())
 	{
@@ -641,7 +640,7 @@ static bool DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
 				DtmGlobalSetTransStatus(xid, status, false);
 				XTM_INFO("Abort transaction %d\n", xid);
-				return true;
+				return;
 			}
 			else
 			{
@@ -650,13 +649,12 @@ static bool DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
 				LWLockRelease(dtm->hashLock);
-				if (!DtmGlobalSetTransStatus(xid, status, true)) { 
-                    acknowledged = false;
-                    XTM_INFO("Commit of transaction %d in rejected by DTM\n", xid);
-                    status = TRANSACTION_STATUS_ABORTED;
-                } else { 
-                    XTM_INFO("Commit transaction %d\n", xid);
+				if (DtmGlobalSetTransStatus(xid, status, true) != status) { 
+                    END_CRIT_SECTION();
+                    MarkAsAborted();
+                    elog(ERROR, "Transaction commit rejected by XTM");                    
                 }
+                XTM_INFO("Commit transaction %d\n", xid);
 			}
 		}
 		else
@@ -669,11 +667,10 @@ static bool DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 		XidStatus gs;
 		gs = DtmGlobalGetTransStatus(xid, false);        
 		if (gs != TRANSACTION_STATUS_UNKNOWN) { 
-            acknowledged = status == gs;
 			status = gs;
         }
 	}
-	return PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn) && acknowledged;
+	PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
 }
 
 static uint32 dtm_xid_hash_fn(const void *key, Size keysize)

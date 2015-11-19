@@ -93,11 +93,11 @@ static void TransactionIdSetStatusBit(TransactionId xid, XidStatus status,
 static void set_status_by_pages(int nsubxids, TransactionId *subxids,
 					XidStatus status, XLogRecPtr lsn);
 
-bool
+void 
 TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
                            TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
-	return TM->SetTransactionStatus(xid, nsubxids, subxids, status, lsn);
+	TM->SetTransactionStatus(xid, nsubxids, subxids, status, lsn);
 }
 
 /*
@@ -151,7 +151,7 @@ TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
  * but aren't yet in cache, as well as hinting pages not to fall out of
  * cache yet.
  */
-bool
+void 
 PgTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
 					TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
@@ -217,7 +217,6 @@ PgTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
 							subxids + nsubxids_on_first_page,
 							status, lsn);
 	}
-    return true;
 }
 
 /*

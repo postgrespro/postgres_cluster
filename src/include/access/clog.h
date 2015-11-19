@@ -30,7 +30,7 @@ typedef int XidStatus;
 #define TRANSACTION_STATUS_UNKNOWN 	        0x03
 
 
-extern bool TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
+extern void TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
                                        TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 extern XidStatus TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn);
 
