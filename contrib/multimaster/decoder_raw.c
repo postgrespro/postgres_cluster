@@ -41,7 +41,7 @@ extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
 typedef struct
 {
 	MemoryContext context;
-	bool		include_transaction;
+    bool isExternal;
 } DecoderRawData;
 
 static void decoder_raw_startup(LogicalDecodingContext *ctx,
@@ -79,67 +79,16 @@ decoder_raw_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 	ListCell   *option;
 	DecoderRawData *data;
 
-	data = palloc(sizeof(DecoderRawData));
+	data = (DecoderRawData*)palloc(sizeof(DecoderRawData));
 	data->context = AllocSetContextCreate(ctx->context,
 										  "Raw decoder context",
 										  ALLOCSET_DEFAULT_MINSIZE,
 										  ALLOCSET_DEFAULT_INITSIZE,
 										  ALLOCSET_DEFAULT_MAXSIZE);
-	data->include_transaction = false;
-
+    data->isExternal = false;
 	ctx->output_plugin_private = data;
 
-	/* Default output format */
 	opt->output_type = OUTPUT_PLUGIN_TEXTUAL_OUTPUT;
-
-	foreach(option, ctx->output_plugin_options)
-	{
-		DefElem    *elem = lfirst(option);
-
-		Assert(elem->arg == NULL || IsA(elem->arg, String));
-
-		if (strcmp(elem->defname, "include_transaction") == 0)
-		{
-			/* if option does not provide a value, it means its value is true */
-			if (elem->arg == NULL)
-				data->include_transaction = true;
-			else if (!parse_bool(strVal(elem->arg), &data->include_transaction))
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
-								strVal(elem->arg), elem->defname)));
-		}
-		else if (strcmp(elem->defname, "output_format") == 0)
-		{
-			char	   *format = NULL;
-
-			if (elem->arg == NULL)
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("No value specified for parameter \"%s\"",
-								elem->defname)));
-
-			format = strVal(elem->arg);
-
-			if (strcmp(format, "textual") == 0)
-				opt->output_type = OUTPUT_PLUGIN_TEXTUAL_OUTPUT;
-			else if (strcmp(format, "binary") == 0)
-				opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
-			else
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("Incorrect value \"%s\" for parameter \"%s\"",
-								format, elem->defname)));
-		}
-		else
-		{
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("option \"%s\" = \"%s\" is unknown",
-							elem->defname,
-							elem->arg ? strVal(elem->arg) : "(null)")));
-		}
-	}
 }
 
 /* cleanup this plugin's resources */
@@ -155,16 +104,16 @@ decoder_raw_shutdown(LogicalDecodingContext *ctx)
 /* BEGIN callback */
 static void
 decoder_raw_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
-{
+{   
 	DecoderRawData *data = ctx->output_plugin_private;
-
-	/* Write to the plugin only if there is */
-	if (data->include_transaction)
-	{
-		OutputPluginPrepareWrite(ctx, true);
-		appendStringInfoString(ctx->out, "BEGIN;");
-		OutputPluginWrite(ctx, true);
-	}
+    
+    if (MultimasterIsExternalTransaction(txn->xid)) {
+        data->isExternal = true;
+    } else { 
+        OutputPluginPrepareWrite(ctx, true);
+        appendStringInfoString(ctx->out, "BEGIN %u;", txn->xid);
+        OutputPluginWrite(ctx, true);
+    }
 }
 
 /* COMMIT callback */
@@ -173,14 +122,11 @@ decoder_raw_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					 XLogRecPtr commit_lsn)
 {
 	DecoderRawData *data = ctx->output_plugin_private;
-
-	/* Write to the plugin only if there is */
-	if (data->include_transaction)
-	{
-		OutputPluginPrepareWrite(ctx, true);
-		appendStringInfoString(ctx->out, "COMMIT;");
-		OutputPluginWrite(ctx, true);
-	}
+    if (!data->isExternal) { 
+        OutputPluginPrepareWrite(ctx, true);
+        appendStringInfoString(ctx->out, "COMMIT;");
+        OutputPluginWrite(ctx, true);
+    }
 }
 
 /*
@@ -530,7 +476,9 @@ decoder_raw_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	bool			is_rel_non_selective;
 
 	data = ctx->output_plugin_private;
-
+    if (data->isExternal) { 
+        return;
+    }
 	/* Avoid leaking memory by using and resetting our own context */
 	old = MemoryContextSwitchTo(data->context);
 

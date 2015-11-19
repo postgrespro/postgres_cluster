@@ -29,11 +29,10 @@
 #include "utils/guc.h"
 #include "utils/snapmgr.h"
 
+#include "multimaster.h"
+
 /* Allow load of this module in shared libs */
 PG_MODULE_MAGIC;
-
-extern void LogicalReplicationStartReceivers(char* nodes, int node_id);
-
 
 typedef struct ReceiverArgs { 
     char* receiver_conn_string;
@@ -210,6 +209,8 @@ receiver_raw_main(Datum main_arg)
 	PGconn *conn;
 	PGresult *res;
 
+    isBackgroundWorker = true;
+    
 	/* Register functions for SIGTERM/SIGHUP management */
 	pqsignal(SIGHUP, receiver_raw_sighup);
 	pqsignal(SIGTERM, receiver_raw_sigterm);
@@ -234,8 +235,7 @@ receiver_raw_main(Datum main_arg)
 	query = createPQExpBuffer();
 
 	/* Start logical replication at specified position */
-	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL 0/0 "
-					         "(\"include_transaction\" 'off')",
+	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL 0/0 ",
 					  args->receiver_slot);
 	res = PQexec(conn, query->data);
 	if (PQresultStatus(res) != PGRES_COPY_BOTH)
@@ -253,7 +253,7 @@ receiver_raw_main(Datum main_arg)
 		int rc, hdr_len;
 		/* Buffer for COPY data */
 		char	*copybuf = NULL;
-
+        bool insideTrans = false;
 		/* Wait necessary amount of time */
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
@@ -302,6 +302,7 @@ receiver_raw_main(Datum main_arg)
 		while (true)
 		{
 			XLogRecPtr  walEnd, walStart;
+            char* stmt;
 
 			rc = PQgetCopyData(conn, &copybuf, 1);
 			if (rc <= 0)
@@ -395,31 +396,45 @@ receiver_raw_main(Datum main_arg)
 						 (uint32) walEnd)));
 
 			/* Apply change to database */
-			pgstat_report_activity(STATE_RUNNING, copybuf + hdr_len);
+            stmt = copybuf + hdr_len;
+			pgstat_report_activity(STATE_RUNNING, stmt);
 			SetCurrentStatementStartTimestamp();
-
-			/* Execute query */
-			rc = SPI_execute(copybuf + hdr_len, false, 0);
-
-			if (rc == SPI_OK_INSERT)
-				ereport(LOG, (errmsg("%s: INSERT received correctly: %s",
-									 worker_name, copybuf + hdr_len)));
-			else if (rc == SPI_OK_UPDATE)
-				ereport(LOG, (errmsg("%s: UPDATE received correctly: %s",
-									 worker_name, copybuf + hdr_len)));
-			else if (rc == SPI_OK_DELETE)
-				ereport(LOG, (errmsg("%s: DELETE received correctly: %s",
-									 worker_name, copybuf + hdr_len)));
-			else
-				ereport(LOG, (errmsg("%s: Error when applying change: %s",
-									 worker_name, copybuf + hdr_len)));
-
+            
+            if (strncmp(stmt, "BEGIN ", 6) == 0) { 
+                TransactionId xid;
+                int rc = sscanf(stmt + 6, "%u", &xid);
+                Assert(rc == 1);
+                Assert(!insideTrans);
+                MultimasterJoinTransaction(xid);
+                insideTrans = true;
+            } else if (strncmp(stmt, "COMMIT;", 7) == 0) { 
+                Assert(insideTrans);
+                insideTrans = false;
+            } else {
+                Assert(insideTrans);
+                /* Execute query */
+                rc = SPI_execute(stmt, false, 0);
+                
+                if (rc == SPI_OK_INSERT)
+                    ereport(LOG, (errmsg("%s: INSERT received correctly: %s",
+                                         worker_name, stmt)));
+                else if (rc == SPI_OK_UPDATE)
+                    ereport(LOG, (errmsg("%s: UPDATE received correctly: %s",
+                                         worker_name, stmt)));
+                else if (rc == SPI_OK_DELETE)
+                    ereport(LOG, (errmsg("%s: DELETE received correctly: %s",
+                                         worker_name, stmt)));
+                else
+                    ereport(LOG, (errmsg("%s: Error when applying change: %s",
+                                         worker_name, stmt)));
+            }
 			/* Update written position */
 			output_written_lsn = Max(walEnd, output_written_lsn);
 			output_fsync_lsn = output_written_lsn;
 			output_applied_lsn = output_written_lsn;
 		}
 
+        Assert(!insideTrans);
 		/* Finish process */
 		SPI_finish();
 		PopActiveSnapshot();
@@ -514,7 +529,7 @@ receiver_raw_main(Datum main_arg)
 }
 
 
-void LogicalReplicationStartReceivers(char* conn_strs, int node_id)
+int LogicalReplicationStartReceivers(char* conn_strs, int node_id)
 {
     int i = 0;
 	BackgroundWorker worker;
@@ -529,7 +544,7 @@ void LogicalReplicationStartReceivers(char* conn_strs, int node_id)
             p = conn_strs + strlen(conn_strs);
         }
         if (++i != node_id) {
-            RecevierCtx* ctx = (ReceiverArgs*)pg_malloc(sizeof(RecevierCtx));
+            RecevierCtx* ctx = (ReceiverArgs*)malloc(sizeof(RecevierCtx));
             if (receiver_database == NULL) {
                 char* dbname = strstr(conn_strs, "dbname=");
                 char* eon;
@@ -538,7 +553,7 @@ void LogicalReplicationStartReceivers(char* conn_strs, int node_id)
                 dbname += 7;
                 eon = strchar(dbname, ' ');
                 len = eon - dbname;
-                receiver_database = (char*)pg_malloc(len + 1);
+                receiver_database = (char*)malloc(len + 1);
                 memcpy(receiver_database, dbname, len);
                 dbname[len] = '\0';
             }
@@ -554,4 +569,6 @@ void LogicalReplicationStartReceivers(char* conn_strs, int node_id)
         }
         conn_strs = p;
     } while (*conn_strs != '\0');
+
+    return i;
 }

@@ -44,6 +44,7 @@
 #include "sockhub/sockhub.h"
 
 #include "libdtm.h"
+#include "multimaster.h"
 
 typedef struct
 {
@@ -52,6 +53,7 @@ typedef struct
 	TransactionId minXid;  /* XID of oldest transaction visible by any active transaction (local or global) */
 	TransactionId nextXid; /* next XID for local transaction */
 	size_t nReservedXids;  /* number of XIDs reserved for local transactions */
+    int    nNodes;
 } DtmState;
 
 typedef struct
@@ -61,18 +63,17 @@ typedef struct
     int used;
 } ByteBuffer;
 
+typedef struct
+{
+    TransactionId xid;
+    int count;
+} ExternalTransaction;
 
 #define DTM_SHMEM_SIZE (1024*1024)
 #define DTM_HASH_SIZE  1003
 
 void _PG_init(void);
 void _PG_fini(void);
-
-extern void LogicalReplicationStartReceivers(char* nodes, int node_id);
-extern void LogicalReplicationBroadcastXid(TransactonId Xid);
-
-void MultimasterBeginTransaction(void);
-void MultimasterJoinTransaction(TransactionId xid);
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static void DtmMergeWithGlobalSnapshot(Snapshot snapshot);
@@ -103,6 +104,7 @@ static void ByteBufferFree(ByteBuffer* buf);
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB* xid_in_doubt;
+static HTAB* external_trans;
 static DtmState* dtm;
 static Snapshot CurrentTransactionSnapshot;
 
@@ -126,10 +128,13 @@ static TransactionManager DtmTM = {
 
 static char* MultimasterConnStrs;
 static int MultimasterNodeId;
+static int MultimasterNodes;
 
 static char* DtmHost;
 static int DtmPort;
 static int DtmBufferSize;
+
+bool isBackgroundWorker;
 
 static BackgroundWorker DtmWorker = {
 	"DtmWorker",
@@ -694,6 +699,7 @@ static void DtmInitialize()
 		dtm->xidLock = LWLockAssign();
 		dtm->nReservedXids = 0;
 		dtm->minXid = InvalidTransactionId;
+        dtm->nNodes = MultimasterNodes;
 		RegisterXactCallback(DtmXactCallback, NULL);
 	}
 	LWLockRelease(AddinShmemInitLock);
@@ -704,6 +710,17 @@ static void DtmInitialize()
 	info.match = dtm_xid_match_fn;
 	xid_in_doubt = ShmemInitHash(
 		"xid_in_doubt",
+		DTM_HASH_SIZE, DTM_HASH_SIZE,
+		&info,
+		HASH_ELEM | HASH_FUNCTION | HASH_COMPARE
+	);
+
+	info.keysize = sizeof(TransactionId);
+	info.entrysize = sizeof(ExternalTransaction);
+	info.hash = dtm_xid_hash_fn;
+	info.match = dtm_xid_match_fn;
+	external_trans = ShmemInitHash(
+		"external_trans",
 		DTM_HASH_SIZE, DTM_HASH_SIZE,
 		&info,
 		HASH_ELEM | HASH_FUNCTION | HASH_COMPARE
@@ -720,7 +737,9 @@ DtmXactCallback(XactEvent event, void *arg)
     switch (event) 
     {
       case XACT_EVENT_BEGIN:
-          MultimasterBeginTransaction();
+          if (!isBackgroundWorker) {
+              MultimasterBeginTransaction();
+          }
           break;
       case XACT_EVENT_COMMIT:
       case XACT_EVENT_ABORT:
@@ -865,7 +884,7 @@ _PG_init(void)
 		NULL
 	);
     
-    LogicalReplicationStartReceivers(MultimasterConnStrs, MultimasterNodeId);
+    MultimasterNodes = LogicalReplicationStartReceivers(MultimasterConnStrs, MultimasterNodeId);
 
 	if (DtmBufferSize != 0)
 	{
@@ -931,10 +950,8 @@ dtm_get_current_snapshot_xcnt(PG_FUNCTION_ARGS)
 
 void MultimasterBeginTransaction(void)
 {
-	if (TransactionIdIsValid(DtmNextXid)) {
-        /* slave transaction */
-        return;
-    }
+	if (TransactionIdIsValid(DtmNextXid))
+		elog(ERROR, "MultimasterBeginTransaction should be called only once for global transaction");
 	if (dtm == NULL)
 		elog(ERROR, "DTM is not properly initialized, please check that pg_dtm plugin was added to shared_preload_libraries list in postgresql.conf");
 	DtmNextXid = DtmGlobalStartTransaction(&DtmSnapshot, &dtm->minXid);
@@ -944,12 +961,12 @@ void MultimasterBeginTransaction(void)
 
 	DtmHasGlobalSnapshot = true;
 	DtmLastSnapshot = NULL;
-
-    LogicalReplicationBroadcastXid(DtmNextXid);
 }
 
 void MultimasterJoinTransaction(TransactionId xid)
 {
+    ExternalTrans* et;
+
 	if (TransactionIdIsValid(DtmNextXid))
 		elog(ERROR, "dtm_begin/join_transaction should be called only once for global transaction");
 	DtmNextXid = xid;
@@ -961,7 +978,30 @@ void MultimasterJoinTransaction(TransactionId xid)
 
 	DtmHasGlobalSnapshot = true;
 	DtmLastSnapshot = NULL;
+
+    LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
+    et = hash_search(external_trans, &DtmNextXid, HASH_ENTER, NULL);
+    et->count = dtm->nNodes-1;
+    LWLockRelease(dtm->hashLock);
 }
+
+bool MultimasterIsExternalTransaction(TransactionId xid)
+{
+    ExternalTrans* et;
+    bool result = false;
+    LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
+    et = hash_search(external_trans, &DtmNextXid, HASH_FIND, NULL);
+    if (et != NULL) { 
+        result = true;
+        if (--et->count == 0) { 
+            hash_search(external_trans, &DtmNextXid, HASH_REMOVE, NULL);
+        }
+    }
+    LWLockRelease(dtm->hashLock);
+    return result;
+}
+
+
 
 void DtmBackgroundWorker(Datum arg)
 {
@@ -969,6 +1009,8 @@ void DtmBackgroundWorker(Datum arg)
 	ShubParams params;
 	char unix_sock_path[MAXPGPATH];
 
+    isBackgroundWorker = true;
+    
 	snprintf(unix_sock_path, sizeof(unix_sock_path), "%s/p%d", Unix_socket_directories, DtmPort);
 
 	ShubInitParams(&params);
