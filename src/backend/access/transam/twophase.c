@@ -167,6 +167,19 @@ static void ProcessRecords(char *bufptr, TransactionId xid,
 static void RemoveGXact(GlobalTransaction gxact);
 
 
+
+static char twophase_buf[10*1024];
+static int twophase_pos = 0;
+size_t 
+bogus_write(int fd, char *buf, size_t nbytes)
+{
+	memcpy(twophase_buf + twophase_pos, buf, nbytes);
+	twophase_pos += nbytes;
+	return nbytes;
+}
+
+
+
 /*
  * Initialization of shared memory
  */
@@ -1050,11 +1063,13 @@ EndPrepare(GlobalTransaction gxact)
 	/*
 	 * Create the 2PC state file.
 	 */
-	TwoPhaseFilePath(path, xid);
+	// TwoPhaseFilePath(path, xid);
 
-	fd = OpenTransientFile(path,
-						   O_CREAT | O_EXCL | O_WRONLY | PG_BINARY,
-						   S_IRUSR | S_IWUSR);
+	// fd = OpenTransientFile(path,
+	// 					   O_CREAT | O_EXCL | O_WRONLY | PG_BINARY,
+	// 					   S_IRUSR | S_IWUSR);
+	fd = 1;
+
 	if (fd < 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
@@ -1067,7 +1082,7 @@ EndPrepare(GlobalTransaction gxact)
 	for (record = records.head; record != NULL; record = record->next)
 	{
 		COMP_CRC32C(statefile_crc, record->data, record->len);
-		if ((write(fd, record->data, record->len)) != record->len)
+		if ((bogus_write(fd, record->data, record->len)) != record->len)
 		{
 			CloseTransientFile(fd);
 			ereport(ERROR,
@@ -1078,28 +1093,28 @@ EndPrepare(GlobalTransaction gxact)
 
 	FIN_CRC32C(statefile_crc);
 
-	/*
-	 * Write a deliberately bogus CRC to the state file; this is just paranoia
-	 * to catch the case where four more bytes will run us out of disk space.
-	 */
-	bogus_crc = ~statefile_crc;
+	// /*
+	//  * Write a deliberately bogus CRC to the state file; this is just paranoia
+	//  * to catch the case where four more bytes will run us out of disk space.
+	//  */
+	// bogus_crc = ~statefile_crc;
 
-	if ((write(fd, &bogus_crc, sizeof(pg_crc32c))) != sizeof(pg_crc32c))
-	{
-		CloseTransientFile(fd);
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not write two-phase state file: %m")));
-	}
+	// if ((bogus_write(fd, &bogus_crc, sizeof(pg_crc32c))) != sizeof(pg_crc32c))
+	// {
+	// 	CloseTransientFile(fd);
+	// 	ereport(ERROR,
+	// 			(errcode_for_file_access(),
+	// 			 errmsg("could not write two-phase state file: %m")));
+	// }
 
-	/* Back up to prepare for rewriting the CRC */
-	if (lseek(fd, -((off_t) sizeof(pg_crc32c)), SEEK_CUR) < 0)
-	{
-		CloseTransientFile(fd);
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not seek in two-phase state file: %m")));
-	}
+	// /* Back up to prepare for rewriting the CRC */
+	// if (lseek(fd, -((off_t) sizeof(pg_crc32c)), SEEK_CUR) < 0)
+	// {
+	// 	CloseTransientFile(fd);
+	// 	ereport(ERROR,
+	// 			(errcode_for_file_access(),
+	// 			 errmsg("could not seek in two-phase state file: %m")));
+	// }
 
 	/*
 	 * The state file isn't valid yet, because we haven't written the correct
@@ -1137,7 +1152,7 @@ EndPrepare(GlobalTransaction gxact)
 	/* If we crash now, we have prepared: WAL replay will fix things */
 
 	/* write correct CRC and close file */
-	if ((write(fd, &statefile_crc, sizeof(pg_crc32c))) != sizeof(pg_crc32c))
+	if ((bogus_write(fd, &statefile_crc, sizeof(pg_crc32c))) != sizeof(pg_crc32c))
 	{
 		CloseTransientFile(fd);
 		ereport(ERROR,
@@ -1145,10 +1160,10 @@ EndPrepare(GlobalTransaction gxact)
 				 errmsg("could not write two-phase state file: %m")));
 	}
 
-	if (CloseTransientFile(fd) != 0)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not close two-phase state file: %m")));
+	// if (CloseTransientFile(fd) != 0)
+	// 	ereport(ERROR,
+	// 			(errcode_for_file_access(),
+	// 			 errmsg("could not close two-phase state file: %m")));
 
 	/*
 	 * Mark the prepared transaction as valid.  As soon as xact.c marks
@@ -1219,27 +1234,28 @@ RegisterTwoPhaseRecord(TwoPhaseRmgrId rmid, uint16 info,
 static char *
 ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 {
-	char		path[MAXPGPATH];
-	char	   *buf;
-	TwoPhaseFileHeader *hdr;
-	int			fd;
-	struct stat stat;
-	uint32		crc_offset;
-	pg_crc32c	calc_crc,
-				file_crc;
+	// char		path[MAXPGPATH];
+	// char	   *buf;
+	// TwoPhaseFileHeader *hdr;
+	// int			fd;
+	// struct stat stat;
+	// uint32		crc_offset;
+	// pg_crc32c	calc_crc,
+	// 			file_crc;
 
-	TwoPhaseFilePath(path, xid);
+	// TwoPhaseFilePath(path, xid);
 
-	fd = OpenTransientFile(path, O_RDONLY | PG_BINARY, 0);
-	if (fd < 0)
-	{
-		if (give_warnings)
-			ereport(WARNING,
-					(errcode_for_file_access(),
-					 errmsg("could not open two-phase state file \"%s\": %m",
-							path)));
-		return NULL;
-	}
+	// fd = OpenTransientFile(path, O_RDONLY | PG_BINARY, 0);
+
+	// if (fd < 0)
+	// {
+	// 	if (give_warnings)
+	// 		ereport(WARNING,
+	// 				(errcode_for_file_access(),
+	// 				 errmsg("could not open two-phase state file \"%s\": %m",
+	// 						path)));
+	// 	return NULL;
+	// }
 
 	/*
 	 * Check file length.  We can determine a lower bound pretty easily. We
@@ -1247,72 +1263,72 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 	 * we can't guarantee that we won't get an out of memory error anyway,
 	 * even on a valid file.
 	 */
-	if (fstat(fd, &stat))
-	{
-		CloseTransientFile(fd);
-		if (give_warnings)
-			ereport(WARNING,
-					(errcode_for_file_access(),
-					 errmsg("could not stat two-phase state file \"%s\": %m",
-							path)));
-		return NULL;
-	}
+	// if (fstat(fd, &stat))
+	// {
+	// 	CloseTransientFile(fd);
+	// 	if (give_warnings)
+	// 		ereport(WARNING,
+	// 				(errcode_for_file_access(),
+	// 				 errmsg("could not stat two-phase state file \"%s\": %m",
+	// 						path)));
+	// 	return NULL;
+	// }
 
-	if (stat.st_size < (MAXALIGN(sizeof(TwoPhaseFileHeader)) +
-						MAXALIGN(sizeof(TwoPhaseRecordOnDisk)) +
-						sizeof(pg_crc32c)) ||
-		stat.st_size > MaxAllocSize)
-	{
-		CloseTransientFile(fd);
-		return NULL;
-	}
+	// if (stat.st_size < (MAXALIGN(sizeof(TwoPhaseFileHeader)) +
+	// 					MAXALIGN(sizeof(TwoPhaseRecordOnDisk)) +
+	// 					sizeof(pg_crc32c)) ||
+	// 	stat.st_size > MaxAllocSize)
+	// {
+	// 	CloseTransientFile(fd);
+	// 	return NULL;
+	// }
 
-	crc_offset = stat.st_size - sizeof(pg_crc32c);
-	if (crc_offset != MAXALIGN(crc_offset))
-	{
-		CloseTransientFile(fd);
-		return NULL;
-	}
+	// crc_offset = stat.st_size - sizeof(pg_crc32c);
+	// if (crc_offset != MAXALIGN(crc_offset))
+	// {
+	// 	CloseTransientFile(fd);
+	// 	return NULL;
+	// }
 
-	/*
-	 * OK, slurp in the file.
-	 */
-	buf = (char *) palloc(stat.st_size);
+	// /*
+	//  * OK, slurp in the file.
+	//  */
+	// buf = (char *) palloc(stat.st_size);
 
-	if (read(fd, buf, stat.st_size) != stat.st_size)
-	{
-		CloseTransientFile(fd);
-		if (give_warnings)
-			ereport(WARNING,
-					(errcode_for_file_access(),
-					 errmsg("could not read two-phase state file \"%s\": %m",
-							path)));
-		pfree(buf);
-		return NULL;
-	}
+	// if (read(fd, buf, stat.st_size) != stat.st_size)
+	// {
+	// 	CloseTransientFile(fd);
+	// 	if (give_warnings)
+	// 		ereport(WARNING,
+	// 				(errcode_for_file_access(),
+	// 				 errmsg("could not read two-phase state file \"%s\": %m",
+	// 						path)));
+	// 	pfree(buf);
+	// 	return NULL;
+	// }
 
-	CloseTransientFile(fd);
+	// CloseTransientFile(fd);
 
-	hdr = (TwoPhaseFileHeader *) buf;
-	if (hdr->magic != TWOPHASE_MAGIC || hdr->total_len != stat.st_size)
-	{
-		pfree(buf);
-		return NULL;
-	}
+	// hdr = (TwoPhaseFileHeader *) buf;
+	// if (hdr->magic != TWOPHASE_MAGIC || hdr->total_len != stat.st_size)
+	// {
+	// 	pfree(buf);
+	// 	return NULL;
+	// }
 
-	INIT_CRC32C(calc_crc);
-	COMP_CRC32C(calc_crc, buf, crc_offset);
-	FIN_CRC32C(calc_crc);
+	// INIT_CRC32C(calc_crc);
+	// COMP_CRC32C(calc_crc, buf, crc_offset);
+	// FIN_CRC32C(calc_crc);
 
-	file_crc = *((pg_crc32c *) (buf + crc_offset));
+	// file_crc = *((pg_crc32c *) (buf + crc_offset));
 
-	if (!EQ_CRC32C(calc_crc, file_crc))
-	{
-		pfree(buf);
-		return NULL;
-	}
+	// if (!EQ_CRC32C(calc_crc, file_crc))
+	// {
+	// 	pfree(buf);
+	// 	return NULL;
+	// }
 
-	return buf;
+	return twophase_buf;
 }
 
 /*
@@ -1489,7 +1505,7 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	RemoveGXact(gxact);
 	MyLockedGxact = NULL;
 
-	pfree(buf);
+	// pfree(buf);
 }
 
 /*
@@ -1527,15 +1543,16 @@ ProcessRecords(char *bufptr, TransactionId xid,
 void
 RemoveTwoPhaseFile(TransactionId xid, bool giveWarning)
 {
-	char		path[MAXPGPATH];
+	// char		path[MAXPGPATH];
 
-	TwoPhaseFilePath(path, xid);
-	if (unlink(path))
-		if (errno != ENOENT || giveWarning)
-			ereport(WARNING,
-					(errcode_for_file_access(),
-				   errmsg("could not remove two-phase state file \"%s\": %m",
-						  path)));
+	// TwoPhaseFilePath(path, xid);
+	// if (unlink(path))
+	// 	if (errno != ENOENT || giveWarning)
+	// 		ereport(WARNING,
+	// 				(errcode_for_file_access(),
+	// 			   errmsg("could not remove two-phase state file \"%s\": %m",
+	// 					  path)));
+	twophase_pos = 0;
 }
 
 /*
