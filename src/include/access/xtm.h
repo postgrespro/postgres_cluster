@@ -21,7 +21,7 @@ typedef struct
 	/* Get current transaction status (encapsulation of TransactionIdGetStatus in clog.c) */
 	XidStatus (*GetTransactionStatus)(TransactionId xid, XLogRecPtr *lsn);
 
-	/* Set current transaction status (encapsulation of TransactionIdGetStatus in clog.c) */
+	/* Set current transaction status (encapsulation of TransactionIdSetTreeStatus in clog.c) */
 	bool (*SetTransactionStatus)(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 
 	/* Get current transaction snaphot (encapsulation of GetSnapshotData in procarray.c) */
