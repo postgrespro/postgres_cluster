@@ -990,11 +990,11 @@ bool MultimasterIsExternalTransaction(TransactionId xid)
     ExternalTrans* et;
     bool result = false;
     LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
-    et = hash_search(external_trans, &DtmNextXid, HASH_FIND, NULL);
+    et = hash_search(external_trans, &xid, HASH_FIND, NULL);
     if (et != NULL) { 
         result = true;
         if (--et->count == 0) { 
-            hash_search(external_trans, &DtmNextXid, HASH_REMOVE, NULL);
+            hash_search(external_trans, &xid, HASH_REMOVE, NULL);
         }
     }
     LWLockRelease(dtm->hashLock);
