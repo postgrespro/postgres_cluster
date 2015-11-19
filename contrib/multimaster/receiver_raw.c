@@ -402,7 +402,7 @@ receiver_raw_main(Datum main_arg)
                 int rc = sscanf(stmt + 6, "%u", &xid);
                 Assert(rc == 1);
                 Assert(!insideTrans);
-                MultimasterJoinTransaction(xid);
+                MMJoinTransaction(xid);
                 insideTrans = true;
             } else if (strncmp(stmt, "COMMIT;", 7) == 0) { 
                 Assert(insideTrans);
@@ -526,7 +526,7 @@ receiver_raw_main(Datum main_arg)
 }
 
 
-int LogicalReplicationStartReceivers(char* conn_strs, int node_id)
+int MMStartReceivers(char* conn_strs, int node_id)
 {
     int i = 0;
 	BackgroundWorker worker;

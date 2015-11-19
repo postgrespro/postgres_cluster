@@ -39,7 +39,7 @@ extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
 typedef struct
 {
 	MemoryContext context;
-    bool isExternal;
+    bool isLocal;
 } DecoderRawData;
 
 static void decoder_raw_startup(LogicalDecodingContext *ctx,
@@ -82,7 +82,7 @@ decoder_raw_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 										  ALLOCSET_DEFAULT_MINSIZE,
 										  ALLOCSET_DEFAULT_INITSIZE,
 										  ALLOCSET_DEFAULT_MAXSIZE);
-    data->isExternal = false;
+    data->isLocal = false;
 	ctx->output_plugin_private = data;
 
 	opt->output_type = OUTPUT_PLUGIN_TEXTUAL_OUTPUT;
@@ -104,8 +104,8 @@ decoder_raw_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 {   
 	DecoderRawData *data = ctx->output_plugin_private;
     
-    if (MultimasterIsExternalTransaction(txn->xid)) {
-        data->isExternal = true;
+    if (MMIsLocalTransaction(txn->xid)) {
+        data->isLocal = true;
     } else { 
         OutputPluginPrepareWrite(ctx, true);
         appendStringInfo(ctx->out, "BEGIN %u;", txn->xid);
@@ -119,7 +119,7 @@ decoder_raw_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					 XLogRecPtr commit_lsn)
 {
 	DecoderRawData *data = ctx->output_plugin_private;
-    if (!data->isExternal) { 
+    if (!data->isLocal) { 
         OutputPluginPrepareWrite(ctx, true);
         appendStringInfoString(ctx->out, "COMMIT;");
         OutputPluginWrite(ctx, true);
@@ -473,7 +473,7 @@ decoder_raw_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	bool			is_rel_non_selective;
 
 	data = ctx->output_plugin_private;
-    if (data->isExternal) { 
+    if (data->isLocal) { 
         return;
     }
 	/* Avoid leaking memory by using and resetting our own context */

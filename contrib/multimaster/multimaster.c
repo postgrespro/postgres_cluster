@@ -67,7 +67,7 @@ typedef struct
 {
     TransactionId xid;
     int count;
-} ExternalTransaction;
+} LocalTransaction;
 
 #define DTM_SHMEM_SIZE (1024*1024)
 #define DTM_HASH_SIZE  1003
@@ -76,6 +76,9 @@ void _PG_init(void);
 void _PG_fini(void);
 
 PG_MODULE_MAGIC;
+
+PG_FUNCTION_INFO_V1(mm_start_replication);
+PG_FUNCTION_INFO_V1(mm_stop_replication);
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static void DtmMergeWithGlobalSnapshot(Snapshot snapshot);
@@ -103,10 +106,11 @@ static void ByteBufferAppend(ByteBuffer* buf, void* data, int len);
 static void ByteBufferAppendInt32(ByteBuffer* buf, int data);
 static void ByteBufferFree(ByteBuffer* buf);
 
+static void MMMarkTransAsLocal(TransactionId xid);
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB* xid_in_doubt;
-static HTAB* external_trans;
+static HTAB* local_trans;
 static DtmState* dtm;
 static Snapshot CurrentTransactionSnapshot;
 
@@ -128,9 +132,10 @@ static TransactionManager DtmTM = {
     DtmDetectGlobalDeadLock
 };
 
-static char* MultimasterConnStrs;
-static int MultimasterNodeId;
-static int MultimasterNodes;
+static char* MMConnStrs;
+static int   MMNodeId;
+static int   MMNodes;
+static bool  MMDoReplication = true;
 
 static char* DtmHost;
 static int DtmPort;
@@ -145,8 +150,8 @@ static BackgroundWorker DtmWorker = {
 };
 
 #define XTM_TRACE(fmt, ...)
-//#define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
-#define XTM_INFO(fmt, ...)
+#define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
+//#define XTM_INFO(fmt, ...)
 
 static void DumpSnapshot(Snapshot s, char *name)
 {
@@ -697,7 +702,7 @@ static void DtmInitialize()
 		dtm->xidLock = LWLockAssign();
 		dtm->nReservedXids = 0;
 		dtm->minXid = InvalidTransactionId;
-        dtm->nNodes = MultimasterNodes;
+        dtm->nNodes = MMNodes;
 		RegisterXactCallback(DtmXactCallback, NULL);
 	}
 	LWLockRelease(AddinShmemInitLock);
@@ -714,11 +719,11 @@ static void DtmInitialize()
 	);
 
 	info.keysize = sizeof(TransactionId);
-	info.entrysize = sizeof(ExternalTransaction);
+	info.entrysize = sizeof(LocalTransaction);
 	info.hash = dtm_xid_hash_fn;
 	info.match = dtm_xid_match_fn;
-	external_trans = ShmemInitHash(
-		"external_trans",
+	local_trans = ShmemInitHash(
+		"local_trans",
 		DTM_HASH_SIZE, DTM_HASH_SIZE,
 		&info,
 		HASH_ELEM | HASH_FUNCTION | HASH_COMPARE
@@ -734,14 +739,19 @@ DtmXactCallback(XactEvent event, void *arg)
 	XTM_INFO("%d: DtmXactCallbackevent=%d nextxid=%d\n", getpid(), event, DtmNextXid);
     switch (event) 
     {
-      case XACT_EVENT_START: 
-       if (MyProc && MyProc->backendId != InvalidBackendId) { 
-           printf("getpid=%d, MyProc=%d, MyProc->backendId=%d\n", getpid(), MyProc->pid, MyProc->backendId);
-           MultimasterBeginTransaction();
+    case XACT_EVENT_START: 
+        if (MyBackendId != InvalidBackendId && MMDoReplication) { 
+            printf("getpid=%d, backendId=%d\n", getpid(), MyBackendId);
+            MMBeginTransaction();
         }
         break;
-      case XACT_EVENT_COMMIT:
-      case XACT_EVENT_ABORT:
+    case XACT_EVENT_PRE_COMMIT:
+    case XACT_EVENT_PARALLEL_PRE_COMMIT:
+        if (!MMDoReplication && TransactionIdIsValid(GetCurrentTransactionIdIfAny())) {
+            MMMarkTransAsLocal(GetCurrentTransactionIdIfAny());               
+        }
+        break;
+    case XACT_EVENT_ABORT:
 		if (TransactionIdIsValid(DtmNextXid))
 		{
 			if (event == XACT_EVENT_COMMIT)
@@ -862,7 +872,7 @@ _PG_init(void)
 		"multimaster.conn_strings",
 		"Multimaster node connection strings separated by commas, i.e. 'replication=database dbname=postgres host=localhost port=5001,replication=database dbname=postgres host=localhost port=5002'",
 		NULL,
-		&MultimasterConnStrs,
+		&MMConnStrs,
 		"",
 		PGC_POSTMASTER, // context
 		0, // flags,
@@ -875,7 +885,7 @@ _PG_init(void)
 		"multimaster.node_id",
 		"Multimaster node ID",
 		NULL,
-		&MultimasterNodeId,
+		&MMNodeId,
 		1,
 		1,
 		INT_MAX,
@@ -886,7 +896,7 @@ _PG_init(void)
 		NULL
 	);
     
-    MultimasterNodes = LogicalReplicationStartReceivers(MultimasterConnStrs, MultimasterNodeId);
+    MMNodes = MMStartReceivers(MMConnStrs, MMNodeId);
 
 	if (DtmBufferSize != 0)
 	{
@@ -924,10 +934,10 @@ static void DtmShmemStartup(void)
  *  ***************************************************************************
  */
 
-void MultimasterBeginTransaction(void)
+void MMBeginTransaction(void)
 {
 	if (TransactionIdIsValid(DtmNextXid))
-		elog(ERROR, "MultimasterBeginTransaction should be called only once for global transaction");
+		elog(ERROR, "MMBeginTransaction should be called only once for global transaction");
 	if (dtm == NULL)
 		elog(ERROR, "DTM is not properly initialized, please check that pg_dtm plugin was added to shared_preload_libraries list in postgresql.conf");
 	DtmNextXid = DtmGlobalStartTransaction(&DtmSnapshot, &dtm->minXid);
@@ -939,10 +949,8 @@ void MultimasterBeginTransaction(void)
 	DtmLastSnapshot = NULL;
 }
 
-void MultimasterJoinTransaction(TransactionId xid)
+void MMJoinTransaction(TransactionId xid)
 {
-    ExternalTransaction* et;
-
 	if (TransactionIdIsValid(DtmNextXid))
 		elog(ERROR, "dtm_begin/join_transaction should be called only once for global transaction");
 	DtmNextXid = xid;
@@ -955,27 +963,51 @@ void MultimasterJoinTransaction(TransactionId xid)
 	DtmHasGlobalSnapshot = true;
 	DtmLastSnapshot = NULL;
 
+    MMMarkTransAsLocal(DtmNextXid);
+}
+ 
+
+void MMMarkTransAsLocal(TransactionId xid)
+{
+    LocalTransaction* lt;
+
+    Assert(TransactionIdIsValid(xid));
     LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
-    et = hash_search(external_trans, &DtmNextXid, HASH_ENTER, NULL);
-    et->count = dtm->nNodes-1;
+    lt = hash_search(local_trans, &xid, HASH_ENTER, NULL);
+    lt->count = dtm->nNodes-1;
     LWLockRelease(dtm->hashLock);
 }
 
-bool MultimasterIsExternalTransaction(TransactionId xid)
+bool MMIsLocalTransaction(TransactionId xid)
 {
-    ExternalTransaction* et;
+    LocalTransaction* lt;
     bool result = false;
     LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
-    et = hash_search(external_trans, &xid, HASH_FIND, NULL);
-    if (et != NULL) { 
+    lt = hash_search(local_trans, &xid, HASH_FIND, NULL);
+    if (lt != NULL) { 
         result = true;
-        if (--et->count == 0) { 
-            hash_search(external_trans, &xid, HASH_REMOVE, NULL);
+        if (--lt->count == 0) { 
+            hash_search(local_trans, &xid, HASH_REMOVE, NULL);
         }
     }
     LWLockRelease(dtm->hashLock);
     return result;
 }
+
+Datum
+mm_start_replication(PG_FUNCTION_ARGS)
+{
+    MMDoReplication = true;
+    PG_RETURN_VOID();
+}
+
+Datum
+mm_stop_replication(PG_FUNCTION_ARGS)
+{
+    MMDoReplication = false;
+    PG_RETURN_VOID();
+}
+
 
 
 

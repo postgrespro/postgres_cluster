@@ -255,11 +255,11 @@ static void die(int sig) {
 void ShubLoop(Shub* shub)
 {    
     int buffer_size = shub->params->buffer_size;
+    sigset_t sset;
     signal(SIGINT, die);
     signal(SIGQUIT, die);
     signal(SIGTERM, die);
-    // signal(SIGHUP, die);
-    sigset_t sset;
+    /* signal(SIGHUP, die); */
     sigfillset(&sset);
     sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
