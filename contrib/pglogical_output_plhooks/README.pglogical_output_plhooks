@@ -124,8 +124,6 @@ want to add any params.
 Transaction filter
 ---
 
-Called only on 9.5+; ignored on 9.4.
-
 The arguments are the replication origin identifier and the client hook param.
 
 The return value is true to keep the transaction, false to discard it.
