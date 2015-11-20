@@ -296,7 +296,7 @@ void DtmInitSnapshot(Snapshot snapshot)
 	#endif
 }
 
-TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin)
+TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin, int nParticipants)
 {
 	int i;
 	xid_t xid;
@@ -307,7 +307,7 @@ TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin)
 	assert(snapshot != NULL);
 
 	// command
-	if (!dtm_send_command(dtm, CMD_BEGIN, 0)) goto failure;
+	if (!dtm_send_command(dtm, CMD_BEGIN, 1, nParticipants)) goto failure;
 
 	// results
 	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);

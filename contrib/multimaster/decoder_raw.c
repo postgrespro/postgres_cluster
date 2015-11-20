@@ -108,8 +108,10 @@ decoder_raw_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
         data->isLocal = true;
     } else { 
         OutputPluginPrepareWrite(ctx, true);
+        elog(WARNING, "Send transation to %u to replica", txn->xid);
         appendStringInfo(ctx->out, "BEGIN %u;", txn->xid);
         OutputPluginWrite(ctx, true);
+        data->isLocal = false;
     }
 }
 
@@ -120,6 +122,7 @@ decoder_raw_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	DecoderRawData *data = ctx->output_plugin_private;
     if (!data->isLocal) { 
+        elog(WARNING, "Send commit of %u to replica", txn->xid);
         OutputPluginPrepareWrite(ctx, true);
         appendStringInfoString(ctx->out, "COMMIT;");
         OutputPluginWrite(ctx, true);
@@ -476,7 +479,9 @@ decoder_raw_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
     if (data->isLocal) { 
         return;
     }
-	/* Avoid leaking memory by using and resetting our own context */
+    elog(WARNING, "Send action %d in transaction  %u to replica", change->action, txn->xid);
+
+ 	/* Avoid leaking memory by using and resetting our own context */
 	old = MemoryContextSwitchTo(data->context);
 
 	/*

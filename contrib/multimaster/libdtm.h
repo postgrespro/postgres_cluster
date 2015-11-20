@@ -22,7 +22,7 @@ void DtmInitSnapshot(Snapshot snapshot);
  * smallest xmin among all snapshots known to arbiter. Returns INVALID_XID
  * otherwise.
  */
-TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin);
+TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin, int nParticipants);
 
 /**
  * Asks the arbiter for a fresh snapshot. Fills the 'snapshot' and 'gxmin' on

@@ -38,6 +38,8 @@ typedef struct ReceiverArgs {
     char receiver_slot[16];
 } ReceiverArgs;
 
+#define ERRCODE_DUPLICATE_OBJECT_STR  "42710"
+
 /* Signal handling */
 static volatile sig_atomic_t got_sigterm = false;
 static volatile sig_atomic_t got_sighup = false;
@@ -207,10 +209,12 @@ receiver_raw_main(Datum main_arg)
 	PQExpBuffer query;
 	PGconn *conn;
 	PGresult *res;
-
+    bool insideTrans = false;
+    
 	/* Register functions for SIGTERM/SIGHUP management */
 	pqsignal(SIGHUP, receiver_raw_sighup);
 	pqsignal(SIGTERM, receiver_raw_sigterm);
+
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -223,13 +227,28 @@ receiver_raw_main(Datum main_arg)
 	if (PQstatus(conn) != CONNECTION_OK)
 	{
 		PQfinish(conn);
-		ereport(LOG, (errmsg("%s: Could not establish connection to remote server",
+		ereport(ERROR, (errmsg("%s: Could not establish connection to remote server",
 							 worker_name)));
 		proc_exit(1);
 	}
 
-	/* Query buffer for remote connection */
 	query = createPQExpBuffer();
+
+    appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", args->receiver_slot, worker_name);
+    res = PQexec(conn, query->data);
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+	{
+ 		const char *sqlstate = PQresultErrorField(res, PG_DIAG_SQLSTATE);
+        if (!sqlstate || strcmp(sqlstate, ERRCODE_DUPLICATE_OBJECT_STR) != 0)
+		{
+            PQclear(res);
+            ereport(ERROR, (errmsg("%s: Could not create logical slot",
+                                 worker_name)));
+            proc_exit(1);
+        }
+    }
+    PQclear(res);
+	resetPQExpBuffer(query);
 
 	/* Start logical replication at specified position */
 	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL 0/0 ",
@@ -245,12 +264,13 @@ receiver_raw_main(Datum main_arg)
 	PQclear(res);
 	resetPQExpBuffer(query);
 
+    MMReceiverStarted();
+
 	while (!got_sigterm)
 	{
 		int rc, hdr_len;
 		/* Buffer for COPY data */
 		char	*copybuf = NULL;
-        bool insideTrans = false;
 		/* Wait necessary amount of time */
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
@@ -285,15 +305,6 @@ receiver_raw_main(Datum main_arg)
 		}
 
 		/*
-		 * Begin a transaction before applying any changes. All the changes
-		 * of the same batch are applied within the same transaction.
-		 */
-		SetCurrentStatementStartTimestamp();
-		StartTransactionCommand();
-		SPI_connect();
-		PushActiveSnapshot(GetTransactionSnapshot());
-
-		/*
 		 * Receive data.
 		 */
 		while (true)
@@ -302,8 +313,9 @@ receiver_raw_main(Datum main_arg)
             char* stmt;
 
 			rc = PQgetCopyData(conn, &copybuf, 1);
-			if (rc <= 0)
+			if (rc <= 0) {
 				break;
+            }
 
 			/*
 			 * Check message received from server:
@@ -402,11 +414,20 @@ receiver_raw_main(Datum main_arg)
                 int rc = sscanf(stmt + 6, "%u", &xid);
                 Assert(rc == 1);
                 Assert(!insideTrans);
+                elog(WARNING, "Receiver begin transaction %u", xid);
+                SetCurrentStatementStartTimestamp();
+                StartTransactionCommand();
+                SPI_connect();
+                PushActiveSnapshot(GetTransactionSnapshot());
                 MMJoinTransaction(xid);
                 insideTrans = true;
             } else if (strncmp(stmt, "COMMIT;", 7) == 0) { 
+                elog(WARNING, "Receiver commit transaction");
                 Assert(insideTrans);
                 insideTrans = false;
+                SPI_finish();
+                PopActiveSnapshot();
+                CommitTransactionCommand();
             } else {
                 Assert(insideTrans);
                 /* Execute query */
@@ -431,11 +452,7 @@ receiver_raw_main(Datum main_arg)
 			output_applied_lsn = output_written_lsn;
 		}
 
-        Assert(!insideTrans);
 		/* Finish process */
-		SPI_finish();
-		PopActiveSnapshot();
-		CommitTransactionCommand();
 		pgstat_report_activity(STATE_IDLE, NULL);
 
 		/* No data, move to next loop */
@@ -526,24 +543,27 @@ receiver_raw_main(Datum main_arg)
 }
 
 
-int MMStartReceivers(char* conn_strs, int node_id)
+int MMStartReceivers(char* conns, int node_id)
 {
     int i = 0;
 	BackgroundWorker worker;
+    char* conn_str = strdup(conns);
+    char* conn_str_end = conn_str + strlen(conn_str);
 	MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
-	worker.bgw_main = receiver_raw_main; /* Wait 10 seconds for restart before crash */
+	worker.bgw_main = receiver_raw_main; 
+	worker.bgw_restart_time = 10; /* Wait 10 seconds for restart before crash */
 
-    do { 
-        char* p = strchr(conn_strs, ',');
+    while (conn_str < conn_str_end) { 
+        char* p = strchr(conn_str, ',');
         if (p == NULL) { 
-            p = conn_strs + strlen(conn_strs);
+            p = conn_str_end;
         }
         if (++i != node_id) {
             ReceiverArgs* ctx = (ReceiverArgs*)malloc(sizeof(ReceiverArgs));
             if (receiver_database == NULL) {
-                char* dbname = strstr(conn_strs, "dbname=");
+                char* dbname = strstr(conn_str, "dbname=");
                 char* eon;
                 int len;
                 Assert(dbname != NULL);
@@ -552,20 +572,20 @@ int MMStartReceivers(char* conn_strs, int node_id)
                 len = eon - dbname;
                 receiver_database = (char*)malloc(len + 1);
                 memcpy(receiver_database, dbname, len);
-                dbname[len] = '\0';
+                receiver_database[len] = '\0';
             }
             *p = '\0';        
-            ctx->receiver_conn_string = conn_strs;
-            sprintf(ctx->receiver_slot, "mm_slot_%d", i);
+            ctx->receiver_conn_string = conn_str;
+            sprintf(ctx->receiver_slot, "mm_slot_%d", node_id);
             
             /* Worker parameter and registration */
-            snprintf(worker.bgw_name, BGW_MAXLEN, "mm_worker_%d", i);
+            snprintf(worker.bgw_name, BGW_MAXLEN, "mm_worker_%d_%d", node_id, i);
             
             worker.bgw_main_arg = (Datum)ctx;
             RegisterBackgroundWorker(&worker);
         }
-        conn_strs = p;
-    } while (*conn_strs++ != '\0');
+        conn_str = p + 1;
+    }
 
     return i;
 }

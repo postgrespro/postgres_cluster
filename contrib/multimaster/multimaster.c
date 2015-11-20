@@ -28,8 +28,9 @@
 #include "access/xlog.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
+#include "executor/executor.h"
 #include "access/twophase.h"
-#include <utils/guc.h>
+#include "utils/guc.h"
 #include "utils/hsearch.h"
 #include "utils/tqual.h"
 #include "utils/array.h"
@@ -41,6 +42,8 @@
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "utils/syscache.h"
+#include "port/atomics.h"
+
 #include "sockhub/sockhub.h"
 
 #include "libdtm.h"
@@ -54,6 +57,8 @@ typedef struct
 	TransactionId nextXid; /* next XID for local transaction */
 	size_t nReservedXids;  /* number of XIDs reserved for local transactions */
     int    nNodes;
+    pg_atomic_uint32 nReceivers;
+    bool initialized;
 } DtmState;
 
 typedef struct
@@ -109,6 +114,7 @@ static void ByteBufferFree(ByteBuffer* buf);
 static void MMMarkTransAsLocal(TransactionId xid);
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
+
 static HTAB* xid_in_doubt;
 static HTAB* local_trans;
 static DtmState* dtm;
@@ -132,14 +138,19 @@ static TransactionManager DtmTM = {
     DtmDetectGlobalDeadLock
 };
 
+bool  MMDoReplication;
+
 static char* MMConnStrs;
 static int   MMNodeId;
 static int   MMNodes;
-static bool  MMDoReplication = true;
 
 static char* DtmHost;
 static int DtmPort;
 static int DtmBufferSize;
+
+static ExecutorRun_hook_type PreviousExecutorRunHook = NULL;
+static void MMExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count);
+static bool MMIsDistributedTrans;
 
 static BackgroundWorker DtmWorker = {
 	"DtmWorker",
@@ -356,6 +367,7 @@ static TransactionId DtmGetNextXid()
 	{
 		if (dtm->nReservedXids == 0)
 		{
+            XTM_INFO("%d: reserve new XID range\n", getpid());
 			dtm->nReservedXids = DtmGlobalReserve(ShmemVariableCache->nextXid, DtmLocalXidReserve, &dtm->nextXid);
 			Assert(dtm->nReservedXids > 0);
 			Assert(TransactionIdFollowsOrEquals(dtm->nextXid, ShmemVariableCache->nextXid));
@@ -640,16 +652,16 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 		if (TransactionIdIsValid(DtmNextXid))
 		{
 			CurrentTransactionSnapshot = NULL;
-			if (status == TRANSACTION_STATUS_ABORTED)
+			if (status == TRANSACTION_STATUS_ABORTED || !MMIsDistributedTrans)
 			{
 				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
-				DtmGlobalSetTransStatus(xid, status, false);
+				DtmGlobalSetTransStatus(xid, TRANSACTION_STATUS_ABORTED, false);
 				XTM_INFO("Abort transaction %d\n", xid);
 				return;
 			}
 			else
 			{
-				XTM_INFO("Begin[ commit transaction %d\n", xid);
+				XTM_INFO("Begin commit transaction %d\n", xid);
 				/* Mark transaction as on-doubt in xid_in_doubt hash table */
 				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
@@ -703,6 +715,8 @@ static void DtmInitialize()
 		dtm->nReservedXids = 0;
 		dtm->minXid = InvalidTransactionId;
         dtm->nNodes = MMNodes;
+        pg_atomic_write_u32(&dtm->nReceivers, 0);
+        dtm->initialized = false;
 		RegisterXactCallback(DtmXactCallback, NULL);
 	}
 	LWLockRelease(AddinShmemInitLock);
@@ -729,7 +743,7 @@ static void DtmInitialize()
 		HASH_ELEM | HASH_FUNCTION | HASH_COMPARE
 	);
 
-
+    MMDoReplication = true;
 	TM = &DtmTM;
 }
 
@@ -740,17 +754,19 @@ DtmXactCallback(XactEvent event, void *arg)
     switch (event) 
     {
     case XACT_EVENT_START: 
-        if (MyBackendId != InvalidBackendId && MMDoReplication) { 
-            printf("getpid=%d, backendId=%d\n", getpid(), MyBackendId);
+        XTM_INFO("%d: normal=%d, initialized=%d, replication=%d, bgw=%d, vacuum=%d\n", 
+                 getpid(), IsNormalProcessingMode(), dtm->initialized, MMDoReplication, IsBackgroundWorker, IsAutoVacuumWorkerProcess());
+        if (IsNormalProcessingMode() && dtm->initialized && MMDoReplication && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess()) { 
             MMBeginTransaction();
         }
         break;
     case XACT_EVENT_PRE_COMMIT:
     case XACT_EVENT_PARALLEL_PRE_COMMIT:
-        if (!MMDoReplication && TransactionIdIsValid(GetCurrentTransactionIdIfAny())) {
+        if (!MMIsDistributedTrans && TransactionIdIsValid(GetCurrentTransactionIdIfAny())) {
             MMMarkTransAsLocal(GetCurrentTransactionIdIfAny());               
         }
         break;
+    case XACT_EVENT_COMMIT:
     case XACT_EVENT_ABORT:
 		if (TransactionIdIsValid(DtmNextXid))
 		{
@@ -771,11 +787,14 @@ DtmXactCallback(XactEvent event, void *arg)
 				 * before it starts doing anything and assigned Xid, in this case Postgres is not calling SetTransactionStatus,
 				 * so we have to send report to DTMD here
 				 */
-				if (!TransactionIdIsValid(GetCurrentTransactionIdIfAny()))
+				if (!TransactionIdIsValid(GetCurrentTransactionIdIfAny())) {
+                    XTM_INFO("%d: abort transation on DTMD\n", getpid());
 					DtmGlobalSetTransStatus(DtmNextXid, TRANSACTION_STATUS_ABORTED, false);
+                }
 			}
 			DtmNextXid = InvalidTransactionId;
 			DtmLastSnapshot = NULL;
+            MMIsDistributedTrans = false;
             break;
 		}
       default:
@@ -833,7 +852,7 @@ _PG_init(void)
 		0,
 		0,
 		INT_MAX,
-		PGC_POSTMASTER,
+		PGC_BACKEND,
 		0,
 		NULL,
 		NULL,
@@ -846,7 +865,7 @@ _PG_init(void)
 		NULL,
 		&DtmHost,
 		"127.0.0.1",
-		PGC_POSTMASTER, // context
+		PGC_BACKEND, // context
 		0, // flags,
 		NULL, // GucStringCheckHook check_hook,
 		NULL, // GucStringAssignHook assign_hook,
@@ -861,7 +880,7 @@ _PG_init(void)
 		5431,
 		1,
 		INT_MAX,
-		PGC_POSTMASTER,
+		PGC_BACKEND,
 		0,
 		NULL,
 		NULL,
@@ -874,7 +893,7 @@ _PG_init(void)
 		NULL,
 		&MMConnStrs,
 		"",
-		PGC_POSTMASTER, // context
+		PGC_BACKEND, // context
 		0, // flags,
 		NULL, // GucStringCheckHook check_hook,
 		NULL, // GucStringAssignHook assign_hook,
@@ -889,7 +908,7 @@ _PG_init(void)
 		1,
 		1,
 		INT_MAX,
-		PGC_POSTMASTER,
+		PGC_BACKEND,
 		0,
 		NULL,
 		NULL,
@@ -897,7 +916,9 @@ _PG_init(void)
 	);
     
     MMNodes = MMStartReceivers(MMConnStrs, MMNodeId);
-
+    if (MMNodes < 2) { 
+        elog(ERROR, "Multimaster should have at least two nodes");
+    }
 	if (DtmBufferSize != 0)
 	{
 		DtmGlobalConfig(NULL, DtmPort, Unix_socket_directories);
@@ -911,6 +932,9 @@ _PG_init(void)
 	 */
 	prev_shmem_startup_hook = shmem_startup_hook;
 	shmem_startup_hook = DtmShmemStartup;
+
+	PreviousExecutorRunHook = ExecutorRun_hook;
+	ExecutorRun_hook = MMExecutorRun;
 }
 
 /*
@@ -920,6 +944,7 @@ void
 _PG_fini(void)
 {
 	shmem_startup_hook = prev_shmem_startup_hook;
+	ExecutorRun_hook = PreviousExecutorRunHook;
 }
 
 
@@ -940,13 +965,16 @@ void MMBeginTransaction(void)
 		elog(ERROR, "MMBeginTransaction should be called only once for global transaction");
 	if (dtm == NULL)
 		elog(ERROR, "DTM is not properly initialized, please check that pg_dtm plugin was added to shared_preload_libraries list in postgresql.conf");
-	DtmNextXid = DtmGlobalStartTransaction(&DtmSnapshot, &dtm->minXid);
+    Assert(!RecoveryInProgress());
+    XTM_INFO("%d: Try to start global transaction\n", getpid());
+	DtmNextXid = DtmGlobalStartTransaction(&DtmSnapshot, &dtm->minXid, dtm->nNodes);
 	if (!TransactionIdIsValid(DtmNextXid))
 		elog(ERROR, "Arbiter was not able to assign XID");
 	XTM_INFO("%d: Start global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
 
 	DtmHasGlobalSnapshot = true;
 	DtmLastSnapshot = NULL;
+    MMIsDistributedTrans = false;
 }
 
 void MMJoinTransaction(TransactionId xid)
@@ -962,10 +990,17 @@ void MMJoinTransaction(TransactionId xid)
 
 	DtmHasGlobalSnapshot = true;
 	DtmLastSnapshot = NULL;
+    MMIsDistributedTrans = true;
 
     MMMarkTransAsLocal(DtmNextXid);
 }
  
+void MMReceiverStarted()
+{
+     if (pg_atomic_fetch_add_u32(&dtm->nReceivers, 1) == dtm->nNodes-2) {
+         dtm->initialized = true;
+     }
+}
 
 void MMMarkTransAsLocal(TransactionId xid)
 {
@@ -993,23 +1028,6 @@ bool MMIsLocalTransaction(TransactionId xid)
     LWLockRelease(dtm->hashLock);
     return result;
 }
-
-Datum
-mm_start_replication(PG_FUNCTION_ARGS)
-{
-    MMDoReplication = true;
-    PG_RETURN_VOID();
-}
-
-Datum
-mm_stop_replication(PG_FUNCTION_ARGS)
-{
-    MMDoReplication = false;
-    PG_RETURN_VOID();
-}
-
-
-
 
 void DtmBackgroundWorker(Datum arg)
 {
@@ -1119,3 +1137,36 @@ bool DtmDetectGlobalDeadLock(PGPROC* proc)
     }
     return hasDeadlock;
 }
+
+Datum
+mm_start_replication(PG_FUNCTION_ARGS)
+{
+    MMDoReplication = true;
+    PG_RETURN_VOID();
+}
+
+Datum
+mm_stop_replication(PG_FUNCTION_ARGS)
+{
+    MMDoReplication = false;
+    MMIsDistributedTrans = false;
+    PG_RETURN_VOID();
+}
+
+static void
+MMExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count)
+{
+    if (MMDoReplication) { 
+        CmdType operation = queryDesc->operation;
+        MMIsDistributedTrans |= operation == CMD_INSERT || operation == CMD_UPDATE || operation == CMD_DELETE;
+    }
+    if (PreviousExecutorRunHook != NULL)
+    {
+        PreviousExecutorRunHook(queryDesc, direction, count);
+    }
+    else
+    {
+        standard_ExecutorRun(queryDesc, direction, count);
+    }
+}
+        

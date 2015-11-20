@@ -270,7 +270,7 @@ static xid_t get_global_xmin() {
 static void onbegin(client_t client, int argc, xid_t *argv) {
 	Transaction *t;
 	CHECK(
-		argc == 1,
+		argc == 2,
 		client,
 		"BEGIN: wrong number of arguments"
 	);
@@ -292,7 +292,7 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 
 	prev_gxid = t->xid = next_gxid++;
 	t->snapshots_count = 0;
-	t->size = 1;
+	t->size = argv[1];
 
     t->collision = transaction_hash[t->xid % MAX_TRANSACTIONS];
     transaction_hash[t->xid % MAX_TRANSACTIONS] = t;
@@ -448,7 +448,6 @@ static void onsnapshot(client_t client, int argc, xid_t *argv) {
 	if (CLIENT_XID(client) == INVALID_XID) {
 		CLIENT_SNAPSENT(client) = 0;
 		CLIENT_XID(client) = t->xid;
-		t->size += 1;
 	}
 
 	CHECK(

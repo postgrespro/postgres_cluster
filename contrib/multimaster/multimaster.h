@@ -5,7 +5,6 @@ extern int  MMStartReceivers(char* nodes, int node_id);
 extern void MMBeginTransaction(void);
 extern void MMJoinTransaction(TransactionId xid);
 extern bool MMIsLocalTransaction(TransactionId xid);
-
-extern bool isBackgroundWorker;
+extern void MMReceiverStarted(void);
 
 #endif
