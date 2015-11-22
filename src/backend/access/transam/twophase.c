@@ -62,6 +62,7 @@
 #include "replication/origin.h"
 #include "replication/syncrep.h"
 #include "replication/walsender.h"
+#include "replication/logicalfuncs.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/predicate.h"
@@ -174,6 +175,8 @@ static void RemoveGXact(GlobalTransaction gxact);
 static char twophase_buf[10*1024];
 static int twophase_pos = 0;
 size_t bogus_write(int fd, char *buf, size_t nbytes);
+
+static char *XlogReadTwoPhaseData(XLogRecPtr lsn);
 // LWLock *xlogreclock;
 
 /*
@@ -1156,8 +1159,10 @@ EndPrepare(GlobalTransaction gxact)
 	XLogFlush(gxact->prepare_lsn);
 
 
-	fprintf(stderr, "WAL %s->prepare_xlogptr = %X/%X \n", gxact->gid, (uint32) (gxact->prepare_xlogptr >> 32), (uint32) (gxact->prepare_xlogptr));
-	fprintf(stderr, "WAL %s->prepare_lsn = %X/%X \n", gxact->gid, (uint32) (gxact->prepare_lsn >> 32), (uint32) (gxact->prepare_lsn));
+	// fprintf(stderr, "WAL %s->prepare_xlogptr = %X/%X \n", 
+	// gxact->gid, (uint32) (gxact->prepare_xlogptr >> 32), (uint32) (gxact->prepare_xlogptr));
+	// fprintf(stderr, "WAL %s->prepare_lsn = %X/%X \n", 
+	// gxact->gid, (uint32) (gxact->prepare_lsn >> 32), (uint32) (gxact->prepare_lsn));
 
 
 	/* If we crash now, we have prepared: WAL replay will fix things */
@@ -1404,7 +1409,8 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	/*
 	 * Read and validate the state file
 	 */
-	buf = ReadTwoPhaseFile(xid, true);
+	// buf = ReadTwoPhaseFile(xid, true);
+	buf = XlogReadTwoPhaseData(gxact->prepare_xlogptr);
 	if (buf == NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
@@ -2251,15 +2257,16 @@ RecordTransactionAbortPrepared(TransactionId xid,
 /**********************************************************************************/
 
 
-static int	xlogreadfd = -1;
-static XLogSegNo xlogreadsegno = -1;
-static char xlogfpath[MAXPGPATH];
+// static int	xlogreadfd = -1;
+// static XLogSegNo xlogreadsegno = -1;
+// static char xlogfpath[MAXPGPATH];
 
-typedef struct XLogPageReadPrivate
-{
-	const char *datadir;
-	TimeLineID	tli;
-} XLogPageReadPrivate;
+// typedef struct XLogPageReadPrivate
+// {
+// 	const char *datadir;
+// 	TimeLineID	tli;
+// } XLogPageReadPrivate;
+
 
 size_t 
 bogus_write(int fd, char *buf, size_t nbytes)
@@ -2270,164 +2277,38 @@ bogus_write(int fd, char *buf, size_t nbytes)
 }
 
 
-static int SimpleXLogPageRead(XLogReaderState *xlogreader,
-				   XLogRecPtr targetPagePtr,
-				   int reqLen, XLogRecPtr targetRecPtr, char *readBuf,
-				   TimeLineID *pageTLI);
-
-
-/* XLogreader callback function, to read a WAL page */
-static int
-SimpleXLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr,
-				   int reqLen, XLogRecPtr targetRecPtr, char *readBuf,
-				   TimeLineID *pageTLI)
+static char *
+XlogReadTwoPhaseData(XLogRecPtr lsn)
 {
-	XLogPageReadPrivate *private = (XLogPageReadPrivate *) xlogreader->private_data;
-	uint32		targetPageOff;
-	XLogSegNo targetSegNo PG_USED_FOR_ASSERTS_ONLY;
+	XLogRecord *record;
+	XLogReaderState *xlogreader;
+	char	   *errormsg;
 
-	XLByteToSeg(targetPagePtr, targetSegNo);
-	targetPageOff = targetPagePtr % XLogSegSize;
+	fprintf(stderr, "XlogReadTwoPhaseData called\n");
 
-	/*
-	 * See if we need to switch to a new segment because the requested record
-	 * is not in the currently open one.
-	 */
-	if (xlogreadfd >= 0 && !XLByteInSeg(targetPagePtr, xlogreadsegno))
+	xlogreader = XLogReaderAllocate(&logical_read_local_xlog_page, NULL);
+	if (xlogreader == NULL)
+		fprintf(stderr, "xlogreader == NULL\n");
+
+	record = XLogReadRecord(xlogreader, lsn, &errormsg);
+	if (record == NULL)
 	{
-		close(xlogreadfd);
-		xlogreadfd = -1;
+		fprintf(stderr, "XLogReadRecord error\n");
 	}
 
-	XLByteToSeg(targetPagePtr, xlogreadsegno);
+	// memcpy(twophase_buf + twophase_pos, buf, nbytes);
+	// twophase_pos += nbytes;
+	// return nbytes;
 
-	if (xlogreadfd < 0)
-	{
-		char		xlogfname[MAXFNAMELEN];
+	// XLogReaderFree(xlogreader);
+	// if (xlogreadfd != -1)
+	// {
+	// 	close(xlogreadfd);
+	// 	xlogreadfd = -1;
+	// }
 
-		XLogFileName(xlogfname, private->tli, xlogreadsegno);
-
-		snprintf(xlogfpath, MAXPGPATH, "%s/" XLOGDIR "/%s", private->datadir, xlogfname);
-
-		xlogreadfd = open(xlogfpath, O_RDONLY | PG_BINARY, 0);
-
-		if (xlogreadfd < 0)
-		{
-			printf(_("could not open file \"%s\": %s\n"), xlogfpath,
-				   strerror(errno));
-			return -1;
-		}
-	}
-
-	/*
-	 * At this point, we have the right segment open.
-	 */
-	Assert(xlogreadfd != -1);
-
-	/* Read the requested page */
-	if (lseek(xlogreadfd, (off_t) targetPageOff, SEEK_SET) < 0)
-	{
-		printf(_("could not seek in file \"%s\": %s\n"), xlogfpath,
-			   strerror(errno));
-		return -1;
-	}
-
-	if (read(xlogreadfd, readBuf, XLOG_BLCKSZ) != XLOG_BLCKSZ)
-	{
-		printf(_("could not read from file \"%s\": %s\n"), xlogfpath,
-			   strerror(errno));
-		return -1;
-	}
-
-	Assert(targetSegNo == xlogreadsegno);
-
-	*pageTLI = private->tli;
-	return XLOG_BLCKSZ;
+	return XLogRecGetData(xlogreader);
 }
-
-// XLogRecPtr
-// readOneRecord(const char *datadir, XLogRecPtr ptr, TimeLineID tli);
-
-// XLogRecPtr
-// readOneRecord(const char *datadir, XLogRecPtr ptr, TimeLineID tli)
-// {
-// 	XLogRecord *record;
-// 	XLogReaderState *xlogreader;
-// 	char	   *errormsg;
-// 	XLogPageReadPrivate private;
-// 	XLogRecPtr	endptr;
-
-// 	private.datadir = datadir;
-// 	private.tli = tli;
-// 	xlogreader = XLogReaderAllocate(&SimpleXLogPageRead, &private);
-// 	if (xlogreader == NULL)
-// 		pg_fatal("out of memory\n");
-
-// 	record = XLogReadRecord(xlogreader, ptr, &errormsg);
-// 	if (record == NULL)
-// 	{
-// 		if (errormsg)
-// 			pg_fatal("could not read WAL record at %X/%X: %s\n",
-// 					 (uint32) (ptr >> 32), (uint32) (ptr), errormsg);
-// 		else
-// 			pg_fatal("could not read WAL record at %X/%X\n",
-// 					 (uint32) (ptr >> 32), (uint32) (ptr));
-// 	}
-// 	endptr = xlogreader->EndRecPtr;
-
-// 	XLogReaderFree(xlogreader);
-// 	if (xlogreadfd != -1)
-// 	{
-// 		close(xlogreadfd);
-// 		xlogreadfd = -1;
-// 	}
-
-// 	return endptr;
-// }
-
-
-// static char *
-// XlogReadTwoPhaseData(XLogRecPtr lsn, bool give_warnings, TimeLineID tli)
-// {
-// 	XLogRecord *record;
-// 	XLogReaderState *xlogreader;
-// 	XLogPageReadPrivate private;
-
-// 	private.datadir = datadir;
-// 	private.tli = tli;
-// 	xlogreader = XLogReaderAllocate(&SimpleXLogPageRead, &private);
-// 	if (xlogreader == NULL)
-// 		pg_fatal("out of memory\n");
-
-// 	record = XLogReadRecord(xlogreader, ptr, &errormsg);
-// 	if (record == NULL)
-// 	{
-// 		if (errormsg)
-// 			pg_fatal("could not read WAL record at %X/%X: %s\n",
-// 					 (uint32) (ptr >> 32), (uint32) (ptr), errormsg);
-// 		else
-// 			pg_fatal("could not read WAL record at %X/%X\n",
-// 					 (uint32) (ptr >> 32), (uint32) (ptr));
-// 	}
-// 	endptr = xlogreader->EndRecPtr;
-
-// 	XLogReaderFree(xlogreader);
-// 	if (xlogreadfd != -1)
-// 	{
-// 		close(xlogreadfd);
-// 		xlogreadfd = -1;
-// 	}
-
-// 	return XLogRecGetData(record)
-// }
-
-
-
-
-
-
-
-
 
 
 
