@@ -148,8 +148,8 @@ static char* DtmHost;
 static int DtmPort;
 static int DtmBufferSize;
 
-static ExecutorRun_hook_type PreviousExecutorRunHook = NULL;
-static void MMExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count);
+static ExecutorFinish_hook_type PreviousExecutorFinishHook = NULL;
+static void MMExecutorFinish(QueryDesc *queryDesc);
 static bool MMIsDistributedTrans;
 
 static BackgroundWorker DtmWorker = {
@@ -160,9 +160,6 @@ static BackgroundWorker DtmWorker = {
 	DtmBackgroundWorker
 };
 
-#define XTM_TRACE(fmt, ...)
-#define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
-//#define XTM_INFO(fmt, ...)
 
 static void DumpSnapshot(Snapshot s, char *name)
 {
@@ -235,7 +232,10 @@ static void DtmMergeWithGlobalSnapshot(Snapshot dst)
 	TransactionId xid;
 	Snapshot src = &DtmSnapshot;
 
-	Assert(TransactionIdIsValid(src->xmin) && TransactionIdIsValid(src->xmax));
+	if (!(TransactionIdIsValid(src->xmin) && TransactionIdIsValid(src->xmax))) { 
+        PgGetSnapshotData(dst);
+        return;
+    }
 
 GetLocalSnapshot:
 	/*
@@ -667,8 +667,11 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
 				LWLockRelease(dtm->hashLock);
 				if (DtmGlobalSetTransStatus(xid, status, true) != status) { 
-                    END_CRIT_SECTION();
+                    DtmNextXid = InvalidTransactionId;
+                    DtmLastSnapshot = NULL;
+                    MMIsDistributedTrans = false; 
                     MarkAsAborted();
+                    END_CRIT_SECTION();
                     elog(ERROR, "Transaction commit rejected by XTM");                    
                 }
 				XTM_INFO("Commit transaction %d\n", xid);
@@ -763,7 +766,10 @@ DtmXactCallback(XactEvent event, void *arg)
     case XACT_EVENT_PRE_COMMIT:
     case XACT_EVENT_PARALLEL_PRE_COMMIT:
         if (!MMIsDistributedTrans && TransactionIdIsValid(GetCurrentTransactionIdIfAny())) {
+            XTM_INFO("%d: Will ignore transaction %u\n", getpid(), GetCurrentTransactionIdIfAny());
             MMMarkTransAsLocal(GetCurrentTransactionIdIfAny());               
+        } else { 
+            XTM_INFO("%d: Transaction %u will be replicated\n", getpid(), GetCurrentTransactionIdIfAny());
         }
         break;
     case XACT_EVENT_COMMIT:
@@ -794,9 +800,9 @@ DtmXactCallback(XactEvent event, void *arg)
 			}
 			DtmNextXid = InvalidTransactionId;
 			DtmLastSnapshot = NULL;
-            MMIsDistributedTrans = false;
-            break;
-		}
+        }
+        MMIsDistributedTrans = false;
+        break;
       default:
         break;
 	}
@@ -933,8 +939,8 @@ _PG_init(void)
 	prev_shmem_startup_hook = shmem_startup_hook;
 	shmem_startup_hook = DtmShmemStartup;
 
-	PreviousExecutorRunHook = ExecutorRun_hook;
-	ExecutorRun_hook = MMExecutorRun;
+	PreviousExecutorFinishHook = ExecutorFinish_hook;
+	ExecutorFinish_hook = MMExecutorFinish;
 }
 
 /*
@@ -944,7 +950,7 @@ void
 _PG_fini(void)
 {
 	shmem_startup_hook = prev_shmem_startup_hook;
-	ExecutorRun_hook = PreviousExecutorRunHook;
+	ExecutorFinish_hook = PreviousExecutorFinishHook;
 }
 
 
@@ -1021,6 +1027,7 @@ bool MMIsLocalTransaction(TransactionId xid)
     lt = hash_search(local_trans, &xid, HASH_FIND, NULL);
     if (lt != NULL) { 
         result = true;
+        Assert(lt->count > 0);
         if (--lt->count == 0) { 
             hash_search(local_trans, &xid, HASH_REMOVE, NULL);
         }
@@ -1154,19 +1161,22 @@ mm_stop_replication(PG_FUNCTION_ARGS)
 }
 
 static void
-MMExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count)
+MMExecutorFinish(QueryDesc *queryDesc)
 {
     if (MMDoReplication) { 
         CmdType operation = queryDesc->operation;
-        MMIsDistributedTrans |= operation == CMD_INSERT || operation == CMD_UPDATE || operation == CMD_DELETE;
+        EState *estate = queryDesc->estate;
+        if (estate->es_processed != 0) { 
+            MMIsDistributedTrans |= operation == CMD_INSERT || operation == CMD_UPDATE || operation == CMD_DELETE;
+        }
     }
-    if (PreviousExecutorRunHook != NULL)
+    if (PreviousExecutorFinishHook != NULL)
     {
-        PreviousExecutorRunHook(queryDesc, direction, count);
+        PreviousExecutorFinishHook(queryDesc);
     }
     else
     {
-        standard_ExecutorRun(queryDesc, direction, count);
+        standard_ExecutorFinish(queryDesc);
     }
 }
         

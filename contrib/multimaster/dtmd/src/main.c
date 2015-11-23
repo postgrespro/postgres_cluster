@@ -357,13 +357,13 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 	// Check the arguments
 	xid_t xid = argv[1];
 	bool wait = argv[2];
-
+#if 0
 	CHECK(
 		CLIENT_XID(client) == xid,
 		client,
 		"VOTE: voting for a transaction not participated in"
 	);
-
+#endif
 	Transaction *t = find_transaction(xid);
 	if (t == NULL) {
 		shout(
@@ -392,6 +392,10 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 				client,
 				"VOTE: transaction failed to abort O_o"
 			);
+            shout(
+                "[%d] VOTE: abort xid %u\n",
+                CLIENT_ID(client), xid
+                );
 
 			notify_listeners(t, NEGATIVE);
 			free_transaction(t);
@@ -427,6 +431,7 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 }
 
 static void onsnapshot(client_t client, int argc, xid_t *argv) {
+    Snapshot snapshot_now;
 	CHECK(
 		argc == 2,
 		client,
@@ -434,38 +439,35 @@ static void onsnapshot(client_t client, int argc, xid_t *argv) {
 	);
 
 	xid_t xid = argv[1];
-
+    Snapshot *snap;
 	Transaction *t = find_transaction(xid);
 	if (t == NULL) {
 		shout(
-			"[%d] SNAPSHOT: xid %u not found\n",
+			"[%d] SNAPSHOT: xid %u not found: use curent snapshot\n",
 			CLIENT_ID(client), xid
 		);
-		client_message_shortcut(client, RES_FAILED);
-		return;
-	}
+        gen_snapshot(&snapshot_now);
+        snap = &snapshot_now;
+	} else { 
+        if (CLIENT_XID(client) == INVALID_XID) {
+            CLIENT_SNAPSENT(client) = 0;
+            CLIENT_XID(client) = t->xid;
+        }
+        CHECK(
+            CLIENT_XID(client) == t->xid,
+            client,
+            "SNAPSHOT: getting snapshot for a transaction not participated in"
+            );
+        assert(CLIENT_SNAPSENT(client) <= t->snapshots_count); // who sent an inexistent snapshot?!
+        
+        if (CLIENT_SNAPSENT(client) == t->snapshots_count) {
+            // a fresh snapshot is needed
+            gen_snapshot(transaction_next_snapshot(t));
+        }
 
-	if (CLIENT_XID(client) == INVALID_XID) {
-		CLIENT_SNAPSENT(client) = 0;
-		CLIENT_XID(client) = t->xid;
-	}
-
-	CHECK(
-		CLIENT_XID(client) == t->xid,
-		client,
-		"SNAPSHOT: getting snapshot for a transaction not participated in"
-	);
-
-	assert(CLIENT_SNAPSENT(client) <= t->snapshots_count); // who sent an inexistent snapshot?!
-
-	if (CLIENT_SNAPSENT(client) == t->snapshots_count) {
-		// a fresh snapshot is needed
-		gen_snapshot(transaction_next_snapshot(t));
-	}
-
-	Snapshot *snap = transaction_snapshot(t, CLIENT_SNAPSENT(client)++);
-	snap->times_sent += 1; // FIXME: does times_sent get used anywhere? see also 4765234987
-
+        snap = transaction_snapshot(t, CLIENT_SNAPSENT(client)++);
+        snap->times_sent += 1; // FIXME: does times_sent get used anywhere? see also 4765234987
+    }
 	xid_t ok = RES_OK;
 	client_message_start(client); {
 		client_message_append(client, sizeof(xid_t), &ok);

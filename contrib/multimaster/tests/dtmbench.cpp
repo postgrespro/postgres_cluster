@@ -62,9 +62,6 @@ struct config
     int nWriters;
     int nIterations;
     int nAccounts;
-    int startId;
-    int diapason;
-    char const* isolationLevel;
     vector<string> connections;
 
     config() {
@@ -72,9 +69,6 @@ struct config
         nWriters = 10;
         nIterations = 1000;
         nAccounts = 100000;
-        isolationLevel = "read committed";
-        startId = 1;
-        diapason = 100000;
     }
 };
 
@@ -122,35 +116,15 @@ void* reader(void* arg)
     int64_t prevSum = 0;
 
     while (running) {
-        xid_t xid = 0;
-        for (size_t i = 0; i < conns.size(); i++) {        
-            work txn(*conns[i]);
-            if (i == 0) {
-                xid = execQuery(txn, "select dtm_begin_transaction()");
-            } else {
-                exec(txn, "select dtm_join_transaction(%u)", xid);
-            }
-            txn.commit();
-        }
-        vector< my_unique_ptr<nontransaction> > txns(conns.size());
-        vector< my_unique_ptr<pipeline> > pipes(conns.size());
-        vector<pipeline::query_id> results(conns.size());
-        for (size_t i = 0; i < conns.size(); i++) {        
-            txns[i] = new nontransaction(*conns[i]);
-            pipes[i] = new pipeline(*txns[i]);
-            results[i] = pipes[i]->insert("select sum(v) from t");
-        }
-        int64_t sum = 0;
-        for (size_t i = 0; i < conns.size(); i++) {        
-            pipes[i]->complete();
-            result r = pipes[i]->retrieve(results[i]);
-            sum += r[0][0].as(int64_t());
-        }
+        work txn(*conns[random() % conns.size()]);
+        result r = txn.exec("select sum(v) from t");
+        int64_t sum = r[0][0].as(int64_t());
         if (sum != prevSum) {
-            printf("Total=%ld xid=%u\n", sum, xid);
+            printf("Total=%ld\n", sum);
             prevSum = sum;
         }
         t.proceeded += 1;
+        txn.commit();
     }
     return NULL;
 }
@@ -158,51 +132,25 @@ void* reader(void* arg)
 void* writer(void* arg)
 {
     thread& t = *(thread*)arg;
-    connection *srcCon, *dstCon;
-
-    srcCon = new connection(cfg.connections[t.id % cfg.connections.size()]);
-    dstCon = new connection(cfg.connections[(t.id + 1) % cfg.connections.size()]);
-
+    vector< my_unique_ptr<connection> > conns(cfg.connections.size());
+    for (size_t i = 0; i < conns.size(); i++) {
+        conns[i] = new connection(cfg.connections[i]);
+    }
     for (int i = 0; i < cfg.nIterations; i++)
     { 
-        int srcAcc = cfg.startId + random() % cfg.diapason;
-        int dstAcc = cfg.startId + random() % cfg.diapason;
-
-        if (srcAcc > dstAcc) {
-            int tmpAcc = dstAcc;
-            dstAcc = srcAcc;
-            srcAcc = tmpAcc;
-        }
-
-        nontransaction srcTx(*srcCon);
-        nontransaction dstTx(*dstCon);
-        
-        xid_t xid = execQuery(srcTx, "select dtm_begin_transaction()");
-        exec(dstTx, "select dtm_join_transaction(%u)", xid);
-
-        exec(srcTx, "begin transaction isolation level %s", cfg.isolationLevel);
-        exec(dstTx, "begin transaction isolation level %s", cfg.isolationLevel);
-
-        try { 
-            exec(srcTx, "update t set v = v - 1 where u=%d", srcAcc);
-            exec(dstTx, "update t set v = v + 1 where u=%d", dstAcc);
+        work txn(*conns[random() % conns.size()]);
+        int srcAcc = random() % cfg.nAccounts;
+        int dstAcc = random() % cfg.nAccounts;
+        try {            
+            exec(txn, "update t set v = v - 1 where u=%d", srcAcc);
+            exec(txn, "update t set v = v + 1 where u=%d", dstAcc);
+            txn.commit();            
         } catch (pqxx_exception const& x) { 
-            exec(srcTx, "rollback");
-            exec(srcTx, "rollback");
+            txn.abort();
             t.aborts += 1;
             i -= 1;
             continue;
         }
-
-        pipeline srcPipe(srcTx);
-        pipeline dstPipe(dstTx);
-
-        srcPipe.insert("commit transaction");
-        dstPipe.insert("commit transaction");
-
-        srcPipe.complete();
-        dstPipe.complete();
-
         t.proceeded += 1;
     }
     return NULL;
@@ -210,16 +158,10 @@ void* writer(void* arg)
       
 void initializeDatabase()
 {
-    for (size_t i = 0; i < cfg.connections.size(); i++) { 
-        connection conn(cfg.connections[i]);
-        work txn(conn);
-        exec(txn, "drop extension if exists pg_dtm");
-        exec(txn, "create extension pg_dtm");
-        exec(txn, "drop table if exists t");
-        exec(txn, "create table t(u int primary key, v int)");
-        exec(txn, "insert into t (select generate_series(0,%d), %d)", cfg.nAccounts-1, 0);
-        txn.commit();
-    }        
+    connection conn(cfg.connections[0]);
+    work txn(conn);
+    exec(txn, "insert into t (select generate_series(0,%d), %d)", cfg.nAccounts-1, 0);
+    txn.commit();
 }
 
 int main (int argc, char* argv[])
@@ -246,15 +188,7 @@ int main (int argc, char* argv[])
             case 'n':
                 cfg.nIterations = atoi(argv[++i]);
                 continue;
-            case 's':
-                cfg.startId = atoi(argv[++i]);
-                continue;
-            case 'd':
-                cfg.diapason = atoi(argv[++i]);
-                continue;
-            case 'l':
-                cfg.isolationLevel = argv[++i];
-            case 'C':
+            case 'c':
                 cfg.connections.push_back(string(argv[++i]));
                 continue;
             case 'i':
@@ -269,22 +203,14 @@ int main (int argc, char* argv[])
                "\t-s N\tperform updates starting from this id (1)\n"
                "\t-d N\tperform updates in this diapason (100000)\n"
                "\t-n N\tnumber of iterations (1000)\n"
-               "\t-l STR\tisolation level (read committed)\n"
                "\t-c STR\tdatabase connection string\n"
-               "\t-C STR\tdatabase connection string\n"
                "\t-i\tinitialize datanase\n");
-        return 1;
-    }
-
-    if (cfg.startId + cfg.diapason - 1 > cfg.nAccounts) {
-        printf("startId + diapason should be less that nAccounts. Exiting.\n");
         return 1;
     }
 
     if (initialize) { 
         initializeDatabase();
         printf("%d account inserted\n", cfg.nAccounts);
-        return 0;
     }
 
     time_t start = getCurrentTime();
@@ -321,7 +247,7 @@ int main (int argc, char* argv[])
     printf(
         "{\"update_tps\":%f, \"read_tps\":%f,"
         " \"readers\":%d, \"writers\":%d,"
-        " \"accounts\":%d, \"iterations\":%d, \"hosts\":%d}\n",
+        " \"accounts\":%d, \"iterations\":%d, \"hosts\":%ld}\n",
         (double)(nWrites*USEC)/elapsed,
         (double)(nReads*USEC)/elapsed,
         cfg.nReaders,

@@ -210,7 +210,8 @@ receiver_raw_main(Datum main_arg)
 	PGconn *conn;
 	PGresult *res;
     bool insideTrans = false;
-    
+    bool rollbackTransaction = false;
+
 	/* Register functions for SIGTERM/SIGHUP management */
 	pqsignal(SIGHUP, receiver_raw_sighup);
 	pqsignal(SIGTERM, receiver_raw_sigterm);
@@ -414,37 +415,47 @@ receiver_raw_main(Datum main_arg)
                 int rc = sscanf(stmt + 6, "%u", &xid);
                 Assert(rc == 1);
                 Assert(!insideTrans);
-                elog(WARNING, "Receiver begin transaction %u", xid);
                 SetCurrentStatementStartTimestamp();
+                MMJoinTransaction(xid);
                 StartTransactionCommand();
                 SPI_connect();
                 PushActiveSnapshot(GetTransactionSnapshot());
-                MMJoinTransaction(xid);
                 insideTrans = true;
+                rollbackTransaction = false;
             } else if (strncmp(stmt, "COMMIT;", 7) == 0) { 
-                elog(WARNING, "Receiver commit transaction");
                 Assert(insideTrans);
                 insideTrans = false;
                 SPI_finish();
                 PopActiveSnapshot();
-                CommitTransactionCommand();
-            } else {
+                if (rollbackTransaction) {
+                    AbortCurrentTransaction();
+                } else { 
+                    CommitTransactionCommand();
+                }
+            } else if (!rollbackTransaction) {
                 Assert(insideTrans);
                 /* Execute query */
-                rc = SPI_execute(stmt, false, 0);
-                
-                if (rc == SPI_OK_INSERT)
-                    ereport(LOG, (errmsg("%s: INSERT received correctly: %s",
-                                         worker_name, stmt)));
-                else if (rc == SPI_OK_UPDATE)
-                    ereport(LOG, (errmsg("%s: UPDATE received correctly: %s",
-                                         worker_name, stmt)));
-                else if (rc == SPI_OK_DELETE)
-                    ereport(LOG, (errmsg("%s: DELETE received correctly: %s",
-                                         worker_name, stmt)));
-                else
-                    ereport(LOG, (errmsg("%s: Error when applying change: %s",
-                                         worker_name, stmt)));
+                PG_TRY();
+                {
+                    rc = SPI_execute(stmt, false, 0);
+                    if (rc == SPI_OK_INSERT)
+                        ereport(LOG, (errmsg("%s: INSERT received correctly: %s",
+                                             worker_name, stmt)));
+                    else if (rc == SPI_OK_UPDATE)
+                        ereport(LOG, (errmsg("%s: UPDATE received correctly: %s",
+                                             worker_name, stmt)));
+                    else if (rc == SPI_OK_DELETE)
+                        ereport(LOG, (errmsg("%s: DELETE received correctly: %s",
+                                             worker_name, stmt)));
+                    else
+                        ereport(LOG, (errmsg("%s: Error when applying change: %s",
+                                             worker_name, stmt)));
+                }
+                PG_CATCH();
+                {
+                    rollbackTransaction = true;
+                }
+                PG_END_TRY();
             }
 			/* Update written position */
 			output_written_lsn = Max(walEnd, output_written_lsn);

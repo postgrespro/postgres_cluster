@@ -11,16 +11,16 @@ typedef struct list_node_t {
 
 int transaction_status(Transaction *t) {
 	assert(t->votes_for + t->votes_against <= t->size);
-
+#if 0 /* report ABORTED status immediately: do not wait for all responses */
 	if (t->votes_for + t->votes_against < t->size) {
 		return DOUBT;
 	}
-
-	if (t->votes_against) {
-		return NEGATIVE;
-	} else {
-		return POSITIVE;
-	}
+#endif
+	return t->votes_against 
+        ? NEGATIVE
+        : (t->votes_for == t->size) 
+          ? POSITIVE
+          : DOUBT;
 }
 
 void transaction_clear(Transaction *t) {

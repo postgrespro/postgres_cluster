@@ -99,16 +99,20 @@ decoder_raw_shutdown(LogicalDecodingContext *ctx)
 }
 
 /* BEGIN callback */
+static TransactionId lastXid;
+
 static void
 decoder_raw_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 {   
 	DecoderRawData *data = ctx->output_plugin_private;
-    
+    Assert(lastXid != txn->xid);
+    lastXid = txn->xid;
     if (MMIsLocalTransaction(txn->xid)) {
+        XTM_INFO("Skip local transaction %u\n", txn->xid);
         data->isLocal = true;
     } else { 
         OutputPluginPrepareWrite(ctx, true);
-        elog(WARNING, "Send transation to %u to replica", txn->xid);
+        XTM_INFO("Send transaction %u to replica\n", txn->xid);
         appendStringInfo(ctx->out, "BEGIN %u;", txn->xid);
         OutputPluginWrite(ctx, true);
         data->isLocal = false;
@@ -122,10 +126,12 @@ decoder_raw_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	DecoderRawData *data = ctx->output_plugin_private;
     if (!data->isLocal) { 
-        elog(WARNING, "Send commit of %u to replica", txn->xid);
+        XTM_INFO("Send commit of transaction %u to replica\n", txn->xid);
         OutputPluginPrepareWrite(ctx, true);
         appendStringInfoString(ctx->out, "COMMIT;");
         OutputPluginWrite(ctx, true);
+    } else { 
+        XTM_INFO("Skip commit of transaction %u\n", txn->xid);
     }
 }
 
@@ -291,7 +297,7 @@ print_where_clause(StringInfo s,
 		int			key;
 
 		/* Use all the values associated with the index */
-		indexRel = index_open(relation->rd_replidindex, ShareLock);
+		indexRel = index_open(relation->rd_replidindex, AccessShareLock);
 		for (key = 0; key < indexRel->rd_index->indnatts; key++)
 		{
 			int	relattr = indexRel->rd_index->indkey.values[key];
@@ -477,9 +483,10 @@ decoder_raw_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 	data = ctx->output_plugin_private;
     if (data->isLocal) { 
+        XTM_INFO("Skip action %d in transaction %u\n", change->action, txn->xid);
         return;
     }
-    elog(WARNING, "Send action %d in transaction  %u to replica", change->action, txn->xid);
+    XTM_INFO("Send action %d in transaction %u to replica\n", change->action, txn->xid);
 
  	/* Avoid leaking memory by using and resetting our own context */
 	old = MemoryContextSwitchTo(data->context);
