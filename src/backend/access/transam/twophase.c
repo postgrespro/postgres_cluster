@@ -174,10 +174,8 @@ static void RemoveGXact(GlobalTransaction gxact);
 
 static char twophase_buf[10*1024];
 static int twophase_pos = 0;
-size_t bogus_write(int fd, char *buf, size_t nbytes);
-
+size_t bogus_write(int fd, const void *buf, size_t nbytes);
 static char *XlogReadTwoPhaseData(XLogRecPtr lsn);
-// LWLock *xlogreclock;
 
 /*
  * Initialization of shared memory
@@ -997,6 +995,8 @@ StartPrepare(GlobalTransaction gxact)
 
 	save_state_data(&hdr, sizeof(TwoPhaseFileHeader));
 
+	// fprintf(stderr, "StartPrepare: %s=(%d,%d,%d,%d)\n", hdr.gid, hdr.nsubxacts, hdr.ncommitrels, hdr.nabortrels, hdr.ninvalmsgs);
+
 	/*
 	 * Add the additional info about subxacts, deletable files and cache
 	 * invalidation messages.
@@ -1033,13 +1033,13 @@ StartPrepare(GlobalTransaction gxact)
 void
 EndPrepare(GlobalTransaction gxact)
 {
-	PGXACT	   *pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
-	TransactionId xid = pgxact->xid;
+	// PGXACT	   *pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
+	// TransactionId xid = pgxact->xid;
 	TwoPhaseFileHeader *hdr;
 	char		path[MAXPGPATH];
 	StateFileChunk *record;
 	pg_crc32c	statefile_crc;
-	pg_crc32c	bogus_crc;
+	// pg_crc32c	bogus_crc;
 	int			fd;
 
 	/* Add the end sentinel to the list of 2PC records */
@@ -1144,26 +1144,13 @@ EndPrepare(GlobalTransaction gxact)
 	MyPgXact->delayChkpt = true;
 
 	XLogBeginInsert();
-
 	for (record = records.head; record != NULL; record = record->next)
 		XLogRegisterData(record->data, record->len);
-
-	// LWLockAcquire(xlogreclock, LW_EXCLUSIVE);
-	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
-	gxact->prepare_xlogptr = GetXLogInsertRecPtr();
 	gxact->prepare_lsn = XLogInsert(RM_XACT_ID, XLOG_XACT_PREPARE);
-	LWLockRelease(TwoPhaseStateLock);
-	// LWLockRelease(xlogreclock);
-	
-
 	XLogFlush(gxact->prepare_lsn);
+	gxact->prepare_xlogptr = ProcLastRecPtr;
 
-
-	// fprintf(stderr, "WAL %s->prepare_xlogptr = %X/%X \n", 
-	// gxact->gid, (uint32) (gxact->prepare_xlogptr >> 32), (uint32) (gxact->prepare_xlogptr));
-	// fprintf(stderr, "WAL %s->prepare_lsn = %X/%X \n", 
-	// gxact->gid, (uint32) (gxact->prepare_lsn >> 32), (uint32) (gxact->prepare_lsn));
-
+	// fprintf(stderr, "EndPrepare: %s={xlogptr:%X,lsn:%X, delta: %X}\n", gxact->gid, gxact->prepare_xlogptr, gxact->prepare_lsn, gxact->prepare_lsn - gxact->prepare_xlogptr);
 
 	/* If we crash now, we have prepared: WAL replay will fix things */
 
@@ -1250,28 +1237,27 @@ RegisterTwoPhaseRecord(TwoPhaseRmgrId rmid, uint16 info,
 static char *
 ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 {
-	// char		path[MAXPGPATH];
-	// char	   *buf;
-	// TwoPhaseFileHeader *hdr;
-	// int			fd;
-	// struct stat stat;
-	// uint32		crc_offset;
-	// pg_crc32c	calc_crc,
-	// 			file_crc;
+	char		path[MAXPGPATH];
+	char	   *buf;
+	TwoPhaseFileHeader *hdr;
+	int			fd;
+	struct stat stat;
+	uint32		crc_offset;
+	pg_crc32c	calc_crc,
+				file_crc;
 
-	// TwoPhaseFilePath(path, xid);
+	TwoPhaseFilePath(path, xid);
 
-	// fd = OpenTransientFile(path, O_RDONLY | PG_BINARY, 0);
-
-	// if (fd < 0)
-	// {
-	// 	if (give_warnings)
-	// 		ereport(WARNING,
-	// 				(errcode_for_file_access(),
-	// 				 errmsg("could not open two-phase state file \"%s\": %m",
-	// 						path)));
-	// 	return NULL;
-	// }
+	fd = OpenTransientFile(path, O_RDONLY | PG_BINARY, 0);
+	if (fd < 0)
+	{
+		if (give_warnings)
+			ereport(WARNING,
+					(errcode_for_file_access(),
+					 errmsg("could not open two-phase state file \"%s\": %m",
+							path)));
+		return NULL;
+	}
 
 	/*
 	 * Check file length.  We can determine a lower bound pretty easily. We
@@ -1279,72 +1265,72 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 	 * we can't guarantee that we won't get an out of memory error anyway,
 	 * even on a valid file.
 	 */
-	// if (fstat(fd, &stat))
-	// {
-	// 	CloseTransientFile(fd);
-	// 	if (give_warnings)
-	// 		ereport(WARNING,
-	// 				(errcode_for_file_access(),
-	// 				 errmsg("could not stat two-phase state file \"%s\": %m",
-	// 						path)));
-	// 	return NULL;
-	// }
+	if (fstat(fd, &stat))
+	{
+		CloseTransientFile(fd);
+		if (give_warnings)
+			ereport(WARNING,
+					(errcode_for_file_access(),
+					 errmsg("could not stat two-phase state file \"%s\": %m",
+							path)));
+		return NULL;
+	}
 
-	// if (stat.st_size < (MAXALIGN(sizeof(TwoPhaseFileHeader)) +
-	// 					MAXALIGN(sizeof(TwoPhaseRecordOnDisk)) +
-	// 					sizeof(pg_crc32c)) ||
-	// 	stat.st_size > MaxAllocSize)
-	// {
-	// 	CloseTransientFile(fd);
-	// 	return NULL;
-	// }
+	if (stat.st_size < (MAXALIGN(sizeof(TwoPhaseFileHeader)) +
+						MAXALIGN(sizeof(TwoPhaseRecordOnDisk)) +
+						sizeof(pg_crc32c)) ||
+		stat.st_size > MaxAllocSize)
+	{
+		CloseTransientFile(fd);
+		return NULL;
+	}
 
-	// crc_offset = stat.st_size - sizeof(pg_crc32c);
-	// if (crc_offset != MAXALIGN(crc_offset))
-	// {
-	// 	CloseTransientFile(fd);
-	// 	return NULL;
-	// }
+	crc_offset = stat.st_size - sizeof(pg_crc32c);
+	if (crc_offset != MAXALIGN(crc_offset))
+	{
+		CloseTransientFile(fd);
+		return NULL;
+	}
 
-	// /*
-	//  * OK, slurp in the file.
-	//  */
-	// buf = (char *) palloc(stat.st_size);
+	/*
+	 * OK, slurp in the file.
+	 */
+	buf = (char *) palloc(stat.st_size);
 
-	// if (read(fd, buf, stat.st_size) != stat.st_size)
-	// {
-	// 	CloseTransientFile(fd);
-	// 	if (give_warnings)
-	// 		ereport(WARNING,
-	// 				(errcode_for_file_access(),
-	// 				 errmsg("could not read two-phase state file \"%s\": %m",
-	// 						path)));
-	// 	pfree(buf);
-	// 	return NULL;
-	// }
+	if (read(fd, buf, stat.st_size) != stat.st_size)
+	{
+		CloseTransientFile(fd);
+		if (give_warnings)
+			ereport(WARNING,
+					(errcode_for_file_access(),
+					 errmsg("could not read two-phase state file \"%s\": %m",
+							path)));
+		pfree(buf);
+		return NULL;
+	}
 
-	// CloseTransientFile(fd);
+	CloseTransientFile(fd);
 
-	// hdr = (TwoPhaseFileHeader *) buf;
-	// if (hdr->magic != TWOPHASE_MAGIC || hdr->total_len != stat.st_size)
-	// {
-	// 	pfree(buf);
-	// 	return NULL;
-	// }
+	hdr = (TwoPhaseFileHeader *) buf;
+	if (hdr->magic != TWOPHASE_MAGIC || hdr->total_len != stat.st_size)
+	{
+		pfree(buf);
+		return NULL;
+	}
 
-	// INIT_CRC32C(calc_crc);
-	// COMP_CRC32C(calc_crc, buf, crc_offset);
-	// FIN_CRC32C(calc_crc);
+	INIT_CRC32C(calc_crc);
+	COMP_CRC32C(calc_crc, buf, crc_offset);
+	FIN_CRC32C(calc_crc);
 
-	// file_crc = *((pg_crc32c *) (buf + crc_offset));
+	file_crc = *((pg_crc32c *) (buf + crc_offset));
 
-	// if (!EQ_CRC32C(calc_crc, file_crc))
-	// {
-	// 	pfree(buf);
-	// 	return NULL;
-	// }
+	if (!EQ_CRC32C(calc_crc, file_crc))
+	{
+		pfree(buf);
+		return NULL;
+	}
 
-	return twophase_buf;
+	return buf;
 }
 
 /*
@@ -1410,12 +1396,8 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	 * Read and validate the state file
 	 */
 	// buf = ReadTwoPhaseFile(xid, true);
+	// buf = twophase_buf;
 	buf = XlogReadTwoPhaseData(gxact->prepare_xlogptr);
-	if (buf == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg("two-phase state file for transaction %u is corrupt",
-						xid)));
 
 	/*
 	 * Disassemble the header area
@@ -1434,6 +1416,15 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 
 	/* compute latestXid among all children */
 	latestXid = TransactionIdLatest(xid, hdr->nsubxacts, children);
+
+
+	// fprintf(stderr, "FinishPrepared: %s=(%d,%d,%d,%d)\n", gxact->gid, hdr->nsubxacts, hdr->ncommitrels, hdr->nabortrels, hdr->ninvalmsgs);
+	// fprintf(stderr, "FinishPrepared: %s={xlogptr:%X,lsn:%X,delta:%X}\n", gxact->gid, gxact->prepare_xlogptr, gxact->prepare_lsn, gxact->prepare_lsn - gxact->prepare_xlogptr);
+
+	Assert(hdr->nsubxacts == 0);
+	Assert(hdr->ncommitrels == 0);
+	Assert(hdr->nabortrels == 0);
+	Assert(hdr->ninvalmsgs == 0);
 
 	/*
 	 * The order of operations here is critical: make the XLOG entry for
@@ -2246,30 +2237,11 @@ RecordTransactionAbortPrepared(TransactionId xid,
 	SyncRepWaitForLSN(recptr);
 }
 
-
-
-
-
-
-
-
-
 /**********************************************************************************/
 
 
-// static int	xlogreadfd = -1;
-// static XLogSegNo xlogreadsegno = -1;
-// static char xlogfpath[MAXPGPATH];
-
-// typedef struct XLogPageReadPrivate
-// {
-// 	const char *datadir;
-// 	TimeLineID	tli;
-// } XLogPageReadPrivate;
-
-
-size_t 
-bogus_write(int fd, char *buf, size_t nbytes)
+size_t
+bogus_write(int fd, const void *buf, size_t nbytes)
 {
 	memcpy(twophase_buf + twophase_pos, buf, nbytes);
 	twophase_pos += nbytes;
@@ -2284,8 +2256,6 @@ XlogReadTwoPhaseData(XLogRecPtr lsn)
 	XLogReaderState *xlogreader;
 	char	   *errormsg;
 
-	fprintf(stderr, "XlogReadTwoPhaseData called\n");
-
 	xlogreader = XLogReaderAllocate(&logical_read_local_xlog_page, NULL);
 	if (xlogreader == NULL)
 		fprintf(stderr, "xlogreader == NULL\n");
@@ -2296,20 +2266,5 @@ XlogReadTwoPhaseData(XLogRecPtr lsn)
 		fprintf(stderr, "XLogReadRecord error\n");
 	}
 
-	// memcpy(twophase_buf + twophase_pos, buf, nbytes);
-	// twophase_pos += nbytes;
-	// return nbytes;
-
-	// XLogReaderFree(xlogreader);
-	// if (xlogreadfd != -1)
-	// {
-	// 	close(xlogreadfd);
-	// 	xlogreadfd = -1;
-	// }
-
 	return XLogRecGetData(xlogreader);
 }
-
-
-
-
