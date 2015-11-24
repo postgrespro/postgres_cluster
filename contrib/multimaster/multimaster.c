@@ -118,7 +118,6 @@ static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB* xid_in_doubt;
 static HTAB* local_trans;
 static DtmState* dtm;
-static Snapshot CurrentTransactionSnapshot;
 
 static TransactionId DtmNextXid;
 static SnapshotData DtmSnapshot = { HeapTupleSatisfiesMVCC };
@@ -609,8 +608,9 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
 	if (TransactionIdIsValid(DtmNextXid) && snapshot != &CatalogSnapshotData)
 	{
-		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != snapshot->curcid))
+		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != snapshot->curcid)) {
 			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
+        }
 		DtmCurcid = snapshot->curcid;
 		DtmLastSnapshot = snapshot;
 		DtmMergeWithGlobalSnapshot(snapshot);
@@ -628,7 +628,6 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 		snapshot = PgGetSnapshotData(snapshot);
 	}
 	DtmUpdateRecentXmin(snapshot);
-	CurrentTransactionSnapshot = snapshot;
 	return snapshot;
 }
 
@@ -651,7 +650,6 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 	{
 		if (TransactionIdIsValid(DtmNextXid))
 		{
-			CurrentTransactionSnapshot = NULL;
 			if (status == TRANSACTION_STATUS_ABORTED || !MMIsDistributedTrans)
 			{
 				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
@@ -662,7 +660,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 			else
 			{
 				XTM_INFO("Begin commit transaction %d\n", xid);
-				/* Mark transaction as on-doubt in xid_in_doubt hash table */
+				/* Mark transaction as in-doubt in xid_in_doubt hash table */
 				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
 				LWLockRelease(dtm->hashLock);
@@ -673,8 +671,9 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
                     MarkAsAborted();
                     END_CRIT_SECTION();
                     elog(ERROR, "Transaction commit rejected by XTM");                    
+                } else { 
+                    XTM_INFO("Commit transaction %d\n", xid);
                 }
-				XTM_INFO("Commit transaction %d\n", xid);
 			}
 		}
 		else
@@ -682,11 +681,12 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 			XTM_INFO("Set transaction %u status in local CLOG" , xid);
 		}
 	}
-	else
+	else if (status != TRANSACTION_STATUS_ABORTED) 
 	{
 		XidStatus gs;
 		gs = DtmGlobalGetTransStatus(xid, false);
 		if (gs != TRANSACTION_STATUS_UNKNOWN) { 
+            Assert(gs != TRANSACTION_STATUS_IN_PROGRESS);
 			status = gs;
         }
 	}
@@ -753,23 +753,21 @@ static void DtmInitialize()
 static void
 DtmXactCallback(XactEvent event, void *arg)
 {
-	XTM_INFO("%d: DtmXactCallbackevent=%d nextxid=%d\n", getpid(), event, DtmNextXid);
+	//XTM_INFO("%d: DtmXactCallbackevent=%d nextxid=%d\n", getpid(), event, DtmNextXid);
     switch (event) 
     {
     case XACT_EVENT_START: 
-        XTM_INFO("%d: normal=%d, initialized=%d, replication=%d, bgw=%d, vacuum=%d\n", 
-                 getpid(), IsNormalProcessingMode(), dtm->initialized, MMDoReplication, IsBackgroundWorker, IsAutoVacuumWorkerProcess());
+      //XTM_INFO("%d: normal=%d, initialized=%d, replication=%d, bgw=%d, vacuum=%d\n", 
+      //           getpid(), IsNormalProcessingMode(), dtm->initialized, MMDoReplication, IsBackgroundWorker, IsAutoVacuumWorkerProcess());
         if (IsNormalProcessingMode() && dtm->initialized && MMDoReplication && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess()) { 
             MMBeginTransaction();
         }
         break;
     case XACT_EVENT_PRE_COMMIT:
     case XACT_EVENT_PARALLEL_PRE_COMMIT:
-        if (!MMIsDistributedTrans && TransactionIdIsValid(GetCurrentTransactionIdIfAny())) {
-            XTM_INFO("%d: Will ignore transaction %u\n", getpid(), GetCurrentTransactionIdIfAny());
-            MMMarkTransAsLocal(GetCurrentTransactionIdIfAny());               
-        } else { 
-            XTM_INFO("%d: Transaction %u will be replicated\n", getpid(), GetCurrentTransactionIdIfAny());
+        if (!MMIsDistributedTrans && TransactionIdIsValid(DtmNextXid)) {
+            XTM_INFO("%d: Will ignore transaction %u\n", getpid(), DtmNextXid);
+            MMMarkTransAsLocal(DtmNextXid);               
         }
         break;
     case XACT_EVENT_COMMIT:

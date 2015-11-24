@@ -143,7 +143,7 @@ static void ondisconnect(client_t client) {
             }
 		} else { 
 			shout(
-				"[%d] DISCONNECT: transaction %u not found O_o\n",
+				"[%d] DISCONNECT: transaction %u of disconnected client is not found\n",
 				CLIENT_ID(client), CLIENT_XID(client)
 			);
 		}
@@ -392,11 +392,12 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 				client,
 				"VOTE: transaction failed to abort O_o"
 			);
+#if 0
             shout(
                 "[%d] VOTE: abort xid %u\n",
                 CLIENT_ID(client), xid
                 );
-
+#endif
 			notify_listeners(t, NEGATIVE);
 			free_transaction(t);
 			client_message_shortcut(client, RES_TRANSACTION_ABORTED);

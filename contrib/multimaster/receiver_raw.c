@@ -417,7 +417,11 @@ receiver_raw_main(Datum main_arg)
                 Assert(!insideTrans);
                 SetCurrentStatementStartTimestamp();
                 MMJoinTransaction(xid);
+
                 StartTransactionCommand();
+                BeginTransactionBlock();
+                CommitTransactionCommand();
+
                 SPI_connect();
                 PushActiveSnapshot(GetTransactionSnapshot());
                 insideTrans = true;
@@ -427,11 +431,19 @@ receiver_raw_main(Datum main_arg)
                 insideTrans = false;
                 SPI_finish();
                 PopActiveSnapshot();
+                StartTransactionCommand();
                 if (rollbackTransaction) {
-                    AbortCurrentTransaction();
-                } else { 
+                    UserAbortTransactionBlock();
+                } 
+                PG_TRY();
+                {
                     CommitTransactionCommand();
                 }
+                PG_CATCH();
+                {
+                    elog(WARNING, "%s: Current transaction is aborted at receiver", worker_name);
+                }
+                PG_END_TRY();
             } else if (!rollbackTransaction) {
                 Assert(insideTrans);
                 /* Execute query */
@@ -448,11 +460,12 @@ receiver_raw_main(Datum main_arg)
                         ereport(LOG, (errmsg("%s: DELETE received correctly: %s",
                                              worker_name, stmt)));
                     else
-                        ereport(LOG, (errmsg("%s: Error when applying change: %s",
+                        ereport(WARNING, (errmsg("%s: Error when applying change: %s",
                                              worker_name, stmt)));
                 }
                 PG_CATCH();
                 {
+                    elog(WARNING, "%s: %s failed at receiver", worker_name, stmt);
                     rollbackTransaction = true;
                 }
                 PG_END_TRY();
@@ -595,8 +608,4 @@ int MMStartReceivers(char* conns, int node_id)
             worker.bgw_main_arg = (Datum)ctx;
             RegisterBackgroundWorker(&worker);
         }
-        conn_str = p + 1;
-    }
-
-    return i;
-}
+        con

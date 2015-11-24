@@ -210,7 +210,7 @@ int main (int argc, char* argv[])
 
     if (initialize) { 
         initializeDatabase();
-        printf("%d account inserted\n", cfg.nAccounts);
+        printf("%d accounts inserted\n", cfg.nAccounts);
     }
 
     time_t start = getCurrentTime();
@@ -246,12 +246,14 @@ int main (int argc, char* argv[])
 
     printf(
         "{\"update_tps\":%f, \"read_tps\":%f,"
-        " \"readers\":%d, \"writers\":%d,"
+        " \"readers\":%d, \"writers\":%d, \"aborts\":%ld, \"abort_percent\": %d,"
         " \"accounts\":%d, \"iterations\":%d, \"hosts\":%ld}\n",
         (double)(nWrites*USEC)/elapsed,
         (double)(nReads*USEC)/elapsed,
         cfg.nReaders,
         cfg.nWriters,
+        nAborts,
+        (int)(nAborts*100/cfg.nWriters),
         cfg.nAccounts,
         cfg.nIterations,
         cfg.connections.size()
