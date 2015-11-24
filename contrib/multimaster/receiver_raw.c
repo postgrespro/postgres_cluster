@@ -14,11 +14,13 @@
  */
 
 /* Some general headers for custom bgworker facility */
+#include <unistd.h>
 #include "postgres.h"
 #include "fmgr.h"
 #include "libpq-fe.h"
 #include "pqexpbuffer.h"
 #include "access/xact.h"
+#include "access/transam.h"
 #include "lib/stringinfo.h"
 #include "pgstat.h"
 #include "executor/spi.h"
@@ -50,7 +52,7 @@ static int receiver_idle_time = 1;
 static bool receiver_sync_mode = true;
 
 /* Worker name */
-static char *worker_name = "multimaster";
+char worker_proc[16];
 
 /* Lastly written positions */
 static XLogRecPtr output_written_lsn = InvalidXLogRecPtr;
@@ -93,7 +95,7 @@ sendFeedback(PGconn *conn, int64 now)
 	ereport(LOG, (errmsg("%s: confirming write up to %X/%X, "
 						 "flush to %X/%X (slot custom_slot), "
 						 "applied to %X/%X",
-						 worker_name,
+						 worker_proc,
 						 (uint32) (output_written_lsn >> 32),
 						 (uint32) output_written_lsn,
 						 (uint32) (output_fsync_lsn >> 32),
@@ -119,7 +121,7 @@ sendFeedback(PGconn *conn, int64 now)
 	if (PQputCopyData(conn, replybuf, len) <= 0 || PQflush(conn))
 	{
 		ereport(LOG, (errmsg("%s: could not send feedback packet: %s",
-							 worker_name, PQerrorMessage(conn))));
+							 worker_proc, PQerrorMessage(conn))));
 		return false;
 	}
 
@@ -209,6 +211,7 @@ receiver_raw_main(Datum main_arg)
 	PQExpBuffer query;
 	PGconn *conn;
 	PGresult *res;
+    TransactionId xid = InvalidTransactionId;
     bool insideTrans = false;
     bool rollbackTransaction = false;
 
@@ -216,6 +219,7 @@ receiver_raw_main(Datum main_arg)
 	pqsignal(SIGHUP, receiver_raw_sighup);
 	pqsignal(SIGTERM, receiver_raw_sigterm);
 
+    sprintf(worker_proc, "mm_recv_%d", getpid());
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -229,13 +233,13 @@ receiver_raw_main(Datum main_arg)
 	{
 		PQfinish(conn);
 		ereport(ERROR, (errmsg("%s: Could not establish connection to remote server",
-							 worker_name)));
+							 worker_proc)));
 		proc_exit(1);
 	}
 
 	query = createPQExpBuffer();
 
-    appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", args->receiver_slot, worker_name);
+    appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", args->receiver_slot, worker_proc);
     res = PQexec(conn, query->data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
@@ -244,7 +248,7 @@ receiver_raw_main(Datum main_arg)
 		{
             PQclear(res);
             ereport(ERROR, (errmsg("%s: Could not create logical slot",
-                                 worker_name)));
+                                 worker_proc)));
             proc_exit(1);
         }
     }
@@ -259,7 +263,7 @@ receiver_raw_main(Datum main_arg)
 	{
 		PQclear(res);
 		ereport(LOG, (errmsg("%s: Could not start logical replication",
-							 worker_name)));
+							 worker_proc)));
 		proc_exit(1);
 	}
 	PQclear(res);
@@ -284,13 +288,13 @@ receiver_raw_main(Datum main_arg)
 			/* Process config file */
 			ProcessConfigFile(PGC_SIGHUP);
 			got_sighup = false;
-			ereport(LOG, (errmsg("%s: processed SIGHUP", worker_name)));
+			ereport(LOG, (errmsg("%s: processed SIGHUP", worker_proc)));
 		}
 
 		if (got_sigterm)
 		{
 			/* Simply exit */
-			ereport(LOG, (errmsg("%s: processed SIGTERM", worker_name)));
+			ereport(LOG, (errmsg("%s: processed SIGTERM", worker_proc)));
 			proc_exit(0);
 		}
 
@@ -342,7 +346,7 @@ receiver_raw_main(Datum main_arg)
 				walEnd = fe_recvint64(&copybuf[pos]);
 				ereport(LOG, (errmsg("%s: keepalive message from server, "
 									 "walEnd %X/%X, ",
-									 worker_name,
+									 worker_proc,
 									 (uint32) (walEnd >> 32),
 									 (uint32) walEnd)));
 				pos += 8;	/* read walEnd */
@@ -350,7 +354,7 @@ receiver_raw_main(Datum main_arg)
 				if (rc < pos + 1)
 				{
 					ereport(LOG, (errmsg("%s: streaming header too small: %d",
-										 worker_name, rc)));
+										 worker_proc, rc)));
 					proc_exit(1);
 				}
 				replyRequested = copybuf[pos];
@@ -378,7 +382,7 @@ receiver_raw_main(Datum main_arg)
 			else if (copybuf[0] != 'w')
 			{
 				ereport(LOG, (errmsg("%s: Incorrect streaming header",
-									 worker_name)));
+									 worker_proc)));
 				proc_exit(1);
 			}
 
@@ -392,14 +396,14 @@ receiver_raw_main(Datum main_arg)
 			if (rc < hdr_len + 1)
 			{
 				ereport(LOG, (errmsg("%s: Streaming header too small",
-									 worker_name)));
+									 worker_proc)));
 				proc_exit(1);
 			}
 
 			/* Log some useful information */
 			ereport(LOG, (errmsg("%s: received from server, walStart %X/%X, "
 								 "and walEnd %X/%X",
-						 worker_name,
+						 worker_proc,
 						 (uint32) (walStart >> 32),
 						 (uint32) walStart,
 						 (uint32) (walEnd >> 32),
@@ -411,7 +415,6 @@ receiver_raw_main(Datum main_arg)
 			SetCurrentStatementStartTimestamp();
             
             if (strncmp(stmt, "BEGIN ", 6) == 0) { 
-                TransactionId xid;
                 int rc = sscanf(stmt + 6, "%u", &xid);
                 Assert(rc == 1);
                 Assert(!insideTrans);
@@ -419,9 +422,6 @@ receiver_raw_main(Datum main_arg)
                 MMJoinTransaction(xid);
 
                 StartTransactionCommand();
-                BeginTransactionBlock();
-                CommitTransactionCommand();
-
                 SPI_connect();
                 PushActiveSnapshot(GetTransactionSnapshot());
                 insideTrans = true;
@@ -431,19 +431,20 @@ receiver_raw_main(Datum main_arg)
                 insideTrans = false;
                 SPI_finish();
                 PopActiveSnapshot();
-                StartTransactionCommand();
                 if (rollbackTransaction) {
-                    UserAbortTransactionBlock();
-                } 
-                PG_TRY();
-                {
-                    CommitTransactionCommand();
+                    elog(WARNING, "%s: Rollback transaction %u", worker_proc, xid);
+                    AbortCurrentTransaction();
+                } else { 
+                    PG_TRY();
+                    {
+                        CommitTransactionCommand();
+                    }
+                    PG_CATCH();
+                    {
+                        elog(WARNING, "%s: Commit of transaction %u is failed", worker_proc, xid);
+                    }
+                    PG_END_TRY();
                 }
-                PG_CATCH();
-                {
-                    elog(WARNING, "%s: Current transaction is aborted at receiver", worker_name);
-                }
-                PG_END_TRY();
             } else if (!rollbackTransaction) {
                 Assert(insideTrans);
                 /* Execute query */
@@ -452,20 +453,20 @@ receiver_raw_main(Datum main_arg)
                     rc = SPI_execute(stmt, false, 0);
                     if (rc == SPI_OK_INSERT)
                         ereport(LOG, (errmsg("%s: INSERT received correctly: %s",
-                                             worker_name, stmt)));
+                                             worker_proc, stmt)));
                     else if (rc == SPI_OK_UPDATE)
                         ereport(LOG, (errmsg("%s: UPDATE received correctly: %s",
-                                             worker_name, stmt)));
+                                             worker_proc, stmt)));
                     else if (rc == SPI_OK_DELETE)
                         ereport(LOG, (errmsg("%s: DELETE received correctly: %s",
-                                             worker_name, stmt)));
+                                             worker_proc, stmt)));
                     else
                         ereport(WARNING, (errmsg("%s: Error when applying change: %s",
-                                             worker_name, stmt)));
+                                             worker_proc, stmt)));
                 }
                 PG_CATCH();
                 {
-                    elog(WARNING, "%s: %s failed at receiver", worker_name, stmt);
+                    elog(WARNING, "%s: %s failed in transaction %u", worker_proc, stmt, xid);
                     rollbackTransaction = true;
                 }
                 PG_END_TRY();
@@ -531,7 +532,7 @@ receiver_raw_main(Datum main_arg)
 			else if (r < 0)
 			{
 				ereport(LOG, (errmsg("%s: Incorrect status received... Leaving.",
-									 worker_name)));
+									 worker_proc)));
 				proc_exit(1);
 			}
 
@@ -539,7 +540,7 @@ receiver_raw_main(Datum main_arg)
 			if (PQconsumeInput(conn) == 0)
 			{
 				ereport(LOG, (errmsg("%s: Data remaining on the socket... Leaving.",
-									 worker_name)));
+									 worker_proc)));
 				proc_exit(1);
 			}
 			continue;
@@ -549,7 +550,7 @@ receiver_raw_main(Datum main_arg)
 		if (rc == -1)
 		{
 			ereport(LOG, (errmsg("%s: COPY Stream has abruptly ended...",
-								 worker_name)));
+								 worker_proc)));
 			break;
 		}
 
@@ -557,7 +558,7 @@ receiver_raw_main(Datum main_arg)
 		if (rc == -2)
 		{
 			ereport(LOG, (errmsg("%s: Failure while receiving changes...",
-								 worker_name)));
+								 worker_proc)));
 			proc_exit(1);
 		}
 	}
@@ -608,4 +609,9 @@ int MMStartReceivers(char* conns, int node_id)
             worker.bgw_main_arg = (Datum)ctx;
             RegisterBackgroundWorker(&worker);
         }
-        con
+        conn_str = p + 1;
+    }
+
+    return i;
+}
+

@@ -1,7 +1,7 @@
 /*
- * pg_dtm.c
+ * multimaster.c
  *
- * Pluggable distributed transaction manager
+ * Multimaster based on logical replication
  *
  */
 
