@@ -253,7 +253,7 @@ int main (int argc, char* argv[])
         cfg.nReaders,
         cfg.nWriters,
         nAborts,
-        (int)(nAborts*100/cfg.nWriters),
+        (int)(nAborts*100/cfg.nIterations),
         cfg.nAccounts,
         cfg.nIterations,
         cfg.connections.size()

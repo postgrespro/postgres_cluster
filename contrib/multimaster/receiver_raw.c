@@ -52,6 +52,7 @@ static int receiver_idle_time = 1;
 static bool receiver_sync_mode = true;
 
 /* Worker name */
+static char *worker_name = "multimaster";
 char worker_proc[16];
 
 /* Lastly written positions */
@@ -239,7 +240,7 @@ receiver_raw_main(Datum main_arg)
 
 	query = createPQExpBuffer();
 
-    appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", args->receiver_slot, worker_proc);
+    appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", args->receiver_slot, worker_name);
     res = PQexec(conn, query->data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
