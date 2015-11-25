@@ -93,17 +93,6 @@ sendFeedback(PGconn *conn, int64 now)
 	char		replybuf[1 + 8 + 8 + 8 + 8 + 1];
 	int		 len = 0;
 
-	ereport(LOG, (errmsg("%s: confirming write up to %X/%X, "
-						 "flush to %X/%X (slot custom_slot), "
-						 "applied to %X/%X",
-						 worker_proc,
-						 (uint32) (output_written_lsn >> 32),
-						 (uint32) output_written_lsn,
-						 (uint32) (output_fsync_lsn >> 32),
-						 (uint32) output_fsync_lsn,
-						 (uint32) (output_applied_lsn >> 32),
-						 (uint32) output_applied_lsn)));
-
 	replybuf[len] = 'r';
 	len += 1;
 	fe_sendint64(output_written_lsn, &replybuf[len]);   /* write */
@@ -315,7 +304,7 @@ receiver_raw_main(Datum main_arg)
 		 */
 		while (true)
 		{
-			XLogRecPtr  walEnd, walStart;
+			XLogRecPtr  walEnd;
             char* stmt;
 
 			rc = PQgetCopyData(conn, &copybuf, 1);
@@ -345,11 +334,6 @@ receiver_raw_main(Datum main_arg)
 				 * considered as sent to this receiver.
 				 */
 				walEnd = fe_recvint64(&copybuf[pos]);
-				ereport(LOG, (errmsg("%s: keepalive message from server, "
-									 "walEnd %X/%X, ",
-									 worker_proc,
-									 (uint32) (walEnd >> 32),
-									 (uint32) walEnd)));
 				pos += 8;	/* read walEnd */
 				pos += 8;	/* skip sendTime */
 				if (rc < pos + 1)
@@ -389,7 +373,7 @@ receiver_raw_main(Datum main_arg)
 
 			/* Now fetch the data */
 			hdr_len = 1;		/* msgtype 'w' */
-			walStart = fe_recvint64(&copybuf[hdr_len]);
+			fe_recvint64(&copybuf[hdr_len]);
 			hdr_len += 8;		/* dataStart */
 			walEnd = fe_recvint64(&copybuf[hdr_len]);
 			hdr_len += 8;		/* WALEnd */
@@ -400,15 +384,6 @@ receiver_raw_main(Datum main_arg)
 									 worker_proc)));
 				proc_exit(1);
 			}
-
-			/* Log some useful information */
-			ereport(LOG, (errmsg("%s: received from server, walStart %X/%X, "
-								 "and walEnd %X/%X",
-						 worker_proc,
-						 (uint32) (walStart >> 32),
-						 (uint32) walStart,
-						 (uint32) (walEnd >> 32),
-						 (uint32) walEnd)));
 
 			/* Apply change to database */
             stmt = copybuf + hdr_len;
@@ -427,6 +402,7 @@ receiver_raw_main(Datum main_arg)
                 PushActiveSnapshot(GetTransactionSnapshot());
                 insideTrans = true;
                 rollbackTransaction = false;
+                XTM_INFO("%s: Receive transaction %u\n", worker_proc, xid);
             } else if (strncmp(stmt, "COMMIT;", 7) == 0) { 
                 Assert(insideTrans);
                 insideTrans = false;
@@ -438,11 +414,15 @@ receiver_raw_main(Datum main_arg)
                 } else { 
                     PG_TRY();
                     {
+                        XTM_INFO("%s: Start commit of transaction %u\n", worker_proc, xid);
                         CommitTransactionCommand();
+                        XTM_INFO("%s: Complete commit of transaction %u\n", worker_proc, xid);
                     }
                     PG_CATCH();
                     {
+                        FlushErrorState();
                         elog(WARNING, "%s: Commit of transaction %u is failed", worker_proc, xid);
+                        AbortCurrentTransaction();
                     }
                     PG_END_TRY();
                 }
@@ -452,21 +432,14 @@ receiver_raw_main(Datum main_arg)
                 PG_TRY();
                 {
                     rc = SPI_execute(stmt, false, 0);
-                    if (rc == SPI_OK_INSERT)
-                        ereport(LOG, (errmsg("%s: INSERT received correctly: %s",
+                    if (rc != SPI_OK_INSERT && rc != SPI_OK_UPDATE && rc != SPI_OK_DELETE) {
+                        ereport(LOG, (errmsg("%s: Error when applying change: %s",
                                              worker_proc, stmt)));
-                    else if (rc == SPI_OK_UPDATE)
-                        ereport(LOG, (errmsg("%s: UPDATE received correctly: %s",
-                                             worker_proc, stmt)));
-                    else if (rc == SPI_OK_DELETE)
-                        ereport(LOG, (errmsg("%s: DELETE received correctly: %s",
-                                             worker_proc, stmt)));
-                    else
-                        ereport(WARNING, (errmsg("%s: Error when applying change: %s",
-                                             worker_proc, stmt)));
+                    }
                 }
                 PG_CATCH();
                 {
+                    FlushErrorState();
                     elog(WARNING, "%s: %s failed in transaction %u", worker_proc, stmt, xid);
                     rollbackTransaction = true;
                 }

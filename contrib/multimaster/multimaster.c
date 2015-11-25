@@ -74,7 +74,7 @@ typedef struct
     int count;
 } LocalTransaction;
 
-#define DTM_SHMEM_SIZE (1024*1024)
+#define DTM_SHMEM_SIZE (64*1024*1024)
 #define DTM_HASH_SIZE  1003
 
 void _PG_init(void);
@@ -665,12 +665,13 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
 				LWLockRelease(dtm->hashLock);
 				if (DtmGlobalSetTransStatus(xid, status, true) != status) { 
+                    XTM_INFO("Commit of transaction %d is rejected by arbiter\n", xid);
                     DtmNextXid = InvalidTransactionId;
                     DtmLastSnapshot = NULL;
                     MMIsDistributedTrans = false; 
                     MarkAsAborted();
                     END_CRIT_SECTION();
-                    elog(ERROR, "Transaction commit rejected by XTM");                    
+                    elog(ERROR, "Commit of transaction %d is rejected by DTM", xid);                    
                 } else { 
                     XTM_INFO("Commit transaction %d\n", xid);
                 }
@@ -678,7 +679,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 		}
 		else
 		{
-			XTM_INFO("Set transaction %u status in local CLOG" , xid);
+			XTM_INFO("Set transaction %u status in local CLOG\n" , xid);
 		}
 	}
 	else if (status != TRANSACTION_STATUS_ABORTED) 
@@ -765,11 +766,14 @@ DtmXactCallback(XactEvent event, void *arg)
         break;
     case XACT_EVENT_PRE_COMMIT:
     case XACT_EVENT_PARALLEL_PRE_COMMIT:
-        if (!MMIsDistributedTrans && TransactionIdIsValid(DtmNextXid)) {
-            XTM_INFO("%d: Will ignore transaction %u\n", getpid(), DtmNextXid);
-            MMMarkTransAsLocal(DtmNextXid);               
+    { 
+        TransactionId xid = GetCurrentTransactionIdIfAny();
+        if (!MMIsDistributedTrans && TransactionIdIsValid(xid)) {
+            XTM_INFO("%d: Will ignore transaction %u\n", getpid(), xid);
+            MMMarkTransAsLocal(xid);               
         }
         break;
+    }
     case XACT_EVENT_COMMIT:
     case XACT_EVENT_ABORT:
 		if (TransactionIdIsValid(DtmNextXid))
@@ -1137,8 +1141,10 @@ bool DtmDetectGlobalDeadLock(PGPROC* proc)
         XTM_INFO("%d: wait graph end\n", getpid());
         hasDeadlock = DtmGlobalDetectDeadLock(PostPortNumber, pgxact->xid, buf.data, buf.used);
         ByteBufferFree(&buf);
-        XTM_INFO("%d: deadlock detected for %u\n", getpid(), pgxact->xid);
-        elog(WARNING, "Deadlock detected for transaction %u", pgxact->xid);
+        XTM_INFO("%d: deadlock %sdetected for transaction %u\n", getpid(), hasDeadlock ? "": "not ",  pgxact->xid);
+        if (hasDeadlock) {  
+            elog(WARNING, "Deadlock detected for transaction %u", pgxact->xid);
+        }
     }
     return hasDeadlock;
 }
