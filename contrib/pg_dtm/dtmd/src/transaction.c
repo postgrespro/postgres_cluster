@@ -27,7 +27,7 @@ void transaction_clear(Transaction *t) {
 	int i;
 
 	t->xid = INVALID_XID;
-    t->xmin = INVALID_XID;
+	t->xmin = INVALID_XID;
 	t->size = 0;
 	t->votes_for = 0;
 	t->votes_against = 0;
@@ -38,10 +38,10 @@ void transaction_clear(Transaction *t) {
 	}
 }
 
-void transaction_push_listener(Transaction *t, char cmd, void *stream) {
+void transaction_push_listener(Transaction *t, char cmd, void *listener) {
 	assert((cmd >= 'a') && (cmd <= 'z'));
 	list_node_t *n = malloc(sizeof(list_node_t));
-	n->value = stream;
+	n->value = listener;
 	n->next = t->listeners[CHAR_TO_INDEX(cmd)];
 	t->listeners[CHAR_TO_INDEX(cmd)] = n;
 }
@@ -56,6 +56,34 @@ void *transaction_pop_listener(Transaction *t, char cmd) {
 	void *value = n->value;
 	free(n);
 	return value;
+}
+
+bool transaction_remove_listener(Transaction *t, char cmd, void *listener) {
+	assert((cmd >= 'a') && (cmd <= 'z'));
+	list_node_t *prev = NULL;
+	list_node_t *victim = t->listeners[CHAR_TO_INDEX(cmd)];
+
+	// find the victim
+	while (victim) {
+		if (victim->value == listener) {
+			break;
+		}
+		prev = victim;
+		victim = victim->next;
+	}
+
+	if (victim) {
+		// victim found
+		if (prev) {
+			prev->next = victim->next;
+		} else {
+			t->listeners[CHAR_TO_INDEX(cmd)] = victim->next;
+		}
+		free(victim);
+		return true;
+	}
+
+	return false;
 }
 
 Snapshot *transaction_snapshot(Transaction *t, int snapno) {

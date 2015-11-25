@@ -15,6 +15,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
+#include <netinet/in.h>
 
 #include "server.h"
 #include "dtmdlimits.h"
@@ -33,6 +34,7 @@ typedef struct client_data_t {
 	stream_t stream; // NULL: client value is empty
 	void *userdata;
 	unsigned int chan;
+	int refcount;
 } client_data_t;
 
 typedef struct stream_data_t {
@@ -183,7 +185,7 @@ static bool stream_flush(stream_t stream) {
 }
 
 static void server_flush(server_t server) {
-	debug("flushing the streams\n");
+	//debug("flushing the streams\n");
 	int i;
 	for (i = 0; i < server->streamsnum; i++) {
 		stream_t stream = server->streams + i;
@@ -210,6 +212,7 @@ static void stream_init(stream_t stream, int fd) {
 	assert(stream->clients);
 	// mark all clients as empty
 	for (i = 0; i < MAX_TRANSACTIONS; i++) {
+		stream->clients[i].refcount = 0;
 		stream->clients[i].stream = NULL;
 	}
 }
@@ -264,6 +267,10 @@ static void server_close_bad_streams(server_t server) {
 
 static bool stream_message_start(stream_t stream, unsigned int chan) {
 	ShubMessageHdr *msg;
+
+	if (!stream->good) {
+		return false;
+	}
 
 	if (stream->output.curmessage) {
 		shout("cannot start new message while the old one is unfinished\n");
@@ -490,7 +497,7 @@ static bool server_stream_handle(server_t server, stream_t stream) {
 
 bool server_tick(server_t server, int timeout_ms) {
 	int i;
-	debug("selecting\n");
+	//debug("selecting\n");
 	fd_set readfds = server->all;
 	struct timeval timeout = ms2tv(timeout_ms);
 	int numready = select(server->maxfd + 1, &readfds, NULL, NULL, &timeout);
@@ -564,6 +571,23 @@ void client_set_userdata(client_t client, void *userdata) {
 
 void *client_get_userdata(client_t client) {
 	return client->userdata;
+}
+
+unsigned client_get_ip_addr(client_t client)
+{
+    struct sockaddr_in inet_addr;
+    socklen_t inet_addr_len = sizeof(inet_addr);
+    inet_addr.sin_addr.s_addr = 0;
+    getpeername(client->stream->fd, (struct sockaddr *)&inet_addr, &inet_addr_len);
+    return inet_addr.sin_addr.s_addr;
+}
+   
+int client_ref(client_t client) {
+	return ++client->refcount;
+}
+
+int client_deref(client_t client) {
+	return --client->refcount;
 }
 
 #if 0

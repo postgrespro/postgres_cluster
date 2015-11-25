@@ -14,6 +14,7 @@
 #include "util.h"
 #include "transaction.h"
 #include "proto.h"
+#include "ddd.h"
 
 #define DEFAULT_DATADIR "/tmp/clog"
 #define DEFAULT_LISTENHOST "0.0.0.0"
@@ -24,10 +25,18 @@ static xid_t get_global_xmin();
 L2List active_transactions = {&active_transactions, &active_transactions};
 L2List* free_transactions;
 
+Transaction* transaction_hash[MAX_TRANSACTIONS];
+
 // We reserve the local xids if they fit between (prev, next) range, and
 // reserve something in (next, x) range otherwise, moving 'next' after 'x'.
 xid_t prev_gxid, next_gxid;
 xid_t global_xmin = INVALID_XID;
+
+static Transaction *find_transaction(xid_t xid) {    
+	Transaction *t;    
+	for (t = transaction_hash[xid % MAX_TRANSACTIONS]; t != NULL && t->xid != xid; t = t->collision);
+	return t;
+}
 
 typedef struct client_userdata_t {
 	int id;
@@ -57,23 +66,15 @@ static void free_client_userdata(client_userdata_t *cd) {
 }
 
 inline static void free_transaction(Transaction* t) {
+    Transaction** tpp;
+    for (tpp = &transaction_hash[t->xid % MAX_TRANSACTIONS]; *tpp != t; tpp = &(*tpp)->collision);
+    *tpp = t->collision;
 	l2_list_unlink(&t->elem);
 	t->elem.next = free_transactions;
 	free_transactions = &t->elem;
 	if (t->xmin == global_xmin) { 
 		global_xmin = get_global_xmin();
 	}
-}
-
-static Transaction *find_transaction(xid_t xid) {
-	Transaction *t;
-
-	for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
-		if (t->xid == xid) {
-			return t;
-		}
-	}
-	return NULL;
 }
 
 static void notify_listeners(Transaction *t, int status) {
@@ -83,6 +84,7 @@ static void notify_listeners(Transaction *t, int status) {
 		case BLANK:
 			while ((listener = transaction_pop_listener(t, 's'))) {
 				debug("[%d] notifying the client about xid=%u (unknown)\n", CLIENT_ID(listener), t->xid);
+				shout("%p DEREF(notify): %d\n", listener, client_deref(listener));
 				client_message_shortcut(
 					(client_t)listener,
 					RES_TRANSACTION_UNKNOWN
@@ -92,6 +94,7 @@ static void notify_listeners(Transaction *t, int status) {
 		case NEGATIVE:
 			while ((listener = transaction_pop_listener(t, 's'))) {
 				debug("[%d] notifying the client about xid=%u (aborted)\n", CLIENT_ID(listener), t->xid);
+				shout("%p DEREF(notify): %d\n", listener, client_deref(listener));
 				client_message_shortcut(
 					(client_t)listener,
 					RES_TRANSACTION_ABORTED
@@ -101,6 +104,7 @@ static void notify_listeners(Transaction *t, int status) {
 		case POSITIVE:
 			while ((listener = transaction_pop_listener(t, 's'))) {
 				debug("[%d] notifying the client about xid=%u (committed)\n", CLIENT_ID(listener), t->xid);
+				shout("%p DEREF(notify): %d\n", listener, client_deref(listener));
 				client_message_shortcut(
 					(client_t)listener,
 					RES_TRANSACTION_COMMITTED
@@ -110,6 +114,7 @@ static void notify_listeners(Transaction *t, int status) {
 		case DOUBT:
 			while ((listener = transaction_pop_listener(t, 's'))) {
 				debug("[%d] notifying the client about xid=%u (inprogress)\n", CLIENT_ID(listener), t->xid);
+				shout("%p DEREF(notify): %d\n", listener, client_deref(listener));
 				client_message_shortcut(
 					(client_t)listener,
 					RES_TRANSACTION_INPROGRESS
@@ -152,19 +157,18 @@ static void ondisconnect(client_t client) {
 	debug("[%d] disconnected\n", CLIENT_ID(client));
 
 	if (CLIENT_XID(client) != INVALID_XID) {
-		Transaction* t;
-
-		// need to abort the transaction this client is participating in
-		for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
-			if (t->xid == CLIENT_XID(client)) {
-				if (use_raft && (raft.role == ROLE_LEADER)) {
-					raft_emit(&raft, NEGATIVE, t->xid);
-				}
-				break;
+		Transaction* t = find_transaction(CLIENT_XID(client));
+		if (t != NULL) { 
+			if (transaction_remove_listener(t, 's', client)) {
+				shout("%p DEREF(disconn): %d\n", client, client_deref(client));
+			} else {
+				shout("%p DEREF(disconn): not found\n", client);
 			}
-		}
 
-		if (t == (Transaction*)&active_transactions) {
+			if (use_raft && (raft.role == ROLE_LEADER)) {
+				raft_emit(&raft, NEGATIVE, t->xid);
+			}
+		} else { 
 			shout(
 				"[%d] DISCONNECT: transaction xid=%u not found O_o\n",
 				CLIENT_ID(client), CLIENT_XID(client)
@@ -188,6 +192,7 @@ static void debug_cmd(client_t client, int argc, xid_t *argv) {
 		case CMD_AGAINST : cmdname =  "AGAINST"; break;
 		case CMD_SNAPSHOT: cmdname = "SNAPSHOT"; break;
 		case CMD_STATUS  : cmdname =   "STATUS"; break;
+		case CMD_DEADLOCK: cmdname = "DEADLOCK"; break;
 		default          : cmdname =  "unknown";
 	}
 	debug("[%d] %s", CLIENT_ID(client), cmdname);
@@ -219,24 +224,25 @@ static xid_t max_of_xids(xid_t a, xid_t b) {
 
 static void gen_snapshot(Snapshot *s) {
 	Transaction* t;
+    int n = 0;
 	s->times_sent = 0;
-	s->nactive = 0;
-	s->xmin = MAX_XID;
-	s->xmax = MIN_XID;
-	for (t = (Transaction*)active_transactions.next; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.next) {
+	for (t = (Transaction*)active_transactions.prev; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.prev) {
+        /*
 		if (t->xid < s->xmin) {
 			s->xmin = t->xid;
 		}
 		if (t->xid >= s->xmax) { 
 			s->xmax = t->xid + 1;
 		}
-		s->active[s->nactive++] = t->xid;
+        */
+		s->active[n++] = t->xid;
 	}
-	if (s->nactive > 0) {
-		assert(s->xmin < MAX_XID);
-		assert(s->xmax > MIN_XID);
+    s->nactive = n;
+	if (n > 0) {
+        s->xmin = s->active[0];
+        s->xmax = s->active[n-1];
 		assert(s->xmin <= s->xmax);
-		snapshot_sort(s);
+		// snapshot_sort(s);
 	} else {
 		s->xmin = s->xmax = 0;
 	}
@@ -330,6 +336,9 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 	t->snapshots_count = 0;
 	t->size = 1;
 
+    t->collision = transaction_hash[t->xid % MAX_TRANSACTIONS];
+    transaction_hash[t->xid % MAX_TRANSACTIONS] = t;
+
 	CLIENT_SNAPSENT(client) = 0;
 	CLIENT_XID(client) = t->xid;
 
@@ -382,6 +391,7 @@ static bool queue_for_transaction_finish(client_t client, xid_t xid, char cmd) {
 	// transaction waits which transaction.
 
 	transaction_push_listener(t, cmd, client);
+	shout("%p REF: %d\n", client, client_ref(client));
 	return true;
 }
 
@@ -561,6 +571,30 @@ static void onnoise(client_t client, int argc, xid_t *argv) {
 	client_message_shortcut(client, RES_FAILED);
 }
 
+static Graph graph;
+
+static void ondeadlock(client_t client, int argc, xid_t *argv) {
+    int port;
+    xid_t root;
+    nodeid_t node_id;
+
+	if (argc < 4) {
+		shout(
+			"[%d] DEADLOCK: wrong number of arguments %d, expected > 4\n",
+			CLIENT_ID(client), argc
+		);        
+		client_message_shortcut(client, RES_FAILED);
+		return;
+	}
+    port = argv[1];
+    root = argv[2];
+    node_id = ((nodeid_t)port << 32) | client_get_ip_addr(client);
+    addSubgraph(&graph, node_id, argv+3, argc-3);
+    bool hasDeadLock = detectDeadLock(&graph, root);
+    client_message_shortcut(client, hasDeadLock ? RES_DEADLOCK : RES_OK);
+}
+    
+
 static void oncmd(client_t client, int argc, xid_t *argv) {
 	debug_cmd(client, argc, argv);
 
@@ -592,6 +626,9 @@ static void oncmd(client_t client, int argc, xid_t *argv) {
 		case CMD_STATUS:
 			CHECKLEADER(client);
 			onstatus(client, argc, argv);
+			break;
+		case CMD_DEADLOCK:
+			ondeadlock(client, argc, argv);
 			break;
 		default:
 			onnoise(client, argc, argv);
@@ -703,6 +740,8 @@ bool assassin = false;
 bool configure(int argc, char **argv) {
 	raft_init(&raft);
 	int myid = NOBODY;
+
+    initGraph(&graph);
 
 	int opt;
 	while ((opt = getopt(argc, argv, "hd:i:r:l:k")) != -1) {
@@ -817,6 +856,8 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 
+	srand(getpid());
+
 	mstimer_t t;
 	mstimer_reset(&t);
 	while (true) {
@@ -831,6 +872,11 @@ int main(int argc, char **argv) {
 		if (server_tick(server, HEARTBEAT_TIMEOUT_MS)) {
 			m = raft_recv_message(&raft);
 			assert(m); // m should not be NULL, because the message should be ready to recv
+		}
+
+		if (rand() % 10000 == 0) {
+			shout("sleeping to test raft features\n");
+			sleep(1);
 		}
 
 		if (use_raft) {

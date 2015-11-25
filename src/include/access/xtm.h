@@ -11,6 +11,7 @@
 #ifndef XTM_H
 #define XTM_H
 
+#include "storage/proc.h"
 #include "access/clog.h"
 #include "utils/snapmgr.h"
 #include "utils/relcache.h"
@@ -20,8 +21,8 @@ typedef struct
 	/* Get current transaction status (encapsulation of TransactionIdGetStatus in clog.c) */
 	XidStatus (*GetTransactionStatus)(TransactionId xid, XLogRecPtr *lsn);
 
-	/* Set current transaction status (encapsulation of TransactionIdGetStatus in clog.c) */
-	bool (*SetTransactionStatus)(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
+	/* Set current transaction status (encapsulation of TransactionIdSetTreeStatus in clog.c) */
+	void (*SetTransactionStatus)(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 
 	/* Get current transaction snaphot (encapsulation of GetSnapshotData in procarray.c) */
 	Snapshot (*GetSnapshot)(Snapshot snapshot);
@@ -40,6 +41,9 @@ typedef struct
 
 	/* Is the given XID still-in-progress according to the snapshot (encapsulation of XidInMVCCSnapshot in tqual.c) */
 	bool (*IsInSnapshot)(TransactionId xid, Snapshot snapshot);
+
+    /* Detect distributed deadlock */
+    bool (*DetectGlobalDeadLock)(PGPROC* proc);
 } TransactionManager;
 
 /* Get pointer to transaction manager: actually returns content of TM variable */
@@ -51,7 +55,7 @@ extern TransactionManager PgTM; /* Standard PostgreSQL transaction manager */
 /* Standard PostgreSQL function implementing TM interface */
 extern bool PgXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 
-extern bool PgTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
+extern void PgTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
                                          TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 extern XidStatus PgTransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn);
 
@@ -64,5 +68,7 @@ extern bool PgTransactionIdIsInProgress(TransactionId xid);
 extern TransactionId PgGetGlobalTransactionId(void);
 
 extern TransactionId PgGetNewTransactionId(bool isSubXact);
+
+extern bool PgDetectGlobalDeadLock(PGPROC* proc);
 
 #endif

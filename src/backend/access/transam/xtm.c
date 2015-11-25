@@ -23,6 +23,11 @@ TransactionId PgGetGlobalTransactionId(void)
 	return InvalidTransactionId;
 }
 
+bool PgDetectGlobalDeadLock(PGPROC* proc)
+{
+    return false;
+}
+
 TransactionManager PgTM = {
 	PgTransactionIdGetStatus,
 	PgTransactionIdSetTreeStatus,
@@ -31,7 +36,8 @@ TransactionManager PgTM = {
 	PgGetOldestXmin,
 	PgTransactionIdIsInProgress,
 	PgGetGlobalTransactionId,
-	PgXidInMVCCSnapshot
+	PgXidInMVCCSnapshot,
+    PgDetectGlobalDeadLock
 };
 
 TransactionManager* TM = &PgTM;

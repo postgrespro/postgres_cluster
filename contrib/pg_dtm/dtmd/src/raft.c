@@ -432,7 +432,7 @@ static void raft_handle_update(raft_t *r, raft_msg_update_t *m) {
 	reply.msg.from = r->me;
 	reply.msg.seqno = m->msg.seqno;
 
-	reply.index = r->log.size - r->log.first - 1;
+	reply.index = r->log.first + r->log.size - 1;
 	if (reply.index >= 0) {
 		reply.term = RAFT_LOG(r, reply.index).term;
 	} else {

@@ -54,6 +54,13 @@ typedef struct
 	size_t nReservedXids;  /* number of XIDs reserved for local transactions */
 } DtmState;
 
+typedef struct
+{
+    char* data;
+    int size;
+    int used;
+} ByteBuffer;
+
 
 #define DTM_SHMEM_SIZE (1024*1024)
 #define DTM_HASH_SIZE  1003
@@ -73,11 +80,20 @@ static TransactionId DtmGetNewTransactionId(bool isSubXact);
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static TransactionId DtmGetGlobalTransactionId(void);
 
+static bool DtmDetectGlobalDeadLock(PGPROC* proc);
+static void DtmSerializeLock(PROCLOCK* lock, void* arg);
+
 static bool TransactionIdIsInSnapshot(TransactionId xid, Snapshot snapshot);
 static bool TransactionIdIsInDoubt(TransactionId xid);
 
 static void DtmShmemStartup(void);
 static void DtmBackgroundWorker(Datum arg);
+
+static void ByteBufferAlloc(ByteBuffer* buf);
+static void ByteBufferAppend(ByteBuffer* buf, void* data, int len);
+static void ByteBufferAppendInt32(ByteBuffer* buf, int data);
+static void ByteBufferFree(ByteBuffer* buf);
+
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB* xid_in_doubt;
@@ -99,7 +115,8 @@ static TransactionManager DtmTM = {
 	DtmGetOldestXmin,
 	PgTransactionIdIsInProgress,
 	DtmGetGlobalTransactionId,
-	PgXidInMVCCSnapshot
+	PgXidInMVCCSnapshot,
+    DtmDetectGlobalDeadLock
 };
 
 static char *DtmServers;
@@ -631,7 +648,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 				if (DtmGlobalSetTransStatus(xid, status, false) == -1)
 				{
 					elog(WARNING, "failed to set 'aborted' transaction status on arbiter");
-					return; // FIXME: return bool
+					return;
 				}
 				XTM_INFO("Abort transaction %d\n", xid);
 				return;
@@ -643,10 +660,10 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
 				LWLockRelease(dtm->hashLock);
-				if (DtmGlobalSetTransStatus(xid, status, true) == -1)
-				{
-					elog(WARNING, "failed to set 'committed' transaction status on arbiter");
-					return; // FIXME: return bool
+				if (DtmGlobalSetTransStatus(xid, status, true) != status) { 
+					END_CRIT_SECTION();
+					MarkAsAborted();
+					elog(ERROR, "Transaction commit rejected by XTM");                    
 				}
 				XTM_INFO("Commit transaction %d\n", xid);
 			}
@@ -659,12 +676,12 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 	else
 	{
 		XidStatus gs;
-		gs = DtmGlobalGetTransStatus(xid, false);
-		if (gs != TRANSACTION_STATUS_UNKNOWN)
+		gs = DtmGlobalGetTransStatus(xid, false);        
+		if (gs != TRANSACTION_STATUS_UNKNOWN) { 
 			status = gs;
+		}
 	}
 	PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
-	// FIXME: return bool
 }
 
 static uint32 dtm_xid_hash_fn(const void *key, Size keysize)
@@ -947,4 +964,94 @@ void DtmBackgroundWorker(Datum arg)
 	ShubInitialize(&shub, &params);
 	ShubLoop(&shub);
 	*/
+}
+
+static void ByteBufferAlloc(ByteBuffer* buf)
+{
+    buf->size = 1024;
+    buf->data = palloc(buf->size);
+    buf->used = 0;
+}
+
+static void ByteBufferAppend(ByteBuffer* buf, void* data, int len)
+{
+    if (buf->used + len > buf->size) { 
+        buf->size = buf->used + len > buf->size*2 ? buf->used + len : buf->size*2;
+        buf->data = (char*)repalloc(buf->data, buf->size);
+    }
+    memcpy(&buf->data[buf->used], data, len);
+    buf->used += len;
+}
+
+static void ByteBufferAppendInt32(ByteBuffer* buf, int data)
+{
+    ByteBufferAppend(buf, &data, sizeof data);
+}
+
+static void ByteBufferFree(ByteBuffer* buf)
+{
+    pfree(buf->data);
+}
+
+static void DtmSerializeLock(PROCLOCK* proclock, void* arg)
+{
+    ByteBuffer* buf = (ByteBuffer*)arg;
+    LOCK* lock = proclock->tag.myLock;
+    PGPROC* proc = proclock->tag.myProc; 
+
+    if (lock != NULL) {
+        PGXACT* srcPgXact = &ProcGlobal->allPgXact[proc->pgprocno];
+        
+        if (TransactionIdIsValid(srcPgXact->xid) && proc->waitLock == lock) { 
+            LockMethod lockMethodTable = GetLocksMethodTable(lock);
+            int numLockModes = lockMethodTable->numLockModes;
+            int conflictMask = lockMethodTable->conflictTab[proc->waitLockMode];
+            SHM_QUEUE *procLocks = &(lock->procLocks);
+            int lm;
+            
+            ByteBufferAppendInt32(buf, srcPgXact->xid); /* waiting transaction */
+            proclock = (PROCLOCK *) SHMQueueNext(procLocks, procLocks,
+                                                 offsetof(PROCLOCK, lockLink));
+            while (proclock)
+            {
+                if (proc != proclock->tag.myProc) { 
+                    PGXACT* dstPgXact = &ProcGlobal->allPgXact[proclock->tag.myProc->pgprocno];
+                    if (TransactionIdIsValid(dstPgXact->xid)) { 
+                        Assert(srcPgXact->xid != dstPgXact->xid);
+                        for (lm = 1; lm <= numLockModes; lm++)
+                        {
+                            if ((proclock->holdMask & LOCKBIT_ON(lm)) && (conflictMask & LOCKBIT_ON(lm)))
+                            {
+                                XTM_INFO("%d: %u(%u) waits for %u(%u)\n", getpid(), srcPgXact->xid, proc->pid, dstPgXact->xid, proclock->tag.myProc->pid);
+                                ByteBufferAppendInt32(buf, dstPgXact->xid); /* transaction holding lock */
+                                break;
+                            }
+                        }
+                    }
+                }
+                proclock = (PROCLOCK *) SHMQueueNext(procLocks, &proclock->lockLink,
+                                                     offsetof(PROCLOCK, lockLink));
+            }
+            ByteBufferAppendInt32(buf, 0); /* end of lock owners list */
+        }
+    }
+}
+
+bool DtmDetectGlobalDeadLock(PGPROC* proc)
+{
+    bool hasDeadlock = false;
+    ByteBuffer buf;
+    PGXACT* pgxact = &ProcGlobal->allPgXact[proc->pgprocno];
+
+    if (TransactionIdIsValid(pgxact->xid)) { 
+        ByteBufferAlloc(&buf);
+        XTM_INFO("%d: wait graph begin\n", getpid());
+        EnumerateLocks(DtmSerializeLock, &buf);
+        XTM_INFO("%d: wait graph end\n", getpid());
+        hasDeadlock = DtmGlobalDetectDeadLock(PostPortNumber, pgxact->xid, buf.data, buf.used);
+        ByteBufferFree(&buf);
+        XTM_INFO("%d: deadlock detected for %u\n", getpid(), pgxact->xid);
+        elog(WARNING, "Deadlock detected for transaction %u", pgxact->xid);
+    }
+    return hasDeadlock;
 }

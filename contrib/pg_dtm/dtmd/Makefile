@@ -14,15 +14,17 @@ all: bin/dtmd bin/heart
 	@echo Done.
 	@echo Feel free to run the tests with \'make check\'.
 
-bin/dtmd: obj/server.o obj/raft.o obj/main.o obj/clog.o obj/clogfile.o obj/util.o obj/transaction.o obj/snapshot.o | bindir objdir
+bin/dtmd: obj/server.o obj/raft.o obj/main.o obj/clog.o obj/clogfile.o obj/util.o obj/transaction.o obj/snapshot.o obj/ddd.o | bindir objdir
 	$(CC) -o bin/dtmd $(CFLAGS) \
 		obj/server.o obj/raft.o obj/main.o \
 		obj/clog.o obj/clogfile.o obj/util.o obj/transaction.o \
-		obj/snapshot.o
+		obj/snapshot.o obj/ddd.o
 
 bin/heart: obj/heart.o obj/raft.o obj/util.o | bindir objdir
 	$(CC) -o bin/heart $(CFLAGS) \
-		obj/heart.o obj/raft.o obj/util.o
+		obj/heart.o obj/raft.o obj/util.o \
+		obj/snapshot.o \
+		$(SOCKHUB_LDFLAGS)
 
 obj/server.o: src/server.c | objdir
 	$(CC) -c -o obj/server.o $(CFLAGS) $(SOCKHUB_CFLAGS) src/server.c
