@@ -68,7 +68,7 @@ struct config
         nWriters = 10;
         nIterations = 1000;
         nAccounts = 100000;  
-        startId = 1;
+        startId = 0;
         diapason = 100000;
     }
 };
@@ -177,7 +177,10 @@ void* writer(void* arg)
         csn_t snapshot = execQuery(srcTx, "select dtm_extend('%s')", gtid);
         snapshot = execQuery(dstTx, "select dtm_access(%ld, '%s')", snapshot, gtid);
 
-        exec(srcTx, "update t set v = v - 1 where u=%d", srcAcc);
+        exec(srcTx, "savepoint c1");        
+        exec(dstTx, "savepoint c2");        
+
+        exec(srcTx, "update t set v = v - 1 where u=%d", srcAcc);        
         exec(dstTx, "update t set v = v + 1 where u=%d", dstAcc);
 
         exec(srcTx, "prepare transaction '%s'", gtid);
@@ -260,7 +263,7 @@ int main (int argc, char* argv[])
         return 1;
     }
 
-    if (cfg.startId + cfg.diapason - 1 > cfg.nAccounts) {
+    if (cfg.startId + cfg.diapason > cfg.nAccounts) {
         printf("startId + diapason should be less that nAccounts. Exiting.\n");
         return 1;
     }
@@ -305,7 +308,7 @@ int main (int argc, char* argv[])
     printf(
         "{\"update_tps\":%f, \"read_tps\":%f,"
         " \"readers\":%d, \"writers\":%d,"
-        " \"accounts\":%d, \"iterations\":%d, \"hosts\":%d}\n",
+        " \"accounts\":%d, \"iterations\":%d, \"hosts\":%ld}\n",
         (double)(nWrites*USEC)/elapsed,
         (double)(nReads*USEC)/elapsed,
         cfg.nReaders,

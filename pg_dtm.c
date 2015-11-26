@@ -21,6 +21,7 @@
 #include "access/xact.h"
 #include "access/xtm.h"
 #include "access/transam.h"
+#include "access/subtrans.h"
 #include "access/xlog.h"
 #include "access/clog.h"
 #include "access/twophase.h"
@@ -455,7 +456,10 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 #endif
     while (true)
     {
-        DtmTransStatus* ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_FIND, NULL);
+        DtmTransStatus* ts;
+        TransactionId subxid = xid;
+        while ((ts = (DtmTransStatus*)hash_search(xid2status, &subxid, HASH_FIND, NULL)) == NULL
+               && TransactionIdIsValid(subxid = SubTransGetParent(subxid)));        
         if (ts != NULL)
         {
             if (ts->cid > dtm_tx.snapshot) { 
