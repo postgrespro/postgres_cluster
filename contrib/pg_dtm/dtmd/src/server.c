@@ -34,7 +34,6 @@ typedef struct client_data_t {
 	stream_t stream; // NULL: client value is empty
 	void *userdata;
 	unsigned int chan;
-	int refcount;
 } client_data_t;
 
 typedef struct stream_data_t {
@@ -57,7 +56,8 @@ typedef struct server_data_t {
 	int maxfd;
 
 	int streamsnum;
-	stream_data_t streams[MAX_STREAMS];
+	stream_t streams[MAX_STREAMS]; // pointers to streamdata
+	stream_data_t streamdata[MAX_STREAMS];
 
 	onmessage_callback_t onmessage;
 	onconnect_callback_t onconnect;
@@ -115,7 +115,13 @@ server_t server_init(
 	server->onmessage = onmessage;
 	server->onconnect = onconnect;
 	server->ondisconnect = ondisconnect;
+
 	server->streamsnum = 0;
+	int i;
+	for (i = 0; i < MAX_STREAMS; i++) {
+		server->streams[i] = server->streamdata + i;
+	}
+
 	server->raftsock = -1;
 	FD_ZERO(&server->all);
 	server->maxfd = 0;
@@ -188,7 +194,7 @@ static void server_flush(server_t server) {
 	//debug("flushing the streams\n");
 	int i;
 	for (i = 0; i < server->streamsnum; i++) {
-		stream_t stream = server->streams + i;
+		stream_t stream = server->streams[i];
 		stream_flush(stream);
 	}
 }
@@ -212,7 +218,6 @@ static void stream_init(stream_t stream, int fd) {
 	assert(stream->clients);
 	// mark all clients as empty
 	for (i = 0; i < MAX_TRANSACTIONS; i++) {
-		stream->clients[i].refcount = 0;
 		stream->clients[i].stream = NULL;
 	}
 }
@@ -239,26 +244,21 @@ static void server_stream_destroy(server_t server, stream_t stream) {
 	free(stream->output.data);
 }
 
-static void stream_move(stream_t dst, stream_t src) {
-	int i;
-	*dst = *src;
-	for (i = 0; i < MAX_TRANSACTIONS; i++) {
-		if (dst->clients[i].stream) {
-			dst->clients[i].stream = dst;
-		}
-	}
+static void server_streams_swap(server_t s, int a, int b) {
+	stream_t t = s->streams[a];
+	s->streams[a] = s->streams[b];
+	s->streams[b] = t;
 }
 
 static void server_close_bad_streams(server_t server) {
 	int i;
 	for (i = server->streamsnum - 1; i >= 0; i--) {
-		stream_t stream = server->streams + i;
+		stream_t stream = server->streams[i];
 		if (!stream->good) {
 			server_stream_destroy(server, stream);
 			if (i != server->streamsnum - 1) {
 				// move the last one here
-				*stream = server->streams[server->streamsnum - 1];
-				stream_move(stream, server->streams + server->streamsnum - 1);
+				server_streams_swap(server, i, server->streamsnum - 1);
 			}
 			server->streamsnum--;
 		}
@@ -396,7 +396,7 @@ static bool server_accept(server_t server) {
 	}
 
 	// add new stream
-	stream_t s = server->streams + server->streamsnum++;
+	stream_t s = server->streams[server->streamsnum++];
 	stream_init(s, fd);
 
 	FD_SET(fd, &server->all);
@@ -518,7 +518,7 @@ bool server_tick(server_t server, int timeout_ms) {
 	}
 
 	for (i = 0; (i < server->streamsnum) && (numready > 0); i++) {
-		stream_t stream = server->streams + i;
+		stream_t stream = server->streams[i];
 		if (FD_ISSET(stream->fd, &readfds)) {
 			server_stream_handle(server, stream);
 			numready--;
@@ -534,7 +534,7 @@ bool server_tick(server_t server, int timeout_ms) {
 static void server_close_all_streams(server_t server) {
 	int i;
 	for (i = 0; i < server->streamsnum; i++) {
-		stream_t stream = server->streams + i;
+		stream_t stream = server->streams[i];
 		server_stream_destroy(server, stream);
 	}
 	server->streamsnum = 0;
@@ -582,14 +582,6 @@ unsigned client_get_ip_addr(client_t client)
     return inet_addr.sin_addr.s_addr;
 }
    
-int client_ref(client_t client) {
-	return ++client->refcount;
-}
-
-int client_deref(client_t client) {
-	return --client->refcount;
-}
-
 #if 0
 // usage example
 

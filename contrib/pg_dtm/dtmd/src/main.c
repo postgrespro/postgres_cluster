@@ -30,6 +30,10 @@ Transaction* transaction_hash[MAX_TRANSACTIONS];
 // We reserve the local xids if they fit between (prev, next) range, and
 // reserve something in (next, x) range otherwise, moving 'next' after 'x'.
 xid_t prev_gxid, next_gxid;
+
+xid_t threshold_gxid; // when to start worrying about starting a new term
+xid_t last_gxid; // the greatest gxid we can provide on BEGIN or RESERVE
+
 xid_t global_xmin = INVALID_XID;
 
 static Transaction *find_transaction(xid_t xid) {    
@@ -41,7 +45,11 @@ static Transaction *find_transaction(xid_t xid) {
 typedef struct client_userdata_t {
 	int id;
 	int snapshots_sent;
-	xid_t xid;
+
+	// FIXME: use some meaningful words for these. E.g. "expectee" instead
+	// of "xwait".
+	Transaction *xpart; // the transaction this client is participating in
+	Transaction *xwait; // the transaction this client is waiting for
 } client_userdata_t;
 
 clog_t clg;
@@ -51,13 +59,15 @@ bool use_raft;
 #define CLIENT_USERDATA(CLIENT) ((client_userdata_t*)client_get_userdata(CLIENT))
 #define CLIENT_ID(CLIENT) (CLIENT_USERDATA(CLIENT)->id)
 #define CLIENT_SNAPSENT(CLIENT) (CLIENT_USERDATA(CLIENT)->snapshots_sent)
-#define CLIENT_XID(CLIENT) (CLIENT_USERDATA(CLIENT)->xid)
+#define CLIENT_XPART(CLIENT) (CLIENT_USERDATA(CLIENT)->xpart)
+#define CLIENT_XWAIT(CLIENT) (CLIENT_USERDATA(CLIENT)->xwait)
 
 static client_userdata_t *create_client_userdata(int id) {
 	client_userdata_t *cd = malloc(sizeof(client_userdata_t));
 	cd->id = id;
 	cd->snapshots_sent = 0;
-	cd->xid = INVALID_XID;
+	cd->xpart = NULL;
+	cd->xwait = NULL;
 	return cd;
 }
 
@@ -66,9 +76,10 @@ static void free_client_userdata(client_userdata_t *cd) {
 }
 
 inline static void free_transaction(Transaction* t) {
-    Transaction** tpp;
-    for (tpp = &transaction_hash[t->xid % MAX_TRANSACTIONS]; *tpp != t; tpp = &(*tpp)->collision);
-    *tpp = t->collision;
+	assert(transaction_pop_listener(t, 's') == NULL);
+	Transaction** tpp;
+	for (tpp = &transaction_hash[t->xid % MAX_TRANSACTIONS]; *tpp != t; tpp = &(*tpp)->collision);
+	*tpp = t->collision;
 	l2_list_unlink(&t->elem);
 	t->elem.next = free_transactions;
 	free_transactions = &t->elem;
@@ -84,7 +95,7 @@ static void notify_listeners(Transaction *t, int status) {
 		case BLANK:
 			while ((listener = transaction_pop_listener(t, 's'))) {
 				debug("[%d] notifying the client about xid=%u (unknown)\n", CLIENT_ID(listener), t->xid);
-				shout("%p DEREF(notify): %d\n", listener, client_deref(listener));
+				CLIENT_XWAIT(listener) = NULL;
 				client_message_shortcut(
 					(client_t)listener,
 					RES_TRANSACTION_UNKNOWN
@@ -94,7 +105,7 @@ static void notify_listeners(Transaction *t, int status) {
 		case NEGATIVE:
 			while ((listener = transaction_pop_listener(t, 's'))) {
 				debug("[%d] notifying the client about xid=%u (aborted)\n", CLIENT_ID(listener), t->xid);
-				shout("%p DEREF(notify): %d\n", listener, client_deref(listener));
+				CLIENT_XWAIT(listener) = NULL;
 				client_message_shortcut(
 					(client_t)listener,
 					RES_TRANSACTION_ABORTED
@@ -104,7 +115,7 @@ static void notify_listeners(Transaction *t, int status) {
 		case POSITIVE:
 			while ((listener = transaction_pop_listener(t, 's'))) {
 				debug("[%d] notifying the client about xid=%u (committed)\n", CLIENT_ID(listener), t->xid);
-				shout("%p DEREF(notify): %d\n", listener, client_deref(listener));
+				CLIENT_XWAIT(listener) = NULL;
 				client_message_shortcut(
 					(client_t)listener,
 					RES_TRANSACTION_COMMITTED
@@ -114,7 +125,7 @@ static void notify_listeners(Transaction *t, int status) {
 		case DOUBT:
 			while ((listener = transaction_pop_listener(t, 's'))) {
 				debug("[%d] notifying the client about xid=%u (inprogress)\n", CLIENT_ID(listener), t->xid);
-				shout("%p DEREF(notify): %d\n", listener, client_deref(listener));
+				CLIENT_XWAIT(listener) = NULL;
 				client_message_shortcut(
 					(client_t)listener,
 					RES_TRANSACTION_INPROGRESS
@@ -122,6 +133,21 @@ static void notify_listeners(Transaction *t, int status) {
 			}
 			break;
 	}
+}
+
+static void set_next_gxid(xid_t value) {
+	assert(next_gxid < value);
+	if (use_raft && raft.role == ROLE_LEADER) {
+		assert(value <= last_gxid);
+		if (inrange(next_gxid + 1, threshold_gxid, value)) {
+			// Time to worry has come.
+			raft.term++;
+		} else {
+			// It is either too early to worry,
+			// or we have already increased the term.
+		}
+	}
+	next_gxid = value;
 }
 
 static void apply_clog_update(int action, int argument) {
@@ -154,26 +180,18 @@ static void onconnect(client_t client) {
 }
 
 static void ondisconnect(client_t client) {
-	debug("[%d] disconnected\n", CLIENT_ID(client));
-
-	if (CLIENT_XID(client) != INVALID_XID) {
-		Transaction* t = find_transaction(CLIENT_XID(client));
-		if (t != NULL) { 
-			if (transaction_remove_listener(t, 's', client)) {
-				shout("%p DEREF(disconn): %d\n", client, client_deref(client));
-			} else {
-				shout("%p DEREF(disconn): not found\n", client);
-			}
-
-			if (use_raft && (raft.role == ROLE_LEADER)) {
-				raft_emit(&raft, NEGATIVE, t->xid);
-			}
-		} else { 
-			shout(
-				"[%d] DISCONNECT: transaction xid=%u not found O_o\n",
-				CLIENT_ID(client), CLIENT_XID(client)
-			);
+	Transaction *t;
+	debug("[%d, %p] disconnected\n", CLIENT_ID(client), client);
+	
+	if ((t = CLIENT_XPART(client))) {
+		transaction_remove_listener(t, 's', client);
+		if (use_raft && (raft.role == ROLE_LEADER)) {
+			raft_emit(&raft, NEGATIVE, t->xid);
 		}
+	}
+
+	if ((t = CLIENT_XWAIT(client))) {
+		transaction_remove_listener(t, 's', client);
 	}
 
 	free_client_userdata(CLIENT_USERDATA(client));
@@ -274,7 +292,7 @@ static void onreserve(client_t client, int argc, xid_t *argv) {
 
 	if ((prev_gxid >= minxid) || (maxxid >= next_gxid)) {
 		debug(
-			"[%d] RESERVE: local range %u-%u is not between global range %u-%u\n",
+			"[%d] RESERVE: local range %u-%u is not inside global range %u-%u\n",
 			CLIENT_ID(client),
 			minxid, maxxid,
 			prev_gxid, next_gxid
@@ -282,7 +300,12 @@ static void onreserve(client_t client, int argc, xid_t *argv) {
 
 		minxid = max_of_xids(minxid, next_gxid);
 		maxxid = max_of_xids(maxxid, minxid + minsize - 1);
-		next_gxid = maxxid + 1;
+		CHECK(
+			maxxid <= last_gxid,
+			client,
+			"not enough xids left in this term"
+		);
+		set_next_gxid(maxxid + 1);
 	}
 	debug(
 		"[%d] RESERVE: allocating range %u-%u\n",
@@ -318,7 +341,7 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 	);
 
 	CHECK(
-		CLIENT_XID(client) == INVALID_XID,
+		CLIENT_XPART(client) == NULL,
 		client,
 		"BEGIN: already participating in another transaction"
 	);
@@ -332,15 +355,21 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 	transaction_clear(t);
 	l2_list_link(&active_transactions, &t->elem);
 
-	prev_gxid = t->xid = next_gxid++;
+	CHECK(
+		next_gxid <= last_gxid,
+		client,
+		"not enought xids left in this term"
+	);
+	set_next_gxid(next_gxid + 1);
+	prev_gxid = t->xid = next_gxid;
 	t->snapshots_count = 0;
 	t->size = 1;
 
-    t->collision = transaction_hash[t->xid % MAX_TRANSACTIONS];
-    transaction_hash[t->xid % MAX_TRANSACTIONS] = t;
+	t->collision = transaction_hash[t->xid % MAX_TRANSACTIONS];
+	transaction_hash[t->xid % MAX_TRANSACTIONS] = t;
 
 	CLIENT_SNAPSENT(client) = 0;
-	CLIENT_XID(client) = t->xid;
+	CLIENT_XPART(client) = t;
 
 	if (!clog_write(clg, t->xid, DOUBT)) {
 		shout(
@@ -390,8 +419,8 @@ static bool queue_for_transaction_finish(client_t client, xid_t xid, char cmd) {
 	// CLIENT_XID(client) and 'xid', i.e. we are able to tell which
 	// transaction waits which transaction.
 
+	CLIENT_XWAIT(client) = t;
 	transaction_push_listener(t, cmd, client);
-	shout("%p REF: %d\n", client, client_ref(client));
 	return true;
 }
 
@@ -403,7 +432,7 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 	bool wait = argv[2];
 
 	CHECK(
-		CLIENT_XID(client) == xid,
+		CLIENT_XPART(client) && (CLIENT_XPART(client)->xid == xid),
 		client,
 		"VOTE: voting for a transaction not participated in"
 	);
@@ -427,7 +456,7 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 	}
 	assert(t->votes_for + t->votes_against <= t->size);
 
-	CLIENT_XID(client) = INVALID_XID; // not participating any more
+	CLIENT_XPART(client) = NULL; // not participating any more
 
 	int s = transaction_status(t);
 	switch (s) {
@@ -485,14 +514,14 @@ static void onsnapshot(client_t client, int argc, xid_t *argv) {
 		return;
 	}
 
-	if (CLIENT_XID(client) == INVALID_XID) {
+	if (CLIENT_XPART(client) == NULL) {
 		CLIENT_SNAPSENT(client) = 0;
-		CLIENT_XID(client) = t->xid;
+		CLIENT_XPART(client) = t;
 		t->size += 1;
 	}
 
 	CHECK(
-		CLIENT_XID(client) == t->xid,
+		CLIENT_XPART(client) && (CLIENT_XPART(client)->xid == xid),
 		client,
 		"SNAPSHOT: getting snapshot for a transaction not participated in"
 	);
@@ -839,6 +868,7 @@ int main(int argc, char **argv) {
 
 	prev_gxid = MIN_XID;
 	next_gxid = MIN_XID;
+	last_gxid = INVALID_XID;
 
 	int raftsock = raft_create_udp_socket(&raft);
 	if (raftsock == -1) {
@@ -856,8 +886,6 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 
-	srand(getpid());
-
 	mstimer_t t;
 	mstimer_reset(&t);
 	while (true) {
@@ -874,11 +902,6 @@ int main(int argc, char **argv) {
 			assert(m); // m should not be NULL, because the message should be ready to recv
 		}
 
-		if (rand() % 10000 == 0) {
-			shout("sleeping to test raft features\n");
-			sleep(1);
-		}
-
 		if (use_raft) {
 			int applied = raft_apply(&raft, apply_clog_update);
 			if (applied) {
@@ -890,6 +913,22 @@ int main(int argc, char **argv) {
 			}
 
 			server_set_enabled(server, raft.role == ROLE_LEADER);
+
+			// Update the gxid limits based on current term and leadership.
+			xid_t recent_last_gxid = raft.term * XIDS_PER_TERM;
+			if (last_gxid < recent_last_gxid) {
+				shout("updating last_gxid from %u to %u\n", last_gxid, recent_last_gxid);
+				last_gxid = recent_last_gxid;
+				threshold_gxid = last_gxid - NEW_TERM_THRESHOLD;
+				if (raft.role == ROLE_FOLLOWER) {
+					// If we become a leader, we will use
+					// the range of xids after the current
+					// last_gxid.
+					prev_gxid = last_gxid;
+					next_gxid = prev_gxid + 1;
+					shout("updated range to %u-%u\n", prev_gxid, next_gxid);
+				}
+			}
 		} else {
 			server_set_enabled(server, true);
 		}

@@ -401,6 +401,9 @@ void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *g
 	int reslen;
 	xid_t results[RESULTS_SIZE];
 	DTMConn dtm = GetConnection();
+	if (!dtm) {
+		goto failure;
+	}
 
 	assert(snapshot != NULL);
 

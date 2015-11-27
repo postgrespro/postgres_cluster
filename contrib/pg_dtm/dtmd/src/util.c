@@ -71,6 +71,7 @@ int falloc(int fd, off64_t size) {
 	return res;
 }
 
+#define MAX_ELAPSED 30
 int mstimer_reset(mstimer_t *t) {
 	struct timeval newtime;
 	gettimeofday(&newtime, NULL);
@@ -81,6 +82,9 @@ int mstimer_reset(mstimer_t *t) {
 
 	t->tv = newtime;
 
+	if (ms > MAX_ELAPSED) {
+		return MAX_ELAPSED;
+	}
 	return ms;
 }
 

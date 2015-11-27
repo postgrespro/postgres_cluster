@@ -127,7 +127,5 @@ bool client_message_shortcut(client_t client, xid_t arg);
 bool client_redirect(client_t client, unsigned addr, int port);
 
 unsigned client_get_ip_addr(client_t client);
-int client_ref(client_t client);
-int client_deref(client_t client);
 
 #endif

@@ -285,7 +285,7 @@ func execQuery64(conn *pgx.Conn, stmt string, arguments ...interface{}) int64 {
 
 func checkErr(err error) {
     if err != nil {
-        panic(err)
+        fmt.Println(err)
     }
 }
 

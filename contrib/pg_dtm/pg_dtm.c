@@ -213,6 +213,11 @@ GetLocalSnapshot:
 	 * should be completed locally
 	 */
 	dst = PgGetSnapshotData(dst);
+	if (!TransactionIdIsValid(src->xmin) || !TransactionIdIsValid(src->xmax)) {
+		// Global snapshot is invalid
+		return;
+	}
+
 	for (i = 0; i < dst->xcnt; i++)
 		if (TransactionIdIsInDoubt(dst->xip[i]))
 			goto GetLocalSnapshot;
