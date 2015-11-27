@@ -83,8 +83,9 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 static TransactionId DtmAdjustOldestXid(TransactionId xid);
+static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 
-static TransactionManager DtmTM = { PgTransactionIdGetStatus, PgTransactionIdSetTreeStatus, DtmGetSnapshot, PgGetNewTransactionId, DtmGetOldestXmin, PgTransactionIdIsInProgress, PgGetGlobalTransactionId, DtmXidInMVCCSnapshot };
+static TransactionManager DtmTM = { PgTransactionIdGetStatus, DtmSetTransactionStatus, DtmGetSnapshot, PgGetNewTransactionId, DtmGetOldestXmin, PgTransactionIdIsInProgress, PgGetGlobalTransactionId, DtmXidInMVCCSnapshot };
 
 void _PG_init(void);
 void _PG_fini(void);
@@ -456,10 +457,11 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 #endif
     while (true)
     {
-        DtmTransStatus* ts;
-        TransactionId subxid = xid;
-        while ((ts = (DtmTransStatus*)hash_search(xid2status, &subxid, HASH_FIND, NULL)) == NULL
-               && TransactionIdIsValid(subxid = SubTransGetParent(subxid)));        
+        DtmTransStatus* ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_FIND, NULL);
+        if (ts == NULL && TransactionIdFollowsOrEquals(xid, TransactionXmin)) { 
+            xid = SubTransGetTopmostTransaction(xid);
+            ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_FIND, NULL);
+        }
         if (ts != NULL)
         {
             if (ts->cid > dtm_tx.snapshot) { 
@@ -679,8 +681,8 @@ void DtmLocalCommit(DtmTransState* x)
         if (x->is_prepared) { 
             Assert(found);
             Assert(x->is_global);
-        } else { 
-            Assert(!found);
+        } else if (!found) { 
+            //Assert(!found);
             ts->cid = dtm_get_cid();
             IncludeInTransactionList(ts);
         }
@@ -718,8 +720,8 @@ void DtmLocalAbort(DtmTransState* x)
         if (x->is_prepared) { 
             Assert(found);
             Assert(x->is_global);
-        } else { 
-            Assert(!found);
+        } else if (!found) { 
+            //Assert(!found);
             ts->cid = dtm_get_cid();
             IncludeInTransactionList(ts);
         }
@@ -738,3 +740,28 @@ void DtmLocalEnd(DtmTransState* x)
     x->cid = INVALID_CID;
 }
 
+void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
+{
+    if (nsubxids != 0) {
+        SpinLockAcquire(&local->lock);
+        { 
+            int i;
+            bool found;
+            DtmTransStatus* ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_ENTER, &found);
+            if (!found) {
+                ts->cid = dtm_get_cid();
+            }
+            ts->status = status;
+            for (i = 0; i < nsubxids; i++) { 
+                DtmTransStatus* sts = (DtmTransStatus*)hash_search(xid2status, &subxids[i], HASH_ENTER, &found);
+                Assert(!found);
+                sts->status = status;
+                sts->cid = ts->cid;
+                sts->next = ts->next;
+                ts->next = sts;
+            }
+        }
+        SpinLockRelease(&local->lock);
+    }
+    PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
+}
