@@ -84,8 +84,9 @@ static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 static TransactionId DtmAdjustOldestXid(TransactionId xid);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
+static bool DtmDetectGlobalDeadLock(PGPROC* proc);
 
-static TransactionManager DtmTM = { PgTransactionIdGetStatus, DtmSetTransactionStatus, DtmGetSnapshot, PgGetNewTransactionId, DtmGetOldestXmin, PgTransactionIdIsInProgress, PgGetGlobalTransactionId, DtmXidInMVCCSnapshot };
+static TransactionManager DtmTM = { PgTransactionIdGetStatus, DtmSetTransactionStatus, DtmGetSnapshot, PgGetNewTransactionId, DtmGetOldestXmin, PgTransactionIdIsInProgress, PgGetGlobalTransactionId, DtmXidInMVCCSnapshot, DtmDetectGlobalDeadLock };
 
 void _PG_init(void);
 void _PG_fini(void);
@@ -764,4 +765,10 @@ void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *sub
         SpinLockRelease(&local->lock);
     }
     PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
+}
+
+bool DtmDetectGlobalDeadLock(PGPROC* proc)
+{
+    elog(WARNING, "Global deadlock?");
+    return true;
 }

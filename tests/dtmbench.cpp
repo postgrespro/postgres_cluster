@@ -40,11 +40,13 @@ struct thread
 {
     pthread_t t;
     size_t proceeded;
+    size_t aborts;
     int id;
 
     void start(int tid, thread_proc_t proc) { 
         id = tid;
         proceeded = 0;
+        aborts = 0;
         pthread_create(&t, NULL, proc, this);
     }
 
@@ -160,12 +162,13 @@ void* writer(void* arg)
         int srcAcc = cfg.startId + random() % cfg.diapason;
         int dstAcc = cfg.startId + random() % cfg.diapason;
 
+        #if 1 // avoid deadlocks
         if (srcAcc > dstAcc) {
             int tmpAcc = dstAcc;
             dstAcc = srcAcc;
             srcAcc = tmpAcc;
         }
-
+        #endif
         sprintf(gtid, "%d.%d.%d", cfg.startId, t.id, i);
 
         nontransaction srcTx(*srcCon);
@@ -180,8 +183,16 @@ void* writer(void* arg)
         exec(srcTx, "savepoint c1");        
         exec(dstTx, "savepoint c2");        
 
-        exec(srcTx, "update t set v = v - 1 where u=%d", srcAcc);        
-        exec(dstTx, "update t set v = v + 1 where u=%d", dstAcc);
+        try { 
+            exec(srcTx, "update t set v = v - 1 where u=%d", srcAcc);        
+            exec(dstTx, "update t set v = v + 1 where u=%d", dstAcc);
+        } catch (pqxx_exception const& x) { 
+            exec(srcTx, "rollback");
+            exec(dstTx, "rollback");
+            t.aborts += 1;
+            i -= 1;
+            continue;
+        }
 
         exec(srcTx, "prepare transaction '%s'", gtid);
         exec(dstTx, "prepare transaction '%s'", gtid);
@@ -281,7 +292,8 @@ int main (int argc, char* argv[])
     vector<thread> writers(cfg.nWriters);
     size_t nReads = 0;
     size_t nWrites = 0;
-    
+    size_t nAborts = 0;
+   
     for (int i = 0; i < cfg.nReaders; i++) { 
         readers[i].start(i, reader);
     }
@@ -292,6 +304,7 @@ int main (int argc, char* argv[])
     for (int i = 0; i < cfg.nWriters; i++) { 
         writers[i].wait();
         nWrites += writers[i].proceeded;
+        nAborts += writers[i].aborts;
     }
     
     running = false;
@@ -307,12 +320,14 @@ int main (int argc, char* argv[])
 
     printf(
         "{\"update_tps\":%f, \"read_tps\":%f,"
-        " \"readers\":%d, \"writers\":%d,"
+        " \"readers\":%d, \"writers\":%d, \"aborts\":%ld, \"abort_percent\": %d,"
         " \"accounts\":%d, \"iterations\":%d, \"hosts\":%ld}\n",
         (double)(nWrites*USEC)/elapsed,
         (double)(nReads*USEC)/elapsed,
         cfg.nReaders,
         cfg.nWriters,
+        nAborts,
+        (int)(nAborts*100/nWrites),
         cfg.nAccounts,
         cfg.nIterations,
         cfg.connections.size()
