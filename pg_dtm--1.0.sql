@@ -20,3 +20,7 @@ LANGUAGE C;
 CREATE FUNCTION dtm_end_prepare(gtid cstring, csn bigint) RETURNS void
 AS 'MODULE_PATHNAME','dtm_end_prepare'
 LANGUAGE C;
+
+CREATE FUNCTION dtm_get_csn(xid integer) RETURNS bigint
+AS 'MODULE_PATHNAME','dtm_get_csn'
+LANGUAGE C;

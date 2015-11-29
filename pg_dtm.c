@@ -85,6 +85,7 @@ static bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 static TransactionId DtmAdjustOldestXid(TransactionId xid);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 static bool DtmDetectGlobalDeadLock(PGPROC* proc);
+static cid_t DtmGetCsn(TransactionId xid);
 
 static TransactionManager DtmTM = { PgTransactionIdGetStatus, DtmSetTransactionStatus, DtmGetSnapshot, PgGetNewTransactionId, DtmGetOldestXmin, PgTransactionIdIsInProgress, PgGetGlobalTransactionId, DtmXidInMVCCSnapshot, DtmDetectGlobalDeadLock };
 
@@ -308,6 +309,7 @@ PG_FUNCTION_INFO_V1(dtm_access);
 PG_FUNCTION_INFO_V1(dtm_begin_prepare);
 PG_FUNCTION_INFO_V1(dtm_prepare);
 PG_FUNCTION_INFO_V1(dtm_end_prepare);
+PG_FUNCTION_INFO_V1(dtm_get_csn);
 
 Datum
 dtm_extend(PG_FUNCTION_ARGS)
@@ -357,7 +359,13 @@ dtm_end_prepare(PG_FUNCTION_ARGS)
     PG_RETURN_VOID();
 }
 
-
+Datum
+dtm_get_csn(PG_FUNCTION_ARGS)
+{
+    TransactionId xid = PG_GETARG_INT32(0);
+    cid_t csn = DtmGetCsn(xid);
+    PG_RETURN_INT64(csn);
+} 
 /*
  *  ***************************************************************************
  */
@@ -392,11 +400,20 @@ static int dtm_gtid_match_fn(const void *key1, const void *key2, Size keysize)
 	return strcmp((GlobalTransactionId)key1, (GlobalTransactionId)key2);
 }
 
-static void IncludeInTransactionList(DtmTransStatus* ts)
+static void DtmTransactionListAppend(DtmTransStatus* ts)
 {
     ts->next = NULL;
     *local->trans_list_tail = ts;
     local->trans_list_tail = &ts->next;
+}
+
+static void DtmTransactionListInsertAfter(DtmTransStatus* after, DtmTransStatus* ts)
+{
+    ts->next = after->next;
+    after->next = ts;
+    if (local->trans_list_tail == &after->next) { 
+        local->trans_list_tail = &ts->next;
+    }
 }
 
 static TransactionId DtmAdjustOldestXid(TransactionId xid)
@@ -459,9 +476,12 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     while (true)
     {
         DtmTransStatus* ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_FIND, NULL);
-        if (ts == NULL && TransactionIdFollowsOrEquals(xid, TransactionXmin)) { 
-            xid = SubTransGetTopmostTransaction(xid);
-            ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_FIND, NULL);
+        if (ts == NULL && 
+            !(TransactionIdFollowsOrEquals(xid, snapshot->xmax) || TransactionIdPrecedes(xid, snapshot->xmin))) 
+        {
+            //TransactionIdFollowsOrEquals(xid, TransactionXmin)) { 
+            TransactionId subxid = SubTransGetTopmostTransaction(xid);
+            ts = (DtmTransStatus*)hash_search(xid2status, &subxid, HASH_FIND, NULL);
         }
         if (ts != NULL)
         {
@@ -618,7 +638,7 @@ void DtmLocalBeginPrepare(GlobalTransactionId gtid)
         ts = (DtmTransStatus*)hash_search(xid2status, &id->xid, HASH_ENTER, NULL);
         ts->status = TRANSACTION_STATUS_IN_PROGRESS;
         ts->cid = dtm_get_cid();
-        IncludeInTransactionList(ts);
+        DtmTransactionListAppend(ts);
     }
     SpinLockRelease(&local->lock);
 }
@@ -685,7 +705,7 @@ void DtmLocalCommit(DtmTransState* x)
         } else if (!found) { 
             //Assert(!found);
             ts->cid = dtm_get_cid();
-            IncludeInTransactionList(ts);
+            DtmTransactionListAppend(ts);
         }
         x->cid = ts->cid;
         ts->status = TRANSACTION_STATUS_COMMITTED;
@@ -724,7 +744,7 @@ void DtmLocalAbort(DtmTransState* x)
         } else if (!found) { 
             //Assert(!found);
             ts->cid = dtm_get_cid();
-            IncludeInTransactionList(ts);
+            DtmTransactionListAppend(ts);
         }
         x->cid = ts->cid;
         ts->status = TRANSACTION_STATUS_ABORTED;
@@ -758,8 +778,7 @@ void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *sub
                 Assert(!found);
                 sts->status = status;
                 sts->cid = ts->cid;
-                sts->next = ts->next;
-                ts->next = sts;
+                DtmTransactionListInsertAfter(ts, sts);
             }
         }
         SpinLockRelease(&local->lock);
@@ -772,3 +791,18 @@ bool DtmDetectGlobalDeadLock(PGPROC* proc)
     elog(WARNING, "Global deadlock?");
     return true;
 }
+
+static cid_t DtmGetCsn(TransactionId xid)
+{
+    cid_t csn  = 0;
+	SpinLockAcquire(&local->lock);
+	{
+        DtmTransStatus* ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_FIND, NULL);
+        if (ts != NULL) { 
+            csn = ts->cid;
+        }
+    }
+	SpinLockRelease(&local->lock);
+    return csn;
+}
+                                         
