@@ -11,4 +11,6 @@ extern void MMJoinTransaction(TransactionId xid);
 extern bool MMIsLocalTransaction(TransactionId xid);
 extern void MMReceiverStarted(void);
 
+extern char const* MMDatabaseName;
+
 #endif

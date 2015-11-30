@@ -47,7 +47,6 @@ static volatile sig_atomic_t got_sigterm = false;
 static volatile sig_atomic_t got_sighup = false;
 
 /* GUC variables */
-static char *receiver_database;
 static int receiver_idle_time = 1;
 static bool receiver_sync_mode = true;
 
@@ -215,7 +214,7 @@ receiver_raw_main(Datum main_arg)
 	BackgroundWorkerUnblockSignals();
 
 	/* Connect to a database */
-	BackgroundWorkerInitializeConnection(receiver_database, NULL);
+	BackgroundWorkerInitializeConnection(MMDatabaseName, NULL);
 
 	/* Establish connection to remote server */
 	conn = PQconnectdb(args->receiver_conn_string);
@@ -561,7 +560,7 @@ int MMStartReceivers(char* conns, int node_id)
         }
         if (++i != node_id) {
             ReceiverArgs* ctx = (ReceiverArgs*)malloc(sizeof(ReceiverArgs));
-            if (receiver_database == NULL) {
+            if (MMDatabaseName == NULL) {
                 char* dbname = strstr(conn_str, "dbname=");
                 char* eon;
                 int len;
@@ -569,9 +568,9 @@ int MMStartReceivers(char* conns, int node_id)
                 dbname += 7;
                 eon = strchr(dbname, ' ');
                 len = eon - dbname;
-                receiver_database = (char*)malloc(len + 1);
-                memcpy(receiver_database, dbname, len);
-                receiver_database[len] = '\0';
+                MMDatabaseName = (char*)malloc(len + 1);
+                memcpy(MMDatabaseName, dbname, len);
+                MMDatabaseName[len] = '\0';
             }
             *p = '\0';        
             ctx->receiver_conn_string = conn_str;

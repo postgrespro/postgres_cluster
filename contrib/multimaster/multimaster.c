@@ -59,6 +59,7 @@ typedef struct
     int    nNodes;
     pg_atomic_uint32 nReceivers;
     bool initialized;
+    
 } DtmState;
 
 typedef struct
@@ -142,6 +143,8 @@ bool  MMDoReplication;
 static char* MMConnStrs;
 static int   MMNodeId;
 static int   MMNodes;
+static int   MMQueueSize;
+static int   MMWorkers;
 
 static char* DtmHost;
 static int DtmPort;
@@ -838,6 +841,36 @@ _PG_init(void)
 	RequestAddinLWLocks(2);
 
 	DefineCustomIntVariable(
+		"multimaster.workers",
+		"Number of multimaster executor workers per node",
+		NULL,
+		&MMWorkers,
+		8,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.queue_size",
+		"Multimaster queue size",
+		NULL,
+		&MMQueueSize,
+		1024*1024,
+	    1024,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
 		"multimaster.local_xid_reserve",
 		"Number of XIDs reserved by node for local transactions",
 		NULL,
@@ -927,6 +960,8 @@ _PG_init(void)
     if (MMNodes < 2) { 
         elog(ERROR, "Multimaster should have at least two nodes");
     }
+    dtm->pool = BgwPoolCreate(MMExecutor, MMDatabaseName, MMQueueSize, MMWorkers);
+
 	if (DtmBufferSize != 0)
 	{
 		DtmGlobalConfig(NULL, DtmPort, Unix_socket_directories);
