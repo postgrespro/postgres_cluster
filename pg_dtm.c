@@ -48,6 +48,7 @@ typedef struct DtmTransStatus
 {
     TransactionId xid;
     XidStatus status;
+    int nSubxids;
     cid_t cid;
     struct DtmTransStatus* next;
 } DtmTransStatus;
@@ -65,6 +66,8 @@ typedef struct
 {
     char gtid[MAX_GTID_SIZE];
     TransactionId xid;
+    TransactionId* subxids;
+    int nSubxids;
 } DtmTransId;
               
 
@@ -75,7 +78,7 @@ static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB* xid2status;
 static HTAB* gtid2xid;
 static DtmNodeState* local;
-static DtmTransState dtm_tx;
+static DtmCurrentTrans dtm_tx;
 static uint64 totalSleepInterrupts;
 static int DtmVacuumDelay;
 
@@ -83,11 +86,11 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 static TransactionId DtmAdjustOldestXid(TransactionId xid);
-static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 static bool DtmDetectGlobalDeadLock(PGPROC* proc);
 static cid_t DtmGetCsn(TransactionId xid);
+static void DtmAddSubtransactions(DtmTransStatus* ts, TransactionId* subxids, int nSubxids);
 
-static TransactionManager DtmTM = { PgTransactionIdGetStatus, DtmSetTransactionStatus, DtmGetSnapshot, PgGetNewTransactionId, DtmGetOldestXmin, PgTransactionIdIsInProgress, PgGetGlobalTransactionId, DtmXidInMVCCSnapshot, DtmDetectGlobalDeadLock };
+static TransactionManager DtmTM = { PgTransactionIdGetStatus, PgTransactionIdSetTreeStatus, DtmGetSnapshot, PgGetNewTransactionId, DtmGetOldestXmin, PgTransactionIdIsInProgress, PgGetGlobalTransactionId, DtmXidInMVCCSnapshot, DtmDetectGlobalDeadLock };
 
 void _PG_init(void);
 void _PG_fini(void);
@@ -290,6 +293,7 @@ dtm_xact_callback(XactEvent event, void *arg)
 			break;
 
 		case XACT_EVENT_PREPARE:
+            DtmLocalSavePreparedState(dtm_get_global_trans_id());
             DtmLocalEnd(&dtm_tx);
 			break;
 
@@ -462,6 +466,7 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     static timestamp_t firstReportTime;
     static timestamp_t prevReportTime;
     static timestamp_t totalSleepTime;
+    static timestamp_t maxSleepTime;
 #endif
     timestamp_t delay = MIN_WAIT_TIMEOUT;
     Assert(xid != InvalidTransactionId);
@@ -476,13 +481,6 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     while (true)
     {
         DtmTransStatus* ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_FIND, NULL);
-        if (ts == NULL && 
-            !(TransactionIdFollowsOrEquals(xid, snapshot->xmax) || TransactionIdPrecedes(xid, snapshot->xmin))) 
-        {
-            //TransactionIdFollowsOrEquals(xid, TransactionXmin)) { 
-            TransactionId subxid = SubTransGetTopmostTransaction(xid);
-            ts = (DtmTransStatus*)hash_search(xid2status, &subxid, HASH_FIND, NULL);
-        }
         if (ts != NULL)
         {
             if (ts->cid > dtm_tx.snapshot) { 
@@ -497,17 +495,21 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
                 SpinLockRelease(&local->lock);
 #if TRACE_SLEEP_TIME
                 {
-                timestamp_t now = dtm_get_current_time();
+                timestamp_t delta, now = dtm_get_current_time();
 #endif
                 dtm_sleep(delay);
 #if TRACE_SLEEP_TIME
-                totalSleepTime += dtm_get_current_time() - now;
-                if (now > prevReportTime + USEC*1) { 
+                delta = dtm_get_current_time() - now;
+                totalSleepTime += delta;
+                if (delta > maxSleepTime) {
+                    maxSleepTime = delta;
+                }
+                if (now > prevReportTime + USEC*10) { 
                     prevReportTime = now;
                     if (firstReportTime == 0) { 
                         firstReportTime = now;
                     } else { 
-                        fprintf(stderr, "Snapshot sleep %lu of %lu usec (%f%%)\n", totalSleepTime, now - firstReportTime, totalSleepTime*100.0/(now - firstReportTime));
+                        fprintf(stderr, "Snapshot sleep %lu of %lu usec (%f%%), maximum=%lu\n", totalSleepTime, now - firstReportTime, totalSleepTime*100.0/(now - firstReportTime), maxSleepTime);
                     }
                 }
                 }
@@ -577,7 +579,7 @@ void DtmInitialize()
 }
 
 
-void DtmLocalBegin(DtmTransState* x)
+void DtmLocalBegin(DtmCurrentTrans* x)
 {
     if (x->xid == InvalidTransactionId) { 
         SpinLockAcquire(&local->lock);
@@ -592,23 +594,23 @@ void DtmLocalBegin(DtmTransState* x)
     }
 }
 
-cid_t DtmLocalExtend(DtmTransState* x, GlobalTransactionId gtid)
+cid_t DtmLocalExtend(DtmCurrentTrans* x, GlobalTransactionId gtid)
 {
     if (gtid != NULL) {
         SpinLockAcquire(&local->lock);
         {
             DtmTransId* id = (DtmTransId*)hash_search(gtid2xid, gtid, HASH_ENTER, NULL);
-            x->is_global = true;
             id->xid = x->xid;
+            id->nSubxids = 0;
+            id->subxids = 0;
         }
         SpinLockRelease(&local->lock);        
-    } else { 
-        x->is_global = true;
-    }
+    } 
+    x->is_global = true;
     return x->snapshot;
 }
 
-cid_t DtmLocalAccess(DtmTransState* x, GlobalTransactionId gtid, cid_t global_cid)
+cid_t DtmLocalAccess(DtmCurrentTrans* x, GlobalTransactionId gtid, cid_t global_cid)
 {
     cid_t local_cid;
     SpinLockAcquire(&local->lock);
@@ -616,6 +618,8 @@ cid_t DtmLocalAccess(DtmTransState* x, GlobalTransactionId gtid, cid_t global_ci
         if (gtid != NULL) {
             DtmTransId* id = (DtmTransId*)hash_search(gtid2xid, gtid, HASH_ENTER, NULL);
             id->xid = x->xid;
+            id->nSubxids = 0;
+            id->subxids = 0;
         }
         local_cid = dtm_sync(global_cid);
         x->snapshot = local_cid;
@@ -638,7 +642,9 @@ void DtmLocalBeginPrepare(GlobalTransactionId gtid)
         ts = (DtmTransStatus*)hash_search(xid2status, &id->xid, HASH_ENTER, NULL);
         ts->status = TRANSACTION_STATUS_IN_PROGRESS;
         ts->cid = dtm_get_cid();
+        ts->nSubxids = id->nSubxids;
         DtmTransactionListAppend(ts);
+        DtmAddSubtransactions(ts, id->subxids, id->nSubxids);
     }
     SpinLockRelease(&local->lock);
 }
@@ -661,6 +667,7 @@ void DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 	{
         DtmTransStatus* ts;
         DtmTransId* id;
+        int i;
 
         id = (DtmTransId*)hash_search(gtid2xid, gtid, HASH_FIND, NULL);
         Assert(id != NULL);
@@ -668,7 +675,10 @@ void DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
         ts = (DtmTransStatus*)hash_search(xid2status, &id->xid, HASH_FIND, NULL);
         Assert(ts != NULL);
         ts->cid = cid;
-        
+        for (i = 0; i < ts->nSubxids; i++) { 
+            ts = ts->next;
+            ts->cid = cid;
+        }        
         dtm_sync(cid);
 
         DTM_TRACE((stderr, "Prepare transaction %u(%s) with CSN %lu\n", id->xid, gtid, cid));
@@ -676,7 +686,7 @@ void DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 	SpinLockRelease(&local->lock);
 }
 
-void DtmLocalCommitPrepared(DtmTransState* x, GlobalTransactionId gtid)
+void DtmLocalCommitPrepared(DtmCurrentTrans* x, GlobalTransactionId gtid)
 {
     Assert(gtid != NULL);
 
@@ -688,33 +698,45 @@ void DtmLocalCommitPrepared(DtmTransState* x, GlobalTransactionId gtid)
         x->is_global = true;
         x->is_prepared = true;
         x->xid = id->xid;
+        free(id->subxids);
+
         DTM_TRACE((stderr, "Global transaction %u(%s) is precommitted\n", x->xid, gtid));
     }
     SpinLockRelease(&local->lock);
 }
 
-void DtmLocalCommit(DtmTransState* x)
+void DtmLocalCommit(DtmCurrentTrans* x)
 {
     SpinLockAcquire(&local->lock);
     {
         bool found;
         DtmTransStatus* ts = (DtmTransStatus*)hash_search(xid2status, &x->xid, HASH_ENTER, &found);
+        ts->status = TRANSACTION_STATUS_COMMITTED;
         if (x->is_prepared) { 
+            int i;
+            DtmTransStatus* sts = ts;
             Assert(found);
             Assert(x->is_global);
-        } else if (!found) { 
-            //Assert(!found);
+            for (i = 0; i < ts->nSubxids; i++) { 
+                sts = sts->next;
+                Assert(sts->cid == ts->cid);
+                sts->status = TRANSACTION_STATUS_COMMITTED;
+            }
+        } else { 
+            TransactionId* subxids;
+            Assert(!found);
             ts->cid = dtm_get_cid();
             DtmTransactionListAppend(ts);
+            ts->nSubxids = xactGetCommittedChildren(&subxids);            
+            DtmAddSubtransactions(ts, subxids, ts->nSubxids);
         }
         x->cid = ts->cid;
-        ts->status = TRANSACTION_STATUS_COMMITTED;
         DTM_TRACE((stderr, "Local transaction %u is committed at %lu\n", x->xid, x->cid));
     }
     SpinLockRelease(&local->lock);
 }
 
-void DtmLocalAbortPrepared(DtmTransState* x, GlobalTransactionId gtid)
+void DtmLocalAbortPrepared(DtmCurrentTrans* x, GlobalTransactionId gtid)
 {
     Assert (gtid != NULL);
 
@@ -726,13 +748,14 @@ void DtmLocalAbortPrepared(DtmTransState* x, GlobalTransactionId gtid)
         x->is_global = true;
         x->is_prepared = true;
         x->xid = id->xid;
+        free(id->subxids);
 
         DTM_TRACE((stderr, "Global transaction %u(%s) is preaborted\n", x->xid, gtid));
     }
     SpinLockRelease(&local->lock);
 }
 
-void DtmLocalAbort(DtmTransState* x)
+void DtmLocalAbort(DtmCurrentTrans* x)
 {
     SpinLockAcquire(&local->lock);
     { 
@@ -741,9 +764,10 @@ void DtmLocalAbort(DtmTransState* x)
         if (x->is_prepared) { 
             Assert(found);
             Assert(x->is_global);
-        } else if (!found) { 
-            //Assert(!found);
+        } else { 
+            Assert(!found);
             ts->cid = dtm_get_cid();
+            ts->nSubxids = 0;
             DtmTransactionListAppend(ts);
         }
         x->cid = ts->cid;
@@ -753,37 +777,12 @@ void DtmLocalAbort(DtmTransState* x)
     SpinLockRelease(&local->lock);
 }
 
-void DtmLocalEnd(DtmTransState* x)
+void DtmLocalEnd(DtmCurrentTrans* x)
 {
     x->is_global = false;
     x->is_prepared = false;
     x->xid = InvalidTransactionId;
     x->cid = INVALID_CID;
-}
-
-void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
-{
-    if (nsubxids != 0) {
-        SpinLockAcquire(&local->lock);
-        { 
-            int i;
-            bool found;
-            DtmTransStatus* ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_ENTER, &found);
-            if (!found) {
-                ts->cid = dtm_get_cid();
-            }
-            ts->status = status;
-            for (i = 0; i < nsubxids; i++) { 
-                DtmTransStatus* sts = (DtmTransStatus*)hash_search(xid2status, &subxids[i], HASH_ENTER, &found);
-                Assert(!found);
-                sts->status = status;
-                sts->cid = ts->cid;
-                DtmTransactionListInsertAfter(ts, sts);
-            }
-        }
-        SpinLockRelease(&local->lock);
-    }
-    PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
 }
 
 bool DtmDetectGlobalDeadLock(PGPROC* proc)
@@ -806,3 +805,36 @@ static cid_t DtmGetCsn(TransactionId xid)
     return csn;
 }
                                          
+void DtmLocalSavePreparedState(GlobalTransactionId gtid)
+{
+    if (gtid != NULL) {
+        SpinLockAcquire(&local->lock);
+        {
+            DtmTransId* id = (DtmTransId*)hash_search(gtid2xid, gtid, HASH_FIND, NULL);
+            if (id != NULL) {                 
+                TransactionId* subxids;
+                int nSubxids = xactGetCommittedChildren(&subxids);
+                if (nSubxids != 0) { 
+                    id->subxids = (TransactionId*)malloc(nSubxids*sizeof(TransactionId));
+                    id->nSubxids = nSubxids;
+                    memcpy(id->subxids, subxids, nSubxids*sizeof(TransactionId));
+                }
+            }
+        }
+        SpinLockRelease(&local->lock);        
+    }
+}
+
+static void DtmAddSubtransactions(DtmTransStatus* ts, TransactionId* subxids, int nSubxids)
+{
+    int i;
+    for (i = 0; i < nSubxids; i++) { 
+        bool found;
+        DtmTransStatus* sts = (DtmTransStatus*)hash_search(xid2status, &subxids[i], HASH_ENTER, &found);
+        Assert(!found);
+        sts->status = ts->status;
+        sts->cid = ts->cid;
+        sts->nSubxids = 0;
+        DtmTransactionListInsertAfter(ts, sts);
+    }
+}
