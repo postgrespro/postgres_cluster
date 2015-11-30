@@ -20,13 +20,13 @@ static void BgwMainLoop(Datum arg)
         PGSemaphoreLock(&pool->available);
         SpinLockAcquire(&pool->lock);
         Assert(pool->head != pool->tail);
-        size = (int*)&pool->buf[pool->head];
+        size = (int*)&pool->queue[pool->head];
         void* work = palloc(len);
         if (pool->head + size + 4 > pool->size) { 
-            memcpy(work, pool->buf, size);
+            memcpy(work, pool->queue, size);
             pool->head = (size & 3) & ~3;
         } else { 
-            memcpy(work, &pool->buf[pool->head+4], size);
+            memcpy(work, &pool->queue[pool->head+4], size);
             pool->head += 4 + ((size & 3) & ~3);
         }
         if (pool->size == pool->head) { 
@@ -42,11 +42,11 @@ static void BgwMainLoop(Datum arg)
     }
 }
 
-BGWPool* BgwPoolCreate(BgwExecutor executor, char const* dbname, size_t bufSize, size_t nWorkers);
+BGWPool* BgwPoolCreate(BgwExecutor executor, char const* dbname, size_t queueSize, size_t nWorkers);
 {
     int i;
 	BackgroundWorker worker;
-    BGWPool* pool = (BGWPool*)ShmemAlloc(bufSize + sizeof(BGWPool));
+    BGWPool* pool = (BGWPool*)ShmemAlloc(queueSize + sizeof(BGWPool));
     pool->executor = executor;
     PGSemaphoreCreate(&pool->available);
     PGSemaphoreCreate(&pool->overflow);
@@ -56,7 +56,7 @@ BGWPool* BgwPoolCreate(BgwExecutor executor, char const* dbname, size_t bufSize,
     pool->producerBlocked = false;
     pool->head = 0;
     pool->tail = 0;
-    pool->size = bufSize;
+    pool->size = queueSize;
     strcpy(pool->dbname, dbname);
 
 	MemSet(&worker, 0, sizeof(BackgroundWorker));
@@ -90,12 +90,12 @@ void BgwPoolExecute(BgwPool* pool, void* work, size_t size);
             PGSemaphoreLock(&pool->overflow);
             SpinLockAcquire(&pool->lock);
         } else {
-            *(int*)&pool->buf[pool->tail] = size;
+            *(int*)&pool->queue[pool->tail] = size;
             if (pool->size - pool->tail >= size + 4) { 
-                memcpy(&pool->buf[pool->tail+4], work, size);
+                memcpy(&pool->queue[pool->tail+4], work, size);
                 pool->tail += 4 + (size+3) & ~3;
             } else { 
-                memcpy(pool->buf, work, size);
+                memcpy(pool->queue, work, size);
                 pool->tail = (size+3) & ~3;
             }
             PGSemaphoreUnlock(&pool->available);
