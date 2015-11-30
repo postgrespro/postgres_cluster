@@ -170,12 +170,7 @@ static void ProcessRecords(char *bufptr, TransactionId xid,
 			   const TwoPhaseCallback callbacks[]);
 static void RemoveGXact(GlobalTransaction gxact);
 
-
-
-static char twophase_buf[10*1024];
-static int twophase_pos = 0;
-size_t bogus_write(int fd, const void *buf, size_t nbytes);
-static char *XlogReadTwoPhaseData(XLogRecPtr lsn);
+static void XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len);
 
 /*
  * Initialization of shared memory
@@ -1033,14 +1028,8 @@ StartPrepare(GlobalTransaction gxact)
 void
 EndPrepare(GlobalTransaction gxact)
 {
-	// PGXACT	   *pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
-	// TransactionId xid = pgxact->xid;
 	TwoPhaseFileHeader *hdr;
-	char		path[MAXPGPATH];
 	StateFileChunk *record;
-	pg_crc32c	statefile_crc;
-	// pg_crc32c	bogus_crc;
-	int			fd;
 
 	/* Add the end sentinel to the list of 2PC records */
 	RegisterTwoPhaseRecord(TWOPHASE_RM_END_ID, 0,
@@ -1061,72 +1050,7 @@ EndPrepare(GlobalTransaction gxact)
 				 errmsg("two-phase state file maximum length exceeded")));
 
 	/*
-	 * Create the 2PC state file.
-	 */
-	// TwoPhaseFilePath(path, xid);
-
-	// fd = OpenTransientFile(path,
-	// 					   O_CREAT | O_EXCL | O_WRONLY | PG_BINARY,
-	// 					   S_IRUSR | S_IWUSR);
-	fd = 1;
-
-	if (fd < 0)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not create two-phase state file \"%s\": %m",
-						path)));
-
-	/* Write data to file, and calculate CRC as we pass over it */
-	INIT_CRC32C(statefile_crc);
-
-	for (record = records.head; record != NULL; record = record->next)
-	{
-		COMP_CRC32C(statefile_crc, record->data, record->len);
-		if ((bogus_write(fd, record->data, record->len)) != record->len)
-		{
-			CloseTransientFile(fd);
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not write two-phase state file: %m")));
-		}
-	}
-
-	FIN_CRC32C(statefile_crc);
-
-	// /*
-	//  * Write a deliberately bogus CRC to the state file; this is just paranoia
-	//  * to catch the case where four more bytes will run us out of disk space.
-	//  */
-	// bogus_crc = ~statefile_crc;
-
-	// if ((bogus_write(fd, &bogus_crc, sizeof(pg_crc32c))) != sizeof(pg_crc32c))
-	// {
-	// 	CloseTransientFile(fd);
-	// 	ereport(ERROR,
-	// 			(errcode_for_file_access(),
-	// 			 errmsg("could not write two-phase state file: %m")));
-	// }
-
-	// /* Back up to prepare for rewriting the CRC */
-	// if (lseek(fd, -((off_t) sizeof(pg_crc32c)), SEEK_CUR) < 0)
-	// {
-	// 	CloseTransientFile(fd);
-	// 	ereport(ERROR,
-	// 			(errcode_for_file_access(),
-	// 			 errmsg("could not seek in two-phase state file: %m")));
-	// }
-
-	/*
-	 * The state file isn't valid yet, because we haven't written the correct
-	 * CRC yet.  Before we do that, insert entry in WAL and flush it to disk.
-	 *
-	 * Between the time we have written the WAL entry and the time we write
-	 * out the correct state file CRC, we have an inconsistency: the xact is
-	 * prepared according to WAL but not according to our on-disk state. We
-	 * use a critical section to force a PANIC if we are unable to complete
-	 * the write --- then, WAL replay should repair the inconsistency.  The
-	 * odds of a PANIC actually occurring should be very tiny given that we
-	 * were able to write the bogus CRC above.
+	 * Now writing 2PC state data to WAL.
 	 *
 	 * We have to set delayChkpt here, too; otherwise a checkpoint starting
 	 * immediately after the WAL record is inserted could complete without
@@ -1148,25 +1072,11 @@ EndPrepare(GlobalTransaction gxact)
 		XLogRegisterData(record->data, record->len);
 	gxact->prepare_lsn = XLogInsert(RM_XACT_ID, XLOG_XACT_PREPARE);
 	XLogFlush(gxact->prepare_lsn);
-	gxact->prepare_xlogptr = ProcLastRecPtr;
-
-	// fprintf(stderr, "EndPrepare: %s={xlogptr:%X,lsn:%X, delta: %X}\n", gxact->gid, gxact->prepare_xlogptr, gxact->prepare_lsn, gxact->prepare_lsn - gxact->prepare_xlogptr);
 
 	/* If we crash now, we have prepared: WAL replay will fix things */
 
-	/* write correct CRC and close file */
-	if ((bogus_write(fd, &statefile_crc, sizeof(pg_crc32c))) != sizeof(pg_crc32c))
-	{
-		CloseTransientFile(fd);
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not write two-phase state file: %m")));
-	}
-
-	// if (CloseTransientFile(fd) != 0)
-	// 	ereport(ERROR,
-	// 			(errcode_for_file_access(),
-	// 			 errmsg("could not close two-phase state file: %m")));
+	/* Store record's start location to read that later on Commit */
+	gxact->prepare_xlogptr = ProcLastRecPtr;
 
 	/*
 	 * Mark the prepared transaction as valid.  As soon as xact.c marks
@@ -1197,6 +1107,11 @@ EndPrepare(GlobalTransaction gxact)
 	MyLockedGxact = gxact;
 
 	END_CRIT_SECTION();
+
+
+	fprintf(stderr, "EndPrepare: %s=(%d,%d,%d,%d,%d)\n", gxact->gid, hdr->xid, hdr->nsubxacts, hdr->ncommitrels, hdr->nabortrels, hdr->ninvalmsgs);
+	fprintf(stderr, "EndPrepare: %s={xlogptr:%lX,lsn:%lX,delta:%lX}\n", gxact->gid, gxact->prepare_xlogptr, gxact->prepare_lsn, gxact->prepare_lsn - gxact->prepare_xlogptr);
+
 
 	/*
 	 * Wait for synchronous replication, if required.
@@ -1254,7 +1169,7 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 		if (give_warnings)
 			ereport(WARNING,
 					(errcode_for_file_access(),
-					 errmsg("could not open two-phase state file \"%s\": %m",
+					 errmsg("ReadTwoPhaseFile: could not open two-phase state file \"%s\": %m",
 							path)));
 		return NULL;
 	}
@@ -1395,9 +1310,10 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	/*
 	 * Read and validate the state file
 	 */
-	// buf = ReadTwoPhaseFile(xid, true);
-	// buf = twophase_buf;
-	buf = XlogReadTwoPhaseData(gxact->prepare_xlogptr);
+	if (gxact->prepare_lsn <= GetRedoRecPtr())
+		buf = ReadTwoPhaseFile(xid, true);
+	else
+		XlogReadTwoPhaseData(gxact->prepare_xlogptr, &buf, NULL);
 
 	/*
 	 * Disassemble the header area
@@ -1417,9 +1333,8 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	/* compute latestXid among all children */
 	latestXid = TransactionIdLatest(xid, hdr->nsubxacts, children);
 
-
-	// fprintf(stderr, "FinishPrepared: %s=(%d,%d,%d,%d)\n", gxact->gid, hdr->nsubxacts, hdr->ncommitrels, hdr->nabortrels, hdr->ninvalmsgs);
-	// fprintf(stderr, "FinishPrepared: %s={xlogptr:%X,lsn:%X,delta:%X}\n", gxact->gid, gxact->prepare_xlogptr, gxact->prepare_lsn, gxact->prepare_lsn - gxact->prepare_xlogptr);
+	fprintf(stderr, "FinishPrepared: %s=(%d,%d,%d,%d,%d)\n", gxact->gid, hdr->xid, hdr->nsubxacts, hdr->ncommitrels, hdr->nabortrels, hdr->ninvalmsgs);
+	fprintf(stderr, "FinishPrepared: %s={xlogptr:%lX,lsn:%lX,delta:%lX}\n", gxact->gid, gxact->prepare_xlogptr, gxact->prepare_lsn, gxact->prepare_lsn - gxact->prepare_xlogptr);
 
 	Assert(hdr->nsubxacts == 0);
 	Assert(hdr->ncommitrels == 0);
@@ -1508,7 +1423,7 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	/*
 	 * And now we can clean up our mess.
 	 */
-	RemoveTwoPhaseFile(xid, true);
+	// RemoveTwoPhaseFile(xid, true);
 
 	RemoveGXact(gxact);
 	MyLockedGxact = NULL;
@@ -1551,16 +1466,15 @@ ProcessRecords(char *bufptr, TransactionId xid,
 void
 RemoveTwoPhaseFile(TransactionId xid, bool giveWarning)
 {
-	// char		path[MAXPGPATH];
+	char		path[MAXPGPATH];
 
-	// TwoPhaseFilePath(path, xid);
-	// if (unlink(path))
-	// 	if (errno != ENOENT || giveWarning)
-	// 		ereport(WARNING,
-	// 				(errcode_for_file_access(),
-	// 			   errmsg("could not remove two-phase state file \"%s\": %m",
-	// 					  path)));
-	twophase_pos = 0;
+	TwoPhaseFilePath(path, xid);
+	if (unlink(path))
+		if (errno != ENOENT || giveWarning)
+			ereport(WARNING,
+					(errcode_for_file_access(),
+				   errmsg("could not remove two-phase state file \"%s\": %m",
+						  path)));
 }
 
 /*
@@ -1574,6 +1488,8 @@ RecreateTwoPhaseFile(TransactionId xid, void *content, int len)
 	char		path[MAXPGPATH];
 	pg_crc32c	statefile_crc;
 	int			fd;
+
+	fprintf(stderr, "RecreateTwoPhaseFile called xid=%d, len=%d\n", xid, len);
 
 	/* Recompute CRC */
 	INIT_CRC32C(statefile_crc);
@@ -1646,6 +1562,7 @@ void
 CheckPointTwoPhase(XLogRecPtr redo_horizon)
 {
 	TransactionId *xids;
+	XLogRecPtr	  *xlogptrs;
 	int			nxids;
 	char		path[MAXPGPATH];
 	int			i;
@@ -1667,6 +1584,7 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 	TRACE_POSTGRESQL_TWOPHASE_CHECKPOINT_START();
 
 	xids = (TransactionId *) palloc(max_prepared_xacts * sizeof(TransactionId));
+	xlogptrs = (XLogRecPtr *) palloc(max_prepared_xacts * sizeof(XLogRecPtr));
 	nxids = 0;
 
 	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
@@ -1675,10 +1593,14 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 	{
 		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
 		PGXACT	   *pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
+		int j;
 
-		if (gxact->valid &&
-			gxact->prepare_lsn <= redo_horizon)
-			xids[nxids++] = pgxact->xid;
+		if (gxact->valid && gxact->prepare_lsn <= redo_horizon){
+			j = nxids++;
+			xids[j] = pgxact->xid;
+			xlogptrs[j] = gxact->prepare_xlogptr;
+		}
+			
 	}
 
 	LWLockRelease(TwoPhaseStateLock);
@@ -1687,32 +1609,39 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 	{
 		TransactionId xid = xids[i];
 		int			fd;
+		int 		len;
+		char	   *buf;
 
 		TwoPhaseFilePath(path, xid);
 
-		fd = OpenTransientFile(path, O_RDWR | PG_BINARY, 0);
-		if (fd < 0)
-		{
-			if (errno == ENOENT)
-			{
-				/* OK if gxact is no longer valid */
-				if (!TransactionIdIsPrepared(xid))
-					continue;
-				/* Restore errno in case it was changed */
-				errno = ENOENT;
-			}
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not open two-phase state file \"%s\": %m",
-							path)));
-		}
+		fprintf(stderr, "CheckPointTwoPhase: %lX\n", xlogptrs[i]);
 
-		if (pg_fsync(fd) != 0)
+		fd = OpenTransientFile(path, O_RDWR | PG_BINARY, 0);
+
+		if (fd < 0 && errno == ENOENT)
 		{
-			CloseTransientFile(fd);
+			fprintf(stderr, "CheckPointTwoPhase: %d <-> %d \n", errno, ENOENT);
+
+			/* OK if gxact is no longer valid */
+			if (!TransactionIdIsPrepared(xid))
+				continue;
+
+			/* Re-create file */
+			XlogReadTwoPhaseData(xlogptrs[i], &buf, &len);
+			RecreateTwoPhaseFile(xid, buf, len);
+			fd = OpenTransientFile(path, O_RDWR | PG_BINARY, 0);
+
+			if (fd < 0) 
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("CheckPointTwoPhase: could not open two-phase state file after re-creating \"%s\": %m",
+								path)));
+		}
+		else if (fd < 0)
+		{
 			ereport(ERROR,
 					(errcode_for_file_access(),
-					 errmsg("could not fsync two-phase state file \"%s\": %m",
+					 errmsg("CheckPointTwoPhase: could not open two-phase state file \"%s\": %m",
 							path)));
 		}
 
@@ -2239,18 +2168,8 @@ RecordTransactionAbortPrepared(TransactionId xid,
 
 /**********************************************************************************/
 
-
-size_t
-bogus_write(int fd, const void *buf, size_t nbytes)
-{
-	memcpy(twophase_buf + twophase_pos, buf, nbytes);
-	twophase_pos += nbytes;
-	return nbytes;
-}
-
-
-static char *
-XlogReadTwoPhaseData(XLogRecPtr lsn)
+void
+XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
 {
 	XLogRecord *record;
 	XLogReaderState *xlogreader;
@@ -2261,10 +2180,16 @@ XlogReadTwoPhaseData(XLogRecPtr lsn)
 		fprintf(stderr, "xlogreader == NULL\n");
 
 	record = XLogReadRecord(xlogreader, lsn, &errormsg);
-	if (record == NULL)
-	{
-		fprintf(stderr, "XLogReadRecord error\n");
-	}
 
-	return XLogRecGetData(xlogreader);
+	if (record == NULL)
+		fprintf(stderr, "XLogReadRecord error\n");
+
+	if (len != NULL)
+		*len = XLogRecGetDataLen(xlogreader);
+	*buf = XLogRecGetData(xlogreader);
 }
+
+
+
+
+
