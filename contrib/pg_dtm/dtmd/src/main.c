@@ -141,7 +141,7 @@ static void set_next_gxid(xid_t value) {
 		assert(value <= last_gxid);
 		if (inrange(next_gxid + 1, threshold_gxid, value)) {
 			// Time to worry has come.
-			raft.term++;
+			raft_start_next_term(&raft);
 		} else {
 			// It is either too early to worry,
 			// or we have already increased the term.

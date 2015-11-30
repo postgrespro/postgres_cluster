@@ -140,5 +140,6 @@ void raft_tick(raft_t *r, int msec);
 void raft_handle_message(raft_t *r, raft_msg_t *m);
 raft_msg_t *raft_recv_message(raft_t *r);
 int raft_create_udp_socket(raft_t *r);
+void raft_start_next_term(raft_t *r);
 
 #endif

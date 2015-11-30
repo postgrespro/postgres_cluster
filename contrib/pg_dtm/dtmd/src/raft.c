@@ -458,6 +458,8 @@ static void raft_handle_update(raft_t *r, raft_msg_update_t *m) {
 			r->log.first + r->log.size,
 			m->acked
 		);
+		raft_server_t *s = r->servers + sender;
+		s->acked = s->tosend = r->log.acked;
 	}
 
 	if (m->empty) {
@@ -537,6 +539,14 @@ static void raft_handle_done(raft_t *r, raft_msg_done_t *m) {
 		debug("[from %d] ============= refused\n", sender);
 		if (server->tosend > 0) {
 			// the client should have specified the last index it had gotten
+			if (server->tosend == m->index + 1) {
+				shout(
+					"[from %d] the last index I have is %d, but"
+					" I still refuse, this should not happen\n",
+					sender, m->index
+				);
+				assert(false);
+			}
 			server->tosend = m->index + 1;
 		}
 		assert(server->tosend >= server->acked); // FIXME: remove this, because 'tosend' is actually allowed to be less than 'acked' if the follower has restarted
@@ -553,6 +563,11 @@ static void raft_set_term(raft_t *r, int term) {
 	r->term = term;
 	r->vote = NOBODY;
 	r->votes = 0;
+}
+
+void raft_start_next_term(raft_t *r) {
+	assert(r->role == ROLE_LEADER);
+	r->term++;
 }
 
 static void raft_handle_claim(raft_t *r, raft_msg_claim_t *m) {
