@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <time.h>
 
+#include "postgres.h"
 #include "libdtm.h"
 #include "dtmd/include/proto.h"
 #include "dtmd/include/dtmdlimits.h"
@@ -428,8 +429,7 @@ void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *g
 	return;
 failure:
 	DiscardConnection();
-	fprintf(
-		stderr,
+	elog(ERROR,
 		"DtmGlobalGetSnapshot: failed to"
 		" get the snapshot for xid = %d\n",
 		xid
