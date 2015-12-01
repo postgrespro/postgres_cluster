@@ -5611,6 +5611,6 @@ xact_redo(XLogReaderState *record)
 
 void MarkAsAborted()
 {
-    CurrentTransactionState->state = TRANS_ABORT;
-    CurrentTransactionState->blockState = TBLOCK_ABORT_PENDING;
+    CurrentTransactionState->state = TRANS_INPROGRESS;
+    CurrentTransactionState->blockState = TBLOCK_STARTED;
 }

@@ -1,7 +1,7 @@
 /*
- * pg_dtm.c
+ * multimaster.c
  *
- * Pluggable distributed transaction manager
+ * Multimaster based on logical replication
  *
  */
 
@@ -28,6 +28,7 @@
 #include "access/xlog.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
+#include "executor/spi.h"
 #include "executor/executor.h"
 #include "access/twophase.h"
 #include "utils/guc.h"
@@ -48,6 +49,7 @@
 
 #include "libdtm.h"
 #include "multimaster.h"
+#include "bgwpool.h"
 
 typedef struct
 {
@@ -59,14 +61,8 @@ typedef struct
     int    nNodes;
     pg_atomic_uint32 nReceivers;
     bool initialized;
+    BgwPool* pool;
 } DtmState;
-
-typedef struct
-{
-    char* data;
-    int size;
-    int used;
-} ByteBuffer;
 
 typedef struct
 {
@@ -74,7 +70,7 @@ typedef struct
     int count;
 } LocalTransaction;
 
-#define DTM_SHMEM_SIZE (1024*1024)
+#define DTM_SHMEM_SIZE (64*1024*1024)
 #define DTM_HASH_SIZE  1003
 
 void _PG_init(void);
@@ -106,19 +102,14 @@ static bool TransactionIdIsInDoubt(TransactionId xid);
 static void DtmShmemStartup(void);
 static void DtmBackgroundWorker(Datum arg);
 
-static void ByteBufferAlloc(ByteBuffer* buf);
-static void ByteBufferAppend(ByteBuffer* buf, void* data, int len);
-static void ByteBufferAppendInt32(ByteBuffer* buf, int data);
-static void ByteBufferFree(ByteBuffer* buf);
-
 static void MMMarkTransAsLocal(TransactionId xid);
+static void MMExecutor(int id, void* work, size_t size);
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
 
 static HTAB* xid_in_doubt;
 static HTAB* local_trans;
 static DtmState* dtm;
-static Snapshot CurrentTransactionSnapshot;
 
 static TransactionId DtmNextXid;
 static SnapshotData DtmSnapshot = { HeapTupleSatisfiesMVCC };
@@ -139,14 +130,17 @@ static TransactionManager DtmTM = {
 };
 
 bool  MMDoReplication;
+char* MMDatabaseName;
 
 static char* MMConnStrs;
 static int   MMNodeId;
 static int   MMNodes;
+static int   MMQueueSize;
+static int   MMWorkers;
 
 static char* DtmHost;
-static int DtmPort;
-static int DtmBufferSize;
+static int   DtmPort;
+static int   DtmBufferSize;
 
 static ExecutorFinish_hook_type PreviousExecutorFinishHook = NULL;
 static void MMExecutorFinish(QueryDesc *queryDesc);
@@ -609,8 +603,9 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
 	if (TransactionIdIsValid(DtmNextXid) && snapshot != &CatalogSnapshotData)
 	{
-		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != snapshot->curcid))
+		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != snapshot->curcid)) {
 			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
+        }
 		DtmCurcid = snapshot->curcid;
 		DtmLastSnapshot = snapshot;
 		DtmMergeWithGlobalSnapshot(snapshot);
@@ -628,7 +623,6 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 		snapshot = PgGetSnapshotData(snapshot);
 	}
 	DtmUpdateRecentXmin(snapshot);
-	CurrentTransactionSnapshot = snapshot;
 	return snapshot;
 }
 
@@ -651,7 +645,6 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 	{
 		if (TransactionIdIsValid(DtmNextXid))
 		{
-			CurrentTransactionSnapshot = NULL;
 			if (status == TRANSACTION_STATUS_ABORTED || !MMIsDistributedTrans)
 			{
 				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
@@ -662,31 +655,34 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 			else
 			{
 				XTM_INFO("Begin commit transaction %d\n", xid);
-				/* Mark transaction as on-doubt in xid_in_doubt hash table */
+				/* Mark transaction as in-doubt in xid_in_doubt hash table */
 				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
 				LWLockRelease(dtm->hashLock);
 				if (DtmGlobalSetTransStatus(xid, status, true) != status) { 
+                    XTM_INFO("Commit of transaction %d is rejected by arbiter\n", xid);
                     DtmNextXid = InvalidTransactionId;
                     DtmLastSnapshot = NULL;
                     MMIsDistributedTrans = false; 
                     MarkAsAborted();
                     END_CRIT_SECTION();
-                    elog(ERROR, "Transaction commit rejected by XTM");                    
+                    elog(ERROR, "Commit of transaction %d is rejected by DTM", xid);                    
+                } else { 
+                    XTM_INFO("Commit transaction %d\n", xid);
                 }
-				XTM_INFO("Commit transaction %d\n", xid);
 			}
 		}
 		else
 		{
-			XTM_INFO("Set transaction %u status in local CLOG" , xid);
+			XTM_INFO("Set transaction %u status in local CLOG\n" , xid);
 		}
 	}
-	else
+	else if (status != TRANSACTION_STATUS_ABORTED) 
 	{
 		XidStatus gs;
 		gs = DtmGlobalGetTransStatus(xid, false);
 		if (gs != TRANSACTION_STATUS_UNKNOWN) { 
+            Assert(gs != TRANSACTION_STATUS_IN_PROGRESS);
 			status = gs;
         }
 	}
@@ -753,25 +749,26 @@ static void DtmInitialize()
 static void
 DtmXactCallback(XactEvent event, void *arg)
 {
-	XTM_INFO("%d: DtmXactCallbackevent=%d nextxid=%d\n", getpid(), event, DtmNextXid);
+	//XTM_INFO("%d: DtmXactCallbackevent=%d nextxid=%d\n", getpid(), event, DtmNextXid);
     switch (event) 
     {
     case XACT_EVENT_START: 
-        XTM_INFO("%d: normal=%d, initialized=%d, replication=%d, bgw=%d, vacuum=%d\n", 
-                 getpid(), IsNormalProcessingMode(), dtm->initialized, MMDoReplication, IsBackgroundWorker, IsAutoVacuumWorkerProcess());
+      //XTM_INFO("%d: normal=%d, initialized=%d, replication=%d, bgw=%d, vacuum=%d\n", 
+      //           getpid(), IsNormalProcessingMode(), dtm->initialized, MMDoReplication, IsBackgroundWorker, IsAutoVacuumWorkerProcess());
         if (IsNormalProcessingMode() && dtm->initialized && MMDoReplication && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess()) { 
             MMBeginTransaction();
         }
         break;
     case XACT_EVENT_PRE_COMMIT:
     case XACT_EVENT_PARALLEL_PRE_COMMIT:
-        if (!MMIsDistributedTrans && TransactionIdIsValid(GetCurrentTransactionIdIfAny())) {
-            XTM_INFO("%d: Will ignore transaction %u\n", getpid(), GetCurrentTransactionIdIfAny());
-            MMMarkTransAsLocal(GetCurrentTransactionIdIfAny());               
-        } else { 
-            XTM_INFO("%d: Transaction %u will be replicated\n", getpid(), GetCurrentTransactionIdIfAny());
+    { 
+        TransactionId xid = GetCurrentTransactionIdIfAny();
+        if (!MMIsDistributedTrans && TransactionIdIsValid(xid)) {
+            XTM_INFO("%d: Will ignore transaction %u\n", getpid(), xid);
+            MMMarkTransAsLocal(xid);               
         }
         break;
+    }
     case XACT_EVENT_COMMIT:
     case XACT_EVENT_ABORT:
 		if (TransactionIdIsValid(DtmNextXid))
@@ -834,6 +831,36 @@ _PG_init(void)
 	 */
 	RequestAddinShmemSpace(DTM_SHMEM_SIZE);
 	RequestAddinLWLocks(2);
+
+	DefineCustomIntVariable(
+		"multimaster.workers",
+		"Number of multimaster executor workers per node",
+		NULL,
+		&MMWorkers,
+		8,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.queue_size",
+		"Multimaster queue size",
+		NULL,
+		&MMQueueSize,
+		1024*1024,
+	    1024,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
 
 	DefineCustomIntVariable(
 		"multimaster.local_xid_reserve",
@@ -925,6 +952,8 @@ _PG_init(void)
     if (MMNodes < 2) { 
         elog(ERROR, "Multimaster should have at least two nodes");
     }
+    dtm->pool = BgwPoolCreate(MMExecutor, MMDatabaseName, MMQueueSize, MMWorkers);
+
 	if (DtmBufferSize != 0)
 	{
 		DtmGlobalConfig(NULL, DtmPort, Unix_socket_directories);
@@ -1055,33 +1084,6 @@ void DtmBackgroundWorker(Datum arg)
 	ShubLoop(&shub);
 }
 
-static void ByteBufferAlloc(ByteBuffer* buf)
-{
-    buf->size = 1024;
-    buf->data = palloc(buf->size);
-    buf->used = 0;
-}
-
-static void ByteBufferAppend(ByteBuffer* buf, void* data, int len)
-{
-    if (buf->used + len > buf->size) { 
-        buf->size = buf->used + len > buf->size*2 ? buf->used + len : buf->size*2;
-        buf->data = (char*)repalloc(buf->data, buf->size);
-    }
-    memcpy(&buf->data[buf->used], data, len);
-    buf->used += len;
-}
-
-static void ByteBufferAppendInt32(ByteBuffer* buf, int data)
-{
-    ByteBufferAppend(buf, &data, sizeof data);
-}
-
-static void ByteBufferFree(ByteBuffer* buf)
-{
-    pfree(buf->data);
-}
-
 static void DtmSerializeLock(PROCLOCK* proclock, void* arg)
 {
     ByteBuffer* buf = (ByteBuffer*)arg;
@@ -1139,8 +1141,10 @@ bool DtmDetectGlobalDeadLock(PGPROC* proc)
         XTM_INFO("%d: wait graph end\n", getpid());
         hasDeadlock = DtmGlobalDetectDeadLock(PostPortNumber, pgxact->xid, buf.data, buf.used);
         ByteBufferFree(&buf);
-        XTM_INFO("%d: deadlock detected for %u\n", getpid(), pgxact->xid);
-        elog(WARNING, "Deadlock detected for transaction %u", pgxact->xid);
+        XTM_INFO("%d: deadlock %sdetected for transaction %u\n", getpid(), hasDeadlock ? "": "not ",  pgxact->xid);
+        if (hasDeadlock) {  
+            elog(WARNING, "Deadlock detected for transaction %u", pgxact->xid);
+        }
     }
     return hasDeadlock;
 }
@@ -1180,3 +1184,45 @@ MMExecutorFinish(QueryDesc *queryDesc)
     }
 }
         
+static void MMExecutor(int id, void* work, size_t size)
+{
+    TransactionId xid = *(TransactionId*)work;
+    char* stmts = (char*)work + 4;
+    int rc = SPI_ERROR_TRANSACTION;
+    MMJoinTransaction(xid);
+
+    SetCurrentStatementStartTimestamp();               
+    StartTransactionCommand();
+    SPI_connect();
+    PushActiveSnapshot(GetTransactionSnapshot());
+
+    PG_TRY();
+    {
+        rc = SPI_execute(stmts, false, 0);
+        SPI_finish();
+        PopActiveSnapshot();
+        if (rc != SPI_OK_INSERT && rc != SPI_OK_UPDATE && rc != SPI_OK_DELETE) {
+            FlushErrorState();
+            ereport(LOG, (errmsg("Executor %d: failed to apply transaction %u",
+                                 id, xid)));
+            AbortCurrentTransaction();
+        } else { 
+            CommitTransactionCommand();
+        }
+    }
+    PG_CATCH();
+    {
+        if (rc == SPI_ERROR_TRANSACTION) {
+            SPI_finish();
+            PopActiveSnapshot();
+        }
+        AbortCurrentTransaction();
+    }
+    PG_END_TRY();
+}
+
+extern void MMExecute(void* work, int size)
+{
+    BgwPoolExecute(dtm->pool, work, size);
+}
+    

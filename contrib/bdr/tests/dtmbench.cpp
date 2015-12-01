@@ -120,7 +120,7 @@ void* reader(void* arg)
         result r = txn.exec("select sum(v) from t");
         int64_t sum = r[0][0].as(int64_t());
         if (sum != prevSum) {
-            printf("Total=%ld\n", sum);
+            //printf("Total=%ld\n", sum);
             prevSum = sum;
         }
         t.proceeded += 1;

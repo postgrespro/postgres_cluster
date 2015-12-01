@@ -23,6 +23,7 @@
 #include "access/transam.h"
 #include "lib/stringinfo.h"
 #include "pgstat.h"
+#include "executor/spi.h"
 #include "postmaster/bgworker.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
@@ -46,8 +47,9 @@ static volatile sig_atomic_t got_sigterm = false;
 static volatile sig_atomic_t got_sighup = false;
 
 /* GUC variables */
+static char *receiver_database;
 static int receiver_idle_time = 1;
-static bool receiver_sync_mode = false;/*true;*/
+static bool receiver_sync_mode = true;
 
 /* Worker name */
 static char *worker_name = "multimaster";
@@ -199,8 +201,9 @@ receiver_raw_main(Datum main_arg)
 	PQExpBuffer query;
 	PGconn *conn;
 	PGresult *res;
+    TransactionId xid = InvalidTransactionId;
     bool insideTrans = false;
-    ByteBuffer buf;
+    bool rollbackTransaction = false;
 
 	/* Register functions for SIGTERM/SIGHUP management */
 	pqsignal(SIGHUP, receiver_raw_sighup);
@@ -212,7 +215,7 @@ receiver_raw_main(Datum main_arg)
 	BackgroundWorkerUnblockSignals();
 
 	/* Connect to a database */
-	BackgroundWorkerInitializeConnection(MMDatabaseName, NULL);
+	BackgroundWorkerInitializeConnection(receiver_database, NULL);
 
 	/* Establish connection to remote server */
 	conn = PQconnectdb(args->receiver_conn_string);
@@ -255,9 +258,6 @@ receiver_raw_main(Datum main_arg)
 	}
 	PQclear(res);
 	resetPQExpBuffer(query);
-
-    MMReceiverStarted();
-    ByteBufferAlloc(&buf);
 
 	while (!got_sigterm)
 	{
@@ -383,25 +383,64 @@ receiver_raw_main(Datum main_arg)
 				proc_exit(1);
 			}
 
+			/* Apply change to database */
             stmt = copybuf + hdr_len;
-           
-            if (strncmp(stmt, "BEGIN ", 6) == 0) { 
-                TransactionId xid;
-                int rc = sscanf(stmt + 6, "%u", &xid);
-                Assert(rc == 1);
-                ByteBufferAppendInt32(&buf, xid);
+			pgstat_report_activity(STATE_RUNNING, stmt);
+			SetCurrentStatementStartTimestamp();
+            
+            if (strncmp(stmt, "BEGIN;", 6) == 0) { 
                 Assert(!insideTrans);
+                SetCurrentStatementStartTimestamp();
+
+                StartTransactionCommand();
+                xid = GetCurrentTransactionId();
+                MMMarkTransAsLocal(xid);
+                SPI_connect();
+                PushActiveSnapshot(GetTransactionSnapshot());
                 insideTrans = true;
+                rollbackTransaction = false;
+                XTM_INFO("%s: Receive transaction %u\n", worker_proc, xid);
             } else if (strncmp(stmt, "COMMIT;", 7) == 0) { 
                 Assert(insideTrans);
-                Assert(buf.used > 4);
-                buf.data[buf.used-1] = '\0'; /* replace last ';' with '\0' to make string zero terminated */
-                MMExecute(buf.data, buf.used);
-                ByteBufferReset(&buf);
                 insideTrans = false;
-            } else {
+                SPI_finish();
+                PopActiveSnapshot();
+                if (rollbackTransaction) {
+                    elog(WARNING, "%s: Rollback transaction %u", worker_proc, xid);
+                    AbortCurrentTransaction();
+                } else { 
+                    PG_TRY();
+                    {
+                        XTM_INFO("%s: Start commit of transaction %u\n", worker_proc, xid);
+                        CommitTransactionCommand();
+                        XTM_INFO("%s: Complete commit of transaction %u\n", worker_proc, xid);
+                    }
+                    PG_CATCH();
+                    {
+                        FlushErrorState();
+                        elog(WARNING, "%s: Commit of transaction %u is failed", worker_proc, xid);
+                        AbortCurrentTransaction();
+                    }
+                    PG_END_TRY();
+                }
+            } else if (!rollbackTransaction) {
                 Assert(insideTrans);
-                ByteBufferAppend(&buf, stmt, strlen(stmt));
+                /* Execute query */
+                PG_TRY();
+                {
+                    rc = SPI_execute(stmt, false, 0);
+                    if (rc != SPI_OK_INSERT && rc != SPI_OK_UPDATE && rc != SPI_OK_DELETE) {
+                        ereport(LOG, (errmsg("%s: Error when applying change: %s",
+                                             worker_proc, stmt)));
+                    }
+                }
+                PG_CATCH();
+                {
+                    FlushErrorState();
+                    elog(WARNING, "%s: %s failed in transaction %u", worker_proc, stmt, xid);
+                    rollbackTransaction = true;
+                }
+                PG_END_TRY();
             }
 			/* Update written position */
 			output_written_lsn = Max(walEnd, output_written_lsn);
@@ -495,7 +534,6 @@ receiver_raw_main(Datum main_arg)
 		}
 	}
 
-    ByteBufferFree(&buf);
 	/* No problems, so clean exit */
 	proc_exit(0);
 }
@@ -520,7 +558,7 @@ int MMStartReceivers(char* conns, int node_id)
         }
         if (++i != node_id) {
             ReceiverArgs* ctx = (ReceiverArgs*)malloc(sizeof(ReceiverArgs));
-            if (MMDatabaseName == NULL) {
+            if (receiver_database == NULL) {
                 char* dbname = strstr(conn_str, "dbname=");
                 char* eon;
                 int len;
@@ -528,9 +566,9 @@ int MMStartReceivers(char* conns, int node_id)
                 dbname += 7;
                 eon = strchr(dbname, ' ');
                 len = eon - dbname;
-                MMDatabaseName = (char*)malloc(len + 1);
-                memcpy(MMDatabaseName, dbname, len);
-                MMDatabaseName[len] = '\0';
+                receiver_database = (char*)malloc(len + 1);
+                memcpy(receiver_database, dbname, len);
+                receiver_database[len] = '\0';
             }
             *p = '\0';        
             ctx->receiver_conn_string = conn_str;
