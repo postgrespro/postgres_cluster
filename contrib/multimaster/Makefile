@@ -1,5 +1,5 @@
 MODULE_big = multimaster
-OBJS = multimaster.o receiver_raw.o decoder_raw.o libdtm.o sockhub/sockhub.o
+OBJS = multimaster.o receiver_raw.o decoder_raw.o libdtm.o bytebuf.o bgwpool.o sockhub/sockhub.o
 
 EXTENSION = multimaster
 DATA = multimaster--1.0.sql

@@ -1,3 +1,13 @@
+#include "postgres.h"
+#include "fmgr.h"
+#include "miscadmin.h"
+#include "postmaster/postmaster.h"
+#include "postmaster/bgworker.h"
+#include "storage/s_lock.h"
+#include "storage/spin.h"
+#include "storage/pg_sema.h"
+#include "storage/shmem.h"
+
 #include "bgwpool.h"
 
 typedef struct
@@ -6,7 +16,7 @@ typedef struct
     int id;
 } BgwExecutorCtx;
 
-static void BgwMainLoop(Datum arg)
+static void BgwPoolMainLoop(Datum arg)
 {
     BgwExecutorCtx* ctx = (BgwExecutorCtx*)arg;
     int id = ctx->id;
@@ -19,22 +29,22 @@ static void BgwMainLoop(Datum arg)
     while(true) { 
         PGSemaphoreLock(&pool->available);
         SpinLockAcquire(&pool->lock);
-        Assert(pool->head != pool->tail);
-        size = (int*)&pool->queue[pool->head];
-        void* work = palloc(len);
+        size = *(int*)&pool->queue[pool->head];
+        Assert(size < pool->size);
+        work = palloc(size);
         if (pool->head + size + 4 > pool->size) { 
             memcpy(work, pool->queue, size);
-            pool->head = (size & 3) & ~3;
+            pool->head = INTALIGN(size);
         } else { 
             memcpy(work, &pool->queue[pool->head+4], size);
-            pool->head += 4 + ((size & 3) & ~3);
+            pool->head += 4 + INTALIGN(size);
         }
         if (pool->size == pool->head) { 
             pool->head = 0;
         }
         if (pool->producerBlocked) {
-            PGSemaphoreUnlock(&pool->overflow);
             pool->producerBlocked = false;
+            PGSemaphoreUnlock(&pool->overflow);
         }
         SpinLockRelease(&pool->lock);
         pool->executor(id, work, size);
@@ -42,11 +52,11 @@ static void BgwMainLoop(Datum arg)
     }
 }
 
-BGWPool* BgwPoolCreate(BgwExecutor executor, char const* dbname, size_t queueSize, size_t nWorkers);
+BgwPool* BgwPoolCreate(BgwExecutor executor, char const* dbname, size_t queueSize, int nWorkers)
 {
     int i;
 	BackgroundWorker worker;
-    BGWPool* pool = (BGWPool*)ShmemAlloc(queueSize + sizeof(BGWPool));
+    BgwPool* pool = (BgwPool*)ShmemAlloc(queueSize + sizeof(BgwPool));
     pool->executor = executor;
     PGSemaphoreCreate(&pool->available);
     PGSemaphoreCreate(&pool->overflow);
@@ -76,13 +86,13 @@ BGWPool* BgwPoolCreate(BgwExecutor executor, char const* dbname, size_t queueSiz
     return pool;
 }
 
-void BgwPoolExecute(BgwPool* pool, void* work, size_t size);
+void BgwPoolExecute(BgwPool* pool, void* work, size_t size)
 {
     Assert(size+4 <= pool->size);
  
     SpinLockAcquire(&pool->lock);
     while (true) { 
-        if ((pool->head < pool->tail && pool->size - pool->tail < size + 4 && pool->head < size) 
+        if ((pool->head <= pool->tail && pool->size - pool->tail < size + 4 && pool->head < size) 
             || (pool->head > pool->tail && pool->head - pool->tail < size + 4))
         {
             pool->producerBlocked = true;
@@ -93,13 +103,18 @@ void BgwPoolExecute(BgwPool* pool, void* work, size_t size);
             *(int*)&pool->queue[pool->tail] = size;
             if (pool->size - pool->tail >= size + 4) { 
                 memcpy(&pool->queue[pool->tail+4], work, size);
-                pool->tail += 4 + (size+3) & ~3;
+                pool->tail += 4 + INTALIGN(size);
             } else { 
                 memcpy(pool->queue, work, size);
-                pool->tail = (size+3) & ~3;
+                pool->tail = INTALIGN(size);
+            }
+            if (pool->tail == pool->size) {
+                pool->tail = 0;
             }
             PGSemaphoreUnlock(&pool->available);
+            break;
         }
     }
+    SpinLockRelease(&pool->lock);            
 }
 

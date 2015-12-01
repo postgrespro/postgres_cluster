@@ -19,8 +19,8 @@ typedef struct
     char queue[1];
 } BgwPool;
 
-BgwPool* BgwPoolCreate(BgwExecutor executor, char const* dbname, size_t queueSize, int nWorkers);
+extern BgwPool* BgwPoolCreate(BgwExecutor executor, char const* dbname, size_t queueSize, int nWorkers);
 
-void BgwPoolExecute(BgwPool* pool, void* work, size_t size);
+extern void BgwPoolExecute(BgwPool* pool, void* work, size_t size);
 
 #endif

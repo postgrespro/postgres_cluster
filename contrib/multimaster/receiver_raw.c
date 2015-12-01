@@ -23,7 +23,6 @@
 #include "access/transam.h"
 #include "lib/stringinfo.h"
 #include "pgstat.h"
-#include "executor/spi.h"
 #include "postmaster/bgworker.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
@@ -48,7 +47,7 @@ static volatile sig_atomic_t got_sighup = false;
 
 /* GUC variables */
 static int receiver_idle_time = 1;
-static bool receiver_sync_mode = true;
+static bool receiver_sync_mode = false;/*true;*/
 
 /* Worker name */
 static char *worker_name = "multimaster";
@@ -200,9 +199,8 @@ receiver_raw_main(Datum main_arg)
 	PQExpBuffer query;
 	PGconn *conn;
 	PGresult *res;
-    TransactionId xid = InvalidTransactionId;
     bool insideTrans = false;
-    bool rollbackTransaction = false;
+    ByteBuffer buf;
 
 	/* Register functions for SIGTERM/SIGHUP management */
 	pqsignal(SIGHUP, receiver_raw_sighup);
@@ -259,6 +257,7 @@ receiver_raw_main(Datum main_arg)
 	resetPQExpBuffer(query);
 
     MMReceiverStarted();
+    ByteBufferAlloc(&buf);
 
 	while (!got_sigterm)
 	{
@@ -384,65 +383,25 @@ receiver_raw_main(Datum main_arg)
 				proc_exit(1);
 			}
 
-			/* Apply change to database */
             stmt = copybuf + hdr_len;
-			pgstat_report_activity(STATE_RUNNING, stmt);
-			SetCurrentStatementStartTimestamp();
-            
+           
             if (strncmp(stmt, "BEGIN ", 6) == 0) { 
+                TransactionId xid;
                 int rc = sscanf(stmt + 6, "%u", &xid);
                 Assert(rc == 1);
+                ByteBufferAppendInt32(&buf, xid);
                 Assert(!insideTrans);
-                SetCurrentStatementStartTimestamp();
-                MMJoinTransaction(xid);
-
-                StartTransactionCommand();
-                SPI_connect();
-                PushActiveSnapshot(GetTransactionSnapshot());
                 insideTrans = true;
-                rollbackTransaction = false;
-                XTM_INFO("%s: Receive transaction %u\n", worker_proc, xid);
             } else if (strncmp(stmt, "COMMIT;", 7) == 0) { 
                 Assert(insideTrans);
+                Assert(buf.used > 4);
+                buf.data[buf.used-1] = '\0'; /* replace last ';' with '\0' to make string zero terminated */
+                MMExecute(buf.data, buf.used);
+                ByteBufferReset(&buf);
                 insideTrans = false;
-                SPI_finish();
-                PopActiveSnapshot();
-                if (rollbackTransaction) {
-                    elog(WARNING, "%s: Rollback transaction %u", worker_proc, xid);
-                    AbortCurrentTransaction();
-                } else { 
-                    PG_TRY();
-                    {
-                        XTM_INFO("%s: Start commit of transaction %u\n", worker_proc, xid);
-                        CommitTransactionCommand();
-                        XTM_INFO("%s: Complete commit of transaction %u\n", worker_proc, xid);
-                    }
-                    PG_CATCH();
-                    {
-                        FlushErrorState();
-                        elog(WARNING, "%s: Commit of transaction %u is failed", worker_proc, xid);
-                        AbortCurrentTransaction();
-                    }
-                    PG_END_TRY();
-                }
-            } else if (!rollbackTransaction) {
+            } else {
                 Assert(insideTrans);
-                /* Execute query */
-                PG_TRY();
-                {
-                    rc = SPI_execute(stmt, false, 0);
-                    if (rc != SPI_OK_INSERT && rc != SPI_OK_UPDATE && rc != SPI_OK_DELETE) {
-                        ereport(LOG, (errmsg("%s: Error when applying change: %s",
-                                             worker_proc, stmt)));
-                    }
-                }
-                PG_CATCH();
-                {
-                    FlushErrorState();
-                    elog(WARNING, "%s: %s failed in transaction %u", worker_proc, stmt, xid);
-                    rollbackTransaction = true;
-                }
-                PG_END_TRY();
+                ByteBufferAppend(&buf, stmt, strlen(stmt));
             }
 			/* Update written position */
 			output_written_lsn = Max(walEnd, output_written_lsn);
@@ -536,6 +495,7 @@ receiver_raw_main(Datum main_arg)
 		}
 	}
 
+    ByteBufferFree(&buf);
 	/* No problems, so clean exit */
 	proc_exit(0);
 }

@@ -28,6 +28,7 @@
 #include "access/xlog.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
+#include "executor/spi.h"
 #include "executor/executor.h"
 #include "access/twophase.h"
 #include "utils/guc.h"
@@ -48,6 +49,7 @@
 
 #include "libdtm.h"
 #include "multimaster.h"
+#include "bgwpool.h"
 
 typedef struct
 {
@@ -59,15 +61,8 @@ typedef struct
     int    nNodes;
     pg_atomic_uint32 nReceivers;
     bool initialized;
-    
+    BgwPool* pool;
 } DtmState;
-
-typedef struct
-{
-    char* data;
-    int size;
-    int used;
-} ByteBuffer;
 
 typedef struct
 {
@@ -107,12 +102,8 @@ static bool TransactionIdIsInDoubt(TransactionId xid);
 static void DtmShmemStartup(void);
 static void DtmBackgroundWorker(Datum arg);
 
-static void ByteBufferAlloc(ByteBuffer* buf);
-static void ByteBufferAppend(ByteBuffer* buf, void* data, int len);
-static void ByteBufferAppendInt32(ByteBuffer* buf, int data);
-static void ByteBufferFree(ByteBuffer* buf);
-
 static void MMMarkTransAsLocal(TransactionId xid);
+static void MMExecutor(int id, void* work, size_t size);
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
 
@@ -139,6 +130,7 @@ static TransactionManager DtmTM = {
 };
 
 bool  MMDoReplication;
+char* MMDatabaseName;
 
 static char* MMConnStrs;
 static int   MMNodeId;
@@ -147,8 +139,8 @@ static int   MMQueueSize;
 static int   MMWorkers;
 
 static char* DtmHost;
-static int DtmPort;
-static int DtmBufferSize;
+static int   DtmPort;
+static int   DtmBufferSize;
 
 static ExecutorFinish_hook_type PreviousExecutorFinishHook = NULL;
 static void MMExecutorFinish(QueryDesc *queryDesc);
@@ -1092,33 +1084,6 @@ void DtmBackgroundWorker(Datum arg)
 	ShubLoop(&shub);
 }
 
-static void ByteBufferAlloc(ByteBuffer* buf)
-{
-    buf->size = 1024;
-    buf->data = palloc(buf->size);
-    buf->used = 0;
-}
-
-static void ByteBufferAppend(ByteBuffer* buf, void* data, int len)
-{
-    if (buf->used + len > buf->size) { 
-        buf->size = buf->used + len > buf->size*2 ? buf->used + len : buf->size*2;
-        buf->data = (char*)repalloc(buf->data, buf->size);
-    }
-    memcpy(&buf->data[buf->used], data, len);
-    buf->used += len;
-}
-
-static void ByteBufferAppendInt32(ByteBuffer* buf, int data)
-{
-    ByteBufferAppend(buf, &data, sizeof data);
-}
-
-static void ByteBufferFree(ByteBuffer* buf)
-{
-    pfree(buf->data);
-}
-
 static void DtmSerializeLock(PROCLOCK* proclock, void* arg)
 {
     ByteBuffer* buf = (ByteBuffer*)arg;
@@ -1219,3 +1184,45 @@ MMExecutorFinish(QueryDesc *queryDesc)
     }
 }
         
+static void MMExecutor(int id, void* work, size_t size)
+{
+    TransactionId xid = *(TransactionId*)work;
+    char* stmts = (char*)work + 4;
+    int rc = SPI_ERROR_TRANSACTION;
+    MMJoinTransaction(xid);
+
+    SetCurrentStatementStartTimestamp();               
+    StartTransactionCommand();
+    SPI_connect();
+    PushActiveSnapshot(GetTransactionSnapshot());
+
+    PG_TRY();
+    {
+        rc = SPI_execute(stmts, false, 0);
+        SPI_finish();
+        PopActiveSnapshot();
+        if (rc != SPI_OK_INSERT && rc != SPI_OK_UPDATE && rc != SPI_OK_DELETE) {
+            FlushErrorState();
+            ereport(LOG, (errmsg("Executor %d: failed to apply transaction %u",
+                                 id, xid)));
+            AbortCurrentTransaction();
+        } else { 
+            CommitTransactionCommand();
+        }
+    }
+    PG_CATCH();
+    {
+        if (rc == SPI_ERROR_TRANSACTION) {
+            SPI_finish();
+            PopActiveSnapshot();
+        }
+        AbortCurrentTransaction();
+    }
+    PG_END_TRY();
+}
+
+extern void MMExecute(void* work, int size)
+{
+    BgwPoolExecute(dtm->pool, work, size);
+}
+    
