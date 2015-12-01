@@ -200,11 +200,9 @@ int main (int argc, char* argv[])
                "\t-r N\tnumber of readers (1)\n"
                "\t-w N\tnumber of writers (10)\n"
                "\t-a N\tnumber of accounts (100000)\n"
-               "\t-s N\tperform updates starting from this id (1)\n"
-               "\t-d N\tperform updates in this diapason (100000)\n"
                "\t-n N\tnumber of iterations (1000)\n"
                "\t-c STR\tdatabase connection string\n"
-               "\t-i\tinitialize datanase\n");
+               "\t-i\tinitialize database\n");
         return 1;
     }
 

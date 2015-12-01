@@ -18,6 +18,7 @@ typedef struct
     size_t head;
     size_t tail;
     size_t size;
+    size_t active;
     bool   producerBlocked;
     char   dbname[MAX_DBNAME_LEN];
     char*  queue;

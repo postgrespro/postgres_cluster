@@ -269,7 +269,6 @@ receiver_raw_main(Datum main_arg)
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 					   receiver_idle_time * 1L);
 		ResetLatch(&MyProc->procLatch);
-
 		/* Process signals */
 		if (got_sighup)
 		{
