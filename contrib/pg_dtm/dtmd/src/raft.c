@@ -339,7 +339,7 @@ bool raft_emit(raft_t *r, int action, int argument) {
 	if (r->log.size == RAFT_LOGLEN) {
 		int compacted = raft_log_compact(&r->log, RAFT_KEEP_APPLIED);
 		if (compacted > 1) {
-			shout("compacted %d entries\n", compacted);
+			debug("compacted %d entries\n", compacted);
 		} else {
 			shout(
 				"cannot emit new entries, the log is"

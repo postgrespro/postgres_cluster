@@ -905,7 +905,7 @@ int main(int argc, char **argv) {
 		if (use_raft) {
 			int applied = raft_apply(&raft, apply_clog_update);
 			if (applied) {
-				shout("applied %d updates\n", applied);
+				debug("applied %d updates\n", applied);
 			}
 
 			if (m) {
