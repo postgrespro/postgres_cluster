@@ -716,6 +716,7 @@ static void DtmInitialize()
         dtm->nNodes = MMNodes;
         pg_atomic_write_u32(&dtm->nReceivers, 0);
         dtm->initialized = false;
+        dtm->pool = BgwPoolCreate(MMExecutor, MMDatabaseName, MMQueueSize, MMWorkers);
 		RegisterXactCallback(DtmXactCallback, NULL);
 	}
 	LWLockRelease(AddinShmemInitLock);
@@ -823,14 +824,6 @@ _PG_init(void)
 	 */
 	if (!process_shared_preload_libraries_in_progress)
 		return;
-
-	/*
-	 * Request additional shared resources.  (These are no-ops if we're not in
-	 * the postmaster process.)  We'll allocate or attach to the shared
-	 * resources in imcs_shmem_startup().
-	 */
-	RequestAddinShmemSpace(DTM_SHMEM_SIZE);
-	RequestAddinLWLocks(2);
 
 	DefineCustomIntVariable(
 		"multimaster.workers",
@@ -948,11 +941,18 @@ _PG_init(void)
 		NULL
 	);
     
+	/*
+	 * Request additional shared resources.  (These are no-ops if we're not in
+	 * the postmaster process.)  We'll allocate or attach to the shared
+	 * resources in dtm_shmem_startup().
+	 */
+	RequestAddinShmemSpace(DTM_SHMEM_SIZE + MMQueueSize);
+	RequestAddinLWLocks(2);
+
     MMNodes = MMStartReceivers(MMConnStrs, MMNodeId);
     if (MMNodes < 2) { 
         elog(ERROR, "Multimaster should have at least two nodes");
     }
-    dtm->pool = BgwPoolCreate(MMExecutor, MMDatabaseName, MMQueueSize, MMWorkers);
 
 	if (DtmBufferSize != 0)
 	{
@@ -1189,6 +1189,7 @@ static void MMExecutor(int id, void* work, size_t size)
     TransactionId xid = *(TransactionId*)work;
     char* stmts = (char*)work + 4;
     int rc = SPI_ERROR_TRANSACTION;
+
     MMJoinTransaction(xid);
 
     SetCurrentStatementStartTimestamp();               
