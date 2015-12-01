@@ -61,7 +61,7 @@ typedef struct
     int    nNodes;
     pg_atomic_uint32 nReceivers;
     bool initialized;
-    BgwPool* pool;
+    BgwPool pool;
 } DtmState;
 
 typedef struct
@@ -104,6 +104,7 @@ static void DtmBackgroundWorker(Datum arg);
 
 static void MMMarkTransAsLocal(TransactionId xid);
 static void MMExecutor(int id, void* work, size_t size);
+static BgwPool* MMPoolConstructor(void);
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
 
@@ -716,7 +717,7 @@ static void DtmInitialize()
         dtm->nNodes = MMNodes;
         pg_atomic_write_u32(&dtm->nReceivers, 0);
         dtm->initialized = false;
-        dtm->pool = BgwPoolCreate(MMExecutor, MMDatabaseName, MMQueueSize, MMWorkers);
+        BgwPoolInit(&dtm->pool, MMExecutor, MMDatabaseName, MMQueueSize);
 		RegisterXactCallback(DtmXactCallback, NULL);
 	}
 	LWLockRelease(AddinShmemInitLock);
@@ -953,6 +954,7 @@ _PG_init(void)
     if (MMNodes < 2) { 
         elog(ERROR, "Multimaster should have at least two nodes");
     }
+    BgwPoolStart(MMWorkers, MMPoolConstructor);
 
 	if (DtmBufferSize != 0)
 	{
@@ -1203,7 +1205,6 @@ static void MMExecutor(int id, void* work, size_t size)
         SPI_finish();
         PopActiveSnapshot();
         if (rc != SPI_OK_INSERT && rc != SPI_OK_UPDATE && rc != SPI_OK_DELETE) {
-            FlushErrorState();
             ereport(LOG, (errmsg("Executor %d: failed to apply transaction %u",
                                  id, xid)));
             AbortCurrentTransaction();
@@ -1213,6 +1214,7 @@ static void MMExecutor(int id, void* work, size_t size)
     }
     PG_CATCH();
     {
+        FlushErrorState();
         if (rc == SPI_ERROR_TRANSACTION) {
             SPI_finish();
             PopActiveSnapshot();
@@ -1224,6 +1226,10 @@ static void MMExecutor(int id, void* work, size_t size)
 
 extern void MMExecute(void* work, int size)
 {
-    BgwPoolExecute(dtm->pool, work, size);
+    BgwPoolExecute(&dtm->pool, work, size);
 }
     
+static BgwPool* MMPoolConstructor(void)
+{
+    return &dtm->pool;
+}

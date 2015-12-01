@@ -12,19 +12,22 @@
 
 typedef struct
 {
-    BgwPool* pool;
+    BgwPoolConstructor constructor;
     int id;
-} BgwExecutorCtx;
+} BgwPoolExecutorCtx;
 
 static void BgwPoolMainLoop(Datum arg)
 {
-    BgwExecutorCtx* ctx = (BgwExecutorCtx*)arg;
+    BgwPoolExecutorCtx* ctx = (BgwPoolExecutorCtx*)arg;
     int id = ctx->id;
-    BgwPool* pool = ctx->pool;
+    BgwPool* pool = ctx->constructor();
     int size;
     void* work;
 
+    BackgroundWorkerUnblockSignals();
 	BackgroundWorkerInitializeConnection(pool->dbname, NULL);
+
+    elog(WARNING, "Start background worker %d", id);
 
     while(true) { 
         PGSemaphoreLock(&pool->available);
@@ -52,11 +55,9 @@ static void BgwPoolMainLoop(Datum arg)
     }
 }
 
-BgwPool* BgwPoolCreate(BgwExecutor executor, char const* dbname, size_t queueSize, int nWorkers)
+void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname, size_t queueSize)
 {
-    int i;
-	BackgroundWorker worker;
-    BgwPool* pool = (BgwPool*)ShmemAlloc(queueSize + sizeof(BgwPool));
+    pool->queue = (char*)ShmemAlloc(queueSize);
     pool->executor = executor;
     PGSemaphoreCreate(&pool->available);
     PGSemaphoreCreate(&pool->overflow);
@@ -68,22 +69,27 @@ BgwPool* BgwPoolCreate(BgwExecutor executor, char const* dbname, size_t queueSiz
     pool->tail = 0;
     pool->size = queueSize;
     strcpy(pool->dbname, dbname);
+}
+
+void BgwPoolStart(int nWorkers, BgwPoolConstructor constructor)
+{
+    int i;
+	BackgroundWorker worker;
 
 	MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_main = BgwPoolMainLoop;
 	worker.bgw_restart_time = 10; /* Wait 10 seconds for restart before crash */
-
+    
     for (i = 0; i < nWorkers; i++) { 
-        BgwExecutorCtx* ctx = (BgwExecutorCtx*)malloc(sizeof(BgwExecutorCtx));
+        BgwPoolExecutorCtx* ctx = (BgwPoolExecutorCtx*)malloc(sizeof(BgwPoolExecutorCtx));
         snprintf(worker.bgw_name, BGW_MAXLEN, "bgw_pool_worker_%d", i+1);
         ctx->id = i;
-        ctx->pool = pool;
+        ctx->constructor = constructor;
         worker.bgw_main_arg = (Datum)ctx;
         RegisterBackgroundWorker(&worker);
     }
-    return pool;
 }
 
 void BgwPoolExecute(BgwPool* pool, void* work, size_t size)

@@ -116,7 +116,7 @@ void addSubgraph(Graph* graph, nodeid_t node_id, xid_t* xids, int n_xids)
         if (--e->dst->nIncomingEdges == 0 && l2_list_is_empty(&e->dst->outgoingEdges)) {
             freeVertex(graph, e->dst);
         }
-        if (e->src->nIncomingEdges == 0 && l2_list_is_empty(&e->src->outgoingEdges)) {
+        if (e->dst != e->src && e->src->nIncomingEdges == 0 && l2_list_is_empty(&e->src->outgoingEdges)) {
             freeVertex(graph, e->src);
         }
         freeEdge(graph, e);
