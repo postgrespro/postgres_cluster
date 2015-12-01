@@ -122,3 +122,18 @@ confirmed that it enabled the requested functionality. It might choose to
 disconnect and report an error to the user if the server didn't do what it
 asked. This can be important, e.g. when a security-significant hook is
 specified.
+
+## XIDs only in begin/commit
+
+There's no need to send transaction IDs in each protocol message because
+logical decoding accumulates transactions' changes on the upstream in
+reorder buffers. It sends them only when they are committed, strictly
+in the order that they are committed.
+
+If support for streaming transactions through logical decoding before
+commit is added to PostgreSQL in future, the pglogical output plugin
+will continue to rely on xact reordering by default. Interleaving will
+only be enabled if the client sends a startup parameter indicating it
+expects/supports interleaving. So we can add xid fields to individual
+messages in that case, if and when support is added, without breaking
+other clients.
