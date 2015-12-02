@@ -43,6 +43,7 @@
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "utils/syscache.h"
+#include "replication/walsender.h"
 #include "port/atomics.h"
 
 #include "sockhub/sockhub.h"
@@ -757,7 +758,7 @@ DtmXactCallback(XactEvent event, void *arg)
     case XACT_EVENT_START: 
       //XTM_INFO("%d: normal=%d, initialized=%d, replication=%d, bgw=%d, vacuum=%d\n", 
       //           getpid(), IsNormalProcessingMode(), dtm->initialized, MMDoReplication, IsBackgroundWorker, IsAutoVacuumWorkerProcess());
-        if (IsNormalProcessingMode() && dtm->initialized && MMDoReplication && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess()) { 
+        if (IsNormalProcessingMode() && dtm->initialized && MMDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess()) { 
             MMBeginTransaction();
         }
         break;
@@ -1190,7 +1191,7 @@ static void MMExecutor(int id, void* work, size_t size)
 {
     TransactionId xid = *(TransactionId*)work;
     char* stmts = (char*)work + 4;
-    int rc = SPI_ERROR_TRANSACTION;
+    bool finished = false;
 
     MMJoinTransaction(xid);
 
@@ -1201,9 +1202,10 @@ static void MMExecutor(int id, void* work, size_t size)
 
     PG_TRY();
     {
-        rc = SPI_execute(stmts, false, 0);
+        int rc = SPI_execute(stmts, false, 0);
         SPI_finish();
         PopActiveSnapshot();
+        finished = true;
         if (rc != SPI_OK_INSERT && rc != SPI_OK_UPDATE && rc != SPI_OK_DELETE) {
             ereport(LOG, (errmsg("Executor %d: failed to apply transaction %u",
                                  id, xid)));
@@ -1215,9 +1217,11 @@ static void MMExecutor(int id, void* work, size_t size)
     PG_CATCH();
     {
         FlushErrorState();
-        if (rc == SPI_ERROR_TRANSACTION) {
+        if (!finished) {
             SPI_finish();
-            PopActiveSnapshot();
+            if (ActiveSnapshotSet()) { 
+                PopActiveSnapshot();
+            }
         }
         AbortCurrentTransaction();
     }
