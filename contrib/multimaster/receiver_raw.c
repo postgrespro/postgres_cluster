@@ -46,8 +46,8 @@ static volatile sig_atomic_t got_sigterm = false;
 static volatile sig_atomic_t got_sighup = false;
 
 /* GUC variables */
-static int receiver_idle_time = 0;/*1*/
-static bool receiver_sync_mode = false;/*true;*/
+static int receiver_idle_time = 0;
+static bool receiver_sync_mode = false;
 
 /* Worker name */
 static char *worker_name = "multimaster";

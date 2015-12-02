@@ -48,7 +48,7 @@ static volatile sig_atomic_t got_sighup = false;
 
 /* GUC variables */
 static char *receiver_database;
-static int receiver_idle_time = 1;
+static int receiver_idle_time = 0;
 static bool receiver_sync_mode = false;
 
 /* Worker name */
