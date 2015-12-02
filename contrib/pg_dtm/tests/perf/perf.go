@@ -78,29 +78,29 @@ func dump_cfg() {
 
 func init() {
     flag.StringVar(&cfg.Backend, "b", "transfers",
-        "Backend to use. Default to 'transfers'")
+        "Backend to use ('transfers', 'fdw', 'readers', 'pgshard')")
     flag.Var(&cfg.ConnStrs, "C",
-    	"Connection string (repeat for multiple connections)")
+        "Connection string (repeat for multiple connections)")
     flag.BoolVar(&cfg.Init, "i", false,
-    	"Init database")
+        "Init database")
     flag.BoolVar(&cfg.UseDtm, "g", false,
-    	"Use DTM to keep global consistency")
+        "Use DTM to keep global consistency")
     flag.IntVar(&cfg.AccountsNum, "a", 100000,
-    	"The number of bank accounts")
+        "The number of bank accounts")
     flag.IntVar(&cfg.Writers.StartId, "s", 0,
-    	"StartID. Script will update rows starting from this value")
+        "StartID. Script will update rows starting from this value")
     flag.IntVar(&cfg.IterNum, "n", 10000,
-    	"The number updates each writer (reader in case of Reades backend) performs")
+        "The number updates each writer (reader in case of 'readers' backend) performs")
     flag.IntVar(&cfg.ReadersNum, "r", 1,
-    	"The number of readers")
+        "The number of readers")
     flag.IntVar(&cfg.Writers.Num, "w", 8,
-    	"The number of writers")
+        "The number of writers")
     flag.BoolVar(&cfg.Verbose, "v", false,
-    	"Show progress and other stuff for mortals")
+        "Show progress and other stuff for mortals")
     flag.BoolVar(&cfg.Parallel, "p", false,
-    	"Use parallel execs")
+        "Use parallel execs")
     repread := flag.Bool("l", false,
-    	"Use 'repeatable read' isolation level instead of 'read committed'")
+        "Use 'repeatable read' isolation level instead of 'read committed'")
     flag.Parse()
 
     if len(cfg.ConnStrs) == 0 {
@@ -179,9 +179,9 @@ func main() {
     readerWg.Wait()
 
     fmt.Printf("writers finished in %0.2f seconds\n",
-    	time.Since(start).Seconds())
+        time.Since(start).Seconds())
     fmt.Printf("TPS = %0.2f\n",
-    	float64(cfg.Writers.Num*cfg.IterNum)/time.Since(start).Seconds())
+        float64(cfg.Writers.Num*cfg.IterNum)/time.Since(start).Seconds())
 
     if inconsistency {
         fmt.Printf("INCONSISTENCY DETECTED\n")
@@ -285,7 +285,7 @@ func execQuery64(conn *pgx.Conn, stmt string, arguments ...interface{}) int64 {
 
 func checkErr(err error) {
     if err != nil {
-        panic(err)
+        fmt.Println(err)
     }
 }
 

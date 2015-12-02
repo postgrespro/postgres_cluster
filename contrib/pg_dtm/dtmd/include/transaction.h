@@ -5,7 +5,7 @@
 #include "int.h"
 #include "clog.h"
 #include "snapshot.h"
-#include "limits.h"
+#include "dtmdlimits.h"
 
 #define MAX_SNAPSHOTS_PER_TRANS 8
 
@@ -68,6 +68,6 @@ int transaction_status(Transaction *t);
 void transaction_clear(Transaction *t);
 void transaction_push_listener(Transaction *t, char cmd, void *listener);
 void *transaction_pop_listener(Transaction *t, char cmd);
-bool transaction_participate(Transaction *t, int clientid);
+bool transaction_remove_listener(Transaction *t, char cmd, void *listener);
 
 #endif

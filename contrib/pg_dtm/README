@@ -43,6 +43,13 @@ The format of all commands:
 
 The commands:
 
+'h': hello()
+	The first message.
+
+	The arbiter replies with:
+		[RES_OK] if ready
+		[RES_FAILED] (or disconnection) if not ready
+
 'r': reserve(minxid, minsize)
 	Claims a sequence ≥ minsize of xids ≥ minxid for local usage. This will
 	prevent the arbiter from using those values for global transactions.
@@ -88,7 +95,7 @@ The commands:
 
 	The reply and 'wait' logic is the same as for the 'status' command.
 
-'h': snapshot(xid)
+'t': snapshot(xid)
 	Tells the arbiter to generate a snapshot for the global transaction
 	identified by the given 'xid'. The arbiter will create a snapshot for
 	every participant, so when each of them asks for the snapshot it will
