@@ -150,13 +150,12 @@ func (t Transfers) reader(wg *sync.WaitGroup, cFetches chan int, inconsistency *
         }
         commit(conns...)
 
-        if (sum != prevSum) {
-            fmt.Printf("Total=%d xid=%d\n", sum, xid)
-            if (prevSum != 0) {
-                fmt.Printf("inconsistency!\n")
+        if (sum != 0) {
+            if (sum != prevsum) {
+                fmt.Printf("inconsistency: total=%d xid=%d\n", sum, xid)
                 *inconsistency = true
+                prevsum = sum
             }
-            prevSum = sum
         }
     }
 

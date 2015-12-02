@@ -56,9 +56,24 @@ func cmd_to_channel(argv []string, name string, out chan string) {
 	log.Printf("'%s' finished\n", name)
 }
 
-func dtmd(bin string, wg *sync.WaitGroup) {
-	argv := []string{bin}
-	name := "dtmd"
+const (
+	DtmHost = "127.0.0.1"
+	DtmPort = 5431
+	PgPort = 5432
+)
+
+func dtmd(bin string, datadir string, servers []string, id int, wg *sync.WaitGroup) {
+	argv := []string{
+		bin,
+		"-d", datadir,
+		"-i", strconv.Itoa(id),
+	}
+	for _, server := range servers {
+		argv = append(argv, "-r", server)
+	}
+	log.Println(argv)
+
+	name := "dtmd " + datadir
 	c := make(chan string)
 
 	go cmd_to_channel(argv, name, c)
@@ -86,14 +101,14 @@ func initdb(bin string, datadir string) {
 	}
 }
 
-func postgres(bin string, datadir string, port int, nodeid int, wg *sync.WaitGroup) {
+func postgres(bin string, datadir string, dtmservers []string, port int, nodeid int, wg *sync.WaitGroup) {
 	argv := []string{
 		bin,
 		"-D", datadir,
 		"-p", strconv.Itoa(port),
-		"-c", "dtm.buffer_size=65536",
-		"-c", "dtm.host=127.0.0.1",
-		"-c", "dtm.port=" + strconv.Itoa(5431),
+//		"-c", "dtm.buffer_size=65536",
+		"-c", "dtm.buffer_size=0",
+		"-c", "dtm.servers=" + strings.Join(dtmservers, ","),
 		"-c", "autovacuum=off",
 		"-c", "fsync=off",
 		"-c", "synchronous_commit=off",
@@ -148,7 +163,8 @@ func main() {
 		"postgres": prefix + "/bin/postgres",
 	}
 
-	datadirs := []string{"/tmp/data1", "/tmp/data2", "/tmp/data3"}
+	datadirs := []string{"/tmp/data0", "/tmp/data1", "/tmp/data2"}
+	dtmdirs := []string{"/tmp/dtm0", "/tmp/dtm1", "/tmp/dtm2"}
 
 	check_bin(&bin);
 
@@ -158,12 +174,18 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-	go dtmd(bin["dtmd"], &wg)
-
-	for i, datadir := range datadirs {
+	var dtmservers []string
+	for i := range dtmdirs {
+		dtmservers = append(dtmservers, DtmHost + ":" + strconv.Itoa(DtmPort - i))
+	}
+	for i, dir := range dtmdirs {
 		wg.Add(1)
-		go postgres(bin["postgres"], datadir, 5432 + i, i, &wg)
+		go dtmd(bin["dtmd"], dir, dtmservers, i, &wg)
+	}
+
+	for i, dir := range datadirs {
+		wg.Add(1)
+		go postgres(bin["postgres"], dir, dtmservers, PgPort + i, i, &wg)
 	}
 
 	wg.Wait()

@@ -118,35 +118,40 @@ void* reader(void* arg)
     int64_t prevSum = 0;
 
     while (running) {
-        xid_t xid = 0;
-        for (size_t i = 0; i < conns.size(); i++) {        
-            work txn(*conns[i]);
-            if (i == 0) {
-                xid = execQuery(txn, "select dtm_begin_transaction()");
-            } else {
-                exec(txn, "select dtm_join_transaction(%u)", xid);
+        try {
+            xid_t xid = 0;
+            for (size_t i = 0; i < conns.size(); i++) {        
+                work txn(*conns[i]);
+                if (i == 0) {
+                    xid = execQuery(txn, "select dtm_begin_transaction()");
+                } else {
+                    exec(txn, "select dtm_join_transaction(%u)", xid);
+                }
+                txn.commit();
             }
-            txn.commit();
+            vector< unique_ptr<nontransaction> > txns(conns.size());
+            vector< unique_ptr<pipeline> > pipes(conns.size());
+            vector<pipeline::query_id> results(conns.size());
+            for (size_t i = 0; i < conns.size(); i++) {        
+                txns[i] = new nontransaction(*conns[i]);
+                pipes[i] = new pipeline(*txns[i]);
+                results[i] = pipes[i]->insert("select sum(v) from t");
+            }
+            int64_t sum = 0;
+            for (size_t i = 0; i < conns.size(); i++) {        
+                pipes[i]->complete();
+                result r = pipes[i]->retrieve(results[i]);
+                sum += r[0][0].as(int64_t());
+            }
+            if (sum != prevSum) {
+                printf("Total=%ld xid=%u\n", sum, xid);
+                prevSum = sum;
+            }
+            t.proceeded += 1;
+        } catch (pqxx_exception const& x) { 
+            printf("reader exception\n");
+            continue;
         }
-        vector< unique_ptr<nontransaction> > txns(conns.size());
-        vector< unique_ptr<pipeline> > pipes(conns.size());
-        vector<pipeline::query_id> results(conns.size());
-        for (size_t i = 0; i < conns.size(); i++) {        
-            txns[i] = new nontransaction(*conns[i]);
-            pipes[i] = new pipeline(*txns[i]);
-            results[i] = pipes[i]->insert("select sum(v) from t");
-        }
-        int64_t sum = 0;
-        for (size_t i = 0; i < conns.size(); i++) {        
-            pipes[i]->complete();
-            result r = pipes[i]->retrieve(results[i]);
-            sum += r[0][0].as(int64_t());
-        }
-        if (sum != prevSum) {
-            printf("Total=%ld xid=%u\n", sum, xid);
-            prevSum = sum;
-        }
-        t.proceeded += 1;
     }
     return NULL;
 }
@@ -174,8 +179,13 @@ void* writer(void* arg)
         nontransaction srcTx(*conns[srcCon]);
         nontransaction dstTx(*conns[dstCon]);
         
-        xid_t xid = execQuery(srcTx, "select dtm_begin_transaction()");
-        exec(dstTx, "select dtm_join_transaction(%u)", xid);
+        try {
+            xid_t xid = execQuery(srcTx, "select dtm_begin_transaction()");
+            exec(dstTx, "select dtm_join_transaction(%u)", xid);
+        } catch (pqxx_exception const& x) {
+            i -= 1;
+            continue;
+        }
 
         exec(srcTx, "begin transaction isolation level %s", cfg.isolationLevel);
         exec(dstTx, "begin transaction isolation level %s", cfg.isolationLevel);
@@ -213,14 +223,19 @@ void* writer(void* arg)
 void initializeDatabase()
 {
     for (size_t i = 0; i < cfg.connections.size(); i++) { 
-        connection conn(cfg.connections[i]);
-        work txn(conn);
-        exec(txn, "drop extension if exists pg_dtm");
-        exec(txn, "create extension pg_dtm");
-        exec(txn, "drop table if exists t");
-        exec(txn, "create table t(u int primary key, v int)");
-        exec(txn, "insert into t (select generate_series(0,%d), %d)", cfg.nAccounts-1, 0);
-        txn.commit();
+        try {
+            connection conn(cfg.connections[i]);
+            work txn(conn);
+            exec(txn, "drop extension if exists pg_dtm");
+            exec(txn, "create extension pg_dtm");
+            exec(txn, "drop table if exists t");
+            exec(txn, "create table t(u int primary key, v int)");
+            exec(txn, "insert into t (select generate_series(0,%d), %d)", cfg.nAccounts-1, 0);
+            txn.commit();
+        } catch (pqxx_exception const& x) {
+            i -= 1;
+            continue;
+        }
     }        
 }
 
@@ -308,3 +323,4 @@ int main (int argc, char* argv[])
     }
     return 0;
 }
+// vim: sts=4 ts=4 sw=4 expandtab

@@ -9,10 +9,9 @@
 #define INVALID_XID 0
 
 /**
- * Sets up the host and port for arbiter connection.
- * The defaults are "127.0.0.1" and 5431.
+ * Sets up the servers and the unix sockdir for DTM connections.
  */
-void DtmGlobalConfig(char *host, int port, char* sock_dir);
+void DtmGlobalConfig(char *servers, char *sock_dir);
 
 void DtmInitSnapshot(Snapshot snapshot);
 

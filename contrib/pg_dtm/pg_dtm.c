@@ -119,8 +119,7 @@ static TransactionManager DtmTM = {
     DtmDetectGlobalDeadLock
 };
 
-static char *DtmHost;
-static int DtmPort;
+static char *DtmServers;
 static int DtmBufferSize;
 
 static BackgroundWorker DtmWorker = {
@@ -214,6 +213,11 @@ GetLocalSnapshot:
 	 * should be completed locally
 	 */
 	dst = PgGetSnapshotData(dst);
+	if (!TransactionIdIsValid(src->xmin) || !TransactionIdIsValid(src->xmax)) {
+		// Global snapshot is invalid
+		return;
+	}
+
 	for (i = 0; i < dst->xcnt; i++)
 		if (TransactionIdIsInDoubt(dst->xip[i]))
 			goto GetLocalSnapshot;
@@ -313,7 +317,7 @@ static void DtmUpdateRecentXmin(Snapshot snapshot)
  */
 static TransactionId DtmGetNextXid()
 {
-	TransactionId xid;
+	TransactionId xid = InvalidTransactionId;
 	LWLockAcquire(dtm->xidLock, LW_EXCLUSIVE);
 	if (TransactionIdIsValid(DtmNextXid))
 	{
@@ -339,7 +343,12 @@ static TransactionId DtmGetNextXid()
 		if (dtm->nReservedXids == 0)
 		{
 			dtm->nReservedXids = DtmGlobalReserve(ShmemVariableCache->nextXid, DtmLocalXidReserve, &dtm->nextXid);
-			Assert(dtm->nReservedXids > 0);
+			if (dtm->nReservedXids < 1)
+			{
+				elog(WARNING, "failed to reserve a local range of xids on arbiter");
+				goto end;
+			}
+
 			Assert(TransactionIdFollowsOrEquals(dtm->nextXid, ShmemVariableCache->nextXid));
 
 			/* Advance ShmemVariableCache->nextXid formward until new Xid */
@@ -357,6 +366,7 @@ static TransactionId DtmGetNextXid()
 		dtm->nReservedXids -= 1;
 		XTM_INFO("Obtain new local XID %d\n", xid);
 	}
+end:
 	LWLockRelease(dtm->xidLock);
 	return xid;
 }
@@ -405,6 +415,8 @@ DtmGetNewTransactionId(bool isSubXact)
 
 	LWLockAcquire(XidGenLock, LW_EXCLUSIVE);
 	xid = DtmGetNextXid();
+	if (!TransactionIdIsValid(xid))
+		elog(ERROR, "failed to get next xid from XTM");
 
 	/*----------
 	 * Check to see if it's safe to assign another XID.  This protects against
@@ -638,7 +650,11 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 			if (status == TRANSACTION_STATUS_ABORTED)
 			{
 				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
-				DtmGlobalSetTransStatus(xid, status, false);
+				if (DtmGlobalSetTransStatus(xid, status, false) == -1)
+				{
+					elog(WARNING, "failed to set 'aborted' transaction status on arbiter");
+					return;
+				}
 				XTM_INFO("Abort transaction %d\n", xid);
 				return;
 			}
@@ -650,11 +666,11 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
 				LWLockRelease(dtm->hashLock);
 				if (DtmGlobalSetTransStatus(xid, status, true) != status) { 
-                    END_CRIT_SECTION();
-                    MarkAsAborted();
-                    elog(ERROR, "Transaction commit rejected by XTM");                    
-                }
-                XTM_INFO("Commit transaction %d\n", xid);
+					END_CRIT_SECTION();
+					MarkAsAborted();
+					elog(ERROR, "Transaction commit rejected by XTM");                    
+				}
+				XTM_INFO("Commit transaction %d\n", xid);
 			}
 		}
 		else
@@ -668,7 +684,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 		gs = DtmGlobalGetTransStatus(xid, false);        
 		if (gs != TRANSACTION_STATUS_UNKNOWN) { 
 			status = gs;
-        }
+		}
 	}
 	PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
 }
@@ -819,11 +835,11 @@ _PG_init(void)
 	);
 
 	DefineCustomStringVariable(
-		"dtm.host",
-		"The host where DTM daemon resides",
+		"dtm.servers",
+		"The space separated host:port pairs where DTM daemons reside",
 		NULL,
-		&DtmHost,
-		"127.0.0.1",
+		&DtmServers,
+		"127.0.0.1:5431",
 		PGC_BACKEND, // context
 		0, // flags,
 		NULL, // GucStringCheckHook check_hook,
@@ -831,29 +847,13 @@ _PG_init(void)
 		NULL // GucShowHook show_hook
 	);
 
-	DefineCustomIntVariable(
-		"dtm.port",
-		"The port DTM daemon is listening",
-		NULL,
-		&DtmPort,
-		5431,
-		1,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
-
-
 	if (DtmBufferSize != 0)
 	{
-		DtmGlobalConfig(NULL, DtmPort, Unix_socket_directories);
+		DtmGlobalConfig(DtmServers, Unix_socket_directories);
 		RegisterBackgroundWorker(&DtmWorker);
 	}
 	else
-		DtmGlobalConfig(DtmHost, DtmPort, Unix_socket_directories);
+		DtmGlobalConfig(DtmServers, NULL);
 
 	/*
 	 * Install hooks.
@@ -948,6 +948,11 @@ Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 
 void DtmBackgroundWorker(Datum arg)
 {
+	elog(ERROR, "unix socket not supported yet");
+	// FIXME: implement switching between multiple connections
+	*(int*)0 = 0;
+
+	/*
 	Shub shub;
 	ShubParams params;
 	char unix_sock_path[MAXPGPATH];
@@ -963,6 +968,7 @@ void DtmBackgroundWorker(Datum arg)
 
 	ShubInitialize(&shub, &params);
 	ShubLoop(&shub);
+	*/
 }
 
 static void ByteBufferAlloc(ByteBuffer* buf)

@@ -2,7 +2,7 @@
 #define SNAPSHOT_H
 
 #include "int.h"
-#include "limits.h"
+#include "dtmdlimits.h"
 
 typedef struct Snapshot {
 	xid_t xmin;

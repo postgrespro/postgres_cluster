@@ -97,7 +97,7 @@ void
 TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
                            TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
-	TM->SetTransactionStatus(xid, nsubxids, subxids, status, lsn);
+	return TM->SetTransactionStatus(xid, nsubxids, subxids, status, lsn);
 }
 
 /*
@@ -217,6 +217,7 @@ PgTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
 							subxids + nsubxids_on_first_page,
 							status, lsn);
 	}
+    return true;
 }
 
 /*
@@ -352,10 +353,10 @@ TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, i
 	 * Current state change should be from 0 or subcommitted to target state
 	 * or we should already be there when replaying changes during recovery.
 	 */
-	Assert(curval == 0 ||
-		   (curval == TRANSACTION_STATUS_SUB_COMMITTED &&
-			status != TRANSACTION_STATUS_IN_PROGRESS) ||
-		   curval == status);
+//	Assert(curval == 0 ||
+//		   (curval == TRANSACTION_STATUS_SUB_COMMITTED &&
+//			status != TRANSACTION_STATUS_IN_PROGRESS) ||
+//		   curval == status);
 
 	/* note this assumes exclusive access to the clog page */
 	byteval = *byteptr;

@@ -41,15 +41,36 @@ server_t server_init(
 );
 
 /*
+ * Assigns the given raft socket to the server. The server will add the socket
+ * to the 'select' calls and give you the incoming messages.
+ */
+void server_set_raft_socket(server_t server, int sock);
+
+/*
  * Starts the server. Returns 'true' on success, 'false' otherwise.
  */
 bool server_start(server_t server);
 
 /*
- * The main server loop. Does not return, so use the callbacks and signal
- * handlers to add more logic.
+ * The main server loop. Returns true if there is a raft message ready, or NULL
+ * if timed out. Use the callbacks and signal handlers to add more logic.
  */
-void server_loop(server_t server);
+bool server_tick(server_t server, int timeout_ms);
+
+/*
+ * Closes all client connections on the server and refuses to accept new ones.
+ */
+void server_disable(server_t server);
+
+/*
+ * Allows the server to accept new connections.
+ */
+void server_enable(server_t server);
+
+/*
+ * Enables or disables the server depending on the argument.
+ */
+void server_set_enabled(server_t server, bool enable);
 
 /*
  * These two methods allow you to set and get your custom 'userdata' for the
@@ -97,6 +118,13 @@ bool client_message_finish(client_t client);
  * Returns 'true' on success, 'false' otherwise.
  */
 bool client_message_shortcut(client_t client, xid_t arg);
+
+/*
+ * A shortcut to send the 'redirect' message.
+ *
+ * Returns 'true' on success, 'false' otherwise.
+ */
+bool client_redirect(client_t client, unsigned addr, int port);
 
 unsigned client_get_ip_addr(client_t client);
 
