@@ -6,6 +6,14 @@
  * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
+ * This file contains routines that are intended to support setting up,
+ * using, and tearing down a ParallelContext from within the PostgreSQL
+ * executor.  The ParallelContext machinery will handle starting the
+ * workers and ensuring that their state generally matches that of the
+ * leader; see src/backend/access/transam/README.parallel for details.
+ * However, we must save and restore relevant executor state, such as
+ * any ParamListInfo associated with the query, buffer usage info, and
+ * the actual plan to be passed down to the worker.
  *
  * IDENTIFICATION
  *	  src/backend/executor/execParallel.c
@@ -76,7 +84,8 @@ static bool ExecParallelEstimate(PlanState *node,
 					 ExecParallelEstimateContext *e);
 static bool ExecParallelInitializeDSM(PlanState *node,
 					 ExecParallelInitializeDSMContext *d);
-static shm_mq_handle **ExecParallelSetupTupleQueues(ParallelContext *pcxt);
+static shm_mq_handle **ExecParallelSetupTupleQueues(ParallelContext *pcxt,
+							 bool reinitialize);
 static bool ExecParallelRetrieveInstrumentation(PlanState *planstate,
 						  SharedExecutorInstrumentation *instrumentation);
 
@@ -209,7 +218,7 @@ ExecParallelInitializeDSM(PlanState *planstate,
  * to the main backend and start the workers.
  */
 static shm_mq_handle **
-ExecParallelSetupTupleQueues(ParallelContext *pcxt)
+ExecParallelSetupTupleQueues(ParallelContext *pcxt, bool reinitialize)
 {
 	shm_mq_handle **responseq;
 	char	   *tqueuespace;
@@ -223,9 +232,16 @@ ExecParallelSetupTupleQueues(ParallelContext *pcxt)
 	responseq = (shm_mq_handle **)
 		palloc(pcxt->nworkers * sizeof(shm_mq_handle *));
 
-	/* Allocate space from the DSM for the queues themselves. */
-	tqueuespace = shm_toc_allocate(pcxt->toc,
-								 PARALLEL_TUPLE_QUEUE_SIZE * pcxt->nworkers);
+	/*
+	 * If not reinitializing, allocate space from the DSM for the queues;
+	 * otherwise, find the already allocated space.
+	 */
+	if (!reinitialize)
+		tqueuespace =
+			shm_toc_allocate(pcxt->toc,
+							 PARALLEL_TUPLE_QUEUE_SIZE * pcxt->nworkers);
+	else
+		tqueuespace = shm_toc_lookup(pcxt->toc, PARALLEL_KEY_TUPLE_QUEUE);
 
 	/* Create the queues, and become the receiver for each. */
 	for (i = 0; i < pcxt->nworkers; ++i)
@@ -240,10 +256,21 @@ ExecParallelSetupTupleQueues(ParallelContext *pcxt)
 	}
 
 	/* Add array of queues to shm_toc, so others can find it. */
-	shm_toc_insert(pcxt->toc, PARALLEL_KEY_TUPLE_QUEUE, tqueuespace);
+	if (!reinitialize)
+		shm_toc_insert(pcxt->toc, PARALLEL_KEY_TUPLE_QUEUE, tqueuespace);
 
 	/* Return array of handles. */
 	return responseq;
+}
+
+/*
+ * Re-initialize the response queues for backend workers to return tuples
+ * to the main backend and start the workers.
+ */
+shm_mq_handle **
+ExecParallelReinitializeTupleQueues(ParallelContext *pcxt)
+{
+	return ExecParallelSetupTupleQueues(pcxt, true);
 }
 
 /*
@@ -355,7 +382,7 @@ ExecInitParallelPlan(PlanState *planstate, EState *estate, int nworkers)
 	pei->buffer_usage = bufusage_space;
 
 	/* Set up tuple queues. */
-	pei->tqueue = ExecParallelSetupTupleQueues(pcxt);
+	pei->tqueue = ExecParallelSetupTupleQueues(pcxt, false);
 
 	/*
 	 * If instrumentation options were supplied, allocate space for the
