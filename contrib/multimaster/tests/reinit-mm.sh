@@ -3,8 +3,8 @@ export PATH=/home/knizhnik/postgrespro/cluster_install/bin/:$PATH
 ulimit -c unlimited
 pkill -9 postgres
 pkill -9 dtmd
-rm -fr node? *.log dtm
-mkdir dtm
+sleep 2
+rm -fr node? *.log dtm/*
 conn_str=""
 sep=""
 for ((i=1;i<=n_nodes;i++))
