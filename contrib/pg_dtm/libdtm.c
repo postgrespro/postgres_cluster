@@ -113,12 +113,9 @@ static bool DtmConnect(DTMConn conn)
 
 	if (conn->host == NULL)
 	{
-		perror("unix socket not supported yet");
-		*(int*)0 = 0;
-		/*
 		// use a UNIX socket
 		struct sockaddr sock;
-		int len = offsetof(struct sockaddr, sa_data) + snprintf(sock.sa_data, sizeof(sock.sa_data), "%s/p%u", dtm_unix_sock_dir, port);
+		int len = offsetof(struct sockaddr, sa_data) + snprintf(sock.sa_data, sizeof(sock.sa_data), "%s/sh.unix", dtm_unix_sock_dir);
 		sock.sa_family = AF_UNIX;
 
 		sd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -137,7 +134,6 @@ static bool DtmConnect(DTMConn conn)
 		}
 		conn->sock = sd;
 		return (connected = true);
-		*/
 	}
 	else
 	{

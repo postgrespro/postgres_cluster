@@ -28,11 +28,10 @@ typedef struct
 {
     int buffer_size;
     int delay;
-    int port;
     int queue_size;
     int max_attempts;
     char const* file;
-    char const* host;
+    char const* hosts;
     ShubErrorHandler error_handler;
 } ShubParams;
    

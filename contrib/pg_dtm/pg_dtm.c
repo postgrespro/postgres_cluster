@@ -948,27 +948,20 @@ Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 
 void DtmBackgroundWorker(Datum arg)
 {
-	elog(ERROR, "unix socket not supported yet");
-	// FIXME: implement switching between multiple connections
-	*(int*)0 = 0;
-
-	/*
 	Shub shub;
 	ShubParams params;
 	char unix_sock_path[MAXPGPATH];
 
-	snprintf(unix_sock_path, sizeof(unix_sock_path), "%s/p%d", Unix_socket_directories, DtmPort);
+	snprintf(unix_sock_path, sizeof(unix_sock_path), "%s/sh.unix", Unix_socket_directories);
 
 	ShubInitParams(&params);
 
-	params.host = DtmHost;
-	params.port = DtmPort;
+	params.hosts = DtmServers;
 	params.file = unix_sock_path;
 	params.buffer_size = DtmBufferSize;
 
 	ShubInitialize(&shub, &params);
 	ShubLoop(&shub);
-	*/
 }
 
 static void ByteBufferAlloc(ByteBuffer* buf)
