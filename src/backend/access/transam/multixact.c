@@ -1126,7 +1126,7 @@ GetNewMultiXactId(int nmembers, MultiXactOffset *offset)
 		/*
 		 * To avoid swamping the postmaster with signals, we issue the autovac
 		 * request only when crossing a segment boundary. With default
-		 * compilation settings that's rougly after 50k members.  This still
+		 * compilation settings that's roughly after 50k members.  This still
 		 * gives plenty of chances before we get into real trouble.
 		 */
 		if ((MXOffsetToMemberPage(nextOffset) / SLRU_PAGES_PER_SEGMENT) !=
@@ -1140,7 +1140,9 @@ GetNewMultiXactId(int nmembers, MultiXactOffset *offset)
 								 nmembers + MULTIXACT_MEMBERS_PER_PAGE * SLRU_PAGES_PER_SEGMENT * OFFSET_WARN_SEGMENTS))
 		ereport(WARNING,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-				 errmsg("database with OID %u must be vacuumed before %d more multixact members are used",
+				 errmsg_plural("database with OID %u must be vacuumed before %d more multixact member is used",
+							   "database with OID %u must be vacuumed before %d more multixact members are used",
+						MultiXactState->offsetStopLimit - nextOffset + nmembers,
 						MultiXactState->oldestMultiXactDB,
 					MultiXactState->offsetStopLimit - nextOffset + nmembers),
 				 errhint("Execute a database-wide VACUUM in that database with reduced vacuum_multixact_freeze_min_age and vacuum_multixact_freeze_table_age settings.")));

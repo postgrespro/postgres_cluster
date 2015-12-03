@@ -163,7 +163,7 @@ shared_preload_libraries = 'multimaster'		# (change requires restart)
 # - Asynchronous Behavior -
 
 #effective_io_concurrency = 1		# 1-1000; 0 disables prefetching
-#max_worker_processes = 8
+max_worker_processes = 100
 
 
 #------------------------------------------------------------------------------
@@ -547,9 +547,9 @@ timezone = 'W-SU'
 # These settings are initialized by initdb, but they can be changed.
 lc_messages = 'en_US.UTF-8'			# locale for system error message
 					# strings
-lc_monetary = 'en_US.UTF-8'			# locale for monetary formatting
-lc_numeric = 'en_US.UTF-8'			# locale for number formatting
-lc_time = 'en_US.UTF-8'				# locale for time formatting
+lc_monetary = 'ru_RU.UTF-8'			# locale for monetary formatting
+lc_numeric = 'ru_RU.UTF-8'			# locale for number formatting
+lc_time = 'ru_RU.UTF-8'				# locale for time formatting
 
 # default configuration for text search
 default_text_search_config = 'pg_catalog.english'
@@ -624,3 +624,5 @@ default_text_search_config = 'pg_catalog.english'
 
 # Add settings for extensions here
 
+multimaster.queue_size = 1073741824
+#multimaster.workers = 16

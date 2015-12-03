@@ -48,6 +48,7 @@
     version={{pg_version_tag}}
     depth=1
     accept_hostkey=True
+    key_file={{pg_repo_key}}
   register: pg_sources
   when: pg_copydist is undefined
 
@@ -86,7 +87,7 @@
 #   when: pg_pidfile.stat.exists
 
 - name: stop postgres if it was running
-  shell: "kill -9 `head -n 1 {{pg_datadir}}/postmaster.pid`"
+  shell: "kill -9 `head -n 1 {{pg_datadir}}/postmaster.pid` || true"
   environment:
     LD_LIBRARY_PATH: "{{pg_dst}}/lib"
   when: pg_pidfile.stat.exists
@@ -119,7 +120,12 @@
 - name: enable blind trust on datanodes
   lineinfile:
     dest: "{{pg_datadir}}/pg_hba.conf"
-    line: "host all all 0.0.0.0/0 trust"
+    line: "{{item}}"
+    state: present
+  with_items:
+    - "host all all 0.0.0.0/0 trust"
+    - "host replication all 0.0.0.0/0 trust"
+    - "local replication all trust"
 
 - name: start postgrespro
   shell: "{{pg_dst}}/bin/pg_ctl start -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"

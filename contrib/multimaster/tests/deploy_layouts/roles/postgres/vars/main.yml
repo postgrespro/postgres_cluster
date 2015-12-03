@@ -3,6 +3,7 @@
 makejobs: 4
 
 pg_repo: git://git.postgresql.org/git/postgresql.git
+pg_repo_key: None
 pg_version_tag: master
 
 pg_destroy_and_init: false

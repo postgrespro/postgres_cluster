@@ -217,7 +217,6 @@ PgTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
 							subxids + nsubxids_on_first_page,
 							status, lsn);
 	}
-    return true;
 }
 
 /*
