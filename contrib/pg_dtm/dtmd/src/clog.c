@@ -195,3 +195,17 @@ bool clog_close(clog_t clog) {
 	free(clog);
 	return true;
 }
+
+// Returns the last used xid.
+xid_t clog_find_last_used(clog_t clog) {
+	xid_t last_used = INVALID_XID;
+	clogfile_chain_t *chain = clog->lastfile;
+	xid_t xid;
+	for (xid = chain->file.min; xid <= chain->file.max; xid++) {
+		int status = clogfile_get_status(&chain->file, xid);
+		if ((last_used == INVALID_XID) || (status != BLANK)) {
+			last_used = xid;
+		}
+	}
+	return last_used;
+}

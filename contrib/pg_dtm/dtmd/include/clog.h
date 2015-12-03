@@ -39,4 +39,7 @@ bool clog_forget(clog_t clog, xid_t until);
 // 'true' on success, 'false' otherwise.
 bool clog_close(clog_t clog);
 
+// Returns the last used xid.
+xid_t clog_find_last_used(clog_t clog);
+
 #endif
