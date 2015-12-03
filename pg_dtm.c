@@ -25,6 +25,7 @@
 #include "access/xlog.h"
 #include "access/clog.h"
 #include "access/twophase.h"
+#include "executor/spi.h"
 #include "utils/hsearch.h"
 #include "utils/tqual.h"
 #include <utils/guc.h>
@@ -81,6 +82,7 @@ static DtmNodeState* local;
 static DtmCurrentTrans dtm_tx;
 static uint64 totalSleepInterrupts;
 static int DtmVacuumDelay;
+static bool DtmRecordCommits;
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
@@ -204,6 +206,19 @@ _PG_init(void)
 		10,
 		1,
 		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomBoolVariable(
+		"dtm.record_commits",
+		"Store information about committed global transactions in pg_committed_xacts table",
+		NULL,
+		&DtmRecordCommit,
+		false,
 		PGC_BACKEND,
 		0,
 		NULL,
@@ -684,6 +699,17 @@ void DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
         DTM_TRACE((stderr, "Prepare transaction %u(%s) with CSN %lu\n", id->xid, gtid, cid));
 	}
 	SpinLockRelease(&local->lock);
+    if (DtmRecordCommits) {
+        char stmt[MAX_GTID_SIZE + 64];
+        int rc;
+        sprintf(stmt, "insert into pg_committed_xacts values ('%s')", gtid);
+        SPI_connect();    
+        rc = SPI_execute(stmt, true, 0);
+        SPI_finish();
+        if (rc != SPI_OK_INSERT) { 
+            elog(ERROR, "Failed to insert GTID %s in table pg_committed_xacts", gtid);
+        } 
+    }        
 }
 
 void DtmLocalCommitPrepared(DtmCurrentTrans* x, GlobalTransactionId gtid)

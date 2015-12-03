@@ -17,17 +17,17 @@ using namespace std;
 using namespace pqxx;
 
 template<class T>
-class unique_ptr
+class my_unique_ptr
 {
     T* ptr;
     
   public:
-    unique_ptr(T* p = NULL) : ptr(p) {}
-    ~unique_ptr() { delete ptr; }
+    my_unique_ptr(T* p = NULL) : ptr(p) {}
+    ~my_unique_ptr() { delete ptr; }
     T& operator*() { return *ptr; }
     T* operator->() { return ptr; }
     void operator=(T* p) { ptr = p; }
-    void operator=(unique_ptr& other) {
+    void operator=(my_unique_ptr& other) {
         ptr = other.ptr;
         other.ptr = NULL;
     }        
@@ -122,7 +122,7 @@ int64_t execQuery( transaction_base& txn, char const* sql, ...)
 void* reader(void* arg)
 {
     thread& t = *(thread*)arg;
-    vector< unique_ptr<connection> > conns(cfg.connections.size());
+    vector< my_unique_ptr<connection> > conns(cfg.connections.size());
     for (size_t i = 0; i < conns.size(); i++) {
         conns[i] = new connection(cfg.connections[i]);
     }
@@ -130,7 +130,7 @@ void* reader(void* arg)
 
     while (running) {
         csn_t snapshot = 0;
-        vector< unique_ptr<work> > txns(conns.size());
+        vector< my_unique_ptr<work> > txns(conns.size());
         time_t start = getCurrentTime();
         for (size_t i = 0; i < conns.size(); i++) {        
             txns[i] = new work(*conns[i]);
