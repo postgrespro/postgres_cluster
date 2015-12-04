@@ -681,8 +681,10 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 	}
 	else
 	{
-		XidStatus gs;
-		gs = DtmGlobalGetTransStatus(xid, false);        
+		XidStatus gs = -1;
+		while (gs == -1) {
+			gs = DtmGlobalGetTransStatus(xid, true);
+		}
 		if (gs != TRANSACTION_STATUS_UNKNOWN) { 
 			status = gs;
 		}
