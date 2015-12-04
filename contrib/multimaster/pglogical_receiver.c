@@ -66,9 +66,9 @@ static void UserTableUpdateIndexes(EState *estate, TupleTableSlot *slot);
 
 static void process_remote_begin(StringInfo s);
 static void process_remote_commit(StringInfo s);
-static void process_remote_insert(StringInfo s);
-static void process_remote_update(StringInfo s);
-static void process_remote_delete(StringInfo s);
+static void process_remote_insert(StringInfo s, Relation rel);
+static void process_remote_update(StringInfo s, Relation rel);
+static void process_remote_delete(StringInfo s, Relation rel);
 
 /*
  * Search the index 'idxrel' for a tuple identified by 'skey' in 'rel'.
@@ -346,7 +346,7 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 	memset(tup->isnull, 1, sizeof(tup->isnull));
 	memset(tup->changed, 1, sizeof(tup->changed));
 
-	rnatts = pq_getmsgint(s, 4);
+	rnatts = pq_getmsgint(s, 2);
 
 	if (desc->natts != rnatts)
 		elog(ERROR, "tuple natts mismatch, %u vs %u", desc->natts, rnatts);
@@ -370,7 +370,6 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 				tup->isnull[i] = true;
 				tup->changed[i] = false;
 				tup->values[i] = 0xdeadbeef; /* make bad usage more obvious */
-
 				break;
 
 			case 'b': /* binary format */
@@ -463,24 +462,15 @@ process_remote_commit(StringInfo s)
 }
 
 static void
-process_remote_insert(StringInfo s)
+process_remote_insert(StringInfo s, Relation rel)
 {
-	char		action;
 	EState	   *estate;
 	TupleData   new_tuple;
 	TupleTableSlot *newslot;
 	TupleTableSlot *oldslot;
-	Relation	rel;
 	ResultRelInfo *relinfo;
 	ScanKey	   *index_keys;
 	int			i;
-
-	rel = read_rel(s, RowExclusiveLock);
-
-	action = pq_getmsgbyte(s);
-	if (action != 'N')
-		elog(ERROR, "expected new tuple but got %d",
-			 action);
 
 	estate = create_rel_estate(rel);
 	newslot = ExecInitExtraTupleSlot(estate);
@@ -565,7 +555,7 @@ process_remote_insert(StringInfo s)
 }
 
 static void
-process_remote_update(StringInfo s)
+process_remote_update(StringInfo s, Relation rel)
 {
 	char		action;
 	EState	   *estate;
@@ -576,12 +566,9 @@ process_remote_update(StringInfo s)
 	TupleData   old_tuple;
 	TupleData   new_tuple;
 	Oid			idxoid;
-	Relation	rel;
 	Relation	idxrel;
 	ScanKeyData skey[INDEX_MAX_KEYS];
 	HeapTuple	remote_tuple = NULL;
-
-	rel = read_rel(s, RowExclusiveLock);
 
 	action = pq_getmsgbyte(s);
 
@@ -690,31 +677,15 @@ process_remote_update(StringInfo s)
 }
 
 static void
-process_remote_delete(StringInfo s)
+process_remote_delete(StringInfo s, Relation rel)
 {
-	char		action;
 	EState	   *estate;
 	TupleData   oldtup;
 	TupleTableSlot *oldslot;
 	Oid			idxoid;
-	Relation	rel;
 	Relation	idxrel;
 	ScanKeyData skey[INDEX_MAX_KEYS];
 	bool		found_old;
-
-	rel = read_rel(s, RowExclusiveLock);
-
-	action = pq_getmsgbyte(s);
-
-	if (action != 'K' && action != 'E')
-		elog(ERROR, "expected action K or E got %c", action);
-
-	if (action == 'E')
-	{
-		elog(WARNING, "got delete without pkey");
-		heap_close(rel, NoLock);
-		return;
-	}
 
 	estate = create_rel_estate(rel);
 	oldslot = ExecInitExtraTupleSlot(estate);
@@ -784,6 +755,7 @@ process_remote_delete(StringInfo s)
 void MMExecutor(int id, void* work, size_t size)
 {
     StringInfoData s;
+    Relation rel = NULL;
     initStringInfo(&s);
     s.data = work;
     s.len = size;
@@ -796,26 +768,29 @@ void MMExecutor(int id, void* work, size_t size)
             
             switch (action) {
                 /* BEGIN */
-              case 'B':
+            case 'B':
                 process_remote_begin(&s);
                 continue;
                 /* COMMIT */
-              case 'C':
+            case 'C':
                 process_remote_commit(&s);
                 break;
                 /* INSERT */
-              case 'I':
-                process_remote_insert(&s);
+            case 'I':
+                process_remote_insert(&s, rel);
                 continue;
                 /* UPDATE */
-              case 'U':
-                process_remote_update(&s);
+            case 'U':
+                process_remote_update(&s, rel);
                 continue;
                 /* DELETE */
-              case 'D':
-                process_remote_delete(&s);
+            case 'D':
+                process_remote_delete(&s, rel);
                 continue;
-              default:
+            case 'R':
+                rel = read_rel(&s, RowExclusiveLock);
+                continue;
+            default:
                 elog(ERROR, "unknown action of type %c", action);
             }        
             break;

@@ -131,17 +131,7 @@ pglogical_write_insert(StringInfo out, PGLogicalOutputData *data,
 {
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
     if (!mm->isLocal) { 
-        uint8 flags = 0;
-        
         pq_sendbyte(out, 'I');		/* action INSERT */
-        
-        /* send the flags field */
-        pq_sendbyte(out, flags);
-        
-        /* use Oid as relation identifier */
-        pq_sendint(out, RelationGetRelid(rel), 4);
-        
-        pq_sendbyte(out, 'N');		/* new tuple follows */
         pglogical_write_tuple(out, data, rel, newtuple);
     }
 }
@@ -155,15 +145,7 @@ pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 {
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
     if (!mm->isLocal) { 
-        uint8 flags = 0;
         pq_sendbyte(out, 'U');		/* action UPDATE */
-        
-        /* send the flags field */
-        pq_sendbyte(out, flags);
-        
-        /* use Oid as relation identifier */
-        pq_sendint(out, RelationGetRelid(rel), 4);
-        
         /* FIXME support whole tuple (O tuple type) */
         if (oldtuple != NULL)
         {
@@ -184,18 +166,7 @@ pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 {
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
     if (!mm->isLocal) { 
-        uint8 flags = 0;
-
         pq_sendbyte(out, 'D');		/* action DELETE */
-
-        /* send the flags field */
-        pq_sendbyte(out, flags);
-        
-        /* use Oid as relation identifier */
-        pq_sendint(out, RelationGetRelid(rel), 4);
-        
-        /* FIXME support whole tuple (O tuple type) */
-        pq_sendbyte(out, 'K');	/* old key follows */
         pglogical_write_tuple(out, data, rel, oldtuple);
     }
 }
@@ -207,20 +178,6 @@ pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 static void
 write_startup_message(StringInfo out, List *msg)
 {
-#if 0
-	ListCell *lc;
-
-	pq_sendbyte(out, 'S');	/* message type field */
-	pq_sendbyte(out, 1); 	/* startup message version */
-	foreach (lc, msg)
-	{
-		DefElem *param = (DefElem*)lfirst(lc);
-		Assert(IsA(param->arg, String) && strVal(param->arg) != NULL);
-		/* null-terminated key and value pairs, in client_encoding */
-		pq_sendstring(out, param->defname);
-		pq_sendstring(out, strVal(param->arg));
-	}
-#endif
 }
 
 /*
@@ -289,11 +246,10 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 		transfer_type = decide_datum_transfer(att, typclass,
 											  data->allow_internal_basetypes,
 											  data->allow_binary_basetypes);
-
+        pq_sendbyte(out, transfer_type);
 		switch (transfer_type)
 		{
-			case 'i':
-				pq_sendbyte(out, 'i');	/* internal-format binary data follows */
+			case 'b':	/* internal-format binary data follows */
 
 				/* pass by value */
 				if (att->attbyval)
@@ -338,12 +294,10 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 
 				break;
 
-			case 'b':
+			case 's': /* binary send/recv data follows */
 				{
 					bytea	   *outputbytes;
 					int			len;
-
-					pq_sendbyte(out, 'b');	/* binary send/recv data follows */
 
 					outputbytes = OidSendFunctionCall(typclass->typsend,
 													  values[i]);
@@ -359,8 +313,6 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 				{
 					char   	   *outputstr;
 					int			len;
-
-					pq_sendbyte(out, 't');	/* 'text' data follows */
 
 					outputstr =	OidOutputFunctionCall(typclass->typoutput,
 													  values[i]);
@@ -391,7 +343,7 @@ decide_datum_transfer(Form_pg_attribute att, Form_pg_type typclass,
 		att->atttypid < FirstNormalObjectId &&
 		typclass->typelem == InvalidOid)
 	{
-		return 'i';
+		return 'b';
 	}
 	/*
 	 * Use send/recv, if allowed, if the type is plain or builtin.
@@ -404,7 +356,7 @@ decide_datum_transfer(Form_pg_attribute att, Form_pg_type typclass,
 			 (att->atttypid < FirstNormalObjectId || typclass->typtype != 'c') &&
 			 (att->atttypid < FirstNormalObjectId || typclass->typelem == InvalidOid))
 	{
-		return 'b';
+		return 's';
 	}
 
 	return 't';
