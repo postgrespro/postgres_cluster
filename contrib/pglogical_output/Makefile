@@ -16,8 +16,7 @@ include $(top_srcdir)/contrib/contrib-global.mk
 # 'make installcheck' disabled when building in-tree because these tests
 # require "wal_level=logical", which typical installcheck users do not have
 # (e.g. buildfarm clients).
-installcheck:
-	;
+installcheck:;
 
 EXTRA_INSTALL += contrib/pglogical_output_plhooks
 EXTRA_REGRESS_OPTS += --temp-config=./regression.conf
