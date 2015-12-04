@@ -207,5 +207,8 @@ xid_t clog_find_last_used(clog_t clog) {
 			last_used = xid;
 		}
 	}
+	if (last_used < MIN_XID) {
+		last_used = MIN_XID;
+	}
 	return last_used;
 }

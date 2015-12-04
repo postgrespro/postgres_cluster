@@ -310,7 +310,7 @@ static DTMConn GetConnection()
 			}
 			else
 			{
-				elog(WARNING, "Failed to connect to DTMD at unix %d", c->port);
+				elog(WARNING, "Failed to connect to DTMD at unix socket");
 			}
 		}
 	}

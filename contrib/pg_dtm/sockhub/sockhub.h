@@ -24,6 +24,14 @@ typedef enum
 
 typedef void(*ShubErrorHandler)(char const* msg, ShubErrorSeverity severity);
 
+typedef struct host_t
+{
+    char *host;
+    int port;
+    struct host_t *next;
+    struct host_t *prev;
+} host_t;
+
 typedef struct 
 {
     int buffer_size;
@@ -31,7 +39,7 @@ typedef struct
     int queue_size;
     int max_attempts;
     char const* file;
-    char const* hosts;
+    host_t *leader;
     ShubErrorHandler error_handler;
 } ShubParams;
    
@@ -53,7 +61,10 @@ int ShubReadSocket(int sd, void* buf, int size);
 int ShubWriteSocket(int sd, void const* buf, int size);
 
 void ShubInitParams(ShubParams* params);
+void ShubParamsSetHosts(ShubParams* params, char* hoststring);
 void ShubInitialize(Shub* shub, ShubParams* params);
 void ShubLoop(Shub* shub);
 
 #endif
+
+// vim: sts=4 ts=4 sw=4 expandtab

@@ -120,6 +120,7 @@ static TransactionManager DtmTM = {
 };
 
 static char *DtmServers;
+static char *DtmServersCopy;
 static int DtmBufferSize;
 
 static BackgroundWorker DtmWorker = {
@@ -836,7 +837,7 @@ _PG_init(void)
 
 	DefineCustomStringVariable(
 		"dtm.servers",
-		"The space separated host:port pairs where DTM daemons reside",
+		"The comma separated host:port pairs where DTM daemons reside",
 		NULL,
 		&DtmServers,
 		"127.0.0.1:5431",
@@ -847,6 +848,7 @@ _PG_init(void)
 		NULL // GucShowHook show_hook
 	);
 
+	DtmServersCopy = strdup(DtmServers);
 	if (DtmBufferSize != 0)
 	{
 		DtmGlobalConfig(DtmServers, Unix_socket_directories);
@@ -956,7 +958,7 @@ void DtmBackgroundWorker(Datum arg)
 
 	ShubInitParams(&params);
 
-	params.hosts = DtmServers;
+	ShubParamsSetHosts(&params, DtmServersCopy);
 	params.file = unix_sock_path;
 	params.buffer_size = DtmBufferSize;
 

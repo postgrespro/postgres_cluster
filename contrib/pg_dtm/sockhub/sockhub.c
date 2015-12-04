@@ -35,8 +35,58 @@ void ShubInitParams(ShubParams* params)
     params->queue_size = 100;
     params->max_attempts = 10;
     params->error_handler = default_error_handler;
+    params->leader = NULL;
 }
 
+void ShubParamsSetHosts(ShubParams* params, char* hoststring)
+{
+    char *hstate, *pstate;
+    char *hostport, *host, *portstr;
+    int port;
+
+    char *hosts = strdup(hoststring);
+    fprintf(stderr, "sockhub parsing hosts = '%s'\n", hosts);
+    hostport = strtok_r(hosts, ",", &hstate);
+
+    while (hostport) {
+        fprintf(stderr, "hostport = '%s'\n", hostport);
+        host = strtok_r(hostport, ":", &pstate);
+        if (!host) {
+            fprintf(stderr, "wrong host in host list\n");
+            break;
+        }
+
+        portstr = strtok_r(NULL, ":", &pstate);
+        if (portstr) {
+            port = atoi(portstr);
+        } else {
+            port = 5431;
+        }
+
+        fprintf(stderr, "adding host %s:%d\n", host, port);
+        host_t *h = malloc(sizeof(host_t));
+        h->host = strdup(host);
+        h->port = port;
+        if (params->leader) {
+            // update pointers from
+            h->prev = params->leader->prev;
+            h->next = params->leader;
+
+            // update pointers to
+            h->prev->next = h;
+            h->next->prev = h;
+        } else {
+            // the list is empty
+            params->leader = h;
+            h->prev = h;
+            h->next = h;
+        }
+
+        hostport = strtok_r(NULL, ",", &hstate);
+    }
+
+    free(hosts);
+}
 
 static int resolve_host_by_name(const char *hostname, unsigned* addrs, unsigned* n_addrs)
 {
@@ -103,57 +153,37 @@ int ShubWriteSocket(int sd, void const* buf, int size)
     return 1;
 }
 
-
 static void reconnect(Shub* shub)
 {
-    static int skip_hosts = 0;
-    printf("will connect to host #%d\n", skip_hosts);
-
     struct sockaddr_in sock_inet;
     unsigned addrs[128];
     unsigned i, n_addrs = sizeof(addrs) / sizeof(addrs[0]);
     int max_attempts = shub->params->max_attempts;
-    char *hosts = strdup(shub->params->hosts);
     if (shub->output >= 0) {
         close_socket(shub, shub->output);
     }
 
     sock_inet.sin_family = AF_INET;
 
-    char *hstate, *pstate;
-    char *hostport, *host, *portstr;
-    int port;
-    hostport = strtok_r(hosts, ",", &hstate);
-    int hosti = 0;
-    while (hostport) {
+    while (shub->params->leader) {
+        char *host = shub->params->leader->host;
+        int port = shub->params->leader->port;
+
+        fprintf(stderr, "shub leader = %s:%d\n", host, port);
+
+        shub->params->leader = shub->params->leader->next;
+
         ShubErrorSeverity severity = SHUB_RECOVERABLE_ERROR;
-
-        if (hosti < skip_hosts) {
-            goto trynext;
-        }
-
-        host = strtok_r(hostport, ":", &pstate);
-        if (!host) {
-            severity = SHUB_FATAL_ERROR;
-            break;
-        }
-
-        portstr = strtok_r(NULL, ":", &pstate);
-        if (portstr) {
-            port = atoi(portstr);
-        } else {
-            port = 5431;
-        }
         sock_inet.sin_port = htons(port);
 
         if (!resolve_host_by_name(host, addrs, &n_addrs)) {
             shub->params->error_handler("Failed to resolve host by name", severity);
-            goto trynext;
+            continue;
         }
         shub->output = socket(AF_INET, SOCK_STREAM, 0);
         if (shub->output < 0) {
             shub->params->error_handler("Failed to create inet socket", severity);
-            goto trynext;
+            continue;
         }
         while (1) {
             int rc = -1;
@@ -170,32 +200,22 @@ static void reconnect(Shub* shub)
             if (rc < 0) {
                 if (errno != ENOENT && errno != ECONNREFUSED && errno != EINPROGRESS) {
                     shub->params->error_handler("Connection can not be establish", severity);
-                    goto trynext;
+                    continue;
                 }
                 if (max_attempts-- != 0) {
                     sleep(1);
                 } else {
                     shub->params->error_handler("Failed to connect to host", severity);
-                    goto trynext;
+                    continue;
                 }
             } else {
                 int optval = 1;
                 setsockopt(shub->output, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
                 FD_SET(shub->output, &shub->inset);
-                goto finish;
+                return;
             }
         }
-    trynext:
-        hostport = strtok_r(NULL, ",", &hstate);
-        hosti++;
     }
-finish:
-    if (hosti < skip_hosts) {
-        skip_hosts = 0;
-    } else {
-        skip_hosts++;
-    }
-    free(hosts);
 }
 
 static void notify_disconnect(Shub* shub, int chan)
