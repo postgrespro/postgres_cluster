@@ -29,6 +29,7 @@
 #include "storage/proc.h"
 #include "utils/guc.h"
 #include "utils/snapmgr.h"
+#include "executor/spi.h"
 
 #include "multimaster.h"
 
@@ -384,6 +385,14 @@ receiver_raw_main(Datum main_arg)
 
             stmt = copybuf + hdr_len;
            
+#ifdef PGLOGICAL_OUTPUT
+            ByteBufferAppend(&buf, stmt, rc - hdr_len);
+            if (stmt[0] == 'C') 
+            { 
+                MMExecute(buf.data, buf.used);
+                ByteBufferReset(&buf);
+            }
+#else
             if (strncmp(stmt, "BEGIN ", 6) == 0) { 
                 TransactionId xid;
                 int rc = sscanf(stmt + 6, "%u", &xid);
@@ -400,8 +409,9 @@ receiver_raw_main(Datum main_arg)
                 insideTrans = false;
             } else {
                 Assert(insideTrans);
-                ByteBufferAppend(&buf, stmt, strlen(stmt));
+                ByteBufferAppend(&buf, stmt, rc - hdr_len/*strlen(stmt)*/);
             }
+#endif
 			/* Update written position */
 			output_written_lsn = Max(walEnd, output_written_lsn);
 			output_fsync_lsn = output_written_lsn;
@@ -547,3 +557,43 @@ int MMStartReceivers(char* conns, int node_id)
     return i;
 }
 
+void MMExecutor(int id, void* work, size_t size)
+{
+    TransactionId xid = *(TransactionId*)work;
+    char* stmts = (char*)work + 4;
+    bool finished = false;
+
+    MMJoinTransaction(xid);
+
+    SetCurrentStatementStartTimestamp();               
+    StartTransactionCommand();
+    SPI_connect();
+    PushActiveSnapshot(GetTransactionSnapshot());
+
+    PG_TRY();
+    {
+        int rc = SPI_execute(stmts, false, 0);
+        SPI_finish();
+        PopActiveSnapshot();
+        finished = true;
+        if (rc != SPI_OK_INSERT && rc != SPI_OK_UPDATE && rc != SPI_OK_DELETE) {
+            ereport(LOG, (errmsg("Executor %d: failed to apply transaction %u",
+                                 id, xid)));
+            AbortCurrentTransaction();
+        } else { 
+            CommitTransactionCommand();
+        }
+    }
+    PG_CATCH();
+    {
+        FlushErrorState();
+        if (!finished) {
+            SPI_finish();
+            if (ActiveSnapshotSet()) { 
+                PopActiveSnapshot();
+            }
+        }
+        AbortCurrentTransaction();
+    }
+    PG_END_TRY();
+}
