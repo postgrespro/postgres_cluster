@@ -323,15 +323,7 @@ create_rel_estate(Relation rel)
 static void
 process_remote_begin(StringInfo s)
 {
-	TimestampTz	commit_time;
-    XLogRecPtr	final_lsn;
-	TransactionId xid;
-    uint8 flags;
-
-    flags = pq_getmsgbyte(s);
-    final_lsn = pq_getmsgint64(s);
-	commit_time = pq_getmsgint64(s);
-	xid = pq_getmsgint(s, 4);
+	TransactionId xid = pq_getmsgint(s, 4);
     
     MMJoinTransaction(xid);
     SetCurrentStatementStartTimestamp();     

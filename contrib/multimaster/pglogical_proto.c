@@ -56,8 +56,6 @@ static void pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 static void pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 							Relation rel, HeapTuple oldtuple);
 
-#define IS_REPLICA_IDENTITY 1
-
 static void pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 								   Relation rel, HeapTuple tuple);
 static char decide_datum_transfer(Form_pg_attribute att,
@@ -105,16 +103,8 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
     if (MMIsLocalTransaction(txn->xid)) {
         mm->isLocal = true;
     } else { 
-        uint8	flags = 0;
         mm->isLocal = false;        
         pq_sendbyte(out, 'B');		/* BEGIN */
-        
-        /* send the flags field its self */
-        pq_sendbyte(out, flags);
-        
-        /* fixed fields */
-        pq_sendint64(out, txn->final_lsn);
-        pq_sendint64(out, txn->commit_time);
         pq_sendint(out, txn->xid, 4);
     }
 }
@@ -128,16 +118,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 {
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
     if (!mm->isLocal) { 
-        uint8 flags = 0;
         pq_sendbyte(out, 'C');		/* sending COMMIT */
-        
-        /* send the flags field */
-        pq_sendbyte(out, flags);
-        
-        /* send fixed fields */
-        pq_sendint64(out, commit_lsn);
-        pq_sendint64(out, txn->end_lsn);
-        pq_sendint64(out, txn->commit_time);
     }
 }
 
