@@ -70,7 +70,6 @@ enum {
 	PARAM_BINARY_WANT_BINARY_BASETYPES,
 	PARAM_BINARY_BASETYPES_MAJOR_VERSION,
 	PARAM_PG_VERSION,
-	PARAM_FORWARD_CHANGESETS,
 	PARAM_HOOKS_SETUP_FUNCTION,
 	PARAM_NO_TXINFO
 } OutputPluginParamKey;
@@ -97,7 +96,6 @@ static OutputPluginParam param_lookup[] = {
 	{"binary.want_binary_basetypes", PARAM_BINARY_WANT_BINARY_BASETYPES},
 	{"binary.basetypes_major_version", PARAM_BINARY_BASETYPES_MAJOR_VERSION},
 	{"pg_version", PARAM_PG_VERSION},
-	{"forward_changesets", PARAM_FORWARD_CHANGESETS},
 	{"hooks.setup_function", PARAM_HOOKS_SETUP_FUNCTION},
 	{"no_txinfo", PARAM_NO_TXINFO},
 	{NULL, PARAM_UNRECOGNISED}
@@ -208,18 +206,6 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 			case PARAM_PG_VERSION:
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_UINT32);
 				data->client_pg_version = DatumGetUInt32(val);
-				break;
-
-			case PARAM_FORWARD_CHANGESETS:
-				/*
-				 * Check to see if the client asked for changeset forwarding
-				 *
-				 * Note that we cannot support this on 9.4. We'll tell the client
-				 * in the startup reply message.
-				 */
-				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
-				data->client_forward_changesets_set = true;
-				data->client_forward_changesets = DatumGetBool(val);
 				break;
 
 			case PARAM_BINARY_WANT_INTERNAL_BASETYPES:
@@ -444,8 +430,6 @@ prepare_startup_message(PGLogicalOutputData *data)
 
 	l = add_startup_msg_s(l, "encoding", (char*)pg_encoding_to_char(data->field_datum_encoding));
 
-	l = add_startup_msg_b(l, "forward_changesets",
-			data->forward_changesets);
 	l = add_startup_msg_b(l, "forward_changeset_origins",
 			data->forward_changeset_origins);
 
