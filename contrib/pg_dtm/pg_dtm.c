@@ -120,6 +120,7 @@ static TransactionManager DtmTM = {
 };
 
 static char *DtmServers;
+static char *DtmServersCopy;
 static int DtmBufferSize;
 
 static BackgroundWorker DtmWorker = {
@@ -680,8 +681,10 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 	}
 	else
 	{
-		XidStatus gs;
-		gs = DtmGlobalGetTransStatus(xid, false);        
+		XidStatus gs = -1;
+		while (gs == -1) {
+			gs = DtmGlobalGetTransStatus(xid, true);
+		}
 		if (gs != TRANSACTION_STATUS_UNKNOWN) { 
 			status = gs;
 		}
@@ -836,7 +839,7 @@ _PG_init(void)
 
 	DefineCustomStringVariable(
 		"dtm.servers",
-		"The space separated host:port pairs where DTM daemons reside",
+		"The comma separated host:port pairs where DTM daemons reside",
 		NULL,
 		&DtmServers,
 		"127.0.0.1:5431",
@@ -847,6 +850,7 @@ _PG_init(void)
 		NULL // GucShowHook show_hook
 	);
 
+	DtmServersCopy = strdup(DtmServers);
 	if (DtmBufferSize != 0)
 	{
 		DtmGlobalConfig(DtmServers, Unix_socket_directories);
@@ -948,27 +952,20 @@ Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 
 void DtmBackgroundWorker(Datum arg)
 {
-	elog(ERROR, "unix socket not supported yet");
-	// FIXME: implement switching between multiple connections
-	*(int*)0 = 0;
-
-	/*
 	Shub shub;
 	ShubParams params;
 	char unix_sock_path[MAXPGPATH];
 
-	snprintf(unix_sock_path, sizeof(unix_sock_path), "%s/p%d", Unix_socket_directories, DtmPort);
+	snprintf(unix_sock_path, sizeof(unix_sock_path), "%s/sh.unix", Unix_socket_directories);
 
 	ShubInitParams(&params);
 
-	params.host = DtmHost;
-	params.port = DtmPort;
+	ShubParamsSetHosts(&params, DtmServersCopy);
 	params.file = unix_sock_path;
 	params.buffer_size = DtmBufferSize;
 
 	ShubInitialize(&shub, &params);
 	ShubLoop(&shub);
-	*/
 }
 
 static void ByteBufferAlloc(ByteBuffer* buf)

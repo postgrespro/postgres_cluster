@@ -6,6 +6,7 @@ import (
 	"io"
 	"bufio"
 	"sync"
+	"flag"
 	"os"
 	"strconv"
 	"strings"
@@ -106,8 +107,8 @@ func postgres(bin string, datadir string, dtmservers []string, port int, nodeid 
 		bin,
 		"-D", datadir,
 		"-p", strconv.Itoa(port),
-//		"-c", "dtm.buffer_size=65536",
-		"-c", "dtm.buffer_size=0",
+		"-c", "dtm.buffer_size=65536",
+//		"-c", "dtm.buffer_size=0",
 		"-c", "dtm.servers=" + strings.Join(dtmservers, ","),
 		"-c", "autovacuum=off",
 		"-c", "fsync=off",
@@ -153,6 +154,12 @@ func get_prefix(srcroot string) string {
 	return "."
 }
 
+var doInitDb bool = false
+func init() {
+	flag.BoolVar(&doInitDb, "i", false, "perform initdb")
+	flag.Parse()
+}
+
 func main() {
 	srcroot := "../../.."
 	prefix := get_prefix(srcroot)
@@ -168,8 +175,10 @@ func main() {
 
 	check_bin(&bin);
 
-	for _, datadir := range datadirs {
-		initdb(bin["initdb"], datadir)
+	if doInitDb {
+		for _, datadir := range datadirs {
+			initdb(bin["initdb"], datadir)
+		}
 	}
 
 	var wg sync.WaitGroup

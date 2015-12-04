@@ -1,30 +1,30 @@
 ---
 
+- hosts: nodes
+  gather_facts: no
+  tasks:
+
+  - name: create mm ext
+    shell: >
+      ~/pg_cluster/install/bin/psql -p 15432 postgres -c "drop extension if exists multimaster";
+      ~/pg_cluster/install/bin/psql -p 15432 postgres -c "drop table if exists t";
+      ~/pg_cluster/install/bin/psql -p 15432 postgres -c 'create extension multimaster;';
+      ~/pg_cluster/install/bin/psql -p 15432 postgres -c 'create table t(u int primary key, v int);';
+
 - hosts: clients
   gather_facts: no
   tasks:
 
   - name: generate connstrings
     set_fact:
-      connstr: "-C 'host={{item}} user={{ansible_ssh_user}} port=15432 dbname=postgres' "
+      connstr: "-c 'host={{item}} user={{ansible_ssh_user}} port=15432 dbname=postgres' "
     with_items:
-      groups['nodes'] | reverse | batch(nnodes | d(2) | int) | first
+      groups['nodes'] | reverse | batch(nnodes | d(1) | int) | first
     register: connstrs
 
   - name: make a list
     set_fact:
       connections: "{{ connstrs.results | map(attribute='ansible_facts.connstr') | join }}"
-
-  - name: copy transfers source
-    copy: src=./{{item}} dest=~/{{item}} mode=0755
-    with_items:
-      - "dtmbench.cpp"
-
-  - name: compile dtmbench
-    shell: "g++ -g -Wall -O2 -o dtmbench dtmbench.cpp -lpqxx -lpq -pthread"
-
-  - name: compile dtmbench
-    shell: "mv dtmbench ~/pg_cluster/install/bin/dtmbench"
 
 - hosts: clients[0]
   gather_facts: no
@@ -32,6 +32,9 @@
   - name: init database
     shell: "~/pg_cluster/install/bin/dtmbench {{connections}} -a 500000 -i"
     register: init_result
+    environment:
+      LD_LIBRARY_PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/lib"
+
   - debug: var=init_result
 
 - hosts: clients
@@ -43,8 +46,7 @@
   - name: run transfers
     shell: >
       ~/pg_cluster/install/bin/dtmbench {{connections}}
-      -w {{ (nconns | d(100)| int)*(nnodes | d(2) | int)/(2*( groups['clients'] | count))}}
-      -s {{offset}} -d 100000 -r 1 -n 2000 -a 500000 |
+      -w {{ nconns }} -r 1 -n 2000 -a 500000 |
       tee -a perf.results |
       sed "s/^/`hostname`:/"
     register: transfers_result

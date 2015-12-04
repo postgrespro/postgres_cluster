@@ -135,21 +135,6 @@ static void notify_listeners(Transaction *t, int status) {
 	}
 }
 
-static void set_next_gxid(xid_t value) {
-	assert(next_gxid < value);
-	if (use_raft && raft.role == ROLE_LEADER) {
-		assert(value <= last_gxid);
-		if (inrange(next_gxid + 1, threshold_gxid, value)) {
-			// Time to worry has come.
-			raft_start_next_term(&raft);
-		} else {
-			// It is either too early to worry,
-			// or we have already increased the term.
-		}
-	}
-	next_gxid = value;
-}
-
 static void apply_clog_update(int action, int argument) {
 	int status = action;
 	xid_t xid = argument;
@@ -277,6 +262,37 @@ static void onhello(client_t client, int argc, xid_t *argv) {
 	}
 }
 
+static void set_next_gxid(xid_t value) {
+        assert(next_gxid < value); // The value should only grow.
+
+	if (use_raft && raft.role == ROLE_LEADER) {
+		assert(value <= last_gxid);
+		if (inrange(next_gxid + 1, threshold_gxid, value)) {
+			// Time to worry has come.
+			raft_start_next_term(&raft);
+		} else {
+			// It is either too early to worry,
+			// or we have already increased the term.
+		}
+	}
+
+	// Check that old position is 'dirty'. It is used when dtmd restarts,
+	// to find out a correct value for 'next_gxid'. If we do not remember
+	// 'next_gxid' it will lead to reuse of xids, which is bad.
+	assert((next_gxid == MIN_XID) || (clog_read(clg, next_gxid) == NEGATIVE));
+	assert(clog_read(clg, value) == BLANK); // New position should be clean.
+	if (!clog_write(clg, value, NEGATIVE)) { // Marked the new position as dirty.
+		shout("could not mark xid = %u dirty\n", value);
+		assert(false); // should not happen
+	}
+	if (!clog_write(clg, next_gxid, BLANK)) { // Cleaned the old position.
+		shout("could not clean clean xid = %u from dirty state\n", next_gxid);
+		assert(false); // should not happen
+	}
+
+        next_gxid = value;
+}
+
 static void onreserve(client_t client, int argc, xid_t *argv) {
 	CHECK(argc == 3, client, "RESERVE: wrong number of arguments");
 
@@ -360,8 +376,8 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 		client,
 		"not enought xids left in this term"
 	);
-	set_next_gxid(next_gxid + 1);
 	prev_gxid = t->xid = next_gxid;
+	set_next_gxid(next_gxid + 1);
 	t->snapshots_count = 0;
 	t->size = 1;
 
@@ -847,7 +863,12 @@ int main(int argc, char **argv) {
 
 	if (!redirect_output()) return EXIT_FAILURE;
 
+	next_gxid = MIN_XID;
 	clg = clog_open(datadir);
+	set_next_gxid(clog_find_last_used(clg) + 1);
+	prev_gxid = next_gxid - 1;
+	last_gxid = INVALID_XID;
+	debug("initial next_gxid = %u\n", next_gxid);
 	if (!clg) {
 		shout("could not open clog at '%s'\n", datadir);
 		return EXIT_FAILURE;
@@ -866,9 +887,6 @@ int main(int argc, char **argv) {
 
 	write_pid(pidpath, getpid());
 
-	prev_gxid = MIN_XID;
-	next_gxid = MIN_XID;
-	last_gxid = INVALID_XID;
 
 	int raftsock = raft_create_udp_socket(&raft);
 	if (raftsock == -1) {
