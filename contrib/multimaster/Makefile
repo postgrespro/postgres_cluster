@@ -1,10 +1,10 @@
 MODULE_big = multimaster
-OBJS = multimaster.o libdtm.o bytebuf.o bgwpool.o sockhub/sockhub.o pglogical_output.o pglogical_proto.o pglogical_receiver.o
-#OBJS = multimaster.o receiver_raw.o decoder_raw.o libdtm.o bytebuf.o bgwpool.o sockhub/sockhub.o
+OBJS = multimaster.o libdtm.o bytebuf.o bgwpool.o sockhub/sockhub.o pglogical_output.o pglogical_proto.o pglogical_receiver.o pglogical_apply.o
+#OBJS = multimaster.o pglogical_receiver.o decoder_raw.o libdtm.o bytebuf.o bgwpool.o sockhub/sockhub.o
 EXTENSION = multimaster
 DATA = multimaster--1.0.sql
 
-PG_CPPFLAGS = -I$(libpq_srcdir)
+PG_CPPFLAGS = -I$(libpq_srcdir) -DUSE_PGLOGICAL_OUTPUT
 SHLIB_LINK = $(libpq)
 
 ifdef USE_PGXS
