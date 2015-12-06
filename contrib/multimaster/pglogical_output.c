@@ -433,7 +433,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	if (data->api->write_rel)
 	{
 		OutputPluginPrepareWrite(ctx, false);
-		data->api->write_rel(ctx->out, relation);
+		data->api->write_rel(ctx->out, data, relation);
 		OutputPluginWrite(ctx, false);
 	}
 

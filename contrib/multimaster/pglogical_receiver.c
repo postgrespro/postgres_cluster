@@ -244,7 +244,7 @@ pglogical_receiver_main(Datum main_arg)
 	resetPQExpBuffer(query);
 
 	/* Start logical replication at specified position */
-	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL 0/0 ",
+	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL 0/0 (\"startup_params_format\" '1', \"max_proto_version\" '1',  \"min_proto_version\" '1')",
 					  args->receiver_slot);
 	res = PQexec(conn, query->data);
 	if (PQresultStatus(res) != PGRES_COPY_BOTH)
@@ -376,50 +376,48 @@ pglogical_receiver_main(Datum main_arg)
 			walEnd = fe_recvint64(&copybuf[hdr_len]);
 			hdr_len += 8;		/* WALEnd */
 			hdr_len += 8;		/* sendTime */
-			if (rc < hdr_len + 1)
-			{
-				ereport(LOG, (errmsg("%s: Streaming header too small",
-									 worker_proc)));
-				proc_exit(1);
-			}
 
-            stmt = copybuf + hdr_len;
+			/*ereport(LOG, (errmsg("%s: receive message %c length %d", worker_proc, copybuf[hdr_len], rc - hdr_len)));*/
+
+            Assert(rc >= hdr_len);
+
+			if (rc > hdr_len)
+			{
+                stmt = copybuf + hdr_len;
            
 #ifdef USE_PGLOGICAL_OUTPUT
-            ByteBufferAppend(&buf, stmt, rc - hdr_len);
-            if (stmt[0] == 'C') 
-            { 
-                MMExecute(buf.data, buf.used);
-                ByteBufferReset(&buf);
-            }
+                ByteBufferAppend(&buf, stmt, rc - hdr_len);
+                if (stmt[0] == 'C') /* commit */
+                { 
+                    MMExecute(buf.data, buf.used);
+                    ByteBufferReset(&buf);
+                }
 #else
-            if (strncmp(stmt, "BEGIN ", 6) == 0) { 
-                TransactionId xid;
-                int rc = sscanf(stmt + 6, "%u", &xid);
-                Assert(rc == 1);
-                ByteBufferAppendInt32(&buf, xid);
-                Assert(!insideTrans);
-                insideTrans = true;
-            } else if (strncmp(stmt, "COMMIT;", 7) == 0) { 
-                Assert(insideTrans);
-                Assert(buf.used > 4);
-                buf.data[buf.used-1] = '\0'; /* replace last ';' with '\0' to make string zero terminated */
-                MMExecute(buf.data, buf.used);
-                ByteBufferReset(&buf);
-                insideTrans = false;
-            } else {
-                Assert(insideTrans);
-                ByteBufferAppend(&buf, stmt, rc - hdr_len/*strlen(stmt)*/);
-            }
+                if (strncmp(stmt, "BEGIN ", 6) == 0) { 
+                    TransactionId xid;
+                    int rc = sscanf(stmt + 6, "%u", &xid);
+                    Assert(rc == 1);
+                    ByteBufferAppendInt32(&buf, xid);
+                    Assert(!insideTrans);
+                    insideTrans = true;
+                } else if (strncmp(stmt, "COMMIT;", 7) == 0) { 
+                    Assert(insideTrans);
+                    Assert(buf.used > 4);
+                    buf.data[buf.used-1] = '\0'; /* replace last ';' with '\0' to make string zero terminated */
+                    MMExecute(buf.data, buf.used);
+                    ByteBufferReset(&buf);
+                    insideTrans = false;
+                } else {
+                    Assert(insideTrans);
+                    ByteBufferAppend(&buf, stmt, rc - hdr_len/*strlen(stmt)*/);
+                }
 #endif
+            }
 			/* Update written position */
 			output_written_lsn = Max(walEnd, output_written_lsn);
 			output_fsync_lsn = output_written_lsn;
 			output_applied_lsn = output_written_lsn;
 		}
-
-		/* Finish process */
-		pgstat_report_activity(STATE_IDLE, NULL);
 
 		/* No data, move to next loop */
 		if (rc == 0)

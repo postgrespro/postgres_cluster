@@ -13,7 +13,7 @@
 #ifndef PG_LOGICAL_PROTO_H
 #define PG_LOGICAL_PROTO_H
 
-typedef void (*pglogical_write_rel_fn)(StringInfo out, Relation rel);
+typedef void (*pglogical_write_rel_fn)(StringInfo out, PGLogicalOutputData *data, Relation rel);
 
 typedef void (*pglogical_write_begin_fn)(StringInfo out, PGLogicalOutputData *data,
 							 ReorderBufferTXN *txn);

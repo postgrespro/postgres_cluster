@@ -41,7 +41,7 @@ typedef struct PGLogicalProtoMM
     bool isLocal;
 } PGLogicalProtoMM;
 
-static void pglogical_write_rel(StringInfo out, Relation rel);
+static void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel);
 
 static void pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 							ReorderBufferTXN *txn);
@@ -67,29 +67,32 @@ static char decide_datum_transfer(Form_pg_attribute att,
  * Write relation description to the output stream.
  */
 static void
-pglogical_write_rel(StringInfo out, Relation rel)
+pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
 {
-	const char *nspname;
-	uint8		nspnamelen;
-	const char *relname;
-	uint8		relnamelen;
-
-	pq_sendbyte(out, 'R');		/* sending RELATION */
-
-	nspname = get_namespace_name(rel->rd_rel->relnamespace);
-	if (nspname == NULL)
-		elog(ERROR, "cache lookup failed for namespace %u",
-			 rel->rd_rel->relnamespace);
-	nspnamelen = strlen(nspname) + 1;
-
-	relname = NameStr(rel->rd_rel->relname);
-	relnamelen = strlen(relname) + 1;
-
-	pq_sendbyte(out, nspnamelen);		/* schema name length */
-	pq_sendbytes(out, nspname, nspnamelen);
-
-	pq_sendbyte(out, relnamelen);		/* table name length */
-	pq_sendbytes(out, relname, relnamelen);
+    PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
+    if (!mm->isLocal) { 
+        const char *nspname;
+        uint8		nspnamelen;
+        const char *relname;
+        uint8		relnamelen;
+        
+        pq_sendbyte(out, 'R');		/* sending RELATION */
+        
+        nspname = get_namespace_name(rel->rd_rel->relnamespace);
+        if (nspname == NULL)
+            elog(ERROR, "cache lookup failed for namespace %u",
+                 rel->rd_rel->relnamespace);
+        nspnamelen = strlen(nspname) + 1;
+        
+        relname = NameStr(rel->rd_rel->relname);
+        relnamelen = strlen(relname) + 1;
+        
+        pq_sendbyte(out, nspnamelen);		/* schema name length */
+        pq_sendbytes(out, nspname, nspnamelen);
+        
+        pq_sendbyte(out, relnamelen);		/* table name length */
+        pq_sendbytes(out, relname, relnamelen);
+    }
 }
 
 /*

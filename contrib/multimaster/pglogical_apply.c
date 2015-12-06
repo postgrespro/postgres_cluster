@@ -751,6 +751,7 @@ process_remote_delete(StringInfo s, Relation rel)
 	CommandCounterIncrement();
 }
 
+static MemoryContext ApplyContext;
 
 void MMExecutor(int id, void* work, size_t size)
 {
@@ -760,6 +761,15 @@ void MMExecutor(int id, void* work, size_t size)
     s.data = work;
     s.len = size;
     s.maxlen = -1;
+
+    if (ApplyContext == NULL) {
+        ApplyContext = AllocSetContextCreate(TopMemoryContext,
+										   "MessageContext",
+										   ALLOCSET_DEFAULT_MINSIZE,
+										   ALLOCSET_DEFAULT_INITSIZE,
+										   ALLOCSET_DEFAULT_MAXSIZE);
+    }
+    MemoryContextSwitchTo(ApplyContext);
 
     PG_TRY();
     {    
@@ -802,5 +812,7 @@ void MMExecutor(int id, void* work, size_t size)
         AbortCurrentTransaction();
     }
     PG_END_TRY();
+
+    MemoryContextResetAndDeleteChildren(ApplyContext);
 }
     
