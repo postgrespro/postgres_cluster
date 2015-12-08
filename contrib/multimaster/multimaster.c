@@ -28,7 +28,6 @@
 #include "access/xlog.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
-#include "executor/spi.h"
 #include "executor/executor.h"
 #include "access/twophase.h"
 #include "utils/guc.h"
@@ -104,7 +103,6 @@ static void DtmShmemStartup(void);
 static void DtmBackgroundWorker(Datum arg);
 
 static void MMMarkTransAsLocal(TransactionId xid);
-static void MMExecutor(int id, void* work, size_t size);
 static BgwPool* MMPoolConstructor(void);
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
@@ -1185,48 +1183,7 @@ MMExecutorFinish(QueryDesc *queryDesc)
     {
         standard_ExecutorFinish(queryDesc);
     }
-}
-        
-static void MMExecutor(int id, void* work, size_t size)
-{
-    TransactionId xid = *(TransactionId*)work;
-    char* stmts = (char*)work + 4;
-    bool finished = false;
-
-    MMJoinTransaction(xid);
-
-    SetCurrentStatementStartTimestamp();               
-    StartTransactionCommand();
-    SPI_connect();
-    PushActiveSnapshot(GetTransactionSnapshot());
-
-    PG_TRY();
-    {
-        int rc = SPI_execute(stmts, false, 0);
-        SPI_finish();
-        PopActiveSnapshot();
-        finished = true;
-        if (rc != SPI_OK_INSERT && rc != SPI_OK_UPDATE && rc != SPI_OK_DELETE) {
-            ereport(LOG, (errmsg("Executor %d: failed to apply transaction %u",
-                                 id, xid)));
-            AbortCurrentTransaction();
-        } else { 
-            CommitTransactionCommand();
-        }
-    }
-    PG_CATCH();
-    {
-        FlushErrorState();
-        if (!finished) {
-            SPI_finish();
-            if (ActiveSnapshotSet()) { 
-                PopActiveSnapshot();
-            }
-        }
-        AbortCurrentTransaction();
-    }
-    PG_END_TRY();
-}
+}        
 
 extern void MMExecute(void* work, int size)
 {
