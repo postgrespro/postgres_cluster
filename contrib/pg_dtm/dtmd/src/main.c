@@ -31,9 +31,6 @@ Transaction* transaction_hash[MAX_TRANSACTIONS];
 // reserve something in (next, x) range otherwise, moving 'next' after 'x'.
 xid_t prev_gxid, next_gxid;
 
-xid_t threshold_gxid; // when to start worrying about starting a new term
-xid_t last_gxid; // the greatest gxid we can provide on BEGIN or RESERVE
-
 xid_t global_xmin = INVALID_XID;
 
 static Transaction *find_transaction(xid_t xid) {    
@@ -262,14 +259,41 @@ static void onhello(client_t client, int argc, xid_t *argv) {
 	}
 }
 
+// the greatest gxid we can provide on BEGIN or RESERVE
+static xid_t last_xid_in_term() {
+	return raft.term * XIDS_PER_TERM - 1;
+}
+
+static xid_t first_xid_in_term() {
+	return (raft.term - 1) * XIDS_PER_TERM;
+}
+
+static int xid2term(xid_t xid) {
+	int term = xid / XIDS_PER_TERM + 1;
+	return term;
+}
+
+// when to start worrying about starting a new term
+static xid_t get_threshold_xid() {
+	return last_xid_in_term() - NEW_TERM_THRESHOLD;
+}
+
+static bool xid_is_safe(xid_t xid) {
+	return xid <= last_xid_in_term();
+}
+
+static bool xid_is_disturbing(xid_t xid) {
+	return inrange(next_gxid + 1, get_threshold_xid(), xid);
+}
+
 static void set_next_gxid(xid_t value) {
         assert(next_gxid < value); // The value should only grow.
 
 	if (use_raft && raft.role == ROLE_LEADER) {
-		assert(value <= last_gxid);
-		if (inrange(next_gxid + 1, threshold_gxid, value)) {
+		assert(xid_is_safe(value));
+		if (xid_is_disturbing(value)) {
 			// Time to worry has come.
-			raft_start_next_term(&raft);
+			raft_ensure_term(&raft, xid2term(value));
 		} else {
 			// It is either too early to worry,
 			// or we have already increased the term.
@@ -291,6 +315,15 @@ static void set_next_gxid(xid_t value) {
 	}
 
         next_gxid = value;
+}
+
+static bool use_xid(xid_t xid) {
+	if (!xid_is_safe(xid)) {
+		return false;
+	}
+	shout("setting next_gxid to %u\n", xid + 1);
+	set_next_gxid(xid + 1);
+	return true;
 }
 
 static void onreserve(client_t client, int argc, xid_t *argv) {
@@ -317,11 +350,10 @@ static void onreserve(client_t client, int argc, xid_t *argv) {
 		minxid = max_of_xids(minxid, next_gxid);
 		maxxid = max_of_xids(maxxid, minxid + minsize - 1);
 		CHECK(
-			maxxid <= last_gxid,
+			use_xid(maxxid),
 			client,
 			"not enough xids left in this term"
 		);
-		set_next_gxid(maxxid + 1);
 	}
 	debug(
 		"[%d] RESERVE: allocating range %u-%u\n",
@@ -371,13 +403,13 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 	transaction_clear(t);
 	l2_list_link(&active_transactions, &t->elem);
 
+	t->xid = next_gxid;
 	CHECK(
-		next_gxid <= last_gxid,
+		use_xid(next_gxid),
 		client,
 		"not enought xids left in this term"
 	);
-	prev_gxid = t->xid = next_gxid;
-	set_next_gxid(next_gxid + 1);
+	prev_gxid = t->xid;
 	t->snapshots_count = 0;
 	t->size = 1;
 
@@ -865,9 +897,16 @@ int main(int argc, char **argv) {
 
 	next_gxid = MIN_XID;
 	clg = clog_open(datadir);
-	set_next_gxid(clog_find_last_used(clg) + 1);
+
+	xid_t last_used_xid = clog_find_last_used(clg);
+	shout("will use %u\n", last_used_xid);
+	if (!use_xid(last_used_xid)) {
+		shout("could not set last used xid to %u\n", last_used_xid);
+		return EXIT_FAILURE;
+	}
+	raft.term = xid2term(next_gxid);
+
 	prev_gxid = next_gxid - 1;
-	last_gxid = INVALID_XID;
 	debug("initial next_gxid = %u\n", next_gxid);
 	if (!clg) {
 		shout("could not open clog at '%s'\n", datadir);
@@ -906,6 +945,7 @@ int main(int argc, char **argv) {
 
 	mstimer_t t;
 	mstimer_reset(&t);
+	int old_term = 0;
 	while (true) {
 		int ms = mstimer_reset(&t);
 		raft_msg_t *m = NULL;
@@ -933,19 +973,16 @@ int main(int argc, char **argv) {
 			server_set_enabled(server, raft.role == ROLE_LEADER);
 
 			// Update the gxid limits based on current term and leadership.
-			xid_t recent_last_gxid = raft.term * XIDS_PER_TERM;
-			if (last_gxid < recent_last_gxid) {
-				shout("updating last_gxid from %u to %u\n", last_gxid, recent_last_gxid);
-				last_gxid = recent_last_gxid;
-				threshold_gxid = last_gxid - NEW_TERM_THRESHOLD;
+			if (old_term < raft.term) {
 				if (raft.role == ROLE_FOLLOWER) {
 					// If we become a leader, we will use
 					// the range of xids after the current
 					// last_gxid.
-					prev_gxid = last_gxid;
-					next_gxid = prev_gxid + 1;
+					prev_gxid = last_xid_in_term();
+					set_next_gxid(prev_gxid + 1);
 					shout("updated range to %u-%u\n", prev_gxid, next_gxid);
 				}
+				old_term = raft.term;
 			}
 		} else {
 			server_set_enabled(server, true);

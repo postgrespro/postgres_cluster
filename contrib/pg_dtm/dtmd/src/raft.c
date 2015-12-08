@@ -565,9 +565,11 @@ static void raft_set_term(raft_t *r, int term) {
 	r->votes = 0;
 }
 
-void raft_start_next_term(raft_t *r) {
+void raft_ensure_term(raft_t *r, int term) {
 	assert(r->role == ROLE_LEADER);
-	r->term++;
+	if (term > r->term) {
+		r->term = term;
+	}
 }
 
 static void raft_handle_claim(raft_t *r, raft_msg_claim_t *m) {
