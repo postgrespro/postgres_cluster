@@ -122,7 +122,7 @@ typedef struct GlobalTransactionData
 	TimestampTz prepared_at;	/* time of preparation */
 	XLogRecPtr	prepare_lsn;	/* XLOG offset of prepare record end */
 	XLogRecPtr	prepare_xlogptr;	/* XLOG offset of prepare record start
-									 * or NULL if twophase data moved to file 
+									 * or NULL if twophase data moved to file
 									 * after checkpoint.
 									 */
 	Oid			owner;			/* ID of user that executed the xact */
@@ -585,41 +585,6 @@ RemoveGXact(GlobalTransaction gxact)
 	LWLockRelease(TwoPhaseStateLock);
 
 	elog(ERROR, "failed to find %p in GlobalTransaction array", gxact);
-}
-
-/*
- * TransactionIdIsPrepared
- *		True iff transaction associated with the identifier is prepared
- *		for two-phase commit
- *
- * Note: only gxacts marked "valid" are considered; but notice we do not
- * check the locking status.
- *
- * This is not currently exported, because it is only needed internally.
- */
-static bool
-TransactionIdIsPrepared(TransactionId xid)
-{
-	bool		result = false;
-	int			i;
-
-	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
-
-	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
-	{
-		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
-		PGXACT	   *pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
-
-		if (gxact->valid && pgxact->xid == xid)
-		{
-			result = true;
-			break;
-		}
-	}
-
-	LWLockRelease(TwoPhaseStateLock);
-
-	return result;
 }
 
 /*
@@ -1244,6 +1209,36 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 	return buf;
 }
 
+
+/*
+ * Reads 2PC data from xlog. During checkpoint this data will be moved to
+ * twophase files and ReadTwoPhaseFile should be used instead.
+ */
+static void
+XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
+{
+	XLogRecord *record;
+	XLogReaderState *xlogreader;
+	char	   *errormsg;
+
+	xlogreader = XLogReaderAllocate(&logical_read_local_xlog_page, NULL);
+	if (xlogreader == NULL)
+		elog(ERROR, "failed to open xlogreader for reading 2PC data");
+
+	record = XLogReadRecord(xlogreader, lsn, &errormsg);
+	if (record == NULL)
+		elog(ERROR, "failed to read 2PC record from xlog");
+
+	if (len != NULL)
+		*len = XLogRecGetDataLen(xlogreader);
+
+	*buf = palloc(sizeof(char)*XLogRecGetDataLen(xlogreader));
+	memcpy(*buf, XLogRecGetData(xlogreader), sizeof(char)*XLogRecGetDataLen(xlogreader));
+
+	XLogReaderFree(xlogreader);
+}
+
+
 /*
  * Confirms an xid is prepared, during recovery
  */
@@ -1306,13 +1301,9 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 
 	/*
 	 * Read and validate 2PC state data.
-	 * State data can be stored in xlog or files depending on checkpoint
-	 * status. One way to read that data is to delay checkpoint (delayChkpt) and
-	 * compare gxact->prepare_lsn with current xlog horizon. But having in mind
-	 * that most of 2PC transactions will be commited right after prepare, we
-	 * can just try to read xlog and in case of error read file. Also that is
-	 * happening under LockGXact, so nobody can commit our transaction between
-	 * xlog and file reads.
+	 * State data can be stored in xlog or in files after xlog checkpoint.
+	 * While checkpointing we set gxact->prepare_lsn to NULL to signalize
+	 * that 2PC data is moved to files.
 	 */
 	if (gxact->prepare_lsn)
 	{
@@ -1480,7 +1471,8 @@ RemoveTwoPhaseFile(TransactionId xid, bool giveWarning)
 }
 
 /*
- * Recreates a state file. This is used in WAL replay.
+ * Recreates a state file. This is used in WAL replay and during
+ * checkpoint creation.
  *
  * Note: content and len don't include CRC.
  */
@@ -1574,12 +1566,11 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 
 	/*
 	 * Here we doing whole I/O while holding TwoPhaseStateLock.
-	 * It's also possible to move I/O out of the lock, but on 
+	 * It's also possible to move I/O out of the lock, but on
 	 * every error we should check whether somebody commited our
 	 * transaction in different backend. Let's leave this optimisation
-	 * for future, if somebody will spot that this place cause 
+	 * for future, if somebody will spot that this place cause
 	 * bottleneck.
-	 * 
 	 */
 	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
 	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
@@ -2106,30 +2097,4 @@ RecordTransactionAbortPrepared(TransactionId xid,
 	 * in the procarray and continue to hold locks.
 	 */
 	SyncRepWaitForLSN(recptr);
-}
-
-/**********************************************************************************/
-
-static void
-XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
-{
-	XLogRecord *record;
-	XLogReaderState *xlogreader;
-	char	   *errormsg;
-
-	xlogreader = XLogReaderAllocate(&logical_read_local_xlog_page, NULL);
-	if (xlogreader == NULL)
-		elog(ERROR, "failed to open xlogreader for reading 2PC data");
-
-	record = XLogReadRecord(xlogreader, lsn, &errormsg);
-	if (record == NULL)
-		elog(ERROR, "failed to read 2PC record from xlog");
-
-	if (len != NULL)
-		*len = XLogRecGetDataLen(xlogreader);
-
-	*buf = palloc(sizeof(char)*XLogRecGetDataLen(xlogreader));
-	memcpy(*buf, XLogRecGetData(xlogreader), sizeof(char)*XLogRecGetDataLen(xlogreader));
-
-	XLogReaderFree(xlogreader);
 }
