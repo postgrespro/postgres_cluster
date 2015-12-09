@@ -167,8 +167,12 @@ static void ondisconnect(client_t client) {
 	
 	if ((t = CLIENT_XPART(client))) {
 		transaction_remove_listener(t, 's', client);
-		if (use_raft && (raft.role == ROLE_LEADER)) {
-			raft_emit(&raft, NEGATIVE, t->xid);
+		if (use_raft) {
+			if (raft.role == ROLE_LEADER) {
+				raft_emit(&raft, NEGATIVE, t->xid);
+			}
+		} else {
+			apply_clog_update(NEGATIVE, t->xid);
 		}
 	}
 
