@@ -121,7 +121,10 @@ typedef struct GlobalTransactionData
 	BackendId	dummyBackendId; /* similar to backend id for backends */
 	TimestampTz prepared_at;	/* time of preparation */
 	XLogRecPtr	prepare_lsn;	/* XLOG offset of prepare record end */
-	XLogRecPtr	prepare_xlogptr;	/* XLOG offset of prepare record start */
+	XLogRecPtr	prepare_xlogptr;	/* XLOG offset of prepare record start
+									 * or NULL if twophase data moved to file 
+									 * after checkpoint.
+									 */
 	Oid			owner;			/* ID of user that executed the xact */
 	BackendId	locking_backend;	/* backend currently working on the xact */
 	bool		valid;			/* TRUE if PGPROC entry is in proc array */
@@ -1303,21 +1306,23 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 
 	/*
 	 * Read and validate 2PC state data.
-	 * NB: Here we can face the situation where checkpoint can happend
-	 * between condition check and xlog read. To prevent that I'm holding
-	 * delayChkpt. Other possible scenario is try to read xlog and if it fails
-	 * try to read file.
+	 * State data can be stored in xlog or files depending on checkpoint
+	 * status. One way to read that data is to delay checkpoint (delayChkpt) and
+	 * compare gxact->prepare_lsn with current xlog horizon. But having in mind
+	 * that most of 2PC transactions will be commited right after prepare, we
+	 * can just try to read xlog and in case of error read file. Also that is
+	 * happening under LockGXact, so nobody can commit our transaction between
+	 * xlog and file reads.
 	 */
-	MyPgXact->delayChkpt = true;
-	if (gxact->prepare_lsn <= GetRedoRecPtr()){
-		buf = ReadTwoPhaseFile(xid, true);
-		file_used = true;
-	}
-	else
+	if (gxact->prepare_lsn)
 	{
 		XlogReadTwoPhaseData(gxact->prepare_xlogptr, &buf, NULL);
 	}
-	MyPgXact->delayChkpt = false;
+	else
+	{
+		buf = ReadTwoPhaseFile(xid, true);
+		file_used = true;
+	}
 
 	/*
 	 * Disassemble the header area
@@ -1560,24 +1565,35 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 	int 		len;
 	char	   *buf;
 
+	fprintf(stderr, "=== Checkpoint: redo_horizon=%lX\n", redo_horizon);
+
 	if (max_prepared_xacts <= 0)
 		return;					/* nothing to do */
 
 	TRACE_POSTGRESQL_TWOPHASE_CHECKPOINT_START();
 
+	/*
+	 * Here we doing whole I/O while holding TwoPhaseStateLock.
+	 * It's also possible to move I/O out of the lock, but on 
+	 * every error we should check whether somebody commited our
+	 * transaction in different backend. Let's leave this optimisation
+	 * for future, if somebody will spot that this place cause 
+	 * bottleneck.
+	 * 
+	 */
 	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
-
 	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
 	{
 		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
 		PGXACT	   *pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
 
-		if (gxact->valid && gxact->prepare_lsn <= redo_horizon){
+		if (gxact->valid && gxact->prepare_lsn && gxact->prepare_lsn <= redo_horizon){
 			XlogReadTwoPhaseData(gxact->prepare_xlogptr, &buf, &len);
 			RecreateTwoPhaseFile(pgxact->xid, buf, len);
+			gxact->prepare_lsn = (XLogRecPtr) NULL;
+			pfree(buf);
 		}
 	}
-
 	LWLockRelease(TwoPhaseStateLock);
 
 	TRACE_POSTGRESQL_TWOPHASE_CHECKPOINT_DONE();
@@ -2094,7 +2110,7 @@ RecordTransactionAbortPrepared(TransactionId xid,
 
 /**********************************************************************************/
 
-void
+static void
 XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
 {
 	XLogRecord *record;
@@ -2106,17 +2122,14 @@ XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
 		elog(ERROR, "failed to open xlogreader for reading 2PC data");
 
 	record = XLogReadRecord(xlogreader, lsn, &errormsg);
-
 	if (record == NULL)
-		elog(ERROR, "failed to find 2PC data in xlog");
+		elog(ERROR, "failed to read 2PC record from xlog");
 
 	if (len != NULL)
 		*len = XLogRecGetDataLen(xlogreader);
-	else
-		elog(ERROR, "failed to read 2PC data from xlog: xore length");
 
-	*buf = palloc(sizeof(char)*(*len));
-	memcpy(*buf, XLogRecGetData(xlogreader), sizeof(char)*(*len));
+	*buf = palloc(sizeof(char)*XLogRecGetDataLen(xlogreader));
+	memcpy(*buf, XLogRecGetData(xlogreader), sizeof(char)*XLogRecGetDataLen(xlogreader));
 
 	XLogReaderFree(xlogreader);
 }
