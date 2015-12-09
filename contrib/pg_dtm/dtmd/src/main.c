@@ -216,7 +216,7 @@ static void debug_cmd(client_t client, int argc, xid_t *argv) {
 	} while (0)
 
 #define CHECKLEADER(CLIENT) \
-	CHECK(raft.role == ROLE_LEADER, CLIENT, "not a leader")
+	CHECK(!use_raft || (raft.role == ROLE_LEADER), CLIENT, "not a leader")
 
 static xid_t max_of_xids(xid_t a, xid_t b) {
 	return a > b ? a : b;
