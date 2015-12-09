@@ -52,7 +52,6 @@
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
 #include "access/xlogreader.h"
-#include "access/xlog_internal.h"
 #include "catalog/pg_type.h"
 #include "catalog/storage.h"
 #include "funcapi.h"
