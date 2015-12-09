@@ -117,7 +117,7 @@ void* reader(void* arg)
     }
     int64_t prevSum = 0;
 
-    while (running) {
+    while (running && (cfg.nWriters != 0 || t.proceeded < (size_t)cfg.nIterations)) {
         try {
             xid_t xid = 0;
             for (size_t i = 0; i < conns.size(); i++) {        
@@ -307,8 +307,10 @@ int main (int argc, char* argv[])
         nWrites += writers[i].proceeded;
         nAborts += writers[i].aborts;
     }
-    
-    running = false;
+
+    if (cfg.nWriters != 0) {
+        running = false;
+    }
 
     for (int i = 0; i < cfg.nReaders; i++) { 
         readers[i].wait();
