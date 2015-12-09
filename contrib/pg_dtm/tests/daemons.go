@@ -113,7 +113,7 @@ func postgres(bin string, datadir string, dtmservers []string, port int, nodeid 
 		"-c", "dtm.servers=" + strings.Join(dtmservers, ","),
 		"-c", "autovacuum=off",
 		"-c", "fsync=off",
-		"-c", "synchronous_commit=off",
+		"-c", "synchronous_commit=on",
 		"-c", "shared_preload_libraries=pg_dtm",
 	}
 	name := "postgres " + datadir
