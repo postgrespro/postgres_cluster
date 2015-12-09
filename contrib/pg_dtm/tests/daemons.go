@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func read_to_channel(r io.Reader, c chan string, wg *sync.WaitGroup) {
@@ -191,6 +192,8 @@ func main() {
 		wg.Add(1)
 		go dtmd(bin["dtmd"], dir, dtmservers, i, &wg)
 	}
+
+	time.Sleep(3 * time.Second)
 
 	for i, dir := range datadirs {
 		wg.Add(1)
