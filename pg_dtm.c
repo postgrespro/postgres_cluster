@@ -217,7 +217,7 @@ _PG_init(void)
 		"dtm.record_commits",
 		"Store information about committed global transactions in pg_committed_xacts table",
 		NULL,
-		&DtmRecordCommit,
+		&DtmRecordCommits,
 		false,
 		PGC_BACKEND,
 		0,
