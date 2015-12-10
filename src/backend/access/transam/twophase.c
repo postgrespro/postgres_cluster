@@ -119,11 +119,11 @@ typedef struct GlobalTransactionData
 	int			pgprocno;		/* ID of associated dummy PGPROC */
 	BackendId	dummyBackendId; /* similar to backend id for backends */
 	TimestampTz prepared_at;	/* time of preparation */
-	XLogRecPtr	prepare_lsn;	/* XLOG offset of prepare record end */
-	XLogRecPtr	prepare_xlogptr;	/* XLOG offset of prepare record start
-									 * or NULL if twophase data moved to file
-									 * after checkpoint.
+	XLogRecPtr	prepare_start_lsn;	/* XLOG offset of prepare record start
+									 * or InvalidXLogRecPtr if twophase data
+									 * moved to file after checkpoint.
 									 */
+	XLogRecPtr	prepare_end_lsn;	/* XLOG offset of prepare record end */
 	Oid			owner;			/* ID of user that executed the xact */
 	BackendId	locking_backend;	/* backend currently working on the xact */
 	bool		valid;			/* TRUE if PGPROC entry is in proc array */
@@ -405,9 +405,9 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	pgxact->nxids = 0;
 
 	gxact->prepared_at = prepared_at;
-	/* initialize LSN to 0 (start of WAL) */
-	gxact->prepare_lsn = 0;
-	gxact->prepare_xlogptr = 0;
+	/* initialize LSN to InvalidXLogRecPtr */
+	gxact->prepare_start_lsn = InvalidXLogRecPtr;
+	gxact->prepare_end_lsn = InvalidXLogRecPtr;
 	gxact->owner = owner;
 	gxact->locking_backend = MyBackendId;
 	gxact->valid = false;
@@ -1035,13 +1035,13 @@ EndPrepare(GlobalTransaction gxact)
 	XLogBeginInsert();
 	for (record = records.head; record != NULL; record = record->next)
 		XLogRegisterData(record->data, record->len);
-	gxact->prepare_lsn = XLogInsert(RM_XACT_ID, XLOG_XACT_PREPARE);
-	XLogFlush(gxact->prepare_lsn);
+	gxact->prepare_end_lsn = XLogInsert(RM_XACT_ID, XLOG_XACT_PREPARE);
+	XLogFlush(gxact->prepare_end_lsn);
 
 	/* If we crash now, we have prepared: WAL replay will fix things */
 
 	/* Store record's start location to read that later on Commit */
-	gxact->prepare_xlogptr = ProcLastRecPtr;
+	gxact->prepare_start_lsn = ProcLastRecPtr;
 
 	/*
 	 * Mark the prepared transaction as valid.  As soon as xact.c marks
@@ -1079,7 +1079,7 @@ EndPrepare(GlobalTransaction gxact)
 	 * Note that at this stage we have marked the prepare, but still show as
 	 * running in the procarray (twice!) and continue to hold locks.
 	 */
-	SyncRepWaitForLSN(gxact->prepare_lsn);
+	SyncRepWaitForLSN(gxact->prepare_end_lsn);
 
 	records.tail = records.head = NULL;
 	records.num_chunks = 0;
@@ -1301,12 +1301,12 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	/*
 	 * Read and validate 2PC state data.
 	 * State data can be stored in xlog or in files after xlog checkpoint.
-	 * While checkpointing we set gxact->prepare_lsn to NULL to signalize
+	 * While checkpointing we set gxact->prepare_start_lsn to NULL to signalize
 	 * that 2PC data is moved to files.
 	 */
-	if (gxact->prepare_lsn)
+	if (gxact->prepare_start_lsn)
 	{
-		XlogReadTwoPhaseData(gxact->prepare_xlogptr, &buf, NULL);
+		XlogReadTwoPhaseData(gxact->prepare_start_lsn, &buf, NULL);
 	}
 	else
 	{
@@ -1556,8 +1556,6 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 	int 		len;
 	char	   *buf;
 
-	fprintf(stderr, "=== Checkpoint: redo_horizon=%lX\n", redo_horizon);
-
 	if (max_prepared_xacts <= 0)
 		return;					/* nothing to do */
 
@@ -1577,10 +1575,11 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
 		PGXACT	   *pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
 
-		if (gxact->valid && gxact->prepare_lsn && gxact->prepare_lsn <= redo_horizon){
-			XlogReadTwoPhaseData(gxact->prepare_xlogptr, &buf, &len);
+		if (gxact->valid && gxact->prepare_start_lsn != InvalidXLogRecPtr &&
+										gxact->prepare_end_lsn <= redo_horizon){
+			XlogReadTwoPhaseData(gxact->prepare_start_lsn, &buf, &len);
 			RecreateTwoPhaseFile(pgxact->xid, buf, len);
-			gxact->prepare_lsn = (XLogRecPtr) NULL;
+			gxact->prepare_start_lsn = InvalidXLogRecPtr;
 			pfree(buf);
 		}
 	}
@@ -1916,12 +1915,8 @@ RecoverPreparedTransactions(void)
 			/*
 			 * Recreate its GXACT and dummy PGPROC
 			 *
-			 * Note: since we don't have the PREPARE record's WAL location at
-			 * hand, we leave prepare_lsn zeroes.  This means the GXACT will
-			 * be fsync'd on every future checkpoint.  We assume this
-			 * situation is infrequent enough that the performance cost is
-			 * negligible (especially since we know the state file has already
-			 * been fsynced).
+			 * MarkAsPreparing sets prepare_start_lsn to InvalidXLogRecPtr
+			 * so next checkpoint will skip that transaction.
 			 */
 			gxact = MarkAsPreparing(xid, hdr->gid,
 									hdr->prepared_at,
