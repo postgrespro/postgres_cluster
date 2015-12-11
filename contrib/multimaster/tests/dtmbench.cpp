@@ -101,7 +101,8 @@ void exec(transaction_base& txn, char const* sql, ...)
     txn.exec(buf);
 }
 
-xid_t execQuery( transaction_base& txn, char const* sql, ...)
+template<class T>
+T execQuery( transaction_base& txn, char const* sql, ...)
 {
     va_list args;
     va_start(args, sql);
@@ -109,7 +110,7 @@ xid_t execQuery( transaction_base& txn, char const* sql, ...)
     vsprintf(buf, sql, args);
     va_end(args);
     result r = txn.exec(buf);
-    return r[0][0].as(xid_t());
+    return r[0][0].as(T());
 }  
 
 void* reader(void* arg)
@@ -154,8 +155,8 @@ void* writer(void* arg)
                 exec(txn, "update t set v = v + 1 where u=%d", dstAcc);
                 t.updates += 2;
             } else { 
-                int64_t sum = execQuery(txn, "select v from t where u=%d", srcAcc)
-                    + execQuery(txn, "select v from t where u=%d", dstAcc);
+                int64_t sum = execQuery<int64_t>(txn, "select v from t where u=%d", srcAcc)
+                    + execQuery<int64_t>(txn, "select v from t where u=%d", dstAcc);
                 if (sum > cfg.nIterations*cfg.nWriters || sum < -cfg.nIterations*cfg.nWriters) { 
                     printf("Wrong sum=%ld\n", sum);
                 }
@@ -164,6 +165,7 @@ void* writer(void* arg)
             txn.commit();            
             t.transactions += 1;
         } catch (pqxx_exception const& x) { 
+            printf("EXCEPTION: %s\n", x.base().what());
             txn.abort();
             t.aborts += 1;
             i -= 1;
