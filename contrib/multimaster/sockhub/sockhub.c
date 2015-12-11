@@ -379,7 +379,10 @@ void ShubLoop(Shub* shub)
                                 /* read as much as possible */
                                 rc = ShubReadSocketEx(chan, &shub->in_buffer[pos + available], sizeof(ShubMessageHdr) - available, buffer_size - pos - available);
                                 if (rc < sizeof(ShubMessageHdr) - available) { 
-                                    shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
+                                    char buf[1024];
+                                    sprintf(buf, "Failed to read local socket rc=%d, min requested=%ld, max requested=%d, errno=%d", rc,  sizeof(ShubMessageHdr) - available, buffer_size - pos - available, errno);
+                                    shub->params->error_handler(buf, SHUB_RECOVERABLE_ERROR);
+                                    //shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
                                     close_socket(shub, i);
                                     shub->in_buffer_used = pos;
                                     notify_disconnect(shub, i);
@@ -415,7 +418,10 @@ void ShubLoop(Shub* shub)
                                     do { 
                                         unsigned int n = processed + size > buffer_size ? buffer_size - processed : size;
                                         if (chan >= 0 && !ShubReadSocket(chan, shub->in_buffer + processed, n)) { 
-                                            shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
+                                    char buf[1024];
+                                    sprintf(buf, "Failed to read local socket rc=%d, len=%d, errno=%d", rc, n, errno);
+                                    shub->params->error_handler(buf, SHUB_RECOVERABLE_ERROR);
+                                    //shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
                                             close_socket(shub, chan);
                                             if (hdr != NULL) { /* if message header is not yet sent to the server... */
                                                 /* ... then skip this message */
