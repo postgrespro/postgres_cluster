@@ -148,7 +148,7 @@ static void MMExecutorFinish(QueryDesc *queryDesc);
 static bool MMIsDistributedTrans;
 
 static BackgroundWorker DtmWorker = {
-	"DtmWorker",
+	"sockhub",
 	0, /* do not need connection to the database */
 	BgWorkerStart_PostmasterStart,
 	1, /* restrart in one second (is it possible to restort immediately?) */
@@ -656,13 +656,15 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 			}
 			else
 			{
+                XidStatus verdict;
 				XTM_INFO("Begin commit transaction %d\n", xid);
 				/* Mark transaction as in-doubt in xid_in_doubt hash table */
 				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
 				LWLockRelease(dtm->hashLock);
-				if (DtmGlobalSetTransStatus(xid, status, true) != status) { 
-                    XTM_INFO("Commit of transaction %d is rejected by arbiter\n", xid);
+                verdict = DtmGlobalSetTransStatus(xid, status, true);
+                if (verdict != status) { 
+                    XTM_INFO("Commit of transaction %d is rejected by arbiter: staus=%d\n", xid, verdict);
                     DtmNextXid = InvalidTransactionId;
                     DtmLastSnapshot = NULL;
                     MMIsDistributedTrans = false; 
