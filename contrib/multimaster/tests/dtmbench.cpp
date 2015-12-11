@@ -165,7 +165,6 @@ void* writer(void* arg)
             txn.commit();            
             t.transactions += 1;
         } catch (pqxx_exception const& x) { 
-            printf("EXCEPTION: %s\n", x.base().what());
             txn.abort();
             t.aborts += 1;
             i -= 1;
