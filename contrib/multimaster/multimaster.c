@@ -141,6 +141,7 @@ static int   MMWorkers;
 static char* DtmHost;
 static int   DtmPort;
 static int   DtmBufferSize;
+static bool  DtmVoted;
 
 static ExecutorFinish_hook_type PreviousExecutorFinishHook = NULL;
 static void MMExecutorFinish(QueryDesc *queryDesc);
@@ -645,6 +646,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 	{
 		if (TransactionIdIsValid(DtmNextXid))
 		{
+            DtmVoted = true;
 			if (status == TRANSACTION_STATUS_ABORTED || !MMIsDistributedTrans)
 			{
 				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
@@ -774,6 +776,9 @@ DtmXactCallback(XactEvent event, void *arg)
     case XACT_EVENT_ABORT:
 		if (TransactionIdIsValid(DtmNextXid))
 		{
+            if (!DtmVoted) {
+                DtmGlobalSetTransStatus(DtmNextXid, TRANSACTION_STATUS_ABORTED, false);
+            }
 			if (event == XACT_EVENT_COMMIT)
 			{
 				/*
@@ -784,6 +789,7 @@ DtmXactCallback(XactEvent event, void *arg)
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_REMOVE, NULL);
 				LWLockRelease(dtm->hashLock);
 			}
+#if 0 /* should be handled now using DtmVoted flag */
 			else
 			{
 				/*
@@ -796,6 +802,7 @@ DtmXactCallback(XactEvent event, void *arg)
 					DtmGlobalSetTransStatus(DtmNextXid, TRANSACTION_STATUS_ABORTED, false);
                 }
 			}
+#endif
 			DtmNextXid = InvalidTransactionId;
 			DtmLastSnapshot = NULL;
         }
@@ -1008,6 +1015,7 @@ void MMBeginTransaction(void)
 		elog(ERROR, "Arbiter was not able to assign XID");
 	XTM_INFO("%d: Start global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
 
+    DtmVoted = false;
 	DtmHasGlobalSnapshot = true;
 	DtmLastSnapshot = NULL;
     MMIsDistributedTrans = false;
@@ -1020,6 +1028,7 @@ void MMJoinTransaction(TransactionId xid)
 	DtmNextXid = xid;
 	if (!TransactionIdIsValid(DtmNextXid))
 		elog(ERROR, "Arbiter was not able to assign XID");
+    DtmVoted = false;
 
 	DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
 	XTM_INFO("%d: Join global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
