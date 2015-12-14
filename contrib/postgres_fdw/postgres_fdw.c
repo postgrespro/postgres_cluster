@@ -215,7 +215,8 @@ static ForeignScan *postgresGetForeignPlan(PlannerInfo *root,
 					   Oid foreigntableid,
 					   ForeignPath *best_path,
 					   List *tlist,
-					   List *scan_clauses);
+					   List *scan_clauses,
+					   Plan *outer_plan);
 static void postgresBeginForeignScan(ForeignScanState *node, int eflags);
 static TupleTableSlot *postgresIterateForeignScan(ForeignScanState *node);
 static void postgresReScanForeignScan(ForeignScanState *node);
@@ -536,6 +537,7 @@ postgresGetForeignPaths(PlannerInfo *root,
 								   fpinfo->total_cost,
 								   NIL, /* no pathkeys */
 								   NULL,		/* no outer rel either */
+								   NULL,		/* no extra plan */
 								   NIL);		/* no fdw_private list */
 	add_path(baserel, (Path *) path);
 
@@ -589,6 +591,7 @@ postgresGetForeignPaths(PlannerInfo *root,
 										 startup_cost,
 										 total_cost,
 										 usable_pathkeys,
+										 NULL,
 										 NULL,
 										 NIL));
 	}
@@ -757,6 +760,7 @@ postgresGetForeignPaths(PlannerInfo *root,
 									   total_cost,
 									   NIL,		/* no pathkeys */
 									   param_info->ppi_req_outer,
+									   NULL,
 									   NIL);	/* no fdw_private list */
 		add_path(baserel, (Path *) path);
 	}
@@ -772,7 +776,8 @@ postgresGetForeignPlan(PlannerInfo *root,
 					   Oid foreigntableid,
 					   ForeignPath *best_path,
 					   List *tlist,
-					   List *scan_clauses)
+					   List *scan_clauses,
+					   Plan *outer_plan)
 {
 	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) baserel->fdw_private;
 	Index		scan_relid = baserel->relid;
@@ -916,7 +921,8 @@ postgresGetForeignPlan(PlannerInfo *root,
 							params_list,
 							fdw_private,
 							NIL,	/* no custom tlist */
-							remote_exprs);
+							remote_exprs,
+							outer_plan);
 }
 
 /*

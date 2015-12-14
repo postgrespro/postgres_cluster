@@ -1490,6 +1490,55 @@ UPDATE r1 SET a = 30 RETURNING *;
 
 DROP TABLE r1;
 
+-- Check dependency handling
+RESET SESSION AUTHORIZATION;
+CREATE TABLE dep1 (c1 int);
+CREATE TABLE dep2 (c1 int);
+
+CREATE POLICY dep_p1 ON dep1 TO rls_regress_user1 USING (c1 > (select max(dep2.c1) from dep2));
+ALTER POLICY dep_p1 ON dep1 TO rls_regress_user1,rls_regress_user2;
+
+-- Should return one
+SELECT count(*) = 1 FROM pg_depend
+				   WHERE objid = (SELECT oid FROM pg_policy WHERE polname = 'dep_p1')
+					 AND refobjid = (SELECT oid FROM pg_class WHERE relname = 'dep2');
+
+ALTER POLICY dep_p1 ON dep1 USING (true);
+
+-- Should return one
+SELECT count(*) = 1 FROM pg_shdepend
+				   WHERE objid = (SELECT oid FROM pg_policy WHERE polname = 'dep_p1')
+					 AND refobjid = (SELECT oid FROM pg_authid WHERE rolname = 'rls_regress_user1');
+
+-- Should return one
+SELECT count(*) = 1 FROM pg_shdepend
+				   WHERE objid = (SELECT oid FROM pg_policy WHERE polname = 'dep_p1')
+					 AND refobjid = (SELECT oid FROM pg_authid WHERE rolname = 'rls_regress_user2');
+
+-- Should return zero
+SELECT count(*) = 0 FROM pg_depend
+				   WHERE objid = (SELECT oid FROM pg_policy WHERE polname = 'dep_p1')
+					 AND refobjid = (SELECT oid FROM pg_class WHERE relname = 'dep2');
+
+-- DROP OWNED BY testing
+RESET SESSION AUTHORIZATION;
+
+CREATE ROLE dob_role1;
+CREATE ROLE dob_role2;
+
+CREATE TABLE dob_t1 (c1 int);
+
+CREATE POLICY p1 ON dob_t1 TO dob_role1 USING (true);
+DROP OWNED BY dob_role1;
+DROP POLICY p1 ON dob_t1; -- should fail, already gone
+
+CREATE POLICY p1 ON dob_t1 TO dob_role1,dob_role2 USING (true);
+DROP OWNED BY dob_role1;
+DROP POLICY p1 ON dob_t1; -- should succeed
+
+DROP USER dob_role1;
+DROP USER dob_role2;
+
 --
 -- Clean up objects
 --

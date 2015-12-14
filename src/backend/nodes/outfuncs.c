@@ -1683,6 +1683,7 @@ _outForeignPath(StringInfo str, const ForeignPath *node)
 
 	_outPathInfo(str, (const Path *) node);
 
+	WRITE_NODE_FIELD(fdw_outerpath);
 	WRITE_NODE_FIELD(fdw_private);
 }
 
@@ -1846,7 +1847,6 @@ _outPlannerInfo(StringInfo str, const PlannerInfo *node)
 	WRITE_NODE_FIELD(right_join_clauses);
 	WRITE_NODE_FIELD(full_join_clauses);
 	WRITE_NODE_FIELD(join_info_list);
-	WRITE_NODE_FIELD(lateral_info_list);
 	WRITE_NODE_FIELD(append_rel_list);
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_NODE_FIELD(placeholder_list);
@@ -1891,13 +1891,14 @@ _outRelOptInfo(StringInfo str, const RelOptInfo *node)
 	WRITE_NODE_FIELD(cheapest_total_path);
 	WRITE_NODE_FIELD(cheapest_unique_path);
 	WRITE_NODE_FIELD(cheapest_parameterized_paths);
+	WRITE_BITMAPSET_FIELD(direct_lateral_relids);
+	WRITE_BITMAPSET_FIELD(lateral_relids);
 	WRITE_UINT_FIELD(relid);
 	WRITE_OID_FIELD(reltablespace);
 	WRITE_ENUM_FIELD(rtekind, RTEKind);
 	WRITE_INT_FIELD(min_attr);
 	WRITE_INT_FIELD(max_attr);
 	WRITE_NODE_FIELD(lateral_vars);
-	WRITE_BITMAPSET_FIELD(lateral_relids);
 	WRITE_BITMAPSET_FIELD(lateral_referencers);
 	WRITE_NODE_FIELD(indexlist);
 	WRITE_UINT_FIELD(pages);
@@ -2053,15 +2054,6 @@ _outSpecialJoinInfo(StringInfo str, const SpecialJoinInfo *node)
 	WRITE_BOOL_FIELD(semi_can_hash);
 	WRITE_NODE_FIELD(semi_operators);
 	WRITE_NODE_FIELD(semi_rhs_exprs);
-}
-
-static void
-_outLateralJoinInfo(StringInfo str, const LateralJoinInfo *node)
-{
-	WRITE_NODE_TYPE("LATERALJOININFO");
-
-	WRITE_BITMAPSET_FIELD(lateral_lhs);
-	WRITE_BITMAPSET_FIELD(lateral_rhs);
 }
 
 static void
@@ -3353,9 +3345,6 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_SpecialJoinInfo:
 				_outSpecialJoinInfo(str, obj);
-				break;
-			case T_LateralJoinInfo:
-				_outLateralJoinInfo(str, obj);
 				break;
 			case T_AppendRelInfo:
 				_outAppendRelInfo(str, obj);
