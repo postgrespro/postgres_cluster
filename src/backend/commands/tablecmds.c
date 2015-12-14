@@ -328,9 +328,10 @@ static void ATPrepAddColumn(List **wqueue, Relation rel, bool recurse, bool recu
 				bool is_view, AlterTableCmd *cmd, LOCKMODE lockmode);
 static ObjectAddress ATExecAddColumn(List **wqueue, AlteredTableInfo *tab,
 				Relation rel, ColumnDef *colDef, bool isOid,
-				bool recurse, bool recursing, bool if_not_exists, LOCKMODE lockmode);
+				bool recurse, bool recursing,
+				bool if_not_exists, LOCKMODE lockmode);
 static bool check_for_column_name_collision(Relation rel, const char *colname,
-				bool if_not_exists);
+								bool if_not_exists);
 static void add_column_datatype_dependency(Oid relid, int32 attnum, Oid typid);
 static void add_column_collation_dependency(Oid relid, int32 attnum, Oid collid);
 static void ATPrepAddOids(List **wqueue, Relation rel, bool recurse,
@@ -3457,11 +3458,13 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		case AT_AddColumnToView:		/* add column via CREATE OR REPLACE
 										 * VIEW */
 			address = ATExecAddColumn(wqueue, tab, rel, (ColumnDef *) cmd->def,
-									  false, false, false, false, lockmode);
+									  false, false, false,
+									  false, lockmode);
 			break;
 		case AT_AddColumnRecurse:
 			address = ATExecAddColumn(wqueue, tab, rel, (ColumnDef *) cmd->def,
-									  false, true, false, cmd->missing_ok, lockmode);
+									  false, true, false,
+									  cmd->missing_ok, lockmode);
 			break;
 		case AT_ColumnDefault:	/* ALTER COLUMN DEFAULT */
 			address = ATExecColumnDefault(rel, cmd->name, cmd->def, lockmode);
@@ -3516,7 +3519,7 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 										 * constraint */
 			address =
 				ATExecAddConstraint(wqueue, tab, rel, (Constraint *) cmd->def,
-									false, true, lockmode);
+									true, true, lockmode);
 			break;
 		case AT_ReAddComment:	/* Re-add existing comment */
 			address = CommentObject((CommentStmt *) cmd->def);
@@ -3574,14 +3577,16 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			if (cmd->def != NULL)
 				address =
 					ATExecAddColumn(wqueue, tab, rel, (ColumnDef *) cmd->def,
-									true, false, false, cmd->missing_ok, lockmode);
+									true, false, false,
+									cmd->missing_ok, lockmode);
 			break;
 		case AT_AddOidsRecurse:	/* SET WITH OIDS */
 			/* Use the ADD COLUMN code, unless prep decided to do nothing */
 			if (cmd->def != NULL)
 				address =
 					ATExecAddColumn(wqueue, tab, rel, (ColumnDef *) cmd->def,
-									true, true, false, cmd->missing_ok, lockmode);
+									true, true, false,
+									cmd->missing_ok, lockmode);
 			break;
 		case AT_DropOids:		/* SET WITHOUT OIDS */
 
@@ -4691,7 +4696,8 @@ ATPrepAddColumn(List **wqueue, Relation rel, bool recurse, bool recursing,
 static ObjectAddress
 ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 				ColumnDef *colDef, bool isOid,
-				bool recurse, bool recursing, bool if_not_exists, LOCKMODE lockmode)
+				bool recurse, bool recursing,
+				bool if_not_exists, LOCKMODE lockmode)
 {
 	Oid			myrelid = RelationGetRelid(rel);
 	Relation	pgclass,
@@ -6090,13 +6096,6 @@ ATExecAddConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
  * AddRelationNewConstraints would normally assign different names to the
  * child constraints.  To fix that, we must capture the name assigned at
  * the parent table and pass that down.
- *
- * When re-adding a previously existing constraint (during ALTER COLUMN TYPE),
- * we don't need to recurse here, because recursion will be carried out at a
- * higher level; the constraint name issue doesn't apply because the names
- * have already been assigned and are just being re-used.  We need a separate
- * "is_readd" flag for that; just setting recurse=false would result in an
- * error if there are child tables.
  */
 static ObjectAddress
 ATAddCheckConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
@@ -6125,7 +6124,7 @@ ATAddCheckConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	 */
 	newcons = AddRelationNewConstraints(rel, NIL,
 										list_make1(copyObject(constr)),
-										recursing,		/* allow_merge */
+										recursing | is_readd,	/* allow_merge */
 										!recursing,		/* is_local */
 										is_readd);		/* is_internal */
 
@@ -6174,10 +6173,8 @@ ATAddCheckConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 	/*
 	 * If adding a NO INHERIT constraint, no need to find our children.
-	 * Likewise, in a re-add operation, we don't need to recurse (that will be
-	 * handled at higher levels).
 	 */
-	if (constr->is_no_inherit || is_readd)
+	if (constr->is_no_inherit)
 		return address;
 
 	/*
@@ -8209,7 +8206,7 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 				if (!list_member_oid(tab->changedConstraintOids,
 									 foundObject.objectId))
 				{
-					char	   *defstring = pg_get_constraintdef_string(foundObject.objectId);
+					char	   *defstring = pg_get_constraintdef_command(foundObject.objectId);
 
 					/*
 					 * Put NORMAL dependencies at the front of the list and
@@ -8584,10 +8581,30 @@ ATPostAlterTypeCleanup(List **wqueue, AlteredTableInfo *tab, LOCKMODE lockmode)
 			def_item, tab->changedConstraintDefs)
 	{
 		Oid			oldId = lfirst_oid(oid_item);
+		HeapTuple	tup;
+		Form_pg_constraint con;
 		Oid			relid;
 		Oid			confrelid;
+		bool		conislocal;
 
-		get_constraint_relation_oids(oldId, &relid, &confrelid);
+		tup = SearchSysCache1(CONSTROID, ObjectIdGetDatum(oldId));
+		if (!HeapTupleIsValid(tup))		/* should not happen */
+			elog(ERROR, "cache lookup failed for constraint %u", oldId);
+		con = (Form_pg_constraint) GETSTRUCT(tup);
+		relid = con->conrelid;
+		confrelid = con->confrelid;
+		conislocal = con->conislocal;
+		ReleaseSysCache(tup);
+
+		/*
+		 * If the constraint is inherited (only), we don't want to inject a
+		 * new definition here; it'll get recreated when ATAddCheckConstraint
+		 * recurses from adding the parent table's constraint.  But we had to
+		 * carry the info this far so that we can drop the constraint below.
+		 */
+		if (!conislocal)
+			continue;
+
 		ATPostAlterTypeParse(oldId, relid, confrelid,
 							 (char *) lfirst(def_item),
 							 wqueue, lockmode, tab->rewrite);
@@ -8761,7 +8778,7 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, char *cmd,
 											 rel, con->conname);
 				}
 				else
-					elog(ERROR, "unexpected statement type: %d",
+					elog(ERROR, "unexpected statement subtype: %d",
 						 (int) cmd->subtype);
 			}
 		}
@@ -11213,10 +11230,8 @@ ATPrepChangePersistence(Relation rel, bool toLogged)
 		case RELPERSISTENCE_TEMP:
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-					 errmsg("cannot change logged status of table %s",
+					 errmsg("cannot change logged status of table \"%s\" because it is temporary",
 							RelationGetRelationName(rel)),
-					 errdetail("Table %s is temporary.",
-							   RelationGetRelationName(rel)),
 					 errtable(rel)));
 			break;
 		case RELPERSISTENCE_PERMANENT:
@@ -11274,9 +11289,7 @@ ATPrepChangePersistence(Relation rel, bool toLogged)
 				if (foreignrel->rd_rel->relpersistence != RELPERSISTENCE_PERMANENT)
 					ereport(ERROR,
 							(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-						 errmsg("cannot change status of table %s to logged",
-								RelationGetRelationName(rel)),
-						  errdetail("Table %s references unlogged table %s.",
+							 errmsg("could not change table \"%s\" to logged because it references unlogged table \"%s\"",
 									RelationGetRelationName(rel),
 									RelationGetRelationName(foreignrel)),
 							 errtableconstraint(rel, NameStr(con->conname))));
@@ -11286,11 +11299,9 @@ ATPrepChangePersistence(Relation rel, bool toLogged)
 				if (foreignrel->rd_rel->relpersistence == RELPERSISTENCE_PERMANENT)
 					ereport(ERROR,
 							(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-					   errmsg("cannot change status of table %s to unlogged",
-							  RelationGetRelationName(rel)),
-					  errdetail("Logged table %s is referenced by table %s.",
-								RelationGetRelationName(foreignrel),
-								RelationGetRelationName(rel)),
+							 errmsg("could not change table \"%s\" to unlogged because it references logged table \"%s\"",
+									RelationGetRelationName(rel),
+									RelationGetRelationName(foreignrel)),
 							 errtableconstraint(rel, NameStr(con->conname))));
 			}
 
@@ -11356,7 +11367,7 @@ AlterTableNamespace(AlterObjectSchemaStmt *stmt, Oid *oldschema)
 	nspOid = RangeVarGetAndCheckCreationNamespace(newrv, NoLock, NULL);
 
 	/* common checks on switching namespaces */
-	CheckSetNamespace(oldNspOid, nspOid, RelationRelationId, relid);
+	CheckSetNamespace(oldNspOid, nspOid);
 
 	objsMoved = new_object_addresses();
 	AlterTableNamespaceInternal(rel, oldNspOid, nspOid, objsMoved);
@@ -11424,6 +11435,7 @@ AlterRelationNamespaceInternal(Relation classRel, Oid relOid,
 	HeapTuple	classTup;
 	Form_pg_class classForm;
 	ObjectAddress thisobj;
+	bool		already_done = false;
 
 	classTup = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(relOid));
 	if (!HeapTupleIsValid(classTup))
@@ -11437,9 +11449,12 @@ AlterRelationNamespaceInternal(Relation classRel, Oid relOid,
 	thisobj.objectSubId = 0;
 
 	/*
-	 * Do nothing when there's nothing to do.
+	 * If the object has already been moved, don't move it again.  If it's
+	 * already in the right place, don't move it, but still fire the object
+	 * access hook.
 	 */
-	if (!object_address_present(&thisobj, objsMoved))
+	already_done = object_address_present(&thisobj, objsMoved);
+	if (!already_done && oldNspOid != newNspOid)
 	{
 		/* check for duplicate name (more friendly than unique-index failure) */
 		if (get_relname_relid(NameStr(classForm->relname),
@@ -11465,7 +11480,9 @@ AlterRelationNamespaceInternal(Relation classRel, Oid relOid,
 								newNspOid) != 1)
 			elog(ERROR, "failed to change schema dependency for relation \"%s\"",
 				 NameStr(classForm->relname));
-
+	}
+	if (!already_done)
+	{
 		add_exact_object_address(&thisobj, objsMoved);
 
 		InvokeObjectPostAlterHook(RelationRelationId, relOid, 0);
