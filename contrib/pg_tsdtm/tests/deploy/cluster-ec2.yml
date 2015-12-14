@@ -1,0 +1,77 @@
+---
+- hosts: tag_Name_dtmtest
+  user: ec2-user
+
+  roles:
+
+  - role: postgres
+    pg_port: 15432
+    pg_repo: https://github.com/kelvich/postgresql.git
+    pg_version_tag: xtm_patched
+    pg_destroy_and_init: true
+    pg_config_role:
+    - line: "dtm.buffer_size = 65536"
+
+  tasks:
+  - name: collect private ips
+    set_fact:
+      pip: "{{ ec2_private_ip_address }}"
+
+  - name: set dtm ip
+    set_fact:
+      dtm_ip: "{{ hostvars[groups['tag_Name_dtmtest'][0]].pip  }}"
+
+  - name: clone dtm sources
+    git: repo=https://github.com/postgrespro/pg_dtm.git
+      dest={{pg_prefix}}/pg_dtm
+      accept_hostkey=yes
+      update=yes
+      force=yes
+    register: dtm_sources
+
+  - name: build dtm
+    shell: "make clean && make -j {{makejobs}} install"
+    args:
+      chdir: "{{pg_prefix}}/pg_dtm"
+    environment:
+      PG_CONFIG: "{{pg_dst}}/bin/pg_config"
+    when: dtm_sources.changed
+
+  - name: enable dtm extension on datanodes
+    lineinfile:
+      dest: "{{pg_datadir}}/postgresql.conf"
+      line: "{{item}}"
+      state: present
+    with_items:
+    - "shared_preload_libraries = 'pg_dtm'"
+    - "dtm.host = '{{ dtm_ip }}'"
+
+  - name: restart postgrespro
+    command: "{{pg_dst}}/bin/pg_ctl restart -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
+    environment:
+      LD_LIBRARY_PATH: "{{pg_dst}}/lib/"
+
+- hosts: tag_Name_dtmtest[0]
+  user: ec2-user
+  tasks:
+  - name: build dtmd
+    shell: "make clean && make -j 4"
+    args:
+      chdir: "~/pg_cluster/pg_dtm/dtmd"
+    # environment:
+    #   PG_CONFIG: "~/pg_cluster/install/bin/pg_config"
+
+  - name: kill dtmd
+    shell: kill -9 `cat ~/pg_cluster/dtm_data/arbiter.pid` || true
+
+  - name: ensure datadir for dtm exists
+    shell: "rm -rf ~/pg_cluster/dtm_data && mkdir ~/pg_cluster/dtm_data"
+
+  - name: start dtm
+    shell: >
+      nohup ~/pg_cluster/pg_dtm/dtmd/bin/dtmd
+      -d ~/pg_cluster/dtm_data -a 0.0.0.0 -p 5431 > ~/pg_cluster/dtm_data/log &
+
+  - name: wait until dtm is available
+    wait_for: port=5431 delay=1
+
