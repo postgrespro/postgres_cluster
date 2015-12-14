@@ -78,6 +78,7 @@ int ShubReadSocketEx(int sd, void* buf, int min_size, int max_size)
     while (received < min_size) { 
         int n = recv(sd, (char*)buf + received, max_size - received, 0);
         if (n <= 0) { 
+            fprintf(stderr, "recv failed on socket %d with error code %d, errno=%d\n", sd, n, errno);
             break;
         } 
         received += n;
@@ -96,6 +97,7 @@ int ShubWriteSocket(int sd, void const* buf, int size)
     while (size != 0) { 
         int n = send(sd, src, size, 0);
         if (n <= 0) { 
+            fprintf(stderr, "send failed on socket %d with error code %d, errno=%d\n", sd, n, errno);
             return 0;
         } 
         size -= n;
