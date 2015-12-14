@@ -1,17 +1,11 @@
 ---
 - hosts: nodes
 
-  pre_tasks:
-  - name: setup the private key for postgrespro git access
-    copy: dest=.ssh/ppg-deploy src=~/ppg-deploy.key mode=0600
-
   roles:
   - role: postgres
     pg_port: 15432
-    pg_repo: git@gitlab.postgrespro.ru:pgpro-dev/postgrespro.git
-    pg_version_tag: xtm
+    pg_repo: https://github.com/postgrespro/postgres_cluster.git
     pg_destroy_and_init: true
-    pg_repo_key: ~/.ssh/ppg-deploy
 
   tasks:
   - name: clone dtm sources
