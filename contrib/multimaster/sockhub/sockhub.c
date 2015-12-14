@@ -380,7 +380,7 @@ void ShubLoop(Shub* shub)
                                 rc = ShubReadSocketEx(chan, &shub->in_buffer[pos + available], sizeof(ShubMessageHdr) - available, buffer_size - pos - available);
                                 if (rc < sizeof(ShubMessageHdr) - available) { 
                                     char buf[1024];
-                                    sprintf(buf, "Failed to read local socket rc=%d, min requested=%ld, max requested=%d, errno=%d", rc,  sizeof(ShubMessageHdr) - available, buffer_size - pos - available, errno);
+                                    sprintf(buf, "Failed to read local socket chan=%d, rc=%d, min requested=%ld, max requested=%d, errno=%d", chan, rc, sizeof(ShubMessageHdr) - available, buffer_size - pos - available, errno);
                                     shub->params->error_handler(buf, SHUB_RECOVERABLE_ERROR);
                                     //shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
                                     close_socket(shub, i);
