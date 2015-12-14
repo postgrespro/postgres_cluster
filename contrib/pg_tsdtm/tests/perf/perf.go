@@ -6,9 +6,9 @@ import (
     "os"
     "sync"
     "time"
-    "runtime"
+    // "runtime"
     "github.com/jackc/pgx"
-    "runtime/pprof"
+    // "runtime/pprof"
 )
 
 type ConnStrings []string
@@ -133,17 +133,17 @@ func main() {
         fmt.Println("ERROR: This test needs at leas two connections")
         os.Exit(1)
     }
-    runtime.GOMAXPROCS(100)
+    // runtime.GOMAXPROCS(100)
 
-    if cfg.Profile != "" {
-        f, err := os.Create(cfg.Profile)
-        if err != nil {
-           fmt.Println("Failed to create profile file")
-           os.Exit(1)
-        }
-        pprof.StartCPUProfile(f)
-        defer pprof.StopCPUProfile()
-    }
+    // if cfg.Profile != "" {
+    //     f, err := os.Create(cfg.Profile)
+    //     if err != nil {
+    //        fmt.Println("Failed to create profile file")
+    //        os.Exit(1)
+    //     }
+    //     // pprof.StartCPUProfile(f)
+    //     // defer pprof.StopCPUProfile()
+    // }
 
     // switch cfg.Backend {
     //     case "transfers":
