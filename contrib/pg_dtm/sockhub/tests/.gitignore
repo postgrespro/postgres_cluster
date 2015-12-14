@@ -1,0 +1,5 @@
+*.a
+sockhub
+test-client
+test-async-client
+test-server

@@ -1,7 +1,9 @@
 ---
-- hosts: nodes:clients
+- hosts: tag_Name_dtmtest
+  user: ec2-user
 
   roles:
+
   - role: postgres
     pg_port: 15432
     pg_repo: https://github.com/kelvich/postgresql.git
@@ -11,6 +13,14 @@
     - line: "dtm.buffer_size = 65536"
 
   tasks:
+  - name: collect private ips
+    set_fact:
+      pip: "{{ ec2_private_ip_address }}"
+
+  - name: set dtm ip
+    set_fact:
+      dtm_ip: "{{ hostvars[groups['tag_Name_dtmtest'][0]].pip  }}"
+
   - name: clone dtm sources
     git: repo=https://github.com/postgrespro/pg_dtm.git
       dest={{pg_prefix}}/pg_dtm
@@ -34,41 +44,15 @@
       state: present
     with_items:
     - "shared_preload_libraries = 'pg_dtm'"
-    - "dtm.host = '{{ groups['nodes'][0] }}'"
+    - "dtm.host = '{{ dtm_ip }}'"
 
   - name: restart postgrespro
     command: "{{pg_dst}}/bin/pg_ctl restart -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
     environment:
       LD_LIBRARY_PATH: "{{pg_dst}}/lib/"
 
-  - name: copy transfers source
-    copy: src=../{{item}} dest=~/{{item}} mode=0755
-    with_items:
-      - "dtmbench.cpp"
-
-  - name: clone pqxx
-    git: repo=https://github.com/Ambrosys/pqxx.git
-      dest=~/pqxx
-      accept_hostkey=yes
-      update=no
-      force=yes
-    register: pqxx
-
-  - name: build pqxx
-    shell: "./configure --prefix=/home/{{ansible_ssh_user}}/pg_cluster/install/ --enable-shared && make -j4 && make install"
-    args:
-      chdir: "~/pqxx"
-    environment:
-      PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/bin/:{{ansible_env.PATH}}"
-    when: pqxx.changed
-
-  - name: compile dtmbench
-    shell: "g++ -g -Wall -O2 -o dtmbench dtmbench.cpp -lpqxx -lpq -pthread -L/home/{{ansible_ssh_user}}/pg_cluster/install/lib/ -I/home/{{ansible_ssh_user}}/pg_cluster/install/include/"
-
-  - name: move dtmbench to bin
-    shell: "mv dtmbench ~/pg_cluster/install/bin/dtmbench"
-
-- hosts: nodes[0]
+- hosts: tag_Name_dtmtest[0]
+  user: ec2-user
   tasks:
   - name: build dtmd
     shell: "make clean && make -j 4"

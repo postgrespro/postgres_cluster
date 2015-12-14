@@ -2,8 +2,8 @@
 - hosts: nodes[-1]
   roles:
 
-  # - role: postgrespro
-  #   deploy_dtm: true
+  - role: postgrespro
+    deploy_dtm: true
 
   - role: postgrespro
     deploy_postgres: true

@@ -17,3 +17,10 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
+
+# ifndef PG_CONFIG
+# PG_CONFIG = pg_config
+# endif
+
+# PGXS := $(shell $(PG_CONFIG) --pgxs)
+# include $(PGXS)
