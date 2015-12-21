@@ -158,6 +158,7 @@ static BackgroundWorker DtmWorker = {
 
 static void DumpSnapshot(Snapshot s, char *name)
 {
+#ifdef DUMP_SNAPSHOT
 	int i;
 	char buf[10000];
 	char *cursor = buf;
@@ -175,6 +176,7 @@ static void DumpSnapshot(Snapshot s, char *name)
 	}
 	cursor += sprintf(cursor, "]");
 	XTM_INFO("%s\n", buf);
+#endif
 }
 
 /* In snapshots provided by DTMD xip array is sorted, so we can use bsearch */
@@ -244,7 +246,9 @@ GetLocalSnapshot:
 	for (xid = dst->xmax; xid < src->xmax; xid++)
 		if (TransactionIdIsInDoubt(xid))
 			goto GetLocalSnapshot;
-	DumpSnapshot(dst, "local");
+
+    GetCurrentTransactionId();
+    DumpSnapshot(dst, "local");
 	DumpSnapshot(src, "DTM");
 
 	if (src->xmax < dst->xmax) dst->xmax = src->xmax;
@@ -764,6 +768,7 @@ DtmXactCallback(XactEvent event, void *arg)
             MMBeginTransaction();
         }
         break;
+#if 0
     case XACT_EVENT_PRE_COMMIT:
     case XACT_EVENT_PARALLEL_PRE_COMMIT:
     { 
@@ -774,6 +779,7 @@ DtmXactCallback(XactEvent event, void *arg)
         }
         break;
     }
+#endif
     case XACT_EVENT_COMMIT:
     case XACT_EVENT_ABORT:
 		if (TransactionIdIsValid(DtmNextXid))
