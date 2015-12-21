@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -c -I. -Wall -O3 -g -fPIC
+CFLAGS = -c -I. -Wall -O3 -g -fPIC -DUSE_EPOLL
 LD = $(CC)
 LDFLAGS = -g
 AR = ar
