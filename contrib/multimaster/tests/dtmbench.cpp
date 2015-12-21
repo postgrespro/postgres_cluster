@@ -231,6 +231,7 @@ int main (int argc, char* argv[])
     if (initialize) { 
         initializeDatabase();
         printf("%d accounts inserted\n", cfg.nAccounts);
+        return 0;
     }
 
     time_t start = getCurrentTime();

@@ -195,6 +195,7 @@ static void gen_snapshot(Snapshot *s) {
 	Transaction* t;
     int n = 0;
 	s->times_sent = 0;
+#if 0
 	for (t = (Transaction*)active_transactions.prev; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.prev) {
         /*
 		if (t->xid < s->xmin) {
@@ -206,6 +207,13 @@ static void gen_snapshot(Snapshot *s) {
         */
 		s->active[n++] = t->xid;
 	}
+#else
+    if (!l2_list_is_empty(&active_transactions)) {         
+        s->active[0] = ((Transaction*)active_transactions.prev)->xid;
+        s->active[1] = ((Transaction*)active_transactions.next)->xid;
+        n = 2;
+    }
+#endif
     s->nactive = n;
 	if (n > 0) {
         s->xmin = s->active[0];
