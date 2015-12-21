@@ -6,6 +6,7 @@
   - role: postgres
     pg_port: 15432
     pg_repo: https://github.com/postgrespro/postgres_cluster.git
+    pg_version_tag: master
     pg_destroy_and_init: true
     pg_datadir: "/mnt/pgtmpfs/data_{{pg_port}}"
     pg_config_role:
@@ -44,7 +45,7 @@
     - "multimaster.conn_strings = '{{ connections }}'"
     - "multimaster.node_id = {{ node_id }}"
     - "multimaster.queue_size = 1073741824"
-    - "multimaster.workers = 16"
+    - "multimaster.workers = 32"
 
   - name: restart postgrespro
     command: "{{pg_dst}}/bin/pg_ctl restart -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
@@ -57,6 +58,7 @@
   - role: postgres
     pg_port: 15432
     pg_repo: https://github.com/postgrespro/postgres_cluster.git
+    pg_version_tag: master
     pg_destroy_and_init: true
 
   tasks:
