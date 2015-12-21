@@ -7,6 +7,7 @@
     pg_port: 15432
     pg_repo: https://github.com/postgrespro/postgres_cluster.git
     pg_destroy_and_init: true
+    pg_datadir: "/mnt/pgtmpfs/data_{{pg_port}}"
     pg_config_role:
     - line: "multimaster.buffer_size = 65536"
 
@@ -95,16 +96,19 @@
 
   - name: clone pqxx
     git: repo=https://github.com/Ambrosys/pqxx.git
-      dest=~/pqxx
+      dest=~/pg_cluster/pqxx
       accept_hostkey=yes
       update=no
       force=yes
     register: pqxx
 
+  # - name: ensure dirs
+  #   shell: "mkdir -p /home/{{ansible_ssh_user}}/pg_cluster/install/lib/"
+
   - name: build pqxx
-    shell: "./configure --prefix=/home/{{ansible_ssh_user}}/pg_cluster/install/ --enable-shared && make && make install"
+    shell: "./configure --prefix=/home/{{ansible_ssh_user}}/pg_cluster/install/ --enable-shared && make -j 6 && make install"
     args:
-      chdir: "~/pqxx"
+      chdir: "~/pg_cluster/pqxx"
     environment:
       PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/bin/:{{ansible_env.PATH}}"
     when: pqxx.changed
@@ -112,7 +116,7 @@
   - name: compile dtmbench
     shell: "g++ -g -Wall -O2 -o dtmbench dtmbench.cpp -lpqxx -lpq -pthread -L/home/{{ansible_ssh_user}}/pg_cluster/install/lib/ -I/home/{{ansible_ssh_user}}/pg_cluster/install/include/"
 
-  - name: compile dtmbench
+  - name: install dtmbench
     shell: "mv dtmbench ~/pg_cluster/install/bin/dtmbench"
 
 
