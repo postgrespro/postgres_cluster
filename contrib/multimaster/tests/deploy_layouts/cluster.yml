@@ -8,7 +8,7 @@
     pg_repo: https://github.com/postgrespro/postgres_cluster.git
     pg_destroy_and_init: true
     pg_config_role:
-    - line: "dtm.buffer_size = 65536"
+    - line: "multimaster.buffer_size = 65536"
 
   tasks:
   - name: generate connstrings
