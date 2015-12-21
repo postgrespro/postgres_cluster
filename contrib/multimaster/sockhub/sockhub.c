@@ -323,7 +323,8 @@ void ShubLoop(Shub* shub)
             if (rc > 0) {
 #ifdef USE_EPOLL
                 int j;
-                for (j = 0; j < rc; j++) {
+                int n = rc;
+                for (j = 0; j < n; j++) {
                     i = events[j].data.fd;
                     fprintf(stderr, "events[j].events=%d, events[j].data.fd=%d\n",  events[j].events, events[j].data.fd);
                     if (events[j].events & EPOLLERR) {
