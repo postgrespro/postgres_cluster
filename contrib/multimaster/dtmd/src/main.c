@@ -209,7 +209,7 @@ static void gen_snapshot(Snapshot *s) {
 	}
 #else
     if (!l2_list_is_empty(&active_transactions)) {         
-        s->active[0] = ((Transaction*)active_transactions.next)->xid;
+        s->active[0] = ((Transaction*)active_transactions.prev)->xid;
         n = 1;
     }
 #endif
