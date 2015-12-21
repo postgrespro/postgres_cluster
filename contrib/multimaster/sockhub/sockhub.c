@@ -263,6 +263,9 @@ void ShubInitialize(Shub* shub, ShubParams* params)
     shub->output = -1;
 #ifdef USE_EPOLL
     shub->epollfd = epoll_create(MAX_EVENTS);
+    if (shub->epollfd < 0) { 
+        shub->params->error_handler("Failed to create epoll", SHUB_FATAL_ERROR);
+    }   
 #else
     FD_ZERO(&shub->inset);
     shub->max_fd = 0;
@@ -299,7 +302,7 @@ void ShubLoop(Shub* shub)
         int i, rc;
 #ifdef USE_EPOLL
         struct epoll_event events[MAX_EVENTS];
-        rc = epoll_wait(shub->epollfd, events, MAX_EVENTS, shub->params->delay);
+        rc = epoll_wait(shub->epollfd, events, MAX_EVENTS, shub->in_buffer_used == 0 ? -1 : shub->params->delay);
 #else
         fd_set events;
         struct timeval tm;
@@ -307,6 +310,7 @@ void ShubLoop(Shub* shub)
 
         tm.tv_sec = shub->params->delay/1000;
         tm.tv_usec = shub->params->delay % 1000 * 1000;
+        events = shub->inset;
 
         rc = select(max_fd+1, &events, NULL, NULL, shub->in_buffer_used == 0 ? NULL : &tm);
 #endif
@@ -320,8 +324,14 @@ void ShubLoop(Shub* shub)
 #ifdef USE_EPOLL
                 int j;
                 for (j = 0; j < rc; j++) {
-                    {
-                        i = events[j].data.fd;
+                    i = events[j].data.fd;
+                    fprintf(stderr, "events[j].events=%d, events[j].data.fd=%d\n",  events[j].events, events[j].data.fd);
+                    if (events[j].events & EPOLLERR) {
+                        if (i != shub->input && i != shub->output) { 
+                            notify_disconnect(shub, i);
+                        }
+                        close_socket(shub, i);
+                    } else if (events[j].events & EPOLLIN) { 
 #else
                 for (i = 0; i <= max_fd; i++) {
                     if (FD_ISSET(i, &events)) { 
@@ -331,7 +341,7 @@ void ShubLoop(Shub* shub)
                             if (s < 0) { 
                                 shub->params->error_handler("Failed to accept socket", SHUB_RECOVERABLE_ERROR);
                             } else {
-                                ShubAddSocket(shub, i);
+                                ShubAddSocket(shub, s);
                             }
                         } else if (i == shub->output) { /* receive response from server */
                             /* try to read as much as possible */

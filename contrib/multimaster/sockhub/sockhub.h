@@ -2,6 +2,8 @@
 #define __SOCKHUB_H__
 
 
+#define USE_EPOLL 1
+
 #ifdef USE_EPOLL
 #include <sys/epoll.h>
 #define MAX_EVENTS 1024
