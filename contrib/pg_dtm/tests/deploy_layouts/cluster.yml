@@ -1,17 +1,93 @@
 ---
-- hosts: nodes[1]
-  # roles:
-  # - role: postgrespro
-  #   deploy_dtm: true
+- hosts: nodes:clients
 
-- hosts: nodes
   roles:
-  - role: postgrespro
+  - role: postgres
     pg_port: 15432
-    deploy_postgres: true
-    pg_dtm_enable: true
+    pg_repo: https://github.com/kelvich/postgresql.git
+    pg_version_tag: xtm_patched
+    pg_destroy_and_init: true
     pg_config_role:
-      - line: "dtm.vacuum_delay = 1"
-    # pg_dtm_host: "{{ groups['nodes'][0] }}"
+    - line: "dtm.buffer_size = 65536"
 
+  tasks:
+  - name: clone dtm sources
+    git: repo=https://github.com/postgrespro/pg_dtm.git
+      dest={{pg_prefix}}/pg_dtm
+      accept_hostkey=yes
+      update=yes
+      force=yes
+    register: dtm_sources
+
+  - name: build dtm
+    shell: "make clean && make -j {{makejobs}} install"
+    args:
+      chdir: "{{pg_prefix}}/pg_dtm"
+    environment:
+      PG_CONFIG: "{{pg_dst}}/bin/pg_config"
+    when: dtm_sources.changed
+
+  - name: enable dtm extension on datanodes
+    lineinfile:
+      dest: "{{pg_datadir}}/postgresql.conf"
+      line: "{{item}}"
+      state: present
+    with_items:
+    - "shared_preload_libraries = 'pg_dtm'"
+    - "dtm.host = '{{ groups['nodes'][0] }}'"
+
+  - name: restart postgrespro
+    command: "{{pg_dst}}/bin/pg_ctl restart -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
+    environment:
+      LD_LIBRARY_PATH: "{{pg_dst}}/lib/"
+
+  - name: copy transfers source
+    copy: src=../{{item}} dest=~/{{item}} mode=0755
+    with_items:
+      - "dtmbench.cpp"
+
+  - name: clone pqxx
+    git: repo=https://github.com/Ambrosys/pqxx.git
+      dest=~/pqxx
+      accept_hostkey=yes
+      update=no
+      force=yes
+    register: pqxx
+
+  - name: build pqxx
+    shell: "./configure --prefix=/home/{{ansible_ssh_user}}/pg_cluster/install/ --enable-shared && make -j4 && make install"
+    args:
+      chdir: "~/pqxx"
+    environment:
+      PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/bin/:{{ansible_env.PATH}}"
+    when: pqxx.changed
+
+  - name: compile dtmbench
+    shell: "g++ -g -Wall -O2 -o dtmbench dtmbench.cpp -lpqxx -lpq -pthread -L/home/{{ansible_ssh_user}}/pg_cluster/install/lib/ -I/home/{{ansible_ssh_user}}/pg_cluster/install/include/"
+
+  - name: move dtmbench to bin
+    shell: "mv dtmbench ~/pg_cluster/install/bin/dtmbench"
+
+- hosts: nodes[0]
+  tasks:
+  - name: build dtmd
+    shell: "make clean && make -j 4"
+    args:
+      chdir: "~/pg_cluster/pg_dtm/dtmd"
+    # environment:
+    #   PG_CONFIG: "~/pg_cluster/install/bin/pg_config"
+
+  - name: kill dtmd
+    shell: kill -9 `cat ~/pg_cluster/dtm_data/arbiter.pid` || true
+
+  - name: ensure datadir for dtm exists
+    shell: "rm -rf ~/pg_cluster/dtm_data && mkdir ~/pg_cluster/dtm_data"
+
+  - name: start dtm
+    shell: >
+      nohup ~/pg_cluster/pg_dtm/dtmd/bin/dtmd
+      -d ~/pg_cluster/dtm_data -a 0.0.0.0 -p 5431 > ~/pg_cluster/dtm_data/log &
+
+  - name: wait until dtm is available
+    wait_for: port=5431 delay=1
 

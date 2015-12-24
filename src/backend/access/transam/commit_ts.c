@@ -106,6 +106,7 @@ static void SetXidCommitTsInPage(TransactionId xid, int nsubxids,
 					 RepOriginId nodeid, int pageno);
 static void TransactionIdSetCommitTs(TransactionId xid, TimestampTz ts,
 						 RepOriginId nodeid, int slotno);
+static void error_commit_ts_disabled(void);
 static int	ZeroCommitTsPage(int pageno, bool writeXlog);
 static bool CommitTsPagePrecedes(int page1, int page2);
 static void ActivateCommitTs(void);
@@ -297,11 +298,7 @@ TransactionIdGetCommitTsData(TransactionId xid, TimestampTz *ts,
 
 	/* Error if module not enabled */
 	if (!commitTsShared->commitTsActive)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("could not get commit timestamp data"),
-			  errhint("Make sure the configuration parameter \"%s\" is set.",
-					  "track_commit_timestamp")));
+		error_commit_ts_disabled();
 
 	/*
 	 * If we're asked for the cached value, return that.  Otherwise, fall
@@ -368,11 +365,7 @@ GetLatestCommitTsData(TimestampTz *ts, RepOriginId *nodeid)
 
 	/* Error if module not enabled */
 	if (!commitTsShared->commitTsActive)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("could not get commit timestamp data"),
-			  errhint("Make sure the configuration parameter \"%s\" is set.",
-					  "track_commit_timestamp")));
+		error_commit_ts_disabled();
 
 	xid = commitTsShared->xidLastCommit;
 	if (ts)
@@ -382,6 +375,19 @@ GetLatestCommitTsData(TimestampTz *ts, RepOriginId *nodeid)
 	LWLockRelease(CommitTsLock);
 
 	return xid;
+}
+
+static void
+error_commit_ts_disabled(void)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+			 errmsg("could not get commit timestamp data"),
+			 RecoveryInProgress() ?
+			 errhint("Make sure the configuration parameter \"%s\" is set on the master server.",
+					 "track_commit_timestamp") :
+			 errhint("Make sure the configuration parameter \"%s\" is set.",
+					 "track_commit_timestamp")));
 }
 
 /*
@@ -478,7 +484,7 @@ CommitTsShmemInit(void)
 	bool		found;
 
 	CommitTsCtl->PagePrecedes = CommitTsPagePrecedes;
-	SimpleLruInit(CommitTsCtl, "CommitTs Ctl", CommitTsShmemBuffers(), 0,
+	SimpleLruInit(CommitTsCtl, "commit_timestamp", CommitTsShmemBuffers(), 0,
 				  CommitTsControlLock, "pg_commit_ts");
 
 	commitTsShared = ShmemInitStruct("CommitTs shared",
@@ -510,7 +516,7 @@ BootStrapCommitTs(void)
 	/*
 	 * Nothing to do here at present, unlike most other SLRU modules; segments
 	 * are created when the server is started with this module enabled. See
-	 * StartupCommitTs.
+	 * ActivateCommitTs.
 	 */
 }
 
@@ -539,19 +545,11 @@ ZeroCommitTsPage(int pageno, bool writeXlog)
 /*
  * This must be called ONCE during postmaster or standalone-backend startup,
  * after StartupXLOG has initialized ShmemVariableCache->nextXid.
- *
- * Caller may choose to enable the feature even when it is turned off in the
- * configuration.
  */
 void
-StartupCommitTs(bool force_enable)
+StartupCommitTs(void)
 {
-	/*
-	 * If the module is not enabled, there's nothing to do here.  The module
-	 * could still be activated from elsewhere.
-	 */
-	if (track_commit_timestamp || force_enable)
-		ActivateCommitTs();
+	ActivateCommitTs();
 }
 
 /*
@@ -564,9 +562,17 @@ CompleteCommitTsInitialization(void)
 	/*
 	 * If the feature is not enabled, turn it off for good.  This also removes
 	 * any leftover data.
+	 *
+	 * Conversely, we activate the module if the feature is enabled.  This is
+	 * not necessary in a master system because we already did it earlier, but
+	 * if we're in a standby server that got promoted which had the feature
+	 * enabled and was following a master that had the feature disabled, this
+	 * is where we turn it on locally.
 	 */
 	if (!track_commit_timestamp)
 		DeactivateCommitTs();
+	else
+		ActivateCommitTs();
 }
 
 /*
@@ -585,6 +591,9 @@ CommitTsParameterChange(bool newvalue, bool oldvalue)
 	 *
 	 * If the module is disabled in the master, disable it here too, unless
 	 * the module is enabled locally.
+	 *
+	 * Note this only runs in the recovery process, so an unlocked read is
+	 * fine.
 	 */
 	if (newvalue)
 	{
@@ -614,8 +623,20 @@ CommitTsParameterChange(bool newvalue, bool oldvalue)
 static void
 ActivateCommitTs(void)
 {
-	TransactionId xid = ShmemVariableCache->nextXid;
-	int			pageno = TransactionIdToCTsPage(xid);
+	TransactionId xid;
+	int			pageno;
+
+	/* If we've done this already, there's nothing to do */
+	LWLockAcquire(CommitTsLock, LW_EXCLUSIVE);
+	if (commitTsShared->commitTsActive)
+	{
+		LWLockRelease(CommitTsLock);
+		return;
+	}
+	LWLockRelease(CommitTsLock);
+
+	xid = ShmemVariableCache->nextXid;
+	pageno = TransactionIdToCTsPage(xid);
 
 	/*
 	 * Re-Initialize our idea of the latest page number.

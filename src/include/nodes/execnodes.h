@@ -1029,6 +1029,7 @@ typedef struct PlanState
 								 * top-level plan */
 
 	Instrumentation *instrument;	/* Optional runtime stats for this node */
+	WorkerInstrumentation *worker_instrument; /* per-worker instrumentation */
 
 	/*
 	 * Common structural data for all Plan types.  These links to subsidiary
@@ -1248,11 +1249,15 @@ typedef struct ScanState
 	TupleTableSlot *ss_ScanTupleSlot;
 } ScanState;
 
-/*
- * SeqScan uses a bare ScanState as its state node, since it needs
- * no additional fields.
+/* ----------------
+ *	 SeqScanState information
+ * ----------------
  */
-typedef ScanState SeqScanState;
+typedef struct SeqScanState
+{
+	ScanState	ss;				/* its first field is NodeTag */
+	Size		pscan_len;		/* size of parallel heap scan descriptor */
+} SeqScanState;
 
 /* ----------------
  *	 SampleScanState information
@@ -1963,7 +1968,9 @@ typedef struct GatherState
 	PlanState	ps;				/* its first field is NodeTag */
 	bool		initialized;
 	struct ParallelExecutorInfo *pei;
-	struct TupleQueueFunnel *funnel;
+	int			nreaders;
+	int			nextreader;
+	struct TupleQueueReader **reader;
 	TupleTableSlot *funnel_slot;
 	bool		need_to_scan_locally;
 } GatherState;

@@ -28,6 +28,7 @@
 
 #include <math.h>
 
+#include "fmgr.h"
 #include "nodes/parsenodes.h"
 #include "nodes/plannodes.h"
 #include "nodes/readfuncs.h"
@@ -1412,6 +1413,7 @@ ReadCommonPlan(Plan *local_node)
 	READ_FLOAT_FIELD(total_cost);
 	READ_FLOAT_FIELD(plan_rows);
 	READ_INT_FIELD(plan_width);
+	READ_BOOL_FIELD(parallel_aware);
 	READ_INT_FIELD(plan_node_id);
 	READ_NODE_FIELD(targetlist);
 	READ_NODE_FIELD(qual);
@@ -1801,6 +1803,44 @@ _readForeignScan(void)
 	READ_NODE_FIELD(fdw_recheck_quals);
 	READ_BITMAPSET_FIELD(fs_relids);
 	READ_BOOL_FIELD(fsSystemCol);
+
+	READ_DONE();
+}
+
+/*
+ * _readCustomScan
+ */
+static CustomScan *
+_readCustomScan(void)
+{
+	READ_LOCALS(CustomScan);
+	char	   *library_name;
+	char	   *symbol_name;
+	const CustomScanMethods *methods;
+
+	ReadCommonScan(&local_node->scan);
+
+	READ_UINT_FIELD(flags);
+	READ_NODE_FIELD(custom_plans);
+	READ_NODE_FIELD(custom_exprs);
+	READ_NODE_FIELD(custom_private);
+	READ_NODE_FIELD(custom_scan_tlist);
+	READ_BITMAPSET_FIELD(custom_relids);
+
+	/*
+	 * Reconstruction of methods using library and symbol name
+	 */
+	token = pg_strtok(&length);		/* skip methods: */
+	token = pg_strtok(&length);		/* LibraryName */
+	library_name = nullable_string(token, length);
+	token = pg_strtok(&length);		/* SymbolName */
+	symbol_name = nullable_string(token, length);
+
+	methods = (const CustomScanMethods *)
+		load_external_function(library_name, symbol_name, true, NULL);
+	Assert(strcmp(methods->LibraryName, library_name) == 0 &&
+		   strcmp(methods->SymbolName, symbol_name) == 0);
+	local_node->methods = methods;
 
 	READ_DONE();
 }
@@ -2361,6 +2401,8 @@ parseNodeString(void)
 		return_value = _readWorkTableScan();
 	else if (MATCH("FOREIGNSCAN", 11))
 		return_value = _readForeignScan();
+	else if (MATCH("CUSTOMSCAN", 10))
+		return_value = _readCustomScan();
 	else if (MATCH("JOIN", 4))
 		return_value = _readJoin();
 	else if (MATCH("NESTLOOP", 8))

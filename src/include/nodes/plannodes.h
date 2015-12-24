@@ -109,6 +109,11 @@ typedef struct Plan
 	int			plan_width;		/* average row width in bytes */
 
 	/*
+	 * information needed for parallel query
+	 */
+	bool		parallel_aware; /* engage parallel-aware logic? */
+
+	/*
 	 * Common structural data for all Plan types.
 	 */
 	int			plan_node_id;	/* unique across entire final plan tree */
@@ -552,12 +557,11 @@ struct CustomScan;
 typedef struct CustomScanMethods
 {
 	const char *CustomName;
+	const char *LibraryName;
+	const char *SymbolName;
 
 	/* Create execution state (CustomScanState) from a CustomScan plan node */
 	Node	   *(*CreateCustomScanState) (struct CustomScan *cscan);
-	/* Optional: print custom_xxx fields in some special way */
-	void		(*TextOutCustomScan) (StringInfo str,
-											  const struct CustomScan *node);
 } CustomScanMethods;
 
 typedef struct CustomScan

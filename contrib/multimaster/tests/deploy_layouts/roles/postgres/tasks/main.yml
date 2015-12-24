@@ -42,6 +42,9 @@
 
 #############################################################################
 
+- name: stop postgres if it was running
+  shell: "pkill -9 postgres || true"
+
 - name: clone postgres sources
   git: repo={{pg_repo}}
     dest={{pg_src}}
@@ -65,32 +68,12 @@
 
 #############################################################################
 
-- name: copy pg source
-  copy: src=./{{item}} dest=~/{{item}} mode=0755
-  with_items:
-    - "pg_cluster_install.tgz"
-  when: pg_copydist is defined
-
-- name: extract postgres
-  command: "tar xzf pg_cluster_install.tgz"
-  when: pg_copydist is defined
-
-#############################################################################
-
-- stat: path={{pg_datadir}}/postmaster.pid
-  register: pg_pidfile
+# - stat: path={{pg_datadir}}/postmaster.pid
+#   register: pg_pidfile
 
 # - name: stop postgres if it was running
-#   command: "{{pg_dst}}/bin/pg_ctl stop -w -D {{pg_datadir}}"
-#   environment:
-#     LD_LIBRARY_PATH: "{{pg_dst}}/lib"
+#   shell: "kill -9 `head -n 1 {{pg_datadir}}/postmaster.pid` || true"
 #   when: pg_pidfile.stat.exists
-
-- name: stop postgres if it was running
-  shell: "kill -9 `head -n 1 {{pg_datadir}}/postmaster.pid` || true"
-  environment:
-    LD_LIBRARY_PATH: "{{pg_dst}}/lib"
-  when: pg_pidfile.stat.exists
 
 - name: remove datadirs on datanodes
   command: "rm -rf {{pg_datadir}}"

@@ -14,10 +14,7 @@ int main(int argc, char* argv[])
         if (argv[i][0] == '-') { 
             switch (argv[i][1]) { 
               case 'h':
-                params.host = argv[++i];
-                continue;
-              case 'p':
-                params.port = atoi(argv[++i]);
+                ShubParamsSetHosts(&params, argv[++i]);
                 continue;
               case 'f':
                 params.file = argv[++i];
@@ -36,8 +33,7 @@ int main(int argc, char* argv[])
       Usage:
         fprintf(stderr, "sockhub: combine several local unix socket connections into one inet socket\n"
                 "Options:\n"
-                "\t-h HOST\tremote host name\n"                
-                "\t-p PORT\tremote port\n"
+                "\t-h HOST:PORT\tremote address\n"
                 "\t-f FILE\tunix socket file name\n"
                 "\t-d DELAY\tdelay for waiting income requests (milliseconds)\n"
                 "\t-b SIZE\tbuffer size\n"
@@ -47,7 +43,7 @@ int main(int argc, char* argv[])
         
         return 1;
     }
-    if (params.host == NULL || params.file == NULL || i != argc) { 
+    if (params.leader == NULL || params.file == NULL || i != argc) { 
         goto Usage;
     }
     

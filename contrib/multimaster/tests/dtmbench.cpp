@@ -40,14 +40,18 @@ typedef uint32_t xid_t;
 struct thread
 {
     pthread_t t;
-    size_t proceeded;
+    size_t transactions;
+    size_t updates;
+    size_t selects;
     size_t aborts;
     int id;
 
     void start(int tid, thread_proc_t proc) { 
         id = tid;
-        proceeded = 0;
+        updates = 0;
+        selects = 0;
         aborts = 0;
+        transactions = 0;
         pthread_create(&t, NULL, proc, this);
     }
 
@@ -62,6 +66,7 @@ struct config
     int nWriters;
     int nIterations;
     int nAccounts;
+    int updatePercent;
     vector<string> connections;
 
     config() {
@@ -69,6 +74,7 @@ struct config
         nWriters = 10;
         nIterations = 1000;
         nAccounts = 100000;
+        updatePercent = 100;
     }
 };
 
@@ -95,7 +101,8 @@ void exec(transaction_base& txn, char const* sql, ...)
     txn.exec(buf);
 }
 
-xid_t execQuery( transaction_base& txn, char const* sql, ...)
+template<class T>
+T execQuery( transaction_base& txn, char const* sql, ...)
 {
     va_list args;
     va_start(args, sql);
@@ -103,7 +110,7 @@ xid_t execQuery( transaction_base& txn, char const* sql, ...)
     vsprintf(buf, sql, args);
     va_end(args);
     result r = txn.exec(buf);
-    return r[0][0].as(xid_t());
+    return r[0][0].as(T());
 }  
 
 void* reader(void* arg)
@@ -123,7 +130,8 @@ void* reader(void* arg)
             printf("Total=%ld\n", sum);
             prevSum = sum;
         }
-        t.proceeded += 1;
+        t.transactions += 1;
+        t.selects += 1;
         txn.commit();
     }
     return NULL;
@@ -142,16 +150,26 @@ void* writer(void* arg)
         int srcAcc = random() % cfg.nAccounts;
         int dstAcc = random() % cfg.nAccounts;
         try {            
-            exec(txn, "update t set v = v - 1 where u=%d", srcAcc);
-            exec(txn, "update t set v = v + 1 where u=%d", dstAcc);
+            if (random() % 100 < cfg.updatePercent) { 
+                exec(txn, "update t set v = v - 1 where u=%d", srcAcc);
+                exec(txn, "update t set v = v + 1 where u=%d", dstAcc);
+                t.updates += 2;
+            } else { 
+                int64_t sum = execQuery<int64_t>(txn, "select v from t where u=%d", srcAcc)
+                    + execQuery<int64_t>(txn, "select v from t where u=%d", dstAcc);
+                if (sum > cfg.nIterations*cfg.nWriters || sum < -cfg.nIterations*cfg.nWriters) { 
+                    printf("Wrong sum=%ld\n", sum);
+                }
+                t.selects += 2;
+            }
             txn.commit();            
+            t.transactions += 1;
         } catch (pqxx_exception const& x) { 
             txn.abort();
             t.aborts += 1;
             i -= 1;
             continue;
         }
-        t.proceeded += 1;
     }
     return NULL;
 }
@@ -188,6 +206,9 @@ int main (int argc, char* argv[])
             case 'n':
                 cfg.nIterations = atoi(argv[++i]);
                 continue;
+            case 'p':
+                cfg.updatePercent = atoi(argv[++i]);
+                continue;
             case 'c':
                 cfg.connections.push_back(string(argv[++i]));
                 continue;
@@ -201,6 +222,7 @@ int main (int argc, char* argv[])
                "\t-w N\tnumber of writers (10)\n"
                "\t-a N\tnumber of accounts (100000)\n"
                "\t-n N\tnumber of iterations (1000)\n"
+               "\t-p N\tupdate percent (100)\n"
                "\t-c STR\tdatabase connection string\n"
                "\t-i\tinitialize database\n");
         return 1;
@@ -209,6 +231,7 @@ int main (int argc, char* argv[])
     if (initialize) { 
         initializeDatabase();
         printf("%d accounts inserted\n", cfg.nAccounts);
+        return 0;
     }
 
     time_t start = getCurrentTime();
@@ -216,10 +239,11 @@ int main (int argc, char* argv[])
 
     vector<thread> readers(cfg.nReaders);
     vector<thread> writers(cfg.nWriters);
-    size_t nReads = 0;
-    size_t nWrites = 0;
     size_t nAborts = 0;
-    
+    size_t nUpdates = 0;
+    size_t nSelects = 0;
+    size_t nTransactions = 0;
+
     for (int i = 0; i < cfg.nReaders; i++) { 
         readers[i].start(i, reader);
     }
@@ -229,29 +253,35 @@ int main (int argc, char* argv[])
     
     for (int i = 0; i < cfg.nWriters; i++) { 
         writers[i].wait();
-        nWrites += writers[i].proceeded;
+        nUpdates += writers[i].updates;
+        nSelects += writers[i].selects;
         nAborts += writers[i].aborts;
+        nTransactions += writers[i].transactions;
     }
     
     running = false;
 
     for (int i = 0; i < cfg.nReaders; i++) { 
         readers[i].wait();
-        nReads += readers[i].proceeded;
+        nSelects += readers[i].selects;
+        nTransactions += writers[i].transactions;
     }
  
     time_t elapsed = getCurrentTime() - start;
 
     printf(
-        "{\"update_tps\":%f, \"read_tps\":%f,"
-        " \"readers\":%d, \"writers\":%d, \"aborts\":%ld, \"abort_percent\": %d,"
-        " \"accounts\":%d, \"iterations\":%d, \"hosts\":%ld}\n",
-        (double)(nWrites*USEC)/elapsed,
-        (double)(nReads*USEC)/elapsed,
+        "{\"tps\":%f, \"transactions\":%ld,"
+        " \"selects\":%ld, \"updates\":%ld, \"aborts\":%ld, \"abort_percent\": %d,"
+        " \"readers\":%d, \"writers\":%d, \"update_percent\":%d, \"accounts\":%d, \"iterations\":%d, \"hosts\":%ld}\n",
+        (double)(nTransactions*USEC)/elapsed,
+        nTransactions,
+        nSelects, 
+        nUpdates,
+        nAborts,
+        (int)(nAborts*100/nTransactions),        
         cfg.nReaders,
         cfg.nWriters,
-        nAborts,
-        (int)(nAborts*100/nWrites),
+        cfg.updatePercent,
         cfg.nAccounts,
         cfg.nIterations,
         cfg.connections.size()

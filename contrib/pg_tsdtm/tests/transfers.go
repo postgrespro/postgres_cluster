@@ -10,21 +10,21 @@ import (
 )
 
 const (
-    TRANSFER_CONNECTIONS = 100
+    TRANSFER_CONNECTIONS = 10
     INIT_AMOUNT = 10000
-    N_ITERATIONS = 1000
-    N_ACCOUNTS = 1000
+    N_ITERATIONS = 10000
+    N_ACCOUNTS = 100000
 )
 
 
 var cfg1 = pgx.ConnConfig{
-        Host:     "localhost",
+        Host:     "127.0.0.1",
         Port:     5432,
         Database: "postgres",
     }
 
 var cfg2 = pgx.ConnConfig{
-        Host:     "localhost",
+        Host:     "127.0.0.1",
         Port:     5433,
         Database: "postgres",
     }

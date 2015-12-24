@@ -1838,10 +1838,10 @@ MultiXactShmemInit(void)
 	MultiXactMemberCtl->PagePrecedes = MultiXactMemberPagePrecedes;
 
 	SimpleLruInit(MultiXactOffsetCtl,
-				  "MultiXactOffset Ctl", NUM_MXACTOFFSET_BUFFERS, 0,
+				  "multixact_offset", NUM_MXACTOFFSET_BUFFERS, 0,
 				  MultiXactOffsetControlLock, "pg_multixact/offsets");
 	SimpleLruInit(MultiXactMemberCtl,
-				  "MultiXactMember Ctl", NUM_MXACTMEMBER_BUFFERS, 0,
+				  "multixact_member", NUM_MXACTMEMBER_BUFFERS, 0,
 				  MultiXactMemberControlLock, "pg_multixact/members");
 
 	/* Initialize our shared state struct */
@@ -2552,6 +2552,7 @@ SetOffsetVacuumLimit(void)
 	bool		oldestOffsetKnown = false;
 	bool		prevOldestOffsetKnown;
 	MultiXactOffset offsetStopLimit = 0;
+	MultiXactOffset prevOffsetStopLimit;
 
 	/*
 	 * NB: Have to prevent concurrent truncation, we might otherwise try to
@@ -2566,6 +2567,7 @@ SetOffsetVacuumLimit(void)
 	nextOffset = MultiXactState->nextOffset;
 	prevOldestOffsetKnown = MultiXactState->oldestOffsetKnown;
 	prevOldestOffset = MultiXactState->oldestOffset;
+	prevOffsetStopLimit = MultiXactState->offsetStopLimit;
 	Assert(MultiXactState->finishedStartup);
 	LWLockRelease(MultiXactGenLock);
 
@@ -2633,11 +2635,13 @@ SetOffsetVacuumLimit(void)
 	{
 		/*
 		 * If we failed to get the oldest offset this time, but we have a
-		 * value from a previous pass through this function, use the old value
-		 * rather than automatically forcing it.
+		 * value from a previous pass through this function, use the old
+		 * values rather than automatically forcing an emergency autovacuum
+		 * cycle again.
 		 */
 		oldestOffset = prevOldestOffset;
 		oldestOffsetKnown = true;
+		offsetStopLimit = prevOffsetStopLimit;
 	}
 
 	/* Install the computed values */

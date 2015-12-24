@@ -1,0 +1,49 @@
+---
+
+- hosts: nodes
+  # gather_facts: no
+
+  roles:
+  - role: postgres
+    pg_port: 15432
+    pg_repo: https://github.com/kelvich/postgresql.git
+    pg_version_tag: xtm_patched
+    pg_destroy_and_init: true
+    pg_copydist: true
+    pg_config_role: 
+    - line: "dtm.vacuum_delay=1000"
+
+  tasks:
+
+  - name: enable dtm extension on datanodes
+    lineinfile:
+      dest: "{{pg_datadir}}/postgresql.conf"
+      regexp: "^shared_preload_libraries"
+      line: "shared_preload_libraries = 'pg_dtm'"
+      state: present
+
+  - name: restart postgrespro
+    command: "{{pg_dst}}/bin/pg_ctl restart -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
+    environment:
+      LD_LIBRARY_PATH: "$LD_LIBRARY_PATH:{{pg_dst}}/lib/"
+
+- hosts: clients
+  tasks:
+  - name: increase max open files
+    lineinfile:
+      dest: /etc/security/limits.d/cluster.conf
+      line: "{{item}}"
+      state: present
+      create: true
+    with_items:
+    - '{{ansible_ssh_user}}  soft  nofile  65535'
+    - '{{ansible_ssh_user}}  hard  nofile  65535'
+    sudo: yes
+
+  - name: copy pg source
+    copy: src=./{{item}} dest=~/{{item}} mode=0755
+    with_items:
+      - "pg_cluster_install.tgz"
+
+  - name: extract postgres
+    command: "tar xzf pg_cluster_install.tgz"

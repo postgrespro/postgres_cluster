@@ -1,7 +1,16 @@
 #ifndef __SOCKHUB_H__
 #define __SOCKHUB_H__
 
+
+#define USE_EPOLL 1
+
+#ifdef USE_EPOLL
+#include <sys/epoll.h>
+#define MAX_EVENTS 1024
+#else
 #include <sys/select.h>
+#endif
+
 
 typedef struct {
     unsigned int size : 24; /* size of message without header */
@@ -40,8 +49,12 @@ typedef struct
 {
     int    output;
     int    input;
+#ifdef USE_EPOLL
+    int epollfd;
+#else
     int    max_fd;
     fd_set inset;
+#endif
     char*  in_buffer;
     char*  out_buffer;
     int    in_buffer_used;

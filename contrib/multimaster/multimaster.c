@@ -141,13 +141,14 @@ static int   MMWorkers;
 static char* DtmHost;
 static int   DtmPort;
 static int   DtmBufferSize;
+static bool  DtmVoted;
 
 static ExecutorFinish_hook_type PreviousExecutorFinishHook = NULL;
 static void MMExecutorFinish(QueryDesc *queryDesc);
 static bool MMIsDistributedTrans;
 
 static BackgroundWorker DtmWorker = {
-	"DtmWorker",
+	"sockhub",
 	0, /* do not need connection to the database */
 	BgWorkerStart_PostmasterStart,
 	1, /* restrart in one second (is it possible to restort immediately?) */
@@ -157,6 +158,7 @@ static BackgroundWorker DtmWorker = {
 
 static void DumpSnapshot(Snapshot s, char *name)
 {
+#ifdef DUMP_SNAPSHOT
 	int i;
 	char buf[10000];
 	char *cursor = buf;
@@ -174,6 +176,7 @@ static void DumpSnapshot(Snapshot s, char *name)
 	}
 	cursor += sprintf(cursor, "]");
 	XTM_INFO("%s\n", buf);
+#endif
 }
 
 /* In snapshots provided by DTMD xip array is sorted, so we can use bsearch */
@@ -243,7 +246,9 @@ GetLocalSnapshot:
 	for (xid = dst->xmax; xid < src->xmax; xid++)
 		if (TransactionIdIsInDoubt(xid))
 			goto GetLocalSnapshot;
-	DumpSnapshot(dst, "local");
+
+    GetCurrentTransactionId();
+    DumpSnapshot(dst, "local");
 	DumpSnapshot(src, "DTM");
 
 	if (src->xmax < dst->xmax) dst->xmax = src->xmax;
@@ -645,6 +650,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 	{
 		if (TransactionIdIsValid(DtmNextXid))
 		{
+            DtmVoted = true;
 			if (status == TRANSACTION_STATUS_ABORTED || !MMIsDistributedTrans)
 			{
 				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
@@ -654,13 +660,15 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 			}
 			else
 			{
+                XidStatus verdict;
 				XTM_INFO("Begin commit transaction %d\n", xid);
 				/* Mark transaction as in-doubt in xid_in_doubt hash table */
 				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
 				LWLockRelease(dtm->hashLock);
-				if (DtmGlobalSetTransStatus(xid, status, true) != status) { 
-                    XTM_INFO("Commit of transaction %d is rejected by arbiter\n", xid);
+                verdict = DtmGlobalSetTransStatus(xid, status, true);
+                if (verdict != status) { 
+                    XTM_INFO("Commit of transaction %d is rejected by arbiter: staus=%d\n", xid, verdict);
                     DtmNextXid = InvalidTransactionId;
                     DtmLastSnapshot = NULL;
                     MMIsDistributedTrans = false; 
@@ -760,6 +768,7 @@ DtmXactCallback(XactEvent event, void *arg)
             MMBeginTransaction();
         }
         break;
+#if 0
     case XACT_EVENT_PRE_COMMIT:
     case XACT_EVENT_PARALLEL_PRE_COMMIT:
     { 
@@ -770,10 +779,14 @@ DtmXactCallback(XactEvent event, void *arg)
         }
         break;
     }
+#endif
     case XACT_EVENT_COMMIT:
     case XACT_EVENT_ABORT:
 		if (TransactionIdIsValid(DtmNextXid))
 		{
+            if (!DtmVoted) {
+                DtmGlobalSetTransStatus(DtmNextXid, TRANSACTION_STATUS_ABORTED, false);
+            }
 			if (event == XACT_EVENT_COMMIT)
 			{
 				/*
@@ -784,6 +797,7 @@ DtmXactCallback(XactEvent event, void *arg)
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_REMOVE, NULL);
 				LWLockRelease(dtm->hashLock);
 			}
+#if 0 /* should be handled now using DtmVoted flag */
 			else
 			{
 				/*
@@ -796,6 +810,7 @@ DtmXactCallback(XactEvent event, void *arg)
 					DtmGlobalSetTransStatus(DtmNextXid, TRANSACTION_STATUS_ABORTED, false);
                 }
 			}
+#endif
 			DtmNextXid = InvalidTransactionId;
 			DtmLastSnapshot = NULL;
         }
@@ -1008,6 +1023,7 @@ void MMBeginTransaction(void)
 		elog(ERROR, "Arbiter was not able to assign XID");
 	XTM_INFO("%d: Start global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
 
+    DtmVoted = false;
 	DtmHasGlobalSnapshot = true;
 	DtmLastSnapshot = NULL;
     MMIsDistributedTrans = false;
@@ -1020,6 +1036,7 @@ void MMJoinTransaction(TransactionId xid)
 	DtmNextXid = xid;
 	if (!TransactionIdIsValid(DtmNextXid))
 		elog(ERROR, "Arbiter was not able to assign XID");
+    DtmVoted = false;
 
 	DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
 	XTM_INFO("%d: Join global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);

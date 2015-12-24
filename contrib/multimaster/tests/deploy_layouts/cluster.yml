@@ -2,19 +2,15 @@
 - hosts: nodes[1]:nodes[2]:nodes[3]
   # accelerate: true
 
-  pre_tasks:
-  - name: setup the private key for postgrespro git access
-    copy: dest=.ssh/ppg-deploy src=~/ppg-deploy.key mode=0600
-
   roles:
   - role: postgres
     pg_port: 15432
-    pg_repo: git@gitlab.postgrespro.ru:pgpro-dev/postgrespro.git
-    pg_version_tag: xtm
-    pg_repo_key: ~/.ssh/ppg-deploy
+    pg_repo: https://github.com/postgrespro/postgres_cluster.git
+    pg_version_tag: master
     pg_destroy_and_init: true
-    # pg_config_role:
-    # - line: "dtm.buffer_size = 65536"
+    pg_datadir: "/mnt/pgtmpfs/data_{{pg_port}}"
+    pg_config_role:
+    - line: "multimaster.buffer_size = 65536"
 
   tasks:
   - name: generate connstrings
@@ -49,7 +45,7 @@
     - "multimaster.conn_strings = '{{ connections }}'"
     - "multimaster.node_id = {{ node_id }}"
     - "multimaster.queue_size = 1073741824"
-    - "multimaster.workers = 16"
+    - "multimaster.workers = 32"
 
   - name: restart postgrespro
     command: "{{pg_dst}}/bin/pg_ctl restart -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
@@ -57,16 +53,12 @@
       LD_LIBRARY_PATH: "{{pg_dst}}/lib/"
 
 - hosts: nodes[0]
-  pre_tasks:
-  - name: setup the private key for postgrespro git access
-    copy: dest=.ssh/ppg-deploy src=~/ppg-deploy.key mode=0600
 
   roles:
   - role: postgres
     pg_port: 15432
-    pg_repo: git@gitlab.postgrespro.ru:pgpro-dev/postgrespro.git
-    pg_version_tag: xtm
-    pg_repo_key: ~/.ssh/ppg-deploy
+    pg_repo: https://github.com/postgrespro/postgres_cluster.git
+    pg_version_tag: master
     pg_destroy_and_init: true
 
   tasks:
@@ -106,16 +98,19 @@
 
   - name: clone pqxx
     git: repo=https://github.com/Ambrosys/pqxx.git
-      dest=~/pqxx
+      dest=~/pg_cluster/pqxx
       accept_hostkey=yes
       update=no
       force=yes
     register: pqxx
 
+  # - name: ensure dirs
+  #   shell: "mkdir -p /home/{{ansible_ssh_user}}/pg_cluster/install/lib/"
+
   - name: build pqxx
-    shell: "./configure --prefix=/home/{{ansible_ssh_user}}/pg_cluster/install/ --enable-shared && make && make install"
+    shell: "./configure --prefix=/home/{{ansible_ssh_user}}/pg_cluster/install/ --enable-shared && make -j 6 && make install"
     args:
-      chdir: "~/pqxx"
+      chdir: "~/pg_cluster/pqxx"
     environment:
       PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/bin/:{{ansible_env.PATH}}"
     when: pqxx.changed
@@ -123,7 +118,7 @@
   - name: compile dtmbench
     shell: "g++ -g -Wall -O2 -o dtmbench dtmbench.cpp -lpqxx -lpq -pthread -L/home/{{ansible_ssh_user}}/pg_cluster/install/lib/ -I/home/{{ansible_ssh_user}}/pg_cluster/install/include/"
 
-  - name: compile dtmbench
+  - name: install dtmbench
     shell: "mv dtmbench ~/pg_cluster/install/bin/dtmbench"
 
 
