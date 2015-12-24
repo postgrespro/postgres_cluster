@@ -3,21 +3,19 @@ package main
 import (
 	"archive/tar"
 	"bufio"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/samalba/dockerclient"
+	"github.com/fsouza/go-dockerclient"
 	"io"
 	"log"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
-//	"time"
 )
 
 var cfg struct {
-	Docker *dockerclient.DockerClient
+	Docker *docker.Client
 	Paths struct {
 		Postgres string
 		Dtmd     string
@@ -60,7 +58,7 @@ func get_labels(container_id string) map[string]string {
 	return info.Config.Labels
 }
 
-func get_containers(morelabels ...string) []dockerclient.Container {
+func get_containers(morelabels ...string) []docker.APIContainers {
 	labellist := make([]string, len(labels) + len(morelabels))
 	i := 0
 	for k, v := range labels {
@@ -72,12 +70,13 @@ func get_containers(morelabels ...string) []dockerclient.Container {
 		i += 1
 	}
 	filters := map[string][]string{"label": labellist}
-	filterstr, err := json.Marshal(filters)
-	if err != nil {
-		log.Fatal(err)
-	}
 
-	containers, err := cfg.Docker.ListContainers(true, true, string(filterstr))
+	opts := docker.ListContainersOptions{
+		All: true,
+		Size: false,
+		Filters: filters,
+	}
+	containers, err := cfg.Docker.ListContainers(opts)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -86,17 +85,14 @@ func get_containers(morelabels ...string) []dockerclient.Container {
 }
 
 func get_ip(container_id string) (string, bool) {
-	info, err := cfg.Docker.InspectContainer(container_id)
+	cont, err := cfg.Docker.InspectContainer(container_id)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	net, err := cfg.Docker.InspectNetwork("contain")
-	if err != nil {
-		log.Fatal(err)
-	}
+	ip := cont.NetworkSettings.Networks["contain"].IPAddress
 
-	return net.Containers[container_id].IPv4Address, info.State.Running
+	return ip, cont.State.Running
 }
 
 func status() {
@@ -104,7 +100,7 @@ func status() {
 
 	for _, c := range get_containers() {
 		name := c.Names[0]
-		ip, running := get_ip(c.Id)
+		ip, running := get_ip(c.ID)
 		if running {
 			fmt.Printf("%s (%s)\n", name, ip)
 		} else {
@@ -206,23 +202,25 @@ func open_as_tar(paths map[string]string) *io.PipeReader {
 func build_image() {
 	log.Println("--- build")
 
-	reader := open_as_tar(map[string]string{
+	tarstream := open_as_tar(map[string]string{
 		"Dockerfile": "Dockerfile",
 		cfg.Paths.Postgres: "postgres",
 		cfg.Paths.Dtmd: "dtmd",
 		cfg.Paths.DtmBench: "dtmbench",
 	})
-	defer reader.Close()
+	defer tarstream.Close()
 
-	config := &dockerclient.BuildImage{
-		Context        : reader,
-		RepoName       : "postgrespro",
-		SuppressOutput : false,
-		ForceRemove    : true,
-		Remove         : true,
+	buildreader, buildstream := io.Pipe()
+	config := docker.BuildImageOptions{
+		InputStream         : tarstream,
+		OutputStream        : buildstream,
+		Name                : "postgrespro",
+		SuppressOutput      : false,
+		ForceRmTmpContainer : true,
+		RmTmpContainer      : true,
 	}
 
-	buildreader, err := cfg.Docker.BuildImage(config)
+	err := cfg.Docker.BuildImage(config)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -237,31 +235,48 @@ func build_image() {
 	}
 }
 
-func create_bulk_containers(config dockerclient.ContainerConfig, role string, num int) {
+func create_bulk_containers(image string, netname string, role string, num int) {
+	clabels := make(map[string]string)
+	for k, v := range labels {
+		clabels[k] = v
+	}
+	clabels["role"] = role
+
 	for i := 0; i < num; i++ {
-		config.Labels["role"] = role
 		name := fmt.Sprintf("%s%d", role, i)
-		config.Hostname = name
-		id, err := cfg.Docker.CreateContainer(&config, name, nil)
+		opts := docker.CreateContainerOptions{
+			Name: name,
+			Config: &docker.Config{
+				Hostname : name,
+				Labels   : clabels,
+				Tty      : true,
+				Image    : image,
+			},
+			HostConfig: &docker.HostConfig{
+				Privileged  : true,
+				NetworkMode : netname,
+			},
+		}
+		c, err := cfg.Docker.CreateContainer(opts)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		log.Printf("created container %s (%s...)\n", name, id[:8])
+		log.Printf("created container %s (%s...)\n", name, c.ID[:8])
 	}
 }
 
 func create_network(name string) {
-	netconfig := dockerclient.NetworkCreate{
+	opts := docker.CreateNetworkOptions{
 		Name           : name,
 		CheckDuplicate : true,
 		Driver         : "bridge",
 	}
-	response, err := cfg.Docker.CreateNetwork(&netconfig)
+	net, err := cfg.Docker.CreateNetwork(opts)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("created network %s (%s...)\n", name, response.ID[:8])
+	log.Printf("created network %s (%s...)\n", name, net.ID[:8])
 }
 
 func remove_network(name string) {
@@ -275,25 +290,13 @@ func remove_network(name string) {
 func create_containers() {
 	log.Println("--- create")
 
+	image := "postgrespro:latest"
 	netname := "contain"
 	create_network(netname)
 
-	clabels := make(map[string]string)
-	for k, v := range labels {
-		clabels[k] = v
-	}
-
-	config := dockerclient.ContainerConfig{
-		Image  : "postgrespro:latest",
-		Tty    : true,
-		Labels : clabels,
-	}
-	config.HostConfig.Privileged = true
-	config.HostConfig.NetworkMode = netname
-
-	create_bulk_containers(config, "postgres", cfg.NodesAs.Postgres)
-	create_bulk_containers(config,     "dtmd", cfg.NodesAs.Dtmd)
-	create_bulk_containers(config, "dtmbench", cfg.NodesAs.DtmBench)
+	create_bulk_containers(image, netname, "postgres", cfg.NodesAs.Postgres)
+	create_bulk_containers(image, netname,     "dtmd", cfg.NodesAs.Dtmd)
+	create_bulk_containers(image, netname, "dtmbench", cfg.NodesAs.DtmBench)
 }
 
 func start_containers() {
@@ -301,12 +304,12 @@ func start_containers() {
 
 	for _, c := range get_containers() {
 		name := c.Names[0]
-		ip, running := get_ip(c.Id)
+		ip, running := get_ip(c.ID)
 		if running {
 			fmt.Printf("%s (%s)\n", name, ip)
 		} else {
 			log.Printf("starting %s\n", name)
-			err := cfg.Docker.StartContainer(c.Id, nil)
+			err := cfg.Docker.StartContainer(c.ID, nil)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -319,10 +322,10 @@ func stop_containers() {
 
 	for _, c := range get_containers() {
 		name := c.Names[0]
-		ip, running := get_ip(c.Id)
+		ip, running := get_ip(c.ID)
 		if running {
 			log.Printf("stopping %s (%s)\n", name, ip)
-			err := cfg.Docker.StopContainer(c.Id, 5)
+			err := cfg.Docker.StopContainer(c.ID, 5)
 			if err != nil {
 				log.Println(err)
 			}
@@ -335,23 +338,40 @@ func stop_containers() {
 func run_in_container(container_id string, argv ...string) {
 	log.Printf("run in %s: %v", container_id[:8], argv)
 
-	config := dockerclient.ExecConfig{
-		AttachStdin  : true,
+	createopts := docker.CreateExecOptions{
+		AttachStdin  : false,
 		AttachStdout : true,
 		AttachStderr : true,
 		Tty          : true,
 		Cmd          : argv,
 		Container    : container_id,
-		Detach       : false,
 	}
 
-	execid, err := cfg.Docker.ExecCreate(&config)
+	exec, err := cfg.Docker.CreateExec(createopts)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = cfg.Docker.ExecStart(execid, &config)
+	reader, writer := io.Pipe()
+
+	startopts := docker.StartExecOptions{
+		Detach       : false,
+		Tty          : true,
+		OutputStream : writer,
+		ErrorStream  : writer,
+	}
+
+	err = cfg.Docker.StartExec(exec.ID, startopts)
 	if err != nil {
+		log.Fatal(err)
+	}
+
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		fmt.Println(scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -365,7 +385,7 @@ func init_data() {
 	log.Println("--- init")
 
 	for _, c := range get_containers("role=postgres") {
-		initdb(c.Id)
+		initdb(c.ID)
 	}
 }
 
@@ -375,7 +395,14 @@ func clean_all() {
 	for _, c := range get_containers() {
 		name := c.Names[0]
 		log.Printf("removing %s\n", name)
-		err := cfg.Docker.RemoveContainer(c.Id, true, true)
+
+		opts := docker.RemoveContainerOptions{
+			ID            : c.ID,
+			RemoveVolumes : true,
+			Force         : true,
+		}
+
+		err := cfg.Docker.RemoveContainer(opts)
 		if err != nil {
 			log.Println(err)
 		}
@@ -415,7 +442,7 @@ func init() {
 		cfg.Actions = []string{"status"}
 	}
 
-	cfg.Docker, _ = dockerclient.NewDockerClient("unix:///var/run/docker.sock", nil)
+	cfg.Docker, _ = docker.NewClientFromEnv()
 	dump_cfg()
 
 	should_exist(path.Join(cfg.Paths.Postgres, "bin", "postgres"))
