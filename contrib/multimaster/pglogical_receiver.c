@@ -512,7 +512,7 @@ int MMStartReceivers(char* conns, int node_id)
 {
     int i = 0;
 	BackgroundWorker worker;
-    char* conn_str = strdup(conns);
+    char* conn_str = conns;
     char* conn_str_end = conn_str + strlen(conn_str);
 	MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -539,8 +539,7 @@ int MMStartReceivers(char* conns, int node_id)
                 memcpy(MMDatabaseName, dbname, len);
                 MMDatabaseName[len] = '\0';
             }
-            *p = '\0';        
-            ctx->receiver_conn_string = conn_str;
+            ctx->receiver_conn_string = psprintf("replication=database %.*s", (int)(p - conn_str), conn_str);
             sprintf(ctx->receiver_slot, "mm_slot_%d", node_id);
             
             /* Worker parameter and registration */

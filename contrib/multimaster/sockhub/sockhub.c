@@ -19,6 +19,8 @@
 
 #include "sockhub.h"
 
+void ShubAddSocket(Shub* shub, int fd);
+
 inline void ShubAddSocket(Shub* shub, int fd)
 {
 #ifdef USE_EPOLL

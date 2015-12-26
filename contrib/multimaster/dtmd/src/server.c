@@ -16,53 +16,61 @@
 #include <netinet/tcp.h>
 #include <netinet/in.h>
 
+#ifdef USE_EPOLL
+#include <sys/epoll.h>
+#endif
+
 #include "server.h"
 #include "limits.h"
 #include "util.h"
 #include "sockhub.h"
 
 typedef struct buffer_t {
-	int ready; // number of bytes that are ready to be sent/processed
+	int ready; /* number of bytes that are ready to be sent/processed */
 	ShubMessageHdr *curmessage;
-	char *data; // dynamically allocated buffer
+	char *data; /* dynamically allocated buffer */
 } buffer_t;
 
 typedef struct stream_data_t *stream_t;
 
 typedef struct client_data_t {
-	stream_t stream; // NULL: client value is empty
+	stream_t stream; /* NULL: client value is empty */
 	void *userdata;
 	unsigned int chan;
 } client_data_t;
 
 typedef struct stream_data_t {
 	int fd;
-	bool good; // 'false': stop serving this stream and disconnect when possible
+	bool good; /* 'false': stop serving this stream and disconnect when possible */
 	buffer_t input;
 	buffer_t output;
 
-	// a map: 'chan' -> client_data_t
-	// 'chan' is expected to be < MAX_FDS which is pretty low
-	client_data_t *clients; // dynamically allocated
+	/* a map: 'chan' -> client_data_t */
+	/* 'chan' is expected to be < MAX_FDS which is pretty low */
+	client_data_t *clients; /* dynamically allocated */
+	struct stream_data_t* next;
 } stream_data_t;
 
 typedef struct server_data_t {
 	char *host;
 	int port;
 
-	int listener; // the listening socket
-	fd_set all; // all sockets including the listener
+	int listener; /* the listening socket */
+#ifdef USE_EPOLL
+	int epollfd;
+#else
+	fd_set all; /* all sockets including the listener */
 	int maxfd;
-
-	int streamsnum;
-	stream_data_t streams[MAX_STREAMS];
+#endif
+	stream_t used_chain;
+	stream_t free_chain;
 
 	onmessage_callback_t onmessage;
 	onconnect_callback_t onconnect;
 	ondisconnect_callback_t ondisconnect;
 } server_data_t;
 
-// Returns the created socket, or -1 if failed.
+/* Returns the created socket, or -1 if failed. */
 static int create_listening_socket(const char *host, int port) {
 	int s = socket(AF_INET, SOCK_STREAM, 0);
 	if (s == -1) {
@@ -113,32 +121,56 @@ server_t server_init(
 	return server;
 }
 
+bool register_socket(server_t server, int fd, stream_t stream)
+{
+#ifdef USE_EPOLL
+    struct epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.ptr = (void*)stream;        
+    if (epoll_ctl(server->epollfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
+        return false;
+    } 
+#else
+	FD_SET(fd, &server->all);
+	if (fd > server->maxfd) { 
+		server->maxfd = fd;
+	}
+#endif
+	return true;
+}
+
 bool server_start(server_t server) {
 	debug("starting the server\n");
-	server->streamsnum = 0;
-
+	server->free_chain = NULL;
+	server->used_chain = NULL;
+	
 	server->listener = create_listening_socket(server->host, server->port);
 	if (server->listener == -1) {
 		return false;
 	}
 
+#ifdef USE_EPOLL
+    server->epollfd = epoll_create(MAX_EVENTS);
+    if (server->epollfd < 0) { 
+		return false;
+	}
+#else
 	FD_ZERO(&server->all);
-	FD_SET(server->listener, &server->all);
-	server->maxfd = server->listener;
-
-	return true;
+	server->maxfd = 0;
+#endif
+	return register_socket(server, server->listener, NULL);
 }
 
 static bool stream_flush(stream_t stream) {
 	int tosend = stream->output.ready;
 	if (tosend == 0) {
-		// nothing to do
+		/* nothing to do */
 		return true;
 	}
 
 	char *cursor = stream->output.data;
 	while (tosend > 0) {
-		// repeat sending until we send everything
+		/* repeat sending until we send everything */
 		int sent = send(stream->fd, cursor, tosend, 0);
 		if (sent == -1) {
 			shout("failed to flush the stream\n");
@@ -153,7 +185,7 @@ static bool stream_flush(stream_t stream) {
 	stream->output.ready = 0;
 	ShubMessageHdr *msg = stream->output.curmessage;
 	if (msg) {
-		// move the unfinished message to the start of the buffer
+		/* move the unfinished message to the start of the buffer */
 		memmove(stream->output.data, msg, msg->size + sizeof(ShubMessageHdr));
 		stream->output.curmessage = (ShubMessageHdr*)stream->output.data;
 	}
@@ -163,10 +195,9 @@ static bool stream_flush(stream_t stream) {
 
 static void server_flush(server_t server) {
 	debug("flushing the streams\n");
-	int i;
-	for (i = 0; i < server->streamsnum; i++) {
-		stream_t stream = server->streams + i;
-		stream_flush(stream);
+	stream_t s;
+	for (s = server->used_chain; s != NULL; s = s->next) { 
+		stream_flush(s);
 	}
 }
 
@@ -187,7 +218,7 @@ static void stream_init(stream_t stream, int fd) {
 
 	stream->clients = malloc(MAX_TRANSACTIONS * sizeof(client_data_t));
 	assert(stream->clients);
-	// mark all clients as empty
+	/* mark all clients as empty */
 	for (i = 0; i < MAX_TRANSACTIONS; i++) {
 		stream->clients[i].stream = NULL;
 	}
@@ -207,36 +238,28 @@ static void server_stream_destroy(server_t server, stream_t stream) {
 			}
 		}
 	}
-
-	FD_CLR(stream->fd, &server->all);
+#ifdef USE_EPOLL
+	epoll_ctl(server->epollfd, EPOLL_CTL_DEL, stream->fd, NULL);
+#else
+ 	FD_CLR(stream->fd, &server->all);
+#endif
 	close(stream->fd);
 	free(stream->clients);
 	free(stream->input.data);
 	free(stream->output.data);
 }
 
-static void stream_move(stream_t dst, stream_t src) {
-	int i;
-	*dst = *src;
-	for (i = 0; i < MAX_TRANSACTIONS; i++) {
-		if (dst->clients[i].stream) {
-			dst->clients[i].stream = dst;
-		}
-	}
-}
-
 static void server_close_bad_streams(server_t server) {
-	int i;
-	for (i = server->streamsnum - 1; i >= 0; i--) {
-		stream_t stream = server->streams + i;
-		if (!stream->good) {
-			server_stream_destroy(server, stream);
-			if (i != server->streamsnum - 1) {
-				// move the last one here
-				*stream = server->streams[server->streamsnum - 1];
-				stream_move(stream, server->streams + server->streamsnum - 1);
-			}
-			server->streamsnum--;
+	stream_t s, next, *spp;
+	for (spp = &server->used_chain; (s = *spp) != NULL; s = next) { 
+		next = s->next;
+		if (!s->good) {
+			server_stream_destroy(server, s);
+			*spp = next;
+			s->next = server->free_chain;
+			server->free_chain = s;
+		} else {
+			spp = &s->next;
 		}
 	}
 }
@@ -279,7 +302,7 @@ static bool stream_message_append(stream_t stream, size_t len, void *data) {
 
 	int newsize = stream->output.curmessage->size + sizeof(ShubMessageHdr) + len;
 	if (newsize > BUFFER_SIZE) {
-		// the flushing will not help here
+		/* the flushing will not help here */
 		shout("the message cannot be bigger than the buffer size\n");
 		stream->good = false;
 		return false;
@@ -326,7 +349,8 @@ bool client_message_finish(client_t client) {
 	return stream_message_finish(client->stream);
 }
 
-bool client_message_shortcut(client_t client, xid_t arg) {
+bool client_message_shortcut(client_t client, xid_t arg) 
+{
 	if (!stream_message_start(client->stream, client->chan)) {
 		return false;
 	}
@@ -348,36 +372,33 @@ static bool server_accept(server_t server) {
 		return false;
 	}
 	debug("a new connection accepted\n");
-
-	if (server->streamsnum >= MAX_STREAMS) {
-		shout("streams limit hit, disconnecting the accepted connection\n");
-		close(fd);
-		return false;
+	
+	stream_t s = server->free_chain;
+	if (s == NULL) { 
+		s = malloc(sizeof(stream_data_t));
+	} else { 
+		server->free_chain = s->next;
 	}
+	/* add new stream */
+	s->next = server->used_chain;
+	server->used_chain = s;
 
-	// add new stream
-	stream_t s = server->streams + server->streamsnum++;
 	stream_init(s, fd);
 
-	FD_SET(fd, &server->all);
-	if (fd > server->maxfd) {
-		server->maxfd = fd;
-	}
-
-	return true;
+	return register_socket(server, fd, s);
 }
 
 static client_t stream_get_client(stream_t stream, unsigned int chan, bool *isnew) {
 	assert(chan < MAX_TRANSACTIONS);
 	client_t client = stream->clients + chan;
 	if (client->stream == NULL) {
-		// client is new
+		/* client is new */
 		client->stream = stream;
 		client->chan = chan;
 		*isnew = true;
 		client->userdata = NULL;
 	} else {
-		// collisions should not happen
+		/* collisions should not happen */
 		assert(client->chan == chan);
 		*isnew = false;
 	}
@@ -412,7 +433,7 @@ static bool server_stream_handle(server_t server, stream_t stream) {
 		ShubMessageHdr *msg = (ShubMessageHdr*)cursor;
 		int header_and_data = sizeof(ShubMessageHdr) + msg->size;
 		if (header_and_data <= toprocess) {
-			// handle message
+			/* handle message */
 			bool isnew;
 			client_t client = stream_get_client(stream, msg->chan, &isnew);
 			if (isnew) {
@@ -457,9 +478,30 @@ static bool server_stream_handle(server_t server, stream_t stream) {
 void server_loop(server_t server) {
 	while (1) {
 		int i;
+		int numready;
+#ifdef USE_EPOLL
+        struct epoll_event events[MAX_EVENTS];
+        numready = epoll_wait(server->epollfd, events, MAX_EVENTS, -1);
+		if (numready < 0) {
+			shout("failed to select: %s\n", strerror(errno));
+			return;
+		}
+		for (i = 0; i < numready; i++) { 
+			stream_t stream = (stream_t)events[i].data.ptr;
+			if (stream == NULL) { 
+				server_accept(server);
+			} else {
+				if (events[i].events & EPOLLERR) {
+					stream->good = false;
+				} else if (events[i].events & EPOLLIN) {
+					server_stream_handle(server, stream);
+				}
+			}
+		}
+#else
 		fd_set readfds = server->all;
-		debug("selecting\n");
 		int numready = select(server->maxfd + 1, &readfds, NULL, NULL, NULL);
+		stream_t s;
 		if (numready == -1) {
 			shout("failed to select: %s\n", strerror(errno));
 			return;
@@ -470,14 +512,13 @@ void server_loop(server_t server) {
 			server_accept(server);
 		}
 
-		for (i = 0; (i < server->streamsnum) && (numready > 0); i++) {
-			stream_t stream = server->streams + i;
-			if (FD_ISSET(stream->fd, &readfds)) {
-				server_stream_handle(server, stream);
+		for (s = server_used_chain; s != NULL && numready > 0; s = s->next) {
+			if (FD_ISSET(s->fd, &readfds)) {
+				server_stream_handle(server, s);
 				numready--;
 			}
 		}
-
+#endif
 		server_close_bad_streams(server);
 		server_flush(server);
 	}
@@ -501,7 +542,7 @@ unsigned client_get_ip_addr(client_t client)
 }
    
 #if 0
-// usage example
+/* usage example */
 
 void test_onconnect(client_t client) {
 	char *name = "hello";

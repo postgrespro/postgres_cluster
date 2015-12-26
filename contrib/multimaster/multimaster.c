@@ -12,6 +12,7 @@
 #include "postgres.h"
 #include "fmgr.h"
 #include "miscadmin.h"
+#include "libpq-fe.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/bgworker.h"
 #include "storage/s_lock.h"
@@ -44,7 +45,7 @@
 #include "utils/syscache.h"
 #include "replication/walsender.h"
 #include "port/atomics.h"
-
+#include "tcop/utility.h"
 #include "sockhub/sockhub.h"
 
 #include "libdtm.h"
@@ -104,8 +105,7 @@ static void DtmBackgroundWorker(Datum arg);
 
 static void MMMarkTransAsLocal(TransactionId xid);
 static BgwPool* MMPoolConstructor(void);
-
-static shmem_startup_hook_type prev_shmem_startup_hook;
+static bool MMRunUtilityStmt(PGconn* conn, char const* sql);
 
 static HTAB* xid_in_doubt;
 static HTAB* local_trans;
@@ -143,8 +143,15 @@ static int   DtmPort;
 static int   DtmBufferSize;
 static bool  DtmVoted;
 
-static ExecutorFinish_hook_type PreviousExecutorFinishHook = NULL;
+static ExecutorFinish_hook_type PreviousExecutorFinishHook;
+static ProcessUtility_hook_type PreviousProcessUtilityHook;
+static shmem_startup_hook_type PreviousShmemStartupHook;
+
+
 static void MMExecutorFinish(QueryDesc *queryDesc);
+static void MMProcessUtility(Node *parsetree, const char *queryString,
+							 ProcessUtilityContext context, ParamListInfo params,
+							 DestReceiver *dest, char *completionTag);
 static bool MMIsDistributedTrans;
 
 static BackgroundWorker DtmWorker = {
@@ -981,11 +988,14 @@ _PG_init(void)
 	/*
 	 * Install hooks.
 	 */
-	prev_shmem_startup_hook = shmem_startup_hook;
+	PreviousShmemStartupHook = shmem_startup_hook;
 	shmem_startup_hook = DtmShmemStartup;
 
 	PreviousExecutorFinishHook = ExecutorFinish_hook;
 	ExecutorFinish_hook = MMExecutorFinish;
+
+	PreviousProcessUtilityHook = ProcessUtility_hook;
+	ProcessUtility_hook = MMProcessUtility;
 }
 
 /*
@@ -994,15 +1004,17 @@ _PG_init(void)
 void
 _PG_fini(void)
 {
-	shmem_startup_hook = prev_shmem_startup_hook;
+	shmem_startup_hook = PreviousShmemStartupHook;
 	ExecutorFinish_hook = PreviousExecutorFinishHook;
+	ProcessUtility_hook = PreviousProcessUtilityHook;	
 }
 
 
 static void DtmShmemStartup(void)
 {
-	if (prev_shmem_startup_hook)
-		prev_shmem_startup_hook();
+	if (PreviousShmemStartupHook) {
+		PreviousShmemStartupHook();
+	}
 	DtmInitialize();
 }
 
@@ -1182,6 +1194,123 @@ mm_stop_replication(PG_FUNCTION_ARGS)
     PG_RETURN_VOID();
 }
 
+/*
+ * Execute statement with specified parameters and check its result
+ */
+static bool MMRunUtilityStmt(PGconn* conn, char const* sql)
+{
+	PGresult *result = PQexec(conn, sql);
+	bool ret = PQresultStatus(result) == PGRES_COMMAND_OK;
+	PQclear(result);
+	return ret;
+}
+
+
+static void MMProcessUtility(Node *parsetree, const char *queryString,
+							 ProcessUtilityContext context, ParamListInfo params,
+							 DestReceiver *dest, char *completionTag)
+{
+	bool skipCommand;
+	switch (nodeTag(parsetree))
+	{
+		case T_TransactionStmt:
+		case T_PlannedStmt:
+		case T_ClosePortalStmt:
+		case T_FetchStmt:
+		case T_DoStmt:
+		case T_CopyStmt:
+		case T_PrepareStmt:
+		case T_ExecuteStmt:
+		case T_NotifyStmt:
+		case T_ListenStmt:
+		case T_UnlistenStmt:
+		case T_LoadStmt:
+		case T_VariableSetStmt:
+		case T_VariableShowStmt:
+			skipCommand = true;
+			break;
+	    default:
+			skipCommand = false;			
+			break;
+	}
+	if (skipCommand || IsTransactionBlock()) { 
+		if (PreviousProcessUtilityHook != NULL)
+		{
+			PreviousProcessUtilityHook(parsetree, queryString, context,
+									   params, dest, completionTag);
+		}
+		else
+		{
+			standard_ProcessUtility(parsetree, queryString, context,
+									params, dest, completionTag);
+		}
+		if (!skipCommand) {
+			MMIsDistributedTrans = false;
+		}
+	} else { 		
+		char* conn_str = pstrdup(MMConnStrs);
+		char* conn_str_end = conn_str + strlen(conn_str);
+		int i = 0;
+		int failedNode = -1;
+		char const* errorMsg;
+		PGconn **conns;
+		conns = palloc(sizeof(PGconn*)*MMNodes);
+
+		while (conn_str < conn_str_end) { 
+			char* p = strchr(conn_str, ',');
+			if (p == NULL) { 
+				p = conn_str_end;
+			}
+			*p = '\0';        
+			conns[i] = PQconnectdb(conn_str);
+			if (PQstatus(conns[i]) != CONNECTION_OK)
+			{
+				failedNode = i;
+				do { 
+					PQfinish(conns[i]);
+				} while (--i >= 0);				
+				elog(ERROR, "Failed to establish connection '%s' to node %d", conn_str, failedNode);
+			}
+			conn_str = p + 1;
+			i += 1;
+		}
+		Assert(i == MMNodes);
+		
+		for (i = 0; i < MMNodes; i++) { 
+			if (!MMRunUtilityStmt(conns[i], "BEGIN TRANSACTION"))
+			{
+				errorMsg = "Failed to start transaction at node %d";
+				failedNode = i;
+				break;
+			}
+			if (!MMRunUtilityStmt(conns[i], queryString))
+			{
+				errorMsg = "Failed to run command at node %d";
+				failedNode = i;
+				break;
+			}
+		}
+		if (failedNode >= 0)  
+		{
+			for (i = 0; i < MMNodes; i++) { 
+				MMRunUtilityStmt(conns[i], "ROLLBACK TRANSACTION");
+			}
+		} else { 
+			for (i = 0; i < MMNodes; i++) { 
+				if (!MMRunUtilityStmt(conns[i], "COMMIT TRANSACTION")) { 
+					errorMsg = "Commit failed at node %d";
+					failedNode = i;
+				}
+			}
+		}			
+		for (i = 0; i < MMNodes; i++) { 
+			PQfinish(conns[i]);
+		}
+		if (failedNode >= 0) { 
+			elog(ERROR, errorMsg, failedNode+1);
+		}
+	}
+}
 static void
 MMExecutorFinish(QueryDesc *queryDesc)
 {
@@ -1202,7 +1331,7 @@ MMExecutorFinish(QueryDesc *queryDesc)
     }
 }        
 
-extern void MMExecute(void* work, int size)
+void MMExecute(void* work, int size)
 {
     BgwPoolExecute(&dtm->pool, work, size);
 }
