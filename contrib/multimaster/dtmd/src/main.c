@@ -196,25 +196,19 @@ static void gen_snapshot(Snapshot *s) {
     int n = 0;
 	s->times_sent = 0;
 	for (t = (Transaction*)active_transactions.prev; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.prev) {
-        /*
-		if (t->xid < s->xmin) {
-			s->xmin = t->xid;
-		}
-		if (t->xid >= s->xmax) { 
-			s->xmax = t->xid + 1;
-		}
-        */
 		s->active[n++] = t->xid;
 	}
-    s->nactive = n;
+	while (n > 1 && s->active[n-2]+1 == s->active[n-1]) { 
+		n -= 1;
+	}
 	if (n > 0) {
         s->xmin = s->active[0];
-        s->xmax = s->active[n-1];
+        s->xmax = s->active[--n];
 		assert(s->xmin <= s->xmax);
-		// snapshot_sort(s);
 	} else {
 		s->xmin = s->xmax = 0;
 	}
+    s->nactive = n;
 }
 
 static void onreserve(client_t client, int argc, xid_t *argv) {
