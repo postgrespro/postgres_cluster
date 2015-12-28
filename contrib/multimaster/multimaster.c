@@ -211,11 +211,13 @@ static bool TransactionIdIsInDoubt(TransactionId xid)
 		LWLockAcquire(dtm->hashLock, LW_SHARED);
 		inDoubt = hash_search(xid_in_doubt, &xid, HASH_FIND, NULL) != NULL;
 		LWLockRelease(dtm->hashLock);
+#if 0 /* We do not need to wait until transaction locks are released, do we? */
 		if (!inDoubt)
 		{
 			XLogRecPtr lsn;
 			inDoubt = DtmGetTransactionStatus(xid, &lsn) != TRANSACTION_STATUS_IN_PROGRESS;
 		}
+#endif
 		if (inDoubt)
 		{
 			XTM_INFO("Wait for transaction %d to complete\n", xid);
