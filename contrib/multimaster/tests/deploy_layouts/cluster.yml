@@ -15,7 +15,7 @@
   tasks:
   - name: generate connstrings
     set_fact:
-      connstr: "replication=database host={{item}} user={{ansible_ssh_user}} port=15432 dbname=postgres sslmode=disable"
+      connstr: "host={{item}} user={{ansible_ssh_user}} port=15432 dbname=postgres sslmode=disable"
     with_items:
       groups['nodes'] | reverse | batch(nnodes | d(3) | int) | first
     register: connstrs
