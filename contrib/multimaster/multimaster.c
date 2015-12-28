@@ -1252,7 +1252,7 @@ static void MMProcessUtility(Node *parsetree, const char *queryString,
 		char* conn_str_end = conn_str + strlen(conn_str);
 		int i = 0;
 		int failedNode = -1;
-		char const* errorMsg;
+		char const* errorMsg = NULL;
 		PGconn **conns;
 		conns = palloc(sizeof(PGconn*)*MMNodes);
 
