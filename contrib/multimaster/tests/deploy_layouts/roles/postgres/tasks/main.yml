@@ -60,11 +60,11 @@
   when: (pg_copydist is undefined) and pg_sources.changed
 
 - name: build and install
-  shell: ./configure --prefix={{pg_dst}} --without-zlib && make clean && make -j {{makejobs}} && make install
+  shell: ./configure --prefix={{pg_dst}} --enable-debug --without-zlib && make clean && make -j {{makejobs}} && make install
   args:
     chdir: "{{pg_src}}"
     creates: "{{pg_dst}}/bin/postgres"
-  when: pg_copydist is undefined
+  # when: pg_copydist is undefined
 
 #############################################################################
 

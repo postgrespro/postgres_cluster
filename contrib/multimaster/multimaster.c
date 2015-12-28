@@ -270,7 +270,7 @@ GetLocalSnapshot:
 		memcpy(dst->xip + dst->xcnt, src->xip, src->xcnt*sizeof(TransactionId));
 		n = dst->xcnt + src->xcnt;
 
-		qsort(dst->xip, n, sizeof(TransactionId), xidComparator);
+		// qsort(dst->xip, n, sizeof(TransactionId), xidComparator);
 		xid = InvalidTransactionId;
 
 		for (i = 0, j = 0; i < n && dst->xip[i] < dst->xmax; i++)
@@ -285,7 +285,7 @@ GetLocalSnapshot:
 		memcpy(dst->subxip + dst->subxcnt + dst->xcnt, src->xip, src->xcnt*sizeof(TransactionId));
 		n = dst->xcnt + dst->subxcnt + src->xcnt;
 
-		qsort(dst->subxip, n, sizeof(TransactionId), xidComparator);
+		// qsort(dst->subxip, n, sizeof(TransactionId), xidComparator);
 		xid = InvalidTransactionId;
 
 		for (i = 0, j = 0; i < n && dst->subxip[i] < dst->xmax; i++)
