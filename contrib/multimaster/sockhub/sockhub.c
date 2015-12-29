@@ -57,7 +57,6 @@ void ShubInitParams(ShubParams* params)
     params->port = 54321;
     params->queue_size = 100;
     params->max_attempts = 10;
-	params->delay = 10;
     params->error_handler = default_error_handler;
 }
 
