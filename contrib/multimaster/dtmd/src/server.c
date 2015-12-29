@@ -485,8 +485,11 @@ void server_loop(server_t server) {
 		int numready;
 #ifdef USE_EPOLL
         struct epoll_event events[MAX_EVENTS];
-        numready = epoll_wait(server->epollfd, events, MAX_EVENTS, -1);
+        numready = epoll_wait(server->epollfd, events, MAX_EVENTS, -1);        
 		if (numready < 0) {
+            if (errno == EINTR) { 
+                continue;
+            }
 			shout("failed to select: %s\n", strerror(errno));
 			return;
 		}

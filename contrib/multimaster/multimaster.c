@@ -617,10 +617,11 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
 	if (TransactionIdIsValid(DtmNextXid) && snapshot != &CatalogSnapshotData)
 	{
-		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != snapshot->curcid)) {
+        int cid = GetCurrentCommandId(false);
+		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != cid) {
 			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
         }
-		DtmCurcid = snapshot->curcid;
+		DtmCurcid = cid;
 		DtmLastSnapshot = snapshot;
 		DtmMergeWithGlobalSnapshot(snapshot);
 		if (!IsolationUsesXactSnapshot())
