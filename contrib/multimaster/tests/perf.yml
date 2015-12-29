@@ -6,7 +6,6 @@
 
   - name: create mm ext
     shell: >
-	  sleep 5
       ~/pg_cluster/install/bin/psql -p 15432 postgres -c "drop extension if exists multimaster";
       ~/pg_cluster/install/bin/psql -p 15432 postgres -c "drop table if exists t";
       ~/pg_cluster/install/bin/psql -p 15432 postgres -c 'create extension multimaster;';
