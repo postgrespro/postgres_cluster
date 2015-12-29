@@ -46,7 +46,7 @@
   - name: run transfers
     shell: >
       ~/pg_cluster/install/bin/dtmbench {{connections}}
-      -w {{ nconns }} -r 1 -n 5000 -a 500000 -p {{ up }} |
+      -w {{ nconns }} -r 0 -n 100000 -a 500000 -p {{ up }} |
       tee -a perf.results |
       sed "s/^/`hostname`:/"
     register: transfers_result

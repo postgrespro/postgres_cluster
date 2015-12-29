@@ -1202,7 +1202,11 @@ mm_stop_replication(PG_FUNCTION_ARGS)
 static bool MMRunUtilityStmt(PGconn* conn, char const* sql)
 {
 	PGresult *result = PQexec(conn, sql);
-	bool ret = PQresultStatus(result) == PGRES_COMMAND_OK;
+	int status = PQresultStatus(result);
+	bool ret = status == PGRES_COMMAND_OK;
+	if (!ret) { 
+		elog(WARNING, "Command '%s' failed with status %d", sql, status);
+	}
 	PQclear(result);
 	return ret;
 }
