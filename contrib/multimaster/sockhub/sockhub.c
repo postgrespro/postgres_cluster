@@ -19,7 +19,7 @@
 
 #include "sockhub.h"
 
-#define SOCKHUB_BUFFER_SIZE (16*1024*1024)
+#define SOCKHUB_BUFFER_SIZE (1024*1024)
 
 void ShubAddSocket(Shub* shub, int fd);
 
@@ -57,6 +57,7 @@ void ShubInitParams(ShubParams* params)
     params->port = 54321;
     params->queue_size = 100;
     params->max_attempts = 10;
+	params->delay = 10;
     params->error_handler = default_error_handler;
 }
 
