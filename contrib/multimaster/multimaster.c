@@ -115,7 +115,6 @@ static TransactionId DtmNextXid;
 static SnapshotData DtmSnapshot = { HeapTupleSatisfiesMVCC };
 static bool DtmHasGlobalSnapshot;
 static int DtmLocalXidReserve;
-static int DtmCurcid;
 static Snapshot DtmLastSnapshot;
 static TransactionManager DtmTM = {
 	DtmGetTransactionStatus,
@@ -617,11 +616,9 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
 	if (TransactionIdIsValid(DtmNextXid) && snapshot != &CatalogSnapshotData)
 	{
-        int cid = GetCurrentCommandId(false);
-		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != cid) {
+		if (!DtmHasGlobalSnapshot) {
 			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
         }
-		DtmCurcid = cid;
 		DtmLastSnapshot = snapshot;
 		DtmMergeWithGlobalSnapshot(snapshot);
 		if (!IsolationUsesXactSnapshot())
