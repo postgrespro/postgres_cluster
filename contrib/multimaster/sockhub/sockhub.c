@@ -335,10 +335,14 @@ void ShubLoop(Shub* shub)
                 for (j = 0; j < n; j++) {
                     i = events[j].data.fd;
                     if (events[j].events & EPOLLERR) {
-                        if (i != shub->input && i != shub->output) { 
+                        if (i == shub->input) { 
+                            shub->params->error_handler("Input socket error", SHUB_FATAL_ERROR);                            
+                        } else if (i == shub->output) { 
+                            reconnect(shub);
+                        } else { 
                             notify_disconnect(shub, i);
+                            close_socket(shub, i);
                         }
-                        close_socket(shub, i);
                     } else if (events[j].events & EPOLLIN) { 
 #else
                 for (i = 0; i <= max_fd; i++) {
