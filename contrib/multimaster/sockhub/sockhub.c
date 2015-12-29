@@ -19,7 +19,7 @@
 
 #include "sockhub.h"
 
-const size_t SOCKHUB_BUFFER_SIZE (16*1024*1024)
+#define SOCKHUB_BUFFER_SIZE (16*1024*1024)
 
 void ShubAddSocket(Shub* shub, int fd);
 
