@@ -211,11 +211,13 @@ static bool TransactionIdIsInDoubt(TransactionId xid)
 		LWLockAcquire(dtm->hashLock, LW_SHARED);
 		inDoubt = hash_search(xid_in_doubt, &xid, HASH_FIND, NULL) != NULL;
 		LWLockRelease(dtm->hashLock);
+#if 0 /* We do not need to wait until transaction locks are released, do we? */
 		if (!inDoubt)
 		{
 			XLogRecPtr lsn;
 			inDoubt = DtmGetTransactionStatus(xid, &lsn) != TRANSACTION_STATUS_IN_PROGRESS;
 		}
+#endif
 		if (inDoubt)
 		{
 			XTM_INFO("Wait for transaction %d to complete\n", xid);
@@ -1200,7 +1202,11 @@ mm_stop_replication(PG_FUNCTION_ARGS)
 static bool MMRunUtilityStmt(PGconn* conn, char const* sql)
 {
 	PGresult *result = PQexec(conn, sql);
-	bool ret = PQresultStatus(result) == PGRES_COMMAND_OK;
+	int status = PQresultStatus(result);
+	bool ret = status == PGRES_COMMAND_OK;
+	if (!ret) { 
+		elog(WARNING, "Command '%s' failed with status %d", sql, status);
+	}
 	PQclear(result);
 	return ret;
 }
