@@ -19,6 +19,8 @@
 
 #include "sockhub.h"
 
+const size_t SOCKHUB_BUFFER_SIZE (16*1024*1024)
+
 void ShubAddSocket(Shub* shub, int fd);
 
 inline void ShubAddSocket(Shub* shub, int fd)
@@ -189,6 +191,10 @@ static void reconnect(Shub* shub)
             } else { 
                 int optval = 1;
                 setsockopt(shub->output, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
+				optval = SOCKHUB_BUFFER_SIZE;
+				setsockopt(shub->output, SOL_SOCKET, SO_SNDBUF, (const char*) &optval, sizeof(int));
+				optval = SOCKHUB_BUFFER_SIZE;
+				setsockopt(shub->output, SOL_SOCKET, SO_RCVBUF, (const char*) &optval, sizeof(int));
 
                 ShubAddSocket(shub, shub->output);
                 if (sep != NULL) { 

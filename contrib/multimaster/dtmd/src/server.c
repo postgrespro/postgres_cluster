@@ -81,6 +81,10 @@ static int create_listening_socket(const char *host, int port) {
 	int optval = 1;
 	setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
 	setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char const*)&optval, sizeof(optval));
+	optval = SOCKET_BUFFER_SIZE;
+	setsockopt(s, SOL_SOCKET, SO_SNDBUF, (const char*) &optval, sizeof(int));
+	optval = SOCKET_BUFFER_SIZE;
+	setsockopt(s, SOL_SOCKET, SO_RCVBUF, (const char*) &optval, sizeof(int));
 
 	struct sockaddr_in addr;
 	addr.sin_family = AF_INET;
