@@ -1,4 +1,41 @@
 ---
+
+- hosts: nodes[0]
+
+  roles:
+  - role: postgres
+    pg_port: 15432
+    pg_repo: https://github.com/postgrespro/postgres_cluster.git
+    pg_version_tag: master
+    pg_destroy_and_init: true
+
+  tasks:
+  - name: build sockhub
+    shell: "make clean && make -j 4"
+    args:
+      chdir: "~/pg_cluster/src/contrib/multimaster/sockhub"
+
+  - name: build dtm
+    shell: "make clean && make -j 4"
+    args:
+      chdir: "~/pg_cluster/src/contrib/multimaster/dtmd"
+    # when: dtm_sources.changed
+
+  - name: kill dtmd
+    shell: kill -9 `cat ~/pg_cluster/dtm_data/arbiter.pid` || true
+
+  - name: ensure datadir for dtm exists
+    shell: "rm -rf ~/pg_cluster/dtm_data && mkdir ~/pg_cluster/dtm_data"
+
+  - name: start dtm
+    shell: >
+      nohup ~/pg_cluster/src/contrib/multimaster/dtmd/bin/dtmd
+      -d ~/pg_cluster/dtm_data -a 0.0.0.0 -p 5431 > ~/pg_cluster/dtm_data/log &
+
+  - name: wait until dtm is available
+    wait_for: port=5431 delay=1
+
+
 - hosts: nodes[1]:nodes[2]:nodes[3]
   # accelerate: true
 
@@ -51,41 +88,6 @@
     command: "{{pg_dst}}/bin/pg_ctl restart -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
     environment:
       LD_LIBRARY_PATH: "{{pg_dst}}/lib/"
-
-- hosts: nodes[0]
-
-  roles:
-  - role: postgres
-    pg_port: 15432
-    pg_repo: https://github.com/postgrespro/postgres_cluster.git
-    pg_version_tag: master
-    pg_destroy_and_init: true
-
-  tasks:
-  - name: build sockhub
-    shell: "make clean && make -j 4"
-    args:
-      chdir: "~/pg_cluster/src/contrib/multimaster/sockhub"
-
-  - name: build dtm
-    shell: "make clean && make -j 4"
-    args:
-      chdir: "~/pg_cluster/src/contrib/multimaster/dtmd"
-    # when: dtm_sources.changed
-
-  - name: kill dtmd
-    shell: kill -9 `cat ~/pg_cluster/dtm_data/arbiter.pid` || true
-
-  - name: ensure datadir for dtm exists
-    shell: "rm -rf ~/pg_cluster/dtm_data && mkdir ~/pg_cluster/dtm_data"
-
-  - name: start dtm
-    shell: >
-      nohup ~/pg_cluster/src/contrib/multimaster/dtmd/bin/dtmd
-      -d ~/pg_cluster/dtm_data -a 0.0.0.0 -p 5431 > ~/pg_cluster/dtm_data/log &
-
-  - name: wait until dtm is available
-    wait_for: port=5431 delay=1
 
 
 - hosts: clients
