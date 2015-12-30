@@ -42,7 +42,7 @@ set sr_plan.write_mode = false;
 ```
 Now verify that your query is saved:
 ```SQL
-select query_hash, enable, query, explain_jsonb_plan(plan) from sr_plans;
+select query_hash, enable, valid, query, explain_jsonb_plan(plan) from sr_plans;
 ```
 explain_jsonb_plan function allows you to display explain execute the plan of which lies in jsonb. By default, all the plans are off, you need enable it:
 ```SQL
@@ -50,3 +50,14 @@ update sr_plans set enable=true where query_hash=812619660;
 ```
 (812619660 for example only)
 After that, the plan for the query will be taken from the sr_plans.
+
+In addition sr plan allows you to save a parameterized query plan. In this case, we have some constants in the query are not essential.
+For the parameters we use a special function _p (anyelement) example:
+```SQL
+select query_hash from sr_plans where query_hash=1000+_p(10);
+```
+if we keep the plan for the query and enable it to be used also for the following queries:
+```SQL
+select query_hash from sr_plans where query_hash=1000+_p(11);
+select query_hash from sr_plans where query_hash=1000+_p(-5);
+```
