@@ -7,8 +7,7 @@
 #include "utils/palloc.h"
 #include "replication/reorderbuffer.h"
 
-struct PGLogicalOutputData;
-typedef struct PGLogicalOutputData PGLogicalOutputData;
+#include "pglogical_output/compat.h"
 
 /*
  * This header is to be included by extensions that implement pglogical output

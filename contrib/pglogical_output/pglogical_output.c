@@ -12,10 +12,12 @@
  */
 #include "postgres.h"
 
+#include "pglogical_output/compat.h"
 #include "pglogical_config.h"
 #include "pglogical_output.h"
 #include "pglogical_proto.h"
 #include "pglogical_hooks.h"
+#include "pglogical_relmetacache.h"
 
 #include "access/hash.h"
 #include "access/sysattr.h"
@@ -33,7 +35,9 @@
 
 #include "replication/output_plugin.h"
 #include "replication/logical.h"
+#ifdef HAVE_REPLICATION_ORIGINS
 #include "replication/origin.h"
+#endif
 
 #include "utils/builtins.h"
 #include "utils/catcache.h"
@@ -63,8 +67,10 @@ static void pg_decode_change(LogicalDecodingContext *ctx,
 				 ReorderBufferTXN *txn, Relation rel,
 				 ReorderBufferChange *change);
 
+#ifdef HAVE_REPLICATION_ORIGINS
 static bool pg_decode_origin_filter(LogicalDecodingContext *ctx,
 						RepOriginId origin_id);
+#endif
 
 static void send_startup_message(LogicalDecodingContext *ctx,
 		PGLogicalOutputData *data, bool last_message);
@@ -81,7 +87,9 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	cb->begin_cb = pg_decode_begin_txn;
 	cb->change_cb = pg_decode_change;
 	cb->commit_cb = pg_decode_commit_txn;
+#ifdef HAVE_REPLICATION_ORIGINS
 	cb->filter_by_origin_cb = pg_decode_origin_filter;
+#endif
 	cb->shutdown_cb = pg_decode_shutdown;
 }
 
@@ -204,17 +212,17 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				 errmsg("client sent startup parameters in format %d but we only support format 1",
 					params_format)));
 
-		if (data->client_min_proto_version > PG_LOGICAL_PROTO_VERSION_NUM)
+		if (data->client_min_proto_version > PGLOGICAL_PROTO_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("client sent min_proto_version=%d but we only support protocol %d or lower",
-					 data->client_min_proto_version, PG_LOGICAL_PROTO_VERSION_NUM)));
+					 data->client_min_proto_version, PGLOGICAL_PROTO_VERSION_NUM)));
 
-		if (data->client_max_proto_version < PG_LOGICAL_PROTO_MIN_VERSION_NUM)
+		if (data->client_max_proto_version < PGLOGICAL_PROTO_MIN_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("client sent max_proto_version=%d but we only support protocol %d or higher",
-				 	data->client_max_proto_version, PG_LOGICAL_PROTO_MIN_VERSION_NUM)));
+				 	data->client_max_proto_version, PGLOGICAL_PROTO_MIN_VERSION_NUM)));
 
 		/*
 		 * Set correct protocol format.
@@ -332,6 +340,43 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			load_hooks(data);
 			call_startup_hook(data, ctx->output_plugin_options);
 		}
+
+		if (data->client_relmeta_cache_size < -1)
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("relmeta_cache_size must be -1, 0, or positive")));
+		}
+
+		/*
+		 * Relation metadata cache configuration.
+		 *
+		 * TODO: support fixed size cache
+		 *
+		 * Need a LRU for eviction, and need to implement a new message type for
+		 * cache purge notifications for clients. In the mean time force it to 0
+		 * (off). The client will be told via a startup param and must respect
+		 * that.
+		 */
+		if (data->client_relmeta_cache_size != 0
+				&& data->client_relmeta_cache_size != -1)
+		{
+			ereport(INFO,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("fixed size cache not supported, forced to off"),
+					 errdetail("only relmeta_cache_size=0 (off) or relmeta_cache_size=-1 (unlimited) supported")));
+
+			data->relmeta_cache_size = 0;
+		}
+		else
+		{
+			/* ack client request */
+			data->relmeta_cache_size = data->client_relmeta_cache_size;
+		}
+
+		/* if cache enabled, init it */
+		if (data->relmeta_cache_size != 0)
+			pglogical_init_relmetacache();
 	}
 }
 
@@ -347,12 +392,15 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 	if (!startup_message_sent)
 		send_startup_message(ctx, data, false /* can't be last message */);
 
+#ifdef HAVE_REPLICATION_ORIGINS
 	/* If the record didn't originate locally, send origin info */
 	send_replication_origin &= txn->origin_id != InvalidRepOriginId;
+#endif
 
 	OutputPluginPrepareWrite(ctx, !send_replication_origin);
 	data->api->write_begin(ctx->out, data, txn);
 
+#ifdef HAVE_REPLICATION_ORIGINS
 	if (send_replication_origin)
 	{
 		char *origin;
@@ -374,6 +422,7 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 			replorigin_by_oid(txn->origin_id, true, &origin))
 			data->api->write_origin(ctx->out, origin, txn->origin_lsn);
 	}
+#endif
 
 	OutputPluginWrite(ctx, true);
 }
@@ -398,6 +447,8 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	PGLogicalOutputData *data = ctx->output_plugin_private;
 	MemoryContext old;
+	struct PGLRelMetaCacheEntry *cached_relmeta = NULL;
+
 
 	/* First check the table filter */
 	if (!call_row_filter_hook(data, txn, relation, change))
@@ -406,11 +457,18 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	/* Avoid leaking memory by using and resetting our own context */
 	old = MemoryContextSwitchTo(data->context);
 
-	/* TODO: add caching (send only if changed) */
-	if (data->api->write_rel)
+	/*
+	 * If the protocol wants to write relation information and the client
+	 * isn't known to have metadata cached for this relation already,
+	 * send relation metadata.
+	 *
+	 * TODO: track hit/miss stats
+	 */
+	if (data->api->write_rel != NULL &&
+			!pglogical_cache_relmeta(data, relation, &cached_relmeta))
 	{
 		OutputPluginPrepareWrite(ctx, false);
-		data->api->write_rel(ctx->out, relation);
+		data->api->write_rel(ctx->out, data, relation, cached_relmeta);
 		OutputPluginWrite(ctx, false);
 	}
 
@@ -454,6 +512,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	MemoryContextReset(data->context);
 }
 
+#ifdef HAVE_REPLICATION_ORIGINS
 /*
  * Decide if the whole transaction with specific origin should be filtered out.
  */
@@ -468,6 +527,7 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 
 	return false;
 }
+#endif
 
 static void
 send_startup_message(LogicalDecodingContext *ctx,

@@ -52,8 +52,8 @@ FROM pg_logical_slot_peek_changes('regression_slot',
 	'proto_format', 'json',
 	'no_txinfo', 't');
 SELECT * FROM get_startup_params();
-               key                | value  
-----------------------------------+--------
+               key                |  value  
+----------------------------------+---------
  binary.binary_basetypes          | "f"
  binary.float4_byval              | "t"
  binary.float8_byval              | "t"
@@ -72,7 +72,9 @@ SELECT * FROM get_startup_params();
  max_proto_version                | "1"
  min_proto_version                | "1"
  no_txinfo                        | "t"
-(18 rows)
+ pglogical_output_version         | "10000"
+ relmeta_cache_size               | "0"
+(20 rows)
 
 SELECT * FROM get_queued_data();
                                       data                                       
@@ -121,8 +123,8 @@ FROM pg_logical_slot_peek_changes('regression_slot',
 	'proto_format', 'json',
 	'no_txinfo', 't');
 SELECT * FROM get_startup_params();
-               key                | value  
-----------------------------------+--------
+               key                |  value  
+----------------------------------+---------
  binary.binary_basetypes          | "f"
  binary.float4_byval              | "t"
  binary.float8_byval              | "t"
@@ -141,7 +143,9 @@ SELECT * FROM get_startup_params();
  max_proto_version                | "1"
  min_proto_version                | "1"
  no_txinfo                        | "t"
-(18 rows)
+ pglogical_output_version         | "10000"
+ relmeta_cache_size               | "0"
+(20 rows)
 
 SELECT * FROM get_queued_data();
                                       data                                      

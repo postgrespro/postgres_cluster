@@ -30,10 +30,8 @@ not the priority as tools like wal2json already exist for that.
 
 ## Column metadata
 
-The output plugin sends metadata for columsn - at minimum, the column names -
-before each row. It will soon be changed to send the data before each row from
-a new, different table, so that streams of inserts from COPY etc don't repeat
-the metadata each time. That's just a pending feature.
+The output plugin sends metadata for columns - at minimum, the column names -
+before each row that first refers to that relation.
 
 The reason metadata must be sent is that the upstream and downstream table's
 attnos don't necessarily correspond. The column names might, and their ordering
@@ -53,15 +51,66 @@ maintained by DDL replication, but:
 
 So despite the bandwidth cost, we need to send metadata.
 
-In future a client-negotiated cache is planned, so that clients can announce
-to the output plugin that they can cache metadata across change series, and
-metadata can only be sent when invalidated by relation changes or when a new
-relation is seen.
-
 Support for type metadata is penciled in to the protocol so that clients that
 don't have table definitions at all - like queueing engines - can decode the
 data. That'll also permit type validation sanity checking on the apply side
 with logical replication.
+
+The upstream expects the client to cache this metadata and re-use it when data
+is sent for the relation again. Cache size controls, an LRU and purge
+notifications will be added.
+
+## Relation metadata cache size controls
+
+The relation metadata cache will have downstream size control added. The
+downstream will send a parameter indicating that it supports caching, and the
+maximum cache size desired. The option will have settings for "no cache",
+"cache unlimited" and "fixed size LRU [size specified]".
+
+Since there is no downstream-to-upstream communication after the startup params
+there's no easy way for the downstream to tell the upstream when it purges
+cache entries. So the downstream cache is a slave cache that must depend
+strictly on the upstream cache. The downstream tells the upstream how to manage
+its cache and then after that it just follows orders.
+
+To keep the caches in sync so the upstream never sends a row without knowing
+the downstream has metadata for it cached the downstream must always cache
+relation metadata when it receives it, and may not purge it from its cache
+until it receives a purge message for that relation from the upstream. If a
+new metadata message for the same relation arrives it *must* replace the old
+entry in the cache.
+
+The downstream does *not* have to promptly purge or invalidate cache entries
+when it gets purge messages from the upstream. They are just notifications that
+the upstream no longer expects the downstream to retain that cache entry and
+will re-send it if it is required again later.
+
+## Not an extension
+
+There's no extension script for pglogical_output. That's by design. We've tried
+really hard to avoid needing one, allowing applications using pglogical_output
+to entirely define any SQL level catalogs they need and interact with them
+using the hooks.
+
+That way applications don't have to deal with some of their catalog data being
+in pglogical_output extension catalogs and some being in their own.
+
+There's no issue with dump and restore that way either. The app controls it
+entirely and pglogical_output doesn't need any policy or tools for it.
+
+pglogical_output is meant to be a re-usable component of other solutions. Users
+shouldn't need to care about it directly.
+
+## Hooks
+
+Quite a bit of functionality that could be done directly in the output
+plugin is instead delegated to pluggable hooks. Replication origin filtering
+for example.
+
+That's because pglogical_output tries hard not to know anything about the
+topology of the replication cluster and leave that to applications using the
+plugin. It doesn't 
+
 
 ## Hook entry point as a SQL function
 
@@ -123,17 +172,59 @@ disconnect and report an error to the user if the server didn't do what it
 asked. This can be important, e.g. when a security-significant hook is
 specified.
 
-## XIDs only in begin/commit
+## Support for transaction streaming
 
-There's no need to send transaction IDs in each protocol message because
-logical decoding accumulates transactions' changes on the upstream in
-reorder buffers. It sends them only when they are committed, strictly
-in the order that they are committed.
+Presently logical decoding requires that a transaction has committed before it
+can *begin* sending it to the client. This means long running xacts can take 2x
+as long, since we can't start apply on the replica until the xact is committed
+on the master.
 
-If support for streaming transactions through logical decoding before
-commit is added to PostgreSQL in future, the pglogical output plugin
-will continue to rely on xact reordering by default. Interleaving will
-only be enabled if the client sends a startup parameter indicating it
-expects/supports interleaving. So we can add xid fields to individual
-messages in that case, if and when support is added, without breaking
-other clients.
+Additionally, a big xact will cause large delays in apply of smaller
+transactions because logical decoding reoreders transactions into strict commit
+order and replays them in that sequence. Small transactions that commited after
+the big transaction cannot be replayed to the replica until the big transaction
+is transferred over the wire, and we can't get a head start on that while it's
+still running.
+
+Finally, the accumulation of a big transaction in the reorder buffer means that
+storage on the upstream must be sufficient to hold the entire transaction until
+it can be streamed to the replica and discarded. That is in addition to the
+copy in retained WAL, which cannot be purged until replay is confirmed past
+commit for that xact. The temporary copy serves no data safety purpose; it can
+be regenerated from retained WAL is just a spool file.
+
+There are big upsides to waiting until commit. Rolled-back transactions and
+subtransactions are never sent at all. The apply/downstream side is greatly
+simplified by not needing to do transaction ordering, worry about
+interdependencies and conflicts during apply. The commit timestamp is known
+from the beginning of replay, allowing for smarter conflict resolution
+behaviour in multi-master scenarios. Nonetheless sometimes we want to be able
+to stream changes in advance of commit.
+
+So we need the ability to start streaming a transaction from the upstream as
+its changes are seen in WAL, either applying it immediately on the downstream
+or spooling it on the downstream until it's committed. This requires changes
+to the logical decoding facilities themselves, it isn't something pglogical_output
+can do alone. However, we've left room in pglogical_output to support this
+when support is added to logical decoding:
+
+* Flags in most message types let us add fields if we need to, like a
+  HAS_XID flag and an extra field for the transaction ID so we can
+  differentiate between concurrent transactions when streaming. The space
+  isn't wasted the rest of the time.
+
+* The upstream isn't allowed to send new message types, etc, without a
+  capability flag being set by the client. So for interleaved xacts we won't
+  enable them in logical decoding unless the client tells us the client is
+  prepared to cope with them by sending additional startup parameters.
+
+Note that for consistency reasons we still have to commit things in the same
+order on the downstream. The purpose of transaction streaming is to reduce the
+latency between the commit of the last xact before a big one and the first xact
+after the big one, minimising the duration of the stall in the flow of smaller
+xacts perceptible on the downstream.
+
+Transaction streaming also makes parallel apply on the downstream possible,
+though it is not necessary to have parallel apply to benefit from transaction
+streaming. Parallel apply has further complexities that are outside the scope
+of the output plugin design.

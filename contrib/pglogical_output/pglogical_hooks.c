@@ -5,7 +5,9 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 
+#ifdef HAVE_REPLICATION_ORIGINS
 #include "replication/origin.h"
+#endif
 
 #include "parser/parse_func.h"
 
