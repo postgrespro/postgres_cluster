@@ -50,7 +50,7 @@ class StructExVisitor(c_ast.NodeVisitor, StructMixin):
 		self.node_tags_structs = node_tags_structs
 
 	def visit_Struct(self, node):
-		if "include/nodes/" not in node.coord.file:
+		if "/nodes/" not in node.coord.file:
 			return
 
 		if node.decls:
@@ -69,7 +69,7 @@ class StructVisitor(c_ast.NodeVisitor, StructMixin):
 		self.node_tag_enums = node_tag_enums
 
 	def visit_Struct(self, node):
-		if "include/nodes/" not in node.coord.file:
+		if "/nodes/" not in node.coord.file:
 			return
 		#print(str(node.name)+" "+str(type(node)))
 
@@ -99,9 +99,10 @@ class StructVisitor(c_ast.NodeVisitor, StructMixin):
 
 if __name__ == "__main__":
 	filename = sys.argv[1]
-	postgres_include = ""
+	postgres_include = r""
 	if len(sys.argv) == 3:
-		postgres_include = "-I" + sys.argv[2]
+		postgres_include = r"-I" + sys.argv[2]
+
 	ast = parse_file(
 		filename,
 		use_cpp=True,

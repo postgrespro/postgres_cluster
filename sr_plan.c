@@ -469,7 +469,7 @@ sr_plan_invalid_table(PG_FUNCTION_ARGS)
 				}
 				if (find_plan)
 				{
-					elog(WARNING, "Invalidate saved plan with query_hash:%i", DatumGetInt32(search_values[0]));
+					elog(WARNING, "Invalidate saved plan with query:\n\t%s", TextDatumGetCString(search_values[2]));
 					/* update existing entry */
 					search_values[5] = BoolGetDatum(false);
 					search_replaces[5] = true;
