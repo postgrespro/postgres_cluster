@@ -20,6 +20,7 @@
 #include "sockhub.h"
 
 #define SOCKHUB_BUFFER_SIZE (1024*1024)
+#define ERR_BUF_SIZE 1024
 
 void ShubAddSocket(Shub* shub, int fd);
 
@@ -30,7 +31,9 @@ inline void ShubAddSocket(Shub* shub, int fd)
     ev.events = EPOLLIN;
     ev.data.fd = fd;        
     if (epoll_ctl(shub->epollfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
-        shub->params->error_handler("Failed to add socket to epoll set", SHUB_FATAL_ERROR);
+        char buf[ERR_BUF_SIZE];
+        sprintf(buf, "Failed to add socket %d to epoll set", fd);
+        shub->params->error_handler(buf, SHUB_FATAL_ERROR);
     } 
 #else
     FD_SET(fd, &shub->inset);    
@@ -441,7 +444,7 @@ void ShubLoop(Shub* shub)
                                 /* read as much as possible */
                                 rc = ShubReadSocketEx(chan, &shub->in_buffer[pos + available], sizeof(ShubMessageHdr) - available, buffer_size - pos - available);
                                 if (rc < sizeof(ShubMessageHdr) - available) { 
-                                    char buf[1024];
+                                    char buf[ERR_BUF_SIZE];
                                     sprintf(buf, "Failed to read local socket chan=%d, rc=%d, min requested=%ld, max requested=%d, errno=%d", chan, rc, sizeof(ShubMessageHdr) - available, buffer_size - pos - available, errno);
                                     shub->params->error_handler(buf, SHUB_RECOVERABLE_ERROR);
                                     //shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
@@ -480,7 +483,7 @@ void ShubLoop(Shub* shub)
                                     do { 
                                         unsigned int n = processed + size > buffer_size ? buffer_size - processed : size;
                                         if (chan >= 0 && !ShubReadSocket(chan, shub->in_buffer + processed, n)) { 
-                                            char buf[1024];
+                                            char buf[ERR_BUF_SIZE];
                                             sprintf(buf, "Failed to read local socket rc=%d, len=%d, errno=%d", rc, n, errno);
                                             shub->params->error_handler(buf, SHUB_RECOVERABLE_ERROR);
                                             //shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
