@@ -1,0 +1,43 @@
+CREATE EXTENSION
+CREATE TABLE
+SET
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+SET
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+UPDATE 2
+psql:./sql/sr_plan.sql:16: WARNING:  Ok we find saved plan.
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+psql:./sql/sr_plan.sql:17: WARNING:  Ok we find saved plan.
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+psql:./sql/sr_plan.sql:18: WARNING:  Ok we find saved plan.
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
