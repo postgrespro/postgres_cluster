@@ -92,7 +92,6 @@ static int resolve_host_by_name(const char *hostname, unsigned* addrs, unsigned*
 
 static void close_socket(Shub* shub, int fd)
 {
-    close(fd);
 #ifdef USE_EPOLL
     if (epoll_ctl(shub->epollfd, EPOLL_CTL_DEL, fd, NULL) < 0) {
         char buf[ERR_BUF_SIZE];
@@ -102,6 +101,7 @@ static void close_socket(Shub* shub, int fd)
 #else
     FD_CLR(fd, &shub->inset);
 #endif
+    close(fd);
 }
 
 int ShubReadSocketEx(int sd, void* buf, int min_size, int max_size)
