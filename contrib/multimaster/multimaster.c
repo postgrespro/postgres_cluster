@@ -1238,9 +1238,6 @@ static void MMProcessUtility(Node *parsetree, const char *queryString,
 			break;
 	}
 	if (skipCommand || IsTransactionBlock()) { 
-        if (!skipCommand) {
-            elog(WARNING, "Statement '%s' is in transaction block at node %d", queryString, MMNodeId);
-        }
 		if (PreviousProcessUtilityHook != NULL)
 		{
 			PreviousProcessUtilityHook(parsetree, queryString, context,
@@ -1263,8 +1260,6 @@ static void MMProcessUtility(Node *parsetree, const char *queryString,
 		PGconn **conns;
 		conns = palloc(sizeof(PGconn*)*MMNodes);
         
-        elog(WARNING, "Broadcast utility statement '%s' at node %d", queryString, MMNodeId);
-
 		while (conn_str < conn_str_end) { 
 			char* p = strchr(conn_str, ',');
 			if (p == NULL) { 
