@@ -146,7 +146,8 @@ void* writer(void* arg)
     }
     for (int i = 0; i < cfg.nIterations; i++)
     { 
-        work txn(*conns[random() % conns.size()]);
+        //work 
+            transaction<repeatable_read> txn(*conns[random() % conns.size()]);
         int srcAcc = random() % cfg.nAccounts;
         int dstAcc = random() % cfg.nAccounts;
         try {            
