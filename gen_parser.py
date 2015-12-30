@@ -118,7 +118,6 @@ if __name__ == "__main__":
 
 	deserialize_tmpl = Template(filename='./deserialize.mako')
 	serialize_tmpl = Template(filename='./serialize.mako')
-	walker_tmpl = Template(filename='./walker.mako')
 	out_file = open("./deserialize.c", "w")
 	out_file.write(deserialize_tmpl.render(
 		node_tree=struct_visitor.structs_dict,
