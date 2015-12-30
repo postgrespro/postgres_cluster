@@ -95,7 +95,9 @@ static void close_socket(Shub* shub, int fd)
     close(fd);
 #ifdef USE_EPOLL
     if (epoll_ctl(shub->epollfd, EPOLL_CTL_DEL, fd, NULL) < 0) {
-        shub->params->error_handler("Failed to add socket to epoll set", SHUB_RECOVERABLE_ERROR);
+        char buf[ERR_BUF_SIZE];
+        sprintf(buf, "Failed to remove socket %d from epoll set", fd);
+        shub->params->error_handler(buf, SHUB_RECOVERABLE_ERROR);
     }           
 #else
     FD_CLR(fd, &shub->inset);
