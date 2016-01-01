@@ -1,12 +1,6 @@
 results
-regression_output
 tmp_check
 pglogical_create_subscriber
-.vimrc
 *.o
 *.so
 *~
-pglogical.control
-pglogical-*.tar.bz2
-pglogical-*.tar.bz2.md5
-pglogical-*.tar.bz2.asc
