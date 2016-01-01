@@ -59,11 +59,7 @@
 
 #define CATALOG_LOCAL_SYNC_STATUS	"local_sync_status"
 
-#if PG_VERSION_NUM < 90500
-#define PGDUMP_BINARY "pglogical_dump"
-#else
 #define PGDUMP_BINARY "pg_dump"
-#endif
 #define PGRESTORE_BINARY "pg_restore"
 
 #define Natts_local_sync_state	5
@@ -98,7 +94,7 @@ dump_structure(PGLogicalSubscription *sub, const char *destfile,
 			 PG_VERSION_NUM / 100 / 100, PG_VERSION_NUM / 100 % 100);
 
 	initStringInfo(&command);
-	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -N pglogical_origin -F c -f \"%s\" \"%s\"",
+	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -F c -f \"%s\" \"%s\"",
 					 pg_dump, snapshot, EXTENSION_NAME, destfile,
 					 sub->origin_if->dsn);
 

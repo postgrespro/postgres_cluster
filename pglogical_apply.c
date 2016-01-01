@@ -294,11 +294,7 @@ UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
 		List	   *recheckIndexes = NIL;
 		recheckIndexes = ExecInsertIndexTuples(slot,
 											   &slot->tts_tuple->t_self,
-											   estate
-#if PG_VERSION_NUM >= 90500
-											   , false, NULL, NIL
-#endif
-											   );
+											   estate, false, NULL, NIL);
 
 		/* FIXME: recheck the indexes */
 		if (recheckIndexes != NIL)
@@ -417,11 +413,7 @@ handle_insert(StringInfo s)
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
 	ExecSetSlotDescriptor(applyslot, RelationGetDescr(rel->rel));
 
-	ExecOpenIndices(estate->es_result_relation_info
-#if PG_VERSION_NUM >= 90500
-					, false
-#endif
-					);
+	ExecOpenIndices(estate->es_result_relation_info, false);
 
 	conflicts = pglogical_tuple_find_conflict(estate, &newtup, localslot);
 
@@ -616,11 +608,7 @@ handle_update(StringInfo s)
 			/* Only update indexes if it's not HOT update. */
 			if (!HeapTupleIsHeapOnly(applyslot->tts_tuple))
 			{
-				ExecOpenIndices(estate->es_result_relation_info
-#if PG_VERSION_NUM >= 90500
-								, false
-#endif
-							   );
+				ExecOpenIndices(estate->es_result_relation_info, false);
 				UserTableUpdateOpenIndexes(estate, applyslot);
 				ExecCloseIndices(estate->es_result_relation_info);
 			}

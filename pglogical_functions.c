@@ -222,11 +222,7 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 					continue;
 				}
 
-#if PG_VERSION_NUM < 90500
-				if (slot->active)
-#else
 				if (slot->active_pid != 0)
-#endif
 				{
 					SpinLockRelease(&slot->mutex);
 					LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
@@ -1192,11 +1188,7 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	/* Force everything in the query to be fully qualified. */
 	(void) set_config_option("search_path", "",
 							 PGC_USERSET, PGC_S_SESSION,
-							 GUC_ACTION_SAVE, true, 0
-#if PG_VERSION_NUM >= 90500
-							 , false
-#endif
-							 );
+							 GUC_ACTION_SAVE, true, 0, false);
 
 	/* Convert the query to json string. */
 	initStringInfo(&cmd);
@@ -1212,12 +1204,7 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 				  QUEUE_COMMAND_TYPE_SQL, cmd.data);
 
 	/* Execute the query locally. */
-	pglogical_execute_sql_command(query, GetUserNameFromId(GetUserId()
-#if PG_VERSION_NUM >= 90500
-														   , false
-#endif
-														   ),
-								  false);
+	pglogical_execute_sql_command(query, GetUserNameFromId(GetUserId(), false), false);
 
 	/*
 	 * Restore the GUC variables we set above.
