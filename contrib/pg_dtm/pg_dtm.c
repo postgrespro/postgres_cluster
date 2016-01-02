@@ -74,6 +74,7 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 static void DtmUpdateRecentXmin(Snapshot snapshot);
 static void DtmInitialize(void);
+static void DtmSubXactCallback(XactEvent event, void *arg);
 static void DtmXactCallback(XactEvent event, void *arg);
 static TransactionId DtmGetNextXid(void);
 static TransactionId DtmGetNewTransactionId(bool isSubXact);
@@ -105,7 +106,6 @@ static SnapshotData DtmSnapshot = { HeapTupleSatisfiesMVCC };
 static bool DtmHasGlobalSnapshot;
 static bool DtmGlobalXidAssigned;
 static int DtmLocalXidReserve;
-static int DtmCurcid;
 static Snapshot DtmLastSnapshot;
 static TransactionManager DtmTM = {
 	DtmGetTransactionStatus,
@@ -605,9 +605,9 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 	}
 	if (TransactionIdIsValid(DtmNextXid) && snapshot != &CatalogSnapshotData)
 	{
-		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != snapshot->curcid))
+		if (!DtmHasGlobalSnapshot) { 
 			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
-		DtmCurcid = snapshot->curcid;
+		}
 		DtmLastSnapshot = snapshot;
 		DtmMergeWithGlobalSnapshot(snapshot);
 		if (!IsolationUsesXactSnapshot())
@@ -717,6 +717,7 @@ static void DtmInitialize()
 		dtm->nReservedXids = 0;
 		dtm->minXid = InvalidTransactionId;
 		RegisterXactCallback(DtmXactCallback, NULL);
+		RegisterSubXactCallback(DtmSubXactCallback, NULL);
 	}
 	LWLockRelease(AddinShmemInitLock);
 
@@ -733,6 +734,12 @@ static void DtmInitialize()
 
 
 	TM = &DtmTM;
+}
+
+static void
+DtmSubXactCallback(XactEvent event, void *arg)
+{
+	elog(ERROR, "Subtransactions are not currently supported");
 }
 
 static void

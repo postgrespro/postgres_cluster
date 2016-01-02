@@ -88,6 +88,7 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 static void DtmUpdateRecentXmin(Snapshot snapshot);
 static void DtmInitialize(void);
+static void DtmSubXactCallback(XactEvent event, void *arg);
 static void DtmXactCallback(XactEvent event, void *arg);
 static TransactionId DtmGetNextXid(void);
 static TransactionId DtmGetNewTransactionId(bool isSubXact);
@@ -733,6 +734,7 @@ static void DtmInitialize()
         dtm->initialized = false;
         BgwPoolInit(&dtm->pool, MMExecutor, MMDatabaseName, MMQueueSize);
 		RegisterXactCallback(DtmXactCallback, NULL);
+		RegisterSubXactCallback(DtmSubXactCallback, NULL);
 	}
 	LWLockRelease(AddinShmemInitLock);
 
@@ -760,6 +762,12 @@ static void DtmInitialize()
 
     MMDoReplication = true;
 	TM = &DtmTM;
+}
+
+static void
+DtmSubXactCallback(XactEvent event, void *arg)
+{
+	elog(ERROR, "Subtransactions are not currently supported");
 }
 
 static void
