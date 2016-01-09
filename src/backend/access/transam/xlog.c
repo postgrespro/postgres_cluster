@@ -511,7 +511,6 @@ typedef struct XLogCtlInsert
 	 */
 	WALInsertLockPadded *WALInsertLocks;
 	LWLockTranche WALInsertLockTranche;
-	int			WALInsertLockTrancheId;
 } XLogCtlInsert;
 
 /*
@@ -4652,7 +4651,7 @@ XLOGShmemInit(void)
 
 		/* Initialize local copy of WALInsertLocks and register the tranche */
 		WALInsertLocks = XLogCtl->Insert.WALInsertLocks;
-		LWLockRegisterTranche(XLogCtl->Insert.WALInsertLockTrancheId,
+		LWLockRegisterTranche(LWTRANCHE_WAL_INSERT,
 							  &XLogCtl->Insert.WALInsertLockTranche);
 		return;
 	}
@@ -4676,17 +4675,14 @@ XLOGShmemInit(void)
 		(WALInsertLockPadded *) allocptr;
 	allocptr += sizeof(WALInsertLockPadded) * NUM_XLOGINSERT_LOCKS;
 
-	XLogCtl->Insert.WALInsertLockTrancheId = LWLockNewTrancheId();
-
 	XLogCtl->Insert.WALInsertLockTranche.name = "WALInsertLocks";
 	XLogCtl->Insert.WALInsertLockTranche.array_base = WALInsertLocks;
 	XLogCtl->Insert.WALInsertLockTranche.array_stride = sizeof(WALInsertLockPadded);
 
-	LWLockRegisterTranche(XLogCtl->Insert.WALInsertLockTrancheId, &XLogCtl->Insert.WALInsertLockTranche);
+	LWLockRegisterTranche(LWTRANCHE_WAL_INSERT, &XLogCtl->Insert.WALInsertLockTranche);
 	for (i = 0; i < NUM_XLOGINSERT_LOCKS; i++)
 	{
-		LWLockInitialize(&WALInsertLocks[i].l.lock,
-						 XLogCtl->Insert.WALInsertLockTrancheId);
+		LWLockInitialize(&WALInsertLocks[i].l.lock, LWTRANCHE_WAL_INSERT);
 		WALInsertLocks[i].l.insertingAt = InvalidXLogRecPtr;
 	}
 
@@ -6338,6 +6334,14 @@ StartupXLOG(void)
 	StartupMultiXact();
 
 	/*
+	 * Ditto commit timestamps.  In a standby, we do it if setting is enabled
+	 * in ControlFile; in a master we base the decision on the GUC itself.
+	 */
+	if (ArchiveRecoveryRequested ?
+		ControlFile->track_commit_timestamp : track_commit_timestamp)
+		StartupCommitTs();
+
+	/*
 	 * Recover knowledge about replay progress of known replication partners.
 	 */
 	StartupReplicationOrigin();
@@ -6564,16 +6568,11 @@ StartupXLOG(void)
 			ProcArrayInitRecovery(ShmemVariableCache->nextXid);
 
 			/*
-			 * Startup commit log, commit timestamp and subtrans only.
-			 * MultiXact has already been started up and other SLRUs are not
+			 * Startup commit log and subtrans only.  MultiXact and commit
+			 * timestamp have already been started up and other SLRUs are not
 			 * maintained during recovery and need not be started yet.
-			 *
-			 * For commit timestamps, we do this based on the control file
-			 * info: in a standby, we want to drive it off the state of the
-			 * master, not local configuration.
 			 */
 			StartupCLOG();
-			StartupCommitTs(ControlFile->track_commit_timestamp);
 			StartupSUBTRANS(oldestActiveXID);
 
 			/*
@@ -7336,13 +7335,12 @@ StartupXLOG(void)
 	LWLockRelease(ProcArrayLock);
 
 	/*
-	 * Start up the commit log, commit timestamp and subtrans, if not already
-	 * done for hot standby.
+	 * Start up the commit log and subtrans, if not already done for hot
+	 * standby.  (commit timestamps are started below, if necessary.)
 	 */
 	if (standbyState == STANDBY_DISABLED)
 	{
 		StartupCLOG();
-		StartupCommitTs(track_commit_timestamp);
 		StartupSUBTRANS(oldestActiveXID);
 	}
 

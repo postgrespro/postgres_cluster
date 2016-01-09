@@ -2067,20 +2067,6 @@ _copySpecialJoinInfo(const SpecialJoinInfo *from)
 }
 
 /*
- * _copyLateralJoinInfo
- */
-static LateralJoinInfo *
-_copyLateralJoinInfo(const LateralJoinInfo *from)
-{
-	LateralJoinInfo *newnode = makeNode(LateralJoinInfo);
-
-	COPY_BITMAPSET_FIELD(lateral_lhs);
-	COPY_BITMAPSET_FIELD(lateral_rhs);
-
-	return newnode;
-}
-
-/*
  * _copyAppendRelInfo
  */
 static AppendRelInfo *
@@ -2415,6 +2401,7 @@ _copyAIndices(const A_Indices *from)
 {
 	A_Indices  *newnode = makeNode(A_Indices);
 
+	COPY_SCALAR_FIELD(is_slice);
 	COPY_NODE_FIELD(lidx);
 	COPY_NODE_FIELD(uidx);
 
@@ -4518,9 +4505,6 @@ copyObject(const void *from)
 			break;
 		case T_SpecialJoinInfo:
 			retval = _copySpecialJoinInfo(from);
-			break;
-		case T_LateralJoinInfo:
-			retval = _copyLateralJoinInfo(from);
 			break;
 		case T_AppendRelInfo:
 			retval = _copyAppendRelInfo(from);

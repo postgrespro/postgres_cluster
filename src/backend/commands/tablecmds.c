@@ -42,6 +42,7 @@
 #include "catalog/pg_type.h"
 #include "catalog/pg_type_fn.h"
 #include "catalog/storage.h"
+#include "catalog/storage_xlog.h"
 #include "catalog/toasting.h"
 #include "commands/cluster.h"
 #include "commands/comment.h"
@@ -1612,8 +1613,10 @@ MergeAttributes(List *schema, List *supers, char relpersistence,
 						errmsg("inherited column \"%s\" has a type conflict",
 							   attributeName),
 							 errdetail("%s versus %s",
-									   TypeNameToString(def->typeName),
-									   format_type_be(attribute->atttypid))));
+									   format_type_with_typemod(defTypeId,
+																deftypmod),
+								format_type_with_typemod(attribute->atttypid,
+													attribute->atttypmod))));
 				defCollId = GetColumnDefCollation(NULL, def, defTypeId);
 				if (defCollId != attribute->attcollation)
 					ereport(ERROR,
@@ -1831,8 +1834,10 @@ MergeAttributes(List *schema, List *supers, char relpersistence,
 							 errmsg("column \"%s\" has a type conflict",
 									attributeName),
 							 errdetail("%s versus %s",
-									   TypeNameToString(def->typeName),
-									   TypeNameToString(newdef->typeName))));
+									   format_type_with_typemod(defTypeId,
+																deftypmod),
+									   format_type_with_typemod(newTypeId,
+																newtypmod))));
 				defcollid = GetColumnDefCollation(NULL, def, defTypeId);
 				newcollid = GetColumnDefCollation(NULL, newdef, newTypeId);
 				if (defcollid != newcollid)
@@ -9080,8 +9085,7 @@ ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing, LOCKMODE lock
 		 * Also change the ownership of the table's row type, if it has one
 		 */
 		if (tuple_class->relkind != RELKIND_INDEX)
-			AlterTypeOwnerInternal(tuple_class->reltype, newOwnerId,
-							 tuple_class->relkind == RELKIND_COMPOSITE_TYPE);
+			AlterTypeOwnerInternal(tuple_class->reltype, newOwnerId);
 
 		/*
 		 * If we are operating on a table or materialized view, also change
@@ -9659,6 +9663,15 @@ ATExecSetTableSpace(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode)
 		if (smgrexists(rel->rd_smgr, forkNum))
 		{
 			smgrcreate(dstrel, forkNum, false);
+
+			/*
+			 * WAL log creation if the relation is persistent, or this is the
+			 * init fork of an unlogged relation.
+			 */
+			if (rel->rd_rel->relpersistence == RELPERSISTENCE_PERMANENT ||
+				(rel->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED &&
+				 forkNum == INIT_FORKNUM))
+				log_smgrcreate(&newrnode, forkNum);
 			copy_relation_data(rel->rd_smgr, dstrel, forkNum,
 							   rel->rd_rel->relpersistence);
 		}
@@ -9878,6 +9891,7 @@ copy_relation_data(SMgrRelation src, SMgrRelation dst,
 	char	   *buf;
 	Page		page;
 	bool		use_wal;
+	bool		copying_initfork;
 	BlockNumber nblocks;
 	BlockNumber blkno;
 
@@ -9891,10 +9905,19 @@ copy_relation_data(SMgrRelation src, SMgrRelation dst,
 	page = (Page) buf;
 
 	/*
+	 * The init fork for an unlogged relation in many respects has to be
+	 * treated the same as normal relation, changes need to be WAL logged and
+	 * it needs to be synced to disk.
+	 */
+	copying_initfork = relpersistence == RELPERSISTENCE_UNLOGGED &&
+		forkNum == INIT_FORKNUM;
+
+	/*
 	 * We need to log the copied data in WAL iff WAL archiving/streaming is
 	 * enabled AND it's a permanent relation.
 	 */
-	use_wal = XLogIsNeeded() && relpersistence == RELPERSISTENCE_PERMANENT;
+	use_wal = XLogIsNeeded() &&
+		(relpersistence == RELPERSISTENCE_PERMANENT || copying_initfork);
 
 	nblocks = smgrnblocks(src, forkNum);
 
@@ -9949,7 +9972,7 @@ copy_relation_data(SMgrRelation src, SMgrRelation dst,
 	 * wouldn't replay our earlier WAL entries. If we do not fsync those pages
 	 * here, they might still not be on disk when the crash occurs.
 	 */
-	if (relpersistence == RELPERSISTENCE_PERMANENT)
+	if (relpersistence == RELPERSISTENCE_PERMANENT || copying_initfork)
 		smgrimmedsync(dst, forkNum);
 }
 

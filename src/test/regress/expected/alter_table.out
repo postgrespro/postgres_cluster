@@ -380,7 +380,16 @@ DROP TABLE tmp2;
 -- NOT VALID with plan invalidation -- ensure we don't use a constraint for
 -- exclusion until validated
 set constraint_exclusion TO 'partition';
-create table nv_parent (d date);
+create table nv_parent (d date, check (false) no inherit not valid);
+-- not valid constraint added at creation time should automatically become valid
+\d nv_parent
+ Table "public.nv_parent"
+ Column | Type | Modifiers 
+--------+------+-----------
+ d      | date | 
+Check constraints:
+    "nv_parent_check" CHECK (false) NO INHERIT
+
 create table nv_child_2010 () inherits (nv_parent);
 create table nv_child_2011 () inherits (nv_parent);
 alter table nv_child_2010 add check (d between '2010-01-01'::date and '2010-12-31'::date) not valid;
@@ -1259,6 +1268,27 @@ select * from child;
  12 | testing
 (1 row)
 
+drop table child;
+drop table parent;
+-- check error cases for inheritance column merging
+create table parent (a float8, b numeric(10,4), c text collate "C");
+create table child (a float4) inherits (parent); -- fail
+NOTICE:  merging column "a" with inherited definition
+ERROR:  column "a" has a type conflict
+DETAIL:  double precision versus real
+create table child (b decimal(10,7)) inherits (parent); -- fail
+NOTICE:  moving and merging column "b" with inherited definition
+DETAIL:  User-specified column moved to the position of the inherited column.
+ERROR:  column "b" has a type conflict
+DETAIL:  numeric(10,4) versus numeric(10,7)
+create table child (c text collate "POSIX") inherits (parent); -- fail
+NOTICE:  moving and merging column "c" with inherited definition
+DETAIL:  User-specified column moved to the position of the inherited column.
+ERROR:  column "c" has a collation conflict
+DETAIL:  "C" versus "POSIX"
+create table child (a double precision, b decimal(10,4)) inherits (parent);
+NOTICE:  merging column "a" with inherited definition
+NOTICE:  merging column "b" with inherited definition
 drop table child;
 drop table parent;
 -- test copy in/out

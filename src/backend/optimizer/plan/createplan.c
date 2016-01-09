@@ -558,7 +558,8 @@ use_physical_tlist(PlannerInfo *root, RelOptInfo *rel)
  * If the plan node immediately above a scan would prefer to get only
  * needed Vars and not a physical tlist, it must call this routine to
  * undo the decision made by use_physical_tlist().  Currently, Hash, Sort,
- * and Material nodes want this, so they don't have to store useless columns.
+ * Material, and Gather nodes want this, so they don't have to store or
+ * transfer useless columns.
  */
 static void
 disuse_physical_tlist(PlannerInfo *root, Plan *plan, Path *path)
@@ -1122,6 +1123,8 @@ create_gather_plan(PlannerInfo *root, GatherPath *best_path)
 	Plan	   *subplan;
 
 	subplan = create_plan_recurse(root, best_path->subpath);
+
+	disuse_physical_tlist(root, subplan, best_path->subpath);
 
 	gather_plan = make_gather(subplan->targetlist,
 							  NIL,
@@ -2095,10 +2098,15 @@ create_foreignscan_plan(PlannerInfo *root, ForeignPath *best_path,
 	Index		scan_relid = rel->relid;
 	Oid			rel_oid = InvalidOid;
 	Bitmapset  *attrs_used = NULL;
+	Plan	   *outer_plan = NULL;
 	ListCell   *lc;
 	int			i;
 
 	Assert(rel->fdwroutine != NULL);
+
+	/* transform the child path if any */
+	if (best_path->fdw_outerpath)
+		outer_plan = create_plan_recurse(root, best_path->fdw_outerpath);
 
 	/*
 	 * If we're scanning a base relation, fetch its OID.  (Irrelevant if
@@ -2129,7 +2137,8 @@ create_foreignscan_plan(PlannerInfo *root, ForeignPath *best_path,
 	 */
 	scan_plan = rel->fdwroutine->GetForeignPlan(root, rel, rel_oid,
 												best_path,
-												tlist, scan_clauses);
+												tlist, scan_clauses,
+												outer_plan);
 
 	/* Copy cost data from Path to Plan; no need to make FDW do this */
 	copy_generic_path_info(&scan_plan->scan.plan, &best_path->path);
@@ -3747,7 +3756,8 @@ make_foreignscan(List *qptlist,
 				 List *fdw_exprs,
 				 List *fdw_private,
 				 List *fdw_scan_tlist,
-				 List *fdw_recheck_quals)
+				 List *fdw_recheck_quals,
+				 Plan *outer_plan)
 {
 	ForeignScan *node = makeNode(ForeignScan);
 	Plan	   *plan = &node->scan.plan;
@@ -3755,7 +3765,7 @@ make_foreignscan(List *qptlist,
 	/* cost will be filled in by create_foreignscan_plan */
 	plan->targetlist = qptlist;
 	plan->qual = qpqual;
-	plan->lefttree = NULL;
+	plan->lefttree = outer_plan;
 	plan->righttree = NULL;
 	node->scan.scanrelid = scanrelid;
 	/* fs_server will be filled in by create_foreignscan_plan */

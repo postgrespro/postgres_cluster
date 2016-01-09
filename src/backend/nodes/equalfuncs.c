@@ -846,15 +846,6 @@ _equalSpecialJoinInfo(const SpecialJoinInfo *a, const SpecialJoinInfo *b)
 }
 
 static bool
-_equalLateralJoinInfo(const LateralJoinInfo *a, const LateralJoinInfo *b)
-{
-	COMPARE_BITMAPSET_FIELD(lateral_lhs);
-	COMPARE_BITMAPSET_FIELD(lateral_rhs);
-
-	return true;
-}
-
-static bool
 _equalAppendRelInfo(const AppendRelInfo *a, const AppendRelInfo *b)
 {
 	COMPARE_SCALAR_FIELD(parent_relid);
@@ -2160,6 +2151,7 @@ _equalAStar(const A_Star *a, const A_Star *b)
 static bool
 _equalAIndices(const A_Indices *a, const A_Indices *b)
 {
+	COMPARE_SCALAR_FIELD(is_slice);
 	COMPARE_NODE_FIELD(lidx);
 	COMPARE_NODE_FIELD(uidx);
 
@@ -2859,9 +2851,6 @@ equal(const void *a, const void *b)
 			break;
 		case T_SpecialJoinInfo:
 			retval = _equalSpecialJoinInfo(a, b);
-			break;
-		case T_LateralJoinInfo:
-			retval = _equalLateralJoinInfo(a, b);
 			break;
 		case T_AppendRelInfo:
 			retval = _equalAppendRelInfo(a, b);

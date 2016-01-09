@@ -1132,9 +1132,8 @@ inheritance_planner(PlannerInfo *root)
 			}
 		}
 
-		/* There shouldn't be any OJ or LATERAL info to translate, as yet */
+		/* There shouldn't be any OJ info to translate, as yet */
 		Assert(subroot.join_info_list == NIL);
-		Assert(subroot.lateral_info_list == NIL);
 		/* and we haven't created PlaceHolderInfos, either */
 		Assert(subroot.placeholder_list == NIL);
 		/* hack to mark target relation as an inheritance partition */
@@ -1530,7 +1529,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 * This may add new security barrier subquery RTEs to the rangetable.
 		 */
 		expand_security_quals(root, tlist);
-		root->glob->hasRowSecurity = parse->hasRowSecurity;
+		if (parse->hasRowSecurity)
+			root->glob->hasRowSecurity = true;
 
 		/*
 		 * Locate any window functions in the tlist.  (We don't need to look

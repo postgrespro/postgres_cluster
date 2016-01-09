@@ -86,6 +86,7 @@ extern ForeignPath *create_foreignscan_path(PlannerInfo *root, RelOptInfo *rel,
 						double rows, Cost startup_cost, Cost total_cost,
 						List *pathkeys,
 						Relids required_outer,
+						Path *fdw_outerpath,
 						List *fdw_private);
 
 extern Relids calc_nestloop_required_outer(Path *outer_path, Path *inner_path);
@@ -147,6 +148,10 @@ extern RelOptInfo *build_join_rel(PlannerInfo *root,
 			   RelOptInfo *inner_rel,
 			   SpecialJoinInfo *sjinfo,
 			   List **restrictlist_ptr);
+extern Relids min_join_parameterization(PlannerInfo *root,
+						  Relids joinrelids,
+						  RelOptInfo *outer_rel,
+						  RelOptInfo *inner_rel);
 extern RelOptInfo *build_empty_join_rel(PlannerInfo *root);
 extern AppendRelInfo *find_childrel_appendrelinfo(PlannerInfo *root,
 							RelOptInfo *rel);

@@ -98,6 +98,8 @@ extern RelOptInfo *make_join_rel(PlannerInfo *root,
 			  RelOptInfo *rel1, RelOptInfo *rel2);
 extern bool have_join_order_restriction(PlannerInfo *root,
 							RelOptInfo *rel1, RelOptInfo *rel2);
+extern bool have_dangerous_phv(PlannerInfo *root,
+				   Relids outer_relids, Relids inner_params);
 
 /*
  * equivclass.c
@@ -204,5 +206,8 @@ extern List *truncate_useless_pathkeys(PlannerInfo *root,
 						  RelOptInfo *rel,
 						  List *pathkeys);
 extern bool has_useful_pathkeys(PlannerInfo *root, RelOptInfo *rel);
+extern PathKey *make_canonical_pathkey(PlannerInfo *root,
+					   EquivalenceClass *eclass, Oid opfamily,
+					   int strategy, bool nulls_first);
 
 #endif   /* PATHS_H */
