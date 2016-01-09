@@ -28,8 +28,21 @@
  *		In order to survive crashes and shutdowns, all prepared
  *		transactions must be stored in permanent storage. This includes
  *		locking information, pending notifications etc. All that state
- *		information is written to the per-transaction state file in
- *		the pg_twophase directory.
+ *		information is written to the WAL and later can be moved to the
+ *		per-transaction state file in the pg_twophase directory. Life track of
+ *		state data is following:
+ *
+ *		* On PREPARE TRANSACTION backend writes state data only to the WAL and
+ *		  stores pointer to the start of the WAL record in
+ *		  gxact->prepare_start_lsn.
+ *		* If COMMIT occurs before checkpoint then backend reads data from WAL
+ *		  using prepare_start_lsn.
+ *		* On checkpoint state data copied to files in pg_twophase directory and
+ *		  fsynced
+ *		* If COMMIT happens after checkpoint then backend reads state data from
+ *		  files
+ *		* In case of crash replay will move data from xlog to files, if that
+ *		  didn't happend before.
  *
  *-------------------------------------------------------------------------
  */
