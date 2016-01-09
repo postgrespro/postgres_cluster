@@ -42,7 +42,7 @@
  *		* If COMMIT happens after checkpoint then backend reads state data from
  *		  files
  *		* In case of crash replay will move data from xlog to files, if that
- *		  didn't happend before.
+ *		  hasn't happened before.
  *
  *-------------------------------------------------------------------------
  */
