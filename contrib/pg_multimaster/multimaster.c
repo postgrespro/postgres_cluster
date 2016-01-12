@@ -48,32 +48,50 @@
 #include "tcop/utility.h"
 #include "sockhub/sockhub.h"
 
-#include "libdtm.h"
 #include "multimaster.h"
 #include "bgwpool.h"
 
-typedef struct
+#define DTM_HASH_INIT_SIZE  1000000
+#define INVALID_CID    0
+#define MIN_WAIT_TIMEOUT 1000
+#define MAX_WAIT_TIMEOUT 100000
+#define MAX_GTID_SIZE  16
+#define HASH_PER_ELEM_OVERHEAD 64
+
+#define USEC 1000000
+
+typedef uint64 timestamp_t;
+
+typedef struct DtmTransStatus
 {
-	LWLockId hashLock;
-	LWLockId xidLock;
-	TransactionId minXid;  /* XID of oldest transaction visible by any active transaction (local or global) */
-	TransactionId nextXid; /* next XID for local transaction */
-	size_t nReservedXids;  /* number of XIDs reserved for local transactions */
+    TransactionId xid;
+    XidStatus status;
+    int nSubxids;
+    cid_t cid;
+    struct DtmTransStatus* next;
+} DtmTransStatus;
+
+typedef struct 
+{
+    cid_t cid;
+    long  time_shift;
+	volatile slock_t lock;
+    DtmTransStatus* trans_list_head;
+    DtmTransStatus** trans_list_tail;
     int    nNodes;
     pg_atomic_uint32 nReceivers;
     bool initialized;
     BgwPool pool;
-} DtmState;
+} DtmNodeState;
 
 typedef struct
 {
+    char gtid[MAX_GTID_SIZE];
     TransactionId xid;
-    int count;
-} LocalTransaction;
-
-#define DTM_SHMEM_SIZE (64*1024*1024)
-#define DTM_HASH_SIZE  1003
-
+    TransactionId* subxids;
+    int nSubxids;
+} DtmTransId;
+              
 void _PG_init(void);
 void _PG_fini(void);
 
@@ -81,6 +99,28 @@ PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(mm_start_replication);
 PG_FUNCTION_INFO_V1(mm_stop_replication);
+
+
+static shmem_startup_hook_type prev_shmem_startup_hook;
+static HTAB* xid2status;
+static HTAB* gtid2xid;
+static DtmNodeState* local;
+static DtmCurrentTrans dtm_tx;
+static uint64 totalSleepInterrupts;
+static int DtmVacuumDelay;
+static bool DtmRecordCommits;
+
+static Snapshot DtmGetSnapshot(Snapshot snapshot);
+static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
+static bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
+static TransactionId DtmAdjustOldestXid(TransactionId xid);
+static bool DtmDetectGlobalDeadLock(PGPROC* proc);
+static cid_t DtmGetCsn(TransactionId xid);
+static void DtmAddSubtransactions(DtmTransStatus* ts, TransactionId* subxids, int nSubxids);
+
+static TransactionManager MultimasterTM = { PgTransactionIdGetStatus, PgTransactionIdSetTreeStatus, DtmGetSnapshot, PgGetNewTransactionId, DtmGetOldestXmin, PgTransactionIdIsInProgress, PgGetGlobalTransactionId, DtmXidInMVCCSnapshot, DtmDetectGlobalDeadLock };
+
+
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static void DtmMergeWithGlobalSnapshot(Snapshot snapshot);

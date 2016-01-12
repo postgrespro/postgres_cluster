@@ -74,7 +74,7 @@ static XidStatus DtmGetTransactionStatus(TransactionId xid, XLogRecPtr *lsn);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 static void DtmUpdateRecentXmin(Snapshot snapshot);
 static void DtmInitialize(void);
-static void DtmSubXactCallback(XactEvent event, void *arg);
+static void DtmSubXactCallback(SubXactEvent event, SubTransactionId mySubid, SubTransactionId parentSubid, void *arg);
 static void DtmXactCallback(XactEvent event, void *arg);
 static TransactionId DtmGetNextXid(void);
 static TransactionId DtmGetNewTransactionId(bool isSubXact);
@@ -737,7 +737,7 @@ static void DtmInitialize()
 }
 
 static void
-DtmSubXactCallback(XactEvent event, void *arg)
+DtmSubXactCallback(SubXactEvent event, SubTransactionId mySubid, SubTransactionId parentSubid, void *arg)
 {
 	elog(ERROR, "Subtransactions are not currently supported");
 }
