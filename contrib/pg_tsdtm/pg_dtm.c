@@ -637,7 +637,7 @@ cid_t DtmLocalAccess(DtmCurrentTrans* x, GlobalTransactionId gtid, cid_t global_
             id->subxids = 0;
         }
         local_cid = dtm_sync(global_cid);
-        x->snapshot = local_cid;
+        x->snapshot = global_cid;
         x->is_global = true;
     }
     SpinLockRelease(&local->lock);

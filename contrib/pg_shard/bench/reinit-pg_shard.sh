@@ -28,6 +28,8 @@ cp postgresql.conf.pg_shard master/postgresql.conf
 echo "shared_preload_libraries = 'pg_shard'" >> master/postgresql.conf
 pg_ctl -D master -l master.log start
 
+sleep 5
+
 for ((i=1;i<=n_shards;i++))
 do
     port=$((5432+i))

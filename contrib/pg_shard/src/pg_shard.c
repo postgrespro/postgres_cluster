@@ -94,6 +94,9 @@ bool UseCitusDBSelectLogic = false;
 /* informs pg_shard to use the distributed transaction manager */
 bool UseDtmTransactions = false;
 
+/* Use two phase commit for update transactions */
+bool DtmTwoPhaseCommit = false;
+
 /* logs each statement used in a distributed plan */
 bool LogDistributedStatements = false;
 
@@ -178,7 +181,7 @@ static ProcessUtility_hook_type PreviousProcessUtilityHook = NULL;
 /* XTM stuff */
 static List *connectionsWithDtmTransactions = NIL;
 static csn_t currentGlobalTransactionId = 0;
-static int   currentLocalTransactionId = 0;
+static int	 currentLocalTransactionId = 0;
 static bool commitCallbackSet = false;
 
 #define TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
@@ -642,7 +645,7 @@ ErrorIfQueryNotSupported(Query *queryTree)
 			/*
 			 * if (!IsA(targetEntry->expr, Const))
 			 * {
-			 * 	hasNonConstTargetEntryExprs = true;
+			 *	hasNonConstTargetEntryExprs = true;
 			 * }
 			 */
 
@@ -656,7 +659,7 @@ ErrorIfQueryNotSupported(Query *queryTree)
 		 * joinTree = queryTree->jointree;
 		 * if (joinTree != NULL && contain_mutable_functions(joinTree->quals))
 		 * {
-		 * 	hasNonConstQualExprs = true;
+		 *	hasNonConstQualExprs = true;
 		 * }
 		 */
 	}
@@ -669,9 +672,9 @@ ErrorIfQueryNotSupported(Query *queryTree)
 	/*
 	 * if (hasNonConstTargetEntryExprs || hasNonConstQualExprs)
 	 * {
-	 * 	ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-	 * 					errmsg("cannot plan sharded modification containing values "
-	 * 						   "which are not constants or constant expressions")));
+	 *	ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+	 *					errmsg("cannot plan sharded modification containing values "
+	 *						   "which are not constants or constant expressions")));
 	 * }
 	 *
 	 */
@@ -1280,8 +1283,8 @@ PgShardExecutorStart(QueryDesc *queryDesc, int eflags)
 			/*
 			 * if (!UseDtmTransactions)
 			 * {
-			 * 	PreventTransactionChain(topLevel, "distributed commands");
-			 * 	eflags |= EXEC_FLAG_SKIP_TRIGGERS;
+			 *	PreventTransactionChain(topLevel, "distributed commands");
+			 *	eflags |= EXEC_FLAG_SKIP_TRIGGERS;
 			 * }
 			 *
 			 */
@@ -1492,6 +1495,8 @@ ExecuteMultipleShardSelect(DistributedPlan *distributedPlan,
 
 	ListCell *taskCell = NULL;
 
+	DtmTwoPhaseCommit = IsTransactionBlock();
+
 	foreach(taskCell, taskList)
 	{
 		Task *task = (Task *) lfirst(taskCell);
@@ -1519,6 +1524,7 @@ ExecuteMultipleShardSelect(DistributedPlan *distributedPlan,
 
 		tuplestore_end(tupleStore);
 	}
+	
 }
 
 
@@ -1893,6 +1899,7 @@ ExecuteDistributedModify(DistributedPlan *plan)
 
 	if (UseDtmTransactions)
 	{
+		DtmTwoPhaseCommit = true;
 		PrepareDtmTransaction(task);
 	}
 
@@ -2000,7 +2007,12 @@ PrepareDtmTransaction(Task *task)
 			/* already started a transaction */
 			continue;
 		}
-
+		if (!SendCommand(connection, "BEGIN"))
+		{
+			PurgeConnection(connection);
+			abortTransaction = true;
+			continue;
+		}
 		if (!currentGlobalTransactionId)
 		{
 			/* Send dtm_begin_transaction to the first node */
@@ -2013,7 +2025,7 @@ PrepareDtmTransaction(Task *task)
 				continue;
 			}
 			TRACE("shard_xtm: conn#%p: Sent dtm_begin() to %s:%u -> %llu\n",
-				     connection, nodeName, nodePort, currentGlobalTransactionId);
+					 connection, nodeName, nodePort, currentGlobalTransactionId);
 		}
 		else
 		{
@@ -2024,7 +2036,7 @@ PrepareDtmTransaction(Task *task)
 				continue;
 			}
 			TRACE("shard_xtm: conn#%p: Sent dtm_access(%llu) to %s:%u\n",
-				     connection, currentGlobalTransactionId, nodeName, nodePort);
+					 connection, currentGlobalTransactionId, nodeName, nodePort);
 		}
 
 		newTransactions = lappend(newTransactions, connection);
@@ -2032,11 +2044,11 @@ PrepareDtmTransaction(Task *task)
 
 	if (abortTransaction)
 	{
-		/* make sure we abort all pending transactions */
-		connectionsWithDtmTransactions = newTransactions;
-
 		MemoryContextSwitchTo(oldContext);
 
+		/* make sure we abort all pending transactions */
+		connectionsWithDtmTransactions = newTransactions;
+		
 		/*
 		 * Since pg_shard reuses connections across transactions on the master,
 		 * we need to abort pending transactions on the workers.
@@ -2045,40 +2057,8 @@ PrepareDtmTransaction(Task *task)
 		ereport(ERROR, (errmsg("aborting distributed transaction due to failures")));
 	}
 
-	foreach(taskPlacementCell, task->taskPlacementList)
-	{
-		ShardPlacement *taskPlacement = (ShardPlacement *) lfirst(taskPlacementCell);
-		char *nodeName = taskPlacement->nodeName;
-		int32 nodePort = taskPlacement->nodePort;
-		PGconn *connection = NULL;
-
-		connection = GetConnection(nodeName, nodePort, false);
-		if (connection == NULL)
-		{
-			ereport(WARNING, (errmsg("failed to connect to %s:%d",
-									 nodeName, nodePort)));
-			abortTransaction = true;
-			continue;
-		}
-
-		if (list_member_ptr(connectionsWithDtmTransactions, connection))
-		{
-			/* already started a transaction */
-			continue;
-		}
-
-		if (!SendCommand(connection, "BEGIN"))
-		{
-			PurgeConnection(connection);
-			abortTransaction = true;
-			continue;
-		}
-		TRACE("shard_xtm: conn#%p: Sent BEGIN to %s:%u\n", connection, nodeName, nodePort);
-
-	}
-
 	connectionsWithDtmTransactions = list_union(connectionsWithDtmTransactions,
-						    					newTransactions);
+												newTransactions);
 
 	MemoryContextSwitchTo(oldContext);
 
@@ -2107,8 +2087,10 @@ SendDtmBeginTransaction(PGconn *connection)
 	char *resp = NULL;
 	csn_t remoteTransactionId;
 
-    
-	result = PQexec(connection, psprintf("SELECT dtm_extend('%d.%d')", MyProcPid, ++currentLocalTransactionId));
+	
+	result = DtmTwoPhaseCommit
+		? PQexec(connection, psprintf("SELECT dtm_extend('%d.%d')", MyProcPid, ++currentLocalTransactionId))
+		: PQexec(connection, "SELECT dtm_extend()");
 	if (PQresultStatus(result) != PGRES_TUPLES_OK)
 	{
 		ReportRemoteError(connection, result);
@@ -2135,7 +2117,9 @@ SendDtmJoinTransaction(PGconn *connection, csn_t TransactionId)
 	PGresult *result = NULL;
 	bool resultOK = true;
 
-	result = PQexec(connection, psprintf("SELECT dtm_access(%llu, '%d.%d')", TransactionId, MyProcPid, currentLocalTransactionId));
+	result = PQexec(connection, DtmTwoPhaseCommit
+					? psprintf("SELECT dtm_access(%llu, '%d.%d')", TransactionId, MyProcPid, currentLocalTransactionId)
+					: psprintf("SELECT dtm_access(%llu)", TransactionId));
 	if (PQresultStatus(result) != PGRES_TUPLES_OK)
 	{
 		ReportRemoteError(connection, result);
@@ -2170,23 +2154,28 @@ typedef bool (*DtmCommandResultHandler)(PGresult *result, void* arg);
 
 static bool RunDtmStatement(char const* sql, unsigned expectedStatus, DtmCommandResultHandler handler, void* arg)
 {
-	ListCell *connectionCell = NULL;
 	int querySent = 0;
 	PGresult *result = NULL;
 	PGconn *connection = NULL;
 	bool allOk = true;
+	ListCell *connectionCell = NULL;
+	ListCell *nextCell = list_head(connectionsWithDtmTransactions);
+	ListCell *prevCell = NULL;
 
-	foreach(connectionCell, connectionsWithDtmTransactions)
+	while ((connectionCell = nextCell) != NULL)
 	{
+		nextCell = lnext(connectionCell);
 		connection = (PGconn *) lfirst(connectionCell);
 		querySent = PQsendQuery(connection, sql);
 		if (!querySent)
 		{
 			ReportRemoteError(connection, NULL);
+			list_delete_cell(connectionsWithDtmTransactions, connectionCell, prevCell);
 			PurgeConnection(connection);
 			allOk = false;
 			continue;
 		}
+		prevCell = connectionCell;
 		TRACE("shard_xtm: conn#%p: Sent %s to %s:%s\n", connection, sql, PQhost(connection), PQport(connection));
 	}
 	foreach(connectionCell, connectionsWithDtmTransactions)
@@ -2199,7 +2188,7 @@ static bool RunDtmStatement(char const* sql, unsigned expectedStatus, DtmCommand
 			allOk = false;
 		}
 		PQclear(result);
-		PQresultStatus(result); /* consume NULL result */
+		PQgetResult(connection); /* consume NULL result */
 	}	
 	return allOk;
 }
@@ -2234,37 +2223,46 @@ static bool DtmMaxCSN(PGresult *result, void* arg)
 
 
 static void
-FinishDtmTransaction(XactEvent event, void *arg)
+FinishDtmTransaction(XactEvent event, void * arg)
 {
-	if (!(event == XACT_EVENT_COMMIT || event == XACT_EVENT_ABORT) 
-        || !connectionsWithDtmTransactions)
-    {
-		return;
-    }
-	if (event == XACT_EVENT_COMMIT)
-    {
-		csn_t maxCSN = 0;
-
-		if (!RunDtmCommand(psprintf("PREPARE TRANSACTION '%d.%d'", MyProcPid, currentLocalTransactionId)) ||
-			!RunDtmFunction(psprintf("SELECT dtm_begin_prepare('%d.%d')", MyProcPid, currentLocalTransactionId)) ||
-			!RunDtmStatement(psprintf("SELECT dtm_prepare('%d.%d',0)", MyProcPid, currentLocalTransactionId), PGRES_TUPLES_OK, DtmMaxCSN, &maxCSN) ||
-			!RunDtmFunction(psprintf("SELECT dtm_end_prepare('%d.%d',%lld)", MyProcPid, currentLocalTransactionId, maxCSN)) ||
-			!RunDtmCommand(psprintf("COMMIT PREPARED '%d.%d'", MyProcPid, currentLocalTransactionId)))
-		{
-			RunDtmCommand(psprintf("ROLLBACK PREPARED '%d.%d'", MyProcPid, currentLocalTransactionId));
+	if ((event == XACT_EVENT_COMMIT || event == XACT_EVENT_ABORT) && connectionsWithDtmTransactions)
+	{
+		if (DtmTwoPhaseCommit) 
+		{ 
+			if (event == XACT_EVENT_COMMIT)
+			{
+				csn_t maxCSN = 0;
+				
+				if (!RunDtmCommand(psprintf("PREPARE TRANSACTION '%d.%d'", 
+											MyProcPid, currentLocalTransactionId)) ||
+					!RunDtmFunction(psprintf("SELECT dtm_begin_prepare('%d.%d')", 
+											 MyProcPid, currentLocalTransactionId)) ||
+					!RunDtmStatement(psprintf("SELECT dtm_prepare('%d.%d',0)", 
+											  MyProcPid, currentLocalTransactionId), PGRES_TUPLES_OK, DtmMaxCSN, &maxCSN) ||
+					!RunDtmFunction(psprintf("SELECT dtm_end_prepare('%d.%d',%lld)", 
+											 MyProcPid, currentLocalTransactionId, maxCSN)) ||
+					!RunDtmCommand(psprintf("COMMIT PREPARED '%d.%d'", 
+											MyProcPid, currentLocalTransactionId)))
+				{
+					RunDtmCommand(psprintf("ROLLBACK PREPARED '%d.%d'", 
+										   MyProcPid, currentLocalTransactionId));
+				}
+			} else { 
+				RunDtmCommand("ROLLBACK");
+			}
+		} else { 
+			RunDtmCommand("COMMIT");
 		}
-	} else { 
-		RunDtmCommand("ROLLBACK");
+		/*
+		 * Calling unregister inside callback itself leads to segfault when
+		 * there are several callbacks on the same event.
+		 */
+		/*
+		 * UnregisterXactCallback(FinishDtmTransaction, NULL);
+		 */
+		connectionsWithDtmTransactions = NIL;
+		currentGlobalTransactionId = 0;
 	}
-	/*
-	 * Calling unregister inside callback itself leads to segfault when
-	 * there are several callbacks on the same event.
-	 */
-	/*
-	 * UnregisterXactCallback(FinishDtmTransaction, NULL);
-	 */
-	connectionsWithDtmTransactions = NIL;
-	currentGlobalTransactionId = 0;
 }
 
 

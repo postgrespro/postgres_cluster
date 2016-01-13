@@ -79,6 +79,7 @@ struct config
         diapason = 100000;
         deadlockFree = false;
         makeSavepoints = false;
+        maxSnapshot = false;
     }
 };
 
@@ -156,7 +157,7 @@ void* reader(void* arg)
             sum += execQuery(*txns[i], "select sum(v) from t");
         }
         if (sum != prevSum) {
-            printf("Total=%ld snapshot=%ldm delta=%ld usec\n", sum, snapshot, getCurrentTime()-snapshot);
+            printf("Total=%ld snapshot=%ld, delta=%ld usec\n", sum, snapshot, getCurrentTime()-snapshot);
             prevSum = sum;
         }
         t.proceeded += 1;
