@@ -238,7 +238,7 @@ static void DtmMergeWithGlobalSnapshot(Snapshot dst)
 	TransactionId xid;
 	Snapshot src = &DtmSnapshot;
 
-	if (true || !(TransactionIdIsValid(src->xmin) && TransactionIdIsValid(src->xmax))) { 
+	if (!(TransactionIdIsValid(src->xmin) && TransactionIdIsValid(src->xmax))) { 
         PgGetSnapshotData(dst);
         return;
     }
@@ -627,7 +627,7 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 			/* Use single global snapshot during all transaction for repeatable read isolation level,
 			 * but obtain new global snapshot each time it is requested for read committed isolation level
 			 */
-			//DtmHasGlobalSnapshot = false;
+			DtmHasGlobalSnapshot = false;
 		}
 	}
 	else
