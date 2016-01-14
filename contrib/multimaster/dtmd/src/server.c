@@ -173,9 +173,10 @@ static bool stream_flush(stream_t stream) {
 	}
     {
         struct timespec ts;
+		int rc;
         ts.tv_sec = 0;
         ts.tv_nsec = 100000; /* 100usec */
-        nanosleep(&ts, NULL);
+        while (nanosleep(&ts, &ts) < 0);
     }
 	char *cursor = stream->output.data;
 	while (tosend > 0) {
