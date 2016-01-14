@@ -22,9 +22,6 @@
 #include "utils/hsearch.h"
 #include "utils/memutils.h"
 
-#undef DEBUG3
-#define DEBUG3 WARNING
-
 /*
  * Connection cache hash table entry
  *
