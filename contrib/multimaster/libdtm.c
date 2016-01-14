@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <time.h>
 
 #include "libdtm.h"
 #include "dtmd/include/proto.h"
@@ -168,6 +169,12 @@ static int dtm_recv_results(DTMConn dtm, int maxlen, xid_t *results)
 		elog(ERROR, "The message body will not fit into the results array");
 		return 0;
 	}
+    {
+        struct timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = 100000; /* 100usec */
+        while (nanosleep(&ts, &ts) < 0);
+    }
 	while (recved < needed)
 	{
 		int newbytes = read(dtm->sock, (char*)results + recved, needed - recved);
