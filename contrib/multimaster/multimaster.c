@@ -97,6 +97,7 @@ static TransactionId DtmGetGlobalTransactionId(void);
 
 static bool DtmDetectGlobalDeadLock(PGPROC* proc);
 static void DtmSerializeLock(PROCLOCK* lock, void* arg);
+static char const* DtmGetName(void);
 
 static bool TransactionIdIsInSnapshot(TransactionId xid, Snapshot snapshot);
 static bool TransactionIdIsInDoubt(TransactionId xid);
@@ -126,7 +127,8 @@ static TransactionManager DtmTM = {
 	PgTransactionIdIsInProgress,
 	DtmGetGlobalTransactionId,
 	PgXidInMVCCSnapshot,
-    DtmDetectGlobalDeadLock
+    DtmDetectGlobalDeadLock,
+	GtmGetName
 };
 
 bool  MMDoReplication;
@@ -162,6 +164,11 @@ static BackgroundWorker DtmWorker = {
 	DtmBackgroundWorker
 };
 
+
+static char const* DtmGetName(void)
+{
+	return "multimaster";
+}
 
 static void DumpSnapshot(Snapshot s, char *name)
 {

@@ -119,4 +119,6 @@ extern void appendOrderByClause(StringInfo buf, PlannerInfo *root,
 extern bool is_builtin(Oid objectId);
 extern bool is_shippable(Oid objectId, Oid classId, PgFdwRelationInfo *fpinfo);
 
+extern bool UseTsDtmTransactions;
+
 #endif   /* POSTGRES_FDW_H */

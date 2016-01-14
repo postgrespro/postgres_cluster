@@ -1,5 +1,5 @@
 n_shards=3
-export PATH=/home/knizhnik/postgres_cluster/dist/bin/:$PATH
+export PATH=~/postgres_cluster/dist/bin/:$PATH
 ulimit -c unlimited
 pkill -9 postgres
 sleep 2
@@ -33,7 +33,7 @@ sleep 5
 for ((i=1;i<=n_shards;i++))
 do
     port=$((5432+i))
-	psql -p $port postgres -U knizhnik -c "create extension pg_dtm"
+	psql -p $port postgres -c "create extension pg_dtm"
 done 
 
 echo Done

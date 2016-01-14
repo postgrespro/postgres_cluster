@@ -44,6 +44,8 @@ typedef struct
 
     /* Detect distributed deadlock */
     bool (*DetectGlobalDeadLock)(PGPROC* proc);
+
+	char const* (*GetName)(void);
 } TransactionManager;
 
 /* Get pointer to transaction manager: actually returns content of TM variable */
@@ -70,5 +72,7 @@ extern TransactionId PgGetGlobalTransactionId(void);
 extern TransactionId PgGetNewTransactionId(bool isSubXact);
 
 extern bool PgDetectGlobalDeadLock(PGPROC* proc);
+
+extern char const* PgGetTransactionManagerName(void);
 
 #endif

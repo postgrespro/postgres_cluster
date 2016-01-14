@@ -83,6 +83,7 @@ static TransactionId DtmGetGlobalTransactionId(void);
 
 static bool DtmDetectGlobalDeadLock(PGPROC* proc);
 static void DtmSerializeLock(PROCLOCK* lock, void* arg);
+static char const* DtmGetName(void);
 
 static bool TransactionIdIsInSnapshot(TransactionId xid, Snapshot snapshot);
 static bool TransactionIdIsInDoubt(TransactionId xid);
@@ -116,7 +117,8 @@ static TransactionManager DtmTM = {
 	PgTransactionIdIsInProgress,
 	DtmGetGlobalTransactionId,
 	PgXidInMVCCSnapshot,
-    DtmDetectGlobalDeadLock
+    DtmDetectGlobalDeadLock,
+	GtmGetName
 };
 
 static char *DtmServers;
@@ -134,6 +136,12 @@ static BackgroundWorker DtmWorker = {
 #define XTM_TRACE(fmt, ...)
 //#define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
 #define XTM_INFO(fmt, ...)
+
+static char const* DtmGetName(void)
+{
+	return "pg_dtm";
+}
+
 
 static void DumpSnapshot(Snapshot s, char *name)
 {

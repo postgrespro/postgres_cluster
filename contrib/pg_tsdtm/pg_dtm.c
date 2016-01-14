@@ -91,8 +91,9 @@ static TransactionId DtmAdjustOldestXid(TransactionId xid);
 static bool DtmDetectGlobalDeadLock(PGPROC* proc);
 static cid_t DtmGetCsn(TransactionId xid);
 static void DtmAddSubtransactions(DtmTransStatus* ts, TransactionId* subxids, int nSubxids);
+static char const* DtmGetName(void);
 
-static TransactionManager DtmTM = { PgTransactionIdGetStatus, PgTransactionIdSetTreeStatus, DtmGetSnapshot, PgGetNewTransactionId, DtmGetOldestXmin, PgTransactionIdIsInProgress, PgGetGlobalTransactionId, DtmXidInMVCCSnapshot, DtmDetectGlobalDeadLock };
+static TransactionManager DtmTM = { PgTransactionIdGetStatus, PgTransactionIdSetTreeStatus, DtmGetSnapshot, PgGetNewTransactionId, DtmGetOldestXmin, PgTransactionIdIsInProgress, PgGetGlobalTransactionId, DtmXidInMVCCSnapshot, DtmDetectGlobalDeadLock, DtmGetName };
 
 void _PG_init(void);
 void _PG_fini(void);
@@ -417,6 +418,11 @@ static void* dtm_gtid_keycopy_fn(void *dest, const void *src, Size keysize)
 static int dtm_gtid_match_fn(const void *key1, const void *key2, Size keysize)
 {
 	return strcmp((GlobalTransactionId)key1, (GlobalTransactionId)key2);
+}
+
+static char const* DtmGetName(void)
+{
+	return "pg_tsdtm";
 }
 
 static void DtmTransactionListAppend(DtmTransStatus* ts)

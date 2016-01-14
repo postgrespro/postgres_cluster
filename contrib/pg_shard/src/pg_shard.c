@@ -184,7 +184,10 @@ static csn_t currentGlobalTransactionId = 0;
 static int	 currentLocalTransactionId = 0;
 static bool commitCallbackSet = false;
 
+/*
 #define TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
+*/
+#define TRACE(fmt, ...) 
 
 /*
  * _PG_init is called when the module is loaded. In this function we save the

@@ -50,9 +50,11 @@ struct config
     int nIterations;
     int nAccounts;
     int updatePercent;
+	int nShards;
     string connection;
 
     config() {
+		nShards = 1;
         nReaders = 1;
         nWriters = 10;
         nIterations = 1000;
@@ -155,12 +157,10 @@ void initializeDatabase()
 {
     connection conn(cfg.connection);
     work txn(conn);
-	exec(txn, "CREATE EXTENSION pg_shard");
-	exec(txn, "create table t(u int primary key, v int)");
-	exec(txn, "SELECT master_create_distributed_table(table_name := 't', partition_column := 'u')");
-	exec(txn, "SELECT master_create_worker_shards(table_name := 't', shard_count := 100, replication_factor := 1)");
-	for (int i = 0; i < cfg.nAccounts; i++) { 
-		exec(txn, "insert into t values (%d,0)", i);
+	int accountsPerShard = (cfg.nAccounts + cfg.nShards - 1)/cfg.nShards;
+	for (int i = 0; i < cfg.nShards; i++) 
+	{ 
+		exec(txn, "insert into t_fdw%i (select generate_series(0,%d), %d)", i+1, accountsPerShard*i, accountsPerShard-1, 0);
 	}
     txn.commit();
 }
@@ -197,6 +197,7 @@ int main (int argc, char* argv[])
                 continue;
             case 'i':
                 initialize = true;
+				cfg.nShards = atoi(argv[++i]);
                 continue;
             }
         }
@@ -207,7 +208,7 @@ int main (int argc, char* argv[])
                "\t-n N\tnumber of iterations (1000)\n"
                "\t-p N\tupdate percent (100)\n"
                "\t-c STR\tdatabase connection string\n"
-               "\t-i\tinitialize database\n");
+               "\t-i N\tinitialize N shards\n");
         return 1;
     }
 
@@ -255,7 +256,7 @@ int main (int argc, char* argv[])
     printf(
         "{\"tps\":%f, \"transactions\":%ld,"
         " \"selects\":%ld, \"updates\":%ld, \"aborts\":%ld, \"abort_percent\": %d,"
-        " \"readers\":%d, \"writers\":%d, \"update_percent\":%d, \"accounts\":%d, \"iterations\":%d}\n",
+        " \"readers\":%d, \"writers\":%d, \"update_percent\":%d, \"accounts\":%d, \"iterations\":%d ,\"shards\":%d}\n",
         (double)(nTransactions*USEC)/elapsed,
         nTransactions,
         nSelects, 
@@ -266,7 +267,8 @@ int main (int argc, char* argv[])
         cfg.nWriters,
         cfg.updatePercent,
         cfg.nAccounts,
-        cfg.nIterations);
+        cfg.nIterations,
+		cfg.nShards);
 
     return 0;
 }

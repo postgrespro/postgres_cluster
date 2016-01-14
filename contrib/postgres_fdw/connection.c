@@ -67,6 +67,10 @@ static unsigned int prep_stmt_number = 0;
 /* tracks whether any work is needed in callback functions */
 static bool xact_got_connection = false;
 
+typedef long long csn_t;
+static csn_t currentGlobalTransactionId = 0;
+static int	 currentLocalTransactionId = 0;
+
 /* prototypes of private functions */
 static PGconn *connect_pg_server(ForeignServer *server, UserMapping *user);
 static void check_conn_params(const char **keywords, const char **values);
@@ -424,6 +428,32 @@ begin_remote_xact(ConnCacheEntry *entry)
 			sql = "START TRANSACTION ISOLATION LEVEL REPEATABLE READ";
 		do_sql_command(entry->conn, sql);
 		entry->xact_depth = 1;
+	    if (UseTsDtmTransactions) 
+		{
+			if (!currentGlobalTransactionId)
+			{
+				PGresult *res = PQexec(entry->conn, psprintf("SELECT public.dtm_extend('%d.%d')", 
+															 MyProcPid, ++currentLocalTransactionId));
+				char* resp;
+				if (PQresultStatus(res) != PGRES_TUPLES_OK) 
+				{
+					pgfdw_report_error(ERROR, res, entry->conn, true, sql);
+				}
+				resp = PQgetvalue(res, 0, 0);
+				if (resp == NULL || (*resp) == '\0' || sscanf(resp, "%lld", &currentGlobalTransactionId) != 1)
+				{
+					pgfdw_report_error(ERROR, res, entry->conn, true, sql);
+				}
+				PQclear(res);
+			} else { 
+				PGresult *res = PQexec(entry->conn, psprintf("SELECT public.dtm_access(%llu, '%d.%d')", currentGlobalTransactionId, MyProcPid, currentLocalTransactionId));
+				if (PQresultStatus(res) != PGRES_TUPLES_OK) 
+				{
+					pgfdw_report_error(ERROR, res, entry->conn, true, sql);
+				}
+				PQclear(res);				
+			}
+		}
 	}
 
 	/*
@@ -549,6 +579,63 @@ pgfdw_report_error(int elevel, PGresult *res, PGconn *conn,
 		PQclear(res);
 }
 
+typedef bool (*DtmCommandResultHandler)(PGresult *result, void* arg);
+
+static bool RunDtmStatement(char const* sql, unsigned expectedStatus, DtmCommandResultHandler handler, void* arg)
+{
+	HASH_SEQ_STATUS scan;
+	ConnCacheEntry *entry;
+	bool allOk = true;
+
+	hash_seq_init(&scan, ConnectionHash);
+	while ((entry = (ConnCacheEntry *) hash_seq_search(&scan)))
+	{
+		do_sql_send_command(entry->conn, sql);
+	}
+
+	hash_seq_init(&scan, ConnectionHash);
+	while ((entry = (ConnCacheEntry *) hash_seq_search(&scan)))
+	{
+		PGresult *result = PQgetResult(entry->conn);
+		if (PQresultStatus(result) != expectedStatus || (handler && !handler(result, arg)))
+		{
+			pgfdw_report_error(ERROR, result, entry->conn, true, sql);
+			allOk = false;
+		}
+		PQclear(result);
+		PQgetResult(entry->conn); /* consume NULL result */
+	}
+	return allOk;
+}
+
+static bool RunDtmCommand(char const* sql)
+{
+	return RunDtmStatement(sql, PGRES_COMMAND_OK, NULL, NULL);
+}
+
+static bool RunDtmFunction(char const* sql)
+{
+	return RunDtmStatement(sql, PGRES_TUPLES_OK, NULL, NULL);
+}
+
+
+static bool DtmMaxCSN(PGresult *result, void* arg)
+{
+	char* resp = PQgetvalue(result, 0, 0);
+	csn_t* maxCSN = (csn_t*)arg;
+	csn_t csn = 0;
+	if (resp == NULL || (*resp) == '\0' || sscanf(resp, "%lld", &csn) != 1)
+	{
+		return false;
+	} else {
+		if (*maxCSN < csn)
+		{
+			*maxCSN = csn;
+		}
+		return true;
+	}
+}
+
 /*
  * pgfdw_xact_callback --- cleanup at main-transaction end.
  */
@@ -562,90 +649,128 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 	if (!xact_got_connection)
 		return;
 
-	/*
-	 * Scan all connection cache entries to find open remote transactions, and
-	 * close them.
-	 */
-	hash_seq_init(&scan, ConnectionHash);
-	while ((entry = (ConnCacheEntry *) hash_seq_search(&scan)))
+	if (currentGlobalTransactionId != 0)
 	{
-		PGresult   *res;
-
-		/* Ignore cache entry if no open connection right now */
-		if (entry->conn == NULL)
-			continue;
-
-		/* If it has an open remote transaction, try to close it */
-		if (entry->xact_depth > 0)
+		switch (event)
 		{
-			elog(DEBUG3, "closing remote transaction on connection %p event %d",
-				 entry->conn, event);
+		  case XACT_EVENT_PARALLEL_COMMIT:
+		  case XACT_EVENT_COMMIT:
+		  {
+			  csn_t maxCSN = 0;
+			  
+			  if (!RunDtmCommand(psprintf("PREPARE TRANSACTION '%d.%d'", 
+										  MyProcPid, currentLocalTransactionId)) ||
+				  !RunDtmFunction(psprintf("SELECT public.dtm_begin_prepare('%d.%d')", 
+										   MyProcPid, currentLocalTransactionId)) ||
+				  !RunDtmStatement(psprintf("SELECT public.dtm_prepare('%d.%d',0)", 
+											MyProcPid, currentLocalTransactionId), PGRES_TUPLES_OK, DtmMaxCSN, &maxCSN) ||
+				  !RunDtmFunction(psprintf("SELECT public.dtm_end_prepare('%d.%d',%lld)", 
+										   MyProcPid, currentLocalTransactionId, maxCSN)) ||
+				  !RunDtmCommand(psprintf("COMMIT PREPARED '%d.%d'", 
+										  MyProcPid, currentLocalTransactionId)))
+			  {
+				  RunDtmCommand(psprintf("ROLLBACK PREPARED '%d.%d'", 
+										 MyProcPid, currentLocalTransactionId));
+			  }
+			  break;
+		  }
+		  case XACT_EVENT_ABORT:
+			  RunDtmCommand("ROLLBACK"); 
+			  break;
+		  case XACT_EVENT_PRE_PREPARE:
+  			  ereport(ERROR,
+					  (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					   errmsg("cannot prepare a transaction that modified remote tables")));
+			  break;
+		  default:
+  			  break;
+		}
 
-			switch (event)
+		currentGlobalTransactionId = 0;
+
+		hash_seq_init(&scan, ConnectionHash);
+		while ((entry = (ConnCacheEntry *) hash_seq_search(&scan)))
+		{
+			/* Ignore cache entry if no open connection right now */
+			if (entry->conn == NULL)
+				continue;
+			/* Reset state to show we're out of a transaction */
+			entry->xact_depth = 0;
+			
+			/*
+			 * If the connection isn't in a good idle state, discard it to
+			 * recover. Next GetConnection will open a new connection.
+			 */
+			if (PQstatus(entry->conn) != CONNECTION_OK ||
+				PQtransactionStatus(entry->conn) != PQTRANS_IDLE)
 			{
-				case XACT_EVENT_PARALLEL_PRE_COMMIT:
-				case XACT_EVENT_PRE_COMMIT:
-					/* Commit all remote transactions during pre-commit */
-					do_sql_send_command(entry->conn, "COMMIT TRANSACTION");
-					continue;
+				elog(DEBUG3, "discarding connection %p, conn status=%d, trans status=%d", entry->conn, PQstatus(entry->conn), PQtransactionStatus(entry->conn));
+				PQfinish(entry->conn);
+				entry->conn = NULL;
+			}
+		}
+	} else { 
+		/*
+		 * Scan all connection cache entries to find open remote transactions, and
+		 * close them.
+		 */
+		hash_seq_init(&scan, ConnectionHash);
+		while ((entry = (ConnCacheEntry *) hash_seq_search(&scan)))
+		{
+			PGresult   *res;
+			
+			/* Ignore cache entry if no open connection right now */
+			if (entry->conn == NULL)
+				continue;
+			
+			/* If it has an open remote transaction, try to close it */
+			if (entry->xact_depth > 0)
+			{
+				elog(DEBUG3, "closing remote transaction on connection %p event %d",
+					 entry->conn, event);
+				
+				switch (event)
+				{
+				    case XACT_EVENT_PARALLEL_PRE_COMMIT:
+   				    case XACT_EVENT_PRE_COMMIT:
+					    /* Commit all remote transactions during pre-commit */
+						do_sql_send_command(entry->conn, "COMMIT TRANSACTION");
+						continue;
+						
+			        case XACT_EVENT_PRE_PREPARE:
+  					    /*
+						 * We disallow remote transactions that modified anything,
+						 * since it's not very reasonable to hold them open until
+						 * the prepared transaction is committed.  For the moment,
+						 * throw error unconditionally; later we might allow
+						 * read-only cases.  Note that the error will cause us to
+						 * come right back here with event == XACT_EVENT_ABORT, so
+						 * we'll clean up the connection state at that point.
+						 */
+					  ereport(ERROR,
+							  (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							   errmsg("cannot prepare a transaction that modified remote tables")));
+					  break;
 
-				case XACT_EVENT_PRE_PREPARE:
-					/*
-					 * We disallow remote transactions that modified anything,
-					 * since it's not very reasonable to hold them open until
-					 * the prepared transaction is committed.  For the moment,
-					 * throw error unconditionally; later we might allow
-					 * read-only cases.  Note that the error will cause us to
-					 * come right back here with event == XACT_EVENT_ABORT, so
-					 * we'll clean up the connection state at that point.
-					 */
-					ereport(ERROR,
-							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-							 errmsg("cannot prepare a transaction that modified remote tables")));
-					break;
-
-				case XACT_EVENT_PARALLEL_COMMIT:
-				case XACT_EVENT_COMMIT:
-				case XACT_EVENT_PREPARE:
-					do_sql_wait_command(entry->conn, "COMMIT TRANSACTION");
-					/*
-					 * If there were any errors in subtransactions, and we
-					 * made prepared statements, do a DEALLOCATE ALL to make
-					 * sure we get rid of all prepared statements. This is
-					 * annoying and not terribly bulletproof, but it's
-					 * probably not worth trying harder.
-					 *
-					 * DEALLOCATE ALL only exists in 8.3 and later, so this
-					 * constrains how old a server postgres_fdw can
-					 * communicate with.  We intentionally ignore errors in
-					 * the DEALLOCATE, so that we can hobble along to some
-					 * extent with older servers (leaking prepared statements
-					 * as we go; but we don't really support update operations
-					 * pre-8.3 anyway).
-					 */
-					if (entry->have_prep_stmt && entry->have_error)
-					{
-						res = PQexec(entry->conn, "DEALLOCATE ALL");
-						PQclear(res);
-					}
-					entry->have_prep_stmt = false;
-					entry->have_error = false;
-					break;
-
-				case XACT_EVENT_PARALLEL_ABORT:
-				case XACT_EVENT_ABORT:
-					/* Assume we might have lost track of prepared statements */
-					entry->have_error = true;
-					/* If we're aborting, abort all remote transactions too */
-					res = PQexec(entry->conn, "ABORT TRANSACTION");
-					/* Note: can't throw ERROR, it would be infinite loop */
-					if (PQresultStatus(res) != PGRES_COMMAND_OK)
-						pgfdw_report_error(WARNING, res, entry->conn, true,
-										   "ABORT TRANSACTION");
-					else
-					{
-						PQclear(res);
-						/* As above, make sure to clear any prepared stmts */
+				    case XACT_EVENT_PARALLEL_COMMIT:
+				    case XACT_EVENT_COMMIT:
+				    case XACT_EVENT_PREPARE:
+					    do_sql_wait_command(entry->conn, "COMMIT TRANSACTION");
+					    /*
+						 * If there were any errors in subtransactions, and we
+						 * made prepared statements, do a DEALLOCATE ALL to make
+						 * sure we get rid of all prepared statements. This is
+						 * annoying and not terribly bulletproof, but it's
+						 * probably not worth trying harder.
+						 *
+						 * DEALLOCATE ALL only exists in 8.3 and later, so this
+						 * constrains how old a server postgres_fdw can
+						 * communicate with.  We intentionally ignore errors in
+						 * the DEALLOCATE, so that we can hobble along to some
+						 * extent with older servers (leaking prepared statements
+						 * as we go; but we don't really support update operations
+						 * pre-8.3 anyway).
+						 */
 						if (entry->have_prep_stmt && entry->have_error)
 						{
 							res = PQexec(entry->conn, "DEALLOCATE ALL");
@@ -653,33 +778,54 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 						}
 						entry->have_prep_stmt = false;
 						entry->have_error = false;
-					}
-					break;
+						break;
+						
+  				    case XACT_EVENT_PARALLEL_ABORT:
+				    case XACT_EVENT_ABORT:
+					    /* Assume we might have lost track of prepared statements */
+					    entry->have_error = true;
+						/* If we're aborting, abort all remote transactions too */
+						res = PQexec(entry->conn, "ABORT TRANSACTION");
+						/* Note: can't throw ERROR, it would be infinite loop */
+						if (PQresultStatus(res) != PGRES_COMMAND_OK)
+							pgfdw_report_error(WARNING, res, entry->conn, true,
+											   "ABORT TRANSACTION");
+						else
+						{
+							PQclear(res);
+							/* As above, make sure to clear any prepared stmts */
+							if (entry->have_prep_stmt && entry->have_error)
+							{
+								res = PQexec(entry->conn, "DEALLOCATE ALL");
+								PQclear(res);
+							}
+							entry->have_prep_stmt = false;
+							entry->have_error = false;
+						}
+						break;
 
-				case XACT_EVENT_START:
-				case XACT_EVENT_ABORT_PREPARED:
-				case XACT_EVENT_COMMIT_PREPARED:
-					break;
-
+ 				    case XACT_EVENT_START:
+				    case XACT_EVENT_ABORT_PREPARED:
+				    case XACT_EVENT_COMMIT_PREPARED:
+					   break;					
+				}
+			}
+			/* Reset state to show we're out of a transaction */
+			entry->xact_depth = 0;
+			
+			/*
+			 * If the connection isn't in a good idle state, discard it to
+			 * recover. Next GetConnection will open a new connection.
+			 */
+			if (PQstatus(entry->conn) != CONNECTION_OK ||
+				PQtransactionStatus(entry->conn) != PQTRANS_IDLE)
+			{
+				elog(DEBUG3, "discarding connection %p, conn status=%d, trans status=%d", entry->conn, PQstatus(entry->conn), PQtransactionStatus(entry->conn));
+				PQfinish(entry->conn);
+				entry->conn = NULL;
 			}
 		}
-
-		/* Reset state to show we're out of a transaction */
-		entry->xact_depth = 0;
-
-		/*
-		 * If the connection isn't in a good idle state, discard it to
-		 * recover. Next GetConnection will open a new connection.
-		 */
-		if (PQstatus(entry->conn) != CONNECTION_OK ||
-			PQtransactionStatus(entry->conn) != PQTRANS_IDLE)
-		{
-			elog(DEBUG3, "discarding connection %p, conn status=%d, trans status=%d", entry->conn, PQstatus(entry->conn), PQtransactionStatus(entry->conn));
-			PQfinish(entry->conn);
-			entry->conn = NULL;
-		}
 	}
-
 	if (event != XACT_EVENT_PARALLEL_PRE_COMMIT && event != XACT_EVENT_PRE_COMMIT) { 
 		/*
 		 * Regardless of the event type, we can now mark ourselves as out of the

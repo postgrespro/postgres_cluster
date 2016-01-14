@@ -195,6 +195,9 @@ typedef struct
 	List	   *already_used;	/* expressions already dealt with */
 } ec_member_foreign_arg;
 
+bool UseTsDtmTransactions;
+void _PG_init(void);
+
 /*
  * SQL functions
  */
@@ -3105,3 +3108,13 @@ postgres_fdw_exec(PG_FUNCTION_ARGS)
 	ReleaseConnection(conn);
 	PG_RETURN_VOID();
 }
+
+void
+_PG_init(void)
+{
+	DefineCustomBoolVariable("postgres_fdw.use_tsdtm",
+							 "Use timestamp base distributed transaction manager for FDW connections", NULL,
+							 &UseTsDtmTransactions, false, PGC_USERSET, 0, NULL,
+							 NULL, NULL);
+}
+

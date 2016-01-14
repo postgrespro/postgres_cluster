@@ -1,5 +1,5 @@
 n_nodes=3
-export PATH=/home/knizhnik/postgres_cluster/dist/bin/:$PATH
+export PATH=~/postgres_cluster/dist/bin/:$PATH
 ulimit -c unlimited
 pkill -9 postgres
 pkill -9 dtmd
@@ -10,7 +10,7 @@ sep=""
 for ((i=1;i<=n_nodes;i++))
 do    
     port=$((5431+i))
-    conn_str="$conn_str${sep}dbname=postgres host=127.0.0.1 user=knizhnik port=$port sslmode=disable"
+    conn_str="$conn_str${sep}dbname=postgres host=127.0.0.1 port=$port sslmode=disable"
     sep=","
     initdb node$i
 done
@@ -32,6 +32,6 @@ done
 
 sleep 5
 echo Initialize database schema
-psql postgres -U knizhnik -f init.sql
+psql postgres -f init.sql
 
 echo Done

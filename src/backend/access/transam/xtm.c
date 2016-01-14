@@ -28,6 +28,11 @@ bool PgDetectGlobalDeadLock(PGPROC* proc)
     return false;
 }
 
+char const* PgGetTransactionManagerName(void)
+{
+	return "postgres";
+}
+
 TransactionManager PgTM = {
 	PgTransactionIdGetStatus,
 	PgTransactionIdSetTreeStatus,
@@ -37,7 +42,8 @@ TransactionManager PgTM = {
 	PgTransactionIdIsInProgress,
 	PgGetGlobalTransactionId,
 	PgXidInMVCCSnapshot,
-    PgDetectGlobalDeadLock
+    PgDetectGlobalDeadLock,
+	PgGetTransactionManagerName
 };
 
 TransactionManager* TM = &PgTM;
