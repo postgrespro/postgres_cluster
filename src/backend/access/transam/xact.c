@@ -5593,8 +5593,15 @@ xact_redo(XLogReaderState *record)
 	else if (info == XLOG_XACT_PREPARE)
 	{
 		/* the record contents are exactly the 2PC file */
-		RecreateTwoPhaseFile(XLogRecGetXid(record),
-						  XLogRecGetData(record), XLogRecGetDataLen(record));
+		// RecreateTwoPhaseFile(XLogRecGetXid(record),
+		// 				  XLogRecGetData(record), XLogRecGetDataLen(record));
+
+
+		// RecoverPreparedTransaction(XLogRecGetXid(record),
+						  // (char *) XLogRecGetData(record), XLogRecGetDataLen(record));
+		fprintf(stderr, "=== Recovering tx %lx : %lx \n", record->ReadRecPtr, record->EndRecPtr);
+
+		RecoverPreparedTransaction(record);
 	}
 	else if (info == XLOG_XACT_ASSIGNMENT)
 	{
