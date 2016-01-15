@@ -378,7 +378,7 @@ sr_plan_invalid_table(PG_FUNCTION_ARGS)
 
 	if (!dropped_objects_func)
 	{
-		Oid args[0] = {};
+		Oid args[1];
 		dropped_objects_func = LookupFuncName(list_make1(makeString("pg_event_trigger_dropped_objects")), 0, args, true);
 	}
 	
