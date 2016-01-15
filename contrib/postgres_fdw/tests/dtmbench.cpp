@@ -156,14 +156,14 @@ void* writer(void* arg)
 void initializeDatabase()
 {
     connection conn(cfg.connection);
-    work txn(conn);
 	int accountsPerShard = (cfg.nAccounts + cfg.nShards - 1)/cfg.nShards;
 	for (int i = 0; i < cfg.nShards; i++) 
 	{ 
+		work txn(conn);
 		exec(txn, "alter table t_fdw%i add check (u between %d and %d)", i+1, accountsPerShard*i, accountsPerShard*(i+1)-1);
 		exec(txn, "insert into t_fdw%i (select generate_series(%d,%d), %d)", i+1, accountsPerShard*i, accountsPerShard*(i+1)-1, 0);
+		txn.commit();
 	}
-    txn.commit();
 }
 
 int main (int argc, char* argv[])

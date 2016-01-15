@@ -72,8 +72,8 @@ typedef struct
 } DtmTransId;
               
 
-#define DTM_TRACE(x) 
-//#define DTM_TRACE(x) fprintf x
+//#define DTM_TRACE(x) 
+#define DTM_TRACE(x) fprintf x
 
 static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB* xid2status;
@@ -602,10 +602,10 @@ void DtmInitialize()
 
 void DtmLocalBegin(DtmCurrentTrans* x)
 {
-    if (x->xid == InvalidTransactionId) { 
+    if (!TransactionIdIsValid(x->xid)) { 
         SpinLockAcquire(&local->lock);
         x->xid = GetCurrentTransactionId();
-        Assert(x->xid != InvalidTransactionId);
+        Assert(TransactionIdIsValid(x->xid));
         x->cid = INVALID_CID;
         x->is_global = false;
         x->is_prepared = false;
@@ -648,7 +648,7 @@ cid_t DtmLocalAccess(DtmCurrentTrans* x, GlobalTransactionId gtid, cid_t global_
     }
     SpinLockRelease(&local->lock);
 	if (global_cid < local_cid - DtmVacuumDelay*USEC) { 
-		elog(ERROR, "Too old snapshot");
+		elog(ERROR, "Too old snapshot: requested %ld, current %ld", global_cid, local_cid);
 	}
     return global_cid;
 }
@@ -662,7 +662,7 @@ void DtmLocalBeginPrepare(GlobalTransactionId gtid)
 
         id = (DtmTransId*)hash_search(gtid2xid, gtid, HASH_FIND, NULL);
         Assert(id != NULL);
-
+		Assert(TransactionIdIsValid(id->xid));
         ts = (DtmTransStatus*)hash_search(xid2status, &id->xid, HASH_ENTER, NULL);
         ts->status = TRANSACTION_STATUS_IN_PROGRESS;
         ts->cid = dtm_get_cid();
@@ -743,9 +743,11 @@ void DtmLocalCommitPrepared(DtmCurrentTrans* x, GlobalTransactionId gtid)
 void DtmLocalCommit(DtmCurrentTrans* x)
 {
     SpinLockAcquire(&local->lock);
+	if (TransactionIdIsValid(x->xid))
     {
         bool found;
-        DtmTransStatus* ts = (DtmTransStatus*)hash_search(xid2status, &x->xid, HASH_ENTER, &found);
+        DtmTransStatus* ts;
+		ts = (DtmTransStatus*)hash_search(xid2status, &x->xid, HASH_ENTER, &found);
         ts->status = TRANSACTION_STATUS_COMMITTED;
         if (x->is_prepared) { 
             int i;
@@ -795,7 +797,9 @@ void DtmLocalAbort(DtmCurrentTrans* x)
     SpinLockAcquire(&local->lock);
     { 
         bool found;
-        DtmTransStatus* ts = (DtmTransStatus*)hash_search(xid2status, &x->xid, HASH_ENTER, &found);
+        DtmTransStatus* ts;
+		Assert(TransactionIdIsValid(x->xid));
+		ts = (DtmTransStatus*)hash_search(xid2status, &x->xid, HASH_ENTER, &found);
         if (x->is_prepared) { 
             Assert(found);
             Assert(x->is_global);
@@ -865,7 +869,9 @@ static void DtmAddSubtransactions(DtmTransStatus* ts, TransactionId* subxids, in
     int i;
     for (i = 0; i < nSubxids; i++) { 
         bool found;
-        DtmTransStatus* sts = (DtmTransStatus*)hash_search(xid2status, &subxids[i], HASH_ENTER, &found);
+		DtmTransStatus* sts;
+		Assert(TransactionIdIsValid(subxids[i]));
+        sts = (DtmTransStatus*)hash_search(xid2status, &subxids[i], HASH_ENTER, &found);
         Assert(!found);
         sts->status = ts->status;
         sts->cid = ts->cid;

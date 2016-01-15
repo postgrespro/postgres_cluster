@@ -370,6 +370,7 @@ do_sql_send_command(PGconn *conn, const char *sql)
 {
 	if (PQsendQuery(conn, sql) != PGRES_COMMAND_OK) {
 		PGresult *res = PQgetResult(conn);
+		elog(WARNING, "Failed to send command %s", sql);
 		pgfdw_report_error(ERROR, res, conn, true, sql);
 		PQclear(res);
 	}
@@ -587,20 +588,27 @@ static bool RunDtmStatement(char const* sql, unsigned expectedStatus, DtmCommand
 	hash_seq_init(&scan, ConnectionHash);
 	while ((entry = (ConnCacheEntry *) hash_seq_search(&scan)))
 	{
-		do_sql_send_command(entry->conn, sql);
+		if (entry->xact_depth > 0)
+		{
+			do_sql_send_command(entry->conn, sql);
+		}
 	}
 
 	hash_seq_init(&scan, ConnectionHash);
 	while ((entry = (ConnCacheEntry *) hash_seq_search(&scan)))
 	{
-		PGresult *result = PQgetResult(entry->conn);
-		if (PQresultStatus(result) != expectedStatus || (handler && !handler(result, arg)))
+		if (entry->xact_depth > 0)
 		{
-			pgfdw_report_error(ERROR, result, entry->conn, true, sql);
-			allOk = false;
+			PGresult *result = PQgetResult(entry->conn);
+			if (PQresultStatus(result) != expectedStatus || (handler && !handler(result, arg)))
+			{
+				elog(WARNING, "Failed command %s: status=%d, expected status=%d", sql, PQresultStatus(result), expectedStatus);
+				pgfdw_report_error(ERROR, result, entry->conn, true, sql);
+				allOk = false;
+			}
+			PQclear(result);
+			PQgetResult(entry->conn); /* consume NULL result */
 		}
-		PQclear(result);
-		PQgetResult(entry->conn); /* consume NULL result */
 	}
 	return allOk;
 }
