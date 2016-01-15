@@ -63,7 +63,7 @@
   shell: ./configure --prefix={{pg_dst}} --enable-debug --without-zlib && make clean && make -j {{makejobs}} && make install
   args:
     chdir: "{{pg_src}}"
-    creates: "{{pg_dst}}/bin/postgres"
+    # creates: "{{pg_dst}}/bin/postgres"
   # when: pg_copydist is undefined
 
 #############################################################################

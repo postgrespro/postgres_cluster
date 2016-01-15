@@ -128,7 +128,7 @@ static TransactionManager DtmTM = {
 	DtmGetGlobalTransactionId,
 	PgXidInMVCCSnapshot,
     DtmDetectGlobalDeadLock,
-	GtmGetName
+	DtmGetName
 };
 
 bool  MMDoReplication;
