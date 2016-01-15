@@ -5601,7 +5601,7 @@ xact_redo(XLogReaderState *record)
 						  // (char *) XLogRecGetData(record), XLogRecGetDataLen(record));
 		fprintf(stderr, "=== Recovering tx %lx : %lx \n", record->ReadRecPtr, record->EndRecPtr);
 
-		RecoverPreparedTransaction(record);
+		RecoverPreparedFromXLOG(record);
 	}
 	else if (info == XLOG_XACT_ASSIGNMENT)
 	{

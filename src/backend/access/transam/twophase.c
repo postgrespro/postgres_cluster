@@ -1848,21 +1848,21 @@ StandbyRecoverPreparedTransactions(bool overwriteOK)
 }
 
 /*
- * RecoverPreparedTransactions
+ * RecoverPreparedFromFiles
  *
  * Scan the pg_twophase directory and reload shared-memory state for each
  * prepared transaction (reacquire locks, etc).  This is run during database
  * startup.
  */
 void
-RecoverPreparedTransactions(void)
+RecoverPreparedFromFiles(void)
 {
 	char		dir[MAXPGPATH];
 	DIR		   *cldir;
 	struct dirent *clde;
 	bool		overwriteOK = false;
 
-	fprintf(stderr, "===(%u) RecoverPreparedTransactions called\n", getpid());
+	fprintf(stderr, "===(%u) RecoverPreparedFromFiles called\n", getpid());
 
 	snprintf(dir, MAXPGPATH, "%s", TWOPHASE_DIR);
 
@@ -1879,8 +1879,22 @@ RecoverPreparedTransactions(void)
 			TransactionId *subxids;
 			GlobalTransaction gxact;
 			int			i;
+			PGXACT	   *pgxact;
+
 
 			xid = (TransactionId) strtoul(clde->d_name, NULL, 16);
+
+			/* Already recovered from WAL? */
+			for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+			{
+				gxact = TwoPhaseState->prepXacts[i];
+				pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
+				
+
+				fprintf(stderr, "! %x ?= %x\n", xid, pgxact->xid);
+				if (xid == pgxact->xid)
+					goto next_file;
+			}
 
 			/* Already processed? */
 			if (TransactionIdDidCommit(xid) || TransactionIdDidAbort(xid))
@@ -1969,13 +1983,17 @@ RecoverPreparedTransactions(void)
 
 			pfree(buf);
 		}
+
+next_file:
+		continue;
+
 	}
 	FreeDir(cldir);
 }
 
 
 void
-RecoverPreparedTransaction(XLogReaderState *record)
+RecoverPreparedFromXLOG(XLogReaderState *record)
 {
 	bool		overwriteOK = false;
 	TransactionId xid = XLogRecGetXid(record);
@@ -1986,31 +2004,7 @@ RecoverPreparedTransaction(XLogReaderState *record)
 	GlobalTransaction gxact;
 	int			i;
 
-	fprintf(stderr, "===(%u) RecoverPreparedTransactioNN called\n", getpid());
-
-	// /* Already processed? */
-	// if (TransactionIdDidCommit(xid) || TransactionIdDidAbort(xid))
-	// {
-	// 	ereport(WARNING,
-	// 			(errmsg("removing stale two-phase state file \"%s\"",
-	// 					clde->d_name)));
-	// 	RemoveTwoPhaseFile(xid, true);
-	// 	continue;
-	// }
-
-	// /* Read and validate file */
-	// buf = ReadTwoPhaseFile(xid, true);
-	// if (buf == NULL)
-	// {
-	// 	ereport(WARNING,
-	// 		  (errmsg("removing corrupt two-phase state file \"%s\"",
-	// 				  clde->d_name)));
-	// 	RemoveTwoPhaseFile(xid, true);
-	// 	continue;
-	// }
-
-	// ereport(LOG,
-	// 		(errmsg("recovering prepared transaction %u", xid)));
+	fprintf(stderr, "===(%u) RecoverPreparedFromXLOG called\n", getpid());
 
 	/* Deconstruct header */
 	hdr = (TwoPhaseFileHeader *) buf;

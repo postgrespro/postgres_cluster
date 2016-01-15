@@ -7351,7 +7351,7 @@ StartupXLOG(void)
 	TrimMultiXact();
 
 	/* Reload shared-memory state for prepared transactions */
-	RecoverPreparedTransactions();
+	RecoverPreparedFromFiles();
 
 	/*
 	 * Shutdown the recovery environment. This must occur after

@@ -40,9 +40,34 @@ reinit_slave() {
 
 make install > /dev/null
 
+
 cat <<MSG
 ###############################################################################
-# Check that we can commit after hard restart
+# Check that we can commit after soft restart.
+# Here checkpoint happens before shutdown and no WAL replay will not occur
+# during start. So code should re-create memory state from files.
+###############################################################################
+MSG
+
+pkill -9 postgres
+reinit_master >> /dev/null
+psql <<SQL
+	begin;
+	insert into t values (42);
+	prepare transaction 'x';
+SQL
+./install/bin/pg_ctl -w -D ./install/data -l ./install/data/logfile restart
+psql <<SQL
+	commit prepared 'x';
+SQL
+
+
+
+cat <<MSG
+###############################################################################
+# Check that we can commit after hard restart.
+# On startup WAL replay will re-create memory for global transactions that 
+# happend after last checkpoint and stored. After that  
 ###############################################################################
 MSG
 
@@ -61,23 +86,6 @@ SQL
 
 
 
-# cat <<MSG
-# ###############################################################################
-# # Check that we can commit after soft restart
-# ###############################################################################
-# MSG
-
-# pkill -9 postgres
-# reinit_master >> /dev/null
-# psql <<SQL
-# 	begin;
-# 	insert into t values (42);
-# 	prepare transaction 'x';
-# SQL
-# ./install/bin/pg_ctl -w -D ./install/data -l ./install/data/logfile restart
-# psql <<SQL
-# 	commit prepared 'x';
-# SQL
 
 
 
