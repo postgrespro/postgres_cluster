@@ -59,6 +59,7 @@ typedef struct
 	TransactionId minXid;  /* XID of oldest transaction visible by any active transaction (local or global) */
 	TransactionId nextXid; /* next XID for local transaction */
 	size_t nReservedXids;  /* number of XIDs reserved for local transactions */
+	int64  disabledNodeMask;
     int    nNodes;
     pg_atomic_uint32 nReceivers;
     bool initialized;
@@ -74,6 +75,8 @@ typedef struct
 #define DTM_SHMEM_SIZE (64*1024*1024)
 #define DTM_HASH_SIZE  1003
 
+#define BIT_SET(mask, bit) ((mask) & ((int64)1 << (bit)))
+
 void _PG_init(void);
 void _PG_fini(void);
 
@@ -81,6 +84,7 @@ PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(mm_start_replication);
 PG_FUNCTION_INFO_V1(mm_stop_replication);
+PG_FUNCTION_INFO_V1(mm_disable_node);
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static void DtmMergeWithGlobalSnapshot(Snapshot snapshot);
@@ -108,6 +112,7 @@ static void DtmBackgroundWorker(Datum arg);
 static void MMMarkTransAsLocal(TransactionId xid);
 static BgwPool* MMPoolConstructor(void);
 static bool MMRunUtilityStmt(PGconn* conn, char const* sql);
+static void MMBroadcastUtilityStmt(char const* sql, bool ignoreError);
 
 static HTAB* xid_in_doubt;
 static HTAB* local_trans;
@@ -737,6 +742,7 @@ static void DtmInitialize()
 		dtm->nReservedXids = 0;
 		dtm->minXid = InvalidTransactionId;
         dtm->nNodes = MMNodes;
+		dtm->disabledNodeMask = 0;
         pg_atomic_write_u32(&dtm->nReceivers, 0);
         dtm->initialized = false;
         BgwPoolInit(&dtm->pool, MMExecutor, MMDatabaseName, MMQueueSize);
@@ -1209,6 +1215,22 @@ mm_stop_replication(PG_FUNCTION_ARGS)
     PG_RETURN_VOID();
 }
 
+Datum
+mm_disable_node(PG_FUNCTION_ARGS)
+{
+	int nodeId = PG_GETARG_INT32(0);
+	if (!BIT_SET(dtm->disabledNodeMask, nodeId))
+	{
+		dtm->disabledNodeMask |= ((int64)1 << nodeId);
+		dtm->nNodes -= 1;
+		if (!IsTransactionBlock())
+		{
+			MMBroadcastUtilityStmt(psprintf("select mm_disable_node(%d)", nodeId), true);
+		}
+	}
+    PG_RETURN_VOID();
+}
+		
 /*
  * Execute statement with specified parameters and check its result
  */
@@ -1224,6 +1246,95 @@ static bool MMRunUtilityStmt(PGconn* conn, char const* sql)
 	return ret;
 }
 
+static void MMBroadcastUtilityStmt(char const* sql, bool ignoreError)
+{
+	char* conn_str = pstrdup(MMConnStrs);
+	char* conn_str_end = conn_str + strlen(conn_str);
+	int i = 0;
+	int64 disabledNodeMask = dtm->disabledNodeMask;
+	int failedNode = -1;
+	char const* errorMsg = NULL;
+	PGconn **conns = palloc0(sizeof(PGconn*)*MMNodes);
+    
+	while (conn_str < conn_str_end) 
+	{ 
+		char* p = strchr(conn_str, ',');
+		if (p == NULL) { 
+			p = conn_str_end;
+		}
+		*p = '\0';
+		if (!BIT_SET(disabledNodeMask, i)) 
+		{
+			conns[i] = PQconnectdb(conn_str);
+			if (PQstatus(conns[i]) != CONNECTION_OK)
+			{
+				if (ignoreError) 
+				{ 
+					PQfinish(conns[i]);
+					conns[i] = NULL;
+				} else { 
+					failedNode = i;
+					do { 
+						PQfinish(conns[i]);
+					} while (--i >= 0);				
+					elog(ERROR, "Failed to establish connection '%s' to node %d", conn_str, failedNode);
+				}
+			}
+		}
+		conn_str = p + 1;
+		i += 1;
+	}
+	Assert(i == MMNodes);
+	
+	for (i = 0; i < MMNodes; i++) 
+	{ 
+		if (conns[i]) 
+		{
+			if (!MMRunUtilityStmt(conns[i], "BEGIN TRANSACTION") && !ignoreError)
+			{
+				errorMsg = "Failed to start transaction at node %d";
+				failedNode = i;
+				break;
+			}
+			if (!MMRunUtilityStmt(conns[i], sql) && !ignoreError)
+			{
+				errorMsg = "Failed to run command at node %d";
+				failedNode = i;
+				break;
+			}
+		}
+	}
+	if (failedNode >= 0 && !ignoreError)  
+	{
+		for (i = 0; i < MMNodes; i++) 
+		{ 
+			if (conns[i])
+			{
+				MMRunUtilityStmt(conns[i], "ROLLBACK TRANSACTION");
+			}
+		}
+	} else { 
+		for (i = 0; i < MMNodes; i++) 
+		{ 
+			if (conns[i] && !MMRunUtilityStmt(conns[i], "COMMIT TRANSACTION") && !ignoreError) 
+			{ 
+				errorMsg = "Commit failed at node %d";
+				failedNode = i;
+			}
+		}
+	}			
+	for (i = 0; i < MMNodes; i++) 
+	{ 
+		if (conns[i])
+		{
+			PQfinish(conns[i]);
+		}
+	}
+	if (!ignoreError && failedNode >= 0) 
+	{ 
+		elog(ERROR, errorMsg, failedNode+1);
+	}
+}
 
 static void MMProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
@@ -1267,67 +1378,7 @@ static void MMProcessUtility(Node *parsetree, const char *queryString,
 			MMIsDistributedTrans = false;
 		}
 	} else { 		
-		char* conn_str = pstrdup(MMConnStrs);
-		char* conn_str_end = conn_str + strlen(conn_str);
-		int i = 0;
-		int failedNode = -1;
-		char const* errorMsg = NULL;
-		PGconn **conns;
-		conns = palloc(sizeof(PGconn*)*MMNodes);
-        
-		while (conn_str < conn_str_end) { 
-			char* p = strchr(conn_str, ',');
-			if (p == NULL) { 
-				p = conn_str_end;
-			}
-			*p = '\0';        
-			conns[i] = PQconnectdb(conn_str);
-			if (PQstatus(conns[i]) != CONNECTION_OK)
-			{
-				failedNode = i;
-				do { 
-					PQfinish(conns[i]);
-				} while (--i >= 0);				
-				elog(ERROR, "Failed to establish connection '%s' to node %d", conn_str, failedNode);
-			}
-			conn_str = p + 1;
-			i += 1;
-		}
-		Assert(i == MMNodes);
-		
-		for (i = 0; i < MMNodes; i++) { 
-			if (!MMRunUtilityStmt(conns[i], "BEGIN TRANSACTION"))
-			{
-				errorMsg = "Failed to start transaction at node %d";
-				failedNode = i;
-				break;
-			}
-			if (!MMRunUtilityStmt(conns[i], queryString))
-			{
-				errorMsg = "Failed to run command at node %d";
-				failedNode = i;
-				break;
-			}
-		}
-		if (failedNode >= 0)  
-		{
-			for (i = 0; i < MMNodes; i++) { 
-				MMRunUtilityStmt(conns[i], "ROLLBACK TRANSACTION");
-			}
-		} else { 
-			for (i = 0; i < MMNodes; i++) { 
-				if (!MMRunUtilityStmt(conns[i], "COMMIT TRANSACTION")) { 
-					errorMsg = "Commit failed at node %d";
-					failedNode = i;
-				}
-			}
-		}			
-		for (i = 0; i < MMNodes; i++) { 
-			PQfinish(conns[i]);
-		}
-		if (failedNode >= 0) { 
-			elog(ERROR, errorMsg, failedNode+1);
-		}
+		MMBroadcastUtilityStmt(queryString, false);
 	}
 }
 static void
