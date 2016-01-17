@@ -1238,7 +1238,7 @@ static bool MMRunUtilityStmt(PGconn* conn, char const* sql)
 {
 	PGresult *result = PQexec(conn, sql);
 	int status = PQresultStatus(result);
-	bool ret = status == PGRES_COMMAND_OK;
+	bool ret = status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK;
 	if (!ret) { 
 		elog(WARNING, "Command '%s' failed with status %d", sql, status);
 	}
