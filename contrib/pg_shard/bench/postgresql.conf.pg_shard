@@ -624,4 +624,5 @@ default_text_search_config = 'pg_catalog.english'
 
 # Add settings for extensions here
 pg_shard.use_dtm_transactions = 1
+pg_shard.all_modifications_commutative = 1
 

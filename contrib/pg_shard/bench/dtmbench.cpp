@@ -158,7 +158,7 @@ void initializeDatabase()
 	exec(txn, "CREATE EXTENSION pg_shard");
 	exec(txn, "create table t(u int primary key, v int)");
 	exec(txn, "SELECT master_create_distributed_table(table_name := 't', partition_column := 'u')");
-	exec(txn, "SELECT master_create_worker_shards(table_name := 't', shard_count := 9, replication_factor := 1)");
+	exec(txn, "SELECT master_create_worker_shards(table_name := 't', shard_count := 100, replication_factor := 1)");
 	for (int i = 0; i < cfg.nAccounts; i++) { 
 		exec(txn, "insert into t values (%d,0)", i);
 	}

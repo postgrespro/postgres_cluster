@@ -17,6 +17,7 @@
 
 #include "distribution_metadata.h"
 #include "prune_shard_list.h"
+#include "create_shards.h"
 
 #include <stddef.h>
 
@@ -69,6 +70,50 @@ static List * BuildRestrictInfoList(List *qualList);
 static Node * BuildBaseConstraint(Var *column);
 static void UpdateConstraint(Node *baseConstraint, ShardInterval *shardInterval);
 
+static HTAB* shardPlacementCache;
+
+typedef struct ShardPlacementEntryCacheEntry
+{
+	Oid tableId;
+	List** placements;
+} ShardPlacementCacheEntry;
+
+#define MAX_DISTRIBUTED_TABLES 101
+
+static List* 
+LookupShardPlacementCache(Oid relationId, int shardHashCode)
+{
+	ShardPlacementCacheEntry* entry = NULL;
+
+	if (shardPlacementCache == NULL)
+	{
+		HASHCTL info;
+		int hashFlags = (HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+
+		memset(&info, 0, sizeof(info));
+		info.keysize = sizeof(Oid);
+		info.entrysize = sizeof(ShardPlacementCacheEntry);
+		info.hcxt = CacheMemoryContext;
+
+		shardPlacementCache = hash_create("pg_shard placement cache", MAX_DISTRIBUTED_TABLES, &info, hashFlags);
+	}
+	entry = hash_search(shardPlacementCache, &relationId, HASH_FIND, NULL);
+	return (entry != NULL) ? entry->placements[shardHashCode] : NULL;
+}
+
+static void 
+AddToShardPlacementCache(Oid relationId, int shardHashCode, int shardCount, List* shardPlacements)
+{
+	MemoryContext oldContext = MemoryContextSwitchTo(CacheMemoryContext);
+	bool found = false;
+	ShardPlacementCacheEntry* entry = (ShardPlacementCacheEntry*)hash_search(shardPlacementCache, &relationId, HASH_ENTER, &found);
+	if (!found)
+	{
+		entry->placements = palloc0(shardCount*sizeof(List*));
+	}
+	entry->placements[shardHashCode] = list_copy(shardPlacements);
+	MemoryContextSwitchTo(oldContext);
+}
 
 /*
  * PruneShardList prunes shards from given list based on the selection criteria,
@@ -81,7 +126,7 @@ PruneShardList(Oid relationId, List *whereClauseList, List *shardIntervalList)
 	ListCell *shardIntervalCell = NULL;
 	List *restrictInfoList = NIL;
 	Node *baseConstraint = NULL;
-
+	int shardHashCode = -1;
 	Var *partitionColumn = PartitionColumn(relationId);
 	char partitionMethod = PartitionType(relationId);
 
@@ -97,10 +142,51 @@ PruneShardList(Oid relationId, List *whereClauseList, List *shardIntervalList)
 
 		case HASH_PARTITION_TYPE:
 		{
-			Node *hashedNode = HashableClauseMutator((Node *) whereClauseList,
-													 partitionColumn);
+			Node *hashedNode = NULL;
+			List *hashedClauseList = NULL;
+			if (whereClauseList && whereClauseList->length == 1)
+			{
+				Expr* predicate = (Expr *)lfirst(list_head(whereClauseList));
 
-			List *hashedClauseList = (List *) hashedNode;
+				if (IsA(predicate, OpExpr))
+				{
+					OpExpr *operatorExpression = (OpExpr *) predicate;
+					Oid leftHashFunction = InvalidOid;
+					Oid rightHashFunction = InvalidOid;
+					if (get_op_hash_functions(operatorExpression->opno,
+											  &leftHashFunction,
+											  &rightHashFunction)				
+						&& SimpleOpExpression(predicate)
+						&& OpExpressionContainsColumn(operatorExpression,
+													  partitionColumn))
+					{
+						Node *leftOperand = get_leftop(predicate);
+						Node *rightOperand = get_rightop(predicate);
+						Const *constant = (Const*)(IsA(rightOperand, Const) ? rightOperand : leftOperand);
+						TypeCacheEntry *typeEntry = lookup_type_cache(constant->consttype, TYPECACHE_HASH_PROC_FINFO);
+						FmgrInfo *hashFunction = &(typeEntry->hash_proc_finfo);
+						if (OidIsValid(hashFunction->fn_oid))
+						{
+							int hashedValue = DatumGetInt32(FunctionCall1(hashFunction, constant->constvalue));
+							int shardCount = shardIntervalList->length;
+							uint32 hashTokenIncrement = (uint32)(HASH_TOKEN_COUNT / shardCount);
+							shardHashCode = (int)((uint32)(hashedValue - INT32_MIN) / hashTokenIncrement);
+							remainingShardList = LookupShardPlacementCache(relationId, shardHashCode);
+							if (remainingShardList != NULL)
+							{
+								return remainingShardList;
+							}
+						}
+					}
+				}
+			}
+			hashedNode = HashableClauseMutator((Node *) whereClauseList,
+											   partitionColumn);
+			hashedClauseList = (List *) hashedNode;
+			restrictInfoList = BuildRestrictInfoList(hashedClauseList);
+
+			/* override the partition column for hash partitioning */
+			partitionColumn = MakeInt4Column();
 			restrictInfoList = BuildRestrictInfoList(hashedClauseList);
 
 			/* override the partition column for hash partitioning */
@@ -141,7 +227,10 @@ PruneShardList(Oid relationId, List *whereClauseList, List *shardIntervalList)
 			remainingShardList = lappend(remainingShardList, &(shardInterval->id));
 		}
 	}
-
+	if (shardHashCode >= 0)
+	{
+		AddToShardPlacementCache(relationId, shardHashCode, shardIntervalList->length, remainingShardList);
+	}
 	return remainingShardList;
 }
 
