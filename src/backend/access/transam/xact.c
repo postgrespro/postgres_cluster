@@ -5568,6 +5568,7 @@ xact_redo(XLogReaderState *record)
 			xact_redo_commit(&parsed, parsed.twophase_xid,
 							 record->EndRecPtr, XLogRecGetOrigin(record));
 			RemoveTwoPhaseFile(parsed.twophase_xid, false);
+			XlogRedoFinishPrepared(parsed.twophase_xid);
 		}
 	}
 	else if (info == XLOG_XACT_ABORT || info == XLOG_XACT_ABORT_PREPARED)
@@ -5594,12 +5595,12 @@ xact_redo(XLogReaderState *record)
 	{
 		/* the record contents are exactly the 2PC file */
 		// RecreateTwoPhaseFile(XLogRecGetXid(record),
-		// 				  XLogRecGetData(record), XLogRecGetDataLen(record));
+						  // XLogRecGetData(record), XLogRecGetDataLen(record));
 
 
 		// RecoverPreparedTransaction(XLogRecGetXid(record),
 						  // (char *) XLogRecGetData(record), XLogRecGetDataLen(record));
-		fprintf(stderr, "=== Recovering tx %lx : %lx \n", record->ReadRecPtr, record->EndRecPtr);
+		// fprintf(stderr, "=== Recovering tx %lx : %lx \n", record->ReadRecPtr, record->EndRecPtr);
 
 		RecoverPreparedFromXLOG(record);
 	}

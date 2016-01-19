@@ -1550,6 +1550,78 @@ RecreateTwoPhaseFile(TransactionId xid, void *content, int len)
 }
 
 /*
+ *
+ */
+void
+XlogRedoFinishPrepared(TransactionId xid)
+{
+	GlobalTransaction gxact;
+	PGPROC	   *proc;
+	PGXACT	   *pgxact;
+	int			i;
+	bool		file_used = false;
+	char 	   *buf;
+	char	   *bufptr;
+	TwoPhaseFileHeader *hdr;
+
+	fprintf(stderr, "===(%u) XlogRedoCleanupPrepared called for %x\n", getpid(), xid);
+
+	/* We can do that without the lock in replay, aren't we? */
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	{
+		gxact = TwoPhaseState->prepXacts[i];
+		proc = &ProcGlobal->allProcs[gxact->pgprocno];
+		pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
+
+		if (xid == pgxact->xid)
+		{
+			fprintf(stderr, "cleaning memory state for %x\n", xid);
+
+			if (gxact->prepare_start_lsn)
+			{
+				XlogReadTwoPhaseData(gxact->prepare_start_lsn, &buf, NULL);
+			}
+			else
+			{
+				buf = ReadTwoPhaseFile(xid, true);
+				file_used = true;
+			}
+
+			/*
+			 * Disassemble the header area
+			 */
+			hdr = (TwoPhaseFileHeader *) buf;
+			Assert(TransactionIdEquals(hdr->xid, xid));
+
+			bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
+			bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
+			bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
+			bufptr += MAXALIGN(hdr->nabortrels * sizeof(RelFileNode));
+			bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));
+
+			ProcArrayRemove(proc, xid);
+
+			gxact->valid = false;
+
+			/* And now do the callbacks */
+			if (true)
+				ProcessRecords(bufptr, xid, twophase_postcommit_callbacks);
+			else
+				ProcessRecords(bufptr, xid, twophase_postabort_callbacks);
+
+			PredicateLockTwoPhaseFinish(xid, true);
+
+			RemoveGXact(gxact);
+			MyLockedGxact = NULL;
+
+			break;
+		}
+	}
+}
+
+
+
+/*
  * CheckPointTwoPhase -- handle 2PC component of checkpointing.
  *
  * We must fsync the state file of any GXACT that is valid and has a PREPARE

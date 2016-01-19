@@ -85,6 +85,58 @@ psql <<SQL
 SQL
 
 
+cat <<MSG
+###############################################################################
+# Check that WAL replay will delete memory state for commited 2pc tx.
+###############################################################################
+MSG
+
+pkill -9 postgres
+reinit_master >> /dev/null
+psql <<SQL
+	begin;
+	insert into t values (42);
+	prepare transaction 'x';
+	commit prepared 'x';
+SQL
+pkill -9 postgres
+./install/bin/pg_ctl -w -D ./install/data -l ./install/data/logfile start
+# ./install/bin/pg_ctl -w -D ./install/data -l ./install/data/logfile restart
+psql <<SQL
+	begin;
+	insert into t values (42);
+
+	-- This prepare can fail due to 2pc identifier conflict if replay
+	-- didn't clean proc and gxact on commit.
+	prepare transaction 'x';
+SQL
+
+
+
+# cat <<MSG
+# ###############################################################################
+# # Check that we can commit while running active sync slave and that there is no
+# # active prepared transaction on slave after that.
+# ###############################################################################
+# MSG
+
+# pkill -9 postgres
+# reinit_master >> /dev/null
+# reinit_slave >> /dev/null
+# psql <<SQL
+# 	begin;
+# 	insert into t values (42);
+# 	prepare transaction 'x';
+# SQL
+# pkill -9 postgres
+# ./install/bin/pg_ctl -w -D ./install/data -l ./install/data/logfile start
+# psql <<SQL
+# 	commit prepared 'x';
+# SQL
+# echo "Following list should be empty:"
+# psql -tc 'select * from pg_prepared_xacts;' -p 5433
+
+
 
 
 

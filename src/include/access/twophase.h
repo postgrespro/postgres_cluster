@@ -17,6 +17,7 @@
 #include "access/xlogdefs.h"
 #include "datatype/timestamp.h"
 #include "storage/lock.h"
+#include "access/xlogreader.h"
 
 /*
  * GlobalTransactionData is defined in twophase.c; other places have no
@@ -56,5 +57,7 @@ extern void RemoveTwoPhaseFile(TransactionId xid, bool giveWarning);
 extern void CheckPointTwoPhase(XLogRecPtr redo_horizon);
 
 extern void FinishPreparedTransaction(const char *gid, bool isCommit);
+
+extern void XlogRedoFinishPrepared(TransactionId xid);
 
 #endif   /* TWOPHASE_H */
