@@ -9,7 +9,7 @@ CREATE FUNCTION mm_stop_replication() RETURNS void
 AS 'MODULE_PATHNAME','mm_stop_replication'
 LANGUAGE C;
 
-CREATE FUNCTION mm_disable_node(node integer) RETURNS void
-AS 'MODULE_PATHNAME','mm_disable_node'
+CREATE FUNCTION mm_drop_node(node integer, drop_slot bool default false) RETURNS void
+AS 'MODULE_PATHNAME','mm_drop_node'
 LANGUAGE C;
 

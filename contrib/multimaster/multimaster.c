@@ -44,6 +44,7 @@
 #include "storage/proc.h"
 #include "utils/syscache.h"
 #include "replication/walsender.h"
+#include "replication/slot.h"
 #include "port/atomics.h"
 #include "tcop/utility.h"
 #include "sockhub/sockhub.h"
@@ -84,7 +85,7 @@ PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(mm_start_replication);
 PG_FUNCTION_INFO_V1(mm_stop_replication);
-PG_FUNCTION_INFO_V1(mm_disable_node);
+PG_FUNCTION_INFO_V1(mm_drop_node);
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static void DtmMergeWithGlobalSnapshot(Snapshot snapshot);
@@ -1216,17 +1217,26 @@ mm_stop_replication(PG_FUNCTION_ARGS)
 }
 
 Datum
-mm_disable_node(PG_FUNCTION_ARGS)
+mm_drop_node(PG_FUNCTION_ARGS)
 {
 	int nodeId = PG_GETARG_INT32(0);
-	if (!BIT_SET(dtm->disabledNodeMask, nodeId))
+	bool dropSlot = PG_GETARG_BOOL(1);
+	if (!BIT_SET(dtm->disabledNodeMask, nodeId-1))
 	{
-		dtm->disabledNodeMask |= ((int64)1 << nodeId);
+		if (nodeId <= 0 || nodeId > dtm->nNodes) 
+		{ 
+			elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, dtm->nNodes);
+		}
+		dtm->disabledNodeMask |= ((int64)1 << (nodeId-1));
 		dtm->nNodes -= 1;
 		if (!IsTransactionBlock())
 		{
-			MMBroadcastUtilityStmt(psprintf("select mm_disable_node(%d)", nodeId), true);
+			MMBroadcastUtilityStmt(psprintf("select mm_drop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
 		}
+		if (dropSlot) 
+		{
+			ReplicationSlotDrop(psprintf("mm_slot_%d", nodeId));
+		}		
 	}
     PG_RETURN_VOID();
 }

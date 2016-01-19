@@ -118,7 +118,7 @@ static TransactionManager DtmTM = {
 	DtmGetGlobalTransactionId,
 	PgXidInMVCCSnapshot,
     DtmDetectGlobalDeadLock,
-	GtmGetName
+	DtmGetName
 };
 
 static char *DtmServers;
