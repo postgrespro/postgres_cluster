@@ -16,7 +16,7 @@ reinit_master() {
 	echo "max_wal_senders = 2" >> ./install/data/postgresql.conf
 	echo "max_replication_slots = 2" >> ./install/data/postgresql.conf
 
-	echo '' > ./install/data/logfile
+	# echo '' > ./install/data/logfile
 
 	echo 'local replication stas trust' >> ./install/data/pg_hba.conf
 
@@ -211,28 +211,31 @@ make install > /dev/null
 
 
 
-cat <<MSG
-###############################################################################
-# Check that we can commit after soft restart.
-# Here checkpoint happens before shutdown and no WAL replay will not occur
-# during start. So code should re-create memory state from files.
-###############################################################################
-MSG
+# cat <<MSG
+# ###############################################################################
+# # Check that we can commit after soft restart.
+# # Here checkpoint happens before shutdown and no WAL replay will not occur
+# # during start. So code should re-create memory state from files.
+# ###############################################################################
+# MSG
 
-pkill -9 postgres
-reinit_master >> /dev/null
-psql <<SQL
-	begin;
-	insert into t values (42);
-	savepoint s1;
-	insert into t values (43);
-	prepare transaction 'x';
-	insert into t values (100);
-SQL
-./install/bin/pg_ctl -w -D ./install/data -l ./install/data/logfile restart
-psql <<SQL
-	commit prepared 'x';
-SQL
+# pkill -9 postgres
+# reinit_master >> /dev/null
+# psql <<SQL
+# 	begin;
+# 	select txid_current();
+# 	insert into t values (42);
+# 	savepoint s1;
+# 	insert into t values (43);
+# 	prepare transaction 'x';
+# SQL
+# ./install/bin/pg_ctl -w -D ./install/data -l ./install/data/logfile restart
+# echo "xmin should be equal to xip of prepared tx"
+# psql <<SQL
+# 	insert into t values (44);
+# 	select txid_current_snapshot();
+# 	commit prepared 'x';
+# SQL
 
 
 
@@ -248,24 +251,25 @@ pkill -9 postgres
 reinit_master >> /dev/null
 psql <<SQL
 	begin;
+	select txid_current();
 	insert into t values (42);
 	savepoint s1;
 	insert into t values (43);
-	select txid_current();
 	prepare transaction 'x';
 SQL
 pkill -9 postgres
 ./install/bin/pg_ctl -w -D ./install/data -l ./install/data/logfile start
+echo "xmin should be equal to xip of prepared tx"
 psql <<SQL
-	select txid_current();
 	insert into t values (44);
+	select txid_current_snapshot();
 	commit prepared 'x';
 SQL
 
 
 
 
-
+# try to replay several tx with same name
 
 
 

@@ -84,6 +84,7 @@
 #include "storage/smgr.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
+#include "utils/snapmgr.h"
 #include "utils/timestamp.h"
 
 
@@ -1708,6 +1709,10 @@ TransactionId
 PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 {
 	TransactionId origNextXid = ShmemVariableCache->nextXid;
+
+	/* By this we will take into account xacts restored to memory */
+	// TransactionId origNextXid = GetOldestSafeDecodingTransactionId();
+	
 	TransactionId result = origNextXid;
 	DIR		   *cldir;
 	struct dirent *clde;
@@ -1715,7 +1720,15 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	int			nxids = 0;
 	int			allocsize = 0;
 
+
 	fprintf(stderr, "===(%u) PrescanPreparedTransactions called. result = %u\n", getpid(), result);
+
+	/*
+	 * Since we want to find minimum among prepared xacts we can use that function ignoring
+	 * KnownAssignedXids.
+	 * Other option is just to iterate here through the procarray.
+	 */
+	result = GetOldestActiveTransactionId();
 
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
@@ -1952,22 +1965,32 @@ RecoverPreparedFromFiles(void)
 			TransactionId *subxids;
 			GlobalTransaction gxact;
 			int			i;
-			PGXACT	   *pgxact;
+			// PGXACT	   *pgxact;
 
 
 			xid = (TransactionId) strtoul(clde->d_name, NULL, 16);
 
 			/* Already recovered from WAL? */
-			for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+			if (TransactionIdIsInProgress(xid))
 			{
-				gxact = TwoPhaseState->prepXacts[i];
-				pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
+				fprintf(stderr, "! xid %x is in progress\n", xid);
+				continue;
+			}
+
+			// /* Already recovered from WAL? */
+			// for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+			// {
+			// 	gxact = TwoPhaseState->prepXacts[i];
+			// 	pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
 				
 
-				fprintf(stderr, "! %x ?= %x\n", xid, pgxact->xid);
-				if (xid == pgxact->xid)
-					goto next_file;
-			}
+			// 	fprintf(stderr, "! %x ?= %x\n", xid, pgxact->xid);
+
+
+
+			// 	if (xid == pgxact->xid)
+			// 		goto next_file;
+			// }
 
 			/* Already processed? */
 			if (TransactionIdDidCommit(xid) || TransactionIdDidAbort(xid))
@@ -2057,8 +2080,8 @@ RecoverPreparedFromFiles(void)
 			pfree(buf);
 		}
 
-next_file:
-		continue;
+// next_file:
+// 		continue;
 
 	}
 	FreeDir(cldir);

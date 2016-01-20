@@ -2061,7 +2061,7 @@ GetOldestActiveTransactionId(void)
 	TransactionId oldestRunningXid;
 	int			index;
 
-	Assert(!RecoveryInProgress());
+	// Assert(!RecoveryInProgress());
 
 	LWLockAcquire(ProcArrayLock, LW_SHARED);
 

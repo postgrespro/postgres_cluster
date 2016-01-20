@@ -6563,7 +6563,10 @@ StartupXLOG(void)
 			InitRecoveryTransactionEnvironment();
 
 			if (wasShutdown)
+			{
+				fprintf(stderr, "=== PrescanPreparedTransactions #1\n");
 				oldestActiveXID = PrescanPreparedTransactions(&xids, &nxids);
+			}
 			else
 				oldestActiveXID = checkPoint.oldestActiveXid;
 			Assert(TransactionIdIsValid(oldestActiveXID));
@@ -7163,6 +7166,7 @@ StartupXLOG(void)
 	XLogCtl->LogwrtRqst.Flush = EndOfLog;
 
 	/* Pre-scan prepared transactions to find out the range of XIDs present */
+	fprintf(stderr, "=== PrescanPreparedTransactions #2\n");
 	oldestActiveXID = PrescanPreparedTransactions(NULL, NULL);
 
 	/*
@@ -9258,6 +9262,7 @@ xlog_redo(XLogReaderState *record)
 			TransactionId latestCompletedXid;
 			RunningTransactionsData running;
 
+			fprintf(stderr, "=== PrescanPreparedTransactions #3\n");
 			oldestActiveXID = PrescanPreparedTransactions(&xids, &nxids);
 
 			/*
