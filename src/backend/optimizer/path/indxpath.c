@@ -1798,13 +1798,13 @@ check_index_only(RelOptInfo *rel, IndexOptInfo *index)
 	 * Check that all needed attributes of the relation are available from the
 	 * index.
 	 *
-	 * XXX this is overly conservative for partial indexes, since we will
-	 * consider attributes involved in the index predicate as required even
-	 * though the predicate won't need to be checked at runtime.  (The same is
-	 * true for attributes used only in index quals, if we are certain that
-	 * the index is not lossy.)  However, it would be quite expensive to
-	 * determine that accurately at this point, so for now we take the easy
-	 * way out.
+	 * For partial indexes we won't consider attributes involved in clauses
+	 * implied by the index predicate, as those won't be needed at runtime.
+	 *
+	 * XXX The same is true for attributes used only in index quals, if we
+	 * are certain that the index is not lossy. However, it would be quite
+	 * expensive to determine that accurately at this point, so for now we
+	 * take the easy way out.
 	 */
 
 	/*
@@ -1819,6 +1819,27 @@ check_index_only(RelOptInfo *rel, IndexOptInfo *index)
 	{
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
 
+		/*
+		 * If the index is partial, we won't consider the clauses that are
+		 * implied by the index predicate (those are not needed at runtime).
+		 */
+		if (index->indpred != NIL)
+		{
+			bool	implied = false;
+			List   *clauses  = NIL;
+
+			/* need a list for the 'implied_by' call */
+			clauses = lappend(clauses, (Node *) rinfo->clause);
+
+			implied = predicate_implied_by(clauses, index->indpred);
+
+			/* we generally don't free memory, but well ... */
+			list_free(clauses);
+
+			/* if the clause is implied by index predicate, skip it */
+			if (implied)
+				continue;
+		}
 		pull_varattnos((Node *) rinfo->clause, rel->relid, &attrs_used);
 	}
 
