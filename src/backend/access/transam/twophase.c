@@ -1715,7 +1715,7 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	int			nxids = 0;
 	int			allocsize = 0;
 
-	fprintf(stderr, "===(%u) PrescanPreparedTransactions called\n", getpid());
+	fprintf(stderr, "===(%u) PrescanPreparedTransactions called. result = %u\n", getpid(), result);
 
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
@@ -1831,6 +1831,7 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 		*nxids_p = nxids;
 	}
 
+	fprintf(stderr, "===(%u) PrescanPreparedTransactions ended. result = %u\n", getpid(), result);
 	return result;
 }
 
@@ -1852,7 +1853,7 @@ StandbyRecoverPreparedTransactions(bool overwriteOK)
 	DIR		   *cldir;
 	struct dirent *clde;
 
-	fprintf(stderr, "===(%u) StandbyRecoverPreparedTransactions called\n", getpid());
+	fprintf(stderr, "!===(%u) StandbyRecoverPreparedTransactions called, overwriteOK = %u\n", getpid(), (int)overwriteOK);
 
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)

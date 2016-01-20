@@ -6042,6 +6042,8 @@ StartupXLOG(void)
 	{
 		List	   *tablespaces = NIL;
 
+		fprintf(stderr, "!= label file found\n");
+
 		/*
 		 * Archive recovery was requested, and thanks to the backup label
 		 * file, we know how far we need to replay to reach consistency. Enter
@@ -6125,6 +6127,8 @@ StartupXLOG(void)
 	}
 	else
 	{
+		fprintf(stderr, "!= no label file found\n");
+
 		/*
 		 * If tablespace_map file is present without backup_label file, there
 		 * is no use of such file.  There is no harm in retaining it, but it
@@ -6574,6 +6578,8 @@ StartupXLOG(void)
 			 */
 			StartupCLOG();
 			StartupSUBTRANS(oldestActiveXID);
+
+			fprintf(stderr, "!!!!!!!!!!!!!!! \n");
 
 			/*
 			 * If we're beginning at a shutdown checkpoint, we know that
@@ -9235,6 +9241,8 @@ xlog_redo(XLogReaderState *record)
 			XLogRecPtrIsInvalid(ControlFile->backupEndPoint))
 			ereport(PANIC,
 			(errmsg("online backup was canceled, recovery cannot continue")));
+
+		fprintf(stderr, "!_!_!_!_!_!_!_!\n");
 
 		/*
 		 * If we see a shutdown checkpoint, we know that nothing was running
