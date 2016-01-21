@@ -1,5 +1,5 @@
-#ifndef LIMITS_H
-#define LIMITS_H
+#ifndef DTMD_LIMITS_H
+#define DTMD_LIMITS_H
 
 #define MAX_TRANSACTIONS 4096
 
