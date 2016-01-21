@@ -271,7 +271,16 @@ pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 	/* use Oid as relation identifier */
 	pq_sendint(out, RelationGetRelid(rel), 4);
 
-	/* FIXME support whole tuple (O tuple type) */
+	/*
+	 * TODO: support whole tuple (O tuple type)
+	 *
+	 * Right now we can only write the key-part since logical decoding
+	 * doesn't know how to record the whole old tuple for us in WAL.
+	 * We can't use REPLICA IDENTITY FULL for this, since that makes
+	 * the key-part the whole tuple, causing issues with conflict
+	 * resultion and index lookups. We need a separate decoding option
+	 * to record whole tuples.
+	 */
 	if (oldtuple != NULL)
 	{
 		pq_sendbyte(out, 'K');	/* old key follows */
@@ -299,7 +308,11 @@ pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 	/* use Oid as relation identifier */
 	pq_sendint(out, RelationGetRelid(rel), 4);
 
-	/* FIXME support whole tuple (O tuple type) */
+	/*
+	 * TODO support whole tuple ('O' tuple type)
+	 *
+	 * See notes on update for details
+	 */
 	pq_sendbyte(out, 'K');	/* old key follows */
 	pglogical_write_tuple(out, data, rel, oldtuple);
 }
@@ -314,7 +327,7 @@ write_startup_message(StringInfo out, List *msg)
 	ListCell *lc;
 
 	pq_sendbyte(out, 'S');	/* message type field */
-	pq_sendbyte(out, 1); 	/* startup message version */
+	pq_sendbyte(out, PGLOGICAL_STARTUP_MSG_FORMAT_FLAT); 	/* startup message version */
 	foreach (lc, msg)
 	{
 		DefElem *param = (DefElem*)lfirst(lc);
