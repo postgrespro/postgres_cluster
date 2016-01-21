@@ -1724,6 +1724,7 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	int			nxids = 0;
 	int			allocsize = 0;
 
+	// !!! take care of TransactionId **xids_p, int *nxids_p
 
 	fprintf(stderr, "===(%u) PrescanPreparedTransactions called. result = %u\n", getpid(), result);
 
@@ -1733,6 +1734,7 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	 * Other option is just to iterate here through the procarray.
 	 */
 	result = GetOldestActiveTransactionId();
+	// fprintf(stderr, "===(%u) PrescanPreparedTransactions called. should be = %u\n", getpid(), GetOldestActiveTransactionId());
 
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
