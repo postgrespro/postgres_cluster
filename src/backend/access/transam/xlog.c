@@ -6042,8 +6042,6 @@ StartupXLOG(void)
 	{
 		List	   *tablespaces = NIL;
 
-		fprintf(stderr, "!= label file found\n");
-
 		/*
 		 * Archive recovery was requested, and thanks to the backup label
 		 * file, we know how far we need to replay to reach consistency. Enter
@@ -6127,8 +6125,6 @@ StartupXLOG(void)
 	}
 	else
 	{
-		fprintf(stderr, "!= no label file found\n");
-
 		/*
 		 * If tablespace_map file is present without backup_label file, there
 		 * is no use of such file.  There is no harm in retaining it, but it
@@ -6563,10 +6559,7 @@ StartupXLOG(void)
 			InitRecoveryTransactionEnvironment();
 
 			if (wasShutdown)
-			{
-				fprintf(stderr, "=== PrescanPreparedTransactions #1\n");
 				oldestActiveXID = PrescanPreparedTransactions(&xids, &nxids);
-			}
 			else
 				oldestActiveXID = checkPoint.oldestActiveXid;
 			Assert(TransactionIdIsValid(oldestActiveXID));
@@ -6581,8 +6574,6 @@ StartupXLOG(void)
 			 */
 			StartupCLOG();
 			StartupSUBTRANS(oldestActiveXID);
-
-			fprintf(stderr, "!!!!!!!!!!!!!!! \n");
 
 			/*
 			 * If we're beginning at a shutdown checkpoint, we know that
@@ -7166,7 +7157,6 @@ StartupXLOG(void)
 	XLogCtl->LogwrtRqst.Flush = EndOfLog;
 
 	/* Pre-scan prepared transactions to find out the range of XIDs present */
-	fprintf(stderr, "=== PrescanPreparedTransactions #2\n");
 	oldestActiveXID = PrescanPreparedTransactions(NULL, NULL);
 
 	/*
@@ -9244,8 +9234,6 @@ xlog_redo(XLogReaderState *record)
 			ereport(PANIC,
 			(errmsg("online backup was canceled, recovery cannot continue")));
 
-		fprintf(stderr, "!_!_!_!_!_!_!_!\n");
-
 		/*
 		 * If we see a shutdown checkpoint, we know that nothing was running
 		 * on the master at this point. So fake-up an empty running-xacts
@@ -9260,7 +9248,6 @@ xlog_redo(XLogReaderState *record)
 			TransactionId latestCompletedXid;
 			RunningTransactionsData running;
 
-			fprintf(stderr, "=== PrescanPreparedTransactions #3\n");
 			oldestActiveXID = PrescanPreparedTransactions(&xids, &nxids);
 
 			/*

@@ -47,7 +47,6 @@ extern bool StandbyTransactionIdIsPrepared(TransactionId xid);
 
 extern TransactionId PrescanPreparedTransactions(TransactionId **xids_p,
 							int *nxids_p);
-// extern void StandbyRecoverPreparedTransactions(bool overwriteOK);
 extern void RecoverPreparedFromFiles(bool overwriteOK);
 extern void RecoverPreparedFromXLOG(XLogReaderState *record);
 
@@ -59,5 +58,4 @@ extern void CheckPointTwoPhase(XLogRecPtr redo_horizon);
 extern void FinishPreparedTransaction(const char *gid, bool isCommit);
 
 extern void XlogRedoFinishPrepared(TransactionId xid);
-
 #endif   /* TWOPHASE_H */

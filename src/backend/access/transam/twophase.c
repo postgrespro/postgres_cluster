@@ -47,7 +47,6 @@
  *		  files
  *		* In case of crash replay will move data from xlog to files, if that
  *		  hasn't happened before. XXX TODO - move to shmem in replay also
-
  *
  *-------------------------------------------------------------------------
  */
@@ -79,7 +78,6 @@
 #include "replication/origin.h"
 #include "replication/syncrep.h"
 #include "replication/walsender.h"
-#include "replication/logicalfuncs.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/predicate.h"
@@ -89,7 +87,6 @@
 #include "storage/smgr.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
-#include "utils/snapmgr.h"
 #include "utils/timestamp.h"
 
 
@@ -1251,8 +1248,6 @@ XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
 	XLogReaderState *xlogreader;
 	char	   *errormsg;
 
-	Assert(!RecoveryInProgress());
-
 	xlogreader = XLogReaderAllocate(&read_local_xlog_page, NULL);
 	if (!xlogreader)
 		ereport(ERROR,
@@ -1280,7 +1275,6 @@ XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
 		*len = XLogRecGetDataLen(xlogreader);
 
 	*buf = palloc(sizeof(char)*XLogRecGetDataLen(xlogreader));
-
 	memcpy(*buf, XLogRecGetData(xlogreader), sizeof(char) * XLogRecGetDataLen(xlogreader));
 
 	XLogReaderFree(xlogreader);
@@ -1297,14 +1291,12 @@ StandbyTransactionIdIsPrepared(TransactionId xid)
 	TwoPhaseFileHeader *hdr;
 	bool		result;
 
-	fprintf(stderr, "===(%u) StandbyTransactionIdIsPrepared(%u) \n", getpid(), xid);
-
 	Assert(TransactionIdIsValid(xid));
 
 	if (max_prepared_xacts <= 0)
 		return false;			/* nothing to do */
 
-	// check for in-memory tx here too
+	// NB: check for in-memory tx here too
 
 	/* Read and validate file */
 	buf = ReadTwoPhaseFile(xid, false);
@@ -1340,7 +1332,6 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	int			ndelrels;
 	SharedInvalidationMessage *invalmsgs;
 	int			i;
-	bool		file_used = false;
 
 	/*
 	 * Validate the GID, and lock the GXACT to ensure that two backends do not
@@ -1361,6 +1352,7 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 		buf = ReadTwoPhaseFile(xid, true);
 	else
 		XlogReadTwoPhaseData(gxact->prepare_start_lsn, &buf, NULL);
+
 
 	/*
 	 * Disassemble the header area
@@ -1529,8 +1521,6 @@ RecreateTwoPhaseFile(TransactionId xid, void *content, int len)
 	pg_crc32c	statefile_crc;
 	int			fd;
 
-	fprintf(stderr, "===(%u) RecreateTwoPhaseFile called\n", getpid());
-
 	/* Recompute CRC */
 	INIT_CRC32C(statefile_crc);
 	COMP_CRC32C(statefile_crc, content, len);
@@ -1596,9 +1586,10 @@ XlogRedoFinishPrepared(TransactionId xid)
 	char	   *bufptr;
 	TwoPhaseFileHeader *hdr;
 
-	fprintf(stderr, "===(%u) XlogRedoCleanupPrepared called for %x\n", getpid(), xid);
+	// NB: take care about file state file removal
 
-	/* We can do that without the lock in replay, aren't we? */
+	// NB: put lock there
+
 	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
 	{
 		gxact = TwoPhaseState->prepXacts[i];
@@ -1761,10 +1752,6 @@ TransactionId
 PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 {
 	TransactionId origNextXid = ShmemVariableCache->nextXid;
-
-	/* By this we will take into account xacts restored to memory */
-	// TransactionId origNextXid = GetOldestSafeDecodingTransactionId();
-	
 	TransactionId result = origNextXid;
 	DIR		   *cldir;
 	struct dirent *clde;
@@ -1772,17 +1759,10 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	int			nxids = 0;
 	int			allocsize = 0;
 
-	// !!! take care of TransactionId **xids_p, int *nxids_p
+	// NB: take care of TransactionId **xids_p, int *nxids_p
 
-	fprintf(stderr, "===(%u) PrescanPreparedTransactions called. result = %u\n", getpid(), result);
-
-	/*
-	 * Since we want to find minimum among prepared xacts we can use that function ignoring
-	 * KnownAssignedXids.
-	 * Other option is just to iterate here through the procarray.
-	 */
+	// NB: just iterate through preparedXacts here
 	result = GetOldestActiveTransactionId();
-	// fprintf(stderr, "===(%u) PrescanPreparedTransactions called. should be = %u\n", getpid(), GetOldestActiveTransactionId());
 
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
@@ -1898,94 +1878,8 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 		*nxids_p = nxids;
 	}
 
-	fprintf(stderr, "===(%u) PrescanPreparedTransactions ended. result = %u\n", getpid(), result);
 	return result;
 }
-
-// /*
-//  * StandbyRecoverPreparedTransactions
-//  *
-//  * Scan the pg_twophase directory and setup all the required information to
-//  * allow standby queries to treat prepared transactions as still active.
-//  * This is never called at the end of recovery - we use
-//  * RecoverPreparedTransactions() at that point.
-//  *
-//  * Currently we simply call SubTransSetParent() for any subxids of prepared
-//  * transactions. If overwriteOK is true, it's OK if some XIDs have already
-//  * been marked in pg_subtrans.
-//  */
-// void
-// StandbyRecoverPreparedTransactions(bool overwriteOK)
-// {
-// 	DIR		   *cldir;
-// 	struct dirent *clde;
-
-// 	fprintf(stderr, "!===(%u) StandbyRecoverPreparedTransactions called, overwriteOK = %u\n", getpid(), (int)overwriteOK);
-
-// 	cldir = AllocateDir(TWOPHASE_DIR);
-// 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
-// 	{
-// 		if (strlen(clde->d_name) == 8 &&
-// 			strspn(clde->d_name, "0123456789ABCDEF") == 8)
-// 		{
-// 			TransactionId xid;
-// 			char	   *buf;
-// 			TwoPhaseFileHeader *hdr;
-// 			TransactionId *subxids;
-// 			int			i;
-
-// 			xid = (TransactionId) strtoul(clde->d_name, NULL, 16);
-
-// 			/* Already processed? */
-// 			if (TransactionIdDidCommit(xid) || TransactionIdDidAbort(xid))
-// 			{
-// 				ereport(WARNING,
-// 						(errmsg("removing stale two-phase state file \"%s\"",
-// 								clde->d_name)));
-// 				RemoveTwoPhaseFile(xid, true);
-// 				continue;
-// 			}
-
-// 			/* Read and validate file */
-// 			buf = ReadTwoPhaseFile(xid, true);
-// 			if (buf == NULL)
-// 			{
-// 				ereport(WARNING,
-// 					  (errmsg("removing corrupt two-phase state file \"%s\"",
-// 							  clde->d_name)));
-// 				RemoveTwoPhaseFile(xid, true);
-// 				continue;
-// 			}
-
-// 			/* Deconstruct header */
-// 			hdr = (TwoPhaseFileHeader *) buf;
-// 			if (!TransactionIdEquals(hdr->xid, xid))
-// 			{
-// 				ereport(WARNING,
-// 					  (errmsg("removing corrupt two-phase state file \"%s\"",
-// 							  clde->d_name)));
-// 				RemoveTwoPhaseFile(xid, true);
-// 				pfree(buf);
-// 				continue;
-// 			}
-
-// 			/*
-// 			 * Examine subtransaction XIDs ... they should all follow main
-// 			 * XID.
-// 			 */
-// 			subxids = (TransactionId *)
-// 				(buf + MAXALIGN(sizeof(TwoPhaseFileHeader)));
-// 			for (i = 0; i < hdr->nsubxacts; i++)
-// 			{
-// 				TransactionId subxid = subxids[i];
-
-// 				Assert(TransactionIdFollows(subxid, xid));
-// 				SubTransSetParent(xid, subxid, overwriteOK);
-// 			}
-// 		}
-// 	}
-// 	FreeDir(cldir);
-// }
 
 /*
  * RecoverPreparedFromFiles
@@ -2000,9 +1894,8 @@ RecoverPreparedFromFiles(bool overwriteOK)
 	char		dir[MAXPGPATH];
 	DIR		   *cldir;
 	struct dirent *clde;
-	// bool		overwriteOK = false;
 
-	fprintf(stderr, "===(%u) RecoverPreparedFromFiles called\n", getpid());
+	// NB: look carefully at case overwriteOK=true
 
 	snprintf(dir, MAXPGPATH, "%s", TWOPHASE_DIR);
 
@@ -2024,23 +1917,15 @@ RecoverPreparedFromFiles(bool overwriteOK)
 
 			xid = (TransactionId) strtoul(clde->d_name, NULL, 16);
 
-			// /* Already recovered from WAL? */
-			// if (TransactionIdIsInProgress(xid))
-			// {
-			// 	fprintf(stderr, "! xid %x is in progress\n", xid);
-			// 	continue;
-			// }
+			// NB: put lock here
 
 			/* Already recovered from WAL? */
 			for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
 			{
 				gxact = TwoPhaseState->prepXacts[i];
 				pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
-				
 
 				fprintf(stderr, "! %x ?= %x\n", xid, pgxact->xid);
-
-
 
 				if (xid == pgxact->xid)
 					goto next_file;
@@ -2151,8 +2036,6 @@ RecoverPreparedFromXLOG(XLogReaderState *record)
 	TransactionId *subxids;
 	GlobalTransaction gxact;
 	int			i;
-
-	fprintf(stderr, "===(%u) RecoverPreparedFromXLOG called\n", getpid());
 
 	/* Deconstruct header */
 	hdr = (TwoPhaseFileHeader *) buf;

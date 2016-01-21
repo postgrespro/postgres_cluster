@@ -3246,7 +3246,7 @@ PostPrepare_Locks(TransactionId xid)
 			if (!hash_update_hash_key(LockMethodProcLockHash,
 									  (void *) proclock,
 									  (void *) &proclocktag))
-				elog(PANIC, "(proc %u) duplicate entry found while reassigning a prepared transaction's locks", getpid());
+				elog(PANIC, "duplicate entry found while reassigning a prepared transaction's locks");
 
 			/* Re-link into the new proc's proclock list */
 			SHMQueueInsertBefore(&(newproc->myProcLocks[partition]),
@@ -3682,8 +3682,6 @@ lock_twophase_recover(TransactionId xid, uint16 info,
 	int			partition;
 	LWLock	   *partitionLock;
 	LockMethod	lockMethodTable;
-
-	fprintf(stderr, "=== (%u) lock_twophase_recover\n", getpid());
 
 	Assert(len == sizeof(TwoPhaseLockRecord));
 	locktag = &rec->locktag;
