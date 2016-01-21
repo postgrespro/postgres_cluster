@@ -5,7 +5,7 @@
  *	  Planning is complete, we just need to convert the selected
  *	  Path into a Plan.
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -1054,6 +1054,8 @@ create_unique_plan(PlannerInfo *root, UniquePath *best_path)
 								 groupOperators,
 								 NIL,
 								 numGroups,
+								 false,
+								 true,
 								 subplan);
 	}
 	else
@@ -1128,7 +1130,7 @@ create_gather_plan(PlannerInfo *root, GatherPath *best_path)
 
 	gather_plan = make_gather(subplan->targetlist,
 							  NIL,
-							  best_path->num_workers,
+							  best_path->path.parallel_degree,
 							  best_path->single_copy,
 							  subplan);
 
@@ -4557,9 +4559,8 @@ Agg *
 make_agg(PlannerInfo *root, List *tlist, List *qual,
 		 AggStrategy aggstrategy, const AggClauseCosts *aggcosts,
 		 int numGroupCols, AttrNumber *grpColIdx, Oid *grpOperators,
-		 List *groupingSets,
-		 long numGroups,
-		 Plan *lefttree)
+		 List *groupingSets, long numGroups, bool combineStates,
+		 bool finalizeAggs, Plan *lefttree)
 {
 	Agg		   *node = makeNode(Agg);
 	Plan	   *plan = &node->plan;
@@ -4568,6 +4569,8 @@ make_agg(PlannerInfo *root, List *tlist, List *qual,
 
 	node->aggstrategy = aggstrategy;
 	node->numCols = numGroupCols;
+	node->combineStates = combineStates;
+	node->finalizeAggs = finalizeAggs;
 	node->grpColIdx = grpColIdx;
 	node->grpOperators = grpOperators;
 	node->numGroups = numGroups;

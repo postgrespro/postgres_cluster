@@ -3,7 +3,7 @@
  * index.c
  *	  code to create and destroy POSTGRES index relations
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -23,6 +23,7 @@
 
 #include <unistd.h>
 
+#include "access/amapi.h"
 #include "access/multixact.h"
 #include "access/relscan.h"
 #include "access/sysattr.h"
@@ -36,6 +37,7 @@
 #include "catalog/heap.h"
 #include "catalog/index.h"
 #include "catalog/objectaccess.h"
+#include "catalog/pg_am.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_operator.h"
@@ -279,20 +281,14 @@ ConstructTupleDescriptor(Relation heapRelation,
 	int			numatts = indexInfo->ii_NumIndexAttrs;
 	ListCell   *colnames_item = list_head(indexColNames);
 	ListCell   *indexpr_item = list_head(indexInfo->ii_Expressions);
-	HeapTuple	amtuple;
-	Form_pg_am	amform;
+	IndexAmRoutine *amroutine;
 	TupleDesc	heapTupDesc;
 	TupleDesc	indexTupDesc;
 	int			natts;			/* #atts in heap rel --- for error checks */
 	int			i;
 
-	/* We need access to the index AM's pg_am tuple */
-	amtuple = SearchSysCache1(AMOID,
-							  ObjectIdGetDatum(accessMethodObjectId));
-	if (!HeapTupleIsValid(amtuple))
-		elog(ERROR, "cache lookup failed for access method %u",
-			 accessMethodObjectId);
-	amform = (Form_pg_am) GETSTRUCT(amtuple);
+	/* We need access to the index AM's API struct */
+	amroutine = GetIndexAmRoutineByAmId(accessMethodObjectId);
 
 	/* ... and to the table's tuple descriptor */
 	heapTupDesc = RelationGetDescr(heapRelation);
@@ -439,7 +435,7 @@ ConstructTupleDescriptor(Relation heapRelation,
 		if (OidIsValid(opclassTup->opckeytype))
 			keyType = opclassTup->opckeytype;
 		else
-			keyType = amform->amkeytype;
+			keyType = amroutine->amkeytype;
 		ReleaseSysCache(tuple);
 
 		if (OidIsValid(keyType) && keyType != to->atttypid)
@@ -461,7 +457,7 @@ ConstructTupleDescriptor(Relation heapRelation,
 		}
 	}
 
-	ReleaseSysCache(amtuple);
+	pfree(amroutine);
 
 	return indexTupDesc;
 }
@@ -1990,7 +1986,6 @@ index_build(Relation heapRelation,
 			bool isprimary,
 			bool isreindex)
 {
-	RegProcedure procedure;
 	IndexBuildResult *stats;
 	Oid			save_userid;
 	int			save_sec_context;
@@ -2000,10 +1995,9 @@ index_build(Relation heapRelation,
 	 * sanity checks
 	 */
 	Assert(RelationIsValid(indexRelation));
-	Assert(PointerIsValid(indexRelation->rd_am));
-
-	procedure = indexRelation->rd_am->ambuild;
-	Assert(RegProcedureIsValid(procedure));
+	Assert(PointerIsValid(indexRelation->rd_amroutine));
+	Assert(PointerIsValid(indexRelation->rd_amroutine->ambuild));
+	Assert(PointerIsValid(indexRelation->rd_amroutine->ambuildempty));
 
 	ereport(DEBUG1,
 			(errmsg("building index \"%s\" on table \"%s\"",
@@ -2023,11 +2017,8 @@ index_build(Relation heapRelation,
 	/*
 	 * Call the access method's build procedure
 	 */
-	stats = (IndexBuildResult *)
-		DatumGetPointer(OidFunctionCall3(procedure,
-										 PointerGetDatum(heapRelation),
-										 PointerGetDatum(indexRelation),
-										 PointerGetDatum(indexInfo)));
+	stats = indexRelation->rd_amroutine->ambuild(heapRelation, indexRelation,
+												 indexInfo);
 	Assert(PointerIsValid(stats));
 
 	/*
@@ -2040,11 +2031,9 @@ index_build(Relation heapRelation,
 	if (indexRelation->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED &&
 		!smgrexists(indexRelation->rd_smgr, INIT_FORKNUM))
 	{
-		RegProcedure ambuildempty = indexRelation->rd_am->ambuildempty;
-
 		RelationOpenSmgr(indexRelation);
 		smgrcreate(indexRelation->rd_smgr, INIT_FORKNUM, false);
-		OidFunctionCall1(ambuildempty, PointerGetDatum(indexRelation));
+		indexRelation->rd_amroutine->ambuildempty(indexRelation);
 	}
 
 	/*
@@ -2381,8 +2370,8 @@ IndexBuildHeapRangeScan(Relation heapRelation,
 				case HEAPTUPLE_INSERT_IN_PROGRESS:
 
 					/*
-					 * In "anyvisible" mode, this tuple is visible and we don't
-					 * need any further checks.
+					 * In "anyvisible" mode, this tuple is visible and we
+					 * don't need any further checks.
 					 */
 					if (anyvisible)
 					{
@@ -2437,8 +2426,8 @@ IndexBuildHeapRangeScan(Relation heapRelation,
 
 					/*
 					 * As with INSERT_IN_PROGRESS case, this is unexpected
-					 * unless it's our own deletion or a system catalog;
-					 * but in anyvisible mode, this tuple is visible.
+					 * unless it's our own deletion or a system catalog; but
+					 * in anyvisible mode, this tuple is visible.
 					 */
 					if (anyvisible)
 					{
@@ -2892,9 +2881,9 @@ validate_index(Oid heapId, Oid indexId, Snapshot snapshot)
 static inline int64
 itemptr_encode(ItemPointer itemptr)
 {
-	BlockNumber		block = ItemPointerGetBlockNumber(itemptr);
-	OffsetNumber	offset = ItemPointerGetOffsetNumber(itemptr);
-	int64			encoded;
+	BlockNumber block = ItemPointerGetBlockNumber(itemptr);
+	OffsetNumber offset = ItemPointerGetOffsetNumber(itemptr);
+	int64		encoded;
 
 	/*
 	 * Use the 16 least significant bits for the offset.  32 adjacent bits are
@@ -2913,8 +2902,8 @@ itemptr_encode(ItemPointer itemptr)
 static inline void
 itemptr_decode(ItemPointer itemptr, int64 encoded)
 {
-	BlockNumber		block = (BlockNumber) (encoded >> 16);
-	OffsetNumber	offset = (OffsetNumber) (encoded & 0xFFFF);
+	BlockNumber block = (BlockNumber) (encoded >> 16);
+	OffsetNumber offset = (OffsetNumber) (encoded & 0xFFFF);
 
 	ItemPointerSet(itemptr, block, offset);
 }
@@ -2960,7 +2949,7 @@ validate_index_heapscan(Relation heapRelation,
 
 	/* state variables for the merge */
 	ItemPointer indexcursor = NULL;
-	ItemPointerData		decoded;
+	ItemPointerData decoded;
 	bool		tuplesort_empty = false;
 
 	/*

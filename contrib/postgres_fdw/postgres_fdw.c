@@ -3,7 +3,7 @@
  * postgres_fdw.c
  *		  Foreign-data wrapper for remote PostgreSQL servers
  *
- * Portions Copyright (c) 2012-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2012-2016, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		  contrib/postgres_fdw/postgres_fdw.c
@@ -2892,7 +2892,11 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 
 		/*
 		 * Fetch all table data from this schema, possibly restricted by
-		 * EXCEPT or LIMIT TO.
+		 * EXCEPT or LIMIT TO.  (We don't actually need to pay any attention
+		 * to EXCEPT/LIMIT TO here, because the core code will filter the
+		 * statements we return according to those lists anyway.  But it
+		 * should save a few cycles to not process excluded tables in the
+		 * first place.)
 		 *
 		 * Note: because we run the connection with search_path restricted to
 		 * pg_catalog, the format_type() and pg_get_expr() outputs will always

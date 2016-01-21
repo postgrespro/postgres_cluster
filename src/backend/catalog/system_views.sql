@@ -1,7 +1,7 @@
 /*
  * PostgreSQL System Views
  *
- * Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Copyright (c) 1996-2016, PostgreSQL Global Development Group
  *
  * src/backend/catalog/system_views.sql
  *
@@ -662,6 +662,22 @@ CREATE VIEW pg_stat_replication AS
     WHERE S.usesysid = U.oid AND
             S.pid = W.pid;
 
+CREATE VIEW pg_stat_wal_receiver AS
+    SELECT
+            s.pid,
+            s.status,
+            s.receive_start_lsn,
+            s.receive_start_tli,
+            s.received_lsn,
+            s.received_tli,
+            s.last_msg_send_time,
+            s.last_msg_receipt_time,
+            s.latest_end_lsn,
+            s.latest_end_time,
+            s.slot_name
+    FROM pg_stat_get_wal_receiver() s
+    WHERE s.pid IS NOT NULL;
+
 CREATE VIEW pg_stat_ssl AS
     SELECT
             S.pid,
@@ -930,6 +946,7 @@ CREATE OR REPLACE FUNCTION pg_create_physical_replication_slot(
     OUT slot_name name, OUT xlog_position pg_lsn)
 RETURNS RECORD
 LANGUAGE INTERNAL
+STRICT VOLATILE
 AS 'pg_create_physical_replication_slot';
 
 CREATE OR REPLACE FUNCTION
