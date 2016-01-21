@@ -47,8 +47,8 @@ extern bool StandbyTransactionIdIsPrepared(TransactionId xid);
 
 extern TransactionId PrescanPreparedTransactions(TransactionId **xids_p,
 							int *nxids_p);
-extern void StandbyRecoverPreparedTransactions(bool overwriteOK);
-extern void RecoverPreparedFromFiles(void);
+// extern void StandbyRecoverPreparedTransactions(bool overwriteOK);
+extern void RecoverPreparedFromFiles(bool overwriteOK);
 extern void RecoverPreparedFromXLOG(XLogReaderState *record);
 
 extern void RecreateTwoPhaseFile(TransactionId xid, void *content, int len);

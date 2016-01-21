@@ -6614,7 +6614,7 @@ StartupXLOG(void)
 
 				ProcArrayApplyRecoveryInfo(&running);
 
-				StandbyRecoverPreparedTransactions(false);
+				RecoverPreparedFromFiles(false);
 			}
 		}
 
@@ -7361,7 +7361,7 @@ StartupXLOG(void)
 	TrimMultiXact();
 
 	/* Reload shared-memory state for prepared transactions */
-	RecoverPreparedFromFiles();
+	RecoverPreparedFromFiles(false);
 
 	/*
 	 * Shutdown the recovery environment. This must occur after
@@ -9284,7 +9284,10 @@ xlog_redo(XLogReaderState *record)
 
 			ProcArrayApplyRecoveryInfo(&running);
 
-			StandbyRecoverPreparedTransactions(true);
+			/*
+			 * NB: is still okay to call Recover with overwriteOK = true?
+			 */
+			RecoverPreparedFromFiles(true);
 		}
 
 		/* ControlFile->checkPointCopy always tracks the latest ckpt XID */

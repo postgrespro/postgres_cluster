@@ -1264,10 +1264,14 @@ StandbyTransactionIdIsPrepared(TransactionId xid)
 	TwoPhaseFileHeader *hdr;
 	bool		result;
 
+	fprintf(stderr, "===(%u) StandbyTransactionIdIsPrepared(%u) \n", getpid(), xid);
+
 	Assert(TransactionIdIsValid(xid));
 
 	if (max_prepared_xacts <= 0)
 		return false;			/* nothing to do */
+
+	// check for in-memory tx here too
 
 	/* Read and validate file */
 	buf = ReadTwoPhaseFile(xid, false);
@@ -1848,90 +1852,90 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	return result;
 }
 
-/*
- * StandbyRecoverPreparedTransactions
- *
- * Scan the pg_twophase directory and setup all the required information to
- * allow standby queries to treat prepared transactions as still active.
- * This is never called at the end of recovery - we use
- * RecoverPreparedTransactions() at that point.
- *
- * Currently we simply call SubTransSetParent() for any subxids of prepared
- * transactions. If overwriteOK is true, it's OK if some XIDs have already
- * been marked in pg_subtrans.
- */
-void
-StandbyRecoverPreparedTransactions(bool overwriteOK)
-{
-	DIR		   *cldir;
-	struct dirent *clde;
+// /*
+//  * StandbyRecoverPreparedTransactions
+//  *
+//  * Scan the pg_twophase directory and setup all the required information to
+//  * allow standby queries to treat prepared transactions as still active.
+//  * This is never called at the end of recovery - we use
+//  * RecoverPreparedTransactions() at that point.
+//  *
+//  * Currently we simply call SubTransSetParent() for any subxids of prepared
+//  * transactions. If overwriteOK is true, it's OK if some XIDs have already
+//  * been marked in pg_subtrans.
+//  */
+// void
+// StandbyRecoverPreparedTransactions(bool overwriteOK)
+// {
+// 	DIR		   *cldir;
+// 	struct dirent *clde;
 
-	fprintf(stderr, "!===(%u) StandbyRecoverPreparedTransactions called, overwriteOK = %u\n", getpid(), (int)overwriteOK);
+// 	fprintf(stderr, "!===(%u) StandbyRecoverPreparedTransactions called, overwriteOK = %u\n", getpid(), (int)overwriteOK);
 
-	cldir = AllocateDir(TWOPHASE_DIR);
-	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
-	{
-		if (strlen(clde->d_name) == 8 &&
-			strspn(clde->d_name, "0123456789ABCDEF") == 8)
-		{
-			TransactionId xid;
-			char	   *buf;
-			TwoPhaseFileHeader *hdr;
-			TransactionId *subxids;
-			int			i;
+// 	cldir = AllocateDir(TWOPHASE_DIR);
+// 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
+// 	{
+// 		if (strlen(clde->d_name) == 8 &&
+// 			strspn(clde->d_name, "0123456789ABCDEF") == 8)
+// 		{
+// 			TransactionId xid;
+// 			char	   *buf;
+// 			TwoPhaseFileHeader *hdr;
+// 			TransactionId *subxids;
+// 			int			i;
 
-			xid = (TransactionId) strtoul(clde->d_name, NULL, 16);
+// 			xid = (TransactionId) strtoul(clde->d_name, NULL, 16);
 
-			/* Already processed? */
-			if (TransactionIdDidCommit(xid) || TransactionIdDidAbort(xid))
-			{
-				ereport(WARNING,
-						(errmsg("removing stale two-phase state file \"%s\"",
-								clde->d_name)));
-				RemoveTwoPhaseFile(xid, true);
-				continue;
-			}
+// 			/* Already processed? */
+// 			if (TransactionIdDidCommit(xid) || TransactionIdDidAbort(xid))
+// 			{
+// 				ereport(WARNING,
+// 						(errmsg("removing stale two-phase state file \"%s\"",
+// 								clde->d_name)));
+// 				RemoveTwoPhaseFile(xid, true);
+// 				continue;
+// 			}
 
-			/* Read and validate file */
-			buf = ReadTwoPhaseFile(xid, true);
-			if (buf == NULL)
-			{
-				ereport(WARNING,
-					  (errmsg("removing corrupt two-phase state file \"%s\"",
-							  clde->d_name)));
-				RemoveTwoPhaseFile(xid, true);
-				continue;
-			}
+// 			/* Read and validate file */
+// 			buf = ReadTwoPhaseFile(xid, true);
+// 			if (buf == NULL)
+// 			{
+// 				ereport(WARNING,
+// 					  (errmsg("removing corrupt two-phase state file \"%s\"",
+// 							  clde->d_name)));
+// 				RemoveTwoPhaseFile(xid, true);
+// 				continue;
+// 			}
 
-			/* Deconstruct header */
-			hdr = (TwoPhaseFileHeader *) buf;
-			if (!TransactionIdEquals(hdr->xid, xid))
-			{
-				ereport(WARNING,
-					  (errmsg("removing corrupt two-phase state file \"%s\"",
-							  clde->d_name)));
-				RemoveTwoPhaseFile(xid, true);
-				pfree(buf);
-				continue;
-			}
+// 			/* Deconstruct header */
+// 			hdr = (TwoPhaseFileHeader *) buf;
+// 			if (!TransactionIdEquals(hdr->xid, xid))
+// 			{
+// 				ereport(WARNING,
+// 					  (errmsg("removing corrupt two-phase state file \"%s\"",
+// 							  clde->d_name)));
+// 				RemoveTwoPhaseFile(xid, true);
+// 				pfree(buf);
+// 				continue;
+// 			}
 
-			/*
-			 * Examine subtransaction XIDs ... they should all follow main
-			 * XID.
-			 */
-			subxids = (TransactionId *)
-				(buf + MAXALIGN(sizeof(TwoPhaseFileHeader)));
-			for (i = 0; i < hdr->nsubxacts; i++)
-			{
-				TransactionId subxid = subxids[i];
+// 			/*
+// 			 * Examine subtransaction XIDs ... they should all follow main
+// 			 * XID.
+// 			 */
+// 			subxids = (TransactionId *)
+// 				(buf + MAXALIGN(sizeof(TwoPhaseFileHeader)));
+// 			for (i = 0; i < hdr->nsubxacts; i++)
+// 			{
+// 				TransactionId subxid = subxids[i];
 
-				Assert(TransactionIdFollows(subxid, xid));
-				SubTransSetParent(xid, subxid, overwriteOK);
-			}
-		}
-	}
-	FreeDir(cldir);
-}
+// 				Assert(TransactionIdFollows(subxid, xid));
+// 				SubTransSetParent(xid, subxid, overwriteOK);
+// 			}
+// 		}
+// 	}
+// 	FreeDir(cldir);
+// }
 
 /*
  * RecoverPreparedFromFiles
@@ -1941,12 +1945,12 @@ StandbyRecoverPreparedTransactions(bool overwriteOK)
  * startup.
  */
 void
-RecoverPreparedFromFiles(void)
+RecoverPreparedFromFiles(bool overwriteOK)
 {
 	char		dir[MAXPGPATH];
 	DIR		   *cldir;
 	struct dirent *clde;
-	bool		overwriteOK = false;
+	// bool		overwriteOK = false;
 
 	fprintf(stderr, "===(%u) RecoverPreparedFromFiles called\n", getpid());
 
@@ -1965,32 +1969,32 @@ RecoverPreparedFromFiles(void)
 			TransactionId *subxids;
 			GlobalTransaction gxact;
 			int			i;
-			// PGXACT	   *pgxact;
+			PGXACT	   *pgxact;
 
 
 			xid = (TransactionId) strtoul(clde->d_name, NULL, 16);
 
-			/* Already recovered from WAL? */
-			if (TransactionIdIsInProgress(xid))
-			{
-				fprintf(stderr, "! xid %x is in progress\n", xid);
-				continue;
-			}
-
 			// /* Already recovered from WAL? */
-			// for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+			// if (TransactionIdIsInProgress(xid))
 			// {
-			// 	gxact = TwoPhaseState->prepXacts[i];
-			// 	pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
+			// 	fprintf(stderr, "! xid %x is in progress\n", xid);
+			// 	continue;
+			// }
+
+			/* Already recovered from WAL? */
+			for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+			{
+				gxact = TwoPhaseState->prepXacts[i];
+				pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
 				
 
-			// 	fprintf(stderr, "! %x ?= %x\n", xid, pgxact->xid);
+				fprintf(stderr, "! %x ?= %x\n", xid, pgxact->xid);
 
 
 
-			// 	if (xid == pgxact->xid)
-			// 		goto next_file;
-			// }
+				if (xid == pgxact->xid)
+					goto next_file;
+			}
 
 			/* Already processed? */
 			if (TransactionIdDidCommit(xid) || TransactionIdDidAbort(xid))
@@ -2080,8 +2084,8 @@ RecoverPreparedFromFiles(void)
 			pfree(buf);
 		}
 
-// next_file:
-// 		continue;
+next_file:
+		continue;
 
 	}
 	FreeDir(cldir);
