@@ -1665,6 +1665,11 @@ XlogRedoFinishPrepared(TransactionId xid)
 	ProcArrayRemove(proc, latestXid);
 	gxact->valid = false;
 
+	/*
+	 * 2REVIEWER: I assume that we can skip invalidation callbacks here,
+	 * aren't we?
+	 */
+
 	/* And release locks */
 	if (true)
 		ProcessRecords(bufptr, xid, twophase_postcommit_callbacks);

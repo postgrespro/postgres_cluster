@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# This script assumes that it is placed in postgres repository root,
+# and postgres configured with --prefix=$PG_REPO_ROOT/install
+
 reinit_master() {
 	rm -rf install/data
 
@@ -18,7 +21,7 @@ reinit_master() {
 
 	echo '---- test ----' >> ./install/logfile
 
-	echo 'local replication stas trust' >> ./install/data/pg_hba.conf
+	echo "local replication `whoami` trust" >> ./install/data/pg_hba.conf
 
 	./install/bin/pg_ctl -sw -D ./install/data -l ./install/logfile start
 }
@@ -41,7 +44,7 @@ reinit_slave() {
 }
 
 postinit(){
-	./install/bin/createdb stas
+	./install/bin/createdb `whoami`
 	./install/bin/psql -c "create table t(id int);"
 }
 
