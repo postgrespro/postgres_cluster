@@ -21,7 +21,7 @@
 #endif
 
 #include "server.h"
-#include "limits.h"
+#include "dtmdlimits.h"
 #include "util.h"
 #include "sockhub.h"
 

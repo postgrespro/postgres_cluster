@@ -127,6 +127,8 @@ PruneShardList(Oid relationId, List *whereClauseList, List *shardIntervalList)
 	List *restrictInfoList = NIL;
 	Node *baseConstraint = NULL;
 	int shardHashCode = -1;
+	int shardCount = shardIntervalList->length;
+	uint32 hashTokenIncrement = (uint32)(HASH_TOKEN_COUNT / shardCount);
 	Var *partitionColumn = PartitionColumn(relationId);
 	char partitionMethod = PartitionType(relationId);
 
@@ -168,8 +170,6 @@ PruneShardList(Oid relationId, List *whereClauseList, List *shardIntervalList)
 						if (OidIsValid(hashFunction->fn_oid))
 						{
 							int hashedValue = DatumGetInt32(FunctionCall1(hashFunction, constant->constvalue));
-							int shardCount = shardIntervalList->length;
-							uint32 hashTokenIncrement = (uint32)(HASH_TOKEN_COUNT / shardCount);
 							shardHashCode = (int)((uint32)(hashedValue - INT32_MIN) / hashTokenIncrement);
 							remainingShardList = LookupShardPlacementCache(relationId, shardHashCode);
 							if (remainingShardList != NULL)
@@ -229,7 +229,19 @@ PruneShardList(Oid relationId, List *whereClauseList, List *shardIntervalList)
 	}
 	if (shardHashCode >= 0)
 	{
-		AddToShardPlacementCache(relationId, shardHashCode, shardIntervalList->length, remainingShardList);
+		ShardInterval* shardInterval = (ShardInterval *) linitial(remainingShardList);
+		int64 shardId = shardInterval->id;
+		int32 shardMinHashToken = INT32_MIN + (shardId * hashTokenIncrement);
+		int32 shardMaxHashToken = shardMinHashToken + (hashTokenIncrement - 1);
+		if (shardId == (shardCount - 1))
+		{
+			shardMaxHashToken = INT32_MAX;
+		}
+		if (DatumGetInt32(shardInterval->minValue) == shardMinHashToken &&
+			DatumGetInt32(shardInterval->maxValue) == shardMaxHashToken)
+		{		
+			AddToShardPlacementCache(relationId, shardHashCode, shardIntervalList->length, remainingShardList);
+		}
 	}
 	return remainingShardList;
 }
