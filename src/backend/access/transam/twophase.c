@@ -2183,7 +2183,6 @@ RecoverPreparedFromXLOG(XLogReaderState *record)
 
 	gxact->prepare_start_lsn = record->ReadRecPtr;
 	gxact->prepare_end_lsn = record->EndRecPtr;
-	gxact->ondisk = false;
 
 	/*
 	 * Recover other state (notably locks) using resource managers

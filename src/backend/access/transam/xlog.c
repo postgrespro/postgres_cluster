@@ -9269,9 +9269,6 @@ xlog_redo(XLogReaderState *record)
 
 			ProcArrayApplyRecoveryInfo(&running);
 
-			/*
-			 * NB: is still okay to call Recover with overwriteOK = true?
-			 */
 			RecoverPreparedFromFiles(true);
 		}
 
