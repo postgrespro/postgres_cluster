@@ -7,7 +7,7 @@ reinit_master() {
 
 	echo "max_prepared_transactions = 100" >> ./install/data/postgresql.conf
 	echo "shared_buffers = 512MB" >> ./install/data/postgresql.conf
-	echo "fsync = off" >> ./install/data/postgresql.conf
+	# echo "fsync = on" >> ./install/data/postgresql.conf
 	echo "log_checkpoints = on" >> ./install/data/postgresql.conf
 	echo "max_wal_size = 48MB" >> ./install/data/postgresql.conf
 	echo "min_wal_size = 32MB" >> ./install/data/postgresql.conf
@@ -16,11 +16,11 @@ reinit_master() {
 	echo "max_wal_senders = 2" >> ./install/data/postgresql.conf
 	echo "max_replication_slots = 2" >> ./install/data/postgresql.conf
 
-	echo '' > ./install/data/logfile
+	echo '---- test ----' >> ./install/logfile
 
 	echo 'local replication stas trust' >> ./install/data/pg_hba.conf
 
-	./install/bin/pg_ctl -sw -D ./install/data -l ./install/data/logfile start
+	./install/bin/pg_ctl -sw -D ./install/data -l ./install/logfile start
 	./install/bin/createdb stas
 	./install/bin/psql -c "create table t(id int);"
 }
@@ -33,12 +33,14 @@ reinit_slave() {
 	echo "port = 5433" >> ./install/data_slave/postgresql.conf
 	echo "hot_standby = on" >> ./install/data_slave/postgresql.conf
 
-	echo '' > ./install/data_slave/logfile
+	echo '---- test ----' >> ./install/slave_logfile
 
-	./install/bin/pg_ctl -sw -D ./install/data_slave -l ./install/data_slave/logfile start
+	./install/bin/pg_ctl -sw -D ./install/data_slave -l ./install/slave_logfile start
 }
 
 make install > /dev/null
+echo > ./install/logfile
+echo > ./install/slave_logfile
 
 
 cat <<MSG
@@ -59,7 +61,7 @@ psql <<SQL
 	insert into t values (43);
 	prepare transaction 'y';
 SQL
-./install/bin/pg_ctl -sw -D ./install/data -l ./install/data/logfile restart
+./install/bin/pg_ctl -sw -D ./install/data -l ./install/logfile restart
 psql <<SQL
 	commit prepared 'x';
 	rollback prepared 'y';
@@ -78,15 +80,19 @@ MSG
 pkill -9 postgres
 reinit_master >> /dev/null
 psql <<SQL
+	checkpoint;
+	select * from pg_current_xlog_location();
 	begin;
 	insert into t values (42);
 	prepare transaction 'x';
+	select * from pg_current_xlog_location();
 	begin;
 	insert into t values (43);
 	prepare transaction 'y';
 SQL
 pkill -9 postgres
-./install/bin/pg_ctl -sw -D ./install/data -l ./install/data/logfile start
+echo '--- kill -9 ---' >> ./install/logfile
+./install/bin/pg_ctl -sw -D ./install/data -l ./install/logfile start
 psql <<SQL
 	commit prepared 'x';
 	rollback prepared 'y';
@@ -105,11 +111,13 @@ reinit_master >> /dev/null
 psql <<SQL
 	begin;
 	insert into t values (42);
+	savepoint s;
+	insert into t values (43);
 	prepare transaction 'x';
 	commit prepared 'x';
 SQL
 pkill -9 postgres
-./install/bin/pg_ctl -sw -D ./install/data -l ./install/data/logfile start
+./install/bin/pg_ctl -sw -D ./install/data -l ./install/logfile start
 psql <<SQL
 	begin;
 	insert into t values (42);
@@ -206,8 +214,8 @@ psql <<SQL
 	prepare transaction 'x';
 	insert into t values (100);
 SQL
-./install/bin/pg_ctl -sw -D ./install/data -l ./install/data/logfile stop
-./install/bin/pg_ctl -sw -D ./install/data_slave -l ./install/data_slave/logfile restart
+./install/bin/pg_ctl -sw -D ./install/data -l ./install/logfile stop
+./install/bin/pg_ctl -sw -D ./install/data_slave -l ./install/slave_logfile restart
 echo "Following list should contain transaction 'x':"
 psql -p5433 <<SQL
 	select * from pg_prepared_xacts;
@@ -232,9 +240,9 @@ psql <<SQL
 	prepare transaction 'x';
 	insert into t values (100);
 SQL
-./install/bin/pg_ctl -sw -D ./install/data -l ./install/data/logfile stop
+./install/bin/pg_ctl -sw -D ./install/data -l ./install/logfile stop
 kill -9 `cat install/data_slave/postmaster.pid | head -n 1`
-./install/bin/pg_ctl -sw -D ./install/data_slave -l ./install/data_slave/logfile start
+./install/bin/pg_ctl -sw -D ./install/data_slave -l ./install/slave_logfile start
 echo "Following list should contain transaction 'x':"
 psql -p5433 <<SQL
 	select * from pg_prepared_xacts;
@@ -259,9 +267,21 @@ psql <<SQL
 	prepare transaction 'x';
 SQL
 pkill -9 postgres
-./install/bin/pg_ctl -sw -D ./install/data -l ./install/data/logfile start
+./install/bin/pg_ctl -sw -D ./install/data -l ./install/logfile start
 psql <<SQL
 	commit prepared 'x';
 SQL
+
+
+
+# check for prescan with pgbench
+
+
+
+
+
+
+
+
 
 

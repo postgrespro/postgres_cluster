@@ -5548,6 +5548,8 @@ xact_redo(XLogReaderState *record)
 	/* Backup blocks are not used in xact records */
 	Assert(!XLogRecHasAnyBlockRefs(record));
 
+	fprintf(stderr, "=== xact_redo \n");
+
 	if (info == XLOG_XACT_COMMIT || info == XLOG_XACT_COMMIT_PREPARED)
 	{
 		xl_xact_commit *xlrec = (xl_xact_commit *) XLogRecGetData(record);

@@ -1290,13 +1290,34 @@ StandbyTransactionIdIsPrepared(TransactionId xid)
 	char	   *buf;
 	TwoPhaseFileHeader *hdr;
 	bool		result;
+	int			i;
+
+	fprintf(stderr, "=== StandbyTransactionIdIsPrepared(%u)\n", xid);
 
 	Assert(TransactionIdIsValid(xid));
 
 	if (max_prepared_xacts <= 0)
 		return false;			/* nothing to do */
 
-	// NB: check for in-memory tx here too
+	/*
+	 * At first check prepared tx, that have no saved state files.
+	 *
+	 * 2REVIEWER: Actually I can't reproduce case where this function is used,
+	 * so that loop can be overkill if that fn called only after checkpoint.
+	 */
+	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	{
+		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
+		PGXACT *pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
+
+		if (TransactionIdEquals(pgxact->xid, xid))
+		{
+			LWLockRelease(TwoPhaseStateLock);
+			return true;
+		}
+	}
+	LWLockRelease(TwoPhaseStateLock);
 
 	/* Read and validate file */
 	buf = ReadTwoPhaseFile(xid, false);
@@ -1571,75 +1592,107 @@ RecreateTwoPhaseFile(TransactionId xid, void *content, int len)
 				 errmsg("could not close two-phase state file: %m")));
 }
 
+
 /*
+ * XlogRedoFinishPrepared()
  *
+ * This function is called during replay when xlog reader faces 2pc commit or
+ * abort record. That function should clean up memory state that was created
+ * while replaying prepare xlog record.
+ * Actions are the same as in FinishPreparedTransaction() but without any
+ * writes to xlog and files (as it was already done).
  */
 void
 XlogRedoFinishPrepared(TransactionId xid)
 {
-	GlobalTransaction gxact;
-	PGPROC	   *proc;
-	PGXACT	   *pgxact;
 	int			i;
-	bool		file_used = false;
 	char 	   *buf;
 	char	   *bufptr;
 	TwoPhaseFileHeader *hdr;
+	TransactionId latestXid;
+	TransactionId *children;
 
-	// NB: take care about file state file removal
+	GlobalTransaction gxact;
+	PGPROC	   *proc;
+	PGXACT	   *pgxact;
 
-	// NB: put lock there
+	fprintf(stderr, "=== XlogRedoFinishPrepared(%u)\n", xid);
 
+	/* During replay that lock isn't really necessary, but let's take it anyway */
+	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
 	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
 	{
 		gxact = TwoPhaseState->prepXacts[i];
 		proc = &ProcGlobal->allProcs[gxact->pgprocno];
 		pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
 
-		if (xid == pgxact->xid)
+		if (TransactionIdEquals(xid, pgxact->xid))
 		{
-			fprintf(stderr, "cleaning memory state for %x\n", xid);
-
-			if (gxact->prepare_start_lsn)
-			{
-				XlogReadTwoPhaseData(gxact->prepare_start_lsn, &buf, NULL);
-			}
-			else
-			{
-				buf = ReadTwoPhaseFile(xid, true);
-				file_used = true;
-			}
-
-			/*
-			 * Disassemble the header area
-			 */
-			hdr = (TwoPhaseFileHeader *) buf;
-			Assert(TransactionIdEquals(hdr->xid, xid));
-
-			bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
-			bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
-			bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
-			bufptr += MAXALIGN(hdr->nabortrels * sizeof(RelFileNode));
-			bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));
-
-			ProcArrayRemove(proc, xid);
-
-			gxact->valid = false;
-
-			/* And now do the callbacks */
-			if (true)
-				ProcessRecords(bufptr, xid, twophase_postcommit_callbacks);
-			else
-				ProcessRecords(bufptr, xid, twophase_postabort_callbacks);
-
-			PredicateLockTwoPhaseFinish(xid, true);
-
-			RemoveGXact(gxact);
-			MyLockedGxact = NULL;
-
+			gxact->locking_backend = MyBackendId;
+			MyLockedGxact = gxact;
 			break;
 		}
 	}
+	LWLockRelease(TwoPhaseStateLock);
+
+	/*
+	 * If requested xid isn't in numPrepXacts array that means that prepare
+	 * record was moved to files before our replay started. That's okay and we
+	 * have nothing to clean.
+	 */
+	if (i == TwoPhaseState->numPrepXacts)
+		return;
+
+	if (gxact->ondisk)
+		buf = ReadTwoPhaseFile(xid, true);
+	else
+		XlogReadTwoPhaseData(gxact->prepare_start_lsn, &buf, NULL);
+
+	/*
+	 * Disassemble the header area
+	 */
+	hdr = (TwoPhaseFileHeader *) buf;
+
+	Assert(TransactionIdEquals(hdr->xid, xid));
+
+	bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
+	children = (TransactionId *) bufptr;
+	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
+	bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
+	bufptr += MAXALIGN(hdr->nabortrels * sizeof(RelFileNode));
+	bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));
+
+	/*
+	 * Here we don't need to care about putting records to xlog or
+	 * deleting files, as it already done by process that have written
+	 * that xlog record. We need just to clen up memmory state.
+	 */
+
+	latestXid = TransactionIdLatest(xid, hdr->nsubxacts, children);
+	ProcArrayRemove(proc, latestXid);
+	gxact->valid = false;
+
+	/*
+	 * 2REVIWER: I assume that we can skip invalidation callbacks here,
+	 * aren't we?
+	 */
+
+	/* And release locks */
+	if (true)
+		ProcessRecords(bufptr, xid, twophase_postcommit_callbacks);
+	else
+		ProcessRecords(bufptr, xid, twophase_postabort_callbacks);
+	PredicateLockTwoPhaseFinish(xid, true);
+	RemoveGXact(gxact);
+	MyLockedGxact = NULL;
+
+	/*
+	 * And now we can clean up any files we may have left.
+	 */
+	if (gxact->ondisk)
+		RemoveTwoPhaseFile(xid, true);
+
+	pfree(buf);
 }
 
 
@@ -1758,12 +1811,54 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	TransactionId *xids = NULL;
 	int			nxids = 0;
 	int			allocsize = 0;
+	int			i;
 
-	// NB: take care of TransactionId **xids_p, int *nxids_p
 
-	// NB: just iterate through preparedXacts here
-	result = GetOldestActiveTransactionId();
+	fprintf(stderr, "=== PrescanPreparedTransactions \n");
 
+	/*
+	 * This is usually called after end-of-recovery checkpoint, so all 2pc
+	 * files moved xlog to files. But if we restart slave when master is
+	 * switched off this function will be called before checkpoint ans we need
+	 * to check PGXACT array as it can contain prepared transactions that
+	 * didn't created any state files yet.
+	 */
+	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	{
+		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
+		PGXACT	   *pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
+
+		if (!gxact->valid)
+			continue;
+
+		if (TransactionIdPrecedes(pgxact->xid, result))
+			result = pgxact->xid;
+
+		if (xids_p)
+		{
+			if (nxids == allocsize)
+			{
+				if (nxids == 0)
+				{
+					allocsize = 10;
+					xids = palloc(allocsize * sizeof(TransactionId));
+				}
+				else
+				{
+					allocsize = allocsize * 2;
+					xids = repalloc(xids, allocsize * sizeof(TransactionId));
+				}
+			}
+			xids[nxids++] = pgxact->xid;
+		}
+	}
+	LWLockRelease(TwoPhaseStateLock);
+
+
+	/*
+	 * And now scan files in pg_twophase directory
+	 */
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
 	{
@@ -1774,7 +1869,6 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 			char	   *buf;
 			TwoPhaseFileHeader *hdr;
 			TransactionId *subxids;
-			int			i;
 
 			xid = (TransactionId) strtoul(clde->d_name, NULL, 16);
 
@@ -1897,6 +1991,8 @@ RecoverPreparedFromFiles(bool overwriteOK)
 
 	// NB: look carefully at case overwriteOK=true
 
+	fprintf(stderr, "=== RecoverPreparedFromFiles\n");
+
 	snprintf(dir, MAXPGPATH, "%s", TWOPHASE_DIR);
 
 	cldir = AllocateDir(dir);
@@ -1914,22 +2010,22 @@ RecoverPreparedFromFiles(bool overwriteOK)
 			int			i;
 			PGXACT	   *pgxact;
 
-
 			xid = (TransactionId) strtoul(clde->d_name, NULL, 16);
 
-			// NB: put lock here
-
 			/* Already recovered from WAL? */
+			LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
 			for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
 			{
 				gxact = TwoPhaseState->prepXacts[i];
 				pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
 
-				fprintf(stderr, "! %x ?= %x\n", xid, pgxact->xid);
-
-				if (xid == pgxact->xid)
+				if (TransactionIdEquals(xid, pgxact->xid))
+				{
+					LWLockRelease(TwoPhaseStateLock);
 					goto next_file;
+				}
 			}
+			LWLockRelease(TwoPhaseStateLock);
 
 			/* Already processed? */
 			if (TransactionIdDidCommit(xid) || TransactionIdDidAbort(xid))
@@ -2037,6 +2133,8 @@ RecoverPreparedFromXLOG(XLogReaderState *record)
 	GlobalTransaction gxact;
 	int			i;
 
+	fprintf(stderr, "=== RecoverPreparedFromXLOG(%u)\n", xid);
+
 	/* Deconstruct header */
 	hdr = (TwoPhaseFileHeader *) buf;
 	Assert(TransactionIdEquals(hdr->xid, xid));
@@ -2080,6 +2178,7 @@ RecoverPreparedFromXLOG(XLogReaderState *record)
 
 	gxact->prepare_start_lsn = record->ReadRecPtr;
 	gxact->prepare_end_lsn = record->EndRecPtr;
+	gxact->ondisk = false;
 
 	/*
 	 * Recover other state (notably locks) using resource managers
