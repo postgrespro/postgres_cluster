@@ -1299,9 +1299,6 @@ StandbyTransactionIdIsPrepared(TransactionId xid)
 
 	/*
 	 * At first check prepared tx, that have no saved state files.
-	 *
-	 * 2REVIEWER: Actually I can't reproduce case where this function is used,
-	 * so that loop can be overkill if that fn called only after checkpoint.
 	 */
 	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
 	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
