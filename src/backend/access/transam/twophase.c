@@ -1292,8 +1292,6 @@ StandbyTransactionIdIsPrepared(TransactionId xid)
 	bool		result;
 	int			i;
 
-	fprintf(stderr, "=== StandbyTransactionIdIsPrepared(%u)\n", xid);
-
 	Assert(TransactionIdIsValid(xid));
 
 	if (max_prepared_xacts <= 0)
@@ -1616,8 +1614,6 @@ XlogRedoFinishPrepared(TransactionId xid)
 	PGPROC	   *proc;
 	PGXACT	   *pgxact;
 
-	fprintf(stderr, "=== XlogRedoFinishPrepared(%u)\n", xid);
-
 	/* During replay that lock isn't really necessary, but let's take it anyway */
 	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
 	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
@@ -1813,9 +1809,6 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	int			allocsize = 0;
 	int			i;
 
-
-	fprintf(stderr, "=== PrescanPreparedTransactions \n");
-
 	/*
 	 * This is usually called after end-of-recovery checkpoint, so all 2pc
 	 * files moved xlog to files. But if we restart slave when master is
@@ -1990,8 +1983,6 @@ RecoverPreparedFromFiles(bool forceOverwriteOK)
 	struct dirent *clde;
 	bool		overwriteOK = false;
 
-	fprintf(stderr, "=== RecoverPreparedFromFiles\n");
-
 	snprintf(dir, MAXPGPATH, "%s", TWOPHASE_DIR);
 
 	cldir = AllocateDir(dir);
@@ -2137,8 +2128,6 @@ RecoverPreparedFromXLOG(XLogReaderState *record)
 	TransactionId *subxids;
 	GlobalTransaction gxact;
 	int			i;
-
-	fprintf(stderr, "=== RecoverPreparedFromXLOG(%u)\n", xid);
 
 	/* Deconstruct header */
 	hdr = (TwoPhaseFileHeader *) buf;
