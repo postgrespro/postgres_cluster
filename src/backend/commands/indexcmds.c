@@ -275,6 +275,140 @@ CheckIndexCompatible(Oid oldId,
 	return ret;
 }
 
+#if 0
+void
+AlterIndex(Oid relationId, IndexStmt *stmt, Oid indexRelationId)
+{
+	char* select;
+	IndexUniqueCheck checkUnique;
+	bool		satisfiesConstraint;
+	Datum		values[INDEX_MAX_KEYS];
+	bool		isnull[INDEX_MAX_KEYS];
+	Relation heapRelation;
+	Relation indexRelation;
+    SPIPlanPtr plan;
+    Portal portal;
+	HeapTuple tuple;
+	TupleDesc tupdesc;
+	TupleTableSlot *slot;
+	ItemPointer tupleid;
+	IndexInfo  *indexInfo;
+	EState *estate;
+
+	Assert(stmt->whereClause);
+
+	/* Open and lock the parent heap relation */
+	heapRelation = heap_openrv(stmt->relation, ShareUpdateExclusiveLock);
+
+	/* And the target index relation */
+	indexRelation = index_open(indexRelationId, RowExclusiveLock);
+
+	indexInfo = BuildIndexInfo(indexRelation);
+	Assert(indexInfo->ii_Predicate);
+	Assert(!indexInfo->ii_ExclusionOps);
+ 
+	/*
+	 * Generate the constraint and default execution states
+	 */
+	estate = CreateExecutorState();
+
+	checkUnique = indexRelation->rd_index->indisunique ? UNIQUE_CHECK_YES : UNIQUE_CHECK_NO;
+
+    SPI_connect();
+	select = psprintf("select * from %s where %s and not (%s)",
+					  quote_qualified_identifier(get_namespace_name(RelationGetNamespace(heapRelation)),
+												 get_rel_name(relationId)),
+					  nodeToString(indexInfo->ii_Predicate),
+					  nodeToString(stmt->whereClause)
+		);
+	plan = SPI_parepare(select, 0, NULL); 
+	if (plan == NULL) {
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_CURSOR_STATE),
+				 errmsg("Failed to preapre statement ", select)));
+	} 
+	portal = SPI_cursor_open(NULL, plan, NULL, NULL, true);
+	if (portal == NULL) { 
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_CURSOR_STATE),
+				 errmsg("Failed to open cursor for ", select)));
+	}	
+	while (true)
+	{
+        SPI_cursor_fetch(portal, true, 1);
+        if (!SPI_processed) { 
+			break;
+		}
+		tuple = SPI_tuptable->vals[0];
+		tupdesc = SPI_tuptable->tupdesc;
+		slot = TupleDescGetSlot(tupdesc);
+		tupleid = &tuple->t_datat->t_ctid;
+
+		/* delete tuple from index */
+	}
+    SPI_cursor_close(portal);
+
+
+	select = psprintf("select * from %s where %s and not (%s)",
+					  quote_qualified_identifier(get_namespace_name(RelationGetNamespace(heapRelation)),
+												 get_rel_name(relationId)),
+					  nodeToString(stmt->whereClause),
+					  nodeToString(indexInfo->ii_Predicate)
+		);
+	plan = SPI_parepare(select, 0, NULL); 
+	if (plan == NULL) {
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_CURSOR_STATE),
+				 errmsg("Failed to preapre statement ", select)));
+	} 
+	portal = SPI_cursor_open(NULL, plan, NULL, NULL, true);
+	if (portal == NULL) { 
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_CURSOR_STATE),
+				 errmsg("Failed to open cursor for ", select)));
+	}	
+	while (true)
+	{
+        SPI_cursor_fetch(portal, true, 1);
+        if (!SPI_processed) { 
+			break;
+		}
+		tuple = SPI_tuptable->vals[0];
+		tupdesc = SPI_tuptable->tupdesc;
+		slot = TupleDescGetSlot(tupdesc);
+		tupleid = &tuple->t_datat->t_ctid;
+			
+		FormIndexDatum(indexInfo,
+					   slot,
+					   estate,
+					   values,
+					   isnull);
+		satisfiesConstraint =
+			index_insert(indexRelation, /* index relation */
+						 values,	/* array of index Datums */
+						 isnull,	/* null flags */
+						 tupleid,		/* tid of heap tuple */
+						 heapRelation,	/* heap relation */
+						 checkUnique);	/* type of uniqueness check to do */
+
+		if (!satisfiesConstraint)
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_INTEGRITY_CONSTRAINT_VIOLATION),
+					 errmsg("Index constraint violation")));
+		}
+		SPI_freetuple(tuple);
+		SPI_freetuptable(SPI_tuptable);
+	}
+    SPI_cursor_close(portal);
+    SPI_finish();
+
+	/* Close both the relations, but keep the locks */
+	heap_close(heapRelation, NoLock);
+	index_close(indexRelation, NoLock);
+}
+#endif
+
 /*
  * DefineIndex
  *		Creates a new index.
