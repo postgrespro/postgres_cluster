@@ -1298,7 +1298,7 @@ StandbyTransactionIdIsPrepared(TransactionId xid)
 		return false;			/* nothing to do */
 
 	/*
-	 * At first check prepared tx, that have no saved state files.
+	 * At first check prepared tx that have no saved state files.
 	 */
 	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
 	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
@@ -1664,11 +1664,6 @@ XlogRedoFinishPrepared(TransactionId xid)
 	latestXid = TransactionIdLatest(xid, hdr->nsubxacts, children);
 	ProcArrayRemove(proc, latestXid);
 	gxact->valid = false;
-
-	/*
-	 * 2REVIWER: I assume that we can skip invalidation callbacks here,
-	 * aren't we?
-	 */
 
 	/* And release locks */
 	if (true)
