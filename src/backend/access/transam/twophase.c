@@ -1983,13 +1983,12 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
  * startup.
  */
 void
-RecoverPreparedFromFiles(bool overwriteOK)
+RecoverPreparedFromFiles(bool forceOverwriteOK)
 {
 	char		dir[MAXPGPATH];
 	DIR		   *cldir;
 	struct dirent *clde;
-
-	// NB: look carefully at case overwriteOK=true
+	bool		overwriteOK = false;
 
 	fprintf(stderr, "=== RecoverPreparedFromFiles\n");
 
@@ -2068,6 +2067,12 @@ RecoverPreparedFromFiles(bool overwriteOK)
 			 */
 			if (InHotStandby && (hdr->nsubxacts >= PGPROC_MAX_CACHED_SUBXIDS ||
 								 XLogLogicalInfoActive()))
+				overwriteOK = true;
+
+			/*
+			 * Caller can also force overwriteOK.
+			 */
+			if (forceOverwriteOK)
 				overwriteOK = true;
 
 			/*

@@ -7,7 +7,7 @@ reinit_master() {
 
 	echo "max_prepared_transactions = 100" >> ./install/data/postgresql.conf
 	echo "shared_buffers = 512MB" >> ./install/data/postgresql.conf
-	# echo "fsync = on" >> ./install/data/postgresql.conf
+	# echo "fsync = off" >> ./install/data/postgresql.conf
 	echo "log_checkpoints = on" >> ./install/data/postgresql.conf
 	echo "max_wal_size = 48MB" >> ./install/data/postgresql.conf
 	echo "min_wal_size = 32MB" >> ./install/data/postgresql.conf
@@ -21,8 +21,6 @@ reinit_master() {
 	echo 'local replication stas trust' >> ./install/data/pg_hba.conf
 
 	./install/bin/pg_ctl -sw -D ./install/data -l ./install/logfile start
-	./install/bin/createdb stas
-	./install/bin/psql -c "create table t(id int);"
 }
 
 reinit_slave() {
@@ -36,6 +34,15 @@ reinit_slave() {
 	echo '---- test ----' >> ./install/slave_logfile
 
 	./install/bin/pg_ctl -sw -D ./install/data_slave -l ./install/slave_logfile start
+
+
+	echo "synchronous_standby_names = '*'" >> ./install/data/postgresql.conf
+	./install/bin/pg_ctl -sw -D ./install/data -l ./install/logfile restart
+}
+
+postinit(){
+	./install/bin/createdb stas
+	./install/bin/psql -c "create table t(id int);"
 }
 
 make install > /dev/null
@@ -53,6 +60,7 @@ MSG
 
 pkill -9 postgres
 reinit_master >> /dev/null
+postinit >> /dev/null
 psql <<SQL
 	begin;
 	insert into t values (42);
@@ -79,6 +87,7 @@ MSG
 
 pkill -9 postgres
 reinit_master >> /dev/null
+postinit >> /dev/null
 psql <<SQL
 	checkpoint;
 	select * from pg_current_xlog_location();
@@ -108,6 +117,7 @@ MSG
 
 pkill -9 postgres
 reinit_master >> /dev/null
+postinit >> /dev/null
 psql <<SQL
 	begin;
 	insert into t values (42);
@@ -139,6 +149,7 @@ MSG
 pkill -9 postgres
 reinit_master >> /dev/null
 reinit_slave >> /dev/null
+postinit >> /dev/null
 psql <<SQL
 	begin;
 	insert into t values (42);
@@ -159,6 +170,7 @@ MSG
 pkill -9 postgres
 reinit_master >> /dev/null
 reinit_slave >> /dev/null
+postinit >> /dev/null
 psql <<SQL
 	begin;
 	insert into t values (42);
@@ -182,11 +194,15 @@ MSG
 
 pkill -9 postgres
 reinit_master >> /dev/null
+echo "master init"
 reinit_slave >> /dev/null
+echo "slave init"
+postinit >> /dev/null
 psql <<SQL
 	begin;
 	insert into t values (42);
 	prepare transaction 'x';
+	--select * from pg_current_xlog_location();
 SQL
 kill -9 `cat install/data/postmaster.pid | head -n 1`
 ./install/bin/pg_ctl promote -D ./install/data_slave
@@ -206,6 +222,7 @@ MSG
 pkill -9 postgres
 reinit_master >> /dev/null
 reinit_slave >> /dev/null
+postinit >> /dev/null
 psql <<SQL
 	begin;
 	insert into t values (42);
@@ -232,6 +249,7 @@ MSG
 pkill -9 postgres
 reinit_master >> /dev/null
 reinit_slave >> /dev/null
+postinit >> /dev/null
 psql <<SQL
 	begin;
 	insert into t values (42);
@@ -257,6 +275,7 @@ MSG
 
 pkill -9 postgres
 reinit_master >> /dev/null
+postinit >> /dev/null
 psql <<SQL
 	begin;
 	insert into t values (42);
