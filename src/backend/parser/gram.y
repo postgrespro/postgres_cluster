@@ -1801,6 +1801,15 @@ AlterTableStmt:
 					n->nowait = $13;
 					$$ = (Node *)n;
 				}
+        |   ALTER INDEX qualified_name WHERE a_expr
+		        {
+					IndexStmt* n = makeNode(IndexStmt);
+					n->relation = $3;
+					n->whereClause = $5;
+					n->is_alter = true;
+					$$ = (Node *)n;					
+				}
+			
 		|	ALTER INDEX qualified_name alter_table_cmds
 				{
 					AlterTableStmt *n = makeNode(AlterTableStmt);
