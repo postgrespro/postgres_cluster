@@ -5,6 +5,7 @@
 #include <inttypes.h>
 #include <sys/time.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #include <string>
 #include <vector>
@@ -13,6 +14,7 @@
 #include <pqxx/transaction>
 #include <pqxx/nontransaction>
 #include <pqxx/pipeline>
+#include <pqxx/version>
 
 using namespace std;
 using namespace pqxx;
@@ -39,6 +41,8 @@ struct config
     int nIndexes;
     int nIterations;
 	int transactionSize;
+	bool useSystemTime;
+	bool noPK;
     string connection;
 
     config() {
@@ -47,6 +51,8 @@ struct config
 		nIndexes = 8;
         nIterations = 10000;
 		transactionSize = 100;
+		useSystemTime = false;
+		noPK = false;
     }
 };
 
@@ -55,6 +61,7 @@ bool running;
 int nIndexUpdates;
 time_t maxIndexUpdateTime;
 time_t totalIndexUpdateTime;
+time_t currTimestamp;
 
 #define USEC 1000000
 
@@ -79,14 +86,30 @@ void exec(transaction_base& txn, char const* sql, ...)
 void* inserter(void* arg)
 {
     connection con(cfg.connection);
-	con.prepare("insert", "insert into t values ($1,$2,$3,$4,$5,$6,$7,$8,$9)")("bigint")("bigint")("bigint")("bigint")("bigint")("bigint")("bigint")("bigint")("bigint");
+	if (cfg.useSystemTime) 
+	{
+#if PQXX_VERSION_MAJOR >= 4
+		con.prepare("insert", "insert into t values ($1,$2,$3,$4,$5,$6,$7,$8,$9)");
+#else
+		con.prepare("insert", "insert into t values ($1,$2,$3,$4,$5,$6,$7,$8,$9)")("bigint")("bigint")("bigint")("bigint")("bigint")("bigint")("bigint")("bigint")("bigint");
+#endif
+	} else {
+		con.prepare("insert", "insert into t (select generate_series($1::integer,$2::integer),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000))");
+	}
+	
     for (int i = 0; i < cfg.nIterations; i++)
     { 
 		work txn(con);
-		for (int j = 0; j < cfg.transactionSize; j++) 
-		{ 
-			txn.prepared("insert")(getCurrentTime())(random())(random())(random())(random())(random())(random())(random())(random()).exec();
-		}
+		if (cfg.useSystemTime) 
+		{
+		    for (int j = 0; j < cfg.transactionSize; j++) 
+			{ 
+		        txn.prepared("insert")(getCurrentTime())(random())(random())(random())(random())(random())(random())(random())(random()).exec();
+	        }
+	    } else { 
+			currTimestamp = i*cfg.transactionSize;
+		    txn.prepared("insert")(i*cfg.transactionSize)((i+1)*cfg.transactionSize-1).exec();
+	    }
 		txn.commit();
 	}
 	return NULL;
@@ -97,14 +120,16 @@ void* indexUpdater(void* arg)
     connection con(cfg.connection);
 	while (running) {
 		sleep(cfg.indexUpdateInterval);
+		printf("Alter indexes\n");
 		time_t now = getCurrentTime();
 		{
 			work txn(con);
 			for (int i = 0; i < cfg.nIndexes; i++) { 
-				exec(txn, "alter index idx%d where pk<%lu", i, now);
+				exec(txn, "alter index idx%d where pk<%lu", i, cfg.useSystemTime ? now : currTimestamp);
 			}
 			txn.commit();
 		}
+		printf("End alter indexes\n");
 		nIndexUpdates += 1;
 		time_t elapsed = getCurrentTime() - now;
 		totalIndexUpdateTime += elapsed;
@@ -122,12 +147,16 @@ void initializeDatabase()
 	time_t now = getCurrentTime();
 	exec(txn, "drop table if exists t");
 	exec(txn, "create table t (pk bigint, k1 bigint, k2 bigint, k3 bigint, k4 bigint, k5 bigint, k6 bigint, k7 bigint, k8 bigint)");
-	exec(txn, "create index pk on t(pk)");
+	if (!cfg.noPK) { 
+		exec(txn, "create index pk on t(pk)");
+	}
 	for (int i = 0; i < cfg.nIndexes; i++) { 
 		if (cfg.indexUpdateInterval == 0)  { 
 			exec(txn, "create index idx%d on t(k%d)", i, i+1);
-		} else { 
+		} else if (cfg.useSystemTime) { 
 			exec(txn, "create index idx%d on t(k%d) where pk<%ld", i, i+1, now);
+		} else { 
+			exec(txn, "create index idx%d on t(k%d) where pk<%ld", i, i+1, 0);
 		}
 	}
 	txn.commit();
@@ -162,6 +191,12 @@ int main (int argc, char* argv[])
             case 'c':
                 cfg.connection = string(argv[++i]);
                 continue;
+			  case 'q':
+				cfg.useSystemTime = true;
+				continue;
+			  case 'p':
+				cfg.noPK = true;
+				continue;
             }
         }
         printf("Options:\n"
@@ -170,6 +205,8 @@ int main (int argc, char* argv[])
                "\t-u N\tindex update interval (0)\n"
                "\t-n N\tnumber of iterations (10000)\n"
                "\t-i N\tnumber of indexes (8)\n"
+               "\t-q\tuse system time and libpq\n"
+               "\t-p\tno primary key\n"
                "\t-c STR\tdatabase connection string\n");
         return 1;
     }
