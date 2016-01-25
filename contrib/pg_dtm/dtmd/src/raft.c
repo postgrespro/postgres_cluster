@@ -662,12 +662,13 @@ void raft_handle_message(raft_t *r, raft_msg_t *m) {
 	}
 }
 
+static char buf[1024];
+
 raft_msg_t *raft_recv_message(raft_t *r) {
 	struct sockaddr_in addr;
 	unsigned int addrlen = sizeof(addr);
 
 	//try to receive some data, this is a blocking call
-	char buf[1024];
 	raft_msg_t *m = (raft_msg_t *)buf;
 	int recved = recvfrom(
 		r->sock, buf, sizeof(buf), 0,
