@@ -309,13 +309,15 @@ AlterIndex(Oid indexRelationId, IndexStmt *stmt)
 	Assert(stmt->whereClause);
 	CheckPredicate((Expr *) stmt->whereClause);
 
-	/* Open the target index relation */
-	indexRelation = index_open(indexRelationId, RowExclusiveLock);
-	namespaceId = RelationGetNamespace(indexRelation);
-
 	/* Open and lock the parent heap relation */
 	heapRelationId = IndexGetRelation(indexRelationId, false);
-	heapRelation = heap_open(heapRelationId, ShareLock);
+	heapRelation = heap_open(heapRelationId, AccessShareLock);
+
+	/* Open the target index relation */
+	/*	indexRelation = index_open(indexRelationId, RowExclusiveLock); */
+	//indexRelation = index_open(indexRelationId, ShareUpdateExclusiveLock);
+	indexRelation = index_open(indexRelationId, AccessShareLock);
+	namespaceId = RelationGetNamespace(indexRelation);
 
 	pg_index = heap_open(IndexRelationId, RowExclusiveLock);
 
@@ -343,6 +345,7 @@ AlterIndex(Oid indexRelationId, IndexStmt *stmt)
 	CatalogUpdateIndexes(pg_index, updatedTuple);
 	heap_freetuple(updatedTuple);
 	heap_freetuple(tuple);
+	heap_close(pg_index, NoLock);
 
 	slot = MakeSingleTupleTableSlot(RelationGetDescr(heapRelation));
 
@@ -396,7 +399,6 @@ AlterIndex(Oid indexRelationId, IndexStmt *stmt)
 	ExecDropSingleTupleTableSlot(slot);
 	FreeExecutorState(estate);
 
-	heap_close(pg_index, NoLock);
 	heap_close(heapRelation, NoLock);
 	index_close(indexRelation, NoLock);
 }
