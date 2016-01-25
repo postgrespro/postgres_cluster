@@ -748,7 +748,6 @@ static void DtmInitialize()
         dtm->initialized = false;
         BgwPoolInit(&dtm->pool, MMExecutor, MMDatabaseName, MMQueueSize);
 		RegisterXactCallback(DtmXactCallback, NULL);
-		RegisterSubXactCallback(DtmSubXactCallback, NULL);
 	}
 	LWLockRelease(AddinShmemInitLock);
 

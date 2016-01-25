@@ -177,7 +177,7 @@ static cid_t dtm_sync(cid_t global_cid)
         SpinLockAcquire(&local->lock);
     }
 #endif
-    return local_cid;
+    return global_cid;
 }
 
 void
@@ -647,10 +647,7 @@ cid_t DtmLocalAccess(DtmCurrentTrans* x, GlobalTransactionId gtid, cid_t global_
         x->is_global = true;
     }
     SpinLockRelease(&local->lock);
-	if (global_cid < local_cid - DtmVacuumDelay*USEC) { 
-		elog(ERROR, "Too old snapshot: requested %ld, current %ld", global_cid, local_cid);
-	}
-    return global_cid;
+    return local_cid;
 }
 
 void DtmLocalBeginPrepare(GlobalTransactionId gtid)

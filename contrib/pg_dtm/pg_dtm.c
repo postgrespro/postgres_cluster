@@ -107,6 +107,7 @@ static SnapshotData DtmSnapshot = { HeapTupleSatisfiesMVCC };
 static bool DtmHasGlobalSnapshot;
 static bool DtmGlobalXidAssigned;
 static int DtmLocalXidReserve;
+static int DtmCurcid;
 static Snapshot DtmLastSnapshot;
 static TransactionManager DtmTM = {
 	DtmGetTransactionStatus,
@@ -613,9 +614,9 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 	}
 	if (TransactionIdIsValid(DtmNextXid) && snapshot != &CatalogSnapshotData)
 	{
-		if (!DtmHasGlobalSnapshot) { 
+		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != snapshot->curcid))
 			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
-		}
+		DtmCurcid = snapshot->curcid;
 		DtmLastSnapshot = snapshot;
 		DtmMergeWithGlobalSnapshot(snapshot);
 		if (!IsolationUsesXactSnapshot())
@@ -725,7 +726,6 @@ static void DtmInitialize()
 		dtm->nReservedXids = 0;
 		dtm->minXid = InvalidTransactionId;
 		RegisterXactCallback(DtmXactCallback, NULL);
-		RegisterSubXactCallback(DtmSubXactCallback, NULL);
 	}
 	LWLockRelease(AddinShmemInitLock);
 
