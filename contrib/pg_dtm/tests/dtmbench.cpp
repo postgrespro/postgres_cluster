@@ -70,7 +70,7 @@ struct config
         nWriters = 10;
         nIterations = 1000;
         nAccounts = 1000;      
-        isolationLevel = "repeatable read";//"read committed";
+        isolationLevel = "read committed";
     }
 };
 
