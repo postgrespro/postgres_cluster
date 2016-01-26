@@ -98,7 +98,8 @@ void* inserter(void* arg)
 	} else {
 		con.prepare("insert", "insert into t (select generate_series($1::integer,$2::integer),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000))");
 	}
-	
+	time_t curr = currTimestamp;
+
     for (int i = 0; i < cfg.nIterations; i++)
     { 
 		work txn(con);
@@ -109,8 +110,9 @@ void* inserter(void* arg)
 		        txn.prepared("insert")(getCurrentTime())(random())(random())(random())(random())(random())(random())(random())(random()).exec();
 	        }
 	    } else { 
-			currTimestamp = i*cfg.transactionSize;
-		    txn.prepared("insert")(i*cfg.transactionSize)((i+1)*cfg.transactionSize-1).exec();
+		    txn.prepared("insert")(curr)(curr+cfg.transactionSize-1).exec();
+			curr += cfg.transactionSize;
+			currTimestamp = curr;
 	    }
 		txn.commit();
 	}
@@ -234,7 +236,8 @@ int main (int argc, char* argv[])
                "\t-w N\tnumber of inserters (1)\n"
                "\t-u N\tindex update interval (0)\n"
                "\t-n N\tnumber of iterations (10000)\n"
-               "\t-i N\tnumber of indexes (8)\n"
+               "\t-x N\tnumber of indexes (8)\n"
+               "\t-i N\tinitial table size (1000000)\n"
                "\t-q\tuse system time and libpq\n"
                "\t-p\tno primary key\n"
                "\t-c STR\tdatabase connection string\n");
