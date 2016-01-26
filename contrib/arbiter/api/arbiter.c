@@ -9,9 +9,9 @@
 #include <time.h>
 
 #include "postgres.h"
-#include "libdtm.h"
-#include "dtmd/include/proto.h"
-#include "dtmd/include/dtmdlimits.h"
+#include "arbiter.h"
+#include "proto.h"
+#include "arbiterlimits.h"
 #include "sockhub/sockhub.h"
 
 #ifdef TEST
@@ -23,20 +23,20 @@
 #define COMMAND_BUFFER_SIZE 1024
 #define RESULTS_SIZE 1024 // size in 32-bit numbers
 
-typedef struct DTMConnData *DTMConn;
+typedef struct ArbiterConnData *ArbiterConn;
 
-typedef struct DTMConnData
+typedef struct ArbiterConnData
 {
 	char *host; // use unix socket if host is NULL
 	int port;
 	int sock;
-} DTMConnData;
+} ArbiterConnData;
 
 static bool connected = false;
 static int leader = 0;
 static int connum = 0;
-static DTMConnData conns[MAX_SERVERS];
-static char *dtm_unix_sock_dir;
+static ArbiterConnData conns[MAX_SERVERS];
+static char *arbiter_unix_sock_dir;
 
 typedef unsigned xid_t;
 
@@ -52,7 +52,7 @@ static void DiscardConnection()
 	fprintf(stderr, "pid=%d: next candidate is %s:%d (%d of %d)\n", getpid(), conns[leader].host, conns[leader].port, leader, connum);
 }
 
-static int dtm_recv_results(DTMConn dtm, int maxlen, xid_t *results)
+static int arbiter_recv_results(ArbiterConn arbiter, int maxlen, xid_t *results)
 {
 	ShubMessageHdr msg;
 	int recved;
@@ -62,7 +62,7 @@ static int dtm_recv_results(DTMConn dtm, int maxlen, xid_t *results)
 	needed = sizeof(ShubMessageHdr);
 	while (recved < needed)
 	{
-		int newbytes = read(dtm->sock, (char*)&msg + recved, needed - recved);
+		int newbytes = read(arbiter->sock, (char*)&msg + recved, needed - recved);
 		if (newbytes == -1)
 		{
 			DiscardConnection();
@@ -88,7 +88,7 @@ static int dtm_recv_results(DTMConn dtm, int maxlen, xid_t *results)
 	}
 	while (recved < needed)
 	{
-		int newbytes = read(dtm->sock, (char*)results + recved, needed - recved);
+		int newbytes = read(arbiter->sock, (char*)results + recved, needed - recved);
 		if (newbytes == -1)
 		{
 			DiscardConnection();
@@ -106,8 +106,8 @@ static int dtm_recv_results(DTMConn dtm, int maxlen, xid_t *results)
 	return needed / sizeof(xid_t);
 }
 
-// Connects to the specified DTM.
-static bool DtmConnect(DTMConn conn)
+// Connects to the specified Arbiter.
+static bool ArbiterConnect(ArbiterConn conn)
 {
 	int sd;
 
@@ -115,7 +115,7 @@ static bool DtmConnect(DTMConn conn)
 	{
 		// use a UNIX socket
 		struct sockaddr sock;
-		int len = offsetof(struct sockaddr, sa_data) + snprintf(sock.sa_data, sizeof(sock.sa_data), "%s/sh.unix", dtm_unix_sock_dir);
+		int len = offsetof(struct sockaddr, sa_data) + snprintf(sock.sa_data, sizeof(sock.sa_data), "%s/sh.unix", arbiter_unix_sock_dir);
 		sock.sa_family = AF_UNIX;
 
 		sd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -187,7 +187,7 @@ static bool DtmConnect(DTMConn conn)
 	return false;
 }
 
-static bool dtm_send_command(DTMConn dtm, xid_t cmd, int argc, ...)
+static bool arbiter_send_command(ArbiterConn arbiter, xid_t cmd, int argc, ...)
 {
 	va_list argv;
 	int i;
@@ -220,7 +220,7 @@ static bool dtm_send_command(DTMConn dtm, xid_t cmd, int argc, ...)
 	sent = 0;
 	while (sent < datasize)
 	{
-		int newbytes = write(dtm->sock, buf + sent, datasize - sent);
+		int newbytes = write(arbiter->sock, buf + sent, datasize - sent);
 		if (newbytes == -1)
 		{
 			DiscardConnection();
@@ -232,7 +232,7 @@ static bool dtm_send_command(DTMConn dtm, xid_t cmd, int argc, ...)
 	return true;
 }
 
-void DtmGlobalConfig(char *servers, char *sock_dir)
+void ArbiterConfig(char *servers, char *sock_dir)
 {
 	char *hstate, *pstate;
 	char *hostport, *host, *portstr;
@@ -272,25 +272,25 @@ void DtmGlobalConfig(char *servers, char *sock_dir)
 		hostport = strtok_r(NULL, ",", &hstate);
 	}
 
-	dtm_unix_sock_dir = sock_dir;
+	arbiter_unix_sock_dir = sock_dir;
 }
 
-static DTMConn GetConnection()
+static ArbiterConn GetConnection()
 {
 	int tries = 3 * connum;
 	while (!connected && (tries > 0))
 	{
-		DTMConn c = conns + leader;
-		if (DtmConnect(c))
+		ArbiterConn c = conns + leader;
+		if (ArbiterConnect(c))
 		{
 			xid_t results[RESULTS_SIZE];
 			int reslen;
-			if (!dtm_send_command(c, CMD_HELLO, 0))
+			if (!arbiter_send_command(c, CMD_HELLO, 0))
 			{
 				tries--;
 				continue;
 			}
-			reslen = dtm_recv_results(c, RESULTS_SIZE, results);
+			reslen = arbiter_recv_results(c, RESULTS_SIZE, results);
 			if ((reslen < 1) || (results[0] != RES_OK))
 			{
 				tries--;
@@ -306,11 +306,11 @@ static DTMConn GetConnection()
 			tries--;
 			if (c->host)
 			{
-				elog(WARNING, "Failed to connect to DTMD at tcp %s:%d", c->host, c->port);
+				elog(WARNING, "Failed to connect to arbiter at tcp %s:%d", c->host, c->port);
 			}
 			else
 			{
-				elog(WARNING, "Failed to connect to DTMD at unix socket");
+				elog(WARNING, "Failed to connect to arbiter at unix socket");
 			}
 		}
 	}
@@ -321,14 +321,8 @@ static DTMConn GetConnection()
 	return conns + leader;
 }
 
-void DtmInitSnapshot(Snapshot snapshot)
+void ArbiterInitSnapshot(Snapshot snapshot)
 {
-	#ifdef TEST
-	if (snapshot->xip == NULL)
-	{
-		snapshot->xip = malloc(snapshot->xcnt * sizeof(TransactionId));
-	}
-	#else
 	if (snapshot->xip == NULL)
 	{
 		/*
@@ -349,33 +343,32 @@ void DtmInitSnapshot(Snapshot snapshot)
 					(errcode(ERRCODE_OUT_OF_MEMORY),
 					 errmsg("out of memory")));
 	}
-	#endif
 }
 
-TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin)
+TransactionId ArbiterStartTransaction(Snapshot snapshot, TransactionId *gxmin)
 {
 	int i;
 	xid_t xid;
 	int reslen;
 	xid_t results[RESULTS_SIZE];
-	DTMConn dtm = GetConnection();
-	if (!dtm) {
+	ArbiterConn arbiter = GetConnection();
+	if (!arbiter) {
 		goto failure;
 	}
 
 	assert(snapshot != NULL);
 
 	// command
-	if (!dtm_send_command(dtm, CMD_BEGIN, 0)) goto failure;
+	if (!arbiter_send_command(arbiter, CMD_BEGIN, 0)) goto failure;
 
 	// results
-	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
+	reslen = arbiter_recv_results(arbiter, RESULTS_SIZE, results);
 	if (reslen < 5) goto failure;
 	if (results[0] != RES_OK) goto failure;
 	xid = results[1];
 	*gxmin = results[2];
 
-	DtmInitSnapshot(snapshot);
+	ArbiterInitSnapshot(snapshot);
 	snapshot->xmin = results[3];
 	snapshot->xmax = results[4];
 	snapshot->xcnt = reslen - 5;
@@ -388,31 +381,31 @@ TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin)
 	return xid;
 failure:
 	DiscardConnection();
-	fprintf(stderr, "DtmGlobalStartTransaction: transaction failed to start\n");
+	fprintf(stderr, "ArbiterStartTransaction: transaction failed to start\n");
 	return INVALID_XID;
 }
 
-void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *gxmin)
+void ArbiterGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *gxmin)
 {
 	int i;
 	int reslen;
 	xid_t results[RESULTS_SIZE];
-	DTMConn dtm = GetConnection();
-	if (!dtm) {
+	ArbiterConn arbiter = GetConnection();
+	if (!arbiter) {
 		goto failure;
 	}
 
 	assert(snapshot != NULL);
 
 	// command
-	if (!dtm_send_command(dtm, CMD_SNAPSHOT, 1, xid)) goto failure;
+	if (!arbiter_send_command(arbiter, CMD_SNAPSHOT, 1, xid)) goto failure;
 
 	// response
-	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
+	reslen = arbiter_recv_results(arbiter, RESULTS_SIZE, results);
 	if (reslen < 4) goto failure;
 	if (results[0] != RES_OK) goto failure;
 	*gxmin = results[1];
-	DtmInitSnapshot(snapshot);
+	ArbiterInitSnapshot(snapshot);
 	snapshot->xmin = results[2];
 	snapshot->xmax = results[3];
 	snapshot->xcnt = reslen - 4;
@@ -426,28 +419,28 @@ void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *g
 failure:
 	DiscardConnection();
 	elog(ERROR,
-		"DtmGlobalGetSnapshot: failed to"
+		"ArbiterGetSnapshot: failed to"
 		" get the snapshot for xid = %d\n",
 		xid
 	);
 }
 
-XidStatus DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait)
+XidStatus ArbiterSetTransStatus(TransactionId xid, XidStatus status, bool wait)
 {
 	int reslen;
 	xid_t results[RESULTS_SIZE];
-	DTMConn dtm = GetConnection();
-	if (!dtm) {
+	ArbiterConn arbiter = GetConnection();
+	if (!arbiter) {
 		goto failure;
 	}
 
 	switch (status)
 	{
 		case TRANSACTION_STATUS_COMMITTED:
-			if (!dtm_send_command(dtm, CMD_FOR, 2, xid, wait)) goto failure;
+			if (!arbiter_send_command(arbiter, CMD_FOR, 2, xid, wait)) goto failure;
 			break;
 		case TRANSACTION_STATUS_ABORTED:
-			if (!dtm_send_command(dtm, CMD_AGAINST, 2, xid, wait)) goto failure;
+			if (!arbiter_send_command(arbiter, CMD_AGAINST, 2, xid, wait)) goto failure;
 			break;
 		default:
 			assert(false); // should not happen
@@ -455,7 +448,7 @@ XidStatus DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait
 	}
 
 	// response
-	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
+	reslen = arbiter_recv_results(arbiter, RESULTS_SIZE, results);
 	if (reslen != 1) goto failure;
 	switch (results[0])
 	{
@@ -472,7 +465,7 @@ failure:
 	DiscardConnection();
 	fprintf(
 		stderr,
-		"DtmGlobalSetTransStatus: failed to vote"
+		"ArbiterSetTransStatus: failed to vote"
 		" %s the transaction xid = %d\n",
 		(status == TRANSACTION_STATUS_COMMITTED) ? "for" : "against",
 		xid
@@ -480,20 +473,20 @@ failure:
 	return -1;
 }
 
-XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait)
+XidStatus ArbiterGetTransStatus(TransactionId xid, bool wait)
 {
 	int reslen;
 	xid_t results[RESULTS_SIZE];
-	DTMConn dtm = GetConnection();
-	if (!dtm) {
+	ArbiterConn arbiter = GetConnection();
+	if (!arbiter) {
 		goto failure;
 	}
 
 	// command
-	if (!dtm_send_command(dtm, CMD_STATUS, 2, xid, wait)) goto failure;
+	if (!arbiter_send_command(arbiter, CMD_STATUS, 2, xid, wait)) goto failure;
 
 	// response
-	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
+	reslen = arbiter_recv_results(arbiter, RESULTS_SIZE, results);
 	if (reslen != 1) goto failure;
 	switch (results[0])
 	{
@@ -512,29 +505,29 @@ failure:
 	DiscardConnection();
 	fprintf(
 		stderr,
-		"DtmGlobalGetTransStatus: failed to get"
+		"ArbiterGetTransStatus: failed to get"
 		" the status of xid = %d\n",
 		xid
 	);
 	return -1;
 }
 
-int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first)
+int ArbiterReserve(TransactionId xid, int nXids, TransactionId *first)
 {
 	xid_t xmin, xmax;
 	int count;
 	int reslen;
 	xid_t results[RESULTS_SIZE];
-	DTMConn dtm = GetConnection();
-	if (!dtm) {
+	ArbiterConn arbiter = GetConnection();
+	if (!arbiter) {
 		goto failure;
 	}
 
 	// command
-	if (!dtm_send_command(dtm, CMD_RESERVE, 2, xid, nXids)) goto failure;
+	if (!arbiter_send_command(arbiter, CMD_RESERVE, 2, xid, nXids)) goto failure;
 
 	// response
-	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
+	reslen = arbiter_recv_results(arbiter, RESULTS_SIZE, results);
 	if (reslen != 3) goto failure;
 	if (results[0] != RES_OK) goto failure;
 	xmin = results[1];
@@ -549,14 +542,14 @@ failure:
 	DiscardConnection();
 	fprintf(
 		stderr,
-		"DtmGlobalReserve: failed to reserve"
+		"ArbiterReserve: failed to reserve"
 		" %d transaction starting from = %d\n",
 		nXids, xid
 	);
 	return 0;
 }
 
-bool DtmGlobalDetectDeadLock(int port, TransactionId xid, void* data, int size)
+bool ArbiterDetectDeadLock(int port, TransactionId xid, void* data, int size)
 {
 	int msg_size = size + sizeof(xid)*3;
 	int data_size = sizeof(ShubMessageHdr) + msg_size;
@@ -566,7 +559,7 @@ bool DtmGlobalDetectDeadLock(int port, TransactionId xid, void* data, int size)
 	int sent;
 	int reslen;
 	xid_t results[RESULTS_SIZE];
-	DTMConn dtm = GetConnection();
+	ArbiterConn arbiter = GetConnection();
 
 	msg->chan = 0;
 	msg->code = MSG_FIRST_USER_CODE;
@@ -580,7 +573,7 @@ bool DtmGlobalDetectDeadLock(int port, TransactionId xid, void* data, int size)
 	sent = 0;
 	while (sent < data_size)
 	{
-		int new_bytes = write(dtm->sock, buf + sent, data_size - sent);
+		int new_bytes = write(arbiter->sock, buf + sent, data_size - sent);
 		if (new_bytes == -1)
 		{
 			elog(ERROR, "Failed to send a command to arbiter");
@@ -589,12 +582,12 @@ bool DtmGlobalDetectDeadLock(int port, TransactionId xid, void* data, int size)
 		sent += new_bytes;
 	}
 
-	reslen = dtm_recv_results(dtm, RESULTS_SIZE, results);
+	reslen = arbiter_recv_results(arbiter, RESULTS_SIZE, results);
 	if (reslen != 1 || (results[0] != RES_OK && results[0] != RES_DEADLOCK))
 	{
 		fprintf(
 			stderr,
-			"DtmGlobalDetectDeadLock: failed"
+			"ArbiterDetectDeadLock: failed"
 			" to check xid=%u for deadlock\n",
 			xid
 		);

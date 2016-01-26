@@ -1,5 +1,5 @@
-#ifndef LIBDTM_H
-#define LIBDTM_H
+#ifndef ARBITER_API_H
+#define ARBITER_API_H
 
 #include "postgres.h"
 #include "utils/snapmgr.h"
@@ -9,11 +9,11 @@
 #define INVALID_XID 0
 
 /**
- * Sets up the servers and the unix sockdir for DTM connections.
+ * Sets up the servers and the unix sockdir for Arbiter connections.
  */
-void DtmGlobalConfig(char *servers, char *sock_dir);
+void ArbiterConfig(char *servers, char *sock_dir);
 
-void DtmInitSnapshot(Snapshot snapshot);
+void ArbiterInitSnapshot(Snapshot snapshot);
 
 /**
  * Starts a new global transaction. Returns the
@@ -21,13 +21,13 @@ void DtmInitSnapshot(Snapshot snapshot);
  * smallest xmin among all snapshots known to arbiter. Returns INVALID_XID
  * otherwise.
  */
-TransactionId DtmGlobalStartTransaction(Snapshot snapshot, TransactionId *gxmin);
+TransactionId ArbiterStartTransaction(Snapshot snapshot, TransactionId *gxmin);
 
 /**
  * Asks the arbiter for a fresh snapshot. Fills the 'snapshot' and 'gxmin' on
  * success. 'gxmin' is the smallest xmin among all snapshots known to arbiter.
  */
-void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *gxmin);
+void ArbiterGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *gxmin);
 
 /**
  * Commits transaction only once all participants have called this function,
@@ -35,14 +35,14 @@ void DtmGlobalGetSnapshot(TransactionId xid, Snapshot snapshot, TransactionId *g
  * to return only after the transaction is considered finished by the arbiter.
  * Returns the status on success, or -1 otherwise.
  */
-XidStatus DtmGlobalSetTransStatus(TransactionId xid, XidStatus status, bool wait);
+XidStatus ArbiterSetTransStatus(TransactionId xid, XidStatus status, bool wait);
 
 /**
  * Gets the status of the transaction identified by 'xid'. Returns the status
  * on success, or -1 otherwise. If 'wait' is true, then it does not return
  * until the transaction is finished.
  */
-XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait);
+XidStatus ArbiterGetTransStatus(TransactionId xid, bool wait);
 
 /**
  * Reserves at least 'nXids' successive xids for local transactions. The xids
@@ -51,7 +51,7 @@ XidStatus DtmGlobalGetTransStatus(TransactionId xid, bool wait);
  * is guaranteed to be at least nXids.
  * In other words, *first ≥ xid and result ≥ nXids.
  */
-int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first);
+int ArbiterReserve(TransactionId xid, int nXids, TransactionId *first);
 
 /**
  * Detect global deadlock. This function sends serialized local resource graph
@@ -61,6 +61,6 @@ int DtmGlobalReserve(TransactionId xid, int nXids, TransactionId *first);
  * resource graph if a new local graph is received from this cluster node (not
  * backend).
  */
-bool DtmGlobalDetectDeadLock(int port, TransactionId xid, void* graph, int size);
+bool ArbiterDetectDeadLock(int port, TransactionId xid, void* graph, int size);
 
 #endif

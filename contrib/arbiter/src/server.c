@@ -18,7 +18,7 @@
 #include <netinet/in.h>
 
 #include "server.h"
-#include "dtmdlimits.h"
+#include "arbiterlimits.h"
 #include "util.h"
 #include "sockhub.h"
 

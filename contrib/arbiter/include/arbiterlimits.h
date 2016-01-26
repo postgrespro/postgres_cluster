@@ -1,5 +1,5 @@
-#ifndef DTMD_LIMITS_H
-#define DTMD_LIMITS_H
+#ifndef ARBITER_LIMITS_H
+#define ARBITER_LIMITS_H
 
 // how many xids are reserved per raft term
 #define XIDS_PER_TERM  1000000
@@ -8,6 +8,7 @@
 #define NEW_TERM_THRESHOLD 100000
 
 #define MAX_TRANSACTIONS 4096
+#define MAX_SNAPSHOTS_PER_TRANS 8
 
 #define BUFFER_SIZE (64 * 1024)
 #define LISTEN_QUEUE_SIZE 100

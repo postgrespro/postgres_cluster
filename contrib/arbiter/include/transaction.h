@@ -5,9 +5,7 @@
 #include "int.h"
 #include "clog.h"
 #include "snapshot.h"
-#include "dtmdlimits.h"
-
-#define MAX_SNAPSHOTS_PER_TRANS 8
+#include "arbiterlimits.h"
 
 #define CHAR_TO_INDEX(C) ((C) - 'a')
 
