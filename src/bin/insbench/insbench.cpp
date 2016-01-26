@@ -126,10 +126,11 @@ void* indexUpdater(void* arg)
 		sleep(cfg.indexUpdateInterval);
 		printf("Alter indexes\n");
 		time_t now = getCurrentTime();
+		time_t limit = cfg.useSystemTime ? now : currTimestamp;
 		{
 			work txn(con);
 			for (int i = 0; i < cfg.nIndexes; i++) { 
-				exec(txn, "alter index idx%d where pk<%lu", i, cfg.useSystemTime ? now : currTimestamp);
+				exec(txn, "alter index idx%d where pk<%lu", i, limit);
 			}
 			txn.commit();
 		}
@@ -151,18 +152,6 @@ void initializeDatabase()
 	time_t now = getCurrentTime();
 	exec(txn, "drop table if exists t");
 	exec(txn, "create table t (pk bigint, k1 bigint, k2 bigint, k3 bigint, k4 bigint, k5 bigint, k6 bigint, k7 bigint, k8 bigint)");
-	if (!cfg.noPK) { 
-		exec(txn, "create index pk on t(pk)");
-	}
-	for (int i = 0; i < cfg.nIndexes; i++) { 
-		if (cfg.indexUpdateInterval == 0)  { 
-			exec(txn, "create index idx%d on t(k%d)", i, i+1);
-		} else if (cfg.useSystemTime) { 
-			exec(txn, "create index idx%d on t(k%d) where pk<%ld", i, i+1, now);
-		} else { 
-			exec(txn, "create index idx%d on t(k%d) where pk<%ld", i, i+1, 0);
-		}
-	}
 
 	if (cfg.initialSize)
 	{
@@ -186,9 +175,26 @@ void initializeDatabase()
 		    txn.prepared("insert")(cfg.initialSize)(cfg.initialSize-1).exec();
 			currTimestamp = cfg.initialSize;
 	    }
-		txn.exec("vacuum analyze");
+	}
+	if (!cfg.noPK) { 
+		exec(txn, "create index pk on t(pk)");
+	}
+	for (int i = 0; i < cfg.nIndexes; i++) { 
+		if (cfg.indexUpdateInterval == 0)  { 
+			exec(txn, "create index idx%d on t(k%d)", i, i+1);
+		} else if (cfg.useSystemTime) { 
+			exec(txn, "create index idx%d on t(k%d) where pk<%ld", i, i+1, now);
+		} else { 
+			exec(txn, "create index idx%d on t(k%d) where pk<%ld", i, i+1, currTimestamp);
+		}
 	}
 	txn.commit();
+	{
+		nontransaction txn(con);
+		txn.exec("vacuum analyze");
+		sleep(2);
+	}
+	printf("Database intialized\n");
 }
 			
 	
@@ -260,10 +266,11 @@ int main (int argc, char* argv[])
     for (int i = 0; i < cfg.nInserters; i++) { 
         inserters[i].wait();
     }    
+    time_t elapsed = getCurrentTime() - start;
+
     running = false;
 	bgw.wait();
  
-    time_t elapsed = getCurrentTime() - start;
 
     printf(
         "{\"tps\":%f, \"index_updates\":%d, \"max_update_time\":%ld, \"avg_update_time\":%f,"
