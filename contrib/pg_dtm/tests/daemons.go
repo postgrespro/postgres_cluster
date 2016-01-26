@@ -64,7 +64,7 @@ const (
 	PgPort = 5432
 )
 
-func dtmd(bin string, datadir string, servers []string, id int, wg *sync.WaitGroup) {
+func arbiter(bin string, datadir string, servers []string, id int, wg *sync.WaitGroup) {
 	argv := []string{
 		bin,
 		"-d", datadir,
@@ -75,7 +75,7 @@ func dtmd(bin string, datadir string, servers []string, id int, wg *sync.WaitGro
 	}
 	log.Println(argv)
 
-	name := "dtmd " + datadir
+	name := "arbiter " + datadir
 	c := make(chan string)
 
 	go cmd_to_channel(argv, name, c)
@@ -103,14 +103,23 @@ func initdb(bin string, datadir string) {
 	}
 }
 
-func postgres(bin string, datadir string, dtmservers []string, port int, nodeid int, wg *sync.WaitGroup) {
+func initarbiter(arbiterdir string) {
+	if err := os.RemoveAll(arbiterdir); err != nil {
+		log.Fatal(err)
+	}
+	if err := os.MkdirAll(arbiterdir, os.ModeDir | 0777); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func postgres(bin string, datadir string, arbiters []string, port int, nodeid int, wg *sync.WaitGroup) {
 	argv := []string{
 		bin,
 		"-D", datadir,
 		"-p", strconv.Itoa(port),
 		"-c", "dtm.buffer_size=65536",
 //		"-c", "dtm.buffer_size=0",
-		"-c", "dtm.servers=" + strings.Join(dtmservers, ","),
+		"-c", "dtm.servers=" + strings.Join(arbiters, ","),
 		"-c", "autovacuum=off",
 		"-c", "fsync=off",
 		"-c", "synchronous_commit=on",
@@ -166,13 +175,13 @@ func main() {
 	prefix := get_prefix(srcroot)
 
 	bin := map[string]string{
-		"dtmd": srcroot + "/contrib/pg_dtm/dtmd/bin/dtmd",
+		"arbiter": srcroot + "/contrib/arbiter/bin/arbiter",
 		"initdb": prefix + "/bin/initdb",
 		"postgres": prefix + "/bin/postgres",
 	}
 
 	datadirs := []string{"/tmp/data0", "/tmp/data1", "/tmp/data2"}
-	dtmdirs := []string{"/tmp/dtm0", "/tmp/dtm1", "/tmp/dtm2"}
+	arbiterdirs := []string{"/tmp/arbiter0", "/tmp/arbiter1", "/tmp/arbiter2"}
 
 	check_bin(&bin);
 
@@ -180,24 +189,27 @@ func main() {
 		for _, datadir := range datadirs {
 			initdb(bin["initdb"], datadir)
 		}
+		for _, arbiterdir := range arbiterdirs {
+			initarbiter(arbiterdir)
+		}
 	}
 
 	var wg sync.WaitGroup
 
-	var dtmservers []string
-	for i := range dtmdirs {
-		dtmservers = append(dtmservers, DtmHost + ":" + strconv.Itoa(DtmPort - i))
+	var arbiters []string
+	for i := range arbiterdirs {
+		arbiters = append(arbiters, DtmHost + ":" + strconv.Itoa(DtmPort - i))
 	}
-	for i, dir := range dtmdirs {
+	for i, dir := range arbiterdirs {
 		wg.Add(1)
-		go dtmd(bin["dtmd"], dir, dtmservers, i, &wg)
+		go arbiter(bin["arbiter"], dir, arbiters, i, &wg)
 	}
 
 	time.Sleep(3 * time.Second)
 
 	for i, dir := range datadirs {
 		wg.Add(1)
-		go postgres(bin["postgres"], dir, dtmservers, PgPort + i, i, &wg)
+		go postgres(bin["postgres"], dir, arbiters, PgPort + i, i, &wg)
 	}
 
 	wg.Wait()
