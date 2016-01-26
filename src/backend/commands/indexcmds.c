@@ -368,7 +368,7 @@ AlterIndex(Oid indexRelationId, IndexStmt *stmt)
         SPI_cursor_fetch(portal, true, 1);
         if (!SPI_processed) { 
 			break;
-		}
+		}										
 		tuple = SPI_tuptable->vals[0];
 		tupleid = &tuple->t_data->t_ctid;
 		ExecStoreTuple(tuple, slot, InvalidBuffer, false);
