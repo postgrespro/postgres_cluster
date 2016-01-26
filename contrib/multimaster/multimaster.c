@@ -123,6 +123,7 @@ static TransactionId DtmNextXid;
 static SnapshotData DtmSnapshot = { HeapTupleSatisfiesMVCC };
 static bool DtmHasGlobalSnapshot;
 static int DtmLocalXidReserve;
+static CommandId DtmCurcid;
 static Snapshot DtmLastSnapshot;
 static TransactionManager DtmTM = {
 	DtmGetTransactionStatus,
@@ -630,11 +631,12 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 {
 	if (TransactionIdIsValid(DtmNextXid) && snapshot != &CatalogSnapshotData)
 	{
-		if (!DtmHasGlobalSnapshot) {
+		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != GetCurrentCommandId(false))) {
 			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
         }
 		DtmLastSnapshot = snapshot;
 		DtmMergeWithGlobalSnapshot(snapshot);
+		DtmCurcid = snapshot->curcid;
 		if (!IsolationUsesXactSnapshot())
 		{
 			/* Use single global snapshot during all transaction for repeatable read isolation level,
