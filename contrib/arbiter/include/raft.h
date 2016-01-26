@@ -3,7 +3,7 @@
 
 #include <arpa/inet.h>
 #include <stdbool.h>
-#include "dtmdlimits.h"
+#include "arbiterlimits.h"
 
 #define NOBODY -1
 

@@ -1,31 +1,30 @@
-===
-xtm
-===
+=======
+Arbiter
+=======
 
-Distributed transaction management tools for PostgreSQL.
+Arbiter is a daemon responsible for distributed transaction management.
+It implements the XTM protocol.
 
 --------------------
 Communication scheme
 --------------------
-              ┏━━━━━━━━━┓
-     ┌────────┨ Backend ┠──────────┐
-     │        ┗━━━━━━━━━┛          │
-┏━━━━┷━━━━┓   ┏━━━━━━━━━┓   ┏━━━━━━┷━━━━━━┓
-┃ Arbiter ┠───┨ Backend ┠───┨ Coordinator ┃
-┗━━━━┯━━━━┛   ┗━━━━━━━━━┛   ┗━━━━━━┯━━━━━━┛
-     │        ┏━━━━━━━━━┓          │
-     └──┬─────┨ Backend ┠───────┬──┘
-        ┆     ┗━━━━━━━━━┛       ┆
- libdtm + libsockhub      libpq + xtm procs
+                 ┏━━━━━━━━━┓
+        ┌────────┨ Backend ┠──────────┐
+    ┏━━━┷━━━━━┓  ┗━━━━━━━━━┛          │
+   ┏┻━━━━━━━━┓┃  ┏━━━━━━━━━┓   ┏━━━━━━┷━━━━━━┓
+  ┏┻━━━━━━━━┓┣┹──┨ Backend ┠───┨ Coordinator ┃
+  ┃ Arbiter ┣┛   ┗━━━━━━━━━┛   ┗━━━━━━┯━━━━━━┛
+  ┗━━━━━┯━━━┛    ┏━━━━━━━━━┓          │
+        └──┬─────┨ Backend ┠───────┬──┘
+           ┆     ┗━━━━━━━━━┛       ┆
+libarbiter + libsockhub      libpq + xtm procs
 
------------------------
-Coordinator-Backend API
------------------------
+---
+API
+---
 
-This API includes a set of postgres procedures that
-the coordinator can call with "select" statement.
-
-FIXME: actualize the API
+For the API see the contents of 'include/api.h', it is packed with comments.
+Compile with '-larbiter'.
 
 ------------------------
 Backend-Arbiter Protocol

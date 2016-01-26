@@ -41,9 +41,9 @@
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "utils/syscache.h"
-#include "sockhub/sockhub.h"
 
-#include "libdtm.h"
+#include "sockhub.h"
+#include "arbiter.h"
 
 typedef struct
 {
@@ -351,7 +351,7 @@ static TransactionId DtmGetNextXid()
 	{
 		if (dtm->nReservedXids == 0)
 		{
-			dtm->nReservedXids = DtmGlobalReserve(ShmemVariableCache->nextXid, DtmLocalXidReserve, &dtm->nextXid);
+			dtm->nReservedXids = ArbiterReserve(ShmemVariableCache->nextXid, DtmLocalXidReserve, &dtm->nextXid);
 			if (dtm->nReservedXids < 1)
 			{
 				elog(WARNING, "failed to reserve a local range of xids on arbiter");
@@ -614,7 +614,7 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 	if (TransactionIdIsValid(DtmNextXid) && snapshot != &CatalogSnapshotData)
 	{
 		if (!DtmHasGlobalSnapshot) { 
-			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
+			ArbiterGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
 		}
 		DtmLastSnapshot = snapshot;
 		DtmMergeWithGlobalSnapshot(snapshot);
@@ -659,7 +659,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 			if (status == TRANSACTION_STATUS_ABORTED)
 			{
 				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
-				if (DtmGlobalSetTransStatus(xid, status, false) == -1)
+				if (ArbiterSetTransStatus(xid, status, false) == -1)
 				{
 					elog(WARNING, "failed to set 'aborted' transaction status on arbiter");
 					return;
@@ -674,7 +674,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
 				LWLockRelease(dtm->hashLock);
-				if (DtmGlobalSetTransStatus(xid, status, true) != status) { 
+				if (ArbiterSetTransStatus(xid, status, true) != status) { 
 					END_CRIT_SECTION();
 					MarkAsAborted();
 					elog(ERROR, "Transaction commit rejected by XTM");                    
@@ -691,7 +691,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 	{
 		XidStatus gs = -1;
 		while (gs == -1) {
-			gs = DtmGlobalGetTransStatus(xid, true);
+			gs = ArbiterGetTransStatus(xid, true);
 		}
 		if (gs != TRANSACTION_STATUS_UNKNOWN) { 
 			status = gs;
@@ -787,7 +787,7 @@ DtmXactCallback(XactEvent event, void *arg)
 				 * so we have to send report to DTMD here
 				 */
 				if (!TransactionIdIsValid(GetCurrentTransactionIdIfAny()))
-					DtmGlobalSetTransStatus(DtmNextXid, TRANSACTION_STATUS_ABORTED, false);
+					ArbiterSetTransStatus(DtmNextXid, TRANSACTION_STATUS_ABORTED, false);
 			}
 			DtmNextXid = InvalidTransactionId;
 			DtmLastSnapshot = NULL;
@@ -868,11 +868,11 @@ _PG_init(void)
 	DtmServersCopy = strdup(DtmServers);
 	if (DtmBufferSize != 0)
 	{
-		DtmGlobalConfig(DtmServers, Unix_socket_directories);
+		ArbiterConfig(DtmServers, Unix_socket_directories);
 		RegisterBackgroundWorker(&DtmWorker);
 	}
 	else
-		DtmGlobalConfig(DtmServers, NULL);
+		ArbiterConfig(DtmServers, NULL);
 
 	/*
 	 * Install hooks.
@@ -935,7 +935,7 @@ dtm_begin_transaction(PG_FUNCTION_ARGS)
 		elog(ERROR, "dtm_begin/join_transaction should be called only once for global transaction");
 	if (dtm == NULL)
 		elog(ERROR, "DTM is not properly initialized, please check that pg_dtm plugin was added to shared_preload_libraries list in postgresql.conf");
-	DtmNextXid = DtmGlobalStartTransaction(&DtmSnapshot, &dtm->minXid);
+	DtmNextXid = ArbiterStartTransaction(&DtmSnapshot, &dtm->minXid);
 	if (!TransactionIdIsValid(DtmNextXid))
 		elog(ERROR, "Arbiter was not able to assign XID");
 	XTM_INFO("%d: Start global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
@@ -955,7 +955,7 @@ Datum dtm_join_transaction(PG_FUNCTION_ARGS)
 	if (!TransactionIdIsValid(DtmNextXid))
 		elog(ERROR, "Arbiter was not able to assign XID");
 
-	DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
+	ArbiterGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
 	XTM_INFO("%d: Join global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
 
 	DtmHasGlobalSnapshot = true;
@@ -1065,7 +1065,7 @@ bool DtmDetectGlobalDeadLock(PGPROC* proc)
         XTM_INFO("%d: wait graph begin\n", getpid());
         EnumerateLocks(DtmSerializeLock, &buf);
         XTM_INFO("%d: wait graph end\n", getpid());
-        hasDeadlock = DtmGlobalDetectDeadLock(PostPortNumber, pgxact->xid, buf.data, buf.used);
+        hasDeadlock = ArbiterDetectDeadLock(PostPortNumber, pgxact->xid, buf.data, buf.used);
         ByteBufferFree(&buf);
         XTM_INFO("%d: deadlock detected for %u\n", getpid(), pgxact->xid);
         elog(WARNING, "Deadlock detected for transaction %u", pgxact->xid);

@@ -304,7 +304,7 @@ static void set_next_gxid(xid_t value) {
 		}
 	}
 
-	// Check that old position is 'dirty'. It is used when dtmd restarts,
+	// Check that old position is 'dirty'. It is used when arbiter restarts,
 	// to find out a correct value for 'next_gxid'. If we do not remember
 	// 'next_gxid' it will lead to reuse of xids, which is bad.
 	assert((next_gxid == MIN_XID) || (clog_read(clg, next_gxid) == NEGATIVE));
@@ -731,6 +731,8 @@ static void usage(char *prog) {
 		"Usage: %s -i ID -r HOST:PORT [-r HOST:PORT ...] [-d DATADIR] [-k] [-l LOGFILE]\n"
 		"   arbiter will try to kill the other one running at\n"
 		"   the same DATADIR.\n"
+		"   -r : Listen on the HOST and PORT. Specify multiple times to enable Raft protocol.\n"
+		"   -i : A number to distinguish this instance among the Raft peers.\n"
 		"   -l : Run as a daemon and write output to LOGFILE.\n"
 		"   -k : Just kill the other arbiter and exit.\n",
 		prog
