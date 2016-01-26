@@ -1244,7 +1244,7 @@ ProcessUtilitySlow(Node *parsetree,
 					 * eventually be needed here, so the lockmode calculation
 					 * needs to match what DefineIndex() does.
 					 */
-					lockmode = stmt->is_alter ? AccessShareLock : stmt->concurrent ? ShareUpdateExclusiveLock
+					lockmode = stmt->is_alter || stmt->concurrent ? ShareUpdateExclusiveLock
 						: ShareLock;
 					relid =
 						RangeVarGetRelidExtended(stmt->relation, lockmode,

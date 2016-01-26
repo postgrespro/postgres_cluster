@@ -41,11 +41,13 @@ struct config
     int nIndexes;
     int nIterations;
 	int transactionSize;
+	int initialSize;
 	bool useSystemTime;
 	bool noPK;
     string connection;
 
     config() {
+		initialSize = 1000000;
 		indexUpdateInterval = 0;
         nInserters = 1;
 		nIndexes = 8;
@@ -142,8 +144,8 @@ void* indexUpdater(void* arg)
       
 void initializeDatabase()
 {
-    connection conn(cfg.connection);
-	work txn(conn);
+    connection con(cfg.connection);
+	work txn(con);
 	time_t now = getCurrentTime();
 	exec(txn, "drop table if exists t");
 	exec(txn, "create table t (pk bigint, k1 bigint, k2 bigint, k3 bigint, k4 bigint, k5 bigint, k6 bigint, k7 bigint, k8 bigint)");
@@ -158,6 +160,31 @@ void initializeDatabase()
 		} else { 
 			exec(txn, "create index idx%d on t(k%d) where pk<%ld", i, i+1, 0);
 		}
+	}
+
+	if (cfg.initialSize)
+	{
+		if (cfg.useSystemTime) 
+		{
+#if PQXX_VERSION_MAJOR >= 4
+			con.prepare("insert", "insert into t values ($1,$2,$3,$4,$5,$6,$7,$8,$9)");
+#else
+			con.prepare("insert", "insert into t values ($1,$2,$3,$4,$5,$6,$7,$8,$9)")("bigint")("bigint")("bigint")("bigint")("bigint")("bigint")("bigint")("bigint")("bigint");
+#endif
+		} else {
+			con.prepare("insert", "insert into t (select generate_series($1::integer,$2::integer),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000),ceil(random()*1000000000))");
+		}
+		if (cfg.useSystemTime) 
+		{
+		    for (int i = 0; i < cfg.initialSize; i++) 
+			{ 
+		        txn.prepared("insert")(getCurrentTime())(random())(random())(random())(random())(random())(random())(random())(random()).exec();
+	        }
+	    } else { 
+		    txn.prepared("insert")(cfg.initialSize)(cfg.initialSize-1).exec();
+			currTimestamp = cfg.initialSize;
+	    }
+		txn.exec("vacuum analyze");
 	}
 	txn.commit();
 }
@@ -185,8 +212,11 @@ int main (int argc, char* argv[])
             case 'n':
                 cfg.nIterations = atoi(argv[++i]);
                 continue;
-            case 'i':
+            case 'x':
                 cfg.nIndexes = atoi(argv[++i]);
+                continue;
+            case 'i':
+                cfg.initialSize = atoi(argv[++i]);
                 continue;
             case 'c':
                 cfg.connection = string(argv[++i]);

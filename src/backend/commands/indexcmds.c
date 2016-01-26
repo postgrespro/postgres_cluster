@@ -315,8 +315,8 @@ AlterIndex(Oid indexRelationId, IndexStmt *stmt)
 
 	/* Open the target index relation */
 	/*	indexRelation = index_open(indexRelationId, RowExclusiveLock); */
-	//indexRelation = index_open(indexRelationId, ShareUpdateExclusiveLock);
-	indexRelation = index_open(indexRelationId, AccessShareLock);
+	indexRelation = index_open(indexRelationId, ShareUpdateExclusiveLock);
+	/* indexRelation = index_open(indexRelationId, AccessShareLock); */
 	namespaceId = RelationGetNamespace(indexRelation);
 
 	pg_index = heap_open(IndexRelationId, RowExclusiveLock);
