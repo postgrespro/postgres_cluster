@@ -418,8 +418,15 @@ static bool server_accept(server_t server) {
 		shout("failed to accept a connection: %s\n", strerror(errno));
 		return false;
 	}
-	debug("a new connection accepted\n");
+	debug("a new connection fd=%d accepted\n", fd);
 	
+	if (!server->enabled) {
+		shout("server disabled, disconnecting the accepted connection fd=%d\n", fd);
+		// FIXME: redirect instead of disconnecting
+		close(fd);
+		return false;
+	}
+
 	s = server->free_chain;
 	if (s == NULL) { 
 		s = malloc(sizeof(stream_data_t));
@@ -429,13 +436,6 @@ static bool server_accept(server_t server) {
 	/* add new stream */
 	s->next = server->used_chain;
 	server->used_chain = s;
-
-	if (!server->enabled) {
-		shout("server disabled, disconnecting the accepted connection\n");
-		// FIXME: redirect instead of disconnecting
-		close(fd);
-		return false;
-	}
 
 	stream_init(s, fd);
 
