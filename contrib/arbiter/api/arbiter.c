@@ -345,7 +345,7 @@ void ArbiterInitSnapshot(Snapshot snapshot)
 	}
 }
 
-TransactionId ArbiterStartTransaction(Snapshot snapshot, TransactionId *gxmin)
+TransactionId ArbiterStartTransaction(Snapshot snapshot, TransactionId *gxmin, int nParticipants)
 {
 	int i;
 	xid_t xid;
@@ -359,7 +359,11 @@ TransactionId ArbiterStartTransaction(Snapshot snapshot, TransactionId *gxmin)
 	assert(snapshot != NULL);
 
 	// command
-	if (!arbiter_send_command(arbiter, CMD_BEGIN, 0)) goto failure;
+	if (nParticipants) {
+		if (!arbiter_send_command(arbiter, CMD_BEGIN, 1, nParticipants)) goto failure;
+	} else {
+		if (!arbiter_send_command(arbiter, CMD_BEGIN, 0)) goto failure;
+	}
 
 	// results
 	reslen = arbiter_recv_results(arbiter, RESULTS_SIZE, results);

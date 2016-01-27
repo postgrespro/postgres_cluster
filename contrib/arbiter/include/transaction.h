@@ -21,7 +21,8 @@ typedef struct Transaction {
 	xid_t xid;
     xid_t xmin;
 
-	int size; // number of paritcipants
+	int size; // number of participants
+	bool fixed_size;
 
 	// for + against ≤ size
 	int votes_for;
@@ -56,8 +57,6 @@ static inline void l2_list_unlink(L2List* elem)
     elem->next->prev = elem->prev;
     elem->prev->next = elem->next;
 }
-
-
 
 Snapshot *transaction_latest_snapshot(Transaction *t);
 Snapshot *transaction_snapshot(Transaction *t, int snapno);

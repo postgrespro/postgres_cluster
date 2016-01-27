@@ -9,10 +9,13 @@
 #define PATHSEP '/'
 
 char *join_path(const char *dir, const char *file) {
+	size_t dirlen, filelen, pathlen;
+	char *path;
+
 	assert(dir != NULL);
 	assert(file != NULL);
 
-	size_t dirlen = strlen(dir);
+	dirlen = strlen(dir);
 	if (dirlen > 0) {
 		if (dir[dirlen - 1] == PATHSEP) {
 			// do not copy the separator
@@ -23,7 +26,7 @@ char *join_path(const char *dir, const char *file) {
 		return strdup(file);
 	}
 
-	size_t filelen = strlen(file);
+	filelen = strlen(file);
 	if (filelen > 0) {
 		if (file[0] == PATHSEP) {
 			// 'file' is an absolute path
@@ -34,9 +37,9 @@ char *join_path(const char *dir, const char *file) {
 		return strndup(dir, dirlen);
 	}
 
-	size_t pathlen = dirlen + 1 + filelen;
+	pathlen = dirlen + 1 + filelen;
 
-	char *path = malloc(pathlen + 1);
+	path = malloc(pathlen + 1);
 
 	strncpy(path, dir, dirlen);
 	path[dirlen] = PATHSEP;
@@ -73,10 +76,11 @@ int falloc(int fd, off64_t size) {
 
 #define MAX_ELAPSED 30
 int mstimer_reset(mstimer_t *t) {
+	int ms;
 	struct timeval newtime;
 	gettimeofday(&newtime, NULL);
 
-	int ms =
+	ms =
 		(newtime.tv_sec - t->tv.tv_sec) * 1000 +
 		(newtime.tv_usec - t->tv.tv_usec) / 1000;
 

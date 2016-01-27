@@ -122,8 +122,8 @@ static TransactionManager DtmTM = {
 	DtmGetName
 };
 
-static char *DtmServers;
-static char *DtmServersCopy;
+static char *Arbiters;
+static char *ArbitersCopy;
 static int DtmBufferSize;
 
 static BackgroundWorker DtmWorker = {
@@ -840,7 +840,7 @@ _PG_init(void)
 
 	DefineCustomIntVariable(
 		"dtm.buffer_size",
-		"Size of sockhub buffer for connection to DTM daemon, if 0, then direct connection will be used",
+		"Size of sockhub buffer for connection to arbiters, if 0, then direct connection will be used",
 		NULL,
 		&DtmBufferSize,
 		0,
@@ -854,10 +854,10 @@ _PG_init(void)
 	);
 
 	DefineCustomStringVariable(
-		"dtm.servers",
-		"The comma separated host:port pairs where DTM daemons reside",
+		"dtm.arbiters",
+		"The comma separated host:port pairs where arbiters reside",
 		NULL,
-		&DtmServers,
+		&Arbiters,
 		"127.0.0.1:5431",
 		PGC_BACKEND, // context
 		0, // flags,
@@ -866,14 +866,14 @@ _PG_init(void)
 		NULL // GucShowHook show_hook
 	);
 
-	DtmServersCopy = strdup(DtmServers);
+	ArbitersCopy = strdup(Arbiters);
 	if (DtmBufferSize != 0)
 	{
-		ArbiterConfig(DtmServers, Unix_socket_directories);
+		ArbiterConfig(Arbiters, Unix_socket_directories);
 		RegisterBackgroundWorker(&DtmWorker);
 	}
 	else
-		ArbiterConfig(DtmServers, NULL);
+		ArbiterConfig(Arbiters, NULL);
 
 	/*
 	 * Install hooks.
@@ -936,7 +936,7 @@ dtm_begin_transaction(PG_FUNCTION_ARGS)
 		elog(ERROR, "dtm_begin/join_transaction should be called only once for global transaction");
 	if (dtm == NULL)
 		elog(ERROR, "DTM is not properly initialized, please check that pg_dtm plugin was added to shared_preload_libraries list in postgresql.conf");
-	DtmNextXid = ArbiterStartTransaction(&DtmSnapshot, &dtm->minXid);
+	DtmNextXid = ArbiterStartTransaction(&DtmSnapshot, &dtm->minXid, 0);
 	if (!TransactionIdIsValid(DtmNextXid))
 		elog(ERROR, "Arbiter was not able to assign XID");
 	XTM_INFO("%d: Start global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
@@ -976,7 +976,7 @@ void DtmBackgroundWorker(Datum arg)
 
 	ShubInitParams(&params);
 
-	ShubParamsSetHosts(&params, DtmServersCopy);
+	ShubParamsSetHosts(&params, ArbitersCopy);
 	params.file = unix_sock_path;
 	params.buffer_size = DtmBufferSize;
 

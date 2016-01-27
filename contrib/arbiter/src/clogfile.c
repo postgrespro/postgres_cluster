@@ -22,11 +22,12 @@ static char *clogfile_get_path(char *datadir, int fileid) {
 // Open a clog file with the gived id. Create before opening if 'create' is
 // true. Return 'true' on success, 'false' otherwise.
 bool clogfile_open_by_id(clogfile_t *clogfile, char *datadir, int fileid, bool create) {
+	int fd;
+
 	clogfile->path = clogfile_get_path(datadir, fileid);
 	clogfile->min = COMMITS_PER_FILE * fileid;
 	clogfile->max = clogfile->min + COMMITS_PER_FILE - 1;
 
-	int fd;
 	if (create) {
 		fd = open(clogfile->path, O_RDWR | O_CREAT | O_EXCL, 0660);
 		if (fd == -1) {

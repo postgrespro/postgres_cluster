@@ -27,10 +27,11 @@ L2List* free_transactions;
 
 Transaction* transaction_hash[MAX_TRANSACTIONS];
 
-// We reserve the local xids if they fit between (prev, next) range, and
-// reserve something in (next, x) range otherwise, moving 'next' after 'x'.
+/*
+ * We reserve the local xids if they fit between (prev, next) range, and
+ * reserve something in (next, x) range otherwise, moving 'next' after 'x'.
+ */
 xid_t prev_gxid, next_gxid;
-
 xid_t global_xmin = INVALID_XID;
 
 static Transaction *find_transaction(xid_t xid) {    
@@ -43,10 +44,12 @@ typedef struct client_userdata_t {
 	int id;
 	int snapshots_sent;
 
-	// FIXME: use some meaningful words for these. E.g. "expectee" instead
-	// of "xwait".
-	Transaction *xpart; // the transaction this client is participating in
-	Transaction *xwait; // the transaction this client is waiting for
+	/*
+	 * FIXME: use some meaningful words for these. E.g. "expectee" instead
+	 * of "xwait".
+	 */
+	Transaction *xpart; /* the transaction this client is participating in */
+	Transaction *xwait; /* the transaction this client is waiting for */
 } client_userdata_t;
 
 clog_t clg;
@@ -88,7 +91,7 @@ inline static void free_transaction(Transaction* t) {
 static void notify_listeners(Transaction *t, int status) {
 	void *listener;
 	switch (status) {
-		// notify 'status' listeners about the transaction status
+		/* notify 'status' listeners about the transaction status */
 		case BLANK:
 			while ((listener = transaction_pop_listener(t, 's'))) {
 				debug("[%d] notifying the client about xid=%u (unknown)\n", CLIENT_ID(listener), t->xid);
@@ -231,25 +234,19 @@ static void gen_snapshot(Snapshot *s) {
     int n = 0;
 	s->times_sent = 0;
 	for (t = (Transaction*)active_transactions.prev; t != (Transaction*)&active_transactions; t = (Transaction*)t->elem.prev) {
-        /*
-		if (t->xid < s->xmin) {
-			s->xmin = t->xid;
-		}
-		if (t->xid >= s->xmax) { 
-			s->xmax = t->xid + 1;
-		}
-        */
 		s->active[n++] = t->xid;
 	}
-    s->nactive = n;
+	while (n > 1 && s->active[n-2]+1 == s->active[n-1]) { 
+		n -= 1;
+	}
 	if (n > 0) {
         s->xmin = s->active[0];
-        s->xmax = s->active[n-1];
+        s->xmax = s->active[--n];
 		assert(s->xmin <= s->xmax);
-		// snapshot_sort(s);
 	} else {
 		s->xmin = s->xmax = 0;
-	}
+	} 
+	s->nactive = n;
 }
 
 static void onhello(client_t client, int argc, xid_t *argv) {
@@ -263,7 +260,7 @@ static void onhello(client_t client, int argc, xid_t *argv) {
 	}
 }
 
-// the greatest gxid we can provide on BEGIN or RESERVE
+/* the greatest gxid we can provide on BEGIN or RESERVE */
 static xid_t last_xid_in_term() {
 	return raft.term * XIDS_PER_TERM - 1;
 }
@@ -277,7 +274,7 @@ static int xid2term(xid_t xid) {
 	return term;
 }
 
-// when to start worrying about starting a new term
+/* when to start worrying about starting a new term */
 static xid_t get_threshold_xid() {
 	return last_xid_in_term() - NEW_TERM_THRESHOLD;
 }
@@ -291,34 +288,38 @@ static bool xid_is_disturbing(xid_t xid) {
 }
 
 static void set_next_gxid(xid_t value) {
-        assert(next_gxid < value); // The value should only grow.
+        assert(next_gxid < value); /* the value should only grow */
 
 	if (use_raft && raft.role == ROLE_LEADER) {
 		assert(xid_is_safe(value));
 		if (xid_is_disturbing(value)) {
-			// Time to worry has come.
+			/* Time to worry has come. */
 			raft_ensure_term(&raft, xid2term(value));
 		} else {
-			// It is either too early to worry,
-			// or we have already increased the term.
+			/*
+			 * It is either too early to worry,
+			 * or we have already increased the term.
+			 */
 		}
 	}
 
-	// Check that old position is 'dirty'. It is used when arbiter restarts,
-	// to find out a correct value for 'next_gxid'. If we do not remember
-	// 'next_gxid' it will lead to reuse of xids, which is bad.
+	/*
+	 * Check that old position is 'dirty'. It is used when arbiter restarts,
+	 * to find out a correct value for 'next_gxid'. If we do not remember
+	 * 'next_gxid' it will lead to reuse of xids, which is bad.
+	 */
 	assert((next_gxid == MIN_XID) || (clog_read(clg, next_gxid) == NEGATIVE));
-	assert(clog_read(clg, value) == BLANK); // New position should be clean.
-	if (!clog_write(clg, value, NEGATIVE)) { // Marked the new position as dirty.
+	assert(clog_read(clg, value) == BLANK); /* New position should be clean. */
+	if (!clog_write(clg, value, NEGATIVE)) { /* Marked the new position as dirty. */
 		shout("could not mark xid = %u dirty\n", value);
-		assert(false); // should not happen
+		assert(false); /* should not happen */
 	}
-	if (!clog_write(clg, next_gxid, BLANK)) { // Cleaned the old position.
+	if (!clog_write(clg, next_gxid, BLANK)) { /* Cleaned the old position. */
 		shout("could not clean clean xid = %u from dirty state\n", next_gxid);
-		assert(false); // should not happen
+		assert(false); /* should not happen */
 	}
 
-        next_gxid = value;
+	next_gxid = value;
 }
 
 static bool use_xid(xid_t xid) {
@@ -387,7 +388,7 @@ static xid_t get_global_xmin() {
 static void onbegin(client_t client, int argc, xid_t *argv) {
 	Transaction *t;
 	CHECK(
-		argc == 1,
+		(argc == 1) || (argc == 2),
 		client,
 		"BEGIN: wrong number of arguments"
 	);
@@ -415,7 +416,14 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 	);
 	prev_gxid = t->xid;
 	t->snapshots_count = 0;
-	t->size = 1;
+
+	if (argc == 2) {
+		t->size = argv[1];
+		t->fixed_size = true;
+	} else {
+		t->size = 1; /* count the beginner as a participant */
+		t->fixed_size = false;
+	}
 
 	t->collision = transaction_hash[t->xid % MAX_TRANSACTIONS];
 	transaction_hash[t->xid % MAX_TRANSACTIONS] = t;
@@ -435,7 +443,7 @@ static void onbegin(client_t client, int argc, xid_t *argv) {
 	}
 
 	Snapshot *snap = transaction_next_snapshot(t);
-	gen_snapshot(snap); // FIXME: increase 'times_sent' here? see also 4765234987
+	gen_snapshot(snap); /* FIXME: increase 'times_sent' here? see also 4765234987 */
 	t->xmin = snap->xmin;
 	if (global_xmin == INVALID_XID) { 
 		global_xmin = snap->xmin;
@@ -467,9 +475,11 @@ static bool queue_for_transaction_finish(client_t client, xid_t xid, char cmd) {
 		return false;
 	}
 
-	// TODO: Implement deadlock detection here. We have
-	// CLIENT_XID(client) and 'xid', i.e. we are able to tell which
-	// transaction waits which transaction.
+	/*
+	 * TODO: Implement deadlock detection here. We have
+	 * CLIENT_XID(client) and 'xid', i.e. we are able to tell which
+	 * transaction waits which transaction.
+	 */
 
 	CLIENT_XWAIT(client) = t;
 	transaction_push_listener(t, cmd, client);
@@ -479,7 +489,7 @@ static bool queue_for_transaction_finish(client_t client, xid_t xid, char cmd) {
 static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 	assert((vote == POSITIVE) || (vote == NEGATIVE));
 
-	// Check the arguments
+	/* Check the arguments */
 	xid_t xid = argv[1];
 	bool wait = argv[2];
 
@@ -504,11 +514,11 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 	} else if (vote == NEGATIVE) {
 		t->votes_against += 1;
 	} else {
-		assert(false); // should not happen
+		assert(false); /* should not happen */
 	}
 	assert(t->votes_for + t->votes_against <= t->size);
 
-	CLIENT_XPART(client) = NULL; // not participating any more
+	CLIENT_XPART(client) = NULL; /* not participating any more */
 
 	int s = transaction_status(t);
 	switch (s) {
@@ -543,11 +553,13 @@ static void onvote(client_t client, int argc, xid_t *argv, int vote) {
 			return;
 	}
 
-	assert(false); // a case missed in the switch?
+	assert(false); /* a case missed in the switch? */
 	client_message_shortcut(client, RES_FAILED);
 }
 
 static void onsnapshot(client_t client, int argc, xid_t *argv) {
+	Snapshot snapshot_now;
+
 	CHECK(
 		argc == 2,
 		client,
@@ -555,38 +567,40 @@ static void onsnapshot(client_t client, int argc, xid_t *argv) {
 	);
 
 	xid_t xid = argv[1];
-
+	Snapshot *snap;
 	Transaction *t = find_transaction(xid);
 	if (t == NULL) {
 		shout(
-			"[%d] SNAPSHOT: xid=%u not found\n",
+			"[%d] SNAPSHOT: xid=%u not found: use current snapshot\n",
 			CLIENT_ID(client), xid
 		);
-		client_message_shortcut(client, RES_FAILED);
-		return;
+		gen_snapshot(&snapshot_now);
+		snap = &snapshot_now;
+	} else {
+		if (CLIENT_XPART(client) == NULL) {
+			CLIENT_SNAPSENT(client) = 0;
+			CLIENT_XPART(client) = t;
+			if (!t->fixed_size) {
+				t->size += 1;
+			}
+		}
+
+		CHECK(
+			CLIENT_XPART(client) && (CLIENT_XPART(client)->xid == xid),
+			client,
+			"SNAPSHOT: getting snapshot for a transaction not participated in"
+		);
+
+		assert(CLIENT_SNAPSENT(client) <= t->snapshots_count); /* who sent an inexistent snapshot?! */
+
+		if (CLIENT_SNAPSENT(client) == t->snapshots_count) {
+			/* a fresh snapshot is needed */
+			gen_snapshot(transaction_next_snapshot(t));
+		}
+
+		snap = transaction_snapshot(t, CLIENT_SNAPSENT(client)++);
+		snap->times_sent += 1; /* FIXME: does times_sent get used anywhere? see also 4765234987 */
 	}
-
-	if (CLIENT_XPART(client) == NULL) {
-		CLIENT_SNAPSENT(client) = 0;
-		CLIENT_XPART(client) = t;
-		t->size += 1;
-	}
-
-	CHECK(
-		CLIENT_XPART(client) && (CLIENT_XPART(client)->xid == xid),
-		client,
-		"SNAPSHOT: getting snapshot for a transaction not participated in"
-	);
-
-	assert(CLIENT_SNAPSENT(client) <= t->snapshots_count); // who sent an inexistent snapshot?!
-
-	if (CLIENT_SNAPSENT(client) == t->snapshots_count) {
-		// a fresh snapshot is needed
-		gen_snapshot(transaction_next_snapshot(t));
-	}
-
-	Snapshot *snap = transaction_snapshot(t, CLIENT_SNAPSENT(client)++);
-	snap->times_sent += 1; // FIXME: does times_sent get used anywhere? see also 4765234987
 
 	xid_t ok = RES_OK;
 	client_message_start(client); {
@@ -637,7 +651,7 @@ static void onstatus(client_t client, int argc, xid_t *argv) {
 				return;
 			}
 		default:
-			assert(false); // should not happen
+			assert(false); /* should not happen */
 			client_message_shortcut(client, RES_FAILED);
 			return;
 	}
@@ -739,8 +753,10 @@ static void usage(char *prog) {
 	);
 }
 
-// Reads a pid from the file at 'pidpath'.
-// Returns the pid, or 0 in case of error.
+/*
+ * Reads a pid from the file at 'pidpath'.
+ * Returns the pid, or 0 in case of error.
+ */
 int read_pid(char *pidpath) {
 	FILE *f = fopen(pidpath, "r");
 	if (f == NULL) {
@@ -760,7 +776,9 @@ int read_pid(char *pidpath) {
 	return pid;
 }
 
-// Returns the pid, or 0 in case of error.
+/*
+ * Returns the pid, or 0 in case of error.
+ */
 int write_pid(char *pidpath, int pid) {
 	FILE *f = fopen(pidpath, "w");
 	if (f == NULL) {
@@ -779,8 +797,10 @@ int write_pid(char *pidpath, int pid) {
 	return pid;
 }
 
-// If there is a pidfile in 'datadir',
-// sends TERM signal to the corresponding pid.
+/*
+ * If there is a pidfile in 'datadir',
+ * sends TERM signal to the corresponding pid.
+ */
 void kill_the_elder(char *datadir) {
 	char *pidpath = join_path(datadir, "arbiter.pid");
 	int pid = read_pid(pidpath);
@@ -882,11 +902,11 @@ bool configure(int argc, char **argv) {
 bool redirect_output() {
 	if (logfilename) {
 		if (!freopen(logfilename, "a", stdout)) {
-			// nowhere to report this failure
+			/* nowhere to report this failure */
 			return false;
 		}
 		if (!freopen(logfilename, "a", stderr)) {
-			// nowhere to report this failure
+			/* nowhere to report this failure */
 			return false;
 		}
 	}
@@ -960,10 +980,10 @@ int main(int argc, char **argv) {
 			raft_tick(&raft, ms);
 		}
 
-		// The client interaction is done in server_tick.
+		/* The client interaction is done in server_tick. */
 		if (server_tick(server, HEARTBEAT_TIMEOUT_MS)) {
 			m = raft_recv_message(&raft);
-			assert(m); // m should not be NULL, because the message should be ready to recv
+			assert(m); /* m should not be NULL, because the message should be ready to recv */
 		}
 
 		if (use_raft) {
@@ -978,12 +998,14 @@ int main(int argc, char **argv) {
 
 			server_set_enabled(server, raft.role == ROLE_LEADER);
 
-			// Update the gxid limits based on current term and leadership.
+			/* Update the gxid limits based on current term and leadership. */
 			if (old_term < raft.term) {
 				if (raft.role == ROLE_FOLLOWER) {
-					// If we become a leader, we will use
-					// the range of xids after the current
-					// last_gxid.
+					/*
+					 * If we become a leader, we will use
+					 * the range of xids after the current
+					 * last_gxid.
+					 */
 					prev_gxid = last_xid_in_term();
 					set_next_gxid(prev_gxid + 1);
 					shout("updated range to %u-%u\n", prev_gxid, next_gxid);

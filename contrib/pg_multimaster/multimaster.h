@@ -20,8 +20,6 @@ typedef struct {
 
 typedef char const* GlobalTransactionId;
 
-/* Initialize DTM extension */
-void  DtmInitialize(void);
 /* Invoked at start of any local or global transaction */
 void  DtmLocalBegin(DtmCurrentTrans* x);
 /* Extend local transaction to global by assigning upper bound CSN which is returned to coordinator */
