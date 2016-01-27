@@ -119,7 +119,7 @@ func postgres(bin string, datadir string, arbiters []string, port int, nodeid in
 		"-p", strconv.Itoa(port),
 		"-c", "dtm.buffer_size=65536",
 //		"-c", "dtm.buffer_size=0",
-		"-c", "dtm.servers=" + strings.Join(arbiters, ","),
+		"-c", "dtm.arbiters=" + strings.Join(arbiters, ","),
 		"-c", "autovacuum=off",
 		"-c", "fsync=off",
 		"-c", "synchronous_commit=on",
