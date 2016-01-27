@@ -150,6 +150,7 @@ static void close_socket(Shub* shub, int fd)
 #else
     FD_CLR(fd, &shub->inset);
 #endif
+    close(fd);
 }
 
 int ShubReadSocketEx(int sd, void* buf, int min_size, int max_size)
@@ -252,6 +253,7 @@ static void reconnect(Shub* shub)
                 return;
             }
         }
+        close(shub->output);
     }
 }
 
