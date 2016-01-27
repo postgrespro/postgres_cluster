@@ -1,7 +1,7 @@
 top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 
-override CFLAGS += -fPIC
+override CFLAGS += -fPIC -O0
 override CPPFLAGS += -I. -Iinclude -Iapi -D_LARGEFILE64_SOURCE
 
 AR = ar
