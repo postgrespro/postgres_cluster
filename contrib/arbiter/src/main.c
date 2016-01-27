@@ -807,7 +807,8 @@ void kill_the_elder(char *datadir) {
 	free(pidpath);
 
 	if (pid > 1) {
-		if (kill(pid, SIGTERM)) {
+		int rc = kill(pid, SIGTERM);
+		if (rc) {
 			switch(errno) {
 				case EPERM:
 					shout("was not allowed to kill pid=%d\n", pid);
@@ -816,11 +817,12 @@ void kill_the_elder(char *datadir) {
 					shout("pid=%d not found for killing\n", pid);
 					break;
 			}
+		} else {
+			debug("SIGTERM sent to pid=%d\n", pid);
+			debug("waiting for pid=%d to die\n", pid);
+			waitpid(pid, NULL, 0);
+			debug("pid=%d died\n", pid);
 		}
-		debug("SIGTERM sent to pid=%d\n", pid);
-		debug("waiting for pid=%d to die\n", pid);
-		waitpid(pid, NULL, 0);
-		debug("pid=%d died\n", pid);
 	} else {
 		debug("no elder to kill\n");
 	}
