@@ -50,9 +50,9 @@ The commands:
 		[RES_OK, min, max] if reserved a range [min, max]
 		[RES_FAILED] on failure
 
-'b': begin(size)
-	Starts a global transaction and assign a 'xid' to it. 'size' is used
-	for vote results calculation. The arbiter also creates and returns the
+'b': begin(), begin(size)
+	Starts a global transaction and assign a 'xid' to it. Optional 'size' is
+	used for vote results calculation. The arbiter also creates and returns the
 	snapshot.
 
 	The arbiter replies with:

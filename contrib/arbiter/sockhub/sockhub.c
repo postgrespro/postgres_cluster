@@ -19,6 +19,31 @@
 
 #include "sockhub.h"
 
+#define SOCKHUB_BUFFER_SIZE (1024*1024)
+#define ERR_BUF_SIZE 1024
+
+void ShubAddSocket(Shub* shub, int fd);
+
+inline void ShubAddSocket(Shub* shub, int fd)
+{
+#ifdef USE_EPOLL
+    struct epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.fd = fd;        
+    if (epoll_ctl(shub->epollfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
+        char buf[ERR_BUF_SIZE];
+        sprintf(buf, "Failed to add socket %d to epoll set", fd);
+        shub->params->error_handler(buf, SHUB_FATAL_ERROR);
+    } 
+#else
+    FD_SET(fd, &shub->inset);    
+    if (fd > shub->max_fd) {
+        shub->max_fd = fd;
+    }
+#endif          
+}     
+
+
 static void default_error_handler(char const* msg, ShubErrorSeverity severity)
 {
     perror(msg);
@@ -116,8 +141,15 @@ static int resolve_host_by_name(const char *hostname, unsigned* addrs, unsigned*
 
 static void close_socket(Shub* shub, int fd)
 {
-    close(fd);
+#ifdef USE_EPOLL
+    if (epoll_ctl(shub->epollfd, EPOLL_CTL_DEL, fd, NULL) < 0) {
+        char buf[ERR_BUF_SIZE];
+        sprintf(buf, "Failed to remove socket %d from epoll set", fd);
+        shub->params->error_handler(buf, SHUB_RECOVERABLE_ERROR);
+    }           
+#else
     FD_CLR(fd, &shub->inset);
+#endif
 }
 
 int ShubReadSocketEx(int sd, void* buf, int min_size, int max_size)
@@ -211,7 +243,12 @@ static void reconnect(Shub* shub)
             } else {
                 int optval = 1;
                 setsockopt(shub->output, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
-                FD_SET(shub->output, &shub->inset);
+				optval = SOCKHUB_BUFFER_SIZE;
+				setsockopt(shub->output, SOL_SOCKET, SO_SNDBUF, (const char*) &optval, sizeof(int));
+				optval = SOCKHUB_BUFFER_SIZE;
+				setsockopt(shub->output, SOL_SOCKET, SO_RCVBUF, (const char*) &optval, sizeof(int));
+
+                ShubAddSocket(shub, shub->output);
                 return;
             }
         }
@@ -238,6 +275,7 @@ static void notify_disconnect(Shub* shub, int chan)
 
 static void recovery(Shub* shub)
 {
+#ifndef USE_EPOLL
     int i, max_fd;
 
     for (i = 0, max_fd = shub->max_fd; i <= max_fd; i++) {
@@ -254,6 +292,7 @@ static void recovery(Shub* shub)
             }
         }
     }
+#endif
 }
 
 void ShubInitialize(Shub* shub, ShubParams* params)
@@ -276,11 +315,17 @@ void ShubInitialize(Shub* shub, ShubParams* params)
     if (listen(shub->input, params->queue_size) < 0) {
         shub->params->error_handler("Failed to listen local socket", SHUB_FATAL_ERROR);
     }
-    FD_ZERO(&shub->inset);
-    FD_SET(shub->input, &shub->inset);
-
     shub->output = -1;
-    shub->max_fd = shub->input;
+#ifdef USE_EPOLL
+    shub->epollfd = epoll_create(MAX_EVENTS);
+    if (shub->epollfd < 0) { 
+        shub->params->error_handler("Failed to create epoll", SHUB_FATAL_ERROR);
+    }   
+#else
+    FD_ZERO(&shub->inset);
+    shub->max_fd = 0;
+#endif
+    ShubAddSocket(shub, shub->input);
     reconnect(shub);
 
     shub->in_buffer = malloc(params->buffer_size);
@@ -301,43 +346,61 @@ static void die(int sig)
 void ShubLoop(Shub* shub)
 {
     int buffer_size = shub->params->buffer_size;
+    sigset_t sset;
     signal(SIGINT, die);
     signal(SIGQUIT, die);
     signal(SIGTERM, die);
-    // signal(SIGHUP, die);
-    sigset_t sset;
+    /* signal(SIGHUP, die); */
     sigfillset(&sset);
     sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
-    while (!stop) {
+    while (!stop) { 
+        int i, rc;
+#ifdef USE_EPOLL
+        struct epoll_event events[MAX_EVENTS];
+        rc = epoll_wait(shub->epollfd, events, MAX_EVENTS, shub->in_buffer_used == 0 ? -1 : shub->params->delay);
+#else
         fd_set events;
         struct timeval tm;
-        int i, rc;
         int max_fd = shub->max_fd;
 
         tm.tv_sec = shub->params->delay/1000;
         tm.tv_usec = shub->params->delay % 1000 * 1000;
-
         events = shub->inset;
         rc = select(max_fd+1, &events, NULL, NULL, shub->in_buffer_used == 0 ? NULL : &tm);
-        if (rc < 0) {
-            if (errno != EINTR) {
+#endif
+        if (rc < 0) { 
+            if (errno != EINTR) {                
                 shub->params->error_handler("Select failed", SHUB_RECOVERABLE_ERROR);
                 recovery(shub);
             }
         } else {
             if (rc > 0) {
+#ifdef USE_EPOLL
+                int j;
+                int n = rc;
+                for (j = 0; j < n; j++) {
+                    i = events[j].data.fd;
+                    if (events[j].events & EPOLLERR) {
+                        if (i == shub->input) { 
+                            shub->params->error_handler("Input socket error", SHUB_FATAL_ERROR);                            
+                        } else if (i == shub->output) { 
+                            reconnect(shub);
+                        } else { 
+                            notify_disconnect(shub, i);
+                            close_socket(shub, i);
+                        }
+                    } else if (events[j].events & EPOLLIN) { 
+#else
                 for (i = 0; i <= max_fd; i++) {
                     if (FD_ISSET(i, &events)) {
-                        if (i == shub->input) { /* accept incomming connection */
+#endif
+                        if (i == shub->input) { /* accept incomming connection */ 
                             int s = accept(i, NULL, NULL);
                             if (s < 0) {
                                 shub->params->error_handler("Failed to accept socket", SHUB_RECOVERABLE_ERROR);
                             } else {
-                                if (s > shub->max_fd) {
-                                    shub->max_fd = s;
-                                }
-                                FD_SET(s, &shub->inset);
+                                ShubAddSocket(shub, s);
                             }
                         } else if (i == shub->output) { /* receive response from server */
                             /* try to read as much as possible */
@@ -424,8 +487,11 @@ void ShubLoop(Shub* shub)
                                 assert(sizeof(ShubMessageHdr) > available);
                                 /* read as much as possible */
                                 rc = ShubReadSocketEx(chan, &shub->in_buffer[pos + available], sizeof(ShubMessageHdr) - available, buffer_size - pos - available);
-                                if (rc < sizeof(ShubMessageHdr) - available) {
-                                    shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
+                                if (rc < sizeof(ShubMessageHdr) - available) { 
+                                    char buf[ERR_BUF_SIZE];
+                                    sprintf(buf, "Failed to read local socket chan=%d, rc=%d, min requested=%ld, max requested=%d, errno=%d", chan, rc, sizeof(ShubMessageHdr) - available, buffer_size - pos - available, errno);
+                                    shub->params->error_handler(buf, SHUB_RECOVERABLE_ERROR);
+                                    //shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
                                     close_socket(shub, i);
                                     shub->in_buffer_used = pos;
                                     notify_disconnect(shub, i);
@@ -460,8 +526,11 @@ void ShubLoop(Shub* shub)
                                     /* fetch rest of message body */
                                     do {
                                         unsigned int n = processed + size > buffer_size ? buffer_size - processed : size;
-                                        if (chan >= 0 && !ShubReadSocket(chan, shub->in_buffer + processed, n)) {
-                                            shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
+                                        if (chan >= 0 && !ShubReadSocket(chan, shub->in_buffer + processed, n)) { 
+                                            char buf[ERR_BUF_SIZE];
+                                            sprintf(buf, "Failed to read local socket rc=%d, len=%d, errno=%d", rc, n, errno);
+                                            shub->params->error_handler(buf, SHUB_RECOVERABLE_ERROR);
+                                            //shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
                                             close_socket(shub, chan);
                                             if (hdr != NULL) { /* if message header is not yet sent to the server... */
                                                 /* ... then skip this message */

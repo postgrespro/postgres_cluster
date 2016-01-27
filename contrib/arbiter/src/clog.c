@@ -35,6 +35,8 @@ static clogfile_chain_t *new_clogfile_chain(clogfile_t* file) {
 }
 
 static int get_latest_fileid(char *datadir) {
+	int latest;
+	struct dirent *e;
 	DIR *d = opendir(datadir);
 
 	if (!d) {
@@ -42,14 +44,14 @@ static int get_latest_fileid(char *datadir) {
 		return -1;
 	}
 
-	int latest = 0;
-	struct dirent *e;
+	latest = 0;
 	while ((e = readdir(d)) != NULL) {
-		int len = strlen(e->d_name);
-		if (len != 20) continue;
 		int fileid;
 		char ext[4];
-		int r = sscanf(e->d_name, "%016x.%3s", &fileid, ext);
+		int r;
+		int len = strlen(e->d_name);
+		if (len != 20) continue;
+		r = sscanf(e->d_name, "%016x.%3s", &fileid, ext);
 		if (r != 2) continue;
 		if (strcmp(ext, "dat")) continue;
 		if (fileid > latest) latest = fileid;
@@ -61,16 +63,19 @@ static int get_latest_fileid(char *datadir) {
 
 static clogfile_chain_t *load_clogfile_chain(char *datadir) {
 	clogfile_t file;
-	int fileid = get_latest_fileid(datadir);
+	int fileid;
+	clogfile_chain_t *head, *tail;
+
+	fileid = get_latest_fileid(datadir);
 	if (!clogfile_open_by_id(&file, datadir, fileid, false)) {
 		// This may be the first launch, so try to create the file.
 		if (!clogfile_open_by_id(&file, datadir, fileid, true)) {
 			return NULL;
 		}
 	}
-	clogfile_chain_t *head = new_clogfile_chain(&file);
+	head = new_clogfile_chain(&file);
 
-	clogfile_chain_t *tail = head;
+	tail = head;
 	while (fileid-- > 0) {
 		if (!clogfile_open_by_id(&file, datadir, fileid, false)) {
 			break;
@@ -133,8 +138,10 @@ int clog_read(clog_t clog, xid_t xid) {
 bool clog_write(clog_t clog, xid_t xid, int status) {
 	clogfile_t *file = clog_xid_to_file(clog, xid);
 	if (!file) {
-		debug("xid %u out of range, creating the file\n", xid);
 		clogfile_t newfile;
+		clogfile_chain_t *lastfile;
+
+		debug("xid %u out of range, creating the file\n", xid);
 		if (!clogfile_open_by_id(&newfile, clog->datadir, XID_TO_FILEID(xid), true)) {
 			shout(
 				"failed to create new clogfile "
@@ -143,7 +150,7 @@ bool clog_write(clog_t clog, xid_t xid, int status) {
 			return false;
 		}
 
-		clogfile_chain_t *lastfile = new_clogfile_chain(&newfile);
+		lastfile = new_clogfile_chain(&newfile);
 		lastfile->prev = clog->lastfile;
 		clog->lastfile = lastfile;
 	}
@@ -152,8 +159,7 @@ bool clog_write(clog_t clog, xid_t xid, int status) {
 		shout("the file is absent despite our efforts\n");
 		return false;
 	}
-	bool ok = clogfile_set_status(file, xid, status);
-	return ok;
+	return clogfile_set_status(file, xid, status);
 }
 
 // Forget about the commits before the given one ('until'), and free the

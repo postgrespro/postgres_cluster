@@ -16,11 +16,11 @@
 #define STATELEN 10
 int state[STATELEN] = {0};
 
-void raft_update_apply(int action, int argument) {
+static void raft_update_apply(int action, int argument) {
 	state[argument % STATELEN] = action;
 }
 
-void die(int signum) {
+static void die(int signum) {
 	shout("terminated\n");
 	exit(signum);
 }
@@ -38,8 +38,8 @@ raft_t raft;
 char *rolenames[] = {"F", "C", "L"};
 
 static void show_status() {
-	shout("pid=%d [%d @ %d] %s(%d):%4dms:", getpid(), raft.me, raft.term, rolenames[raft.role], raft.log.acked, raft.timer);
 	int i;
+	shout("pid=%d [%d @ %d] %s(%d):%4dms:", getpid(), raft.me, raft.term, rolenames[raft.role], raft.log.acked, raft.timer);
 	for (i = 0; i < STATELEN; i++) {
 		shout(" %d", state[i]);
 	}
@@ -47,21 +47,28 @@ static void show_status() {
 }
 
 static void main_loop() {
+	int s;
+	int arg;
+
 	mstimer_t t;
 	mstimer_reset(&t);
 
 	//create a UDP socket
-	int s = raft_create_udp_socket(&raft);
+	s = raft_create_udp_socket(&raft);
 	if (s == -1) {
 		die(EXIT_FAILURE);
 	}
 
-	int arg = 0;
+	arg = 0;
 	while (true) {
-		int ms = mstimer_reset(&t);
+		int ms;
+		raft_msg_t *m;
+		int applied;
+
+		ms = mstimer_reset(&t);
 		raft_tick(&raft, ms);
-		raft_msg_t *m = raft_recv_message(&raft);
-		int applied = raft_apply(&raft, raft_update_apply);
+		m = raft_recv_message(&raft);
+		applied = raft_apply(&raft, raft_update_apply);
 		if (applied) {
 			shout("applied %d updates\n", applied);
 		}
@@ -89,10 +96,10 @@ int main(int argc, char **argv) {
 	char *host;
 	char *portstr;
 	int port;
+	int opt;
 
 	raft_init(&raft);
 
-	int opt;
 	while ((opt = getopt(argc, argv, "hi:r:l:")) != -1) {
 		switch (opt) {
 			case 'i':

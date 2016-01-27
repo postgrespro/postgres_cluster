@@ -47,9 +47,9 @@
 #include "replication/slot.h"
 #include "port/atomics.h"
 #include "tcop/utility.h"
-#include "sockhub/sockhub.h"
 
-#include "libdtm.h"
+#include "arbiter.h"
+#include "sockhub.h"
 #include "multimaster.h"
 #include "bgwpool.h"
 
@@ -147,8 +147,8 @@ static int   MMNodes;
 static int   MMQueueSize;
 static int   MMWorkers;
 
-static char* DtmHost;
-static int   DtmPort;
+static char *Arbiters;
+static char *ArbitersCopy;
 static int   DtmBufferSize;
 static bool  DtmVoted;
 
@@ -390,7 +390,7 @@ static TransactionId DtmGetNextXid()
 		if (dtm->nReservedXids == 0)
 		{
             XTM_INFO("%d: reserve new XID range\n", getpid());
-			dtm->nReservedXids = DtmGlobalReserve(ShmemVariableCache->nextXid, DtmLocalXidReserve, &dtm->nextXid);
+			dtm->nReservedXids = ArbiterReserve(ShmemVariableCache->nextXid, DtmLocalXidReserve, &dtm->nextXid);
 			Assert(dtm->nReservedXids > 0);
 			Assert(TransactionIdFollowsOrEquals(dtm->nextXid, ShmemVariableCache->nextXid));
 
@@ -632,7 +632,7 @@ static Snapshot DtmGetSnapshot(Snapshot snapshot)
 	if (TransactionIdIsValid(DtmNextXid) && snapshot != &CatalogSnapshotData)
 	{
 		if (!DtmHasGlobalSnapshot && (snapshot != DtmLastSnapshot || DtmCurcid != GetCurrentCommandId(false))) {
-			DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
+			ArbiterGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
         }
 		DtmLastSnapshot = snapshot;
 		DtmMergeWithGlobalSnapshot(snapshot);
@@ -677,7 +677,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 			if (status == TRANSACTION_STATUS_ABORTED || !MMIsDistributedTrans)
 			{
 				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
-				DtmGlobalSetTransStatus(xid, TRANSACTION_STATUS_ABORTED, false);
+				ArbiterSetTransStatus(xid, TRANSACTION_STATUS_ABORTED, false);
 				XTM_INFO("Abort transaction %d\n", xid);
 				return;
 			}
@@ -689,7 +689,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 				LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 				hash_search(xid_in_doubt, &DtmNextXid, HASH_ENTER, NULL);
 				LWLockRelease(dtm->hashLock);
-                verdict = DtmGlobalSetTransStatus(xid, status, true);
+                verdict = ArbiterSetTransStatus(xid, status, true);
                 if (verdict != status) { 
                     XTM_INFO("Commit of transaction %d is rejected by arbiter: staus=%d\n", xid, verdict);
                     DtmNextXid = InvalidTransactionId;
@@ -711,7 +711,7 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 	else if (status != TRANSACTION_STATUS_ABORTED) 
 	{
 		XidStatus gs;
-		gs = DtmGlobalGetTransStatus(xid, false);
+		gs = ArbiterGetTransStatus(xid, false);
 		if (gs != TRANSACTION_STATUS_UNKNOWN) { 
             Assert(gs != TRANSACTION_STATUS_IN_PROGRESS);
 			status = gs;
@@ -816,7 +816,7 @@ DtmXactCallback(XactEvent event, void *arg)
 		if (TransactionIdIsValid(DtmNextXid))
 		{
             if (!DtmVoted) {
-                DtmGlobalSetTransStatus(DtmNextXid, TRANSACTION_STATUS_ABORTED, false);
+                ArbiterSetTransStatus(DtmNextXid, TRANSACTION_STATUS_ABORTED, false);
             }
 			if (event == XACT_EVENT_COMMIT)
 			{
@@ -838,7 +838,7 @@ DtmXactCallback(XactEvent event, void *arg)
 				 */
 				if (!TransactionIdIsValid(GetCurrentTransactionIdIfAny())) {
                     XTM_INFO("%d: abort transation on DTMD\n", getpid());
-					DtmGlobalSetTransStatus(DtmNextXid, TRANSACTION_STATUS_ABORTED, false);
+					ArbiterSetTransStatus(DtmNextXid, TRANSACTION_STATUS_ABORTED, false);
                 }
 			}
 #endif
@@ -932,31 +932,16 @@ _PG_init(void)
 	);
 
 	DefineCustomStringVariable(
-		"multimaster.arbiter_host",
-		"The host where DTM daemon resides",
+		"multimaster.arbiters",
+		"The comma separated host:port pairs where arbiters reside",
 		NULL,
-		&DtmHost,
-		"127.0.0.1",
+		&Arbiters,
+		"127.0.0.1:5431",
 		PGC_BACKEND, // context
 		0, // flags,
 		NULL, // GucStringCheckHook check_hook,
 		NULL, // GucStringAssignHook assign_hook,
 		NULL // GucShowHook show_hook
-	);
-
-	DefineCustomIntVariable(
-		"multimaster.arbiter_port",
-		"The port DTM daemon is listening",
-		NULL,
-		&DtmPort,
-		5431,
-		1,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
 	);
 
 	DefineCustomStringVariable(
@@ -986,7 +971,7 @@ _PG_init(void)
 		NULL,
 		NULL
 	);
-    
+
 	/*
 	 * Request additional shared resources.  (These are no-ops if we're not in
 	 * the postmaster process.)  We'll allocate or attach to the shared
@@ -1001,13 +986,14 @@ _PG_init(void)
     }
     BgwPoolStart(MMWorkers, MMPoolConstructor);
 
+	ArbitersCopy = strdup(Arbiters);
 	if (DtmBufferSize != 0)
 	{
-		DtmGlobalConfig(NULL, DtmPort, Unix_socket_directories);
+		ArbiterConfig(Arbiters, Unix_socket_directories);
 		RegisterBackgroundWorker(&DtmWorker);
 	}
 	else
-		DtmGlobalConfig(DtmHost, DtmPort, Unix_socket_directories);
+		ArbiterConfig(Arbiters, NULL);
 
 	/*
 	 * Install hooks.
@@ -1054,7 +1040,7 @@ void MMBeginTransaction(void)
 		elog(ERROR, "DTM is not properly initialized, please check that pg_dtm plugin was added to shared_preload_libraries list in postgresql.conf");
     Assert(!RecoveryInProgress());
     XTM_INFO("%d: Try to start global transaction\n", getpid());
-	DtmNextXid = DtmGlobalStartTransaction(&DtmSnapshot, &dtm->minXid, dtm->nNodes);
+	DtmNextXid = ArbiterStartTransaction(&DtmSnapshot, &dtm->minXid, dtm->nNodes);
 	if (!TransactionIdIsValid(DtmNextXid))
 		elog(ERROR, "Arbiter was not able to assign XID");
 	XTM_INFO("%d: Start global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
@@ -1074,7 +1060,7 @@ void MMJoinTransaction(TransactionId xid)
 		elog(ERROR, "Arbiter was not able to assign XID");
     DtmVoted = false;
 
-	DtmGlobalGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
+	ArbiterGetSnapshot(DtmNextXid, &DtmSnapshot, &dtm->minXid);
 	XTM_INFO("%d: Join global transaction %d, dtm->minXid=%d\n", getpid(), DtmNextXid, dtm->minXid);
 
 	DtmHasGlobalSnapshot = true;
@@ -1125,12 +1111,11 @@ void DtmBackgroundWorker(Datum arg)
 	ShubParams params;
 	char unix_sock_path[MAXPGPATH];
 
-	snprintf(unix_sock_path, sizeof(unix_sock_path), "%s/p%d", Unix_socket_directories, DtmPort);
+	snprintf(unix_sock_path, sizeof(unix_sock_path), "%s/sh.unix", Unix_socket_directories);
 
 	ShubInitParams(&params);
 
-	params.host = DtmHost;
-	params.port = DtmPort;
+	ShubParamsSetHosts(&params, ArbitersCopy);
 	params.file = unix_sock_path;
 	params.buffer_size = DtmBufferSize;
 
@@ -1193,7 +1178,7 @@ bool DtmDetectGlobalDeadLock(PGPROC* proc)
         XTM_INFO("%d: wait graph begin\n", getpid());
         EnumerateLocks(DtmSerializeLock, &buf);
         XTM_INFO("%d: wait graph end\n", getpid());
-        hasDeadlock = DtmGlobalDetectDeadLock(PostPortNumber, pgxact->xid, buf.data, buf.used);
+        hasDeadlock = ArbiterDetectDeadLock(PostPortNumber, pgxact->xid, buf.data, buf.used);
         ByteBufferFree(&buf);
         XTM_INFO("%d: deadlock %sdetected for transaction %u\n", getpid(), hasDeadlock ? "": "not ",  pgxact->xid);
         if (hasDeadlock) {  

@@ -23,41 +23,44 @@
 #include "sockhub.h"
 
 typedef struct buffer_t {
-	int ready; // number of bytes that are ready to be sent/processed
+	int ready; /* number of bytes that are ready to be sent/processed */
 	ShubMessageHdr *curmessage;
-	char *data; // dynamically allocated buffer
+	char *data; /* dynamically allocated buffer */
 } buffer_t;
 
 typedef struct stream_data_t *stream_t;
 
 typedef struct client_data_t {
-	stream_t stream; // NULL: client value is empty
+	stream_t stream; /* NULL: client value is empty */
 	void *userdata;
 	unsigned int chan;
 } client_data_t;
 
 typedef struct stream_data_t {
 	int fd;
-	bool good; // 'false': stop serving this stream and disconnect when possible
+	bool good; /* 'false': stop serving this stream and disconnect when possible */
 	buffer_t input;
 	buffer_t output;
 
-	// a map: 'chan' -> client_data_t
-	// 'chan' is expected to be < MAX_FDS which is pretty low
-	client_data_t *clients; // dynamically allocated
+	/* a map: 'chan' -> client_data_t */
+	/* 'chan' is expected to be < MAX_FDS which is pretty low */
+	client_data_t *clients; /* dynamically allocated */
+	struct stream_data_t* next;
 } stream_data_t;
 
 typedef struct server_data_t {
 	char *host;
 	int port;
 
-	int listener; // the listening socket
-	fd_set all; // all sockets including the listener
+	int listener; /* the listening socket */
+#ifdef USE_EPOLL
+	int epollfd;
+#else
+	fd_set all; /* all sockets including the listener */
 	int maxfd;
-
-	int streamsnum;
-	stream_t streams[MAX_STREAMS]; // pointers to streamdata
-	stream_data_t streamdata[MAX_STREAMS];
+#endif
+	stream_t used_chain;
+	stream_t free_chain;
 
 	onmessage_callback_t onmessage;
 	onconnect_callback_t onconnect;
@@ -65,22 +68,27 @@ typedef struct server_data_t {
 
 	bool enabled;
 
-	int raftsock; // the raft socket
+	stream_data_t raft_stream;
 } server_data_t;
 
-// Returns the created socket, or -1 if failed.
+/* Returns the created socket, or -1 if failed. */
 static int create_listening_socket(const char *host, int port) {
+	int optval;
+	struct sockaddr_in addr;
 	int s = socket(AF_INET, SOCK_STREAM, 0);
 	if (s == -1) {
 		shout("cannot create the listening socket: %s\n", strerror(errno));
 		return -1;
 	}
 
-	int optval = 1;
+	optval = 1;
 	setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
 	setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char const*)&optval, sizeof(optval));
+	optval = SOCKET_BUFFER_SIZE;
+	setsockopt(s, SOL_SOCKET, SO_SNDBUF, (const char*) &optval, sizeof(int));
+	optval = SOCKET_BUFFER_SIZE;
+	setsockopt(s, SOL_SOCKET, SO_RCVBUF, (const char*) &optval, sizeof(int));
 
-	struct sockaddr_in addr;
 	addr.sin_family = AF_INET;
 	if (inet_aton(host, &addr.sin_addr) == 0) {
 		shout("cannot convert the host string '%s' to a valid address\n", host);
@@ -116,58 +124,91 @@ server_t server_init(
 	server->onconnect = onconnect;
 	server->ondisconnect = ondisconnect;
 
-	server->streamsnum = 0;
-	int i;
-	for (i = 0; i < MAX_STREAMS; i++) {
-		server->streams[i] = server->streamdata + i;
+#ifdef USE_EPOLL
+    server->epollfd = epoll_create(MAX_EVENTS);
+    if (server->epollfd < 0) { 
+		free(server);
+		return NULL;
 	}
-
-	server->raftsock = -1;
+#else
 	FD_ZERO(&server->all);
 	server->maxfd = 0;
+#endif
+
+	server->raft_stream.fd = -1;
+	server->raft_stream.good = false;
+	server->raft_stream.input.ready = false;
+	server->raft_stream.input.data = NULL;
+	server->raft_stream.output.ready = false;
+	server->raft_stream.output.data = NULL;
+	server->raft_stream.output.data = NULL;
+	server->raft_stream.clients = NULL;
+	server->raft_stream.next = NULL;
 	server->enabled = false;
 
 	return server;
 }
 
-static void server_add_socket(server_t server, int sock) {
+/* Pass NULL instead of stream if the socket is not associated with any. */
+static bool server_add_socket(server_t server, int sock, stream_t stream) {
+#ifdef USE_EPOLL
+    struct epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.ptr = (void*)stream;        
+    if (epoll_ctl(server->epollfd, EPOLL_CTL_ADD, sock, &ev) < 0) {
+        return false;
+    } 
+#else
 	FD_SET(sock, &server->all);
 	if (sock > server->maxfd) {
 		server->maxfd = sock;
 	}
+#endif
+	return true;
 }
 
-static void server_remove_socket(server_t server, int sock) {
+static bool server_remove_socket(server_t server, int sock) {
+#ifdef USE_EPOLL
+	if (epoll_ctl(server->epollfd, EPOLL_CTL_DEL, sock, NULL) < 0) {
+		return false;
+	}
+#else
 	FD_CLR(sock, &server->all);
+#endif
+	return true;
 }
 
 void server_set_raft_socket(server_t server, int sock) {
-	server->raftsock = sock;
-	server_add_socket(server, sock);
+	server->raft_stream.fd = sock;
+	bool good = server_add_socket(server, sock, &server->raft_stream);
+	server->raft_stream.good = good;
 }
 
 bool server_start(server_t server) {
 	debug("starting the server\n");
-
+	server->free_chain = NULL;
+	server->used_chain = NULL;
+	
 	server->listener = create_listening_socket(server->host, server->port);
 	if (server->listener == -1) {
 		return false;
 	}
-	server_add_socket(server, server->listener);
 
-	return true;
+	return server_add_socket(server, server->listener, NULL);
 }
 
 static bool stream_flush(stream_t stream) {
+	char *cursor;
+	ShubMessageHdr *msg;
 	int tosend = stream->output.ready;
 	if (tosend == 0) {
-		// nothing to do
+		/* nothing to do */
 		return true;
 	}
 
-	char *cursor = stream->output.data;
+	cursor = stream->output.data;
 	while (tosend > 0) {
-		// repeat sending until we send everything
+		/* repeat sending until we send everything */
 		int sent = send(stream->fd, cursor, tosend, 0);
 		if (sent == -1) {
 			shout("failed to flush the stream\n");
@@ -180,9 +221,9 @@ static bool stream_flush(stream_t stream) {
 	}
 
 	stream->output.ready = 0;
-	ShubMessageHdr *msg = stream->output.curmessage;
+	msg = stream->output.curmessage;
 	if (msg) {
-		// move the unfinished message to the start of the buffer
+		/* move the unfinished message to the start of the buffer */
 		memmove(stream->output.data, msg, msg->size + sizeof(ShubMessageHdr));
 		stream->output.curmessage = (ShubMessageHdr*)stream->output.data;
 	}
@@ -191,11 +232,10 @@ static bool stream_flush(stream_t stream) {
 }
 
 static void server_flush(server_t server) {
-	//debug("flushing the streams\n");
-	int i;
-	for (i = 0; i < server->streamsnum; i++) {
-		stream_t stream = server->streams[i];
-		stream_flush(stream);
+	stream_t s;
+	debug("flushing the streams\n");
+	for (s = server->used_chain; s != NULL; s = s->next) { 
+		stream_flush(s);
 	}
 }
 
@@ -216,7 +256,7 @@ static void stream_init(stream_t stream, int fd) {
 
 	stream->clients = malloc(MAX_TRANSACTIONS * sizeof(client_data_t));
 	assert(stream->clients);
-	// mark all clients as empty
+	/* mark all clients as empty */
 	for (i = 0; i < MAX_TRANSACTIONS; i++) {
 		stream->clients[i].stream = NULL;
 	}
@@ -244,23 +284,17 @@ static void server_stream_destroy(server_t server, stream_t stream) {
 	free(stream->output.data);
 }
 
-static void server_streams_swap(server_t s, int a, int b) {
-	stream_t t = s->streams[a];
-	s->streams[a] = s->streams[b];
-	s->streams[b] = t;
-}
-
 static void server_close_bad_streams(server_t server) {
-	int i;
-	for (i = server->streamsnum - 1; i >= 0; i--) {
-		stream_t stream = server->streams[i];
-		if (!stream->good) {
-			server_stream_destroy(server, stream);
-			if (i != server->streamsnum - 1) {
-				// move the last one here
-				server_streams_swap(server, i, server->streamsnum - 1);
-			}
-			server->streamsnum--;
+	stream_t s, next, *spp;
+	for (spp = &server->used_chain; (s = *spp) != NULL; s = next) { 
+		next = s->next;
+		if (!s->good) {
+			server_stream_destroy(server, s);
+			*spp = next;
+			s->next = server->free_chain;
+			server->free_chain = s;
+		} else {
+			spp = &s->next;
 		}
 	}
 }
@@ -296,6 +330,7 @@ static bool stream_message_start(stream_t stream, unsigned int chan) {
 
 static bool stream_message_append(stream_t stream, size_t len, void *data) {
 	ShubMessageHdr *msg;
+	int newsize;
 
 	debug("appending %d\n", *(int*)data);
 
@@ -305,9 +340,9 @@ static bool stream_message_append(stream_t stream, size_t len, void *data) {
 		return false;
 	}
 
-	int newsize = stream->output.curmessage->size + sizeof(ShubMessageHdr) + len;
+	newsize = stream->output.curmessage->size + sizeof(ShubMessageHdr) + len;
 	if (newsize > BUFFER_SIZE) {
-		// the flushing will not help here
+		/* the flushing will not help here */
 		shout("the message cannot be bigger than the buffer size\n");
 		stream->good = false;
 		return false;
@@ -373,20 +408,27 @@ bool client_redirect(client_t client, unsigned addr, int port) {
 }
 
 static bool server_accept(server_t server) {
+	int fd;
+	stream_t s;
+
 	debug("a new connection is queued\n");
 
-	int fd = accept(server->listener, NULL, NULL);
+	fd = accept(server->listener, NULL, NULL);
 	if (fd == -1) {
 		shout("failed to accept a connection: %s\n", strerror(errno));
 		return false;
 	}
 	debug("a new connection accepted\n");
-
-	if (server->streamsnum >= MAX_STREAMS) {
-		shout("streams limit hit, disconnecting the accepted connection\n");
-		close(fd);
-		return false;
+	
+	s = server->free_chain;
+	if (s == NULL) { 
+		s = malloc(sizeof(stream_data_t));
+	} else { 
+		server->free_chain = s->next;
 	}
+	/* add new stream */
+	s->next = server->used_chain;
+	server->used_chain = s;
 
 	if (!server->enabled) {
 		shout("server disabled, disconnecting the accepted connection\n");
@@ -395,29 +437,24 @@ static bool server_accept(server_t server) {
 		return false;
 	}
 
-	// add new stream
-	stream_t s = server->streams[server->streamsnum++];
 	stream_init(s, fd);
 
-	FD_SET(fd, &server->all);
-	if (fd > server->maxfd) {
-		server->maxfd = fd;
-	}
-
-	return true;
+	return server_add_socket(server, fd, s);
 }
 
 static client_t stream_get_client(stream_t stream, unsigned int chan, bool *isnew) {
+	client_t client;
+
 	assert(chan < MAX_TRANSACTIONS);
-	client_t client = stream->clients + chan;
+	client = stream->clients + chan;
 	if (client->stream == NULL) {
-		// client is new
+		/* client is new */
 		client->stream = stream;
 		client->chan = chan;
 		*isnew = true;
 		client->userdata = NULL;
 	} else {
-		// collisions should not happen
+		/* collisions should not happen */
 		assert(client->chan == chan);
 		*isnew = false;
 	}
@@ -425,13 +462,18 @@ static client_t stream_get_client(stream_t stream, unsigned int chan, bool *isne
 }
 
 static bool server_stream_handle(server_t server, stream_t stream) {
+	char *cursor;
+	int avail;
+	int recved;
+	int toprocess;
+
 	debug("a stream ready to recv\n");
 
-	char *cursor = stream->input.data + stream->input.ready;
-	int avail = BUFFER_SIZE - stream->input.ready;
+	cursor = stream->input.data + stream->input.ready;
+	avail = BUFFER_SIZE - stream->input.ready;
 	assert(avail > 0);
 
-	int recved = recv(stream->fd, cursor, avail, 0);
+	recved = recv(stream->fd, cursor, avail, 0);
 	if (recved == -1) {
 		shout("failed to recv from a stream: %s\n", strerror(errno));
 		stream->good = false;
@@ -447,12 +489,12 @@ static bool server_stream_handle(server_t server, stream_t stream) {
 	stream->input.ready += recved;
 
 	cursor = stream->input.data;
-	int toprocess = stream->input.ready;
+	toprocess = stream->input.ready;
 	while (toprocess >= sizeof(ShubMessageHdr)) {
 		ShubMessageHdr *msg = (ShubMessageHdr*)cursor;
 		int header_and_data = sizeof(ShubMessageHdr) + msg->size;
 		if (header_and_data <= toprocess) {
-			// handle message
+			/* handle message */
 			bool isnew;
 			client_t client = stream_get_client(stream, msg->chan, &isnew);
 			if (isnew) {
@@ -496,14 +538,39 @@ static bool server_stream_handle(server_t server, stream_t stream) {
 }
 
 bool server_tick(server_t server, int timeout_ms) {
+
 	int i;
-	//debug("selecting\n");
+	int numready;
+	bool raft_ready = false;
+#ifdef USE_EPOLL
+	struct epoll_event events[MAX_EVENTS];
+	numready = epoll_wait(server->epollfd, events, MAX_EVENTS, timeout_ms);
+	if (numready < 0) {
+		shout("failed to epoll: %s\n", strerror(errno));
+		return false;
+	}
+	for (i = 0; i < numready; i++) { 
+		stream_t stream = (stream_t)events[i].data.ptr;
+
+		if (stream == NULL) { 
+			server_accept(server);
+		} else if (stream == &server->raft_stream) {
+			raft_ready = true;
+		} else {
+			if (events[i].events & EPOLLERR) {
+				stream->good = false;
+			} else if (events[i].events & EPOLLIN) {
+				server_stream_handle(server, stream);
+			}
+		}
+	}
+#else
 	fd_set readfds = server->all;
 	struct timeval timeout = ms2tv(timeout_ms);
-	int numready = select(server->maxfd + 1, &readfds, NULL, NULL, &timeout);
+	numready = select(server->maxfd + 1, &readfds, NULL, NULL, &timeout);
 	if (numready == -1) {
 		shout("failed to select: %s\n", strerror(errno));
-		return NULL;
+		return false;
 	}
 
 	if (FD_ISSET(server->listener, &readfds)) {
@@ -511,19 +578,19 @@ bool server_tick(server_t server, int timeout_ms) {
 		server_accept(server);
 	}
 
-	bool raft_ready = false;
-	if ((server->raftsock != -1) && FD_ISSET(server->raftsock, &readfds)) {
+	if ((server->raft_stream.good) && FD_ISSET(server->raft_stream.fd, &readfds)) {
 		numready--;
 		raft_ready = true;
 	}
 
-	for (i = 0; (i < server->streamsnum) && (numready > 0); i++) {
-		stream_t stream = server->streams[i];
-		if (FD_ISSET(stream->fd, &readfds)) {
-			server_stream_handle(server, stream);
+	stream_t s;
+	for (s = server_used_chain; (s != NULL) && (numready > 0); s = s->next) {
+		if (FD_ISSET(s->fd, &readfds)) {
+			server_stream_handle(server, s);
 			numready--;
 		}
 	}
+#endif
 
 	server_close_bad_streams(server);
 	server_flush(server);
@@ -532,12 +599,14 @@ bool server_tick(server_t server, int timeout_ms) {
 }
 
 static void server_close_all_streams(server_t server) {
-	int i;
-	for (i = 0; i < server->streamsnum; i++) {
-		stream_t stream = server->streams[i];
-		server_stream_destroy(server, stream);
+	stream_t s, next, *spp;
+	for (spp = &server->used_chain; (s = *spp) != NULL; s = next) { 
+		next = s->next;
+		server_stream_destroy(server, s);
+		*spp = next;
+		s->next = server->free_chain;
+		server->free_chain = s;
 	}
-	server->streamsnum = 0;
 }
 
 void server_disable(server_t server) {
@@ -583,7 +652,7 @@ unsigned client_get_ip_addr(client_t client)
 }
    
 #if 0
-// usage example
+/* usage example */
 
 void test_onconnect(client_t client) {
 	char *name = "hello";

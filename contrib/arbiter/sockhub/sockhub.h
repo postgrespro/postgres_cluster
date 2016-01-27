@@ -1,7 +1,18 @@
 #ifndef __SOCKHUB_H__
 #define __SOCKHUB_H__
 
+
+#ifdef __linux__
+#define USE_EPOLL 1
+#endif
+
+#ifdef USE_EPOLL
+#include <sys/epoll.h>
+#define MAX_EVENTS 1024
+#else
 #include <sys/select.h>
+#endif
+
 
 typedef struct {
     unsigned int size : 24; /* size of message without header */
@@ -47,14 +58,19 @@ typedef struct
 {
     int    output;
     int    input;
+#ifdef USE_EPOLL
+    int epollfd;
+#else
     int    max_fd;
     fd_set inset;
+#endif
     char*  in_buffer;
     char*  out_buffer;
     int    in_buffer_used;
     int    out_buffer_used;
     ShubParams* params;
 } Shub;
+
 
 int ShubReadSocketEx(int sd, void* buf, int min_size, int max_size);
 int ShubReadSocket(int sd, void* buf, int size);
@@ -66,5 +82,3 @@ void ShubInitialize(Shub* shub, ShubParams* params);
 void ShubLoop(Shub* shub);
 
 #endif
-
-// vim: sts=4 ts=4 sw=4 expandtab

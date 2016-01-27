@@ -46,8 +46,8 @@
 #include "replication/walsender.h"
 #include "port/atomics.h"
 #include "tcop/utility.h"
-#include "sockhub/sockhub.h"
 
+#include "sockhub.h"
 #include "multimaster.h"
 #include "bgwpool.h"
 
