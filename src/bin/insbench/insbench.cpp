@@ -14,6 +14,7 @@
 #include <pqxx/transaction>
 #include <pqxx/nontransaction>
 #include <pqxx/pipeline>
+#include <pqxx/tablewriter>
 #include <pqxx/version>
 
 using namespace std;
@@ -44,6 +45,7 @@ struct config
 	int initialSize;
 	bool useSystemTime;
 	bool noPK;
+	bool useCopy;
     string connection;
 
     config() {
@@ -55,6 +57,7 @@ struct config
 		transactionSize = 100;
 		useSystemTime = false;
 		noPK = false;
+		useCopy = false;
     }
 };
 
@@ -105,10 +108,25 @@ void* inserter(void* arg)
 		work txn(con);
 		if (cfg.useSystemTime) 
 		{
-		    for (int j = 0; j < cfg.transactionSize; j++) 
-			{ 
-		        txn.prepared("insert")(getCurrentTime())(random())(random())(random())(random())(random())(random())(random())(random()).exec();
-	        }
+			if (cfg.useCopy)
+			{				
+				tablewriter writer(txn,"t");
+				vector<int64_t> row(9);
+				for (int j = 0; j < cfg.transactionSize; j++) 
+				{ 
+					row[0] = getCurrentTime();
+					for (int c = 1; c <= 8; c++) {
+						row[c] = random();
+					}
+					writer << row;
+				}
+				writer.complete();
+			} else {
+				for (int j = 0; j < cfg.transactionSize; j++) 
+				{ 
+					txn.prepared("insert")(getCurrentTime())(random())(random())(random())(random())(random())(random())(random())(random()).exec();
+				}
+			}
 	    } else { 
 		    txn.prepared("insert")(curr)(curr+cfg.transactionSize-1).exec();
 			curr += cfg.transactionSize;
@@ -167,9 +185,23 @@ void initializeDatabase()
 		}
 		if (cfg.useSystemTime) 
 		{
-		    for (int i = 0; i < cfg.initialSize; i++) 
-			{ 
-		        txn.prepared("insert")(getCurrentTime())(random())(random())(random())(random())(random())(random())(random())(random()).exec();
+			if (cfg.useCopy) { 
+				tablewriter writer(txn,"t");
+				vector<int64_t> row(9);
+				for (int i = 0; i < cfg.initialSize; i++) 
+				{ 
+					row[0] = getCurrentTime();
+					for (int c = 1; c <= 8; c++) {
+						row[c] = random();
+					}
+					writer << row;
+				}
+				writer.complete();
+			} else { 
+				for (int i = 0; i < cfg.initialSize; i++) 
+				{ 
+					txn.prepared("insert")(getCurrentTime())(random())(random())(random())(random())(random())(random())(random())(random()).exec();
+				}
 	        }
 	    } else { 
 		    txn.prepared("insert")(cfg.initialSize)(cfg.initialSize-1).exec();
@@ -235,6 +267,9 @@ int main (int argc, char* argv[])
 			  case 'p':
 				cfg.noPK = true;
 				continue;
+			  case 'C':
+				cfg.useCopy = true;
+				continue;
             }
         }
         printf("Options:\n"
@@ -246,6 +281,7 @@ int main (int argc, char* argv[])
                "\t-i N\tinitial table size (1000000)\n"
                "\t-q\tuse system time and libpq\n"
                "\t-p\tno primary key\n"
+               "\t-C\tuse COPY command\n"
                "\t-c STR\tdatabase connection string\n");
         return 1;
     }
