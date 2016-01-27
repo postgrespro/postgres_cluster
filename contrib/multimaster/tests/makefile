@@ -4,7 +4,7 @@ CXXFLAGS=-g -Wall -O2 -pthread
 all: dtmbench
 
 dtmbench: dtmbench.cpp
-	$(CXX) $(CXXFLAGS) -o dtmbench dtmbench.cpp -lpqxx
+	$(CXX) $(CXXFLAGS) -o dtmbench dtmbench.cpp -lpqxx -lpq
 
 clean:
 	rm -f dtmbench

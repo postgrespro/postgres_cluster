@@ -2,13 +2,16 @@ package main
 
 import (
 	"log"
+	"fmt"
 	"os/exec"
 	"io"
 	"bufio"
 	"sync"
+	"flag"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func read_to_channel(r io.Reader, c chan string, wg *sync.WaitGroup) {
@@ -56,9 +59,24 @@ func cmd_to_channel(argv []string, name string, out chan string) {
 	log.Printf("'%s' finished\n", name)
 }
 
-func dtmd(bin string, wg *sync.WaitGroup) {
-	argv := []string{bin}
-	name := "dtmd"
+const (
+	DtmHost = "127.0.0.1"
+	DtmPort = 5431
+	PgPort = 5432
+)
+
+func arbiter(bin string, datadir string, servers []string, id int, wg *sync.WaitGroup) {
+	argv := []string{
+		bin,
+		"-d", datadir,
+		"-i", strconv.Itoa(id),
+	}
+	for _, server := range servers {
+		argv = append(argv, "-r", server)
+	}
+	log.Println(argv)
+
+	name := "arbiter " + datadir
 	c := make(chan string)
 
 	go cmd_to_channel(argv, name, c)
@@ -68,6 +86,21 @@ func dtmd(bin string, wg *sync.WaitGroup) {
 	}
 
 	wg.Done()
+}
+
+func appendfile(filename string, lines ...string) {
+	f, err := os.OpenFile(filename, os.O_APPEND | os.O_WRONLY, 0600)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer f.Close()
+
+	for _, l := range lines {
+		if _, err = f.WriteString(l + "\n"); err != nil {
+			log.Fatal(err)
+		}
+	}
 }
 
 func initdb(bin string, datadir string) {
@@ -84,20 +117,45 @@ func initdb(bin string, datadir string) {
 	for s := range c {
 		log.Printf("[%s] %s\n", name, s)
 	}
+
+	appendfile(
+		datadir + "/pg_hba.conf",
+		"local replication all trust",
+		"host replication all 127.0.0.1/32 trust",
+		"host replication all ::1/128 trust",
+	)
 }
 
-func postgres(bin string, datadir string, port int, nodeid int, wg *sync.WaitGroup) {
+func initarbiter(arbiterdir string) {
+	if err := os.RemoveAll(arbiterdir); err != nil {
+		log.Fatal(err)
+	}
+	if err := os.MkdirAll(arbiterdir, os.ModeDir | 0777); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func postgres(bin string, datadir string, postgresi []string, arbiters []string, port int, nodeid int, wg *sync.WaitGroup) {
 	argv := []string{
 		bin,
 		"-D", datadir,
 		"-p", strconv.Itoa(port),
-		"-c", "dtm.buffer_size=65536",
-		"-c", "dtm.host=127.0.0.1",
-		"-c", "dtm.port=" + strconv.Itoa(5431),
+		"-c", "multimaster.buffer_size=65536",
+		"-c", "multimaster.conn_strings=" + strings.Join(postgresi, ","),
+		"-c", "multimaster.node_id=" + strconv.Itoa(nodeid + 1),
+		"-c", "multimaster.arbiters=" + strings.Join(arbiters, ","),
+		"-c", "multimaster.workers=8",
+		"-c", "multimaster.queue_size=1073741824",
+		"-c", "wal_level=logical",
+		"-c", "wal_sender_timeout=0",
+		"-c", "max_wal_senders=10",
+		"-c", "max_worker_processes=100",
+		"-c", "max_replication_slots=10",
 		"-c", "autovacuum=off",
 		"-c", "fsync=off",
-		"-c", "synchronous_commit=off",
-		"-c", "shared_preload_libraries=pg_dtm",
+		"-c", "synchronous_commit=on",
+		"-c", "max_connections=200",
+		"-c", "shared_preload_libraries=multimaster",
 	}
 	name := "postgres " + datadir
 	c := make(chan string)
@@ -138,32 +196,60 @@ func get_prefix(srcroot string) string {
 	return "."
 }
 
+var doInitDb bool = false
+func init() {
+	flag.BoolVar(&doInitDb, "i", false, "perform initdb")
+	flag.Parse()
+}
+
 func main() {
 	srcroot := "../../.."
 	prefix := get_prefix(srcroot)
 
 	bin := map[string]string{
-		"dtmd": srcroot + "/contrib/pg_dtm/dtmd/bin/dtmd",
+		"arbiter": srcroot + "/contrib/arbiter/bin/arbiter",
 		"initdb": prefix + "/bin/initdb",
 		"postgres": prefix + "/bin/postgres",
 	}
 
-	datadirs := []string{"/tmp/data1", "/tmp/data2", "/tmp/data3"}
+	datadirs := []string{"/tmp/data0", "/tmp/data1", "/tmp/data2"}
+	//arbiterdirs := []string{"/tmp/arbiter0", "/tmp/arbiter1", "/tmp/arbiter2"}
+	arbiterdirs := []string{"/tmp/arbiter0"}
 
 	check_bin(&bin);
 
-	for _, datadir := range datadirs {
-		initdb(bin["initdb"], datadir)
+	if doInitDb {
+		for _, datadir := range datadirs {
+			initdb(bin["initdb"], datadir)
+		}
+		for _, arbiterdir := range arbiterdirs {
+			initarbiter(arbiterdir)
+		}
 	}
 
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-	go dtmd(bin["dtmd"], &wg)
-
-	for i, datadir := range datadirs {
+	var arbiters []string
+	for i := range arbiterdirs {
+		arbiters = append(arbiters, DtmHost + ":" + strconv.Itoa(DtmPort - i))
+	}
+	for i, dir := range arbiterdirs {
 		wg.Add(1)
-		go postgres(bin["postgres"], datadir, 5432 + i, i, &wg)
+		go arbiter(bin["arbiter"], dir, arbiters, i, &wg)
+	}
+
+	time.Sleep(3 * time.Second)
+
+	var postgresi []string
+	for i := range datadirs {
+		postgresi = append(
+			postgresi,
+			fmt.Sprintf("dbname=postgres host=127.0.0.1 port=%d sslmode=disable", PgPort + i),
+		)
+	}
+	for i, dir := range datadirs {
+		wg.Add(1)
+		go postgres(bin["postgres"], dir, postgresi, arbiters, PgPort + i, i, &wg)
 	}
 
 	wg.Wait()
