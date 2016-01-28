@@ -12,7 +12,7 @@ OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 	   pglogical_functions.o pglogical_queue.o pglogical_fe.o \
 	   pglogical_worker.o pglogical_hooks.o pglogical_sync.o
 
-PG_CPPFLAGS = -I$(libpq_srcdir)
+PG_CPPFLAGS = -I$(libpq_srcdir) -I$(top_srcdir)/contrib/pglogical_output
 SHLIB_LINK = $(libpq)
 
 REGRESS = preseed infofuncs init_fail init preseed_check basic extended toasted replication_set add_table matview bidirectional primary_key foreign_key functions copy drop
@@ -27,9 +27,7 @@ include $(top_srcdir)/contrib/contrib-global.mk
 # typical installcheck users do not have (e.g. buildfarm clients).
 @installcheck: ;
 
-EXTRA_INSTALL += $(top_srcdir)/contrib/pglogical_output
-EXTRA_REGRESS_OPTS += $(top_srcdir)/contrib/pglogical/regress-postgresql.conf
-
-override CPPFLAGS := $(CPPFLAGS) -I$(top_srcdir)/contrib/pglogical_output
+EXTRA_INSTALL += contrib/pglogical_output
+EXTRA_REGRESS_OPTS += --temp-config $(top_srcdir)/contrib/pglogical/regress-postgresql.conf
 
 .PHONY: pglogical_create_subscriber
