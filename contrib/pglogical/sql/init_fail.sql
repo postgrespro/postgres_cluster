@@ -13,8 +13,6 @@ GRANT ALL ON ALL TABLES IN SCHEMA pglogical TO nonreplica;
 \c :subscriber_dsn
 SET client_min_messages = 'warning';
 \set VERBOSITY terse
-CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
-ALTER EXTENSION pglogical UPDATE;
 
 -- fail (local node not existing)
 SELECT * FROM pglogical.create_subscription(
