@@ -59,8 +59,8 @@ func cmd_to_channel(argv []string, name string, out chan string) {
 }
 
 const (
-	DtmHost = "127.0.0.1"
-	DtmPort = 5431
+	ArbiterHost = "127.0.0.1"
+	ArbiterPort = 5431
 	PgPort = 5432
 )
 
@@ -198,7 +198,7 @@ func main() {
 
 	var arbiters []string
 	for i := range arbiterdirs {
-		arbiters = append(arbiters, DtmHost + ":" + strconv.Itoa(DtmPort - i))
+		arbiters = append(arbiters, ArbiterHost + ":" + strconv.Itoa(ArbiterPort - i))
 	}
 	for i, dir := range arbiterdirs {
 		wg.Add(1)
