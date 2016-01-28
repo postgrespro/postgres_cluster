@@ -178,25 +178,20 @@ void* writer(void* arg)
       
 void initializeDatabase()
 {
-	//for (size_t i = 0; i < cfg.connections.size(); i++) { 
-	//	printf("creating extension %lu\n", i);
-	//	try {
-	//		connection conn(cfg.connections[i]);
-	//		work txn(conn);
-	//		//exec(txn, "drop extension if exists multimaster");
-	//		exec(txn, "create extension multimaster");
-	//		txn.commit();
-	//	} catch (pqxx_exception const& x) {
-	//		i -= 1;
-	//		continue;
-	//	}
-	//	printf("extension %lu created\n", i);
-	//}
+	connection conn(cfg.connections[0]);
+
+	printf("creating extension\n");
+	{
+		nontransaction txn(conn);
+		exec(txn, "drop extension if exists multimaster");
+		exec(txn, "create extension multimaster");
+		txn.commit();
+	}
+	printf("extension created\n");
 
 	printf("creating table t\n");
-    connection conn(cfg.connections[0]);
 	{
-		work txn(conn);
+		nontransaction txn(conn);
 		exec(txn, "drop table if exists t");
 		exec(txn, "create table t(u int primary key, v int)");
 		txn.commit();
