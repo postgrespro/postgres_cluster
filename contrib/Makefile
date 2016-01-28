@@ -36,6 +36,8 @@ SUBDIRS = \
 		pg_trgm		\
 		pgcrypto	\
 		pglogical	\
+		pglogical_output \
+		pglogical_output_plhooks \
 		pgrowlocks	\
 		pgstattuple	\
 		postgres_fdw	\
