@@ -16,7 +16,7 @@ do
 done
 
 echo Start DTM
-~/postgres_cluster/contrib/multimaster/dtmd/bin/dtmd -d dtm 2> dtm.log &
+~/postgres_cluster/contrib/arbiter/bin/arbiter -r 0.0.0.0:5431 -i 0 -d dtm 2> dtm.log &
 sleep 2
 
 echo Start nodes
