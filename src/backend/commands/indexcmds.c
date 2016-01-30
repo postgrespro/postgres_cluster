@@ -279,6 +279,30 @@ CheckIndexCompatible(Oid oldId,
 	return ret;
 }
 
+static void 
+UpdateIndex(Oid indexRelationId, Node* whereClause)
+{
+	Datum		values[Natts_pg_index];
+	bool		isnull[Natts_pg_index];
+	HeapTuple   oldTuple;
+	HeapTuple   newTuple;
+	Relation	pg_index;
+
+	pg_index = heap_open(IndexRelationId, RowExclusiveLock);
+	oldTuple = SearchSysCacheCopy1(INDEXRELID, ObjectIdGetDatum(indexRelationId));
+	if (!HeapTupleIsValid(oldTuple))
+		elog(ERROR, "cache lookup failed for index %u", indexRelationId);
+
+	heap_deform_tuple(oldTuple, RelationGetDescr(pg_index), values, isnull);
+	values[Anum_pg_index_indpred - 1] = CStringGetTextDatum(nodeToString(whereClause));
+	newTuple = heap_form_tuple(RelationGetDescr(pg_index), values, isnull);
+	simple_heap_update(pg_index, &oldTuple->t_self, newTuple);
+	CatalogUpdateIndexes(pg_index, newTuple);
+	heap_freetuple(newTuple);
+	heap_freetuple(oldTuple);
+	heap_close(pg_index, NoLock);
+}
+
 void
 AlterIndex(Oid indexRelationId, IndexStmt *stmt)
 {
@@ -292,14 +316,15 @@ AlterIndex(Oid indexRelationId, IndexStmt *stmt)
     SPIPlanPtr plan;
     Portal portal;
 	HeapTuple tuple;
-	HeapTuple updatedTuple;
 	TupleTableSlot *slot;
 	ItemPointer tupleid;
 	IndexInfo  *indexInfo;
 	EState *estate;
 	Oid	namespaceId;
-	Relation	pg_index;
 	List*       deparseCtx;
+	char*       oldIndexPredicate;
+	char*       newIndexPredicate;
+	char*       relationName;
 
 	Assert(stmt->whereClause);
 	CheckPredicate((Expr *) stmt->whereClause);
@@ -314,8 +339,6 @@ AlterIndex(Oid indexRelationId, IndexStmt *stmt)
 	/* indexRelation = index_open(indexRelationId, AccessShareLock); */
 	namespaceId = RelationGetNamespace(indexRelation);
 
-	pg_index = heap_open(IndexRelationId, RowExclusiveLock);
-
 	indexInfo = BuildIndexInfo(indexRelation);
 	Assert(indexInfo->ii_Predicate);
 	Assert(!indexInfo->ii_ExclusionOps);
@@ -327,75 +350,85 @@ AlterIndex(Oid indexRelationId, IndexStmt *stmt)
 
 	checkUnique = indexRelation->rd_index->indisunique ? UNIQUE_CHECK_YES : UNIQUE_CHECK_NO;
 
-	/* Update pg_index tuple */
-	tuple = SearchSysCacheCopy1(INDEXRELID, ObjectIdGetDatum(indexRelationId));
-	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for index %u", indexRelationId);
-
-	Assert(Natts_pg_index <= INDEX_MAX_KEYS);
-	heap_deform_tuple(tuple, RelationGetDescr(pg_index), values, isnull);
-	values[Anum_pg_index_indpred - 1] = CStringGetTextDatum(nodeToString(stmt->whereClause));
-	updatedTuple = heap_form_tuple(RelationGetDescr(pg_index), values, isnull);
-	simple_heap_update(pg_index, &tuple->t_self, updatedTuple);
-	CatalogUpdateIndexes(pg_index, updatedTuple);
-	heap_freetuple(updatedTuple);
-	heap_freetuple(tuple);
-	heap_close(pg_index, NoLock);
-
 	slot = MakeSingleTupleTableSlot(RelationGetDescr(heapRelation));
+	
+	deparseCtx = deparse_context_for(RelationGetRelationName(heapRelation), heapRelationId);
+	relationName = quote_qualified_identifier(get_namespace_name(namespaceId),
+											  get_rel_name(heapRelationId)),
+	newIndexPredicate = deparse_expression(stmt->whereClause, deparseCtx, false, false);
+	oldIndexPredicate = deparse_expression((Node*)make_ands_explicit(indexInfo->ii_Predicate), deparseCtx, false, false);
 
     SPI_connect();
-	deparseCtx = deparse_context_for(RelationGetRelationName(heapRelation), heapRelationId);
-	select = psprintf("select * from %s where %s and not (%s)",
-					  quote_qualified_identifier(get_namespace_name(namespaceId),
-					                             get_rel_name(heapRelationId)),
- 		              deparse_expression(stmt->whereClause, deparseCtx, false, false),
-					  deparse_expression((Node*)make_ands_explicit(indexInfo->ii_Predicate), deparseCtx, false, false));
-	plan = SPI_prepare(select, 0, NULL); 
-	if (plan == NULL) {
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_CURSOR_STATE),
-				 errmsg("Failed to preapre statement %s", select)));
-	} 
-	portal = SPI_cursor_open(NULL, plan, NULL, NULL, true);
-	if (portal == NULL) { 
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_CURSOR_STATE),
-				 errmsg("Failed to open cursor for %s", select)));
-	}	
-	while (true)
-	{
-        SPI_cursor_fetch(portal, true, 1);
-        if (!SPI_processed) { 
-			break;
-		}										
-		tuple = SPI_tuptable->vals[0];
-		tupleid = &tuple->t_data->t_ctid;
-		ExecStoreTuple(tuple, slot, InvalidBuffer, false);
-			
-		FormIndexDatum(indexInfo,
-					   slot,
-					   estate,
-					   values,
-					   isnull);
-		index_insert(indexRelation, /* index relation */
-					 values,	/* array of index Datums */
-					 isnull,	/* null flags */
-					 tupleid,		/* tid of heap tuple */
-					 heapRelation,	/* heap relation */
-					 checkUnique);	/* type of uniqueness check to do */
 
-		SPI_freetuple(tuple);
-		SPI_freetuptable(SPI_tuptable);
+	select = psprintf("select * from  %s where %s and not (%s) limit 1",
+					  relationName, oldIndexPredicate, newIndexPredicate);
+	if (SPI_execute(select, true, 1) != SPI_OK_SELECT) 
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_CURSOR_STATE),
+				 errmsg("Failed to execute statement %s", select)));		
+	}	
+	if (SPI_processed) { 
+		/* There is no way in Postgres to exclude records from index, so we have to completelty rebuild index in this case */
+		bool relpersistence = indexRelation->rd_rel->relpersistence;
+		index_close(indexRelation, NoLock);
+		indexRelation->rd_indpred = make_ands_implicit((Expr *) stmt->whereClause);
+		indexRelation = NULL;
+		UpdateIndex(indexRelationId, stmt->whereClause);
+		reindex_index(indexRelationId, false, relpersistence, 0);		
+	} else { 
+		select = psprintf("select * from %s where %s and not (%s)",
+						  relationName, newIndexPredicate, oldIndexPredicate);
+		plan = SPI_prepare(select, 0, NULL); 
+		if (plan == NULL) {
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_CURSOR_STATE),
+					 errmsg("Failed to preapre statement %s", select)));
+		} 
+		portal = SPI_cursor_open(NULL, plan, NULL, NULL, true);
+		if (portal == NULL) { 
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_CURSOR_STATE),
+					 errmsg("Failed to open cursor for %s", select)));
+		}	
+		while (true)
+		{
+			SPI_cursor_fetch(portal, true, 1);
+			if (!SPI_processed) { 
+				break;
+			}										
+			tuple = SPI_tuptable->vals[0];
+			tupleid = &tuple->t_data->t_ctid;
+			ExecStoreTuple(tuple, slot, InvalidBuffer, false);
+			
+			FormIndexDatum(indexInfo,
+						   slot,
+						   estate,
+						   values,
+						   isnull);
+			index_insert(indexRelation, /* index relation */
+						 values,	/* array of index Datums */
+						 isnull,	/* null flags */
+						 tupleid,		/* tid of heap tuple */
+						 heapRelation,	/* heap relation */
+						 checkUnique);	/* type of uniqueness check to do */
+			
+			SPI_freetuple(tuple);
+			SPI_freetuptable(SPI_tuptable);
+		}
+		SPI_cursor_close(portal);
+
+		UpdateIndex(indexRelationId, stmt->whereClause);
 	}
-    SPI_cursor_close(portal);
     SPI_finish();
 
 	ExecDropSingleTupleTableSlot(slot);
 	FreeExecutorState(estate);
 
 	heap_close(heapRelation, NoLock);
-	index_close(indexRelation, NoLock);
+	if (indexRelation) {
+		index_close(indexRelation, NoLock);
+	}
 }
 
 /*
