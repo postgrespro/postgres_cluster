@@ -763,6 +763,7 @@ create_index_path(PlannerInfo *root,
 				  IndexOptInfo *index,
 				  List *indexclauses,
 				  List *indexclausecols,
+				  List *indexrinfos,
 				  List *indexorderbys,
 				  List *indexorderbycols,
 				  List *pathkeys,
@@ -792,6 +793,7 @@ create_index_path(PlannerInfo *root,
 	pathnode->indexclauses = indexclauses;
 	pathnode->indexquals = indexquals;
 	pathnode->indexqualcols = indexqualcols;
+	pathnode->indexrinfos = indexrinfos;
 	pathnode->indexorderbys = indexorderbys;
 	pathnode->indexorderbycols = indexorderbycols;
 	pathnode->indexscandir = indexscandir;

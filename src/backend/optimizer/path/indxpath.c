@@ -59,6 +59,7 @@ typedef struct
 	bool		nonempty;		/* True if lists are not all empty */
 	/* Lists of RestrictInfos, one per index column */
 	List	   *indexclauses[INDEX_MAX_KEYS];
+	List	   *indexrinfos;	/* clauses not implied by predicate */
 } IndexClauseSet;
 
 /* Per-path data used within choose_bitmap_and() */
@@ -129,7 +130,7 @@ static PathClauseUsage *classify_index_clause_usage(Path *path,
 static Relids get_bitmap_tree_required_outer(Path *bitmapqual);
 static void find_indexpath_quals(Path *bitmapqual, List **quals, List **preds);
 static int	find_list_position(Node *node, List **nodelist);
-static bool check_index_only(RelOptInfo *rel, IndexOptInfo *index);
+static bool check_index_only(RelOptInfo *rel, IndexOptInfo *index, List *clauses);
 static double get_loop_count(PlannerInfo *root, Index cur_relid, Relids outer_relids);
 static double adjust_rowcount_for_semijoins(PlannerInfo *root,
 							  Index cur_relid,
@@ -866,6 +867,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	double		loop_count;
 	List	   *orderbyclauses;
 	List	   *orderbyclausecols;
+	List	   *restrictinfo;
 	List	   *index_pathkeys;
 	List	   *useful_pathkeys;
 	bool		found_lower_saop_clause;
@@ -1013,13 +1015,16 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 		orderbyclausecols = NIL;
 	}
 
+	restrictinfo
+		= (index->indpred != NIL) ? clauses->indexrinfos : rel->baserestrictinfo;
+
 	/*
 	 * 3. Check if an index-only scan is possible.  If we're not building
 	 * plain indexscans, this isn't relevant since bitmap scans don't support
 	 * index data retrieval anyway.
 	 */
 	index_only_scan = (scantype != ST_BITMAPSCAN &&
-					   check_index_only(rel, index));
+					   check_index_only(rel, index, restrictinfo));
 
 	/*
 	 * 4. Generate an indexscan path if there are relevant restriction clauses
@@ -1033,6 +1038,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 		ipath = create_index_path(root, index,
 								  index_clauses,
 								  clause_columns,
+								  restrictinfo,
 								  orderbyclauses,
 								  orderbyclausecols,
 								  useful_pathkeys,
@@ -1059,6 +1065,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 			ipath = create_index_path(root, index,
 									  index_clauses,
 									  clause_columns,
+									  restrictinfo,
 									  NIL,
 									  NIL,
 									  useful_pathkeys,
@@ -1782,7 +1789,7 @@ find_list_position(Node *node, List **nodelist)
  *		Determine whether an index-only scan is possible for this index.
  */
 static bool
-check_index_only(RelOptInfo *rel, IndexOptInfo *index)
+check_index_only(RelOptInfo *rel, IndexOptInfo *index, List *clauses)
 {
 	bool		result;
 	Bitmapset  *attrs_used = NULL;
@@ -1814,8 +1821,11 @@ check_index_only(RelOptInfo *rel, IndexOptInfo *index)
 	 */
 	pull_varattnos((Node *) rel->reltargetlist, rel->relid, &attrs_used);
 
-	/* Add all the attributes used by restriction clauses. */
-	foreach(lc, rel->baserestrictinfo)
+	/*
+	 * Add all the attributes used by restriction clauses (only those not
+	 * implied by the index predicate for partial indexes).
+	 */
+	foreach(lc, clauses)
 	{
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
 
@@ -2141,6 +2151,14 @@ match_clauses_to_index(IndexOptInfo *index,
  * If the clause is usable, add it to the appropriate list in *clauseset.
  * *clauseset must be initialized to zeroes before first call.
  *
+ * For partial indexes we ignore clauses that are implied by the index
+ * predicate - no need to to re-evaluate those, and the columns may not
+ * even be included in the index itself.
+ *
+ * We also build a list of clauses that are not implied by the index
+ * predicate so that we don't need calling predicate_implied_by again
+ * (e.g. in check_index_only).
+ *
  * Note: in some circumstances we may find the same RestrictInfos coming from
  * multiple places.  Defend against redundant outputs by refusing to add a
  * clause twice (pointer equality should be a good enough check for this).
@@ -2156,6 +2174,16 @@ match_clause_to_index(IndexOptInfo *index,
 					  IndexClauseSet *clauseset)
 {
 	int			indexcol;
+
+	if (index->indpred != NIL)
+	{
+		if (predicate_implied_by(list_make1(rinfo->clause),
+											index->indpred))
+			return;
+
+		/* track non-implied restriction clauses */
+		clauseset->indexrinfos = lappend(clauseset->indexrinfos, rinfo);
+	}
 
 	for (indexcol = 0; indexcol < index->ncolumns; indexcol++)
 	{
