@@ -30,7 +30,7 @@
   - name: start dtm
     shell: >
       nohup ~/pg_cluster/src/contrib/arbiter/bin/arbiter
-      -d ~/pg_cluster/dtm_data -r "0.0.0.0:5431" -i 0 -l ~/pg_cluster/dtm_data/log &
+      -d ~/pg_cluster/dtm_data -r 0.0.0.0:5431 -i 0 -l ~/pg_cluster/dtm_data/log &
 
   - name: wait until dtm is available
     wait_for: port=5431 delay=1
@@ -83,8 +83,8 @@
     - "max_replication_slots = 10"
     - "max_worker_processes = 100"
     - "shared_preload_libraries = 'multimaster'"
-    - "multimaster.arbiter_host = '{{ groups['nodes'][0] }}'"
-    - "multimaster.conn_strings = '{{ connections }}'"
+    - "multimaster.arbiters = '{{groups['nodes'][0]}}:5431'"
+    - "multimaster.conn_strings = '{{connections}}'"
     - "multimaster.node_id = {{ node_id }}"
     - "multimaster.queue_size = 1073741824"
     - "multimaster.workers = 32"

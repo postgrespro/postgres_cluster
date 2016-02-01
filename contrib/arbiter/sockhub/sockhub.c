@@ -22,6 +22,9 @@
 #define SOCKHUB_BUFFER_SIZE (1024*1024)
 #define ERR_BUF_SIZE 1024
 
+#define SHUB_TRACE(fmt, ...)
+/* #define SHUB_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) */
+
 void ShubAddSocket(Shub* shub, int fd);
 
 inline void ShubAddSocket(Shub* shub, int fd)
@@ -63,21 +66,23 @@ void ShubInitParams(ShubParams* params)
     params->leader = NULL;
 }
 
-void ShubParamsSetHosts(ShubParams* params, char* hoststring)
+int ShubParamsSetHosts(ShubParams* params, char* hoststring)
 {
     char *hstate, *pstate;
     char *hostport, *host, *portstr;
     int port;
+	int ok = 1;
 
     char *hosts = strdup(hoststring);
-    fprintf(stderr, "sockhub parsing hosts = '%s'\n", hosts);
+    SHUB_TRACE("sockhub parsing hosts = '%s'\n", hosts);
     hostport = strtok_r(hosts, ",", &hstate);
 
     while (hostport) {
-        fprintf(stderr, "hostport = '%s'\n", hostport);
+        SHUB_TRACE("hostport = '%s'\n", hostport);
         host = strtok_r(hostport, ":", &pstate);
         if (!host) {
-            fprintf(stderr, "wrong host in host list\n");
+            SHUB_TRACE("wrong host in host list\n");
+			ok = 0;
             break;
         }
 
@@ -88,20 +93,20 @@ void ShubParamsSetHosts(ShubParams* params, char* hoststring)
             port = 5431;
         }
 
-        fprintf(stderr, "adding host %s:%d\n", host, port);
+        SHUB_TRACE("adding host %s:%d\n", host, port);
         host_t *h = malloc(sizeof(host_t));
         h->host = strdup(host);
         h->port = port;
         if (params->leader) {
-            // update pointers from
+            /* update pointers from */
             h->prev = params->leader->prev;
             h->next = params->leader;
 
-            // update pointers to
+            /* update pointers to */
             h->prev->next = h;
             h->next->prev = h;
         } else {
-            // the list is empty
+            /* the list is empty */
             params->leader = h;
             h->prev = h;
             h->next = h;
@@ -111,6 +116,7 @@ void ShubParamsSetHosts(ShubParams* params, char* hoststring)
     }
 
     free(hosts);
+	return ok;
 }
 
 static int resolve_host_by_name(const char *hostname, unsigned* addrs, unsigned* n_addrs)
@@ -202,7 +208,7 @@ static void reconnect(Shub* shub)
         char *host = shub->params->leader->host;
         int port = shub->params->leader->port;
 
-        fprintf(stderr, "shub leader = %s:%d\n", host, port);
+        SHUB_TRACE("shub leader = %s:%d\n", host, port);
 
         shub->params->leader = shub->params->leader->next;
 
@@ -210,12 +216,12 @@ static void reconnect(Shub* shub)
         sock_inet.sin_port = htons(port);
 
         if (!resolve_host_by_name(host, addrs, &n_addrs)) {
-            shub->params->error_handler("Failed to resolve host by name", severity);
+            shub->params->error_handler("Sockhub failed to resolve host by name", severity);
             continue;
         }
         shub->output = socket(AF_INET, SOCK_STREAM, 0);
         if (shub->output < 0) {
-            shub->params->error_handler("Failed to create inet socket", severity);
+            shub->params->error_handler("Sockhub failed to create inet socket", severity);
             continue;
         }
         while (1) {
@@ -231,16 +237,16 @@ static void reconnect(Shub* shub)
                 }
             }
             if (rc < 0) {
-                if (errno != ENOENT && errno != ECONNREFUSED && errno != EINPROGRESS) {
-                    shub->params->error_handler("Connection can not be establish", severity);
-                    continue;
-                }
-                if (max_attempts-- != 0) {
-                    sleep(1);
-                } else {
-                    shub->params->error_handler("Failed to connect to host", severity);
-                    continue;
-                }
+                if ((errno != ENOENT && errno != ECONNREFUSED && errno != EINPROGRESS) || max_attempts == 0) {
+					char buf[ERR_BUF_SIZE];
+					sprintf(buf, "Sockhub failed to connect to %s:%d: %d", host, port, errno);
+                    shub->params->error_handler(buf, severity);
+					max_attempts = shub->params->max_attempts;
+                } else { 
+					max_attempts -= 1;
+					sleep(1);
+				}
+				continue;
             } else {
                 int optval = 1;
                 setsockopt(shub->output, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
@@ -493,7 +499,6 @@ void ShubLoop(Shub* shub)
                                     char buf[ERR_BUF_SIZE];
                                     sprintf(buf, "Failed to read local socket chan=%d, rc=%d, min requested=%ld, max requested=%d, errno=%d", chan, rc, sizeof(ShubMessageHdr) - available, buffer_size - pos - available, errno);
                                     shub->params->error_handler(buf, SHUB_RECOVERABLE_ERROR);
-                                    //shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
                                     close_socket(shub, i);
                                     shub->in_buffer_used = pos;
                                     notify_disconnect(shub, i);
@@ -532,7 +537,6 @@ void ShubLoop(Shub* shub)
                                             char buf[ERR_BUF_SIZE];
                                             sprintf(buf, "Failed to read local socket rc=%d, len=%d, errno=%d", rc, n, errno);
                                             shub->params->error_handler(buf, SHUB_RECOVERABLE_ERROR);
-                                            //shub->params->error_handler("Failed to read local socket", SHUB_RECOVERABLE_ERROR);
                                             close_socket(shub, chan);
                                             if (hdr != NULL) { /* if message header is not yet sent to the server... */
                                                 /* ... then skip this message */
@@ -607,4 +611,3 @@ void ShubLoop(Shub* shub)
     }
 }
 
-// vim: sts=4 ts=4 sw=4 expandtab
