@@ -2,7 +2,7 @@ n_nodes=3
 export PATH=~/postgres_cluster/dist/bin/:$PATH
 ulimit -c unlimited
 pkill -9 postgres
-pkill -9 dtmd
+pkill -9 arbiter
 rm -fr node? *.log dtm
 mkdir dtm
 conn_str=""

@@ -77,7 +77,7 @@ int ShubReadSocket(int sd, void* buf, int size);
 int ShubWriteSocket(int sd, void const* buf, int size);
 
 void ShubInitParams(ShubParams* params);
-void ShubParamsSetHosts(ShubParams* params, char* hoststring);
+int  ShubParamsSetHosts(ShubParams* params, char* hoststring);
 void ShubInitialize(Shub* shub, ShubParams* params);
 void ShubLoop(Shub* shub);
 

@@ -1114,8 +1114,13 @@ void DtmBackgroundWorker(Datum arg)
 	snprintf(unix_sock_path, sizeof(unix_sock_path), "%s/sh.unix", Unix_socket_directories);
 
 	ShubInitParams(&params);
-
-	ShubParamsSetHosts(&params, ArbitersCopy);
+	
+	if (!ShubParamsSetHosts(&params, ArbitersCopy))
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("Invalid values of arbiters.multimaster parameter: %s", ArbitersCopy)));
+	}
 	params.file = unix_sock_path;
 	params.buffer_size = DtmBufferSize;
 
