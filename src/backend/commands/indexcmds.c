@@ -356,7 +356,9 @@ AlterIndex(Oid indexRelationId, IndexStmt *stmt)
 	relationName = quote_qualified_identifier(get_namespace_name(namespaceId),
 											  get_rel_name(heapRelationId)),
 	newIndexPredicate = deparse_expression(stmt->whereClause, deparseCtx, false, false);
-	oldIndexPredicate = deparse_expression((Node*)make_ands_explicit(indexInfo->ii_Predicate), deparseCtx, false, false);
+	oldIndexPredicate = indexInfo->ii_Predicate 
+		? deparse_expression((Node*)make_ands_explicit(indexInfo->ii_Predicate), deparseCtx, false, false)
+		: "true";
 
     SPI_connect();
 
