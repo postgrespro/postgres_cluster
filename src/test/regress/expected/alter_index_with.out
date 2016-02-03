@@ -1,0 +1,132 @@
+create table tmptab (pk integer primary key, sk integer);
+-- insert ebnough records to make psotgresql optimizer use indexes
+insert into tmptab values (generate_series(1, 10000), generate_series(1, 10000));
+vacuum analyze;
+-- create normal index
+create index idx on tmptab(sk);
+-- just normal index search
+select * from tmptab where sk = 100;
+ pk  | sk  
+-----+-----
+ 100 | 100
+(1 row)
+
+-- make index partial
+alter index idx where pk < 1000;
+-- select using exact partial index range
+select * from tmptab where sk = 100 and pk < 1000;
+ pk  | sk  
+-----+-----
+ 100 | 100
+(1 row)
+
+explain select * from tmptab where sk = 100 and pk < 1000;
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Index Scan using idx on tmptab  (cost=0.28..8.29 rows=1 width=8)
+   Index Cond: (sk = 100)
+(2 rows)
+
+-- select using subset of partial index range 
+select * from tmptab where sk = 100 and pk < 200;
+ pk  | sk  
+-----+-----
+ 100 | 100
+(1 row)
+
+explain select * from tmptab where sk = 100 and pk < 200;
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Index Scan using idx on tmptab  (cost=0.28..8.29 rows=1 width=8)
+   Index Cond: (sk = 100)
+   Filter: (pk < 200)
+(3 rows)
+
+-- select outside partial index range 
+select * from tmptab where sk = 100 and pk > 1000;
+ pk | sk 
+----+----
+(0 rows)
+
+explain select * from tmptab where sk = 100 and pk > 1000;
+                       QUERY PLAN                       
+--------------------------------------------------------
+ Seq Scan on tmptab  (cost=0.00..195.00 rows=1 width=8)
+   Filter: ((pk > 1000) AND (sk = 100))
+(2 rows)
+
+-- select without partial index range
+select * from tmptab where sk = 100;
+ pk  | sk  
+-----+-----
+ 100 | 100
+(1 row)
+
+explain select * from tmptab where sk = 100;
+                       QUERY PLAN                       
+--------------------------------------------------------
+ Seq Scan on tmptab  (cost=0.00..170.00 rows=1 width=8)
+   Filter: (sk = 100)
+(2 rows)
+
+-- extend partial index range 
+alter index idx where pk < 10000;
+-- select using exact partial index range
+select * from tmptab where sk = 1000 and pk < 10000;
+  pk  |  sk  
+------+------
+ 1000 | 1000
+(1 row)
+
+explain select * from tmptab where sk = 1000 and pk < 10000;
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Index Scan using idx on tmptab  (cost=0.28..8.30 rows=1 width=8)
+   Index Cond: (sk = 1000)
+(2 rows)
+
+-- calculating aggregate within exact partial index range
+select count(*) from tmptab where sk < 1000 and pk < 10000;
+ count 
+-------
+   999
+(1 row)
+
+explain select count(*) from tmptab where sk < 1000 and pk < 10000;
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
+ Aggregate  (cost=40.28..40.29 rows=1 width=0)
+   ->  Index Only Scan using idx on tmptab  (cost=0.28..37.78 rows=1000 width=0)
+         Index Cond: (sk < 1000)
+(3 rows)
+
+-- reducing partial idex predicate
+alter index idx where pk < 9000;
+-- select using new exact partial index range and key value belonging to old range
+select * from tmptab where sk = 9000 and pk < 9000;
+ pk | sk 
+----+----
+(0 rows)
+
+explain select * from tmptab where sk = 9000 and pk < 9000;
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Index Scan using idx on tmptab  (cost=0.29..8.30 rows=1 width=8)
+   Index Cond: (sk = 9000)
+(2 rows)
+
+-- select using exact partial index range
+select * from tmptab where sk = 900 and pk < 9000;
+ pk  | sk  
+-----+-----
+ 900 | 900
+(1 row)
+
+explain select * from tmptab where sk = 900 and pk < 9000;
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Index Scan using idx on tmptab  (cost=0.29..8.30 rows=1 width=8)
+   Index Cond: (sk = 900)
+(2 rows)
+
+drop table tmptab;
