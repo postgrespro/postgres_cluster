@@ -4049,6 +4049,17 @@ make_sort(PlannerInfo *root, Plan *lefttree, int numCols,
 			  0.0,
 			  work_mem,
 			  limit_tuples);
+	if (lefttree->type == T_IndexOnlyScan && root->simple_rel_array_size == 2)
+	{
+		RelOptInfo* relinfo = root->simple_rel_array[1];
+		IndexOptInfo* indexinfo = linitial(root->simple_rel_array[1]->indexlist);
+		IndexOnlyScan* indexscan = (IndexOnlyScan*)lefttree;
+		List *index_pathkeys = build_index_pathkeys(root, indexinfo, indexscan->indexorderdir);
+		int prefix_len = pathkeys_get_prefix(root->query_pathkeys, index_pathkeys);
+		sort_path.total_cost -= sort_path.startup_cost;
+		sort_path.startup_cost /= (prefix_len+1);
+		sort_path.total_cost += sort_path.startup_cost;
+	}
 	plan->startup_cost = sort_path.startup_cost;
 	plan->total_cost = sort_path.total_cost;
 	plan->targetlist = lefttree->targetlist;
