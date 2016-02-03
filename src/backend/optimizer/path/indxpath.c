@@ -1829,27 +1829,6 @@ check_index_only(RelOptInfo *rel, IndexOptInfo *index, List *clauses)
 	{
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
 
-		/*
-		 * If the index is partial, we won't consider the clauses that are
-		 * implied by the index predicate (those are not needed at runtime).
-		 */
-		if (index->indpred != NIL)
-		{
-			bool	implied = false;
-			List   *clauses  = NIL;
-
-			/* need a list for the 'implied_by' call */
-			clauses = lappend(clauses, (Node *) rinfo->clause);
-
-			implied = predicate_implied_by(clauses, index->indpred);
-
-			/* we generally don't free memory, but well ... */
-			list_free(clauses);
-
-			/* if the clause is implied by index predicate, skip it */
-			if (implied)
-				continue;
-		}
 		pull_varattnos((Node *) rinfo->clause, rel->relid, &attrs_used);
 	}
 

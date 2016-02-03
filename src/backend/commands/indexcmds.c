@@ -295,6 +295,7 @@ UpdateIndex(Oid indexRelationId, Node* whereClause)
 
 	heap_deform_tuple(oldTuple, RelationGetDescr(pg_index), values, isnull);
 	values[Anum_pg_index_indpred - 1] = CStringGetTextDatum(nodeToString(whereClause));
+	isnull[Anum_pg_index_indpred - 1] = false;
 	newTuple = heap_form_tuple(RelationGetDescr(pg_index), values, isnull);
 	simple_heap_update(pg_index, &oldTuple->t_self, newTuple);
 	CatalogUpdateIndexes(pg_index, newTuple);
@@ -340,7 +341,6 @@ AlterIndex(Oid indexRelationId, IndexStmt *stmt)
 	namespaceId = RelationGetNamespace(indexRelation);
 
 	indexInfo = BuildIndexInfo(indexRelation);
-	Assert(indexInfo->ii_Predicate);
 	Assert(!indexInfo->ii_ExclusionOps);
  
 	/*
