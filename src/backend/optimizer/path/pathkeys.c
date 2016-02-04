@@ -430,6 +430,40 @@ get_cheapest_fractional_path_for_pathkeys(List *paths,
 	return matched_path;
 }
 
+Path *
+get_cheapest_partial_path_for_pathkeys(List *paths,
+									   List *pathkeys,
+									   Relids required_outer,
+									   double fraction)
+{
+	Path	   *matched_path = NULL;
+	ListCell   *l;
+	int best_prefix_len = 0;
+	foreach(l, paths)
+	{
+		Path	   *path = (Path *) lfirst(l);
+		int prefix_len = pathkeys_get_prefix(pathkeys, path->pathkeys);
+		if (prefix_len < best_prefix_len || path->pathtype != T_IndexOnlyScan) { 
+			continue;
+		}
+		/*
+		 * Since cost comparison is a lot cheaper than pathkey comparison, do
+		 * that first.  (XXX is that still true?)
+		 */
+		if (matched_path != NULL &&
+			compare_fractional_path_costs(matched_path, path, fraction) <= 0)
+			continue;
+
+		if (prefix_len != 0 
+			&& bms_is_subset(PATH_REQ_OUTER(path), required_outer))
+		{
+			matched_path = path;
+			best_prefix_len = prefix_len;
+		}
+	}
+	return matched_path;
+}
+
 /****************************************************************************
  *		NEW PATHKEY FORMATION
  ****************************************************************************/
@@ -1483,6 +1517,7 @@ pathkeys_useful_for_ordering(PlannerInfo *root, List *pathkeys)
 	if (pathkeys == NIL)
 		return 0;				/* unordered path */
 
+#if 0
 	if (pathkeys_contained_in(root->query_pathkeys, pathkeys))
 	{
 		/* It's useful ... or at least the first N keys are */
@@ -1490,6 +1525,9 @@ pathkeys_useful_for_ordering(PlannerInfo *root, List *pathkeys)
 	}
 
 	return 0;					/* path ordering not useful */
+#else
+	return pathkeys_get_prefix(root->query_pathkeys, pathkeys);
+#endif
 }
 
 /*

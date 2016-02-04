@@ -175,6 +175,10 @@ extern Path *get_cheapest_fractional_path_for_pathkeys(List *paths,
 										  List *pathkeys,
 										  Relids required_outer,
 										  double fraction);
+extern Path *get_cheapest_partial_path_for_pathkeys(List *paths,
+										  List *pathkeys,
+										  Relids required_outer,
+										  double fraction);
 extern List *build_index_pathkeys(PlannerInfo *root, IndexOptInfo *index,
 					 ScanDirection scandir);
 extern List *build_expression_pathkey(PlannerInfo *root, Expr *expr,

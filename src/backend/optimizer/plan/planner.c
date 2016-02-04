@@ -1334,6 +1334,10 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	double		dNumGroups = 0;
 	bool		use_hashed_distinct = false;
 	bool		tested_hashed_distinct = false;
+	Path	   *cheapest_path;
+	Path	   *sorted_path = NULL;
+	Path	   *partial_sorted_path = NULL;
+	Path	   *best_path  = NULL;
 
 	/* Tweak caller-supplied tuple_fraction if have LIMIT/OFFSET */
 	if (parse->limitCount || parse->limitOffset)
@@ -1434,9 +1438,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		List	   *rollup_groupclauses = NIL;
 		standard_qp_extra qp_extra;
 		RelOptInfo *final_rel;
-		Path	   *cheapest_path;
-		Path	   *sorted_path;
-		Path	   *best_path;
 
 		MemSet(&agg_costs, 0, sizeof(AggClauseCosts));
 
@@ -1764,7 +1765,14 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 													  root->query_pathkeys,
 													  NULL,
 													  tuple_fraction);
-
+		if (sorted_path == NULL)
+		{
+			partial_sorted_path =
+				get_cheapest_partial_path_for_pathkeys(final_rel->pathlist,
+													   root->query_pathkeys,
+													   NULL,
+													   tuple_fraction);
+		}
 		/* Don't consider same path in both guises; just wastes effort */
 		if (sorted_path == cheapest_path)
 			sorted_path = NULL;
@@ -1803,7 +1811,32 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				/* Presorted path is a loser */
 				sorted_path = NULL;
 			}
+		} else if (partial_sorted_path != NULL) {
+			Path	sort_path;
+			Path	partial_sort_path;
+			
+			cost_sort(&sort_path, root, root->query_pathkeys,
+					  cheapest_path->total_cost,
+					  path_rows, path_width,
+					  0.0, work_mem, root->limit_tuples);
+			
+			cost_sort(&partial_sort_path, root, root->query_pathkeys,
+					  partial_sorted_path->total_cost,
+					  path_rows, path_width,
+					  0.0, work_mem, root->limit_tuples);
+			
+			partial_sort_path.total_cost -= partial_sort_path.startup_cost;
+			partial_sort_path.startup_cost /= partial_sorted_path->pathkeys->length+1;
+			partial_sort_path.total_cost += partial_sort_path.startup_cost;
+
+
+			if (compare_fractional_path_costs(&sort_path, &partial_sort_path,
+											  tuple_fraction) > 0)
+			{
+				cheapest_path = partial_sorted_path;
+			}
 		}
+			
 
 		/*
 		 * Consider whether we want to use hashing instead of sorting.
@@ -2370,6 +2403,12 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 														   result_plan,
 														 root->sort_pathkeys,
 														   limit_tuples);
+			if (partial_sorted_path && best_path == partial_sorted_path)
+			{
+				result_plan->total_cost -= result_plan->startup_cost;
+				result_plan->startup_cost /= partial_sorted_path->pathkeys->length+1;
+				result_plan->total_cost += result_plan->startup_cost;				
+			}
 			current_pathkeys = root->sort_pathkeys;
 		}
 	}
