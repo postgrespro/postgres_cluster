@@ -330,6 +330,26 @@ pathkeys_contained_in(List *keys1, List *keys2)
 	return false;
 }
 
+int
+pathkeys_get_prefix(List *keys1, List *keys2)
+{
+	ListCell   *key1,
+			   *key2;
+
+	int prefix = 0;
+
+	forboth(key1, keys1, key2, keys2)
+	{
+		PathKey    *pathkey1 = (PathKey *) lfirst(key1);
+		PathKey    *pathkey2 = (PathKey *) lfirst(key2);
+
+		if (pathkey1 != pathkey2)
+			break;
+		prefix += 1;
+	}
+	return prefix;
+}
+
 /*
  * get_cheapest_path_for_pathkeys
  *	  Find the cheapest path (according to the specified criterion) that
