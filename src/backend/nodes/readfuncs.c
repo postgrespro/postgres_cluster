@@ -1951,6 +1951,7 @@ _readSort(void)
 	ReadCommonPlan(&local_node->plan);
 
 	READ_INT_FIELD(numCols);
+	READ_INT_FIELD(prefix);
 	READ_ATTRNUMBER_ARRAY(sortColIdx, local_node->numCols);
 	READ_OID_ARRAY(sortOperators, local_node->numCols);
 	READ_OID_ARRAY(collations, local_node->numCols);

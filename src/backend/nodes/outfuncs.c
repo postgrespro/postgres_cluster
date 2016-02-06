@@ -778,6 +778,7 @@ _outSort(StringInfo str, const Sort *node)
 	_outPlanInfo(str, (const Plan *) node);
 
 	WRITE_INT_FIELD(numCols);
+	WRITE_INT_FIELD(prefix);
 
 	appendStringInfoString(str, " :sortColIdx");
 	for (i = 0; i < node->numCols; i++)

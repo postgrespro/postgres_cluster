@@ -1811,7 +1811,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				/* Presorted path is a loser */
 				sorted_path = NULL;
 			}
-		} else if (partial_sorted_path != NULL) {
+		} else if (partial_sorted_path != NULL && limit_tuples > 0.0 && limit_tuples < path_rows) {
 			Path	sort_path;
 			Path	partial_sort_path;
 			
@@ -1826,7 +1826,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 					  0.0, work_mem, root->limit_tuples);
 			
 			partial_sort_path.total_cost -= partial_sort_path.startup_cost;
-			partial_sort_path.startup_cost /= partial_sorted_path->pathkeys->length+1;
+			partial_sort_path.startup_cost /= path_rows/limit_tuples;
 			partial_sort_path.total_cost += partial_sort_path.startup_cost;
 
 
@@ -2399,15 +2399,18 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	{
 		if (!pathkeys_contained_in(root->sort_pathkeys, current_pathkeys))
 		{
+			double numRows = result_plan->plan_rows;
 			result_plan = (Plan *) make_sort_from_pathkeys(root,
 														   result_plan,
-														 root->sort_pathkeys,
+														   root->sort_pathkeys,
 														   limit_tuples);
-			if (partial_sorted_path && best_path == partial_sorted_path)
-			{
+			/* check if input data was partially sorted and there is limit clause */
+			if (partial_sorted_path && best_path == partial_sorted_path && limit_tuples > 0.0 && limit_tuples < numRows)
+			{								
 				result_plan->total_cost -= result_plan->startup_cost;
-				result_plan->startup_cost /= partial_sorted_path->pathkeys->length+1;
+				result_plan->startup_cost /= numRows/limit_tuples;
 				result_plan->total_cost += result_plan->startup_cost;				
+				((Sort*)result_plan)->prefix = partial_sorted_path->pathkeys->length;
 			}
 			current_pathkeys = root->sort_pathkeys;
 		}

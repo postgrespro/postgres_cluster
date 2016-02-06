@@ -89,7 +89,9 @@ ExecSort(SortState *node)
 											  plannode->collations,
 											  plannode->nullsFirst,
 											  work_mem,
-											  node->randomAccess);
+											  node->randomAccess,
+											  plannode->prefix
+			);
 		if (node->bounded)
 			tuplesort_set_bound(tuplesortstate, node->bound);
 		node->tuplesortstate = (void *) tuplesortstate;
@@ -98,15 +100,14 @@ ExecSort(SortState *node)
 		 * Scan the subplan and feed all the tuples to tuplesort.
 		 */
 
-		for (;;)
+		do
 		{
 			slot = ExecProcNode(outerNode);
 
 			if (TupIsNull(slot))
 				break;
 
-			tuplesort_puttupleslot(tuplesortstate, slot);
-		}
+		} while (tuplesort_puttupleslot(tuplesortstate, slot));
 
 		/*
 		 * Complete the sort.

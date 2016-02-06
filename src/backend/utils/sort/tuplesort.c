@@ -219,6 +219,8 @@ struct Tuplesortstate
 								 * tuples to return? */
 	bool		boundUsed;		/* true if we made use of a bounded heap */
 	int			bound;			/* if bounded, the maximum number of tuples */
+	int         prefix;         /* number of prefix keys by which input data is already sorted */
+	int         matchedKeys;    /* number of matched keys */
 	int64		availMem;		/* remaining memory available, in bytes */
 	int64		allowedMem;		/* total memory allowed, in bytes */
 	int			maxTapes;		/* number of tapes (Knuth's T) */
@@ -458,7 +460,7 @@ struct Tuplesortstate
 
 
 static Tuplesortstate *tuplesort_begin_common(int workMem, bool randomAccess);
-static void puttuple_common(Tuplesortstate *state, SortTuple *tuple);
+static bool puttuple_common(Tuplesortstate *state, SortTuple *tuple);
 static bool consider_abort_common(Tuplesortstate *state);
 static void inittapes(Tuplesortstate *state);
 static void selectnewtape(Tuplesortstate *state);
@@ -575,7 +577,7 @@ tuplesort_begin_common(int workMem, bool randomAccess)
 	state->availMem = state->allowedMem;
 	state->sortcontext = sortcontext;
 	state->tapeset = NULL;
-
+	state->prefix = 0;
 	state->memtupcount = 0;
 
 	/*
@@ -613,7 +615,7 @@ tuplesort_begin_heap(TupleDesc tupDesc,
 					 int nkeys, AttrNumber *attNums,
 					 Oid *sortOperators, Oid *sortCollations,
 					 bool *nullsFirstFlags,
-					 int workMem, bool randomAccess)
+					 int workMem, bool randomAccess, int prefix)
 {
 	Tuplesortstate *state = tuplesort_begin_common(workMem, randomAccess);
 	MemoryContext oldcontext;
@@ -648,6 +650,7 @@ tuplesort_begin_heap(TupleDesc tupDesc,
 
 	/* Prepare SortSupport data for each column */
 	state->sortKeys = (SortSupport) palloc0(nkeys * sizeof(SortSupportData));
+	state->prefix = prefix;
 
 	for (i = 0; i < nkeys; i++)
 	{
@@ -1202,21 +1205,22 @@ noalloc:
  *
  * Note that the input data is always copied; the caller need not save it.
  */
-void
+bool
 tuplesort_puttupleslot(Tuplesortstate *state, TupleTableSlot *slot)
 {
 	MemoryContext oldcontext = MemoryContextSwitchTo(state->sortcontext);
 	SortTuple	stup;
-
+	bool needmore;
 	/*
 	 * Copy the given tuple into memory we control, and decrease availMem.
 	 * Then call the common code.
 	 */
 	COPYTUP(state, &stup, (void *) slot);
 
-	puttuple_common(state, &stup);
+	needmore = puttuple_common(state, &stup);
 
 	MemoryContextSwitchTo(oldcontext);
+	return needmore;
 }
 
 /*
@@ -1397,7 +1401,7 @@ tuplesort_putdatum(Tuplesortstate *state, Datum val, bool isNull)
 /*
  * Shared code for tuple and datum cases.
  */
-static void
+static bool
 puttuple_common(Tuplesortstate *state, SortTuple *tuple)
 {
 	switch (state->status)
@@ -1441,14 +1445,14 @@ puttuple_common(Tuplesortstate *state, SortTuple *tuple)
 						 pg_rusage_show(&state->ru_start));
 #endif
 				make_bounded_heap(state);
-				return;
+				break;
 			}
 
 			/*
 			 * Done if we still fit in available memory and have array slots.
 			 */
 			if (state->memtupcount < state->memtupsize && !LACKMEM(state))
-				return;
+				break;
 
 			/*
 			 * Nope; time to switch to tape-based operation.
@@ -1475,6 +1479,9 @@ puttuple_common(Tuplesortstate *state, SortTuple *tuple)
 			{
 				/* new tuple <= top of the heap, so we can discard it */
 				free_sort_tuple(state, tuple);
+				if (state->prefix > state->matchedKeys && state->memtupcount >= state->bound) { 
+					return false;
+				}
 				CHECK_FOR_INTERRUPTS();
 			}
 			else
@@ -1517,6 +1524,7 @@ puttuple_common(Tuplesortstate *state, SortTuple *tuple)
 			elog(ERROR, "invalid tuplesort state");
 			break;
 	}
+	return true;
 }
 
 static bool
@@ -3071,19 +3079,20 @@ comparetup_heap(const SortTuple *a, const SortTuple *b, Tuplesortstate *state)
 	HeapTupleData rtup;
 	TupleDesc	tupDesc;
 	int			nkey;
-	int32		compare;
+	int32		compare = 0;
 	AttrNumber	attno;
 	Datum		datum1,
 				datum2;
 	bool		isnull1,
 				isnull2;
 
+	state->matchedKeys = 0;
 
 	/* Compare the leading sort key */
 	compare = ApplySortComparator(a->datum1, a->isnull1,
 								  b->datum1, b->isnull1,
 								  sortKey);
-	if (compare != 0)
+	if (compare != 0) 
 		return compare;
 
 	/* Compare additional sort keys */
@@ -3119,10 +3128,11 @@ comparetup_heap(const SortTuple *a, const SortTuple *b, Tuplesortstate *state)
 									  datum2, isnull2,
 									  sortKey);
 		if (compare != 0)
-			return compare;
+			break;
 	}
+	state->matchedKeys = nkey;
 
-	return 0;
+	return compare;
 }
 
 static void

@@ -62,7 +62,7 @@ extern Tuplesortstate *tuplesort_begin_heap(TupleDesc tupDesc,
 					 int nkeys, AttrNumber *attNums,
 					 Oid *sortOperators, Oid *sortCollations,
 					 bool *nullsFirstFlags,
-					 int workMem, bool randomAccess);
+ 					 int workMem, bool randomAccess, int prefix);
 extern Tuplesortstate *tuplesort_begin_cluster(TupleDesc tupDesc,
 						Relation indexRel,
 						int workMem, bool randomAccess);
@@ -81,7 +81,7 @@ extern Tuplesortstate *tuplesort_begin_datum(Oid datumType,
 
 extern void tuplesort_set_bound(Tuplesortstate *state, int64 bound);
 
-extern void tuplesort_puttupleslot(Tuplesortstate *state,
+extern bool tuplesort_puttupleslot(Tuplesortstate *state,
 					   TupleTableSlot *slot);
 extern void tuplesort_putheaptuple(Tuplesortstate *state, HeapTuple tup);
 extern void tuplesort_putindextuplevalues(Tuplesortstate *state,

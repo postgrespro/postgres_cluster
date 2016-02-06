@@ -679,6 +679,7 @@ typedef struct Sort
 {
 	Plan		plan;
 	int			numCols;		/* number of sort-key columns */
+	int         prefix;         /* sorted prefix: number of keys by which input stream is already sorted */
 	AttrNumber *sortColIdx;		/* their indexes in the target list */
 	Oid		   *sortOperators;	/* OIDs of operators to sort them by */
 	Oid		   *collations;		/* OIDs of collations */

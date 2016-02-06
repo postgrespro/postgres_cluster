@@ -827,6 +827,7 @@ _copySort(const Sort *from)
 	CopyPlanFields((const Plan *) from, (Plan *) newnode);
 
 	COPY_SCALAR_FIELD(numCols);
+	COPY_SCALAR_FIELD(prefix);
 	COPY_POINTER_FIELD(sortColIdx, from->numCols * sizeof(AttrNumber));
 	COPY_POINTER_FIELD(sortOperators, from->numCols * sizeof(Oid));
 	COPY_POINTER_FIELD(collations, from->numCols * sizeof(Oid));
