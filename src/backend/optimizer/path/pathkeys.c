@@ -443,7 +443,7 @@ get_cheapest_partial_path_for_pathkeys(List *paths,
 	{
 		Path	   *path = (Path *) lfirst(l);
 		int prefix_len = pathkeys_get_prefix(pathkeys, path->pathkeys);
-		if (prefix_len < best_prefix_len || path->pathtype != T_IndexOnlyScan) { 
+		if (prefix_len < best_prefix_len) { 
 			continue;
 		}
 		/*
