@@ -164,7 +164,7 @@ static cid_t dtm_sync(cid_t global_cid)
         dtm_sleep(global_cid - local_cid);
 #if TRACE_SLEEP_TIME
         totalSleepTime += dtm_get_current_time() - now;
-        if (now > prevReportTime + USEC*10) { 
+        if (now > prevReportTime + USEC) { 
             prevReportTime = now;
             if (firstReportTime == 0) { 
                 firstReportTime = now;
@@ -445,17 +445,20 @@ static TransactionId DtmAdjustOldestXid(TransactionId xid)
 {
     if (TransactionIdIsValid(xid)) { 
         DtmTransStatus *ts, *prev = NULL;
-        timestamp_t cutoff_time = dtm_get_current_time() - DtmVacuumDelay*USEC;
+		timestamp_t now = dtm_get_current_time();
+        timestamp_t cutoff_time = now - DtmVacuumDelay*USEC;
         SpinLockAcquire(&local->lock);
         ts = (DtmTransStatus*)hash_search(xid2status, &xid, HASH_FIND, NULL);
         if (ts != NULL) { 
             cutoff_time = ts->cid - DtmVacuumDelay*USEC;
-        }                
-        for (ts = local->trans_list_head; ts != NULL && ts->cid < cutoff_time; prev = ts, ts = ts->next) { 
-            if (prev != NULL) { 
-                hash_search(xid2status, &prev->xid, HASH_REMOVE, NULL);
-            }
-        }
+			
+			for (ts = local->trans_list_head; ts != NULL && ts->cid < cutoff_time; prev = ts, ts = ts->next) { 
+				if (prev != NULL) { 
+					/* intf(stderr, "Remove xid %d from hash at %lu\n", prev->xid, now); */
+					hash_search(xid2status, &prev->xid, HASH_REMOVE, NULL);
+				}
+			}
+		}
         if (prev != NULL) { 
             local->trans_list_head = prev;
             xid = prev->xid;            
@@ -487,7 +490,7 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     static timestamp_t firstReportTime;
     static timestamp_t prevReportTime;
     static timestamp_t totalSleepTime;
-    static timestamp_t maxSleepTime;
+    static timestamp_t mnxSleepTime;
 #endif
     timestamp_t delay = MIN_WAIT_TIMEOUT;
     Assert(xid != InvalidTransactionId);
