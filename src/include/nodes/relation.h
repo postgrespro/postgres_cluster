@@ -805,6 +805,10 @@ typedef struct Path
  * index column, so 'indexqualcols' must form a nondecreasing sequence.
  * (The order of multiple quals for the same index column is unspecified.)
  *
+ * 'indexrinfos' is a list of RestrictInfo nodes from the query's WHERE
+ * or JOIN conditions, excluding those implied by the index predicate
+ * (if the index is not partial, the list includes all restriction clauses).
+ *
  * 'indexorderbys', if not NIL, is a list of ORDER BY expressions that have
  * been found to be usable as ordering operators for an amcanorderbyop index.
  * The list must match the path's pathkeys, ie, one expression per pathkey
@@ -839,6 +843,7 @@ typedef struct IndexPath
 	List	   *indexclauses;
 	List	   *indexquals;
 	List	   *indexqualcols;
+	List	   *indexrinfos;
 	List	   *indexorderbys;
 	List	   *indexorderbycols;
 	ScanDirection indexscandir;

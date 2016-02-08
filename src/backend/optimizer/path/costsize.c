@@ -89,6 +89,7 @@
 #include "optimizer/placeholder.h"
 #include "optimizer/plancat.h"
 #include "optimizer/planmain.h"
+#include "optimizer/predtest.h"
 #include "optimizer/restrictinfo.h"
 #include "parser/parsetree.h"
 #include "utils/lsyscache.h"
@@ -429,7 +430,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 		path->path.rows = path->path.param_info->ppi_rows;
 		/* qpquals come from the rel's restriction clauses and ppi_clauses */
 		qpquals = list_concat(
-					   extract_nonindex_conditions(baserel->baserestrictinfo,
+					   extract_nonindex_conditions(path->indexrinfos,
 												   path->indexquals),
 			  extract_nonindex_conditions(path->path.param_info->ppi_clauses,
 										  path->indexquals));
@@ -438,7 +439,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 	{
 		path->path.rows = baserel->rows;
 		/* qpquals come from just the rel's restriction clauses */
-		qpquals = extract_nonindex_conditions(baserel->baserestrictinfo,
+		qpquals = extract_nonindex_conditions(path->indexrinfos,
 											  path->indexquals);
 	}
 
@@ -639,6 +640,7 @@ extract_nonindex_conditions(List *qual_clauses, List *indexquals)
 			continue;			/* simple duplicate */
 		if (is_redundant_derived_clause(rinfo, indexquals))
 			continue;			/* derived from same EquivalenceClass */
+
 		/* ... skip the predicate proof attempts createplan.c will try ... */
 		result = lappend(result, rinfo);
 	}
