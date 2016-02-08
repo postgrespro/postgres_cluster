@@ -1,0 +1,102 @@
+Bench started at Пн. дек. 28 16:45:57 MSK 2015
+astro5:{tps:82710.398466, transactions:505000, selects:1000094, updates:0, aborts:0, abort_percent: 0, readers:1, writers:100, update_percent:0, accounts:500000, iterations:5000, hosts:3}
+Bench finished at Пн. дек. 28 16:46:03 MSK 2015
+Bench started at Пн. дек. 28 16:48:11 MSK 2015
+astro5:{tps:95486.419038, transactions:2000000, selects:4000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 16:48:32 MSK 2015
+Bench started at Пн. дек. 28 16:50:40 MSK 2015
+astro5:{tps:58000.391271, transactions:3000000, selects:6000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:300, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 16:51:32 MSK 2015
+Bench started at Пн. дек. 28 16:52:36 MSK 2015
+astro5:{tps:75481.448607, transactions:2500000, selects:5000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:250, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 16:53:10 MSK 2015
+Bench started at Пн. дек. 28 16:53:30 MSK 2015
+astro5:{tps:96849.761356, transactions:1500000, selects:3000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:150, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 16:53:46 MSK 2015
+Bench started at Пн. дек. 28 16:54:35 MSK 2015
+astro5:{tps:99112.256474, transactions:2000000, selects:4000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 16:54:56 MSK 2015
+Bench started at Пн. дек. 28 16:55:40 MSK 2015
+astro5:{tps:77118.328667, transactions:2500000, selects:5000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:250, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 16:56:13 MSK 2015
+Bench started at Пн. дек. 28 16:56:38 MSK 2015
+astro5:{tps:97729.043079, transactions:1800000, selects:3600000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:180, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 16:56:57 MSK 2015
+Bench started at Пн. дек. 28 16:57:21 MSK 2015
+astro5:{tps:88135.849072, transactions:2200000, selects:4400000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:220, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 16:57:46 MSK 2015
+Bench started at Пн. дек. 28 16:58:06 MSK 2015
+astro5:{tps:96213.836406, transactions:2000000, selects:4000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 16:58:27 MSK 2015
+Bench started at Пн. дек. 28 17:00:08 MSK 2015
+astro5:{tps:94062.466696, transactions:2000000, selects:4000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 17:00:30 MSK 2015
+Bench started at Пн. дек. 28 17:01:23 MSK 2015
+astro5:{tps:96258.868672, transactions:1900000, selects:3800000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:190, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 17:01:43 MSK 2015
+Bench started at Пн. дек. 28 17:06:24 MSK 2015
+astro5:{tps:98201.344180, transactions:2000000, selects:4000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 17:06:45 MSK 2015
+Bench started at Пн. дек. 28 17:10:02 MSK 2015
+astro5:{tps:99260.179144, transactions:2000000, selects:4000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 17:10:23 MSK 2015
+Bench started at Пн. дек. 28 17:10:45 MSK 2015
+astro5:{tps:59596.922177, transactions:3000000, selects:6000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:300, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 17:11:36 MSK 2015
+Bench started at Пн. дек. 28 17:12:04 MSK 2015
+astro5:{tps:97180.149516, transactions:1500000, selects:3000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:150, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 17:12:19 MSK 2015
+Bench started at Пн. дек. 28 17:14:24 MSK 2015
+
+Bench finished at Пн. дек. 28 17:14:24 MSK 2015
+Bench started at Пн. дек. 28 17:14:50 MSK 2015
+astro5:{tps:75264.442560, transactions:2000000, selects:4000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 17:15:17 MSK 2015
+Bench started at Пн. дек. 28 17:15:43 MSK 2015
+astro5:{tps:73916.036114, transactions:1500000, selects:3000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:150, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 17:16:04 MSK 2015
+Bench started at Пн. дек. 28 17:16:32 MSK 2015
+astro5:{tps:75341.921227, transactions:2500000, selects:5000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:250, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 17:17:06 MSK 2015
+Bench started at Пн. дек. 28 17:17:45 MSK 2015
+astro5:{tps:75056.119461, transactions:2500000, selects:5000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:250, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 17:18:18 MSK 2015
+Bench started at Пн. дек. 28 17:18:43 MSK 2015
+astro5:{tps:75890.386233, transactions:2500000, selects:5000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:250, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 17:19:16 MSK 2015
+Bench started at Пн. дек. 28 17:21:07 MSK 2015
+
+Bench finished at Пн. дек. 28 17:21:08 MSK 2015
+Bench started at Пн. дек. 28 17:21:29 MSK 2015
+astro5:{tps:100635.796837, transactions:2000000, selects:4000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пн. дек. 28 17:21:49 MSK 2015
+Bench started at Пн. дек. 28 17:25:19 MSK 2015
+astro5:{tps:105187.951278, transactions:20000000, selects:40000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:100000, hosts:3}
+Bench finished at Пн. дек. 28 17:28:30 MSK 2015
+Bench started at Пн. дек. 28 17:28:58 MSK 2015
+
+Bench finished at Пн. дек. 28 17:37:24 MSK 2015
+Bench started at Ср. дек. 30 10:20:00 MSK 2015
+astro5:{tps:58953.867049, transactions:20000000, selects:40000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:100000, hosts:3}
+Bench finished at Ср. дек. 30 10:25:40 MSK 2015
+Bench started at Ср. дек. 30 10:35:41 MSK 2015
+astro5:{tps:57329.959855, transactions:20000000, selects:40000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:100000, hosts:3}
+Bench finished at Ср. дек. 30 10:41:30 MSK 2015
+Bench started at Ср. дек. 30 11:00:00 MSK 2015
+astro5:{tps:112584.121096, transactions:20000000, selects:40000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:100000, hosts:3}
+Bench finished at Ср. дек. 30 11:02:57 MSK 2015
+Bench started at Ср. дек. 30 12:52:42 MSK 2015
+astro5:{tps:112702.584939, transactions:20000000, selects:40000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:100000, hosts:3}
+Bench finished at Ср. дек. 30 12:55:40 MSK 2015
+Bench started at Ср. дек. 30 13:04:02 MSK 2015
+astro5:{tps:112698.844997, transactions:20000000, selects:40000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:100000, hosts:3}
+Bench finished at Ср. дек. 30 13:07:00 MSK 2015
+Bench started at Ср. дек. 30 13:20:16 MSK 2015
+astro5:{tps:109226.955236, transactions:20000000, selects:40000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:100000, hosts:3}
+Bench finished at Ср. дек. 30 13:23:20 MSK 2015
+Bench started at Ср. дек. 30 15:32:48 MSK 2015
+astro5:{tps:112740.183590, transactions:20000000, selects:40000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:100000, hosts:3}
+Bench finished at Ср. дек. 30 15:35:45 MSK 2015
+Bench started at Ср. дек. 30 19:57:27 MSK 2015
+astro5:{tps:111696.732113, transactions:20000000, selects:40000000, updates:0, aborts:0, abort_percent: 0, readers:0, writers:200, update_percent:0, accounts:500000, iterations:100000, hosts:3}
+Bench finished at Ср. дек. 30 20:00:27 MSK 2015
