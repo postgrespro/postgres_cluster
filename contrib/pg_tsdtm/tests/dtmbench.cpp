@@ -383,7 +383,7 @@ int main (int argc, char* argv[])
         cfg.nReaders,
         cfg.nWriters,
         nAborts,
-        (int)(nAborts*100/nWrites),
+        (int)(nAborts*100/(nWrites + 0.0001)),
         maxReadDuration, maxWriteDuration,
         cfg.nAccounts,
         cfg.nIterations,
