@@ -4,7 +4,7 @@
  *	  Functions to convert stored expressions/querytrees back to
  *	  source text
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -19,11 +19,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include "access/amapi.h"
 #include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_aggregate.h"
+#include "catalog/pg_am.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
@@ -1019,6 +1021,7 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 	Form_pg_index idxrec;
 	Form_pg_class idxrelrec;
 	Form_pg_am	amrec;
+	IndexAmRoutine *amroutine;
 	List	   *indexprs;
 	ListCell   *indexpr_item;
 	List	   *context;
@@ -1078,6 +1081,9 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 		elog(ERROR, "cache lookup failed for access method %u",
 			 idxrelrec->relam);
 	amrec = (Form_pg_am) GETSTRUCT(ht_am);
+
+	/* Fetch the index AM's API struct */
+	amroutine = GetIndexAmRoutine(amrec->amhandler);
 
 	/*
 	 * Get the index expressions, if any.  (NOTE: we do not use the relcache
@@ -1190,7 +1196,7 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 			get_opclass_name(indclass->values[keyno], keycoltype, &buf);
 
 			/* Add options if relevant */
-			if (amrec->amcanorder)
+			if (amroutine->amcanorder)
 			{
 				/* if it supports sort ordering, report DESC and NULLS opts */
 				if (opt & INDOPTION_DESC)
@@ -5526,9 +5532,21 @@ get_insert_query_def(Query *query, deparse_context *context)
 			/* Add a WHERE clause (for partial indexes) if given */
 			if (confl->arbiterWhere != NULL)
 			{
+				bool		save_varprefix;
+
+				/*
+				 * Force non-prefixing of Vars, since parser assumes that they
+				 * belong to target relation.  WHERE clause does not use
+				 * InferenceElem, so this is separately required.
+				 */
+				save_varprefix = context->varprefix;
+				context->varprefix = false;
+
 				appendContextKeyword(context, " WHERE ",
 									 -PRETTYINDENT_STD, PRETTYINDENT_STD, 1);
 				get_rule_expr(confl->arbiterWhere, context, false);
+
+				context->varprefix = save_varprefix;
 			}
 		}
 		else if (confl->constraint != InvalidOid)
@@ -7950,13 +7968,14 @@ get_rule_expr(Node *node, deparse_context *context,
 		case T_InferenceElem:
 			{
 				InferenceElem *iexpr = (InferenceElem *) node;
-				bool		varprefix = context->varprefix;
+				bool		save_varprefix;
 				bool		need_parens;
 
 				/*
 				 * InferenceElem can only refer to target relation, so a
-				 * prefix is never useful.
+				 * prefix is not useful, and indeed would cause parse errors.
 				 */
+				save_varprefix = context->varprefix;
 				context->varprefix = false;
 
 				/*
@@ -7976,7 +7995,7 @@ get_rule_expr(Node *node, deparse_context *context,
 				if (need_parens)
 					appendStringInfoChar(buf, ')');
 
-				context->varprefix = varprefix;
+				context->varprefix = save_varprefix;
 
 				if (iexpr->infercollid)
 					appendStringInfo(buf, " COLLATE %s",
@@ -9372,10 +9391,12 @@ printSubscripts(ArrayRef *aref, deparse_context *context)
 		appendStringInfoChar(buf, '[');
 		if (lowlist_item)
 		{
+			/* If subexpression is NULL, get_rule_expr prints nothing */
 			get_rule_expr((Node *) lfirst(lowlist_item), context, false);
 			appendStringInfoChar(buf, ':');
 			lowlist_item = lnext(lowlist_item);
 		}
+		/* If subexpression is NULL, get_rule_expr prints nothing */
 		get_rule_expr((Node *) lfirst(uplist_item), context, false);
 		appendStringInfoChar(buf, ']');
 	}
@@ -9856,18 +9877,59 @@ flatten_reloptions(Oid relid)
 								 Anum_pg_class_reloptions, &isnull);
 	if (!isnull)
 	{
-		Datum		sep,
-					txt;
+		StringInfoData buf;
+		Datum	   *options;
+		int			noptions;
+		int			i;
 
-		/*
-		 * We want to use array_to_text(reloptions, ', ') --- but
-		 * DirectFunctionCall2(array_to_text) does not work, because
-		 * array_to_text() relies on flinfo to be valid.  So use
-		 * OidFunctionCall2.
-		 */
-		sep = CStringGetTextDatum(", ");
-		txt = OidFunctionCall2(F_ARRAY_TO_TEXT, reloptions, sep);
-		result = TextDatumGetCString(txt);
+		initStringInfo(&buf);
+
+		deconstruct_array(DatumGetArrayTypeP(reloptions),
+						  TEXTOID, -1, false, 'i',
+						  &options, NULL, &noptions);
+
+		for (i = 0; i < noptions; i++)
+		{
+			char	   *option = TextDatumGetCString(options[i]);
+			char	   *name;
+			char	   *separator;
+			char	   *value;
+
+			/*
+			 * Each array element should have the form name=value.  If the "="
+			 * is missing for some reason, treat it like an empty value.
+			 */
+			name = option;
+			separator = strchr(option, '=');
+			if (separator)
+			{
+				*separator = '\0';
+				value = separator + 1;
+			}
+			else
+				value = "";
+
+			if (i > 0)
+				appendStringInfoString(&buf, ", ");
+			appendStringInfo(&buf, "%s=", quote_identifier(name));
+
+			/*
+			 * In general we need to quote the value; but to avoid unnecessary
+			 * clutter, do not quote if it is an identifier that would not
+			 * need quoting.  (We could also allow numbers, but that is a bit
+			 * trickier than it looks --- for example, are leading zeroes
+			 * significant?  We don't want to assume very much here about what
+			 * custom reloptions might mean.)
+			 */
+			if (quote_identifier(value) == value)
+				appendStringInfoString(&buf, value);
+			else
+				simple_quote_literal(&buf, value);
+
+			pfree(option);
+		}
+
+		result = buf.data;
 	}
 
 	ReleaseSysCache(tuple);

@@ -4,7 +4,7 @@
  *	  POSTGRES low-level lock mechanism
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/storage/lock.h
@@ -346,6 +346,7 @@ typedef struct PROCLOCK
 	PROCLOCKTAG tag;			/* unique identifier of proclock object */
 
 	/* data */
+	PGPROC	   *groupLeader;	/* group leader, or NULL if no lock group */
 	LOCKMASK	holdMask;		/* bitmask for lock types currently held */
 	LOCKMASK	releaseMask;	/* bitmask for lock types to be released */
 	SHM_QUEUE	lockLink;		/* list link in LOCK's list of proclocks */
@@ -458,7 +459,6 @@ typedef enum
     DS_DISTRIBUTED_DEADLOCK     /* distributed deadlock detected by DTM */
 } DeadLockState;
 
-
 /*
  * The lockmgr's shared hash tables are partitioned to reduce contention.
  * To determine which partition a given locktag belongs to, compute the tag's
@@ -472,6 +472,17 @@ typedef enum
 		LockHashPartition(hashcode)].lock)
 #define LockHashPartitionLockByIndex(i) \
 	(&MainLWLockArray[LOCK_MANAGER_LWLOCK_OFFSET + (i)].lock)
+
+/*
+ * The deadlock detector needs to be able to access lockGroupLeader and
+ * related fields in the PGPROC, so we arrange for those fields to be protected
+ * by one of the lock hash partition locks.  Since the deadlock detector
+ * acquires all such locks anyway, this makes it safe for it to access these
+ * fields without doing anything extra.  To avoid contention as much as
+ * possible, we map different PGPROCs to different partition locks.
+ */
+#define LockHashPartitionLockByProc(p) \
+	LockHashPartitionLock((p)->pgprocno)
 
 /*
  * function prototypes

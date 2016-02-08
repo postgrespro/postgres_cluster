@@ -6,7 +6,7 @@
  * for developers.  If you edit any of these, be sure to do a *full*
  * rebuild (and an initdb if noted).
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/pg_config_manual.h
@@ -50,11 +50,6 @@
  */
 #define SEQ_MAXVALUE	PG_INT64_MAX
 #define SEQ_MINVALUE	(-SEQ_MAXVALUE)
-
-/*
- * Number of spare LWLocks to allocate for user-defined add-on code.
- */
-#define NUM_USER_DEFINED_LWLOCKS	4
 
 /*
  * When we don't have native spinlocks, we use semaphores to simulate them.

@@ -4,7 +4,7 @@
  *	  Definitions for tagged nodes.
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/nodes/nodes.h
@@ -454,6 +454,7 @@ typedef enum NodeTag
 	T_TIDBitmap,				/* in nodes/tidbitmap.h */
 	T_InlineCodeBlock,			/* in nodes/parsenodes.h */
 	T_FdwRoutine,				/* in foreign/fdwapi.h */
+	T_IndexAmRoutine,			/* in access/amapi.h */
 	T_TsmRoutine				/* in access/tsmapi.h */
 } NodeTag;
 

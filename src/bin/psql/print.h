@@ -1,7 +1,7 @@
 /*
  * psql - the PostgreSQL interactive terminal
  *
- * Copyright (c) 2000-2015, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2016, PostgreSQL Global Development Group
  *
  * src/bin/psql/print.h
  */
@@ -152,7 +152,6 @@ typedef struct printQueryOpt
 {
 	printTableOpt topt;			/* the options above */
 	char	   *nullPrint;		/* how to print null entities */
-	bool		quote;			/* quote all values as much as possible */
 	char	   *title;			/* override title */
 	char	  **footers;		/* override footer (default is "(xx rows)") */
 	bool		translate_header;		/* do gettext on column headers */

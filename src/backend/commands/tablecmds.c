@@ -3,7 +3,7 @@
  * tablecmds.c
  *	  Commands for creating and altering table structures and settings
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -29,6 +29,7 @@
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/objectaccess.h"
+#include "catalog/pg_am.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_depend.h"
@@ -1613,8 +1614,10 @@ MergeAttributes(List *schema, List *supers, char relpersistence,
 						errmsg("inherited column \"%s\" has a type conflict",
 							   attributeName),
 							 errdetail("%s versus %s",
-									   TypeNameToString(def->typeName),
-									   format_type_be(attribute->atttypid))));
+									   format_type_with_typemod(defTypeId,
+																deftypmod),
+								format_type_with_typemod(attribute->atttypid,
+													attribute->atttypmod))));
 				defCollId = GetColumnDefCollation(NULL, def, defTypeId);
 				if (defCollId != attribute->attcollation)
 					ereport(ERROR,
@@ -1832,8 +1835,10 @@ MergeAttributes(List *schema, List *supers, char relpersistence,
 							 errmsg("column \"%s\" has a type conflict",
 									attributeName),
 							 errdetail("%s versus %s",
-									   TypeNameToString(def->typeName),
-									   TypeNameToString(newdef->typeName))));
+									   format_type_with_typemod(defTypeId,
+																deftypmod),
+									   format_type_with_typemod(newTypeId,
+																newtypmod))));
 				defcollid = GetColumnDefCollation(NULL, def, defTypeId);
 				newcollid = GetColumnDefCollation(NULL, newdef, newTypeId);
 				if (defcollid != newcollid)
@@ -9081,8 +9086,7 @@ ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing, LOCKMODE lock
 		 * Also change the ownership of the table's row type, if it has one
 		 */
 		if (tuple_class->relkind != RELKIND_INDEX)
-			AlterTypeOwnerInternal(tuple_class->reltype, newOwnerId,
-							 tuple_class->relkind == RELKIND_COMPOSITE_TYPE);
+			AlterTypeOwnerInternal(tuple_class->reltype, newOwnerId);
 
 		/*
 		 * If we are operating on a table or materialized view, also change
@@ -9398,7 +9402,7 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 			(void) view_reloptions(newOptions, true);
 			break;
 		case RELKIND_INDEX:
-			(void) index_reloptions(rel->rd_am->amoptions, newOptions, true);
+			(void) index_reloptions(rel->rd_amroutine->amoptions, newOptions, true);
 			break;
 		default:
 			ereport(ERROR,
@@ -11008,7 +11012,8 @@ ATExecReplicaIdentity(Relation rel, ReplicaIdentityStmt *stmt, LOCKMODE lockmode
 						RelationGetRelationName(indexRel),
 						RelationGetRelationName(rel))));
 	/* The AM must support uniqueness, and the index must in fact be unique. */
-	if (!indexRel->rd_am->amcanunique || !indexRel->rd_index->indisunique)
+	if (!indexRel->rd_amroutine->amcanunique ||
+		!indexRel->rd_index->indisunique)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 			 errmsg("cannot use non-unique index \"%s\" as replica identity",

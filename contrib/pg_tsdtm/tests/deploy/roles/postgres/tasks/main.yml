@@ -42,6 +42,9 @@
 
 #############################################################################
 
+- name: stop postgres if it was running
+  shell: "pkill -9 postgres || true"
+
 - name: clone postgres sources
   git: repo={{pg_repo}}
     dest={{pg_src}}

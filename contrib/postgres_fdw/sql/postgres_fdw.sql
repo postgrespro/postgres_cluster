@@ -178,6 +178,20 @@ SELECT * FROM ft1 t1 WHERE t1.c3 = (SELECT MAX(c3) FROM ft2 t2) ORDER BY c1;
 WITH t1 AS (SELECT * FROM ft1 WHERE c1 <= 10) SELECT t2.c1, t2.c2, t2.c3, t2.c4 FROM t1, ft2 t2 WHERE t1.c1 = t2.c1 ORDER BY t1.c1;
 -- fixed values
 SELECT 'fixed', NULL FROM ft1 t1 WHERE c1 = 1;
+-- Test forcing the remote server to produce sorted data for a merge join.
+SET enable_hashjoin TO false;
+SET enable_nestloop TO false;
+-- inner join; expressions in the clauses appear in the equivalence class list
+EXPLAIN (VERBOSE, COSTS false)
+	SELECT t1.c1, t2."C 1" FROM ft2 t1 JOIN "S 1"."T 1" t2 ON (t1.c1 = t2."C 1") OFFSET 100 LIMIT 10;
+SELECT t1.c1, t2."C 1" FROM ft2 t1 JOIN "S 1"."T 1" t2 ON (t1.c1 = t2."C 1") OFFSET 100 LIMIT 10;
+-- outer join; expressions in the clauses do not appear in equivalence class
+-- list but no output change as compared to the previous query
+EXPLAIN (VERBOSE, COSTS false)
+	SELECT t1.c1, t2."C 1" FROM ft2 t1 LEFT JOIN "S 1"."T 1" t2 ON (t1.c1 = t2."C 1") OFFSET 100 LIMIT 10;
+SELECT t1.c1, t2."C 1" FROM ft2 t1 LEFT JOIN "S 1"."T 1" t2 ON (t1.c1 = t2."C 1") OFFSET 100 LIMIT 10;
+RESET enable_hashjoin;
+RESET enable_nestloop;
 
 -- ===================================================================
 -- WHERE with remotely-executable conditions
@@ -399,6 +413,15 @@ EXPLAIN (verbose, costs off)
 DELETE FROM ft2 USING ft1 WHERE ft1.c1 = ft2.c2 AND ft1.c1 % 10 = 2;
 DELETE FROM ft2 USING ft1 WHERE ft1.c1 = ft2.c2 AND ft1.c1 % 10 = 2;
 SELECT c1,c2,c3,c4 FROM ft2 ORDER BY c1;
+EXPLAIN (verbose, costs off)
+INSERT INTO ft2 (c1,c2,c3) VALUES (9999,999,'foo') RETURNING tableoid::regclass;
+INSERT INTO ft2 (c1,c2,c3) VALUES (9999,999,'foo') RETURNING tableoid::regclass;
+EXPLAIN (verbose, costs off)
+UPDATE ft2 SET c3 = 'bar' WHERE c1 = 9999 RETURNING tableoid::regclass;
+UPDATE ft2 SET c3 = 'bar' WHERE c1 = 9999 RETURNING tableoid::regclass;
+EXPLAIN (verbose, costs off)
+DELETE FROM ft2 WHERE c1 = 9999 RETURNING tableoid::regclass;
+DELETE FROM ft2 WHERE c1 = 9999 RETURNING tableoid::regclass;
 
 -- Test that trigger on remote table works as expected
 CREATE OR REPLACE FUNCTION "S 1".F_BRTRIG() RETURNS trigger AS $$
@@ -812,6 +835,32 @@ where bar.f1 = ss.f1;
 
 select tableoid::regclass, * from bar order by 1,2;
 
+-- Test forcing the remote server to produce sorted data for a merge join,
+-- but the foreign table is an inheritance child.
+truncate table loct1;
+truncate table only foo;
+\set num_rows_foo 2000
+insert into loct1 select generate_series(0, :num_rows_foo, 2), generate_series(0, :num_rows_foo, 2), generate_series(0, :num_rows_foo, 2);
+insert into foo select generate_series(1, :num_rows_foo, 2), generate_series(1, :num_rows_foo, 2);
+SET enable_hashjoin to false;
+SET enable_nestloop to false;
+alter foreign table foo2 options (use_remote_estimate 'true');
+create index i_loct1_f1 on loct1(f1);
+create index i_foo_f1 on foo(f1);
+analyze foo;
+analyze loct1;
+-- inner join; expressions in the clauses appear in the equivalence class list
+explain (verbose, costs off)
+	select foo.f1, loct1.f1 from foo join loct1 on (foo.f1 = loct1.f1) order by foo.f2 offset 10 limit 10;
+select foo.f1, loct1.f1 from foo join loct1 on (foo.f1 = loct1.f1) order by foo.f2 offset 10 limit 10;
+-- outer join; expressions in the clauses do not appear in equivalence class
+-- list but no output change as compared to the previous query
+explain (verbose, costs off)
+	select foo.f1, loct1.f1 from foo left join loct1 on (foo.f1 = loct1.f1) order by foo.f2 offset 10 limit 10;
+select foo.f1, loct1.f1 from foo left join loct1 on (foo.f1 = loct1.f1) order by foo.f2 offset 10 limit 10;
+RESET enable_hashjoin;
+RESET enable_nestloop;
+
 -- Test that WHERE CURRENT OF is not supported
 begin;
 declare c cursor for select * from bar where f1 = 7;
@@ -839,29 +888,29 @@ ALTER TABLE import_source."x 5" DROP COLUMN c1;
 
 CREATE SCHEMA import_dest1;
 IMPORT FOREIGN SCHEMA import_source FROM SERVER loopback INTO import_dest1;
-\det+ import_dest1
+\det+ import_dest1.*
 \d import_dest1.*
 
 -- Options
 CREATE SCHEMA import_dest2;
 IMPORT FOREIGN SCHEMA import_source FROM SERVER loopback INTO import_dest2
   OPTIONS (import_default 'true');
-\det+ import_dest2
+\det+ import_dest2.*
 \d import_dest2.*
 CREATE SCHEMA import_dest3;
 IMPORT FOREIGN SCHEMA import_source FROM SERVER loopback INTO import_dest3
   OPTIONS (import_collate 'false', import_not_null 'false');
-\det+ import_dest3
+\det+ import_dest3.*
 \d import_dest3.*
 
 -- Check LIMIT TO and EXCEPT
 CREATE SCHEMA import_dest4;
 IMPORT FOREIGN SCHEMA import_source LIMIT TO (t1, nonesuch)
   FROM SERVER loopback INTO import_dest4;
-\det+ import_dest4
+\det+ import_dest4.*
 IMPORT FOREIGN SCHEMA import_source EXCEPT (t1, "x 4", nonesuch)
   FROM SERVER loopback INTO import_dest4;
-\det+ import_dest4
+\det+ import_dest4.*
 
 -- Assorted error cases
 IMPORT FOREIGN SCHEMA import_source FROM SERVER loopback INTO import_dest4;
@@ -879,4 +928,48 @@ BEGIN;
 DROP TYPE "Colors" CASCADE;
 IMPORT FOREIGN SCHEMA import_source LIMIT TO (t5)
   FROM SERVER loopback INTO import_dest5;  -- ERROR
+
+ROLLBACK;
+
+BEGIN;
+
+
+CREATE SERVER fetch101 FOREIGN DATA WRAPPER postgres_fdw OPTIONS( fetch_size '101' );
+
+SELECT count(*)
+FROM pg_foreign_server
+WHERE srvname = 'fetch101'
+AND srvoptions @> array['fetch_size=101'];
+
+ALTER SERVER fetch101 OPTIONS( SET fetch_size '202' );
+
+SELECT count(*)
+FROM pg_foreign_server
+WHERE srvname = 'fetch101'
+AND srvoptions @> array['fetch_size=101'];
+
+SELECT count(*)
+FROM pg_foreign_server
+WHERE srvname = 'fetch101'
+AND srvoptions @> array['fetch_size=202'];
+
+CREATE FOREIGN TABLE table30000 ( x int ) SERVER fetch101 OPTIONS ( fetch_size '30000' );
+
+SELECT COUNT(*)
+FROM pg_foreign_table
+WHERE ftrelid = 'table30000'::regclass
+AND ftoptions @> array['fetch_size=30000'];
+
+ALTER FOREIGN TABLE table30000 OPTIONS ( SET fetch_size '60000');
+
+SELECT COUNT(*)
+FROM pg_foreign_table
+WHERE ftrelid = 'table30000'::regclass
+AND ftoptions @> array['fetch_size=30000'];
+
+SELECT COUNT(*)
+FROM pg_foreign_table
+WHERE ftrelid = 'table30000'::regclass
+AND ftoptions @> array['fetch_size=60000'];
+
 ROLLBACK;

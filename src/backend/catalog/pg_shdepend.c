@@ -3,7 +3,7 @@
  * pg_shdepend.c
  *	  routines to support manipulation of the pg_shdepend relation
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -1365,7 +1365,7 @@ shdepReassignOwned(List *roleids, Oid newrole)
 			switch (sdepForm->classid)
 			{
 				case TypeRelationId:
-					AlterTypeOwnerInternal(sdepForm->objid, newrole, true);
+					AlterTypeOwner_oid(sdepForm->objid, newrole, true);
 					break;
 
 				case NamespaceRelationId:

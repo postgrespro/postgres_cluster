@@ -197,7 +197,6 @@ _PG_init(void)
 		return;
 
 	RequestAddinShmemSpace(dtm_memsize());
-	RequestAddinLWLocks(1);
 
 	DefineCustomIntVariable(
 		"dtm.vacuum_delay",

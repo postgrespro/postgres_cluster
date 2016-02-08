@@ -4,7 +4,7 @@
  *	  Definitions for planner's internal data structures.
  *
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/nodes/relation.h
@@ -108,6 +108,10 @@ typedef struct PlannerGlobal
 	bool		parallelModeOK; /* parallel mode potentially OK? */
 
 	bool		parallelModeNeeded;		/* parallel mode actually required? */
+
+	bool		wholePlanParallelSafe;	/* is the entire plan parallel safe? */
+
+	bool		hasForeignJoin;	/* does have a pushed down foreign join */
 } PlannerGlobal;
 
 /* macro for fetching the Plan associated with a SubPlan node */
@@ -458,6 +462,7 @@ typedef struct RelOptInfo
 	List	   *reltargetlist;	/* Vars to be output by scan of relation */
 	List	   *pathlist;		/* Path structures */
 	List	   *ppilist;		/* ParamPathInfos used in pathlist */
+	List	   *partial_pathlist;	/* partial Paths */
 	struct Path *cheapest_startup_path;
 	struct Path *cheapest_total_path;
 	struct Path *cheapest_unique_path;
@@ -489,6 +494,7 @@ typedef struct RelOptInfo
 
 	/* Information about foreign tables and foreign joins */
 	Oid			serverid;		/* identifies server for the table or join */
+	Oid			umid;			/* identifies user mapping for the table or join */
 	/* use "struct FdwRoutine" to avoid including fdwapi.h here */
 	struct FdwRoutine *fdwroutine;
 	void	   *fdw_private;
@@ -554,8 +560,6 @@ typedef struct IndexOptInfo
 								 * index-only scan? */
 	Oid			relam;			/* OID of the access method (in pg_am) */
 
-	RegProcedure amcostestimate;	/* OID of the access method's cost fcn */
-
 	List	   *indexprs;		/* expressions for non-simple index columns */
 	List	   *indpred;		/* predicate if a partial index, else NIL */
 
@@ -565,12 +569,16 @@ typedef struct IndexOptInfo
 	bool		unique;			/* true if a unique index */
 	bool		immediate;		/* is uniqueness enforced immediately? */
 	bool		hypothetical;	/* true if index doesn't really exist */
+
+	/* Remaining fields are copied from the index AM's API struct: */
 	bool		amcanorderbyop; /* does AM support order by operator result? */
 	bool		amoptionalkey;	/* can query omit key for the first column? */
 	bool		amsearcharray;	/* can AM handle ScalarArrayOpExpr quals? */
 	bool		amsearchnulls;	/* can AM search for NULL/NOT NULL entries? */
 	bool		amhasgettuple;	/* does AM have amgettuple interface? */
 	bool		amhasgetbitmap; /* does AM have amgetbitmap interface? */
+	/* Rather than include amapi.h here, we declare amcostestimate like this */
+	void		(*amcostestimate) ();	/* AM's cost estimator */
 } IndexOptInfo;
 
 
@@ -759,6 +767,8 @@ typedef struct Path
 	RelOptInfo *parent;			/* the relation this path can build */
 	ParamPathInfo *param_info;	/* parameterization info, or NULL if none */
 	bool		parallel_aware; /* engage parallel-aware logic? */
+	bool		parallel_safe;	/* OK to use as part of parallel plan? */
+	int			parallel_degree; /* desired parallel degree; 0 = not parallel */
 
 	/* estimated size/costs for path (see costsize.c for more info) */
 	double		rows;			/* estimated number of result tuples */
@@ -956,9 +966,6 @@ typedef struct CustomPathMethods
 												List *tlist,
 												List *clauses,
 												List *custom_plans);
-	/* Optional: print additional fields besides "private" */
-	void		(*TextOutCustomPath) (StringInfo str,
-											  const struct CustomPath *node);
 } CustomPathMethods;
 
 typedef struct CustomPath
@@ -1067,7 +1074,6 @@ typedef struct GatherPath
 {
 	Path		path;
 	Path	   *subpath;		/* path for each worker */
-	int			num_workers;	/* number of workers sought to help */
 	bool		single_copy;	/* path must not be executed >1x */
 } GatherPath;
 

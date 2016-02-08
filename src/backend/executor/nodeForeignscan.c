@@ -3,7 +3,7 @@
  * nodeForeignscan.c
  *	  Routines to support scans of foreign tables
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -281,4 +281,66 @@ ExecReScanForeignScan(ForeignScanState *node)
 		ExecReScan(outerPlan);
 
 	ExecScanReScan(&node->ss);
+}
+
+/* ----------------------------------------------------------------
+ *		ExecForeignScanEstimate
+ *
+ *		Informs size of the parallel coordination information, if any
+ * ----------------------------------------------------------------
+ */
+void
+ExecForeignScanEstimate(ForeignScanState *node, ParallelContext *pcxt)
+{
+	FdwRoutine *fdwroutine = node->fdwroutine;
+
+	if (fdwroutine->EstimateDSMForeignScan)
+	{
+		node->pscan_len = fdwroutine->EstimateDSMForeignScan(node, pcxt);
+		shm_toc_estimate_chunk(&pcxt->estimator, node->pscan_len);
+		shm_toc_estimate_keys(&pcxt->estimator, 1);
+	}
+}
+
+/* ----------------------------------------------------------------
+ *		ExecForeignScanInitializeDSM
+ *
+ *		Initialize the parallel coordination information
+ * ----------------------------------------------------------------
+ */
+void
+ExecForeignScanInitializeDSM(ForeignScanState *node, ParallelContext *pcxt)
+{
+	FdwRoutine *fdwroutine = node->fdwroutine;
+
+	if (fdwroutine->InitializeDSMForeignScan)
+	{
+		int			plan_node_id = node->ss.ps.plan->plan_node_id;
+		void	   *coordinate;
+
+		coordinate = shm_toc_allocate(pcxt->toc, node->pscan_len);
+		fdwroutine->InitializeDSMForeignScan(node, pcxt, coordinate);
+		shm_toc_insert(pcxt->toc, plan_node_id, coordinate);
+	}
+}
+
+/* ----------------------------------------------------------------
+ *		ExecForeignScanInitializeDSM
+ *
+ *		Initialization according to the parallel coordination information
+ * ----------------------------------------------------------------
+ */
+void
+ExecForeignScanInitializeWorker(ForeignScanState *node, shm_toc *toc)
+{
+	FdwRoutine *fdwroutine = node->fdwroutine;
+
+	if (fdwroutine->InitializeWorkerForeignScan)
+	{
+		int			plan_node_id = node->ss.ps.plan->plan_node_id;
+		void	   *coordinate;
+
+		coordinate = shm_toc_lookup(toc, plan_node_id);
+		fdwroutine->InitializeWorkerForeignScan(node, toc, coordinate);
+	}
 }

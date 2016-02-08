@@ -3,7 +3,7 @@
  * planner.c
  *	  The query optimizer external interface.
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -48,10 +48,12 @@
 #include "storage/dsm_impl.h"
 #include "utils/rel.h"
 #include "utils/selfuncs.h"
+#include "utils/syscache.h"
 
 
-/* GUC parameter */
+/* GUC parameters */
 double		cursor_tuple_fraction = DEFAULT_CURSOR_TUPLE_FRACTION;
+int			force_parallel_mode = FORCE_PARALLEL_OFF;
 
 /* Hook for plugins to get control in planner() */
 planner_hook_type planner_hook = NULL;
@@ -106,7 +108,6 @@ static bool choose_hashed_distinct(PlannerInfo *root,
 static List *make_subplanTargetList(PlannerInfo *root, List *tlist,
 					   AttrNumber **groupColIdx, bool *need_tlist_eval);
 static int	get_grouping_column_index(Query *parse, TargetEntry *tle);
-static int	get_sort_column_index(Query *parse, TargetEntry *tle);
 static void locate_grouping_columns(PlannerInfo *root,
 						List *tlist,
 						List *sub_tlist,
@@ -201,16 +202,17 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	glob->lastPlanNodeId = 0;
 	glob->transientPlan = false;
 	glob->hasRowSecurity = false;
+	glob->hasForeignJoin = false;
 
 	/*
-	 * Assess whether it's feasible to use parallel mode for this query.
-	 * We can't do this in a standalone backend, or if the command will
-	 * try to modify any data, or if this is a cursor operation, or if
-	 * GUCs are set to values that don't permit parallelism, or if
-	 * parallel-unsafe functions are present in the query tree.
+	 * Assess whether it's feasible to use parallel mode for this query. We
+	 * can't do this in a standalone backend, or if the command will try to
+	 * modify any data, or if this is a cursor operation, or if GUCs are set
+	 * to values that don't permit parallelism, or if parallel-unsafe
+	 * functions are present in the query tree.
 	 *
-	 * For now, we don't try to use parallel mode if we're running inside
-	 * a parallel worker.  We might eventually be able to relax this
+	 * For now, we don't try to use parallel mode if we're running inside a
+	 * parallel worker.  We might eventually be able to relax this
 	 * restriction, but for now it seems best not to have parallel workers
 	 * trying to create their own parallel workers.
 	 *
@@ -219,8 +221,8 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	 * tries to run a parallel plan in serializable mode; it just won't get
 	 * any workers and will run serially.  But it seems like a good heuristic
 	 * to assume that the same serialization level will be in effect at plan
-	 * time and execution time, so don't generate a parallel plan if we're
-	 * in serializable mode.
+	 * time and execution time, so don't generate a parallel plan if we're in
+	 * serializable mode.
 	 */
 	glob->parallelModeOK = (cursorOptions & CURSOR_OPT_PARALLEL_OK) != 0 &&
 		IsUnderPostmaster && dynamic_shared_memory_type != DSM_IMPL_NONE &&
@@ -230,29 +232,31 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 		!has_parallel_hazard((Node *) parse, true);
 
 	/*
-	 * glob->parallelModeOK should tell us whether it's necessary to impose
-	 * the parallel mode restrictions, but we don't actually want to impose
-	 * them unless we choose a parallel plan, so that people who mislabel
-	 * their functions but don't use parallelism anyway aren't harmed.
-	 * However, it's useful for testing purposes to be able to force the
-	 * restrictions to be imposed whenever a parallel plan is actually chosen
-	 * or not.
+	 * glob->parallelModeNeeded should tell us whether it's necessary to
+	 * impose the parallel mode restrictions, but we don't actually want to
+	 * impose them unless we choose a parallel plan, so that people who
+	 * mislabel their functions but don't use parallelism anyway aren't
+	 * harmed. But when force_parallel_mode is set, we enable the restrictions
+	 * whenever possible for testing purposes.
 	 *
-	 * (It's been suggested that we should always impose these restrictions
-	 * whenever glob->parallelModeOK is true, so that it's easier to notice
-	 * incorrectly-labeled functions sooner.  That might be the right thing
-	 * to do, but for now I've taken this approach.  We could also control
-	 * this with a GUC.)
-	 *
-	 * FIXME: It's assumed that code further down will set parallelModeNeeded
-	 * to true if a parallel path is actually chosen.  Since the core
-	 * parallelism code isn't committed yet, this currently never happens.
+	 * glob->wholePlanParallelSafe should tell us whether it's OK to stick a
+	 * Gather node on top of the entire plan.  However, it only needs to be
+	 * accurate when force_parallel_mode is 'on' or 'regress', so we don't
+	 * bother doing the work otherwise.  The value we set here is just a
+	 * preliminary guess; it may get changed from true to false later, but
+	 * not visca versa.
 	 */
-#ifdef FORCE_PARALLEL_MODE
-	glob->parallelModeNeeded = glob->parallelModeOK;
-#else
-	glob->parallelModeNeeded = false;
-#endif
+	if (force_parallel_mode == FORCE_PARALLEL_OFF || !glob->parallelModeOK)
+	{
+		glob->parallelModeNeeded = false;
+		glob->wholePlanParallelSafe = false;	/* either false or don't care */
+	}
+	else
+	{
+		glob->parallelModeNeeded = true;
+		glob->wholePlanParallelSafe =
+			!has_parallel_hazard((Node *) parse, false);
+	}
 
 	/* Determine what fraction of the plan is likely to be scanned */
 	if (cursorOptions & CURSOR_OPT_FAST_PLAN)
@@ -294,6 +298,35 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	{
 		if (!ExecSupportsBackwardScan(top_plan))
 			top_plan = materialize_finished_plan(top_plan);
+	}
+
+	/*
+	 * At present, we don't copy subplans to workers.  The presence of a
+	 * subplan in one part of the plan doesn't preclude the use of parallelism
+	 * in some other part of the plan, but it does preclude the possibility of
+	 * regarding the entire plan parallel-safe.
+	 */
+	if (glob->subplans != NULL)
+		glob->wholePlanParallelSafe = false;
+
+	/*
+	 * Optionally add a Gather node for testing purposes, provided this is
+	 * actually a safe thing to do.
+	 */
+	if (glob->wholePlanParallelSafe &&
+		force_parallel_mode != FORCE_PARALLEL_OFF)
+	{
+		Gather	   *gather = makeNode(Gather);
+
+		gather->plan.targetlist = top_plan->targetlist;
+		gather->plan.qual = NIL;
+		gather->plan.lefttree = top_plan;
+		gather->plan.righttree = NULL;
+		gather->num_workers = 1;
+		gather->single_copy = true;
+		gather->invisible = (force_parallel_mode == FORCE_PARALLEL_REGRESS);
+		root->glob->parallelModeNeeded = true;
+		top_plan = &gather->plan;
 	}
 
 	/*
@@ -351,6 +384,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	result->nParamExec = glob->nParamExec;
 	result->hasRowSecurity = glob->hasRowSecurity;
 	result->parallelModeNeeded = glob->parallelModeNeeded;
+	result->hasForeignJoin = glob->hasForeignJoin;
 
 	return result;
 }
@@ -619,13 +653,19 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	 * In some cases we may want to transfer a HAVING clause into WHERE. We
 	 * cannot do so if the HAVING clause contains aggregates (obviously) or
 	 * volatile functions (since a HAVING clause is supposed to be executed
-	 * only once per group).  Also, it may be that the clause is so expensive
-	 * to execute that we're better off doing it only once per group, despite
-	 * the loss of selectivity.  This is hard to estimate short of doing the
-	 * entire planning process twice, so we use a heuristic: clauses
-	 * containing subplans are left in HAVING.  Otherwise, we move or copy the
-	 * HAVING clause into WHERE, in hopes of eliminating tuples before
-	 * aggregation instead of after.
+	 * only once per group).  We also can't do this if there are any nonempty
+	 * grouping sets; moving such a clause into WHERE would potentially change
+	 * the results, if any referenced column isn't present in all the grouping
+	 * sets.  (If there are only empty grouping sets, then the HAVING clause
+	 * must be degenerate as discussed below.)
+	 *
+	 * Also, it may be that the clause is so expensive to execute that we're
+	 * better off doing it only once per group, despite the loss of
+	 * selectivity.  This is hard to estimate short of doing the entire
+	 * planning process twice, so we use a heuristic: clauses containing
+	 * subplans are left in HAVING.  Otherwise, we move or copy the HAVING
+	 * clause into WHERE, in hopes of eliminating tuples before aggregation
+	 * instead of after.
 	 *
 	 * If the query has explicit grouping then we can simply move such a
 	 * clause into WHERE; any group that fails the clause will not be in the
@@ -645,7 +685,8 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	{
 		Node	   *havingclause = (Node *) lfirst(l);
 
-		if (contain_agg_clause(havingclause) ||
+		if ((parse->groupClause && parse->groupingSets) ||
+			contain_agg_clause(havingclause) ||
 			contain_volatile_functions(havingclause) ||
 			contain_subplans(havingclause))
 		{
@@ -1416,9 +1457,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	else
 	{
 		/* No set operations, do regular planning */
-		List	   *sub_tlist;
-		AttrNumber *groupColIdx = NULL;
-		bool		need_tlist_eval = true;
 		long		numGroups = 0;
 		AggClauseCosts agg_costs;
 		int			numGroupCols;
@@ -1429,7 +1467,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		List	   *activeWindows = NIL;
 		OnConflictExpr *onconfl;
 		int			maxref = 0;
-		int		   *tleref_to_colnum_map;
 		List	   *rollup_lists = NIL;
 		List	   *rollup_groupclauses = NIL;
 		standard_qp_extra qp_extra;
@@ -1443,14 +1480,19 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		/* A recursive query should always have setOperations */
 		Assert(!root->hasRecursion);
 
-		/* Preprocess Grouping set, if any */
+		/* Preprocess grouping sets, if any */
 		if (parse->groupingSets)
+		{
+			int		   *tleref_to_colnum_map;
+			List	   *sets;
+			ListCell   *lc;
+			ListCell   *lc2;
+			ListCell   *lc_set;
+
 			parse->groupingSets = expand_grouping_sets(parse->groupingSets, -1);
 
-		if (parse->groupClause)
-		{
-			ListCell   *lc;
-
+			/* Identify max SortGroupRef in groupClause, for array sizing */
+			/* (note this value will be used again later) */
 			foreach(lc, parse->groupClause)
 			{
 				SortGroupClause *gc = lfirst(lc);
@@ -1458,25 +1500,38 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				if (gc->tleSortGroupRef > maxref)
 					maxref = gc->tleSortGroupRef;
 			}
-		}
 
-		tleref_to_colnum_map = palloc((maxref + 1) * sizeof(int));
+			/* Allocate workspace array for remapping */
+			tleref_to_colnum_map = (int *) palloc((maxref + 1) * sizeof(int));
 
-		if (parse->groupingSets)
-		{
-			ListCell   *lc;
-			ListCell   *lc2;
-			ListCell   *lc_set;
-			List	   *sets = extract_rollup_sets(parse->groupingSets);
+			/* Examine the rollup sets */
+			sets = extract_rollup_sets(parse->groupingSets);
 
 			foreach(lc_set, sets)
 			{
-				List	   *current_sets = reorder_grouping_sets(lfirst(lc_set),
-													  (list_length(sets) == 1
-													   ? parse->sortClause
-													   : NIL));
-				List	   *groupclause = preprocess_groupclause(root, linitial(current_sets));
-				int			ref = 0;
+				List	   *current_sets = (List *) lfirst(lc_set);
+				List	   *groupclause;
+				int			ref;
+
+				/*
+				 * Reorder the current list of grouping sets into correct
+				 * prefix order.  If only one aggregation pass is needed, try
+				 * to make the list match the ORDER BY clause; if more than
+				 * one pass is needed, we don't bother with that.
+				 */
+				current_sets = reorder_grouping_sets(current_sets,
+													 (list_length(sets) == 1
+													  ? parse->sortClause
+													  : NIL));
+
+				/*
+				 * Order the groupClause appropriately.  If the first grouping
+				 * set is empty, this can match regular GROUP BY
+				 * preprocessing, otherwise we have to force the groupClause
+				 * to match that grouping set's order.
+				 */
+				groupclause = preprocess_groupclause(root,
+													 linitial(current_sets));
 
 				/*
 				 * Now that we've pinned down an order for the groupClause for
@@ -1485,7 +1540,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				 * (0-based) into the groupClause for this collection of
 				 * grouping sets.
 				 */
-
+				ref = 0;
 				foreach(lc, groupclause)
 				{
 					SortGroupClause *gc = lfirst(lc);
@@ -1501,6 +1556,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 					}
 				}
 
+				/* Save the reordered sets and corresponding groupclauses */
 				rollup_lists = lcons(current_sets, rollup_lists);
 				rollup_groupclauses = lcons(groupclause, rollup_groupclauses);
 			}
@@ -1530,7 +1586,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 * This may add new security barrier subquery RTEs to the rangetable.
 		 */
 		expand_security_quals(root, tlist);
-		root->glob->hasRowSecurity = parse->hasRowSecurity;
+		if (parse->hasRowSecurity)
+			root->glob->hasRowSecurity = true;
 
 		/*
 		 * Locate any window functions in the tlist.  (We don't need to look
@@ -1547,13 +1604,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			else
 				parse->hasWindowFuncs = false;
 		}
-
-		/*
-		 * Generate appropriate target list for subplan; may be different from
-		 * tlist if grouping or aggregation is needed.
-		 */
-		sub_tlist = make_subplanTargetList(root, tlist,
-										   &groupColIdx, &need_tlist_eval);
 
 		/*
 		 * Do aggregate preprocessing, if the query has any aggs.
@@ -1612,7 +1662,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 * standard_qp_callback) pathkey representations of the query's sort
 		 * clause, distinct clause, etc.
 		 */
-		final_rel = query_planner(root, sub_tlist,
+		final_rel = query_planner(root, tlist,
 								  standard_qp_callback, &qp_extra);
 
 		/*
@@ -1888,6 +1938,9 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			 * Normal case --- create a plan according to query_planner's
 			 * results.
 			 */
+			List	   *sub_tlist;
+			AttrNumber *groupColIdx = NULL;
+			bool		need_tlist_eval = true;
 			bool		need_sort_for_grouping = false;
 
 			result_plan = create_plan(root, best_path);
@@ -1896,23 +1949,27 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			/* Detect if we'll need an explicit sort for grouping */
 			if (parse->groupClause && !use_hashed_grouping &&
 			  !pathkeys_contained_in(root->group_pathkeys, current_pathkeys))
-			{
 				need_sort_for_grouping = true;
 
-				/*
-				 * Always override create_plan's tlist, so that we don't sort
-				 * useless data from a "physical" tlist.
-				 */
-				need_tlist_eval = true;
-			}
+			/*
+			 * Generate appropriate target list for scan/join subplan; may be
+			 * different from tlist if grouping or aggregation is needed.
+			 */
+			sub_tlist = make_subplanTargetList(root, tlist,
+											   &groupColIdx,
+											   &need_tlist_eval);
 
 			/*
 			 * create_plan returns a plan with just a "flat" tlist of required
 			 * Vars.  Usually we need to insert the sub_tlist as the tlist of
 			 * the top plan node.  However, we can skip that if we determined
 			 * that whatever create_plan chose to return will be good enough.
+			 *
+			 * If we need_sort_for_grouping, always override create_plan's
+			 * tlist, so that we don't sort useless data from a "physical"
+			 * tlist.
 			 */
-			if (need_tlist_eval)
+			if (need_tlist_eval || need_sort_for_grouping)
 			{
 				/*
 				 * If the top-level plan node is one that cannot do expression
@@ -1956,10 +2013,9 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 
 			/*
 			 * groupColIdx is now cast in stone, so record a mapping from
-			 * tleSortGroupRef to column index. setrefs.c needs this to
+			 * tleSortGroupRef to column index.  setrefs.c will need this to
 			 * finalize GROUPING() operations.
 			 */
-
 			if (parse->groupingSets)
 			{
 				AttrNumber *grouping_map = palloc0(sizeof(AttrNumber) * (maxref + 1));
@@ -1995,13 +2051,18 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 									extract_grouping_ops(parse->groupClause),
 												NIL,
 												numGroups,
+												false,
+												true,
 												result_plan);
 				/* Hashed aggregation produces randomly-ordered results */
 				current_pathkeys = NIL;
 			}
-			else if (parse->hasAggs || (parse->groupingSets && parse->groupClause))
+			else if (parse->hasAggs ||
+					 (parse->groupingSets && parse->groupClause))
 			{
 				/*
+				 * Aggregation and/or non-degenerate grouping sets.
+				 *
 				 * Output is in sorted order by group_pathkeys if, and only
 				 * if, there is a single rollup operation on a non-empty list
 				 * of grouping expressions.
@@ -2022,13 +2083,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 												   &agg_costs,
 												   numGroups,
 												   result_plan);
-
-				/*
-				 * these are destroyed by build_grouping_chain, so make sure
-				 * we don't try and touch them again
-				 */
-				rollup_groupclauses = NIL;
-				rollup_lists = NIL;
 			}
 			else if (parse->groupClause)
 			{
@@ -2306,6 +2360,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 								 extract_grouping_ops(parse->distinctClause),
 											NIL,
 											numDistinctRows,
+											false,
+											true,
 											result_plan);
 			/* Hashed aggregation produces randomly-ordered results */
 			current_pathkeys = NIL;
@@ -2403,13 +2459,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 										  parse->limitCount,
 										  offset_est,
 										  count_est);
-		if (parse->sortClause && tlist != result_plan->targetlist)
-		{			
-			result_plan = (Plan *) make_result(root,
-											   tlist,
-											   NULL,
-											   result_plan);			
-		}
 	}
 
 	/*
@@ -2455,10 +2504,10 @@ remap_groupColIdx(PlannerInfo *root, List *groupClause)
 
 /*
  * Build Agg and Sort nodes to implement sorted grouping with one or more
- * grouping sets. (A plain GROUP BY or just the presence of aggregates counts
+ * grouping sets.  A plain GROUP BY or just the presence of aggregates counts
  * for this purpose as a single grouping set; the calling code is responsible
- * for providing a non-empty rollup_groupclauses list for such cases, though
- * rollup_lists may be null.)
+ * for providing a single-element rollup_groupclauses list for such cases,
+ * though rollup_lists may be nil.
  *
  * The last entry in rollup_groupclauses (which is the one the input is sorted
  * on, if at all) is the one used for the returned Agg node. Any additional
@@ -2467,8 +2516,6 @@ remap_groupColIdx(PlannerInfo *root, List *groupClause)
  * participate in the plan directly, but they are both a convenient way to
  * represent the required data and a convenient way to account for the costs
  * of execution.
- *
- * rollup_groupclauses and rollup_lists are destroyed by this function.
  */
 static Plan *
 build_grouping_chain(PlannerInfo *root,
@@ -2508,62 +2555,73 @@ build_grouping_chain(PlannerInfo *root,
 	 * Generate the side nodes that describe the other sort and group
 	 * operations besides the top one.
 	 */
-	while (list_length(rollup_groupclauses) > 1)
+	if (list_length(rollup_groupclauses) > 1)
 	{
-		List	   *groupClause = linitial(rollup_groupclauses);
-		List	   *gsets = linitial(rollup_lists);
-		AttrNumber *new_grpColIdx;
-		Plan	   *sort_plan;
-		Plan	   *agg_plan;
+		ListCell   *lc,
+				   *lc2;
 
-		Assert(groupClause);
-		Assert(gsets);
+		Assert(list_length(rollup_groupclauses) == list_length(rollup_lists));
+		forboth(lc, rollup_groupclauses, lc2, rollup_lists)
+		{
+			List	   *groupClause = (List *) lfirst(lc);
+			List	   *gsets = (List *) lfirst(lc2);
+			AttrNumber *new_grpColIdx;
+			Plan	   *sort_plan;
+			Plan	   *agg_plan;
 
-		new_grpColIdx = remap_groupColIdx(root, groupClause);
+			/* We want to iterate over all but the last rollup list elements */
+			if (lnext(lc) == NULL)
+				break;
 
-		sort_plan = (Plan *)
-			make_sort_from_groupcols(root,
-									 groupClause,
-									 new_grpColIdx,
-									 result_plan);
+			new_grpColIdx = remap_groupColIdx(root, groupClause);
 
-		/*
-		 * sort_plan includes the cost of result_plan over again, which is not
-		 * what we want (since it's not actually running that plan). So
-		 * correct the cost figures.
-		 */
+			sort_plan = (Plan *)
+				make_sort_from_groupcols(root,
+										 groupClause,
+										 new_grpColIdx,
+										 result_plan);
 
-		sort_plan->startup_cost -= result_plan->total_cost;
-		sort_plan->total_cost -= result_plan->total_cost;
+			/*
+			 * sort_plan includes the cost of result_plan, which is not what
+			 * we want (since we'll not actually run that plan again).  So
+			 * correct the cost figures.
+			 */
+			sort_plan->startup_cost -= result_plan->total_cost;
+			sort_plan->total_cost -= result_plan->total_cost;
 
-		agg_plan = (Plan *) make_agg(root,
-									 tlist,
-									 (List *) parse->havingQual,
-									 AGG_SORTED,
-									 agg_costs,
-									 list_length(linitial(gsets)),
-									 new_grpColIdx,
-									 extract_grouping_ops(groupClause),
-									 gsets,
-									 numGroups,
-									 sort_plan);
+			agg_plan = (Plan *) make_agg(root,
+										 tlist,
+										 (List *) parse->havingQual,
+										 AGG_SORTED,
+										 agg_costs,
+										 list_length(linitial(gsets)),
+										 new_grpColIdx,
+										 extract_grouping_ops(groupClause),
+										 gsets,
+										 numGroups,
+										 false,
+										 true,
+										 sort_plan);
 
-		sort_plan->lefttree = NULL;
+			/*
+			 * Nuke stuff we don't need to avoid bloating debug output.
+			 */
+			sort_plan->targetlist = NIL;
+			sort_plan->lefttree = NULL;
 
-		chain = lappend(chain, agg_plan);
+			agg_plan->targetlist = NIL;
+			agg_plan->qual = NIL;
 
-		if (rollup_lists)
-			rollup_lists = list_delete_first(rollup_lists);
-
-		rollup_groupclauses = list_delete_first(rollup_groupclauses);
+			chain = lappend(chain, agg_plan);
+		}
 	}
 
 	/*
 	 * Now make the final Agg node
 	 */
 	{
-		List	   *groupClause = linitial(rollup_groupclauses);
-		List	   *gsets = rollup_lists ? linitial(rollup_lists) : NIL;
+		List	   *groupClause = (List *) llast(rollup_groupclauses);
+		List	   *gsets = rollup_lists ? (List *) llast(rollup_lists) : NIL;
 		int			numGroupCols;
 		ListCell   *lc;
 
@@ -2582,6 +2640,8 @@ build_grouping_chain(PlannerInfo *root,
 										extract_grouping_ops(groupClause),
 										gsets,
 										numGroups,
+										false,
+										true,
 										result_plan);
 
 		((Agg *) result_plan)->chain = chain;
@@ -2595,14 +2655,6 @@ build_grouping_chain(PlannerInfo *root,
 			Plan	   *subplan = lfirst(lc);
 
 			result_plan->total_cost += subplan->total_cost;
-
-			/*
-			 * Nuke stuff we don't need to avoid bloating debug output.
-			 */
-
-			subplan->targetlist = NIL;
-			subplan->qual = NIL;
-			subplan->lefttree->targetlist = NIL;
 		}
 	}
 
@@ -3483,7 +3535,8 @@ extract_rollup_sets(List *groupingSets)
  * prefix relationships.
  *
  * The input must be ordered with smallest sets first; the result is returned
- * with largest sets first.
+ * with largest sets first.  Note that the result shares no list substructure
+ * with the input, so it's safe for the caller to modify it later.
  *
  * If we're passed in a sortclause, we follow its order of columns to the
  * extent possible, to minimize the chance that we add unnecessary sorts.
@@ -3972,8 +4025,8 @@ make_subplanTargetList(PlannerInfo *root,
 					   bool *need_tlist_eval)
 {
 	Query	   *parse = root->parse;
-	List	   *sub_tlist = NIL;
-	List	   *non_group_cols = NIL;
+	List	   *sub_tlist;
+	List	   *non_group_cols;
 	List	   *non_group_vars;
 	int			numCols;
 
@@ -3986,61 +4039,6 @@ make_subplanTargetList(PlannerInfo *root,
 	if (!parse->hasAggs && !parse->groupClause && !parse->groupingSets && !root->hasHavingQual &&
 		!parse->hasWindowFuncs)
 	{
-		if (parse->sortClause && limit_needed(parse)) {
-			ListCell   *tl;
-			bool contains_non_vars = false;
-			*need_tlist_eval = false;	/* only eval if not flat tlist */
-			foreach(tl, tlist)
-			{
-				TargetEntry *tle = (TargetEntry *) lfirst(tl);
-				int			colno;
-				
-				colno = get_sort_column_index(parse, tle);
-				if (colno >= 0)
-				{
-					TargetEntry *newtle;
-					
-					newtle = makeTargetEntry(tle->expr,
-											 list_length(sub_tlist) + 1,
-											 NULL,
-											 false);
-					sub_tlist = lappend(sub_tlist, newtle);
-					if (!(newtle->expr && IsA(newtle->expr, Var)))
-						*need_tlist_eval = true;	/* tlist contains non Vars */
-				}
-				else
-				{
-					/*
-					 * Non-sorting column, so just remember the expression for
-					 * later call to pull_var_clause.  There's no need for
-					 * pull_var_clause to examine the TargetEntry node itself.
-					 */
-					non_group_cols = lappend(non_group_cols, tle->expr);
-					contains_non_vars |= !(tle->expr && IsA(tle->expr, Var));
-				}
-			}
-						
-			if (non_group_cols) /* there are some columns not used in order by */
-			{ 
-				non_group_vars = pull_var_clause((Node *) non_group_cols,
-												 PVC_RECURSE_AGGREGATES,
-												 PVC_INCLUDE_PLACEHOLDERS);
-				sub_tlist = add_to_flat_tlist(sub_tlist, non_group_vars);
-				/* clean up cruft */
-				list_free(non_group_vars);
-				list_free(non_group_cols);
-
-				if (contains_non_vars ) 
-				{ 
-					/*
-					 * This optimization makes sense only if target list contains some complex expressions, 
-					 * for example functions calls. May be it is better to check cost of this expressions,
-					 * but right now just apply this optimization if there are non-vars columns 
-					 */
-					return sub_tlist;
-				}
-			}
-		} 
 		*need_tlist_eval = true;
 		return tlist;
 	}
@@ -4049,6 +4047,8 @@ make_subplanTargetList(PlannerInfo *root,
 	 * Otherwise, we must build a tlist containing all grouping columns, plus
 	 * any other Vars mentioned in the targetlist and HAVING qual.
 	 */
+	sub_tlist = NIL;
+	non_group_cols = NIL;
 	*need_tlist_eval = false;	/* only eval if not flat tlist */
 
 	numCols = list_length(parse->groupClause);
@@ -4163,37 +4163,6 @@ get_grouping_column_index(Query *parse, TargetEntry *tle)
 		SortGroupClause *grpcl = (SortGroupClause *) lfirst(gl);
 
 		if (grpcl->tleSortGroupRef == ressortgroupref)
-			return colno;
-		colno++;
-	}
-
-	return -1;
-}
-
-/*
- * get_sort_column_index
- *		Get the ORDER BY column position, if any, of a targetlist entry.
- *
- * Returns the index (counting from 0) of the TLE in the ORDER BY list, or -1
- * if it's not a sorting column.  Note: the result is unique because the
- * parser won't make multiple sortClause entries for the same TLE.
- */
-static int
-get_sort_column_index(Query *parse, TargetEntry *tle)
-{
-	int			colno = 0;
-	Index		ressortgroupref = tle->ressortgroupref;
-	ListCell   *gl;
-
-	/* No need to search groupClause if TLE hasn't got a sortgroupref */
-	if (ressortgroupref == 0)
-		return -1;
-
-	foreach(gl, parse->sortClause)
-	{
-		SortGroupClause *sortcl = (SortGroupClause *) lfirst(gl);
-
-		if (sortcl->tleSortGroupRef == ressortgroupref)
 			return colno;
 		colno++;
 	}

@@ -11,7 +11,7 @@
  * Transactions on Mathematical Software, Vol. 24, No. 4, December 1998,
  * pages 359-367.
  *
- * Copyright (c) 1998-2015, PostgreSQL Global Development Group
+ * Copyright (c) 1998-2016, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/utils/adt/numeric.c
@@ -2824,6 +2824,23 @@ numeric_power(PG_FUNCTION_ARGS)
 
 	PG_RETURN_NUMERIC(res);
 }
+
+/*
+ * numeric_scale() -
+ *
+ *	Returns the scale, i.e. the count of decimal digits in the fractional part
+ */
+Datum
+numeric_scale(PG_FUNCTION_ARGS)
+{
+	Numeric		num = PG_GETARG_NUMERIC(0);
+
+	if (NUMERIC_IS_NAN(num))
+		PG_RETURN_NULL();
+
+	PG_RETURN_INT32(NUMERIC_DSCALE(num));
+}
+
 
 
 /* ----------------------------------------------------------------------

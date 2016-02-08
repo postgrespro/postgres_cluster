@@ -4,7 +4,7 @@
  *	  Post-processing of a completed plan tree: fix references to subplan
  *	  vars, compute regproc values for operators, etc
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -2401,7 +2401,8 @@ extract_query_dependencies_walker(Node *node, PlannerInfo *context)
 		ListCell   *lc;
 
 		/* Collect row security information */
-		context->glob->hasRowSecurity = query->hasRowSecurity;
+		if (query->hasRowSecurity)
+			context->glob->hasRowSecurity = true;
 
 		if (query->commandType == CMD_UTILITY)
 		{
