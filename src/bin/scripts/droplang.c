@@ -2,7 +2,7 @@
  *
  * droplang
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/bin/scripts/droplang.c
@@ -139,8 +139,8 @@ main(int argc, char *argv[])
 		printQueryOpt popt;
 		static const bool translate_columns[] = {false, true};
 
-		conn = connectDatabase(dbname, host, port, username, NULL,
-							   prompt_password, progname, false);
+		conn = connectDatabase(dbname, host, port, username, prompt_password,
+							   progname, false, false);
 
 		printfPQExpBuffer(&sql, "SELECT lanname as \"%s\", "
 				"(CASE WHEN lanpltrusted THEN '%s' ELSE '%s' END) as \"%s\" "
@@ -181,8 +181,8 @@ main(int argc, char *argv[])
 		if (*p >= 'A' && *p <= 'Z')
 			*p += ('a' - 'A');
 
-	conn = connectDatabase(dbname, host, port, username, NULL,
-						   prompt_password, progname, false);
+	conn = connectDatabase(dbname, host, port, username, prompt_password,
+						   progname, false, false);
 
 	/*
 	 * Force schema search path to be just pg_catalog, so that we don't have

@@ -6,7 +6,7 @@
  * gram.y
  *	  POSTGRESQL BISON rules/actions
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -434,7 +434,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <node>	columnDef columnOptions
 %type <defelt>	def_elem reloption_elem old_aggr_elem operator_def_elem
 %type <node>	def_arg columnElem where_clause where_or_current_clause
-				a_expr b_expr c_expr AexprConst indirection_el
+				a_expr b_expr c_expr AexprConst indirection_el opt_slice_bound
 				columnref in_expr having_clause func_table array_expr
 				ExclusionWhereClause
 %type <list>	rowsfrom_item rowsfrom_list opt_col_def_list
@@ -3080,6 +3080,8 @@ ColConstraintElem:
 					n->is_no_inherit = $5;
 					n->raw_expr = $3;
 					n->cooked_expr = NULL;
+					n->skip_validation = false;
+					n->initially_valid = true;
 					$$ = (Node *)n;
 				}
 			| DEFAULT b_expr
@@ -13189,17 +13191,24 @@ indirection_el:
 			| '[' a_expr ']'
 				{
 					A_Indices *ai = makeNode(A_Indices);
+					ai->is_slice = false;
 					ai->lidx = NULL;
 					ai->uidx = $2;
 					$$ = (Node *) ai;
 				}
-			| '[' a_expr ':' a_expr ']'
+			| '[' opt_slice_bound ':' opt_slice_bound ']'
 				{
 					A_Indices *ai = makeNode(A_Indices);
+					ai->is_slice = true;
 					ai->lidx = $2;
 					ai->uidx = $4;
 					$$ = (Node *) ai;
 				}
+		;
+
+opt_slice_bound:
+			a_expr									{ $$ = $1; }
+			| /*EMPTY*/								{ $$ = NULL; }
 		;
 
 indirection:

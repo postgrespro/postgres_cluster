@@ -327,7 +327,10 @@ DROP TABLE tmp2;
 -- NOT VALID with plan invalidation -- ensure we don't use a constraint for
 -- exclusion until validated
 set constraint_exclusion TO 'partition';
-create table nv_parent (d date);
+create table nv_parent (d date, check (false) no inherit not valid);
+-- not valid constraint added at creation time should automatically become valid
+\d nv_parent
+
 create table nv_child_2010 () inherits (nv_parent);
 create table nv_child_2011 () inherits (nv_parent);
 alter table nv_child_2010 add check (d between '2010-01-01'::date and '2010-12-31'::date) not valid;
@@ -899,6 +902,17 @@ select * from child;
 alter table parent drop c;
 select * from parent;
 select * from child;
+
+drop table child;
+drop table parent;
+
+-- check error cases for inheritance column merging
+create table parent (a float8, b numeric(10,4), c text collate "C");
+
+create table child (a float4) inherits (parent); -- fail
+create table child (b decimal(10,7)) inherits (parent); -- fail
+create table child (c text collate "POSIX") inherits (parent); -- fail
+create table child (a double precision, b decimal(10,4)) inherits (parent);
 
 drop table child;
 drop table parent;

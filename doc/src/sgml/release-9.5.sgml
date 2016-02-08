@@ -1,13 +1,409 @@
 <!-- doc/src/sgml/release-9.5.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
+ <sect1 id="release-9-5-1">
+  <title>Release 9.5.1</title>
+
+  <note>
+  <title>Release Date</title>
+  <simpara>2016-02-11</simpara>
+  </note>
+
+  <para>
+   This release contains a variety of fixes from 9.5.0.
+   For information about new features in the 9.5 major release, see
+   <xref linkend="release-9-5">.
+  </para>
+
+  <sect2>
+   <title>Migration to Version 9.5.1</title>
+
+   <para>
+    A dump/restore is not required for those running 9.5.X.
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Changes</title>
+
+   <itemizedlist>
+
+<!--
+Author: Tom Lane <tgl@sss.pgh.pa.us>
+Branch: master [f867ce551] 2016-02-07 12:29:32 -0500
+Branch: REL9_5_STABLE [129db3cbe] 2016-02-07 12:29:17 -0500
+-->
+
+    <listitem>
+     <para>
+      Fix an oversight that caused hash joins to miss joining to some tuples
+      of the inner relation in rare cases (Tomas Vondra, Tom Lane)
+     </para>
+    </listitem>
+
+<!--
+Author: Tom Lane <tgl@sss.pgh.pa.us>
+Branch: master [b8682a715] 2016-01-26 15:38:33 -0500
+Branch: REL9_5_STABLE [2acb682f6] 2016-01-26 15:38:33 -0500
+Branch: REL9_4_STABLE [2b3983158] 2016-01-26 15:38:33 -0500
+Branch: REL9_3_STABLE [9bbfca8fd] 2016-01-26 15:38:33 -0500
+Branch: REL9_2_STABLE [3a7af9d73] 2016-01-26 15:38:33 -0500
+Branch: REL9_1_STABLE [b043df093] 2016-01-26 15:38:33 -0500
+-->
+
+    <listitem>
+     <para>
+      Make <literal>%h</> and <literal>%r</> escapes
+      in <varname>log_line_prefix</> work for messages emitted due
+      to <varname>log_connections</> (Tom Lane)
+     </para>
+
+     <para>
+      Previously, <literal>%h</>/<literal>%r</> started to work just after a
+      new session had emitted the <quote>connection received</> log message;
+      now they work for that message too.
+     </para>
+    </listitem>
+
+<!--
+Author: Magnus Hagander <magnus@hagander.net>
+Branch: master [6a61d1ff9] 2016-01-14 13:06:03 +0100
+Branch: REL9_5_STABLE [3276ca303] 2016-01-14 13:07:20 +0100
+Branch: REL9_4_STABLE [ab49f87d5] 2016-01-14 13:07:35 +0100
+Branch: REL9_3_STABLE [77d8edcf5] 2016-01-14 13:07:45 +0100
+Branch: REL9_2_STABLE [df0bd5a0f] 2016-01-14 13:07:55 +0100
+Branch: REL9_1_STABLE [b1c0f92eb] 2016-01-14 13:08:10 +0100
+-->
+
+    <listitem>
+     <para>
+      Avoid leaking a token handle during SSPI authentication
+      (Christian Ullrich)
+     </para>
+    </listitem>
+
+<!--
+Author: Tom Lane <tgl@sss.pgh.pa.us>
+Branch: master [7e2247047] 2016-01-29 10:28:02 +0100
+Branch: REL9_5_STABLE [56251f396] 2016-01-29 10:28:02 +0100
+Branch: REL9_4_STABLE [5849b6e32] 2016-01-29 10:28:02 +0100
+Branch: REL9_3_STABLE [db678ca16] 2016-01-29 10:28:03 +0100
+Branch: REL9_2_STABLE [a362cc2e3] 2016-01-29 10:28:03 +0100
+Branch: REL9_1_STABLE [ed5f57218] 2016-01-29 10:28:03 +0100
+-->
+
+    <listitem>
+     <para>
+      Fix <application>psql</>'s <literal>\det</> command to interpret its
+      pattern argument the same way as other <literal>\d</> commands with
+      potentially schema-qualified patterns do (Reece Hart)
+     </para>
+    </listitem>
+
+<!--
+Author: Alvaro Herrera <alvherre@alvh.no-ip.org>
+Branch: master [a96761391] 2016-01-07 11:59:08 -0300
+Branch: REL9_5_STABLE [744d01c9a] 2016-01-07 11:59:08 -0300
+Branch: REL9_4_STABLE [c7aca3d45] 2016-01-07 11:59:08 -0300
+Branch: REL9_3_STABLE [74d4009b8] 2016-01-07 11:59:08 -0300
+Branch: REL9_2_STABLE [5c4cbd5d1] 2016-01-07 11:59:08 -0300
+Branch: REL9_1_STABLE [b96f6f444] 2016-01-07 11:59:08 -0300
+-->
+
+    <listitem>
+     <para>
+      In <application>pg_ctl</> on Windows, check service status to decide
+      where to send output, rather than checking if standard output is a
+      terminal (Michael Paquier)
+     </para>
+    </listitem>
+
+<!--
+Author: Tom Lane <tgl@sss.pgh.pa.us>
+Branch: master [e72d7d853] 2016-01-13 18:55:27 -0500
+Branch: REL9_5_STABLE [c42df2d46] 2016-01-13 18:55:27 -0500
+Branch: REL9_4_STABLE [7393208b5] 2016-01-13 18:55:27 -0500
+Branch: REL9_3_STABLE [b87403f70] 2016-01-13 18:55:27 -0500
+Branch: REL9_2_STABLE [be2b27651] 2016-01-13 18:55:27 -0500
+Branch: REL9_1_STABLE [5108013db] 2016-01-13 18:55:27 -0500
+-->
+
+    <listitem>
+     <para>
+      Fix assorted corner-case bugs in <application>pg_dump</>'s processing
+      of extension member objects (Tom Lane)
+     </para>
+    </listitem>
+
+<!--
+Author: Alvaro Herrera <alvherre@alvh.no-ip.org>
+Branch: master [df43fcf45] 2016-01-22 20:04:35 -0300
+Branch: REL9_5_STABLE [1e910cf5b] 2016-01-22 20:04:35 -0300
+-->
+
+    <listitem>
+     <para>
+      Fix improper quoting of domain constraint names
+      in <application>pg_dump</> (Elvis Pranskevichus)
+     </para>
+    </listitem>
+
+<!--
+Author: Tom Lane <tgl@sss.pgh.pa.us>
+Branch: master [0ed707e9b] 2016-02-04 00:26:10 -0500
+Branch: REL9_5_STABLE [b99dd7170] 2016-02-04 00:26:10 -0500
+Branch: REL9_4_STABLE [411e2b0d5] 2016-02-04 00:26:10 -0500
+Branch: REL9_3_STABLE [aefbc208b] 2016-02-04 00:26:10 -0500
+Branch: REL9_2_STABLE [4f58a7003] 2016-02-04 00:26:10 -0500
+Branch: REL9_1_STABLE [9c704632c] 2016-02-04 00:26:10 -0500
+-->
+
+    <listitem>
+     <para>
+      Make <application>pg_dump</> mark a view's triggers as needing to be
+      processed after its rule, to prevent possible failure during
+      parallel <application>pg_restore</> (Tom Lane)
+     </para>
+    </listitem>
+
+<!--
+Author: Robert Haas <rhaas@postgresql.org>
+Branch: master [64f5edca2] 2016-02-01 08:23:41 -0500
+Branch: REL9_5_STABLE [829757c8a] 2016-02-01 08:26:07 -0500
+Branch: REL9_4_STABLE [c33d1a8d5] 2016-02-03 09:15:29 -0500
+Branch: REL9_3_STABLE [014796aa3] 2016-02-03 09:19:58 -0500
+Branch: REL9_2_STABLE [b63a4f418] 2016-02-03 09:21:44 -0500
+Branch: REL9_1_STABLE [4c8b07d3c] 2016-02-03 09:25:34 -0500
+-->
+
+    <listitem>
+     <para>
+      Install guards in <application>pgbench</> against corner-case overflow
+      conditions during evaluation of script-specified division or modulo
+      operators (Fabien Coelho, Michael Paquier)
+     </para>
+    </listitem>
+
+<!--
+Author: Alvaro Herrera <alvherre@alvh.no-ip.org>
+Branch: master [4aecd22d3] 2016-01-05 17:25:12 -0300
+Branch: REL9_5_STABLE [7ef311eb4] 2016-01-05 17:25:12 -0300
+-->
+
+    <listitem>
+     <para>
+      Suppress useless warning message when <application>pg_receivexlog</>
+      connects to a pre-9.4 server (Marco Nenciarini)
+     </para>
+    </listitem>
+
+<!--
+Author: Tom Lane <tgl@sss.pgh.pa.us>
+Branch: master [866566a69] 2016-01-11 19:55:39 -0500
+Branch: REL9_5_STABLE [db8fa56d6] 2016-01-11 19:55:39 -0500
+Branch: REL9_4_STABLE [22815752e] 2016-01-11 19:55:40 -0500
+Branch: REL9_3_STABLE [0ddeaba7e] 2016-01-11 19:55:40 -0500
+Branch: REL9_2_STABLE [3843ba510] 2016-01-11 19:55:40 -0500
+Branch: master [fb6fcbd33] 2016-01-11 20:06:36 -0500
+Branch: REL9_5_STABLE [5ef26b8de] 2016-01-11 20:06:47 -0500
+-->
+
+    <listitem>
+     <para>
+      Avoid dump/reload problems when using both <application>plpython2</>
+      and <application>plpython3</> (Tom Lane)
+     </para>
+
+     <para>
+      In principle, both versions of <application>PL/Python</> can be used in
+      the same database, though not in the same session (because the two
+      versions of <application>libpython</> cannot safely be used concurrently).
+      However, <application>pg_restore</> and <application>pg_upgrade</> both
+      do things that can fall foul of the same-session restriction.  Work
+      around that by changing the timing of the check.
+     </para>
+    </listitem>
+
+<!--
+Author: Peter Eisentraut <peter_e@gmx.net>
+Branch: REL9_4_STABLE [f1b898759] 2015-11-14 13:43:43 -0500
+Branch: REL9_3_STABLE [a37ab812c] 2015-11-14 13:44:09 -0500
+Branch: REL9_2_STABLE [82076c1e4] 2015-11-14 13:53:26 -0500
+Author: Tom Lane <tgl@sss.pgh.pa.us>
+Branch: REL9_5_STABLE [a66c1fcdd] 2016-01-08 11:39:28 -0500
+-->
+
+    <listitem>
+     <para>
+      Fix <application>PL/Python</> regression tests to pass with Python 3.5
+      (Peter Eisentraut)
+     </para>
+    </listitem>
+
+<!--
+Author: Noah Misch <noah@leadboat.com>
+Branch: master [f4aa3a18a] 2016-02-05 20:22:51 -0500
+Branch: REL9_5_STABLE [0089dd34a] 2016-02-05 20:23:04 -0500
+Branch: REL9_4_STABLE [ed6deeb7a] 2016-02-05 20:23:07 -0500
+Branch: REL9_3_STABLE [34e91736b] 2016-02-05 20:23:11 -0500
+Branch: REL9_2_STABLE [de9766d39] 2016-02-05 20:23:14 -0500
+Branch: REL9_1_STABLE [b1f591c50] 2016-02-05 20:23:19 -0500
+-->
+
+    <listitem>
+     <para>
+      Prevent certain <application>PL/Java</> parameters from being set by
+      non-superusers (Noah Misch)
+     </para>
+
+     <para>
+      This change mitigates a <application>PL/Java</> security bug
+      (CVE-2016-0766), which was fixed in <application>PL/Java</> by marking
+      these parameters as superuser-only.  To fix the security hazard for
+      sites that update <productname>PostgreSQL</> more frequently
+      than <application>PL/Java</>, make the core code aware of them also.
+     </para>
+    </listitem>
+
+<!--
+Author: Michael Meskes <meskes@postgresql.org>
+Branch: master [7a58d19b0] 2016-02-01 13:21:00 +0100
+Branch: REL9_5_STABLE [40482e606] 2016-02-01 13:20:37 +0100
+Branch: REL9_3_STABLE [0b55fef39] 2016-02-01 13:19:10 +0100
+Branch: REL9_2_STABLE [d9ce5d201] 2016-02-01 13:19:34 +0100
+Branch: REL9_1_STABLE [79782b407] 2016-02-01 13:19:43 +0100
+-->
+
+    <listitem>
+     <para>
+      Fix <application>ecpg</>-supplied header files to not contain comments
+      continued from a preprocessor directive line onto the next line
+      (Michael Meskes)
+     </para>
+
+     <para>
+      Such a comment is rejected by <application>ecpg</>.  It's not yet clear
+      whether <application>ecpg</> itself should be changed.
+     </para>
+    </listitem>
+
+<!--
+Author: Tom Lane <tgl@sss.pgh.pa.us>
+Branch: master [e6ecc93a1] 2016-02-03 01:39:48 -0500
+Branch: REL9_5_STABLE [1c291624b] 2016-02-03 01:39:08 -0500
+Branch: REL9_4_STABLE [aa223a037] 2016-02-03 01:39:08 -0500
+Branch: REL9_3_STABLE [1f2b195eb] 2016-02-03 01:39:08 -0500
+-->
+
+    <listitem>
+     <para>
+      Fix <function>hstore_to_json_loose()</>'s test for whether
+      an <type>hstore</> value can be converted to a JSON number (Tom Lane)
+     </para>
+
+     <para>
+      Previously this function could be fooled by non-alphanumeric trailing
+      characters, leading to emitting syntactically-invalid JSON.
+     </para>
+    </listitem>
+
+<!--
+Author: Robert Haas <rhaas@postgresql.org>
+Branch: master [9418d79a7] 2016-02-04 21:17:53 -0500
+Branch: REL9_5_STABLE [453d40817] 2016-02-04 21:17:46 -0500
+Branch: REL9_4_STABLE [1f3294c22] 2016-02-04 21:15:57 -0500
+Branch: master [37c84570b] 2016-02-04 22:27:13 -0500
+Branch: REL9_5_STABLE [d160e2a34] 2016-02-04 22:27:38 -0500
+Branch: REL9_4_STABLE [2099b911d] 2016-02-04 22:27:47 -0500
+-->
+
+    <listitem>
+     <para>
+      In <filename>contrib/postgres_fdw</>, fix bugs triggered by use
+      of <literal>tableoid</> in data-modifying commands (Etsuro Fujita,
+      Robert Haas)
+     </para>
+    </listitem>
+
+<!--
+Author: Tom Lane <tgl@sss.pgh.pa.us>
+Branch: master [a396144ac] 2016-01-22 11:53:06 -0500
+Branch: REL9_5_STABLE [47acf3add] 2016-01-22 11:53:06 -0500
+-->
+
+    <listitem>
+     <para>
+      Fix ill-advised restriction of <literal>NAMEDATALEN</> to be less
+      than 256 (Robert Haas, Tom Lane)
+     </para>
+    </listitem>
+
+<!--
+Author: Tom Lane <tgl@sss.pgh.pa.us>
+Branch: master [3343ea9e8] 2016-01-05 15:47:05 -0500
+Branch: REL9_5_STABLE [8805af088] 2016-01-05 15:47:05 -0500
+Branch: REL9_4_STABLE [8c558b2e9] 2016-01-05 15:47:05 -0500
+Branch: REL9_3_STABLE [6d899f098] 2016-01-05 15:47:05 -0500
+-->
+
+    <listitem>
+     <para>
+      Improve reproducibility of build output by ensuring filenames are given
+      to the linker in a fixed order (Christoph Berg)
+     </para>
+
+     <para>
+      This avoids possible bitwise differences in the produced executable
+      files from one build to the next.
+     </para>
+    </listitem>
+
+<!--
+Author: Bruce Momjian <bruce@momjian.us>
+Branch: master [216d56843] 2016-01-19 23:30:29 -0500
+Branch: REL9_5_STABLE [34bda20ae] 2016-01-19 23:30:29 -0500
+Branch: REL9_4_STABLE [8b3d52801] 2016-01-19 23:30:29 -0500
+Branch: REL9_3_STABLE [7a47262ce] 2016-01-19 23:30:28 -0500
+Branch: REL9_2_STABLE [49d65e857] 2016-01-19 23:30:28 -0500
+Branch: REL9_1_STABLE [b1bc38144] 2016-01-19 23:30:28 -0500
+-->
+
+    <listitem>
+     <para>
+      Ensure that <filename>dynloader.h</> is included in the installed
+      header files in MSVC builds (Bruce Momjian, Michael Paquier)
+     </para>
+    </listitem>
+
+<!--
+Author: Tom Lane <tgl@sss.pgh.pa.us>
+Branch: master [a73311e52] 2016-02-05 10:59:09 -0500
+Branch: REL9_5_STABLE [37e694632] 2016-02-05 10:59:21 -0500
+Branch: REL9_4_STABLE [31b792f61] 2016-02-05 10:59:26 -0500
+Branch: REL9_3_STABLE [9a3475b84] 2016-02-05 10:59:31 -0500
+Branch: REL9_2_STABLE [32f17a2e7] 2016-02-05 10:59:35 -0500
+Branch: REL9_1_STABLE [6887d72d0] 2016-02-05 10:59:39 -0500
+-->
+
+    <listitem>
+     <para>
+      Update time zone data files to <application>tzdata</> release 2016a for
+      DST law changes in Cayman Islands, Metlakatla, and Trans-Baikal
+      Territory (Zabaykalsky Krai), plus historical corrections for Pakistan.
+     </para>
+    </listitem>
+
+   </itemizedlist>
+
+  </sect2>
+ </sect1>
+
  <sect1 id="release-9-5">
   <title>Release 9.5</title>
 
   <note>
    <title>Release Date</title>
-   <simpara>2015-??-??</simpara>
-   <simpara>Current as of 2015-11-07</simpara>
+   <simpara>2016-01-07</simpara>
   </note>
 
   <sect2>
@@ -23,7 +419,7 @@
 
     <listitem>
      <para>
-      Allow <link linkend="sql-on-conflict"><command>INSERTS</></>
+      Allow <link linkend="sql-on-conflict"><command>INSERT</></>s
       that would generate constraint conflicts to be turned into
       <command>UPDATE</>s or ignored
      </para>
@@ -31,7 +427,7 @@
 
     <listitem>
      <para>
-      Add <literal>GROUP BY</> analysis functions <link
+      Add <literal>GROUP BY</> analysis features <link
       linkend="queries-grouping-sets"><literal>GROUPING SETS</></>,
       <link linkend="queries-grouping-sets"><literal>CUBE</></> and
       <link linkend="queries-grouping-sets"><literal>ROLLUP</></>
@@ -40,15 +436,16 @@
 
     <listitem>
      <para>
-      Add row-level security control
+      Add <link linkend="ddl-rowsecurity">row-level security control</>
      </para>
     </listitem>
 
     <listitem>
      <para>
-      Allow <link linkend="pg-replication-origin-create">labeling</> of
-      the origin of logical replication changes, and provide mechanisms
-      for tracking the progress of replication
+      Create mechanisms for tracking
+      the <link linkend="replication-origins">progress of replication</>,
+      including methods for identifying the origin of individual changes
+      during logical replication
      </para>
     </listitem>
 
@@ -128,7 +525,7 @@
 2015-03-31 [0badb06] Bruce ..: pg_ctl:  change default shutdown mode from 'sma..
 -->
      <para>
-      Change <application>pg_ctl</>'s default shutdown mode from
+      Change <xref linkend="app-pg-ctl">'s default shutdown mode from
       <literal>smart</> to <literal>fast</> (Bruce Momjian)
      </para>
 
@@ -181,40 +578,52 @@
 2015-05-08 [9a08841] Stephe..: Change default for include_realm to 1
 -->
      <para>
-      Change the default value of <link
-      linkend="gssapi-auth"><varname>include_realm</></> to 1, so that
-      by default the realm is not removed from a <acronym>GSS</>
+      Change the default value of the GSSAPI <link
+      linkend="gssapi-auth"><varname>include_realm</></> parameter to 1, so
+      that by default the realm is not removed from a <acronym>GSS</>
       or <acronym>SSPI</> principal name (Stephen Frost)
      </para>
     </listitem>
 
     <listitem>
 <!--
-2015-01-22 [59367fd] Bruce ..: adjust ACL owners for REASSIGN and ALTER OWNER..
+2015-02-23 [88e9823] Heikki..: Replace checkpoint_segments with min_wal_size a..
+2015-03-15 [a0f5954] Andres..: Increase max_wal_size's default from 128MB to 1..
+2015-06-29 [d661532] Heikki..: Also trigger restartpoints based on max_wal_siz..
 -->
      <para>
-      Fix <link linkend="SQL-REASSIGN-OWNED"><command>REASSIGN OWNED</></>
-      and <link linkend="SQL-ALTERTYPE"><command>ALTER OWNER TO</></>
-      to properly update permissions lists (ACLs) when changing ownership of
-      types, foreign data wrappers, and foreign servers (Bruce Momjian)
+      Replace configuration parameter <varname>checkpoint_segments</>
+      with <xref linkend="guc-min-wal-size">
+      and <xref linkend="guc-max-wal-size"> (Heikki Linnakangas)
      </para>
-    </listitem>
 
-    <listitem>
      <para>
-      The configuration parameter <varname>checkpoint_segments</varname> has
-      been removed.  Its place is taken by the new
-      setting <xref linkend="guc-max-wal-size">.  If you had previously
-      tuned <varname>checkpoint_segments</varname>, the following formula will
-      give you an approximately equivalent setting:
+      If you previously adjusted <varname>checkpoint_segments</varname>, the
+      following formula will give you an approximately equivalent setting:
 <programlisting>
 max_wal_size = (3 * checkpoint_segments) * 16MB
 </programlisting>
       Note that the default setting for <varname>max_wal_size</varname> is
       much higher than the default <varname>checkpoint_segments</varname> used
-      to be, so setting this might no longer be necessary.
+      to be, so adjusting it might no longer be necessary.
      </para>
     </listitem>
+
+      <listitem>
+<!--
+2014-06-18 [df8b7bc] Tom Lane: Improve our mechanism for controlling the Linux..
+-->
+       <para>
+        Control the Linux <acronym>OOM</> killer via new environment
+        variables <link
+        linkend="linux-memory-overcommit"><envar>PG_OOM_ADJUST_FILE</></>
+        and <link
+        linkend="linux-memory-overcommit"><envar>PG_OOM_ADJUST_VALUE</></>,
+        instead of compile-time options <literal>LINUX_OOM_SCORE_ADJ</> and
+        <literal>LINUX_OOM_ADJ</>
+        (Gurjeet Singh)
+       </para>
+      </listitem>
 
     <listitem>
 <!--
@@ -222,7 +631,7 @@ max_wal_size = (3 * checkpoint_segments) * 16MB
 2015-07-28 [6087d95] Andres..: Remove ssl renegotiation support.
 -->
      <para>
-      Disable server configuration
+      Decommission server configuration
       parameter <varname>ssl_renegotiation_limit</>, which was deprecated
       in earlier releases (Andres Freund)
      </para>
@@ -253,8 +662,21 @@ max_wal_size = (3 * checkpoint_segments) * 16MB
 2015-03-06 [bb8582a] Peter ..: Remove rolcatupdate
 -->
      <para>
-      Remove <link linkend="catalog-pg-authid"><structname>pg_authid</></>'s
-      <structfield>rolcatupdate</> field, as it had no value (Adam Brightwell)
+      Remove the <link linkend="catalog-pg-authid"><structname>pg_authid</></>
+      catalog's <structfield>rolcatupdate</> field, as it had no usefulness
+      (Adam Brightwell)
+     </para>
+    </listitem>
+
+    <listitem>
+<!--
+2015-12-13 [28c3667] Magnus..: Consistently set all fields in pg_stat_replica..
+-->
+     <para>
+      The <link
+      linkend="monitoring-stats-views-table"><structname>pg_stat_replication</></link>
+      system view's <structfield>sent</> field is now NULL, not zero, when
+      it has no valid value (Magnus Hagander)
      </para>
     </listitem>
 
@@ -264,9 +686,13 @@ max_wal_size = (3 * checkpoint_segments) * 16MB
 -->
      <para>
       Allow <type>json</> and <type>jsonb</> array extraction operators to
-      accept negative subscripts, which count from the end of JSON arrays.
+      accept negative subscripts, which count from the end of JSON arrays
+      (Peter Geoghegan, Andrew Dunstan)
+     </para>
+
+     <para>
       Previously, these operators returned <literal>NULL</> for negative
-      subscripts.  (Peter Geoghegan, Andrew Dunstan)
+      subscripts.
      </para>
     </listitem>
 
@@ -322,10 +748,10 @@ max_wal_size = (3 * checkpoint_segments) * 16MB
        </para>
 
        <para>
-        Previously, a common table expression was required to return a
-        large number of rows ordered by bounding-box distance, and the
-        result then had to be filtered further with a more accurate
-        non-bounding-box distance calculation.
+        Previously, to exploit such an index a subquery had to be used to
+        select a large number of rows ordered by bounding-box distance, and
+        the result then had to be filtered further with a more accurate
+        distance calculation.
        </para>
       </listitem>
 
@@ -352,9 +778,11 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
        </para>
 
        <para>
-        Previously the list size was controlled
-        by <xref linkend="guc-work-mem">.  This can also be set as an index
-        storage parameter.
+        This value can also be set on a per-index basis as an index storage
+        parameter.  Previously the pending-list size was controlled
+        by <xref linkend="guc-work-mem">, which was awkward because
+        appropriate values for <varname>work_mem</> are often much too large
+        for this purpose.
        </para>
       </listitem>
 
@@ -480,7 +908,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 -->
        <para>
         Allow pushdown of query restrictions into subqueries with <link
-        linkend="functions-window">window functions</>, where appropriate
+        linkend="tutorial-window">window functions</>, where appropriate
         (David Rowley)
        </para>
       </listitem>
@@ -490,9 +918,9 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 2015-04-27 [dcbf594]  Stephe..: Improve qual pushdown for RLS and SB views
 -->
        <para>
-        Allow non-leakproof functions to be passed into security barrier
-        views if the function does not reference any table columns
-        (Dean Rasheed)
+        Allow a non-leakproof function to be pushed down into a security
+        barrier view if the function does not receive any view output
+        columns (Dean Rasheed)
        </para>
       </listitem>
 
@@ -701,7 +1129,6 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 2015-02-23 [88e9823] Heikki..: Replace checkpoint_segments with min_wal_size a..
 2015-03-15 [a0f5954] Andres..: Increase max_wal_size's default from 128MB to 1..
 2015-06-29 [d661532] Heikki..: Also trigger restartpoints based on max_wal_siz..
-FIXME: Add docs about restartpoint behaviour change
 -->
        <para>
         Replace configuration parameter <varname>checkpoint_segments</>
@@ -710,10 +1137,35 @@ FIXME: Add docs about restartpoint behaviour change
        </para>
 
        <para>
-        This allows the allocation of a large number of <acronym>WAL</> files
-        without keeping them if they are not needed. Thus the default
-        for <xref linkend="guc-max-wal-size"> has been increased
-        to <literal>1GB</>.
+        This change allows the allocation of a large number of <acronym>WAL</>
+        files without keeping them after they are no longer needed.
+        Therefore the default for <varname>max_wal_size</> has been set
+        to <literal>1GB</>, much larger than the old default
+        for <varname>checkpoint_segments</>.
+        Also note that standby servers perform restartpoints to try to limit
+        their WAL space consumption to <varname>max_wal_size</>; previously
+        they did not pay any attention to <varname>checkpoint_segments</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2014-06-18 [df8b7bc] Tom Lane: Improve our mechanism for controlling the Linux..
+-->
+       <para>
+        Control the Linux <acronym>OOM</> killer via new environment
+        variables <link
+        linkend="linux-memory-overcommit"><envar>PG_OOM_ADJUST_FILE</></>
+        and <link
+        linkend="linux-memory-overcommit"><envar>PG_OOM_ADJUST_VALUE</></>
+        (Gurjeet Singh)
+       </para>
+
+       <para>
+        The previous <acronym>OOM</> control infrastructure involved
+        compile-time options <literal>LINUX_OOM_SCORE_ADJ</> and
+        <literal>LINUX_OOM_ADJ</>, which are no longer supported.
+        The new behavior is available in all builds.
        </para>
       </listitem>
 
@@ -750,8 +1202,9 @@ FIXME: Add docs about restartpoint behaviour change
 2015-04-03 [a75fb9b] Alvaro..: Have autovacuum workers listen to SIGHUP, too
 -->
        <para>
-        Allow running <link linkend="autovacuum">autovacuum workers</>
-        to respond to configuration parameter changes (Michael Paquier)
+        Allow <link linkend="autovacuum">autovacuum workers</>
+        to respond to configuration parameter changes during a run
+        (Michael Paquier)
        </para>
       </listitem>
 
@@ -779,24 +1232,6 @@ FIXME: Add docs about restartpoint behaviour change
        <para>
         Allow setting <xref linkend="guc-effective-io-concurrency"> on
         systems where it has no effect (Peter Eisentraut)
-       </para>
-      </listitem>
-
-      <listitem>
-<!--
-2014-06-18 [df8b7bc] Tom Lane: Improve our mechanism for controlling the Linux..
--->
-       <para>
-        Add environment variables <link
-        linkend="linux-memory-overcommit"><envar>PG_OOM_ADJUST_FILE</></>
-        and <link
-        linkend="linux-memory-overcommit"><envar>PG_OOM_ADJUST_VALUE</></>
-        to help control the Linux <acronym>OOM</> killer (Gurjeet Singh)
-       </para>
-
-       <para>
-        The previous <acronym>OOM</> control infrastructure involved a
-        compile-time option.
        </para>
       </listitem>
 
@@ -851,6 +1286,22 @@ FIXME: Add docs about restartpoint behaviour change
     <title>Replication and Recovery</title>
 
      <itemizedlist>
+
+      <listitem>
+<!--
+2015-04-29 [5aa2350] Andres..: Introduce replication progress tracking infrast..
+-->
+       <para>
+        Create mechanisms for tracking
+        the <link linkend="replication-origins">progress of replication</>,
+        including methods for identifying the origin of individual changes
+        during logical replication (Andres Freund)
+       </para>
+
+       <para>
+        This is helpful when implementing replication solutions.
+       </para>
+      </listitem>
 
       <listitem>
 <!--
@@ -959,21 +1410,6 @@ FIXME: Add docs about restartpoint behaviour change
 
       <listitem>
 <!--
-2015-04-29 [5aa2350] Andres..: Introduce replication progress tracking infrast..
--->
-       <para>
-        Allow <link linkend="pg-replication-origin-create">labeling</> of
-        the origin of logical replication changes, and provide mechanisms
-        for tracking the progress of replication (Andres Freund)
-       </para>
-
-       <para>
-        This is helpful when implementing replication solutions.
-       </para>
-      </listitem>
-
-      <listitem>
-<!--
 2015-04-21 [d811c03] Andres..: Add 'active_in' column to pg_replication_slots.
 -->
        <para>
@@ -993,7 +1429,7 @@ FIXME: Add docs about restartpoint behaviour change
 -->
        <para>
         Allow <filename>recovery.conf</>'s <link
-        linkend="primary-conninfo"><varname>primary_conninfo</></> to
+        linkend="primary-conninfo"><varname>primary_conninfo</></> setting to
         use connection <acronym>URI</>s, e.g. <literal>postgres://</>
         (Alexander Shulgin)
        </para>
@@ -1014,7 +1450,7 @@ FIXME: Add docs about restartpoint behaviour change
 2015-05-08 [2c8f483] Andres..: Represent columns requiring insert and update p..
 -->
        <para>
-        Allow <link linkend="sql-on-conflict"><command>INSERTS</></>
+        Allow <link linkend="sql-on-conflict"><command>INSERT</></>s
         that would generate constraint conflicts to be turned into
         <command>UPDATE</>s or ignored (Peter Geoghegan, Heikki
         Linnakangas, Andres Freund)
@@ -1032,7 +1468,7 @@ FIXME: Add docs about restartpoint behaviour change
 2015-05-16 [f3d3118] Andres..: Support GROUPING SETS, CUBE and ROLLUP.
 -->
        <para>
-        Add <literal>GROUP BY</> analysis functions <link
+        Add <literal>GROUP BY</> analysis features <link
         linkend="queries-grouping-sets"><literal>GROUPING SETS</></>,
         <link linkend="queries-grouping-sets"><literal>CUBE</></> and
         <link linkend="queries-grouping-sets"><literal>ROLLUP</></>
@@ -1080,6 +1516,13 @@ FIXME: Add docs about restartpoint behaviour change
         <literal>TABLESAMPLE</> to return a subset of a table (Petr
         Jel&iacute;nek)
        </para>
+
+       <para>
+        This feature supports the SQL-standard table sampling methods.
+        In addition, there are provisions
+        for <link linkend="tablesample-method">user-defined
+        table sampling methods</>.
+       </para>
       </listitem>
 
       <listitem>
@@ -1122,7 +1565,7 @@ FIXME: Add docs about restartpoint behaviour change
 2014-12-18 [35192f0] Alvaro..: Have VACUUM log number of skipped pages due to ..
 -->
        <para>
-        Have <link linkend="SQL-VACUUM"><command>VACUUM</></> log the
+        Make <link linkend="SQL-VACUUM"><command>VACUUM</></> log the
         number of pages skipped due to pins (Jim Nasby)
        </para>
       </listitem>
@@ -1132,7 +1575,7 @@ FIXME: Add docs about restartpoint behaviour change
 2015-02-20 [d42358e] Alvaro..: Have TRUNCATE update pgstat tuple counters
 -->
        <para>
-        Have <link linkend="SQL-TRUNCATE"><command>TRUNCATE</></> properly
+        Make <link linkend="SQL-TRUNCATE"><command>TRUNCATE</></> properly
         update the <literal>pg_stat</>* tuple counters (Alexander Shulgin)
        </para>
       </listitem>
@@ -1200,13 +1643,15 @@ FIXME: Add docs about restartpoint behaviour change
 2014-09-19 [491c029] Stephe..: Row-Level Security Policies (RLS)
 -->
        <para>
-        Add row-level security control (Craig Ringer, KaiGai Kohei,
-        Adam Brightwell, Dean Rasheed, Stephen Frost)
+        Add  <link linkend="ddl-rowsecurity">row-level security control</>
+        (Craig Ringer, KaiGai Kohei, Adam Brightwell, Dean Rasheed,
+        Stephen Frost)
        </para>
 
        <para>
-        This controls viewing and adding/modifying rows via new commands
-        <link linkend="SQL-CREATEPOLICY"><command>CREATE</></>/<link
+        This feature allows row-by-row control over which users can add,
+        modify, or even see rows in a table.  This is controlled by new
+        commands <link linkend="SQL-CREATEPOLICY"><command>CREATE</></>/<link
         linkend="SQL-ALTERPOLICY"><command>ALTER</></>/<link
         linkend="SQL-DROPPOLICY"><command>DROP POLICY</></> and <link
         linkend="SQL-ALTERTABLE"><command>ALTER TABLE ... ENABLE/DISABLE
@@ -1221,7 +1666,7 @@ FIXME: Add docs about restartpoint behaviour change
        <para>
         Allow changing of the <acronym>WAL</acronym>
         logging status of a table after creation with <link
-        linkend="SQL-ALTERTABLE"><command>ALTER TABLE .. SET LOGGED /
+        linkend="SQL-ALTERTABLE"><command>ALTER TABLE ... SET LOGGED /
         UNLOGGED</></> (Fabr&iacute;zio de Royes Mello)
        </para>
       </listitem>
@@ -1258,17 +1703,17 @@ FIXME: Add docs about restartpoint behaviour change
 2015-03-09 [31eae60] Alvaro..: Allow CURRENT/SESSION_USER to be used in certai..
 -->
        <para>
-        Allow <literal>CURRENT</><literal>/SESSION_USER</> to specify the
-        current user in some commands (Kyotaro Horiguchi, &Aacute;lvaro
-        Herrera)
+        Allow some DDL commands to accept <literal>CURRENT_USER</>
+        or <literal>SESSION_USER</>, meaning the current user or session
+        user, in place of a specific user name (Kyotaro Horiguchi,
+        &Aacute;lvaro Herrera)
        </para>
 
        <para>
-        This includes <link linkend="SQL-ALTERUSER"><command>ALTER
-        USER</></>, <link linkend="SQL-ALTERGROUP"><command>ALTER
-        GROUP</></>, <link linkend="SQL-ALTERROLE"><command>ALTER
-        ROLE</></>, <link linkend="SQL-GRANT"><command>GRANT</></>,
-        and various <command>ALTER <replaceable>object</> OWNER TO</> commands.
+        This feature is now supported in
+        <xref linkend="SQL-ALTERUSER">, <xref linkend="SQL-ALTERGROUP">,
+        <xref linkend="SQL-ALTERROLE">, <xref linkend="SQL-GRANT">,
+        and <command>ALTER <replaceable>object</> OWNER TO</> commands.
        </para>
       </listitem>
 
@@ -1277,7 +1722,7 @@ FIXME: Add docs about restartpoint behaviour change
 2015-06-21 [ad89a5d] Alvaro..: Add transforms to pg_get_object_address and fr..
 -->
        <para>
-        Allow comments on <link linkend="SQL-CREATEDOMAIN">domain
+        Support comments on <link linkend="SQL-CREATEDOMAIN">domain
         constraints</> (&Aacute;lvaro Herrera)
        </para>
       </listitem>
@@ -1297,14 +1742,14 @@ FIXME: Add docs about restartpoint behaviour change
 2015-05-11 [fa26424] Stephe..: Allow LOCK TABLE .. ROW EXCLUSIVE MODE with IN..
 -->
        <para>
-        Allow <link linkend="SQL-LOCK"><command>LOCK TABLE .. ROW EXCLUSIVE
-        MODE</></> for those with <command>INSERT</> privileges (Stephen
-        Frost)
+        Allow <link linkend="SQL-LOCK"><command>LOCK TABLE ... ROW EXCLUSIVE
+        MODE</></> for those with <command>INSERT</> privileges on the
+        target table (Stephen Frost)
        </para>
 
        <para>
-        Previously this required <command>UPDATE</>, <command>DELETE</>, or
-        <command>TRUNCATE</> privileges.
+        Previously this command required <command>UPDATE</>, <command>DELETE</>,
+        or <command>TRUNCATE</> privileges.
        </para>
       </listitem>
 
@@ -1313,12 +1758,12 @@ FIXME: Add docs about restartpoint behaviour change
 2015-03-23 [e5f455f] Tom Lane: Apply table and domain CHECK constraints in nam.
 -->
        <para>
-        Apply table and domain <literal>CHECK</> constraints in name order
+        Apply table and domain <literal>CHECK</> constraints in order by name
         (Tom Lane)
        </para>
 
        <para>
-        The previous order was indeterminate.
+        The previous ordering was indeterminate.
        </para>
       </listitem>
 
@@ -1336,17 +1781,17 @@ FIXME: Add docs about restartpoint behaviour change
        </para>
 
        <para>
-        This allows these database settings to be
-        changed more easily than modifying the <link
+        This allows these per-database settings to be
+        changed without manually modifying the <link
         linkend="catalog-pg-database"><structname>pg_database</></>
-        system table.
+        system catalog.
        </para>
       </listitem>
 
      </itemizedlist>
 
      <sect4>
-      <title><xref linkend="SQL-CREATEFOREIGNDATAWRAPPER"></title>
+      <title><link linkend="ddl-foreign-data">Foreign Tables</link></title>
 
       <itemizedlist>
 
@@ -1355,29 +1800,13 @@ FIXME: Add docs about restartpoint behaviour change
 2014-07-10 [59efda3] Tom Lane: Implement IMPORT FOREIGN SCHEMA.
 -->
        <para>
-        Add support for <link
-        linkend="SQL-IMPORTFOREIGNSCHEMA"><command>IMPORT FOREIGN
-        SCHEMA</></> (Ronan Dunklau, Michael Paquier, Tom Lane)
+        Add support for <xref linkend="SQL-IMPORTFOREIGNSCHEMA">
+        (Ronan Dunklau, Michael Paquier, Tom Lane)
        </para>
 
        <para>
         This command allows automatic creation of local foreign tables
         that match the structure of existing tables on a remote server.
-       </para>
-      </listitem>
-
-      <listitem>
-<!--
-2015-03-22 [cb1ca4d] Tom Lane: Allow foreign tables to participate in inherita..
--->
-       <para>
-        Allow foreign tables to participate in inheritance (Shigeru Hanada,
-        Etsuro Fujita)
-       </para>
-
-       <para>
-        This also allows foreign tables to mark check constraints as not
-        valid, and to set storage and <type>OID</> characteristics.
        </para>
       </listitem>
 
@@ -1391,11 +1820,28 @@ FIXME: Add docs about restartpoint behaviour change
        </para>
 
        <para>
-        These constraints are assumed to be enforced on the remote server,
+        Such constraints are assumed to be enforced on the remote server,
         and are not enforced locally.  However, they are assumed to hold for
         purposes of query optimization, such
         as <link linkend="ddl-partitioning-constraint-exclusion">constraint
         exclusion</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-03-22 [cb1ca4d] Tom Lane: Allow foreign tables to participate in inherita..
+-->
+       <para>
+        Allow foreign tables to participate in inheritance (Shigeru Hanada,
+        Etsuro Fujita)
+       </para>
+
+       <para>
+        To let this work naturally, foreign tables are now allowed to have
+        check constraints marked as not valid, and to set storage
+        and <type>OID</> characteristics, even though these operations are
+        effectively no-ops for a foreign table.
        </para>
       </listitem>
 
@@ -1415,19 +1861,25 @@ FIXME: Add docs about restartpoint behaviour change
      </sect4>
 
      <sect4>
-      <title><xref linkend="SQL-CREATEEVENTTRIGGER"></title>
+      <title><link linkend="event-triggers">Event Triggers</link></title>
 
       <itemizedlist>
 
        <listitem>
 <!--
 2015-05-11 [b488c58] Alvaro..: Allow on-the-fly capture of DDL event details
-FIXME: Better description?
 -->
         <para>
-         Add a set-returning function <link
-         linkend="pg-event-trigger-ddl-command-end-functions"><function>pg_event_trigger_ddl_commands()</></>, which returns <acronym>DDL</> activity
-         associated with event triggers (&Aacute;lvaro Herrera)
+         Whenever a <literal>ddl_command_end</> event trigger is installed,
+         capture details of <acronym>DDL</> activity for it to inspect
+         (&Aacute;lvaro Herrera)
+        </para>
+
+        <para>
+         This information is available through a set-returning function <link
+         linkend="pg-event-trigger-ddl-command-end-functions"><function>pg_event_trigger_ddl_commands()</></link>,
+         or by inspection of C data structures if that function doesn't
+         provide enough detail.
         </para>
        </listitem>
 
@@ -1488,7 +1940,7 @@ FIXME: Better description?
 -->
       <para>
        Allow the <link linkend="datatype-xml"><type>xml</></> data type
-       to accept empty or all-whitespace values (Peter Eisentraut)
+       to accept empty or all-whitespace content values (Peter Eisentraut)
       </para>
 
       <para>
@@ -1510,17 +1962,19 @@ FIXME: Better description?
      <listitem>
 <!--
 2014-10-18 [417f924] Bruce ..: interval:  tighten precision specification
-FIXME: Add more specifics?
 -->
       <para>
-       Tighten syntax of <link
-       linkend="datatype-interval-input"><type>interval</></> precision
-       specifications (Bruce Momjian)
+       Disallow non-SQL-standard syntax for <link
+       linkend="datatype-interval-input"><type>interval</></link> with
+       both precision and field specifications (Bruce Momjian)
       </para>
 
       <para>
-       Only allow interval precision to be specified after the
-       <literal>INTERVAL</> keyword if no units are specified.
+       Per the standard, such type specifications should be written as,
+       for example, <literal>INTERVAL MINUTE TO SECOND(2)</>.
+       <productname>PostgreSQL</> formerly allowed this to be written as
+       <literal>INTERVAL(2) MINUTE TO SECOND</>, but it must now be
+       written in the standard way.
       </para>
      </listitem>
 
@@ -1545,8 +1999,8 @@ FIXME: Add more specifics?
        Add data
        types <link linkend="datatype-oid-table"><type>regrole</></link>
        and <link linkend="datatype-oid-table"><type>regnamespace</></link>
-       that simplify pretty-printing the <type>OID</> of a role or
-       namespace (Kyotaro Horiguchi)
+       to simplify entering and pretty-printing the <type>OID</> of a role
+       or namespace (Kyotaro Horiguchi)
       </para>
      </listitem>
 
@@ -1563,7 +2017,7 @@ FIXME: Add more specifics?
 2015-05-31 [37def42] Andrew..: Rename jsonb_replace to jsonb_set and allow it ..
 -->
        <para>
-        Add <type>JSONB</> functions <link
+        Add <type>jsonb</> functions <link
         linkend="functions-json-processing-table"><function>jsonb_set()</></>
         and <link
         linkend="functions-json-processing-table"><function>jsonb_pretty()</></>
@@ -1576,12 +2030,7 @@ FIXME: Add more specifics?
 2014-12-12 [7e354ab] Andrew..: Add several generator functions for jsonb that ..
 -->
        <para>
-        Add several generator functions for <type>jsonb</> that already
-        existed for <type>json</> (Andrew Dunstan)
-       </para>
-
-       <para>
-        These are <link
+        Add <type>jsonb</> generator functions <link
         linkend="functions-json-creation-table"><function>to_jsonb()</></>,
         <link
         linkend="functions-json-creation-table"><function>jsonb_object()</></>,
@@ -1592,7 +2041,12 @@ FIXME: Add more specifics?
         <link
         linkend="functions-aggregate-table"><function>jsonb_agg()</></>,
         and <link
-        linkend="functions-aggregate-table"><function>jsonb_object_agg()</></>.
+        linkend="functions-aggregate-table"><function>jsonb_object_agg()</></>
+        (Andrew Dunstan)
+       </para>
+
+       <para>
+        Equivalent functions already existed for type <type>json</>.
        </para>
       </listitem>
 
@@ -1638,7 +2092,7 @@ FIXME: Add more specifics?
         linkend="functions-json-processing-table"><function>json_strip_nulls()</></>
         and <link
         linkend="functions-json-processing-table"><function>jsonb_strip_nulls()</></>
-        functions to remove <type>json</> null values from documents
+        functions to remove JSON null values from documents
         (Andrew Dunstan)
        </para>
       </listitem>
@@ -1694,9 +2148,9 @@ FIXME: Add more specifics?
 2014-12-15 [4520ba6] Heikki..: Add point <-> polygon distance operator.
 -->
        <para>
-        Add <link
-        linkend="gist-builtin-opclasses-table"><type>point</>-to-<type>polygon</></>
-        distance operator (&lt;-&gt;) (Alexander Korotkov)
+        Add a <type>point</>-to-<type>polygon</> distance operator
+        <link linkend="functions-geometry-op-table">&lt;-&gt;</>
+        (Alexander Korotkov)
        </para>
       </listitem>
 
@@ -1705,7 +2159,7 @@ FIXME: Add more specifics?
 2014-08-27 [8167a38] Jeff D..: Allow multibyte characters as escape in SIMILA..
 -->
        <para>
-        Allow multibyte characters as escape in <link
+        Allow multibyte characters as escapes in <link
         linkend="functions-similarto-regexp"><literal>SIMILAR TO</></>
         and <link linkend="functions-string-sql"><literal>SUBSTRING</></>
         (Jeff Davis)
@@ -1804,8 +2258,8 @@ FIXME: Add more specifics?
        </para>
 
        <para>
-        Now, role membership is sufficient; previously only the same
-        role could perform these operations.
+        Previously, only the specific role owning the target session could
+        perform these operations; now membership in that role is sufficient.
        </para>
       </listitem>
 
@@ -1951,7 +2405,7 @@ FIXME: Add more specifics?
 2015-03-25 [a4847fc] Tom Lane: Add an ASSERT statement in plpgsql.
 -->
       <para>
-       Add <link linkend="plpgsql-statements-assert"><command>ASSERT</></>
+       Add an <link linkend="plpgsql-statements-assert"><command>ASSERT</></>
        statement in <application>PL/pgSQL</> (Pavel Stehule)
       </para>
      </listitem>
@@ -2054,6 +2508,17 @@ FIXME: Add more specifics?
 
      <listitem>
 <!--
+2015-11-12 [5094da9] Alvaro..: vacuumdb: don't prompt for passwords over and ..
+-->
+      <para>
+       In <link linkend="APP-VACUUMDB"><application>vacuumdb</></>, do not
+       prompt for the same password repeatedly when multiple connections
+       are necessary (Haribabu Kommi, Michael Paquier)
+      </para>
+     </listitem>
+
+     <listitem>
+<!--
 2015-05-15 [458a077] Fujii ..: Support &#8211;&#8211;verbose option in reindexdb.
 -->
       <para>
@@ -2107,13 +2572,13 @@ FIXME: Add more specifics?
 2014-07-10 [5b214c5] Fujii ..: Add new ECHO mode 'errors' that displays only ..
 -->
         <para>
-         Add <literal>errors</> mode to <application>psql</>'s
-         <varname>ECHO</> variable to display only failed commands
+         Add an <literal>errors</> mode that displays only failed commands
+         to <application>psql</>'s <varname>ECHO</> variable
          (Pavel Stehule)
         </para>
 
         <para>
-         This can also be enabled with the <application>psql</>
+         This behavior can also be selected with <application>psql</>'s
          <option>-b</> option.
         </para>
        </listitem>
@@ -2150,7 +2615,7 @@ FIXME: Add more specifics?
 2015-03-28 [7655f4c] Andrew..: Add a pager_min_lines setting to psql
 -->
         <para>
-         Add <application>psql</> setting <link
+         Add <literal>\pset</> option <link
          linkend="APP-PSQL-meta-commands"><varname>pager_min_lines</></>
          to control pager invocation (Andrew Dunstan)
         </para>
@@ -2163,6 +2628,22 @@ FIXME: Add more specifics?
         <para>
          Improve <application>psql</> line counting used when deciding
          to invoke the pager (Andrew Dunstan)
+        </para>
+       </listitem>
+
+       <listitem>
+<!--
+2015-12-03 [07338cb] Tom Lane: Clean up some psql issues around handling of t..
+2015-12-08 [e90371d] Tom Lane: Make failure to open psql log-file fatal.
+-->
+        <para>
+         <application>psql</> now fails if the file specified by
+         an <option>--output</> or <option>--log-file</> switch cannot be
+         written (Tom Lane, Daniel Verite)
+        </para>
+
+        <para>
+         Previously, it effectively ignored the switch in such cases.
         </para>
        </listitem>
 
@@ -2207,10 +2688,12 @@ FIXME: Add more specifics?
         </para>
 
         <para>
-         <literal>variables</> shows <application>psql</>'s special variables
-         and <literal>options</> shows command-line options.
-         <command>\? commands</> is the default output. This help
-         information can also be output via <literal>--help=section</>.
+         <literal>\? variables</> shows <application>psql</>'s special
+         variables and <literal>\? options</> shows the command-line options.
+         <command>\? commands</> shows the meta-commands, which is the
+         traditional output and remains the default.  These help displays
+         can also be obtained with the command-line
+         option <literal>--help=<replaceable>section</></literal>.
         </para>
        </listitem>
 
@@ -2245,7 +2728,7 @@ FIXME: Add more specifics?
 
         <para>
          Also prevent <option>--echo-hidden</> from echoing
-         <command>\watch</> queries.
+         <command>\watch</> queries, since that is generally unwanted.
         </para>
        </listitem>
 
@@ -2254,8 +2737,8 @@ FIXME: Add more specifics?
 2014-11-22 [eca2b9b] Andrew..: Rework echo_hidden for \sf and \ef from commit ..
 -->
         <para>
-         Allow <application>psql</>'s <literal>\sf</> and <literal>\ef</>
-         to honor <envar>ECHO_HIDDEN</> (Andrew Dunstan)
+         Make <application>psql</>'s <literal>\sf</> and <literal>\ef</>
+         commands honor <envar>ECHO_HIDDEN</> (Andrew Dunstan)
         </para>
        </listitem>
 
@@ -2310,10 +2793,26 @@ FIXME: Add more specifics?
 
       <listitem>
 <!--
+2015-11-21 [5f5e68b] Tom Lane: Adopt the GNU convention for handling tar-arch..
+-->
+       <para>
+        Support table sizes exceeding 8GB in tar archive format (Tom Lane)
+       </para>
+
+       <para>
+        The POSIX standard for tar format does not allow elements of a tar
+        archive to exceed 8GB, but most modern implementations of tar
+        support an extension that does allow it.  Use the extension format
+        when necessary, rather than failing.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
 2014-07-07 [7700597] Tom Lane: In pg_dump, show server and pg_dump versions w..
 -->
        <para>
-        Always have <application>pg_dump</> print server and
+        Make <application>pg_dump</> always print the server and
         <application>pg_dump</> versions (Jing Wang)
        </para>
 
@@ -2348,8 +2847,8 @@ FIXME: Add more specifics?
 2014-08-25 [ebe30ad] Bruce ..: pg_ctl, pg_upgrade:  allow multiple -o/-O opti..
 -->
        <para>
-        Allow multiple <application>pg_ctl</> <option>-o</> options to
-        be appended (Bruce Momjian)
+        Support multiple <application>pg_ctl</> <option>-o</> options,
+        concatenating their values (Bruce Momjian)
        </para>
       </listitem>
 
@@ -2365,6 +2864,23 @@ FIXME: Add more specifics?
        <para>
         This only controls <application>pg_ctl</>, not the server, which
         has separate settings in <filename>postgresql.conf</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-11-08 [bdb42ba] Noah M..: Don't connect() to a wildcard address in test_..
+-->
+       <para>
+        If the server's listen address is set to a wildcard value
+        (<literal>0.0.0.0</> in IPv4 or <literal>::</> in IPv6), connect via
+        the loopback address rather than trying to use the wildcard address
+        literally (Kondo Yuta)
+       </para>
+
+       <para>
+        This fix primarily affects Windows, since on other platforms
+        <application>pg_ctl</> will prefer to use a Unix-domain socket.
        </para>
       </listitem>
 
@@ -2398,8 +2914,9 @@ FIXME: Add more specifics?
 2014-08-25 [ebe30ad] Bruce ..: pg_ctl, pg_upgrade:  allow multiple -o/-O optio..
 -->
        <para>
-        Allow multiple <application>pg_upgrade</>
-        <option>-o</>/<option>-O</> options to be appended (Bruce Momjian)
+        Support multiple <application>pg_upgrade</>
+        <option>-o</>/<option>-O</> options,
+        concatenating their values (Bruce Momjian)
        </para>
       </listitem>
 
@@ -2410,17 +2927,6 @@ FIXME: Add more specifics?
        <para>
         Improve database collation comparisons in
         <application>pg_upgrade</> (Heikki Linnakangas)
-       </para>
-      </listitem>
-
-      <listitem>
-<!--
-2015-03-18 [417f78a] Bruce ..: pg_upgrade: document use of rsync for slave up..
--->
-       <para>
-        Document the use of <application>rsync</> for standby server
-        upgrades using <application>pg_upgrade</> (Stephen Frost,
-        Bruce Momjian)
        </para>
       </listitem>
 
@@ -2480,7 +2986,7 @@ FIXME: Add more specifics?
        </para>
 
        <para>
-        This is controlled by new <option>--latency-limit</> option.
+        This is controlled by a new <option>--latency-limit</> option.
        </para>
       </listitem>
 
@@ -2497,11 +3003,12 @@ FIXME: Add more specifics?
       <listitem>
 <!--
 2015-03-02 [878fdcb] Robert..: pgbench: Add a real expression syntax to \set
-FIXME: Improve description, link
 -->
        <para>
         Allow <application>pgbench</>'s <command>\set</> command to handle
-        multi-operator expressions (Robert Haas, Fabien Coelho)
+        arithmetic expressions containing more than one operator, and add
+        <literal>%</> (modulo) to the set of operators it supports
+        (Robert Haas, Fabien Coelho)
        </para>
       </listitem>
 
@@ -2698,8 +3205,8 @@ FIXME: Improve description, link
 -->
        <para>
         Allow higher-precision time stamp resolution on <systemitem
-        class="osname">Windows 8</> or <systemitem class="osname">Windows
-        Server 2012</> and later Windows systems (Craig Ringer)
+        class="osname">Windows 8</>, <systemitem class="osname">Windows
+        Server 2012</>, and later Windows systems (Craig Ringer)
        </para>
       </listitem>
 

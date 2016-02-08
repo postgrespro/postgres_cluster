@@ -5,7 +5,7 @@
  *	  Planning is complete, we just need to convert the selected
  *	  Path into a Plan.
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -211,6 +211,10 @@ create_plan(PlannerInfo *root, Path *best_path)
 
 	/* Recursively process the path tree */
 	plan = create_plan_recurse(root, best_path);
+
+	/* Update parallel safety information if needed. */
+	if (!best_path->parallel_safe)
+		root->glob->wholePlanParallelSafe = false;
 
 	/* Check we successfully assigned all NestLoopParams to plan nodes */
 	if (root->curOuterParams != NIL)
@@ -558,7 +562,8 @@ use_physical_tlist(PlannerInfo *root, RelOptInfo *rel)
  * If the plan node immediately above a scan would prefer to get only
  * needed Vars and not a physical tlist, it must call this routine to
  * undo the decision made by use_physical_tlist().  Currently, Hash, Sort,
- * and Material nodes want this, so they don't have to store useless columns.
+ * Material, and Gather nodes want this, so they don't have to store or
+ * transfer useless columns.
  */
 static void
 disuse_physical_tlist(PlannerInfo *root, Plan *plan, Path *path)
@@ -1053,6 +1058,8 @@ create_unique_plan(PlannerInfo *root, UniquePath *best_path)
 								 groupOperators,
 								 NIL,
 								 numGroups,
+								 false,
+								 true,
 								 subplan);
 	}
 	else
@@ -1123,9 +1130,11 @@ create_gather_plan(PlannerInfo *root, GatherPath *best_path)
 
 	subplan = create_plan_recurse(root, best_path->subpath);
 
+	disuse_physical_tlist(root, subplan, best_path->subpath);
+
 	gather_plan = make_gather(subplan->targetlist,
 							  NIL,
-							  best_path->num_workers,
+							  best_path->path.parallel_degree,
 							  best_path->single_copy,
 							  subplan);
 
@@ -2094,10 +2103,7 @@ create_foreignscan_plan(PlannerInfo *root, ForeignPath *best_path,
 	RelOptInfo *rel = best_path->path.parent;
 	Index		scan_relid = rel->relid;
 	Oid			rel_oid = InvalidOid;
-	Bitmapset  *attrs_used = NULL;
 	Plan	   *outer_plan = NULL;
-	ListCell   *lc;
-	int			i;
 
 	Assert(rel->fdwroutine != NULL);
 
@@ -2147,6 +2153,15 @@ create_foreignscan_plan(PlannerInfo *root, ForeignPath *best_path,
 	scan_plan->fs_relids = best_path->path.parent->relids;
 
 	/*
+	 * If a join between foreign relations was pushed down, remember it. The
+	 * push-down safety of the join depends upon the server and user mapping
+	 * being same. That can change between planning and execution time, in which
+	 * case the plan should be invalidated.
+	 */
+	if (scan_relid == 0)
+		root->glob->hasForeignJoin = true;
+
+	/*
 	 * Replace any outer-relation variables with nestloop params in the qual,
 	 * fdw_exprs and fdw_recheck_quals expressions.  We do this last so that
 	 * the FDW doesn't have to be involved.  (Note that parts of fdw_exprs
@@ -2166,36 +2181,48 @@ create_foreignscan_plan(PlannerInfo *root, ForeignPath *best_path,
 	}
 
 	/*
-	 * Detect whether any system columns are requested from rel.  This is a
-	 * bit of a kluge and might go away someday, so we intentionally leave it
-	 * out of the API presented to FDWs.
-	 *
-	 * First, examine all the attributes needed for joins or final output.
-	 * Note: we must look at reltargetlist, not the attr_needed data, because
-	 * attr_needed isn't computed for inheritance child rels.
+	 * If rel is a base relation, detect whether any system columns are
+	 * requested from the rel.  (If rel is a join relation, rel->relid will be
+	 * 0, but there can be no Var with relid 0 in the reltargetlist or the
+	 * restriction clauses, so we skip this in that case.  Note that any such
+	 * columns in base relations that were joined are assumed to be contained
+	 * in fdw_scan_tlist.)  This is a bit of a kluge and might go away someday,
+	 * so we intentionally leave it out of the API presented to FDWs.
 	 */
-	pull_varattnos((Node *) rel->reltargetlist, rel->relid, &attrs_used);
-
-	/* Add all the attributes used by restriction clauses. */
-	foreach(lc, rel->baserestrictinfo)
-	{
-		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
-
-		pull_varattnos((Node *) rinfo->clause, rel->relid, &attrs_used);
-	}
-
-	/* Now, are any system columns requested from rel? */
 	scan_plan->fsSystemCol = false;
-	for (i = FirstLowInvalidHeapAttributeNumber + 1; i < 0; i++)
+	if (scan_relid > 0)
 	{
-		if (bms_is_member(i - FirstLowInvalidHeapAttributeNumber, attrs_used))
-		{
-			scan_plan->fsSystemCol = true;
-			break;
-		}
-	}
+		Bitmapset  *attrs_used = NULL;
+		ListCell   *lc;
+		int			i;
 
-	bms_free(attrs_used);
+		/*
+		 * First, examine all the attributes needed for joins or final output.
+		 * Note: we must look at reltargetlist, not the attr_needed data,
+		 * because attr_needed isn't computed for inheritance child rels.
+		 */
+		pull_varattnos((Node *) rel->reltargetlist, scan_relid, &attrs_used);
+
+		/* Add all the attributes used by restriction clauses. */
+		foreach(lc, rel->baserestrictinfo)
+		{
+			RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
+
+			pull_varattnos((Node *) rinfo->clause, scan_relid, &attrs_used);
+		}
+
+		/* Now, are any system columns requested from rel? */
+		for (i = FirstLowInvalidHeapAttributeNumber + 1; i < 0; i++)
+		{
+			if (bms_is_member(i - FirstLowInvalidHeapAttributeNumber, attrs_used))
+			{
+				scan_plan->fsSystemCol = true;
+				break;
+			}
+		}
+
+		bms_free(attrs_used);
+	}
 
 	return scan_plan;
 }
@@ -4554,9 +4581,8 @@ Agg *
 make_agg(PlannerInfo *root, List *tlist, List *qual,
 		 AggStrategy aggstrategy, const AggClauseCosts *aggcosts,
 		 int numGroupCols, AttrNumber *grpColIdx, Oid *grpOperators,
-		 List *groupingSets,
-		 long numGroups,
-		 Plan *lefttree)
+		 List *groupingSets, long numGroups, bool combineStates,
+		 bool finalizeAggs, Plan *lefttree)
 {
 	Agg		   *node = makeNode(Agg);
 	Plan	   *plan = &node->plan;
@@ -4565,6 +4591,8 @@ make_agg(PlannerInfo *root, List *tlist, List *qual,
 
 	node->aggstrategy = aggstrategy;
 	node->numCols = numGroupCols;
+	node->combineStates = combineStates;
+	node->finalizeAggs = finalizeAggs;
 	node->grpColIdx = grpColIdx;
 	node->grpOperators = grpOperators;
 	node->numGroups = numGroups;
@@ -4805,6 +4833,7 @@ make_gather(List *qptlist,
 	plan->righttree = NULL;
 	node->num_workers = nworkers;
 	node->single_copy = single_copy;
+	node->invisible	= false;
 
 	return node;
 }

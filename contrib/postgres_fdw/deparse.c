@@ -24,7 +24,7 @@
  * with collations that match the remote table's columns, which we can
  * consider to be user error.
  *
- * Portions Copyright (c) 2012-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2012-2016, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		  contrib/postgres_fdw/deparse.c
@@ -45,7 +45,9 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "nodes/nodeFuncs.h"
+#include "nodes/plannodes.h"
 #include "optimizer/clauses.h"
+#include "optimizer/prep.h"
 #include "optimizer/var.h"
 #include "parser/parsetree.h"
 #include "utils/builtins.h"
@@ -110,6 +112,7 @@ static void deparseTargetList(StringInfo buf,
 				  PlannerInfo *root,
 				  Index rtindex,
 				  Relation rel,
+				  bool is_returning,
 				  Bitmapset *attrs_used,
 				  List **retrieved_attrs);
 static void deparseReturningList(StringInfo buf, PlannerInfo *root,
@@ -139,6 +142,11 @@ static void printRemoteParam(int paramindex, Oid paramtype, int32 paramtypmod,
 				 deparse_expr_cxt *context);
 static void printRemotePlaceholder(Oid paramtype, int32 paramtypmod,
 					   deparse_expr_cxt *context);
+static void deparseSelectSql(Bitmapset *attrs_used, List **retrieved_attrs,
+				 deparse_expr_cxt *context);
+static void deparseLockingClause(deparse_expr_cxt *context);
+static void appendWhereClause(List *exprs, deparse_expr_cxt *context);
+static void appendOrderByClause(List *pathkeys, deparse_expr_cxt *context);
 
 
 /*
@@ -695,6 +703,51 @@ deparse_type_name(Oid type_oid, int32 typemod)
 		return format_type_with_typemod_qualified(type_oid, typemod);
 }
 
+/*
+ * Deparse SELECT statement for given relation into buf.
+ *
+ * remote_conds is the list of conditions to be deparsed as WHERE clause.
+ *
+ * pathkeys is the list of pathkeys to order the result by.
+ *
+ * List of columns selected is returned in retrieved_attrs.
+ *
+ * If params_list is not NULL, it receives a list of Params and other-relation
+ * Vars used in the clauses; these values must be transmitted to the remote
+ * server as parameter values.
+ *
+ * If params_list is NULL, we're generating the query for EXPLAIN purposes,
+ * so Params and other-relation Vars should be replaced by dummy values.
+ */
+extern void
+deparseSelectStmtForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *rel,
+						List *remote_conds, List *pathkeys,
+						List **retrieved_attrs, List **params_list)
+{
+	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) rel->fdw_private;
+	deparse_expr_cxt context;
+
+	/* Initialize params_list if caller needs one */
+	if (params_list)
+		*params_list = NIL;
+
+	context.buf = buf;
+	context.root = root;
+	context.foreignrel = rel;
+	context.params_list = params_list;
+
+	deparseSelectSql(fpinfo->attrs_used, retrieved_attrs, &context);
+
+	if (remote_conds)
+		appendWhereClause(remote_conds, &context);
+
+	/* Add ORDER BY clause if we found any useful pathkeys */
+	if (pathkeys)
+		appendOrderByClause(pathkeys, &context);
+
+	/* Add any necessary FOR UPDATE/SHARE. */
+	deparseLockingClause(&context);
+}
 
 /*
  * Construct a simple SELECT statement that retrieves desired columns
@@ -704,14 +757,14 @@ deparse_type_name(Oid type_oid, int32 typemod)
  * We also create an integer List of the columns being retrieved, which is
  * returned to *retrieved_attrs.
  */
-void
-deparseSelectSql(StringInfo buf,
-				 PlannerInfo *root,
-				 RelOptInfo *baserel,
-				 Bitmapset *attrs_used,
-				 List **retrieved_attrs)
+static void
+deparseSelectSql(Bitmapset *attrs_used, List **retrieved_attrs,
+				 deparse_expr_cxt *context)
 {
-	RangeTblEntry *rte = planner_rt_fetch(baserel->relid, root);
+	StringInfo	buf = context->buf;
+	RelOptInfo *foreignrel = context->foreignrel;
+	PlannerInfo *root = context->root;
+	RangeTblEntry *rte = planner_rt_fetch(foreignrel->relid, root);
 	Relation	rel;
 
 	/*
@@ -724,7 +777,7 @@ deparseSelectSql(StringInfo buf,
 	 * Construct SELECT list
 	 */
 	appendStringInfoString(buf, "SELECT ");
-	deparseTargetList(buf, root, baserel->relid, rel, attrs_used,
+	deparseTargetList(buf, root, foreignrel->relid, rel, false, attrs_used,
 					  retrieved_attrs);
 
 	/*
@@ -738,7 +791,8 @@ deparseSelectSql(StringInfo buf,
 
 /*
  * Emit a target list that retrieves the columns specified in attrs_used.
- * This is used for both SELECT and RETURNING targetlists.
+ * This is used for both SELECT and RETURNING targetlists; the is_returning
+ * parameter is true only for a RETURNING targetlist.
  *
  * The tlist text is appended to buf, and we also create an integer List
  * of the columns being retrieved, which is returned to *retrieved_attrs.
@@ -748,6 +802,7 @@ deparseTargetList(StringInfo buf,
 				  PlannerInfo *root,
 				  Index rtindex,
 				  Relation rel,
+				  bool is_returning,
 				  Bitmapset *attrs_used,
 				  List **retrieved_attrs)
 {
@@ -777,6 +832,8 @@ deparseTargetList(StringInfo buf,
 		{
 			if (!first)
 				appendStringInfoString(buf, ", ");
+			else if (is_returning)
+				appendStringInfoString(buf, " RETURNING ");
 			first = false;
 
 			deparseColumnRef(buf, rtindex, i, root);
@@ -794,6 +851,8 @@ deparseTargetList(StringInfo buf,
 	{
 		if (!first)
 			appendStringInfoString(buf, ", ");
+		else if (is_returning)
+			appendStringInfoString(buf, " RETURNING ");
 		first = false;
 
 		appendStringInfoString(buf, "ctid");
@@ -803,44 +862,83 @@ deparseTargetList(StringInfo buf,
 	}
 
 	/* Don't generate bad syntax if no undropped columns */
-	if (first)
+	if (first && !is_returning)
 		appendStringInfoString(buf, "NULL");
 }
 
 /*
- * Deparse WHERE clauses in given list of RestrictInfos and append them to buf.
- *
- * baserel is the foreign table we're planning for.
- *
- * If no WHERE clause already exists in the buffer, is_first should be true.
- *
- * If params is not NULL, it receives a list of Params and other-relation Vars
- * used in the clauses; these values must be transmitted to the remote server
- * as parameter values.
- *
- * If params is NULL, we're generating the query for EXPLAIN purposes,
- * so Params and other-relation Vars should be replaced by dummy values.
+ * Deparse the appropriate locking clause (FOR SELECT or FOR SHARE) for a
+ * given relation (context->foreignrel).
  */
-void
-appendWhereClause(StringInfo buf,
-				  PlannerInfo *root,
-				  RelOptInfo *baserel,
-				  List *exprs,
-				  bool is_first,
-				  List **params)
+static void
+deparseLockingClause(deparse_expr_cxt *context)
 {
-	deparse_expr_cxt context;
+	StringInfo	buf = context->buf;
+	PlannerInfo *root = context->root;
+	RelOptInfo *rel = context->foreignrel;
+
+	/*
+	 * Add FOR UPDATE/SHARE if appropriate.  We apply locking during the
+	 * initial row fetch, rather than later on as is done for local tables.
+	 * The extra roundtrips involved in trying to duplicate the local
+	 * semantics exactly don't seem worthwhile (see also comments for
+	 * RowMarkType).
+	 *
+	 * Note: because we actually run the query as a cursor, this assumes that
+	 * DECLARE CURSOR ... FOR UPDATE is supported, which it isn't before 8.3.
+	 */
+	if (rel->relid == root->parse->resultRelation &&
+		(root->parse->commandType == CMD_UPDATE ||
+		 root->parse->commandType == CMD_DELETE))
+	{
+		/* Relation is UPDATE/DELETE target, so use FOR UPDATE */
+		appendStringInfoString(buf, " FOR UPDATE");
+	}
+	else
+	{
+		PlanRowMark *rc = get_plan_rowmark(root->rowMarks, rel->relid);
+
+		if (rc)
+		{
+			/*
+			 * Relation is specified as a FOR UPDATE/SHARE target, so handle
+			 * that.  (But we could also see LCS_NONE, meaning this isn't a
+			 * target relation after all.)
+			 *
+			 * For now, just ignore any [NO] KEY specification, since (a) it's
+			 * not clear what that means for a remote table that we don't have
+			 * complete information about, and (b) it wouldn't work anyway on
+			 * older remote servers.  Likewise, we don't worry about NOWAIT.
+			 */
+			switch (rc->strength)
+			{
+				case LCS_NONE:
+					/* No locking needed */
+					break;
+				case LCS_FORKEYSHARE:
+				case LCS_FORSHARE:
+					appendStringInfoString(buf, " FOR SHARE");
+					break;
+				case LCS_FORNOKEYUPDATE:
+				case LCS_FORUPDATE:
+					appendStringInfoString(buf, " FOR UPDATE");
+					break;
+			}
+		}
+	}
+}
+
+/*
+ * Deparse WHERE clauses in given list of RestrictInfos and append them to
+ * context->buf.
+ */
+static void
+appendWhereClause(List *exprs, deparse_expr_cxt *context)
+{
 	int			nestlevel;
 	ListCell   *lc;
-
-	if (params)
-		*params = NIL;			/* initialize result list to empty */
-
-	/* Set up context struct for recursion */
-	context.root = root;
-	context.foreignrel = baserel;
-	context.buf = buf;
-	context.params_list = params;
+	bool		is_first = true;
+	StringInfo	buf = context->buf;
 
 	/* Make sure any constants in the exprs are printed portably */
 	nestlevel = set_transmission_modes();
@@ -856,7 +954,7 @@ appendWhereClause(StringInfo buf,
 			appendStringInfoString(buf, " AND ");
 
 		appendStringInfoChar(buf, '(');
-		deparseExpr(ri->clause, &context);
+		deparseExpr(ri->clause, context);
 		appendStringInfoChar(buf, ')');
 
 		is_first = false;
@@ -1022,11 +1120,8 @@ deparseReturningList(StringInfo buf, PlannerInfo *root,
 	}
 
 	if (attrs_used != NULL)
-	{
-		appendStringInfoString(buf, " RETURNING ");
-		deparseTargetList(buf, root, rtindex, rel, attrs_used,
+		deparseTargetList(buf, root, rtindex, rel, true, attrs_used,
 						  retrieved_attrs);
-	}
 	else
 		*retrieved_attrs = NIL;
 }
@@ -1886,20 +1981,14 @@ printRemotePlaceholder(Oid paramtype, int32 paramtypmod,
  * relation. From given pathkeys expressions belonging entirely to the given
  * base relation are obtained and deparsed.
  */
-void
-appendOrderByClause(StringInfo buf, PlannerInfo *root, RelOptInfo *baserel,
-					List *pathkeys)
+static void
+appendOrderByClause(List *pathkeys, deparse_expr_cxt *context)
 {
 	ListCell   *lcell;
-	deparse_expr_cxt context;
 	int			nestlevel;
 	char	   *delim = " ";
-
-	/* Set up context struct for recursion */
-	context.root = root;
-	context.foreignrel = baserel;
-	context.buf = buf;
-	context.params_list = NULL;
+	RelOptInfo *baserel = context->foreignrel;
+	StringInfo	buf = context->buf;
 
 	/* Make sure any constants in the exprs are printed portably */
 	nestlevel = set_transmission_modes();
@@ -1914,7 +2003,7 @@ appendOrderByClause(StringInfo buf, PlannerInfo *root, RelOptInfo *baserel,
 		Assert(em_expr != NULL);
 
 		appendStringInfoString(buf, delim);
-		deparseExpr(em_expr, &context);
+		deparseExpr(em_expr, context);
 		if (pathkey->pk_strategy == BTLessStrategyNumber)
 			appendStringInfoString(buf, " ASC");
 		else

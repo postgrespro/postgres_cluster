@@ -3,7 +3,7 @@
  * execParallel.c
  *	  Support routines for parallel execution.
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * This file contains routines that are intended to support setting up,
@@ -25,6 +25,8 @@
 
 #include "executor/execParallel.h"
 #include "executor/executor.h"
+#include "executor/nodeCustom.h"
+#include "executor/nodeForeignscan.h"
 #include "executor/nodeSeqscan.h"
 #include "executor/tqueue.h"
 #include "nodes/nodeFuncs.h"
@@ -143,6 +145,7 @@ ExecSerializePlan(Plan *plan, EState *estate)
 	pstmt->relationOids = NIL;
 	pstmt->invalItems = NIL;	/* workers can't replan anyway... */
 	pstmt->hasRowSecurity = false;
+	pstmt->hasForeignJoin = false;
 
 	/* Return serialized copy of our dummy PlannedStmt. */
 	return nodeToString(pstmt);
@@ -167,25 +170,33 @@ ExecParallelEstimate(PlanState *planstate, ExecParallelEstimateContext *e)
 	e->nnodes++;
 
 	/* Call estimators for parallel-aware nodes. */
-	switch (nodeTag(planstate))
+	if (planstate->plan->parallel_aware)
 	{
-		case T_SeqScanState:
-			ExecSeqScanEstimate((SeqScanState *) planstate,
-								e->pcxt);
-			break;
-		default:
-			break;
+		switch (nodeTag(planstate))
+		{
+			case T_SeqScanState:
+				ExecSeqScanEstimate((SeqScanState *) planstate,
+									e->pcxt);
+				break;
+			case T_ForeignScanState:
+				ExecForeignScanEstimate((ForeignScanState *) planstate,
+										e->pcxt);
+				break;
+			case T_CustomScanState:
+				ExecCustomScanEstimate((CustomScanState *) planstate,
+									   e->pcxt);
+				break;
+			default:
+				break;
+		}
 	}
 
 	return planstate_tree_walker(planstate, ExecParallelEstimate, e);
 }
 
 /*
- * Ordinary plan nodes won't do anything here, but parallel-aware plan nodes
- * may need to initialize shared state in the DSM before parallel workers
- * are available.  They can allocate the space they previous estimated using
- * shm_toc_allocate, and add the keys they previously estimated using
- * shm_toc_insert, in each case targeting pcxt->toc.
+ * Initialize the dynamic shared memory segment that will be used to control
+ * parallel execution.
  */
 static bool
 ExecParallelInitializeDSM(PlanState *planstate,
@@ -202,15 +213,34 @@ ExecParallelInitializeDSM(PlanState *planstate,
 	/* Count this node. */
 	d->nnodes++;
 
-	/* Call initializers for parallel-aware plan nodes. */
-	switch (nodeTag(planstate))
+	/*
+	 * Call initializers for parallel-aware plan nodes.
+	 *
+	 * Ordinary plan nodes won't do anything here, but parallel-aware plan
+	 * nodes may need to initialize shared state in the DSM before parallel
+	 * workers are available.  They can allocate the space they previously
+	 * estimated using shm_toc_allocate, and add the keys they previously
+	 * estimated using shm_toc_insert, in each case targeting pcxt->toc.
+	 */
+	if (planstate->plan->parallel_aware)
 	{
-		case T_SeqScanState:
-			ExecSeqScanInitializeDSM((SeqScanState *) planstate,
-									 d->pcxt);
-			break;
-		default:
-			break;
+		switch (nodeTag(planstate))
+		{
+			case T_SeqScanState:
+				ExecSeqScanInitializeDSM((SeqScanState *) planstate,
+										 d->pcxt);
+				break;
+			case T_ForeignScanState:
+				ExecForeignScanInitializeDSM((ForeignScanState *) planstate,
+											 d->pcxt);
+				break;
+			case T_CustomScanState:
+				ExecCustomScanInitializeDSM((CustomScanState *) planstate,
+											d->pcxt);
+				break;
+			default:
+				break;
+		}
 	}
 
 	return planstate_tree_walker(planstate, ExecParallelInitializeDSM, d);
@@ -623,13 +653,24 @@ ExecParallelInitializeWorker(PlanState *planstate, shm_toc *toc)
 		return false;
 
 	/* Call initializers for parallel-aware plan nodes. */
-	switch (nodeTag(planstate))
+	if (planstate->plan->parallel_aware)
 	{
-		case T_SeqScanState:
-			ExecSeqScanInitializeWorker((SeqScanState *) planstate, toc);
-			break;
-		default:
-			break;
+		switch (nodeTag(planstate))
+		{
+			case T_SeqScanState:
+				ExecSeqScanInitializeWorker((SeqScanState *) planstate, toc);
+				break;
+			case T_ForeignScanState:
+				ExecForeignScanInitializeWorker((ForeignScanState *) planstate,
+												toc);
+				break;
+			case T_CustomScanState:
+				ExecCustomScanInitializeWorker((CustomScanState *) planstate,
+											   toc);
+				break;
+			default:
+				break;
+		}
 	}
 
 	return planstate_tree_walker(planstate, ExecParallelInitializeWorker, toc);

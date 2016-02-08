@@ -1008,9 +1008,12 @@ LSEG
 LVRelStats
 LWLock
 LWLockHandle
+NamedLWLockTranche
+LWLockMinimallyPadded
 LWLockMode
 LWLockPadded
 LWLockTranche
+NamedLWLockTrancheRequest
 LabelProvider
 LargeObjectDesc
 Latch

@@ -14,7 +14,7 @@
  * and rewrites the typemods sent by the remote side to the corresponding
  * local record typemods.
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -535,7 +535,7 @@ TupleQueueReaderNext(TupleQueueReader *reader, bool nowait, bool *done)
 		void	   *data;
 
 		/* Attempt to read a message. */
-		result = shm_mq_receive(reader->queue, &nbytes, &data, true);
+		result = shm_mq_receive(reader->queue, &nbytes, &data, nowait);
 
 		/* If queue is detached, set *done and return NULL. */
 		if (result == SHM_MQ_DETACHED)
