@@ -108,7 +108,6 @@ static bool choose_hashed_distinct(PlannerInfo *root,
 static List *make_subplanTargetList(PlannerInfo *root, List *tlist,
 					   AttrNumber **groupColIdx, bool *need_tlist_eval);
 static int	get_grouping_column_index(Query *parse, TargetEntry *tle);
-static int	get_sort_column_index(Query *parse, TargetEntry *tle);
 static void locate_grouping_columns(PlannerInfo *root,
 						List *tlist,
 						List *sub_tlist,
@@ -2460,13 +2459,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 										  parse->limitCount,
 										  offset_est,
 										  count_est);
-		if (parse->sortClause && tlist != result_plan->targetlist)
-		{			
-			result_plan = (Plan *) make_result(root,
-											   tlist,
-											   NULL,
-											   result_plan);			
-		}
 	}
 
 	/*
@@ -4033,8 +4025,8 @@ make_subplanTargetList(PlannerInfo *root,
 					   bool *need_tlist_eval)
 {
 	Query	   *parse = root->parse;
-	List	   *sub_tlist = NIL;
-	List	   *non_group_cols = NIL;
+	List	   *sub_tlist;
+	List	   *non_group_cols;
 	List	   *non_group_vars;
 	int			numCols;
 
@@ -4047,61 +4039,6 @@ make_subplanTargetList(PlannerInfo *root,
 	if (!parse->hasAggs && !parse->groupClause && !parse->groupingSets && !root->hasHavingQual &&
 		!parse->hasWindowFuncs)
 	{
-		if (parse->sortClause && limit_needed(parse)) {
-			ListCell   *tl;
-			bool contains_non_vars = false;
-			*need_tlist_eval = false;	/* only eval if not flat tlist */
-			foreach(tl, tlist)
-			{
-				TargetEntry *tle = (TargetEntry *) lfirst(tl);
-				int			colno;
-				
-				colno = get_sort_column_index(parse, tle);
-				if (colno >= 0)
-				{
-					TargetEntry *newtle;
-					
-					newtle = makeTargetEntry(tle->expr,
-											 list_length(sub_tlist) + 1,
-											 NULL,
-											 false);
-					sub_tlist = lappend(sub_tlist, newtle);
-					if (!(newtle->expr && IsA(newtle->expr, Var)))
-						*need_tlist_eval = true;	/* tlist contains non Vars */
-				}
-				else
-				{
-					/*
-					 * Non-sorting column, so just remember the expression for
-					 * later call to pull_var_clause.  There's no need for
-					 * pull_var_clause to examine the TargetEntry node itself.
-					 */
-					non_group_cols = lappend(non_group_cols, tle->expr);
-					contains_non_vars |= !(tle->expr && IsA(tle->expr, Var));
-				}
-			}
-						
-			if (non_group_cols) /* there are some columns not used in order by */
-			{ 
-				non_group_vars = pull_var_clause((Node *) non_group_cols,
-												 PVC_RECURSE_AGGREGATES,
-												 PVC_INCLUDE_PLACEHOLDERS);
-				sub_tlist = add_to_flat_tlist(sub_tlist, non_group_vars);
-				/* clean up cruft */
-				list_free(non_group_vars);
-				list_free(non_group_cols);
-
-				if (contains_non_vars ) 
-				{ 
-					/*
-					 * This optimization makes sense only if target list contains some complex expressions, 
-					 * for example functions calls. May be it is better to check cost of this expressions,
-					 * but right now just apply this optimization if there are non-vars columns 
-					 */
-					return sub_tlist;
-				}
-			}
-		} 
 		*need_tlist_eval = true;
 		return tlist;
 	}
@@ -4110,6 +4047,8 @@ make_subplanTargetList(PlannerInfo *root,
 	 * Otherwise, we must build a tlist containing all grouping columns, plus
 	 * any other Vars mentioned in the targetlist and HAVING qual.
 	 */
+	sub_tlist = NIL;
+	non_group_cols = NIL;
 	*need_tlist_eval = false;	/* only eval if not flat tlist */
 
 	numCols = list_length(parse->groupClause);
@@ -4224,37 +4163,6 @@ get_grouping_column_index(Query *parse, TargetEntry *tle)
 		SortGroupClause *grpcl = (SortGroupClause *) lfirst(gl);
 
 		if (grpcl->tleSortGroupRef == ressortgroupref)
-			return colno;
-		colno++;
-	}
-
-	return -1;
-}
-
-/*
- * get_sort_column_index
- *		Get the ORDER BY column position, if any, of a targetlist entry.
- *
- * Returns the index (counting from 0) of the TLE in the ORDER BY list, or -1
- * if it's not a sorting column.  Note: the result is unique because the
- * parser won't make multiple sortClause entries for the same TLE.
- */
-static int
-get_sort_column_index(Query *parse, TargetEntry *tle)
-{
-	int			colno = 0;
-	Index		ressortgroupref = tle->ressortgroupref;
-	ListCell   *gl;
-
-	/* No need to search groupClause if TLE hasn't got a sortgroupref */
-	if (ressortgroupref == 0)
-		return -1;
-
-	foreach(gl, parse->sortClause)
-	{
-		SortGroupClause *sortcl = (SortGroupClause *) lfirst(gl);
-
-		if (sortcl->tleSortGroupRef == ressortgroupref)
 			return colno;
 		colno++;
 	}
