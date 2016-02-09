@@ -51,7 +51,8 @@
 #include "multimaster.h"
 
 #define MAX_CONNECT_ATTEMPTS 10
-#define TX_BUFFER_SIZE 1024
+#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 1024
 
 typedef struct
 {
@@ -61,12 +62,11 @@ typedef struct
 
 typedef struct 
 {
-	DtmCommitMessage data[TX_BUFFER_SIZE];
+	DtmCommitMessage data[BUFFER_SIZE];
 	int used;
-} DtmTxBuffer;
+} DtmBuffer;
 
 static int* sockets;
-static DtmTxBuffer* txBuffers;
 
 static BackgroundWorker DtmSender = {
 	"mm-sender",
@@ -114,6 +114,34 @@ static int resolve_host_by_name(const char *hostname, unsigned* addrs, unsigned*
     *n_addrs = i;
     return 1;
 }
+
+#ifdef USE_EPOLL
+static int    epollfd;
+#else
+static int    max_fd;
+static fd_set inset;
+#endif
+
+inline void registerSocket(int fd, int i)
+{
+#ifdef USE_EPOLL
+    struct epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.u32 = i;        
+    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
+        char buf[ERR_BUF_SIZE];
+        sprintf(buf, "Failed to add socket %d to epoll set", fd);
+        shub->params->error_handler(buf, SHUB_FATAL_ERROR);
+    } 
+#else
+    FD_SET(fd, &inset);    
+    if (fd > max_fd) {
+        max_fd = fd;
+    }
+#endif          
+}     
+
+
 
 static int connectSocket(char const* host, int port)
 {
@@ -206,20 +234,47 @@ static void acceptConnections()
 		elog(ERROR, "Failed to bind socket: %d", errno);
 	}	
 
-	for (i = 0; i < nNodes-1; i++) {
-		sockets[i] = accept(sd, NULL, NULL);
-		if (sockets[i] < 0) {
+	for (i = 0; i < nNodes; i++) {
+		int fd = accept(sd, NULL, NULL);
+		if (fd < 0) {
 			elog(ERROR, "Failed to accept socket: %d", errno);
 		}	
+		registerSocket(fd, i);
+		sockets[i] = fd;
 	}
 }
+
+static void WriteSocket(int sd, void const* buf, int size)
+{
+    char* src = (char*)buf;
+    while (size != 0) {
+        int n = send(sd, src, size, 0);
+        if (n <= 0) {
+            return 0;
+        }
+        size -= n;
+        src += n;
+    }
+}
+
+static int ReadSocket(int sd, void* buf, int buf_size)
+{
+	int rc = recv(sd, buf, buf_size, 0);
+	if (rc <= 0) { 
+		elog(ERROR, "Arbiter failed to read socket: %d", rc);
+	}
+	return rc;
+}
+
 
 static void DtmTransSender(Datum arg)
 {
 	int nNodes = dtm->nNodes;
 	int i;
-	DtmCommitMessage* txBuffer = (DtmCommitMessage*)palloc(sizeof(DtmTxBuffer)*(nNodes));
+	DtmTxBuffer* txBuffer = (DtmTxBuffer*)palloc(sizeof(DtmTxBuffer)*nNodes);
 	
+	sockets = (int*)palloc(sizeof(int)*nNodes);
+
 	openConnections();
 
 	for (i = 0; i < nNodes; i++) { 
@@ -229,31 +284,106 @@ static void DtmTransSender(Datum arg)
 	while (true) {
 		DtmTransState* ts;		
 		PGSemaphoreLock(&dtm->semphore);
+		CHECK_FOR_INTERRUPTS();
 
 		SpinLockAcquire(&dtm->spinlock);
 		ts = dtm->pendingTransactions;
 		dtm->pendingTransactions = NULL;
 		SpinLockRelease(&dtm->spinlock);
 
-		for (ts = dtm->pendingTransactions; ts != NULL; ts = ts->nextPending) {
-			int node = ts->gtid.node;
-			Assert(node != MMNodeId);
-			node -= 1;
-			if (txBuffer[node].used == TX_BUFFER_SIZE) { 
-				WriteSocket(sockets[node], txBuffer[node].data, txBuffer[node].used*sizeof(DtmCommitRequest));
-				txBuffer[node].used = 0;
+		for (; ts != NULL; ts = ts->nextPending) {
+			i = ts->gtid.node-1;
+			Assert(i != MMNodeId);
+			if (txBuffer[i].used == BUFFER_SIZE) { 
+				WriteSocket(sockets[i], txBuffer[i].data, txBuffer[i].used*sizeof(DtmCommitRequest));
+				txBuffer[i].used = 0;
 			}
-			txBuffer[node].data[txBuffer[node].used].xid = ts->xid;
-			txBuffer[node].data[txBuffer[node].used].csn = ts->csn;
-			txBuffer[node].used += 1;
+			txBuffer[i].data[txBuffer[i].used].xid = ts->xid;
+			txBuffer[i].data[txBuffer[i].used].csn = ts->csn;
+			txBuffer[i].used += 1;
 		}
-		dtm->pendingTransactions = NULL;
-		
+		for (i = 0; i < nNodes; i++) { 
+			if (txBuffer[i].used != 0) { 
+				WriteSocket(sockets[i], txBuffer[i].data, txBuffer[i].used*sizeof(DtmCommitRequest));
+				txBuffer[i].used = 0;
+			}
+		}		
 	}
 }
 
 static void DtmTransReceiver(Datum arg)
 {
+	int nNodes = dtm->nNodes-1;
+	int i, j, rc;
+	int rxBufPos = 0;
+	DtmBuffer* rxBuffer = (DtmBuffer*)palloc(sizeof(DtmBuffer)*nNodes);
+	HTAB* xid2state;
+
+#ifdef USE_EPOLL
+	struct epoll_event* events = (struct epoll_event*)palloc(SIZEOF(struct epoll_event)*nNodes);
+    epollfd = epoll_create(nNodes);
+#else
+    FD_ZERO(&inset);
+    max_fd = 0;
+#endif
+	
 	acceptConnections();
+	xid2state = MMCreateHash();
+
+	for (i = 0; i < nNodes; i++) { 
+		txBuffer[i].used = 0;
+	}
+
+	while (true) {
+#ifdef USE_EPOLL
+        rc = epoll_wait(epollfd, events, MAX_EVENTS, shub->in_buffer_used == 0 ? -1 : shub->params->delay);
+		if (rc < 0) { 
+			elog(ERROR, "epoll failed: %d", errno);
+		}
+		for (j = 0; j < rc; j++) {
+			i = events[j].data.u32;
+			if (events[j].events & EPOLLERR) {
+				struct sockaddr_in insock;
+				socklen_t len = sizeof(insock);
+				getpeername(fd, (struct sockaddr*)&insock, &len);
+				elog(WARNING, "Loose connection with %s", inet_ntoa(insock.sin_addr_));
+				epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
+			} 
+			else if (events[j].events & EPOLLIN)  
+#else
+        fd_set events;
+        events = inset;
+        rc = select(max_fd+1, &events, NULL, NULL, NULL);
+		if (rc < 0) { 
+			elog(ERROR, "select failed: %d", errno);
+		}
+		for (i = 0; i < nNodes; i++) { 
+			if (FD_ISSET(sockets[i], &events)) 
+#endif
+			{
+				int nResponses;
+				rxBuffer[i].used += ReadSocket(sockets[i], (char*)rxBuffer[i].data + rxBuffer[i].used, RX_BUFFER_SIZE-rxBufPos);
+				nResponses = rxBuffer[i].used/sizeof(DtmCommitRequest);
+
+				LWLockAcquire(&dtm->hashLock, LW_SHARED);						
+
+				for (j = 0; j < nResponses; j++) { 
+					DtmCommitRequest* req = &rxBuffer[i].data[j];
+					DtmTransState* ts = (DtmTransState*)hash_search(xid2state, &req->xid, HASH_FIND, NULL);
+					Assert(ts != NULL);
+					if (req->csn > ts->csn) { 
+						ts->csn = req->csn;
+					}
+					if (ts->nVotes == dtm->nNodes-1) { 
+						SetLatch(&ProcGlobal->allProcs[ts->pid].procLatch);
+					}
+				}
+				if (rxBuffer[i].used != nResponses*sizeof(DtmCommitRequest)) { 
+					rxBuffer[i].used -= nResponses*sizeof(DtmCommitRequest);
+					memmove(rxBuffer[i].data, (char*)rxBuffer[i].data + nResponses*sizeof(DtmCommitRequest), rxBuffer[i].used);
+				}
+			}
+		}
+	}
 }
 
