@@ -103,12 +103,14 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 					  ReorderBufferTXN *txn)
 {
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
-    if (MMIsLocalTransaction(txn->xid)) {
+	csn_t csn = MMTransactionSnapshot(txn->xid);
+    if (csn == INVALID_CSN) {
         mm->isLocal = true;
     } else { 
         mm->isLocal = false;        
         pq_sendbyte(out, 'B');		/* BEGIN */
-        pq_sendint64(out, MMTransactionSnapshot(txn->xid));
+		pq_sendint64(out, MMGenerateGTID(txn->xid));
+        pq_sendint64(out, csn);
     }
 }
 
@@ -122,7 +124,6 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
     if (!mm->isLocal) { 
         pq_sendbyte(out, 'C');		/* sending COMMIT */
-		pq_sendint64(out, MyProcPid, txn->xid);
     }
 }
 
