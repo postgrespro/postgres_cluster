@@ -60,6 +60,7 @@ extern void MMJoinTransaction(GlobalTransactionId gtid, csn_t snapshot);
 extern void MMReceiverStarted(void);
 extern void MMExecute(void* work, int size);
 extern void MMExecutor(int id, void* work, size_t size);
+extern HTAB* MMCreateHash();
 
 extern char* MMDatabaseName;
 

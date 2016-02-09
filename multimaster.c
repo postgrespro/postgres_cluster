@@ -385,7 +385,6 @@ static TransactionId DtmAdjustOldestXid(TransactionId xid)
 static void DtmInitialize()
 {
 	bool found;
-	static HASHCTL info;
 
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
 	dtm = ShmemInitStruct("dtm", sizeof(DtmState), &found);
@@ -403,18 +402,8 @@ static void DtmInitialize()
 		RegisterXactCallback(DtmXactCallback, NULL);
 		RegisterSubXactCallback(DtmSubXactCallback, NULL);
 	}
+	xid2state = MMCreateHash();
 	LWLockRelease(AddinShmemInitLock);
-
-	info.keysize = sizeof(TransactionId);
-	info.entrysize = sizeof(DtmTransState);
-	info.hash = dtm_xid_hash_fn;
-	info.match = dtm_xid_match_fn;
-	xid2state = ShmemInitHash(
-		"xid2state",
-		DTM_HASH_SIZE, DTM_HASH_SIZE,
-		&info,
-		HASH_ELEM | HASH_FUNCTION | HASH_COMPARE
-	);
     MMDoReplication = true;
 	TM = &DtmTM;
 }
@@ -987,13 +976,32 @@ void MMVoteForTransaction(DtmTransState* ts)
 		/* I am replica: first notify master... */
 		SpinLockAcquire(&dtm->spinlock);
 		ts->nextPending = dtm->pendingTransactions;
+		ts->pid = MyProc->pgprocno;
 		dtm->pendingTransactions = ts;
 		SpinLockRelease(&dtm->spinlock);
 
 		PGSemaphoreUnlock(&dtm->semapahore);
-		/* ... and wait reposnse from it */
+		/* ... and wait response from it */
 		WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
 		ResetLatch(&MyProc->procLatch);			
 	}
 	LWLockAcquire(&dtm->hashLock< LW_EXCLUSIVE);
 }
+
+HTAB* MMCreateHash();
+{
+	static HASHCTL info;
+	TAB* htab;
+	info.keysize = sizeof(TransactionId);
+	info.entrysize = sizeof(DtmTransState);
+	info.hash = dtm_xid_hash_fn;
+	info.match = dtm_xid_match_fn;
+	htab = ShmemInitHash(
+		"xid2state",
+		DTM_HASH_SIZE, DTM_HASH_SIZE,
+		&info,
+		HASH_ELEM | HASH_FUNCTION | HASH_COMPARE
+	);
+	return htab;
+}
+	
