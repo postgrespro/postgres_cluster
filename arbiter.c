@@ -61,12 +61,12 @@ typedef struct
 
 typedef struct 
 {
-	DtmCOmmitMessage buf[TX_BUFFER_SIZE];
+	DtmCommitMessage data[TX_BUFFER_SIZE];
 	int used;
 } DtmTxBuffer;
 
 static int* sockets;
-static DtmCommitMessage** txBuffers;
+static DtmTxBuffer* txBuffers;
 
 static BackgroundWorker DtmSender = {
 	"mm-sender",
@@ -216,18 +216,40 @@ static void acceptConnections()
 
 static void DtmTransSender(Datum arg)
 {
-	txBuffer = (DtmCommitMessage*)
+	int nNodes = dtm->nNodes;
+	int i;
+	DtmCommitMessage* txBuffer = (DtmCommitMessage*)palloc(sizeof(DtmTxBuffer)*(nNodes));
+	
 	openConnections();
 
+	for (i = 0; i < nNodes; i++) { 
+		txBuffer[i].used = 0;
+	}
+
 	while (true) {
-		DtmTransState* ts;
+		DtmTransState* ts;		
 		PGSemaphoreLock(&dtm->semphore);
 
-		LWLockAcquire(&dtm->hashLock, LW_EXCLUSIVE);
+		SpinLockAcquire(&dtm->spinlock);
+		ts = dtm->pendingTransactions;
+		dtm->pendingTransactions = NULL;
+		SpinLockRelease(&dtm->spinlock);
+
 		for (ts = dtm->pendingTransactions; ts != NULL; ts = ts->nextPending) {
 			int node = ts->gtid.node;
 			Assert(node != MMNodeId);
-			sockets
+			node -= 1;
+			if (txBuffer[node].used == TX_BUFFER_SIZE) { 
+				WriteSocket(sockets[node], txBuffer[node].data, txBuffer[node].used*sizeof(DtmCommitRequest));
+				txBuffer[node].used = 0;
+			}
+			txBuffer[node].data[txBuffer[node].used].xid = ts->xid;
+			txBuffer[node].data[txBuffer[node].used].csn = ts->csn;
+			txBuffer[node].used += 1;
+		}
+		dtm->pendingTransactions = NULL;
+		
+	}
 }
 
 static void DtmTransReceiver(Datum arg)

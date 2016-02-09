@@ -32,6 +32,8 @@ typedef struct DtmTransState
 
 typedef struct
 {
+	volatile slock_t spinlock;
+	PGSemaphoreData semaphore;
 	LWLockId hashLock;
 	TransactionId minXid;  /* XID of oldest transaction visible by any active transaction (local or global) */
 	int64  disabledNodeMask;

@@ -983,14 +983,17 @@ void MMVoteForTransaction(DtmTransState* ts)
 			WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
 			ResetLatch(&MyProc->procLatch);			
 		}
-		LWLockAcquire(&dtm->hashLock< LW_EXCLUSIVE);
 	} else {
-		/* I am replica: firrst notify master... */
+		/* I am replica: first notify master... */
+		SpinLockAcquire(&dtm->spinlock);
 		ts->nextPending = dtm->pendingTransactions;
 		dtm->pendingTransactions = ts;
+		SpinLockRelease(&dtm->spinlock);
+
 		PGSemaphoreUnlock(&dtm->semapahore);
 		/* ... and wait reposnse from it */
 		WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
 		ResetLatch(&MyProc->procLatch);			
 	}
+	LWLockAcquire(&dtm->hashLock< LW_EXCLUSIVE);
 }
