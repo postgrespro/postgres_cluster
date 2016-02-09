@@ -25,7 +25,7 @@ TransactionId PgGetGlobalTransactionId(void)
 
 bool PgDetectGlobalDeadLock(PGPROC* proc)
 {
-    return false;
+	return false;
 }
 
 char const* PgGetTransactionManagerName(void)
@@ -42,7 +42,7 @@ TransactionManager PgTM = {
 	PgTransactionIdIsInProgress,
 	PgGetGlobalTransactionId,
 	PgXidInMVCCSnapshot,
-    PgDetectGlobalDeadLock,
+	PgDetectGlobalDeadLock,
 	PgGetTransactionManagerName
 };
 

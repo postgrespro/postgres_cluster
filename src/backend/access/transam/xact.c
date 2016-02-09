@@ -1273,9 +1273,8 @@ RecordTransactionCommit(void)
 		/*
 		 * Now we may update the CLOG, if we wrote a COMMIT record above
 		 */
-		if (markXidCommitted) {
+		if (markXidCommitted)
 			TransactionIdCommitTree(xid, nchildren, children);
-		}
 	}
 	else
 	{
@@ -1297,9 +1296,8 @@ RecordTransactionCommit(void)
 		 * XLOG. Instead, we store the LSN up to which the XLOG must be
 		 * flushed before the CLOG may be updated.
 		 */
-		if (markXidCommitted) {
+		if (markXidCommitted)
 			TransactionIdAsyncCommitTree(xid, nchildren, children, XactLastRecEnd);
-		}
 	}
 
 	/*
@@ -5372,7 +5370,7 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 		 * recovered. It's unlikely but it's good to be safe.
 		 */
 		TransactionIdAsyncCommitTree(
-				xid, parsed->nsubxacts, parsed->subxacts, lsn);
+							  xid, parsed->nsubxacts, parsed->subxacts, lsn);
 
 		/*
 		 * We must mark clog before we update the ProcArray.
@@ -5399,6 +5397,7 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 		 */
 		StandbyReleaseLockTree(xid, 0, NULL);
 	}
+
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
 	{
 		/* recover apply progress */
@@ -5609,8 +5608,9 @@ xact_redo(XLogReaderState *record)
 		elog(PANIC, "xact_redo: unknown op code %u", info);
 }
 
-void MarkAsAborted()
+void
+MarkAsAborted()
 {
-    CurrentTransactionState->state = TRANS_INPROGRESS;
-    CurrentTransactionState->blockState = TBLOCK_STARTED;
+	CurrentTransactionState->state = TRANS_INPROGRESS;
+	CurrentTransactionState->blockState = TBLOCK_STARTED;
 }

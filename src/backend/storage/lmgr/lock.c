@@ -3639,7 +3639,7 @@ GetLockmodeName(LOCKMETHODID lockmethodid, LOCKMODE mode)
 	return LockMethods[lockmethodid]->lockModeNames[mode];
 }
 
-void 
+void
 EnumerateLocks(LockIterator iterator, void* arg)
 {
 	PROCLOCK   *proclock;
@@ -3649,8 +3649,8 @@ EnumerateLocks(LockIterator iterator, void* arg)
 
 	while ((proclock = (PROCLOCK *) hash_seq_search(&status)) != NULL)
 	{
-        iterator(proclock, arg);
-    }
+		iterator(proclock, arg);
+	}
 }
 
 #ifdef LOCK_DEBUG

@@ -456,7 +456,7 @@ typedef enum
 	DS_HARD_DEADLOCK,			/* deadlock, no way out but ERROR */
 	DS_BLOCKED_BY_AUTOVACUUM,	/* no deadlock; queue blocked by autovacuum
 								 * worker */
-    DS_DISTRIBUTED_DEADLOCK     /* distributed deadlock detected by DTM */
+	DS_DISTRIBUTED_DEADLOCK		/* distributed deadlock detected by DTM */
 } DeadLockState;
 
 /*
