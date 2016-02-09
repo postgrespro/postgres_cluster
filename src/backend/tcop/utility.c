@@ -1244,7 +1244,7 @@ ProcessUtilitySlow(Node *parsetree,
 					 * eventually be needed here, so the lockmode calculation
 					 * needs to match what DefineIndex() does.
 					 */
-					lockmode = stmt->is_alter || stmt->concurrent ? ShareUpdateExclusiveLock
+					lockmode = stmt->concurrent ? ShareUpdateExclusiveLock
 						: ShareLock;
 					relid =
 						RangeVarGetRelidExtended(stmt->relation, lockmode,
@@ -1257,29 +1257,22 @@ ProcessUtilitySlow(Node *parsetree,
 
 					/* ... and do it */
 					EventTriggerAlterTableStart(parsetree);
-					if (stmt->is_alter)
-					{
-						AlterIndex(relid, stmt);
-					}
-					else
-					{
-						address =
-							DefineIndex(relid,		/* OID of heap relation */
-										stmt,
-										InvalidOid, /* no predefined OID */
-										false,		/* is_alter_table */
-										true,		/* check_rights */
-										false,		/* skip_build */
-										false);		/* quiet */
-						
-						/*
-						 * Add the CREATE INDEX node itself to stash right away;
-						 * if there were any commands stashed in the ALTER TABLE
-						 * code, we need them to appear after this one.
-						 */
-						EventTriggerCollectSimpleCommand(address, secondaryObject,
-														 parsetree);
-					}
+					address =
+						DefineIndex(relid,		/* OID of heap relation */
+									stmt,
+									InvalidOid, /* no predefined OID */
+									false,		/* is_alter_table */
+									true,		/* check_rights */
+									false,		/* skip_build */
+									false);		/* quiet */
+
+					/*
+					 * Add the CREATE INDEX node itself to stash right away;
+					 * if there were any commands stashed in the ALTER TABLE
+					 * code, we need them to appear after this one.
+					 */
+					EventTriggerCollectSimpleCommand(address, secondaryObject,
+													 parsetree);
 					commandCollected = true;
 					EventTriggerAlterTableEnd();
 				}

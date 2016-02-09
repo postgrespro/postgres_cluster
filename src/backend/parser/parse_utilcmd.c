@@ -2065,10 +2065,6 @@ transformIndexStmt(Oid relid, IndexStmt *stmt, const char *queryString)
 	 * to its fields without qualification.  Caller is responsible for locking
 	 * relation, but we still need to open it.
 	 */
-	if (stmt->is_alter) 
-	{
-		relid = IndexGetRelation(relid, false);
-	}
 	rel = relation_open(relid, NoLock);
 	rte = addRangeTableEntryForRelation(pstate, rel, NULL, false, true);
 
