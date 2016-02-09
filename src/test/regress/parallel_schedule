@@ -103,7 +103,7 @@ test: select_views portals_p2 foreign_key cluster dependency guc bitmapops combo
 # NB: temp.sql does a reconnect which transiently uses 2 connections,
 # so keep this parallel group to at most 19 tests
 # ----------
-test: plancache limit plpgsql copy2 temp domain rangefuncs prepare without_oid conversion truncate alter_table alter_index_with sequence polymorphism rowtypes returning largeobject with xml
+test: plancache limit plpgsql copy2 temp domain rangefuncs prepare without_oid conversion truncate alter_table sequence polymorphism rowtypes returning largeobject with xml
 
 # event triggers cannot run concurrently with any test that runs DDL
 test: event_trigger

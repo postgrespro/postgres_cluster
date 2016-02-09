@@ -42,8 +42,8 @@ typedef struct
 	/* Is the given XID still-in-progress according to the snapshot (encapsulation of XidInMVCCSnapshot in tqual.c) */
 	bool (*IsInSnapshot)(TransactionId xid, Snapshot snapshot);
 
-    /* Detect distributed deadlock */
-    bool (*DetectGlobalDeadLock)(PGPROC* proc);
+	/* Detect distributed deadlock */
+	bool (*DetectGlobalDeadLock)(PGPROC* proc);
 
 	char const* (*GetName)(void);
 } TransactionManager;
@@ -58,7 +58,7 @@ extern TransactionManager PgTM; /* Standard PostgreSQL transaction manager */
 extern bool PgXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 
 extern void PgTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
-                                         TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
+					TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 extern XidStatus PgTransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn);
 
 extern Snapshot PgGetSnapshotData(Snapshot snapshot);

@@ -489,7 +489,7 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     static timestamp_t firstReportTime;
     static timestamp_t prevReportTime;
     static timestamp_t totalSleepTime;
-    static timestamp_t mnxSleepTime;
+    static timestamp_t maxSleepTime;
 #endif
     timestamp_t delay = MIN_WAIT_TIMEOUT;
     Assert(xid != InvalidTransactionId);

@@ -83,18 +83,6 @@
 - stat: path={{pg_datadir}}/postmaster.pid
   register: pg_pidfile
 
-# - name: stop postgres if it was running
-#   command: "{{pg_dst}}/bin/pg_ctl stop -w -D {{pg_datadir}}"
-#   environment:
-#     LD_LIBRARY_PATH: "{{pg_dst}}/lib"
-#   when: pg_pidfile.stat.exists
-
-- name: stop postgres if it was running
-  shell: "kill -9 `head -n 1 {{pg_datadir}}/postmaster.pid`"
-  environment:
-    LD_LIBRARY_PATH: "{{pg_dst}}/lib"
-  when: pg_pidfile.stat.exists
-
 - name: remove datadirs on datanodes
   command: "rm -rf {{pg_datadir}}"
   when: pg_destroy_and_init

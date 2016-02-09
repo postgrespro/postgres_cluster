@@ -780,6 +780,7 @@ explain (costs off)
                  ->  Index Only Scan Backward using minmaxtest2i on minmaxtest2
                        Index Cond: (f1 IS NOT NULL)
                  ->  Index Only Scan using minmaxtest3i on minmaxtest3
+                       Index Cond: (f1 IS NOT NULL)
    InitPlan 2 (returns $1)
      ->  Limit
            ->  Merge Append
@@ -791,7 +792,8 @@ explain (costs off)
                  ->  Index Only Scan using minmaxtest2i on minmaxtest2 minmaxtest2_1
                        Index Cond: (f1 IS NOT NULL)
                  ->  Index Only Scan Backward using minmaxtest3i on minmaxtest3 minmaxtest3_1
-(23 rows)
+                       Index Cond: (f1 IS NOT NULL)
+(25 rows)
 
 select min(f1), max(f1) from minmaxtest;
  min | max 
@@ -817,6 +819,7 @@ explain (costs off)
                  ->  Index Only Scan Backward using minmaxtest2i on minmaxtest2
                        Index Cond: (f1 IS NOT NULL)
                  ->  Index Only Scan using minmaxtest3i on minmaxtest3
+                       Index Cond: (f1 IS NOT NULL)
    InitPlan 2 (returns $1)
      ->  Limit
            ->  Merge Append
@@ -828,8 +831,9 @@ explain (costs off)
                  ->  Index Only Scan using minmaxtest2i on minmaxtest2 minmaxtest2_1
                        Index Cond: (f1 IS NOT NULL)
                  ->  Index Only Scan Backward using minmaxtest3i on minmaxtest3 minmaxtest3_1
+                       Index Cond: (f1 IS NOT NULL)
    ->  Result
-(25 rows)
+(27 rows)
 
 select distinct min(f1), max(f1) from minmaxtest;
  min | max 

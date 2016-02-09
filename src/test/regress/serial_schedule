@@ -153,7 +153,6 @@ test: without_oid
 test: conversion
 test: truncate
 test: alter_table
-test: alter_index_with
 test: sequence
 test: polymorphism
 test: rowtypes
