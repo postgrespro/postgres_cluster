@@ -1,23 +1,16 @@
-MODULE_big = pg_dtm
-OBJS = pg_dtm.o
+MODULE_big = pg_tsdtm
+OBJS = pg_tsdtm.o
 
-EXTENSION = pg_dtm
-DATA = pg_dtm--1.0.sql
+EXTENSION = pg_tsdtm
+DATA = pg_tsdtm--1.0.sql
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 else
-subdir = contrib/pg_dtm
+subdir = contrib/pg_tsdtm
 top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
-
-# ifndef PG_CONFIG
-# PG_CONFIG = pg_config
-# endif
-
-# PGXS := $(shell $(PG_CONFIG) --pgxs)
-# include $(PGXS)

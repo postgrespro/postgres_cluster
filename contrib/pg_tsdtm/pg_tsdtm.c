@@ -30,7 +30,7 @@
 #include "utils/tqual.h"
 #include <utils/guc.h>
 
-#include "pg_dtm.h"
+#include "pg_tsdtm.h"
 
 #define DTM_HASH_INIT_SIZE	1000000
 #define INVALID_CID    0
