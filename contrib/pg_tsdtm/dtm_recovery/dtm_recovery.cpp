@@ -20,9 +20,9 @@ int main (int argc, char* argv[])
     set<string> prepared_xacts;
     set<string> committed_xacts;
     bool verbose = false;
-    for (int i = 1; i < argc; i++) { 
-        if (argv[i][0] == '-') { 
-            switch (argv[i][1]) { 
+    for (int i = 1; i < argc; i++) {
+        if (argv[i][0] == '-') {
+            switch (argv[i][1]) {
               case 'C':
               case 'c':
                 connections.push_back(string(argv[++i]));
@@ -39,12 +39,12 @@ int main (int argc, char* argv[])
                "\t-v\tverbose mode: print extra information while processing\n");
         return 1;
     }
-    if (verbose) { 
+    if (verbose) {
         cout << "Collecting information about prepared transactions...\n";
     }
     for (vector<string>::iterator ic = connections.begin(); ic != connections.end(); ++ic)
     {
-        if (verbose) { 
+        if (verbose) {
             cout << "Connecting to " << *ic << "...\n";
         }
         connection con(*ic);
@@ -57,17 +57,17 @@ int main (int argc, char* argv[])
         }
         txn.commit();
     }
-    if (verbose) { 
+    if (verbose) {
         cout << "Prepared transactions: ";
         for (set<string>::iterator it = prepared_xacts.begin(); it != prepared_xacts.end(); ++it)
         {
             cout << *it << ", ";
         }
         cout << "\nChecking which of them are committed...\n";
-    }        
+    }
     for (vector<string>::iterator ic = connections.begin(); ic != connections.end(); ++ic)
     {
-        if (verbose) { 
+        if (verbose) {
             cout << "Connecting to " << *ic << "...\n";
         }
         connection con(*ic);
@@ -83,17 +83,17 @@ int main (int argc, char* argv[])
         }
         txn.commit();
     }
-    if (verbose) { 
+    if (verbose) {
         cout << "Committed transactions: ";
         for (set<string>::iterator it = committed_xacts.begin(); it != committed_xacts.end(); ++it)
         {
             cout << *it << ", ";
         }
         cout << "\nCommitting them at all nodes...\n";
-    }      
+    }
     for (vector<string>::iterator ic = connections.begin(); ic != connections.end(); ++ic)
     {
-        if (verbose) { 
+        if (verbose) {
             cout << "Connecting to " << *ic << "...\n";
         }
         connection con(*ic);
@@ -108,12 +108,12 @@ int main (int argc, char* argv[])
             result rc = txn.prepared("commit-check")(gid).exec();
             if (rc.empty()) {
                 if (committed_xacts.find(gid) != committed_xacts.end()) {
-                    if (verbose) { 
+                    if (verbose) {
                         cout << "Commit transaction " << gid << "\n";
                     }
                     txn.prepared("commit-prepared")(gid);
-                } else { 
-                    if (verbose) { 
+                } else {
+                    if (verbose) {
                         cout << "Rollback transaction " << gid << "\n";
                     }
                     txn.prepared("rollback-prepared")(gid);
@@ -122,8 +122,8 @@ int main (int argc, char* argv[])
         }
         txn.commit();
     }
-    if (verbose) { 
+    if (verbose) {
         cout << "Recovery completed\n";
     }
     return 0;
-}               
+}

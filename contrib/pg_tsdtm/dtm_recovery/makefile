@@ -1,5 +1,5 @@
 CXX=g++
-CXXFLAGS=-g -Wall -O0 -pthread 
+CXXFLAGS=-g -Wall -O0 -pthread
 
 all: dtm_recovery
 
