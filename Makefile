@@ -1,8 +1,5 @@
 MODULE_big = multimaster
-OBJS = multimaster.o ../arbiter/lib/libarbiter.a ../arbiter/sockhub/libsockhub.a bytebuf.o bgwpool.o pglogical_output.o pglogical_proto.o pglogical_receiver.o pglogical_apply.o pglogical_hooks.o pglogical_config.o
-#OBJS = multimaster.o pglogical_receiver.o decoder_raw.o libdtm.o bytebuf.o bgwpool.o sockhub/sockhub.o
-
-override CPPFLAGS += -I../arbiter/api -I../arbiter/sockhub
+OBJS = multimaster.o arbiter.o bytebuf.o bgwpool.o pglogical_output.o pglogical_proto.o pglogical_receiver.o pglogical_apply.o pglogical_hooks.o pglogical_config.o
 
 EXTENSION = multimaster
 DATA = multimaster--1.0.sql
@@ -10,12 +7,6 @@ DATA = multimaster--1.0.sql
 .PHONY: all
 
 all: multimaster.o multimaster.so
-
-../arbiter/sockhub/libsockhub.a:
-	make -C ../arbiter/sockhub
-
-../arbiter/lib/libarbiter.a:
-	make -C ../arbiter
 
 PG_CPPFLAGS = -I$(libpq_srcdir) -DUSE_PGLOGICAL_OUTPUT
 SHLIB_LINK = $(libpq)

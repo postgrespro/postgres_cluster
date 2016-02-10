@@ -20,6 +20,7 @@
 #include "libpq-fe.h"
 #include "pqexpbuffer.h"
 #include "access/xact.h"
+#include "access/clog.h"
 #include "access/transam.h"
 #include "lib/stringinfo.h"
 #include "pgstat.h"
@@ -200,7 +201,9 @@ pglogical_receiver_main(Datum main_arg)
 	PQExpBuffer query;
 	PGconn *conn;
 	PGresult *res;
+#ifndef USE_PGLOGICAL_OUTPUT
     bool insideTrans = false;
+#endif
     ByteBuffer buf;
 
 	/* Register functions for SIGTERM/SIGHUP management */

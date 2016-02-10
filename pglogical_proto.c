@@ -7,6 +7,7 @@
 #include "access/sysattr.h"
 #include "access/tuptoaster.h"
 #include "access/xact.h"
+#include "access/clog.h"
 
 #include "catalog/catversion.h"
 #include "catalog/index.h"
@@ -109,7 +110,8 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
     } else { 
         mm->isLocal = false;        
         pq_sendbyte(out, 'B');		/* BEGIN */
-		pq_sendint64(out, MMGenerateGTID(txn->xid));
+		pq_sendint(out, MMNodeId, 4);
+		pq_sendint(out, txn->xid, 4);
         pq_sendint64(out, csn);
     }
 }
