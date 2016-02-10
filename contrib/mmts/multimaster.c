@@ -15,11 +15,13 @@
 #include "libpq-fe.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/bgworker.h"
+#include "storage/lwlock.h"
 #include "storage/s_lock.h"
 #include "storage/spin.h"
 #include "storage/lmgr.h"
 #include "storage/shmem.h"
 #include "storage/ipc.h"
+#include "storage/procarray.h"
 #include "access/xlogdefs.h"
 #include "access/xact.h"
 #include "access/xtm.h"
@@ -28,7 +30,6 @@
 #include "access/commit_ts.h"
 #include "access/xlog.h"
 #include "storage/proc.h"
-#include "storage/procarray.h"
 #include "executor/executor.h"
 #include "access/twophase.h"
 #include "utils/guc.h"
@@ -50,25 +51,22 @@
 
 #include "multimaster.h"
 
-
-
 typedef struct { 
-    TransactionId xid;
-	GlobalTransactionId gtid
-	bool  is_local;       /* transaction on replica */
-	bool  is_distributed; /* transaction performs INSERT/UPDATE/DELETE and has to be replicated to other nodes */
+    TransactionId xid;    /* local transaction ID   */
+	GlobalTransactionId gtid; /* global transaction ID assigned by coordinator of transaction */
+	bool  isReplicated;   /* transaction on replica */
+	bool  isDistributed;  /* transaction performed INSERT/UPDATE/DELETE and has to be replicated to other nodes */
+	bool  containsDML;    /* transaction contains DML statements */
     csn_t snapshot;       /* transaction snaphsot   */
 } DtmCurrentTrans;
 
 typedef uint64 timestamp_t;
 
 #define DTM_SHMEM_SIZE (64*1024*1024)
-#define DTM_HASH_SIZE  1000003
+#define DTM_HASH_SIZE  100003
 #define USEC 1000000
 #define MIN_WAIT_TIMEOUT 1000
 #define MAX_WAIT_TIMEOUT 100000
-
-#define BIT_SET(mask, bit) ((mask) & ((int64)1 << (bit)))
 
 void _PG_init(void);
 void _PG_fini(void);
@@ -81,16 +79,16 @@ PG_FUNCTION_INFO_V1(mm_drop_node);
 
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
-static void DtmUpdateRecentXmin(Snapshot snapshot);
 static void DtmInitialize(void);
 static void DtmXactCallback(XactEvent event, void *arg);
-
+static void DtmBeginTransaction(DtmCurrentTrans* x);
+static void DtmPrepareTransaction(DtmCurrentTrans* x);
+static void DtmEndTransaction(DtmCurrentTrans* x);
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static TransactionId DtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 static TransactionId DtmAdjustOldestXid(TransactionId xid);
 static bool DtmDetectGlobalDeadLock(PGPROC* proc);
-static cid_t DtmGetCsn(TransactionId xid);
 static void DtmAddSubtransactions(DtmTransState* ts, TransactionId* subxids, int nSubxids);
 static char const* DtmGetName(void);
 
@@ -102,11 +100,12 @@ static void MMBroadcastUtilityStmt(char const* sql, bool ignoreError);
 static void MMVoteForTransaction(DtmTransState* ts);
 
 static HTAB* xid2state;
-static DtmCurrentTrans dtm_tx;
+static DtmCurrentTrans dtmTx;
+static DtmState* dtm;
 
 static TransactionManager DtmTM = { 
 	PgTransactionIdGetStatus, 
-	PgTransactionIdSetTreeStatus, 
+	DtmSetTransactionStatus, 
 	DtmGetSnapshot, 
 	PgGetNewTransactionId, 
 	DtmGetOldestXmin, 
@@ -117,17 +116,17 @@ static TransactionManager DtmTM = {
 	DtmGetName 
 };
 
-DtmState* dtm;
 bool  MMDoReplication;
 char* MMDatabaseName;
 
 char* MMConnStrs;
 int   MMNodeId;
 int   MMArbiterPort;
+int   MMNodes;
 
-static int   MMNodes;
-static int   MMQueueSize;
-static int   MMWorkers;
+static int MMQueueSize;
+static int MMWorkers;
+static int DtmVacuumDelay;
 
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
 static ProcessUtility_hook_type PreviousProcessUtilityHook;
@@ -148,7 +147,7 @@ static timestamp_t dtm_get_current_time()
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    return (timestamp_t)tv.tv_sec*USEC + tv.tv_usec + local->time_shift;
+    return (timestamp_t)tv.tv_sec*USEC + tv.tv_usec + dtm->timeShift;
 }
 
 static void dtm_sleep(timestamp_t interval)
@@ -159,7 +158,6 @@ static void dtm_sleep(timestamp_t interval)
     ts.tv_nsec = interval*1000;
 
     while (nanosleep(&ts, &rem) < 0) { 
-        totalSleepInterrupts += 1;
         Assert(errno == EINTR);
         ts = rem;
     }
@@ -179,36 +177,9 @@ static csn_t dtm_get_csn()
 static csn_t dtm_sync(csn_t global_csn)
 {
     csn_t dtm_csn;
-#if 1
     while ((dtm_csn = dtm_get_csn()) < global_csn) { 
-        dtm->time_shift += global_csn - dtm_csn;
+        dtm->timeShift += global_csn - dtm_csn;
     }
-#else
-    while ((dtm_csn = dtm_get_csn()) < global_csn) { 
-        LWLockRelease(&dtm->hashLock);
-#if TRACE_SLEEP_TIME
-        {
-        timestamp_t now = dtm_get_current_time();
-        static timestamp_t firstReportTime;
-        static timestamp_t prevReportTime;
-        static timestamp_t totalSleepTime;
-#endif
-        dtm_sleep(global_csn - dtm_csn);
-#if TRACE_SLEEP_TIME
-        totalSleepTime += dtm_get_current_time() - now;
-        if (now > prevReportTime + USEC) { 
-            prevReportTime = now;
-            if (firstReportTime == 0) { 
-                firstReportTime = now;
-            } else { 
-                fprintf(stderr, "Sync sleep %lu of %lu usec (%f%%)\n", totalSleepTime, now - firstReportTime, totalSleepTime*100.0/(now - firstReportTime));
-            }
-        }
-        }
-#endif
-		LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
-    }
-#endif
     return dtm_csn;
 }
 
@@ -217,7 +188,7 @@ static csn_t dtm_sync(csn_t global_csn)
  */ 
 static char const* DtmGetName(void)
 {
-	return "mmts";
+	return MULTIMASTER_NAME;
 }
 
 Snapshot DtmGetSnapshot(Snapshot snapshot)
@@ -246,7 +217,7 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     timestamp_t delay = MIN_WAIT_TIMEOUT;
     Assert(xid != InvalidTransactionId);
 
-	LWLockAcquire(&dtm->hashLock, LW_SHARED);
+	LWLockAcquire(dtm->hashLock, LW_SHARED);
 
 #if TRACE_SLEEP_TIME
     if (firstReportTime == 0) {
@@ -258,16 +229,16 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         DtmTransState* ts = (DtmTransState*)hash_search(xid2state, &xid, HASH_FIND, NULL);
         if (ts != NULL)
         {
-            if (ts->csn > dtm_tx.snapshot) { 
+            if (ts->csn > dtmTx.snapshot) { 
                 DTM_TRACE((stderr, "%d: tuple with xid=%d(csn=%lld) is invisibile in snapshot %lld\n",
-                           getpid(), xid, ts->csn, dtm_tx.snapshot));
-                LWLockRelease(&dtm->hashLock);
+                           getpid(), xid, ts->csn, dtmTx.snapshot));
+                LWLockRelease(dtm->hashLock);
                 return true;
             }
             if (ts->status == TRANSACTION_STATUS_IN_PROGRESS)
             {
-                DTM_TRACE((stderr, "%d: wait for in-doubt transaction %u in snapshot %lu\n", getpid(), xid, dtm_tx.snapshot));
-                LWLockRelease(&dtm->hashLock);
+                DTM_TRACE((stderr, "%d: wait for in-doubt transaction %u in snapshot %lu\n", getpid(), xid, dtmTx.snapshot));
+                LWLockRelease(dtm->hashLock);
 #if TRACE_SLEEP_TIME
                 {
                 timestamp_t delta, now = dtm_get_current_time();
@@ -292,24 +263,24 @@ bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
                 if (delay*2 <= MAX_WAIT_TIMEOUT) {
                     delay *= 2;
                 }
-				LWLockAcquire(&dtm->hashLock, LW_SHARED);
+				LWLockAcquire(dtm->hashLock, LW_SHARED);
             }
             else
             {
                 bool invisible = ts->status != TRANSACTION_STATUS_COMMITTED;
                 DTM_TRACE((stderr, "%d: tuple with xid=%d(csn= %lld) is %s in snapshot %lld\n",
-                           getpid(), xid, ts->csn, invisible ? "rollbacked" : "committed", dtm_tx.snapshot));
-                LWLockRelease(&dtm->hashLock);
+                           getpid(), xid, ts->csn, invisible ? "rollbacked" : "committed", dtmTx.snapshot));
+                LWLockRelease(dtm->hashLock);
                 return invisible;
             }
         }
         else
         {
-            DTM_TRACE((stderr, "%d: visibility check is skept for transaction %u in snapshot %lu\n", getpid(), xid, dtm_tx.snapshot));
+            DTM_TRACE((stderr, "%d: visibility check is skept for transaction %u in snapshot %lu\n", getpid(), xid, dtmTx.snapshot));
             break;
         }
     }
-	LWLockRelease(&dtm->hashLock);
+	LWLockRelease(dtm->hashLock);
 	return PgXidInMVCCSnapshot(xid, snapshot);
 }    
 
@@ -326,16 +297,16 @@ static int dtm_xid_match_fn(const void *key1, const void *key2, Size keysize)
 static void DtmTransactionListAppend(DtmTransState* ts)
 {
     ts->next = NULL;
-    *dtm->trans_list_tail = ts;
-    dtm->trans_list_tail = &ts->next;
+    *dtm->transListTail = ts;
+    dtm->transListTail = &ts->next;
 }
 
 static void DtmTransactionListInsertAfter(DtmTransState* after, DtmTransState* ts)
 {
     ts->next = after->next;
     after->next = ts;
-    if (dtm->trans_list_tail == &after->next) { 
-        dtm->trans_list_tail = &ts->next;
+    if (dtm->transListTail == &after->next) { 
+        dtm->transListTail = &ts->next;
     }
 }
 
@@ -350,34 +321,43 @@ static void DtmAddSubtransactions(DtmTransState* ts, TransactionId* subxids, int
         Assert(!found);
         sts->status = ts->status;
         sts->csn = ts->csn;
-        sts->nSubxids = 0;
         DtmTransactionListInsertAfter(ts, sts);
     }
 }
 
-static TransactionId DtmAdjustOldestXid(TransactionId xid)
+/*
+ * There can be different oldest XIDs at different cluster node.
+ * Seince we do not have centralized aribiter, we have to rely in DtmVacuumDelay.
+ * This function takes XID which PostgreSQL consider to be the latest and try to find XID which
+ * is older than it more than DtmVacuumDelay.
+ * If no such XID can be located, then return previously observed oldest XID
+ */
+static TransactionId 
+DtmAdjustOldestXid(TransactionId xid)
 {
     if (TransactionIdIsValid(xid)) { 
         DtmTransState *ts, *prev = NULL;
         
-		LWLockAcquire(&dtm->hashLock, LW_EXCLSUIVE);
+		LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
         ts = (DtmTransState*)hash_search(xid2state, &xid, HASH_FIND, NULL);
         if (ts != NULL) { 
             timestamp_t cutoff_time = ts->csn - DtmVacuumDelay*USEC;
 			
-			for (ts = dtm->trans_list_head; ts != NULL && ts->csn < cutoff_time; prev = ts, ts = ts->next) { 
+			for (ts = dtm->transListHead; ts != NULL && ts->csn < cutoff_time; prev = ts, ts = ts->next) { 
+				Assert(ts->status == TRANSACTION_STATUS_COMMITTED || ts->status == TRANSACTION_STATUS_ABORTED);
 				if (prev != NULL) { 
+					/* Remove information about too old transactions */
 					hash_search(xid2state, &prev->xid, HASH_REMOVE, NULL);
 				}
 			}
         }
         if (prev != NULL) { 
-            dtm->trans_list_head = prev;
-            dtm->minXid = xid = prev->xid;            
+            dtm->transListHead = prev;
+            dtm->oldestXid = xid = prev->xid;            
         } else { 
-            xid = dtm->minXid;
+            xid = dtm->oldestXid;
         }
-		LWLockRelease(&dtm->hashLock);
+		LWLockRelease(dtm->hashLock);
     }
     return xid;
 }
@@ -387,25 +367,32 @@ static void DtmInitialize()
 	bool found;
 
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
-	dtm = ShmemInitStruct("dtm", sizeof(DtmState), &found);
+	dtm = (DtmState*)ShmemInitStruct(MULTIMASTER_NAME, sizeof(DtmState), &found);
 	if (!found)
 	{
-		dtm->hashLock = LWLockAssign();
+		dtm->hashLock = (LWLock*)GetNamedLWLockTranche(MULTIMASTER_NAME);
 		dtm->csn = dtm_get_current_time();
-		dtm->minXid = InvalidTransactionId;
+		dtm->oldestXid = FirstNormalTransactionId;
         dtm->nNodes = MMNodes;
 		dtm->disabledNodeMask = 0;
-		dtm->pendingTransactions = NULL;
+		dtm->votingTransactions = NULL;
+        dtm->transListHead = NULL;
+        dtm->transListTail = &dtm->transListHead;
         pg_atomic_write_u32(&dtm->nReceivers, 0);
+		dtm->timeShift = 0;
         dtm->initialized = false;
+		PGSemaphoreCreate(&dtm->votingSemaphore);
+		PGSemaphoreReset(&dtm->votingSemaphore);
+		SpinLockInit(&dtm->votingSpinlock);
         BgwPoolInit(&dtm->pool, MMExecutor, MMDatabaseName, MMQueueSize);
 		RegisterXactCallback(DtmXactCallback, NULL);
-		RegisterSubXactCallback(DtmSubXactCallback, NULL);
+		dtmTx.snapshot = INVALID_CSN;
+		dtmTx.xid = InvalidTransactionId;
 	}
 	xid2state = MMCreateHash();
-	LWLockRelease(AddinShmemInitLock);
     MMDoReplication = true;
 	TM = &DtmTM;
+	LWLockRelease(AddinShmemInitLock);
 }
 
 static void
@@ -414,24 +401,29 @@ DtmXactCallback(XactEvent event, void *arg)
 	//XTM_INFO("%d: DtmXactCallbackevent=%d nextxid=%d\n", getpid(), event, DtmNextXid);
     switch (event) 
     {
-    case XACT_EVENT_START: 
-	    DtmBeginTransaction(&dtm_tx);
+	  case XACT_EVENT_START: 
+	    DtmBeginTransaction(&dtmTx);
         break;
-    case XACT_EVENT_PRE_COMMIT:
-		DtmPrepareTransaction(&dtm_tx);
+	  case XACT_EVENT_PRE_COMMIT:
+		DtmPrepareTransaction(&dtmTx);
 		break;
+	  case XACT_EVENT_COMMIT:
+	  case XACT_EVENT_ABORT:
+		DtmEndTransaction(&dtmTx);
       default:
         break;
 	}
 }
 
-void DtmBeginTransaction(DtmCurrentTrans* x)
+static void 
+DtmBeginTransaction(DtmCurrentTrans* x)
 {
-    if (!TransactionIdIsValid(x->xid)) { 
+    if (x->snapshot == INVALID_CSN) { 
 		LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
         x->xid = GetCurrentTransactionIdIfAny();
-        x->is_local = false;
-        x->is_distributed = false;
+        x->isReplicated = false;
+        x->isDistributed = IsNormalProcessingMode() && dtm->initialized && MMDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess();
+		x->containsDML = false;
         x->snapshot = dtm_get_csn();	
 		x->gtid.xid = InvalidTransactionId;
 		LWLockRelease(dtm->hashLock);
@@ -446,15 +438,28 @@ void DtmBeginTransaction(DtmCurrentTrans* x)
 static void DtmPrepareTransaction(DtmCurrentTrans* x)
 { 
 	DtmTransState* ts;
-	Assert(TransactionIdIsValid(x->xid));
+	int i;
+	
+	if (!x->isDistributed) {
+		return;
+	}
+		
+	if (!TransactionIdIsValid(x->xid)) {
+		x->xid = GetCurrentTransactionId();
+	}
 	LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 	ts = hash_search(xid2state, &x->xid, HASH_ENTER, NULL);
-	ts->snapshot = x->is_local ? x->snapshot : INVALID_CSN;
+	ts->snapshot = x->isReplicated ? x->snapshot : INVALID_CSN;
 	ts->status = TRANSACTION_STATUS_UNKNOWN;
 	ts->csn = dtm_get_csn();	
+	ts->procno = MyProc->pgprocno;
+	ts->nVotes = 1; /* I voted myself */
+	for (i = 0; i < MMNodes; i++) { 
+		ts->xids[i] = InvalidTransactionId;
+	}
 	if (!TransactionIdIsValid(x->gtid.xid)) 
 	{
-		ts->gtid.xid = xid;
+		ts->gtid.xid = x->xid;
 		ts->gtid.node = MMNodeId;
 	} else {
 		ts->gtid = x->gtid;
@@ -462,12 +467,20 @@ static void DtmPrepareTransaction(DtmCurrentTrans* x)
 	LWLockRelease(dtm->hashLock);
 }
 
-static XidStatus DtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
+static void 
+DtmEndTransaction(DtmCurrentTrans* x)
+{
+	x->snapshot = INVALID_CSN;
+	x->xid = InvalidTransactionId;
+	x->gtid.xid = InvalidTransactionId;
+}
+
+static XidStatus 
+DtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
 {
 	DtmTransState* ts;
 	csn_t csn;
 	int i;
-	int nSubxids;
 	XidStatus status;
 
 	LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
@@ -501,50 +514,43 @@ static XidStatus DtmCommitTransaction(TransactionId xid, int nsubxids, Transacti
 	return status;
 }
 	
-static void DtmAbortTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
+static void 
+DtmAbortTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
 {
 	int i;
 	DtmTransState* ts;
-
-	if (!TransactionIdIsValid(dtm_tx.gtid.xid)) 
-	{
-		dtm_tx.gtid.xid = xid;
-		dtm_tx.gtid.node = MMNodeId;
-	}
 
 	LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 	ts = hash_search(xid2state, &xid, HASH_FIND, NULL);
 	Assert(ts != NULL); /* should be created by DtmPrepareTransaction */
 	ts->status = TRANSACTION_STATUS_ABORTED;	
-	for (i = 0; i < nSubxids; i++) { 	
-		ts->status = status;
+	for (i = 0; i < nsubxids; i++) { 	
 		ts = ts->next;
 		ts->status = TRANSACTION_STATUS_ABORTED;
 	}        
 	LWLockRelease(dtm->hashLock);
-
-	ArbiterVoteTransaction(dtm_tx.gtid, false);
 }	
 		
 	
 
-static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
+static void 
+DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
-	XTM_INFO("%d: DtmSetTransactionStatus %u = %u\n", getpid(), xid, status);
-	if (!RecoveryInProgress())
+	DTM_INFO("%d: DtmSetTransactionStatus %u = %u\n", getpid(), xid, status);
+	if (dtmTx.isDistributed)
 	{
-		if (status == TRANSACTION_STATUS_ABORTED || !dtm_tx.is_distributed)
+		if (status == TRANSACTION_STATUS_ABORTED || !dtmTx.containsDML)
 		{
-			DtmAbortTransaction(xid, nsubxids, xibxods);	
-			XTM_INFO("Abort transaction %d\n", xid);
+			DtmAbortTransaction(xid, nsubxids, subxids);	
+			DTM_INFO("Abort transaction %d\n", xid);
 		}
 		else
 		{
-			if (DtmCommitTransaction(xid, nsubxids, xids) == TRANSACTION_STATUS_COMMITTED) { 
-				XTM_INFO("Commit transaction %d\n", xid);
+			if (DtmCommitTransaction(xid, nsubxids, subxids) == TRANSACTION_STATUS_COMMITTED) { 
+				DTM_INFO("Commit transaction %d\n", xid);
 			} else { 
-				PgTransactionIdSetTreeStatus(xid, nsubxids, TRANSACTION_STATUS_ABORTED, status, lsn);
-				dtm_tx.is_distributed = false; 
+				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_ABORTED, lsn);
+				dtmTx.isDistributed = false; 
 				MarkAsAborted();
 				END_CRIT_SECTION();
 				elog(ERROR, "Commit of transaction %d is rejected by DTM", xid);                    
@@ -554,13 +560,15 @@ static void DtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 	PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
 }
 
-bool DtmDetectGlobalDeadLock(PGPROC* proc)
+static bool 
+DtmDetectGlobalDeadLock(PGPROC* proc)
 {
     elog(WARNING, "Global deadlock?");
     return true;
 }
 
-static void DtmShmemStartup(void)
+static void 
+DtmShmemStartup(void)
 {
 	if (PreviousShmemStartupHook) {
 		PreviousShmemStartupHook();
@@ -585,6 +593,21 @@ _PG_init(void)
 	 */
 	if (!process_shared_preload_libraries_in_progress)
 		return;
+
+	DefineCustomIntVariable(
+		"multimaster.vacuum_delay",
+		"Minimal age of records which can be vacuumed (seconds)",
+		NULL,
+		&DtmVacuumDelay,
+		10,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
 
 	DefineCustomIntVariable(
 		"multimaster.workers",
@@ -620,7 +643,7 @@ _PG_init(void)
 		"multimaster.arpiter_port",
 		"Base value for assigning arbiter ports",
 		NULL,
-		&MMAtbiterPort,
+		&MMArbiterPort,
 		54321,
 	    0,
 		INT_MAX,
@@ -665,12 +688,12 @@ _PG_init(void)
 	 * resources in dtm_shmem_startup().
 	 */
 	RequestAddinShmemSpace(DTM_SHMEM_SIZE + MMQueueSize);
-	RequestAddinLWLocks(1);
+	RequestNamedLWLockTranche(MULTIMASTER_NAME, 1);
 
     MMNodes = MMStartReceivers(MMConnStrs, MMNodeId);
     if (MMNodes < 2) { 
         elog(ERROR, "Multimaster should have at least two nodes");
-    }
+	}		
     BgwPoolStart(MMWorkers, MMPoolConstructor);
 
 	MMArbiterInitialize();
@@ -705,17 +728,18 @@ _PG_fini(void)
  *  ***************************************************************************
  */
 
-void MMJoinTransaction(GlonalTransactionId gtid, csn_t snapshot)
+void MMJoinTransaction(GlobalTransactionId* gtid, csn_t snapshot)
 {
 	LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 	dtm_sync(snapshot);
 	LWLockRelease(dtm->hashLock);
 	
-	dtm_tx.gtid = gtid;
-	dtm_tx.xid = GetCurrentTransactionId();
-	dtm_tx.snapshot = snapshot;	
-	dtm_tx.is_local = true;
-	dtm_tx.is_distributed = false;
+	dtmTx.gtid = *gtid;
+	dtmTx.xid = GetCurrentTransactionId();
+	dtmTx.snapshot = snapshot;	
+	dtmTx.isReplicated = true;
+	dtmTx.isDistributed = true;
+	dtmTx.containsDML = true;
 }
  
 void MMReceiverStarted()
@@ -727,7 +751,7 @@ void MMReceiverStarted()
 
 csn_t MMTransactionSnapshot(TransactionId xid)
 {
-	TransStatus* ts;
+	DtmTransState* ts;
 	csn_t snapshot = INVALID_CSN;
 
 	LWLockAcquire(dtm->hashLock, LW_SHARED);
@@ -751,7 +775,7 @@ Datum
 mm_stop_replication(PG_FUNCTION_ARGS)
 {
     MMDoReplication = false;
-    dtm_tx.is_distributed = false;
+    dtmTx.isDistributed = false;
     PG_RETURN_VOID();
 }
 
@@ -924,7 +948,7 @@ static void MMProcessUtility(Node *parsetree, const char *queryString,
 									params, dest, completionTag);
 		}
 		if (!skipCommand) {
-			dtm_tx.is_distributed = false;
+			dtmTx.isDistributed = false;
 		}
 	} else { 		
 		MMBroadcastUtilityStmt(queryString, false);
@@ -939,7 +963,7 @@ MMExecutorFinish(QueryDesc *queryDesc)
         CmdType operation = queryDesc->operation;
         EState *estate = queryDesc->estate;
         if (estate->es_processed != 0) { 
-            dtm_tx.is_distributed |= operation == CMD_INSERT || operation == CMD_UPDATE || operation == CMD_DELETE;
+            dtmTx.containsDML |= operation == CMD_INSERT || operation == CMD_UPDATE || operation == CMD_DELETE;
         }
     }
     if (PreviousExecutorFinishHook != NULL)
@@ -957,43 +981,53 @@ void MMExecute(void* work, int size)
     BgwPoolExecute(&dtm->pool, work, size);
 }
     
-static BgwPool* MMPoolConstructor(void)
+static BgwPool* 
+MMPoolConstructor(void)
 {
     return &dtm->pool;
 }
 
-
-void MMVoteForTransaction(DtmTransState* ts)
+static void 
+SendCommitMessage(DtmTransState* ts)
 {
-	LWLockRelease(&dtm->hashLock);
+	SpinLockAcquire(&dtm->votingSpinlock);
+	ts->nextVoting = dtm->votingTransactions;
+	dtm->votingTransactions = ts;
+	SpinLockRelease(&dtm->votingSpinlock);
+	
+	PGSemaphoreUnlock(&dtm->votingSemaphore);
+}
+
+static void 
+MMVoteForTransaction(DtmTransState* ts)
+{
+	LWLockRelease(dtm->hashLock);
 	if (ts->gtid.node == MMNodeId) {
-		/* I am master: wait responces from replicas */
-		while (ts->nVotes+1 != dtm->nNodes) {
-			WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
-			ResetLatch(&MyProc->procLatch);			
-		}
+		/* I am coordinator: wait responses from all replicas for transaction replicated using logical decoding */
+		WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
+		ResetLatch(&MyProc->procLatch);			
+		Assert(ts->nVotes == dtm->nNodes);
+		
+		/* ... and then send notifications to replicas */
+		SendCommitMessage(ts);
 	} else {
 		/* I am replica: first notify master... */
-		SpinLockAcquire(&dtm->spinlock);
-		ts->nextPending = dtm->pendingTransactions;
-		ts->pid = MyProc->pgprocno;
-		dtm->pendingTransactions = ts;
-		SpinLockRelease(&dtm->spinlock);
-
-		PGSemaphoreUnlock(&dtm->semapahore);
+		ts->nVotes = dtm->nNodes-1; /* I just need one confirmation from coordinator */
+		SendCommitMessage(ts);
 		/* ... and wait response from it */
 		WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
 		ResetLatch(&MyProc->procLatch);			
 	}
-	LWLockAcquire(&dtm->hashLock< LW_EXCLUSIVE);
+	LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 }
 
-HTAB* MMCreateHash();
+HTAB* MMCreateHash(void)
 {
-	static HASHCTL info;
-	TAB* htab;
+	HASHCTL info;
+	HTAB* htab;
+	memset(&info, 0, sizeof(info));
 	info.keysize = sizeof(TransactionId);
-	info.entrysize = sizeof(DtmTransState);
+	info.entrysize = sizeof(DtmTransState) + (MMNodes-1)*sizeof(TransactionId);
 	info.hash = dtm_xid_hash_fn;
 	info.match = dtm_xid_match_fn;
 	htab = ShmemInitHash(
@@ -1004,4 +1038,9 @@ HTAB* MMCreateHash();
 	);
 	return htab;
 }
-	
+
+DtmState*	
+MMGetState(void)
+{
+	return dtm;
+}

@@ -45,24 +45,29 @@
 
 typedef uint64 timestamp_t;
 
+/* Distributed transaction state kept in shared memory */
 typedef struct DtmTransStatus
 {
 	TransactionId xid;
 	XidStatus	status;
 	int			nSubxids;
-	cid_t		cid;
-	struct DtmTransStatus *next;
+	cid_t		cid;             /* CSN */
+	struct DtmTransStatus *next; /* pointer to next element in finished transaction list */
 }	DtmTransStatus;
 
+/* State of DTM node */
 typedef struct
 {
-	cid_t		cid;
-	long		time_shift;
-	volatile slock_t lock;
-	DtmTransStatus *trans_list_head;
+	cid_t		   cid;              /* last assigned CSN; used to provide unique ascending CSNs */
+	TransactionId  oldest_xid;       /* XID of oldest transaction visible by any active transaction (local or global) */
+	long		   time_shift;       /* correction to system time */
+	volatile slock_t lock;           /* spinlock to protect access to hash table  */
+	DtmTransStatus *trans_list_head; /* L1 list of finished transactions present in xid2status hash table.
+										This list is used to perform cleanup of too old transactions */
 	DtmTransStatus **trans_list_tail;
 }	DtmNodeState;
 
+/* Structure used to map global transaction identifier to XID */
 typedef struct
 {
 	char		gtid[MAX_GTID_SIZE];
@@ -119,10 +124,10 @@ static cid_t dtm_get_cid();
 static cid_t dtm_sync(cid_t cid);
 
 /*
- *	***************************************************************************
+ *	Time manipulation functions
  */
 
-
+/* Get current time with microscond resolution */
 static timestamp_t
 dtm_get_current_time()
 {
@@ -132,6 +137,7 @@ dtm_get_current_time()
 	return (timestamp_t) tv.tv_sec * USEC + tv.tv_usec + local->time_shift;
 }
 
+/* Sleep for specified amount of time */
 static void
 dtm_sleep(timestamp_t interval)
 {
@@ -149,6 +155,9 @@ dtm_sleep(timestamp_t interval)
 	}
 }
 
+/* Get unique ascending CSN.
+ * This function is called inside critical section
+ */
 static cid_t
 dtm_get_cid()
 {
@@ -165,6 +174,9 @@ dtm_get_cid()
 	return cid;
 }
 
+/*
+ * Adjust system time
+ */
 static cid_t
 dtm_sync(cid_t global_cid)
 {
@@ -456,6 +468,13 @@ DtmTransactionListInsertAfter(DtmTransStatus * after, DtmTransStatus * ts)
 	}
 }
 
+/*
+ * There can be different oldest XIDs at different cluster node.
+ * Seince we do not have centralized aribiter, we have to rely in DtmVacuumDelay.
+ * This function takes XID which PostgreSQL consider to be the latest and try to find XID which
+ * is older than it more than DtmVacuumDelay.
+ * If no such XID can be located, then return previously observed oldest XID
+ */
 static TransactionId
 DtmAdjustOldestXid(TransactionId xid)
 {
@@ -481,11 +500,11 @@ DtmAdjustOldestXid(TransactionId xid)
 		if (prev != NULL)
 		{
 			local->trans_list_head = prev;
-			xid = prev->xid;
+			local->oldest_xid = xid = prev->xid;
 		}
 		else
 		{
-			xid = FirstNormalTransactionId;
+			xid = local->oldest_xid;
 		}
 		SpinLockRelease(&local->lock);
 	}
@@ -509,6 +528,10 @@ DtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 	return xmin;
 }
 
+/*
+ * Check tuple bisibility based on CSN of current transaction.
+ * If there is no niformation about transaction with this XID, then use standard PostgreSQL visibility rules.
+ */
 bool
 DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 {
@@ -594,6 +617,7 @@ DtmInitialize()
 	if (!found)
 	{
 		local->time_shift = 0;
+		local->oldest_xid = FirstNormalTransactionId;
 		local->cid = dtm_get_current_time();
 		local->trans_list_head = NULL;
 		local->trans_list_tail = &local->trans_list_head;
@@ -603,7 +627,10 @@ DtmInitialize()
 	LWLockRelease(AddinShmemInitLock);
 }
 
-
+/*
+ * Start transaction at local node.
+ * Associate local snapshot (current time) with this transaction.
+ */
 void
 DtmLocalBegin(DtmCurrentTrans * x)
 {
@@ -621,6 +648,10 @@ DtmLocalBegin(DtmCurrentTrans * x)
 	}
 }
 
+/*
+ * Transaction is going to be distributed.
+ * Returns snapshot of current transaction.
+ */
 cid_t
 DtmLocalExtend(DtmCurrentTrans * x, GlobalTransactionId gtid)
 {
@@ -640,6 +671,10 @@ DtmLocalExtend(DtmCurrentTrans * x, GlobalTransactionId gtid)
 	return x->snapshot;
 }
 
+/*
+ * This function is executed on all nodes joining distributed transaction.
+ * global_cid is snapshot taken from node initiated this transaction
+ */
 cid_t
 DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 {
@@ -667,6 +702,10 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 	return global_cid;
 }
 
+/*
+ * Set transaction status to in-doubt. Now all transactions accessing tuples updated by this transaction have to
+ * wait until it is either committed either aborted
+ */
 void
 DtmLocalBeginPrepare(GlobalTransactionId gtid)
 {
@@ -688,6 +727,10 @@ DtmLocalBeginPrepare(GlobalTransactionId gtid)
 	SpinLockRelease(&local->lock);
 }
 
+/*
+ * Choose maximal CSN among all nodes.
+ * This function returns maximum of passed (global) and local (current time) CSNs.
+ */
 cid_t
 DtmLocalPrepare(GlobalTransactionId gtid, cid_t global_cid)
 {
@@ -703,6 +746,9 @@ DtmLocalPrepare(GlobalTransactionId gtid, cid_t global_cid)
 	return global_cid;
 }
 
+/*
+ * Adjust system tiem according to the received maximal CSN
+ */
 void
 DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 {
@@ -728,6 +774,11 @@ DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 		DTM_TRACE((stderr, "Prepare transaction %u(%s) with CSN %lu\n", id->xid, gtid, cid));
 	}
 	SpinLockRelease(&local->lock);
+
+	/*
+	 * Record commit in pg_committed_xact table to be make it possible to perform recovery in case of crash
+	 * of some of cluster nodes 
+	 */
 	if (DtmRecordCommits)
 	{
 		char		stmt[MAX_GTID_SIZE + 64];
@@ -744,6 +795,9 @@ DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 	}
 }
 
+/* 
+ * Mark tranasction as prepared
+ */
 void
 DtmLocalCommitPrepared(DtmCurrentTrans * x, GlobalTransactionId gtid)
 {
@@ -765,6 +819,9 @@ DtmLocalCommitPrepared(DtmCurrentTrans * x, GlobalTransactionId gtid)
 	SpinLockRelease(&local->lock);
 }
 
+/* 
+ * Set transaction status to committed
+ */
 void
 DtmLocalCommit(DtmCurrentTrans * x)
 {
@@ -806,6 +863,9 @@ DtmLocalCommit(DtmCurrentTrans * x)
 	SpinLockRelease(&local->lock);
 }
 
+/* 
+ * Mark tranasction as prepared
+ */
 void
 DtmLocalAbortPrepared(DtmCurrentTrans * x, GlobalTransactionId gtid)
 {
@@ -827,6 +887,9 @@ DtmLocalAbortPrepared(DtmCurrentTrans * x, GlobalTransactionId gtid)
 	SpinLockRelease(&local->lock);
 }
 
+/* 
+ * Set transaction status to aborted
+ */
 void
 DtmLocalAbort(DtmCurrentTrans * x)
 {
@@ -856,6 +919,9 @@ DtmLocalAbort(DtmCurrentTrans * x)
 	SpinLockRelease(&local->lock);
 }
 
+/*
+ * Cleanup dtm_tx structure
+ */
 void
 DtmLocalEnd(DtmCurrentTrans * x)
 {
@@ -865,6 +931,11 @@ DtmLocalEnd(DtmCurrentTrans * x)
 	x->cid = INVALID_CID;
 }
 
+/*
+ * Now only timestapm based dealock detection is supported for pg_tsdtm.
+ * Please adjust "deadlock_timeout" parameter in postresql.conf to avoid false
+ * deadlock detection.
+ */
 bool
 DtmDetectGlobalDeadLock(PGPROC *proc)
 {
@@ -890,6 +961,9 @@ DtmGetCsn(TransactionId xid)
 	return csn;
 }
 
+/*
+ * Save state of parepared transaction
+ */
 void
 DtmLocalSavePreparedState(GlobalTransactionId gtid)
 {
@@ -916,6 +990,10 @@ DtmLocalSavePreparedState(GlobalTransactionId gtid)
 	}
 }
 
+/*
+ * Add subtransactions to finished transactions list.
+ * Copy CSN and status of parent transaction.
+ */
 static void
 DtmAddSubtransactions(DtmTransStatus * ts, TransactionId *subxids, int nSubxids)
 {
