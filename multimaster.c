@@ -453,7 +453,7 @@ static void DtmPrepareTransaction(DtmCurrentTrans* x)
 	ts->status = TRANSACTION_STATUS_UNKNOWN;
 	ts->csn = dtm_get_csn();	
 	ts->procno = MyProc->pgprocno;
-	ts->nVotes = 1; /* I voted myself */
+	ts->nVotes = 1; /* My own voice */
 	for (i = 0; i < MMNodes; i++) { 
 		ts->xids[i] = InvalidTransactionId;
 	}
@@ -479,7 +479,8 @@ static XidStatus
 DtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
 {
 	DtmTransState* ts;
-	csn_t csn;
+	csn_t localCSN;
+	csn_t globalCSN;
 	int i;
 	XidStatus status;
 
@@ -489,33 +490,34 @@ DtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
 
 	/* now transaction is in doubt state */
 	ts->status = TRANSACTION_STATUS_IN_PROGRESS;
-	csn = dtm_get_csn();	
-	if (csn > ts->csn) {
-		ts->csn = csn;
-	}
+	localCSN = dtm_get_csn();	
+	ts->csn = localCSN;
 	DtmTransactionListAppend(ts);
 	DtmAddSubtransactions(ts, subxids, nsubxids);
 
 	MMVoteForTransaction(ts); /* wait until transaction at all nodes are prepared */
-	csn = ts->csn;
-	if (csn != INVALID_CSN) { 
-		dtm_sync(csn);
+	globalCSN = ts->csn;
+	Assert(globalCSN >= localCSN);
+
+	if (globalCSN != INVALID_CSN) { 
+		dtm_sync(globalCSN);
 		status = TRANSACTION_STATUS_COMMITTED;
 	} else { 
+		ts->csn = globalCSN = localCSN;
 		status = TRANSACTION_STATUS_ABORTED;
 	}
 	ts->status = status;
 	for (i = 0; i < nsubxids; i++) { 	
 		ts = ts->next;
 		ts->status = status;
-		ts->csn = csn;
+		ts->csn = globalCSN;
 	}        
 	LWLockRelease(dtm->hashLock);
 	return status;
 }
 	
 static void 
-DtmAbortTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
+DtmFinishTransaction(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status)
 {
 	int i;
 	DtmTransState* ts;
@@ -523,10 +525,10 @@ DtmAbortTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
 	LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
 	ts = hash_search(xid2state, &xid, HASH_FIND, NULL);
 	Assert(ts != NULL); /* should be created by DtmPrepareTransaction */
-	ts->status = TRANSACTION_STATUS_ABORTED;	
+	ts->status = status;
 	for (i = 0; i < nsubxids; i++) { 	
 		ts = ts->next;
-		ts->status = TRANSACTION_STATUS_ABORTED;
+		ts->status = status;
 	}        
 	LWLockRelease(dtm->hashLock);
 }	
@@ -539,9 +541,10 @@ DtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids,
 	DTM_INFO("%d: DtmSetTransactionStatus %u = %u\n", getpid(), xid, status);
 	if (dtmTx.isDistributed)
 	{
+		Assert(xid == dtmTx.xid);
 		if (status == TRANSACTION_STATUS_ABORTED || !dtmTx.containsDML)
 		{
-			DtmAbortTransaction(xid, nsubxids, subxids);	
+			DtmFinishTransaction(xid, nsubxids, subxids, status);	
 			DTM_INFO("Abort transaction %d\n", xid);
 		}
 		else
@@ -990,12 +993,18 @@ MMPoolConstructor(void)
 static void 
 SendCommitMessage(DtmTransState* ts)
 {
+	DtmTransState* votingList;
+
 	SpinLockAcquire(&dtm->votingSpinlock);
-	ts->nextVoting = dtm->votingTransactions;
+	votingList = dtm->votingTransactions;
+	ts->nextVoting = votingList;
 	dtm->votingTransactions = ts;
 	SpinLockRelease(&dtm->votingSpinlock);
 	
-	PGSemaphoreUnlock(&dtm->votingSemaphore);
+	if (votingList == NULL) { 
+		/* singal semaphreo only once for the whole list */
+		PGSemaphoreUnlock(&dtm->votingSemaphore);
+	}
 }
 
 static void 
@@ -1011,7 +1020,7 @@ MMVoteForTransaction(DtmTransState* ts)
 		/* ... and then send notifications to replicas */
 		SendCommitMessage(ts);
 	} else {
-		/* I am replica: first notify master... */
+		/* I am replica: first notify coordinator... */
 		ts->nVotes = dtm->nNodes-1; /* I just need one confirmation from coordinator */
 		SendCommitMessage(ts);
 		/* ... and wait response from it */

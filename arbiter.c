@@ -1,7 +1,7 @@
 /*
- * multimaster.c
+ * arbiter.c
  *
- * Multimaster based on logical replication
+ * Coordinate global transaction commit
  *
  */
 
@@ -99,7 +99,7 @@ static void DtmTransReceiver(Datum arg);
 static BackgroundWorker DtmSender = {
 	"mm-sender",
 	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
-	BgWorkerStart_PostmasterStart,
+	BgWorkerStart_ConsistentState,
 	1, /* restrart in one second (is it possible to restort immediately?) */
 	DtmTransSender
 };
@@ -107,7 +107,7 @@ static BackgroundWorker DtmSender = {
 static BackgroundWorker DtmRecevier = {
 	"mm-receiver",
 	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
-	BgWorkerStart_PostmasterStart,
+	BgWorkerStart_ConsistentState,
 	1, /* restrart in one second (is it possible to restort immediately?) */
 	DtmTransReceiver
 };
@@ -216,7 +216,7 @@ static int connectSocket(char const* host, int port)
 
 static void openConnections()
 {
-	int nNodes = ds->nNodes;
+	int nNodes = MMNodes;
 	int i;
 	char* connStr = pstrdup(MMConnStrs);
 
@@ -228,9 +228,14 @@ static void openConnections()
 		if (host == NULL) {
 			elog(ERROR, "Invalid connection string: '%s'", MMConnStrs);
 		}
-		for (end = host+5; *end != ' ' && *end != ',' && end != '\0'; end++);
-		*end = '\0';
-		connStr = end + 1;
+		host += 5;
+		for (end = host; *end != ' ' && *end != ',' && *end != '\0'; end++);
+		if (*end != '\0') { 
+			*end = '\0';
+			connStr = end + 1;
+		} else { 
+			connStr = end;
+		}
 		sockets[i] = i+1 != MMNodeId ? connectSocket(host, MMArbiterPort + i) : -1;
 	}
 }
@@ -241,7 +246,7 @@ static void acceptConnections()
 	int i;
 	int sd;
     int on = 1;
-	int nNodes = ds->nNodes-1;
+	int nNodes = MMNodes-1;
 
 	sockets = (int*)palloc(sizeof(int)*nNodes);
 
@@ -359,7 +364,6 @@ static void DtmTransReceiver(Datum arg)
 {
 	int nNodes = MMNodes-1;
 	int i, j, rc;
-	int rxBufPos = 0;
 	DtmBuffer* rxBuffer = (DtmBuffer*)palloc(sizeof(DtmBuffer)*nNodes);
 	HTAB* xid2state;
 
@@ -408,7 +412,7 @@ static void DtmTransReceiver(Datum arg)
 #endif
 			{
 				int nResponses;
-				rxBuffer[i].used += readSocket(sockets[i], (char*)rxBuffer[i].data + rxBuffer[i].used, BUFFER_SIZE-rxBufPos);
+				rxBuffer[i].used += readSocket(sockets[i], (char*)rxBuffer[i].data + rxBuffer[i].used, BUFFER_SIZE-rxBuffer[i].used);
 				nResponses = rxBuffer[i].used/sizeof(DtmCommitMessage);
 
 				LWLockAcquire(ds->hashLock, LW_SHARED);						
@@ -426,6 +430,8 @@ static void DtmTransReceiver(Datum arg)
 						SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch);
 					}
 				}
+				LWLockRelease(ds->hashLock);
+				
 				rxBuffer[i].used -= nResponses*sizeof(DtmCommitMessage);
 				if (rxBuffer[i].used != 0) { 
 					memmove(rxBuffer[i].data, (char*)rxBuffer[i].data + nResponses*sizeof(DtmCommitMessage), rxBuffer[i].used);
