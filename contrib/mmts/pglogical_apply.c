@@ -8,6 +8,7 @@
 #include "access/htup_details.h"
 #include "access/relscan.h"
 #include "access/xact.h"
+#include "access/clog.h"
 
 #include "catalog/catversion.h"
 #include "catalog/dependency.h"
@@ -323,9 +324,13 @@ create_rel_estate(Relation rel)
 static void
 process_remote_begin(StringInfo s)
 {
-	GlobalTransactionId gtid = pg_getmsgint64(s); 
-	csn_t snapshot = pq_getmsgint64(s);    
-    MMJoinTransaction(gtid, snapshot);
+	GlobalTransactionId gtid;
+	csn_t snapshot;
+
+	gtid.node = pq_getmsgint(s, 4); 
+	gtid.xid = pq_getmsgint(s, 4); 
+	snapshot = pq_getmsgint64(s);    
+    MMJoinTransaction(&gtid, snapshot);
     SetCurrentStatementStartTimestamp();     
 	StartTransactionCommand();
 }
