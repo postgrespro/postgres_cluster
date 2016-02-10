@@ -73,14 +73,15 @@ $node2->psql('postgres', "create extension pg_tsdtm;");
 $node2->psql('postgres', "create table t(u int primary key, v int)");
 $node2->psql('postgres', "insert into t (select generate_series(0, 9), 0)");
 
-my $conn1 = DBI->connect('DBI:Pg:' . $node1->connstr('postgres'));
-my $conn2 = DBI->connect('DBI:Pg:' . $node2->connstr('postgres'));
+# we need two connections to each node (run two simultameous global tx)
+my $conn11 = DBI->connect('DBI:Pg:' . $node1->connstr('postgres'));
+my $conn21 = DBI->connect('DBI:Pg:' . $node2->connstr('postgres'));
+my $conn12 = DBI->connect('DBI:Pg:' . $node1->connstr('postgres'));
+my $conn22 = DBI->connect('DBI:Pg:' . $node2->connstr('postgres'));
 
 sub count_total
 {
-	# my ($c1, $c2) = @_;
-	my $c1 = DBI->connect('DBI:Pg:' . $node1->connstr('postgres'));
-	my $c2 = DBI->connect('DBI:Pg:' . $node2->connstr('postgres'));
+	my ($c1, $c2) = @_;
 
 	query_exec($c1, "begin");
 	query_exec($c2, "begin");
@@ -101,54 +102,33 @@ sub count_total
 }
 
 ###############################################################################
-# Check for dirty reads
+# Sanity check on dirty reads
 ###############################################################################
 
-my $gtid = "tx1";
+my $gtid1 = "gtx1";
 
-query_exec($conn1, "begin transaction");
-query_exec($conn2, "begin transaction");
-my $snapshot = query_row($conn1, "select dtm_extend('$gtid')");
-query_exec($conn2, "select dtm_access($snapshot, '$gtid')");
-query_exec($conn1, "update t set v = v - 10 where u=1");
+# start global tx
+query_exec($conn11, "begin transaction");
+query_exec($conn21, "begin transaction");
+my $snapshot = query_row($conn11, "select dtm_extend('$gtid1')");
+query_exec($conn21, "select dtm_access($snapshot, '$gtid1')");
 
-my $intermediate_total = count_total();
+# transfer some amount of integers to different node
+query_exec($conn11, "update t set v = v - 10 where u=1");
+my $intermediate_total = count_total($conn12, $conn22);
+query_exec($conn21, "update t set v = v + 10 where u=2");
 
-query_exec($conn2, "update t set v = v + 10 where u=2");
-query_exec($conn1, "prepare transaction '$gtid'");
-query_exec($conn2, "prepare transaction '$gtid'");
-query_exec($conn1, "select dtm_begin_prepare('$gtid')");
-query_exec($conn2, "select dtm_begin_prepare('$gtid')");
-my $csn = query_row($conn1, "select dtm_prepare('$gtid', 0)");
-query_exec($conn2, "select dtm_prepare('$gtid', $csn)");
-query_exec($conn1, "select dtm_end_prepare('$gtid', $csn)");
-query_exec($conn2, "select dtm_end_prepare('$gtid', $csn)");
-query_exec($conn1, "commit prepared '$gtid'");
-query_exec($conn2, "commit prepared '$gtid'");
+# commit our global tx
+query_exec($conn11, "prepare transaction '$gtid1'");
+query_exec($conn21, "prepare transaction '$gtid1'");
+query_exec($conn11, "select dtm_begin_prepare('$gtid1')");
+query_exec($conn21, "select dtm_begin_prepare('$gtid1')");
+my $csn = query_row($conn11, "select dtm_prepare('$gtid1', 0)");
+query_exec($conn21, "select dtm_prepare('$gtid1', $csn)");
+query_exec($conn11, "select dtm_end_prepare('$gtid1', $csn)");
+query_exec($conn21, "select dtm_end_prepare('$gtid1', $csn)");
+query_exec($conn11, "commit prepared '$gtid1'");
+query_exec($conn21, "commit prepared '$gtid1'");
 
 is($intermediate_total, 0, "Check for absence of dirty reads");
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
