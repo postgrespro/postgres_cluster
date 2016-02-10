@@ -29,7 +29,7 @@ struct thread
     size_t aborts;
     int id;
 
-    void start(int tid, thread_proc_t proc) { 
+    void start(int tid, thread_proc_t proc) {
         id = tid;
         updates = 0;
         selects = 0;
@@ -38,7 +38,7 @@ struct thread
         pthread_create(&t, NULL, proc, this);
     }
 
-    void wait() { 
+    void wait() {
         pthread_join(t, NULL);
     }
 };
@@ -96,7 +96,7 @@ T execQuery( transaction_base& txn, char const* sql, ...)
     va_end(args);
     result r = txn.exec(buf);
     return r[0][0].as(T());
-}  
+}
 
 void* reader(void* arg)
 {
@@ -118,32 +118,32 @@ void* reader(void* arg)
     }
     return NULL;
 }
- 
+
 void* writer(void* arg)
 {
     thread& t = *(thread*)arg;
     connection conn(cfg.connection);
     for (int i = 0; i < cfg.nIterations; i++)
-    { 
+    {
 		work txn(conn);
         int srcAcc = random() % cfg.nAccounts;
         int dstAcc = random() % cfg.nAccounts;
-        try {            
-            if (random() % 100 < cfg.updatePercent) { 
+        try {
+            if (random() % 100 < cfg.updatePercent) {
                 exec(txn, "update t set v = v - 1 where u=%d", srcAcc);
                 exec(txn, "update t set v = v + 1 where u=%d", dstAcc);
                 t.updates += 2;
-            } else { 
+            } else {
                 int64_t sum = execQuery<int64_t>(txn, "select v from t where u=%d", srcAcc)
                     + execQuery<int64_t>(txn, "select v from t where u=%d", dstAcc);
-                if (sum > cfg.nIterations*cfg.nWriters || sum < -cfg.nIterations*cfg.nWriters) { 
+                if (sum > cfg.nIterations*cfg.nWriters || sum < -cfg.nIterations*cfg.nWriters) {
                     printf("Wrong sum=%ld\n", sum);
                 }
                 t.selects += 2;
             }
-            txn.commit();            
+            txn.commit();
             t.transactions += 1;
-        } catch (pqxx_exception const& x) { 
+        } catch (pqxx_exception const& x) {
             txn.abort();
             t.aborts += 1;
             i -= 1;
@@ -152,13 +152,13 @@ void* writer(void* arg)
     }
     return NULL;
 }
-      
+
 void initializeDatabase()
 {
     connection conn(cfg.connection);
 	int accountsPerShard = (cfg.nAccounts + cfg.nShards - 1)/cfg.nShards;
-	for (int i = 0; i < cfg.nShards; i++) 
-	{ 
+	for (int i = 0; i < cfg.nShards; i++)
+	{
 		work txn(conn);
 		exec(txn, "alter table t_fdw%i add check (u between %d and %d)", i+1, accountsPerShard*i, accountsPerShard*(i+1)-1);
 		exec(txn, "insert into t_fdw%i (select generate_series(%d,%d), %d)", i+1, accountsPerShard*i, accountsPerShard*(i+1)-1, 0);
@@ -175,15 +175,15 @@ int main (int argc, char* argv[])
         return 1;
     }
 
-    for (int i = 1; i < argc; i++) { 
-        if (argv[i][0] == '-') { 
-            switch (argv[i][1]) { 
+    for (int i = 1; i < argc; i++) {
+        if (argv[i][0] == '-') {
+            switch (argv[i][1]) {
             case 'r':
                 cfg.nReaders = atoi(argv[++i]);
                 continue;
             case 'w':
                 cfg.nWriters = atoi(argv[++i]);
-                continue;                
+                continue;
             case 'a':
                 cfg.nAccounts = atoi(argv[++i]);
                 continue;
@@ -213,7 +213,7 @@ int main (int argc, char* argv[])
         return 1;
     }
 
-    if (initialize) { 
+    if (initialize) {
         initializeDatabase();
         printf("%d accounts inserted\n", cfg.nAccounts);
         return 0;
@@ -229,29 +229,29 @@ int main (int argc, char* argv[])
     size_t nSelects = 0;
     size_t nTransactions = 0;
 
-    for (int i = 0; i < cfg.nReaders; i++) { 
+    for (int i = 0; i < cfg.nReaders; i++) {
         readers[i].start(i, reader);
     }
-    for (int i = 0; i < cfg.nWriters; i++) { 
+    for (int i = 0; i < cfg.nWriters; i++) {
         writers[i].start(i, writer);
     }
-    
-    for (int i = 0; i < cfg.nWriters; i++) { 
+
+    for (int i = 0; i < cfg.nWriters; i++) {
         writers[i].wait();
         nUpdates += writers[i].updates;
         nSelects += writers[i].selects;
         nAborts += writers[i].aborts;
         nTransactions += writers[i].transactions;
     }
-    
+
     running = false;
 
-    for (int i = 0; i < cfg.nReaders; i++) { 
+    for (int i = 0; i < cfg.nReaders; i++) {
         readers[i].wait();
         nSelects += readers[i].selects;
         nTransactions += writers[i].transactions;
     }
- 
+
     time_t elapsed = getCurrentTime() - start;
 
     printf(
@@ -260,10 +260,10 @@ int main (int argc, char* argv[])
         " \"readers\":%d, \"writers\":%d, \"update_percent\":%d, \"accounts\":%d, \"iterations\":%d ,\"shards\":%d}\n",
         (double)(nTransactions*USEC)/elapsed,
         nTransactions,
-        nSelects, 
+        nSelects,
         nUpdates,
         nAborts,
-        (int)(nAborts*100/nTransactions),        
+        (int)(nAborts*100/nTransactions),
         cfg.nReaders,
         cfg.nWriters,
         cfg.updatePercent,

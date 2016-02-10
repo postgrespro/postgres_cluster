@@ -1,5 +1,5 @@
 CXX=g++
-CXXFLAGS=-g -Wall -O2 -pthread 
+CXXFLAGS=-g -Wall -O2 -pthread
 
 all: dtmbench
 
