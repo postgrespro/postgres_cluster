@@ -29,17 +29,17 @@ sub query_exec
 }
 
 sub PostgresNode::psql_ok {
-   my ($self, $sql, $comment) = @_;
+	my ($self, $sql, $comment) = @_;
 
-   $self->command_ok(['psql', '-A', '-t', '--no-psqlrc',
-   	'-d', $self->connstr, '-c', $sql], $comment);
+	$self->command_ok(['psql', '-A', '-t', '--no-psqlrc',
+		'-d', $self->connstr, '-c', $sql], $comment);
 }
 
 sub PostgresNode::psql_fails {
-   my ($self, $sql, $comment) = @_;
+	my ($self, $sql, $comment) = @_;
 
-   $self->command_ok(['psql', '-A', '-t', '--no-psqlrc',
-   	'-d', $self->connstr, '-c', $sql], $comment);
+	$self->command_ok(['psql', '-A', '-t', '--no-psqlrc',
+		'-d', $self->connstr, '-c', $sql], $comment);
 }
 
 ###############################################################################
@@ -84,7 +84,7 @@ sub count_total
 
 	query_exec($c1, "begin");
 	query_exec($c2, "begin");
-	
+
 	my $snapshot = query_row($c1, "select dtm_extend()");
 	query_row($c2, "select dtm_access($snapshot)");
 
