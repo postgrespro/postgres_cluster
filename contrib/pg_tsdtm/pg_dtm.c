@@ -169,42 +169,10 @@ static cid_t
 dtm_sync(cid_t global_cid)
 {
 	cid_t		local_cid;
-#if 1
 	while ((local_cid = dtm_get_cid()) < global_cid)
 	{
 		local->time_shift += global_cid - local_cid;
 	}
-#else
-	while ((local_cid = dtm_get_cid()) < global_cid)
-	{
-		SpinLockRelease(&local->lock);
-#if TRACE_SLEEP_TIME
-		{
-			timestamp_t now = dtm_get_current_time();
-			static timestamp_t firstReportTime;
-			static timestamp_t prevReportTime;
-			static timestamp_t totalSleepTime;
-#endif
-			dtm_sleep(global_cid - local_cid);
-#if TRACE_SLEEP_TIME
-			totalSleepTime += dtm_get_current_time() - now;
-			if (now > prevReportTime + USEC)
-			{
-				prevReportTime = now;
-				if (firstReportTime == 0)
-				{
-					firstReportTime = now;
-				}
-				else
-				{
-					fprintf(stderr, "Sync sleep %lu of %lu usec (%f%%)\n", totalSleepTime, now - firstReportTime, totalSleepTime * 100.0 / (now - firstReportTime));
-				}
-			}
-		}
-#endif
-		SpinLockAcquire(&local->lock);
-	}
-#endif
 	return local_cid;
 }
 
@@ -507,13 +475,7 @@ DtmAdjustOldestXid(TransactionId xid)
 			for (ts = local->trans_list_head; ts != NULL && ts->cid < cutoff_time; prev = ts, ts = ts->next)
 			{
 				if (prev != NULL)
-				{
-					/*
-					 * intf(stderr, "Remove xid %d from hash at %lu\n",
-					 * prev->xid, now);
-					 */
 					hash_search(xid2status, &prev->xid, HASH_REMOVE, NULL);
-				}
 			}
 		}
 		if (prev != NULL)
@@ -550,24 +512,12 @@ DtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 bool
 DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 {
-#if TRACE_SLEEP_TIME
-	static timestamp_t firstReportTime;
-	static timestamp_t prevReportTime;
-	static timestamp_t totalSleepTime;
-	static timestamp_t maxSleepTime;
-#endif
 	timestamp_t delay = MIN_WAIT_TIMEOUT;
 
 	Assert(xid != InvalidTransactionId);
 
 	SpinLockAcquire(&local->lock);
 
-#if TRACE_SLEEP_TIME
-	if (firstReportTime == 0)
-	{
-		firstReportTime = dtm_get_current_time();
-	}
-#endif
 	while (true)
 	{
 		DtmTransStatus *ts = (DtmTransStatus *) hash_search(xid2status, &xid, HASH_FIND, NULL);
@@ -585,37 +535,11 @@ DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 			{
 				DTM_TRACE((stderr, "%d: wait for in-doubt transaction %u in snapshot %lu\n", getpid(), xid, dtm_tx.snapshot));
 				SpinLockRelease(&local->lock);
-#if TRACE_SLEEP_TIME
-				{
-					timestamp_t delta,
-								now = dtm_get_current_time();
-#endif
+
 					dtm_sleep(delay);
-#if TRACE_SLEEP_TIME
-					delta = dtm_get_current_time() - now;
-					totalSleepTime += delta;
-					if (delta > maxSleepTime)
-					{
-						maxSleepTime = delta;
-					}
-					if (now > prevReportTime + USEC * 10)
-					{
-						prevReportTime = now;
-						if (firstReportTime == 0)
-						{
-							firstReportTime = now;
-						}
-						else
-						{
-							fprintf(stderr, "Snapshot sleep %lu of %lu usec (%f%%), maximum=%lu\n", totalSleepTime, now - firstReportTime, totalSleepTime * 100.0 / (now - firstReportTime), maxSleepTime);
-						}
-					}
-				}
-#endif
+
 				if (delay * 2 <= MAX_WAIT_TIMEOUT)
-				{
 					delay *= 2;
-				}
 				SpinLockAcquire(&local->lock);
 			}
 			else
