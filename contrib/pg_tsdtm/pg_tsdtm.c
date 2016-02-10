@@ -51,19 +51,24 @@ typedef struct DtmTransStatus
 	TransactionId xid;
 	XidStatus	status;
 	int			nSubxids;
-	cid_t		cid;             /* CSN */
-	struct DtmTransStatus *next; /* pointer to next element in finished transaction list */
+	cid_t		cid;			/* CSN */
+	struct DtmTransStatus *next;/* pointer to next element in finished
+								 * transaction list */
 }	DtmTransStatus;
 
 /* State of DTM node */
 typedef struct
 {
-	cid_t		   cid;              /* last assigned CSN; used to provide unique ascending CSNs */
-	TransactionId  oldest_xid;       /* XID of oldest transaction visible by any active transaction (local or global) */
-	long		   time_shift;       /* correction to system time */
-	volatile slock_t lock;           /* spinlock to protect access to hash table  */
-	DtmTransStatus *trans_list_head; /* L1 list of finished transactions present in xid2status hash table.
-										This list is used to perform cleanup of too old transactions */
+	cid_t		cid;			/* last assigned CSN; used to provide unique
+								 * ascending CSNs */
+	TransactionId oldest_xid;	/* XID of oldest transaction visible by any
+								 * active transaction (local or global) */
+	long		time_shift;		/* correction to system time */
+	volatile slock_t lock;		/* spinlock to protect access to hash table  */
+	DtmTransStatus *trans_list_head;	/* L1 list of finished transactions
+										 * present in xid2status hash table.
+										 * This list is used to perform
+										 * cleanup of too old transactions */
 	DtmTransStatus **trans_list_tail;
 }	DtmNodeState;
 
@@ -181,6 +186,7 @@ static cid_t
 dtm_sync(cid_t global_cid)
 {
 	cid_t		local_cid;
+
 	while ((local_cid = dtm_get_cid()) < global_cid)
 	{
 		local->time_shift += global_cid - local_cid;
@@ -559,7 +565,7 @@ DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 				DTM_TRACE((stderr, "%d: wait for in-doubt transaction %u in snapshot %lu\n", getpid(), xid, dtm_tx.snapshot));
 				SpinLockRelease(&local->lock);
 
-					dtm_sleep(delay);
+				dtm_sleep(delay);
 
 				if (delay * 2 <= MAX_WAIT_TIMEOUT)
 					delay *= 2;
@@ -776,8 +782,8 @@ DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 	SpinLockRelease(&local->lock);
 
 	/*
-	 * Record commit in pg_committed_xact table to be make it possible to perform recovery in case of crash
-	 * of some of cluster nodes 
+	 * Record commit in pg_committed_xact table to be make it possible to
+	 * perform recovery in case of crash of some of cluster nodes
 	 */
 	if (DtmRecordCommits)
 	{
@@ -795,7 +801,7 @@ DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 	}
 }
 
-/* 
+/*
  * Mark tranasction as prepared
  */
 void
@@ -819,7 +825,7 @@ DtmLocalCommitPrepared(DtmCurrentTrans * x, GlobalTransactionId gtid)
 	SpinLockRelease(&local->lock);
 }
 
-/* 
+/*
  * Set transaction status to committed
  */
 void
@@ -863,7 +869,7 @@ DtmLocalCommit(DtmCurrentTrans * x)
 	SpinLockRelease(&local->lock);
 }
 
-/* 
+/*
  * Mark tranasction as prepared
  */
 void
@@ -887,7 +893,7 @@ DtmLocalAbortPrepared(DtmCurrentTrans * x, GlobalTransactionId gtid)
 	SpinLockRelease(&local->lock);
 }
 
-/* 
+/*
  * Set transaction status to aborted
  */
 void
