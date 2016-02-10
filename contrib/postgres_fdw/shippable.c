@@ -46,13 +46,13 @@ typedef struct
 	Oid			objid;			/* function/operator/type OID */
 	Oid			classid;		/* OID of its catalog (pg_proc, etc) */
 	Oid			serverid;		/* FDW server we are concerned with */
-} ShippableCacheKey;
+}	ShippableCacheKey;
 
 typedef struct
 {
 	ShippableCacheKey key;		/* hash key - must be first */
 	bool		shippable;
-} ShippableCacheEntry;
+}	ShippableCacheEntry;
 
 
 /*

@@ -193,8 +193,8 @@ typedef struct
 	List	   *already_used;	/* expressions already dealt with */
 } ec_member_foreign_arg;
 
-bool UseTsDtmTransactions;
-void _PG_init(void);
+bool		UseTsDtmTransactions;
+void		_PG_init(void);
 
 /*
  * SQL functions
@@ -3222,14 +3222,15 @@ find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel)
 Datum
 postgres_fdw_exec(PG_FUNCTION_ARGS)
 {
-	Oid relid = PG_GETARG_OID(0);
-	char const* sql = PG_GETARG_CSTRING(1);
+	Oid			relid = PG_GETARG_OID(0);
+	char const *sql = PG_GETARG_CSTRING(1);
 	Oid			userid = GetUserId();
 	ForeignTable *table = GetForeignTable(relid);
 	ForeignServer *server = GetForeignServer(table->serverid);
 	UserMapping *user = GetUserMapping(userid, server->serverid);
-	PGconn* conn =  GetConnection(server, user, false);
-	PGresult* res = PQexec(conn, sql);
+	PGconn	   *conn = GetConnection(server, user, false);
+	PGresult   *res = PQexec(conn, sql);
+
 	PQclear(res);
 	ReleaseConnection(conn);
 	PG_RETURN_VOID();
@@ -3240,7 +3241,6 @@ _PG_init(void)
 {
 	DefineCustomBoolVariable("postgres_fdw.use_tsdtm",
 							 "Use timestamp base distributed transaction manager for FDW connections", NULL,
-							 &UseTsDtmTransactions, false, PGC_USERSET, 0, NULL,
+						  &UseTsDtmTransactions, false, PGC_USERSET, 0, NULL,
 							 NULL, NULL);
 }
-
