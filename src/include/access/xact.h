@@ -103,7 +103,7 @@ typedef enum
 typedef void (*SubXactCallback) (SubXactEvent event, SubTransactionId mySubid,
 									SubTransactionId parentSubid, void *arg);
 
-void CallXactCallbacks(XactEvent event);
+void		CallXactCallbacks(XactEvent event);
 
 
 /* ----------------

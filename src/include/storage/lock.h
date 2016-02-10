@@ -548,9 +548,9 @@ extern void DumpLocks(PGPROC *proc);
 extern void DumpAllLocks(void);
 #endif
 
-typedef void(*LockIterator)(PROCLOCK* lock, void* arg);
+typedef void (*LockIterator) (PROCLOCK *lock, void *arg);
 
-extern void EnumerateLocks(LockIterator iterator, void* arg);
+extern void EnumerateLocks(LockIterator iterator, void *arg);
 
 /* Lock a VXID (used to wait for a transaction to finish) */
 extern void VirtualXactLockTableInsert(VirtualTransactionId vxid);

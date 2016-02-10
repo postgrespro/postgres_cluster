@@ -18,17 +18,20 @@
 #include "access/transam.h"
 #include "access/xtm.h"
 
-TransactionId PgGetGlobalTransactionId(void)
+TransactionId
+PgGetGlobalTransactionId(void)
 {
 	return InvalidTransactionId;
 }
 
-bool PgDetectGlobalDeadLock(PGPROC* proc)
+bool
+PgDetectGlobalDeadLock(PGPROC *proc)
 {
 	return false;
 }
 
-char const* PgGetTransactionManagerName(void)
+char const *
+PgGetTransactionManagerName(void)
 {
 	return "postgres";
 }
@@ -46,9 +49,10 @@ TransactionManager PgTM = {
 	PgGetTransactionManagerName
 };
 
-TransactionManager* TM = &PgTM;
+TransactionManager *TM = &PgTM;
 
-TransactionManager* GetTransactionManager(void)
+TransactionManager *
+GetTransactionManager(void)
 {
 	return TM;
 }
