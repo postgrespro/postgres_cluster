@@ -22,6 +22,7 @@
 #include "utils/hsearch.h"
 #include "utils/memutils.h"
 
+
 /*
  * Connection cache hash table entry
  *
@@ -809,6 +810,7 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					break;
 			}
 		}
+
 		/* Reset state to show we're out of a transaction */
 		entry->xact_depth = 0;
 

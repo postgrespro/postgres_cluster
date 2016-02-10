@@ -54,7 +54,7 @@ typedef struct PgFdwRelationInfo
 	ForeignServer *server;
 	UserMapping *user;			/* only set in use_remote_estimate mode */
 
-	int			fetch_size;		/* fetch size for this remote table */
+	int			fetch_size;      /* fetch size for this remote table */
 } PgFdwRelationInfo;
 
 /* in postgres_fdw.c */
@@ -109,7 +109,5 @@ extern void deparseSelectStmtForRel(StringInfo buf, PlannerInfo *root,
 /* in shippable.c */
 extern bool is_builtin(Oid objectId);
 extern bool is_shippable(Oid objectId, Oid classId, PgFdwRelationInfo *fpinfo);
-
-extern bool UseTsDtmTransactions;
 
 #endif   /* POSTGRES_FDW_H */
