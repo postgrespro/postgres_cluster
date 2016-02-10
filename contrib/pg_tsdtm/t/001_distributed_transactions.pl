@@ -1,6 +1,5 @@
 ###############################################################################
 # Test of proper transaction isolation.
-# Based on Martin Kleppmann's set of tests (https://github.com/ept/hermitage)
 ###############################################################################
 
 use strict;
