@@ -330,9 +330,10 @@ process_remote_begin(StringInfo s)
 	gtid.node = pq_getmsgint(s, 4); 
 	gtid.xid = pq_getmsgint(s, 4); 
 	snapshot = pq_getmsgint64(s);    
-    MMJoinTransaction(&gtid, snapshot);
     SetCurrentStatementStartTimestamp();     
 	StartTransactionCommand();
+    MMJoinTransaction(&gtid, snapshot);
+	fprintf(stderr, "REMOTE begin node=%d xid=%d snapshot=%ld\n", gtid.node, gtid.xid, snapshot);
 }
 
 static void

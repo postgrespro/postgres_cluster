@@ -4,9 +4,9 @@
 #include "bytebuf.h"
 #include "bgwpool.h"
 
-#define DTM_TRACE(fmt, ...)
-/* #define XTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) */
-#define DTM_INFO(fmt, ...)
+#define DTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
+//#define DTM_TRACE(fmt, ...)
+#define DTM_TUPLE_TRACE(fmt, ...)
 
 #define BIT_SET(mask, bit) ((mask) & ((int64)1 << (bit)))
 

@@ -200,7 +200,7 @@ static int connectSocket(char const* host, int port)
 		}
 		if (rc < 0) {
 			if ((errno != ENOENT && errno != ECONNREFUSED && errno != EINPROGRESS) || max_attempts == 0) {
-				elog(ERROR, "Sockhub failed to connect to %s:%d: %d", host, port, errno);
+				elog(ERROR, "Arbiter failed to connect to %s:%d: %d", host, port, errno);
 			} else { 
 				max_attempts -= 1;
 				sleep(1);
@@ -236,7 +236,7 @@ static void openConnections()
 		} else { 
 			connStr = end;
 		}
-		sockets[i] = i+1 != MMNodeId ? connectSocket(host, MMArbiterPort + i) : -1;
+		sockets[i] = i+1 != MMNodeId ? connectSocket(host, MMArbiterPort + i + 1) : -1;
 	}
 }
 
@@ -260,8 +260,11 @@ static void acceptConnections()
 	}
     setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char*)&on, sizeof on);
 
-    if (bind(sd, (struct sockaddr*)&sock_inet, nNodes-1) < 0) {
+    if (bind(sd, (struct sockaddr*)&sock_inet, sizeof(sock_inet)) < 0) {
 		elog(ERROR, "Failed to bind socket: %d", errno);
+	}	
+    if (listen(sd, MMNodes-1) < 0) {
+		elog(ERROR, "Failed to listen socket: %d", errno);
 	}	
 
 	for (i = 0; i < nNodes; i++) {
@@ -332,8 +335,13 @@ static void DtmTransSender(Datum arg)
 							writeSocket(sockets[i], txBuffer[i].data, txBuffer[i].used*sizeof(DtmCommitMessage));
 							txBuffer[i].used = 0;
 						}
+						DTM_TRACE("Send notification %ld to replica %d from coordinator %d for transaction %d (local transaction %d)\n", 
+								  ts->csn, i+1, MMNodeId, ts->xid, ts->xids[i]);
+
 						txBuffer[i].data[txBuffer[i].used].dxid = ts->xids[i];
+						txBuffer[i].data[txBuffer[i].used].sxid = ts->xid;
 						txBuffer[i].data[txBuffer[i].used].csn = ts->csn;
+						txBuffer[i].data[txBuffer[i].used].node = MMNodeId;
 						txBuffer[i].used += 1;
 					}
 				}
@@ -344,6 +352,8 @@ static void DtmTransSender(Datum arg)
 					writeSocket(sockets[i], txBuffer[i].data, txBuffer[i].used*sizeof(DtmCommitMessage));
 					txBuffer[i].used = 0;
 				}
+				DTM_TRACE("Send notification %ld to coordinator %d from node %d for transaction %d (local transaction %d)\n", 
+						  ts->csn, ts->gtid.node, MMNodeId, ts->gtid.xid, ts->xid);
 				txBuffer[i].data[txBuffer[i].used].dxid = ts->gtid.xid;
 				txBuffer[i].data[txBuffer[i].used].sxid = ts->xid;
 				txBuffer[i].data[txBuffer[i].used].node = MMNodeId;
@@ -426,6 +436,9 @@ static void DtmTransReceiver(Datum arg)
 					}
 					Assert((unsigned)(msg->node-1) <= (unsigned)nNodes);
 					ts->xids[msg->node-1] = msg->sxid;
+					DTM_TRACE("Receive response %ld for transaction %d votes %d from node %d (transaction %d)\n", 
+							  msg->csn, msg->dxid, ts->nVotes+1, msg->node, msg->sxid);
+					Assert(ts->nVotes > 0 && ts->nVotes < ds->nNodes);
 					if (++ts->nVotes == ds->nNodes) { 
 						SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch);
 					}
