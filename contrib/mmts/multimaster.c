@@ -342,7 +342,6 @@ DtmAdjustOldestXid(TransactionId xid)
         ts = (DtmTransState*)hash_search(xid2state, &xid, HASH_FIND, NULL);
         if (ts != NULL) { 
             timestamp_t cutoff_time = ts->csn - DtmVacuumDelay*USEC;
-			#if 0
 			for (ts = dtm->transListHead; ts != NULL && ts->csn < cutoff_time; prev = ts, ts = ts->next) { 
 				Assert(ts->status == TRANSACTION_STATUS_COMMITTED || ts->status == TRANSACTION_STATUS_ABORTED);
 				if (prev != NULL) { 
@@ -350,7 +349,6 @@ DtmAdjustOldestXid(TransactionId xid)
 					hash_search(xid2state, &prev->xid, HASH_REMOVE, NULL);
 				}
 			}
-			#endif
         }
         if (prev != NULL) { 
             dtm->transListHead = prev;
@@ -477,8 +475,7 @@ DtmEndTransaction(DtmCurrentTrans* x)
 	x->gtid.xid = InvalidTransactionId;
 }
 
-static void 
-SendNotificationMessage(DtmTransState* ts)
+void MMSendNotificationMessage(DtmTransState* ts)
 {
 	DtmTransState* votingList;
 
@@ -551,7 +548,7 @@ DtmFinishTransaction(TransactionId xid, int nsubxids, TransactionId *subxids, Xi
 			ts->status = status;
 		}        
 		if (dtmTx.isReplicated) {
-			SendNotificationMessage(ts);
+			MMSendNotificationMessage(ts);
 		}
 	}
 	LWLockRelease(dtm->hashLock);
@@ -1026,11 +1023,11 @@ MMVoteForTransaction(DtmTransState* ts)
 		Assert(ts->nVotes == dtm->nNodes);
 		
 		/* ... and then send notifications to replicas */
-		SendNotificationMessage(ts);
+		MMSendNotificationMessage(ts);
 	} else {
 		/* I am replica: first notify coordinator... */
 		ts->nVotes = dtm->nNodes-1; /* I just need one confirmation from coordinator */
-		SendNotificationMessage(ts);
+		MMSendNotificationMessage(ts);
 		/* ... and wait response from it */
 		DTM_TRACE("Node %d waiting latch...\n", MMNodeId);
 		WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);

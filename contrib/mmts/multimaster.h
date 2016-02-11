@@ -73,6 +73,7 @@ extern void  MMReceiverStarted(void);
 extern void  MMExecute(void* work, int size);
 extern void  MMExecutor(int id, void* work, size_t size);
 extern HTAB* MMCreateHash(void);
+extern void  MMSendNotificationMessage(DtmTransState* ts);
 extern DtmState* MMGetState(void);
 
 #endif
