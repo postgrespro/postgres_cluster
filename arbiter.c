@@ -76,11 +76,20 @@
 #define MAX_ROUTES           16
 #define BUFFER_SIZE          1024
 
+typedef enum
+{ 
+	MSG_PREPARE,
+	MSG_COMMIT,
+	MSG_ABORT
+} MessageCode;
+
+
 typedef struct
 {
+	MessageCode   code; /* Message code: MSG_PREPARE, MSG_COMMIT, MSG_ABORT
+    int           node; /* Sender node ID */
 	TransactionId dxid; /* Transaction ID at destination node */
 	TransactionId sxid; /* Transaction IO at sender node */  
-    int           node; /* Sender node ID */
 	csn_t         csn;  /* local CSN in case of sending data from replica to master, global CSN master->replica */
 } DtmCommitMessage;
 
@@ -100,7 +109,7 @@ static BackgroundWorker DtmSender = {
 	"mm-sender",
 	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
 	BgWorkerStart_ConsistentState,
-	1, /* restrart in one second (is it possible to restort immediately?) */
+	1, /* restart in one second (is it possible to restart immediately?) */
 	DtmTransSender
 };
 
@@ -108,7 +117,7 @@ static BackgroundWorker DtmRecevier = {
 	"mm-receiver",
 	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
 	BgWorkerStart_ConsistentState,
-	1, /* restrart in one second (is it possible to restort immediately?) */
+	1, /* restart in one second (is it possible to restart immediately?) */
 	DtmTransReceiver
 };
 
@@ -300,6 +309,25 @@ static int readSocket(int sd, void* buf, int buf_size)
 	return rc;
 }
 
+static bool IsCoordinator(DtmTransState* ts)
+{
+	return ts->dsid.node == MMNodeId;
+}
+
+static void DtmAppendBuffer(MessageCode code, DtmBuffer* txBuffer, TransactionId xid, int node, DtmTransState* ts)
+{
+	DtmBuffer* buf = &txBuffer[node];
+	if (buf->used == BUFFER_SIZE) { 
+		writeSocket(sockets[node], buf->data, buf->used*sizeof(DtmCommitMessage));
+		buf->used = 0;
+	}
+	buf->data[buf->used].code = code;
+	buf->data[buf->used].dxid = xid;
+	buf->data[buf->used].sxid = ts->xid;
+	buf->data[buf->used].csn = ts->status == TRANSACTION_STATUS_ABORTED ? INVALID_CSN : ts->csn;
+	buf->data[buf->used].node = MMNodeId;
+	buf->used += 1;
+}
 
 static void DtmTransSender(Datum arg)
 {
@@ -327,38 +355,18 @@ static void DtmTransSender(Datum arg)
 		SpinLockRelease(&ds->votingSpinlock);
 
 		for (; ts != NULL; ts = ts->nextVoting) {
-			if (ts->gtid.node == MMNodeId) { 
-				/* Coordinator is broadcasting confirmations to replicas */
+			if (IsCoordinator(ts)) { 				
+				/* Coordinator is broadcasting PREPARE message to replicas */
 				for (i = 0; i < nNodes; i++) { 
 					if (TransactionIdIsValid(ts->xids[i])) { 
-						if (txBuffer[i].used == BUFFER_SIZE) { 
-							writeSocket(sockets[i], txBuffer[i].data, txBuffer[i].used*sizeof(DtmCommitMessage));
-							txBuffer[i].used = 0;
-						}
-						DTM_TRACE("Send notification %ld to replica %d from coordinator %d for transaction %d (local transaction %d)\n", 
-								  ts->csn, i+1, MMNodeId, ts->xid, ts->xids[i]);
-
-						txBuffer[i].data[txBuffer[i].used].dxid = ts->xids[i];
-						txBuffer[i].data[txBuffer[i].used].sxid = ts->xid;
-						txBuffer[i].data[txBuffer[i].used].csn = ts->csn;
-						txBuffer[i].data[txBuffer[i].used].node = MMNodeId;
-						txBuffer[i].used += 1;
+						DtmAppendBuffer(CMD_PREPARE, txBuffer, ts->xids[i], i, ts);
 					}
 				}
 			} else { 
-				/* Replica is notifying master */
-				i = ts->gtid.node-1;
-				if (txBuffer[i].used == BUFFER_SIZE) { 
-					writeSocket(sockets[i], txBuffer[i].data, txBuffer[i].used*sizeof(DtmCommitMessage));
-					txBuffer[i].used = 0;
-				}
+				/* Replica is notifying master that it is ready to PREPARE */
 				DTM_TRACE("Send notification %ld to coordinator %d from node %d for transaction %d (local transaction %d)\n", 
 						  ts->csn, ts->gtid.node, MMNodeId, ts->gtid.xid, ts->xid);
-				txBuffer[i].data[txBuffer[i].used].dxid = ts->gtid.xid;
-				txBuffer[i].data[txBuffer[i].used].sxid = ts->xid;
-				txBuffer[i].data[txBuffer[i].used].node = MMNodeId;
-				txBuffer[i].data[txBuffer[i].used].csn = ts->csn;
-				txBuffer[i].used += 1;
+				DtmAppendBuffer(CMD_PREPARE, txBuffer, ts->gtid.xid, ts->gtid.node-1, ts);
 			}
 		}
 		for (i = 0; i < nNodes; i++) { 
@@ -431,9 +439,33 @@ static void DtmTransReceiver(Datum arg)
 					DtmCommitMessage* msg = &rxBuffer[i].data[j];
 					DtmTransState* ts = (DtmTransState*)hash_search(xid2state, &msg->dxid, HASH_FIND, NULL);
 					Assert(ts != NULL);
-					if (msg->csn > ts->csn) { 
-						ts->csn = msg->csn;
-					}
+					switch (msg->code) { 
+					case CMD_PREPARE:
+						if (IsCoordinator(ts)) { 
+							switch (msg->command) { 
+							case CMD_PREPARE:
+								
+							if (ts->state == TRANSACTION_STATUS_IN_PROGRESS:
+								/* transaction is in-prepared stage (in-doubt): calculate max CSN */
+								if (msg->csn > ts->csn) { 
+									ts->csn = msg->csn;
+								}
+								Assert(ts->nVotes < dtm->nNodes);
+								if (++ts->nVotes == dtm->nNodes) { /* receive responses from all nodes */
+									ts->status = TRANSACTION_STATUS_COMMIT;
+
+								if (ts->state == TRANSACTION_STATUS_UNKNOWN) { 
+									/* All nodes are ready to prepare: switch transaction to in-doubt state */
+									ts->csn = dtm_get_csn();	
+									ts->status = TRANSACTION_STATUS_IN_PROGRESS; 
+									/* and broadcast PREPARE message */									
+									MMSendNotificationMessage(ts);
+								}  else if (ts->state == CMD_ABORT) {
+									ts->status = TRANSACTION_STATUS_ABORTED;
+									
+								}  else {
+									Assert(ts->state == TRANSACTION_STATUS_IN_PROGRESS);
+									
 					Assert((unsigned)(msg->node-1) <= (unsigned)nNodes);
 					ts->xids[msg->node-1] = msg->sxid;
 					DTM_TRACE("Receive response %ld for transaction %d votes %d from node %d (transaction %d)\n", 
