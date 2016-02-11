@@ -179,7 +179,7 @@ void* writer(void* arg)
 void initializeDatabase()
 {
 	connection conn(cfg.connections[0]);
-
+#if 0
 	printf("creating extension\n");
 	{
 		nontransaction txn(conn);
@@ -197,7 +197,7 @@ void initializeDatabase()
 		txn.commit();
 	}
 	printf("table t created\n");
-
+#endif
 	printf("inserting stuff into t\n");
 	{
 		work txn(conn);
