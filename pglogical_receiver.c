@@ -216,7 +216,7 @@ pglogical_receiver_main(Datum main_arg)
 	BackgroundWorkerUnblockSignals();
 
 	/* Connect to a database */
-	BackgroundWorkerInitializeConnection(MMDatabaseName, NULL);
+	BackgroundWorkerInitializeConnection(MtmDatabaseName, NULL);
 
 	/* Establish connection to remote server */
 	conn = PQconnectdb(args->receiver_conn_string);
@@ -260,7 +260,7 @@ pglogical_receiver_main(Datum main_arg)
 	PQclear(res);
 	resetPQExpBuffer(query);
 
-    MMReceiverStarted();
+    MtmReceiverStarted();
     ByteBufferAlloc(&buf);
 
 	while (!got_sigterm)
@@ -392,7 +392,7 @@ pglogical_receiver_main(Datum main_arg)
                 ByteBufferAppend(&buf, stmt, rc - hdr_len);
                 if (stmt[0] == 'C') /* commit */
                 { 
-                    MMExecute(buf.data, buf.used);
+                    MtmExecute(buf.data, buf.used);
                     ByteBufferReset(&buf);
                 }
 #else
@@ -511,7 +511,7 @@ pglogical_receiver_main(Datum main_arg)
 }
 
 
-int MMStartReceivers(char* conns, int node_id)
+int MtmStartReceivers(char* conns, int node_id)
 {
     int i = 0;
 	BackgroundWorker worker;
@@ -530,7 +530,7 @@ int MMStartReceivers(char* conns, int node_id)
         }
         if (++i != node_id) {
             ReceiverArgs* ctx = (ReceiverArgs*)malloc(sizeof(ReceiverArgs));
-            if (MMDatabaseName == NULL) {
+            if (MtmDatabaseName == NULL) {
                 char* dbname = strstr(conn_str, "dbname=");
                 char* eon;
                 int len;
@@ -538,9 +538,9 @@ int MMStartReceivers(char* conns, int node_id)
                 dbname += 7;
                 eon = strchr(dbname, ' ');
                 len = eon - dbname;
-                MMDatabaseName = (char*)malloc(len + 1);
-                memcpy(MMDatabaseName, dbname, len);
-                MMDatabaseName[len] = '\0';
+                MtmDatabaseName = (char*)malloc(len + 1);
+                memcpy(MtmDatabaseName, dbname, len);
+                MtmDatabaseName[len] = '\0';
             }
             ctx->receiver_conn_string = psprintf("replication=database %.*s", (int)(p - conn_str), conn_str);
             sprintf(ctx->receiver_slot, "mm_slot_%d", node_id);

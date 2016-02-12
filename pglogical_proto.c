@@ -105,7 +105,7 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 {
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
 	csn_t csn = MtmTransactionSnapshot(txn->xid);
-	fprintf(stderr, "pglogical_write_begin %d CSN=%ld\n", txn->xid, csn);
+	MTM_TRACE("pglogical_write_begin %d CSN=%ld\n", txn->xid, csn);
     if (csn == INVALID_CSN) {
         mm->isLocal = true;
     } else { 

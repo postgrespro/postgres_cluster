@@ -184,7 +184,6 @@ void initializeDatabase()
 		nontransaction txn(conn);
 		exec(txn, "drop extension if exists multimaster");
 		exec(txn, "create extension multimaster");
-		txn.commit();
 	}
 	printf("extension created\n");
 
@@ -193,7 +192,6 @@ void initializeDatabase()
 		nontransaction txn(conn);
 		exec(txn, "drop table if exists t");
 		exec(txn, "create table t(u int primary key, v int)");
-		txn.commit();
 	}
 	printf("table t created\n");
 	printf("inserting stuff into t\n");
