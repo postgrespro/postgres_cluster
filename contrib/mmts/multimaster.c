@@ -507,7 +507,7 @@ void MtmSendNotificationMessage(MtmTransState* ts)
 	}
 }
 
-static XidStatus 
+static bool
 MtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
 {
 	MtmTransState* ts;
@@ -523,7 +523,7 @@ MtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
 
 	MtmVoteForTransaction(ts); 
 
-	return ts->status;
+	return ts->status == TRANSACTION_STATUS_COMMITTED;
 }
 	
 static void 
@@ -558,7 +558,7 @@ MtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids,
 		}
 		else
 		{
-			if (MtmCommitTransaction(xid, nsubxids, subxids) == TRANSACTION_STATUS_COMMITTED) { 
+			if (MtmCommitTransaction(xid, nsubxids, subxids)) {
 				MTM_TRACE("Commit transaction %d\n", xid);
 			} else { 
 				PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, TRANSACTION_STATUS_ABORTED, lsn);
