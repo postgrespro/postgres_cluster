@@ -740,8 +740,9 @@ static void DtmInitialize()
 	dtm = ShmemInitStruct("dtm", sizeof(DtmState), &found);
 	if (!found)
 	{
-		dtm->hashLock = LWLockAssign();
-		dtm->xidLock = LWLockAssign();
+		LWLockPadded* locks = GetNamedLWLockTranche("multimaster");
+		dtm->hashLock = (LWLock*)&locks[0];
+		dtm->xidLock = (LWLock*)&locks[1];
 		dtm->nReservedXids = 0;
 		dtm->minXid = InvalidTransactionId;
         dtm->nNodes = MMNodes;
@@ -978,7 +979,7 @@ _PG_init(void)
 	 * resources in dtm_shmem_startup().
 	 */
 	RequestAddinShmemSpace(DTM_SHMEM_SIZE + MMQueueSize);
-	RequestAddinLWLocks(2);
+	RequestNamedLWLockTranche("multimaster", 2);
 
     MMNodes = MMStartReceivers(MMConnStrs, MMNodeId);
     if (MMNodes < 2) { 

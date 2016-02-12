@@ -108,11 +108,11 @@ decoder_raw_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
     Assert(lastXid != txn->xid);
     lastXid = txn->xid;
     if (MMIsLocalTransaction(txn->xid)) {
-        XTM_INFO("Skip local transaction %u\n", txn->xid);
+        MTM_INFO("Skip local transaction %u\n", txn->xid);
         data->isLocal = true;
     } else { 
         OutputPluginPrepareWrite(ctx, true);
-        XTM_INFO("Send transaction %u to replica\n", txn->xid);
+        MTM_INFO("Send transaction %u to replica\n", txn->xid);
         appendStringInfo(ctx->out, "BEGIN %u;", txn->xid);
         OutputPluginWrite(ctx, true);
         data->isLocal = false;
@@ -126,12 +126,12 @@ decoder_raw_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	DecoderRawData *data = ctx->output_plugin_private;
     if (!data->isLocal) { 
-        XTM_INFO("Send commit of transaction %u to replica\n", txn->xid);
+        MTM_INFO("Send commit of transaction %u to replica\n", txn->xid);
         OutputPluginPrepareWrite(ctx, true);
         appendStringInfoString(ctx->out, "COMMIT;");
         OutputPluginWrite(ctx, true);
     } else { 
-        XTM_INFO("Skip commit of transaction %u\n", txn->xid);
+        MTM_INFO("Skip commit of transaction %u\n", txn->xid);
     }
 }
 
@@ -483,10 +483,10 @@ decoder_raw_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 	data = ctx->output_plugin_private;
     if (data->isLocal) { 
-        XTM_INFO("Skip action %d in transaction %u\n", change->action, txn->xid);
+        MTM_INFO("Skip action %d in transaction %u\n", change->action, txn->xid);
         return;
     }
-    XTM_INFO("Send action %d in transaction %u to replica\n", change->action, txn->xid);
+    MTM_INFO("Send action %d in transaction %u to replica\n", change->action, txn->xid);
 
  	/* Avoid leaking memory by using and resetting our own context */
 	old = MemoryContextSwitchTo(data->context);

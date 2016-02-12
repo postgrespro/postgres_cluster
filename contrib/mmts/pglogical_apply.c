@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include "postgres.h"
 
 #include "funcapi.h"
@@ -333,7 +334,8 @@ process_remote_begin(StringInfo s)
     SetCurrentStatementStartTimestamp();     
 	StartTransactionCommand();
     MtmJoinTransaction(&gtid, snapshot);
-	fprintf(stderr, "REMOTE begin node=%d xid=%d snapshot=%ld\n", gtid.node, gtid.xid, snapshot);
+
+	MTM_TRACE("REMOTE begin node=%d xid=%d snapshot=%ld\n", gtid.node, gtid.xid, snapshot);
 }
 
 static void
@@ -815,6 +817,7 @@ void MtmExecutor(int id, void* work, size_t size)
     PG_CATCH();
     {
         FlushErrorState();
+		MTM_TRACE("%d: REMOTE abort transaction %d\n", getpid(), GetCurrentTransactionId());
         AbortCurrentTransaction();
     }
     PG_END_TRY();

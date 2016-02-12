@@ -194,7 +194,7 @@ static char const* MtmGetName(void)
 Snapshot MtmGetSnapshot(Snapshot snapshot)
 {
     snapshot = PgGetSnapshotData(snapshot);
-    RecentGlobalDataXmin = RecentGlobalXmin = MtmAdjustOldestXid(RecentGlobalDataXmin);
+    RecentGlobalDataXmin = RecentGlobalXmin = dtm->oldestXid;//MtmAdjustOldestXid(RecentGlobalDataXmin);
     return snapshot;
 }
 
@@ -499,10 +499,8 @@ void MtmSendNotificationMessage(MtmTransState* ts)
 	ts->nextVoting = votingList;
 	dtm->votingTransactions = ts;
 	SpinLockRelease(&dtm->votingSpinlock);
-	MTM_TRACE("Register commit message\n");
 	if (votingList == NULL) { 
 		/* singal semaphore only once for the whole list */
-		MTM_TRACE("Signal semaphore\n");
 		PGSemaphoreUnlock(&dtm->votingSemaphore);
 	}
 }
@@ -519,9 +517,11 @@ MtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
 	MtmTransactionListAppend(ts);
 	MtmAddSubtransactions(ts, subxids, nsubxids);
 
+	MtmVoteForTransaction(ts); 
+
 	LWLockRelease(dtm->hashLock);
 
-	MtmVoteForTransaction(ts); 
+	MTM_TRACE("%d: MtmCommitTransaction status=%d\n", getpid(), ts->status);
 
 	return ts->status == TRANSACTION_STATUS_COMMITTED;
 }
@@ -530,15 +530,32 @@ static void
 MtmFinishTransaction(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status)
 {
 	MtmTransState* ts;
+	MtmCurrentTrans* x = &dtmTx;
+	bool found;
 
 	LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
-	ts = hash_search(xid2state, &xid, HASH_FIND, NULL);
-	if (ts != NULL) { 
+	ts = hash_search(xid2state, &xid, HASH_ENTER, &found);
+	if (!found) { 
 		ts->status = status;
-		MtmAdjustSubtransactions(ts);
-		if (dtmTx.isReplicated) {
-			MtmSendNotificationMessage(ts);
+		ts->csn = MtmAssignCSN();	
+		ts->procno = MyProc->pgprocno;
+		ts->snapshot = INVALID_CSN;
+		if (!TransactionIdIsValid(x->gtid.xid)) 
+		{
+			ts->gtid.xid = x->xid;
+			ts->gtid.node = MtmNodeId;
+		} else {
+			ts->gtid = x->gtid;
 		}
+		MtmTransactionListAppend(ts);
+		MtmAddSubtransactions(ts, subxids, nsubxids);
+	}
+	ts->status = status;
+	MtmAdjustSubtransactions(ts);
+
+	if (dtmTx.isReplicated) {
+		ts->gtid = x->gtid;
+		MtmSendNotificationMessage(ts);
 	}
 	LWLockRelease(dtm->hashLock);
 }	
@@ -548,13 +565,13 @@ MtmFinishTransaction(TransactionId xid, int nsubxids, TransactionId *subxids, Xi
 static void 
 MtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
-	MTM_TRACE("%d: MtmSetTransactionStatus %u = %u\n", getpid(), xid, status);
+	MTM_TRACE("%d: MtmSetTransactionStatus %u(%u) = %u, isDistributed=%d\n", getpid(), xid, dtmTx.xid, status, dtmTx.isDistributed);
 	if (xid == dtmTx.xid && dtmTx.isDistributed)
 	{
 		if (status == TRANSACTION_STATUS_ABORTED || !dtmTx.containsDML)
 		{
 			MtmFinishTransaction(xid, nsubxids, subxids, status);	
-			MTM_TRACE("Abort transaction %d\n", xid);
+			MTM_TRACE("Abort transaction %d, status=%d, DML=%d\n", xid, status, dtmTx.containsDML);
 		}
 		else
 		{
@@ -1006,10 +1023,14 @@ MtmVoteForTransaction(MtmTransState* ts)
 		MtmSendNotificationMessage(ts); /* send READY message to coordinator */
 	}
 
-	MTM_TRACE("Node %d waiting latch...\n", MtmNodeId);
-	WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
-	ResetLatch(&MyProc->procLatch);			
-	MTM_TRACE("Node %d receives response...\n", MtmNodeId);
+	MTM_TRACE("%d: Node %d waiting latch...\n", getpid(), MtmNodeId);
+	while (ts->status != TRANSACTION_STATUS_COMMITTED && ts->status != TRANSACTION_STATUS_ABORTED) {
+		LWLockRelease(dtm->hashLock);
+		WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
+		ResetLatch(&MyProc->procLatch);			
+		LWLockAcquire(dtm->hashLock, LW_SHARED);
+	}
+	MTM_TRACE("%d: Node %d receives response...\n", getpid(), MtmNodeId);
 }
 
 HTAB* MtmCreateHash(void)

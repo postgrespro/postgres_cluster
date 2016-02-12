@@ -334,7 +334,7 @@ static void MtmAppendBuffer(MessageCode code, MtmBuffer* txBuffer, TransactionId
 		MtmWriteSocket(sockets[node], buf->data, buf->used*sizeof(MtmCommitMessage));
 		buf->used = 0;
 	}
-	DTM_TRACE("Send message %s CSN=%ld to node %d from node %d for global transaction %d/local transaction %d\n", 
+	MTM_TRACE("Send message %s CSN=%ld to node %d from node %d for global transaction %d/local transaction %d\n", 
 			  messageText[code], ts->csn, node, MtmNodeId, ts->gtid.xid, ts->xid);
 	buf->data[buf->used].code = code;
 	buf->data[buf->used].dxid = xid;
