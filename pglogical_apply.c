@@ -332,7 +332,7 @@ process_remote_begin(StringInfo s)
 	snapshot = pq_getmsgint64(s);    
     SetCurrentStatementStartTimestamp();     
 	StartTransactionCommand();
-    MMJoinTransaction(&gtid, snapshot);
+    MtmJoinTransaction(&gtid, snapshot);
 	fprintf(stderr, "REMOTE begin node=%d xid=%d snapshot=%ld\n", gtid.node, gtid.xid, snapshot);
 }
 
@@ -759,7 +759,7 @@ process_remote_delete(StringInfo s, Relation rel)
 
 static MemoryContext ApplyContext;
 
-void MMExecutor(int id, void* work, size_t size)
+void MtmExecutor(int id, void* work, size_t size)
 {
     StringInfoData s;
     Relation rel = NULL;

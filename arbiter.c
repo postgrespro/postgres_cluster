@@ -63,7 +63,7 @@
 #endif
 #endif
 
-#ifdef USE_EPOLL
+#if USE_EPOLL
 #include <sys/epoll.h>
 #else
 #include <sys/select.h>
@@ -78,56 +78,73 @@
 
 typedef enum
 { 
+	MSG_READY,
 	MSG_PREPARE,
 	MSG_COMMIT,
-	MSG_ABORT
+	MSG_ABORT,
+	MSG_PREPARED,
+	MSG_COMMITTED,
+	MSG_ABORTED
 } MessageCode;
 
 
 typedef struct
 {
-	MessageCode   code; /* Message code: MSG_PREPARE, MSG_COMMIT, MSG_ABORT
+	MessageCode   code; /* Message code: MSG_READY, MSG_PREPARE, MSG_COMMIT, MSG_ABORT */
     int           node; /* Sender node ID */
 	TransactionId dxid; /* Transaction ID at destination node */
 	TransactionId sxid; /* Transaction IO at sender node */  
 	csn_t         csn;  /* local CSN in case of sending data from replica to master, global CSN master->replica */
-} DtmCommitMessage;
+} MtmCommitMessage;
 
 typedef struct 
 {
 	int used;
-	DtmCommitMessage data[BUFFER_SIZE];
-} DtmBuffer;
+	MtmCommitMessage data[BUFFER_SIZE];
+} MtmBuffer;
 
 static int* sockets;
-static DtmState* ds;
+static MtmState* ds;
 
-static void DtmTransSender(Datum arg);
-static void DtmTransReceiver(Datum arg);
+static void MtmTransSender(Datum arg);
+static void MtmTransReceiver(Datum arg);
 
-static BackgroundWorker DtmSender = {
+static char const* const messageText[] = 
+{
+	"READY",
+	"PREPARE",
+	"COMMIT",
+	"ABORT",
+	"PREPARED",
+	"COMMITTED",
+	"ABORTED"
+};
+
+
+static BackgroundWorker MtmSender = {
 	"mm-sender",
 	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
 	BgWorkerStart_ConsistentState,
 	1, /* restart in one second (is it possible to restart immediately?) */
-	DtmTransSender
+	MtmTransSender
 };
 
-static BackgroundWorker DtmRecevier = {
+static BackgroundWorker MtmRecevier = {
 	"mm-receiver",
 	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
 	BgWorkerStart_ConsistentState,
 	1, /* restart in one second (is it possible to restart immediately?) */
-	DtmTransReceiver
+	MtmTransReceiver
 };
 
-void MMArbiterInitialize(void)
+void MtmArbiterInitialize(void)
 {
-	RegisterBackgroundWorker(&DtmSender);
-	RegisterBackgroundWorker(&DtmRecevier);
+	RegisterBackgroundWorker(&MtmSender);
+	RegisterBackgroundWorker(&MtmRecevier);
 }
 
-static int resolve_host_by_name(const char *hostname, unsigned* addrs, unsigned* n_addrs)
+static int 
+MtmResolveHostByName(const char *hostname, unsigned* addrs, unsigned* n_addrs)
 {
     struct sockaddr_in sin;
     struct hostent* hp;
@@ -158,7 +175,7 @@ static int    max_fd;
 static fd_set inset;
 #endif
 
-static void registerSocket(int fd, int i)
+static void MtmRegisterSocket(int fd, int i)
 {
 #if USE_EPOLL
     struct epoll_event ev;
@@ -177,7 +194,7 @@ static void registerSocket(int fd, int i)
 
 
 
-static int connectSocket(char const* host, int port)
+static int MtmConnectSocket(char const* host, int port)
 {
     struct sockaddr_in sock_inet;
     unsigned addrs[MAX_ROUTES];
@@ -188,7 +205,7 @@ static int connectSocket(char const* host, int port)
     sock_inet.sin_family = AF_INET;
 	sock_inet.sin_port = htons(port);
 
-	if (!resolve_host_by_name(host, addrs, &n_addrs)) {
+	if (!MtmResolveHostByName(host, addrs, &n_addrs)) {
 		elog(ERROR, "Failed to resolve host '%s' by name", host);
 	}
 	sd = socket(AF_INET, SOCK_STREAM, 0);
@@ -223,11 +240,11 @@ static int connectSocket(char const* host, int port)
     }
 }
 
-static void openConnections()
+static void MtmOpenConnections()
 {
-	int nNodes = MMNodes;
+	int nNodes = MtmNodes;
 	int i;
-	char* connStr = pstrdup(MMConnStrs);
+	char* connStr = pstrdup(MtmConnStrs);
 
 	sockets = (int*)palloc(sizeof(int)*nNodes);
 
@@ -235,7 +252,7 @@ static void openConnections()
 		char* host = strstr(connStr, "host=");
 		char* end;
 		if (host == NULL) {
-			elog(ERROR, "Invalid connection string: '%s'", MMConnStrs);
+			elog(ERROR, "Invalid connection string: '%s'", MtmConnStrs);
 		}
 		host += 5;
 		for (end = host; *end != ' ' && *end != ',' && *end != '\0'; end++);
@@ -245,23 +262,23 @@ static void openConnections()
 		} else { 
 			connStr = end;
 		}
-		sockets[i] = i+1 != MMNodeId ? connectSocket(host, MMArbiterPort + i + 1) : -1;
+		sockets[i] = i+1 != MtmNodeId ? MtmConnectSocket(host, MtmArbiterPort + i + 1) : -1;
 	}
 }
 
-static void acceptConnections()
+static void MtmAcceptConnections()
 {
 	struct sockaddr_in sock_inet;
 	int i;
 	int sd;
     int on = 1;
-	int nNodes = MMNodes-1;
+	int nNodes = MtmNodes-1;
 
 	sockets = (int*)palloc(sizeof(int)*nNodes);
 
 	sock_inet.sin_family = AF_INET;
 	sock_inet.sin_addr.s_addr = htonl(INADDR_ANY);
-	sock_inet.sin_port = htons(MMArbiterPort + MMNodeId);
+	sock_inet.sin_port = htons(MtmArbiterPort + MtmNodeId);
 
     sd = socket(sock_inet.sin_family, SOCK_STREAM, 0);
 	if (sd < 0) {
@@ -272,7 +289,7 @@ static void acceptConnections()
     if (bind(sd, (struct sockaddr*)&sock_inet, sizeof(sock_inet)) < 0) {
 		elog(ERROR, "Failed to bind socket: %d", errno);
 	}	
-    if (listen(sd, MMNodes-1) < 0) {
+    if (listen(sd, MtmNodes-1) < 0) {
 		elog(ERROR, "Failed to listen socket: %d", errno);
 	}	
 
@@ -281,13 +298,13 @@ static void acceptConnections()
 		if (fd < 0) {
 			elog(ERROR, "Failed to accept socket: %d", errno);
 		}	
-		registerSocket(fd, i);
+		MtmRegisterSocket(fd, i);
 		sockets[i] = fd;
 	}
 	close(sd);
 }
 
-static void writeSocket(int sd, void const* buf, int size)
+static void MtmWriteSocket(int sd, void const* buf, int size)
 {
     char* src = (char*)buf;
     while (size != 0) {
@@ -300,7 +317,7 @@ static void writeSocket(int sd, void const* buf, int size)
     }
 }
 
-static int readSocket(int sd, void* buf, int buf_size)
+static int MtmReadSocket(int sd, void* buf, int buf_size)
 {
 	int rc = recv(sd, buf, buf_size, 0);
 	if (rc <= 0) { 
@@ -309,43 +326,55 @@ static int readSocket(int sd, void* buf, int buf_size)
 	return rc;
 }
 
-static bool IsCoordinator(DtmTransState* ts)
-{
-	return ts->dsid.node == MMNodeId;
-}
 
-static void DtmAppendBuffer(MessageCode code, DtmBuffer* txBuffer, TransactionId xid, int node, DtmTransState* ts)
+static void MtmAppendBuffer(MessageCode code, MtmBuffer* txBuffer, TransactionId xid, int node, MtmTransState* ts)
 {
-	DtmBuffer* buf = &txBuffer[node];
+	MtmBuffer* buf = &txBuffer[node];
 	if (buf->used == BUFFER_SIZE) { 
-		writeSocket(sockets[node], buf->data, buf->used*sizeof(DtmCommitMessage));
+		MtmWriteSocket(sockets[node], buf->data, buf->used*sizeof(MtmCommitMessage));
 		buf->used = 0;
 	}
+	DTM_TRACE("Send message %s CSN=%ld to node %d from node %d for global transaction %d/local transaction %d\n", 
+			  messageText[code], ts->csn, node, MtmNodeId, ts->gtid.xid, ts->xid);
 	buf->data[buf->used].code = code;
 	buf->data[buf->used].dxid = xid;
 	buf->data[buf->used].sxid = ts->xid;
-	buf->data[buf->used].csn = ts->status == TRANSACTION_STATUS_ABORTED ? INVALID_CSN : ts->csn;
-	buf->data[buf->used].node = MMNodeId;
+	buf->data[buf->used].csn =  ts->csn;
+	buf->data[buf->used].node = MtmNodeId;
 	buf->used += 1;
 }
 
-static void DtmTransSender(Datum arg)
+static void MtmBroadcastMessage(MessageCode code, MtmBuffer* txBuffer, MtmTransState* ts)
 {
-	int nNodes = MMNodes;
 	int i;
-	DtmBuffer* txBuffer = (DtmBuffer*)palloc(sizeof(DtmBuffer)*nNodes);
+	int n = 1;
+	for (i = 0; i < MtmNodes; i++)
+	{
+		if (TransactionIdIsValid(ts->xids[i])) { 
+			MtmAppendBuffer(code, txBuffer, ts->xids[i], i, ts);
+			n += 1;
+		}
+	}
+	Assert(n == ds->nNodes);
+}
+
+static void MtmTransSender(Datum arg)
+{
+	int nNodes = MtmNodes;
+	int i;
+	MtmBuffer* txBuffer = (MtmBuffer*)palloc(sizeof(MtmBuffer)*nNodes);
 	
 	sockets = (int*)palloc(sizeof(int)*nNodes);
-	ds = MMGetState();
+	ds = MtmGetState();
 
-	openConnections();
+	MtmOpenConnections();
 
 	for (i = 0; i < nNodes; i++) { 
 		txBuffer[i].used = 0;
 	}
 
 	while (true) {
-		DtmTransState* ts;		
+		MtmTransState* ts;		
 		PGSemaphoreLock(&ds->votingSemaphore);
 		CHECK_FOR_INTERRUPTS();
 
@@ -355,34 +384,64 @@ static void DtmTransSender(Datum arg)
 		SpinLockRelease(&ds->votingSpinlock);
 
 		for (; ts != NULL; ts = ts->nextVoting) {
-			if (IsCoordinator(ts)) { 				
-				/* Coordinator is broadcasting PREPARE message to replicas */
-				for (i = 0; i < nNodes; i++) { 
-					if (TransactionIdIsValid(ts->xids[i])) { 
-						DtmAppendBuffer(CMD_PREPARE, txBuffer, ts->xids[i], i, ts);
-					}
+			if (MtmIsCoordinator(ts)) {
+				/* Coordinator is broadcasting message to replicas */
+				MessageCode code = MSG_ABORT;
+				switch (ts->status) { 
+				  case TRANSACTION_STATUS_IN_PROGRESS:
+					code = MSG_PREPARE;
+					break;
+				  case TRANSACTION_STATUS_COMMITTED:
+					code = MSG_COMMIT;
+					break;
+				  case TRANSACTION_STATUS_ABORTED:
+					code = MSG_ABORT;
+					break;
+				  default:
+					Assert(false);
 				}
+				MtmBroadcastMessage(code, txBuffer, ts);
 			} else { 
-				/* Replica is notifying master that it is ready to PREPARE */
-				DTM_TRACE("Send notification %ld to coordinator %d from node %d for transaction %d (local transaction %d)\n", 
-						  ts->csn, ts->gtid.node, MMNodeId, ts->gtid.xid, ts->xid);
-				DtmAppendBuffer(CMD_PREPARE, txBuffer, ts->gtid.xid, ts->gtid.node-1, ts);
+				/* Replica is notifying master about it's state */
+				MessageCode code = MSG_ABORT;
+				switch (ts->status) { 
+				  case TRANSACTION_STATUS_UNKNOWN:
+					code = MSG_READY;
+					break;
+				  case TRANSACTION_STATUS_IN_PROGRESS:
+					code = MSG_PREPARED;
+					break;
+				  case TRANSACTION_STATUS_COMMITTED:
+					code = MSG_COMMITTED;
+					break;
+				  case TRANSACTION_STATUS_ABORTED:
+					code = MSG_ABORTED;
+					break;
+				  default:
+					Assert(false);
+				}
+				MtmAppendBuffer(code, txBuffer, ts->gtid.xid, ts->gtid.node-1, ts);
 			}
 		}
 		for (i = 0; i < nNodes; i++) { 
 			if (txBuffer[i].used != 0) { 
-				writeSocket(sockets[i], txBuffer[i].data, txBuffer[i].used*sizeof(DtmCommitMessage));
+				MtmWriteSocket(sockets[i], txBuffer[i].data, txBuffer[i].used*sizeof(MtmCommitMessage));
 				txBuffer[i].used = 0;
 			}
 		}		
 	}
 }
 
-static void DtmTransReceiver(Datum arg)
+static void MtmWakeUpBackend(MtmTransState* ts)
 {
-	int nNodes = MMNodes-1;
+	SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
+}
+
+static void MtmTransReceiver(Datum arg)
+{
+	int nNodes = MtmNodes-1;
 	int i, j, rc;
-	DtmBuffer* rxBuffer = (DtmBuffer*)palloc(sizeof(DtmBuffer)*nNodes);
+	MtmBuffer* rxBuffer = (MtmBuffer*)palloc(sizeof(MtmBuffer)*nNodes);
 	HTAB* xid2state;
 
 #if USE_EPOLL
@@ -393,10 +452,10 @@ static void DtmTransReceiver(Datum arg)
     max_fd = 0;
 #endif
 	
-	ds = MMGetState();
+	ds = MtmGetState();
 
-	acceptConnections();
-	xid2state = MMCreateHash();
+	MtmAcceptConnections();
+	xid2state = MtmCreateHash();
 
 	for (i = 0; i < nNodes; i++) { 
 		rxBuffer[i].used = 0;
@@ -430,56 +489,105 @@ static void DtmTransReceiver(Datum arg)
 #endif
 			{
 				int nResponses;
-				rxBuffer[i].used += readSocket(sockets[i], (char*)rxBuffer[i].data + rxBuffer[i].used, BUFFER_SIZE-rxBuffer[i].used);
-				nResponses = rxBuffer[i].used/sizeof(DtmCommitMessage);
+				rxBuffer[i].used += MtmReadSocket(sockets[i], (char*)rxBuffer[i].data + rxBuffer[i].used, BUFFER_SIZE-rxBuffer[i].used);
+				nResponses = rxBuffer[i].used/sizeof(MtmCommitMessage);
 
-				LWLockAcquire(ds->hashLock, LW_SHARED);						
+				LWLockAcquire(ds->hashLock, LW_EXCLUSIVE);						
 
 				for (j = 0; j < nResponses; j++) { 
-					DtmCommitMessage* msg = &rxBuffer[i].data[j];
-					DtmTransState* ts = (DtmTransState*)hash_search(xid2state, &msg->dxid, HASH_FIND, NULL);
+					MtmCommitMessage* msg = &rxBuffer[i].data[j];
+					MtmTransState* ts = (MtmTransState*)hash_search(xid2state, &msg->dxid, HASH_FIND, NULL);
 					Assert(ts != NULL);
-					switch (msg->code) { 
-					case CMD_PREPARE:
-						if (IsCoordinator(ts)) { 
-							switch (msg->command) { 
-							case CMD_PREPARE:
-								
-							if (ts->state == TRANSACTION_STATUS_IN_PROGRESS:
-								/* transaction is in-prepared stage (in-doubt): calculate max CSN */
-								if (msg->csn > ts->csn) { 
-									ts->csn = msg->csn;
-								}
-								Assert(ts->nVotes < dtm->nNodes);
-								if (++ts->nVotes == dtm->nNodes) { /* receive responses from all nodes */
-									ts->status = TRANSACTION_STATUS_COMMIT;
-
-								if (ts->state == TRANSACTION_STATUS_UNKNOWN) { 
-									/* All nodes are ready to prepare: switch transaction to in-doubt state */
-									ts->csn = dtm_get_csn();	
-									ts->status = TRANSACTION_STATUS_IN_PROGRESS; 
-									/* and broadcast PREPARE message */									
-									MMSendNotificationMessage(ts);
-								}  else if (ts->state == CMD_ABORT) {
-									ts->status = TRANSACTION_STATUS_ABORTED;
-									
-								}  else {
-									Assert(ts->state == TRANSACTION_STATUS_IN_PROGRESS);
-									
 					Assert((unsigned)(msg->node-1) <= (unsigned)nNodes);
 					ts->xids[msg->node-1] = msg->sxid;
-					DTM_TRACE("Receive response %ld for transaction %d votes %d from node %d (transaction %d)\n", 
-							  msg->csn, msg->dxid, ts->nVotes+1, msg->node, msg->sxid);
-					Assert(ts->nVotes > 0 && ts->nVotes < ds->nNodes);
-					if (++ts->nVotes == ds->nNodes) { 
-						SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch);
+
+					if (MtmIsCoordinator(ts)) { 
+						switch (msg->code) { 
+						  case MSG_READY:
+							if (ts->status == TRANSACTION_STATUS_UNKNOWN) {
+								Assert(ts->nVotes < ds->nNodes);
+								if (++ts->nVotes == ds->nNodes) { 
+									/* All nodes are ready to commit: assign CSN and switch to in-doubt state */
+									ts->nVotes = 1; /* I voted myself */
+									ts->csn = MtmAssignCSN();	
+									ts->status = TRANSACTION_STATUS_IN_PROGRESS; 
+									MtmAdjustSubtransactions(ts);
+									MtmSendNotificationMessage(ts);
+								}
+							} else { 
+								Assert(ts->status == TRANSACTION_STATUS_ABORTED);
+							}
+							break;
+						  case MSG_PREPARED:
+							Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);							  
+							if (msg->csn > ts->csn) {
+								ts->csn = msg->csn;
+							}
+							Assert(ts->nVotes < ds->nNodes);
+							if (++ts->nVotes == ds->nNodes) { 
+								/* All nodes are in in-doubt state, ts->csn is maximum of CSNs at all nodes */
+								/* Now do commit */
+								ts->nVotes = 1; /* I voted myself */
+								MtmSyncClock(ts->csn);
+								ts->status = TRANSACTION_STATUS_COMMITTED;
+								MtmAdjustSubtransactions(ts);
+								MtmSendNotificationMessage(ts);
+							}
+							break;
+						  case MSG_COMMITTED:
+							Assert(ts->status == TRANSACTION_STATUS_COMMITTED);
+							Assert(ts->nVotes < ds->nNodes);
+							if (++ts->nVotes == ds->nNodes) { 									
+								MtmWakeUpBackend(ts);
+							}
+							break;
+						  case MSG_ABORTED:
+							if (ts->status != TRANSACTION_STATUS_ABORTED) {
+								Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
+								ts->status = TRANSACTION_STATUS_ABORTED;									
+								MtmAdjustSubtransactions(ts);
+								MtmWakeUpBackend(ts);
+							}
+							break;
+						  default:
+							Assert(false);
+						}
+					} else { /* replica */
+						switch (msg->code) { 
+						  case MSG_PREPARE:
+							Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
+							ts->csn = MtmAssignCSN();	
+							ts->status = TRANSACTION_STATUS_IN_PROGRESS; 
+							MtmAdjustSubtransactions(ts);
+							MtmSendNotificationMessage(ts);
+							break;
+						  case MSG_COMMIT:
+							Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+							ts->csn = msg->csn;
+							MtmSyncClock(ts->csn);
+							ts->status = TRANSACTION_STATUS_COMMITTED;
+							MtmAdjustSubtransactions(ts);
+							MtmSendNotificationMessage(ts);
+							MtmWakeUpBackend(ts);
+							break;
+						  case MSG_ABORT:
+							if (ts->status != TRANSACTION_STATUS_ABORTED) {
+								Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
+								ts->status = TRANSACTION_STATUS_ABORTED;								
+								MtmAdjustSubtransactions(ts);
+								MtmWakeUpBackend(ts);
+							}
+							break;
+						  default:
+							Assert(false);
+						}
 					}
 				}
 				LWLockRelease(ds->hashLock);
 				
-				rxBuffer[i].used -= nResponses*sizeof(DtmCommitMessage);
+				rxBuffer[i].used -= nResponses*sizeof(MtmCommitMessage);
 				if (rxBuffer[i].used != 0) { 
-					memmove(rxBuffer[i].data, (char*)rxBuffer[i].data + nResponses*sizeof(DtmCommitMessage), rxBuffer[i].used);
+					memmove(rxBuffer[i].data, (char*)rxBuffer[i].data + nResponses*sizeof(MtmCommitMessage), rxBuffer[i].used);
 				}
 			}
 		}
