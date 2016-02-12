@@ -104,14 +104,14 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 					  ReorderBufferTXN *txn)
 {
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
-	csn_t csn = MMTransactionSnapshot(txn->xid);
+	csn_t csn = MtmTransactionSnapshot(txn->xid);
 	fprintf(stderr, "pglogical_write_begin %d CSN=%ld\n", txn->xid, csn);
     if (csn == INVALID_CSN) {
         mm->isLocal = true;
     } else { 
         mm->isLocal = false;        
         pq_sendbyte(out, 'B');		/* BEGIN */
-		pq_sendint(out, MMNodeId, 4);
+		pq_sendint(out, MtmNodeId, 4);
 		pq_sendint(out, txn->xid, 4);
         pq_sendint64(out, csn);
     }
