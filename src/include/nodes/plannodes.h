@@ -73,6 +73,7 @@ typedef struct PlannedStmt
 	bool		hasRowSecurity; /* row security applied? */
 
 	bool		parallelModeNeeded; /* parallel mode required to execute? */
+	bool		hasForeignJoin;	/* Plan has a pushed down foreign join */
 } PlannedStmt;
 
 /* macro for fetching the Plan associated with a SubPlan node */
@@ -774,6 +775,7 @@ typedef struct Gather
 	Plan		plan;
 	int			num_workers;
 	bool		single_copy;
+	bool		invisible;		/* suppress EXPLAIN display (for testing)? */
 } Gather;
 
 /* ----------------

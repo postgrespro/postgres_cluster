@@ -106,6 +106,9 @@ static TransactionId *KnownAssignedXids;
 static bool *KnownAssignedXidsValid;
 static TransactionId latestObservedXid = InvalidTransactionId;
 
+/* LWLock tranche for backend locks */
+static LWLockTranche ProcLWLockTranche;
+
 /*
  * If we're in STANDBY_SNAPSHOT_PENDING state, standbySnapshotPendingXmin is
  * the highest xid that might still be running that we don't have in
@@ -261,6 +264,13 @@ CreateSharedProcArray(void)
 							mul_size(sizeof(bool), TOTAL_MAX_CACHED_SUBXIDS),
 							&found);
 	}
+
+	/* Register and initialize fields of ProcLWLockTranche */
+	ProcLWLockTranche.name = "proc";
+	ProcLWLockTranche.array_base = (char *) (ProcGlobal->allProcs) +
+		offsetof(PGPROC, backendLock);
+	ProcLWLockTranche.array_stride = sizeof(PGPROC);
+	LWLockRegisterTranche(LWTRANCHE_PROC, &ProcLWLockTranche);
 }
 
 /*
@@ -487,14 +497,14 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 	Assert(TransactionIdIsValid(allPgXact[proc->pgprocno].xid));
 
 	/* Add ourselves to the list of processes needing a group XID clear. */
-	proc->clearXid = true;
-	proc->backendLatestXid = latestXid;
+	proc->procArrayGroupMember = true;
+	proc->procArrayGroupMemberXid = latestXid;
 	while (true)
 	{
-		nextidx = pg_atomic_read_u32(&procglobal->firstClearXidElem);
-		pg_atomic_write_u32(&proc->nextClearXidElem, nextidx);
+		nextidx = pg_atomic_read_u32(&procglobal->procArrayGroupFirst);
+		pg_atomic_write_u32(&proc->procArrayGroupNext, nextidx);
 
-		if (pg_atomic_compare_exchange_u32(&procglobal->firstClearXidElem,
+		if (pg_atomic_compare_exchange_u32(&procglobal->procArrayGroupFirst,
 										   &nextidx,
 										   (uint32) proc->pgprocno))
 			break;
@@ -513,12 +523,12 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 		{
 			/* acts as a read barrier */
 			PGSemaphoreLock(&proc->sem);
-			if (!proc->clearXid)
+			if (!proc->procArrayGroupMember)
 				break;
 			extraWaits++;
 		}
 
-		Assert(pg_atomic_read_u32(&proc->nextClearXidElem) == INVALID_PGPROCNO);
+		Assert(pg_atomic_read_u32(&proc->procArrayGroupNext) == INVALID_PGPROCNO);
 
 		/* Fix semaphore count for any absorbed wakeups */
 		while (extraWaits-- > 0)
@@ -536,8 +546,8 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 	 */
 	while (true)
 	{
-		nextidx = pg_atomic_read_u32(&procglobal->firstClearXidElem);
-		if (pg_atomic_compare_exchange_u32(&procglobal->firstClearXidElem,
+		nextidx = pg_atomic_read_u32(&procglobal->procArrayGroupFirst);
+		if (pg_atomic_compare_exchange_u32(&procglobal->procArrayGroupFirst,
 										   &nextidx,
 										   INVALID_PGPROCNO))
 			break;
@@ -552,10 +562,10 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 		PGPROC	*proc = &allProcs[nextidx];
 		PGXACT	*pgxact = &allPgXact[nextidx];
 
-		ProcArrayEndTransactionInternal(proc, pgxact, proc->backendLatestXid);
+		ProcArrayEndTransactionInternal(proc, pgxact, proc->procArrayGroupMemberXid);
 
 		/* Move to next proc in list. */
-		nextidx = pg_atomic_read_u32(&proc->nextClearXidElem);
+		nextidx = pg_atomic_read_u32(&proc->procArrayGroupNext);
 	}
 
 	/* We're done with the lock now. */
@@ -572,13 +582,13 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 	{
 		PGPROC	*proc = &allProcs[wakeidx];
 
-		wakeidx = pg_atomic_read_u32(&proc->nextClearXidElem);
-		pg_atomic_write_u32(&proc->nextClearXidElem, INVALID_PGPROCNO);
+		wakeidx = pg_atomic_read_u32(&proc->procArrayGroupNext);
+		pg_atomic_write_u32(&proc->procArrayGroupNext, INVALID_PGPROCNO);
 
 		/* ensure all previous writes are visible before follower continues. */
 		pg_write_barrier();
 
-		proc->clearXid = false;
+		proc->procArrayGroupMember = false;
 
 		if (proc != MyProc)
 			PGSemaphoreUnlock(&proc->sem);

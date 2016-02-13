@@ -142,12 +142,18 @@ struct PGPROC
 	struct XidCache subxids;	/* cache for subtransaction XIDs */
 
 	/* Support for group XID clearing. */
-	bool			clearXid;
-	pg_atomic_uint32	nextClearXidElem;
-	TransactionId	backendLatestXid;
+	/* true, if member of ProcArray group waiting for XID clear */
+	bool			procArrayGroupMember;
+	/* next ProcArray group member waiting for XID clear */
+	pg_atomic_uint32	procArrayGroupNext;
+	/*
+	 * latest transaction id among the transaction's main XID and
+	 * subtransactions
+	 */
+	TransactionId	procArrayGroupMemberXid;
 
 	/* Per-backend LWLock.  Protects fields below. */
-	LWLock	   *backendLock;	/* protects the fields below */
+	LWLock		backendLock;
 
 	/* Lock manager data, recording fast-path locks taken by this backend. */
 	uint64		fpLockBits;		/* lock modes held for each fast-path slot */
@@ -155,6 +161,15 @@ struct PGPROC
 	bool		fpVXIDLock;		/* are we holding a fast-path VXID lock? */
 	LocalTransactionId fpLocalTransactionId;	/* lxid for fast-path VXID
 												 * lock */
+
+	/*
+	 * Support for lock groups.  Use LockHashPartitionLockByProc to get the
+	 * LWLock protecting these fields.
+	 */
+	int			lockGroupLeaderIdentifier;	/* MyProcPid, if I'm a leader */
+	PGPROC	   *lockGroupLeader;	/* lock group leader, if I'm a follower */
+	dlist_head	lockGroupMembers;	/* list of members, if I'm a leader */
+	dlist_node  lockGroupLink;		/* my member link, if I'm a member */
 };
 
 /* NOTE: "typedef struct PGPROC PGPROC" appears in storage/lock.h. */
@@ -208,7 +223,7 @@ typedef struct PROC_HDR
 	/* Head of list of bgworker free PGPROC structures */
 	PGPROC	   *bgworkerFreeProcs;
 	/* First pgproc waiting for group XID clear */
-	pg_atomic_uint32 firstClearXidElem;
+	pg_atomic_uint32 procArrayGroupFirst;
 	/* WALWriter process's latch */
 	Latch	   *walwriterLatch;
 	/* Checkpointer process's latch */
@@ -271,5 +286,8 @@ extern void LockErrorCleanup(void);
 
 extern void ProcWaitForSignal(void);
 extern void ProcSendSignal(int pid);
+
+extern void BecomeLockGroupLeader(void);
+extern bool BecomeLockGroupMember(PGPROC *leader, int pid);
 
 #endif   /* PROC_H */
