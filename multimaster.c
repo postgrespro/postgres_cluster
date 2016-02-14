@@ -84,7 +84,6 @@ static void MtmXactCallback(XactEvent event, void *arg);
 static void MtmBeginTransaction(MtmCurrentTrans* x);
 static void MtmPrepareTransaction(MtmCurrentTrans* x);
 static void MtmEndTransaction(MtmCurrentTrans* x);
-static Snapshot MtmGetSnapshot(Snapshot snapshot);
 static TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 static TransactionId MtmAdjustOldestXid(TransactionId xid);
@@ -138,10 +137,28 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag);
 
+void MtmLock(LWLockMode mode)
+{
+#ifdef USE_SPINLOCK
+	SpinLockAcquire(&ds->hashSpinlock);
+#else
+	LWLockAcquire(dtm->hashLock, mode);
+#endif
+}
+
+void MtmUnlock(void)
+{
+#ifdef USE_SPINLOCK
+	SpinLockRelease(&ds->hashSpinlock);
+#else
+	LWLockRelease(dtm->hashLock);
+#endif
+}
+
+
 /*
  *  System time manipulation functions
  */
-
 
 static timestamp_t MtmGetCurrentTime()
 {
@@ -194,7 +211,7 @@ static char const* MtmGetName(void)
 Snapshot MtmGetSnapshot(Snapshot snapshot)
 {
     snapshot = PgGetSnapshotData(snapshot);
-    RecentGlobalDataXmin = RecentGlobalXmin = dtm->oldestXid;//MtmAdjustOldestXid(RecentGlobalDataXmin);
+	RecentGlobalDataXmin = RecentGlobalXmin = dtm->oldestXid;//MtmAdjustOldestXid(RecentGlobalDataXmin);
     return snapshot;
 }
 
@@ -217,7 +234,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     timestamp_t delay = MIN_WAIT_TIMEOUT;
     Assert(xid != InvalidTransactionId);
 
-	LWLockAcquire(dtm->hashLock, LW_SHARED);
+	MtmLock(LW_SHARED);
 
 #if TRACE_SLEEP_TIME
     if (firstReportTime == 0) {
@@ -232,13 +249,13 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
             if (ts->csn > dtmTx.snapshot) { 
                 MTM_TUPLE_TRACE("%d: tuple with xid=%d(csn=%ld) is invisibile in snapshot %ld\n",
 								getpid(), xid, ts->csn, dtmTx.snapshot);
-                LWLockRelease(dtm->hashLock);
+                MtmUnlock();
                 return true;
             }
-            if (ts->status == TRANSACTION_STATUS_IN_PROGRESS)
+            if (ts->status == TRANSACTION_STATUS_UNKNOWN)
             {
                 MTM_TRACE("%d: wait for in-doubt transaction %u in snapshot %lu\n", getpid(), xid, dtmTx.snapshot);
-                LWLockRelease(dtm->hashLock);
+                MtmUnlock();
 #if TRACE_SLEEP_TIME
                 {
                 timestamp_t delta, now = MtmGetCurrentTime();
@@ -263,14 +280,14 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
                 if (delay*2 <= MAX_WAIT_TIMEOUT) {
                     delay *= 2;
                 }
-				LWLockAcquire(dtm->hashLock, LW_SHARED);
+				MtmLock(LW_SHARED);
             }
             else
             {
                 bool invisible = ts->status != TRANSACTION_STATUS_COMMITTED;
                 MTM_TUPLE_TRACE("%d: tuple with xid=%d(csn= %ld) is %s in snapshot %ld\n",
 								getpid(), xid, ts->csn, invisible ? "rollbacked" : "committed", dtmTx.snapshot);
-                LWLockRelease(dtm->hashLock);
+                MtmUnlock();
                 return invisible;
             }
         }
@@ -280,7 +297,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
             break;
         }
     }
-	LWLockRelease(dtm->hashLock);
+	MtmUnlock();
 	return PgXidInMVCCSnapshot(xid, snapshot);
 }    
 
@@ -297,6 +314,7 @@ static int MtmXidMatchFunc(const void *key1, const void *key2, Size keysize)
 static void MtmTransactionListAppend(MtmTransState* ts)
 {
     ts->next = NULL;
+	ts->nSubxids = 0;
     *dtm->transListTail = ts;
     dtm->transListTail = &ts->next;
 }
@@ -353,12 +371,12 @@ MtmAdjustOldestXid(TransactionId xid)
     if (TransactionIdIsValid(xid)) { 
         MtmTransState *ts, *prev = NULL;
         
-		LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
+		MtmLock(LW_EXCLUSIVE);
         ts = (MtmTransState*)hash_search(xid2state, &xid, HASH_FIND, NULL);
         if (ts != NULL) { 
             timestamp_t cutoff_time = ts->csn - MtmVacuumDelay*USEC;
 			for (ts = dtm->transListHead; ts != NULL && ts->csn < cutoff_time; prev = ts, ts = ts->next) { 
-				Assert(ts->status == TRANSACTION_STATUS_COMMITTED || ts->status == TRANSACTION_STATUS_ABORTED);
+				Assert(ts->status == TRANSACTION_STATUS_COMMITTED || ts->status == TRANSACTION_STATUS_ABORTED || ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 				if (prev != NULL) { 
 					/* Remove information about too old transactions */
 					hash_search(xid2state, &prev->xid, HASH_REMOVE, NULL);
@@ -371,7 +389,7 @@ MtmAdjustOldestXid(TransactionId xid)
         } else { 
             xid = dtm->oldestXid;
         }
-		LWLockRelease(dtm->hashLock);
+		MtmUnlock();
     }
     return xid;
 }
@@ -397,7 +415,7 @@ static void MtmInitialize()
         dtm->initialized = false;
 		PGSemaphoreCreate(&dtm->votingSemaphore);
 		PGSemaphoreReset(&dtm->votingSemaphore);
-		SpinLockInit(&dtm->votingSpinlock);
+		SpinLockInit(&dtm->hashSpinlock);
         BgwPoolInit(&dtm->pool, MtmExecutor, MtmDatabaseName, MtmQueueSize);
 		RegisterXactCallback(MtmXactCallback, NULL);
 		dtmTx.snapshot = INVALID_CSN;
@@ -432,15 +450,16 @@ static void
 MtmBeginTransaction(MtmCurrentTrans* x)
 {
     if (x->snapshot == INVALID_CSN) { 
-		LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
-        x->xid = GetCurrentTransactionIdIfAny();
+		MtmLock(LW_EXCLUSIVE);
+		x->xid = GetCurrentTransactionIdIfAny();
         x->isReplicated = false;
         x->isDistributed = IsNormalProcessingMode() && dtm->initialized && MtmDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess();
 		x->containsDML = false;
         x->snapshot = MtmAssignCSN();	
 		x->gtid.xid = InvalidTransactionId;
-		LWLockRelease(dtm->hashLock);
-        MTM_TRACE("MtmLocalTransaction: transaction %u uses local snapshot %lu\n", x->xid, x->snapshot);
+		MtmUnlock();
+
+        MTM_TRACE("MtmLocalTransaction: %s transaction %u uses local snapshot %lu\n", x->isDistributed ? "distributed" : "local", x->xid, x->snapshot);
     }
 }
 
@@ -451,35 +470,40 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 static void MtmPrepareTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
-	bool found;
 	int i;
 	
 	if (!x->isDistributed) {
 		return;
 	}
-		
-	if (!TransactionIdIsValid(x->xid)) {
-		x->xid = GetCurrentTransactionId();
-	}
-	LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
-	ts = hash_search(xid2state, &x->xid, HASH_ENTER, &found);
-	Assert(!found);
-	ts->snapshot = x->isReplicated ? INVALID_CSN : x->snapshot;
+	x->xid = GetCurrentTransactionId();
+
+	MtmLock(LW_EXCLUSIVE);
+	ts = hash_search(xid2state, &x->xid, HASH_ENTER, NULL);
+#ifdef FAST_COMMIT_PROTOCOL
 	ts->status = TRANSACTION_STATUS_UNKNOWN;
+#else
+	ts->status = TRANSACTION_STATUS_IN_PROGRESS;	
+#endif
+	ts->snapshot = x->isReplicated ? INVALID_CSN : x->snapshot;
 	ts->csn = MtmAssignCSN();	
+	ts->gtid = x->gtid;
+	ts->cmd = MSG_INVALID;
 	ts->procno = MyProc->pgprocno;
-	ts->nVotes = 1; /* My own voice */
+	ts->nVotes = 0; 
+	if (TransactionIdIsValid(x->gtid.xid)) { 
+		ts->gtid = x->gtid;
+	} else { 
+		ts->gtid.xid = x->xid;
+		ts->gtid.node = MtmNodeId;
+	}
 	for (i = 0; i < MtmNodes; i++) { 
 		ts->xids[i] = InvalidTransactionId;
 	}
-	if (!TransactionIdIsValid(x->gtid.xid)) 
-	{
-		ts->gtid.xid = x->xid;
-		ts->gtid.node = MtmNodeId;
-	} else {
-		ts->gtid = x->gtid;
-	}
-	LWLockRelease(dtm->hashLock);
+	MtmTransactionListAppend(ts);
+
+	MtmUnlock();
+
+	MTM_TRACE("%d: MtmPrepareTransaction prepare commit of %d CSN=%ld\n", getpid(), x->xid, ts->csn);
 }
 
 static void 
@@ -494,11 +518,10 @@ void MtmSendNotificationMessage(MtmTransState* ts)
 {
 	MtmTransState* votingList;
 
-	SpinLockAcquire(&dtm->votingSpinlock);
 	votingList = dtm->votingTransactions;
 	ts->nextVoting = votingList;
 	dtm->votingTransactions = ts;
-	SpinLockRelease(&dtm->votingSpinlock);
+
 	if (votingList == NULL) { 
 		/* singal semaphore only once for the whole list */
 		PGSemaphoreUnlock(&dtm->votingSemaphore);
@@ -510,18 +533,18 @@ MtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
 {
 	MtmTransState* ts;
 
-	LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
+	MtmLock(LW_EXCLUSIVE);
 	ts = hash_search(xid2state, &xid, HASH_FIND, NULL);
 	Assert(ts != NULL); /* should be created by MtmPrepareTransaction */
 	
-	MtmTransactionListAppend(ts);
+	MTM_TRACE("%d: MtmCommitTransaction begin commit of %d CSN=%ld\n", getpid(), xid, ts->csn);
 	MtmAddSubtransactions(ts, subxids, nsubxids);
 
 	MtmVoteForTransaction(ts); 
 
-	LWLockRelease(dtm->hashLock);
+	MtmUnlock();
 
-	MTM_TRACE("%d: MtmCommitTransaction status=%d\n", getpid(), ts->status);
+	MTM_TRACE("%d: MtmCommitTransaction %d status=%d\n", getpid(), xid, ts->status);
 
 	return ts->status == TRANSACTION_STATUS_COMMITTED;
 }
@@ -529,35 +552,35 @@ MtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
 static void 
 MtmFinishTransaction(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status)
 {
-	MtmTransState* ts;
 	MtmCurrentTrans* x = &dtmTx;
-	bool found;
 
-	LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
-	ts = hash_search(xid2state, &xid, HASH_ENTER, &found);
-	if (!found) { 
-		ts->status = status;
-		ts->csn = MtmAssignCSN();	
-		ts->procno = MyProc->pgprocno;
-		ts->snapshot = INVALID_CSN;
-		if (!TransactionIdIsValid(x->gtid.xid)) 
-		{
-			ts->gtid.xid = x->xid;
-			ts->gtid.node = MtmNodeId;
-		} else {
+	if (x->isReplicated) { 
+		MtmTransState* ts;
+		XidStatus prevStatus = TRANSACTION_STATUS_UNKNOWN;
+		bool found;
+
+		Assert(status == TRANSACTION_STATUS_ABORTED);
+
+		MtmLock(LW_EXCLUSIVE);
+		ts = hash_search(xid2state, &xid, HASH_ENTER, &found);
+		if (!found) {
+			ts->snapshot = INVALID_CSN;
+			ts->csn = MtmAssignCSN();	
 			ts->gtid = x->gtid;
+			ts->cmd = MSG_INVALID;
+		} else { 			
+			prevStatus = ts->status;
 		}
-		MtmTransactionListAppend(ts);
-		MtmAddSubtransactions(ts, subxids, nsubxids);
+		ts->status = status;
+		MtmAdjustSubtransactions(ts);
+		
+		if (prevStatus != TRANSACTION_STATUS_ABORTED) {
+			ts->cmd = MSG_ABORTED;
+			MtmSendNotificationMessage(ts);
+		}
+		MtmUnlock();
+		MTM_TRACE("%d: MtmFinishTransaction %d CSN=%ld, status=%d\n", getpid(), xid, ts->csn, status);
 	}
-	ts->status = status;
-	MtmAdjustSubtransactions(ts);
-
-	if (dtmTx.isReplicated) {
-		ts->gtid = x->gtid;
-		MtmSendNotificationMessage(ts);
-	}
-	LWLockRelease(dtm->hashLock);
 }	
 		
 	
@@ -571,7 +594,7 @@ MtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids,
 		if (status == TRANSACTION_STATUS_ABORTED || !dtmTx.containsDML)
 		{
 			MtmFinishTransaction(xid, nsubxids, subxids, status);	
-			MTM_TRACE("Abort transaction %d, status=%d, DML=%d\n", xid, status, dtmTx.containsDML);
+			MTM_TRACE("Finish transaction %d, status=%d, DML=%d\n", xid, status, dtmTx.containsDML);
 		}
 		else
 		{
@@ -757,15 +780,22 @@ _PG_fini(void)
  *  ***************************************************************************
  */
 
-void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t snapshot)
+void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
-	LWLockAcquire(dtm->hashLock, LW_EXCLUSIVE);
-	MtmSyncClock(snapshot);
-	LWLockRelease(dtm->hashLock);
+	csn_t localSnapshot;
+
+	MtmLock(LW_EXCLUSIVE);
+	localSnapshot = MtmSyncClock(globalSnapshot);	
+	MtmUnlock();
 	
+	if (globalSnapshot < localSnapshot - MtmVacuumDelay * USEC)
+	{
+		elog(ERROR, "Too old snapshot: requested %ld, current %ld", globalSnapshot, localSnapshot);
+	}
+
 	dtmTx.gtid = *gtid;
 	dtmTx.xid = GetCurrentTransactionId();
-	dtmTx.snapshot = snapshot;	
+	dtmTx.snapshot = globalSnapshot;	
 	dtmTx.isReplicated = true;
 	dtmTx.isDistributed = true;
 	dtmTx.containsDML = true;
@@ -783,12 +813,12 @@ csn_t MtmTransactionSnapshot(TransactionId xid)
 	MtmTransState* ts;
 	csn_t snapshot = INVALID_CSN;
 
-	LWLockAcquire(dtm->hashLock, LW_SHARED);
+	MtmLock(LW_SHARED);
     ts = hash_search(xid2state, &xid, HASH_FIND, NULL);
     if (ts != NULL) { 
 		snapshot = ts->snapshot;
 	}
-	LWLockRelease(dtm->hashLock);
+	MtmUnlock();
 
     return snapshot;
 }
@@ -1020,15 +1050,25 @@ static void
 MtmVoteForTransaction(MtmTransState* ts)
 {
 	if (!MtmIsCoordinator(ts)) {
+		ts->cmd = ts->status == TRANSACTION_STATUS_ABORTED ? MSG_ABORTED : MSG_READY;
 		MtmSendNotificationMessage(ts); /* send READY message to coordinator */
+	} else if (++ts->nVotes == dtm->nNodes) { /* everybody already voted except me */
+		if (ts->status != TRANSACTION_STATUS_ABORTED) {
+#ifdef FAST_COMMIT_PROTOCOL
+			ts->cmd = MSG_COMMIT;
+#else
+			ts->cmd = MSG_BEGIN_PREPARE;
+#endif
+			ts->nVotes = 1; /* I voted myself */
+			MtmSendNotificationMessage(ts);			
+		}
 	}
-
 	MTM_TRACE("%d: Node %d waiting latch...\n", getpid(), MtmNodeId);
 	while (ts->status != TRANSACTION_STATUS_COMMITTED && ts->status != TRANSACTION_STATUS_ABORTED) {
-		LWLockRelease(dtm->hashLock);
+		MtmUnlock();
 		WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
 		ResetLatch(&MyProc->procLatch);			
-		LWLockAcquire(dtm->hashLock, LW_SHARED);
+		MtmLock(LW_SHARED);
 	}
 	MTM_TRACE("%d: Node %d receives response...\n", getpid(), MtmNodeId);
 }
