@@ -753,7 +753,7 @@ DtmLocalPrepare(GlobalTransactionId gtid, cid_t global_cid)
 }
 
 /*
- * Adjust system tiem according to the received maximal CSN
+ * Adjust system time according to the received maximal CSN
  */
 void
 DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)

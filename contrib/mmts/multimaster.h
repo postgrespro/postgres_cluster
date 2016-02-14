@@ -13,6 +13,9 @@
 
 #define MULTIMASTER_NAME "mmts"
 
+//#define FAST_COMMIT_PROTOCOL 1
+
+
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
 
@@ -23,26 +26,44 @@ typedef struct
 	TransactionId xid; /* Transaction ID at this node */
 } GlobalTransactionId;
 
+typedef enum
+{ 
+	MSG_INVALID,
+	MSG_READY,
+	MSG_BEGIN_PREPARE,
+	MSG_PREPARE,
+	MSG_END_PREPARE,
+	MSG_COMMIT,
+	MSG_ABORT,
+	MSG_BEGIN_PREPARED,
+	MSG_PREPARED,
+	MSG_END_PREPARED,
+	MSG_COMMITTED,
+	MSG_ABORTED
+} MtmMessageCode;
+
+
 typedef struct MtmTransState
 {
-    TransactionId xid;
-    XidStatus     status; 
+    TransactionId  xid;
+    XidStatus      status; 
 	GlobalTransactionId gtid;
-    csn_t         csn;                 /* commit serial number */
-    csn_t         snapshot;            /* transaction snapshot, or INVALID_CSN for local transactions */
-	int           nVotes;              /* number of votes received from replcas for this transaction: 
+    csn_t          csn;                /* commit serial number */
+    csn_t          snapshot;           /* transaction snapshot, or INVALID_CSN for local transactions */
+	int            nVotes;             /* number of votes received from replcas for this transaction: 
 							              finally should be nNodes-1 */
-	int           procno;              /* pgprocno of transaction coordinator waiting for responses from replicas, 
+	int            procno;             /* pgprocno of transaction coordinator waiting for responses from replicas, 
 							              used to notify coordinator by arbiter */
+	MtmMessageCode cmd;                /* Notification message code to be sent */
+	int            nSubxids;           /* Number of subtransanctions */
 	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
-	int           nSubxids;            /* Number of subtransanctions */
 	TransactionId xids[1];             /* transaction ID at replicas: varying size MtmNodes */
 } MtmTransState;
 
 typedef struct
 {
-	volatile slock_t votingSpinlock;   /* spinlock used to protect votingTransactions list */
+	volatile slock_t hashSpinlock;     /* spinlock used to protect access to hash table */
 	PGSemaphoreData votingSemaphore;   /* semaphore used to notify mm-sender about new responses to coordinator */
 	LWLockId hashLock;                 /* lock to synchronize access to hash table */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
@@ -81,6 +102,8 @@ extern void  MtmExecutor(int id, void* work, size_t size);
 extern HTAB* MtmCreateHash(void);
 extern void  MtmSendNotificationMessage(MtmTransState* ts);
 extern void  MtmAdjustSubtransactions(MtmTransState* ts);
+extern void  MtmLock(LWLockMode mode);
+extern void  MtmUnlock(void);
 extern MtmState* MtmGetState(void);
 
 #endif
