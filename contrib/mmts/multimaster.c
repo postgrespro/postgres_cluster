@@ -73,9 +73,10 @@ void _PG_fini(void);
 
 PG_MODULE_MAGIC;
 
-PG_FUNCTION_INFO_V1(mm_start_replication);
-PG_FUNCTION_INFO_V1(mm_stop_replication);
-PG_FUNCTION_INFO_V1(mm_drop_node);
+PG_FUNCTION_INFO_V1(mtm_start_replication);
+PG_FUNCTION_INFO_V1(mtm_stop_replication);
+PG_FUNCTION_INFO_V1(mtm_drop_node);
+PG_FUNCTION_INFO_V1(mtm_get_snapshot);
 
 static Snapshot MtmGetSnapshot(Snapshot snapshot);
 static void MtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
@@ -83,7 +84,7 @@ static void MtmInitialize(void);
 static void MtmXactCallback(XactEvent event, void *arg);
 static void MtmBeginTransaction(MtmCurrentTrans* x);
 static void MtmPrepareTransaction(MtmCurrentTrans* x);
-static void MtmEndTransaction(MtmCurrentTrans* x);
+static void MtmEndTransaction(MtmCurrentTrans* x, bool commit);
 static TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 static TransactionId MtmAdjustOldestXid(TransactionId xid);
@@ -211,7 +212,7 @@ static char const* MtmGetName(void)
 Snapshot MtmGetSnapshot(Snapshot snapshot)
 {
     snapshot = PgGetSnapshotData(snapshot);
-	RecentGlobalDataXmin = RecentGlobalXmin = dtm->oldestXid;//MtmAdjustOldestXid(RecentGlobalDataXmin);
+	RecentGlobalDataXmin = RecentGlobalXmin = MtmAdjustOldestXid(RecentGlobalDataXmin);
     return snapshot;
 }
 
@@ -244,7 +245,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     while (true)
     {
         MtmTransState* ts = (MtmTransState*)hash_search(xid2state, &xid, HASH_FIND, NULL);
-        if (ts != NULL)
+        if (ts != NULL && ts->status != TRANSACTION_STATUS_IN_PROGRESS)
         {
             if (ts->csn > dtmTx.snapshot) { 
                 MTM_TUPLE_TRACE("%d: tuple with xid=%d(csn=%ld) is invisibile in snapshot %ld\n",
@@ -439,9 +440,12 @@ MtmXactCallback(XactEvent event, void *arg)
 		MtmPrepareTransaction(&dtmTx);
 		break;
 	  case XACT_EVENT_COMMIT:
-	  case XACT_EVENT_ABORT:
-		MtmEndTransaction(&dtmTx);
-      default:
+		MtmEndTransaction(&dtmTx, true);
+		break;
+	  case XACT_EVENT_ABORT: 
+		MtmEndTransaction(&dtmTx, false);
+		break;
+	  default:
         break;
 	}
 }
@@ -479,17 +483,14 @@ static void MtmPrepareTransaction(MtmCurrentTrans* x)
 
 	MtmLock(LW_EXCLUSIVE);
 	ts = hash_search(xid2state, &x->xid, HASH_ENTER, NULL);
-#ifdef FAST_COMMIT_PROTOCOL
-	ts->status = TRANSACTION_STATUS_UNKNOWN;
-#else
 	ts->status = TRANSACTION_STATUS_IN_PROGRESS;	
-#endif
 	ts->snapshot = x->isReplicated ? INVALID_CSN : x->snapshot;
 	ts->csn = MtmAssignCSN();	
 	ts->gtid = x->gtid;
 	ts->cmd = MSG_INVALID;
 	ts->procno = MyProc->pgprocno;
 	ts->nVotes = 0; 
+	ts->done = false;
 	if (TransactionIdIsValid(x->gtid.xid)) { 
 		ts->gtid = x->gtid;
 	} else { 
@@ -507,8 +508,17 @@ static void MtmPrepareTransaction(MtmCurrentTrans* x)
 }
 
 static void 
-MtmEndTransaction(MtmCurrentTrans* x)
+MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
+	if (x->isDistributed && commit) { 
+		MtmTransState* ts;
+		MtmLock(LW_EXCLUSIVE);
+		ts = hash_search(xid2state, &x->xid, HASH_FIND, NULL);
+		Assert(ts != NULL);
+		ts->status = TRANSACTION_STATUS_COMMITTED;
+		MtmAdjustSubtransactions(ts);
+		MtmUnlock();
+	}
 	x->snapshot = INVALID_CSN;
 	x->xid = InvalidTransactionId;
 	x->gtid.xid = InvalidTransactionId;
@@ -546,7 +556,7 @@ MtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
 
 	MTM_TRACE("%d: MtmCommitTransaction %d status=%d\n", getpid(), xid, ts->status);
 
-	return ts->status == TRANSACTION_STATUS_COMMITTED;
+	return ts->status != TRANSACTION_STATUS_ABORTED;
 }
 	
 static void 
@@ -824,14 +834,14 @@ csn_t MtmTransactionSnapshot(TransactionId xid)
 }
 
 Datum
-mm_start_replication(PG_FUNCTION_ARGS)
+mtm_start_replication(PG_FUNCTION_ARGS)
 {
     MtmDoReplication = true;
     PG_RETURN_VOID();
 }
 
 Datum
-mm_stop_replication(PG_FUNCTION_ARGS)
+mtm_stop_replication(PG_FUNCTION_ARGS)
 {
     MtmDoReplication = false;
     dtmTx.isDistributed = false;
@@ -839,7 +849,7 @@ mm_stop_replication(PG_FUNCTION_ARGS)
 }
 
 Datum
-mm_drop_node(PG_FUNCTION_ARGS)
+mtm_drop_node(PG_FUNCTION_ARGS)
 {
 	int nodeId = PG_GETARG_INT32(0);
 	bool dropSlot = PG_GETARG_BOOL(1);
@@ -853,16 +863,22 @@ mm_drop_node(PG_FUNCTION_ARGS)
 		dtm->nNodes -= 1;
 		if (!IsTransactionBlock())
 		{
-			MtmBroadcastUtilityStmt(psprintf("select mm_drop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
+			MtmBroadcastUtilityStmt(psprintf("select mtm_drop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
 		}
 		if (dropSlot) 
 		{
-			ReplicationSlotDrop(psprintf("mm_slot_%d", nodeId));
+			ReplicationSlotDrop(psprintf("mtm_slot_%d", nodeId));
 		}		
 	}
     PG_RETURN_VOID();
 }
-		
+	
+Datum
+mtm_get_snapshot(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(dtmTx.snapshot);
+}
+	
 /*
  * Execute statement with specified parameters and check its result
  */
@@ -1054,17 +1070,14 @@ MtmVoteForTransaction(MtmTransState* ts)
 		MtmSendNotificationMessage(ts); /* send READY message to coordinator */
 	} else if (++ts->nVotes == dtm->nNodes) { /* everybody already voted except me */
 		if (ts->status != TRANSACTION_STATUS_ABORTED) {
-#ifdef FAST_COMMIT_PROTOCOL
-			ts->cmd = MSG_COMMIT;
-#else
-			ts->cmd = MSG_BEGIN_PREPARE;
-#endif
+			Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+			ts->cmd = MSG_PREPARE;
 			ts->nVotes = 1; /* I voted myself */
 			MtmSendNotificationMessage(ts);			
 		}
 	}
 	MTM_TRACE("%d: Node %d waiting latch...\n", getpid(), MtmNodeId);
-	while (ts->status != TRANSACTION_STATUS_COMMITTED && ts->status != TRANSACTION_STATUS_ABORTED) {
+	while (!ts->done) {
 		MtmUnlock();
 		WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
 		ResetLatch(&MyProc->procLatch);			

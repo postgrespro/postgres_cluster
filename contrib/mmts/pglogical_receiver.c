@@ -210,7 +210,7 @@ pglogical_receiver_main(Datum main_arg)
 	pqsignal(SIGHUP, receiver_raw_sighup);
 	pqsignal(SIGTERM, receiver_raw_sigterm);
 
-    sprintf(worker_proc, "mm_recv_%d", getpid());
+    sprintf(worker_proc, "mtm_recv_%d", getpid());
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -543,10 +543,10 @@ int MtmStartReceivers(char* conns, int node_id)
                 MtmDatabaseName[len] = '\0';
             }
             ctx->receiver_conn_string = psprintf("replication=database %.*s", (int)(p - conn_str), conn_str);
-            sprintf(ctx->receiver_slot, "mm_slot_%d", node_id);
+            sprintf(ctx->receiver_slot, "mtm_slot_%d", node_id);
             
             /* Worker parameter and registration */
-            snprintf(worker.bgw_name, BGW_MAXLEN, "mm_worker_%d_%d", node_id, i);
+            snprintf(worker.bgw_name, BGW_MAXLEN, "mtm_worker_%d_%d", node_id, i);
             
             worker.bgw_main_arg = (Datum)ctx;
             RegisterBackgroundWorker(&worker);

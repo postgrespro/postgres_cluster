@@ -101,14 +101,10 @@ static char const* const messageText[] =
 {
 	"INVALID",
 	"READY",
-	"BEGIN_PREPARE",
 	"PREPARE",
-	"END_PREPARE",
 	"COMMIT",
 	"ABORT",
-	"BEGIN_PREPARED",
 	"PREPARED",
-	"END_PREPARED",
 	"COMMITTED",
 	"ABORTED"
 };
@@ -401,6 +397,7 @@ static void MtmTransSender(Datum arg)
 
 static void MtmWakeUpBackend(MtmTransState* ts)
 {
+	ts->done = true;
 	SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
 }
 
@@ -469,79 +466,6 @@ static void MtmTransReceiver(Datum arg)
 					Assert((unsigned)(msg->node-1) <= (unsigned)nNodes);
 					ts->xids[msg->node-1] = msg->sxid;
 
-#ifdef FAST_COMMIT_PROTOCOL
-					if (MtmIsCoordinator(ts)) { 
-						switch (msg->code) { 
-						case MSG_READY:
-							Assert(ts->status == TRANSACTION_STATUS_ABORTED || ts->status == TRANSACTION_STATUS_UNKNOWN);
-							Assert(ts->nVotes < ds->nNodes);
-							if (msg->csn > ts->csn) { 
-								ts->csn = msg->csn;
-								MtmSyncClock(ts->csn);
-							}
-							if (++ts->nVotes == ds->nNodes) { 
-								/* All nodes are finished their transactions */
-								if (ts->status == TRANSACTION_STATUS_UNKNOWN) {
-									ts->nVotes = 1; /* I voted myself */
-									ts->cmd = MSG_COMMIT;
-								} else { 
-									ts->status = TRANSACTION_STATUS_ABORTED;
-									ts->cmd = MSG_ABORT;
-									MtmWakeUpBackend(ts);								
-								}
-								MtmAdjustSubtransactions(ts);
-								MtmSendNotificationMessage(ts);									  
-							}
-							break;
-						case MSG_COMMITTED:
-							Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
-							Assert(ts->nVotes < ds->nNodes);
-							if (++ts->nVotes == ds->nNodes) { 									
-								ts->status = TRANSACTION_STATUS_COMMITTED;
-								MtmAdjustSubtransactions(ts);
-								MtmWakeUpBackend(ts);
-							}
-							break;
-						case MSG_ABORTED:
-							Assert(ts->status == TRANSACTION_STATUS_ABORTED || ts->status == TRANSACTION_STATUS_UNKNOWN);
-							Assert(ts->nVotes < ds->nNodes);
-							ts->status = TRANSACTION_STATUS_ABORTED;									
-							if (++ts->nVotes == ds->nNodes) { 
-								ts->cmd = MSG_ABORT;
-								MtmAdjustSubtransactions(ts);
-								MtmSendNotificationMessage(ts);		
-								MtmWakeUpBackend(ts);								
-							}
-							break;
-						default:
-							Assert(false);
-						}
-					} else { /* replica */
-						switch (msg->code) { 
-						case MSG_COMMIT:
-							Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
-							Assert(ts->csn <= msg->csn);
-							ts->csn = msg->csn;
-							MtmSyncClock(ts->csn);
-							ts->status = TRANSACTION_STATUS_COMMITTED;
-							ts->cmd = MSG_COMMITTED;							
-							MtmAdjustSubtransactions(ts);
-							MtmSendNotificationMessage(ts);
-							MtmWakeUpBackend(ts);
-							break;
-						case MSG_ABORT:
-							if (ts->status != TRANSACTION_STATUS_ABORTED) {
-								Assert(ts->status == TRANSACTION_STATUS_UNKNOWN || ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-								ts->status = TRANSACTION_STATUS_ABORTED;								
-								MtmAdjustSubtransactions(ts);
-								MtmWakeUpBackend(ts);
-							}
-							break;
-						default:
-							Assert(false);
-						}
-					}
-#else
 					if (MtmIsCoordinator(ts)) { 
 						switch (msg->code) { 
 						case MSG_READY:
@@ -551,31 +475,18 @@ static void MtmTransReceiver(Datum arg)
 								/* All nodes are finished their transactions */
 								if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
 									ts->nVotes = 1; /* I voted myself */
-									ts->cmd = MSG_BEGIN_PREPARE;
+									ts->cmd = MSG_PREPARE;
 								} else { 
 									ts->status = TRANSACTION_STATUS_ABORTED;
 									ts->cmd = MSG_ABORT;
+									MtmAdjustSubtransactions(ts);
 									MtmWakeUpBackend(ts);								
 								}
-								MtmAdjustSubtransactions(ts);
 								MtmSendNotificationMessage(ts);									  
 							}
 							break;
-						case MSG_BEGIN_PREPARED:
- 						    Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-							Assert(ts->nVotes < ds->nNodes);
-							if (++ts->nVotes == ds->nNodes) { 
-								/* All nodes are in in-doubt state */ 
-								ts->nVotes = 1; /* I voted myself */
-								ts->status = TRANSACTION_STATUS_UNKNOWN;
-								ts->cmd = MSG_PREPARE;
-								ts->csn = MtmAssignCSN();	
-								MtmAdjustSubtransactions(ts);
-								MtmSendNotificationMessage(ts);
-							}
-							break;
 						case MSG_PREPARED:
- 						    Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
+ 						    Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 							Assert(ts->nVotes < ds->nNodes);
 							if (msg->csn > ts->csn) {
 								ts->csn = msg->csn;
@@ -584,18 +495,10 @@ static void MtmTransReceiver(Datum arg)
 							if (++ts->nVotes == ds->nNodes) { 
 								/* ts->csn is maximum of CSNs at all nodes */
 								ts->nVotes = 1; /* I voted myself */
-								ts->cmd = MSG_END_PREPARE;
-								MtmAdjustSubtransactions(ts);
-								MtmSendNotificationMessage(ts);
-							}
-							break;
-						case MSG_END_PREPARED:
- 						    Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
-							Assert(ts->nVotes < ds->nNodes);
-							if (++ts->nVotes == ds->nNodes) { 
-								/* All nodes have now same CSN: do commits */
-								ts->nVotes = 1; /* I voted myself */
 								ts->cmd = MSG_COMMIT;
+								ts->csn = MtmAssignCSN();
+								ts->status = TRANSACTION_STATUS_UNKNOWN;
+								MtmAdjustSubtransactions(ts);
 								MtmSendNotificationMessage(ts);
 							}
 							break;
@@ -603,8 +506,7 @@ static void MtmTransReceiver(Datum arg)
 							Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
 							Assert(ts->nVotes < ds->nNodes);
 							if (++ts->nVotes == ds->nNodes) { 									
-								ts->status = TRANSACTION_STATUS_COMMITTED;
-								MtmAdjustSubtransactions(ts);
+								/* All nodes have the same CSN */
 								MtmWakeUpBackend(ts);
 							}
 							break;
@@ -624,33 +526,19 @@ static void MtmTransReceiver(Datum arg)
 						}
 					} else { /* replica */
 						switch (msg->code) { 
-						case MSG_BEGIN_PREPARE:
+						case MSG_PREPARE:
  					        Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS); 
 							ts->status = TRANSACTION_STATUS_UNKNOWN;
-							ts->cmd = MSG_BEGIN_PREPARED;
-							ts->csn = MtmAssignCSN();	
-							MtmAdjustSubtransactions(ts);
-							MtmSendNotificationMessage(ts);
-							break;
-						case MSG_PREPARE:
- 					        Assert(ts->status == TRANSACTION_STATUS_UNKNOWN); 
 							ts->csn = MtmAssignCSN();
 							ts->cmd = MSG_PREPARED;
 							MtmSendNotificationMessage(ts);
 							break;
-						case MSG_END_PREPARE:
- 					        Assert(ts->status == TRANSACTION_STATUS_UNKNOWN); 
-							Assert(ts->csn <= msg->csn);
-							ts->csn = msg->csn;
-							ts->cmd = MSG_END_PREPARED;	
-							MtmAdjustSubtransactions(ts);
-							MtmSyncClock(ts->csn);
-							MtmSendNotificationMessage(ts);
 							break;
 						case MSG_COMMIT:
 							Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
-							Assert(ts->csn == msg->csn);
-							ts->status = TRANSACTION_STATUS_COMMITTED;
+							Assert(ts->csn < msg->csn);
+							ts->csn = msg->csn;
+							MtmSyncClock(ts->csn);
 							ts->cmd = MSG_COMMITTED;							
 							MtmAdjustSubtransactions(ts);
 							MtmSendNotificationMessage(ts);
@@ -668,7 +556,6 @@ static void MtmTransReceiver(Datum arg)
 							Assert(false);
 						}
 					}
-#endif
 				}
 				MtmUnlock();
 				
