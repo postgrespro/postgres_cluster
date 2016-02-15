@@ -127,7 +127,8 @@ void* reader(void* arg)
         result r = txn.exec("select sum(v) from t");
         int64_t sum = r[0][0].as(int64_t());
         if (sum != prevSum) {
-            printf("Total=%ld\n", sum);
+			//		r = txn.exec("select mtm_get_snapshot()");			
+            printf("Total=%ld, snapshot=%ld\n", sum, r[0][0].as(int64_t()));
             prevSum = sum;
         }
         t.transactions += 1;
@@ -148,7 +149,7 @@ void* writer(void* arg)
     { 
         //work 
         transaction<repeatable_read> txn(*conns[random() % conns.size()]);
-        // transaction<read_committed> txn(*conns[random() % conns.size()]);
+        //transaction<read_committed> txn(*conns[random() % conns.size()]);
         int srcAcc = random() % cfg.nAccounts;
         int dstAcc = random() % cfg.nAccounts;
         try {            

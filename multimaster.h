@@ -5,16 +5,16 @@
 #include "bgwpool.h"
 
 #define MTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
-//#define MTM_TRACE(fmt, ...)
-#define MTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
+#define MTM_TRACE(fmt, ...)
 #define MTM_TUPLE_TRACE(fmt, ...)
+/*
+#define MTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
+#define MTM_TUPLE_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
+*/
 
 #define BIT_SET(mask, bit) ((mask) & ((int64)1 << (bit)))
 
 #define MULTIMASTER_NAME "mmts"
-
-//#define FAST_COMMIT_PROTOCOL 1
-
 
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
@@ -30,14 +30,10 @@ typedef enum
 { 
 	MSG_INVALID,
 	MSG_READY,
-	MSG_BEGIN_PREPARE,
 	MSG_PREPARE,
-	MSG_END_PREPARE,
 	MSG_COMMIT,
 	MSG_ABORT,
-	MSG_BEGIN_PREPARED,
 	MSG_PREPARED,
-	MSG_END_PREPARED,
 	MSG_COMMITTED,
 	MSG_ABORTED
 } MtmMessageCode;
@@ -58,6 +54,7 @@ typedef struct MtmTransState
 	int            nSubxids;           /* Number of subtransanctions */
 	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
+	bool done;
 	TransactionId xids[1];             /* transaction ID at replicas: varying size MtmNodes */
 } MtmTransState;
 
