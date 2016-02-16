@@ -60,6 +60,8 @@ typedef struct {
     csn_t snapshot;       /* transaction snaphsot   */
 } MtmCurrentTrans;
 
+/* #define USE_SPINLOCK 1 */
+
 typedef uint64 timestamp_t;
 
 #define MTM_SHMEM_SIZE (64*1024*1024)
@@ -141,7 +143,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 void MtmLock(LWLockMode mode)
 {
 #ifdef USE_SPINLOCK
-	SpinLockAcquire(&ds->hashSpinlock);
+	SpinLockAcquire(&dtm->hashSpinlock);
 #else
 	LWLockAcquire(dtm->hashLock, mode);
 #endif
@@ -150,7 +152,7 @@ void MtmLock(LWLockMode mode)
 void MtmUnlock(void)
 {
 #ifdef USE_SPINLOCK
-	SpinLockRelease(&ds->hashSpinlock);
+	SpinLockRelease(&dtm->hashSpinlock);
 #else
 	LWLockRelease(dtm->hashLock);
 #endif
