@@ -4675,7 +4675,7 @@ XLOGShmemInit(void)
 		(WALInsertLockPadded *) allocptr;
 	allocptr += sizeof(WALInsertLockPadded) * NUM_XLOGINSERT_LOCKS;
 
-	XLogCtl->Insert.WALInsertLockTranche.name = "WALInsertLocks";
+	XLogCtl->Insert.WALInsertLockTranche.name = "wal_insert";
 	XLogCtl->Insert.WALInsertLockTranche.array_base = WALInsertLocks;
 	XLogCtl->Insert.WALInsertLockTranche.array_stride = sizeof(WALInsertLockPadded);
 
@@ -6283,7 +6283,7 @@ StartupXLOG(void)
 				  (uint32) (checkPoint.redo >> 32), (uint32) checkPoint.redo,
 					wasShutdown ? "TRUE" : "FALSE")));
 	ereport(DEBUG1,
-			(errmsg_internal("next transaction ID: %u/%u; next OID: %u",
+			(errmsg_internal("next transaction ID: %u:%u; next OID: %u",
 					checkPoint.nextXidEpoch, checkPoint.nextXid,
 					checkPoint.nextOid)));
 	ereport(DEBUG1,
@@ -7948,10 +7948,6 @@ ShutdownXLOG(int code, Datum arg)
 	ShutdownCommitTs();
 	ShutdownSUBTRANS();
 	ShutdownMultiXact();
-
-	/* Don't be chatty in standalone mode */
-	ereport(IsPostmasterEnvironment ? LOG : NOTICE,
-			(errmsg("database system is shut down")));
 }
 
 /*

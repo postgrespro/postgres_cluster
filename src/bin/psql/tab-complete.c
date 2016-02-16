@@ -899,7 +899,7 @@ static const pgsql_thing_t words_after_create[] = {
 	{"GROUP", Query_for_list_of_roles},
 	{"LANGUAGE", Query_for_list_of_languages},
 	{"INDEX", NULL, &Query_for_list_of_indexes},
-	{"MATERIALIZED VIEW", NULL, NULL},
+	{"MATERIALIZED VIEW", NULL, &Query_for_list_of_matviews},
 	{"OPERATOR", NULL, NULL},	/* Querying for this is probably not such a
 								 * good idea. */
 	{"OWNED", NULL, NULL, THING_NO_CREATE},		/* for DROP OWNED BY ... */
@@ -1264,7 +1264,8 @@ psql_completion(const char *text, int start, int end)
 		"DELETE FROM", "DISCARD", "DO", "DROP", "END", "EXECUTE", "EXPLAIN",
 		"FETCH", "GRANT", "IMPORT", "INSERT", "LISTEN", "LOAD", "LOCK",
 		"MOVE", "NOTIFY", "PREPARE",
-		"REASSIGN", "REFRESH", "REINDEX", "RELEASE", "RESET", "REVOKE", "ROLLBACK",
+		"REASSIGN", "REFRESH MATERIALIZED VIEW", "REINDEX", "RELEASE",
+		"RESET", "REVOKE", "ROLLBACK",
 		"SAVEPOINT", "SECURITY LABEL", "SELECT", "SET", "SHOW", "START",
 		"TABLE", "TRUNCATE", "UNLISTEN", "UPDATE", "VACUUM", "VALUES", "WITH",
 		NULL
@@ -1417,7 +1418,7 @@ psql_completion(const char *text, int start, int end)
 
 	/* ALTER FOREIGN DATA WRAPPER <name> */
 	else if (Matches5("ALTER", "FOREIGN", "DATA", "WRAPPER", MatchAny))
-		COMPLETE_WITH_LIST4("HANDLER", "VALIDATOR", "OPTIONS", "OWNER TO");
+		COMPLETE_WITH_LIST5("HANDLER", "VALIDATOR", "OPTIONS", "OWNER TO", "RENAME TO");
 
 	/* ALTER FOREIGN TABLE <name> */
 	else if (Matches4("ALTER", "FOREIGN", "TABLE", MatchAny))
@@ -1544,12 +1545,15 @@ psql_completion(const char *text, int start, int end)
 		COMPLETE_WITH_LIST3("MINVALUE", "MAXVALUE", "CYCLE");
 	/* ALTER SERVER <name> */
 	else if (Matches3("ALTER", "SERVER", MatchAny))
-		COMPLETE_WITH_LIST3("VERSION", "OPTIONS", "OWNER TO");
+		COMPLETE_WITH_LIST4("VERSION", "OPTIONS", "OWNER TO", "RENAME TO");
+	/* ALTER SERVER <name> VERSION <version>*/
+	else if (Matches5("ALTER", "SERVER", MatchAny, "VERSION", MatchAny))
+		COMPLETE_WITH_CONST("OPTIONS");
 	/* ALTER SYSTEM SET, RESET, RESET ALL */
 	else if (Matches2("ALTER", "SYSTEM"))
 		COMPLETE_WITH_LIST2("SET", "RESET");
 	/* ALTER SYSTEM SET|RESET <name> */
-	else if (Matches4("ALTER", "SYSTEM", "SET|RESET", MatchAny))
+	else if (Matches3("ALTER", "SYSTEM", "SET|RESET"))
 		COMPLETE_WITH_QUERY(Query_for_list_of_alter_system_set_vars);
 	/* ALTER VIEW <name> */
 	else if (Matches3("ALTER", "VIEW", MatchAny))
@@ -1750,6 +1754,9 @@ psql_completion(const char *text, int start, int end)
 	 */
 	else if (Matches5("ALTER", "TABLE", MatchAny, "SET", "TABLESPACE"))
 		COMPLETE_WITH_QUERY(Query_for_list_of_tablespaces);
+	/* If we have ALTER TABLE <sth> SET WITH provide OIDS */
+	else if (Matches5("ALTER", "TABLE", MatchAny, "SET", "WITH"))
+		COMPLETE_WITH_CONST("OIDS");
 	/* If we have ALTER TABLE <sth> SET WITHOUT provide CLUSTER or OIDS */
 	else if (Matches5("ALTER", "TABLE", MatchAny, "SET", "WITHOUT"))
 		COMPLETE_WITH_LIST2("CLUSTER", "OIDS");
@@ -2000,7 +2007,7 @@ psql_completion(const char *text, int start, int end)
 
 	/* CREATE FOREIGN DATA WRAPPER */
 	else if (Matches5("CREATE", "FOREIGN", "DATA", "WRAPPER", MatchAny))
-		COMPLETE_WITH_LIST2("HANDLER", "VALIDATOR");
+		COMPLETE_WITH_LIST3("HANDLER", "VALIDATOR", "OPTIONS");
 
 	/* CREATE INDEX --- is allowed inside CREATE SCHEMA, so use TailMatches */
 	/* First off we complete CREATE UNIQUE with "INDEX" */
@@ -2379,6 +2386,10 @@ psql_completion(const char *text, int start, int end)
 	else if (TailMatches3("FOREIGN", "DATA", "WRAPPER") &&
 			 !TailMatches4("CREATE", MatchAny, MatchAny, MatchAny))
 		COMPLETE_WITH_QUERY(Query_for_list_of_fdws);
+	/* applies in CREATE SERVER */
+	else if (TailMatches4("FOREIGN", "DATA", "WRAPPER", MatchAny) &&
+			 HeadMatches2("CREATE", "SERVER"))
+		COMPLETE_WITH_CONST("OPTIONS");
 
 /* FOREIGN TABLE */
 	else if (TailMatches2("FOREIGN", "TABLE") &&
@@ -2646,12 +2657,14 @@ psql_completion(const char *text, int start, int end)
 	else if (Matches4("REFRESH", "MATERIALIZED", "VIEW", MatchAny))
 		COMPLETE_WITH_CONST("WITH");
 	else if (Matches5("REFRESH", "MATERIALIZED", "VIEW", "CONCURRENTLY", MatchAny))
-		COMPLETE_WITH_CONST("WITH DATA");
+		COMPLETE_WITH_CONST("WITH");
 	else if (Matches5("REFRESH", "MATERIALIZED", "VIEW", MatchAny, "WITH"))
 		COMPLETE_WITH_LIST2("NO DATA", "DATA");
 	else if (Matches6("REFRESH", "MATERIALIZED", "VIEW", "CONCURRENTLY", MatchAny, "WITH"))
-		COMPLETE_WITH_CONST("DATA");
+		COMPLETE_WITH_LIST2("NO DATA", "DATA");
 	else if (Matches6("REFRESH", "MATERIALIZED", "VIEW", MatchAny, "WITH", "NO"))
+		COMPLETE_WITH_CONST("DATA");
+	else if (Matches7("REFRESH", "MATERIALIZED", "VIEW", "CONCURRENTLY", MatchAny, "WITH", "NO"))
 		COMPLETE_WITH_CONST("DATA");
 
 /* REINDEX */
@@ -2692,7 +2705,7 @@ psql_completion(const char *text, int start, int end)
 
 /* SET, RESET, SHOW */
 	/* Complete with a variable name */
-	else if (Matches1("SET|RESET"))
+	else if (TailMatches1("SET|RESET") && !TailMatches3("UPDATE", MatchAny, "SET"))
 		COMPLETE_WITH_QUERY(Query_for_list_of_set_vars);
 	else if (Matches1("SHOW"))
 		COMPLETE_WITH_QUERY(Query_for_list_of_show_vars);
@@ -2733,8 +2746,12 @@ psql_completion(const char *text, int start, int end)
 	/* Complete SET <var> with "TO" */
 	else if (Matches2("SET", MatchAny))
 		COMPLETE_WITH_CONST("TO");
+	/* Complete ALTER DATABASE|FUNCTION|ROLE|USER ... SET <name> */
+	else if (HeadMatches2("ALTER", "DATABASE|FUNCTION|ROLE|USER") &&
+			 TailMatches2("SET", MatchAny))
+		COMPLETE_WITH_LIST2("FROM CURRENT", "TO");
 	/* Suggest possible variable values */
-	else if (Matches3("SET", MatchAny, "TO|="))
+	else if (TailMatches3("SET", MatchAny, "TO|="))
 	{
 		/* special cased code for individual GUCs */
 		if (TailMatches2("DateStyle", "TO|="))
@@ -2823,6 +2840,8 @@ psql_completion(const char *text, int start, int end)
 		COMPLETE_WITH_QUERY(Query_for_list_of_user_mappings);
 	else if (Matches5("CREATE|ALTER|DROP", "USER", "MAPPING", "FOR", MatchAny))
 		COMPLETE_WITH_CONST("SERVER");
+	else if (Matches7("CREATE|ALTER", "USER", "MAPPING", "FOR", MatchAny, "SERVER", MatchAny))
+		COMPLETE_WITH_CONST("OPTIONS");
 
 /*
  * VACUUM [ FULL | FREEZE ] [ VERBOSE ] [ table ]
