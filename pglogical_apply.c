@@ -472,13 +472,14 @@ process_remote_commit(StringInfo s)
 static void
 process_remote_insert(StringInfo s, Relation rel)
 {
-	EState	   *estate;
-	TupleData   new_tuple;
+	EState *estate;
+	TupleData new_tuple;
 	TupleTableSlot *newslot;
 	TupleTableSlot *oldslot;
 	ResultRelInfo *relinfo;
-	ScanKey	   *index_keys;
-	int			i;
+	ScanKey	*index_keys;
+	char* relname = RelationGetRelationName(rel);
+	int	i;
 
 	estate = create_rel_estate(rel);
 	newslot = ExecInitExtraTupleSlot(estate);
@@ -560,6 +561,18 @@ process_remote_insert(StringInfo s, Relation rel)
     FreeExecutorState(estate);
 
 	CommandCounterIncrement();
+
+	if (strcmp(relname, MULTIMASTER_DDL_TABLE) == 0) { 
+		char* ddl = TextDatumGetCString(new_tuple.values[Anum_mtm_ddl_log_query-1]);
+		int rc;
+		SPI_connect();
+		rc = SPI_execute(ddl, false, 0);
+        SPI_finish();
+		if (rc != SPI_OK_UTILITY) { 
+			elog(ERROR, "Failed to execute utility statement %s", ddl);
+		}
+	}
+
 }
 
 static void

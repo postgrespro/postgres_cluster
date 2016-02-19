@@ -5,7 +5,7 @@
 #include "bgwpool.h"
 
 #define MTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
-#define MTM_TRACE(fmt, ...)
+#define MTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 #define MTM_TUPLE_TRACE(fmt, ...)
 /*
 #define MTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
@@ -14,7 +14,14 @@
 
 #define BIT_SET(mask, bit) ((mask) & ((int64)1 << (bit)))
 
-#define MULTIMASTER_NAME "mmts"
+#define MULTIMASTER_NAME           "mtm"
+#define MULTIMASTER_SCHEMA_NAME    "mtm"
+#define MULTIMASTER_DDL_TABLE      "ddl_log"
+
+#define Natts_mtm_ddl_log 2
+#define Anum_mtm_ddl_log_issued		1
+#define Anum_mtm_ddl_log_query		2
+
 
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
