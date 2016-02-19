@@ -32,13 +32,5 @@ do
 done
 
 sleep 5
-echo "Create multimaster extension..."
-
-for ((i=1;i<=n_nodes;i++))
-do
-    port=$((5431+i))
-	psql postgres -p $port -c "create extension multimaster"
-done
-
 
 echo Done

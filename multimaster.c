@@ -489,7 +489,7 @@ static void MtmPrepareTransaction(MtmCurrentTrans* x)
 	MtmLock(LW_EXCLUSIVE);
 	ts = hash_search(xid2state, &x->xid, HASH_ENTER, NULL);
 	ts->status = TRANSACTION_STATUS_IN_PROGRESS;	
-	ts->snapshot = x->isReplicated ? INVALID_CSN : x->snapshot;
+	ts->snapshot = x->isReplicated || !x->containsDML ? INVALID_CSN : x->snapshot;
 	ts->csn = MtmAssignCSN();	
 	ts->gtid = x->gtid;
 	ts->cmd = MSG_INVALID;
@@ -868,7 +868,7 @@ mtm_drop_node(PG_FUNCTION_ARGS)
 		dtm->nNodes -= 1;
 		if (!IsTransactionBlock())
 		{
-			MtmBroadcastUtilityStmt(psprintf("select multimaster.drop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
+			MtmBroadcastUtilityStmt(psprintf("select mtm.drop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
 		}
 		if (dropSlot) 
 		{
@@ -989,7 +989,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	}
 }
 
-static void MtmProcessDDLCommand(char const* queryString)
+static bool MtmProcessDDLCommand(char const* queryString)
 {
 	RangeVar   *rv;
 	Relation	rel;
@@ -1002,8 +1002,12 @@ static void MtmProcessDDLCommand(char const* queryString)
 	rv = makeRangeVar(MULTIMASTER_SCHEMA_NAME, MULTIMASTER_DDL_TABLE, -1);
 	rel = heap_openrv_extended(rv, RowExclusiveLock, true);
 
-	if (rel == NULL) { 
-		return;
+	if (rel == NULL) {
+		if (!IsTransactionBlock()) {
+			MtmBroadcastUtilityStmt(queryString, false);
+			return true;
+		}
+		return false;
 	}
 		
 	tupDesc = RelationGetDescr(rel);
@@ -1026,9 +1030,8 @@ static void MtmProcessDDLCommand(char const* queryString)
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
 
-	elog(WARNING, "Replicate command: '%s'", queryString);
-
 	dtmTx.containsDML = true;
+	return false;
 }
 
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
@@ -1038,7 +1041,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	bool skipCommand;
 	switch (nodeTag(parsetree))
 	{
-		case T_TransactionStmt:
 		case T_PlannedStmt:
 		case T_ClosePortalStmt:
 		case T_FetchStmt:
@@ -1052,14 +1054,17 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_LoadStmt:
 		case T_VariableSetStmt:
 		case T_VariableShowStmt:
+	    case T_TransactionStmt:
 			skipCommand = true;
 			break;
 	    default:
-			skipCommand = false;			
+			skipCommand = false;
 			break;
 	}
-	if (!skipCommand && !dtmTx.isReplicated) {
-		MtmProcessDDLCommand(queryString);
+	if (!skipCommand && !dtmTx.isReplicated && context == PROCESS_UTILITY_TOPLEVEL) {
+		if (MtmProcessDDLCommand(queryString)) { 
+			return;
+		}
 	}
 	if (PreviousProcessUtilityHook != NULL)
 	{
