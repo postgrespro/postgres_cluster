@@ -10,14 +10,15 @@ sep=""
 for ((i=1;i<=n_nodes;i++))
 do    
     port=$((5431+i))
-    conn_str="$conn_str${sep}dbname=postgres host=127.0.0.1 port=$port sslmode=disable"
+    conn_str="$conn_str${sep}dbname=postgres host=localhost port=$port sslmode=disable"
     sep=","
     initdb node$i
 done
 
-echo Start DTM
-~/postgres_cluster/contrib/arbiter/bin/arbiter -r 0.0.0.0:5431 -i 0 -d dtm 2> dtm.log &
-sleep 2
+#echo Start DTM
+#~/postgres_cluster/contrib/arbiter/bin/arbiter -r 0.0.0.0:5431 -i 0 -d dtm 2> dtm.log &
+#sleep 2
+echo "Starting nodes..."
 
 echo Start nodes
 for ((i=1;i<=n_nodes;i++))
@@ -31,7 +32,13 @@ do
 done
 
 sleep 5
-echo Initialize database schema
-psql postgres -f init.sql
+echo "Create multimaster extension..."
+
+for ((i=1;i<=n_nodes;i++))
+do
+    port=$((5431+i))
+	psql postgres -p $port -c "create extension multimaster"
+done
+
 
 echo Done

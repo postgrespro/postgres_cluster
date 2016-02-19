@@ -48,6 +48,9 @@
 #include "replication/slot.h"
 #include "port/atomics.h"
 #include "tcop/utility.h"
+#include "nodes/makefuncs.h"
+#include "access/htup_details.h"
+#include "catalog/indexing.h"
 
 #include "multimaster.h"
 
@@ -863,7 +866,7 @@ mtm_drop_node(PG_FUNCTION_ARGS)
 		dtm->nNodes -= 1;
 		if (!IsTransactionBlock())
 		{
-			MtmBroadcastUtilityStmt(psprintf("select mtm_drop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
+			MtmBroadcastUtilityStmt(psprintf("select multimaster.drop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
 		}
 		if (dropSlot) 
 		{
@@ -878,7 +881,7 @@ mtm_get_snapshot(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT64(dtmTx.snapshot);
 }
-	
+
 /*
  * Execute statement with specified parameters and check its result
  */
@@ -924,7 +927,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 					failedNode = i;
 					do { 
 						PQfinish(conns[i]);
-					} while (--i >= 0);				
+					} while (--i >= 0);                             
 					elog(ERROR, "Failed to establish connection '%s' to node %d", conn_str, failedNode);
 				}
 			}
@@ -933,7 +936,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 		i += 1;
 	}
 	Assert(i == MtmNodes);
-	
+    
 	for (i = 0; i < MtmNodes; i++) 
 	{ 
 		if (conns[i]) 
@@ -970,7 +973,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 				failedNode = i;
 			}
 		}
-	}			
+	}                       
 	for (i = 0; i < MtmNodes; i++) 
 	{ 
 		if (conns[i])
@@ -982,6 +985,48 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	{ 
 		elog(ERROR, errorMsg, failedNode+1);
 	}
+}
+
+static void MtmProcessDDLCommand(char const* queryString)
+{
+	RangeVar   *rv;
+	Relation	rel;
+	TupleDesc	tupDesc;
+	HeapTuple	tup;
+	Datum		values[Natts_mtm_ddl_log];
+	bool		nulls[Natts_mtm_ddl_log];
+	TimestampTz ts = GetCurrentTimestamp();
+
+	rv = makeRangeVar(MULTIMASTER_SCHEMA_NAME, MULTIMASTER_DDL_TABLE, -1);
+	rel = heap_openrv_extended(rv, RowExclusiveLock, true);
+
+	if (rel == NULL) { 
+		return;
+	}
+		
+	tupDesc = RelationGetDescr(rel);
+
+	/* Form a tuple. */
+	memset(nulls, false, sizeof(nulls));
+
+	values[Anum_mtm_ddl_log_issued - 1] = TimestampTzGetDatum(ts);
+	values[Anum_mtm_ddl_log_query - 1] = CStringGetTextDatum(queryString);
+
+	tup = heap_form_tuple(tupDesc, values, nulls);
+
+	/* Insert the tuple to the catalog. */
+	simple_heap_insert(rel, tup);
+
+	/* Update the indexes. */
+	CatalogUpdateIndexes(rel, tup);
+
+	/* Cleanup. */
+	heap_freetuple(tup);
+	heap_close(rel, RowExclusiveLock);
+
+	elog(WARNING, "Replicate command: '%s'", queryString);
+
+	dtmTx.containsDML = true;
 }
 
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
@@ -1011,22 +1056,18 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			skipCommand = false;			
 			break;
 	}
-	if (skipCommand || IsTransactionBlock()) { 
-		if (PreviousProcessUtilityHook != NULL)
-		{
-			PreviousProcessUtilityHook(parsetree, queryString, context,
-									   params, dest, completionTag);
-		}
-		else
-		{
-			standard_ProcessUtility(parsetree, queryString, context,
-									params, dest, completionTag);
-		}
-		if (!skipCommand) {
-			dtmTx.isDistributed = false;
-		}
-	} else { 		
-		MtmBroadcastUtilityStmt(queryString, false);
+	if (!skipCommand && !dtmTx.isReplicated) {
+		MtmProcessDDLCommand(queryString);
+	}
+	if (PreviousProcessUtilityHook != NULL)
+	{
+		PreviousProcessUtilityHook(parsetree, queryString, context,
+								   params, dest, completionTag);
+	}
+	else
+	{
+		standard_ProcessUtility(parsetree, queryString, context,
+								params, dest, completionTag);
 	}
 }
 

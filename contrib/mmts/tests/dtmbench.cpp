@@ -180,28 +180,20 @@ void* writer(void* arg)
 void initializeDatabase()
 {
 	connection conn(cfg.connections[0]);
-	printf("creating extension\n");
-	{
-		nontransaction txn(conn);
-		exec(txn, "drop extension if exists multimaster");
-		exec(txn, "create extension multimaster");
-	}
-	printf("extension created\n");
-
-	printf("creating table t\n");
+    time_t start = getCurrentTime();
+	printf("Creating database schema...\n");
 	{
 		nontransaction txn(conn);
 		exec(txn, "drop table if exists t");
 		exec(txn, "create table t(u int primary key, v int)");
 	}
-	printf("table t created\n");
-	printf("inserting stuff into t\n");
+	printf("Populating data...\n");
 	{
 		work txn(conn);
 		exec(txn, "insert into t (select generate_series(0,%d), %d)", cfg.nAccounts-1, 0);
 		txn.commit();
 	}
-	printf("stuff inserted\n");
+	printf("Initialization completed in %f seconds\n", (start  - getCurrentTime())/100000.0);
 }
 
 int main (int argc, char* argv[])
