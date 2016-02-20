@@ -26,6 +26,8 @@
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
 
+typedef uint64 timestamp_t;
+
 /* Identifier of global transaction */
 typedef struct 
 {
@@ -36,6 +38,7 @@ typedef struct
 typedef enum
 { 
 	MSG_INVALID,
+	MSG_HANDSHAKE,
 	MSG_READY,
 	MSG_PREPARE,
 	MSG_COMMIT,
@@ -68,7 +71,7 @@ typedef struct MtmTransState
 typedef struct
 {
 	volatile slock_t hashSpinlock;     /* spinlock used to protect access to hash table */
-	PGSemaphoreData votingSemaphore;   /* semaphore used to notify mm-sender about new responses to coordinator */
+	PGSemaphoreData votingSemaphore;   /* semaphore used to notify mtm-sender about new responses to coordinator */
 	LWLockId hashLock;                 /* lock to synchronize access to hash table */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	int64  disabledNodeMask;           /* bitmask of disable nodes (so no more than 64 nodes in multimaster:) */
@@ -78,7 +81,7 @@ typedef struct
     bool initialized;             
 	csn_t csn;                         /* last obtained CSN: used to provide unique acending CSNs based on system time */
 	MtmTransState* votingTransactions; /* L1-list of replicated transactions sendings notifications to coordinator.
-									 	 This list is used to pass information to mm-sender BGW */
+									 	 This list is used to pass information to mtm-sender BGW */
     MtmTransState* transListHead;      /* L1 list of all finished transactions present in xid2state hash.
 									 	  It is cleanup by MtmGetOldestXmin */
     MtmTransState** transListTail;     /* Tail of L1 list of all finished transactionds, used to append new elements.
@@ -93,9 +96,12 @@ extern int   MtmNodeId;
 extern int   MtmNodes;
 extern int   MtmArbiterPort;
 extern char* MtmDatabaseName;
+extern int   MtmConnectAttempts;
+extern int   MtmConnectTimeout;
+extern int   MtmReconnectAttempts;
 
 extern void  MtmArbiterInitialize(void);
-extern int   MtmStartReceivers(char* nodes, int node_id);
+extern int   MtmStartReceivers(char* nodes, int nodeId);
 extern csn_t MtmTransactionSnapshot(TransactionId xid);
 extern csn_t MtmAssignCSN(void);
 extern csn_t MtmSyncClock(csn_t csn);
@@ -108,6 +114,9 @@ extern void  MtmSendNotificationMessage(MtmTransState* ts);
 extern void  MtmAdjustSubtransactions(MtmTransState* ts);
 extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
+extern void  MtmDropNode(int nodeId, bool dropSlot);
 extern MtmState* MtmGetState(void);
+extern timestamp_t MtmGetCurrentTime(void);
+extern void MtmSleep(timestamp_t interval);
 
 #endif

@@ -65,8 +65,6 @@ typedef struct {
 
 /* #define USE_SPINLOCK 1 */
 
-typedef uint64 timestamp_t;
-
 #define MTM_SHMEM_SIZE (64*1024*1024)
 #define MTM_HASH_SIZE  100003
 #define USEC 1000000
@@ -128,6 +126,9 @@ char* MtmConnStrs;
 int   MtmNodeId;
 int   MtmArbiterPort;
 int   MtmNodes;
+int   MtmConnectAttempts;
+int   MtmConnectTimeout;
+int   MtmReconnectAttempts;
 
 static int MtmQueueSize;
 static int MtmWorkers;
@@ -166,19 +167,19 @@ void MtmUnlock(void)
  *  System time manipulation functions
  */
 
-static timestamp_t MtmGetCurrentTime()
+timestamp_t MtmGetCurrentTime(void)
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return (timestamp_t)tv.tv_sec*USEC + tv.tv_usec + dtm->timeShift;
 }
 
-static void MtmSleep(timestamp_t interval)
+void MtmSleep(timestamp_t interval)
 {
     struct timespec ts;
     struct timespec rem;
-    ts.tv_sec = 0;
-    ts.tv_nsec = interval*1000;
+    ts.tv_sec = interval/1000000;
+    ts.tv_nsec = interval%1000000*1000;
 
     while (nanosleep(&ts, &rem) < 0) { 
         Assert(errno == EINTR);
@@ -749,6 +750,52 @@ _PG_init(void)
 		NULL
 	);
 
+	DefineCustomIntVariable(
+		"multimaster.connect_timeout",
+		"Multimaster nodes connect timeout",
+		"Interval in microseconds between connection attempts",
+		&MtmConnectTimeout,
+		1000000,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.connect_attempts",
+		"Multimaster number of connect attemts",
+		"Maximal number of attempt to establish connection with other node after which multimaster is give up",
+		&MtmConnectAttempts,
+		10,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.reconnect_attempts",
+		"Multimaster number of reconnect attemts",
+		"Maximal number of attempt to reestablish connection with other node after which node is considered to be offline",
+		&MtmReconnectAttempts,
+		10,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+
 	/*
 	 * Request additional shared resources.  (These are no-ops if we're not in
 	 * the postmaster process.)  We'll allocate or attach to the shared
@@ -838,6 +885,28 @@ csn_t MtmTransactionSnapshot(TransactionId xid)
     return snapshot;
 }
 
+
+void MtmDropNode(int nodeId, bool dropSlot)
+{
+	if (!BIT_SET(dtm->disabledNodeMask, nodeId-1))
+	{
+		if (nodeId <= 0 || nodeId > dtm->nNodes) 
+		{ 
+			elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, dtm->nNodes);
+		}
+		dtm->disabledNodeMask |= ((int64)1 << (nodeId-1));
+		dtm->nNodes -= 1;
+		if (!IsTransactionBlock())
+		{
+			MtmBroadcastUtilityStmt(psprintf("select mtm.drop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
+		}
+		if (dropSlot) 
+		{
+			ReplicationSlotDrop(psprintf("mtm_slot_%d", nodeId));
+		}		
+	}
+}
+
 Datum
 mtm_start_replication(PG_FUNCTION_ARGS)
 {
@@ -858,23 +927,7 @@ mtm_drop_node(PG_FUNCTION_ARGS)
 {
 	int nodeId = PG_GETARG_INT32(0);
 	bool dropSlot = PG_GETARG_BOOL(1);
-	if (!BIT_SET(dtm->disabledNodeMask, nodeId-1))
-	{
-		if (nodeId <= 0 || nodeId > dtm->nNodes) 
-		{ 
-			elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, dtm->nNodes);
-		}
-		dtm->disabledNodeMask |= ((int64)1 << (nodeId-1));
-		dtm->nNodes -= 1;
-		if (!IsTransactionBlock())
-		{
-			MtmBroadcastUtilityStmt(psprintf("select mtm.drop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
-		}
-		if (dropSlot) 
-		{
-			ReplicationSlotDrop(psprintf("mtm_slot_%d", nodeId));
-		}		
-	}
+	MtmDropNode(nodeId, dropSlot);
     PG_RETURN_VOID();
 }
 	
