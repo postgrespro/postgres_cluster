@@ -269,6 +269,7 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 			int optval = 1;
 			MtmArbiterMessage msg;
 			setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
+			setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, (char const*)&optval, sizeof(optval));
 
 			msg.code = MSG_HANDSHAKE;
 			msg.node = MtmNodeId;
