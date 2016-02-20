@@ -17,6 +17,7 @@
 #define MULTIMASTER_NAME           "mtm"
 #define MULTIMASTER_SCHEMA_NAME    "mtm"
 #define MULTIMASTER_DDL_TABLE      "ddl_log"
+#define MULTIMASTER_SLOT_PATTERN   "mtm_slot_%d"
 
 #define Natts_mtm_ddl_log 2
 #define Anum_mtm_ddl_log_issued		1

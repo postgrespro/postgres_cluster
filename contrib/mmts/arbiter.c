@@ -361,9 +361,14 @@ static void MtmAcceptOneConnection()
 			close(fd);
 		} else{ 			
 			Assert(msg.node > 0 && msg.node <= MtmNodes && msg.node != MtmNodeId);
-			elog(NOTICE, "Arbiter established connection with node %d", msg.node); 
-			MtmRegisterSocket(fd, msg.node-1);
-			sockets[msg.node-1] = fd;
+			if (BIT_SET(ds->disabledNodeMask, msg.node-1)) { 
+				elog(WARNING, "Reject attempt to reconnect from disabled node %d", msg.node); 
+				close(fd);
+			} else { 
+				elog(NOTICE, "Arbiter established connection with node %d", msg.node); 
+				MtmRegisterSocket(fd, msg.node-1);
+				sockets[msg.node-1] = fd;
+			}
 		}
 	}
 }
