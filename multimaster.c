@@ -902,7 +902,7 @@ void MtmDropNode(int nodeId, bool dropSlot)
 		}
 		if (dropSlot) 
 		{
-			ReplicationSlotDrop(psprintf("mtm_slot_%d", nodeId));
+			ReplicationSlotDrop(psprintf(MULTIMASTER_SLOT_PATTERN, nodeId));
 		}		
 	}
 }

@@ -39,6 +39,8 @@
 typedef struct PGLogicalProtoMM
 {
     PGLogicalProtoAPI api;
+	MtmState* state;
+	int  nodeId;
     bool isLocal;
 } PGLogicalProtoMM;
 
@@ -106,7 +108,7 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
 	csn_t csn = MtmTransactionSnapshot(txn->xid);
 	MTM_TRACE("pglogical_write_begin %d CSN=%ld\n", txn->xid, csn);
-    if (csn == INVALID_CSN) {
+    if (csn == INVALID_CSN || BIT_SET(mm->state->disabledNodeMask, mm->nodeId-1)) {
         mm->isLocal = true;
     } else { 
         mm->isLocal = false;        
@@ -377,6 +379,8 @@ pglogical_init_api(PGLogicalProtoType typ)
 	PGLogicalProtoMM* pmm = palloc0(sizeof(PGLogicalProtoMM));
     PGLogicalProtoAPI* res = &pmm->api;
     pmm->isLocal = false;
+	pmm->state = MtmGetState();
+	sscanf(MyReplicationSlot->data.name.data, MULTIMASTER_SLOT_PATTERN, &pmm->nodeId);
     res->write_rel = pglogical_write_rel;
     res->write_begin = pglogical_write_begin;
     res->write_commit = pglogical_write_commit;
