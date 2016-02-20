@@ -1,0 +1,8 @@
+<!-- doc/src/sgml/xtm.sgml -->
+ <chapter id="XTM">
+  <title>eXtensible Transaction Manager</title>
+  <indexterm zone="XTM">
+   <primary>eXtensible Transaction Manager</primary>
+  </indexterm>
+  <para>
+    </
