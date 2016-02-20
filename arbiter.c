@@ -72,9 +72,9 @@
 
 #include "multimaster.h"
 
-#define MAX_CONNECT_ATTEMPTS 10
-#define MAX_ROUTES           16
-#define BUFFER_SIZE          1024
+#define MAX_ROUTES      16
+#define BUFFER_SIZE     1024
+#define HANDSHAKE_MAGIC 0xCAFEDEED
 
 typedef struct
 {
@@ -83,15 +83,17 @@ typedef struct
 	TransactionId  dxid; /* Transaction ID at destination node */
 	TransactionId  sxid; /* Transaction IO at sender node */  
 	csn_t          csn;  /* local CSN in case of sending data from replica to master, global CSN master->replica */
-} MtmCommitMessage;
+} MtmArbiterMessage;
 
 typedef struct 
 {
 	int used;
-	MtmCommitMessage data[BUFFER_SIZE];
+	MtmArbiterMessage data[BUFFER_SIZE];
 } MtmBuffer;
 
-static int* sockets;
+static int*      sockets;
+static char**    hosts;
+static int       gateway;
 static MtmState* ds;
 
 static void MtmTransSender(Datum arg);
@@ -100,6 +102,7 @@ static void MtmTransReceiver(Datum arg);
 static char const* const messageText[] = 
 {
 	"INVALID",
+	"HANDSHAKE",
 	"READY",
 	"PREPARE",
 	"COMMIT",
@@ -111,7 +114,7 @@ static char const* const messageText[] =
 
 
 static BackgroundWorker MtmSender = {
-	"mm-sender",
+	"mtm-sender",
 	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
 	BgWorkerStart_ConsistentState,
 	1, /* restart in one second (is it possible to restart immediately?) */
@@ -119,7 +122,7 @@ static BackgroundWorker MtmSender = {
 };
 
 static BackgroundWorker MtmRecevier = {
-	"mm-receiver",
+	"mtm-receiver",
 	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
 	BgWorkerStart_ConsistentState,
 	1, /* restart in one second (is it possible to restart immediately?) */
@@ -164,14 +167,14 @@ static int    max_fd;
 static fd_set inset;
 #endif
 
-static void MtmRegisterSocket(int fd, int i)
+static void MtmRegisterSocket(int fd, int node)
 {
 #if USE_EPOLL
     struct epoll_event ev;
     ev.events = EPOLLIN;
-    ev.data.u32 = i;        
+    ev.data.u32 = node;        
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
-        elog(ERROR, "Failed to add socket to epoll set: %d", errno);
+        elog(ERROR, "Arbuter failed to add socket to epoll set: %d", errno);
     } 
 #else
     FD_SET(fd, &inset);    
@@ -181,25 +184,65 @@ static void MtmRegisterSocket(int fd, int i)
 #endif          
 }     
 
+static void MtmUnregisterSocket(int fd)
+{
+#if USE_EPOLL
+    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
+#else
+	FD_CLR(fd, &inset); 
+#endif
+}
 
 
-static int MtmConnectSocket(char const* host, int port)
+static void MtmDisconnect(int node)
+{
+	close(sockets[node]);
+	MtmUnregisterSocket(sockets[node]);
+	sockets[node] = -1;
+}
+
+static bool MtmWriteSocket(int sd, void const* buf, int size)
+{
+    char* src = (char*)buf;
+    while (size != 0) {
+        int n = send(sd, src, size, 0);
+        if (n <= 0) {
+			return false;
+        }
+        size -= n;
+        src += n;
+    }
+	return true;
+}
+
+static int MtmReadSocket(int sd, void* buf, int buf_size)
+{
+	int rc = recv(sd, buf, buf_size, 0);
+	if (rc <= 0) { 
+		return -1;
+	}
+	return rc;
+}
+
+
+
+static int MtmConnectSocket(char const* host, int port, int max_attempts)
 {
     struct sockaddr_in sock_inet;
     unsigned addrs[MAX_ROUTES];
     unsigned i, n_addrs = sizeof(addrs) / sizeof(addrs[0]);
-    int max_attempts = MAX_CONNECT_ATTEMPTS;
 	int sd;
 
     sock_inet.sin_family = AF_INET;
 	sock_inet.sin_port = htons(port);
 
 	if (!MtmResolveHostByName(host, addrs, &n_addrs)) {
-		elog(ERROR, "Failed to resolve host '%s' by name", host);
+		elog(ERROR, "Arbiter failed to resolve host '%s' by name", host);
 	}
+  Retry:
 	sd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sd < 0) {
-	    elog(ERROR, "Failed to create socket: %d", errno);
+	    elog(ERROR, "Arbiter failed to create socket: %d", errno);
     }
     while (1) {
 		int rc = -1;
@@ -215,19 +258,33 @@ static int MtmConnectSocket(char const* host, int port)
 		}
 		if (rc < 0) {
 			if ((errno != ENOENT && errno != ECONNREFUSED && errno != EINPROGRESS) || max_attempts == 0) {
-				elog(ERROR, "Arbiter failed to connect to %s:%d: %d", host, port, errno);
+				elog(WARNING, "Arbiter failed to connect to %s:%d: %d", host, port, errno);
+				return -1;
 			} else { 
 				max_attempts -= 1;
-				sleep(1);
+				MtmSleep(MtmConnectTimeout);
 			}
 			continue;
 		} else {
 			int optval = 1;
+			MtmArbiterMessage msg;
 			setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
+
+			msg.code = MSG_HANDSHAKE;
+			msg.node = MtmNodeId;
+			msg.dxid = HANDSHAKE_MAGIC;
+			msg.sxid = ShmemVariableCache->nextXid;
+			msg.csn  = MtmGetCurrentTime();
+			if (!MtmWriteSocket(sd, &msg, sizeof msg)) { 
+				elog(WARNING, "Arbiter failed to send handshake message to %s:%d: %d", host, port, errno);
+				close(sd);
+				goto Retry;
+			}
 			return sd;
 		}
     }
 }
+
 
 static void MtmOpenConnections()
 {
@@ -236,6 +293,7 @@ static void MtmOpenConnections()
 	char* connStr = pstrdup(MtmConnStrs);
 
 	sockets = (int*)palloc(sizeof(int)*nNodes);
+	hosts = (char**)palloc(sizeof(char*)*nNodes);
 
 	for (i = 0; i < nNodes; i++) {
 		char* host = strstr(connStr, "host=");
@@ -251,68 +309,97 @@ static void MtmOpenConnections()
 		} else { 
 			connStr = end;
 		}
-		sockets[i] = i+1 != MtmNodeId ? MtmConnectSocket(host, MtmArbiterPort + i + 1) : -1;
+		hosts[i] = host;
+		if (i+1 != MtmNodeId) { 
+			sockets[i] = MtmConnectSocket(host, MtmArbiterPort + i + 1, MtmConnectAttempts);
+			if (sockets[i] < 0) { 
+				MtmDropNode(i+1, false);
+			}
+		} else {
+			sockets[i] = -1;
+		}
 	}
 }
 
-static void MtmAcceptConnections()
+
+static bool MtmSendToNode(int node, void const* buf, int size)
+{
+	while (!MtmWriteSocket(sockets[node], buf, size)) { 
+		elog(WARNING, "Arbiter failed to write socket: %d", errno);
+		close(sockets[node]);
+		sockets[node] = MtmConnectSocket(hosts[node], MtmArbiterPort + node + 1, MtmReconnectAttempts);
+		if (sockets[node] < 0) { 
+			MtmDropNode(node+1, false);
+			return false;
+		}
+	}
+	return true;
+}
+
+static int MtmReadFromNode(int node, void* buf, int buf_size)
+{
+	int rc = MtmReadSocket(sockets[node], buf, buf_size);
+	if (rc <= 0) { 
+		elog(WARNING, "Arbiter failed to read from node=%d, rc=%d, errno=%d", node+1, rc, errno);
+		MtmDisconnect(node);
+	}
+	return rc;
+}
+
+static void MtmAcceptOneConnection()
+{
+	int fd = accept(gateway, NULL, NULL);
+	if (fd < 0) {
+		elog(WARNING, "Arbiter failed to accept socket: %d", errno);
+	} else { 	
+		MtmArbiterMessage msg;
+		int rc = MtmReadSocket(fd, &msg, sizeof msg);
+		if (rc < sizeof(msg)) { 
+			elog(WARNING, "Arbiter failed to handshake socket: %d, errno=%d", rc, errno);
+		} else if (msg.code != MSG_HANDSHAKE && msg.dxid != HANDSHAKE_MAGIC) { 
+			elog(WARNING, "Arbiter get unexpected handshake message %d", msg.code);
+			close(fd);
+		} else{ 			
+			Assert(msg.node > 0 && msg.node <= MtmNodes && msg.node != MtmNodeId);
+			elog(NOTICE, "Arbiter established connection with node %d", msg.node); 
+			MtmRegisterSocket(fd, msg.node-1);
+			sockets[msg.node-1] = fd;
+		}
+	}
+}
+	
+
+static void MtmAcceptIncomingConnections()
 {
 	struct sockaddr_in sock_inet;
-	int i;
-	int sd;
     int on = 1;
-	int nNodes = MtmNodes-1;
+	int i;
 
-	sockets = (int*)palloc(sizeof(int)*nNodes);
+	sockets = (int*)palloc(sizeof(int)*MtmNodes);
 
 	sock_inet.sin_family = AF_INET;
 	sock_inet.sin_addr.s_addr = htonl(INADDR_ANY);
 	sock_inet.sin_port = htons(MtmArbiterPort + MtmNodeId);
 
-    sd = socket(sock_inet.sin_family, SOCK_STREAM, 0);
-	if (sd < 0) {
-		elog(ERROR, "Failed to create socket: %d", errno);
+    gateway = socket(sock_inet.sin_family, SOCK_STREAM, 0);
+	if (gateway < 0) {
+		elog(ERROR, "Arbiter failed to create socket: %d", errno);
 	}
-    setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char*)&on, sizeof on);
+    setsockopt(gateway, SOL_SOCKET, SO_REUSEADDR, (char*)&on, sizeof on);
 
-    if (bind(sd, (struct sockaddr*)&sock_inet, sizeof(sock_inet)) < 0) {
-		elog(ERROR, "Failed to bind socket: %d", errno);
+    if (bind(gateway, (struct sockaddr*)&sock_inet, sizeof(sock_inet)) < 0) {
+		elog(ERROR, "Arbiter failed to bind socket: %d", errno);
 	}	
-    if (listen(sd, MtmNodes-1) < 0) {
-		elog(ERROR, "Failed to listen socket: %d", errno);
+    if (listen(gateway, MtmNodes) < 0) {
+		elog(ERROR, "Arbiter failed to listen socket: %d", errno);
 	}	
 
-	for (i = 0; i < nNodes; i++) {
-		int fd = accept(sd, NULL, NULL);
-		if (fd < 0) {
-			elog(ERROR, "Failed to accept socket: %d", errno);
-		}	
-		MtmRegisterSocket(fd, i);
-		sockets[i] = fd;
-	}
-	close(sd);
-}
+	sockets[MtmNodeId-1] = gateway;
+	MtmRegisterSocket(gateway, MtmNodeId-1);
 
-static void MtmWriteSocket(int sd, void const* buf, int size)
-{
-    char* src = (char*)buf;
-    while (size != 0) {
-        int n = send(sd, src, size, 0);
-        if (n <= 0) {
-            elog(ERROR, "Write socket failed: %d", errno);
-        }
-        size -= n;
-        src += n;
-    }
-}
-
-static int MtmReadSocket(int sd, void* buf, int buf_size)
-{
-	int rc = recv(sd, buf, buf_size, 0);
-	if (rc <= 0) { 
-		elog(ERROR, "Arbiter failed to read socket: %d", rc);
+	for (i = 0; i < MtmNodes-1; i++) {
+		MtmAcceptOneConnection();
 	}
-	return rc;
 }
 
 
@@ -320,7 +407,10 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 {
 	MtmBuffer* buf = &txBuffer[node];
 	if (buf->used == BUFFER_SIZE) { 
-		MtmWriteSocket(sockets[node], buf->data, buf->used*sizeof(MtmCommitMessage));
+		if (!MtmSendToNode(node, buf->data, buf->used*sizeof(MtmArbiterMessage))) {			
+			buf->used = 0;
+			return;
+		}
 		buf->used = 0;
 	}
 	MTM_TRACE("Send message %s CSN=%ld to node %d from node %d for global transaction %d/local transaction %d\n", 
@@ -355,7 +445,6 @@ static void MtmTransSender(Datum arg)
 	int i;
 	MtmBuffer* txBuffer = (MtmBuffer*)palloc(sizeof(MtmBuffer)*nNodes);
 	
-	sockets = (int*)palloc(sizeof(int)*nNodes);
 	ds = MtmGetState();
 
 	MtmOpenConnections();
@@ -371,7 +460,7 @@ static void MtmTransSender(Datum arg)
 
 		/* 
 		 * Use shared lock to improve locality,
-		 * because all other process mnodifying this list use exclusive lock 
+		 * because all other process modifying this list are using exclusive lock 
 		 */
 		MtmLock(LW_SHARED); 
 
@@ -388,7 +477,7 @@ static void MtmTransSender(Datum arg)
 
 		for (i = 0; i < nNodes; i++) { 
 			if (txBuffer[i].used != 0) { 
-				MtmWriteSocket(sockets[i], txBuffer[i].data, txBuffer[i].used*sizeof(MtmCommitMessage));
+				MtmSendToNode(i, txBuffer[i].data, txBuffer[i].used*sizeof(MtmArbiterMessage));
 				txBuffer[i].used = 0;
 			}
 		}		
@@ -401,10 +490,36 @@ static void MtmWakeUpBackend(MtmTransState* ts)
 	SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
 }
 
+#if !USE_EPOLL
+static bool MtmRecovery()
+{
+	int nNodes = MtmNodes;
+	bool recovered = false;
+    int i;
+
+    for (i = 0; i < nNodes; i++) {
+		int sd = sockets[i];
+        if (sd >= 0 && FD_ISSET(sd, &inset)) {
+            struct timeval tm = {0,0};
+            fd_set tryset;
+            FD_ZERO(&tryset);
+            FD_SET(sd, &tryset);
+            if (select(sd+1, &tryset, NULL, NULL, &tm) < 0) {
+				elog(WARNING, "Arbiter lost connection with node %d", i+1);
+				MtmDisconnect(i);
+				recovered = true;
+            }
+        }
+    }
+	return recorvered;
+}
+#endif
+
 static void MtmTransReceiver(Datum arg)
 {
-	int nNodes = MtmNodes-1;
-	int i, j, rc;
+	int nNodes = MtmNodes;
+	int nResponses;
+	int i, j, n, rc;
 	MtmBuffer* rxBuffer = (MtmBuffer*)palloc(sizeof(MtmBuffer)*nNodes);
 	HTAB* xid2state;
 
@@ -418,7 +533,7 @@ static void MtmTransReceiver(Datum arg)
 	
 	ds = MtmGetState();
 
-	MtmAcceptConnections();
+	MtmAcceptIncomingConnections();
 	xid2state = MtmCreateHash();
 
 	for (i = 0; i < nNodes; i++) { 
@@ -427,43 +542,53 @@ static void MtmTransReceiver(Datum arg)
 
 	while (true) {
 #if USE_EPOLL
-        rc = epoll_wait(epollfd, events, nNodes, -1);
-		if (rc < 0) { 
-			elog(ERROR, "epoll failed: %d", errno);
+        n = epoll_wait(epollfd, events, nNodes, -1);
+		if (n < 0) { 
+			elog(ERROR, "Arbiter failed to poll sockets: %d", errno);
 		}
-		for (j = 0; j < rc; j++) {
+		for (j = 0; j < n; j++) {
 			i = events[j].data.u32;
 			if (events[j].events & EPOLLERR) {
-				struct sockaddr_in insock;
-				socklen_t len = sizeof(insock);
-				getpeername(sockets[i], (struct sockaddr*)&insock, &len);
-				elog(WARNING, "Loose connection with %s", inet_ntoa(insock.sin_addr));
-				epoll_ctl(epollfd, EPOLL_CTL_DEL, sockets[i], NULL);
+				elog(WARNING, "Arbiter lost connection with node %d", i+1);
+				MtmDisconnect(j);
 			} 
 			else if (events[j].events & EPOLLIN)  
 #else
         fd_set events;
-        events = inset;
-        rc = select(max_fd+1, &events, NULL, NULL, NULL);
+		do { 
+			events = inset;
+			rc = select(max_fd+1, &events, NULL, NULL, NULL);
+		} while (rc < 0 && MtmRecovery());
+		
 		if (rc < 0) { 
-			elog(ERROR, "select failed: %d", errno);
+			elog(ERROR, "Arbiter failed to select sockets: %d", errno);
 		}
 		for (i = 0; i < nNodes; i++) { 
 			if (FD_ISSET(sockets[i], &events)) 
 #endif
 			{
-				int nResponses;
-				rxBuffer[i].used += MtmReadSocket(sockets[i], (char*)rxBuffer[i].data + rxBuffer[i].used, BUFFER_SIZE-rxBuffer[i].used);
-				nResponses = rxBuffer[i].used/sizeof(MtmCommitMessage);
+				if (i+1 == MtmNodeId) { 
+					Assert(sockets[i] == gateway);
+					MtmAcceptOneConnection();
+					continue;
+				}  
+				
+				rc = MtmReadFromNode(i, (char*)rxBuffer[i].data + rxBuffer[i].used, BUFFER_SIZE-rxBuffer[i].used);
+				if (rc <= 0) { 
+					continue;
+				}
+
+				rxBuffer[i].used += rc;
+				nResponses = rxBuffer[i].used/sizeof(MtmArbiterMessage);
 
 				MtmLock(LW_EXCLUSIVE);						
 
 				for (j = 0; j < nResponses; j++) { 
-					MtmCommitMessage* msg = &rxBuffer[i].data[j];
+					MtmArbiterMessage* msg = &rxBuffer[i].data[j];
 					MtmTransState* ts = (MtmTransState*)hash_search(xid2state, &msg->dxid, HASH_FIND, NULL);
 					Assert(ts != NULL);
 					Assert(ts->cmd == MSG_INVALID);
-					Assert((unsigned)(msg->node-1) <= (unsigned)nNodes);
+					Assert(msg->node > 0 && msg->node <= nNodes && msg->node != MtmNodeId);
 					ts->xids[msg->node-1] = msg->sxid;
 
 					if (MtmIsCoordinator(ts)) { 
@@ -559,9 +684,9 @@ static void MtmTransReceiver(Datum arg)
 				}
 				MtmUnlock();
 				
-				rxBuffer[i].used -= nResponses*sizeof(MtmCommitMessage);
+				rxBuffer[i].used -= nResponses*sizeof(MtmArbiterMessage);
 				if (rxBuffer[i].used != 0) { 
-					memmove(rxBuffer[i].data, (char*)rxBuffer[i].data + nResponses*sizeof(MtmCommitMessage), rxBuffer[i].used);
+					memmove(rxBuffer[i].data, (char*)rxBuffer[i].data + nResponses*sizeof(MtmArbiterMessage), rxBuffer[i].used);
 				}
 			}
 		}
