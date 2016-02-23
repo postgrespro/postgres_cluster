@@ -83,6 +83,7 @@ typedef struct
 	TransactionId  dxid; /* Transaction ID at destination node */
 	TransactionId  sxid; /* Transaction IO at sender node */  
 	csn_t          csn;  /* local CSN in case of sending data from replica to master, global CSN master->replica */
+	int64          disabledNodeMask; /* bitmask of disabled nodes at the sender of message */
 } MtmArbiterMessage;
 
 typedef struct 
@@ -109,7 +110,8 @@ static char const* const messageText[] =
 	"ABORT",
 	"PREPARED",
 	"COMMITTED",
-	"ABORTED"
+	"ABORTED",
+	"STATUS"
 };
 
 
@@ -276,11 +278,28 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 			msg.dxid = HANDSHAKE_MAGIC;
 			msg.sxid = ShmemVariableCache->nextXid;
 			msg.csn  = MtmGetCurrentTime();
+			msg.disabledNodeMask = ds->disabledNodeMask;
 			if (!MtmWriteSocket(sd, &msg, sizeof msg)) { 
 				elog(WARNING, "Arbiter failed to send handshake message to %s:%d: %d", host, port, errno);
 				close(sd);
 				goto Retry;
 			}
+			if (MtmReadSocket(sd, &msg, sizeof msg) != sizeof(msg)) { 
+				elog(WARNING, "Arbiter failed to receive response for handshake message from %s:%d: %d", host, port, errno);
+				close(sd);
+				goto Retry;
+			}
+			if (msg.code != MSG_STATUS || msg.dxid != HANDSHAKE_MAGIC) {
+				elog(WARNING, "Arbiter get unexpected response %d for handshake message from %s:%d: %d", msg.code, host, port, errno);
+				close(sd);
+				goto Retry;
+			}
+				
+			if (BIT_CHECK(msg.disabledNodeMask, MtmNodeId-1)) { 
+				elog(WARNING, "Node is switched to recovery mode");
+				ds->status = MTM_RECOVERY;
+			}
+			ds->disabledNodeMask = msg.disabledNodeMask;
 			return sd;
 		}
     }
@@ -315,10 +334,15 @@ static void MtmOpenConnections()
 			sockets[i] = MtmConnectSocket(host, MtmArbiterPort + i + 1, MtmConnectAttempts);
 			if (sockets[i] < 0) { 
 				MtmDropNode(i+1, false);
-			}
+			} 
 		} else {
 			sockets[i] = -1;
 		}
+	}
+	if (ds->nNodes < MtmNodes/2+1) { /* no quorum */
+		ds->status = MTM_OFFLINE;
+	} else if (ds->status == MTM_INITIALIZATION) { 
+		ds->status = MTM_CONNECTED;
 	}
 }
 
@@ -362,8 +386,13 @@ static void MtmAcceptOneConnection()
 			close(fd);
 		} else{ 			
 			Assert(msg.node > 0 && msg.node <= MtmNodes && msg.node != MtmNodeId);
-			if (BIT_SET(ds->disabledNodeMask, msg.node-1)) { 
-				elog(WARNING, "Reject attempt to reconnect from disabled node %d", msg.node); 
+			msg.code = MSG_STATUS;
+			msg.disabledNodeMask = ds->disabledNodeMask;
+			msg.dxid = HANDSHAKE_MAGIC;
+			msg.sxid = ShmemVariableCache->nextXid;
+			msg.csn  = MtmGetCurrentTime();
+			if (!MtmWriteSocket(fd, &msg, sizeof msg)) { 
+				elog(WARNING, "Arbiter failed to write response for handshake message from node %d", msg.node);
 				close(fd);
 			} else { 
 				elog(NOTICE, "Arbiter established connection with node %d", msg.node); 
@@ -427,6 +456,7 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 	buf->data[buf->used].sxid = ts->xid;
 	buf->data[buf->used].csn =  ts->csn;
 	buf->data[buf->used].node = MtmNodeId;
+	buf->data[buf->used].disabledNodeMask = ds->disabledNodeMask;
 	buf->used += 1;
 }
 
@@ -659,11 +689,19 @@ static void MtmTransReceiver(Datum arg)
 						switch (msg->code) { 
 						case MSG_PREPARE:
  					        Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS); 
-							ts->status = TRANSACTION_STATUS_UNKNOWN;
-							ts->csn = MtmAssignCSN();
-							ts->cmd = MSG_PREPARED;
+							if ((msg->disabledNodeMask & ~ds->disabledNodeMask) != 0) { 
+								/* Coordinator's disabled mask is wider than my:so reject such transaction to avoid 
+								   commit  on smaller subset of nodes */
+								ts->status = TRANSACTION_STATUS_ABORTED;
+								ts->cmd = MSG_ABORT;
+								MtmAdjustSubtransactions(ts);
+								MtmWakeUpBackend(ts);
+							} else { 
+								ts->status = TRANSACTION_STATUS_UNKNOWN;
+								ts->csn = MtmAssignCSN();
+								ts->cmd = MSG_PREPARED;
+							}
 							MtmSendNotificationMessage(ts);
-							break;
 							break;
 						case MSG_COMMIT:
 							Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);

@@ -31,7 +31,7 @@ typedef struct
 	void		(*SetTransactionStatus) (TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
 
 	/*
-	 * Get current transaction snaphot (encapsulation of GetSnapshotData in
+	 * Get current transaction snapshot (encapsulation of GetSnapshotData in
 	 * procarray.c)
 	 */
 	Snapshot	(*GetSnapshot) (Snapshot snapshot);
@@ -69,6 +69,7 @@ typedef struct
 	/* Detect distributed deadlock */
 	bool		(*DetectGlobalDeadLock) (PGPROC *proc);
 
+	/* Get transaction manager name */
 	char const *(*GetName) (void);
 }	TransactionManager;
 

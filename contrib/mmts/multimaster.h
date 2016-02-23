@@ -12,7 +12,7 @@
 #define MTM_TUPLE_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 */
 
-#define BIT_SET(mask, bit) ((mask) & ((int64)1 << (bit)))
+#define BIT_CHECK(mask, bit) ((mask) & ((int64)1 << (bit)))
 
 #define MULTIMASTER_NAME           "mtm"
 #define MULTIMASTER_SCHEMA_NAME    "mtm"
@@ -46,9 +46,25 @@ typedef enum
 	MSG_ABORT,
 	MSG_PREPARED,
 	MSG_COMMITTED,
-	MSG_ABORTED
+	MSG_ABORTED,
+	MSG_STATUS
 } MtmMessageCode;
 
+typedef enum
+{
+	MTM_INITIALIZATION, /* Initial status */
+	MTM_OFFLINE,        /* Node is out of quorum */
+	MTM_CONNECTED,      /* Arbiter is established connections with other nodes */
+	MTM_ONLINE,         /* Ready to receive client's queries */
+	MTM_RECOVERY        /* Node is in recovery process */
+} MtmNodeStatus;
+
+typedef enum
+{
+	SLOT_CREATE_NEW,   /* create new slot (drop existed) */
+	SLOT_OPEN_EXISTED, /* open existed slot */
+	SLOT_OPEN_ALWAYS,  /* open existed slot or create new if noty exists */
+} MtmSlotMode;
 
 typedef struct MtmTransState
 {
@@ -71,16 +87,18 @@ typedef struct MtmTransState
 
 typedef struct
 {
-	volatile slock_t hashSpinlock;     /* spinlock used to protect access to hash table */
+	MtmNodeStatus status;              /* Status of this node */
+	int recoverySlot;                  /* NodeId of recovery slot or 0 if none */
+	volatile slock_t spinlock;         /* spinlock used to protect access to hash table */
 	PGSemaphoreData votingSemaphore;   /* semaphore used to notify mtm-sender about new responses to coordinator */
 	LWLockId hashLock;                 /* lock to synchronize access to hash table */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
-	int64  disabledNodeMask;           /* bitmask of disable nodes (so no more than 64 nodes in multimaster:) */
+	int64  disabledNodeMask;           /* bitmask of disabled nodes (so no more than 64 nodes in multimaster:) */
+	int64  pglogicalNodeMask;          /* bitmask of started pglogic receviers */
     int    nNodes;                     /* number of active nodes */
-    pg_atomic_uint32 nReceivers;       /* number of initialized logical receivers (used to determine moment when Mtm intialization is completed */
-	long timeShift;                    /* local time correction */
-    bool initialized;             
-	csn_t csn;                         /* last obtained CSN: used to provide unique acending CSNs based on system time */
+    int    nReceivers;                 /* number of initialized logical receivers (used to determine moment when Mtm intialization is completed */
+	long   timeShift;                  /* local time correction */
+	csn_t  csn;                        /* last obtained CSN: used to provide unique acending CSNs based on system time */
 	MtmTransState* votingTransactions; /* L1-list of replicated transactions sendings notifications to coordinator.
 									 	 This list is used to pass information to mtm-sender BGW */
     MtmTransState* transListHead;      /* L1 list of all finished transactions present in xid2state hash.
@@ -107,7 +125,8 @@ extern csn_t MtmTransactionSnapshot(TransactionId xid);
 extern csn_t MtmAssignCSN(void);
 extern csn_t MtmSyncClock(csn_t csn);
 extern void  MtmJoinTransaction(GlobalTransactionId* gtid, csn_t snapshot);
-extern void  MtmReceiverStarted(void);
+extern void  MtmReceiverStarted(int nodeId);
+extern MtmSlotMode MtmReceiverSlotMode(int nodeId);
 extern void  MtmExecute(void* work, int size);
 extern void  MtmExecutor(int id, void* work, size_t size);
 extern HTAB* MtmCreateHash(void);
