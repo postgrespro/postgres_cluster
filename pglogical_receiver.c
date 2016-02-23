@@ -37,6 +37,7 @@
 /* Allow load of this module in shared libs */
 
 typedef struct ReceiverArgs { 
+	int receiver_node;
     char* receiver_conn_string;
     char receiver_slot[16];
 } ReceiverArgs;
@@ -201,6 +202,7 @@ pglogical_receiver_main(Datum main_arg)
 	PQExpBuffer query;
 	PGconn *conn;
 	PGresult *res;
+	MtmSlotMode mode;
 #ifndef USE_PGLOGICAL_OUTPUT
     bool insideTrans = false;
 #endif
@@ -218,6 +220,8 @@ pglogical_receiver_main(Datum main_arg)
 	/* Connect to a database */
 	BackgroundWorkerInitializeConnection(MtmDatabaseName, NULL);
 
+	mode = MtmReceiverSlotMode(args->receiver_node);	
+    
 	/* Establish connection to remote server */
 	conn = PQconnectdb(args->receiver_conn_string);
 	if (PQstatus(conn) != CONNECTION_OK)
@@ -230,22 +234,29 @@ pglogical_receiver_main(Datum main_arg)
 
 	query = createPQExpBuffer();
 
-    appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", args->receiver_slot, worker_name);
-    res = PQexec(conn, query->data);
-	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-	{
- 		const char *sqlstate = PQresultErrorField(res, PG_DIAG_SQLSTATE);
-        if (!sqlstate || strcmp(sqlstate, ERRCODE_DUPLICATE_OBJECT_STR) != 0)
+	if (mode == SLOT_CREATE_NEW) {
+		appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", args->receiver_slot);
+		res = PQexec(conn, query->data);
+		PQclear(res);
+		resetPQExpBuffer(query);
+	}
+	if (mode != SLOT_OPEN_EXISTED) { 
+		appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", args->receiver_slot, worker_name);
+		res = PQexec(conn, query->data);
+		if (PQresultStatus(res) != PGRES_TUPLES_OK)
 		{
-            PQclear(res);
-            ereport(ERROR, (errmsg("%s: Could not create logical slot",
-                                 worker_proc)));
-            proc_exit(1);
-        }
-    }
-    PQclear(res);
-	resetPQExpBuffer(query);
-
+			const char *sqlstate = PQresultErrorField(res, PG_DIAG_SQLSTATE);
+			if (!sqlstate || strcmp(sqlstate, ERRCODE_DUPLICATE_OBJECT_STR) != 0)
+			{
+				PQclear(res);
+				ereport(ERROR, (errmsg("%s: Could not create logical slot",
+									   worker_proc)));
+				proc_exit(1);
+			}
+		}
+		PQclear(res);
+		resetPQExpBuffer(query);
+	}
 	/* Start logical replication at specified position */
 	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL 0/0 (\"startup_params_format\" '1', \"max_proto_version\" '1',  \"min_proto_version\" '1')",
 					  args->receiver_slot);
@@ -260,7 +271,7 @@ pglogical_receiver_main(Datum main_arg)
 	PQclear(res);
 	resetPQExpBuffer(query);
 
-    MtmReceiverStarted();
+    MtmReceiverStarted(args->receiver_node);
     ByteBufferAlloc(&buf);
 
 	while (!got_sigterm)
@@ -544,7 +555,8 @@ int MtmStartReceivers(char* conns, int node_id)
             }
             ctx->receiver_conn_string = psprintf("replication=database %.*s", (int)(p - conn_str), conn_str);
             sprintf(ctx->receiver_slot, "mtm_slot_%d", node_id);
-            
+            ctx->receiver_node = node_id;
+
             /* Worker parameter and registration */
             snprintf(worker.bgw_name, BGW_MAXLEN, "mtm_worker_%d_%d", node_id, i);
             

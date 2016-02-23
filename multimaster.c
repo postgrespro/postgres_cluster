@@ -70,6 +70,7 @@ typedef struct {
 #define USEC 1000000
 #define MIN_WAIT_TIMEOUT 1000
 #define MAX_WAIT_TIMEOUT 100000
+#define STATUS_POLL_DELAY USEC
 
 void _PG_init(void);
 void _PG_fini(void);
@@ -147,7 +148,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 void MtmLock(LWLockMode mode)
 {
 #ifdef USE_SPINLOCK
-	SpinLockAcquire(&dtm->hashSpinlock);
+	SpinLockAcquire(&dtm->spinlock);
 #else
 	LWLockAcquire(dtm->hashLock, mode);
 #endif
@@ -156,7 +157,7 @@ void MtmLock(LWLockMode mode)
 void MtmUnlock(void)
 {
 #ifdef USE_SPINLOCK
-	SpinLockRelease(&dtm->hashSpinlock);
+	SpinLockRelease(&dtm->spinlock);
 #else
 	LWLockRelease(dtm->hashLock);
 #endif
@@ -409,20 +410,22 @@ static void MtmInitialize()
 	dtm = (MtmState*)ShmemInitStruct(MULTIMASTER_NAME, sizeof(MtmState), &found);
 	if (!found)
 	{
+		dtm->status = MTM_INITIALIZATION;
+		dtm->recoverySlot = 0;
 		dtm->hashLock = (LWLock*)GetNamedLWLockTranche(MULTIMASTER_NAME);
 		dtm->csn = MtmGetCurrentTime();
 		dtm->oldestXid = FirstNormalTransactionId;
         dtm->nNodes = MtmNodes;
 		dtm->disabledNodeMask = 0;
+		dtm->pglogicalNodeMask = 0;
 		dtm->votingTransactions = NULL;
         dtm->transListHead = NULL;
-        dtm->transListTail = &dtm->transListHead;
-        pg_atomic_write_u32(&dtm->nReceivers, 0);
+        dtm->transListTail = &dtm->transListHead;		
+        dtm->nReceivers = 0;
 		dtm->timeShift = 0;
-        dtm->initialized = false;
 		PGSemaphoreCreate(&dtm->votingSemaphore);
 		PGSemaphoreReset(&dtm->votingSemaphore);
-		SpinLockInit(&dtm->hashSpinlock);
+		SpinLockInit(&dtm->spinlock);
         BgwPoolInit(&dtm->pool, MtmExecutor, MtmDatabaseName, MtmQueueSize);
 		RegisterXactCallback(MtmXactCallback, NULL);
 		dtmTx.snapshot = INVALID_CSN;
@@ -463,7 +466,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		MtmLock(LW_EXCLUSIVE);
 		x->xid = GetCurrentTransactionIdIfAny();
         x->isReplicated = false;
-        x->isDistributed = IsNormalProcessingMode() && dtm->initialized && MtmDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess();
+        x->isDistributed = IsNormalProcessingMode() && dtm->status == MTM_ONLINE && MtmDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess();
 		x->containsDML = false;
         x->snapshot = MtmAssignCSN();	
 		x->gtid.xid = InvalidTransactionId;
@@ -575,8 +578,6 @@ MtmFinishTransaction(TransactionId xid, int nsubxids, TransactionId *subxids, Xi
 		XidStatus prevStatus = TRANSACTION_STATUS_UNKNOWN;
 		bool found;
 
-		Assert(status == TRANSACTION_STATUS_ABORTED);
-
 		MtmLock(LW_EXCLUSIVE);
 		ts = hash_search(xid2state, &xid, HASH_ENTER, &found);
 		if (!found) {
@@ -590,7 +591,7 @@ MtmFinishTransaction(TransactionId xid, int nsubxids, TransactionId *subxids, Xi
 		ts->status = status;
 		MtmAdjustSubtransactions(ts);
 		
-		if (prevStatus != TRANSACTION_STATUS_ABORTED) {
+		if (dtm->status != MTM_RECOVERY && prevStatus != TRANSACTION_STATUS_ABORTED) {
 			ts->cmd = MSG_ABORTED;
 			MtmSendNotificationMessage(ts);
 		}
@@ -607,7 +608,7 @@ MtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids,
 	MTM_TRACE("%d: MtmSetTransactionStatus %u(%u) = %u, isDistributed=%d\n", getpid(), xid, dtmTx.xid, status, dtmTx.isDistributed);
 	if (xid == dtmTx.xid && dtmTx.isDistributed)
 	{
-		if (status == TRANSACTION_STATUS_ABORTED || !dtmTx.containsDML)
+		if (status == TRANSACTION_STATUS_ABORTED || !dtmTx.containsDML || dtm->status == MTM_RECOVERY)
 		{
 			MtmFinishTransaction(xid, nsubxids, subxids, status);	
 			MTM_TRACE("Finish transaction %d, status=%d, DML=%d\n", xid, status, dtmTx.containsDML);
@@ -863,11 +864,17 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 	dtmTx.containsDML = true;
 }
  
-void MtmReceiverStarted()
+void MtmReceiverStarted(int nodeId)
 {
-     if (pg_atomic_fetch_add_u32(&dtm->nReceivers, 1) == dtm->nNodes-2) {
-         dtm->initialized = true;
+	SpinLockAcquire(&dtm->spinlock);	
+	if (!BIT_CHECK(dtm->pglogicalNodeMask, nodeId-1)) { 
+		dtm->pglogicalNodeMask |= (int64)1 << (nodeId-1);
+		if (++dtm->nReceivers == dtm->nNodes-1) {
+			Assert(dtm->status == MTM_CONNECTED);
+			dtm->status = MTM_ONLINE;
+		}
      }
+	SpinLockRelease(&dtm->spinlock);	
 }
 
 csn_t MtmTransactionSnapshot(TransactionId xid)
@@ -885,10 +892,23 @@ csn_t MtmTransactionSnapshot(TransactionId xid)
     return snapshot;
 }
 
-
+MtmSlotMode MtmReceiverSlotMode(int nodeId)
+{
+	while (dtm->status != MTM_CONNECTED && dtm->status != MTM_ONLINE) { 		
+		if (dtm->status == MTM_RECOVERY) { 
+			if (dtm->recoverySlot == 0 || dtm->recoverySlot == nodeId) { 
+				dtm->recoverySlot = nodeId;
+				return SLOT_OPEN_EXISTED;
+			}
+		}
+		MtmSleep(STATUS_POLL_DELAY);
+	}
+	return dtm->recoverySlot ? SLOT_CREATE_NEW : SLOT_OPEN_ALWAYS;
+}
+			
 void MtmDropNode(int nodeId, bool dropSlot)
 {
-	if (!BIT_SET(dtm->disabledNodeMask, nodeId-1))
+	if (!BIT_CHECK(dtm->disabledNodeMask, nodeId-1))
 	{
 		if (nodeId <= 0 || nodeId > dtm->nNodes) 
 		{ 
@@ -969,7 +989,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 			p = conn_str_end;
 		}
 		*p = '\0';
-		if (!BIT_SET(disabledNodeMask, i)) 
+		if (!BIT_CHECK(disabledNodeMask, i)) 
 		{
 			conns[i] = PQconnectdb(conn_str);
 			if (PQstatus(conns[i]) != CONNECTION_OK)

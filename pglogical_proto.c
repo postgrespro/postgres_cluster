@@ -108,7 +108,7 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
 	csn_t csn = MtmTransactionSnapshot(txn->xid);
 	MTM_TRACE("pglogical_write_begin %d CSN=%ld\n", txn->xid, csn);
-    if (csn == INVALID_CSN || BIT_SET(mm->state->disabledNodeMask, mm->nodeId-1)) {
+    if (csn == INVALID_CSN || BIT_CHECK(mm->state->disabledNodeMask, mm->nodeId-1)) {
         mm->isLocal = true;
     } else { 
         mm->isLocal = false;        
