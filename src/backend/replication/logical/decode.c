@@ -34,6 +34,8 @@
 #include "access/xlogutils.h"
 #include "access/xlogreader.h"
 #include "access/xlogrecord.h"
+#include "access/twophase.h"
+//#include "access/twophase_rmgr.h"
 
 #include "catalog/pg_control.h"
 
@@ -51,6 +53,24 @@ typedef struct XLogRecordBuffer
 	XLogRecPtr	endptr;
 	XLogReaderState *record;
 } XLogRecordBuffer;
+
+
+typedef struct TwoPhaseFileHeader
+{
+	uint32		magic;			/* format identifier */
+	uint32		total_len;		/* actual file length */
+	TransactionId xid;			/* original transaction XID */
+	Oid			database;		/* OID of database it was in */
+	TimestampTz prepared_at;	/* time of preparation */
+	Oid			owner;			/* user running the transaction */
+	int32		nsubxacts;		/* number of following subxact XIDs */
+	int32		ncommitrels;	/* number of delete-on-commit rels */
+	int32		nabortrels;		/* number of delete-on-abort rels */
+	int32		ninvalmsgs;		/* number of cache invalidation messages */
+	bool		initfileinval;	/* does relcache init file need invalidation? */
+	char		gid[200];	/* GID for transaction */
+} TwoPhaseFileHeader;
+
 
 /* RMGR Handlers */
 static void DecodeXLogOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf);
@@ -70,6 +90,7 @@ static void DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			 xl_xact_parsed_commit *parsed, TransactionId xid);
 static void DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			xl_xact_parsed_abort *parsed, TransactionId xid);
+static void DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf);
 
 /* common function to decode tuples */
 static void DecodeXLogTuple(char *data, Size len, ReorderBufferTupleBuf *tup);
@@ -251,16 +272,10 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 				break;
 			}
 		case XLOG_XACT_PREPARE:
-
-			/*
-			 * Currently decoding ignores PREPARE TRANSACTION and will just
-			 * decode the transaction when the COMMIT PREPARED is sent or
-			 * throw away the transaction's contents when a ROLLBACK PREPARED
-			 * is received. In the future we could add code to expose prepared
-			 * transactions in the changestream allowing for a kind of
-			 * distributed 2PC.
-			 */
-			break;
+			{
+				DecodePrepare(ctx, buf);
+				break;
+			}
 		default:
 			elog(ERROR, "unexpected RM_XACT_ID record type: %u", info);
 	}
@@ -516,6 +531,116 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	for (i = 0; i < parsed->nsubxacts; i++)
 	{
 		ReorderBufferCommitChild(ctx->reorder, xid, parsed->subxacts[i],
+								 buf->origptr, buf->endptr);
+	}
+
+	/* replay actions of all transaction + subtransactions in order */
+	ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
+						commit_time, origin_id, origin_lsn);
+}
+
+static void
+DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
+{
+	XLogReaderState *r = buf->record;
+	XLogRecPtr	origin_lsn = InvalidXLogRecPtr;
+	XLogRecPtr	commit_time = InvalidXLogRecPtr;
+	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
+	int			i;
+
+	TransactionId xid;
+	TwoPhaseFileHeader *hdr;
+	char *twophase_buf;
+	int twophase_len;
+	char *twophase_bufptr;
+	TransactionId *children;
+	RelFileNode *commitrels;
+	RelFileNode *abortrels;
+	SharedInvalidationMessage *invalmsgs;
+
+
+
+	// probably there are no origin
+	// if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
+	// {
+	// 	origin_lsn = parsed->origin_lsn;
+	// 	commit_time = parsed->origin_timestamp;
+	// }
+
+	xid = XLogRecGetXid(r);
+	twophase_buf = XLogRecGetData(r);
+	twophase_len = sizeof(char) * XLogRecGetDataLen(r);
+
+	hdr = (TwoPhaseFileHeader *) twophase_buf;
+	Assert(TransactionIdEquals(hdr->xid, xid));
+	twophase_bufptr = twophase_buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
+	children = (TransactionId *) twophase_bufptr;
+	twophase_bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
+	commitrels = (RelFileNode *) twophase_bufptr;
+	twophase_bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
+	abortrels = (RelFileNode *) twophase_bufptr;
+	twophase_bufptr += MAXALIGN(hdr->nabortrels * sizeof(RelFileNode));
+	invalmsgs = (SharedInvalidationMessage *) twophase_bufptr;
+	twophase_bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));
+
+	/*
+	 * Process invalidation messages, even if we're not interested in the
+	 * transaction's contents, since the various caches need to always be
+	 * consistent.
+	 */
+	if (hdr->ninvalmsgs > 0)
+	{
+		ReorderBufferAddInvalidations(ctx->reorder, xid, buf->origptr,
+									  hdr->ninvalmsgs, invalmsgs);
+		ReorderBufferXidSetCatalogChanges(ctx->reorder, xid, buf->origptr);
+	}
+
+	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
+					   hdr->nsubxacts, children);
+
+	/* ----
+	 * Check whether we are interested in this specific transaction, and tell
+	 * the reorderbuffer to forget the content of the (sub-)transactions
+	 * if not.
+	 *
+	 * There can be several reasons we might not be interested in this
+	 * transaction:
+	 * 1) We might not be interested in decoding transactions up to this
+	 *	  LSN. This can happen because we previously decoded it and now just
+	 *	  are restarting or if we haven't assembled a consistent snapshot yet.
+	 * 2) The transaction happened in another database.
+	 * 3) The output plugin is not interested in the origin.
+	 *
+	 * We can't just use ReorderBufferAbort() here, because we need to execute
+	 * the transaction's invalidations.  This currently won't be needed if
+	 * we're just skipping over the transaction because currently we only do
+	 * so during startup, to get to the first transaction the client needs. As
+	 * we have reset the catalog caches before starting to read WAL, and we
+	 * haven't yet touched any catalogs, there can't be anything to invalidate.
+	 * But if we're "forgetting" this commit because it's it happened in
+	 * another database, the invalidations might be important, because they
+	 * could be for shared catalogs and we might have loaded data into the
+	 * relevant syscaches.
+	 * ---
+	 */
+
+	// Add db check here
+	if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) ||
+		FilterByOrigin(ctx, origin_id))
+	{
+		for (i = 0; i < hdr->nsubxacts; i++)
+		{
+			ReorderBufferForget(ctx->reorder, children[i], buf->origptr);
+		}
+		ReorderBufferForget(ctx->reorder, xid, buf->origptr);
+
+		return;
+	}
+
+	/* tell the reorderbuffer about the surviving subtransactions */
+	for (i = 0; i < hdr->nsubxacts; i++)
+	{
+		ReorderBufferCommitChild(ctx->reorder, xid, children[i],
 								 buf->origptr, buf->endptr);
 	}
 
