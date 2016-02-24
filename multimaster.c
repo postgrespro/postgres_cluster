@@ -60,10 +60,18 @@ typedef struct {
 	bool  isReplicated;   /* transaction on replica */
 	bool  isDistributed;  /* transaction performed INSERT/UPDATE/DELETE and has to be replicated to other nodes */
 	bool  containsDML;    /* transaction contains DML statements */
+	bool  isPrepared;     /* transaction was prepared for commit */
     csn_t snapshot;       /* transaction snaphsot   */
 } MtmCurrentTrans;
 
 /* #define USE_SPINLOCK 1 */
+
+typedef enum 
+{
+	HASH_LOCK_ID,
+	COMMIT_LOCK_ID,
+	N_LOCKS
+} MtmLockIds;
 
 #define MTM_SHMEM_SIZE (64*1024*1024)
 #define MTM_HASH_SIZE  100003
@@ -150,7 +158,7 @@ void MtmLock(LWLockMode mode)
 #ifdef USE_SPINLOCK
 	SpinLockAcquire(&dtm->spinlock);
 #else
-	LWLockAcquire(dtm->hashLock, mode);
+	LWLockAcquire(dtm->locks[HASH_LOCK_ID], mode);
 #endif
 }
 
@@ -159,7 +167,7 @@ void MtmUnlock(void)
 #ifdef USE_SPINLOCK
 	SpinLockRelease(&dtm->spinlock);
 #else
-	LWLockRelease(dtm->hashLock);
+	LWLockRelease(dtm->locks[HASH_LOCK_ID]);
 #endif
 }
 
@@ -412,7 +420,7 @@ static void MtmInitialize()
 	{
 		dtm->status = MTM_INITIALIZATION;
 		dtm->recoverySlot = 0;
-		dtm->hashLock = (LWLock*)GetNamedLWLockTranche(MULTIMASTER_NAME);
+		dtm->locks = GetNamedLWLockTranche(MULTIMASTER_NAME);
 		dtm->csn = MtmGetCurrentTime();
 		dtm->oldestXid = FirstNormalTransactionId;
         dtm->nNodes = MtmNodes;
@@ -423,6 +431,7 @@ static void MtmInitialize()
         dtm->transListTail = &dtm->transListHead;		
         dtm->nReceivers = 0;
 		dtm->timeShift = 0;
+		pg_atomic_write_u32(&dtm->nCommittingTrans, 0);
 		PGSemaphoreCreate(&dtm->votingSemaphore);
 		PGSemaphoreReset(&dtm->votingSemaphore);
 		SpinLockInit(&dtm->spinlock);
@@ -467,6 +476,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		x->xid = GetCurrentTransactionIdIfAny();
         x->isReplicated = false;
         x->isDistributed = IsNormalProcessingMode() && dtm->status == MTM_ONLINE && MtmDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess();
+		x->isPrepared = false;
 		x->containsDML = false;
         x->snapshot = MtmAssignCSN();	
 		x->gtid.xid = InvalidTransactionId;
@@ -475,6 +485,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
         MTM_TRACE("MtmLocalTransaction: %s transaction %u uses local snapshot %lu\n", x->isDistributed ? "distributed" : "local", x->xid, x->snapshot);
     }
 }
+
 
 /* 
  * We need to pass snapshot to WAL-sender, so create record in transaction status hash table 
@@ -488,8 +499,14 @@ static void MtmPrepareTransaction(MtmCurrentTrans* x)
 	if (!x->isDistributed) {
 		return;
 	}
-	x->xid = GetCurrentTransactionId();
+	/* Check that commits are not disabled */
+	LWLockAcquire(dtm->locks[COMMIT_LOCK_ID], LW_SHARED);		
+	LWLockRelease(dtm->locks[COMMIT_LOCK_ID]);
 
+	pg_atomic_fetch_add_u32(dtm->nCommittingTransactions, 1);
+	x->isPrepared = true;
+	x->xid = GetCurrentTransactionId();
+				  
 	MtmLock(LW_EXCLUSIVE);
 	ts = hash_search(xid2state, &x->xid, HASH_ENTER, NULL);
 	ts->status = TRANSACTION_STATUS_IN_PROGRESS;	
@@ -500,6 +517,7 @@ static void MtmPrepareTransaction(MtmCurrentTrans* x)
 	ts->procno = MyProc->pgprocno;
 	ts->nVotes = 0; 
 	ts->done = false;
+				  
 	if (TransactionIdIsValid(x->gtid.xid)) { 
 		ts->gtid = x->gtid;
 	} else { 
@@ -528,6 +546,9 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		MtmAdjustSubtransactions(ts);
 		MtmUnlock();
 	}
+	if (x->isPrepared) { 
+		pg_atomic_fetch_add_u32(dtm->nCommittingTransactions, -1);
+	}
 	x->snapshot = INVALID_CSN;
 	x->xid = InvalidTransactionId;
 	x->gtid.xid = InvalidTransactionId;
@@ -546,6 +567,39 @@ void MtmSendNotificationMessage(MtmTransState* ts)
 		PGSemaphoreUnlock(&dtm->votingSemaphore);
 	}
 }
+
+void  MtmUpdateStatus(bool recovered)
+{
+	if (dtm->status == MTM_RECOVERY) { 
+		MtmLock(LW_EXCLUSIVE);		
+		dtm->status = MTM_ONLINE; /* Is it all we shoudl do t switch to nortmal state */
+		MtmUnlock();
+	}
+}
+
+void MtmRecoveryCompleted(int nodeId)
+{
+	if (BIT_CHECK(dtm->pglogicalNodeMask, nodeId-1)) { 
+		if (MyWalSnd->sentPtr == GetXLogInsertRecPtr()) { 
+			/* Ok, now we done with recovery of node */
+			MtmLock(LW_EXCLUSIVE);
+			dtm->pglogicalNodeMask &= (int64)1 << (nodeId-1); /* now node is assumed as recovered */
+			dtm->nNodes += 1;
+			MtmUnlock();
+
+			LWLockRelease(dtm->locks[COMMIT_LOCK_ID]); /* enable commits */
+
+			return true;
+		} else if (MyWalSnd->sentPtr + MtmSlotDelayThreashold > GetXLogInsertRecPtr()) { 
+			/* we almost done with recovery of node.. */
+			LWLockAcquire(dtm->locks[COMMIT_LOCK_ID], LW_EXCLUSIVE); /* disable new commits */
+		}
+		return false;
+	} else { 
+		return true;
+	}
+}
+
 
 static bool
 MtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
@@ -803,7 +857,7 @@ _PG_init(void)
 	 * resources in mtm_shmem_startup().
 	 */
 	RequestAddinShmemSpace(MTM_SHMEM_SIZE + MtmQueueSize);
-	RequestNamedLWLockTranche(MULTIMASTER_NAME, 1);
+	RequestNamedLWLockTranche(MULTIMASTER_NAME, N_LOCKS);
 
     MtmNodes = MtmStartReceivers(MtmConnStrs, MtmNodeId);
     if (MtmNodes < 2) { 

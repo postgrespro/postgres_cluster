@@ -14,10 +14,12 @@
 
 #define BIT_CHECK(mask, bit) ((mask) & ((int64)1 << (bit)))
 
-#define MULTIMASTER_NAME           "mtm"
-#define MULTIMASTER_SCHEMA_NAME    "mtm"
-#define MULTIMASTER_DDL_TABLE      "ddl_log"
-#define MULTIMASTER_SLOT_PATTERN   "mtm_slot_%d"
+#define MULTIMASTER_NAME                "mtm"
+#define MULTIMASTER_SCHEMA_NAME         "mtm"
+#define MULTIMASTER_DDL_TABLE           "ddl_log"
+#define MULTIMASTER_SLOT_PATTERN        "mtm_slot_%d"
+#define MULTIMASTER_MIN_PROTO_VERSION   1
+#define MULTIMASTER_MAX_PROTO_VERSION   1
 
 #define Natts_mtm_ddl_log 2
 #define Anum_mtm_ddl_log_issued		1
@@ -91,7 +93,7 @@ typedef struct
 	int recoverySlot;                  /* NodeId of recovery slot or 0 if none */
 	volatile slock_t spinlock;         /* spinlock used to protect access to hash table */
 	PGSemaphoreData votingSemaphore;   /* semaphore used to notify mtm-sender about new responses to coordinator */
-	LWLockId hashLock;                 /* lock to synchronize access to hash table */
+	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	int64  disabledNodeMask;           /* bitmask of disabled nodes (so no more than 64 nodes in multimaster:) */
 	int64  pglogicalNodeMask;          /* bitmask of started pglogic receviers */
@@ -99,6 +101,7 @@ typedef struct
     int    nReceivers;                 /* number of initialized logical receivers (used to determine moment when Mtm intialization is completed */
 	long   timeShift;                  /* local time correction */
 	csn_t  csn;                        /* last obtained CSN: used to provide unique acending CSNs based on system time */
+	pg_atomic_uint32 nCommittingTrans; /* nubmer of transactions i process of commit */
 	MtmTransState* votingTransactions; /* L1-list of replicated transactions sendings notifications to coordinator.
 									 	 This list is used to pass information to mtm-sender BGW */
     MtmTransState* transListHead;      /* L1 list of all finished transactions present in xid2state hash.
@@ -137,6 +140,7 @@ extern void  MtmUnlock(void);
 extern void  MtmDropNode(int nodeId, bool dropSlot);
 extern MtmState* MtmGetState(void);
 extern timestamp_t MtmGetCurrentTime(void);
-extern void MtmSleep(timestamp_t interval);
-
+extern void  MtmSleep(timestamp_t interval);
+extern void  MtmRecoveryCompleted(int nodeId);
+extern void  MtmUpdateStatus(bool recovered);
 #endif
