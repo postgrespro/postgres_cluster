@@ -30,11 +30,16 @@ SUBDIRS = \
 		passwordcheck	\
 		pg_buffercache	\
 		pg_freespacemap \
-		pg_prewarm	\
+		pglogical \
+		pglogical_output \
+		pglogical_output_plhooks \
+ 		pg_prewarm	\
 		pg_standby	\
 		pg_stat_statements \
 		pg_trgm		\
 		pgcrypto	\
+		pglogical_output \
+		pglogical_output_plhooks \
 		pgrowlocks	\
 		pgstattuple	\
 		postgres_fdw	\
