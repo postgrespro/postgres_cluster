@@ -129,6 +129,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
     if (!mm->isLocal) { 
         pq_sendbyte(out, 'C');		/* sending COMMIT */
+        pq_sendbyte(out, MtmRecoveryCompleted(mm->nodeId));
     }
 }
 

@@ -31,6 +31,7 @@
 #include "utils/guc.h"
 #include "utils/snapmgr.h"
 #include "executor/spi.h"
+#include "replication/origin.h"
 
 #include "multimaster.h"
 
@@ -203,10 +204,12 @@ pglogical_receiver_main(Datum main_arg)
 	PGconn *conn;
 	PGresult *res;
 	MtmSlotMode mode;
+	MtmState* ds;
 #ifndef USE_PGLOGICAL_OUTPUT
     bool insideTrans = false;
 #endif
     ByteBuffer buf;
+	XLogRecPtr originStartPos;
 
 	/* Register functions for SIGTERM/SIGHUP management */
 	pqsignal(SIGHUP, receiver_raw_sighup);
@@ -258,8 +261,14 @@ pglogical_receiver_main(Datum main_arg)
 		resetPQExpBuffer(query);
 	}
 	/* Start logical replication at specified position */
-	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL 0/0 (\"startup_params_format\" '1', \"max_proto_version\" '1',  \"min_proto_version\" '1')",
-					  args->receiver_slot);
+	originStartPos = replorigin_session_get_progress(false);
+	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %u/%u (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d')",
+					  args->receiver_slot,
+					  (uint32) (originStartPos >> 32),
+					  (uint32) originStartPos,
+					  MULTIMASTER_MAX_PROTO_VERSION,
+					  MULTIMASTER_MIN_PROTO_VERSION
+		);
 	res = PQexec(conn, query->data);
 	if (PQresultStatus(res) != PGRES_COPY_BOTH)
 	{
@@ -273,6 +282,7 @@ pglogical_receiver_main(Datum main_arg)
 
     MtmReceiverStarted(args->receiver_node);
     ByteBufferAlloc(&buf);
+	ds = MtmGetState();
 
 	while (!got_sigterm)
 	{
@@ -366,7 +376,7 @@ pglogical_receiver_main(Datum main_arg)
 				 * If sync mode is sent reply in all cases to ensure that
 				 * server knows how far replay has been done.
 				 */
-				if (replyRequested || receiver_sync_mode)
+				if (replyRequested || receiver_sync_mode || ds->status == MTM_RECOVERY)
 				{
 					int64 now = feGetCurrentTimestamp();
 
