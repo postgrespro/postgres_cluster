@@ -35,7 +35,6 @@
 #include "access/xlogreader.h"
 #include "access/xlogrecord.h"
 #include "access/twophase.h"
-//#include "access/twophase_rmgr.h"
 
 #include "catalog/pg_control.h"
 
@@ -53,24 +52,6 @@ typedef struct XLogRecordBuffer
 	XLogRecPtr	endptr;
 	XLogReaderState *record;
 } XLogRecordBuffer;
-
-
-typedef struct TwoPhaseFileHeader
-{
-	uint32		magic;			/* format identifier */
-	uint32		total_len;		/* actual file length */
-	TransactionId xid;			/* original transaction XID */
-	Oid			database;		/* OID of database it was in */
-	TimestampTz prepared_at;	/* time of preparation */
-	Oid			owner;			/* user running the transaction */
-	int32		nsubxacts;		/* number of following subxact XIDs */
-	int32		ncommitrels;	/* number of delete-on-commit rels */
-	int32		nabortrels;		/* number of delete-on-abort rels */
-	int32		ninvalmsgs;		/* number of cache invalidation messages */
-	bool		initfileinval;	/* does relcache init file need invalidation? */
-	char		gid[200];	/* GID for transaction */
-} TwoPhaseFileHeader;
-
 
 /* RMGR Handlers */
 static void DecodeXLogOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf);
