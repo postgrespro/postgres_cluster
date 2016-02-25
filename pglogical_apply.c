@@ -466,9 +466,7 @@ read_rel(StringInfo s, LOCKMODE mode)
 static void
 process_remote_commit(StringInfo s)
 {
-	bool recovered = pq_getmsgbyte(s);
 	CommitTransactionCommand();
-	MtmUpdateStatus(recovered);
 }
 
 static void

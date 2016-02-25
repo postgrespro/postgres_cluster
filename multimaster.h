@@ -12,7 +12,7 @@
 #define MTM_TUPLE_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 */
 
-#define BIT_CHECK(mask, bit) ((mask) & ((int64)1 << (bit)))
+#define BIT_CHECK(mask, bit) (((mask) & ((nodemask_t)1 << (bit))) != 0)
 
 #define MULTIMASTER_NAME                "mtm"
 #define MULTIMASTER_SCHEMA_NAME         "mtm"
@@ -30,6 +30,7 @@ typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
 
 typedef uint64 timestamp_t;
+typedef uint64_t nodemask_t;
 
 /* Identifier of global transaction */
 typedef struct 
@@ -95,13 +96,15 @@ typedef struct
 	PGSemaphoreData votingSemaphore;   /* semaphore used to notify mtm-sender about new responses to coordinator */
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
-	int64  disabledNodeMask;           /* bitmask of disabled nodes (so no more than 64 nodes in multimaster:) */
-	int64  pglogicalNodeMask;          /* bitmask of started pglogic receviers */
+	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes (so no more than 64 nodes in multimaster:) */
+	nodemask_t pglogicalNodeMask;      /* bitmask of started pglogic receivers */
+	nodemask_t walSenderLockerMask;    /* Mask of WAL-senders IDs locking the cluster */
+	nodemask_t nodeLockerMask;         /* Mask of node IDs which WAL-senders are locking the cluster */
     int    nNodes;                     /* number of active nodes */
     int    nReceivers;                 /* number of initialized logical receivers (used to determine moment when Mtm intialization is completed */
+	int    nLockers;                   /* number of lockers */
 	long   timeShift;                  /* local time correction */
 	csn_t  csn;                        /* last obtained CSN: used to provide unique acending CSNs based on system time */
-	pg_atomic_uint32 nCommittingTrans; /* nubmer of transactions i process of commit */
 	MtmTransState* votingTransactions; /* L1-list of replicated transactions sendings notifications to coordinator.
 									 	 This list is used to pass information to mtm-sender BGW */
     MtmTransState* transListHead;      /* L1 list of all finished transactions present in xid2state hash.
@@ -141,6 +144,5 @@ extern void  MtmDropNode(int nodeId, bool dropSlot);
 extern MtmState* MtmGetState(void);
 extern timestamp_t MtmGetCurrentTime(void);
 extern void  MtmSleep(timestamp_t interval);
-extern void  MtmRecoveryCompleted(int nodeId);
-extern void  MtmUpdateStatus(bool recovered);
+extern bool  MtmIsRecoveredNode(int nodeId);
 #endif
