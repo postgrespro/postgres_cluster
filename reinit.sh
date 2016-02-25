@@ -23,6 +23,13 @@ reinit_master() {
 	./install/bin/pg_ctl -sw -D ./install/data -l ./install/data/logfile start
 	./install/bin/createdb stas
 	./install/bin/psql -c "create table t(id int);"
+	./install/bin/psql -c "SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'pglogical_output');"
+	./install/bin/psql <<SQL
+		begin;
+		insert into t values (42);
+		prepare transaction 'x';
+		commit prepared 'x';
+SQL
 }
 
 reinit_slave() {

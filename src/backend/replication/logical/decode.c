@@ -474,6 +474,12 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		commit_time = parsed->origin_timestamp;
 	}
 
+	if (TransactionIdIsValid(parsed->twophase_xid)) {
+		ReorderBufferCommitPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
+							commit_time, origin_id, origin_lsn);
+		return;
+	}
+
 	/*
 	 * Process invalidation messages, even if we're not interested in the
 	 * transaction's contents, since the various caches need to always be
@@ -558,9 +564,7 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	RelFileNode *abortrels;
 	SharedInvalidationMessage *invalmsgs;
 
-
-
-	// probably there are no origin
+	// probably there are no origin -- origin stored in hdr
 	// if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
 	// {
 	// 	origin_lsn = parsed->origin_lsn;
