@@ -83,7 +83,7 @@ typedef struct
 	TransactionId  dxid; /* Transaction ID at destination node */
 	TransactionId  sxid; /* Transaction IO at sender node */  
 	csn_t          csn;  /* local CSN in case of sending data from replica to master, global CSN master->replica */
-	int64          disabledNodeMask; /* bitmask of disabled nodes at the sender of message */
+	nodemask_t     disabledNodeMask; /* bitmask of disabled nodes at the sender of message */
 } MtmArbiterMessage;
 
 typedef struct 

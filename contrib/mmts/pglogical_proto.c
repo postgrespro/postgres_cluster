@@ -39,7 +39,6 @@
 typedef struct PGLogicalProtoMM
 {
     PGLogicalProtoAPI api;
-	MtmState* state;
 	int  nodeId;
     bool isLocal;
 } PGLogicalProtoMM;
@@ -107,14 +106,15 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 {
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
 	csn_t csn = MtmTransactionSnapshot(txn->xid);
+	bool isRecovery = MtmIsRecoveredNode(mm->nodeId);
 	MTM_TRACE("pglogical_write_begin %d CSN=%ld\n", txn->xid, csn);
-    if (csn == INVALID_CSN || BIT_CHECK(mm->state->disabledNodeMask, mm->nodeId-1)) {
+    if (csn == INVALID_CSN && !isRecovery) {
         mm->isLocal = true;
     } else { 
         mm->isLocal = false;        
         pq_sendbyte(out, 'B');		/* BEGIN */
 		pq_sendint(out, MtmNodeId, 4);
-		pq_sendint(out, txn->xid, 4);
+		pq_sendint(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
         pq_sendint64(out, csn);
     }
 }
@@ -129,7 +129,6 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
     if (!mm->isLocal) { 
         pq_sendbyte(out, 'C');		/* sending COMMIT */
-        pq_sendbyte(out, MtmRecoveryCompleted(mm->nodeId));
     }
 }
 
@@ -380,7 +379,6 @@ pglogical_init_api(PGLogicalProtoType typ)
 	PGLogicalProtoMM* pmm = palloc0(sizeof(PGLogicalProtoMM));
     PGLogicalProtoAPI* res = &pmm->api;
     pmm->isLocal = false;
-	pmm->state = MtmGetState();
 	sscanf(MyReplicationSlot->data.name.data, MULTIMASTER_SLOT_PATTERN, &pmm->nodeId);
     res->write_rel = pglogical_write_rel;
     res->write_begin = pglogical_write_begin;

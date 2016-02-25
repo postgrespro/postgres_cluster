@@ -45,6 +45,7 @@
 #include "storage/proc.h"
 #include "utils/syscache.h"
 #include "replication/walsender.h"
+#include "replication/walsender_private.h"
 #include "replication/slot.h"
 #include "port/atomics.h"
 #include "tcop/utility.h"
@@ -60,7 +61,6 @@ typedef struct {
 	bool  isReplicated;   /* transaction on replica */
 	bool  isDistributed;  /* transaction performed INSERT/UPDATE/DELETE and has to be replicated to other nodes */
 	bool  containsDML;    /* transaction contains DML statements */
-	bool  isPrepared;     /* transaction was prepared for commit */
     csn_t snapshot;       /* transaction snaphsot   */
 } MtmCurrentTrans;
 
@@ -68,8 +68,7 @@ typedef struct {
 
 typedef enum 
 {
-	HASH_LOCK_ID,
-	COMMIT_LOCK_ID,
+	MTM_STATE_LOCK_ID,
 	N_LOCKS
 } MtmLockIds;
 
@@ -142,6 +141,7 @@ int   MtmReconnectAttempts;
 static int MtmQueueSize;
 static int MtmWorkers;
 static int MtmVacuumDelay;
+static int MtmMinRecoveryLag;
 
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
 static ProcessUtility_hook_type PreviousProcessUtilityHook;
@@ -158,7 +158,7 @@ void MtmLock(LWLockMode mode)
 #ifdef USE_SPINLOCK
 	SpinLockAcquire(&dtm->spinlock);
 #else
-	LWLockAcquire(dtm->locks[HASH_LOCK_ID], mode);
+	LWLockAcquire((LWLockId)&dtm->locks[MTM_STATE_LOCK_ID], mode);
 #endif
 }
 
@@ -167,7 +167,7 @@ void MtmUnlock(void)
 #ifdef USE_SPINLOCK
 	SpinLockRelease(&dtm->spinlock);
 #else
-	LWLockRelease(dtm->locks[HASH_LOCK_ID]);
+	LWLockRelease((LWLockId)&dtm->locks[MTM_STATE_LOCK_ID]);
 #endif
 }
 
@@ -426,12 +426,14 @@ static void MtmInitialize()
         dtm->nNodes = MtmNodes;
 		dtm->disabledNodeMask = 0;
 		dtm->pglogicalNodeMask = 0;
+		dtm->walSenderLockerMask = 0;
+		dtm->nodeLockerMask = 0;
+		dtm->nLockers = 0;
 		dtm->votingTransactions = NULL;
         dtm->transListHead = NULL;
         dtm->transListTail = &dtm->transListHead;		
         dtm->nReceivers = 0;
 		dtm->timeShift = 0;
-		pg_atomic_write_u32(&dtm->nCommittingTrans, 0);
 		PGSemaphoreCreate(&dtm->votingSemaphore);
 		PGSemaphoreReset(&dtm->votingSemaphore);
 		SpinLockInit(&dtm->spinlock);
@@ -476,7 +478,6 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		x->xid = GetCurrentTransactionIdIfAny();
         x->isReplicated = false;
         x->isDistributed = IsNormalProcessingMode() && dtm->status == MTM_ONLINE && MtmDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess();
-		x->isPrepared = false;
 		x->containsDML = false;
         x->snapshot = MtmAssignCSN();	
 		x->gtid.xid = InvalidTransactionId;
@@ -486,6 +487,53 @@ MtmBeginTransaction(MtmCurrentTrans* x)
     }
 }
 
+
+/* This function is called at transaction start with multimaster ock set */
+static void 
+MtmCheckClusterLock()
+{	
+	while (true)
+	{
+		nodemask_t mask = dtm->walSenderLockerMask;
+		if (mask != 0) {
+			XLogRecPtr currLogPos = GetXLogInsertRecPtr();
+			int i;
+			timestamp_t delay = MIN_WAIT_TIMEOUT;
+			for (i = 0; mask != 0; i++, mask >>= 1) { 
+				if (mask & 1) { 
+					if (WalSndCtl->walsnds[i].sentPtr != currLogPos) {
+						/* recovery is in progress */
+						break;
+					} else { 
+						/* recovered replica catched up with master */
+						dtm->walSenderLockerMask &= ~((nodemask_t)1 << i);
+					}
+				}
+			}
+			if (mask != 0) { 
+				/* some "almost catch-up" wal-senders are still working */
+				/* Do not start new transactions until them complete */
+				MtmUnlock();
+				MtmSleep(delay);
+				if (delay*2 <= MAX_WAIT_TIMEOUT) { 
+					delay *= 2;
+				}
+				MtmLock(LW_EXCLUSIVE);
+				continue;
+			} else {  
+				/* All lockers are synchronized their logs */
+				/* Remove lock and mark them as receovered */
+				Assert(dtm->walSenderLockerMask == 0);
+				Assert((dtm->nodeLockerMask & dtm->disabledNodeMask) == dtm->nodeLockerMask);
+				dtm->disabledNodeMask &= ~dtm->nodeLockerMask;
+				dtm->nNodes += dtm->nLockers;
+				dtm->nLockers = 0;
+				dtm->nodeLockerMask = 0;
+			}
+		}
+		break;
+	}
+}	
 
 /* 
  * We need to pass snapshot to WAL-sender, so create record in transaction status hash table 
@@ -499,15 +547,12 @@ static void MtmPrepareTransaction(MtmCurrentTrans* x)
 	if (!x->isDistributed) {
 		return;
 	}
-	/* Check that commits are not disabled */
-	LWLockAcquire(dtm->locks[COMMIT_LOCK_ID], LW_SHARED);		
-	LWLockRelease(dtm->locks[COMMIT_LOCK_ID]);
 
-	pg_atomic_fetch_add_u32(dtm->nCommittingTransactions, 1);
-	x->isPrepared = true;
 	x->xid = GetCurrentTransactionId();
 				  
 	MtmLock(LW_EXCLUSIVE);
+	MtmCheckClusterLock();
+
 	ts = hash_search(xid2state, &x->xid, HASH_ENTER, NULL);
 	ts->status = TRANSACTION_STATUS_IN_PROGRESS;	
 	ts->snapshot = x->isReplicated || !x->containsDML ? INVALID_CSN : x->snapshot;
@@ -546,9 +591,6 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		MtmAdjustSubtransactions(ts);
 		MtmUnlock();
 	}
-	if (x->isPrepared) { 
-		pg_atomic_fetch_add_u32(dtm->nCommittingTransactions, -1);
-	}
 	x->snapshot = INVALID_CSN;
 	x->xid = InvalidTransactionId;
 	x->gtid.xid = InvalidTransactionId;
@@ -568,38 +610,28 @@ void MtmSendNotificationMessage(MtmTransState* ts)
 	}
 }
 
-void  MtmUpdateStatus(bool recovered)
+/*
+ * This function is called by WAL sender when start sending new transaction
+ */
+bool MtmIsRecoveredNode(int nodeId)
 {
-	if (dtm->status == MTM_RECOVERY) { 
-		MtmLock(LW_EXCLUSIVE);		
-		dtm->status = MTM_ONLINE; /* Is it all we shoudl do t switch to nortmal state */
-		MtmUnlock();
-	}
-}
-
-void MtmRecoveryCompleted(int nodeId)
-{
-	if (BIT_CHECK(dtm->pglogicalNodeMask, nodeId-1)) { 
-		if (MyWalSnd->sentPtr == GetXLogInsertRecPtr()) { 
-			/* Ok, now we done with recovery of node */
+	if (BIT_CHECK(dtm->disabledNodeMask, nodeId-1)) { 
+		Assert(MyWalSnd != NULL);		
+		if (!BIT_CHECK(dtm->nodeLockerMask, nodeId-1)
+			&& MyWalSnd->sentPtr + MtmMinRecoveryLag > GetXLogInsertRecPtr()) 
+		{ 
+			/* Wal sender almost catched up */
+			/* Lock cluster preventing new transaction to start until wal is completely replayed */
 			MtmLock(LW_EXCLUSIVE);
-			dtm->pglogicalNodeMask &= (int64)1 << (nodeId-1); /* now node is assumed as recovered */
-			dtm->nNodes += 1;
+			dtm->nodeLockerMask |= (nodemask_t)1 << (nodeId-1);
+			dtm->walSenderLockerMask |= (nodemask_t)1 << (MyWalSnd - WalSndCtl->walsnds);
+			dtm->nLockers += 1;
 			MtmUnlock();
-
-			LWLockRelease(dtm->locks[COMMIT_LOCK_ID]); /* enable commits */
-
-			return true;
-		} else if (MyWalSnd->sentPtr + MtmSlotDelayThreashold > GetXLogInsertRecPtr()) { 
-			/* we almost done with recovery of node.. */
-			LWLockAcquire(dtm->locks[COMMIT_LOCK_ID], LW_EXCLUSIVE); /* disable new commits */
 		}
-		return false;
-	} else { 
 		return true;
 	}
+	return false;
 }
-
 
 static bool
 MtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
@@ -716,6 +748,21 @@ _PG_init(void)
 	 */
 	if (!process_shared_preload_libraries_in_progress)
 		return;
+
+	DefineCustomIntVariable(
+		"multimaster.min_recovery_lag",
+		"Minamal lag of WAL-sender performing recovery after which cluster is locked until recovery is completed",
+		NULL,
+		&MtmMinRecoveryLag,
+		100000,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
 
 	DefineCustomIntVariable(
 		"multimaster.vacuum_delay",
@@ -897,6 +944,12 @@ _PG_fini(void)
  *  ***************************************************************************
  */
 
+static void MtmSwitchFromRecoveryToNormalMode()
+{
+	dtm->status = MTM_ONLINE;
+	/* ??? Something else to do here? */
+}
+
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
 	csn_t localSnapshot;
@@ -910,6 +963,11 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 		elog(ERROR, "Too old snapshot: requested %ld, current %ld", globalSnapshot, localSnapshot);
 	}
 
+	if (!TransactionIdIsValid(gtid->xid)) { 
+		Assert(dtm->status == MTM_RECOVERY);
+	} else if (dtm->status == MTM_RECOVERY) { 
+		MtmSwitchFromRecoveryToNormalMode();
+	}
 	dtmTx.gtid = *gtid;
 	dtmTx.xid = GetCurrentTransactionId();
 	dtmTx.snapshot = globalSnapshot;	
