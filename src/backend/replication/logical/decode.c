@@ -197,6 +197,8 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT)
 		return;
 
+	reorder->xact_action = info;
+
 	switch (info)
 	{
 		case XLOG_XACT_COMMIT:
@@ -582,32 +584,6 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 
 	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
 					   hdr->nsubxacts, children);
-
-	/* ----
-	 * Check whether we are interested in this specific transaction, and tell
-	 * the reorderbuffer to forget the content of the (sub-)transactions
-	 * if not.
-	 *
-	 * There can be several reasons we might not be interested in this
-	 * transaction:
-	 * 1) We might not be interested in decoding transactions up to this
-	 *	  LSN. This can happen because we previously decoded it and now just
-	 *	  are restarting or if we haven't assembled a consistent snapshot yet.
-	 * 2) The transaction happened in another database.
-	 * 3) The output plugin is not interested in the origin.
-	 *
-	 * We can't just use ReorderBufferAbort() here, because we need to execute
-	 * the transaction's invalidations.  This currently won't be needed if
-	 * we're just skipping over the transaction because currently we only do
-	 * so during startup, to get to the first transaction the client needs. As
-	 * we have reset the catalog caches before starting to read WAL, and we
-	 * haven't yet touched any catalogs, there can't be anything to invalidate.
-	 * But if we're "forgetting" this commit because it's it happened in
-	 * another database, the invalidations might be important, because they
-	 * could be for shared catalogs and we might have loaded data into the
-	 * relevant syscaches.
-	 * ---
-	 */
 
 	// Add db check here
 	if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) ||

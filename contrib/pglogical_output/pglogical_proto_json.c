@@ -90,7 +90,13 @@ pglogical_json_write_commit(StringInfo out, PGLogicalOutputData *data, ReorderBu
 						XLogRecPtr commit_lsn)
 {
 	appendStringInfoChar(out, '{');
-	appendStringInfoString(out, "\"action\":\"C\"");
+	if (txn->xact_action == XLOG_XACT_PREPARE)
+		appendStringInfoString(out, "\"action\":\"P\"");
+	else if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED)
+		appendStringInfoString(out, "\"action\":\"CP\"");
+	else
+		appendStringInfoString(out, "\"action\":\"C\"");
+
 	if (!data->client_no_txinfo)
 	{
 		appendStringInfo(out, ", \"final_lsn\":\"%X/%X\"",

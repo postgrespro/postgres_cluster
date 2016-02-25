@@ -1278,6 +1278,7 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 	txn->commit_time = commit_time;
 	txn->origin_id = origin_id;
 	txn->origin_lsn = origin_lsn;
+	txn->xact_action = rb->xact_action;
 
 	/* serialize the last bunch of changes if we need start earlier anyway */
 	if (txn->nentries_mem != txn->nentries)
@@ -1626,6 +1627,7 @@ ReorderBufferCommitPrepared(ReorderBuffer *rb, TransactionId xid,
 	txn->commit_time = commit_time;
 	txn->origin_id = origin_id;
 	txn->origin_lsn = origin_lsn;
+	txn->xact_action = XLOG_XACT_COMMIT_PREPARED;
 
 	rb->commit(rb, txn, commit_lsn);
 }

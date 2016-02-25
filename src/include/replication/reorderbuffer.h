@@ -132,6 +132,13 @@ typedef struct ReorderBufferTXN
 	 */
 	TransactionId xid;
 
+	/*
+	 * Commit callback is used for COMMIT/PREPARE/COMMMIT PREPARED,
+	 * as well as abort for ROLLBACK and ROLLBACK PREPARED. Here
+	 * stored actual xact action allowing decoding plugin to distinguish them.
+	 */
+	uint8 xact_action;
+
 	/* did the TX have catalog changes */
 	bool		has_catalog_changes;
 
@@ -277,6 +284,9 @@ struct ReorderBuffer
 	 * xid => ReorderBufferTXN lookup table
 	 */
 	HTAB	   *by_txn;
+
+	/* For twophase tx support we need to pass XACT action to ReorderBufferTXN */
+	uint8 xact_action;
 
 	/*
 	 * Transactions that could be a toplevel xact, ordered by LSN of the first
