@@ -10,6 +10,7 @@
 #define REORDERBUFFER_H
 
 #include "access/htup_details.h"
+#include "access/twophase.h"
 #include "lib/ilist.h"
 #include "storage/sinval.h"
 #include "utils/hsearch.h"
@@ -137,7 +138,8 @@ typedef struct ReorderBufferTXN
 	 * as well as abort for ROLLBACK and ROLLBACK PREPARED. Here
 	 * stored actual xact action allowing decoding plugin to distinguish them.
 	 */
-	uint8 xact_action;
+	uint8		xact_action;
+	char		gid[GIDSIZE];
 
 	/* did the TX have catalog changes */
 	bool		has_catalog_changes;
@@ -286,7 +288,8 @@ struct ReorderBuffer
 	HTAB	   *by_txn;
 
 	/* For twophase tx support we need to pass XACT action to ReorderBufferTXN */
-	uint8 xact_action;
+	uint8		xact_action;
+	char		gid[GIDSIZE];
 
 	/*
 	 * Transactions that could be a toplevel xact, ordered by LSN of the first

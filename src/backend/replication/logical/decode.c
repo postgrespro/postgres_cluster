@@ -570,6 +570,8 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	invalmsgs = (SharedInvalidationMessage *) twophase_bufptr;
 	twophase_bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));
 
+	memcpy(ctx->reorder->gid, hdr->gid, GIDSIZE);
+
 	/*
 	 * Process invalidation messages, even if we're not interested in the
 	 * transaction's contents, since the various caches need to always be

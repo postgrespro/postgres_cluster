@@ -1279,6 +1279,7 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 	txn->origin_id = origin_id;
 	txn->origin_lsn = origin_lsn;
 	txn->xact_action = rb->xact_action;
+	memcpy(txn->gid, rb->gid, GIDSIZE);
 
 	/* serialize the last bunch of changes if we need start earlier anyway */
 	if (txn->nentries_mem != txn->nentries)

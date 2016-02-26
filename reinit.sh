@@ -51,3 +51,15 @@ make install > /dev/null
 pkill -9 postgres
 reinit_master >> /dev/null
 
+
+
+# SELECT * FROM pg_logical_slot_peek_changes('regression_slot',
+# 	NULL, NULL,
+# 	'expected_encoding', 'UTF8',
+# 	'min_proto_version', '1',
+# 	'max_proto_version', '1',
+# 	'startup_params_format', '1',
+# 	'proto_format', 'json',
+# 	'no_txinfo', 't');
+
+
