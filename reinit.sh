@@ -13,8 +13,12 @@ reinit_master() {
 	echo "min_wal_size = 32MB" >> ./install/data/postgresql.conf
 	echo "wal_level = logical" >> ./install/data/postgresql.conf
 	echo "wal_keep_segments = 64" >> ./install/data/postgresql.conf
-	echo "max_wal_senders = 2" >> ./install/data/postgresql.conf
-	echo "max_replication_slots = 2" >> ./install/data/postgresql.conf
+	echo "max_wal_senders = 10" >> ./install/data/postgresql.conf
+	echo "max_replication_slots = 10" >> ./install/data/postgresql.conf
+
+	echo "max_worker_processes = 10" >> ./install/data/postgresql.conf
+	echo "shared_preload_libraries = 'pglogical'" >> ./install/data/postgresql.conf
+	echo "track_commit_timestamp = on" >> ./install/data/postgresql.conf
 
 	echo '' > ./install/data/logfile
 
@@ -49,7 +53,7 @@ make install > /dev/null
 
 
 pkill -9 postgres
-reinit_master >> /dev/null
+reinit_master
 
 
 
