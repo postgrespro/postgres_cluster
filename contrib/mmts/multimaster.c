@@ -142,6 +142,7 @@ static int MtmQueueSize;
 static int MtmWorkers;
 static int MtmVacuumDelay;
 static int MtmMinRecoveryLag;
+static int MtmMaxRecoveryLag;
 
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
 static ProcessUtility_hook_type PreviousProcessUtilityHook;
@@ -579,6 +580,29 @@ static void MtmPrepareTransaction(MtmCurrentTrans* x)
 	MTM_TRACE("%d: MtmPrepareTransaction prepare commit of %d CSN=%ld\n", getpid(), x->xid, ts->csn);
 }
 
+static void MtmCheckSlots()
+{
+	if (MtmMaxRecoveryLag != 0 && dtm->disabledNodeMask != 0) 
+	{
+		int i;
+		for (i = 0; i < max_replication_slots; i++) { 
+			ReplicationSlot* slot = &ReplicationSlotCtl->replication_slots[i];
+			int nodeId;
+			if (slot->in_use 
+				&& sscanf(slot->data.name.data, MULTIMASTER_SLOT_PATTERN, &nodeId) == 1
+				&& BIT_CHECK(dtm->disabledNodeMask, nodeId-1)
+				&& slot->data.restart_lsn + MtmMaxRecoveryLag < GetXLogInsertRecPtr()) 
+			{
+				elog(WARNING, "Drop slot for node %d which lag %ld is larger than threshold %d", 
+					 nodeId,
+					 GetXLogInsertRecPtr() - slot->data.restart_lsn,
+					 MtmMaxRecoveryLag);
+				ReplicationSlotDrop(slot->data.name.data);
+			}
+		}
+	}
+}
+
 static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
@@ -594,6 +618,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 	x->snapshot = INVALID_CSN;
 	x->xid = InvalidTransactionId;
 	x->gtid.xid = InvalidTransactionId;
+	MtmCheckSlots();
 }
 
 void MtmSendNotificationMessage(MtmTransState* ts)
@@ -752,10 +777,27 @@ _PG_init(void)
 	DefineCustomIntVariable(
 		"multimaster.min_recovery_lag",
 		"Minamal lag of WAL-sender performing recovery after which cluster is locked until recovery is completed",
-		NULL,
+		"When wal-sender almost catch-up WAL current position we need to stop 'Achilles tortile compeition' and "
+		"temporary stop commit of new transactions until node will be completely repared",
 		&MtmMinRecoveryLag,
 		100000,
 		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.max_recovery_lag",
+		"Maximal lag of replication slot of failed node after which this slot is dropped to avoid transaction log overflow",
+		"Dropping slog makes it not possible to recover node using logical replication mechanism, it will eb ncessary to completely copy content of some other nodes " 
+		"usimg basebackup or similar tool",
+		&MtmMaxRecoveryLag,
+		100000000,
+		0,
 		INT_MAX,
 		PGC_BACKEND,
 		0,
@@ -944,11 +986,13 @@ _PG_fini(void)
  *  ***************************************************************************
  */
 
+
 static void MtmSwitchFromRecoveryToNormalMode()
 {
 	dtm->status = MTM_ONLINE;
 	/* ??? Something else to do here? */
 }
+
 
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
