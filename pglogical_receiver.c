@@ -223,6 +223,11 @@ pglogical_receiver_main(Datum main_arg)
 	/* Connect to a database */
 	BackgroundWorkerInitializeConnection(MtmDatabaseName, NULL);
 
+	/* 
+	 * Determine when and how we should open replication slot.
+	 * Druing recovery we need to open only one replication slot from which node should receive all transactions.
+	 * Slots at other nodes should be removed 
+	 */
 	mode = MtmReceiverSlotMode(args->receiver_node);	
     
 	/* Establish connection to remote server */
@@ -375,6 +380,8 @@ pglogical_receiver_main(Datum main_arg)
 				 * If the server requested an immediate reply, send one.
 				 * If sync mode is sent reply in all cases to ensure that
 				 * server knows how far replay has been done.
+				 * In recovery mode also always send reply to provide master with more precise information
+				 * about recovery progress
 				 */
 				if (replyRequested || receiver_sync_mode || ds->status == MTM_RECOVERY)
 				{

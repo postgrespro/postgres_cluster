@@ -176,7 +176,7 @@ static void MtmRegisterSocket(int fd, int node)
     ev.events = EPOLLIN;
     ev.data.u32 = node;        
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
-        elog(ERROR, "Arbuter failed to add socket to epoll set: %d", errno);
+        elog(ERROR, "Arbiter failed to add socket to epoll set: %d", errno);
     } 
 #else
     FD_SET(fd, &inset);    
@@ -285,21 +285,23 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 				goto Retry;
 			}
 			if (MtmReadSocket(sd, &msg, sizeof msg) != sizeof(msg)) { 
-				elog(WARNING, "Arbiter failed to receive response for handshake message from %s:%d: %d", host, port, errno);
+				elog(WARNING, "Arbiter failed to receive response for handshake message from %s:%d: errno=%d", host, port, errno);
 				close(sd);
 				goto Retry;
 			}
 			if (msg.code != MSG_STATUS || msg.dxid != HANDSHAKE_MAGIC) {
-				elog(WARNING, "Arbiter get unexpected response %d for handshake message from %s:%d: %d", msg.code, host, port, errno);
+				elog(WARNING, "Arbiter get unexpected response %d for handshake message from %s:%d", msg.code, host, port);
 				close(sd);
 				goto Retry;
 			}
 				
+			/* Some node cnosidered that I am dead, so switch to recovery mode */
 			if (BIT_CHECK(msg.disabledNodeMask, MtmNodeId-1)) { 
 				elog(WARNING, "Node is switched to recovery mode");
 				ds->status = MTM_RECOVERY;
 			}
-			ds->disabledNodeMask = msg.disabledNodeMask;
+			/* Combine disable masks from all node. Is it actually correct or we should better check availability of nodes ourselves? */
+			ds->disabledNodeMask |= msg.disabledNodeMask;
 			return sd;
 		}
     }
@@ -340,8 +342,10 @@ static void MtmOpenConnections()
 		}
 	}
 	if (ds->nNodes < MtmNodes/2+1) { /* no quorum */
+		elog(WARNING, "Node is out of quorum: only %d nodes from %d are accssible", ds->nNodes, MtmNodes);
 		ds->status = MTM_OFFLINE;
 	} else if (ds->status == MTM_INITIALIZATION) { 
+		elog(WARNING, "Switch to CONNECTED mode");
 		ds->status = MTM_CONNECTED;
 	}
 }
@@ -392,7 +396,7 @@ static void MtmAcceptOneConnection()
 			msg.sxid = ShmemVariableCache->nextXid;
 			msg.csn  = MtmGetCurrentTime();
 			if (!MtmWriteSocket(fd, &msg, sizeof msg)) { 
-				elog(WARNING, "Arbiter failed to write response for handshake message from node %d", msg.node);
+				elog(WARNING, "Arbiter failed to write response for handshake message to node %d", msg.node);
 				close(fd);
 			} else { 
 				elog(NOTICE, "Arbiter established connection with node %d", msg.node); 
@@ -690,8 +694,8 @@ static void MtmTransReceiver(Datum arg)
 						case MSG_PREPARE:
  					        Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS); 
 							if ((msg->disabledNodeMask & ~ds->disabledNodeMask) != 0) { 
-								/* Coordinator's disabled mask is wider than my:so reject such transaction to avoid 
-								   commit  on smaller subset of nodes */
+								/* Coordinator's disabled mask is wider than my: so reject such transaction to avoid 
+								   commit on smaller subset of nodes */
 								ts->status = TRANSACTION_STATUS_ABORTED;
 								ts->cmd = MSG_ABORT;
 								MtmAdjustSubtransactions(ts);
