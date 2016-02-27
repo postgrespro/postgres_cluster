@@ -154,6 +154,9 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag);
 
+/*
+ * Using LWLock seems to be  more efficient (at our benchmarks)
+ */
 void MtmLock(LWLockMode mode)
 {
 #ifdef USE_SPINLOCK
@@ -197,6 +200,9 @@ void MtmSleep(timestamp_t interval)
     }
 }
     
+/** 
+ * Return ascending unique timestamp which is used as CSN
+ */
 csn_t MtmAssignCSN()
 {
     csn_t csn = MtmGetCurrentTime();
@@ -208,6 +214,9 @@ csn_t MtmAssignCSN()
     return csn;
 }
 
+/**
+ * "Adjust" system clock if we receive message from future 
+ */
 csn_t MtmSyncClock(csn_t global_csn)
 {
     csn_t local_csn;
@@ -471,6 +480,15 @@ MtmXactCallback(XactEvent event, void *arg)
 	}
 }
 
+/* 
+ * Check if this is "normal" user trnsaction which shoudl be distributed to other nodes
+ */
+static bool
+MtmIsUserTransaction()
+{
+	return IsNormalProcessingMode() && dtm->status == MTM_ONLINE && MtmDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess();
+}
+
 static void 
 MtmBeginTransaction(MtmCurrentTrans* x)
 {
@@ -478,7 +496,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		MtmLock(LW_EXCLUSIVE);
 		x->xid = GetCurrentTransactionIdIfAny();
         x->isReplicated = false;
-        x->isDistributed = IsNormalProcessingMode() && dtm->status == MTM_ONLINE && MtmDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess();
+        x->isDistributed = MtmIsUserTransaction();
 		x->containsDML = false;
         x->snapshot = MtmAssignCSN();	
 		x->gtid.xid = InvalidTransactionId;
@@ -489,7 +507,11 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 }
 
 
-/* This function is called at transaction start with multimaster ock set */
+/*
+ * If there are recovering nodes which are catching-up WAL, check the status and prevent new transaction from commit to give
+ * WAL-sender a chance to catch-up WAL, completely synchronize replica and switch it to normal mode.
+ * This function is called at transaction start with multimaster lock set
+ */
 static void 
 MtmCheckClusterLock()
 {	
@@ -507,6 +529,7 @@ MtmCheckClusterLock()
 						break;
 					} else { 
 						/* recovered replica catched up with master */
+						elog(WARNING, "WAL-sender %d complete receovery", i);
 						dtm->walSenderLockerMask &= ~((nodemask_t)1 << i);
 					}
 				}
@@ -524,6 +547,7 @@ MtmCheckClusterLock()
 			} else {  
 				/* All lockers are synchronized their logs */
 				/* Remove lock and mark them as receovered */
+				elog(WARNING, "Complete recovery of %d nodes (node mask %lx)", dtm->nLockers, dtm->nodeLockerMask);
 				Assert(dtm->walSenderLockerMask == 0);
 				Assert((dtm->nodeLockerMask & dtm->disabledNodeMask) == dtm->nodeLockerMask);
 				dtm->disabledNodeMask &= ~dtm->nodeLockerMask;
@@ -552,6 +576,10 @@ static void MtmPrepareTransaction(MtmCurrentTrans* x)
 	x->xid = GetCurrentTransactionId();
 				  
 	MtmLock(LW_EXCLUSIVE);
+
+	/*
+	 * Check if there is global multimaster lock preventing new transaction from commit to make a chance to wal-senders to cache-up
+	 */
 	MtmCheckClusterLock();
 
 	ts = hash_search(xid2state, &x->xid, HASH_ENTER, NULL);
@@ -580,6 +608,10 @@ static void MtmPrepareTransaction(MtmCurrentTrans* x)
 	MTM_TRACE("%d: MtmPrepareTransaction prepare commit of %d CSN=%ld\n", getpid(), x->xid, ts->csn);
 }
 
+/**
+ * Check state of replication slots. If some of them are too much lag behind wal, then drop this slots to avoid 
+ * WAL overflow
+ */
 static void MtmCheckSlots()
 {
 	if (MtmMaxRecoveryLag != 0 && dtm->disabledNodeMask != 0) 
@@ -636,17 +668,23 @@ void MtmSendNotificationMessage(MtmTransState* ts)
 }
 
 /*
- * This function is called by WAL sender when start sending new transaction
+ * This function is called by WAL sender when start sending new transaction.
+ * It returns true if specified node is in recovery mode. In this case we should send all transactions from WAL, 
+ * not only coordinated by self node as in normal mode.
  */
 bool MtmIsRecoveredNode(int nodeId)
 {
 	if (BIT_CHECK(dtm->disabledNodeMask, nodeId-1)) { 
-		Assert(MyWalSnd != NULL);		
+		Assert(MyWalSnd != NULL); /* This function is called by WAL-sender, so it should not be NULL */
 		if (!BIT_CHECK(dtm->nodeLockerMask, nodeId-1)
 			&& MyWalSnd->sentPtr + MtmMinRecoveryLag > GetXLogInsertRecPtr()) 
 		{ 
-			/* Wal sender almost catched up */
-			/* Lock cluster preventing new transaction to start until wal is completely replayed */
+			/*
+			 * Wal sender almost catched up.
+			 * Lock cluster preventing new transaction to start until wal is completely replayed.
+			 * We have to maintain two bitmasks: one is marking wal sender, another - correspondent nodes. 
+			 * Is there some better way to establish mapping between nodes ad WAL-seconder?
+			 */
 			MtmLock(LW_EXCLUSIVE);
 			dtm->nodeLockerMask |= (nodemask_t)1 << (nodeId-1);
 			dtm->walSenderLockerMask |= (nodemask_t)1 << (MyWalSnd - WalSndCtl->walsnds);
@@ -793,8 +831,8 @@ _PG_init(void)
 	DefineCustomIntVariable(
 		"multimaster.max_recovery_lag",
 		"Maximal lag of replication slot of failed node after which this slot is dropped to avoid transaction log overflow",
-		"Dropping slog makes it not possible to recover node using logical replication mechanism, it will eb ncessary to completely copy content of some other nodes " 
-		"usimg basebackup or similar tool",
+		"Dropping slog makes it not possible to recover node using logical replication mechanism, it will be ncessary to completely copy content of some other nodes " 
+		"usimg basebackup or similar tool. Zero value of parameter disable droipping slot.",
 		&MtmMaxRecoveryLag,
 		100000000,
 		0,
@@ -990,6 +1028,7 @@ _PG_fini(void)
 static void MtmSwitchFromRecoveryToNormalMode()
 {
 	dtm->status = MTM_ONLINE;
+	elog(WARNING, "Switch to normal mode");
 	/* ??? Something else to do here? */
 }
 
@@ -1008,8 +1047,10 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 	}
 
 	if (!TransactionIdIsValid(gtid->xid)) { 
+		/* In case of recovery InvalidTransactionId is passed */
 		Assert(dtm->status == MTM_RECOVERY);
 	} else if (dtm->status == MTM_RECOVERY) { 
+		/* When recovery is completed we get normal transaction ID and switch to normal mode */
 		MtmSwitchFromRecoveryToNormalMode();
 	}
 	dtmTx.gtid = *gtid;
@@ -1026,6 +1067,7 @@ void MtmReceiverStarted(int nodeId)
 	if (!BIT_CHECK(dtm->pglogicalNodeMask, nodeId-1)) { 
 		dtm->pglogicalNodeMask |= (int64)1 << (nodeId-1);
 		if (++dtm->nReceivers == dtm->nNodes-1) {
+			elog(WARNING, "All receivers are started, switch to normal mode");
 			Assert(dtm->status == MTM_CONNECTED);
 			dtm->status = MTM_ONLINE;
 		}
@@ -1048,17 +1090,25 @@ csn_t MtmTransactionSnapshot(TransactionId xid)
     return snapshot;
 }
 
+/* 
+ * Determine when and how we should open replication slot.
+ * Druing recovery we need to open only one replication slot from which node should receive all transactions.
+ * Slots at other nodes should be removed 
+ */
 MtmSlotMode MtmReceiverSlotMode(int nodeId)
 {
 	while (dtm->status != MTM_CONNECTED && dtm->status != MTM_ONLINE) { 		
 		if (dtm->status == MTM_RECOVERY) { 
 			if (dtm->recoverySlot == 0 || dtm->recoverySlot == nodeId) { 
+				/* Choose for recovery first available slot */
 				dtm->recoverySlot = nodeId;
 				return SLOT_OPEN_EXISTED;
 			}
 		}
+		/* delay opening of other slots until recovery is completed */
 		MtmSleep(STATUS_POLL_DELAY);
 	}
+	/* After recovery completion we need to drop all other slots to avoid receive of redundant data */
 	return dtm->recoverySlot ? SLOT_CREATE_NEW : SLOT_OPEN_ALWAYS;
 }
 			
