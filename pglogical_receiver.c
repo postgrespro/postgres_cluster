@@ -209,7 +209,8 @@ pglogical_receiver_main(Datum main_arg)
     bool insideTrans = false;
 #endif
     ByteBuffer buf;
-	XLogRecPtr originStartPos;
+	XLogRecPtr originStartPos = 0;
+	RepOriginId originId;
 
 	/* Register functions for SIGTERM/SIGHUP management */
 	pqsignal(SIGHUP, receiver_raw_sighup);
@@ -266,7 +267,10 @@ pglogical_receiver_main(Datum main_arg)
 		resetPQExpBuffer(query);
 	}
 	/* Start logical replication at specified position */
-	originStartPos = replorigin_session_get_progress(false);
+	originId = replorigin_by_name(args->receiver_slot, true);
+	if (originId != InvalidRepOriginId) { 
+		originStartPos = replorigin_get_progress(originId, false);
+	}
 	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %u/%u (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d')",
 					  args->receiver_slot,
 					  (uint32) (originStartPos >> 32),
