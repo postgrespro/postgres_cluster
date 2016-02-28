@@ -61,7 +61,8 @@ typedef struct {
 	bool  isReplicated;   /* transaction on replica */
 	bool  isDistributed;  /* transaction performed INSERT/UPDATE/DELETE and has to be replicated to other nodes */
 	bool  containsDML;    /* transaction contains DML statements */
-    csn_t snapshot;       /* transaction snaphsot   */
+	bool  isPrepared;     /* transaction is prepared as part of 2PC */
+    csn_t snapshot;       /* transaction snaphsot */
 } MtmCurrentTrans;
 
 /* #define USE_SPINLOCK 1 */
@@ -94,6 +95,8 @@ static void MtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 static void MtmInitialize(void);
 static void MtmXactCallback(XactEvent event, void *arg);
 static void MtmBeginTransaction(MtmCurrentTrans* x);
+static void MtmPrecommitTransaction(MtmCurrentTrans* x);
+static bool MtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids);
 static void MtmPrepareTransaction(MtmCurrentTrans* x);
 static void MtmEndTransaction(MtmCurrentTrans* x, bool commit);
 static TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum);
@@ -143,6 +146,7 @@ static int MtmWorkers;
 static int MtmVacuumDelay;
 static int MtmMinRecoveryLag;
 static int MtmMaxRecoveryLag;
+static bool MtmUse2PC;
 
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
 static ProcessUtility_hook_type PreviousProcessUtilityHook;
@@ -467,6 +471,9 @@ MtmXactCallback(XactEvent event, void *arg)
 	    MtmBeginTransaction(&dtmTx);
         break;
 	  case XACT_EVENT_PRE_COMMIT:
+		MtmPrecommitTransaction(&dtmTx);
+		break;
+	  case XACT_EVENT_PREPARE:
 		MtmPrepareTransaction(&dtmTx);
 		break;
 	  case XACT_EVENT_COMMIT:
@@ -498,6 +505,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
         x->isReplicated = false;
         x->isDistributed = MtmIsUserTransaction();
 		x->containsDML = false;
+		x->isPrepared = false;
         x->snapshot = MtmAssignCSN();	
 		x->gtid.xid = InvalidTransactionId;
 		MtmUnlock();
@@ -561,10 +569,11 @@ MtmCheckClusterLock()
 }	
 
 /* 
+ * This functions is called as pre-commit callback.
  * We need to pass snapshot to WAL-sender, so create record in transaction status hash table 
  * before commit
  */
-static void MtmPrepareTransaction(MtmCurrentTrans* x)
+static void MtmPrecommitTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
 	int i;
@@ -606,6 +615,20 @@ static void MtmPrepareTransaction(MtmCurrentTrans* x)
 	MtmUnlock();
 
 	MTM_TRACE("%d: MtmPrepareTransaction prepare commit of %d CSN=%ld\n", getpid(), x->xid, ts->csn);
+}
+
+static void 
+MtmPrepareTransaction(MtmCurrentTrans* x)
+{	
+	TransactionId *subxids;
+	int nSubxids;
+	MtmPrecommitTransaction(x);
+	x->isPrepared = true;	
+	nSubxids = xactGetCommittedChildren(&subxids);
+	if (!MtmCommitTransaction(x->xid, nSubxids, subxids))
+	{
+		elog(ERROR, "Commit of transaction %d is rejected by DTM", x->xid);                    
+	}
 }
 
 /**
@@ -755,7 +778,7 @@ static void
 MtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
 	MTM_TRACE("%d: MtmSetTransactionStatus %u(%u) = %u, isDistributed=%d\n", getpid(), xid, dtmTx.xid, status, dtmTx.isDistributed);
-	if (xid == dtmTx.xid && dtmTx.isDistributed)
+	if (xid == dtmTx.xid && dtmTx.isDistributed && !dtmTx.isPrepared)
 	{
 		if (status == TRANSACTION_STATUS_ABORTED || !dtmTx.containsDML || dtm->status == MTM_RECOVERY)
 		{
@@ -812,6 +835,18 @@ _PG_init(void)
 	if (!process_shared_preload_libraries_in_progress)
 		return;
 
+	DefineCustomBoolVariable(
+		"multimaster.use_2pc",
+		"Use two phase commit",
+		"Replace normal commit with two phase commit",
+		&MtmUse2PC,
+		false,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
 	DefineCustomIntVariable(
 		"multimaster.min_recovery_lag",
 		"Minamal lag of WAL-sender performing recovery after which cluster is locked until recovery is completed",
@@ -1313,6 +1348,17 @@ static bool MtmProcessDDLCommand(char const* queryString)
 	return false;
 }
 
+/*
+ * Genenerate global transaction identifier for two-pahse commit.
+ * It should be unique for all nodes
+ */
+static char*
+MtmGenerateGid()
+{
+	static int localCount;
+	return psprintf("GID-%d-%d-%d", MtmNodeId, MyProcPid, ++localCount);
+}
+
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag)
@@ -1320,6 +1366,36 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	bool skipCommand;
 	switch (nodeTag(parsetree))
 	{
+	    case T_TransactionStmt:
+			{
+				TransactionStmt *stmt = (TransactionStmt *) parsetree;
+				switch (stmt->kind)
+				{					
+				case TRANS_STMT_COMMIT:
+					if (MtmUse2PC) { 
+						char* gid = MtmGenerateGid();
+						if (!PrepareTransactionBlock(gid))
+						{
+							/* report unsuccessful commit in completionTag */
+							if (completionTag) { 
+								strcpy(completionTag, "ROLLBACK");
+							}
+							/* ??? Should we do explicit rollback */
+						} else { 
+							FinishPreparedTransaction(gid, true);
+						}
+						return;
+					}
+					break;
+				case TRANS_STMT_PREPARE:
+				case TRANS_STMT_COMMIT_PREPARED:
+				case TRANS_STMT_ROLLBACK_PREPARED:
+					elog(ERROR, "Two phase commit is not supported by multimaster");
+				default:
+					break;
+				}
+			}
+			/* no break */
 		case T_PlannedStmt:
 		case T_ClosePortalStmt:
 		case T_FetchStmt:
@@ -1333,7 +1409,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_LoadStmt:
 		case T_VariableSetStmt:
 		case T_VariableShowStmt:
-	    case T_TransactionStmt:
 			skipCommand = true;
 			break;
 	    default:
