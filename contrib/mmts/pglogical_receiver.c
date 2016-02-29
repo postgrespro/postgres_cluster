@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include "postgres.h"
 #include "fmgr.h"
+#include "miscadmin.h"
 #include "libpq-fe.h"
 #include "pqexpbuffer.h"
 #include "access/xact.h"
@@ -38,7 +39,8 @@
 /* Allow load of this module in shared libs */
 
 typedef struct ReceiverArgs { 
-	int receiver_node;
+	int local_node;
+	int remote_node;
     char* receiver_conn_string;
     char receiver_slot[16];
 } ReceiverArgs;
@@ -55,7 +57,7 @@ static bool receiver_sync_mode = false;
 
 /* Worker name */
 static char *worker_name = "multimaster";
-char worker_proc[16];
+char worker_proc[BGW_MAXLEN];
 
 /* Lastly written positions */
 static XLogRecPtr output_written_lsn = InvalidXLogRecPtr;
@@ -216,7 +218,7 @@ pglogical_receiver_main(Datum main_arg)
 	pqsignal(SIGHUP, receiver_raw_sighup);
 	pqsignal(SIGTERM, receiver_raw_sigterm);
 
-    sprintf(worker_proc, "mtm_recv_%d", getpid());
+    sprintf(worker_proc, "mtm_pglogical_receiver_%d_%d", args->local_node, args->remote_node);
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -229,7 +231,7 @@ pglogical_receiver_main(Datum main_arg)
 	 * Druing recovery we need to open only one replication slot from which node should receive all transactions.
 	 * Slots at other nodes should be removed 
 	 */
-	mode = MtmReceiverSlotMode(args->receiver_node);	
+	mode = MtmReceiverSlotMode(args->remote_node);	
     
 	/* Establish connection to remote server */
 	conn = PQconnectdb(args->receiver_conn_string);
@@ -266,11 +268,18 @@ pglogical_receiver_main(Datum main_arg)
 		PQclear(res);
 		resetPQExpBuffer(query);
 	}
+	
 	/* Start logical replication at specified position */
+	StartTransactionCommand();
 	originId = replorigin_by_name(args->receiver_slot, true);
 	if (originId != InvalidRepOriginId) { 
 		originStartPos = replorigin_get_progress(originId, false);
+		elog(WARNING, "Restart logical receiver at position %lx from node %d", originStartPos, args->remote_node);
+	} else { 
+		elog(WARNING, "Start logical receiver from node %d", args->remote_node);
 	}
+	CommitTransactionCommand();
+	
 	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %u/%u (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d')",
 					  args->receiver_slot,
 					  (uint32) (originStartPos >> 32),
@@ -282,14 +291,14 @@ pglogical_receiver_main(Datum main_arg)
 	if (PQresultStatus(res) != PGRES_COPY_BOTH)
 	{
 		PQclear(res);
-		ereport(LOG, (errmsg("%s: Could not start logical replication",
-							 worker_proc)));
+		ereport(WARNING, (errmsg("%s: Could not start logical replication",
+								 worker_proc)));
 		proc_exit(1);
 	}
 	PQclear(res);
 	resetPQExpBuffer(query);
 
-    MtmReceiverStarted(args->receiver_node);
+    MtmReceiverStarted(args->remote_node);
     ByteBufferAlloc(&buf);
 	ds = MtmGetState();
 
@@ -576,10 +585,11 @@ int MtmStartReceivers(char* conns, int node_id)
             }
             ctx->receiver_conn_string = psprintf("replication=database %.*s", (int)(p - conn_str), conn_str);
             sprintf(ctx->receiver_slot, "mtm_slot_%d", node_id);
-            ctx->receiver_node = node_id;
+            ctx->local_node = node_id;
+            ctx->remote_node = i;
 
             /* Worker parameter and registration */
-            snprintf(worker.bgw_name, BGW_MAXLEN, "mtm_worker_%d_%d", node_id, i);
+            snprintf(worker.bgw_name, BGW_MAXLEN, "mtm_pglogical_receiver_%d_%d", node_id, i);
             
             worker.bgw_main_arg = (Datum)ctx;
             RegisterBackgroundWorker(&worker);

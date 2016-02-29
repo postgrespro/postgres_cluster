@@ -278,13 +278,13 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         {
             if (ts->csn > dtmTx.snapshot) { 
                 MTM_TUPLE_TRACE("%d: tuple with xid=%d(csn=%ld) is invisibile in snapshot %ld\n",
-								getpid(), xid, ts->csn, dtmTx.snapshot);
+								MyProcPid, xid, ts->csn, dtmTx.snapshot);
                 MtmUnlock();
                 return true;
             }
             if (ts->status == TRANSACTION_STATUS_UNKNOWN)
             {
-                MTM_TRACE("%d: wait for in-doubt transaction %u in snapshot %lu\n", getpid(), xid, dtmTx.snapshot);
+                MTM_TRACE("%d: wait for in-doubt transaction %u in snapshot %lu\n", MyProcPid, xid, dtmTx.snapshot);
                 MtmUnlock();
 #if TRACE_SLEEP_TIME
                 {
@@ -316,14 +316,14 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
             {
                 bool invisible = ts->status != TRANSACTION_STATUS_COMMITTED;
                 MTM_TUPLE_TRACE("%d: tuple with xid=%d(csn= %ld) is %s in snapshot %ld\n",
-								getpid(), xid, ts->csn, invisible ? "rollbacked" : "committed", dtmTx.snapshot);
+								MyProcPid, xid, ts->csn, invisible ? "rollbacked" : "committed", dtmTx.snapshot);
                 MtmUnlock();
                 return invisible;
             }
         }
         else
         {
-            MTM_TUPLE_TRACE("%d: visibility check is skept for transaction %u in snapshot %lu\n", getpid(), xid, dtmTx.snapshot);
+            MTM_TUPLE_TRACE("%d: visibility check is skept for transaction %u in snapshot %lu\n", MyProcPid, xid, dtmTx.snapshot);
             break;
         }
     }
@@ -493,7 +493,7 @@ MtmXactCallback(XactEvent event, void *arg)
 static bool
 MtmIsUserTransaction()
 {
-	return IsNormalProcessingMode() && dtm->status == MTM_ONLINE && MtmDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess();
+	return IsNormalProcessingMode() && MtmDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess();
 }
 
 static void 
@@ -504,6 +504,10 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		x->xid = GetCurrentTransactionIdIfAny();
         x->isReplicated = false;
         x->isDistributed = MtmIsUserTransaction();
+		if (x->isDistributed && dtm->status != MTM_ONLINE) { 
+			MtmUnlock();
+			elog(ERROR, "Multimaster node is offline");
+		}
 		x->containsDML = false;
 		x->isPrepared = false;
         x->snapshot = MtmAssignCSN();	
@@ -614,7 +618,7 @@ static void MtmPrecommitTransaction(MtmCurrentTrans* x)
 
 	MtmUnlock();
 
-	MTM_TRACE("%d: MtmPrepareTransaction prepare commit of %d CSN=%ld\n", getpid(), x->xid, ts->csn);
+	MTM_TRACE("%d: MtmPrepareTransaction prepare commit of %d CSN=%ld\n", MyProcPid, x->xid, ts->csn);
 }
 
 static void 
@@ -728,14 +732,14 @@ MtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids)
 	ts = hash_search(xid2state, &xid, HASH_FIND, NULL);
 	Assert(ts != NULL); /* should be created by MtmPrepareTransaction */
 	
-	MTM_TRACE("%d: MtmCommitTransaction begin commit of %d CSN=%ld\n", getpid(), xid, ts->csn);
+	MTM_TRACE("%d: MtmCommitTransaction begin commit of %d CSN=%ld\n", MyProcPid, xid, ts->csn);
 	MtmAddSubtransactions(ts, subxids, nsubxids);
 
 	MtmVoteForTransaction(ts); 
 
 	MtmUnlock();
 
-	MTM_TRACE("%d: MtmCommitTransaction %d status=%d\n", getpid(), xid, ts->status);
+	MTM_TRACE("%d: MtmCommitTransaction %d status=%d\n", MyProcPid, xid, ts->status);
 
 	return ts->status != TRANSACTION_STATUS_ABORTED;
 }
@@ -768,7 +772,7 @@ MtmFinishTransaction(TransactionId xid, int nsubxids, TransactionId *subxids, Xi
 			MtmSendNotificationMessage(ts);
 		}
 		MtmUnlock();
-		MTM_TRACE("%d: MtmFinishTransaction %d CSN=%ld, status=%d\n", getpid(), xid, ts->csn, status);
+		MTM_TRACE("%d: MtmFinishTransaction %d CSN=%ld, status=%d\n", MyProcPid, xid, ts->csn, status);
 	}
 }	
 		
@@ -777,7 +781,7 @@ MtmFinishTransaction(TransactionId xid, int nsubxids, TransactionId *subxids, Xi
 static void 
 MtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
-	MTM_TRACE("%d: MtmSetTransactionStatus %u(%u) = %u, isDistributed=%d\n", getpid(), xid, dtmTx.xid, status, dtmTx.isDistributed);
+	MTM_TRACE("%d: MtmSetTransactionStatus %u(%u) = %u, isDistributed=%d\n", MyProcPid, xid, dtmTx.xid, status, dtmTx.isDistributed);
 	if (xid == dtmTx.xid && dtmTx.isDistributed && !dtmTx.isPrepared)
 	{
 		if (status == TRANSACTION_STATUS_ABORTED || !dtmTx.containsDML || dtm->status == MTM_RECOVERY)
@@ -1100,7 +1104,7 @@ void MtmReceiverStarted(int nodeId)
 {
 	SpinLockAcquire(&dtm->spinlock);	
 	if (!BIT_CHECK(dtm->pglogicalNodeMask, nodeId-1)) { 
-		dtm->pglogicalNodeMask |= (int64)1 << (nodeId-1);
+		dtm->pglogicalNodeMask |= (nodemask_t)1 << (nodeId-1);
 		if (++dtm->nReceivers == dtm->nNodes-1) {
 			elog(WARNING, "All receivers are started, switch to normal mode");
 			Assert(dtm->status == MTM_CONNECTED);
@@ -1478,14 +1482,14 @@ MtmVoteForTransaction(MtmTransState* ts)
 			MtmSendNotificationMessage(ts);			
 		}
 	}
-	MTM_TRACE("%d: Node %d waiting latch...\n", getpid(), MtmNodeId);
+	MTM_TRACE("%d: Node %d waiting latch...\n", MyProcPid, MtmNodeId);
 	while (!ts->done) {
 		MtmUnlock();
 		WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
 		ResetLatch(&MyProc->procLatch);			
 		MtmLock(LW_SHARED);
 	}
-	MTM_TRACE("%d: Node %d receives response...\n", getpid(), MtmNodeId);
+	MTM_TRACE("%d: Node %d receives response...\n", MyProcPid, MtmNodeId);
 }
 
 HTAB* MtmCreateHash(void)
