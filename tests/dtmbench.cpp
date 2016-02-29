@@ -184,7 +184,7 @@ void initializeDatabase()
 	printf("Creating database schema...\n");
 	{
 		nontransaction txn(conn);
-        exec(txn, "drop extension if exists multimsater");
+        exec(txn, "drop extension if exists multimaster");
         exec(txn, "create extension multimaster");
 		exec(txn, "drop table if exists t");
 		exec(txn, "create table t(u int primary key, v int)");
