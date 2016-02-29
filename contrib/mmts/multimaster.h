@@ -145,4 +145,6 @@ extern MtmState* MtmGetState(void);
 extern timestamp_t MtmGetCurrentTime(void);
 extern void  MtmSleep(timestamp_t interval);
 extern bool  MtmIsRecoveredNode(int nodeId);
+extern void  MtmSerializeLockGraph(ByteBuffer* buf);
+
 #endif
