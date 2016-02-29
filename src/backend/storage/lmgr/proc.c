@@ -401,7 +401,6 @@ InitProcess(void)
 	pg_atomic_init_u32(&MyProc->procArrayGroupNext, INVALID_PGPROCNO);
 
 	/* Check that group locking fields are in a proper initial state. */
-	Assert(MyProc->lockGroupLeaderIdentifier == 0);
 	Assert(MyProc->lockGroupLeader == NULL);
 	Assert(dlist_is_empty(&MyProc->lockGroupMembers));
 
@@ -565,7 +564,6 @@ InitAuxiliaryProcess(void)
 	SwitchToSharedLatch();
 
 	/* Check that group locking fields are in a proper initial state. */
-	Assert(MyProc->lockGroupLeaderIdentifier == 0);
 	Assert(MyProc->lockGroupLeader == NULL);
 	Assert(dlist_is_empty(&MyProc->lockGroupMembers));
 
@@ -822,7 +820,6 @@ ProcKill(int code, Datum arg)
 		dlist_delete(&MyProc->lockGroupLink);
 		if (dlist_is_empty(&leader->lockGroupMembers))
 		{
-			leader->lockGroupLeaderIdentifier = 0;
 			leader->lockGroupLeader = NULL;
 			if (leader != MyProc)
 			{
@@ -1004,7 +1001,7 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable)
 	int			i;
 
 	/*
-	 * If group locking is in use, locks held my members of my locking group
+	 * If group locking is in use, locks held by members of my locking group
 	 * need to be included in myHeldLocks.
 	 */
 	if (leader != NULL)
@@ -1050,7 +1047,8 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable)
 		{
 			/*
 			 * If we're part of the same locking group as this waiter, its
-			 * locks neither conflict with ours nor contribute to aheadRequsts.
+			 * locks neither conflict with ours nor contribute to
+			 * aheadRequests.
 			 */
 			if (leader != NULL && leader == proc->lockGroupLeader)
 			{
@@ -1770,7 +1768,6 @@ BecomeLockGroupLeader(void)
 	leader_lwlock = LockHashPartitionLockByProc(MyProc);
 	LWLockAcquire(leader_lwlock, LW_EXCLUSIVE);
 	MyProc->lockGroupLeader = MyProc;
-	MyProc->lockGroupLeaderIdentifier = MyProcPid;
 	dlist_push_head(&MyProc->lockGroupMembers, &MyProc->lockGroupLink);
 	LWLockRelease(leader_lwlock);
 }
@@ -1794,14 +1791,26 @@ BecomeLockGroupMember(PGPROC *leader, int pid)
 	/* Group leader can't become member of group */
 	Assert(MyProc != leader);
 
+	/* Can't already be a member of a group */
+	Assert(MyProc->lockGroupLeader == NULL);
+
 	/* PID must be valid. */
 	Assert(pid != 0);
 
-	/* Try to join the group. */
-	leader_lwlock = LockHashPartitionLockByProc(MyProc);
+	/*
+	 * Get lock protecting the group fields.  Note LockHashPartitionLockByProc
+	 * accesses leader->pgprocno in a PGPROC that might be free.  This is safe
+	 * because all PGPROCs' pgprocno fields are set during shared memory
+	 * initialization and never change thereafter; so we will acquire the
+	 * correct lock even if the leader PGPROC is in process of being recycled.
+	 */
+	leader_lwlock = LockHashPartitionLockByProc(leader);
 	LWLockAcquire(leader_lwlock, LW_EXCLUSIVE);
-	if (leader->lockGroupLeaderIdentifier == pid)
+
+	/* Is this the leader we're looking for? */
+	if (leader->pid == pid && leader->lockGroupLeader == leader)
 	{
+		/* OK, join the group */
 		ok = true;
 		MyProc->lockGroupLeader = leader;
 		dlist_push_tail(&leader->lockGroupMembers, &MyProc->lockGroupLink);

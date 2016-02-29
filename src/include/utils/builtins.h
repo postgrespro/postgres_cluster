@@ -473,6 +473,7 @@ extern Datum pg_relation_size(PG_FUNCTION_ARGS);
 extern Datum pg_total_relation_size(PG_FUNCTION_ARGS);
 extern Datum pg_size_pretty(PG_FUNCTION_ARGS);
 extern Datum pg_size_pretty_numeric(PG_FUNCTION_ARGS);
+extern Datum pg_size_bytes(PG_FUNCTION_ARGS);
 extern Datum pg_table_size(PG_FUNCTION_ARGS);
 extern Datum pg_indexes_size(PG_FUNCTION_ARGS);
 extern Datum pg_relation_filenode(PG_FUNCTION_ARGS);
@@ -1147,12 +1148,16 @@ extern Datum set_config_by_name(PG_FUNCTION_ARGS);
 extern Datum show_all_settings(PG_FUNCTION_ARGS);
 extern Datum show_all_file_settings(PG_FUNCTION_ARGS);
 
+/* pg_config.c */
+extern Datum pg_config(PG_FUNCTION_ARGS);
+
 /* rls.c */
 extern Datum row_security_active(PG_FUNCTION_ARGS);
 extern Datum row_security_active_name(PG_FUNCTION_ARGS);
 
 /* lockfuncs.c */
 extern Datum pg_lock_status(PG_FUNCTION_ARGS);
+extern Datum pg_blocking_pids(PG_FUNCTION_ARGS);
 extern Datum pg_advisory_lock_int8(PG_FUNCTION_ARGS);
 extern Datum pg_advisory_xact_lock_int8(PG_FUNCTION_ARGS);
 extern Datum pg_advisory_lock_shared_int8(PG_FUNCTION_ARGS);
