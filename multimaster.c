@@ -1516,3 +1516,73 @@ MtmGetState(void)
 {
 	return dtm;
 }
+
+static void
+MtmGetGtid(TransactionId xid, GlobalTransactionId* gtid)
+{
+	MtmTransState* ts;
+
+	MtmLock(LW_SHARED);
+	ts = (MtmTransState*)hash_search(xid2state, &xid, HASH_FIND, NULL);
+	Assert(ts != NULL);
+	*gtid = ts->gtid;
+	MtmUnlock();
+}
+
+
+static void 
+MtmSerializeLock(PROCLOCK* proclock, void* arg)
+{
+    ByteBuffer* buf = (ByteBuffer*)arg;
+    LOCK* lock = proclock->tag.myLock;
+    PGPROC* proc = proclock->tag.myProc; 
+	GlobalTransactionId gtid;
+    if (lock != NULL) {
+        PGXACT* srcPgXact = &ProcGlobal->allPgXact[proc->pgprocno];
+        
+        if (TransactionIdIsValid(srcPgXact->xid) && proc->waitLock == lock) { 
+            LockMethod lockMethodTable = GetLocksMethodTable(lock);
+            int numLockModes = lockMethodTable->numLockModes;
+            int conflictMask = lockMethodTable->conflictTab[proc->waitLockMode];
+            SHM_QUEUE *procLocks = &(lock->procLocks);
+            int lm;
+
+			MtmGetGtid(srcPgXact->xid, &gtid);  /* waiting transaction */
+			
+            ByteBufferAppendInt32(buf, gtid.node);
+            ByteBufferAppendInt32(buf, gtid.xid); 
+
+            proclock = (PROCLOCK *) SHMQueueNext(procLocks, procLocks,
+                                                 offsetof(PROCLOCK, lockLink));
+            while (proclock)
+            {
+                if (proc != proclock->tag.myProc) { 
+                    PGXACT* dstPgXact = &ProcGlobal->allPgXact[proclock->tag.myProc->pgprocno];
+                    if (TransactionIdIsValid(dstPgXact->xid)) { 
+                        Assert(srcPgXact->xid != dstPgXact->xid);
+                        for (lm = 1; lm <= numLockModes; lm++)
+                        {
+                            if ((proclock->holdMask & LOCKBIT_ON(lm)) && (conflictMask & LOCKBIT_ON(lm)))
+                            {
+                                MTM_TRACE("%d: %u(%u) waits for %u(%u)\n", getpid(), srcPgXact->xid, proc->pid, dstPgXact->xid, proclock->tag.myProc->pid);
+                                MtmGetGtid(srcPgXact->xid, &gtid); /* transaction holding lock */
+								ByteBufferAppendInt32(buf, gtid.node); 
+								ByteBufferAppendInt32(buf, gtid.xid); 
+                                break;
+                            }
+                        }
+                    }
+                }
+                proclock = (PROCLOCK *) SHMQueueNext(procLocks, &proclock->lockLink,
+                                                     offsetof(PROCLOCK, lockLink));
+            }
+            ByteBufferAppendInt32(buf, 0); /* end of lock owners list */
+            ByteBufferAppendInt32(buf, 0); /* end of lock owners list */
+        }
+    }
+}
+
+void MtmSerializeLockGraph(ByteBuffer* buf)
+{
+	EnumerateLocks(MtmSerializeLock, buf);
+}
