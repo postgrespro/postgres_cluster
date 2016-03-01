@@ -27,8 +27,8 @@ include $(top_srcdir)/contrib/contrib-global.mk
 # typical installcheck users do not have (e.g. buildfarm clients).
 @installcheck: ;
 
-EXTRA_INSTALL += $(top_srcdir)/contrib/pglogical_output
-EXTRA_REGRESS_OPTS += $(top_srcdir)/contrib/pglogical/regress-postgresql.conf
+EXTRA_INSTALL += contrib/pglogical_output
+EXTRA_REGRESS_OPTS += --temp-config=./regress-postgresql.conf
 
 override CPPFLAGS := $(CPPFLAGS) -I$(top_srcdir)/contrib/pglogical_output
 

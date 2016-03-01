@@ -39,7 +39,7 @@ BEGIN
 	END IF;
 END;$$;
 
-SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=regression user=super');
+SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=contrib_regression user=super');
 
 \c :subscriber_dsn
 SET client_min_messages = 'warning';
@@ -56,7 +56,7 @@ SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbna
 
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=super',
+    provider_dsn := 'dbname=contrib_regression user=super',
 	forward_origins := '{}');
 
 DO $$

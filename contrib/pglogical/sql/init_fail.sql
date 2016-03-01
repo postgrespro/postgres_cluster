@@ -17,7 +17,7 @@ CREATE EXTENSION IF NOT EXISTS pglogical;
 -- fail (local node not existing)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=nonreplica',
+    provider_dsn := 'dbname=contrib_regression user=nonreplica',
 	forward_origins := '{}');
 
 -- succeed
@@ -26,13 +26,13 @@ SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbna
 -- fail (can't connect to remote)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=nonexisting',
+    provider_dsn := 'dbname=contrib_regression user=nonexisting',
 	forward_origins := '{}');
 
 -- fail (remote node not existing)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=nonreplica',
+    provider_dsn := 'dbname=contrib_regression user=nonreplica',
 	forward_origins := '{}');
 
 \c :provider_dsn
@@ -44,7 +44,7 @@ SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname
 -- fail (can't connect with replication connection to remote)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=nonreplica',
+    provider_dsn := 'dbname=contrib_regression user=nonreplica',
 	forward_origins := '{}');
 
 -- cleanup
