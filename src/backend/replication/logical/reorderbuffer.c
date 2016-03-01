@@ -1616,7 +1616,8 @@ void
 ReorderBufferCommitPrepared(ReorderBuffer *rb, TransactionId xid,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					TimestampTz commit_time,
-					RepOriginId origin_id, XLogRecPtr origin_lsn)
+					RepOriginId origin_id, XLogRecPtr origin_lsn,
+					char *gid)
 {
 	ReorderBufferTXN *txn;
 
@@ -1629,6 +1630,7 @@ ReorderBufferCommitPrepared(ReorderBuffer *rb, TransactionId xid,
 	txn->origin_id = origin_id;
 	txn->origin_lsn = origin_lsn;
 	txn->xact_action = XLOG_XACT_COMMIT_PREPARED;
+	memcpy(txn->gid, gid, GIDSIZE);
 
 	rb->commit(rb, txn, commit_lsn);
 }

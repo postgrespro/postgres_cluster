@@ -459,7 +459,8 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 
 	if (TransactionIdIsValid(parsed->twophase_xid)) {
 		ReorderBufferCommitPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
-							commit_time, origin_id, origin_lsn);
+							commit_time, origin_id, origin_lsn,
+							parsed->twophase_gid);
 		return;
 	}
 
