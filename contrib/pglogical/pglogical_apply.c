@@ -216,6 +216,24 @@ handle_commit(StringInfo s)
 	pgstat_report_activity(STATE_IDLE, NULL);
 }
 
+static void
+handle_prepare(StringInfo s)
+{
+	BeginTransactionBlock();
+	CommitTransactionCommand();
+	StartTransactionCommand();
+	PrepareTransactionBlock("dumb_gid");
+	CommitTransactionCommand();
+}
+
+static void
+handle_commit_prepared(StringInfo s)
+{
+	StartTransactionCommand();
+	FinishPreparedTransaction("dumb_gid", true);
+	CommitTransactionCommand();
+}
+
 /*
  * Handle ORIGIN message.
  */
@@ -1026,9 +1044,17 @@ replication_handler(StringInfo s)
 		case 'C':
 			handle_commit(s);
 			break;
+		/* COMMIT PREPARED (FINISH) */
+		case 'F':
+			handle_commit_prepared(s);
+			break;
 		/* ORIGIN */
 		case 'O':
 			handle_origin(s);
+			break;
+		/* PREPARE */
+		case 'P':
+			handle_prepare(s);
 			break;
 		/* RELATION */
 		case 'R':
