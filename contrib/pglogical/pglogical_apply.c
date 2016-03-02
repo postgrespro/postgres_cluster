@@ -141,22 +141,50 @@ handle_begin(StringInfo s)
  * Handle COMMIT message.
  */
 static void
-handle_commit(StringInfo s)
+handle_commit(char action, StringInfo s)
 {
 	XLogRecPtr		commit_lsn;
 	XLogRecPtr		end_lsn;
 	TimestampTz		commit_time;
+	const char		   *gid;
+	PGLFlushPosition *flushpos;
 
-	pglogical_read_commit(s, &commit_lsn, &end_lsn, &commit_time);
+
+	if (action == 'C')
+		pglogical_read_commit(s, &commit_lsn, &end_lsn, &commit_time);
+	else if (action == 'P')
+		pglogical_read_twophase(s, &commit_lsn, &end_lsn, &commit_time, &gid);
+	else //if (action == 'F')
+	{
+		pglogical_read_twophase(s, &commit_lsn, &end_lsn, &commit_time, &gid);
+		replorigin_session_origin_timestamp = commit_time;
+		replorigin_session_origin_lsn = commit_lsn;
+	}
 
 	Assert(commit_lsn == replorigin_session_origin_lsn);
 	Assert(commit_time == replorigin_session_origin_timestamp);
 
-	if (IsTransactionState())
-	{
-		PGLFlushPosition *flushpos;
+	// if (IsTransactionState())
+	// {
+		if (action == 'C')
+		{
+			CommitTransactionCommand();
+		}
+		else if (action == 'P')
+		{
+			BeginTransactionBlock();
+			CommitTransactionCommand();
+			StartTransactionCommand();
+			PrepareTransactionBlock(gid);
+			CommitTransactionCommand();
+		}
+		else if (action == 'F')
+		{
+			StartTransactionCommand();
+			FinishPreparedTransaction(gid, true);
+			CommitTransactionCommand();
+		}
 
-		CommitTransactionCommand();
 		MemoryContextSwitchTo(TopMemoryContext);
 
 		/* Track commit lsn  */
@@ -166,7 +194,7 @@ handle_commit(StringInfo s)
 
 		dlist_push_tail(&lsn_mapping, &flushpos->node);
 		MemoryContextSwitchTo(MessageContext);
-	}
+	// }
 
 	/*
 	 * If the row isn't from the immediate upstream; advance the slot of the
@@ -214,24 +242,6 @@ handle_commit(StringInfo s)
 	process_syncing_tables(end_lsn);
 
 	pgstat_report_activity(STATE_IDLE, NULL);
-}
-
-static void
-handle_prepare(StringInfo s)
-{
-	BeginTransactionBlock();
-	CommitTransactionCommand();
-	StartTransactionCommand();
-	PrepareTransactionBlock("dumb_gid");
-	CommitTransactionCommand();
-}
-
-static void
-handle_commit_prepared(StringInfo s)
-{
-	StartTransactionCommand();
-	FinishPreparedTransaction("dumb_gid", true);
-	CommitTransactionCommand();
 }
 
 /*
@@ -1042,19 +1052,15 @@ replication_handler(StringInfo s)
 			break;
 		/* COMMIT */
 		case 'C':
-			handle_commit(s);
-			break;
+		/* PREPARE */
+		case 'P':
 		/* COMMIT PREPARED (FINISH) */
 		case 'F':
-			handle_commit_prepared(s);
+			handle_commit(action, s);
 			break;
 		/* ORIGIN */
 		case 'O':
 			handle_origin(s);
-			break;
-		/* PREPARE */
-		case 'P':
-			handle_prepare(s);
 			break;
 		/* RELATION */
 		case 'R':

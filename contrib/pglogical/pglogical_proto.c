@@ -96,6 +96,25 @@ pglogical_read_commit(StringInfo in, XLogRecPtr *commit_lsn,
 }
 
 /*
+ * Read transaction PREPARE or COMMIT PREPARED from the stream.
+ */
+void
+pglogical_read_twophase(StringInfo in, XLogRecPtr *commit_lsn,
+					   XLogRecPtr *end_lsn, TimestampTz *committime,
+					   const char **gid)
+{
+	/* read flags */
+	uint8	flags = pq_getmsgbyte(in);
+	Assert(flags == 0);
+
+	/* read fields */
+	*commit_lsn = pq_getmsgint64(in);
+	*end_lsn = pq_getmsgint64(in);
+	*committime = pq_getmsgint64(in);
+	*gid = pq_getmsgstring(in);
+}
+
+/*
  * Read ORIGIN from the output stream.
  */
 char *

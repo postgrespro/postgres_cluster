@@ -28,6 +28,8 @@ extern void pglogical_read_begin(StringInfo in, XLogRecPtr *remote_lsn,
 					  TimestampTz *committime, TransactionId *remote_xid);
 extern void pglogical_read_commit(StringInfo in, XLogRecPtr *commit_lsn,
 					   XLogRecPtr *end_lsn, TimestampTz *committime);
+extern void pglogical_read_twophase(StringInfo in, XLogRecPtr *commit_lsn,
+					   XLogRecPtr *end_lsn, TimestampTz *committime, const char **gid);
 extern char *pglogical_read_origin(StringInfo in, XLogRecPtr *origin_lsn);
 
 extern uint32 pglogical_read_rel(StringInfo in);

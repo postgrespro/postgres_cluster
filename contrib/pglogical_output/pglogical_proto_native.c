@@ -212,7 +212,9 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 	pq_sendint64(out, txn->end_lsn);
 	pq_sendint64(out, txn->commit_time);
 
-	if (txn->xact_action == XLOG_XACT_PREPARE)
+	// send that as a cstring, instead of fixlen
+	if (txn->xact_action == XLOG_XACT_PREPARE || 
+		txn->xact_action == XLOG_XACT_COMMIT_PREPARED )
 		pq_sendbytes(out, txn->gid, GIDSIZE);
 }
 
