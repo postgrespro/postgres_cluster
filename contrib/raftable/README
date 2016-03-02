@@ -1,0 +1,28 @@
+This extension allows you to have a key-value table replicated between several
+Postgres instances over Raft protocol.
+
+C API:
+	/* Gets value by key. Returns the value or NULL if not found. */
+	char *raftable_get(int key);
+
+	/*
+	 * Adds/updates value by key. Returns when the value gets replicated.
+	 * Storing NULL will delete the item from the table.
+	 */
+	void raftable_set(int key, char *value);
+
+	/*
+	 * Iterates over all items in the table, calling func(key, value, arg)
+	 * for each of them.
+	 */
+	void raftable_every(void (*func)(int, char *, void *), void *arg);
+
+SQL API:
+	-- set
+	raftable(key int, value text);
+
+	-- get
+	raftable(key int) returns text;
+
+	-- list
+	raftable() returns table (key int, value text);
