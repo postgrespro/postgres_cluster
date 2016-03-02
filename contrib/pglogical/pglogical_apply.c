@@ -151,50 +151,70 @@ handle_commit(char action, StringInfo s)
 
 
 	if (action == 'C')
+	{
+		// Can we really be there without tx?
+		Assert(IsTransactionState());
+
 		pglogical_read_commit(s, &commit_lsn, &end_lsn, &commit_time);
+		CommitTransactionCommand();
+	}
 	else if (action == 'P')
+	{
+		// Can we really be there without tx?
+		Assert(IsTransactionState());
+
 		pglogical_read_twophase(s, &commit_lsn, &end_lsn, &commit_time, &gid);
-	else //if (action == 'F')
+
+		/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
+		BeginTransactionBlock();
+		CommitTransactionCommand();
+		StartTransactionCommand();
+
+		/* PREPARE itself */
+		PrepareTransactionBlock(gid);
+		CommitTransactionCommand();
+	}
+	else if (action == 'F')
 	{
 		pglogical_read_twophase(s, &commit_lsn, &end_lsn, &commit_time, &gid);
+
+		StartTransactionCommand();
+		FinishPreparedTransaction(gid, true);
+		CommitTransactionCommand();
+
+		/* There were no BEGIN stmt for COMMIT PREPARED */
 		replorigin_session_origin_timestamp = commit_time;
 		replorigin_session_origin_lsn = commit_lsn;
 	}
+	else if (action == 'X')
+	{
+		pglogical_read_twophase(s, &commit_lsn, &end_lsn, &commit_time, &gid);
+
+		StartTransactionCommand();
+		FinishPreparedTransaction(gid, false);
+		CommitTransactionCommand();
+
+		/* There were no BEGIN stmt for ROLLBACK PREPARED */
+		replorigin_session_origin_timestamp = commit_time;
+		replorigin_session_origin_lsn = commit_lsn;
+	}
+	else
+	{
+		Assert(false);
+	}
+
+	MemoryContextSwitchTo(TopMemoryContext);
+
+	/* Track commit lsn  */
+	flushpos = (PGLFlushPosition *) palloc(sizeof(PGLFlushPosition));
+	flushpos->local_end = XactLastCommitEnd;
+	flushpos->remote_end = end_lsn;
+
+	dlist_push_tail(&lsn_mapping, &flushpos->node);
+	MemoryContextSwitchTo(MessageContext);
 
 	Assert(commit_lsn == replorigin_session_origin_lsn);
 	Assert(commit_time == replorigin_session_origin_timestamp);
-
-	// if (IsTransactionState())
-	// {
-		if (action == 'C')
-		{
-			CommitTransactionCommand();
-		}
-		else if (action == 'P')
-		{
-			BeginTransactionBlock();
-			CommitTransactionCommand();
-			StartTransactionCommand();
-			PrepareTransactionBlock(gid);
-			CommitTransactionCommand();
-		}
-		else if (action == 'F')
-		{
-			StartTransactionCommand();
-			FinishPreparedTransaction(gid, true);
-			CommitTransactionCommand();
-		}
-
-		MemoryContextSwitchTo(TopMemoryContext);
-
-		/* Track commit lsn  */
-		flushpos = (PGLFlushPosition *) palloc(sizeof(PGLFlushPosition));
-		flushpos->local_end = XactLastCommitEnd;
-		flushpos->remote_end = end_lsn;
-
-		dlist_push_tail(&lsn_mapping, &flushpos->node);
-		MemoryContextSwitchTo(MessageContext);
-	// }
 
 	/*
 	 * If the row isn't from the immediate upstream; advance the slot of the
@@ -1054,8 +1074,10 @@ replication_handler(StringInfo s)
 		case 'C':
 		/* PREPARE */
 		case 'P':
-		/* COMMIT PREPARED (FINISH) */
+		/* COMMIT PREPARED */
 		case 'F':
+		/* ROLLBACK PREPARED */
+		case 'X':
 			handle_commit(action, s);
 			break;
 		/* ORIGIN */

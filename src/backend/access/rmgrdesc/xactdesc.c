@@ -169,10 +169,16 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
 	{
 		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
+		uint8 gidlen = xl_twophase->gidlen;
 
 		parsed->twophase_xid = xl_twophase->xid;
 
-		data += sizeof(xl_xact_twophase);
+		memcpy(parsed->twophase_gid, xl_twophase->gid, gidlen);
+		/* Dirty! */
+		memset(parsed->twophase_gid + gidlen, '\0', 200 - gidlen); // GIDSIZE
+
+		data += MinSizeOfXactTwophase;
+		data += gidlen;
 	}
 }
 

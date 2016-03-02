@@ -1629,7 +1629,7 @@ ReorderBufferCommitPrepared(ReorderBuffer *rb, TransactionId xid,
 	txn->commit_time = commit_time;
 	txn->origin_id = origin_id;
 	txn->origin_lsn = origin_lsn;
-	txn->xact_action = XLOG_XACT_COMMIT_PREPARED;
+	txn->xact_action = rb->xact_action;
 	memcpy(txn->gid, gid, GIDSIZE);
 
 	rb->commit(rb, txn, commit_lsn);

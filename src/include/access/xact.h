@@ -303,6 +303,7 @@ typedef struct xl_xact_parsed_abort
 	RelFileNode *xnodes;
 
 	TransactionId twophase_xid; /* only for 2PC */
+	char 		twophase_gid[200]; // GIDSIZE
 } xl_xact_parsed_abort;
 
 

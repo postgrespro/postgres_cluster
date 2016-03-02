@@ -5267,6 +5267,8 @@ XactLogAbortRecord(TimestampTz abort_time,
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_TWOPHASE;
 		xl_twophase.xid = twophase_xid;
+		xl_twophase.gidlen = strlen(twophase_gid);
+		memcpy(xl_twophase.gid, twophase_gid, xl_twophase.gidlen);
 	}
 
 	if (xl_xinfo.xinfo != 0)
@@ -5298,7 +5300,11 @@ XactLogAbortRecord(TimestampTz abort_time,
 	}
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
-		XLogRegisterData((char *) (&xl_twophase), sizeof(xl_xact_twophase));
+	{
+		// Write gid only in logical mode
+		XLogRegisterData((char *) (&xl_twophase), MinSizeOfXactTwophase);
+		XLogRegisterData((char *) twophase_gid, xl_twophase.gidlen);
+	}
 
 	return XLogInsert(RM_XACT_ID, info);
 }

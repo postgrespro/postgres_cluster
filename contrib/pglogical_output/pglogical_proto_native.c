@@ -201,8 +201,12 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 		pq_sendbyte(out, 'P'); /* sending PREPARE */
 	else if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED)
 		pq_sendbyte(out, 'F'); /* sending COMMIT_PREPARED (Finish 2PC) */
-	else
+	else if (txn->xact_action == XLOG_XACT_COMMIT)
 		pq_sendbyte(out, 'C'); /* sending COMMIT */
+	else if (txn->xact_action == XLOG_XACT_ABORT_PREPARED)
+		pq_sendbyte(out, 'X'); /* sending ABORT PREPARED */
+	else
+		Assert(false);
 
 	/* send the flags field */
 	pq_sendbyte(out, flags);
@@ -214,7 +218,8 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 
 	// send that as a cstring, instead of fixlen
 	if (txn->xact_action == XLOG_XACT_PREPARE || 
-		txn->xact_action == XLOG_XACT_COMMIT_PREPARED )
+			txn->xact_action == XLOG_XACT_COMMIT_PREPARED ||
+			txn->xact_action == XLOG_XACT_ABORT_PREPARED)
 		pq_sendbytes(out, txn->gid, GIDSIZE);
 }
 
