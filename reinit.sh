@@ -29,13 +29,6 @@ reinit_master() {
 	./install/bin/pg_ctl -sw -D ./install/data -l ./install/data/logfile start
 	./install/bin/createdb stas
 	./install/bin/psql -c "create table t(id int primary key, v int);"
-	./install/bin/psql -c "SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'pglogical_output');"
-	./install/bin/psql <<SQL
-		begin;
-		insert into t values (42);
-		prepare transaction 'hellyeah';
-		commit prepared 'hellyeah';
-SQL
 }
 
 reinit_master2() {
@@ -69,14 +62,6 @@ reinit_master2() {
 
 	./install/bin/pg_ctl -sw -D ./install/data2 -l ./install/data2/logfile start
 	./install/bin/createdb stas -p5433
-	# ./install/bin/psql -c "create table t(id int primary key, v int);" -p5433
-	# ./install/bin/psql -c "SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'pglogical_output');"
-	# ./install/bin/psql <<SQL
-	# 	begin;
-	# 	insert into t values (42);
-	# 	prepare transaction 'x';
-	# 	commit prepared 'x';
-# SQL
 }
 
 make install > /dev/null
@@ -84,42 +69,57 @@ make install > /dev/null
 cd contrib/pglogical
 make clean && make install
 cd ../..
+cd contrib/pglogical_output
+make clean && make install
+cd ../..
 
 pkill -9 postgres
 reinit_master
-# reinit_master2
-
-# ./install/bin/psql <<SQL
-# 	CREATE EXTENSION pglogical;
-# 	SELECT pglogical.create_node(
-# 		node_name := 'provider1',
-# 		dsn := 'port=5432 dbname=stas'
-# 	);
-# 	SELECT pglogical.replication_set_add_all_tables('default', ARRAY['public']);
-# SQL
-
-# ./install/bin/psql -p 5433 <<SQL
-# 	CREATE EXTENSION pglogical;
-# 	SELECT pglogical.create_node(
-# 		node_name := 'subscriber1',
-# 		dsn := 'port=5433 dbname=stas'
-# 	);
-# 	SELECT pglogical.create_subscription(
-# 		subscription_name := 'subscription1',
-# 		provider_dsn := 'port=5432 dbname=stas'
-# 	);
-# SQL
+reinit_master2
 
 ./install/bin/psql <<SQL
-SELECT * FROM pg_logical_slot_peek_changes('regression_slot',
-	NULL, NULL,
-	'expected_encoding', 'UTF8',
-	'min_proto_version', '1',
-	'max_proto_version', '1',
-	'startup_params_format', '1',
-	'proto_format', 'json',
-	'no_txinfo', 't');
+	CREATE EXTENSION pglogical;
+	SELECT pglogical.create_node(
+		node_name := 'provider1',
+		dsn := 'port=5432 dbname=stas'
+	);
+	SELECT pglogical.replication_set_add_all_tables('default', ARRAY['public']);
 SQL
+
+./install/bin/psql -p 5433 <<SQL
+	CREATE EXTENSION pglogical;
+	SELECT pglogical.create_node(
+		node_name := 'subscriber1',
+		dsn := 'port=5433 dbname=stas'
+	);
+	SELECT pglogical.create_subscription(
+		subscription_name := 'subscription1',
+		provider_dsn := 'port=5432 dbname=stas'
+	);
+SQL
+
+# ./install/bin/psql -c "SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'pglogical_output');"
+
+# ./install/bin/psql <<SQL
+# 	begin;
+# 	insert into t values (42);
+# 	prepare transaction 'hellyeah';
+# 	rollback prepared 'hellyeah';
+# SQL
+
+# ./install/bin/psql <<SQL
+# SELECT * FROM pg_logical_slot_peek_changes('regression_slot',
+# 	NULL, NULL,
+# 	'expected_encoding', 'UTF8',
+# 	'min_proto_version', '1',
+# 	'max_proto_version', '1',
+# 	'startup_params_format', '1',
+# 	'proto_format', 'json',
+# 	'no_txinfo', 't');
+# SQL
+
+
+
 
 
 
