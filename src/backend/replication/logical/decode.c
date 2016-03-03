@@ -458,9 +458,9 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	}
 
 	if (TransactionIdIsValid(parsed->twophase_xid)) {
-		ReorderBufferCommitPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
-							commit_time, origin_id, origin_lsn,
-							parsed->twophase_gid);
+		strcpy(ctx->reorder->gid, parsed->twophase_gid);
+		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
+							commit_time, origin_id, origin_lsn);
 		return;
 	}
 
@@ -627,9 +627,9 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
 
 	if (TransactionIdIsValid(parsed->twophase_xid)) {
-		ReorderBufferCommitPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
-							commit_time, origin_id, origin_lsn,
-							parsed->twophase_gid);
+		strcpy(ctx->reorder->gid, parsed->twophase_gid);
+		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
+							commit_time, origin_id, origin_lsn);
 		return;
 	}
 

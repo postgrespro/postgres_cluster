@@ -1612,12 +1612,15 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 	PG_END_TRY();
 }
 
+
+/*
+ * Send standalone xact event. This is used to handle COMMIT/ABORT PREPARED.
+ */
 void
-ReorderBufferCommitPrepared(ReorderBuffer *rb, TransactionId xid,
+ReorderBufferCommitBareXact(ReorderBuffer *rb, TransactionId xid,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					TimestampTz commit_time,
-					RepOriginId origin_id, XLogRecPtr origin_lsn,
-					char *gid)
+					RepOriginId origin_id, XLogRecPtr origin_lsn)
 {
 	ReorderBufferTXN *txn;
 
@@ -1630,7 +1633,7 @@ ReorderBufferCommitPrepared(ReorderBuffer *rb, TransactionId xid,
 	txn->origin_id = origin_id;
 	txn->origin_lsn = origin_lsn;
 	txn->xact_action = rb->xact_action;
-	memcpy(txn->gid, gid, GIDSIZE);
+	strcpy(txn->gid, rb->gid);
 
 	rb->commit(rb, txn, commit_lsn);
 }

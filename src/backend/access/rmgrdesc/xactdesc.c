@@ -100,12 +100,9 @@ ParseCommitRecord(uint8 info, xl_xact_commit *xlrec, xl_xact_parsed_commit *pars
 		uint8 gidlen = xl_twophase->gidlen;
 
 		parsed->twophase_xid = xl_twophase->xid;
-
-		memcpy(parsed->twophase_gid, xl_twophase->gid, gidlen);
-		/* Dirty! */
-		memset(parsed->twophase_gid + gidlen, '\0', 200 - gidlen); // GIDSIZE
-
 		data += MinSizeOfXactTwophase;
+
+		strcpy(parsed->twophase_gid, data);
 		data += gidlen;
 	}
 
@@ -172,12 +169,9 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 		uint8 gidlen = xl_twophase->gidlen;
 
 		parsed->twophase_xid = xl_twophase->xid;
-
-		memcpy(parsed->twophase_gid, xl_twophase->gid, gidlen);
-		/* Dirty! */
-		memset(parsed->twophase_gid + gidlen, '\0', 200 - gidlen); // GIDSIZE
-
 		data += MinSizeOfXactTwophase;
+
+		strcpy(parsed->twophase_gid, data);
 		data += gidlen;
 	}
 }
