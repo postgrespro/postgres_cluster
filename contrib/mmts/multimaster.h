@@ -25,6 +25,7 @@
 #define Anum_mtm_ddl_log_issued		1
 #define Anum_mtm_ddl_log_query		2
 
+#define MAX_NODES 64
 
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
@@ -146,5 +147,6 @@ extern MtmState* MtmGetState(void);
 extern timestamp_t MtmGetCurrentTime(void);
 extern void  MtmSleep(timestamp_t interval);
 extern bool  MtmIsRecoveredNode(int nodeId);
+extern nodemask_t MtmFindMaxClique(nodemask_t* matrix, in n_modes);
 
 #endif

@@ -1023,6 +1023,10 @@ _PG_init(void)
     if (MtmNodes < 2) { 
         elog(ERROR, "Multimaster should have at least two nodes");
 	}		
+	if (MtmNodes > MAX_NODES) { 
+        elog(ERROR, "Multimaster with mor than %d nodes is not currently supported", MAX_NODES);
+	}		
+		
     BgwPoolStart(MtmWorkers, MtmPoolConstructor);
 
 	MtmArbiterInitialize();
