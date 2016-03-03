@@ -93,17 +93,17 @@ pglogical_json_write_commit(StringInfo out, PGLogicalOutputData *data, ReorderBu
 	if (txn->xact_action == XLOG_XACT_PREPARE)
 	{
 		appendStringInfoString(out, "\"action\":\"P\"");
-		appendStringInfo(out, ", \"gid\":\"%s\"", txn->gid); /* NB: Add \0 at the end, if we are using all 200 bytes in GID */
+		appendStringInfo(out, ", \"gid\":\"%s\"", txn->gid);
 	}
 	else if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED)
 	{
 		appendStringInfoString(out, "\"action\":\"CP\"");
-		appendStringInfo(out, ", \"gid\":\"%s\"", txn->gid); /* NB: Add \0 at the end, if we are using all 200 bytes in GID */
+		appendStringInfo(out, ", \"gid\":\"%s\"", txn->gid);
 	}
 	else if (txn->xact_action == XLOG_XACT_ABORT_PREPARED)
 	{
 		appendStringInfoString(out, "\"action\":\"AP\"");
-		appendStringInfo(out, ", \"gid\":\"%s\"", txn->gid); /* NB: Add \0 at the end, if we are using all 200 bytes in GID */
+		appendStringInfo(out, ", \"gid\":\"%s\"", txn->gid);
 	}
 	else if (txn->xact_action == XLOG_XACT_COMMIT)
 	{
