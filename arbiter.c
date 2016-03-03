@@ -335,7 +335,7 @@ static void MtmOpenConnections()
 		if (i+1 != MtmNodeId) { 
 			sockets[i] = MtmConnectSocket(host, MtmArbiterPort + i + 1, MtmConnectAttempts);
 			if (sockets[i] < 0) { 
-				MtmDropNode(i+1, false);
+				MtmOnLostConnection(i+1);
 			} 
 		} else {
 			sockets[i] = -1;
@@ -358,7 +358,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 		close(sockets[node]);
 		sockets[node] = MtmConnectSocket(hosts[node], MtmArbiterPort + node + 1, MtmReconnectAttempts);
 		if (sockets[node] < 0) { 
-			MtmDropNode(node+1, false);
+			MtmOnLostConnection(node+1);
 			return false;
 		}
 	}

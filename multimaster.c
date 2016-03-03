@@ -112,6 +112,7 @@ static BgwPool* MtmPoolConstructor(void);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
 static void MtmVoteForTransaction(MtmTransState* ts);
+static void MtmSerializeLockGraph(ByteBuffer* buf)
 
 static HTAB* xid2state;
 static MtmCurrentTrans dtmTx;
@@ -803,13 +804,6 @@ MtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids,
 		}
 	}
 	PgTransactionIdSetTreeStatus(xid, nsubxids, subxids, status, lsn);
-}
-
-static bool 
-MtmDetectGlobalDeadLock(PGPROC* proc)
-{
-    elog(WARNING, "Global deadlock?");
-    return true;
 }
 
 static void 
@@ -1582,7 +1576,63 @@ MtmSerializeLock(PROCLOCK* proclock, void* arg)
     }
 }
 
-void MtmSerializeLockGraph(ByteBuffer* buf)
+/* Stubs */
+typedef PaxosTimestamp { 
+	time_t time;   /* local time at master */
+	uint32 naster; /* master node for this operation */
+	uint32 psn;    /* PAXOS serial number */
+} PaxosTimestamp;
+
+void* PaxosGet(char const* key, int* size, PaxosTimestamp* ts);
+void  PaxosSet(char const* key, void* value, int size);
+
+
+static bool 
+MtmDetectGlobalDeadLock(PGPROC* proc)
 {
-	EnumerateLocks(MtmSerializeLock, buf);
+    bool hasDeadlock = false;
+    ByteBuffer buf;
+    PGXACT* pgxact = &ProcGlobal->allPgXact[proc->pgprocno];
+	bool hasDeadlock = false;
+    if (TransactionIdIsValid(pgxact->xid)) { 
+		MtmGraph graph;
+		GlobalTransactionId gtid; 
+		int i;
+		
+        ByteBufferAlloc(&buf);
+        EnumerateLocks(DtmSerializeLock, &buf);
+        ByteBufferFree(&buf);
+		PaxosPut(dsprintf("lock-graph-%d", MMNodeId), buf.data, buf.size);
+		MtmGraphInit(&graph);
+		MtmGraphAdd(&graph, (GlobalTransactionId*)buf.data, buf.size/sizeof(GlobalTransactionId));
+		for (i = 0; i < MtmNodes; i++) { 
+			if (i+1 MtmNodeId && !BIT_CHECK(dtm->disabledNodeMask, i)) { 
+				int size;
+				void* data = PaxosGet(dsprintf("lock-graph-%d", i+1), &size, NULL);
+				MtmGraphAdd(&graph, (GlobalTransactionId*)data, size/sizeof(GlobalTransactoinId));
+			}
+		}
+		MtmGetGtid(pgxact->xid, &gtid);
+		hasDeadlock = MtmGraphFindLoop(&graph, &gtid);
+		elog(WARNING, "Distributed deadlock check for %u:%u = %d", gtid.node, gtid.xid, hasDeadlock);
+	}
+    return hasDeadlock;
+}
+
+void MtmOnLostConnection(int nodeId)
+{
+	int i;
+	nodemask_t mask = dtm->disabledNodeMask;
+	nodemask_t matrix = (nodemask_t*)palloc0(sizeof(nodemask_t)*MtmNodes);
+	
+	mask |= (nodemask_t)1 << (nodeId-1);
+	PaxosPut(dsprintf("node-mask-%d", MMNodeId), &mask, sizeof mask);
+	matrix[MtmNodeId-1] = mask;
+	MtmSleep(MtmConnectTimeout);
+	for (i = 0; i < MtnNodes; i++) { 
+		if (i+1 != MtmNodeId && !BIT_CHECK(dtm->disabledNodeMask, i)) { 
+			void* data = PaxosGet(dsprintf("node-mask-%d", i+1), NULL, NULL);
+			matrix[i] = *(nodemask_t*)data;
+		}
+	}
 }

@@ -141,10 +141,10 @@ extern void  MtmAdjustSubtransactions(MtmTransState* ts);
 extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
 extern void  MtmDropNode(int nodeId, bool dropSlot);
+extern void  MtmOnLostConnection(int nodeId);
 extern MtmState* MtmGetState(void);
 extern timestamp_t MtmGetCurrentTime(void);
 extern void  MtmSleep(timestamp_t interval);
 extern bool  MtmIsRecoveredNode(int nodeId);
-extern void  MtmSerializeLockGraph(ByteBuffer* buf);
 
 #endif
