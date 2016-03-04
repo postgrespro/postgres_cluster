@@ -297,8 +297,7 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 				
 			/* Some node considered that I am dead, so switch to recovery mode */
 			if (BIT_CHECK(msg.disabledNodeMask, MtmNodeId-1)) { 
-				elog(WARNING, "Node is switched to recovery mode");
-				ds->status = MTM_RECOVERY;
+				MtmClusterSwitchMode(MTM_RECOVERY);
 			}
 			/* Combine disable masks from all node. Is it actually correct or we should better check availability of nodes ourselves? */
 			ds->disabledNodeMask |= msg.disabledNodeMask;
@@ -345,8 +344,7 @@ static void MtmOpenConnections()
 		elog(WARNING, "Node is out of quorum: only %d nodes from %d are accssible", ds->nNodes, MtmNodes);
 		ds->status = MTM_OFFLINE;
 	} else if (ds->status == MTM_INITIALIZATION) { 
-		elog(WARNING, "Switch to CONNECTED mode");
-		ds->status = MTM_CONNECTED;
+		MtmClusterSwitchMode(MTM_CONNECTED);
 	}
 }
 
@@ -403,9 +401,9 @@ static void MtmAcceptOneConnection()
 			} else { 
 				elog(NOTICE, "Arbiter established connection with node %d", msg.node); 
 				BIT_CLEAR(ds->connectivityMask, msg.node-1);
-				MtmOnNodeConnect(msg.node);
 				MtmRegisterSocket(fd, msg.node-1);
 				sockets[msg.node-1] = fd;
+				MtmOnNodeConnect(msg.node);
 			}
 		}
 	}
@@ -586,7 +584,7 @@ static void MtmTransReceiver(Datum arg)
 
 	while (true) {
 #if USE_EPOLL
-        n = epoll_wait(epollfd, events, nNodes, -1);
+        n = epoll_wait(epollfd, events, nNodes, MtmKeepaliveTimeout/1000);
 		if (n < 0) { 
 			elog(ERROR, "Arbiter failed to poll sockets: %d", errno);
 		}
@@ -600,9 +598,12 @@ static void MtmTransReceiver(Datum arg)
 #else
         fd_set events;
 		do { 
+			struct timeval tv;
 			events = inset;
-			rc = select(max_fd+1, &events, NULL, NULL, NULL);
-		} while (rc < 0 && MtmRecovery());
+			tv.tv_sec = MtmKeepAliveTimeout/USEC;
+			tv.tv_usec = MtmKeepAliveTimeout%USEC;
+			n = select(max_fd+1, &events, NULL, NULL, &tv);
+		} while (n < 0 && MtmRecovery());
 		
 		if (rc < 0) { 
 			elog(ERROR, "Arbiter failed to select sockets: %d", errno);
@@ -741,6 +742,10 @@ static void MtmTransReceiver(Datum arg)
 					memmove(rxBuffer[i].data, (char*)rxBuffer[i].data + nResponses*sizeof(MtmArbiterMessage), rxBuffer[i].used);
 				}
 			}
+		}
+		if (n == 0 && ds->disabledNodeMask != 0) { 
+			/* If timeout is expired and there are didabled nodes, then recheck cluster's state */
+			MtmUpdateClusterStatus();
 		}
 	}
 }
