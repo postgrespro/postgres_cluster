@@ -21,7 +21,7 @@
 #include "access/sysattr.h"
 #include "access/tuptoaster.h"
 #include "access/xact.h"
-
+#include "access/twophase.h"
 #include "catalog/catversion.h"
 #include "catalog/index.h"
 
@@ -196,7 +196,17 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 {
 	uint8 flags = 0;
 
-	pq_sendbyte(out, 'C');		/* sending COMMIT */
+
+	if (txn->xact_action == XLOG_XACT_PREPARE)
+		pq_sendbyte(out, 'P'); /* sending PREPARE */
+	else if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED)
+		pq_sendbyte(out, 'F'); /* sending COMMIT_PREPARED (Finish 2PC) */
+	else if (txn->xact_action == XLOG_XACT_COMMIT)
+		pq_sendbyte(out, 'C'); /* sending COMMIT */
+	else if (txn->xact_action == XLOG_XACT_ABORT_PREPARED)
+		pq_sendbyte(out, 'X'); /* sending ABORT PREPARED */
+	else
+		Assert(false);
 
 	/* send the flags field */
 	pq_sendbyte(out, flags);
@@ -205,6 +215,11 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 	pq_sendint64(out, commit_lsn);
 	pq_sendint64(out, txn->end_lsn);
 	pq_sendint64(out, txn->commit_time);
+
+	if (txn->xact_action == XLOG_XACT_PREPARE ||
+			txn->xact_action == XLOG_XACT_COMMIT_PREPARED ||
+			txn->xact_action == XLOG_XACT_ABORT_PREPARED)
+		pq_sendstring(out, txn->gid);
 }
 
 /*

@@ -219,8 +219,14 @@ typedef struct xl_xact_invals
 typedef struct xl_xact_twophase
 {
 	TransactionId xid;
+	/*
+	 * Gid and gidlen will be set only with wal_level=logical.
+	 * See details in XactLogCommitRecord().
+	 */
+	uint8 gidlen;
+	char gid[200];
 } xl_xact_twophase;
-#define MinSizeOfXactInvals offsetof(xl_xact_invals, msgs)
+#define MinSizeOfXactTwophase offsetof(xl_xact_twophase, gid)
 
 typedef struct xl_xact_origin
 {
@@ -279,6 +285,7 @@ typedef struct xl_xact_parsed_commit
 	SharedInvalidationMessage *msgs;
 
 	TransactionId twophase_xid; /* only for 2PC */
+	char 		twophase_gid[200]; // GIDSIZE
 
 	XLogRecPtr	origin_lsn;
 	TimestampTz origin_timestamp;
@@ -296,6 +303,7 @@ typedef struct xl_xact_parsed_abort
 	RelFileNode *xnodes;
 
 	TransactionId twophase_xid; /* only for 2PC */
+	char 		twophase_gid[200]; // GIDSIZE
 } xl_xact_parsed_abort;
 
 
@@ -327,7 +335,7 @@ extern void CommitTransactionCommand(void);
 extern void AbortCurrentTransaction(void);
 extern void BeginTransactionBlock(void);
 extern bool EndTransactionBlock(void);
-extern bool PrepareTransactionBlock(char *gid);
+extern bool PrepareTransactionBlock(const char *gid);
 extern void UserAbortTransactionBlock(void);
 extern void ReleaseSavepoint(List *options);
 extern void DefineSavepoint(char *name);
@@ -360,12 +368,12 @@ extern XLogRecPtr XactLogCommitRecord(TimestampTz commit_time,
 					int nrels, RelFileNode *rels,
 					int nmsgs, SharedInvalidationMessage *msgs,
 					bool relcacheInval, bool forceSync,
-					TransactionId twophase_xid);
+					TransactionId twophase_xid, const char *twophase_gid);
 
 extern XLogRecPtr XactLogAbortRecord(TimestampTz abort_time,
 				   int nsubxacts, TransactionId *subxacts,
 				   int nrels, RelFileNode *rels,
-				   TransactionId twophase_xid);
+				   TransactionId twophase_xid, const char *twophase_gid);
 extern void xact_redo(XLogReaderState *record);
 
 /* xactdesc.c */

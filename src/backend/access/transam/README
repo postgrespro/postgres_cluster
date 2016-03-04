@@ -59,26 +59,26 @@ For example, consider the following sequence of user commands:
 In the main processing loop, this results in the following function call
 sequence:
 
-     /  StartTransactionCommand;
+     /  StartTransactionCommand;        // TBLOCK_DEFAULT -> TBLOCK_STARTED
     /       StartTransaction;
-1) <        ProcessUtility;             << BEGIN
-    \       BeginTransactionBlock;
-     \  CommitTransactionCommand;
+1) <    ProcessUtility;                 << BEGIN
+    \       BeginTransactionBlock;      // TBLOCK_STARTED -> TBLOCK_BEGIN
+     \  CommitTransactionCommand;       // TBLOCK_BEGIN -> TBLOCK_INPROGRESS
 
     /   StartTransactionCommand;
-2) /        ProcessQuery;               << SELECT ...
-   \        CommitTransactionCommand;
+2) /    PortalRunSelect;                << SELECT ...
+   \    CommitTransactionCommand;
     \       CommandCounterIncrement;
 
     /   StartTransactionCommand;
-3) /        ProcessQuery;               << INSERT ...
-   \        CommitTransactionCommand;
+3) /    ProcessQuery;                   << INSERT ...
+   \    CommitTransactionCommand;
     \       CommandCounterIncrement;
 
      /  StartTransactionCommand;
     /   ProcessUtility;                 << COMMIT
-4) <            EndTransactionBlock;
-    \   CommitTransactionCommand;
+4) <        EndTransactionBlock;        // TBLOCK_INPROGRESS -> TBLOCK_END
+    \   CommitTransactionCommand;       // TBLOCK_END -> TBLOCK_DEFAULT
      \      CommitTransaction;
 
 The point of this example is to demonstrate the need for
