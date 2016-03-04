@@ -20,6 +20,8 @@
 #define MULTIMASTER_MIN_PROTO_VERSION   1
 #define MULTIMASTER_MAX_PROTO_VERSION   1
 
+#define USEC 1000000
+
 #define Natts_mtm_ddl_log 2
 #define Anum_mtm_ddl_log_issued		1
 #define Anum_mtm_ddl_log_query		2
@@ -124,6 +126,7 @@ extern char* MtmDatabaseName;
 extern int   MtmConnectAttempts;
 extern int   MtmConnectTimeout;
 extern int   MtmReconnectAttempts;
+extern int   MtmKeepaliveTimeout;
 
 extern void  MtmArbiterInitialize(void);
 extern int   MtmStartReceivers(char* nodes, int nodeId);
@@ -148,6 +151,5 @@ extern timestamp_t MtmGetCurrentTime(void);
 extern void  MtmSleep(timestamp_t interval);
 extern bool  MtmIsRecoveredNode(int nodeId);
 extern void  MtmUpdateClusterStatus(void);
-extern void MtmSwitchToNormalMode(void);
-extern void MtmSwitchToRecoveryMode(void);
+extern void  MtmClusterSwitchMode(MtmNodeStatus mode);
 #endif

@@ -77,7 +77,6 @@ typedef enum
 
 #define MTM_SHMEM_SIZE (64*1024*1024)
 #define MTM_HASH_SIZE  100003
-#define USEC 1000000
 #define MIN_WAIT_TIMEOUT 1000
 #define MAX_WAIT_TIMEOUT 100000
 #define STATUS_POLL_DELAY USEC
@@ -130,6 +129,15 @@ static TransactionManager MtmTM = {
 	MtmXidInMVCCSnapshot, 
 	MtmDetectGlobalDeadLock, 
 	MtmGetName 
+};
+
+static char const* const MtmNodeStatusMnem[] = 
+{ 
+	"Intialization", 
+	"Offline", 
+	"Connected",
+	"Online",
+	"Recovery"
 };
 
 bool  MtmDoReplication;
@@ -509,8 +517,9 @@ MtmBeginTransaction(MtmCurrentTrans* x)
         x->isReplicated = false;
         x->isDistributed = MtmIsUserTransaction();
 		if (x->isDistributed && dtm->status != MTM_ONLINE) { 
-			MtmUnlock();
-			elog(ERROR, "Multimaster node is offline");
+			/* reject all user's transactions at offline cluster */
+			MtmUnlock();			
+			elog(ERROR, "Multimaster node is not online");
 		}
 		x->containsDML = false;
 		x->isPrepared = false;
@@ -594,6 +603,9 @@ static void MtmPrecommitTransaction(MtmCurrentTrans* x)
 			
 	if (dtm->disabledNodeMask != 0) { 
 		MtmUpdateClusterStatus();
+		if (dtm->status != MTM_ONLINE) { 
+			elog(ERROR, "Abort current transaction because this cluster node is not online");			
+		}
 	}
 
 	MtmLock(LW_EXCLUSIVE);
@@ -1084,20 +1096,12 @@ _PG_fini(void)
  */
 
 
-void MtmSwitchToNormalMode()
+void MtmClusterSwitchMode(MtmNodeStatus mode)
 {
-	dtm->status = MTM_ONLINE;
-	elog(WARNING, "Switch to normal mode");
+	dtm->status = mode;
+	elog(WARNING, "Switch to %s mode", MtmNodeStatusMnem[mode]);
 	/* ??? Something else to do here? */
 }
-
-void MtmSwitchToRecoveryMode()
-{
-	dtm->status = MTM_RECOVERY;
-	/* ??? Something else to do here? */
-	elog(ERROR, "Switch to normal mode");
-}
-
 
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
@@ -1117,7 +1121,7 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 		Assert(dtm->status == MTM_RECOVERY);
 	} else if (dtm->status == MTM_RECOVERY) { 
 		/* When recovery is completed we get normal transaction ID and switch to normal mode */
-		MtmSwitchToNormalMode();
+		MtmClusterSwitchMode(MTM_ONLINE);
 	}
 	dtmTx.gtid = *gtid;
 	dtmTx.xid = GetCurrentTransactionId();
@@ -1670,7 +1674,10 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 	}
 }	
 
-
+/**
+ * Build connectivity graph, find clique in it and extend disabledNodeMask by nodes not included in clique.
+ * This function returns false if current node is excluded from cluster, true otherwise
+ */
 void MtmUpdateClusterStatus(void)
 {
 	nodemask_t mask, clique;
@@ -1683,17 +1690,29 @@ void MtmUpdateClusterStatus(void)
 	clique = MtmFindMaxClique(matrix, MtmNodes, &clique_size);
 	if (clique_size >= MtmNodes/2+1) { /* have quorum */
 		MtmLock(LW_EXCLUSIVE);
-		mask = ~clique & (((nodemask_t)1 << MtmNodes)-1) & ~dtm->disabledNodeMask;
+		mask = ~clique & (((nodemask_t)1 << MtmNodes)-1) & ~dtm->disabledNodeMask; /* new disabled nodes mask */
 		for (i = 0; mask != 0; i++, mask >>= 1) {
 			if (mask & 1) { 
 				dtm->nNodes -= 1;
 				BIT_SET(dtm->disabledNodeMask, i);
 			}
 		}
+		mask = clique & dtm->disabledNodeMask; /* new enabled nodes mask */		
+		for (i = 0; mask != 0; i++, mask >>= 1) {
+			if (mask & 1) { 
+				dtm->nNodes += 1;
+				BIT_CLEAR(dtm->disabledNodeMask, i);
+			}
+		}
 		MtmUnlock();
 		if (BIT_CHECK(dtm->disabledNodeMask, MtmNodeId-1)) { 
-            /* I was excluded from cluster:( */
-			MtmSwitchToRecoveryMode();
+			if (dtm->status == MTM_ONLINE) {
+				/* I was excluded from cluster:( */
+				MtmClusterSwitchMode(MTM_OFFLINE);
+			}
+		} else if (dtm->status == MTM_OFFLINE) {
+			/* Should we somehow restart logical receivers? */ 
+			MtmClusterSwitchMode(MTM_RECOVERY);
 		}
 	} else { 
 		elog(WARNING, "Clique %lx has no quorum", clique);
