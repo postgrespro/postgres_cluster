@@ -1,4 +1,5 @@
 #ifndef __DDD_H__
+#define __DDD_H__
 
 #include "multimaster.h"
 
@@ -20,8 +21,8 @@ typedef struct MtmVertex
 
 typedef struct MtmGraph
 {
-    MtmVertex* hashtable[MTM_MAX_TRANSACTIONS];
-} Graph;
+    MtmVertex* hashtable[MAX_TRANSACTIONS];
+} MtmGraph;
 
 extern void MtmGraphInit(MtmGraph* graph);
 extern void MtmGraphAdd(MtmGraph* graph, GlobalTransactionId* subgraph, int size);

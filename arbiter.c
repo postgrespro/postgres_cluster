@@ -81,7 +81,7 @@ typedef struct
 	MtmMessageCode code; /* Message code: MSG_READY, MSG_PREPARE, MSG_COMMIT, MSG_ABORT */
     int            node; /* Sender node ID */
 	TransactionId  dxid; /* Transaction ID at destination node */
-	TransactionId  sxid; /* Transaction IO at sender node */  
+	TransactionId  sxid; /* Transaction ID at sender node */  
 	csn_t          csn;  /* local CSN in case of sending data from replica to master, global CSN master->replica */
 	nodemask_t     disabledNodeMask; /* bitmask of disabled nodes at the sender of message */
 } MtmArbiterMessage;
@@ -353,9 +353,11 @@ static void MtmOpenConnections()
 
 static bool MtmSendToNode(int node, void const* buf, int size)
 {
-	while (!MtmWriteSocket(sockets[node], buf, size)) { 
+	while (sockets[node] < 0 || !MtmWriteSocket(sockets[node], buf, size)) { 
 		elog(WARNING, "Arbiter failed to write socket: %d", errno);
-		close(sockets[node]);
+		if (sockets[node] >= 0) { 
+			close(sockets[node]);
+		}
 		sockets[node] = MtmConnectSocket(hosts[node], MtmArbiterPort + node + 1, MtmReconnectAttempts);
 		if (sockets[node] < 0) { 
 			MtmOnLostConnection(node+1);
@@ -400,6 +402,8 @@ static void MtmAcceptOneConnection()
 				close(fd);
 			} else { 
 				elog(NOTICE, "Arbiter established connection with node %d", msg.node); 
+				BIT_CLEAR(ds->connectivityMask, msg.node-1);
+				MtmOnConnectNode(msg.node);
 				MtmRegisterSocket(fd, msg.node-1);
 				sockets[msg.node-1] = fd;
 			}
