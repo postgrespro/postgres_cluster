@@ -141,78 +141,78 @@ handle_begin(StringInfo s)
  * Handle COMMIT message.
  */
 static void
-handle_commit(char action, StringInfo s)
+handle_commit(StringInfo s)
 {
 	XLogRecPtr		commit_lsn;
 	XLogRecPtr		end_lsn;
 	TimestampTz		commit_time;
-
-	const char		   *gid;
+	uint8 			flags;
+	const char	   *gid;
 	PGLFlushPosition *flushpos;
+	bool 			flush = true;
 
+	pglogical_read_commit(s, &commit_lsn, &end_lsn, &commit_time, &flags, &gid);
 
-	if (action == 'C')
+	switch(PGLOGICAL_XACT_EVENT(flags))
 	{
-		// Can we really be there without tx?
-		Assert(IsTransactionState());
+		case PGLOGICAL_COMMIT:
+		{
+			if (IsTransactionState())
+				CommitTransactionCommand();
+			else
+				flush = false;
+			break;
+		}
+		case PGLOGICAL_PREPARE:
+		{
+			/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
+			BeginTransactionBlock();
+			CommitTransactionCommand();
+			StartTransactionCommand();
 
-		pglogical_read_commit(s, &commit_lsn, &end_lsn, &commit_time);
-		CommitTransactionCommand();
-	}
-	else if (action == 'P')
-	{
-		// Can we really be there without tx?
-		Assert(IsTransactionState());
+			/* PREPARE itself */
+			PrepareTransactionBlock(gid);
+			CommitTransactionCommand();
+			break;
+		}
+		case PGLOGICAL_COMMIT_PREPARED:
+		{
+			StartTransactionCommand();
+			FinishPreparedTransaction(gid, true);
+			CommitTransactionCommand();
 
-		pglogical_read_twophase(s, &commit_lsn, &end_lsn, &commit_time, &gid);
+			/* There were no BEGIN stmt for COMMIT PREPARED */
+			replorigin_session_origin_timestamp = commit_time;
+			replorigin_session_origin_lsn = commit_lsn;
+			break;
+		}
+		case PGLOGICAL_ABORT_PREPARED:
+		{
+			StartTransactionCommand();
+			FinishPreparedTransaction(gid, false);
+			CommitTransactionCommand();
 
-		/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
-		BeginTransactionBlock();
-		CommitTransactionCommand();
-		StartTransactionCommand();
-
-		/* PREPARE itself */
-		PrepareTransactionBlock(gid);
-		CommitTransactionCommand();
-	}
-	else if (action == 'F')
-	{
-		pglogical_read_twophase(s, &commit_lsn, &end_lsn, &commit_time, &gid);
-
-		StartTransactionCommand();
-		FinishPreparedTransaction(gid, true);
-		CommitTransactionCommand();
-
-		/* There were no BEGIN stmt for COMMIT PREPARED */
-		replorigin_session_origin_timestamp = commit_time;
-		replorigin_session_origin_lsn = commit_lsn;
-	}
-	else if (action == 'X')
-	{
-		pglogical_read_twophase(s, &commit_lsn, &end_lsn, &commit_time, &gid);
-
-		StartTransactionCommand();
-		FinishPreparedTransaction(gid, false);
-		CommitTransactionCommand();
-
-		/* There were no BEGIN stmt for ROLLBACK PREPARED */
-		replorigin_session_origin_timestamp = commit_time;
-		replorigin_session_origin_lsn = commit_lsn;
-	}
-	else
-	{
-		Assert(false);
+			/* There were no BEGIN stmt for ROLLBACK PREPARED */
+			replorigin_session_origin_timestamp = commit_time;
+			replorigin_session_origin_lsn = commit_lsn;
+			break;
+		}
+		default:
+			Assert(false);
 	}
 
-	MemoryContextSwitchTo(TopMemoryContext);
+	if (flush)
+	{
+		MemoryContextSwitchTo(TopMemoryContext);
 
-	/* Track commit lsn  */
-	flushpos = (PGLFlushPosition *) palloc(sizeof(PGLFlushPosition));
-	flushpos->local_end = XactLastCommitEnd;
-	flushpos->remote_end = end_lsn;
+		/* Track commit lsn  */
+		flushpos = (PGLFlushPosition *) palloc(sizeof(PGLFlushPosition));
+		flushpos->local_end = XactLastCommitEnd;
+		flushpos->remote_end = end_lsn;
 
-	dlist_push_tail(&lsn_mapping, &flushpos->node);
-	MemoryContextSwitchTo(MessageContext);
+		dlist_push_tail(&lsn_mapping, &flushpos->node);
+		MemoryContextSwitchTo(MessageContext);
+	}
 
 	Assert(commit_lsn == replorigin_session_origin_lsn);
 	Assert(commit_time == replorigin_session_origin_timestamp);
@@ -1070,13 +1070,7 @@ replication_handler(StringInfo s)
 			break;
 		/* COMMIT */
 		case 'C':
-		/* PREPARE */
-		case 'P':
-		/* COMMIT PREPARED */
-		case 'F':
-		/* ROLLBACK PREPARED */
-		case 'X':
-			handle_commit(action, s);
+			handle_commit(s);
 			break;
 		/* ORIGIN */
 		case 'O':

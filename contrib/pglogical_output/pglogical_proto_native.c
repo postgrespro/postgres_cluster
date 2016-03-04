@@ -196,15 +196,16 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 {
 	uint8 flags = 0;
 
+	pq_sendbyte(out, 'C'); /* sending COMMIT */
 
-	if (txn->xact_action == XLOG_XACT_PREPARE)
-		pq_sendbyte(out, 'P'); /* sending PREPARE */
+	if (txn->xact_action == XLOG_XACT_COMMIT)
+		flags = PGLOGICAL_COMMIT;
+	else if (txn->xact_action == XLOG_XACT_PREPARE)
+		flags = PGLOGICAL_PREPARE;
 	else if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED)
-		pq_sendbyte(out, 'F'); /* sending COMMIT_PREPARED (Finish 2PC) */
-	else if (txn->xact_action == XLOG_XACT_COMMIT)
-		pq_sendbyte(out, 'C'); /* sending COMMIT */
+		flags = PGLOGICAL_COMMIT_PREPARED;
 	else if (txn->xact_action == XLOG_XACT_ABORT_PREPARED)
-		pq_sendbyte(out, 'X'); /* sending ABORT PREPARED */
+		flags = PGLOGICAL_ABORT_PREPARED;
 	else
 		Assert(false);
 
