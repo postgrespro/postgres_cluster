@@ -335,7 +335,7 @@ static void MtmOpenConnections()
 		if (i+1 != MtmNodeId) { 
 			sockets[i] = MtmConnectSocket(host, MtmArbiterPort + i + 1, MtmConnectAttempts);
 			if (sockets[i] < 0) { 
-				MtmOnLostConnection(i+1);
+				MtmOnNodeDisconnect(i+1);
 			} 
 		} else {
 			sockets[i] = -1;
@@ -360,7 +360,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 		}
 		sockets[node] = MtmConnectSocket(hosts[node], MtmArbiterPort + node + 1, MtmReconnectAttempts);
 		if (sockets[node] < 0) { 
-			MtmOnLostConnection(node+1);
+			MtmOnNodeDisconnect(node+1);
 			return false;
 		}
 	}
@@ -403,7 +403,7 @@ static void MtmAcceptOneConnection()
 			} else { 
 				elog(NOTICE, "Arbiter established connection with node %d", msg.node); 
 				BIT_CLEAR(ds->connectivityMask, msg.node-1);
-				MtmOnConnectNode(msg.node);
+				MtmOnNodeConnect(msg.node);
 				MtmRegisterSocket(fd, msg.node-1);
 				sockets[msg.node-1] = fd;
 			}

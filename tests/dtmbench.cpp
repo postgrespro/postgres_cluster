@@ -195,7 +195,7 @@ void initializeDatabase()
 		exec(txn, "insert into t (select generate_series(0,%d), %d)", cfg.nAccounts-1, 0);
 		txn.commit();
 	}
-	printf("Initialization completed in %f seconds\n", (start  - getCurrentTime())/100000.0);
+	printf("Initialization completed in %f seconds\n", (getCurrentTime() - start)/100000.0);
 }
 
 int main (int argc, char* argv[])
