@@ -134,7 +134,7 @@ handle_begin(StringInfo s)
 
 	in_remote_transaction = true;
 
-	pgstat_report_activity(STATE_RUNNING, false);
+	pgstat_report_activity(STATE_RUNNING, NULL);
 }
 
 /*
