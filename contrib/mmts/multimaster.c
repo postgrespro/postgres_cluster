@@ -141,6 +141,7 @@ int   MtmArbiterPort;
 int   MtmNodes;
 int   MtmConnectAttempts;
 int   MtmConnectTimeout;
+int   MtmKeepaliveTimeout;
 int   MtmReconnectAttempts;
 
 static int MtmQueueSize;
@@ -987,6 +988,21 @@ _PG_init(void)
 	);
 
 	DefineCustomIntVariable(
+		"multimaster.keepalive_timeout",
+		"Multimaster keepalive interval for sockets",
+		"Timeout in microseconds before polling state of nodes",
+		&MtmKeepaliveTimeout,
+		1000000,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
 		"multimaster.connect_attempts",
 		"Multimaster number of connect attemts",
 		"Maximal number of attempt to establish connection with other node after which multimaster is give up",
@@ -1528,8 +1544,12 @@ MtmGetGtid(TransactionId xid, GlobalTransactionId* gtid)
 
 	MtmLock(LW_SHARED);
 	ts = (MtmTransState*)hash_search(xid2state, &xid, HASH_FIND, NULL);
-	Assert(ts != NULL);
-	*gtid = ts->gtid;
+	if (ts != NULL) { 
+		*gtid = ts->gtid;
+	} else { 
+		gtid->node = MtmNodeId;
+		gtid->xid = xid;
+	}
 	MtmUnlock();
 }
 
@@ -1601,15 +1621,19 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 		
         ByteBufferAlloc(&buf);
         EnumerateLocks(MtmSerializeLock, &buf);
-        ByteBufferFree(&buf);
-		PaxosSet(psprintf("lock-graph-%d", MtmNodeId), buf.data, buf.size);
+		PaxosSet(psprintf("lock-graph-%d", MtmNodeId), buf.data, buf.used);
 		MtmGraphInit(&graph);
-		MtmGraphAdd(&graph, (GlobalTransactionId*)buf.data, buf.size/sizeof(GlobalTransactionId));
+		MtmGraphAdd(&graph, (GlobalTransactionId*)buf.data, buf.used/sizeof(GlobalTransactionId));
+        ByteBufferFree(&buf);
 		for (i = 0; i < MtmNodes; i++) { 
 			if (i+1 != MtmNodeId && !BIT_CHECK(dtm->disabledNodeMask, i)) { 
 				int size;
 				void* data = PaxosGet(psprintf("lock-graph-%d", i+1), &size, NULL);
-				MtmGraphAdd(&graph, (GlobalTransactionId*)data, size/sizeof(GlobalTransactionId));
+				if (data == NULL) { 
+					hasDeadlock = true; /* Just temporary hack until no Paxos */
+				} else { 
+					MtmGraphAdd(&graph, (GlobalTransactionId*)data, size/sizeof(GlobalTransactionId));
+				}
 			}
 		}
 		MtmGetGtid(pgxact->xid, &gtid);
@@ -1636,42 +1660,56 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 
 void MtmUpdateClusterStatus(void)
 {
-	nodemask_t mask, clique;
+	nodemask_t mask, clique, disconnectedMask;
 	nodemask_t matrix[MAX_NODES];
 	int i;
 
 	MtmBuildConnectivityMatrix(matrix);
 
 	clique = MtmFindMaxClique(matrix, MtmNodes);
-
+	disconnectedMask = ~clique & (((nodemask_t)1 << MtmNodes)-1);
 	MtmLock(LW_EXCLUSIVE);
-	mask = clique & ~dtm->disabledNodeMask;
+	mask = disconnectedMask & ~dtm->disabledNodeMask;
 	for (i = 0; mask != 0; i++, mask >>= 1) {
 		if (mask & 1) { 
 			dtm->nNodes -= 1;
 			BIT_SET(dtm->disabledNodeMask, i);
 		}
 	}
-	if (dtm->disabledNodeMask != clique) { 
-		dtm->disabledNodeMask |= clique;
+	if (dtm->disabledNodeMask != disconnectedMask) { 
+		dtm->disabledNodeMask |= disconnectedMask;
 		PaxosSet(psprintf("node-mask-%d", MtmNodeId), &dtm->disabledNodeMask, sizeof dtm->disabledNodeMask);
 	}
 	MtmUnlock();
 }
 
-void MtmOnLostConnection(int nodeId)
+void MtmOnNodeDisconnect(int nodeId)
 {
 	BIT_SET(dtm->connectivityMask, nodeId-1);
 	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &dtm->connectivityMask, sizeof dtm->connectivityMask);
 
 	/* Wait more than socket KEEPALIVE timeout to let other nodes update their statuses */
-	MtmSleep(MtmConnectTimeout);
+	MtmSleep(MtmKeepaliveTimeout);
 
 	MtmUpdateClusterStatus();
 }
 
-void MtmOnConnectNode(int nodeId)
+void MtmOnNodeConnect(int nodeId)
 {
 	BIT_CLEAR(dtm->connectivityMask, nodeId-1);
 	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &dtm->connectivityMask, sizeof dtm->connectivityMask);
 }
+
+/*
+ * Paxos function stubs (until them are miplemented)
+ */
+void* PaxosGet(char const* key, int* size, PaxosTimestamp* ts)
+{
+	if (size != NULL) { 
+		*size = 0;
+	}
+	return NULL;
+}
+
+void  PaxosSet(char const* key, void const* value, int size)
+{}

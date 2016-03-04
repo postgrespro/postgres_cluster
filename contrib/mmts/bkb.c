@@ -1,4 +1,4 @@
-#include "postgres.h"
+#include <stdint.h>
 #include "bkb.h"
 
 /*
@@ -12,7 +12,6 @@ typedef struct {
 
 static void list_append(NodeList* list, int n)
 {
-	Assert(list->size < MAX_NODES);
 	list->nodes[list->size++] = n;
 }
 
@@ -44,7 +43,7 @@ static void findMaximumIndependentSet(NodeList* cur, NodeList* result, nodemask_
 		int pos = -1;
 		
 		for (j = ne; j < ce; j++) { 
-			if (!BIT_CHECK(graph[p], oldSet[j])) {
+			if (BIT_CHECK(graph[p], oldSet[j])) {
 				if (++cnt == minnod) { 
 					break;
 				}
@@ -71,13 +70,13 @@ static void findMaximumIndependentSet(NodeList* cur, NodeList* result, nodemask_
 		
 		newne = 0;
 		for (i = 0; i < ne; i++) {
-			if (BIT_CHECK(graph[sel], oldSet[i])) {
+			if (!BIT_CHECK(graph[sel], oldSet[i])) {
 				newSet[newne++] = oldSet[i];
 			}
 		}
 	    newce = newne;
 		for (i = ne + 1; i < ce; i++) {
-			if (BIT_CHECK(graph[sel], oldSet[i])) { 
+			if (!BIT_CHECK(graph[sel], oldSet[i])) { 
 				newSet[newce++] = oldSet[i];
 			}
 		}
@@ -92,8 +91,9 @@ static void findMaximumIndependentSet(NodeList* cur, NodeList* result, nodemask_
 			}
 		}
 		cur->size -= 1;
+		ne += 1;
 		if (k > 1) {
-			for (s = ++ne; BIT_CHECK(graph[fixp], oldSet[s]); s++);
+			for (s = ++ne; !BIT_CHECK(graph[fixp], oldSet[s]); s++);
 		}
 	}
 }
@@ -114,7 +114,7 @@ nodemask_t MtmFindMaxClique(nodemask_t* graph, int n_nodes)
 	findMaximumIndependentSet(&tmp, &result, graph, all, 0, n_nodes);
 	mask = 0;
 	for (i = 0; i < result.size; i++) { 
-		mask |= (nodemask_t)1 << result.nodes[i];
+		BIT_SET(mask, result.nodes[i]);
 	}
 	return mask;
 }
