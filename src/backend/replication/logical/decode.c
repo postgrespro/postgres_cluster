@@ -457,6 +457,9 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		commit_time = parsed->origin_timestamp;
 	}
 
+	/*
+	 * If that is COMMIT PREPARED than send that to callbacks.
+	 */
 	if (TransactionIdIsValid(parsed->twophase_xid)) {
 		strcpy(ctx->reorder->gid, parsed->twophase_gid);
 		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
@@ -548,13 +551,6 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	RelFileNode *abortrels;
 	SharedInvalidationMessage *invalmsgs;
 
-	// probably there are no origin -- origin stored in hdr
-	// if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
-	// {
-	// 	origin_lsn = parsed->origin_lsn;
-	// 	commit_time = parsed->origin_timestamp;
-	// }
-
 	xid = XLogRecGetXid(r);
 	twophase_buf = XLogRecGetData(r);
 	twophase_len = sizeof(char) * XLogRecGetDataLen(r);
@@ -588,8 +584,8 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
 					   hdr->nsubxacts, children);
 
-	// Add db check here
 	if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) ||
+		(hdr->database != InvalidOid && hdr->database != ctx->slot->data.database) ||
 		FilterByOrigin(ctx, origin_id))
 	{
 		for (i = 0; i < hdr->nsubxacts; i++)
@@ -626,6 +622,9 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	XLogRecPtr	commit_time = InvalidXLogRecPtr;
 	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
 
+	/*
+	 * If that is ROLLBACK PREPARED than send that to callbacks.
+	 */
 	if (TransactionIdIsValid(parsed->twophase_xid)) {
 		strcpy(ctx->reorder->gid, parsed->twophase_gid);
 		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
