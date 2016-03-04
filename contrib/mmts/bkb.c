@@ -1,18 +1,22 @@
+#include "postgres.h"
+#include "bkb.h"
+
 /*
- * Bron–Kerbosch algorithm to find maximum clque in graph
+ * Bron–Kerbosch algorithm to find maximum clique in graph
  */  
 
 typedef struct {
 	int size;
 	int nodes[MAX_NODES];
-} List;
+} NodeList;
 
-static void list_append(List* list, int n)
+static void list_append(NodeList* list, int n)
 {
-	nodes[list->size++] = n;
+	Assert(list->size < MAX_NODES);
+	list->nodes[list->size++] = n;
 }
 
-static void list_copy(List* dst, List* src)
+static void list_copy(NodeList* dst, NodeList const* src)
 {
 	int i;
 	int n = src->size;
@@ -23,13 +27,15 @@ static void list_copy(List* dst, List* src)
 }
 
 
-static void findMaximumIndependentSet(List* cur, List* result, nodemask_t* graph, int* oldSet, int ne, int ce) 
+static void findMaximumIndependentSet(NodeList* cur, NodeList* result, nodemask_t* graph, int* oldSet, int ne, int ce) 
 {
     int nod = 0;
     int minnod = ce;
     int fixp = -1;
     int s = -1;
-	int i, j;
+	int i, j, k;
+	int newce, newne;
+	int sel;
     int newSet[MAX_NODES];
 
     for (i = 0; i < ce && minnod != 0; i++) {
@@ -39,8 +45,9 @@ static void findMaximumIndependentSet(List* cur, List* result, nodemask_t* graph
 		
 		for (j = ne; j < ce; j++) { 
 			if (!BIT_CHECK(graph[p], oldSet[j])) {
-				if (++cnt == minnod)
+				if (++cnt == minnod) { 
 					break;
+				}
 				pos = j;
 			}
 		}
@@ -57,19 +64,19 @@ static void findMaximumIndependentSet(List* cur, List* result, nodemask_t* graph
     }
 	
 
-    for (int k = minnod + nod; k >= 1; k--) {
-        int sel = oldSet[s];
+    for (k = minnod + nod; k >= 1; k--) {
+        sel = oldSet[s];
 		oldSet[s] = oldSet[ne];
 		oldSet[ne] = sel;
 		
-		int newne = 0;
-		for (int i = 0; i < ne; i++) {
+		newne = 0;
+		for (i = 0; i < ne; i++) {
 			if (BIT_CHECK(graph[sel], oldSet[i])) {
 				newSet[newne++] = oldSet[i];
 			}
 		}
-		int newce = newne;
-		for (int i = ne + 1; i < ce; i++) {
+	    newce = newne;
+		for (i = ne + 1; i < ce; i++) {
 			if (BIT_CHECK(graph[sel], oldSet[i])) { 
 				newSet[newce++] = oldSet[i];
 			}
@@ -84,28 +91,30 @@ static void findMaximumIndependentSet(List* cur, List* result, nodemask_t* graph
 				findMaximumIndependentSet(cur, result, graph, newSet, newne, newce);
 			}
 		}
-		cur.size -= 1;
+		cur->size -= 1;
 		if (k > 1) {
 			for (s = ++ne; BIT_CHECK(graph[fixp], oldSet[s]); s++);
 		}
 	}
 }
 
-nodemask_t MtmFindMaxClique(nodemask_t* graphs, in n_nodes);
+nodemask_t MtmFindMaxClique(nodemask_t* graph, int n_nodes)
 {
-	List tmp;
-	List result;
-	nodemask_t mask = 0;
+	NodeList tmp;
+	NodeList result;
+	nodemask_t mask;
 	int all[MAX_NODES];
 	int i;
+
 	tmp.size = 0;
 	result.size = 0;
 	for (i = 0; i < n_nodes; i++) { 
-		all[i]= i;
+		all[i] = i;
 	}
 	findMaximumIndependentSet(&tmp, &result, graph, all, 0, n_nodes);
+	mask = 0;
 	for (i = 0; i < result.size; i++) { 
 		mask |= (nodemask_t)1 << result.nodes[i];
 	}
-	return ~mask;
+	return mask;
 }

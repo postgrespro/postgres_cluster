@@ -3,6 +3,7 @@
 
 #include "bytebuf.h"
 #include "bgwpool.h"
+#include "bkb.h"
 
 #define MTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 #define MTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
@@ -11,8 +12,6 @@
 #define MTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 #define MTM_TUPLE_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 */
-
-#define BIT_CHECK(mask, bit) (((mask) & ((nodemask_t)1 << (bit))) != 0)
 
 #define MULTIMASTER_NAME                "mtm"
 #define MULTIMASTER_SCHEMA_NAME         "mtm"
@@ -25,13 +24,10 @@
 #define Anum_mtm_ddl_log_issued		1
 #define Anum_mtm_ddl_log_query		2
 
-#define MAX_NODES 64
-
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
 
 typedef uint64 timestamp_t;
-typedef uint64_t nodemask_t;
 
 /* Identifier of global transaction */
 typedef struct 
@@ -39,6 +35,8 @@ typedef struct
 	int node;          /* Zero based index of node initiating transaction */
 	TransactionId xid; /* Transaction ID at this node */
 } GlobalTransactionId;
+
+#define EQUAL_GTID(x,y) ((x).node == (y).node && (x).xid == (y).xid)
 
 typedef enum
 { 
@@ -97,7 +95,8 @@ typedef struct
 	PGSemaphoreData votingSemaphore;   /* semaphore used to notify mtm-sender about new responses to coordinator */
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
-	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes (so no more than 64 nodes in multimaster:) */
+	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
+	nodemask_t connectivityMask;       /* bitmask of dicconnected nodes */
 	nodemask_t pglogicalNodeMask;      /* bitmask of started pglogic receivers */
 	nodemask_t walSenderLockerMask;    /* Mask of WAL-senders IDs locking the cluster */
 	nodemask_t nodeLockerMask;         /* Mask of node IDs which WAL-senders are locking the cluster */
@@ -143,10 +142,10 @@ extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
 extern void  MtmDropNode(int nodeId, bool dropSlot);
 extern void  MtmOnLostConnection(int nodeId);
+extern void  MtmOnConnectNode(int nodeId);
 extern MtmState* MtmGetState(void);
 extern timestamp_t MtmGetCurrentTime(void);
 extern void  MtmSleep(timestamp_t interval);
 extern bool  MtmIsRecoveredNode(int nodeId);
-extern nodemask_t MtmFindMaxClique(nodemask_t* matrix, in n_modes);
-
+extern void  MtmUpdateClusterStatus(void);
 #endif

@@ -54,6 +54,8 @@
 #include "catalog/indexing.h"
 
 #include "multimaster.h"
+#include "ddd.h"
+#include "paxos.h"
 
 typedef struct { 
     TransactionId xid;    /* local transaction ID   */
@@ -112,7 +114,6 @@ static BgwPool* MtmPoolConstructor(void);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
 static void MtmVoteForTransaction(MtmTransState* ts);
-static void MtmSerializeLockGraph(ByteBuffer* buf)
 
 static HTAB* xid2state;
 static MtmCurrentTrans dtmTx;
@@ -440,6 +441,7 @@ static void MtmInitialize()
 		dtm->oldestXid = FirstNormalTransactionId;
         dtm->nNodes = MtmNodes;
 		dtm->disabledNodeMask = 0;
+		dtm->connectivityMask = 0;
 		dtm->pglogicalNodeMask = 0;
 		dtm->walSenderLockerMask = 0;
 		dtm->nodeLockerMask = 0;
@@ -543,7 +545,7 @@ MtmCheckClusterLock()
 					} else { 
 						/* recovered replica catched up with master */
 						elog(WARNING, "WAL-sender %d complete receovery", i);
-						dtm->walSenderLockerMask &= ~((nodemask_t)1 << i);
+						BIT_CLEAR(dtm->walSenderLockerMask, i);
 					}
 				}
 			}
@@ -588,11 +590,15 @@ static void MtmPrecommitTransaction(MtmCurrentTrans* x)
 	}
 
 	x->xid = GetCurrentTransactionId();
-				  
+			
+	if (dtm->disabledNodeMask != 0) { 
+		MtmUpdateClusterStatus();
+	}
+
 	MtmLock(LW_EXCLUSIVE);
 
 	/*
-	 * Check if there is global multimaster lock preventing new transaction from commit to make a chance to wal-senders to cache-up
+	 * Check if there is global multimaster lock preventing new transaction from commit to make a chance to wal-senders to catch-up
 	 */
 	MtmCheckClusterLock();
 
@@ -714,8 +720,8 @@ bool MtmIsRecoveredNode(int nodeId)
 			 * Is there some better way to establish mapping between nodes ad WAL-seconder?
 			 */
 			MtmLock(LW_EXCLUSIVE);
-			dtm->nodeLockerMask |= (nodemask_t)1 << (nodeId-1);
-			dtm->walSenderLockerMask |= (nodemask_t)1 << (MyWalSnd - WalSndCtl->walsnds);
+			BIT_SET(dtm->nodeLockerMask, nodeId-1);
+			BIT_SET(dtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
 			dtm->nLockers += 1;
 			MtmUnlock();
 		}
@@ -1102,7 +1108,7 @@ void MtmReceiverStarted(int nodeId)
 {
 	SpinLockAcquire(&dtm->spinlock);	
 	if (!BIT_CHECK(dtm->pglogicalNodeMask, nodeId-1)) { 
-		dtm->pglogicalNodeMask |= (nodemask_t)1 << (nodeId-1);
+		BIT_SET(dtm->pglogicalNodeMask, nodeId-1);
 		if (++dtm->nReceivers == dtm->nNodes-1) {
 			elog(WARNING, "All receivers are started, switch to normal mode");
 			Assert(dtm->status == MTM_CONNECTED);
@@ -1157,7 +1163,7 @@ void MtmDropNode(int nodeId, bool dropSlot)
 		{ 
 			elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, dtm->nNodes);
 		}
-		dtm->disabledNodeMask |= ((int64)1 << (nodeId-1));
+		BIT_SET(dtm->disabledNodeMask, nodeId-1);
 		dtm->nNodes -= 1;
 		if (!IsTransactionBlock())
 		{
@@ -1220,7 +1226,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	char* conn_str = pstrdup(MtmConnStrs);
 	char* conn_str_end = conn_str + strlen(conn_str);
 	int i = 0;
-	int64 disabledNodeMask = dtm->disabledNodeMask;
+	nodemask_t disabledNodeMask = dtm->disabledNodeMask;
 	int failedNode = -1;
 	char const* errorMsg = NULL;
 	PGconn **conns = palloc0(sizeof(PGconn*)*MtmNodes);
@@ -1581,20 +1587,10 @@ MtmSerializeLock(PROCLOCK* proclock, void* arg)
 }
 
 /* Stubs */
-typedef PaxosTimestamp { 
-	time_t time;   /* local time at master */
-	uint32 naster; /* master node for this operation */
-	uint32 psn;    /* PAXOS serial number */
-} PaxosTimestamp;
-
-void* PaxosGet(char const* key, int* size, PaxosTimestamp* ts);
-void  PaxosSet(char const* key, void* value, int size);
-
 
 static bool 
 MtmDetectGlobalDeadLock(PGPROC* proc)
 {
-    bool hasDeadlock = false;
     ByteBuffer buf;
     PGXACT* pgxact = &ProcGlobal->allPgXact[proc->pgprocno];
 	bool hasDeadlock = false;
@@ -1604,16 +1600,16 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 		int i;
 		
         ByteBufferAlloc(&buf);
-        EnumerateLocks(DtmSerializeLock, &buf);
+        EnumerateLocks(MtmSerializeLock, &buf);
         ByteBufferFree(&buf);
-		PaxosPut(dsprintf("lock-graph-%d", MMNodeId), buf.data, buf.size);
+		PaxosSet(psprintf("lock-graph-%d", MtmNodeId), buf.data, buf.size);
 		MtmGraphInit(&graph);
 		MtmGraphAdd(&graph, (GlobalTransactionId*)buf.data, buf.size/sizeof(GlobalTransactionId));
 		for (i = 0; i < MtmNodes; i++) { 
-			if (i+1 MtmNodeId && !BIT_CHECK(dtm->disabledNodeMask, i)) { 
+			if (i+1 != MtmNodeId && !BIT_CHECK(dtm->disabledNodeMask, i)) { 
 				int size;
-				void* data = PaxosGet(dsprintf("lock-graph-%d", i+1), &size, NULL);
-				MtmGraphAdd(&graph, (GlobalTransactionId*)data, size/sizeof(GlobalTransactoinId));
+				void* data = PaxosGet(psprintf("lock-graph-%d", i+1), &size, NULL);
+				MtmGraphAdd(&graph, (GlobalTransactionId*)data, size/sizeof(GlobalTransactionId));
 			}
 		}
 		MtmGetGtid(pgxact->xid, &gtid);
@@ -1623,20 +1619,59 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
     return hasDeadlock;
 }
 
-void MtmOnLostConnection(int nodeId)
+static void 
+MtmBuildConnectivityMatrix(nodemask_t* matrix)
 {
 	int i;
-	nodemask_t mask = dtm->disabledNodeMask;
-	nodemask_t matrix = (nodemask_t*)palloc0(sizeof(nodemask_t)*MtmNodes);
-	
-	mask |= (nodemask_t)1 << (nodeId-1);
-	PaxosPut(dsprintf("node-mask-%d", MMNodeId), &mask, sizeof mask);
-	matrix[MtmNodeId-1] = mask;
-	MtmSleep(MtmConnectTimeout);
-	for (i = 0; i < MtnNodes; i++) { 
-		if (i+1 != MtmNodeId && !BIT_CHECK(dtm->disabledNodeMask, i)) { 
-			void* data = PaxosGet(dsprintf("node-mask-%d", i+1), NULL, NULL);
+	for (i = 0; i < MtmNodes; i++) { 
+		if (i+1 != MtmNodeId) { 
+			void* data = PaxosGet(psprintf("node-mask-%d", i+1), NULL, NULL);
 			matrix[i] = *(nodemask_t*)data;
+		} else { 
+			matrix[i] = dtm->connectivityMask;
 		}
 	}
+}	
+
+
+void MtmUpdateClusterStatus(void)
+{
+	nodemask_t mask, clique;
+	nodemask_t matrix[MAX_NODES];
+	int i;
+
+	MtmBuildConnectivityMatrix(matrix);
+
+	clique = MtmFindMaxClique(matrix, MtmNodes);
+
+	MtmLock(LW_EXCLUSIVE);
+	mask = clique & ~dtm->disabledNodeMask;
+	for (i = 0; mask != 0; i++, mask >>= 1) {
+		if (mask & 1) { 
+			dtm->nNodes -= 1;
+			BIT_SET(dtm->disabledNodeMask, i);
+		}
+	}
+	if (dtm->disabledNodeMask != clique) { 
+		dtm->disabledNodeMask |= clique;
+		PaxosSet(psprintf("node-mask-%d", MtmNodeId), &dtm->disabledNodeMask, sizeof dtm->disabledNodeMask);
+	}
+	MtmUnlock();
+}
+
+void MtmOnLostConnection(int nodeId)
+{
+	BIT_SET(dtm->connectivityMask, nodeId-1);
+	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &dtm->connectivityMask, sizeof dtm->connectivityMask);
+
+	/* Wait more than socket KEEPALIVE timeout to let other nodes update their statuses */
+	MtmSleep(MtmConnectTimeout);
+
+	MtmUpdateClusterStatus();
+}
+
+void MtmOnConnectNode(int nodeId)
+{
+	BIT_CLEAR(dtm->connectivityMask, nodeId-1);
+	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &dtm->connectivityMask, sizeof dtm->connectivityMask);
 }
