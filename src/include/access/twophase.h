@@ -15,13 +15,9 @@
 #define TWOPHASE_H
 
 #include "access/xlogdefs.h"
+#include "access/xact.h"
 #include "datatype/timestamp.h"
 #include "storage/lock.h"
-
-/*
- * Maximum size of Global Transaction ID.
- */
-#define GIDSIZE 200
 
 /*
  * GlobalTransactionData is defined in twophase.c; other places have no
