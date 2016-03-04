@@ -295,7 +295,7 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 				goto Retry;
 			}
 				
-			/* Some node cnosidered that I am dead, so switch to recovery mode */
+			/* Some node considered that I am dead, so switch to recovery mode */
 			if (BIT_CHECK(msg.disabledNodeMask, MtmNodeId-1)) { 
 				elog(WARNING, "Node is switched to recovery mode");
 				ds->status = MTM_RECOVERY;

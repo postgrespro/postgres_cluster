@@ -1084,11 +1084,18 @@ _PG_fini(void)
  */
 
 
-static void MtmSwitchFromRecoveryToNormalMode()
+void MtmSwitchToNormalMode()
 {
 	dtm->status = MTM_ONLINE;
 	elog(WARNING, "Switch to normal mode");
 	/* ??? Something else to do here? */
+}
+
+void MtmSwitchToRecoveryMode()
+{
+	dtm->status = MTM_RECOVERY;
+	/* ??? Something else to do here? */
+	elog(ERROR, "Switch to normal mode");
 }
 
 
@@ -1110,7 +1117,7 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 		Assert(dtm->status == MTM_RECOVERY);
 	} else if (dtm->status == MTM_RECOVERY) { 
 		/* When recovery is completed we get normal transaction ID and switch to normal mode */
-		MtmSwitchFromRecoveryToNormalMode();
+		MtmSwitchToNormalMode();
 	}
 	dtmTx.gtid = *gtid;
 	dtmTx.xid = GetCurrentTransactionId();
@@ -1646,8 +1653,8 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 static void 
 MtmBuildConnectivityMatrix(nodemask_t* matrix)
 {
-	int i;
-	for (i = 0; i < MtmNodes; i++) { 
+	int i, j, n = MtmNodes;
+	for (i = 0; i < n; i++) { 
 		if (i+1 != MtmNodeId) { 
 			void* data = PaxosGet(psprintf("node-mask-%d", i+1), NULL, NULL);
 			matrix[i] = *(nodemask_t*)data;
@@ -1655,32 +1662,42 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 			matrix[i] = dtm->connectivityMask;
 		}
 	}
+	/* make matrix symetric: required for Bron–Kerbosch algorithm */
+	for (i = 0; i < n; i++) { 
+		for (j = 0; j < i; j++) { 
+			matrix[i] |= ((matrix[j] >> i) & 1) << j;
+		}
+	}
 }	
 
 
 void MtmUpdateClusterStatus(void)
 {
-	nodemask_t mask, clique, disconnectedMask;
+	nodemask_t mask, clique;
 	nodemask_t matrix[MAX_NODES];
+	int clique_size;
 	int i;
 
 	MtmBuildConnectivityMatrix(matrix);
 
-	clique = MtmFindMaxClique(matrix, MtmNodes);
-	disconnectedMask = ~clique & (((nodemask_t)1 << MtmNodes)-1);
-	MtmLock(LW_EXCLUSIVE);
-	mask = disconnectedMask & ~dtm->disabledNodeMask;
-	for (i = 0; mask != 0; i++, mask >>= 1) {
-		if (mask & 1) { 
-			dtm->nNodes -= 1;
-			BIT_SET(dtm->disabledNodeMask, i);
+	clique = MtmFindMaxClique(matrix, MtmNodes, &clique_size);
+	if (clique_size >= MtmNodes/2+1) { /* have quorum */
+		MtmLock(LW_EXCLUSIVE);
+		mask = ~clique & (((nodemask_t)1 << MtmNodes)-1) & ~dtm->disabledNodeMask;
+		for (i = 0; mask != 0; i++, mask >>= 1) {
+			if (mask & 1) { 
+				dtm->nNodes -= 1;
+				BIT_SET(dtm->disabledNodeMask, i);
+			}
 		}
+		MtmUnlock();
+		if (BIT_CHECK(dtm->disabledNodeMask, MtmNodeId-1)) { 
+            /* I was excluded from cluster:( */
+			MtmSwitchToRecoveryMode();
+		}
+	} else { 
+		elog(WARNING, "Clique %lx has no quorum", clique);
 	}
-	if (dtm->disabledNodeMask != disconnectedMask) { 
-		dtm->disabledNodeMask |= disconnectedMask;
-		PaxosSet(psprintf("node-mask-%d", MtmNodeId), &dtm->disabledNodeMask, sizeof dtm->disabledNodeMask);
-	}
-	MtmUnlock();
 }
 
 void MtmOnNodeDisconnect(int nodeId)

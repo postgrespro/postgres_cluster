@@ -98,7 +98,7 @@ static void findMaximumIndependentSet(NodeList* cur, NodeList* result, nodemask_
 	}
 }
 
-nodemask_t MtmFindMaxClique(nodemask_t* graph, int n_nodes)
+nodemask_t MtmFindMaxClique(nodemask_t* graph, int n_nodes, int* clique_size)
 {
 	NodeList tmp;
 	NodeList result;
@@ -116,5 +116,6 @@ nodemask_t MtmFindMaxClique(nodemask_t* graph, int n_nodes)
 	for (i = 0; i < result.size; i++) { 
 		BIT_SET(mask, result.nodes[i]);
 	}
+	*clique_size = result.size;
 	return mask;
 }
