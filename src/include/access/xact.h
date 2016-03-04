@@ -295,6 +295,23 @@ typedef struct xl_xact_parsed_commit
 	TimestampTz origin_timestamp;
 } xl_xact_parsed_commit;
 
+typedef struct xl_xact_parsed_prepare
+{
+	Oid			dbId;			/* MyDatabaseId */
+
+	int			nsubxacts;
+	TransactionId *subxacts;
+
+	int			nrels;
+	RelFileNode *xnodes;
+
+	int			nmsgs;
+	SharedInvalidationMessage *msgs;
+
+	TransactionId twophase_xid;
+	char 		twophase_gid[GIDSIZE];
+} xl_xact_parsed_prepare;
+
 typedef struct xl_xact_parsed_abort
 {
 	TimestampTz xact_time;
@@ -307,7 +324,7 @@ typedef struct xl_xact_parsed_abort
 	RelFileNode *xnodes;
 
 	TransactionId twophase_xid; /* only for 2PC */
-	char 		twophase_gid[GIDSIZE]; // GIDSIZE
+	char 		twophase_gid[GIDSIZE];
 } xl_xact_parsed_abort;
 
 

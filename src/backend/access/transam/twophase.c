@@ -826,6 +826,50 @@ TwoPhaseGetDummyProc(TransactionId xid)
 	return &ProcGlobal->allProcs[gxact->pgprocno];
 }
 
+/************************************************************************/
+/* State file support													*/
+/************************************************************************/
+
+#define TwoPhaseFilePath(path, xid) \
+	snprintf(path, MAXPGPATH, TWOPHASE_DIR "/%08X", xid)
+
+/*
+ * 2PC state file format:
+ *
+ *	1. TwoPhaseFileHeader
+ *	2. TransactionId[] (subtransactions)
+ *	3. RelFileNode[] (files to be deleted at commit)
+ *	4. RelFileNode[] (files to be deleted at abort)
+ *	5. SharedInvalidationMessage[] (inval messages to be sent at commit)
+ *	6. TwoPhaseRecordOnDisk
+ *	7. ...
+ *	8. TwoPhaseRecordOnDisk (end sentinel, rmid == TWOPHASE_RM_END_ID)
+ *	9. checksum (CRC-32C)
+ *
+ * Each segment except the final checksum is MAXALIGN'd.
+ */
+
+/*
+ * Header for a 2PC state file
+ */
+#define TWOPHASE_MAGIC	0x57F94532		/* format identifier */
+
+typedef struct TwoPhaseFileHeader
+{
+	uint32		magic;			/* format identifier */
+	uint32		total_len;		/* actual file length */
+	TransactionId xid;			/* original transaction XID */
+	Oid			database;		/* OID of database it was in */
+	TimestampTz prepared_at;	/* time of preparation */
+	Oid			owner;			/* user running the transaction */
+	int32		nsubxacts;		/* number of following subxact XIDs */
+	int32		ncommitrels;	/* number of delete-on-commit rels */
+	int32		nabortrels;		/* number of delete-on-abort rels */
+	int32		ninvalmsgs;		/* number of cache invalidation messages */
+	bool		initfileinval;	/* does relcache init file need invalidation? */
+	char		gid[GIDSIZE];	/* GID for transaction */
+} TwoPhaseFileHeader;
+
 /*
  * Header for each record in a state file
  *
@@ -1187,6 +1231,35 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 	}
 
 	return buf;
+}
+
+/*
+ * ParsePrepareRecord
+ */
+void
+ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
+{
+	TwoPhaseFileHeader *hdr;
+	char *bufptr;
+
+	hdr = (TwoPhaseFileHeader *) xlrec;
+	bufptr = xlrec + MAXALIGN(sizeof(TwoPhaseFileHeader));
+
+	parsed->twophase_xid = hdr->xid;
+	parsed->dbId = hdr->database;
+	strcpy(parsed->twophase_gid, hdr->gid);
+
+	parsed->subxacts = (TransactionId *) bufptr;
+	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
+
+	parsed->xnodes = (RelFileNode *) bufptr;
+	bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
+	
+	/* Ignoring abortrels? */
+	bufptr += MAXALIGN(hdr->nabortrels * sizeof(RelFileNode));
+	
+	parsed->msgs = (SharedInvalidationMessage *) bufptr;
+	bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));	
 }
 
 

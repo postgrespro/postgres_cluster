@@ -70,8 +70,9 @@ static void DecodeSpecConfirm(LogicalDecodingContext *ctx, XLogRecordBuffer *buf
 static void DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			 xl_xact_parsed_commit *parsed, TransactionId xid);
 static void DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
-			xl_xact_parsed_abort *parsed, TransactionId xid);
-static void DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf);
+			 xl_xact_parsed_abort *parsed, TransactionId xid);
+static void DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
+			 xl_xact_parsed_prepare *parsed);
 
 /* common function to decode tuples */
 static void DecodeXLogTuple(char *data, Size len, ReorderBufferTupleBuf *tup);
@@ -256,7 +257,10 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 			}
 		case XLOG_XACT_PREPARE:
 			{
-				DecodePrepare(ctx, buf);
+				xl_xact_parsed_prepare parsed;
+
+				ParsePrepareRecord(XLogRecGetInfo(buf->record), XLogRecGetData(buf->record), &parsed);
+				DecodePrepare(ctx, buf, &parsed);
 				break;
 			}
 		default:
@@ -533,64 +537,39 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 }
 
 static void
-DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
+DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
+			 xl_xact_parsed_prepare *parsed)
 {
-	XLogReaderState *r = buf->record;
 	XLogRecPtr	origin_lsn = InvalidXLogRecPtr;
-	XLogRecPtr	commit_time = InvalidXLogRecPtr;
+	TimestampTz	commit_time = 0;
 	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
 	int			i;
-
-	TransactionId xid;
-	TwoPhaseFileHeader *hdr;
-	char *twophase_buf;
-	int twophase_len;
-	char *twophase_bufptr;
-	TransactionId *children;
-	RelFileNode *commitrels;
-	RelFileNode *abortrels;
-	SharedInvalidationMessage *invalmsgs;
-
-	xid = XLogRecGetXid(r);
-	twophase_buf = XLogRecGetData(r);
-	twophase_len = sizeof(char) * XLogRecGetDataLen(r);
-
-	hdr = (TwoPhaseFileHeader *) twophase_buf;
-	Assert(TransactionIdEquals(hdr->xid, xid));
-	twophase_bufptr = twophase_buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
-	children = (TransactionId *) twophase_bufptr;
-	twophase_bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
-	commitrels = (RelFileNode *) twophase_bufptr;
-	twophase_bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
-	abortrels = (RelFileNode *) twophase_bufptr;
-	twophase_bufptr += MAXALIGN(hdr->nabortrels * sizeof(RelFileNode));
-	invalmsgs = (SharedInvalidationMessage *) twophase_bufptr;
-	twophase_bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));
-
-	memcpy(ctx->reorder->gid, hdr->gid, GIDSIZE);
+	TransactionId xid = parsed->twophase_xid;
 
 	/*
 	 * Process invalidation messages, even if we're not interested in the
 	 * transaction's contents, since the various caches need to always be
 	 * consistent.
 	 */
-	if (hdr->ninvalmsgs > 0)
+	if (parsed->nmsgs > 0)
 	{
 		ReorderBufferAddInvalidations(ctx->reorder, xid, buf->origptr,
-									  hdr->ninvalmsgs, invalmsgs);
+									  parsed->nmsgs, parsed->msgs);
 		ReorderBufferXidSetCatalogChanges(ctx->reorder, xid, buf->origptr);
 	}
 
 	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
-					   hdr->nsubxacts, children);
+					   parsed->nsubxacts, parsed->subxacts);
+
+
 
 	if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) ||
-		(hdr->database != InvalidOid && hdr->database != ctx->slot->data.database) ||
+		(parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) ||
 		FilterByOrigin(ctx, origin_id))
 	{
-		for (i = 0; i < hdr->nsubxacts; i++)
+		for (i = 0; i < parsed->nsubxacts; i++)
 		{
-			ReorderBufferForget(ctx->reorder, children[i], buf->origptr);
+			ReorderBufferForget(ctx->reorder, parsed->subxacts[i], buf->origptr);
 		}
 		ReorderBufferForget(ctx->reorder, xid, buf->origptr);
 
@@ -598,9 +577,9 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	}
 
 	/* tell the reorderbuffer about the surviving subtransactions */
-	for (i = 0; i < hdr->nsubxacts; i++)
+	for (i = 0; i < parsed->nsubxacts; i++)
 	{
-		ReorderBufferCommitChild(ctx->reorder, xid, children[i],
+		ReorderBufferCommitChild(ctx->reorder, xid, parsed->subxacts[i],
 								 buf->origptr, buf->endptr);
 	}
 

@@ -98,25 +98,25 @@ reinit_master
 # 	);
 # SQL
 
-# ./install/bin/psql -c "SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'pglogical_output');"
+./install/bin/psql -c "SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'pglogical_output');"
 
-# ./install/bin/psql <<SQL
-# 	begin;
-# 	insert into t values (42);
-# 	prepare transaction 'hellyeah';
-# 	rollback prepared 'hellyeah';
-# SQL
+./install/bin/psql <<SQL
+	begin;
+	insert into t values (42);
+	prepare transaction 'hellyeah';
+	rollback prepared 'hellyeah';
+SQL
 
-# ./install/bin/psql <<SQL
-# SELECT * FROM pg_logical_slot_peek_changes('regression_slot',
-# 	NULL, NULL,
-# 	'expected_encoding', 'UTF8',
-# 	'min_proto_version', '1',
-# 	'max_proto_version', '1',
-# 	'startup_params_format', '1',
-# 	'proto_format', 'json',
-# 	'no_txinfo', 't');
-# SQL
+./install/bin/psql <<SQL
+SELECT * FROM pg_logical_slot_peek_changes('regression_slot',
+NULL, NULL,
+'expected_encoding', 'UTF8',
+'min_proto_version', '1',
+'max_proto_version', '1',
+'startup_params_format', '1',
+'proto_format', 'json',
+'no_txinfo', 't');
+SQL
 
 
 
