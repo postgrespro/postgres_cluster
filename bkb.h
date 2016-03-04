@@ -11,6 +11,6 @@ typedef uint64_t nodemask_t;
 #define BIT_CLEAR(mask, bit) (mask &= ~((nodemask_t)1 << (bit)))
 #define BIT_SET(mask, bit)   (mask |= ((nodemask_t)1 << (bit)))
 
-extern nodemask_t MtmFindMaxClique(nodemask_t* matrix, int n_modes);
+extern nodemask_t MtmFindMaxClique(nodemask_t* matrix, int n_modes, int* clique_size);
 
 #endif
