@@ -119,7 +119,7 @@ static BackgroundWorker MtmSender = {
 	"mtm-sender",
 	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
 	BgWorkerStart_ConsistentState,
-	1, /* restart in one second (is it possible to restart immediately?) */
+	MULTIMASTER_BGW_RESTART_TIMEOUT,
 	MtmTransSender
 };
 
@@ -127,7 +127,7 @@ static BackgroundWorker MtmRecevier = {
 	"mtm-receiver",
 	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
 	BgWorkerStart_ConsistentState,
-	1, /* restart in one second (is it possible to restart immediately?) */
+	MULTIMASTER_BGW_RESTART_TIMEOUT,
 	MtmTransReceiver
 };
 
@@ -297,6 +297,7 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 				
 			/* Some node considered that I am dead, so switch to recovery mode */
 			if (BIT_CHECK(msg.disabledNodeMask, MtmNodeId-1)) { 
+				elog(WARNING, "Node %d think that I am dead", msg.node);
 				MtmSwitchClusterMode(MTM_RECOVERY);
 			}
 			/* Combine disable masks from all node. Is it actually correct or we should better check availability of nodes ourselves? */

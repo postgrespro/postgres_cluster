@@ -85,7 +85,7 @@ void BgwPoolStart(int nWorkers, BgwPoolConstructor constructor)
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_main = BgwPoolMainLoop;
-	worker.bgw_restart_time = 10; /* Wait 10 seconds for restart before crash */
+	worker.bgw_restart_time = MULTIMASTER_BGW_RESTART_TIMEOUT;
     
     for (i = 0; i < nWorkers; i++) { 
         BgwPoolExecutorCtx* ctx = (BgwPoolExecutorCtx*)malloc(sizeof(BgwPoolExecutorCtx));

@@ -56,7 +56,6 @@ static int receiver_idle_time = 0;
 static bool receiver_sync_mode = false;
 
 /* Worker name */
-static char *worker_name = "multimaster";
 char worker_proc[BGW_MAXLEN];
 
 /* Lastly written positions */
@@ -252,7 +251,7 @@ pglogical_receiver_main(Datum main_arg)
 		resetPQExpBuffer(query);
 	}
 	if (mode != SLOT_OPEN_EXISTED) { 
-		appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", args->receiver_slot, worker_name);
+		appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", args->receiver_slot, MULTIMASTER_NAME);
 		res = PQexec(conn, query->data);
 		if (PQresultStatus(res) != PGRES_TUPLES_OK)
 		{
@@ -568,7 +567,7 @@ int MtmStartReceivers(char* conns, int node_id)
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_main = pglogical_receiver_main; 
-	worker.bgw_restart_time = 10; /* Wait 10 seconds for restart before crash */
+	worker.bgw_restart_time = MULTIMASTER_BGW_RESTART_TIMEOUT;
 
     while (conn_str < conn_str_end) { 
         char* p = strchr(conn_str, ',');

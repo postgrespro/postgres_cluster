@@ -8,6 +8,7 @@
 typedef void(*BgwPoolExecutor)(int id, void* work, size_t size);
 
 #define MAX_DBNAME_LEN 30
+#define MULTIMASTER_BGW_RESTART_TIMEOUT 10 /* seconds */
 
 typedef struct
 {

@@ -13,7 +13,7 @@
 #define MTM_TUPLE_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 */
 
-#define MULTIMASTER_NAME                "mtm"
+#define MULTIMASTER_NAME                "multimaster"
 #define MULTIMASTER_SCHEMA_NAME         "mtm"
 #define MULTIMASTER_DDL_TABLE           "ddl_log"
 #define MULTIMASTER_SLOT_PATTERN        "mtm_slot_%d"
@@ -146,6 +146,7 @@ extern void  MtmAdjustSubtransactions(MtmTransState* ts);
 extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
 extern void  MtmDropNode(int nodeId, bool dropSlot);
+extern void  MtmRecoverNode(int nodeId);
 extern void  MtmOnNodeDisconnect(int nodeId);
 extern void  MtmOnNodeConnect(int nodeId);
 extern MtmState* MtmGetState(void);
