@@ -830,7 +830,7 @@ void MtmExecutor(int id, void* work, size_t size)
     PG_CATCH();
     {
         FlushErrorState();
-		MTM_TRACE("%d: REMOTE abort transaction %d\n", getpid(), GetCurrentTransactionId());
+		MTM_TRACE("%d: REMOTE abort transaction %d\n", MyProcPid, GetCurrentTransactionId());
         AbortCurrentTransaction();
     }
     PG_END_TRY();

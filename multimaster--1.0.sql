@@ -13,6 +13,12 @@ CREATE FUNCTION mtm.drop_node(node integer, drop_slot bool default false) RETURN
 AS 'MODULE_PATHNAME','mtm_drop_node'
 LANGUAGE C;
 
+-- Create replication slot for the node which was previously dropped together with it's slot 
+CREATE FUNCTION mtm.recover_node(node integer) RETURNS void
+AS 'MODULE_PATHNAME','mtm_recover_node'
+LANGUAGE C;
+
+
 CREATE FUNCTION mtm.get_snapshot() RETURNS bigint
 AS 'MODULE_PATHNAME','mtm_get_snapshot'
 LANGUAGE C;

@@ -89,6 +89,7 @@ PG_MODULE_MAGIC;
 PG_FUNCTION_INFO_V1(mtm_start_replication);
 PG_FUNCTION_INFO_V1(mtm_stop_replication);
 PG_FUNCTION_INFO_V1(mtm_drop_node);
+PG_FUNCTION_INFO_V1(mtm_recover_node);
 PG_FUNCTION_INFO_V1(mtm_get_snapshot);
 
 static Snapshot MtmGetSnapshot(Snapshot snapshot);
@@ -1182,6 +1183,22 @@ MtmSlotMode MtmReceiverSlotMode(int nodeId)
 	return dtm->recoverySlot ? SLOT_CREATE_NEW : SLOT_OPEN_ALWAYS;
 }
 			
+void MtmRecoverNode(int nodeId)
+{
+	if (nodeId <= 0 || nodeId > dtm->nNodes) 
+	{ 
+		elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, dtm->nNodes);
+	}
+	if (!BIT_CHECK(dtm->disabledNodeMask, nodeId-1)) { 
+		elog(ERROR, "Node %d was not disabled", nodeId);
+	}
+	if (!IsTransactionBlock())
+	{
+		MtmBroadcastUtilityStmt(psprintf("select pg_create_logical_replication_slot('" MULTIMASTER_SLOT_PATTERN "', '" MULTIMASTER_NAME "')", nodeId), true);
+	}
+}
+	
+	
 void MtmDropNode(int nodeId, bool dropSlot)
 {
 	if (!BIT_CHECK(dtm->disabledNodeMask, nodeId-1))
@@ -1224,6 +1241,14 @@ mtm_drop_node(PG_FUNCTION_ARGS)
 	int nodeId = PG_GETARG_INT32(0);
 	bool dropSlot = PG_GETARG_BOOL(1);
 	MtmDropNode(nodeId, dropSlot);
+    PG_RETURN_VOID();
+}
+	
+Datum
+mtm_recover_node(PG_FUNCTION_ARGS)
+{
+	int nodeId = PG_GETARG_INT32(0);
+	MtmRecoverNode(nodeId);
     PG_RETURN_VOID();
 }
 	
@@ -1599,7 +1624,7 @@ MtmSerializeLock(PROCLOCK* proclock, void* arg)
                         {
                             if ((proclock->holdMask & LOCKBIT_ON(lm)) && (conflictMask & LOCKBIT_ON(lm)))
                             {
-                                MTM_TRACE("%d: %u(%u) waits for %u(%u)\n", getpid(), srcPgXact->xid, proc->pid, dstPgXact->xid, proclock->tag.myProc->pid);
+                                MTM_TRACE("%d: %u(%u) waits for %u(%u)\n", MyProcPid, srcPgXact->xid, proc->pid, dstPgXact->xid, proclock->tag.myProc->pid);
                                 MtmGetGtid(srcPgXact->xid, &gtid); /* transaction holding lock */
 								ByteBufferAppendInt32(buf, gtid.node); 
 								ByteBufferAppendInt32(buf, gtid.xid); 
@@ -1689,6 +1714,7 @@ void MtmRefreshClusterStatus(bool nowait)
 
 	clique = MtmFindMaxClique(matrix, MtmNodes, &clique_size);
 	if (clique_size >= MtmNodes/2+1) { /* have quorum */
+		elog(WARNING, "Find clique %lx, disabledNodeMask %lx", clique, dtm->disabledNodeMask);
 		MtmLock(LW_EXCLUSIVE);
 		mask = ~clique & (((nodemask_t)1 << MtmNodes)-1) & ~dtm->disabledNodeMask; /* new disabled nodes mask */
 		for (i = 0; mask != 0; i++, mask >>= 1) {
