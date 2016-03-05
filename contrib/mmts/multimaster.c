@@ -131,7 +131,7 @@ static TransactionManager MtmTM = {
 	MtmGetName 
 };
 
-static char const* const MtmNodeStatusMnem[] = 
+char const* const MtmNodeStatusMnem[] = 
 { 
 	"Intialization", 
 	"Offline", 
@@ -602,7 +602,7 @@ static void MtmPrecommitTransaction(MtmCurrentTrans* x)
 	x->xid = GetCurrentTransactionId();
 			
 	if (dtm->disabledNodeMask != 0) { 
-		MtmUpdateClusterStatus();
+		MtmRefreshClusterStatus(true);
 		if (dtm->status != MTM_ONLINE) { 
 			elog(ERROR, "Abort current transaction because this cluster node is not online");			
 		}
@@ -1096,7 +1096,7 @@ _PG_fini(void)
  */
 
 
-void MtmClusterSwitchMode(MtmNodeStatus mode)
+void MtmSwitchClusterMode(MtmNodeStatus mode)
 {
 	dtm->status = mode;
 	elog(WARNING, "Switch to %s mode", MtmNodeStatusMnem[mode]);
@@ -1121,7 +1121,8 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 		Assert(dtm->status == MTM_RECOVERY);
 	} else if (dtm->status == MTM_RECOVERY) { 
 		/* When recovery is completed we get normal transaction ID and switch to normal mode */
-		MtmClusterSwitchMode(MTM_ONLINE);
+		dtm->recoverySlot = 0;
+		MtmSwitchClusterMode(MTM_ONLINE);
 	}
 	dtmTx.gtid = *gtid;
 	dtmTx.xid = GetCurrentTransactionId();
@@ -1137,9 +1138,8 @@ void MtmReceiverStarted(int nodeId)
 	if (!BIT_CHECK(dtm->pglogicalNodeMask, nodeId-1)) { 
 		BIT_SET(dtm->pglogicalNodeMask, nodeId-1);
 		if (++dtm->nReceivers == dtm->nNodes-1) {
-			elog(WARNING, "All receivers are started, switch to normal mode");
 			Assert(dtm->status == MTM_CONNECTED);
-			dtm->status = MTM_ONLINE;
+			MtmSwitchClusterMode(MTM_OFFLINE);
 		}
      }
 	SpinLockRelease(&dtm->spinlock);	
@@ -1632,14 +1632,14 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 		
         ByteBufferAlloc(&buf);
         EnumerateLocks(MtmSerializeLock, &buf);
-		PaxosSet(psprintf("lock-graph-%d", MtmNodeId), buf.data, buf.used);
+		PaxosSet(psprintf("lock-graph-%d", MtmNodeId), buf.data, buf.used, true);
 		MtmGraphInit(&graph);
 		MtmGraphAdd(&graph, (GlobalTransactionId*)buf.data, buf.used/sizeof(GlobalTransactionId));
         ByteBufferFree(&buf);
 		for (i = 0; i < MtmNodes; i++) { 
 			if (i+1 != MtmNodeId && !BIT_CHECK(dtm->disabledNodeMask, i)) { 
 				int size;
-				void* data = PaxosGet(psprintf("lock-graph-%d", i+1), &size, NULL);
+				void* data = PaxosGet(psprintf("lock-graph-%d", i+1), &size, NULL, true);
 				if (data == NULL) { 
 					hasDeadlock = true; /* Just temporary hack until no Paxos */
 				} else { 
@@ -1655,12 +1655,12 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 }
 
 static void 
-MtmBuildConnectivityMatrix(nodemask_t* matrix)
+MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 {
 	int i, j, n = MtmNodes;
 	for (i = 0; i < n; i++) { 
 		if (i+1 != MtmNodeId) { 
-			void* data = PaxosGet(psprintf("node-mask-%d", i+1), NULL, NULL);
+			void* data = PaxosGet(psprintf("node-mask-%d", i+1), NULL, NULL, nowait);
 			matrix[i] = *(nodemask_t*)data;
 		} else { 
 			matrix[i] = dtm->connectivityMask;
@@ -1678,14 +1678,14 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
  * Build connectivity graph, find clique in it and extend disabledNodeMask by nodes not included in clique.
  * This function returns false if current node is excluded from cluster, true otherwise
  */
-void MtmUpdateClusterStatus(void)
+void MtmRefreshClusterStatus(bool nowait)
 {
 	nodemask_t mask, clique;
 	nodemask_t matrix[MAX_NODES];
 	int clique_size;
 	int i;
 
-	MtmBuildConnectivityMatrix(matrix);
+	MtmBuildConnectivityMatrix(matrix, nowait);
 
 	clique = MtmFindMaxClique(matrix, MtmNodes, &clique_size);
 	if (clique_size >= MtmNodes/2+1) { /* have quorum */
@@ -1708,11 +1708,11 @@ void MtmUpdateClusterStatus(void)
 		if (BIT_CHECK(dtm->disabledNodeMask, MtmNodeId-1)) { 
 			if (dtm->status == MTM_ONLINE) {
 				/* I was excluded from cluster:( */
-				MtmClusterSwitchMode(MTM_OFFLINE);
+				MtmSwitchClusterMode(MTM_OFFLINE);
 			}
 		} else if (dtm->status == MTM_OFFLINE) {
 			/* Should we somehow restart logical receivers? */ 
-			MtmClusterSwitchMode(MTM_RECOVERY);
+			MtmSwitchClusterMode(MTM_RECOVERY);
 		}
 	} else { 
 		elog(WARNING, "Clique %lx has no quorum", clique);
@@ -1722,24 +1722,24 @@ void MtmUpdateClusterStatus(void)
 void MtmOnNodeDisconnect(int nodeId)
 {
 	BIT_SET(dtm->connectivityMask, nodeId-1);
-	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &dtm->connectivityMask, sizeof dtm->connectivityMask);
+	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &dtm->connectivityMask, sizeof dtm->connectivityMask, false);
 
 	/* Wait more than socket KEEPALIVE timeout to let other nodes update their statuses */
 	MtmSleep(MtmKeepaliveTimeout);
 
-	MtmUpdateClusterStatus();
+	MtmRefreshClusterStatus(false);
 }
 
 void MtmOnNodeConnect(int nodeId)
 {
 	BIT_CLEAR(dtm->connectivityMask, nodeId-1);
-	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &dtm->connectivityMask, sizeof dtm->connectivityMask);
+	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &dtm->connectivityMask, sizeof dtm->connectivityMask, false);
 }
 
 /*
  * Paxos function stubs (until them are miplemented)
  */
-void* PaxosGet(char const* key, int* size, PaxosTimestamp* ts)
+void* PaxosGet(char const* key, int* size, PaxosTimestamp* ts, bool nowait)
 {
 	if (size != NULL) { 
 		*size = 0;
@@ -1747,5 +1747,5 @@ void* PaxosGet(char const* key, int* size, PaxosTimestamp* ts)
 	return NULL;
 }
 
-void  PaxosSet(char const* key, void const* value, int size)
+void  PaxosSet(char const* key, void const* value, int size, bool nowait)
 {}

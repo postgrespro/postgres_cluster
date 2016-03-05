@@ -297,7 +297,7 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 				
 			/* Some node considered that I am dead, so switch to recovery mode */
 			if (BIT_CHECK(msg.disabledNodeMask, MtmNodeId-1)) { 
-				MtmClusterSwitchMode(MTM_RECOVERY);
+				MtmSwitchClusterMode(MTM_RECOVERY);
 			}
 			/* Combine disable masks from all node. Is it actually correct or we should better check availability of nodes ourselves? */
 			ds->disabledNodeMask |= msg.disabledNodeMask;
@@ -344,7 +344,7 @@ static void MtmOpenConnections()
 		elog(WARNING, "Node is out of quorum: only %d nodes from %d are accssible", ds->nNodes, MtmNodes);
 		ds->status = MTM_OFFLINE;
 	} else if (ds->status == MTM_INITIALIZATION) { 
-		MtmClusterSwitchMode(MTM_CONNECTED);
+		MtmSwitchClusterMode(MTM_CONNECTED);
 	}
 }
 
@@ -745,7 +745,7 @@ static void MtmTransReceiver(Datum arg)
 		}
 		if (n == 0 && ds->disabledNodeMask != 0) { 
 			/* If timeout is expired and there are didabled nodes, then recheck cluster's state */
-			MtmUpdateClusterStatus();
+			MtmRefreshClusterStatus(false);
 		}
 	}
 }
