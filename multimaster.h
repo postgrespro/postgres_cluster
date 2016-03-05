@@ -118,6 +118,8 @@ typedef struct
 
 #define MtmIsCoordinator(ts) (ts->gtid.node == MtmNodeId)
 
+extern char const* const MtmNodeStatusMnem[];
+
 extern char* MtmConnStrs;
 extern int   MtmNodeId;
 extern int   MtmNodes;
@@ -150,6 +152,6 @@ extern MtmState* MtmGetState(void);
 extern timestamp_t MtmGetCurrentTime(void);
 extern void  MtmSleep(timestamp_t interval);
 extern bool  MtmIsRecoveredNode(int nodeId);
-extern void  MtmUpdateClusterStatus(void);
-extern void  MtmClusterSwitchMode(MtmNodeStatus mode);
+extern void  MtmRefreshClusterStatus(bool nowait);
+extern void  MtmSwitchClusterMode(MtmNodeStatus mode);
 #endif
