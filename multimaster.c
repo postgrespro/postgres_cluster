@@ -523,7 +523,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		if (x->isDistributed && dtm->status != MTM_ONLINE) { 
 			/* reject all user's transactions at offline cluster */
 			MtmUnlock();			
-			elog(ERROR, "Multimaster node is not online");
+			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[dtm->status]);
 		}
 		x->containsDML = false;
 		x->isPrepared = false;
@@ -1159,7 +1159,7 @@ void MtmReceiverStarted(int nodeId)
 		BIT_SET(dtm->pglogicalNodeMask, nodeId-1);
 		if (++dtm->nReceivers == dtm->nNodes-1) {
 			Assert(dtm->status == MTM_CONNECTED);
-			MtmSwitchClusterMode(MTM_OFFLINE);
+			MtmSwitchClusterMode(MTM_ONLINE);
 		}
      }
 	SpinLockRelease(&dtm->spinlock);	
@@ -1293,6 +1293,7 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	MtmGetNodeStateCtx* usrfctx;
 	MemoryContext oldcontext;
 	char* p;
+	int64 lag;
     bool is_first_call = SRF_IS_FIRSTCALL();
 
     if (is_first_call) { 
@@ -1315,7 +1316,9 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	usrfctx->values[1] = BoolGetDatum(BIT_CHECK(dtm->disabledNodeMask, usrfctx->nodeId-1));
 	usrfctx->values[2] = BoolGetDatum(BIT_CHECK(dtm->connectivityMask, usrfctx->nodeId-1));
 	usrfctx->values[3] = BoolGetDatum(BIT_CHECK(dtm->nodeLockerMask, usrfctx->nodeId-1));
-	usrfctx->values[4] = Int64GetDatum(MtmGetSlotLag(usrfctx->nodeId));
+	lag = MtmGetSlotLag(usrfctx->nodeId);
+	usrfctx->values[4] = Int64GetDatum(lag);
+	usrfctx->nulls[4] = lag < 0;
 	p = strchr(usrfctx->connStrPtr, ',');
 	if (p != NULL) { 
 		*p++ = '\0';
@@ -1333,7 +1336,6 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 	TupleDesc desc;
     Datum     values[7];
     bool      nulls[7] = {false};
-
 	get_call_result_type(fcinfo, NULL, &desc);
 
 	values[0] = CStringGetTextDatum(MtmNodeStatusMnem[dtm->status]);

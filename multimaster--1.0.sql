@@ -24,13 +24,13 @@ AS 'MODULE_PATHNAME','mtm_get_snapshot'
 LANGUAGE C;
 
 
-CREATE TYPE mtm.node_state(id integer, disabled bool, disconnected bool, catchUp boolean, slotLag bigint, connStr text);
+CREATE TYPE mtm.node_state AS (id integer, disabled bool, disconnected bool, catchUp bool, slotLag bigint, connStr text);
 
 CREATE FUNCTION mtm.get_nodes_state() RETURNS SETOF mtm.node_state
 AS 'MODULE_PATHNAME','mtm_get_nodes_state'
 LANGUAGE C;
 
-CREATE TYPE mtm.cluster_state(status text, disabledNodeMask bigint, disconnectedNodeMask bigint, catchUpNodeMask bigint, nNodes integer, nActiveQueries integer, queueSize bigint);
+CREATE TYPE mtm.cluster_state AS (status text, disabledNodeMask bigint, disconnectedNodeMask bigint, catchUpNodeMask bigint, nNodes integer, nActiveQueries integer, queueSize bigint);
 
 CREATE FUNCTION mtm.get_cluster_state() RETURNS mtm.cluster_state 
 AS 'MODULE_PATHNAME','mtm_get_cluster_state'
