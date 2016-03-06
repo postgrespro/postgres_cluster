@@ -97,6 +97,16 @@ void BgwPoolStart(int nWorkers, BgwPoolConstructor constructor)
     }
 }
 
+size_t BgwPoolGetQueueSize(BgwPool* pool)
+{
+	size_t used;
+    SpinLockAcquire(&pool->lock);
+	used = pool->head <= pool->tail ? pool->tail - pool->head : pool->size - pool->head + pool->tail;
+    SpinLockRelease(&pool->lock);            
+	return used;
+}
+
+
 void BgwPoolExecute(BgwPool* pool, void* work, size_t size)
 {
     Assert(size+4 <= pool->size);

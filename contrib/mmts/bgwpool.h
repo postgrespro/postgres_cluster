@@ -33,4 +33,6 @@ extern void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbn
 
 extern void BgwPoolExecute(BgwPool* pool, void* work, size_t size);
 
+extern size_t BgwPoolGetQueueSize(BgwPool* pool);
+
 #endif
