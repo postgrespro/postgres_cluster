@@ -109,7 +109,14 @@ size_t BgwPoolGetQueueSize(BgwPool* pool)
 
 void BgwPoolExecute(BgwPool* pool, void* work, size_t size)
 {
-    Assert(size+4 <= pool->size);
+    if (size+4 > pool->size) {
+		/* 
+		 * Size of work is larger than size of shared buffer: 
+		 * run it immediately
+		 */
+		pool->executor(0, work, size);
+		return;
+	}
  
     SpinLockAcquire(&pool->lock);
     while (true) { 

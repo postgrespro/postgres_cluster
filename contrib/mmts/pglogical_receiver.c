@@ -331,8 +331,8 @@ pglogical_receiver_main(Datum main_arg)
 		if (rc & WL_POSTMASTER_DEATH)
 			proc_exit(1);
 
-		if (ds->status != MTM_ONLINE && (ds->status != MTM_RECOVERY || ds->recoverySlot != args->remote_node)) {
-			ereport(LOG, (errmsg("%s: terminating WAL receiver because node is switched to %s mode", worker_proc, MtmNodeStatusMnem[ds->status])));
+		if (ds->status == MTM_OFFLINE || (ds->status == MTM_RECOVERY && ds->recoverySlot != args->remote_node)) {
+			ereport(LOG, (errmsg("%s: terminating WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[ds->status])));
 			proc_exit(0);
 		}
 			
