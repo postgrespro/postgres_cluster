@@ -113,6 +113,8 @@ typedef struct
 									 	  It is cleanup by MtmGetOldestXmin */
     MtmTransState** transListTail;     /* Tail of L1 list of all finished transactionds, used to append new elements.
 								  		  This list is expected to be in CSN ascending order, by strict order may be violated */
+	uint64 transCount;                 /* Counter of transactions perfromed by this node */
+	time_t nodeTransDelay[MAX_NODES];  /* Time of waiting transaction acknowledgment from node */
     BgwPool pool;                      /* Pool of background workers for applying logical replication patches */
 } MtmState;
 
