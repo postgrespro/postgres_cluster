@@ -10,6 +10,7 @@
 #include <time.h>
 
 #include "postgres.h"
+#include "funcapi.h"
 #include "fmgr.h"
 #include "miscadmin.h"
 #include "libpq-fe.h"
@@ -91,6 +92,8 @@ PG_FUNCTION_INFO_V1(mtm_stop_replication);
 PG_FUNCTION_INFO_V1(mtm_drop_node);
 PG_FUNCTION_INFO_V1(mtm_recover_node);
 PG_FUNCTION_INFO_V1(mtm_get_snapshot);
+PG_FUNCTION_INFO_V1(mtm_get_nodes_state);
+PG_FUNCTION_INFO_V1(mtm_get_cluster_state);
 
 static Snapshot MtmGetSnapshot(Snapshot snapshot);
 static void MtmSetTransactionStatus(TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn);
@@ -683,6 +686,22 @@ static void MtmCheckSlots()
 	}
 }
 
+static int64 MtmGetSlotLag(int nodeId)
+{
+	int i;
+	for (i = 0; i < max_replication_slots; i++) { 
+		ReplicationSlot* slot = &ReplicationSlotCtl->replication_slots[i];
+		int node;
+		if (slot->in_use 
+			&& sscanf(slot->data.name.data, MULTIMASTER_SLOT_PATTERN, &node) == 1
+			&& node == nodeId)
+		{
+			return GetXLogInsertRecPtr() - slot->data.restart_lsn;
+		}
+	}
+	return -1;
+}
+
 static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
@@ -932,8 +951,8 @@ _PG_init(void)
 		"Multimaster queue size",
 		NULL,
 		&MtmQueueSize,
-		1024*1024,
-	    1024,
+		256*1024*1024,
+	    1024*1024,
 		INT_MAX,
 		PGC_BACKEND,
 		0,
@@ -1256,6 +1275,76 @@ Datum
 mtm_get_snapshot(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT64(dtmTx.snapshot);
+}
+
+typedef struct
+{
+	int       nodeId;
+	char*     connStrPtr;
+	TupleDesc desc;
+    Datum     values[6];
+    bool      nulls[6];
+} MtmGetNodeStateCtx;
+
+Datum
+mtm_get_nodes_state(PG_FUNCTION_ARGS)
+{
+    FuncCallContext* funcctx;
+	MtmGetNodeStateCtx* usrfctx;
+	MemoryContext oldcontext;
+	char* p;
+    bool is_first_call = SRF_IS_FIRSTCALL();
+
+    if (is_first_call) { 
+		funcctx = SRF_FIRSTCALL_INIT();
+		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);       
+		usrfctx = (MtmGetNodeStateCtx*)palloc(sizeof(MtmGetNodeStateCtx));
+		get_call_result_type(fcinfo, NULL, &usrfctx->desc);
+		usrfctx->nodeId = 1;
+		usrfctx->connStrPtr = pstrdup(MtmConnStrs);
+		memset(usrfctx->nulls, false, sizeof(usrfctx->nulls));
+		funcctx->user_fctx = usrfctx;
+		MemoryContextSwitchTo(oldcontext);      
+    }
+    funcctx = SRF_PERCALL_SETUP();	
+	usrfctx = (MtmGetNodeStateCtx*)funcctx->user_fctx;
+	if (usrfctx->nodeId > MtmNodes) {
+		SRF_RETURN_DONE(funcctx);      
+	}
+	usrfctx->values[0] = Int32GetDatum(usrfctx->nodeId);
+	usrfctx->values[1] = BoolGetDatum(BIT_CHECK(dtm->disabledNodeMask, usrfctx->nodeId-1));
+	usrfctx->values[2] = BoolGetDatum(BIT_CHECK(dtm->connectivityMask, usrfctx->nodeId-1));
+	usrfctx->values[3] = BoolGetDatum(BIT_CHECK(dtm->nodeLockerMask, usrfctx->nodeId-1));
+	usrfctx->values[4] = Int64GetDatum(MtmGetSlotLag(usrfctx->nodeId));
+	p = strchr(usrfctx->connStrPtr, ',');
+	if (p != NULL) { 
+		*p++ = '\0';
+	}
+	usrfctx->values[5] = CStringGetTextDatum(usrfctx->connStrPtr);
+	usrfctx->connStrPtr = p;
+	usrfctx->nodeId += 1;
+
+	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(heap_form_tuple(usrfctx->desc, usrfctx->values, usrfctx->nulls)));
+}
+
+Datum
+mtm_get_cluster_state(PG_FUNCTION_ARGS)
+{
+	TupleDesc desc;
+    Datum     values[7];
+    bool      nulls[7] = {false};
+
+	get_call_result_type(fcinfo, NULL, &desc);
+
+	values[0] = CStringGetTextDatum(MtmNodeStatusMnem[dtm->status]);
+	values[1] = Int64GetDatum(dtm->disabledNodeMask);
+	values[2] = Int64GetDatum(dtm->connectivityMask);
+	values[3] = Int64GetDatum(dtm->nodeLockerMask);
+	values[4] = Int32GetDatum(dtm->nNodes);
+	values[5] = Int32GetDatum((int)dtm->pool.active);
+	values[6] = Int64GetDatum(BgwPoolGetQueueSize(&dtm->pool));
+
+	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
 }
 
 /*
