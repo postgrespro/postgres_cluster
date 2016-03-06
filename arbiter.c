@@ -641,7 +641,8 @@ static void MtmTransReceiver(Datum arg)
 						switch (msg->code) { 
 						case MSG_READY:
 							Assert(ts->status == TRANSACTION_STATUS_ABORTED || ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-							Assert(ts->nVotes < ds->nNodes);
+							Assert(ts->nVotes < ds->nNodes);	
+							ds->nodeTransDelay[msg->node-1] += MtmGetCurrentTime() - ts->csn;
 							if (++ts->nVotes == ds->nNodes) { 
 								/* All nodes are finished their transactions */
 								if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {

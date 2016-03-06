@@ -464,13 +464,15 @@ static void MtmInitialize()
         dtm->transListTail = &dtm->transListHead;		
         dtm->nReceivers = 0;
 		dtm->timeShift = 0;
+		dtm->transCount = 0;
+		memset(dtm->nodeTransDelay, 0, sizeof(dtm->nodeTransDelay));
 		PGSemaphoreCreate(&dtm->votingSemaphore);
 		PGSemaphoreReset(&dtm->votingSemaphore);
 		SpinLockInit(&dtm->spinlock);
         BgwPoolInit(&dtm->pool, MtmExecutor, MtmDatabaseName, MtmQueueSize);
 		RegisterXactCallback(MtmXactCallback, NULL);
 		dtmTx.snapshot = INVALID_CSN;
-		dtmTx.xid = InvalidTransactionId;
+		dtmTx.xid = InvalidTransactionId;		
 	}
 	xid2state = MtmCreateHash();
     MtmDoReplication = true;
@@ -628,7 +630,8 @@ static void MtmPrecommitTransaction(MtmCurrentTrans* x)
 	ts->procno = MyProc->pgprocno;
 	ts->nVotes = 0; 
 	ts->done = false;
-				  
+	dtm->transCount += 1;
+
 	if (TransactionIdIsValid(x->gtid.xid)) { 
 		ts->gtid = x->gtid;
 	} else { 
@@ -1282,8 +1285,8 @@ typedef struct
 	int       nodeId;
 	char*     connStrPtr;
 	TupleDesc desc;
-    Datum     values[6];
-    bool      nulls[6];
+    Datum     values[7];
+    bool      nulls[7];
 } MtmGetNodeStateCtx;
 
 Datum
@@ -1319,11 +1322,12 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	lag = MtmGetSlotLag(usrfctx->nodeId);
 	usrfctx->values[4] = Int64GetDatum(lag);
 	usrfctx->nulls[4] = lag < 0;
+	usrfctx->values[5] = Int64GetDatum(dtm->transCount ? dtm->nodeTransDelay[usrfctx->nodeId-1]/dtm->transCount : 0);
 	p = strchr(usrfctx->connStrPtr, ',');
 	if (p != NULL) { 
 		*p++ = '\0';
 	}
-	usrfctx->values[5] = CStringGetTextDatum(usrfctx->connStrPtr);
+	usrfctx->values[6] = CStringGetTextDatum(usrfctx->connStrPtr);
 	usrfctx->connStrPtr = p;
 	usrfctx->nodeId += 1;
 
@@ -1334,8 +1338,8 @@ Datum
 mtm_get_cluster_state(PG_FUNCTION_ARGS)
 {
 	TupleDesc desc;
-    Datum     values[7];
-    bool      nulls[7] = {false};
+    Datum     values[10];
+    bool      nulls[10] = {false};
 	get_call_result_type(fcinfo, NULL, &desc);
 
 	values[0] = CStringGetTextDatum(MtmNodeStatusMnem[dtm->status]);
@@ -1345,6 +1349,10 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 	values[4] = Int32GetDatum(dtm->nNodes);
 	values[5] = Int32GetDatum((int)dtm->pool.active);
 	values[6] = Int64GetDatum(BgwPoolGetQueueSize(&dtm->pool));
+	values[7] = Int64GetDatum(dtm->transCount);
+	values[8] = Int64GetDatum(dtm->timeShift);
+	values[9] = Int32GetDatum(dtm->recoverySlot);
+	nulls[9] = dtm->recoverySlot == 0;
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
 }
