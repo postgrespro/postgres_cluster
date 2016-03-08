@@ -85,7 +85,7 @@ typedef struct MtmTransState
 	int            nSubxids;           /* Number of subtransanctions */
 	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
-	bool done;
+	bool voteCompleted;                /* Responses necessary to make a decision are received by coordinator of transaction */
 	TransactionId xids[1];             /* transaction ID at replicas: varying size MtmNodes */
 } MtmTransState;
 

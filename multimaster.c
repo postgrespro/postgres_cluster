@@ -629,7 +629,7 @@ static void MtmPrecommitTransaction(MtmCurrentTrans* x)
 	ts->cmd = MSG_INVALID;
 	ts->procno = MyProc->pgprocno;
 	ts->nVotes = 0; 
-	ts->done = false;
+	ts->voteCompleted = false;
 	dtm->transCount += 1;
 
 	if (TransactionIdIsValid(x->gtid.xid)) { 
@@ -1638,7 +1638,7 @@ MtmVoteForTransaction(MtmTransState* ts)
 		}
 	}
 	MTM_TRACE("%d: Node %d waiting latch...\n", MyProcPid, MtmNodeId);
-	while (!ts->done) {
+	while (!ts->voteCompleted) {
 		MtmUnlock();
 		WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
 		ResetLatch(&MyProc->procLatch);			

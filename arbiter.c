@@ -529,7 +529,7 @@ static void MtmTransSender(Datum arg)
 
 static void MtmWakeUpBackend(MtmTransState* ts)
 {
-	ts->done = true;
+	ts->voteCompleted = true;
 	SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
 }
 
