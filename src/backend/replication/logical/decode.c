@@ -545,6 +545,7 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
 	int			i;
 	TransactionId xid = parsed->twophase_xid;
+	strcpy(ctx->reorder->gid, parsed->twophase_gid);
 
 	/*
 	 * Process invalidation messages, even if we're not interested in the
@@ -560,8 +561,6 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 
 	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
 					   parsed->nsubxacts, parsed->subxacts);
-
-
 
 	if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) ||
 		(parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) ||
