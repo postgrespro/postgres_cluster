@@ -1724,7 +1724,7 @@ MtmSerializeLock(PROCLOCK* proclock, void* arg)
                             if ((proclock->holdMask & LOCKBIT_ON(lm)) && (conflictMask & LOCKBIT_ON(lm)))
                             {
                                 MTM_TRACE("%d: %u(%u) waits for %u(%u)\n", MyProcPid, srcPgXact->xid, proc->pid, dstPgXact->xid, proclock->tag.myProc->pid);
-                                MtmGetGtid(srcPgXact->xid, &gtid); /* transaction holding lock */
+                                MtmGetGtid(dstPgXact->xid, &gtid); /* transaction holding lock */
 								ByteBufferAppendInt32(buf, gtid.node); 
 								ByteBufferAppendInt32(buf, gtid.xid); 
                                 break;
