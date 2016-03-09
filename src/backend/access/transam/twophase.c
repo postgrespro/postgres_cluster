@@ -1247,6 +1247,10 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 
 	parsed->twophase_xid = hdr->xid;
 	parsed->dbId = hdr->database;
+	parsed->nsubxacts = hdr->nsubxacts;
+	parsed->nrels = hdr->ncommitrels;
+	parsed->nmsgs = hdr->ninvalmsgs;
+
 	strcpy(parsed->twophase_gid, hdr->gid);
 
 	parsed->subxacts = (TransactionId *) bufptr;
