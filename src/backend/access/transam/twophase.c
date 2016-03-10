@@ -1258,12 +1258,12 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 
 	parsed->xnodes = (RelFileNode *) bufptr;
 	bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
-	
+
 	/* Ignoring abortrels? */
 	bufptr += MAXALIGN(hdr->nabortrels * sizeof(RelFileNode));
-	
+
 	parsed->msgs = (SharedInvalidationMessage *) bufptr;
-	bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));	
+	bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));
 }
 
 

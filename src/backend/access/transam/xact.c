@@ -5311,7 +5311,9 @@ XactLogAbortRecord(TimestampTz abort_time,
 	{
 		XLogRegisterData((char *) (&xl_twophase), MinSizeOfXactTwophase);
 		XLogRegisterData((char *) twophase_gid, xl_twophase.gidlen);
-	}	if (xl_xinfo.xinfo & XACT_XINFO_HAS_DBINFO)
+	}
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_DBINFO)
 		XLogRegisterData((char *) (&xl_dbinfo), sizeof(xl_dbinfo));
 
 	return XLogInsert(RM_XACT_ID, info);

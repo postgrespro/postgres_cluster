@@ -29,7 +29,7 @@ typedef struct PGLogicalTupleData
 #define PGLOGICAL_COMMIT_PREPARED	0x02
 #define PGLOGICAL_ABORT_PREPARED	0x03
 
-#define PGLOGICAL_XACT_EVENT(flags)	(flags & 0x3)
+#define PGLOGICAL_XACT_EVENT(flags)	(flags & 0x03)
 
 extern void pglogical_read_begin(StringInfo in, XLogRecPtr *remote_lsn,
 					  TimestampTz *committime, TransactionId *remote_xid);

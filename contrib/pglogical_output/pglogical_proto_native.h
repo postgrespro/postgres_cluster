@@ -28,7 +28,7 @@
 #define PGLOGICAL_COMMIT_PREPARED	0x02
 #define PGLOGICAL_ABORT_PREPARED	0x03
 
-#define PGLOGICAL_XACT_EVENT(flags)	(flags & 0x3)
+#define PGLOGICAL_XACT_EVENT(flags)	(flags & 0x03)
 
 extern void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
 							struct PGLRelMetaCacheEntry *cache_entry);

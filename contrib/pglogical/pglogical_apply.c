@@ -369,7 +369,6 @@ UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
 											   &slot->tts_tuple->t_self,
 											   estate, false, NULL, NIL);
 
-
 		/* FIXME: recheck the indexes */
 		if (recheckIndexes != NIL)
 			ereport(ERROR,
@@ -476,7 +475,6 @@ handle_insert(StringInfo s)
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
 	econtext = GetPerTupleExprContext(estate);
-
 
 	PushActiveSnapshot(GetTransactionSnapshot());
 
