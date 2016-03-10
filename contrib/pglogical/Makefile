@@ -15,7 +15,7 @@ OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 PG_CPPFLAGS = -I$(libpq_srcdir) -I$(top_srcdir)/contrib/pglogical_output
 SHLIB_LINK = $(libpq)
 
-REGRESS = preseed infofuncs init_fail init preseed_check basic extended twophase toasted replication_set add_table matview bidirectional primary_key foreign_key functions copy drop
+REGRESS = preseed infofuncs init_fail init preseed_check basic extended toasted replication_set add_table matview bidirectional primary_key foreign_key functions copy twophase drop
 
 # In-tree builds only
 subdir = contrib/pglogical

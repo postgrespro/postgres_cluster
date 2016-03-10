@@ -462,16 +462,6 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	}
 
 	/*
-	 * If that is COMMIT PREPARED than send that to callbacks.
-	 */
-	if (TransactionIdIsValid(parsed->twophase_xid)) {
-		strcpy(ctx->reorder->gid, parsed->twophase_gid);
-		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
-							commit_time, origin_id, origin_lsn);
-		return;
-	}
-
-	/*
 	 * Process invalidation messages, even if we're not interested in the
 	 * transaction's contents, since the various caches need to always be
 	 * consistent.
@@ -531,9 +521,19 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 								 buf->origptr, buf->endptr);
 	}
 
-	/* replay actions of all transaction + subtransactions in order */
-	ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
-						commit_time, origin_id, origin_lsn);
+	if (TransactionIdIsValid(parsed->twophase_xid)) {
+		/*
+		 * We are processing COMMIT PREPARED and know that reorder buffer is
+		 * empty. So we can skip use shortcut for coomiting bare xact.
+		 */
+		strcpy(ctx->reorder->gid, parsed->twophase_gid);
+		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
+							commit_time, origin_id, origin_lsn);
+	} else {
+		/* replay actions of all transaction + subtransactions in order */
+		ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
+							commit_time, origin_id, origin_lsn);
+	}
 }
 
 static void
@@ -603,8 +603,18 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	/*
 	 * If that is ROLLBACK PREPARED than send that to callbacks.
 	 */
+
 	if (TransactionIdIsValid(parsed->twophase_xid)) {
+		fprintf(stderr, "(!) db_id=%d, gid=%s\n", parsed->dbId, parsed->twophase_gid);
+	}
+
+	if (TransactionIdIsValid(parsed->twophase_xid)
+			&& (parsed->dbId == ctx->slot->data.database)) {
+
 		strcpy(ctx->reorder->gid, parsed->twophase_gid);
+
+		fprintf(stderr, "(!)	aborting: db_id=%d, gid=%s\n", parsed->dbId, parsed->twophase_gid);
+
 		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
 							commit_time, origin_id, origin_lsn);
 		return;

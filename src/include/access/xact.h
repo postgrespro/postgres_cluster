@@ -314,6 +314,9 @@ typedef struct xl_xact_parsed_prepare
 
 typedef struct xl_xact_parsed_abort
 {
+	Oid			dbId;
+	Oid			tsId;
+
 	TimestampTz xact_time;
 	uint32		xinfo;
 

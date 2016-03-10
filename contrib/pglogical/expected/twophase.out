@@ -3,17 +3,24 @@ SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
-CREATE TABLE public.test2pc_tbl(id serial primary key, value int);
+	CREATE TABLE public.test2pc_tbl(id serial primary key, value int);
 $$);
  replicate_ddl_command 
 -----------------------
  t
 (1 row)
 
-SELECT * FROM pglogical.replication_set_add_all_tables('default', '{public}');
- replication_set_add_all_tables 
---------------------------------
+-- SELECT * FROM pglogical.replication_set_add_all_tables('default', '{public}');
+SELECT * FROM pglogical.replication_set_add_table('default', 'test2pc_tbl');
+ replication_set_add_table 
+---------------------------
  t
+(1 row)
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
 (1 row)
 
 -- Check that prapeared state is visible on slave and data available after commit
@@ -28,10 +35,11 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 SELECT gid, owner, database FROM pg_prepared_xacts;
- gid | owner |      database      
------+-------+--------------------
- tx1 | stas  | contrib_regression
-(1 row)
+         gid         | owner |      database      
+---------------------+-------+--------------------
+ tx1                 | stas  | contrib_regression
+ test_subscriber:tx1 | stas  | postgres
+(2 rows)
 
 SELECT * FROM test2pc_tbl;
  id | value 
@@ -71,10 +79,11 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 SELECT gid, owner, database FROM pg_prepared_xacts;
- gid | owner |      database      
------+-------+--------------------
- tx2 | stas  | contrib_regression
-(1 row)
+         gid         | owner |      database      
+---------------------+-------+--------------------
+ tx2                 | stas  | contrib_regression
+ test_subscriber:tx2 | stas  | postgres
+(2 rows)
 
 SELECT * FROM test2pc_tbl;
  id | value 

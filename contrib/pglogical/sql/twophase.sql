@@ -4,10 +4,11 @@ SELECT * FROM pglogical_regress_variables()
 
 \c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
-CREATE TABLE public.test2pc_tbl(id serial primary key, value int);
+	CREATE TABLE public.test2pc_tbl(id serial primary key, value int);
 $$);
-SELECT * FROM pglogical.replication_set_add_all_tables('default', '{public}');
-
+-- SELECT * FROM pglogical.replication_set_add_all_tables('default', '{public}');
+SELECT * FROM pglogical.replication_set_add_table('default', 'test2pc_tbl');
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 -- Check that prapeared state is visible on slave and data available after commit
 BEGIN;

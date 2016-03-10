@@ -148,8 +148,10 @@ handle_commit(StringInfo s)
 	TimestampTz		commit_time;
 	uint8 			flags;
 	const char	   *gid;
+	char 		   *local_gid;
 	PGLFlushPosition *flushpos;
 	bool 			flush = true;
+	PGLogicalLocalNode *mynode;
 
 	pglogical_read_commit(s, &commit_lsn, &end_lsn, &commit_time, &flags, &gid);
 
@@ -170,31 +172,53 @@ handle_commit(StringInfo s)
 			CommitTransactionCommand();
 			StartTransactionCommand();
 
+			mynode = get_local_node(false);
+			local_gid = palloc0(GIDSIZE);
+			strncpy(local_gid, mynode->node->name, GIDSIZE);
+			strncat(local_gid, ":", GIDSIZE);
+			strncat(local_gid, gid, GIDSIZE);
+
 			/* PREPARE itself */
-			PrepareTransactionBlock(gid);
+			PrepareTransactionBlock(local_gid);
 			CommitTransactionCommand();
 			break;
 		}
 		case PGLOGICAL_COMMIT_PREPARED:
 		{
 			StartTransactionCommand();
-			FinishPreparedTransaction(gid, true);
+
+			mynode = get_local_node(false);
+			local_gid = palloc0(GIDSIZE);
+			strncpy(local_gid, mynode->node->name, GIDSIZE);
+			strncat(local_gid, ":", GIDSIZE);
+			strncat(local_gid, gid, GIDSIZE);
+
+			FinishPreparedTransaction(local_gid, true);
 			CommitTransactionCommand();
 
 			/* There were no BEGIN stmt for COMMIT PREPARED */
 			replorigin_session_origin_timestamp = commit_time;
 			replorigin_session_origin_lsn = commit_lsn;
+
 			break;
 		}
 		case PGLOGICAL_ABORT_PREPARED:
 		{
 			StartTransactionCommand();
-			FinishPreparedTransaction(gid, false);
+
+			mynode = get_local_node(false);
+			local_gid = palloc(GIDSIZE);
+			strncpy(local_gid, mynode->node->name, GIDSIZE);
+			strncat(local_gid, ":", GIDSIZE);
+			strncat(local_gid, gid, GIDSIZE);
+
+			FinishPreparedTransaction(local_gid, false);
 			CommitTransactionCommand();
 
 			/* There were no BEGIN stmt for ROLLBACK PREPARED */
 			replorigin_session_origin_timestamp = commit_time;
 			replorigin_session_origin_lsn = commit_lsn;
+
 			break;
 		}
 		default:
