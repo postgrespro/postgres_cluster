@@ -42,6 +42,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/bgwriter.h"
+#include "postmaster/walwriter.h"
 #include "postmaster/startup.h"
 #include "replication/basebackup.h"
 #include "replication/logical.h"
@@ -2729,28 +2730,37 @@ XLogFlush(XLogRecPtr record)
 }
 
 /*
- * Flush xlog, but without specifying exactly where to flush to.
+ * Write & flush xlog, but without specifying exactly where to.
  *
- * We normally flush only completed blocks; but if there is nothing to do on
- * that basis, we check for unflushed async commits in the current incomplete
- * block, and flush through the latest one of those.  Thus, if async commits
- * are not being used, we will flush complete blocks only.  We can guarantee
- * that async commits reach disk after at most three cycles; normally only
- * one or two.  (When flushing complete blocks, we allow XLogWrite to write
- * "flexibly", meaning it can stop at the end of the buffer ring; this makes a
- * difference only with very high load or long wal_writer_delay, but imposes
- * one extra cycle for the worst case for async commits.)
+ * We normally write only completed blocks; but if there is nothing to do on
+ * that basis, we check for unwritten async commits in the current incomplete
+ * block, and write through the latest one of those.  Thus, if async commits
+ * are not being used, we will write complete blocks only.
+ *
+ * If, based on the above, there's anything to write we do so immediately. But
+ * to avoid calling fsync, fdatasync et. al. at a rate that'd impact
+ * concurrent IO, we only flush WAL every wal_writer_delay ms, or if there's
+ * more than wal_writer_flush_after unflushed blocks.
+ *
+ * We can guarantee that async commits reach disk after at most three
+ * wal_writer_delay cycles. (When flushing complete blocks, we allow XLogWrite
+ * to write "flexibly", meaning it can stop at the end of the buffer ring;
+ * this makes a difference only with very high load or long wal_writer_delay,
+ * but imposes one extra cycle for the worst case for async commits.)
  *
  * This routine is invoked periodically by the background walwriter process.
  *
- * Returns TRUE if we flushed anything.
+ * Returns TRUE if there was any work to do, even if we skipped flushing due
+ * to wal_writer_delay/wal_flush_after.
  */
 bool
 XLogBackgroundFlush(void)
 {
-	XLogRecPtr	WriteRqstPtr;
+	XLogwrtRqst WriteRqst;
 	bool		flexible = true;
-	bool		wrote_something = false;
+	static TimestampTz lastflush;
+	TimestampTz now;
+	int			flushbytes;
 
 	/* XLOG doesn't need flushing during recovery */
 	if (RecoveryInProgress())
@@ -2759,17 +2769,17 @@ XLogBackgroundFlush(void)
 	/* read LogwrtResult and update local state */
 	SpinLockAcquire(&XLogCtl->info_lck);
 	LogwrtResult = XLogCtl->LogwrtResult;
-	WriteRqstPtr = XLogCtl->LogwrtRqst.Write;
+	WriteRqst = XLogCtl->LogwrtRqst;
 	SpinLockRelease(&XLogCtl->info_lck);
 
 	/* back off to last completed page boundary */
-	WriteRqstPtr -= WriteRqstPtr % XLOG_BLCKSZ;
+	WriteRqst.Write -= WriteRqst.Write % XLOG_BLCKSZ;
 
 	/* if we have already flushed that far, consider async commit records */
-	if (WriteRqstPtr <= LogwrtResult.Flush)
+	if (WriteRqst.Write <= LogwrtResult.Flush)
 	{
 		SpinLockAcquire(&XLogCtl->info_lck);
-		WriteRqstPtr = XLogCtl->asyncXactLSN;
+		WriteRqst.Write = XLogCtl->asyncXactLSN;
 		SpinLockRelease(&XLogCtl->info_lck);
 		flexible = false;		/* ensure it all gets written */
 	}
@@ -2779,7 +2789,7 @@ XLogBackgroundFlush(void)
 	 * holding an open file handle to a logfile that's no longer in use,
 	 * preventing the file from being deleted.
 	 */
-	if (WriteRqstPtr <= LogwrtResult.Flush)
+	if (WriteRqst.Write <= LogwrtResult.Flush)
 	{
 		if (openLogFile >= 0)
 		{
@@ -2791,10 +2801,47 @@ XLogBackgroundFlush(void)
 		return false;
 	}
 
+	/*
+	 * Determine how far to flush WAL, based on the wal_writer_delay and
+	 * wal_writer_flush_after GUCs.
+	 */
+	now = GetCurrentTimestamp();
+	flushbytes =
+		WriteRqst.Write / XLOG_BLCKSZ - LogwrtResult.Flush / XLOG_BLCKSZ;
+
+	if (WalWriterFlushAfter == 0 || lastflush == 0)
+	{
+		/* first call, or block based limits disabled */
+		WriteRqst.Flush = WriteRqst.Write;
+		lastflush = now;
+	}
+	else if (TimestampDifferenceExceeds(lastflush, now, WalWriterDelay))
+	{
+		/*
+		 * Flush the writes at least every WalWriteDelay ms. This is important
+		 * to bound the amount of time it takes for an asynchronous commit to
+		 * hit disk.
+		 */
+		WriteRqst.Flush = WriteRqst.Write;
+		lastflush = now;
+	}
+	else if (flushbytes >= WalWriterFlushAfter)
+	{
+		/* exceeded wal_writer_flush_after blocks, flush */
+		WriteRqst.Flush = WriteRqst.Write;
+		lastflush = now;
+	}
+	else
+	{
+		/* no flushing, this time round */
+		WriteRqst.Flush = 0;
+	}
+
 #ifdef WAL_DEBUG
 	if (XLOG_DEBUG)
-		elog(LOG, "xlog bg flush request %X/%X; write %X/%X; flush %X/%X",
-			 (uint32) (WriteRqstPtr >> 32), (uint32) WriteRqstPtr,
+		elog(LOG, "xlog bg flush request write %X/%X; flush: %X/%X, current is write %X/%X; flush %X/%X",
+			 (uint32) (WriteRqst.Write >> 32), (uint32) WriteRqst.Write,
+			 (uint32) (WriteRqst.Flush >> 32), (uint32) WriteRqst.Flush,
 			 (uint32) (LogwrtResult.Write >> 32), (uint32) LogwrtResult.Write,
 		   (uint32) (LogwrtResult.Flush >> 32), (uint32) LogwrtResult.Flush);
 #endif
@@ -2802,17 +2849,13 @@ XLogBackgroundFlush(void)
 	START_CRIT_SECTION();
 
 	/* now wait for any in-progress insertions to finish and get write lock */
-	WaitXLogInsertionsToFinish(WriteRqstPtr);
+	WaitXLogInsertionsToFinish(WriteRqst.Write);
 	LWLockAcquire(WALWriteLock, LW_EXCLUSIVE);
 	LogwrtResult = XLogCtl->LogwrtResult;
-	if (WriteRqstPtr > LogwrtResult.Flush)
+	if (WriteRqst.Write > LogwrtResult.Write ||
+		WriteRqst.Flush > LogwrtResult.Flush)
 	{
-		XLogwrtRqst WriteRqst;
-
-		WriteRqst.Write = WriteRqstPtr;
-		WriteRqst.Flush = WriteRqstPtr;
 		XLogWrite(WriteRqst, flexible);
-		wrote_something = true;
 	}
 	LWLockRelease(WALWriteLock);
 
@@ -2827,7 +2870,12 @@ XLogBackgroundFlush(void)
 	 */
 	AdvanceXLInsertBuffer(InvalidXLogRecPtr, true);
 
-	return wrote_something;
+	/*
+	 * If we determined that we need to write data, but somebody else
+	 * wrote/flushed already, it should be considered as being active, to
+	 * avoid hibernating too early.
+	 */
+	return true;
 }
 
 /*
@@ -3251,34 +3299,16 @@ InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 	}
 
 	/*
-	 * Prefer link() to rename() here just to be really sure that we don't
-	 * overwrite an existing logfile.  However, there shouldn't be one, so
-	 * rename() is an acceptable substitute except for the truly paranoid.
+	 * Perform the rename using link if available, paranoidly trying to avoid
+	 * overwriting an existing file (there shouldn't be one).
 	 */
-#if HAVE_WORKING_LINK
-	if (link(tmppath, path) < 0)
+	if (durable_link_or_rename(tmppath, path, LOG) != 0)
 	{
 		if (use_lock)
 			LWLockRelease(ControlFileLock);
-		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not link file \"%s\" to \"%s\" (initialization of log file): %m",
-						tmppath, path)));
+		/* durable_link_or_rename already emitted log message */
 		return false;
 	}
-	unlink(tmppath);
-#else
-	if (rename(tmppath, path) < 0)
-	{
-		if (use_lock)
-			LWLockRelease(ControlFileLock);
-		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not rename file \"%s\" to \"%s\" (initialization of log file): %m",
-						tmppath, path)));
-		return false;
-	}
-#endif
 
 	if (use_lock)
 		LWLockRelease(ControlFileLock);
@@ -4675,7 +4705,7 @@ XLOGShmemInit(void)
 		(WALInsertLockPadded *) allocptr;
 	allocptr += sizeof(WALInsertLockPadded) * NUM_XLOGINSERT_LOCKS;
 
-	XLogCtl->Insert.WALInsertLockTranche.name = "WALInsertLocks";
+	XLogCtl->Insert.WALInsertLockTranche.name = "wal_insert";
 	XLogCtl->Insert.WALInsertLockTranche.array_base = WALInsertLocks;
 	XLogCtl->Insert.WALInsertLockTranche.array_stride = sizeof(WALInsertLockPadded);
 
@@ -5291,11 +5321,7 @@ exitArchiveRecovery(TimeLineID endTLI, XLogRecPtr endOfLog)
 	 * re-enter archive recovery mode in a subsequent crash.
 	 */
 	unlink(RECOVERY_COMMAND_DONE);
-	if (rename(RECOVERY_COMMAND_FILE, RECOVERY_COMMAND_DONE) != 0)
-		ereport(FATAL,
-				(errcode_for_file_access(),
-				 errmsg("could not rename file \"%s\" to \"%s\": %m",
-						RECOVERY_COMMAND_FILE, RECOVERY_COMMAND_DONE)));
+	durable_rename(RECOVERY_COMMAND_FILE, RECOVERY_COMMAND_DONE, FATAL);
 
 	ereport(LOG,
 			(errmsg("archive recovery complete")));
@@ -5665,6 +5691,10 @@ recoveryApplyDelay(XLogReaderState *record)
 
 	/* nothing to do if no delay configured */
 	if (recovery_min_apply_delay <= 0)
+		return false;
+
+	/* no delay is applied on a database not yet consistent */
+	if (!reachedConsistency)
 		return false;
 
 	/*
@@ -6138,7 +6168,7 @@ StartupXLOG(void)
 		if (stat(TABLESPACE_MAP, &st) == 0)
 		{
 			unlink(TABLESPACE_MAP_OLD);
-			if (rename(TABLESPACE_MAP, TABLESPACE_MAP_OLD) == 0)
+			if (durable_rename(TABLESPACE_MAP, TABLESPACE_MAP_OLD, DEBUG1) == 0)
 				ereport(LOG,
 					(errmsg("ignoring file \"%s\" because no file \"%s\" exists",
 							TABLESPACE_MAP, BACKUP_LABEL_FILE),
@@ -6283,7 +6313,7 @@ StartupXLOG(void)
 				  (uint32) (checkPoint.redo >> 32), (uint32) checkPoint.redo,
 					wasShutdown ? "TRUE" : "FALSE")));
 	ereport(DEBUG1,
-			(errmsg_internal("next transaction ID: %u/%u; next OID: %u",
+			(errmsg_internal("next transaction ID: %u:%u; next OID: %u",
 					checkPoint.nextXidEpoch, checkPoint.nextXid,
 					checkPoint.nextOid)));
 	ereport(DEBUG1,
@@ -6501,11 +6531,7 @@ StartupXLOG(void)
 		if (haveBackupLabel)
 		{
 			unlink(BACKUP_LABEL_OLD);
-			if (rename(BACKUP_LABEL_FILE, BACKUP_LABEL_OLD) != 0)
-				ereport(FATAL,
-						(errcode_for_file_access(),
-						 errmsg("could not rename file \"%s\" to \"%s\": %m",
-								BACKUP_LABEL_FILE, BACKUP_LABEL_OLD)));
+			durable_rename(BACKUP_LABEL_FILE, BACKUP_LABEL_OLD, FATAL);
 		}
 
 		/*
@@ -6518,11 +6544,7 @@ StartupXLOG(void)
 		if (haveTblspcMap)
 		{
 			unlink(TABLESPACE_MAP_OLD);
-			if (rename(TABLESPACE_MAP, TABLESPACE_MAP_OLD) != 0)
-				ereport(FATAL,
-						(errcode_for_file_access(),
-						 errmsg("could not rename file \"%s\" to \"%s\": %m",
-								TABLESPACE_MAP, TABLESPACE_MAP_OLD)));
+			durable_rename(TABLESPACE_MAP, TABLESPACE_MAP_OLD, FATAL);
 		}
 
 		/* Check that the GUCs used to generate the WAL allow recovery */
@@ -7299,11 +7321,7 @@ StartupXLOG(void)
 				 */
 				XLogArchiveCleanup(partialfname);
 
-				if (rename(origpath, partialpath) != 0)
-					ereport(ERROR,
-							(errcode_for_file_access(),
-						 errmsg("could not rename file \"%s\" to \"%s\": %m",
-								origpath, partialpath)));
+				durable_rename(origpath, partialpath, ERROR);
 				XLogArchiveNotify(partialfname);
 			}
 		}
@@ -7948,10 +7966,6 @@ ShutdownXLOG(int code, Datum arg)
 	ShutdownCommitTs();
 	ShutdownSUBTRANS();
 	ShutdownMultiXact();
-
-	/* Don't be chatty in standalone mode */
-	ereport(IsPostmasterEnvironment ? LOG : NOTICE,
-			(errmsg("database system is shut down")));
 }
 
 /*
@@ -10863,7 +10877,7 @@ CancelBackup(void)
 	/* remove leftover file from previously canceled backup if it exists */
 	unlink(BACKUP_LABEL_OLD);
 
-	if (rename(BACKUP_LABEL_FILE, BACKUP_LABEL_OLD) != 0)
+	if (durable_rename(BACKUP_LABEL_FILE, BACKUP_LABEL_OLD, DEBUG1) != 0)
 	{
 		ereport(WARNING,
 				(errcode_for_file_access(),
@@ -10886,7 +10900,7 @@ CancelBackup(void)
 	/* remove leftover file from previously canceled backup if it exists */
 	unlink(TABLESPACE_MAP_OLD);
 
-	if (rename(TABLESPACE_MAP, TABLESPACE_MAP_OLD) == 0)
+	if (durable_rename(TABLESPACE_MAP, TABLESPACE_MAP_OLD, DEBUG1) == 0)
 	{
 		ereport(LOG,
 				(errmsg("online backup mode canceled"),

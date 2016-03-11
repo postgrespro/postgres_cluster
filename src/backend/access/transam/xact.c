@@ -1214,7 +1214,7 @@ RecordTransactionCommit(void)
 							nchildren, children, nrels, rels,
 							nmsgs, invalMessages,
 							RelcacheInitFileInval, forceSyncCommit,
-							InvalidTransactionId /* plain commit */ );
+							InvalidTransactionId, NULL /* plain commit */ );
 
 		if (replorigin)
 			/* Move LSNs forward for this replication origin */
@@ -1566,7 +1566,7 @@ RecordTransactionAbort(bool isSubXact)
 	XactLogAbortRecord(xact_time,
 					   nchildren, children,
 					   nrels, rels,
-					   InvalidTransactionId);
+					   InvalidTransactionId, NULL);
 
 	/*
 	 * Report the latest async abort LSN, so that the WAL writer knows to
@@ -2446,6 +2446,10 @@ AbortTransaction(void)
 	 * while cleaning up!
 	 */
 	LWLockReleaseAll();
+
+	/* Clear wait information and command progress indicator */
+	pgstat_report_wait_end();
+	pgstat_progress_end_command();
 
 	/* Clean up buffer I/O and buffer context locks, too */
 	AbortBufferIO();
@@ -3445,7 +3449,7 @@ BeginTransactionBlock(void)
  * resource owner, etc while executing inside a Portal.
  */
 bool
-PrepareTransactionBlock(char *gid)
+PrepareTransactionBlock(const char *gid)
 {
 	TransactionState s;
 	bool		result;
@@ -4538,6 +4542,8 @@ AbortSubTransaction(void)
 	 */
 	LWLockReleaseAll();
 
+	pgstat_report_wait_end();
+	pgstat_progress_end_command();
 	AbortBufferIO();
 	UnlockBuffers();
 
@@ -4648,6 +4654,9 @@ AbortSubTransaction(void)
 	 * with the commit case.
 	 */
 	XactReadOnly = s->prevXactReadOnly;
+
+	/* Report wait end here, when there is no further possibility of wait */
+	pgstat_report_wait_end();
 
 	RESUME_INTERRUPTS();
 }
@@ -5084,7 +5093,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 					int nrels, RelFileNode *rels,
 					int nmsgs, SharedInvalidationMessage *msgs,
 					bool relcacheInval, bool forceSync,
-					TransactionId twophase_xid)
+					TransactionId twophase_xid, const char *twophase_gid)
 {
 	xl_xact_commit xlrec;
 	xl_xact_xinfo xl_xinfo;
@@ -5149,6 +5158,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_TWOPHASE;
 		xl_twophase.xid = twophase_xid;
+		xl_twophase.gidlen = strlen(twophase_gid) + 1; /* Include '\0' */
 	}
 
 	/* dump transaction origin information */
@@ -5199,7 +5209,10 @@ XactLogCommitRecord(TimestampTz commit_time,
 	}
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
-		XLogRegisterData((char *) (&xl_twophase), sizeof(xl_xact_twophase));
+	{
+		XLogRegisterData((char *) (&xl_twophase), MinSizeOfXactTwophase);
+		XLogRegisterData((char *) twophase_gid, xl_twophase.gidlen);
+	}
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_ORIGIN)
 		XLogRegisterData((char *) (&xl_origin), sizeof(xl_xact_origin));
@@ -5220,13 +5233,14 @@ XLogRecPtr
 XactLogAbortRecord(TimestampTz abort_time,
 				   int nsubxacts, TransactionId *subxacts,
 				   int nrels, RelFileNode *rels,
-				   TransactionId twophase_xid)
+				   TransactionId twophase_xid, const char *twophase_gid)
 {
 	xl_xact_abort xlrec;
 	xl_xact_xinfo xl_xinfo;
 	xl_xact_subxacts xl_subxacts;
 	xl_xact_relfilenodes xl_relfilenodes;
 	xl_xact_twophase xl_twophase;
+	xl_xact_dbinfo xl_dbinfo;
 
 	uint8		info;
 
@@ -5261,6 +5275,14 @@ XactLogAbortRecord(TimestampTz abort_time,
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_TWOPHASE;
 		xl_twophase.xid = twophase_xid;
+		xl_twophase.gidlen = strlen(twophase_gid) + 1; /* Include '\0' */
+	}
+
+	if (TransactionIdIsValid(twophase_xid) && XLogLogicalInfoActive())
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_DBINFO;
+		xl_dbinfo.dbId = MyDatabaseId;
+		xl_dbinfo.tsId = MyDatabaseTableSpace;
 	}
 
 	if (xl_xinfo.xinfo != 0)
@@ -5274,6 +5296,9 @@ XactLogAbortRecord(TimestampTz abort_time,
 
 	if (xl_xinfo.xinfo != 0)
 		XLogRegisterData((char *) (&xl_xinfo), sizeof(xl_xinfo));
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_DBINFO)
+		XLogRegisterData((char *) (&xl_dbinfo), sizeof(xl_dbinfo));
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_SUBXACTS)
 	{
@@ -5292,7 +5317,13 @@ XactLogAbortRecord(TimestampTz abort_time,
 	}
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
-		XLogRegisterData((char *) (&xl_twophase), sizeof(xl_xact_twophase));
+	{
+		XLogRegisterData((char *) (&xl_twophase), MinSizeOfXactTwophase);
+		XLogRegisterData((char *) twophase_gid, xl_twophase.gidlen);
+	}
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_DBINFO)
+		XLogRegisterData((char *) (&xl_dbinfo), sizeof(xl_dbinfo));
 
 	return XLogInsert(RM_XACT_ID, info);
 }

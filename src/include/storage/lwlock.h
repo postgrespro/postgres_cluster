@@ -187,6 +187,8 @@ extern Size LWLockShmemSize(void);
 extern void CreateLWLocks(void);
 extern void InitLWLockAccess(void);
 
+extern const char *GetLWLockIdentifier(uint8 classId, uint16 eventId);
+
 /*
  * Extensions (or core code) can obtain an LWLocks by calling
  * RequestNamedLWLockTranche() during postmaster startup.  Subsequently,
@@ -195,8 +197,6 @@ extern void InitLWLockAccess(void);
  */
 extern void RequestNamedLWLockTranche(const char *tranche_name, int num_lwlocks);
 extern LWLockPadded *GetNamedLWLockTranche(const char *tranche_name);
-
-extern LWLock *LWLockAssign(void);
 
 /*
  * There is another, more flexible method of obtaining lwlocks. First, call
@@ -235,6 +235,9 @@ typedef enum BuiltinTrancheIds
 	LWTRANCHE_REPLICATION_ORIGIN,
 	LWTRANCHE_REPLICATION_SLOT_IO_IN_PROGRESS,
 	LWTRANCHE_PROC,
+	LWTRANCHE_BUFFER_MAPPING,
+	LWTRANCHE_LOCK_MANAGER,
+	LWTRANCHE_PREDICATE_LOCK_MANAGER,
 	LWTRANCHE_FIRST_USER_DEFINED
 }	BuiltinTrancheIds;
 
