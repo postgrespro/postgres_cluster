@@ -511,7 +511,7 @@ MtmXactCallback(XactEvent event, void *arg)
 static bool
 MtmIsUserTransaction()
 {
-	return IsNormalProcessingMode() && MtmDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess();
+	return !IsAutoVacuumLauncherProcess() && IsNormalProcessingMode() && MtmDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess();
 }
 
 static void 
@@ -525,6 +525,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		if (x->isDistributed && dtm->status != MTM_ONLINE) { 
 			/* reject all user's transactions at offline cluster */
 			MtmUnlock();			
+			Assert(dtm->status == MTM_ONLINE);
 			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[dtm->status]);
 		}
 		x->containsDML = false;
@@ -1765,7 +1766,7 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 				int size;
 				void* data = PaxosGet(psprintf("lock-graph-%d", i+1), &size, NULL, true);
 				if (data == NULL) { 
-					hasDeadlock = true; /* Just temporary hack until no Paxos */
+					return true; /* Just temporary hack until no Paxos */
 				} else { 
 					MtmGraphAdd(&graph, (GlobalTransactionId*)data, size/sizeof(GlobalTransactionId));
 				}
