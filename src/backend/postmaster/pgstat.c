@@ -48,12 +48,12 @@
 #include "postmaster/autovacuum.h"
 #include "postmaster/fork_process.h"
 #include "postmaster/postmaster.h"
-#include "storage/proc.h"
 #include "storage/backendid.h"
 #include "storage/dsm.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
+#include "storage/lmgr.h"
 #include "storage/pg_shmem.h"
 #include "storage/procsignal.h"
 #include "storage/sinvaladt.h"
@@ -2723,7 +2723,6 @@ pgstat_bestart(void)
 #else
 	beentry->st_ssl = false;
 #endif
-	beentry->st_waiting = false;
 	beentry->st_state = STATE_UNDEFINED;
 	beentry->st_appname[0] = '\0';
 	beentry->st_activity[0] = '\0';
@@ -2731,6 +2730,13 @@ pgstat_bestart(void)
 	beentry->st_clienthostname[NAMEDATALEN - 1] = '\0';
 	beentry->st_appname[NAMEDATALEN - 1] = '\0';
 	beentry->st_activity[pgstat_track_activity_query_size - 1] = '\0';
+	beentry->st_progress_command = PROGRESS_COMMAND_INVALID;
+	beentry->st_progress_command_target = InvalidOid;
+	/*
+	 * we don't zero st_progress_param here to save cycles; nobody should
+	 * examine it until st_progress_command has been set to something other
+	 * than PROGRESS_COMMAND_INVALID
+	 */
 
 	pgstat_increment_changecount_after(beentry);
 
@@ -2803,6 +2809,8 @@ pgstat_report_activity(BackendState state, const char *cmd_str)
 	{
 		if (beentry->st_state != STATE_DISABLED)
 		{
+			volatile PGPROC *proc = MyProc;
+
 			/*
 			 * track_activities is disabled, but we last reported a
 			 * non-disabled state.  As our final update, change the state and
@@ -2813,9 +2821,9 @@ pgstat_report_activity(BackendState state, const char *cmd_str)
 			beentry->st_state_start_timestamp = 0;
 			beentry->st_activity[0] = '\0';
 			beentry->st_activity_start_timestamp = 0;
-			/* st_xact_start_timestamp and st_waiting are also disabled */
+			/* st_xact_start_timestamp and wait_event_info are also disabled */
 			beentry->st_xact_start_timestamp = 0;
-			beentry->st_waiting = false;
+			proc->wait_event_info = 0;
 			pgstat_increment_changecount_after(beentry);
 		}
 		return;
@@ -2848,6 +2856,73 @@ pgstat_report_activity(BackendState state, const char *cmd_str)
 		beentry->st_activity_start_timestamp = start_timestamp;
 	}
 
+	pgstat_increment_changecount_after(beentry);
+}
+
+/*-----------
+ * pgstat_progress_start_command() -
+ *
+ * Set st_progress_command (and st_progress_command_target) in own backend
+ * entry.  Also, zero-initialize st_progress_param array.
+ *-----------
+ */
+void
+pgstat_progress_start_command(ProgressCommandType cmdtype, Oid relid)
+{
+	volatile PgBackendStatus *beentry = MyBEEntry;
+
+	if (!beentry || !pgstat_track_activities)
+		return;
+
+	pgstat_increment_changecount_before(beentry);
+	beentry->st_progress_command = cmdtype;
+	beentry->st_progress_command_target = relid;
+	MemSet(&beentry->st_progress_param, 0, sizeof(beentry->st_progress_param));
+	pgstat_increment_changecount_after(beentry);
+}
+
+/*-----------
+ * pgstat_progress_update_param() -
+ *
+ * Update index'th member in st_progress_param[] of own backend entry.
+ *-----------
+ */
+void
+pgstat_progress_update_param(int index, int64 val)
+{
+	volatile PgBackendStatus *beentry = MyBEEntry;
+
+	Assert(index >= 0 && index < PGSTAT_NUM_PROGRESS_PARAM);
+
+	if (!beentry || !pgstat_track_activities)
+		return;
+
+	pgstat_increment_changecount_before(beentry);
+	beentry->st_progress_param[index] = val;
+	pgstat_increment_changecount_after(beentry);
+}
+
+/*-----------
+ * pgstat_progress_end_command() -
+ *
+ * Reset st_progress_command (and st_progress_command_target) in own backend
+ * entry.  This signals the end of the command.
+ *-----------
+ */
+void
+pgstat_progress_end_command(void)
+{
+	volatile PgBackendStatus *beentry = MyBEEntry;
+
+	if (!beentry)
+		return;
+	if (!pgstat_track_activities
+		&& beentry->st_progress_command == PROGRESS_COMMAND_INVALID)
+		return;
+
+	pgstat_increment_changecount_before(beentry);
+	beentry->st_progress_command = PROGRESS_COMMAND_INVALID;
+	beentry->st_progress_command_target = InvalidOid;
 	pgstat_increment_changecount_after(beentry);
 }
 
@@ -2903,32 +2978,6 @@ pgstat_report_xact_timestamp(TimestampTz tstamp)
 	beentry->st_xact_start_timestamp = tstamp;
 	pgstat_increment_changecount_after(beentry);
 }
-
-/* ----------
- * pgstat_report_waiting() -
- *
- *	Called from lock manager to report beginning or end of a lock wait.
- *
- * NB: this *must* be able to survive being called before MyBEEntry has been
- * initialized.
- * ----------
- */
-void
-pgstat_report_waiting(bool waiting)
-{
-	volatile PgBackendStatus *beentry = MyBEEntry;
-
-	if (!pgstat_track_activities || !beentry)
-		return;
-
-	/*
-	 * Since this is a single-byte field in a struct that only this process
-	 * may modify, there seems no need to bother with the st_changecount
-	 * protocol.  The update must appear atomic in any case.
-	 */
-	beentry->st_waiting = waiting;
-}
-
 
 /* ----------
  * pgstat_read_current_status() -
@@ -3045,6 +3094,87 @@ pgstat_read_current_status(void)
 	localBackendStatusTable = localtable;
 }
 
+/* ----------
+ * pgstat_get_wait_event_type() -
+ *
+ *	Return a string representing the current wait event type, backend is
+ *	waiting on.
+ */
+const char *
+pgstat_get_wait_event_type(uint32 wait_event_info)
+{
+	uint8		classId;
+	const char *event_type;
+
+	/* report process as not waiting. */
+	if (wait_event_info == 0)
+		return NULL;
+
+	wait_event_info = wait_event_info >> 24;
+	classId = wait_event_info & 0XFF;
+
+	switch (classId)
+	{
+		case WAIT_LWLOCK_NAMED:
+			event_type = "LWLockNamed";
+			break;
+		case WAIT_LWLOCK_TRANCHE:
+			event_type = "LWLockTranche";
+			break;
+		case WAIT_LOCK:
+			event_type = "Lock";
+			break;
+		case WAIT_BUFFER_PIN:
+			event_type = "BufferPin";
+			break;
+		default:
+			event_type = "???";
+			break;
+	}
+
+	return event_type;
+}
+
+/* ----------
+ * pgstat_get_wait_event() -
+ *
+ *	Return a string representing the current wait event, backend is
+ *	waiting on.
+ */
+const char *
+pgstat_get_wait_event(uint32 wait_event_info)
+{
+	uint8		classId;
+	uint16		eventId;
+	const char *event_name;
+
+	/* report process as not waiting. */
+	if (wait_event_info == 0)
+		return NULL;
+
+	eventId = wait_event_info & ((1 << 24) - 1);
+	wait_event_info = wait_event_info >> 24;
+	classId = wait_event_info & 0XFF;
+
+	switch (classId)
+	{
+		case WAIT_LWLOCK_NAMED:
+		case WAIT_LWLOCK_TRANCHE:
+			event_name = GetLWLockIdentifier(classId, eventId);
+			break;
+		case WAIT_LOCK:
+			event_name = GetLockNameFromTagType(eventId);
+			break;
+		case WAIT_BUFFER_PIN:
+			event_name = "BufferPin";
+			break;
+		default:
+			event_name = "unknown wait event";
+			break;
+	}
+
+	return event_name;
+}
 
 /* ----------
  * pgstat_get_backend_current_activity() -

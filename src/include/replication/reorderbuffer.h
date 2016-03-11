@@ -10,6 +10,7 @@
 #define REORDERBUFFER_H
 
 #include "access/htup_details.h"
+#include "access/twophase.h"
 #include "lib/ilist.h"
 #include "storage/sinval.h"
 #include "utils/hsearch.h"
@@ -23,15 +24,18 @@ typedef struct ReorderBufferTupleBuf
 	/* position in preallocated list */
 	slist_node	node;
 
-	/* tuple, stored sequentially */
+	/* tuple header, the interesting bit for users of logical decoding */
 	HeapTupleData tuple;
-	union
-	{
-		HeapTupleHeaderData header;
-		char		data[MaxHeapTupleSize];
-		double		align_it;	/* ensure t_data is MAXALIGN'd */
-	}			t_data;
+
+	/* pre-allocated size of tuple buffer, different from tuple size */
+	Size	alloc_tuple_size;
+
+	/* actual tuple data follows */
 } ReorderBufferTupleBuf;
+
+/* pointer to the data stored in a TupleBuf */
+#define ReorderBufferTupleBufData(p) \
+	((HeapTupleHeader) MAXALIGN(((char *) p) + sizeof(ReorderBufferTupleBuf)))
 
 /*
  * Types of the change passed to a 'change' callback.
@@ -75,8 +79,8 @@ typedef struct ReorderBufferChange
 	RepOriginId origin_id;
 
 	/*
-	 * Context data for the change, which part of the union is valid depends
-	 * on action/action_internal.
+	 * Context data for the change. Which part of the union is valid depends
+	 * on action.
 	 */
 	union
 	{
@@ -131,6 +135,14 @@ typedef struct ReorderBufferTXN
 	 * The transactions transaction id, can be a toplevel or sub xid.
 	 */
 	TransactionId xid;
+
+	/*
+	 * Commit callback is used for COMMIT/PREPARE/COMMMIT PREPARED,
+	 * as well as abort for ROLLBACK and ROLLBACK PREPARED. Here
+	 * stored actual xact action allowing decoding plugin to distinguish them.
+	 */
+	uint8		xact_action;
+	char		gid[GIDSIZE];
 
 	/* did the TX have catalog changes */
 	bool		has_catalog_changes;
@@ -242,7 +254,7 @@ typedef struct ReorderBufferTXN
 	/* ---
 	 * Position in one of three lists:
 	 * * list of subtransactions if we are *known* to be subxact
-	 * * list of toplevel xacts (can be am as-yet unknown subxact)
+	 * * list of toplevel xacts (can be an as-yet unknown subxact)
 	 * * list of preallocated ReorderBufferTXNs
 	 * ---
 	 */
@@ -278,9 +290,13 @@ struct ReorderBuffer
 	 */
 	HTAB	   *by_txn;
 
+	/* For twophase tx support we need to pass XACT action to ReorderBufferTXN */
+	uint8		xact_action;
+	char		gid[GIDSIZE];
+
 	/*
 	 * Transactions that could be a toplevel xact, ordered by LSN of the first
-	 * record bearing that xid..
+	 * record bearing that xid.
 	 */
 	dlist_head	toplevel_by_lsn;
 
@@ -292,7 +308,7 @@ struct ReorderBuffer
 	ReorderBufferTXN *by_txn_last_txn;
 
 	/*
-	 * Callacks to be called when a transactions commits.
+	 * Callbacks to be called when a transactions commits.
 	 */
 	ReorderBufferBeginCB begin;
 	ReorderBufferApplyChangeCB apply_change;
@@ -315,7 +331,7 @@ struct ReorderBuffer
 	 * overhead we cache some unused ones here.
 	 *
 	 * The maximum number of cached entries is controlled by const variables
-	 * ontop of reorderbuffer.c
+	 * on top of reorderbuffer.c
 	 */
 
 	/* cached ReorderBufferTXNs */
@@ -341,7 +357,7 @@ struct ReorderBuffer
 ReorderBuffer *ReorderBufferAllocate(void);
 void		ReorderBufferFree(ReorderBuffer *);
 
-ReorderBufferTupleBuf *ReorderBufferGetTupleBuf(ReorderBuffer *);
+ReorderBufferTupleBuf *ReorderBufferGetTupleBuf(ReorderBuffer *, Size tuple_len);
 void		ReorderBufferReturnTupleBuf(ReorderBuffer *, ReorderBufferTupleBuf *tuple);
 ReorderBufferChange *ReorderBufferGetChange(ReorderBuffer *);
 void		ReorderBufferReturnChange(ReorderBuffer *, ReorderBufferChange *);
@@ -350,6 +366,10 @@ void		ReorderBufferQueueChange(ReorderBuffer *, TransactionId, XLogRecPtr lsn, R
 void ReorderBufferCommit(ReorderBuffer *, TransactionId,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 	  TimestampTz commit_time, RepOriginId origin_id, XLogRecPtr origin_lsn);
+void ReorderBufferCommitBareXact(ReorderBuffer *rb, TransactionId xid,
+					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
+					TimestampTz commit_time,
+					RepOriginId origin_id, XLogRecPtr origin_lsn);
 void		ReorderBufferAssignChild(ReorderBuffer *, TransactionId, TransactionId, XLogRecPtr commit_lsn);
 void ReorderBufferCommitChild(ReorderBuffer *, TransactionId, TransactionId,
 						 XLogRecPtr commit_lsn, XLogRecPtr end_lsn);
@@ -366,7 +386,7 @@ void ReorderBufferAddNewTupleCids(ReorderBuffer *, TransactionId, XLogRecPtr lsn
 						 CommandId cmin, CommandId cmax, CommandId combocid);
 void ReorderBufferAddInvalidations(ReorderBuffer *, TransactionId, XLogRecPtr lsn,
 							  Size nmsgs, SharedInvalidationMessage *msgs);
-bool		ReorderBufferIsXidKnown(ReorderBuffer *, TransactionId xid);
+void		ReorderBufferProcessXid(ReorderBuffer *, TransactionId xid, XLogRecPtr lsn);
 void		ReorderBufferXidSetCatalogChanges(ReorderBuffer *, TransactionId xid, XLogRecPtr lsn);
 bool		ReorderBufferXidHasCatalogChanges(ReorderBuffer *, TransactionId xid);
 bool		ReorderBufferXidHasBaseSnapshot(ReorderBuffer *, TransactionId xid);

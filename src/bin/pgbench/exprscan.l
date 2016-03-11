@@ -35,6 +35,9 @@ static int expr_col = 0;
 %option warn
 %option prefix="expr_yy"
 
+alpha			[a-zA-Z_]
+digit			[0-9]
+alnum			[a-zA-Z0-9_]
 space			[ \t\r\f]
 
 %%
@@ -46,19 +49,26 @@ space			[ \t\r\f]
 "%"				{ yycol += yyleng; return '%'; }
 "("				{ yycol += yyleng; return '('; }
 ")"				{ yycol += yyleng; return ')'; }
+","				{ yycol += yyleng; return ','; }
 
-:[a-zA-Z0-9_]+	{
+:{alnum}+		{
 					yycol += yyleng;
 					yylval.str = pg_strdup(yytext + 1);
 					return VARIABLE;
 				}
-[0-9]+			{
+{digit}+		{
 					yycol += yyleng;
 					yylval.ival = strtoint64(yytext);
 					return INTEGER;
 				}
+{alpha}{alnum}*	{
+					yycol += yyleng;
+					yylval.str = pg_strdup(yytext);
+					return FUNCTION;
+				}
 
 [\n]			{ yycol = 0; yyline++; }
+
 {space}+		{ yycol += yyleng; /* ignore */ }
 
 .				{
@@ -71,10 +81,16 @@ space			[ \t\r\f]
 %%
 
 void
-yyerror(const char *message)
+expr_yyerror_more(const char *message, const char *more)
 {
 	syntax_error(expr_source, expr_lineno, expr_full_line, expr_command,
-				 message, NULL, expr_col + yycol);
+				 message, more, expr_col + yycol);
+}
+
+void
+yyerror(const char *message)
+{
+	expr_yyerror_more(message, NULL);
 }
 
 /*
@@ -93,6 +109,9 @@ expr_scanner_init(const char *str, const char *source,
 	expr_full_line = (char *) line;
 	expr_command = (char *) cmd;
 	expr_col = (int) ecol;
+
+	/* reset error pointers for this scan */
+	yycol = yyline = 0;
 
 	/*
 	 * Might be left over after error

@@ -142,11 +142,19 @@ struct PGPROC
 	struct XidCache subxids;	/* cache for subtransaction XIDs */
 
 	/* Support for group XID clearing. */
-	bool			clearXid;
-	pg_atomic_uint32	nextClearXidElem;
-	TransactionId	backendLatestXid;
+	/* true, if member of ProcArray group waiting for XID clear */
+	bool			procArrayGroupMember;
+	/* next ProcArray group member waiting for XID clear */
+	pg_atomic_uint32	procArrayGroupNext;
+	/*
+	 * latest transaction id among the transaction's main XID and
+	 * subtransactions
+	 */
+	TransactionId	procArrayGroupMemberXid;
 
-	/* Per-backend LWLock.  Protects fields below. */
+	uint32          wait_event_info;        /* proc's wait information */
+
+	/* Per-backend LWLock.  Protects fields below (but not group fields). */
 	LWLock		backendLock;
 
 	/* Lock manager data, recording fast-path locks taken by this backend. */
@@ -157,11 +165,10 @@ struct PGPROC
 												 * lock */
 
 	/*
-	 * Support for lock groups.  Use LockHashPartitionLockByProc to get the
-	 * LWLock protecting these fields.
+	 * Support for lock groups.  Use LockHashPartitionLockByProc on the group
+	 * leader to get the LWLock protecting these fields.
 	 */
-	int			lockGroupLeaderIdentifier;	/* MyProcPid, if I'm a leader */
-	PGPROC	   *lockGroupLeader;	/* lock group leader, if I'm a follower */
+	PGPROC	   *lockGroupLeader;	/* lock group leader, if I'm a member */
 	dlist_head	lockGroupMembers;	/* list of members, if I'm a leader */
 	dlist_node  lockGroupLink;		/* my member link, if I'm a member */
 };
@@ -217,7 +224,7 @@ typedef struct PROC_HDR
 	/* Head of list of bgworker free PGPROC structures */
 	PGPROC	   *bgworkerFreeProcs;
 	/* First pgproc waiting for group XID clear */
-	pg_atomic_uint32 firstClearXidElem;
+	pg_atomic_uint32 procArrayGroupFirst;
 	/* WALWriter process's latch */
 	Latch	   *walwriterLatch;
 	/* Checkpointer process's latch */

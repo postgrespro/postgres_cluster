@@ -178,7 +178,9 @@ GetForeignPlan (PlannerInfo *root,
      the selected <structname>ForeignPath</> (previously produced by
      <function>GetForeignPaths</> or <function>GetForeignJoinPaths</>),
      the target list to be emitted by the plan node,
-     and the restriction clauses to be enforced by the plan node.
+     the restriction clauses to be enforced by the plan node,
+     and the outer subplan of the <structname>ForeignScan</>,
+     which is used for rechecks performed by <function>RecheckForeignScan</>.
      (If the path is for a join rather than a base
      relation, <literal>foreigntableid</> is <literal>InvalidOid</>.)
     </para>
@@ -340,21 +342,6 @@ GetForeignJoinPaths (PlannerInfo *root,
     <para>
      See <xref linkend="fdw-planning"> for additional information.
     </para>
-
-    <para>
-<programlisting>
-void
-GetExistingLocalJoinPath(RelOptInfo *joinrel)
-</programlisting>
-     The function returns copy of a local join path, which can be converted
-     into an alternative local join plan, which may be useful when
-     implementing a <literal>RecheckForeignScan</> method.  The function
-     searches for an unparameterized path in the <literal>pathlist</> of given
-     <literal>joinrel</>. If it does not find such a path, it returns NULL, in
-     which case a foreign data wrapper may build the local path by itself or
-     may choose not to create access paths for that join.
-    </para>
-
    </sect2>
 
    <sect2 id="fdw-callbacks-update">
@@ -808,9 +795,13 @@ RecheckForeignScan (ForeignScanState *node, TupleTableSlot *slot);
      can be executed and the resulting tuple can be stored in the slot.
      This plan need not be efficient since no base table will return more
      than one row; for example, it may implement all joins as nested loops.
-     <literal>GetExistingLocalJoinPath</> may be used to search existing paths
-     for a suitable local join path, which can be used as the alternative
-     local join plan.
+     The function <literal>GetExistingLocalJoinPath</> may be used to search
+     existing paths for a suitable local join path, which can be used as the
+     alternative local join plan.  <literal>GetExistingLocalJoinPath</>
+     searches for an unparameterized path in the path list of the specified
+     join relation.  (If it does not find such a path, it returns NULL, in
+     which case a foreign data wrapper may build the local path by itself or
+     may choose not to create access paths for that join.)
     </para>
    </sect2>
 
@@ -988,6 +979,29 @@ ImportForeignSchema (ImportForeignSchemaStmt *stmt, Oid serverOid);
     <para>
 <programlisting>
 Size
+IsForeignScanParallelSafe(PlannerInfo *root, RelOptInfo *rel,
+                          RangeTblEntry *rte);
+</programlisting>
+    Test whether a scan can be performed within a parallel worker.  This
+    function will only be called when the planner believes that a parallel
+    plan might be possible, and should return true if it is safe for that scan
+    to run within a parallel worker.  This will generally not be the case if
+    the remote data source has transaction semantics, unless the worker's
+    connection to the data can somehow be made to share the same transaction
+    context as the leader.
+    </para>
+
+    <para>
+    If this callback is not defined, it is assumed that the scan must take
+    place within the parallel leader.  Note that returning true does not mean
+    that the scan itself can be done in parallel, only that the scan can be
+    performed within a parallel worker.  Therefore, it can be useful to define
+    this method even when parallel execution is not supported.
+    </para>
+
+    <para>
+<programlisting>
+Size
 EstimateDSMForeignScan(ForeignScanState *node, ParallelContext *pcxt);
 </programlisting>
     Estimate the amount of dynamic shared memory that will be required
@@ -1159,7 +1173,7 @@ GetForeignServerByName(const char *name, bool missing_ok);
      it contains restriction quals (<literal>WHERE</> clauses) that should be
      used to filter the rows to be fetched.  (The FDW itself is not required
      to enforce these quals, as the core executor can check them instead.)
-     <literal>baserel-&gt;reltargetlist</> can be used to determine which
+     <literal>baserel-&gt;reltarget.exprs</> can be used to determine which
      columns need to be fetched; but note that it only lists columns that
      have to be emitted by the <structname>ForeignScan</> plan node, not
      columns that are used in qual evaluation but not output by the query.
@@ -1302,6 +1316,40 @@ GetForeignServerByName(const char *name, bool missing_ok);
      relations; instead, the relevant join clauses for a particular join are
      passed to <function>GetForeignJoinPaths</> as a separate parameter
      (<literal>extra-&gt;restrictlist</>).
+    </para>
+
+    <para>
+     An FDW might additionally support direct execution of some plan actions
+     that are above the level of scans and joins, such as grouping or
+     aggregation.  To offer such options, the FDW should generate paths
+     (probably ForeignPaths or CustomPaths) and insert them into the
+     appropriate <firstterm>upper relation</>.  For example, a path
+     representing remote aggregation should be inserted into the relation
+     obtained from <literal>fetch_upper_rel(root, UPPERREL_GROUP_AGG,
+     NULL)</>, using <function>add_path</>.  This path will be compared on a
+     cost basis with local aggregation performed by reading a simple scan path
+     for the foreign relation (note that such a path must also be supplied,
+     else there will be an error at plan time).  If the remote-aggregation
+     path wins, which it usually would, it will be converted into a plan in
+     the usual way, by calling <function>GetForeignPlan</>.
+    </para>
+
+    <para>
+     <function>PlanForeignModify</> and the other callbacks described in
+     <xref linkend="fdw-callbacks-update"> are designed around the assumption
+     that the foreign relation will be scanned in the usual way and then
+     individual row updates will be driven by a local <literal>ModifyTable</>
+     plan node.  This approach is necessary for the general case where an
+     update requires reading local tables as well as foreign tables.
+     However, if the operation could be executed entirely by the foreign
+     server, the FDW could generate a path representing that and insert it
+     into the <literal>UPPERREL_FINAL</> upper relation, where it would
+     compete against the <literal>ModifyTable</> approach.  This approach
+     could also be used to implement remote <literal>SELECT FOR UPDATE</>,
+     rather than using the row locking callbacks described in
+     <xref linkend="fdw-callbacks-row-locking">.  Keep in mind that a path
+     inserted into <literal>UPPERREL_FINAL</> is responsible for
+     implementing <emphasis>all</> behavior of the query.
     </para>
 
     <para>
