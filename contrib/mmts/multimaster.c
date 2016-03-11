@@ -881,7 +881,7 @@ _PG_init(void)
 		"Use two phase commit",
 		"Replace normal commit with two phase commit",
 		&MtmUse2PC,
-		false,
+		true,
 		PGC_BACKEND,
 		0,
 		NULL,
