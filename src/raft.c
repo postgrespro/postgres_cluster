@@ -50,6 +50,8 @@ typedef struct raft_peer_t {
 	char *host;
 	int port;
 	struct sockaddr_in addr;
+
+	int silent_ms; // how long was this peer silent
 } raft_peer_t;
 
 typedef struct raft_data_t {
@@ -178,6 +180,7 @@ static void raft_peer_init(raft_peer_t *p) {
 
 	p->host = DEFAULT_LISTENHOST;
 	p->port = DEFAULT_LISTENPORT;
+	p->silent_ms = 0;
 }
 
 static void raft_entry_init(raft_entry_t *e) {
@@ -549,6 +552,22 @@ static void raft_refresh_acked(raft_t r) {
 	}
 }
 
+static int raft_increase_silent_time(raft_t r, int ms) {
+	int recent_peers = 1; // count myself as recent
+
+	for (int i = 0; i < r->config.peernum_max; i++) {
+		if (!r->peers[i].up) continue;
+		if (i == r->me) continue;
+
+		r->peers[i].silent_ms += ms;
+		if (r->peers[i].silent_ms < r->config.election_ms_max) {
+			recent_peers++;
+		}
+	}
+
+	return recent_peers;
+}
+
 void raft_tick(raft_t r, int msec) {
 	r->timer -= msec;
 	if (r->timer < 0) {
@@ -578,6 +597,13 @@ void raft_tick(raft_t r, int msec) {
 		raft_reset_timer(r);
 	}
 	raft_refresh_acked(r);
+
+	int recent_peers = raft_increase_silent_time(r, msec);
+	if ((r->role == LEADER) && (recent_peers * 2 <= r->peernum)) {
+		shout("lost quorum, demoting\n");
+		r->leader = NOBODY;
+		r->role = FOLLOWER;
+	}
 }
 
 static int raft_compact(raft_t raft) {
@@ -757,6 +783,7 @@ static void raft_handle_update(raft_t r, raft_msg_update_t *m) {
 		r->leader = sender;
 	}
 
+	r->peers[sender].silent_ms = 0;
 	raft_reset_timer(r);
 
 	if (m->acked > r->log.acked) {
@@ -768,38 +795,37 @@ static void raft_handle_update(raft_t r, raft_msg_update_t *m) {
 		p->acked.entries = r->log.acked;
 	}
 
-	if (m->empty) {
-		// just a heartbeat
-		return;
-	}
+	if (!m->empty) {
+		if (m->offset > e->bytes) {
+			shout("unexpectedly large offset %d for a chunk, ignoring to avoid gaps\n", m->offset);
+			goto finish;
+		}
 
-	if (m->offset > e->bytes) {
-		shout("unexpectedly large offset %d for a chunk, ignoring to avoid gaps\n", m->offset);
-		goto finish;
-	}
+		u->len = m->totallen;
+		u->data = realloc(u->data, m->totallen);
 
-	u->len = m->totallen;
-	u->data = realloc(u->data, m->totallen);
+		memcpy(u->data + m->offset, m->data, m->len);
+		e->term = m->term;
+		e->bytes = m->offset + m->len;
+		assert(e->bytes <= u->len);
 
-	memcpy(u->data + m->offset, m->data, m->len);
-	e->term = m->term;
-	e->bytes = m->offset + m->len;
-	assert(e->bytes <= u->len);
+		e->snapshot = m->snapshot;
 
-	e->snapshot = m->snapshot;
-
-	if (e->bytes == u->len) {
-		if (m->snapshot) {
-			if (!raft_restore(r, m->previndex, e)) {
-				shout("restore from snapshot failed\n");
-				goto finish;
-			}
-		} else {
-			if (!raft_append(r, m->previndex, m->prevterm, e)) {
-				debug("log_append failed\n");
-				goto finish;
+		if (e->bytes == u->len) {
+			if (m->snapshot) {
+				if (!raft_restore(r, m->previndex, e)) {
+					shout("restore from snapshot failed\n");
+					goto finish;
+				}
+			} else {
+				if (!raft_append(r, m->previndex, m->prevterm, e)) {
+					debug("log_append failed\n");
+					goto finish;
+				}
 			}
 		}
+	} else {
+		// just a heartbeat
 	}
 
 	reply.progress.entries = RAFT_LOG_LAST_INDEX(r) + 1;
@@ -839,6 +865,7 @@ static void raft_handle_done(raft_t r, raft_msg_done_t *m) {
 	if (m->success) {
 		debug("[from %d] ============= done\n", sender);
 		peer->acked = m->progress;
+		peer->silent_ms = 0;
 	} else {
 		debug("[from %d] ============= refused\n", sender);
 		if (peer->acked.entries > 0) {
@@ -872,7 +899,7 @@ static void raft_handle_claim(raft_t r, raft_msg_claim_t *m) {
 
 	if (m->msg.term >= r->term) {
 		if (r->role != FOLLOWER) {
-			shout("demoting myself\n");
+			shout("There is another candidate, demoting myself\n");
 		}
 		if (m->msg.term > r->term) {
 			raft_set_term(r, m->term);
@@ -913,6 +940,14 @@ static void raft_reset_bytes_acked(raft_t r) {
 	}
 }
 
+static void raft_reset_silent_time(raft_t r, int id) {
+	for (int i = 0; i < r->config.peernum_max; i++) {
+		if ((i == id) || (id == NOBODY)) {
+			r->peers[i].silent_ms = 0;
+		}
+	}
+}
+
 static void raft_handle_vote(raft_t r, raft_msg_vote_t *m) {
 	int sender = m->msg.from;
 	raft_peer_t *peer = r->peers + sender;
@@ -931,6 +966,7 @@ static void raft_handle_vote(raft_t r, raft_msg_vote_t *m) {
 		r->role = LEADER;
 		r->leader = r->me;
 		raft_reset_bytes_acked(r);
+		raft_reset_silent_time(r, NOBODY);
 		raft_reset_timer(r);
 	}
 }
@@ -938,7 +974,7 @@ static void raft_handle_vote(raft_t r, raft_msg_vote_t *m) {
 void raft_handle_message(raft_t r, raft_msg_t m) {
 	if (m->term > r->term) {
 		if (r->role != FOLLOWER) {
-			shout("demoting myself\n");
+			shout("I have an old term, demoting myself\n");
 		}
 		raft_set_term(r, m->term);
 		r->role = FOLLOWER;
