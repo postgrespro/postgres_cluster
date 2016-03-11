@@ -127,9 +127,37 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 					   ReorderBufferTXN *txn, XLogRecPtr commit_lsn)
 {
     PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
-    if (!mm->isLocal) { 
-        pq_sendbyte(out, 'C');		/* sending COMMIT */
-    }
+    uint8 flags = 0;
+
+    if (mm->isLocal)
+    	return;
+
+    pq_sendbyte(out, 'C');		/* sending COMMIT */
+
+    if (txn->xact_action == XLOG_XACT_COMMIT)
+    	flags = PGLOGICAL_COMMIT;
+    else if (txn->xact_action == XLOG_XACT_PREPARE)
+    	flags = PGLOGICAL_PREPARE;
+    else if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED)
+    	flags = PGLOGICAL_COMMIT_PREPARED;
+    else if (txn->xact_action == XLOG_XACT_ABORT_PREPARED)
+    	flags = PGLOGICAL_ABORT_PREPARED;
+    else
+    	Assert(false);
+
+    /* send the flags field */
+    pq_sendbyte(out, flags);
+
+    /* send fixed fields */
+    pq_sendint64(out, commit_lsn);
+    pq_sendint64(out, txn->end_lsn);
+    pq_sendint64(out, txn->commit_time);
+
+    if (txn->xact_action == XLOG_XACT_PREPARE ||
+    		txn->xact_action == XLOG_XACT_COMMIT_PREPARED ||
+    		txn->xact_action == XLOG_XACT_ABORT_PREPARED)
+    	pq_sendstring(out, txn->gid);
+
 }
 
 /*
