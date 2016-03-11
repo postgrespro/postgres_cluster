@@ -466,9 +466,6 @@ read_rel(StringInfo s, LOCKMODE mode)
 static void
 process_remote_commit(StringInfo in)
 {
-	XLogRecPtr		commit_lsn;
-	XLogRecPtr		end_lsn;
-	TimestampTz		commit_time;
 	uint8 			flags;
 	const char	   *gid;
 
@@ -476,9 +473,9 @@ process_remote_commit(StringInfo in)
 	flags = pq_getmsgbyte(in);
 
 	/* read fields */
-	commit_lsn = pq_getmsgint64(in);
-	end_lsn = pq_getmsgint64(in);
-	commit_time = pq_getmsgint64(in);
+	pq_getmsgint64(in); /* commit_lsn */
+	pq_getmsgint64(in); /* end_lsn */
+	pq_getmsgint64(in); /* commit_time */
 
 	if (PGLOGICAL_XACT_EVENT(flags) != PGLOGICAL_COMMIT)
 		gid = pq_getmsgstring(in);
