@@ -29,6 +29,13 @@
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
 
+#define PGLOGICAL_COMMIT			0x00
+#define PGLOGICAL_PREPARE			0x01
+#define PGLOGICAL_COMMIT_PREPARED	0x02
+#define PGLOGICAL_ABORT_PREPARED	0x03
+
+#define PGLOGICAL_XACT_EVENT(flags)	(flags & 0x03)
+
 typedef uint64 timestamp_t;
 
 /* Identifier of global transaction */
