@@ -579,7 +579,7 @@ MtmCheckClusterLock()
 			} else {  
 				/* All lockers are synchronized their logs */
 				/* Remove lock and mark them as receovered */
-				elog(WARNING, "Complete recovery of %d nodes (node mask %lx)", dtm->nLockers, dtm->nodeLockerMask);
+				elog(WARNING, "Complete recovery of %d nodes (node mask %llx)", dtm->nLockers, dtm->nodeLockerMask);
 				Assert(dtm->walSenderLockerMask == 0);
 				Assert((dtm->nodeLockerMask & dtm->disabledNodeMask) == dtm->nodeLockerMask);
 				dtm->disabledNodeMask &= ~dtm->nodeLockerMask;
@@ -1814,7 +1814,7 @@ void MtmRefreshClusterStatus(bool nowait)
 
 	clique = MtmFindMaxClique(matrix, MtmNodes, &clique_size);
 	if (clique_size >= MtmNodes/2+1) { /* have quorum */
-		elog(WARNING, "Find clique %lx, disabledNodeMask %lx", clique, dtm->disabledNodeMask);
+		elog(WARNING, "Find clique %llx, disabledNodeMask %llx", clique, dtm->disabledNodeMask);
 		MtmLock(LW_EXCLUSIVE);
 		mask = ~clique & (((nodemask_t)1 << MtmNodes)-1) & ~dtm->disabledNodeMask; /* new disabled nodes mask */
 		for (i = 0; mask != 0; i++, mask >>= 1) {
@@ -1841,7 +1841,7 @@ void MtmRefreshClusterStatus(bool nowait)
 			MtmSwitchClusterMode(MTM_RECOVERY);
 		}
 	} else { 
-		elog(WARNING, "Clique %lx has no quorum", clique);
+		elog(WARNING, "Clique %llx has no quorum", clique);
 	}
 }
 
