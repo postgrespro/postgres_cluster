@@ -150,6 +150,7 @@ int main(int argc, char **argv) {
 	rc.log_len = 10;
 	rc.chunk_len = 4;
 	rc.msg_len_max = 500;
+	rc.userdata = state;
 	rc.applier = applier;
 	rc.snapshooter = snapshooter;
 	raft = raft_init(&rc);
