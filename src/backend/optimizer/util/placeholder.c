@@ -220,7 +220,8 @@ find_placeholders_in_expr(PlannerInfo *root, Node *expr)
 	 * convenient to use.
 	 */
 	vars = pull_var_clause(expr,
-						   PVC_RECURSE_AGGREGATES,
+						   PVC_RECURSE_AGGREGATES |
+						   PVC_RECURSE_WINDOWFUNCS |
 						   PVC_INCLUDE_PLACEHOLDERS);
 	foreach(vl, vars)
 	{
@@ -354,7 +355,8 @@ fix_placeholder_input_needed_levels(PlannerInfo *root)
 	{
 		PlaceHolderInfo *phinfo = (PlaceHolderInfo *) lfirst(lc);
 		List	   *vars = pull_var_clause((Node *) phinfo->ph_var->phexpr,
-										   PVC_RECURSE_AGGREGATES,
+										   PVC_RECURSE_AGGREGATES |
+										   PVC_RECURSE_WINDOWFUNCS |
 										   PVC_INCLUDE_PLACEHOLDERS);
 
 		add_vars_to_targetlist(root, vars, phinfo->ph_eval_at, false);

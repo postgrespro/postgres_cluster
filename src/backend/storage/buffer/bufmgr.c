@@ -37,6 +37,7 @@
 #include "catalog/catalog.h"
 #include "catalog/storage.h"
 #include "executor/instrument.h"
+#include "lib/binaryheap.h"
 #include "miscadmin.h"
 #include "pg_trace.h"
 #include "pgstat.h"
@@ -75,12 +76,48 @@ typedef struct PrivateRefCountEntry
 /* 64 bytes, about the size of a cache line on common systems */
 #define REFCOUNT_ARRAY_ENTRIES 8
 
+/*
+ * Status of buffers to checkpoint for a particular tablespace, used
+ * internally in BufferSync.
+ */
+typedef struct CkptTsStatus
+{
+	/* oid of the tablespace */
+	Oid			tsId;
+
+	/*
+	 * Checkpoint progress for this tablespace. To make progress comparable
+	 * between tablespaces the progress is, for each tablespace, measured as a
+	 * number between 0 and the total number of to-be-checkpointed pages. Each
+	 * page checkpointed in this tablespace increments this space's progress
+	 * by progress_slice.
+	 */
+	float8		progress;
+	float8		progress_slice;
+
+	/* number of to-be checkpointed pages in this tablespace */
+	int			num_to_scan;
+	/* already processed pages in this tablespace */
+	int			num_scanned;
+
+	/* current offset in CkptBufferIds for this tablespace */
+	int			index;
+} CkptTsStatus;
+
 /* GUC variables */
 bool		zero_damaged_pages = false;
 int			bgwriter_lru_maxpages = 100;
 double		bgwriter_lru_multiplier = 2.0;
 bool		track_io_timing = false;
 int			effective_io_concurrency = 0;
+
+/*
+ * GUC variables about triggering kernel writeback for buffers written; OS
+ * dependant defaults are set via the GUC mechanism.
+ */
+int			checkpoint_flush_after = 0;
+int			bgwriter_flush_after = 0;
+int			backend_flush_after = 0;
 
 /*
  * How many buffers PrefetchBuffer callers should try to stay ahead of their
@@ -399,7 +436,7 @@ static bool PinBuffer(BufferDesc *buf, BufferAccessStrategy strategy);
 static void PinBuffer_Locked(BufferDesc *buf);
 static void UnpinBuffer(BufferDesc *buf, bool fixOwner);
 static void BufferSync(int flags);
-static int	SyncOneBuffer(int buf_id, bool skip_recently_used);
+static int	SyncOneBuffer(int buf_id, bool skip_recently_used, WritebackContext *flush_context);
 static void WaitIO(BufferDesc *buf);
 static bool StartBufferIO(BufferDesc *buf, bool forInput);
 static void TerminateBufferIO(BufferDesc *buf, bool clear_dirty,
@@ -416,6 +453,9 @@ static void FlushBuffer(BufferDesc *buf, SMgrRelation reln);
 static void AtProcExit_Buffers(int code, Datum arg);
 static void CheckForBufferLeaks(void);
 static int	rnode_comparator(const void *p1, const void *p2);
+static int	buffertag_comparator(const void *p1, const void *p2);
+static int	ckpt_buforder_comparator(const void *pa, const void *pb);
+static int	ts_ckpt_progress_comparator(Datum a, Datum b, void *arg);
 
 
 /*
@@ -818,6 +858,13 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 		MemSet((char *) bufBlock, 0, BLCKSZ);
 		/* don't set checksum for all-zero page */
 		smgrextend(smgr, forkNum, blockNum, (char *) bufBlock, false);
+
+		/*
+		 * NB: we're *not* doing a ScheduleBufferTagForWriteback here;
+		 * although we're essentially performing a write. At least on linux
+		 * doing so defeats the 'delayed allocation' mechanism, leading to
+		 * increased file fragmentation.
+		 */
 	}
 	else
 	{
@@ -1083,6 +1130,9 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 
 				FlushBuffer(buf, NULL);
 				LWLockRelease(BufferDescriptorGetContentLock(buf));
+
+				ScheduleBufferTagForWriteback(&BackendWritebackContext,
+											  &buf->tag);
 
 				TRACE_POSTGRESQL_BUFFER_WRITE_DIRTY_DONE(forkNum, blockNum,
 											   smgr->smgr_rnode.node.spcNode,
@@ -1639,9 +1689,15 @@ BufferSync(int flags)
 {
 	int			buf_id;
 	int			num_to_scan;
-	int			num_to_write;
+	int			num_spaces;
+	int			num_processed;
 	int			num_written;
+	CkptTsStatus *per_ts_stat = NULL;
+	Oid			last_tsid;
+	binaryheap *ts_heap;
+	int			i;
 	int			mask = BM_DIRTY;
+	WritebackContext wb_context;
 
 	/* Make sure we can handle the pin inside SyncOneBuffer */
 	ResourceOwnerEnlargeBuffers(CurrentResourceOwner);
@@ -1657,7 +1713,7 @@ BufferSync(int flags)
 
 	/*
 	 * Loop over all buffers, and mark the ones that need to be written with
-	 * BM_CHECKPOINT_NEEDED.  Count them as we go (num_to_write), so that we
+	 * BM_CHECKPOINT_NEEDED.  Count them as we go (num_to_scan), so that we
 	 * can estimate how much work needs to be done.
 	 *
 	 * This allows us to write only those pages that were dirty when the
@@ -1671,7 +1727,7 @@ BufferSync(int flags)
 	 * BM_CHECKPOINT_NEEDED still set.  This is OK since any such buffer would
 	 * certainly need to be written for the next checkpoint attempt, too.
 	 */
-	num_to_write = 0;
+	num_to_scan = 0;
 	for (buf_id = 0; buf_id < NBuffers; buf_id++)
 	{
 		BufferDesc *bufHdr = GetBufferDescriptor(buf_id);
@@ -1684,32 +1740,141 @@ BufferSync(int flags)
 
 		if ((bufHdr->flags & mask) == mask)
 		{
+			CkptSortItem *item;
+
 			bufHdr->flags |= BM_CHECKPOINT_NEEDED;
-			num_to_write++;
+
+			item = &CkptBufferIds[num_to_scan++];
+			item->buf_id = buf_id;
+			item->tsId = bufHdr->tag.rnode.spcNode;
+			item->relNode = bufHdr->tag.rnode.relNode;
+			item->forkNum = bufHdr->tag.forkNum;
+			item->blockNum = bufHdr->tag.blockNum;
 		}
 
 		UnlockBufHdr(bufHdr);
 	}
 
-	if (num_to_write == 0)
+	if (num_to_scan == 0)
 		return;					/* nothing to do */
 
-	TRACE_POSTGRESQL_BUFFER_SYNC_START(NBuffers, num_to_write);
+	WritebackContextInit(&wb_context, &checkpoint_flush_after);
+
+	TRACE_POSTGRESQL_BUFFER_SYNC_START(NBuffers, num_to_scan);
 
 	/*
-	 * Loop over all buffers again, and write the ones (still) marked with
-	 * BM_CHECKPOINT_NEEDED.  In this loop, we start at the clock sweep point
-	 * since we might as well dump soon-to-be-recycled buffers first.
-	 *
-	 * Note that we don't read the buffer alloc count here --- that should be
-	 * left untouched till the next BgBufferSync() call.
+	 * Sort buffers that need to be written to reduce the likelihood of random
+	 * IO. The sorting is also important for the implementation of balancing
+	 * writes between tablespaces. Without balancing writes we'd potentially
+	 * end up writing to the tablespaces one-by-one; possibly overloading the
+	 * underlying system.
 	 */
-	buf_id = StrategySyncStart(NULL, NULL);
-	num_to_scan = NBuffers;
-	num_written = 0;
-	while (num_to_scan-- > 0)
+	qsort(CkptBufferIds, num_to_scan, sizeof(CkptSortItem),
+		  ckpt_buforder_comparator);
+
+	num_spaces = 0;
+
+	/*
+	 * Allocate progress status for each tablespace with buffers that need to
+	 * be flushed. This requires the to-be-flushed array to be sorted.
+	 */
+	last_tsid = InvalidOid;
+	for (i = 0; i < num_to_scan; i++)
 	{
-		BufferDesc *bufHdr = GetBufferDescriptor(buf_id);
+		CkptTsStatus *s;
+		Oid			cur_tsid;
+
+		cur_tsid = CkptBufferIds[i].tsId;
+
+		/*
+		 * Grow array of per-tablespace status structs, every time a new
+		 * tablespace is found.
+		 */
+		if (last_tsid == InvalidOid || last_tsid != cur_tsid)
+		{
+			Size		sz;
+
+			num_spaces++;
+
+			/*
+			 * Not worth adding grow-by-power-of-2 logic here - even with a
+			 * few hundred tablespaces this should be fine.
+			 */
+			sz = sizeof(CkptTsStatus) * num_spaces;
+
+			if (per_ts_stat == NULL)
+				per_ts_stat = (CkptTsStatus *) palloc(sz);
+			else
+				per_ts_stat = (CkptTsStatus *) repalloc(per_ts_stat, sz);
+
+			s = &per_ts_stat[num_spaces - 1];
+			memset(s, 0, sizeof(*s));
+			s->tsId = cur_tsid;
+
+			/*
+			 * The first buffer in this tablespace. As CkptBufferIds is sorted
+			 * by tablespace all (s->num_to_scan) buffers in this tablespace
+			 * will follow afterwards.
+			 */
+			s->index = i;
+
+			/*
+			 * progress_slice will be determined once we know how many buffers
+			 * are in each tablespace, i.e. after this loop.
+			 */
+
+			last_tsid = cur_tsid;
+		}
+		else
+		{
+			s = &per_ts_stat[num_spaces - 1];
+		}
+
+		s->num_to_scan++;
+	}
+
+	Assert(num_spaces > 0);
+
+	/*
+	 * Build a min-heap over the write-progress in the individual tablespaces,
+	 * and compute how large a portion of the total progress a single
+	 * processed buffer is.
+	 */
+	ts_heap = binaryheap_allocate(num_spaces,
+								  ts_ckpt_progress_comparator,
+								  NULL);
+
+	for (i = 0; i < num_spaces; i++)
+	{
+		CkptTsStatus *ts_stat = &per_ts_stat[i];
+
+		ts_stat->progress_slice = (float8) num_to_scan / ts_stat->num_to_scan;
+
+		binaryheap_add_unordered(ts_heap, PointerGetDatum(ts_stat));
+	}
+
+	binaryheap_build(ts_heap);
+
+	/*
+	 * Iterate through to-be-checkpointed buffers and write the ones (still)
+	 * marked with BM_CHECKPOINT_NEEDED. The writes are balanced between
+	 * tablespaces; otherwise the sorting would lead to only one tablespace
+	 * receiving writes at a time, making inefficient use of the hardware.
+	 */
+	num_processed = 0;
+	num_written = 0;
+	while (!binaryheap_empty(ts_heap))
+	{
+		BufferDesc *bufHdr = NULL;
+		CkptTsStatus *ts_stat = (CkptTsStatus *)
+		DatumGetPointer(binaryheap_first(ts_heap));
+
+		buf_id = CkptBufferIds[ts_stat->index].buf_id;
+		Assert(buf_id != -1);
+
+		bufHdr = GetBufferDescriptor(buf_id);
+
+		num_processed++;
 
 		/*
 		 * We don't need to acquire the lock here, because we're only looking
@@ -1725,36 +1890,45 @@ BufferSync(int flags)
 		 */
 		if (bufHdr->flags & BM_CHECKPOINT_NEEDED)
 		{
-			if (SyncOneBuffer(buf_id, false) & BUF_WRITTEN)
+			if (SyncOneBuffer(buf_id, false, &wb_context) & BUF_WRITTEN)
 			{
 				TRACE_POSTGRESQL_BUFFER_SYNC_WRITTEN(buf_id);
 				BgWriterStats.m_buf_written_checkpoints++;
 				num_written++;
-
-				/*
-				 * We know there are at most num_to_write buffers with
-				 * BM_CHECKPOINT_NEEDED set; so we can stop scanning if
-				 * num_written reaches num_to_write.
-				 *
-				 * Note that num_written doesn't include buffers written by
-				 * other backends, or by the bgwriter cleaning scan. That
-				 * means that the estimate of how much progress we've made is
-				 * conservative, and also that this test will often fail to
-				 * trigger.  But it seems worth making anyway.
-				 */
-				if (num_written >= num_to_write)
-					break;
-
-				/*
-				 * Sleep to throttle our I/O rate.
-				 */
-				CheckpointWriteDelay(flags, (double) num_written / num_to_write);
 			}
 		}
 
-		if (++buf_id >= NBuffers)
-			buf_id = 0;
+		/*
+		 * Measure progress independent of actualy having to flush the buffer
+		 * - otherwise writing become unbalanced.
+		 */
+		ts_stat->progress += ts_stat->progress_slice;
+		ts_stat->num_scanned++;
+		ts_stat->index++;
+
+		/* Have all the buffers from the tablespace been processed? */
+		if (ts_stat->num_scanned == ts_stat->num_to_scan)
+		{
+			binaryheap_remove_first(ts_heap);
+		}
+		else
+		{
+			/* update heap with the new progress */
+			binaryheap_replace_first(ts_heap, PointerGetDatum(ts_stat));
+		}
+
+		/*
+		 * Sleep to throttle our I/O rate.
+		 */
+		CheckpointWriteDelay(flags, (double) num_processed / num_to_scan);
 	}
+
+	/* issue all pending flushes */
+	IssuePendingWritebacks(&wb_context);
+
+	pfree(per_ts_stat);
+	per_ts_stat = NULL;
+	binaryheap_free(ts_heap);
 
 	/*
 	 * Update checkpoint statistics. As noted above, this doesn't include
@@ -1762,7 +1936,7 @@ BufferSync(int flags)
 	 */
 	CheckpointStats.ckpt_bufs_written += num_written;
 
-	TRACE_POSTGRESQL_BUFFER_SYNC_DONE(NBuffers, num_written, num_to_write);
+	TRACE_POSTGRESQL_BUFFER_SYNC_DONE(NBuffers, num_written, num_to_scan);
 }
 
 /*
@@ -1777,7 +1951,7 @@ BufferSync(int flags)
  * bgwriter_lru_maxpages to 0.)
  */
 bool
-BgBufferSync(void)
+BgBufferSync(WritebackContext *wb_context)
 {
 	/* info obtained from freelist.c */
 	int			strategy_buf_id;
@@ -2002,7 +2176,8 @@ BgBufferSync(void)
 	/* Execute the LRU scan */
 	while (num_to_scan > 0 && reusable_buffers < upcoming_alloc_est)
 	{
-		int			buffer_state = SyncOneBuffer(next_to_clean, true);
+		int			buffer_state = SyncOneBuffer(next_to_clean, true,
+												 wb_context);
 
 		if (++next_to_clean >= NBuffers)
 		{
@@ -2079,10 +2254,11 @@ BgBufferSync(void)
  * Note: caller must have done ResourceOwnerEnlargeBuffers.
  */
 static int
-SyncOneBuffer(int buf_id, bool skip_recently_used)
+SyncOneBuffer(int buf_id, bool skip_recently_used, WritebackContext *wb_context)
 {
 	BufferDesc *bufHdr = GetBufferDescriptor(buf_id);
 	int			result = 0;
+	BufferTag	tag;
 
 	ReservePrivateRefCountEntry();
 
@@ -2123,7 +2299,12 @@ SyncOneBuffer(int buf_id, bool skip_recently_used)
 	FlushBuffer(bufHdr, NULL);
 
 	LWLockRelease(BufferDescriptorGetContentLock(bufHdr));
+
+	tag = bufHdr->tag;
+
 	UnpinBuffer(bufHdr, true);
+
+	ScheduleBufferTagForWriteback(wb_context, &tag);
 
 	return result | BUF_WRITTEN;
 }
@@ -3351,6 +3532,9 @@ LockBufferForCleanup(Buffer buffer)
 		UnlockBufHdr(bufHdr);
 		LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 
+		/* Report the wait */
+		pgstat_report_wait_start(WAIT_BUFFER_PIN, 0);
+
 		/* Wait to be signaled by UnpinBuffer() */
 		if (InHotStandby)
 		{
@@ -3363,6 +3547,8 @@ LockBufferForCleanup(Buffer buffer)
 		}
 		else
 			ProcWaitForSignal();
+
+		pgstat_report_wait_end();
 
 		/*
 		 * Remove flag marking us as waiter. Normally this will not be set
@@ -3723,4 +3909,208 @@ rnode_comparator(const void *p1, const void *p2)
 		return 1;
 	else
 		return 0;
+}
+
+/*
+ * BufferTag comparator.
+ */
+static int
+buffertag_comparator(const void *a, const void *b)
+{
+	const BufferTag *ba = (const BufferTag *) a;
+	const BufferTag *bb = (const BufferTag *) b;
+	int			ret;
+
+	ret = rnode_comparator(&ba->rnode, &bb->rnode);
+
+	if (ret != 0)
+		return ret;
+
+	if (ba->forkNum < bb->forkNum)
+		return -1;
+	if (ba->forkNum > bb->forkNum)
+		return 1;
+
+	if (ba->blockNum < bb->blockNum)
+		return -1;
+	if (ba->blockNum > bb->blockNum)
+		return 1;
+
+	return 0;
+}
+
+/*
+ * Comparator determining the writeout order in a checkpoint.
+ *
+ * It is important that tablespaces are compared first, the logic balancing
+ * writes between tablespaces relies on it.
+ */
+static int
+ckpt_buforder_comparator(const void *pa, const void *pb)
+{
+	const CkptSortItem *a = (CkptSortItem *) pa;
+	const CkptSortItem *b = (CkptSortItem *) pb;
+
+	/* compare tablespace */
+	if (a->tsId < b->tsId)
+		return -1;
+	else if (a->tsId > b->tsId)
+		return 1;
+	/* compare relation */
+	if (a->relNode < b->relNode)
+		return -1;
+	else if (a->relNode > b->relNode)
+		return 1;
+	/* compare fork */
+	else if (a->forkNum < b->forkNum)
+		return -1;
+	else if (a->forkNum > b->forkNum)
+		return 1;
+	/* compare block number */
+	else if (a->blockNum < b->blockNum)
+		return -1;
+	else	/* should not be the same block ... */
+		return 1;
+}
+
+/*
+ * Comparator for a Min-Heap over the per-tablespace checkpoint completion
+ * progress.
+ */
+static int
+ts_ckpt_progress_comparator(Datum a, Datum b, void *arg)
+{
+	CkptTsStatus *sa = (CkptTsStatus *) a;
+	CkptTsStatus *sb = (CkptTsStatus *) b;
+
+	/* we want a min-heap, so return 1 for the a < b */
+	if (sa->progress < sb->progress)
+		return 1;
+	else if (sa->progress == sb->progress)
+		return 0;
+	else
+		return -1;
+}
+
+/*
+ * Initialize a writeback context, discarding potential previous state.
+ *
+ * *max_coalesce is a pointer to a variable containing the current maximum
+ * number of writeback requests that will be coalesced into a bigger one. A
+ * value <= 0 means that no writeback control will be performed. max_pending
+ * is a pointer instead of an immediate value, so the coalesce limits can
+ * easily changed by the GUC mechanism, and so calling code does not have to
+ * check the current configuration.
+ */
+void
+WritebackContextInit(WritebackContext *context, int *max_pending)
+{
+	Assert(*max_pending <= WRITEBACK_MAX_PENDING_FLUSHES);
+
+	context->max_pending = max_pending;
+	context->nr_pending = 0;
+}
+
+/*
+ * Add buffer to list of pending writeback requests.
+ */
+void
+ScheduleBufferTagForWriteback(WritebackContext *context, BufferTag *tag)
+{
+	PendingWriteback *pending;
+
+	/*
+	 * Add buffer to the pending writeback array, unless writeback control is
+	 * disabled.
+	 */
+	if (*context->max_pending > 0)
+	{
+		Assert(*context->max_pending <= WRITEBACK_MAX_PENDING_FLUSHES);
+
+		pending = &context->pending_writebacks[context->nr_pending++];
+
+		pending->tag = *tag;
+	}
+
+	/*
+	 * Perform pending flushes if the writeback limit is exceeded. This
+	 * includes the case where previously an item has been added, but control
+	 * is now disabled.
+	 */
+	if (context->nr_pending >= *context->max_pending)
+		IssuePendingWritebacks(context);
+}
+
+/*
+ * Issue all pending writeback requests, previously scheduled with
+ * ScheduleBufferTagForWriteback, to the OS.
+ *
+ * Because this is only used to improve the OSs IO scheduling we try to never
+ * error out - it's just a hint.
+ */
+void
+IssuePendingWritebacks(WritebackContext *context)
+{
+	int			i;
+
+	if (context->nr_pending == 0)
+		return;
+
+	/*
+	 * Executing the writes in-order can make them a lot faster, and allows to
+	 * merge writeback requests to consecutive blocks into larger writebacks.
+	 */
+	qsort(&context->pending_writebacks, context->nr_pending,
+		  sizeof(PendingWriteback), buffertag_comparator);
+
+	/*
+	 * Coalesce neighbouring writes, but nothing else. For that we iterate
+	 * through the, now sorted, array of pending flushes, and look forward to
+	 * find all neighbouring (or identical) writes.
+	 */
+	for (i = 0; i < context->nr_pending; i++)
+	{
+		PendingWriteback *cur;
+		PendingWriteback *next;
+		SMgrRelation reln;
+		int			ahead;
+		BufferTag	tag;
+		Size		nblocks = 1;
+
+		cur = &context->pending_writebacks[i];
+		tag = cur->tag;
+
+		/*
+		 * Peek ahead, into following writeback requests, to see if they can
+		 * be combined with the current one.
+		 */
+		for (ahead = 0; i + ahead + 1 < context->nr_pending; ahead++)
+		{
+			next = &context->pending_writebacks[i + ahead + 1];
+
+			/* different file, stop */
+			if (!RelFileNodeEquals(cur->tag.rnode, next->tag.rnode) ||
+				cur->tag.forkNum != next->tag.forkNum)
+				break;
+
+			/* ok, block queued twice, skip */
+			if (cur->tag.blockNum == next->tag.blockNum)
+				continue;
+
+			/* only merge consecutive writes */
+			if (cur->tag.blockNum + 1 != next->tag.blockNum)
+				break;
+
+			nblocks++;
+			cur = next;
+		}
+
+		i += ahead;
+
+		/* and finally tell the kernel to write the data to storage */
+		reln = smgropen(tag.rnode, InvalidBackendId);
+		smgrwriteback(reln, tag.forkNum, tag.blockNum, nblocks);
+	}
+
+	context->nr_pending = 0;
 }
