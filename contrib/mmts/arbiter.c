@@ -529,7 +529,8 @@ static void MtmTransSender(Datum arg)
 
 static void MtmWakeUpBackend(MtmTransState* ts)
 {
-	ts->voteCompleted = true;
+	ts->voteCompleted = true;								
+	MTM_TRACE("Wakeup backed procno=%d, pid=%d\n", ts->procno, ProcGlobal->allProcs[ts->procno].pid);
 	SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
 }
 
