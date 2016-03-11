@@ -35,6 +35,9 @@ SUBDIRS = \
 		pg_stat_statements \
 		pg_trgm		\
 		pgcrypto	\
+		pglogical_output \
+		pglogical_output_plhooks \
+		pglogical	\
 		pgrowlocks	\
 		pgstattuple	\
 		pg_visibility	\

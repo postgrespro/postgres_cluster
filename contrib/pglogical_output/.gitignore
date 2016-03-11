@@ -1,0 +1,7 @@
+pglogical_output.so
+results/
+regression.diffs
+tmp_install/
+tmp_check/
+log/
+pglogical_output.control
