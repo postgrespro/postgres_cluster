@@ -464,9 +464,61 @@ read_rel(StringInfo s, LOCKMODE mode)
 }
 
 static void
-process_remote_commit(StringInfo s)
+process_remote_commit(StringInfo in)
 {
-	CommitTransactionCommand();
+	XLogRecPtr		commit_lsn;
+	XLogRecPtr		end_lsn;
+	TimestampTz		commit_time;
+	uint8 			flags;
+	const char	   *gid;
+
+	/* read flags */
+	flags = pq_getmsgbyte(in);
+
+	/* read fields */
+	commit_lsn = pq_getmsgint64(in);
+	end_lsn = pq_getmsgint64(in);
+	commit_time = pq_getmsgint64(in);
+
+	if (PGLOGICAL_XACT_EVENT(flags) != PGLOGICAL_COMMIT)
+		gid = pq_getmsgstring(in);
+
+	switch(PGLOGICAL_XACT_EVENT(flags))
+	{
+		case PGLOGICAL_COMMIT:
+		{
+			if (IsTransactionState())
+				CommitTransactionCommand();
+			break;
+		}
+		case PGLOGICAL_PREPARE:
+		{
+			/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
+			BeginTransactionBlock();
+			CommitTransactionCommand();
+			StartTransactionCommand();
+			/* PREPARE itself */
+			PrepareTransactionBlock(gid);
+			CommitTransactionCommand();
+			break;
+		}
+		case PGLOGICAL_COMMIT_PREPARED:
+		{
+			StartTransactionCommand();
+			FinishPreparedTransaction(gid, true);
+			CommitTransactionCommand();
+			break;
+		}
+		case PGLOGICAL_ABORT_PREPARED:
+		{
+			StartTransactionCommand();
+			FinishPreparedTransaction(gid, false);
+			CommitTransactionCommand();
+			break;
+		}
+		default:
+			Assert(false);
+	}
 }
 
 static void

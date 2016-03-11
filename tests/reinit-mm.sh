@@ -1,5 +1,5 @@
 n_nodes=3
-export PATH=~/postgres_cluster/dist/bin/:$PATH
+export PATH=~/code/postgres_cluster/install/bin/:$PATH
 ulimit -c unlimited
 pkill -9 postgres
 pkill -9 arbiter

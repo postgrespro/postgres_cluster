@@ -554,7 +554,7 @@ static bool MtmRecovery()
             }
         }
     }
-	return recorvered;
+	return recovered;
 }
 #endif
 
@@ -601,8 +601,8 @@ static void MtmTransReceiver(Datum arg)
 		do { 
 			struct timeval tv;
 			events = inset;
-			tv.tv_sec = MtmKeepAliveTimeout/USEC;
-			tv.tv_usec = MtmKeepAliveTimeout%USEC;
+			tv.tv_sec = MtmKeepaliveTimeout/USEC;
+			tv.tv_usec = MtmKeepaliveTimeout%USEC;
 			n = select(max_fd+1, &events, NULL, NULL, &tv);
 		} while (n < 0 && MtmRecovery());
 		
