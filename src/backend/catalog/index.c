@@ -40,6 +40,7 @@
 #include "catalog/pg_am.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
+#include "catalog/pg_constraint_fn.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_tablespace.h"
@@ -1919,7 +1920,7 @@ index_update_stats(Relation rel,
 		BlockNumber relallvisible;
 
 		if (rd_rel->relkind != RELKIND_INDEX)
-			relallvisible = visibilitymap_count(rel);
+			visibilitymap_count(rel, &relallvisible, NULL);
 		else	/* don't bother for indexes */
 			relallvisible = 0;
 
@@ -3062,7 +3063,7 @@ validate_index_heapscan(Relation heapRelation,
 			}
 
 			tuplesort_empty = !tuplesort_getdatum(state->tuplesort, true,
-												  &ts_val, &ts_isnull);
+												  &ts_val, &ts_isnull, NULL);
 			Assert(tuplesort_empty || !ts_isnull);
 			if (!tuplesort_empty)
 			{

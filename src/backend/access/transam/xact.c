@@ -2447,6 +2447,10 @@ AbortTransaction(void)
 	 */
 	LWLockReleaseAll();
 
+	/* Clear wait information and command progress indicator */
+	pgstat_report_wait_end();
+	pgstat_progress_end_command();
+
 	/* Clean up buffer I/O and buffer context locks, too */
 	AbortBufferIO();
 	UnlockBuffers();
@@ -4538,6 +4542,8 @@ AbortSubTransaction(void)
 	 */
 	LWLockReleaseAll();
 
+	pgstat_report_wait_end();
+	pgstat_progress_end_command();
 	AbortBufferIO();
 	UnlockBuffers();
 
@@ -4648,6 +4654,9 @@ AbortSubTransaction(void)
 	 * with the commit case.
 	 */
 	XactReadOnly = s->prevXactReadOnly;
+
+	/* Report wait end here, when there is no further possibility of wait */
+	pgstat_report_wait_end();
 
 	RESUME_INTERRUPTS();
 }

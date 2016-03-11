@@ -138,7 +138,7 @@ ReplicationSlotsShmemInit(void)
 		ShmemInitStruct("ReplicationSlot Ctl", ReplicationSlotsShmemSize(),
 						&found);
 
-	ReplSlotIOLWLockTranche.name = "Replication Slot IO Locks";
+	ReplSlotIOLWLockTranche.name = "replication_slot_io";
 	ReplSlotIOLWLockTranche.array_base =
 		((char *) ReplicationSlotCtl) + offsetof(ReplicationSlotCtlData, replication_slots) +offsetof(ReplicationSlot, io_in_progress_lock);
 	ReplSlotIOLWLockTranche.array_stride = sizeof(ReplicationSlot);
@@ -352,7 +352,7 @@ ReplicationSlotAcquire(const char *name)
 	if (active_pid != 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_IN_USE),
-			   errmsg("replication slot \"%s\" is already active for PID %d",
+			   errmsg("replication slot \"%s\" is active for PID %d",
 					  name, active_pid)));
 
 	/* We made this slot active, so it's ours now. */
@@ -1095,7 +1095,7 @@ SaveSlotToPath(ReplicationSlot *slot, const char *dir, int elevel)
 	START_CRIT_SECTION();
 
 	fsync_fname(path, false);
-	fsync_fname((char *) dir, true);
+	fsync_fname(dir, true);
 	fsync_fname("pg_replslot", true);
 
 	END_CRIT_SECTION();

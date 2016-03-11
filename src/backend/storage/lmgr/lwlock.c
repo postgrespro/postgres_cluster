@@ -77,6 +77,7 @@
 #include "postgres.h"
 
 #include "miscadmin.h"
+#include "pgstat.h"
 #include "pg_trace.h"
 #include "postmaster/postmaster.h"
 #include "replication/slot.h"
@@ -91,7 +92,7 @@
 #endif
 
 
-/* We use the ShmemLock spinlock to protect LWLockAssign */
+/* We use the ShmemLock spinlock to protect LWLockCounter */
 extern slock_t *ShmemLock;
 
 #define LW_FLAG_HAS_WAITERS			((uint32) 1 << 30)
@@ -125,6 +126,9 @@ static int	LWLockTranchesAllocated = 0;
  */
 LWLockPadded *MainLWLockArray = NULL;
 static LWLockTranche MainLWLockTranche;
+static LWLockTranche BufMappingLWLockTranche;
+static LWLockTranche LockManagerLWLockTranche;
+static LWLockTranche PredicateLockManagerLWLockTranche;
 
 /*
  * We use this structure to keep track of locked LWLocks for release
@@ -158,6 +162,12 @@ int			NamedLWLockTrancheRequests = 0;
 NamedLWLockTranche *NamedLWLockTrancheArray = NULL;
 
 static bool lock_named_request_allowed = true;
+
+static void InitializeLWLocks(void);
+static void RegisterLWLockTranches(void);
+
+static inline void LWLockReportWaitStart(LWLock *lock);
+static inline void LWLockReportWaitEnd();
 
 #ifdef LWLOCK_STATS
 typedef struct lwlock_stats_key
@@ -364,30 +374,6 @@ NumLWLocksByNamedTranches(void)
 }
 
 /*
- * Compute number of LWLocks to allocate in the main array.
- */
-static int
-NumLWLocks(void)
-{
-	int			numLocks;
-
-	/*
-	 * Many users of LWLocks no longer reserve space in the main array here,
-	 * but instead allocate separate tranches.  The latter approach has the
-	 * advantage of allowing LWLOCK_STATS and LOCK_DEBUG output to produce
-	 * more useful output.
-	 */
-
-	/* Predefined LWLocks */
-	numLocks = NUM_FIXED_LWLOCKS;
-
-	/* Disallow named LWLocks' requests after startup */
-	lock_named_request_allowed = false;
-
-	return numLocks;
-}
-
-/*
  * Compute shmem space needed for LWLocks and named tranches.
  */
 Size
@@ -395,7 +381,7 @@ LWLockShmemSize(void)
 {
 	Size		size;
 	int			i;
-	int			numLocks = NumLWLocks();
+	int			numLocks = NUM_FIXED_LWLOCKS;
 
 	numLocks += NumLWLocksByNamedTranches();
 
@@ -403,7 +389,7 @@ LWLockShmemSize(void)
 	size = mul_size(numLocks, sizeof(LWLockPadded));
 
 	/* Space for dynamic allocation counter, plus room for alignment. */
-	size = add_size(size, 3 * sizeof(int) + LWLOCK_PADDED_SIZE);
+	size = add_size(size, sizeof(int) + LWLOCK_PADDED_SIZE);
 
 	/* space for named tranches. */
 	size = add_size(size, mul_size(NamedLWLockTrancheRequests, sizeof(NamedLWLockTranche)));
@@ -412,18 +398,19 @@ LWLockShmemSize(void)
 	for (i = 0; i < NamedLWLockTrancheRequests; i++)
 		size = add_size(size, strlen(NamedLWLockTrancheRequestArray[i].tranche_name) + 1);
 
+	/* Disallow named LWLocks' requests after startup */
+	lock_named_request_allowed = false;
+
 	return size;
 }
 
 /*
- * Allocate shmem space for the main LWLock array and named tranches and
- * initialize it.  We also register the main and named tranche here.
+ * Allocate shmem space for the main LWLock array and all tranches and
+ * initialize it.  We also register all the LWLock tranches here.
  */
 void
 CreateLWLocks(void)
 {
-	int			i;
-
 	StaticAssertExpr(LW_VAL_EXCLUSIVE > (uint32) MAX_BACKENDS,
 					 "MAX_BACKENDS too big for lwlock.c");
 
@@ -433,82 +420,116 @@ CreateLWLocks(void)
 
 	if (!IsUnderPostmaster)
 	{
-		int			numLocks = NumLWLocks();
-		int			numNamedLocks = NumLWLocksByNamedTranches();
 		Size		spaceLocks = LWLockShmemSize();
-		LWLockPadded *lock;
 		int		   *LWLockCounter;
 		char	   *ptr;
-		int			id;
-		int			j;
 
 		/* Allocate space */
 		ptr = (char *) ShmemAlloc(spaceLocks);
 
-		/* Leave room for dynamic allocation of locks and tranches */
-		ptr += 3 * sizeof(int);
+		/* Leave room for dynamic allocation of tranches */
+		ptr += sizeof(int);
 
 		/* Ensure desired alignment of LWLock array */
 		ptr += LWLOCK_PADDED_SIZE - ((uintptr_t) ptr) % LWLOCK_PADDED_SIZE;
 
 		MainLWLockArray = (LWLockPadded *) ptr;
 
-		/* Initialize all fixed LWLocks in main array */
-		for (id = 0, lock = MainLWLockArray; id < numLocks; id++, lock++)
-			LWLockInitialize(&lock->lock, LWTRANCHE_MAIN);
-
 		/*
-		 * Initialize the dynamic-allocation counters, which are stored just
-		 * before the first LWLock.  LWLockCounter[0] is the allocation
-		 * counter for lwlocks, LWLockCounter[1] is the maximum number that
-		 * can be allocated from the main array, and LWLockCounter[2] is the
-		 * allocation counter for tranches.
+		 * Initialize the dynamic-allocation counter for tranches, which is
+		 * stored just before the first LWLock.
 		 */
-		LWLockCounter = (int *) ((char *) MainLWLockArray - 3 * sizeof(int));
-		LWLockCounter[0] = NUM_FIXED_LWLOCKS;
-		LWLockCounter[1] = numLocks;
-		LWLockCounter[2] = LWTRANCHE_FIRST_USER_DEFINED;
+		LWLockCounter = (int *) ((char *) MainLWLockArray - sizeof(int));
+		*LWLockCounter = LWTRANCHE_FIRST_USER_DEFINED;
 
-		/* Initialize named tranches. */
-		if (NamedLWLockTrancheRequests > 0)
+		/* Initialize all LWLocks */
+		InitializeLWLocks();
+	}
+
+	/* Register all LWLock tranches */
+	RegisterLWLockTranches();
+}
+
+/*
+ * Initialize LWLocks that are fixed and those belonging to named tranches.
+ */
+static void
+InitializeLWLocks(void)
+{
+	int			numNamedLocks = NumLWLocksByNamedTranches();
+	int			id;
+	int			i;
+	int			j;
+	LWLockPadded *lock;
+
+	/* Initialize all individual LWLocks in main array */
+	for (id = 0, lock = MainLWLockArray; id < NUM_INDIVIDUAL_LWLOCKS; id++, lock++)
+		LWLockInitialize(&lock->lock, LWTRANCHE_MAIN);
+
+	/* Initialize buffer mapping LWLocks in main array */
+	lock = MainLWLockArray + NUM_INDIVIDUAL_LWLOCKS;
+	for (id = 0; id < NUM_BUFFER_PARTITIONS; id++, lock++)
+		LWLockInitialize(&lock->lock, LWTRANCHE_BUFFER_MAPPING);
+
+	/* Initialize lmgrs' LWLocks in main array */
+	lock = MainLWLockArray + NUM_INDIVIDUAL_LWLOCKS + NUM_BUFFER_PARTITIONS;
+	for (id = 0; id < NUM_LOCK_PARTITIONS; id++, lock++)
+		LWLockInitialize(&lock->lock, LWTRANCHE_LOCK_MANAGER);
+
+	/* Initialize predicate lmgrs' LWLocks in main array */
+	lock = MainLWLockArray + NUM_INDIVIDUAL_LWLOCKS +
+		NUM_BUFFER_PARTITIONS + NUM_LOCK_PARTITIONS;
+	for (id = 0; id < NUM_PREDICATELOCK_PARTITIONS; id++, lock++)
+		LWLockInitialize(&lock->lock, LWTRANCHE_PREDICATE_LOCK_MANAGER);
+
+	/* Initialize named tranches. */
+	if (NamedLWLockTrancheRequests > 0)
+	{
+		char	   *trancheNames;
+
+		NamedLWLockTrancheArray = (NamedLWLockTranche *)
+			&MainLWLockArray[NUM_FIXED_LWLOCKS + numNamedLocks];
+
+		trancheNames = (char *) NamedLWLockTrancheArray +
+			(NamedLWLockTrancheRequests * sizeof(NamedLWLockTranche));
+		lock = &MainLWLockArray[NUM_FIXED_LWLOCKS];
+
+		for (i = 0; i < NamedLWLockTrancheRequests; i++)
 		{
-			char	   *trancheNames;
+			NamedLWLockTrancheRequest *request;
+			NamedLWLockTranche *tranche;
+			char	   *name;
 
-			NamedLWLockTrancheArray = (NamedLWLockTranche *)
-				&MainLWLockArray[numLocks + numNamedLocks];
+			request = &NamedLWLockTrancheRequestArray[i];
+			tranche = &NamedLWLockTrancheArray[i];
 
-			trancheNames = (char *) NamedLWLockTrancheArray +
-				(NamedLWLockTrancheRequests * sizeof(NamedLWLockTranche));
-			lock = &MainLWLockArray[numLocks];
+			name = trancheNames;
+			trancheNames += strlen(request->tranche_name) + 1;
+			strcpy(name, request->tranche_name);
+			tranche->lwLockTranche.name = name;
+			tranche->trancheId = LWLockNewTrancheId();
+			tranche->lwLockTranche.array_base = lock;
+			tranche->lwLockTranche.array_stride = sizeof(LWLockPadded);
 
-			for (i = 0; i < NamedLWLockTrancheRequests; i++)
-			{
-				NamedLWLockTrancheRequest *request;
-				NamedLWLockTranche *tranche;
-				char	   *name;
-
-				request = &NamedLWLockTrancheRequestArray[i];
-				tranche = &NamedLWLockTrancheArray[i];
-
-				name = trancheNames;
-				trancheNames += strlen(request->tranche_name) + 1;
-				strcpy(name, request->tranche_name);
-				tranche->lwLockTranche.name = name;
-				tranche->trancheId = LWLockNewTrancheId();
-				tranche->lwLockTranche.array_base = lock;
-				tranche->lwLockTranche.array_stride = sizeof(LWLockPadded);
-
-				for (j = 0; j < request->num_lwlocks; j++, lock++)
-					LWLockInitialize(&lock->lock, tranche->trancheId);
-			}
+			for (j = 0; j < request->num_lwlocks; j++, lock++)
+				LWLockInitialize(&lock->lock, tranche->trancheId);
 		}
 	}
+}
+
+/*
+ * Register named tranches and tranches for fixed LWLocks.
+ */
+static void
+RegisterLWLockTranches(void)
+{
+	int			i;
 
 	if (LWLockTrancheArray == NULL)
 	{
-		LWLockTranchesAllocated = 16;
+		LWLockTranchesAllocated = 32;
 		LWLockTrancheArray = (LWLockTranche **)
-			MemoryContextAlloc(TopMemoryContext,
+			MemoryContextAllocZero(TopMemoryContext,
 						  LWLockTranchesAllocated * sizeof(LWLockTranche *));
 		Assert(LWLockTranchesAllocated >= LWTRANCHE_FIRST_USER_DEFINED);
 	}
@@ -517,6 +538,23 @@ CreateLWLocks(void)
 	MainLWLockTranche.array_base = MainLWLockArray;
 	MainLWLockTranche.array_stride = sizeof(LWLockPadded);
 	LWLockRegisterTranche(LWTRANCHE_MAIN, &MainLWLockTranche);
+
+	BufMappingLWLockTranche.name = "buffer_mapping";
+	BufMappingLWLockTranche.array_base = MainLWLockArray + NUM_INDIVIDUAL_LWLOCKS;
+	BufMappingLWLockTranche.array_stride = sizeof(LWLockPadded);
+	LWLockRegisterTranche(LWTRANCHE_BUFFER_MAPPING, &BufMappingLWLockTranche);
+
+	LockManagerLWLockTranche.name = "lock_manager";
+	LockManagerLWLockTranche.array_base = MainLWLockArray + NUM_INDIVIDUAL_LWLOCKS +
+		NUM_BUFFER_PARTITIONS;
+	LockManagerLWLockTranche.array_stride = sizeof(LWLockPadded);
+	LWLockRegisterTranche(LWTRANCHE_LOCK_MANAGER, &LockManagerLWLockTranche);
+
+	PredicateLockManagerLWLockTranche.name = "predicate_lock_manager";
+	PredicateLockManagerLWLockTranche.array_base = MainLWLockArray + NUM_INDIVIDUAL_LWLOCKS +
+		NUM_BUFFER_PARTITIONS + NUM_LOCK_PARTITIONS;
+	PredicateLockManagerLWLockTranche.array_stride = sizeof(LWLockPadded);
+	LWLockRegisterTranche(LWTRANCHE_PREDICATE_LOCK_MANAGER, &PredicateLockManagerLWLockTranche);
 
 	/* Register named tranches. */
 	for (i = 0; i < NamedLWLockTrancheRequests; i++)
@@ -536,32 +574,6 @@ InitLWLockAccess(void)
 }
 
 /*
- * LWLockAssign - assign a dynamically-allocated LWLock number
- *
- * We interlock this using the same spinlock that is used to protect
- * ShmemAlloc().  Interlocking is not really necessary during postmaster
- * startup, but it is needed if any user-defined code tries to allocate
- * LWLocks after startup.
- */
-LWLock *
-LWLockAssign(void)
-{
-	LWLock	   *result;
-	int		   *LWLockCounter;
-
-	LWLockCounter = (int *) ((char *) MainLWLockArray - 3 * sizeof(int));
-	SpinLockAcquire(ShmemLock);
-	if (LWLockCounter[0] >= LWLockCounter[1])
-	{
-		SpinLockRelease(ShmemLock);
-		elog(ERROR, "no more LWLocks available");
-	}
-	result = &MainLWLockArray[LWLockCounter[0]++].lock;
-	SpinLockRelease(ShmemLock);
-	return result;
-}
-
-/*
  * GetNamedLWLockTranche - returns the base address of LWLock from the
  *		specified tranche.
  *
@@ -574,16 +586,13 @@ GetNamedLWLockTranche(const char *tranche_name)
 {
 	int			lock_pos;
 	int			i;
-	int		   *LWLockCounter;
-
-	LWLockCounter = (int *) ((char *) MainLWLockArray - 3 * sizeof(int));
 
 	/*
 	 * Obtain the position of base address of LWLock belonging to requested
 	 * tranche_name in MainLWLockArray.  LWLocks for named tranches are placed
-	 * in MainLWLockArray after LWLocks specified by LWLockCounter[1].
+	 * in MainLWLockArray after fixed locks.
 	 */
-	lock_pos = LWLockCounter[1];
+	lock_pos = NUM_FIXED_LWLOCKS;
 	for (i = 0; i < NamedLWLockTrancheRequests; i++)
 	{
 		if (strcmp(NamedLWLockTrancheRequestArray[i].tranche_name,
@@ -609,9 +618,9 @@ LWLockNewTrancheId(void)
 	int			result;
 	int		   *LWLockCounter;
 
-	LWLockCounter = (int *) ((char *) MainLWLockArray - 3 * sizeof(int));
+	LWLockCounter = (int *) ((char *) MainLWLockArray - sizeof(int));
 	SpinLockAcquire(ShmemLock);
-	result = LWLockCounter[2]++;
+	result = (*LWLockCounter)++;
 	SpinLockRelease(ShmemLock);
 
 	return result;
@@ -631,6 +640,7 @@ LWLockRegisterTranche(int tranche_id, LWLockTranche *tranche)
 	if (tranche_id >= LWLockTranchesAllocated)
 	{
 		int			i = LWLockTranchesAllocated;
+		int			j = LWLockTranchesAllocated;
 
 		while (i <= tranche_id)
 			i *= 2;
@@ -639,6 +649,8 @@ LWLockRegisterTranche(int tranche_id, LWLockTranche *tranche)
 			repalloc(LWLockTrancheArray,
 					 i * sizeof(LWLockTranche *));
 		LWLockTranchesAllocated = i;
+		while (j < LWLockTranchesAllocated)
+			LWLockTrancheArray[j++] = NULL;
 	}
 
 	LWLockTrancheArray[tranche_id] = tranche;
@@ -706,6 +718,57 @@ LWLockInitialize(LWLock *lock, int tranche_id)
 #endif
 	lock->tranche = tranche_id;
 	dlist_init(&lock->waiters);
+}
+
+/*
+ * Report start of wait event for light-weight locks.
+ *
+ * This function will be used by all the light-weight lock calls which
+ * needs to wait to acquire the lock.  This function distinguishes wait
+ * event based on tranche and lock id.
+ */
+static inline void
+LWLockReportWaitStart(LWLock *lock)
+{
+	int			lockId = T_ID(lock);
+
+	if (lock->tranche == 0)
+		pgstat_report_wait_start(WAIT_LWLOCK_NAMED, (uint16) lockId);
+	else
+		pgstat_report_wait_start(WAIT_LWLOCK_TRANCHE, lock->tranche);
+}
+
+/*
+ * Report end of wait event for light-weight locks.
+ */
+static inline void
+LWLockReportWaitEnd()
+{
+	pgstat_report_wait_end();
+}
+
+/*
+ * Return an identifier for an LWLock based on the wait class and event.
+ */
+const char *
+GetLWLockIdentifier(uint8 classId, uint16 eventId)
+{
+	if (classId == WAIT_LWLOCK_NAMED)
+		return MainLWLockNames[eventId];
+
+	Assert(classId == WAIT_LWLOCK_TRANCHE);
+
+	/*
+	 * It is quite possible that user has registered tranche in one of the
+	 * backends (e.g. by allocation lwlocks in dynamic shared memory) but not
+	 * all of them, so we can't assume the tranche is registered here.
+	 * extension for such cases.
+	 */
+	if (eventId >= LWLockTranchesAllocated ||
+		LWLockTrancheArray[eventId]->name == NULL)
+		return "extension";
+
+	return LWLockTrancheArray[eventId]->name;
 }
 
 /*
@@ -1157,6 +1220,7 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 		lwstats->block_count++;
 #endif
 
+		LWLockReportWaitStart(lock);
 		TRACE_POSTGRESQL_LWLOCK_WAIT_START(T_NAME(lock), T_ID(lock), mode);
 
 		for (;;)
@@ -1180,6 +1244,7 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 #endif
 
 		TRACE_POSTGRESQL_LWLOCK_WAIT_DONE(T_NAME(lock), T_ID(lock), mode);
+		LWLockReportWaitEnd();
 
 		LOG_LWDEBUG("LWLockAcquire", lock, "awakened");
 
@@ -1315,6 +1380,8 @@ LWLockAcquireOrWait(LWLock *lock, LWLockMode mode)
 #ifdef LWLOCK_STATS
 			lwstats->block_count++;
 #endif
+
+			LWLockReportWaitStart(lock);
 			TRACE_POSTGRESQL_LWLOCK_WAIT_START(T_NAME(lock), T_ID(lock), mode);
 
 			for (;;)
@@ -1334,6 +1401,7 @@ LWLockAcquireOrWait(LWLock *lock, LWLockMode mode)
 			}
 #endif
 			TRACE_POSTGRESQL_LWLOCK_WAIT_DONE(T_NAME(lock), T_ID(lock), mode);
+			LWLockReportWaitEnd();
 
 			LOG_LWDEBUG("LWLockAcquireOrWait", lock, "awakened");
 		}
@@ -1539,6 +1607,7 @@ LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval)
 		lwstats->block_count++;
 #endif
 
+		LWLockReportWaitStart(lock);
 		TRACE_POSTGRESQL_LWLOCK_WAIT_START(T_NAME(lock), T_ID(lock),
 										   LW_EXCLUSIVE);
 
@@ -1561,6 +1630,7 @@ LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval)
 
 		TRACE_POSTGRESQL_LWLOCK_WAIT_DONE(T_NAME(lock), T_ID(lock),
 										  LW_EXCLUSIVE);
+		LWLockReportWaitEnd();
 
 		LOG_LWDEBUG("LWLockWaitForVar", lock, "awakened");
 
