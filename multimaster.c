@@ -103,6 +103,7 @@ static void MtmBeginTransaction(MtmCurrentTrans* x);
 static void MtmPrecommitTransaction(MtmCurrentTrans* x);
 static bool MtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids);
 static void MtmPrepareTransaction(MtmCurrentTrans* x);
+static void MtmCommitPreparedTransaction(MtmCurrentTrans* x);
 static void MtmEndTransaction(MtmCurrentTrans* x, bool commit);
 static TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
@@ -494,6 +495,9 @@ MtmXactCallback(XactEvent event, void *arg)
 	  case XACT_EVENT_PREPARE:
 		MtmPrepareTransaction(&dtmTx);
 		break;
+	  case XACT_EVENT_COMMIT_PREPARED:
+		MtmCommitPreparedTransaction(&dtmTx);
+		break;
 	  case XACT_EVENT_COMMIT:
 		MtmEndTransaction(&dtmTx, true);
 		break;
@@ -652,10 +656,15 @@ static void MtmPrecommitTransaction(MtmCurrentTrans* x)
 static void 
 MtmPrepareTransaction(MtmCurrentTrans* x)
 {	
-	TransactionId *subxids;
-	int nSubxids;
 	MtmPrecommitTransaction(x);
 	x->isPrepared = true;	
+}
+
+static void 
+MtmCommitPreparedTransaction(MtmCurrentTrans* x)
+{
+	TransactionId *subxids;
+	int nSubxids;
 	nSubxids = xactGetCommittedChildren(&subxids);
 	if (!MtmCommitTransaction(x->xid, nSubxids, subxids))
 	{
@@ -1536,12 +1545,15 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 						char* gid = MtmGenerateGid();
 						if (!PrepareTransactionBlock(gid))
 						{
+							elog(WARNING, "Failed to prepare transaction %s", gid);
 							/* report unsuccessful commit in completionTag */
 							if (completionTag) { 
 								strcpy(completionTag, "ROLLBACK");
 							}
 							/* ??? Should we do explicit rollback */
 						} else { 
+							CommitTransactionCommand();
+							StartTransactionCommand();
 							FinishPreparedTransaction(gid, true);
 						}
 						return;

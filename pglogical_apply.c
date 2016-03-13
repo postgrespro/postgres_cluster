@@ -467,7 +467,7 @@ static void
 process_remote_commit(StringInfo in)
 {
 	uint8 			flags;
-	const char	   *gid;
+	const char	   *gid = NULL;
 
 	/* read flags */
 	flags = pq_getmsgbyte(in);
@@ -479,6 +479,8 @@ process_remote_commit(StringInfo in)
 
 	if (PGLOGICAL_XACT_EVENT(flags) != PGLOGICAL_COMMIT)
 		gid = pq_getmsgstring(in);
+
+	MTM_TRACE("PGLOGICAL_RECV commit: flags=%d, gid=%s\n", flags, gid);
 
 	switch(PGLOGICAL_XACT_EVENT(flags))
 	{

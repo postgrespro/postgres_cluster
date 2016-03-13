@@ -145,6 +145,8 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     else
     	Assert(false);
 
+	MTM_TRACE("PGLOGICAL_SEND commit: event=%d, gid=%s\n", flags, txn->gid);
+
     /* send the flags field */
     pq_sendbyte(out, flags);
 
