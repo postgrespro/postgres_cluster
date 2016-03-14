@@ -94,6 +94,9 @@ typedef struct PgFdwRelationInfo
 	List	   *joinclauses;
 } PgFdwRelationInfo;
 
+/* use transaction manager */
+extern bool	UseTsDtmTransactions;
+
 /* in postgres_fdw.c */
 extern int	set_transmission_modes(void);
 extern void reset_transmission_modes(int nestlevel);

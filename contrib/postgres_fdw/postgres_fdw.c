@@ -3951,7 +3951,7 @@ postgres_fdw_exec(PG_FUNCTION_ARGS)
 	ForeignTable *table = GetForeignTable(relid);
 	ForeignServer *server = GetForeignServer(table->serverid);
 	UserMapping *user = GetUserMapping(userid, server->serverid);
-	PGconn	   *conn = GetConnection(server, user, false);
+	PGconn	   *conn = GetConnection(user, false);
 	PGresult   *res = PQexec(conn, sql);
 
 	PQclear(res);
