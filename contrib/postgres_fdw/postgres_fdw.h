@@ -150,4 +150,6 @@ extern bool is_builtin(Oid objectId);
 extern bool is_shippable(Oid objectId, Oid classId, PgFdwRelationInfo *fpinfo);
 extern const char *get_jointype_name(JoinType jointype);
 
+extern bool UseTsDtmTransactions;
+
 #endif   /* POSTGRES_FDW_H */
