@@ -458,28 +458,13 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 	MTM_TRACE("Send message %s CSN=%ld to node %d from node %d for global transaction %d/local transaction %d\n", 
 			  messageText[ts->cmd], ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
 	Assert(ts->cmd != MSG_INVALID);
-	buf->data[buf->used].code = ts->cmd;
+	buf->data[buf->used].code = ts->status == TRANSACTION_STATUS_ABORTED ? MSG_ABORTED : MSG_PREPARED;
 	buf->data[buf->used].dxid = xid;
 	buf->data[buf->used].sxid = ts->xid;
 	buf->data[buf->used].csn =  ts->csn;
 	buf->data[buf->used].node = MtmNodeId;
 	buf->data[buf->used].disabledNodeMask = ds->disabledNodeMask;
 	buf->used += 1;
-}
-
-static void MtmBroadcastMessage(MtmBuffer* txBuffer, MtmTransState* ts)
-{
-	int i;
-	int n = 1;
-	for (i = 0; i < MtmNodes; i++)
-	{
-		if (TransactionIdIsValid(ts->xids[i])) { 
-			Assert(i+1 != MtmNodeId);
-			MtmAppendBuffer(txBuffer, ts->xids[i], i, ts);
-			n += 1;
-		}
-	}
-	Assert(n == ds->nNodes);
 }
 
 static void MtmTransSender(Datum arg)
@@ -508,12 +493,7 @@ static void MtmTransSender(Datum arg)
 		MtmLock(LW_SHARED); 
 
 		for (ts = ds->votingTransactions; ts != NULL; ts = ts->nextVoting) {
-			if (MtmIsCoordinator(ts)) { 
-				MtmBroadcastMessage(txBuffer, ts);
-			} else { 
-				MtmAppendBuffer(txBuffer, ts->gtid.xid, ts->gtid.node-1, ts);
-			}
-			ts->cmd = MSG_INVALID;
+			MtmAppendBuffer(txBuffer, ts->gtid.xid, ts->gtid.node-1, ts);
 		}
 		ds->votingTransactions = NULL;
 		MtmUnlock();
@@ -634,101 +614,23 @@ static void MtmTransReceiver(Datum arg)
 					MtmArbiterMessage* msg = &rxBuffer[i].data[j];
 					MtmTransState* ts = (MtmTransState*)hash_search(xid2state, &msg->dxid, HASH_FIND, NULL);
 					Assert(ts != NULL);
-					Assert(ts->cmd == MSG_INVALID);
 					Assert(msg->node > 0 && msg->node <= nNodes && msg->node != MtmNodeId);
-					ts->xids[msg->node-1] = msg->sxid;
-
-					if (MtmIsCoordinator(ts)) { 
-						switch (msg->code) { 
-						case MSG_READY:
-							Assert(ts->status == TRANSACTION_STATUS_ABORTED || ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-							Assert(ts->nVotes < ds->nNodes);	
-							ds->nodeTransDelay[msg->node-1] += MtmGetCurrentTime() - ts->csn;
-							if (++ts->nVotes == ds->nNodes) { 
-								/* All nodes are finished their transactions */
-								if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
-									ts->nVotes = 1; /* I voted myself */
-									ts->cmd = MSG_PREPARE;
-								} else { 
-									ts->status = TRANSACTION_STATUS_ABORTED;
-									ts->cmd = MSG_ABORT;
-									MtmAdjustSubtransactions(ts);
-									MtmWakeUpBackend(ts);								
-								}
-								MtmSendNotificationMessage(ts);									  
-							}
-							break;
+					Assert (MtmIsCoordinator(ts));
+					switch (msg->code) { 
 						case MSG_PREPARED:
- 						    Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-							Assert(ts->nVotes < ds->nNodes);
-							if (msg->csn > ts->csn) {
-								ts->csn = msg->csn;
-								MtmSyncClock(ts->csn);
-							}
-							if (++ts->nVotes == ds->nNodes) { 
-								/* ts->csn is maximum of CSNs at all nodes */
-								ts->nVotes = 1; /* I voted myself */
-								ts->cmd = MSG_COMMIT;
-								ts->csn = MtmAssignCSN();
-								ts->status = TRANSACTION_STATUS_UNKNOWN;
-								MtmAdjustSubtransactions(ts);
-								MtmSendNotificationMessage(ts);
-							}
-							break;
-						case MSG_COMMITTED:
-							Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
-							Assert(ts->nVotes < ds->nNodes);
-							if (++ts->nVotes == ds->nNodes) { 									
-								/* All nodes have the same CSN */
-								MtmWakeUpBackend(ts);
+							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
+								if (msg->csn > ts->csn) {
+									ts->csn = msg->csn;
+									MtmSyncClock(ts->csn);
+								}
+								if (++ts->nVotes == ds->nNodes) { 
+									MtmWakeUpBackend(ts);
+								}
 							}
 							break;
 						case MSG_ABORTED:
-							Assert(ts->status == TRANSACTION_STATUS_ABORTED || ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-							Assert(ts->nVotes < ds->nNodes);
-							ts->status = TRANSACTION_STATUS_ABORTED;									
-							if (++ts->nVotes == ds->nNodes) { 
-								ts->cmd = MSG_ABORT;
-								MtmAdjustSubtransactions(ts);
-								MtmSendNotificationMessage(ts);		
-								MtmWakeUpBackend(ts);								
-							}
-							break;
-						default:
-							Assert(false);
-						}
-					} else { /* replica */
-						switch (msg->code) { 
-						case MSG_PREPARE:
- 					        Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS); 
-							if ((msg->disabledNodeMask & ~ds->disabledNodeMask) != 0) { 
-								/* Coordinator's disabled mask is wider than my: so reject such transaction to avoid 
-								   commit on smaller subset of nodes */
+							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
 								ts->status = TRANSACTION_STATUS_ABORTED;
-								ts->cmd = MSG_ABORT;
-								MtmAdjustSubtransactions(ts);
-								MtmWakeUpBackend(ts);
-							} else { 
-								ts->status = TRANSACTION_STATUS_UNKNOWN;
-								ts->csn = MtmAssignCSN();
-								ts->cmd = MSG_PREPARED;
-							}
-							MtmSendNotificationMessage(ts);
-							break;
-						case MSG_COMMIT:
-							Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
-							Assert(ts->csn < msg->csn);
-							ts->csn = msg->csn;
-							MtmSyncClock(ts->csn);
-							ts->cmd = MSG_COMMITTED;							
-							MtmAdjustSubtransactions(ts);
-							MtmSendNotificationMessage(ts);
-							MtmWakeUpBackend(ts);
-							break;
-						case MSG_ABORT:
-							if (ts->status != TRANSACTION_STATUS_ABORTED) {
-								Assert(ts->status == TRANSACTION_STATUS_UNKNOWN || ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-								ts->status = TRANSACTION_STATUS_ABORTED;								
 								MtmAdjustSubtransactions(ts);
 								MtmWakeUpBackend(ts);
 							}
@@ -736,7 +638,7 @@ static void MtmTransReceiver(Datum arg)
 						default:
 							Assert(false);
 						}
-					}
+					} 
 				}
 				MtmUnlock();
 				

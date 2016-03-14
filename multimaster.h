@@ -19,6 +19,7 @@
 #define MULTIMASTER_SLOT_PATTERN        "mtm_slot_%d"
 #define MULTIMASTER_MIN_PROTO_VERSION   1
 #define MULTIMASTER_MAX_PROTO_VERSION   1
+#define MULTIMASTER_MAX_GID             32
 
 #define USEC 1000000
 
@@ -51,12 +52,7 @@ typedef enum
 { 
 	MSG_INVALID,
 	MSG_HANDSHAKE,
-	MSG_READY,
-	MSG_PREPARE,
-	MSG_COMMIT,
-	MSG_ABORT,
 	MSG_PREPARED,
-	MSG_COMMITTED,
 	MSG_ABORTED,
 	MSG_STATUS
 } MtmMessageCode;
@@ -88,11 +84,10 @@ typedef struct MtmTransState
 							              finally should be nNodes-1 */
 	int            procno;             /* pgprocno of transaction coordinator waiting for responses from replicas, 
 							              used to notify coordinator by arbiter */
-	MtmMessageCode cmd;                /* Notification message code to be sent */
+	bool           voteCompleted;      /* Responses necessary to make a decision are received by coordinator of transaction */
 	int            nSubxids;           /* Number of subtransanctions */
 	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
-	bool voteCompleted;                /* Responses necessary to make a decision are received by coordinator of transaction */
 	TransactionId xids[1];             /* transaction ID at replicas: varying size MtmNodes */
 } MtmTransState;
 

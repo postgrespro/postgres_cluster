@@ -64,7 +64,6 @@ typedef struct {
 	bool  isReplicated;   /* transaction on replica */
 	bool  isDistributed;  /* transaction performed INSERT/UPDATE/DELETE and has to be replicated to other nodes */
 	bool  containsDML;    /* transaction contains DML statements */
-	bool  isPrepared;     /* transaction is prepared as part of 2PC */
     csn_t snapshot;       /* transaction snaphsot */
 } MtmCurrentTrans;
 
@@ -100,8 +99,8 @@ static void MtmSetTransactionStatus(TransactionId xid, int nsubxids, Transaction
 static void MtmInitialize(void);
 static void MtmXactCallback(XactEvent event, void *arg);
 static void MtmBeginTransaction(MtmCurrentTrans* x);
-static void MtmPrecommitTransaction(MtmCurrentTrans* x);
 static bool MtmCommitTransaction(TransactionId xid, int nsubxids, TransactionId *subxids);
+static void MtmPrePrepareTransaction(MtmCurrentTrans* x);
 static void MtmPrepareTransaction(MtmCurrentTrans* x);
 static void MtmCommitPreparedTransaction(MtmCurrentTrans* x);
 static void MtmEndTransaction(MtmCurrentTrans* x, bool commit);
@@ -347,15 +346,6 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 	return PgXidInMVCCSnapshot(xid, snapshot);
 }    
 
-static uint32 MtmXidHashFunc(const void *key, Size keysize)
-{
-	return (uint32)*(TransactionId*)key;
-}
-
-static int MtmXidMatchFunc(const void *key1, const void *key2, Size keysize)
-{
-	return *(TransactionId*)key1 - *(TransactionId*)key2;
-}
 
 static void MtmTransactionListAppend(MtmTransState* ts)
 {
@@ -489,8 +479,8 @@ MtmXactCallback(XactEvent event, void *arg)
 	  case XACT_EVENT_START: 
 	    MtmBeginTransaction(&dtmTx);
         break;
-	  case XACT_EVENT_PRE_COMMIT:
-		MtmPrecommitTransaction(&dtmTx);
+	  case XACT_EVENT_PRE_PREPARE:
+		MtmPrePrepareTransaction(&dtmTx);
 		break;
 	  case XACT_EVENT_PREPARE:
 		MtmPrepareTransaction(&dtmTx);
@@ -598,16 +588,14 @@ MtmCheckClusterLock()
 }	
 
 /* 
- * This functions is called as pre-commit callback.
- * We need to pass snapshot to WAL-sender, so create record in transaction status hash table 
- * before commit
+ * Prepare transaction for two-phase commit
  */
-static void MtmPrecommitTransaction(MtmCurrentTrans* x)
+MtmPrePrepareTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
 	int i;
 	
-	if (!x->isDistributed || x->isPrepared) {
+	if (!x->isDistributed) {
 		return;
 	}
 
@@ -632,7 +620,6 @@ static void MtmPrecommitTransaction(MtmCurrentTrans* x)
 	ts->snapshot = x->isReplicated || !x->containsDML ? INVALID_CSN : x->snapshot;
 	ts->csn = MtmAssignCSN();	
 	ts->gtid = x->gtid;
-	ts->cmd = MSG_INVALID;
 	ts->procno = MyProc->pgprocno;
 	ts->nVotes = 0; 
 	ts->voteCompleted = false;
@@ -644,9 +631,6 @@ static void MtmPrecommitTransaction(MtmCurrentTrans* x)
 		ts->gtid.xid = x->xid;
 		ts->gtid.node = MtmNodeId;
 	}
-	for (i = 0; i < MtmNodes; i++) { 
-		ts->xids[i] = InvalidTransactionId;
-	}
 	MtmTransactionListAppend(ts);
 
 	MtmUnlock();
@@ -654,13 +638,33 @@ static void MtmPrecommitTransaction(MtmCurrentTrans* x)
 	MTM_TRACE("%d: MtmPrepareTransaction prepare commit of %d CSN=%ld\n", MyProcPid, x->xid, ts->csn);
 }
 
-static void 
 MtmPrepareTransaction(MtmCurrentTrans* x)
-{	
-	MtmPrecommitTransaction(x);
-	MTM_TRACE("Prepare transaction %d", x->xid);
-	x->isPrepared = true;	
+{ 
+	MtmLock(LW_EXCLUSIVE);
+	if (ts->status = TRANSACTION_STATUS_IN_PROGRESS) { 
+		ts->status = TRANSACTION_STATUS_UNKNOWN;	
+		MtmAdjustSubtransactions(ts);
+	}
+
+	if (!MtmIsCoordinator(ts)) {
+		MtmSendNotificationMessage(ts); /* send notification to coordinator */
+		MtmUnlock();
+	} else { 
+		/* wait N commits or just one ABORT */
+		ts->nVotes += 1;
+		while (ts->nVotes != dtm->nNodes && ts->status == TRANSACTION_STATUS_PROGRESS) { 
+			MtmUnlock();
+			WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
+			ResetLatch(&MyProc->procLatch);			
+			MtmLock(LW_SHARED);
+		}
+		MtmUnlock();
+		if (ts->status == TRANSACTION_STATUS_ABORTED) { 
+			elog(ERROR, "Distributed transaction %d is rejected by DTM", x->xid);
+		}
+	}
 }
+
 
 static void 
 MtmCommitPreparedTransaction(MtmCurrentTrans* x)
@@ -1679,14 +1683,12 @@ HTAB* MtmCreateHash(void)
 	Assert(MtmNodes > 0);
 	memset(&info, 0, sizeof(info));
 	info.keysize = sizeof(TransactionId);
-	info.entrysize = sizeof(MtmTransState) + (MtmNodes-1)*sizeof(TransactionId);
-	info.hash = MtmXidHashFunc;
-	info.match = MtmXidMatchFunc;
+	info.entrysize = sizeof(MtmTransState);
 	htab = ShmemInitHash(
 		"xid2state",
 		MTM_HASH_SIZE, MTM_HASH_SIZE,
 		&info,
-		HASH_ELEM | HASH_FUNCTION | HASH_COMPARE
+		HASH_ELEM
 	);
 	return htab;
 }
