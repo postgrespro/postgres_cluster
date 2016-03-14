@@ -485,7 +485,7 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	 * columns used in them.  Doesn't seem worth detecting that case though.)
 	 */
 	fpinfo->attrs_used = NULL;
-	pull_varattnos((Node *) baserel->reltarget.exprs, baserel->relid,
+	pull_varattnos((Node *) baserel->reltarget->exprs, baserel->relid,
 				   &fpinfo->attrs_used);
 	foreach(lc, fpinfo->local_conds)
 	{
@@ -536,7 +536,7 @@ postgresGetForeignRelSize(PlannerInfo *root,
 
 		/* Report estimated baserel size to planner. */
 		baserel->rows = fpinfo->rows;
-		baserel->reltarget.width = fpinfo->width;
+		baserel->reltarget->width = fpinfo->width;
 	}
 	else
 	{
@@ -553,7 +553,7 @@ postgresGetForeignRelSize(PlannerInfo *root,
 		{
 			baserel->pages = 10;
 			baserel->tuples =
-				(10 * BLCKSZ) / (baserel->reltarget.width +
+				(10 * BLCKSZ) / (baserel->reltarget->width +
 								 MAXALIGN(SizeofHeapTupleHeader));
 		}
 
@@ -2168,7 +2168,7 @@ estimate_path_cost_size(PlannerInfo *root,
 		 * between foreign relations.
 		 */
 		rows = foreignrel->rows;
-		width = foreignrel->reltarget.width;
+		width = foreignrel->reltarget->width;
 
 		/* Back into an estimate of the number of retrieved rows. */
 		retrieved_rows = clamp_row_est(rows / fpinfo->local_conds_sel);
@@ -3694,7 +3694,7 @@ postgresGetForeignJoinPaths(PlannerInfo *root,
 							&width, &startup_cost, &total_cost);
 	/* Now update this information in the joinrel */
 	joinrel->rows = rows;
-	joinrel->reltarget.width = width;
+	joinrel->reltarget->width = width;
 	fpinfo->rows = rows;
 	fpinfo->width = width;
 	fpinfo->startup_cost = startup_cost;
