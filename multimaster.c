@@ -538,7 +538,8 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		x->gtid.xid = InvalidTransactionId;
 		MtmUnlock();
 
-        MTM_TRACE("MtmLocalTransaction: %s transaction %u uses local snapshot %lu\n", x->isDistributed ? "distributed" : "local", x->xid, x->snapshot);
+        MTM_TRACE("%d: MtmLocalTransaction: %s transaction %u uses local snapshot %lu\n", 
+				  MyProcPid, x->isDistributed ? "distributed" : "local", x->xid, x->snapshot);
     }
 }
 
@@ -583,7 +584,7 @@ MtmCheckClusterLock()
 			} else {  
 				/* All lockers are synchronized their logs */
 				/* Remove lock and mark them as receovered */
-				elog(WARNING, "Complete recovery of %d nodes (node mask %llx)", dtm->nLockers, dtm->nodeLockerMask);
+				elog(WARNING, "Complete recovery of %d nodes (node mask %lx)", dtm->nLockers, dtm->nodeLockerMask);
 				Assert(dtm->walSenderLockerMask == 0);
 				Assert((dtm->nodeLockerMask & dtm->disabledNodeMask) == dtm->nodeLockerMask);
 				dtm->disabledNodeMask &= ~dtm->nodeLockerMask;
@@ -606,7 +607,7 @@ static void MtmPrecommitTransaction(MtmCurrentTrans* x)
 	MtmTransState* ts;
 	int i;
 	
-	if (!x->isDistributed) {
+	if (!x->isDistributed || x->isPrepared) {
 		return;
 	}
 
@@ -657,6 +658,7 @@ static void
 MtmPrepareTransaction(MtmCurrentTrans* x)
 {	
 	MtmPrecommitTransaction(x);
+	MTM_TRACE("Prepare transaction %d", x->xid);
 	x->isPrepared = true;	
 }
 
@@ -666,6 +668,7 @@ MtmCommitPreparedTransaction(MtmCurrentTrans* x)
 	TransactionId *subxids;
 	int nSubxids;
 	nSubxids = xactGetCommittedChildren(&subxids);
+	MTM_TRACE("%d: Commit prepared transaction %d\n", MyProcPid, x->xid);
 	if (!MtmCommitTransaction(x->xid, nSubxids, subxids))
 	{
 		elog(ERROR, "Commit of transaction %d is rejected by DTM", x->xid);                    
@@ -718,8 +721,12 @@ static int64 MtmGetSlotLag(int nodeId)
 static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
-	if (x->isDistributed && commit) { 
+	MTM_TRACE("%d: End transaction %d, prepared=%d, distributed=%d -> %s\n", MyProcPid, x->xid, x->isPrepared, x->isDistributed, commit ? "commit" : "abort");
+	if (x->isDistributed && commit) { 		
 		MtmTransState* ts;
+		if (x->isPrepared) { 
+			return;
+		}
 		MtmLock(LW_EXCLUSIVE);
 		ts = hash_search(xid2state, &x->xid, HASH_FIND, NULL);
 		Assert(ts != NULL);
@@ -1541,8 +1548,13 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				switch (stmt->kind)
 				{					
 				case TRANS_STMT_COMMIT:
-					if (MtmUse2PC) { 
+					if (MtmUse2PC && dtmTx.isDistributed && dtmTx.containsDML) { 
 						char* gid = MtmGenerateGid();
+						if (!IsTransactionBlock()) { 
+							elog(WARNING, "Start transaction block for %d", dtmTx.xid);
+							CommitTransactionCommand();
+							StartTransactionCommand();
+						}
 						if (!PrepareTransactionBlock(gid))
 						{
 							elog(WARNING, "Failed to prepare transaction %s", gid);
@@ -1826,7 +1838,7 @@ void MtmRefreshClusterStatus(bool nowait)
 
 	clique = MtmFindMaxClique(matrix, MtmNodes, &clique_size);
 	if (clique_size >= MtmNodes/2+1) { /* have quorum */
-		elog(WARNING, "Find clique %llx, disabledNodeMask %llx", clique, dtm->disabledNodeMask);
+		elog(WARNING, "Find clique %lx, disabledNodeMask %lx", clique, dtm->disabledNodeMask);
 		MtmLock(LW_EXCLUSIVE);
 		mask = ~clique & (((nodemask_t)1 << MtmNodes)-1) & ~dtm->disabledNodeMask; /* new disabled nodes mask */
 		for (i = 0; mask != 0; i++, mask >>= 1) {
@@ -1853,7 +1865,7 @@ void MtmRefreshClusterStatus(bool nowait)
 			MtmSwitchClusterMode(MTM_RECOVERY);
 		}
 	} else { 
-		elog(WARNING, "Clique %llx has no quorum", clique);
+		elog(WARNING, "Clique %lx has no quorum", clique);
 	}
 }
 
