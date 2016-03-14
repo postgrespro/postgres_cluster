@@ -51,6 +51,7 @@
 #include "access/twophase.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#include "access/xtm.h"
 #include "catalog/catalog.h"
 #include "miscadmin.h"
 #include "storage/proc.h"
@@ -971,6 +972,12 @@ ProcArrayApplyXidAssignment(TransactionId topxid,
 	LWLockRelease(ProcArrayLock);
 }
 
+bool
+TransactionIdIsInProgress(TransactionId xid)
+{
+	return TM->IsInProgress(xid);
+}
+
 /*
  * TransactionIdIsInProgress -- is given transaction running in some backend
  *
@@ -998,7 +1005,7 @@ ProcArrayApplyXidAssignment(TransactionId topxid,
  * PGXACT again anyway; see GetNewTransactionId).
  */
 bool
-TransactionIdIsInProgress(TransactionId xid)
+PgTransactionIdIsInProgress(TransactionId xid)
 {
 	static TransactionId *xids = NULL;
 	int			nxids = 0;
@@ -1259,6 +1266,12 @@ TransactionIdIsActive(TransactionId xid)
 }
 
 
+TransactionId
+GetOldestXmin(Relation rel, bool ignoreVacuum)
+{
+	return TM->GetOldestXmin(rel, ignoreVacuum);
+}
+
 /*
  * GetOldestXmin -- returns oldest transaction that was running
  *					when any current transaction was started.
@@ -1308,7 +1321,7 @@ TransactionIdIsActive(TransactionId xid)
  * GetOldestXmin() move backwards, with no consequences for data integrity.
  */
 TransactionId
-GetOldestXmin(Relation rel, bool ignoreVacuum)
+PgGetOldestXmin(Relation rel, bool ignoreVacuum)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId result;
@@ -1470,6 +1483,12 @@ GetMaxSnapshotSubxidCount(void)
 	return TOTAL_MAX_CACHED_SUBXIDS;
 }
 
+Snapshot
+GetSnapshotData(Snapshot snapshot)
+{
+	return TM->GetSnapshot(snapshot);
+}
+
 /*
  * GetSnapshotData -- returns information about running transactions.
  *
@@ -1506,7 +1525,7 @@ GetMaxSnapshotSubxidCount(void)
  * not statically allocated (see xip allocation below).
  */
 Snapshot
-GetSnapshotData(Snapshot snapshot)
+PgGetSnapshotData(Snapshot snapshot)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId xmin;

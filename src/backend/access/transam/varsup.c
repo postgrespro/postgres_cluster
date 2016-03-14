@@ -19,6 +19,7 @@
 #include "access/transam.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#include "access/xtm.h"
 #include "commands/dbcommands.h"
 #include "miscadmin.h"
 #include "postmaster/autovacuum.h"
@@ -33,6 +34,11 @@
 /* pointer to "variable cache" in shared memory (set up by shmem.c) */
 VariableCache ShmemVariableCache = NULL;
 
+TransactionId
+GetNewTransactionId(bool isSubXact)
+{
+	return TM->GetNewTransactionId(isSubXact);
+}
 
 /*
  * Allocate the next XID for a new transaction or subtransaction.
@@ -45,7 +51,7 @@ VariableCache ShmemVariableCache = NULL;
  * issue a warning about XID wrap.
  */
 TransactionId
-GetNewTransactionId(bool isSubXact)
+PgGetNewTransactionId(bool isSubXact)
 {
 	TransactionId xid;
 
