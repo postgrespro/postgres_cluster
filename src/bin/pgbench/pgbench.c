@@ -94,6 +94,7 @@ static int	pthread_join(pthread_t th, void **thread_return);
 
 int			nxacts = 0;			/* number of transactions per client */
 int			duration = 0;		/* duration in seconds */
+int64		end_time = 0;		/* when to stop in micro seconds, under -T */
 
 /*
  * scaling factor. for example, scale = 10 will make 1000000 tuples in
@@ -371,6 +372,8 @@ static void processXactStats(TState *thread, CState *st, instr_time *now,
 static void doLog(TState *thread, CState *st, instr_time *now,
 	  StatsData *agg, bool skipped, double latency, double lag);
 
+
+static bool evaluateExpr(CState *, PgBenchExpr *, int64 *);
 
 static void
 usage(void)
@@ -990,6 +993,150 @@ getQueryParams(CState *st, const Command *command, const char **params)
 		params[i] = getVariable(st, command->argv[i + 1]);
 }
 
+/* maximum number of function arguments */
+#define MAX_FARGS 16
+
+/*
+ * Recursive evaluation of functions
+ */
+static bool
+evalFunc(CState *st,
+		 PgBenchFunction func, PgBenchExprLink *args, int64 *retval)
+{
+	/* evaluate all function arguments */
+	int			nargs = 0;
+	int64		iargs[MAX_FARGS];
+	PgBenchExprLink *l = args;
+
+	for (nargs = 0; nargs < MAX_FARGS && l != NULL; nargs++, l = l->next)
+		if (!evaluateExpr(st, l->expr, &iargs[nargs]))
+			return false;
+
+	if (l != NULL)
+	{
+		fprintf(stderr,
+				"too many function arguments, maximum is %d\n", MAX_FARGS);
+		return false;
+	}
+
+	/* then evaluate function */
+	switch (func)
+	{
+		case PGBENCH_ADD:
+		case PGBENCH_SUB:
+		case PGBENCH_MUL:
+		case PGBENCH_DIV:
+		case PGBENCH_MOD:
+			{
+				int64		lval = iargs[0],
+							rval = iargs[1];
+
+				Assert(nargs == 2);
+
+				switch (func)
+				{
+					case PGBENCH_ADD:
+						*retval = lval + rval;
+						return true;
+
+					case PGBENCH_SUB:
+						*retval = lval - rval;
+						return true;
+
+					case PGBENCH_MUL:
+						*retval = lval * rval;
+						return true;
+
+					case PGBENCH_DIV:
+					case PGBENCH_MOD:
+						if (rval == 0)
+						{
+							fprintf(stderr, "division by zero\n");
+							return false;
+						}
+						/* special handling of -1 divisor */
+						if (rval == -1)
+						{
+							if (func == PGBENCH_DIV)
+							{
+								/* overflow check (needed for INT64_MIN) */
+								if (lval == PG_INT64_MIN)
+								{
+									fprintf(stderr, "bigint out of range\n");
+									return false;
+								}
+								else
+									*retval = -lval;
+							}
+							else
+								*retval = 0;
+							return true;
+						}
+						/* divisor is not -1 */
+						if (func == PGBENCH_DIV)
+							*retval = lval / rval;
+						else	/* func == PGBENCH_MOD */
+							*retval = lval % rval;
+						return true;
+
+					default:
+						/* cannot get here */
+						Assert(0);
+				}
+			}
+
+		case PGBENCH_ABS:
+			{
+				Assert(nargs == 1);
+
+				if (iargs[0] < 0)
+					*retval = -iargs[0];
+				else
+					*retval = iargs[0];
+
+				return true;
+			}
+
+		case PGBENCH_DEBUG:
+			{
+				Assert(nargs == 1);
+
+				fprintf(stderr, "debug(script=%d,command=%d): " INT64_FORMAT "\n",
+						st->use_file, st->state + 1, iargs[0]);
+
+				*retval = iargs[0];
+
+				return true;
+			}
+
+		case PGBENCH_MIN:
+		case PGBENCH_MAX:
+			{
+				int64		extremum = iargs[0];
+				int			i;
+
+				Assert(nargs >= 1);
+
+				for (i = 1; i < nargs; i++)
+				{
+					int64		ival = iargs[i];
+
+					if (func == PGBENCH_MIN)
+						extremum = extremum < ival ? extremum : ival;
+					else if (func == PGBENCH_MAX)
+						extremum = extremum > ival ? extremum : ival;
+				}
+
+				*retval = extremum;
+				return true;
+			}
+
+		default:
+			fprintf(stderr, "unexpected function tag: %d\n", func);
+			exit(1);
+	}
+}
+
 /*
  * Recursive evaluation of an expression in a pgbench script
  * using the current state of variables.
@@ -1021,86 +1168,16 @@ evaluateExpr(CState *st, PgBenchExpr *expr, int64 *retval)
 				return true;
 			}
 
-		case ENODE_OPERATOR:
-			{
-				int64		lval;
-				int64		rval;
-
-				if (!evaluateExpr(st, expr->u.operator.lexpr, &lval))
-					return false;
-				if (!evaluateExpr(st, expr->u.operator.rexpr, &rval))
-					return false;
-				switch (expr->u.operator.operator)
-				{
-					case '+':
-						*retval = lval + rval;
-						return true;
-
-					case '-':
-						*retval = lval - rval;
-						return true;
-
-					case '*':
-						*retval = lval * rval;
-						return true;
-
-					case '/':
-						if (rval == 0)
-						{
-							fprintf(stderr, "division by zero\n");
-							return false;
-						}
-
-						/*
-						 * INT64_MIN / -1 is problematic, since the result
-						 * can't be represented on a two's-complement machine.
-						 * Some machines produce INT64_MIN, some produce zero,
-						 * some throw an exception. We can dodge the problem
-						 * by recognizing that division by -1 is the same as
-						 * negation.
-						 */
-						if (rval == -1)
-						{
-							*retval = -lval;
-
-							/* overflow check (needed for INT64_MIN) */
-							if (lval == PG_INT64_MIN)
-							{
-								fprintf(stderr, "bigint out of range\n");
-								return false;
-							}
-						}
-						else
-							*retval = lval / rval;
-
-						return true;
-
-					case '%':
-						if (rval == 0)
-						{
-							fprintf(stderr, "division by zero\n");
-							return false;
-						}
-
-						/*
-						 * Some machines throw a floating-point exception for
-						 * INT64_MIN % -1.  Dodge that problem by noting that
-						 * any value modulo -1 is 0.
-						 */
-						if (rval == -1)
-							*retval = 0;
-						else
-							*retval = lval % rval;
-
-						return true;
-				}
-
-				fprintf(stderr, "bad operator\n");
-				return false;
-			}
+		case ENODE_FUNCTION:
+			return evalFunc(st,
+							expr->u.function.function,
+							expr->u.function.args,
+							retval);
 
 		default:
-			break;
+			fprintf(stderr, "unexpected enode type in evaluation: %d\n",
+					expr->etype);
+			exit(1);
 	}
 
 	fprintf(stderr, "bad expression\n");
@@ -1285,6 +1362,10 @@ top:
 
 		thread->throttle_trigger += wait;
 		st->txn_scheduled = thread->throttle_trigger;
+
+		/* stop client if next transaction is beyond pgbench end of execution */
+		if (duration > 0 && st->txn_scheduled > end_time)
+			return clientDone(st, true);
 
 		/*
 		 * If this --latency-limit is used, and this slot is already late so
@@ -1710,6 +1791,7 @@ top:
 				st->ecnt++;
 				return true;
 			}
+
 			sprintf(res, INT64_FORMAT, result);
 
 			if (!putVariable(st, argv[0], argv[1], res))
@@ -2669,22 +2751,36 @@ listAvailableScripts(void)
 	fprintf(stderr, "\n");
 }
 
+/* return builtin script "name" if unambiguous */
 static char *
 findBuiltin(const char *name, char **desc)
 {
-	int			i;
+	int			i,
+				found = 0,
+				len = strlen(name);
+	char	   *commands = NULL;
 
 	for (i = 0; i < N_BUILTIN; i++)
 	{
-		if (strncmp(builtin_script[i].name, name,
-					strlen(builtin_script[i].name)) == 0)
+		if (strncmp(builtin_script[i].name, name, len) == 0)
 		{
 			*desc = builtin_script[i].desc;
-			return builtin_script[i].commands;
+			commands = builtin_script[i].commands;
+			found++;
 		}
 	}
 
-	fprintf(stderr, "no builtin script found for name \"%s\"\n", name);
+	/* ok, unambiguous result */
+	if (found == 1)
+		return commands;
+
+	/* error cases */
+	if (found == 0)
+		fprintf(stderr, "no builtin script found for name \"%s\"\n", name);
+	else	/* found > 1 */
+		fprintf(stderr,
+				"ambiguous builtin name: %d builtin scripts found for prefix \"%s\"\n", found, name);
+
 	listAvailableScripts();
 	exit(1);
 }
@@ -3491,6 +3587,11 @@ main(int argc, char **argv)
 
 		INSTR_TIME_SET_CURRENT(thread->start_time);
 
+		/* compute when to stop */
+		if (duration > 0)
+			end_time = INSTR_TIME_GET_MICROSEC(thread->start_time) +
+				(int64) 1000000 * duration;
+
 		/* the first thread (i = 0) is executed by main thread */
 		if (i > 0)
 		{
@@ -3509,6 +3610,10 @@ main(int argc, char **argv)
 	}
 #else
 	INSTR_TIME_SET_CURRENT(threads[0].start_time);
+	/* compute when to stop */
+	if (duration > 0)
+		end_time = INSTR_TIME_GET_MICROSEC(threads[0].start_time) +
+			(int64) 1000000 * duration;
 	threads[0].thread = INVALID_THREAD;
 #endif   /* ENABLE_THREAD_SAFETY */
 
@@ -3706,7 +3811,7 @@ threadRun(void *arg)
 			sock = PQsocket(st->con);
 			if (sock < 0)
 			{
-				fprintf(stderr, "bad socket: %s\n", strerror(errno));
+				fprintf(stderr, "invalid socket: %s", PQerrorMessage(st->con));
 				goto done;
 			}
 
@@ -3770,11 +3875,22 @@ threadRun(void *arg)
 			Command   **commands = sql_script[st->use_file].commands;
 			int			prev_ecnt = st->ecnt;
 
-			if (st->con && (FD_ISSET(PQsocket(st->con), &input_mask)
-							|| commands[st->state]->type == META_COMMAND))
+			if (st->con)
 			{
-				if (!doCustom(thread, st, &aggs))
-					remains--;	/* I've aborted */
+				int			sock = PQsocket(st->con);
+
+				if (sock < 0)
+				{
+					fprintf(stderr, "invalid socket: %s",
+							PQerrorMessage(st->con));
+					goto done;
+				}
+				if (FD_ISSET(sock, &input_mask) ||
+					commands[st->state]->type == META_COMMAND)
+				{
+					if (!doCustom(thread, st, &aggs))
+						remains--;		/* I've aborted */
+				}
 			}
 
 			if (st->ecnt > prev_ecnt && commands[st->state]->type == META_COMMAND)

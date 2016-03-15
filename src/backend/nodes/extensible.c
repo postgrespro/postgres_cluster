@@ -45,13 +45,14 @@ RegisterExtensibleNodeMethods(const ExtensibleNodeMethods *methods)
 		HASHCTL		ctl;
 
 		memset(&ctl, 0, sizeof(HASHCTL));
-		ctl.keysize = NAMEDATALEN;
+		ctl.keysize = EXTNODENAME_MAX_LEN;
 		ctl.entrysize = sizeof(ExtensibleNodeEntry);
 		extensible_node_methods = hash_create("Extensible Node Methods",
 											  100, &ctl, HASH_ELEM);
 	}
 
-	Assert(strlen(methods->extnodename) <= EXTNODENAME_MAX_LEN);
+	if (strlen(methods->extnodename) >= EXTNODENAME_MAX_LEN)
+		elog(ERROR, "extensible node name is too long");
 
 	entry = (ExtensibleNodeEntry *) hash_search(extensible_node_methods,
 												methods->extnodename,

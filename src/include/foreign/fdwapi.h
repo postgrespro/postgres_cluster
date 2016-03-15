@@ -59,6 +59,9 @@ typedef void (*GetForeignJoinPaths_function) (PlannerInfo *root,
 														  JoinType jointype,
 												   JoinPathExtraData *extra);
 
+typedef void (*GetForeignUpperPaths_function) (PlannerInfo *root,
+											   RelOptInfo *scan_join_rel);
+
 typedef void (*AddForeignUpdateTargets_function) (Query *parsetree,
 												   RangeTblEntry *target_rte,
 												   Relation target_relation);
@@ -131,6 +134,10 @@ typedef void (*InitializeDSMForeignScan_function) (ForeignScanState *node,
 typedef void (*InitializeWorkerForeignScan_function) (ForeignScanState *node,
 													  shm_toc *toc,
 													  void *coordinate);
+typedef bool (*IsForeignScanParallelSafe_function) (PlannerInfo *root,
+															 RelOptInfo *rel,
+														 RangeTblEntry *rte);
+
 /*
  * FdwRoutine is the struct returned by a foreign-data wrapper's handler
  * function.  It provides pointers to the callback functions needed by the
@@ -162,6 +169,9 @@ typedef struct FdwRoutine
 	/* Functions for remote-join planning */
 	GetForeignJoinPaths_function GetForeignJoinPaths;
 
+	/* Functions for remote upper-relation (post scan/join) planning */
+	GetForeignUpperPaths_function GetForeignUpperPaths;
+
 	/* Functions for updating foreign tables */
 	AddForeignUpdateTargets_function AddForeignUpdateTargets;
 	PlanForeignModify_function PlanForeignModify;
@@ -188,6 +198,7 @@ typedef struct FdwRoutine
 	ImportForeignSchema_function ImportForeignSchema;
 
 	/* Support functions for parallelism under Gather node */
+	IsForeignScanParallelSafe_function IsForeignScanParallelSafe;
 	EstimateDSMForeignScan_function EstimateDSMForeignScan;
 	InitializeDSMForeignScan_function InitializeDSMForeignScan;
 	InitializeWorkerForeignScan_function InitializeWorkerForeignScan;

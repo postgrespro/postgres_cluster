@@ -126,6 +126,9 @@ int			max_prepared_xacts = 0;
  *
  * typedef struct GlobalTransactionData *GlobalTransaction appears in
  * twophase.h
+ *
+ * Note that the max value of GIDSIZE must fit in the uint16 gidlen,
+ * specified in TwoPhaseFileHeader.
  */
 #define GIDSIZE 200
 
@@ -851,7 +854,7 @@ TwoPhaseGetDummyProc(TransactionId xid)
 /*
  * Header for a 2PC state file
  */
-#define TWOPHASE_MAGIC	0x57F94532		/* format identifier */
+#define TWOPHASE_MAGIC	0x57F94533		/* format identifier */
 
 typedef struct TwoPhaseFileHeader
 {
@@ -866,7 +869,7 @@ typedef struct TwoPhaseFileHeader
 	int32		nabortrels;		/* number of delete-on-abort rels */
 	int32		ninvalmsgs;		/* number of cache invalidation messages */
 	bool		initfileinval;	/* does relcache init file need invalidation? */
-	char		gid[GIDSIZE];	/* GID for transaction */
+	uint16		gidlen;			/* length of the GID - GID follows the header */
 } TwoPhaseFileHeader;
 
 /*
@@ -977,9 +980,10 @@ StartPrepare(GlobalTransaction gxact)
 	hdr.nabortrels = smgrGetPendingDeletes(false, &abortrels);
 	hdr.ninvalmsgs = xactGetCommittedInvalidationMessages(&invalmsgs,
 														  &hdr.initfileinval);
-	StrNCpy(hdr.gid, gxact->gid, GIDSIZE);
+	hdr.gidlen = strlen(gxact->gid) + 1; /* Include '\0' */
 
 	save_state_data(&hdr, sizeof(TwoPhaseFileHeader));
+	save_state_data(gxact->gid, hdr.gidlen);
 
 	/*
 	 * Add the additional info about subxacts, deletable files and cache
@@ -1376,6 +1380,7 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	hdr = (TwoPhaseFileHeader *) buf;
 	Assert(TransactionIdEquals(hdr->xid, xid));
 	bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
+	bufptr += MAXALIGN(hdr->gidlen);
 	children = (TransactionId *) bufptr;
 	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 	commitrels = (RelFileNode *) bufptr;
@@ -1994,6 +1999,7 @@ RecoverPreparedFromFiles(bool forceOverwriteOK)
 			TwoPhaseFileHeader *hdr;
 			TransactionId *subxids;
 			GlobalTransaction gxact;
+			const char	*gid;
 			int			i;
 			PGXACT	   *pgxact;
 
@@ -2042,6 +2048,8 @@ RecoverPreparedFromFiles(bool forceOverwriteOK)
 			hdr = (TwoPhaseFileHeader *) buf;
 			Assert(TransactionIdEquals(hdr->xid, xid));
 			bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
+			gid = (const char *) bufptr;
+			bufptr += MAXALIGN(hdr->gidlen);
 			subxids = (TransactionId *) bufptr;
 			bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 			bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
@@ -2076,7 +2084,7 @@ RecoverPreparedFromFiles(bool forceOverwriteOK)
 			/*
 			 * Recreate its GXACT and dummy PGPROC
 			 */
-			gxact = MarkAsPreparing(xid, hdr->gid,
+			gxact = MarkAsPreparing(xid, gid,
 									hdr->prepared_at,
 									hdr->owner, hdr->database);
 			gxact->ondisk = true;
@@ -2121,6 +2129,7 @@ RecoverPreparedFromXLOG(XLogReaderState *record)
 	TransactionId xid = XLogRecGetXid(record);
 	char *buf = (char *) XLogRecGetData(record);
 	char	   *bufptr;
+	const char *gid;
 	TwoPhaseFileHeader *hdr;
 	TransactionId *subxids;
 	GlobalTransaction gxact;
@@ -2130,6 +2139,8 @@ RecoverPreparedFromXLOG(XLogReaderState *record)
 	hdr = (TwoPhaseFileHeader *) buf;
 	Assert(TransactionIdEquals(hdr->xid, xid));
 	bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
+	gid = (const char *) bufptr;
+	bufptr += MAXALIGN(hdr->gidlen);
 	subxids = (TransactionId *) bufptr;
 	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 	bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
@@ -2161,7 +2172,7 @@ RecoverPreparedFromXLOG(XLogReaderState *record)
 	 * MarkAsPreparing sets prepare_start_lsn to InvalidXLogRecPtr
 	 * so next checkpoint will skip that transaction.
 	 */
-	gxact = MarkAsPreparing(xid, hdr->gid,
+	gxact = MarkAsPreparing(xid, gid,
 							hdr->prepared_at,
 							hdr->owner, hdr->database);
 	GXactLoadSubxactData(gxact, hdr->nsubxacts, subxids);

@@ -146,7 +146,8 @@ void
 build_base_rel_tlists(PlannerInfo *root, List *final_tlist)
 {
 	List	   *tlist_vars = pull_var_clause((Node *) final_tlist,
-											 PVC_RECURSE_AGGREGATES,
+											 PVC_RECURSE_AGGREGATES |
+											 PVC_RECURSE_WINDOWFUNCS |
 											 PVC_INCLUDE_PLACEHOLDERS);
 
 	if (tlist_vars != NIL)
@@ -156,12 +157,13 @@ build_base_rel_tlists(PlannerInfo *root, List *final_tlist)
 	}
 
 	/*
-	 * If there's a HAVING clause, we'll need the Vars it uses, too.
+	 * If there's a HAVING clause, we'll need the Vars it uses, too.  Note
+	 * that HAVING can contain Aggrefs but not WindowFuncs.
 	 */
 	if (root->parse->havingQual)
 	{
 		List	   *having_vars = pull_var_clause(root->parse->havingQual,
-												  PVC_RECURSE_AGGREGATES,
+												  PVC_RECURSE_AGGREGATES |
 												  PVC_INCLUDE_PLACEHOLDERS);
 
 		if (having_vars != NIL)
@@ -211,10 +213,11 @@ add_vars_to_targetlist(PlannerInfo *root, List *vars,
 			attno -= rel->min_attr;
 			if (rel->attr_needed[attno] == NULL)
 			{
-				/* Variable not yet requested, so add to reltargetlist */
+				/* Variable not yet requested, so add to rel's targetlist */
 				/* XXX is copyObject necessary here? */
-				rel->reltargetlist = lappend(rel->reltargetlist,
-											 copyObject(var));
+				rel->reltarget->exprs = lappend(rel->reltarget->exprs,
+												copyObject(var));
+				/* reltarget cost and width will be computed later */
 			}
 			rel->attr_needed[attno] = bms_add_members(rel->attr_needed[attno],
 													  where_needed);
@@ -1786,7 +1789,8 @@ distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 	if (bms_membership(relids) == BMS_MULTIPLE)
 	{
 		List	   *vars = pull_var_clause(clause,
-										   PVC_RECURSE_AGGREGATES,
+										   PVC_RECURSE_AGGREGATES |
+										   PVC_RECURSE_WINDOWFUNCS |
 										   PVC_INCLUDE_PLACEHOLDERS);
 
 		add_vars_to_targetlist(root, vars, relids, false);

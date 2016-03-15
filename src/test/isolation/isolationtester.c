@@ -227,27 +227,12 @@ main(int argc, char **argv)
 	 */
 	initPQExpBuffer(&wait_query);
 	appendPQExpBufferStr(&wait_query,
-						 "SELECT 1 FROM pg_locks holder, pg_locks waiter "
-						 "WHERE NOT waiter.granted AND waiter.pid = $1 "
-						 "AND holder.granted "
-						 "AND holder.pid <> $1 AND holder.pid IN (");
+						 "SELECT pg_catalog.pg_blocking_pids($1) && '{");
 	/* The spec syntax requires at least one session; assume that here. */
 	appendPQExpBufferStr(&wait_query, backend_pids[1]);
 	for (i = 2; i < nconns; i++)
-		appendPQExpBuffer(&wait_query, ", %s", backend_pids[i]);
-	appendPQExpBufferStr(&wait_query,
-						 ") "
-
-				  "AND holder.locktype IS NOT DISTINCT FROM waiter.locktype "
-				  "AND holder.database IS NOT DISTINCT FROM waiter.database "
-				  "AND holder.relation IS NOT DISTINCT FROM waiter.relation "
-						 "AND holder.page IS NOT DISTINCT FROM waiter.page "
-						 "AND holder.tuple IS NOT DISTINCT FROM waiter.tuple "
-			  "AND holder.virtualxid IS NOT DISTINCT FROM waiter.virtualxid "
-		"AND holder.transactionid IS NOT DISTINCT FROM waiter.transactionid "
-					"AND holder.classid IS NOT DISTINCT FROM waiter.classid "
-						 "AND holder.objid IS NOT DISTINCT FROM waiter.objid "
-				"AND holder.objsubid IS NOT DISTINCT FROM waiter.objsubid ");
+		appendPQExpBuffer(&wait_query, ",%s", backend_pids[i]);
+	appendPQExpBufferStr(&wait_query, "}'::integer[]");
 
 	res = PQprepare(conns[0], PREP_WAITING, wait_query.data, 0, NULL);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
@@ -720,6 +705,12 @@ try_complete_step(Step *step, int flags)
 	PGresult   *res;
 	bool		canceled = false;
 
+	if (sock < 0)
+	{
+		fprintf(stderr, "invalid socket: %s", PQerrorMessage(conn));
+		exit_nicely();
+	}
+
 	gettimeofday(&start_time, NULL);
 	FD_ZERO(&read_set);
 
@@ -745,21 +736,22 @@ try_complete_step(Step *step, int flags)
 			/* If it's OK for the step to block, check whether it has. */
 			if (flags & STEP_NONBLOCK)
 			{
-				int			ntuples;
+				bool		waiting;
 
 				res = PQexecPrepared(conns[0], PREP_WAITING, 1,
 									 &backend_pids[step->session + 1],
 									 NULL, NULL, 0);
-				if (PQresultStatus(res) != PGRES_TUPLES_OK)
+				if (PQresultStatus(res) != PGRES_TUPLES_OK ||
+					PQntuples(res) != 1)
 				{
 					fprintf(stderr, "lock wait query failed: %s",
 							PQerrorMessage(conn));
 					exit_nicely();
 				}
-				ntuples = PQntuples(res);
+				waiting = ((PQgetvalue(res, 0, 0))[0] == 't');
 				PQclear(res);
 
-				if (ntuples >= 1)		/* waiting to acquire a lock */
+				if (waiting)	/* waiting to acquire a lock */
 				{
 					if (!(flags & STEP_RETRY))
 						printf("step %s: %s <waiting ...>\n",

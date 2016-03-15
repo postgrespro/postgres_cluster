@@ -110,6 +110,10 @@ extern char *output_files[];
 #define VISIBILITY_MAP_CRASHSAFE_CAT_VER 201107031
 
 /*
+ * The format of visibility map is changed with this 9.6 commit,
+ */
+#define VISIBILITY_MAP_FROZEN_BIT_CAT_VER 201603011
+/*
  * pg_multixact format changed in 9.3 commit 0ac5ad5134f2769ccbaefec73844f85,
  * ("Improve concurrency of foreign key locking") which also updated catalog
  * version to this value.  pg_upgrade behavior depends on whether old and new
@@ -269,7 +273,6 @@ typedef struct
 	uint32		major_version;	/* PG_VERSION of cluster */
 	char		major_version_str[64];	/* string PG_VERSION of cluster */
 	uint32		bin_version;	/* version returned from pg_ctl */
-	Oid			pg_database_oid;	/* OID of pg_database relation */
 	const char *tablespace_suffix;		/* directory specification */
 } ClusterInfo;
 
@@ -364,40 +367,10 @@ bool		pid_lock_file_exists(const char *datadir);
 
 /* file.c */
 
-#ifdef PAGE_CONVERSION
-typedef const char *(*pluginStartup) (uint16 migratorVersion,
-								uint16 *pluginVersion, uint16 newPageVersion,
-								   uint16 oldPageVersion, void **pluginData);
-typedef const char *(*pluginConvertFile) (void *pluginData,
-								   const char *dstName, const char *srcName);
-typedef const char *(*pluginConvertPage) (void *pluginData,
-								   const char *dstPage, const char *srcPage);
-typedef const char *(*pluginShutdown) (void *pluginData);
-
-typedef struct
-{
-	uint16		oldPageVersion; /* Page layout version of the old cluster		*/
-	uint16		newPageVersion; /* Page layout version of the new cluster		*/
-	uint16		pluginVersion;	/* API version of converter plugin */
-	void	   *pluginData;		/* Plugin data (set by plugin) */
-	pluginStartup startup;		/* Pointer to plugin's startup function */
-	pluginConvertFile convertFile;		/* Pointer to plugin's file converter
-										 * function */
-	pluginConvertPage convertPage;		/* Pointer to plugin's page converter
-										 * function */
-	pluginShutdown shutdown;	/* Pointer to plugin's shutdown function */
-} pageCnvCtx;
-
-const pageCnvCtx *setupPageConverter(void);
-#else
-/* dummy */
-typedef void *pageCnvCtx;
-#endif
-
-const char *copyAndUpdateFile(pageCnvCtx *pageConverter, const char *src,
-				  const char *dst, bool force);
-const char *linkAndUpdateFile(pageCnvCtx *pageConverter, const char *src,
-				  const char *dst);
+const char *copyFile(const char *src, const char *dst, bool force);
+const char *linkFile(const char *src, const char *dst);
+const char *rewriteVisibilityMap(const char *fromfile, const char *tofile,
+								 bool force);
 
 void		check_hard_link(void);
 FILE	   *fopen_priv(const char *path, const char *mode);

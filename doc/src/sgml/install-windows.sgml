@@ -440,6 +440,7 @@ $ENV{CONFIG}="Debug";
 <userinput>vcregress ecpgcheck</userinput>
 <userinput>vcregress isolationcheck</userinput>
 <userinput>vcregress bincheck</userinput>
+<userinput>vcregress recoverycheck</userinput>
 <userinput>vcregress upgradecheck</userinput>
 </screen>
 
@@ -454,8 +455,10 @@ $ENV{CONFIG}="Debug";
   </para>
 
   <para>
-   Running the regression tests on client programs, with "vcregress bincheck",
-   requires an additional Perl module to be installed:
+   Running the regression tests on client programs, with
+   <command>vcregress bincheck</>, or on recovery tests, with
+   <command>vcregress recoverycheck</> requires an additional Perl module
+   to be installed:
    <variablelist>
     <varlistentry>
      <term><productname>IPC::Run</productname></term>

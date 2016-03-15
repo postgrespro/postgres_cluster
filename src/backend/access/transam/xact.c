@@ -2447,6 +2447,10 @@ AbortTransaction(void)
 	 */
 	LWLockReleaseAll();
 
+	/* Clear wait information and command progress indicator */
+	pgstat_report_wait_end();
+	pgstat_progress_end_command();
+
 	/* Clean up buffer I/O and buffer context locks, too */
 	AbortBufferIO();
 	UnlockBuffers();
@@ -4538,6 +4542,8 @@ AbortSubTransaction(void)
 	 */
 	LWLockReleaseAll();
 
+	pgstat_report_wait_end();
+	pgstat_progress_end_command();
 	AbortBufferIO();
 	UnlockBuffers();
 

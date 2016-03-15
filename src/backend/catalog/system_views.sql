@@ -433,6 +433,12 @@ CREATE VIEW pg_timezone_abbrevs AS
 CREATE VIEW pg_timezone_names AS
     SELECT * FROM pg_timezone_names();
 
+CREATE VIEW pg_config AS
+    SELECT * FROM pg_config();
+
+REVOKE ALL on pg_config FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION pg_config() FROM PUBLIC;
+
 -- Statistics views
 
 CREATE VIEW pg_stat_all_tables AS
@@ -630,7 +636,8 @@ CREATE VIEW pg_stat_activity AS
             S.xact_start,
             S.query_start,
             S.state_change,
-            S.waiting,
+            S.wait_event_type,
+            S.wait_event,
             S.state,
             S.backend_xid,
             s.backend_xmin,

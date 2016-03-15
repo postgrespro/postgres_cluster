@@ -152,7 +152,9 @@ struct PGPROC
 	 */
 	TransactionId	procArrayGroupMemberXid;
 
-	/* Per-backend LWLock.  Protects fields below. */
+	uint32          wait_event_info;        /* proc's wait information */
+
+	/* Per-backend LWLock.  Protects fields below (but not group fields). */
 	LWLock		backendLock;
 
 	/* Lock manager data, recording fast-path locks taken by this backend. */
@@ -163,11 +165,10 @@ struct PGPROC
 												 * lock */
 
 	/*
-	 * Support for lock groups.  Use LockHashPartitionLockByProc to get the
-	 * LWLock protecting these fields.
+	 * Support for lock groups.  Use LockHashPartitionLockByProc on the group
+	 * leader to get the LWLock protecting these fields.
 	 */
-	int			lockGroupLeaderIdentifier;	/* MyProcPid, if I'm a leader */
-	PGPROC	   *lockGroupLeader;	/* lock group leader, if I'm a follower */
+	PGPROC	   *lockGroupLeader;	/* lock group leader, if I'm a member */
 	dlist_head	lockGroupMembers;	/* list of members, if I'm a leader */
 	dlist_node  lockGroupLink;		/* my member link, if I'm a member */
 };
