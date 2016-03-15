@@ -499,7 +499,7 @@ process_remote_commit(StringInfo in)
 			CommitTransactionCommand();
 			StartTransactionCommand();
 			/* PREPARE itself */
-			MtmSetCurrentTransactionGid(gid);
+			MtmSetCurrentTransactionGID(gid);
 			PrepareTransactionBlock(gid);
 			CommitTransactionCommand();
 			break;
@@ -519,7 +519,7 @@ process_remote_commit(StringInfo in)
 		{
 			gid = pq_getmsgstring(in);
 			StartTransactionCommand();
-			MtmSetCurrentTransactionGid(gid);
+			MtmSetCurrentTransactionGID(gid);
 			FinishPreparedTransaction(gid, false);
 			CommitTransactionCommand();
 			break;

@@ -122,12 +122,12 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 
 
 static csn_t
-MtmGetCSN(TransactionId xid)
+MtmGetCSN(PGLogicalProtoMM* mm, TransactionId xid)
 {
 	MtmTransState* ts;
 	csn_t csn;
 	MtmLock(LW_SHARED);
-	ts = (MtmTransState*)hash_search(xid2state, &xid, HASH_FIND, NULL);
+	ts = (MtmTransState*)hash_search(mm->xid2state, &xid, HASH_FIND, NULL);
 	Assert(ts != NULL);
 	csn = ts->csn;
 	MtmUnlock();
@@ -171,7 +171,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     pq_sendint64(out, txn->commit_time);
 
 	if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED) { 
-		pq_sendint64(out, MtmGetCSN(txn->xid));
+		pq_sendint64(out, MtmGetCSN(mm, txn->xid));
 	}
     if (txn->xact_action == XLOG_XACT_PREPARE ||
 		txn->xact_action == XLOG_XACT_COMMIT_PREPARED ||

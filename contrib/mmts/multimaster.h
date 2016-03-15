@@ -84,11 +84,9 @@ typedef struct MtmTransState
 							              finally should be nNodes-1 */
 	int            procno;             /* pgprocno of transaction coordinator waiting for responses from replicas, 
 							              used to notify coordinator by arbiter */
-	bool           voteCompleted;      /* Responses necessary to make a decision are received by coordinator of transaction */
 	int            nSubxids;           /* Number of subtransanctions */
 	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
-	TransactionId xids[1];             /* transaction ID at replicas: varying size MtmNodes */
 } MtmTransState;
 
 typedef struct
