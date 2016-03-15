@@ -126,7 +126,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
 static void MtmVoteForTransaction(MtmTransState* ts);
 
 static HTAB* xid2state;
-static HTAB* git2xid;
+static HTAB* gid2xid;
 static MtmCurrentTrans dtmTx;
 static MtmState* dtm;
 
@@ -529,7 +529,6 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[dtm->status]);
 		}
 		x->containsDML = false;
-		x->isPrepared = false;
         x->snapshot = MtmAssignCSN();	
 		x->gtid.xid = InvalidTransactionId;
 		x->gid[0] = '\0';
@@ -541,7 +540,8 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 }
 
 /* 
- * Prepare transaction for two-phase commit
+ * Prepare transaction for two-phase commit.
+ * This code is executed by PRE_PREPARE hook before PREPARE message is sent to replicas by logical replication
  */
 MtmPrePrepareTransaction(MtmCurrentTrans* x)
 { 
@@ -575,7 +575,6 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	ts->gtid = x->gtid;
 	ts->procno = MyProc->pgprocno;
 	ts->nVotes = 0; 
-	ts->voteCompleted = false;
 
 	x->isPrepared = true;
 	x->csn = csn;
