@@ -19,7 +19,7 @@
 #define MULTIMASTER_SLOT_PATTERN        "mtm_slot_%d"
 #define MULTIMASTER_MIN_PROTO_VERSION   1
 #define MULTIMASTER_MAX_PROTO_VERSION   1
-#define MULTIMASTER_MAX_GID             32
+#define MULTIMASTER_MAX_GID_SIZE        32
 
 #define USEC 1000000
 
@@ -145,6 +145,7 @@ extern MtmSlotMode MtmReceiverSlotMode(int nodeId);
 extern void  MtmExecute(void* work, int size);
 extern void  MtmExecutor(int id, void* work, size_t size);
 extern HTAB* MtmCreateHash(void);
+extern HTAB* MtmCreateMap(void);
 extern void  MtmSendNotificationMessage(MtmTransState* ts);
 extern void  MtmAdjustSubtransactions(MtmTransState* ts);
 extern void  MtmLock(LWLockMode mode);
@@ -156,6 +157,8 @@ extern void  MtmOnNodeConnect(int nodeId);
 extern MtmState* MtmGetState(void);
 extern timestamp_t MtmGetCurrentTime(void);
 extern void  MtmSleep(timestamp_t interval);
+extern void  MtmSetCurrentTransactionGID(char const* gid);
+extern void  MtmSetCurrentTransactionCSN(csn_t csn);
 extern bool  MtmIsRecoveredNode(int nodeId);
 extern void  MtmRefreshClusterStatus(bool nowait);
 extern void  MtmSwitchClusterMode(MtmNodeStatus mode);
