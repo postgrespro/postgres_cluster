@@ -623,6 +623,7 @@ process_remote_insert(StringInfo s, Relation rel)
 		char* ddl = TextDatumGetCString(new_tuple.values[Anum_mtm_ddl_log_query-1]);
 		int rc;
 		SPI_connect();
+		MTM_TRACE("%d: Execute utility statement %s\n", MyProcPid, ddl);
 		rc = SPI_execute(ddl, false, 0);
         SPI_finish();
 		if (rc != SPI_OK_UTILITY) { 

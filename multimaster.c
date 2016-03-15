@@ -643,33 +643,36 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
 	MTM_TRACE("%d: End transaction %d, prepared=%d, distributed=%d -> %s\n", MyProcPid, x->xid, x->isPrepared, x->isDistributed, commit ? "commit" : "abort");
 	if (x->isDistributed && (x->isPrepared || x->isReplicated)) {
-		MtmTransState* ts;
+		MtmTransState* ts = NULL;
 		MtmLock(LW_EXCLUSIVE);
 		if (x->isPrepared) { 
 			ts = hash_search(xid2state, &x->xid, HASH_FIND, NULL);
 			Assert(ts != NULL);
 		} else { 
 			MtmTransMap* hm = (MtmTransMap*)hash_search(gid2xid, x->gid, HASH_REMOVE, NULL);
-			Assert(hm != NULL);
-			ts = hm->state;
-		}
-		if (commit) {
-			ts->status = TRANSACTION_STATUS_COMMITTED;
-			if (x->csn > ts->csn) {
-				ts->csn = x->csn;
-				MtmSyncClock(ts->csn);
+			if (hm != NULL) {
+				ts = hm->state;
 			}
-		} else { 
-			ts->status = TRANSACTION_STATUS_ABORTED;
-			if (x->isReplicated && TransactionIdIsValid(x->gtid.xid)) { 
-				/* 
-				 * Send notification only of ABORT happens during transaction processing at replicas, 
-				 * do not send notification if ABORT is receiver from master 
-				 */
-				MtmSendNotificationMessage(ts); /* send notification to coordinator */
-			}				
 		}
-		MtmAdjustSubtransactions(ts);
+		if (ts != NULL) { 
+			if (commit) {
+				ts->status = TRANSACTION_STATUS_COMMITTED;
+				if (x->csn > ts->csn) {
+					ts->csn = x->csn;
+					MtmSyncClock(ts->csn);
+				}
+			} else { 
+				ts->status = TRANSACTION_STATUS_ABORTED;
+				if (x->isReplicated && TransactionIdIsValid(x->gtid.xid)) { 
+					/* 
+					 * Send notification only of ABORT happens during transaction processing at replicas, 
+					 * do not send notification if ABORT is receiver from master 
+					 */
+					MtmSendNotificationMessage(ts); /* send notification to coordinator */
+				}				
+			}
+			MtmAdjustSubtransactions(ts);
+		}
 		MtmUnlock();
 	}
 	x->snapshot = INVALID_CSN;
@@ -1691,6 +1694,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 DestReceiver *dest, char *completionTag)
 {
 	bool skipCommand;
+	MTM_TRACE("%d: Process utility statement %s\n", MyProcPid, queryString);
 	switch (nodeTag(parsetree))
 	{
 	    case T_TransactionStmt:
@@ -1702,8 +1706,10 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 					if (dtmTx.isDistributed && dtmTx.containsDML) { 
 						char gid[MULTIMASTER_MAX_GID_SIZE];
 						MtmGenerateGid(gid);
+						MTM_TRACE("%d: Start 2PC with GID=%s for %s\n", MyProcPid, gid, queryString);
 						if (!IsTransactionBlock()) { 
 							elog(WARNING, "Start transaction block for %d", dtmTx.xid);
+							BeginTransactionBlock();
 							CommitTransactionCommand();
 							StartTransactionCommand();
 						}
