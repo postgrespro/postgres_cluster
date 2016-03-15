@@ -455,9 +455,8 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 		}
 		buf->used = 0;
 	}
-	MTM_TRACE("Send message %s CSN=%ld to node %d from node %d for global transaction %d/local transaction %d\n", 
-			  messageText[ts->cmd], ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
-	Assert(ts->cmd != MSG_INVALID);
+	MTM_TRACE("Send %s message CSN=%ld to node %d from node %d for global transaction %d/local transaction %d\n", 
+			  ts->status == TRANSACTION_STATUS_ABORTED ? "abort" : "commit", ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
 	buf->data[buf->used].code = ts->status == TRANSACTION_STATUS_ABORTED ? MSG_ABORTED : MSG_PREPARED;
 	buf->data[buf->used].dxid = xid;
 	buf->data[buf->used].sxid = ts->xid;
@@ -509,7 +508,6 @@ static void MtmTransSender(Datum arg)
 
 static void MtmWakeUpBackend(MtmTransState* ts)
 {
-	ts->voteCompleted = true;								
 	MTM_TRACE("Wakeup backed procno=%d, pid=%d\n", ts->procno, ProcGlobal->allProcs[ts->procno].pid);
 	SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
 }
@@ -637,7 +635,6 @@ static void MtmTransReceiver(Datum arg)
 							break;
 						default:
 							Assert(false);
-						}
 					} 
 				}
 				MtmUnlock();
