@@ -468,6 +468,7 @@ process_remote_commit(StringInfo in)
 {
 	uint8 			flags;
 	const char	   *gid = NULL;
+	csn_t           csn;
 
 	/* read flags */
 	flags = pq_getmsgbyte(in);
@@ -492,25 +493,33 @@ process_remote_commit(StringInfo in)
 		}
 		case PGLOGICAL_PREPARE:
 		{
+			gid = pq_getmsgstring(in);
 			/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
 			BeginTransactionBlock();
 			CommitTransactionCommand();
 			StartTransactionCommand();
 			/* PREPARE itself */
+			MtmSetCurrentTransactionGid(gid);
 			PrepareTransactionBlock(gid);
 			CommitTransactionCommand();
 			break;
 		}
 		case PGLOGICAL_COMMIT_PREPARED:
 		{
+			csn = pq_getmsgint64(in);
+			gid = pq_getmsgstring(in);
 			StartTransactionCommand();
+			MtmSetCurrentTransactionCSN(csn);
+			MtmSetCurrentTransactionGID(gid);
 			FinishPreparedTransaction(gid, true);
 			CommitTransactionCommand();
 			break;
 		}
 		case PGLOGICAL_ABORT_PREPARED:
 		{
+			gid = pq_getmsgstring(in);
 			StartTransactionCommand();
+			MtmSetCurrentTransactionGid(gid);
 			FinishPreparedTransaction(gid, false);
 			CommitTransactionCommand();
 			break;

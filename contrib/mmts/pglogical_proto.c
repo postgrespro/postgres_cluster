@@ -39,8 +39,9 @@
 typedef struct PGLogicalProtoMM
 {
     PGLogicalProtoAPI api;
-	int  nodeId;
-    bool isLocal;
+	int   nodeId;
+    bool  isLocal;
+	HTAB* xid2state;
 } PGLogicalProtoMM;
 
 static void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel);
@@ -119,6 +120,20 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
     }
 }
 
+
+static csn_t
+MtmGetCSN(TransactionId xid)
+{
+	MtmTransState* ts;
+	csn_t csn;
+	MtmLock(LW_SHARED);
+	ts = (MtmTransState*)hash_search(xid2state, &xid, HASH_FIND, NULL);
+	Assert(ts != NULL);
+	csn = ts->csn;
+	MtmUnlock();
+	return csn;
+}
+
 /*
  * Write COMMIT to the output stream.
  */
@@ -155,10 +170,15 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     pq_sendint64(out, txn->end_lsn);
     pq_sendint64(out, txn->commit_time);
 
+	if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED) { 
+		pq_sendint64(out, MtmGetCSN(txn->xid));
+	}
     if (txn->xact_action == XLOG_XACT_PREPARE ||
-    		txn->xact_action == XLOG_XACT_COMMIT_PREPARED ||
-    		txn->xact_action == XLOG_XACT_ABORT_PREPARED)
+		txn->xact_action == XLOG_XACT_COMMIT_PREPARED ||
+		txn->xact_action == XLOG_XACT_ABORT_PREPARED)
+	{
     	pq_sendstring(out, txn->gid);
+	}
 
 }
 
@@ -409,6 +429,7 @@ pglogical_init_api(PGLogicalProtoType typ)
 	PGLogicalProtoMM* pmm = palloc0(sizeof(PGLogicalProtoMM));
     PGLogicalProtoAPI* res = &pmm->api;
     pmm->isLocal = false;
+	pmm->xid2state = MtmCreateHash();
 	sscanf(MyReplicationSlot->data.name.data, MULTIMASTER_SLOT_PATTERN, &pmm->nodeId);
     res->write_rel = pglogical_write_rel;
     res->write_begin = pglogical_write_begin;
