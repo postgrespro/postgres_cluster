@@ -478,9 +478,6 @@ process_remote_commit(StringInfo in)
 	pq_getmsgint64(in); /* end_lsn */
 	pq_getmsgint64(in); /* commit_time */
 
-	if (PGLOGICAL_XACT_EVENT(flags) != PGLOGICAL_COMMIT)
-		gid = pq_getmsgstring(in);
-
 	MTM_TRACE("PGLOGICAL_RECV commit: flags=%d, gid=%s\n", flags, gid);
 
 	switch(PGLOGICAL_XACT_EVENT(flags))

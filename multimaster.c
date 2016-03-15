@@ -116,14 +116,15 @@ static TransactionId MtmAdjustOldestXid(TransactionId xid);
 static bool MtmDetectGlobalDeadLock(PGPROC* proc);
 static void MtmAddSubtransactions(MtmTransState* ts, TransactionId* subxids, int nSubxids);
 static char const* MtmGetName(void);
-static void MtmCheckClusterLock()
+static void MtmCheckClusterLock(void);
+static void MtmCheckSlots(void);
+static void MtmAddSubtransactions(MtmTransState* ts, TransactionId *subxids, int nSubxids);
 
 static void MtmShmemStartup(void);
 
 static BgwPool* MtmPoolConstructor(void);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
-static void MtmVoteForTransaction(MtmTransState* ts);
 
 static HTAB* xid2state;
 static HTAB* gid2xid;
@@ -543,10 +544,11 @@ MtmBeginTransaction(MtmCurrentTrans* x)
  * Prepare transaction for two-phase commit.
  * This code is executed by PRE_PREPARE hook before PREPARE message is sent to replicas by logical replication
  */
+static void
 MtmPrePrepareTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
-	int i;
+	TransactionId *subxids;
 	
 	if (!x->isDistributed) {
 		return;
@@ -575,9 +577,9 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	ts->gtid = x->gtid;
 	ts->procno = MyProc->pgprocno;
 	ts->nVotes = 0; 
-
+	ts->nSubxids = xactGetCommittedChildren(&subxids);
 	x->isPrepared = true;
-	x->csn = csn;
+	x->csn = ts->csn;
 
 	dtm->transCount += 1;
 
@@ -588,12 +590,14 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 		ts->gtid.node = MtmNodeId;
 	}
 	MtmTransactionListAppend(ts);
+	MtmAddSubtransactions(ts, subxids, ts->nSubxids);
 
 	MtmUnlock();
 
 	MTM_TRACE("%d: MtmPrepareTransaction prepare commit of %d CSN=%ld\n", MyProcPid, x->xid, ts->csn);
 }
 
+static void
 MtmPrepareTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
@@ -601,21 +605,21 @@ MtmPrepareTransaction(MtmCurrentTrans* x)
 	MtmLock(LW_EXCLUSIVE);
 	ts = hash_search(xid2state, &x->xid, HASH_ENTER, NULL);
 	Assert(ts != NULL);
-	if (ts->status = TRANSACTION_STATUS_IN_PROGRESS) { 
+	if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
 		ts->status = TRANSACTION_STATUS_UNKNOWN;	
 		MtmAdjustSubtransactions(ts);
 	}
 	
 	if (!MtmIsCoordinator(ts)) {
-		MtmHashMap* hm = (MtmHashMap*)hash_search(gid2xid, x->gid, HASH_ENTER, NULL);
+		MtmTransMap* hm = (MtmTransMap*)hash_search(gid2xid, x->gid, HASH_ENTER, NULL);
 		Assert(x->gid[0]);
 		hm->state = ts;
 		MtmSendNotificationMessage(ts); /* send notification to coordinator */
 		MtmUnlock();
 	} else { 
 		/* wait N commits or just one ABORT */
-		ts->nVotes += 1;
-		while (ts->nVotes != dtm->nNodes && ts->status == TRANSACTION_STATUS_PROGRESS) { 
+		ts->nVotes += 1; /* I vote myself */
+		while (ts->nVotes != dtm->nNodes && ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
 			MtmUnlock();
 			WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
 			ResetLatch(&MyProc->procLatch);			
@@ -633,14 +637,14 @@ static void
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
 	MTM_TRACE("%d: End transaction %d, prepared=%d, distributed=%d -> %s\n", MyProcPid, x->xid, x->isPrepared, x->isDistributed, commit ? "commit" : "abort");
-	if (x->isDistributed) {
+	if (x->isDistributed && (TransactionIdIsValid(x->xid) || x->isReplicated)) {
 		MtmTransState* ts;
 		MtmLock(LW_EXCLUSIVE);
 		if (x->isPrepared) { 
 			ts = hash_search(xid2state, &x->xid, HASH_FIND, NULL);
 			Assert(ts != NULL);
 		} else { 
-			MtmHashMap* hm = (MtmHashMap*)hash_search(gid2xid, x->gid, HASH_REMOVE, NULL);
+			MtmTransMap* hm = (MtmTransMap*)hash_search(gid2xid, x->gid, HASH_REMOVE, NULL);
 			Assert(hm != NULL);
 			ts = hm->state;
 		}
@@ -712,12 +716,18 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 
 void  MtmSetCurrentTransactionGID(char const* gid)
 {
+	MTM_TRACE("Set current transaction GID %s\n", gid);
 	strcpy(dtmTx.gid, gid);
+	dtmTx.isDistributed = true;
+	dtmTx.isReplicated = true;
 }
 
 void  MtmSetCurrentTransactionCSN(csn_t csn)
 {
+	MTM_TRACE("Set current transaction CSN %ld\n", csn);
 	dtmTx.csn = csn;
+	dtmTx.isDistributed = true;
+	dtmTx.isReplicated = true;
 }
 
 /*
@@ -731,7 +741,8 @@ void  MtmSetCurrentTransactionCSN(csn_t csn)
  * Check state of replication slots. If some of them are too much lag behind wal, then drop this slots to avoid 
  * WAL overflow
  */
-static void MtmCheckSlots()
+static void 
+MtmCheckSlots()
 {
 	if (MtmMaxRecoveryLag != 0 && dtm->disabledNodeMask != 0) 
 	{
@@ -1682,14 +1693,14 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				{					
 				case TRANS_STMT_COMMIT:
 					if (dtmTx.isDistributed && dtmTx.containsDML) { 
-						char gid{MUTLIMASTER_MAX_GID_SIZE];
-						MtmGenerateGid(&gid);
+						char gid[MULTIMASTER_MAX_GID_SIZE];
+						MtmGenerateGid(gid);
 						if (!IsTransactionBlock()) { 
 							elog(WARNING, "Start transaction block for %d", dtmTx.xid);
 							CommitTransactionCommand();
 							StartTransactionCommand();
 						}
-						if (!PrepareTransactionBlock(&gid))
+						if (!PrepareTransactionBlock(gid))
 						{
 							elog(WARNING, "Failed to prepare transaction %s", gid);
 							/* report unsuccessful commit in completionTag */
