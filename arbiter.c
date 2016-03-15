@@ -460,7 +460,7 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 	buf->data[buf->used].code = ts->status == TRANSACTION_STATUS_ABORTED ? MSG_ABORTED : MSG_PREPARED;
 	buf->data[buf->used].dxid = xid;
 	buf->data[buf->used].sxid = ts->xid;
-	buf->data[buf->used].csn =  ts->csn;
+	buf->data[buf->used].csn  = ts->csn;
 	buf->data[buf->used].node = MtmNodeId;
 	buf->data[buf->used].disabledNodeMask = ds->disabledNodeMask;
 	buf->used += 1;
@@ -495,6 +495,7 @@ static void MtmTransSender(Datum arg)
 			MtmAppendBuffer(txBuffer, ts->gtid.xid, ts->gtid.node-1, ts);
 		}
 		ds->votingTransactions = NULL;
+
 		MtmUnlock();
 
 		for (i = 0; i < nNodes; i++) { 
@@ -616,7 +617,8 @@ static void MtmTransReceiver(Datum arg)
 					Assert (MtmIsCoordinator(ts));
 					switch (msg->code) { 
 						case MSG_PREPARED:
-							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
+							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
+								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS || ts->status == TRANSACTION_STATUS_UNKNOWN);
 								if (msg->csn > ts->csn) {
 									ts->csn = msg->csn;
 									MtmSyncClock(ts->csn);
@@ -627,7 +629,8 @@ static void MtmTransReceiver(Datum arg)
 							}
 							break;
 						case MSG_ABORTED:
-							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
+							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
+								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS || ts->status == TRANSACTION_STATUS_UNKNOWN);
 								ts->status = TRANSACTION_STATUS_ABORTED;
 								MtmAdjustSubtransactions(ts);
 								MtmWakeUpBackend(ts);

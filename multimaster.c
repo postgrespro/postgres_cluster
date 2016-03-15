@@ -571,7 +571,10 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	MtmCheckClusterLock();
 
 	ts = hash_search(xid2state, &x->xid, HASH_ENTER, NULL);
-	ts->status = TRANSACTION_STATUS_IN_PROGRESS;	
+	ts->status = TRANSACTION_STATUS_IN_PROGRESS;
+	/* 
+	 * Invalid CSN prevent replication of transaction by logical replication 
+	 */	   
 	ts->snapshot = x->isReplicated || !x->containsDML ? INVALID_CSN : x->snapshot;
 	ts->csn = MtmAssignCSN();	
 	ts->gtid = x->gtid;
@@ -603,7 +606,7 @@ MtmPrepareTransaction(MtmCurrentTrans* x)
 	MtmTransState* ts;
 
 	MtmLock(LW_EXCLUSIVE);
-	ts = hash_search(xid2state, &x->xid, HASH_ENTER, NULL);
+	ts = hash_search(xid2state, &x->xid, HASH_FIND, NULL);
 	Assert(ts != NULL);
 	if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
 		ts->status = TRANSACTION_STATUS_UNKNOWN;	
@@ -619,7 +622,7 @@ MtmPrepareTransaction(MtmCurrentTrans* x)
 	} else { 
 		/* wait N commits or just one ABORT */
 		ts->nVotes += 1; /* I vote myself */
-		while (ts->nVotes != dtm->nNodes && ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
+		while (ts->nVotes != dtm->nNodes && ts->status != TRANSACTION_STATUS_ABORTED) { 
 			MtmUnlock();
 			WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
 			ResetLatch(&MyProc->procLatch);			
@@ -628,6 +631,8 @@ MtmPrepareTransaction(MtmCurrentTrans* x)
 		MtmUnlock();
 		if (ts->status == TRANSACTION_STATUS_ABORTED) { 
 			elog(ERROR, "Distributed transaction %d is rejected by DTM", x->xid);
+		} else { 
+			Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
 		}
 	}
 }
@@ -637,7 +642,7 @@ static void
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
 	MTM_TRACE("%d: End transaction %d, prepared=%d, distributed=%d -> %s\n", MyProcPid, x->xid, x->isPrepared, x->isDistributed, commit ? "commit" : "abort");
-	if (x->isDistributed && (TransactionIdIsValid(x->xid) || x->isReplicated)) {
+	if (x->isDistributed && (x->isPrepared || x->isReplicated)) {
 		MtmTransState* ts;
 		MtmLock(LW_EXCLUSIVE);
 		if (x->isPrepared) { 
@@ -656,7 +661,11 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			}
 		} else { 
 			ts->status = TRANSACTION_STATUS_ABORTED;
-			if (x->isReplicated) { 
+			if (x->isReplicated && TransactionIdIsValid(x->gtid.xid)) { 
+				/* 
+				 * Send notification only of ABORT happens during transaction processing at replicas, 
+				 * do not send notification if ABORT is receiver from master 
+				 */
 				MtmSendNotificationMessage(ts); /* send notification to coordinator */
 			}				
 		}
@@ -682,8 +691,6 @@ void MtmSendNotificationMessage(MtmTransState* ts)
 		PGSemaphoreUnlock(&dtm->votingSemaphore);
 	}
 }
-
-
 
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
