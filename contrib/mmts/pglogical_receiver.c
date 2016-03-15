@@ -274,7 +274,7 @@ pglogical_receiver_main(Datum main_arg)
 	if (originId != InvalidRepOriginId) { 
 		originStartPos = replorigin_get_progress(originId, false);
 		elog(WARNING, "Restart logical receiver at position %lx from node %d", originStartPos, args->remote_node);
-	} else { 
+	} else {  
 		elog(WARNING, "Start logical receiver from node %d", args->remote_node);
 	}
 	CommitTransactionCommand();
