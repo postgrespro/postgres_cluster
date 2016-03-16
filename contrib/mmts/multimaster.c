@@ -126,8 +126,9 @@ static BgwPool* MtmPoolConstructor(void);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
 
-static HTAB* xid2state;
-static HTAB* gid2xid;
+HTAB* MtmXid2State;
+static HTAB* MtmGid2Xid;
+
 static MtmCurrentTrans dtmTx;
 static MtmState* dtm;
 
@@ -279,7 +280,7 @@ csn_t MtmTransactionSnapshot(TransactionId xid)
 	csn_t snapshot = INVALID_CSN;
 
 	MtmLock(LW_SHARED);
-    ts = hash_search(xid2state, &xid, HASH_FIND, NULL);
+    ts = hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
     if (ts != NULL) { 
 		snapshot = ts->snapshot;
 	}
@@ -324,7 +325,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 #endif
     while (true)
     {
-        MtmTransState* ts = (MtmTransState*)hash_search(xid2state, &xid, HASH_FIND, NULL);
+        MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
         if (ts != NULL && ts->status != TRANSACTION_STATUS_IN_PROGRESS)
         {
             if (ts->csn > dtmTx.snapshot) { 
@@ -398,14 +399,14 @@ MtmAdjustOldestXid(TransactionId xid)
         MtmTransState *ts, *prev = NULL;
         
 		MtmLock(LW_EXCLUSIVE);
-        ts = (MtmTransState*)hash_search(xid2state, &xid, HASH_FIND, NULL);
+        ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
         if (ts != NULL) { 
             timestamp_t cutoff_time = ts->csn - MtmVacuumDelay*USEC;
 			for (ts = dtm->transListHead; ts != NULL && ts->csn < cutoff_time; prev = ts, ts = ts->next) { 
 				Assert(ts->status == TRANSACTION_STATUS_COMMITTED || ts->status == TRANSACTION_STATUS_ABORTED || ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 				if (prev != NULL) { 
 					/* Remove information about too old transactions */
-					hash_search(xid2state, &prev->xid, HASH_REMOVE, NULL);
+					hash_search(MtmXid2State, &prev->xid, HASH_REMOVE, NULL);
 				}
 			}
         }
@@ -452,7 +453,7 @@ static void MtmAddSubtransactions(MtmTransState* ts, TransactionId* subxids, int
         bool found;
 		MtmTransState* sts;
 		Assert(TransactionIdIsValid(subxids[i]));
-        sts = (MtmTransState*)hash_search(xid2state, &subxids[i], HASH_ENTER, &found);
+        sts = (MtmTransState*)hash_search(MtmXid2State, &subxids[i], HASH_ENTER, &found);
         Assert(!found);
         sts->status = ts->status;
         sts->csn = ts->csn;
@@ -515,6 +516,14 @@ MtmIsUserTransaction()
 }
 
 static void 
+MtmResetTransaction(MtmCurrentTrans* x)
+{
+	x->snapshot = INVALID_CSN;
+	x->xid = InvalidTransactionId;
+	x->gtid.xid = InvalidTransactionId;
+}
+
+static void 
 MtmBeginTransaction(MtmCurrentTrans* x)
 {
     if (x->snapshot == INVALID_CSN) { 
@@ -555,7 +564,8 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	}
 
 	x->xid = GetCurrentTransactionId();
-			
+	Assert(TransactionIdIsValid(x->xid));
+
 	if (dtm->disabledNodeMask != 0) { 
 		MtmRefreshClusterStatus(true);
 		if (dtm->status != MTM_ONLINE) { 
@@ -570,7 +580,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	 */
 	MtmCheckClusterLock();
 
-	ts = hash_search(xid2state, &x->xid, HASH_ENTER, NULL);
+	ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, NULL);
 	ts->status = TRANSACTION_STATUS_IN_PROGRESS;
 	/* 
 	 * Invalid CSN prevent replication of transaction by logical replication 
@@ -581,23 +591,25 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	ts->procno = MyProc->pgprocno;
 	ts->nVotes = 0; 
 	ts->nSubxids = xactGetCommittedChildren(&subxids);
+
 	x->isPrepared = true;
 	x->csn = ts->csn;
 
 	dtm->transCount += 1;
 
-	if (TransactionIdIsValid(x->gtid.xid)) { 
+	if (TransactionIdIsValid(x->gtid.xid)) { 		
+		Assert(x->gtid.node != MtmNodeId);
 		ts->gtid = x->gtid;
 	} else { 
+		/* I am coordinator of transaction */
 		ts->gtid.xid = x->xid;
 		ts->gtid.node = MtmNodeId;
 	}
 	MtmTransactionListAppend(ts);
 	MtmAddSubtransactions(ts, subxids, ts->nSubxids);
-
+	MTM_TRACE("%d: MtmPrePrepareTransaction prepare commit of %d CSN=%ld\n", MyProcPid, x->xid, ts->csn);
 	MtmUnlock();
 
-	MTM_TRACE("%d: MtmPrepareTransaction prepare commit of %d CSN=%ld\n", MyProcPid, x->xid, ts->csn);
 }
 
 static void
@@ -606,7 +618,7 @@ MtmPrepareTransaction(MtmCurrentTrans* x)
 	MtmTransState* ts;
 
 	MtmLock(LW_EXCLUSIVE);
-	ts = hash_search(xid2state, &x->xid, HASH_FIND, NULL);
+	ts = hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
 	Assert(ts != NULL);
 	if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
 		ts->status = TRANSACTION_STATUS_UNKNOWN;	
@@ -614,11 +626,12 @@ MtmPrepareTransaction(MtmCurrentTrans* x)
 	}
 	
 	if (!MtmIsCoordinator(ts)) {
-		MtmTransMap* hm = (MtmTransMap*)hash_search(gid2xid, x->gid, HASH_ENTER, NULL);
+		MtmTransMap* hm = (MtmTransMap*)hash_search(MtmGid2Xid, x->gid, HASH_ENTER, NULL);
 		Assert(x->gid[0]);
 		hm->state = ts;
 		MtmSendNotificationMessage(ts); /* send notification to coordinator */
 		MtmUnlock();
+		MtmResetTransaction(x);
 	} else { 
 		/* wait N commits or just one ABORT */
 		ts->nVotes += 1; /* I vote myself */
@@ -641,17 +654,20 @@ MtmPrepareTransaction(MtmCurrentTrans* x)
 static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
-	MTM_TRACE("%d: End transaction %d, prepared=%d, distributed=%d -> %s\n", MyProcPid, x->xid, x->isPrepared, x->isDistributed, commit ? "commit" : "abort");
+	MTM_TRACE("%d: End transaction %d, prepared=%d, replicated=%d, distributed=%d, gid=%s -> %s\n", 
+			  MyProcPid, x->xid, x->isPrepared, x->isReplicated, x->isDistributed, x->gid, commit ? "commit" : "abort");
 	if (x->isDistributed && (x->isPrepared || x->isReplicated)) {
 		MtmTransState* ts = NULL;
 		MtmLock(LW_EXCLUSIVE);
 		if (x->isPrepared) { 
-			ts = hash_search(xid2state, &x->xid, HASH_FIND, NULL);
+			ts = hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
 			Assert(ts != NULL);
 		} else { 
-			MtmTransMap* hm = (MtmTransMap*)hash_search(gid2xid, x->gid, HASH_REMOVE, NULL);
+			MtmTransMap* hm = (MtmTransMap*)hash_search(MtmGid2Xid, x->gid, HASH_REMOVE, NULL);
 			if (hm != NULL) {
 				ts = hm->state;
+			} else { 
+				MTM_TRACE("%d: GID %s not found\n", MyProcPid, x->gid);
 			}
 		}
 		if (ts != NULL) { 
@@ -663,16 +679,27 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				}
 			} else { 
 				ts->status = TRANSACTION_STATUS_ABORTED;
-				if (x->isReplicated && TransactionIdIsValid(x->gtid.xid)) { 
-					/* 
-					 * Send notification only of ABORT happens during transaction processing at replicas, 
-					 * do not send notification if ABORT is receiver from master 
-					 */
-					MtmSendNotificationMessage(ts); /* send notification to coordinator */
-				}				
 			}
 			MtmAdjustSubtransactions(ts);
 		}
+		if (!commit && x->isReplicated && TransactionIdIsValid(x->gtid.xid)) { 
+			/* 
+			 * Send notification only if ABORT happens during transaction processing at replicas, 
+			 * do not send notification if ABORT is receiver from master 
+			 */
+			MTM_TRACE("%d: send ABORT notification to coordinator %d\n", MyProcPid, x->gtid.node);
+			if (ts == NULL) { 
+				Assert(TransactionIdIsValid(x->xid));
+				ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, NULL);
+				ts->status = TRANSACTION_STATUS_ABORTED;
+				ts->snapshot = INVALID_CSN;
+				ts->csn = MtmAssignCSN();	
+				ts->gtid = x->gtid;
+				ts->nSubxids = 0;
+				MtmTransactionListAppend(ts);
+			}
+			MtmSendNotificationMessage(ts); /* send notification to coordinator */
+		}				
 		MtmUnlock();
 	}
 	x->snapshot = INVALID_CSN;
@@ -739,6 +766,20 @@ void  MtmSetCurrentTransactionCSN(csn_t csn)
 	dtmTx.isDistributed = true;
 	dtmTx.isReplicated = true;
 }
+
+
+csn_t MtmGetTransactionCSN(TransactionId xid)
+{
+	MtmTransState* ts;
+	csn_t csn;
+	MtmLock(LW_SHARED);
+	ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+	Assert(ts != NULL);
+	csn = ts->csn;
+	MtmUnlock();
+	return csn;
+}
+
 
 /*
  * -------------------------------------------
@@ -990,6 +1031,42 @@ void  PaxosSet(char const* key, void const* value, int size, bool nowait)
  * -------------------------------------------
  */
 
+
+static HTAB* 
+MtmCreateHash(void)
+{
+	HASHCTL info;
+	HTAB* htab;
+	Assert(MtmNodes > 0);
+	memset(&info, 0, sizeof(info));
+	info.keysize = sizeof(TransactionId);
+	info.entrysize = sizeof(MtmTransState);
+	htab = ShmemInitHash(
+		"MtmXid2State",
+		MTM_HASH_SIZE, MTM_HASH_SIZE,
+		&info,
+		HASH_ELEM | HASH_BLOBS
+	);
+	return htab;
+}
+
+static HTAB* 
+MtmCreateMap(void)
+{
+	HASHCTL info;
+	HTAB* htab;
+	memset(&info, 0, sizeof(info));
+	info.keysize = MULTIMASTER_MAX_GID_SIZE;
+	info.entrysize = sizeof(MtmTransMap);
+	htab = ShmemInitHash(
+		"MtmGid2Xid",
+		MTM_MAP_SIZE, MTM_MAP_SIZE,
+		&info,
+		HASH_ELEM 
+	);
+	return htab;
+}
+
 static void MtmInitialize()
 {
 	bool found;
@@ -1025,46 +1102,13 @@ static void MtmInitialize()
 		dtmTx.snapshot = INVALID_CSN;
 		dtmTx.xid = InvalidTransactionId;		
 	}
-	xid2state = MtmCreateHash();
-	gid2xid = MtmCreateMap();
+	MtmXid2State = MtmCreateHash();
+	MtmGid2Xid = MtmCreateMap();
     MtmDoReplication = true;
 	TM = &MtmTM;
 	LWLockRelease(AddinShmemInitLock);
 }
 
-
-HTAB* MtmCreateHash(void)
-{
-	HASHCTL info;
-	HTAB* htab;
-	Assert(MtmNodes > 0);
-	memset(&info, 0, sizeof(info));
-	info.keysize = sizeof(TransactionId);
-	info.entrysize = sizeof(MtmTransState);
-	htab = ShmemInitHash(
-		"xid2state",
-		MTM_HASH_SIZE, MTM_HASH_SIZE,
-		&info,
-		HASH_ELEM | HASH_BLOBS
-	);
-	return htab;
-}
-
-HTAB* MtmCreateMap(void)
-{
-	HASHCTL info;
-	HTAB* htab;
-	memset(&info, 0, sizeof(info));
-	info.keysize = MULTIMASTER_MAX_GID_SIZE;
-	info.entrysize = sizeof(MtmTransMap);
-	htab = ShmemInitHash(
-		"gid2xid",
-		MTM_MAP_SIZE, MTM_MAP_SIZE,
-		&info,
-		HASH_ELEM 
-	);
-	return htab;
-}
 
 MtmState*	
 MtmGetState(void)
@@ -1689,6 +1733,31 @@ MtmGenerateGid(char* gid)
 	sprintf(gid, "MTM-%d-%d-%d", MtmNodeId, MyProcPid, ++localCount);
 }
 
+static void MtmTwoPhaseCommit(char *completionTag)
+{
+	char gid[MULTIMASTER_MAX_GID_SIZE];
+	MtmGenerateGid(gid);
+	if (!IsTransactionBlock()) { 
+		elog(WARNING, "Start transaction block for %d", dtmTx.xid);
+		BeginTransactionBlock();
+		CommitTransactionCommand();
+		StartTransactionCommand();
+	}
+	if (!PrepareTransactionBlock(gid))
+	{
+		elog(WARNING, "Failed to prepare transaction %s", gid);
+		/* report unsuccessful commit in completionTag */
+		if (completionTag) { 
+			strcpy(completionTag, "ROLLBACK");
+		}
+		/* ??? Should we do explicit rollback */
+	} else { 
+		CommitTransactionCommand();
+		StartTransactionCommand();
+		FinishPreparedTransaction(gid, true);
+	}
+}
+
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag)
@@ -1703,29 +1772,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				switch (stmt->kind)
 				{					
 				case TRANS_STMT_COMMIT:
-					if (dtmTx.isDistributed && dtmTx.containsDML) { 
-						char gid[MULTIMASTER_MAX_GID_SIZE];
-						MtmGenerateGid(gid);
-						MTM_TRACE("%d: Start 2PC with GID=%s for %s\n", MyProcPid, gid, queryString);
-						if (!IsTransactionBlock()) { 
-							elog(WARNING, "Start transaction block for %d", dtmTx.xid);
-							BeginTransactionBlock();
-							CommitTransactionCommand();
-							StartTransactionCommand();
-						}
-						if (!PrepareTransactionBlock(gid))
-						{
-							elog(WARNING, "Failed to prepare transaction %s", gid);
-							/* report unsuccessful commit in completionTag */
-							if (completionTag) { 
-								strcpy(completionTag, "ROLLBACK");
-							}
-							/* ??? Should we do explicit rollback */
-						} else { 
-							CommitTransactionCommand();
-							StartTransactionCommand();
-							FinishPreparedTransaction(gid, true);
-						}
+					if (dtmTx.isDistributed && dtmTx.containsDML) {
+						MtmTwoPhaseCommit(completionTag);
 						return;
 					}
 					break;
@@ -1761,6 +1809,9 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		if (MtmProcessDDLCommand(queryString)) { 
 			return;
 		}
+		if (dtmTx.isDistributed && dtmTx.containsDML && !IsTransactionBlock()) { 
+			MtmTwoPhaseCommit(completionTag);
+		}
 	}
 	if (PreviousProcessUtilityHook != NULL)
 	{
@@ -1781,9 +1832,18 @@ MtmExecutorFinish(QueryDesc *queryDesc)
     if (MtmDoReplication) { 
         CmdType operation = queryDesc->operation;
         EState *estate = queryDesc->estate;
-        if (estate->es_processed != 0) { 
-            dtmTx.containsDML |= operation == CMD_INSERT || operation == CMD_UPDATE || operation == CMD_DELETE;
+        if (estate->es_processed != 0 && (operation == CMD_INSERT || operation == CMD_UPDATE || operation == CMD_DELETE)) { 			
+			int i;
+			for (i = 0; i < estate->es_num_result_relations; i++) { 
+				if (RelationNeedsWAL(estate->es_result_relations[i].ri_RelationDesc)) {
+					dtmTx.containsDML = true;
+					break;
+				}
+			}
         }
+		if (dtmTx.isDistributed && dtmTx.containsDML && !IsTransactionBlock()) { 
+			MtmTwoPhaseCommit(NULL);
+		}
     }
     if (PreviousExecutorFinishHook != NULL)
     {
@@ -1824,7 +1884,7 @@ MtmGetGtid(TransactionId xid, GlobalTransactionId* gtid)
 	MtmTransState* ts;
 
 	MtmLock(LW_SHARED);
-	ts = (MtmTransState*)hash_search(xid2state, &xid, HASH_FIND, NULL);
+	ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
 	if (ts != NULL) { 
 		*gtid = ts->gtid;
 	} else { 
