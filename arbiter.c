@@ -544,7 +544,6 @@ static void MtmTransReceiver(Datum arg)
 	int nResponses;
 	int i, j, n, rc;
 	MtmBuffer* rxBuffer = (MtmBuffer*)palloc(sizeof(MtmBuffer)*nNodes);
-	HTAB* xid2state;
 
 #if USE_EPOLL
 	struct epoll_event* events = (struct epoll_event*)palloc(sizeof(struct epoll_event)*nNodes);
@@ -557,7 +556,6 @@ static void MtmTransReceiver(Datum arg)
 	ds = MtmGetState();
 
 	MtmAcceptIncomingConnections();
-	xid2state = MtmCreateHash();
 
 	for (i = 0; i < nNodes; i++) { 
 		rxBuffer[i].used = 0;
@@ -611,7 +609,7 @@ static void MtmTransReceiver(Datum arg)
 
 				for (j = 0; j < nResponses; j++) { 
 					MtmArbiterMessage* msg = &rxBuffer[i].data[j];
-					MtmTransState* ts = (MtmTransState*)hash_search(xid2state, &msg->dxid, HASH_FIND, NULL);
+					MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);
 					Assert(ts != NULL);
 					Assert(msg->node > 0 && msg->node <= nNodes && msg->node != MtmNodeId);
 					Assert (MtmIsCoordinator(ts));
