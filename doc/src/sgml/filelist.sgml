@@ -100,6 +100,7 @@
 <!ENTITY sources    SYSTEM "sources.sgml">
 <!ENTITY storage    SYSTEM "storage.sgml">
 <!ENTITY tablesample-method SYSTEM "tablesample-method.sgml">
+<!ENTITY xtm        SYSTEM "xtm.sgml">
 
 <!-- contrib information -->
 <!ENTITY contrib         SYSTEM "contrib.sgml">

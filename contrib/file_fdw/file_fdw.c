@@ -524,6 +524,7 @@ fileGetForeignPaths(PlannerInfo *root,
 	 */
 	add_path(baserel, (Path *)
 			 create_foreignscan_path(root, baserel,
+									 NULL,		/* default pathtarget */
 									 baserel->rows,
 									 startup_cost,
 									 total_cost,
@@ -821,7 +822,7 @@ check_selective_binary_conversion(RelOptInfo *baserel,
 	}
 
 	/* Collect all the attributes needed for joins or final output. */
-	pull_varattnos((Node *) baserel->reltarget.exprs, baserel->relid,
+	pull_varattnos((Node *) baserel->reltarget->exprs, baserel->relid,
 				   &attrs_used);
 
 	/* Add all the attributes used by restriction clauses. */
@@ -953,7 +954,7 @@ estimate_size(PlannerInfo *root, RelOptInfo *baserel,
 		 */
 		int			tuple_width;
 
-		tuple_width = MAXALIGN(baserel->reltarget.width) +
+		tuple_width = MAXALIGN(baserel->reltarget->width) +
 			MAXALIGN(SizeofHeapTupleHeader);
 		ntuples = clamp_row_est((double) stat_buf.st_size /
 								(double) tuple_width);

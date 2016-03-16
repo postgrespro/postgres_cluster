@@ -12,8 +12,9 @@
 /* system stuff */
 #include <ctype.h>
 #include <fcntl.h>
-#include <unistd.h>
+#include <limits.h>
 #include <locale.h>
+#include <unistd.h>
 
 /* postgreSQL stuff */
 #include "access/htup_details.h"
@@ -281,7 +282,7 @@ static Datum plperl_hash_to_datum(SV *src, TupleDesc td);
 static void plperl_init_shared_libs(pTHX);
 static void plperl_trusted_init(void);
 static void plperl_untrusted_init(void);
-static HV  *plperl_spi_execute_fetch_result(SPITupleTable *, int, int);
+static HV  *plperl_spi_execute_fetch_result(SPITupleTable *, uint64, int);
 static char *hek2cstr(HE *he);
 static SV **hv_store_string(HV *hv, const char *key, SV *val);
 static SV **hv_fetch_string(HV *hv, const char *key);
@@ -1472,7 +1473,7 @@ plperl_ref_from_pg_array(Datum arg, Oid typid)
 
 	hv = newHV();
 	(void) hv_store(hv, "array", 5, av, 0);
-	(void) hv_store(hv, "typeoid", 7, newSViv(typid), 0);
+	(void) hv_store(hv, "typeoid", 7, newSVuv(typid), 0);
 
 	return sv_bless(newRV_noinc((SV *) hv),
 					gv_stashpv("PostgreSQL::InServer::ARRAY", 0));
@@ -3091,7 +3092,7 @@ plperl_spi_exec(char *query, int limit)
 
 
 static HV  *
-plperl_spi_execute_fetch_result(SPITupleTable *tuptable, int processed,
+plperl_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 processed,
 								int status)
 {
 	HV		   *result;
@@ -3103,13 +3104,21 @@ plperl_spi_execute_fetch_result(SPITupleTable *tuptable, int processed,
 	hv_store_string(result, "status",
 					cstr2sv(SPI_result_code_string(status)));
 	hv_store_string(result, "processed",
-					newSViv(processed));
+					(processed > (uint64) UV_MAX) ?
+					newSVnv((NV) processed) :
+					newSVuv((UV) processed));
 
 	if (status > 0 && tuptable)
 	{
 		AV		   *rows;
 		SV		   *row;
-		int			i;
+		uint64		i;
+
+		/* Prevent overflow in call to av_extend() */
+		if (processed > (uint64) AV_SIZE_MAX)
+			ereport(ERROR,
+					(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+			errmsg("query result has too many rows to fit in a Perl array")));
 
 		rows = newAV();
 		av_extend(rows, processed);
@@ -3898,10 +3907,8 @@ hv_store_string(HV *hv, const char *key, SV *val)
 	hkey = pg_server_to_any(key, strlen(key), PG_UTF8);
 
 	/*
-	 * This seems nowhere documented, but under Perl 5.8.0 and up, hv_store()
-	 * recognizes a negative klen parameter as meaning a UTF-8 encoded key. It
-	 * does not appear that hashes track UTF-8-ness of keys at all in Perl
-	 * 5.6.
+	 * hv_store() recognizes a negative klen parameter as meaning a UTF-8
+	 * encoded key.
 	 */
 	hlen = -(int) strlen(hkey);
 	ret = hv_store(hv, hkey, hlen, val, 0);

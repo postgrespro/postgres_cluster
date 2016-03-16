@@ -546,7 +546,7 @@ grouping_is_hashable(List *groupClause)
 PathTarget *
 make_pathtarget_from_tlist(List *tlist)
 {
-	PathTarget *target = (PathTarget *) palloc0(sizeof(PathTarget));
+	PathTarget *target = makeNode(PathTarget);
 	int			i;
 	ListCell   *lc;
 
@@ -606,7 +606,7 @@ make_tlist_from_pathtarget(PathTarget *target)
 PathTarget *
 copy_pathtarget(PathTarget *src)
 {
-	PathTarget *dst = (PathTarget *) palloc(sizeof(PathTarget));
+	PathTarget *dst = makeNode(PathTarget);
 
 	/* Copy scalar fields */
 	memcpy(dst, src, sizeof(PathTarget));
@@ -621,6 +621,17 @@ copy_pathtarget(PathTarget *src)
 		memcpy(dst->sortgrouprefs, src->sortgrouprefs, nbytes);
 	}
 	return dst;
+}
+
+/*
+ * create_empty_pathtarget
+ *	  Create an empty (zero columns, zero cost) PathTarget.
+ */
+PathTarget *
+create_empty_pathtarget(void)
+{
+	/* This is easy, but we don't want callers to hard-wire this ... */
+	return makeNode(PathTarget);
 }
 
 /*
@@ -652,6 +663,41 @@ add_column_to_pathtarget(PathTarget *target, Expr *expr, Index sortgroupref)
 
 		target->sortgrouprefs = (Index *) palloc0(nexprs * sizeof(Index));
 		target->sortgrouprefs[nexprs - 1] = sortgroupref;
+	}
+}
+
+/*
+ * add_new_column_to_pathtarget
+ *		Append a target column to the PathTarget, but only if it's not
+ *		equal() to any pre-existing target expression.
+ *
+ * The caller cannot specify a sortgroupref, since it would be unclear how
+ * to merge that with a pre-existing column.
+ *
+ * As with make_pathtarget_from_tlist, we leave it to the caller to update
+ * the cost and width fields.
+ */
+void
+add_new_column_to_pathtarget(PathTarget *target, Expr *expr)
+{
+	if (!list_member(target->exprs, expr))
+		add_column_to_pathtarget(target, expr, 0);
+}
+
+/*
+ * add_new_columns_to_pathtarget
+ *		Apply add_new_column_to_pathtarget() for each element of the list.
+ */
+void
+add_new_columns_to_pathtarget(PathTarget *target, List *exprs)
+{
+	ListCell   *lc;
+
+	foreach(lc, exprs)
+	{
+		Expr	   *expr = (Expr *) lfirst(lc);
+
+		add_new_column_to_pathtarget(target, expr);
 	}
 }
 

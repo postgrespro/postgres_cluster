@@ -485,7 +485,7 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	 * columns used in them.  Doesn't seem worth detecting that case though.)
 	 */
 	fpinfo->attrs_used = NULL;
-	pull_varattnos((Node *) baserel->reltarget.exprs, baserel->relid,
+	pull_varattnos((Node *) baserel->reltarget->exprs, baserel->relid,
 				   &fpinfo->attrs_used);
 	foreach(lc, fpinfo->local_conds)
 	{
@@ -536,7 +536,7 @@ postgresGetForeignRelSize(PlannerInfo *root,
 
 		/* Report estimated baserel size to planner. */
 		baserel->rows = fpinfo->rows;
-		baserel->reltarget.width = fpinfo->width;
+		baserel->reltarget->width = fpinfo->width;
 	}
 	else
 	{
@@ -553,7 +553,7 @@ postgresGetForeignRelSize(PlannerInfo *root,
 		{
 			baserel->pages = 10;
 			baserel->tuples =
-				(10 * BLCKSZ) / (baserel->reltarget.width +
+				(10 * BLCKSZ) / (baserel->reltarget->width +
 								 MAXALIGN(SizeofHeapTupleHeader));
 		}
 
@@ -797,6 +797,7 @@ postgresGetForeignPaths(PlannerInfo *root,
 	 * to estimate cost and size of this path.
 	 */
 	path = create_foreignscan_path(root, baserel,
+								   NULL,		/* default pathtarget */
 								   fpinfo->rows,
 								   fpinfo->startup_cost,
 								   fpinfo->total_cost,
@@ -968,6 +969,7 @@ postgresGetForeignPaths(PlannerInfo *root,
 
 		/* Make the path */
 		path = create_foreignscan_path(root, baserel,
+									   NULL,	/* default pathtarget */
 									   rows,
 									   startup_cost,
 									   total_cost,
@@ -2168,7 +2170,7 @@ estimate_path_cost_size(PlannerInfo *root,
 		 * between foreign relations.
 		 */
 		rows = foreignrel->rows;
-		width = foreignrel->reltarget.width;
+		width = foreignrel->reltarget->width;
 
 		/* Back into an estimate of the number of retrieved rows. */
 		retrieved_rows = clamp_row_est(rows / fpinfo->local_conds_sel);
@@ -3353,10 +3355,8 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
  *
  * 1) Join type is INNER or OUTER (one of LEFT/RIGHT/FULL)
  * 2) Both outer and inner portions are safe to push-down
- * 3) All foreign tables in the join belong to the same foreign server and use
- *	  the same user mapping.
- * 4) All join conditions are safe to push down
- * 5) No relation has local filter (this can be relaxed for INNER JOIN, if we
+ * 3) All join conditions are safe to push down
+ * 4) No relation has local filter (this can be relaxed for INNER JOIN, if we
  *	  can move unpushable clauses upwards in the join tree).
  */
 static bool
@@ -3571,6 +3571,7 @@ add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
 
 		add_path(rel, (Path *)
 				 create_foreignscan_path(root, rel,
+										 NULL,
 										 rows,
 										 startup_cost,
 										 total_cost,
@@ -3696,7 +3697,7 @@ postgresGetForeignJoinPaths(PlannerInfo *root,
 							&width, &startup_cost, &total_cost);
 	/* Now update this information in the joinrel */
 	joinrel->rows = rows;
-	joinrel->reltarget.width = width;
+	joinrel->reltarget->width = width;
 	fpinfo->rows = rows;
 	fpinfo->width = width;
 	fpinfo->startup_cost = startup_cost;
@@ -3708,6 +3709,7 @@ postgresGetForeignJoinPaths(PlannerInfo *root,
 	 */
 	joinpath = create_foreignscan_path(root,
 									   joinrel,
+									   NULL,	/* default pathtarget */
 									   rows,
 									   startup_cost,
 									   total_cost,
