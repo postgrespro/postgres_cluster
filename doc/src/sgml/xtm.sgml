@@ -1,186 +1,175 @@
 <!-- doc/src/sgml/xtm.sgml -->
- <chapter id="XTM">
+<chapter id="xtm">
   <title>eXtensible Transaction Manager</title>
-  <indexterm zone="XTM">
-   <primary>eXtensible Transaction Manager</primary>
+
+  <indexterm zone="xtm">
+    <primary>eXtensible Transaction Manager</primary>
   </indexterm>
+
   <para>
     PostgreSQL is open and extensible system, allowing to define own types (UDT), access methods, build custom execution plans, work with 
-external storage (FDW), ... But until this moment transaction manager implementation was hardcoded in Postgres core.
-XTM allows to Postgres extensions to define their own transaction managers. For example, it can be used to implement distributed transaction manager
-(DTM) for various cluster extensions of Postgres. Existed cluster extensions for Postgres, such as Postgres-XL, Greenplum, ...
-have to patch code of Postgres core, which  significantly complicates their development and maintenance. Presence of XTM makes it
-possible to implement such clusters as Postgres extension, not touching Postgres core. Such approach can easily be integrated with existed
-Postgres extension, such as pg_shard, postgres_fdw,...
+    external storage (FDW), ... But until this moment transaction manager implementation was hardcoded in Postgres core.
+    XTM allows to Postgres extensions to define their own transaction managers. For example, it can be used to implement distributed transaction manager
+    (MyTM) for various cluster extensions of Postgres. Existed cluster extensions for Postgres, such as Postgres-XL, Greenplum, ...
+    have to patch code of Postgres core, which  significantly complicates their development and maintenance. Presence of XTM makes it
+    possible to implement such clusters as Postgres extension, not touching Postgres core. Such approach can easily be integrated with existed
+    Postgres extension, such as pg_shard, postgres_fdw,...
   </para>
 
   <para>
-    Transaction manager in Postgres is deeply integrated in the core and depends on many other components (clog, xlog, lock manager, procarray,...) 
-as well as them depend on transaction manager. So it is not easy to completely encapsulate all transaction manager functionality. In other
-words XTM doesn't allow to implement arbitrary transaction manager. Subset of function included in XTM is not proven to be a necessary and sufficient.
-We were primary interested in development of distributed transaction manager, so we have tried to implement several possible DTMs
-(snapshot sharing, timestamp based, incremental distributed snapshot) and tried to find out minimal subset of transaction manager function in Postgres which
-has to be overridden.
+    Transaction manager in Postgres is deeply integrated in the core and depends on many other components (clog, xlog, lock manager, procarray,...) as well as them depend on transaction manager. So it is not easy to completely encapsulate all transaction manager functionality. In other words XTM doesn't allow to implement arbitrary transaction manager. Subset of function included in XTM is not proven to be a necessary and sufficient. We were primary interested in development of distributed transaction manager, so we have tried to implement several possible MyTMs (snapshot sharing, timestamp based, incremental distributed snapshot) and tried to find out minimal subset of transaction manager function in Postgres which has to be overridden.
   </para>
 
   <para>
-    XTM tries to minimize changes in Postgres core and still provide the highest level of flexibility. We do not want to change format of tuple header
-or affect lock manager: it requires significant rewriting of all Postgres code. We decided not to introduce new abstract method and instead of it takes
-some most fundamental Postgres transaction manager function and make it possible to override  them.
-Generally we want to control the following things:
+    XTM tries to minimize changes in Postgres core and still provide the highest level of flexibility. We do not want to change format of tuple header or affect lock manager: it requires significant rewriting of all Postgres code. We decided not to introduce new abstract method and instead of it takes some most fundamental Postgres transaction manager function and make it possible to override them. Generally we want to control the following things:
   </para>
 
   <variablelist>
-   <varlistentry>
-    <term>Snapshots and visibility</term>
-    <listitem>
-     <para>
-      tension should be able to generate its own snapshot and determine own rules for checking visibility of tuples. 
-     </para>
-    </listitem>
-   </varlistentry>
 
-   <varlistentry>
-    <term>Transaction status</term>
-    <listitem>
-     <para>
-       It should be possible to alter modification and retrieving of transaction status (in-progress, committed, aborted...).
-       We do not want to override Postgres commit/rollback function because their implementation include quite complex state automaton responsible
-       for transaction control for commands and blocks. Instead of it we override low level functions  which actually record transaction state.
-     </para>
-    </listitem>
-   </varlistentry>
+    <varlistentry>
+      <term>Snapshots and visibility</term>
+      <listitem>
+      <para>
+        tension should be able to generate its own snapshot and determine own rules for checking visibility of tuples. 
+      </para>
+      </listitem>
+    </varlistentry>
 
-   <varlistentry>
-    <term>Transaction identifier (XID)</term>
-    <listitem>
-     <para>
-       Custom TM should have capability to assign its own XIDs. XID representation is not changed: it is still 32-bit integer.
-But TM can define its own transaction identifier (for example commit serial numbers (CSN) and provide mapping between CSNs and XIDs).
-     </para>
-    </listitem>
-   </varlistentry>
+    <varlistentry>
+      <term>Transaction status</term>
+      <listitem>
+      <para>
+         It should be possible to alter modification and retrieving of transaction status (in-progress, committed, aborted...). We do not want to override Postgres commit/rollback function because their implementation include quite complex state automaton responsible for transaction control for commands and blocks. Instead of it we override low level functions  which actually record transaction state.
+      </para>
+      </listitem>
+    </varlistentry>
 
-   <varlistentry>
-    <term>Deadlock detection</term>
-    <listitem>
-     <para>
-       Custom deadlock detection is needed DTM to be able to handle distributed deadlocks. 
-       Actually deadlock detection is part of lock manager, but as far as essentially depends on  intrinsic of TM implementation, we
-       decided to place them in XTM API instead of proposing extensible API for lock manager.
-     </para>
-    </listitem>
-   <varlistentry>
-  <variablelist>
+    <varlistentry>
+      <term>Transaction identifier (XID)</term>
+      <listitem>
+      <para>
+         Custom TM should have capability to assign its own XIDs. XID representation is not changed: it is still 32-bit integer. But TM can define its own transaction identifier (for example commit serial numbers (CSN) and provide mapping between CSNs and XIDs).
+      </para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term>Deadlock detection</term>
+      <listitem>
+      <para>
+         Custom deadlock detection is needed MyTM to be able to handle distributed deadlocks. Actually deadlock detection is part of lock manager, but as far as essentially depends on  intrinsic of TM implementation, we decided to place them in XTM API instead of proposing extensible API for lock manager.
+      </para>
+      </listitem>
+    </varlistentry>
+
+  </variablelist>
 
   <para>
-    We place all XTM functions in single structure <structname>TransactionManager</structname>T to simplify overriding of transaction manager and make it more error prone.
-    Placing all function in one interface actually introduces new abstraction and helps to easily understand what custom TM is implementing itself
-    and where it depends on basic Postgres functionality. Postgres already has some mechanism of defining transaction hooks: pre/post commit/abort.
-    We decided to leave it and even extend set of hooks, adding hook for start of transaction and preparing transaction for two phase commit.
-    In principle it is possible to replace hooks with API functions, but we find using of hooks in some cases more convenient and what to 
-    preserve backward compatibility.
+    We place all XTM functions in single structure <structname>TransactionManager</structname>T to simplify overriding of transaction manager and make it more error prone. Placing all function in one interface actually introduces new abstraction and helps to easily understand what custom TM is implementing itself and where it depends on basic Postgres functionality. Postgres already has some mechanism of defining transaction hooks: pre/post commit/abort. We decided to leave it and even extend set of hooks, adding hook for start of transaction and preparing transaction for two phase commit. In principle it is possible to replace hooks with API functions, but we find using of hooks in some cases more convenient and what to preserve backward compatibility.
   </para>
-
   
   <sect1 id="xtm-functions">
     <title>eXtensible Transaction Manager functions</title>
 
-    <varlistentry id="GetTransactionStatus">
-     <term><synopsis>XidStatus	(*GetTransactionStatus) (TransactionId xid, XLogRecPtr *lsn)</synopsis></term>
-     <listitem>
-      <para>
-       Get current transaction status (encapsulation of <function>TransactionIdGetStatus</function> in <filename>clog.c</filename>)
-      </para>
-     </listitem>
-    </varlistentry>
+    <variablelist>
 
-    <varlistentry id="SetTransactionStatus">
-     <term><synopsis>void		(*SetTransactionStatus) (TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)</synopsis></term>
-     <listitem>
-      <para>
-       Set current transaction status (encapsulation of <function>TransactionIdSetTreeStatus</function> in <filename>clog.c</filename>)
-      </para>
-     </listitem>
-    </varlistentry>
+      <varlistentry id="GetTransactionStatus">
+       <term><synopsis>XidStatus  (*GetTransactionStatus) (TransactionId xid, XLogRecPtr *lsn)</synopsis></term>
+       <listitem>
+        <para>
+         Get current transaction status (encapsulation of <function>TransactionIdGetStatus</function> in <filename>clog.c</filename>)
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry id="SetTransactionStatus">
+       <term><synopsis>void    (*SetTransactionStatus) (TransactionId xid, int nsubxids, TransactionId *subxids, XidStatus status, XLogRecPtr lsn)</synopsis></term>
+       <listitem>
+        <para>
+         Set current transaction status (encapsulation of <function>TransactionIdSetTreeStatus</function> in <filename>clog.c</filename>)
+        </para>
+       </listitem>
+      </varlistentry>
+     
+      <varlistentry id="GetSnapshot">
+       <term><synopsis>Snapshot  (*GetSnapshot) (Snapshot snapshot)</synopsis></term>
+       <listitem>
+        <para>
+          Get current transaction snapshot (encapsulation of <function>GetSnapshotData</function> in <filename>procarray.c</filename>)
+        </para>
+       </listitem>
+      </varlistentry>
+     
+      <varlistentry id="GetNewTransactionId">
+       <term><synopsis>TransactionId (*GetNewTransactionId) (bool isSubXact)</synopsis></term>
+       <listitem>
+        <para>
+           Assign new Xid to transaction (encapsulation of <function>GetNewTransactionId</function> in <filename>varsup.c</filename>)
+        </para>
+       </listitem>
+      </varlistentry>
+     
+      <varlistentry id="GetOldestXmin">
+       <term><synopsis>TransactionId (*GetOldestXmin) (Relation rel, bool ignoreVacuum)</synopsis></term>
+       <listitem>
+        <para>
+           Get oldest transaction Xid that was running when any current
+         transaction was started (encapsulation of <function>GetOldestXmin</function> in <filename>procarray.c</filename>)
+        </para>
+       </listitem>
+      </varlistentry>
+     
+      <varlistentry id="IsInProgress">
+       <term><synopsis>bool    (*IsInProgress) (TransactionId xid)</synopsis></term>
+       <listitem>
+        <para>
+           Check if current transaction is not yet completed (encapsulation of
+         <function>TransactionIdIsInProgress</function> in <filename>procarray.c</filename>)
+        </para>
+       </listitem>
+      </varlistentry>
+     
+      <varlistentry id="GetGlobalTransactionId">
+       <term><synopsis>TransactionId (*GetGlobalTransactionId) (void)</synopsis></term>
+       <listitem>
+        <para>
+           Get global transaction XID: returns XID of current transaction if it is
+         global, <varname>InvalidTransactionId</varname> otherwise.
+        </para>
+       </listitem>
+      </varlistentry>
+     
+      <varlistentry id="IsInSnapshot">
+       <term><synopsis>bool    (*IsInSnapshot) (TransactionId xid, Snapshot snapshot)</synopsis></term>
+       <listitem>
+        <para>
+           Is the given XID still-in-progress according to the snapshot
+         (encapsulation of <function>XidInMVCCSnapshot</function> in <filename>tqual.c</filename>)
+        </para>
+       </listitem>
+      </varlistentry>
+     
+     
+      <varlistentry id="DetectGlobalDeadLock">
+       <term><synopsis>bool    (*DetectGlobalDeadLock) (PGPROC *proc)</synopsis></term>
+       <listitem>
+        <para>
+           Detect distributed deadlock
+        </para>
+       </listitem>
+      </varlistentry>
+     
+      <varlistentry id="GetName">
+       <term><synopsis>char const *(*GetName) (void)</synopsis></term>
+       <listitem>
+        <para>
+           Get transaction manager name
+        </para>
+       </listitem>
+      </varlistentry>
    
-    <varlistentry id="GetSnapshot">
-     <term><synopsis>Snapshot	(*GetSnapshot) (Snapshot snapshot)</synopsis></term>
-     <listitem>
-      <para>
-        Get current transaction snapshot (encapsulation of <function>GetSnapshotData</function> in <filename>procarray.c</filename>)
-      </para>
-     </listitem>
-    </varlistentry>
-   
-    <varlistentry id="GetNewTransactionId">
-     <term><synopsis>TransactionId (*GetNewTransactionId) (bool isSubXact)</synopsis></term>
-     <listitem>
-      <para>
-         Assign new Xid to transaction (encapsulation of <function>GetNewTransactionId</function> in <filename>varsup.c</filename>)
-      </para>
-     </listitem>
-    </varlistentry>
-   
-    <varlistentry id="GetOldestXmin">
-     <term><synopsis>TransactionId (*GetOldestXmin) (Relation rel, bool ignoreVacuum)</synopsis></term>
-     <listitem>
-      <para>
-         Get oldest transaction Xid that was running when any current
-	     transaction was started (encapsulation of <function>GetOldestXmin</function> in <filename>procarray.c</filename>)
-      </para>
-     </listitem>
-    </varlistentry>
-   
-    <varlistentry id="IsInProgress">
-     <term><synopsis>bool		(*IsInProgress) (TransactionId xid)</synopsis></term>
-     <listitem>
-      <para>
-         Check if current transaction is not yet completed (encapsulation of
-	     <function>TransactionIdIsInProgress</function> in <filename>procarray.c</filename>)
-      </para>
-     </listitem>
-    </varlistentry>
-   
-    <varlistentry id="GetGlobalTransactionId">
-     <term><synopsis>TransactionId (*GetGlobalTransactionId) (void)</synopsis></term>
-     <listitem>
-      <para>
-         Get global transaction XID: returns XID of current transaction if it is
-	     global, <varname>InvalidTransactionId</varname> otherwise.
-      </para>
-     </listitem>
-    </varlistentry>
-   
-    <varlistentry id="IsInSnapshot">
-     <term><synopsis>bool		(*IsInSnapshot) (TransactionId xid, Snapshot snapshot)</synopsis></term>
-     <listitem>
-      <para>
-         Is the given XID still-in-progress according to the snapshot
-	     (encapsulation of <function>XidInMVCCSnapshot</function> in <filename>tqual.c</filename>)
-      </para>
-     </listitem>
-    </varlistentry>
-   
-   
-    <varlistentry id="DetectGlobalDeadLock">
-     <term><synopsis>bool		(*DetectGlobalDeadLock) (PGPROC *proc)</synopsis></term>
-     <listitem>
-      <para>
-         Detect distributed deadlock
-      </para>
-     </listitem>
-    </varlistentry>
-   
-    <varlistentry id="GetName">
-     <term><synopsis>char const *(*GetName) (void)</synopsis></term>
-     <listitem>
-      <para>
-         Get transaction manager name
-      </para>
-     </listitem>
-    </varlistentry>
-   
+    </variablelist>
+
   </sect1>
 
   <sect1 id="xtm-usage">
@@ -197,23 +186,23 @@ But TM can define its own transaction identifier (for example commit serial numb
        </para>
 
        <programlisting>
-static TransactionManager DtmTM = {
-	DtmGetTransactionStatus,
-	DtmSetTransactionStatus,
-	DtmGetSnapshot,
-	DtmGetNewTransactionId,
-	DtmGetOldestXmin,
-	PgTransactionIdIsInProgress,
-	DtmGetGlobalTransactionId,
-	PgXidInMVCCSnapshot,
-    DtmDetectGlobalDeadLock,
-	DtmGetName
+static TransactionManager MyTM = {
+  MyTMGetTransactionStatus,
+  MyTMSetTransactionStatus,
+  MyTMGetSnapshot,
+  MyTMGetNewTransactionId,
+  MyTMGetOldestXmin,
+  PgTransactionIdIsInProgress,
+  MyTMGetGlobalTransactionId,
+  PgXidInMVCCSnapshot,
+  MyTMDetectGlobalDeadLock,
+  MyTMGetName
 };
 
-static void DtmInitialize()
+static void MyTMInitialize()
 {
     ...
-	TM = &DtmTM;
+  TM = &amp;MyTM;
 }
        </programlisting>
 
