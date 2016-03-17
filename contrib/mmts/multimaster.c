@@ -1116,6 +1116,11 @@ MtmGetState(void)
 	return dtm;
 }
 
+TransactionId MtmGetCurrentTransaction(void)
+{
+	return dtmTx.xid;
+}
+
 static void 
 MtmShmemStartup(void)
 {
