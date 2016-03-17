@@ -292,6 +292,7 @@ bool raft_peer_up(raft_t r, int id, char *host, int port, bool self) {
 		);
 		return false;
 	}
+	p->addr.sin_family = AF_INET;
 	p->addr.sin_port = htons(p->port);
 
 	if (self) {
