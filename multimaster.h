@@ -157,6 +157,7 @@ extern void  MtmSleep(timestamp_t interval);
 extern void  MtmSetCurrentTransactionGID(char const* gid);
 extern void  MtmSetCurrentTransactionCSN(csn_t csn);
 extern csn_t MtmGetTransactionCSN(TransactionId xid);
+extern TransactionId MtmGetCurrentTransactionId(void);
 extern bool  MtmIsRecoveredNode(int nodeId);
 extern void  MtmRefreshClusterStatus(bool nowait);
 extern void  MtmSwitchClusterMode(MtmNodeStatus mode);

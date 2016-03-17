@@ -484,12 +484,15 @@ process_remote_commit(StringInfo in)
 	{
 		case PGLOGICAL_COMMIT:
 		{
-			if (IsTransactionState())
+			if (IsTransactionState()) {
+				Assert(TransactionIdIsValid(MtmGetCurrentTransactionId()));
 				CommitTransactionCommand();
+			}
 			break;
 		}
 		case PGLOGICAL_PREPARE:
 		{
+			Assert(IsTransactionState() && TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
 			/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
 			BeginTransactionBlock();
@@ -503,6 +506,7 @@ process_remote_commit(StringInfo in)
 		}
 		case PGLOGICAL_COMMIT_PREPARED:
 		{
+			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			csn = pq_getmsgint64(in);
 			gid = pq_getmsgstring(in);
 			StartTransactionCommand();
@@ -514,6 +518,7 @@ process_remote_commit(StringInfo in)
 		}
 		case PGLOGICAL_ABORT_PREPARED:
 		{
+			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
 			StartTransactionCommand();
 			MtmSetCurrentTransactionGID(gid);
@@ -889,8 +894,9 @@ void MtmExecutor(int id, void* work, size_t size)
     {
 		EmitErrorReport();
         FlushErrorState();
-		MTM_TRACE("%d: REMOTE abort transaction %d\n", MyProcPid, GetCurrentTransactionId());
+		MTM_TRACE("%d: REMOTE begin abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
         AbortCurrentTransaction();
+		MTM_TRACE("%d: REMOTE end abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
     }
     PG_END_TRY();
 
