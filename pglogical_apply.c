@@ -465,12 +465,20 @@ read_rel(StringInfo s, LOCKMODE mode)
 }
 
 static void
+MtmSetCurrentSession(int nodeId)
+{
+	char slot_name[MULTIMASTER_MAX_SLOT_NAME_SIZE];
+	sprintf(slot_name, MULTIMASTER_SLOT_PATTERN, nodeId);
+	replorigin_session_origin = replorigin_by_name(slot_name, false); 
+	replorigin_session_setup(replorigin_session_origin);
+}
+
+static void
 process_remote_commit(StringInfo in)
 {
 	uint8 			flags;
 	uint8 			nodeId;
 	const char	   *gid = NULL;
-	char            slot_name[MULTIMASTER_MAX_SLOT_NAME_SIZE];
 
 	/* read flags */
 	flags = pq_getmsgbyte(in);
@@ -481,10 +489,6 @@ process_remote_commit(StringInfo in)
 	pq_getmsgint64(in); /* end_lsn */
 	replorigin_session_origin_timestamp = pq_getmsgint64(in); /* commit_time */
 	
-	sprintf(slot_name, MULTIMASTER_SLOT_PATTERN, nodeId);
-	replorigin_session_origin = replorigin_by_name(slot_name, false); 
-	replorigin_session_setup(replorigin_session_origin);
-
 	switch(PGLOGICAL_XACT_EVENT(flags))
 	{
 		case PGLOGICAL_COMMIT:
@@ -492,6 +496,7 @@ process_remote_commit(StringInfo in)
 			MTM_TRACE("%d: PGLOGICAL_COMMIT commit\n", MyProcPid);
 			if (IsTransactionState()) {
 				Assert(TransactionIdIsValid(MtmGetCurrentTransactionId()));
+				MtmSetCurrentSession(nodeId);
 				CommitTransactionCommand();
 			}
 			break;
@@ -505,6 +510,7 @@ process_remote_commit(StringInfo in)
 			BeginTransactionBlock();
 			CommitTransactionCommand();
 			StartTransactionCommand();
+			MtmSetCurrentSession(nodeId);
 			/* PREPARE itself */
 			MtmSetCurrentTransactionGID(gid);
 			PrepareTransactionBlock(gid);
@@ -517,6 +523,7 @@ process_remote_commit(StringInfo in)
 			gid = pq_getmsgstring(in);
 			MTM_TRACE("%d: PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s\n", MyProcPid, csn, gid);
 			StartTransactionCommand();
+			MtmSetCurrentSession(nodeId);
 			MtmSetCurrentTransactionGID(gid);
 			FinishPreparedTransaction(gid, true);
 			CommitTransactionCommand();

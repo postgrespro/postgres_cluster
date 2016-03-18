@@ -677,6 +677,7 @@ static void MtmTransReceiver(Datum arg)
 								ts->status = TRANSACTION_STATUS_UNKNOWN;
 								MtmWakeUpBackend(ts);
 							}
+							break;
 						  default:
 							Assert(false);
 						} 
