@@ -289,7 +289,6 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 				 * transactions in the changestream allowing for a kind of
 				 * distributed 2PC.
 				 */
-				elog(WARNING, "DECODE process XLOG_XACT_PREPARE");
 				//ReorderBufferProcessXid(reorder, XLogRecGetXid(r), buf->origptr);
 				break;
 

@@ -2418,6 +2418,8 @@ PrepareTransaction(void)
 	 */
 	s->state = TRANS_DEFAULT;
 
+	CallXactCallbacks(XACT_EVENT_POST_PREPARE);
+
 	RESUME_INTERRUPTS();
 }
 

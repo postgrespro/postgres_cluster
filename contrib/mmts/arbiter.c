@@ -106,10 +106,7 @@ static char const* const messageText[] =
 	"HANDSHAKE",
 	"READY",
 	"PREPARE",
-	"COMMIT",
-	"ABORT",
 	"PREPARED",
-	"COMMITTED",
 	"ABORTED",
 	"STATUS"
 };
@@ -456,8 +453,10 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 		buf->used = 0;
 	}
 	MTM_TRACE("Send %s message CSN=%ld to node %d from node %d for global transaction %d/local transaction %d\n", 
-			  ts->status == TRANSACTION_STATUS_ABORTED ? "abort" : "commit", ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
-	buf->data[buf->used].code = ts->status == TRANSACTION_STATUS_ABORTED ? MSG_ABORTED : MSG_PREPARED;
+			  messageText[ts->cmd], ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
+
+	Assert(ts->cmd != MSG_INVALID);
+	buf->data[buf->used].code = ts->cmd;
 	buf->data[buf->used].dxid = xid;
 	buf->data[buf->used].sxid = ts->xid;
 	buf->data[buf->used].csn  = ts->csn;
@@ -465,6 +464,22 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 	buf->data[buf->used].disabledNodeMask = ds->disabledNodeMask;
 	buf->used += 1;
 }
+
+static void MtmBroadcastMessage(MtmBuffer* txBuffer, MtmTransState* ts)
+{
+	int i;
+	int n = 1;
+	for (i = 0; i < MtmNodes; i++)
+	{
+		if (TransactionIdIsValid(ts->xids[i])) { 
+			Assert(i+1 != MtmNodeId);
+			MtmAppendBuffer(txBuffer, ts->xids[i], i, ts);
+			n += 1;
+		}
+	}
+	Assert(n == ds->nNodes);
+}
+
 
 static void MtmTransSender(Datum arg)
 {
@@ -492,7 +507,11 @@ static void MtmTransSender(Datum arg)
 		MtmLock(LW_SHARED); 
 
 		for (ts = ds->votingTransactions; ts != NULL; ts = ts->nextVoting) {
-			MtmAppendBuffer(txBuffer, ts->gtid.xid, ts->gtid.node-1, ts);
+			if (MtmIsCoordinator(ts)) {
+				MtmBroadcastMessage(txBuffer, ts);
+			} else {
+				MtmAppendBuffer(txBuffer, ts->gtid.xid, ts->gtid.node-1, ts);
+			}
 		}
 		ds->votingTransactions = NULL;
 
@@ -510,6 +529,7 @@ static void MtmTransSender(Datum arg)
 static void MtmWakeUpBackend(MtmTransState* ts)
 {
 	MTM_TRACE("Wakeup backed procno=%d, pid=%d\n", ts->procno, ProcGlobal->allProcs[ts->procno].pid);
+	ts->votingCompleted = true;
 	SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
 }
 
@@ -565,6 +585,9 @@ static void MtmTransReceiver(Datum arg)
 #if USE_EPOLL
         n = epoll_wait(epollfd, events, nNodes, MtmKeepaliveTimeout/1000);
 		if (n < 0) { 
+			if (errno == EINTR) { 
+				continue;
+			}
 			elog(ERROR, "Arbiter failed to poll sockets: %d", errno);
 		}
 		for (j = 0; j < n; j++) {
@@ -581,7 +604,9 @@ static void MtmTransReceiver(Datum arg)
 			events = inset;
 			tv.tv_sec = MtmKeepaliveTimeout/USEC;
 			tv.tv_usec = MtmKeepaliveTimeout%USEC;
-			n = select(max_fd+1, &events, NULL, NULL, &tv);
+			do { 
+				n = select(max_fd+1, &events, NULL, NULL, &tv);
+			} while (n < 0 && errno == ENINTR);
 		} while (n < 0 && MtmRecovery());
 		
 		if (rc < 0) { 
@@ -612,31 +637,62 @@ static void MtmTransReceiver(Datum arg)
 					MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);
 					Assert(ts != NULL);
 					Assert(msg->node > 0 && msg->node <= nNodes && msg->node != MtmNodeId);
-					Assert (MtmIsCoordinator(ts));
-					switch (msg->code) { 
-						case MSG_PREPARED:
-							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
-								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS || ts->status == TRANSACTION_STATUS_UNKNOWN);
-								if (msg->csn > ts->csn) {
-									ts->csn = msg->csn;
-									MtmSyncClock(ts->csn);
-								}
-								if (++ts->nVotes == ds->nNodes) { 
-									MtmWakeUpBackend(ts);
+					if (MtmIsCoordinator(ts)) {
+						switch (msg->code) { 
+						  case MSG_READY:
+							Assert(ts->nVotes < ds->nNodes);
+							ds->nodeTransDelay[msg->node-1] += MtmGetCurrentTime() - ts->csn;
+							ts->xids[msg->node-1] = msg->sxid;
+							if (++ts->nVotes == ds->nNodes) { 
+								/* All nodes are finished their transactions */
+								if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
+									ts->nVotes = 1; /* I voted myself */
+									MtmSendNotificationMessage(ts, MSG_PREPARE);									  
+								} else { 
+									Assert(ts->status == TRANSACTION_STATUS_ABORTED);
+									MtmWakeUpBackend(ts);								
 								}
 							}
-							break;
-						case MSG_ABORTED:
+							break;						   
+						  case MSG_ABORTED:
+							Assert(ts->nVotes < ds->nNodes);
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
-								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS || ts->status == TRANSACTION_STATUS_UNKNOWN);
+								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 								ts->status = TRANSACTION_STATUS_ABORTED;
 								MtmAdjustSubtransactions(ts);
+							}
+							if (++ts->nVotes == ds->nNodes) {
 								MtmWakeUpBackend(ts);
 							}
 							break;
-						default:
+						  case MSG_PREPARED:
+							Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+							Assert(ts->nVotes < ds->nNodes);
+							if (msg->csn > ts->csn) {
+								ts->csn = msg->csn;
+								MtmSyncClock(ts->csn);
+							}
+							if (++ts->nVotes == ds->nNodes) {
+								ts->csn = MtmAssignCSN();
+								ts->status = TRANSACTION_STATUS_UNKNOWN;
+								MtmWakeUpBackend(ts);
+							}
+						  default:
 							Assert(false);
-					} 
+						} 
+					} else { 
+						switch (msg->code) { 
+						  case MSG_PREPARE:
+							Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);									
+							ts->status = TRANSACTION_STATUS_UNKNOWN;
+							ts->csn = MtmAssignCSN();
+							MtmAdjustSubtransactions(ts);
+							MtmSendNotificationMessage(ts, MSG_PREPARED);
+							break;
+						  default:
+							Assert(false);
+						} 
+					}
 				}
 				MtmUnlock();
 				

@@ -3,6 +3,7 @@
 #include "miscadmin.h"
 
 #include "pglogical_output.h"
+#include "replication/origin.h"
 
 #include "access/sysattr.h"
 #include "access/tuptoaster.h"
@@ -109,9 +110,11 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	bool isRecovery = MtmIsRecoveredNode(mm->nodeId);
 	MTM_TRACE("pglogical_write_begin %d CSN=%ld\n", txn->xid, csn);
     if (csn == INVALID_CSN && !isRecovery) {
-        mm->isLocal = true;
+		//Assert(txn->origin_id != InvalidRepOriginId);
+        mm->isLocal = true; 
     } else { 
         mm->isLocal = false;        
+		//Assert(txn->origin_id == InvalidRepOriginId || isRecovery);
         pq_sendbyte(out, 'B');		/* BEGIN */
 		pq_sendint(out, MtmNodeId, 4);
 		pq_sendint(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
@@ -159,15 +162,13 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 
     /* send the flags field */
     pq_sendbyte(out, flags);
+    pq_sendbyte(out, MtmNodeId);
 
     /* send fixed fields */
     pq_sendint64(out, commit_lsn);
     pq_sendint64(out, txn->end_lsn);
     pq_sendint64(out, txn->commit_time);
 
-	if (flags == PGLOGICAL_COMMIT_PREPARED) { 
-		pq_sendint64(out, MtmGetTransactionCSN(txn->xid));
-	}
     if (flags != PGLOGICAL_COMMIT) { 
     	pq_sendstring(out, txn->gid);
 	}

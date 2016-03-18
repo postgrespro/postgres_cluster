@@ -68,6 +68,7 @@ struct config
     int nAccounts;
     int updatePercent;
     vector<string> connections;
+	bool scatter;
 
     config() {
         nReaders = 1;
@@ -75,6 +76,7 @@ struct config
         nIterations = 1000;
         nAccounts = 100000;
         updatePercent = 100;
+		scatter = false;
     }
 };
 
@@ -152,6 +154,10 @@ void* writer(void* arg)
         //transaction<read_committed> txn(*conns[random() % conns.size()]);
         int srcAcc = random() % cfg.nAccounts;
         int dstAcc = random() % cfg.nAccounts;
+		if (cfg.scatter) { 
+			srcAcc = srcAcc/cfg.nWriters*cfg.nWriters + t.id;
+			dstAcc = dstAcc/cfg.nWriters*cfg.nWriters + t.id;
+		}
         try {            
             if (random() % 100 < cfg.updatePercent) { 
                 exec(txn, "update t set v = v - 1 where u=%d", srcAcc);
@@ -224,6 +230,9 @@ int main (int argc, char* argv[])
                 continue;
             case 'p':
                 cfg.updatePercent = atoi(argv[++i]);
+                continue;
+            case 's':
+  			    cfg.scatter = true;
                 continue;
             case 'c':
                 cfg.connections.push_back(string(argv[++i]));

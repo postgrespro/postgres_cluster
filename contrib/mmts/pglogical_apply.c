@@ -26,6 +26,7 @@
 #include "parser/parse_type.h"
 
 #include "replication/logical.h"
+#include "replication/origin.h"
 
 #include "storage/ipc.h"
 #include "storage/lmgr.h"
@@ -467,23 +468,28 @@ static void
 process_remote_commit(StringInfo in)
 {
 	uint8 			flags;
+	uint8 			nodeId;
 	const char	   *gid = NULL;
-	csn_t           csn;
+	char            slot_name[MULTIMASTER_MAX_SLOT_NAME_SIZE];
 
 	/* read flags */
 	flags = pq_getmsgbyte(in);
+	nodeId = pq_getmsgbyte(in);
 
 	/* read fields */
-	pq_getmsgint64(in); /* commit_lsn */
+	replorigin_session_origin_lsn = pq_getmsgint64(in); /* commit_lsn */
 	pq_getmsgint64(in); /* end_lsn */
-	pq_getmsgint64(in); /* commit_time */
-
-	MTM_TRACE("PGLOGICAL_RECV commit: flags=%d, gid=%s\n", flags, gid);
+	replorigin_session_origin_timestamp = pq_getmsgint64(in); /* commit_time */
+	
+	sprintf(slot_name, MULTIMASTER_SLOT_PATTERN, nodeId);
+	replorigin_session_origin = replorigin_by_name(slot_name, false); 
+	replorigin_session_setup(replorigin_session_origin);
 
 	switch(PGLOGICAL_XACT_EVENT(flags))
 	{
 		case PGLOGICAL_COMMIT:
 		{
+			MTM_TRACE("%d: PGLOGICAL_COMMIT commit\n", MyProcPid);
 			if (IsTransactionState()) {
 				Assert(TransactionIdIsValid(MtmGetCurrentTransactionId()));
 				CommitTransactionCommand();
@@ -495,6 +501,7 @@ process_remote_commit(StringInfo in)
 			Assert(IsTransactionState() && TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
 			/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
+			MTM_TRACE("%d: PGLOGICAL_PREPARE commit: gid=%s\n", MyProcPid, gid);
 			BeginTransactionBlock();
 			CommitTransactionCommand();
 			StartTransactionCommand();
@@ -507,10 +514,9 @@ process_remote_commit(StringInfo in)
 		case PGLOGICAL_COMMIT_PREPARED:
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
-			csn = pq_getmsgint64(in);
 			gid = pq_getmsgstring(in);
+			MTM_TRACE("%d: PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s\n", MyProcPid, csn, gid);
 			StartTransactionCommand();
-			MtmSetCurrentTransactionCSN(csn);
 			MtmSetCurrentTransactionGID(gid);
 			FinishPreparedTransaction(gid, true);
 			CommitTransactionCommand();
@@ -520,15 +526,20 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
-			StartTransactionCommand();
-			MtmSetCurrentTransactionGID(gid);
-			FinishPreparedTransaction(gid, false);
-			CommitTransactionCommand();
+			MTM_TRACE("%d: PGLOGICAL_ABORT_PREPARED commit: gid=%s\n", MyProcPid, gid);
+			if (MtmGetGlobalTransactionStatus(gid) != TRANSACTION_STATUS_ABORTED) { 
+				StartTransactionCommand();
+				MtmSetCurrentTransactionGID(gid);
+				FinishPreparedTransaction(gid, false);
+				CommitTransactionCommand();
+			}
 			break;
 		}
 		default:
 			Assert(false);
 	}
+	replorigin_session_reset();
+	replorigin_session_origin = InvalidRepOriginId;
 }
 
 static void
@@ -854,12 +865,12 @@ void MtmExecutor(int id, void* work, size_t size)
 										   ALLOCSET_DEFAULT_MAXSIZE);
     }
     MemoryContextSwitchTo(ApplyContext);
-
+	replorigin_session_origin = InvalidRepOriginId;
     PG_TRY();
     {    
         while (true) { 
             char action = pq_getmsgbyte(&s);
-            
+            MTM_TRACE("%d: REMOTE process actiob %c\n", MyProcPid, action);
             switch (action) {
                 /* BEGIN */
             case 'B':
@@ -892,6 +903,9 @@ void MtmExecutor(int id, void* work, size_t size)
     }
     PG_CATCH();
     {
+		if (replorigin_session_origin != InvalidRepOriginId) { 
+			replorigin_session_reset();
+		}
 		EmitErrorReport();
         FlushErrorState();
 		MTM_TRACE("%d: REMOTE begin abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
