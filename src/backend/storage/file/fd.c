@@ -451,8 +451,20 @@ pg_flush_data(int fd, off_t offset, off_t nbytes)
 		 * We map the file (mmap()), tell the kernel to sync back the contents
 		 * (msync()), and then remove the mapping again (munmap()).
 		 */
+
+		/* mmap() need exact length when we want to map whole file */
+		if ((offset == 0) && (nbytes == 0))
+		{
+			int pagesize = getpagesize();
+			nbytes = (lseek(fd, offset, SEEK_END)/pagesize + 1)*pagesize;
+			if (nbytes < 0)
+				ereport(WARNING,
+						(errcode_for_file_access(),
+						 errmsg("could not determine dirty data size: %m")));
+		}
+
 		p = mmap(NULL, nbytes,
-				 PROT_READ | PROT_WRITE, MAP_SHARED,
+				 PROT_READ, MAP_SHARED,
 				 fd, offset);
 		if (p == MAP_FAILED)
 		{
