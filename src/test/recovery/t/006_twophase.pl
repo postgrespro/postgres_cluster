@@ -53,7 +53,7 @@ is($psql_rc, '0', 'Rollback prepared tx after restart.');
 
 ###############################################################################
 # Check that we can commit and abort after hard restart.
-# On startup WAL replay will re-create memory for global transactions that 
+# On startup WAL replay will re-create memory for global transactions that
 # happend after the last checkpoint.
 ###############################################################################
 
@@ -94,7 +94,7 @@ $psql_rc = $node_master->psql('postgres', "commit prepared 'x'");
 is($psql_rc, '0', 'Replay several tx with same name.');
 
 ###############################################################################
-# Check that WAL replay will cleanup it's memory state and release locks while 
+# Check that WAL replay will cleanup it's memory state and release locks while
 # replaying commit.
 ###############################################################################
 
@@ -169,7 +169,7 @@ $node_slave->start;
 
 ###############################################################################
 # Check that we restore prepared xacts after slave soft restart while master is
-# down. Since slave knows that master is down it uses different code path on 
+# down. Since slave knows that master is down it uses different code path on
 # start.
 ###############################################################################
 

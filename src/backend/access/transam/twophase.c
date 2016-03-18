@@ -1302,7 +1302,7 @@ StandbyTransactionIdIsPrepared(TransactionId xid)
 		return false;			/* nothing to do */
 
 	/*
-	 * At first check prepared tx that have no saved state files.
+	 * At first check prepared tx that wasn't yet moved to disk.
 	 */
 	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
 	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
