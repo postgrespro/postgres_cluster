@@ -5,20 +5,6 @@ use PostgresNode;
 use TestLib;
 use Test::More tests => 11;
 
-sub PostgresNode::psql_ok {
-   my ($self, $sql, $comment) = @_;
-
-   $self->command_ok(['psql', '-A', '-t', '--no-psqlrc',
-   	'-d', $self->connstr, '-c', $sql], $comment);
-}
-
-sub PostgresNode::psql_fails {
-   my ($self, $sql, $comment) = @_;
-
-   $self->command_ok(['psql', '-A', '-t', '--no-psqlrc',
-   	'-d', $self->connstr, '-c', $sql], $comment);
-}
-
 # Setup master node
 my $node_master = get_new_node("Candie");
 $node_master->init(allows_streaming => 1);
@@ -41,6 +27,7 @@ synchronous_standby_names = '*'
 $node_master->restart;
 
 my $psql_out = '';
+my $psql_rc = '';
 
 ###############################################################################
 # Check that we can commit and abort after soft restart.
@@ -57,10 +44,12 @@ $node_master->psql('postgres', "
 	prepare transaction 'y';");
 $node_master->stop;
 $node_master->start;
-$node_master->psql_ok("commit prepared 'x'",
-	'Commit prepared tx after restart.');
-$node_master->psql_ok("rollback prepared 'y'",
-	'Rollback prepared tx after restart.');
+
+$psql_rc = $node_master->psql('postgres', "commit prepared 'x'");
+is($psql_rc, '0', 'Commit prepared tx after restart.');
+
+$psql_rc = $node_master->psql('postgres', "rollback prepared 'y'");
+is($psql_rc, '0', 'Rollback prepared tx after restart.');
 
 ###############################################################################
 # Check that we can commit and abort after hard restart.
@@ -77,10 +66,12 @@ $node_master->psql('postgres', "
 	prepare transaction 'y';");
 $node_master->teardown_node;
 $node_master->start;
-$node_master->psql_ok("commit prepared 'x'",
-	'Commit prepared tx after teardown.');
-$node_master->psql_ok("rollback prepared 'y'",
-	'Rollback prepared tx after teardown.');
+
+$psql_rc = $node_master->psql('postgres', "commit prepared 'x'");
+is($psql_rc, '0', 'Commit prepared tx after teardown.');
+
+$psql_rc = $node_master->psql('postgres', "rollback prepared 'y'");
+is($psql_rc, '0', 'Rollback prepared tx after teardown.');
 
 ###############################################################################
 # Check that we can replay several tx with same name.
@@ -96,8 +87,9 @@ $node_master->psql('postgres', "
 	prepare transaction 'x';");
 $node_master->teardown_node;
 $node_master->start;
-$node_master->psql_ok("commit prepared 'x'",
-	'Check that we can replay several tx with same name.');
+
+$psql_rc = $node_master->psql('postgres', "commit prepared 'x'");
+is($psql_rc, '0', 'Check that we can replay several tx with same name.');
 
 ###############################################################################
 # Check that WAL replay will cleanup it's memory state and release locks while 
@@ -111,13 +103,13 @@ $node_master->psql('postgres', "
 	commit prepared 'x';");
 $node_master->teardown_node;
 $node_master->start;
-$node_master->psql_ok("
+$psql_rc = $node_master->psql('postgres',"
 	begin;
 	insert into t values (42);
 	-- This prepare can fail due to 2pc identifier or locks conflicts if replay
-	-- didn't cleanup proc, gxact and locks on commit.
-	prepare transaction 'x';",
-	"Check that WAL replay will cleanup it's memory state");
+	-- didn't cleanup proc, gxact or locks on commit.
+	prepare transaction 'x';");
+is($psql_rc, '0', "Check that WAL replay will cleanup it's memory state");
 $node_master->psql('postgres', "commit prepared 'x'");
 
 ###############################################################################
@@ -161,8 +153,8 @@ $node_master->psql('postgres', "
 $node_master->teardown_node;
 $node_slave->promote;
 $node_slave->poll_query_until('postgres', "SELECT pg_is_in_recovery() <> true");
-$node_slave->psql_ok("commit prepared 'x';",
-	"Check that we can commit transaction on promoted slave.");
+$psql_rc = $node_slave->psql('postgres', "commit prepared 'x';");
+is($psql_rc, '0', "Check that we can commit transaction on promoted slave.");
 
 # change roles
 ($node_master, $node_slave) = ($node_slave, $node_master);
