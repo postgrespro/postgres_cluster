@@ -40,6 +40,8 @@ synchronous_standby_names = '*'
 ));
 $node_master->restart;
 
+my $psql_out = '';
+
 ###############################################################################
 # Check that we can commit and abort after soft restart.
 # Here checkpoint happens before shutdown and no WAL replay will not occur
@@ -116,6 +118,7 @@ $node_master->psql_ok("
 	-- didn't cleanup proc, gxact and locks on commit.
 	prepare transaction 'x';",
 	"Check that WAL replay will cleanup it's memory state");
+$node_master->psql('postgres', "commit prepared 'x'");
 
 ###############################################################################
 # Check that we can commit while running active sync slave and that there is no
@@ -128,8 +131,8 @@ $node_master->psql('postgres', "
 	prepare transaction 'x';
 	commit prepared 'x';
 	");
-my $result = $node_slave->psql('postgres', "select * from pg_prepared_xacts;");
-is($result, "", "Check that WAL replay will cleanup it's memory state on slave");
+$node_slave->psql('postgres', "select count(*) from pg_prepared_xacts;", stdout => \$psql_out);
+is($psql_out, '0', "Check that WAL replay will cleanup it's memory state on slave");
 
 ###############################################################################
 # The same as in previous case, but let's force checkpoint on slave between
@@ -143,8 +146,8 @@ $node_master->psql('postgres', "
 	");
 $node_slave->psql('postgres',"checkpoint;");
 $node_master->psql('postgres', "commit prepared 'x';");
-$result = $node_slave->psql('postgres', "select * from pg_prepared_xacts;");
-is($result, "", "Check that WAL replay will cleanup it's memory state on slave after checkpoint");
+$node_slave->psql('postgres', "select count(*) from pg_prepared_xacts;", stdout => \$psql_out);
+is($psql_out, '0', "Check that WAL replay will cleanup it's memory state on slave after checkpoint");
 
 ###############################################################################
 # Check that we can commit transaction on promoted slave.
@@ -183,8 +186,8 @@ $node_master->stop;
 $node_slave->restart;
 $node_slave->promote;
 $node_slave->poll_query_until('postgres', "SELECT pg_is_in_recovery() <> true");
-my $prepared_count = $node_slave->psql('postgres',"select count(*) from pg_prepared_xacts");
-is($prepared_count, '1', "Check that we restore prepared xacts after slave soft restart while master is down.");
+$node_slave->psql('postgres',"select count(*) from pg_prepared_xacts", stdout => \$psql_out);
+is($psql_out, '1', "Check that we restore prepared xacts after slave soft restart while master is down.");
 
 # restore state
 ($node_master, $node_slave) = ($node_slave, $node_master);
@@ -210,8 +213,8 @@ $node_slave->teardown_node;
 $node_slave->start;
 $node_slave->promote;
 $node_slave->poll_query_until('postgres', "SELECT pg_is_in_recovery() <> true");
-$prepared_count = $node_slave->psql('postgres',"select count(*) from pg_prepared_xacts");
-is($prepared_count, '1', "Check that we restore prepared xacts after slave hard restart while master is down.");
+$node_slave->psql('postgres',"select count(*) from pg_prepared_xacts", stdout => \$psql_out);
+is($psql_out, '1', "Check that we restore prepared xacts after slave hard restart while master is down.");
 
 # restore state
 ($node_master, $node_slave) = ($node_slave, $node_master);

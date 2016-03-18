@@ -1603,7 +1603,7 @@ RecreateTwoPhaseFile(TransactionId xid, void *content, int len)
  * writes to xlog and files (as it was already done).
  */
 void
-XlogRedoFinishPrepared(TransactionId xid)
+XlogRedoFinishPrepared(TransactionId xid, bool isCommit)
 {
 	int			i;
 	char 	   *buf;
@@ -1655,6 +1655,7 @@ XlogRedoFinishPrepared(TransactionId xid)
 
 	bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
 	children = (TransactionId *) bufptr;
+	bufptr += MAXALIGN(hdr->gidlen);
 	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 	bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
 	bufptr += MAXALIGN(hdr->nabortrels * sizeof(RelFileNode));
@@ -1672,14 +1673,15 @@ XlogRedoFinishPrepared(TransactionId xid)
 
 	/*
 	 * 2REVIEWER: I assume that we can skip invalidation callbacks here,
-	 * aren't we?
+	 * as they were executed in xact_redo_commit().
 	 */
 
 	/* And release locks */
-	if (true)
+	if (isCommit)
 		ProcessRecords(bufptr, xid, twophase_postcommit_callbacks);
 	else
 		ProcessRecords(bufptr, xid, twophase_postabort_callbacks);
+
 	PredicateLockTwoPhaseFinish(xid, true);
 	RemoveGXact(gxact);
 	MyLockedGxact = NULL;
