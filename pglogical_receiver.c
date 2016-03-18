@@ -42,7 +42,7 @@ typedef struct ReceiverArgs {
 	int local_node;
 	int remote_node;
     char* receiver_conn_string;
-    char receiver_slot[16];
+    char receiver_slot[MULTIMASTER_MAX_SLOT_NAME_SIZE];
 } ReceiverArgs;
 
 #define ERRCODE_DUPLICATE_OBJECT_STR  "42710"
@@ -205,13 +205,15 @@ pglogical_receiver_main(Datum main_arg)
 	PGconn *conn;
 	PGresult *res;
 	MtmSlotMode mode;
-	MtmState* ds;
+	MtmState* ds = MtmGetState();
+
 #ifndef USE_PGLOGICAL_OUTPUT
     bool insideTrans = false;
 #endif
     ByteBuffer buf;
 	XLogRecPtr originStartPos = 0;
 	RepOriginId originId;
+	char* originName;
 
 	/* Register functions for SIGTERM/SIGHUP management */
 	pqsignal(SIGHUP, receiver_raw_sighup);
@@ -270,12 +272,21 @@ pglogical_receiver_main(Datum main_arg)
 	
 	/* Start logical replication at specified position */
 	StartTransactionCommand();
-	originId = replorigin_by_name(args->receiver_slot, true);
-	if (originId != InvalidRepOriginId) { 
+	originName = psprintf(MULTIMASTER_SLOT_PATTERN, args->remote_node);
+	originId = replorigin_by_name(originName, true);
+	if (originId == InvalidRepOriginId) { 
+		originId = replorigin_create(originName);
+		/* 
+		 * We are just creating new replication slot.
+		 * It is assumed that state of local and remote nodes is the same at this moment.
+		 * Them are either empty, either new node is synchronized using base_backup.
+		 * So we assume that LSNs are the same for local and remote node
+		 */
+		originStartPos = ds->status == MTM_RECOVERY ? GetXLogInsertRecPtr() : 0;
+		elog(WARNING, "Start logical receiver at position %lx from node %d", originStartPos, args->remote_node);
+	} else { 
 		originStartPos = replorigin_get_progress(originId, false);
 		elog(WARNING, "Restart logical receiver at position %lx from node %d", originStartPos, args->remote_node);
-	} else {  
-		elog(WARNING, "Start logical receiver from node %d", args->remote_node);
 	}
 	CommitTransactionCommand();
 	
@@ -299,7 +310,6 @@ pglogical_receiver_main(Datum main_arg)
 
     MtmReceiverStarted(args->remote_node);
     ByteBufferAlloc(&buf);
-	ds = MtmGetState();
 
 	while (!got_sigterm)
 	{
@@ -438,7 +448,7 @@ pglogical_receiver_main(Datum main_arg)
                 ByteBufferAppend(&buf, stmt, rc - hdr_len);
                 if (stmt[0] == 'C') /* commit */
                 { 
-                    MtmExecute(buf.data, buf.used);
+					MtmExecute(buf.data, buf.used);
                     ByteBufferReset(&buf);
                 }
 #else
@@ -589,7 +599,7 @@ int MtmStartReceivers(char* conns, int node_id)
                 MtmDatabaseName[len] = '\0';
             }
             ctx->receiver_conn_string = psprintf("replication=database %.*s", (int)(p - conn_str), conn_str);
-            sprintf(ctx->receiver_slot, "mtm_slot_%d", node_id);
+            sprintf(ctx->receiver_slot, MULTIMASTER_SLOT_PATTERN, node_id);
             ctx->local_node = node_id;
             ctx->remote_node = i;
 

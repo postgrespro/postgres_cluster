@@ -37,7 +37,7 @@ static void BgwPoolMainLoop(Datum arg)
         SpinLockAcquire(&pool->lock);
         size = *(int*)&pool->queue[pool->head];
         Assert(size < pool->size);
-        work = palloc(size);
+        work = malloc(size);
         pool->active -= 1;
         if (pool->head + size + 4 > pool->size) { 
             memcpy(work, pool->queue, size);
@@ -55,7 +55,7 @@ static void BgwPoolMainLoop(Datum arg)
         }
         SpinLockRelease(&pool->lock);
         pool->executor(id, work, size);
-        pfree(work);
+        free(work);
     }
 }
 

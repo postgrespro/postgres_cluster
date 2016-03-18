@@ -5,13 +5,14 @@
 #include "bgwpool.h"
 #include "bkb.h"
 
-#define MTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
-#define MTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 #define MTM_TUPLE_TRACE(fmt, ...)
 /*
+#define MTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 #define MTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
-#define MTM_TUPLE_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 */
+#define MTM_TRACE(fmt, ...) 
+#define MTM_TUPLE_TRACE(fmt, ...) 
+/* */
 
 #define MULTIMASTER_NAME                "multimaster"
 #define MULTIMASTER_SCHEMA_NAME         "mtm"
@@ -20,6 +21,7 @@
 #define MULTIMASTER_MIN_PROTO_VERSION   1
 #define MULTIMASTER_MAX_PROTO_VERSION   1
 #define MULTIMASTER_MAX_GID_SIZE        32
+#define MULTIMASTER_MAX_SLOT_NAME_SIZE  16
 
 #define USEC 1000000
 
@@ -52,6 +54,8 @@ typedef enum
 { 
 	MSG_INVALID,
 	MSG_HANDSHAKE,
+	MSG_READY,
+	MSG_PREPARE,
 	MSG_PREPARED,
 	MSG_ABORTED,
 	MSG_STATUS
@@ -85,8 +89,11 @@ typedef struct MtmTransState
 	int            procno;             /* pgprocno of transaction coordinator waiting for responses from replicas, 
 							              used to notify coordinator by arbiter */
 	int            nSubxids;           /* Number of subtransanctions */
-	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
+	MtmMessageCode cmd;                /* Notification message to be sent */
+  	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
+	bool           votingCompleted;    /* 2PC voting is completed */
+	TransactionId xids[1];             /* Transaction ID at replicas: varying size MtmNodes */
 } MtmTransState;
 
 typedef struct
@@ -143,7 +150,7 @@ extern void  MtmReceiverStarted(int nodeId);
 extern MtmSlotMode MtmReceiverSlotMode(int nodeId);
 extern void  MtmExecute(void* work, int size);
 extern void  MtmExecutor(int id, void* work, size_t size);
-extern void  MtmSendNotificationMessage(MtmTransState* ts);
+extern void  MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd);
 extern void  MtmAdjustSubtransactions(MtmTransState* ts);
 extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
@@ -155,9 +162,9 @@ extern MtmState* MtmGetState(void);
 extern timestamp_t MtmGetCurrentTime(void);
 extern void  MtmSleep(timestamp_t interval);
 extern void  MtmSetCurrentTransactionGID(char const* gid);
-extern void  MtmSetCurrentTransactionCSN(csn_t csn);
-extern csn_t MtmGetTransactionCSN(TransactionId xid);
 extern TransactionId MtmGetCurrentTransactionId(void);
+extern XidStatus MtmGetCurrentTransactionStatus(void);
+extern XidStatus MtmGetGlobalTransactionStatus(char const* gid);
 extern bool  MtmIsRecoveredNode(int nodeId);
 extern void  MtmRefreshClusterStatus(bool nowait);
 extern void  MtmSwitchClusterMode(MtmNodeStatus mode);
