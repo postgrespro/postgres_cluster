@@ -1,13 +1,46 @@
 This extension allows you to have a key-value table replicated between several
 Postgres instances over Raft protocol.
 
+Each 'postgres' instance starts a background worker 'raftable' and creates a
+shared memory segment for storing the 'state'. All 'raftable' workers are
+communicating Raft protocol over UDP.
+
+When 'frontend' issues a read command, the 'backend' returns the data from the
+local replica of the 'state' which is in the shared memory of current instance.
+
+When 'frontend' issues a write command, the 'backend' connects to the current
+'raftable' leader directly through TCP. Raftable leader returns the state
+version number V after the update gets applied (acked by the majority of
+'raftable' workers). Then the backend waits until the local state version
+number becomes at least V and returns 'ok' to the frontend.
+
+The backend can also issue commands to itself through C API.
+
+       fork        ┏━━━━━━━━━┓  sql  ┏━━━━━━━━━━┓
+     ┌─────────────┨ backend ┠───────┨ frontend ┃
+     │             ┗┯━━━━━━━┯┛       ┗━━━━━━━━━━┛
+     │              │shm    │
+┏━━━━┷━━━━━┓    ┏━━━┷━━━┓   │
+┃ postgres ┠────┨ state ┃   │
+┗━━━━┯━━━━━┛    ┗━━━┯━━━┛   │ tcp
+     │              │shm    │
+     │ fork    ┏━━━━┷━━━━━┓ │
+     └─────────┨ raftable ┃ │
+               ┗━┯━┯━┯━┯━┯┛ │
+                 │ raft│ │  │
+               ┏━┷━┷━┷━┷━┷┓ │
+              ┏┻━━━━━━━━━┓┠─┘
+             ┏┻━━━━━━━━━┓┣┛
+             ┃ raftable ┣┛
+             ┗━━━━━━━━━━┛
+
 C API:
 	/* Gets value by key. Returns the value or NULL if not found. */
 	char *raftable_get(int key);
 
 	/*
-	 * Adds/updates value by key. Returns when the value gets replicated.
-	 * Storing NULL will delete the item from the table.
+	 * Adds/updates value by key. Returns when the value gets replicated on
+	 * current machine. Storing NULL will delete the item from the table.
 	 */
 	void raftable_set(int key, char *value);
 
