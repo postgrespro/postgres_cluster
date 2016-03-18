@@ -30,9 +30,9 @@ my $psql_out = '';
 my $psql_rc = '';
 
 ###############################################################################
-# Check that we can commit and abort after soft restart.
+# Check that we can commit and abort tx after soft restart.
 # Here checkpoint happens before shutdown and no WAL replay will not occur
-# during start. So code should re-create memory state from files.
+# during start. So postgres should re-create memory state from files.
 ###############################################################################
 
 $node_master->psql('postgres', "
@@ -54,10 +54,11 @@ is($psql_rc, '0', 'Rollback prepared tx after restart.');
 ###############################################################################
 # Check that we can commit and abort after hard restart.
 # On startup WAL replay will re-create memory for global transactions that 
-# happend after last checkpoint and stored.  
+# happend after the last checkpoint.
 ###############################################################################
 
 $node_master->psql('postgres', "
+	checkpoint;
 	begin;
 	insert into t values (42);
 	prepare transaction 'x';
@@ -78,6 +79,7 @@ is($psql_rc, '0', 'Rollback prepared tx after teardown.');
 ###############################################################################
 
 $node_master->psql('postgres', "
+	checkpoint;
 	begin;
 	insert into t values (42);
 	prepare transaction 'x';
@@ -89,7 +91,7 @@ $node_master->teardown_node;
 $node_master->start;
 
 $psql_rc = $node_master->psql('postgres', "commit prepared 'x'");
-is($psql_rc, '0', 'Check that we can replay several tx with same name.');
+is($psql_rc, '0', 'Replay several tx with same name.');
 
 ###############################################################################
 # Check that WAL replay will cleanup it's memory state and release locks while 
@@ -107,14 +109,14 @@ $psql_rc = $node_master->psql('postgres',"
 	begin;
 	insert into t values (42);
 	-- This prepare can fail due to 2pc identifier or locks conflicts if replay
-	-- didn't cleanup proc, gxact or locks on commit.
+	-- didn't fully cleanup it's state on commit.
 	prepare transaction 'x';");
-is($psql_rc, '0', "Check that WAL replay will cleanup it's memory state");
+is($psql_rc, '0', "Check that replay will cleanup it's memory state");
+
 $node_master->psql('postgres', "commit prepared 'x'");
 
 ###############################################################################
-# Check that we can commit while running active sync slave and that there is no
-# active prepared transaction on slave after that.
+# Check that WAL replay will cleanup it's memory state on running slave.
 ###############################################################################
 
 $node_master->psql('postgres', "
@@ -124,7 +126,7 @@ $node_master->psql('postgres', "
 	commit prepared 'x';
 	");
 $node_slave->psql('postgres', "select count(*) from pg_prepared_xacts;", stdout => \$psql_out);
-is($psql_out, '0', "Check that WAL replay will cleanup it's memory state on slave");
+is($psql_out, '0', "Check that replay will cleanup it's memory state on running slave");
 
 ###############################################################################
 # The same as in previous case, but let's force checkpoint on slave between
@@ -139,7 +141,7 @@ $node_master->psql('postgres', "
 $node_slave->psql('postgres',"checkpoint;");
 $node_master->psql('postgres', "commit prepared 'x';");
 $node_slave->psql('postgres', "select count(*) from pg_prepared_xacts;", stdout => \$psql_out);
-is($psql_out, '0', "Check that WAL replay will cleanup it's memory state on slave after checkpoint");
+is($psql_out, '0', "Check that replay will cleanup it's memory state on slave after checkpoint");
 
 ###############################################################################
 # Check that we can commit transaction on promoted slave.
@@ -153,8 +155,9 @@ $node_master->psql('postgres', "
 $node_master->teardown_node;
 $node_slave->promote;
 $node_slave->poll_query_until('postgres', "SELECT pg_is_in_recovery() <> true");
+
 $psql_rc = $node_slave->psql('postgres', "commit prepared 'x';");
-is($psql_rc, '0', "Check that we can commit transaction on promoted slave.");
+is($psql_rc, '0', "Restore prepared transaction on promoted slave.");
 
 # change roles
 ($node_master, $node_slave) = ($node_slave, $node_master);
@@ -166,7 +169,8 @@ $node_slave->start;
 
 ###############################################################################
 # Check that we restore prepared xacts after slave soft restart while master is
-# down.
+# down. Since slave knows that master is down it uses different code path on 
+# start.
 ###############################################################################
 
 $node_master->psql('postgres', "
@@ -178,8 +182,9 @@ $node_master->stop;
 $node_slave->restart;
 $node_slave->promote;
 $node_slave->poll_query_until('postgres', "SELECT pg_is_in_recovery() <> true");
+
 $node_slave->psql('postgres',"select count(*) from pg_prepared_xacts", stdout => \$psql_out);
-is($psql_out, '1', "Check that we restore prepared xacts after slave soft restart while master is down.");
+is($psql_out, '1', "Restore prepared xacts after slave soft restart while master is down.");
 
 # restore state
 ($node_master, $node_slave) = ($node_slave, $node_master);
@@ -205,8 +210,9 @@ $node_slave->teardown_node;
 $node_slave->start;
 $node_slave->promote;
 $node_slave->poll_query_until('postgres', "SELECT pg_is_in_recovery() <> true");
+
 $node_slave->psql('postgres',"select count(*) from pg_prepared_xacts", stdout => \$psql_out);
-is($psql_out, '1', "Check that we restore prepared xacts after slave hard restart while master is down.");
+is($psql_out, '1', "Restore prepared xacts after slave hard restart while master is down.");
 
 # restore state
 ($node_master, $node_slave) = ($node_slave, $node_master);
