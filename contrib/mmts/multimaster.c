@@ -110,6 +110,7 @@ static void MtmXactCallback(XactEvent event, void *arg);
 static void MtmBeginTransaction(MtmCurrentTrans* x);
 static void MtmPrePrepareTransaction(MtmCurrentTrans* x);
 static void MtmPostPrepareTransaction(MtmCurrentTrans* x);
+static void MtmAbortPreparedTransaction(MtmCurrentTrans* x);
 static void MtmEndTransaction(MtmCurrentTrans* x, bool commit);
 static TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
@@ -496,6 +497,9 @@ MtmXactCallback(XactEvent event, void *arg)
 	  case XACT_EVENT_POST_PREPARE:
 		MtmPostPrepareTransaction(&dtmTx);
 		break;
+	  case XACT_EVENT_ABORT_PREPARED:
+		MtmAbortPreparedTransaction(&dtmTx);
+		break;
 	  case XACT_EVENT_COMMIT:
 		MtmEndTransaction(&dtmTx, true);
 		break;
@@ -522,6 +526,7 @@ MtmResetTransaction(MtmCurrentTrans* x)
 	x->snapshot = INVALID_CSN;
 	x->xid = InvalidTransactionId;
 	x->gtid.xid = InvalidTransactionId;
+	x->isDistributed = false;
 }
 
 static void 
@@ -620,14 +625,16 @@ static void
 MtmPostPrepareTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
+	MtmTransMap* tm;
 
 	MtmLock(LW_EXCLUSIVE);
 	ts = hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
 	Assert(ts != NULL);
+	tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, NULL);
+	Assert(x->gid[0]);
+	tm->state = ts;
+
 	if (!MtmIsCoordinator(ts)) {
-		MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, NULL);
-		Assert(x->gid[0]);
-		tm->state = ts;
 		MtmSendNotificationMessage(ts, MSG_READY); /* send notification to coordinator */
 		MtmUnlock();
 		MtmResetTransaction(x);
@@ -645,6 +652,20 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	}
 }
 
+
+static void 
+MtmAbortPreparedTransaction(MtmCurrentTrans* x)
+{
+	MtmTransMap* tm;
+
+	MtmLock(LW_EXCLUSIVE);
+	tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
+	Assert(tm != NULL);
+	tm->state->status = TRANSACTION_STATUS_ABORTED;
+	MtmAdjustSubtransactions(tm->state);
+	MtmUnlock();
+	MtmResetTransaction(x);		
+}
 
 static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
@@ -695,9 +716,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		}				
 		MtmUnlock();
 	}
-	x->snapshot = INVALID_CSN;
-	x->xid = InvalidTransactionId;
-	x->gtid.xid = InvalidTransactionId;
+	MtmResetTransaction(x);
 	MtmCheckSlots();
 }
 
@@ -1735,17 +1754,16 @@ MtmGenerateGid(char* gid)
 
 static void MtmTwoPhaseCommit(char *completionTag)
 {
-	char gid[MULTIMASTER_MAX_GID_SIZE];
-	MtmGenerateGid(gid);
+	MtmGenerateGid(dtmTx.gid);
 	if (!IsTransactionBlock()) { 
 		elog(WARNING, "Start transaction block for %d", dtmTx.xid);
 		BeginTransactionBlock();
 		CommitTransactionCommand();
 		StartTransactionCommand();
 	}
-	if (!PrepareTransactionBlock(gid))
+	if (!PrepareTransactionBlock(dtmTx.gid))
 	{
-		elog(WARNING, "Failed to prepare transaction %s", gid);
+		elog(WARNING, "Failed to prepare transaction %s", dtmTx.gid);
 		/* report unsuccessful commit in completionTag */
 		if (completionTag) { 
 			strcpy(completionTag, "ROLLBACK");
@@ -1755,10 +1773,10 @@ static void MtmTwoPhaseCommit(char *completionTag)
 		CommitTransactionCommand();
 		StartTransactionCommand();
 		if (MtmGetCurrentTransactionStatus() == TRANSACTION_STATUS_ABORTED) { 
-			FinishPreparedTransaction(gid, false);
-			elog(ERROR, "Transaction %s is aborted by DTM", gid);
+			FinishPreparedTransaction(dtmTx.gid, false);
+			elog(ERROR, "Transaction %s is aborted by DTM", dtmTx.gid);
 		} else {
-			FinishPreparedTransaction(gid, true);
+			FinishPreparedTransaction(dtmTx.gid, true);
 		}
 	}
 }
