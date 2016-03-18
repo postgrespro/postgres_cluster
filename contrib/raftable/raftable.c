@@ -26,6 +26,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <signal.h>
+#include <time.h>
 
 #define RAFTABLE_PEERS_MAX (64)
 
@@ -74,10 +75,20 @@ PG_FUNCTION_INFO_V1(raftable_sql_list);
 static raft_config_t raft_config;
 static raft_t raft;
 
+#define MAX_CLIENTS 1024
+#define BUFLEN 1024
+
 typedef struct client_t {
+	bool good;
+	int sock;
+	char buf[BUFLEN];
+	size_t bufrecved;
+	char *msg;
+	size_t msgrecved;
+	size_t msglen;
+	int expected_version;
 } client_t;
 
-#define MAX_CLIENTS 1024
 struct {
 	char *host;
 	int port;
@@ -87,12 +98,101 @@ struct {
 
 	fd_set all;
 	int maxfd;
-	int clients[MAX_CLIENTS];
 	int clientnum;
+	client_t clients[MAX_CLIENTS];
 } server;
+
+typedef struct host_port_t {
+	char *host;
+	int port;
+} host_port_t;
 
 static int raftable_id;
 static char *raftable_peers;
+static host_port_t raftable_peer_addr[RAFTABLE_PEERS_MAX];
+static int leadersock = -1;
+
+static void disconnect_leader()
+{
+	if (leadersock >= 0)
+	{
+		close(leadersock);
+	}
+	leadersock = -1;
+}
+
+static bool connect_leader()
+{
+	// use an IP socket
+	struct addrinfo *addrs = NULL;
+	struct addrinfo hint;
+	char portstr[6];
+	struct addrinfo *a;
+
+	int leader = raft_get_leader(raft);
+	if (leader == NOBODY)
+	{
+		fprintf(stderr, "no leader to connect to\n");
+		return false;
+	}
+
+	host_port_t *leaderhp = raftable_peer_addr + leader;
+
+	memset(&hint, 0, sizeof(hint));
+	hint.ai_socktype = SOCK_STREAM;
+	hint.ai_family = AF_INET;
+	snprintf(portstr, 6, "%d", leaderhp->port);
+	hint.ai_protocol = getprotobyname("tcp")->p_proto;
+
+	if (getaddrinfo(leaderhp->host, portstr, &hint, &addrs))
+	{
+		disconnect_leader();
+		perror("failed to resolve address");
+		return false;
+	}
+
+	for (a = addrs; a != NULL; a = a->ai_next)
+	{
+		int one = 1;
+
+		int sd = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+		if (sd == -1)
+		{
+			perror("failed to create a socket");
+			continue;
+		}
+		setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+
+		if (connect(sd, a->ai_addr, a->ai_addrlen) == -1)
+		{
+			perror("failed to connect to an address");
+			close(sd);
+			continue;
+		}
+
+		// success
+		freeaddrinfo(addrs);
+		leadersock = sd;
+		return true;
+	}
+	freeaddrinfo(addrs);
+	disconnect_leader();
+	fprintf(stderr, "could not connect\n");
+	return false;
+}
+
+static int get_connection()
+{
+	while (leadersock < 0)
+	{
+		if (connect_leader()) break;
+
+		int timeout_ms = 1000;
+		struct timespec timeout = {0, timeout_ms * 1000000};
+		nanosleep(&timeout, NULL);
+	}
+	return leadersock;
+}
 
 static HTAB *hashtable;
 static LWLockId hashlock;
@@ -143,16 +243,15 @@ static void block_free(RaftableBlock *block)
 	LWLockRelease(blocklock);
 }
 
-
-static text *entry_to_text(RaftableEntry *e)
+static char *entry_to_string(RaftableEntry *e)
 {
-	char *cursor, *buf;
+	char *cursor, *s;
 	RaftableBlock *block;
 	text *t;
 	int len;
 
-	buf = palloc(e->len + 1);
-	cursor = buf;
+	s = palloc(e->len + 1);
+	cursor = s;
 
 	block = e->value;
 	len = e->len;
@@ -166,25 +265,29 @@ static text *entry_to_text(RaftableEntry *e)
 		cursor += tocopy;
 		len -= tocopy;
 
-		Assert(cursor - buf <= e->len);
+		Assert(cursor - s <= e->len);
 		block = block->next;
 	}
-	Assert(cursor - buf == e->len);
+	Assert(cursor - s == e->len);
 	*cursor = '\0';
-	t = cstring_to_text_with_len(buf, e->len);
-	pfree(buf);
+	return s;
+}
+
+static text *entry_to_text(RaftableEntry *e)
+{
+	text *t;
+	char *s = entry_to_string(e);
+	t = cstring_to_text_with_len(s, e->len);
+	pfree(s);
 	return t;
 }
 
-static void text_to_entry(RaftableEntry *e, text *t)
+static void string_to_entry(RaftableEntry *e, char *value)
 {
-	char *buf, *cursor;
 	int len;
 	RaftableBlock *block;
 
-	buf = text_to_cstring(t);
-	cursor = buf;
-	len = strlen(buf);
+	len = strlen(value);
 	e->len = len;
 
 	if (e->len > 0)
@@ -221,15 +324,184 @@ static void text_to_entry(RaftableEntry *e, text *t)
 			}
 		}
 
-		memcpy(block->data, cursor, tocopy);
-		cursor += tocopy;
+		memcpy(block->data, value, tocopy);
+		value += tocopy;
 		len -= tocopy;
 
 		block = block->next;
 	}
 
-	pfree(buf);
 	Assert(block == NULL);
+}
+
+static void text_to_entry(RaftableEntry *e, text *t)
+{
+	char *s = text_to_cstring(t);
+	string_to_entry(e, s);
+	pfree(s);
+}
+
+static void local_state_clear()
+{
+	HASH_SEQ_STATUS scan;
+	RaftableEntry *entry;
+
+	hash_seq_init(&scan, hashtable);
+	while ((entry = (RaftableEntry *)hash_seq_search(&scan))) {
+		if (entry->len > 0)
+			block_free(entry->value);
+		hash_search(hashtable, entry->key.data, HASH_REMOVE, NULL);
+	}
+	hash_seq_term(&scan);
+}
+
+typedef struct raftable_field_t {
+	int keylen; // with NULL at the end
+	int vallen; // with NULL at the end
+	bool isnull;
+	char data[1];
+} raftable_field_t;
+
+typedef struct raftable_update_t {
+	int version;
+	int fieldnum;
+	char data[1];
+} raftable_update_t;
+
+static void local_state_set(char *key, char *value)
+{
+	if (value == NULL)
+	{
+		RaftableEntry *entry = hash_search(hashtable, key, HASH_FIND, NULL);
+		if ((entry != NULL) && (entry->len > 0))
+			block_free(entry->value);
+		hash_search(hashtable, key, HASH_REMOVE, NULL);
+	}
+	else
+	{
+		bool found;
+		RaftableEntry *entry = hash_search(hashtable, key, HASH_ENTER, &found);
+		if (!found)
+		{
+			strncpy(entry->key.data, key, RAFTABLE_KEY_LEN);
+			entry->key.data[RAFTABLE_KEY_LEN - 1] = '\0';
+			entry->value = NULL;
+			entry->len = 0;
+		}
+		string_to_entry(entry, value);
+	}
+}
+
+static void local_state_update(raftable_update_t *update)
+{
+	raftable_field_t *f;
+	int i;
+	char *cursor = update->data;
+	for (i = 0; i < update->fieldnum; i++) {
+		f = (raftable_field_t *)cursor;
+		cursor = f->data;
+		char *key = cursor; cursor += f->keylen;
+		char *value = cursor; cursor += f->vallen;
+		local_state_set(key, value);
+	}
+}
+
+static bool notify(int version)
+{
+	int i = 0;
+	for (i = 0; i < MAX_CLIENTS; i++)
+	{
+		client_t *c = server.clients + i;
+		if (c->sock < 0) continue;
+		if (!c->good) continue;
+		if (!c->expected_version) continue;
+		if (version < c->expected_version) continue;
+
+		if (send(c->sock, &c->expected_version, sizeof(c->expected_version), 0) != sizeof(c->expected_version))
+		{
+			fprintf(stderr, "failed to notify client\n");
+			c->good = false;
+		}
+		c->expected_version = 0;
+	}
+}
+
+static void applier(void *state, raft_update_t update, bool snapshot)
+{
+	raftable_update_t *ru = (raftable_update_t *)update.data;
+	Assert(state == hashtable);
+
+	LWLockAcquire(hashlock, LW_EXCLUSIVE);
+
+	if (snapshot) local_state_clear();
+	local_state_update(ru);
+	notify(ru->version);
+
+	LWLockRelease(hashlock);
+}
+
+static size_t estimate_snapshot_size()
+{
+	HASH_SEQ_STATUS scan;
+	RaftableEntry *entry;
+	size_t size = sizeof(raftable_update_t);
+
+	hash_seq_init(&scan, hashtable);
+	while ((entry = (RaftableEntry *)hash_seq_search(&scan))) {
+		size += sizeof(raftable_field_t) - 1;
+		size += strlen(entry->key.data) + 1;
+		size += entry->len + 1;
+	}
+	hash_seq_term(&scan);
+
+	return size;
+}
+
+static raft_update_t snapshooter(void *state) {
+	HASH_SEQ_STATUS scan;
+	RaftableEntry *entry;
+	raft_update_t shot;
+	raftable_update_t *update;
+	char *cursor;
+
+	Assert(state == hashtable);
+
+	shot.len = estimate_snapshot_size();
+	shot.data = malloc(shot.len);
+	if (!shot.data) {
+		fprintf(stderr, "failed to take a snapshot\n");
+	}
+
+	update = (raftable_update_t *)shot.data;
+	cursor = update->data;
+
+	hash_seq_init(&scan, hashtable);
+	while ((entry = (RaftableEntry *)hash_seq_search(&scan))) {
+		raftable_field_t *f = (raftable_field_t *)cursor;
+		cursor = f->data;
+
+		f->keylen = strlen(entry->key.data) + 1;
+		memcpy(cursor, entry->key.data, f->keylen - 1);
+		cursor[f->keylen - 1] = '\0';
+		cursor += f->keylen;
+
+		if (entry->len)
+		{
+			f->isnull = false;
+			f->vallen = entry->len + 1;
+
+			char *s = entry_to_string(entry);
+			memcpy(cursor, s, f->vallen);
+			pfree(s);
+
+			cursor += f->vallen;
+		}
+		else
+			f->isnull = true;
+	}
+	hash_seq_term(&scan);
+
+	return shot;
 }
 
 Datum
@@ -255,33 +527,61 @@ raftable_sql_get(PG_FUNCTION_ARGS)
 	}
 }
 
+void raftable_set(char *key, char *value)
+{
+	raftable_update_t *ru;
+	size_t size = sizeof(raftable_update_t);
+	int keylen, vallen = 0;
+
+	keylen = strlen(key) + 1;
+	if (value) vallen = strlen(value) + 1;
+
+	size += sizeof(raftable_field_t) - 1;
+	size += keylen;
+	size += vallen;
+	ru = palloc(size);
+
+	raftable_field_t *f = ru->data;
+	f->keylen = keylen;
+	f->vallen = vallen;
+	memcpy(f->data, key, keylen);
+	memcpy(f->data + keylen, key, vallen);
+
+	while (true)
+	{
+		fprintf(stderr, "trying to send update to the leader\n");
+		int s = get_connection();
+		int sent = 0;
+		while (sent < size)
+		{
+			int newbytes = write(s, (char *)ru + sent, size - sent);
+			if (newbytes == -1)
+			{
+				disconnect_leader();
+				fprintf(stderr, "failed to send update to the leader\n");
+			}
+			sent += newbytes;
+		}
+
+		// FIXME: add blocking until the updated state version appears
+	}
+
+	pfree(ru);
+}
+
 Datum
 raftable_sql_set(PG_FUNCTION_ARGS)
 {
-	RaftableKey key;
-	text_to_cstring_buffer(PG_GETARG_TEXT_P(0), key.data, sizeof(key.data));
-
-	LWLockAcquire(hashlock, LW_EXCLUSIVE);
+	char *key = text_to_cstring(PG_GETARG_TEXT_P(0));
 	if (PG_ARGISNULL(1))
-	{
-		RaftableEntry *entry = hash_search(hashtable, key.data, HASH_FIND, NULL);
-		if ((entry != NULL) && (entry->len > 0))
-			block_free(entry->value);
-		hash_search(hashtable, key.data, HASH_REMOVE, NULL);
-	}
+		raftable_set(key, NULL);
 	else
 	{
-		bool found;
-		RaftableEntry *entry = hash_search(hashtable, key.data, HASH_ENTER, &found);
-		if (!found)
-		{
-			entry->key = key;
-			entry->value = NULL;
-			entry->len = 0;
-		}
-		text_to_entry(entry, PG_GETARG_TEXT_P(1));
+		char *value = text_to_cstring(PG_GETARG_TEXT_P(1));
+		raftable_set(key, value);
+		pfree(value);
 	}
-	LWLockRelease(hashlock);
+	pfree(key);
 
 	PG_RETURN_VOID();
 }
@@ -481,12 +781,12 @@ static int create_listening_socket(const char *host, int port) {
 	if (listen(s, LISTEN_QUEUE_SIZE) == -1) {
 		fprintf(stderr, "failed to listen the socket: %s\n", strerror(errno));
 		return -1;
-	}    
+	}
 
 	return s;
 }
 
-static bool server_add_socket(int sock)
+static bool add_socket(int sock)
 {
 	FD_SET(sock, &server.all);
 	if (sock > server.maxfd) {
@@ -495,58 +795,58 @@ static bool server_add_socket(int sock)
 	return true;
 }
 
-static bool server_add_client(int sock)
+static bool add_client(int sock)
 {
-	int i = 0;
-	int cnum = server.clientnum;
+	int i;
+	client_t *c = server.clients;
 
-	if (cnum >= MAX_CLIENTS)
+	if (server.clientnum >= MAX_CLIENTS)
 	{
 		fprintf(stderr, "client limit hit\n");
 		return false;
 	}
 
-	while (cnum > 0)
+	for (i = 0; i < MAX_CLIENTS; i++)
 	{
-		if (server.clients[i] >= 0) cnum--;
-		i++;
+		client_t *c = server.clients + i;
+		if (c->sock < 0) continue;
+
+		c->sock = sock;
+		c->good = true;
+		c->msg = NULL;
+		c->bufrecved = 0;
+		c->expected_version = 0;
+		server.clientnum++;
+		return add_socket(sock);
 	}
 
-	server.clients[i] = sock;
-	server.clientnum++;
-	return server_add_socket(sock);
+	Assert(false); // should not happen
+	return false;
 }
 
-static bool server_remove_socket(int sock)
+static bool remove_socket(int sock)
 {
 	FD_CLR(sock, &server.all);
 	return true;
 }
 
-static bool server_remove_client(int sock)
+static bool remove_client(client_t *c)
 {
 	int i = 0;
-	int cnum = server.clientnum;
+	int sock = c->sock;
+	Assert(sock >= 0);
+	c->sock = -1;
+	pfree(c->msg);
 
-	if (cnum <= 0) return false;
-
-	while (cnum > 0)
-	{
-		if (server.clients[i] >= 0) cnum--;
-		if (server.clients[i] == sock) break;
-		i++;
-	}
-
-	if (server.clients[i] != sock) return false;
-
-	server.clients[i] = -1;
 	server.clientnum--;
 	close(sock);
-	return server_remove_socket(sock);
+	return remove_socket(sock);
 }
 
-static bool server_start()
+static bool start_server()
 {
+	int i;
+
 	server.listener = -1;
 	server.raftsock = -1;
 	FD_ZERO(&server.all);
@@ -554,14 +854,20 @@ static bool server_start()
 	server.clientnum = 0;
 
 	server.listener = create_listening_socket(server.host, server.port);
-	if (server.listener == -1) {
+	if (server.listener == -1)
+	{
 		return false;
 	}
 
-	return server_add_socket(server.listener);
+	for (i = 0; i < MAX_CLIENTS; i++)
+	{
+		server.clients[i].sock = -1;
+	}
+
+	return add_socket(server.listener);
 }
 
-static bool server_accept()
+static bool accept_client()
 {
 	int fd;
 
@@ -580,14 +886,88 @@ static bool server_accept()
 		return false;
 	}
 
-	return server_add_client(fd);
+	return add_client(fd);
 }
 
-int server_handle(int sock)
+bool pull_from_socket(client_t *c)
 {
+	if (!c->good) return false;
+	Assert(c->sock >= 0);
+	void *dst = c->buf + c->bufrecved;
+	size_t avail = BUFLEN - c->bufrecved;
+	if (!avail) return false;
+
+	size_t recved = recv(c->sock, dst, avail, MSG_DONTWAIT);
+	if (recv <= 0)
+	{
+		c->good = false;
+		return false;
+	}
+	c->bufrecved += recved;
+
+	return true;
 }
 
-bool server_tick(int timeout_ms)
+static void shift_buffer(client_t *c, size_t bytes)
+{
+	Assert(c->bufrecved >= bytes);
+	memmove(c->buf, c->buf + bytes, c->bufrecved - bytes);
+	c->bufrecved -= bytes;
+}
+
+static void extract_nomore(client_t *c, void *dst, size_t bytes)
+{
+	if (c->bufrecved < bytes) bytes = c->bufrecved;
+	
+	memcpy(dst, c->buf, bytes);
+	shift_buffer(c, bytes);
+}
+
+static bool extract_exactly(client_t *c, void *dst, size_t bytes)
+{
+	if (c->bufrecved < bytes) return false;
+
+	memcpy(dst, c->buf, bytes);
+	shift_buffer(c, bytes);
+	return true;
+}
+
+static bool get_new_message(client_t *c)
+{
+	Assert((!c->msg) || (c->msgrecved < c->msglen));
+	if (!c->msg) // need to allocate the memory for the message
+	{
+		if (!extract_exactly(c, &c->msglen, sizeof(c->msglen)))
+			return false; // but the size is still unknown
+
+		c->msg = palloc(c->msglen);
+		c->msgrecved = 0;
+
+		if (c->msgrecved < c->msglen)
+		{
+		}
+	}
+}
+
+void attend(client_t *c)
+{
+	if (!c->good) return;
+	if (!pull_from_socket(c))
+		return;
+}
+
+void drop_bads()
+{
+	int i;
+	for (i = 0; i < MAX_CLIENTS; i++)
+	{
+		client_t *c = server.clients + i;
+		if (c->sock < 0) continue;
+		if (!c->good) remove_client(c);
+	}
+}
+
+bool tick(int timeout_ms)
 {
 	int i;
 	int numready;
@@ -596,31 +976,37 @@ bool server_tick(int timeout_ms)
 	fd_set readfds = server.all;
 	struct timeval timeout = ms2tv(timeout_ms);
 	numready = select(server.maxfd + 1, &readfds, NULL, NULL, &timeout);
-	if (numready == -1) {
+	if (numready == -1)
+	{
 		fprintf(stderr, "failed to select: %s\n", strerror(errno));
 		return false;
 	}
 
-	if (FD_ISSET(server.listener, &readfds)) {
+	if (FD_ISSET(server.listener, &readfds))
+	{
 		numready--;
-		server_accept();
+		accept_client();
 	}
 
-	if (FD_ISSET(server.raftsock, &readfds)) {
+	if (FD_ISSET(server.raftsock, &readfds))
+	{
 		numready--;
 		raft_ready = true;
 	}
 
-	i = 0;
+	client_t *c = server.clients;
 	while (numready > 0)
 	{
-		int sock = server.clients[i];
-		if ((sock >= 0) && (FD_ISSET(sock, &readfds)))
+		Assert(c - server.clients < MAX_CLIENTS);
+		if ((c->sock >= 0) && (FD_ISSET(c->sock, &readfds)))
 		{
-			server_handle(sock);
+			attend(c);
 			numready--;
 		}
+		c++;
 	}
+
+	drop_bads();
 
 	return raft_ready;
 }
@@ -633,7 +1019,7 @@ static void die(int sig)
 
 static void raftable_worker_main(Datum arg)
 {
-	if (!server_start()) elog(ERROR, "couldn't start raftable server");
+	if (!start_server()) elog(ERROR, "couldn't start raftable server");
 
     signal(SIGINT, die);
     signal(SIGQUIT, die);
@@ -643,8 +1029,8 @@ static void raftable_worker_main(Datum arg)
     sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
 	server.raftsock = raft_create_udp_socket(raft);
-	server_add_socket(server.raftsock);
-	server_add_socket(server.listener);
+	add_socket(server.raftsock);
+	add_socket(server.listener);
 	if (server.raftsock == -1) elog(ERROR, "couldn't start raft");
 
 	mstimer_t t;
@@ -656,7 +1042,7 @@ static void raftable_worker_main(Datum arg)
 		int ms = mstimer_reset(&t);
 		raft_tick(raft, ms);
 
-		if (server_tick(raft_config.heartbeat_ms))
+		if (tick(raft_config.heartbeat_ms))
 		{
 			m = raft_recv_message(raft);
 			Assert(m != NULL);
