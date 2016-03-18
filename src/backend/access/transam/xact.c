@@ -5598,15 +5598,6 @@ xact_redo(XLogReaderState *record)
 	}
 	else if (info == XLOG_XACT_PREPARE)
 	{
-		/*
-		 * To avoid creation of state files during replay we registering
-		 * prepare xlog resords in shared memory in the same way as it happens
-		 * while not in recovery. If replay faces commit xlog record before
-		 * checkpoint/restartpoint happens then we avoid using files at all.
-		 *
-		 * We need such behaviour because speed of 2PC replay on replica should
-		 * be at least not slower than 2PC tx speed on master.
-		 */
 		RecoverPreparedFromXLOG(record);
 	}
 	else if (info == XLOG_XACT_ASSIGNMENT)

@@ -1664,9 +1664,8 @@ XlogRedoFinishPrepared(TransactionId xid, bool isCommit)
 	/*
 	 * Here we don't need to care about putting records to xlog or
 	 * deleting files, as it already done by process that have written
-	 * that xlog record. We need just to clen up memmory state.
+	 * that xlog record. We need just to clean up memory state.
 	 */
-
 	latestXid = TransactionIdLatest(xid, hdr->nsubxacts, children);
 	ProcArrayRemove(proc, latestXid);
 	gxact->valid = false;
@@ -1814,11 +1813,8 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	int			i;
 
 	/*
-	 * This is usually called after end-of-recovery checkpoint, so all 2pc
-	 * files moved xlog to files. But if we restart slave when master is
-	 * switched off this function will be called before checkpoint ans we need
-	 * to check PGXACT array as it can contain prepared transactions that
-	 * didn't created any state files yet.
+	 * We need to check the PGXACT array for prepared transactions that doesn't
+	 * have any state file in case of a slave restart with the master being off.
 	 */
 	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
 	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
@@ -2124,6 +2120,17 @@ next_file:
 }
 
 
+/*
+ * RecoverPreparedFromXLOG
+ *
+ * To avoid creation of state files during replay we registering
+ * prepare xlog records in shared memory in the same way as it happens
+ * while not in recovery. If replay faces commit xlog record before
+ * checkpoint/restartpoint happens then we avoid using files at all.
+ *
+ * We need this behaviour because the speed of the 2PC replay on the replica
+ * should be at least the same as the 2PC transaction speed of the master.
+ */
 void
 RecoverPreparedFromXLOG(XLogReaderState *record)
 {
