@@ -73,6 +73,8 @@ static void process_remote_insert(StringInfo s, Relation rel);
 static void process_remote_update(StringInfo s, Relation rel);
 static void process_remote_delete(StringInfo s, Relation rel);
 
+static int MtmReplicationNode;
+
 /*
  * Search the index 'idxrel' for a tuple identified by 'skey' in 'rel'.
  *
@@ -465,27 +467,27 @@ read_rel(StringInfo s, LOCKMODE mode)
 }
 
 static void
-MtmBeginSession(int nodeId)
+MtmBeginSession(void)
 {
-#if 0
 	char slot_name[MULTIMASTER_MAX_SLOT_NAME_SIZE];
-	sprintf(slot_name, MULTIMASTER_SLOT_PATTERN, nodeId);
+	MtmLockNode(MtmReplicationNode);
+	sprintf(slot_name, MULTIMASTER_SLOT_PATTERN, MtmReplicationNode);
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 	replorigin_session_origin = replorigin_by_name(slot_name, false); 
-	MTM_INFO("%d: Begin setup replorigin session: %d\n", MyProcPid, replorigin_session_origin);
+	MTM_TRACE("%d: Begin setup replorigin session: %d\n", MyProcPid, replorigin_session_origin);
 	replorigin_session_setup(replorigin_session_origin);
-	MTM_INFO("%d: End setup replorigin session: %d\n", MyProcPid, replorigin_session_origin);
-#endif
+	MTM_TRACE("%d: End setup replorigin session: %d\n", MyProcPid, replorigin_session_origin);
 }
 
 static void 
 MtmEndSession(void)
 {
 	if (replorigin_session_origin != InvalidRepOriginId) { 
-		MTM_INFO("%d: Begin reset replorigin session: %d\n", MyProcPid, replorigin_session_origin);
+		MTM_TRACE("%d: Begin reset replorigin session: %d\n", MyProcPid, replorigin_session_origin);
 		replorigin_session_origin = InvalidRepOriginId;
 		replorigin_session_reset();
-		MTM_INFO("%d: End reset replorigin session: %d\n", MyProcPid, replorigin_session_origin);
+		MtmUnlockNode(MtmReplicationNode);
+		MTM_TRACE("%d: End reset replorigin session: %d\n", MyProcPid, replorigin_session_origin);
 	}
 }
 
@@ -493,13 +495,12 @@ static void
 process_remote_commit(StringInfo in)
 {
 	uint8 		flags;
-	uint8 		nodeId;
 	csn_t       csn;
 	const char *gid = NULL;	
 
 	/* read flags */
 	flags = pq_getmsgbyte(in);
-	nodeId = pq_getmsgbyte(in);
+	MtmReplicationNode = pq_getmsgbyte(in);
 
 	/* read fields */
 	replorigin_session_origin_lsn = pq_getmsgint64(in); /* commit_lsn */
@@ -515,7 +516,7 @@ process_remote_commit(StringInfo in)
 			MTM_TRACE("%d: PGLOGICAL_COMMIT commit\n", MyProcPid);
 			if (IsTransactionState()) {
 				Assert(TransactionIdIsValid(MtmGetCurrentTransactionId()));
-				MtmBeginSession(nodeId);
+				MtmBeginSession();
 				CommitTransactionCommand();
 			}
 			break;
@@ -529,7 +530,8 @@ process_remote_commit(StringInfo in)
 			BeginTransactionBlock();
 			CommitTransactionCommand();
 			StartTransactionCommand();
-			MtmBeginSession(nodeId);
+			
+			MtmBeginSession();
 			/* PREPARE itself */
 			MtmSetCurrentTransactionGID(gid);
 			PrepareTransactionBlock(gid);
@@ -543,7 +545,7 @@ process_remote_commit(StringInfo in)
 			gid = pq_getmsgstring(in);
 			MTM_TRACE("%d: PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s\n", MyProcPid, csn, gid);
 			StartTransactionCommand();
-			MtmBeginSession(nodeId);
+			MtmBeginSession();
 			MtmSetCurrentTransactionCSN(csn);
 			MtmSetCurrentTransactionGID(gid);
 			FinishPreparedTransaction(gid, true);

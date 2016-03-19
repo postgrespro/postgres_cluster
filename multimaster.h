@@ -154,6 +154,8 @@ extern void  MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd);
 extern void  MtmAdjustSubtransactions(MtmTransState* ts);
 extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
+extern void  MtmLockNode(int nodeId);
+extern void  MtmUnlockNode(int nodeId);
 extern void  MtmDropNode(int nodeId, bool dropSlot);
 extern void  MtmRecoverNode(int nodeId);
 extern void  MtmOnNodeDisconnect(int nodeId);
