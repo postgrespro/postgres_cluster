@@ -80,8 +80,7 @@ typedef struct {
 
 typedef enum 
 {
-	MTM_STATE_LOCK_ID,
-	N_LOCKS
+	MTM_STATE_LOCK_ID
 } MtmLockIds;
 
 #define MTM_SHMEM_SIZE (64*1024*1024)
@@ -208,6 +207,17 @@ void MtmUnlock(void)
 #endif
 }
 
+void MtmLockNode(int nodeId)
+{
+	Assert(nodeId > 0 && nodeId <= MtmNodes);
+	LWLockAcquire((LWLockId)&dtm->locks[nodeId], LW_EXCLUSIVE);
+}
+
+void MtmUnlockNode(int nodeId)
+{
+	Assert(nodeId > 0 && nodeId <= MtmNodes);
+	LWLockRelease((LWLockId)&dtm->locks[nodeId]);	
+}
 
 /*
  * -------------------------------------------
@@ -1370,15 +1380,6 @@ _PG_init(void)
 		NULL
 	);
 
-
-	/*
-	 * Request additional shared resources.  (These are no-ops if we're not in
-	 * the postmaster process.)  We'll allocate or attach to the shared
-	 * resources in mtm_shmem_startup().
-	 */
-	RequestAddinShmemSpace(MTM_SHMEM_SIZE + MtmQueueSize);
-	RequestNamedLWLockTranche(MULTIMASTER_NAME, N_LOCKS);
-
     MtmNodes = MtmStartReceivers(MtmConnStrs, MtmNodeId);
     if (MtmNodes < 2) { 
         elog(ERROR, "Multimaster should have at least two nodes");
@@ -1387,6 +1388,14 @@ _PG_init(void)
         elog(ERROR, "Multimaster with mor than %d nodes is not currently supported", MAX_NODES);
 	}		
 		
+	/*
+	 * Request additional shared resources.  (These are no-ops if we're not in
+	 * the postmaster process.)  We'll allocate or attach to the shared
+	 * resources in mtm_shmem_startup().
+	 */
+	RequestAddinShmemSpace(MTM_SHMEM_SIZE + MtmQueueSize);
+	RequestNamedLWLockTranche(MULTIMASTER_NAME, 1 + MtmNodes);
+
     BgwPoolStart(MtmWorkers, MtmPoolConstructor);
 
 	MtmArbiterInitialize();
