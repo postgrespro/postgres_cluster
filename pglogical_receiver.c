@@ -214,6 +214,8 @@ pglogical_receiver_main(Datum main_arg)
 	XLogRecPtr originStartPos = 0;
 	RepOriginId originId;
 	char* originName;
+	/* Buffer for COPY data */
+	char	*copybuf = NULL;
 
 	/* Register functions for SIGTERM/SIGHUP management */
 	pqsignal(SIGHUP, receiver_raw_sighup);
@@ -314,8 +316,6 @@ pglogical_receiver_main(Datum main_arg)
 	while (!got_sigterm)
 	{
 		int rc, hdr_len;
-		/* Buffer for COPY data */
-		char	*copybuf = NULL;
 		/* Wait necessary amount of time */
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
@@ -347,13 +347,6 @@ pglogical_receiver_main(Datum main_arg)
 		}
 			
 
-		/* Some cleanup */
-		if (copybuf != NULL)
-		{
-			PQfreemem(copybuf);
-			copybuf = NULL;
-		}
-
 		/*
 		 * Receive data.
 		 */
@@ -361,6 +354,13 @@ pglogical_receiver_main(Datum main_arg)
 		{
 			XLogRecPtr  walEnd;
             char* stmt;
+
+			/* Some cleanup */
+			if (copybuf != NULL)
+			{
+				PQfreemem(copybuf);
+				copybuf = NULL;
+			}
 
 			rc = PQgetCopyData(conn, &copybuf, 1);
 			if (rc <= 0) {

@@ -169,6 +169,9 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     pq_sendint64(out, txn->end_lsn);
     pq_sendint64(out, txn->commit_time);
 
+	if (flags == PGLOGICAL_COMMIT_PREPARED) { 
+		pq_sendint64(out, MtmGetTransactionCSN(txn->xid));
+	}
     if (flags != PGLOGICAL_COMMIT) { 
     	pq_sendstring(out, txn->gid);
 	}
