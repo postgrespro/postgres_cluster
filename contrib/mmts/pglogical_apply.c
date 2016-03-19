@@ -465,20 +465,37 @@ read_rel(StringInfo s, LOCKMODE mode)
 }
 
 static void
-MtmSetCurrentSession(int nodeId)
+MtmBeginSession(int nodeId)
 {
+#if 0
 	char slot_name[MULTIMASTER_MAX_SLOT_NAME_SIZE];
 	sprintf(slot_name, MULTIMASTER_SLOT_PATTERN, nodeId);
+	Assert(replorigin_session_origin == InvalidRepOriginId);
 	replorigin_session_origin = replorigin_by_name(slot_name, false); 
+	MTM_INFO("%d: Begin setup replorigin session: %d\n", MyProcPid, replorigin_session_origin);
 	replorigin_session_setup(replorigin_session_origin);
+	MTM_INFO("%d: End setup replorigin session: %d\n", MyProcPid, replorigin_session_origin);
+#endif
+}
+
+static void 
+MtmEndSession(void)
+{
+	if (replorigin_session_origin != InvalidRepOriginId) { 
+		MTM_INFO("%d: Begin reset replorigin session: %d\n", MyProcPid, replorigin_session_origin);
+		replorigin_session_origin = InvalidRepOriginId;
+		replorigin_session_reset();
+		MTM_INFO("%d: End reset replorigin session: %d\n", MyProcPid, replorigin_session_origin);
+	}
 }
 
 static void
 process_remote_commit(StringInfo in)
 {
-	uint8 			flags;
-	uint8 			nodeId;
-	const char	   *gid = NULL;
+	uint8 		flags;
+	uint8 		nodeId;
+	csn_t       csn;
+	const char *gid = NULL;	
 
 	/* read flags */
 	flags = pq_getmsgbyte(in);
@@ -489,6 +506,8 @@ process_remote_commit(StringInfo in)
 	pq_getmsgint64(in); /* end_lsn */
 	replorigin_session_origin_timestamp = pq_getmsgint64(in); /* commit_time */
 	
+	Assert(replorigin_session_origin == InvalidRepOriginId);
+
 	switch(PGLOGICAL_XACT_EVENT(flags))
 	{
 		case PGLOGICAL_COMMIT:
@@ -496,7 +515,7 @@ process_remote_commit(StringInfo in)
 			MTM_TRACE("%d: PGLOGICAL_COMMIT commit\n", MyProcPid);
 			if (IsTransactionState()) {
 				Assert(TransactionIdIsValid(MtmGetCurrentTransactionId()));
-				MtmSetCurrentSession(nodeId);
+				MtmBeginSession(nodeId);
 				CommitTransactionCommand();
 			}
 			break;
@@ -510,7 +529,7 @@ process_remote_commit(StringInfo in)
 			BeginTransactionBlock();
 			CommitTransactionCommand();
 			StartTransactionCommand();
-			MtmSetCurrentSession(nodeId);
+			MtmBeginSession(nodeId);
 			/* PREPARE itself */
 			MtmSetCurrentTransactionGID(gid);
 			PrepareTransactionBlock(gid);
@@ -520,10 +539,12 @@ process_remote_commit(StringInfo in)
 		case PGLOGICAL_COMMIT_PREPARED:
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
+			csn = pq_getmsgint64(in); 
 			gid = pq_getmsgstring(in);
 			MTM_TRACE("%d: PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s\n", MyProcPid, csn, gid);
 			StartTransactionCommand();
-			MtmSetCurrentSession(nodeId);
+			MtmBeginSession(nodeId);
+			MtmSetCurrentTransactionCSN(csn);
 			MtmSetCurrentTransactionGID(gid);
 			FinishPreparedTransaction(gid, true);
 			CommitTransactionCommand();
@@ -545,8 +566,7 @@ process_remote_commit(StringInfo in)
 		default:
 			Assert(false);
 	}
-	replorigin_session_reset();
-	replorigin_session_origin = InvalidRepOriginId;
+	MtmEndSession();
 }
 
 static void
@@ -859,10 +879,10 @@ void MtmExecutor(int id, void* work, size_t size)
 {
     StringInfoData s;
     Relation rel = NULL;
-    initStringInfo(&s);
     s.data = work;
     s.len = size;
     s.maxlen = -1;
+	s.cursor = 0;
 
     if (ApplyContext == NULL) {
         ApplyContext = AllocSetContextCreate(TopMemoryContext,
@@ -910,12 +930,10 @@ void MtmExecutor(int id, void* work, size_t size)
     }
     PG_CATCH();
     {
-		if (replorigin_session_origin != InvalidRepOriginId) { 
-			replorigin_session_reset();
-		}
 		EmitErrorReport();
         FlushErrorState();
 		MTM_TRACE("%d: REMOTE begin abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
+		MtmEndSession();
         AbortCurrentTransaction();
 		MTM_TRACE("%d: REMOTE end abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
     }

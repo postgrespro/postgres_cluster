@@ -10,8 +10,8 @@
 #define MTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 #define MTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 */
+#define MTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 #define MTM_TRACE(fmt, ...) 
-#define MTM_TUPLE_TRACE(fmt, ...) 
 /* */
 
 #define MULTIMASTER_NAME                "multimaster"
@@ -162,6 +162,8 @@ extern MtmState* MtmGetState(void);
 extern timestamp_t MtmGetCurrentTime(void);
 extern void  MtmSleep(timestamp_t interval);
 extern void  MtmSetCurrentTransactionGID(char const* gid);
+extern csn_t MtmGetTransactionCSN(TransactionId xid);
+extern void  MtmSetCurrentTransactionCSN(csn_t csn);
 extern TransactionId MtmGetCurrentTransactionId(void);
 extern XidStatus MtmGetCurrentTransactionStatus(void);
 extern XidStatus MtmGetGlobalTransactionStatus(char const* gid);

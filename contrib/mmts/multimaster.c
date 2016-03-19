@@ -527,6 +527,9 @@ MtmResetTransaction(MtmCurrentTrans* x)
 	x->xid = InvalidTransactionId;
 	x->gtid.xid = InvalidTransactionId;
 	x->isDistributed = false;
+	x->isPrepared = false;
+	x->isPrepared = false;
+	x->status = TRANSACTION_STATUS_UNKNOWN;
 }
 
 static void 
@@ -625,16 +628,15 @@ static void
 MtmPostPrepareTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
-	MtmTransMap* tm;
 
 	MtmLock(LW_EXCLUSIVE);
 	ts = hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
 	Assert(ts != NULL);
-	tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, NULL);
-	Assert(x->gid[0]);
-	tm->state = ts;
 
 	if (!MtmIsCoordinator(ts)) {
+		MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, NULL);
+		Assert(x->gid[0]);
+		tm->state = ts;
 		MtmSendNotificationMessage(ts, MSG_READY); /* send notification to coordinator */
 		MtmUnlock();
 		MtmResetTransaction(x);
@@ -658,13 +660,15 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 {
 	MtmTransMap* tm;
 
-	MtmLock(LW_EXCLUSIVE);
-	tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
-	Assert(tm != NULL);
-	tm->state->status = TRANSACTION_STATUS_ABORTED;
-	MtmAdjustSubtransactions(tm->state);
-	MtmUnlock();
-	MtmResetTransaction(x);		
+	if (x->status != TRANSACTION_STATUS_ABORTED) { 
+		MtmLock(LW_EXCLUSIVE);
+		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
+		Assert(tm != NULL);
+		tm->state->status = TRANSACTION_STATUS_ABORTED;
+		MtmAdjustSubtransactions(tm->state);
+		MtmUnlock();
+		x->status = TRANSACTION_STATUS_ABORTED;
+	}
 }
 
 static void 
@@ -672,7 +676,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
 	MTM_TRACE("%d: End transaction %d, prepared=%d, replicated=%d, distributed=%d, gid=%s -> %s\n", 
 			  MyProcPid, x->xid, x->isPrepared, x->isReplicated, x->isDistributed, x->gid, commit ? "commit" : "abort");
-	if (x->isDistributed && (x->isPrepared || x->isReplicated)) {
+	if (x->status != TRANSACTION_STATUS_ABORTED && x->isDistributed && (x->isPrepared || x->isReplicated)) {
 		MtmTransState* ts = NULL;
 		MtmLock(LW_EXCLUSIVE);
 		if (x->isPrepared) { 
@@ -690,6 +694,10 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			if (commit) {
 				Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
 				ts->status = TRANSACTION_STATUS_COMMITTED;
+				if (x->csn > ts->csn) {
+					ts->csn = x->csn;
+					MtmSyncClock(ts->csn);
+				}
 			} else { 
 				ts->status = TRANSACTION_STATUS_ABORTED;
 			}
@@ -799,6 +807,26 @@ XidStatus MtmGetGlobalTransactionStatus(char const* gid)
 	return status;
 }
 
+void  MtmSetCurrentTransactionCSN(csn_t csn)
+{
+	MTM_TRACE("Set current transaction CSN %ld\n", csn);
+	dtmTx.csn = csn;
+	dtmTx.isDistributed = true;
+	dtmTx.isReplicated = true;
+}
+
+
+csn_t MtmGetTransactionCSN(TransactionId xid)
+{
+	MtmTransState* ts;
+	csn_t csn;
+	MtmLock(LW_SHARED);
+	ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+	Assert(ts != NULL);
+	csn = ts->csn;
+	MtmUnlock();
+	return csn;
+}
 	
 /*
  * -------------------------------------------
