@@ -454,7 +454,7 @@ pg_flush_data(int fd, off_t offset, off_t nbytes, bool isdir)
 		 * (msync()), and then remove the mapping again (munmap()).
 		 */
 
-		/* mmap will not work with dirs */
+		/* mmap() will not work with dirs */
 		if (isdir)
 			return;
 
