@@ -312,7 +312,7 @@ Snapshot MtmGetSnapshot(Snapshot snapshot)
 
 TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 {
-    TransactionId xmin = PgGetOldestXmin(rel, ignoreVacuum);
+    TransactionId xmin = PgGetOldestXmin(NULL, ignoreVacuum); /* consider all backends */
     xmin = MtmAdjustOldestXid(xmin);
     return xmin;
 }
@@ -410,7 +410,7 @@ MtmAdjustOldestXid(TransactionId xid)
         
 		MtmLock(LW_EXCLUSIVE);
         ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-        if (ts != NULL && ts->status == TRANSACTION_STATUS_COMMITTED) { 
+        if (ts != NULL && ts->status == TRANSACTION_STATUS_COMMITTED) {  /* committed transactions have same CSNs at all nodes */
 			csn_t oldestSnapshot;
 			int i;
 
