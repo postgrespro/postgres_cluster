@@ -55,8 +55,12 @@ bool raft_peer_down(raft_t r, int id);
 
 // --- Log Actions ---
 
-// Emit an 'update'. Returns true if emitted successfully.
-bool raft_emit(raft_t r, raft_update_t update);
+// Emit an 'update'. Returns the log index if emitted successfully, or -1
+// otherwise.
+int raft_emit(raft_t r, raft_update_t update);
+
+// Checks whether an entry at 'index' has been applied by the peer named 'id'.
+bool raft_applied(raft_t t, int id, int index);
 
 // --- Control ---
 

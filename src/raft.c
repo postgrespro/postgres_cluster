@@ -19,7 +19,6 @@ typedef enum roles {
 
 #define UDP_SAFE_SIZE 508
 
-// raft module does not care what you mean by action and argument
 typedef struct raft_entry_t {
 	int term;
 	bool snapshot;
@@ -46,6 +45,7 @@ typedef struct raft_peer_t {
 
 	int seqno;  // the rpc sequence number
 	raft_progress_t acked; // the number of entries:bytes acked by this peer
+	int applied; // the number of entries applied by this peer
 
 	char *host;
 	int port;
@@ -111,6 +111,7 @@ typedef struct raft_msg_done_t {
 	raft_msg_data_t msg;
 	int term;  // the term of the appended entry
 	raft_progress_t progress; // the progress after appending
+	int applied;
 	bool success;
 	// the message is considered acked when the last chunk appends successfully
 } raft_msg_done_t;
@@ -177,6 +178,7 @@ static void raft_peer_init(raft_peer_t *p) {
 	p->up = false;
 	p->seqno = 0;
 	reset_progress(&p->acked);
+	p->applied = 0;
 
 	p->host = DEFAULT_LISTENHOST;
 	p->port = DEFAULT_LISTENPORT;
@@ -633,7 +635,7 @@ static int raft_compact(raft_t raft) {
 	return compacted;
 }
 
-bool raft_emit(raft_t r, raft_update_t update) {
+int raft_emit(raft_t r, raft_update_t update) {
 	assert(r->leader == r->me);
 	assert(r->role == LEADER);
 
@@ -646,11 +648,12 @@ bool raft_emit(raft_t r, raft_update_t update) {
 				"cannot emit new entries, the log is"
 				" full and cannot be compacted\n"
 			);
-			return false;
+			return -1;
 		}
 	}
 
-	raft_entry_t *e = &RAFT_LOG(r, r->log.first + r->log.size);
+	int newindex = RAFT_LOG_LAST_INDEX(r) + 1;
+	raft_entry_t *e = &RAFT_LOG(r, newindex);
 	e->term = r->term;
 	assert(e->update.len == 0);
 	assert(e->update.data == NULL);
@@ -661,7 +664,13 @@ bool raft_emit(raft_t r, raft_update_t update) {
 
 	raft_beat(r, NOBODY);
 	raft_reset_timer(r);
-	return true;
+	return newindex;
+}
+
+bool raft_applied(raft_t r, int id, int index) {
+	raft_peer_t *p = r->peers + id;
+	if (!p->up) return false;
+	return p->applied >= index;
 }
 
 static bool raft_restore(raft_t r, int previndex, raft_entry_t *e) {
@@ -836,6 +845,7 @@ static void raft_handle_update(raft_t r, raft_msg_update_t *m) {
 	} else {
 		reply.term = -1;
 	}
+	reply.applied = r->log.applied;
 
 	reply.success = true;
 finish:
@@ -862,6 +872,8 @@ static void raft_handle_done(raft_t r, raft_msg_done_t *m) {
 		debug("[from %d] ============= msgterm(%d) != term(%d)\n", sender, m->term, r->term);
 		return;
 	}
+
+	peer->applied = m->applied;
 
 	if (m->success) {
 		debug("[from %d] ============= done\n", sender);
