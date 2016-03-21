@@ -2029,9 +2029,9 @@ include_dir 'conf.d'
         <varname>wal_level</> determines how much information is written
         to the WAL. The default value is <literal>minimal</>, which writes
         only the information needed to recover from a crash or immediate
-        shutdown. <literal>archive</> adds logging required for WAL archiving;
-        <literal>hot_standby</> further adds information required to run
-        read-only queries on a standby server; and, finally
+        shutdown. <literal>replica</> adds logging required for WAL
+        archiving as well as information required to run
+        read-only queries on a standby server.  Finally,
         <literal>logical</> adds information necessary to support logical
         decoding.  Each level includes the information logged at all lower
         levels.  This parameter can only be set at server start.
@@ -2049,29 +2049,23 @@ include_dir 'conf.d'
          transaction</member>
         </simplelist>
         But minimal WAL does not contain enough information to reconstruct the
-        data from a base backup and the WAL logs, so <literal>archive</> or
+        data from a base backup and the WAL logs, so <literal>replica</> or
         higher must be used to enable WAL archiving
         (<xref linkend="guc-archive-mode">) and streaming replication.
        </para>
        <para>
-        In <literal>hot_standby</> level, the same information is logged as
-        with <literal>archive</>, plus information needed to reconstruct
-        the status of running transactions from the WAL. To enable read-only
-        queries on a standby server, <varname>wal_level</> must be set to
-        <literal>hot_standby</> or higher on the primary, and
-        <xref linkend="guc-hot-standby"> must be enabled in the standby. It is
-        thought that there is little measurable difference in performance
-        between using <literal>hot_standby</> and <literal>archive</> levels,
-        so feedback is welcome if any production impacts are noticeable.
-       </para>
-       <para>
         In <literal>logical</> level, the same information is logged as
-        with <literal>hot_standby</>, plus information needed to allow
+        with <literal>replica</>, plus information needed to allow
         extracting logical change sets from the WAL. Using a level of
         <literal>logical</> will increase the WAL volume, particularly if many
         tables are configured for <literal>REPLICA IDENTITY FULL</literal> and
         many <command>UPDATE</> and <command>DELETE</> statements are
         executed.
+       </para>
+       <para>
+        In releases prior to 9.6, this parameter also allowed the
+        values <literal>archive</literal> and <literal>hot_standby</literal>.
+        These are still accepted but mapped to <literal>replica</literal>.
        </para>
       </listitem>
      </varlistentry>
@@ -2784,7 +2778,7 @@ include_dir 'conf.d'
         higher than the maximum number of expected clients so disconnected
         clients can immediately reconnect.  This parameter can only
         be set at server start. <varname>wal_level</> must be set to
-        <literal>archive</> or higher to allow connections from standby
+        <literal>replica</> or higher to allow connections from standby
         servers.
        </para>
        </listitem>
@@ -2803,7 +2797,7 @@ include_dir 'conf.d'
          can support. The default is zero.  This parameter can only be set at
          server start.
          <varname>wal_level</varname> must be set
-         to <literal>archive</literal> or higher to allow replication slots to
+         to <literal>replica</literal> or higher to allow replication slots to
          be used. Setting it to a lower value than the number of currently
          existing replication slots will prevent the server from starting.
         </para>
@@ -4304,6 +4298,67 @@ local0.*    /var/log/postgresql
         </para>
        </listitem>
       </varlistentry>
+
+      <varlistentry id="guc-syslog-sequence-numbers" xreflabel="syslog_sequence_numbers">
+       <term><varname>syslog_sequence_numbers</varname> (<type>boolean</type>)
+        <indexterm>
+         <primary><varname>syslog_sequence_numbers</> configuration parameter</primary>
+        </indexterm>
+       </term>
+
+       <listitem>
+        <para>
+         When logging to <application>syslog</application> and this is on (the
+         default), then each message will be prefixed by an increasing
+         sequence number (such as <literal>[2]</literal>).  This circumvents
+         the <quote>--- last message repeated N times ---</quote> suppression
+         that many syslog implementations perform by default.  In more modern
+         syslog implementations, repeat message suppression can be configured
+         (for example, <literal>$RepeatedMsgReduction</literal>
+         in <productname>rsyslog</productname>), so this might not be
+         necessary.  Also, you could turn this off if you actually want to
+         suppress repeated messages.
+        </para>
+
+        <para>
+         This parameter can only be set in the <filename>postgresql.conf</>
+         file or on the server command line.
+        </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-syslog-split-messages" xreflabel="syslog_split_messages">
+      <term><varname>syslog_split_messages</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>syslog_split_messages</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        When logging to <application>syslog</> is enabled, this parameter
+        determines how messages are delivered to syslog.  When on (the
+        default), messages are split by lines, and long lines are split so
+        that they will fit into 1024 bytes, which is a typical size limit for
+        traditional syslog implementations.  When off, PostgreSQL server log
+        messages are delivered to the syslog service as is, and it is up to
+        the syslog service to cope with the potentially bulky messages.
+       </para>
+
+       <para>
+        If syslog is ultimately logging to a text file, then the effect will
+        be the same either way, and it is best to leave the setting on, since
+        most syslog implementations either cannot handle large messages or
+        would need to be specially configured to handle them.  But if syslog
+        is ultimately writing into some other medium, it might be necessary or
+        more useful to keep messages logically together.
+       </para>
+
+       <para>
+        This parameter can only be set in the <filename>postgresql.conf</>
+        file or on the server command line.
+       </para>
+      </listitem>
+     </varlistentry>
 
      <varlistentry id="guc-event-source" xreflabel="event_source">
       <term><varname>event_source</varname> (<type>string</type>)
@@ -6059,6 +6114,26 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
         Setting <varname>lock_timeout</> in
         <filename>postgresql.conf</> is not recommended because it would
         affect all sessions.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-idle-in-transaction-session-timeout" xreflabel="idle_in_transaction_session_timeout">
+      <term><varname>idle_in_transaction_session_timeout</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>idle_in_transaction_session_timeout</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+       Terminate any session with an open transaction that has been idle for
+       longer than the specified duration in milliseconds. This allows any
+       locks held by that session to be released and the connection slot to be reused;
+       it also allows tuples visible only to this transaction to be vacuumed.  See
+       <xref linkend="routine-vacuuming"> for more details about this.
+       </para>
+       <para>
+       The default value of 0 disables this feature.
        </para>
       </listitem>
      </varlistentry>

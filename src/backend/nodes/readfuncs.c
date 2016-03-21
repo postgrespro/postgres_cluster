@@ -1481,6 +1481,7 @@ _readModifyTable(void)
 	READ_NODE_FIELD(withCheckOptionLists);
 	READ_NODE_FIELD(returningLists);
 	READ_NODE_FIELD(fdwPrivLists);
+	READ_BITMAPSET_FIELD(fdwDirectModifyPlans);
 	READ_NODE_FIELD(rowMarks);
 	READ_INT_FIELD(epqParam);
 	READ_ENUM_FIELD(onConflictAction, OnConflictAction);
@@ -1806,6 +1807,7 @@ _readForeignScan(void)
 
 	ReadCommonScan(&local_node->scan);
 
+	READ_ENUM_FIELD(operation, CmdType);
 	READ_OID_FIELD(fs_server);
 	READ_NODE_FIELD(fdw_exprs);
 	READ_NODE_FIELD(fdw_private);

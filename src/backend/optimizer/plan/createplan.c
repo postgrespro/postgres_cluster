@@ -1396,18 +1396,21 @@ create_projection_plan(PlannerInfo *root, ProjectionPath *best_path)
 	tlist = build_path_tlist(root, &best_path->path);
 
 	/*
-	 * Although the ProjectionPath node wouldn't have been made unless its
-	 * pathtarget is different from the subpath's, it can still happen that
-	 * the constructed tlist matches the subplan's.  (An example is that
-	 * MergeAppend doesn't project, so we would have thought that we needed a
-	 * projection to attach resjunk sort columns to its output ... but
-	 * create_merge_append_plan might have added those same resjunk sort
-	 * columns to both MergeAppend and its children.)  So, if the desired
-	 * tlist is the same expression-wise as the subplan's, just jam it in
-	 * there.  We'll have charged for a Result that doesn't actually appear in
-	 * the plan, but that's better than having a Result we don't need.
+	 * We might not really need a Result node here.  There are several ways
+	 * that this can happen.  For example, MergeAppend doesn't project, so we
+	 * would have thought that we needed a projection to attach resjunk sort
+	 * columns to its output ... but create_merge_append_plan might have
+	 * added those same resjunk sort columns to both MergeAppend and its
+	 * children.  Alternatively, apply_projection_to_path might have created
+	 * a projection path as the subpath of a Gather node even though the
+	 * subpath was projection-capable.  So, if the subpath is capable of
+	 * projection or the desired tlist is the same expression-wise as the
+	 * subplan's, just jam it in there.  We'll have charged for a Result that
+	 * doesn't actually appear in the plan, but that's better than having a
+	 * Result we don't need.
 	 */
-	if (tlist_same_exprs(tlist, subplan->targetlist))
+	if (is_projection_capable_path(best_path->subpath) ||
+		tlist_same_exprs(tlist, subplan->targetlist))
 	{
 		plan = subplan;
 		plan->targetlist = tlist;
@@ -4903,6 +4906,7 @@ make_foreignscan(List *qptlist,
 	plan->lefttree = outer_plan;
 	plan->righttree = NULL;
 	node->scan.scanrelid = scanrelid;
+	node->operation = CMD_SELECT;
 	/* fs_server will be filled in by create_foreignscan_plan */
 	node->fs_server = InvalidOid;
 	node->fdw_exprs = fdw_exprs;
@@ -6018,6 +6022,7 @@ make_modifytable(PlannerInfo *root,
 {
 	ModifyTable *node = makeNode(ModifyTable);
 	List	   *fdw_private_list;
+	Bitmapset  *direct_modify_plans;
 	ListCell   *lc;
 	int			i;
 
@@ -6075,12 +6080,14 @@ make_modifytable(PlannerInfo *root,
 	 * construct private plan data, and accumulate it all into a list.
 	 */
 	fdw_private_list = NIL;
+	direct_modify_plans = NULL;
 	i = 0;
 	foreach(lc, resultRelations)
 	{
 		Index		rti = lfirst_int(lc);
 		FdwRoutine *fdwroutine;
 		List	   *fdw_private;
+		bool		direct_modify;
 
 		/*
 		 * If possible, we want to get the FdwRoutine from our RelOptInfo for
@@ -6107,7 +6114,23 @@ make_modifytable(PlannerInfo *root,
 				fdwroutine = NULL;
 		}
 
+		/*
+		 * If the target foreign table has any row-level triggers, we can't
+		 * modify the foreign table directly.
+		 */
+		direct_modify = false;
 		if (fdwroutine != NULL &&
+			fdwroutine->PlanDirectModify != NULL &&
+			fdwroutine->BeginDirectModify != NULL &&
+			fdwroutine->IterateDirectModify != NULL &&
+			fdwroutine->EndDirectModify != NULL &&
+			!has_row_triggers(root, rti, operation))
+			direct_modify = fdwroutine->PlanDirectModify(root, node, rti, i);
+		if (direct_modify)
+			direct_modify_plans = bms_add_member(direct_modify_plans, i);
+
+		if (!direct_modify &&
+			fdwroutine != NULL &&
 			fdwroutine->PlanForeignModify != NULL)
 			fdw_private = fdwroutine->PlanForeignModify(root, node, rti, i);
 		else
@@ -6116,6 +6139,7 @@ make_modifytable(PlannerInfo *root,
 		i++;
 	}
 	node->fdwPrivLists = fdw_private_list;
+	node->fdwDirectModifyPlans = direct_modify_plans;
 
 	return node;
 }

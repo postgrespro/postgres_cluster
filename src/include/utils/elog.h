@@ -397,6 +397,8 @@ extern int	Log_error_verbosity;
 extern char *Log_line_prefix;
 extern int	Log_destination;
 extern char *Log_destination_string;
+extern bool syslog_sequence_numbers;
+extern bool syslog_split_messages;
 
 /* Log destination bitmap */
 #define LOG_DESTINATION_STDERR	 1

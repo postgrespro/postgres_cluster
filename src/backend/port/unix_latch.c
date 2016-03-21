@@ -56,6 +56,22 @@
 #include "storage/pmsignal.h"
 #include "storage/shmem.h"
 
+/*
+ * Select the fd readiness primitive to use. Normally the "most modern"
+ * primitive supported by the OS will be used, but for testing it can be
+ * useful to manually specify the used primitive.  If desired, just add a
+ * define somewhere before this block.
+ */
+#if defined(LATCH_USE_POLL) || defined(LATCH_USE_SELECT)
+/* don't overwrite manual choice */
+#elif defined(HAVE_POLL)
+#define LATCH_USE_POLL
+#elif HAVE_SYS_SELECT_H
+#define LATCH_USE_SELECT
+#else
+#error "no latch implementation available"
+#endif
+
 /* Are we currently in WaitLatch? The signal handler would like to know. */
 static volatile sig_atomic_t waiting = false;
 
@@ -215,10 +231,10 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 				cur_time;
 	long		cur_timeout;
 
-#ifdef HAVE_POLL
+#if defined(LATCH_USE_POLL)
 	struct pollfd pfds[3];
 	int			nfds;
-#else
+#elif defined(LATCH_USE_SELECT)
 	struct timeval tv,
 			   *tvp;
 	fd_set		input_mask;
@@ -226,11 +242,12 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 	int			hifd;
 #endif
 
-	/* Ignore WL_SOCKET_* events if no valid socket is given */
-	if (sock == PGINVALID_SOCKET)
-		wakeEvents &= ~(WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE);
-
 	Assert(wakeEvents != 0);	/* must have at least one wake event */
+
+	/* waiting for socket readiness without a socket indicates a bug */
+	if (sock == PGINVALID_SOCKET &&
+		(wakeEvents & (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)) != 0)
+		elog(ERROR, "cannot wait on socket event without a socket");
 
 	if ((wakeEvents & WL_LATCH_SET) && latch->owner_pid != MyProcPid)
 		elog(ERROR, "cannot wait on a latch owned by another process");
@@ -247,7 +264,7 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 		Assert(timeout >= 0 && timeout <= INT_MAX);
 		cur_timeout = timeout;
 
-#ifndef HAVE_POLL
+#ifdef LATCH_USE_SELECT
 		tv.tv_sec = cur_timeout / 1000L;
 		tv.tv_usec = (cur_timeout % 1000L) * 1000L;
 		tvp = &tv;
@@ -257,7 +274,7 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 	{
 		cur_timeout = -1;
 
-#ifndef HAVE_POLL
+#ifdef LATCH_USE_SELECT
 		tvp = NULL;
 #endif
 	}
@@ -266,59 +283,59 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 	do
 	{
 		/*
-		 * Clear the pipe, then check if the latch is set already. If someone
-		 * sets the latch between this and the poll()/select() below, the
-		 * setter will write a byte to the pipe (or signal us and the signal
-		 * handler will do that), and the poll()/select() will return
-		 * immediately.
+		 * Check if the latch is set already. If so, leave loop immediately,
+		 * avoid blocking again. We don't attempt to report any other events
+		 * that might also be satisfied.
+		 *
+		 * If someone sets the latch between this and the poll()/select()
+		 * below, the setter will write a byte to the pipe (or signal us and
+		 * the signal handler will do that), and the poll()/select() will
+		 * return immediately.
+		 *
+		 * If there's a pending byte in the self pipe, we'll notice whenever
+		 * blocking. Only clearing the pipe in that case avoids having to
+		 * drain it every time WaitLatchOrSocket() is used. Should the
+		 * pipe-buffer fill up we're still ok, because the pipe is in
+		 * nonblocking mode. It's unlikely for that to happen, because the
+		 * self pipe isn't filled unless we're blocking (waiting = true), or
+		 * from inside a signal handler in latch_sigusr1_handler().
 		 *
 		 * Note: we assume that the kernel calls involved in drainSelfPipe()
 		 * and SetLatch() will provide adequate synchronization on machines
 		 * with weak memory ordering, so that we cannot miss seeing is_set if
 		 * the signal byte is already in the pipe when we drain it.
 		 */
-		drainSelfPipe();
-
 		if ((wakeEvents & WL_LATCH_SET) && latch->is_set)
 		{
 			result |= WL_LATCH_SET;
-
-			/*
-			 * Leave loop immediately, avoid blocking again. We don't attempt
-			 * to report any other events that might also be satisfied.
-			 */
 			break;
 		}
 
 		/*
-		 * Must wait ... we use poll(2) if available, otherwise select(2).
-		 *
-		 * On at least older linux kernels select(), in violation of POSIX,
-		 * doesn't reliably return a socket as writable if closed - but we
-		 * rely on that. So far all the known cases of this problem are on
-		 * platforms that also provide a poll() implementation without that
-		 * bug.  If we find one where that's not the case, we'll need to add a
-		 * workaround.
+		 * Must wait ... we use the polling interface determined at the top of
+		 * this file to do so.
 		 */
-#ifdef HAVE_POLL
+#if defined(LATCH_USE_POLL)
 		nfds = 0;
+
+		/* selfpipe is always in pfds[0] */
+		pfds[0].fd = selfpipe_readfd;
+		pfds[0].events = POLLIN;
+		pfds[0].revents = 0;
+		nfds++;
+
 		if (wakeEvents & (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE))
 		{
-			/* socket, if used, is always in pfds[0] */
-			pfds[0].fd = sock;
-			pfds[0].events = 0;
+			/* socket, if used, is always in pfds[1] */
+			pfds[1].fd = sock;
+			pfds[1].events = 0;
 			if (wakeEvents & WL_SOCKET_READABLE)
-				pfds[0].events |= POLLIN;
+				pfds[1].events |= POLLIN;
 			if (wakeEvents & WL_SOCKET_WRITEABLE)
-				pfds[0].events |= POLLOUT;
-			pfds[0].revents = 0;
+				pfds[1].events |= POLLOUT;
+			pfds[1].revents = 0;
 			nfds++;
 		}
-
-		pfds[nfds].fd = selfpipe_readfd;
-		pfds[nfds].events = POLLIN;
-		pfds[nfds].revents = 0;
-		nfds++;
 
 		if (wakeEvents & WL_POSTMASTER_DEATH)
 		{
@@ -353,19 +370,27 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 		else
 		{
 			/* at least one event occurred, so check revents values */
+
+			if (pfds[0].revents & POLLIN)
+			{
+				/* There's data in the self-pipe, clear it. */
+				drainSelfPipe();
+			}
+
 			if ((wakeEvents & WL_SOCKET_READABLE) &&
-				(pfds[0].revents & POLLIN))
+				(pfds[1].revents & POLLIN))
 			{
 				/* data available in socket, or EOF/error condition */
 				result |= WL_SOCKET_READABLE;
 			}
 			if ((wakeEvents & WL_SOCKET_WRITEABLE) &&
-				(pfds[0].revents & POLLOUT))
+				(pfds[1].revents & POLLOUT))
 			{
 				/* socket is writable */
 				result |= WL_SOCKET_WRITEABLE;
 			}
-			if (pfds[0].revents & (POLLHUP | POLLERR | POLLNVAL))
+			if ((wakeEvents & (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)) &&
+				(pfds[1].revents & (POLLHUP | POLLERR | POLLNVAL)))
 			{
 				/* EOF/error condition */
 				if (wakeEvents & WL_SOCKET_READABLE)
@@ -396,8 +421,16 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 					result |= WL_POSTMASTER_DEATH;
 			}
 		}
-#else							/* !HAVE_POLL */
+#elif defined(LATCH_USE_SELECT)
 
+		/*
+		 * On at least older linux kernels select(), in violation of POSIX,
+		 * doesn't reliably return a socket as writable if closed - but we
+		 * rely on that. So far all the known cases of this problem are on
+		 * platforms that also provide a poll() implementation without that
+		 * bug.  If we find one where that's not the case, we'll need to add a
+		 * workaround.
+		 */
 		FD_ZERO(&input_mask);
 		FD_ZERO(&output_mask);
 
@@ -449,6 +482,11 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 		else
 		{
 			/* at least one event occurred, so check masks */
+			if (FD_ISSET(selfpipe_readfd, &input_mask))
+			{
+				/* There's data in the self-pipe, clear it. */
+				drainSelfPipe();
+			}
 			if ((wakeEvents & WL_SOCKET_READABLE) && FD_ISSET(sock, &input_mask))
 			{
 				/* data available in socket, or EOF */
@@ -477,7 +515,17 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 					result |= WL_POSTMASTER_DEATH;
 			}
 		}
-#endif   /* HAVE_POLL */
+#endif   /* LATCH_USE_SELECT */
+
+		/*
+		 * Check again whether latch is set, the arrival of a signal/self-byte
+		 * might be what stopped our sleep. It's not required for correctness
+		 * to signal the latch as being set (we'd just loop if there's no
+		 * other event), but it seems good to report an arrived latch asap.
+		 * This way we also don't have to compute the current timestamp again.
+		 */
+		if ((wakeEvents & WL_LATCH_SET) && latch->is_set)
+			result |= WL_LATCH_SET;
 
 		/* If we're not done, update cur_timeout for next iteration */
 		if (result == 0 && (wakeEvents & WL_TIMEOUT))
@@ -490,7 +538,7 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 				/* Timeout has expired, no need to continue looping */
 				result |= WL_TIMEOUT;
 			}
-#ifndef HAVE_POLL
+#ifdef LATCH_USE_SELECT
 			else
 			{
 				tv.tv_sec = cur_timeout / 1000L;

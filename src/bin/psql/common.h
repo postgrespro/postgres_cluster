@@ -8,16 +8,17 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#include "postgres_fe.h"
 #include <setjmp.h>
-#include "libpq-fe.h"
 
+#include "libpq-fe.h"
 #include "print.h"
 
 #define atooid(x)  ((Oid) strtoul((x), NULL, 10))
 
 extern bool openQueryOutputFile(const char *fname, FILE **fout, bool *is_pipe);
 extern bool setQFout(const char *fname);
+
+extern char *psql_get_variable(const char *varname, bool escape, bool as_ident);
 
 extern void psql_error(const char *fmt,...) pg_attribute_printf(1, 2);
 

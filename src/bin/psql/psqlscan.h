@@ -25,23 +25,28 @@ typedef enum
 	PSCAN_EOL					/* end of line, SQL possibly complete */
 } PsqlScanResult;
 
-/* Different ways for scan_slash_option to handle parameter words */
-enum slash_option_type
+/* Callback functions to be used by the lexer */
+typedef struct PsqlScanCallbacks
 {
-	OT_NORMAL,					/* normal case */
-	OT_SQLID,					/* treat as SQL identifier */
-	OT_SQLIDHACK,				/* SQL identifier, but don't downcase */
-	OT_FILEPIPE,				/* it's a filename or pipe */
-	OT_WHOLE_LINE,				/* just snarf the rest of the line */
-	OT_NO_EVAL					/* no expansion of backticks or variables */
-};
+	/* Fetch value of a variable, as a pfree'able string; NULL if unknown */
+	/* This pointer can be NULL if no variable substitution is wanted */
+	char	   *(*get_variable) (const char *varname, bool escape, bool as_ident);
+	/* Print an error message someplace appropriate */
+	/* (very old gcc versions don't support attributes on function pointers) */
+#if defined(__GNUC__) && __GNUC__ < 4
+	void		(*write_error) (const char *fmt,...);
+#else
+	void		(*write_error) (const char *fmt,...) pg_attribute_printf(1, 2);
+#endif
+} PsqlScanCallbacks;
 
 
-extern PsqlScanState psql_scan_create(void);
+extern PsqlScanState psql_scan_create(const PsqlScanCallbacks *callbacks);
 extern void psql_scan_destroy(PsqlScanState state);
 
 extern void psql_scan_setup(PsqlScanState state,
-				const char *line, int line_len);
+				const char *line, int line_len,
+				int encoding, bool std_strings);
 extern void psql_scan_finish(PsqlScanState state);
 
 extern PsqlScanResult psql_scan(PsqlScanState state,
@@ -50,15 +55,8 @@ extern PsqlScanResult psql_scan(PsqlScanState state,
 
 extern void psql_scan_reset(PsqlScanState state);
 
+extern void psql_scan_reselect_sql_lexer(PsqlScanState state);
+
 extern bool psql_scan_in_quote(PsqlScanState state);
-
-extern char *psql_scan_slash_command(PsqlScanState state);
-
-extern char *psql_scan_slash_option(PsqlScanState state,
-					   enum slash_option_type type,
-					   char *quote,
-					   bool semicolon);
-
-extern void psql_scan_slash_command_end(PsqlScanState state);
 
 #endif   /* PSQLSCAN_H */
