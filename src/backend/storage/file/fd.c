@@ -395,8 +395,10 @@ pg_fdatasync(int fd)
  * flushed.
  */
 void
-pg_flush_data(int fd, off_t offset, off_t nbytes)
+pg_flush_data(int fd, off_t offset, off_t nbytes, bool isdir)
 {
+	(void) isdir;  	/* this can be unused on some archs */
+
 	/*
 	 * Right now file flushing is primarily used to avoid making later
 	 * fsync()/fdatasync() calls have a less impact. Thus don't trigger
@@ -452,15 +454,26 @@ pg_flush_data(int fd, off_t offset, off_t nbytes)
 		 * (msync()), and then remove the mapping again (munmap()).
 		 */
 
+		/* mmap will not work with dirs */
+		if (isdir)
+			return;
+
 		/* mmap() need exact length when we want to map whole file */
 		if ((offset == 0) && (nbytes == 0))
 		{
-			int pagesize = getpagesize();
-			nbytes = (lseek(fd, offset, SEEK_END)/pagesize + 1)*pagesize;
+			int pagesize = sysconf(_SC_PAGESIZE);
+
+			nbytes = lseek(fd, 0, SEEK_END);
 			if (nbytes < 0)
 				ereport(WARNING,
 						(errcode_for_file_access(),
 						 errmsg("could not determine dirty data size: %m")));
+
+			/* aling to pagesize with underestimation */
+			nbytes = (nbytes/pagesize)*pagesize;
+
+			if(nbytes == 0)
+				return;
 		}
 
 		p = mmap(NULL, nbytes,
@@ -1526,7 +1539,7 @@ FileWriteback(File file, off_t offset, int amount)
 	if (returnCode < 0)
 		return;
 
-	pg_flush_data(VfdCache[file].fd, offset, amount);
+	pg_flush_data(VfdCache[file].fd, offset, amount, false);
 }
 
 int
@@ -2932,7 +2945,7 @@ pre_sync_fname(const char *fname, bool isdir, int elevel)
 	 * pg_flush_data() ignores errors, which is ok because this is only a
 	 * hint.
 	 */
-	pg_flush_data(fd, 0, 0);
+	pg_flush_data(fd, 0, 0, isdir);
 
 	(void) CloseTransientFile(fd);
 }

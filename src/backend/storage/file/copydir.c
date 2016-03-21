@@ -192,7 +192,7 @@ copy_file(char *fromfile, char *tofile)
 		 * cache and hopefully get the kernel to start writing them out before
 		 * the fsync comes.
 		 */
-		pg_flush_data(dstfd, offset, nbytes);
+		pg_flush_data(dstfd, offset, nbytes, false);
 	}
 
 	if (CloseTransientFile(dstfd))
