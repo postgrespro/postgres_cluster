@@ -205,7 +205,6 @@ pglogical_receiver_main(Datum main_arg)
 	PGconn *conn;
 	PGresult *res;
 	MtmSlotMode mode;
-	MtmState* ds = MtmGetState();
 
 #ifndef USE_PGLOGICAL_OUTPUT
     bool insideTrans = false;
@@ -284,7 +283,7 @@ pglogical_receiver_main(Datum main_arg)
 		 * Them are either empty, either new node is synchronized using base_backup.
 		 * So we assume that LSNs are the same for local and remote node
 		 */
-		originStartPos = ds->status == MTM_RECOVERY ? GetXLogInsertRecPtr() : 0;
+		originStartPos = Mtm->status == MTM_RECOVERY ? GetXLogInsertRecPtr() : 0;
 		elog(WARNING, "Start logical receiver at position %lx from node %d", originStartPos, args->remote_node);
 	} else { 
 		originStartPos = replorigin_get_progress(originId, false);
@@ -341,8 +340,8 @@ pglogical_receiver_main(Datum main_arg)
 		if (rc & WL_POSTMASTER_DEATH)
 			proc_exit(1);
 
-		if (ds->status == MTM_OFFLINE || (ds->status == MTM_RECOVERY && ds->recoverySlot != args->remote_node)) {
-			ereport(LOG, (errmsg("%s: terminating WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[ds->status])));
+		if (Mtm->status == MTM_OFFLINE || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != args->remote_node)) {
+			ereport(LOG, (errmsg("%s: terminating WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
 			proc_exit(0);
 		}
 			
@@ -411,7 +410,7 @@ pglogical_receiver_main(Datum main_arg)
 				 * In recovery mode also always send reply to provide master with more precise information
 				 * about recovery progress
 				 */
-				if (replyRequested || receiver_sync_mode || ds->status == MTM_RECOVERY)
+				if (replyRequested || receiver_sync_mode || Mtm->status == MTM_RECOVERY)
 				{
 					int64 now = feGetCurrentTimestamp();
 
@@ -567,52 +566,31 @@ pglogical_receiver_main(Datum main_arg)
 }
 
 
-int MtmStartReceivers(char* conns, int node_id)
+void MtmStartReceivers(void)
 {
-    int i = 0;
+    int i;
 	BackgroundWorker worker;
-    char* conn_str = conns;
-    char* conn_str_end = conn_str + strlen(conn_str);
 	MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_main = pglogical_receiver_main; 
 	worker.bgw_restart_time = MULTIMASTER_BGW_RESTART_TIMEOUT;
 
-    while (conn_str < conn_str_end) { 
-        char* p = strchr(conn_str, ',');
-        if (p == NULL) { 
-            p = conn_str_end;
-        }
-        if (++i != node_id) {
+	for (i = 0; i < MtmNodes; i++) {
+        if (i+1 != MtmNodeId) {
             ReceiverArgs* ctx = (ReceiverArgs*)malloc(sizeof(ReceiverArgs));
-            if (MtmDatabaseName == NULL) {
-                char* dbname = strstr(conn_str, "dbname=");
-                char* eon;
-                int len;
-                Assert(dbname != NULL);
-                dbname += 7;
-                eon = strchr(dbname, ' ');
-                len = eon - dbname;
-                MtmDatabaseName = (char*)malloc(len + 1);
-                memcpy(MtmDatabaseName, dbname, len);
-                MtmDatabaseName[len] = '\0';
-            }
-            ctx->receiver_conn_string = psprintf("replication=database %.*s", (int)(p - conn_str), conn_str);
-            sprintf(ctx->receiver_slot, MULTIMASTER_SLOT_PATTERN, node_id);
-            ctx->local_node = node_id;
-            ctx->remote_node = i;
+            ctx->receiver_conn_string = psprintf("replication=database %s", Mtm->nodes[i].connStr);
+            sprintf(ctx->receiver_slot, MULTIMASTER_SLOT_PATTERN, MtmNodeId);
+            ctx->local_node = MtmNodeId;
+            ctx->remote_node = i+1;
 
             /* Worker parameter and registration */
-            snprintf(worker.bgw_name, BGW_MAXLEN, "mtm_pglogical_receiver_%d_%d", node_id, i);
+            snprintf(worker.bgw_name, BGW_MAXLEN, "mtm_pglogical_receiver_%d_%d", MtmNodeId, i+1);
             
             worker.bgw_main_arg = (Datum)ctx;
             RegisterBackgroundWorker(&worker);
         }
-        conn_str = p + 1;
     }
-
-    return i;
 }
 
 #ifndef USE_PGLOGICAL_OUTPUT

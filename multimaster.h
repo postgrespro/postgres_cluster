@@ -22,6 +22,8 @@
 #define MULTIMASTER_MAX_PROTO_VERSION   1
 #define MULTIMASTER_MAX_GID_SIZE        32
 #define MULTIMASTER_MAX_SLOT_NAME_SIZE  16
+#define MULTIMASTER_MAX_CONN_STR_SIZE   128
+#define MULTIMASTER_MAX_HOST_NAME_SIZE  64
 
 #define USEC 1000000
 
@@ -77,6 +79,14 @@ typedef enum
 	SLOT_OPEN_ALWAYS,  /* open existed slot or create new if noty exists */
 } MtmSlotMode;
 
+typedef struct
+{
+	time_t transDelay;
+	csn_t  oldestSnapshot; /* Oldest snapshot used by active transactions at this node */
+	char   hostName[MULTIMASTER_MAX_HOST_NAME_SIZE];
+	char   connStr[MULTIMASTER_MAX_CONN_STR_SIZE];
+} MtmNodeInfo;
+
 typedef struct MtmTransState
 {
     TransactionId  xid;
@@ -93,7 +103,7 @@ typedef struct MtmTransState
   	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
 	bool           votingCompleted;    /* 2PC voting is completed */
-	TransactionId xids[1];             /* Transaction ID at replicas: varying size MtmNodes */
+	TransactionId xids[1];             /* [MtmNodes]: transaction ID at replicas */
 } MtmTransState;
 
 typedef struct
@@ -123,13 +133,15 @@ typedef struct
 	uint64 transCount;                 /* Counter of transactions perfromed by this node */
 	time_t nodeTransDelay[MAX_NODES];  /* Time of waiting transaction acknowledgment from node */
     BgwPool pool;                      /* Pool of background workers for applying logical replication patches */
+	MtmNodeInfo nodes[1];              /* [MtmNodes]: per-node data */ 
 } MtmState;
 
 #define MtmIsCoordinator(ts) (ts->gtid.node == MtmNodeId)
 
 extern char const* const MtmNodeStatusMnem[];
 
-extern char* MtmConnStrs;
+extern MtmState* Mtm;
+
 extern int   MtmNodeId;
 extern int   MtmNodes;
 extern int   MtmArbiterPort;
@@ -141,7 +153,7 @@ extern int   MtmKeepaliveTimeout;
 extern HTAB* MtmXid2State;
 
 extern void  MtmArbiterInitialize(void);
-extern int   MtmStartReceivers(char* nodes, int nodeId);
+extern void  MtmStartReceivers(void);
 extern csn_t MtmTransactionSnapshot(TransactionId xid);
 extern csn_t MtmAssignCSN(void);
 extern csn_t MtmSyncClock(csn_t csn);
@@ -160,7 +172,6 @@ extern void  MtmDropNode(int nodeId, bool dropSlot);
 extern void  MtmRecoverNode(int nodeId);
 extern void  MtmOnNodeDisconnect(int nodeId);
 extern void  MtmOnNodeConnect(int nodeId);
-extern MtmState* MtmGetState(void);
 extern timestamp_t MtmGetCurrentTime(void);
 extern void  MtmSleep(timestamp_t interval);
 extern void  MtmSetCurrentTransactionGID(char const* gid);
@@ -172,4 +183,6 @@ extern XidStatus MtmGetGlobalTransactionStatus(char const* gid);
 extern bool  MtmIsRecoveredNode(int nodeId);
 extern void  MtmRefreshClusterStatus(bool nowait);
 extern void  MtmSwitchClusterMode(MtmNodeStatus mode);
+extern void  MtmUpdateNodeConnStr(int nodeId, char const* connStr);
+
 #endif

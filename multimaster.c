@@ -127,11 +127,12 @@ static BgwPool* MtmPoolConstructor(void);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
 
+MtmState* Mtm;
+
 HTAB* MtmXid2State;
 static HTAB* MtmGid2State;
 
-static MtmCurrentTrans dtmTx;
-static MtmState* dtm;
+static MtmCurrentTrans MtmTx;
 
 static TransactionManager MtmTM = { 
 	PgTransactionIdGetStatus, 
@@ -158,7 +159,6 @@ char const* const MtmNodeStatusMnem[] =
 bool  MtmDoReplication;
 char* MtmDatabaseName;
 
-char* MtmConnStrs;
 int   MtmNodeId;
 int   MtmArbiterPort;
 int   MtmNodes;
@@ -167,9 +167,9 @@ int   MtmConnectTimeout;
 int   MtmKeepaliveTimeout;
 int   MtmReconnectAttempts;
 
+static char* MtmConnStrs;
 static int MtmQueueSize;
 static int MtmWorkers;
-static int MtmVacuumDelay;
 static int MtmMinRecoveryLag;
 static int MtmMaxRecoveryLag;
 
@@ -185,38 +185,38 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 
 /*
  * -------------------------------------------
- * Synchronize access to DTM structures.
+ * Synchronize access to MTM structures.
  * Using LWLock seems to be  more efficient (at our benchmarks)
  * -------------------------------------------
  */
 void MtmLock(LWLockMode mode)
 {
 #ifdef USE_SPINLOCK
-	SpinLockAcquire(&dtm->spinlock);
+	SpinLockAcquire(&Mtm->spinlock);
 #else
-	LWLockAcquire((LWLockId)&dtm->locks[MTM_STATE_LOCK_ID], mode);
+	LWLockAcquire((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID], mode);
 #endif
 }
 
 void MtmUnlock(void)
 {
 #ifdef USE_SPINLOCK
-	SpinLockRelease(&dtm->spinlock);
+	SpinLockRelease(&Mtm->spinlock);
 #else
-	LWLockRelease((LWLockId)&dtm->locks[MTM_STATE_LOCK_ID]);
+	LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
 #endif
 }
 
 void MtmLockNode(int nodeId)
 {
 	Assert(nodeId > 0 && nodeId <= MtmNodes);
-	LWLockAcquire((LWLockId)&dtm->locks[nodeId], LW_EXCLUSIVE);
+	LWLockAcquire((LWLockId)&Mtm->locks[nodeId], LW_EXCLUSIVE);
 }
 
 void MtmUnlockNode(int nodeId)
 {
 	Assert(nodeId > 0 && nodeId <= MtmNodes);
-	LWLockRelease((LWLockId)&dtm->locks[nodeId]);	
+	LWLockRelease((LWLockId)&Mtm->locks[nodeId]);	
 }
 
 /*
@@ -230,7 +230,7 @@ timestamp_t MtmGetCurrentTime(void)
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    return (timestamp_t)tv.tv_sec*USEC + tv.tv_usec + dtm->timeShift;
+    return (timestamp_t)tv.tv_sec*USEC + tv.tv_usec + Mtm->timeShift;
 }
 
 void MtmSleep(timestamp_t interval)
@@ -252,10 +252,10 @@ void MtmSleep(timestamp_t interval)
 csn_t MtmAssignCSN()
 {
     csn_t csn = MtmGetCurrentTime();
-    if (csn <= dtm->csn) { 
-        csn = ++dtm->csn;
+    if (csn <= Mtm->csn) { 
+        csn = ++Mtm->csn;
     } else { 
-        dtm->csn = csn;
+        Mtm->csn = csn;
     }
     return csn;
 }
@@ -267,7 +267,7 @@ csn_t MtmSyncClock(csn_t global_csn)
 {
     csn_t local_csn;
     while ((local_csn = MtmAssignCSN()) < global_csn) { 
-        dtm->timeShift += global_csn - local_csn;
+        Mtm->timeShift += global_csn - local_csn;
     }
     return local_csn;
 }
@@ -340,15 +340,15 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
         if (ts != NULL && ts->status != TRANSACTION_STATUS_IN_PROGRESS)
         {
-            if (ts->csn > dtmTx.snapshot) { 
+            if (ts->csn > MtmTx.snapshot) { 
                 MTM_TUPLE_TRACE("%d: tuple with xid=%d(csn=%ld) is invisibile in snapshot %ld\n",
-								MyProcPid, xid, ts->csn, dtmTx.snapshot);
+								MyProcPid, xid, ts->csn, MtmTx.snapshot);
                 MtmUnlock();
                 return true;
             }
             if (ts->status == TRANSACTION_STATUS_UNKNOWN)
             {
-                MTM_TRACE("%d: wait for in-doubt transaction %u in snapshot %lu\n", MyProcPid, xid, dtmTx.snapshot);
+                MTM_TRACE("%d: wait for in-doubt transaction %u in snapshot %lu\n", MyProcPid, xid, MtmTx.snapshot);
                 MtmUnlock();
 #if TRACE_SLEEP_TIME
                 {
@@ -380,14 +380,14 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
             {
                 bool invisible = ts->status != TRANSACTION_STATUS_COMMITTED;
                 MTM_TUPLE_TRACE("%d: tuple with xid=%d(csn= %ld) is %s in snapshot %ld\n",
-								MyProcPid, xid, ts->csn, invisible ? "rollbacked" : "committed", dtmTx.snapshot);
+								MyProcPid, xid, ts->csn, invisible ? "rollbacked" : "committed", MtmTx.snapshot);
                 MtmUnlock();
                 return invisible;
             }
         }
         else
         {
-            MTM_TUPLE_TRACE("%d: visibility check is skept for transaction %u in snapshot %lu\n", MyProcPid, xid, dtmTx.snapshot);
+            MTM_TUPLE_TRACE("%d: visibility check is skept for transaction %u in snapshot %lu\n", MyProcPid, xid, MtmTx.snapshot);
             break;
         }
     }
@@ -399,9 +399,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 
 /*
  * There can be different oldest XIDs at different cluster node.
- * Seince we do not have centralized aribiter, we have to rely in MtmVacuumDelay.
- * This function takes XID which PostgreSQL consider to be the latest and try to find XID which
- * is older than it more than MtmVacuumDelay.
+ * We collest oldest CSNs from all nodes and choose minimum from them.
  * If no such XID can be located, then return previously observed oldest XID
  */
 static TransactionId 
@@ -412,9 +410,17 @@ MtmAdjustOldestXid(TransactionId xid)
         
 		MtmLock(LW_EXCLUSIVE);
         ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-        if (ts != NULL) { 
-            timestamp_t cutoff_time = ts->csn - MtmVacuumDelay*USEC;
-			for (ts = dtm->transListHead; ts != NULL && ts->csn < cutoff_time; prev = ts, ts = ts->next) { 
+        if (ts != NULL && ts->status == TRANSACTION_STATUS_COMMITTED) { 
+			csn_t oldestSnapshot;
+			int i;
+
+			Mtm->nodes[MtmNodeId-1].oldestSnapshot = oldestSnapshot = ts->csn;
+			for (i = 0; i < MtmNodes; i++) { 
+				if (Mtm->nodes[i].oldestSnapshot < oldestSnapshot) { 
+					oldestSnapshot = Mtm->nodes[i].oldestSnapshot;
+				}
+			}
+			for (ts = Mtm->transListHead; ts != NULL && ts->csn < oldestSnapshot; prev = ts, ts = ts->next) { 
 				Assert(ts->status == TRANSACTION_STATUS_COMMITTED || ts->status == TRANSACTION_STATUS_ABORTED || ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 				if (prev != NULL) { 
 					/* Remove information about too old transactions */
@@ -423,10 +429,10 @@ MtmAdjustOldestXid(TransactionId xid)
 			}
         }
         if (prev != NULL) { 
-            dtm->transListHead = prev;
-            dtm->oldestXid = xid = prev->xid;            
+            Mtm->transListHead = prev;
+            Mtm->oldestXid = xid = prev->xid;            
         } else { 
-            xid = dtm->oldestXid;
+            xid = Mtm->oldestXid;
         }
 		MtmUnlock();
     }
@@ -444,16 +450,16 @@ static void MtmTransactionListAppend(MtmTransState* ts)
 {
     ts->next = NULL;
 	ts->nSubxids = 0;
-    *dtm->transListTail = ts;
-    dtm->transListTail = &ts->next;
+    *Mtm->transListTail = ts;
+    Mtm->transListTail = &ts->next;
 }
 
 static void MtmTransactionListInsertAfter(MtmTransState* after, MtmTransState* ts)
 {
     ts->next = after->next;
     after->next = ts;
-    if (dtm->transListTail == &after->next) { 
-        dtm->transListTail = &ts->next;
+    if (Mtm->transListTail == &after->next) { 
+        Mtm->transListTail = &ts->next;
     }
 }
 
@@ -499,22 +505,22 @@ MtmXactCallback(XactEvent event, void *arg)
     switch (event) 
     {
 	  case XACT_EVENT_START: 
-	    MtmBeginTransaction(&dtmTx);
+	    MtmBeginTransaction(&MtmTx);
         break;
 	  case XACT_EVENT_PRE_PREPARE:
-		MtmPrePrepareTransaction(&dtmTx);
+		MtmPrePrepareTransaction(&MtmTx);
 		break;
 	  case XACT_EVENT_POST_PREPARE:
-		MtmPostPrepareTransaction(&dtmTx);
+		MtmPostPrepareTransaction(&MtmTx);
 		break;
 	  case XACT_EVENT_ABORT_PREPARED:
-		MtmAbortPreparedTransaction(&dtmTx);
+		MtmAbortPreparedTransaction(&MtmTx);
 		break;
 	  case XACT_EVENT_COMMIT:
-		MtmEndTransaction(&dtmTx, true);
+		MtmEndTransaction(&MtmTx, true);
 		break;
 	  case XACT_EVENT_ABORT: 
-		MtmEndTransaction(&dtmTx, false);
+		MtmEndTransaction(&MtmTx, false);
 		break;
 	  default:
         break;
@@ -551,11 +557,11 @@ MtmBeginTransaction(MtmCurrentTrans* x)
         x->isReplicated = false;
         x->isDistributed = MtmIsUserTransaction();
 		x->isPrepared = false;
-		if (x->isDistributed && dtm->status != MTM_ONLINE) { 
+		if (x->isDistributed && Mtm->status != MTM_ONLINE) { 
 			/* reject all user's transactions at offline cluster */
 			MtmUnlock();			
-			Assert(dtm->status == MTM_ONLINE);
-			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[dtm->status]);
+			Assert(Mtm->status == MTM_ONLINE);
+			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
 		}
 		x->containsDML = false;
         x->snapshot = MtmAssignCSN();	
@@ -586,9 +592,9 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	x->xid = GetCurrentTransactionId();
 	Assert(TransactionIdIsValid(x->xid));
 
-	if (dtm->disabledNodeMask != 0) { 
+	if (Mtm->disabledNodeMask != 0) { 
 		MtmRefreshClusterStatus(true);
-		if (dtm->status != MTM_ONLINE) { 
+		if (Mtm->status != MTM_ONLINE) { 
 			elog(ERROR, "Abort current transaction because this cluster node is not online");			
 		}
 	}
@@ -617,7 +623,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	x->isPrepared = true;
 	x->csn = ts->csn;
 
-	dtm->transCount += 1;
+	Mtm->transCount += 1;
 
 	if (TransactionIdIsValid(x->gtid.xid)) { 		
 		Assert(x->gtid.node != MtmNodeId);
@@ -742,62 +748,55 @@ void MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd)
 {
 	MtmTransState* votingList;
 
-	votingList = dtm->votingTransactions;
+	votingList = Mtm->votingTransactions;
 	ts->nextVoting = votingList;
 	ts->cmd = cmd;
-	dtm->votingTransactions = ts;
+	Mtm->votingTransactions = ts;
 
 	if (votingList == NULL) { 
 		/* singal semaphore only once for the whole list */
-		PGSemaphoreUnlock(&dtm->votingSemaphore);
+		PGSemaphoreUnlock(&Mtm->votingSemaphore);
 	}
 }
 
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
-	csn_t localSnapshot;
-
 	MtmLock(LW_EXCLUSIVE);
-	localSnapshot = MtmSyncClock(globalSnapshot);	
+	MtmSyncClock(globalSnapshot);	
 	MtmUnlock();
 	
-	if (globalSnapshot < localSnapshot - MtmVacuumDelay * USEC)
-	{
-		elog(ERROR, "Too old snapshot: requested %ld, current %ld", globalSnapshot, localSnapshot);
-	}
-
 	if (!TransactionIdIsValid(gtid->xid)) { 
 		/* In case of recovery InvalidTransactionId is passed */
-		Assert(dtm->status == MTM_RECOVERY);
-	} else if (dtm->status == MTM_RECOVERY) { 
+		Assert(Mtm->status == MTM_RECOVERY);
+	} else if (Mtm->status == MTM_RECOVERY) { 
 		/* When recovery is completed we get normal transaction ID and switch to normal mode */
-		dtm->recoverySlot = 0;
+		Mtm->recoverySlot = 0;
 		MtmSwitchClusterMode(MTM_ONLINE);
 	}
-	dtmTx.gtid = *gtid;
-	dtmTx.xid = GetCurrentTransactionId();
-	dtmTx.snapshot = globalSnapshot;	
-	dtmTx.isReplicated = true;
-	dtmTx.isDistributed = true;
-	dtmTx.containsDML = true;
+	MtmTx.gtid = *gtid;
+	MtmTx.xid = GetCurrentTransactionId();
+	MtmTx.snapshot = globalSnapshot;	
+	MtmTx.isReplicated = true;
+	MtmTx.isDistributed = true;
+	MtmTx.containsDML = true;
 }
 
 void  MtmSetCurrentTransactionGID(char const* gid)
 {
 	MTM_TRACE("Set current transaction GID %s\n", gid);
-	strcpy(dtmTx.gid, gid);
-	dtmTx.isDistributed = true;
-	dtmTx.isReplicated = true;
+	strcpy(MtmTx.gid, gid);
+	MtmTx.isDistributed = true;
+	MtmTx.isReplicated = true;
 }
 
 TransactionId MtmGetCurrentTransactionId(void)
 {
-	return dtmTx.xid;
+	return MtmTx.xid;
 }
 
 XidStatus MtmGetCurrentTransactionStatus(void)
 {
-	return dtmTx.status;
+	return MtmTx.status;
 }
 
 XidStatus MtmGetGlobalTransactionStatus(char const* gid)
@@ -820,9 +819,9 @@ XidStatus MtmGetGlobalTransactionStatus(char const* gid)
 void  MtmSetCurrentTransactionCSN(csn_t csn)
 {
 	MTM_TRACE("Set current transaction CSN %ld\n", csn);
-	dtmTx.csn = csn;
-	dtmTx.isDistributed = true;
-	dtmTx.isReplicated = true;
+	MtmTx.csn = csn;
+	MtmTx.isDistributed = true;
+	MtmTx.isReplicated = true;
 }
 
 
@@ -852,7 +851,7 @@ csn_t MtmGetTransactionCSN(TransactionId xid)
 static void 
 MtmCheckSlots()
 {
-	if (MtmMaxRecoveryLag != 0 && dtm->disabledNodeMask != 0) 
+	if (MtmMaxRecoveryLag != 0 && Mtm->disabledNodeMask != 0) 
 	{
 		int i;
 		for (i = 0; i < max_replication_slots; i++) { 
@@ -860,7 +859,7 @@ MtmCheckSlots()
 			int nodeId;
 			if (slot->in_use 
 				&& sscanf(slot->data.name.data, MULTIMASTER_SLOT_PATTERN, &nodeId) == 1
-				&& BIT_CHECK(dtm->disabledNodeMask, nodeId-1)
+				&& BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)
 				&& slot->data.confirmed_flush + MtmMaxRecoveryLag < GetXLogInsertRecPtr()) 
 			{
 				elog(WARNING, "Drop slot for node %d which lag %ld is larger than threshold %d", 
@@ -897,9 +896,9 @@ static int64 MtmGetSlotLag(int nodeId)
  */
 bool MtmIsRecoveredNode(int nodeId)
 {
-	if (BIT_CHECK(dtm->disabledNodeMask, nodeId-1)) { 
+	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
 		Assert(MyWalSnd != NULL); /* This function is called by WAL-sender, so it should not be NULL */
-		if (!BIT_CHECK(dtm->nodeLockerMask, nodeId-1)
+		if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
 			&& MyWalSnd->sentPtr + MtmMinRecoveryLag > GetXLogInsertRecPtr()) 
 		{ 
 			/*
@@ -909,9 +908,9 @@ bool MtmIsRecoveredNode(int nodeId)
 			 * Is there some better way to establish mapping between nodes ad WAL-seconder?
 			 */
 			MtmLock(LW_EXCLUSIVE);
-			BIT_SET(dtm->nodeLockerMask, nodeId-1);
-			BIT_SET(dtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
-			dtm->nLockers += 1;
+			BIT_SET(Mtm->nodeLockerMask, nodeId-1);
+			BIT_SET(Mtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
+			Mtm->nLockers += 1;
 			MtmUnlock();
 		}
 		return true;
@@ -921,7 +920,7 @@ bool MtmIsRecoveredNode(int nodeId)
 
 void MtmSwitchClusterMode(MtmNodeStatus mode)
 {
-	dtm->status = mode;
+	Mtm->status = mode;
 	elog(WARNING, "Switch to %s mode", MtmNodeStatusMnem[mode]);
 	/* ??? Something else to do here? */
 }
@@ -937,7 +936,7 @@ MtmCheckClusterLock()
 {	
 	while (true)
 	{
-		nodemask_t mask = dtm->walSenderLockerMask;
+		nodemask_t mask = Mtm->walSenderLockerMask;
 		if (mask != 0) {
 			XLogRecPtr currLogPos = GetXLogInsertRecPtr();
 			int i;
@@ -950,7 +949,7 @@ MtmCheckClusterLock()
 					} else { 
 						/* recovered replica catched up with master */
 						elog(WARNING, "WAL-sender %d complete receovery", i);
-						BIT_CLEAR(dtm->walSenderLockerMask, i);
+						BIT_CLEAR(Mtm->walSenderLockerMask, i);
 					}
 				}
 			}
@@ -967,13 +966,13 @@ MtmCheckClusterLock()
 			} else {  
 				/* All lockers are synchronized their logs */
 				/* Remove lock and mark them as receovered */
-				elog(WARNING, "Complete recovery of %d nodes (node mask %lx)", dtm->nLockers, dtm->nodeLockerMask);
-				Assert(dtm->walSenderLockerMask == 0);
-				Assert((dtm->nodeLockerMask & dtm->disabledNodeMask) == dtm->nodeLockerMask);
-				dtm->disabledNodeMask &= ~dtm->nodeLockerMask;
-				dtm->nNodes += dtm->nLockers;
-				dtm->nLockers = 0;
-				dtm->nodeLockerMask = 0;
+				elog(WARNING, "Complete recovery of %d nodes (node mask %lx)", Mtm->nLockers, Mtm->nodeLockerMask);
+				Assert(Mtm->walSenderLockerMask == 0);
+				Assert((Mtm->nodeLockerMask & Mtm->disabledNodeMask) == Mtm->nodeLockerMask);
+				Mtm->disabledNodeMask &= ~Mtm->nodeLockerMask;
+				Mtm->nNodes += Mtm->nLockers;
+				Mtm->nLockers = 0;
+				Mtm->nodeLockerMask = 0;
 			}
 		}
 		break;
@@ -992,7 +991,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 			void* data = PaxosGet(psprintf("node-mask-%d", i+1), NULL, NULL, nowait);
 			matrix[i] = *(nodemask_t*)data;
 		} else { 
-			matrix[i] = dtm->connectivityMask;
+			matrix[i] = Mtm->connectivityMask;
 		}
 	}
 	/* make matrix symetric: required for Bron–Kerbosch algorithm */
@@ -1019,29 +1018,29 @@ void MtmRefreshClusterStatus(bool nowait)
 
 	clique = MtmFindMaxClique(matrix, MtmNodes, &clique_size);
 	if (clique_size >= MtmNodes/2+1) { /* have quorum */
-		elog(WARNING, "Find clique %lx, disabledNodeMask %lx", clique, dtm->disabledNodeMask);
+		elog(WARNING, "Find clique %lx, disabledNodeMask %lx", clique, Mtm->disabledNodeMask);
 		MtmLock(LW_EXCLUSIVE);
-		mask = ~clique & (((nodemask_t)1 << MtmNodes)-1) & ~dtm->disabledNodeMask; /* new disabled nodes mask */
+		mask = ~clique & (((nodemask_t)1 << MtmNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
 		for (i = 0; mask != 0; i++, mask >>= 1) {
 			if (mask & 1) { 
-				dtm->nNodes -= 1;
-				BIT_SET(dtm->disabledNodeMask, i);
+				Mtm->nNodes -= 1;
+				BIT_SET(Mtm->disabledNodeMask, i);
 			}
 		}
-		mask = clique & dtm->disabledNodeMask; /* new enabled nodes mask */		
+		mask = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
 		for (i = 0; mask != 0; i++, mask >>= 1) {
 			if (mask & 1) { 
-				dtm->nNodes += 1;
-				BIT_CLEAR(dtm->disabledNodeMask, i);
+				Mtm->nNodes += 1;
+				BIT_CLEAR(Mtm->disabledNodeMask, i);
 			}
 		}
 		MtmUnlock();
-		if (BIT_CHECK(dtm->disabledNodeMask, MtmNodeId-1)) { 
-			if (dtm->status == MTM_ONLINE) {
+		if (BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId-1)) { 
+			if (Mtm->status == MTM_ONLINE) {
 				/* I was excluded from cluster:( */
 				MtmSwitchClusterMode(MTM_OFFLINE);
 			}
-		} else if (dtm->status == MTM_OFFLINE) {
+		} else if (Mtm->status == MTM_OFFLINE) {
 			/* Should we somehow restart logical receivers? */ 
 			MtmSwitchClusterMode(MTM_RECOVERY);
 		}
@@ -1052,8 +1051,8 @@ void MtmRefreshClusterStatus(bool nowait)
 
 void MtmOnNodeDisconnect(int nodeId)
 {
-	BIT_SET(dtm->connectivityMask, nodeId-1);
-	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &dtm->connectivityMask, sizeof dtm->connectivityMask, false);
+	BIT_SET(Mtm->connectivityMask, nodeId-1);
+	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
 
 	/* Wait more than socket KEEPALIVE timeout to let other nodes update their statuses */
 	MtmSleep(MtmKeepaliveTimeout);
@@ -1063,8 +1062,8 @@ void MtmOnNodeDisconnect(int nodeId)
 
 void MtmOnNodeConnect(int nodeId)
 {
-	BIT_CLEAR(dtm->connectivityMask, nodeId-1);
-	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &dtm->connectivityMask, sizeof dtm->connectivityMask, false);
+	BIT_CLEAR(Mtm->connectivityMask, nodeId-1);
+	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
 }
 
 /*
@@ -1127,50 +1126,47 @@ MtmCreateGidMap(void)
 static void MtmInitialize()
 {
 	bool found;
+	int i;
 
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
-	dtm = (MtmState*)ShmemInitStruct(MULTIMASTER_NAME, sizeof(MtmState), &found);
+	Mtm = (MtmState*)ShmemInitStruct(MULTIMASTER_NAME, sizeof(MtmState) + sizeof(MtmNodeInfo)*(MtmNodes-1), &found);
 	if (!found)
 	{
-		dtm->status = MTM_INITIALIZATION;
-		dtm->recoverySlot = 0;
-		dtm->locks = GetNamedLWLockTranche(MULTIMASTER_NAME);
-		dtm->csn = MtmGetCurrentTime();
-		dtm->oldestXid = FirstNormalTransactionId;
-        dtm->nNodes = MtmNodes;
-		dtm->disabledNodeMask = 0;
-		dtm->connectivityMask = 0;
-		dtm->pglogicalNodeMask = 0;
-		dtm->walSenderLockerMask = 0;
-		dtm->nodeLockerMask = 0;
-		dtm->nLockers = 0;
-		dtm->votingTransactions = NULL;
-        dtm->transListHead = NULL;
-        dtm->transListTail = &dtm->transListHead;		
-        dtm->nReceivers = 0;
-		dtm->timeShift = 0;
-		dtm->transCount = 0;
-		memset(dtm->nodeTransDelay, 0, sizeof(dtm->nodeTransDelay));
-		PGSemaphoreCreate(&dtm->votingSemaphore);
-		PGSemaphoreReset(&dtm->votingSemaphore);
-		SpinLockInit(&dtm->spinlock);
-        BgwPoolInit(&dtm->pool, MtmExecutor, MtmDatabaseName, MtmQueueSize);
+		Mtm->status = MTM_INITIALIZATION;
+		Mtm->recoverySlot = 0;
+		Mtm->locks = GetNamedLWLockTranche(MULTIMASTER_NAME);
+		Mtm->csn = MtmGetCurrentTime();
+		Mtm->oldestXid = FirstNormalTransactionId;
+        Mtm->nNodes = MtmNodes;
+		Mtm->disabledNodeMask = 0;
+		Mtm->connectivityMask = 0;
+		Mtm->pglogicalNodeMask = 0;
+		Mtm->walSenderLockerMask = 0;
+		Mtm->nodeLockerMask = 0;
+		Mtm->nLockers = 0;
+		Mtm->votingTransactions = NULL;
+        Mtm->transListHead = NULL;
+        Mtm->transListTail = &Mtm->transListHead;		
+        Mtm->nReceivers = 0;
+		Mtm->timeShift = 0;
+		Mtm->transCount = 0;
+		for (i = 0; i < MtmNodes; i++) {
+			Mtm->nodes[i].oldestSnapshot = 0;
+			Mtm->nodes[i].transDelay = 0;
+		}
+		PGSemaphoreCreate(&Mtm->votingSemaphore);
+		PGSemaphoreReset(&Mtm->votingSemaphore);
+		SpinLockInit(&Mtm->spinlock);
+        BgwPoolInit(&Mtm->pool, MtmExecutor, MtmDatabaseName, MtmQueueSize);
 		RegisterXactCallback(MtmXactCallback, NULL);
-		dtmTx.snapshot = INVALID_CSN;
-		dtmTx.xid = InvalidTransactionId;		
+		MtmTx.snapshot = INVALID_CSN;
+		MtmTx.xid = InvalidTransactionId;		
 	}
 	MtmXid2State = MtmCreateXidMap();
 	MtmGid2State = MtmCreateGidMap();
     MtmDoReplication = true;
 	TM = &MtmTM;
 	LWLockRelease(AddinShmemInitLock);
-}
-
-
-MtmState*	
-MtmGetState(void)
-{
-	return dtm;
 }
 
 static void 
@@ -1182,9 +1178,71 @@ MtmShmemStartup(void)
 	MtmInitialize();
 }
 
-/*
- *  ***************************************************************************
- */
+void MtmUpdateNodeConnStr(int nodeId, char const* connStr)
+{
+	char const* host;
+	char const* end;
+	int         hostLen;
+
+	if (strlen(connStr) >= MULTIMASTER_MAX_CONN_STR_SIZE) {
+		elog(ERROR, "Too long (%d) connection string '%s' for node %d, limit is %d", 
+			 (int)strlen(connStr), connStr, nodeId, MULTIMASTER_MAX_CONN_STR_SIZE-1);
+	}
+	strcpy(Mtm->nodes[nodeId-1].connStr, connStr);
+
+	host = strstr(connStr, "host=");
+	if (host == NULL) {
+		elog(ERROR, "Host not specified in connection string: '%s'", connStr);
+	}
+	host += 5;
+	for (end = host; *end != ' ' && *end != ',' && *end != '\0'; end++);
+	hostLen = end - host;
+	if (hostLen >= MULTIMASTER_MAX_HOST_NAME_SIZE) {
+		elog(ERROR, "Too long (%d) host name '%.*s' for node %d, limit is %d", 
+			 hostLen, hostLen, host, nodeId, MULTIMASTER_MAX_HOST_NAME_SIZE-1);
+	}
+	memcpy(Mtm->nodes[nodeId-1].hostName, host, hostLen);
+	Mtm->nodes[nodeId-1].hostName[hostLen] = '\0';
+}
+
+static void MtmSplitConnStrs(void)
+{
+	int i;
+    char* connStr = strdup(MtmConnStrs);
+    char* connStrEnd = connStr + strlen(connStr);
+
+	for (i = 0; connStr < connStrEnd; i++) { 
+        char* p = strchr(connStr, ',');
+        if (p == NULL) { 
+            p = connStrEnd;
+        }
+		if (i == MAX_NODES) { 
+			elog(ERROR, "Multimaster with more than %d nodes is not currently supported", MAX_NODES);
+		}	
+		*p = '\0';
+		MtmUpdateNodeConnStr(i+1, connStr);
+		if (i+1 == MtmNodeId) { 
+			char* dbName = strstr(connStr, "dbname=");
+			char* end;
+			size_t len;
+			if (dbName == NULL) { 
+				elog(ERROR, "Database not specified in connection string: '%s'", connStr);
+			}
+			dbName += 7;
+			for (end = dbName; *end != ' ' && *end != ',' && *end != '\0'; end++);
+			len = end - dbName;
+			MtmDatabaseName = (char*)malloc(len + 1);
+			memcpy(MtmDatabaseName, dbName, len);
+			MtmDatabaseName[len] = '\0';
+		}
+		connStr = p + 1;
+    }
+	free(connStr);
+	if (i < 2) { 
+        elog(ERROR, "Multimaster should have at least two nodes");
+	}	
+	MtmNodes = i;
+}		
 
 void
 _PG_init(void)
@@ -1224,21 +1282,6 @@ _PG_init(void)
 		&MtmMaxRecoveryLag,
 		100000000,
 		0,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
-
-	DefineCustomIntVariable(
-		"multimaster.vacuum_delay",
-		"Minimal age of records which can be vacuumed (seconds)",
-		NULL,
-		&MtmVacuumDelay,
-		10,
-		1,
 		INT_MAX,
 		PGC_BACKEND,
 		0,
@@ -1380,13 +1423,8 @@ _PG_init(void)
 		NULL
 	);
 
-    MtmNodes = MtmStartReceivers(MtmConnStrs, MtmNodeId);
-    if (MtmNodes < 2) { 
-        elog(ERROR, "Multimaster should have at least two nodes");
-	}		
-	if (MtmNodes > MAX_NODES) { 
-        elog(ERROR, "Multimaster with mor than %d nodes is not currently supported", MAX_NODES);
-	}		
+	MtmSplitConnStrs();
+    MtmStartReceivers();
 		
 	/*
 	 * Request additional shared resources.  (These are no-ops if we're not in
@@ -1428,15 +1466,15 @@ _PG_fini(void)
  
 void MtmReceiverStarted(int nodeId)
 {
-	SpinLockAcquire(&dtm->spinlock);	
-	if (!BIT_CHECK(dtm->pglogicalNodeMask, nodeId-1)) { 
-		BIT_SET(dtm->pglogicalNodeMask, nodeId-1);
-		if (++dtm->nReceivers == dtm->nNodes-1) {
-			Assert(dtm->status == MTM_CONNECTED);
+	SpinLockAcquire(&Mtm->spinlock);	
+	if (!BIT_CHECK(Mtm->pglogicalNodeMask, nodeId-1)) { 
+		BIT_SET(Mtm->pglogicalNodeMask, nodeId-1);
+		if (++Mtm->nReceivers == Mtm->nNodes-1) {
+			Assert(Mtm->status == MTM_CONNECTED);
 			MtmSwitchClusterMode(MTM_ONLINE);
 		}
      }
-	SpinLockRelease(&dtm->spinlock);	
+	SpinLockRelease(&Mtm->spinlock);	
 }
 
 /* 
@@ -1446,11 +1484,11 @@ void MtmReceiverStarted(int nodeId)
  */
 MtmSlotMode MtmReceiverSlotMode(int nodeId)
 {
-	while (dtm->status != MTM_CONNECTED && dtm->status != MTM_ONLINE) { 		
-		if (dtm->status == MTM_RECOVERY) { 
-			if (dtm->recoverySlot == 0 || dtm->recoverySlot == nodeId) { 
+	while (Mtm->status != MTM_CONNECTED && Mtm->status != MTM_ONLINE) { 		
+		if (Mtm->status == MTM_RECOVERY) { 
+			if (Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId) { 
 				/* Choose for recovery first available slot */
-				dtm->recoverySlot = nodeId;
+				Mtm->recoverySlot = nodeId;
 				return SLOT_OPEN_EXISTED;
 			}
 		}
@@ -1458,16 +1496,16 @@ MtmSlotMode MtmReceiverSlotMode(int nodeId)
 		MtmSleep(STATUS_POLL_DELAY);
 	}
 	/* After recovery completion we need to drop all other slots to avoid receive of redundant data */
-	return dtm->recoverySlot ? SLOT_CREATE_NEW : SLOT_OPEN_ALWAYS;
+	return Mtm->recoverySlot ? SLOT_CREATE_NEW : SLOT_OPEN_ALWAYS;
 }
 			
 void MtmRecoverNode(int nodeId)
 {
-	if (nodeId <= 0 || nodeId > dtm->nNodes) 
+	if (nodeId <= 0 || nodeId > Mtm->nNodes) 
 	{ 
-		elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, dtm->nNodes);
+		elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nNodes);
 	}
-	if (!BIT_CHECK(dtm->disabledNodeMask, nodeId-1)) { 
+	if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
 		elog(ERROR, "Node %d was not disabled", nodeId);
 	}
 	if (!IsTransactionBlock())
@@ -1479,14 +1517,14 @@ void MtmRecoverNode(int nodeId)
 	
 void MtmDropNode(int nodeId, bool dropSlot)
 {
-	if (!BIT_CHECK(dtm->disabledNodeMask, nodeId-1))
+	if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))
 	{
-		if (nodeId <= 0 || nodeId > dtm->nNodes) 
+		if (nodeId <= 0 || nodeId > Mtm->nNodes) 
 		{ 
-			elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, dtm->nNodes);
+			elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nNodes);
 		}
-		BIT_SET(dtm->disabledNodeMask, nodeId-1);
-		dtm->nNodes -= 1;
+		BIT_SET(Mtm->disabledNodeMask, nodeId-1);
+		Mtm->nNodes -= 1;
 		if (!IsTransactionBlock())
 		{
 			MtmBroadcastUtilityStmt(psprintf("select mtm.drop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
@@ -1516,7 +1554,7 @@ Datum
 mtm_stop_replication(PG_FUNCTION_ARGS)
 {
     MtmDoReplication = false;
-    dtmTx.isDistributed = false;
+    MtmTx.isDistributed = false;
     PG_RETURN_VOID();
 }
 
@@ -1540,7 +1578,7 @@ mtm_recover_node(PG_FUNCTION_ARGS)
 Datum
 mtm_get_snapshot(PG_FUNCTION_ARGS)
 {
-	PG_RETURN_INT64(dtmTx.snapshot);
+	PG_RETURN_INT64(MtmTx.snapshot);
 }
 
 typedef struct
@@ -1579,13 +1617,13 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 		SRF_RETURN_DONE(funcctx);      
 	}
 	usrfctx->values[0] = Int32GetDatum(usrfctx->nodeId);
-	usrfctx->values[1] = BoolGetDatum(BIT_CHECK(dtm->disabledNodeMask, usrfctx->nodeId-1));
-	usrfctx->values[2] = BoolGetDatum(BIT_CHECK(dtm->connectivityMask, usrfctx->nodeId-1));
-	usrfctx->values[3] = BoolGetDatum(BIT_CHECK(dtm->nodeLockerMask, usrfctx->nodeId-1));
+	usrfctx->values[1] = BoolGetDatum(BIT_CHECK(Mtm->disabledNodeMask, usrfctx->nodeId-1));
+	usrfctx->values[2] = BoolGetDatum(BIT_CHECK(Mtm->connectivityMask, usrfctx->nodeId-1));
+	usrfctx->values[3] = BoolGetDatum(BIT_CHECK(Mtm->nodeLockerMask, usrfctx->nodeId-1));
 	lag = MtmGetSlotLag(usrfctx->nodeId);
 	usrfctx->values[4] = Int64GetDatum(lag);
 	usrfctx->nulls[4] = lag < 0;
-	usrfctx->values[5] = Int64GetDatum(dtm->transCount ? dtm->nodeTransDelay[usrfctx->nodeId-1]/dtm->transCount : 0);
+	usrfctx->values[5] = Int64GetDatum(Mtm->transCount ? Mtm->nodes[usrfctx->nodeId-1].transDelay/Mtm->transCount : 0);
 	p = strchr(usrfctx->connStrPtr, ',');
 	if (p != NULL) { 
 		*p++ = '\0';
@@ -1605,17 +1643,17 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
     bool      nulls[10] = {false};
 	get_call_result_type(fcinfo, NULL, &desc);
 
-	values[0] = CStringGetTextDatum(MtmNodeStatusMnem[dtm->status]);
-	values[1] = Int64GetDatum(dtm->disabledNodeMask);
-	values[2] = Int64GetDatum(dtm->connectivityMask);
-	values[3] = Int64GetDatum(dtm->nodeLockerMask);
-	values[4] = Int32GetDatum(dtm->nNodes);
-	values[5] = Int32GetDatum((int)dtm->pool.active);
-	values[6] = Int64GetDatum(BgwPoolGetQueueSize(&dtm->pool));
-	values[7] = Int64GetDatum(dtm->transCount);
-	values[8] = Int64GetDatum(dtm->timeShift);
-	values[9] = Int32GetDatum(dtm->recoverySlot);
-	nulls[9] = dtm->recoverySlot == 0;
+	values[0] = CStringGetTextDatum(MtmNodeStatusMnem[Mtm->status]);
+	values[1] = Int64GetDatum(Mtm->disabledNodeMask);
+	values[2] = Int64GetDatum(Mtm->connectivityMask);
+	values[3] = Int64GetDatum(Mtm->nodeLockerMask);
+	values[4] = Int32GetDatum(Mtm->nNodes);
+	values[5] = Int32GetDatum((int)Mtm->pool.active);
+	values[6] = Int64GetDatum(BgwPoolGetQueueSize(&Mtm->pool));
+	values[7] = Int64GetDatum(Mtm->transCount);
+	values[8] = Int64GetDatum(Mtm->timeShift);
+	values[9] = Int32GetDatum(Mtm->recoverySlot);
+	nulls[9] = Mtm->recoverySlot == 0;
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
 }
@@ -1646,7 +1684,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	char* conn_str = pstrdup(MtmConnStrs);
 	char* conn_str_end = conn_str + strlen(conn_str);
 	int i = 0;
-	nodemask_t disabledNodeMask = dtm->disabledNodeMask;
+	nodemask_t disabledNodeMask = Mtm->disabledNodeMask;
 	int failedNode = -1;
 	char const* errorMsg = NULL;
 	PGconn **conns = palloc0(sizeof(PGconn*)*MtmNodes);
@@ -1772,7 +1810,7 @@ static bool MtmProcessDDLCommand(char const* queryString)
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
 
-	dtmTx.containsDML = true;
+	MtmTx.containsDML = true;
 	return false;
 }
 
@@ -1791,16 +1829,16 @@ MtmGenerateGid(char* gid)
 
 static void MtmTwoPhaseCommit(char *completionTag)
 {
-	MtmGenerateGid(dtmTx.gid);
+	MtmGenerateGid(MtmTx.gid);
 	if (!IsTransactionBlock()) { 
-		elog(WARNING, "Start transaction block for %d", dtmTx.xid);
+		elog(WARNING, "Start transaction block for %d", MtmTx.xid);
 		BeginTransactionBlock();
 		CommitTransactionCommand();
 		StartTransactionCommand();
 	}
-	if (!PrepareTransactionBlock(dtmTx.gid))
+	if (!PrepareTransactionBlock(MtmTx.gid))
 	{
-		elog(WARNING, "Failed to prepare transaction %s", dtmTx.gid);
+		elog(WARNING, "Failed to prepare transaction %s", MtmTx.gid);
 		/* report unsuccessful commit in completionTag */
 		if (completionTag) { 
 			strcpy(completionTag, "ROLLBACK");
@@ -1810,10 +1848,10 @@ static void MtmTwoPhaseCommit(char *completionTag)
 		CommitTransactionCommand();
 		StartTransactionCommand();
 		if (MtmGetCurrentTransactionStatus() == TRANSACTION_STATUS_ABORTED) { 
-			FinishPreparedTransaction(dtmTx.gid, false);
-			elog(ERROR, "Transaction %s is aborted by DTM", dtmTx.gid);
+			FinishPreparedTransaction(MtmTx.gid, false);
+			elog(ERROR, "Transaction %s is aborted by DTM", MtmTx.gid);
 		} else {
-			FinishPreparedTransaction(dtmTx.gid, true);
+			FinishPreparedTransaction(MtmTx.gid, true);
 		}
 	}
 }
@@ -1832,7 +1870,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				switch (stmt->kind)
 				{					
 				case TRANS_STMT_COMMIT:
-					if (dtmTx.isDistributed && dtmTx.containsDML) {
+					if (MtmTx.isDistributed && MtmTx.containsDML) {
 						MtmTwoPhaseCommit(completionTag);
 						return;
 					}
@@ -1865,11 +1903,11 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			skipCommand = false;
 			break;
 	}
-	if (!skipCommand && !dtmTx.isReplicated && context == PROCESS_UTILITY_TOPLEVEL) {
+	if (!skipCommand && !MtmTx.isReplicated && context == PROCESS_UTILITY_TOPLEVEL) {
 		if (MtmProcessDDLCommand(queryString)) { 
 			return;
 		}
-		if (dtmTx.isDistributed && dtmTx.containsDML && !IsTransactionBlock()) { 
+		if (MtmTx.isDistributed && MtmTx.containsDML && !IsTransactionBlock()) { 
 			MtmTwoPhaseCommit(completionTag);
 		}
 	}
@@ -1896,12 +1934,12 @@ MtmExecutorFinish(QueryDesc *queryDesc)
 			int i;
 			for (i = 0; i < estate->es_num_result_relations; i++) { 
 				if (RelationNeedsWAL(estate->es_result_relations[i].ri_RelationDesc)) {
-					dtmTx.containsDML = true;
+					MtmTx.containsDML = true;
 					break;
 				}
 			}
         }
-		if (dtmTx.isDistributed && dtmTx.containsDML && !IsTransactionBlock()) { 
+		if (MtmTx.isDistributed && MtmTx.containsDML && !IsTransactionBlock()) { 
 			MtmTwoPhaseCommit(NULL);
 		}
     }
@@ -1923,13 +1961,13 @@ MtmExecutorFinish(QueryDesc *queryDesc)
 
 void MtmExecute(void* work, int size)
 {
-    BgwPoolExecute(&dtm->pool, work, size);
+    BgwPoolExecute(&Mtm->pool, work, size);
 }
     
 static BgwPool* 
 MtmPoolConstructor(void)
 {
-    return &dtm->pool;
+    return &Mtm->pool;
 }
 
 /*
@@ -2025,7 +2063,7 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 		MtmGraphAdd(&graph, (GlobalTransactionId*)buf.data, buf.used/sizeof(GlobalTransactionId));
         ByteBufferFree(&buf);
 		for (i = 0; i < MtmNodes; i++) { 
-			if (i+1 != MtmNodeId && !BIT_CHECK(dtm->disabledNodeMask, i)) { 
+			if (i+1 != MtmNodeId && !BIT_CHECK(Mtm->disabledNodeMask, i)) { 
 				int size;
 				void* data = PaxosGet(psprintf("lock-graph-%d", i+1), &size, NULL, true);
 				if (data == NULL) { 
