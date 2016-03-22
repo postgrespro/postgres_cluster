@@ -404,6 +404,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
  * We collest oldest CSNs from all nodes and choose minimum from them.
  * If no such XID can be located, then return previously observed oldest XID
  */
+#if 0
 static TransactionId 
 MtmAdjustOldestXid(TransactionId xid)
 {
@@ -457,7 +458,53 @@ MtmAdjustOldestXid(TransactionId xid)
     }
     return xid;
 }
+#else
+static TransactionId 
+MtmAdjustOldestXid(TransactionId xid)
+{
+    if (TransactionIdIsValid(xid)) { 
+        MtmTransState *ts, *prev = NULL;
+        int i;
 
+		MtmLock(LW_EXCLUSIVE);
+        ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+        if (ts != NULL && ts->status == TRANSACTION_STATUS_COMMITTED) { 
+			csn_t oldestSnapshot = ts->csn;
+			Mtm->nodes[MtmNodeId-1].oldestSnapshot = oldestSnapshot;
+			for (i = 0; i < MtmNodes; i++) { 
+				if (!BIT_CHECK(Mtm->disabledNodeMask, i)
+					&& Mtm->nodes[i].oldestSnapshot < oldestSnapshot) 
+				{ 
+					oldestSnapshot = Mtm->nodes[i].oldestSnapshot;
+				}
+			}
+			oldestSnapshot -= MtmVacuumDelay*USEC;
+
+			for (ts = Mtm->transListHead; 
+				 ts != NULL 
+					 && ts->csn < oldestSnapshot
+					 && TransactionIdPrecedes(ts->xid, xid)
+					 && (ts->status == TRANSACTION_STATUS_COMMITTED ||
+						 ts->status == TRANSACTION_STATUS_ABORTED);
+				 prev = ts, ts = ts->next) 
+			{ 
+				if (prev != NULL) { 
+					/* Remove information about too old transactions */
+					hash_search(MtmXid2State, &prev->xid, HASH_REMOVE, NULL);
+				}
+			}
+        }
+        if (prev != NULL) { 
+            Mtm->transListHead = prev;
+            Mtm->oldestXid = xid = prev->xid;            
+        } else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) { 
+            xid = Mtm->oldestXid;
+        }
+		MtmUnlock();
+    }
+    return xid;
+}
+#endif
 /*
  * -------------------------------------------
  * Transaction list manipulation
