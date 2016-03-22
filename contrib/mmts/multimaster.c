@@ -166,6 +166,7 @@ int   MtmConnectAttempts;
 int   MtmConnectTimeout;
 int   MtmKeepaliveTimeout;
 int   MtmReconnectAttempts;
+MtmConnectionInfo* MtmConnections;
 
 static char* MtmConnStrs;
 static int MtmQueueSize;
@@ -420,8 +421,13 @@ MtmAdjustOldestXid(TransactionId xid)
 					oldestSnapshot = Mtm->nodes[i].oldestSnapshot;
 				}
 			}
-			for (ts = Mtm->transListHead; ts != NULL && ts->csn < oldestSnapshot; prev = ts, ts = ts->next) { 
-				Assert(ts->status == TRANSACTION_STATUS_COMMITTED || ts->status == TRANSACTION_STATUS_ABORTED || ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+			for (ts = Mtm->transListHead; 
+				 ts != NULL 
+					 && ts->csn < oldestSnapshot
+					 && (ts->status == TRANSACTION_STATUS_COMMITTED || ts->status == TRANSACTION_STATUS_ABORTED)
+					 && TransactionIdPrecedes(ts->xid, xid);
+				 prev = ts, ts = ts->next) 
+			{ 
 				if (prev != NULL) { 
 					/* Remove information about too old transactions */
 					hash_search(MtmXid2State, &prev->xid, HASH_REMOVE, NULL);
@@ -989,7 +995,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 	for (i = 0; i < n; i++) { 
 		if (i+1 != MtmNodeId) { 
 			void* data = PaxosGet(psprintf("node-mask-%d", i+1), NULL, NULL, nowait);
-			matrix[i] = *(nodemask_t*)data;
+			matrix[i] = data ? *(nodemask_t*)data : 0;
 		} else { 
 			matrix[i] = Mtm->connectivityMask;
 		}
@@ -1153,6 +1159,7 @@ static void MtmInitialize()
 		for (i = 0; i < MtmNodes; i++) {
 			Mtm->nodes[i].oldestSnapshot = 0;
 			Mtm->nodes[i].transDelay = 0;
+			Mtm->nodes[i].con = MtmConnections[i];
 		}
 		PGSemaphoreCreate(&Mtm->votingSemaphore);
 		PGSemaphoreReset(&Mtm->votingSemaphore);
@@ -1178,17 +1185,17 @@ MtmShmemStartup(void)
 	MtmInitialize();
 }
 
-void MtmUpdateNodeConnStr(int nodeId, char const* connStr)
+void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 {
 	char const* host;
 	char const* end;
 	int         hostLen;
 
 	if (strlen(connStr) >= MULTIMASTER_MAX_CONN_STR_SIZE) {
-		elog(ERROR, "Too long (%d) connection string '%s' for node %d, limit is %d", 
-			 (int)strlen(connStr), connStr, nodeId, MULTIMASTER_MAX_CONN_STR_SIZE-1);
+		elog(ERROR, "Too long (%d) connection string '%s': limit is %d", 
+			 (int)strlen(connStr), connStr, MULTIMASTER_MAX_CONN_STR_SIZE-1);
 	}
-	strcpy(Mtm->nodes[nodeId-1].connStr, connStr);
+	strcpy(conn->connStr, connStr);
 
 	host = strstr(connStr, "host=");
 	if (host == NULL) {
@@ -1198,30 +1205,46 @@ void MtmUpdateNodeConnStr(int nodeId, char const* connStr)
 	for (end = host; *end != ' ' && *end != '\0'; end++);
 	hostLen = end - host;
 	if (hostLen >= MULTIMASTER_MAX_HOST_NAME_SIZE) {
-		elog(ERROR, "Too long (%d) host name '%.*s' for node %d, limit is %d", 
-			 hostLen, hostLen, host, nodeId, MULTIMASTER_MAX_HOST_NAME_SIZE-1);
+		elog(ERROR, "Too long (%d) host name '%.*s': limit is %d", 
+			 hostLen, hostLen, host, MULTIMASTER_MAX_HOST_NAME_SIZE-1);
 	}
-	memcpy(Mtm->nodes[nodeId-1].hostName, host, hostLen);
-	Mtm->nodes[nodeId-1].hostName[hostLen] = '\0';
+	memcpy(conn->hostName, host, hostLen);
+	conn->hostName[hostLen] = '\0';
 }
 
 static void MtmSplitConnStrs(void)
 {
 	int i;
-	char* copy =  strdup(MtmConnStrs);
+	char* copy =  pstrdup(MtmConnStrs);
     char* connStr = copy;
     char* connStrEnd = connStr + strlen(connStr);
+
+	for (i = 0; connStr < connStrEnd; i++) { 
+		char* p = strchr(connStr, ',');
+        if (p == NULL) { 
+            p = connStrEnd;
+        }
+		connStr = p + 1;
+	}
+	if (i > MAX_NODES) { 
+		elog(ERROR, "Multimaster with more than %d nodes is not currently supported", MAX_NODES);
+	}	
+	if (i < 2) { 
+        elog(ERROR, "Multimaster should have at least two nodes");
+	}	
+	MtmNodes = i;
+	MtmConnections = (MtmConnectionInfo*)palloc(i*sizeof(MtmConnectionInfo));
+	connStr = copy;
 
 	for (i = 0; connStr < connStrEnd; i++) { 
         char* p = strchr(connStr, ',');
         if (p == NULL) { 
             p = connStrEnd;
         }
-		if (i == MAX_NODES) { 
-			elog(ERROR, "Multimaster with more than %d nodes is not currently supported", MAX_NODES);
-		}	
 		*p = '\0';
-		MtmUpdateNodeConnStr(i+1, connStr);
+
+		MtmUpdateNodeConnectionInfo(&MtmConnections[i], connStr);
+
 		if (i+1 == MtmNodeId) { 
 			char* dbName = strstr(connStr, "dbname=");
 			char* end;
@@ -1232,20 +1255,13 @@ static void MtmSplitConnStrs(void)
 			dbName += 7;
 			for (end = dbName; *end != ' ' && *end != '\0'; end++);
 			len = end - dbName;
-			MtmDatabaseName = (char*)malloc(len + 1);
+			MtmDatabaseName = (char*)palloc(len + 1);
 			memcpy(MtmDatabaseName, dbName, len);
 			MtmDatabaseName[len] = '\0';
 		}
 		connStr = p + 1;
     }
-	free(copy);
-	if (i < 2) { 
-        elog(ERROR, "Multimaster should have at least two nodes");
-	}	
-	MtmNodes = i;
-	if (MtmNodeId > MtmNodes) {
-		elog(ERROR, "Invalid node id %d for specified nubmer of nodes %d", MtmNodeId, MtmNodes);
-	}
+	pfree(copy);
 }		
 
 void
