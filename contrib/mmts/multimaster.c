@@ -1195,7 +1195,7 @@ void MtmUpdateNodeConnStr(int nodeId, char const* connStr)
 		elog(ERROR, "Host not specified in connection string: '%s'", connStr);
 	}
 	host += 5;
-	for (end = host; *end != ' ' && *end != ',' && *end != '\0'; end++);
+	for (end = host; *end != ' ' && *end != '\0'; end++);
 	hostLen = end - host;
 	if (hostLen >= MULTIMASTER_MAX_HOST_NAME_SIZE) {
 		elog(ERROR, "Too long (%d) host name '%.*s' for node %d, limit is %d", 
@@ -1229,7 +1229,7 @@ static void MtmSplitConnStrs(void)
 				elog(ERROR, "Database not specified in connection string: '%s'", connStr);
 			}
 			dbName += 7;
-			for (end = dbName; *end != ' ' && *end != ',' && *end != '\0'; end++);
+			for (end = dbName; *end != ' ' && *end != '\0'; end++);
 			len = end - dbName;
 			MtmDatabaseName = (char*)malloc(len + 1);
 			memcpy(MtmDatabaseName, dbName, len);
@@ -1242,6 +1242,9 @@ static void MtmSplitConnStrs(void)
         elog(ERROR, "Multimaster should have at least two nodes");
 	}	
 	MtmNodes = i;
+	if (MtmNodeId > MtmNodes) {
+		elog(ERROR, "Invalid node id %d for specified nubmer of nodes %d", MtmNodeId, MtmNodes);
+	}
 }		
 
 void
@@ -1353,7 +1356,7 @@ _PG_init(void)
 		"Multimaster node ID",
 		NULL,
 		&MtmNodeId,
-		1,
+		INT_MAX,
 		1,
 		INT_MAX,
 		PGC_BACKEND,
