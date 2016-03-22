@@ -578,8 +578,8 @@ void MtmStartReceivers(void)
 
 	for (i = 0; i < MtmNodes; i++) {
         if (i+1 != MtmNodeId) {
-            ReceiverArgs* ctx = (ReceiverArgs*)malloc(sizeof(ReceiverArgs));
-            ctx->receiver_conn_string = psprintf("replication=database %s", Mtm->nodes[i].connStr);
+            ReceiverArgs* ctx = (ReceiverArgs*)palloc(sizeof(ReceiverArgs));
+            ctx->receiver_conn_string = psprintf("replication=database %s", MtmConnections[i].connStr);
             sprintf(ctx->receiver_slot, MULTIMASTER_SLOT_PATTERN, MtmNodeId);
             ctx->local_node = MtmNodeId;
             ctx->remote_node = i+1;

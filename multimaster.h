@@ -81,10 +81,16 @@ typedef enum
 
 typedef struct
 {
+	char hostName[MULTIMASTER_MAX_HOST_NAME_SIZE];
+	char connStr[MULTIMASTER_MAX_CONN_STR_SIZE];
+} MtmConnectionInfo;
+
+
+typedef struct
+{
+	MtmConnectionInfo con;
 	time_t transDelay;
 	csn_t  oldestSnapshot; /* Oldest snapshot used by active transactions at this node */
-	char   hostName[MULTIMASTER_MAX_HOST_NAME_SIZE];
-	char   connStr[MULTIMASTER_MAX_CONN_STR_SIZE];
 } MtmNodeInfo;
 
 typedef struct MtmTransState
@@ -152,6 +158,8 @@ extern int   MtmReconnectAttempts;
 extern int   MtmKeepaliveTimeout;
 extern HTAB* MtmXid2State;
 
+extern MtmConnectionInfo* MtmConnections;
+
 extern void  MtmArbiterInitialize(void);
 extern void  MtmStartReceivers(void);
 extern csn_t MtmTransactionSnapshot(TransactionId xid);
@@ -183,6 +191,6 @@ extern XidStatus MtmGetGlobalTransactionStatus(char const* gid);
 extern bool  MtmIsRecoveredNode(int nodeId);
 extern void  MtmRefreshClusterStatus(bool nowait);
 extern void  MtmSwitchClusterMode(MtmNodeStatus mode);
-extern void  MtmUpdateNodeConnStr(int nodeId, char const* connStr);
+extern void  MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr);
 
 #endif
