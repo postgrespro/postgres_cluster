@@ -1208,7 +1208,8 @@ void MtmUpdateNodeConnStr(int nodeId, char const* connStr)
 static void MtmSplitConnStrs(void)
 {
 	int i;
-    char* connStr = strdup(MtmConnStrs);
+	char* copy =  strdup(MtmConnStrs);
+    char* connStr = copy;
     char* connStrEnd = connStr + strlen(connStr);
 
 	for (i = 0; connStr < connStrEnd; i++) { 
@@ -1237,7 +1238,7 @@ static void MtmSplitConnStrs(void)
 		}
 		connStr = p + 1;
     }
-	free(connStr);
+	free(copy);
 	if (i < 2) { 
         elog(ERROR, "Multimaster should have at least two nodes");
 	}	
