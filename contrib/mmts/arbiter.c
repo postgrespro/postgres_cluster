@@ -598,7 +598,7 @@ static void MtmTransReceiver(Datum arg)
 			tv.tv_usec = MtmKeepaliveTimeout%USEC;
 			do { 
 				n = select(max_fd+1, &events, NULL, NULL, &tv);
-			} while (n < 0 && errno == ENINTR);
+			} while (n < 0 && errno == EINTR);
 		} while (n < 0 && MtmRecovery());
 		
 		if (rc < 0) { 
