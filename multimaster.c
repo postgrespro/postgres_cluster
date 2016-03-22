@@ -171,6 +171,7 @@ MtmConnectionInfo* MtmConnections;
 static char* MtmConnStrs;
 static int MtmQueueSize;
 static int MtmWorkers;
+static int MtmVacuumDelay;
 static int MtmMinRecoveryLag;
 static int MtmMaxRecoveryLag;
 
@@ -408,36 +409,48 @@ MtmAdjustOldestXid(TransactionId xid)
 {
     if (TransactionIdIsValid(xid)) { 
         MtmTransState *ts, *prev = NULL;
-        
+		csn_t oldestSnapshot = 0;
+		int i;
+       
 		MtmLock(LW_EXCLUSIVE);
-        ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-        if (ts != NULL && ts->status == TRANSACTION_STATUS_COMMITTED) {  /* committed transactions have same CSNs at all nodes */
-			csn_t oldestSnapshot;
-			int i;
-
-			Mtm->nodes[MtmNodeId-1].oldestSnapshot = oldestSnapshot = ts->csn;
-			for (i = 0; i < MtmNodes; i++) { 
-				if (Mtm->nodes[i].oldestSnapshot < oldestSnapshot) { 
-					oldestSnapshot = Mtm->nodes[i].oldestSnapshot;
-				}
+		for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
+			if (TransactionIdPrecedes(ts->xid, xid)
+				&& ts->status == TRANSACTION_STATUS_COMMITTED
+				&& ts->csn > oldestSnapshot)
+			{
+				oldestSnapshot = ts->csn;
 			}
-			for (ts = Mtm->transListHead; 
-				 ts != NULL 
-					 && ts->csn < oldestSnapshot
-					 && (ts->status == TRANSACTION_STATUS_COMMITTED || ts->status == TRANSACTION_STATUS_ABORTED)
-					 && TransactionIdPrecedes(ts->xid, xid);
-				 prev = ts, ts = ts->next) 
+		}		
+		Mtm->nodes[MtmNodeId-1].oldestSnapshot = oldestSnapshot;
+		for (i = 0; i < MtmNodes; i++) { 
+			if (!BIT_CHECK(Mtm->disabledNodeMask, i)
+				&& Mtm->nodes[i].oldestSnapshot < oldestSnapshot) 
 			{ 
-				if (prev != NULL) { 
-					/* Remove information about too old transactions */
-					hash_search(MtmXid2State, &prev->xid, HASH_REMOVE, NULL);
-				}
+				oldestSnapshot = Mtm->nodes[i].oldestSnapshot;
 			}
-        }
-        if (prev != NULL) { 
-            Mtm->transListHead = prev;
-            Mtm->oldestXid = xid = prev->xid;            
-        } else { 
+		}
+		oldestSnapshot -= MtmVacuumDelay*USEC;
+		for (ts = Mtm->transListHead; 
+			 ts != NULL 
+				 && ts->csn < oldestSnapshot
+				 && TransactionIdPrecedes(ts->xid, xid)
+				 && (ts->status == TRANSACTION_STATUS_COMMITTED ||
+					 ts->status == TRANSACTION_STATUS_ABORTED);
+			 ts = ts->next) 
+		{
+			if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
+				prev = ts;
+			}
+		}
+		if (prev != NULL) { 
+			for (ts = Mtm->transListHead; ts != prev; ts = ts->next) {
+				/* Remove information about too old transactions */
+				Assert(ts->status != TRANSACTION_STATUS_UNKNOWN);
+				hash_search(MtmXid2State, &ts->xid, HASH_REMOVE, NULL);
+			}
+			Mtm->transListHead = prev;
+			Mtm->oldestXid = xid = prev->xid;            
+        } else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) {
             xid = Mtm->oldestXid;
         }
 		MtmUnlock();
@@ -1316,6 +1329,21 @@ _PG_init(void)
 		NULL,
 		&MtmWorkers,
 		8,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.vacuum_delay",
+		"Minimal age of records which can be vacuumed (seconds)",
+		NULL,
+		&MtmVacuumDelay,
+		1,
 		1,
 		INT_MAX,
 		PGC_BACKEND,
