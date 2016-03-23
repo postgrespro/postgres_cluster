@@ -38,7 +38,7 @@ register_wait_collector(void)
 {
 	BackgroundWorker worker;
 
-	/* set up common data for all our workers */
+	/* Set up background worker parameters */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
@@ -68,11 +68,14 @@ static void
 realloc_history(History *observations, int count)
 {
 	HistoryItem	   *newitems;
-	int				copyCount;
-	int				i, j;
+	int				copyCount,
+					i,
+					j;
 
+	/* Allocate new array for history */
 	newitems = (HistoryItem *) palloc0(sizeof(HistoryItem) * count);
 
+	/* Copy entries from old array to the new */
 	if (observations->wraparound)
 		copyCount = observations->count;
 	else
@@ -94,9 +97,9 @@ realloc_history(History *observations, int count)
 		j++;
 	}
 
+	/* Switch to new history array */
 	pfree(observations->items);
 	observations->items = newitems;
-
 	observations->index = copyCount;
 	observations->count = count;
 	observations->wraparound = false;
@@ -131,7 +134,8 @@ get_next_observation(History *observations)
 }
 
 /*
- * Read current waits from backends and write them to history array.
+ * Read current waits from backends and write them to history array
+ * and/or profile hash.
  */
 static void
 probe_waits(History *observations, HTAB *profile_hash,
@@ -146,6 +150,7 @@ probe_waits(History *observations, HTAB *profile_hash,
 	if (observations->count != newSize)
 		realloc_history(observations, newSize);
 
+	/* Iterate PGPROCs under shared lock */
 	LWLockAcquire(ProcArrayLock, LW_SHARED);
 	for (i = 0; i < ProcGlobal->allProcCount; i++)
 	{
@@ -156,16 +161,19 @@ probe_waits(History *observations, HTAB *profile_hash,
 		if (proc->pid == 0)
 			continue;
 
+		/* Collect next wait event sample */
 		item.pid = proc->pid;
 		item.wait_event_info = proc->wait_event_info;
 		item.ts = ts;
 
+		/* Write to the history if needed */
 		if (write_history)
 		{
 			observation = get_next_observation(observations);
 			*observation = item;
 		}
 
+		/* Write to the profile if needed */
 		if (write_profile)
 		{
 			ProfileItem	   *profileItem;
@@ -200,6 +208,9 @@ send_history(History *observations, shm_mq_handle *mqh)
 		shm_mq_send(mqh, sizeof(HistoryItem), &observations->items[i], false);
 }
 
+/*
+ * Send profile to shared memory queue.
+ */
 static void
 send_profile(HTAB *profile_hash, shm_mq_handle *mqh)
 {
@@ -215,6 +226,9 @@ send_profile(HTAB *profile_hash, shm_mq_handle *mqh)
 	}
 }
 
+/*
+ * Make hash table for wait profile.
+ */
 static HTAB *
 make_profile_hash()
 {
@@ -229,6 +243,9 @@ make_profile_hash()
 					   HASH_FUNCTION | HASH_ELEM);
 }
 
+/*
+ * Delta between two timestamps in milliseconds.
+ */
 static int64
 millisecs_diff(TimestampTz tz1, TimestampTz tz2)
 {
@@ -322,6 +339,10 @@ collector_main(Datum main_arg)
 			}
 		}
 
+		/* Shutdown if requested */
+		if (shutdown_requested)
+			break;
+
 		rc = WaitLatch(&MyProc->procLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 				Min(history_period - (int)history_diff,
 					profile_period - (int)profile_diff));
@@ -329,39 +350,40 @@ collector_main(Datum main_arg)
 		if (rc & WL_POSTMASTER_DEATH)
 			exit(1);
 
-		if (shutdown_requested)
-			break;
-
 		ResetLatch(&MyProc->procLatch);
 
+		/* Handle request if any */
 		if (collector_hdr->request != NO_REQUEST)
 		{
 			SHMRequest request = collector_hdr->request;
 
 			collector_hdr->request = NO_REQUEST;
 
-			shm_mq_set_sender(collector_mq, MyProc);
-			mqh = shm_mq_attach(collector_mq, NULL, NULL);
-			shm_mq_wait_for_attach(mqh);
-
-			if (shm_mq_get_receiver(collector_mq) != NULL)
+			if (request == HISTORY_REQUEST || request == PROFILE_REQUEST)
 			{
-				if (request == HISTORY_REQUEST)
+				/* Send history or profile */
+				shm_mq_set_sender(collector_mq, MyProc);
+				mqh = shm_mq_attach(collector_mq, NULL, NULL);
+				shm_mq_wait_for_attach(mqh);
+				if (shm_mq_get_receiver(collector_mq) != NULL)
 				{
-					send_history(&observations, mqh);
+					if (request == HISTORY_REQUEST)
+					{
+						send_history(&observations, mqh);
+					}
+					else if (request == PROFILE_REQUEST)
+					{
+						send_profile(profile_hash, mqh);
+					}
 				}
-				else if (request == PROFILE_REQUEST)
-				{
-					send_profile(profile_hash, mqh);
-				}
-				else if (request == PROFILE_RESET)
-				{
-					hash_destroy(profile_hash);
-					profile_hash = make_profile_hash();
-				}
+				shm_mq_detach(collector_mq);
 			}
-
-			shm_mq_detach(collector_mq);
+			else if (request == PROFILE_RESET)
+			{
+				/* Reset profile hash */
+				hash_destroy(profile_hash);
+				profile_hash = make_profile_hash();
+			}
 		}
 	}
 

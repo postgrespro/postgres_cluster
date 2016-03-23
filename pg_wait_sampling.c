@@ -103,16 +103,15 @@ pgws_shmem_startup(void)
 		collector_mq = shm_toc_lookup(toc, 1);
 	}
 
+	/* Initialize GUC variables in shared memory */
 	DefineCustomIntVariable("pg_wait_sampling.history_size",
 			"Sets size of waits history.", NULL,
 			&collector_hdr->historySize, 5000, 100, INT_MAX,
 			PGC_SUSET, 0, shmem_int_guc_check_hook, NULL, NULL);
-
 	DefineCustomIntVariable("pg_wait_sampling.history_period",
 			"Sets period of waits history sampling.", NULL,
 			&collector_hdr->historyPeriod, 10, 1, INT_MAX,
 			PGC_SUSET, 0, shmem_int_guc_check_hook, NULL, NULL);
-
 	DefineCustomIntVariable("pg_wait_sampling.profile_period",
 			"Sets period of waits profile sampling.", NULL,
 			&collector_hdr->profilePeriod, 10, 1, INT_MAX,
@@ -173,7 +172,8 @@ _PG_fini(void)
 }
 
 /*
- * Find PGPROC entry responsible for given pid.
+ * Find PGPROC entry responsible for given pid assuming ProcArrayLock was
+ * already taken.
  */
 static PGPROC *
 search_proc(int pid)
@@ -199,7 +199,7 @@ search_proc(int pid)
 
 typedef struct
 {
-	HistoryItem	   *state;
+	HistoryItem	   *items;
 	TimestampTz		ts;
 } WaitCurrentContext;
 
@@ -238,15 +238,15 @@ pg_wait_sampling_get_current(PG_FUNCTION_ARGS)
 
 		if (!PG_ARGISNULL(0))
 		{
-			HistoryItem		item;
+			HistoryItem	   *item;
 			PGPROC		   *proc;
 
 			proc = search_proc(PG_GETARG_UINT32(0));
-			item.pid = proc->pid;
-			item.wait_event_info = proc->wait_event_info;
-			params->state = (HistoryItem *)palloc0(sizeof(HistoryItem));
+			params->items = (HistoryItem *) palloc0(sizeof(HistoryItem));
+			item = &params->items[0];
+			item->pid = proc->pid;
+			item->wait_event_info = proc->wait_event_info;
 			funcctx->max_calls = 1;
-			*params->state = item;
 		}
 		else
 		{
@@ -254,15 +254,15 @@ pg_wait_sampling_get_current(PG_FUNCTION_ARGS)
 					i,
 					j = 0;
 
-			params->state = (HistoryItem *) palloc0(sizeof(HistoryItem) * procCount);
+			params->items = (HistoryItem *) palloc0(sizeof(HistoryItem) * procCount);
 			for (i = 0; i < procCount; i++)
 			{
 				PGPROC *proc = &ProcGlobal->allProcs[i];
 
 				if (proc != NULL && proc->pid != 0)
 				{
-					params->state[j].pid = proc->pid;
-					params->state[j].wait_event_info = proc->wait_event_info;
+					params->items[j].pid = proc->pid;
+					params->items[j].wait_event_info = proc->wait_event_info;
 					j++;
 				}
 			}
@@ -288,7 +288,7 @@ pg_wait_sampling_get_current(PG_FUNCTION_ARGS)
 				   *event;
 		HistoryItem *item;
 
-		item = &params->state[funcctx->call_cntr];
+		item = &params->items[funcctx->call_cntr];
 
 		MemSet(values, 0, sizeof(values));
 		MemSet(nulls, 0, sizeof(nulls));

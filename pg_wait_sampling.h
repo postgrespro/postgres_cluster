@@ -22,14 +22,14 @@
 
 typedef struct
 {
-	int				pid;
+	uint32			pid;
 	uint32			wait_event_info;
 	uint64			count;
 } ProfileItem;
 
 typedef struct
 {
-	int				pid;
+	uint32			pid;
 	uint32			wait_event_info;
 	TimestampTz		ts;
 } HistoryItem;
