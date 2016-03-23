@@ -37,8 +37,8 @@ typedef struct
 typedef struct
 {
 	bool			wraparound;
-	int				index;
-	int				count;
+	Size			index;
+	Size			count;
 	HistoryItem	   *items;
 } History;
 
@@ -63,9 +63,10 @@ typedef struct
 extern void check_shmem(void);
 extern CollectorShmqHeader *collector_hdr;
 extern shm_mq			   *collector_mq;
-
 extern void read_current_wait(PGPROC *proc, HistoryItem *item);
-extern void RegisterWaitsCollector(void);
-extern void AllocHistory(History *, int);
+
+/* collector.c */
+extern void register_wait_collector(void);
+extern void alloc_history(History *, int);
 
 #endif

@@ -6,7 +6,6 @@
 CREATE FUNCTION pg_wait_sampling_get_current (
 	pid int4,
 	OUT pid int4,
-	OUT ts timestamptz,
 	OUT event_type text,
 	OUT event text
 )

@@ -14,7 +14,6 @@
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "pgstat.h"
-#include "postmaster/autovacuum.h"
 #include "storage/spin.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
@@ -43,9 +42,6 @@ shm_mq				   *collector_mq = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 
 static PGPROC * search_proc(int backendPid);
-static TupleDesc get_history_item_tupledesc();
-static HeapTuple get_history_item_tuple(HistoryItem *item, TupleDesc tuple_desc);
-
 
 /*
  * Estimate amount of shared memory needed.
@@ -157,7 +153,7 @@ _PG_init(void)
 	 */
 	RequestAddinShmemSpace(pgws_shmem_size());
 
-	RegisterWaitsCollector();
+	register_wait_collector();
 
 	/*
 	 * Install hooks.
@@ -174,57 +170,6 @@ _PG_fini(void)
 {
 	/* Uninstall hooks. */
 	shmem_startup_hook = prev_shmem_startup_hook;
-}
-
-/*
- * Make a TupleDesc describing single item of waits history.
- */
-static TupleDesc
-get_history_item_tupledesc()
-{
-	TupleDesc	tupdesc;
-
-	tupdesc = CreateTemplateTupleDesc(4, false);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "pid",
-					   INT4OID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "sample_ts",
-					   TIMESTAMPTZOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 3, "type",
-					   TEXTOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 4, "event",
-					   TEXTOID, -1, 0);
-
-	return BlessTupleDesc(tupdesc);
-}
-
-static HeapTuple
-get_history_item_tuple(HistoryItem *item, TupleDesc tuple_desc)
-{
-	HeapTuple	tuple;
-	Datum		values[4];
-	bool		nulls[4];
-	const char *event_type,
-			   *event;
-
-	MemSet(values, 0, sizeof(values));
-	MemSet(nulls, 0, sizeof(nulls));
-
-	/* Values available to all callers */
-	event_type = pgstat_get_wait_event_type(item->wait_event_info);
-	event = pgstat_get_wait_event(item->wait_event_info);
-	values[0] = Int32GetDatum(item->pid);
-	values[1] = TimestampTzGetDatum(item->ts);
-	if (event_type)
-		values[2] = PointerGetDatum(cstring_to_text(event_type));
-	else
-		nulls[2] = true;
-	if (event)
-		values[3] = PointerGetDatum(cstring_to_text(event));
-	else
-		nulls[3] = true;
-
-	tuple = heap_form_tuple(tuple_desc, values, nulls);
-	return tuple;
 }
 
 /*
@@ -269,6 +214,7 @@ pg_wait_sampling_get_current(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		MemoryContext		oldcontext;
+		TupleDesc			tupdesc;
 		WaitCurrentContext 	*params;
 
 		funcctx = SRF_FIRSTCALL_INIT();
@@ -278,7 +224,15 @@ pg_wait_sampling_get_current(PG_FUNCTION_ARGS)
 		params->ts = GetCurrentTimestamp();
 
 		funcctx->user_fctx = params;
-		funcctx->tuple_desc = get_history_item_tupledesc();
+		tupdesc = CreateTemplateTupleDesc(3, false);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 1, "pid",
+						   INT4OID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 2, "type",
+						   TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 3, "event",
+						   TEXTOID, -1, 0);
+
+		funcctx->tuple_desc = BlessTupleDesc(tupdesc);
 
 		LWLockAcquire(ProcArrayLock, LW_SHARED);
 
@@ -288,17 +242,17 @@ pg_wait_sampling_get_current(PG_FUNCTION_ARGS)
 			PGPROC		   *proc;
 
 			proc = search_proc(PG_GETARG_UINT32(0));
-			read_current_wait(proc, &item);
+			item.pid = proc->pid;
+			item.wait_event_info = proc->wait_event_info;
 			params->state = (HistoryItem *)palloc0(sizeof(HistoryItem));
 			funcctx->max_calls = 1;
 			*params->state = item;
 		}
 		else
 		{
-			int					procCount = ProcGlobal->allProcCount,
-								i,
-								j = 0;
-			Timestamp			currentTs = GetCurrentTimestamp();
+			int		procCount = ProcGlobal->allProcCount,
+					i,
+					j = 0;
 
 			params->state = (HistoryItem *) palloc0(sizeof(HistoryItem) * procCount);
 			for (i = 0; i < procCount; i++)
@@ -307,8 +261,8 @@ pg_wait_sampling_get_current(PG_FUNCTION_ARGS)
 
 				if (proc != NULL && proc->pid != 0)
 				{
-					read_current_wait(proc, &params->state[j]);
-					params->state[j].ts = currentTs;
+					params->state[j].pid = proc->pid;
+					params->state[j].wait_event_info = proc->wait_event_info;
 					j++;
 				}
 			}
@@ -322,15 +276,37 @@ pg_wait_sampling_get_current(PG_FUNCTION_ARGS)
 
 	/* stuff done on every call of the function */
 	funcctx = SRF_PERCALL_SETUP();
-	params = (WaitCurrentContext *)funcctx->user_fctx;
+	params = (WaitCurrentContext *) funcctx->user_fctx;
 	currentState = NULL;
 
 	if (funcctx->call_cntr < funcctx->max_calls)
 	{
-		HeapTuple tuple;
+		HeapTuple	tuple;
+		Datum		values[3];
+		bool		nulls[3];
+		const char *event_type,
+				   *event;
+		HistoryItem *item;
 
-		tuple = get_history_item_tuple(&params->state[funcctx->call_cntr],
-									   funcctx->tuple_desc);
+		item = &params->state[funcctx->call_cntr];
+
+		MemSet(values, 0, sizeof(values));
+		MemSet(nulls, 0, sizeof(nulls));
+
+		event_type = pgstat_get_wait_event_type(item->wait_event_info);
+		event = pgstat_get_wait_event(item->wait_event_info);
+		values[0] = Int32GetDatum(item->pid);
+		if (event_type)
+			values[1] = PointerGetDatum(cstring_to_text(event_type));
+		else
+			nulls[1] = true;
+		if (event)
+			values[2] = PointerGetDatum(cstring_to_text(event));
+		else
+			nulls[2] = true;
+
+		tuple = heap_form_tuple(funcctx->tuple_desc, values, nulls);
+
 		SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(tuple));
 	}
 	else
@@ -341,12 +317,12 @@ pg_wait_sampling_get_current(PG_FUNCTION_ARGS)
 
 typedef struct
 {
-	long			count;
+	Size			count;
 	ProfileItem	   *items;
 } Profile;
 
 static void
-initLockTag(LOCKTAG *tag)
+init_lock_tag(LOCKTAG *tag)
 {
 	tag->locktag_field1 = PG_WAIT_SAMPLING_MAGIC;
 	tag->locktag_field2 = 0;
@@ -356,79 +332,79 @@ initLockTag(LOCKTAG *tag)
 	tag->locktag_lockmethodid = USER_LOCKMETHOD;
 }
 
-static Profile *
-receive_profile(shm_mq_handle *mqh)
+static void *
+receive_array(SHMRequest request, Size item_size, Size *count)
 {
-	Size			len;
-	void		   *data;
-	Profile		   *result;
-	long			count,
-					i;
+	LOCKTAG			tag;
+	shm_mq		   *mq;
+	shm_mq_handle  *mqh;
 	shm_mq_result	res;
+	Size			len,
+					i;
+	void		   *data;
+	Pointer			result,
+					ptr;
+
+	init_lock_tag(&tag);
+	LockAcquire(&tag, ExclusiveLock, false, false);
+
+	mq = shm_mq_create(collector_mq, COLLECTOR_QUEUE_SIZE);
+	collector_hdr->request = request;
+
+	SetLatch(collector_hdr->latch);
+
+	shm_mq_set_receiver(mq, MyProc);
+	mqh = shm_mq_attach(mq, NULL, NULL);
 
 	res = shm_mq_receive(mqh, &len, &data, false);
-	if (res != SHM_MQ_SUCCESS)
+	if (res != SHM_MQ_SUCCESS || len != sizeof(*count))
 		elog(ERROR, "Error reading mq.");
-	if (len != sizeof(count))
-		elog(ERROR, "Invalid message length.");
-	memcpy(&count, data, sizeof(count));
+	memcpy(count, data, sizeof(*count));
 
-	result = (Profile *) palloc(sizeof(Profile));
-	result->count = count;
-	result->items = (ProfileItem *) palloc(result->count * sizeof(ProfileItem));
+	result = palloc(item_size * (*count));
+	ptr = result;
 
-	for (i = 0; i < count; i++)
+	for (i = 0; i < *count; i++)
 	{
 		res = shm_mq_receive(mqh, &len, &data, false);
-		if (res != SHM_MQ_SUCCESS)
+		if (res != SHM_MQ_SUCCESS || len != item_size)
 			elog(ERROR, "Error reading mq.");
-		if (len != sizeof(ProfileItem))
-			elog(ERROR, "Invalid item message length %d %d.", len, sizeof(ProfileItem));
-		memcpy(&result->items[i], data, sizeof(ProfileItem));
+		memcpy(ptr, data, item_size);
+		ptr += item_size;
 	}
+
+	shm_mq_detach(mq);
+
+	LockRelease(&tag, ExclusiveLock, false);
 
 	return result;
 }
+
 
 PG_FUNCTION_INFO_V1(pg_wait_sampling_get_profile);
 Datum
 pg_wait_sampling_get_profile(PG_FUNCTION_ARGS)
 {
-	Profile *profile;
-	FuncCallContext *funcctx;
+	Profile			   *profile;
+	FuncCallContext	   *funcctx;
 
 	if (SRF_IS_FIRSTCALL())
 	{
-		shm_mq			   *mq;
-		shm_mq_handle	   *mqh;
-		LOCKTAG				tag;
 		MemoryContext		oldcontext;
 		TupleDesc			tupdesc;
 
 		funcctx = SRF_FIRSTCALL_INIT();
-
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
-		initLockTag(&tag);
+		/* Receive profile from shmq */
+		profile = (Profile *) palloc0(sizeof(Profile));
+		profile->items = (ProfileItem *) receive_array(PROFILE_REQUEST,
+										sizeof(ProfileItem), &profile->count);
 
-		LockAcquire(&tag, ExclusiveLock, false, false);
-
-		mq = shm_mq_create(shm_toc_lookup(toc, 1), COLLECTOR_QUEUE_SIZE);
-		collector_hdr->request = PROFILE_REQUEST;
-
-		SetLatch(collector_hdr->latch);
-
-		shm_mq_set_receiver(mq, MyProc);
-		mqh = shm_mq_attach(mq, NULL, NULL);
-
-		profile = receive_profile(mqh);
 		funcctx->user_fctx = profile;
 		funcctx->max_calls = profile->count;
 
-		shm_mq_detach(mq);
-
-		LockRelease(&tag, ExclusiveLock, false);
-
+		/* Make tuple descriptor */
 		tupdesc = CreateTemplateTupleDesc(4, false);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 1, "pid",
 						   INT4OID, -1, 0);
@@ -438,7 +414,6 @@ pg_wait_sampling_get_profile(PG_FUNCTION_ARGS)
 						   TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 4, "count",
 						   INT8OID, -1, 0);
-
 		funcctx->tuple_desc = BlessTupleDesc(tupdesc);
 
 		MemoryContextSwitchTo(oldcontext);
@@ -495,7 +470,7 @@ pg_wait_sampling_reset_profile(PG_FUNCTION_ARGS)
 {
 	LOCKTAG		tag;
 
-	initLockTag(&tag);
+	init_lock_tag(&tag);
 
 	LockAcquire(&tag, ExclusiveLock, false, false);
 
@@ -507,44 +482,11 @@ pg_wait_sampling_reset_profile(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-static History *
-receive_observations(shm_mq_handle *mqh)
-{
-	Size			len;
-	void		   *data;
-	History		   *result;
-	int				count,
-					i;
-	shm_mq_result	res;
-
-	res = shm_mq_receive(mqh, &len, &data, false);
-	if (res != SHM_MQ_SUCCESS)
-		elog(ERROR, "Error reading mq.");
-	if (len != sizeof(count))
-		elog(ERROR, "Invalid message length.");
-	memcpy(&count, data, sizeof(count));
-
-	result = (History *) palloc(sizeof(History));
-	AllocHistory(result, count);
-
-	for (i = 0; i < count; i++)
-	{
-		res = shm_mq_receive(mqh, &len, &data, false);
-		if (res != SHM_MQ_SUCCESS)
-			elog(ERROR, "Error reading mq.");
-		if (len != sizeof(HistoryItem))
-			elog(ERROR, "Invalid message length.");
-		memcpy(&result->items[i], data, sizeof(HistoryItem));
-	}
-
-	return result;
-}
-
 PG_FUNCTION_INFO_V1(pg_wait_sampling_get_history);
 Datum
 pg_wait_sampling_get_history(PG_FUNCTION_ARGS)
 {
-	History				*observations;
+	History				*history;
 	FuncCallContext		*funcctx;
 
 	check_shmem();
@@ -552,48 +494,70 @@ pg_wait_sampling_get_history(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		MemoryContext	oldcontext;
-		LOCKTAG			tag;
-		shm_mq		   *mq;
-		shm_mq_handle  *mqh;
+		TupleDesc		tupdesc;
 
 		funcctx = SRF_FIRSTCALL_INIT();
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
-		initLockTag(&tag);
-		LockAcquire(&tag, ExclusiveLock, false, false);
+		/* Receive history from shmq */
+		history = (History *) palloc0(sizeof(History));
+		history->items = (HistoryItem *) receive_array(HISTORY_REQUEST,
+										sizeof(HistoryItem), &history->count);
 
-		mq = shm_mq_create(collector_mq, COLLECTOR_QUEUE_SIZE);
-		collector_hdr->request = HISTORY_REQUEST;
+		funcctx->user_fctx = history;
+		funcctx->max_calls = history->count;
 
-		SetLatch(collector_hdr->latch);
+		/* Make tuple descriptor */
+		tupdesc = CreateTemplateTupleDesc(4, false);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 1, "pid",
+						   INT4OID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 2, "sample_ts",
+						   TIMESTAMPTZOID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 3, "type",
+						   TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 4, "event",
+						   TEXTOID, -1, 0);
+		funcctx->tuple_desc = BlessTupleDesc(tupdesc);
 
-		shm_mq_set_receiver(mq, MyProc);
-		mqh = shm_mq_attach(mq, NULL, NULL);
-
-		observations = receive_observations(mqh);
-		funcctx->user_fctx = observations;
-		funcctx->max_calls = observations->count;
-
-		shm_mq_detach(mq);
-		LockRelease(&tag, ExclusiveLock, false);
-
-		funcctx->tuple_desc = get_history_item_tupledesc();
 		MemoryContextSwitchTo(oldcontext);
 	}
 
 	/* stuff done on every call of the function */
 	funcctx = SRF_PERCALL_SETUP();
 
-	observations = (History *)funcctx->user_fctx;
+	history = (History *) funcctx->user_fctx;
 
-	if (observations->index < observations->count)
+	if (history->index < history->count)
 	{
 		HeapTuple	tuple;
-		HistoryItem *observation;
+		HistoryItem *item;
+		Datum		values[4];
+		bool		nulls[4];
+		const char *event_type,
+				   *event;
 
-		observation = &observations->items[observations->index];
-		tuple = get_history_item_tuple(observation, funcctx->tuple_desc);
-		observations->index++;
+		item = &history->items[history->index];
+
+		MemSet(values, 0, sizeof(values));
+		MemSet(nulls, 0, sizeof(nulls));
+
+		/* Values available to all callers */
+		event_type = pgstat_get_wait_event_type(item->wait_event_info);
+		event = pgstat_get_wait_event(item->wait_event_info);
+		values[0] = Int32GetDatum(item->pid);
+		values[1] = TimestampTzGetDatum(item->ts);
+		if (event_type)
+			values[2] = PointerGetDatum(cstring_to_text(event_type));
+		else
+			nulls[2] = true;
+		if (event)
+			values[3] = PointerGetDatum(cstring_to_text(event));
+		else
+			nulls[3] = true;
+
+		tuple = heap_form_tuple(funcctx->tuple_desc, values, nulls);
+
+		history->index++;
 		SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(tuple));
 	}
 	else

@@ -9,7 +9,6 @@
  */
 #include "postgres.h"
 
-#include "access/htup_details.h"
 #include "catalog/pg_type.h"
 #include "funcapi.h"
 #include "miscadmin.h"
@@ -17,14 +16,12 @@
 #include "storage/ipc.h"
 #include "storage/procarray.h"
 #include "storage/procsignal.h"
-#include "storage/s_lock.h"
 #include "storage/shm_mq.h"
 #include "storage/shm_toc.h"
 #include "storage/spin.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"
 #include "utils/resowner.h"
-#include "portability/instr_time.h"
 
 #include "pg_wait_sampling.h"
 
@@ -37,13 +34,12 @@ static void collector_main(Datum main_arg);
  * Register background worker for collecting waits history.
  */
 void
-RegisterWaitsCollector(void)
+register_wait_collector(void)
 {
 	BackgroundWorker worker;
 
 	/* set up common data for all our workers */
-	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
-		BGWORKER_BACKEND_DATABASE_CONNECTION;
+	worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
 	worker.bgw_main = collector_main;
@@ -57,7 +53,7 @@ RegisterWaitsCollector(void)
  * Allocate memory for waits history.
  */
 void
-AllocHistory(History *observations, int count)
+alloc_history(History *observations, int count)
 {
 	observations->items = (HistoryItem *) palloc0(sizeof(HistoryItem) * count);
 	observations->index = 0;
@@ -69,7 +65,7 @@ AllocHistory(History *observations, int count)
  * Reallocate memory for changed number of history items.
  */
 static void
-ReallocHistory(History *observations, int count)
+realloc_history(History *observations, int count)
 {
 	HistoryItem	   *newitems;
 	int				copyCount;
@@ -85,14 +81,17 @@ ReallocHistory(History *observations, int count)
 	copyCount = Min(copyCount, count);
 
 	i = 0;
-	j = observations->index;
+	if (observations->wraparound)
+		j = observations->index + 1;
+	else
+		j = 0;
 	while (i < copyCount)
 	{
-		j--;
-		if (j < 0)
-			j = observations->count - 1;
+		if (j >= observations->count)
+			j = 0;
 		memcpy(&newitems[i], &observations->items[j], sizeof(HistoryItem));
 		i++;
+		j++;
 	}
 
 	pfree(observations->items);
@@ -101,17 +100,6 @@ ReallocHistory(History *observations, int count)
 	observations->index = copyCount;
 	observations->count = count;
 	observations->wraparound = false;
-}
-
-/* 
- * Read current wait information for given proc.
- */
-void
-read_current_wait(PGPROC *proc, HistoryItem *item)
-{
-	item->pid = proc->pid;
-	item->wait_event_info = proc->wait_event_info;
-	item->ts = GetCurrentTimestamp();
 }
 
 static void
@@ -149,13 +137,14 @@ static void
 probe_waits(History *observations, HTAB *profile_hash,
 			bool write_history, bool write_profile)
 {
-	int		i,
-			newSize;
+	int			i,
+				newSize;
+	TimestampTz	ts = GetCurrentTimestamp();
 
 	/* Realloc waits history if needed */
 	newSize = collector_hdr->historySize;
 	if (observations->count != newSize)
-		ReallocHistory(observations, newSize);
+		realloc_history(observations, newSize);
 
 	LWLockAcquire(ProcArrayLock, LW_SHARED);
 	for (i = 0; i < ProcGlobal->allProcCount; i++)
@@ -167,7 +156,9 @@ probe_waits(History *observations, HTAB *profile_hash,
 		if (proc->pid == 0)
 			continue;
 
-		read_current_wait(proc, &item);
+		item.pid = proc->pid;
+		item.wait_event_info = proc->wait_event_info;
+		item.ts = ts;
 
 		if (write_history)
 		{
@@ -196,7 +187,7 @@ probe_waits(History *observations, HTAB *profile_hash,
 static void
 send_history(History *observations, shm_mq_handle *mqh)
 {
-	int		count,
+	Size	count,
 			i;
 
 	if (observations->wraparound)
@@ -212,12 +203,11 @@ send_history(History *observations, shm_mq_handle *mqh)
 static void
 send_profile(HTAB *profile_hash, shm_mq_handle *mqh)
 {
-	HASH_SEQ_STATUS scan_status;
-	ProfileItem  *item;
-	long		count = hash_get_num_entries(profile_hash);
+	HASH_SEQ_STATUS	scan_status;
+	ProfileItem	   *item;
+	Size			count = hash_get_num_entries(profile_hash);
 
 	shm_mq_send(mqh, sizeof(count), &count, false);
-
 	hash_seq_init(&scan_status, profile_hash);
 	while ((item = (ProfileItem *) hash_seq_search(&scan_status)) != NULL)
 	{
@@ -288,7 +278,7 @@ collector_main(Datum main_arg)
 			ALLOCSET_DEFAULT_INITSIZE,
 			ALLOCSET_DEFAULT_MAXSIZE);
 	old_context = MemoryContextSwitchTo(collector_context);
-	AllocHistory(&observations, collector_hdr->historySize);
+	alloc_history(&observations, collector_hdr->historySize);
 	MemoryContextSwitchTo(old_context);
 
 	profile_ts = history_ts = GetCurrentTimestamp();
