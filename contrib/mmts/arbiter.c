@@ -243,30 +243,34 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 	if (!MtmResolveHostByName(host, addrs, &n_addrs)) {
 		elog(ERROR, "Arbiter failed to resolve host '%s' by name", host);
 	}
-  Retry:
-	sd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sd < 0) {
-	    elog(ERROR, "Arbiter failed to create socket: %d", errno);
-    }
+
+Retry:
+
     while (1) {
 		int rc = -1;
+
+		sd = socket(AF_INET, SOCK_STREAM, 0);
+		if (sd < 0) {
+			elog(ERROR, "Arbiter failed to create socket: %d", errno);
+		}
 		for (i = 0; i < n_addrs; ++i) {
 			memcpy(&sock_inet.sin_addr, &addrs[i], sizeof sock_inet.sin_addr);
 			do {
 				rc = connect(sd, (struct sockaddr*)&sock_inet, sizeof(sock_inet));
 			} while (rc < 0 && errno == EINTR);
-			
+
 			if (rc >= 0 || errno == EINPROGRESS) {
 				break;
 			}
 		}
 		if (rc < 0) {
 			if ((errno != ENOENT && errno != ECONNREFUSED && errno != EINPROGRESS) || max_attempts == 0) {
-				elog(WARNING, "Arbiter failed to connect to %s:%d: %d", host, port, errno);
+				elog(WARNING, "Arbiter failed to connect to %s:%d: error=%d", host, port, errno);
 				return -1;
 			} else { 
 				max_attempts -= 1;
-				MtmSleep(MtmConnectTimeout);
+				elog(WARNING, "Arbiter trying to connect to %s:%d: error=%d", host, port, errno);
+				MtmSleep(5*MtmConnectTimeout);
 			}
 			continue;
 		} else {
