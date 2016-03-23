@@ -3,6 +3,12 @@ export PATH=~/code/postgres_cluster/install/bin/:$PATH
 ulimit -c unlimited
 pkill -9 postgres
 pkill -9 arbiter
+
+cd ~/code/postgres_cluster/contrib/mmts/
+make install
+cd ~/code/postgres_cluster/contrib/mmts/tests
+
+
 rm -fr node? *.log dtm
 mkdir dtm
 conn_str=""
@@ -28,9 +34,10 @@ do
     echo "multimaster.conn_strings = '$conn_str'" >> node$i/postgresql.conf
     echo "multimaster.node_id = $i" >> node$i/postgresql.conf
     cp pg_hba.conf node$i
-    pg_ctl -D node$i -l node$i.log start
+    pg_ctl -w -D node$i -l node$i.log start
 done
 
-sleep 5
+# sleep 5
+# psql -c "create extension multimaster;" postgres
 
 echo Done
