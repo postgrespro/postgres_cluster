@@ -2728,6 +2728,8 @@ CommitTransactionCommand(void)
 {
 	TransactionState s = CurrentTransactionState;
 
+	CallXactCallbacks(XACT_EVENT_COMMIT_COMMAND);
+
 	switch (s->blockState)
 	{
 			/*
