@@ -101,6 +101,10 @@ in-memory hash table.
 
 pg_wait_sampling_reset_profile() function resets the profile.
 
+See
+[PostgreSQL documentation](http://www.postgresql.org/docs/devel/static/monitoring-stats.html#WAIT-EVENT-TABLE)
+for list of possible wait events.
+
 Contribution
 ------------
 
