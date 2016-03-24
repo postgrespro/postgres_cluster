@@ -298,6 +298,7 @@ collector_main(Datum main_arg)
 	alloc_history(&observations, collector_hdr->historySize);
 	MemoryContextSwitchTo(old_context);
 
+	/* Start counting time for history and profile samples */
 	profile_ts = history_ts = GetCurrentTimestamp();
 
 	while (1)
@@ -311,6 +312,7 @@ collector_main(Datum main_arg)
 		bool			write_history,
 						write_profile;
 
+		/* Wait calculate time to next sample for history or profile */
 		current_ts = GetCurrentTimestamp();
 
 		history_diff = millisecs_diff(history_ts, current_ts);
@@ -343,6 +345,10 @@ collector_main(Datum main_arg)
 		if (shutdown_requested)
 			break;
 
+		/*
+		 * Wait until next sample time or request to do something through
+		 * shared memory.
+		 */
 		rc = WaitLatch(&MyProc->procLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 				Min(history_period - (int)history_diff,
 					profile_period - (int)profile_diff));

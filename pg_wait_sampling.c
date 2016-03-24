@@ -290,6 +290,7 @@ pg_wait_sampling_get_current(PG_FUNCTION_ARGS)
 
 		item = &params->items[funcctx->call_cntr];
 
+		/* Make and return next tuple to caller */
 		MemSet(values, 0, sizeof(values));
 		MemSet(nulls, 0, sizeof(nulls));
 
@@ -439,7 +440,7 @@ pg_wait_sampling_get_profile(PG_FUNCTION_ARGS)
 		MemSet(values, 0, sizeof(values));
 		MemSet(nulls, 0, sizeof(nulls));
 
-		/* Values available to all callers */
+		/* Make and return next tuple to caller */
 		event_type = pgstat_get_wait_event_type(item->wait_event_info);
 		event = pgstat_get_wait_event(item->wait_event_info);
 		values[0] = Int32GetDatum(item->pid);
@@ -538,10 +539,10 @@ pg_wait_sampling_get_history(PG_FUNCTION_ARGS)
 
 		item = &history->items[history->index];
 
+		/* Make and return next tuple to caller */
 		MemSet(values, 0, sizeof(values));
 		MemSet(nulls, 0, sizeof(nulls));
 
-		/* Values available to all callers */
 		event_type = pgstat_get_wait_event_type(item->wait_event_info);
 		event = pgstat_get_wait_event(item->wait_event_info);
 		values[0] = Int32GetDatum(item->pid);
