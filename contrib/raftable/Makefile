@@ -1,4 +1,4 @@
-MODULES = raftable
+MODULE_big = raftable
 OBJS = raftable.o worker.o state.o blockmem.o
 EXTENSION = raftable
 DATA = raftable--1.0.sql
