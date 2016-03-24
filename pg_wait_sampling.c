@@ -211,6 +211,8 @@ pg_wait_sampling_get_current(PG_FUNCTION_ARGS)
 	WaitCurrentContext 	*params;
 	HistoryItem 		*currentState;
 
+	check_shmem();
+
 	if (SRF_IS_FIRSTCALL())
 	{
 		MemoryContext		oldcontext;
@@ -389,6 +391,8 @@ pg_wait_sampling_get_profile(PG_FUNCTION_ARGS)
 	Profile			   *profile;
 	FuncCallContext	   *funcctx;
 
+	check_shmem();
+
 	if (SRF_IS_FIRSTCALL())
 	{
 		MemoryContext		oldcontext;
@@ -470,6 +474,8 @@ Datum
 pg_wait_sampling_reset_profile(PG_FUNCTION_ARGS)
 {
 	LOCKTAG		tag;
+
+	check_shmem();
 
 	init_lock_tag(&tag);
 
