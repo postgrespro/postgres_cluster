@@ -1,14 +1,13 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-#include <stdbool.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-bool inrange(int min, int x, int max);
+int inrange(int min, int x, int max);
 
 static inline int min(int a, int b) {
 	return a < b ? a : b;

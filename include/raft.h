@@ -6,6 +6,8 @@
 typedef struct raft_data_t *raft_t;
 typedef struct raft_msg_data_t *raft_msg_t;
 
+typedef int raft_bool_t;
+
 typedef struct raft_update_t {
 	int len;
 	char *data;
@@ -17,7 +19,7 @@ typedef struct raft_update_t {
 // This should be a function that applies an 'update' to the state machine.
 // 'snapshot' is true if 'update' contains a snapshot. 'userdata' is the
 // userdata that raft was configured with.
-typedef void (*raft_applier_t)(void *userdata, raft_update_t update, bool snapshot);
+typedef void (*raft_applier_t)(void *userdata, raft_update_t update, raft_bool_t snapshot);
 
 // This should be a function that makes a snapshot of the state machine. Used
 // for raft log compaction. 'userdata' is the userdata that raft was configured
@@ -48,10 +50,10 @@ raft_t raft_init(raft_config_t *config);
 
 // Add a peer named 'id'. 'self' should be true, if that peer is this instance.
 // Only one peer should have 'self' == true.
-bool raft_peer_up(raft_t r, int id, char *host, int port, bool self);
+raft_bool_t raft_peer_up(raft_t r, int id, char *host, int port, raft_bool_t self);
 
 // Remove a previously added peer named 'id'.
-bool raft_peer_down(raft_t r, int id);
+raft_bool_t raft_peer_down(raft_t r, int id);
 
 // --- Log Actions ---
 
@@ -60,7 +62,7 @@ bool raft_peer_down(raft_t r, int id);
 int raft_emit(raft_t r, raft_update_t update);
 
 // Checks whether an entry at 'index' has been applied by the peer named 'id'.
-bool raft_applied(raft_t t, int id, int index);
+raft_bool_t raft_applied(raft_t t, int id, int index);
 
 // --- Control ---
 
@@ -85,7 +87,7 @@ void raft_handle_message(raft_t r, raft_msg_t m);
 int raft_create_udp_socket(raft_t r);
 
 // Returns true if this peer thinks it is the leader.
-bool raft_is_leader(raft_t r);
+raft_bool_t raft_is_leader(raft_t r);
 
 // Returns the id of the current leader, or NOBODY if no leader.
 int raft_get_leader(raft_t r);

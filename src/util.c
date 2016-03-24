@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include "util.h"
 
-bool inrange(int min, int x, int max) {
+int inrange(int min, int x, int max) {
 	assert(min <= max);
 	return (min <= x) && (x <= max);
 }

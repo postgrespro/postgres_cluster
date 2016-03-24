@@ -15,7 +15,7 @@
 #include "raft.h"
 #include "util.h"
 
-static void applier(void *state, raft_update_t update, bool snapshot) {
+static void applier(void *state, raft_update_t update, raft_bool_t snapshot) {
 	json_error_t error;
 
 	json_t *patch = json_loadb(update.data, update.len, 0, &error);

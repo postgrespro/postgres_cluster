@@ -1,8 +1,7 @@
 #override CC := clang
 override CFLAGS += -Wfatal-errors -O0 -g
 override CPPFLAGS += -I. -Iinclude -DDEBUG
-override SERVER_LDFLAGS += -Llib -lraft -ljansson
-override CLIENT_LDFLAGS += -ljansson
+override HEART_LDFLAGS += -Llib -lraft -ljansson
 
 AR = ar
 ARFLAGS = -cru
@@ -17,7 +16,7 @@ lib/libraft.a: obj/raft.o obj/util.o | libdir objdir
 
 bin/heart: obj/heart.o lib/libraft.a | bindir objdir
 	$(CC) -o bin/heart $(CFLAGS) $(CPPFLAGS) \
-		obj/heart.o $(SERVER_LDFLAGS)
+		obj/heart.o $(HEART_LDFLAGS)
 
 obj/%.o: src/%.c | objdir
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<

@@ -2,11 +2,14 @@
 #include <assert.h>
 #include <errno.h>
 #include <limits.h>
-#include <stdbool.h>
 #include <string.h>
 
 #include "raft.h"
 #include "util.h"
+
+#define bool raft_bool_t
+#define true 1
+#define false 0
 
 #define DEFAULT_LISTENHOST "0.0.0.0"
 #define DEFAULT_LISTENPORT 6543
