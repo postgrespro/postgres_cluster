@@ -5,7 +5,7 @@
  * Copyright (c) 2015-2016, Postgres Professional
  *
  * IDENTIFICATION
- *	  contrib/pg_stat_wait/pg_wait_sampling.h
+ *	  contrib/pg_wait_sampling/pg_wait_sampling.h
  */
 #ifndef __PG_WAIT_SAMPLING_H__
 #define __PG_WAIT_SAMPLING_H__
@@ -59,7 +59,7 @@ typedef struct
 	int				profilePeriod;
 } CollectorShmqHeader;
 
-/* pg_stat_wait.c */
+/* pg_wait_sampling.c */
 extern void check_shmem(void);
 extern CollectorShmqHeader *collector_hdr;
 extern shm_mq			   *collector_mq;
