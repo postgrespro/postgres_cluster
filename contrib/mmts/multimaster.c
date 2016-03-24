@@ -64,6 +64,7 @@ typedef struct {
 	bool  isReplicated;   /* transaction on replica */
 	bool  isDistributed;  /* transaction performed INSERT/UPDATE/DELETE and has to be replicated to other nodes */
 	bool  isPrepared;     /* transaction is perpared at first stage of 2PC */
+    bool  isTransactionBlock; /* is transaction block */
 	bool  containsDML;    /* transaction contains DML statements */
 	XidStatus status;     /* transaction status */
     csn_t snapshot;       /* transaction snaphsot */
@@ -590,7 +591,7 @@ MtmXactCallback(XactEvent event, void *arg)
 		MtmEndTransaction(&MtmTx, false);
 		break;
 	  case XACT_EVENT_COMMIT_COMMAND:
-		if (!IsTransactionBlock()) { 
+		if (!MtmTx.isTransactionBlock) { 
 			MtmTwoPhaseCommit(&MtmTx);
 		}
 		break;
@@ -629,6 +630,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
         x->isReplicated = false;
         x->isDistributed = MtmIsUserTransaction();
 		x->isPrepared = false;
+		x->isTransactionBlock = IsTransactionBlock();
 		if (x->isDistributed && Mtm->status != MTM_ONLINE) { 
 			/* reject all user's transactions at offline cluster */
 			MtmUnlock();			
@@ -1930,11 +1932,12 @@ MtmGenerateGid(char* gid)
 
 static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 {
-	if (x->isDistributed && x->containsDML) { 
+	if (!x->isReplicated && (x->isDistributed && x->containsDML)) { 
 		MtmGenerateGid(x->gid);
-		if (!IsTransactionBlock()) { 
-			elog(WARNING, "Start transaction block for %d", x->xid);
+		if (!x->isTransactionBlock) { 
+			elog(WARNING, "Start transaction block for %s", x->gid);
 			BeginTransactionBlock();
+			x->isTransactionBlock = true;
 			CommitTransactionCommand();
 			StartTransactionCommand();
 		}
@@ -1942,7 +1945,7 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 		{
 			elog(WARNING, "Failed to prepare transaction %s", x->gid);
 			/* ??? Should we do explicit rollback */
-		} else { 
+		} else { 	
 			CommitTransactionCommand();
 			StartTransactionCommand();
 			if (MtmGetCurrentTransactionStatus() == TRANSACTION_STATUS_ABORTED) { 
@@ -1970,8 +1973,11 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				TransactionStmt *stmt = (TransactionStmt *) parsetree;
 				switch (stmt->kind)
 				{					
+				case TRANS_STMT_BEGIN:
+  				    MtmTx.isTransactionBlock = true;
+				    break;
 				case TRANS_STMT_COMMIT:
-				  if (MtmTwoPhaseCommit(&MtmTx)) { 
+  				    if (MtmTwoPhaseCommit(&MtmTx)) { 
 						return;
 					}
 					break;
@@ -2036,9 +2042,6 @@ MtmExecutorFinish(QueryDesc *queryDesc)
 				}
 			}
         }
-		if (MtmTx.isDistributed && MtmTx.containsDML && !IsTransactionBlock()) { 
-			MtmTwoPhaseCommit(&MtmTx);
-		}
     }
     if (PreviousExecutorFinishHook != NULL)
     {
