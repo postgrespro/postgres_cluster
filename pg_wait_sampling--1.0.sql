@@ -49,3 +49,5 @@ RETURNS void
 AS 'MODULE_PATHNAME'
 LANGUAGE C VOLATILE STRICT;
 
+-- Don't want this to be available to non-superusers.
+REVOKE ALL ON FUNCTION pg_wait_sampling_reset_profile() FROM PUBLIC;
