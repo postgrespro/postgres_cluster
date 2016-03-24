@@ -605,7 +605,7 @@ static void MtmTransReceiver(Datum arg)
 			} while (n < 0 && errno == EINTR);
 		} while (n < 0 && MtmRecovery());
 		
-		if (rc < 0) { 
+		if (n < 0) {
 			elog(ERROR, "Arbiter failed to select sockets: %d", errno);
 		}
 		for (i = 0; i < nNodes; i++) { 
