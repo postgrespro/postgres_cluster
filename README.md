@@ -67,7 +67,7 @@ Usage
 
 pg\_wait\_sampling interacts with user by set of views and functions.
 
-pg\_wait\_sampling\_current view -- information about current wait events for
+pg\_wait\_sampling\_current view – information about current wait events for
 all processed including background workers.
 
 | Column name | Column type |      Description        |
@@ -79,7 +79,7 @@ all processed including background workers.
 pg_wait_sampling_get_current(pid int4) returns the same table for single given
 process.
 
-pg\_wait\_sampling\_history -- history of wait events obtained by sampling into
+pg\_wait\_sampling\_history view – history of wait events obtained by sampling into
 in-memory ring buffer.
 
 | Column name | Column type |      Description        |
@@ -89,7 +89,7 @@ in-memory ring buffer.
 | event_type  | text        | Name of wait event type |
 | event       | text        | Name of wait event      |
 
-pg\_wait\_sampling\_profile -- profile of wait events obtained by sampling into
+pg\_wait\_sampling\_profile view – profile of wait events obtained by sampling into
 in-memory hash table.
 
 | Column name | Column type |      Description        |
