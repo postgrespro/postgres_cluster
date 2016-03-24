@@ -64,6 +64,7 @@ typedef struct {
 	bool  isReplicated;   /* transaction on replica */
 	bool  isDistributed;  /* transaction performed INSERT/UPDATE/DELETE and has to be replicated to other nodes */
 	bool  isPrepared;     /* transaction is perpared at first stage of 2PC */
+    bool  isTransactionBlock; /* is transaction block */
 	bool  containsDML;    /* transaction contains DML statements */
 	XidStatus status;     /* transaction status */
     csn_t snapshot;       /* transaction snaphsot */
@@ -111,6 +112,7 @@ static void MtmPrePrepareTransaction(MtmCurrentTrans* x);
 static void MtmPostPrepareTransaction(MtmCurrentTrans* x);
 static void MtmAbortPreparedTransaction(MtmCurrentTrans* x);
 static void MtmEndTransaction(MtmCurrentTrans* x, bool commit);
+static bool MtmTwoPhaseCommit(MtmCurrentTrans* x);
 static TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 static TransactionId MtmAdjustOldestXid(TransactionId xid);
@@ -588,6 +590,11 @@ MtmXactCallback(XactEvent event, void *arg)
 	  case XACT_EVENT_ABORT: 
 		MtmEndTransaction(&MtmTx, false);
 		break;
+	  case XACT_EVENT_COMMIT_COMMAND:
+		if (!MtmTx.isTransactionBlock) { 
+			MtmTwoPhaseCommit(&MtmTx);
+		}
+		break;
 	  default:
         break;
 	}
@@ -623,6 +630,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
         x->isReplicated = false;
         x->isDistributed = MtmIsUserTransaction();
 		x->isPrepared = false;
+		x->isTransactionBlock = IsTransactionBlock();
 		if (x->isDistributed && Mtm->status != MTM_ONLINE) { 
 			/* reject all user's transactions at offline cluster */
 			MtmUnlock();			
@@ -1922,33 +1930,34 @@ MtmGenerateGid(char* gid)
 	sprintf(gid, "MTM-%d-%d-%d", MtmNodeId, MyProcPid, ++localCount);
 }
 
-static void MtmTwoPhaseCommit(char *completionTag)
+static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 {
-	MtmGenerateGid(MtmTx.gid);
-	if (!IsTransactionBlock()) { 
-		elog(WARNING, "Start transaction block for %d", MtmTx.xid);
-		BeginTransactionBlock();
-		CommitTransactionCommand();
-		StartTransactionCommand();
-	}
-	if (!PrepareTransactionBlock(MtmTx.gid))
-	{
-		elog(WARNING, "Failed to prepare transaction %s", MtmTx.gid);
-		/* report unsuccessful commit in completionTag */
-		if (completionTag) { 
-			strcpy(completionTag, "ROLLBACK");
+	if (!x->isReplicated && (x->isDistributed && x->containsDML)) { 
+		MtmGenerateGid(x->gid);
+		if (!x->isTransactionBlock) { 
+			elog(WARNING, "Start transaction block for %s", x->gid);
+			BeginTransactionBlock();
+			x->isTransactionBlock = true;
+			CommitTransactionCommand();
+			StartTransactionCommand();
 		}
-		/* ??? Should we do explicit rollback */
-	} else { 
-		CommitTransactionCommand();
-		StartTransactionCommand();
-		if (MtmGetCurrentTransactionStatus() == TRANSACTION_STATUS_ABORTED) { 
-			FinishPreparedTransaction(MtmTx.gid, false);
-			elog(ERROR, "Transaction %s is aborted by DTM", MtmTx.gid);
-		} else {
-			FinishPreparedTransaction(MtmTx.gid, true);
+		if (!PrepareTransactionBlock(x->gid))
+		{
+			elog(WARNING, "Failed to prepare transaction %s", x->gid);
+			/* ??? Should we do explicit rollback */
+		} else { 	
+			CommitTransactionCommand();
+			StartTransactionCommand();
+			if (MtmGetCurrentTransactionStatus() == TRANSACTION_STATUS_ABORTED) { 
+				FinishPreparedTransaction(x->gid, false);
+				elog(ERROR, "Transaction %s is aborted by DTM", x->gid);
+			} else {
+				FinishPreparedTransaction(x->gid, true);
+			}
 		}
+		return true;
 	}
+	return false;
 }
 
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
@@ -1964,9 +1973,11 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				TransactionStmt *stmt = (TransactionStmt *) parsetree;
 				switch (stmt->kind)
 				{					
+				case TRANS_STMT_BEGIN:
+  				    MtmTx.isTransactionBlock = true;
+				    break;
 				case TRANS_STMT_COMMIT:
-					if (MtmTx.isDistributed && MtmTx.containsDML) {
-						MtmTwoPhaseCommit(completionTag);
+  				    if (MtmTwoPhaseCommit(&MtmTx)) { 
 						return;
 					}
 					break;
@@ -2002,9 +2013,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		if (MtmProcessDDLCommand(queryString)) { 
 			return;
 		}
-		if (MtmTx.isDistributed && MtmTx.containsDML && !IsTransactionBlock()) { 
-			MtmTwoPhaseCommit(completionTag);
-		}
 	}
 	if (PreviousProcessUtilityHook != NULL)
 	{
@@ -2034,9 +2042,6 @@ MtmExecutorFinish(QueryDesc *queryDesc)
 				}
 			}
         }
-		if (MtmTx.isDistributed && MtmTx.containsDML && !IsTransactionBlock()) { 
-			MtmTwoPhaseCommit(NULL);
-		}
     }
     if (PreviousExecutorFinishHook != NULL)
     {

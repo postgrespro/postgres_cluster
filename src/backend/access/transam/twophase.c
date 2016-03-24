@@ -1248,7 +1248,7 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 
 	hdr = (TwoPhaseFileHeader *) xlrec;
 	bufptr = xlrec + MAXALIGN(sizeof(TwoPhaseFileHeader));
-
+	
 	strncpy(parsed->twophase_gid, bufptr, hdr->gidlen);
 	bufptr += MAXALIGN(hdr->gidlen);
 

@@ -129,7 +129,7 @@ void* reader(void* arg)
         result r = txn.exec("select sum(v) from t");
         int64_t sum = r[0][0].as(int64_t());
         if (sum != prevSum) {
-			//		r = txn.exec("select mtm_get_snapshot()");			
+			r = txn.exec("select mtm_get_snapshot()");			
             printf("Total=%ld, snapshot=%ld\n", sum, r[0][0].as(int64_t()));
             prevSum = sum;
         }
