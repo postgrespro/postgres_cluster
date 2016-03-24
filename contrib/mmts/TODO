@@ -1,0 +1,22 @@
+TODO
+
+* Disallow tables without pkeys.
+* Automate extension creation (?)
+* Database itn't usable right after pg_ctl -w. There are still several second before db will switch to operational mode.
+* Statements without tx.
+* Disallow user-created MTM-* gid's.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
