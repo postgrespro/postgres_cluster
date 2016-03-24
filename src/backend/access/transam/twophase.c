@@ -1249,6 +1249,9 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 	hdr = (TwoPhaseFileHeader *) xlrec;
 	bufptr = xlrec + MAXALIGN(sizeof(TwoPhaseFileHeader));
 
+	strncpy(parsed->twophase_gid, bufptr, hdr->gidlen);
+	bufptr += MAXALIGN(hdr->gidlen);
+
 	parsed->twophase_xid = hdr->xid;
 	parsed->dbId = hdr->database;
 	parsed->nsubxacts = hdr->nsubxacts;
@@ -1266,8 +1269,6 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 
 	parsed->msgs = (SharedInvalidationMessage *) bufptr;
 	bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));
-
-	strncpy(parsed->twophase_gid, bufptr, hdr->gidlen);
 }
 
 
