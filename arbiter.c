@@ -230,6 +230,51 @@ static int MtmReadSocket(int sd, void* buf, int buf_size)
 
 
 
+static void MtmSetSocketOptions(int sd)
+{
+#ifdef TCP_NODELAY
+	int optval = 1;
+	if (setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval)) < 0) {
+		elog(WARNING, "Failed to set TCP_NODELAY: %m");
+	}
+#endif
+	if (tcp_keepalives_idle) { 
+#ifdef TCP_KEEPIDLE
+		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPIDLE,
+					   (char *) &tcp_keepalives_idle, sizeof(tcp_keepalives_idle)) < 0)
+		{
+			elog(WARNING, "Failed to set TCP_KEEPIDLE: %m");
+		}
+#else
+#ifdef TCP_KEEPALIVE
+		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPALIVE,
+					   (char *) &tcp_keepalives_idle, sizeof(tcp_keepalives_idle)) < 0) 
+		{
+			elog(WARNING, "Failed to set TCP_KEEPALIVE: %m");
+		}
+#endif
+#endif
+	}
+#ifdef TCP_KEEPINTVL
+	if (tcp_keepalives_interval) { 
+		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPINTVL,
+					   (char *) &tcp_keepalives_interval, sizeof(tcp_keepalives_interval)) < 0)
+		{
+			elog(WARNING, "Failed to set TCP_KEEPINTVL: %m");
+		}
+	}
+#endif
+#ifdef TCP_KEEPCNT
+	if (tcp_keepalives_count) {
+		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPCNT,
+					   (char *) &tcp_keepalives_count, sizeof(tcp_keepalives_count)) < 0)
+		{
+			elog(WARNING, "Failed to set TCP_KEEPCNT: %m");
+		}
+	}
+#endif
+}
+
 static int MtmConnectSocket(char const* host, int port, int max_attempts)
 {
     struct sockaddr_in sock_inet;
@@ -274,12 +319,9 @@ Retry:
 			}
 			continue;
 		} else {
-			int optval = 1;
 			MtmHandshakeMessage req;
 			MtmArbiterMessage   resp;
-			setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
-			setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, (char const*)&optval, sizeof(optval));
-
+			MtmSetSocketOptions(sd);
 			req.hdr.code = MSG_HANDSHAKE;
 			req.hdr.node = MtmNodeId;
 			req.hdr.dxid = HANDSHAKE_MAGIC;
