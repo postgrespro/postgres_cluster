@@ -243,30 +243,34 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 	if (!MtmResolveHostByName(host, addrs, &n_addrs)) {
 		elog(ERROR, "Arbiter failed to resolve host '%s' by name", host);
 	}
-  Retry:
-	sd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sd < 0) {
-	    elog(ERROR, "Arbiter failed to create socket: %d", errno);
-    }
+
+Retry:
+
     while (1) {
 		int rc = -1;
+
+		sd = socket(AF_INET, SOCK_STREAM, 0);
+		if (sd < 0) {
+			elog(ERROR, "Arbiter failed to create socket: %d", errno);
+		}
 		for (i = 0; i < n_addrs; ++i) {
 			memcpy(&sock_inet.sin_addr, &addrs[i], sizeof sock_inet.sin_addr);
 			do {
 				rc = connect(sd, (struct sockaddr*)&sock_inet, sizeof(sock_inet));
 			} while (rc < 0 && errno == EINTR);
-			
+
 			if (rc >= 0 || errno == EINPROGRESS) {
 				break;
 			}
 		}
 		if (rc < 0) {
 			if ((errno != ENOENT && errno != ECONNREFUSED && errno != EINPROGRESS) || max_attempts == 0) {
-				elog(WARNING, "Arbiter failed to connect to %s:%d: %d", host, port, errno);
+				elog(WARNING, "Arbiter failed to connect to %s:%d: error=%d", host, port, errno);
 				return -1;
 			} else { 
 				max_attempts -= 1;
-				MtmSleep(MtmConnectTimeout);
+				elog(WARNING, "Arbiter trying to connect to %s:%d: error=%d", host, port, errno);
+				MtmSleep(5*MtmConnectTimeout);
 			}
 			continue;
 		} else {
@@ -282,7 +286,7 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 			req.hdr.sxid = ShmemVariableCache->nextXid;
 			req.hdr.csn  = MtmGetCurrentTime();
 			req.hdr.disabledNodeMask = Mtm->disabledNodeMask;
-			strcpy(req.connStr, Mtm->nodes[MtmNodeId-1].connStr);
+			strcpy(req.connStr, Mtm->nodes[MtmNodeId-1].con.connStr);
 			if (!MtmWriteSocket(sd, &req, sizeof req)) { 
 				elog(WARNING, "Arbiter failed to send handshake message to %s:%d: %d", host, port, errno);
 				close(sd);
@@ -321,7 +325,7 @@ static void MtmOpenConnections()
 
 	for (i = 0; i < nNodes; i++) {
 		if (i+1 != MtmNodeId) { 
-			sockets[i] = MtmConnectSocket(Mtm->nodes[i].hostName, MtmArbiterPort + i + 1, MtmConnectAttempts);
+			sockets[i] = MtmConnectSocket(Mtm->nodes[i].con.hostName, MtmArbiterPort + i + 1, MtmConnectAttempts);
 			if (sockets[i] < 0) { 
 				MtmOnNodeDisconnect(i+1);
 			} 
@@ -345,7 +349,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 		if (sockets[node] >= 0) { 
 			close(sockets[node]);
 		}
-		sockets[node] = MtmConnectSocket(Mtm->nodes[node].hostName, MtmArbiterPort + node + 1, MtmReconnectAttempts);
+		sockets[node] = MtmConnectSocket(Mtm->nodes[node].con.hostName, MtmArbiterPort + node + 1, MtmReconnectAttempts);
 		if (sockets[node] < 0) { 
 			MtmOnNodeDisconnect(node+1);
 			return false;
@@ -385,7 +389,7 @@ static void MtmAcceptOneConnection()
 			resp.dxid = HANDSHAKE_MAGIC;
 			resp.sxid = ShmemVariableCache->nextXid;
 			resp.csn  = MtmGetCurrentTime();
-			MtmUpdateNodeConnStr(req.hdr.node, req.connStr);
+			MtmUpdateNodeConnectionInfo(&Mtm->nodes[req.hdr.node-1].con, req.connStr);
 			if (!MtmWriteSocket(fd, &resp, sizeof resp)) { 
 				elog(WARNING, "Arbiter failed to write response for handshake message to node %d", resp.node);
 				close(fd);
