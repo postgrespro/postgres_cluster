@@ -9,10 +9,8 @@ When 'frontend' issues a read command, the 'backend' returns the data from the
 local replica of the 'state' which is in the shared memory of current instance.
 
 When 'frontend' issues a write command, the 'backend' connects to the current
-'raftable' leader directly through TCP. Raftable leader returns the state
-version number V after the update gets applied (acked by the majority of
-'raftable' workers). Then the backend waits until the local state version
-number becomes at least V and returns 'ok' to the frontend.
+'raftable' leader directly through TCP and sends an update. Raftable leader
+returns 'ok' to the backend when the update gets applied on current instance.
 
 The backend can also issue commands to itself through C API.
 

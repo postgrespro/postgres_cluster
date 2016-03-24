@@ -1,4 +1,4 @@
-MODULES = raftable
+MODULES = raftable worker blockmem state
 EXTENSION = raftable
 DATA = raftable--1.0.sql
 
