@@ -318,6 +318,7 @@ static int raft_apply(raft_t raft) {
 	raft_log_t *l = &raft->log;
 	while (l->applied < l->acked) {
 		raft_entry_t *e = &RAFT_LOG(raft, l->applied);
+		assert(e->update.len == e->bytes);
 		raft->config.applier(raft->config.userdata, e->update, false);
 		raft->log.applied++;
 		applied_now++;
@@ -661,6 +662,7 @@ int raft_emit(raft_t r, raft_update_t update) {
 	assert(e->update.len == 0);
 	assert(e->update.data == NULL);
 	e->update.len = update.len;
+	e->bytes = update.len;
 	e->update.data = malloc(update.len);
 	memcpy(e->update.data, update.data, update.len);
 	r->log.size++;
@@ -671,9 +673,16 @@ int raft_emit(raft_t r, raft_update_t update) {
 }
 
 bool raft_applied(raft_t r, int id, int index) {
-	raft_peer_t *p = r->peers + id;
-	if (!p->up) return false;
-	return p->applied >= index;
+	if (r->me == id)
+	{
+		return r->log.applied >= index;
+	}
+	else
+	{
+		raft_peer_t *p = r->peers + id;
+		if (!p->up) return false;
+		return p->applied >= index;
+	}
 }
 
 static bool raft_restore(raft_t r, int previndex, raft_entry_t *e) {
