@@ -304,6 +304,8 @@ typedef struct xl_xact_parsed_commit
 
 typedef struct xl_xact_parsed_prepare
 {
+	uint32		xinfo;
+
 	Oid			dbId;			/* MyDatabaseId */
 
 	int			nsubxacts;
@@ -317,6 +319,9 @@ typedef struct xl_xact_parsed_prepare
 
 	TransactionId twophase_xid;
 	char 		twophase_gid[GIDSIZE];
+
+	XLogRecPtr	origin_lsn;
+	TimestampTz origin_timestamp;
 } xl_xact_parsed_prepare;
 
 typedef struct xl_xact_parsed_abort
