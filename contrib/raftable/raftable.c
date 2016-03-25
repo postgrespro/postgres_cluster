@@ -140,6 +140,11 @@ static int get_connection(void)
 	return leadersock;
 }
 
+char *raftable_get(char *key)
+{
+	return state_get(shared.state, key);
+}
+
 Datum
 raftable_sql_get(PG_FUNCTION_ARGS)
 {
@@ -242,6 +247,21 @@ raftable_sql_set(PG_FUNCTION_ARGS)
 	pfree(key);
 
 	PG_RETURN_VOID();
+}
+
+void raftable_every(void (*func)(char *, char *, void *), void *arg)
+{
+	void *scan;
+	char *key, *value;
+	Assert(shared.state);
+
+	scan = state_scan(shared.state);
+	while (state_next(shared.state, scan, &key, &value))
+	{
+		func(key, value, arg);
+		pfree(key);
+		pfree(value);
+	}
 }
 
 Datum
