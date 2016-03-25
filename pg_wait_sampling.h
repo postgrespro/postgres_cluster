@@ -12,6 +12,11 @@
 
 #include <postgres.h>
 
+/* Check PostgreSQL version */
+#if PG_VERSION_NUM < 90600
+	#error "You are trying to build pg_wait_sampling with PostgreSQL version lower than 9.6.  Please, check you environment."
+#endif
+
 #include "storage/proc.h"
 #include "storage/shm_mq.h"
 #include "utils/timestamp.h"
