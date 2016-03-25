@@ -53,6 +53,7 @@
 #include "nodes/makefuncs.h"
 #include "access/htup_details.h"
 #include "catalog/indexing.h"
+#include "pglogical_output/hooks.h"
 
 #include "multimaster.h"
 #include "ddd.h"
@@ -162,6 +163,7 @@ bool  MtmDoReplication;
 char* MtmDatabaseName;
 
 int   MtmNodeId;
+int   MtmReplicationNodeId;
 int   MtmArbiterPort;
 int   MtmNodes;
 int   MtmConnectAttempts;
@@ -1639,6 +1641,27 @@ void MtmDropNode(int nodeId, bool dropSlot)
 	}
 }
 
+static void 
+MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
+{
+	MtmOnNodeDisconnect(MtmReplicationNodeId);
+}
+
+static bool 
+MtmReplicationTxnFilterHook(struct PGLogicalTxnFilterArgs* args)
+{
+	elog(WARNING, "MtmReplicationTxnFilterHook: args->origin_id=%d, MtmReplicationNodeId=%d", args->origin_id, MtmReplicationNodeId);
+	return args->origin_id == InvalidRepOriginId || MtmIsRecoveredNode(MtmReplicationNodeId);
+}
+
+void MtmSetupReplicationHooks(struct PGLogicalHooks* hooks)
+{
+	hooks->shutdown_hook = MtmReplicationShutdownHook;
+	hooks->txn_filter_hook = MtmReplicationTxnFilterHook;
+}
+
+	
+
 /*
  * -------------------------------------------
  * SQL API functions
@@ -1994,16 +2017,42 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ClosePortalStmt:
 		case T_FetchStmt:
 		case T_DoStmt:
+		case T_CreateTableSpaceStmt:
+		case T_DropTableSpaceStmt:
+		case T_AlterTableSpaceOptionsStmt:
+		case T_TruncateStmt:
+		case T_CommentStmt: /* XXX: we could replicate these */;
 		case T_CopyStmt:
 		case T_PrepareStmt:
 		case T_ExecuteStmt:
+		case T_DeallocateStmt:
+		case T_GrantStmt: /* XXX: we could replicate some of these these */;
+		case T_GrantRoleStmt:
+		case T_AlterDatabaseStmt:
+		case T_AlterDatabaseSetStmt:
 		case T_NotifyStmt:
 		case T_ListenStmt:
 		case T_UnlistenStmt:
 		case T_LoadStmt:
+		case T_ClusterStmt: /* XXX: we could replicate these */;
+		case T_VacuumStmt:
+		case T_ExplainStmt:
+		case T_AlterSystemStmt:
 		case T_VariableSetStmt:
 		case T_VariableShowStmt:
-			skipCommand = true;
+		case T_DiscardStmt:
+		case T_CreateEventTrigStmt:
+		case T_AlterEventTrigStmt:
+		case T_CreateRoleStmt:
+		case T_AlterRoleStmt:
+		case T_AlterRoleSetStmt:
+		case T_DropRoleStmt:
+		case T_ReassignOwnedStmt:
+		case T_LockStmt:
+		case T_ConstraintsSetStmt:
+		case T_CheckPointStmt:
+		case T_ReindexStmt:
+		    skipCommand = true;
 			break;
 	    default:
 			skipCommand = false;
