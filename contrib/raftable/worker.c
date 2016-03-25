@@ -442,9 +442,9 @@ static void worker_main(Datum arg)
 
 void worker_register(WorkerConfig *cfg)
 {
-	BackgroundWorker worker;
+	BackgroundWorker worker = {};
 	strcpy(worker.bgw_name, "raftable worker");
-	worker.bgw_flags = 0;
+	worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
 	worker.bgw_start_time = BgWorkerStart_PostmasterStart;
 	worker.bgw_restart_time = 1;
 	worker.bgw_main = worker_main;

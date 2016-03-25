@@ -239,7 +239,6 @@ bool state_next(StateP state, void *scan, char **key, char **value)
 	}
 	else
 	{
-		hash_seq_term((HASH_SEQ_STATUS *)scan);
 		LWLockRelease(state->lock);
 		pfree(scan);
 		return false;
@@ -248,11 +247,13 @@ bool state_next(StateP state, void *scan, char **key, char **value)
 
 void state_shmem_request()
 {
+	int flags;
 	HASHCTL info;
 	info.keysize = sizeof(RaftableKey);
 	info.entrysize = sizeof(RaftableEntry);
 	info.dsize = info.max_dsize = hash_select_dirsize(RAFTABLE_HASH_SIZE);
-	RequestAddinShmemSpace(RAFTABLE_BLOCK_MEM + sizeof(State) + hash_get_shared_size(&info, HASH_ELEM));
+	flags = HASH_SHARED_MEM | HASH_ALLOC | HASH_DIRSIZE | HASH_ELEM;
+	RequestAddinShmemSpace(RAFTABLE_BLOCK_MEM + sizeof(State) + hash_get_shared_size(&info, flags));
 	RequestAddinLWLocks(1);
 }
 

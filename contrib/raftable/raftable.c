@@ -52,10 +52,11 @@ static void *get_shared_state(void)
 	return shared.state;
 }
 
-static void try_next_peer(void)
+static void select_next_peer(void)
 {
-	while (!wcfg.peers[*shared.leader].up)
+	do {
 		*shared.leader = (*shared.leader + 1) % RAFTABLE_PEERS_MAX;
+	} while (!wcfg.peers[*shared.leader].up);
 }
 
 static void disconnect_leader(void)
@@ -64,7 +65,7 @@ static void disconnect_leader(void)
 	{
 		close(leadersock);
 	}
-	try_next_peer();
+	select_next_peer();
 	leadersock = -1;
 }
 
@@ -74,6 +75,9 @@ static bool connect_leader(void)
 	struct addrinfo hint;
 	char portstr[6];
 	struct addrinfo *a;
+	int rc;
+
+	if (*shared.leader == NOBODY) select_next_peer();
 
 	HostPort *leaderhp = wcfg.peers + *shared.leader;
 
@@ -83,10 +87,12 @@ static bool connect_leader(void)
 	snprintf(portstr, 6, "%d", leaderhp->port);
 	hint.ai_protocol = getprotobyname("tcp")->p_proto;
 
-	if (getaddrinfo(leaderhp->host, portstr, &hint, &addrs))
+	if ((rc = getaddrinfo(leaderhp->host, portstr, &hint, &addrs)))
 	{
 		disconnect_leader();
-		perror("failed to resolve address");
+		fprintf(stderr, "failed to resolve address '%s:%d': %s",
+				leaderhp->host, leaderhp->port,
+				gai_strerror(rc));
 		return false;
 	}
 
@@ -168,11 +174,14 @@ void raftable_set(char *key, char *value)
 	size += vallen;
 	ru = palloc(size);
 
+	ru->expector = wcfg.id;
+	ru->fieldnum = 1;
+
 	RaftableField *f = (RaftableField *)ru->data;
 	f->keylen = keylen;
 	f->vallen = vallen;
 	memcpy(f->data, key, keylen);
-	memcpy(f->data + keylen, key, vallen);
+	memcpy(f->data + keylen, value, vallen);
 
 	bool ok = false;
 	while (!ok)
@@ -200,6 +209,18 @@ void raftable_set(char *key, char *value)
 				ok = false;
 			}
 			sent += newbytes;
+		}
+
+		if (ok)
+		{
+			int status;
+			int recved = read(s, &status, sizeof(status));
+			if (recved != sizeof(status))
+			{
+				disconnect_leader();
+				fprintf(stderr, "failed to recv the update status from the leader\n");
+				ok = false;
+			}
 		}
 	}
 
@@ -358,6 +379,7 @@ _PG_init(void)
 	);
 	parse_peers(wcfg.peers, peerstr);
 
+	request_shmem();
 	worker_register(&wcfg);
 
 	PreviousShmemStartupHook = shmem_startup_hook;
