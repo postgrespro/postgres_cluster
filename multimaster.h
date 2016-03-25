@@ -5,6 +5,8 @@
 #include "bgwpool.h"
 #include "bkb.h"
 
+#include "pglogical_output/hooks.h"
+
 #define MTM_TUPLE_TRACE(fmt, ...)
 /*
 #define MTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
@@ -149,6 +151,7 @@ extern char const* const MtmNodeStatusMnem[];
 extern MtmState* Mtm;
 
 extern int   MtmNodeId;
+extern int   MtmReplicationNodeId;
 extern int   MtmNodes;
 extern int   MtmArbiterPort;
 extern char* MtmDatabaseName;
@@ -192,5 +195,5 @@ extern bool  MtmIsRecoveredNode(int nodeId);
 extern void  MtmRefreshClusterStatus(bool nowait);
 extern void  MtmSwitchClusterMode(MtmNodeStatus mode);
 extern void  MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr);
-
+extern void  MtmSetupReplicationHooks(struct PGLogicalHooks* hooks);
 #endif

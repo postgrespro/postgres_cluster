@@ -343,7 +343,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			data->forward_changeset_origins = false;
 		}
 
-		if (data->hooks_setup_funcname != NIL)
+		if (data->hooks_setup_funcname != NIL || data->api->setup_hooks)
 		{
 
 			data->hooks_mctxt = AllocSetContextCreate(ctx->context,
