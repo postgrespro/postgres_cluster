@@ -104,11 +104,11 @@ pg_wait_sampling_reset_profile() function resets the profile.
 The work of wait event statistics collector worker is controlled by following
 GUCs.
 
-|         Parameter name          | Data type |                  Description                |
-| ------------------------------- | --------- | ------------------------------------------- |
-| pg_wait_sampling.history_size   | int4      | Size of history in-memory ring buffer       |
-| pg_wait_sampling.history_period | int4      | Period for history sampling in milliseconds |
-| pg_wait_sampling.profile_period | int4      | Period for profile sampling in milliseconds |
+|         Parameter name          | Data type |                  Description                | Default value |
+| ------------------------------- | --------- | ------------------------------------------- | ------------: |
+| pg_wait_sampling.history_size   | int4      | Size of history in-memory ring buffer       |          5000 |
+| pg_wait_sampling.history_period | int4      | Period for history sampling in milliseconds |            10 |
+| pg_wait_sampling.profile_period | int4      | Period for profile sampling in milliseconds |            10 |
 
 These GUCs are allowed to be changed by superuser. Also, they are placed into
 shared memory. Thus, they could be changed from any backend and affects worker
