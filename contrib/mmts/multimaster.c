@@ -127,7 +127,7 @@ static void MtmAddSubtransactions(MtmTransState* ts, TransactionId *subxids, int
 static void MtmShmemStartup(void);
 
 static BgwPool* MtmPoolConstructor(void);
-static bool MtmRunUtilityStmt(PGconn* conn, char const* sql);
+static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
 
 MtmState* Mtm;
@@ -1793,14 +1793,24 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 /*
  * Execute statement with specified parameters and check its result
  */
-static bool MtmRunUtilityStmt(PGconn* conn, char const* sql)
+static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg)
 {
 	PGresult *result = PQexec(conn, sql);
 	int status = PQresultStatus(result);
+	char *errstr;
+
 	bool ret = status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK;
-	if (!ret) { 
-		elog(WARNING, "Command '%s' failed with status %d", sql, status);
+
+	if (!ret) {
+		char *errstr = PQresultErrorMessage(result);
+		int errlen = strlen(errstr);
+
+		*errmsg = palloc0(errlen);
+
+		/* Strip "ERROR:\t" from beginning and "\n" from end of error string */
+		strncpy(*errmsg, errstr + 7, errlen - 1 - 7);
 	}
+
 	PQclear(result);
 	return ret;
 }
@@ -1814,6 +1824,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	int failedNode = -1;
 	char const* errorMsg = NULL;
 	PGconn **conns = palloc0(sizeof(PGconn*)*MtmNodes);
+	char* utility_errmsg;
     
 	while (conn_str < conn_str_end) 
 	{ 
@@ -1849,15 +1860,18 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	{ 
 		if (conns[i]) 
 		{
-			if (!MtmRunUtilityStmt(conns[i], "BEGIN TRANSACTION") && !ignoreError)
+			if (!MtmRunUtilityStmt(conns[i], "BEGIN TRANSACTION", &utility_errmsg) && !ignoreError)
 			{
 				errorMsg = "Failed to start transaction at node %d";
 				failedNode = i;
 				break;
 			}
-			if (!MtmRunUtilityStmt(conns[i], sql) && !ignoreError)
+			if (!MtmRunUtilityStmt(conns[i], sql, &utility_errmsg) && !ignoreError)
 			{
-				errorMsg = "Failed to run command at node %d";
+				// errorMsg = "Failed to run command at node %d";
+				// XXX: add check for our node
+				errorMsg = utility_errmsg;
+
 				failedNode = i;
 				break;
 			}
@@ -1869,13 +1883,13 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 		{ 
 			if (conns[i])
 			{
-				MtmRunUtilityStmt(conns[i], "ROLLBACK TRANSACTION");
+				MtmRunUtilityStmt(conns[i], "ROLLBACK TRANSACTION", &utility_errmsg);
 			}
 		}
 	} else { 
 		for (i = 0; i < MtmNodes; i++) 
 		{ 
-			if (conns[i] && !MtmRunUtilityStmt(conns[i], "COMMIT TRANSACTION") && !ignoreError) 
+			if (conns[i] && !MtmRunUtilityStmt(conns[i], "COMMIT TRANSACTION", &utility_errmsg) && !ignoreError) 
 			{ 
 				errorMsg = "Commit failed at node %d";
 				failedNode = i;
@@ -1958,7 +1972,7 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 	if (!x->isReplicated && (x->isDistributed && x->containsDML)) { 
 		MtmGenerateGid(x->gid);
 		if (!x->isTransactionBlock) { 
-			elog(WARNING, "Start transaction block for %s", x->gid);
+			/* elog(WARNING, "Start transaction block for %s", x->gid); */
 			BeginTransactionBlock();
 			x->isTransactionBlock = true;
 			CommitTransactionCommand();
@@ -2053,6 +2067,13 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_CheckPointStmt:
 		case T_ReindexStmt:
 		    skipCommand = true;
+			break;
+		case T_CreateStmt:
+			{
+				/* Do not replicate temp tables */
+				CreateStmt *stmt = (CreateStmt *) parsetree;
+				skipCommand = stmt->relation->relpersistence == RELPERSISTENCE_TEMP;
+			}
 			break;
 	    default:
 			skipCommand = false;
