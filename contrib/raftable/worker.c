@@ -337,7 +337,7 @@ static void drop_bads(void)
 	{
 		Client *c = server.clients + i;
 		if (c->sock < 0) continue;
-		if (!c->good) remove_client(c);
+		if (!c->good || !raft_is_leader(raft)) remove_client(c);
 	}
 }
 
