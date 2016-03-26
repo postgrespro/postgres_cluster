@@ -3,6 +3,8 @@ OBJS = raftable.o worker.o state.o blockmem.o
 EXTENSION = raftable
 DATA = raftable--1.0.sql
 
+EXTRA_INSTALL = contrib/raftable
+
 RAFT_PREFIX = $(HOME)/raft
 override LDFLAGS += -L$(RAFT_PREFIX)/lib -Wl,-whole-archive -lraft -Wl,-no-whole-archive
 override CFLAGS += -Wfatal-errors
@@ -18,3 +20,6 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
+
+check:
+	$(prove_check)
