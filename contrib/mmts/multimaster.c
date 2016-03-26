@@ -800,7 +800,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			 * Send notification only if ABORT happens during transaction processing at replicas, 
 			 * do not send notification if ABORT is receiver from master 
 			 */
-			MTM_TRACE("%d: send ABORT notification to coordinator %d\n", MyProcPid, x->gtid.node);
+			MTM_INFO("%d: send ABORT notification abort transaction %d to coordinator %d\n", MyProcPid, x->gtid.xid, x->gtid.node);
 			if (ts == NULL) { 
 				Assert(TransactionIdIsValid(x->xid));
 				ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, NULL);
@@ -1604,6 +1604,11 @@ MtmSlotMode MtmReceiverSlotMode(int nodeId)
 	return Mtm->recoverySlot ? SLOT_CREATE_NEW : SLOT_OPEN_ALWAYS;
 }
 			
+static bool MtmIsBroadcast() 
+{
+	return application_name != NULL && strcmp(application_name, MULTIMASTER_BROADCAST_SERVICE) == 0;
+}
+
 void MtmRecoverNode(int nodeId)
 {
 	if (nodeId <= 0 || nodeId > Mtm->nNodes) 
@@ -1613,7 +1618,7 @@ void MtmRecoverNode(int nodeId)
 	if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
 		elog(ERROR, "Node %d was not disabled", nodeId);
 	}
-	if (!IsTransactionBlock())
+	if (!MtmIsBroadcast())
 	{
 		MtmBroadcastUtilityStmt(psprintf("select pg_create_logical_replication_slot('" MULTIMASTER_SLOT_PATTERN "', '" MULTIMASTER_NAME "')", nodeId), true);
 	}
@@ -1630,7 +1635,7 @@ void MtmDropNode(int nodeId, bool dropSlot)
 		}
 		BIT_SET(Mtm->disabledNodeMask, nodeId-1);
 		Mtm->nNodes -= 1;
-		if (!IsTransactionBlock())
+		if (!MtmIsBroadcast())
 		{
 			MtmBroadcastUtilityStmt(psprintf("select mtm.drop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
 		}
@@ -1650,7 +1655,6 @@ MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
 static bool 
 MtmReplicationTxnFilterHook(struct PGLogicalTxnFilterArgs* args)
 {
-	elog(WARNING, "MtmReplicationTxnFilterHook: args->origin_id=%d, MtmReplicationNodeId=%d", args->origin_id, MtmReplicationNodeId);
 	return args->origin_id == InvalidRepOriginId || MtmIsRecoveredNode(MtmReplicationNodeId);
 }
 
@@ -1797,7 +1801,6 @@ static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg)
 {
 	PGresult *result = PQexec(conn, sql);
 	int status = PQresultStatus(result);
-	char *errstr;
 
 	bool ret = status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK;
 
@@ -1817,8 +1820,6 @@ static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg)
 
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 {
-	char* conn_str = pstrdup(MtmConnStrs);
-	char* conn_str_end = conn_str + strlen(conn_str);
 	int i = 0;
 	nodemask_t disabledNodeMask = Mtm->disabledNodeMask;
 	int failedNode = -1;
@@ -1826,16 +1827,11 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	PGconn **conns = palloc0(sizeof(PGconn*)*MtmNodes);
 	char* utility_errmsg;
     
-	while (conn_str < conn_str_end) 
+	for (i = 0; i < MtmNodes; i++) 
 	{ 
-		char* p = strchr(conn_str, ',');
-		if (p == NULL) { 
-			p = conn_str_end;
-		}
-		*p = '\0';
 		if (!BIT_CHECK(disabledNodeMask, i)) 
 		{
-			conns[i] = PQconnectdb(conn_str);
+			conns[i] = PQconnectdb(psprintf("%s application_name=%s", Mtm->nodes[i].con.connStr, MULTIMASTER_BROADCAST_SERVICE));
 			if (PQstatus(conns[i]) != CONNECTION_OK)
 			{
 				if (ignoreError) 
@@ -1847,12 +1843,10 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 					do { 
 						PQfinish(conns[i]);
 					} while (--i >= 0);                             
-					elog(ERROR, "Failed to establish connection '%s' to node %d", conn_str, failedNode);
+					elog(ERROR, "Failed to establish connection '%s' to node %d", Mtm->nodes[i].con.connStr, failedNode);
 				}
 			}
 		}
-		conn_str = p + 1;
-		i += 1;
 	}
 	Assert(i == MtmNodes);
     

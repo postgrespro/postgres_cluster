@@ -936,10 +936,10 @@ void MtmExecutor(int id, void* work, size_t size)
     {
 		EmitErrorReport();
         FlushErrorState();
-		MTM_TRACE("%d: REMOTE begin abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
+		MTM_INFO("%d: REMOTE begin abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
 		MtmEndSession(false);
         AbortCurrentTransaction();
-		MTM_TRACE("%d: REMOTE end abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
+		MTM_INFO("%d: REMOTE end abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
     }
     PG_END_TRY();
 
