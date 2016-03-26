@@ -639,6 +639,15 @@ static int raft_compact(raft_t raft) {
 		e->bytes = e->update.len;
 		e->snapshot = true;
 		assert(l->first == l->applied - 1);
+
+		// reset bytes progress of peers that were receiving the compacted entries
+		for (int i = 0; i < raft->config.peernum_max; i++) {
+			raft_peer_t *p = raft->peers + i;
+			if (!p->up) continue;
+			if (i == raft->me) continue;
+			if (p->acked.entries + 1 <= l->first)
+				p->acked.bytes = 0;
+		}
 	}
 	return compacted;
 }
