@@ -800,6 +800,12 @@ static void raft_handle_update(raft_t r, raft_msg_update_t *m) {
 	reply.progress.entries = RAFT_LOG_LAST_INDEX(r) + 1;
 	reply.progress.bytes = e->bytes;
 
+	if (m->previndex > RAFT_LOG_LAST_INDEX(r))
+	{
+		debug("got an update with previndex=%d > lastindex=%d\n", m->previndex, RAFT_LOG_LAST_INDEX(r));
+		goto finish;
+	}
+
 	if (reply.progress.entries > 0) {
 		reply.term = RAFT_LOG(r, reply.progress.entries - 1).term;
 	} else {
@@ -875,6 +881,7 @@ static void raft_handle_update(raft_t r, raft_msg_update_t *m) {
 
 	reply.success = true;
 finish:
+	assert((reply.progress.entries == m->previndex + 1) || (reply.progress.bytes == 0));
 	raft_send(r, sender, &reply, sizeof(reply));
 }
 
