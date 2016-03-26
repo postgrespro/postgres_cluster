@@ -453,10 +453,12 @@ static void raft_beat(raft_t r, int dst) {
 		if (p->acked.entries < RAFT_LOG_FIRST_INDEX(r)) {
 			// The peer has woken up from anabiosis. Send the first
 			// log entry (which is usually a snapshot).
+			debug("sending the snapshot to %d\n", dst);
 			sendindex = RAFT_LOG_FIRST_INDEX(r);
 			assert(RAFT_LOG(r, sendindex).snapshot);
 		} else {
 			// The peer is a bit behind. Send an update.
+			debug("sending update %d snapshot to %d\n", p->acked.entries, dst);
 			sendindex = p->acked.entries;
 		}
 		m->snapshot = RAFT_LOG(r, sendindex).snapshot;
@@ -474,9 +476,11 @@ static void raft_beat(raft_t r, int dst) {
 		m->empty = false;
 		m->offset = p->acked.bytes;
 		m->len = min(r->config.chunk_len, m->totallen - m->offset);
+		assert(m->len > 0);
 		memcpy(m->data, e->update.data + m->offset, m->len);
 	} else {
 		// The peer is up to date. Send an empty heartbeat.
+		debug("sending empty heartbeat to %d\n", dst);
 		m->empty = true;
 		m->len = 0;
 	}
@@ -815,6 +819,7 @@ static void raft_handle_update(raft_t r, raft_msg_update_t *m) {
 		);
 		raft_peer_t *p = r->peers + sender;
 		p->acked.entries = r->log.acked;
+		p->acked.bytes = 0;
 	}
 
 	if (!m->empty) {
@@ -888,7 +893,7 @@ static void raft_handle_done(raft_t r, raft_msg_done_t *m) {
 	peer->applied = m->applied;
 
 	if (m->success) {
-		debug("[from %d] ============= done\n", sender);
+		debug("[from %d] ============= done (%d, %d)\n", sender, m->progress.entries, m->progress.bytes);
 		peer->acked = m->progress;
 		peer->silent_ms = 0;
 	} else {
