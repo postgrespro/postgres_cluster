@@ -718,6 +718,33 @@ static bool raft_restore(raft_t r, int previndex, raft_entry_t *e) {
 	return true;
 }
 
+static bool raft_appendable(raft_t r, int previndex, int prevterm) {
+	int low, high;
+
+	raft_log_t *l = &r->log;
+
+	low = RAFT_LOG_FIRST_INDEX(r);
+	if (low == 0) low = -1; // allow appending at the start
+	high = RAFT_LOG_LAST_INDEX(r);
+
+	if (!inrange(low, previndex, high))
+	{
+		debug(
+			"previndex %d is outside log range %d-%d\n",
+			previndex, low, high
+		);
+		return false;
+	}
+
+	if (previndex != -1) {
+		raft_entry_t *pe = &RAFT_LOG(r, previndex);
+		if (pe->term != prevterm) {
+			debug("log term %d != prevterm %d\n", pe->term, prevterm);
+			return false;
+		}
+	}
+}
+
 static bool raft_append(raft_t r, int previndex, int prevterm, raft_entry_t *e) {
 	assert(e->bytes == e->update.len);
 	assert(!e->snapshot);
@@ -730,16 +757,9 @@ static bool raft_append(raft_t r, int previndex, int prevterm, raft_entry_t *e) 
 		l, previndex, prevterm,
 		e->term
 	);
-	if (previndex != -1) {
-		if (previndex < l->first) {
-			debug("previndex < first\n");
-			return false;
-		}
-	}
-	if (previndex > RAFT_LOG_LAST_INDEX(r)) {
-		debug("previndex(%d) > last(%d)\n", previndex, RAFT_LOG_LAST_INDEX(r));
-		return false;
-	}
+
+	if (!raft_appendable(r, previndex, prevterm)) return false;
+
 	if (previndex == RAFT_LOG_LAST_INDEX(r)) {
 		debug("previndex == last\n");
 		// appending to the end
@@ -752,14 +772,6 @@ static bool raft_append(raft_t r, int previndex, int prevterm, raft_entry_t *e) 
 			} else {
 				return false;
 			}
-		}
-	}
-
-	if (previndex != -1) {
-		raft_entry_t *pe = &RAFT_LOG(r, previndex);
-		if (pe->term != prevterm) {
-			debug("log term %d != prevterm %d\n", pe->term, prevterm);
-			return false;
 		}
 	}
 
@@ -797,14 +809,7 @@ static void raft_handle_update(raft_t r, raft_msg_update_t *m) {
 	raft_entry_t *e = &r->log.newentry;
 	raft_update_t *u = &e->update;
 
-	reply.progress.entries = RAFT_LOG_LAST_INDEX(r) + 1;
-	reply.progress.bytes = e->bytes;
-
-	if (m->previndex > RAFT_LOG_LAST_INDEX(r))
-	{
-		debug("got an update with previndex=%d > lastindex=%d\n", m->previndex, RAFT_LOG_LAST_INDEX(r));
-		goto finish;
-	}
+	if (!m->snapshot && !raft_appendable(r, m->previndex, m->prevterm)) goto finish;
 
 	if (reply.progress.entries > 0) {
 		reply.term = RAFT_LOG(r, reply.progress.entries - 1).term;
@@ -838,6 +843,13 @@ static void raft_handle_update(raft_t r, raft_msg_update_t *m) {
 	}
 
 	if (!m->empty) {
+		if ((m->offset > 0) && (e->term < m->term)) {
+			shout("a chunk of newer version of entry received, resetting progress to avoid corruption\n");
+			e->term = m->term;
+			e->bytes = 0;
+			goto finish;
+		}
+
 		if (m->offset > e->bytes) {
 			shout("unexpectedly large offset %d for a chunk, ignoring to avoid gaps\n", m->offset);
 			goto finish;
@@ -870,10 +882,8 @@ static void raft_handle_update(raft_t r, raft_msg_update_t *m) {
 		// just a heartbeat
 	}
 
-	reply.progress.entries = RAFT_LOG_LAST_INDEX(r) + 1;
-	reply.progress.bytes = e->bytes;
-	if (reply.progress.entries > 0) {
-		reply.term = RAFT_LOG(r, reply.progress.entries - 1).term;
+	if (RAFT_LOG_LAST_INDEX(r) >= 0) {
+		reply.term = RAFT_LOG(r, RAFT_LOG_LAST_INDEX(r)).term;
 	} else {
 		reply.term = -1;
 	}
@@ -881,7 +891,9 @@ static void raft_handle_update(raft_t r, raft_msg_update_t *m) {
 
 	reply.success = true;
 finish:
-	assert((reply.progress.entries == m->previndex + 1) || (reply.progress.bytes == 0));
+	reply.progress.entries = RAFT_LOG_LAST_INDEX(r) + 1;
+	reply.progress.bytes = e->bytes;
+
 	raft_send(r, sender, &reply, sizeof(reply));
 }
 
