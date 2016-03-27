@@ -71,10 +71,11 @@ my %tests = (
 $able->psql('postgres', "select raftable('hello', '$tests{hello}');");
 $baker->psql('postgres', "select raftable('and', '$tests{and}');");
 $charlie->psql('postgres', "select raftable('goodbye', '$tests{goodbye}');");
-#$baker->stop;
+$baker->stop;
 $able->psql('postgres', "select raftable('world', '$tests{world}');");
 
-#$baker->start;
+$baker->start;
+sleep(5);
 while (my ($key, $value) = each(%tests))
 {
 	my $o = $baker->psql('postgres', "select raftable('$key');");

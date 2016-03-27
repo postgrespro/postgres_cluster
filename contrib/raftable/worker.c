@@ -169,7 +169,7 @@ static bool remove_client(Client *c)
 	int sock = c->sock;
 	Assert(sock >= 0);
 	c->sock = -1;
-	pfree(c->msg);
+	if (c->msg) pfree(c->msg);
 
 	server.clientnum--;
 	close(sock);
