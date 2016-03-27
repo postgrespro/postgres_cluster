@@ -125,9 +125,6 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 {
     uint8 flags = 0;
 
-    if (MtmIsFilteredTxn) { 
-		return;
-	}
     if (txn->xact_action == XLOG_XACT_COMMIT) 
     	flags = PGLOGICAL_COMMIT;
 	else if (txn->xact_action == XLOG_XACT_PREPARE)
@@ -139,9 +136,8 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 	else
     	Assert(false);
 
-#if 0
 	if (flags == PGLOGICAL_COMMIT || flags == PGLOGICAL_PREPARE) { 
-		if (mm->isLocal) { 
+		if (MtmIsFilteredTxn) { 
 			return;
 		}
 	} else { 
@@ -151,7 +147,6 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 			return;
 		}
 	}
-#endif
 
     pq_sendbyte(out, 'C');		/* sending COMMIT */
 
