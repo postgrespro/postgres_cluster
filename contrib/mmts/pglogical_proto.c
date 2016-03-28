@@ -103,7 +103,7 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 {
 	bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
 	csn_t csn = MtmTransactionSnapshot(txn->xid);
-	MTM_TRACE("pglogical_write_begin %d CSN=%ld\n", txn->xid, csn);
+	MTM_INFO("%d: pglogical_write_begin %d CSN=%ld\n", MyProcPid, txn->xid, csn);
 	
 	if (csn == INVALID_CSN && !isRecovery) { 
 		MtmIsFilteredTxn = true;

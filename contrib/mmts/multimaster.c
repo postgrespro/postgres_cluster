@@ -156,7 +156,8 @@ char const* const MtmNodeStatusMnem[] =
 	"Offline", 
 	"Connected",
 	"Online",
-	"Recovery"
+	"Recovery",
+	"InMinor"
 };
 
 bool  MtmDoReplication;
@@ -633,10 +634,10 @@ MtmBeginTransaction(MtmCurrentTrans* x)
         x->isDistributed = MtmIsUserTransaction();
 		x->isPrepared = false;
 		x->isTransactionBlock = IsTransactionBlock();
-		if (x->isDistributed && Mtm->status != MTM_ONLINE) { 
+		/* Application name can be cahnged usnig PGAPPNAME environment variable */
+		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
 			/* reject all user's transactions at offline cluster */
 			MtmUnlock();			
-			Assert(Mtm->status == MTM_ONLINE);
 			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
 		}
 		x->containsDML = false;
@@ -983,11 +984,14 @@ bool MtmIsRecoveredNode(int nodeId)
 			 * We have to maintain two bitmasks: one is marking wal sender, another - correspondent nodes. 
 			 * Is there some better way to establish mapping between nodes ad WAL-seconder?
 			 */
+			elog(WARNING,"Node %d is catching up", nodeId);
 			MtmLock(LW_EXCLUSIVE);
 			BIT_SET(Mtm->nodeLockerMask, nodeId-1);
 			BIT_SET(Mtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
 			Mtm->nLockers += 1;
 			MtmUnlock();
+		} else { 
+			MTM_INFO("Continue recovery of node %d, slot position %lx, WAL position %lx, lockers %d\n", nodeId, MyWalSnd->sentPtr, GetXLogInsertRecPtr(), Mtm->nLockers);			
 		}
 		return true;
 	}
@@ -1024,7 +1028,7 @@ MtmCheckClusterLock()
 						break;
 					} else { 
 						/* recovered replica catched up with master */
-						elog(WARNING, "WAL-sender %d complete receovery", i);
+						elog(WARNING, "WAL-sender %d complete recovery", i);
 						BIT_CLEAR(Mtm->walSenderLockerMask, i);
 					}
 				}
@@ -1610,8 +1614,9 @@ void MtmReceiverStarted(int nodeId)
 	if (!BIT_CHECK(Mtm->pglogicalNodeMask, nodeId-1)) { 
 		BIT_SET(Mtm->pglogicalNodeMask, nodeId-1);
 		if (++Mtm->nReceivers == Mtm->nNodes-1) {
-			Assert(Mtm->status == MTM_CONNECTED);
-			MtmSwitchClusterMode(MTM_ONLINE);
+			if (Mtm->status == MTM_CONNECTED) { 
+				MtmSwitchClusterMode(MTM_ONLINE);
+			}
 		}
      }
 	SpinLockRelease(&Mtm->spinlock);	
@@ -1624,10 +1629,14 @@ void MtmReceiverStarted(int nodeId)
  */
 MtmSlotMode MtmReceiverSlotMode(int nodeId)
 {
+	bool recovery = false;
 	while (Mtm->status != MTM_CONNECTED && Mtm->status != MTM_ONLINE) { 		
+		MTM_INFO("%d: receiver slot mode %s\n", MyProcPid, MtmNodeStatusMnem[Mtm->status]);
 		if (Mtm->status == MTM_RECOVERY) { 
+			recovery = true;
 			if (Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId) { 
 				/* Choose for recovery first available slot */
+				elog(WARNING, "Start recovery from node %d", nodeId);
 				Mtm->recoverySlot = nodeId;
 				return SLOT_OPEN_EXISTED;
 			}
@@ -1635,8 +1644,13 @@ MtmSlotMode MtmReceiverSlotMode(int nodeId)
 		/* delay opening of other slots until recovery is completed */
 		MtmSleep(STATUS_POLL_DELAY);
 	}
+	if (recovery) { 
+		elog(WARNING, "Recreate replication slot for node %d after end of recovery", nodeId);
+	} else { 
+		MTM_INFO("%d: Reuse replication slot for node %d\n", MyProcPid, nodeId);
+	}
 	/* After recovery completion we need to drop all other slots to avoid receive of redundant data */
-	return Mtm->recoverySlot ? SLOT_CREATE_NEW : SLOT_OPEN_ALWAYS;
+	return recovery ? SLOT_CREATE_NEW : SLOT_OPEN_ALWAYS;
 }
 			
 static bool MtmIsBroadcast() 
@@ -1692,7 +1706,11 @@ MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
 static bool 
 MtmReplicationTxnFilterHook(struct PGLogicalTxnFilterArgs* args)
 {
-	return args->origin_id == InvalidRepOriginId || MtmIsRecoveredNode(MtmReplicationNodeId);
+	bool res = Mtm->status != MTM_RECOVERY
+		&& (args->origin_id == InvalidRepOriginId 
+			|| MtmIsRecoveredNode(MtmReplicationNodeId));
+	MTM_TRACE("%d: MtmReplicationTxnFilterHook->%d\n", MyProcPid, res);
+	return res;
 }
 
 void MtmSetupReplicationHooks(struct PGLogicalHooks* hooks)
