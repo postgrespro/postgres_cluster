@@ -8,6 +8,7 @@ Depends on
 ----------
 
 Raft implementation in C: https://github.com/kvap/raft
+Please compile the raft library with -fpic flag.
 
 Internals
 ---------
