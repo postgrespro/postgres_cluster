@@ -45,9 +45,10 @@
  *			(total_cost - startup_cost) * tuples_to_fetch / path->rows;
  * Note that a base relation's rows count (and, by extension, plan_rows for
  * plan nodes below the LIMIT node) are set without regard to any LIMIT, so
- * that this equation works properly.  (Also, these routines guarantee not to
- * set the rows count to zero, so there will be no zero divide.)  The LIMIT is
- * applied as a top-level plan node.
+ * that this equation works properly.  (Note: while path->rows is never zero
+ * for ordinary relations, it is zero for paths for provably-empty relations,
+ * so beware of division-by-zero.)  The LIMIT is applied as a top-level
+ * plan node.
  *
  * For largely historical reasons, most of the routines in this module use
  * the passed result Path only to store their results (rows, startup_cost and
@@ -350,16 +351,22 @@ cost_samplescan(Path *path, PlannerInfo *root,
  *
  * 'rel' is the relation to be operated upon
  * 'param_info' is the ParamPathInfo if this is a parameterized path, else NULL
+ * 'rows' may be used to point to a row estimate; if non-NULL, it overrides
+ * both 'rel' and 'param_info'.  This is useful when the path doesn't exactly
+ * correspond to any particular RelOptInfo.
  */
 void
 cost_gather(GatherPath *path, PlannerInfo *root,
-			RelOptInfo *rel, ParamPathInfo *param_info)
+			RelOptInfo *rel, ParamPathInfo *param_info,
+			double *rows)
 {
 	Cost		startup_cost = 0;
 	Cost		run_cost = 0;
 
 	/* Mark the path with the correct row estimate */
-	if (param_info)
+	if (rows)
+		path->path.rows = *rows;
+	else if (param_info)
 		path->path.rows = param_info->ppi_rows;
 	else
 		path->path.rows = rel->rows;
@@ -1751,6 +1758,8 @@ cost_agg(Path *path, PlannerInfo *root,
 	{
 		/* must be AGG_HASHED */
 		startup_cost = input_total_cost;
+		if (!enable_hashagg)
+			startup_cost += disable_cost;
 		startup_cost += aggcosts->transCost.startup;
 		startup_cost += aggcosts->transCost.per_tuple * input_tuples;
 		startup_cost += (cpu_operator_cost * numGroupCols) * input_tuples;
@@ -1982,6 +1991,12 @@ final_cost_nestloop(PlannerInfo *root, NestPath *path,
 	Cost		cpu_per_tuple;
 	QualCost	restrict_qual_cost;
 	double		ntuples;
+
+	/* Protect some assumptions below that rowcounts aren't zero or NaN */
+	if (outer_path_rows <= 0 || isnan(outer_path_rows))
+		outer_path_rows = 1;
+	if (inner_path_rows <= 0 || isnan(inner_path_rows))
+		inner_path_rows = 1;
 
 	/* Mark the path with the correct row estimate */
 	if (path->path.param_info)
@@ -3017,8 +3032,8 @@ cost_subplan(PlannerInfo *root, SubPlan *subplan, Plan *plan)
 
 		if (subplan->subLinkType == EXISTS_SUBLINK)
 		{
-			/* we only need to fetch 1 tuple */
-			sp_cost.per_tuple += plan_run_cost / plan->plan_rows;
+			/* we only need to fetch 1 tuple; clamp to avoid zero divide */
+			sp_cost.per_tuple += plan_run_cost / clamp_row_est(plan->plan_rows);
 		}
 		else if (subplan->subLinkType == ALL_SUBLINK ||
 				 subplan->subLinkType == ANY_SUBLINK)

@@ -20,6 +20,7 @@
 
 #include "parallel.h"
 #include "pg_backup_utils.h"
+#include "fe_utils/string_utils.h"
 
 #ifndef WIN32
 #include <sys/types.h>
@@ -1262,7 +1263,7 @@ readMessageFromPipe(int fd)
 	int			ret;
 
 	/*
-	 * The problem here is that we need to deal with several possibilites: we
+	 * The problem here is that we need to deal with several possibilities: we
 	 * could receive only a partial message or several messages at once. The
 	 * caller expects us to return exactly one message however.
 	 *

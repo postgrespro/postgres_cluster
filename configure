@@ -10193,7 +10193,7 @@ fi
 ## Header files
 ##
 
-for ac_header in atomic.h crypt.h dld.h fp_class.h getopt.h ieeefp.h ifaddrs.h langinfo.h mbarrier.h poll.h pwd.h sys/ioctl.h sys/ipc.h sys/poll.h sys/pstat.h sys/resource.h sys/select.h sys/sem.h sys/shm.h sys/socket.h sys/sockio.h sys/tas.h sys/time.h sys/un.h termios.h ucred.h utime.h wchar.h wctype.h
+for ac_header in atomic.h crypt.h dld.h fp_class.h getopt.h ieeefp.h ifaddrs.h langinfo.h mbarrier.h poll.h pwd.h sys/epoll.h sys/ioctl.h sys/ipc.h sys/poll.h sys/pstat.h sys/resource.h sys/select.h sys/sem.h sys/shm.h sys/socket.h sys/sockio.h sys/tas.h sys/time.h sys/un.h termios.h ucred.h utime.h wchar.h wctype.h
 do :
   as_ac_Header=`$as_echo "ac_cv_header_$ac_header" | $as_tr_sh`
 ac_fn_c_check_header_mongrel "$LINENO" "$ac_header" "$as_ac_Header" "$ac_includes_default"
@@ -12364,6 +12364,59 @@ $as_echo "#define GETTIMEOFDAY_1ARG 1" >>confdefs.h
 
 fi
 
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for wcstombs_l declaration" >&5
+$as_echo_n "checking for wcstombs_l declaration... " >&6; }
+if ${pgac_cv_func_wcstombs_l+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <stdlib.h>
+#include <locale.h>
+int
+main ()
+{
+#ifndef wcstombs_l
+(void) wcstombs_l;
+#endif
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"; then :
+  pgac_cv_func_wcstombs_l='yes'
+else
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <stdlib.h>
+#include <locale.h>
+#include <xlocale.h>
+int
+main ()
+{
+#ifndef wcstombs_l
+(void) wcstombs_l;
+#endif
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"; then :
+  pgac_cv_func_wcstombs_l='yes (in xlocale.h)'
+else
+  pgac_cv_func_wcstombs_l='no'
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $pgac_cv_func_wcstombs_l" >&5
+$as_echo "$pgac_cv_func_wcstombs_l" >&6; }
+if test "$pgac_cv_func_wcstombs_l" = 'yes (in xlocale.h)'; then
+
+$as_echo "#define WCSTOMBS_L_IN_XLOCALE 1" >>confdefs.h
+
+fi
 
 # Some versions of libedit contain strlcpy(), setproctitle(), and other
 # symbols that that library has no business exposing to the world.  Pending
@@ -14733,13 +14786,6 @@ $as_echo "#define USE_WIN32_SHARED_MEMORY 1" >>confdefs.h
   SHMEM_IMPLEMENTATION="src/backend/port/win32_shmem.c"
 fi
 
-# Select latch implementation type.
-if test "$PORTNAME" != "win32"; then
-  LATCH_IMPLEMENTATION="src/backend/port/unix_latch.c"
-else
-  LATCH_IMPLEMENTATION="src/backend/port/win32_latch.c"
-fi
-
 # If not set in template file, set bytes to use libc memset()
 if test x"$MEMSET_LOOP_LIMIT" = x"" ; then
   MEMSET_LOOP_LIMIT=1024
@@ -15815,7 +15861,7 @@ fi
 ac_config_files="$ac_config_files GNUmakefile src/Makefile.global"
 
 
-ac_config_links="$ac_config_links src/backend/port/dynloader.c:src/backend/port/dynloader/${template}.c src/backend/port/pg_sema.c:${SEMA_IMPLEMENTATION} src/backend/port/pg_shmem.c:${SHMEM_IMPLEMENTATION} src/backend/port/pg_latch.c:${LATCH_IMPLEMENTATION} src/include/dynloader.h:src/backend/port/dynloader/${template}.h src/include/pg_config_os.h:src/include/port/${template}.h src/Makefile.port:src/makefiles/Makefile.${template}"
+ac_config_links="$ac_config_links src/backend/port/dynloader.c:src/backend/port/dynloader/${template}.c src/backend/port/pg_sema.c:${SEMA_IMPLEMENTATION} src/backend/port/pg_shmem.c:${SHMEM_IMPLEMENTATION} src/include/dynloader.h:src/backend/port/dynloader/${template}.h src/include/pg_config_os.h:src/include/port/${template}.h src/Makefile.port:src/makefiles/Makefile.${template}"
 
 
 if test "$PORTNAME" = "win32"; then
@@ -16539,7 +16585,6 @@ do
     "src/backend/port/dynloader.c") CONFIG_LINKS="$CONFIG_LINKS src/backend/port/dynloader.c:src/backend/port/dynloader/${template}.c" ;;
     "src/backend/port/pg_sema.c") CONFIG_LINKS="$CONFIG_LINKS src/backend/port/pg_sema.c:${SEMA_IMPLEMENTATION}" ;;
     "src/backend/port/pg_shmem.c") CONFIG_LINKS="$CONFIG_LINKS src/backend/port/pg_shmem.c:${SHMEM_IMPLEMENTATION}" ;;
-    "src/backend/port/pg_latch.c") CONFIG_LINKS="$CONFIG_LINKS src/backend/port/pg_latch.c:${LATCH_IMPLEMENTATION}" ;;
     "src/include/dynloader.h") CONFIG_LINKS="$CONFIG_LINKS src/include/dynloader.h:src/backend/port/dynloader/${template}.h" ;;
     "src/include/pg_config_os.h") CONFIG_LINKS="$CONFIG_LINKS src/include/pg_config_os.h:src/include/port/${template}.h" ;;
     "src/Makefile.port") CONFIG_LINKS="$CONFIG_LINKS src/Makefile.port:src/makefiles/Makefile.${template}" ;;

@@ -1645,10 +1645,12 @@ translate_sub_tlist(List *tlist, int relid)
  * create_gather_path
  *	  Creates a path corresponding to a gather scan, returning the
  *	  pathnode.
+ *
+ * 'rows' may optionally be set to override row estimates from other sources.
  */
 GatherPath *
 create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
-				   Relids required_outer)
+				   PathTarget *target, Relids required_outer, double *rows)
 {
 	GatherPath *pathnode = makeNode(GatherPath);
 
@@ -1656,7 +1658,7 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 
 	pathnode->path.pathtype = T_Gather;
 	pathnode->path.parent = rel;
-	pathnode->path.pathtarget = rel->reltarget;
+	pathnode->path.pathtarget = target;
 	pathnode->path.param_info = get_baserel_parampathinfo(root, rel,
 														  required_outer);
 	pathnode->path.parallel_aware = false;
@@ -1674,7 +1676,7 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		pathnode->single_copy = true;
 	}
 
-	cost_gather(pathnode, root, rel, pathnode->path.param_info);
+	cost_gather(pathnode, root, rel, pathnode->path.param_info, rows);
 
 	return pathnode;
 }
@@ -2222,6 +2224,36 @@ apply_projection_to_path(PlannerInfo *root,
 	path->total_cost += target->cost.startup - oldcost.startup +
 		(target->cost.per_tuple - oldcost.per_tuple) * path->rows;
 
+	/*
+	 * If the path happens to be a Gather path, we'd like to arrange for the
+	 * subpath to return the required target list so that workers can help
+	 * project. But if there is something that is not parallel-safe in the
+	 * target expressions, then we can't.
+	 */
+	if (IsA(path, GatherPath) &&
+		!has_parallel_hazard((Node *) target->exprs, false))
+	{
+		GatherPath *gpath = (GatherPath *) path;
+
+		/*
+		 * We always use create_projection_path here, even if the subpath is
+		 * projection-capable, so as to avoid modifying the subpath in place.
+		 * It seems unlikely at present that there could be any other
+		 * references to the subpath anyway, but better safe than sorry.
+		 * (create_projection_plan will only insert a Result node if the
+		 * subpath is not projection-capable, so we only include the cost of
+		 * that node if it will actually be inserted.  This is a bit grotty
+		 * but we can improve it later if it seems important.)
+		 */
+		if (!is_projection_capable_path(gpath->subpath))
+			gpath->path.total_cost += cpu_tuple_cost * gpath->subpath->rows;
+		gpath->subpath = (Path *)
+			create_projection_path(root,
+								   gpath->subpath->parent,
+								   gpath->subpath,
+								   target);
+	}
+
 	return path;
 }
 
@@ -2387,6 +2419,8 @@ create_upper_unique_path(PlannerInfo *root,
  * 'qual' is the HAVING quals if any
  * 'aggcosts' contains cost info about the aggregate functions to be computed
  * 'numGroups' is the estimated number of groups (1 if not grouping)
+ * 'combineStates' is set to true if the Agg node should combine agg states
+ * 'finalizeAggs' is set to false if the Agg node should not call the finalfn
  */
 AggPath *
 create_agg_path(PlannerInfo *root,
@@ -2397,7 +2431,9 @@ create_agg_path(PlannerInfo *root,
 				List *groupClause,
 				List *qual,
 				const AggClauseCosts *aggcosts,
-				double numGroups)
+				double numGroups,
+				bool combineStates,
+				bool finalizeAggs)
 {
 	AggPath    *pathnode = makeNode(AggPath);
 
@@ -2420,6 +2456,8 @@ create_agg_path(PlannerInfo *root,
 	pathnode->numGroups = numGroups;
 	pathnode->groupClause = groupClause;
 	pathnode->qual = qual;
+	pathnode->finalizeAggs = finalizeAggs;
+	pathnode->combineStates = combineStates;
 
 	cost_agg(&pathnode->path, root,
 			 aggstrategy, aggcosts,

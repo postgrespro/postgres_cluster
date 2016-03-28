@@ -89,6 +89,7 @@ gin_extract_query_trgm(PG_FUNCTION_ARGS)
 	switch (strategy)
 	{
 		case SimilarityStrategyNumber:
+		case WordSimilarityStrategyNumber:
 			trg = generate_trgm(VARDATA(val), VARSIZE(val) - VARHDRSZ);
 			break;
 		case ILikeStrategyNumber:
@@ -176,6 +177,7 @@ gin_trgm_consistent(PG_FUNCTION_ARGS)
 	bool		res;
 	int32		i,
 				ntrue;
+	double		nlimit;
 
 	/* All cases served by this function are inexact */
 	*recheck = true;
@@ -183,6 +185,10 @@ gin_trgm_consistent(PG_FUNCTION_ARGS)
 	switch (strategy)
 	{
 		case SimilarityStrategyNumber:
+		case WordSimilarityStrategyNumber:
+			nlimit = (strategy == SimilarityStrategyNumber) ?
+				similarity_threshold : word_similarity_threshold;
+
 			/* Count the matches */
 			ntrue = 0;
 			for (i = 0; i < nkeys; i++)
@@ -204,9 +210,10 @@ gin_trgm_consistent(PG_FUNCTION_ARGS)
 			 * And again, c (ntrue) is a lower bound of len2, but c <= len1
 			 * just by definition and, consequently, upper bound of
 			 * similarity is just c / len1.
-			 * So, independly on DIVUNION the upper bound formula is the same.
+			 * So, independently on DIVUNION the upper bound formula is the same.
 			 */
-			res = (nkeys == 0) ? false : ((((((float4) ntrue) / ((float4) nkeys))) >= trgm_limit) ? true : false);
+			res = (nkeys == 0) ? false :
+				(((((float4) ntrue) / ((float4) nkeys))) >= nlimit);
 			break;
 		case ILikeStrategyNumber:
 #ifndef IGNORECASE
@@ -268,10 +275,15 @@ gin_trgm_triconsistent(PG_FUNCTION_ARGS)
 	int32		i,
 				ntrue;
 	bool	   *boolcheck;
+	double		nlimit;
 
 	switch (strategy)
 	{
 		case SimilarityStrategyNumber:
+		case WordSimilarityStrategyNumber:
+			nlimit = (strategy == SimilarityStrategyNumber) ?
+				similarity_threshold : word_similarity_threshold;
+
 			/* Count the matches */
 			ntrue = 0;
 			for (i = 0; i < nkeys; i++)
@@ -283,7 +295,9 @@ gin_trgm_triconsistent(PG_FUNCTION_ARGS)
 			/*
 			 * See comment in gin_trgm_consistent() about * upper bound formula
 			 */
-			res = (nkeys == 0) ? GIN_FALSE : (((((float4) ntrue) / ((float4) nkeys)) >= trgm_limit) ? GIN_MAYBE : GIN_FALSE);
+			res = (nkeys == 0)
+				? GIN_FALSE : (((((float4) ntrue) / ((float4) nkeys)) >= nlimit)
+							? GIN_MAYBE : GIN_FALSE);
 			break;
 		case ILikeStrategyNumber:
 #ifndef IGNORECASE
@@ -316,7 +330,7 @@ gin_trgm_triconsistent(PG_FUNCTION_ARGS)
 			else
 			{
 				/*
-				 * As trigramsMatchGraph implements a montonic boolean function,
+				 * As trigramsMatchGraph implements a monotonic boolean function,
 				 * promoting all GIN_MAYBE keys to GIN_TRUE will give a
 				 * conservative result.
 				 */

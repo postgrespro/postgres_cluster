@@ -75,6 +75,7 @@ test: drop_if_exists
 test: updatable_views
 test: rolenames
 test: roleattributes
+test: create_am
 test: sanity_check
 test: errors
 test: select
@@ -88,7 +89,6 @@ test: union
 test: case
 test: join
 test: aggregates
-test: groupingsets
 test: transactions
 ignore: random
 test: random
@@ -113,6 +113,8 @@ test: replica_identity
 test: rowsecurity
 test: object_address
 test: tablesample
+test: groupingsets
+test: drop_operator
 test: alter_generic
 test: alter_operator
 test: misc

@@ -188,6 +188,7 @@ _copyModifyTable(const ModifyTable *from)
 	COPY_NODE_FIELD(withCheckOptionLists);
 	COPY_NODE_FIELD(returningLists);
 	COPY_NODE_FIELD(fdwPrivLists);
+	COPY_BITMAPSET_FIELD(fdwDirectModifyPlans);
 	COPY_NODE_FIELD(rowMarks);
 	COPY_SCALAR_FIELD(epqParam);
 	COPY_SCALAR_FIELD(onConflictAction);
@@ -648,6 +649,7 @@ _copyForeignScan(const ForeignScan *from)
 	/*
 	 * copy remainder of node
 	 */
+	COPY_SCALAR_FIELD(operation);
 	COPY_SCALAR_FIELD(fs_server);
 	COPY_NODE_FIELD(fdw_exprs);
 	COPY_NODE_FIELD(fdw_private);
@@ -1231,6 +1233,7 @@ _copyAggref(const Aggref *from)
 
 	COPY_SCALAR_FIELD(aggfnoid);
 	COPY_SCALAR_FIELD(aggtype);
+	COPY_SCALAR_FIELD(aggoutputtype);
 	COPY_SCALAR_FIELD(aggcollid);
 	COPY_SCALAR_FIELD(inputcollid);
 	COPY_NODE_FIELD(aggdirectargs);
@@ -3828,6 +3831,18 @@ _copyCreateTransformStmt(const CreateTransformStmt *from)
 	return newnode;
 }
 
+static CreateAmStmt *
+_copyCreateAmStmt(const CreateAmStmt *from)
+{
+	CreateAmStmt *newnode = makeNode(CreateAmStmt);
+
+	COPY_STRING_FIELD(amname);
+	COPY_NODE_FIELD(handler_name);
+	COPY_SCALAR_FIELD(amtype);
+
+	return newnode;
+}
+
 static CreateTrigStmt *
 _copyCreateTrigStmt(const CreateTrigStmt *from)
 {
@@ -4818,6 +4833,9 @@ copyObject(const void *from)
 			break;
 		case T_CreateTransformStmt:
 			retval = _copyCreateTransformStmt(from);
+			break;
+		case T_CreateAmStmt:
+			retval = _copyCreateAmStmt(from);
 			break;
 		case T_CreateTrigStmt:
 			retval = _copyCreateTrigStmt(from);

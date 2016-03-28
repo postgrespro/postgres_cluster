@@ -313,7 +313,7 @@ s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY
 	{
 		print "Generating probes.h...\n";
 		system(
-'psed -f src/backend/utils/Gen_dummy_probes.sed src/backend/utils/probes.d > src/include/utils/probes.h'
+'perl src/backend/utils/Gen_dummy_probes.pl src/backend/utils/probes.d > src/include/utils/probes.h'
 		);
 	}
 
@@ -347,6 +347,17 @@ s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY
 		print "Generating plerrcodes.h...\n";
 		system(
 'perl src/pl/plpgsql/src/generate-plerrcodes.pl src/backend/utils/errcodes.txt > src/pl/plpgsql/src/plerrcodes.h'
+		);
+	}
+
+	if ($self->{options}->{tcl}
+		&& IsNewer(
+			'src/pl/tcl/pltclerrcodes.h',
+			'src/backend/utils/errcodes.txt'))
+	{
+		print "Generating pltclerrcodes.h...\n";
+		system(
+'perl src/pl/tcl/generate-pltclerrcodes.pl src/backend/utils/errcodes.txt > src/pl/tcl/pltclerrcodes.h'
 		);
 	}
 

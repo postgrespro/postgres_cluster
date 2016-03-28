@@ -192,6 +192,7 @@ _equalAggref(const Aggref *a, const Aggref *b)
 {
 	COMPARE_SCALAR_FIELD(aggfnoid);
 	COMPARE_SCALAR_FIELD(aggtype);
+	COMPARE_SCALAR_FIELD(aggoutputtype);
 	COMPARE_SCALAR_FIELD(aggcollid);
 	COMPARE_SCALAR_FIELD(inputcollid);
 	COMPARE_NODE_FIELD(aggdirectargs);
@@ -1855,6 +1856,16 @@ _equalCreateTransformStmt(const CreateTransformStmt *a, const CreateTransformStm
 }
 
 static bool
+_equalCreateAmStmt(const CreateAmStmt *a, const CreateAmStmt *b)
+{
+	COMPARE_STRING_FIELD(amname);
+	COMPARE_NODE_FIELD(handler_name);
+	COMPARE_SCALAR_FIELD(amtype);
+
+	return true;
+}
+
+static bool
 _equalCreateTrigStmt(const CreateTrigStmt *a, const CreateTrigStmt *b)
 {
 	COMPARE_STRING_FIELD(trigname);
@@ -3145,6 +3156,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_CreateTransformStmt:
 			retval = _equalCreateTransformStmt(a, b);
+			break;
+		case T_CreateAmStmt:
+			retval = _equalCreateAmStmt(a, b);
 			break;
 		case T_CreateTrigStmt:
 			retval = _equalCreateTrigStmt(a, b);

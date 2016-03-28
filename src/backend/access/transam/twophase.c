@@ -1733,7 +1733,7 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 	 * transaction manager isn't active.
 	 *
 	 * It's also possible to move I/O out of the lock, but on
-	 * every error we should check whether somebody commited our
+	 * every error we should check whether somebody committed our
 	 * transaction in different backend. Let's leave this optimisation
 	 * for future, if somebody will spot that this place cause
 	 * bottleneck.

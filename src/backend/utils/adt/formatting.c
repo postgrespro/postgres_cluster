@@ -2506,12 +2506,15 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 				break;
 			case DCH_OF:
 				INVALID_FOR_INTERVAL;
-				sprintf(s, "%+0*d", S_FM(n->suffix) ? 0 : (tm->tm_gmtoff >= 0) ? 3 : 4,
-						(int) tm->tm_gmtoff / SECS_PER_HOUR);
+				sprintf(s, "%c%0*d",
+						(tm->tm_gmtoff >= 0) ? '+' : '-',
+						S_FM(n->suffix) ? 0 : 2,
+						abs((int) tm->tm_gmtoff) / SECS_PER_HOUR);
 				s += strlen(s);
-				if ((int) tm->tm_gmtoff % SECS_PER_HOUR != 0)
+				if (abs((int) tm->tm_gmtoff) % SECS_PER_HOUR != 0)
 				{
-					sprintf(s, ":%02d", abs((int) tm->tm_gmtoff % SECS_PER_HOUR) / SECS_PER_MINUTE);
+					sprintf(s, ":%02d",
+							(abs((int) tm->tm_gmtoff) % SECS_PER_HOUR) / SECS_PER_MINUTE);
 					s += strlen(s);
 				}
 				break;
@@ -3525,6 +3528,7 @@ to_date(PG_FUNCTION_ARGS)
 
 	do_to_timestamp(date_txt, fmt, &tm, &fsec);
 
+	/* Prevent overflow in Julian-day routines */
 	if (!IS_VALID_JULIAN(tm.tm_year, tm.tm_mon, tm.tm_mday))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
@@ -3532,6 +3536,13 @@ to_date(PG_FUNCTION_ARGS)
 						text_to_cstring(date_txt))));
 
 	result = date2j(tm.tm_year, tm.tm_mon, tm.tm_mday) - POSTGRES_EPOCH_JDATE;
+
+	/* Now check for just-out-of-range dates */
+	if (!IS_VALID_DATE(result))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+				 errmsg("date out of range: \"%s\"",
+						text_to_cstring(date_txt))));
 
 	PG_RETURN_DATEADT(result);
 }

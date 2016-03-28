@@ -162,6 +162,13 @@ SELECT 'Wed Jul 11 10:51:14 PST+03:00 2001'::timestamptz;
 
 SELECT '' AS "64", d1 FROM TIMESTAMPTZ_TBL;
 
+-- Check behavior at the lower boundary of the timestamp range
+SELECT '4714-11-24 00:00:00+00 BC'::timestamptz;
+SELECT '4714-11-23 16:00:00-08 BC'::timestamptz;
+SELECT 'Sun Nov 23 16:00:00 4714 PST BC'::timestamptz;
+SELECT '4714-11-23 23:59:59+00 BC'::timestamptz;  -- out of range
+-- The upper boundary differs between integer and float timestamps, so no check
+
 -- Demonstrate functions and operators
 SELECT '' AS "48", d1 FROM TIMESTAMPTZ_TBL
    WHERE d1 > timestamp with time zone '1997-01-02';
@@ -240,6 +247,23 @@ SELECT '' AS to_char_10, to_char(d1, 'IYYY IYY IY I IW IDDD ID')
 
 SELECT '' AS to_char_11, to_char(d1, 'FMIYYY FMIYY FMIY FMI FMIW FMIDDD FMID')
    FROM TIMESTAMPTZ_TBL;
+
+-- Check OF with various zone offsets, particularly fractional hours
+SET timezone = '00:00';
+SELECT to_char(now(), 'OF');
+SET timezone = '+02:00';
+SELECT to_char(now(), 'OF');
+SET timezone = '-13:00';
+SELECT to_char(now(), 'OF');
+SET timezone = '-00:30';
+SELECT to_char(now(), 'OF');
+SET timezone = '00:30';
+SELECT to_char(now(), 'OF');
+SET timezone = '-04:30';
+SELECT to_char(now(), 'OF');
+SET timezone = '04:30';
+SELECT to_char(now(), 'OF');
+RESET timezone;
 
 CREATE TABLE TIMESTAMPTZ_TST (a int , b timestamptz);
 
