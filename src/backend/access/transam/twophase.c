@@ -1241,9 +1241,9 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
  * Reads 2PC data from xlog. During checkpoint this data will be moved to
  * twophase files and ReadTwoPhaseFile should be used instead.
  *
- * Note clearly that this function accesses WAL during normal operation, similarly
- * to the way WALSender or Logical Decoding would do. It does not run during
- * crash recovery or standby processing.
+ * Note clearly that this function access WAL not only during recovery/replay
+ * but also during normal operation, similarly to the way WALSender or
+ * Logical Decoding would do.
  */
 static void
 XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
@@ -1616,7 +1616,6 @@ XlogRedoFinishPrepared(TransactionId xid, bool isCommit)
 	PGPROC	   *proc;
 	PGXACT	   *pgxact;
 
-	/* During replay that lock isn't really necessary, but let's take it anyway */
 	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
 	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
 	{

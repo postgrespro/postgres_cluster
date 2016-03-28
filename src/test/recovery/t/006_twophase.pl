@@ -1,4 +1,3 @@
-# Checks for recovery_min_apply_delay
 use strict;
 use warnings;
 use PostgresNode;
@@ -24,7 +23,7 @@ $node_slave->start;
 $node_master->append_conf('postgresql.conf', qq(
 synchronous_standby_names = '*'
 ));
-$node_master->restart;
+$node_master->psql('postgres', "select pg_reload_conf()");
 
 my $psql_out = '';
 my $psql_rc = '';
