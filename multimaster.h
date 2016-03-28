@@ -27,6 +27,7 @@
 #define MULTIMASTER_MAX_CONN_STR_SIZE   128
 #define MULTIMASTER_MAX_HOST_NAME_SIZE  64
 #define MULTIMASTER_BROADCAST_SERVICE   "mtm_broadcast"
+#define MULTIMASTER_ADMIN               "mtm_admin"
 
 #define USEC 1000000
 

@@ -348,10 +348,9 @@ Retry:
 			/* Some node considered that I am dead, so switch to recovery mode */
 			if (BIT_CHECK(resp.disabledNodeMask, MtmNodeId-1)) { 
 				elog(WARNING, "Node %d think that I am dead", resp.node);
+				BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
 				MtmSwitchClusterMode(MTM_RECOVERY);
 			}
-			/* Combine disable masks from all node. Is it actually correct or we should better check availability of nodes ourselves? */
-			Mtm->disabledNodeMask |= resp.disabledNodeMask;
 			return sd;
 		}
     }
@@ -377,7 +376,7 @@ static void MtmOpenConnections()
 	}
 	if (Mtm->nNodes < MtmNodes/2+1) { /* no quorum */
 		elog(WARNING, "Node is out of quorum: only %d nodes from %d are accssible", Mtm->nNodes, MtmNodes);
-		Mtm->status = MTM_OFFLINE;
+		Mtm->status = MTM_IN_MINORITY;
 	} else if (Mtm->status == MTM_INITIALIZATION) { 
 		MtmSwitchClusterMode(MTM_CONNECTED);
 	}
@@ -431,6 +430,7 @@ static void MtmAcceptOneConnection()
 			resp.dxid = HANDSHAKE_MAGIC;
 			resp.sxid = ShmemVariableCache->nextXid;
 			resp.csn  = MtmGetCurrentTime();
+			resp.node = MtmNodeId;
 			MtmUpdateNodeConnectionInfo(&Mtm->nodes[req.hdr.node-1].con, req.connStr);
 			if (!MtmWriteSocket(fd, &resp, sizeof resp)) { 
 				elog(WARNING, "Arbiter failed to write response for handshake message to node %d", resp.node);
