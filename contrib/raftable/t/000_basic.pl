@@ -3,7 +3,7 @@ use warnings;
 
 use PostgresNode;
 use TestLib;
-use Test::More tests => 4;
+use Test::More tests => 5;
 
 sub genstr
 {
@@ -79,7 +79,18 @@ sleep(5);
 while (my ($key, $value) = each(%tests))
 {
 	my $o = $baker->psql('postgres', "select raftable('$key');");
-	is($o, $value, "Check that baker has all the state replicated");
+	is($o, $value, "Baker has '$key'");
 }
+
+my $ok = 1;
+my $o = $baker->psql('postgres', "select raftable();");
+while ($o =~ /\((\w+),(\w+)\)/g)
+{
+	if (!exists $tests{$1}) { $ok = 0; last; }
+	my $val = delete $tests{$1};
+	if ($val ne $2) { $ok = 0; last; }
+}
+if (keys %tests > 0) { $ok = 0; }
+is($ok, 1, "Baker has everything");
 
 exit(0);
