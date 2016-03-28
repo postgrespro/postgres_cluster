@@ -1049,6 +1049,7 @@ MtmCheckClusterLock()
 				Mtm->nNodes += Mtm->nLockers;
 				Mtm->nLockers = 0;
 				Mtm->nodeLockerMask = 0;
+				MtmCheckQuorum();
 			}
 		}
 		break;
@@ -1058,14 +1059,17 @@ MtmCheckClusterLock()
 /**
  * Build internode connectivity mask. 1 - means that node is disconnected.
  */
-static void 
+static bool 
 MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 {
 	int i, j, n = MtmNodes;
 	for (i = 0; i < n; i++) { 
 		if (i+1 != MtmNodeId) { 
 			void* data = PaxosGet(psprintf("node-mask-%d", i+1), NULL, NULL, nowait);
-			matrix[i] = data ? *(nodemask_t*)data : 0;
+			if (data == NULL) { 
+				return false;
+			}
+			matrix[i] = *(nodemask_t*)data;
 		} else { 
 			matrix[i] = Mtm->connectivityMask;
 		}
@@ -1076,6 +1080,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 			matrix[i] |= ((matrix[j] >> i) & 1) << j;
 		}
 	}
+	return true;
 }	
 
 
@@ -1083,14 +1088,17 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
  * Build connectivity graph, find clique in it and extend disabledNodeMask by nodes not included in clique.
  * This function returns false if current node is excluded from cluster, true otherwise
  */
-void MtmRefreshClusterStatus(bool nowait)
+bool MtmRefreshClusterStatus(bool nowait)
 {
 	nodemask_t mask, clique;
 	nodemask_t matrix[MAX_NODES];
 	int clique_size;
 	int i;
 
-	MtmBuildConnectivityMatrix(matrix, nowait);
+	if (!MtmBuildConnectivityMatrix(matrix, nowait)) { 
+		/* RAFT is not available */
+		return false;
+	}
 
 	clique = MtmFindMaxClique(matrix, MtmNodes, &clique_size);
 	if (clique_size >= MtmNodes/2+1) { /* have quorum */
@@ -1110,6 +1118,7 @@ void MtmRefreshClusterStatus(bool nowait)
 				BIT_CLEAR(Mtm->disabledNodeMask, i);
 			}
 		}
+		MtmCheckQuorum();
 		MtmUnlock();
 		if (BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId-1)) { 
 			if (Mtm->status == MTM_ONLINE) {
@@ -1122,9 +1131,27 @@ void MtmRefreshClusterStatus(bool nowait)
 		}
 	} else { 
 		elog(WARNING, "Clique %lx has no quorum", clique);
+		Mtm->status = MTM_IN_MINORITY;
 	}
+	return true;
 }
 
+void MtmCheckQuorum(void)
+{
+	if (Mtm->nNodes < MtmNodes/2+1) {
+		if (Mtm->status == MTM_ONLINE) { /* out of quorum */
+			elog(WARNING, "Node is in minority: disabled mask %lx", Mtm->disabledNodeMask);
+			Mtm->status = MTM_IN_MINORITY;
+		}
+	} else {
+		if (Mtm->status == MTM_IN_MINORITY) { 
+			elog(WARNING, "Node is in majority: dissbled mask %lx", Mtm->disabledNodeMask);
+			Mtm->status = MTM_ONLINE;
+		}
+	}
+}
+			
+	
 void MtmOnNodeDisconnect(int nodeId)
 {
 	BIT_SET(Mtm->connectivityMask, nodeId-1);
@@ -1133,7 +1160,15 @@ void MtmOnNodeDisconnect(int nodeId)
 	/* Wait more than socket KEEPALIVE timeout to let other nodes update their statuses */
 	MtmSleep(MtmKeepaliveTimeout);
 
-	MtmRefreshClusterStatus(false);
+	if (!MtmRefreshClusterStatus(false)) { 
+		MtmLock(LW_EXCLUSIVE);
+		if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
+			BIT_SET(Mtm->disabledNodeMask, nodeId-1);
+			Mtm->nNodes -= 1;
+			MtmCheckQuorum();
+		}
+		MtmUnlock();
+	}
 }
 
 void MtmOnNodeConnect(int nodeId)
@@ -1635,6 +1670,7 @@ void MtmDropNode(int nodeId, bool dropSlot)
 		}
 		BIT_SET(Mtm->disabledNodeMask, nodeId-1);
 		Mtm->nNodes -= 1;
+		MtmCheckQuorum();
 		if (!MtmIsBroadcast())
 		{
 			MtmBroadcastUtilityStmt(psprintf("select mtm.drop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
@@ -1649,6 +1685,7 @@ void MtmDropNode(int nodeId, bool dropSlot)
 static void 
 MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
 {
+	elog(WARNING, "Logical replication to node %d is stopped", MtmReplicationNodeId); 
 	MtmOnNodeDisconnect(MtmReplicationNodeId);
 }
 

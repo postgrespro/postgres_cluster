@@ -8,13 +8,13 @@
 #include "pglogical_output/hooks.h"
 
 #define MTM_TUPLE_TRACE(fmt, ...)
-/*
+#if 0
 #define MTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 #define MTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
-*/
+#else
 #define MTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 #define MTM_TRACE(fmt, ...) 
-/* */
+#endif
 
 #define MULTIMASTER_NAME                "multimaster"
 #define MULTIMASTER_SCHEMA_NAME         "mtm"
@@ -72,7 +72,8 @@ typedef enum
 	MTM_OFFLINE,        /* Node is out of quorum */
 	MTM_CONNECTED,      /* Arbiter is established connections with other nodes */
 	MTM_ONLINE,         /* Ready to receive client's queries */
-	MTM_RECOVERY        /* Node is in recovery process */
+	MTM_RECOVERY,       /* Node is in recovery process */
+	MTM_IN_MINORITY     /* Node is out of quorum */
 } MtmNodeStatus;
 
 typedef enum
@@ -193,8 +194,10 @@ extern TransactionId MtmGetCurrentTransactionId(void);
 extern XidStatus MtmGetCurrentTransactionStatus(void);
 extern XidStatus MtmGetGlobalTransactionStatus(char const* gid);
 extern bool  MtmIsRecoveredNode(int nodeId);
-extern void  MtmRefreshClusterStatus(bool nowait);
+extern bool  MtmRefreshClusterStatus(bool nowait);
 extern void  MtmSwitchClusterMode(MtmNodeStatus mode);
 extern void  MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr);
 extern void  MtmSetupReplicationHooks(struct PGLogicalHooks* hooks);
+extern void  MtmCheckQuorum(void);
+
 #endif
