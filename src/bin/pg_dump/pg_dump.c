@@ -4157,10 +4157,7 @@ getAccessMethods(Archive *fout, int *numAccessMethods)
 	/* Make sure we are in proper schema */
 	selectSourceSchema(fout, "pg_catalog");
 
-	/*
-	 * Select only user-defined access methods assuming all built-in access
-	 * methods have oid < 10000.
-	 */
+	/* Select all access methods from pg_am table */
 	appendPQExpBuffer(query, "SELECT tableoid, oid, amname, amtype, "
 					  "amhandler::pg_catalog.regproc AS amhandler "
 					  "FROM pg_am");
@@ -11583,6 +11580,7 @@ dumpAccessMethod(Archive *fout, AccessMethodInfo *aminfo)
 		default:
 			write_msg(NULL, "WARNING: invalid type %c of access method %s\n",
 					  aminfo->amtype, qamname);
+			pg_free(qamname);
 			destroyPQExpBuffer(q);
 			destroyPQExpBuffer(delq);
 			destroyPQExpBuffer(labelq);
@@ -11612,7 +11610,7 @@ dumpAccessMethod(Archive *fout, AccessMethodInfo *aminfo)
 				NULL, "",
 				aminfo->dobj.catId, 0, aminfo->dobj.dumpId);
 
-	free(qamname);
+	pg_free(qamname);
 
 	destroyPQExpBuffer(q);
 	destroyPQExpBuffer(delq);
