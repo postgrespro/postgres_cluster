@@ -1222,9 +1222,10 @@ void  PaxosSet(char const* key, void const* value, int size, bool nowait)
 	char *enc, *dec;
 
 	enclen = hex_enc_len(value, size);
-	enc = palloc(enclen);
+	enc = palloc(enclen) + 1;
 	len = hex_encode(value, size, enc);
 	Assert(len == enclen);
+	enc[len] = '\0';
 
 	raftable_set(key, enc, nowait ? 1 : INT_MAX);
 	pfree(enc);
