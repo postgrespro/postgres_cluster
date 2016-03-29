@@ -56,7 +56,7 @@ C API:
 
 SQL API:
 	-- set
-	raftable(key varchar(64), value text);
+	raftable(key varchar(64), value text, tries int);
 
 	-- get
 	raftable(key varchar(64)) returns text;

@@ -165,11 +165,17 @@ raftable_sql_get(PG_FUNCTION_ARGS)
 		PG_RETURN_NULL();
 }
 
-void raftable_set(char *key, char *value)
+bool raftable_set(char *key, char *value, int tries)
 {
 	RaftableUpdate *ru;
 	size_t size = sizeof(RaftableUpdate);
 	int keylen, vallen = 0;
+	bool ok = false;
+
+	if (tries <= 0)
+	{
+		elog(ERROR, "raftable set should be called with 'tries' > 0");
+	}
 
 	keylen = strlen(key) + 1;
 	if (value) vallen = strlen(value) + 1;
@@ -188,60 +194,67 @@ void raftable_set(char *key, char *value)
 	memcpy(f->data, key, keylen);
 	memcpy(f->data + keylen, value, vallen);
 
-	bool ok = false;
-	while (!ok)
+tryagain:
+	if (tries--)
 	{
-		fprintf(stderr, "trying to send an update to the leader\n");
 		int s = get_connection();
-		int sent = 0;
-		ok = true;
+		int sent = 0, recved = 0;
+		int status;
 
 		if (write(s, &size, sizeof(size)) != sizeof(size))
 		{
 			disconnect_leader();
-			fprintf(stderr, "failed to send the update size to the leader\n");
-			ok = false;
-			continue;
+			elog(WARNING, "failed[%d] to send the update size to the leader", tries);
+			goto tryagain;
 		}
 
-		while (ok && (sent < size))
+		while (sent < size)
 		{
 			int newbytes = write(s, (char *)ru + sent, size - sent);
 			if (newbytes == -1)
 			{
 				disconnect_leader();
-				fprintf(stderr, "failed to send the update to the leader\n");
-				ok = false;
+				elog(WARNING, "failed[%d] to send the update to the leader", tries);
+				goto tryagain;
 			}
 			sent += newbytes;
 		}
 
-		if (ok)
+		recved = read(s, &status, sizeof(status));
+		if (recved != sizeof(status))
 		{
-			int status;
-			int recved = read(s, &status, sizeof(status));
-			if (recved != sizeof(status))
-			{
-				disconnect_leader();
-				fprintf(stderr, "failed to recv the update status from the leader\n");
-				ok = false;
-			}
+			disconnect_leader();
+			elog(WARNING, "failed to recv the update status from the leader\n");
+			goto tryagain;
 		}
+		goto success;
+	}
+	else
+	{
+		goto failure;
 	}
 
+failure:
+	elog(WARNING, "failed all tries to set raftable value\n");
 	pfree(ru);
+	return false;
+
+success:
+	pfree(ru);
+	return true;
 }
 
 Datum
 raftable_sql_set(PG_FUNCTION_ARGS)
 {
 	char *key = text_to_cstring(PG_GETARG_TEXT_P(0));
+	int tries = PG_GETARG_INT32(2);
 	if (PG_ARGISNULL(1))
-		raftable_set(key, NULL);
+		raftable_set(key, NULL, tries);
 	else
 	{
 		char *value = text_to_cstring(PG_GETARG_TEXT_P(1));
-		raftable_set(key, value);
+		raftable_set(key, value, tries);
 		pfree(value);
 	}
 	pfree(key);

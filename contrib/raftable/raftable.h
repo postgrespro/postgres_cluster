@@ -6,9 +6,10 @@ char *raftable_get(char *key);
 
 /*
  * Adds/updates value by key. Returns when the value gets replicated.
- * Storing NULL will delete the item from the table.
+ * Storing NULL will delete the item from the table. Give up after 'tries'
+ * tries have failed.
  */
-void raftable_set(char *key, char *value);
+bool raftable_set(char *key, char *value, int tries);
 
 /*
  * Iterates over all items in the table, calling func(key, value, arg)

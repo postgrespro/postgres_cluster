@@ -68,11 +68,13 @@ my %tests = (
 	world => genstr(3000),
 );
 
-$able->psql('postgres', "select raftable('hello', '$tests{hello}');");
-$baker->psql('postgres', "select raftable('and', '$tests{and}');");
-$charlie->psql('postgres', "select raftable('goodbye', '$tests{goodbye}');");
+my $tries = 10;
+
+$able->psql('postgres', "select raftable('hello', '$tests{hello}', $tries);");
+$baker->psql('postgres', "select raftable('and', '$tests{and}', $tries);");
+$charlie->psql('postgres', "select raftable('goodbye', '$tests{goodbye}', $tries);");
 $baker->stop;
-$able->psql('postgres', "select raftable('world', '$tests{world}');");
+$able->psql('postgres', "select raftable('world', '$tests{world}', $tries);");
 
 $baker->start;
 sleep(5);
