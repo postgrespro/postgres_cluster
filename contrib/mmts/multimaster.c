@@ -973,7 +973,13 @@ static int64 MtmGetSlotLag(int nodeId)
  */
 bool MtmIsRecoveredNode(int nodeId)
 {
-	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
+	return BIT_CHECK(Mtm->disabledNodeMask, nodeId-1));
+}
+
+
+void MtmRecoveryPorgress(XLogRecPtr lsn)
+{
+	
 		Assert(MyWalSnd != NULL); /* This function is called by WAL-sender, so it should not be NULL */
 		if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
 			&& MyWalSnd->sentPtr + MtmMinRecoveryLag > GetXLogInsertRecPtr()) 
@@ -1135,7 +1141,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 		}
 	} else { 
 		elog(WARNING, "Clique %lx has no quorum", clique);
-		Mtm->status = MTM_IN_MINORITY;
+		MtmSwitchClusterMode(MTM_IN_MINORITY);
 	}
 	return true;
 }
@@ -1145,12 +1151,12 @@ void MtmCheckQuorum(void)
 	if (Mtm->nNodes < MtmNodes/2+1) {
 		if (Mtm->status == MTM_ONLINE) { /* out of quorum */
 			elog(WARNING, "Node is in minority: disabled mask %lx", Mtm->disabledNodeMask);
-			Mtm->status = MTM_IN_MINORITY;
+			MtmSwitchClusterMode(MTM_IN_MINORITY);
 		}
 	} else {
 		if (Mtm->status == MTM_IN_MINORITY) { 
 			elog(WARNING, "Node is in majority: dissbled mask %lx", Mtm->disabledNodeMask);
-			Mtm->status = MTM_ONLINE;
+			MtmSwitchClusterMode(MTM_ONLINE);
 		}
 	}
 }
@@ -1697,6 +1703,19 @@ void MtmDropNode(int nodeId, bool dropSlot)
 }
 
 static void 
+MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
+{
+	MtmLock(LW_EXCLUSIVE);
+	if (BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
+		elog(WARNING, "Recovery of node %d is completed: start normal replication", MtmReplicationNodeId); 
+		BIT_CLEAR(Mtm->disabledNodeMask,  MtmReplicationNodeId-1);
+		Mtm->nNodes += 1;
+		MtmCheckQuorum();
+	}
+	MtmUnlock();
+}
+
+static void 
 MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
 {
 	elog(WARNING, "Logical replication to node %d is stopped", MtmReplicationNodeId); 
@@ -1715,6 +1734,7 @@ MtmReplicationTxnFilterHook(struct PGLogicalTxnFilterArgs* args)
 
 void MtmSetupReplicationHooks(struct PGLogicalHooks* hooks)
 {
+	hooks->startup_hook = MtmReplicationStartupHook;
 	hooks->shutdown_hook = MtmReplicationShutdownHook;
 	hooks->txn_filter_hook = MtmReplicationTxnFilterHook;
 }

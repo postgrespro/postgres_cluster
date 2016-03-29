@@ -376,7 +376,7 @@ static void MtmOpenConnections()
 	}
 	if (Mtm->nNodes < MtmNodes/2+1) { /* no quorum */
 		elog(WARNING, "Node is out of quorum: only %d nodes from %d are accssible", Mtm->nNodes, MtmNodes);
-		Mtm->status = MTM_IN_MINORITY;
+		MtmSwitchClusterMode(MTM_IN_MINORITY);
 	} else if (Mtm->status == MTM_INITIALIZATION) { 
 		MtmSwitchClusterMode(MTM_CONNECTED);
 	}
