@@ -1220,14 +1220,44 @@ void MtmOnNodeConnect(int nodeId)
  */
 void* PaxosGet(char const* key, int* size, PaxosTimestamp* ts, bool nowait)
 {
-	if (size != NULL) { 
+	unsigned enclen, declen, len;
+	char *enc, *dec;
+	Assert(ts == NULL); // not implemented
+
+	enc = raftable_get(key);
+	if (enc == NULL)
+	{
 		*size = 0;
+		return NULL;
 	}
-	return NULL;
+
+	enclen = strlen(enc);
+	declen = hex_dec_len(enc, enclen);
+	dec = palloc(declen);
+	len = hex_decode(enc, enclen, dec);
+	pfree(enc);
+	Assert(len == declen);
+
+	if (size != NULL) {
+		*size = declen;
+	}
+	return dec;
 }
 
 void  PaxosSet(char const* key, void const* value, int size, bool nowait)
-{}
+{
+	unsigned enclen, declen, len;
+	char *enc, *dec;
+
+	enclen = hex_enc_len(value, size);
+	enc = palloc(enclen) + 1;
+	len = hex_encode(value, size, enc);
+	Assert(len == enclen);
+	enc[len] = '\0';
+
+	raftable_set(key, enc, nowait ? 1 : INT_MAX);
+	pfree(enc);
+}
 
 
 /*
