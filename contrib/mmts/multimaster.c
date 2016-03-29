@@ -696,6 +696,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	ts->votingCompleted = false;
 	ts->cmd = MSG_INVALID;
 	ts->nSubxids = xactGetCommittedChildren(&subxids);
+	Mtm->nActiveTransactions += 1;
 
 	x->isPrepared = true;
 	x->csn = ts->csn;
@@ -795,6 +796,8 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				ts->status = TRANSACTION_STATUS_ABORTED;
 			}
 			MtmAdjustSubtransactions(ts);
+			Assert(Mtm->nActiveTransactions != 0);
+			Mtm->nActiveTransactions -= 1;
 		}
 		if (!commit && x->isReplicated && TransactionIdIsValid(x->gtid.xid)) { 
 			/* 
@@ -836,6 +839,13 @@ void MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd)
 	}
 }
 
+void MtmRecoveryCompleted(void)
+{
+	elog(WARNING, "Recevoery of node %d is completed", MtmNodeId);
+	Mtm->recoverySlot = 0;
+	MtmSwitchClusterMode(MTM_ONLINE);
+}
+
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
 	MtmLock(LW_EXCLUSIVE);
@@ -847,8 +857,7 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 		Assert(Mtm->status == MTM_RECOVERY);
 	} else if (Mtm->status == MTM_RECOVERY) { 
 		/* When recovery is completed we get normal transaction ID and switch to normal mode */
-		Mtm->recoverySlot = 0;
-		MtmSwitchClusterMode(MTM_ONLINE);
+		MtmRecoveryCompleted();
 	}
 	MtmTx.gtid = *gtid;
 	MtmTx.xid = GetCurrentTransactionId();
@@ -973,16 +982,32 @@ static int64 MtmGetSlotLag(int nodeId)
  */
 bool MtmIsRecoveredNode(int nodeId)
 {
-	return BIT_CHECK(Mtm->disabledNodeMask, nodeId-1));
+	return BIT_CHECK(Mtm->disabledNodeMask, nodeId-1);
 }
 
 
-void MtmRecoveryPorgress(XLogRecPtr lsn)
+bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 {
-	
-		Assert(MyWalSnd != NULL); /* This function is called by WAL-sender, so it should not be NULL */
-		if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
-			&& MyWalSnd->sentPtr + MtmMinRecoveryLag > GetXLogInsertRecPtr()) 
+	bool caughtUp = false;
+	if (MtmIsRecoveredNode(nodeId)) { 
+		XLogRecPtr walLSN = GetXLogInsertRecPtr();
+		MtmLock(LW_EXCLUSIVE);
+		if (slotLSN == walLSN) {
+			if (BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)) { 
+				elog(WARNING,"Node %d is caught-up", nodeId);	
+				BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
+				BIT_CLEAR(Mtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
+				BIT_CLEAR(Mtm->nodeLockerMask, nodeId-1);
+				Mtm->nLockers -= 1;
+			} else { 
+				elog(WARNING,"Node %d is caugth-up without locking cluster", nodeId);	
+				/* We are lucky: caugth-up without locking cluster! */
+				Mtm->nNodes += 1;
+				BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
+			}
+			caughtUp = true;
+		} else if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
+				   && slotLSN + MtmMinRecoveryLag > walLSN) 
 		{ 
 			/*
 			 * Wal sender almost catched up.
@@ -990,18 +1015,19 @@ void MtmRecoveryPorgress(XLogRecPtr lsn)
 			 * We have to maintain two bitmasks: one is marking wal sender, another - correspondent nodes. 
 			 * Is there some better way to establish mapping between nodes ad WAL-seconder?
 			 */
-			elog(WARNING,"Node %d is catching up", nodeId);
-			MtmLock(LW_EXCLUSIVE);
+			elog(WARNING,"Node %d is almost caught-up: lock cluster", nodeId);
+			Assert(MyWalSnd != NULL); /* This function is called by WAL-sender, so it should not be NULL */
 			BIT_SET(Mtm->nodeLockerMask, nodeId-1);
 			BIT_SET(Mtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
 			Mtm->nLockers += 1;
-			MtmUnlock();
 		} else { 
-			MTM_INFO("Continue recovery of node %d, slot position %lx, WAL position %lx, lockers %d\n", nodeId, MyWalSnd->sentPtr, GetXLogInsertRecPtr(), Mtm->nLockers);			
+			MTM_INFO("Continue recovery of node %d, slot position %lx, WAL position %lx, WAL sender position %lx, lockers %d, active transactions %d\n", nodeId, slotLSN, walLSN, MyWalSnd->sentPtr, Mtm->nLockers, Mtm->nActiveTransactions);
 		}
-		return true;
+		MtmUnlock();
+	} else { 
+		MTM_INFO("Node %d is not in recovery mode\n", nodeId);
 	}
-	return false;
+	return caughtUp;
 }
 
 void MtmSwitchClusterMode(MtmNodeStatus mode)
@@ -1020,22 +1046,24 @@ void MtmSwitchClusterMode(MtmNodeStatus mode)
 static void 
 MtmCheckClusterLock()
 {	
+	timestamp_t delay = MIN_WAIT_TIMEOUT;
 	while (true)
 	{
 		nodemask_t mask = Mtm->walSenderLockerMask;
 		if (mask != 0) {
-			XLogRecPtr currLogPos = GetXLogInsertRecPtr();
-			int i;
-			timestamp_t delay = MIN_WAIT_TIMEOUT;
-			for (i = 0; mask != 0; i++, mask >>= 1) { 
-				if (mask & 1) { 
-					if (WalSndCtl->walsnds[i].sentPtr != currLogPos) {
-						/* recovery is in progress */
-						break;
-					} else { 
-						/* recovered replica catched up with master */
-						elog(WARNING, "WAL-sender %d complete recovery", i);
-						BIT_CLEAR(Mtm->walSenderLockerMask, i);
+			if (Mtm->nActiveTransactions == 0) { 
+				XLogRecPtr currLogPos = GetXLogInsertRecPtr();
+				int i;
+				for (i = 0; mask != 0; i++, mask >>= 1) { 
+					if (mask & 1) { 
+						if (WalSndCtl->walsnds[i].sentPtr != currLogPos) {
+							/* recovery is in progress */
+							break;
+						} else { 
+							/* recovered replica catched up with master */
+							elog(WARNING, "WAL-sender %d complete recovery", i);
+							BIT_CLEAR(Mtm->walSenderLockerMask, i);
+						}
 					}
 				}
 			}
@@ -1265,6 +1293,7 @@ static void MtmInitialize()
 		Mtm->walSenderLockerMask = 0;
 		Mtm->nodeLockerMask = 0;
 		Mtm->nLockers = 0;
+		Mtm->nActiveTransactions = 0;
 		Mtm->votingTransactions = NULL;
         Mtm->transListHead = NULL;
         Mtm->transListTail = &Mtm->transListHead;		
@@ -1705,12 +1734,31 @@ void MtmDropNode(int nodeId, bool dropSlot)
 static void 
 MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 {
+	ListCell *param;
+	bool isRecoverySession = false;
+	foreach(param, args->in_params)
+	{
+		DefElem    *elem = lfirst(param);
+		if (strcmp("mtm_replication_mode", elem->defname) == 0) { 
+			isRecoverySession = elem->arg != NULL && strVal(elem->arg) != NULL && strcmp(strVal(elem->arg), "recovery") == 0;
+			break;
+		}
+	}
 	MtmLock(LW_EXCLUSIVE);
-	if (BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
-		elog(WARNING, "Recovery of node %d is completed: start normal replication", MtmReplicationNodeId); 
+	if (isRecoverySession) {
+		elog(WARNING, "Node %d start recovery of node %d", MtmNodeId, MtmReplicationNodeId);
+		if (!BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
+			BIT_SET(Mtm->disabledNodeMask,  MtmReplicationNodeId-1);
+			Mtm->nNodes -= 1;			
+			MtmCheckQuorum();
+		}
+	} else if (BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
+		elog(WARNING, "Node %d consider that recovery of node %d is completed: start normal replication", MtmNodeId, MtmReplicationNodeId); 
 		BIT_CLEAR(Mtm->disabledNodeMask,  MtmReplicationNodeId-1);
 		Mtm->nNodes += 1;
 		MtmCheckQuorum();
+	} else {
+		elog(NOTICE, "Node %d start logical replication to node %d in normal mode", MtmNodeId, MtmReplicationNodeId); 
 	}
 	MtmUnlock();
 }
@@ -1728,7 +1776,7 @@ MtmReplicationTxnFilterHook(struct PGLogicalTxnFilterArgs* args)
 	bool res = Mtm->status != MTM_RECOVERY
 		&& (args->origin_id == InvalidRepOriginId 
 			|| MtmIsRecoveredNode(MtmReplicationNodeId));
-	MTM_TRACE("%d: MtmReplicationTxnFilterHook->%d\n", MyProcPid, res);
+	MTM_INFO("%d: MtmReplicationTxnFilterHook->%d\n", MyProcPid, res);
 	return res;
 }
 
