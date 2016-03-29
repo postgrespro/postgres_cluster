@@ -3,7 +3,7 @@ use warnings;
 
 use PostgresNode;
 use TestLib;
-use Test::More tests => 5;
+use Test::More tests => 10;
 
 sub genstr
 {
@@ -80,19 +80,21 @@ $baker->start;
 sleep(5);
 while (my ($key, $value) = each(%tests))
 {
-	my $o = $baker->psql('postgres', "select raftable('$key');");
-	is($o, $value, "Baker has '$key'");
+	my ($rc, $stdout, $stderr) = $baker->psql('postgres', "select raftable('$key');");
+	is($rc, 0, "Baker returns '$key'");
+	is($stdout, $value, "Baker has the proper value for '$key'");
 }
 
 my $ok = 1;
-my $o = $baker->psql('postgres', "select raftable();");
-while ($o =~ /\((\w+),(\w+)\)/g)
+my ($rc, $stdout, $stderr) = $baker->psql('postgres', "select raftable();");
+is($rc, 0, "Baker returns everything");
+while ($stdout =~ /\((\w+),(\w+)\)/g)
 {
 	if (!exists $tests{$1}) { $ok = 0; last; }
 	my $val = delete $tests{$1};
 	if ($val ne $2) { $ok = 0; last; }
 }
 if (keys %tests > 0) { $ok = 0; }
-is($ok, 1, "Baker has everything");
+is($ok, 1, "Baker has the proper value for everything");
 
 exit(0);
