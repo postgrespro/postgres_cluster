@@ -92,7 +92,8 @@ typedef enum
 	XACT_EVENT_PRE_PREPARE,
 	XACT_EVENT_POST_PREPARE,
 	XACT_EVENT_COMMIT_PREPARED,
-	XACT_EVENT_ABORT_PREPARED
+	XACT_EVENT_ABORT_PREPARED,
+	XACT_EVENT_COMMIT_COMMAND
 } XactEvent;
 
 typedef void (*XactCallback) (XactEvent event, void *arg);
@@ -303,6 +304,8 @@ typedef struct xl_xact_parsed_commit
 
 typedef struct xl_xact_parsed_prepare
 {
+	uint32		xinfo;
+
 	Oid			dbId;			/* MyDatabaseId */
 
 	int			nsubxacts;
@@ -316,6 +319,9 @@ typedef struct xl_xact_parsed_prepare
 
 	TransactionId twophase_xid;
 	char 		twophase_gid[GIDSIZE];
+
+	XLogRecPtr	origin_lsn;
+	TimestampTz origin_timestamp;
 } xl_xact_parsed_prepare;
 
 typedef struct xl_xact_parsed_abort

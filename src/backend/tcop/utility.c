@@ -2313,7 +2313,7 @@ CreateCommandTag(Node *parsetree)
 			tag = "ALTER DATABASE";
 			break;
 
-		case T_AlterDatabaseSetStmt:
+	  case T_AlterDatabaseSetStmt:
 			tag = "ALTER DATABASE";
 			break;
 

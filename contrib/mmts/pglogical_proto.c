@@ -37,12 +37,7 @@
 
 #include "multimaster.h"
 
-typedef struct PGLogicalProtoMM
-{
-    PGLogicalProtoAPI api;
-	int   nodeId;
-    bool  isLocal;
-} PGLogicalProtoMM;
+static bool MtmIsFilteredTxn;
 
 static void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel);
 
@@ -72,30 +67,31 @@ static char decide_datum_transfer(Form_pg_attribute att,
 static void
 pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
 {
-    PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
-    if (!mm->isLocal) { 
-        const char *nspname;
-        uint8		nspnamelen;
-        const char *relname;
-        uint8		relnamelen;
-        
-        pq_sendbyte(out, 'R');		/* sending RELATION */
-        
-        nspname = get_namespace_name(rel->rd_rel->relnamespace);
-        if (nspname == NULL)
-            elog(ERROR, "cache lookup failed for namespace %u",
-                 rel->rd_rel->relnamespace);
-        nspnamelen = strlen(nspname) + 1;
-        
-        relname = NameStr(rel->rd_rel->relname);
-        relnamelen = strlen(relname) + 1;
-        
-        pq_sendbyte(out, nspnamelen);		/* schema name length */
-        pq_sendbytes(out, nspname, nspnamelen);
-        
-        pq_sendbyte(out, relnamelen);		/* table name length */
-        pq_sendbytes(out, relname, relnamelen);
-    }
+	const char *nspname;
+	uint8		nspnamelen;
+	const char *relname;
+	uint8		relnamelen;
+		
+    if (MtmIsFilteredTxn) { 
+		return;
+	}
+	
+	pq_sendbyte(out, 'R');		/* sending RELATION */
+    
+	nspname = get_namespace_name(rel->rd_rel->relnamespace);
+	if (nspname == NULL)
+		elog(ERROR, "cache lookup failed for namespace %u",
+			 rel->rd_rel->relnamespace);
+	nspnamelen = strlen(nspname) + 1;
+	
+	relname = NameStr(rel->rd_rel->relname);
+	relnamelen = strlen(relname) + 1;
+    
+	pq_sendbyte(out, nspnamelen);		/* schema name length */
+	pq_sendbytes(out, nspname, nspnamelen);
+    
+	pq_sendbyte(out, relnamelen);		/* table name length */
+	pq_sendbytes(out, relname, relnamelen);
 }
 
 /*
@@ -105,21 +101,19 @@ static void
 pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 					  ReorderBufferTXN *txn)
 {
-    PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
+	bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
 	csn_t csn = MtmTransactionSnapshot(txn->xid);
-	bool isRecovery = MtmIsRecoveredNode(mm->nodeId);
-	MTM_TRACE("pglogical_write_begin %d CSN=%ld\n", txn->xid, csn);
-    if (csn == INVALID_CSN && !isRecovery) {
-		//Assert(txn->origin_id != InvalidRepOriginId);
-        mm->isLocal = true; 
-    } else { 
-        mm->isLocal = false;        
-		//Assert(txn->origin_id == InvalidRepOriginId || isRecovery);
-        pq_sendbyte(out, 'B');		/* BEGIN */
+	MTM_INFO("%d: pglogical_write_begin %d CSN=%ld\n", MyProcPid, txn->xid, csn);
+	
+	if (csn == INVALID_CSN && !isRecovery) { 
+		MtmIsFilteredTxn = true;
+	} else { 
+		pq_sendbyte(out, 'B');		/* BEGIN */
 		pq_sendint(out, MtmNodeId, 4);
 		pq_sendint(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
-        pq_sendint64(out, csn);
-    }
+		pq_sendint64(out, csn);
+		MtmIsFilteredTxn = false;
+	}
 }
 
 /*
@@ -129,7 +123,6 @@ static void
 pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 					   ReorderBufferTXN *txn, XLogRecPtr commit_lsn)
 {
-    PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
     uint8 flags = 0;
 
     if (txn->xact_action == XLOG_XACT_COMMIT) 
@@ -143,14 +136,13 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 	else
     	Assert(false);
 
-
 	if (flags == PGLOGICAL_COMMIT || flags == PGLOGICAL_PREPARE) { 
-		if (mm->isLocal) { 
+		if (MtmIsFilteredTxn) { 
 			return;
 		}
 	} else { 
 		csn_t csn = MtmTransactionSnapshot(txn->xid);
-		bool isRecovery = MtmIsRecoveredNode(mm->nodeId);
+		bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
 		if (csn == INVALID_CSN && !isRecovery) {
 			return;
 		}
@@ -185,11 +177,10 @@ static void
 pglogical_write_insert(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple newtuple)
 {
-    PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
-    if (!mm->isLocal) { 
-        pq_sendbyte(out, 'I');		/* action INSERT */
-        pglogical_write_tuple(out, data, rel, newtuple);
-    }
+    if (!MtmIsFilteredTxn) { 
+		pq_sendbyte(out, 'I');		/* action INSERT */
+		pglogical_write_tuple(out, data, rel, newtuple);
+	}
 }
 
 /*
@@ -199,20 +190,20 @@ static void
 pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple, HeapTuple newtuple)
 {
-    PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
-    if (!mm->isLocal) { 
-        pq_sendbyte(out, 'U');		/* action UPDATE */
-        /* FIXME support whole tuple (O tuple type) */
-        if (oldtuple != NULL)
-        {
-            pq_sendbyte(out, 'K');	/* old key follows */
-            pglogical_write_tuple(out, data, rel, oldtuple);
-	    }
-
-        pq_sendbyte(out, 'N');		/* new tuple follows */
-        pglogical_write_tuple(out, data, rel, newtuple);
-    }
+    if (!MtmIsFilteredTxn) { 
+		pq_sendbyte(out, 'U');		/* action UPDATE */
+		/* FIXME support whole tuple (O tuple type) */
+		if (oldtuple != NULL)
+		{
+			pq_sendbyte(out, 'K');	/* old key follows */
+			pglogical_write_tuple(out, data, rel, oldtuple);
+		}
+		
+		pq_sendbyte(out, 'N');		/* new tuple follows */
+		pglogical_write_tuple(out, data, rel, newtuple);
+	}
 }
+	
 /*
  * Write DELETE to the output stream.
  */
@@ -220,11 +211,10 @@ static void
 pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple)
 {
-    PGLogicalProtoMM* mm = (PGLogicalProtoMM*)data->api;
-    if (!mm->isLocal) { 
-        pq_sendbyte(out, 'D');		/* action DELETE */
-        pglogical_write_tuple(out, data, rel, oldtuple);
-    }
+    if (!MtmIsFilteredTxn) {
+		pq_sendbyte(out, 'D');		/* action DELETE */
+		pglogical_write_tuple(out, data, rel, oldtuple);
+	}
 }
 
 /*
@@ -422,16 +412,16 @@ decide_datum_transfer(Form_pg_attribute att, Form_pg_type typclass,
 PGLogicalProtoAPI *
 pglogical_init_api(PGLogicalProtoType typ)
 {
-	PGLogicalProtoMM* pmm = palloc0(sizeof(PGLogicalProtoMM));
-    PGLogicalProtoAPI* res = &pmm->api;
-    pmm->isLocal = false;
-	sscanf(MyReplicationSlot->data.name.data, MULTIMASTER_SLOT_PATTERN, &pmm->nodeId);
+    PGLogicalProtoAPI* res = palloc0(sizeof(PGLogicalProtoAPI));
+	sscanf(MyReplicationSlot->data.name.data, MULTIMASTER_SLOT_PATTERN, &MtmReplicationNodeId);
+	elog(WARNING, "%d: PRGLOGICAL init API for slot %s node %d", MyProcPid, MyReplicationSlot->data.name.data, MtmReplicationNodeId);
     res->write_rel = pglogical_write_rel;
     res->write_begin = pglogical_write_begin;
     res->write_commit = pglogical_write_commit;
     res->write_insert = pglogical_write_insert;
     res->write_update = pglogical_write_update;
     res->write_delete = pglogical_write_delete;
+	res->setup_hooks = MtmSetupReplicationHooks;
     res->write_startup_message = write_startup_message;
     return res;
 }

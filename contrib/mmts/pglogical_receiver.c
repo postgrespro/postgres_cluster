@@ -240,8 +240,9 @@ pglogical_receiver_main(Datum main_arg)
 	if (PQstatus(conn) != CONNECTION_OK)
 	{
 		PQfinish(conn);
-		ereport(ERROR, (errmsg("%s: Could not establish connection to remote server",
+		ereport(WARNING, (errmsg("%s: Could not establish connection to remote server",
 							 worker_proc)));
+		MtmOnNodeDisconnect(args->remote_node);
 		proc_exit(1);
 	}
 

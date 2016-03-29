@@ -1022,6 +1022,9 @@ EndPrepare(GlobalTransaction gxact)
 {
 	TwoPhaseFileHeader *hdr;
 	StateFileChunk *record;
+	xl_xact_origin xl_origin;
+	xl_xact_xinfo xl_xinfo;
+	uint8		info = XLOG_XACT_PREPARE;
 
 	/* Add the end sentinel to the list of 2PC records */
 	RegisterTwoPhaseRecord(TWOPHASE_RM_END_ID, 0,
@@ -1059,12 +1062,33 @@ EndPrepare(GlobalTransaction gxact)
 
 	START_CRIT_SECTION();
 
+	/* dump transaction origin information */
+	if (replorigin_session_origin != InvalidRepOriginId)
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_ORIGIN;
+
+		xl_origin.origin_lsn = replorigin_session_origin_lsn;
+		xl_origin.origin_timestamp = replorigin_session_origin_timestamp;
+	}
+
+	if (xl_xinfo.xinfo != 0)
+		info |= XLOG_XACT_HAS_INFO;
+
 	MyPgXact->delayChkpt = true;
 
 	XLogBeginInsert();
 	for (record = records.head; record != NULL; record = record->next)
 		XLogRegisterData(record->data, record->len);
-	gxact->prepare_end_lsn = XLogInsert(RM_XACT_ID, XLOG_XACT_PREPARE);
+
+	if (xl_xinfo.xinfo != 0)
+		XLogRegisterData((char *) (&xl_xinfo.xinfo), sizeof(xl_xinfo.xinfo));
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_ORIGIN)
+		XLogRegisterData((char *) (&xl_origin), sizeof(xl_xact_origin));
+
+	XLogIncludeOrigin();
+
+	gxact->prepare_end_lsn = XLogInsert(RM_XACT_ID, info);
 	XLogFlush(gxact->prepare_end_lsn);
 
 	/* If we crash now, we have prepared: WAL replay will fix things */
@@ -1248,6 +1272,9 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 
 	hdr = (TwoPhaseFileHeader *) xlrec;
 	bufptr = xlrec + MAXALIGN(sizeof(TwoPhaseFileHeader));
+	
+	strncpy(parsed->twophase_gid, bufptr, hdr->gidlen);
+	bufptr += MAXALIGN(hdr->gidlen);
 
 	parsed->twophase_xid = hdr->xid;
 	parsed->dbId = hdr->database;
@@ -1267,7 +1294,30 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 	parsed->msgs = (SharedInvalidationMessage *) bufptr;
 	bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));
 
-	strncpy(parsed->twophase_gid, bufptr, hdr->gidlen);
+	/*
+	 * Parse xinfo now.
+	 */
+
+	parsed->xinfo = 0;
+
+	if (info & XLOG_XACT_HAS_INFO)
+	{
+		xl_xact_xinfo *xl_xinfo = (xl_xact_xinfo *) bufptr;
+		parsed->xinfo = xl_xinfo->xinfo;
+		bufptr += sizeof(xl_xact_xinfo);
+	}
+
+
+	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
+	{
+		xl_xact_origin xl_origin;
+		/* we're only guaranteed 4 byte alignment, so copy onto stack */
+		memcpy(&xl_origin, bufptr, sizeof(xl_origin));
+		parsed->origin_lsn = xl_origin.origin_lsn;
+		parsed->origin_timestamp = xl_origin.origin_timestamp;
+		bufptr += sizeof(xl_xact_origin);
+	}
+
 }
 
 

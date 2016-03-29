@@ -480,13 +480,15 @@ MtmBeginSession(void)
 }
 
 static void 
-MtmEndSession(void)
+MtmEndSession(bool unlock)
 {
 	if (replorigin_session_origin != InvalidRepOriginId) { 
 		MTM_TRACE("%d: Begin reset replorigin session: %d\n", MyProcPid, replorigin_session_origin);
 		replorigin_session_origin = InvalidRepOriginId;
 		replorigin_session_reset();
-		MtmUnlockNode(MtmReplicationNode);
+		if (unlock) { 
+			MtmUnlockNode(MtmReplicationNode);
+		}
 		MTM_TRACE("%d: End reset replorigin session: %d\n", MyProcPid, replorigin_session_origin);
 	}
 }
@@ -568,7 +570,7 @@ process_remote_commit(StringInfo in)
 		default:
 			Assert(false);
 	}
-	MtmEndSession();
+	MtmEndSession(true);
 }
 
 static void
@@ -934,10 +936,10 @@ void MtmExecutor(int id, void* work, size_t size)
     {
 		EmitErrorReport();
         FlushErrorState();
-		MTM_TRACE("%d: REMOTE begin abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
-		MtmEndSession();
+		MTM_INFO("%d: REMOTE begin abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
+		MtmEndSession(false);
         AbortCurrentTransaction();
-		MTM_TRACE("%d: REMOTE end abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
+		MTM_INFO("%d: REMOTE end abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
     }
     PG_END_TRY();
 

@@ -53,6 +53,7 @@
 #include "nodes/makefuncs.h"
 #include "access/htup_details.h"
 #include "catalog/indexing.h"
+#include "pglogical_output/hooks.h"
 
 #include "multimaster.h"
 #include "ddd.h"
@@ -64,6 +65,7 @@ typedef struct {
 	bool  isReplicated;   /* transaction on replica */
 	bool  isDistributed;  /* transaction performed INSERT/UPDATE/DELETE and has to be replicated to other nodes */
 	bool  isPrepared;     /* transaction is perpared at first stage of 2PC */
+    bool  isTransactionBlock; /* is transaction block */
 	bool  containsDML;    /* transaction contains DML statements */
 	XidStatus status;     /* transaction status */
     csn_t snapshot;       /* transaction snaphsot */
@@ -111,6 +113,7 @@ static void MtmPrePrepareTransaction(MtmCurrentTrans* x);
 static void MtmPostPrepareTransaction(MtmCurrentTrans* x);
 static void MtmAbortPreparedTransaction(MtmCurrentTrans* x);
 static void MtmEndTransaction(MtmCurrentTrans* x, bool commit);
+static bool MtmTwoPhaseCommit(MtmCurrentTrans* x);
 static TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum);
 static bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 static TransactionId MtmAdjustOldestXid(TransactionId xid);
@@ -124,7 +127,7 @@ static void MtmAddSubtransactions(MtmTransState* ts, TransactionId *subxids, int
 static void MtmShmemStartup(void);
 
 static BgwPool* MtmPoolConstructor(void);
-static bool MtmRunUtilityStmt(PGconn* conn, char const* sql);
+static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
 
 MtmState* Mtm;
@@ -153,13 +156,15 @@ char const* const MtmNodeStatusMnem[] =
 	"Offline", 
 	"Connected",
 	"Online",
-	"Recovery"
+	"Recovery",
+	"InMinor"
 };
 
 bool  MtmDoReplication;
 char* MtmDatabaseName;
 
 int   MtmNodeId;
+int   MtmReplicationNodeId;
 int   MtmArbiterPort;
 int   MtmNodes;
 int   MtmConnectAttempts;
@@ -588,6 +593,11 @@ MtmXactCallback(XactEvent event, void *arg)
 	  case XACT_EVENT_ABORT: 
 		MtmEndTransaction(&MtmTx, false);
 		break;
+	  case XACT_EVENT_COMMIT_COMMAND:
+		if (!MtmTx.isTransactionBlock) { 
+			MtmTwoPhaseCommit(&MtmTx);
+		}
+		break;
 	  default:
         break;
 	}
@@ -623,10 +633,11 @@ MtmBeginTransaction(MtmCurrentTrans* x)
         x->isReplicated = false;
         x->isDistributed = MtmIsUserTransaction();
 		x->isPrepared = false;
-		if (x->isDistributed && Mtm->status != MTM_ONLINE) { 
+		x->isTransactionBlock = IsTransactionBlock();
+		/* Application name can be cahnged usnig PGAPPNAME environment variable */
+		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
 			/* reject all user's transactions at offline cluster */
 			MtmUnlock();			
-			Assert(Mtm->status == MTM_ONLINE);
 			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
 		}
 		x->containsDML = false;
@@ -790,7 +801,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			 * Send notification only if ABORT happens during transaction processing at replicas, 
 			 * do not send notification if ABORT is receiver from master 
 			 */
-			MTM_TRACE("%d: send ABORT notification to coordinator %d\n", MyProcPid, x->gtid.node);
+			MTM_INFO("%d: send ABORT notification abort transaction %d to coordinator %d\n", MyProcPid, x->gtid.xid, x->gtid.node);
 			if (ts == NULL) { 
 				Assert(TransactionIdIsValid(x->xid));
 				ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, NULL);
@@ -973,11 +984,14 @@ bool MtmIsRecoveredNode(int nodeId)
 			 * We have to maintain two bitmasks: one is marking wal sender, another - correspondent nodes. 
 			 * Is there some better way to establish mapping between nodes ad WAL-seconder?
 			 */
+			elog(WARNING,"Node %d is catching up", nodeId);
 			MtmLock(LW_EXCLUSIVE);
 			BIT_SET(Mtm->nodeLockerMask, nodeId-1);
 			BIT_SET(Mtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
 			Mtm->nLockers += 1;
 			MtmUnlock();
+		} else { 
+			MTM_INFO("Continue recovery of node %d, slot position %lx, WAL position %lx, lockers %d\n", nodeId, MyWalSnd->sentPtr, GetXLogInsertRecPtr(), Mtm->nLockers);			
 		}
 		return true;
 	}
@@ -1014,7 +1028,7 @@ MtmCheckClusterLock()
 						break;
 					} else { 
 						/* recovered replica catched up with master */
-						elog(WARNING, "WAL-sender %d complete receovery", i);
+						elog(WARNING, "WAL-sender %d complete recovery", i);
 						BIT_CLEAR(Mtm->walSenderLockerMask, i);
 					}
 				}
@@ -1039,6 +1053,7 @@ MtmCheckClusterLock()
 				Mtm->nNodes += Mtm->nLockers;
 				Mtm->nLockers = 0;
 				Mtm->nodeLockerMask = 0;
+				MtmCheckQuorum();
 			}
 		}
 		break;
@@ -1048,14 +1063,17 @@ MtmCheckClusterLock()
 /**
  * Build internode connectivity mask. 1 - means that node is disconnected.
  */
-static void 
+static bool 
 MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 {
 	int i, j, n = MtmNodes;
 	for (i = 0; i < n; i++) { 
 		if (i+1 != MtmNodeId) { 
 			void* data = PaxosGet(psprintf("node-mask-%d", i+1), NULL, NULL, nowait);
-			matrix[i] = data ? *(nodemask_t*)data : 0;
+			if (data == NULL) { 
+				return false;
+			}
+			matrix[i] = *(nodemask_t*)data;
 		} else { 
 			matrix[i] = Mtm->connectivityMask;
 		}
@@ -1066,6 +1084,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 			matrix[i] |= ((matrix[j] >> i) & 1) << j;
 		}
 	}
+	return true;
 }	
 
 
@@ -1073,14 +1092,17 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
  * Build connectivity graph, find clique in it and extend disabledNodeMask by nodes not included in clique.
  * This function returns false if current node is excluded from cluster, true otherwise
  */
-void MtmRefreshClusterStatus(bool nowait)
+bool MtmRefreshClusterStatus(bool nowait)
 {
 	nodemask_t mask, clique;
 	nodemask_t matrix[MAX_NODES];
 	int clique_size;
 	int i;
 
-	MtmBuildConnectivityMatrix(matrix, nowait);
+	if (!MtmBuildConnectivityMatrix(matrix, nowait)) { 
+		/* RAFT is not available */
+		return false;
+	}
 
 	clique = MtmFindMaxClique(matrix, MtmNodes, &clique_size);
 	if (clique_size >= MtmNodes/2+1) { /* have quorum */
@@ -1100,6 +1122,7 @@ void MtmRefreshClusterStatus(bool nowait)
 				BIT_CLEAR(Mtm->disabledNodeMask, i);
 			}
 		}
+		MtmCheckQuorum();
 		MtmUnlock();
 		if (BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId-1)) { 
 			if (Mtm->status == MTM_ONLINE) {
@@ -1112,9 +1135,27 @@ void MtmRefreshClusterStatus(bool nowait)
 		}
 	} else { 
 		elog(WARNING, "Clique %lx has no quorum", clique);
+		Mtm->status = MTM_IN_MINORITY;
 	}
+	return true;
 }
 
+void MtmCheckQuorum(void)
+{
+	if (Mtm->nNodes < MtmNodes/2+1) {
+		if (Mtm->status == MTM_ONLINE) { /* out of quorum */
+			elog(WARNING, "Node is in minority: disabled mask %lx", Mtm->disabledNodeMask);
+			Mtm->status = MTM_IN_MINORITY;
+		}
+	} else {
+		if (Mtm->status == MTM_IN_MINORITY) { 
+			elog(WARNING, "Node is in majority: dissbled mask %lx", Mtm->disabledNodeMask);
+			Mtm->status = MTM_ONLINE;
+		}
+	}
+}
+			
+	
 void MtmOnNodeDisconnect(int nodeId)
 {
 	BIT_SET(Mtm->connectivityMask, nodeId-1);
@@ -1123,7 +1164,15 @@ void MtmOnNodeDisconnect(int nodeId)
 	/* Wait more than socket KEEPALIVE timeout to let other nodes update their statuses */
 	MtmSleep(MtmKeepaliveTimeout);
 
-	MtmRefreshClusterStatus(false);
+	if (!MtmRefreshClusterStatus(false)) { 
+		MtmLock(LW_EXCLUSIVE);
+		if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
+			BIT_SET(Mtm->disabledNodeMask, nodeId-1);
+			Mtm->nNodes -= 1;
+			MtmCheckQuorum();
+		}
+		MtmUnlock();
+	}
 }
 
 void MtmOnNodeConnect(int nodeId)
@@ -1565,8 +1614,9 @@ void MtmReceiverStarted(int nodeId)
 	if (!BIT_CHECK(Mtm->pglogicalNodeMask, nodeId-1)) { 
 		BIT_SET(Mtm->pglogicalNodeMask, nodeId-1);
 		if (++Mtm->nReceivers == Mtm->nNodes-1) {
-			Assert(Mtm->status == MTM_CONNECTED);
-			MtmSwitchClusterMode(MTM_ONLINE);
+			if (Mtm->status == MTM_CONNECTED) { 
+				MtmSwitchClusterMode(MTM_ONLINE);
+			}
 		}
      }
 	SpinLockRelease(&Mtm->spinlock);	
@@ -1579,10 +1629,14 @@ void MtmReceiverStarted(int nodeId)
  */
 MtmSlotMode MtmReceiverSlotMode(int nodeId)
 {
+	bool recovery = false;
 	while (Mtm->status != MTM_CONNECTED && Mtm->status != MTM_ONLINE) { 		
+		MTM_INFO("%d: receiver slot mode %s\n", MyProcPid, MtmNodeStatusMnem[Mtm->status]);
 		if (Mtm->status == MTM_RECOVERY) { 
+			recovery = true;
 			if (Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId) { 
 				/* Choose for recovery first available slot */
+				elog(WARNING, "Start recovery from node %d", nodeId);
 				Mtm->recoverySlot = nodeId;
 				return SLOT_OPEN_EXISTED;
 			}
@@ -1590,10 +1644,20 @@ MtmSlotMode MtmReceiverSlotMode(int nodeId)
 		/* delay opening of other slots until recovery is completed */
 		MtmSleep(STATUS_POLL_DELAY);
 	}
+	if (recovery) { 
+		elog(WARNING, "Recreate replication slot for node %d after end of recovery", nodeId);
+	} else { 
+		MTM_INFO("%d: Reuse replication slot for node %d\n", MyProcPid, nodeId);
+	}
 	/* After recovery completion we need to drop all other slots to avoid receive of redundant data */
-	return Mtm->recoverySlot ? SLOT_CREATE_NEW : SLOT_OPEN_ALWAYS;
+	return recovery ? SLOT_CREATE_NEW : SLOT_OPEN_ALWAYS;
 }
 			
+static bool MtmIsBroadcast() 
+{
+	return application_name != NULL && strcmp(application_name, MULTIMASTER_BROADCAST_SERVICE) == 0;
+}
+
 void MtmRecoverNode(int nodeId)
 {
 	if (nodeId <= 0 || nodeId > Mtm->nNodes) 
@@ -1603,7 +1667,7 @@ void MtmRecoverNode(int nodeId)
 	if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
 		elog(ERROR, "Node %d was not disabled", nodeId);
 	}
-	if (!IsTransactionBlock())
+	if (!MtmIsBroadcast())
 	{
 		MtmBroadcastUtilityStmt(psprintf("select pg_create_logical_replication_slot('" MULTIMASTER_SLOT_PATTERN "', '" MULTIMASTER_NAME "')", nodeId), true);
 	}
@@ -1620,7 +1684,8 @@ void MtmDropNode(int nodeId, bool dropSlot)
 		}
 		BIT_SET(Mtm->disabledNodeMask, nodeId-1);
 		Mtm->nNodes -= 1;
-		if (!IsTransactionBlock())
+		MtmCheckQuorum();
+		if (!MtmIsBroadcast())
 		{
 			MtmBroadcastUtilityStmt(psprintf("select mtm.drop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
 		}
@@ -1630,6 +1695,31 @@ void MtmDropNode(int nodeId, bool dropSlot)
 		}		
 	}
 }
+
+static void 
+MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
+{
+	elog(WARNING, "Logical replication to node %d is stopped", MtmReplicationNodeId); 
+	MtmOnNodeDisconnect(MtmReplicationNodeId);
+}
+
+static bool 
+MtmReplicationTxnFilterHook(struct PGLogicalTxnFilterArgs* args)
+{
+	bool res = Mtm->status != MTM_RECOVERY
+		&& (args->origin_id == InvalidRepOriginId 
+			|| MtmIsRecoveredNode(MtmReplicationNodeId));
+	MTM_TRACE("%d: MtmReplicationTxnFilterHook->%d\n", MyProcPid, res);
+	return res;
+}
+
+void MtmSetupReplicationHooks(struct PGLogicalHooks* hooks)
+{
+	hooks->shutdown_hook = MtmReplicationShutdownHook;
+	hooks->txn_filter_hook = MtmReplicationTxnFilterHook;
+}
+
+	
 
 /*
  * -------------------------------------------
@@ -1762,38 +1852,41 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 /*
  * Execute statement with specified parameters and check its result
  */
-static bool MtmRunUtilityStmt(PGconn* conn, char const* sql)
+static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg)
 {
 	PGresult *result = PQexec(conn, sql);
 	int status = PQresultStatus(result);
+
 	bool ret = status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK;
-	if (!ret) { 
-		elog(WARNING, "Command '%s' failed with status %d", sql, status);
+
+	if (!ret) {
+		char *errstr = PQresultErrorMessage(result);
+		int errlen = strlen(errstr);
+
+		*errmsg = palloc0(errlen);
+
+		/* Strip "ERROR:\t" from beginning and "\n" from end of error string */
+		strncpy(*errmsg, errstr + 7, errlen - 1 - 7);
 	}
+
 	PQclear(result);
 	return ret;
 }
 
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 {
-	char* conn_str = pstrdup(MtmConnStrs);
-	char* conn_str_end = conn_str + strlen(conn_str);
 	int i = 0;
 	nodemask_t disabledNodeMask = Mtm->disabledNodeMask;
 	int failedNode = -1;
 	char const* errorMsg = NULL;
 	PGconn **conns = palloc0(sizeof(PGconn*)*MtmNodes);
+	char* utility_errmsg;
     
-	while (conn_str < conn_str_end) 
+	for (i = 0; i < MtmNodes; i++) 
 	{ 
-		char* p = strchr(conn_str, ',');
-		if (p == NULL) { 
-			p = conn_str_end;
-		}
-		*p = '\0';
 		if (!BIT_CHECK(disabledNodeMask, i)) 
 		{
-			conns[i] = PQconnectdb(conn_str);
+			conns[i] = PQconnectdb(psprintf("%s application_name=%s", Mtm->nodes[i].con.connStr, MULTIMASTER_BROADCAST_SERVICE));
 			if (PQstatus(conns[i]) != CONNECTION_OK)
 			{
 				if (ignoreError) 
@@ -1805,12 +1898,10 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 					do { 
 						PQfinish(conns[i]);
 					} while (--i >= 0);                             
-					elog(ERROR, "Failed to establish connection '%s' to node %d", conn_str, failedNode);
+					elog(ERROR, "Failed to establish connection '%s' to node %d", Mtm->nodes[i].con.connStr, failedNode);
 				}
 			}
 		}
-		conn_str = p + 1;
-		i += 1;
 	}
 	Assert(i == MtmNodes);
     
@@ -1818,15 +1909,18 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	{ 
 		if (conns[i]) 
 		{
-			if (!MtmRunUtilityStmt(conns[i], "BEGIN TRANSACTION") && !ignoreError)
+			if (!MtmRunUtilityStmt(conns[i], "BEGIN TRANSACTION", &utility_errmsg) && !ignoreError)
 			{
 				errorMsg = "Failed to start transaction at node %d";
 				failedNode = i;
 				break;
 			}
-			if (!MtmRunUtilityStmt(conns[i], sql) && !ignoreError)
+			if (!MtmRunUtilityStmt(conns[i], sql, &utility_errmsg) && !ignoreError)
 			{
-				errorMsg = "Failed to run command at node %d";
+				// errorMsg = "Failed to run command at node %d";
+				// XXX: add check for our node
+				errorMsg = utility_errmsg;
+
 				failedNode = i;
 				break;
 			}
@@ -1838,13 +1932,13 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 		{ 
 			if (conns[i])
 			{
-				MtmRunUtilityStmt(conns[i], "ROLLBACK TRANSACTION");
+				MtmRunUtilityStmt(conns[i], "ROLLBACK TRANSACTION", &utility_errmsg);
 			}
 		}
 	} else { 
 		for (i = 0; i < MtmNodes; i++) 
 		{ 
-			if (conns[i] && !MtmRunUtilityStmt(conns[i], "COMMIT TRANSACTION") && !ignoreError) 
+			if (conns[i] && !MtmRunUtilityStmt(conns[i], "COMMIT TRANSACTION", &utility_errmsg) && !ignoreError) 
 			{ 
 				errorMsg = "Commit failed at node %d";
 				failedNode = i;
@@ -1922,33 +2016,34 @@ MtmGenerateGid(char* gid)
 	sprintf(gid, "MTM-%d-%d-%d", MtmNodeId, MyProcPid, ++localCount);
 }
 
-static void MtmTwoPhaseCommit(char *completionTag)
+static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 {
-	MtmGenerateGid(MtmTx.gid);
-	if (!IsTransactionBlock()) { 
-		elog(WARNING, "Start transaction block for %d", MtmTx.xid);
-		BeginTransactionBlock();
-		CommitTransactionCommand();
-		StartTransactionCommand();
-	}
-	if (!PrepareTransactionBlock(MtmTx.gid))
-	{
-		elog(WARNING, "Failed to prepare transaction %s", MtmTx.gid);
-		/* report unsuccessful commit in completionTag */
-		if (completionTag) { 
-			strcpy(completionTag, "ROLLBACK");
+	if (!x->isReplicated && (x->isDistributed && x->containsDML)) { 
+		MtmGenerateGid(x->gid);
+		if (!x->isTransactionBlock) { 
+			/* elog(WARNING, "Start transaction block for %s", x->gid); */
+			BeginTransactionBlock();
+			x->isTransactionBlock = true;
+			CommitTransactionCommand();
+			StartTransactionCommand();
 		}
-		/* ??? Should we do explicit rollback */
-	} else { 
-		CommitTransactionCommand();
-		StartTransactionCommand();
-		if (MtmGetCurrentTransactionStatus() == TRANSACTION_STATUS_ABORTED) { 
-			FinishPreparedTransaction(MtmTx.gid, false);
-			elog(ERROR, "Transaction %s is aborted by DTM", MtmTx.gid);
-		} else {
-			FinishPreparedTransaction(MtmTx.gid, true);
+		if (!PrepareTransactionBlock(x->gid))
+		{
+			elog(WARNING, "Failed to prepare transaction %s", x->gid);
+			/* ??? Should we do explicit rollback */
+		} else { 	
+			CommitTransactionCommand();
+			StartTransactionCommand();
+			if (MtmGetCurrentTransactionStatus() == TRANSACTION_STATUS_ABORTED) { 
+				FinishPreparedTransaction(x->gid, false);
+				elog(ERROR, "Transaction %s is aborted by DTM", x->gid);
+			} else {
+				FinishPreparedTransaction(x->gid, true);
+			}
 		}
+		return true;
 	}
+	return false;
 }
 
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
@@ -1964,9 +2059,11 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				TransactionStmt *stmt = (TransactionStmt *) parsetree;
 				switch (stmt->kind)
 				{					
+				case TRANS_STMT_BEGIN:
+  				    MtmTx.isTransactionBlock = true;
+				    break;
 				case TRANS_STMT_COMMIT:
-					if (MtmTx.isDistributed && MtmTx.containsDML) {
-						MtmTwoPhaseCommit(completionTag);
+  				    if (MtmTwoPhaseCommit(&MtmTx)) { 
 						return;
 					}
 					break;
@@ -1983,16 +2080,49 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ClosePortalStmt:
 		case T_FetchStmt:
 		case T_DoStmt:
+		case T_CreateTableSpaceStmt:
+		case T_DropTableSpaceStmt:
+		case T_AlterTableSpaceOptionsStmt:
+		case T_TruncateStmt:
+		case T_CommentStmt: /* XXX: we could replicate these */;
 		case T_CopyStmt:
 		case T_PrepareStmt:
 		case T_ExecuteStmt:
+		case T_DeallocateStmt:
+		case T_GrantStmt: /* XXX: we could replicate some of these these */;
+		case T_GrantRoleStmt:
+		case T_AlterDatabaseStmt:
+		case T_AlterDatabaseSetStmt:
 		case T_NotifyStmt:
 		case T_ListenStmt:
 		case T_UnlistenStmt:
 		case T_LoadStmt:
+		case T_ClusterStmt: /* XXX: we could replicate these */;
+		case T_VacuumStmt:
+		case T_ExplainStmt:
+		case T_AlterSystemStmt:
 		case T_VariableSetStmt:
 		case T_VariableShowStmt:
-			skipCommand = true;
+		case T_DiscardStmt:
+		case T_CreateEventTrigStmt:
+		case T_AlterEventTrigStmt:
+		case T_CreateRoleStmt:
+		case T_AlterRoleStmt:
+		case T_AlterRoleSetStmt:
+		case T_DropRoleStmt:
+		case T_ReassignOwnedStmt:
+		case T_LockStmt:
+		case T_ConstraintsSetStmt:
+		case T_CheckPointStmt:
+		case T_ReindexStmt:
+		    skipCommand = true;
+			break;
+		case T_CreateStmt:
+			{
+				/* Do not replicate temp tables */
+				CreateStmt *stmt = (CreateStmt *) parsetree;
+				skipCommand = stmt->relation->relpersistence == RELPERSISTENCE_TEMP;
+			}
 			break;
 	    default:
 			skipCommand = false;
@@ -2001,9 +2131,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	if (!skipCommand && !MtmTx.isReplicated && context == PROCESS_UTILITY_TOPLEVEL) {
 		if (MtmProcessDDLCommand(queryString)) { 
 			return;
-		}
-		if (MtmTx.isDistributed && MtmTx.containsDML && !IsTransactionBlock()) { 
-			MtmTwoPhaseCommit(completionTag);
 		}
 	}
 	if (PreviousProcessUtilityHook != NULL)
@@ -2034,9 +2161,6 @@ MtmExecutorFinish(QueryDesc *queryDesc)
 				}
 			}
         }
-		if (MtmTx.isDistributed && MtmTx.containsDML && !IsTransactionBlock()) { 
-			MtmTwoPhaseCommit(NULL);
-		}
     }
     if (PreviousExecutorFinishHook != NULL)
     {

@@ -230,6 +230,51 @@ static int MtmReadSocket(int sd, void* buf, int buf_size)
 
 
 
+static void MtmSetSocketOptions(int sd)
+{
+#ifdef TCP_NODELAY
+	int optval = 1;
+	if (setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval)) < 0) {
+		elog(WARNING, "Failed to set TCP_NODELAY: %m");
+	}
+#endif
+	if (tcp_keepalives_idle) { 
+#ifdef TCP_KEEPIDLE
+		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPIDLE,
+					   (char *) &tcp_keepalives_idle, sizeof(tcp_keepalives_idle)) < 0)
+		{
+			elog(WARNING, "Failed to set TCP_KEEPIDLE: %m");
+		}
+#else
+#ifdef TCP_KEEPALIVE
+		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPALIVE,
+					   (char *) &tcp_keepalives_idle, sizeof(tcp_keepalives_idle)) < 0) 
+		{
+			elog(WARNING, "Failed to set TCP_KEEPALIVE: %m");
+		}
+#endif
+#endif
+	}
+#ifdef TCP_KEEPINTVL
+	if (tcp_keepalives_interval) { 
+		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPINTVL,
+					   (char *) &tcp_keepalives_interval, sizeof(tcp_keepalives_interval)) < 0)
+		{
+			elog(WARNING, "Failed to set TCP_KEEPINTVL: %m");
+		}
+	}
+#endif
+#ifdef TCP_KEEPCNT
+	if (tcp_keepalives_count) {
+		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPCNT,
+					   (char *) &tcp_keepalives_count, sizeof(tcp_keepalives_count)) < 0)
+		{
+			elog(WARNING, "Failed to set TCP_KEEPCNT: %m");
+		}
+	}
+#endif
+}
+
 static int MtmConnectSocket(char const* host, int port, int max_attempts)
 {
     struct sockaddr_in sock_inet;
@@ -274,12 +319,9 @@ Retry:
 			}
 			continue;
 		} else {
-			int optval = 1;
 			MtmHandshakeMessage req;
 			MtmArbiterMessage   resp;
-			setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
-			setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, (char const*)&optval, sizeof(optval));
-
+			MtmSetSocketOptions(sd);
 			req.hdr.code = MSG_HANDSHAKE;
 			req.hdr.node = MtmNodeId;
 			req.hdr.dxid = HANDSHAKE_MAGIC;
@@ -306,10 +348,9 @@ Retry:
 			/* Some node considered that I am dead, so switch to recovery mode */
 			if (BIT_CHECK(resp.disabledNodeMask, MtmNodeId-1)) { 
 				elog(WARNING, "Node %d think that I am dead", resp.node);
+				BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
 				MtmSwitchClusterMode(MTM_RECOVERY);
 			}
-			/* Combine disable masks from all node. Is it actually correct or we should better check availability of nodes ourselves? */
-			Mtm->disabledNodeMask |= resp.disabledNodeMask;
 			return sd;
 		}
     }
@@ -335,7 +376,7 @@ static void MtmOpenConnections()
 	}
 	if (Mtm->nNodes < MtmNodes/2+1) { /* no quorum */
 		elog(WARNING, "Node is out of quorum: only %d nodes from %d are accssible", Mtm->nNodes, MtmNodes);
-		Mtm->status = MTM_OFFLINE;
+		Mtm->status = MTM_IN_MINORITY;
 	} else if (Mtm->status == MTM_INITIALIZATION) { 
 		MtmSwitchClusterMode(MTM_CONNECTED);
 	}
@@ -389,6 +430,7 @@ static void MtmAcceptOneConnection()
 			resp.dxid = HANDSHAKE_MAGIC;
 			resp.sxid = ShmemVariableCache->nextXid;
 			resp.csn  = MtmGetCurrentTime();
+			resp.node = MtmNodeId;
 			MtmUpdateNodeConnectionInfo(&Mtm->nodes[req.hdr.node-1].con, req.connStr);
 			if (!MtmWriteSocket(fd, &resp, sizeof resp)) { 
 				elog(WARNING, "Arbiter failed to write response for handshake message to node %d", resp.node);
@@ -605,7 +647,7 @@ static void MtmTransReceiver(Datum arg)
 			} while (n < 0 && errno == EINTR);
 		} while (n < 0 && MtmRecovery());
 		
-		if (rc < 0) { 
+		if (n < 0) {
 			elog(ERROR, "Arbiter failed to select sockets: %d", errno);
 		}
 		for (i = 0; i < nNodes; i++) { 

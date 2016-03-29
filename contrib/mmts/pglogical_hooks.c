@@ -106,6 +106,12 @@ load_hooks(PGLogicalOutputData *data)
 				data->hooks.row_filter_hook,
 				data->hooks.txn_filter_hook,
 				data->hooks.hooks_private_data);
+	} 
+	else if (data->api->setup_hooks) 
+	{ 
+		old_ctxt = MemoryContextSwitchTo(data->hooks_mctxt);
+		(*data->api->setup_hooks)(&data->hooks);
+		MemoryContextSwitchTo(old_ctxt);
 	}
 
 	if (txn_started)
