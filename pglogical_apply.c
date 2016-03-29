@@ -497,10 +497,12 @@ process_remote_commit(StringInfo in)
 	uint8 		flags;
 	csn_t       csn;
 	const char *gid = NULL;	
+	bool        caughtUp;
 
 	/* read flags */
 	flags = pq_getmsgbyte(in);
 	MtmReplicationNode = pq_getmsgbyte(in);
+	caughtUp = pq_getmsgbyte(in) != 0;
 
 	/* read fields */
 	replorigin_session_origin_lsn = pq_getmsgint64(in); /* commit_lsn */
@@ -568,7 +570,10 @@ process_remote_commit(StringInfo in)
 		default:
 			Assert(false);
 	}
-	MtmEndSession();
+	MtmEndSession(true);
+	if (caughtUp) {
+		MtmRecoveryCompleted();
+	}
 }
 
 static void

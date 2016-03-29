@@ -292,12 +292,13 @@ pglogical_receiver_main(Datum main_arg)
 	}
 	CommitTransactionCommand();
 	
-	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %u/%u (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d')",
+	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %u/%u (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"mtm_replication_mode\" '%s')",
 					  args->receiver_slot,
 					  (uint32) (originStartPos >> 32),
 					  (uint32) originStartPos,
 					  MULTIMASTER_MAX_PROTO_VERSION,
-					  MULTIMASTER_MIN_PROTO_VERSION
+					  MULTIMASTER_MIN_PROTO_VERSION,
+					  mode == SLOT_OPEN_EXISTED ? "recovery" : "normal"					  
 		);
 	res = PQexec(conn, query->data);
 	if (PQresultStatus(res) != PGRES_COPY_BOTH)

@@ -130,18 +130,19 @@ typedef struct
 	nodemask_t pglogicalNodeMask;      /* bitmask of started pglogic receivers */
 	nodemask_t walSenderLockerMask;    /* Mask of WAL-senders IDs locking the cluster */
 	nodemask_t nodeLockerMask;         /* Mask of node IDs which WAL-senders are locking the cluster */
-    int    nNodes;                     /* number of active nodes */
-    int    nReceivers;                 /* number of initialized logical receivers (used to determine moment when Mtm intialization is completed */
-	int    nLockers;                   /* number of lockers */
-	long   timeShift;                  /* local time correction */
-	csn_t  csn;                        /* last obtained CSN: used to provide unique acending CSNs based on system time */
+    int    nNodes;                     /* Number of active nodes */
+    int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when Mtm intialization is completed */
+	int    nLockers;                   /* Number of lockers */
+	int    nActiveTransactions;        /* Nunmber of active 2PC transactions */
+	long   timeShift;                  /* Local time correction */
+	csn_t  csn;                        /* Last obtained CSN: used to provide unique acending CSNs based on system time */
 	MtmTransState* votingTransactions; /* L1-list of replicated transactions sendings notifications to coordinator.
 									 	 This list is used to pass information to mtm-sender BGW */
     MtmTransState* transListHead;      /* L1 list of all finished transactions present in xid2state hash.
 									 	  It is cleanup by MtmGetOldestXmin */
     MtmTransState** transListTail;     /* Tail of L1 list of all finished transactionds, used to append new elements.
 								  		  This list is expected to be in CSN ascending order, by strict order may be violated */
-	uint64 transCount;                 /* Counter of transactions perfromed by this node */
+	uint64 transCount;                 /* Counter of transactions perfromed by this node */	
 	time_t nodeTransDelay[MAX_NODES];  /* Time of waiting transaction acknowledgment from node */
     BgwPool pool;                      /* Pool of background workers for applying logical replication patches */
 	MtmNodeInfo nodes[1];              /* [MtmNodes]: per-node data */ 
@@ -200,5 +201,6 @@ extern void  MtmSwitchClusterMode(MtmNodeStatus mode);
 extern void  MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr);
 extern void  MtmSetupReplicationHooks(struct PGLogicalHooks* hooks);
 extern void  MtmCheckQuorum(void);
-
+extern bool  MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN);
+extern void  MtmRecoveryCompleted(void);
 #endif

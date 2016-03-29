@@ -150,11 +150,12 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 
     pq_sendbyte(out, 'C');		/* sending COMMIT */
 
-	MTM_TRACE("PGLOGICAL_SEND commit: event=%d, gid=%s\n", flags, txn->gid);
+	MTM_INFO("PGLOGICAL_SEND commit: event=%d, gid=%s, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx\n", flags, txn->gid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
 
     /* send the flags field */
     pq_sendbyte(out, flags);
     pq_sendbyte(out, MtmNodeId);
+    pq_sendbyte(out, MtmRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn));
 
     /* send fixed fields */
     pq_sendint64(out, commit_lsn);
@@ -167,7 +168,6 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     if (flags != PGLOGICAL_COMMIT) { 
     	pq_sendstring(out, txn->gid);
 	}
-
 }
 
 /*
