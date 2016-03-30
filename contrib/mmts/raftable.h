@@ -33,5 +33,6 @@ extern bool  RaftableCAS(char const* key, char const* value, bool nowait);
 typedef void* (*raftable_get_t)(char const* key, int* size, int timeout);
 typedef void (*raftable_set_t)(char const* key, void const* value, int size, int timeout);
 
+extern bool MtmUseRaftable;
 
 #endif
