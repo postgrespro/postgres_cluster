@@ -53,7 +53,7 @@ static volatile sig_atomic_t got_sighup = false;
 
 /* GUC variables */
 static int receiver_idle_time = 0;
-static bool receiver_sync_mode = false;
+static bool receiver_sync_mode = true;
 
 /* Worker name */
 char worker_proc[BGW_MAXLEN];
@@ -292,7 +292,7 @@ pglogical_receiver_main(Datum main_arg)
 	}
 	CommitTransactionCommand();
 	
-	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %u/%u (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"mtm_replication_mode\" '%s')",
+	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %u/%u (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s')",
 					  args->receiver_slot,
 					  (uint32) (originStartPos >> 32),
 					  (uint32) originStartPos,
