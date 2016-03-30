@@ -36,7 +36,7 @@ my $pgconf_common = qq(
 	max_wal_senders = 10
 	max_replication_slots = 10
 	wal_level = logical
-	shared_preload_libraries = 'multimaster'
+	shared_preload_libraries = 'raftable,multimaster'
 	multimaster.workers=4
 	multimaster.queue_size=10485760 # 10mb
 );
