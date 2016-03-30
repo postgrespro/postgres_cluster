@@ -8,7 +8,7 @@
 #include "pglogical_output/hooks.h"
 
 #define MTM_TUPLE_TRACE(fmt, ...)
-#if 0
+#if 1
 #define MTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 #define MTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
 #else
