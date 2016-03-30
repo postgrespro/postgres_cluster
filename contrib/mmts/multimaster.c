@@ -58,7 +58,7 @@
 #include "raftable.h"
 #include "multimaster.h"
 #include "ddd.h"
-#include "paxos.h"
+#include "raftable.h"
 
 typedef struct { 
     TransactionId xid;    /* local transaction ID   */
@@ -172,6 +172,7 @@ int   MtmConnectAttempts;
 int   MtmConnectTimeout;
 int   MtmKeepaliveTimeout;
 int   MtmReconnectAttempts;
+bool  MtmUseRaftable;
 MtmConnectionInfo* MtmConnections;
 
 static char* MtmConnStrs;
@@ -1104,7 +1105,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 	int i, j, n = MtmNodes;
 	for (i = 0; i < n; i++) { 
 		if (i+1 != MtmNodeId) { 
-			void* data = PaxosGet(psprintf("node-mask-%d", i+1), NULL, NULL, nowait);
+			void* data = RaftableGet(psprintf("node-mask-%d", i+1), NULL, NULL, nowait);
 			if (data == NULL) { 
 				return false;
 			}
@@ -1134,7 +1135,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 	int clique_size;
 	int i;
 
-	if (!MtmBuildConnectivityMatrix(matrix, nowait)) { 
+	if (!MtmUseRaftable || !MtmBuildConnectivityMatrix(matrix, nowait)) { 
 		/* RAFT is not available */
 		return false;
 	}
@@ -1194,7 +1195,7 @@ void MtmCheckQuorum(void)
 void MtmOnNodeDisconnect(int nodeId)
 {
 	BIT_SET(Mtm->connectivityMask, nodeId-1);
-	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
+	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
 
 	/* Wait more than socket KEEPALIVE timeout to let other nodes update their statuses */
 	MtmSleep(MtmKeepaliveTimeout);
@@ -1213,52 +1214,9 @@ void MtmOnNodeDisconnect(int nodeId)
 void MtmOnNodeConnect(int nodeId)
 {
 	BIT_CLEAR(Mtm->connectivityMask, nodeId-1);
-	PaxosSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
+	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
 }
 
-/*
- * Paxos function stubs (until them are miplemented)
- */
-void* PaxosGet(char const* key, int* size, PaxosTimestamp* ts, bool nowait)
-{
-	unsigned enclen, declen, len;
-	char *enc, *dec;
-	Assert(ts == NULL); // not implemented
-
-	enc = raftable_get(key);
-	if (enc == NULL)
-	{
-		*size = 0;
-		return NULL;
-	}
-
-	enclen = strlen(enc);
-	declen = hex_dec_len(enc, enclen);
-	dec = palloc(declen);
-	len = hex_decode(enc, enclen, dec);
-	pfree(enc);
-	Assert(len == declen);
-
-	if (size != NULL) {
-		*size = declen;
-	}
-	return dec;
-}
-
-void  PaxosSet(char const* key, void const* value, int size, bool nowait)
-{
-	unsigned enclen, declen, len;
-	char *enc, *dec;
-
-	enclen = hex_enc_len(value, size);
-	enc = palloc(enclen) + 1;
-	len = hex_encode(value, size, enc);
-	Assert(len == enclen);
-	enc[len] = '\0';
-
-	raftable_set(key, enc, nowait ? 1 : INT_MAX);
-	pfree(enc);
-}
 
 
 /*
@@ -1478,6 +1436,19 @@ _PG_init(void)
 		100000000,
 		0,
 		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomBoolVariable(
+		"multimaster.use_raftable",
+		"Use raftable plugin for internode communication",
+		NULL,
+		&MtmUseRaftable,
+		false,
 		PGC_BACKEND,
 		0,
 		NULL,
@@ -1775,6 +1746,10 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			break;
 		}
 	}
+	if (isRecoverySession) { 
+		MTM_INFO("%d: PGLOGICAL startup hook\n", MyProcPid);
+		sleep(30);
+	}
 	MtmLock(LW_EXCLUSIVE);
 	if (isRecoverySession) {
 		elog(WARNING, "Node %d start recovery of node %d", MtmNodeId, MtmReplicationNodeId);
@@ -1807,7 +1782,7 @@ MtmReplicationTxnFilterHook(struct PGLogicalTxnFilterArgs* args)
 	bool res = Mtm->status != MTM_RECOVERY
 		&& (args->origin_id == InvalidRepOriginId 
 			|| MtmIsRecoveredNode(MtmReplicationNodeId));
-	MTM_INFO("%d: MtmReplicationTxnFilterHook->%d\n", MyProcPid, res);
+	MTM_TRACE("%d: MtmReplicationTxnFilterHook->%d\n", MyProcPid, res);
 	return res;
 }
 
@@ -2376,16 +2351,16 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 		
         ByteBufferAlloc(&buf);
         EnumerateLocks(MtmSerializeLock, &buf);
-		PaxosSet(psprintf("lock-graph-%d", MtmNodeId), buf.data, buf.used, true);
+		RaftableSet(psprintf("lock-graph-%d", MtmNodeId), buf.data, buf.used, true);
 		MtmGraphInit(&graph);
 		MtmGraphAdd(&graph, (GlobalTransactionId*)buf.data, buf.used/sizeof(GlobalTransactionId));
         ByteBufferFree(&buf);
 		for (i = 0; i < MtmNodes; i++) { 
 			if (i+1 != MtmNodeId && !BIT_CHECK(Mtm->disabledNodeMask, i)) { 
 				int size;
-				void* data = PaxosGet(psprintf("lock-graph-%d", i+1), &size, NULL, true);
+				void* data = RaftableGet(psprintf("lock-graph-%d", i+1), &size, NULL, true);
 				if (data == NULL) { 
-					return true; /* Just temporary hack until no Paxos */
+					return true; /* If using Raftable is disabled */
 				} else { 
 					MtmGraphAdd(&graph, (GlobalTransactionId*)data, size/sizeof(GlobalTransactionId));
 				}
