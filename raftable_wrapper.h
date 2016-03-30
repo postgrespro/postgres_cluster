@@ -1,5 +1,5 @@
-#ifndef __RAFTABLE_H__
-#define __RAFTABLE_H__
+#ifndef __RAFTABLE_WRAPPER_H__
+#define __RAFTABLE_WRAPPER_H__
 
 typedef struct RaftableTimestamp { 
 	time_t time;   /* local time at master */
