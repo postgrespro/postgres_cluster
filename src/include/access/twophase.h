@@ -58,6 +58,4 @@ extern void CheckPointTwoPhase(XLogRecPtr redo_horizon);
 extern void FinishPreparedTransaction(const char *gid, bool isCommit);
 
 extern void XlogRedoFinishPrepared(TransactionId xid, bool isCommit);
-
-extern GlobalTransaction RecoverPreparedFromBuffer(char *buf, bool forceOverwriteOK);
 #endif   /* TWOPHASE_H */

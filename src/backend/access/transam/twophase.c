@@ -1675,7 +1675,6 @@ RecreateTwoPhaseFile(TransactionId xid, void *content, int len)
 				 errmsg("could not close two-phase state file: %m")));
 }
 
-
 /*
  * CheckPointTwoPhase -- handle 2PC component of checkpointing.
  *
@@ -1957,7 +1956,7 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
  * It's a caller responsibility to call MarkAsPrepared() on returned gxact.
  *
  */
-GlobalTransaction
+static GlobalTransaction
 RecoverPreparedFromBuffer(char *buf, bool forceOverwriteOK)
 {
 	char			*bufptr;
