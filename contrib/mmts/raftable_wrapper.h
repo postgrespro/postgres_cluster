@@ -15,13 +15,13 @@ typedef struct RaftableTimestamp {
  * If "ts" is not NULL, then it is assigned timestamp of last update of this value
  * If RAFT master is not accessible, then depending non value of "nowait" parameter, this funciton should either block until RAFT quorum is reached, either report error.
  */
-extern void* RaftableGet(char const* key, int* size, RaftableTimestamp* ts, bool nowait);
+extern void* RaftableGet(char const* key, size_t* size, RaftableTimestamp* ts, bool nowait);
 
 /*
  * Set new value for the specified key. IF value is NULL, then key should be deleted.
  * If RAFT master is not accessible, then depending non value of "nowait" parameter, this funciton should either block until RAFT quorum is reached, either report error.
  */
-extern void  RaftableSet(char const* key, void const* value, int size, bool nowait);
+extern void  RaftableSet(char const* key, void const* value, size_t size, bool nowait);
 
 /* 
  * If key doesn't exists or its value is not equal to the specified value then store this value and return true.
@@ -30,8 +30,8 @@ extern void  RaftableSet(char const* key, void const* value, int size, bool nowa
  */
 extern bool  RaftableCAS(char const* key, char const* value, bool nowait);
 
-typedef void* (*raftable_get_t)(char const* key, int* size, int timeout);
-typedef void (*raftable_set_t)(char const* key, void const* value, int size, int timeout);
+typedef void* (*raftable_get_t)(char const* key, size_t* size);
+typedef void (*raftable_set_t)(char const* key, void const* value, size_t size, int timeout_ms);
 
 extern bool MtmUseRaftable;
 
