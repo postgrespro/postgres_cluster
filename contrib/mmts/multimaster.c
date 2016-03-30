@@ -55,9 +55,9 @@
 #include "catalog/indexing.h"
 #include "pglogical_output/hooks.h"
 
-#include "raftable.h"
 #include "multimaster.h"
 #include "ddd.h"
+#include "raftable_wrapper.h"
 #include "raftable.h"
 
 typedef struct { 
@@ -2371,4 +2371,25 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 		elog(WARNING, "Distributed deadlock check for %u:%u = %d", gtid.node, gtid.xid, hasDeadlock);
 	}
     return hasDeadlock;
+}
+
+void* RaftableGet(char const* key, int* size, RaftableTimestamp* ts, bool nowait)
+{
+	size_t s;
+	char *value;
+	Assert(ts == NULL); /* not implemented */
+	value = raftable_get(key, &s);
+	*size = s;
+	return value;
+}
+
+void  RaftableSet(char const* key, void const* value, int size, bool nowait)
+{
+	raftable_set(key, value, size, nowait ? 0 : -1);
+}
+
+bool  RaftableCAS(char const* key, char const* value, bool nowait)
+{
+	Assert(false); /* not implemented */
+	return false;
 }

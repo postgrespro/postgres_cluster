@@ -18,16 +18,17 @@ typedef struct State {
 
 static char *state_get_string(StateP state, RaftableEntry *e, size_t *len)
 {
-	size_t checklen;
+	size_t actlen;
 	char *s;
 	Assert(state);
 	Assert(LWLockHeldByMe(state->lock));
 
-	*len = blockmem_len(state->blockmem, e->block);
-	Assert(len > 0);
-	s = palloc(*len);
-	checklen = blockmem_get(state->blockmem, e->block, s, *len);
-	Assert(*len == checklen);
+	actlen = blockmem_len(state->blockmem, e->block);
+	if (len) *len = actlen;
+	Assert(actlen > 0);
+	s = palloc(actlen);
+	actlen -= blockmem_get(state->blockmem, e->block, s, actlen);
+	Assert(actlen == 0);
 
 	return s;
 }
