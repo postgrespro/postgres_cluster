@@ -386,7 +386,7 @@ static void MtmOpenConnections()
 static bool MtmSendToNode(int node, void const* buf, int size)
 {
 	while (sockets[node] < 0 || !MtmWriteSocket(sockets[node], buf, size)) { 
-		elog(WARNING, "Arbiter failed to write socket: %d", errno);
+		elog(WARNING, "Arbiter failed to write to node %d: %d", node+1, errno);
 		if (sockets[node] >= 0) { 
 			close(sockets[node]);
 		}
@@ -395,6 +395,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 			MtmOnNodeDisconnect(node+1);
 			return false;
 		}
+		elog(NOTICE, "Arbiter restablish connection with node %d", node+1);
 	}
 	return true;
 }
