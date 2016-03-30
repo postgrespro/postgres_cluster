@@ -499,12 +499,12 @@ process_remote_commit(StringInfo in)
 	uint8 		flags;
 	csn_t       csn;
 	const char *gid = NULL;	
-	bool        caughtUp;
+	bool        caughtUp = false;
 
 	/* read flags */
 	flags = pq_getmsgbyte(in);
 	MtmReplicationNode = pq_getmsgbyte(in);
-	caughtUp = pq_getmsgbyte(in) != 0;
+	/*caughtUp = pq_getmsgbyte(in) != 0;*/
 
 	/* read fields */
 	replorigin_session_origin_lsn = pq_getmsgint64(in); /* commit_lsn */

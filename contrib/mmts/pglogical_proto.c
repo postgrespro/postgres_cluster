@@ -147,6 +147,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 			return;
 		}
 	}
+	MtmRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn);
 
     pq_sendbyte(out, 'C');		/* sending COMMIT */
 
@@ -155,7 +156,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     /* send the flags field */
     pq_sendbyte(out, flags);
     pq_sendbyte(out, MtmNodeId);
-    pq_sendbyte(out, MtmRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn));
+    /*pq_sendbyte(out, MtmRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn));*/
 
     /* send fixed fields */
     pq_sendint64(out, commit_lsn);
