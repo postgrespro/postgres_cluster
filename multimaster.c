@@ -1748,7 +1748,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	}
 	MtmLock(LW_EXCLUSIVE);
 	if (isRecoverySession) {
-		elog(WARNING, "Node %d start recovery of node %d", MtmNodeId, MtmReplicationNodeId);
+		elog(WARNING, "%d: Node %d start recovery of node %d", MyProcPid, MtmNodeId, MtmReplicationNodeId);
 		if (!BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
 			BIT_SET(Mtm->disabledNodeMask,  MtmReplicationNodeId-1);
 			Mtm->nNodes -= 1;			
@@ -1778,7 +1778,6 @@ MtmReplicationTxnFilterHook(struct PGLogicalTxnFilterArgs* args)
 	bool res = Mtm->status != MTM_RECOVERY
 		&& (args->origin_id == InvalidRepOriginId 
 			|| MtmIsRecoveredNode(MtmReplicationNodeId));
-	MTM_TRACE("%d: MtmReplicationTxnFilterHook->%d\n", MyProcPid, res);
 	return res;
 }
 

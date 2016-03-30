@@ -489,7 +489,6 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 	PGLogicalOutputData *data = ctx->output_plugin_private;
 
 	if (!call_txn_filter_hook(data, origin_id)) { 
-		elog(WARNING, "Record with origin %d is not sent to node %d", origin_id, MtmReplicationNodeId);
 		return true;
 	}
 
