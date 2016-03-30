@@ -55,6 +55,7 @@
 #include "catalog/indexing.h"
 #include "pglogical_output/hooks.h"
 
+#include "raftable.h"
 #include "multimaster.h"
 #include "ddd.h"
 #include "paxos.h"
