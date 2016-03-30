@@ -19,20 +19,28 @@ static void RaftableResolve()
 /*
  * Raftable function proxies
  */
-void* RaftableGet(char const* key, int* size, RaftableTimestamp* ts, bool nowait)
+void* RaftableGet(char const* key, size_t* size, RaftableTimestamp* ts, bool nowait)
 {
 	if (!MtmUseRaftable) { 
 		return NULL;
 	}
 	RaftableResolve();
-	return (*raftable_get_impl)(key, size, nowait ? 0 : -1);
+	return (*raftable_get_impl)(key, size);
 }
 
 
-void RaftableSet(char const* key, void const* value, int size, bool nowait)
+void RaftableSet(char const* key, void const* value, size_t size, bool nowait)
 {
 	if (MtmUseRaftable) { 
 		RaftableResolve();
 		(*raftable_set_impl)(key, value, size, nowait ? 0 : -1);
 	}		
+}
+
+bool RaftableCAS(char const* key, char const* value, bool nowait)
+{
+	if (!MtmUseRaftable) return false;
+
+	Assert(false); /* not implemented */
+	return false;
 }

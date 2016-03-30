@@ -480,17 +480,23 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 /*
  * Decide if the whole transaction with specific origin should be filtered out.
  */
+extern int MtmReplicationNodeId;
+
 static bool
 pg_decode_origin_filter(LogicalDecodingContext *ctx,
 						RepOriginId origin_id)
 {
 	PGLogicalOutputData *data = ctx->output_plugin_private;
 
-	if (!call_txn_filter_hook(data, origin_id))
+	if (!call_txn_filter_hook(data, origin_id)) { 
+		elog(WARNING, "Record with origin %d is not sent to node %d", origin_id, MtmReplicationNodeId);
 		return true;
+	}
 
-	if (!data->forward_changesets && origin_id != InvalidRepOriginId)
+	if (!data->forward_changesets && origin_id != InvalidRepOriginId) {
+		*(int*)0 = 0;
 		return true;
+	}
 
 	return false;
 }
