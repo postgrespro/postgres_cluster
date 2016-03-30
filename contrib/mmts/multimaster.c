@@ -842,8 +842,9 @@ void MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd)
 
 void MtmRecoveryCompleted(void)
 {
-	elog(WARNING, "Recevoery of node %d is completed", MtmNodeId);
+	elog(WARNING, "Recovery of node %d is completed", MtmNodeId);
 	Mtm->recoverySlot = 0;
+	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
 	MtmSwitchClusterMode(MTM_ONLINE);
 }
 
@@ -1744,10 +1745,6 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			isRecoverySession = elem->arg != NULL && strVal(elem->arg) != NULL && strcmp(strVal(elem->arg), "recovery") == 0;
 			break;
 		}
-	}
-	if (isRecoverySession) { 
-		MTM_INFO("%d: PGLOGICAL startup hook\n", MyProcPid);
-		sleep(30);
 	}
 	MtmLock(LW_EXCLUSIVE);
 	if (isRecoverySession) {
