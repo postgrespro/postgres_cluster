@@ -8,7 +8,7 @@ AS 'MODULE_PATHNAME','raftable_sql_get'
 LANGUAGE C;
 
 -- set
-CREATE FUNCTION raftable(key varchar(64), value text, tries int)
+CREATE FUNCTION raftable(key varchar(64), value text, timeout_ms int)
 RETURNS void
 AS 'MODULE_PATHNAME','raftable_sql_set'
 LANGUAGE C;

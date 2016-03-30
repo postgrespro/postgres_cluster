@@ -68,13 +68,13 @@ my %tests = (
 	world => genstr(3000),
 );
 
-my $tries = 10;
+my $timeout_ms = 1000;
 
-$able->psql('postgres', "select raftable('hello', '$tests{hello}', $tries);");
-$baker->psql('postgres', "select raftable('and', '$tests{and}', $tries);");
-$charlie->psql('postgres', "select raftable('goodbye', '$tests{goodbye}', $tries);");
+$able->psql('postgres', "select raftable('hello', '$tests{hello}', $timeout_ms);");
+$baker->psql('postgres', "select raftable('and', '$tests{and}', $timeout_ms);");
+$charlie->psql('postgres', "select raftable('goodbye', '$tests{goodbye}', $timeout_ms);");
 $baker->stop;
-$able->psql('postgres', "select raftable('world', '$tests{world}', $tries);");
+$able->psql('postgres', "select raftable('world', '$tests{world}', $timeout_ms);");
 
 $baker->start;
 sleep(5);

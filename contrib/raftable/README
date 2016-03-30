@@ -40,23 +40,24 @@ The backend can also issue commands to itself through C API.
 
 C API:
 	/* Gets value by key. Returns the value or NULL if not found. */
-	char *raftable_get(char *key);
+	char *raftable_get(const char *key, size_t *vallen);
 
 	/*
-	 * Adds/updates value by key. Returns when the value gets replicated on
-	 * current machine. Storing NULL will delete the item from the table.
+	 * Adds/updates value by key. Returns when the value gets replicated.
+	 * Storing NULL will delete the item from the table. Gives up after
+	 * 'timeout_ms' milliseconds.
 	 */
-	void raftable_set(char *key, char *value);
+	void raftable_set(const char *key, const char *value, size_t len, int timeout_ms);
 
 	/*
 	 * Iterates over all items in the table, calling func(key, value, arg)
 	 * for each of them.
 	 */
-	void raftable_every(void (*func)(char *, char *, void *), void *arg);
+	void raftable_every(void (*func)(const char *, const char *, size_t, void *), void *arg);
 
 SQL API:
 	-- set
-	raftable(key varchar(64), value text, tries int);
+	raftable(key varchar(64), value text, timeout_ms int);
 
 	-- get
 	raftable(key varchar(64)) returns text;

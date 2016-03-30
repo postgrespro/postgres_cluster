@@ -57,6 +57,7 @@
 
 #include "multimaster.h"
 #include "ddd.h"
+#include "raftable_wrapper.h"
 #include "raftable.h"
 
 typedef struct { 
@@ -2367,4 +2368,32 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 		elog(WARNING, "Distributed deadlock check for %u:%u = %d", gtid.node, gtid.xid, hasDeadlock);
 	}
     return hasDeadlock;
+}
+
+void* RaftableGet(char const* key, int* size, RaftableTimestamp* ts, bool nowait)
+{
+	size_t s;
+	char *value;
+
+	if (!MtmUseRaftable) return NULL;
+
+	Assert(ts == NULL); /* not implemented */
+	value = raftable_get(key, &s);
+	*size = s;
+	return value;
+}
+
+void  RaftableSet(char const* key, void const* value, int size, bool nowait)
+{
+	if (!MtmUseRaftable) return;
+
+	raftable_set(key, value, size, nowait ? 0 : -1);
+}
+
+bool  RaftableCAS(char const* key, char const* value, bool nowait)
+{
+	if (!MtmUseRaftable) return false;
+
+	Assert(false); /* not implemented */
+	return false;
 }

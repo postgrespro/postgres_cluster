@@ -15,8 +15,8 @@ typedef struct RaftableEntry
 } RaftableEntry;
 
 typedef struct RaftableField {
-	int keylen; /* with NULL at the end */
-	int vallen; /* with NULL at the end */
+	size_t keylen;
+	size_t vallen;
 	bool isnull;
 	char data[1];
 } RaftableField;
@@ -29,14 +29,14 @@ typedef struct RaftableUpdate {
 
 typedef struct State *StateP;
 
-void state_set(StateP state, char *key, char *value);
-char *state_get(StateP state, char *key);
+void state_set(StateP state, const char *key, const char *value, size_t len);
+char *state_get(StateP state, const char *key, size_t *len);
 
 void state_update(StateP state, RaftableUpdate *update, bool clear);
 void *state_make_snapshot(StateP state, size_t *size);
 
 void *state_scan(StateP state);
-bool state_next(StateP state, void *scan, char **key, char **value);
+bool state_next(StateP state, void *scan, char **key, char **value, size_t *len);
 
 void state_shmem_request();
 StateP state_shmem_init();
