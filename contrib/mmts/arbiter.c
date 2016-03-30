@@ -688,6 +688,8 @@ static void MtmTransReceiver(Datum arg)
 							if ((~msg->disabledNodeMask & Mtm->disabledNodeMask) != 0) { 
 								/* Coordinator's disabled mask is wider than of this node: so reject such transaction to avoid 
 								   commit on smaller subset of nodes */
+								elog(WARNING, "Coordinator of distributed transaction see less nodes than node %d: %lx instead of %lx",
+									 msg->node, Mtm->disabledNodeMask, msg->disabledNodeMask);
 								ts->status = TRANSACTION_STATUS_ABORTED;
 								MtmAdjustSubtransactions(ts);
 							}

@@ -637,7 +637,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		x->isPrepared = false;
 		x->isTransactionBlock = IsTransactionBlock();
 		/* Application name can be cahnged usnig PGAPPNAME environment variable */
-		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
+		if (!IsBackgroundWorker && x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
 			/* reject all user's transactions at offline cluster */
 			MtmUnlock();			
 			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
