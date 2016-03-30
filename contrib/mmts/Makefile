@@ -3,6 +3,8 @@ OBJS = multimaster.o arbiter.o bytebuf.o bgwpool.o pglogical_output.o pglogical_
 
 override CPPFLAGS += -I../raftable
 
+EXTRA_INSTALL = contrib/raftable contrib/mmts
+
 EXTENSION = multimaster
 DATA = multimaster--1.0.sql
 
