@@ -170,6 +170,7 @@ int   MtmConnectAttempts;
 int   MtmConnectTimeout;
 int   MtmKeepaliveTimeout;
 int   MtmReconnectAttempts;
+bool  MtmUseRaftable;
 MtmConnectionInfo* MtmConnections;
 
 static char* MtmConnStrs;
@@ -178,7 +179,6 @@ static int MtmWorkers;
 static int MtmVacuumDelay;
 static int MtmMinRecoveryLag;
 static int MtmMaxRecoveryLag;
-static bool MtmUseRaftable;
 
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
 static ProcessUtility_hook_type PreviousProcessUtilityHook;
