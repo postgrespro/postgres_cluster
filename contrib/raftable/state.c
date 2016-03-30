@@ -16,30 +16,29 @@ typedef struct State {
 	void *blockmem;
 } State;
 
-static char *state_get_string(StateP state, RaftableEntry *e)
+static char *state_get_string(StateP state, RaftableEntry *e, size_t *len)
 {
-	size_t len;
+	size_t checklen;
 	char *s;
 	Assert(state);
 	Assert(LWLockHeldByMe(state->lock));
 
-	len = blockmem_len(state->blockmem, e->block);
+	*len = blockmem_len(state->blockmem, e->block);
 	Assert(len > 0);
-	s = palloc(len);
-	len -= blockmem_get(state->blockmem, e->block, s, len);
-	Assert(len == 0);
+	s = palloc(*len);
+	checklen = blockmem_get(state->blockmem, e->block, s, *len);
+	Assert(*len == checklen);
 
 	return s;
 }
 
-static void state_put_string(StateP state, RaftableEntry *e, char *value)
+static void state_put_string(StateP state, RaftableEntry *e, const char *value, size_t len)
 {
 	Assert(state);
 	Assert(LWLockHeldByMe(state->lock));
-	size_t len = strlen(value) + 1;
 	if (e->block)
 		blockmem_forget(state->blockmem, e->block);
-	e->block = blockmem_put(state->blockmem, value, len);
+	e->block = blockmem_put(state->blockmem, (void *)value, len);
 	if (!e->block)
 		elog(ERROR, "raftable memory limit hit");
 }
@@ -61,7 +60,7 @@ static void state_clear(StateP state)
 	hash_seq_term(&scan);
 }
 
-void state_set(StateP state, char *key, char *value)
+void state_set(StateP state, const char *key, const char *value, size_t vallen)
 {
 	Assert(state);
 	Assert(LWLockHeldByMe(state->lock));
@@ -86,11 +85,11 @@ void state_set(StateP state, char *key, char *value)
 			e->key.data[RAFTABLE_KEY_LEN - 1] = '\0';
 			e->block = 0;
 		}
-		state_put_string(state, e, value);
+		state_put_string(state, e, value, vallen);
 	}
 }
 
-char *state_get(StateP state, char *key)
+char *state_get(StateP state, const char *key, size_t *len)
 {
 	RaftableEntry *e;
 	RaftableKey rkey;
@@ -103,7 +102,7 @@ char *state_get(StateP state, char *key)
 
 	if (e)
 	{
-		char *s = state_get_string(state, e);
+		char *s = state_get_string(state, e, len);
 		LWLockRelease(state->lock);
 		return s;
 	}
@@ -130,7 +129,7 @@ void state_update(StateP state, RaftableUpdate *update, bool clear)
 		cursor = f->data;
 		char *key = cursor; cursor += f->keylen;
 		char *value = cursor; cursor += f->vallen;
-		state_set(state, key, value);
+		state_set(state, key, value, f->vallen);
 	}
 
 	LWLockRelease(state->lock);
@@ -180,8 +179,7 @@ static void agg_snapshot(StateP state, RaftableEntry *e, void *arg)
 	{
 		f->isnull = false;
 
-		char *s = state_get_string(state, e);
-		f->vallen = strlen(s) + 1;
+		char *s = state_get_string(state, e, &f->vallen);
 		memcpy((*cursor), s, f->vallen);
 		pfree(s);
 
@@ -225,7 +223,7 @@ void *state_scan(StateP state)
 	return scan;
 }
 
-bool state_next(StateP state, void *scan, char **key, char **value)
+bool state_next(StateP state, void *scan, char **key, char **value, size_t *len)
 {
 	Assert(state);
 	Assert(scan);
@@ -234,7 +232,7 @@ bool state_next(StateP state, void *scan, char **key, char **value)
 	if (e)
 	{
 		*key = pstrdup(e->key.data);
-		*value = state_get_string(state, e);
+		*value = state_get_string(state, e, len);
 		return true;
 	}
 	else

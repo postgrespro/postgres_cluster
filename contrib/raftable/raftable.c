@@ -12,6 +12,7 @@
 #include "access/htup_details.h"
 #include "miscadmin.h"
 #include "funcapi.h"
+#include "utils/timestamp.h"
 
 #include "raft.h"
 #include "util.h"
@@ -54,9 +55,19 @@ static void *get_shared_state(void)
 
 static void select_next_peer(void)
 {
-	do {
-		*shared.leader = (*shared.leader + 1) % RAFTABLE_PEERS_MAX;
-	} while (!wcfg.peers[*shared.leader].up);
+	int orig_leader = *shared.leader;
+	int i;
+	for (i = 0; i < RAFTABLE_PEERS_MAX; i++)
+	{
+		int idx = (orig_leader + i + 1) % RAFTABLE_PEERS_MAX;
+		HostPort *hp = wcfg.peers + idx;
+		if (hp->up)
+		{
+			*shared.leader = idx;
+			return;
+		}
+	}
+	elog(WARNING, "all raftable peers down");
 }
 
 static void disconnect_leader(void)
@@ -129,20 +140,20 @@ static bool connect_leader(void)
 
 static int get_connection(void)
 {
-	while (leadersock < 0)
+	if (leadersock < 0)
 	{
-		if (connect_leader()) break;
+		if (connect_leader()) return leadersock;
 
-		int timeout_ms = 1000;
+		int timeout_ms = 100;
 		struct timespec timeout = {0, timeout_ms * 1000000};
 		nanosleep(&timeout, NULL);
 	}
 	return leadersock;
 }
 
-char *raftable_get(char *key)
+char *raftable_get(const char *key, size_t *len)
 {
-	return state_get(shared.state, key);
+	return state_get(shared.state, key, len);
 }
 
 Datum
@@ -150,14 +161,15 @@ raftable_sql_get(PG_FUNCTION_ARGS)
 {
 	RaftableEntry *e;
 	RaftableKey key;
+	size_t len;
 	text_to_cstring_buffer(PG_GETARG_TEXT_P(0), key.data, sizeof(key.data));
 
 	Assert(shared.state);
 
-	char *s = state_get(shared.state, key.data);
+	char *s = state_get(shared.state, key.data, &len);
 	if (s)
 	{
-		text *t = cstring_to_text(s);
+		text *t = cstring_to_text_with_len(s, len);
 		pfree(s);
 		PG_RETURN_TEXT_P(t);
 	}
@@ -165,20 +177,79 @@ raftable_sql_get(PG_FUNCTION_ARGS)
 		PG_RETURN_NULL();
 }
 
-bool raftable_set(char *key, char *value, int tries)
+static void start_timer(TimestampTz *timer)
+{
+        *timer -= GetCurrentTimestamp();
+}
+
+static void stop_timer(TimestampTz *timer)
+{
+        *timer += GetCurrentTimestamp();
+}
+
+static long msec(TimestampTz timer)
+{
+        long sec;
+        int usec;
+        TimestampDifference(0, timer, &sec, &usec);
+        return sec * 1000 + usec / 1000;
+}
+
+static bool try_sending_update(RaftableUpdate *ru, size_t size)
+{
+	int s = get_connection();
+
+	if (s < 0) return false;
+
+	int sent = 0, recved = 0;
+	int status;
+
+	if (write(s, &size, sizeof(size)) != sizeof(size))
+	{
+		disconnect_leader();
+		elog(WARNING, "failed to send the update size to the leader");
+		return false;
+	}
+
+	while (sent < size)
+	{
+		int newbytes = write(s, (char *)ru + sent, size - sent);
+		if (newbytes == -1)
+		{
+			disconnect_leader();
+			elog(WARNING, "failed to send the update to the leader");
+			return false;
+		}
+		sent += newbytes;
+	}
+
+	recved = read(s, &status, sizeof(status));
+	if (recved != sizeof(status))
+	{
+		disconnect_leader();
+		elog(WARNING, "failed to recv the update status from the leader");
+		return false;
+	}
+
+	if (status != 1)
+	{
+		disconnect_leader();
+		elog(WARNING, "leader returned %d", status);
+		return false;
+	}
+
+	return true;
+}
+
+bool raftable_set(const char *key, const char *value, size_t vallen, int timeout_ms)
 {
 	RaftableUpdate *ru;
 	size_t size = sizeof(RaftableUpdate);
-	int keylen, vallen = 0;
-	bool ok = false;
-
-	if (tries <= 0)
-	{
-		elog(ERROR, "raftable set should be called with 'tries' > 0");
-	}
+	size_t keylen = 0;
+	TimestampTz now;
+	int elapsed_ms;
 
 	keylen = strlen(key) + 1;
-	if (value) vallen = strlen(value) + 1;
 
 	size += sizeof(RaftableField) - 1;
 	size += keylen;
@@ -194,67 +265,36 @@ bool raftable_set(char *key, char *value, int tries)
 	memcpy(f->data, key, keylen);
 	memcpy(f->data + keylen, value, vallen);
 
-tryagain:
-	if (tries--)
+	elapsed_ms = 0;
+	now = GetCurrentTimestamp();
+	while ((elapsed_ms <= timeout_ms) || (timeout_ms == -1))
 	{
-		int s = get_connection();
-		int sent = 0, recved = 0;
-		int status;
-
-		if (write(s, &size, sizeof(size)) != sizeof(size))
+		TimestampTz past = now;
+		if (try_sending_update(ru, size))
 		{
-			disconnect_leader();
-			elog(WARNING, "failed[%d] to send the update size to the leader", tries);
-			goto tryagain;
+			pfree(ru);
+			return true;
 		}
-
-		while (sent < size)
-		{
-			int newbytes = write(s, (char *)ru + sent, size - sent);
-			if (newbytes == -1)
-			{
-				disconnect_leader();
-				elog(WARNING, "failed[%d] to send the update to the leader", tries);
-				goto tryagain;
-			}
-			sent += newbytes;
-		}
-
-		recved = read(s, &status, sizeof(status));
-		if (recved != sizeof(status))
-		{
-			disconnect_leader();
-			elog(WARNING, "failed to recv the update status from the leader\n");
-			goto tryagain;
-		}
-		goto success;
-	}
-	else
-	{
-		goto failure;
+		now = GetCurrentTimestamp();
+		elapsed_ms += msec(now - past);
 	}
 
-failure:
-	elog(WARNING, "failed all tries to set raftable value\n");
 	pfree(ru);
+	elog(WARNING, "failed to set raftable value after %d ms", timeout_ms);
 	return false;
-
-success:
-	pfree(ru);
-	return true;
 }
 
 Datum
 raftable_sql_set(PG_FUNCTION_ARGS)
 {
 	char *key = text_to_cstring(PG_GETARG_TEXT_P(0));
-	int tries = PG_GETARG_INT32(2);
+	int timeout_ms = PG_GETARG_INT32(2);
 	if (PG_ARGISNULL(1))
-		raftable_set(key, NULL, tries);
+		raftable_set(key, NULL, 0, timeout_ms);
 	else
 	{
 		char *value = text_to_cstring(PG_GETARG_TEXT_P(1));
-		raftable_set(key, value, tries);
+		raftable_set(key, value, strlen(value), timeout_ms);
 		pfree(value);
 	}
 	pfree(key);
@@ -262,16 +302,17 @@ raftable_sql_set(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-void raftable_every(void (*func)(char *, char *, void *), void *arg)
+void raftable_every(void (*func)(const char *, const char *, size_t, void *), void *arg)
 {
 	void *scan;
 	char *key, *value;
+	size_t len;
 	Assert(shared.state);
 
 	scan = state_scan(shared.state);
-	while (state_next(shared.state, scan, &key, &value))
+	while (state_next(shared.state, scan, &key, &value, &len))
 	{
-		func(key, value, arg);
+		func(key, value, len, arg);
 		pfree(key);
 		pfree(value);
 	}
@@ -281,6 +322,7 @@ Datum
 raftable_sql_list(PG_FUNCTION_ARGS)
 {
 	char *key, *value;
+	size_t len;
 	FuncCallContext *funcctx;
 	MemoryContext oldcontext;
 
@@ -309,14 +351,14 @@ raftable_sql_list(PG_FUNCTION_ARGS)
 
 	funcctx = SRF_PERCALL_SETUP();
 
-	if (state_next(shared.state, funcctx->user_fctx, &key, &value))
+	if (state_next(shared.state, funcctx->user_fctx, &key, &value, &len))
 	{
 		HeapTuple tuple;
 		Datum  vals[2];
 		bool isnull[2];
 
-		vals[0] = CStringGetTextDatum(key);
-		vals[1] = CStringGetTextDatum(value);
+		vals[0] = PointerGetDatum(cstring_to_text(key));
+		vals[1] = PointerGetDatum(cstring_to_text_with_len(value, len));
 		isnull[0] = isnull[1] = false;
 
 		tuple = heap_form_tuple(funcctx->tuple_desc, vals, isnull);
