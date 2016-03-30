@@ -1,6 +1,6 @@
 #include <dlfcn.h>
 #include "postgres.h"
-#include "raftable.h"
+#include "raftable_wrapper.h"
 
 
 static raftable_get_t raftable_get_impl;
