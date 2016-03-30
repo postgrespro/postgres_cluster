@@ -292,7 +292,7 @@ pglogical_receiver_main(Datum main_arg)
 	}
 	CommitTransactionCommand();
 	
-	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %u/%u (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s')",
+	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %x/%x (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s')",
 					  args->receiver_slot,
 					  (uint32) (originStartPos >> 32),
 					  (uint32) originStartPos,

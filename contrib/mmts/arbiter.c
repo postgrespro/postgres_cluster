@@ -513,7 +513,7 @@ static void MtmBroadcastMessage(MtmBuffer* txBuffer, MtmTransState* ts)
 	int n = 1;
 	for (i = 0; i < MtmNodes; i++)
 	{
-		if (TransactionIdIsValid(ts->xids[i])) { 
+		if (!BIT_CHECK(Mtm->disabledNodeMask, i) && TransactionIdIsValid(ts->xids[i])) { 
 			Assert(i+1 != MtmNodeId);
 			MtmAppendBuffer(txBuffer, ts->xids[i], i, ts);
 			n += 1;
