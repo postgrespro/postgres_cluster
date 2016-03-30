@@ -153,6 +153,7 @@ static int get_connection(void)
 
 char *raftable_get(const char *key, size_t *len)
 {
+	Assert(wcfg.id >= 0);
 	return state_get(shared.state, key, len);
 }
 
@@ -249,6 +250,8 @@ bool raftable_set(const char *key, const char *value, size_t vallen, int timeout
 	TimestampTz now;
 	int elapsed_ms;
 
+	Assert(wcfg.id >= 0);
+
 	keylen = strlen(key) + 1;
 
 	size += sizeof(RaftableField) - 1;
@@ -308,6 +311,7 @@ void raftable_every(void (*func)(const char *, const char *, size_t, void *), vo
 	char *key, *value;
 	size_t len;
 	Assert(shared.state);
+	Assert(wcfg.id >= 0);
 
 	scan = state_scan(shared.state);
 	while (state_next(shared.state, scan, &key, &value, &len))
@@ -327,6 +331,7 @@ raftable_sql_list(PG_FUNCTION_ARGS)
 	MemoryContext oldcontext;
 
 	Assert(shared.state);
+	Assert(wcfg.id >= 0);
 
 	if (SRF_IS_FIRSTCALL())
 	{
@@ -399,8 +404,8 @@ _PG_init(void)
 
 	DefineCustomIntVariable("raftable.id",
 		"Raft peer id of current instance", NULL,
-		&wcfg.id, 0,
-		0, RAFTABLE_PEERS_MAX-1,
+		&wcfg.id, -1,
+		-1, RAFTABLE_PEERS_MAX-1,
 		PGC_POSTMASTER, 0, NULL, NULL, NULL
 	);
 
@@ -452,13 +457,18 @@ _PG_init(void)
 		&peerstr, "0:127.0.0.1:6543",
 		PGC_POSTMASTER, 0, NULL, NULL, NULL
 	);
-	parse_peers(wcfg.peers, peerstr);
-
-	request_shmem();
-	worker_register(&wcfg);
 
 	PreviousShmemStartupHook = shmem_startup_hook;
-	shmem_startup_hook = startup_shmem;
+
+	if (wcfg.id >= 0)
+	{
+		parse_peers(wcfg.peers, peerstr);
+
+		request_shmem();
+		worker_register(&wcfg);
+
+		shmem_startup_hook = startup_shmem;
+	}
 }
 
 void
