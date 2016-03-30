@@ -5599,21 +5599,7 @@ xact_redo(XLogReaderState *record)
 	}
 	else if (info == XLOG_XACT_PREPARE)
 	{
-		GlobalTransaction gxact;
-
-		/*
-		 * To avoid creation of state files during replay we registering
-		 * prepare xlog records in shared memory in the same way as it happens
-		 * while not in recovery. If replay faces commit xlog record before
-		 * checkpoint/restartpoint happens then we avoid using files at all.
-		 *
-		 * We need this behaviour because the speed of the 2PC replay on the replica
-		 * should be at least the same as the 2PC transaction speed of the master.
-		 */
-		gxact = RecoverPreparedFromBuffer((char *) XLogRecGetData(record), false);
-		gxact->prepare_start_lsn = record->ReadRecPtr;
-		gxact->prepare_end_lsn = record->EndRecPtr;
-		MarkAsPrepared(gxact);
+		RecoverPreparedFromXLOG(record);
 	}
 	else if (info == XLOG_XACT_ASSIGNMENT)
 	{

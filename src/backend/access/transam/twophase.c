@@ -99,6 +99,64 @@
 int			max_prepared_xacts = 0;
 
 /*
+ * This struct describes one global transaction that is in prepared state
+ * or attempting to become prepared.
+ *
+ * The lifecycle of a global transaction is:
+ *
+ * 1. After checking that the requested GID is not in use, set up an entry in
+ * the TwoPhaseState->prepXacts array with the correct GID and valid = false,
+ * and mark it as locked by my backend.
+ *
+ * 2. After successfully completing prepare, set valid = true and enter the
+ * referenced PGPROC into the global ProcArray.
+ *
+ * 3. To begin COMMIT PREPARED or ROLLBACK PREPARED, check that the entry is
+ * valid and not locked, then mark the entry as locked by storing my current
+ * backend ID into locking_backend.  This prevents concurrent attempts to
+ * commit or rollback the same prepared xact.
+ *
+ * 4. On completion of COMMIT PREPARED or ROLLBACK PREPARED, remove the entry
+ * from the ProcArray and the TwoPhaseState->prepXacts array and return it to
+ * the freelist.
+ *
+ * Note that if the preparing transaction fails between steps 1 and 2, the
+ * entry must be removed so that the GID and the GlobalTransaction struct
+ * can be reused.  See AtAbort_Twophase().
+ *
+ * typedef struct GlobalTransactionData *GlobalTransaction appears in
+ * twophase.h
+ *
+ * Note that the max value of GIDSIZE must fit in the uint16 gidlen,
+ * specified in TwoPhaseFileHeader.
+ */
+#define GIDSIZE 200
+
+typedef struct GlobalTransactionData
+{
+	GlobalTransaction next;		/* list link for free list */
+	int			pgprocno;		/* ID of associated dummy PGPROC */
+	BackendId	dummyBackendId; /* similar to backend id for backends */
+	TimestampTz prepared_at;	/* time of preparation */
+
+	/*
+	 * Note that we need to keep track of two LSNs for each GXACT.
+	 * We keep track of the start LSN because this is the address we must
+	 * use to read state data back from WAL when committing a prepared GXACT.
+	 * We keep track of the end LSN because that is the LSN we need to wait
+	 * for prior to commit.
+	 */
+	XLogRecPtr	prepare_start_lsn;	/* XLOG offset of prepare record start */
+	XLogRecPtr	prepare_end_lsn;	/* XLOG offset of prepare record end */
+
+	Oid			owner;			/* ID of user that executed the xact */
+	BackendId	locking_backend;	/* backend currently working on the xact */
+	bool		valid;			/* TRUE if PGPROC entry is in proc array */
+	bool		ondisk;			/* TRUE if prepare state file is on disk */
+	char		gid[GIDSIZE];	/* The GID assigned to the prepared xact */
+}	GlobalTransactionData;
+
+/*
  * Two Phase Commit shared state.  Access to this struct is protected
  * by TwoPhaseStateLock.
  */
@@ -429,7 +487,7 @@ GXactLoadSubxactData(GlobalTransaction gxact, int nsubxacts,
  * MarkAsPrepared
  *		Mark the GXACT as fully valid, and enter it into the global ProcArray.
  */
-void
+static void
 MarkAsPrepared(GlobalTransaction gxact)
 {
 	/* Lock here may be overkill, but I'm not convinced of that ... */
@@ -517,6 +575,37 @@ LockGXact(const char *gid, Oid user)
 
 	/* NOTREACHED */
 	return NULL;
+}
+
+/*
+ * LockGXactByXid
+ *
+ * Find prepared transaction by xid and lock corresponding gxact.
+ * This is used during recovery as an alternative to LockGXact().
+ */
+static GlobalTransaction
+LockGXactByXid(TransactionId xid)
+{
+	int i;
+	GlobalTransaction gxact = NULL;
+	PGXACT	   *pgxact;
+
+	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	{
+		gxact = TwoPhaseState->prepXacts[i];
+		pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
+
+		if (TransactionIdEquals(xid, pgxact->xid))
+		{
+			gxact->locking_backend = MyBackendId;
+			MyLockedGxact = gxact;
+			break;
+		}
+	}
+	LWLockRelease(TwoPhaseStateLock);
+
+	return gxact;
 }
 
 /*
@@ -1274,12 +1363,17 @@ StandbyTransactionIdIsPrepared(TransactionId xid)
 }
 
 /*
- * FinishPreparedTransaction: execute COMMIT PREPARED or ROLLBACK PREPARED
+ * FinishGXact
+ *
+ * Do the actual finish of COMMIT/ABORT PREPARED. It is a caller
+ * responsibility to properly lock corresponding gxact.
+ *
+ * This function can be called during replay to clean memory state
+ * for previously prepared xact. In that case actions are the same
+ * as in normal mode but without any writes to WAL or files.
  */
-void
-FinishPreparedTransaction(const char *gid, bool isCommit)
+static void FinishGXact(GlobalTransaction gxact, bool isCommit)
 {
-	GlobalTransaction gxact;
 	PGPROC	   *proc;
 	PGXACT	   *pgxact;
 	TransactionId xid;
@@ -1295,11 +1389,6 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	SharedInvalidationMessage *invalmsgs;
 	int			i;
 
-	/*
-	 * Validate the GID, and lock the GXACT to ensure that two backends do not
-	 * try to commit the same GID at once.
-	 */
-	gxact = LockGXact(gid, GetUserId());
 	proc = &ProcGlobal->allProcs[gxact->pgprocno];
 	pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
 	xid = pgxact->xid;
@@ -1343,16 +1432,19 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	 * progress), then run the post-commit or post-abort callbacks. The
 	 * callbacks will release the locks the transaction held.
 	 */
-	if (isCommit)
-		RecordTransactionCommitPrepared(xid,
+	if (!RecoveryInProgress())
+	{
+		if (isCommit)
+			RecordTransactionCommitPrepared(xid,
 										hdr->nsubxacts, children,
 										hdr->ncommitrels, commitrels,
 										hdr->ninvalmsgs, invalmsgs,
 										hdr->initfileinval);
-	else
-		RecordTransactionAbortPrepared(xid,
+		else
+			RecordTransactionAbortPrepared(xid,
 									   hdr->nsubxacts, children,
 									   hdr->nabortrels, abortrels);
+	}
 
 	ProcArrayRemove(proc, latestXid);
 
@@ -1383,12 +1475,15 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 		delrels = abortrels;
 		ndelrels = hdr->nabortrels;
 	}
-	for (i = 0; i < ndelrels; i++)
+	if (!RecoveryInProgress())
 	{
-		SMgrRelation srel = smgropen(delrels[i], InvalidBackendId);
+		for (i = 0; i < ndelrels; i++)
+		{
+			SMgrRelation srel = smgropen(delrels[i], InvalidBackendId);
 
-		smgrdounlink(srel, false);
-		smgrclose(srel);
+			smgrdounlink(srel, false);
+			smgrclose(srel);
+		}
 	}
 
 	/*
@@ -1397,11 +1492,14 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	 * Relcache init file invalidation requires processing both before and
 	 * after we send the SI messages. See AtEOXact_Inval()
 	 */
-	if (hdr->initfileinval)
-		RelationCacheInitFilePreInvalidate();
-	SendSharedInvalidMessages(invalmsgs, hdr->ninvalmsgs);
-	if (hdr->initfileinval)
-		RelationCacheInitFilePostInvalidate();
+	if (!RecoveryInProgress())
+	{
+		if (hdr->initfileinval)
+			RelationCacheInitFilePreInvalidate();
+		SendSharedInvalidMessages(invalmsgs, hdr->ninvalmsgs);
+		if (hdr->initfileinval)
+			RelationCacheInitFilePostInvalidate();
+	}
 
 	/* And now do the callbacks */
 	if (isCommit)
@@ -1424,6 +1522,49 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	MyLockedGxact = NULL;
 
 	pfree(buf);
+}
+
+/*
+ * FinishPreparedTransaction: execute COMMIT PREPARED or ROLLBACK PREPARED
+ */
+void
+FinishPreparedTransaction(const char *gid, bool isCommit)
+{
+	GlobalTransaction gxact;
+
+	/*
+	 * Validate the GID, and lock the GXACT to ensure that two backends do not
+	 * try to commit the same GID at once.
+	 */
+	gxact = LockGXact(gid, GetUserId());
+	FinishGXact(gxact, isCommit);
+}
+
+/*
+ * XlogRedoFinishPrepared()
+ *
+ * This function is called during replay when xlog reader faces 2pc commit or
+ * abort record. That function should clean up memory state that was created
+ * while replaying prepare xlog record.
+ */
+void
+XlogRedoFinishPrepared(TransactionId xid, bool isCommit)
+{
+	GlobalTransaction gxact;
+
+	Assert(RecoveryInProgress());
+
+	gxact = LockGXactByXid(xid);
+
+	/*
+	 * If requested xid wasn't found that means that prepare record was moved
+	 * to files before our replay started. That's okay and we have nothing to
+	 * clean/finish.
+	 */
+	if (!gxact)
+		return;
+
+	FinishGXact(gxact, isCommit);
 }
 
 /*
@@ -1533,108 +1674,6 @@ RecreateTwoPhaseFile(TransactionId xid, void *content, int len)
 				(errcode_for_file_access(),
 				 errmsg("could not close two-phase state file: %m")));
 }
-
-
-/*
- * XlogRedoFinishPrepared()
- *
- * This function is called during replay when xlog reader faces 2pc commit or
- * abort record. That function should clean up memory state that was created
- * while replaying prepare xlog record.
- * Actions are the same as in FinishPreparedTransaction() but without any
- * writes to xlog and files (as it was already done).
- */
-void
-XlogRedoFinishPrepared(TransactionId xid, bool isCommit)
-{
-	int			i;
-	char 	   *buf;
-	char	   *bufptr;
-	TwoPhaseFileHeader *hdr;
-	TransactionId latestXid;
-	TransactionId *children;
-
-	GlobalTransaction gxact;
-	PGPROC	   *proc;
-	PGXACT	   *pgxact;
-
-	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
-	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
-	{
-		gxact = TwoPhaseState->prepXacts[i];
-		proc = &ProcGlobal->allProcs[gxact->pgprocno];
-		pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
-
-		if (TransactionIdEquals(xid, pgxact->xid))
-		{
-			gxact->locking_backend = MyBackendId;
-			MyLockedGxact = gxact;
-			break;
-		}
-	}
-	LWLockRelease(TwoPhaseStateLock);
-
-	/*
-	 * If requested xid isn't in numPrepXacts array that means that prepare
-	 * record was moved to files before our replay started. That's okay and we
-	 * have nothing to clean.
-	 */
-	if (i == TwoPhaseState->numPrepXacts)
-		return;
-
-	if (gxact->ondisk)
-		buf = ReadTwoPhaseFile(xid, true);
-	else
-		XlogReadTwoPhaseData(gxact->prepare_start_lsn, &buf, NULL);
-
-	/*
-	 * Disassemble the header area
-	 */
-	hdr = (TwoPhaseFileHeader *) buf;
-
-	Assert(TransactionIdEquals(hdr->xid, xid));
-
-	bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
-	children = (TransactionId *) bufptr;
-	bufptr += MAXALIGN(hdr->gidlen);
-	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
-	bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
-	bufptr += MAXALIGN(hdr->nabortrels * sizeof(RelFileNode));
-	bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));
-
-	/*
-	 * Here we don't need to care about putting records to xlog or
-	 * deleting files, as it already done by process that have written
-	 * that xlog record. We need just to clean up memory state.
-	 */
-	latestXid = TransactionIdLatest(xid, hdr->nsubxacts, children);
-	ProcArrayRemove(proc, latestXid);
-	gxact->valid = false;
-
-	/*
-	 * 2REVIEWER: I assume that we can skip invalidation callbacks here,
-	 * as they were executed in xact_redo_commit().
-	 */
-
-	/* And release locks */
-	if (isCommit)
-		ProcessRecords(bufptr, xid, twophase_postcommit_callbacks);
-	else
-		ProcessRecords(bufptr, xid, twophase_postabort_callbacks);
-
-	PredicateLockTwoPhaseFinish(xid, true);
-	RemoveGXact(gxact);
-	MyLockedGxact = NULL;
-
-	/*
-	 * And now we can clean up any files we may have left.
-	 */
-	if (gxact->ondisk)
-		RemoveTwoPhaseFile(xid, true);
-
-	pfree(buf);
-}
-
 
 
 /*
@@ -1915,7 +1954,7 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
  * Parse data in given buffer (that can be a pointer to WAL record or file)
  * and load shared-memory state for that prepared transaction.
  *
- * It's caller responsibility to call MarkAsPrepared() on returned gxact.
+ * It's a caller responsibility to call MarkAsPrepared() on returned gxact.
  *
  */
 GlobalTransaction
@@ -2077,6 +2116,29 @@ next_file:
 
 	}
 	FreeDir(cldir);
+}
+
+
+/*
+ * RecoverPreparedFromXLOG
+ *
+ * To avoid creation of state files during replay we registering
+ * prepare xlog records in shared memory in the same way as it happens
+ * while not in recovery. If replay faces commit xlog record before
+ * checkpoint/restartpoint happens then we avoid using files at all.
+ *
+ * We need this behaviour because the speed of the 2PC replay on the replica
+ * should be at least the same as the 2PC transaction speed of the master.
+ */
+void
+RecoverPreparedFromXLOG(XLogReaderState *record)
+{
+	GlobalTransaction gxact;
+
+	gxact = RecoverPreparedFromBuffer((char *) XLogRecGetData(record), false);
+	gxact->prepare_start_lsn = record->ReadRecPtr;
+	gxact->prepare_end_lsn = record->EndRecPtr;
+	MarkAsPrepared(gxact);
 }
 
 
