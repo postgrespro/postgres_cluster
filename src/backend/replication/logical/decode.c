@@ -488,7 +488,7 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 {
 	XLogRecPtr	origin_lsn = InvalidXLogRecPtr;
 	TimestampTz	commit_time = parsed->xact_time;
-	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
+	RepOriginId	origin_id = XLogRecGetOrigin(buf->record);
 	int			i;
 
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
@@ -541,6 +541,9 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		(parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) ||
 		FilterByOrigin(ctx, origin_id))
 	{
+		elog(WARNING, "%d: WAL-SENDER ignore record %lx with origin %d: SnapBuildXactNeedsSkip=%d, FilterByOrigin=%d", 
+			 getpid(), buf->origptr, origin_id, 
+			 SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr), FilterByOrigin(ctx, origin_id));
 		for (i = 0; i < parsed->nsubxacts; i++)
 		{
 			ReorderBufferForget(ctx->reorder, parsed->subxacts[i], buf->origptr);

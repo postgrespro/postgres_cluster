@@ -637,7 +637,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		x->isPrepared = false;
 		x->isTransactionBlock = IsTransactionBlock();
 		/* Application name can be cahnged usnig PGAPPNAME environment variable */
-		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
+		if (!IsBackgroundWorker && x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
 			/* reject all user's transactions at offline cluster */
 			MtmUnlock();			
 			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
@@ -673,7 +673,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 
 	if (Mtm->disabledNodeMask != 0) { 
 		MtmRefreshClusterStatus(true);
-		if (Mtm->status != MTM_ONLINE) { 
+		if (!IsBackgroundWorker && Mtm->status != MTM_ONLINE) { 
 			elog(ERROR, "Abort current transaction because this cluster node is not online");			
 		}
 	}
@@ -683,7 +683,9 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	/*
 	 * Check if there is global multimaster lock preventing new transaction from commit to make a chance to wal-senders to catch-up
 	 */
-	MtmCheckClusterLock();
+	if (!x->isReplicated) { 
+		MtmCheckClusterLock();
+	}
 
 	ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, NULL);
 	ts->status = TRANSACTION_STATUS_IN_PROGRESS;
@@ -998,16 +1000,15 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 		if (slotLSN == walLSN) {
 			if (BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)) { 
 				elog(WARNING,"Node %d is caught-up", nodeId);	
-				BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
 				BIT_CLEAR(Mtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
 				BIT_CLEAR(Mtm->nodeLockerMask, nodeId-1);
 				Mtm->nLockers -= 1;
 			} else { 
 				elog(WARNING,"Node %d is caugth-up without locking cluster", nodeId);	
 				/* We are lucky: caugth-up without locking cluster! */
-				Mtm->nNodes += 1;
-				BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
 			}
+			BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
+			Mtm->nNodes += 1;
 			caughtUp = true;
 		} else if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
 				   && slotLSN + MtmMinRecoveryLag > walLSN) 
@@ -2250,7 +2251,12 @@ MtmExecutorFinish(QueryDesc *queryDesc)
 
 void MtmExecute(void* work, int size)
 {
-    BgwPoolExecute(&Mtm->pool, work, size);
+	if (Mtm->status == MTM_RECOVERY) { 
+		/* During recovery apply changes sequentially to preserve commit order */
+		MtmExecutor(0, work, size);
+	} else { 
+		BgwPoolExecute(&Mtm->pool, work, size);
+	}
 }
     
 static BgwPool* 
