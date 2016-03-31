@@ -7,6 +7,10 @@
 
 #define RAFTABLE_PEERS_MAX (64)
 
+#ifndef HOST_NAME_MAX
+#define HOST_NAME_MAX 64
+#endif
+
 typedef struct HostPort {
 	bool up;
 	char host[HOST_NAME_MAX + 1];
