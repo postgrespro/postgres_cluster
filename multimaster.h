@@ -133,6 +133,8 @@ typedef struct
 	nodemask_t pglogicalNodeMask;      /* bitmask of started pglogic receivers */
 	nodemask_t walSenderLockerMask;    /* Mask of WAL-senders IDs locking the cluster */
 	nodemask_t nodeLockerMask;         /* Mask of node IDs which WAL-senders are locking the cluster */
+	nodemask_t reconnectMask; 	       /* Mask of nodes connection to which has to be reestablished by sender */
+
     int    nNodes;                     /* Number of active nodes */
     int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when Mtm intialization is completed */
 	int    nLockers;                   /* Number of lockers */

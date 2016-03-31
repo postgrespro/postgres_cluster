@@ -289,8 +289,7 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 		elog(ERROR, "Arbiter failed to resolve host '%s' by name", host);
 	}
 
-Retry:
-
+  Retry:
     while (1) {
 		int rc = -1;
 
@@ -384,20 +383,29 @@ static void MtmOpenConnections()
 
 
 static bool MtmSendToNode(int node, void const* buf, int size)
-{
-	while (sockets[node] < 0 || !MtmWriteSocket(sockets[node], buf, size)) { 
-		elog(WARNING, "Arbiter failed to write to node %d: %d", node+1, errno);
-		if (sockets[node] >= 0) { 
+{	
+	while (true) {
+		if (sockets[node] >= 0 && BIT_CHECK(Mtm->reconnectMask, node)) {
+			elog(WARNING, "Arbiter is forced to reconnect to node %d", node+1); 
+			BIT_CLEAR(Mtm->reconnectMask, node);
 			close(sockets[node]);
+			sockets[node] = -1;
 		}
-		sockets[node] = MtmConnectSocket(Mtm->nodes[node].con.hostName, MtmArbiterPort + node + 1, MtmReconnectAttempts);
-		if (sockets[node] < 0) { 
-			MtmOnNodeDisconnect(node+1);
-			return false;
+		if (sockets[node] < 0 || !MtmWriteSocket(sockets[node], buf, size)) { 
+			if (sockets[node] >= 0) { 
+				elog(WARNING, "Arbiter failed to write to node %d: %d", node+1, errno);
+				close(sockets[node]);
+			}
+			sockets[node] = MtmConnectSocket(Mtm->nodes[node].con.hostName, MtmArbiterPort + node + 1, MtmReconnectAttempts);
+			if (sockets[node] < 0) { 
+				MtmOnNodeDisconnect(node+1);
+				return false;
+			}
+			MTM_TRACE("Arbiter restablished connection with node %d\n", node+1);
+		} else { 
+			return true;
 		}
-		elog(NOTICE, "Arbiter restablish connection with node %d", node+1);
 	}
-	return true;
 }
 
 static int MtmReadFromNode(int node, void* buf, int buf_size)
@@ -477,10 +485,6 @@ static void MtmAcceptIncomingConnections()
 
 	sockets[MtmNodeId-1] = gateway;
 	MtmRegisterSocket(gateway, MtmNodeId-1);
-
-	for (i = 0; i < MtmNodes-1; i++) {
-		MtmAcceptOneConnection();
-	}
 }
 
 
@@ -693,6 +697,7 @@ static void MtmTransReceiver(Datum arg)
 									 msg->node, Mtm->disabledNodeMask, msg->disabledNodeMask);
 								ts->status = TRANSACTION_STATUS_ABORTED;
 								MtmAdjustSubtransactions(ts);
+								Mtm->nActiveTransactions -= 1;
 							}
 
 							if (++ts->nVotes == Mtm->nNodes) { 
@@ -712,6 +717,7 @@ static void MtmTransReceiver(Datum arg)
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 								ts->status = TRANSACTION_STATUS_ABORTED;
 								MtmAdjustSubtransactions(ts);
+								Mtm->nActiveTransactions -= 1;
 							}
 							if (++ts->nVotes == Mtm->nNodes) {
 								MtmWakeUpBackend(ts);
