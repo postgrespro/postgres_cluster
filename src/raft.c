@@ -1,4 +1,8 @@
+#define _BSD_SOURCE
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <arpa/inet.h>
+
 #include <assert.h>
 #include <errno.h>
 #include <limits.h>
@@ -448,7 +452,6 @@ static void raft_beat(raft_t r, int dst) {
 
 	if (p->acked.entries <= RAFT_LOG_LAST_INDEX(r)) {
 		int sendindex;
-		int sendbyte;
 
 		if (p->acked.entries < RAFT_LOG_FIRST_INDEX(r)) {
 			// The peer has woken up from anabiosis. Send the first
@@ -721,8 +724,6 @@ static bool raft_restore(raft_t r, int previndex, raft_entry_t *e) {
 static bool raft_appendable(raft_t r, int previndex, int prevterm) {
 	int low, high;
 
-	raft_log_t *l = &r->log;
-
 	low = RAFT_LOG_FIRST_INDEX(r);
 	if (low == 0) low = -1; // allow appending at the start
 	high = RAFT_LOG_LAST_INDEX(r);
@@ -743,6 +744,8 @@ static bool raft_appendable(raft_t r, int previndex, int prevterm) {
 			return false;
 		}
 	}
+
+	return true;
 }
 
 static bool raft_append(raft_t r, int previndex, int prevterm, raft_entry_t *e) {
@@ -754,7 +757,7 @@ static bool raft_append(raft_t r, int previndex, int prevterm, raft_entry_t *e) 
 	debug(
 		"log_append(%p, previndex=%d, prevterm=%d,"
 		" term=%d)\n",
-		l, previndex, prevterm,
+		(void *)l, previndex, prevterm,
 		e->term
 	);
 
