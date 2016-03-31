@@ -22,7 +22,7 @@ sub query_exec
 {
 	my ($dbi, $sql) = @_;
 	my $rv = $dbi->do($sql) || die;
-	print "query_exec('$sql')\n";
+	print "query_exec('$sql') = $rv\n";
 	return $rv;
 }
 
@@ -30,7 +30,7 @@ sub query_exec_async
 {
 	my ($dbi, $sql) = @_;
 	my $rv = $dbi->do($sql, {pg_async => PG_ASYNC}) || die;
-	print "query_exec('$sql')\n";
+	print "query_exec_async('$sql') = $rv\n";
 	return $rv;
 }
 
@@ -56,7 +56,7 @@ sub allocate_ports
 	return @allocated_now;
 }
 
-my $nnodes = 2;
+my $nnodes = 3;
 my @nodes = ();
 
 # Create nodes and allocate ports
@@ -89,22 +89,19 @@ foreach my $node (@nodes)
 		listen_addresses = '$host'
 		unix_socket_directories = ''
 		port = $pgport
-		max_connections = 200
-		shared_buffers = 1GB
-		max_prepared_transactions = 200	
-		max_worker_processes = 100
+		max_prepared_transactions = 10
+		max_worker_processes = 10
 		wal_level = logical
 		fsync = off	
-		max_wal_size = 100GB
-		min_wal_size = 1GB
 		max_wal_senders = 10
 		wal_sender_timeout = 0
 		max_replication_slots = 10
 		shared_preload_libraries = 'raftable,multimaster'
-		multimaster.workers = 8
-		multimaster.queue_size = 104857600 # 100mb
+		multimaster.workers = 4
+		multimaster.queue_size = 10485760 # 10mb
 		multimaster.node_id = $id
 		multimaster.conn_strings = '$mm_connstr'
+		multimaster.use_raftable = true
 		raftable.id = $id
 		raftable.peers = '$raft_peers'
 	));
@@ -122,27 +119,39 @@ foreach my $node (@nodes)
 	$node->start();
 }
 
-$nodes[0]->psql("create table t(k int primary key, v text)");
-$nodes[0]->psql("insert into t values (1, 'hello'), (2, 'world')");
+my ($rc, $out, $err);
+sleep(10);
 
-#my @conns = map { DBI->connect('DBI:Pg:' . $_->connstr()) } @nodes;
+$nodes[0]->psql('postgres', "create table t(k int primary key, v text)");
+$nodes[0]->psql('postgres', "insert into t values (1, 'hello'), (2, 'world')");
+
+#sub space2semicol
+#{
+#	my $str = shift;
+#	$str =~ tr/ /;/;
+#	return $str;
+#}
 #
-#query_exec($conns[0], "begin");
-#query_exec($conns[1], "begin");
-#
-#query_exec($conns[0], "update t set v = 'foo' where k = 1");
-#query_exec($conns[1], "update t set v = 'bar' where k = 2");
-#
-#query_exec($conns[0], "update t set v = 'bar' where k = 2");
-#query_exec($conns[1], "update t set v = 'foo' where k = 1");
-#
-#query_exec_async($conns[0], "commit");
-#query_exec_async($conns[1], "commit");
-#
-#my $ready = 0;
-#$ready++ if $conns[0]->pg_ready;
-#$ready++ if $conns[1]->pg_ready;
-#
-#is($ready, 1, "one of the connections is deadlocked");
-#
+my @conns = map { DBI->connect('DBI:Pg:' . $_->connstr()) } @nodes;
+
+query_exec($conns[0], "begin");
+query_exec($conns[1], "begin");
+
+query_exec($conns[0], "update t set v = 'asd' where k = 1");
+query_exec($conns[1], "update t set v = 'bsd' where k = 2");
+
+query_exec($conns[0], "update t set v = 'bar' where k = 2");
+query_exec($conns[1], "update t set v = 'foo' where k = 1");
+
+query_exec_async($conns[0], "commit");
+query_exec_async($conns[1], "commit");
+
+for my $i (1..2)
+{
+	($rc, $out, $err) = $nodes[$i]->psql('postgres', "select * from t");
+	print(" rc[$i] = $rc\n");
+	print("out[$i] = $out\n");
+	print("err[$i] = $err\n");
+}
+
 #sleep(2);
