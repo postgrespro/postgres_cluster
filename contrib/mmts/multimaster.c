@@ -636,9 +636,11 @@ MtmBeginTransaction(MtmCurrentTrans* x)
         x->isDistributed = MtmIsUserTransaction();
 		x->isPrepared = false;
 		x->isTransactionBlock = IsTransactionBlock();
-		/* Application name can be cahnged usnig PGAPPNAME environment variable */
+		/* Application name can be changed usnig PGAPPNAME environment variable */
 		if (!IsBackgroundWorker && x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
-			/* reject all user's transactions at offline cluster */
+			/* Reject all user's transactions at offline cluster. 
+			 * Allow execution of transaction by bg-workers to make it possible to perform recovery.
+			 */
 			MtmUnlock();			
 			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
 		}
@@ -674,14 +676,17 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	if (Mtm->disabledNodeMask != 0) { 
 		MtmRefreshClusterStatus(true);
 		if (!IsBackgroundWorker && Mtm->status != MTM_ONLINE) { 
-			elog(ERROR, "Abort current transaction because this cluster node is not online");			
+			/* Do not take in accoutn bg-workers which are performing recovery */
+			elog(ERROR, "Abort current transaction because this cluster node is in %s status", MtmNodeStatusMnem[Mtm->status]);			
 		}
 	}
 
 	MtmLock(LW_EXCLUSIVE);
 
 	/*
-	 * Check if there is global multimaster lock preventing new transaction from commit to make a chance to wal-senders to catch-up
+	 * Check if there is global multimaster lock preventing new transaction from commit to make a chance to wal-senders to catch-up.
+	 * Only "own" transactions are blacked. Transactions replicated from other nodes (including recovered transaction) should be proceeded
+	 * and should not cause cluster status change.
 	 */
 	if (!x->isReplicated) { 
 		MtmCheckClusterLock();
@@ -717,7 +722,8 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	}
 	MtmTransactionListAppend(ts);
 	MtmAddSubtransactions(ts, subxids, ts->nSubxids);
-	MTM_TRACE("%d: MtmPrePrepareTransaction prepare commit of %d CSN=%ld\n", MyProcPid, x->xid, ts->csn);
+	MTM_TRACE("%d: MtmPrePrepareTransaction prepare commit of %d (gtid.xid=%d, gtid.node=%d, CSN=%ld)\n", 
+			  MyProcPid, x->xid, ts->gtid.xid, ts->gtid.node, ts->csn);
 	MtmUnlock();
 
 }
@@ -843,14 +849,6 @@ void MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd)
 	}
 }
 
-void MtmRecoveryCompleted(void)
-{
-	elog(WARNING, "Recovery of node %d is completed", MtmNodeId);
-	Mtm->recoverySlot = 0;
-	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
-	MtmSwitchClusterMode(MTM_ONLINE);
-}
-
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
 	MtmLock(LW_EXCLUSIVE);
@@ -934,6 +932,18 @@ csn_t MtmGetTransactionCSN(TransactionId xid)
  * -------------------------------------------
  */
 
+void MtmRecoveryCompleted(void)
+{
+	elog(WARNING, "Recovery of node %d is completed", MtmNodeId);
+	MtmLock(LW_EXCLUSIVE);
+	Mtm->recoverySlot = 0;
+	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
+	/* Mode will be changed to online once all locagical reciever are connected */
+	MtmSwitchClusterMode(MTM_CONNECTED);
+	MtmUnlock();
+}
+
+
 
 /**
  * Check state of replication slots. If some of them are too much lag behind wal, then drop this slots to avoid 
@@ -994,10 +1004,10 @@ bool MtmIsRecoveredNode(int nodeId)
 bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 {
 	bool caughtUp = false;
+	MtmLock(LW_EXCLUSIVE);
 	if (MtmIsRecoveredNode(nodeId)) { 
 		XLogRecPtr walLSN = GetXLogInsertRecPtr();
-		MtmLock(LW_EXCLUSIVE);
-		if (slotLSN == walLSN) {
+		if (slotLSN == walLSN && Mtm->nActiveTransactions == 0) {
 			if (BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)) { 
 				elog(WARNING,"Node %d is caught-up", nodeId);	
 				BIT_CLEAR(Mtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
@@ -1019,7 +1029,8 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 			 * We have to maintain two bitmasks: one is marking wal sender, another - correspondent nodes. 
 			 * Is there some better way to establish mapping between nodes ad WAL-seconder?
 			 */
-			elog(WARNING,"Node %d is almost caught-up: lock cluster", nodeId);
+			elog(WARNING,"Node %d is almost caught-up: slot position %lx, WAL position %lx, active transactions %d", 
+				 nodeId, slotLSN, walLSN, Mtm->nActiveTransactions);
 			Assert(MyWalSnd != NULL); /* This function is called by WAL-sender, so it should not be NULL */
 			BIT_SET(Mtm->nodeLockerMask, nodeId-1);
 			BIT_SET(Mtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
@@ -1027,10 +1038,8 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 		} else { 
 			MTM_INFO("Continue recovery of node %d, slot position %lx, WAL position %lx, WAL sender position %lx, lockers %d, active transactions %d\n", nodeId, slotLSN, walLSN, MyWalSnd->sentPtr, Mtm->nLockers, Mtm->nActiveTransactions);
 		}
-		MtmUnlock();
-	} else { 
-		MTM_INFO("Node %d is not in recovery mode\n", nodeId);
 	}
+	MtmUnlock();
 	return caughtUp;
 }
 
@@ -1045,7 +1054,7 @@ void MtmSwitchClusterMode(MtmNodeStatus mode)
 /*
  * If there are recovering nodes which are catching-up WAL, check the status and prevent new transaction from commit to give
  * WAL-sender a chance to catch-up WAL, completely synchronize replica and switch it to normal mode.
- * This function is called at transaction start with multimaster lock set
+ * This function is called before transaction prepare with multimaster lock set.
  */
 static void 
 MtmCheckClusterLock()
@@ -1072,8 +1081,8 @@ MtmCheckClusterLock()
 				}
 			}
 			if (mask != 0) { 
-				/* some "almost catch-up" wal-senders are still working */
-				/* Do not start new transactions until them complete */
+				/* some "almost catch-up" wal-senders are still working. */
+				/* Do not start new transactions until them are completed. */
 				MtmUnlock();
 				MtmSleep(delay);
 				if (delay*2 <= MAX_WAIT_TIMEOUT) { 
@@ -1216,6 +1225,7 @@ void MtmOnNodeDisconnect(int nodeId)
 void MtmOnNodeConnect(int nodeId)
 {
 	BIT_CLEAR(Mtm->connectivityMask, nodeId-1);
+	elog(NOTICE, "Reconnect node %d", nodeId);
 	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
 }
 
@@ -1646,10 +1656,14 @@ _PG_fini(void)
 }
 
 
- 
+/*
+ * This functions is called by pglogical receiver main function when receiver background worker is started.
+ * We switch to ONLINE mode when all receviers are connected.
+ * As far as background worker can be restarted multiple times, use node bitmask.
+ */
 void MtmReceiverStarted(int nodeId)
 {
-	SpinLockAcquire(&Mtm->spinlock);	
+	MtmLock(LW_EXCLUSIVE);
 	if (!BIT_CHECK(Mtm->pglogicalNodeMask, nodeId-1)) { 
 		BIT_SET(Mtm->pglogicalNodeMask, nodeId-1);
 		if (++Mtm->nReceivers == Mtm->nNodes-1) {
@@ -1657,8 +1671,8 @@ void MtmReceiverStarted(int nodeId)
 				MtmSwitchClusterMode(MTM_ONLINE);
 			}
 		}
-     }
-	SpinLockRelease(&Mtm->spinlock);	
+	}
+	MtmUnlock();
 }
 
 /* 

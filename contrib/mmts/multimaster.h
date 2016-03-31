@@ -45,6 +45,9 @@ typedef uint64 csn_t; /* commit serial number */
 
 #define PGLOGICAL_XACT_EVENT(flags)	(flags & 0x03)
 
+#define PGLOGICAL_CAUGHT_UP	        0x04
+
+
 typedef uint64 timestamp_t;
 
 /* Identifier of global transaction */
