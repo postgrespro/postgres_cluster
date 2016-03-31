@@ -1,19 +1,19 @@
 MODULE_big = raftable
-OBJS = raftable.o worker.o state.o blockmem.o
+OBJS = raftable.o worker.o state.o blockmem.o raft/obj/raft.o raft/obj/util.o
 EXTENSION = raftable
 DATA = raftable--1.0.sql
 
-raftable.so: raft/lib/libraft.a
+.PHONY: all
 
-raft/lib/libraft.a:
-	make -C raft
+all: raftable.so
+
+raft/obj/raft.o raft/obj/util.o:
+	make -C raft obj/raft.o obj/util.o
 
 EXTRA_INSTALL = contrib/raftable
 
-RAFT_PREFIX = raft
-override LDFLAGS += -L$(RAFT_PREFIX)/lib -Wl,-whole-archive -lraft -Wl,-no-whole-archive
-override CFLAGS += -Wfatal-errors
-override CPPFLAGS += -I$(RAFT_PREFIX)/include
+override CFLAGS += -Wfatal-errors -Wall
+override CPPFLAGS += -Iraft/include
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config

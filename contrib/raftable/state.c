@@ -264,7 +264,6 @@ StateP state_shmem_init()
 	info.keysize = sizeof(RaftableKey);
 	info.entrysize = sizeof(RaftableEntry);
 	bool found;
-	int i;
 
 	state = ShmemInitStruct(
 		"raftable_state",

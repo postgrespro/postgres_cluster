@@ -4,12 +4,6 @@ Raftable
 This extension allows you to have a key-value table replicated between several
 Postgres instances over Raft protocol.
 
-Depends on
-----------
-
-Raft implementation in C: https://github.com/kvap/raft
-Please compile the raft library with -fpic flag.
-
 Internals
 ---------
 

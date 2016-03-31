@@ -160,7 +160,6 @@ char *raftable_get(const char *key, size_t *len)
 Datum
 raftable_sql_get(PG_FUNCTION_ARGS)
 {
-	RaftableEntry *e;
 	RaftableKey key;
 	size_t len;
 	text_to_cstring_buffer(PG_GETARG_TEXT_P(0), key.data, sizeof(key.data));
@@ -176,16 +175,6 @@ raftable_sql_get(PG_FUNCTION_ARGS)
 	}
 	else
 		PG_RETURN_NULL();
-}
-
-static void start_timer(TimestampTz *timer)
-{
-        *timer -= GetCurrentTimestamp();
-}
-
-static void stop_timer(TimestampTz *timer)
-{
-        *timer += GetCurrentTimestamp();
 }
 
 static long msec(TimestampTz timer)

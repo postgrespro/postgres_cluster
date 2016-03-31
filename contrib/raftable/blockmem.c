@@ -32,8 +32,6 @@ typedef struct block_t
 int
 blockmem_format(void *origin, size_t size)
 {
-	block_t *block;
-	meta_t *meta;
 	int id;
 	int blocks = (size - 1) / BLOCK_LEN;
 	if (blocks <= 0) return 0;

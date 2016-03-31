@@ -131,7 +131,6 @@ static bool add_socket(int sock)
 static bool add_client(int sock)
 {
 	int i;
-	Client *c = server.clients;
 
 	if (server.clientnum >= MAX_CLIENTS)
 	{
@@ -165,7 +164,6 @@ static bool remove_socket(int sock)
 
 static bool remove_client(Client *c)
 {
-	int i = 0;
 	int sock = c->sock;
 	Assert(sock >= 0);
 	c->sock = -1;
@@ -309,7 +307,7 @@ static void attend(Client *c)
 	}
 }
 
-static bool notify(void)
+static void notify(void)
 {
 	int i = 0;
 	for (i = 0; i < MAX_CLIENTS; i++)
@@ -343,7 +341,6 @@ static void drop_bads(void)
 
 static bool tick(int timeout_ms)
 {
-	int i;
 	int numready;
 	bool raft_ready = false;
 
