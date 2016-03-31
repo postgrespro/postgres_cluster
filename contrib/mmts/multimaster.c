@@ -997,7 +997,6 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 	if (MtmIsRecoveredNode(nodeId)) { 
 		XLogRecPtr walLSN = GetXLogInsertRecPtr();
 		MtmLock(LW_EXCLUSIVE);
-#if 0
 		if (slotLSN == walLSN) {
 			if (BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)) { 
 				elog(WARNING,"Node %d is caught-up", nodeId);	
@@ -1011,9 +1010,7 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 			BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
 			Mtm->nNodes += 1;
 			caughtUp = true;
-		} else 
-#endif
-		if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
+		} else if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
 				   && slotLSN + MtmMinRecoveryLag > walLSN) 
 		{ 
 			/*
