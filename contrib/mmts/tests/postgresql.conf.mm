@@ -144,7 +144,7 @@ dynamic_shared_memory_type = posix	# the default is the first option
 
 #max_files_per_process = 1000		# min 25
 					# (change requires restart)
-shared_preload_libraries = 'multimaster'		# (change requires restart)
+shared_preload_libraries = 'raftable,multimaster'		# (change requires restart)
 
 # - Cost-Based Vacuum Delay -
 
