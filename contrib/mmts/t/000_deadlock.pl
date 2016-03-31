@@ -3,7 +3,7 @@ use warnings;
 
 use PostgresNode;
 use TestLib;
-use Test::More tests => 2;
+use Test::More tests => 1;
 
 use DBI;
 use DBD::Pg ':async';
@@ -14,7 +14,7 @@ sub query_row
 	my $sth = $dbi->prepare($sql) || die;
 	$sth->execute(@keys) || die;
 	my $ret = $sth->fetchrow_array || undef;
-	print "query_row('$sql') -> $ret \n";
+	diag("query_row('$sql') -> $ret\n");
 	return $ret;
 }
 
@@ -22,7 +22,7 @@ sub query_exec
 {
 	my ($dbi, $sql) = @_;
 	my $rv = $dbi->do($sql) || die;
-	print "query_exec('$sql') = $rv\n";
+	diag("query_exec('$sql') = $rv\n");
 	return $rv;
 }
 
@@ -30,7 +30,7 @@ sub query_exec_async
 {
 	my ($dbi, $sql) = @_;
 	my $rv = $dbi->do($sql, {pg_async => PG_ASYNC}) || die;
-	print "query_exec_async('$sql') = $rv\n";
+	diag("query_exec_async('$sql')\n");
 	return $rv;
 }
 
@@ -44,7 +44,7 @@ sub allocate_ports
 	{
 		my $port = int(rand() * 16384) + 49152;
 		next if $allocated_ports{$port};
-		print "# Checking for port $port\n";
+		diag("Checking for port $port\n");
 		if (!TestLib::run_log(['pg_isready', '-h', $host, '-p', $port]))
 		{
 			$allocated_ports{$port} = 1;
@@ -73,8 +73,8 @@ foreach my $i (1..$nnodes)
 my $mm_connstr = join(',', map { "${ \$_->connstr('postgres') }" } @nodes);
 my $raft_peers = join(',', map { join(':', $_->{id}, $_->host, $_->{raftport}) } @nodes);
 
-print("# mm_connstr = $mm_connstr\n");
-print("# raft_peers = $raft_peers\n");
+diag("mm_connstr = $mm_connstr\n");
+diag("raft_peers = $raft_peers\n");
 
 # Init and Configure
 foreach my $node (@nodes)
@@ -125,33 +125,49 @@ sleep(10);
 $nodes[0]->psql('postgres', "create table t(k int primary key, v text)");
 $nodes[0]->psql('postgres', "insert into t values (1, 'hello'), (2, 'world')");
 
-#sub space2semicol
-#{
-#	my $str = shift;
-#	$str =~ tr/ /;/;
-#	return $str;
-#}
-#
 my @conns = map { DBI->connect('DBI:Pg:' . $_->connstr()) } @nodes;
 
 query_exec($conns[0], "begin");
 query_exec($conns[1], "begin");
 
 query_exec($conns[0], "update t set v = 'asd' where k = 1");
-query_exec($conns[1], "update t set v = 'bsd' where k = 2");
+query_exec($conns[1], "update t set v = 'bsd'");
 
 query_exec($conns[0], "update t set v = 'bar' where k = 2");
-query_exec($conns[1], "update t set v = 'foo' where k = 1");
+query_exec($conns[1], "update t set v = 'foo'");
 
 query_exec_async($conns[0], "commit");
 query_exec_async($conns[1], "commit");
 
-for my $i (1..2)
+my $timeout = 5;
+while ($timeout > 0)
 {
-	($rc, $out, $err) = $nodes[$i]->psql('postgres', "select * from t");
-	print(" rc[$i] = $rc\n");
-	print("out[$i] = $out\n");
-	print("err[$i] = $err\n");
+	my $r0 = $conns[0]->pg_ready();
+	my $r1 = $conns[1]->pg_ready();
+	if ($r0 && $r1) {
+		last;
+	}
+	diag("queries still running: [0]=$r0 [1]=$r1\n");
+	sleep(1);
 }
 
-#sleep(2);
+if ($timeout > 0)
+{
+	diag("queries finished\n");
+
+	my $succeeded = 0;
+	$succeeded++ if $conns[0]->pg_result();
+	$succeeded++ if $conns[1]->pg_result();
+
+	pass("queries finished");
+}
+else
+{
+	diag("queries timed out\n");
+	$conns[0]->pg_cancel() unless $conns[0]->pg_ready();
+	$conns[1]->pg_cancel() unless $conns[1]->pg_ready();
+
+	fail("queries timed out");
+}
+
+query_row($conns[0], "select * from t where k = 1");
