@@ -1,5 +1,5 @@
 #override CC := clang
-override CFLAGS += -Wfatal-errors -O0 -g
+override CFLAGS += -fpic -Wall -Wfatal-errors -O0 -g -pedantic -std=c99
 override CPPFLAGS += -I. -Iinclude -DDEBUG
 override HEART_LDFLAGS += -Llib -lraft -ljansson
 
@@ -8,11 +8,11 @@ ARFLAGS = -cru
 
 .PHONY: all clean bindir objdir libdir
 
-all: lib/libraft.a bin/heart
-	@echo Done.
-
 lib/libraft.a: obj/raft.o obj/util.o | libdir objdir
 	$(AR) $(ARFLAGS) lib/libraft.a obj/raft.o obj/util.o
+
+all: lib/libraft.a bin/heart
+	@echo Done.
 
 bin/heart: obj/heart.o lib/libraft.a | bindir objdir
 	$(CC) -o bin/heart $(CFLAGS) $(CPPFLAGS) \

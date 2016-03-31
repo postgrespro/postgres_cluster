@@ -32,15 +32,19 @@ struct timeval ms2tv(int ms);
 
 // ------ logging ------
 
-#ifndef DEBUG
-#define debug(...)
+#ifdef DEBUG
+#define DEBUG_ENABLED 1
 #else
+#define DEBUG_ENABLED 0
+#endif
+
 #define debug(...) \
 	do { \
-		fprintf(stderr, __VA_ARGS__); \
-		fflush(stderr); \
+		if (DEBUG_ENABLED) {\
+			fprintf(stderr, __VA_ARGS__); \
+			fflush(stderr); \
+		}\
 	} while (0)
-#endif
 
 #define shout(...) \
 	do { \

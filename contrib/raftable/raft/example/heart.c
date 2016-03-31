@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 2
+#define _BSD_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,8 +56,6 @@ static void applier(void *state, raft_update_t update, raft_bool_t snapshot) {
 }
 
 static raft_update_t snapshooter(void *state) {
-	json_error_t error;
-
 	raft_update_t shot;
 	shot.data = json_dumps(state, JSON_SORT_KEYS);
 	shot.len = strlen(shot.data);
@@ -98,7 +98,6 @@ static void main_loop(char *host, int port) {
 	while (true) {
 		int ms;
 		raft_msg_t m;
-		int applied;
 
 		ms = mstimer_reset(&t);
 
