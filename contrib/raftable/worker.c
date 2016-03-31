@@ -457,9 +457,11 @@ void parse_peers(HostPort *peers, char *peerstr)
 	char *host;
 	int id, port;
 	int i;
+	peerstr = pstrdup(peerstr);
 
 	for (i = 0; i < RAFTABLE_PEERS_MAX; i++)
 		peers[i].up = false;
+
 
 	fprintf(stderr, "parsing '%s'\n", peerstr);
 	peer = strtok_r(peerstr, ",", &state);
@@ -488,4 +490,6 @@ void parse_peers(HostPort *peers, char *peerstr)
 
 		peer = strtok_r(NULL, ",", &state);
 	}
+
+	pfree(peerstr);
 }
