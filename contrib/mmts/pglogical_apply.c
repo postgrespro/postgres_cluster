@@ -904,7 +904,7 @@ void MtmExecutor(int id, void* work, size_t size)
     {    
         while (true) { 
             char action = pq_getmsgbyte(&s);
-            MTM_TRACE("%d: REMOTE process actiob %c\n", MyProcPid, action);
+            MTM_TRACE("%d: REMOTE process action %c\n", MyProcPid, action);
             switch (action) {
                 /* BEGIN */
             case 'B':

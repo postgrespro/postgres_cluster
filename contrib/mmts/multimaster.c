@@ -737,11 +737,15 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	ts = hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
 	Assert(ts != NULL);
 
-	if (!MtmIsCoordinator(ts)) {
+	if (!MtmIsCoordinator(ts) || Mtm->status == MTM_RECOVERY) {
 		MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, NULL);
 		Assert(x->gid[0]);
 		tm->state = ts;
-		MtmSendNotificationMessage(ts, MSG_READY); /* send notification to coordinator */
+		if (Mtm->status != MTM_RECOVERY) { 
+			MtmSendNotificationMessage(ts, MSG_READY); /* send notification to coordinator */
+		} else {
+			ts->status = TRANSACTION_STATUS_UNKNOWN;
+		}
 		MtmUnlock();
 		MtmResetTransaction(x);
 	} else { 
@@ -770,6 +774,7 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 		Assert(tm != NULL);
 		tm->state->status = TRANSACTION_STATUS_ABORTED;
 		MtmAdjustSubtransactions(tm->state);
+		Mtm->nActiveTransactions -= 1;
 		MtmUnlock();
 		x->status = TRANSACTION_STATUS_ABORTED;
 	}
@@ -810,6 +815,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			Mtm->nActiveTransactions -= 1;
 		}
 		if (!commit && x->isReplicated && TransactionIdIsValid(x->gtid.xid)) { 
+			Assert(Mtm->status != MTM_RECOVERY);
 			/* 
 			 * Send notification only if ABORT happens during transaction processing at replicas, 
 			 * do not send notification if ABORT is receiver from master 
@@ -1206,6 +1212,7 @@ void MtmCheckQuorum(void)
 void MtmOnNodeDisconnect(int nodeId)
 {
 	BIT_SET(Mtm->connectivityMask, nodeId-1);
+	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
 
 	/* Wait more than socket KEEPALIVE timeout to let other nodes update their statuses */
@@ -1293,6 +1300,7 @@ static void MtmInitialize()
 		Mtm->pglogicalNodeMask = 0;
 		Mtm->walSenderLockerMask = 0;
 		Mtm->nodeLockerMask = 0;
+		Mtm->reconnectMask = 0;
 		Mtm->nLockers = 0;
 		Mtm->nActiveTransactions = 0;
 		Mtm->votingTransactions = NULL;
