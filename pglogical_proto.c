@@ -103,7 +103,7 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 {
 	bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
 	csn_t csn = MtmTransactionSnapshot(txn->xid);
-	MTM_INFO("%d: pglogical_write_begin %d CSN=%ld\n", MyProcPid, txn->xid, csn);
+	MTM_INFO("%d: pglogical_write_begin XID=%d node=%d CSN=%ld recovery=%d\n", MyProcPid, txn->xid, MtmReplicationNodeId, csn, isRecovery);
 	
 	if (csn == INVALID_CSN && !isRecovery) { 
 		MtmIsFilteredTxn = true;
@@ -124,7 +124,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 					   ReorderBufferTXN *txn, XLogRecPtr commit_lsn)
 {
     uint8 flags = 0;
-
+	
     if (txn->xact_action == XLOG_XACT_COMMIT) 
     	flags = PGLOGICAL_COMMIT;
 	else if (txn->xact_action == XLOG_XACT_PREPARE)
@@ -146,6 +146,9 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 		if (csn == INVALID_CSN && !isRecovery) {
 			return;
 		}
+		if (MtmRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn)) { 
+			flags |= PGLOGICAL_CAUGHT_UP;
+		}
 	}
     pq_sendbyte(out, 'C');		/* sending COMMIT */
 
@@ -154,7 +157,6 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     /* send the flags field */
     pq_sendbyte(out, flags);
     pq_sendbyte(out, MtmNodeId);
-    pq_sendbyte(out, MtmRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn));
 
     /* send fixed fields */
     pq_sendint64(out, commit_lsn);
