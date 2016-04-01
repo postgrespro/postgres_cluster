@@ -737,6 +737,64 @@ make_timestamptz_at_timezone(PG_FUNCTION_ARGS)
 	PG_RETURN_TIMESTAMPTZ(result);
 }
 
+/*
+ * to_timestamp(double precision)
+ * Convert UNIX epoch to timestamptz.
+ */
+Datum
+float8_timestamptz(PG_FUNCTION_ARGS)
+{
+	float8		seconds = PG_GETARG_FLOAT8(0);
+	TimestampTz result;
+
+	/* Deal with NaN and infinite inputs ... */
+	if (isnan(seconds))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+				 errmsg("timestamp cannot be NaN")));
+
+	if (isinf(seconds))
+	{
+		if (seconds < 0)
+			TIMESTAMP_NOBEGIN(result);
+		else
+			TIMESTAMP_NOEND(result);
+	}
+	else
+	{
+		/* Out of range? */
+		if (seconds <
+			(float8) SECS_PER_DAY * (DATETIME_MIN_JULIAN - UNIX_EPOCH_JDATE))
+			ereport(ERROR,
+					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+					 errmsg("timestamp out of range: \"%g\"", seconds)));
+
+		if (seconds >=
+			(float8) SECS_PER_DAY * (TIMESTAMP_END_JULIAN - UNIX_EPOCH_JDATE))
+			ereport(ERROR,
+					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+					 errmsg("timestamp out of range: \"%g\"", seconds)));
+
+		/* Convert UNIX epoch to Postgres epoch */
+		seconds -= ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY);
+
+#ifdef HAVE_INT64_TIMESTAMP
+		result = seconds * USECS_PER_SEC;
+#else
+		result = seconds;
+#endif
+
+		/* Recheck in case roundoff produces something just out of range */
+		if (!IS_VALID_TIMESTAMP(result))
+			ereport(ERROR,
+					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+					 errmsg("timestamp out of range: \"%g\"",
+							PG_GETARG_FLOAT8(0))));
+	}
+
+	PG_RETURN_TIMESTAMP(result);
+}
+
 /* timestamptz_out()
  * Convert a timestamp to external form.
  */
@@ -3293,14 +3351,16 @@ interval_mul(PG_FUNCTION_ARGS)
 	result = (Interval *) palloc(sizeof(Interval));
 
 	result_double = span->month * factor;
-	if (result_double > INT_MAX || result_double < INT_MIN)
+	if (isnan(result_double) ||
+		result_double > INT_MAX || result_double < INT_MIN)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 				 errmsg("interval out of range")));
 	result->month = (int32) result_double;
 
 	result_double = span->day * factor;
-	if (result_double > INT_MAX || result_double < INT_MIN)
+	if (isnan(result_double) ||
+		result_double > INT_MAX || result_double < INT_MIN)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 				 errmsg("interval out of range")));

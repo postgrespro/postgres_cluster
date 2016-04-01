@@ -1138,7 +1138,7 @@ EndPrepare(GlobalTransaction gxact)
 	 * Note that at this stage we have marked the prepare, but still show as
 	 * running in the procarray (twice!) and continue to hold locks.
 	 */
-	SyncRepWaitForLSN(gxact->prepare_end_lsn);
+	SyncRepWaitForLSN(gxact->prepare_end_lsn, false);
 
 	records.tail = records.head = NULL;
 	records.num_chunks = 0;
@@ -2228,7 +2228,7 @@ RecordTransactionCommitPrepared(TransactionId xid,
 	 * Note that at this stage we have marked clog, but still show as running
 	 * in the procarray and continue to hold locks.
 	 */
-	SyncRepWaitForLSN(recptr);
+	SyncRepWaitForLSN(recptr, true);
 }
 
 /*
@@ -2281,5 +2281,5 @@ RecordTransactionAbortPrepared(TransactionId xid,
 	 * Note that at this stage we have marked clog, but still show as running
 	 * in the procarray and continue to hold locks.
 	 */
-	SyncRepWaitForLSN(recptr);
+	SyncRepWaitForLSN(recptr, false);
 }

@@ -35,7 +35,6 @@
 #include "optimizer/planmain.h"
 #include "optimizer/planner.h"
 #include "optimizer/predtest.h"
-#include "optimizer/prep.h"
 #include "optimizer/restrictinfo.h"
 #include "optimizer/subselect.h"
 #include "optimizer/tlist.h"
@@ -494,8 +493,25 @@ create_scan_plan(PlannerInfo *root, Path *best_path, int flags)
 	 * Extract the relevant restriction clauses from the parent relation. The
 	 * executor must apply all these restrictions during the scan, except for
 	 * pseudoconstants which we'll take care of below.
+	 *
+	 * If this is a plain indexscan or index-only scan, we need not consider
+	 * restriction clauses that are implied by the index's predicate, so use
+	 * indrestrictinfo not baserestrictinfo.  Note that we can't do that for
+	 * bitmap indexscans, since there's not necessarily a single index
+	 * involved; but it doesn't matter since create_bitmap_scan_plan() will be
+	 * able to get rid of such clauses anyway via predicate proof.
 	 */
-	scan_clauses = rel->baserestrictinfo;
+	switch (best_path->pathtype)
+	{
+		case T_IndexScan:
+		case T_IndexOnlyScan:
+			Assert(IsA(best_path, IndexPath));
+			scan_clauses = ((IndexPath *) best_path)->indexinfo->indrestrictinfo;
+			break;
+		default:
+			scan_clauses = rel->baserestrictinfo;
+			break;
+	}
 
 	/*
 	 * If this is a parameterized scan, we also need to enforce all the join
@@ -1279,6 +1295,7 @@ create_unique_plan(PlannerInfo *root, UniquePath *best_path, int flags)
 								 AGG_HASHED,
 								 false,
 								 true,
+								 false,
 								 numGroupCols,
 								 groupColIdx,
 								 groupOperators,
@@ -1578,6 +1595,7 @@ create_agg_plan(PlannerInfo *root, AggPath *best_path)
 					best_path->aggstrategy,
 					best_path->combineStates,
 					best_path->finalizeAggs,
+					best_path->serialStates,
 					list_length(best_path->groupClause),
 					extract_grouping_cols(best_path->groupClause,
 										  subplan->targetlist),
@@ -1732,6 +1750,7 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 										 AGG_SORTED,
 										 false,
 										 true,
+										 false,
 									   list_length((List *) linitial(gsets)),
 										 new_grpColIdx,
 										 extract_grouping_ops(groupClause),
@@ -1768,6 +1787,7 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 						(numGroupCols > 0) ? AGG_SORTED : AGG_PLAIN,
 						false,
 						true,
+						false,
 						numGroupCols,
 						top_grpColIdx,
 						extract_grouping_ops(groupClause),
@@ -2381,11 +2401,6 @@ create_indexscan_plan(PlannerInfo *root,
 	 * first input contains only immutable functions, so we have to check
 	 * that.)
 	 *
-	 * We can also discard quals that are implied by a partial index's
-	 * predicate, but only in a plain SELECT; when scanning a target relation
-	 * of UPDATE/DELETE/SELECT FOR UPDATE, we must leave such quals in the
-	 * plan so that they'll be properly rechecked by EvalPlanQual testing.
-	 *
 	 * Note: if you change this bit of code you should also look at
 	 * extract_nonindex_conditions() in costsize.c.
 	 */
@@ -2401,21 +2416,9 @@ create_indexscan_plan(PlannerInfo *root,
 			continue;			/* simple duplicate */
 		if (is_redundant_derived_clause(rinfo, indexquals))
 			continue;			/* derived from same EquivalenceClass */
-		if (!contain_mutable_functions((Node *) rinfo->clause))
-		{
-			List	   *clausel = list_make1(rinfo->clause);
-
-			if (predicate_implied_by(clausel, indexquals))
-				continue;		/* provably implied by indexquals */
-			if (best_path->indexinfo->indpred)
-			{
-				if (baserelid != root->parse->resultRelation &&
-					get_plan_rowmark(root->rowMarks, baserelid) == NULL)
-					if (predicate_implied_by(clausel,
-											 best_path->indexinfo->indpred))
-						continue;		/* implied by index predicate */
-			}
-		}
+		if (!contain_mutable_functions((Node *) rinfo->clause) &&
+			predicate_implied_by(list_make1(rinfo->clause), indexquals))
+			continue;			/* provably implied by indexquals */
 		qpqual = lappend(qpqual, rinfo);
 	}
 
@@ -2552,11 +2555,12 @@ create_bitmap_scan_plan(PlannerInfo *root,
 	 * redundant with any top-level indexqual by virtue of being generated
 	 * from the same EC.  After that, try predicate_implied_by().
 	 *
-	 * Unlike create_indexscan_plan(), we need take no special thought here
-	 * for partial index predicates; this is because the predicate conditions
-	 * are already listed in bitmapqualorig and indexquals.  Bitmap scans have
-	 * to do it that way because predicate conditions need to be rechecked if
-	 * the scan becomes lossy, so they have to be included in bitmapqualorig.
+	 * Unlike create_indexscan_plan(), the predicate_implied_by() test here is
+	 * useful for getting rid of qpquals that are implied by index predicates,
+	 * because the predicate conditions are included in the "indexquals"
+	 * returned by create_bitmap_subplan().  Bitmap scans have to do it that
+	 * way because predicate conditions need to be rechecked if the scan
+	 * becomes lossy, so they have to be included in bitmapqualorig.
 	 */
 	qpqual = NIL;
 	foreach(l, scan_clauses)
@@ -2571,13 +2575,9 @@ create_bitmap_scan_plan(PlannerInfo *root,
 			continue;			/* simple duplicate */
 		if (rinfo->parent_ec && list_member_ptr(indexECs, rinfo->parent_ec))
 			continue;			/* derived from same EquivalenceClass */
-		if (!contain_mutable_functions(clause))
-		{
-			List	   *clausel = list_make1(clause);
-
-			if (predicate_implied_by(clausel, indexquals))
-				continue;		/* provably implied by indexquals */
-		}
+		if (!contain_mutable_functions(clause) &&
+			predicate_implied_by(list_make1(clause), indexquals))
+			continue;			/* provably implied by indexquals */
 		qpqual = lappend(qpqual, rinfo);
 	}
 
@@ -5636,7 +5636,7 @@ materialize_finished_plan(Plan *subplan)
 Agg *
 make_agg(List *tlist, List *qual,
 		 AggStrategy aggstrategy,
-		 bool combineStates, bool finalizeAggs,
+		 bool combineStates, bool finalizeAggs, bool serialStates,
 		 int numGroupCols, AttrNumber *grpColIdx, Oid *grpOperators,
 		 List *groupingSets, List *chain,
 		 double dNumGroups, Plan *lefttree)
@@ -5651,6 +5651,7 @@ make_agg(List *tlist, List *qual,
 	node->aggstrategy = aggstrategy;
 	node->combineStates = combineStates;
 	node->finalizeAggs = finalizeAggs;
+	node->serialStates = serialStates;
 	node->numCols = numGroupCols;
 	node->grpColIdx = grpColIdx;
 	node->grpOperators = grpOperators;

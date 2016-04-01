@@ -708,6 +708,7 @@ _outAgg(StringInfo str, const Agg *node)
 	WRITE_ENUM_FIELD(aggstrategy, AggStrategy);
 	WRITE_BOOL_FIELD(combineStates);
 	WRITE_BOOL_FIELD(finalizeAggs);
+	WRITE_BOOL_FIELD(serialStates);
 	WRITE_INT_FIELD(numCols);
 
 	appendStringInfoString(str, " :grpColIdx");
@@ -2128,6 +2129,7 @@ _outIndexOptInfo(StringInfo str, const IndexOptInfo *node)
 	/* indexprs is redundant since we print indextlist */
 	WRITE_NODE_FIELD(indpred);
 	WRITE_NODE_FIELD(indextlist);
+	WRITE_NODE_FIELD(indrestrictinfo);
 	WRITE_BOOL_FIELD(predOK);
 	WRITE_BOOL_FIELD(unique);
 	WRITE_BOOL_FIELD(immediate);

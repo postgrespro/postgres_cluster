@@ -27,6 +27,10 @@
 
 #include "access/xlogrecord.h"
 
+#ifndef FRONTEND
+#include "nodes/pg_list.h"
+#endif
+
 typedef struct XLogReaderState XLogReaderState;
 
 /* Function type definition for the read_page callback */
@@ -139,25 +143,45 @@ struct XLogReaderState
 	 * ----------------------------------------
 	 */
 
-	/* Buffer for currently read page (XLOG_BLCKSZ bytes) */
+	/*
+	 * Buffer for currently read page (XLOG_BLCKSZ bytes, valid up to at least
+	 * readLen bytes)
+	 */
 	char	   *readBuf;
+	uint32		readLen;
 
-	/* last read segment, segment offset, read length, TLI */
+	/* last read segment, segment offset, TLI for data currently in readBuf */
 	XLogSegNo	readSegNo;
 	uint32		readOff;
-	uint32		readLen;
 	TimeLineID	readPageTLI;
 
-	/* beginning of last page read, and its TLI  */
+	/*
+	 * beginning of prior page read, and its TLI.  Doesn't necessarily
+	 * correspond to what's in readBuf; used for timeline sanity checks.
+	 */
 	XLogRecPtr	latestPagePtr;
 	TimeLineID	latestPageTLI;
 
 	/* beginning of the WAL record being read. */
 	XLogRecPtr	currRecPtr;
+	/* timeline to read it from, 0 if a lookup is required */
+	TimeLineID	currTLI;
+	/*
+	 * Safe point to read to in currTLI.  If currTLI is historical, then this
+	 * is set to the end of the last whole segment that contains that TLI;
+	 * if currTLI is ThisTimeLineID, this is InvalidXLogRecPtr.  This is *not*
+	 * the tliSwitchPoint.
+	 */
+	XLogRecPtr	currTLIValidUntil;
 
 	/* Buffer for current ReadRecord result (expandable) */
 	char	   *readRecordBuf;
 	uint32		readRecordBufSize;
+
+#ifndef FRONTEND
+	/* cached timeline history, only available in backend */
+	List	   *timelineHistory;
+#endif
 
 	/* Buffer to hold error message */
 	char	   *errormsg_buf;
@@ -173,6 +197,9 @@ extern void XLogReaderFree(XLogReaderState *state);
 /* Read the next XLog record. Returns NULL on end-of-WAL or failure */
 extern struct XLogRecord *XLogReadRecord(XLogReaderState *state,
 			   XLogRecPtr recptr, char **errormsg);
+
+/* Invalidate read state */
+extern void XLogReaderInvalReadState(XLogReaderState *state);
 
 #ifdef FRONTEND
 extern XLogRecPtr XLogFindNextRecord(XLogReaderState *state, XLogRecPtr RecPtr);

@@ -403,6 +403,18 @@ SELECT '2007-12-09 04:00:00'::timestamp AT TIME ZONE 'VET';
 SELECT make_timestamptz(2007, 12, 9, 2, 0, 0, 'VET');
 SELECT make_timestamptz(2007, 12, 9, 3, 0, 0, 'VET');
 
+SELECT to_timestamp(         0);          -- 1970-01-01 00:00:00+00
+SELECT to_timestamp( 946684800);          -- 2000-01-01 00:00:00+00
+SELECT to_timestamp(1262349296.7890123);  -- 2010-01-01 12:34:56.789012+00
+-- edge cases
+SELECT to_timestamp(-210866803200);       --   4714-11-24 00:00:00+00 BC
+-- upper limit varies between integer and float timestamps, so hard to test
+-- nonfinite values
+SELECT to_timestamp(' Infinity'::float);
+SELECT to_timestamp('-Infinity'::float);
+SELECT to_timestamp('NaN'::float);
+
+
 SET TimeZone to 'Europe/Moscow';
 
 SELECT '2011-03-26 21:00:00 UTC'::timestamptz;

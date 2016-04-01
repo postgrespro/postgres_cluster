@@ -1202,7 +1202,7 @@ DATA(insert OID = 1154 (  timestamptz_lt   PGNSP PGUID 12 1 0 0 0 f f f t t f i 
 DATA(insert OID = 1155 (  timestamptz_le   PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "1184 1184" _null_ _null_ _null_ _null_ _null_ timestamp_le _null_ _null_ _null_ ));
 DATA(insert OID = 1156 (  timestamptz_ge   PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "1184 1184" _null_ _null_ _null_ _null_ _null_ timestamp_ge _null_ _null_ _null_ ));
 DATA(insert OID = 1157 (  timestamptz_gt   PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "1184 1184" _null_ _null_ _null_ _null_ _null_ timestamp_gt _null_ _null_ _null_ ));
-DATA(insert OID = 1158 (  to_timestamp	   PGNSP PGUID 14 1 0 0 0 f f f f t f i s 1 0 1184 "701" _null_ _null_ _null_ _null_ _null_ "select (''epoch''::pg_catalog.timestamptz + $1 * ''1 second''::pg_catalog.interval)" _null_ _null_ _null_ ));
+DATA(insert OID = 1158 (  to_timestamp	   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 1184 "701" _null_ _null_ _null_ _null_ _null_ float8_timestamptz _null_ _null_ _null_ ));
 DESCR("convert UNIX epoch to timestamptz");
 DATA(insert OID = 3995 (  timestamp_zone_transform PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 2281 "2281" _null_ _null_ _null_ _null_ _null_ timestamp_zone_transform _null_ _null_ _null_ ));
 DESCR("transform a time zone adjustment");
@@ -5096,6 +5096,17 @@ DATA(insert OID = 3472 (  spg_range_quad_inner_consistent	PGNSP PGUID 12 1 0 0 0
 DESCR("SP-GiST support for quad tree over range");
 DATA(insert OID = 3473 (  spg_range_quad_leaf_consistent	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 16 "2281 2281" _null_ _null_ _null_ _null_  _null_ spg_range_quad_leaf_consistent _null_ _null_ _null_ ));
 DESCR("SP-GiST support for quad tree over range");
+
+DATA(insert OID = 5012 (  spg_box_quad_config PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 2278 "2281 2281" _null_ _null_ _null_ _null_  _null_ spg_box_quad_config _null_ _null_ _null_ ));
+DESCR("SP-GiST support for quad tree over box");
+DATA(insert OID = 5013 (  spg_box_quad_choose PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 2278 "2281 2281" _null_ _null_ _null_ _null_  _null_ spg_box_quad_choose _null_ _null_ _null_ ));
+DESCR("SP-GiST support for quad tree over box");
+DATA(insert OID = 5014 (  spg_box_quad_picksplit	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 2278 "2281 2281" _null_ _null_ _null_ _null_  _null_ spg_box_quad_picksplit _null_ _null_ _null_ ));
+DESCR("SP-GiST support for quad tree over box");
+DATA(insert OID = 5015 (  spg_box_quad_inner_consistent	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 2278 "2281 2281" _null_ _null_ _null_ _null_  _null_ spg_box_quad_inner_consistent _null_ _null_ _null_ ));
+DESCR("SP-GiST support for quad tree over box");
+DATA(insert OID = 5016 (  spg_box_quad_leaf_consistent	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 16 "2281 2281" _null_ _null_ _null_ _null_  _null_ spg_box_quad_leaf_consistent _null_ _null_ _null_ ));
+DESCR("SP-GiST support for quad tree over box");
 
 /* replication slots */
 DATA(insert OID = 3779 (  pg_create_physical_replication_slot PGNSP PGUID 12 1 0 0 0 f f f f t f v u 2 0 2249 "19 16" "{19,16,19,3220}" "{i,i,o,o}" "{slot_name,immediately_reserve,slot_name,xlog_position}" _null_ _null_ pg_create_physical_replication_slot _null_ _null_ _null_ ));
