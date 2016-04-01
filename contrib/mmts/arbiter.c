@@ -584,12 +584,6 @@ static void MtmTransSender(Datum arg)
 	}
 }
 
-static void MtmWakeUpBackend(MtmTransState* ts)
-{
-	MTM_TRACE("Wakeup backed procno=%d, pid=%d\n", ts->procno, ProcGlobal->allProcs[ts->procno].pid);
-	ts->votingCompleted = true;
-	SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
-}
 
 #if !USE_EPOLL
 static bool MtmRecovery()
@@ -715,9 +709,7 @@ static void MtmTransReceiver(Datum arg)
 								   commit on smaller subset of nodes */
 								elog(WARNING, "Coordinator of distributed transaction see less nodes than node %d: %lx instead of %lx",
 									 msg->node, Mtm->disabledNodeMask, msg->disabledNodeMask);
-								ts->status = TRANSACTION_STATUS_ABORTED;
-								MtmAdjustSubtransactions(ts);
-								Mtm->nActiveTransactions -= 1;
+								MtmAbortTransaction(ts);
 							}
 
 							if (++ts->nVotes == Mtm->nNodes) { 
@@ -735,9 +727,7 @@ static void MtmTransReceiver(Datum arg)
 							Assert(ts->nVotes < Mtm->nNodes);
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-								ts->status = TRANSACTION_STATUS_ABORTED;
-								MtmAdjustSubtransactions(ts);
-								Mtm->nActiveTransactions -= 1;
+								MtmAbortTransaction(ts);
 							}
 							if (++ts->nVotes == Mtm->nNodes) {
 								MtmWakeUpBackend(ts);

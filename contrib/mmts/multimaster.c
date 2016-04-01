@@ -553,6 +553,7 @@ static void MtmAddSubtransactions(MtmTransState* ts, TransactionId* subxids, int
         Assert(!found);
         sts->status = ts->status;
         sts->csn = ts->csn;
+		sts->votingCompleted = true;
         MtmTransactionListInsertAfter(ts, sts);
     }
 }
@@ -745,7 +746,8 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	if (!MtmIsCoordinator(ts) || Mtm->status == MTM_RECOVERY) {
 		MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, NULL);
 		Assert(x->gid[0]);
-		tm->state = ts;
+		tm->state = ts;	
+		ts->votingCompleted = true;
 		if (Mtm->status != MTM_RECOVERY) { 
 			MtmSendNotificationMessage(ts, MSG_READY); /* send notification to coordinator */
 		} else {
@@ -777,9 +779,7 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 		MtmLock(LW_EXCLUSIVE);
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
 		Assert(tm != NULL);
-		tm->state->status = TRANSACTION_STATUS_ABORTED;
-		MtmAdjustSubtransactions(tm->state);
-		Mtm->nActiveTransactions -= 1;
+		MtmAbortTransaction(tm->state);
 		MtmUnlock();
 		x->status = TRANSACTION_STATUS_ABORTED;
 	}
@@ -835,6 +835,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				ts->gtid = x->gtid;
 				ts->nSubxids = 0;
 				ts->cmd = MSG_INVALID;				
+				ts->votingCompleted = true;
 				MtmTransactionListAppend(ts);
 			}
 			MtmSendNotificationMessage(ts, MSG_ABORTED); /* send notification to coordinator */
@@ -937,6 +938,20 @@ csn_t MtmGetTransactionCSN(TransactionId xid)
 	return csn;
 }
 	
+void MtmWakeUpBackend(MtmTransState* ts)
+{
+	MTM_TRACE("Wakeup backed procno=%d, pid=%d\n", ts->procno, ProcGlobal->allProcs[ts->procno].pid);
+	ts->votingCompleted = true;
+	SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
+}
+
+void MtmAbortTransaction(MtmTransState* ts)
+{	
+	ts->status = TRANSACTION_STATUS_ABORTED;
+	MtmAdjustSubtransactions(ts);
+	Mtm->nActiveTransactions -= 1;
+}
+
 /*
  * -------------------------------------------
  * HA functions
@@ -1213,9 +1228,10 @@ void MtmCheckQuorum(void)
 	}
 }
 			
-	
 void MtmOnNodeDisconnect(int nodeId)
-{
+{ 
+	MtmTransState *ts;
+
 	BIT_SET(Mtm->connectivityMask, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
@@ -1229,6 +1245,16 @@ void MtmOnNodeDisconnect(int nodeId)
 			BIT_SET(Mtm->disabledNodeMask, nodeId-1);
 			Mtm->nNodes -= 1;
 			MtmCheckQuorum();
+			/* Interrupt voting for active transaction and abort them */
+			for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
+				if (!ts->votingCompleted) { 
+					if (ts->status != TRANSACTION_STATUS_ABORTED) {
+						elog(WARNING, "Rollback active transaction %d:%d", ts->gtid.node, ts->gtid.xid);
+						MtmAbortTransaction(ts);
+					}						
+					MtmWakeUpBackend(ts);
+				}
+			}
 		}
 		MtmUnlock();
 	}
