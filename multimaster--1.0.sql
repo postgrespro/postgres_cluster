@@ -36,4 +36,11 @@ CREATE FUNCTION mtm.get_cluster_state() RETURNS mtm.cluster_state
 AS 'MODULE_PATHNAME','mtm_get_cluster_state'
 LANGUAGE C;
 
+CREATE FUNCTION mtm.make_table_local(relation regclass) RETURNS void
+AS 'MODULE_PATHNAME','mtm_make_table_local'
+LANGUAGE C;
+
 CREATE TABLE IF NOT EXISTS mtm.ddl_log (issued timestamp with time zone not null, query text);
+
+CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema text, rel_name text, primary key pk(rel_schema, rel_name));
+
