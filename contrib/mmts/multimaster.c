@@ -2400,14 +2400,17 @@ MtmExecutorFinish(QueryDesc *queryDesc)
 			for (i = 0; i < estate->es_num_result_relations; i++) { 
 				Relation rel = estate->es_result_relations[i].ri_RelationDesc;
 				if (RelationNeedsWAL(rel)) {
+					if (MtmIgnoreTablesWithoutPk) {
+						if (!rel->rd_indexvalid) {
+							RelationGetIndexList(rel);
+						}
+						if (rel->rd_replidindex == InvalidOid) { 
+							MtmMakeRelationLocal(RelationGetRelid(rel));
+							continue;
+						}
+					}
 					MtmTx.containsDML = true;
 					break;
-				}
-				if (MtmIgnoreTablesWithoutPk) {
-					if (!rel->rd_indexvalid) {
-						RelationGetIndexList(rel);
-					}
-					MtmMakeRelationLocal(rel->rd_replidindex);					
 				}
 			}
         }
