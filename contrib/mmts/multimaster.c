@@ -2135,7 +2135,7 @@ static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg)
 		*errmsg = palloc0(errlen);
 
 		/* Strip "ERROR:\t" from beginning and "\n" from end of error string */
-		strncpy(*errmsg, errstr + 7, errlen - 1 - 7);
+		strncpy(*errmsg, errstr + 8, errlen - 1 - 8);
 	}
 
 	PQclear(result);

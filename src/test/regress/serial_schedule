@@ -70,7 +70,7 @@ test: triggers
 test: inherit
 test: create_table_like
 test: typed_table
-test: vacuum
+#test: vacuum
 test: drop_if_exists
 test: updatable_views
 test: rolenames
@@ -107,7 +107,7 @@ test: spgist
 test: privileges
 test: security_label
 test: collate
-test: matview
+#test: matview
 test: lock
 test: replica_identity
 test: rowsecurity
@@ -143,7 +143,7 @@ test: indirect_toast
 test: equivclass
 test: plancache
 test: limit
-test: plpgsql
+#test: plpgsql
 test: copy2
 test: temp
 test: domain

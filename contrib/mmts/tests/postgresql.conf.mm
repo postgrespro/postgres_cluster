@@ -626,3 +626,4 @@ default_text_search_config = 'pg_catalog.english'
 
 multimaster.workers=8
 multimaster.queue_size=104857600 # 100mb
+multimaster.ignore_tables_without_pk=1

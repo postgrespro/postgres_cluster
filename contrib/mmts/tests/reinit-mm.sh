@@ -6,6 +6,8 @@ pkill -9 arbiter
 
 cd ~/code/postgres_cluster/contrib/mmts/
 make install
+cd ~/code/postgres_cluster/contrib/raftable/
+make install
 cd ~/code/postgres_cluster/contrib/mmts/tests
 
 
