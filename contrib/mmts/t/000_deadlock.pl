@@ -56,7 +56,7 @@ sub allocate_ports
 	return @allocated_now;
 }
 
-my $nnodes = 3;
+my $nnodes = 2;
 my @nodes = ();
 
 # Create nodes and allocate ports

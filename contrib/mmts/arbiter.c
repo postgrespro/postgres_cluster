@@ -164,6 +164,12 @@ MtmResolveHostByName(const char *hostname, unsigned* addrs, unsigned* n_addrs)
     return 1;
 }
 
+static int stop = 0;
+static void SetStop(int sig)
+{
+	stop = 1;
+}
+
 #if USE_EPOLL
 static int    epollfd;
 #else
@@ -530,17 +536,24 @@ static void MtmBroadcastMessage(MtmBuffer* txBuffer, MtmTransState* ts)
 
 static void MtmTransSender(Datum arg)
 {
+	sigset_t sset;
 	int nNodes = MtmNodes;
 	int i;
 	MtmBuffer* txBuffer = (MtmBuffer*)palloc(sizeof(MtmBuffer)*nNodes);
-	
+
+	signal(SIGINT, SetStop);
+	signal(SIGQUIT, SetStop);
+	signal(SIGTERM, SetStop);
+	sigfillset(&sset);
+	sigprocmask(SIG_UNBLOCK, &sset, NULL);
+
 	MtmOpenConnections();
 
 	for (i = 0; i < nNodes; i++) { 
 		txBuffer[i].used = 0;
 	}
 
-	while (true) {
+	while (!stop) {
 		MtmTransState* ts;		
 		PGSemaphoreLock(&Mtm->votingSemaphore);
 		CHECK_FOR_INTERRUPTS();
@@ -605,6 +618,7 @@ static bool MtmRecovery()
 
 static void MtmTransReceiver(Datum arg)
 {
+	sigset_t sset;
 	int nNodes = MtmNodes;
 	int nResponses;
 	int i, j, n, rc;
@@ -617,6 +631,12 @@ static void MtmTransReceiver(Datum arg)
     FD_ZERO(&inset);
     max_fd = 0;
 #endif
+
+	signal(SIGINT, SetStop);
+	signal(SIGQUIT, SetStop);
+	signal(SIGTERM, SetStop);
+	sigfillset(&sset);
+	sigprocmask(SIG_UNBLOCK, &sset, NULL);
 	
 	MtmAcceptIncomingConnections();
 
@@ -624,7 +644,7 @@ static void MtmTransReceiver(Datum arg)
 		rxBuffer[i].used = 0;
 	}
 
-	while (true) {
+	while (!stop) {
 #if USE_EPOLL
         n = epoll_wait(epollfd, events, nNodes, MtmKeepaliveTimeout/1000);
 		if (n < 0) { 
