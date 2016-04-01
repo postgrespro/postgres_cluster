@@ -42,5 +42,5 @@ LANGUAGE C;
 
 CREATE TABLE IF NOT EXISTS mtm.ddl_log (issued timestamp with time zone not null, query text);
 
-CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema text, rel_name text, primary key pk(rel_schema, rel_name));
+CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema text, rel_name text, primary key(rel_schema, rel_name));
 
