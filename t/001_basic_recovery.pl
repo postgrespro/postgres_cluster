@@ -96,8 +96,14 @@ is($psql_out, '10', "Check replication while all nodes are up.");
 
 $nodes[2]->teardown_node;
 
+diag("sleeping");
+sleep(15);
+
+diag("inserting 2");
 $nodes[0]->psql('postgres', "insert into t values(2, 20);");
+diag("selecting");
 $nodes[1]->psql('postgres', "select v from t where k=2;", stdout => \$psql_out);
+diag("selected");
 is($psql_out, '20', "Check replication after node failure.");
 
 ###############################################################################
@@ -105,9 +111,12 @@ is($psql_out, '20', "Check replication after node failure.");
 ###############################################################################
 
 $nodes[2]->start;
-sleep(5); # XXX: here we can poll
+sleep(15); # XXX: here we can poll
+diag("inserting 3");
 $nodes[0]->psql('postgres', "insert into t values(3, 30);");
+diag("selecting");
 $nodes[2]->psql('postgres', "select v from t where k=3;", stdout => \$psql_out);
+diag("selected");
 is($psql_out, '30', "Check replication after failed node recovery.");
 
 
