@@ -19,6 +19,7 @@
 #define MULTIMASTER_NAME                "multimaster"
 #define MULTIMASTER_SCHEMA_NAME         "mtm"
 #define MULTIMASTER_DDL_TABLE           "ddl_log"
+#define MULTIMASTER_LOCAL_TABLES_TABLE  "local_tables"
 #define MULTIMASTER_SLOT_PATTERN        "mtm_slot_%d"
 #define MULTIMASTER_MIN_PROTO_VERSION   1
 #define MULTIMASTER_MAX_PROTO_VERSION   1
@@ -26,6 +27,7 @@
 #define MULTIMASTER_MAX_SLOT_NAME_SIZE  16
 #define MULTIMASTER_MAX_CONN_STR_SIZE   128
 #define MULTIMASTER_MAX_HOST_NAME_SIZE  64
+#define MULTIMASTER_MAX_LOCAL_TABLES    256
 #define MULTIMASTER_BROADCAST_SERVICE   "mtm_broadcast"
 #define MULTIMASTER_ADMIN               "mtm_admin"
 
@@ -34,6 +36,10 @@
 #define Natts_mtm_ddl_log 2
 #define Anum_mtm_ddl_log_issued		1
 #define Anum_mtm_ddl_log_query		2
+
+#define Natts_mtm_local_tables 2
+#define Anum_mtm_local_tables_rel_schema 1
+#define Anum_mtm_local_tables_rel_name	 2
 
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
@@ -135,6 +141,7 @@ typedef struct
 	nodemask_t nodeLockerMask;         /* Mask of node IDs which WAL-senders are locking the cluster */
 	nodemask_t reconnectMask; 	       /* Mask of nodes connection to which has to be reestablished by sender */
 
+	bool   localTablesHashLoaded;      /* Whether data from local_tables table is loaded in shared memory hash table */
     int    nNodes;                     /* Number of active nodes */
     int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when Mtm intialization is completed */
 	int    nLockers;                   /* Number of lockers */
@@ -208,4 +215,6 @@ extern void  MtmSetupReplicationHooks(struct PGLogicalHooks* hooks);
 extern void  MtmCheckQuorum(void);
 extern bool  MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN);
 extern void  MtmRecoveryCompleted(void);
+extern void  MtmMakeTableLocal(char* schema, char* name);
+
 #endif

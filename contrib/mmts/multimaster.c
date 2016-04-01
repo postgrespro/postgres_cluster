@@ -45,6 +45,7 @@
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "utils/syscache.h"
+#include "utils/lsyscache.h"
 #include "replication/walsender.h"
 #include "replication/walsender_private.h"
 #include "replication/slot.h"
@@ -53,6 +54,7 @@
 #include "nodes/makefuncs.h"
 #include "access/htup_details.h"
 #include "catalog/indexing.h"
+#include "catalog/namespace.h"
 #include "pglogical_output/hooks.h"
 
 #include "multimaster.h"
@@ -105,6 +107,7 @@ PG_FUNCTION_INFO_V1(mtm_recover_node);
 PG_FUNCTION_INFO_V1(mtm_get_snapshot);
 PG_FUNCTION_INFO_V1(mtm_get_nodes_state);
 PG_FUNCTION_INFO_V1(mtm_get_cluster_state);
+PG_FUNCTION_INFO_V1(mtm_make_table_local);
 
 static Snapshot MtmGetSnapshot(Snapshot snapshot);
 static void MtmInitialize(void);
@@ -135,6 +138,7 @@ MtmState* Mtm;
 
 HTAB* MtmXid2State;
 static HTAB* MtmGid2State;
+static HTAB* MtmLocalTables;
 
 static MtmCurrentTrans MtmTx;
 
@@ -176,11 +180,12 @@ bool  MtmUseRaftable;
 MtmConnectionInfo* MtmConnections;
 
 static char* MtmConnStrs;
-static int MtmQueueSize;
-static int MtmWorkers;
-static int MtmVacuumDelay;
-static int MtmMinRecoveryLag;
-static int MtmMaxRecoveryLag;
+static int   MtmQueueSize;
+static int   MtmWorkers;
+static int   MtmVacuumDelay;
+static int   MtmMinRecoveryLag;
+static int   MtmMaxRecoveryLag;
+static bool  MtmIgnoreTablesWithoutPk;
 
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
 static ProcessUtility_hook_type PreviousProcessUtilityHook;
@@ -1280,6 +1285,71 @@ MtmCreateGidMap(void)
 	return htab;
 }
 
+static HTAB* 
+MtmCreateLocalTableMap(void)
+{
+	HASHCTL info;
+	HTAB* htab;
+	memset(&info, 0, sizeof(info));
+	info.keysize = sizeof(Oid);
+	htab = ShmemInitHash(
+		"MtmLocalTables",
+		MULTIMASTER_MAX_LOCAL_TABLES, MULTIMASTER_MAX_LOCAL_TABLES,
+		&info,
+		0 
+	);
+	return htab;
+}
+
+static void MtmMakeRelationLocal(Oid relid)
+{
+	if (OidIsValid(relid)) { 
+		MtmLock(LW_EXCLUSIVE);		
+		hash_search(MtmLocalTables, &relid, HASH_ENTER, NULL);
+		MtmUnlock();		
+	}
+}	
+
+
+void MtmMakeTableLocal(char* schema, char* name)
+{
+	RangeVar* rv = makeRangeVar(schema, name, -1);
+	Oid relid = RangeVarGetRelid(rv, NoLock, true);
+	MtmMakeRelationLocal(relid);
+}
+
+
+typedef struct { 
+	NameData schema;
+	NameData name;
+} MtmLocalTablesTuple;
+
+static void MtmLoadLocalTables(void)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+
+	Assert(IsTransactionState());
+
+	rv = makeRangeVar(MULTIMASTER_SCHEMA_NAME, MULTIMASTER_LOCAL_TABLES_TABLE, -1);
+	rel = heap_openrv_extended(rv, RowExclusiveLock, true);
+	if (rel != NULL) { 
+		scan = systable_beginscan(rel, 0, true, NULL, 0, NULL);
+		
+		while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+		{
+			MtmLocalTablesTuple	*t = (MtmLocalTablesTuple*) GETSTRUCT(tuple);
+			MtmMakeTableLocal(NameStr(t->schema), NameStr(t->name));
+		}
+
+		systable_endscan(scan);
+		heap_close(rel, RowExclusiveLock);
+	}
+}
+	
+
 static void MtmInitialize()
 {
 	bool found;
@@ -1309,6 +1379,7 @@ static void MtmInitialize()
         Mtm->nReceivers = 0;
 		Mtm->timeShift = 0;
 		Mtm->transCount = 0;
+		Mtm->localTablesHashLoaded = false;
 		for (i = 0; i < MtmNodes; i++) {
 			Mtm->nodes[i].oldestSnapshot = 0;
 			Mtm->nodes[i].transDelay = 0;
@@ -1324,6 +1395,7 @@ static void MtmInitialize()
 	}
 	MtmXid2State = MtmCreateXidMap();
 	MtmGid2State = MtmCreateGidMap();
+	MtmLocalTables = MtmCreateLocalTableMap();
     MtmDoReplication = true;
 	TM = &MtmTM;
 	LWLockRelease(AddinShmemInitLock);
@@ -1468,6 +1540,19 @@ _PG_init(void)
 		"Use raftable plugin for internode communication",
 		NULL,
 		&MtmUseRaftable,
+		false,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomBoolVariable(
+		"multimaster.ignore_tables_without_pk",
+		"Do not replicate tables withpout primary key",
+		NULL,
+		&MtmIgnoreTablesWithoutPk,
 		false,
 		PGC_BACKEND,
 		0,
@@ -1805,11 +1890,30 @@ MtmReplicationTxnFilterHook(struct PGLogicalTxnFilterArgs* args)
 	return res;
 }
 
+static bool 
+MtmReplicationRowFilterHook(struct PGLogicalRowFilterArgs* args)
+{
+	bool isDistributed;
+	MtmLock(LW_SHARED);
+	if (!Mtm->localTablesHashLoaded) { 
+		MtmUnlock();
+		MtmLock(LW_EXCLUSIVE);
+		if (!Mtm->localTablesHashLoaded) { 
+			MtmLoadLocalTables();
+			Mtm->localTablesHashLoaded = true;
+		}
+	}
+	isDistributed = hash_search(MtmLocalTables, &RelationGetRelid(args->changed_rel), HASH_FIND, NULL) == NULL;
+	MtmUnlock();
+	return isDistributed;
+}
+
 void MtmSetupReplicationHooks(struct PGLogicalHooks* hooks)
 {
 	hooks->startup_hook = MtmReplicationStartupHook;
 	hooks->shutdown_hook = MtmReplicationShutdownHook;
 	hooks->txn_filter_hook = MtmReplicationTxnFilterHook;
+	hooks->row_filter_hook = MtmReplicationRowFilterHook;
 }
 
 	
@@ -1935,6 +2039,52 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
 }
+
+
+Datum mtm_make_table_local(PG_FUNCTION_ARGS)
+{
+	Oid	reloid = PG_GETARG_OID(1);
+	RangeVar   *rv;
+	Relation	rel;
+	TupleDesc	tupDesc;
+	HeapTuple	tup;
+	Datum		values[Natts_mtm_local_tables];
+	bool		nulls[Natts_mtm_local_tables];
+
+	MtmMakeRelationLocal(reloid);
+	
+	rv = makeRangeVar(MULTIMASTER_SCHEMA_NAME, MULTIMASTER_LOCAL_TABLES_TABLE, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	if (rel != NULL) {
+		char* tableName = get_rel_name(reloid);
+		Oid   schemaid = get_rel_namespace(reloid);
+		char* schemaName = get_namespace_name(schemaid);
+
+		tupDesc = RelationGetDescr(rel);
+
+		/* Form a tuple. */
+		memset(nulls, false, sizeof(nulls));
+		
+		values[Anum_mtm_local_tables_rel_schema - 1] = CStringGetTextDatum(schemaName);
+		values[Anum_mtm_local_tables_rel_name - 1] = CStringGetTextDatum(tableName);
+
+		tup = heap_form_tuple(tupDesc, values, nulls);
+		
+		/* Insert the tuple to the catalog. */
+		simple_heap_insert(rel, tup);
+		
+		/* Update the indexes. */
+		CatalogUpdateIndexes(rel, tup);
+		
+		/* Cleanup. */
+		heap_freetuple(tup);
+		heap_close(rel, RowExclusiveLock);
+
+		MtmTx.containsDML = true;
+	}
+	return false;
+}
+
 
 /*
  * -------------------------------------------
@@ -2248,9 +2398,16 @@ MtmExecutorFinish(QueryDesc *queryDesc)
         if (estate->es_processed != 0 && (operation == CMD_INSERT || operation == CMD_UPDATE || operation == CMD_DELETE)) { 			
 			int i;
 			for (i = 0; i < estate->es_num_result_relations; i++) { 
-				if (RelationNeedsWAL(estate->es_result_relations[i].ri_RelationDesc)) {
+				Relation rel = estate->es_result_relations[i].ri_RelationDesc;
+				if (RelationNeedsWAL(rel)) {
 					MtmTx.containsDML = true;
 					break;
+				}
+				if (MtmIgnoreTablesWithoutPk) {
+					if (!rel->rd_indexvalid) {
+						RelationGetIndexList(rel);
+					}
+					MtmMakeRelationLocal(rel->rd_replidindex);					
 				}
 			}
         }

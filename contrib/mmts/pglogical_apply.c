@@ -679,6 +679,10 @@ process_remote_insert(StringInfo s, Relation rel)
 		if (rc != SPI_OK_UTILITY) { 
 			elog(ERROR, "Failed to execute utility statement %s", ddl);
 		}
+	} else if (strcmp(relname, MULTIMASTER_LOCAL_TABLES_TABLE) == 0) { 
+		char* schema = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_schema-1]);
+		char* name = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_name-1]);
+		MtmMakeTableLocal(schema, name);
 	}
 
 }
