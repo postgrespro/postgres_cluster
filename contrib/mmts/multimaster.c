@@ -1882,12 +1882,23 @@ static void
 MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 {
 	ListCell *param;
+	bool recoveryCompleted = false;
 	MtmIsRecoverySession = false;
 	foreach(param, args->in_params)
 	{
 		DefElem    *elem = lfirst(param);
 		if (strcmp("mtm_replication_mode", elem->defname) == 0) { 
-			MtmIsRecoverySession = elem->arg != NULL && strVal(elem->arg) != NULL && strcmp(strVal(elem->arg), "recovery") == 0;
+			if (elem->arg != NULL && strVal(elem->arg) != NULL) { 
+				if (strcmp(strVal(elem->arg), "recovery") == 0) { 
+					MtmIsRecoverySession = true;
+				} else if (strcmp(strVal(elem->arg), "recovered") == 0) { 
+					recoveryCompleted = true;
+				} else if (strcmp(strVal(elem->arg), "normal") != 0) { 
+					elog(ERROR, "Illegal recovery mode %s", strVal(elem->arg));
+				}
+			} else { 
+				elog(ERROR, "Replication mode is not specified");
+			}				
 			break;
 		}
 	}
@@ -1900,10 +1911,14 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			MtmCheckQuorum();
 		}
 	} else if (BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
-		elog(WARNING, "Node %d consider that recovery of node %d is completed: start normal replication", MtmNodeId, MtmReplicationNodeId); 
-		BIT_CLEAR(Mtm->disabledNodeMask,  MtmReplicationNodeId-1);
-		Mtm->nNodes += 1;
-		MtmCheckQuorum();
+		if (recoveryCompleted) { 
+			elog(WARNING, "Node %d consider that recovery of node %d is completed: start normal replication", MtmNodeId, MtmReplicationNodeId); 
+			BIT_CLEAR(Mtm->disabledNodeMask,  MtmReplicationNodeId-1);
+			Mtm->nNodes += 1;
+			MtmCheckQuorum();
+		} else {
+			elog(ERROR, "Disabled node %d tries to reconnect without recovery", MtmReplicationNodeId); 
+		}
 	} else {
 		elog(NOTICE, "Node %d start logical replication to node %d in normal mode", MtmNodeId, MtmReplicationNodeId); 
 	}
