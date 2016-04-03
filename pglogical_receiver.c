@@ -196,6 +196,13 @@ feTimestampDifference(int64 start_time, int64 stop_time,
 	}
 }
 
+static char const* const MtmReplicationModeName[] = 
+{
+	"recovered", /* SLOT_CREATE_NEW: recovery of node is completed so drop old slot and restart replication from the current position in WAL */
+	"recovery",  /* SLOT_OPEN_EXISTED: perform recorvery of the node by applying all data from theslot from specified point */
+	"normal"     /* SLOT_OPEN_ALWAYS: normal mode: use existeed slot or create new one and start receiving data from it from the specified position */
+};
+
 static void
 pglogical_receiver_main(Datum main_arg)
 {
@@ -298,7 +305,7 @@ pglogical_receiver_main(Datum main_arg)
 					  (uint32) originStartPos,
 					  MULTIMASTER_MAX_PROTO_VERSION,
 					  MULTIMASTER_MIN_PROTO_VERSION,
-					  mode == SLOT_OPEN_EXISTED ? "recovery" : "normal"					  
+					  MtmReplicationModeName[mode]
 		);
 	res = PQexec(conn, query->data);
 	if (PQresultStatus(res) != PGRES_COPY_BOTH)
