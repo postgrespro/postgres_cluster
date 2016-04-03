@@ -140,6 +140,8 @@ HTAB* MtmXid2State;
 static HTAB* MtmGid2State;
 static HTAB* MtmLocalTables;
 
+static bool  MtmIsRecoverySession;
+
 static MtmCurrentTrans MtmTx;
 
 static TransactionManager MtmTM = { 
@@ -1023,7 +1025,15 @@ static int64 MtmGetSlotLag(int nodeId)
  */
 bool MtmIsRecoveredNode(int nodeId)
 {
-	return BIT_CHECK(Mtm->disabledNodeMask, nodeId-1);
+	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
+		if (!MtmIsRecoverySession) { 
+			elog(ERROR, "Node %d is marked as disabled but is not in recovery mode", nodeId);
+		}
+		return true;
+	} else { 
+		MtmIsRecoverySession = false; /* recovery is completed */
+		return false;
+	}
 }
 
 
@@ -1872,17 +1882,17 @@ static void
 MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 {
 	ListCell *param;
-	bool isRecoverySession = false;
+	MtmIsRecoverySession = false;
 	foreach(param, args->in_params)
 	{
 		DefElem    *elem = lfirst(param);
 		if (strcmp("mtm_replication_mode", elem->defname) == 0) { 
-			isRecoverySession = elem->arg != NULL && strVal(elem->arg) != NULL && strcmp(strVal(elem->arg), "recovery") == 0;
+			MtmIsRecoverySession = elem->arg != NULL && strVal(elem->arg) != NULL && strcmp(strVal(elem->arg), "recovery") == 0;
 			break;
 		}
 	}
 	MtmLock(LW_EXCLUSIVE);
-	if (isRecoverySession) {
+	if (MtmIsRecoverySession) {
 		elog(WARNING, "%d: Node %d start recovery of node %d", MyProcPid, MtmNodeId, MtmReplicationNodeId);
 		if (!BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
 			BIT_SET(Mtm->disabledNodeMask,  MtmReplicationNodeId-1);

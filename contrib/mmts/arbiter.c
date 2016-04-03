@@ -694,7 +694,10 @@ static void MtmTransReceiver(Datum arg)
 					MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);
 					Assert(ts != NULL);
 					Assert(msg->node > 0 && msg->node <= nNodes && msg->node != MtmNodeId);
-					
+
+					if (BIT_CHECK(msg->disabledNodeMask, MtmNodeId-1) && Mtm->status != MTM_RECOVERY) { 
+						elog(PANIC, "Node %d thinks that I was dead: perform hara-kiri not to be a zombie", msg->node);
+					}
 					Mtm->nodes[msg->node-1].oldestSnapshot = msg->oldestSnapshot;
 
 					if (MtmIsCoordinator(ts)) {
