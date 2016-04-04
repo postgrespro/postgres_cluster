@@ -36,6 +36,7 @@
 #include "utils/typcache.h"
 
 #include "multimaster.h"
+#include "pglogical_relid_map.h"
 
 static bool MtmIsFilteredTxn;
 
@@ -71,13 +72,15 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
 	uint8		nspnamelen;
 	const char *relname;
 	uint8		relnamelen;
-		
+	Oid         relid;
     if (MtmIsFilteredTxn) { 
 		return;
 	}
 	
-	pq_sendbyte(out, 'R');		/* sending RELATION */
-    
+	relid = RelationGetRelid(rel);
+	pq_sendbyte(out, 'R');		/* sending RELATION */	
+	pq_sendint(out, relid, sizeof relid); /* use Oid as relation identifier */
+	
 	nspname = get_namespace_name(rel->rd_rel->relnamespace);
 	if (nspname == NULL)
 		elog(ERROR, "cache lookup failed for namespace %u",
@@ -86,10 +89,10 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
 	
 	relname = NameStr(rel->rd_rel->relname);
 	relnamelen = strlen(relname) + 1;
-    
+	
 	pq_sendbyte(out, nspnamelen);		/* schema name length */
 	pq_sendbytes(out, nspname, nspnamelen);
-    
+	
 	pq_sendbyte(out, relnamelen);		/* table name length */
 	pq_sendbytes(out, relname, relnamelen);
 }
