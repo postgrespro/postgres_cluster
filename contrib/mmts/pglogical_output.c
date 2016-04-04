@@ -12,10 +12,12 @@
  */
 #include "postgres.h"
 
+#include "pglogical_output/compat.h"
 #include "pglogical_config.h"
 #include "pglogical_output.h"
 #include "pglogical_proto.h"
 #include "pglogical_hooks.h"
+#include "pglogical_relmetacache.h"
 
 #include "access/hash.h"
 #include "access/sysattr.h"
@@ -33,7 +35,9 @@
 
 #include "replication/output_plugin.h"
 #include "replication/logical.h"
+#ifdef HAVE_REPLICATION_ORIGINS
 #include "replication/origin.h"
+#endif
 
 #include "utils/builtins.h"
 #include "utils/catcache.h"
@@ -46,6 +50,8 @@
 #include "utils/relcache.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
+
+PG_MODULE_MAGIC;
 
 extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
 
@@ -61,8 +67,10 @@ static void pg_decode_change(LogicalDecodingContext *ctx,
 				 ReorderBufferTXN *txn, Relation rel,
 				 ReorderBufferChange *change);
 
+#ifdef HAVE_REPLICATION_ORIGINS
 static bool pg_decode_origin_filter(LogicalDecodingContext *ctx,
 						RepOriginId origin_id);
+#endif
 
 static void send_startup_message(LogicalDecodingContext *ctx,
 		PGLogicalOutputData *data, bool last_message);
@@ -79,7 +87,9 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	cb->begin_cb = pg_decode_begin_txn;
 	cb->change_cb = pg_decode_change;
 	cb->commit_cb = pg_decode_commit_txn;
+#ifdef HAVE_REPLICATION_ORIGINS
 	cb->filter_by_origin_cb = pg_decode_origin_filter;
+#endif
 	cb->shutdown_cb = pg_decode_shutdown;
 }
 
@@ -99,42 +109,42 @@ check_binary_compatibility(PGLogicalOutputData *data)
 	if (data->client_binary_sizeofdatum != 0
 		&& data->client_binary_sizeofdatum != sizeof(Datum))
 	{
-		elog(DEBUG1, "Binary mode rejected: Server and client endian sizeof(Datum) mismatch");
+		elog(DEBUG1, "Binary mode rejected: Server and client sizeof(Datum) mismatch");
 		return false;
 	}
 
 	if (data->client_binary_sizeofint != 0
 		&& data->client_binary_sizeofint != sizeof(int))
 	{
-		elog(DEBUG1, "Binary mode rejected: Server and client endian sizeof(int) mismatch");
+		elog(DEBUG1, "Binary mode rejected: Server and client sizeof(int) mismatch");
 		return false;
 	}
 
 	if (data->client_binary_sizeoflong != 0
 		&& data->client_binary_sizeoflong != sizeof(long))
 	{
-		elog(DEBUG1, "Binary mode rejected: Server and client endian sizeof(long) mismatch");
+		elog(DEBUG1, "Binary mode rejected: Server and client sizeof(long) mismatch");
 		return false;
 	}
 
 	if (data->client_binary_float4byval_set
 		&& data->client_binary_float4byval != server_float4_byval())
 	{
-		elog(DEBUG1, "Binary mode rejected: Server and client endian float4byval mismatch");
+		elog(DEBUG1, "Binary mode rejected: Server and client float4byval mismatch");
 		return false;
 	}
 
 	if (data->client_binary_float8byval_set
 		&& data->client_binary_float8byval != server_float8_byval())
 	{
-		elog(DEBUG1, "Binary mode rejected: Server and client endian float8byval mismatch");
+		elog(DEBUG1, "Binary mode rejected: Server and client float8byval mismatch");
 		return false;
 	}
 
 	if (data->client_binary_intdatetimes_set
 		&& data->client_binary_intdatetimes != server_integer_datetimes())
 	{
-		elog(DEBUG1, "Binary mode rejected: Server and client endian integer datetimes mismatch");
+		elog(DEBUG1, "Binary mode rejected: Server and client integer datetimes mismatch");
 		return false;
 	}
 
@@ -148,7 +158,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 {
 	PGLogicalOutputData  *data = palloc0(sizeof(PGLogicalOutputData));
 
-	data->context = AllocSetContextCreate(TopMemoryContext,
+	data->context = AllocSetContextCreate(ctx->context,
 										  "pglogical conversion context",
 										  ALLOCSET_DEFAULT_MINSIZE,
 										  ALLOCSET_DEFAULT_INITSIZE,
@@ -202,17 +212,17 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				 errmsg("client sent startup parameters in format %d but we only support format 1",
 					params_format)));
 
-		if (data->client_min_proto_version > PG_LOGICAL_PROTO_VERSION_NUM)
+		if (data->client_min_proto_version > PGLOGICAL_PROTO_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("client sent min_proto_version=%d but we only support protocol %d or lower",
-					 data->client_min_proto_version, PG_LOGICAL_PROTO_VERSION_NUM)));
+					 data->client_min_proto_version, PGLOGICAL_PROTO_VERSION_NUM)));
 
-		if (data->client_max_proto_version < PG_LOGICAL_PROTO_MIN_VERSION_NUM)
+		if (data->client_max_proto_version < PGLOGICAL_PROTO_MIN_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("client sent max_proto_version=%d but we only support protocol %d or higher",
-				 	data->client_max_proto_version, PG_LOGICAL_PROTO_MIN_VERSION_NUM)));
+				 	data->client_max_proto_version, PGLOGICAL_PROTO_MIN_VERSION_NUM)));
 
 		/*
 		 * Set correct protocol format.
@@ -308,42 +318,17 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		}
 
 		/*
-		 * Will we forward changesets? We have to if we're on 9.4;
-		 * otherwise honour the client's request.
+		 * 9.4 lacks origins info so don't forward it.
+		 *
+		 * There's currently no knob for clients to use to suppress
+		 * this info and it's sent if it's supported and available.
 		 */
 		if (PG_VERSION_NUM/100 == 904)
-		{
-			/*
-			 * 9.4 unconditionally forwards changesets due to lack of
-			 * replication origins, and it can't ever send origin info
-			 * for the same reason.
-			 */
-			data->forward_changesets = true;
 			data->forward_changeset_origins = false;
-
-			if (data->client_forward_changesets_set
-				&& !data->client_forward_changesets)
-			{
-				ereport(DEBUG1,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("Cannot disable changeset forwarding on PostgreSQL 9.4")));
-			}
-		}
-		else if (data->client_forward_changesets_set
-				 && data->client_forward_changesets)
-		{
-			/* Client explicitly asked for forwarding; forward csets and origins */
-			data->forward_changesets = true;
-			data->forward_changeset_origins = true;
-		}
 		else
-		{
-			/* Default to not forwarding or honour client's request not to fwd */
-			data->forward_changesets = false;
-			data->forward_changeset_origins = false;
-		}
+			data->forward_changeset_origins = true;
 
-		if (data->hooks_setup_funcname != NIL || data->api->setup_hooks)
+		if (data->hooks_setup_funcname != NIL)
 		{
 
 			data->hooks_mctxt = AllocSetContextCreate(ctx->context,
@@ -355,6 +340,43 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			load_hooks(data);
 			call_startup_hook(data, ctx->output_plugin_options);
 		}
+
+		if (data->client_relmeta_cache_size < -1)
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("relmeta_cache_size must be -1, 0, or positive")));
+		}
+
+		/*
+		 * Relation metadata cache configuration.
+		 *
+		 * TODO: support fixed size cache
+		 *
+		 * Need a LRU for eviction, and need to implement a new message type for
+		 * cache purge notifications for clients. In the mean time force it to 0
+		 * (off). The client will be told via a startup param and must respect
+		 * that.
+		 */
+		if (data->client_relmeta_cache_size != 0
+				&& data->client_relmeta_cache_size != -1)
+		{
+			ereport(INFO,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("fixed size cache not supported, forced to off"),
+					 errdetail("only relmeta_cache_size=0 (off) or relmeta_cache_size=-1 (unlimited) supported")));
+
+			data->relmeta_cache_size = 0;
+		}
+		else
+		{
+			/* ack client request */
+			data->relmeta_cache_size = data->client_relmeta_cache_size;
+		}
+
+		/* if cache enabled, init it */
+		if (data->relmeta_cache_size != 0)
+			pglogical_init_relmetacache(ctx->context);
 	}
 }
 
@@ -370,12 +392,15 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 	if (!startup_message_sent)
 		send_startup_message(ctx, data, false /* can't be last message */);
 
+#ifdef HAVE_REPLICATION_ORIGINS
 	/* If the record didn't originate locally, send origin info */
 	send_replication_origin &= txn->origin_id != InvalidRepOriginId;
+#endif
 
 	OutputPluginPrepareWrite(ctx, !send_replication_origin);
 	data->api->write_begin(ctx->out, data, txn);
 
+#ifdef HAVE_REPLICATION_ORIGINS
 	if (send_replication_origin)
 	{
 		char *origin;
@@ -397,6 +422,7 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 			replorigin_by_oid(txn->origin_id, true, &origin))
 			data->api->write_origin(ctx->out, origin, txn->origin_lsn);
 	}
+#endif
 
 	OutputPluginWrite(ctx, true);
 }
@@ -421,6 +447,8 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	PGLogicalOutputData *data = ctx->output_plugin_private;
 	MemoryContext old;
+	struct PGLRelMetaCacheEntry *cached_relmeta = NULL;
+
 
 	/* First check the table filter */
 	if (!call_row_filter_hook(data, txn, relation, change))
@@ -429,11 +457,18 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	/* Avoid leaking memory by using and resetting our own context */
 	old = MemoryContextSwitchTo(data->context);
 
-	/* TODO: add caching (send only if changed) */
-	if (data->api->write_rel)
+	/*
+	 * If the protocol wants to write relation information and the client
+	 * isn't known to have metadata cached for this relation already,
+	 * send relation metadata.
+	 *
+	 * TODO: track hit/miss stats
+	 */
+	if (data->api->write_rel != NULL &&
+			!pglogical_cache_relmeta(data, relation, &cached_relmeta))
 	{
 		OutputPluginPrepareWrite(ctx, false);
-		data->api->write_rel(ctx->out, data, relation);
+		data->api->write_rel(ctx->out, data, relation, cached_relmeta);
 		OutputPluginWrite(ctx, false);
 	}
 
@@ -477,28 +512,22 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	MemoryContextReset(data->context);
 }
 
+#ifdef HAVE_REPLICATION_ORIGINS
 /*
  * Decide if the whole transaction with specific origin should be filtered out.
  */
-extern int MtmReplicationNodeId;
-
 static bool
 pg_decode_origin_filter(LogicalDecodingContext *ctx,
 						RepOriginId origin_id)
 {
 	PGLogicalOutputData *data = ctx->output_plugin_private;
 
-	if (!call_txn_filter_hook(data, origin_id)) { 
+	if (!call_txn_filter_hook(data, origin_id))
 		return true;
-	}
-
-	if (!data->forward_changesets && origin_id != InvalidRepOriginId) {
-		*(int*)0 = 0;
-		return true;
-	}
 
 	return false;
 }
+#endif
 
 static void
 send_startup_message(LogicalDecodingContext *ctx,
@@ -532,9 +561,10 @@ static void pg_decode_shutdown(LogicalDecodingContext * ctx)
 
 	call_shutdown_hook(data);
 
-	if (data->hooks_mctxt != NULL)
-	{
-		MemoryContextDelete(data->hooks_mctxt);
-		data->hooks_mctxt = NULL;
-	}
+	pglogical_destroy_relmetacache();
+
+	/*
+	 * no need to delete data->context or data->hooks_mctxt as they're children
+	 * of ctx->context which will expire on return.
+	 */
 }

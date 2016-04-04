@@ -17,7 +17,7 @@ struct PGLogicalOutputData;
 struct PGLRelMetaCacheEntry;
 
 typedef void (*pglogical_write_rel_fn)(StringInfo out, struct PGLogicalOutputData *data,
-									   Relation rel/*, struct PGLRelMetaCacheEntry *cache_entry*/);
+									   Relation rel, struct PGLRelMetaCacheEntry *cache_entry);
 
 typedef void (*pglogical_write_begin_fn)(StringInfo out, struct PGLogicalOutputData *data,
 							 ReorderBufferTXN *txn);

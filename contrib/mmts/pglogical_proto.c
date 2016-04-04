@@ -39,7 +39,7 @@
 
 static bool MtmIsFilteredTxn;
 
-static void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel);
+static void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel, struct PGLRelMetaCacheEntry *cache_entry));
 
 static void pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 							ReorderBufferTXN *txn);
@@ -54,6 +54,7 @@ static void pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 static void pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 							Relation rel, HeapTuple oldtuple);
 
+static void pglogical_write_attrs(StringInfo out, Relation rel);
 static void pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 								   Relation rel, HeapTuple tuple);
 static char decide_datum_transfer(Form_pg_attribute att,
@@ -65,19 +66,32 @@ static char decide_datum_transfer(Form_pg_attribute att,
  * Write relation description to the output stream.
  */
 static void
-pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
+pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
+					struct PGLRelMetaCacheEntry *cache_entry)
 {
 	const char *nspname;
 	uint8		nspnamelen;
 	const char *relname;
 	uint8		relnamelen;
+	uint8		flags = 0;
 		
     if (MtmIsFilteredTxn) { 
 		return;
 	}
 	
+	/* must not have cache entry if metacache off; must have entry if on */
+	Assert( (data->relmeta_cache_size == 0) == (cache_entry == NULL) );
+	/* if cache enabled must never be called with an already-cached rel */
+	Assert(cache_entry == NULL || !cache_entry->is_cached);
+
 	pq_sendbyte(out, 'R');		/* sending RELATION */
     
+	/* send the flags field */
+	pq_sendbyte(out, flags);
+
+	/* use Oid as relation identifier */
+	pq_sendint(out, RelationGetRelid(rel), 4);
+
 	nspname = get_namespace_name(rel->rd_rel->relnamespace);
 	if (nspname == NULL)
 		elog(ERROR, "cache lookup failed for namespace %u",
@@ -92,6 +106,74 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
     
 	pq_sendbyte(out, relnamelen);		/* table name length */
 	pq_sendbytes(out, relname, relnamelen);
+
+	/* send the attribute info */
+	pglogical_write_attrs(out, rel);
+
+	/*
+	 * Since we've sent the whole relation metadata not just the columns for
+	 * the coming row(s), we can omit sending it again. The client will cache
+	 * it. If the relation changes the cached flag is cleared by
+	 * pglogical_output and we'll be called again next time it's touched.
+	 *
+	 * We don't care about the cache size here, the size management is done
+	 * in the generic cache code.
+	 */
+	if (cache_entry != NULL)
+		cache_entry->is_cached = true;
+}
+
+/*
+ * Write relation attributes to the outputstream.
+ */
+static void
+pglogical_write_attrs(StringInfo out, Relation rel)
+{
+	TupleDesc	desc;
+	int			i;
+	uint16		nliveatts = 0;
+	Bitmapset  *idattrs;
+
+	desc = RelationGetDescr(rel);
+
+	pq_sendbyte(out, 'A');			/* sending ATTRS */
+
+	/* send number of live attributes */
+	for (i = 0; i < desc->natts; i++)
+	{
+		if (desc->attrs[i]->attisdropped)
+			continue;
+		nliveatts++;
+	}
+	pq_sendint(out, nliveatts, 2);
+
+	/* fetch bitmap of REPLICATION IDENTITY attributes */
+	idattrs = RelationGetIndexAttrBitmap(rel, INDEX_ATTR_BITMAP_IDENTITY_KEY);
+
+	/* send the attributes */
+	for (i = 0; i < desc->natts; i++)
+	{
+		Form_pg_attribute att = desc->attrs[i];
+		uint8			flags = 0;
+		uint16			len;
+		const char	   *attname;
+
+		if (att->attisdropped)
+			continue;
+
+		if (bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
+						  idattrs))
+			flags |= IS_REPLICA_IDENTITY;
+
+		pq_sendbyte(out, 'C');		/* column definition follows */
+		pq_sendbyte(out, flags);
+
+		pq_sendbyte(out, 'N');		/* column name block follows */
+		attname = NameStr(att->attname);
+		len = strlen(attname) + 1;
+		pq_sendint(out, len, 2);
+		pq_sendbytes(out, attname, len); /* data */
+	}
 }
 
 /*
@@ -179,7 +261,16 @@ pglogical_write_insert(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple newtuple)
 {
     if (!MtmIsFilteredTxn) { 
+		uint8 flags = 0;
+
 		pq_sendbyte(out, 'I');		/* action INSERT */
+		/* send the flags field */
+		pq_sendbyte(out, flags);
+		
+		/* use Oid as relation identifier */
+		pq_sendint(out, RelationGetRelid(rel), 4);
+
+		pq_sendbyte(out, 'N');		/* new tuple follows */
 		pglogical_write_tuple(out, data, rel, newtuple);
 	}
 }
@@ -192,7 +283,16 @@ pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple, HeapTuple newtuple)
 {
     if (!MtmIsFilteredTxn) { 
+		uint8 flags = 0;
+
 		pq_sendbyte(out, 'U');		/* action UPDATE */
+
+		/* send the flags field */
+		pq_sendbyte(out, flags);
+		
+		/* use Oid as relation identifier */
+		pq_sendint(out, RelationGetRelid(rel), 4);
+		
 		/* FIXME support whole tuple (O tuple type) */
 		if (oldtuple != NULL)
 		{
@@ -213,7 +313,22 @@ pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple)
 {
     if (!MtmIsFilteredTxn) {
+		uint8 flags = 0;
+		
 		pq_sendbyte(out, 'D');		/* action DELETE */
+		
+		/* send the flags field */
+		pq_sendbyte(out, flags);
+		
+		/* use Oid as relation identifier */
+		pq_sendint(out, RelationGetRelid(rel), 4);
+		
+		/*
+		 * TODO support whole tuple ('O' tuple type)
+		 *
+		 * See notes on update for details
+		 */
+		pq_sendbyte(out, 'K');	/* old key follows */
 		pglogical_write_tuple(out, data, rel, oldtuple);
 	}
 }

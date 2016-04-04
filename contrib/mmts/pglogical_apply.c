@@ -577,7 +577,7 @@ process_remote_commit(StringInfo in)
 }
 
 static void
-process_remote_insert(StringInfo s, Relation rel)
+process_remote_insert(StringInfo s)
 {
 	EState *estate;
 	TupleData new_tuple;
@@ -585,10 +585,36 @@ process_remote_insert(StringInfo s, Relation rel)
 	TupleTableSlot *oldslot;
 	ResultRelInfo *relinfo;
 	ScanKey	*index_keys;
+	uint32		relid;
+	uint8		flags;
+	PGLogicalRelation *lr;
+	Relation rel;
 	char* relname = RelationGetRelationName(rel);
 	int	i;
 
+	/* read the flags */
+	flags = pq_getmsgbyte(in);
+	Assert(flags == 0);
+
+	/* read the relation id */
+	relid = pq_getmsgint(in, 4);
+
+	action = pq_getmsgbyte(in);
+	if (action != 'N')
+		elog(ERROR, "expected new tuple but got %d",
+			 action);
+
+	rl = pglogical_relation_open(relid, RowExclusiveLock);
+	rel = rl->rel;
+
 	estate = create_rel_estate(rel);
+	econtext = GetPerTupleExprContext(estate);
+
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
+	fill_tuple_defaults(rel, econtext, &new_tup);
+
 	newslot = ExecInitExtraTupleSlot(estate);
 	oldslot = ExecInitExtraTupleSlot(estate);
 	ExecSetSlotDescriptor(newslot, RelationGetDescr(rel));
@@ -664,6 +690,7 @@ process_remote_insert(StringInfo s, Relation rel)
 	ExecCloseIndices(estate->es_result_relation_info);
 
     heap_close(rel, NoLock);
+	pglogical_relation_close(rl, NoLock);
     ExecResetTupleTable(estate->es_tupleTable, true);
     FreeExecutorState(estate);
 
