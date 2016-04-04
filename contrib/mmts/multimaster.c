@@ -2159,12 +2159,31 @@ static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg)
 
 		*errmsg = palloc0(errlen);
 
-		/* Strip "ERROR:\t" from beginning and "\n" from end of error string */
+		/* Strip "ERROR:  " from beginning and "\n" from end of error string */
 		strncpy(*errmsg, errstr + 8, errlen - 1 - 8);
 	}
 
 	PQclear(result);
 	return ret;
+}
+
+void MtmNoticeReceiver(void *i, const PGresult *res)
+{
+	char *notice = PQresultErrorMessage(res);
+	char *stripped_notice;
+	int len = strlen(notice);
+
+	/* Skip notices from other nodes */
+	if ( (*(int *)i) != MtmNodeId - 1)
+		return;
+
+	stripped_notice = palloc0(len);
+
+	/* Strip "NOTICE:  " from beginning and "\n" from end of error string */
+	strncpy(stripped_notice, notice + 9, len - 1 - 9);
+
+	elog(NOTICE, stripped_notice);
+	pfree(stripped_notice);
 }
 
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
@@ -2195,6 +2214,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 					elog(ERROR, "Failed to establish connection '%s' to node %d", Mtm->nodes[i].con.connStr, failedNode);
 				}
 			}
+			PQsetNoticeReceiver(conns[i], MtmNoticeReceiver, &i);
 		}
 	}
 	Assert(i == MtmNodes);
