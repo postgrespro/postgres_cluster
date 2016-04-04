@@ -559,7 +559,7 @@ static void pg_decode_shutdown(LogicalDecodingContext * ctx)
 {
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 
-	call_shu\tdown_hook(data);
+	call_shutdown_hook(data);
 
 	pglogical_destroy_relmetacache();
 
