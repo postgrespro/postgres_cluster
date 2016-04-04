@@ -2231,9 +2231,10 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 			}
 			if (!MtmRunUtilityStmt(conns[i], sql, &utility_errmsg) && !ignoreError)
 			{
-				// errorMsg = "Failed to run command at node %d";
-				// XXX: add check for our node
-				errorMsg = utility_errmsg;
+				if (i + 1 == MtmNodeId)
+					errorMsg = utility_errmsg;
+				else
+					errorMsg = "Failed to run command at node %d";
 
 				failedNode = i;
 				break;
@@ -2436,6 +2437,27 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				/* Do not replicate temp tables */
 				CreateStmt *stmt = (CreateStmt *) parsetree;
 				skipCommand = stmt->relation->relpersistence == RELPERSISTENCE_TEMP;
+			}
+			break;
+		case T_IndexStmt:
+			{
+				Oid			relid;
+				LOCKMODE	lockmode;
+				Relation	rel;
+
+				IndexStmt *stmt = (IndexStmt *) parsetree;
+				lockmode = stmt->concurrent ? ShareUpdateExclusiveLock
+						: ShareLock;
+				relid = RangeVarGetRelidExtended(stmt->relation, lockmode,
+												 false, false,
+												 NULL, // ???
+												 NULL);
+
+				rel = heap_open(relid, lockmode);
+
+				skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
+
+				heap_close(rel, NoLock);
 			}
 			break;
 	    default:
