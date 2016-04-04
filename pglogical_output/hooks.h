@@ -7,8 +7,7 @@
 #include "utils/palloc.h"
 #include "replication/reorderbuffer.h"
 
-struct PGLogicalOutputData;
-typedef struct PGLogicalOutputData PGLogicalOutputData;
+#include "pglogical_output/compat.h"
 
 /*
  * This header is to be included by extensions that implement pglogical output
@@ -43,6 +42,8 @@ struct PGLogicalRowFilterArgs
 	void 	   *private_data;
 	Relation	changed_rel;
 	enum ReorderBufferChangeType	change_type;
+	/* detailed row change event from logical decoding */
+	ReorderBufferChange* change;
 };
 
 typedef bool (*pglogical_row_filter_hook_fn)(struct PGLogicalRowFilterArgs *args);
