@@ -49,6 +49,7 @@
 #include "parser/parse_relation.h"
 
 #include "multimaster.h"
+#include "pglogical_relid_map.h"
 
 typedef struct TupleData
 {
@@ -451,19 +452,28 @@ read_rel(StringInfo s, LOCKMODE mode)
 	int			relnamelen;
 	int			nspnamelen;
 	RangeVar*	rv;
-	Oid			relid;
+	Oid			remote_relid = pq_getmsgint(s, 4);
+	Oid         local_relid;
 
-	rv = makeNode(RangeVar);
+	local_relid = pglogical_relid_map_get(remote_relid);
+	if (local_relid == InvalidOid) { 
+		rv = makeNode(RangeVar);
 
-	nspnamelen = pq_getmsgbyte(s);
-	rv->schemaname = (char *) pq_getmsgbytes(s, nspnamelen);
-
-	relnamelen = pq_getmsgbyte(s);
-	rv->relname = (char *) pq_getmsgbytes(s, relnamelen);
-
-	relid = RangeVarGetRelidExtended(rv, mode, false, false, NULL, NULL);
-
-	return heap_open(relid, NoLock);
+		nspnamelen = pq_getmsgbyte(s);
+		rv->schemaname = (char *) pq_getmsgbytes(s, nspnamelen);
+		
+		relnamelen = pq_getmsgbyte(s);
+		rv->relname = (char *) pq_getmsgbytes(s, relnamelen);
+		
+		local_relid = RangeVarGetRelidExtended(rv, mode, false, false, NULL, NULL);
+		pglogical_relid_map_put(remote_relid, local_relid);
+	} else { 
+		nspnamelen = pq_getmsgbyte(s);
+		s->cursor += nspnamelen;
+		relnamelen = pq_getmsgbyte(s);
+		s->cursor += relnamelen;
+	}
+	return heap_open(local_relid, NoLock);
 }
 
 static void
