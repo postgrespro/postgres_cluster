@@ -2247,9 +2247,10 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 			}
 			if (!MtmRunUtilityStmt(conns[i], sql, &utility_errmsg) && !ignoreError)
 			{
-				// errorMsg = "Failed to run command at node %d";
-				// XXX: add check for our node
-				errorMsg = utility_errmsg;
+				if (i + 1 == MtmNodeId)
+					errorMsg = utility_errmsg;
+				else
+					errorMsg = "Failed to run command at node %d";
 
 				failedNode = i;
 				break;
@@ -2452,6 +2453,23 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				/* Do not replicate temp tables */
 				CreateStmt *stmt = (CreateStmt *) parsetree;
 				skipCommand = stmt->relation->relpersistence == RELPERSISTENCE_TEMP;
+			}
+			break;
+		case T_IndexStmt:
+			{
+				Oid			relid;
+				Relation	rel;
+				IndexStmt *stmt = (IndexStmt *) parsetree;
+				bool		isTopLevel = (context == PROCESS_UTILITY_TOPLEVEL);
+
+				if (stmt->concurrent)
+					PreventTransactionChain(isTopLevel,
+												"CREATE INDEX CONCURRENTLY");
+
+				relid = RelnameGetRelid(stmt->relation->relname);
+				rel = heap_open(relid, ShareLock);
+				skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
+				heap_close(rel, NoLock);
 			}
 			break;
 	    default:
