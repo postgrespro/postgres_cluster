@@ -239,11 +239,15 @@ static int MtmReadSocket(int sd, void* buf, int buf_size)
 static void MtmSetSocketOptions(int sd)
 {
 #ifdef TCP_NODELAY
-	int optval = 1;
-	if (setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval)) < 0) {
+	int on = 1;
+	if (setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char const*)&on, sizeof(on)) < 0) {
 		elog(WARNING, "Failed to set TCP_NODELAY: %m");
 	}
 #endif
+	if (setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, (char const*)&on, sizeof(on)) < 0) {
+		elog(WARNING, "Failed to set SO_KEEPALIVE: %m");
+	}
+
 	if (tcp_keepalives_idle) { 
 #ifdef TCP_KEEPIDLE
 		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPIDLE,
