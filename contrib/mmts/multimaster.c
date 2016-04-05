@@ -865,10 +865,13 @@ void MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd)
 
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
-	MtmLock(LW_EXCLUSIVE);
-	MtmSyncClock(globalSnapshot);	
-	MtmUnlock();
-	
+	if (globalSnapshot != INVALID_CSN) {
+		MtmLock(LW_EXCLUSIVE);
+		MtmSyncClock(globalSnapshot);	
+		MtmUnlock();
+	} else { 
+		globalSnapshot = MtmTx.snapshot;
+	}
 	if (!TransactionIdIsValid(gtid->xid)) { 
 		/* In case of recovery InvalidTransactionId is passed */
 		Assert(Mtm->status == MTM_RECOVERY);
@@ -1877,6 +1880,14 @@ void MtmDropNode(int nodeId, bool dropSlot)
 		}		
 	}
 }
+static void
+MtmOnProcExit(int code, Datum arg)
+{
+	if (MtmReplicationNodeId >= 0) { 
+		elog(WARNING, "WAL-sender to %d is terminated", MtmReplicationNodeId); 
+		MtmOnNodeDisconnect(MtmReplicationNodeId);
+	}
+}
 
 static void 
 MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
@@ -1923,13 +1934,17 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 		elog(NOTICE, "Node %d start logical replication to node %d in normal mode", MtmNodeId, MtmReplicationNodeId); 
 	}
 	MtmUnlock();
+	on_proc_exit(MtmOnProcExit, 0);
 }
 
 static void 
 MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
 {
-	elog(WARNING, "Logical replication to node %d is stopped", MtmReplicationNodeId); 
-	MtmOnNodeDisconnect(MtmReplicationNodeId);
+	if (MtmReplicationNodeId >= 0) { 
+		elog(WARNING, "Logical replication to node %d is stopped", MtmReplicationNodeId); 
+		MtmOnNodeDisconnect(MtmReplicationNodeId);
+		MtmReplicationNodeId = -1; /* defuse on_proc_exit hook */
+	}
 }
 
 static bool 
@@ -2167,7 +2182,8 @@ static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg)
 	return ret;
 }
 
-void MtmNoticeReceiver(void *i, const PGresult *res)
+static void 
+MtmNoticeReceiver(void *i, const PGresult *res)
 {
 	char *notice = PQresultErrorMessage(res);
 	char *stripped_notice;
