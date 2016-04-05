@@ -2442,21 +2442,17 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_IndexStmt:
 			{
 				Oid			relid;
-				LOCKMODE	lockmode;
 				Relation	rel;
-
 				IndexStmt *stmt = (IndexStmt *) parsetree;
-				lockmode = stmt->concurrent ? ShareUpdateExclusiveLock
-						: ShareLock;
-				relid = RangeVarGetRelidExtended(stmt->relation, lockmode,
-												 false, false,
-												 NULL, // ???
-												 NULL);
+				bool		isTopLevel = (context == PROCESS_UTILITY_TOPLEVEL);
 
-				rel = heap_open(relid, lockmode);
+				if (stmt->concurrent)
+					PreventTransactionChain(isTopLevel,
+												"CREATE INDEX CONCURRENTLY");
 
+				relid = RelnameGetRelid(stmt->relation->relname);
+				rel = heap_open(relid, ShareLock);
 				skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
-
 				heap_close(rel, NoLock);
 			}
 			break;
