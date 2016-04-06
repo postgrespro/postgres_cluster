@@ -1934,7 +1934,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 		elog(NOTICE, "Node %d start logical replication to node %d in normal mode", MtmNodeId, MtmReplicationNodeId); 
 	}
 	MtmUnlock();
-	on_proc_exit(MtmOnProcExit, 0);
+	on_shmem_exit(MtmOnProcExit, 0);
 }
 
 static void 
