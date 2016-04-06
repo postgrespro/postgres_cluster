@@ -100,7 +100,7 @@ foreach my $node (@nodes)
 {
 	push(@argv, '-c', $node->connstr('postgres'));
 }
-push(@argv, '-n', 10, '-a', 1000, '-w', 10, '-r', 1);
+push(@argv, '-n', 1000, '-a', 1000, '-w', 10, '-r', 1);
 
 diag("running dtmbench -i");
 if (TestLib::run_log([@argv, '-i']))
