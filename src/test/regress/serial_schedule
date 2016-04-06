@@ -160,5 +160,5 @@ test: returning
 test: largeobject
 test: with
 test: xml
-test: event_trigger
+#test: event_trigger
 test: stats
