@@ -103,11 +103,17 @@ foreach my $node (@nodes)
 push(@argv, '-n', 10, '-a', 1000, '-w', 10, '-r', 1);
 
 diag("running dtmbench -i");
-TestLib::run_log([@argv, '-i']);
+if (TestLib::run_log([@argv, '-i']))
+{
+	BAIL_OUT("dtmbench -i failed");
+}
 
 diag("running dtmbench");
-TestLib::run_log(\@argv, '>', \$out);
-if ($out =~ /Wrong sum/)
+if (TestLib::run_log(\@argv, '>', \$out))
+{
+	fail("dtmbench failed");
+}
+elsif ($out =~ /Wrong sum/)
 {
 	fail("inconsistency detected");
 }
