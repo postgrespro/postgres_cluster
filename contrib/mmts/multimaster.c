@@ -2381,7 +2381,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag)
 {
-	bool skipCommand;
+	bool skipCommand = false;
 	MTM_TRACE("%d: Process utility statement %s\n", MyProcPid, queryString);
 	switch (nodeTag(parsetree))
 	{
@@ -2467,11 +2467,35 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 												"CREATE INDEX CONCURRENTLY");
 
 				relid = RelnameGetRelid(stmt->relation->relname);
-				rel = heap_open(relid, ShareLock);
-				skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
-				heap_close(rel, NoLock);
+
+				if (OidIsValid(relid))
+				{
+					rel = heap_open(relid, ShareLock);
+					skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
+					heap_close(rel, NoLock);
+				}
 			}
 			break;
+		case T_DropStmt:
+			{
+				DropStmt *stmt = (DropStmt *) parsetree;
+
+				if (stmt->removeType == OBJECT_TABLE)
+				{
+					RangeVar   *rv = makeRangeVarFromNameList(
+										(List *) lfirst(list_head(stmt->objects)));
+					Oid			relid = RelnameGetRelid(rv->relname);
+
+					if (OidIsValid(relid))
+					{
+						Relation	rel = heap_open(relid, ShareLock);
+						skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
+						heap_close(rel, ShareLock);
+					}
+				}
+			}
+			break;
+		case T_CreateSchemaStmt:
 	    default:
 			skipCommand = false;
 			break;
