@@ -2456,6 +2456,18 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				heap_close(rel, NoLock);
 			}
 			break;
+		case T_DropStmt:
+			{
+				Oid			relid;
+				Relation	rel;
+				DropStmt *stmt = (DropStmt *) parsetree;
+
+				//relid = RelnameGetRelid(stmt->relation->relname);
+				//rel = heap_open(relid, ShareLock);
+				//skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
+				//heap_close(rel, NoLock);
+			}
+			break;
 	    default:
 			skipCommand = false;
 			break;
