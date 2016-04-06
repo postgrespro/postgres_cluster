@@ -2451,9 +2451,13 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 												"CREATE INDEX CONCURRENTLY");
 
 				relid = RelnameGetRelid(stmt->relation->relname);
-				rel = heap_open(relid, ShareLock);
-				skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
-				heap_close(rel, NoLock);
+
+				if (OidIsValid(relid))
+				{
+					rel = heap_open(relid, ShareLock);
+					skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
+					heap_close(rel, NoLock);
+				}
 			}
 			break;
 		case T_DropStmt:
@@ -2475,6 +2479,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				}
 			}
 			break;
+		case T_CreateSchemaStmt:
 	    default:
 			skipCommand = false;
 			break;
