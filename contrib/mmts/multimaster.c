@@ -865,10 +865,13 @@ void MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd)
 
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
-	MtmLock(LW_EXCLUSIVE);
-	MtmSyncClock(globalSnapshot);	
-	MtmUnlock();
-	
+	if (globalSnapshot != INVALID_CSN) {
+		MtmLock(LW_EXCLUSIVE);
+		MtmSyncClock(globalSnapshot);	
+		MtmUnlock();
+	} else { 
+		globalSnapshot = MtmTx.snapshot;
+	}
 	if (!TransactionIdIsValid(gtid->xid)) { 
 		/* In case of recovery InvalidTransactionId is passed */
 		Assert(Mtm->status == MTM_RECOVERY);
@@ -1877,6 +1880,14 @@ void MtmDropNode(int nodeId, bool dropSlot)
 		}		
 	}
 }
+static void
+MtmOnProcExit(int code, Datum arg)
+{
+	if (MtmReplicationNodeId >= 0) { 
+		elog(WARNING, "WAL-sender to %d is terminated", MtmReplicationNodeId); 
+		MtmOnNodeDisconnect(MtmReplicationNodeId);
+	}
+}
 
 static void 
 MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
@@ -1923,13 +1934,17 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 		elog(NOTICE, "Node %d start logical replication to node %d in normal mode", MtmNodeId, MtmReplicationNodeId); 
 	}
 	MtmUnlock();
+	on_proc_exit(MtmOnProcExit, 0);
 }
 
 static void 
 MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
 {
-	elog(WARNING, "Logical replication to node %d is stopped", MtmReplicationNodeId); 
-	MtmOnNodeDisconnect(MtmReplicationNodeId);
+	if (MtmReplicationNodeId >= 0) { 
+		elog(WARNING, "Logical replication to node %d is stopped", MtmReplicationNodeId); 
+		MtmOnNodeDisconnect(MtmReplicationNodeId);
+		MtmReplicationNodeId = -1; /* defuse on_proc_exit hook */
+	}
 }
 
 static bool 
@@ -2159,12 +2174,32 @@ static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg)
 
 		*errmsg = palloc0(errlen);
 
-		/* Strip "ERROR:\t" from beginning and "\n" from end of error string */
+		/* Strip "ERROR:  " from beginning and "\n" from end of error string */
 		strncpy(*errmsg, errstr + 8, errlen - 1 - 8);
 	}
 
 	PQclear(result);
 	return ret;
+}
+
+static void 
+MtmNoticeReceiver(void *i, const PGresult *res)
+{
+	char *notice = PQresultErrorMessage(res);
+	char *stripped_notice;
+	int len = strlen(notice);
+
+	/* Skip notices from other nodes */
+	if ( (*(int *)i) != MtmNodeId - 1)
+		return;
+
+	stripped_notice = palloc0(len);
+
+	/* Strip "NOTICE:  " from beginning and "\n" from end of error string */
+	strncpy(stripped_notice, notice + 9, len - 1 - 9);
+
+	elog(NOTICE, stripped_notice);
+	pfree(stripped_notice);
 }
 
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
@@ -2195,6 +2230,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 					elog(ERROR, "Failed to establish connection '%s' to node %d", Mtm->nodes[i].con.connStr, failedNode);
 				}
 			}
+			PQsetNoticeReceiver(conns[i], MtmNoticeReceiver, &i);
 		}
 	}
 	Assert(i == MtmNodes);
@@ -2211,9 +2247,10 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 			}
 			if (!MtmRunUtilityStmt(conns[i], sql, &utility_errmsg) && !ignoreError)
 			{
-				// errorMsg = "Failed to run command at node %d";
-				// XXX: add check for our node
-				errorMsg = utility_errmsg;
+				if (i + 1 == MtmNodeId)
+					errorMsg = utility_errmsg;
+				else
+					errorMsg = "Failed to run command at node %d";
 
 				failedNode = i;
 				break;
@@ -2416,6 +2453,23 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				/* Do not replicate temp tables */
 				CreateStmt *stmt = (CreateStmt *) parsetree;
 				skipCommand = stmt->relation->relpersistence == RELPERSISTENCE_TEMP;
+			}
+			break;
+		case T_IndexStmt:
+			{
+				Oid			relid;
+				Relation	rel;
+				IndexStmt *stmt = (IndexStmt *) parsetree;
+				bool		isTopLevel = (context == PROCESS_UTILITY_TOPLEVEL);
+
+				if (stmt->concurrent)
+					PreventTransactionChain(isTopLevel,
+												"CREATE INDEX CONCURRENTLY");
+
+				relid = RelnameGetRelid(stmt->relation->relname);
+				rel = heap_open(relid, ShareLock);
+				skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
+				heap_close(rel, NoLock);
 			}
 			break;
 	    default:
