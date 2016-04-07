@@ -140,7 +140,7 @@ HTAB* MtmXid2State;
 static HTAB* MtmGid2State;
 static HTAB* MtmLocalTables;
 
-static bool  MtmIsRecoverySession;
+static bool MtmIsRecoverySession;
 
 static MtmCurrentTrans MtmTx;
 
@@ -198,6 +198,9 @@ static void MtmExecutorFinish(QueryDesc *queryDesc);
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag);
+
+static StringInfo	MtmGUCBuffer;
+static bool			MtmGUCBufferAllocated = false;
 
 /*
  * -------------------------------------------
@@ -1934,7 +1937,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 		elog(NOTICE, "Node %d start logical replication to node %d in normal mode", MtmNodeId, MtmReplicationNodeId); 
 	}
 	MtmUnlock();
-	on_proc_exit(MtmOnProcExit, 0);
+	on_shmem_exit(MtmOnProcExit, 0);
 }
 
 static void 
@@ -2239,6 +2242,12 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	{ 
 		if (conns[i]) 
 		{
+			if (MtmGUCBufferAllocated && !MtmRunUtilityStmt(conns[i], MtmGUCBuffer->data, &utility_errmsg) && !ignoreError)
+			{
+				errorMsg = "Failed to set GUC variables at node %d";
+				failedNode = i;
+				break;
+			}
 			if (!MtmRunUtilityStmt(conns[i], "BEGIN TRANSACTION", &utility_errmsg) && !ignoreError)
 			{
 				errorMsg = "Failed to start transaction at node %d";
@@ -2250,7 +2259,10 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 				if (i + 1 == MtmNodeId)
 					errorMsg = utility_errmsg;
 				else
+				{
+					elog(ERROR, utility_errmsg);
 					errorMsg = "Failed to run command at node %d";
+				}
 
 				failedNode = i;
 				break;
@@ -2381,7 +2393,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag)
 {
-	bool skipCommand;
+	bool skipCommand = false;
 	MTM_TRACE("%d: Process utility statement %s\n", MyProcPid, queryString);
 	switch (nodeTag(parsetree))
 	{
@@ -2412,7 +2424,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_FetchStmt:
 		case T_DoStmt:
 		case T_CreateTableSpaceStmt:
-		case T_DropTableSpaceStmt:
 		case T_AlterTableSpaceOptionsStmt:
 		case T_TruncateStmt:
 		case T_CommentStmt: /* XXX: we could replicate these */;
@@ -2421,9 +2432,9 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ExecuteStmt:
 		case T_DeallocateStmt:
 		case T_GrantStmt: /* XXX: we could replicate some of these these */;
-		case T_GrantRoleStmt:
-		case T_AlterDatabaseStmt:
-		case T_AlterDatabaseSetStmt:
+		//case T_GrantRoleStmt:
+		//case T_AlterDatabaseStmt:
+		//case T_AlterDatabaseSetStmt:
 		case T_NotifyStmt:
 		case T_ListenStmt:
 		case T_UnlistenStmt:
@@ -2432,21 +2443,45 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_VacuumStmt:
 		case T_ExplainStmt:
 		case T_AlterSystemStmt:
-		case T_VariableSetStmt:
 		case T_VariableShowStmt:
 		case T_DiscardStmt:
-		case T_CreateEventTrigStmt:
-		case T_AlterEventTrigStmt:
-		case T_CreateRoleStmt:
-		case T_AlterRoleStmt:
-		case T_AlterRoleSetStmt:
-		case T_DropRoleStmt:
+		//case T_CreateEventTrigStmt:
+		//case T_AlterEventTrigStmt:
+		//case T_CreateRoleStmt:
+		//case T_AlterRoleStmt:
+		//case T_AlterRoleSetStmt:
+		//case T_DropRoleStmt:
 		case T_ReassignOwnedStmt:
 		case T_LockStmt:
-		case T_ConstraintsSetStmt:
+		//case T_ConstraintsSetStmt:
 		case T_CheckPointStmt:
 		case T_ReindexStmt:
 		    skipCommand = true;
+			break;
+		case T_VariableSetStmt:
+			{
+				//VariableSetStmt *stmt = (VariableSetStmt *) parsetree;
+
+				if (!MtmGUCBufferAllocated)
+				{
+					MemoryContext oldcontext;
+
+					oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+					MtmGUCBuffer = makeStringInfo();
+					MemoryContextSwitchTo(oldcontext);
+					MtmGUCBufferAllocated = true;
+				}
+
+				//appendStringInfoString(MtmGUCBuffer, "SET ");
+				//appendStringInfoString(MtmGUCBuffer, stmt->name);
+				//appendStringInfoString(MtmGUCBuffer, " TO ");
+				//appendStringInfoString(MtmGUCBuffer, ExtractSetVariableArgs(stmt));
+				//appendStringInfoString(MtmGUCBuffer, "; ");
+
+				appendStringInfoString(MtmGUCBuffer, queryString);
+
+				skipCommand = true;
+			}
 			break;
 		case T_CreateStmt:
 			{
@@ -2467,9 +2502,32 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 												"CREATE INDEX CONCURRENTLY");
 
 				relid = RelnameGetRelid(stmt->relation->relname);
-				rel = heap_open(relid, ShareLock);
-				skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
-				heap_close(rel, NoLock);
+
+				if (OidIsValid(relid))
+				{
+					rel = heap_open(relid, ShareLock);
+					skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
+					heap_close(rel, NoLock);
+				}
+			}
+			break;
+		case T_DropStmt:
+			{
+				DropStmt *stmt = (DropStmt *) parsetree;
+
+				if (stmt->removeType == OBJECT_TABLE)
+				{
+					RangeVar   *rv = makeRangeVarFromNameList(
+										(List *) lfirst(list_head(stmt->objects)));
+					Oid			relid = RelnameGetRelid(rv->relname);
+
+					if (OidIsValid(relid))
+					{
+						Relation	rel = heap_open(relid, ShareLock);
+						skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
+						heap_close(rel, ShareLock);
+					}
+				}
 			}
 			break;
 	    default:
