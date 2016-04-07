@@ -3,7 +3,9 @@ use warnings;
 
 use PostgresNode;
 use TestLib;
-use Test::More tests => 1;
+use Test::More tests => 2;
+use IPC::Run qw(start finish);
+use Cwd;
 
 my %allocated_ports = ();
 sub allocate_ports
@@ -73,6 +75,7 @@ foreach my $node (@nodes)
 		multimaster.node_id = $id
 		multimaster.conn_strings = '$mm_connstr'
 		multimaster.use_raftable = true
+		multimaster.ignore_tables_without_pk = true
 		raftable.id = $id
 		raftable.peers = '$raft_peers'
 	));
@@ -92,32 +95,96 @@ foreach my $node (@nodes)
 
 my ($rc, $out, $err);
 
-diag("sleeping");
+diag("sleeping 10");
 sleep(10);
 
-my @argv = ('dtmbench');
+diag("preparing the tables");
+if ($nodes[0]->psql('postgres', "create table t (k int primary key, v int)"))
+{
+	BAIL_OUT('failed to create t');
+}
+
+if ($nodes[0]->psql('postgres', "insert into t (select generate_series(0, 999), 0)"))
+{
+	BAIL_OUT('failed to fill t');
+}
+
+if ($nodes[0]->psql('postgres', "create table reader_log (v int)"))
+{
+	BAIL_OUT('failed to create reader_log');
+}
+
+sub reader
+{
+	my ($node, $inref, $outref) = @_;
+
+	my $clients = 1;
+	my $jobs = 1;
+	my $seconds = 30;
+	my $tps = 10;
+	my @argv = (
+		'pgbench',
+		'-n',
+		-c => $clients,
+		-j => $jobs,
+		-T => $seconds,
+		-h => $node->host(),
+		-p => $node->port(),
+		-f => 'tests/writer.pgb',
+		-R => $tps,
+		'postgres',
+	);
+
+	diag("running[" . getcwd() . "]: " . join(' ', @argv));
+
+	return start(\@argv, $inref, $outref);
+}
+
+sub writer
+{
+	my ($node, $inref, $outref) = @_;
+
+	my $clients = 10;
+	my $jobs = 10;
+	my $seconds = 30;
+	my @argv = (
+		'pgbench',
+		'-n',
+		-c => $clients,
+		-j => $jobs,
+		-T => $seconds,
+		-h => $node->host(),
+		-p => $node->port(),
+		-f => 'tests/reader.pgb',
+		'postgres',
+	);
+
+	diag("running[" . getcwd() . "]: " . join(' ', @argv));
+
+	return start(\@argv, $inref, $outref);
+}
+
+diag("starting benches");
+my $in = '';
+my $out = '';
+my @benches = ();
 foreach my $node (@nodes)
 {
-	push(@argv, '-c', $node->connstr('postgres'));
-}
-push(@argv, '-n', 1000, '-a', 1000, '-w', 10, '-r', 1);
-
-diag("running dtmbench -i");
-if (!TestLib::run_log([@argv, '-i']))
-{
-	BAIL_OUT("dtmbench -i failed");
+	push(@benches, writer($node, \$in, \$out));
+	push(@benches, reader($node, \$in, \$out));
 }
 
-diag("running dtmbench");
-if (!TestLib::run_log(\@argv, '>', \$out))
+diag("finishing benches");
+foreach my $bench (@benches)
 {
-	fail("dtmbench failed");
+	finish($bench) || BAIL_OUT("pgbench exited with $?");
 }
-elsif ($out =~ /Wrong sum/)
-{
-	fail("inconsistency detected");
-}
-else
-{
-	pass("all consistent during dtmbench");
-}
+diag($out);
+
+diag("checking readers' logs");
+
+($rc, $out, $err) = $nodes[0]->psql('postgres', "select count(*) from reader_log where v != 0;");
+is($out, 0, "there is nothing except zeros in reader_log");
+
+($rc, $out, $err) = $nodes[0]->psql('postgres', "select count(*) from reader_log where v = 0;");
+isnt($out, 0, "there are some zeros in reader_log");

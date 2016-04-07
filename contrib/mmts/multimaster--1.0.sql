@@ -40,6 +40,10 @@ CREATE FUNCTION mtm.make_table_local(relation regclass) RETURNS void
 AS 'MODULE_PATHNAME','mtm_make_table_local'
 LANGUAGE C;
 
+CREATE FUNCTION mtm.dump_lock_graph() RETURNS text
+AS 'MODULE_PATHNAME','mtm_dump_lock_graph'
+LANGUAGE C;
+
 CREATE TABLE IF NOT EXISTS mtm.ddl_log (issued timestamp with time zone not null, query text);
 
 CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema text, rel_name text, primary key(rel_schema, rel_name));

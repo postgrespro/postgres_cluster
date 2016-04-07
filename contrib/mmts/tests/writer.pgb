@@ -1,0 +1,7 @@
+\setrandom src 0 999
+\setrandom dst 0 999
+\setrandom amount 1 10
+begin;
+update t set v = v - :amount where k=:src;
+update t set v = v + :amount where k=:dst;
+commit;
