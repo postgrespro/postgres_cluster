@@ -62,7 +62,7 @@ foreach my $node (@nodes)
 		listen_addresses = '$host'
 		unix_socket_directories = ''
 		port = $pgport
-		max_prepared_transactions = 10
+		max_prepared_transactions = 1000
 		max_worker_processes = 10
 		wal_level = logical
 		fsync = off	

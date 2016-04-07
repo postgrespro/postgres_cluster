@@ -60,7 +60,7 @@ foreach my $node (@nodes)
 		listen_addresses = '$host'
 		unix_socket_directories = ''
 		port = $pgport
-		max_prepared_transactions = 10
+		max_prepared_transactions = 1000
 		max_worker_processes = 10
 		wal_level = logical
 		fsync = off	
@@ -103,13 +103,13 @@ foreach my $node (@nodes)
 push(@argv, '-n', 1000, '-a', 1000, '-w', 10, '-r', 1);
 
 diag("running dtmbench -i");
-if (TestLib::run_log([@argv, '-i']))
+if (!TestLib::run_log([@argv, '-i']))
 {
 	BAIL_OUT("dtmbench -i failed");
 }
 
 diag("running dtmbench");
-if (TestLib::run_log(\@argv, '>', \$out))
+if (!TestLib::run_log(\@argv, '>', \$out))
 {
 	fail("dtmbench failed");
 }
