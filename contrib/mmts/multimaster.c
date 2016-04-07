@@ -874,7 +874,9 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 	}
 	if (!TransactionIdIsValid(gtid->xid)) { 
 		/* In case of recovery InvalidTransactionId is passed */
-		Assert(Mtm->status == MTM_RECOVERY);
+		if (Mtm->status != MTM_RECOVERY) { 
+			elog(PANIC, "Node %d tries to recover node %d which is in %s mode", MtmReplicationNode, MtmNodeId,  MtmNodeStatusMnem[Mtm->status]);
+		}
 	} else if (Mtm->status == MTM_RECOVERY) { 
 		/* When recovery is completed we get normal transaction ID and switch to normal mode */
 		MtmRecoveryCompleted();
@@ -2303,7 +2305,7 @@ static bool MtmProcessDDLCommand(char const* queryString)
 	rel = heap_openrv_extended(rv, RowExclusiveLock, true);
 
 	if (rel == NULL) {
-		if (!IsTransactionBlock()) {
+		if (!MtmIsBroadcast()) {
 			MtmBroadcastUtilityStmt(queryString, false);
 			return true;
 		}
