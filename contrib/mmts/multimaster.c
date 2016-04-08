@@ -2274,6 +2274,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 			if (MtmGUCBufferAllocated && !MtmRunUtilityStmt(conns[i], MtmGUCBuffer->data, &utility_errmsg) && !ignoreError)
 			{
 				errorMsg = "Failed to set GUC variables at node %d";
+				elog(ERROR, utility_errmsg);
 				failedNode = i;
 				break;
 			}
@@ -2460,7 +2461,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_PrepareStmt:
 		case T_ExecuteStmt:
 		case T_DeallocateStmt:
-		case T_GrantStmt: /* XXX: we could replicate some of these these */;
+		//case T_GrantStmt: /* XXX: we could replicate some of these these */;
 		//case T_GrantRoleStmt:
 		//case T_AlterDatabaseStmt:
 		//case T_AlterDatabaseSetStmt:
@@ -2471,7 +2472,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ClusterStmt: /* XXX: we could replicate these */;
 		case T_VacuumStmt:
 		case T_ExplainStmt:
-		case T_AlterSystemStmt:
+		//case T_AlterSystemStmt:
 		case T_VariableShowStmt:
 		case T_DiscardStmt:
 		//case T_CreateEventTrigStmt:
@@ -2489,7 +2490,13 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			break;
 		case T_VariableSetStmt:
 			{
-				//VariableSetStmt *stmt = (VariableSetStmt *) parsetree;
+				VariableSetStmt *stmt = (VariableSetStmt *) parsetree;
+
+				skipCommand = true;
+
+				/* Prevent SET TRANSACTION from replication */
+				if (MtmTx.isTransactionBlock || stmt->kind == VAR_SET_MULTI)
+					break;
 
 				if (!MtmGUCBufferAllocated)
 				{
@@ -2508,8 +2515,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				//appendStringInfoString(MtmGUCBuffer, "; ");
 
 				appendStringInfoString(MtmGUCBuffer, queryString);
-
-				skipCommand = true;
 			}
 			break;
 		case T_CreateStmt:
@@ -2536,7 +2541,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				{
 					rel = heap_open(relid, ShareLock);
 					skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
-					heap_close(rel, NoLock);
+					heap_close(rel, ShareLock);
 				}
 			}
 			break;
