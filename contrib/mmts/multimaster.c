@@ -1156,7 +1156,7 @@ MtmCheckClusterLock()
 			} else {  
 				/* All lockers are synchronized their logs */
 				/* Remove lock and mark them as receovered */
-				elog(WARNING, "Complete recovery of %d nodes (node mask %lx)", Mtm->nLockers, Mtm->nodeLockerMask);
+				elog(WARNING, "Complete recovery of %d nodes (node mask %lx)", Mtm->nLockers, (long) Mtm->nodeLockerMask);
 				Assert(Mtm->walSenderLockerMask == 0);
 				Assert((Mtm->nodeLockerMask & Mtm->disabledNodeMask) == Mtm->nodeLockerMask);
 				Mtm->disabledNodeMask &= ~Mtm->nodeLockerMask;
@@ -1216,7 +1216,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 
 	clique = MtmFindMaxClique(matrix, MtmNodes, &clique_size);
 	if (clique_size >= MtmNodes/2+1) { /* have quorum */
-		elog(WARNING, "Find clique %lx, disabledNodeMask %lx", clique, Mtm->disabledNodeMask);
+		elog(WARNING, "Find clique %lx, disabledNodeMask %lx", (long) clique, (long) Mtm->disabledNodeMask);
 		MtmLock(LW_EXCLUSIVE);
 		mask = ~clique & (((nodemask_t)1 << MtmNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
 		for (i = 0; mask != 0; i++, mask >>= 1) {
@@ -1244,7 +1244,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 			MtmSwitchClusterMode(MTM_RECOVERY);
 		}
 	} else { 
-		elog(WARNING, "Clique %lx has no quorum", clique);
+		elog(WARNING, "Clique %lx has no quorum", (long) clique);
 		MtmSwitchClusterMode(MTM_IN_MINORITY);
 	}
 	return true;
@@ -1254,12 +1254,12 @@ void MtmCheckQuorum(void)
 {
 	if (Mtm->nNodes < MtmNodes/2+1) {
 		if (Mtm->status == MTM_ONLINE) { /* out of quorum */
-			elog(WARNING, "Node is in minority: disabled mask %lx", Mtm->disabledNodeMask);
+			elog(WARNING, "Node is in minority: disabled mask %lx", (long) Mtm->disabledNodeMask);
 			MtmSwitchClusterMode(MTM_IN_MINORITY);
 		}
 	} else {
 		if (Mtm->status == MTM_IN_MINORITY) { 
-			elog(WARNING, "Node is in majority: dissbled mask %lx", Mtm->disabledNodeMask);
+			elog(WARNING, "Node is in majority: dissbled mask %lx", (long) Mtm->disabledNodeMask);
 			MtmSwitchClusterMode(MTM_ONLINE);
 		}
 	}
@@ -2248,7 +2248,7 @@ MtmNoticeReceiver(void *i, const PGresult *res)
 	/* Strip "NOTICE:  " from beginning and "\n" from end of error string */
 	strncpy(stripped_notice, notice + 9, len - 1 - 9);
 
-	elog(NOTICE, stripped_notice);
+	elog(NOTICE, "%s", stripped_notice);
 	pfree(stripped_notice);
 }
 
@@ -2292,7 +2292,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 			if (MtmGUCBufferAllocated && !MtmRunUtilityStmt(conns[i], MtmGUCBuffer->data, &utility_errmsg) && !ignoreError)
 			{
 				errorMsg = "Failed to set GUC variables at node %d";
-				elog(ERROR, utility_errmsg);
+				elog(NOTICE, "%s", utility_errmsg);
 				failedNode = i;
 				break;
 			}
@@ -2308,7 +2308,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 					errorMsg = utility_errmsg;
 				else
 				{
-					elog(ERROR, utility_errmsg);
+					elog(ERROR, "%s", utility_errmsg);
 					errorMsg = "Failed to run command at node %d";
 				}
 
