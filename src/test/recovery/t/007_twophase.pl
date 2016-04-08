@@ -5,7 +5,7 @@ use TestLib;
 use Test::More tests => 11;
 
 # Setup master node
-my $node_master = get_new_node("Candie");
+my $node_master = get_new_node("master");
 $node_master->init(allows_streaming => 1);
 $node_master->append_conf('postgresql.conf', qq(
 max_prepared_transactions = 10
@@ -15,7 +15,7 @@ $node_master->backup('master_backup');
 $node_master->psql('postgres', "create table t(id int)");
 
 # Setup master node
-my $node_slave = get_new_node('Django');
+my $node_slave = get_new_node('slave');
 $node_slave->init_from_backup($node_master, 'master_backup', has_streaming => 1);
 $node_slave->start;
 
