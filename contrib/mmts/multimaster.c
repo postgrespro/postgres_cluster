@@ -879,7 +879,7 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 	if (!TransactionIdIsValid(gtid->xid)) { 
 		/* In case of recovery InvalidTransactionId is passed */
 		if (Mtm->status != MTM_RECOVERY) { 
-			elog(PANIC, "Node %d tries to recover node %d which is in %s mode", MtmReplicationNode, MtmNodeId,  MtmNodeStatusMnem[Mtm->status]);
+			elog(PANIC, "Node %d tries to recover node %d which is in %s mode", MtmReplicationNodeId, MtmNodeId,  MtmNodeStatusMnem[Mtm->status]);
 		}
 	} else if (Mtm->status == MTM_RECOVERY) { 
 		/* When recovery is completed we get normal transaction ID and switch to normal mode */
@@ -2165,20 +2165,21 @@ Datum mtm_dump_lock_graph(PG_FUNCTION_ARGS)
 	{
 		size_t size;
 		char *data = RaftableGet(psprintf("lock-graph-%d", i+1), &size, NULL, true);
-		if (!data) continue;
-		GlobalTransactionId *gtid = (GlobalTransactionId *)data;
-		GlobalTransactionId *last = (GlobalTransactionId *)(data + size);
-		appendStringInfo(s, "node-%d lock graph: ", i+1);
-		while (gtid != last) { 
-			GlobalTransactionId *src = gtid++;
-			appendStringInfo(s, "%d:%d -> ", src->node, src->xid);
-			while (gtid->node != 0) {
-				GlobalTransactionId *dst = gtid++;
-				appendStringInfo(s, "%d:%d, ", dst->node, dst->xid);
+		if (data) { 
+			GlobalTransactionId *gtid = (GlobalTransactionId *)data;
+			GlobalTransactionId *last = (GlobalTransactionId *)(data + size);
+			appendStringInfo(s, "node-%d lock graph: ", i+1);
+			while (gtid != last) { 
+				GlobalTransactionId *src = gtid++;
+				appendStringInfo(s, "%d:%d -> ", src->node, src->xid);
+				while (gtid->node != 0) {
+					GlobalTransactionId *dst = gtid++;
+					appendStringInfo(s, "%d:%d, ", dst->node, dst->xid);
+				}
+				gtid += 1;
 			}
-			gtid += 1;
+			appendStringInfo(s, "\n");
 		}
-		appendStringInfo(s, "\n");
 	}
 	return CStringGetTextDatum(s->data);
 }
