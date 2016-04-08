@@ -3,7 +3,7 @@ OBJS = multimaster.o raftable.o arbiter.o bytebuf.o bgwpool.o pglogical_output.o
 
 override CPPFLAGS += -I../raftable
 
-SCRIPTS_built = tests/dtmbench
+#SCRIPTS_built = tests/dtmbench
 EXTRA_INSTALL = contrib/raftable contrib/mmts
 
 EXTENSION = multimaster
@@ -11,7 +11,7 @@ DATA = multimaster--1.0.sql
 
 .PHONY: all
 
-all: multimaster.so tests/dtmbench
+all: multimaster.so #tests/dtmbench
 
 tests/dtmbench:
 	make -C tests

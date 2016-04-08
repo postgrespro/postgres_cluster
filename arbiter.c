@@ -105,17 +105,18 @@ static int       gateway;
 static void MtmTransSender(Datum arg);
 static void MtmTransReceiver(Datum arg);
 
-static char const* const messageText[] = 
-{
-	"INVALID",
-	"HANDSHAKE",
-	"READY",
-	"PREPARE",
-	"PREPARED",
-	"ABORTED",
-	"STATUS"
-};
-
+/*
+ * static char const* const messageText[] = 
+ * {
+ *	"INVALID",
+ *	"HANDSHAKE",
+ *	"READY",
+ *	"PREPARE",
+ *	"PREPARED",
+ *	"ABORTED",
+ *	"STATUS"
+ *};
+ */
 
 static BackgroundWorker MtmSender = {
 	"mtm-sender",
@@ -715,7 +716,7 @@ static void MtmTransReceiver(Datum arg)
 								/* Coordinator's disabled mask is wider than of this node: so reject such transaction to avoid 
 								   commit on smaller subset of nodes */
 								elog(WARNING, "Coordinator of distributed transaction see less nodes than node %d: %lx instead of %lx",
-									 msg->node, Mtm->disabledNodeMask, msg->disabledNodeMask);
+									 msg->node, (long) Mtm->disabledNodeMask, (long) msg->disabledNodeMask);
 								MtmAbortTransaction(ts);
 							}
 

@@ -493,7 +493,6 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 	}
 
 	if (!data->forward_changesets && origin_id != InvalidRepOriginId) {
-		*(int*)0 = 0;
 		return true;
 	}
 
