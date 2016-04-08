@@ -879,7 +879,7 @@ _equalPlaceHolderInfo(const PlaceHolderInfo *a, const PlaceHolderInfo *b)
 static bool
 _equalExtensibleNode(const ExtensibleNode *a, const ExtensibleNode *b)
 {
-	const ExtensibleNodeMethods  *methods;
+	const ExtensibleNodeMethods *methods;
 
 	COMPARE_STRING_FIELD(extnodename);
 
@@ -1321,6 +1321,18 @@ _equalRenameStmt(const RenameStmt *a, const RenameStmt *b)
 	COMPARE_STRING_FIELD(newname);
 	COMPARE_SCALAR_FIELD(behavior);
 	COMPARE_SCALAR_FIELD(missing_ok);
+
+	return true;
+}
+
+static bool
+_equalAlterObjectDependsStmt(const AlterObjectDependsStmt *a, const AlterObjectDependsStmt *b)
+{
+	COMPARE_SCALAR_FIELD(objectType);
+	COMPARE_NODE_FIELD(relation);
+	COMPARE_NODE_FIELD(objname);
+	COMPARE_NODE_FIELD(objargs);
+	COMPARE_NODE_FIELD(extname);
 
 	return true;
 }
@@ -3003,6 +3015,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_RenameStmt:
 			retval = _equalRenameStmt(a, b);
+			break;
+		case T_AlterObjectDependsStmt:
+			retval = _equalAlterObjectDependsStmt(a, b);
 			break;
 		case T_AlterObjectSchemaStmt:
 			retval = _equalAlterObjectSchemaStmt(a, b);

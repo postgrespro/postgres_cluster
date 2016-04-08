@@ -126,7 +126,7 @@ typedef struct PlannerGlobal
 
 	bool		wholePlanParallelSafe;	/* is the entire plan parallel safe? */
 
-	bool		hasForeignJoin;	/* does have a pushed down foreign join */
+	bool		hasForeignJoin; /* does have a pushed down foreign join */
 } PlannerGlobal;
 
 /* macro for fetching the Plan associated with a SubPlan node */
@@ -494,7 +494,7 @@ typedef struct RelOptInfo
 	/* materialization information */
 	List	   *pathlist;		/* Path structures */
 	List	   *ppilist;		/* ParamPathInfos used in pathlist */
-	List	   *partial_pathlist;	/* partial Paths */
+	List	   *partial_pathlist;		/* partial Paths */
 	struct Path *cheapest_startup_path;
 	struct Path *cheapest_total_path;
 	struct Path *cheapest_unique_path;
@@ -516,6 +516,7 @@ typedef struct RelOptInfo
 	List	   *lateral_vars;	/* LATERAL Vars and PHVs referenced by rel */
 	Relids		lateral_referencers;	/* rels that reference me laterally */
 	List	   *indexlist;		/* list of IndexOptInfo */
+	List	   *fkeylist;			/* list of ForeignKeyOptInfo */
 	BlockNumber pages;			/* size estimates derived from pg_class */
 	double		tuples;
 	double		allvisfrac;
@@ -524,7 +525,8 @@ typedef struct RelOptInfo
 
 	/* Information about foreign tables and foreign joins */
 	Oid			serverid;		/* identifies server for the table or join */
-	Oid			umid;			/* identifies user mapping for the table or join */
+	Oid			umid;			/* identifies user mapping for the table or
+								 * join */
 	/* use "struct FdwRoutine" to avoid including fdwapi.h here */
 	struct FdwRoutine *fdwroutine;
 	void	   *fdw_private;
@@ -620,6 +622,27 @@ typedef struct IndexOptInfo
 	void		(*amcostestimate) ();	/* AM's cost estimator */
 } IndexOptInfo;
 
+/*
+ * ForeignKeyOptInfo
+ *		Per-foreign-key information for planning/optimization
+ *
+ * Only includes columns from pg_constraint related to foreign keys.
+ *
+ * conkeys[], confkeys[] and conpfeqop[] each have nkeys entries.
+ */
+typedef struct ForeignKeyOptInfo
+{
+	NodeTag		type;
+
+	Oid			conrelid;	/* relation constrained by the foreign key */
+	Oid			confrelid;	/* relation referenced by the foreign key */
+
+	int			nkeys;		/* number of columns in the foreign key */
+	int		   *conkeys;	/* attnums of columns in the constrained table */
+	int		   *confkeys;	/* attnums of columns in the referenced table */
+	Oid		   *conpfeqop;	/* OIDs of equality operators used by the FK */
+
+} ForeignKeyOptInfo;
 
 /*
  * EquivalenceClasses
@@ -848,7 +871,7 @@ typedef struct Path
 
 	bool		parallel_aware; /* engage parallel-aware logic? */
 	bool		parallel_safe;	/* OK to use as part of parallel plan? */
-	int			parallel_degree; /* desired parallel degree; 0 = not parallel */
+	int			parallel_degree;	/* desired parallel degree; 0 = not parallel */
 
 	/* estimated size/costs for path (see costsize.c for more info) */
 	double		rows;			/* estimated number of result tuples */

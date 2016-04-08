@@ -125,6 +125,7 @@
 # actively intend to use prepared transactions.
 #work_mem = 4MB				# min 64kB
 #maintenance_work_mem = 64MB		# min 1MB
+#replacement_sort_tuples = 150000	# limits use of replacement selection sort
 #autovacuum_work_mem = -1		# min 1MB, or -1 to use maintenance_work_mem
 #max_stack_depth = 2MB			# min 100kB
 #dynamic_shared_memory_type = posix	# the default is the first option
@@ -240,7 +241,7 @@
 # These settings are ignored on a standby server.
 
 #synchronous_standby_names = ''	# standby servers that provide sync rep
-				# comma-separated list of application_name
+				# number of sync standbys and comma-separated list of application_name
 				# from standby(s); '*' = all
 #vacuum_defer_cleanup_age = 0	# number of xacts by which cleanup is delayed
 

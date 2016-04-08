@@ -904,7 +904,7 @@ current_windows_user(const char **acct, const char **dom)
 	if (!GetTokenInformation(token, TokenUser, NULL, 0, &retlen) && GetLastError() != 122)
 	{
 		fprintf(stderr,
-				_("%s: could not get token user size: error code %lu\n"),
+				_("%s: could not get token information buffer size: error code %lu\n"),
 				progname, GetLastError());
 		exit(2);
 	}
@@ -912,7 +912,7 @@ current_windows_user(const char **acct, const char **dom)
 	if (!GetTokenInformation(token, TokenUser, tokenuser, retlen, &retlen))
 	{
 		fprintf(stderr,
-				_("%s: could not get token user: error code %lu\n"),
+				_("%s: could not get token information: error code %lu\n"),
 				progname, GetLastError());
 		exit(2);
 	}
@@ -1329,7 +1329,7 @@ results_differ(const char *testname, const char *resultsfile, const char *defaul
 	if (platform_expectfile)
 	{
 		/*
-		 * Replace everything afer the last slash in expectfile with what the
+		 * Replace everything after the last slash in expectfile with what the
 		 * platform_expectfile contains.
 		 */
 		char	   *p = strrchr(expectfile, '/');

@@ -9128,6 +9128,12 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <entry><literal>!'cat'</literal></entry>
        </row>
        <row>
+        <entry> <literal>&lt;-&gt;</literal> </entry>
+        <entry><type>tsquery</> followed by <type>tsquery</></entry>
+        <entry><literal>to_tsquery('fat') &lt;-&gt; to_tsquery('rat')</literal></entry>
+        <entry><literal>'fat' &lt;-&gt; 'rat'</literal></entry>
+       </row>
+       <row>
         <entry> <literal>@&gt;</literal> </entry>
         <entry><type>tsquery</> contains another ?</entry>
         <entry><literal>'cat'::tsquery @&gt; 'cat &amp; rat'::tsquery</literal></entry>
@@ -9218,6 +9224,18 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <entry>produce <type>tsquery</> ignoring punctuation</entry>
         <entry><literal>plainto_tsquery('english', 'The Fat Rats')</literal></entry>
         <entry><literal>'fat' &amp; 'rat'</literal></entry>
+       </row>
+       <row>
+        <entry>
+         <indexterm>
+          <primary>phraseto_tsquery</primary>
+         </indexterm>
+         <literal><function>phraseto_tsquery(<optional> <replaceable class="PARAMETER">config</> <type>regconfig</> , </optional> <replaceable class="PARAMETER">query</> <type>text</type>)</function></literal>
+        </entry>
+        <entry><type>tsquery</type></entry>
+        <entry>produce <type>tsquery</> ignoring punctuation</entry>
+        <entry><literal>phraseto_tsquery('english', 'The Fat Rats')</literal></entry>
+        <entry><literal>'fat' &lt;-&gt; 'rat'</literal></entry>
        </row>
        <row>
         <entry>
@@ -9420,6 +9438,27 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <entry>replace using targets and substitutes from a <command>SELECT</> command</entry>
         <entry><literal>SELECT ts_rewrite('a &amp; b'::tsquery, 'SELECT t,s FROM aliases')</literal></entry>
         <entry><literal>'b' &amp; ( 'foo' | 'bar' )</literal></entry>
+       </row>
+       <row>
+        <entry>
+         <indexterm>
+          <primary>tsquery_phrase</primary>
+         </indexterm>
+         <literal><function>tsquery_phrase(<replaceable class="PARAMETER">query1</replaceable> <type>tsquery</>, <replaceable class="PARAMETER">query2</replaceable> <type>tsquery</>)</function></literal>
+        </entry>
+        <entry><type>tsquery</type></entry>
+        <entry>implementation of <literal>&lt;-&gt;</> (FOLLOWED BY) operator</entry>
+        <entry><literal>tsquery_phrase(to_tsquery('fat'), to_tsquery('cat'))</literal></entry>
+        <entry><literal>'fat' &lt;-&gt; 'cat'</literal></entry>
+       </row>
+       <row>
+        <entry>
+         <literal><function>tsquery_phrase(<replaceable class="PARAMETER">query1</replaceable> <type>tsquery</>, <replaceable class="PARAMETER">query2</replaceable> <type>tsquery</>, <replaceable class="PARAMETER">distance</replaceable> <type>integer</>)</function></literal>
+        </entry>
+        <entry><type>tsquery</type></entry>
+        <entry>phrase-concatenate with distance</entry>
+        <entry><literal>tsquery_phrase(to_tsquery('fat'), to_tsquery('cat'), 10)</literal></entry>
+        <entry><literal>'fat' &lt;10&gt; 'cat'</literal></entry>
        </row>
        <row>
         <entry>
@@ -10903,6 +10942,9 @@ table2-mapping
    <primary>jsonb_set</primary>
   </indexterm>
   <indexterm>
+   <primary>jsonb_insert</primary>
+  </indexterm>
+  <indexterm>
    <primary>jsonb_pretty</primary>
   </indexterm>
 
@@ -11184,6 +11226,39 @@ table2-mapping
         </para></entry>
        </row>
       <row>
+       <entry>
+           <para><literal>
+           jsonb_insert(target jsonb, path text[], new_value jsonb, <optional><parameter>insert_after</parameter> <type>boolean</type></optional>)
+           </literal></para>
+       </entry>
+       <entry><para><type>jsonb</type></para></entry>
+       <entry>
+         Returns <replaceable>target</replaceable> with
+         <replaceable>new_value</replaceable> inserted. If
+         <replaceable>target</replaceable> section designated by
+         <replaceable>path</replaceable> is in a JSONB array,
+         <replaceable>new_value</replaceable> will be inserted before target or
+         after if <replaceable>insert_after</replaceable> is true (default is
+         <literal>false</>). If <replaceable>target</replaceable> section
+         designated by <replaceable>path</replaceable> is in JSONB object,
+         <replaceable>new_value</replaceable> will be inserted only if
+         <replaceable>target</replaceable> does not exist. As with the path
+         orientated operators, negative integers that appear in
+         <replaceable>path</replaceable> count from the end of JSON arrays.
+       </entry>
+       <entry>
+           <para><literal>
+               jsonb_insert('{"a": [0,1,2]}', '{a, 1}', '"new_value"')
+           </literal></para>
+           <para><literal>
+               jsonb_insert('{"a": [0,1,2]}', '{a, 1}', '"new_value"', true)
+           </literal></para>
+       </entry>
+       <entry><para><literal>{"a": [0, "new_value", 1, 2]}</literal>
+         </para><para><literal>{"a": [0, 1, "new_value", 2]}</literal>
+        </para></entry>
+       </row>
+      <row>
        <entry><para><literal>jsonb_pretty(from_json jsonb)</literal>
          </para></entry>
        <entry><para><type>text</type></para></entry>
@@ -11235,10 +11310,11 @@ table2-mapping
   <note>
     <para>
       All the items of the <literal>path</> parameter of <literal>jsonb_set</>
-      must be present in the <literal>target</>, unless
-      <literal>create_missing</> is true, in which case all but the last item
-      must be present. If these conditions are not met the <literal>target</>
-      is returned unchanged.
+      as well as <literal>jsonb_insert</> except the last item must be present
+      in the <literal>target</>. If <literal>create_missing</> is false, all
+      items of the <literal>path</> parameter of <literal>jsonb_set</> must be
+      present. If these conditions are not met the <literal>target</> is
+      returned unchanged.
     </para>
     <para>
       If the last path item is an object key, it will be created if it
@@ -17302,8 +17378,9 @@ SELECT set_config('log_statement_stats', 'off', false);
    <para>
     The functions shown in <xref
     linkend="functions-admin-signal-table"> send control signals to
-    other server processes.  Use of these functions is usually restricted
-    to superusers, with noted exceptions.
+    other server processes.  Use of these functions is restricted to
+    superusers by default but access may be granted to others with the
+    <command>GRANT</command>, with noted exceptions.
    </para>
 
    <table id="functions-admin-signal-table">
@@ -17453,7 +17530,7 @@ SELECT set_config('log_statement_stats', 'off', false);
         <literal><function>pg_create_restore_point(<parameter>name</> <type>text</>)</function></literal>
         </entry>
        <entry><type>pg_lsn</type></entry>
-       <entry>Create a named point for performing restore (restricted to superusers)</entry>
+       <entry>Create a named point for performing restore (restricted to superusers by default, but other users can be granted EXECUTE to run the function)</entry>
       </row>
       <row>
        <entry>
@@ -17478,17 +17555,24 @@ SELECT set_config('log_statement_stats', 'off', false);
       </row>
       <row>
        <entry>
-        <literal><function>pg_start_backup(<parameter>label</> <type>text</> <optional>, <parameter>fast</> <type>boolean</> </optional>)</function></literal>
+        <literal><function>pg_start_backup(<parameter>label</> <type>text</> <optional>, <parameter>fast</> <type>boolean</> <optional>, <parameter>exclusive</> <type>boolean</> </optional></optional>)</function></literal>
         </entry>
        <entry><type>pg_lsn</type></entry>
-       <entry>Prepare for performing on-line backup (restricted to superusers or replication roles)</entry>
+       <entry>Prepare for performing on-line backup (restricted to superusers by default, but other users can be granted EXECUTE to run the function)</entry>
       </row>
       <row>
        <entry>
         <literal><function>pg_stop_backup()</function></literal>
         </entry>
        <entry><type>pg_lsn</type></entry>
-       <entry>Finish performing on-line backup (restricted to superusers or replication roles)</entry>
+       <entry>Finish performing exclusive on-line backup (restricted to superusers by default, but other users can be granted EXECUTE to run the function)</entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>pg_stop_backup(<parameter>exclusive</> <type>boolean</>)</function></literal>
+        </entry>
+       <entry><type>setof record</type></entry>
+       <entry>Finish performing exclusive or non-exclusive on-line backup (restricted to superusers by default, but other users can be granted EXECUTE to run the function)</entry>
       </row>
       <row>
        <entry>
@@ -17509,7 +17593,7 @@ SELECT set_config('log_statement_stats', 'off', false);
         <literal><function>pg_switch_xlog()</function></literal>
         </entry>
        <entry><type>pg_lsn</type></entry>
-       <entry>Force switch to a new transaction log file (restricted to superusers)</entry>
+       <entry>Force switch to a new transaction log file (restricted to superusers by default, but other users can be granted EXECUTE to run the function)</entry>
       </row>
       <row>
        <entry>
@@ -17537,15 +17621,19 @@ SELECT set_config('log_statement_stats', 'off', false);
    </table>
 
    <para>
-    <function>pg_start_backup</> accepts an
-    arbitrary user-defined label for the backup.  (Typically this would be
-    the name under which the backup dump file will be stored.)  The function
-    writes a backup label file (<filename>backup_label</>) and, if there
-    are any links in the <filename>pg_tblspc/</> directory, a tablespace map
-    file (<filename>tablespace_map</>) into the database cluster's data
-    directory, performs a checkpoint, and then returns the backup's starting
-    transaction log location as text.  The user can ignore this result value,
-    but it is provided in case it is useful.
+    <function>pg_start_backup</> accepts an arbitrary user-defined label for
+    the backup.  (Typically this would be the name under which the backup dump
+    file will be stored.) When used in exclusive mode, the function writes a
+    backup label file (<filename>backup_label</>) and, if there are any links
+    in the <filename>pg_tblspc/</> directory, a tablespace map file
+    (<filename>tablespace_map</>) into the database cluster's data directory,
+    performs a checkpoint, and then returns the backup's starting transaction
+    log location as text.  The user can ignore this result value, but it is
+    provided in case it is useful. When used in non-exclusive mode, the
+    contents of these files are instead returned by the
+    <function>pg_stop_backup</> function, and should be written to the backup
+    by the caller.
+
 <programlisting>
 postgres=# select pg_start_backup('label_goes_here');
  pg_start_backup
@@ -17560,10 +17648,17 @@ postgres=# select pg_start_backup('label_goes_here');
    </para>
 
    <para>
-    <function>pg_stop_backup</> removes the label file and, if it exists,
-    the <filename>tablespace_map</> file created by
-    <function>pg_start_backup</>, and creates a backup history file in
-    the transaction log archive area.  The history file includes the label given to
+    In an exclusive backup, <function>pg_stop_backup</> removes the label file
+    and, if it exists, the <filename>tablespace_map</> file created by
+    <function>pg_start_backup</>. In a non-exclusive backup, the contents of
+    the <filename>backup_label</> and <filename>tablespace_map</> are returned
+    in the result of the function, and should be written to files in the
+    backup (and not in the data directory).
+   </para>
+
+   <para>
+    The function also creates a backup history file in the transaction log
+    archive area. The history file includes the label given to
     <function>pg_start_backup</>, the starting and ending transaction log locations for
     the backup, and the starting and ending times of the backup.  The return
     value is the backup's ending transaction log location (which again
@@ -17766,7 +17861,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         <literal><function>pg_xlog_replay_pause()</function></literal>
         </entry>
        <entry><type>void</type></entry>
-       <entry>Pauses recovery immediately (restricted to superusers).
+       <entry>Pauses recovery immediately (restricted to superusers by default, but other users can be granted EXECUTE to run the function).
        </entry>
       </row>
       <row>
@@ -17774,7 +17869,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         <literal><function>pg_xlog_replay_resume()</function></literal>
         </entry>
        <entry><type>void</type></entry>
-       <entry>Restarts recovery if it was paused (restricted to superusers).
+       <entry>Restarts recovery if it was paused (restricted to superusers by default, but other users can be granted EXECUTE to run the function).
        </entry>
       </row>
      </tbody>
@@ -18234,6 +18329,51 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         parameter <parameter>flush</parameter> determines whether the
         corresponding local transaction will be guaranteed to have been
         flushed to disk or not.
+       </entry>
+      </row>
+
+      <row>
+       <entry id="pg-logical-emit-message-text">
+        <indexterm>
+         <primary>pg_logical_emit_message</primary>
+        </indexterm>
+        <literal><function>pg_logical_emit_message(<parameter>transactional</parameter> <type>bool</type>, <parameter>prefix</parameter> <type>text</type>, <parameter>content</parameter> <type>text</type>)</function></literal>
+       </entry>
+       <entry>
+        void
+       </entry>
+       <entry>
+        Emit text logical decoding message. This can be used to pass generic
+        messages to logical decoding plugins through WAL. The parameter
+        <parameter>transactional</parameter> specifies if the message should
+        be part of current transaction or if it should be written immediately
+        and decoded as soon as the logical decoding reads the record. The
+        <parameter>prefix</parameter> is textual prefix used by the logical
+        decoding plugins to easily recognize interesting messages for them.
+        The <parameter>content</parameter> is the text of the message.
+       </entry>
+      </row>
+
+      <row>
+       <entry id="pg-logical-emit-message-bytea">
+        <indexterm>
+         <primary>>pg_logical_emit_message</primary>
+        </indexterm>
+        <literal><function>>pg_logical_emit_message(<parameter>transactional</parameter> <type>bool</type>, <parameter>prefix</parameter> <type>text</type>, <parameter>content</parameter> <type>bytea</type>)</function></literal>
+       </entry>
+       <entry>
+        void
+       </entry>
+       <entry>
+        Emit binary logical decoding message. This can be used to pass generic
+        messages to logical decoding plugins through WAL. The parameter
+        <parameter>transactional</parameter> specifies if the message should
+        be part of current transaction or if it should be written immediately
+        and decoded as soon as the logical decoding reads the record. The
+        <parameter>prefix</parameter> is textual prefix used by the logical
+        decoding plugins to easily recognize interesting messages for them.
+        The <parameter>content</parameter> is the binary content of the
+        message.
        </entry>
       </row>
 

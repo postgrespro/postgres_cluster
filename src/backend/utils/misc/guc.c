@@ -877,6 +877,15 @@ static struct config_bool ConfigureNamesBool[] =
 		true,
 		NULL, NULL, NULL
 	},
+	{
+		{"enable_fkey_estimates", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Enables use of foreign keys for estimating joins."),
+			NULL
+		},
+		&enable_fkey_estimates,
+		true,
+		NULL, NULL, NULL
+	},
 
 	{
 		{"geqo", PGC_USERSET, QUERY_TUNING_GEQO,
@@ -1916,6 +1925,16 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&maintenance_work_mem,
 		65536, 1024, MAX_KILOBYTES,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"replacement_sort_tuples", PGC_USERSET, RESOURCES_MEM,
+			gettext_noop("Sets the maximum number of tuples to be sorted using replacement selection."),
+			gettext_noop("When more tuples than this are present, quicksort will be used.")
+		},
+		&replacement_sort_tuples,
+		150000, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
 
@@ -3448,7 +3467,7 @@ static struct config_string ConfigureNamesString[] =
 
 	{
 		{"synchronous_standby_names", PGC_SIGHUP, REPLICATION_MASTER,
-			gettext_noop("List of names of potential synchronous standbys."),
+			gettext_noop("Number of synchronous standbys and list of names of potential synchronous ones."),
 			NULL,
 			GUC_LIST_INPUT
 		},
@@ -7000,22 +7019,37 @@ AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt)
 					 errmsg("parameter \"%s\" cannot be changed",
 							name)));
 
+		/*
+		 * If a value is specified, verify that it's sane.
+		 */
 		if (value)
 		{
 			union config_var_val newval;
 			void	   *newextra = NULL;
 
+			/* Check that it's acceptable for the indicated parameter */
 			if (!parse_and_validate_value(record, name, value,
 										  PGC_S_FILE, ERROR,
 										  &newval, &newextra))
 				ereport(ERROR,
-						(errmsg("invalid value for parameter \"%s\": \"%s\"",
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("invalid value for parameter \"%s\": \"%s\"",
 								name, value)));
 
 			if (record->vartype == PGC_STRING && newval.stringval != NULL)
 				free(newval.stringval);
 			if (newextra)
 				free(newextra);
+
+			/*
+			 * We must also reject values containing newlines, because the
+			 * grammar for config files doesn't support embedded newlines in
+			 * string literals.
+			 */
+			if (strchr(value, '\n'))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("parameter value for ALTER SYSTEM must not contain a newline")));
 		}
 	}
 
@@ -7052,13 +7086,15 @@ AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt)
 			infile = AllocateFile(AutoConfFileName, "r");
 			if (infile == NULL)
 				ereport(ERROR,
-						(errmsg("could not open file \"%s\": %m",
+						(errcode_for_file_access(),
+						 errmsg("could not open file \"%s\": %m",
 								AutoConfFileName)));
 
 			/* parse it */
 			if (!ParseConfigFp(infile, AutoConfFileName, 0, LOG, &head, &tail))
 				ereport(ERROR,
-						(errmsg("could not parse contents of file \"%s\"",
+						(errcode(ERRCODE_CONFIG_FILE_ERROR),
+						 errmsg("could not parse contents of file \"%s\"",
 								AutoConfFileName)));
 
 			FreeFile(infile);

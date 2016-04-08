@@ -3204,6 +3204,20 @@ _copyRenameStmt(const RenameStmt *from)
 	return newnode;
 }
 
+static AlterObjectDependsStmt *
+_copyAlterObjectDependsStmt(const AlterObjectDependsStmt *from)
+{
+	AlterObjectDependsStmt *newnode = makeNode(AlterObjectDependsStmt);
+
+	COPY_SCALAR_FIELD(objectType);
+	COPY_NODE_FIELD(relation);
+	COPY_NODE_FIELD(objname);
+	COPY_NODE_FIELD(objargs);
+	COPY_NODE_FIELD(extname);
+
+	return newnode;
+}
+
 static AlterObjectSchemaStmt *
 _copyAlterObjectSchemaStmt(const AlterObjectSchemaStmt *from)
 {
@@ -4189,7 +4203,7 @@ _copyList(const List *from)
 static ExtensibleNode *
 _copyExtensibleNode(const ExtensibleNode *from)
 {
-	ExtensibleNode	   *newnode;
+	ExtensibleNode *newnode;
 	const ExtensibleNodeMethods *methods;
 
 	methods = GetExtensibleNodeMethods(from->extnodename, false);
@@ -4681,6 +4695,9 @@ copyObject(const void *from)
 			break;
 		case T_RenameStmt:
 			retval = _copyRenameStmt(from);
+			break;
+		case T_AlterObjectDependsStmt:
+			retval = _copyAlterObjectDependsStmt(from);
 			break;
 		case T_AlterObjectSchemaStmt:
 			retval = _copyAlterObjectSchemaStmt(from);

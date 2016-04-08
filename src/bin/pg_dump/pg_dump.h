@@ -81,6 +81,18 @@ typedef enum
 	DO_POLICY
 } DumpableObjectType;
 
+/* component types of an object which can be selected for dumping */
+typedef uint32 DumpComponents;	/* a bitmask of dump object components */
+#define DUMP_COMPONENT_NONE			(0)
+#define DUMP_COMPONENT_DEFINITION	(1 << 0)
+#define DUMP_COMPONENT_DATA			(1 << 1)
+#define DUMP_COMPONENT_COMMENT		(1 << 2)
+#define DUMP_COMPONENT_SECLABEL		(1 << 3)
+#define DUMP_COMPONENT_ACL			(1 << 4)
+#define DUMP_COMPONENT_POLICY		(1 << 5)
+#define DUMP_COMPONENT_USERMAP		(1 << 6)
+#define DUMP_COMPONENT_ALL			(0xFFFF)
+
 typedef struct _dumpableObject
 {
 	DumpableObjectType objType;
@@ -88,7 +100,8 @@ typedef struct _dumpableObject
 	DumpId		dumpId;			/* assigned by AssignDumpId() */
 	char	   *name;			/* object name (should never be NULL) */
 	struct _namespaceInfo *namespace;	/* containing namespace, or NULL */
-	bool		dump;			/* true if we want to dump this object */
+	DumpComponents dump;		/* bitmask of components to dump */
+	DumpComponents dump_contains;		/* as above, but for contained objects */
 	bool		ext_member;		/* true if object is member of extension */
 	DumpId	   *dependencies;	/* dumpIds of objects this one depends on */
 	int			nDeps;			/* number of valid dependencies */
@@ -100,6 +113,9 @@ typedef struct _namespaceInfo
 	DumpableObject dobj;
 	char	   *rolname;		/* name of owner, or empty string */
 	char	   *nspacl;
+	char	   *rnspacl;
+	char	   *initnspacl;
+	char	   *initrnspacl;
 } NamespaceInfo;
 
 typedef struct _extensionInfo
@@ -122,6 +138,9 @@ typedef struct _typeInfo
 	 */
 	char	   *rolname;		/* name of owner, or empty string */
 	char	   *typacl;
+	char	   *rtypacl;
+	char	   *inittypacl;
+	char	   *initrtypacl;
 	Oid			typelem;
 	Oid			typrelid;
 	char		typrelkind;		/* 'r', 'v', 'c', etc */
@@ -151,6 +170,9 @@ typedef struct _funcInfo
 	Oid		   *argtypes;
 	Oid			prorettype;
 	char	   *proacl;
+	char	   *rproacl;
+	char	   *initproacl;
+	char	   *initrproacl;
 } FuncInfo;
 
 /* AggInfo is a superset of FuncInfo */
@@ -207,6 +229,9 @@ typedef struct _tableInfo
 	DumpableObject dobj;
 	char	   *rolname;		/* name of owner, or empty string */
 	char	   *relacl;
+	char	   *rrelacl;
+	char	   *initrelacl;
+	char	   *initrrelacl;
 	char		relkind;
 	char		relpersistence; /* relation persistence */
 	bool		relispopulated; /* relation is populated */
@@ -375,6 +400,9 @@ typedef struct _procLangInfo
 	Oid			laninline;
 	Oid			lanvalidator;
 	char	   *lanacl;
+	char	   *rlanacl;
+	char	   *initlanacl;
+	char	   *initrlanacl;
 	char	   *lanowner;		/* name of owner, or empty string */
 } ProcLangInfo;
 
@@ -444,6 +472,9 @@ typedef struct _fdwInfo
 	char	   *fdwvalidator;
 	char	   *fdwoptions;
 	char	   *fdwacl;
+	char	   *rfdwacl;
+	char	   *initfdwacl;
+	char	   *initrfdwacl;
 } FdwInfo;
 
 typedef struct _foreignServerInfo
@@ -454,6 +485,9 @@ typedef struct _foreignServerInfo
 	char	   *srvtype;
 	char	   *srvversion;
 	char	   *srvacl;
+	char	   *rsrvacl;
+	char	   *initsrvacl;
+	char	   *initrsrvacl;
 	char	   *srvoptions;
 } ForeignServerInfo;
 
@@ -470,6 +504,9 @@ typedef struct _blobInfo
 	DumpableObject dobj;
 	char	   *rolname;
 	char	   *blobacl;
+	char	   *rblobacl;
+	char	   *initblobacl;
+	char	   *initrblobacl;
 } BlobInfo;
 
 /*

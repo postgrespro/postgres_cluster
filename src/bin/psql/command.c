@@ -822,6 +822,28 @@ exec_command(const char *cmd,
 		}
 	}
 
+	/* \errverbose -- display verbose message from last failed query */
+	else if (strcmp(cmd, "errverbose") == 0)
+	{
+		if (pset.last_error_result)
+		{
+			char	   *msg;
+
+			msg = PQresultVerboseErrorMessage(pset.last_error_result,
+											  PQERRORS_VERBOSE,
+											  PQSHOW_CONTEXT_ALWAYS);
+			if (msg)
+			{
+				psql_error("%s", msg);
+				PQfreemem(msg);
+			}
+			else
+				puts(_("out of memory"));
+		}
+		else
+			puts(_("There was no previous error."));
+	}
+
 	/* \f -- change field separator */
 	else if (strcmp(cmd, "f") == 0)
 	{
@@ -846,6 +868,13 @@ exec_command(const char *cmd,
 			pset.gfname = pg_strdup(fname);
 		}
 		free(fname);
+		status = PSQL_CMD_SEND;
+	}
+
+	/* \gexec -- send query and execute each field of result */
+	else if (strcmp(cmd, "gexec") == 0)
+	{
+		pset.gexec_flag = true;
 		status = PSQL_CMD_SEND;
 	}
 
