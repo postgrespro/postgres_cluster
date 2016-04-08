@@ -108,6 +108,7 @@ PG_FUNCTION_INFO_V1(mtm_get_snapshot);
 PG_FUNCTION_INFO_V1(mtm_get_nodes_state);
 PG_FUNCTION_INFO_V1(mtm_get_cluster_state);
 PG_FUNCTION_INFO_V1(mtm_make_table_local);
+PG_FUNCTION_INFO_V1(mtm_dump_lock_graph);
 
 static Snapshot MtmGetSnapshot(Snapshot snapshot);
 static void MtmInitialize(void);
@@ -877,7 +878,9 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 	}
 	if (!TransactionIdIsValid(gtid->xid)) { 
 		/* In case of recovery InvalidTransactionId is passed */
-		Assert(Mtm->status == MTM_RECOVERY);
+		if (Mtm->status != MTM_RECOVERY) { 
+			elog(PANIC, "Node %d tries to recover node %d which is in %s mode", MtmReplicationNode, MtmNodeId,  MtmNodeStatusMnem[Mtm->status]);
+		}
 	} else if (Mtm->status == MTM_RECOVERY) { 
 		/* When recovery is completed we get normal transaction ID and switch to normal mode */
 		MtmRecoveryCompleted();
@@ -2154,6 +2157,31 @@ Datum mtm_make_table_local(PG_FUNCTION_ARGS)
 	return false;
 }
 
+Datum mtm_dump_lock_graph(PG_FUNCTION_ARGS)
+{
+	StringInfo s = makeStringInfo();
+	int i;
+	for (i = 0; i < MtmNodes; i++)
+	{
+		size_t size;
+		char *data = RaftableGet(psprintf("lock-graph-%d", i+1), &size, NULL, true);
+		if (!data) continue;
+		GlobalTransactionId *gtid = (GlobalTransactionId *)data;
+		GlobalTransactionId *last = (GlobalTransactionId *)(data + size);
+		appendStringInfo(s, "node-%d lock graph: ", i+1);
+		while (gtid != last) { 
+			GlobalTransactionId *src = gtid++;
+			appendStringInfo(s, "%d:%d -> ", src->node, src->xid);
+			while (gtid->node != 0) {
+				GlobalTransactionId *dst = gtid++;
+				appendStringInfo(s, "%d:%d, ", dst->node, dst->xid);
+			}
+			gtid += 1;
+		}
+		appendStringInfo(s, "\n");
+	}
+	return CStringGetTextDatum(s->data);
+}
 
 /*
  * -------------------------------------------
@@ -2316,7 +2344,7 @@ static bool MtmProcessDDLCommand(char const* queryString)
 	rel = heap_openrv_extended(rv, RowExclusiveLock, true);
 
 	if (rel == NULL) {
-		if (!IsTransactionBlock()) {
+		if (!MtmIsBroadcast()) {
 			MtmBroadcastUtilityStmt(queryString, false);
 			return true;
 		}
