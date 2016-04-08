@@ -668,6 +668,29 @@ MtmBeginTransaction(MtmCurrentTrans* x)
     }
 }
 
+
+static MtmTransState* 
+MtmCreateTransState(MtmCurrentTrans* x)
+{
+	bool found;
+	MtmTransState* ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, &found);
+	if (!found) {
+		ts->status = TRANSACTION_STATUS_IN_PROGRESS;
+		ts->snapshot = x->snapshot;
+		if (TransactionIdIsValid(x->gtid.xid)) { 		
+			Assert(x->gtid.node != MtmNodeId);
+			ts->gtid = x->gtid;
+		} else { 
+			/* I am coordinator of transaction */
+			ts->gtid.xid = x->xid;
+			ts->gtid.node = MtmNodeId;
+		}
+	}
+	return ts;
+}
+
+	
+	
 /* 
  * Prepare transaction for two-phase commit.
  * This code is executed by PRE_PREPARE hook before PREPARE message is sent to replicas by logical replication
@@ -676,7 +699,7 @@ static void
 MtmPrePrepareTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
-	TransactionId *subxids;
+	TransactionId* subxids;
 	
 	if (!x->isDistributed) {
 		return;
@@ -704,14 +727,12 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 		MtmCheckClusterLock();
 	}
 
-	ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, NULL);
-	ts->status = TRANSACTION_STATUS_IN_PROGRESS;
+	ts = MtmCreateTransState(x);
 	/* 
 	 * Invalid CSN prevent replication of transaction by logical replication 
 	 */	   
 	ts->snapshot = x->isReplicated || !x->containsDML ? INVALID_CSN : x->snapshot;
 	ts->csn = MtmAssignCSN();	
-	ts->gtid = x->gtid;
 	ts->procno = MyProc->pgprocno;
 	ts->nVotes = 1; /* I am voted myself */
 	ts->votingCompleted = false;
@@ -723,15 +744,6 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	x->csn = ts->csn;
 
 	Mtm->transCount += 1;
-
-	if (TransactionIdIsValid(x->gtid.xid)) { 		
-		Assert(x->gtid.node != MtmNodeId);
-		ts->gtid = x->gtid;
-	} else { 
-		/* I am coordinator of transaction */
-		ts->gtid.xid = x->xid;
-		ts->gtid.node = MtmNodeId;
-	}
 	MtmTransactionListAppend(ts);
 	MtmAddSubtransactions(ts, subxids, ts->nSubxids);
 	MTM_TRACE("%d: MtmPrePrepareTransaction prepare commit of %d (gtid.xid=%d, gtid.node=%d, CSN=%ld)\n", 
@@ -845,7 +857,9 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				MtmTransactionListAppend(ts);
 			}
 			MtmSendNotificationMessage(ts, MSG_ABORTED); /* send notification to coordinator */
-		}				
+		} else if (x->status == TRANSACTION_STATUS_ABORTED && x->isReplicated && !x->isPrepared) {
+			hash_search(MtmXid2State, &x->xid, HASH_REMOVE, NULL);
+		}
 		MtmUnlock();
 	}
 	MtmResetTransaction(x);
@@ -869,9 +883,19 @@ void MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd)
 
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
+	MtmTx.gtid = *gtid;
+	MtmTx.xid = GetCurrentTransactionId();
+	MtmTx.isReplicated = true;
+	MtmTx.isDistributed = true;
+	MtmTx.containsDML = true;
+
 	if (globalSnapshot != INVALID_CSN) {
 		MtmLock(LW_EXCLUSIVE);
 		MtmSyncClock(globalSnapshot);	
+		MtmTx.snapshot = globalSnapshot;	
+		if (Mtm->status != MTM_RECOVERY) { 
+			MtmCreateTransState(&MtmTx); /* we need local->remote xid mapping for deadlock detection */
+		}
 		MtmUnlock();
 	} else { 
 		globalSnapshot = MtmTx.snapshot;
@@ -879,18 +903,12 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 	if (!TransactionIdIsValid(gtid->xid)) { 
 		/* In case of recovery InvalidTransactionId is passed */
 		if (Mtm->status != MTM_RECOVERY) { 
-			elog(PANIC, "Node %d tries to recover node %d which is in %s mode", MtmReplicationNodeId, MtmNodeId,  MtmNodeStatusMnem[Mtm->status]);
+			elog(PANIC, "Node %d tries to recover node %d which is in %s mode", gtid->node, MtmNodeId,  MtmNodeStatusMnem[Mtm->status]);
 		}
 	} else if (Mtm->status == MTM_RECOVERY) { 
 		/* When recovery is completed we get normal transaction ID and switch to normal mode */
 		MtmRecoveryCompleted();
 	}
-	MtmTx.gtid = *gtid;
-	MtmTx.xid = GetCurrentTransactionId();
-	MtmTx.snapshot = globalSnapshot;	
-	MtmTx.isReplicated = true;
-	MtmTx.isDistributed = true;
-	MtmTx.containsDML = true;
 }
 
 void  MtmSetCurrentTransactionGID(char const* gid)

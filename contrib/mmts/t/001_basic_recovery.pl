@@ -31,13 +31,15 @@ my $nnodes = 3;
 my @nodes = ();
 my $pgconf_common = qq(
 	listen_addresses = '127.0.0.1'
-	max_prepared_transactions = 10
-	max_worker_processes = 10
+	max_prepared_transactions = 200
+    max_connections = 200
+	max_worker_processes = 100
 	max_wal_senders = 10
 	max_replication_slots = 10
 	wal_level = logical
+    wal_sender_timeout = 0
 	shared_preload_libraries = 'raftable,multimaster'
-	multimaster.workers=4
+	multimaster.workers=10
 	multimaster.queue_size=10485760 # 10mb
 );
 
