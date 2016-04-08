@@ -2,7 +2,7 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 12;
+use Test::More tests => 11;
 
 # Setup master node
 my $node_master = get_new_node("Candie");
@@ -27,26 +27,6 @@ $node_master->psql('postgres', "select pg_reload_conf()");
 
 my $psql_out = '';
 my $psql_rc = '';
-
-
-
-
-
-$node_master->psql('postgres', "
-	begin;
-	insert into t values (1);
-	prepare transaction 'x';
-");
-$node_slave->teardown_node;
-$node_master->psql('postgres',"commit prepared 'x'");
-$node_slave->start;
-$node_slave->psql('postgres',"select count(*) from pg_prepared_xacts", stdout => \$psql_out);
-is($psql_out, '0', "Commit prepared on master while slave is down.");
-
-
-
-
-
 
 ###############################################################################
 # Check that we can commit and abort tx after soft restart.
