@@ -30,8 +30,6 @@ static void BgwPoolMainLoop(Datum arg)
     BackgroundWorkerUnblockSignals();
 	BackgroundWorkerInitializeConnection(pool->dbname, NULL);
 
-    elog(WARNING, "Start background worker %d", id);
-
     while(true) { 
         PGSemaphoreLock(&pool->available);
         SpinLockAcquire(&pool->lock);

@@ -150,6 +150,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 			return;
 		}
 		if (MtmRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn)) { 
+			elog(NOTICE, "wal-sender complete recovery of node %d at LSN(commit %lx, end %lx, log %lx) in transaction %s event %d", MtmReplicationNodeId, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr(), txn->gid, flags);
 			flags |= PGLOGICAL_CAUGHT_UP;
 		}
 	}
@@ -418,7 +419,7 @@ pglogical_init_api(PGLogicalProtoType typ)
 {
     PGLogicalProtoAPI* res = palloc0(sizeof(PGLogicalProtoAPI));
 	sscanf(MyReplicationSlot->data.name.data, MULTIMASTER_SLOT_PATTERN, &MtmReplicationNodeId);
-	elog(WARNING, "%d: PRGLOGICAL init API for slot %s node %d", MyProcPid, MyReplicationSlot->data.name.data, MtmReplicationNodeId);
+	elog(LOG, "%d: PRGLOGICAL init API for slot %s node %d", MyProcPid, MyReplicationSlot->data.name.data, MtmReplicationNodeId);
     res->write_rel = pglogical_write_rel;
     res->write_begin = pglogical_write_begin;
     res->write_commit = pglogical_write_commit;
