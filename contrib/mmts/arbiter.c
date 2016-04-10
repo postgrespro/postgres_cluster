@@ -412,7 +412,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 				MtmOnNodeDisconnect(node+1);
 				return false;
 			}
-			MTM_TRACE("Arbiter restablished connection with node %d\n", node+1);
+			MTM_LOG3("Arbiter restablished connection with node %d", node+1);
 		} else { 
 			return true;
 		}
@@ -456,7 +456,7 @@ static void MtmAcceptOneConnection()
 				elog(WARNING, "Arbiter failed to write response for handshake message to node %d", resp.node);
 				close(fd);
 			} else { 
-				elog(NOTICE, "Arbiter established connection with node %d", req.hdr.node); 
+				MTM_LOG1("Arbiter established connection with node %d", req.hdr.node); 
 				BIT_CLEAR(Mtm->connectivityMask, req.hdr.node-1);
 				MtmRegisterSocket(fd, req.hdr.node-1);
 				sockets[req.hdr.node-1] = fd;
@@ -509,8 +509,8 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 		}
 		buf->used = 0;
 	}
-	MTM_TRACE("Send %s message CSN=%ld to node %d from node %d for global transaction %d/local transaction %d\n", 
-			  messageText[ts->cmd], ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
+	MTM_LOG3("Send %s message CSN=%ld to node %d from node %d for global transaction %d/local transaction %d", 
+			 messageText[ts->cmd], ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
 
 	Assert(ts->cmd != MSG_INVALID);
 	buf->data[buf->used].code = ts->cmd;

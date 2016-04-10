@@ -7,13 +7,28 @@
 
 #include "pglogical_output/hooks.h"
 
-#define MTM_TUPLE_TRACE(fmt, ...)
-#if 0
-#define MTM_INFO(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
-#define MTM_TRACE(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__) 
-#else
-#define MTM_INFO(fmt, ...) 
-#define MTM_TRACE(fmt, ...) 
+#define  DEBUG_LEVEL 1
+
+#if DEBUG_LEVEL == 0
+#define MTM_LOG1(fmt, ...) elog(LOG, fmt, ## __VA_ARGS__) 
+#define MTM_LOG2(fmt, ...) 
+#define MTM_LOG3(fmt, ...) 
+#define MTM_LOG4(fmt, ...) 
+#elif  DEBUG_LEVEL == 1
+#define MTM_LOG1(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
+#define MTM_LOG2(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
+#define MTM_LOG3(fmt, ...) 
+#define MTM_LOG4(fmt, ...) 
+#elif  DEBUG_LEVEL == 2
+#define MTM_LOG1(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
+#define MTM_LOG2(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
+#define MTM_LOG3(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
+#define MTM_LOG4(fmt, ...) 
+#elif  DEBUG_LEVEL >= 3
+#define MTM_LOG1(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
+#define MTM_LOG2(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
+#define MTM_LOG3(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
+#define MTM_LOG4(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
 #endif
 
 #define MULTIMASTER_NAME                "multimaster"
