@@ -2227,10 +2227,24 @@ MtmNoticeReceiver(void *i, const PGresult *res)
 
 	stripped_notice = palloc0(len);
 
-	/* Strip "NOTICE:  " from beginning and "\n" from end of error string */
-	strncpy(stripped_notice, notice + 9, len - 1 - 9);
+	if (*notice == 'N')
+	{
+		/* Strip "NOTICE:  " from beginning and "\n" from end of error string */
+		strncpy(stripped_notice, notice + 9, len - 1 - 9);
+		elog(NOTICE, "%s", stripped_notice);
+	}
+	else if (*notice == 'W')
+	{
+		/* Strip "WARNING:  " from beginning and "\n" from end of error string */
+		strncpy(stripped_notice, notice + 10, len - 1 - 10);
+		elog(WARNING, "%s", stripped_notice);
+	}
+	else
+	{
+		stripped_notice = notice;
+		elog(WARNING, "%s", stripped_notice);
+	}
 
-	elog(NOTICE, "%s", stripped_notice);
 	pfree(stripped_notice);
 }
 
@@ -2461,10 +2475,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_PrepareStmt:
 		case T_ExecuteStmt:
 		case T_DeallocateStmt:
-		//case T_GrantStmt: /* XXX: we could replicate some of these these */;
-		//case T_GrantRoleStmt:
-		//case T_AlterDatabaseStmt:
-		//case T_AlterDatabaseSetStmt:
 		case T_NotifyStmt:
 		case T_ListenStmt:
 		case T_UnlistenStmt:
@@ -2472,21 +2482,29 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ClusterStmt: /* XXX: we could replicate these */;
 		case T_VacuumStmt:
 		case T_ExplainStmt:
-		//case T_AlterSystemStmt:
 		case T_VariableShowStmt:
-		case T_DiscardStmt:
-		//case T_CreateEventTrigStmt:
-		//case T_AlterEventTrigStmt:
-		//case T_CreateRoleStmt:
-		//case T_AlterRoleStmt:
-		//case T_AlterRoleSetStmt:
-		//case T_DropRoleStmt:
 		case T_ReassignOwnedStmt:
 		case T_LockStmt:
-		//case T_ConstraintsSetStmt:
 		case T_CheckPointStmt:
 		case T_ReindexStmt:
 		    skipCommand = true;
+			break;
+		case T_DiscardStmt:
+			{
+				//DiscardStmt *stmt = (DiscardStmt *) parsetree;
+				//skipCommand = stmt->target == DISCARD_TEMP;
+
+				skipCommand = true;
+
+				if (MtmGUCBufferAllocated)
+				{
+					// XXX: move allocation somewhere to backend startup and check
+					// where buffer is empty in send routines.
+					MtmGUCBufferAllocated = false;
+					pfree(MtmGUCBuffer);
+				}
+
+			}
 			break;
 		case T_VariableSetStmt:
 			{
@@ -2495,7 +2513,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				skipCommand = true;
 
 				/* Prevent SET TRANSACTION from replication */
-				if (MtmTx.isTransactionBlock || stmt->kind == VAR_SET_MULTI)
+				if (stmt->kind == VAR_SET_MULTI)
 					break;
 
 				if (!MtmGUCBufferAllocated)
@@ -2508,13 +2526,10 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 					MtmGUCBufferAllocated = true;
 				}
 
-				//appendStringInfoString(MtmGUCBuffer, "SET ");
-				//appendStringInfoString(MtmGUCBuffer, stmt->name);
-				//appendStringInfoString(MtmGUCBuffer, " TO ");
-				//appendStringInfoString(MtmGUCBuffer, ExtractSetVariableArgs(stmt));
-				//appendStringInfoString(MtmGUCBuffer, "; ");
-
 				appendStringInfoString(MtmGUCBuffer, queryString);
+
+				// sometimes there is no ';' char at the end.
+				appendStringInfoString(MtmGUCBuffer, ";");
 			}
 			break;
 		case T_CreateStmt:
