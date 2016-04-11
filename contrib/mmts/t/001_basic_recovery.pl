@@ -115,8 +115,8 @@ is($psql_out, '20', "Check replication after node failure.");
 
 diag("starting node 2");
 $nodes[2]->start;
-diag("sleeping 30");
-sleep(30); # XXX: here we can poll
+diag("sleeping 10");
+sleep(10); # XXX: here we can poll
 diag("inserting 3");
 $nodes[0]->psql('postgres', "insert into t values(3, 30);");
 diag("selecting");
