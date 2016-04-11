@@ -84,7 +84,7 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
 	nspname = get_namespace_name(rel->rd_rel->relnamespace);
 	if (nspname == NULL)
 		elog(ERROR, "cache lookup failed for namespace %u",
-			 rel->rd_rel->relnamespace);
+				 rel->rd_rel->relnamespace);
 	nspnamelen = strlen(nspname) + 1;
 	
 	relname = NameStr(rel->rd_rel->relname);
@@ -106,7 +106,7 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 {
 	bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
 	csn_t csn = MtmTransactionSnapshot(txn->xid);
-	MTM_INFO("%d: pglogical_write_begin XID=%d node=%d CSN=%ld recovery=%d\n", MyProcPid, txn->xid, MtmReplicationNodeId, csn, isRecovery);
+	MTM_LOG2("%d: pglogical_write_begin XID=%d node=%d CSN=%ld recovery=%d", MyProcPid, txn->xid, MtmReplicationNodeId, csn, isRecovery);
 	
 	if (csn == INVALID_CSN && !isRecovery) { 
 		MtmIsFilteredTxn = true;
@@ -150,12 +150,13 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 			return;
 		}
 		if (MtmRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn)) { 
+			MTM_LOG1("wal-sender complete recovery of node %d at LSN(commit %lx, end %lx, log %lx) in transaction %s event %d", MtmReplicationNodeId, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr(), txn->gid, flags);
 			flags |= PGLOGICAL_CAUGHT_UP;
 		}
 	}
     pq_sendbyte(out, 'C');		/* sending COMMIT */
 
-	MTM_INFO("PGLOGICAL_SEND commit: event=%d, gid=%s, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx\n", flags, txn->gid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
+	MTM_LOG2("PGLOGICAL_SEND commit: event=%d, gid=%s, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", flags, txn->gid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
 
     /* send the flags field */
     pq_sendbyte(out, flags);
@@ -418,7 +419,7 @@ pglogical_init_api(PGLogicalProtoType typ)
 {
     PGLogicalProtoAPI* res = palloc0(sizeof(PGLogicalProtoAPI));
 	sscanf(MyReplicationSlot->data.name.data, MULTIMASTER_SLOT_PATTERN, &MtmReplicationNodeId);
-	elog(WARNING, "%d: PRGLOGICAL init API for slot %s node %d", MyProcPid, MyReplicationSlot->data.name.data, MtmReplicationNodeId);
+	MTM_LOG1("%d: PRGLOGICAL init API for slot %s node %d", MyProcPid, MyReplicationSlot->data.name.data, MtmReplicationNodeId);
     res->write_rel = pglogical_write_rel;
     res->write_begin = pglogical_write_begin;
     res->write_commit = pglogical_write_commit;

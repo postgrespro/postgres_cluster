@@ -339,7 +339,7 @@ process_remote_begin(StringInfo s)
 	StartTransactionCommand();
     MtmJoinTransaction(&gtid, snapshot);
 
-	MTM_TRACE("REMOTE begin node=%d xid=%d snapshot=%ld\n", gtid.node, gtid.xid, snapshot);
+	MTM_LOG3("REMOTE begin node=%d xid=%d snapshot=%ld", gtid.node, gtid.xid, snapshot);
 }
 
 static void
@@ -484,22 +484,22 @@ MtmBeginSession(void)
 	sprintf(slot_name, MULTIMASTER_SLOT_PATTERN, MtmReplicationNode);
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 	replorigin_session_origin = replorigin_by_name(slot_name, false); 
-	MTM_TRACE("%d: Begin setup replorigin session: %d\n", MyProcPid, replorigin_session_origin);
+	MTM_LOG3("%d: Begin setup replorigin session: %d", MyProcPid, replorigin_session_origin);
 	replorigin_session_setup(replorigin_session_origin);
-	MTM_TRACE("%d: End setup replorigin session: %d\n", MyProcPid, replorigin_session_origin);
+	MTM_LOG3("%d: End setup replorigin session: %d", MyProcPid, replorigin_session_origin);
 }
 
 static void 
 MtmEndSession(bool unlock)
 {
 	if (replorigin_session_origin != InvalidRepOriginId) { 
-		MTM_TRACE("%d: Begin reset replorigin session: %d\n", MyProcPid, replorigin_session_origin);
+		MTM_LOG3("%d: Begin reset replorigin session: %d", MyProcPid, replorigin_session_origin);
 		replorigin_session_origin = InvalidRepOriginId;
 		replorigin_session_reset();
 		if (unlock) { 
 			MtmUnlockNode(MtmReplicationNode);
 		}
-		MTM_TRACE("%d: End reset replorigin session: %d\n", MyProcPid, replorigin_session_origin);
+		MTM_LOG3("%d: End reset replorigin session: %d", MyProcPid, replorigin_session_origin);
 	}
 }
 
@@ -525,7 +525,7 @@ process_remote_commit(StringInfo in)
 	{
 		case PGLOGICAL_COMMIT:
 		{
-			MTM_TRACE("%d: PGLOGICAL_COMMIT commit\n", MyProcPid);
+			MTM_LOG3("%d: PGLOGICAL_COMMIT commit", MyProcPid);
 			if (IsTransactionState()) {
 				Assert(TransactionIdIsValid(MtmGetCurrentTransactionId()));
 				MtmBeginSession();
@@ -538,7 +538,7 @@ process_remote_commit(StringInfo in)
 			Assert(IsTransactionState() && TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
 			/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
-			MTM_TRACE("%d: PGLOGICAL_PREPARE commit: gid=%s\n", MyProcPid, gid);
+			MTM_LOG3("%d: PGLOGICAL_PREPARE commit: gid=%s", MyProcPid, gid);
 			BeginTransactionBlock();
 			CommitTransactionCommand();
 			StartTransactionCommand();
@@ -555,7 +555,7 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			csn = pq_getmsgint64(in); 
 			gid = pq_getmsgstring(in);
-			MTM_TRACE("%d: PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s\n", MyProcPid, csn, gid);
+			MTM_LOG3("%d: PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s", MyProcPid, csn, gid);
 			StartTransactionCommand();
 			MtmBeginSession();
 			MtmSetCurrentTransactionCSN(csn);
@@ -568,7 +568,7 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
-			MTM_TRACE("%d: PGLOGICAL_ABORT_PREPARED commit: gid=%s\n", MyProcPid, gid);
+			MTM_LOG3("%d: PGLOGICAL_ABORT_PREPARED commit: gid=%s", MyProcPid, gid);
 			if (MtmGetGlobalTransactionStatus(gid) != TRANSACTION_STATUS_ABORTED) { 
 				StartTransactionCommand();
 				MtmSetCurrentTransactionGID(gid);
@@ -683,7 +683,7 @@ process_remote_insert(StringInfo s, Relation rel)
 		char* ddl = TextDatumGetCString(new_tuple.values[Anum_mtm_ddl_log_query-1]);
 		int rc;
 		SPI_connect();
-		MTM_TRACE("%d: Execute utility statement %s\n", MyProcPid, ddl);
+		MTM_LOG3("%d: Execute utility statement %s", MyProcPid, ddl);
 		rc = SPI_execute(ddl, false, 0);
         SPI_finish();
 		if (rc != SPI_OK_UTILITY) { 
@@ -790,7 +790,7 @@ process_remote_update(StringInfo s, Relation rel)
 			tuple_to_stringinfo(&o, RelationGetDescr(rel), oldslot->tts_tuple);
 			appendStringInfo(&o, " to");
 			tuple_to_stringinfo(&o, RelationGetDescr(rel), remote_tuple);
-			elog(DEBUG1, "UPDATE:%s", o.data);
+			MTM_LOG1(DEBUG1, "UPDATE:%s", o.data);
 			resetStringInfo(&o);
 		}
 #endif
@@ -918,7 +918,7 @@ void MtmExecutor(int id, void* work, size_t size)
     {    
         while (true) { 
             char action = pq_getmsgbyte(&s);
-            MTM_TRACE("%d: REMOTE process action %c\n", MyProcPid, action);
+            MTM_LOG3("%d: REMOTE process action %c", MyProcPid, action);
             switch (action) {
                 /* BEGIN */
             case 'B':
@@ -953,10 +953,10 @@ void MtmExecutor(int id, void* work, size_t size)
     {
 		EmitErrorReport();
         FlushErrorState();
-		MTM_INFO("%d: REMOTE begin abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
+		MTM_LOG2("%d: REMOTE begin abort transaction %d", MyProcPid, MtmGetCurrentTransactionId());
 		MtmEndSession(false);
         AbortCurrentTransaction();
-		MTM_INFO("%d: REMOTE end abort transaction %d\n", MyProcPid, MtmGetCurrentTransactionId());
+		MTM_LOG2("%d: REMOTE end abort transaction %d", MyProcPid, MtmGetCurrentTransactionId());
     }
     PG_END_TRY();
 

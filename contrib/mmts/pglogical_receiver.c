@@ -292,10 +292,10 @@ pglogical_receiver_main(Datum main_arg)
 		 * So we assume that LSNs are the same for local and remote node
 		 */
 		originStartPos = Mtm->status == MTM_RECOVERY ? GetXLogInsertRecPtr() : 0;
-		elog(WARNING, "Start logical receiver at position %lx from node %d", originStartPos, args->remote_node);
+		MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, args->remote_node);
 	} else { 
 		originStartPos = replorigin_get_progress(originId, false);
-		elog(WARNING, "Restart logical receiver at position %lx from node %d", originStartPos, args->remote_node);
+		MTM_LOG1("Restart logical receiver at position %lx from node %d", originStartPos, args->remote_node);
 	}
 	CommitTransactionCommand();
 	
