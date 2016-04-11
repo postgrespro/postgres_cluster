@@ -178,6 +178,7 @@ int   MtmConnectAttempts;
 int   MtmConnectTimeout;
 int   MtmKeepaliveTimeout;
 int   MtmReconnectAttempts;
+int   MtmNodeDisableDelay;
 bool  MtmUseRaftable;
 MtmConnectionInfo* MtmConnections;
 
@@ -992,6 +993,7 @@ void MtmRecoveryCompleted(void)
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
 	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
+	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = time(NULL);
 	/* Mode will be changed to online once all locagical reciever are connected */
 	MtmSwitchClusterMode(MTM_CONNECTED);
 	MtmUnlock();
@@ -1080,6 +1082,7 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 				/* We are lucky: caugth-up without locking cluster! */
 			}
 			BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
+			Mtm->nodes[nodeId-1].lastStatusChangeTime = time(NULL);
 			Mtm->nNodes += 1;
 			caughtUp = true;
 		} else if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
@@ -1222,6 +1225,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 			if (mask & 1) { 
 				Mtm->nNodes -= 1;
 				BIT_SET(Mtm->disabledNodeMask, i);
+				Mtm->nodes[i].lastStatusChangeTime = time(NULL);
 			}
 		}
 		mask = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
@@ -1229,6 +1233,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 			if (mask & 1) { 
 				Mtm->nNodes += 1;
 				BIT_CLEAR(Mtm->disabledNodeMask, i);
+				Mtm->nodes[i].lastStatusChangeTime = time(NULL);
 			}
 		}
 		MtmCheckQuorum();
@@ -1268,6 +1273,11 @@ void MtmOnNodeDisconnect(int nodeId)
 { 
 	MtmTransState *ts;
 
+	if (Mtm->nodes[nodeId-1].lastStatusChangeTime + MtmNodeDisableDelay > time(NULL)) { 
+		/* Avoid false detection of node failure and prevent node status blinking */
+		return;
+	}
+
 	BIT_SET(Mtm->connectivityMask, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
@@ -1278,6 +1288,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	if (!MtmRefreshClusterStatus(false)) { 
 		MtmLock(LW_EXCLUSIVE);
 		if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
+			Mtm->nodes[nodeId-1].lastStatusChangeTime = time(NULL);
 			BIT_SET(Mtm->disabledNodeMask, nodeId-1);
 			Mtm->nNodes -= 1;
 			MtmCheckQuorum();
@@ -1445,6 +1456,7 @@ static void MtmInitialize()
 		for (i = 0; i < MtmNodes; i++) {
 			Mtm->nodes[i].oldestSnapshot = 0;
 			Mtm->nodes[i].transDelay = 0;
+			Mtm->nodes[i].lastStatusChangeTime = time(NULL);
 			Mtm->nodes[i].con = MtmConnections[i];
 		}
 		PGSemaphoreCreate(&Mtm->votingSemaphore);
@@ -1566,9 +1578,24 @@ _PG_init(void)
 		return;
 
 	DefineCustomIntVariable(
+		"multimaster.node_disable_delay",
+		"Minamal amount of time (sec) between node status change",
+		"This delay is used to avoid false detection of node failure and to prevent blinking of node status node",
+		&MtmNodeDisableDelay,
+		1,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
 		"multimaster.min_recovery_lag",
 		"Minamal lag of WAL-sender performing recovery after which cluster is locked until recovery is completed",
-		"When wal-sender almost catch-up WAL current position we need to stop 'Achilles tortile compeition' and "
+		"When wal-sender almost catch-up WAL current position we need to stop 'Achilles tortile competition' and "
 		"temporary stop commit of new transactions until node will be completely repared",
 		&MtmMinRecoveryLag,
 		100000,
@@ -1890,6 +1917,7 @@ void MtmDropNode(int nodeId, bool dropSlot)
 		{ 
 			elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nNodes);
 		}
+		Mtm->nodes[nodeId-1].lastStatusChangeTime = time(NULL);
 		BIT_SET(Mtm->disabledNodeMask, nodeId-1);
 		Mtm->nNodes -= 1;
 		MtmCheckQuorum();
@@ -1940,6 +1968,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	if (MtmIsRecoverySession) {
 		MTM_LOG1("%d: Node %d start recovery of node %d", MyProcPid, MtmNodeId, MtmReplicationNodeId);
 		if (!BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
+			Mtm->nodes[MtmReplicationNodeId-1].lastStatusChangeTime = time(NULL);
 			BIT_SET(Mtm->disabledNodeMask,  MtmReplicationNodeId-1);
 			Mtm->nNodes -= 1;			
 			MtmCheckQuorum();
@@ -1947,6 +1976,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	} else if (BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
 		if (recoveryCompleted) { 
 			MTM_LOG1("Node %d consider that recovery of node %d is completed: start normal replication", MtmNodeId, MtmReplicationNodeId); 
+			Mtm->nodes[MtmReplicationNodeId-1].lastStatusChangeTime = time(NULL);
 			BIT_CLEAR(Mtm->disabledNodeMask,  MtmReplicationNodeId-1);
 			Mtm->nNodes += 1;
 			MtmCheckQuorum();
@@ -2057,8 +2087,8 @@ typedef struct
 	int       nodeId;
 	char*     connStrPtr;
 	TupleDesc desc;
-    Datum     values[7];
-    bool      nulls[7];
+    Datum     values[8];
+    bool      nulls[8];
 } MtmGetNodeStateCtx;
 
 Datum
@@ -2095,11 +2125,12 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	usrfctx->values[4] = Int64GetDatum(lag);
 	usrfctx->nulls[4] = lag < 0;
 	usrfctx->values[5] = Int64GetDatum(Mtm->transCount ? Mtm->nodes[usrfctx->nodeId-1].transDelay/Mtm->transCount : 0);
+	usrfctx->values[6] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].lastStatusChangeTime));
 	p = strchr(usrfctx->connStrPtr, ',');
 	if (p != NULL) { 
 		*p++ = '\0';
 	}
-	usrfctx->values[6] = CStringGetTextDatum(usrfctx->connStrPtr);
+	usrfctx->values[7] = CStringGetTextDatum(usrfctx->connStrPtr);
 	usrfctx->connStrPtr = p;
 	usrfctx->nodeId += 1;
 

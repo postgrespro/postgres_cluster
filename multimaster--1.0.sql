@@ -24,7 +24,7 @@ AS 'MODULE_PATHNAME','mtm_get_snapshot'
 LANGUAGE C;
 
 
-CREATE TYPE mtm.node_state AS (id integer, disabled bool, disconnected bool, catchUp bool, slotLag bigint, avgTransDelay bigint, connStr text);
+CREATE TYPE mtm.node_state AS (id integer, disabled bool, disconnected bool, catchUp bool, slotLag bigint, avgTransDelay bigint, lastStatusChange timestamp, connStr text);
 
 CREATE FUNCTION mtm.get_nodes_state() RETURNS SETOF mtm.node_state
 AS 'MODULE_PATHNAME','mtm_get_nodes_state'

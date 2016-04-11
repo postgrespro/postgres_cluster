@@ -58,9 +58,9 @@ is($psql_out, '20', "Check replication after node failure.");
 ###############################################################################
 
 diag("starting node 2");
-$cluster->{nodes}->[2]->start;
-diag("sleeping 30");
-sleep(30); # XXX: here we can poll
+$nodes[2]->start;
+diag("sleeping 10");
+sleep(10); # XXX: here we can poll
 diag("inserting 3");
 $cluster->psql(0, 'postgres', "insert into t values(3, 30);");
 diag("selecting");
