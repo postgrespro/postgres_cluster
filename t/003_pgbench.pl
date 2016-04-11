@@ -14,7 +14,7 @@ $cluster->init();
 $cluster->configure();
 $cluster->start();
 
-my ($rc, $out, $err);
+my ($rc, $in, $out, $err);
 
 diag("sleeping 10");
 sleep(10);
@@ -86,8 +86,8 @@ sub writer
 }
 
 diag("starting benches");
-my $in = '';
-my $out = '';
+$in = '';
+$out = '';
 my @benches = ();
 foreach my $node (@{$cluster->{nodes}})
 {
