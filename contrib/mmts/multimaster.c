@@ -1077,7 +1077,7 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 				BIT_CLEAR(Mtm->nodeLockerMask, nodeId-1);
 				Mtm->nLockers -= 1;
 			} else { 
-				MTM_LOG1("%d: dode %d is caugth-up without locking cluster", MyProcPid, nodeId);	
+				MTM_LOG1("%d: node %d is caugth-up without locking cluster", MyProcPid, nodeId);	
 				/* We are lucky: caugth-up without locking cluster! */
 			}
 			BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
