@@ -103,6 +103,7 @@ PG_MODULE_MAGIC;
 PG_FUNCTION_INFO_V1(mtm_start_replication);
 PG_FUNCTION_INFO_V1(mtm_stop_replication);
 PG_FUNCTION_INFO_V1(mtm_drop_node);
+PG_FUNCTION_INFO_V1(mtm_poll_node);
 PG_FUNCTION_INFO_V1(mtm_recover_node);
 PG_FUNCTION_INFO_V1(mtm_get_snapshot);
 PG_FUNCTION_INFO_V1(mtm_get_nodes_state);
@@ -2067,6 +2068,27 @@ mtm_drop_node(PG_FUNCTION_ARGS)
 	bool dropSlot = PG_GETARG_BOOL(1);
 	MtmDropNode(nodeId, dropSlot);
     PG_RETURN_VOID();
+}
+	
+Datum
+mtm_poll_node(PG_FUNCTION_ARGS)
+{
+	int nodeId = PG_GETARG_INT32(0);
+	bool nowait = PG_GETARG_BOOL(1);
+	bool online = true;
+	while (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
+		if (nowait) { 
+			online = false;
+			break;
+		} else { 
+			MtmSleep(STATUS_POLL_DELAY);
+		}
+	}
+	if (!nowait) { 
+		/* Just wait some time until logical repication channels will be reestablished */
+		MtmSleep(MtmNodeDisableDelay);
+	}
+    PG_RETURN_BOOL(online);
 }
 	
 Datum

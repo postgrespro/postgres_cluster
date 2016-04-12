@@ -44,6 +44,10 @@ CREATE FUNCTION mtm.dump_lock_graph() RETURNS text
 AS 'MODULE_PATHNAME','mtm_dump_lock_graph'
 LANGUAGE C;
 
+CREATE FUNCTION mtm.poll_node(nodeId integer, noWait boolean default FALSE) RETURNS boolean
+AS 'MODULE_PATHNAME','mtm_poll_node'
+LANGUAGE C;
+
 CREATE TABLE IF NOT EXISTS mtm.ddl_log (issued timestamp with time zone not null, query text);
 
 CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema text, rel_name text, primary key(rel_schema, rel_name));
