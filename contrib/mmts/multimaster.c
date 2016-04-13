@@ -182,6 +182,7 @@ int   MtmKeepaliveTimeout;
 int   MtmReconnectAttempts;
 int   MtmNodeDisableDelay;
 bool  MtmUseRaftable;
+bool  MtmUseDtm;
 MtmConnectionInfo* MtmConnections;
 
 static char* MtmConnStrs;
@@ -340,7 +341,7 @@ TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 }
 
 bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
-{
+{	
 #if TRACE_SLEEP_TIME
     static timestamp_t firstReportTime;
     static timestamp_t prevReportTime;
@@ -350,6 +351,10 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     timestamp_t delay = MIN_WAIT_TIMEOUT;
     Assert(xid != InvalidTransactionId);
 
+	if (!MtmUseDtm) { 
+		return PgXidInMVCCSnapshot(xid, snapshot);
+	}
+	
 	MtmLock(LW_SHARED);
 
 #if TRACE_SLEEP_TIME
@@ -769,7 +774,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		tm->state = ts;	
 		ts->votingCompleted = true;
 		if (Mtm->status != MTM_RECOVERY) { 
-			MtmSendNotificationMessage(ts, MSG_READY); /* send notification to coordinator */
+			MtmSendNotificationMessage(ts, MtmUseDtm ? MSG_READY : MSG_PREPARED); /* send notification to coordinator */
 		} else {
 			ts->status = TRANSACTION_STATUS_UNKNOWN;
 		}
@@ -1645,6 +1650,19 @@ _PG_init(void)
 		NULL,
 		&MtmIgnoreTablesWithoutPk,
 		false,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomBoolVariable(
+		"multimaster.use_dtm",
+		"Use distributed transaction manager",
+		NULL,
+		&MtmUseDtm,
+		true,
 		PGC_BACKEND,
 		0,
 		NULL,
