@@ -62,7 +62,7 @@ int			force_parallel_mode = FORCE_PARALLEL_OFF;
 /* Hook for plugins to get control in planner() */
 planner_hook_type planner_hook = NULL;
 
-/* Hook for plugins to get control before grouping_planner plans upper rels */
+/* Hook for plugins to get control when grouping_planner() plans upper rels */
 create_upper_paths_hook_type create_upper_paths_hook = NULL;
 
 
@@ -1772,19 +1772,19 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 		root->upper_targets[UPPERREL_GROUP_AGG] = grouping_target;
 
 		/*
-		 * Let extensions, particularly FDWs and CustomScan providers,
-		 * consider injecting extension Paths into the query's upperrels,
-		 * where they will compete with the Paths we create below.  We pass
-		 * the final scan/join rel because that's not so easily findable from
-		 * the PlannerInfo struct; anything else the hooks want to know should
-		 * be obtainable via "root".
+		 * If there is an FDW that's responsible for the final scan/join rel,
+		 * let it consider injecting extension Paths into the query's
+		 * upperrels, where they will compete with the Paths we create below.
+		 * We pass the final scan/join rel because that's not so easily
+		 * findable from the PlannerInfo struct; anything else the FDW wants
+		 * to know should be obtainable via "root".
+		 *
+		 * Note: CustomScan providers, as well as FDWs that don't want to
+		 * use this hook, can use the create_upper_paths_hook; see below.
 		 */
 		if (current_rel->fdwroutine &&
 			current_rel->fdwroutine->GetForeignUpperPaths)
 			current_rel->fdwroutine->GetForeignUpperPaths(root, current_rel);
-
-		if (create_upper_paths_hook)
-			(*create_upper_paths_hook) (root, current_rel);
 
 		/*
 		 * If we have grouping and/or aggregation, consider ways to implement
@@ -1961,6 +1961,11 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 		/* And shove it into final_rel */
 		add_path(final_rel, path);
 	}
+
+	/* Let extensions possibly add some more paths */
+	if (create_upper_paths_hook)
+		(*create_upper_paths_hook) (root, UPPERREL_FINAL,
+									current_rel, final_rel);
 
 	/* Note: currently, we leave it to callers to do set_cheapest() */
 }
@@ -3257,6 +3262,8 @@ create_grouping_paths(PlannerInfo *root,
 	RelOptInfo *grouped_rel;
 	PathTarget *partial_grouping_target = NULL;
 	AggClauseCosts agg_costs;
+	AggClauseCosts agg_partial_costs;	/* parallel only */
+	AggClauseCosts agg_final_costs;		/* parallel only */
 	Size		hashaggtablesize;
 	double		dNumGroups;
 	double		dNumPartialGroups = 0;
@@ -3341,8 +3348,10 @@ create_grouping_paths(PlannerInfo *root,
 	MemSet(&agg_costs, 0, sizeof(AggClauseCosts));
 	if (parse->hasAggs)
 	{
-		count_agg_clauses(root, (Node *) target->exprs, &agg_costs);
-		count_agg_clauses(root, parse->havingQual, &agg_costs);
+		count_agg_clauses(root, (Node *) target->exprs, &agg_costs, true,
+						  false, false);
+		count_agg_clauses(root, parse->havingQual, &agg_costs, true, false,
+						  false);
 	}
 
 	/*
@@ -3417,6 +3426,25 @@ create_grouping_paths(PlannerInfo *root,
 												 NIL,
 												 NIL);
 
+		/*
+		 * Collect statistics about aggregates for estimating costs of
+		 * performing aggregation in parallel.
+		 */
+		MemSet(&agg_partial_costs, 0, sizeof(AggClauseCosts));
+		MemSet(&agg_final_costs, 0, sizeof(AggClauseCosts));
+		if (parse->hasAggs)
+		{
+			/* partial phase */
+			count_agg_clauses(root, (Node *) partial_grouping_target->exprs,
+							  &agg_partial_costs, false, false, true);
+
+			/* final phase */
+			count_agg_clauses(root, (Node *) target->exprs, &agg_final_costs,
+							  true, true, true);
+			count_agg_clauses(root, parse->havingQual, &agg_final_costs, true,
+							  true, true);
+		}
+
 		if (can_sort)
 		{
 			/* Checked in set_grouped_rel_consider_parallel() */
@@ -3452,7 +3480,7 @@ create_grouping_paths(PlannerInfo *root,
 								parse->groupClause ? AGG_SORTED : AGG_PLAIN,
 													parse->groupClause,
 													NIL,
-													&agg_costs,
+													&agg_partial_costs,
 													dNumPartialGroups,
 													false,
 													false,
@@ -3477,7 +3505,7 @@ create_grouping_paths(PlannerInfo *root,
 
 			hashaggtablesize =
 				estimate_hashagg_tablesize(cheapest_partial_path,
-										   &agg_costs,
+										   &agg_partial_costs,
 										   dNumPartialGroups);
 
 			/*
@@ -3494,7 +3522,7 @@ create_grouping_paths(PlannerInfo *root,
 											AGG_HASHED,
 											parse->groupClause,
 											NIL,
-											&agg_costs,
+											&agg_partial_costs,
 											dNumPartialGroups,
 											false,
 											false,
@@ -3626,7 +3654,7 @@ create_grouping_paths(PlannerInfo *root,
 								parse->groupClause ? AGG_SORTED : AGG_PLAIN,
 											parse->groupClause,
 											(List *) parse->havingQual,
-											&agg_costs,
+											&agg_final_costs,
 											dNumGroups,
 											true,
 											true,
@@ -3686,7 +3714,7 @@ create_grouping_paths(PlannerInfo *root,
 			Path   *path = (Path *) linitial(grouped_rel->partial_pathlist);
 
 			hashaggtablesize = estimate_hashagg_tablesize(path,
-														  &agg_costs,
+														  &agg_final_costs,
 														  dNumGroups);
 
 			if (hashaggtablesize < work_mem * 1024L)
@@ -3708,7 +3736,7 @@ create_grouping_paths(PlannerInfo *root,
 											AGG_HASHED,
 											parse->groupClause,
 											(List *) parse->havingQual,
-											&agg_costs,
+											&agg_final_costs,
 											dNumGroups,
 											true,
 											true,
@@ -3723,6 +3751,11 @@ create_grouping_paths(PlannerInfo *root,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("could not implement GROUP BY"),
 				 errdetail("Some of the datatypes only support hashing, while others only support sorting.")));
+
+	/* Let extensions possibly add some more paths */
+	if (create_upper_paths_hook)
+		(*create_upper_paths_hook) (root, UPPERREL_GROUP_AGG,
+									input_rel, grouped_rel);
 
 	/* Now choose the best path(s) */
 	set_cheapest(grouped_rel);
@@ -3779,6 +3812,11 @@ create_window_paths(PlannerInfo *root,
 								   wflists,
 								   activeWindows);
 	}
+
+	/* Let extensions possibly add some more paths */
+	if (create_upper_paths_hook)
+		(*create_upper_paths_hook) (root, UPPERREL_WINDOW,
+									input_rel, window_rel);
 
 	/* Now choose the best path(s) */
 	set_cheapest(window_rel);
@@ -4056,6 +4094,11 @@ create_distinct_paths(PlannerInfo *root,
 				 errmsg("could not implement DISTINCT"),
 				 errdetail("Some of the datatypes only support hashing, while others only support sorting.")));
 
+	/* Let extensions possibly add some more paths */
+	if (create_upper_paths_hook)
+		(*create_upper_paths_hook) (root, UPPERREL_DISTINCT,
+									input_rel, distinct_rel);
+
 	/* Now choose the best path(s) */
 	set_cheapest(distinct_rel);
 
@@ -4116,6 +4159,11 @@ create_ordered_paths(PlannerInfo *root,
 			add_path(ordered_rel, path);
 		}
 	}
+
+	/* Let extensions possibly add some more paths */
+	if (create_upper_paths_hook)
+		(*create_upper_paths_hook) (root, UPPERREL_ORDERED,
+									input_rel, ordered_rel);
 
 	/*
 	 * No need to bother with set_cheapest here; grouping_planner does not

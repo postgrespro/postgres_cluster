@@ -50,7 +50,7 @@
 typedef struct
 {
 	Buffer		buffer;			/* registered buffer */
-	bool		fullImage;		/* are we taking a full image of this page? */
+	int			flags;			/* flags for this buffer */
 	int			deltaLen;		/* space consumed in delta field */
 	char		image[BLCKSZ];	/* copy of page image for modification */
 	char		delta[MAX_DELTA_SIZE];	/* delta between page images */
@@ -280,9 +280,11 @@ GenericXLogStart(Relation relation)
  * is what the caller should modify.
  *
  * If the buffer is already registered, just return its existing entry.
+ * (It's not very clear what to do with the flags in such a case, but
+ * for now we stay with the original flags.)
  */
 Page
-GenericXLogRegister(GenericXLogState *state, Buffer buffer, bool isNew)
+GenericXLogRegisterBuffer(GenericXLogState *state, Buffer buffer, int flags)
 {
 	int			block_id;
 
@@ -295,7 +297,7 @@ GenericXLogRegister(GenericXLogState *state, Buffer buffer, bool isNew)
 		{
 			/* Empty slot, so use it (there cannot be a match later) */
 			page->buffer = buffer;
-			page->fullImage = isNew;
+			page->flags = flags;
 			memcpy(page->image,
 				   BufferGetPage(buffer, NULL, NULL, BGP_NO_SNAPSHOT_TEST),
 				   BLCKSZ);
@@ -338,17 +340,31 @@ GenericXLogFinish(GenericXLogState *state)
 		{
 			PageData   *pageData = &state->pages[i];
 			Page		page;
+			PageHeader	pageHeader;
 
 			if (BufferIsInvalid(pageData->buffer))
 				continue;
 
 			page = BufferGetPage(pageData->buffer, NULL, NULL,
 								 BGP_NO_SNAPSHOT_TEST);
+			pageHeader = (PageHeader) pageData->image;
 
-			if (pageData->fullImage)
+			if (pageData->flags & GENERIC_XLOG_FULL_IMAGE)
 			{
-				/* A full page image does not require anything special */
-				memcpy(page, pageData->image, BLCKSZ);
+				/*
+				 * A full-page image does not require us to supply any xlog
+				 * data.  Just apply the image, being careful to zero the
+				 * "hole" between pd_lower and pd_upper in order to avoid
+				 * divergence between actual page state and what replay would
+				 * produce.
+				 */
+				memcpy(page, pageData->image, pageHeader->pd_lower);
+				memset(page + pageHeader->pd_lower, 0,
+					   pageHeader->pd_upper - pageHeader->pd_lower);
+				memcpy(page + pageHeader->pd_upper,
+					   pageData->image + pageHeader->pd_upper,
+					   BLCKSZ - pageHeader->pd_upper);
+
 				XLogRegisterBuffer(i, pageData->buffer,
 								   REGBUF_FORCE_IMAGE | REGBUF_STANDARD);
 			}
@@ -359,7 +375,15 @@ GenericXLogFinish(GenericXLogState *state)
 				 * associated with this page.
 				 */
 				computeDelta(pageData, page, (Page) pageData->image);
-				memcpy(page, pageData->image, BLCKSZ);
+
+				/* Apply the image, with zeroed "hole" as above */
+				memcpy(page, pageData->image, pageHeader->pd_lower);
+				memset(page + pageHeader->pd_lower, 0,
+					   pageHeader->pd_upper - pageHeader->pd_lower);
+				memcpy(page + pageHeader->pd_upper,
+					   pageData->image + pageHeader->pd_upper,
+					   BLCKSZ - pageHeader->pd_upper);
+
 				XLogRegisterBuffer(i, pageData->buffer, REGBUF_STANDARD);
 				XLogRegisterBufData(i, pageData->delta, pageData->deltaLen);
 			}
@@ -395,6 +419,7 @@ GenericXLogFinish(GenericXLogState *state)
 								 BGP_NO_SNAPSHOT_TEST),
 				   pageData->image,
 				   BLCKSZ);
+			/* We don't worry about zeroing the "hole" in this case */
 			MarkBufferDirty(pageData->buffer);
 		}
 		END_CRIT_SECTION();
@@ -473,6 +498,7 @@ generic_redo(XLogReaderState *record)
 		if (action == BLK_NEEDS_REDO)
 		{
 			Page		page;
+			PageHeader	pageHeader;
 			char	   *blockDelta;
 			Size		blockDeltaSize;
 
@@ -480,6 +506,16 @@ generic_redo(XLogReaderState *record)
 								 BGP_NO_SNAPSHOT_TEST);
 			blockDelta = XLogRecGetBlockData(record, block_id, &blockDeltaSize);
 			applyPageRedo(page, blockDelta, blockDeltaSize);
+
+			/*
+			 * Since the delta contains no information about what's in the
+			 * "hole" between pd_lower and pd_upper, set that to zero to
+			 * ensure we produce the same page state that application of the
+			 * logged action by GenericXLogFinish did.
+			 */
+			pageHeader = (PageHeader) page;
+			memset(page + pageHeader->pd_lower, 0,
+				   pageHeader->pd_upper - pageHeader->pd_lower);
 
 			PageSetLSN(page, lsn);
 			MarkBufferDirty(buffers[block_id]);
