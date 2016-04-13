@@ -7,7 +7,7 @@
 
 #include "pglogical_output/hooks.h"
 
-#define  DEBUG_LEVEL 1
+#define  DEBUG_LEVEL 0
 
 #if DEBUG_LEVEL == 0
 #define MTM_LOG1(fmt, ...) elog(LOG, fmt, ## __VA_ARGS__) 
@@ -191,6 +191,7 @@ extern int   MtmConnectTimeout;
 extern int   MtmReconnectAttempts;
 extern int   MtmKeepaliveTimeout;
 extern int   MtmNodeDisableDelay;
+extern bool  MtmUseDtm;
 extern HTAB* MtmXid2State;
 
 extern MtmConnectionInfo* MtmConnections;
