@@ -133,6 +133,9 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 		estimate_rel_size(relation, rel->attr_widths - rel->min_attr,
 						  &rel->pages, &rel->tuples, &rel->allvisfrac);
 
+	/* Retrive the parallel_degree reloption, if set. */
+	rel->rel_parallel_degree = RelationGetParallelDegree(relation, -1);
+
 	/*
 	 * Make list of indexes.  Ignore indexes on system catalogs if told to.
 	 * Don't bother with indexes for an inheritance parent, either.
@@ -405,17 +408,20 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 
 	foreach(l, fkoidlist)
 	{
-		int			i;
-		ArrayType  *arr;
+		Oid			fkoid = lfirst_oid(l);
+		HeapTuple	htup;
+		Form_pg_constraint constraint;
+		ForeignKeyOptInfo *info;
 		Datum		adatum;
 		bool		isnull;
+		ArrayType  *arr;
 		int			numkeys;
-		Oid			fkoid = lfirst_oid(l);
+		int			i;
 
-		HeapTuple	htup = SearchSysCache1(CONSTROID, ObjectIdGetDatum(fkoid));
-		Form_pg_constraint constraint = (Form_pg_constraint) GETSTRUCT(htup);
-
-		ForeignKeyOptInfo *info;
+		htup = SearchSysCache1(CONSTROID, ObjectIdGetDatum(fkoid));
+		if (!HeapTupleIsValid(htup)) /* should not happen */
+			elog(ERROR, "cache lookup failed for constraint %u", fkoid);
+		constraint = (Form_pg_constraint) GETSTRUCT(htup);
 
 		Assert(constraint->contype == CONSTRAINT_FOREIGN);
 
@@ -431,8 +437,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 
 		arr = DatumGetArrayTypeP(adatum);
 		numkeys = ARR_DIMS(arr)[0];
-		info->conkeys = (int*)palloc0(numkeys * sizeof(int));
-
+		info->conkeys = (int*)palloc(numkeys * sizeof(int));
 		for (i = 0; i < numkeys; i++)
 			info->conkeys[i] = ((int16 *) ARR_DATA_PTR(arr))[i];
 
@@ -442,9 +447,8 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 		Assert(!isnull);
 
 		arr = DatumGetArrayTypeP(adatum);
-		numkeys = ARR_DIMS(arr)[0];
-		info->confkeys = (int*)palloc0(numkeys * sizeof(int));
-
+		Assert(numkeys == ARR_DIMS(arr)[0]);
+		info->confkeys = (int*)palloc(numkeys * sizeof(int));
 		for (i = 0; i < numkeys; i++)
 			info->confkeys[i] = ((int16 *) ARR_DATA_PTR(arr))[i];
 
@@ -454,9 +458,8 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 		Assert(!isnull);
 
 		arr = DatumGetArrayTypeP(adatum);
-		numkeys = ARR_DIMS(arr)[0];
-		info->conpfeqop = (Oid*)palloc0(numkeys * sizeof(Oid));
-
+		Assert(numkeys == ARR_DIMS(arr)[0]);
+		info->conpfeqop = (Oid*)palloc(numkeys * sizeof(Oid));
 		for (i = 0; i < numkeys; i++)
 			info->conpfeqop[i] = ((Oid *) ARR_DATA_PTR(arr))[i];
 
@@ -464,7 +467,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 
 		ReleaseSysCache(htup);
 
-		fkinfos = lcons(info, fkinfos);
+		fkinfos = lappend(fkinfos, info);
 	}
 
 	list_free(fkoidlist);

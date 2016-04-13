@@ -74,7 +74,7 @@ static void heap_prune_record_unused(PruneState *prstate, OffsetNumber offnum);
 void
 heap_page_prune_opt(Relation relation, Buffer buffer)
 {
-	Page		page = BufferGetPage(buffer);
+	Page		page = BufferGetPage(buffer, NULL, NULL, BGP_NO_SNAPSHOT_TEST);
 	Size		minfree;
 	TransactionId OldestXmin;
 
@@ -92,12 +92,21 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
 	 * need to use the horizon that includes slots, otherwise the data-only
 	 * horizon can be used. Note that the toast relation of user defined
 	 * relations are *not* considered catalog relations.
+	 *
+	 * It is OK to apply the old snapshot limit before acquiring the cleanup
+	 * lock because the worst that can happen is that we are not quite as
+	 * aggressive about the cleanup (by however many transaction IDs are
+	 * consumed between this point and acquiring the lock).  This allows us to
+	 * save significant overhead in the case where the page is found not to be
+	 * prunable.
 	 */
 	if (IsCatalogRelation(relation) ||
 		RelationIsAccessibleInLogicalDecoding(relation))
 		OldestXmin = RecentGlobalXmin;
 	else
-		OldestXmin = RecentGlobalDataXmin;
+		OldestXmin =
+				TransactionIdLimitedForOldSnapshots(RecentGlobalDataXmin,
+													relation);
 
 	Assert(TransactionIdIsValid(OldestXmin));
 
@@ -174,7 +183,7 @@ heap_page_prune(Relation relation, Buffer buffer, TransactionId OldestXmin,
 				bool report_stats, TransactionId *latestRemovedXid)
 {
 	int			ndeleted = 0;
-	Page		page = BufferGetPage(buffer);
+	Page		page = BufferGetPage(buffer, NULL, NULL, BGP_NO_SNAPSHOT_TEST);
 	OffsetNumber offnum,
 				maxoff;
 	PruneState	prstate;
@@ -261,7 +270,8 @@ heap_page_prune(Relation relation, Buffer buffer, TransactionId OldestXmin,
 									prstate.nowunused, prstate.nunused,
 									prstate.latestRemovedXid);
 
-			PageSetLSN(BufferGetPage(buffer), recptr);
+			PageSetLSN(BufferGetPage(buffer, NULL, NULL,
+									 BGP_NO_SNAPSHOT_TEST), recptr);
 		}
 	}
 	else
@@ -347,7 +357,7 @@ heap_prune_chain(Relation relation, Buffer buffer, OffsetNumber rootoffnum,
 				 PruneState *prstate)
 {
 	int			ndeleted = 0;
-	Page		dp = (Page) BufferGetPage(buffer);
+	Page		dp = BufferGetPage(buffer, NULL, NULL, BGP_NO_SNAPSHOT_TEST);
 	TransactionId priorXmax = InvalidTransactionId;
 	ItemId		rootlp;
 	HeapTupleHeader htup;
@@ -673,7 +683,8 @@ heap_page_prune_execute(Buffer buffer,
 						OffsetNumber *nowdead, int ndead,
 						OffsetNumber *nowunused, int nunused)
 {
-	Page		page = (Page) BufferGetPage(buffer);
+	Page		page = BufferGetPage(buffer, NULL, NULL,
+									 BGP_NO_SNAPSHOT_TEST);
 	OffsetNumber *offnum;
 	int			i;
 

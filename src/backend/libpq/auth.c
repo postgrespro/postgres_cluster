@@ -89,6 +89,17 @@ static Port *pam_port_cludge;	/* Workaround for passing "Port *port" into
 
 
 /*----------------------------------------------------------------
+ * BSD authentication
+ *----------------------------------------------------------------
+ */
+#ifdef USE_BSD_AUTH
+#include <bsd_auth.h>
+
+static int	CheckBSDAuth(Port *port, char *user);
+#endif   /* USE_BSD_AUTH */
+
+
+/*----------------------------------------------------------------
  * LDAP authentication
  *----------------------------------------------------------------
  */
@@ -155,6 +166,11 @@ typedef SECURITY_STATUS
 			(WINAPI * QUERY_SECURITY_CONTEXT_TOKEN_FN) (
 													   PCtxtHandle, void **);
 static int	pg_SSPI_recvauth(Port *port);
+static int pg_SSPI_make_upn(char *accountname,
+				 size_t accountnamesize,
+				 char *domainname,
+				 size_t domainnamesize,
+				 bool update_accountname);
 #endif
 
 /*----------------------------------------------------------------
@@ -257,6 +273,9 @@ auth_failed(Port *port, int status, char *logdetail)
 			break;
 		case uaPAM:
 			errstr = gettext_noop("PAM authentication failed for user \"%s\"");
+			break;
+		case uaBSD:
+			errstr = gettext_noop("BSD authentication failed for user \"%s\"");
 			break;
 		case uaLDAP:
 			errstr = gettext_noop("LDAP authentication failed for user \"%s\"");
@@ -527,6 +546,14 @@ ClientAuthentication(Port *port)
 #else
 			Assert(false);
 #endif   /* USE_PAM */
+			break;
+
+		case uaBSD:
+#ifdef USE_BSD_AUTH
+			status = CheckBSDAuth(port, port->user_name);
+#else
+			Assert(false);
+#endif   /* USE_BSD_AUTH */
 			break;
 
 		case uaLDAP:
@@ -1265,6 +1292,17 @@ pg_SSPI_recvauth(Port *port)
 
 	free(tokenuser);
 
+	if (!port->hba->compat_realm)
+	{
+		int			status = pg_SSPI_make_upn(accountname, sizeof(accountname),
+											  domainname, sizeof(domainname),
+											  port->hba->upn_username);
+
+		if (status != STATUS_OK)
+			/* Error already reported from pg_SSPI_make_upn */
+			return status;
+	}
+
 	/*
 	 * Compare realm/domain if requested. In SSPI, always compare case
 	 * insensitive.
@@ -1299,6 +1337,100 @@ pg_SSPI_recvauth(Port *port)
 	}
 	else
 		return check_usermap(port->hba->usermap, port->user_name, accountname, true);
+}
+
+/*
+ * Replaces the domainname with the Kerberos realm name,
+ * and optionally the accountname with the Kerberos user name.
+ */
+static int
+pg_SSPI_make_upn(char *accountname,
+				 size_t accountnamesize,
+				 char *domainname,
+				 size_t domainnamesize,
+				 bool update_accountname)
+{
+	char	   *samname;
+	char	   *upname = NULL;
+	char	   *p = NULL;
+	ULONG		upnamesize = 0;
+	size_t		upnamerealmsize;
+	BOOLEAN		res;
+
+	/*
+	 * Build SAM name (DOMAIN\user), then translate to UPN
+	 * (user@kerberos.realm). The realm name is returned in lower case, but
+	 * that is fine because in SSPI auth, string comparisons are always
+	 * case-insensitive.
+	 */
+
+	samname = psprintf("%s\\%s", domainname, accountname);
+	res = TranslateName(samname, NameSamCompatible, NameUserPrincipal,
+						NULL, &upnamesize);
+
+	if ((!res && GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+		|| upnamesize == 0)
+	{
+		pfree(samname);
+		ereport(LOG,
+				(errcode(ERRCODE_INVALID_ROLE_SPECIFICATION),
+				 errmsg("could not translate name")));
+		return STATUS_ERROR;
+	}
+
+	/* upnamesize includes the terminating NUL. */
+	upname = palloc(upnamesize);
+
+	res = TranslateName(samname, NameSamCompatible, NameUserPrincipal,
+						upname, &upnamesize);
+
+	pfree(samname);
+	if (res)
+		p = strchr(upname, '@');
+
+	if (!res || p == NULL)
+	{
+		pfree(upname);
+		ereport(LOG,
+				(errcode(ERRCODE_INVALID_ROLE_SPECIFICATION),
+				 errmsg("could not translate name")));
+		return STATUS_ERROR;
+	}
+
+	/* Length of realm name after the '@', including the NUL. */
+	upnamerealmsize = upnamesize - (p - upname + 1);
+
+	/* Replace domainname with realm name. */
+	if (upnamerealmsize > domainnamesize)
+	{
+		pfree(upname);
+		ereport(LOG,
+				(errcode(ERRCODE_INVALID_ROLE_SPECIFICATION),
+				 errmsg("realm name too long")));
+		return STATUS_ERROR;
+	}
+
+	/* Length is now safe. */
+	strcpy(domainname, p + 1);
+
+	/* Replace account name as well (in case UPN != SAM)? */
+	if (update_accountname)
+	{
+		if ((p - upname + 1) > accountnamesize)
+		{
+			pfree(upname);
+			ereport(LOG,
+					(errcode(ERRCODE_INVALID_ROLE_SPECIFICATION),
+					 errmsg("translated account name too long")));
+			return STATUS_ERROR;
+		}
+
+		*p = 0;
+		strcpy(accountname, upname);
+	}
+
+	pfree(upname);
+	return STATUS_OK;
 }
 #endif   /* ENABLE_SSPI */
 
@@ -1739,6 +1871,18 @@ CheckPAMAuth(Port *port, char *user, char *password)
 {
 	int			retval;
 	pam_handle_t *pamh = NULL;
+	char		hostinfo[NI_MAXHOST];
+
+	retval = pg_getnameinfo_all(&port->raddr.addr, port->raddr.salen,
+								hostinfo, sizeof(hostinfo), NULL, 0,
+								port->hba->pam_use_hostname ? 0 : NI_NUMERICHOST | NI_NUMERICSERV);
+	if (retval != 0)
+	{
+		ereport(WARNING,
+				(errmsg_internal("pg_getnameinfo_all() failed: %s",
+								 gai_strerror(retval))));
+		return STATUS_ERROR;
+	}
 
 	/*
 	 * We can't entirely rely on PAM to pass through appdata --- it appears
@@ -1781,6 +1925,17 @@ CheckPAMAuth(Port *port, char *user, char *password)
 				(errmsg("pam_set_item(PAM_USER) failed: %s",
 						pam_strerror(pamh, retval))));
 		pam_passwd = NULL;		/* Unset pam_passwd */
+		return STATUS_ERROR;
+	}
+
+	retval = pam_set_item(pamh, PAM_RHOST, hostinfo);
+
+	if (retval != PAM_SUCCESS)
+	{
+		ereport(LOG,
+				(errmsg("pam_set_item(PAM_RHOST) failed: %s",
+					pam_strerror(pamh, retval))));
+		pam_passwd = NULL;
 		return STATUS_ERROR;
 	}
 
@@ -1832,6 +1987,38 @@ CheckPAMAuth(Port *port, char *user, char *password)
 }
 #endif   /* USE_PAM */
 
+
+/*----------------------------------------------------------------
+ * BSD authentication system
+ *----------------------------------------------------------------
+ */
+#ifdef USE_BSD_AUTH
+static int
+CheckBSDAuth(Port *port, char *user)
+{
+	char *passwd;
+	int retval;
+
+	/* Send regular password request to client, and get the response */
+	sendAuthRequest(port, AUTH_REQ_PASSWORD);
+
+	passwd = recv_password_packet(port);
+	if (passwd == NULL)
+		return STATUS_EOF;
+
+	/*
+	 * Ask the BSD auth system to verify password.  Note that auth_userokay
+	 * will overwrite the password string with zeroes, but it's just a
+	 * temporary string so we don't care.
+	 */
+	retval = auth_userokay(user, NULL, "auth-postgresql", passwd);
+
+	if (!retval)
+		return STATUS_ERROR;
+
+	return STATUS_OK;
+}
+#endif   /* USE_BSD_AUTH */
 
 
 /*----------------------------------------------------------------

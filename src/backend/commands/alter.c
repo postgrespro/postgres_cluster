@@ -422,7 +422,7 @@ ExecAlterObjectDependsStmt(AlterObjectDependsStmt *stmt, ObjectAddress *refAddre
 	if (refAddress)
 		*refAddress = refAddr;
 
-	recordDependencyOn(&address, refAddress, DEPENDENCY_AUTO_EXTENSION);
+	recordDependencyOn(&address, &refAddr, DEPENDENCY_AUTO_EXTENSION);
 
 	return address;
 }
@@ -746,6 +746,9 @@ ObjectAddress
 ExecAlterOwnerStmt(AlterOwnerStmt *stmt)
 {
 	Oid			newowner = get_rolespec_oid(stmt->newowner, false);
+
+	check_rolespec_name(stmt->newowner,
+						"Cannot make reserved roles owners of objects.");
 
 	switch (stmt->objectType)
 	{

@@ -39,6 +39,7 @@
 
 #include "common.h"
 #include "copy.h"
+#include "crosstabview.h"
 #include "describe.h"
 #include "help.h"
 #include "input.h"
@@ -364,6 +365,20 @@ exec_command(const char *cmd,
 	else if (strcmp(cmd, "copyright") == 0)
 		print_copyright();
 
+	/* \crosstabview -- execute a query and display results in crosstab */
+	else if (strcmp(cmd, "crosstabview") == 0)
+	{
+		pset.ctv_col_V = psql_scan_slash_option(scan_state,
+												OT_NORMAL, NULL, false);
+		pset.ctv_col_H = psql_scan_slash_option(scan_state,
+												OT_NORMAL, NULL, false);
+		pset.ctv_col_D = psql_scan_slash_option(scan_state,
+												OT_NORMAL, NULL, false);
+
+		pset.crosstab_flag = true;
+		status = PSQL_CMD_SEND;
+	}
+
 	/* \d* commands */
 	else if (cmd[0] == 'd')
 	{
@@ -429,7 +444,7 @@ exec_command(const char *cmd,
 				break;
 			case 'g':
 				/* no longer distinct from \du */
-				success = describeRoles(pattern, show_verbose);
+				success = describeRoles(pattern, show_verbose, show_system);
 				break;
 			case 'l':
 				success = do_lo_list();
@@ -474,7 +489,7 @@ exec_command(const char *cmd,
 					success = PSQL_CMD_UNKNOWN;
 				break;
 			case 'u':
-				success = describeRoles(pattern, show_verbose);
+				success = describeRoles(pattern, show_verbose, show_system);
 				break;
 			case 'F':			/* text search subsystem */
 				switch (cmd[2])

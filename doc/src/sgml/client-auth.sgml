@@ -522,6 +522,16 @@ hostnossl  <replaceable>database</replaceable>  <replaceable>user</replaceable> 
          </para>
         </listitem>
        </varlistentry>
+
+       <varlistentry>
+        <term><literal>bsd</></term>
+        <listitem>
+         <para>
+          Authenticate using the BSD Authentication service provided by the
+          operating system. See <xref linkend="auth-bsd"> for details.
+         </para>
+        </listitem>
+       </varlistentry>
       </variablelist>
 
       </para>
@@ -1097,6 +1107,43 @@ omicron         bryanh                  guest1
      </varlistentry>
 
      <varlistentry>
+      <term><literal>compat_realm</literal></term>
+      <listitem>
+       <para>
+        If set to 1, the domain's SAM-compatible name (also known as the
+        NetBIOS name) is used for the <literal>include_realm</literal>
+        option. This is the default. If set to 0, the true realm name from
+        the Kerberos user principal name is used.
+       </para>
+       <para>
+        Do not enable this option unless your server runs under a domain
+        account (this includes virtual service accounts on a domain member
+        system) and all clients authenticating through SSPI are also using
+        domain accounts, or authentication will fail.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>upn_username</literal></term>
+      <listitem>
+       <para>
+        If this option is enabled along with <literal>compat_realm</literal>,
+        the user name from the Kerberos UPN is used for authentication. If
+        it is disabled (the default), the SAM-compatible user name is used.
+        By default, these two names are identical for new user accounts.
+       </para>
+       <para>
+        Note that <application>libpq</> uses the SAM-compatible name if no
+        explicit user name is specified. If you use
+        <application>libpq</> or a driver based on it, you should
+        leave this option disabled or explicitly specify user name in the
+        connection string.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><literal>map</literal></term>
       <listitem>
        <para>
@@ -1617,10 +1664,11 @@ host ... ldap ldapurl="ldap://ldap.example.net/dc=example,dc=net?uid?sub"
     <literal>password</literal> except that it uses PAM (Pluggable
     Authentication Modules) as the authentication mechanism. The
     default PAM service name is <literal>postgresql</literal>.
-    PAM is used only to validate user name/password pairs.
-    Therefore the user must already exist in the database before PAM
-    can be used for authentication.  For more information about
-    PAM, please read the <ulink url="http://www.kernel.org/pub/linux/libs/pam/">
+    PAM is used only to validate user name/password pairs and optionally the
+    connected remote host name or IP address. Therefore the user must already
+    exist in the database before PAM can be used for authentication.  For more
+    information about PAM, please read the
+    <ulink url="http://www.kernel.org/pub/linux/libs/pam/">
     <productname>Linux-PAM</> Page</ulink>.
    </para>
 
@@ -1635,6 +1683,20 @@ host ... ldap ldapurl="ldap://ldap.example.net/dc=example,dc=net?uid?sub"
        </para>
       </listitem>
      </varlistentry>
+     <varlistentry>
+      <term><literal>pam_use_hostname</literal></term>
+      <listitem>
+       <para>
+        Determines whether the remote IP address or the host name is provided
+        to PAM modules through the <symbol>PAM_RHOST</symbol> item.  By
+        default, the IP address is used.  Set this option to 1 to use the
+        resolved host name instead.  Host name resolution can lead to login
+        delays.  (Most PAM configurations don't use this information, so it is
+        only necessary to consider this setting if a PAM configuration was
+        specifically created to make use of it.)
+       </para>
+      </listitem>
+     </varlistentry>
     </variablelist>
    </para>
 
@@ -1644,6 +1706,41 @@ host ... ldap ldapurl="ldap://ldap.example.net/dc=example,dc=net?uid?sub"
      will fail because the PostgreSQL server is started by a non-root
      user.  However, this is not an issue when PAM is configured to use
      LDAP or other authentication methods.
+    </para>
+   </note>
+  </sect2>
+
+  <sect2 id="auth-bsd">
+   <title>BSD Authentication</title>
+
+   <indexterm zone="auth-bsd">
+    <primary>BSD Authentication</primary>
+   </indexterm>
+
+   <para>
+    This authentication method operates similarly to
+    <literal>password</literal> except that it uses BSD Authentication
+    to verify the password. BSD Authentication is used only
+    to validate user name/password pairs. Therefore the user's role must
+    already exist in the database before BSD Authentication can be used
+    for authentication. The BSD Authentication framework is currently
+    only available on OpenBSD.
+   </para>
+
+   <para>
+    BSD Authentication in <productname>PostgreSQL</> uses
+    the <literal>auth-postgresql</literal> login type and authenticates with
+    the <literal>postgresql</literal> login class if that's defined
+    in <filename>login.conf</filename>. By default that login class does not
+    exist, and <productname>PostgreSQL</> will use the default login class.
+   </para>
+
+   <note>
+    <para>
+     To use BSD Authentication, the PostgreSQL user account (that is, the
+     operating system user running the server) must first be added to
+     the <literal>auth</literal> group.  The <literal>auth</literal> group
+     exists by default on OpenBSD systems.
     </para>
    </note>
   </sect2>

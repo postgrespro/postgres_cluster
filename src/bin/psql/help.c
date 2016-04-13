@@ -177,6 +177,7 @@ slashUsage(unsigned short int pager)
 	fprintf(output, _("  \\gexec                 execute query, then execute each value in its result\n"));
 	fprintf(output, _("  \\gset [PREFIX]         execute query and store results in psql variables\n"));
 	fprintf(output, _("  \\q                     quit psql\n"));
+	fprintf(output, _("  \\crosstabview [COLUMNS] execute query and display results in crosstab\n"));
 	fprintf(output, _("  \\watch [SEC]           execute query every SEC seconds\n"));
 	fprintf(output, "\n");
 
@@ -229,7 +230,7 @@ slashUsage(unsigned short int pager)
 	fprintf(output, _("  \\dFd[+] [PATTERN]      list text search dictionaries\n"));
 	fprintf(output, _("  \\dFp[+] [PATTERN]      list text search parsers\n"));
 	fprintf(output, _("  \\dFt[+] [PATTERN]      list text search templates\n"));
-	fprintf(output, _("  \\dg[+]  [PATTERN]      list roles\n"));
+	fprintf(output, _("  \\dg[S+] [PATTERN]      list roles\n"));
 	fprintf(output, _("  \\di[S+] [PATTERN]      list indexes\n"));
 	fprintf(output, _("  \\dl                    list large objects, same as \\lo_list\n"));
 	fprintf(output, _("  \\dL[S+] [PATTERN]      list procedural languages\n"));
@@ -242,7 +243,7 @@ slashUsage(unsigned short int pager)
 	fprintf(output, _("  \\ds[S+] [PATTERN]      list sequences\n"));
 	fprintf(output, _("  \\dt[S+] [PATTERN]      list tables\n"));
 	fprintf(output, _("  \\dT[S+] [PATTERN]      list data types\n"));
-	fprintf(output, _("  \\du[+]  [PATTERN]      list roles\n"));
+	fprintf(output, _("  \\du[S+] [PATTERN]      list roles\n"));
 	fprintf(output, _("  \\dv[S+] [PATTERN]      list views\n"));
 	fprintf(output, _("  \\dE[S+] [PATTERN]      list foreign tables\n"));
 	fprintf(output, _("  \\dx[+]  [PATTERN]      list extensions\n"));
