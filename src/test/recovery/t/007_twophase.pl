@@ -2,13 +2,13 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 11;
+use Test::More tests => 12;
 
 # Setup master node
 my $node_master = get_new_node("master");
 $node_master->init(allows_streaming => 1);
 $node_master->append_conf('postgresql.conf', qq(
-max_prepared_transactions = 10
+	max_prepared_transactions = 10
 ));
 $node_master->start;
 $node_master->backup('master_backup');
@@ -224,13 +224,20 @@ $node_master->psql('postgres',"commit prepared 'x'");
 
 
 ###############################################################################
-# Commit prepared on master while slave is down.
+# Check for a lock confcict between prepared tx with DDL inside and replay of
+# XLOG_STANDBY_LOCK wal record.
 ###############################################################################
 
-# Switch to asynchronous replication
-#$node_master->append_conf('postgresql.conf', qq(
-#	synchronous_standby_names = ''
-#));
-#$node_master->psql('postgres', "select pg_reload_conf()");
+$node_master->psql('postgres', "
+	begin;
+	create table t2(id int);
+	prepare transaction 'x';
+	-- checkpoint will issue XLOG_STANDBY_LOCK that can conflict with lock
+	-- held by 'create table' statement
+	checkpoint;
+	commit prepared 'x';
+");
 
+$node_slave->psql('postgres',"select count(*) from pg_prepared_xacts", stdout => \$psql_out);
+is($psql_out, '0', "Replay tx with DDL");
 
