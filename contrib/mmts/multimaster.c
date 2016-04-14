@@ -526,6 +526,10 @@ MtmAdjustOldestXid(TransactionId xid)
 			} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) { 
 				xid = Mtm->oldestXid;
 			}
+		} else { 
+			if (prev != NULL) { 
+				Mtm->transListHead = prev;
+			}
 		}
 		MtmUnlock();
     }
