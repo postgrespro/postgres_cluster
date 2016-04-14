@@ -487,7 +487,7 @@ MtmAdjustOldestXid(TransactionId xid)
 static TransactionId 
 MtmAdjustOldestXid(TransactionId xid)
 {
-    if (TransactionIdIsValid(xid)) { 
+    if (TransactionIdIsValid(xid) && MtmUseDtm) { 
         MtmTransState *ts, *prev = NULL;
         int i;
 
