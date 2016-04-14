@@ -252,3 +252,42 @@ Bench finished at Чт. апр. 14 18:53:23 MSK 2016
 Bench started at Чт. апр. 14 18:53:42 MSK 2016
 astro5:{tps:180.239135, transactions:150000, selects:0, updates:300156, aborts:232, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:1000, hosts:3}
 Bench finished at Чт. апр. 14 19:07:34 MSK 2016
+Bench started at Чт. апр. 14 19:59:58 MSK 2016
+astro5:{tps:17844.456298, transactions:150000, selects:0, updates:300152, aborts:240, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:1000, hosts:3}
+Bench finished at Чт. апр. 14 20:00:07 MSK 2016
+Bench started at Чт. апр. 14 20:01:03 MSK 2016
+astro5:{tps:19247.941850, transactions:150000, selects:0, updates:300138, aborts:203, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:1000, hosts:3}
+Bench finished at Чт. апр. 14 20:01:11 MSK 2016
+Bench started at Чт. апр. 14 20:01:49 MSK 2016
+astro5:{tps:18371.053393, transactions:150000, selects:0, updates:300170, aborts:235, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:1000, hosts:3}
+Bench finished at Чт. апр. 14 20:01:57 MSK 2016
+Bench started at Чт. апр. 14 20:02:23 MSK 2016
+astro5:{tps:13404.266927, transactions:100000, selects:0, updates:200058, aborts:97, abort_percent: 0, readers:0, writers:100, update_percent:100, accounts:500000, iterations:1000, hosts:3}
+Bench finished at Чт. апр. 14 20:02:30 MSK 2016
+Bench started at Чт. апр. 14 20:03:24 MSK 2016
+astro5:{tps:16527.393080, transactions:100000, selects:0, updates:200078, aborts:95, abort_percent: 0, readers:0, writers:100, update_percent:100, accounts:500000, iterations:1000, hosts:3}
+Bench finished at Чт. апр. 14 20:03:31 MSK 2016
+Bench started at Чт. апр. 14 20:04:00 MSK 2016
+astro5:{tps:18563.630432, transactions:150000, selects:0, updates:300190, aborts:226, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:1000, hosts:3}
+Bench finished at Чт. апр. 14 20:04:08 MSK 2016
+Bench started at Чт. апр. 14 20:04:49 MSK 2016
+astro5:{tps:18701.395074, transactions:150000, selects:0, updates:300168, aborts:236, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:1000, hosts:3}
+Bench finished at Чт. апр. 14 20:04:57 MSK 2016
+Bench started at Чт. апр. 14 20:05:19 MSK 2016
+astro5:{tps:19369.111871, transactions:150000, selects:0, updates:300190, aborts:231, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:1000, hosts:3}
+Bench finished at Чт. апр. 14 20:05:27 MSK 2016
+Bench started at Чт. апр. 14 20:06:04 MSK 2016
+astro5:{tps:19453.975668, transactions:1500000, selects:0, updates:3001868, aborts:2439, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Чт. апр. 14 20:07:21 MSK 2016
+Bench started at Чт. апр. 14 20:08:36 MSK 2016
+astro5:{tps:19686.758474, transactions:1500000, selects:0, updates:3001850, aborts:2463, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Чт. апр. 14 20:09:53 MSK 2016
+Bench started at Чт. апр. 14 20:10:09 MSK 2016
+astro5:{tps:20577.036061, transactions:1500000, selects:0, updates:3001964, aborts:2467, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Чт. апр. 14 20:11:23 MSK 2016
+Bench started at Чт. апр. 14 20:12:49 MSK 2016
+astro5:{tps:16349.624735, transactions:1500000, selects:0, updates:3001828, aborts:2412, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Чт. апр. 14 20:14:21 MSK 2016
+Bench started at Чт. апр. 14 20:14:46 MSK 2016
+astro5:{tps:11453.993709, transactions:1500000, selects:0, updates:3001960, aborts:2563, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Чт. апр. 14 20:16:57 MSK 2016
