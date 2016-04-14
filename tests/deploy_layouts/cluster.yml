@@ -46,7 +46,7 @@
     - "wal_sender_timeout = 0"
     - "max_replication_slots = 10"
     - "max_connections = 200"
-    - "max_worker_processes = 200"
+    - "max_worker_processes = 100"
     - "shared_preload_libraries = 'raftable,multimaster'"
     - "multimaster.conn_strings = '{{connections}}'"
     - "multimaster.node_id = {{ node_id }}"
@@ -54,7 +54,7 @@
     - "multimaster.queue_size = 1073741824"
     - "multimaster.arbiter_port = 5600"
     - "multimaster.vacuum_delay = 1"
-    - "multimaster.workers = 100"
+    - "multimaster.workers = 32"
     - "multimaster.use_dtm = 0"
 
   - name: restart postgrespro

@@ -518,13 +518,11 @@ MtmAdjustOldestXid(TransactionId xid)
 				}
 			}
         } 
-		if (MtmUseDtm) { 
-			if (prev != NULL) { 
-				Mtm->transListHead = prev;
-				Mtm->oldestXid = xid = prev->xid;            
-			} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) { 
-				xid = Mtm->oldestXid;
-			}
+		if (prev != NULL) { 
+			Mtm->transListHead = prev;
+			Mtm->oldestXid = xid = prev->xid;            
+		} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) { 
+			xid = Mtm->oldestXid;
 		}
 		MtmUnlock();
     }
@@ -782,12 +780,18 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		MtmUnlock();
 		MtmResetTransaction(x);
 	} else { 
+		time_t wakeupTime;
+		static time_t maxWakeupTime;
 		/* wait votes from all nodes */
 		while (!ts->votingCompleted) { 
 			MtmUnlock();
 			WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
 			ResetLatch(&MyProc->procLatch);			
 			MtmLock(LW_SHARED);
+		}
+		wakeupTime = MtmGetCurrentTime() - ts->wakeupTime;
+		if (wakeupTime > maxWakeupTime) { 
+			maxWakeupTime = wakeupTime;
 		}
 		x->status = ts->status;
 		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
@@ -979,6 +983,7 @@ void MtmWakeUpBackend(MtmTransState* ts)
 {
 	MTM_LOG3("Wakeup backed procno=%d, pid=%d", ts->procno, ProcGlobal->allProcs[ts->procno].pid);
 	ts->votingCompleted = true;
+	ts->wakeupTime = MtmGetCurrentTime();
 	SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
 }
 
