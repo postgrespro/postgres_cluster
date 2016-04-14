@@ -487,7 +487,7 @@ MtmAdjustOldestXid(TransactionId xid)
 static TransactionId 
 MtmAdjustOldestXid(TransactionId xid)
 {
-    if (TransactionIdIsValid(xid) && MtmUseDtm) { 
+    if (TransactionIdIsValid(xid)) { 
         MtmTransState *ts, *prev = NULL;
         int i;
 
@@ -518,13 +518,15 @@ MtmAdjustOldestXid(TransactionId xid)
 					hash_search(MtmXid2State, &prev->xid, HASH_REMOVE, NULL);
 				}
 			}
-        }
-        if (prev != NULL) { 
-            Mtm->transListHead = prev;
-            Mtm->oldestXid = xid = prev->xid;            
-        } else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) { 
-            xid = Mtm->oldestXid;
-        }
+        } 
+		if (MtmUseDtm) { 
+			if (prev != NULL) { 
+				Mtm->transListHead = prev;
+				Mtm->oldestXid = xid = prev->xid;            
+			} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) { 
+				xid = Mtm->oldestXid;
+			}
+		}
 		MtmUnlock();
     }
     return xid;
