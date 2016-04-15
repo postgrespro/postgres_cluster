@@ -103,6 +103,7 @@ PG_MODULE_MAGIC;
 PG_FUNCTION_INFO_V1(mtm_start_replication);
 PG_FUNCTION_INFO_V1(mtm_stop_replication);
 PG_FUNCTION_INFO_V1(mtm_drop_node);
+PG_FUNCTION_INFO_V1(mtm_poll_node);
 PG_FUNCTION_INFO_V1(mtm_recover_node);
 PG_FUNCTION_INFO_V1(mtm_get_snapshot);
 PG_FUNCTION_INFO_V1(mtm_get_nodes_state);
@@ -181,6 +182,7 @@ int   MtmKeepaliveTimeout;
 int   MtmReconnectAttempts;
 int   MtmNodeDisableDelay;
 bool  MtmUseRaftable;
+bool  MtmUseDtm;
 MtmConnectionInfo* MtmConnections;
 
 static char* MtmConnStrs;
@@ -339,7 +341,7 @@ TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 }
 
 bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
-{
+{	
 #if TRACE_SLEEP_TIME
     static timestamp_t firstReportTime;
     static timestamp_t prevReportTime;
@@ -349,6 +351,10 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     timestamp_t delay = MIN_WAIT_TIMEOUT;
     Assert(xid != InvalidTransactionId);
 
+	if (!MtmUseDtm) { 
+		return PgXidInMVCCSnapshot(xid, snapshot);
+	}
+	
 	MtmLock(LW_SHARED);
 
 #if TRACE_SLEEP_TIME
@@ -512,13 +518,19 @@ MtmAdjustOldestXid(TransactionId xid)
 					hash_search(MtmXid2State, &prev->xid, HASH_REMOVE, NULL);
 				}
 			}
-        }
-        if (prev != NULL) { 
-            Mtm->transListHead = prev;
-            Mtm->oldestXid = xid = prev->xid;            
-        } else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) { 
-            xid = Mtm->oldestXid;
-        }
+        } 
+		if (MtmUseDtm) { 
+			if (prev != NULL) { 
+				Mtm->transListHead = prev;
+				Mtm->oldestXid = xid = prev->xid;            
+			} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) { 
+				xid = Mtm->oldestXid;
+			}
+		} else { 
+			if (prev != NULL) { 
+				Mtm->transListHead = prev;
+			}
+		}
 		MtmUnlock();
     }
     return xid;
@@ -753,6 +765,8 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 
 }
 
+static time_t maxWakeupTime;
+
 static void
 MtmPostPrepareTransaction(MtmCurrentTrans* x)
 { 
@@ -768,18 +782,23 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		tm->state = ts;	
 		ts->votingCompleted = true;
 		if (Mtm->status != MTM_RECOVERY) { 
-			MtmSendNotificationMessage(ts, MSG_READY); /* send notification to coordinator */
+			MtmSendNotificationMessage(ts, MtmUseDtm ? MSG_READY : MSG_PREPARED); /* send notification to coordinator */
 		} else {
 			ts->status = TRANSACTION_STATUS_UNKNOWN;
 		}
 		MtmUnlock();
 		MtmResetTransaction(x);
 	} else { 
+		time_t wakeupTime;
 		/* wait votes from all nodes */
 		while (!ts->votingCompleted) { 
 			MtmUnlock();
 			WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
 			ResetLatch(&MyProc->procLatch);			
+			wakeupTime = MtmGetCurrentTime() - ts->wakeupTime;
+			if (wakeupTime > maxWakeupTime) { 
+				maxWakeupTime = wakeupTime;
+			}
 			MtmLock(LW_SHARED);
 		}
 		x->status = ts->status;
@@ -972,6 +991,7 @@ void MtmWakeUpBackend(MtmTransState* ts)
 {
 	MTM_LOG3("Wakeup backed procno=%d, pid=%d", ts->procno, ProcGlobal->allProcs[ts->procno].pid);
 	ts->votingCompleted = true;
+	ts->wakeupTime = MtmGetCurrentTime();
 	SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
 }
 
@@ -1651,6 +1671,19 @@ _PG_init(void)
 		NULL
 	);
 
+	DefineCustomBoolVariable(
+		"multimaster.use_dtm",
+		"Use distributed transaction manager",
+		NULL,
+		&MtmUseDtm,
+		true,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
 	DefineCustomIntVariable(
 		"multimaster.workers",
 		"Number of multimaster executor workers per node",
@@ -2067,6 +2100,27 @@ mtm_drop_node(PG_FUNCTION_ARGS)
 	bool dropSlot = PG_GETARG_BOOL(1);
 	MtmDropNode(nodeId, dropSlot);
     PG_RETURN_VOID();
+}
+	
+Datum
+mtm_poll_node(PG_FUNCTION_ARGS)
+{
+	int nodeId = PG_GETARG_INT32(0);
+	bool nowait = PG_GETARG_BOOL(1);
+	bool online = true;
+	while (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
+		if (nowait) { 
+			online = false;
+			break;
+		} else { 
+			MtmSleep(STATUS_POLL_DELAY);
+		}
+	}
+	if (!nowait) { 
+		/* Just wait some time until logical repication channels will be reestablished */
+		MtmSleep(MtmNodeDisableDelay);
+	}
+    PG_RETURN_BOOL(online);
 }
 	
 Datum

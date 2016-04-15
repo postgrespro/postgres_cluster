@@ -7,7 +7,7 @@
 
 #include "pglogical_output/hooks.h"
 
-#define  DEBUG_LEVEL 1
+#define  DEBUG_LEVEL 0
 
 #if DEBUG_LEVEL == 0
 #define MTM_LOG1(fmt, ...) elog(LOG, fmt, ## __VA_ARGS__) 
@@ -135,6 +135,7 @@ typedef struct MtmTransState
 	int            procno;             /* pgprocno of transaction coordinator waiting for responses from replicas, 
 							              used to notify coordinator by arbiter */
 	int            nSubxids;           /* Number of subtransanctions */
+	time_t         wakeupTime;         
 	MtmMessageCode cmd;                /* Notification message to be sent */
   	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
@@ -191,6 +192,7 @@ extern int   MtmConnectTimeout;
 extern int   MtmReconnectAttempts;
 extern int   MtmKeepaliveTimeout;
 extern int   MtmNodeDisableDelay;
+extern bool  MtmUseDtm;
 extern HTAB* MtmXid2State;
 
 extern MtmConnectionInfo* MtmConnections;
