@@ -1,0 +1,47 @@
+version: '2'
+
+networks:
+  clusternet:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.0.0.0/24
+
+services:
+  node1:
+    build: .
+    networks:
+      clusternet:
+        ipv4_address: 10.0.0.10
+    environment:
+      NODEID: '1'
+      CONNS: 'dbname=postgres host=10.0.0.10 port=5432,dbname=postgres host=10.0.0.20 port=5432,dbname=postgres host=10.0.0.30 port=5432'
+      PEERS: '1:10.0.0.10:5431,2:10.0.0.20:5431,3:10.0.0.30:5431'
+    ports:
+      - "5432:5432"
+      - "5431:5431"
+  node2:
+    build: .
+    networks:
+      clusternet:
+        ipv4_address: 10.0.0.20
+    environment:
+      NODEID: '2'
+      CONNS: 'dbname=postgres host=10.0.0.10 port=5432,dbname=postgres host=10.0.0.20 port=5432,dbname=postgres host=10.0.0.30 port=5432'
+      PEERS: '1:10.0.0.10:5431,2:10.0.0.20:5431,3:10.0.0.30:5431'
+    ports:
+      - "5434:5432"
+      - "5433:5431"
+  node3:
+    build: .
+    networks:
+      clusternet:
+        ipv4_address: 10.0.0.30
+    environment:
+      NODEID: '3'
+      CONNS: 'dbname=postgres host=10.0.0.10 port=5432,dbname=postgres host=10.0.0.20 port=5432,dbname=postgres host=10.0.0.30 port=5432'
+      PEERS: '1:10.0.0.10:5431,2:10.0.0.20:5431,3:10.0.0.30:5431'
+    ports:
+      - "5436:5432"
+      - "5435:5431"
