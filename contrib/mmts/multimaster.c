@@ -519,7 +519,8 @@ MtmAdjustOldestXid(TransactionId xid)
 				}
 			}
         } 
-		if (MtmUseDtm) { 
+		//if (MtmUseDtm) 
+		{ 
 			if (prev != NULL) { 
 				Mtm->transListHead = prev;
 				Mtm->oldestXid = xid = prev->xid;            
@@ -2570,7 +2571,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_AlterTableSpaceOptionsStmt:
 		case T_TruncateStmt:
 		case T_CommentStmt: /* XXX: we could replicate these */;
-		case T_CopyStmt:
 		case T_PrepareStmt:
 		case T_ExecuteStmt:
 		case T_DeallocateStmt:
@@ -2678,6 +2678,29 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				}
 			}
 			break;
+	    case T_CopyStmt:
+		{
+			CopyStmt *copyStatement = (CopyStmt *) parsetree;
+			skipCommand = true;
+			if (copyStatement->is_from) { 
+				RangeVar *relation = copyStatement->relation;
+				
+				if (relation != NULL)
+				{
+					Oid relid = RangeVarGetRelid(relation, NoLock, true);
+					if (OidIsValid(relid))
+					{
+						Relation rel = heap_open(relid, ShareLock);
+						if (RelationNeedsWAL(rel)) {
+							MtmTx.containsDML = true;
+						}	
+						heap_close(rel, ShareLock);
+					}
+				}
+			}
+			break;
+		}
+
 	    default:
 			skipCommand = false;
 			break;

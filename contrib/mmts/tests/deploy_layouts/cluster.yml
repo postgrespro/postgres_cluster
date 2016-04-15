@@ -55,7 +55,7 @@
     - "multimaster.arbiter_port = 5600"
     - "multimaster.vacuum_delay = 1"
     - "multimaster.workers = 32"
-    - "multimaster.use_dtm = 0"
+    - "multimaster.use_dtm = 1"
 
   - name: restart postgrespro
     command: "{{pg_dst}}/bin/pg_ctl restart -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
