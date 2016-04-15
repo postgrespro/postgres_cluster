@@ -519,7 +519,7 @@ MtmAdjustOldestXid(TransactionId xid)
 				}
 			}
         } 
-		//if (MtmUseDtm) 
+		if (MtmUseDtm) 
 		{ 
 			if (prev != NULL) { 
 				Mtm->transListHead = prev;
