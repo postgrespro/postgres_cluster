@@ -135,7 +135,6 @@ typedef struct MtmTransState
 	int            procno;             /* pgprocno of transaction coordinator waiting for responses from replicas, 
 							              used to notify coordinator by arbiter */
 	int            nSubxids;           /* Number of subtransanctions */
-	time_t         wakeupTime;         
 	MtmMessageCode cmd;                /* Notification message to be sent */
   	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
