@@ -783,11 +783,8 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		tm->state = ts;	
 		ts->votingCompleted = true;
 		if (Mtm->status != MTM_RECOVERY) { 
-			if (MtmUseDtm) { 
-				MtmSendNotificationMessage(ts, MSG_READY); /* send notification to coordinator */
-			} else { 
-				ts->csn = MtmAssignCSN();
-				MtmSendNotificationMessage(ts, MSG_PREPARED); /* send notification to coordinator */
+			MtmSendNotificationMessage(ts, MSG_READY); /* send notification to coordinator */
+			if (!MtmUseDtm) { 
 				ts->status = TRANSACTION_STATUS_UNKNOWN;
 			}
 		} else {
