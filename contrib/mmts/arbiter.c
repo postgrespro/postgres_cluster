@@ -720,14 +720,24 @@ static void MtmTransReceiver(Datum arg)
 								MtmAbortTransaction(ts);
 							}
 
+							if (!MtmUseDtm && msg->csn > ts->csn) {
+								ts->csn = msg->csn;
+								MtmSyncClock(ts->csn);
+							}
+
 							if (++ts->nVotes == Mtm->nNodes) { 
 								/* All nodes are finished their transactions */
-								if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
+								if (ts->status == TRANSACTION_STATUS_ABORTED) { 
+									MtmWakeUpBackend(ts);								
+								} else if (MtmUseDtm) { 
+									Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 									ts->nVotes = 1; /* I voted myself */
 									MtmSendNotificationMessage(ts, MSG_PREPARE);									  
 								} else { 
-									Assert(ts->status == TRANSACTION_STATUS_ABORTED);
-									MtmWakeUpBackend(ts);								
+									Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+									ts->csn = MtmAssignCSN();
+									ts->status = TRANSACTION_STATUS_UNKNOWN;
+									MtmWakeUpBackend(ts);
 								}
 							}
 							break;						   

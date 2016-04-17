@@ -191,6 +191,8 @@ static int   MtmWorkers;
 static int   MtmVacuumDelay;
 static int   MtmMinRecoveryLag;
 static int   MtmMaxRecoveryLag;
+static int   Mtm2PCPrepareRatio;
+static int   Mtm2PCMinTimeout;
 static bool  MtmIgnoreTablesWithoutPk;
 
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
@@ -766,8 +768,6 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 
 }
 
-static time_t maxWakeupTime;
-
 static void
 MtmPostPrepareTransaction(MtmCurrentTrans* x)
 { 
@@ -783,24 +783,31 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		tm->state = ts;	
 		ts->votingCompleted = true;
 		if (Mtm->status != MTM_RECOVERY) { 
-			MtmSendNotificationMessage(ts, MtmUseDtm ? MSG_READY : MSG_PREPARED); /* send notification to coordinator */
+			if (MtmUseDtm) { 
+				MtmSendNotificationMessage(ts, MSG_READY); /* send notification to coordinator */
+			} else { 
+				ts->csn = MtmAssignCSN();
+				MtmSendNotificationMessage(ts, MSG_PREPARED); /* send notification to coordinator */
+				ts->status = TRANSACTION_STATUS_UNKNOWN;
+			}
 		} else {
 			ts->status = TRANSACTION_STATUS_UNKNOWN;
 		}
 		MtmUnlock();
 		MtmResetTransaction(x);
 	} else { 
-		time_t wakeupTime;
+		time_t timeout = Max(Mtm2PCMinTimeout, (ts->csn - ts->snapshot)*Mtm2PCPrepareRatio/100000); /* usec->msec and percents */ 
+		int result = 0;
 		/* wait votes from all nodes */
-		while (!ts->votingCompleted) { 
+		while (!ts->votingCompleted && !(result & WL_TIMEOUT)) {
 			MtmUnlock();
-			WaitLatch(&MyProc->procLatch, WL_LATCH_SET, -1);
+			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET|WL_TIMEOUT, timeout);
 			ResetLatch(&MyProc->procLatch);			
-			wakeupTime = MtmGetCurrentTime() - ts->wakeupTime;
-			if (wakeupTime > maxWakeupTime) { 
-				maxWakeupTime = wakeupTime;
-			}
 			MtmLock(LW_SHARED);
+		}
+		if (!ts->votingCompleted) {
+			ts->status = TRANSACTION_STATUS_ABORTED;
+			elog(WARNING, "Transaction is aborted because of %d msec timeout expiration", (int)timeout);
 		}
 		x->status = ts->status;
 		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
@@ -989,11 +996,12 @@ csn_t MtmGetTransactionCSN(TransactionId xid)
 }
 	
 void MtmWakeUpBackend(MtmTransState* ts)
-{
-	MTM_LOG3("Wakeup backed procno=%d, pid=%d", ts->procno, ProcGlobal->allProcs[ts->procno].pid);
-	ts->votingCompleted = true;
-	ts->wakeupTime = MtmGetCurrentTime();
-	SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
+{																		
+	if (!ts->votingCompleted) { 
+		MTM_LOG3("Wakeup backed procno=%d, pid=%d", ts->procno, ProcGlobal->allProcs[ts->procno].pid);
+		ts->votingCompleted = true;
+		SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
+	}
 }
 
 void MtmAbortTransaction(MtmTransState* ts)
@@ -1598,6 +1606,38 @@ _PG_init(void)
 	 */
 	if (!process_shared_preload_libraries_in_progress)
 		return;
+
+	DefineCustomIntVariable(
+		"multimaster.2pc_min_timeout",
+		"Minamal amount of time (milliseconds) to wait 2PC confirmation from all nodes",
+		"Timeout for 2PC is calculated as MAX(prepare_time*2pc_prepare_ratio/100,2pc_min_timeout)",
+		&Mtm2PCMinTimeout,
+		10000,
+		0,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.2pc_prepare_ratio",
+		"Percent of prepare time for maximal time of second phase of two-pahse commit",
+		"Timeout for 2PC is calculated as MAX(prepare_time*2pc_prepare_ratio/100,2pc_min_timeout)",
+		&Mtm2PCPrepareRatio,
+		100,
+		0,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+
 
 	DefineCustomIntVariable(
 		"multimaster.node_disable_delay",

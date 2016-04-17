@@ -53,15 +53,13 @@ static volatile sig_atomic_t got_sighup = false;
 
 /* GUC variables */
 static int receiver_idle_time = 0;
-static bool receiver_sync_mode = true;
+static bool receiver_sync_mode = false;
 
 /* Worker name */
-char worker_proc[BGW_MAXLEN];
+static char worker_proc[BGW_MAXLEN];
 
 /* Lastly written positions */
 static XLogRecPtr output_written_lsn = InvalidXLogRecPtr;
-static XLogRecPtr output_fsync_lsn = InvalidXLogRecPtr;
-static XLogRecPtr output_applied_lsn = InvalidXLogRecPtr;
 
 /* Stream functions */
 static void fe_sendint64(int64 i, char *buf);
@@ -91,16 +89,17 @@ receiver_raw_sighup(SIGNAL_ARGS)
  * Send a Standby Status Update message to server.
  */
 static bool
-sendFeedback(PGconn *conn, int64 now)
+sendFeedback(PGconn *conn, int64 now, RepOriginId originId)
 {
 	char		replybuf[1 + 8 + 8 + 8 + 8 + 1];
 	int		 len = 0;
+	XLogRecPtr output_applied_lsn = replorigin_get_progress(originId, true);
 
 	replybuf[len] = 'r';
 	len += 1;
 	fe_sendint64(output_written_lsn, &replybuf[len]);   /* write */
 	len += 8;
-	fe_sendint64(output_fsync_lsn, &replybuf[len]);	 /* flush */
+	fe_sendint64(output_applied_lsn, &replybuf[len]);	/* flush */
 	len += 8;
 	fe_sendint64(output_applied_lsn, &replybuf[len]);	/* apply */
 	len += 8;
@@ -409,8 +408,6 @@ pglogical_receiver_main(Datum main_arg)
 
 				/* Update written position */
 				output_written_lsn = Max(walEnd, output_written_lsn);
-				output_fsync_lsn = output_written_lsn;
-				output_applied_lsn = output_written_lsn;
 
 				/*
 				 * If the server requested an immediate reply, send one.
@@ -424,7 +421,7 @@ pglogical_receiver_main(Datum main_arg)
 					int64 now = feGetCurrentTimestamp();
 
 					/* Leave is feedback is not sent properly */
-					if (!sendFeedback(conn, now))
+					if (!sendFeedback(conn, now, originId))
 						proc_exit(1);
 				}
 				continue;
@@ -482,8 +479,6 @@ pglogical_receiver_main(Datum main_arg)
             }
 			/* Update written position */
 			output_written_lsn = Max(walEnd, output_written_lsn);
-			output_fsync_lsn = output_written_lsn;
-			output_applied_lsn = output_written_lsn;
 		}
 
 		/* No data, move to next loop */
