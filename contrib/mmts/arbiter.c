@@ -720,11 +720,6 @@ static void MtmTransReceiver(Datum arg)
 								MtmAbortTransaction(ts);
 							}
 
-							if (!MtmUseDtm && msg->csn > ts->csn) {
-								ts->csn = msg->csn;
-								MtmSyncClock(ts->csn);
-							}
-
 							if (++ts->nVotes == Mtm->nNodes) { 
 								/* All nodes are finished their transactions */
 								if (ts->status == TRANSACTION_STATUS_ABORTED) { 
@@ -735,7 +730,6 @@ static void MtmTransReceiver(Datum arg)
 									MtmSendNotificationMessage(ts, MSG_PREPARE);									  
 								} else { 
 									Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-									ts->csn = MtmAssignCSN();
 									ts->status = TRANSACTION_STATUS_UNKNOWN;
 									MtmWakeUpBackend(ts);
 								}

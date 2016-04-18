@@ -804,7 +804,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		}
 		if (!ts->votingCompleted) {
 			ts->status = TRANSACTION_STATUS_ABORTED;
-			elog(WARNING, "Transaction is aborted because of %d msec timeout expiration", (int)timeout);
+			elog(WARNING, "Transaction is aborted because of %d msec timeout expiration, prepare time %d msec", (int)timeout, (int)((ts->csn - x->snapshot)/1000));
 		}
 		x->status = ts->status;
 		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
@@ -1605,7 +1605,7 @@ _PG_init(void)
 		return;
 
 	DefineCustomIntVariable(
-		"multimaster.2pc_min_timeout",
+		"multimaster.twopc_min_timeout",
 		"Minamal amount of time (milliseconds) to wait 2PC confirmation from all nodes",
 		"Timeout for 2PC is calculated as MAX(prepare_time*2pc_prepare_ratio/100,2pc_min_timeout)",
 		&Mtm2PCMinTimeout,
@@ -1620,7 +1620,7 @@ _PG_init(void)
 	);
 
 	DefineCustomIntVariable(
-		"multimaster.2pc_prepare_ratio",
+		"multimaster.twopc_prepare_ratio",
 		"Percent of prepare time for maximal time of second phase of two-pahse commit",
 		"Timeout for 2PC is calculated as MAX(prepare_time*2pc_prepare_ratio/100,2pc_min_timeout)",
 		&Mtm2PCPrepareRatio,

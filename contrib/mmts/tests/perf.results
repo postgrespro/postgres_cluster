@@ -328,3 +328,6 @@ Bench finished at Пт. апр. 15 11:56:45 MSK 2016
 Bench started at Пт. апр. 15 18:41:39 MSK 2016
 astro5:{tps:17367.895646, transactions:1500000, selects:0, updates:3002062, aborts:1968, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:10000, hosts:3}
 Bench finished at Пт. апр. 15 18:43:05 MSK 2016
+Bench started at Пт. апр. 15 20:01:20 MSK 2016
+astro5:{tps:18310.750502, transactions:1500000, selects:0, updates:3001948, aborts:1897, abort_percent: 0, readers:0, writers:150, update_percent:100, accounts:500000, iterations:10000, hosts:3}
+Bench finished at Пт. апр. 15 20:02:42 MSK 2016
