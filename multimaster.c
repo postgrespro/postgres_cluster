@@ -166,7 +166,8 @@ char const* const MtmNodeStatusMnem[] =
 	"Connected",
 	"Online",
 	"Recovery",
-	"InMinor"
+	"InMinor",
+	"OutOfService"
 };
 
 bool  MtmDoReplication;
@@ -1025,8 +1026,11 @@ void MtmHandleApplyError(void)
 	  case ERRCODE_INDEX_CORRUPTED:
 	  case ERRCODE_SYSTEM_ERROR:
 	  case ERRCODE_INTERNAL_ERROR:
-	  case ERRCODE_OUT_OF_MEMORY:
-		break;
+	  case ERRCODE_OUT_OF_MEMORY:		  
+		  elog(WARNING, "Node is excluded from cluster because of non-recoverable error %d", edata->sqlerrcode);
+		  MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
+		  kill(PostmasterPid, SIGQUIT);
+		  break;
 	}
 }
 
