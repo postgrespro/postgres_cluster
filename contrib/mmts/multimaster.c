@@ -1015,6 +1015,23 @@ void MtmAbortTransaction(MtmTransState* ts)
  * -------------------------------------------
  */
 
+void MtmHandleApplyError(void)
+{
+	ErrorData *edata = CopyErrorData();
+	switch (edata->sqlerrcode) { 
+	  case ERRCODE_DISK_FULL:
+	  case ERRCODE_INSUFFICIENT_RESOURCES:
+	  case ERRCODE_IO_ERROR:
+	  case ERRCODE_DATA_CORRUPTED:
+	  case ERRCODE_INDEX_CORRUPTED:
+	  case ERRCODE_SYSTEM_ERROR:
+	  case ERRCODE_INTERNAL_ERROR:
+	  case ERRCODE_OUT_OF_MEMORY:
+		break;
+	}
+}
+
+
 void MtmRecoveryCompleted(void)
 {
 	MTM_LOG1("Recovery of node %d is completed", MtmNodeId);

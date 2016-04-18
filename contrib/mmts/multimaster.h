@@ -238,5 +238,6 @@ extern void  MtmCheckQuorum(void);
 extern bool  MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN);
 extern void  MtmRecoveryCompleted(void);
 extern void  MtmMakeTableLocal(char* schema, char* name);
+extern void  MtmHandleApplyError(void);
 
 #endif
