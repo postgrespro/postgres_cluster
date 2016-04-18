@@ -16,9 +16,6 @@ typedef struct
     int id;
 } BgwPoolExecutorCtx;
 
-size_t n_snapshots;
-size_t n_active;
-
 static void BgwPoolMainLoop(Datum arg)
 {
     BgwPoolExecutorCtx* ctx = (BgwPoolExecutorCtx*)arg;
@@ -36,7 +33,8 @@ static void BgwPoolMainLoop(Datum arg)
         size = *(int*)&pool->queue[pool->head];
         Assert(size < pool->size);
         work = malloc(size);
-        pool->active -= 1;
+        pool->pending -= 1;
+        pool->active += 1;
         if (pool->head + size + 4 > pool->size) { 
             memcpy(work, pool->queue, size);
             pool->head = INTALIGN(size);
@@ -54,6 +52,9 @@ static void BgwPoolMainLoop(Datum arg)
         SpinLockRelease(&pool->lock);
         pool->executor(id, work, size);
         free(work);
+        SpinLockAcquire(&pool->lock);
+        pool->active -= 1;
+        SpinLockRelease(&pool->lock);
     }
 }
 
@@ -71,6 +72,7 @@ void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname, si
     pool->tail = 0;
     pool->size = queueSize;
     pool->active = 0;
+    pool->pending = 0;
     strcpy(pool->dbname, dbname);
 }
 
@@ -126,9 +128,7 @@ void BgwPoolExecute(BgwPool* pool, void* work, size_t size)
             PGSemaphoreLock(&pool->overflow);
             SpinLockAcquire(&pool->lock);
         } else {
-            pool->active += 1;
-            n_snapshots += 1;
-            n_active += pool->active;
+            pool->pending += 1;
             *(int*)&pool->queue[pool->tail] = size;
             if (pool->size - pool->tail >= size + 4) { 
                 memcpy(&pool->queue[pool->tail+4], work, size);
