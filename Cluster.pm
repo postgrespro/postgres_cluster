@@ -100,6 +100,7 @@ sub configure
 			multimaster.conn_strings = '$connstr'
 			multimaster.use_raftable = true
 			multimaster.ignore_tables_without_pk = true
+			multimaster.twopc_min_timeout = 60000
 			raftable.id = $id
 			raftable.peers = '$raftpeers'
 		));
