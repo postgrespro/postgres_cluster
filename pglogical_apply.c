@@ -951,6 +951,7 @@ void MtmExecutor(int id, void* work, size_t size)
     }
     PG_CATCH();
     {
+		MtmHandleApplyError();
 		EmitErrorReport();
         FlushErrorState();
 		MTM_LOG2("%d: REMOTE begin abort transaction %d", MyProcPid, MtmGetCurrentTransactionId());
