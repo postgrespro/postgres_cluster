@@ -150,8 +150,8 @@ void* writer(void* arg)
     for (int i = 0; i < cfg.nIterations; i++)
     { 
         //work 
-        transaction<repeatable_read> txn(*conns[random() % conns.size()]);
-        //transaction<read_committed> txn(*conns[random() % conns.size()]);
+        //transaction<repeatable_read> txn(*conns[random() % conns.size()]);
+        transaction<read_committed> txn(*conns[random() % conns.size()]);
         int srcAcc = random() % cfg.nAccounts;
         int dstAcc = random() % cfg.nAccounts;
 		if (cfg.scatter) { 

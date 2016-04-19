@@ -147,6 +147,8 @@ static bool MtmIsRecoverySession;
 
 static MtmCurrentTrans MtmTx;
 
+static dlist_head MtmLsnMapping = DLIST_STATIC_INIT(MtmLsnMapping);
+
 static TransactionManager MtmTM = { 
 	PgTransactionIdGetStatus, 
 	PgTransactionIdSetTreeStatus,
@@ -1033,6 +1035,7 @@ void MtmHandleApplyError(void)
 		  kill(PostmasterPid, SIGQUIT);
 		  break;
 	}
+	FreeErrorData(edata);
 }
 
 
@@ -1507,6 +1510,7 @@ static void MtmInitialize()
 			Mtm->nodes[i].transDelay = 0;
 			Mtm->nodes[i].lastStatusChangeTime = time(NULL);
 			Mtm->nodes[i].con = MtmConnections[i];
+			Mtm->nodes[i].flushPos = 0;
 		}
 		PGSemaphoreCreate(&Mtm->votingSemaphore);
 		PGSemaphoreReset(&Mtm->votingSemaphore);
@@ -2083,6 +2087,45 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	MtmUnlock();
 	on_shmem_exit(MtmOnProcExit, 0);
 }
+
+XLogRecPtr MtmGetFlushPosition(int nodeId)
+{
+	return Mtm->nodes[nodeId-1].flushPos;
+}
+
+void  MtmUpdateLsnMapping(int node_id, XLogRecPtr end_lsn)
+{
+	dlist_mutable_iter iter;
+	MtmFlushPosition* flushpos;
+	XLogRecPtr local_flush = GetFlushRecPtr();
+	MemoryContext old_context = MemoryContextSwitchTo(TopMemoryContext);
+
+	/* Track commit lsn */
+	flushpos = (MtmFlushPosition *) palloc(sizeof(MtmFlushPosition));
+	flushpos->node_id = node_id;
+	flushpos->local_end = XactLastCommitEnd;
+	flushpos->remote_end = end_lsn;
+	dlist_push_tail(&MtmLsnMapping, &flushpos->node);
+
+	MtmLock(LW_EXCLUSIVE);
+	dlist_foreach_modify(iter, &MtmLsnMapping)
+	{
+		flushpos = dlist_container(MtmFlushPosition, node, iter.cur);
+		if (flushpos->local_end <= local_flush)
+		{
+			if (Mtm->nodes[node_id-1].flushPos < local_flush) { 
+				Mtm->nodes[node_id-1].flushPos = local_flush;
+			}
+			dlist_delete(iter.cur);
+			pfree(flushpos);
+		} else { 
+			break;
+		}
+	}
+	MtmUnlock();
+	MemoryContextSwitchTo(old_context);
+}
+
 
 static void 
 MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)

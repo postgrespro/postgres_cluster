@@ -89,17 +89,18 @@ receiver_raw_sighup(SIGNAL_ARGS)
  * Send a Standby Status Update message to server.
  */
 static bool
-sendFeedback(PGconn *conn, int64 now, RepOriginId originId)
+sendFeedback(PGconn *conn, int64 now, int node_id)
 {
 	char		replybuf[1 + 8 + 8 + 8 + 8 + 1];
 	int		 len = 0;
-	XLogRecPtr output_applied_lsn = replorigin_get_progress(originId, true);
+	XLogRecPtr output_applied_lsn = output_written_lsn;
+	XLogRecPtr output_flushed_lsn = MtmGetFlushPosition(node_id);
 
 	replybuf[len] = 'r';
 	len += 1;
 	fe_sendint64(output_written_lsn, &replybuf[len]);   /* write */
 	len += 8;
-	fe_sendint64(output_applied_lsn, &replybuf[len]);	/* flush */
+	fe_sendint64(output_flushed_lsn, &replybuf[len]);	/* flush */
 	len += 8;
 	fe_sendint64(output_applied_lsn, &replybuf[len]);	/* apply */
 	len += 8;
@@ -421,7 +422,7 @@ pglogical_receiver_main(Datum main_arg)
 					int64 now = feGetCurrentTimestamp();
 
 					/* Leave is feedback is not sent properly */
-					if (!sendFeedback(conn, now, originId))
+					if (!sendFeedback(conn, now, args->remote_node))
 						proc_exit(1);
 				}
 				continue;

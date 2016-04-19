@@ -124,6 +124,7 @@ typedef struct
 	MtmConnectionInfo con;
 	time_t transDelay;
 	time_t lastStatusChangeTime;
+	XLogRecPtr flushPos;
 	csn_t  oldestSnapshot; /* Oldest snapshot used by active transactions at this node */
 } MtmNodeInfo;
 
@@ -178,6 +179,15 @@ typedef struct
     BgwPool pool;                      /* Pool of background workers for applying logical replication patches */
 	MtmNodeInfo nodes[1];              /* [MtmNodes]: per-node data */ 
 } MtmState;
+
+typedef struct MtmFlushPosition
+{
+	dlist_node node;
+	int        node_id;
+	XLogRecPtr local_end;
+	XLogRecPtr remote_end;
+} MtmFlushPosition;
+
 
 #define MtmIsCoordinator(ts) (ts->gtid.node == MtmNodeId)
 
@@ -240,5 +250,7 @@ extern bool  MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN);
 extern void  MtmRecoveryCompleted(void);
 extern void  MtmMakeTableLocal(char* schema, char* name);
 extern void  MtmHandleApplyError(void);
+extern void  MtmUpdateLsnMapping(int nodeId, XLogRecPtr endLsn);
+extern 	XLogRecPtr MtmGetFlushPosition(int nodeId);
 
 #endif
