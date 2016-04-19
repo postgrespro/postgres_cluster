@@ -108,6 +108,7 @@ PG_FUNCTION_INFO_V1(mtm_recover_node);
 PG_FUNCTION_INFO_V1(mtm_get_snapshot);
 PG_FUNCTION_INFO_V1(mtm_get_nodes_state);
 PG_FUNCTION_INFO_V1(mtm_get_cluster_state);
+PG_FUNCTION_INFO_V1(mtm_get_cluster_info);
 PG_FUNCTION_INFO_V1(mtm_make_table_local);
 PG_FUNCTION_INFO_V1(mtm_dump_lock_graph);
 
@@ -166,7 +167,8 @@ char const* const MtmNodeStatusMnem[] =
 	"Connected",
 	"Online",
 	"Recovery",
-	"InMinor"
+	"InMinor",
+	"OutOfService"
 };
 
 bool  MtmDoReplication;
@@ -1014,6 +1016,26 @@ void MtmAbortTransaction(MtmTransState* ts)
  * -------------------------------------------
  */
 
+void MtmHandleApplyError(void)
+{
+	ErrorData *edata = CopyErrorData();
+	switch (edata->sqlerrcode) { 
+	  case ERRCODE_DISK_FULL:
+	  case ERRCODE_INSUFFICIENT_RESOURCES:
+	  case ERRCODE_IO_ERROR:
+	  case ERRCODE_DATA_CORRUPTED:
+	  case ERRCODE_INDEX_CORRUPTED:
+	  case ERRCODE_SYSTEM_ERROR:
+	  case ERRCODE_INTERNAL_ERROR:
+	  case ERRCODE_OUT_OF_MEMORY:		  
+		  elog(WARNING, "Node is excluded from cluster because of non-recoverable error %d", edata->sqlerrcode);
+		  MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
+		  kill(PostmasterPid, SIGQUIT);
+		  break;
+	}
+}
+
+
 void MtmRecoveryCompleted(void)
 {
 	MTM_LOG1("Recovery of node %d is completed", MtmNodeId);
@@ -1609,7 +1631,7 @@ _PG_init(void)
 		"Minamal amount of time (milliseconds) to wait 2PC confirmation from all nodes",
 		"Timeout for 2PC is calculated as MAX(prepare_time*2pc_prepare_ratio/100,2pc_min_timeout)",
 		&Mtm2PCMinTimeout,
-		10000,
+		100000, /* 100 seconds */
 		0,
 		INT_MAX,
 		PGC_BACKEND,
@@ -1624,7 +1646,7 @@ _PG_init(void)
 		"Percent of prepare time for maximal time of second phase of two-pahse commit",
 		"Timeout for 2PC is calculated as MAX(prepare_time*2pc_prepare_ratio/100,2pc_min_timeout)",
 		&Mtm2PCPrepareRatio,
-		100,
+		1000, /* 10 times */
 		0,
 		INT_MAX,
 		PGC_BACKEND,
@@ -2178,10 +2200,9 @@ mtm_get_snapshot(PG_FUNCTION_ARGS)
 typedef struct
 {
 	int       nodeId;
-	char*     connStrPtr;
 	TupleDesc desc;
-    Datum     values[8];
-    bool      nulls[8];
+    Datum     values[Natts_mtm_nodes_state];
+    bool      nulls[Natts_mtm_nodes_state];
 } MtmGetNodeStateCtx;
 
 Datum
@@ -2190,7 +2211,6 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
     FuncCallContext* funcctx;
 	MtmGetNodeStateCtx* usrfctx;
 	MemoryContext oldcontext;
-	char* p;
 	int64 lag;
     bool is_first_call = SRF_IS_FIRSTCALL();
 
@@ -2200,7 +2220,6 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 		usrfctx = (MtmGetNodeStateCtx*)palloc(sizeof(MtmGetNodeStateCtx));
 		get_call_result_type(fcinfo, NULL, &usrfctx->desc);
 		usrfctx->nodeId = 1;
-		usrfctx->connStrPtr = pstrdup(MtmConnStrs);
 		memset(usrfctx->nulls, false, sizeof(usrfctx->nulls));
 		funcctx->user_fctx = usrfctx;
 		MemoryContextSwitchTo(oldcontext);      
@@ -2219,23 +2238,19 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	usrfctx->nulls[4] = lag < 0;
 	usrfctx->values[5] = Int64GetDatum(Mtm->transCount ? Mtm->nodes[usrfctx->nodeId-1].transDelay/Mtm->transCount : 0);
 	usrfctx->values[6] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].lastStatusChangeTime));
-	p = strchr(usrfctx->connStrPtr, ',');
-	if (p != NULL) { 
-		*p++ = '\0';
-	}
-	usrfctx->values[7] = CStringGetTextDatum(usrfctx->connStrPtr);
-	usrfctx->connStrPtr = p;
+	usrfctx->values[7] = CStringGetTextDatum(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
 	usrfctx->nodeId += 1;
 
 	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(heap_form_tuple(usrfctx->desc, usrfctx->values, usrfctx->nulls)));
 }
 
+
 Datum
 mtm_get_cluster_state(PG_FUNCTION_ARGS)
 {
 	TupleDesc desc;
-    Datum     values[10];
-    bool      nulls[10] = {false};
+    Datum     values[Natts_mtm_cluster_state];
+    bool      nulls[Natts_mtm_cluster_state] = {false};
 	get_call_result_type(fcinfo, NULL, &desc);
 
 	values[0] = CStringGetTextDatum(MtmNodeStatusMnem[Mtm->status]);
@@ -2244,13 +2259,70 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 	values[3] = Int64GetDatum(Mtm->nodeLockerMask);
 	values[4] = Int32GetDatum(Mtm->nNodes);
 	values[5] = Int32GetDatum((int)Mtm->pool.active);
-	values[6] = Int64GetDatum(BgwPoolGetQueueSize(&Mtm->pool));
-	values[7] = Int64GetDatum(Mtm->transCount);
-	values[8] = Int64GetDatum(Mtm->timeShift);
-	values[9] = Int32GetDatum(Mtm->recoverySlot);
-	nulls[9] = Mtm->recoverySlot == 0;
+	values[6] = Int32GetDatum((int)Mtm->pool.pending);
+	values[7] = Int64GetDatum(BgwPoolGetQueueSize(&Mtm->pool));
+	values[8] = Int64GetDatum(Mtm->transCount);
+	values[9] = Int64GetDatum(Mtm->timeShift);
+	values[10] = Int32GetDatum(Mtm->recoverySlot);
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
+}
+
+
+typedef struct
+{
+	int       nodeId;
+} MtmGetClusterInfoCtx;
+
+
+Datum
+mtm_get_cluster_info(PG_FUNCTION_ARGS)
+{
+
+    FuncCallContext* funcctx;
+	MtmGetClusterInfoCtx* usrfctx;
+	MemoryContext oldcontext;
+	TupleDesc desc;
+    bool is_first_call = SRF_IS_FIRSTCALL();
+	int i;
+	PGconn* conn;
+	PGresult *result;
+	char* values[Natts_mtm_cluster_state];
+	HeapTuple tuple;
+
+    if (is_first_call) { 
+		funcctx = SRF_FIRSTCALL_INIT();
+		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);       
+		usrfctx = (MtmGetClusterInfoCtx*)palloc(sizeof(MtmGetNodeStateCtx));
+		get_call_result_type(fcinfo, NULL, &desc);
+		funcctx->attinmeta = TupleDescGetAttInMetadata(desc);
+		usrfctx->nodeId = 1;
+		funcctx->user_fctx = usrfctx;
+		MemoryContextSwitchTo(oldcontext);      
+    }
+    funcctx = SRF_PERCALL_SETUP();	
+	usrfctx = (MtmGetClusterInfoCtx*)funcctx->user_fctx;
+	if (usrfctx->nodeId > MtmNodes) {
+		SRF_RETURN_DONE(funcctx);      
+	}	
+	conn = PQconnectdb(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
+	if (PQstatus(conn) != CONNECTION_OK) {
+		elog(ERROR, "Failed to establish connection '%s' to node %d", Mtm->nodes[usrfctx->nodeId-1].con.connStr, usrfctx->nodeId);
+	}
+	result = PQexec(conn, "select * from mtm.get_cluster_state()");
+
+	if (PQresultStatus(result) != PGRES_TUPLES_OK || PQntuples(result) != 1) { 
+		elog(ERROR, "Failed to receive data from %d", usrfctx->nodeId);
+	}
+
+	for (i = 0; i < Natts_mtm_cluster_state; i++) { 
+		values[i] = PQgetvalue(result, 0, i);
+	}
+	tuple = BuildTupleFromCStrings(funcctx->attinmeta, values);
+	PQclear(result);
+	PQfinish(conn);
+	usrfctx->nodeId += 1;
+	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(tuple));
 }
 
 

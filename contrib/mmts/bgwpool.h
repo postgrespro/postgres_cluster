@@ -20,6 +20,7 @@ typedef struct
     size_t tail;
     size_t size;
     size_t active;
+    size_t pending;
     bool   producerBlocked;
     char   dbname[MAX_DBNAME_LEN];
     char*  queue;

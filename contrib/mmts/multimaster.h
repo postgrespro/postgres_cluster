@@ -56,6 +56,9 @@
 #define Anum_mtm_local_tables_rel_schema 1
 #define Anum_mtm_local_tables_rel_name	 2
 
+#define Natts_mtm_cluster_state 11
+#define Natts_mtm_nodes_state   8
+
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
 
@@ -94,11 +97,12 @@ typedef enum
 typedef enum
 {
 	MTM_INITIALIZATION, /* Initial status */
-	MTM_OFFLINE,        /* Node is out of quorum */
+	MTM_OFFLINE,        /* Node is excluded from cluster */
 	MTM_CONNECTED,      /* Arbiter is established connections with other nodes */
 	MTM_ONLINE,         /* Ready to receive client's queries */
 	MTM_RECOVERY,       /* Node is in recovery process */
-	MTM_IN_MINORITY     /* Node is out of quorum */
+	MTM_IN_MINORITY,    /* Node is out of quorum */
+	MTM_OUT_OF_SERVICE  /* Node is not avaiable to to critical, non-recoverable error */
 } MtmNodeStatus;
 
 typedef enum
@@ -235,5 +239,6 @@ extern void  MtmCheckQuorum(void);
 extern bool  MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN);
 extern void  MtmRecoveryCompleted(void);
 extern void  MtmMakeTableLocal(char* schema, char* name);
+extern void  MtmHandleApplyError(void);
 
 #endif
