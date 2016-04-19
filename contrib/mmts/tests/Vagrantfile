@@ -1,0 +1,12 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure(2) do |config|
+  config.vm.box = "ubuntu/ubuntu-15.04-snappy-core-stable"
+
+  5.times do |i|
+    config.vm.define "n#{i+1}l"
+  end
+
+end
+
