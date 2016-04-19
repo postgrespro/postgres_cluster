@@ -509,14 +509,14 @@ process_remote_commit(StringInfo in)
 	uint8 		flags;
 	csn_t       csn;
 	const char *gid = NULL;	
-
+	XLogRecPtr end_lsn;
 	/* read flags */
 	flags = pq_getmsgbyte(in);
 	MtmReplicationNode = pq_getmsgbyte(in);
 
 	/* read fields */
 	replorigin_session_origin_lsn = pq_getmsgint64(in); /* commit_lsn */
-	pq_getmsgint64(in); /* end_lsn */
+	end_lsn = pq_getmsgint64(in); /* end_lsn */
 	replorigin_session_origin_timestamp = pq_getmsgint64(in); /* commit_time */
 	
 	Assert(replorigin_session_origin == InvalidRepOriginId);
@@ -581,6 +581,7 @@ process_remote_commit(StringInfo in)
 			Assert(false);
 	}
 	MtmEndSession(true);
+	MtmUpdateLsnMapping(MtmReplicationNodeId, end_lsn);
 	if (flags & PGLOGICAL_CAUGHT_UP) {
 		MtmRecoveryCompleted();
 	}
@@ -951,7 +952,9 @@ void MtmExecutor(int id, void* work, size_t size)
     }
     PG_CATCH();
     {
+		MemoryContext oldcontext = MemoryContextSwitchTo(ApplyContext);
 		MtmHandleApplyError();
+		MemoryContextSwitchTo(oldcontext);
 		EmitErrorReport();
         FlushErrorState();
 		MTM_LOG2("%d: REMOTE begin abort transaction %d", MyProcPid, MtmGetCurrentTransactionId());
