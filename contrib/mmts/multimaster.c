@@ -1246,6 +1246,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 	for (i = 0; i < n; i++) { 
 		for (j = 0; j < i; j++) { 
 			matrix[i] |= ((matrix[j] >> i) & 1) << j;
+			matrix[j] |= ((matrix[i] >> j) & 1) << i;
 		}
 	}
 	return true;
