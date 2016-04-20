@@ -147,6 +147,8 @@ static bool MtmIsRecoverySession;
 
 static MtmCurrentTrans MtmTx;
 
+static dlist_head MtmLsnMapping = DLIST_STATIC_INIT(MtmLsnMapping);
+
 static TransactionManager MtmTM = { 
 	PgTransactionIdGetStatus, 
 	PgTransactionIdSetTreeStatus,
@@ -183,6 +185,7 @@ int   MtmConnectTimeout;
 int   MtmKeepaliveTimeout;
 int   MtmReconnectAttempts;
 int   MtmNodeDisableDelay;
+int   MtmTransSpillThreshold;
 bool  MtmUseRaftable;
 bool  MtmUseDtm;
 MtmConnectionInfo* MtmConnections;
@@ -1033,6 +1036,7 @@ void MtmHandleApplyError(void)
 		  kill(PostmasterPid, SIGQUIT);
 		  break;
 	}
+	FreeErrorData(edata);
 }
 
 
@@ -1243,7 +1247,9 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 	for (i = 0; i < n; i++) { 
 		for (j = 0; j < i; j++) { 
 			matrix[i] |= ((matrix[j] >> i) & 1) << j;
+			matrix[j] |= ((matrix[i] >> j) & 1) << i;
 		}
+		matrix[i] &= ~((nodemask_t)1 << i);
 	}
 	return true;
 }	
@@ -1507,6 +1513,7 @@ static void MtmInitialize()
 			Mtm->nodes[i].transDelay = 0;
 			Mtm->nodes[i].lastStatusChangeTime = time(NULL);
 			Mtm->nodes[i].con = MtmConnections[i];
+			Mtm->nodes[i].flushPos = 0;
 		}
 		PGSemaphoreCreate(&Mtm->votingSemaphore);
 		PGSemaphoreReset(&Mtm->votingSemaphore);
@@ -1625,6 +1632,21 @@ _PG_init(void)
 	 */
 	if (!process_shared_preload_libraries_in_progress)
 		return;
+
+	DefineCustomIntVariable(
+		"multimaster.trans_spill_threshold",
+		"Maximal size (Mb) of transaction after which transaction is written to the disk",
+		NULL,
+		&MtmTransSpillThreshold,
+		1000, /* 1Gb */
+		0,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
 
 	DefineCustomIntVariable(
 		"multimaster.twopc_min_timeout",
@@ -2083,6 +2105,45 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	MtmUnlock();
 	on_shmem_exit(MtmOnProcExit, 0);
 }
+
+XLogRecPtr MtmGetFlushPosition(int nodeId)
+{
+	return Mtm->nodes[nodeId-1].flushPos;
+}
+
+void  MtmUpdateLsnMapping(int node_id, XLogRecPtr end_lsn)
+{
+	dlist_mutable_iter iter;
+	MtmFlushPosition* flushpos;
+	XLogRecPtr local_flush = GetFlushRecPtr();
+	MemoryContext old_context = MemoryContextSwitchTo(TopMemoryContext);
+
+	/* Track commit lsn */
+	flushpos = (MtmFlushPosition *) palloc(sizeof(MtmFlushPosition));
+	flushpos->node_id = node_id;
+	flushpos->local_end = XactLastCommitEnd;
+	flushpos->remote_end = end_lsn;
+	dlist_push_tail(&MtmLsnMapping, &flushpos->node);
+
+	MtmLock(LW_EXCLUSIVE);
+	dlist_foreach_modify(iter, &MtmLsnMapping)
+	{
+		flushpos = dlist_container(MtmFlushPosition, node, iter.cur);
+		if (flushpos->local_end <= local_flush)
+		{
+			if (Mtm->nodes[node_id-1].flushPos < local_flush) { 
+				Mtm->nodes[node_id-1].flushPos = local_flush;
+			}
+			dlist_delete(iter.cur);
+			pfree(flushpos);
+		} else { 
+			break;
+		}
+	}
+	MtmUnlock();
+	MemoryContextSwitchTo(old_context);
+}
+
 
 static void 
 MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
