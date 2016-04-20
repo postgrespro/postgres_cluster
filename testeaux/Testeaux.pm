@@ -1,5 +1,7 @@
 package Testeaux;
 
+use Stresseaux;
+
 package Combineaux
 {
 	sub combine
@@ -12,35 +14,18 @@ package Combineaux
 		{
 			foreach my $trouble (@$troubles)
 			{
-				print("run workload $workload during trouble $trouble\n");
-				# FIXME: generate proper id instead of 'hello'
-				Stresseaux::start('hello', $workload, $cluster);
+				print("--- $workload vs. $trouble ---\n");
+				my $id = "$workload+$trouble";
+				Stresseaux::start($id, $workload, $cluster) || die "stress wouldn't start";
 				sleep(1); # FIXME: will this work?
 				Troubleaux::cause($cluster, $trouble);
 				sleep(1); # FIXME: will this work?
-				Stresseaux::stop('hello');
+				Stresseaux::stop($id) || die "stress wouldn't stop";
 				Troubleaux::fix($cluster);
 			}
 		}
 
 		$cluster->destroy();
-	}
-}
-
-package Stresseaux
-{
-	sub start
-	{
-		my ($id, $workload, $cluster) = @_;
-		print("start stress $id: workload $workload, cluster $cluster\n");
-		# fixme: implement
-	}
-
-	sub stop
-	{
-		my $id = shift;
-		print("stop stress $id\n");
-		# FIXME: implement
 	}
 }
 
