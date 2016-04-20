@@ -256,11 +256,16 @@ void MtmUnlockNode(int nodeId)
  */
 
 
-timestamp_t MtmGetCurrentTime(void)
+timestamp_t MtmGetSystemTime(void)
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return (timestamp_t)tv.tv_sec*USEC + tv.tv_usec + Mtm->timeShift;
+}
+
+timestamp_t MtmGetCurrentTime(void)
+{
+    return MtmGetSystemTime() + Mtm->timeShift;
 }
 
 void MtmSleep(timestamp_t interval)
@@ -1046,7 +1051,7 @@ void MtmRecoveryCompleted(void)
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
 	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
-	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = time(NULL);
+	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	/* Mode will be changed to online once all locagical reciever are connected */
 	MtmSwitchClusterMode(MTM_CONNECTED);
 	MtmUnlock();
@@ -1135,7 +1140,7 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 				/* We are lucky: caugth-up without locking cluster! */
 			}
 			BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
-			Mtm->nodes[nodeId-1].lastStatusChangeTime = time(NULL);
+			Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 			Mtm->nNodes += 1;
 			caughtUp = true;
 		} else if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
@@ -1280,7 +1285,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 			if (mask & 1) { 
 				Mtm->nNodes -= 1;
 				BIT_SET(Mtm->disabledNodeMask, i);
-				Mtm->nodes[i].lastStatusChangeTime = time(NULL);
+				Mtm->nodes[i].lastStatusChangeTime = MtmGetSystemTime();
 			}
 		}
 		mask = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
@@ -1288,7 +1293,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 			if (mask & 1) { 
 				Mtm->nNodes += 1;
 				BIT_CLEAR(Mtm->disabledNodeMask, i);
-				Mtm->nodes[i].lastStatusChangeTime = time(NULL);
+				Mtm->nodes[i].lastStatusChangeTime = MtmGetSystemTime();
 			}
 		}
 		MtmCheckQuorum();
@@ -1328,7 +1333,7 @@ void MtmOnNodeDisconnect(int nodeId)
 { 
 	MtmTransState *ts;
 
-	if (Mtm->nodes[nodeId-1].lastStatusChangeTime + MtmNodeDisableDelay > time(NULL)) { 
+	if (Mtm->nodes[nodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) > MtmGetSystemTime()) { 
 		/* Avoid false detection of node failure and prevent node status blinking */
 		return;
 	}
@@ -1343,7 +1348,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	if (!MtmRefreshClusterStatus(false)) { 
 		MtmLock(LW_EXCLUSIVE);
 		if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
-			Mtm->nodes[nodeId-1].lastStatusChangeTime = time(NULL);
+			Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 			BIT_SET(Mtm->disabledNodeMask, nodeId-1);
 			Mtm->nNodes -= 1;
 			MtmCheckQuorum();
@@ -1511,14 +1516,14 @@ static void MtmInitialize()
 		for (i = 0; i < MtmNodes; i++) {
 			Mtm->nodes[i].oldestSnapshot = 0;
 			Mtm->nodes[i].transDelay = 0;
-			Mtm->nodes[i].lastStatusChangeTime = time(NULL);
+			Mtm->nodes[i].lastStatusChangeTime = MtmGetSystemTime();
 			Mtm->nodes[i].con = MtmConnections[i];
 			Mtm->nodes[i].flushPos = 0;
 		}
 		PGSemaphoreCreate(&Mtm->votingSemaphore);
 		PGSemaphoreReset(&Mtm->votingSemaphore);
 		SpinLockInit(&Mtm->spinlock);
-        BgwPoolInit(&Mtm->pool, MtmExecutor, MtmDatabaseName, MtmQueueSize);
+        BgwPoolInit(&Mtm->pool, MtmExecutor, MtmDatabaseName, MtmQueueSize, MtmWorkers);
 		RegisterXactCallback(MtmXactCallback, NULL);
 		MtmTx.snapshot = INVALID_CSN;
 		MtmTx.xid = InvalidTransactionId;		
@@ -1682,10 +1687,10 @@ _PG_init(void)
 
 	DefineCustomIntVariable(
 		"multimaster.node_disable_delay",
-		"Minamal amount of time (sec) between node status change",
+		"Minamal amount of time (msec) between node status change",
 		"This delay is used to avoid false detection of node failure and to prevent blinking of node status node",
 		&MtmNodeDisableDelay,
-		1,
+		1000,
 		1,
 		INT_MAX,
 		PGC_BACKEND,
@@ -2033,7 +2038,7 @@ void MtmDropNode(int nodeId, bool dropSlot)
 		{ 
 			elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nNodes);
 		}
-		Mtm->nodes[nodeId-1].lastStatusChangeTime = time(NULL);
+		Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 		BIT_SET(Mtm->disabledNodeMask, nodeId-1);
 		Mtm->nNodes -= 1;
 		MtmCheckQuorum();
@@ -2084,7 +2089,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	if (MtmIsRecoverySession) {
 		MTM_LOG1("%d: Node %d start recovery of node %d", MyProcPid, MtmNodeId, MtmReplicationNodeId);
 		if (!BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
-			Mtm->nodes[MtmReplicationNodeId-1].lastStatusChangeTime = time(NULL);
+			Mtm->nodes[MtmReplicationNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 			BIT_SET(Mtm->disabledNodeMask,  MtmReplicationNodeId-1);
 			Mtm->nNodes -= 1;			
 			MtmCheckQuorum();
@@ -2092,7 +2097,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	} else if (BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
 		if (recoveryCompleted) { 
 			MTM_LOG1("Node %d consider that recovery of node %d is completed: start normal replication", MtmNodeId, MtmReplicationNodeId); 
-			Mtm->nodes[MtmReplicationNodeId-1].lastStatusChangeTime = time(NULL);
+			Mtm->nodes[MtmReplicationNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 			BIT_CLEAR(Mtm->disabledNodeMask,  MtmReplicationNodeId-1);
 			Mtm->nNodes += 1;
 			MtmCheckQuorum();
@@ -2239,7 +2244,7 @@ mtm_poll_node(PG_FUNCTION_ARGS)
 	}
 	if (!nowait) { 
 		/* Just wait some time until logical repication channels will be reestablished */
-		MtmSleep(MtmNodeDisableDelay);
+		MtmSleep(MSEC_TO_USEC(MtmNodeDisableDelay));
 	}
     PG_RETURN_BOOL(online);
 }
@@ -2298,7 +2303,7 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	usrfctx->values[4] = Int64GetDatum(lag);
 	usrfctx->nulls[4] = lag < 0;
 	usrfctx->values[5] = Int64GetDatum(Mtm->transCount ? Mtm->nodes[usrfctx->nodeId-1].transDelay/Mtm->transCount : 0);
-	usrfctx->values[6] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].lastStatusChangeTime));
+	usrfctx->values[6] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].lastStatusChangeTime/USEC));
 	usrfctx->values[7] = CStringGetTextDatum(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
 	usrfctx->nodeId += 1;
 
@@ -3061,6 +3066,18 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 		MtmGetGtid(pgxact->xid, &gtid);
 		hasDeadlock = MtmGraphFindLoop(&graph, &gtid);
 		elog(WARNING, "Distributed deadlock check for %u:%u = %d", gtid.node, gtid.xid, hasDeadlock);
+		if (!hasDeadlock) { 
+			/* There is no deadlock loop in graph, but deadlock can be caused by lack of apply workers: if all of them are busy, then some transactions
+			 * can not be appied just because there are no vacant workers and it cause additional dependency between transactions which is not 
+			 * refelected in lock graph 
+			 */
+			timestamp_t lastPeekTime = BgwGetLastPeekTime(&Mtm->pool);
+			if (lastPeekTime != 0 && MtmGetSystemTime() - lastPeekTime >= MSEC_TO_USEC(DeadlockTimeout)) { 
+				hasDeadlock = true;
+				elog(WARNING, "Apply workers were blocked more than %d msec", 
+					 (int)USEC_TO_MSEC(MtmGetSystemTime() - lastPeekTime));
+			}
+		}
 	}
     return hasDeadlock;
 }
