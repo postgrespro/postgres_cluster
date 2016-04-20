@@ -7,32 +7,24 @@ use PostgresNode;
 use TestLib;
 use Test::More;
 use Cwd;
-use List::Util;
 
-my %allocated_ports = ();
+my $max_port = 5431;
 sub allocate_ports
 {
 	my @allocated_now = ();
 	my ($host, $ports_to_alloc) = @_;
+	my $port = $max_port + 1;
 
 	while ($ports_to_alloc > 0)
 	{
-		my $port = int(rand() * 16384) + 49152;
-
-		# # try to use ordinary ports if available
-		# if (!@allocated_now)	
-		#   my $port = 5432;
-		# else
-		#   my $port = max(@allocated_now) + 1;
-
-		next if $allocated_ports{$port};
 		diag("checking for port $port\n");
 		if (!TestLib::run_log(['pg_isready', '-h', $host, '-p', $port]))
 		{
-			$allocated_ports{$port} = 1;
+			$max_port = $port;
 			push(@allocated_now, $port);
 			$ports_to_alloc--;
 		}
+		$port++;
 	}
 
 	return @allocated_now;
