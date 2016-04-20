@@ -205,6 +205,7 @@ extern int   MtmConnectTimeout;
 extern int   MtmReconnectAttempts;
 extern int   MtmKeepaliveTimeout;
 extern int   MtmNodeDisableDelay;
+extern int   MtmTransSpillThreshold;
 extern bool  MtmUseDtm;
 extern HTAB* MtmXid2State;
 
