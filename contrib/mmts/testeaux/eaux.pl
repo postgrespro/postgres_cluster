@@ -2,7 +2,13 @@
 
 use Testeaux;
 
-Combineaux::combine(
-	['bank-transfers', 'pgbench-default'],
-	['split-brain', 'time-shift'],
-)
+my @workloads = qw(
+	bank-transfers
+	pgbench-default
+);
+my @troubles = qw(
+	split-brain
+	time-shift
+);
+
+Combineaux::combine(\@workloads, \@troubles);
