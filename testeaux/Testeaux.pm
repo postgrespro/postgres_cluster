@@ -1,12 +1,12 @@
 package Testeaux;
 
-package combineaux
+package Combineaux
 {
 	sub combine
 	{
 		my ($workloads, $troubles) = @_;
 
-		my $cluster = starteaux->deploy('lxc');
+		my $cluster = Starteaux->deploy('lxc');
 
 		foreach my $workload (@$workloads)
 		{
@@ -14,18 +14,20 @@ package combineaux
 			{
 				print("run workload $workload during trouble $trouble\n");
 				# FIXME: generate proper id instead of 'hello'
-				stresseaux::start('hello', $workload, $cluster);
-				# FIXME: add a time gap here
-				troubleaux::cause($cluster, $trouble);
-				# FIXME: add a time gap here
-				stresseaux::stop('hello');
-				troubleaux::fix($cluster);
+				Stresseaux::start('hello', $workload, $cluster);
+				sleep(1); # FIXME: will this work?
+				Troubleaux::cause($cluster, $trouble);
+				sleep(1); # FIXME: will this work?
+				Stresseaux::stop('hello');
+				Troubleaux::fix($cluster);
 			}
 		}
+
+		$cluster->destroy();
 	}
 }
 
-package stresseaux
+package Stresseaux
 {
 	sub start
 	{
@@ -42,7 +44,7 @@ package stresseaux
 	}
 }
 
-package starteaux
+package Starteaux
 {
 	sub deploy
 	{
@@ -50,7 +52,7 @@ package starteaux
 		my $self = {};
 		print("deploy cluster using driver $driver\n");
 		# fixme: implement
-		return bless $self, 'starteaux';
+		return bless $self, 'Starteaux';
 	}
 
 	sub up
@@ -62,7 +64,7 @@ package starteaux
 
 	sub down
 	{
-		my ($self, $id = @_;
+		my ($self, $id) = @_;
 		print("down node $id\n");
 		# FIXME: implement
 	}
@@ -79,6 +81,30 @@ package starteaux
 		my ($self, $src, $dst, $msec) = @_;
 		print("delay packets from $src to $dst by $msec msec\n");
 		# FIXME: implement
+	}
+
+	sub destroy
+	{
+		my ($self) = @_;
+		print("destroy cluster $cluster\n");
+		# FIXME: implement
+	}
+}
+
+package Troubleaux
+{
+	sub cause
+	{
+		my ($cluster, $trouble) = @_;
+		print("cause $trouble in cluster $cluster\n");
+		# fixme: implement
+	}
+
+	sub fix
+	{
+		my ($cluster) = @_;
+		print("fix cluster $cluster\n");
+		# fixme: implement
 	}
 }
 
