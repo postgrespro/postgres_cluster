@@ -48,6 +48,9 @@
 
 #define USEC 1000000
 
+#define USEC_TO_MSEC(t) ((t)/1000)
+#define MSEC_TO_USEC(t) ((t)*1000)
+
 #define Natts_mtm_ddl_log 2
 #define Anum_mtm_ddl_log_issued		1
 #define Anum_mtm_ddl_log_query		2
@@ -71,8 +74,6 @@ typedef uint64 csn_t; /* commit serial number */
 
 #define PGLOGICAL_CAUGHT_UP	        0x04
 
-
-typedef uint64 timestamp_t;
 
 /* Identifier of global transaction */
 typedef struct 
@@ -122,9 +123,9 @@ typedef struct
 typedef struct
 {
 	MtmConnectionInfo con;
-	time_t transDelay;
-	time_t lastStatusChangeTime;
-	XLogRecPtr flushPos;
+	timestamp_t transDelay;
+	timestamp_t lastStatusChangeTime;
+	XLogRecPtr  flushPos;
 	csn_t  oldestSnapshot; /* Oldest snapshot used by active transactions at this node */
 } MtmNodeInfo;
 
@@ -232,8 +233,9 @@ extern void  MtmRecoverNode(int nodeId);
 extern void  MtmOnNodeDisconnect(int nodeId);
 extern void  MtmOnNodeConnect(int nodeId);
 extern void  MtmWakeUpBackend(MtmTransState* ts);
-extern timestamp_t MtmGetCurrentTime(void);
-extern void  MtmSleep(timestamp_t interval);
+extern timestamp_t MtmGetSystemTime(void);   /* non-adjusted current system time */
+extern timestamp_t MtmGetCurrentTime(void);  /* adjusted current system time */
+extern void  MtmSleep(timestamp_t interval); 
 extern void  MtmAbortTransaction(MtmTransState* ts);
 extern void  MtmSetCurrentTransactionGID(char const* gid);
 extern csn_t MtmGetTransactionCSN(TransactionId xid);

@@ -35,6 +35,9 @@ static void BgwPoolMainLoop(Datum arg)
         work = malloc(size);
         pool->pending -= 1;
         pool->active += 1;
+		if (pool->lastPeakTime == 0 && pool->active == pool->nWorkers && pool->pending != 0) {
+			pool->lastPeakTime = MtmGetSystemTime();
+		}
         if (pool->head + size + 4 > pool->size) { 
             memcpy(work, pool->queue, size);
             pool->head = INTALIGN(size);
@@ -48,17 +51,19 @@ static void BgwPoolMainLoop(Datum arg)
         if (pool->producerBlocked) {
             pool->producerBlocked = false;
             PGSemaphoreUnlock(&pool->overflow);
+			pool->lastPeakTime = 0;
         }
         SpinLockRelease(&pool->lock);
         pool->executor(id, work, size);
         free(work);
         SpinLockAcquire(&pool->lock);
         pool->active -= 1;
+		pool->lastPeakTime = 0;
         SpinLockRelease(&pool->lock);
     }
 }
 
-void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname, size_t queueSize)
+void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname, size_t queueSize, size_t nWorkers)
 {
     pool->queue = (char*)ShmemAlloc(queueSize);
     pool->executor = executor;
@@ -73,7 +78,14 @@ void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname, si
     pool->size = queueSize;
     pool->active = 0;
     pool->pending = 0;
+	pool->nWorkers = nWorkers;
+	pool->lastPeakTime = 0;
     strcpy(pool->dbname, dbname);
+}
+ 
+timestamp_t BgwGetLastPeekTime(BgwPool* pool)
+{
+	return pool->lastPeakTime;
 }
 
 void BgwPoolStart(int nWorkers, BgwPoolConstructor constructor)
@@ -123,12 +135,18 @@ void BgwPoolExecute(BgwPool* pool, void* work, size_t size)
         if ((pool->head <= pool->tail && pool->size - pool->tail < size + 4 && pool->head < size) 
             || (pool->head > pool->tail && pool->head - pool->tail < size + 4))
         {
-            pool->producerBlocked = true;
+            if (pool->lastPeakTime == 0) {
+				pool->lastPeakTime = MtmGetSystemTime();
+			}
+			pool->producerBlocked = true;
             SpinLockRelease(&pool->lock);
             PGSemaphoreLock(&pool->overflow);
             SpinLockAcquire(&pool->lock);
         } else {
             pool->pending += 1;
+			if (pool->lastPeakTime == 0 && pool->active == pool->nWorkers && pool->pending != 0) {
+				pool->lastPeakTime = MtmGetSystemTime();
+			}
             *(int*)&pool->queue[pool->tail] = size;
             if (pool->size - pool->tail >= size + 4) { 
                 memcpy(&pool->queue[pool->tail+4], work, size);
