@@ -185,6 +185,7 @@ int   MtmConnectTimeout;
 int   MtmKeepaliveTimeout;
 int   MtmReconnectAttempts;
 int   MtmNodeDisableDelay;
+int   MtmTransSpillThreshold;
 bool  MtmUseRaftable;
 bool  MtmUseDtm;
 MtmConnectionInfo* MtmConnections;
@@ -1248,6 +1249,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 			matrix[i] |= ((matrix[j] >> i) & 1) << j;
 			matrix[j] |= ((matrix[i] >> j) & 1) << i;
 		}
+		matrix[i] &= ~((nodemask_t)1 << i);
 	}
 	return true;
 }	
@@ -1630,6 +1632,21 @@ _PG_init(void)
 	 */
 	if (!process_shared_preload_libraries_in_progress)
 		return;
+
+	DefineCustomIntVariable(
+		"multimaster.trans_spill_threshold",
+		"Maximal size (Mb) of transaction after which transaction is written to the disk",
+		NULL,
+		&MtmTransSpillThreshold,
+		1000, /* 1Gb */
+		0,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
 
 	DefineCustomIntVariable(
 		"multimaster.twopc_min_timeout",

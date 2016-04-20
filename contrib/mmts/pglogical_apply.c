@@ -50,6 +50,7 @@
 
 #include "multimaster.h"
 #include "pglogical_relid_map.h"
+#include "spill.h"
 
 typedef struct TupleData
 {
@@ -901,6 +902,9 @@ void MtmExecutor(int id, void* work, size_t size)
 {
     StringInfoData s;
     Relation rel = NULL;
+	int spill_file = -1;
+	int save_cursor;
+	int save_len;
     s.data = work;
     s.len = size;
     s.maxlen = -1;
@@ -944,6 +948,33 @@ void MtmExecutor(int id, void* work, size_t size)
             case 'R':
                 rel = read_rel(&s, RowExclusiveLock);
                 continue;
+			case 'F':
+			{
+				int node_id = pq_getmsgint(&s, 4);
+				int file_id = pq_getmsgint(&s, 4);
+				Assert(spill_file < 0);
+				spill_file = MtmOpenSpillFile(node_id, file_id);
+				continue;
+			}
+ 		    case '(':
+			{
+			    int64 size = pq_getmsgint(&s, 4);    
+				s.data = palloc(size);
+				save_cursor = s.cursor;
+				save_len = s.len;
+				s.cursor = 0;
+				s.len = size;
+				MtmReadSpillFile(spill_file, s.data, size);
+				continue;
+			}
+  		    case ')':
+			{
+  			    pfree(s.data);
+				s.data = work;
+  			    s.cursor = save_cursor;
+				s.len = save_len;
+				continue;
+			}
             default:
                 elog(ERROR, "unknown action of type %c", action);
             }        
@@ -963,7 +994,9 @@ void MtmExecutor(int id, void* work, size_t size)
 		MTM_LOG2("%d: REMOTE end abort transaction %d", MyProcPid, MtmGetCurrentTransactionId());
     }
     PG_END_TRY();
-
+	if (spill_file >= 0) { 
+		MtmCloseSpillFile(spill_file);
+	}
     MemoryContextResetAndDeleteChildren(ApplyContext);
 }
     

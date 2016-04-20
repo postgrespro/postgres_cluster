@@ -24,6 +24,7 @@
 #include "access/clog.h"
 #include "access/transam.h"
 #include "lib/stringinfo.h"
+#include "libpq/pqformat.h"
 #include "pgstat.h"
 #include "postmaster/bgworker.h"
 #include "storage/ipc.h"
@@ -35,6 +36,7 @@
 #include "replication/origin.h"
 
 #include "multimaster.h"
+#include "spill.h"
 
 /* Allow load of this module in shared libs */
 
@@ -213,19 +215,22 @@ pglogical_receiver_main(Datum main_arg)
 	PGresult *res;
 	MtmSlotMode mode;
 
-#ifndef USE_PGLOGICAL_OUTPUT
-    bool insideTrans = false;
-#endif
     ByteBuffer buf;
 	XLogRecPtr originStartPos = 0;
 	RepOriginId originId;
 	char* originName;
 	/* Buffer for COPY data */
 	char	*copybuf = NULL;
+	int spill_file = -1;
+	StringInfoData spill_info;
+
+	initStringInfo(&spill_info);
 
 	/* Register functions for SIGTERM/SIGHUP management */
 	pqsignal(SIGHUP, receiver_raw_sighup);
 	pqsignal(SIGTERM, receiver_raw_sigterm);
+
+	MtmCreateSpillDirectory(args->remote_node);
 
     sprintf(worker_proc, "mtm_pglogical_receiver_%d_%d", args->local_node, args->remote_node);
 
@@ -449,34 +454,38 @@ pglogical_receiver_main(Datum main_arg)
 			if (rc > hdr_len)
 			{
                 stmt = copybuf + hdr_len;
-           
-#ifdef USE_PGLOGICAL_OUTPUT
+				
+				if (buf.used >= MtmTransSpillThreshold) { 
+					if (spill_file < 0) {
+						int file_id;
+						spill_file = MtmCreateSpillFile(args->remote_node, &file_id);
+						pq_sendbyte(&spill_info, 'F');
+						pq_sendint(&spill_info, args->remote_node, 4);
+						pq_sendint(&spill_info, file_id, 4);
+					}
+					ByteBufferAppend(&buf, ")", 1);
+					pq_sendbyte(&spill_info, '(');
+					pq_sendint(&spill_info, buf.used, 4);
+					MtmSpillToFile(spill_file, buf.data, buf.used);
+					ByteBufferReset(&buf);
+				}
                 ByteBufferAppend(&buf, stmt, rc - hdr_len);
                 if (stmt[0] == 'C') /* commit */
-                { 
-					MtmExecute(buf.data, buf.used);
+                {
+					if (spill_file >= 0) { 
+						ByteBufferAppend(&buf, ")", 1);
+						pq_sendbyte(&spill_info, '(');
+						pq_sendint(&spill_info, buf.used, 4);
+						MtmSpillToFile(spill_file, buf.data, buf.used);
+						MtmCloseSpillFile(spill_file);
+						MtmExecute(spill_info.data, spill_info.len);
+						spill_file = -1;
+						resetStringInfo(&spill_info);
+					} else { 
+						MtmExecute(buf.data, buf.used);
+					}
                     ByteBufferReset(&buf);
                 }
-#else
-                if (strncmp(stmt, "BEGIN ", 6) == 0) { 
-                    TransactionId xid;
-                    int rc = sscanf(stmt + 6, "%u", &xid);
-                    Assert(rc == 1);
-                    ByteBufferAppendInt32(&buf, xid);
-                    Assert(!insideTrans);
-                    insideTrans = true;
-                } else if (strncmp(stmt, "COMMIT;", 7) == 0) { 
-                    Assert(insideTrans);
-                    Assert(buf.used > 4);
-                    buf.data[buf.used-1] = '\0'; /* replace last ';' with '\0' to make string zero terminated */
-                    MMExecute(buf.data, buf.used);
-                    ByteBufferReset(&buf);
-                    insideTrans = false;
-                } else {
-                    Assert(insideTrans);
-                    ByteBufferAppend(&buf, stmt, rc - hdr_len/*strlen(stmt)*/);
-                }
-#endif
             }
 			/* Update written position */
 			output_written_lsn = Max(walEnd, output_written_lsn);
@@ -575,6 +584,7 @@ void MtmStartReceivers(void)
 {
     int i;
 	BackgroundWorker worker;
+
 	MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
@@ -586,6 +596,7 @@ void MtmStartReceivers(void)
             ReceiverArgs* ctx = (ReceiverArgs*)palloc(sizeof(ReceiverArgs));
             ctx->receiver_conn_string = psprintf("replication=database %s", MtmConnections[i].connStr);
             sprintf(ctx->receiver_slot, MULTIMASTER_SLOT_PATTERN, MtmNodeId);
+		
             ctx->local_node = MtmNodeId;
             ctx->remote_node = i+1;
 
@@ -598,45 +609,3 @@ void MtmStartReceivers(void)
     }
 }
 
-#ifndef USE_PGLOGICAL_OUTPUT
-void MMExecutor(int id, void* work, size_t size)
-{
-    TransactionId xid = *(TransactionId*)work;
-    char* stmts = (char*)work + 4;
-    bool finished = false;
-
-    MMJoinTransaction(xid);
-
-    SetCurrentStatementStartTimestamp();               
-    StartTransactionCommand();
-    SPI_connect();
-    PushActiveSnapshot(GetTransactionSnapshot());
-
-    PG_TRY();
-    {
-        int rc = SPI_execute(stmts, false, 0);
-        SPI_finish();
-        PopActiveSnapshot();
-        finished = true;
-        if (rc != SPI_OK_INSERT && rc != SPI_OK_UPDATE && rc != SPI_OK_DELETE) {
-            ereport(LOG, (errmsg("Executor %d: failed to apply transaction %u",
-                                 id, xid)));
-            AbortCurrentTransaction();
-        } else { 
-            CommitTransactionCommand();
-        }
-    }
-    PG_CATCH();
-    {
-        FlushErrorState();
-        if (!finished) {
-            SPI_finish();
-            if (ActiveSnapshotSet()) { 
-                PopActiveSnapshot();
-            }
-        }
-        AbortCurrentTransaction();
-    }
-    PG_END_TRY();
-}
-#endif
