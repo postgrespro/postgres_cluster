@@ -4,19 +4,16 @@ my %running = ();
 
 sub start
 {
-	my ($id, $workload, $cluster) = @_;
-	print("start stress $id: workload $workload, cluster $cluster\n");
+	my ($id, $stressname, $cluster, @args) = @_;
 
 	if (exists $running{$id})
 	{
-		print("cannot start stress $id: that id has already been taken\n");
+		print("cannot start stress $stressname as $id: that id has already been taken\n");
 		return 0;
 	}
 
-	# FIXME: implement 'stress'/'workload' objects
-	$running{$id} = {hello => 'world'};
-
-	# FIXME: implement
+	require "stress/$stressname.pm";
+	$running{$id} = "stress::$stressname"->start($id, $cluster, @args);
 
 	return 1;
 }
@@ -24,7 +21,6 @@ sub start
 sub stop
 {
 	my $id = shift;
-	print("stop stress $id\n");
 
 	my $stress = delete $running{$id};
 
@@ -34,7 +30,7 @@ sub stop
 		return 0;
 	}
 
-	# FIXME: implement
+	$stress->stop();
 
 	return 1;
 }
