@@ -32,20 +32,12 @@
 #include "storage/proc.h"
 #include "utils/guc.h"
 #include "utils/snapmgr.h"
+#include "utils/memutils.h"
 #include "executor/spi.h"
 #include "replication/origin.h"
 
 #include "multimaster.h"
 #include "spill.h"
-
-/* Allow load of this module in shared libs */
-
-typedef struct ReceiverArgs { 
-	int local_node;
-	int remote_node;
-    char* receiver_conn_string;
-    char receiver_slot[MULTIMASTER_MAX_SLOT_NAME_SIZE];
-} ReceiverArgs;
 
 #define ERRCODE_DUPLICATE_OBJECT_STR  "42710"
 
@@ -208,7 +200,7 @@ static char const* const MtmReplicationModeName[] =
 static void
 pglogical_receiver_main(Datum main_arg)
 {
-    ReceiverArgs* args = (ReceiverArgs*)main_arg;
+	int nodeId = DatumGetInt32(main_arg);
 	/* Variables for replication connection */
 	PQExpBuffer query;
 	PGconn *conn;
@@ -223,6 +215,8 @@ pglogical_receiver_main(Datum main_arg)
 	char	*copybuf = NULL;
 	int spill_file = -1;
 	StringInfoData spill_info;
+	char* connString = psprintf("replication=database %s", Mtm->nodes[nodeId-1].con.connStr);
+	char* slotName = psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId);
 
 	initStringInfo(&spill_info);
 
@@ -230,9 +224,9 @@ pglogical_receiver_main(Datum main_arg)
 	pqsignal(SIGHUP, receiver_raw_sighup);
 	pqsignal(SIGTERM, receiver_raw_sigterm);
 
-	MtmCreateSpillDirectory(args->remote_node);
+	MtmCreateSpillDirectory(nodeId);
 
-    sprintf(worker_proc, "mtm_pglogical_receiver_%d_%d", args->local_node, args->remote_node);
+    sprintf(worker_proc, "mtm_pglogical_receiver_%d_%d", MtmNodeId, nodeId);
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -245,29 +239,29 @@ pglogical_receiver_main(Datum main_arg)
 	 * Druing recovery we need to open only one replication slot from which node should receive all transactions.
 	 * Slots at other nodes should be removed 
 	 */
-	mode = MtmReceiverSlotMode(args->remote_node);	
+	mode = MtmReceiverSlotMode(nodeId);	
     
 	/* Establish connection to remote server */
-	conn = PQconnectdb(args->receiver_conn_string);
+	conn = PQconnectdb(connString);
 	if (PQstatus(conn) != CONNECTION_OK)
 	{
 		PQfinish(conn);
 		ereport(WARNING, (errmsg("%s: Could not establish connection to remote server",
-							 worker_proc)));
-		/* MtmOnNodeDisconnect(args->remote_node); */
+								 worker_proc)));
+		/* MtmOnNodeDisconnect(nodeId); */
 		proc_exit(1);
 	}
 
 	query = createPQExpBuffer();
 
 	if (mode == SLOT_CREATE_NEW) {
-		appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", args->receiver_slot);
+		appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", slotName);
 		res = PQexec(conn, query->data);
 		PQclear(res);
 		resetPQExpBuffer(query);
 	}
 	if (mode != SLOT_OPEN_EXISTED) { 
-		appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", args->receiver_slot, MULTIMASTER_NAME);
+		appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", slotName, MULTIMASTER_NAME);
 		res = PQexec(conn, query->data);
 		if (PQresultStatus(res) != PGRES_TUPLES_OK)
 		{
@@ -286,7 +280,7 @@ pglogical_receiver_main(Datum main_arg)
 	
 	/* Start logical replication at specified position */
 	StartTransactionCommand();
-	originName = psprintf(MULTIMASTER_SLOT_PATTERN, args->remote_node);
+	originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
 	originId = replorigin_by_name(originName, true);
 	if (originId == InvalidRepOriginId) { 
 		originId = replorigin_create(originName);
@@ -297,15 +291,15 @@ pglogical_receiver_main(Datum main_arg)
 		 * So we assume that LSNs are the same for local and remote node
 		 */
 		originStartPos = Mtm->status == MTM_RECOVERY ? GetXLogInsertRecPtr() : 0;
-		MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, args->remote_node);
+		MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, nodeId);
 	} else { 
 		originStartPos = replorigin_get_progress(originId, false);
-		MTM_LOG1("Restart logical receiver at position %lx from node %d", originStartPos, args->remote_node);
+		MTM_LOG1("Restart logical receiver at position %lx from node %d", originStartPos, nodeId);
 	}
 	CommitTransactionCommand();
 	
 	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %x/%x (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s')",
-					  args->receiver_slot,
+					  slotName,
 					  (uint32) (originStartPos >> 32),
 					  (uint32) originStartPos,
 					  MULTIMASTER_MAX_PROTO_VERSION,
@@ -323,7 +317,7 @@ pglogical_receiver_main(Datum main_arg)
 	PQclear(res);
 	resetPQExpBuffer(query);
 
-    MtmReceiverStarted(args->remote_node);
+    MtmReceiverStarted(nodeId);
     ByteBufferAlloc(&buf);
 
 	while (!got_sigterm)
@@ -354,7 +348,7 @@ pglogical_receiver_main(Datum main_arg)
 		if (rc & WL_POSTMASTER_DEATH)
 			proc_exit(1);
 
-		if (Mtm->status == MTM_OFFLINE || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != args->remote_node)) {
+		if (Mtm->status == MTM_OFFLINE || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId)) {
 			ereport(LOG, (errmsg("%s: terminating WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
 			proc_exit(0);
 		}
@@ -427,7 +421,7 @@ pglogical_receiver_main(Datum main_arg)
 					int64 now = feGetCurrentTimestamp();
 
 					/* Leave is feedback is not sent properly */
-					if (!sendFeedback(conn, now, args->remote_node))
+					if (!sendFeedback(conn, now, nodeId))
 						proc_exit(1);
 				}
 				continue;
@@ -458,9 +452,9 @@ pglogical_receiver_main(Datum main_arg)
 				if (buf.used >= MtmTransSpillThreshold) { 
 					if (spill_file < 0) {
 						int file_id;
-						spill_file = MtmCreateSpillFile(args->remote_node, &file_id);
+						spill_file = MtmCreateSpillFile(nodeId, &file_id);
 						pq_sendbyte(&spill_info, 'F');
-						pq_sendint(&spill_info, args->remote_node, 4);
+						pq_sendint(&spill_info, nodeId, 4);
 						pq_sendint(&spill_info, file_id, 4);
 					}
 					ByteBufferAppend(&buf, ")", 1);
@@ -579,32 +573,37 @@ pglogical_receiver_main(Datum main_arg)
 	proc_exit(0);
 }
 
-
-void MtmStartReceivers(void)
+void MtmStartReceiver(int nodeId, bool dynamic)
 {
-    int i;
 	BackgroundWorker worker;
+	MemoryContext oldContext = MemoryContextSwitchTo(TopMemoryContext);
 
 	MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_main = pglogical_receiver_main; 
 	worker.bgw_restart_time = MULTIMASTER_BGW_RESTART_TIMEOUT;
+	
+	/* Worker parameter and registration */
+	snprintf(worker.bgw_name, BGW_MAXLEN, "mtm_pglogical_receiver_%d_%d", MtmNodeId, nodeId);
+	
+	worker.bgw_main_arg = Int32GetDatum(nodeId);
+	if (dynamic) { 
+		BackgroundWorkerHandle *handle;
+		RegisterDynamicBackgroundWorker(&worker, &handle);
+	} else {
+		RegisterBackgroundWorker(&worker);
+	}
 
+	MemoryContextSwitchTo(oldContext);
+}
+
+void MtmStartReceivers(void)
+{
+    int i;
 	for (i = 0; i < MtmNodes; i++) {
         if (i+1 != MtmNodeId) {
-            ReceiverArgs* ctx = (ReceiverArgs*)palloc(sizeof(ReceiverArgs));
-            ctx->receiver_conn_string = psprintf("replication=database %s", MtmConnections[i].connStr);
-            sprintf(ctx->receiver_slot, MULTIMASTER_SLOT_PATTERN, MtmNodeId);
-		
-            ctx->local_node = MtmNodeId;
-            ctx->remote_node = i+1;
-
-            /* Worker parameter and registration */
-            snprintf(worker.bgw_name, BGW_MAXLEN, "mtm_pglogical_receiver_%d_%d", MtmNodeId, i+1);
-            
-            worker.bgw_main_arg = (Datum)ctx;
-            RegisterBackgroundWorker(&worker);
+			MtmStartReceiver(i+1, false);
         }
     }
 }

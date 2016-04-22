@@ -12,6 +12,9 @@ typedef uint64 timestamp_t;
 #define MAX_DBNAME_LEN 30
 #define MULTIMASTER_BGW_RESTART_TIMEOUT 1 /* seconds */
 
+extern timestamp_t MtmGetSystemTime(void);   /* non-adjusted current system time */
+extern timestamp_t MtmGetCurrentTime(void);  /* adjusted current system time */
+
 typedef struct
 {
     BgwPoolExecutor executor;

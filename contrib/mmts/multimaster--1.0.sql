@@ -13,6 +13,10 @@ CREATE FUNCTION mtm.drop_node(node integer, drop_slot bool default false) RETURN
 AS 'MODULE_PATHNAME','mtm_drop_node'
 LANGUAGE C;
 
+CREATE FUNCTION mtm.add_node(conn_str cstring) RETURNS void
+AS 'MODULE_PATHNAME','mtm_add_node'
+LANGUAGE C;
+
 -- Create replication slot for the node which was previously dropped together with it's slot 
 CREATE FUNCTION mtm.recover_node(node integer) RETURNS void
 AS 'MODULE_PATHNAME','mtm_recover_node'
@@ -30,7 +34,7 @@ CREATE FUNCTION mtm.get_nodes_state() RETURNS SETOF mtm.node_state
 AS 'MODULE_PATHNAME','mtm_get_nodes_state'
 LANGUAGE C;
 
-CREATE TYPE mtm.cluster_state AS ("status" text, "disabledNodeMask" bigint, "disconnectedNodeMask" bigint, "catchUpNodeMask" bigint, "nNodes" integer, "nActiveQueries" integer, "nPendingQueries" integer, "queueSize" bigint, "transCount" bigint, "timeShift" bigint, "recoverySlot" integer);
+CREATE TYPE mtm.cluster_state AS ("status" text, "disabledNodeMask" bigint, "disconnectedNodeMask" bigint, "catchUpNodeMask" bigint, "liveNodes" integer, "allNodes" integer, "nActiveQueries" integer, "nPendingQueries" integer, "queueSize" bigint, "transCount" bigint, "timeShift" bigint, "recoverySlot" integer);
 
 CREATE FUNCTION mtm.get_cluster_state() RETURNS mtm.cluster_state 
 AS 'MODULE_PATHNAME','mtm_get_cluster_state'
