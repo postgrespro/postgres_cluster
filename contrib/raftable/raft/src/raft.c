@@ -814,8 +814,8 @@ static void raft_handle_update(raft_t r, raft_msg_update_t *m) {
 
 	if (!m->empty && !m->snapshot && !raft_appendable(r, m->previndex, m->prevterm)) goto finish;
 
-	if (reply.progress.entries > 0) {
-		reply.term = RAFT_LOG(r, reply.progress.entries - 1).term;
+	if (RAFT_LOG_LAST_INDEX(r) >= 0) {
+		reply.term = RAFT_LOG(r, RAFT_LOG_LAST_INDEX(r)).term;
 	} else {
 		reply.term = -1;
 	}
