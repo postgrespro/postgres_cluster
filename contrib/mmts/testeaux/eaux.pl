@@ -20,15 +20,6 @@ sub list_modules
 	return @modules;
 }
 
-#my @workloads = qw(
-#	banktransfer
-#	pgbench
-#);
-#my @troubles = qw(
-#	splitbrain
-#	timeshift
-#);
-
 my @stresses = list_modules('stress');
 my @troubles = list_modules('trouble');
 
