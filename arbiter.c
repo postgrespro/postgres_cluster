@@ -369,13 +369,13 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 
 static void MtmOpenConnections()
 {
-	int nNodes = MtmNodes;
+	int nNodes = MtmMaxNodes;
 	int i;
 
 	sockets = (int*)palloc(sizeof(int)*nNodes);
 
 	for (i = 0; i < nNodes; i++) {
-		if (i+1 != MtmNodeId) { 
+		if (i+1 != MtmNodeId && i < Mtm->nAllNodes) { 
 			sockets[i] = MtmConnectSocket(Mtm->nodes[i].con.hostName, MtmArbiterPort + i + 1, MtmConnectAttempts);
 			if (sockets[i] < 0) { 
 				MtmOnNodeDisconnect(i+1);
@@ -384,8 +384,8 @@ static void MtmOpenConnections()
 			sockets[i] = -1;
 		}
 	}
-	if (Mtm->nNodes < MtmNodes/2+1) { /* no quorum */
-		elog(WARNING, "Node is out of quorum: only %d nodes from %d are accssible", Mtm->nNodes, MtmNodes);
+	if (Mtm->nLiveNodes < Mtm->nAllNodes/2+1) { /* no quorum */
+		elog(WARNING, "Node is out of quorum: only %d nodes of %d are accessible", Mtm->nLiveNodes, Mtm->nAllNodes);
 		MtmSwitchClusterMode(MTM_IN_MINORITY);
 	} else if (Mtm->status == MTM_INITIALIZATION) { 
 		MtmSwitchClusterMode(MTM_CONNECTED);
@@ -444,7 +444,7 @@ static void MtmAcceptOneConnection()
 			elog(WARNING, "Arbiter get unexpected handshake message %d", req.hdr.code);
 			close(fd);
 		} else{ 			
-			Assert(req.hdr.node > 0 && req.hdr.node <= MtmNodes && req.hdr.node != MtmNodeId);
+			Assert(req.hdr.node > 0 && req.hdr.node <= Mtm->nAllNodes && req.hdr.node != MtmNodeId);
 			resp.code = MSG_STATUS;
 			resp.disabledNodeMask = Mtm->disabledNodeMask;
 			resp.dxid = HANDSHAKE_MAGIC;
@@ -472,9 +472,10 @@ static void MtmAcceptIncomingConnections()
 	struct sockaddr_in sock_inet;
     int on = 1;
 	int i;
+	int nNodes = MtmMaxNodes;
 
-	sockets = (int*)palloc(sizeof(int)*MtmNodes);
-	for (i = 0; i < MtmNodes; i++) { 
+	sockets = (int*)palloc(sizeof(int)*nNodes);
+	for (i = 0; i < nNodes; i++) { 
 		sockets[i] = -1;
 	}
 	sock_inet.sin_family = AF_INET;
@@ -490,7 +491,7 @@ static void MtmAcceptIncomingConnections()
     if (bind(gateway, (struct sockaddr*)&sock_inet, sizeof(sock_inet)) < 0) {
 		elog(ERROR, "Arbiter failed to bind socket: %d", errno);
 	}	
-    if (listen(gateway, MtmNodes) < 0) {
+    if (listen(gateway, nNodes) < 0) {
 		elog(ERROR, "Arbiter failed to listen socket: %d", errno);
 	}	
 
@@ -527,7 +528,7 @@ static void MtmBroadcastMessage(MtmBuffer* txBuffer, MtmTransState* ts)
 {
 	int i;
 	int n = 1;
-	for (i = 0; i < MtmNodes; i++)
+	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
 		if (!BIT_CHECK(Mtm->disabledNodeMask, i) && TransactionIdIsValid(ts->xids[i])) { 
 			Assert(i+1 != MtmNodeId);
@@ -535,14 +536,14 @@ static void MtmBroadcastMessage(MtmBuffer* txBuffer, MtmTransState* ts)
 			n += 1;
 		}
 	}
-	Assert(n == Mtm->nNodes);
+	Assert(n == Mtm->nLiveNodes);
 }
 
 
 static void MtmTransSender(Datum arg)
 {
 	sigset_t sset;
-	int nNodes = MtmNodes;
+	int nNodes = MtmMaxNodes;
 	int i;
 	MtmBuffer* txBuffer = (MtmBuffer*)palloc(sizeof(MtmBuffer)*nNodes);
 
@@ -580,7 +581,7 @@ static void MtmTransSender(Datum arg)
 
 		MtmUnlock();
 
-		for (i = 0; i < nNodes; i++) { 
+		for (i = 0; i < Mtm->nAllNodes; i++) { 
 			if (txBuffer[i].used != 0) { 
 				MtmSendToNode(i, txBuffer[i].data, txBuffer[i].used*sizeof(MtmArbiterMessage));
 				txBuffer[i].used = 0;
@@ -593,7 +594,7 @@ static void MtmTransSender(Datum arg)
 #if !USE_EPOLL
 static bool MtmRecovery()
 {
-	int nNodes = MtmNodes;
+	int nNodes = Mtm->nAllNodes;
 	bool recovered = false;
     int i;
 
@@ -618,7 +619,7 @@ static bool MtmRecovery()
 static void MtmTransReceiver(Datum arg)
 {
 	sigset_t sset;
-	int nNodes = MtmNodes;
+	int nNodes = MtmMaxNodes;
 	int nResponses;
 	int i, j, n, rc;
 	MtmBuffer* rxBuffer = (MtmBuffer*)palloc(sizeof(MtmBuffer)*nNodes);
@@ -708,7 +709,7 @@ static void MtmTransReceiver(Datum arg)
 					if (MtmIsCoordinator(ts)) {
 						switch (msg->code) { 
 						  case MSG_READY:
-							Assert(ts->nVotes < Mtm->nNodes);
+							Assert(ts->nVotes < Mtm->nLiveNodes);
 							Mtm->nodes[msg->node-1].transDelay += MtmGetCurrentTime() - ts->csn;
 							ts->xids[msg->node-1] = msg->sxid;
 
@@ -720,7 +721,7 @@ static void MtmTransReceiver(Datum arg)
 								MtmAbortTransaction(ts);
 							}
 
-							if (++ts->nVotes == Mtm->nNodes) { 
+							if (++ts->nVotes == Mtm->nLiveNodes) { 
 								/* All nodes are finished their transactions */
 								if (ts->status == TRANSACTION_STATUS_ABORTED) { 
 									MtmWakeUpBackend(ts);								
@@ -736,23 +737,23 @@ static void MtmTransReceiver(Datum arg)
 							}
 							break;						   
 						  case MSG_ABORTED:
-							Assert(ts->nVotes < Mtm->nNodes);
+							Assert(ts->nVotes < Mtm->nLiveNodes);
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 								MtmAbortTransaction(ts);
 							}
-							if (++ts->nVotes == Mtm->nNodes) {
+							if (++ts->nVotes == Mtm->nLiveNodes) {
 								MtmWakeUpBackend(ts);
 							}
 							break;
 						  case MSG_PREPARED:
 							Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-							Assert(ts->nVotes < Mtm->nNodes);
+							Assert(ts->nVotes < Mtm->nLiveNodes);
 							if (msg->csn > ts->csn) {
 								ts->csn = msg->csn;
 								MtmSyncClock(ts->csn);
 							}
-							if (++ts->nVotes == Mtm->nNodes) {
+							if (++ts->nVotes == Mtm->nLiveNodes) {
 								ts->csn = MtmAssignCSN();
 								ts->status = TRANSACTION_STATUS_UNKNOWN;
 								MtmWakeUpBackend(ts);

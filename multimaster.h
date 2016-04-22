@@ -59,7 +59,7 @@
 #define Anum_mtm_local_tables_rel_schema 1
 #define Anum_mtm_local_tables_rel_name	 2
 
-#define Natts_mtm_cluster_state 11
+#define Natts_mtm_cluster_state 12
 #define Natts_mtm_nodes_state   8
 
 typedef uint64 csn_t; /* commit serial number */
@@ -145,7 +145,7 @@ typedef struct MtmTransState
   	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
 	bool           votingCompleted;    /* 2PC voting is completed */
-	TransactionId xids[1];             /* [MtmNodes]: transaction ID at replicas */
+	TransactionId xids[1];             /* [Mtm->nAllNodes]: transaction ID at replicas */
 } MtmTransState;
 
 typedef struct
@@ -164,7 +164,8 @@ typedef struct
 	nodemask_t reconnectMask; 	       /* Mask of nodes connection to which has to be reestablished by sender */
 
 	bool   localTablesHashLoaded;      /* Whether data from local_tables table is loaded in shared memory hash table */
-    int    nNodes;                     /* Number of active nodes */
+    int    nLiveNodes;                 /* Number of active nodes */
+    int    nAllNodes;                  /* Total numbber of nodes */
     int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when Mtm intialization is completed */
 	int    nLockers;                   /* Number of lockers */
 	int    nActiveTransactions;        /* Nunmber of active 2PC transactions */
@@ -178,7 +179,7 @@ typedef struct
 								  		  This list is expected to be in CSN ascending order, by strict order may be violated */
 	uint64 transCount;                 /* Counter of transactions perfromed by this node */	
     BgwPool pool;                      /* Pool of background workers for applying logical replication patches */
-	MtmNodeInfo nodes[1];              /* [MtmNodes]: per-node data */ 
+	MtmNodeInfo nodes[1];              /* [Mtm->nAllNodes]: per-node data */ 
 } MtmState;
 
 typedef struct MtmFlushPosition
@@ -197,6 +198,7 @@ extern char const* const MtmNodeStatusMnem[];
 extern MtmState* Mtm;
 
 extern int   MtmNodeId;
+extern int   MtmMaxNodes;
 extern int   MtmReplicationNodeId;
 extern int   MtmNodes;
 extern int   MtmArbiterPort;
@@ -210,10 +212,9 @@ extern int   MtmTransSpillThreshold;
 extern bool  MtmUseDtm;
 extern HTAB* MtmXid2State;
 
-extern MtmConnectionInfo* MtmConnections;
-
 extern void  MtmArbiterInitialize(void);
 extern void  MtmStartReceivers(void);
+extern void  MtmStartReceiver(int nodeId, bool dynamic);
 extern csn_t MtmTransactionSnapshot(TransactionId xid);
 extern csn_t MtmAssignCSN(void);
 extern csn_t MtmSyncClock(csn_t csn);
@@ -233,8 +234,6 @@ extern void  MtmRecoverNode(int nodeId);
 extern void  MtmOnNodeDisconnect(int nodeId);
 extern void  MtmOnNodeConnect(int nodeId);
 extern void  MtmWakeUpBackend(MtmTransState* ts);
-extern timestamp_t MtmGetSystemTime(void);   /* non-adjusted current system time */
-extern timestamp_t MtmGetCurrentTime(void);  /* adjusted current system time */
 extern void  MtmSleep(timestamp_t interval); 
 extern void  MtmAbortTransaction(MtmTransState* ts);
 extern void  MtmSetCurrentTransactionGID(char const* gid);
