@@ -505,6 +505,8 @@ MtmAdjustOldestXid(TransactionId xid)
         MtmTransState *ts, *prev = NULL;
         int i;
 
+		return  FirstNormalTransactionId;
+
 		MtmLock(LW_EXCLUSIVE);
         ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
         if (ts != NULL && ts->status == TRANSACTION_STATUS_COMMITTED) { 
