@@ -449,7 +449,7 @@ pglogical_receiver_main(Datum main_arg)
 			{
                 stmt = copybuf + hdr_len;
 				
-				if (buf.used >= MtmTransSpillThreshold) { 
+				if (buf.used >= MtmTransSpillThreshold*MB) { 
 					if (spill_file < 0) {
 						int file_id;
 						spill_file = MtmCreateSpillFile(nodeId, &file_id);
