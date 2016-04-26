@@ -342,14 +342,14 @@ csn_t MtmTransactionSnapshot(TransactionId xid)
 Snapshot MtmGetSnapshot(Snapshot snapshot)
 {
     snapshot = PgGetSnapshotData(snapshot);
-	RecentGlobalDataXmin = RecentGlobalXmin = MtmAdjustOldestXid(RecentGlobalDataXmin);
+	RecentGlobalDataXmin = RecentGlobalXmin = Mtm->oldestXid;//MtmAdjustOldestXid(RecentGlobalDataXmin);
     return snapshot;
 }
 
 
 TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 {
-    TransactionId xmin = PgGetOldestXmin(NULL, ignoreVacuum); /* consider all backends */
+    TransactionId xmin = PgGetOldestXmin(NULL, false); /* consider all backends */
     xmin = MtmAdjustOldestXid(xmin);
     return xmin;
 }
@@ -505,6 +505,8 @@ MtmAdjustOldestXid(TransactionId xid)
         MtmTransState *ts, *prev = NULL;
         int i;
 
+		return  FirstNormalTransactionId;
+
 		MtmLock(LW_EXCLUSIVE);
         ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
         if (ts != NULL && ts->status == TRANSACTION_STATUS_COMMITTED) { 
@@ -538,7 +540,8 @@ MtmAdjustOldestXid(TransactionId xid)
 			if (prev != NULL) { 
 				Mtm->transListHead = prev;
 				Mtm->oldestXid = xid = prev->xid;            
-			} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) { 
+			} else  {
+				Assert(TransactionIdPrecedesOrEqual(Mtm->oldestXid, xid)); 
 				xid = Mtm->oldestXid;
 			}
 		} else { 
