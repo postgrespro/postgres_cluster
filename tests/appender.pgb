@@ -1,0 +1,4 @@
+\set key :appender_id * :clients + :client_id
+begin;
+update t set v = v + 1 where k = :key;
+commit;
