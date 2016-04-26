@@ -2,10 +2,20 @@
 # vi: set ft=ruby :
 
 Vagrant.configure(2) do |config|
-  config.vm.box = "ubuntu/ubuntu-15.04-snappy-core-stable"
+  config.vm.box = "ubuntu/trusty64"
 
-  5.times do |i|
-    config.vm.define "n#{i+1}l"
+  nhosts = 3
+
+  nhosts.times do |i|
+    config.vm.define "node#{i}" do |node|
+      node.vm.hostname = "node#{i}"
+      if i == nhosts - 1
+        node.vm.provision :ansible do |ansible|
+          ansible.limit = "all"
+          ansible.playbook = "provision.yml"
+        end
+      end
+    end
   end
 
 end
