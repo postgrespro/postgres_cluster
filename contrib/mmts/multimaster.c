@@ -93,7 +93,7 @@ typedef enum
 #define MTM_MAP_SIZE   1003
 #define MIN_WAIT_TIMEOUT 1000
 #define MAX_WAIT_TIMEOUT 100000
-#define STATUS_POLL_DELAY USEC
+#define STATUS_POLL_DELAY USECS_PER_SEC
 
 void _PG_init(void);
 void _PG_fini(void);
@@ -262,7 +262,7 @@ timestamp_t MtmGetSystemTime(void)
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    return (timestamp_t)tv.tv_sec*USEC + tv.tv_usec + Mtm->timeShift;
+    return (timestamp_t)tv.tv_sec*USECS_PER_SEC + tv.tv_usec + Mtm->timeShift;
 }
 
 timestamp_t MtmGetCurrentTime(void)
@@ -402,7 +402,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
                 if (delta > maxSleepTime) {
                     maxSleepTime = delta;
                 }
-                if (now > prevReportTime + USEC*10) { 
+                if (now > prevReportTime + USECS_PER_SEC*10) { 
                     prevReportTime = now;
                     if (firstReportTime == 0) { 
                         firstReportTime = now;
@@ -443,69 +443,12 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
  * We collest oldest CSNs from all nodes and choose minimum from them.
  * If no such XID can be located, then return previously observed oldest XID
  */
-#if 0
-static TransactionId 
-MtmAdjustOldestXid(TransactionId xid)
-{
-    if (TransactionIdIsValid(xid)) { 
-        MtmTransState *ts, *prev = NULL;
-		csn_t oldestSnapshot = 0;
-		int i;
-       
-		MtmLock(LW_EXCLUSIVE);
-		for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
-			if (TransactionIdPrecedes(ts->xid, xid)
-				&& ts->status == TRANSACTION_STATUS_COMMITTED
-				&& ts->csn > oldestSnapshot)
-			{
-				oldestSnapshot = ts->csn;
-			}
-		}		
-		Mtm->nodes[MtmNodeId-1].oldestSnapshot = oldestSnapshot;
-		for (i = 0; i < Mtm->nAllNodes; i++) { 
-			if (!BIT_CHECK(Mtm->disabledNodeMask, i)
-				&& Mtm->nodes[i].oldestSnapshot < oldestSnapshot) 
-			{ 
-				oldestSnapshot = Mtm->nodes[i].oldestSnapshot;
-			}
-		}
-		oldestSnapshot -= MtmVacuumDelay*USEC;
-		for (ts = Mtm->transListHead; 
-			 ts != NULL 
-				 && ts->csn < oldestSnapshot
-				 && TransactionIdPrecedes(ts->xid, xid)
-				 && (ts->status == TRANSACTION_STATUS_COMMITTED ||
-					 ts->status == TRANSACTION_STATUS_ABORTED);
-			 ts = ts->next) 
-		{
-			if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
-				prev = ts;
-			}
-		}
-		if (prev != NULL) { 
-			for (ts = Mtm->transListHead; ts != prev; ts = ts->next) {
-				/* Remove information about too old transactions */
-				Assert(ts->status != TRANSACTION_STATUS_UNKNOWN);
-				hash_search(MtmXid2State, &ts->xid, HASH_REMOVE, NULL);
-			}
-			Mtm->transListHead = prev;
-			Mtm->oldestXid = xid = prev->xid;            
-        } else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) {
-            xid = Mtm->oldestXid;
-        }
-		MtmUnlock();
-    }
-    return xid;
-}
-#else
 static TransactionId 
 MtmAdjustOldestXid(TransactionId xid)
 {
     if (TransactionIdIsValid(xid)) { 
         MtmTransState *ts, *prev = NULL;
         int i;
-
-		return  FirstNormalTransactionId;
 
 		MtmLock(LW_EXCLUSIVE);
         ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
@@ -519,7 +462,7 @@ MtmAdjustOldestXid(TransactionId xid)
 					oldestSnapshot = Mtm->nodes[i].oldestSnapshot;
 				}
 			}
-			oldestSnapshot -= MtmVacuumDelay*USEC;
+			oldestSnapshot -= MtmVacuumDelay*USECS_PER_SEC;
 
 			for (ts = Mtm->transListHead; 
 				 ts != NULL 
@@ -541,7 +484,7 @@ MtmAdjustOldestXid(TransactionId xid)
 				Mtm->transListHead = prev;
 				Mtm->oldestXid = xid = prev->xid;            
 			} else  {
-				Assert(TransactionIdPrecedesOrEqual(Mtm->oldestXid, xid)); 
+				Assert(TransactionIdPrecedesOrEquals(Mtm->oldestXid, xid)); 
 				xid = Mtm->oldestXid;
 			}
 		} else { 
@@ -553,7 +496,6 @@ MtmAdjustOldestXid(TransactionId xid)
     }
     return xid;
 }
-#endif
 /*
  * -------------------------------------------
  * Transaction list manipulation
@@ -2357,7 +2299,7 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	usrfctx->values[4] = Int64GetDatum(lag);
 	usrfctx->nulls[4] = lag < 0;
 	usrfctx->values[5] = Int64GetDatum(Mtm->transCount ? Mtm->nodes[usrfctx->nodeId-1].transDelay/Mtm->transCount : 0);
-	usrfctx->values[6] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].lastStatusChangeTime/USEC));
+	usrfctx->values[6] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].lastStatusChangeTime/USECS_PER_SEC));
 	usrfctx->values[7] = CStringGetTextDatum(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
 	usrfctx->nodeId += 1;
 
