@@ -145,6 +145,7 @@ typedef struct MtmTransState
   	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
 	bool           votingCompleted;    /* 2PC voting is completed */
+	bool           isLocal;            /* Transaction is either replicated, either doesn't contain DML statements, so it shoudl be ignored by pglogical replication */
 	TransactionId xids[1];             /* [Mtm->nAllNodes]: transaction ID at replicas */
 } MtmTransState;
 
