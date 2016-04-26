@@ -46,8 +46,7 @@
 #define MULTIMASTER_BROADCAST_SERVICE   "mtm_broadcast"
 #define MULTIMASTER_ADMIN               "mtm_admin"
 
-#define USEC 1000000
-#define MB   (1024*1024)
+#define MB (1024*1024L)
 
 #define USEC_TO_MSEC(t) ((t)/1000)
 #define MSEC_TO_USEC(t) ((t)*1000)

@@ -665,8 +665,8 @@ static void MtmTransReceiver(Datum arg)
 		do { 
 			struct timeval tv;
 			events = inset;
-			tv.tv_sec = MtmKeepaliveTimeout/USEC;
-			tv.tv_usec = MtmKeepaliveTimeout%USEC;
+			tv.tv_sec = MtmKeepaliveTimeout/USECS_PER_SEC;
+			tv.tv_usec = MtmKeepaliveTimeout%USECS_PER_SEC;
 			do { 
 				n = select(max_fd+1, &events, NULL, NULL, &tv);
 			} while (n < 0 && errno == EINTR);
