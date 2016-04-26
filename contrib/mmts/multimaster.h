@@ -169,7 +169,8 @@ typedef struct
     int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when Mtm intialization is completed */
 	int    nLockers;                   /* Number of lockers */
 	int    nActiveTransactions;        /* Nunmber of active 2PC transactions */
-	long   timeShift;                  /* Local time correction */
+	int    nConfigChanges;             /* Number of cluster configuration changes */
+	int64  timeShift;                  /* Local time correction */
 	csn_t  csn;                        /* Last obtained CSN: used to provide unique acending CSNs based on system time */
 	MtmTransState* votingTransactions; /* L1-list of replicated transactions sendings notifications to coordinator.
 									 	 This list is used to pass information to mtm-sender BGW */

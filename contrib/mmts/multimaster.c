@@ -274,8 +274,8 @@ void MtmSleep(timestamp_t interval)
 {
     struct timespec ts;
     struct timespec rem;
-    ts.tv_sec = interval/1000000;
-    ts.tv_nsec = interval%1000000*1000;
+    ts.tv_sec = interval/USECS_PER_SEC;
+    ts.tv_nsec = interval%USECS_PER_SEC*1000;
 
     while (nanosleep(&ts, &rem) < 0) { 
         Assert(errno == EINTR);
@@ -752,6 +752,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	} else { 
 		time_t timeout = Max(Mtm2PCMinTimeout, (ts->csn - ts->snapshot)*Mtm2PCPrepareRatio/100000); /* usec->msec and percents */ 
 		int result = 0;
+		int nConfigChanges = Mtm->nConfigChanges;
 		/* wait votes from all nodes */
 		while (!ts->votingCompleted && !(result & WL_TIMEOUT)) {
 			MtmUnlock();
@@ -759,9 +760,12 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 			ResetLatch(&MyProc->procLatch);			
 			MtmLock(LW_SHARED);
 		}
-		if (!ts->votingCompleted) {
+		if (!ts->votingCompleted) { 
 			ts->status = TRANSACTION_STATUS_ABORTED;
-			elog(WARNING, "Transaction is aborted because of %d msec timeout expiration, prepare time %d msec", (int)timeout, (int)((ts->csn - x->snapshot)/1000));
+			elog(WARNING, "Transaction is aborted because of %d msec timeout expiration, prepare time %d msec", (int)timeout, (int)USEC_TO_MSEC(ts->csn - x->snapshot));
+		} else if (nConfigChanges != Mtm->nConfigChanges) {
+			ts->status = TRANSACTION_STATUS_ABORTED;
+			elog(WARNING, "Transaction is aborted because cluster configuration is changed during commit");
 		}
 		x->status = ts->status;
 		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
@@ -1089,6 +1093,7 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 			BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
 			Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 			Mtm->nLiveNodes += 1;
+			Mtm->nConfigChanges += 1;
 			caughtUp = true;
 		} else if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
 				   && slotLSN + MtmMinRecoveryLag > walLSN) 
@@ -1263,6 +1268,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 
 void MtmCheckQuorum(void)
 {
+	Mtm->nConfigChanges += 1;
 	if (Mtm->nLiveNodes < Mtm->nAllNodes/2+1) {
 		if (Mtm->status == MTM_ONLINE) { /* out of quorum */
 			elog(WARNING, "Node is in minority: disabled mask %lx", (long) Mtm->disabledNodeMask);
@@ -1460,6 +1466,7 @@ static void MtmInitialize()
         Mtm->nReceivers = 0;
 		Mtm->timeShift = 0;
 		Mtm->transCount = 0;
+		Mtm->nConfigChanges = 0;
 		Mtm->localTablesHashLoaded = false;
 		for (i = 0; i < MtmNodes; i++) {
 			Mtm->nodes[i].oldestSnapshot = 0;
