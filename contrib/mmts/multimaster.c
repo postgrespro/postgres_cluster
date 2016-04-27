@@ -200,6 +200,7 @@ static int   MtmMinRecoveryLag;
 static int   MtmMaxRecoveryLag;
 static int   Mtm2PCPrepareRatio;
 static int   Mtm2PCMinTimeout;
+static int   MtmGcPeriod;
 static bool  MtmIgnoreTablesWithoutPk;
 
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
@@ -342,7 +343,7 @@ csn_t MtmTransactionSnapshot(TransactionId xid)
 Snapshot MtmGetSnapshot(Snapshot snapshot)
 {
     snapshot = PgGetSnapshotData(snapshot);
-	RecentGlobalDataXmin = RecentGlobalXmin = Mtm->oldestXid;//MtmAdjustOldestXid(RecentGlobalDataXmin);
+	RecentGlobalDataXmin = RecentGlobalXmin = Mtm->oldestXid;
     return snapshot;
 }
 
@@ -350,8 +351,12 @@ Snapshot MtmGetSnapshot(Snapshot snapshot)
 TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum)
 {
     TransactionId xmin = PgGetOldestXmin(NULL, false); /* consider all backends */
-    xmin = MtmAdjustOldestXid(xmin);
-    return xmin;
+	if (TransactionIdIsValid(xmin)) { 
+		MtmLock(LW_EXCLUSIVE);
+		xmin = MtmAdjustOldestXid(xmin);
+		MtmUnlock();
+	}
+	return xmin;
 }
 
 bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
@@ -446,53 +451,50 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 static TransactionId 
 MtmAdjustOldestXid(TransactionId xid)
 {
-    if (TransactionIdIsValid(xid)) { 
-        MtmTransState *ts, *prev = NULL;
-        int i;
-
-		MtmLock(LW_EXCLUSIVE);
-        ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-        if (ts != NULL) { 
-			csn_t oldestSnapshot = ts->snapshot;
-			Mtm->nodes[MtmNodeId-1].oldestSnapshot = oldestSnapshot;
-			for (i = 0; i < Mtm->nAllNodes; i++) { 
-				if (!BIT_CHECK(Mtm->disabledNodeMask, i)
-					&& Mtm->nodes[i].oldestSnapshot < oldestSnapshot) 
-				{ 
-					oldestSnapshot = Mtm->nodes[i].oldestSnapshot;
-				}
-			}
-			oldestSnapshot -= MtmVacuumDelay*USECS_PER_SEC;
-
-			for (ts = Mtm->transListHead; 
-				 ts != NULL 
-					 && ts->csn < oldestSnapshot
-					 && TransactionIdPrecedes(ts->xid, xid)
-					 && (ts->status == TRANSACTION_STATUS_COMMITTED ||
-						 ts->status == TRANSACTION_STATUS_ABORTED);
-				 prev = ts, ts = ts->next) 
+	int i;   
+	MtmTransState *prev = NULL;
+	MtmTransState *ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+	MTM_LOG1("%d: MtmAdjustOldestXid(%d): snapshot=%ld, csn=%ld, status=%d", MyProcPid, xid, ts != NULL ? ts->snapshot : 0, ts != NULL ? ts->csn : 0, ts != NULL ? ts->status : -1);
+	Mtm->gcCount = 0;
+	if (ts != NULL) { 
+		csn_t oldestSnapshot = ts->snapshot;
+		Mtm->nodes[MtmNodeId-1].oldestSnapshot = oldestSnapshot;
+		for (i = 0; i < Mtm->nAllNodes; i++) { 
+			if (!BIT_CHECK(Mtm->disabledNodeMask, i)
+				&& Mtm->nodes[i].oldestSnapshot < oldestSnapshot) 
 			{ 
-				if (prev != NULL) { 
-					/* Remove information about too old transactions */
-					hash_search(MtmXid2State, &prev->xid, HASH_REMOVE, NULL);
-				}
-			}
-        } 
-		if (MtmUseDtm) 
-		{ 
-			if (prev != NULL) { 
-				Mtm->transListHead = prev;
-				Mtm->oldestXid = xid = prev->xid;            
-			} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) {  
-				xid = Mtm->oldestXid;
-			}
-		} else { 
-			if (prev != NULL) { 
-				Mtm->transListHead = prev;
+				oldestSnapshot = Mtm->nodes[i].oldestSnapshot;
 			}
 		}
-		MtmUnlock();
-    }
+		oldestSnapshot -= MtmVacuumDelay*USECS_PER_SEC;
+		
+		for (ts = Mtm->transListHead; 
+			 ts != NULL 
+				 && ts->csn < oldestSnapshot
+				 && TransactionIdPrecedes(ts->xid, xid)
+				 && (ts->status == TRANSACTION_STATUS_COMMITTED ||
+					 ts->status == TRANSACTION_STATUS_ABORTED);
+			 prev = ts, ts = ts->next) 
+		{ 
+			if (prev != NULL) { 
+				/* Remove information about too old transactions */
+				hash_search(MtmXid2State, &prev->xid, HASH_REMOVE, NULL);
+			}
+		}
+	} 
+	if (MtmUseDtm) 
+	{ 
+		if (prev != NULL) { 
+			Mtm->transListHead = prev;
+			Mtm->oldestXid = xid = prev->xid;            
+		} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) {  
+			xid = Mtm->oldestXid;
+		}
+	} else { 
+		if (prev != NULL) { 
+			Mtm->transListHead = prev;
+		}
+	}
     return xid;
 }
 /*
@@ -614,7 +616,12 @@ static void
 MtmBeginTransaction(MtmCurrentTrans* x)
 {
     if (x->snapshot == INVALID_CSN) { 
-		MtmLock(LW_EXCLUSIVE);
+		TransactionId xmin = (Mtm->gcCount >= MtmGcPeriod) ? PgGetOldestXmin(NULL, false) : InvalidTransactionId; /* Get oldest xmin outside critical section */
+
+		MtmLock(LW_EXCLUSIVE);	
+		if (TransactionIdIsValid(xmin) && Mtm->gcCount >= MtmGcPeriod) {
+			MtmAdjustOldestXid(xmin);
+		}
 		x->xid = GetCurrentTransactionIdIfAny();
         x->isReplicated = false;
         x->isDistributed = MtmIsUserTransaction();
@@ -690,7 +697,6 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	}
 
 	MtmLock(LW_EXCLUSIVE);
-
 	/*
 	 * Check if there is global multimaster lock preventing new transaction from commit to make a chance to wal-senders to catch-up.
 	 * Only "own" transactions are blacked. Transactions replicated from other nodes (including recovered transaction) should be proceeded
@@ -716,8 +722,10 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 
 	x->isPrepared = true;
 	x->csn = ts->csn;
-
+	
 	Mtm->transCount += 1;
+	Mtm->gcCount += 1;
+
 	MtmTransactionListAppend(ts);
 	MtmAddSubtransactions(ts, subxids, ts->nSubxids);
 	MTM_LOG3("%d: MtmPrePrepareTransaction prepare commit of %d (gtid.xid=%d, gtid.node=%d, CSN=%ld)", 
@@ -1466,8 +1474,9 @@ static void MtmInitialize()
         Mtm->transListHead = NULL;
         Mtm->transListTail = &Mtm->transListHead;		
         Mtm->nReceivers = 0;
-		Mtm->timeShift = 0;
+		Mtm->timeShift = 0;		
 		Mtm->transCount = 0;
+		Mtm->gcCount = 0;
 		Mtm->nConfigChanges = 0;
 		Mtm->localTablesHashLoaded = false;
 		for (i = 0; i < MtmNodes; i++) {
@@ -1599,6 +1608,21 @@ _PG_init(void)
 	 */
 	if (!process_shared_preload_libraries_in_progress)
 		return;
+
+	DefineCustomIntVariable(
+		"multimaster.gc_period",
+		"Number of distributed transactions after which garbage collection is started",
+		"Multimaster is building xid->csn hash map which has to be cleaned to avoid hash overflow. This parameter specifies interval of invoking garbage collector for this map",
+		&MtmGcPeriod,
+		MTM_HASH_SIZE/10,
+		1,
+	    INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
 
 	DefineCustomIntVariable(
 		"multimaster.max_nodes",
@@ -2339,7 +2363,7 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 	values[11] = Int32GetDatum(Mtm->recoverySlot);
 	values[12] = Int64GetDatum(hash_get_num_entries(MtmXid2State));
 	values[13] = Int64GetDatum(hash_get_num_entries(MtmGid2State));
-	values[14] = Int64GetDatum(Mtm->oldestSnapshot);
+	values[14] = Int32GetDatum(Mtm->oldestXid);
 	values[15] = Int32GetDatum(Mtm->nConfigChanges);
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));

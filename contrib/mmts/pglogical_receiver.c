@@ -47,7 +47,7 @@ static volatile sig_atomic_t got_sighup = false;
 
 /* GUC variables */
 static int receiver_idle_time = 0;
-static bool receiver_sync_mode = false;
+static bool receiver_sync_mode = true; /* We need sync mode to have up-to-date values of catalog_xmin in replication slots */
 
 /* Worker name */
 static char worker_proc[BGW_MAXLEN];

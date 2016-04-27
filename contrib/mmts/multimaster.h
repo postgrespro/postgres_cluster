@@ -180,6 +180,7 @@ typedef struct
     MtmTransState** transListTail;     /* Tail of L1 list of all finished transactionds, used to append new elements.
 								  		  This list is expected to be in CSN ascending order, by strict order may be violated */
 	uint64 transCount;                 /* Counter of transactions perfromed by this node */	
+	uint64 gcCount;                    /* Number of global transactions performed since last GC */
     BgwPool pool;                      /* Pool of background workers for applying logical replication patches */
 	MtmNodeInfo nodes[1];              /* [Mtm->nAllNodes]: per-node data */ 
 } MtmState;

@@ -75,8 +75,6 @@ static void process_remote_insert(StringInfo s, Relation rel);
 static void process_remote_update(StringInfo s, Relation rel);
 static void process_remote_delete(StringInfo s, Relation rel);
 
-static int MtmReplicationNode;
-
 /*
  * Search the index 'idxrel' for a tuple identified by 'skey' in 'rel'.
  *
@@ -481,8 +479,8 @@ static void
 MtmBeginSession(void)
 {
 	char slot_name[MULTIMASTER_MAX_SLOT_NAME_SIZE];
-	MtmLockNode(MtmReplicationNode);
-	sprintf(slot_name, MULTIMASTER_SLOT_PATTERN, MtmReplicationNode);
+	MtmLockNode(MtmReplicationNodeId);
+	sprintf(slot_name, MULTIMASTER_SLOT_PATTERN, MtmReplicationNodeId);
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 	replorigin_session_origin = replorigin_by_name(slot_name, false); 
 	MTM_LOG3("%d: Begin setup replorigin session: %d", MyProcPid, replorigin_session_origin);
@@ -498,7 +496,7 @@ MtmEndSession(bool unlock)
 		replorigin_session_origin = InvalidRepOriginId;
 		replorigin_session_reset();
 		if (unlock) { 
-			MtmUnlockNode(MtmReplicationNode);
+			MtmUnlockNode(MtmReplicationNodeId);
 		}
 		MTM_LOG3("%d: End reset replorigin session: %d", MyProcPid, replorigin_session_origin);
 	}
@@ -513,7 +511,7 @@ process_remote_commit(StringInfo in)
 	XLogRecPtr end_lsn;
 	/* read flags */
 	flags = pq_getmsgbyte(in);
-	MtmReplicationNode = pq_getmsgbyte(in);
+	MtmReplicationNodeId = pq_getmsgbyte(in);
 
 	/* read fields */
 	replorigin_session_origin_lsn = pq_getmsgint64(in); /* commit_lsn */
