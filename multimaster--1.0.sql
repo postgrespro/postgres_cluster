@@ -27,6 +27,10 @@ CREATE FUNCTION mtm.get_snapshot() RETURNS bigint
 AS 'MODULE_PATHNAME','mtm_get_snapshot'
 LANGUAGE C;
 
+CREATE FUNCTION mtm.get_csn(tid xid) RETURNS bigint
+AS 'MODULE_PATHNAME','mtm_get_csn'
+LANGUAGE C;
+
 
 CREATE TYPE mtm.node_state AS ("id" integer, "disabled" bool, "disconnected" bool, "catchUp" bool, "slotLag" bigint, "avgTransDelay" bigint, "lastStatusChange" timestamp, "oldestSnapshot" bigint, "connStr" text);
 
