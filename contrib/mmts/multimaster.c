@@ -107,6 +107,7 @@ PG_FUNCTION_INFO_V1(mtm_add_node);
 PG_FUNCTION_INFO_V1(mtm_poll_node);
 PG_FUNCTION_INFO_V1(mtm_recover_node);
 PG_FUNCTION_INFO_V1(mtm_get_snapshot);
+PG_FUNCTION_INFO_V1(mtm_get_csn);
 PG_FUNCTION_INFO_V1(mtm_get_nodes_state);
 PG_FUNCTION_INFO_V1(mtm_get_cluster_state);
 PG_FUNCTION_INFO_V1(mtm_get_cluster_info);
@@ -452,12 +453,13 @@ static TransactionId
 MtmAdjustOldestXid(TransactionId xid)
 {
 	int i;   
+	csn_t oldestSnapshot = INVALID_CSN;
 	MtmTransState *prev = NULL;
 	MtmTransState *ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
 	MTM_LOG1("%d: MtmAdjustOldestXid(%d): snapshot=%ld, csn=%ld, status=%d", MyProcPid, xid, ts != NULL ? ts->snapshot : 0, ts != NULL ? ts->csn : 0, ts != NULL ? ts->status : -1);
 	Mtm->gcCount = 0;
 	if (ts != NULL) { 
-		csn_t oldestSnapshot = ts->snapshot;
+		oldestSnapshot = ts->snapshot;
 		Mtm->nodes[MtmNodeId-1].oldestSnapshot = oldestSnapshot;
 		for (i = 0; i < Mtm->nAllNodes; i++) { 
 			if (!BIT_CHECK(Mtm->disabledNodeMask, i)
@@ -487,6 +489,7 @@ MtmAdjustOldestXid(TransactionId xid)
 		if (prev != NULL) { 
 			Mtm->transListHead = prev;
 			Mtm->oldestXid = xid = prev->xid;            
+			MTM_LOG1("%d: MtmAdjustOldestXid: oldestXid=%d, olderstSnapshot=%ld", MyProcPid, xid, oldestSnapshot);
 		} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) {  
 			xid = Mtm->oldestXid;
 		}
@@ -2290,6 +2293,23 @@ Datum
 mtm_get_snapshot(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT64(MtmTx.snapshot);
+}
+
+Datum
+mtm_get_csn(PG_FUNCTION_ARGS)
+{
+	TransactionId xid = PG_GETARG_INT32(0);
+	MtmTransState* ts;
+	csn_t csn = INVALID_CSN;
+
+	MtmLock(LW_SHARED);
+    ts = hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+    if (ts != NULL) { 
+		csn = ts->csn;
+	}
+	MtmUnlock();
+
+    return csn;
 }
 
 typedef struct
