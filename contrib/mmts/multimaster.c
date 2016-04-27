@@ -2307,7 +2307,8 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	usrfctx->nulls[4] = lag < 0;
 	usrfctx->values[5] = Int64GetDatum(Mtm->transCount ? Mtm->nodes[usrfctx->nodeId-1].transDelay/Mtm->transCount : 0);
 	usrfctx->values[6] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].lastStatusChangeTime/USECS_PER_SEC));
-	usrfctx->values[7] = CStringGetTextDatum(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
+	usrfctx->values[7] = Int64GetDatum(Mtm->nodes[usrfctx->nodeId-1].oldestSnapshot);
+	usrfctx->values[8] = CStringGetTextDatum(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
 	usrfctx->nodeId += 1;
 
 	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(heap_form_tuple(usrfctx->desc, usrfctx->values, usrfctx->nulls)));
@@ -2334,6 +2335,10 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 	values[9] = Int64GetDatum(Mtm->transCount);
 	values[10] = Int64GetDatum(Mtm->timeShift);
 	values[11] = Int32GetDatum(Mtm->recoverySlot);
+	values[12] = Int64GetDatum(hash_get_num_entries(MtmXid2State));
+	values[13] = Int64GetDatum(hash_get_num_entries(MtmGid2State));
+	values[14] = Int64GetDatum(Mtm->oldestSnapshot);
+	values[15] = Int32GetDatum(Mtm->nConfigChanges);
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
 }

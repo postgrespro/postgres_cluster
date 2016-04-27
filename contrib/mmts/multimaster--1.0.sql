@@ -28,13 +28,14 @@ AS 'MODULE_PATHNAME','mtm_get_snapshot'
 LANGUAGE C;
 
 
-CREATE TYPE mtm.node_state AS ("id" integer, "disabled" bool, "disconnected" bool, "catchUp" bool, "slotLag" bigint, "avgTransDelay" bigint, "lastStatusChange" timestamp, "connStr" text);
+CREATE TYPE mtm.node_state AS ("id" integer, "disabled" bool, "disconnected" bool, "catchUp" bool, "slotLag" bigint, "avgTransDelay" bigint, "lastStatusChange" timestamp, "oldestSnapshot" bigint, "connStr" text);
 
 CREATE FUNCTION mtm.get_nodes_state() RETURNS SETOF mtm.node_state
 AS 'MODULE_PATHNAME','mtm_get_nodes_state'
 LANGUAGE C;
 
-CREATE TYPE mtm.cluster_state AS ("status" text, "disabledNodeMask" bigint, "disconnectedNodeMask" bigint, "catchUpNodeMask" bigint, "liveNodes" integer, "allNodes" integer, "nActiveQueries" integer, "nPendingQueries" integer, "queueSize" bigint, "transCount" bigint, "timeShift" bigint, "recoverySlot" integer);
+CREATE TYPE mtm.cluster_state AS ("status" text, "disabledNodeMask" bigint, "disconnectedNodeMask" bigint, "catchUpNodeMask" bigint, "liveNodes" integer, "allNodes" integer, "nActiveQueries" integer, "nPendingQueries" integer, "queueSize" bigint, "transCount" bigint, "timeShift" bigint, "recoverySlot" integer,
+"xidHashSize" bigint, "gidHashSize" bigint, "oldestSnapshot" bigint, "configChanges" integer);
 
 CREATE FUNCTION mtm.get_cluster_state() RETURNS mtm.cluster_state 
 AS 'MODULE_PATHNAME','mtm_get_cluster_state'

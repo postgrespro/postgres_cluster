@@ -59,8 +59,8 @@
 #define Anum_mtm_local_tables_rel_schema 1
 #define Anum_mtm_local_tables_rel_name	 2
 
-#define Natts_mtm_cluster_state 12
-#define Natts_mtm_nodes_state   8
+#define Natts_mtm_cluster_state 16
+#define Natts_mtm_nodes_state   9
 
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
