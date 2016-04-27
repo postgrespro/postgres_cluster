@@ -5,32 +5,32 @@ use warnings;
 use Data::Dumper;
 use Net::OpenSSH;
 use Cwd;
+use RemoteNode;
 
 sub new
 {
 	my ($class, $config_fname) = @_;
 	open(my $config, '<', $config_fname);
-	my @config_lines = <$config>;
 	my @nodes = ();
 
 	# Parse connection options from ssh_config
-	my $node;
-	foreach (@config_lines)
+	my $node_cfg;
+	foreach (<$config>)
 	{
    		if (/^Host (.+)/)
 		{
-			if ($node->{'host'}){
-				push(@nodes, $node);
-				$node = {};
+			if ($node_cfg->{'host'}){
+				push(@nodes, new RemoteNode($node_cfg->{'host'}, $node_cfg->{'cfg'}));
+				$node_cfg = {};
 			}
-			$node->{'host'} = $1;
+			$node_cfg->{'host'} = $1;
 		}
 		elsif (/\s*([^\s]+)\s*([^\s]+)\s*/)
 		{
-			$node->{'cfg'}->{$1} = $2;
+			$node_cfg->{'cfg'}->{$1} = $2;
 		}
 	}
-	push(@nodes, $node);
+	push(@nodes, new RemoteNode($node_cfg->{'host'}, $node_cfg->{'cfg'}));
 
 	# print Dumper(@nodes);
 
@@ -43,30 +43,6 @@ sub new
 	return $self;
 }
 
-sub run
-{
-	my ($self, $node_id, $cmd) = @_;
-	my $node = $self->{nodes}[$node_id];
-	my $opts = $node->{cfg};
-
-	print "===\n";
-	print Dumper($opts);
-	print "===\n";
-
-	my $ssh = Net::OpenSSH->new(
-		$opts->{HostName},
-		port => $opts->{Port},
-		user => $opts->{User},
-		key_path => $opts->{IdentityFile} =~ /"([^"]*)"/,
-		master_opts => [-o => "StrictHostKeyChecking=no"]
-	);
-
-	my @ls = $ssh->capture($cmd);
-
-	print Dumper(@ls);
-
-}
-
 sub init
 {
 	my ($self) = @_;
@@ -74,18 +50,7 @@ sub init
 
 	foreach my $node (@$nodes)
 	{
-		$node->init(hba_permit_replication => 0);
-	}
-}
-
-sub detach 
-{
-	my ($self) = @_;
-	my $nodes = $self->{nodes};
-
-	foreach my $node (@$nodes)
-	{
-		delete $node->{_pid};
+		$node->init;
 	}
 }
 
@@ -94,20 +59,19 @@ sub configure
 	my ($self) = @_;
 	my $nodes = $self->{nodes};
 
-	my $connstr = join(',', map { "${ \$_->connstr('postgres') }" } @$nodes);
-	my $raftpeers = join(',', map { join(':', $_->{id}, $_->host, $_->{raftport}) } @$nodes);
+	my $connstr = join(', ', map { $_->connstr('postgres') } @$nodes);
+	my $raftpeers = join(',', map { join(':', $_->{_id}, $_->{_host}, 6666) } @$nodes);
 
 	foreach my $node (@$nodes)
 	{
-		my $id = $node->{id};
-		my $host = $node->host;
-		my $pgport = $node->port;
-		my $raftport = $node->{raftport};
+		my $id = $node->{_id};
+		my $host = $node->{_host};
+		my $pgport = $node->{_port};
+		#my $raftport = $node->{raftport};
 
 		$node->append_conf("postgresql.conf", qq(
 			listen_addresses = '$host'
-			unix_socket_directories = ''
-			port = $pgport
+			port = 5432
 			max_prepared_transactions = 200
 			max_connections = 200
 			max_worker_processes = 100
@@ -130,8 +94,8 @@ sub configure
 
 		$node->append_conf("pg_hba.conf", qq(
 			local replication all trust
-			host replication all 127.0.0.1/32 trust
-			host replication all ::1/128 trust
+			host replication all 0.0.0.0/0 trust
+			host replication all ::1/0 trust
 		));
 	}
 }
@@ -165,15 +129,10 @@ sub psql
 	return $node->psql(@args);
 }
 
-
+# XXX: test
 my $cluster = new RemoteCluster('ssh-config');
-
-print $cluster->{'nnodes'} . "\n";
-
-$cluster->run(1, 'ls -la');
+$cluster->init;
+$cluster->configure;
+$cluster->start;
 
 1;
-
-
-
-
