@@ -7,8 +7,13 @@ use Net::OpenSSH;
 sub new
 {
 	my ($class, $name, $sshopts) = @_;
+	my ($node_id) = $name =~ /(\d+)/;
+
+	print "### Creating node $name.\n";
 
 	my $self = {
+		_name    => $name,
+		_id      => $node_id + 1,
 		_port    => $sshopts->{Port},
 		_host    => $sshopts->{HostName},
 		_user    => $sshopts->{User},
@@ -24,6 +29,13 @@ sub new
 	$self->execute("pkill -9 postgres || true");
 
 	return $self;
+}
+
+sub connstr
+{
+	my ($self, $dbname) = @_;
+
+	"host=$self->{_host} dbname=$dbname";
 }
 
 sub execute
@@ -62,8 +74,8 @@ sub init
 	$self->execute("rm -rf $pgdata");
 	$self->execute("env LANG=C LC_ALL=C $pgbin/initdb -D $pgdata -A trust -N");
 	
-	$self->execute("echo 'fsync = off' >> $pgdata/postgresql.conf");
-	$self->execute("echo 'host all all 0.0.0.0/0 trust' >> $pgdata/pg_hba.conf");
+	$self->append_conf("postgresql.conf", "fsync = off");
+	$self->append_conf("pg_hba.conf", "host all all 0.0.0.0/0 trust");
 }
 
 sub start
@@ -72,7 +84,7 @@ sub start
 	my $pgbin = $self->{_pgbin}; 
 	my $pgdata = $self->{_pgdata};
 
-	$self->execute("$pgbin/pg_ctl -w -D $pgdata -l $pgdata/log start");
+	$self->execute("ulimit -c unlimited && $pgbin/pg_ctl -w -D $pgdata -l $pgdata/log start");
 }
 
 sub stop
@@ -90,34 +102,16 @@ sub restart
 	my $pgbin = $self->{_pgbin}; 
 	my $pgdata = $self->{_pgdata};
 
-	$self->execute("$pgbin/pg_ctl -w -D $pgdata restart");
+	$self->execute("$pgbin/pg_ctl -w -D $pgdata  -l $pgdata/log restart");
 }
 
 sub append_conf
 {
+	my ($self, $fname, $conf_str) = @_;
+	my $pgdata = $self->{_pgdata};
+	my $cmd = "cat <<- EOF >> $pgdata/$fname \n $conf_str \nEOF\n";
 
+	$self->execute($cmd);
 }
 
-sub psql
-{
-
-}
-
-# XXX: test
-my $node = new RemoteNode('node0', {
-          'Port' => '2200',
-          'IdentityFile' => '"/Users/stas/code/postgres_cluster/contrib/mmts/testeaux/.vagrant/machines/node1/virtualbox/private_key"',
-          'IdentitiesOnly' => 'yes',
-          'LogLevel' => 'FATAL',
-          'PasswordAuthentication' => 'no',
-          'StrictHostKeyChecking' => 'no',
-          'HostName' => '127.0.0.1',
-          'User' => 'vagrant',
-          'UserKnownHostsFile' => '/dev/null'
-        });
-
-$node->execute("ls -ls");
-$node->init;
-$node->start;
-
-
+1;
