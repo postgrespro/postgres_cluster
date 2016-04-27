@@ -285,7 +285,6 @@ int main (int argc, char* argv[])
     for (int i = 0; i < cfg.nReaders; i++) { 
         readers[i].wait();
         nSelects += readers[i].selects;
-        nTransactions += writers[i].transactions;
     }
  
     time_t elapsed = getCurrentTime() - start;
