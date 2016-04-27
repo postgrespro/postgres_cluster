@@ -330,7 +330,7 @@ csn_t MtmTransactionSnapshot(TransactionId xid)
 
 	MtmLock(LW_SHARED);
     ts = hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-    if (ts != NULL) { 
+    if (ts != NULL && !ts->isLocal) { 
 		snapshot = ts->snapshot;
 	}
 	MtmUnlock();
@@ -452,8 +452,8 @@ MtmAdjustOldestXid(TransactionId xid)
 
 		MtmLock(LW_EXCLUSIVE);
         ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-        if (ts != NULL && ts->status == TRANSACTION_STATUS_COMMITTED) { 
-			csn_t oldestSnapshot = ts->csn;
+        if (ts != NULL) { 
+			csn_t oldestSnapshot = ts->snapshot;
 			Mtm->nodes[MtmNodeId-1].oldestSnapshot = oldestSnapshot;
 			for (i = 0; i < Mtm->nAllNodes; i++) { 
 				if (!BIT_CHECK(Mtm->disabledNodeMask, i)
@@ -483,8 +483,7 @@ MtmAdjustOldestXid(TransactionId xid)
 			if (prev != NULL) { 
 				Mtm->transListHead = prev;
 				Mtm->oldestXid = xid = prev->xid;            
-			} else  {
-				Assert(TransactionIdPrecedesOrEquals(Mtm->oldestXid, xid)); 
+			} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) {  
 				xid = Mtm->oldestXid;
 			}
 		} else { 
@@ -650,6 +649,7 @@ MtmCreateTransState(MtmCurrentTrans* x)
 	if (!found) {
 		ts->status = TRANSACTION_STATUS_IN_PROGRESS;
 		ts->snapshot = x->snapshot;
+		ts->isLocal = true;
 		if (TransactionIdIsValid(x->gtid.xid)) { 		
 			Assert(x->gtid.node != MtmNodeId);
 			ts->gtid = x->gtid;
@@ -704,7 +704,8 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	/* 
 	 * Invalid CSN prevent replication of transaction by logical replication 
 	 */	   
-	ts->snapshot = x->isReplicated || !x->containsDML ? INVALID_CSN : x->snapshot;
+	ts->isLocal = x->isReplicated || !x->containsDML;
+	ts->snapshot = x->snapshot;
 	ts->csn = MtmAssignCSN();	
 	ts->procno = MyProc->pgprocno;
 	ts->nVotes = 1; /* I am voted myself */
@@ -834,7 +835,8 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				Assert(TransactionIdIsValid(x->xid));
 				ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, NULL);
 				ts->status = TRANSACTION_STATUS_ABORTED;
-				ts->snapshot = INVALID_CSN;
+				ts->isLocal = true;
+				ts->snapshot = x->snapshot;
 				ts->csn = MtmAssignCSN();	
 				ts->gtid = x->gtid;
 				ts->nSubxids = 0;
