@@ -12,9 +12,6 @@ raft/obj/raft.o raft/obj/util.o:
 
 EXTRA_INSTALL = contrib/raftable
 
-override CFLAGS += -Wfatal-errors -Wall
-override CPPFLAGS += -Iraft/include
-
 ifdef USE_PGXS
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
@@ -25,6 +22,9 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
+
+override CFLAGS += -Wfatal-errors -Wall
+override CPPFLAGS += -Iraft/include
 
 check:
 	$(prove_check)
