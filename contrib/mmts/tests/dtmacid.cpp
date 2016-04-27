@@ -144,7 +144,6 @@ void* reader(void* arg)
 				}
 			}
 		}
-        t.transactions += 2;
         t.selects += 2;
         txn1.commit();
         txn2.commit();

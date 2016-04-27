@@ -274,8 +274,8 @@ void MtmSleep(timestamp_t interval)
 {
     struct timespec ts;
     struct timespec rem;
-    ts.tv_sec = interval/1000000;
-    ts.tv_nsec = interval%1000000*1000;
+    ts.tv_sec = interval/USECS_PER_SEC;
+    ts.tv_nsec = interval%USECS_PER_SEC*1000;
 
     while (nanosleep(&ts, &rem) < 0) { 
         Assert(errno == EINTR);
@@ -330,7 +330,7 @@ csn_t MtmTransactionSnapshot(TransactionId xid)
 
 	MtmLock(LW_SHARED);
     ts = hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-    if (ts != NULL) { 
+    if (ts != NULL && !ts->isLocal) { 
 		snapshot = ts->snapshot;
 	}
 	MtmUnlock();
@@ -452,8 +452,8 @@ MtmAdjustOldestXid(TransactionId xid)
 
 		MtmLock(LW_EXCLUSIVE);
         ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-        if (ts != NULL && ts->status == TRANSACTION_STATUS_COMMITTED) { 
-			csn_t oldestSnapshot = ts->csn;
+        if (ts != NULL) { 
+			csn_t oldestSnapshot = ts->snapshot;
 			Mtm->nodes[MtmNodeId-1].oldestSnapshot = oldestSnapshot;
 			for (i = 0; i < Mtm->nAllNodes; i++) { 
 				if (!BIT_CHECK(Mtm->disabledNodeMask, i)
@@ -483,8 +483,7 @@ MtmAdjustOldestXid(TransactionId xid)
 			if (prev != NULL) { 
 				Mtm->transListHead = prev;
 				Mtm->oldestXid = xid = prev->xid;            
-			} else  {
-				Assert(TransactionIdPrecedesOrEquals(Mtm->oldestXid, xid)); 
+			} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) {  
 				xid = Mtm->oldestXid;
 			}
 		} else { 
@@ -650,6 +649,7 @@ MtmCreateTransState(MtmCurrentTrans* x)
 	if (!found) {
 		ts->status = TRANSACTION_STATUS_IN_PROGRESS;
 		ts->snapshot = x->snapshot;
+		ts->isLocal = true;
 		if (TransactionIdIsValid(x->gtid.xid)) { 		
 			Assert(x->gtid.node != MtmNodeId);
 			ts->gtid = x->gtid;
@@ -704,7 +704,8 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	/* 
 	 * Invalid CSN prevent replication of transaction by logical replication 
 	 */	   
-	ts->snapshot = x->isReplicated || !x->containsDML ? INVALID_CSN : x->snapshot;
+	ts->isLocal = x->isReplicated || !x->containsDML;
+	ts->snapshot = x->snapshot;
 	ts->csn = MtmAssignCSN();	
 	ts->procno = MyProc->pgprocno;
 	ts->nVotes = 1; /* I am voted myself */
@@ -752,6 +753,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	} else { 
 		time_t timeout = Max(Mtm2PCMinTimeout, (ts->csn - ts->snapshot)*Mtm2PCPrepareRatio/100000); /* usec->msec and percents */ 
 		int result = 0;
+		int nConfigChanges = Mtm->nConfigChanges;
 		/* wait votes from all nodes */
 		while (!ts->votingCompleted && !(result & WL_TIMEOUT)) {
 			MtmUnlock();
@@ -759,9 +761,12 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 			ResetLatch(&MyProc->procLatch);			
 			MtmLock(LW_SHARED);
 		}
-		if (!ts->votingCompleted) {
+		if (!ts->votingCompleted) { 
 			ts->status = TRANSACTION_STATUS_ABORTED;
-			elog(WARNING, "Transaction is aborted because of %d msec timeout expiration, prepare time %d msec", (int)timeout, (int)((ts->csn - x->snapshot)/1000));
+			elog(WARNING, "Transaction is aborted because of %d msec timeout expiration, prepare time %d msec", (int)timeout, (int)USEC_TO_MSEC(ts->csn - x->snapshot));
+		} else if (nConfigChanges != Mtm->nConfigChanges) {
+			ts->status = TRANSACTION_STATUS_ABORTED;
+			elog(WARNING, "Transaction is aborted because cluster configuration is changed during commit");
 		}
 		x->status = ts->status;
 		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
@@ -830,7 +835,8 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				Assert(TransactionIdIsValid(x->xid));
 				ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, NULL);
 				ts->status = TRANSACTION_STATUS_ABORTED;
-				ts->snapshot = INVALID_CSN;
+				ts->isLocal = true;
+				ts->snapshot = x->snapshot;
 				ts->csn = MtmAssignCSN();	
 				ts->gtid = x->gtid;
 				ts->nSubxids = 0;
@@ -1089,6 +1095,7 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 			BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
 			Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 			Mtm->nLiveNodes += 1;
+			Mtm->nConfigChanges += 1;
 			caughtUp = true;
 		} else if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
 				   && slotLSN + MtmMinRecoveryLag > walLSN) 
@@ -1263,6 +1270,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 
 void MtmCheckQuorum(void)
 {
+	Mtm->nConfigChanges += 1;
 	if (Mtm->nLiveNodes < Mtm->nAllNodes/2+1) {
 		if (Mtm->status == MTM_ONLINE) { /* out of quorum */
 			elog(WARNING, "Node is in minority: disabled mask %lx", (long) Mtm->disabledNodeMask);
@@ -1460,6 +1468,7 @@ static void MtmInitialize()
         Mtm->nReceivers = 0;
 		Mtm->timeShift = 0;
 		Mtm->transCount = 0;
+		Mtm->nConfigChanges = 0;
 		Mtm->localTablesHashLoaded = false;
 		for (i = 0; i < MtmNodes; i++) {
 			Mtm->nodes[i].oldestSnapshot = 0;

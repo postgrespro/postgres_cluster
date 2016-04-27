@@ -145,6 +145,7 @@ typedef struct MtmTransState
   	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
 	bool           votingCompleted;    /* 2PC voting is completed */
+	bool           isLocal;            /* Transaction is either replicated, either doesn't contain DML statements, so it shoudl be ignored by pglogical replication */
 	TransactionId xids[1];             /* [Mtm->nAllNodes]: transaction ID at replicas */
 } MtmTransState;
 
@@ -169,7 +170,8 @@ typedef struct
     int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when Mtm intialization is completed */
 	int    nLockers;                   /* Number of lockers */
 	int    nActiveTransactions;        /* Nunmber of active 2PC transactions */
-	long   timeShift;                  /* Local time correction */
+	int    nConfigChanges;             /* Number of cluster configuration changes */
+	int64  timeShift;                  /* Local time correction */
 	csn_t  csn;                        /* Last obtained CSN: used to provide unique acending CSNs based on system time */
 	MtmTransState* votingTransactions; /* L1-list of replicated transactions sendings notifications to coordinator.
 									 	 This list is used to pass information to mtm-sender BGW */
