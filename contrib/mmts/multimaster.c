@@ -828,6 +828,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 					ts->csn = x->csn;
 					MtmSyncClock(ts->csn);
 				}
+				Mtm->lastCsn = ts->csn;
 				ts->status = TRANSACTION_STATUS_COMMITTED;
 			} else { 
 				ts->status = TRANSACTION_STATUS_ABORTED;
