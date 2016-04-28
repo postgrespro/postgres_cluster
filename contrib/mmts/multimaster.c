@@ -375,7 +375,6 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 	if (!MtmUseDtm) { 
 		return PgXidInMVCCSnapshot(xid, snapshot);
 	}
-	
 	MtmLock(LW_SHARED);
 
 #if TRACE_SLEEP_TIME
@@ -427,6 +426,9 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
             else
             {
                 bool invisible = ts->status != TRANSACTION_STATUS_COMMITTED;
+				if (invisible != PgXidInMVCCSnapshot(xid, snapshot)) { 
+					fprintf(stderr, "Change visibility for XID %d(csn=%ld, status=%d) in snapshot %ld [%d,%d]\n", xid, ts->csn, ts->status, MtmTx.snapshot, snapshot->xmin, snapshot->xmax);
+				}
                 MTM_LOG4("%d: tuple with xid=%d(csn= %ld) is %s in snapshot %ld",
 						 MyProcPid, xid, ts->csn, invisible ? "rollbacked" : "committed", MtmTx.snapshot);
                 MtmUnlock();
