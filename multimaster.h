@@ -172,7 +172,8 @@ typedef struct
 	int    nActiveTransactions;        /* Nunmber of active 2PC transactions */
 	int    nConfigChanges;             /* Number of cluster configuration changes */
 	int64  timeShift;                  /* Local time correction */
-	csn_t  csn;                        /* Last obtained CSN: used to provide unique acending CSNs based on system time */
+	csn_t  csn;                        /* Last obtained timestamp: used to provide unique acending CSNs based on system time */
+	csn_t  lastCsn;                    /* CSN of last committed transaction */
 	MtmTransState* votingTransactions; /* L1-list of replicated transactions sendings notifications to coordinator.
 									 	 This list is used to pass information to mtm-sender BGW */
     MtmTransState* transListHead;      /* L1 list of all finished transactions present in xid2state hash.

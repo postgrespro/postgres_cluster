@@ -130,8 +130,8 @@ void* reader(void* arg)
 		while ((c2 = random() % conns.size()) == c1);
         work txn1(*conns[c1]);
         work txn2(*conns[c2]);
-        result r1 = txn1.exec("select v,xmin,xmax,mtm.get_csn(xmin) from t order by u");
-        result r2 = txn2.exec("select v,xmin,xmax,mtm.get_csn(xmin) from t order by u");
+        result r1 = txn1.exec("select v,xmin,xmax,mtm.get_csn(xmin),mtm.get_csn(xmax),mtm.get_snapshot(),mtm.get_last_csn() from t order by u");
+        result r2 = txn2.exec("select v,xmin,xmax,mtm.get_csn(xmin),mtm.get_csn(xmax),mtm.get_snapshot(),mtm.get_last_csn() from t order by u");
 		int delta = 0;
 		for (int i=0; i < cfg.nAccounts; i++) { 
 			int diff = r1[i][0].as(int()) - r2[i][0].as(int());
@@ -140,7 +140,9 @@ void* reader(void* arg)
 					delta = diff;
 					if (delta < 0) lt++; else gt++;
 				} else if (delta != diff) { 
-					printf("Inconsistency found for record %d: [%d,%d]->%ld vs [%d,%d]->%ld\n", i, r1[i][1].as(int()), r1[i][2].as(int()), r1[i][3].as(int64_t()), r2[i][1].as(int()), r2[i][2].as(int()), r2[i][3].as(int64_t()));
+					printf("Inconsistency found for record %d: [%d,%d]->[%ld,%ld] (snapshot %ld, last CSN %ld) vs. [%d,%d]->[%ld,%ld] (snapshot %ld, last CSN %ld)\n", i, 
+						   r1[i][1].as(int()), r1[i][2].as(int()), r1[i][3].as(int64_t()), r1[i][4].as(int64_t()), r1[i][5].as(int64_t()), r1[i][6].as(int64_t()), 
+						   r2[i][1].as(int()), r2[i][2].as(int()), r2[i][3].as(int64_t()), r2[i][4].as(int64_t()), r2[i][5].as(int64_t()), r2[i][6].as(int64_t()));
 				}
 			}
 		}

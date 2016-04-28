@@ -107,6 +107,7 @@ PG_FUNCTION_INFO_V1(mtm_poll_node);
 PG_FUNCTION_INFO_V1(mtm_recover_node);
 PG_FUNCTION_INFO_V1(mtm_get_snapshot);
 PG_FUNCTION_INFO_V1(mtm_get_csn);
+PG_FUNCTION_INFO_V1(mtm_get_last_csn);
 PG_FUNCTION_INFO_V1(mtm_get_nodes_state);
 PG_FUNCTION_INFO_V1(mtm_get_cluster_state);
 PG_FUNCTION_INFO_V1(mtm_get_cluster_info);
@@ -822,11 +823,11 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		if (ts != NULL) { 
 			if (commit) {
 				Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
-				ts->status = TRANSACTION_STATUS_COMMITTED;
 				if (x->csn > ts->csn) {
 					ts->csn = x->csn;
 					MtmSyncClock(ts->csn);
 				}
+				ts->status = TRANSACTION_STATUS_COMMITTED;
 			} else { 
 				ts->status = TRANSACTION_STATUS_ABORTED;
 			}
@@ -1461,6 +1462,7 @@ static void MtmInitialize()
 		Mtm->recoverySlot = 0;
 		Mtm->locks = GetNamedLWLockTranche(MULTIMASTER_NAME);
 		Mtm->csn = MtmGetCurrentTime();
+		Mtm->lastCsn = INVALID_CSN;
 		Mtm->oldestXid = FirstNormalTransactionId;
         Mtm->nLiveNodes = MtmNodes;
         Mtm->nAllNodes = MtmNodes;
@@ -2292,6 +2294,12 @@ Datum
 mtm_get_snapshot(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT64(MtmTx.snapshot);
+}
+
+Datum
+mtm_get_last_csn(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(Mtm->lastCsn);
 }
 
 Datum
