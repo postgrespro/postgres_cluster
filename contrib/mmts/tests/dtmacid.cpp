@@ -166,7 +166,10 @@ void* writer(void* arg)
         //work 
         //transaction<repeatable_read> txn(*conns[random() % conns.size()]);
         transaction<read_committed> txn(*conns[random() % conns.size()]);
-        int acc = random() % cfg.nAccounts;
+        int acc = cfg.scatter
+			? random() % (cfg.nAccounts/cfg.nWriters) * cfg.nWriters + t.id
+			: random() % cfg.nAccounts;
+			
         try {            
 			exec(txn, "update t set v = v + 1 where u=%d", acc);
             txn.commit();
@@ -247,6 +250,7 @@ int main (int argc, char* argv[])
                "\t-n N\tnumber of iterations (1000)\n"
                "\t-p N\tupdate percent (100)\n"
                "\t-c STR\tdatabase connection string\n"
+               "\t-s\tavoid conflicts\n"
                "\t-i\tinitialize database\n");
         return 1;
     }
