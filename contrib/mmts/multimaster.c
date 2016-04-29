@@ -326,13 +326,41 @@ static char const* MtmGetName(void)
  * -------------------------------------------
  */
 
+static MtmTransState* MtmXidMapLookup(TransactionId xid)
+{
+	MtmTransState* ts;
+	if (TransactionIdPrecedes(xid, Mtm->oldestXid)) { 
+		Mtm->xidCacheSkips += 1;
+		return NULL;
+	}
+	ts = Mtm->xidCache[xid % MULTIMASTER_XID_MAP_SIZE];
+	if (ts != NULL && ts->xid == xid) { 
+		Mtm->xidCacheHits += 1;
+		return ts;
+	}
+	Mtm->xidCacheMisses += 1;	
+	ts = hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+	if (ts != NULL) { 
+		Mtm->xidCache[xid % MULTIMASTER_XID_MAP_SIZE] = ts;
+	}
+	return ts;
+}
+
+static void MtmXidMapRemove(TransactionId xid)
+{
+	MtmTransState* ts = hash_search(MtmXid2State, &xid, HASH_REMOVE, NULL);
+	if (Mtm->xidCache[xid % MULTIMASTER_XID_MAP_SIZE] == ts) {  
+		Mtm->xidCache[xid % MULTIMASTER_XID_MAP_SIZE] = NULL;
+	}
+}
+	
 csn_t MtmTransactionSnapshot(TransactionId xid)
 {
 	MtmTransState* ts;
 	csn_t snapshot = INVALID_CSN;
 
 	MtmLock(LW_SHARED);
-    ts = hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+    ts = MtmXidMapLookup(xid);
     if (ts != NULL && !ts->isLocal) { 
 		snapshot = ts->snapshot;
 	}
@@ -384,7 +412,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 #endif
     while (true)
     {
-        MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+        MtmTransState* ts = MtmXidMapLookup(xid);
         if (ts != NULL && ts->status != TRANSACTION_STATUS_IN_PROGRESS)
         {
             if (ts->csn > MtmTx.snapshot) { 
@@ -455,7 +483,7 @@ MtmAdjustOldestXid(TransactionId xid)
 	int i;   
 	csn_t oldestSnapshot = INVALID_CSN;
 	MtmTransState *prev = NULL;
-	MtmTransState *ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+	MtmTransState *ts = MtmXidMapLookup(xid);
 	MTM_LOG2("%d: MtmAdjustOldestXid(%d): snapshot=%ld, csn=%ld, status=%d", MyProcPid, xid, ts != NULL ? ts->snapshot : 0, ts != NULL ? ts->csn : 0, ts != NULL ? ts->status : -1);
 	Mtm->gcCount = 0;
 	if (ts != NULL) { 
@@ -480,7 +508,7 @@ MtmAdjustOldestXid(TransactionId xid)
 		{ 
 			if (prev != NULL) { 
 				/* Remove information about too old transactions */
-				hash_search(MtmXid2State, &prev->xid, HASH_REMOVE, NULL);
+				MtmXidMapRemove(prev->xid);
 			}
 		}
 	} 
@@ -657,6 +685,7 @@ MtmCreateTransState(MtmCurrentTrans* x)
 	bool found;
 	MtmTransState* ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, &found);
 	if (!found) {
+		Mtm->xidCache[x->xid % MULTIMASTER_XID_MAP_SIZE] = ts;
 		ts->status = TRANSACTION_STATUS_IN_PROGRESS;
 		ts->snapshot = x->snapshot;
 		ts->isLocal = true;
@@ -743,7 +772,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	MtmTransState* ts;
 
 	MtmLock(LW_EXCLUSIVE);
-	ts = hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
+	ts = MtmXidMapLookup(x->xid);
 	Assert(ts != NULL);
 
 	if (!MtmIsCoordinator(ts) || Mtm->status == MTM_RECOVERY) {
@@ -810,7 +839,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		MtmTransState* ts = NULL;
 		MtmLock(LW_EXCLUSIVE);
 		if (x->isPrepared) { 
-			ts = hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
+			ts = MtmXidMapLookup(x->xid);
 			Assert(ts != NULL);
 		} else if (x->gid[0]) { 
 			MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
@@ -858,7 +887,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			}
 			MtmSendNotificationMessage(ts, MSG_ABORTED); /* send notification to coordinator */
 		} else if (x->status == TRANSACTION_STATUS_ABORTED && x->isReplicated && !x->isPrepared) {
-			hash_search(MtmXid2State, &x->xid, HASH_REMOVE, NULL);
+			MtmXidMapRemove(x->xid);
 		}
 		MtmUnlock();
 	}
@@ -960,7 +989,7 @@ csn_t MtmGetTransactionCSN(TransactionId xid)
 	MtmTransState* ts;
 	csn_t csn;
 	MtmLock(LW_SHARED);
-	ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+	ts = MtmXidMapLookup(xid);
 	Assert(ts != NULL);
 	csn = ts->csn;
 	MtmUnlock();
@@ -1207,6 +1236,9 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 		if (i+1 != MtmNodeId) { 
 			void* data = RaftableGet(psprintf("node-mask-%d", i+1), NULL, NULL, nowait);
 			if (data == NULL) { 
+				if (MtmUseRaftable) { 
+					elog(WARNING, "Failed to get connectivity matrix from Raftable");
+				}
 				return false;
 			}
 			matrix[i] = *(nodemask_t*)data;
@@ -1491,6 +1523,8 @@ static void MtmInitialize()
 			Mtm->nodes[i].con = MtmConnections[i];
 			Mtm->nodes[i].flushPos = 0;
 		}
+		Mtm->xidCache = (MtmTransState**)ShmemAlloc(MULTIMASTER_XID_MAP_SIZE*sizeof(MtmTransState*));
+		memset(Mtm->xidCache, 0, MULTIMASTER_XID_MAP_SIZE*sizeof(MtmTransState*));
 		PGSemaphoreCreate(&Mtm->votingSemaphore);
 		PGSemaphoreReset(&Mtm->votingSemaphore);
 		SpinLockInit(&Mtm->spinlock);
@@ -2311,7 +2345,7 @@ mtm_get_csn(PG_FUNCTION_ARGS)
 	csn_t csn = INVALID_CSN;
 
 	MtmLock(LW_SHARED);
-    ts = hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+    ts = MtmXidMapLookup(xid);
     if (ts != NULL) { 
 		csn = ts->csn;
 	}
@@ -3036,7 +3070,7 @@ MtmGetGtid(TransactionId xid, GlobalTransactionId* gtid)
 	MtmTransState* ts;
 
 	MtmLock(LW_SHARED);
-	ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+	ts = MtmXidMapLookup(xid);
 	if (ts != NULL) { 
 		*gtid = ts->gtid;
 	} else { 
@@ -3121,6 +3155,9 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 				size_t size;
 				void* data = RaftableGet(psprintf("lock-graph-%d", i+1), &size, NULL, true);
 				if (data == NULL) { 
+					if (MtmUseRaftable) { 
+						elog(WARNING, "Failed to get deadlock graph from Raftable");
+					}
 					return true; /* If using Raftable is disabled */
 				} else { 
 					MtmGraphAdd(&graph, (GlobalTransactionId*)data, size/sizeof(GlobalTransactionId));

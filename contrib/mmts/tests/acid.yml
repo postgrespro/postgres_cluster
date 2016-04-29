@@ -46,7 +46,7 @@
   - name: run transfers
     shell: >
       ~/pg_cluster/install/bin/dtmacid {{connections}}
-      -w {{ nconns }} -w 4 -r 2 -n 100000 -a 100  |
+      -w {{ nconns }} -w 4 -r 2  -s -n 100000 -a 100  |
       tee -a perf.results |
       sed "s/^/`hostname`:/"
     register: transfers_result

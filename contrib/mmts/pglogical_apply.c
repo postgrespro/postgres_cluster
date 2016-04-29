@@ -901,8 +901,8 @@ void MtmExecutor(int id, void* work, size_t size)
     StringInfoData s;
     Relation rel = NULL;
 	int spill_file = -1;
-	int save_cursor;
-	int save_len;
+	int save_cursor = 0;
+	int save_len = 0;
     s.data = work;
     s.len = size;
     s.maxlen = -1;

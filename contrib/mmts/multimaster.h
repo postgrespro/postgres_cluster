@@ -45,6 +45,7 @@
 #define MULTIMASTER_MAX_LOCAL_TABLES    256
 #define MULTIMASTER_BROADCAST_SERVICE   "mtm_broadcast"
 #define MULTIMASTER_ADMIN               "mtm_admin"
+#define MULTIMASTER_XID_MAP_SIZE        (64*1024) /* should be power of two */
 
 #define MB (1024*1024L)
 
@@ -145,7 +146,7 @@ typedef struct MtmTransState
   	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
 	bool           votingCompleted;    /* 2PC voting is completed */
-	bool           isLocal;            /* Transaction is either replicated, either doesn't contain DML statements, so it shoudl be ignored by pglogical replication */
+	bool           isLocal;            /* Transaction is either replicated, either doesn't contain DML statements, so it should be ignored by pglogical replication */
 	TransactionId xids[1];             /* [Mtm->nAllNodes]: transaction ID at replicas */
 } MtmTransState;
 
@@ -183,6 +184,10 @@ typedef struct
 	uint64 transCount;                 /* Counter of transactions perfromed by this node */	
 	uint64 gcCount;                    /* Number of global transactions performed since last GC */
     BgwPool pool;                      /* Pool of background workers for applying logical replication patches */
+    MtmTransState** xidCache;          /* Fast cache for xid->state map */
+	size_t xidCacheHits;
+	size_t xidCacheMisses;
+	size_t xidCacheSkips;
 	MtmNodeInfo nodes[1];              /* [Mtm->nAllNodes]: per-node data */ 
 } MtmState;
 
