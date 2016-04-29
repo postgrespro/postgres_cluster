@@ -426,9 +426,6 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
             else
             {
                 bool invisible = ts->status != TRANSACTION_STATUS_COMMITTED;
-				if (invisible != PgXidInMVCCSnapshot(xid, snapshot)) { 
-					fprintf(stderr, "Change visibility for XID %d(csn=%ld, status=%d) in snapshot %ld [%d,%d]\n", xid, ts->csn, ts->status, MtmTx.snapshot, snapshot->xmin, snapshot->xmax);
-				}
                 MTM_LOG4("%d: tuple with xid=%d(csn= %ld) is %s in snapshot %ld",
 						 MyProcPid, xid, ts->csn, invisible ? "rollbacked" : "committed", MtmTx.snapshot);
                 MtmUnlock();
@@ -459,7 +456,7 @@ MtmAdjustOldestXid(TransactionId xid)
 	csn_t oldestSnapshot = INVALID_CSN;
 	MtmTransState *prev = NULL;
 	MtmTransState *ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-	MTM_LOG1("%d: MtmAdjustOldestXid(%d): snapshot=%ld, csn=%ld, status=%d", MyProcPid, xid, ts != NULL ? ts->snapshot : 0, ts != NULL ? ts->csn : 0, ts != NULL ? ts->status : -1);
+	MTM_LOG2("%d: MtmAdjustOldestXid(%d): snapshot=%ld, csn=%ld, status=%d", MyProcPid, xid, ts != NULL ? ts->snapshot : 0, ts != NULL ? ts->csn : 0, ts != NULL ? ts->status : -1);
 	Mtm->gcCount = 0;
 	if (ts != NULL) { 
 		oldestSnapshot = ts->snapshot;
@@ -492,7 +489,7 @@ MtmAdjustOldestXid(TransactionId xid)
 		if (prev != NULL) { 
 			Mtm->transListHead = prev;
 			Mtm->oldestXid = xid = prev->xid;            
-			MTM_LOG1("%d: MtmAdjustOldestXid: oldestXid=%d, olderstSnapshot=%ld", MyProcPid, xid, oldestSnapshot);
+			MTM_LOG2("%d: MtmAdjustOldestXid: oldestXid=%d, olderstSnapshot=%ld", MyProcPid, xid, oldestSnapshot);
 		} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) {  
 			xid = Mtm->oldestXid;
 		}

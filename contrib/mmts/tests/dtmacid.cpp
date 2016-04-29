@@ -140,15 +140,17 @@ void* reader(void* arg)
 		assert((int)r1.size() == cfg.nAccounts && (int)r2.size() == cfg.nAccounts);
 		for (int i=0; i < cfg.nAccounts; i++) { 
 			int diff = r1[i][0].as(int()) - r2[i][0].as(int());
+#if 0
 			fprintf(out, "%d: %d %c %d - [%d,%d]->[%ld,%ld] (snapshot %ld, last CSN %ld) vs. [%d,%d]->[%ld,%ld] (snapshot %ld, last CSN %ld)\n",
 					i, r1[i][0].as(int()), diff < 0 ? '<' : diff == 0 ? '=' : '>', r2[i][0].as(int()), 
 					r1[i][1].as(int()), r1[i][2].as(int()), r1[i][3].as(int64_t()), r1[i][4].as(int64_t()), r1[i][5].as(int64_t()), r1[i][6].as(int64_t()), 
 					r2[i][1].as(int()), r2[i][2].as(int()), r2[i][3].as(int64_t()), r2[i][4].as(int64_t()), r2[i][5].as(int64_t()), r2[i][6].as(int64_t()));
+#endif
 			if (diff != 0) { 
 				if (delta == 0) { 
 					delta = diff;
 					if (delta < 0) lt++; else gt++;
-				} else if (delta != diff) { 
+				} else if ((delta ^ diff) < 0) { 
 					fflush(out);
 					printf("Inconsistency found for record %d: [%d,%d]->[%ld,%ld] (snapshot %ld, last CSN %ld) vs. [%d,%d]->[%ld,%ld] (snapshot %ld, last CSN %ld)\n", i, 
 						   r1[i][1].as(int()), r1[i][2].as(int()), r1[i][3].as(int64_t()), r1[i][4].as(int64_t()), r1[i][5].as(int64_t()), r1[i][6].as(int64_t()), 

@@ -70,6 +70,7 @@
     copy: src=../{{item}} dest=~/{{item}} mode=0755
     with_items:
       - "dtmbench.cpp"
+      - "dtmacid.cpp"
 
   - name: clone pqxx
     git: repo=https://github.com/Ambrosys/pqxx.git
@@ -95,5 +96,12 @@
 
   - name: install dtmbench
     shell: "mv dtmbench ~/pg_cluster/install/bin/dtmbench"
+
+  - name: compile dtmacid
+    shell: "g++ -g -Wall -O2 -o dtmacid dtmacid.cpp -lpqxx -lpq -pthread -L/home/{{ansible_ssh_user}}/pg_cluster/install/lib/ -I/home/{{ansible_ssh_user}}/pg_cluster/install/include/"
+
+  - name: install dtmacid
+    shell: "mv dtmacid ~/pg_cluster/install/bin/dtmacid"
+
 
 

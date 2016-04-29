@@ -1,0 +1,60 @@
+---
+
+- hosts: nodes[-1]
+  gather_facts: no
+  tasks:
+
+  - name: create mm ext
+    shell: >
+      ~/pg_cluster/install/bin/psql -p 15432 postgres -c "drop extension if exists multimaster";
+      ~/pg_cluster/install/bin/psql -p 15432 postgres -c "drop table if exists t";
+      ~/pg_cluster/install/bin/psql -p 15432 postgres -c 'create extension multimaster;';
+      ~/pg_cluster/install/bin/psql -p 15432 postgres -c 'create table t(u int primary key, v int);';
+
+- hosts: clients
+  gather_facts: no
+  tasks:
+
+  - name: generate connstrings
+    set_fact:
+      connstr: "-c 'host={{item}} user={{ansible_ssh_user}} port=15432 dbname=postgres' "
+    with_items:
+      groups['nodes'] | reverse | batch(nnodes | d(1) | int) | first
+    register: connstrs
+
+  - name: make a list
+    set_fact:
+      connections: "{{ connstrs.results | map(attribute='ansible_facts.connstr') | join }}"
+
+- hosts: clients[0]
+  gather_facts: no
+  tasks:
+  - name: init database
+    shell: "~/pg_cluster/install/bin/dtmacid {{connections}} -a 100 -i"
+    register: init_result
+    environment:
+      LD_LIBRARY_PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/lib"
+
+  - debug: var=init_result
+
+- hosts: clients
+  gather_facts: no
+  tasks:
+
+  - local_action: shell echo "Bench started at `date`" >> perf.results
+
+  - name: run transfers
+    shell: >
+      ~/pg_cluster/install/bin/dtmacid {{connections}}
+      -w {{ nconns }} -w 4 -r 2 -n 100000 -a 100  |
+      tee -a perf.results |
+      sed "s/^/`hostname`:/"
+    register: transfers_result
+    environment:
+      LD_LIBRARY_PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/lib"
+
+  - debug: var=transfers_result
+
+  - local_action: 'shell echo "{{transfers_result.stdout }}" >> perf.results'
+
+  - local_action: shell echo "Bench finished at `date`" >> perf.results
