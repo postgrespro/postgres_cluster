@@ -1,6 +1,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <assert.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <sys/time.h>
@@ -122,6 +123,9 @@ void* reader(void* arg)
     for (size_t i = 0; i < conns.size(); i++) {
         conns[i] = new connection(cfg.connections[i]);
     } 
+	char buf[256];
+	sprintf(buf, "dump-%d.txt", t.id);	
+	FILE* out = fopen(buf, "w");
 	int lt = 0;
 	int gt = 0;
 	while (running) {
@@ -133,13 +137,19 @@ void* reader(void* arg)
         result r1 = txn1.exec("select v,xmin,xmax,mtm.get_csn(xmin),mtm.get_csn(xmax),mtm.get_snapshot(),mtm.get_last_csn() from t order by u");
         result r2 = txn2.exec("select v,xmin,xmax,mtm.get_csn(xmin),mtm.get_csn(xmax),mtm.get_snapshot(),mtm.get_last_csn() from t order by u");
 		int delta = 0;
+		assert((int)r1.size() == cfg.nAccounts && (int)r2.size() == cfg.nAccounts);
 		for (int i=0; i < cfg.nAccounts; i++) { 
 			int diff = r1[i][0].as(int()) - r2[i][0].as(int());
+			fprintf(out, "%d: %d %c %d - [%d,%d]->[%ld,%ld] (snapshot %ld, last CSN %ld) vs. [%d,%d]->[%ld,%ld] (snapshot %ld, last CSN %ld)\n",
+					i, r1[i][0].as(int()), diff < 0 ? '<' : diff == 0 ? '=' : '>', r2[i][0].as(int()), 
+					r1[i][1].as(int()), r1[i][2].as(int()), r1[i][3].as(int64_t()), r1[i][4].as(int64_t()), r1[i][5].as(int64_t()), r1[i][6].as(int64_t()), 
+					r2[i][1].as(int()), r2[i][2].as(int()), r2[i][3].as(int64_t()), r2[i][4].as(int64_t()), r2[i][5].as(int64_t()), r2[i][6].as(int64_t()));
 			if (diff != 0) { 
 				if (delta == 0) { 
 					delta = diff;
 					if (delta < 0) lt++; else gt++;
 				} else if (delta != diff) { 
+					fflush(out);
 					printf("Inconsistency found for record %d: [%d,%d]->[%ld,%ld] (snapshot %ld, last CSN %ld) vs. [%d,%d]->[%ld,%ld] (snapshot %ld, last CSN %ld)\n", i, 
 						   r1[i][1].as(int()), r1[i][2].as(int()), r1[i][3].as(int64_t()), r1[i][4].as(int64_t()), r1[i][5].as(int64_t()), r1[i][6].as(int64_t()), 
 						   r2[i][1].as(int()), r2[i][2].as(int()), r2[i][3].as(int64_t()), r2[i][4].as(int64_t()), r2[i][5].as(int64_t()), r2[i][6].as(int64_t()));
@@ -150,6 +160,7 @@ void* reader(void* arg)
         txn1.commit();
         txn2.commit();
     }
+	fclose(out);
 	printf("lt=%d, gt=%d\n", lt, gt);
     return NULL;
 }
