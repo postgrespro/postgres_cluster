@@ -75,6 +75,80 @@ shmem_int_guc_check_hook(int *newval, void **extra, GucSource source)
 }
 
 /*
+ * This union allows us to mix the numerous different types of structs
+ * that we are organizing.
+ */
+typedef union
+{
+	struct config_generic generic;
+	struct config_bool _bool;
+	struct config_real real;
+	struct config_int integer;
+	struct config_string string;
+	struct config_enum _enum;
+} mixedStruct;
+
+/*
+ * Setup new GUCs or modify existsing.
+ */
+static void
+setup_gucs()
+{
+	struct config_generic **guc_vars;
+	int			numOpts,
+				i;
+	bool		history_size_found = false,
+				history_period_found = false,
+				profile_period_found = false;
+
+	/* Initialize the guc_variables[] array */
+	build_guc_variables();
+
+	guc_vars = get_guc_variables();
+	numOpts = GetNumConfigOptions();
+
+	for (i = 0; i < numOpts; i++)
+	{
+		mixedStruct *var = (mixedStruct *) guc_vars[i];
+		const char *name = var->generic.name;
+
+		if (!strcmp(name, "pg_wait_sampling.history_size"))
+		{
+			history_size_found = true;
+			var->integer.variable = &collector_hdr->historySize;
+		}
+		else if (!strcmp(name, "pg_wait_sampling.history_period"))
+		{
+			history_period_found = true;
+			var->integer.variable = &collector_hdr->historyPeriod;
+		}
+		else if (!strcmp(name, "pg_wait_sampling.profile_period"))
+		{
+			history_skip_latch_found = true;
+			var->integer.variable = &collector_hdr->profilePeriod;
+		}
+	}
+
+	if (!history_size_found)
+		DefineCustomIntVariable("pg_wait_sampling.history_size",
+				"Sets size of waits history.", NULL,
+				&collector_hdr->historySize, 5000, 100, INT_MAX,
+				PGC_SUSET, 0, shmem_int_guc_check_hook, NULL, NULL);
+
+	if (!history_period_found)
+		DefineCustomIntVariable("pg_wait_sampling.history_period",
+				"Sets period of waits history sampling.", NULL,
+				&collector_hdr->historyPeriod, 10, 1, INT_MAX,
+				PGC_SUSET, 0, shmem_int_guc_check_hook, NULL, NULL);
+
+	if (!profile_period_found)
+		DefineCustomIntVariable("pg_wait_sampling.profile_period",
+				"Sets period of waits profile sampling.", NULL,
+				&collector_hdr->profilePeriod, 10, 1, INT_MAX,
+				PGC_SUSET, 0, shmem_int_guc_check_hook, NULL, NULL);
+}
+
+/*
  * Distribute shared memory.
  */
 static void
@@ -94,6 +168,9 @@ pgws_shmem_startup(void)
 		shm_toc_insert(toc, 0, collector_hdr);
 		collector_mq = shm_toc_allocate(toc, COLLECTOR_QUEUE_SIZE);
 		shm_toc_insert(toc, 1, collector_mq);
+
+		/* Initialize GUC variables in shared memory */
+		setup_gucs();
 	}
 	else
 	{
@@ -102,20 +179,6 @@ pgws_shmem_startup(void)
 		collector_hdr = shm_toc_lookup(toc, 0);
 		collector_mq = shm_toc_lookup(toc, 1);
 	}
-
-	/* Initialize GUC variables in shared memory */
-	DefineCustomIntVariable("pg_wait_sampling.history_size",
-			"Sets size of waits history.", NULL,
-			&collector_hdr->historySize, 5000, 100, INT_MAX,
-			PGC_SUSET, 0, shmem_int_guc_check_hook, NULL, NULL);
-	DefineCustomIntVariable("pg_wait_sampling.history_period",
-			"Sets period of waits history sampling.", NULL,
-			&collector_hdr->historyPeriod, 10, 1, INT_MAX,
-			PGC_SUSET, 0, shmem_int_guc_check_hook, NULL, NULL);
-	DefineCustomIntVariable("pg_wait_sampling.profile_period",
-			"Sets period of waits profile sampling.", NULL,
-			&collector_hdr->profilePeriod, 10, 1, INT_MAX,
-			PGC_SUSET, 0, shmem_int_guc_check_hook, NULL, NULL);
 
 	shmem_initialized = true;
 
@@ -353,6 +416,10 @@ receive_array(SHMRequest request, Size item_size, Size *count)
 
 	mq = shm_mq_create(collector_mq, COLLECTOR_QUEUE_SIZE);
 	collector_hdr->request = request;
+
+	if (!collector_hdr->latch)
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+						errmsg("pg_wait_sampling collector wasn't started")));
 
 	SetLatch(collector_hdr->latch);
 

@@ -41,7 +41,7 @@ register_wait_collector(void)
 	/* Set up background worker parameters */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
-	worker.bgw_restart_time = BGW_NEVER_RESTART;
+	worker.bgw_restart_time = 0;
 	worker.bgw_main = collector_main;
 	worker.bgw_notify_pid = 0;
 	snprintf(worker.bgw_name, BGW_MAXLEN, "pg_wait_sampling collector");
