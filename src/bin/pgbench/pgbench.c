@@ -1464,8 +1464,9 @@ top:
 				default:
 					fprintf(stderr, "client %d aborted in state %d: %s",
 							st->id, st->state, PQerrorMessage(st->con));
-					PQclear(res);
-					return clientDone(st, false);
+					//PQclear(res);
+					//return clientDone(st, false);
+					break;
 			}
 			PQclear(res);
 			discard_response(st);

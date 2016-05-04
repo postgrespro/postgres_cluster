@@ -1,6 +1,6 @@
 #override CC := clang
 override CFLAGS += -fpic -Wall -Wfatal-errors -O0 -g -pedantic -std=c99
-override CPPFLAGS += -I. -Iinclude -DDEBUG
+override CPPFLAGS += -I. -Iinclude #-DDEBUG
 override HEART_LDFLAGS += -Llib -lraft -ljansson
 
 AR = ar
