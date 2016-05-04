@@ -109,9 +109,9 @@ sub configure
 			multimaster.queue_size = 10485760 # 10mb
 			multimaster.node_id = $id
 			multimaster.conn_strings = '$connstr'
-			multimaster.use_raftable = true
+			multimaster.use_raftable = false
 			multimaster.ignore_tables_without_pk = true
-			multimaster.twopc_min_timeout = 60000
+			multimaster.twopc_min_timeout = 10000
 			raftable.id = $id
 			raftable.peers = '$raftpeers'
 		));
