@@ -23,6 +23,7 @@
 #include "utils/builtins.h"
 #include "utils/datetime.h"
 #include "utils/guc.h"
+#include "utils/guc_tables.h"
 
 #include "pg_wait_sampling.h"
 
@@ -124,7 +125,7 @@ setup_gucs()
 		}
 		else if (!strcmp(name, "pg_wait_sampling.profile_period"))
 		{
-			history_skip_latch_found = true;
+			profile_period_found = true;
 			var->integer.variable = &collector_hdr->profilePeriod;
 		}
 	}

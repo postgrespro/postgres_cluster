@@ -19,7 +19,6 @@
 #include "storage/shm_mq.h"
 #include "storage/shm_toc.h"
 #include "storage/spin.h"
-#include "utils/guc.h"
 #include "utils/memutils.h"
 #include "utils/resowner.h"
 
