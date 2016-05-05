@@ -2268,7 +2268,9 @@ mtm_poll_node(PG_FUNCTION_ARGS)
 	int nodeId = PG_GETARG_INT32(0);
 	bool nowait = PG_GETARG_BOOL(1);
 	bool online = true;
-	while (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
+	while ((nodeId == MtmNodeId && Mtm->status != MTM_ONLINE)
+		   || (nodeId =! MtmNodeId && BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))) 
+	{ 
 		if (nowait) { 
 			online = false;
 			break;
