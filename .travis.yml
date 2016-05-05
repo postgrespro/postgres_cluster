@@ -5,5 +5,5 @@ os:
 compiler:
   - gcc
   - clang
-script: ./configure && make check
+script: ./configure && make -j 4 && make check
 

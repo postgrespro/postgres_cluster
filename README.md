@@ -1,5 +1,7 @@
 # Postgres_cluster
 
+[![Build Status](https://travis-ci.org/postgrespro/postgres_cluster.svg?branch=master)](https://travis-ci.org/postgrespro/postgres_cluster)
+
 Various experiments with PostgreSQL clustering perfomed at PostgresPro.
 
 This is mirror of postgres repo with several changes to the core and few extra extensions.
