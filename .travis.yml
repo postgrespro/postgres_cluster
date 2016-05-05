@@ -3,13 +3,19 @@ os:
   - linux
   #- osx
 compiler:
-  #- gcc
+  - gcc
   - clang
 install: cpanm IPC::Run DBD::Pg
 before_script: ./configure --enable-tap-tests && make -j4
 env:
-  - TESTDIR=.
-  - TESTDIR=src/test/recovery
+  #- TESTDIR=.
+  #- TESTDIR=src/test/recovery
+  - TESTDIR=contrib/raftable
   - TESTDIR=contrib/mmts
 script: cd $TESTDIR && make check
+notifications:
+  email:
+    - s.kelvich@postgrespro.ru
+    - c.pan@postgrespro.ru
+    - k.knizhnik@postgrespro.ru
 
