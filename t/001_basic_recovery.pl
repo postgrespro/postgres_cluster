@@ -2,7 +2,7 @@ use strict;
 use warnings;
 use Cluster;
 use TestLib;
-use Test::More tests => 3;
+use Test::More tests => 4;
 
 my $cluster = new Cluster(3);
 $cluster->init();
@@ -60,19 +60,24 @@ is($psql_out, '20', "Check replication after node failure.");
 diag("starting node 2");
 $cluster->{nodes}->[2]->start;
 #diag("sleeping 10");
-sleep(10); # XXX: here we can poll
+#sleep(10); # XXX: here we can poll
 
-#$cluster->psql(0, 'postgres', "select mtm.poll_node(3);");
-#$cluster->psql(1, 'postgres', "select mtm.poll_node(3);");
-#$cluster->psql(2, 'postgres', "select mtm.poll_node(3);");
+$cluster->psql(0, 'postgres', "select mtm.poll_node(3);");
+
 diag("inserting 3");
-
 $cluster->psql(0, 'postgres', "insert into t values(3, 30);");
-diag("selecting");
+diag("inserting 4");
+$cluster->psql(1, 'postgres', "insert into t values(4, 40);");
 
+diag("selecting");
 $cluster->psql(2, 'postgres', "select v from t where k=3;", stdout => \$psql_out);
 diag("selected");
 
 is($psql_out, '30', "Check replication after failed node recovery.");
+
+$cluster->psql(2, 'postgres', "select v from t where k=4;", stdout => \$psql_out);
+diag("selected");
+
+is($psql_out, '40', "Check replication after failed node recovery.");
 
 
