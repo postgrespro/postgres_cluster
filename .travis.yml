@@ -6,15 +6,4 @@ compiler:
   - gcc
   - clang
 script: ./configure && make check
-#addons:
-#  apt:
-#    # XXX: check what actually installed in travis image
-#    packages:
-#      - automake
-#      - libtool
-#      - build-essential
-#      - bison
-#      - flex
-#      - libreadline-dev
-
 
