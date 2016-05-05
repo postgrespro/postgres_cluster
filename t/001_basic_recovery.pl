@@ -63,6 +63,7 @@ $cluster->{nodes}->[2]->start;
 #sleep(10); # XXX: here we can poll
 
 $cluster->psql(0, 'postgres', "select mtm.poll_node(3);");
+$cluster->psql(1, 'postgres', "select mtm.poll_node(3);");
 diag("inserting 3");
 
 $cluster->psql(0, 'postgres', "insert into t values(3, 30);");
