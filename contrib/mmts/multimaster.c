@@ -1695,7 +1695,7 @@ _PG_init(void)
 		"Minamal amount of time (msec) between node status change",
 		"This delay is used to avoid false detection of node failure and to prevent blinking of node status node",
 		&MtmNodeDisableDelay,
-		10000,
+		1000,
 		1,
 		INT_MAX,
 		PGC_BACKEND,
