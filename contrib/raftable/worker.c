@@ -229,7 +229,7 @@ static bool pull_from_socket(Client *c)
 	if (!avail) return false;
 
 	size_t recved = recv(c->sock, dst, avail, MSG_DONTWAIT);
-	if (recv <= 0)
+	if (recved <= 0)
 	{
 		c->good = false;
 		return false;
