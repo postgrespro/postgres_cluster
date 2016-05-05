@@ -93,7 +93,7 @@ static void findMaximumIndependentSet(NodeList* cur, NodeList* result, nodemask_
 		cur->size -= 1;
 		ne += 1;
 		if (k > 1) {
-			for (s = ++ne; !BIT_CHECK(graph[fixp], oldSet[s]); s++);
+			for (s = ne; !BIT_CHECK(graph[fixp], oldSet[s]); s++);
 		}
 	}
 }
