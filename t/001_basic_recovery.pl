@@ -60,11 +60,11 @@ is($psql_out, '20', "Check replication after node failure.");
 diag("starting node 2");
 $cluster->{nodes}->[2]->start;
 #diag("sleeping 10");
-#sleep(10); # XXX: here we can poll
+sleep(10); # XXX: here we can poll
 
-$cluster->psql(0, 'postgres', "select mtm.poll_node(3);");
-$cluster->psql(1, 'postgres', "select mtm.poll_node(3);");
-$cluster->psql(2, 'postgres', "select mtm.poll_node(3);");
+#$cluster->psql(0, 'postgres', "select mtm.poll_node(3);");
+#$cluster->psql(1, 'postgres', "select mtm.poll_node(3);");
+#$cluster->psql(2, 'postgres', "select mtm.poll_node(3);");
 diag("inserting 3");
 
 $cluster->psql(0, 'postgres', "insert into t values(3, 30);");
