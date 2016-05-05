@@ -1290,7 +1290,7 @@ void MtmCheckQuorum(void)
 		}
 	} else {
 		if (Mtm->status == MTM_IN_MINORITY) { 
-			MTM_LOG1("Node is in majority: dissbled mask %lx", (long) Mtm->disabledNodeMask);
+			MTM_LOG1("Node is in majority: disabled mask %lx", (long) Mtm->disabledNodeMask);
 			MtmSwitchClusterMode(MTM_ONLINE);
 		}
 	}

@@ -499,11 +499,44 @@ static void raft_beat(raft_t r, int dst) {
 	free(m);
 }
 
+static void raft_reset_bytes_acked(raft_t r) {
+	for (int i = 0; i < r->config.peernum_max; i++) {
+		r->peers[i].acked.bytes = 0;
+	}
+}
+
+static void raft_reset_silent_time(raft_t r, int id) {
+	for (int i = 0; i < r->config.peernum_max; i++) {
+		if ((i == id) || (id == NOBODY)) {
+			r->peers[i].silent_ms = 0;
+		}
+	}
+}
+
+// Returns true if we got the support of a majority and became the leader
+static bool raft_become_leader(raft_t r) {
+	if (r->votes * 2 > r->peernum) {
+		// got the support of a majority
+		r->role = LEADER;
+		r->leader = r->me;
+		raft_reset_bytes_acked(r);
+		raft_reset_silent_time(r, NOBODY);
+		raft_reset_timer(r);
+		shout("became the leader\n");
+		return true;
+	}
+	return false;
+}
+
 static void raft_claim(raft_t r) {
 	assert(r->role == CANDIDATE);
 	assert(r->leader == NOBODY);
 
 	r->votes = 1; // vote for self
+	if (raft_become_leader(r)) {
+		// no need to send any messages, since we are alone
+		return;
+	}
 
 	raft_msg_claim_t m;
 
@@ -995,20 +1028,6 @@ finish:
 	raft_send(r, candidate, &reply, sizeof(reply));
 }
 
-static void raft_reset_bytes_acked(raft_t r) {
-	for (int i = 0; i < r->config.peernum_max; i++) {
-		r->peers[i].acked.bytes = 0;
-	}
-}
-
-static void raft_reset_silent_time(raft_t r, int id) {
-	for (int i = 0; i < r->config.peernum_max; i++) {
-		if ((i == id) || (id == NOBODY)) {
-			r->peers[i].silent_ms = 0;
-		}
-	}
-}
-
 static void raft_handle_vote(raft_t r, raft_msg_vote_t *m) {
 	int sender = m->msg.from;
 	raft_peer_t *peer = r->peers + sender;
@@ -1022,14 +1041,7 @@ static void raft_handle_vote(raft_t r, raft_msg_vote_t *m) {
 		r->votes++;
 	}
 
-	if (r->votes * 2 > r->peernum) {
-		// got the support of a majority
-		r->role = LEADER;
-		r->leader = r->me;
-		raft_reset_bytes_acked(r);
-		raft_reset_silent_time(r, NOBODY);
-		raft_reset_timer(r);
-	}
+	raft_become_leader(r);
 }
 
 void raft_handle_message(raft_t r, raft_msg_t m) {

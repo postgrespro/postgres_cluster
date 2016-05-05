@@ -194,7 +194,7 @@ static char const* const MtmReplicationModeName[] =
 {
 	"recovered", /* SLOT_CREATE_NEW: recovery of node is completed so drop old slot and restart replication from the current position in WAL */
 	"recovery",  /* SLOT_OPEN_EXISTED: perform recorvery of the node by applying all data from theslot from specified point */
-	"normal"     /* SLOT_OPEN_ALWAYS: normal mode: use existeed slot or create new one and start receiving data from it from the specified position */
+	"normal"     /* SLOT_OPEN_ALWAYS: normal mode: use existed slot or create new one and start receiving data from it from the specified position */
 };
 
 static void
@@ -248,6 +248,7 @@ pglogical_receiver_main(Datum main_arg)
 		PQfinish(conn);
 		ereport(WARNING, (errmsg("%s: Could not establish connection to remote server",
 								 worker_proc)));
+		/* Do not make decision about node status here because at startup peer node may just no yet started */
 		/* MtmOnNodeDisconnect(nodeId); */
 		proc_exit(1);
 	}
@@ -271,6 +272,7 @@ pglogical_receiver_main(Datum main_arg)
 				PQclear(res);
 				ereport(ERROR, (errmsg("%s: Could not create logical slot",
 									   worker_proc)));
+				MtmOnNodeDisconnect(nodeId);
 				proc_exit(1);
 			}
 		}
@@ -312,6 +314,7 @@ pglogical_receiver_main(Datum main_arg)
 		PQclear(res);
 		ereport(WARNING, (errmsg("%s: Could not start logical replication",
 								 worker_proc)));
+		MtmOnNodeDisconnect(nodeId);
 		proc_exit(1);
 	}
 	PQclear(res);
@@ -402,6 +405,7 @@ pglogical_receiver_main(Datum main_arg)
 				{
 					ereport(LOG, (errmsg("%s: streaming header too small: %d",
 										 worker_proc, rc)));
+					MtmOnNodeDisconnect(nodeId);
 					proc_exit(1);
 				}
 				replyRequested = copybuf[pos];
@@ -421,8 +425,10 @@ pglogical_receiver_main(Datum main_arg)
 					int64 now = feGetCurrentTimestamp();
 
 					/* Leave is feedback is not sent properly */
-					if (!sendFeedback(conn, now, nodeId))
+					if (!sendFeedback(conn, now, nodeId)) {
+						MtmOnNodeDisconnect(nodeId);
 						proc_exit(1);
+					}
 				}
 				continue;
 			}
@@ -430,6 +436,7 @@ pglogical_receiver_main(Datum main_arg)
 			{
 				ereport(LOG, (errmsg("%s: Incorrect streaming header",
 									 worker_proc)));
+				MtmOnNodeDisconnect(nodeId);
 				proc_exit(1);
 			}
 
@@ -538,6 +545,7 @@ pglogical_receiver_main(Datum main_arg)
 			{
 				ereport(LOG, (errmsg("%s: Incorrect status received... Leaving.",
 									 worker_proc)));
+				MtmOnNodeDisconnect(nodeId);
 				proc_exit(1);
 			}
 
@@ -546,6 +554,7 @@ pglogical_receiver_main(Datum main_arg)
 			{
 				ereport(LOG, (errmsg("%s: Data remaining on the socket... Leaving.",
 									 worker_proc)));
+				MtmOnNodeDisconnect(nodeId);
 				proc_exit(1);
 			}
 			continue;
@@ -564,6 +573,7 @@ pglogical_receiver_main(Datum main_arg)
 		{
 			ereport(LOG, (errmsg("%s: Failure while receiving changes...",
 								 worker_proc)));
+			MtmOnNodeDisconnect(nodeId);
 			proc_exit(1);
 		}
 	}
