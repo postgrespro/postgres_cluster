@@ -98,7 +98,7 @@ sub configure
 			multimaster.queue_size = 10485760 # 10mb
 			multimaster.node_id = $id
 			multimaster.conn_strings = '$connstr'
-			multimaster.use_raftable = false
+			multimaster.use_raftable = true
 			multimaster.ignore_tables_without_pk = true
 			multimaster.twopc_min_timeout = 60000
 			raftable.id = $id
