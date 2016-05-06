@@ -65,6 +65,10 @@ CREATE FUNCTION mtm.poll_node(nodeId integer, noWait boolean default FALSE) RETU
 AS 'MODULE_PATHNAME','mtm_poll_node'
 LANGUAGE C;
 
+CREATE FUNCTION mtm.inject_2pc_error(stage integer) RETURNS void
+AS 'MODULE_PATHNAME','mtm_inject_2pc_error'
+LANGUAGE C;
+
 CREATE TABLE IF NOT EXISTS mtm.ddl_log (issued timestamp with time zone not null, query text);
 
 CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema text, rel_name text, primary key(rel_schema, rel_name));
