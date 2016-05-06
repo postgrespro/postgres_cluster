@@ -165,6 +165,7 @@ typedef struct
 	nodemask_t reconnectMask; 	       /* Mask of nodes connection to which has to be reestablished by sender */
 
 	bool   localTablesHashLoaded;      /* Whether data from local_tables table is loaded in shared memory hash table */
+	int    inject2PCError;             /* Simulate error during 2PC commit at this node */
     int    nLiveNodes;                 /* Number of active nodes */
     int    nAllNodes;                  /* Total numbber of nodes */
     int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when Mtm intialization is completed */

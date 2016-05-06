@@ -114,6 +114,7 @@ PG_FUNCTION_INFO_V1(mtm_get_cluster_state);
 PG_FUNCTION_INFO_V1(mtm_get_cluster_info);
 PG_FUNCTION_INFO_V1(mtm_make_table_local);
 PG_FUNCTION_INFO_V1(mtm_dump_lock_graph);
+PG_FUNCTION_INFO_V1(mtm_inject_2pc_error);
 
 static Snapshot MtmGetSnapshot(Snapshot snapshot);
 static void MtmInitialize(void);
@@ -688,6 +689,10 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 		return;
 	}
 
+	if (Mtm->inject2PCError == 1) { 
+		Mtm->inject2PCError = 0;
+		elog(ERROR, "ERROR INJECTION for transaction %d (%s)", x->xid, x->gid);
+	}
 	x->xid = GetCurrentTransactionId();
 	Assert(TransactionIdIsValid(x->xid));
 
@@ -742,6 +747,10 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
 
+	if (Mtm->inject2PCError == 2) { 
+		Mtm->inject2PCError = 0;
+		elog(ERROR, "ERROR INJECTION for transaction %d (%s)", x->xid, x->gid);
+	}
 	MtmLock(LW_EXCLUSIVE);
 	ts = hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
 	Assert(ts != NULL);
@@ -782,6 +791,10 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		x->status = ts->status;
 		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
 		MtmUnlock();
+	}
+	if (Mtm->inject2PCError == 3) { 
+		Mtm->inject2PCError = 0;
+		elog(ERROR, "ERROR INJECTION for transaction %d (%s)", x->xid, x->gid);
 	}
 }
 
@@ -1484,6 +1497,7 @@ static void MtmInitialize()
 		Mtm->gcCount = 0;
 		Mtm->nConfigChanges = 0;
 		Mtm->localTablesHashLoaded = false;
+		Mtm->inject2PCError = 0;
 		for (i = 0; i < MtmNodes; i++) {
 			Mtm->nodes[i].oldestSnapshot = 0;
 			Mtm->nodes[i].transDelay = 0;
@@ -2427,12 +2441,13 @@ mtm_get_cluster_info(PG_FUNCTION_ARGS)
 		usrfctx = (MtmGetClusterInfoCtx*)palloc(sizeof(MtmGetNodeStateCtx));
 		get_call_result_type(fcinfo, NULL, &desc);
 		funcctx->attinmeta = TupleDescGetAttInMetadata(desc);
-		usrfctx->nodeId = 1;
+		usrfctx->nodeId = 0;
 		funcctx->user_fctx = usrfctx;
 		MemoryContextSwitchTo(oldcontext);      
     }
     funcctx = SRF_PERCALL_SETUP();	
 	usrfctx = (MtmGetClusterInfoCtx*)funcctx->user_fctx;
+	while (++usrfctx->nodeId <= Mtm->nAllNodes && BIT_CHECK(Mtm->disabledNodeMask, usrfctx->nodeId-1));
 	if (usrfctx->nodeId > Mtm->nAllNodes) {
 		SRF_RETURN_DONE(funcctx);      
 	}	
@@ -2526,6 +2541,12 @@ Datum mtm_dump_lock_graph(PG_FUNCTION_ARGS)
 		}
 	}
 	return CStringGetTextDatum(s->data);
+}
+
+Datum mtm_inject_2pc_error(PG_FUNCTION_ARGS)
+{
+	Mtm->inject2PCError = PG_GETARG_INT32(0);
+    PG_RETURN_VOID();
 }
 
 /*
@@ -2800,9 +2821,12 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 					}
 					break;
 				case TRANS_STMT_PREPARE:
+					elog(ERROR, "Two phase commit is not supported by multimaster");
+					break;
 				case TRANS_STMT_COMMIT_PREPARED:
 				case TRANS_STMT_ROLLBACK_PREPARED:
-					elog(ERROR, "Two phase commit is not supported by multimaster");
+  				    skipCommand = true;
+					break;
 				default:
 					break;
 				}
