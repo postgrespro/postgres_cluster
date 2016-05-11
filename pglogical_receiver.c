@@ -226,6 +226,9 @@ pglogical_receiver_main(Datum main_arg)
 
 	MtmCreateSpillDirectory(nodeId);
 
+	Mtm->nodes[nodeId-1].senderPid = MyProcPid;
+	Mtm->nodes[nodeId-1].senderStartTime = MtmGetSystemTime();
+
     sprintf(worker_proc, "mtm_pglogical_receiver_%d_%d", MtmNodeId, nodeId);
 
 	/* We're now ready to receive signals */
