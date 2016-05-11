@@ -3,6 +3,7 @@ package RemoteNode;
 use strict;
 use warnings;
 use Net::OpenSSH;
+use IPC::Run;
 
 sub new
 {
@@ -24,9 +25,8 @@ sub new
 
 	bless $self, $class;
 
-	# kill postgres here to ensure
-	# predictable initial state.
-	$self->execute("pkill -9 postgres || true");
+	$self->execute("sudo iptables -F");
+	$self->execute("sudo iptables -A INPUT -p tcp --dport ssh -j ACCEPT");
 
 	return $self;
 }
@@ -35,7 +35,7 @@ sub connstr
 {
 	my ($self, $dbname) = @_;
 
-	"host=$self->{_host} dbname=$dbname";
+	"host=$self->{_host} dbname=$dbname user=$self->{_user}";
 }
 
 sub execute
@@ -70,6 +70,10 @@ sub init
 	my ($self, %params) = @_;
 	my $pgbin = $self->{_pgbin}; 
 	my $pgdata = $self->{_pgdata};
+
+	# kill postgres here to ensure
+	# predictable initial state.
+	$self->execute("pkill -9 postgres || true");
 
 	$self->execute("rm -rf $pgdata");
 	$self->execute("env LANG=C LC_ALL=C $pgbin/initdb -D $pgdata -A trust -N");
@@ -112,6 +116,44 @@ sub append_conf
 	my $cmd = "cat <<- EOF >> $pgdata/$fname \n $conf_str \nEOF\n";
 
 	$self->execute($cmd);
+}
+
+sub psql
+{
+	my ($self, $dbname, $sql) = @_;
+	my $stderr;
+	my $stdout;
+
+	my @psql_command =
+	  ('psql', '-XAtq', '-d', $self->connstr($dbname), '-f', '-');
+	
+	my @ipcrun_command = (\@psql_command, '<', \$sql);
+	#push @ipcrun_command, '>', $stdout;
+	#push @ipcrun_command, '2>', $stderr;
+
+	IPC::Run::run @ipcrun_command;
+	my $ret = $?;
+
+	return $ret;
+}
+
+sub net_deny_in
+{
+	my ($self)  = @_;
+	$self->execute("sudo iptables -A INPUT -j DROP");
+}
+
+sub net_deny_out
+{
+	my ($self)  = @_;
+	$self->execute("sudo iptables -A OUTPUT -j DROP");
+}
+
+sub net_allow
+{
+	my ($self)  = @_;
+	$self->execute("sudo iptables -D INPUT -j DROP");
+	$self->execute("sudo iptables -D OUTPUT -j DROP");
 }
 
 1;
