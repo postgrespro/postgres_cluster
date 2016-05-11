@@ -1,0 +1,23 @@
+# vim: ts=2 sts=2 sw=2 expandtab
+---
+makejobs: 4
+
+pg_repo: git://git.postgresql.org/git/postgresql.git
+pg_repo_key: None
+pg_version_tag: master
+
+pg_destroy_and_init: false
+
+pg_port: 5432
+pg_config:
+  - line: "synchronous_commit = off"
+  - line: "listen_addresses = '*'"
+  - line: "max_connections = 100"
+  - line: "max_prepared_transactions = 100"
+  - line: "port = {{pg_port}}"
+
+pg_prefix: "{{ansible_env.HOME}}/pg_cluster"
+pg_src: "{{pg_prefix}}/src"
+pg_dst: "{{pg_prefix}}/install"
+pg_datadir: "{{pg_prefix}}/data_{{pg_port}}"
+

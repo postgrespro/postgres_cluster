@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  author: Stas Kelvich
+  description: Role to build and install postgres from sources
+  company: PostgresPro
+  license: MIT
+  min_ansible_version: 1.9
+  platforms:
+  - name: Debian
+    versions:
+    - all
+  - name: CentOS
+    versions:
+    - all
+  galaxy_tags:
+  - postgres
+  - installer
+  - db
+
+dependencies: []
