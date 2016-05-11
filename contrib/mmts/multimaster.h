@@ -60,7 +60,7 @@
 #define Anum_mtm_local_tables_rel_name	 2
 
 #define Natts_mtm_cluster_state 16
-#define Natts_mtm_nodes_state   9
+#define Natts_mtm_nodes_state   13
 
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
@@ -125,8 +125,12 @@ typedef struct
 	MtmConnectionInfo con;
 	timestamp_t transDelay;
 	timestamp_t lastStatusChangeTime;
+	timestamp_t receiverStartTime;
+	timestamp_t senderStartTime;
+	int         senderPid;
+	int         receiverPid;
 	XLogRecPtr  flushPos;
-	csn_t  oldestSnapshot; /* Oldest snapshot used by active transactions at this node */
+	csn_t  oldestSnapshot; /* Oldest snapshot used by active transactions at this node */	
 } MtmNodeInfo;
 
 typedef struct MtmTransState

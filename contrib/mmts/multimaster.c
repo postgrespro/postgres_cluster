@@ -2074,7 +2074,8 @@ void MtmDropNode(int nodeId, bool dropSlot)
 static void
 MtmOnProcExit(int code, Datum arg)
 {
-	if (MtmReplicationNodeId >= 0) { 
+	if (MtmReplicationNodeId > 0) { 
+		Mtm->nodes[MtmReplicationNodeId-1].senderPid = -1;
 		MTM_LOG1("WAL-sender to %d is terminated", MtmReplicationNodeId); 
 		MtmOnNodeDisconnect(MtmReplicationNodeId);
 	}
@@ -2086,6 +2087,8 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	ListCell *param;
 	bool recoveryCompleted = false;
 	MtmIsRecoverySession = false;
+	Mtm->nodes[MtmReplicationNodeId-1].senderPid = MyProcPid;
+	Mtm->nodes[MtmReplicationNodeId-1].senderStartTime = MtmGetSystemTime();
 	foreach(param, args->in_params)
 	{
 		DefElem    *elem = lfirst(param);
@@ -2378,7 +2381,11 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	usrfctx->values[5] = Int64GetDatum(Mtm->transCount ? Mtm->nodes[usrfctx->nodeId-1].transDelay/Mtm->transCount : 0);
 	usrfctx->values[6] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].lastStatusChangeTime/USECS_PER_SEC));
 	usrfctx->values[7] = Int64GetDatum(Mtm->nodes[usrfctx->nodeId-1].oldestSnapshot);
-	usrfctx->values[8] = CStringGetTextDatum(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
+	usrfctx->values[8] = Int32GetDatum(Mtm->nodes[usrfctx->nodeId-1].senderPid);
+	usrfctx->values[9] = Int64GetDatum(Mtm->nodes[usrfctx->nodeId-1].senderStartTime);
+	usrfctx->values[10] = Int32GetDatum(Mtm->nodes[usrfctx->nodeId-1].receiverPid);
+	usrfctx->values[11] = Int64GetDatum(Mtm->nodes[usrfctx->nodeId-1].receiverStartTime);   
+	usrfctx->values[12] = CStringGetTextDatum(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
 	usrfctx->nodeId += 1;
 
 	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(heap_form_tuple(usrfctx->desc, usrfctx->values, usrfctx->nulls)));
