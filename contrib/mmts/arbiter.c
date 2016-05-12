@@ -658,7 +658,7 @@ static void MtmTransReceiver(Datum arg)
 			i = events[j].data.u32;
 			if (events[j].events & EPOLLERR) {
 				elog(WARNING, "Arbiter lost connection with node %d", i+1);
-				MtmDisconnect(j);
+				MtmDisconnect(i);
 			} 
 			else if (events[j].events & EPOLLIN)  
 #else
