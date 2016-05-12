@@ -207,9 +207,10 @@ static void MtmUnregisterSocket(int fd)
 
 static void MtmDisconnect(int node)
 {
-	close(sockets[node]);
 	MtmUnregisterSocket(sockets[node]);
+	close(sockets[node]);
 	sockets[node] = -1;
+	MtmOnNodeDisconnect(node+1);
 }
 
 static bool MtmWriteSocket(int sd, void const* buf, int size)
