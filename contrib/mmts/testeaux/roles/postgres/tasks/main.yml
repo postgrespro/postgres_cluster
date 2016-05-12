@@ -1,0 +1,112 @@
+# vim: ts=2 sts=2 sw=2 expandtab
+---
+
+- name: ensure dependencies (Debian)
+  apt: pkg={{item}} state=installed
+  with_items:
+  - git
+  - automake
+  - libtool
+  - build-essential
+  - bison
+  - flex
+  - libreadline-dev
+  when: ansible_os_family == "Debian"
+  become: yes
+
+- name: ensure dependencies (RedHat)
+  yum: name="@Development tools" state=present
+  when: ansible_os_family == "RedHat"
+  become: yes
+
+- name: ensure dependencies (RedHat)
+  yum: name={{item}} state=installed
+  with_items:
+  - git
+  - automake
+  - libtool
+  - bison
+  - flex
+  - readline-devel
+  when: ansible_os_family == "RedHat"
+  become: yes
+
+- name: increase semaphores
+  sysctl: name=kernel.sem value="1000 128000 128 512"
+  become: yes
+
+- name: increase open files
+  lineinfile:
+    dest: /etc/security/limits.d/cluster.conf
+    line: "{{ansible_ssh_user}}  soft  nofile  65535"
+    state: present
+    create: yes
+  become: yes
+
+#############################################################################
+
+- name: clone postgres sources
+  git: repo={{pg_repo}}
+    dest={{pg_src}}
+    version={{pg_version_tag}}
+    depth=1
+    accept_hostkey=True
+    key_file={{pg_repo_key}}
+  register: pg_sources
+
+  # XXX: Consider using file module with state=absent rather than running rm
+- name: force rebuild on changed sources
+  #command: "rm -f {{pg_dst}}/bin/postgres"
+  file: path="{{pg_dst}}/bin/postgres" state=absent
+  when: pg_sources.changed 
+
+- name: build and install
+  shell: env CFLAGS="-O0" ./configure --prefix={{pg_dst}} --enable-debug --without-zlib && make clean && make -j {{makejobs}} && make install
+  args:
+    chdir: "{{pg_src}}"
+    creates: "{{pg_dst}}/bin/postgres"
+
+#############################################################################
+
+- name: stop postgres if it was running
+  shell: "pkill -9 postgres || true"
+  when: pg_destroy_and_init
+
+- name: remove datadirs
+  #command: "rm -rf {{pg_datadir}}"
+  file: path="{{pg_datadir}}" state=absent
+  when: pg_destroy_and_init
+
+- name: create datadirs
+  command: "{{pg_dst}}/bin/initdb {{pg_datadir}}"
+  environment:
+    LD_LIBRARY_PATH: "{{pg_dst}}/lib/"
+  args:
+    creates: "{{pg_datadir}}"
+  when: pg_destroy_and_init
+
+- name: configure postgres on datanodes
+  lineinfile:
+    dest: "{{pg_datadir}}/postgresql.conf"
+    line: "{{item.line}}"
+    state: present
+  with_items: "{{pg_config}}"
+  when: pg_destroy_and_init
+
+- name: enable blind trust on datanodes
+  lineinfile:
+    dest: "{{pg_datadir}}/pg_hba.conf"
+    line: "{{item}}"
+    state: present
+  with_items:
+    - "host all all 0.0.0.0/0 trust"
+    - "host replication all 0.0.0.0/0 trust"
+    - "local replication all trust"
+  when: pg_destroy_and_init
+
+- name: start postgrespro
+  shell: "{{pg_dst}}/bin/pg_ctl start -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
+  environment:
+    LD_LIBRARY_PATH: "{{pg_dst}}/lib/"
+  when: pg_destroy_and_init
+
