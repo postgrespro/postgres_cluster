@@ -1,5 +1,10 @@
 package stress::banktransfer;
 
+sub init
+{
+
+}
+
 sub start
 {
 	my ($class, @args) = @_;

@@ -23,7 +23,11 @@ IPC::Run::run (
 	'postgres'
 );
 
-my $pgbench1 = IPC::Run::start (
+my $out = '';
+my $err = '';
+my $in = '';
+
+my @pgb_params = (
 	'pgbench',
 	-c => 4,
 	-T => 30,
@@ -33,16 +37,20 @@ my $pgbench1 = IPC::Run::start (
 	'postgres'
 );
 
-sleep 5;
-$cluster->{nodes}->[0]->net_deny_in;
-sleep 10;
-$cluster->{nodes}->[0]->net_allow;
 
+
+my $pgbench1 = IPC::Run::start @pgb_params; #, \$in, \$out, \$err;
+
+sleep 5;
+$cluster->{nodes}->[2]->net_deny_out;
+$cluster->{nodes}->[2]->net_deny_in;
+sleep 10;
+$cluster->{nodes}->[2]->net_allow;
 
 IPC::Run::finish($pgbench1);
-# IPC::Run::run @pgbench_init
 
-
+print("---stdout--\n$out\n");
+print("---stderr--\n$err\n");
 
 
 
