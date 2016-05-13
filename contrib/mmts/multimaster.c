@@ -192,6 +192,8 @@ int   MtmReconnectAttempts;
 int   MtmNodeDisableDelay;
 int   MtmTransSpillThreshold;
 int   MtmMaxNodes;
+int   MtmHeartbeatSendTimeout;
+int   MtmHeartbeatRecvTimeout;
 bool  MtmUseRaftable;
 bool  MtmUseDtm;
 
@@ -742,6 +744,27 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 
 }
 
+/*
+ * Check heartbeats
+ */
+static void MtmWatchdog()
+{
+	int i, n = Mtm->nAllNodes;
+	timestamp_t now = MtmGetSystemTime();
+	for (i = 0; i < n; i++) { 
+		if (i+1 != MtmNodeId && !BIT_CHECK(Mtm->disabledNodeMask, i)) {
+			if (Mtm->nodes[i].lastHeartbeat != 0
+				&& now > Mtm->nodes[i].lastHeartbeat + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) 
+			{ 
+				elog(WARNING, "Disable node %d because last heartbeat was received %d msec ago", 
+					 i+1, (int)USEC_TO_MSEC(now - Mtm->nodes[i].lastHeartbeat));
+				MtmOnNodeDisconnect(i+1);				
+			}
+		}
+	}
+}
+
+
 static void
 MtmPostPrepareTransaction(MtmCurrentTrans* x)
 { 
@@ -771,14 +794,24 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		MtmUnlock();
 		MtmResetTransaction(x);
 	} else { 
-		time_t timeout = Max(Mtm2PCMinTimeout, (ts->csn - ts->snapshot)*Mtm2PCPrepareRatio/100000); /* usec->msec and percents */ 
+		time_t transTimeout = Max(Mtm2PCMinTimeout, (ts->csn - ts->snapshot)*Mtm2PCPrepareRatio/100000); /* usec->msec and percents */ 
+		time_t timeout = transTimeout < MtmHeartbeatRecvTimeout ? transTimeout : MtmHeartbeatRecvTimeout;
+		timestamp_t deadline = MtmGetSystemTime() + MSEC_TO_USEC(transTimeout);
 		int result = 0;
 		int nConfigChanges = Mtm->nConfigChanges;
 		/* wait votes from all nodes */
-		while (!ts->votingCompleted && !(result & WL_TIMEOUT)) {
+		while (!ts->votingCompleted) {
 			MtmUnlock();
+			MtmWatchdog();
 			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET|WL_TIMEOUT, timeout);
-			ResetLatch(&MyProc->procLatch);			
+			if (result & WL_TIMEOUT) { 
+				if (MtmGetSystemTime() > deadline) { 
+					MtmLock(LW_SHARED);
+					break;
+				}
+			} else { 
+				ResetLatch(&MyProc->procLatch);			
+			} 
 			MtmLock(LW_SHARED);
 		}
 		if (!ts->votingCompleted) { 
@@ -1023,6 +1056,22 @@ void MtmHandleApplyError(void)
 }
 
 
+static void MtmDisableNode(int nodeId)
+{
+	BIT_SET(Mtm->disabledNodeMask, nodeId-1);
+	Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
+	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
+	Mtm->nLiveNodes -= 1;			
+}
+	
+static void MtmEnableNode(int nodeId)
+{ 
+	BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
+	Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
+	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
+	Mtm->nLiveNodes += 1;			
+}
+
 void MtmRecoveryCompleted(void)
 {
 	MTM_LOG1("Recovery of node %d is completed", MtmNodeId);
@@ -1117,9 +1166,7 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 				MTM_LOG1("%d: node %d is caugth-up without locking cluster", MyProcPid, nodeId);	
 				/* We are lucky: caugth-up without locking cluster! */
 			}
-			BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
-			Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
-			Mtm->nLiveNodes += 1;
+			MtmEnableNode(nodeId);
 			Mtm->nConfigChanges += 1;
 			caughtUp = true;
 		} else if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
@@ -1262,17 +1309,13 @@ bool MtmRefreshClusterStatus(bool nowait)
 		mask = ~clique & (((nodemask_t)1 << Mtm->nAllNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
 		for (i = 0; mask != 0; i++, mask >>= 1) {
 			if (mask & 1) { 
-				Mtm->nLiveNodes -= 1;
-				BIT_SET(Mtm->disabledNodeMask, i);
-				Mtm->nodes[i].lastStatusChangeTime = MtmGetSystemTime();
+				MtmDisableNode(i+1);
 			}
 		}
 		mask = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
 		for (i = 0; mask != 0; i++, mask >>= 1) {
 			if (mask & 1) { 
-				Mtm->nLiveNodes += 1;
-				BIT_CLEAR(Mtm->disabledNodeMask, i);
-				Mtm->nodes[i].lastStatusChangeTime = MtmGetSystemTime();
+				MtmEnableNode(i+1);
 			}
 		}
 		MtmCheckQuorum();
@@ -1317,7 +1360,6 @@ void MtmOnNodeDisconnect(int nodeId)
 		/* Avoid false detection of node failure and prevent node status blinking */
 		return;
 	}
-
 	BIT_SET(Mtm->connectivityMask, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
@@ -1328,9 +1370,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	if (!MtmRefreshClusterStatus(false)) { 
 		MtmLock(LW_EXCLUSIVE);
 		if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
-			Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
-			BIT_SET(Mtm->disabledNodeMask, nodeId-1);
-			Mtm->nLiveNodes -= 1;
+			MtmDisableNode(nodeId);
 			MtmCheckQuorum();
 			/* Interrupt voting for active transaction and abort them */
 			for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
@@ -1504,6 +1544,7 @@ static void MtmInitialize()
 			Mtm->nodes[i].lastStatusChangeTime = MtmGetSystemTime();
 			Mtm->nodes[i].con = MtmConnections[i];
 			Mtm->nodes[i].flushPos = 0;
+			Mtm->nodes[i].lastHeartbeat = 0;
 		}
 		PGSemaphoreCreate(&Mtm->votingSemaphore);
 		PGSemaphoreReset(&Mtm->votingSemaphore);
@@ -1627,6 +1668,36 @@ _PG_init(void)
 	 */
 	if (!process_shared_preload_libraries_in_progress)
 		return;
+
+	DefineCustomIntVariable(
+		"multimaster.heartbeat_send_timeout", 
+		"Timeout in milliseconds of sending heartbeat messages",
+		"Period of broadcasting heartbeat messages by abiter to all nodes",
+		&MtmHeartbeatSendTimeout,
+		1000,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.heartbeat_recv_timeout", 
+		"Timeout in milliseconds of receiving heartbeat messages",
+		"If no heartbeat message is received from node within this period, it assumed to be dead",
+		&MtmHeartbeatRecvTimeout,
+		2000,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
 
 	DefineCustomIntVariable(
 		"multimaster.gc_period",
@@ -2057,9 +2128,7 @@ void MtmDropNode(int nodeId, bool dropSlot)
 		{ 
 			elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nLiveNodes);
 		}
-		Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
-		BIT_SET(Mtm->disabledNodeMask, nodeId-1);
-		Mtm->nLiveNodes -= 1;
+		MtmDisableNode(nodeId);
 		MtmCheckQuorum();
 		if (!MtmIsBroadcast())
 		{
@@ -2111,17 +2180,13 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	if (MtmIsRecoverySession) {
 		MTM_LOG1("%d: Node %d start recovery of node %d", MyProcPid, MtmNodeId, MtmReplicationNodeId);
 		if (!BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
-			Mtm->nodes[MtmReplicationNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
-			BIT_SET(Mtm->disabledNodeMask,  MtmReplicationNodeId-1);
-			Mtm->nLiveNodes -= 1;			
+			MtmDisableNode(MtmReplicationNodeId);
 			MtmCheckQuorum();
 		}
 	} else if (BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
 		if (recoveryCompleted) { 
 			MTM_LOG1("Node %d consider that recovery of node %d is completed: start normal replication", MtmNodeId, MtmReplicationNodeId); 
-			Mtm->nodes[MtmReplicationNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
-			BIT_CLEAR(Mtm->disabledNodeMask,  MtmReplicationNodeId-1);
-			Mtm->nLiveNodes += 1;
+			MtmEnableNode(MtmReplicationNodeId);
 			MtmCheckQuorum();
 		} else {
 			elog(ERROR, "Disabled node %d tries to reconnect without recovery", MtmReplicationNodeId); 

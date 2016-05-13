@@ -92,7 +92,8 @@ typedef enum
 	MSG_PREPARE,
 	MSG_PREPARED,
 	MSG_ABORTED,
-	MSG_STATUS
+	MSG_STATUS,
+	MSG_HEARTBEAT
 } MtmMessageCode;
 
 typedef enum
@@ -127,6 +128,7 @@ typedef struct
 	timestamp_t lastStatusChangeTime;
 	timestamp_t receiverStartTime;
 	timestamp_t senderStartTime;
+	timestamp_t lastHeartbeat;
 	int         senderPid;
 	int         receiverPid;
 	XLogRecPtr  flushPos;
@@ -218,6 +220,8 @@ extern int   MtmReconnectAttempts;
 extern int   MtmKeepaliveTimeout;
 extern int   MtmNodeDisableDelay;
 extern int   MtmTransSpillThreshold;
+extern int   MtmHeartbeatSendTimeout;
+extern int   MtmHeartbeatRecvTimeout;
 extern bool  MtmUseDtm;
 extern HTAB* MtmXid2State;
 
