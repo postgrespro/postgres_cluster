@@ -9,3 +9,14 @@
     pg_version_tag: master
     pg_destroy_and_init: true
 
+  tasks:
+  - name: build raftable
+    shell: "make clean && make -j {{makejobs}} install"
+    args:
+      chdir: "{{pg_src}}/contrib/raftable"
+
+  - name: build multimaster
+    shell: "make clean && make -j {{makejobs}} install"
+    args:
+      chdir: "{{pg_src}}/contrib/mmts"
+

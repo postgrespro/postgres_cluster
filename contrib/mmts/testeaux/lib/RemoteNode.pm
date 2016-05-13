@@ -27,6 +27,7 @@ sub new
 
 	$self->execute("sudo iptables -F");
 	$self->execute("sudo iptables -A INPUT -p tcp --dport ssh -j ACCEPT");
+	$self->execute("sudo iptables -A OUTPUT -p tcp --sport ssh -m state --state ESTABLISHED,RELATED  -j ACCEPT");
 
 	return $self;
 }
@@ -152,8 +153,8 @@ sub net_deny_out
 sub net_allow
 {
 	my ($self)  = @_;
-	$self->execute("sudo iptables -D INPUT -j DROP");
-	$self->execute("sudo iptables -D OUTPUT -j DROP");
+	$self->execute("sudo iptables -D INPUT -j DROP || true");
+	$self->execute("sudo iptables -D OUTPUT -j DROP || true");
 }
 
 1;
