@@ -42,8 +42,8 @@ my @pgb_params = (
 my $pgbench1 = IPC::Run::start @pgb_params; #, \$in, \$out, \$err;
 
 sleep 5;
-$cluster->{nodes}->[2]->net_deny_out;
 $cluster->{nodes}->[2]->net_deny_in;
+$cluster->{nodes}->[2]->net_deny_out;
 sleep 10;
 $cluster->{nodes}->[2]->net_allow;
 
