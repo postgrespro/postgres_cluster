@@ -198,7 +198,9 @@ static void MtmRegisterSocket(int fd, int node)
 static void MtmUnregisterSocket(int fd)
 {
 #if USE_EPOLL
-    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
+    if (epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL) < 0) { 
+		elog(ERROR, "Arbiter failed to unregister socket from epoll set: %d", errno);
+    } 
 #else
 	FD_CLR(fd, &inset); 
 #endif
