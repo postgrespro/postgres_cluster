@@ -44,6 +44,7 @@
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
+#include "utils/timeout.h"
 #include "commands/dbcommands.h"
 #include "miscadmin.h"
 #include "postmaster/autovacuum.h"
@@ -101,22 +102,23 @@ typedef struct
 
 static int*      sockets;
 static int       gateway;
+static bool      send_heartbeat;
 
 static void MtmTransSender(Datum arg);
 static void MtmTransReceiver(Datum arg);
 
-/*
- * static char const* const messageText[] = 
- * {
- *	"INVALID",
- *	"HANDSHAKE",
- *	"READY",
- *	"PREPARE",
- *	"PREPARED",
- *	"ABORTED",
- *	"STATUS"
- *};
- */
+
+static char const* const messageText[] = 
+{
+	"INVALID",
+	"HANDSHAKE",
+	"READY",
+	"PREPARE",
+	"PREPARED",
+	"ABORTED",
+	"STATUS",
+	"HEARTBEAT"
+};
 
 static BackgroundWorker MtmSender = {
 	"mtm-sender",
@@ -513,14 +515,19 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 		}
 		buf->used = 0;
 	}
-	MTM_LOG3("Send %s message CSN=%ld to node %d from node %d for global transaction %d/local transaction %d", 
-			 messageText[ts->cmd], ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
-
-	Assert(ts->cmd != MSG_INVALID);
-	buf->data[buf->used].code = ts->cmd;
 	buf->data[buf->used].dxid = xid;
-	buf->data[buf->used].sxid = ts->xid;
-	buf->data[buf->used].csn  = ts->csn;
+
+	if (ts != NULL) { 
+		MTM_LOG3("Send %s message CSN=%ld to node %d from node %d for global transaction %d/local transaction %d", 
+				 messageText[ts->cmd], ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
+		Assert(ts->cmd != MSG_INVALID);
+		buf->data[buf->used].code = ts->cmd;
+		buf->data[buf->used].sxid = ts->xid;
+		buf->data[buf->used].csn  = ts->csn;
+	} else { 
+		buf->data[buf->used].code = MSG_HEARTBEAT;
+		MTM_LOG3("Send HEARTBEAT message to node %d from node %d\n", node+1, MtmNodeId);
+	}
 	buf->data[buf->used].node = MtmNodeId;
 	buf->data[buf->used].disabledNodeMask = Mtm->disabledNodeMask;
 	buf->data[buf->used].oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
@@ -533,15 +540,21 @@ static void MtmBroadcastMessage(MtmBuffer* txBuffer, MtmTransState* ts)
 	int n = 1;
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
-		if (!BIT_CHECK(Mtm->disabledNodeMask, i) && TransactionIdIsValid(ts->xids[i])) { 
+		if (!BIT_CHECK(Mtm->disabledNodeMask, i) && (ts == NULL || TransactionIdIsValid(ts->xids[i]))) { 
 			Assert(i+1 != MtmNodeId);
-			MtmAppendBuffer(txBuffer, ts->xids[i], i, ts);
+			MtmAppendBuffer(txBuffer, ts ? ts->xids[i] : InvalidTransactionId, i, ts);
 			n += 1;
 		}
 	}
 	Assert(n == Mtm->nLiveNodes);
 }
 
+static void MtmSendHeartbeat()
+{
+	send_heartbeat = true;
+	PGSemaphoreUnlock(&Mtm->votingSemaphore);
+}
+	
 
 static void MtmTransSender(Datum arg)
 {
@@ -556,6 +569,8 @@ static void MtmTransSender(Datum arg)
 	sigfillset(&sset);
 	sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
+	RegisterTimeout(USER_TIMEOUT, MtmSendHeartbeat);
+
 	MtmOpenConnections();
 
 	for (i = 0; i < nNodes; i++) { 
@@ -567,6 +582,10 @@ static void MtmTransSender(Datum arg)
 		PGSemaphoreLock(&Mtm->votingSemaphore);
 		CHECK_FOR_INTERRUPTS();
 
+		if (send_heartbeat) {
+			send_heartbeat = false;
+			MtmBroadcastMessage(txBuffer, NULL);
+		}			
 		/* 
 		 * Use shared lock to improve locality,
 		 * because all other process modifying this list are using exclusive lock 
@@ -700,15 +719,22 @@ static void MtmTransReceiver(Datum arg)
 
 				for (j = 0; j < nResponses; j++) { 
 					MtmArbiterMessage* msg = &rxBuffer[i].data[j];
-					MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);
-					Assert(ts != NULL);
+					MtmTransState* ts;
+
 					Assert(msg->node > 0 && msg->node <= nNodes && msg->node != MtmNodeId);
+					Mtm->nodes[msg->node-1].oldestSnapshot = msg->oldestSnapshot;
+					Mtm->nodes[msg->node-1].lastHeartbeat = MtmGetSystemTime();
+
+					if (msg->code == MSG_HEARTBEAT) { 
+						continue;
+					}
+					ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);
+					Assert(ts != NULL);
 
 					if (BIT_CHECK(msg->disabledNodeMask, MtmNodeId-1) && Mtm->status != MTM_RECOVERY) { 
 						elog(PANIC, "Node %d thinks that I was dead: perform hara-kiri not to be a zombie", msg->node);
 					}
-					Mtm->nodes[msg->node-1].oldestSnapshot = msg->oldestSnapshot;
-
+					
 					if (MtmIsCoordinator(ts)) {
 						switch (msg->code) { 
 						  case MSG_READY:
@@ -768,7 +794,7 @@ static void MtmTransReceiver(Datum arg)
 					} else { 
 						switch (msg->code) { 
 						  case MSG_PREPARE:
-							Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);									
+							Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS); 	
 							ts->status = TRANSACTION_STATUS_UNKNOWN;
 							ts->csn = MtmAssignCSN();
 							MtmAdjustSubtransactions(ts);
