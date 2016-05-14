@@ -801,8 +801,8 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		int nConfigChanges = Mtm->nConfigChanges;
 		/* wait votes from all nodes */
 		while (!ts->votingCompleted) {
-			MtmUnlock();
 			MtmWatchdog();
+			MtmUnlock();
 			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET|WL_TIMEOUT, timeout);
 			if (result & WL_LATCH_SET) { 
 				ResetLatch(&MyProc->procLatch);			
