@@ -795,7 +795,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		MtmResetTransaction(x);
 	} else { 
 		time_t transTimeout = Max(Mtm2PCMinTimeout, (ts->csn - ts->snapshot)*Mtm2PCPrepareRatio/100000); /* usec->msec and percents */ 
-		time_t timeout = transTimeout < MtmHeartbeatRecvTimeout ? transTimeout : MtmHeartbeatRecvTimeout;
+		time_t timeout = Min(transTimeout, MtmHeartbeatRecvTimeout);
 		timestamp_t deadline = MtmGetSystemTime() + MSEC_TO_USEC(transTimeout);
 		int result = 0;
 		int nConfigChanges = Mtm->nConfigChanges;
