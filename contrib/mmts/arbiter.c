@@ -103,6 +103,7 @@ typedef struct
 static int*      sockets;
 static int       gateway;
 static bool      send_heartbeat;
+static TimeoutId heartbeat_timer;
 
 static void MtmTransSender(Datum arg);
 static void MtmTransReceiver(Datum arg);
@@ -526,7 +527,7 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 		buf->data[buf->used].csn  = ts->csn;
 	} else { 
 		buf->data[buf->used].code = MSG_HEARTBEAT;
-		MTM_LOG3("Send HEARTBEAT message to node %d from node %d\n", node+1, MtmNodeId);
+		MTM_LOG3("Send HEARTBEAT to node %d from node %d at %ld\n", node+1, MtmNodeId, USEC_TO_MSEC(MtmGetSystemTime()));
 	}
 	buf->data[buf->used].node = MtmNodeId;
 	buf->data[buf->used].disabledNodeMask = Mtm->disabledNodeMask;
@@ -540,8 +541,9 @@ static void MtmBroadcastMessage(MtmBuffer* txBuffer, MtmTransState* ts)
 	int n = 1;
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
-		if (!BIT_CHECK(Mtm->disabledNodeMask, i) && (ts == NULL || TransactionIdIsValid(ts->xids[i]))) { 
-			Assert(i+1 != MtmNodeId);
+		if (i+1 != MtmNodeId && !BIT_CHECK(Mtm->disabledNodeMask, i) 
+		    && (ts == NULL || TransactionIdIsValid(ts->xids[i]))) 
+		{ 
 			MtmAppendBuffer(txBuffer, ts ? ts->xids[i] : InvalidTransactionId, i, ts);
 			n += 1;
 		}
@@ -553,6 +555,7 @@ static void MtmSendHeartbeat()
 {
 	send_heartbeat = true;
 	PGSemaphoreUnlock(&Mtm->votingSemaphore);
+        //enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 }
 	
 
@@ -561,7 +564,10 @@ static void MtmTransSender(Datum arg)
 	sigset_t sset;
 	int nNodes = MtmMaxNodes;
 	int i;
+
 	MtmBuffer* txBuffer = (MtmBuffer*)palloc(sizeof(MtmBuffer)*nNodes);
+
+	InitializeTimeouts();
 
 	signal(SIGINT, SetStop);
 	signal(SIGQUIT, SetStop);
@@ -569,7 +575,8 @@ static void MtmTransSender(Datum arg)
 	sigfillset(&sset);
 	sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
-	RegisterTimeout(USER_TIMEOUT, MtmSendHeartbeat);
+	heartbeat_timer = RegisterTimeout(USER_TIMEOUT, MtmSendHeartbeat);
+	enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 
 	MtmOpenConnections();
 
@@ -584,6 +591,7 @@ static void MtmTransSender(Datum arg)
 
 		if (send_heartbeat) {
 			send_heartbeat = false;
+			enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 			MtmBroadcastMessage(txBuffer, NULL);
 		}			
 		/* 
@@ -725,7 +733,8 @@ static void MtmTransReceiver(Datum arg)
 					Mtm->nodes[msg->node-1].oldestSnapshot = msg->oldestSnapshot;
 					Mtm->nodes[msg->node-1].lastHeartbeat = MtmGetSystemTime();
 
-					if (msg->code == MSG_HEARTBEAT) { 
+					if (msg->code == MSG_HEARTBEAT) {
+						MTM_LOG3("Receive HEARTBEAT from node %d at %ld", msg->node, USEC_TO_MSEC(MtmGetSystemTime())); 
 						continue;
 					}
 					ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);

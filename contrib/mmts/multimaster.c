@@ -756,8 +756,8 @@ static void MtmWatchdog()
 			if (Mtm->nodes[i].lastHeartbeat != 0
 				&& now > Mtm->nodes[i].lastHeartbeat + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) 
 			{ 
-				elog(WARNING, "Disable node %d because last heartbeat was received %d msec ago", 
-					 i+1, (int)USEC_TO_MSEC(now - Mtm->nodes[i].lastHeartbeat));
+				elog(WARNING, "Disable node %d because last heartbeat was received %d msec ago (%ld)", 
+					 i+1, (int)USEC_TO_MSEC(now - Mtm->nodes[i].lastHeartbeat), USEC_TO_MSEC(now));
 				MtmOnNodeDisconnect(i+1);				
 			}
 		}
@@ -802,7 +802,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		/* wait votes from all nodes */
 		while (!ts->votingCompleted) {
 			MtmUnlock();
-			MtmWatchdog();
+			//MtmWatchdog();
 			if (ts->status == TRANSACTION_STATUS_ABORTED) {
 				elog(WARNING, "Transaction %d(%s) is aborted by watchdog", x->xid, x->gid);				
 				x->status = TRANSACTION_STATUS_ABORTED;
@@ -1694,7 +1694,7 @@ _PG_init(void)
 		"Timeout in milliseconds of receiving heartbeat messages",
 		"If no heartbeat message is received from node within this period, it assumed to be dead",
 		&MtmHeartbeatRecvTimeout,
-		2000,
+		100000,
 		1,
 		INT_MAX,
 		PGC_BACKEND,
@@ -1753,7 +1753,7 @@ _PG_init(void)
 		"Minamal amount of time (milliseconds) to wait 2PC confirmation from all nodes",
 		"Timeout for 2PC is calculated as MAX(prepare_time*2pc_prepare_ratio/100,2pc_min_timeout)",
 		&Mtm2PCMinTimeout,
-		100000, /* 100 seconds */
+		10000, /* 100 seconds */
 		0,
 		INT_MAX,
 		PGC_BACKEND,
@@ -1814,8 +1814,8 @@ _PG_init(void)
 	DefineCustomIntVariable(
 		"multimaster.max_recovery_lag",
 		"Maximal lag of replication slot of failed node after which this slot is dropped to avoid transaction log overflow",
-		"Dropping slog makes it not possible to recover node using logical replication mechanism, it will be ncessary to completely copy content of some other nodes " 
-		"usimg basebackup or similar tool. Zero value of parameter disable droipping slot.",
+		"Dropping slot makes it not possible to recover node using logical replication mechanism, it will be ncessary to completely copy content of some other nodes " 
+		"using basebackup or similar tool. Zero value of parameter disable dropping slot.",
 		&MtmMaxRecoveryLag,
 		100000000,
 		0,
