@@ -776,17 +776,23 @@ static void MtmTransReceiver(Datum arg)
 							}
 							break;
 						  case MSG_PREPARED:
-							Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-							Assert(ts->nVotes < Mtm->nLiveNodes);
-							if (msg->csn > ts->csn) {
-								ts->csn = msg->csn;
-								MtmSyncClock(ts->csn);
-							}
-							if (++ts->nVotes == Mtm->nLiveNodes) {
-								ts->csn = MtmAssignCSN();
-								ts->status = TRANSACTION_STATUS_UNKNOWN;
-								MtmWakeUpBackend(ts);
-							}
+						    if (ts->status != TRANSACTION_STATUS_ABORTED) { 
+								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+								Assert(ts->nVotes < Mtm->nLiveNodes);
+								if (msg->csn > ts->csn) {
+									ts->csn = msg->csn;
+									MtmSyncClock(ts->csn);
+								}
+								if (++ts->nVotes == Mtm->nLiveNodes) {
+									ts->csn = MtmAssignCSN();
+									ts->status = TRANSACTION_STATUS_UNKNOWN;
+									MtmWakeUpBackend(ts);
+								}
+							} else { 
+								if (++ts->nVotes == Mtm->nLiveNodes) {
+									MtmWakeUpBackend(ts);
+								}
+							}								
 							break;
 						  default:
 							Assert(false);
