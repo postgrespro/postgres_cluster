@@ -804,13 +804,13 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 			MtmUnlock();
 			MtmWatchdog();
 			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET|WL_TIMEOUT, timeout);
-			if (result & WL_TIMEOUT) { 
+			if (result & WL_LATCH_SET) { 
+				ResetLatch(&MyProc->procLatch);			
+			} else if (result & WL_TIMEOUT) { 
 				if (MtmGetSystemTime() > deadline) { 
 					MtmLock(LW_SHARED);
 					break;
 				}
-			} else { 
-				ResetLatch(&MyProc->procLatch);			
 			} 
 			MtmLock(LW_SHARED);
 		}

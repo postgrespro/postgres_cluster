@@ -776,9 +776,9 @@ static void MtmTransReceiver(Datum arg)
 							}
 							break;
 						  case MSG_PREPARED:
+							Assert(ts->nVotes < Mtm->nLiveNodes);
 						    if (ts->status != TRANSACTION_STATUS_ABORTED) { 
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-								Assert(ts->nVotes < Mtm->nLiveNodes);
 								if (msg->csn > ts->csn) {
 									ts->csn = msg->csn;
 									MtmSyncClock(ts->csn);
