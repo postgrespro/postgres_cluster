@@ -801,8 +801,13 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		int nConfigChanges = Mtm->nConfigChanges;
 		/* wait votes from all nodes */
 		while (!ts->votingCompleted) {
-			MtmWatchdog();
 			MtmUnlock();
+			MtmWatchdog();
+			if (ts->status == TRANSACTION_STATUS_ABORTED) {
+				elog(WARNING, "Transaction %d(%s) is aborted by watchdog", x->xid, x->gid);				
+				x->status = TRANSACTION_STATUS_ABORTED;
+				return;
+			}
 			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET|WL_TIMEOUT, timeout);
 			if (result & WL_LATCH_SET) { 
 				ResetLatch(&MyProc->procLatch);			
