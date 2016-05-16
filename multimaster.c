@@ -1693,7 +1693,7 @@ _PG_init(void)
 		"Timeout in milliseconds of receiving heartbeat messages",
 		"If no heartbeat message is received from node within this period, it assumed to be dead",
 		&MtmHeartbeatRecvTimeout,
-		100000,
+		10000,
 		1,
 		INT_MAX,
 		PGC_BACKEND,

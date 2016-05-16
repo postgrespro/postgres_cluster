@@ -292,6 +292,43 @@ static void MtmSetSocketOptions(int sd)
 #endif
 }
 
+
+
+static void MtmScheduleHeartbeat()
+{
+	send_heartbeat = true;
+	PGSemaphoreUnlock(&Mtm->votingSemaphore);
+}
+	
+static void MtmSendHeartbeat()
+{
+	int i;
+	MtmArbiterMessage msg;
+	msg.code = MSG_HEARTBEAT;
+	msg.disabledNodeMask = Mtm->disabledNodeMask;
+	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
+	msg.node = MtmNodeId;
+	
+	for (i = 0; i < Mtm->nAllNodes; i++)
+	{
+		if (sockets[i] >= 0 && !BIT_CHECK(Mtm->disabledNodeMask|Mtm->reconnectMask, i))
+		{ 
+			MtmWriteSocket(sockets[i], &msg, sizeof(msg));
+		}
+	}
+	
+}
+
+static void MtmCheckHeartbeat()
+{
+	if (send_heartbeat) {
+		send_heartbeat = false;
+		enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
+		MtmSendHeartbeat();
+	}			
+}
+		
+
 static int MtmConnectSocket(char const* host, int port, int max_attempts)
 {
     struct sockaddr_in sock_inet;
@@ -318,6 +355,7 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 			memcpy(&sock_inet.sin_addr, &addrs[i], sizeof sock_inet.sin_addr);
 			do {
 				rc = connect(sd, (struct sockaddr*)&sock_inet, sizeof(sock_inet));
+				MtmCheckHeartbeat();
 			} while (rc < 0 && errno == EINTR);
 
 			if (rc >= 0 || errno == EINPROGRESS) {
@@ -331,7 +369,7 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 			} else { 
 				max_attempts -= 1;
 				elog(WARNING, "Arbiter trying to connect to %s:%d: error=%d", host, port, errno);
-				MtmSleep(5*MtmConnectTimeout);
+				MtmSleep(MtmConnectTimeout);
 			}
 			continue;
 		} else {
@@ -381,13 +419,14 @@ static void MtmOpenConnections()
 	sockets = (int*)palloc(sizeof(int)*nNodes);
 
 	for (i = 0; i < nNodes; i++) {
+		sockets[i] = -1;
+	}
+	for (i = 0; i < nNodes; i++) {
 		if (i+1 != MtmNodeId && i < Mtm->nAllNodes) { 
 			sockets[i] = MtmConnectSocket(Mtm->nodes[i].con.hostName, MtmArbiterPort + i + 1, MtmConnectAttempts);
 			if (sockets[i] < 0) { 
 				MtmOnNodeDisconnect(i+1);
 			} 
-		} else {
-			sockets[i] = -1;
 		}
 	}
 	if (Mtm->nLiveNodes < Mtm->nAllNodes/2+1) { /* no quorum */
@@ -412,6 +451,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 			if (sockets[node] >= 0) { 
 				elog(WARNING, "Arbiter failed to write to node %d: %d", node+1, errno);
 				close(sockets[node]);
+				sockets[node] = -1;
 			}
 			sockets[node] = MtmConnectSocket(Mtm->nodes[node].con.hostName, MtmArbiterPort + node + 1, MtmReconnectAttempts);
 			if (sockets[node] < 0) { 
@@ -518,17 +558,12 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 	}
 	buf->data[buf->used].dxid = xid;
 
-	if (ts != NULL) { 
-		MTM_LOG3("Send %s message CSN=%ld to node %d from node %d for global transaction %d/local transaction %d", 
-				 messageText[ts->cmd], ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
-		Assert(ts->cmd != MSG_INVALID);
-		buf->data[buf->used].code = ts->cmd;
-		buf->data[buf->used].sxid = ts->xid;
-		buf->data[buf->used].csn  = ts->csn;
-	} else { 
-		buf->data[buf->used].code = MSG_HEARTBEAT;
-		MTM_LOG3("Send HEARTBEAT to node %d from node %d at %ld\n", node+1, MtmNodeId, USEC_TO_MSEC(MtmGetSystemTime()));
-	}
+	MTM_LOG3("Send %s message CSN=%ld to node %d from node %d for global transaction %d/local transaction %d", 
+			 messageText[ts->cmd], ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
+	Assert(ts->cmd != MSG_INVALID);
+	buf->data[buf->used].code = ts->cmd;
+	buf->data[buf->used].sxid = ts->xid;
+	buf->data[buf->used].csn  = ts->csn;
 	buf->data[buf->used].node = MtmNodeId;
 	buf->data[buf->used].disabledNodeMask = Mtm->disabledNodeMask;
 	buf->data[buf->used].oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
@@ -541,23 +576,14 @@ static void MtmBroadcastMessage(MtmBuffer* txBuffer, MtmTransState* ts)
 	int n = 1;
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
-		if (i+1 != MtmNodeId && !BIT_CHECK(Mtm->disabledNodeMask, i) 
-		    && (ts == NULL || TransactionIdIsValid(ts->xids[i]))) 
+		if (i+1 != MtmNodeId && !BIT_CHECK(Mtm->disabledNodeMask, i) && TransactionIdIsValid(ts->xids[i])) 
 		{ 
-			MtmAppendBuffer(txBuffer, ts ? ts->xids[i] : InvalidTransactionId, i, ts);
+			MtmAppendBuffer(txBuffer, ts->xids[i], i, ts);
 			n += 1;
 		}
 	}
 	Assert(n == Mtm->nLiveNodes);
 }
-
-static void MtmSendHeartbeat()
-{
-	send_heartbeat = true;
-	PGSemaphoreUnlock(&Mtm->votingSemaphore);
-        //enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
-}
-	
 
 static void MtmTransSender(Datum arg)
 {
@@ -575,7 +601,7 @@ static void MtmTransSender(Datum arg)
 	sigfillset(&sset);
 	sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
-	heartbeat_timer = RegisterTimeout(USER_TIMEOUT, MtmSendHeartbeat);
+	heartbeat_timer = RegisterTimeout(USER_TIMEOUT, MtmScheduleHeartbeat);
 	enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 
 	MtmOpenConnections();
@@ -589,11 +615,7 @@ static void MtmTransSender(Datum arg)
 		PGSemaphoreLock(&Mtm->votingSemaphore);
 		CHECK_FOR_INTERRUPTS();
 
-		if (send_heartbeat) {
-			send_heartbeat = false;
-			enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
-			MtmBroadcastMessage(txBuffer, NULL);
-		}			
+		MtmCheckHeartbeat();
 		/* 
 		 * Use shared lock to improve locality,
 		 * because all other process modifying this list are using exclusive lock 
@@ -676,7 +698,7 @@ static void MtmTransReceiver(Datum arg)
 
 	while (!stop) {
 #if USE_EPOLL
-        n = epoll_wait(epollfd, events, nNodes, MtmKeepaliveTimeout/1000);
+        n = epoll_wait(epollfd, events, nNodes, USEC_TO_MSEC(MtmKeepaliveTimeout));
 		if (n < 0) { 
 			if (errno == EINTR) { 
 				continue;
