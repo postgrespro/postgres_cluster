@@ -295,25 +295,11 @@
   <title>Where to Report Bugs</title>
 
   <para>
-   In general, send bug reports to the bug report mailing list at
-   <email>pgsql-bugs@postgresql.org</email>.
+   In general, send bug reports to the bug report our support email
+   address at
+   <email>bugs@postgrespro.ru</email>.
    You are requested to use a descriptive subject for your email
    message, perhaps parts of the error message.
-  </para>
-
-  <para>
-   Another method is to fill in the bug report web-form available
-   at the project's
-   <ulink url="http://www.postgresql.org/">web site</ulink>.
-   Entering a bug report this way causes it to be mailed to the
-   <email>pgsql-bugs@postgresql.org</email> mailing list.
-  </para>
-
-  <para>
-   If your bug report has security implications and you'd prefer that it
-   not become immediately visible in public archives, don't send it to
-   <literal>pgsql-bugs</literal>.  Security issues can be
-   reported privately to <email>security@postgresql.org</email>.
   </para>
 
   <para>
@@ -334,33 +320,5 @@
    discussion about your bug report on <literal>pgsql-hackers</literal>,
    if the problem needs more review.
   </para>
-
-  <para>
-   If you have a problem with the documentation, the best place to report it
-   is the documentation mailing list <email>pgsql-docs@postgresql.org</email>.
-   Please be specific about what part of the documentation you are unhappy
-   with.
-  </para>
-
-  <para>
-   If your bug is a portability problem on a non-supported platform,
-   send mail to <email>pgsql-hackers@postgresql.org</email>,
-   so we (and you) can work on
-   porting <productname>PostgreSQL</productname> to your platform.
-  </para>
-
-  <note>
-   <para>
-    Due to the unfortunate amount of spam going around, all of the above
-    email addresses are closed mailing lists. That is, you need to be
-    subscribed to a list to be allowed to post on it.  (You need not be
-    subscribed to use the bug-report web form, however.)
-    If you would like to send mail but do not want to receive list traffic,
-    you can subscribe and set your subscription option to <literal>nomail</>.
-    For more information send mail to
-    <email>majordomo@postgresql.org</email>
-    with the single word <literal>help</> in the body of the message.
-   </para>
-  </note>
  </sect2>
 </sect1>

@@ -76,7 +76,11 @@ GNUmakefile: GNUmakefile.in $(top_builddir)/config.status
 
 ##########################################################################
 
-distdir	= postgrespro-$(VERSION)
+ifeq ($PGPRO_VERSION,)
+distdir = postgrespro-$(VERSION)
+else
+distdir = postgrespro-$(PGPRO_VERSION)
+endif
 dummy	= =install=
 garbage = =*  "#"*  ."#"*  *~*  *.orig  *.rej  core  postgrespro-*
 
