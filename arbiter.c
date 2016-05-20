@@ -759,6 +759,11 @@ static void MtmTransReceiver(Datum arg)
 						MTM_LOG3("Receive HEARTBEAT from node %d at %ld", msg->node, USEC_TO_MSEC(MtmGetSystemTime())); 
 						continue;
 					}
+					if (BIT_CHECK(msg->disabledNodeMask, msg->node-1)) {
+						elog(WARNING, "Ignore message from dead node %d\n", msg->node);
+						continue;
+					}
+
 					ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);
 					Assert(ts != NULL);
 
