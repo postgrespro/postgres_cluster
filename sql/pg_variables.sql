@@ -1,6 +1,9 @@
 CREATE EXTENSION pg_variables;
 
 -- Integer variables
+SELECT pgv_get_int('vars', 'int1');
+SELECT pgv_get_int('vars', 'int1', false);
+
 SELECT pgv_set_int('vars', 'int1', 101);
 SELECT pgv_set_int('vars', 'int2', 102);
 

@@ -132,6 +132,12 @@ variable_get(text *package_name, text *var_name,
 	ScalarVar		   *scalar;
 
 	package = getPackageByName(package_name, false, strict);
+	if (package == NULL)
+	{
+		*is_null = true;
+		return 0;
+	}
+
 	variable = getVariableByNameWithType(package->variablesHash,
 										 var_name, typid, false, strict);
 
