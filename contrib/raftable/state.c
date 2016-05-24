@@ -252,7 +252,7 @@ void state_shmem_request()
 	info.entrysize = sizeof(RaftableEntry);
 	info.dsize = info.max_dsize = hash_select_dirsize(RAFTABLE_HASH_SIZE);
 	flags = HASH_SHARED_MEM | HASH_ALLOC | HASH_DIRSIZE | HASH_ELEM;
-	RequestAddinShmemSpace(RAFTABLE_BLOCK_MEM + sizeof(State) + hash_get_shared_size(&info, flags));
+	RequestAddinShmemSpace(RAFTABLE_BLOCK_MEM + BUFFERALIGN(sizeof(State)) + BUFFERALIGN(hash_get_shared_size(&info, flags)));
 	RequestNamedLWLockTranche("raftable", 1);
 }
 
@@ -267,7 +267,7 @@ StateP state_shmem_init()
 
 	state = ShmemInitStruct(
 		"raftable_state",
-		RAFTABLE_BLOCK_MEM,
+		sizeof(State),
 		&found
 	);
 	Assert(state);
