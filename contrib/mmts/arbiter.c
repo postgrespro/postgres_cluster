@@ -675,6 +675,8 @@ static void MtmTransReceiver(Datum arg)
 	int nResponses;
 	int i, j, n, rc;
 	MtmBuffer* rxBuffer = (MtmBuffer*)palloc(sizeof(MtmBuffer)*nNodes);
+	timestamp_t lastHeartbeatCheck = MtmGetSystemTime();
+	timestamp_t now;
 
 #if USE_EPOLL
 	struct epoll_event* events = (struct epoll_event*)palloc(sizeof(struct epoll_event)*nNodes);
@@ -698,7 +700,7 @@ static void MtmTransReceiver(Datum arg)
 
 	while (!stop) {
 #if USE_EPOLL
-        n = epoll_wait(epollfd, events, nNodes, USEC_TO_MSEC(MtmKeepaliveTimeout));
+        n = epoll_wait(epollfd, events, nNodes, MtmHeartbeatRecvTimeout);
 		if (n < 0) { 
 			if (errno == EINTR) { 
 				continue;
@@ -717,8 +719,8 @@ static void MtmTransReceiver(Datum arg)
 		do { 
 			struct timeval tv;
 			events = inset;
-			tv.tv_sec = MtmKeepaliveTimeout/USECS_PER_SEC;
-			tv.tv_usec = MtmKeepaliveTimeout%USECS_PER_SEC;
+			tv.tv_sec = MtmHeartbeatRecvTimeout/1000;
+			tv.tv_usec = MtmHeartbeatRecvTimeout%1000*1000;
 			do { 
 				n = select(max_fd+1, &events, NULL, NULL, &tv);
 			} while (n < 0 && errno == EINTR);
@@ -855,8 +857,13 @@ static void MtmTransReceiver(Datum arg)
 				}
 			}
 		}
+		now = MtmGetSystemTime();
+		if (now > lastHeartbeatCheck + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) { 
+			MtmWatchdog();
+			lastHeartbeatCheck = now;
+		}
 		if (n == 0 && Mtm->disabledNodeMask != 0) { 
-			/* If timeout is expired and there are didabled nodes, then recheck cluster's state */
+			/* If timeout is expired and there are disabled nodes, then recheck cluster's state */
 			MtmRefreshClusterStatus(false);
 		}
 	}

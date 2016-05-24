@@ -6,7 +6,7 @@
 #include "blockmem.h"
 #include "state.h"
 
-#define RAFTABLE_BLOCK_MEM (1024 * 1024)
+#define RAFTABLE_BLOCK_MEM (8*1024 * 1024)
 #define RAFTABLE_HASH_SIZE (127)
 
 typedef struct State {
