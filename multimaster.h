@@ -217,7 +217,7 @@ extern char* MtmDatabaseName;
 extern int   MtmConnectAttempts;
 extern int   MtmConnectTimeout;
 extern int   MtmReconnectAttempts;
-extern int   MtmKeepaliveTimeout;
+extern int   MtmRaftPollDelay;
 extern int   MtmNodeDisableDelay;
 extern int   MtmTransSpillThreshold;
 extern int   MtmHeartbeatSendTimeout;
@@ -266,6 +266,8 @@ extern void  MtmRecoveryCompleted(void);
 extern void  MtmMakeTableLocal(char* schema, char* name);
 extern void  MtmHandleApplyError(void);
 extern void  MtmUpdateLsnMapping(int nodeId, XLogRecPtr endLsn);
-extern 	XLogRecPtr MtmGetFlushPosition(int nodeId);
+extern XLogRecPtr MtmGetFlushPosition(int nodeId);
+extern void MtmWatchdog(void);
+
 
 #endif

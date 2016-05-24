@@ -186,7 +186,7 @@ int   MtmReplicationNodeId;
 int   MtmArbiterPort;
 int   MtmConnectAttempts;
 int   MtmConnectTimeout;
-int   MtmKeepaliveTimeout;
+int   MtmRaftPollDelay;
 int   MtmReconnectAttempts;
 int   MtmNodeDisableDelay;
 int   MtmTransSpillThreshold;
@@ -746,7 +746,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 /*
  * Check heartbeats
  */
-static void MtmWatchdog()
+void MtmWatchdog(void)
 {
 	int i, n = Mtm->nAllNodes;
 	timestamp_t now = MtmGetSystemTime();
@@ -794,33 +794,27 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		MtmResetTransaction(x);
 	} else { 
 		time_t transTimeout = Max(Mtm2PCMinTimeout, (ts->csn - ts->snapshot)*Mtm2PCPrepareRatio/100000); /* usec->msec and percents */ 
-		time_t timeout = Min(transTimeout, MtmHeartbeatRecvTimeout);
-		timestamp_t deadline = MtmGetSystemTime() + MSEC_TO_USEC(transTimeout);
 		int result = 0;
 		int nConfigChanges = Mtm->nConfigChanges;
 		/* wait votes from all nodes */
-		while (!ts->votingCompleted) {
+		while (!ts->votingCompleted && !(result & WL_TIMEOUT)) 
+		{
 			MtmUnlock();
-			//MtmWatchdog();
+			MtmWatchdog();
 			if (ts->status == TRANSACTION_STATUS_ABORTED) {
 				elog(WARNING, "Transaction %d(%s) is aborted by watchdog", x->xid, x->gid);				
 				x->status = TRANSACTION_STATUS_ABORTED;
 				return;
 			}
-			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET|WL_TIMEOUT, timeout);
+			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET|WL_TIMEOUT, transTimeout);
 			if (result & WL_LATCH_SET) { 
 				ResetLatch(&MyProc->procLatch);			
-			} else if (result & WL_TIMEOUT) { 
-				if (MtmGetSystemTime() > deadline) { 
-					MtmLock(LW_SHARED);
-					break;
-				}
 			} 
 			MtmLock(LW_SHARED);
 		}
 		if (!ts->votingCompleted) { 
 			ts->status = TRANSACTION_STATUS_ABORTED;
-			elog(WARNING, "Transaction is aborted because of %d msec timeout expiration, prepare time %d msec", (int)timeout, (int)USEC_TO_MSEC(ts->csn - x->snapshot));
+			elog(WARNING, "Transaction is aborted because of %d msec timeout expiration, prepare time %d msec", (int)transTimeout, (int)USEC_TO_MSEC(ts->csn - x->snapshot));
 		} else if (nConfigChanges != Mtm->nConfigChanges) {
 			ts->status = TRANSACTION_STATUS_ABORTED;
 			elog(WARNING, "Transaction is aborted because cluster configuration is changed during commit");
@@ -1368,8 +1362,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
 
-	/* Wait more than socket KEEPALIVE timeout to let other nodes update their statuses */
-	MtmSleep(MtmKeepaliveTimeout);
+	MtmSleep(MtmRaftPollDelay);
 
 	if (!MtmRefreshClusterStatus(false)) { 
 		MtmLock(LW_EXCLUSIVE);
@@ -1969,10 +1962,10 @@ _PG_init(void)
 	);
 
 	DefineCustomIntVariable(
-		"multimaster.keepalive_timeout",
-		"Multimaster keepalive interval for sockets",
+		"multimaster.raft_poll_delay",
+		"Multimaster delay of polling cluster state from Raftable after updating local node status",
 		"Timeout in microseconds before polling state of nodes",
-		&MtmKeepaliveTimeout,
+		&MtmRaftPollDelay,
 		1000000,
 		1,
 		INT_MAX,
