@@ -93,6 +93,8 @@ Function | Returns
 `pgv_list()` | `table(package text, name text)`
 `pgv_stats()` | `table(package text, used_memory bigint)`
 
+Note that **pgv_stats()** works only with the PostgreSQL 9.6 and newer.
+
 ## Examples
 
 It is easy to use functions to work with scalar variables:
