@@ -93,24 +93,6 @@ Function | Returns
 `pgv_list()` | `table(package text, name text)`
 `pgv_stats()` | `table(package text, used_memory bigint)`
 
-## Error messages
-
-* "array argument can not be NULL"
-* "could not identify a hash function for type %s"
-* "could not identify a matching function for type %s"
-* "function returning record called in context that cannot accept type record"
-* "name "%s" is too long"
-* "new record structure differs from variable "%s" structure"
-* "package name can not be NULL"
-* "record argument can not be NULL"
-* "requested value type differs from variable "%s" key type"
-* "searching for elements in multidimensional arrays is not supported"
-* "there is a record in the variable "%s" with same key"
-* "unrecognized package "%s""
-* "unrecognized variable "%s""
-* "variable "%s" requires %s value"
-* "variable name can not be NULL"
-
 ## Examples
 
 It is easy to use functions to work with scalar variables:
