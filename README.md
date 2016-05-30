@@ -5,6 +5,26 @@
 The **pg_variables** module provides functions to work with variables of various
 types. Created variables live only in the current user session.
 
+Note that the module does **not support transactions and savepoints**. For
+example:
+
+```sql
+SELECT pgv_set_int('vars', 'int1', 101);
+
+BEGIN;
+
+SELECT pgv_set_int('vars', 'int2', 102);
+
+ROLLBACK;
+
+SELECT * FROM pgv_list() order by package, name;
+ package | name
+---------+------
+ vars    | int1
+ vars    | int2
+(2 rows)
+```
+
 ## License
 
 This module available under the same license as
