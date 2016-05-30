@@ -10,11 +10,8 @@ example:
 
 ```sql
 SELECT pgv_set_int('vars', 'int1', 101);
-
 BEGIN;
-
 SELECT pgv_set_int('vars', 'int2', 102);
-
 ROLLBACK;
 
 SELECT * FROM pgv_list() order by package, name;
