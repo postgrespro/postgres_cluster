@@ -604,7 +604,6 @@ LocalExecuteInvalidationMessage(SharedInvalidationMessage *msg)
 			InvalidateCatalogSnapshot();
 	}
 	else { 
-		*(int*) 0 = 0;
 		elog(FATAL, "unrecognized SI message ID: %d", msg->id);
 	}
 }

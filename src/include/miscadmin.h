@@ -115,7 +115,7 @@ do { \
 
 #define RESUME_INTERRUPTS() \
 do { \
-	if (InterruptHoldoffCount <= 0) *(int*)0 = 0;	\
+	Assert(InterruptHoldoffCount > 0); \
 	InterruptHoldoffCount--; \
 } while(0)
 
