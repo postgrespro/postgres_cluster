@@ -2489,13 +2489,14 @@ WalSndDone(WalSndSendDataCallback send_data)
 	send_data();
 
 	/*
-	 * Check a write location to see whether all the WAL have successfully
-	 * been replicated if this walsender is connecting to a standby such as
-	 * pg_receivexlog which always returns an invalid flush location.
-	 * Otherwise, check a flush location.
+	 * To figure out whether all WAL has successfully been replicated, check
+	 * flush location if valid, write otherwise. Tools like pg_receivexlog
+	 * will usually (unless in synchronous mode) return an invalid flush
+	 * location.
 	 */
 	replicatedPtr = XLogRecPtrIsInvalid(MyWalSnd->flush) ?
 		MyWalSnd->write : MyWalSnd->flush;
+
 	if (WalSndCaughtUp && sentPtr == replicatedPtr &&
 		!pq_is_send_pending())
 	{
@@ -2506,7 +2507,10 @@ WalSndDone(WalSndSendDataCallback send_data)
 		proc_exit(0);
 	}
 	if (!waiting_for_ping_response)
+	{
 		WalSndKeepalive(true);
+		waiting_for_ping_response = true;
+	}
 }
 
 /*
@@ -2753,7 +2757,7 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 	Tuplestorestate *tupstore;
 	MemoryContext per_query_ctx;
 	MemoryContext oldcontext;
-	WalSnd	   *sync_standby;
+	List	   *sync_standbys;
 	int			i;
 
 	/* check to see if caller supports us returning a tuplestore */
@@ -2782,10 +2786,10 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 	MemoryContextSwitchTo(oldcontext);
 
 	/*
-	 * Get the currently active synchronous standby.
+	 * Get the currently active synchronous standbys.
 	 */
 	LWLockAcquire(SyncRepLock, LW_SHARED);
-	sync_standby = SyncRepGetSynchronousStandby();
+	sync_standbys = SyncRepGetSyncStandbys(NULL);
 	LWLockRelease(SyncRepLock);
 
 	for (i = 0; i < max_wal_senders; i++)
@@ -2858,7 +2862,7 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 			 */
 			if (priority == 0)
 				values[7] = CStringGetTextDatum("async");
-			else if (walsnd == sync_standby)
+			else if (list_member_int(sync_standbys, i))
 				values[7] = CStringGetTextDatum("sync");
 			else
 				values[7] = CStringGetTextDatum("potential");
@@ -2929,44 +2933,3 @@ WalSndKeepaliveIfNecessary(TimestampTz now)
 			WalSndShutdown();
 	}
 }
-
-/*
- * This isn't currently used for anything. Monitoring tools might be
- * interested in the future, and we'll need something like this in the
- * future for synchronous replication.
- */
-#ifdef NOT_USED
-/*
- * Returns the oldest Send position among walsenders. Or InvalidXLogRecPtr
- * if none.
- */
-XLogRecPtr
-GetOldestWALSendPointer(void)
-{
-	XLogRecPtr	oldest = {0, 0};
-	int			i;
-	bool		found = false;
-
-	for (i = 0; i < max_wal_senders; i++)
-	{
-		WalSnd *walsnd = &WalSndCtl->walsnds[i];
-		XLogRecPtr	recptr;
-
-		if (walsnd->pid == 0)
-			continue;
-
-		SpinLockAcquire(&walsnd->mutex);
-		recptr = walsnd->sentPtr;
-		SpinLockRelease(&walsnd->mutex);
-
-		if (recptr.xlogid == 0 && recptr.xrecoff == 0)
-			continue;
-
-		if (!found || recptr < oldest)
-			oldest = recptr;
-		found = true;
-	}
-	return oldest;
-}
-
-#endif

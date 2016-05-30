@@ -107,6 +107,7 @@ build_simple_rel(PlannerInfo *root, int relid, RelOptKind reloptkind)
 	rel->consider_startup = (root->tuple_fraction > 0);
 	rel->consider_param_startup = false;		/* might get changed later */
 	rel->consider_parallel = false;		/* might get changed later */
+	rel->rel_parallel_degree = -1; /* set up in GetRelationInfo */
 	rel->reltarget = create_empty_pathtarget();
 	rel->pathlist = NIL;
 	rel->ppilist = NIL;
@@ -175,16 +176,20 @@ build_simple_rel(PlannerInfo *root, int relid, RelOptKind reloptkind)
 		/*
 		 * This should match what ExecCheckRTEPerms() does.
 		 *
-		 * Note that if the plan ends up depending on the user OID in any
-		 * way - e.g. if it depends on the computed user mapping OID - we must
+		 * Note that if the plan ends up depending on the user OID in any way
+		 * - e.g. if it depends on the computed user mapping OID - we must
 		 * ensure that it gets invalidated in the case of a user OID change.
 		 * See RevalidateCachedQuery and more generally the hasForeignJoin
 		 * flags in PlannerGlobal and PlannedStmt.
+		 *
+		 * It's possible, and not necessarily an error, for rel->umid to be
+		 * InvalidOid even though rel->serverid is set.  That just means there
+		 * is a server with no user mapping.
 		 */
-		Oid		userid;
+		Oid			userid;
 
 		userid = OidIsValid(rte->checkAsUser) ? rte->checkAsUser : GetUserId();
-		rel->umid = GetUserMappingId(userid, rel->serverid);
+		rel->umid = GetUserMappingId(userid, rel->serverid, true);
 	}
 	else
 		rel->umid = InvalidOid;
@@ -430,17 +435,21 @@ build_join_rel(PlannerInfo *root,
 
 	/*
 	 * Set up foreign-join fields if outer and inner relation are foreign
-	 * tables (or joins) belonging to the same server and using the same
-	 * user mapping.
+	 * tables (or joins) belonging to the same server and using the same user
+	 * mapping.
 	 *
 	 * Otherwise those fields are left invalid, so FDW API will not be called
 	 * for the join relation.
+	 *
+	 * For FDWs like file_fdw, which ignore user mapping, the user mapping id
+	 * associated with the joining relation may be invalid. A valid serverid
+	 * distinguishes between a pushed down join with no user mapping and a
+	 * join which can not be pushed down because of user mapping mismatch.
 	 */
 	if (OidIsValid(outer_rel->serverid) &&
 		inner_rel->serverid == outer_rel->serverid &&
 		inner_rel->umid == outer_rel->umid)
 	{
-		Assert(OidIsValid(outer_rel->umid));
 		joinrel->serverid = outer_rel->serverid;
 		joinrel->umid = outer_rel->umid;
 		joinrel->fdwroutine = outer_rel->fdwroutine;
@@ -501,7 +510,7 @@ build_join_rel(PlannerInfo *root,
 	 * level.
 	 *
 	 * Note that if there are more than two rels in this relation, they could
-	 * be divided between inner_rel and outer_rel in any arbitary way.  We
+	 * be divided between inner_rel and outer_rel in any arbitrary way.  We
 	 * assume this doesn't matter, because we should hit all the same baserels
 	 * and joinclauses while building up to this joinrel no matter which we
 	 * take; therefore, we should make the same decision here however we get
@@ -1091,6 +1100,7 @@ get_joinrel_parampathinfo(PlannerInfo *root, RelOptInfo *joinrel,
 	Relids		inner_and_req;
 	List	   *pclauses;
 	List	   *eclauses;
+	List	   *dropped_ecs;
 	double		rows;
 	ListCell   *lc;
 
@@ -1144,6 +1154,7 @@ get_joinrel_parampathinfo(PlannerInfo *root, RelOptInfo *joinrel,
 												required_outer,
 												joinrel);
 	/* We only want ones that aren't movable to lower levels */
+	dropped_ecs = NIL;
 	foreach(lc, eclauses)
 	{
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
@@ -1160,13 +1171,79 @@ get_joinrel_parampathinfo(PlannerInfo *root, RelOptInfo *joinrel,
 										   joinrel->relids,
 										   join_and_req));
 #endif
-		if (!join_clause_is_movable_into(rinfo,
-										 outer_path->parent->relids,
-										 outer_and_req) &&
-			!join_clause_is_movable_into(rinfo,
-										 inner_path->parent->relids,
-										 inner_and_req))
-			pclauses = lappend(pclauses, rinfo);
+		if (join_clause_is_movable_into(rinfo,
+										outer_path->parent->relids,
+										outer_and_req))
+			continue;			/* drop if movable into LHS */
+		if (join_clause_is_movable_into(rinfo,
+										inner_path->parent->relids,
+										inner_and_req))
+		{
+			/* drop if movable into RHS, but remember EC for use below */
+			Assert(rinfo->left_ec == rinfo->right_ec);
+			dropped_ecs = lappend(dropped_ecs, rinfo->left_ec);
+			continue;
+		}
+		pclauses = lappend(pclauses, rinfo);
+	}
+
+	/*
+	 * EquivalenceClasses are harder to deal with than we could wish, because
+	 * of the fact that a given EC can generate different clauses depending on
+	 * context.  Suppose we have an EC {X.X, Y.Y, Z.Z} where X and Y are the
+	 * LHS and RHS of the current join and Z is in required_outer, and further
+	 * suppose that the inner_path is parameterized by both X and Z.  The code
+	 * above will have produced either Z.Z = X.X or Z.Z = Y.Y from that EC,
+	 * and in the latter case will have discarded it as being movable into the
+	 * RHS.  However, the EC machinery might have produced either Y.Y = X.X or
+	 * Y.Y = Z.Z as the EC enforcement clause within the inner_path; it will
+	 * not have produced both, and we can't readily tell from here which one
+	 * it did pick.  If we add no clause to this join, we'll end up with
+	 * insufficient enforcement of the EC; either Z.Z or X.X will fail to be
+	 * constrained to be equal to the other members of the EC.  (When we come
+	 * to join Z to this X/Y path, we will certainly drop whichever EC clause
+	 * is generated at that join, so this omission won't get fixed later.)
+	 *
+	 * To handle this, for each EC we discarded such a clause from, try to
+	 * generate a clause connecting the required_outer rels to the join's LHS
+	 * ("Z.Z = X.X" in the terms of the above example).  If successful, and if
+	 * the clause can't be moved to the LHS, add it to the current join's
+	 * restriction clauses.  (If an EC cannot generate such a clause then it
+	 * has nothing that needs to be enforced here, while if the clause can be
+	 * moved into the LHS then it should have been enforced within that path.)
+	 *
+	 * Note that we don't need similar processing for ECs whose clause was
+	 * considered to be movable into the LHS, because the LHS can't refer to
+	 * the RHS so there is no comparable ambiguity about what it might
+	 * actually be enforcing internally.
+	 */
+	if (dropped_ecs)
+	{
+		Relids		real_outer_and_req;
+
+		real_outer_and_req = bms_union(outer_path->parent->relids,
+									   required_outer);
+		eclauses =
+			generate_join_implied_equalities_for_ecs(root,
+													 dropped_ecs,
+													 real_outer_and_req,
+													 required_outer,
+													 outer_path->parent);
+		foreach(lc, eclauses)
+		{
+			RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
+
+			/* As above, can't quite assert this here */
+#ifdef NOT_USED
+			Assert(join_clause_is_movable_into(rinfo,
+											   outer_path->parent->relids,
+											   real_outer_and_req));
+#endif
+			if (!join_clause_is_movable_into(rinfo,
+											 outer_path->parent->relids,
+											 outer_and_req))
+				pclauses = lappend(pclauses, rinfo);
+		}
 	}
 
 	/*

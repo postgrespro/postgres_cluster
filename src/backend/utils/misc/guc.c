@@ -345,12 +345,13 @@ static const struct config_enum_entry constraint_exclusion_options[] = {
 };
 
 /*
- * Although only "on", "off", "remote_write", and "local" are documented, we
- * accept all the likely variants of "on" and "off".
+ * Although only "on", "off", "remote_apply", "remote_write", and "local" are
+ * documented, we accept all the likely variants of "on" and "off".
  */
 static const struct config_enum_entry synchronous_commit_options[] = {
 	{"local", SYNCHRONOUS_COMMIT_LOCAL_FLUSH, false},
 	{"remote_write", SYNCHRONOUS_COMMIT_REMOTE_WRITE, false},
+	{"remote_apply", SYNCHRONOUS_COMMIT_REMOTE_APPLY, false},
 	{"on", SYNCHRONOUS_COMMIT_ON, false},
 	{"off", SYNCHRONOUS_COMMIT_OFF, false},
 	{"true", SYNCHRONOUS_COMMIT_ON, true},
@@ -873,6 +874,15 @@ static struct config_bool ConfigureNamesBool[] =
 			NULL
 		},
 		&enable_hashjoin,
+		true,
+		NULL, NULL, NULL
+	},
+	{
+		{"enable_fkey_estimates", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Enables use of foreign keys for estimating joins."),
+			NULL
+		},
+		&enable_fkey_estimates,
 		true,
 		NULL, NULL, NULL
 	},
@@ -1632,6 +1642,26 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		{"syslog_sequence_numbers", PGC_SIGHUP, LOGGING_WHERE,
+			gettext_noop("Add sequence number to syslog messages to avoid duplicate suppression."),
+			NULL
+		},
+		&syslog_sequence_numbers,
+		true,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"syslog_split_messages", PGC_SIGHUP, LOGGING_WHERE,
+			gettext_noop("Split messages sent to syslog by lines and to fit into 1024 bytes."),
+			NULL
+		},
+		&syslog_split_messages,
+		true,
+		NULL, NULL, NULL
+	},
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL, NULL
@@ -1898,6 +1928,16 @@ static struct config_int ConfigureNamesInt[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		{"replacement_sort_tuples", PGC_USERSET, RESOURCES_MEM,
+			gettext_noop("Sets the maximum number of tuples to be sorted using replacement selection."),
+			gettext_noop("When more tuples than this are present, quicksort will be used.")
+		},
+		&replacement_sort_tuples,
+		150000, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
 	/*
 	 * We use the hopefully-safely-small value of 100kB as the compiled-in
 	 * default for max_stack_depth.  InitializeGUCOptions will increase it if
@@ -2066,6 +2106,17 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"idle_in_transaction_session_timeout", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Sets the maximum allowed duration of any idling transaction."),
+			gettext_noop("A value of 0 turns off the timeout."),
+			GUC_UNIT_MS
+		},
+		&IdleInTransactionSessionTimeout,
+		0, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"vacuum_freeze_min_age", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Minimum age at which VACUUM should freeze a table row."),
 			NULL
@@ -2223,6 +2274,18 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"checkpoint_flush_after", PGC_SIGHUP, WAL_CHECKPOINTS,
+			gettext_noop("Number of pages after which previously performed writes are flushed to disk."),
+			NULL,
+			GUC_UNIT_BLOCKS
+		},
+		&checkpoint_flush_after,
+		/* see bufmgr.h: OS dependent default */
+		DEFAULT_CHECKPOINT_FLUSH_AFTER, 0, WRITEBACK_MAX_PENDING_FLUSHES,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"wal_buffers", PGC_POSTMASTER, WAL_SETTINGS,
 			gettext_noop("Sets the number of disk-page buffers in shared memory for WAL."),
 			NULL,
@@ -2369,6 +2432,18 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"bgwriter_flush_after", PGC_SIGHUP, RESOURCES_BGWRITER,
+			gettext_noop("Number of pages after which previously performed writes are flushed to disk."),
+			NULL,
+			GUC_UNIT_BLOCKS
+		},
+		&bgwriter_flush_after,
+		/* see bufmgr.h: OS dependent default */
+		DEFAULT_BGWRITER_FLUSH_AFTER, 0, WRITEBACK_MAX_PENDING_FLUSHES,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"effective_io_concurrency",
 			PGC_USERSET,
 			RESOURCES_ASYNCHRONOUS,
@@ -2385,38 +2460,14 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"checkpoint_flush_after", PGC_SIGHUP, RESOURCES_ASYNCHRONOUS,
-			gettext_noop("Number of pages after which previously performed writes are flushed to disk."),
-			NULL,
-			GUC_UNIT_BLOCKS
-		},
-		&checkpoint_flush_after,
-		/* see bufmgr.h: OS dependant default */
-		DEFAULT_CHECKPOINT_FLUSH_AFTER, 0, WRITEBACK_MAX_PENDING_FLUSHES,
-		NULL, NULL, NULL
-	},
-
-	{
-		{"backend_flush_after", PGC_USERSET, WAL_CHECKPOINTS,
+		{"backend_flush_after", PGC_USERSET, RESOURCES_ASYNCHRONOUS,
 			gettext_noop("Number of pages after which previously performed writes are flushed to disk."),
 			NULL,
 			GUC_UNIT_BLOCKS
 		},
 		&backend_flush_after,
-		/* see bufmgr.h: OS dependant default */
+		/* see bufmgr.h: OS dependent default */
 		DEFAULT_BACKEND_FLUSH_AFTER, 0, WRITEBACK_MAX_PENDING_FLUSHES,
-		NULL, NULL, NULL
-	},
-
-	{
-		{"bgwriter_flush_after", PGC_SIGHUP, WAL_CHECKPOINTS,
-			gettext_noop("Number of pages after which previously performed writes are flushed to disk."),
-			NULL,
-			GUC_UNIT_BLOCKS
-		},
-		&bgwriter_flush_after,
-		/* see bufmgr.h: 16 on Linux, 0 otherwise */
-		DEFAULT_BGWRITER_FLUSH_AFTER, 0, WRITEBACK_MAX_PENDING_FLUSHES,
 		NULL, NULL, NULL
 	},
 
@@ -2606,12 +2657,12 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"max_parallel_degree", PGC_SUSET, RESOURCES_ASYNCHRONOUS,
+		{"max_parallel_degree", PGC_USERSET, RESOURCES_ASYNCHRONOUS,
 			gettext_noop("Sets the maximum number of parallel processes per executor node."),
 			NULL
 		},
 		&max_parallel_degree,
-		0, 0, MAX_BACKENDS,
+		2, 0, 1024,
 		NULL, NULL, NULL
 	},
 
@@ -2624,6 +2675,17 @@ static struct config_int ConfigureNamesInt[] =
 		&autovacuum_work_mem,
 		-1, -1, MAX_KILOBYTES,
 		check_autovacuum_work_mem, NULL, NULL
+	},
+
+	{
+		{"old_snapshot_threshold", PGC_POSTMASTER, RESOURCES_ASYNCHRONOUS,
+			gettext_noop("Time before a snapshot is too old to read pages changed after the snapshot was taken."),
+			gettext_noop("A value of -1 disables this feature."),
+			GUC_UNIT_MIN
+		},
+		&old_snapshot_threshold,
+		-1, -1, MINS_PER_HOUR * HOURS_PER_DAY * 60,
+		NULL, NULL, NULL
 	},
 
 	{
@@ -2650,7 +2712,7 @@ static struct config_int ConfigureNamesInt[] =
 
 	{
 		{"ssl_renegotiation_limit", PGC_USERSET, CONN_AUTH_SECURITY,
-			gettext_noop("SSL regenotiation is no longer supported; this can only be 0."),
+			gettext_noop("SSL renegotiation is no longer supported; this can only be 0."),
 			NULL,
 			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE,
 		},
@@ -3416,13 +3478,13 @@ static struct config_string ConfigureNamesString[] =
 
 	{
 		{"synchronous_standby_names", PGC_SIGHUP, REPLICATION_MASTER,
-			gettext_noop("List of names of potential synchronous standbys."),
+			gettext_noop("Number of synchronous standbys and list of names of potential synchronous ones."),
 			NULL,
 			GUC_LIST_INPUT
 		},
 		&SyncRepStandbyNames,
 		"",
-		check_synchronous_standby_names, NULL, NULL
+		check_synchronous_standby_names, assign_synchronous_standby_names, NULL
 	},
 
 	{
@@ -4028,7 +4090,7 @@ get_guc_variables(void)
 
 /*
  * Build the sorted array.  This is split out so that it could be
- * re-executed after startup (eg, we could allow loadable modules to
+ * re-executed after startup (e.g., we could allow loadable modules to
  * add vars, and then we'd need to re-sort).
  */
 void
@@ -5873,7 +5935,7 @@ set_config_option(const char *name, const char *value,
 				 * don't re-read the config file during backend start.
 				 *
 				 * In EXEC_BACKEND builds, this works differently: we load all
-				 * nondefault settings from the CONFIG_EXEC_PARAMS file during
+				 * non-default settings from the CONFIG_EXEC_PARAMS file during
 				 * backend start.  In that case we must accept PGC_SIGHUP
 				 * settings, so as to have the same value as if we'd forked
 				 * from the postmaster.  This can also happen when using
@@ -6632,7 +6694,7 @@ GetConfigOptionResetString(const char *name)
  * We need to be told the name of the variable the args are for, because
  * the flattening rules vary (ugh).
  *
- * The result is NULL if args is NIL (ie, SET ... TO DEFAULT), otherwise
+ * The result is NULL if args is NIL (i.e., SET ... TO DEFAULT), otherwise
  * a palloc'd string.
  */
 static char *
@@ -6968,22 +7030,37 @@ AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt)
 					 errmsg("parameter \"%s\" cannot be changed",
 							name)));
 
+		/*
+		 * If a value is specified, verify that it's sane.
+		 */
 		if (value)
 		{
 			union config_var_val newval;
 			void	   *newextra = NULL;
 
+			/* Check that it's acceptable for the indicated parameter */
 			if (!parse_and_validate_value(record, name, value,
 										  PGC_S_FILE, ERROR,
 										  &newval, &newextra))
 				ereport(ERROR,
-						(errmsg("invalid value for parameter \"%s\": \"%s\"",
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("invalid value for parameter \"%s\": \"%s\"",
 								name, value)));
 
 			if (record->vartype == PGC_STRING && newval.stringval != NULL)
 				free(newval.stringval);
 			if (newextra)
 				free(newextra);
+
+			/*
+			 * We must also reject values containing newlines, because the
+			 * grammar for config files doesn't support embedded newlines in
+			 * string literals.
+			 */
+			if (strchr(value, '\n'))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("parameter value for ALTER SYSTEM must not contain a newline")));
 		}
 	}
 
@@ -7020,13 +7097,15 @@ AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt)
 			infile = AllocateFile(AutoConfFileName, "r");
 			if (infile == NULL)
 				ereport(ERROR,
-						(errmsg("could not open file \"%s\": %m",
+						(errcode_for_file_access(),
+						 errmsg("could not open file \"%s\": %m",
 								AutoConfFileName)));
 
 			/* parse it */
 			if (!ParseConfigFp(infile, AutoConfFileName, 0, LOG, &head, &tail))
 				ereport(ERROR,
-						(errmsg("could not parse contents of file \"%s\"",
+						(errcode(ERRCODE_CONFIG_FILE_ERROR),
+						 errmsg("could not parse contents of file \"%s\"",
 								AutoConfFileName)));
 
 			FreeFile(infile);
@@ -7963,7 +8042,7 @@ GetConfigOptionByNum(int varnum, const char **values, bool *noshow)
 	/* source */
 	values[8] = GucSource_Names[conf->source];
 
-	/* now get the type specifc attributes */
+	/* now get the type specific attributes */
 	switch (conf->vartype)
 	{
 		case PGC_BOOL:
@@ -9500,7 +9579,7 @@ validate_option_array_item(const char *name, const char *value,
 	 * There are three cases to consider:
 	 *
 	 * name is a known GUC variable.  Check the value normally, check
-	 * permissions normally (ie, allow if variable is USERSET, or if it's
+	 * permissions normally (i.e., allow if variable is USERSET, or if it's
 	 * SUSET and user is superuser).
 	 *
 	 * name is not known, but exists or can be created as a placeholder (i.e.,

@@ -30,6 +30,7 @@ volatile bool InterruptPending = false;
 volatile bool QueryCancelPending = false;
 volatile bool ProcDiePending = false;
 volatile bool ClientConnectionLost = false;
+volatile bool IdleInTransactionSessionTimeoutPending = false;
 volatile uint32 InterruptHoldoffCount = 0;
 volatile uint32 QueryCancelHoldoffCount = 0;
 volatile uint32 CritSectionCount = 0;
@@ -108,6 +109,7 @@ bool		enableFsync = true;
 bool		allowSystemTableMods = false;
 int			work_mem = 1024;
 int			maintenance_work_mem = 16384;
+int			replacement_sort_tuples = 150000;
 
 /*
  * Primary determinants of sizes of shared-memory structures.

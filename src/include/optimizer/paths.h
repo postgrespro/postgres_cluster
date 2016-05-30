@@ -70,12 +70,14 @@ extern bool match_index_to_operand(Node *operand, int indexcol,
 extern void expand_indexqual_conditions(IndexOptInfo *index,
 							List *indexclauses, List *indexclausecols,
 							List **indexquals_p, List **indexqualcols_p);
-extern void check_partial_indexes(PlannerInfo *root, RelOptInfo *rel);
+extern void check_index_predicates(PlannerInfo *root, RelOptInfo *rel);
 extern Expr *adjust_rowcompare_for_index(RowCompareExpr *clause,
 							IndexOptInfo *index,
 							int indexcol,
 							List **indexcolnos,
 							bool *var_on_left_p);
+extern bool has_matching_fkey(RelOptInfo *rel, RelOptInfo *frel, List *clauses,
+							  bool reverse);
 
 /*
  * tidpath.h
@@ -133,6 +135,11 @@ extern List *generate_join_implied_equalities(PlannerInfo *root,
 								 Relids join_relids,
 								 Relids outer_relids,
 								 RelOptInfo *inner_rel);
+extern List *generate_join_implied_equalities_for_ecs(PlannerInfo *root,
+										 List *eclasses,
+										 Relids join_relids,
+										 Relids outer_relids,
+										 RelOptInfo *inner_rel);
 extern bool exprs_known_equal(PlannerInfo *root, Node *item1, Node *item2);
 extern void add_child_rel_equivalences(PlannerInfo *root,
 						   AppendRelInfo *appinfo,

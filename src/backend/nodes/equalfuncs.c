@@ -192,6 +192,7 @@ _equalAggref(const Aggref *a, const Aggref *b)
 {
 	COMPARE_SCALAR_FIELD(aggfnoid);
 	COMPARE_SCALAR_FIELD(aggtype);
+	COMPARE_SCALAR_FIELD(aggoutputtype);
 	COMPARE_SCALAR_FIELD(aggcollid);
 	COMPARE_SCALAR_FIELD(inputcollid);
 	COMPARE_NODE_FIELD(aggdirectargs);
@@ -201,6 +202,8 @@ _equalAggref(const Aggref *a, const Aggref *b)
 	COMPARE_NODE_FIELD(aggfilter);
 	COMPARE_SCALAR_FIELD(aggstar);
 	COMPARE_SCALAR_FIELD(aggvariadic);
+	COMPARE_SCALAR_FIELD(aggcombine);
+	COMPARE_SCALAR_FIELD(aggpartial);
 	COMPARE_SCALAR_FIELD(aggkind);
 	COMPARE_SCALAR_FIELD(agglevelsup);
 	COMPARE_LOCATION_FIELD(location);
@@ -878,7 +881,7 @@ _equalPlaceHolderInfo(const PlaceHolderInfo *a, const PlaceHolderInfo *b)
 static bool
 _equalExtensibleNode(const ExtensibleNode *a, const ExtensibleNode *b)
 {
-	const ExtensibleNodeMethods  *methods;
+	const ExtensibleNodeMethods *methods;
 
 	COMPARE_STRING_FIELD(extnodename);
 
@@ -1320,6 +1323,18 @@ _equalRenameStmt(const RenameStmt *a, const RenameStmt *b)
 	COMPARE_STRING_FIELD(newname);
 	COMPARE_SCALAR_FIELD(behavior);
 	COMPARE_SCALAR_FIELD(missing_ok);
+
+	return true;
+}
+
+static bool
+_equalAlterObjectDependsStmt(const AlterObjectDependsStmt *a, const AlterObjectDependsStmt *b)
+{
+	COMPARE_SCALAR_FIELD(objectType);
+	COMPARE_NODE_FIELD(relation);
+	COMPARE_NODE_FIELD(objname);
+	COMPARE_NODE_FIELD(objargs);
+	COMPARE_NODE_FIELD(extname);
 
 	return true;
 }
@@ -1850,6 +1865,16 @@ _equalCreateTransformStmt(const CreateTransformStmt *a, const CreateTransformStm
 	COMPARE_STRING_FIELD(lang);
 	COMPARE_NODE_FIELD(fromsql);
 	COMPARE_NODE_FIELD(tosql);
+
+	return true;
+}
+
+static bool
+_equalCreateAmStmt(const CreateAmStmt *a, const CreateAmStmt *b)
+{
+	COMPARE_STRING_FIELD(amname);
+	COMPARE_NODE_FIELD(handler_name);
+	COMPARE_SCALAR_FIELD(amtype);
 
 	return true;
 }
@@ -2993,6 +3018,9 @@ equal(const void *a, const void *b)
 		case T_RenameStmt:
 			retval = _equalRenameStmt(a, b);
 			break;
+		case T_AlterObjectDependsStmt:
+			retval = _equalAlterObjectDependsStmt(a, b);
+			break;
 		case T_AlterObjectSchemaStmt:
 			retval = _equalAlterObjectSchemaStmt(a, b);
 			break;
@@ -3145,6 +3173,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_CreateTransformStmt:
 			retval = _equalCreateTransformStmt(a, b);
+			break;
+		case T_CreateAmStmt:
+			retval = _equalCreateAmStmt(a, b);
 			break;
 		case T_CreateTrigStmt:
 			retval = _equalCreateTrigStmt(a, b);

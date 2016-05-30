@@ -454,6 +454,7 @@ typedef struct xl_btree_newroot
 
 #define BTORDER_PROC		1
 #define BTSORTSUPPORT_PROC	2
+#define BTNProcs			2
 
 /*
  *	We need to be able to tell the difference between read and write
@@ -710,17 +711,18 @@ extern int	_bt_pagedel(Relation rel, Buffer buf);
  */
 extern BTStack _bt_search(Relation rel,
 		   int keysz, ScanKey scankey, bool nextkey,
-		   Buffer *bufP, int access);
+		   Buffer *bufP, int access, Snapshot snapshot);
 extern Buffer _bt_moveright(Relation rel, Buffer buf, int keysz,
 			  ScanKey scankey, bool nextkey, bool forupdate, BTStack stack,
-			  int access);
+			  int access, Snapshot snapshot);
 extern OffsetNumber _bt_binsrch(Relation rel, Buffer buf, int keysz,
 			ScanKey scankey, bool nextkey);
 extern int32 _bt_compare(Relation rel, int keysz, ScanKey scankey,
 			Page page, OffsetNumber offnum);
 extern bool _bt_first(IndexScanDesc scan, ScanDirection dir);
 extern bool _bt_next(IndexScanDesc scan, ScanDirection dir);
-extern Buffer _bt_get_endpoint(Relation rel, uint32 level, bool rightmost);
+extern Buffer _bt_get_endpoint(Relation rel, uint32 level, bool rightmost,
+							   Snapshot snapshot);
 
 /*
  * prototypes for functions in nbtutils.c

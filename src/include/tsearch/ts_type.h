@@ -49,6 +49,8 @@ typedef struct
 #define MAXSTRLEN ( (1<<11) - 1)
 #define MAXSTRPOS ( (1<<20) - 1)
 
+extern int compareWordEntryPos(const void *a, const void *b);
+
 /*
  * Equivalent to
  * typedef struct {
@@ -213,15 +215,42 @@ typedef struct
 } QueryOperand;
 
 
-/* Legal values for QueryOperator.operator */
-#define OP_NOT	1
-#define OP_AND	2
-#define OP_OR	3
+/*
+ * Legal values for QueryOperator.operator.
+ * They should be ordered by priority! We assume that phrase
+ * has highest priority, but this agreement is only
+ * for query transformation! That's need to simplify
+ * algorithm of query transformation.
+ */
+#define OP_NOT			1
+#define OP_AND			2
+#define OP_OR			3
+#define OP_PHRASE		4
+#define OP_COUNT		4
+
+extern const int tsearch_op_priority[OP_COUNT];
+
+#define NOT_PHRASE_P	5	/*
+							 * OP_PHRASE negation operations must have greater
+							 * priority in order to force infix() to surround
+							 * the whole OP_PHRASE expression with parentheses.
+							 */
+
+#define TOP_PRIORITY	6	/* highest priority for val nodes */
+
+/* get operation priority  by its code*/
+#define	OP_PRIORITY(x)	( tsearch_op_priority[(x) - 1] )
+/* get QueryOperator priority */
+#define QO_PRIORITY(x)	OP_PRIORITY(((QueryOperator *) (x))->oper)
+/* special case: get QueryOperator priority for correct printing !(a <-> b>) */
+#define PRINT_PRIORITY(x) \
+	( (((QueryOperator *) (x))->oper == OP_NOT) ? NOT_PHRASE_P : QO_PRIORITY(x) )
 
 typedef struct
 {
 	QueryItemType type;
 	int8		oper;			/* see above */
+	int16		distance;		/* distance between agrs for OP_PHRASE */
 	uint32		left;			/* pointer to left operand. Right operand is
 								 * item + 1, left operand is placed
 								 * item+item->left */
@@ -304,6 +333,8 @@ extern Datum tsquery_numnode(PG_FUNCTION_ARGS);
 
 extern Datum tsquery_and(PG_FUNCTION_ARGS);
 extern Datum tsquery_or(PG_FUNCTION_ARGS);
+extern Datum tsquery_phrase(PG_FUNCTION_ARGS);
+extern Datum tsquery_phrase_distance(PG_FUNCTION_ARGS);
 extern Datum tsquery_not(PG_FUNCTION_ARGS);
 
 extern Datum tsquery_rewrite(PG_FUNCTION_ARGS);

@@ -229,11 +229,12 @@ heap_page_items(PG_FUNCTION_ARGS)
 			{
 				if (tuphdr->t_infomask & HEAP_HASNULL)
 				{
-					int	bits_len =
-						((tuphdr->t_infomask2 & HEAP_NATTS_MASK) / 8 + 1) * 8;
+					int			bits_len;
 
+					bits_len =
+						((tuphdr->t_infomask2 & HEAP_NATTS_MASK) / 8 + 1) * 8;
 					values[11] = CStringGetTextDatum(
-								 bits_to_text(tuphdr->t_bits, bits_len));
+									 bits_to_text(tuphdr->t_bits, bits_len));
 				}
 				else
 					nulls[11] = true;
@@ -436,7 +437,7 @@ tuple_data_split(PG_FUNCTION_ARGS)
 		if (!t_bits_str)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("argument of t_bits is null, but it is expected to be null and %i character long",
+					 errmsg("argument of t_bits is null, but it is expected to be null and %d character long",
 							bits_len * 8)));
 
 		bits_str_len = strlen(t_bits_str);
@@ -448,7 +449,7 @@ tuple_data_split(PG_FUNCTION_ARGS)
 		if (bits_len * 8 != bits_str_len)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("unexpected length of t_bits %u, expected %i",
+					 errmsg("unexpected length of t_bits %u, expected %d",
 							bits_str_len, bits_len * 8)));
 
 		/* do the conversion */
@@ -459,7 +460,7 @@ tuple_data_split(PG_FUNCTION_ARGS)
 		if (t_bits_str)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("t_bits string is expected to be NULL, but instead it is %lu bytes length",
+					 errmsg("t_bits string is expected to be NULL, but instead it is %zu bytes length",
 							strlen(t_bits_str))));
 	}
 

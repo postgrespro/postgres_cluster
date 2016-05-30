@@ -1217,6 +1217,9 @@ pgstat_drop_relation(Oid relid)
  * pgstat_reset_counters() -
  *
  *	Tell the statistics collector to reset counters for our database.
+ *
+ *	Permission checking for this function is managed through the normal
+ *	GRANT system.
  * ----------
  */
 void
@@ -1227,11 +1230,6 @@ pgstat_reset_counters(void)
 	if (pgStatSock == PGINVALID_SOCKET)
 		return;
 
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to reset statistics counters")));
-
 	pgstat_setheader(&msg.m_hdr, PGSTAT_MTYPE_RESETCOUNTER);
 	msg.m_databaseid = MyDatabaseId;
 	pgstat_send(&msg, sizeof(msg));
@@ -1241,6 +1239,9 @@ pgstat_reset_counters(void)
  * pgstat_reset_shared_counters() -
  *
  *	Tell the statistics collector to reset cluster-wide shared counters.
+ *
+ *	Permission checking for this function is managed through the normal
+ *	GRANT system.
  * ----------
  */
 void
@@ -1250,11 +1251,6 @@ pgstat_reset_shared_counters(const char *target)
 
 	if (pgStatSock == PGINVALID_SOCKET)
 		return;
-
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to reset statistics counters")));
 
 	if (strcmp(target, "archiver") == 0)
 		msg.m_resettarget = RESET_ARCHIVER;
@@ -1274,6 +1270,9 @@ pgstat_reset_shared_counters(const char *target)
  * pgstat_reset_single_counter() -
  *
  *	Tell the statistics collector to reset a single counter.
+ *
+ *	Permission checking for this function is managed through the normal
+ *	GRANT system.
  * ----------
  */
 void
@@ -1283,11 +1282,6 @@ pgstat_reset_single_counter(Oid objoid, PgStat_Single_Reset_Type type)
 
 	if (pgStatSock == PGINVALID_SOCKET)
 		return;
-
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to reset statistics counters")));
 
 	pgstat_setheader(&msg.m_hdr, PGSTAT_MTYPE_RESETSINGLECOUNTER);
 	msg.m_databaseid = MyDatabaseId;
@@ -2899,6 +2893,35 @@ pgstat_progress_update_param(int index, int64 val)
 
 	pgstat_increment_changecount_before(beentry);
 	beentry->st_progress_param[index] = val;
+	pgstat_increment_changecount_after(beentry);
+}
+
+/*-----------
+ * pgstat_progress_update_multi_param() -
+ *
+ * Update multiple members in st_progress_param[] of own backend entry.
+ * This is atomic; readers won't see intermediate states.
+ *-----------
+ */
+void
+pgstat_progress_update_multi_param(int nparam, const int *index,
+								   const int64 *val)
+{
+	volatile PgBackendStatus *beentry = MyBEEntry;
+	int		i;
+
+	if (!beentry || !pgstat_track_activities || nparam == 0)
+		return;
+
+	pgstat_increment_changecount_before(beentry);
+
+	for (i = 0; i < nparam; ++i)
+	{
+		Assert(index[i] >= 0 && index[i] < PGSTAT_NUM_PROGRESS_PARAM);
+
+		beentry->st_progress_param[index[i]] = val[i];
+	}
+
 	pgstat_increment_changecount_after(beentry);
 }
 
@@ -5481,7 +5504,16 @@ pgstat_db_requested(Oid databaseid)
 {
 	slist_iter	iter;
 
-	/* Check the databases if they need to refresh the stats. */
+	/*
+	 * If any requests are outstanding at all, we should write the stats for
+	 * shared catalogs (the "database" with OID 0).  This ensures that
+	 * backends will see up-to-date stats for shared catalogs, even though
+	 * they send inquiry messages mentioning only their own DB.
+	 */
+	if (databaseid == InvalidOid && !slist_is_empty(&last_statrequests))
+		return true;
+
+	/* Search to see if there's an open request to write this database. */
 	slist_foreach(iter, &last_statrequests)
 	{
 		DBWriteRequest *req = slist_container(DBWriteRequest, next, iter.cur);

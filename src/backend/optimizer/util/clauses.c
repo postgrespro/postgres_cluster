@@ -52,11 +52,18 @@
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
+typedef struct
+{
+	PartialAggType allowedtype;
+} partial_agg_context;
 
 typedef struct
 {
 	PlannerInfo *root;
 	AggClauseCosts *costs;
+	bool		finalizeAggs;
+	bool		combineStates;
+	bool		serialStates;
 } count_agg_clauses_context;
 
 typedef struct
@@ -93,6 +100,8 @@ typedef struct
 	bool		allow_restricted;
 } has_parallel_hazard_arg;
 
+static bool aggregates_allow_partial_walker(Node *node,
+											partial_agg_context *context);
 static bool contain_agg_clause_walker(Node *node, void *context);
 static bool count_agg_clauses_walker(Node *node,
 						 count_agg_clauses_context *context);
@@ -400,6 +409,83 @@ make_ands_implicit(Expr *clause)
  *****************************************************************************/
 
 /*
+ * aggregates_allow_partial
+ *		Recursively search for Aggref clauses and determine the maximum
+ *		level of partial aggregation which can be supported.
+ */
+PartialAggType
+aggregates_allow_partial(Node *clause)
+{
+	partial_agg_context context;
+
+	/* initially any type is okay, until we find Aggrefs which say otherwise */
+	context.allowedtype = PAT_ANY;
+
+	if (!aggregates_allow_partial_walker(clause, &context))
+		return context.allowedtype;
+	return context.allowedtype;
+}
+
+static bool
+aggregates_allow_partial_walker(Node *node, partial_agg_context *context)
+{
+	if (node == NULL)
+		return false;
+	if (IsA(node, Aggref))
+	{
+		Aggref	   *aggref = (Aggref *) node;
+		HeapTuple	aggTuple;
+		Form_pg_aggregate aggform;
+
+		Assert(aggref->agglevelsup == 0);
+
+		/*
+		 * We can't perform partial aggregation with Aggrefs containing a
+		 * DISTINCT or ORDER BY clause.
+		 */
+		if (aggref->aggdistinct || aggref->aggorder)
+		{
+			context->allowedtype = PAT_DISABLED;
+			return true;	/* abort search */
+		}
+		aggTuple = SearchSysCache1(AGGFNOID,
+								   ObjectIdGetDatum(aggref->aggfnoid));
+		if (!HeapTupleIsValid(aggTuple))
+			elog(ERROR, "cache lookup failed for aggregate %u",
+				 aggref->aggfnoid);
+		aggform = (Form_pg_aggregate) GETSTRUCT(aggTuple);
+
+		/*
+		 * If there is no combine function, then partial aggregation is not
+		 * possible.
+		 */
+		if (!OidIsValid(aggform->aggcombinefn))
+		{
+			ReleaseSysCache(aggTuple);
+			context->allowedtype = PAT_DISABLED;
+			return true;	/* abort search */
+		}
+
+		/*
+		 * If we find any aggs with an internal transtype then we must check
+		 * that these have a serialization type, serialization func and
+		 * deserialization func; otherwise, we set the maximum allowed type to
+		 * PAT_INTERNAL_ONLY.
+		 */
+		if (aggform->aggtranstype == INTERNALOID &&
+			(!OidIsValid(aggform->aggserialtype) ||
+			 !OidIsValid(aggform->aggserialfn) ||
+			 !OidIsValid(aggform->aggdeserialfn)))
+			context->allowedtype = PAT_INTERNAL_ONLY;
+
+		ReleaseSysCache(aggTuple);
+		return false; /* continue searching */
+	}
+	return expression_tree_walker(node, aggregates_allow_partial_walker,
+								  (void *) context);
+}
+
+/*
  * contain_agg_clause
  *	  Recursively search for Aggref/GroupingFunc nodes within a clause.
  *
@@ -457,12 +543,16 @@ contain_agg_clause_walker(Node *node, void *context)
  * are no subqueries.  There mustn't be outer-aggregate references either.
  */
 void
-count_agg_clauses(PlannerInfo *root, Node *clause, AggClauseCosts *costs)
+count_agg_clauses(PlannerInfo *root, Node *clause, AggClauseCosts *costs,
+				  bool finalizeAggs, bool combineStates, bool serialStates)
 {
 	count_agg_clauses_context context;
 
 	context.root = root;
 	context.costs = costs;
+	context.finalizeAggs = finalizeAggs;
+	context.combineStates = combineStates;
+	context.serialStates = serialStates;
 	(void) count_agg_clauses_walker(clause, &context);
 }
 
@@ -479,6 +569,9 @@ count_agg_clauses_walker(Node *node, count_agg_clauses_context *context)
 		Form_pg_aggregate aggform;
 		Oid			aggtransfn;
 		Oid			aggfinalfn;
+		Oid			aggcombinefn;
+		Oid			aggserialfn;
+		Oid			aggdeserialfn;
 		Oid			aggtranstype;
 		int32		aggtransspace;
 		QualCost	argcosts;
@@ -500,6 +593,9 @@ count_agg_clauses_walker(Node *node, count_agg_clauses_context *context)
 		aggform = (Form_pg_aggregate) GETSTRUCT(aggTuple);
 		aggtransfn = aggform->aggtransfn;
 		aggfinalfn = aggform->aggfinalfn;
+		aggcombinefn = aggform->aggcombinefn;
+		aggserialfn = aggform->aggserialfn;
+		aggdeserialfn = aggform->aggdeserialfn;
 		aggtranstype = aggform->aggtranstype;
 		aggtransspace = aggform->aggtransspace;
 		ReleaseSysCache(aggTuple);
@@ -509,28 +605,58 @@ count_agg_clauses_walker(Node *node, count_agg_clauses_context *context)
 		if (aggref->aggorder != NIL || aggref->aggdistinct != NIL)
 			costs->numOrderedAggs++;
 
-		/* add component function execution costs to appropriate totals */
-		costs->transCost.per_tuple += get_func_cost(aggtransfn) * cpu_operator_cost;
-		if (OidIsValid(aggfinalfn))
-			costs->finalCost += get_func_cost(aggfinalfn) * cpu_operator_cost;
+		/*
+		 * Add the appropriate component function execution costs to
+		 * appropriate totals.
+		 */
+		if (context->combineStates)
+		{
+			/* charge for combining previously aggregated states */
+			costs->transCost.per_tuple += get_func_cost(aggcombinefn) * cpu_operator_cost;
 
-		/* also add the input expressions' cost to per-input-row costs */
-		cost_qual_eval_node(&argcosts, (Node *) aggref->args, context->root);
-		costs->transCost.startup += argcosts.startup;
-		costs->transCost.per_tuple += argcosts.per_tuple;
+			/* charge for deserialization, when appropriate */
+			if (context->serialStates && OidIsValid(aggdeserialfn))
+				costs->transCost.per_tuple += get_func_cost(aggdeserialfn) * cpu_operator_cost;
+		}
+		else
+			costs->transCost.per_tuple += get_func_cost(aggtransfn) * cpu_operator_cost;
+
+		if (context->finalizeAggs)
+		{
+			if (OidIsValid(aggfinalfn))
+				costs->finalCost += get_func_cost(aggfinalfn) * cpu_operator_cost;
+		}
+		else if (context->serialStates)
+		{
+			if (OidIsValid(aggserialfn))
+				costs->finalCost += get_func_cost(aggserialfn) * cpu_operator_cost;
+		}
 
 		/*
-		 * Add any filter's cost to per-input-row costs.
-		 *
-		 * XXX Ideally we should reduce input expression costs according to
-		 * filter selectivity, but it's not clear it's worth the trouble.
+		 * Some costs will already have been incurred by the initial aggregate
+		 * node, so we mustn't include these again.
 		 */
-		if (aggref->aggfilter)
+		if (!context->combineStates)
 		{
-			cost_qual_eval_node(&argcosts, (Node *) aggref->aggfilter,
-								context->root);
+			/* add the input expressions' cost to per-input-row costs */
+			cost_qual_eval_node(&argcosts, (Node *) aggref->args, context->root);
 			costs->transCost.startup += argcosts.startup;
 			costs->transCost.per_tuple += argcosts.per_tuple;
+
+			/*
+			 * Add any filter's cost to per-input-row costs.
+			 *
+			 * XXX Ideally we should reduce input expression costs according
+			 * to filter selectivity, but it's not clear it's worth the
+			 * trouble.
+			 */
+			if (aggref->aggfilter)
+			{
+				cost_qual_eval_node(&argcosts, (Node *) aggref->aggfilter,
+									context->root);
+				costs->transCost.startup += argcosts.startup;
+				costs->transCost.per_tuple += argcosts.per_tuple;
+			}
 		}
 
 		/*
@@ -1334,6 +1460,13 @@ has_parallel_hazard_walker(Node *node, has_parallel_hazard_arg *context)
 		FuncExpr   *expr = (FuncExpr *) node;
 
 		if (parallel_too_dangerous(func_parallel(expr->funcid), context))
+			return true;
+	}
+	else if (IsA(node, Aggref))
+	{
+		Aggref	   *aggref = (Aggref *) node;
+
+		if (parallel_too_dangerous(func_parallel(aggref->aggfnoid), context))
 			return true;
 	}
 	else if (IsA(node, OpExpr))

@@ -877,6 +877,7 @@ typedef struct
 #define THING_NO_SHOW		(THING_NO_CREATE | THING_NO_DROP)
 
 static const pgsql_thing_t words_after_create[] = {
+	{"ACCESS METHOD", NULL, NULL},
 	{"AGGREGATE", NULL, &Query_for_list_of_aggregates},
 	{"CAST", NULL, NULL},		/* Casts have complex structures for names, so
 								 * skip it */
@@ -1273,14 +1274,15 @@ psql_completion(const char *text, int start, int end)
 
 	/* psql's backslash commands. */
 	static const char *const backslash_commands[] = {
-		"\\a", "\\connect", "\\conninfo", "\\C", "\\cd", "\\copy", "\\copyright",
+		"\\a", "\\connect", "\\conninfo", "\\C", "\\cd", "\\copy",
+		"\\copyright", "\\crosstabview",
 		"\\d", "\\da", "\\db", "\\dc", "\\dC", "\\dd", "\\ddp", "\\dD",
 		"\\des", "\\det", "\\deu", "\\dew", "\\dE", "\\df",
 		"\\dF", "\\dFd", "\\dFp", "\\dFt", "\\dg", "\\di", "\\dl", "\\dL",
 		"\\dm", "\\dn", "\\do", "\\dO", "\\dp", "\\drds", "\\ds", "\\dS",
 		"\\dt", "\\dT", "\\dv", "\\du", "\\dx", "\\dy",
-		"\\e", "\\echo", "\\ef", "\\encoding", "\\ev",
-		"\\f", "\\g", "\\gset", "\\h", "\\help", "\\H", "\\i", "\\ir", "\\l",
+		"\\e", "\\echo", "\\ef", "\\encoding", "\\errverbose", "\\ev",
+		"\\f", "\\g", "\\gexec", "\\gset", "\\h", "\\help", "\\H", "\\i", "\\ir", "\\l",
 		"\\lo_import", "\\lo_export", "\\lo_list", "\\lo_unlink",
 		"\\o", "\\p", "\\password", "\\prompt", "\\pset", "\\q", "\\qecho", "\\r",
 		"\\s", "\\set", "\\setenv", "\\sf", "\\sv", "\\t", "\\T",
@@ -1782,6 +1784,7 @@ psql_completion(const char *text, int start, int end)
 			"autovacuum_vacuum_scale_factor",
 			"autovacuum_vacuum_threshold",
 			"fillfactor",
+			"parallel_degree",
 			"log_autovacuum_min_duration",
 			"toast.autovacuum_enabled",
 			"toast.autovacuum_freeze_max_age",
@@ -1976,6 +1979,17 @@ psql_completion(const char *text, int start, int end)
 			 Matches6("COPY", "BINARY", MatchAny, "FROM|TO", MatchAny, "CSV"))
 		COMPLETE_WITH_LIST5("HEADER", "QUOTE", "ESCAPE", "FORCE QUOTE",
 							"FORCE NOT NULL");
+
+	/* CREATE ACCESS METHOD */
+	/* Complete "CREATE ACCESS METHOD <name>" */
+	else if (Matches4("CREATE", "ACCESS", "METHOD", MatchAny))
+		COMPLETE_WITH_CONST("TYPE");
+	/* Complete "CREATE ACCESS METHOD <name> TYPE" */
+	else if (Matches5("CREATE", "ACCESS", "METHOD", MatchAny, "TYPE"))
+		COMPLETE_WITH_CONST("INDEX");
+	/* Complete "CREATE ACCESS METHOD <name> TYPE <type>" */
+	else if (Matches6("CREATE", "ACCESS", "METHOD", MatchAny, "TYPE", MatchAny))
+		COMPLETE_WITH_CONST("HANDLER");
 
 	/* CREATE DATABASE */
 	else if (Matches3("CREATE", "DATABASE", MatchAny))
@@ -2263,6 +2277,7 @@ psql_completion(const char *text, int start, int end)
 	else if (Matches3("DROP",
 					  "COLLATION|CONVERSION|DOMAIN|EXTENSION|LANGUAGE|SCHEMA|SEQUENCE|SERVER|TABLE|TYPE|VIEW",
 					  MatchAny) ||
+			 Matches4("DROP", "ACCESS", "METHOD", MatchAny) ||
 			 (Matches4("DROP", "AGGREGATE|FUNCTION", MatchAny, MatchAny) &&
 			  ends_with(prev_wd, ')')) ||
 			 Matches4("DROP", "EVENT", "TRIGGER", MatchAny) ||

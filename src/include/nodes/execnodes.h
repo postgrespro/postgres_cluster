@@ -311,6 +311,7 @@ typedef struct JunkFilter
  *		TrigInstrument			optional runtime measurements for triggers
  *		FdwRoutine				FDW callback functions, if foreign table
  *		FdwState				available to save private state of FDW
+ *		usesFdwDirectModify		true when modifying foreign table directly
  *		WithCheckOptions		list of WithCheckOption's to be checked
  *		WithCheckOptionExprs	list of WithCheckOption expr states
  *		ConstraintExprs			array of constraint-checking expr states
@@ -334,6 +335,7 @@ typedef struct ResultRelInfo
 	Instrumentation *ri_TrigInstrument;
 	struct FdwRoutine *ri_FdwRoutine;
 	void	   *ri_FdwState;
+	bool		ri_usesFdwDirectModify;
 	List	   *ri_WithCheckOptions;
 	List	   *ri_WithCheckOptionExprs;
 	List	  **ri_ConstraintExprs;
@@ -1604,38 +1606,7 @@ typedef struct ForeignScanState
  * the BeginCustomScan method.
  * ----------------
  */
-struct ParallelContext;			/* avoid including parallel.h here */
-struct shm_toc;					/* avoid including shm_toc.h here */
-struct ExplainState;			/* avoid including explain.h here */
-struct CustomScanState;
-
-typedef struct CustomExecMethods
-{
-	const char *CustomName;
-
-	/* Executor methods: mark/restore are optional, the rest are required */
-	void		(*BeginCustomScan) (struct CustomScanState *node,
-												EState *estate,
-												int eflags);
-	TupleTableSlot *(*ExecCustomScan) (struct CustomScanState *node);
-	void		(*EndCustomScan) (struct CustomScanState *node);
-	void		(*ReScanCustomScan) (struct CustomScanState *node);
-	void		(*MarkPosCustomScan) (struct CustomScanState *node);
-	void		(*RestrPosCustomScan) (struct CustomScanState *node);
-	/* Optional: parallel execution support */
-	Size		(*EstimateDSMCustomScan) (struct CustomScanState *node,
-											   struct ParallelContext *pcxt);
-	void		(*InitializeDSMCustomScan) (struct CustomScanState *node,
-												struct ParallelContext *pcxt,
-														void *coordinate);
-	void		(*InitializeWorkerCustomScan) (struct CustomScanState *node,
-														 struct shm_toc *toc,
-														   void *coordinate);
-	/* Optional: print additional information in EXPLAIN */
-	void		(*ExplainCustomScan) (struct CustomScanState *node,
-												  List *ancestors,
-												  struct ExplainState *es);
-} CustomExecMethods;
+struct CustomExecMethods;
 
 typedef struct CustomScanState
 {
@@ -1643,7 +1614,7 @@ typedef struct CustomScanState
 	uint32		flags;			/* mask of CUSTOMPATH_* flags, see relation.h */
 	List	   *custom_ps;		/* list of child PlanState nodes, if any */
 	Size		pscan_len;		/* size of parallel coordination information */
-	const CustomExecMethods *methods;
+	const struct CustomExecMethods *methods;
 } CustomScanState;
 
 /* ----------------------------------------------------------------
@@ -1865,6 +1836,7 @@ typedef struct AggState
 	bool		agg_done;		/* indicates completion of Agg scan */
 	bool		combineStates;	/* input tuples contain transition states */
 	bool		finalizeAggs;	/* should we call the finalfn on agg states? */
+	bool		serialStates;	/* should agg states be (de)serialized? */
 	int			projected_set;	/* The last projected grouping set */
 	int			current_set;	/* The current grouping set being evaluated */
 	Bitmapset  *grouped_cols;	/* grouped cols in current projection */
@@ -1984,6 +1956,7 @@ typedef struct GatherState
 	struct ParallelExecutorInfo *pei;
 	int			nreaders;
 	int			nextreader;
+	int			nworkers_launched;
 	struct TupleQueueReader **reader;
 	TupleTableSlot *funnel_slot;
 	bool		need_to_scan_locally;

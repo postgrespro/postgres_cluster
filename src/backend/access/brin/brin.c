@@ -135,7 +135,7 @@ brininsert(Relation idxRel, Datum *values, bool *nulls,
 	MemoryContext tupcxt = NULL;
 	MemoryContext oldcxt = NULL;
 
-	revmap = brinRevmapInitialize(idxRel, &pagesPerRange);
+	revmap = brinRevmapInitialize(idxRel, &pagesPerRange, NULL);
 
 	for (;;)
 	{
@@ -152,7 +152,7 @@ brininsert(Relation idxRel, Datum *values, bool *nulls,
 		/* normalize the block number to be the first block in the range */
 		heapBlk = (heapBlk / pagesPerRange) * pagesPerRange;
 		brtup = brinGetTupleForHeapBlock(revmap, heapBlk, &buf, &off, NULL,
-										 BUFFER_LOCK_SHARE);
+										 BUFFER_LOCK_SHARE, NULL);
 
 		/* if range is unsummarized, there's nothing to do */
 		if (!brtup)
@@ -284,7 +284,8 @@ brinbeginscan(Relation r, int nkeys, int norderbys)
 	scan = RelationGetIndexScan(r, nkeys, norderbys);
 
 	opaque = (BrinOpaque *) palloc(sizeof(BrinOpaque));
-	opaque->bo_rmAccess = brinRevmapInitialize(r, &opaque->bo_pagesPerRange);
+	opaque->bo_rmAccess = brinRevmapInitialize(r, &opaque->bo_pagesPerRange,
+											   scan->xs_snapshot);
 	opaque->bo_bdesc = brin_build_desc(r);
 	scan->opaque = opaque;
 
@@ -367,7 +368,8 @@ bringetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 		MemoryContextResetAndDeleteChildren(perRangeCxt);
 
 		tup = brinGetTupleForHeapBlock(opaque->bo_rmAccess, heapBlk, &buf,
-									   &off, &size, BUFFER_LOCK_SHARE);
+									   &off, &size, BUFFER_LOCK_SHARE,
+									   scan->xs_snapshot);
 		if (tup)
 		{
 			tup = brin_copy_tuple(tup, size);
@@ -645,7 +647,7 @@ brinbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	/*
 	 * Initialize our state, including the deformed tuple state.
 	 */
-	revmap = brinRevmapInitialize(index, &pagesPerRange);
+	revmap = brinRevmapInitialize(index, &pagesPerRange, NULL);
 	state = initialize_brin_buildstate(index, revmap, pagesPerRange);
 
 	/*
@@ -1040,7 +1042,8 @@ summarize_range(IndexInfo *indexInfo, BrinBuildState *state, Relation heapRel,
 		 * the same.)
 		 */
 		phtup = brinGetTupleForHeapBlock(state->bs_rmAccess, heapBlk, &phbuf,
-										 &offset, &phsz, BUFFER_LOCK_SHARE);
+										 &offset, &phsz, BUFFER_LOCK_SHARE,
+										 NULL);
 		/* the placeholder tuple must exist */
 		if (phtup == NULL)
 			elog(ERROR, "missing placeholder tuple");
@@ -1075,7 +1078,7 @@ brinsummarize(Relation index, Relation heapRel, double *numSummarized,
 	BlockNumber pagesPerRange;
 	Buffer		buf;
 
-	revmap = brinRevmapInitialize(index, &pagesPerRange);
+	revmap = brinRevmapInitialize(index, &pagesPerRange, NULL);
 
 	/*
 	 * Scan the revmap to find unsummarized items.
@@ -1090,7 +1093,7 @@ brinsummarize(Relation index, Relation heapRel, double *numSummarized,
 		CHECK_FOR_INTERRUPTS();
 
 		tup = brinGetTupleForHeapBlock(revmap, heapBlk, &buf, &off, NULL,
-									   BUFFER_LOCK_SHARE);
+									   BUFFER_LOCK_SHARE, NULL);
 		if (tup == NULL)
 		{
 			/* no revmap entry for this heap range. Summarize it. */

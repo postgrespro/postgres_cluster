@@ -89,7 +89,7 @@
 /* Write a Node field */
 #define WRITE_NODE_FIELD(fldname) \
 	(appendStringInfo(str, " :" CppAsString(fldname) " "), \
-	 _outNode(str, node->fldname))
+	 outNode(str, node->fldname))
 
 /* Write a bitmapset field */
 #define WRITE_BITMAPSET_FIELD(fldname) \
@@ -98,8 +98,6 @@
 
 
 #define booltostr(x)  ((x) ? "true" : "false")
-
-static void _outNode(StringInfo str, const void *obj);
 
 
 /*
@@ -169,7 +167,7 @@ _outList(StringInfo str, const List *node)
 		 */
 		if (IsA(node, List))
 		{
-			_outNode(str, lfirst(lc));
+			outNode(str, lfirst(lc));
 			if (lnext(lc))
 				appendStringInfoChar(str, ' ');
 		}
@@ -214,8 +212,8 @@ outBitmapset(StringInfo str, const Bitmapset *bms)
 /*
  * Print the value of a Datum given its type.
  */
-static void
-_outDatum(StringInfo str, Datum value, int typlen, bool typbyval)
+void
+outDatum(StringInfo str, Datum value, int typlen, bool typbyval)
 {
 	Size		length,
 				i;
@@ -356,6 +354,7 @@ _outModifyTable(StringInfo str, const ModifyTable *node)
 	WRITE_NODE_FIELD(withCheckOptionLists);
 	WRITE_NODE_FIELD(returningLists);
 	WRITE_NODE_FIELD(fdwPrivLists);
+	WRITE_BITMAPSET_FIELD(fdwDirectModifyPlans);
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_INT_FIELD(epqParam);
 	WRITE_ENUM_FIELD(onConflictAction, OnConflictAction);
@@ -608,6 +607,7 @@ _outForeignScan(StringInfo str, const ForeignScan *node)
 
 	_outScanInfo(str, (const Scan *) node);
 
+	WRITE_ENUM_FIELD(operation, CmdType);
 	WRITE_OID_FIELD(fs_server);
 	WRITE_NODE_FIELD(fdw_exprs);
 	WRITE_NODE_FIELD(fdw_private);
@@ -630,11 +630,9 @@ _outCustomScan(StringInfo str, const CustomScan *node)
 	WRITE_NODE_FIELD(custom_private);
 	WRITE_NODE_FIELD(custom_scan_tlist);
 	WRITE_BITMAPSET_FIELD(custom_relids);
-	/* Dump library and symbol name instead of raw pointer */
+	/* CustomName is a key to lookup CustomScanMethods */
 	appendStringInfoString(str, " :methods ");
-	_outToken(str, node->methods->LibraryName);
-	appendStringInfoChar(str, ' ');
-	_outToken(str, node->methods->SymbolName);
+	_outToken(str, node->methods->CustomName);
 }
 
 static void
@@ -708,6 +706,7 @@ _outAgg(StringInfo str, const Agg *node)
 	WRITE_ENUM_FIELD(aggstrategy, AggStrategy);
 	WRITE_BOOL_FIELD(combineStates);
 	WRITE_BOOL_FIELD(finalizeAggs);
+	WRITE_BOOL_FIELD(serialStates);
 	WRITE_INT_FIELD(numCols);
 
 	appendStringInfoString(str, " :grpColIdx");
@@ -1008,7 +1007,7 @@ _outConst(StringInfo str, const Const *node)
 	if (node->constisnull)
 		appendStringInfoString(str, "<>");
 	else
-		_outDatum(str, node->constvalue, node->constlen, node->constbyval);
+		outDatum(str, node->constvalue, node->constlen, node->constbyval);
 }
 
 static void
@@ -1031,6 +1030,7 @@ _outAggref(StringInfo str, const Aggref *node)
 
 	WRITE_OID_FIELD(aggfnoid);
 	WRITE_OID_FIELD(aggtype);
+	WRITE_OID_FIELD(aggoutputtype);
 	WRITE_OID_FIELD(aggcollid);
 	WRITE_OID_FIELD(inputcollid);
 	WRITE_NODE_FIELD(aggdirectargs);
@@ -1040,6 +1040,8 @@ _outAggref(StringInfo str, const Aggref *node)
 	WRITE_NODE_FIELD(aggfilter);
 	WRITE_BOOL_FIELD(aggstar);
 	WRITE_BOOL_FIELD(aggvariadic);
+	WRITE_BOOL_FIELD(aggcombine);
+	WRITE_BOOL_FIELD(aggpartial);
 	WRITE_CHAR_FIELD(aggkind);
 	WRITE_UINT_FIELD(agglevelsup);
 	WRITE_LOCATION_FIELD(location);
@@ -2127,11 +2129,22 @@ _outIndexOptInfo(StringInfo str, const IndexOptInfo *node)
 	/* indexprs is redundant since we print indextlist */
 	WRITE_NODE_FIELD(indpred);
 	WRITE_NODE_FIELD(indextlist);
+	WRITE_NODE_FIELD(indrestrictinfo);
 	WRITE_BOOL_FIELD(predOK);
 	WRITE_BOOL_FIELD(unique);
 	WRITE_BOOL_FIELD(immediate);
 	WRITE_BOOL_FIELD(hypothetical);
 	/* we don't bother with fields copied from the index AM's API struct */
+}
+
+static void
+_outForeignKeyOptInfo(StringInfo str, const ForeignKeyOptInfo *node)
+{
+	WRITE_NODE_TYPE("FOREIGNKEYOPTINFO");
+
+	WRITE_OID_FIELD(conrelid);
+	WRITE_OID_FIELD(confrelid);
+	WRITE_INT_FIELD(nkeys);
 }
 
 static void
@@ -2329,7 +2342,7 @@ _outPlannerParamItem(StringInfo str, const PlannerParamItem *node)
 static void
 _outExtensibleNode(StringInfo str, const ExtensibleNode *node)
 {
-	const ExtensibleNodeMethods  *methods;
+	const ExtensibleNodeMethods *methods;
 
 	methods = GetExtensibleNodeMethods(node->extnodename, false);
 
@@ -3206,11 +3219,11 @@ _outConstraint(StringInfo str, const Constraint *node)
 
 
 /*
- * _outNode -
+ * outNode -
  *	  converts a Node into ascii string and append it to 'str'
  */
-static void
-_outNode(StringInfo str, const void *obj)
+void
+outNode(StringInfo str, const void *obj)
 {
 	if (obj == NULL)
 		appendStringInfoString(str, "<>");
@@ -3604,6 +3617,9 @@ _outNode(StringInfo str, const void *obj)
 			case T_IndexOptInfo:
 				_outIndexOptInfo(str, obj);
 				break;
+			case T_ForeignKeyOptInfo:
+				_outForeignKeyOptInfo(str, obj);
+				break;
 			case T_EquivalenceClass:
 				_outEquivalenceClass(str, obj);
 				break;
@@ -3785,7 +3801,7 @@ _outNode(StringInfo str, const void *obj)
 
 				/*
 				 * This should be an ERROR, but it's too useful to be able to
-				 * dump structures that _outNode only understands part of.
+				 * dump structures that outNode only understands part of.
 				 */
 				elog(WARNING, "could not dump unrecognized node type: %d",
 					 (int) nodeTag(obj));
@@ -3806,6 +3822,6 @@ nodeToString(const void *obj)
 
 	/* see stringinfo.h for an explanation of this maneuver */
 	initStringInfo(&str);
-	_outNode(&str, obj);
+	outNode(&str, obj);
 	return str.data;
 }

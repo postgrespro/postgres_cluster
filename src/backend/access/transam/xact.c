@@ -1163,6 +1163,24 @@ RecordTransactionCommit(void)
 		Assert(nchildren == 0);
 
 		/*
+		 * Transactions without an assigned xid can contain invalidation
+		 * messages (e.g. explicit relcache invalidations or catcache
+		 * invalidations for inplace updates); standbys need to process
+		 * those. We can't emit a commit record without an xid, and we don't
+		 * want to force assigning an xid, because that'd be problematic for
+		 * e.g. vacuum.  Hence we emit a bespoke record for the
+		 * invalidations. We don't want to use that in case a commit record is
+		 * emitted, so they happen synchronously with commits (besides not
+		 * wanting to emit more WAL recoreds).
+		 */
+		if (nmsgs != 0)
+		{
+			LogStandbyInvalidations(nmsgs, invalMessages,
+									RelcacheInitFileInval);
+			wrote_xlog = true; /* not strictly necessary */
+		}
+
+		/*
 		 * If we didn't create XLOG entries, we're done here; otherwise we
 		 * should trigger flushing those entries the same as a commit record
 		 * would.  This will primarily happen for HOT pruning and the like; we
@@ -1253,7 +1271,7 @@ RecordTransactionCommit(void)
 	 * this case, but we don't currently try to do that.  It would certainly
 	 * cause problems at least in Hot Standby mode, where the
 	 * KnownAssignedXids machinery requires tracking every XID assignment.  It
-	 * might be OK to skip it only when wal_level < hot_standby, but for now
+	 * might be OK to skip it only when wal_level < replica, but for now
 	 * we don't.)
 	 *
 	 * However, if we're doing cleanup of any non-temp rels or committing any
@@ -1323,7 +1341,7 @@ RecordTransactionCommit(void)
 	 * in the procarray and continue to hold locks.
 	 */
 	if (wrote_xlog && markXidCommitted)
-		SyncRepWaitForLSN(XactLastRecEnd);
+		SyncRepWaitForLSN(XactLastRecEnd, true);
 
 	/* remember end of last commit record */
 	XactLastCommitEnd = XactLastRecEnd;
@@ -5127,6 +5145,13 @@ XactLogCommitRecord(TimestampTz commit_time,
 		xl_xinfo.xinfo |= XACT_COMPLETION_FORCE_SYNC_COMMIT;
 
 	/*
+	 * Check if the caller would like to ask standbys for immediate feedback
+	 * once this commit is applied.
+	 */
+	if (synchronous_commit >= SYNCHRONOUS_COMMIT_REMOTE_APPLY)
+		xl_xinfo.xinfo |= XACT_COMPLETION_APPLY_FEEDBACK;
+
+	/*
 	 * Relcache invalidations requires information about the current database
 	 * and so does logical decoding.
 	 */
@@ -5361,7 +5386,8 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 		LWLockRelease(XidGenLock);
 	}
 
-	Assert(!!(parsed->xinfo & XACT_XINFO_HAS_ORIGIN) == (origin_id != InvalidRepOriginId));
+	Assert(((parsed->xinfo & XACT_XINFO_HAS_ORIGIN) == 0) ==
+		   (origin_id == InvalidRepOriginId));
 
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
 		commit_time = parsed->origin_timestamp;
@@ -5484,6 +5510,13 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
 	if (XactCompletionForceSyncCommit(parsed->xinfo))
 		XLogFlush(lsn);
 
+	/*
+	 * If asked by the primary (because someone is waiting for a synchronous
+	 * commit = remote_apply), we will need to ask walreceiver to send a
+	 * reply immediately.
+	 */
+	if (XactCompletionApplyFeedback(parsed->xinfo))
+		XLogRequestWalReceiverReply();
 }
 
 /*

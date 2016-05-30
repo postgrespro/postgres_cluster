@@ -25,6 +25,8 @@
 #include "pg_backup_archiver.h"
 #include "pg_backup_db.h"
 #include "pg_backup_utils.h"
+#include "dumputils.h"
+#include "fe_utils/string_utils.h"
 
 #include <ctype.h>
 #include <fcntl.h>
@@ -2324,6 +2326,9 @@ _allocAH(const char *FileSpec, const ArchiveFormat fmt,
 	return AH;
 }
 
+/*
+ * Write out all data (tables & blobs)
+ */
 void
 WriteDataChunks(ArchiveHandle *AH, ParallelState *pstate)
 {
@@ -2341,15 +2346,18 @@ WriteDataChunks(ArchiveHandle *AH, ParallelState *pstate)
 		{
 			/*
 			 * If we are in a parallel backup, then we are always the master
-			 * process.
+			 * process.  Dispatch each data-transfer job to a worker.
 			 */
 			EnsureIdleWorker(AH, pstate);
-			Assert(GetIdleWorker(pstate) != NO_SLOT);
 			DispatchJobForTocEntry(AH, pstate, te, ACT_DUMP);
 		}
 		else
 			WriteDataChunksForTocEntry(AH, te);
 	}
+
+	/*
+	 * If parallel, wait for workers to finish.
+	 */
 	EnsureWorkersFinished(AH, pstate);
 }
 
@@ -2656,35 +2664,35 @@ StrictNamesCheck(RestoreOptions *ropt)
 	{
 		missing_name = simple_string_list_not_touched(&ropt->schemaNames);
 		if (missing_name != NULL)
-			exit_horribly(modulename, "Schema \"%s\" not found.\n", missing_name);
+			exit_horribly(modulename, "schema \"%s\" not found\n", missing_name);
 	}
 
 	if (ropt->tableNames.head != NULL)
 	{
 		missing_name = simple_string_list_not_touched(&ropt->tableNames);
 		if (missing_name != NULL)
-			exit_horribly(modulename, "Table \"%s\" not found.\n", missing_name);
+			exit_horribly(modulename, "table \"%s\" not found\n", missing_name);
 	}
 
 	if (ropt->indexNames.head != NULL)
 	{
 		missing_name = simple_string_list_not_touched(&ropt->indexNames);
 		if (missing_name != NULL)
-			exit_horribly(modulename, "Index \"%s\" not found.\n", missing_name);
+			exit_horribly(modulename, "index \"%s\" not found\n", missing_name);
 	}
 
 	if (ropt->functionNames.head != NULL)
 	{
 		missing_name = simple_string_list_not_touched(&ropt->functionNames);
 		if (missing_name != NULL)
-			exit_horribly(modulename, "Function \"%s\" not found.\n", missing_name);
+			exit_horribly(modulename, "function \"%s\" not found\n", missing_name);
 	}
 
 	if (ropt->triggerNames.head != NULL)
 	{
 		missing_name = simple_string_list_not_touched(&ropt->triggerNames);
 		if (missing_name != NULL)
-			exit_horribly(modulename, "Trigger \"%s\" not found.\n", missing_name);
+			exit_horribly(modulename, "trigger \"%s\" not found\n", missing_name);
 	}
 }
 
@@ -3473,17 +3481,7 @@ WriteHead(ArchiveHandle *AH)
 	(*AH->WriteBytePtr) (AH, AH->intSize);
 	(*AH->WriteBytePtr) (AH, AH->offSize);
 	(*AH->WriteBytePtr) (AH, AH->format);
-
-#ifndef HAVE_LIBZ
-	if (AH->compression != 0)
-		write_msg(modulename, "WARNING: requested compression not available in this "
-				  "installation -- archive will be uncompressed\n");
-
-	AH->compression = 0;
-#endif
-
 	WriteInt(AH, AH->compression);
-
 	crtm = *localtime(&AH->createDate);
 	WriteInt(AH, crtm.tm_sec);
 	WriteInt(AH, crtm.tm_min);
@@ -3827,13 +3825,11 @@ restore_toc_entries_parallel(ArchiveHandle *AH, ParallelState *pstate,
 
 			par_list_remove(next_work_item);
 
-			Assert(GetIdleWorker(pstate) != NO_SLOT);
 			DispatchJobForTocEntry(AH, pstate, next_work_item, ACT_RESTORE);
 		}
 		else
 		{
 			/* at least one child is working and we have nothing ready. */
-			Assert(!IsEveryWorkerIdle(pstate));
 		}
 
 		for (;;)

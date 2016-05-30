@@ -24,6 +24,7 @@
 #include "catalog/pg_class.h"
 #include "foreign/fdwapi.h"
 #include "miscadmin.h"
+#include "nodes/extensible.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
@@ -34,7 +35,6 @@
 #include "optimizer/planmain.h"
 #include "optimizer/planner.h"
 #include "optimizer/predtest.h"
-#include "optimizer/prep.h"
 #include "optimizer/restrictinfo.h"
 #include "optimizer/subselect.h"
 #include "optimizer/tlist.h"
@@ -493,8 +493,25 @@ create_scan_plan(PlannerInfo *root, Path *best_path, int flags)
 	 * Extract the relevant restriction clauses from the parent relation. The
 	 * executor must apply all these restrictions during the scan, except for
 	 * pseudoconstants which we'll take care of below.
+	 *
+	 * If this is a plain indexscan or index-only scan, we need not consider
+	 * restriction clauses that are implied by the index's predicate, so use
+	 * indrestrictinfo not baserestrictinfo.  Note that we can't do that for
+	 * bitmap indexscans, since there's not necessarily a single index
+	 * involved; but it doesn't matter since create_bitmap_scan_plan() will be
+	 * able to get rid of such clauses anyway via predicate proof.
 	 */
-	scan_clauses = rel->baserestrictinfo;
+	switch (best_path->pathtype)
+	{
+		case T_IndexScan:
+		case T_IndexOnlyScan:
+			Assert(IsA(best_path, IndexPath));
+			scan_clauses = ((IndexPath *) best_path)->indexinfo->indrestrictinfo;
+			break;
+		default:
+			scan_clauses = rel->baserestrictinfo;
+			break;
+	}
 
 	/*
 	 * If this is a parameterized scan, we also need to enforce all the join
@@ -770,10 +787,14 @@ use_physical_tlist(PlannerInfo *root, Path *path, int flags)
 	 * to emit any sort/group columns that are not simple Vars.  (If they are
 	 * simple Vars, they should appear in the physical tlist, and
 	 * apply_pathtarget_labeling_to_tlist will take care of getting them
-	 * labeled again.)
+	 * labeled again.)	We also have to check that no two sort/group columns
+	 * are the same Var, else that element of the physical tlist would need
+	 * conflicting ressortgroupref labels.
 	 */
 	if ((flags & CP_LABEL_TLIST) && path->pathtarget->sortgrouprefs)
 	{
+		Bitmapset  *sortgroupatts = NULL;
+
 		i = 0;
 		foreach(lc, path->pathtarget->exprs)
 		{
@@ -782,7 +803,14 @@ use_physical_tlist(PlannerInfo *root, Path *path, int flags)
 			if (path->pathtarget->sortgrouprefs[i])
 			{
 				if (expr && IsA(expr, Var))
-					 /* okay */ ;
+				{
+					int			attno = ((Var *) expr)->varattno;
+
+					attno -= FirstLowInvalidHeapAttributeNumber;
+					if (bms_is_member(attno, sortgroupatts))
+						return false;
+					sortgroupatts = bms_add_member(sortgroupatts, attno);
+				}
 				else
 					return false;
 			}
@@ -1278,6 +1306,7 @@ create_unique_plan(PlannerInfo *root, UniquePath *best_path, int flags)
 								 AGG_HASHED,
 								 false,
 								 true,
+								 false,
 								 numGroupCols,
 								 groupColIdx,
 								 groupOperators,
@@ -1396,18 +1425,21 @@ create_projection_plan(PlannerInfo *root, ProjectionPath *best_path)
 	tlist = build_path_tlist(root, &best_path->path);
 
 	/*
-	 * Although the ProjectionPath node wouldn't have been made unless its
-	 * pathtarget is different from the subpath's, it can still happen that
-	 * the constructed tlist matches the subplan's.  (An example is that
-	 * MergeAppend doesn't project, so we would have thought that we needed a
-	 * projection to attach resjunk sort columns to its output ... but
-	 * create_merge_append_plan might have added those same resjunk sort
-	 * columns to both MergeAppend and its children.)  So, if the desired
-	 * tlist is the same expression-wise as the subplan's, just jam it in
-	 * there.  We'll have charged for a Result that doesn't actually appear in
-	 * the plan, but that's better than having a Result we don't need.
+	 * We might not really need a Result node here.  There are several ways
+	 * that this can happen.  For example, MergeAppend doesn't project, so we
+	 * would have thought that we needed a projection to attach resjunk sort
+	 * columns to its output ... but create_merge_append_plan might have
+	 * added those same resjunk sort columns to both MergeAppend and its
+	 * children.  Alternatively, apply_projection_to_path might have created
+	 * a projection path as the subpath of a Gather node even though the
+	 * subpath was projection-capable.  So, if the subpath is capable of
+	 * projection or the desired tlist is the same expression-wise as the
+	 * subplan's, just jam it in there.  We'll have charged for a Result that
+	 * doesn't actually appear in the plan, but that's better than having a
+	 * Result we don't need.
 	 */
-	if (tlist_same_exprs(tlist, subplan->targetlist))
+	if (is_projection_capable_path(best_path->subpath) ||
+		tlist_same_exprs(tlist, subplan->targetlist))
 	{
 		plan = subplan;
 		plan->targetlist = tlist;
@@ -1572,8 +1604,9 @@ create_agg_plan(PlannerInfo *root, AggPath *best_path)
 
 	plan = make_agg(tlist, quals,
 					best_path->aggstrategy,
-					false,
-					true,
+					best_path->combineStates,
+					best_path->finalizeAggs,
+					best_path->serialStates,
 					list_length(best_path->groupClause),
 					extract_grouping_cols(best_path->groupClause,
 										  subplan->targetlist),
@@ -1728,6 +1761,7 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 										 AGG_SORTED,
 										 false,
 										 true,
+										 false,
 									   list_length((List *) linitial(gsets)),
 										 new_grpColIdx,
 										 extract_grouping_ops(groupClause),
@@ -1764,6 +1798,7 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 						(numGroupCols > 0) ? AGG_SORTED : AGG_PLAIN,
 						false,
 						true,
+						false,
 						numGroupCols,
 						top_grpColIdx,
 						extract_grouping_ops(groupClause),
@@ -2377,11 +2412,6 @@ create_indexscan_plan(PlannerInfo *root,
 	 * first input contains only immutable functions, so we have to check
 	 * that.)
 	 *
-	 * We can also discard quals that are implied by a partial index's
-	 * predicate, but only in a plain SELECT; when scanning a target relation
-	 * of UPDATE/DELETE/SELECT FOR UPDATE, we must leave such quals in the
-	 * plan so that they'll be properly rechecked by EvalPlanQual testing.
-	 *
 	 * Note: if you change this bit of code you should also look at
 	 * extract_nonindex_conditions() in costsize.c.
 	 */
@@ -2397,21 +2427,9 @@ create_indexscan_plan(PlannerInfo *root,
 			continue;			/* simple duplicate */
 		if (is_redundant_derived_clause(rinfo, indexquals))
 			continue;			/* derived from same EquivalenceClass */
-		if (!contain_mutable_functions((Node *) rinfo->clause))
-		{
-			List	   *clausel = list_make1(rinfo->clause);
-
-			if (predicate_implied_by(clausel, indexquals))
-				continue;		/* provably implied by indexquals */
-			if (best_path->indexinfo->indpred)
-			{
-				if (baserelid != root->parse->resultRelation &&
-					get_plan_rowmark(root->rowMarks, baserelid) == NULL)
-					if (predicate_implied_by(clausel,
-											 best_path->indexinfo->indpred))
-						continue;		/* implied by index predicate */
-			}
-		}
+		if (!contain_mutable_functions((Node *) rinfo->clause) &&
+			predicate_implied_by(list_make1(rinfo->clause), indexquals))
+			continue;			/* provably implied by indexquals */
 		qpqual = lappend(qpqual, rinfo);
 	}
 
@@ -2548,11 +2566,12 @@ create_bitmap_scan_plan(PlannerInfo *root,
 	 * redundant with any top-level indexqual by virtue of being generated
 	 * from the same EC.  After that, try predicate_implied_by().
 	 *
-	 * Unlike create_indexscan_plan(), we need take no special thought here
-	 * for partial index predicates; this is because the predicate conditions
-	 * are already listed in bitmapqualorig and indexquals.  Bitmap scans have
-	 * to do it that way because predicate conditions need to be rechecked if
-	 * the scan becomes lossy, so they have to be included in bitmapqualorig.
+	 * Unlike create_indexscan_plan(), the predicate_implied_by() test here is
+	 * useful for getting rid of qpquals that are implied by index predicates,
+	 * because the predicate conditions are included in the "indexquals"
+	 * returned by create_bitmap_subplan().  Bitmap scans have to do it that
+	 * way because predicate conditions need to be rechecked if the scan
+	 * becomes lossy, so they have to be included in bitmapqualorig.
 	 */
 	qpqual = NIL;
 	foreach(l, scan_clauses)
@@ -2567,13 +2586,9 @@ create_bitmap_scan_plan(PlannerInfo *root,
 			continue;			/* simple duplicate */
 		if (rinfo->parent_ec && list_member_ptr(indexECs, rinfo->parent_ec))
 			continue;			/* derived from same EquivalenceClass */
-		if (!contain_mutable_functions(clause))
-		{
-			List	   *clausel = list_make1(clause);
-
-			if (predicate_implied_by(clausel, indexquals))
-				continue;		/* provably implied by indexquals */
-		}
+		if (!contain_mutable_functions(clause) &&
+			predicate_implied_by(list_make1(clause), indexquals))
+			continue;			/* provably implied by indexquals */
 		qpqual = lappend(qpqual, rinfo);
 	}
 
@@ -4903,6 +4918,7 @@ make_foreignscan(List *qptlist,
 	plan->lefttree = outer_plan;
 	plan->righttree = NULL;
 	node->scan.scanrelid = scanrelid;
+	node->operation = CMD_SELECT;
 	/* fs_server will be filled in by create_foreignscan_plan */
 	node->fs_server = InvalidOid;
 	node->fdw_exprs = fdw_exprs;
@@ -5631,7 +5647,7 @@ materialize_finished_plan(Plan *subplan)
 Agg *
 make_agg(List *tlist, List *qual,
 		 AggStrategy aggstrategy,
-		 bool combineStates, bool finalizeAggs,
+		 bool combineStates, bool finalizeAggs, bool serialStates,
 		 int numGroupCols, AttrNumber *grpColIdx, Oid *grpOperators,
 		 List *groupingSets, List *chain,
 		 double dNumGroups, Plan *lefttree)
@@ -5646,6 +5662,7 @@ make_agg(List *tlist, List *qual,
 	node->aggstrategy = aggstrategy;
 	node->combineStates = combineStates;
 	node->finalizeAggs = finalizeAggs;
+	node->serialStates = serialStates;
 	node->numCols = numGroupCols;
 	node->grpColIdx = grpColIdx;
 	node->grpOperators = grpOperators;
@@ -6018,6 +6035,7 @@ make_modifytable(PlannerInfo *root,
 {
 	ModifyTable *node = makeNode(ModifyTable);
 	List	   *fdw_private_list;
+	Bitmapset  *direct_modify_plans;
 	ListCell   *lc;
 	int			i;
 
@@ -6075,12 +6093,14 @@ make_modifytable(PlannerInfo *root,
 	 * construct private plan data, and accumulate it all into a list.
 	 */
 	fdw_private_list = NIL;
+	direct_modify_plans = NULL;
 	i = 0;
 	foreach(lc, resultRelations)
 	{
 		Index		rti = lfirst_int(lc);
 		FdwRoutine *fdwroutine;
 		List	   *fdw_private;
+		bool		direct_modify;
 
 		/*
 		 * If possible, we want to get the FdwRoutine from our RelOptInfo for
@@ -6107,7 +6127,23 @@ make_modifytable(PlannerInfo *root,
 				fdwroutine = NULL;
 		}
 
+		/*
+		 * If the target foreign table has any row-level triggers, we can't
+		 * modify the foreign table directly.
+		 */
+		direct_modify = false;
 		if (fdwroutine != NULL &&
+			fdwroutine->PlanDirectModify != NULL &&
+			fdwroutine->BeginDirectModify != NULL &&
+			fdwroutine->IterateDirectModify != NULL &&
+			fdwroutine->EndDirectModify != NULL &&
+			!has_row_triggers(root, rti, operation))
+			direct_modify = fdwroutine->PlanDirectModify(root, node, rti, i);
+		if (direct_modify)
+			direct_modify_plans = bms_add_member(direct_modify_plans, i);
+
+		if (!direct_modify &&
+			fdwroutine != NULL &&
 			fdwroutine->PlanForeignModify != NULL)
 			fdw_private = fdwroutine->PlanForeignModify(root, node, rti, i);
 		else
@@ -6116,6 +6152,7 @@ make_modifytable(PlannerInfo *root,
 		i++;
 	}
 	node->fdwPrivLists = fdw_private_list;
+	node->fdwDirectModifyPlans = direct_modify_plans;
 
 	return node;
 }

@@ -26,7 +26,7 @@
 #include "help.h"
 #include "input.h"
 #include "mainloop.h"
-#include "print.h"
+#include "fe_utils/print.h"
 #include "settings.h"
 
 
@@ -135,6 +135,7 @@ main(int argc, char *argv[])
 	pset.queryFout = stdout;
 	pset.queryFoutPipe = false;
 	pset.copyStream = NULL;
+	pset.last_error_result = NULL;
 	pset.cur_cmd_source = stdin;
 	pset.cur_cmd_interactive = false;
 
@@ -336,10 +337,10 @@ main(int argc, char *argv[])
 				if (pset.echo == PSQL_ECHO_ALL)
 					puts(cell->val);
 
-				scan_state = psql_scan_create();
+				scan_state = psql_scan_create(&psqlscan_callbacks);
 				psql_scan_setup(scan_state,
-								cell->val,
-								strlen(cell->val));
+								cell->val, strlen(cell->val),
+								pset.encoding, standard_strings());
 
 				successResult = HandleSlashCmds(scan_state, NULL) != PSQL_CMD_ERROR
 					? EXIT_SUCCESS : EXIT_FAILURE;

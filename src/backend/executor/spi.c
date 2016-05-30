@@ -2220,12 +2220,14 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 					CreateTableAsStmt *ctastmt = (CreateTableAsStmt *) stmt;
 
 					if (strncmp(completionTag, "SELECT ", 7) == 0)
-						_SPI_current->processed = pg_strtouint64(completionTag + 7,
-															 NULL, 10);
-					else if (*completionTag == '\0' && ctastmt->if_not_exists)
-						_SPI_current->processed = 0;
+						_SPI_current->processed =
+							pg_strtouint64(completionTag + 7, NULL, 10);
 					else
-						Assert(false);
+					{
+						/* Must be an IF NOT EXISTS that did nothing */
+						Assert(ctastmt->if_not_exists);
+						_SPI_current->processed = 0;
+					}
 
 					/*
 					 * For historical reasons, if CREATE TABLE AS was spelled

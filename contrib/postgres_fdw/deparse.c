@@ -1315,6 +1315,73 @@ deparseUpdateSql(StringInfo buf, PlannerInfo *root,
 }
 
 /*
+ * deparse remote UPDATE statement
+ *
+ * The statement text is appended to buf, and we also create an integer List
+ * of the columns being retrieved by RETURNING (if any), which is returned
+ * to *retrieved_attrs.
+ */
+void
+deparseDirectUpdateSql(StringInfo buf, PlannerInfo *root,
+					   Index rtindex, Relation rel,
+					   List *targetlist,
+					   List *targetAttrs,
+					   List *remote_conds,
+					   List **params_list,
+					   List *returningList,
+					   List **retrieved_attrs)
+{
+	RelOptInfo *baserel = root->simple_rel_array[rtindex];
+	deparse_expr_cxt context;
+	int			nestlevel;
+	bool		first;
+	ListCell   *lc;
+
+	/* Set up context struct for recursion */
+	context.root = root;
+	context.foreignrel = baserel;
+	context.buf = buf;
+	context.params_list = params_list;
+
+	appendStringInfoString(buf, "UPDATE ");
+	deparseRelation(buf, rel);
+	appendStringInfoString(buf, " SET ");
+
+	/* Make sure any constants in the exprs are printed portably */
+	nestlevel = set_transmission_modes();
+
+	first = true;
+	foreach(lc, targetAttrs)
+	{
+		int			attnum = lfirst_int(lc);
+		TargetEntry *tle = get_tle_by_resno(targetlist, attnum);
+
+		if (!tle)
+			elog(ERROR, "attribute number %d not found in UPDATE targetlist",
+				 attnum);
+
+		if (!first)
+			appendStringInfoString(buf, ", ");
+		first = false;
+
+		deparseColumnRef(buf, rtindex, attnum, root, false);
+		appendStringInfoString(buf, " = ");
+		deparseExpr((Expr *) tle->expr, &context);
+	}
+
+	reset_transmission_modes(nestlevel);
+
+	if (remote_conds)
+	{
+		appendStringInfo(buf, " WHERE ");
+		appendConditions(remote_conds, &context);
+	}
+
+	deparseReturningList(buf, root, rtindex, rel, false,
+						 returningList, retrieved_attrs);
+}
+
+/*
  * deparse remote DELETE statement
  *
  * The statement text is appended to buf, and we also create an integer List
@@ -1333,6 +1400,43 @@ deparseDeleteSql(StringInfo buf, PlannerInfo *root,
 
 	deparseReturningList(buf, root, rtindex, rel,
 					   rel->trigdesc && rel->trigdesc->trig_delete_after_row,
+						 returningList, retrieved_attrs);
+}
+
+/*
+ * deparse remote DELETE statement
+ *
+ * The statement text is appended to buf, and we also create an integer List
+ * of the columns being retrieved by RETURNING (if any), which is returned
+ * to *retrieved_attrs.
+ */
+void
+deparseDirectDeleteSql(StringInfo buf, PlannerInfo *root,
+					   Index rtindex, Relation rel,
+					   List *remote_conds,
+					   List **params_list,
+					   List *returningList,
+					   List **retrieved_attrs)
+{
+	RelOptInfo *baserel = root->simple_rel_array[rtindex];
+	deparse_expr_cxt context;
+
+	/* Set up context struct for recursion */
+	context.root = root;
+	context.foreignrel = baserel;
+	context.buf = buf;
+	context.params_list = params_list;
+
+	appendStringInfoString(buf, "DELETE FROM ");
+	deparseRelation(buf, rel);
+
+	if (remote_conds)
+	{
+		appendStringInfo(buf, " WHERE ");
+		appendConditions(remote_conds, &context);
+	}
+
+	deparseReturningList(buf, root, rtindex, rel, false,
 						 returningList, retrieved_attrs);
 }
 
@@ -1467,12 +1571,37 @@ deparseColumnRef(StringInfo buf, int varno, int varattno, PlannerInfo *root,
 {
 	RangeTblEntry *rte;
 
-	/* varattno can be a whole-row reference, ctid or a regular table column */
 	if (varattno == SelfItemPointerAttributeNumber)
 	{
+		/* We support fetching the remote side's CTID. */
 		if (qualify_col)
 			ADD_REL_QUALIFIER(buf, varno);
 		appendStringInfoString(buf, "ctid");
+	}
+	else if (varattno < 0)
+	{
+		/*
+		 * All other system attributes are fetched as 0, except for table OID,
+		 * which is fetched as the local table OID.  However, we must be
+		 * careful; the table could be beneath an outer join, in which case
+		 * it must go to NULL whenever the rest of the row does.
+		 */
+		Oid		fetchval = 0;
+
+		if (varattno == TableOidAttributeNumber)
+		{
+			rte = planner_rt_fetch(varno, root);
+			fetchval = rte->relid;
+		}
+
+		if (qualify_col)
+		{
+			appendStringInfoString(buf, "CASE WHEN ");
+			ADD_REL_QUALIFIER(buf, varno);
+			appendStringInfo(buf, "* IS NOT NULL THEN %u END", fetchval);
+		}
+		else
+			appendStringInfo(buf, "%u", fetchval);
 	}
 	else if (varattno == 0)
 	{
@@ -1502,10 +1631,29 @@ deparseColumnRef(StringInfo buf, int varno, int varattno, PlannerInfo *root,
 		 */
 		attrs_used = bms_add_member(NULL,
 									0 - FirstLowInvalidHeapAttributeNumber);
+
+		/*
+		 * In case the whole-row reference is under an outer join then it has to
+		 * go NULL whenver the rest of the row goes NULL. Deparsing a join query
+		 * would always involve multiple relations, thus qualify_col would be
+		 * true.
+		 */
+		if (qualify_col)
+		{
+			appendStringInfoString(buf, "CASE WHEN ");
+			ADD_REL_QUALIFIER(buf, varno);
+			appendStringInfo(buf, "* IS NOT NULL THEN ");
+		}
+
 		appendStringInfoString(buf, "ROW(");
 		deparseTargetList(buf, root, varno, rel, false, attrs_used, qualify_col,
 						  &retrieved_attrs);
 		appendStringInfoString(buf, ")");
+
+		/* Complete the CASE WHEN statement started above. */
+		if (qualify_col)
+			appendStringInfo(buf," END");
+
 		heap_close(rel, NoLock);
 		bms_free(attrs_used);
 	}

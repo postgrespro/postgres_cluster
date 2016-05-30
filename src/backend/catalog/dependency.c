@@ -20,6 +20,7 @@
 #include "catalog/heap.h"
 #include "catalog/index.h"
 #include "catalog/objectaccess.h"
+#include "catalog/pg_am.h"
 #include "catalog/pg_amop.h"
 #include "catalog/pg_amproc.h"
 #include "catalog/pg_attrdef.h"
@@ -38,6 +39,7 @@
 #include "catalog/pg_extension.h"
 #include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_foreign_server.h"
+#include "catalog/pg_init_privs.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
@@ -141,6 +143,7 @@ static const Oid object_classes[] = {
 	OperatorRelationId,			/* OCLASS_OPERATOR */
 	OperatorClassRelationId,	/* OCLASS_OPCLASS */
 	OperatorFamilyRelationId,	/* OCLASS_OPFAMILY */
+	AccessMethodRelationId,		/* OCLASS_AM */
 	AccessMethodOperatorRelationId,		/* OCLASS_AMOP */
 	AccessMethodProcedureRelationId,	/* OCLASS_AMPROC */
 	RewriteRelationId,			/* OCLASS_REWRITE */
@@ -194,6 +197,7 @@ static bool object_address_present_add_flags(const ObjectAddress *object,
 static bool stack_address_present_add_flags(const ObjectAddress *object,
 								int flags,
 								ObjectAddressStack *stack);
+static void DeleteInitPrivs(const ObjectAddress *object);
 
 
 /*
@@ -587,6 +591,7 @@ findDependentObjects(const ObjectAddress *object,
 		{
 			case DEPENDENCY_NORMAL:
 			case DEPENDENCY_AUTO:
+			case DEPENDENCY_AUTO_EXTENSION:
 				/* no problem */
 				break;
 			case DEPENDENCY_INTERNAL:
@@ -786,6 +791,7 @@ findDependentObjects(const ObjectAddress *object,
 				subflags = DEPFLAG_NORMAL;
 				break;
 			case DEPENDENCY_AUTO:
+			case DEPENDENCY_AUTO_EXTENSION:
 				subflags = DEPFLAG_AUTO;
 				break;
 			case DEPENDENCY_INTERNAL:
@@ -1102,12 +1108,13 @@ deleteOneObject(const ObjectAddress *object, Relation *depRel, int flags)
 
 
 	/*
-	 * Delete any comments or security labels associated with this object.
-	 * (This is a convenient place to do these things, rather than having
-	 * every object type know to do it.)
+	 * Delete any comments, security labels, or initial privileges associated
+	 * with this object.  (This is a convenient place to do these things,
+	 * rather than having every object type know to do it.)
 	 */
 	DeleteComments(object->objectId, object->classId, object->objectSubId);
 	DeleteSecurityLabel(object);
+	DeleteInitPrivs(object);
 
 	/*
 	 * CommandCounterIncrement here to ensure that preceding changes are all
@@ -1197,6 +1204,10 @@ doDeletion(const ObjectAddress *object, int flags)
 
 		case OCLASS_OPFAMILY:
 			RemoveOpFamilyById(object->objectId);
+			break;
+
+		case OCLASS_AM:
+			RemoveAccessMethodById(object->objectId);
 			break;
 
 		case OCLASS_AMOP:
@@ -1778,6 +1789,15 @@ find_expr_references_walker(Node *node,
 		add_object_address(OCLASS_TYPE, cd->resulttype, 0,
 						   context->addrs);
 	}
+	else if (IsA(node, OnConflictExpr))
+	{
+		OnConflictExpr *onconflict = (OnConflictExpr *) node;
+
+		if (OidIsValid(onconflict->constraint))
+			add_object_address(OCLASS_CONSTRAINT, onconflict->constraint, 0,
+							   context->addrs);
+		/* fall through to examine arguments */
+	}
 	else if (IsA(node, SortGroupClause))
 	{
 		SortGroupClause *sgc = (SortGroupClause *) node;
@@ -2356,6 +2376,9 @@ getObjectClass(const ObjectAddress *object)
 		case OperatorFamilyRelationId:
 			return OCLASS_OPFAMILY;
 
+		case AccessMethodRelationId:
+			return OCLASS_AM;
+
 		case AccessMethodOperatorRelationId:
 			return OCLASS_AMOP;
 
@@ -2420,4 +2443,41 @@ getObjectClass(const ObjectAddress *object)
 	/* shouldn't get here */
 	elog(ERROR, "unrecognized object class: %u", object->classId);
 	return OCLASS_CLASS;		/* keep compiler quiet */
+}
+
+/*
+ * delete initial ACL for extension objects
+ */
+static void
+DeleteInitPrivs(const ObjectAddress *object)
+{
+	Relation	relation;
+	ScanKeyData key[3];
+	SysScanDesc scan;
+	HeapTuple	oldtuple;
+
+	relation = heap_open(InitPrivsRelationId, RowExclusiveLock);
+
+	ScanKeyInit(&key[0],
+				Anum_pg_init_privs_objoid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(object->objectId));
+	ScanKeyInit(&key[1],
+				Anum_pg_init_privs_classoid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(object->classId));
+	ScanKeyInit(&key[2],
+				Anum_pg_init_privs_objsubid,
+				BTEqualStrategyNumber, F_INT4EQ,
+				Int32GetDatum(object->objectSubId));
+
+	scan = systable_beginscan(relation, InitPrivsObjIndexId, true,
+							  NULL, 3, key);
+
+	while (HeapTupleIsValid(oldtuple = systable_getnext(scan)))
+		simple_heap_delete(relation, &oldtuple->t_self);
+
+	systable_endscan(scan);
+
+	heap_close(relation, RowExclusiveLock);
 }

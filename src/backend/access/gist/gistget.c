@@ -337,6 +337,7 @@ gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem, double *myDistances,
 	LockBuffer(buffer, GIST_SHARE);
 	gistcheckpage(scan->indexRelation, buffer);
 	page = BufferGetPage(buffer);
+	TestForOldSnapshot(scan->xs_snapshot, r, page);
 	opaque = GistPageGetOpaque(page);
 
 	/*

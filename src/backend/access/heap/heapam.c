@@ -394,7 +394,8 @@ heapgetpage(HeapScanDesc scan, BlockNumber page)
 	 */
 	LockBuffer(buffer, BUFFER_LOCK_SHARE);
 
-	dp = (Page) BufferGetPage(buffer);
+	dp = BufferGetPage(buffer);
+	TestForOldSnapshot(snapshot, scan->rs_rd, dp);
 	lines = PageGetMaxOffsetNumber(dp);
 	ntup = 0;
 
@@ -537,7 +538,8 @@ heapgettup(HeapScanDesc scan,
 
 		LockBuffer(scan->rs_cbuf, BUFFER_LOCK_SHARE);
 
-		dp = (Page) BufferGetPage(scan->rs_cbuf);
+		dp = BufferGetPage(scan->rs_cbuf);
+		TestForOldSnapshot(snapshot, scan->rs_rd, dp);
 		lines = PageGetMaxOffsetNumber(dp);
 		/* page and lineoff now reference the physically next tid */
 
@@ -582,7 +584,8 @@ heapgettup(HeapScanDesc scan,
 
 		LockBuffer(scan->rs_cbuf, BUFFER_LOCK_SHARE);
 
-		dp = (Page) BufferGetPage(scan->rs_cbuf);
+		dp = BufferGetPage(scan->rs_cbuf);
+		TestForOldSnapshot(snapshot, scan->rs_rd, dp);
 		lines = PageGetMaxOffsetNumber(dp);
 
 		if (!scan->rs_inited)
@@ -616,7 +619,8 @@ heapgettup(HeapScanDesc scan,
 			heapgetpage(scan, page);
 
 		/* Since the tuple was previously fetched, needn't lock page here */
-		dp = (Page) BufferGetPage(scan->rs_cbuf);
+		dp = BufferGetPage(scan->rs_cbuf);
+		TestForOldSnapshot(snapshot, scan->rs_rd, dp);
 		lineoff = ItemPointerGetOffsetNumber(&(tuple->t_self));
 		lpp = PageGetItemId(dp, lineoff);
 		Assert(ItemIdIsNormal(lpp));
@@ -745,7 +749,8 @@ heapgettup(HeapScanDesc scan,
 
 		LockBuffer(scan->rs_cbuf, BUFFER_LOCK_SHARE);
 
-		dp = (Page) BufferGetPage(scan->rs_cbuf);
+		dp = BufferGetPage(scan->rs_cbuf);
+		TestForOldSnapshot(snapshot, scan->rs_rd, dp);
 		lines = PageGetMaxOffsetNumber((Page) dp);
 		linesleft = lines;
 		if (backward)
@@ -832,7 +837,8 @@ heapgettup_pagemode(HeapScanDesc scan,
 			lineindex = scan->rs_cindex + 1;
 		}
 
-		dp = (Page) BufferGetPage(scan->rs_cbuf);
+		dp = BufferGetPage(scan->rs_cbuf);
+		TestForOldSnapshot(scan->rs_snapshot, scan->rs_rd, dp);
 		lines = scan->rs_ntuples;
 		/* page and lineindex now reference the next visible tid */
 
@@ -875,7 +881,8 @@ heapgettup_pagemode(HeapScanDesc scan,
 			page = scan->rs_cblock;		/* current page */
 		}
 
-		dp = (Page) BufferGetPage(scan->rs_cbuf);
+		dp = BufferGetPage(scan->rs_cbuf);
+		TestForOldSnapshot(scan->rs_snapshot, scan->rs_rd, dp);
 		lines = scan->rs_ntuples;
 
 		if (!scan->rs_inited)
@@ -908,7 +915,8 @@ heapgettup_pagemode(HeapScanDesc scan,
 			heapgetpage(scan, page);
 
 		/* Since the tuple was previously fetched, needn't lock page here */
-		dp = (Page) BufferGetPage(scan->rs_cbuf);
+		dp = BufferGetPage(scan->rs_cbuf);
+		TestForOldSnapshot(scan->rs_snapshot, scan->rs_rd, dp);
 		lineoff = ItemPointerGetOffsetNumber(&(tuple->t_self));
 		lpp = PageGetItemId(dp, lineoff);
 		Assert(ItemIdIsNormal(lpp));
@@ -1027,7 +1035,8 @@ heapgettup_pagemode(HeapScanDesc scan,
 
 		heapgetpage(scan, page);
 
-		dp = (Page) BufferGetPage(scan->rs_cbuf);
+		dp = BufferGetPage(scan->rs_cbuf);
+		TestForOldSnapshot(scan->rs_snapshot, scan->rs_rd, dp);
 		lines = scan->rs_ntuples;
 		linesleft = lines;
 		if (backward)
@@ -1872,6 +1881,7 @@ heap_fetch(Relation relation,
 	 */
 	LockBuffer(buffer, BUFFER_LOCK_SHARE);
 	page = BufferGetPage(buffer);
+	TestForOldSnapshot(snapshot, relation, page);
 
 	/*
 	 * We'd better check for out-of-range offnum in case of VACUUM since the
@@ -2201,6 +2211,7 @@ heap_get_latest_tid(Relation relation,
 		buffer = ReadBuffer(relation, ItemPointerGetBlockNumber(&ctid));
 		LockBuffer(buffer, BUFFER_LOCK_SHARE);
 		page = BufferGetPage(buffer);
+		TestForOldSnapshot(snapshot, relation, page);
 
 		/*
 		 * Check for bogus item number.  This is not treated as an error
@@ -7025,8 +7036,8 @@ heap_tuple_needs_freeze(HeapTupleHeader tuple, TransactionId cutoff_xid,
 
 	/*
 	 * The considerations for multixacts are complicated; look at
-	 * heap_freeze_tuple for justifications.  This routine had better be in
-	 * sync with that one!
+	 * heap_prepare_freeze_tuple for justifications.  This routine had better
+	 * be in sync with that one!
 	 */
 	if (tuple->t_infomask & HEAP_XMAX_IS_MULTI)
 	{
@@ -7887,8 +7898,8 @@ heap_xlog_visible(XLogReaderState *record)
 			PageInit(vmpage, BLCKSZ, 0);
 
 		/*
-		 * XLogReplayBufferExtended locked the buffer. But visibilitymap_set
-		 * will handle locking itself.
+		 * XLogReadBufferForRedoExtended locked the buffer. But
+		 * visibilitymap_set will handle locking itself.
 		 */
 		LockBuffer(vmbuffer, BUFFER_LOCK_UNLOCK);
 

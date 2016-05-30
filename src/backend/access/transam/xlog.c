@@ -345,6 +345,9 @@ static XLogRecPtr RedoRecPtr;
  */
 static bool doPageWrites;
 
+/* Has the recovery code requested a walreceiver wakeup? */
+static bool doRequestWalReceiverReply;
+
 /*
  * RedoStartLSN points to the checkpoint's REDO location which is specified
  * in a backup label file, backup history file or control file. In standby
@@ -3115,7 +3118,7 @@ XLogFileInit(XLogSegNo logsegno, bool *use_existent, bool use_lock)
  *
  * destsegno: identify segment to be created.
  *
- * srcTLI, srclog, srcseg: identify segment to be copied (could be from
+ * srcTLI, srcsegno: identify segment to be copied (could be from
  *		a different timeline)
  *
  * upto: how much of the source file to copy (the rest is filled with
@@ -5866,7 +5869,7 @@ static void
 CheckRequiredParameterValues(void)
 {
 	/*
-	 * For archive recovery, the WAL must be generated with at least 'archive'
+	 * For archive recovery, the WAL must be generated with at least 'replica'
 	 * wal_level.
 	 */
 	if (ArchiveRecoveryRequested && ControlFile->wal_level == WAL_LEVEL_MINIMAL)
@@ -5877,15 +5880,15 @@ CheckRequiredParameterValues(void)
 	}
 
 	/*
-	 * For Hot Standby, the WAL must be generated with 'hot_standby' mode, and
+	 * For Hot Standby, the WAL must be generated with 'replica' mode, and
 	 * we must have at least as many backend slots as the primary.
 	 */
 	if (ArchiveRecoveryRequested && EnableHotStandby)
 	{
-		if (ControlFile->wal_level < WAL_LEVEL_HOT_STANDBY)
+		if (ControlFile->wal_level < WAL_LEVEL_REPLICA)
 			ereport(ERROR,
-					(errmsg("hot standby is not possible because wal_level was not set to \"hot_standby\" or higher on the master server"),
-					 errhint("Either set wal_level to \"hot_standby\" on the master, or turn off hot_standby here.")));
+					(errmsg("hot standby is not possible because wal_level was not set to \"replica\" or higher on the master server"),
+					 errhint("Either set wal_level to \"replica\" on the master, or turn off hot_standby here.")));
 
 		/* We ignore autovacuum_max_workers when we make this test. */
 		RecoveryRequiresIntParameter("max_connections",
@@ -6176,7 +6179,7 @@ StartupXLOG(void)
 							   TABLESPACE_MAP, TABLESPACE_MAP_OLD)));
 			else
 				ereport(LOG,
-						(errmsg("ignoring \"%s\" file because no \"%s\" file exists",
+						(errmsg("ignoring file \"%s\" because no file \"%s\" exists",
 								TABLESPACE_MAP, BACKUP_LABEL_FILE),
 						 errdetail("Could not rename file \"%s\" to \"%s\": %m.",
 								   TABLESPACE_MAP, TABLESPACE_MAP_OLD)));
@@ -6879,6 +6882,17 @@ StartupXLOG(void)
 				XLogCtl->lastReplayedTLI = ThisTimeLineID;
 				SpinLockRelease(&XLogCtl->info_lck);
 
+				/*
+				 * If rm_redo called XLogRequestWalReceiverReply, then we
+				 * wake up the receiver so that it notices the updated
+				 * lastReplayedEndRecPtr and sends a reply to the master.
+				 */
+				if (doRequestWalReceiverReply)
+				{
+					doRequestWalReceiverReply = false;
+					WalRcvForceReply();
+				}
+
 				/* Remember this record as the last-applied one */
 				LastRec = ReadRecPtr;
 
@@ -7020,7 +7034,7 @@ StartupXLOG(void)
 	 * EndOfLogTLI is the TLI in the filename of the XLOG segment containing
 	 * the end-of-log. It could be different from the timeline that EndOfLog
 	 * nominally belongs to, if there was a timeline switch in that segment,
-	 * and we were reading the old wAL from a segment belonging to a higher
+	 * and we were reading the old WAL from a segment belonging to a higher
 	 * timeline.
 	 */
 	EndOfLogTLI = xlogreader->readPageTLI;
@@ -9459,10 +9473,8 @@ xlog_redo(XLogReaderState *record)
 		/*
 		 * Update minRecoveryPoint to ensure that if recovery is aborted, we
 		 * recover back up to this point before allowing hot standby again.
-		 * This is particularly important if wal_level was set to 'archive'
-		 * before, and is now 'hot_standby', to ensure you don't run queries
-		 * against the WAL preceding the wal_level change. Same applies to
-		 * decreasing max_* settings.
+		 * This is important if the max_* settings are decreased, to ensure
+		 * you don't run queries against the WAL preceding the change.
 		 */
 		minRecoveryPoint = ControlFile->minRecoveryPoint;
 		minRecoveryPointTLI = ControlFile->minRecoveryPointTLI;
@@ -9756,8 +9768,8 @@ XLogFileNameP(TimeLineID tli, XLogSegNo segno)
  */
 XLogRecPtr
 do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
-				   char **labelfile, DIR *tblspcdir, List **tablespaces,
-				   char **tblspcmapfile, bool infotbssize,
+				   StringInfo labelfile, DIR *tblspcdir, List **tablespaces,
+				   StringInfo tblspcmapfile, bool infotbssize,
 				   bool needtblspcmapfile)
 {
 	bool		exclusive = (labelfile == NULL);
@@ -9771,8 +9783,6 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 	XLogSegNo	_logSegNo;
 	struct stat stat_buf;
 	FILE	   *fp;
-	StringInfoData labelfbuf;
-	StringInfoData tblspc_mapfbuf;
 
 	backup_started_in_recovery = RecoveryInProgress();
 
@@ -9793,7 +9803,7 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			  errmsg("WAL level not sufficient for making an online backup"),
-				 errhint("wal_level must be set to \"archive\", \"hot_standby\", or \"logical\" at server start.")));
+				 errhint("wal_level must be set to \"replica\" or \"logical\" at server start.")));
 
 	if (strlen(backupidstr) > MAXPGPATH)
 		ereport(ERROR,
@@ -9969,7 +9979,8 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 		/*
 		 * Construct tablespace_map file
 		 */
-		initStringInfo(&tblspc_mapfbuf);
+		if (exclusive)
+			tblspcmapfile = makeStringInfo();
 
 		datadirpathlen = strlen(DataDir);
 
@@ -10042,7 +10053,7 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 			if (tablespaces)
 				*tablespaces = lappend(*tablespaces, ti);
 
-			appendStringInfo(&tblspc_mapfbuf, "%s %s\n", ti->oid, ti->path);
+			appendStringInfo(tblspcmapfile, "%s %s\n", ti->oid, ti->path);
 
 			pfree(buflinkpath.data);
 #else
@@ -10061,23 +10072,24 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 		/*
 		 * Construct backup label file
 		 */
-		initStringInfo(&labelfbuf);
+		if (exclusive)
+			labelfile = makeStringInfo();
 
 		/* Use the log timezone here, not the session timezone */
 		stamp_time = (pg_time_t) time(NULL);
 		pg_strftime(strfbuf, sizeof(strfbuf),
 					"%Y-%m-%d %H:%M:%S %Z",
 					pg_localtime(&stamp_time, log_timezone));
-		appendStringInfo(&labelfbuf, "START WAL LOCATION: %X/%X (file %s)\n",
+		appendStringInfo(labelfile, "START WAL LOCATION: %X/%X (file %s)\n",
 			 (uint32) (startpoint >> 32), (uint32) startpoint, xlogfilename);
-		appendStringInfo(&labelfbuf, "CHECKPOINT LOCATION: %X/%X\n",
+		appendStringInfo(labelfile, "CHECKPOINT LOCATION: %X/%X\n",
 					 (uint32) (checkpointloc >> 32), (uint32) checkpointloc);
-		appendStringInfo(&labelfbuf, "BACKUP METHOD: %s\n",
+		appendStringInfo(labelfile, "BACKUP METHOD: %s\n",
 						 exclusive ? "pg_start_backup" : "streamed");
-		appendStringInfo(&labelfbuf, "BACKUP FROM: %s\n",
+		appendStringInfo(labelfile, "BACKUP FROM: %s\n",
 						 backup_started_in_recovery ? "standby" : "master");
-		appendStringInfo(&labelfbuf, "START TIME: %s\n", strfbuf);
-		appendStringInfo(&labelfbuf, "LABEL: %s\n", backupidstr);
+		appendStringInfo(labelfile, "START TIME: %s\n", strfbuf);
+		appendStringInfo(labelfile, "LABEL: %s\n", backupidstr);
 
 		/*
 		 * Okay, write the file, or return its contents to caller.
@@ -10111,7 +10123,7 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 						(errcode_for_file_access(),
 						 errmsg("could not create file \"%s\": %m",
 								BACKUP_LABEL_FILE)));
-			if (fwrite(labelfbuf.data, labelfbuf.len, 1, fp) != 1 ||
+			if (fwrite(labelfile->data, labelfile->len, 1, fp) != 1 ||
 				fflush(fp) != 0 ||
 				pg_fsync(fileno(fp)) != 0 ||
 				ferror(fp) ||
@@ -10120,10 +10132,12 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 						(errcode_for_file_access(),
 						 errmsg("could not write file \"%s\": %m",
 								BACKUP_LABEL_FILE)));
-			pfree(labelfbuf.data);
+			/* Allocated locally for exclusive backups, so free separately */
+			pfree(labelfile->data);
+			pfree(labelfile);
 
 			/* Write backup tablespace_map file. */
-			if (tblspc_mapfbuf.len > 0)
+			if (tblspcmapfile->len > 0)
 			{
 				if (stat(TABLESPACE_MAP, &stat_buf) != 0)
 				{
@@ -10147,7 +10161,7 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 							(errcode_for_file_access(),
 							 errmsg("could not create file \"%s\": %m",
 									TABLESPACE_MAP)));
-				if (fwrite(tblspc_mapfbuf.data, tblspc_mapfbuf.len, 1, fp) != 1 ||
+				if (fwrite(tblspcmapfile->data, tblspcmapfile->len, 1, fp) != 1 ||
 					fflush(fp) != 0 ||
 					pg_fsync(fileno(fp)) != 0 ||
 					ferror(fp) ||
@@ -10158,13 +10172,9 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 									TABLESPACE_MAP)));
 			}
 
-			pfree(tblspc_mapfbuf.data);
-		}
-		else
-		{
-			*labelfile = labelfbuf.data;
-			if (tblspc_mapfbuf.len > 0)
-				*tblspcmapfile = tblspc_mapfbuf.data;
+			/* Allocated locally for exclusive backups, so free separately */
+			pfree(tblspcmapfile->data);
+			pfree(tblspcmapfile);
 		}
 	}
 	PG_END_ENSURE_ERROR_CLEANUP(pg_start_backup_callback, (Datum) BoolGetDatum(exclusive));
@@ -10264,14 +10274,23 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			  errmsg("WAL level not sufficient for making an online backup"),
-				 errhint("wal_level must be set to \"archive\", \"hot_standby\", or \"logical\" at server start.")));
+				 errhint("wal_level must be set to \"replica\" or \"logical\" at server start.")));
 
 	/*
 	 * OK to update backup counters and forcePageWrites
 	 */
 	WALInsertLockAcquireExclusive();
 	if (exclusive)
+	{
+		if (!XLogCtl->Insert.exclusiveBackup)
+		{
+			WALInsertLockRelease();
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("exclusive backup not in progress")));
+		}
 		XLogCtl->Insert.exclusiveBackup = false;
+	}
 	else
 	{
 		/*
@@ -10835,7 +10854,11 @@ rm_redo_error_callback(void *arg)
 	initStringInfo(&buf);
 	xlog_outdesc(&buf, record);
 
-	errcontext("xlog redo %s", buf.data);
+	/* translator: %s is an XLog record description */
+	errcontext("xlog redo at %X/%X for %s",
+			   (uint32) (record->ReadRecPtr >> 32),
+			   (uint32) record->ReadRecPtr,
+			   buf.data);
 
 	pfree(buf.data);
 }
@@ -11595,4 +11618,13 @@ SetWalWriterSleeping(bool sleeping)
 	SpinLockAcquire(&XLogCtl->info_lck);
 	XLogCtl->WalWriterSleeping = sleeping;
 	SpinLockRelease(&XLogCtl->info_lck);
+}
+
+/*
+ * Schedule a walreceiver wakeup in the main recovery loop.
+ */
+void
+XLogRequestWalReceiverReply(void)
+{
+	doRequestWalReceiverReply = true;
 }

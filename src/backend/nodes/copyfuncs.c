@@ -188,6 +188,7 @@ _copyModifyTable(const ModifyTable *from)
 	COPY_NODE_FIELD(withCheckOptionLists);
 	COPY_NODE_FIELD(returningLists);
 	COPY_NODE_FIELD(fdwPrivLists);
+	COPY_BITMAPSET_FIELD(fdwDirectModifyPlans);
 	COPY_NODE_FIELD(rowMarks);
 	COPY_SCALAR_FIELD(epqParam);
 	COPY_SCALAR_FIELD(onConflictAction);
@@ -648,6 +649,7 @@ _copyForeignScan(const ForeignScan *from)
 	/*
 	 * copy remainder of node
 	 */
+	COPY_SCALAR_FIELD(operation);
 	COPY_SCALAR_FIELD(fs_server);
 	COPY_NODE_FIELD(fdw_exprs);
 	COPY_NODE_FIELD(fdw_private);
@@ -869,6 +871,7 @@ _copyAgg(const Agg *from)
 	COPY_SCALAR_FIELD(aggstrategy);
 	COPY_SCALAR_FIELD(combineStates);
 	COPY_SCALAR_FIELD(finalizeAggs);
+	COPY_SCALAR_FIELD(serialStates);
 	COPY_SCALAR_FIELD(numCols);
 	if (from->numCols > 0)
 	{
@@ -1231,6 +1234,7 @@ _copyAggref(const Aggref *from)
 
 	COPY_SCALAR_FIELD(aggfnoid);
 	COPY_SCALAR_FIELD(aggtype);
+	COPY_SCALAR_FIELD(aggoutputtype);
 	COPY_SCALAR_FIELD(aggcollid);
 	COPY_SCALAR_FIELD(inputcollid);
 	COPY_NODE_FIELD(aggdirectargs);
@@ -1240,6 +1244,8 @@ _copyAggref(const Aggref *from)
 	COPY_NODE_FIELD(aggfilter);
 	COPY_SCALAR_FIELD(aggstar);
 	COPY_SCALAR_FIELD(aggvariadic);
+	COPY_SCALAR_FIELD(aggpartial);
+	COPY_SCALAR_FIELD(aggcombine);
 	COPY_SCALAR_FIELD(aggkind);
 	COPY_SCALAR_FIELD(agglevelsup);
 	COPY_LOCATION_FIELD(location);
@@ -3200,6 +3206,20 @@ _copyRenameStmt(const RenameStmt *from)
 	return newnode;
 }
 
+static AlterObjectDependsStmt *
+_copyAlterObjectDependsStmt(const AlterObjectDependsStmt *from)
+{
+	AlterObjectDependsStmt *newnode = makeNode(AlterObjectDependsStmt);
+
+	COPY_SCALAR_FIELD(objectType);
+	COPY_NODE_FIELD(relation);
+	COPY_NODE_FIELD(objname);
+	COPY_NODE_FIELD(objargs);
+	COPY_NODE_FIELD(extname);
+
+	return newnode;
+}
+
 static AlterObjectSchemaStmt *
 _copyAlterObjectSchemaStmt(const AlterObjectSchemaStmt *from)
 {
@@ -3828,6 +3848,18 @@ _copyCreateTransformStmt(const CreateTransformStmt *from)
 	return newnode;
 }
 
+static CreateAmStmt *
+_copyCreateAmStmt(const CreateAmStmt *from)
+{
+	CreateAmStmt *newnode = makeNode(CreateAmStmt);
+
+	COPY_STRING_FIELD(amname);
+	COPY_NODE_FIELD(handler_name);
+	COPY_SCALAR_FIELD(amtype);
+
+	return newnode;
+}
+
 static CreateTrigStmt *
 _copyCreateTrigStmt(const CreateTrigStmt *from)
 {
@@ -4173,7 +4205,7 @@ _copyList(const List *from)
 static ExtensibleNode *
 _copyExtensibleNode(const ExtensibleNode *from)
 {
-	ExtensibleNode	   *newnode;
+	ExtensibleNode *newnode;
 	const ExtensibleNodeMethods *methods;
 
 	methods = GetExtensibleNodeMethods(from->extnodename, false);
@@ -4666,6 +4698,9 @@ copyObject(const void *from)
 		case T_RenameStmt:
 			retval = _copyRenameStmt(from);
 			break;
+		case T_AlterObjectDependsStmt:
+			retval = _copyAlterObjectDependsStmt(from);
+			break;
 		case T_AlterObjectSchemaStmt:
 			retval = _copyAlterObjectSchemaStmt(from);
 			break;
@@ -4818,6 +4853,9 @@ copyObject(const void *from)
 			break;
 		case T_CreateTransformStmt:
 			retval = _copyCreateTransformStmt(from);
+			break;
+		case T_CreateAmStmt:
+			retval = _copyCreateAmStmt(from);
 			break;
 		case T_CreateTrigStmt:
 			retval = _copyCreateTrigStmt(from);

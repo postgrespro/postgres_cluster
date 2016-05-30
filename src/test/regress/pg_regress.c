@@ -904,7 +904,7 @@ current_windows_user(const char **acct, const char **dom)
 	if (!GetTokenInformation(token, TokenUser, NULL, 0, &retlen) && GetLastError() != 122)
 	{
 		fprintf(stderr,
-				_("%s: could not get token user size: error code %lu\n"),
+				_("%s: could not get token information buffer size: error code %lu\n"),
 				progname, GetLastError());
 		exit(2);
 	}
@@ -912,7 +912,7 @@ current_windows_user(const char **acct, const char **dom)
 	if (!GetTokenInformation(token, TokenUser, tokenuser, retlen, &retlen))
 	{
 		fprintf(stderr,
-				_("%s: could not get token user: error code %lu\n"),
+				_("%s: could not get token information: error code %lu\n"),
 				progname, GetLastError());
 		exit(2);
 	}
@@ -1329,7 +1329,7 @@ results_differ(const char *testname, const char *resultsfile, const char *defaul
 	if (platform_expectfile)
 	{
 		/*
-		 * Replace everything afer the last slash in expectfile with what the
+		 * Replace everything after the last slash in expectfile with what the
 		 * platform_expectfile contains.
 		 */
 		char	   *p = strrchr(expectfile, '/');
@@ -2185,6 +2185,8 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 	if (temp_instance)
 	{
 		FILE	   *pg_conf;
+		const char *env_wait;
+		int			wait_seconds;
 
 		/*
 		 * Prepare the temp instance
@@ -2335,11 +2337,23 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 		}
 
 		/*
-		 * Wait till postmaster is able to accept connections (normally only a
-		 * second or so, but Cygwin is reportedly *much* slower).  Don't wait
-		 * forever, however.
+		 * Wait till postmaster is able to accept connections; normally this
+		 * is only a second or so, but Cygwin is reportedly *much* slower, and
+		 * test builds using Valgrind or similar tools might be too.  Hence,
+		 * allow the default timeout of 60 seconds to be overridden from the
+		 * PGCTLTIMEOUT environment variable.
 		 */
-		for (i = 0; i < 60; i++)
+		env_wait = getenv("PGCTLTIMEOUT");
+		if (env_wait != NULL)
+		{
+			wait_seconds = atoi(env_wait);
+			if (wait_seconds <= 0)
+				wait_seconds = 60;
+		}
+		else
+			wait_seconds = 60;
+
+		for (i = 0; i < wait_seconds; i++)
 		{
 			/* Done if psql succeeds */
 			if (system(buf2) == 0)
@@ -2360,9 +2374,10 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 
 			pg_usleep(1000000L);
 		}
-		if (i >= 60)
+		if (i >= wait_seconds)
 		{
-			fprintf(stderr, _("\n%s: postmaster did not respond within 60 seconds\nExamine %s/log/postmaster.log for the reason\n"), progname, outputdir);
+			fprintf(stderr, _("\n%s: postmaster did not respond within %d seconds\nExamine %s/log/postmaster.log for the reason\n"),
+					progname, wait_seconds, outputdir);
 
 			/*
 			 * If we get here, the postmaster is probably wedged somewhere in
@@ -2386,7 +2401,7 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 
 		postmaster_running = true;
 
-#ifdef WIN64
+#ifdef _WIN64
 /* need a series of two casts to convert HANDLE without compiler warning */
 #define ULONGPID(x) (unsigned long) (unsigned long long) (x)
 #else

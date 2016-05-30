@@ -66,6 +66,7 @@ extern bool enable_nestloop;
 extern bool enable_material;
 extern bool enable_mergejoin;
 extern bool enable_hashjoin;
+extern bool enable_fkey_estimates;
 extern int	constraint_exclusion;
 
 extern double clamp_row_est(double nrows);
@@ -150,7 +151,7 @@ extern void final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 					SpecialJoinInfo *sjinfo,
 					SemiAntiJoinFactors *semifactors);
 extern void cost_gather(GatherPath *path, PlannerInfo *root,
-			RelOptInfo *baserel, ParamPathInfo *param_info);
+			RelOptInfo *baserel, ParamPathInfo *param_info, double *rows);
 extern void cost_subplan(PlannerInfo *root, SubPlan *subplan, Plan *plan);
 extern void cost_qual_eval(QualCost *cost, List *quals, PlannerInfo *root);
 extern void cost_qual_eval_node(QualCost *cost, Node *qual, PlannerInfo *root);

@@ -72,7 +72,7 @@ typedef struct ProcArrayStruct
 	 * Known assigned XIDs handling
 	 */
 	int			maxKnownAssignedXids;	/* allocated size of array */
-	int			numKnownAssignedXids;	/* currrent # of valid entries */
+	int			numKnownAssignedXids;	/* current # of valid entries */
 	int			tailKnownAssignedXids;	/* index of oldest valid element */
 	int			headKnownAssignedXids;	/* index of newest element, + 1 */
 	slock_t		known_assigned_xids_lck;		/* protects head/tail pointers */
@@ -1778,6 +1778,27 @@ PgGetSnapshotData(Snapshot snapshot)
 	snapshot->regd_count = 0;
 	snapshot->copied = false;
 
+	if (old_snapshot_threshold < 0)
+	{
+		/*
+		 * If not using "snapshot too old" feature, fill related fields with
+		 * dummy values that don't require any locking.
+		 */
+		snapshot->lsn = InvalidXLogRecPtr;
+		snapshot->whenTaken = 0;
+	}
+	else
+	{
+		/*
+		 * Capture the current time and WAL stream location in case this
+		 * snapshot becomes old enough to need to fall back on the special
+		 * "old snapshot" logic.
+		 */
+		snapshot->lsn = GetXLogInsertRecPtr();
+		snapshot->whenTaken = GetSnapshotCurrentTimestamp();
+		MaintainOldSnapshotTimeMapping(snapshot->whenTaken, xmin);
+	}
+
 	return snapshot;
 }
 
@@ -2692,7 +2713,7 @@ MinimumActiveBackends(int min)
 
 		/*
 		 * Since we're not holding a lock, need to be prepared to deal with
-		 * garbage, as someone could have incremented numPucs but not yet
+		 * garbage, as someone could have incremented numProcs but not yet
 		 * filled the structure.
 		 *
 		 * If someone just decremented numProcs, 'proc' could also point to a

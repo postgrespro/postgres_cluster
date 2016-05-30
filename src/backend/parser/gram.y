@@ -51,6 +51,7 @@
 
 #include "catalog/index.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_am.h"
 #include "catalog/pg_trigger.h"
 #include "commands/defrem.h"
 #include "commands/trigger.h"
@@ -232,7 +233,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 		AlterEventTrigStmt
 		AlterDatabaseStmt AlterDatabaseSetStmt AlterDomainStmt AlterEnumStmt
 		AlterFdwStmt AlterForeignServerStmt AlterGroupStmt
-		AlterObjectSchemaStmt AlterOwnerStmt AlterOperatorStmt AlterSeqStmt AlterSystemStmt AlterTableStmt
+		AlterObjectDependsStmt AlterObjectSchemaStmt AlterOwnerStmt
+		AlterOperatorStmt AlterSeqStmt AlterSystemStmt AlterTableStmt
 		AlterTblSpcStmt AlterExtensionStmt AlterExtensionContentsStmt AlterForeignTableStmt
 		AlterCompositeTypeStmt AlterUserStmt AlterUserMappingStmt AlterUserSetStmt
 		AlterRoleStmt AlterRoleSetStmt AlterPolicyStmt
@@ -263,7 +265,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 		DeallocateStmt PrepareStmt ExecuteStmt
 		DropOwnedStmt ReassignOwnedStmt
 		AlterTSConfigurationStmt AlterTSDictionaryStmt
-		CreateMatViewStmt RefreshMatViewStmt
+		CreateMatViewStmt RefreshMatViewStmt CreateAmStmt
 
 %type <node>	select_no_parens select_with_parens select_clause
 				simple_select values_clause
@@ -577,7 +579,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	CURRENT_TIME CURRENT_TIMESTAMP CURRENT_USER CURSOR CYCLE
 
 	DATA_P DATABASE DAY_P DEALLOCATE DEC DECIMAL_P DECLARE DEFAULT DEFAULTS
-	DEFERRABLE DEFERRED DEFINER DELETE_P DELIMITER DELIMITERS DESC
+	DEFERRABLE DEFERRED DEFINER DELETE_P DELIMITER DELIMITERS DEPENDS DESC
 	DICTIONARY DISABLE_P DISCARD DISTINCT DO DOCUMENT_P DOMAIN_P DOUBLE_P DROP
 
 	EACH ELSE ENABLE_P ENCODING ENCRYPTED END_P ENUM_P ESCAPE EVENT EXCEPT
@@ -604,7 +606,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	LEADING LEAKPROOF LEAST LEFT LEVEL LIKE LIMIT LISTEN LOAD LOCAL
 	LOCALTIME LOCALTIMESTAMP LOCATION LOCK_P LOCKED LOGGED
 
-	MAPPING MATCH MATERIALIZED MAXVALUE MINUTE_P MINVALUE MODE MONTH_P MOVE
+	MAPPING MATCH MATERIALIZED MAXVALUE METHOD MINUTE_P MINVALUE MODE MONTH_P MOVE
 
 	NAME_P NAMES NATIONAL NATURAL NCHAR NEXT NO NONE
 	NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF
@@ -766,6 +768,7 @@ stmt :
 			| AlterForeignTableStmt
 			| AlterFunctionStmt
 			| AlterGroupStmt
+			| AlterObjectDependsStmt
 			| AlterObjectSchemaStmt
 			| AlterOwnerStmt
 			| AlterOperatorStmt
@@ -789,6 +792,7 @@ stmt :
 			| CommentStmt
 			| ConstraintsSetStmt
 			| CopyStmt
+			| CreateAmStmt
 			| CreateAsStmt
 			| CreateAssertStmt
 			| CreateCastStmt
@@ -4708,6 +4712,23 @@ row_security_cmd:
 
 /*****************************************************************************
  *
+ *		QUERY:
+ *             CREATE ACCESS METHOD name HANDLER handler_name
+ *
+ *****************************************************************************/
+
+CreateAmStmt: CREATE ACCESS METHOD name TYPE_P INDEX HANDLER handler_name
+				{
+					CreateAmStmt *n = makeNode(CreateAmStmt);
+					n->amname = $4;
+					n->handler_name = $8;
+					n->amtype = AMTYPE_INDEX;
+					$$ = (Node *) n;
+				}
+		;
+
+/*****************************************************************************
+ *
  *		QUERIES :
  *				CREATE TRIGGER ...
  *				DROP TRIGGER ...
@@ -5612,6 +5633,7 @@ drop_type:	TABLE									{ $$ = OBJECT_TABLE; }
 			| MATERIALIZED VIEW						{ $$ = OBJECT_MATVIEW; }
 			| INDEX									{ $$ = OBJECT_INDEX; }
 			| FOREIGN TABLE							{ $$ = OBJECT_FOREIGN_TABLE; }
+			| ACCESS METHOD							{ $$ = OBJECT_ACCESS_METHOD; }
 			| EVENT TRIGGER 						{ $$ = OBJECT_EVENT_TRIGGER; }
 			| COLLATION								{ $$ = OBJECT_COLLATION; }
 			| CONVERSION_P							{ $$ = OBJECT_CONVERSION; }
@@ -6725,7 +6747,6 @@ opt_collate: COLLATE any_name						{ $$ = $2; }
 		;
 
 opt_class:	any_name								{ $$ = $1; }
-			| USING any_name						{ $$ = $2; }
 			| /*EMPTY*/								{ $$ = NIL; }
 		;
 
@@ -8003,6 +8024,55 @@ opt_column: COLUMN									{ $$ = COLUMN; }
 
 opt_set_data: SET DATA_P							{ $$ = 1; }
 			| /*EMPTY*/								{ $$ = 0; }
+		;
+
+/*****************************************************************************
+ *
+ * ALTER THING name DEPENDS ON EXTENSION name
+ *
+ *****************************************************************************/
+
+AlterObjectDependsStmt:
+			ALTER FUNCTION function_with_argtypes DEPENDS ON EXTENSION name
+				{
+					AlterObjectDependsStmt *n = makeNode(AlterObjectDependsStmt);
+					n->objectType = OBJECT_FUNCTION;
+					n->relation = NULL;
+					n->objname = $3->funcname;
+					n->objargs = $3->funcargs;
+					n->extname = makeString($7);
+					$$ = (Node *)n;
+				}
+			| ALTER TRIGGER name ON qualified_name DEPENDS ON EXTENSION name
+				{
+					AlterObjectDependsStmt *n = makeNode(AlterObjectDependsStmt);
+					n->objectType = OBJECT_TRIGGER;
+					n->relation = $5;
+					n->objname = list_make1(makeString($3));
+					n->objargs = NIL;
+					n->extname = makeString($9);
+					$$ = (Node *)n;
+				}
+			| ALTER MATERIALIZED VIEW qualified_name DEPENDS ON EXTENSION name
+				{
+					AlterObjectDependsStmt *n = makeNode(AlterObjectDependsStmt);
+					n->objectType = OBJECT_MATVIEW;
+					n->relation = $4;
+					n->objname = NIL;
+					n->objargs = NIL;
+					n->extname = makeString($8);
+					$$ = (Node *)n;
+				}
+			| ALTER INDEX qualified_name DEPENDS ON EXTENSION name
+				{
+					AlterObjectDependsStmt *n = makeNode(AlterObjectDependsStmt);
+					n->objectType = OBJECT_INDEX;
+					n->relation = $3;
+					n->objname = NIL;
+					n->objargs = NIL;
+					n->extname = makeString($7);
+					$$ = (Node *)n;
+				}
 		;
 
 /*****************************************************************************
@@ -13706,6 +13776,7 @@ unreserved_keyword:
 			| DELETE_P
 			| DELIMITER
 			| DELIMITERS
+			| DEPENDS
 			| DICTIONARY
 			| DISABLE_P
 			| DISCARD
@@ -13778,6 +13849,7 @@ unreserved_keyword:
 			| MATCH
 			| MATERIALIZED
 			| MAXVALUE
+			| METHOD
 			| MINUTE_P
 			| MINVALUE
 			| MODE
@@ -14908,13 +14980,3 @@ parser_init(base_yy_extra_type *yyext)
 {
 	yyext->parsetree = NIL;		/* in case grammar forgets to set it */
 }
-
-/*
- * Must undefine this stuff before including scan.c, since it has different
- * definitions for these macros.
- */
-#undef yyerror
-#undef yylval
-#undef yylloc
-
-#include "scan.c"

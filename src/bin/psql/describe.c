@@ -15,12 +15,12 @@
 #include <ctype.h>
 
 #include "catalog/pg_default_acl.h"
+#include "fe_utils/string_utils.h"
 
 #include "common.h"
 #include "describe.h"
-#include "dumputils.h"
-#include "mbprint.h"
-#include "print.h"
+#include "fe_utils/mbprint.h"
+#include "fe_utils/print.h"
 #include "settings.h"
 #include "variables.h"
 
@@ -2646,7 +2646,7 @@ add_tablespace_footer(printTableContent *const cont, char relkind,
  * Describes roles.  Any schema portion of the pattern is ignored.
  */
 bool
-describeRoles(const char *pattern, bool verbose)
+describeRoles(const char *pattern, bool verbose, bool showSystem)
 {
 	PQExpBufferData buf;
 	PGresult   *res;
@@ -2690,6 +2690,9 @@ describeRoles(const char *pattern, bool verbose)
 		}
 
 		appendPQExpBufferStr(&buf, "\nFROM pg_catalog.pg_roles r\n");
+
+		if (!showSystem && !pattern)
+			appendPQExpBufferStr(&buf, "WHERE r.rolname !~ '^pg_'\n");
 
 		processSQLNamePattern(pset.db, &buf, pattern, false, false,
 							  NULL, "r.rolname", NULL, NULL);

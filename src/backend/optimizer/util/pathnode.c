@@ -394,8 +394,14 @@ set_cheapest(RelOptInfo *parent_rel)
  *	  but just recycling discarded Path nodes is a very useful savings in
  *	  a large join tree.  We can recycle the List nodes of pathlist, too.
  *
- *	  BUT: we do not pfree IndexPath objects, since they may be referenced as
- *	  children of BitmapHeapPaths as well as being paths in their own right.
+ *	  As noted in optimizer/README, deleting a previously-accepted Path is
+ *	  safe because we know that Paths of this rel cannot yet be referenced
+ *	  from any other rel, such as a higher-level join.  However, in some cases
+ *	  it is possible that a Path is referenced by another Path for its own
+ *	  rel; we must not delete such a Path, even if it is dominated by the new
+ *	  Path.  Currently this occurs only for IndexPath objects, which may be
+ *	  referenced as children of BitmapHeapPaths as well as being paths in
+ *	  their own right.  Hence, we don't pfree IndexPaths when rejecting them.
  *
  * 'parent_rel' is the relation entry to which the path corresponds.
  * 'new_path' is a potential path for parent_rel.
@@ -711,6 +717,10 @@ add_path_precheck(RelOptInfo *parent_rel,
  *	  parallel such that each worker will generate a subset of the path's
  *	  overall result.
  *
+ *	  As in add_path, the partial_pathlist is kept sorted with the cheapest
+ *	  total path in front.  This is depended on by multiple places, which
+ *	  just take the front entry as the cheapest path without searching.
+ *
  *	  We don't generate parameterized partial paths for several reasons.  Most
  *	  importantly, they're not safe to execute, because there's nothing to
  *	  make sure that a parallel scan within the parameterized portion of the
@@ -721,8 +731,8 @@ add_path_precheck(RelOptInfo *parent_rel,
  *	  side of the plan will be small anyway.  There could be rare cases where
  *	  this wins big - e.g. if join order constraints put a 1-row relation on
  *	  the outer side of the topmost join with a parameterized plan on the inner
- *	  side - but we'll have to be content not to handle such cases until somebody
- *	  builds an executor infrastructure that can cope with them.
+ *	  side - but we'll have to be content not to handle such cases until
+ *	  somebody builds an executor infrastructure that can cope with them.
  *
  *	  Because we don't consider parameterized paths here, we also don't
  *	  need to consider the row counts as a measure of quality: every path will
@@ -730,6 +740,14 @@ add_path_precheck(RelOptInfo *parent_rel,
  *	  costs: parallelism is only used for plans that will be run to completion.
  *	  Therefore, this routine is much simpler than add_path: it needs to
  *	  consider only pathkeys and total cost.
+ *
+ *	  As with add_path, we pfree paths that are found to be dominated by
+ *	  another partial path; this requires that there be no other references to
+ *	  such paths yet.  Hence, GatherPaths must not be created for a rel until
+ *	  we're done creating all partial paths for it.  We do not currently build
+ *	  partial indexscan paths, so there is no need for an exception for
+ *	  IndexPaths here; for safety, we instead Assert that a path to be freed
+ *	  isn't an IndexPath.
  */
 void
 add_partial_path(RelOptInfo *parent_rel, Path *new_path)
@@ -808,7 +826,7 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 		{
 			parent_rel->partial_pathlist =
 				list_delete_cell(parent_rel->partial_pathlist, p1, p1_prev);
-			/* add_path has a special case for IndexPath; we don't need it */
+			/* we should not see IndexPaths here, so always safe to delete */
 			Assert(!IsA(old_path, IndexPath));
 			pfree(old_path);
 			/* p1_prev does not advance */
@@ -842,7 +860,7 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 	}
 	else
 	{
-		/* add_path has a special case for IndexPath; we don't need it */
+		/* we should not see IndexPaths here, so always safe to delete */
 		Assert(!IsA(new_path, IndexPath));
 		/* Reject and recycle the new path */
 		pfree(new_path);
@@ -1645,10 +1663,12 @@ translate_sub_tlist(List *tlist, int relid)
  * create_gather_path
  *	  Creates a path corresponding to a gather scan, returning the
  *	  pathnode.
+ *
+ * 'rows' may optionally be set to override row estimates from other sources.
  */
 GatherPath *
 create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
-				   Relids required_outer)
+				   PathTarget *target, Relids required_outer, double *rows)
 {
 	GatherPath *pathnode = makeNode(GatherPath);
 
@@ -1656,7 +1676,7 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 
 	pathnode->path.pathtype = T_Gather;
 	pathnode->path.parent = rel;
-	pathnode->path.pathtarget = rel->reltarget;
+	pathnode->path.pathtarget = target;
 	pathnode->path.param_info = get_baserel_parampathinfo(root, rel,
 														  required_outer);
 	pathnode->path.parallel_aware = false;
@@ -1674,7 +1694,7 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		pathnode->single_copy = true;
 	}
 
-	cost_gather(pathnode, root, rel, pathnode->path.param_info);
+	cost_gather(pathnode, root, rel, pathnode->path.param_info, rows);
 
 	return pathnode;
 }
@@ -2222,6 +2242,36 @@ apply_projection_to_path(PlannerInfo *root,
 	path->total_cost += target->cost.startup - oldcost.startup +
 		(target->cost.per_tuple - oldcost.per_tuple) * path->rows;
 
+	/*
+	 * If the path happens to be a Gather path, we'd like to arrange for the
+	 * subpath to return the required target list so that workers can help
+	 * project. But if there is something that is not parallel-safe in the
+	 * target expressions, then we can't.
+	 */
+	if (IsA(path, GatherPath) &&
+		!has_parallel_hazard((Node *) target->exprs, false))
+	{
+		GatherPath *gpath = (GatherPath *) path;
+
+		/*
+		 * We always use create_projection_path here, even if the subpath is
+		 * projection-capable, so as to avoid modifying the subpath in place.
+		 * It seems unlikely at present that there could be any other
+		 * references to the subpath anyway, but better safe than sorry.
+		 * (create_projection_plan will only insert a Result node if the
+		 * subpath is not projection-capable, so we only include the cost of
+		 * that node if it will actually be inserted.  This is a bit grotty
+		 * but we can improve it later if it seems important.)
+		 */
+		if (!is_projection_capable_path(gpath->subpath))
+			gpath->path.total_cost += cpu_tuple_cost * gpath->subpath->rows;
+		gpath->subpath = (Path *)
+			create_projection_path(root,
+								   gpath->subpath->parent,
+								   gpath->subpath,
+								   target);
+	}
+
 	return path;
 }
 
@@ -2387,6 +2437,8 @@ create_upper_unique_path(PlannerInfo *root,
  * 'qual' is the HAVING quals if any
  * 'aggcosts' contains cost info about the aggregate functions to be computed
  * 'numGroups' is the estimated number of groups (1 if not grouping)
+ * 'combineStates' is set to true if the Agg node should combine agg states
+ * 'finalizeAggs' is set to false if the Agg node should not call the finalfn
  */
 AggPath *
 create_agg_path(PlannerInfo *root,
@@ -2397,7 +2449,10 @@ create_agg_path(PlannerInfo *root,
 				List *groupClause,
 				List *qual,
 				const AggClauseCosts *aggcosts,
-				double numGroups)
+				double numGroups,
+				bool combineStates,
+				bool finalizeAggs,
+				bool serialStates)
 {
 	AggPath    *pathnode = makeNode(AggPath);
 
@@ -2420,6 +2475,9 @@ create_agg_path(PlannerInfo *root,
 	pathnode->numGroups = numGroups;
 	pathnode->groupClause = groupClause;
 	pathnode->qual = qual;
+	pathnode->finalizeAggs = finalizeAggs;
+	pathnode->combineStates = combineStates;
+	pathnode->serialStates = serialStates;
 
 	cost_agg(&pathnode->path, root,
 			 aggstrategy, aggcosts,

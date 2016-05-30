@@ -45,9 +45,10 @@
  *			(total_cost - startup_cost) * tuples_to_fetch / path->rows;
  * Note that a base relation's rows count (and, by extension, plan_rows for
  * plan nodes below the LIMIT node) are set without regard to any LIMIT, so
- * that this equation works properly.  (Also, these routines guarantee not to
- * set the rows count to zero, so there will be no zero divide.)  The LIMIT is
- * applied as a top-level plan node.
+ * that this equation works properly.  (Note: while path->rows is never zero
+ * for ordinary relations, it is zero for paths for provably-empty relations,
+ * so beware of division-by-zero.)	The LIMIT is applied as a top-level
+ * plan node.
  *
  * For largely historical reasons, most of the routines in this module use
  * the passed result Path only to store their results (rows, startup_cost and
@@ -112,7 +113,7 @@ int			effective_cache_size = DEFAULT_EFFECTIVE_CACHE_SIZE;
 
 Cost		disable_cost = 1.0e10;
 
-int			max_parallel_degree = 0;
+int			max_parallel_degree = 2;
 
 bool		enable_seqscan = true;
 bool		enable_indexscan = true;
@@ -125,6 +126,7 @@ bool		enable_nestloop = true;
 bool		enable_material = true;
 bool		enable_mergejoin = true;
 bool		enable_hashjoin = true;
+bool		enable_fkey_estimates = true;
 
 typedef struct
 {
@@ -230,8 +232,8 @@ cost_seqscan(Path *path, PlannerInfo *root,
 	/* Adjust costing for parallelism, if used. */
 	if (path->parallel_degree > 0)
 	{
-		double	parallel_divisor = path->parallel_degree;
-		double	leader_contribution;
+		double		parallel_divisor = path->parallel_degree;
+		double		leader_contribution;
 
 		/*
 		 * Early experience with parallel query suggests that when there is
@@ -350,16 +352,22 @@ cost_samplescan(Path *path, PlannerInfo *root,
  *
  * 'rel' is the relation to be operated upon
  * 'param_info' is the ParamPathInfo if this is a parameterized path, else NULL
+ * 'rows' may be used to point to a row estimate; if non-NULL, it overrides
+ * both 'rel' and 'param_info'.  This is useful when the path doesn't exactly
+ * correspond to any particular RelOptInfo.
  */
 void
 cost_gather(GatherPath *path, PlannerInfo *root,
-			RelOptInfo *rel, ParamPathInfo *param_info)
+			RelOptInfo *rel, ParamPathInfo *param_info,
+			double *rows)
 {
 	Cost		startup_cost = 0;
 	Cost		run_cost = 0;
 
 	/* Mark the path with the correct row estimate */
-	if (param_info)
+	if (rows)
+		path->path.rows = *rows;
+	else if (param_info)
 		path->path.rows = param_info->ppi_rows;
 	else
 		path->path.rows = rel->rows;
@@ -426,15 +434,18 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 
 	/*
 	 * Mark the path with the correct row estimate, and identify which quals
-	 * will need to be enforced as qpquals.
+	 * will need to be enforced as qpquals.  We need not check any quals that
+	 * are implied by the index's predicate, so we can use indrestrictinfo not
+	 * baserestrictinfo as the list of relevant restriction clauses for the
+	 * rel.
 	 */
 	if (path->path.param_info)
 	{
 		path->path.rows = path->path.param_info->ppi_rows;
 		/* qpquals come from the rel's restriction clauses and ppi_clauses */
 		qpquals = list_concat(
-					   extract_nonindex_conditions(baserel->baserestrictinfo,
-												   path->indexquals),
+				extract_nonindex_conditions(path->indexinfo->indrestrictinfo,
+											path->indexquals),
 			  extract_nonindex_conditions(path->path.param_info->ppi_clauses,
 										  path->indexquals));
 	}
@@ -442,7 +453,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 	{
 		path->path.rows = baserel->rows;
 		/* qpquals come from just the rel's restriction clauses */
-		qpquals = extract_nonindex_conditions(baserel->baserestrictinfo,
+		qpquals = extract_nonindex_conditions(path->indexinfo->indrestrictinfo,
 											  path->indexquals);
 	}
 
@@ -624,11 +635,11 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
  * final plan.  So we approximate it as quals that don't appear directly in
  * indexquals and also are not redundant children of the same EquivalenceClass
  * as some indexqual.  This method neglects some infrequently-relevant
- * considerations such as clauses that needn't be checked because they are
- * implied by a partial index's predicate.  It does not seem worth the cycles
- * to try to factor those things in at this stage, even though createplan.c
- * will take pains to remove such unnecessary clauses from the qpquals list if
- * this path is selected for use.
+ * considerations, specifically clauses that needn't be checked because they
+ * are implied by an indexqual.  It does not seem worth the cycles to try to
+ * factor that in at this stage, even though createplan.c will take pains to
+ * remove such unnecessary clauses from the qpquals list if this path is
+ * selected for use.
  */
 static List *
 extract_nonindex_conditions(List *qual_clauses, List *indexquals)
@@ -647,7 +658,7 @@ extract_nonindex_conditions(List *qual_clauses, List *indexquals)
 			continue;			/* simple duplicate */
 		if (is_redundant_derived_clause(rinfo, indexquals))
 			continue;			/* derived from same EquivalenceClass */
-		/* ... skip the predicate proof attempts createplan.c will try ... */
+		/* ... skip the predicate proof attempt createplan.c will try ... */
 		result = lappend(result, rinfo);
 	}
 	return result;
@@ -1421,8 +1432,8 @@ cost_recursive_union(Path *runion, Path *nrterm, Path *rterm)
  * total, but we will also need to write and read each tuple once per
  * merge pass.  We expect about ceil(logM(r)) merge passes where r is the
  * number of initial runs formed and M is the merge order used by tuplesort.c.
- * Since the average initial run should be about twice sort_mem, we have
- *		disk traffic = 2 * relsize * ceil(logM(p / (2*sort_mem)))
+ * Since the average initial run should be about sort_mem, we have
+ *		disk traffic = 2 * relsize * ceil(logM(p / sort_mem))
  *		cpu = comparison_cost * t * log2(t)
  *
  * If the sort is bounded (i.e., only the first k result tuples are needed)
@@ -1498,7 +1509,7 @@ cost_sort(Path *path, PlannerInfo *root,
 		 * We'll have to use a disk-based sort of all the tuples
 		 */
 		double		npages = ceil(input_bytes / BLCKSZ);
-		double		nruns = (input_bytes / sort_mem_bytes) * 0.5;
+		double		nruns = input_bytes / sort_mem_bytes;
 		double		mergeorder = tuplesort_merge_order(sort_mem_bytes);
 		double		log_runs;
 		double		npageaccesses;
@@ -1751,6 +1762,8 @@ cost_agg(Path *path, PlannerInfo *root,
 	{
 		/* must be AGG_HASHED */
 		startup_cost = input_total_cost;
+		if (!enable_hashagg)
+			startup_cost += disable_cost;
 		startup_cost += aggcosts->transCost.startup;
 		startup_cost += aggcosts->transCost.per_tuple * input_tuples;
 		startup_cost += (cpu_operator_cost * numGroupCols) * input_tuples;
@@ -1982,6 +1995,12 @@ final_cost_nestloop(PlannerInfo *root, NestPath *path,
 	Cost		cpu_per_tuple;
 	QualCost	restrict_qual_cost;
 	double		ntuples;
+
+	/* Protect some assumptions below that rowcounts aren't zero or NaN */
+	if (outer_path_rows <= 0 || isnan(outer_path_rows))
+		outer_path_rows = 1;
+	if (inner_path_rows <= 0 || isnan(inner_path_rows))
+		inner_path_rows = 1;
 
 	/* Mark the path with the correct row estimate */
 	if (path->path.param_info)
@@ -3017,8 +3036,8 @@ cost_subplan(PlannerInfo *root, SubPlan *subplan, Plan *plan)
 
 		if (subplan->subLinkType == EXISTS_SUBLINK)
 		{
-			/* we only need to fetch 1 tuple */
-			sp_cost.per_tuple += plan_run_cost / plan->plan_rows;
+			/* we only need to fetch 1 tuple; clamp to avoid zero divide */
+			sp_cost.per_tuple += plan_run_cost / clamp_row_est(plan->plan_rows);
 		}
 		else if (subplan->subLinkType == ALL_SUBLINK ||
 				 subplan->subLinkType == ANY_SUBLINK)
@@ -3870,6 +3889,361 @@ get_parameterized_joinrel_size(PlannerInfo *root, RelOptInfo *rel,
 }
 
 /*
+ * quals_match_foreign_key
+ *		Determines if the foreign key is matched by joinquals.
+ *
+ * Checks that there are conditions on all columns of the foreign key, matching
+ * the operator used by the foreign key etc. If such complete match is found,
+ * the function returns bitmap identifying the matching quals (0-based).
+ *
+ * Otherwise (no match at all or incomplete match), NULL is returned.
+ *
+ * XXX It seems possible in the future to do something useful when a
+ * partial match occurs between join and FK, but that is less common
+ * and that part isn't worked out yet.
+ */
+static Bitmapset *
+quals_match_foreign_key(PlannerInfo *root, ForeignKeyOptInfo *fkinfo,
+						RelOptInfo *fkrel, RelOptInfo *foreignrel,
+						List *joinquals)
+{
+	int i;
+	int nkeys = fkinfo->nkeys;
+	Bitmapset *qualmatches = NULL;
+	Bitmapset *fkmatches = NULL;
+
+	/*
+	 * Loop over each column of the foreign key and build a bitmapset
+	 * of each joinqual which matches. Note that we don't stop when we find
+	 * the first match, as the expression could be duplicated in the
+	 * joinquals, and we want to generate a bitmapset which has bits set for
+	 * every matching join qual.
+	 */
+	for (i = 0; i < nkeys; i++)
+	{
+		ListCell *lc;
+		int quallstidx = -1;
+
+		foreach(lc, joinquals)
+		{
+			RestrictInfo   *rinfo;
+			OpExpr		   *clause;
+			Var			   *leftvar;
+			Var			   *rightvar;
+
+			quallstidx++;
+
+			/*
+			 * Technically we don't need to, but here we skip this qual if
+			 * we've matched it to part of the foreign key already. This
+			 * should prove to be a useful optimization when the quals appear
+			 * in the same order as the foreign key's keys. We need only bother
+			 * doing this when the foreign key is made up of more than 1 set
+			 * of columns, and we're not testing the first column.
+			 */
+			if (i > 0 && bms_is_member(quallstidx, qualmatches))
+				continue;
+
+			rinfo = (RestrictInfo *) lfirst(lc);
+			clause = (OpExpr *) rinfo->clause;
+
+			/* only OpExprs are useful for consideration */
+			if (!IsA(clause, OpExpr))
+				continue;
+
+			/*
+			 * If the operator does not match then there's little point in
+			 * checking the operands.
+			 */
+			if (clause->opno != fkinfo->conpfeqop[i])
+				continue;
+
+			leftvar = (Var *) get_leftop((Expr *) clause);
+			rightvar = (Var *) get_rightop((Expr *) clause);
+
+			/* Foreign keys only support Vars, so ignore anything more complex */
+			if (!IsA(leftvar, Var) || !IsA(rightvar, Var))
+				continue;
+
+			/*
+			 * For RestrictInfos built from an eclass we must consider each
+			 * member of the eclass as rinfo's operands may not belong to the
+			 * foreign key. For efficient tracking of which Vars we've found,
+			 * since we're only tracking 2 Vars, we use a bitmask. We can
+			 * safely finish searching when both of the least significant bits
+			 * are set.
+			 */
+			if (rinfo->parent_ec)
+			{
+				EquivalenceClass   *ec = rinfo->parent_ec;
+				ListCell		   *lc2;
+				int					foundvarmask = 0;
+
+				foreach(lc2, ec->ec_members)
+				{
+					EquivalenceMember *em = (EquivalenceMember *) lfirst(lc2);
+					Var *var = (Var *) em->em_expr;
+
+					if (!IsA(var, Var))
+						continue;
+
+					if (foreignrel->relid == var->varno &&
+						fkinfo->confkeys[i] == var->varattno)
+						foundvarmask |= 1;
+
+					else if (fkrel->relid == var->varno &&
+						fkinfo->conkeys[i] == var->varattno)
+						foundvarmask |= 2;
+
+					/*
+					 * Check if we've found both matches. If found we add
+					 * this qual to the matched list and mark this key as
+					 * matched too.
+					 */
+					if (foundvarmask == 3)
+					{
+						qualmatches = bms_add_member(qualmatches, quallstidx);
+						fkmatches = bms_add_member(fkmatches, i);
+						break;
+					}
+				}
+			}
+			else
+			{
+				/*
+				 * In this non eclass RestrictInfo case we'll check if the left
+				 * and right Vars match to this part of the foreign key.
+				 * Remember that this could be written with the Vars in either
+				 * order, so we test both permutations of the expression.
+				 */
+				if ((foreignrel->relid == leftvar->varno) &&
+					(fkrel->relid == rightvar->varno) &&
+					(fkinfo->confkeys[i] == leftvar->varattno) &&
+					(fkinfo->conkeys[i] == rightvar->varattno))
+				{
+					qualmatches = bms_add_member(qualmatches, quallstidx);
+					fkmatches = bms_add_member(fkmatches, i);
+				}
+				else if ((foreignrel->relid == rightvar->varno) &&
+						 (fkrel->relid == leftvar->varno) &&
+						 (fkinfo->confkeys[i] == rightvar->varattno) &&
+						 (fkinfo->conkeys[i] == leftvar->varattno))
+				{
+					qualmatches = bms_add_member(qualmatches, quallstidx);
+					fkmatches = bms_add_member(fkmatches, i);
+				}
+			}
+		}
+	}
+
+	/* can't find more matches than columns in the foreign key */
+	Assert(bms_num_members(fkmatches) <= nkeys);
+
+	/* Only return the matches if the foreign key is matched fully. */
+	if (bms_num_members(fkmatches) == nkeys)
+	{
+		bms_free(fkmatches);
+		return qualmatches;
+	}
+
+	bms_free(fkmatches);
+	bms_free(qualmatches);
+
+	return NULL;
+}
+
+/*
+ * find_best_foreign_key_quals
+ * 		Finds the foreign key best matching the joinquals.
+ *
+ * Analyzes joinquals to determine if any quals match foreign keys defined the
+ * two relations (fkrel referencing foreignrel). When multiple foreign keys
+ * match, we choose the one with the most keys as the best one because of the
+ * way estimation occurs in clauselist_join_selectivity().  We could choose
+ * the FK matching the most quals, however we assume the quals may be duplicated.
+ *
+ * We also track which joinquals match the current foreign key, so that we can
+ * easily skip then when computing the selectivity.
+ *
+ * When no matching foreign key is found we return 0, otherwise we return the
+ * number of keys in the foreign key.
+ *
+ * Foreign keys matched only partially are currently ignored.
+ */
+static int
+find_best_foreign_key_quals(PlannerInfo *root, RelOptInfo *fkrel,
+							RelOptInfo *foreignrel, List *joinquals,
+							Bitmapset **joinqualsbitmap)
+{
+	Bitmapset	   *qualbestmatch;
+	ListCell	   *lc;
+	int				bestmatchnkeys;
+
+	/*
+	 * fast path out when there's no foreign keys on fkrel, or when use of
+	 * foreign keys for estimation is disabled by GUC
+	 */
+	if ((fkrel->fkeylist == NIL) || (!enable_fkey_estimates))
+	{
+		*joinqualsbitmap = NULL;
+		return 0;
+	}
+
+	qualbestmatch = NULL;
+	bestmatchnkeys = 0;
+
+	/* now check the matches for each foreign key defined on the fkrel */
+	foreach(lc, fkrel->fkeylist)
+	{
+		ForeignKeyOptInfo *fkinfo = (ForeignKeyOptInfo *) lfirst(lc);
+		Bitmapset *qualsmatched;
+
+		/*
+		 * We make no attempt in checking that this foreign key actually
+		 * references 'foreignrel', the reasoning here is that we may be able
+		 * to match the foreign key to an eclass member Var of a RestrictInfo
+		 * that's in qualslist, this Var may belong to some other relation.
+		 *
+		 * XXX Is this assumption safe in all cases? Maybe not, but does
+		 * it lead to a worse estimate than the previous approach? Doubt it.
+		 */
+		qualsmatched = quals_match_foreign_key(root, fkinfo, fkrel, foreignrel,
+											   joinquals);
+
+		/* Did we get a match? And is that match better than a previous one? */
+		if (qualsmatched != NULL && fkinfo->nkeys > bestmatchnkeys)
+		{
+			/* save the new best match */
+			bms_free(qualbestmatch);
+			qualbestmatch = qualsmatched;
+			bestmatchnkeys = fkinfo->nkeys;
+		}
+	}
+
+	*joinqualsbitmap = qualbestmatch;
+	return bestmatchnkeys;
+}
+
+/*
+ * clauselist_join_selectivity
+ *		Estimate selectivity of join clauses either by using foreign key info
+ *		or by using the regular clauselist_selectivity().
+ *
+ * Since selectivity estimates for each joinqual are multiplied together, this
+ * can cause significant underestimates on the number of join tuples in cases
+ * where there's more than 1 clause in the join condition. To help ease the
+ * pain here we make use of foreign keys, and we assume that 1 row will match
+ * when *all* of the foreign key columns are present in the join condition, any
+ * additional clauses are estimated using clauselist_selectivity().
+ *
+ * Note this ignores whether the FK is invalid or currently deferred; we don't
+ * rely on this assumption for correctness of the query, so it is a reasonable
+ * and safe assumption for planning purposes.
+ */
+static Selectivity
+clauselist_join_selectivity(PlannerInfo *root, List *joinquals,
+							JoinType jointype, SpecialJoinInfo *sjinfo)
+{
+	int				outerid;
+	int				innerid;
+	Selectivity		sel = 1.0;
+	Bitmapset	   *foundfkquals = NULL;
+
+	innerid = -1;
+	while ((innerid = bms_next_member(sjinfo->min_righthand, innerid)) >= 0)
+	{
+		RelOptInfo *innerrel = find_base_rel(root, innerid);
+
+		outerid = -1;
+		while ((outerid = bms_next_member(sjinfo->min_lefthand, outerid)) >= 0)
+		{
+			RelOptInfo	   *outerrel = find_base_rel(root, outerid);
+			Bitmapset	   *outer2inner;
+			Bitmapset	   *inner2outer;
+			int				innermatches;
+			int				outermatches;
+
+			/*
+			 * check which quals are matched by a foreign key referencing the
+			 * innerrel.
+			 */
+			outermatches = find_best_foreign_key_quals(root, outerrel,
+											innerrel, joinquals, &outer2inner);
+
+			/* do the same, but with relations swapped */
+			innermatches = find_best_foreign_key_quals(root, innerrel,
+											outerrel, joinquals, &inner2outer);
+
+			/*
+			 * did we find any matches at all? If so we need to see which one is
+			 * the best/longest match
+			 */
+			if (outermatches != 0 || innermatches != 0)
+			{
+				double	referenced_tuples;
+				bool overlap;
+
+				/* either could be zero, but not both. */
+				if (outermatches < innermatches)
+				{
+					overlap = bms_overlap(foundfkquals, inner2outer);
+
+					foundfkquals = bms_add_members(foundfkquals, inner2outer);
+					referenced_tuples = Max(outerrel->tuples, 1.0);
+				}
+				else
+				{
+					overlap = bms_overlap(foundfkquals, outer2inner);
+
+					foundfkquals = bms_add_members(foundfkquals, outer2inner);
+					referenced_tuples = Max(innerrel->tuples, 1.0);
+				}
+
+				/*
+				 * XXX should we ignore these overlapping matches?
+				 * Or perhaps take the Max() or Min()?
+				 */
+				if (overlap)
+				{
+					if (jointype == JOIN_SEMI || jointype == JOIN_ANTI)
+						sel = Min(sel,Min(1.0 / (outerrel->tuples / Max(innerrel->tuples, 1.0)), 1.0));
+					else
+						sel = Min(sel, 1.0 / referenced_tuples);
+				}
+				else
+				{
+					if (jointype == JOIN_SEMI || jointype == JOIN_ANTI)
+						sel *= Min(1.0 / (outerrel->tuples / Max(innerrel->tuples, 1.0)), 1.0);
+					else
+						sel *= 1.0 / referenced_tuples;
+				}
+			}
+		}
+	}
+
+	/*
+	 * If any non matched quals exist then we build a list of the non-matches
+	 * and use clauselist_selectivity() to estimate the selectivity of these.
+	 */
+	if (bms_num_members(foundfkquals) < list_length(joinquals))
+	{
+		ListCell *lc;
+		int lstidx = 0;
+		List *nonfkeyclauses = NIL;
+
+		foreach (lc, joinquals)
+		{
+			if (!bms_is_member(lstidx, foundfkquals))
+				nonfkeyclauses = lappend(nonfkeyclauses, lfirst(lc));
+			lstidx++;
+		}
+		sel *= clauselist_selectivity(root, nonfkeyclauses, 0, jointype, sjinfo);
+	}
+
+	return sel;
+}
+
+/*
  * calc_joinrel_size_estimate
  *		Workhorse for set_joinrel_size_estimates and
  *		get_parameterized_joinrel_size.
@@ -3915,11 +4289,11 @@ calc_joinrel_size_estimate(PlannerInfo *root,
 		}
 
 		/* Get the separate selectivities */
-		jselec = clauselist_selectivity(root,
-										joinquals,
-										0,
-										jointype,
-										sjinfo);
+		jselec = clauselist_join_selectivity(root,
+											 joinquals,
+											 jointype,
+											 sjinfo);
+
 		pselec = clauselist_selectivity(root,
 										pushedquals,
 										0,
@@ -3932,11 +4306,10 @@ calc_joinrel_size_estimate(PlannerInfo *root,
 	}
 	else
 	{
-		jselec = clauselist_selectivity(root,
-										restrictlist,
-										0,
-										jointype,
-										sjinfo);
+		jselec = clauselist_join_selectivity(root,
+											 restrictlist,
+											 jointype,
+											 sjinfo);
 		pselec = 0.0;			/* not used, keep compiler quiet */
 	}
 

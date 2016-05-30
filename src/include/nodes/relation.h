@@ -126,7 +126,7 @@ typedef struct PlannerGlobal
 
 	bool		wholePlanParallelSafe;	/* is the entire plan parallel safe? */
 
-	bool		hasForeignJoin;	/* does have a pushed down foreign join */
+	bool		hasForeignJoin; /* does have a pushed down foreign join */
 } PlannerGlobal;
 
 /* macro for fetching the Plan associated with a SubPlan node */
@@ -494,7 +494,7 @@ typedef struct RelOptInfo
 	/* materialization information */
 	List	   *pathlist;		/* Path structures */
 	List	   *ppilist;		/* ParamPathInfos used in pathlist */
-	List	   *partial_pathlist;	/* partial Paths */
+	List	   *partial_pathlist;		/* partial Paths */
 	struct Path *cheapest_startup_path;
 	struct Path *cheapest_total_path;
 	struct Path *cheapest_unique_path;
@@ -516,15 +516,18 @@ typedef struct RelOptInfo
 	List	   *lateral_vars;	/* LATERAL Vars and PHVs referenced by rel */
 	Relids		lateral_referencers;	/* rels that reference me laterally */
 	List	   *indexlist;		/* list of IndexOptInfo */
+	List	   *fkeylist;			/* list of ForeignKeyOptInfo */
 	BlockNumber pages;			/* size estimates derived from pg_class */
 	double		tuples;
 	double		allvisfrac;
 	PlannerInfo *subroot;		/* if subquery */
 	List	   *subplan_params; /* if subquery */
+	int			rel_parallel_degree;	/* wanted number of parallel workers */
 
 	/* Information about foreign tables and foreign joins */
 	Oid			serverid;		/* identifies server for the table or join */
-	Oid			umid;			/* identifies user mapping for the table or join */
+	Oid			umid;			/* identifies user mapping for the table or
+								 * join */
 	/* use "struct FdwRoutine" to avoid including fdwapi.h here */
 	struct FdwRoutine *fdwroutine;
 	void	   *fdw_private;
@@ -563,6 +566,10 @@ typedef struct RelOptInfo
  *		indextlist is a TargetEntry list representing the index columns.
  *		It provides an equivalent base-relation Var for each simple column,
  *		and links to the matching indexprs element for each expression column.
+ *
+ *		While most of these fields are filled when the IndexOptInfo is created
+ *		(by plancat.c), indrestrictinfo and predOK are set later, in
+ *		check_index_predicates().
  */
 typedef struct IndexOptInfo
 {
@@ -595,7 +602,12 @@ typedef struct IndexOptInfo
 
 	List	   *indextlist;		/* targetlist representing index columns */
 
-	bool		predOK;			/* true if predicate matches query */
+	List	   *indrestrictinfo;/* parent relation's baserestrictinfo list,
+								 * less any conditions implied by the index's
+								 * predicate (unless it's a target rel, see
+								 * comments in check_index_predicates()) */
+
+	bool		predOK;			/* true if index predicate matches query */
 	bool		unique;			/* true if a unique index */
 	bool		immediate;		/* is uniqueness enforced immediately? */
 	bool		hypothetical;	/* true if index doesn't really exist */
@@ -611,6 +623,27 @@ typedef struct IndexOptInfo
 	void		(*amcostestimate) ();	/* AM's cost estimator */
 } IndexOptInfo;
 
+/*
+ * ForeignKeyOptInfo
+ *		Per-foreign-key information for planning/optimization
+ *
+ * Only includes columns from pg_constraint related to foreign keys.
+ *
+ * conkeys[], confkeys[] and conpfeqop[] each have nkeys entries.
+ */
+typedef struct ForeignKeyOptInfo
+{
+	NodeTag		type;
+
+	Oid			conrelid;	/* relation constrained by the foreign key */
+	Oid			confrelid;	/* relation referenced by the foreign key */
+
+	int			nkeys;		/* number of columns in the foreign key */
+	int		   *conkeys;	/* attnums of columns in the constrained table */
+	int		   *confkeys;	/* attnums of columns in the referenced table */
+	Oid		   *conpfeqop;	/* OIDs of equality operators used by the FK */
+
+} ForeignKeyOptInfo;
 
 /*
  * EquivalenceClasses
@@ -839,7 +872,7 @@ typedef struct Path
 
 	bool		parallel_aware; /* engage parallel-aware logic? */
 	bool		parallel_safe;	/* OK to use as part of parallel plan? */
-	int			parallel_degree; /* desired parallel degree; 0 = not parallel */
+	int			parallel_degree;	/* desired parallel degree; 0 = not parallel */
 
 	/* estimated size/costs for path (see costsize.c for more info) */
 	double		rows;			/* estimated number of result tuples */
@@ -997,7 +1030,8 @@ typedef struct SubqueryScanPath
 } SubqueryScanPath;
 
 /*
- * ForeignPath represents a potential scan of a foreign table
+ * ForeignPath represents a potential scan of a foreign table, foreign join
+ * or foreign upper-relation.
  *
  * fdw_private stores FDW private data about the scan.  While fdw_private is
  * not actually touched by the core code during normal operations, it's
@@ -1030,23 +1064,8 @@ typedef struct ForeignPath
  * FDW case, we provide a "custom_private" field in CustomPath; providers
  * may prefer to use that rather than define another struct type.
  */
-struct CustomPath;
 
-#define CUSTOMPATH_SUPPORT_BACKWARD_SCAN	0x0001
-#define CUSTOMPATH_SUPPORT_MARK_RESTORE		0x0002
-
-typedef struct CustomPathMethods
-{
-	const char *CustomName;
-
-	/* Convert Path to a Plan */
-	struct Plan *(*PlanCustomPath) (PlannerInfo *root,
-												RelOptInfo *rel,
-												struct CustomPath *best_path,
-												List *tlist,
-												List *clauses,
-												List *custom_plans);
-} CustomPathMethods;
+struct CustomPathMethods;
 
 typedef struct CustomPath
 {
@@ -1054,7 +1073,7 @@ typedef struct CustomPath
 	uint32		flags;			/* mask of CUSTOMPATH_* flags, see above */
 	List	   *custom_paths;	/* list of child Path nodes, if any */
 	List	   *custom_private;
-	const CustomPathMethods *methods;
+	const struct CustomPathMethods *methods;
 } CustomPath;
 
 /*
@@ -1309,6 +1328,9 @@ typedef struct AggPath
 	double		numGroups;		/* estimated number of groups in input */
 	List	   *groupClause;	/* a list of SortGroupClause's */
 	List	   *qual;			/* quals (HAVING quals), if any */
+	bool		combineStates;	/* input is partially aggregated agg states */
+	bool		finalizeAggs;	/* should the executor call the finalfn? */
+	bool		serialStates;	/* should agg states be (de)serialized? */
 } AggPath;
 
 /*

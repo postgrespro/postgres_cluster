@@ -80,6 +80,7 @@
 extern PGDLLIMPORT volatile bool InterruptPending;
 extern PGDLLIMPORT volatile bool QueryCancelPending;
 extern PGDLLIMPORT volatile bool ProcDiePending;
+extern PGDLLIMPORT volatile bool IdleInTransactionSessionTimeoutPending;
 
 extern volatile bool ClientConnectionLost;
 
@@ -238,6 +239,7 @@ extern bool enableFsync;
 extern bool allowSystemTableMods;
 extern PGDLLIMPORT int work_mem;
 extern PGDLLIMPORT int maintenance_work_mem;
+extern PGDLLIMPORT int replacement_sort_tuples;
 
 extern int	VacuumCostPageHit;
 extern int	VacuumCostPageMiss;

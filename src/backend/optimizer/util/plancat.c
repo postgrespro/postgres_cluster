@@ -28,6 +28,7 @@
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
 #include "catalog/pg_am.h"
+#include "catalog/pg_constraint.h"
 #include "foreign/fdwapi.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
@@ -41,6 +42,7 @@
 #include "rewrite/rewriteManip.h"
 #include "storage/bufmgr.h"
 #include "utils/lsyscache.h"
+#include "utils/syscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
@@ -94,6 +96,9 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 	Relation	relation;
 	bool		hasindex;
 	List	   *indexinfos = NIL;
+	List	   *fkinfos = NIL;
+	List	   *fkoidlist;
+	ListCell   *l;
 
 	/*
 	 * We need not lock the relation since it was already locked, either by
@@ -128,6 +133,9 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 		estimate_rel_size(relation, rel->attr_widths - rel->min_attr,
 						  &rel->pages, &rel->tuples, &rel->allvisfrac);
 
+	/* Retrive the parallel_degree reloption, if set. */
+	rel->rel_parallel_degree = RelationGetParallelDegree(relation, -1);
+
 	/*
 	 * Make list of indexes.  Ignore indexes on system catalogs if told to.
 	 * Don't bother with indexes for an inheritance parent, either.
@@ -141,7 +149,6 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 	if (hasindex)
 	{
 		List	   *indexoidlist;
-		ListCell   *l;
 		LOCKMODE	lmode;
 
 		indexoidlist = RelationGetIndexList(relation);
@@ -339,7 +346,8 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 			/* Build targetlist using the completed indexprs data */
 			info->indextlist = build_index_tlist(root, info, relation);
 
-			info->predOK = false;		/* set later in indxpath.c */
+			info->indrestrictinfo = NIL;		/* set later, in indxpath.c */
+			info->predOK = false;		/* set later, in indxpath.c */
 			info->unique = index->indisunique;
 			info->immediate = index->indimmediate;
 			info->hypothetical = false;
@@ -386,6 +394,85 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 	}
 
 	rel->indexlist = indexinfos;
+
+	/*
+	 * Load foreign key data. Note this is the definitional data from the
+	 * catalog only and does not lock the referenced tables here. The
+	 * precise definition of the FK is important and may affect the usage
+	 * elsewhere in the planner, e.g. if the constraint is deferred or
+	 * if the constraint is not valid then relying upon this in the executor
+	 * may not be accurate, though might be considered a useful estimate for
+	 * planning purposes.
+	 */
+	fkoidlist = RelationGetFKeyList(relation);
+
+	foreach(l, fkoidlist)
+	{
+		Oid			fkoid = lfirst_oid(l);
+		HeapTuple	htup;
+		Form_pg_constraint constraint;
+		ForeignKeyOptInfo *info;
+		Datum		adatum;
+		bool		isnull;
+		ArrayType  *arr;
+		int			numkeys;
+		int			i;
+
+		htup = SearchSysCache1(CONSTROID, ObjectIdGetDatum(fkoid));
+		if (!HeapTupleIsValid(htup)) /* should not happen */
+			elog(ERROR, "cache lookup failed for constraint %u", fkoid);
+		constraint = (Form_pg_constraint) GETSTRUCT(htup);
+
+		Assert(constraint->contype == CONSTRAINT_FOREIGN);
+
+		info = makeNode(ForeignKeyOptInfo);
+
+		info->conrelid = constraint->conrelid;
+		info->confrelid = constraint->confrelid;
+
+		/* conkey */
+		adatum = SysCacheGetAttr(CONSTROID, htup,
+									Anum_pg_constraint_conkey, &isnull);
+		Assert(!isnull);
+
+		arr = DatumGetArrayTypeP(adatum);
+		numkeys = ARR_DIMS(arr)[0];
+		info->conkeys = (int*)palloc(numkeys * sizeof(int));
+		for (i = 0; i < numkeys; i++)
+			info->conkeys[i] = ((int16 *) ARR_DATA_PTR(arr))[i];
+
+		/* confkey */
+		adatum = SysCacheGetAttr(CONSTROID, htup,
+									Anum_pg_constraint_confkey, &isnull);
+		Assert(!isnull);
+
+		arr = DatumGetArrayTypeP(adatum);
+		Assert(numkeys == ARR_DIMS(arr)[0]);
+		info->confkeys = (int*)palloc(numkeys * sizeof(int));
+		for (i = 0; i < numkeys; i++)
+			info->confkeys[i] = ((int16 *) ARR_DATA_PTR(arr))[i];
+
+		/* conpfeqop */
+		adatum = SysCacheGetAttr(CONSTROID, htup,
+									Anum_pg_constraint_conpfeqop, &isnull);
+		Assert(!isnull);
+
+		arr = DatumGetArrayTypeP(adatum);
+		Assert(numkeys == ARR_DIMS(arr)[0]);
+		info->conpfeqop = (Oid*)palloc(numkeys * sizeof(Oid));
+		for (i = 0; i < numkeys; i++)
+			info->conpfeqop[i] = ((Oid *) ARR_DATA_PTR(arr))[i];
+
+		info->nkeys = numkeys;
+
+		ReleaseSysCache(htup);
+
+		fkinfos = lappend(fkinfos, info);
+	}
+
+	list_free(fkoidlist);
+
+	rel->fkeylist = fkinfos;
 
 	/* Grab foreign-table info using the relcache, while we have it */
 	if (relation->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
@@ -471,26 +558,18 @@ infer_arbiter_indexes(PlannerInfo *root)
 
 	/*
 	 * Build normalized/BMS representation of plain indexed attributes, as
-	 * well as direct list of inference elements.  This is required for
-	 * matching the cataloged definition of indexes.
+	 * well as a separate list of expression items.  This simplifies matching
+	 * the cataloged definition of indexes.
 	 */
 	foreach(l, onconflict->arbiterElems)
 	{
-		InferenceElem *elem;
+		InferenceElem *elem = (InferenceElem *) lfirst(l);
 		Var		   *var;
 		int			attno;
 
-		elem = (InferenceElem *) lfirst(l);
-
-		/*
-		 * Parse analysis of inference elements performs full parse analysis
-		 * of Vars, even for non-expression indexes (in contrast with utility
-		 * command related use of IndexElem).  However, indexes are cataloged
-		 * with simple attribute numbers for non-expression indexes.  Those
-		 * are handled later.
-		 */
 		if (!IsA(elem->expr, Var))
 		{
+			/* If not a plain Var, just shove it in inferElems for now */
 			inferElems = lappend(inferElems, elem->expr);
 			continue;
 		}
@@ -498,14 +577,13 @@ infer_arbiter_indexes(PlannerInfo *root)
 		var = (Var *) elem->expr;
 		attno = var->varattno;
 
-		if (attno < 0)
+		if (attno == 0)
 			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
-					 errmsg("system columns cannot be used in an ON CONFLICT clause")));
-		else if (attno == 0)
-			elog(ERROR, "whole row unique index inference specifications are not valid");
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("whole row unique index inference specifications are not supported")));
 
-		inferAttrs = bms_add_member(inferAttrs, attno);
+		inferAttrs = bms_add_member(inferAttrs,
+								 attno - FirstLowInvalidHeapAttributeNumber);
 	}
 
 	/*
@@ -522,21 +600,20 @@ infer_arbiter_indexes(PlannerInfo *root)
 					 errmsg("constraint in ON CONFLICT clause has no associated index")));
 	}
 
-	indexList = RelationGetIndexList(relation);
-
 	/*
 	 * Using that representation, iterate through the list of indexes on the
 	 * target relation to try and find a match
 	 */
+	indexList = RelationGetIndexList(relation);
+
 	foreach(l, indexList)
 	{
 		Oid			indexoid = lfirst_oid(l);
 		Relation	idxRel;
 		Form_pg_index idxForm;
-		Bitmapset  *indexedAttrs = NULL;
+		Bitmapset  *indexedAttrs;
 		List	   *idxExprs;
 		List	   *predExprs;
-		List	   *whereExplicit;
 		AttrNumber	natt;
 		ListCell   *el;
 
@@ -593,16 +670,15 @@ infer_arbiter_indexes(PlannerInfo *root)
 		if (!idxForm->indisunique)
 			goto next;
 
-		/* Build BMS representation of cataloged index attributes */
+		/* Build BMS representation of plain (non expression) index attrs */
+		indexedAttrs = NULL;
 		for (natt = 0; natt < idxForm->indnatts; natt++)
 		{
 			int			attno = idxRel->rd_index->indkey.values[natt];
 
-			if (attno < 0)
-				elog(ERROR, "system column in index");
-
 			if (attno != 0)
-				indexedAttrs = bms_add_member(indexedAttrs, attno);
+				indexedAttrs = bms_add_member(indexedAttrs,
+								 attno - FirstLowInvalidHeapAttributeNumber);
 		}
 
 		/* Non-expression attributes (if any) must match */
@@ -658,13 +734,12 @@ infer_arbiter_indexes(PlannerInfo *root)
 			goto next;
 
 		/*
-		 * Any user-supplied ON CONFLICT unique index inference WHERE clause
-		 * need only be implied by the cataloged index definitions predicate.
+		 * If it's a partial index, its predicate must be implied by the ON
+		 * CONFLICT's WHERE clause.
 		 */
 		predExprs = RelationGetIndexPredicate(idxRel);
-		whereExplicit = make_ands_implicit((Expr *) onconflict->arbiterWhere);
 
-		if (!predicate_implied_by(predExprs, whereExplicit))
+		if (!predicate_implied_by(predExprs, (List *) onconflict->arbiterWhere))
 			goto next;
 
 		results = lappend_oid(results, idxForm->indexrelid);
@@ -1539,4 +1614,51 @@ has_unique_index(RelOptInfo *rel, AttrNumber attno)
 			return true;
 	}
 	return false;
+}
+
+
+/*
+ * has_row_triggers
+ *
+ * Detect whether the specified relation has any row-level triggers for event.
+ */
+bool
+has_row_triggers(PlannerInfo *root, Index rti, CmdType event)
+{
+	RangeTblEntry *rte = planner_rt_fetch(rti, root);
+	Relation	relation;
+	TriggerDesc *trigDesc;
+	bool		result = false;
+
+	/* Assume we already have adequate lock */
+	relation = heap_open(rte->relid, NoLock);
+
+	trigDesc = relation->trigdesc;
+	switch (event)
+	{
+		case CMD_INSERT:
+			if (trigDesc &&
+				(trigDesc->trig_insert_after_row ||
+				 trigDesc->trig_insert_before_row))
+				result = true;
+			break;
+		case CMD_UPDATE:
+			if (trigDesc &&
+				(trigDesc->trig_update_after_row ||
+				 trigDesc->trig_update_before_row))
+				result = true;
+			break;
+		case CMD_DELETE:
+			if (trigDesc &&
+				(trigDesc->trig_delete_after_row ||
+				 trigDesc->trig_delete_before_row))
+				result = true;
+			break;
+		default:
+			elog(ERROR, "unrecognized CmdType: %d", (int) event);
+			break;
+	}
+
+	heap_close(relation, NoLock);
+	return result;
 }
