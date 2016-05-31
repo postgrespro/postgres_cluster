@@ -624,5 +624,15 @@ default_text_search_config = 'pg_catalog.english'
 
 # Add settings for extensions here
 
-multimaster.workers=8
-multimaster.queue_size=1073741824
+multimaster.queue_size = 173741824
+multimaster.workers = 10
+multimaster.buffer_size = 65536
+multimaster.arbiter_port = 5700
+multimaster.vacuum_delay = 1
+multimaster.use_dtm = 1
+multimaster.twopc_prepare_ratio = 1000
+multimaster.trans_spill_threshold = 100
+multimaster.max_nodes = 5
+multimaster.gc_period = 1000000000
+
+max_parallel_degree=0
