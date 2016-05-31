@@ -461,6 +461,7 @@ MtmAdjustOldestXid(TransactionId xid)
 	MtmTransState *ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
 	MTM_LOG2("%d: MtmAdjustOldestXid(%d): snapshot=%ld, csn=%ld, status=%d", MyProcPid, xid, ts != NULL ? ts->snapshot : 0, ts != NULL ? ts->csn : 0, ts != NULL ? ts->status : -1);
 	Mtm->gcCount = 0;
+
 	if (ts != NULL) { 
 		oldestSnapshot = ts->snapshot;
 		Mtm->nodes[MtmNodeId-1].oldestSnapshot = oldestSnapshot;
@@ -487,6 +488,7 @@ MtmAdjustOldestXid(TransactionId xid)
 			}
 		}
 	} 
+
 	if (MtmUseDtm) 
 	{ 
 		if (prev != NULL) { 
@@ -2537,7 +2539,6 @@ mtm_get_cluster_info(PG_FUNCTION_ARGS)
 	tuple = BuildTupleFromCStrings(funcctx->attinmeta, values);
 	PQclear(result);
 	PQfinish(conn);
-	usrfctx->nodeId += 1;
 	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(tuple));
 }
 
