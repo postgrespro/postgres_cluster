@@ -88,6 +88,7 @@ sub configure
 			max_prepared_transactions = 200
 			max_connections = 200
 			max_worker_processes = 100
+			max_parallel_degree = 0
 			wal_level = logical
 			fsync = off	
 			max_wal_senders = 10
