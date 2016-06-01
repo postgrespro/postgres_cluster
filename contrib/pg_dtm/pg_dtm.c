@@ -119,7 +119,10 @@ static TransactionManager DtmTM = {
 	DtmGetGlobalTransactionId,
 	PgXidInMVCCSnapshot,
     DtmDetectGlobalDeadLock,
-	DtmGetName
+	DtmGetName,
+	PgGetTransactionStateSize,
+	PgSerializeTransactionState,
+	PgDeserializeTransactionState	
 };
 
 static char *Arbiters;

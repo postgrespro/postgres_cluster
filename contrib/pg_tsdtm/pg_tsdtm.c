@@ -102,6 +102,10 @@ static bool DtmDetectGlobalDeadLock(PGPROC *proc);
 static cid_t DtmGetCsn(TransactionId xid);
 static void DtmAddSubtransactions(DtmTransStatus * ts, TransactionId *subxids, int nSubxids);
 static char const *DtmGetName(void);
+static size_t DtmGetTransactionStateSize(void);
+static void DtmSerializeTransactionState(void* ctx);
+static void DtmDeserializeTransactionState(void* ctx);
+
 
 static TransactionManager DtmTM = {
 	PgTransactionIdGetStatus,
@@ -113,7 +117,10 @@ static TransactionManager DtmTM = {
 	PgGetGlobalTransactionId,
 	DtmXidInMVCCSnapshot,
 	DtmDetectGlobalDeadLock,
-	DtmGetName
+	DtmGetName,
+	DtmGetTransactionStateSize,
+	DtmSerializeTransactionState,
+	DtmDeserializeTransactionState
 };
 
 void		_PG_init(void);
@@ -948,6 +955,25 @@ DtmDetectGlobalDeadLock(PGPROC *proc)
 	elog(WARNING, "Global deadlock?");
 	return true;
 }
+
+static size_t 
+DtmGetTransactionStateSize(void)
+{
+	return sizeof(dtm_tx);
+}
+
+static void
+DtmSerializeTransactionState(void* ctx)
+{
+	memcpy(ctx, &dtm_tx, sizeof(dtm_tx));
+}
+
+static void
+DtmDeserializeTransactionState(void* ctx)
+{
+	memcpy(&dtm_tx, ctx, sizeof(dtm_tx));
+}
+
 
 static cid_t
 DtmGetCsn(TransactionId xid)

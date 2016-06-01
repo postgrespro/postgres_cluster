@@ -71,6 +71,23 @@ typedef struct
 
 	/* Get transaction manager name */
 	char const *(*GetName) (void);
+
+	/* 
+	 * Calculate transaction state size. This method is invoked by EstimateTransactionStateSpace to copy transaction
+	 * state to parallel workers
+	 */
+	size_t      (*GetTransactionStateSize)(void);
+
+	/*
+	 * Serialize transaction state
+	 */
+	void        (*SerializeTransactionState)(void* ctx);
+
+	/*
+	 * Deserialize transaction state
+	 */	
+	void        (*DeserializeTransactionState)(void* ctx);
+
 }	TransactionManager;
 
 /* Get pointer to transaction manager: actually returns content of TM variable */
@@ -100,5 +117,10 @@ extern TransactionId PgGetNewTransactionId(bool isSubXact);
 extern bool PgDetectGlobalDeadLock(PGPROC *proc);
 
 extern char const *PgGetTransactionManagerName(void);
+
+extern size_t PgGetTransactionStateSize(void);
+extern void PgSerializeTransactionState(void* ctx);
+extern void PgDeserializeTransactionState(void* ctx);
+
 
 #endif

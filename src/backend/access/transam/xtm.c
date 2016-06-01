@@ -36,6 +36,23 @@ PgGetTransactionManagerName(void)
 	return "postgres";
 }
 
+size_t 
+PgGetTransactionStateSize(void)
+{
+	return 0;
+}
+
+void
+PgSerializeTransactionState(void* ctx)
+{
+}
+
+void
+PgDeserializeTransactionState(void* ctx)
+{
+}
+
+
 TransactionManager PgTM = {
 	PgTransactionIdGetStatus,
 	PgTransactionIdSetTreeStatus,
@@ -46,7 +63,10 @@ TransactionManager PgTM = {
 	PgGetGlobalTransactionId,
 	PgXidInMVCCSnapshot,
 	PgDetectGlobalDeadLock,
-	PgGetTransactionManagerName
+	PgGetTransactionManagerName,
+	PgGetTransactionStateSize,
+	PgSerializeTransactionState,
+	PgDeserializeTransactionState
 };
 
 TransactionManager *TM = &PgTM;

@@ -27,6 +27,7 @@
 #include "access/transam.h"
 #include "access/twophase.h"
 #include "access/xact.h"
+#include "access/xtm.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
@@ -4826,8 +4827,9 @@ EstimateTransactionStateSpace(void)
 		nxids = add_size(nxids, s->nChildXids);
 	}
 
-	nxids = add_size(nxids, nParallelCurrentXids);
-	return mul_size(nxids, sizeof(TransactionId));
+	nxids = add_size(nxids, nParallelCurrentXids);	
+	nxids = mul_size(nxids, sizeof(TransactionId));
+	return add_size(nxids, TM->GetTransactionStateSize());
 }
 
 /*
@@ -4873,6 +4875,7 @@ SerializeTransactionState(Size maxsize, char *start_address)
 		Assert(maxsize >= (nParallelCurrentXids + c) * sizeof(TransactionId));
 		memcpy(&result[c], ParallelCurrentXids,
 			   nParallelCurrentXids * sizeof(TransactionId));
+		TM->SerializeTransactionState(&result[c + nParallelCurrentXids]);
 		return;
 	}
 
@@ -4906,6 +4909,7 @@ SerializeTransactionState(Size maxsize, char *start_address)
 	/* Copy data into output area. */
 	result[c++] = (TransactionId) nxids;
 	memcpy(&result[c], workspace, nxids * sizeof(TransactionId));
+	TM->SerializeTransactionState(&result[c + nxids]);
 }
 
 /*
@@ -4928,6 +4932,7 @@ StartParallelWorkerTransaction(char *tstatespace)
 	currentCommandId = tstate[4];
 	nParallelCurrentXids = (int) tstate[5];
 	ParallelCurrentXids = &tstate[6];
+	TM->DeserializeTransactionState(&tstate[nParallelCurrentXids + 6]);
 
 	CurrentTransactionState->blockState = TBLOCK_PARALLEL_INPROGRESS;
 }
