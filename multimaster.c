@@ -130,6 +130,10 @@ static TransactionId MtmAdjustOldestXid(TransactionId xid);
 static bool MtmDetectGlobalDeadLock(PGPROC* proc);
 static void MtmAddSubtransactions(MtmTransState* ts, TransactionId* subxids, int nSubxids);
 static char const* MtmGetName(void);
+static size_t MtmGetTransactionStateSize(void);
+static void MtmSerializeTransactionState(void* ctx);
+static void MtmDeserializeTransactionState(void* ctx);
+
 static void MtmCheckClusterLock(void);
 static void MtmCheckSlots(void);
 static void MtmAddSubtransactions(MtmTransState* ts, TransactionId *subxids, int nSubxids);
@@ -163,7 +167,10 @@ static TransactionManager MtmTM = {
 	PgGetGlobalTransactionId, 
 	MtmXidInMVCCSnapshot, 
 	MtmDetectGlobalDeadLock, 
-	MtmGetName 
+	MtmGetName,
+	MtmGetTransactionStateSize,
+	MtmSerializeTransactionState,
+	MtmDeserializeTransactionState
 };
 
 char const* const MtmNodeStatusMnem[] = 
@@ -321,6 +328,26 @@ static char const* MtmGetName(void)
 {
 	return MULTIMASTER_NAME;
 }
+
+static size_t 
+MtmGetTransactionStateSize(void)
+{
+	return sizeof(MtmTx);
+}
+
+static void
+MtmSerializeTransactionState(void* ctx)
+{
+	memcpy(ctx, &MtmTx, sizeof(MtmTx));
+}
+
+static void
+MtmDeserializeTransactionState(void* ctx)
+{
+	memcpy(&MtmTx, ctx, sizeof(MtmTx));
+}
+
+
 
 /*
  * -------------------------------------------
