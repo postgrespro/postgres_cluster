@@ -2145,7 +2145,7 @@ MtmOnProcExit(int code, Datum arg)
 	if (MtmReplicationNodeId > 0) { 
 		Mtm->nodes[MtmReplicationNodeId-1].senderPid = -1;
 		MTM_LOG1("WAL-sender to %d is terminated", MtmReplicationNodeId); 
-		MtmOnNodeDisconnect(MtmReplicationNodeId);
+		/* MtmOnNodeDisconnect(MtmReplicationNodeId); */
 	}
 }
 
@@ -2241,7 +2241,7 @@ MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
 {
 	if (MtmReplicationNodeId >= 0) { 
 		MTM_LOG1("Logical replication to node %d is stopped", MtmReplicationNodeId); 
-		MtmOnNodeDisconnect(MtmReplicationNodeId);
+		/* MtmOnNodeDisconnect(MtmReplicationNodeId); */
 		MtmReplicationNodeId = -1; /* defuse on_proc_exit hook */
 	}
 }
