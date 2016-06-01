@@ -401,7 +401,7 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 				
 			/* Some node considered that I am dead, so switch to recovery mode */
 			if (BIT_CHECK(resp.disabledNodeMask, MtmNodeId-1)) { 
-				elog(WARNING, "Node %d think that I am dead", resp.node);
+				elog(WARNING, "Node %d thinks that I was dead", resp.node);
 				BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
 				MtmSwitchClusterMode(MTM_RECOVERY);
 			}

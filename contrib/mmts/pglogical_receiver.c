@@ -275,7 +275,7 @@ pglogical_receiver_main(Datum main_arg)
 				PQclear(res);
 				ereport(ERROR, (errmsg("%s: Could not create logical slot",
 									   worker_proc)));
-				MtmOnNodeDisconnect(nodeId);
+				/* MtmOnNodeDisconnect(nodeId); */
 				proc_exit(1);
 			}
 		}
@@ -317,7 +317,7 @@ pglogical_receiver_main(Datum main_arg)
 		PQclear(res);
 		ereport(WARNING, (errmsg("%s: Could not start logical replication",
 								 worker_proc)));
-		MtmOnNodeDisconnect(nodeId);
+		/* MtmOnNodeDisconnect(nodeId); */
 		proc_exit(1);
 	}
 	PQclear(res);
@@ -408,7 +408,7 @@ pglogical_receiver_main(Datum main_arg)
 				{
 					ereport(LOG, (errmsg("%s: streaming header too small: %d",
 										 worker_proc, rc)));
-					MtmOnNodeDisconnect(nodeId);
+					/* MtmOnNodeDisconnect(nodeId); */
 					proc_exit(1);
 				}
 				replyRequested = copybuf[pos];
@@ -429,7 +429,7 @@ pglogical_receiver_main(Datum main_arg)
 
 					/* Leave is feedback is not sent properly */
 					if (!sendFeedback(conn, now, nodeId)) {
-						MtmOnNodeDisconnect(nodeId);
+						/* MtmOnNodeDisconnect(nodeId); */
 						proc_exit(1);
 					}
 				}
@@ -439,7 +439,7 @@ pglogical_receiver_main(Datum main_arg)
 			{
 				ereport(LOG, (errmsg("%s: Incorrect streaming header",
 									 worker_proc)));
-				MtmOnNodeDisconnect(nodeId);
+				/* MtmOnNodeDisconnect(nodeId); */
 				proc_exit(1);
 			}
 
@@ -548,7 +548,7 @@ pglogical_receiver_main(Datum main_arg)
 			{
 				ereport(LOG, (errmsg("%s: Incorrect status received... Leaving.",
 									 worker_proc)));
-				MtmOnNodeDisconnect(nodeId);
+				/* MtmOnNodeDisconnect(nodeId); */
 				proc_exit(1);
 			}
 
@@ -557,7 +557,7 @@ pglogical_receiver_main(Datum main_arg)
 			{
 				ereport(LOG, (errmsg("%s: Data remaining on the socket... Leaving.",
 									 worker_proc)));
-				MtmOnNodeDisconnect(nodeId);
+				/* MtmOnNodeDisconnect(nodeId); */
 				proc_exit(1);
 			}
 			continue;
@@ -576,7 +576,7 @@ pglogical_receiver_main(Datum main_arg)
 		{
 			ereport(LOG, (errmsg("%s: Failure while receiving changes...",
 								 worker_proc)));
-			MtmOnNodeDisconnect(nodeId);
+			/* MtmOnNodeDisconnect(nodeId); */
 			proc_exit(1);
 		}
 	}
