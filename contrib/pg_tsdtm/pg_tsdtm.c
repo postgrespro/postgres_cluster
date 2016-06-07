@@ -120,7 +120,8 @@ static TransactionManager DtmTM = {
 	DtmGetName,
 	DtmGetTransactionStateSize,
 	DtmSerializeTransactionState,
-	DtmDeserializeTransactionState
+	DtmDeserializeTransactionState,
+	PgInitializeSequence
 };
 
 void		_PG_init(void);

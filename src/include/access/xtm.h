@@ -88,6 +88,12 @@ typedef struct
 	 */	
 	void        (*DeserializeTransactionState)(void* ctx);
 
+	/*
+	 * Assign initial value and step to new sequence if them are not specified explicitly.
+	 * This function allows to generate unique (but not monotonic) values in distributed cluster
+	 */
+	void        (*InitializeSequence)(int64* start, int64* step);
+
 }	TransactionManager;
 
 /* Get pointer to transaction manager: actually returns content of TM variable */
@@ -121,6 +127,7 @@ extern char const *PgGetTransactionManagerName(void);
 extern size_t PgGetTransactionStateSize(void);
 extern void PgSerializeTransactionState(void* ctx);
 extern void PgDeserializeTransactionState(void* ctx);
+extern void PgInitializeSequence(int64* start, int64* step);
 
 
 #endif

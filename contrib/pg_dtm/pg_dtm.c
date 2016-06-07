@@ -122,7 +122,8 @@ static TransactionManager DtmTM = {
 	DtmGetName,
 	PgGetTransactionStateSize,
 	PgSerializeTransactionState,
-	PgDeserializeTransactionState	
+	PgDeserializeTransactionState,
+	PgInitializeSequence
 };
 
 static char *Arbiters;
@@ -144,6 +145,13 @@ static BackgroundWorker DtmWorker = {
 static char const* DtmGetName(void)
 {
 	return "pg_dtm";
+}
+
+static void
+DtmInitializeSequence(int64* init, int64* step)
+{
+	*init = MtmNodeId;
+	*step = MtmMaxNodes;
 }
 
 

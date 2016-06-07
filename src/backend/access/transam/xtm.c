@@ -52,6 +52,12 @@ PgDeserializeTransactionState(void* ctx)
 {
 }
 
+void PgInitializeSequence(int64* init, int64* step)
+{
+	*init = 1;
+	*step = 1;
+}
+
 
 TransactionManager PgTM = {
 	PgTransactionIdGetStatus,
@@ -66,7 +72,8 @@ TransactionManager PgTM = {
 	PgGetTransactionManagerName,
 	PgGetTransactionStateSize,
 	PgSerializeTransactionState,
-	PgDeserializeTransactionState
+	PgDeserializeTransactionState,
+	PgInitializeSequence
 };
 
 TransactionManager *TM = &PgTM;
