@@ -1,0 +1,4 @@
+.blockade
+.vagrant
+*.swp
+*.pyc
