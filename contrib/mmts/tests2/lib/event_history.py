@@ -78,7 +78,6 @@ class EventHistory():
                 named_agg['running'] = 1
                 named_agg['running_latency'] = latency
 
-#        print(self.running_events)
         return agg
 
     def aggregate_by(self, period):
