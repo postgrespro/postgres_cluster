@@ -62,7 +62,10 @@ class BankClient(object):
         conn = psycopg2.connect(self.connstr)
         cur = conn.cursor();
         while self.run.value:
+            event_id = self.history.register_start('total')
             cur.execute('select sum(amount) from bank_test')
+            self.history.register_finish(event_id, 'commit')
+
             res = cur.fetchone()
             if res[0] != 0:
                 print("Isolation error, total = %d" % (res[0],))
@@ -83,7 +86,7 @@ class BankClient(object):
             from_uid = random.randrange(1, self.accounts + 1)
             to_uid = random.randrange(1, self.accounts + 1)
 
-            event_id = self.history.register_start('tx')
+            event_id = self.history.register_start('transfer')
 
             cur.execute('''update bank_test
                     set amount = amount - %s
@@ -118,7 +121,6 @@ class BankClient(object):
 
         self.total_process = Process(target=self.watchdog, args=())
         self.total_process.start()
-
 
         return
 
