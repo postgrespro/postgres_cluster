@@ -2,6 +2,7 @@ import psycopg2
 import random
 from multiprocessing import Process, Value, Queue
 import time
+import sys
 from event_history import *
 
 class ClientCollection(object):
@@ -59,26 +60,36 @@ class BankClient(object):
         return self._history
 
     def check_total(self):
-        conn = psycopg2.connect(self.connstr)
-        cur = conn.cursor();
+        conn, cur = self.connect()
+
         while self.run.value:
             event_id = self.history.register_start('total')
-            cur.execute('select sum(amount) from bank_test')
-            self.history.register_finish(event_id, 'commit')
 
-            res = cur.fetchone()
-            if res[0] != 0:
-                print("Isolation error, total = %d" % (res[0],))
-                raise BaseException
+            try:
+                cur.execute('select sum(amount) from bank_test')
+                res = cur.fetchone()
+                if res[0] != 0:
+                    print("Isolation error, total = %d" % (res[0],))
+                    raise BaseException
+            except psycopg2.InterfaceError:
+                print("Got error: ", sys.exc_info())
+                print("Reconnecting")
+                conn, cur = self.connect(reconnect=True)
+            except:
+                print("Got error: ", sys.exc_info())
+                self.history.register_finish(event_id, 'rollback')
+            else:
+                self.history.register_finish(event_id, 'commit')
+
 
         cur.close()
         conn.close()
 
     def transfer_money(self):
-        print(self.connstr)
-        conn = psycopg2.connect(self.connstr)
-        cur = conn.cursor()
-        
+        #conn = psycopg2.connect(self.connstr)
+        #cur = conn.cursor()
+        conn, cur = self.connect()
+
         i = 0
         while self.run.value:
             i += 1
@@ -88,39 +99,59 @@ class BankClient(object):
 
             event_id = self.history.register_start('transfer')
 
-            cur.execute('''update bank_test
+            try:
+                cur.execute('''update bank_test
                     set amount = amount - %s
                     where uid = %s''',
                     (amount, from_uid))
-            cur.execute('''update bank_test
+                cur.execute('''update bank_test
                     set amount = amount + %s
                     where uid = %s''',
                     (amount, to_uid))
 
-            try:
                 conn.commit()
+            except psycopg2.DatabaseError:
+                print("Got error: ", sys.exc_info())
+                print("Reconnecting")
+                
+                self.history.register_finish(event_id, 'rollback')
+                conn, cur = self.connect(reconnect=True)
             except:
+                print("Got error: ", sys.exc_info())
                 self.history.register_finish(event_id, 'rollback')
             else:
                 self.history.register_finish(event_id, 'commit')
-            
+
         cur.close()
         conn.close()
 
-    def watchdog(self):
+    def connect(self, reconnect=False):
+        
         while self.run.value:
-            time.sleep(1)
-            print('watchdog: ', self.history.aggregate())
+            try:
+                conn = psycopg2.connect(self.connstr)
+                cur = conn.cursor()
+            except:
+                print("Got error: ", sys.exc_info())
+                if not reconnect:
+                    raise
+            else:
+                return conn, cur
+
+    # def watchdog(self):
+    #    while self.run.value:
+    #        time.sleep(1)
+    #        print('watchdog: ', self.history.aggregate())
 
     def start(self):
         self.transfer_process = Process(target=self.transfer_money, args=())
         self.transfer_process.start()
-        
+
         self.total_process = Process(target=self.check_total, args=())
         self.total_process.start()
 
-        self.total_process = Process(target=self.watchdog, args=())
-        self.total_process.start()
+        #self.total_process = Process(target=self.watchdog, args=())
+        #self.total_process.start()
 
         return
 
@@ -135,6 +166,4 @@ class BankClient(object):
         conn.commit()
         cur.close()
         conn.close()
-
-
 

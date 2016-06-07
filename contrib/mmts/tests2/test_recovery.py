@@ -19,26 +19,44 @@ class RecoveryTest(unittest.TestCase):
         self.clients[0].cleanup()
         subprocess.check_call(['blockade','join'])
 
-#    def test_0_normal_operation(self):
-#        print('normalOpsTest')
-#        time.sleep(5)
-#        
-#        for client in self.clients:
-#            agg = client.history.aggregate()
-#            print(agg)
-#            self.assertTrue(agg['tx']['commit'] > 0)
+    def test_0_normal_operation(self):
+        print('### normalOpsTest ###')
+        print('Waiting 5s to check operability')
+        time.sleep(5)
+        
+        for client in self.clients:
+            agg = client.history.aggregate()
+            print(agg)
+            self.assertTrue(agg['transfer']['commit'] > 0)
 
     def test_1_node_disconnect(self):
-        print('disconnectTest')
-        time.sleep(3)
+        print('### disconnectTest ###')
 
         subprocess.check_call(['blockade','partition','node3'])
-        print('---node3 out---')
-        time.sleep(15)
+        print('Node3 disconnected')
+
+        print('Waiting 12s to discover failure')
+        time.sleep(12)
+        for client in self.clients:
+            agg = client.history.aggregate()
+            print(agg)
+
+        print('Waiting 3s to check operability')
+        time.sleep(3)
+        for client in self.clients:
+            agg = client.history.aggregate()
+            print(agg)
 
         subprocess.check_call(['blockade','join'])
-        print('---node2 and node3 are back---')
-        time.sleep(5)
+        print('Node3 connected back')
+
+        print('Waiting 12s for catch-up')
+        time.sleep(12)
+
+        for client in self.clients:
+            agg = client.history.aggregate()
+            print(agg)
+
 
 if __name__ == '__main__':
     unittest.main()
