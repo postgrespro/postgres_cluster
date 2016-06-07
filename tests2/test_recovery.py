@@ -2,7 +2,6 @@ import unittest
 import time
 import subprocess
 from lib.bank_client import *
-#from lib.bank_client import *
 
 
 class RecoveryTest(unittest.TestCase):
@@ -35,32 +34,11 @@ class RecoveryTest(unittest.TestCase):
 
         subprocess.check_call(['blockade','partition','node3'])
         print('---node3 out---')
-        
-        time.sleep(25)
-
-        # node1 should work
-        agg = self.clients[0].history.aggregate()
-        print(agg)
-#        self.assertTrue(agg['tx']['commit'] > 0)
-
-        # node3 shouldn't work
-        agg = self.clients[2].history.aggregate()
-        print(agg)
-#        self.assertTrue(agg['tx']['commit'] == 0)
-
-#        subprocess.check_call(['blockade','partition','node2'])
-#        print('---node2 out---')
-#        time.sleep(5)
+        time.sleep(15)
 
         subprocess.check_call(['blockade','join'])
         print('---node2 and node3 are back---')
         time.sleep(5)
-
-        #b1_agg = self.b1.history().aggregate()
-        #self.assertTrue(b1_agg['commit']['count'] > 0)
-        #self.assertTrue(
-        #    float(b1_agg['rollback']['count'])/b1_agg['commit']['count'] < 0.2
-        #)
 
 if __name__ == '__main__':
     unittest.main()

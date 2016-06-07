@@ -11,7 +11,6 @@ class ClientCollection(object):
         for cs in connstrs:
             b = BankClient(cs)
             self._clients.append(b)
-            # glob_clients.append(b)
 
         self._clients[0].initialize()
 
@@ -29,7 +28,6 @@ class ClientCollection(object):
     def stop(self):
         for client in self._clients:
             client.stop()
-#            client.cleanup()
 
 
 class BankClient(object):
@@ -41,7 +39,6 @@ class BankClient(object):
         self.accounts = 10000
 
     def initialize(self):
-        # initialize database
         conn = psycopg2.connect(self.connstr)
         cur = conn.cursor()
         cur.execute('create extension if not exists multimaster')
@@ -69,7 +66,7 @@ class BankClient(object):
             res = cur.fetchone()
             if res[0] != 0:
                 print("Isolation error, total = %d" % (res[0],))
-                raise BaseException #
+                raise BaseException
 
         cur.close()
         conn.close()
@@ -88,7 +85,6 @@ class BankClient(object):
 
             event_id = self.history.register_start('tx')
 
-            #cur.execute('begin')
             cur.execute('''update bank_test
                     set amount = amount - %s
                     where uid = %s''',
@@ -97,7 +93,6 @@ class BankClient(object):
                     set amount = amount + %s
                     where uid = %s''',
                     (amount, to_uid))
-            #cur.execute('commit')
 
             try:
                 conn.commit()
@@ -106,8 +101,6 @@ class BankClient(object):
             else:
                 self.history.register_finish(event_id, 'commit')
             
-            #print("T", i)
-
         cur.close()
         conn.close()
 
@@ -131,8 +124,6 @@ class BankClient(object):
 
     def stop(self):
         self.run.value = False
-#        self.total_process.join()
-#        self.transfer_process.join()
         return
 
     def cleanup(self):
