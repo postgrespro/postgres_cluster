@@ -10,6 +10,14 @@ class EventHistory():
         self.queue = Queue()
         self.events = []
         self.running_events = {}
+        self.last_aggregation = datetime.datetime.now()
+        self.agg_template = {
+            'commit': 0,
+            'rollback': 0,
+            'max_latency': 0.0,
+            'running': 0,
+            'running_latency': 0.0
+        }
 
     def register_start(self, name):
         event_id = uuid.uuid4()
@@ -54,22 +62,24 @@ class EventHistory():
 
         agg = {}
         for ev in self.events:
-            if ev['name'] in agg:
-                named_agg = agg[ev['name']]
-                latency = (ev['finished_at'] - ev['started_at']).total_seconds()
-                if ev['status'] in named_agg:
-                    named_agg[ev['status']] += 1
-                    if named_agg['max_latency'] < latency:
-                        named_agg['max_latency'] = latency
-                else:
-                    named_agg[ev['status']] = 0
-                    named_agg['max_latency'] = latency
-            else:
-                agg[ev['name']] = {}
+            if ev['finished_at'] < self.last_aggregation:
+                continue
+
+            if ev['name'] not in agg:
+                agg[ev['name']] = self.agg_template.copy()
+
+            named_agg = agg[ev['name']]
+            latency = (ev['finished_at'] - ev['started_at']).total_seconds()
+            named_agg[ev['status']] += 1
+            if named_agg['max_latency'] < latency:
+                named_agg['max_latency'] = latency
 
         for value in self.running_events.itervalues():
+            if value['name'] not in agg:
+                agg[value['name']] = self.agg_template.copy()
+
             named_agg = agg[value['name']]
-            latency = (datetime.datetime.now() - ev['started_at']).total_seconds()
+            latency = (datetime.datetime.now() - value['time']).total_seconds()
             if 'started' in named_agg:
                 named_agg['running'] += 1
                 if latency > named_agg['running_latency']:
@@ -78,6 +88,7 @@ class EventHistory():
                 named_agg['running'] = 1
                 named_agg['running_latency'] = latency
 
+        self.last_aggregation = datetime.datetime.now()
         return agg
 
     def aggregate_by(self, period):
