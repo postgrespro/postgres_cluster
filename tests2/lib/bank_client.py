@@ -9,8 +9,8 @@ class ClientCollection(object):
     def __init__(self, connstrs):
         self._clients = []
 
-        for cs in connstrs:
-            b = BankClient(cs)
+        for i, cs in enumerate(connstrs):
+            b = BankClient(cs, i)
             self._clients.append(b)
 
         self._clients[0].initialize()
@@ -27,17 +27,21 @@ class ClientCollection(object):
             client.start()
 
     def stop(self):
+        print('collection stop called', self._clients)
         for client in self._clients:
+            print('stop coll')
             client.stop()
 
 
 class BankClient(object):
 
-    def __init__(self, connstr):
+    def __init__(self, connstr, node_id):
         self.connstr = connstr
+        self.node_id = node_id
         self.run = Value('b', True)
         self._history = EventHistory()
         self.accounts = 10000
+        self.show_errors = True
 
     def initialize(self):
         conn = psycopg2.connect(self.connstr)
@@ -59,6 +63,10 @@ class BankClient(object):
     def history(self):
         return self._history
 
+    def print_error(self, arg, comment=''):
+        if self.show_errors:
+            print('Node', self.node_id, 'got error', arg, comment)
+
     def check_total(self):
         conn, cur = self.connect()
 
@@ -72,15 +80,12 @@ class BankClient(object):
                     print("Isolation error, total = %d" % (res[0],))
                     raise BaseException
             except psycopg2.InterfaceError:
-                print("Got error: ", sys.exc_info())
-                print("Reconnecting")
                 conn, cur = self.connect(reconnect=True)
             except:
-                print("Got error: ", sys.exc_info())
+                self.print_error(sys.exc_info(),'3')
                 self.history.register_finish(event_id, 'rollback')
             else:
                 self.history.register_finish(event_id, 'commit')
-
 
         cur.close()
         conn.close()
@@ -110,14 +115,10 @@ class BankClient(object):
                     (amount, to_uid))
 
                 conn.commit()
-            except psycopg2.DatabaseError:
-                print("Got error: ", sys.exc_info())
-                print("Reconnecting")
-                
-                self.history.register_finish(event_id, 'rollback')
+            except psycopg2.InterfaceError:
                 conn, cur = self.connect(reconnect=True)
             except:
-                print("Got error: ", sys.exc_info())
+                self.print_error(sys.exc_info(),'1')
                 self.history.register_finish(event_id, 'rollback')
             else:
                 self.history.register_finish(event_id, 'commit')
@@ -127,16 +128,17 @@ class BankClient(object):
 
     def connect(self, reconnect=False):
         
-        while self.run.value:
+        while True:
             try:
                 conn = psycopg2.connect(self.connstr)
                 cur = conn.cursor()
+                return conn, cur
             except:
-                print("Got error: ", sys.exc_info())
+                self.print_error(sys.exc_info(),'2')
                 if not reconnect:
                     raise
-            else:
-                return conn, cur
+                if not self.run.value:
+                    raise
 
     # def watchdog(self):
     #    while self.run.value:
@@ -156,7 +158,10 @@ class BankClient(object):
         return
 
     def stop(self):
+        print('Stopping!');
         self.run.value = False
+        self.total_process.join()
+        self.transfer_process.join()
         return
 
     def cleanup(self):

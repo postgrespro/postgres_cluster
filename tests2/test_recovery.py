@@ -15,6 +15,7 @@ class RecoveryTest(unittest.TestCase):
         self.clients.start()
 
     def tearDown(self):
+        print('tearDown')
         self.clients.stop()
         self.clients[0].cleanup()
         subprocess.check_call(['blockade','join'])
