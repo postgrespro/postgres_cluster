@@ -1291,6 +1291,7 @@ static bool
 MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 {
 	int i, j, n = Mtm->nAllNodes;
+	fprintf(stderr, "Connectivity matrix:\n");
 	for (i = 0; i < n; i++) { 
 		if (i+1 != MtmNodeId) { 
 			void* data = RaftableGet(psprintf("node-mask-%d", i+1), NULL, NULL, nowait);
@@ -1301,7 +1302,12 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 		} else { 
 			matrix[i] = Mtm->connectivityMask;
 		}
+		for (j = 0; j < n; j++) { 
+			putc(BIT_CHECK(matrix[i], j) ? 'X' : '+', stderr);
+		}
+		putc('\n', stderr);
 	}
+	fputs("-----------------------\n", stderr);
 	/* make matrix symetric: required for Bron–Kerbosch algorithm */
 	for (i = 0; i < n; i++) { 
 		for (j = 0; j < i; j++) { 
@@ -1332,6 +1338,17 @@ bool MtmRefreshClusterStatus(bool nowait)
 
 	clique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &clique_size);
 	if (clique_size >= Mtm->nAllNodes/2+1) { /* have quorum */
+		fprintf(stderr, "Old mask: ");
+		for (i = 0; i <  Mtm->nAllNodes; i++) { 
+			putc(BIT_CHECK(Mtm->disabledNodeMask, i) ? '-' : '+', stderr);
+		}
+		putc('\n', stderr);
+		fprintf(stderr, "New mask: ");
+		for (i = 0; i <  Mtm->nAllNodes; i++) { 
+			putc(BIT_CHECK(clique, i) ? '+' : '-', stderr);
+		}
+		putc('\n', stderr);
+
 		MTM_LOG1("Find clique %lx, disabledNodeMask %lx", (long) clique, (long) Mtm->disabledNodeMask);
 		MtmLock(LW_EXCLUSIVE);
 		mask = ~clique & (((nodemask_t)1 << Mtm->nAllNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
