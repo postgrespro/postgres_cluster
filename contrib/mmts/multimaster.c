@@ -134,6 +134,7 @@ static char const* MtmGetName(void);
 static size_t MtmGetTransactionStateSize(void);
 static void MtmSerializeTransactionState(void* ctx);
 static void MtmDeserializeTransactionState(void* ctx);
+static void MtmInitializeSequence(int64* start, int64* step);
 
 static void MtmCheckClusterLock(void);
 static void MtmCheckSlots(void);
@@ -171,7 +172,8 @@ static TransactionManager MtmTM = {
 	MtmGetName,
 	MtmGetTransactionStateSize,
 	MtmSerializeTransactionState,
-	MtmDeserializeTransactionState
+	MtmDeserializeTransactionState,
+	MtmInitializeSequence
 };
 
 char const* const MtmNodeStatusMnem[] = 
@@ -348,6 +350,13 @@ MtmDeserializeTransactionState(void* ctx)
 	memcpy(&MtmTx, ctx, sizeof(MtmTx));
 }
 
+
+static void
+MtmInitializeSequence(int64* start, int64* step)
+{
+	*start = MtmNodeId;
+	*step = MtmMaxNodes;
+}
 
 
 /*
