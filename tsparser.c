@@ -2040,7 +2040,11 @@ typedef struct
 } hlCheck;
 
 static bool
+#if PG_VERSION_NUM >= 90600
 checkcondition_HL(void *opaque, QueryOperand *val, ExecPhraseData *data)
+#else
+checkcondition_HL(void *opaque, QueryOperand *val)
+#endif
 {
 	int			i;
 	hlCheck	   *checkval = (hlCheck *) opaque;
@@ -2048,6 +2052,7 @@ checkcondition_HL(void *opaque, QueryOperand *val, ExecPhraseData *data)
 	for (i = 0; i < checkval->len; i++)
 	{
 		if (checkval->words[i].item == val)
+#if PG_VERSION_NUM >= 90600
 		{
 			/* don't need to find all positions */
 			if (!data)
@@ -2066,10 +2071,15 @@ checkcondition_HL(void *opaque, QueryOperand *val, ExecPhraseData *data)
 				data->pos[data->npos++] = checkval->words[i].pos;
 			}
 		}
+#else
+			return true;
+#endif
 	}
 
+#if PG_VERSION_NUM >= 90600
 	if (data && data->npos > 0)
 		return true;
+#endif
 
 	return false;
 }
