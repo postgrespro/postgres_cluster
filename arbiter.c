@@ -104,9 +104,13 @@ static int*      sockets;
 static int       gateway;
 static bool      send_heartbeat;
 static TimeoutId heartbeat_timer;
+static int       busy_socket;
 
 static void MtmTransSender(Datum arg);
 static void MtmTransReceiver(Datum arg);
+static void MtmSendHeartbeat(void);
+static void MtmCheckHeartbeat(void);
+
 
 
 static char const* const messageText[] = 
@@ -218,17 +222,41 @@ static void MtmDisconnect(int node)
 	MtmOnNodeDisconnect(node+1);
 }
 
+static int MtmWaitWriteSocket(int sd, time_t timeoutMsec)
+{	
+	struct timeval tv;
+	fd_set out_set;
+	int rc;
+	tv.tv_sec = timeoutMsec/1000; 
+    tv.tv_usec = timeoutMsec%1000*1000; 
+    FD_ZERO(&out_set); 
+    FD_SET(sd, &out_set); 
+	do { 
+		MtmCheckHeartbeat();
+	} while ((rc = select(sd+1, NULL, &out_set, NULL, &tv)) < 0 && errno == EINTR);
+	return rc;
+}
+
 static bool MtmWriteSocket(int sd, void const* buf, int size)
 {
     char* src = (char*)buf;
+	busy_socket = sd;
     while (size != 0) {
-        int n = send(sd, src, size, 0);
-        if (n <= 0) {
+		int rc = MtmWaitWriteSocket(sd, MtmHeartbeatSendTimeout);
+		if (rc == 1) { 
+			int n = send(sd, src, size, 0);
+			if (n < 0) {
+				busy_socket = -1;
+				return false;
+			}
+			size -= n;
+			src += n;
+		} else if (rc < 0) { 
+			busy_socket = -1;
 			return false;
-        }
-        size -= n;
-        src += n;
+		}
     }
+	busy_socket = -1;
 	return true;
 }
 
@@ -311,9 +339,10 @@ static void MtmSendHeartbeat()
 	
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
-		if (sockets[i] >= 0 && !BIT_CHECK(Mtm->disabledNodeMask|Mtm->reconnectMask, i))
+		if (sockets[i] >= 0 && sockets[i] != busy_socket && !BIT_CHECK(Mtm->disabledNodeMask|Mtm->reconnectMask, i))
 		{ 
-			MtmWriteSocket(sockets[i], &msg, sizeof(msg));
+			int rc = send(sockets[i], &msg, sizeof(msg), 0);
+			Assert(rc <= 0 || (size_t)rc == sizeof(msg));
 		}
 	}
 	
@@ -327,13 +356,15 @@ static void MtmCheckHeartbeat()
 		MtmSendHeartbeat();
 	}			
 }
-		
+
 
 static int MtmConnectSocket(char const* host, int port, int max_attempts)
 {
     struct sockaddr_in sock_inet;
     unsigned addrs[MAX_ROUTES];
     unsigned i, n_addrs = sizeof(addrs) / sizeof(addrs[0]);
+	MtmHandshakeMessage req;
+	MtmArbiterMessage   resp;
 	int sd;
 
     sock_inet.sin_family = AF_INET;
@@ -347,67 +378,80 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
     while (1) {
 		int rc = -1;
 
-		sd = socket(AF_INET, SOCK_STREAM, 0);
+		sd = socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK, 0);
 		if (sd < 0) {
 			elog(ERROR, "Arbiter failed to create socket: %d", errno);
 		}
+		busy_socket = sd;
 		for (i = 0; i < n_addrs; ++i) {
 			memcpy(&sock_inet.sin_addr, &addrs[i], sizeof sock_inet.sin_addr);
 			do {
 				rc = connect(sd, (struct sockaddr*)&sock_inet, sizeof(sock_inet));
-				MtmCheckHeartbeat();
 			} while (rc < 0 && errno == EINTR);
 
 			if (rc >= 0 || errno == EINPROGRESS) {
 				break;
 			}
 		}
-		if (rc < 0) {
-			if ((errno != ENOENT && errno != ECONNREFUSED && errno != EINPROGRESS) || max_attempts == 0) {
-				elog(WARNING, "Arbiter failed to connect to %s:%d: error=%d", host, port, errno);
-				return -1;
-			} else { 
-				max_attempts -= 1;
-				elog(WARNING, "Arbiter trying to connect to %s:%d: error=%d", host, port, errno);
-				MtmSleep(MtmConnectTimeout);
-			}
-			continue;
-		} else {
-			MtmHandshakeMessage req;
-			MtmArbiterMessage   resp;
-			MtmSetSocketOptions(sd);
-			req.hdr.code = MSG_HANDSHAKE;
-			req.hdr.node = MtmNodeId;
-			req.hdr.dxid = HANDSHAKE_MAGIC;
-			req.hdr.sxid = ShmemVariableCache->nextXid;
-			req.hdr.csn  = MtmGetCurrentTime();
-			req.hdr.disabledNodeMask = Mtm->disabledNodeMask;
-			strcpy(req.connStr, Mtm->nodes[MtmNodeId-1].con.connStr);
-			if (!MtmWriteSocket(sd, &req, sizeof req)) { 
-				elog(WARNING, "Arbiter failed to send handshake message to %s:%d: %d", host, port, errno);
-				close(sd);
-				goto Retry;
-			}
-			if (MtmReadSocket(sd, &resp, sizeof resp) != sizeof(resp)) { 
-				elog(WARNING, "Arbiter failed to receive response for handshake message from %s:%d: errno=%d", host, port, errno);
-				close(sd);
-				goto Retry;
-			}
-			if (resp.code != MSG_STATUS || resp.dxid != HANDSHAKE_MAGIC) {
-				elog(WARNING, "Arbiter get unexpected response %d for handshake message from %s:%d", resp.code, host, port);
-				close(sd);
-				goto Retry;
-			}
-				
-			/* Some node considered that I am dead, so switch to recovery mode */
-			if (BIT_CHECK(resp.disabledNodeMask, MtmNodeId-1)) { 
-				elog(WARNING, "Node %d thinks that I was dead", resp.node);
-				BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
-				MtmSwitchClusterMode(MTM_RECOVERY);
-			}
-			return sd;
+		if (rc == 0) {
+			break;
 		}
-    }
+		if (errno != EINPROGRESS || max_attempts == 0) {
+			elog(WARNING, "Arbiter failed to connect to %s:%d: error=%d", host, port, errno);
+			busy_socket = -1;
+			return -1;
+		} else {
+			rc = MtmWaitWriteSocket(sd, MtmConnectTimeout);
+			if (rc == 1) {
+				socklen_t optlen = sizeof(int); 
+				if (getsockopt(sd, SOL_SOCKET, SO_ERROR, (void*)&rc, &optlen) < 0) { 
+					elog(WARNING, "Arbiter failed to getsockopt for %s:%d: error=%d", host, port, errno);
+					busy_socket = -1;
+					return -1;
+				}
+				if (rc == 0) { 
+					break;
+				} else { 
+					elog(WARNING, "Arbiter trying to connect to %s:%d: rc=%d, error=%d", host, port, rc, errno);
+				}
+			} else { 
+				elog(WARNING, "Arbiter waiting socket to %s:%d: rc=%d, error=%d", host, port, rc, errno);
+			}
+			max_attempts -= 1;
+			MtmSleep(MSEC_TO_USEC(MtmConnectTimeout));
+		}
+	}
+	MtmSetSocketOptions(sd);
+	req.hdr.code = MSG_HANDSHAKE;
+	req.hdr.node = MtmNodeId;
+	req.hdr.dxid = HANDSHAKE_MAGIC;
+	req.hdr.sxid = ShmemVariableCache->nextXid;
+	req.hdr.csn  = MtmGetCurrentTime();
+	req.hdr.disabledNodeMask = Mtm->disabledNodeMask;
+	strcpy(req.connStr, Mtm->nodes[MtmNodeId-1].con.connStr);
+	if (!MtmWriteSocket(sd, &req, sizeof req)) { 
+		elog(WARNING, "Arbiter failed to send handshake message to %s:%d: %d", host, port, errno);
+		close(sd);
+		goto Retry;
+	}
+	if (MtmReadSocket(sd, &resp, sizeof resp) != sizeof(resp)) { 
+		elog(WARNING, "Arbiter failed to receive response for handshake message from %s:%d: errno=%d", host, port, errno);
+		close(sd);
+		goto Retry;
+	}
+	if (resp.code != MSG_STATUS || resp.dxid != HANDSHAKE_MAGIC) {
+		elog(WARNING, "Arbiter get unexpected response %d for handshake message from %s:%d", resp.code, host, port);
+		close(sd);
+		goto Retry;
+	}
+	
+	/* Some node considered that I am dead, so switch to recovery mode */
+	if (BIT_CHECK(resp.disabledNodeMask, MtmNodeId-1)) { 
+		elog(WARNING, "Node %d thinks that I was dead", resp.node);
+		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
+		MtmSwitchClusterMode(MTM_RECOVERY);
+	}
+	return sd;
 }
 
 
