@@ -1418,7 +1418,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
 
-	MtmSleep(MtmRaftPollDelay);
+	MtmSleep(MSEC_TO_USEC(MtmRaftPollDelay));
 
 	if (!MtmRefreshClusterStatus(false)) { 
 		MtmLock(LW_EXCLUSIVE);
@@ -1801,7 +1801,7 @@ _PG_init(void)
 		"Minamal amount of time (milliseconds) to wait 2PC confirmation from all nodes",
 		"Timeout for 2PC is calculated as MAX(prepare_time*2pc_prepare_ratio/100,2pc_min_timeout)",
 		&Mtm2PCMinTimeout,
-		10000, /* 100 seconds */
+		10000, /* 10 seconds */
 		0,
 		INT_MAX,
 		PGC_BACKEND,
@@ -2005,9 +2005,9 @@ _PG_init(void)
 	DefineCustomIntVariable(
 		"multimaster.connect_timeout",
 		"Multimaster nodes connect timeout",
-		"Interval in microseconds between connection attempts",
+		"Interval in milliseconds between connection attempts",
 		&MtmConnectTimeout,
-		1000000,
+		1000,
 		1,
 		INT_MAX,
 		PGC_BACKEND,
@@ -2020,9 +2020,9 @@ _PG_init(void)
 	DefineCustomIntVariable(
 		"multimaster.raft_poll_delay",
 		"Multimaster delay of polling cluster state from Raftable after updating local node status",
-		"Timeout in microseconds before polling state of nodes",
+		"Timeout in milliseconds before polling state of nodes",
 		&MtmRaftPollDelay,
-		1000000,
+		1000,
 		1,
 		INT_MAX,
 		PGC_BACKEND,
