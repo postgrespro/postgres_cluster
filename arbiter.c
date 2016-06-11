@@ -222,18 +222,18 @@ static void MtmDisconnect(int node)
 	MtmOnNodeDisconnect(node+1);
 }
 
-static int MtmWaitWriteSocket(int sd, time_t timeoutMsec)
+static int MtmWaitSocket(int sd, bool forWrite, time_t timeoutMsec)
 {	
 	struct timeval tv;
-	fd_set out_set;
+	fd_set set;
 	int rc;
 	tv.tv_sec = timeoutMsec/1000; 
     tv.tv_usec = timeoutMsec%1000*1000; 
-    FD_ZERO(&out_set); 
-    FD_SET(sd, &out_set); 
+    FD_ZERO(&set); 
+    FD_SET(sd, &set); 
 	do { 
 		MtmCheckHeartbeat();
-	} while ((rc = select(sd+1, NULL, &out_set, NULL, &tv)) < 0 && errno == EINTR);
+	} while ((rc = select(sd+1, forWrite ? NULL : &set, forWrite ? &set : NULL, NULL, &tv)) < 0 && errno == EINTR);
 	return rc;
 }
 
@@ -242,7 +242,7 @@ static bool MtmWriteSocket(int sd, void const* buf, int size)
     char* src = (char*)buf;
 	busy_socket = sd;
     while (size != 0) {
-		int rc = MtmWaitWriteSocket(sd, MtmHeartbeatSendTimeout);
+		int rc = MtmWaitSocket(sd, true, MtmHeartbeatSendTimeout);
 		if (rc == 1) { 
 			int n = send(sd, src, size, 0);
 			if (n < 0) {
@@ -401,7 +401,7 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 			busy_socket = -1;
 			return -1;
 		} else {
-			rc = MtmWaitWriteSocket(sd, MtmConnectTimeout);
+			rc = MtmWaitSocket(sd, true, MtmConnectTimeout);
 			if (rc == 1) {
 				socklen_t optlen = sizeof(int); 
 				if (getsockopt(sd, SOL_SOCKET, SO_ERROR, (void*)&rc, &optlen) < 0) { 
@@ -434,7 +434,7 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 		close(sd);
 		goto Retry;
 	}
-	if (MtmReadSocket(sd, &resp, sizeof resp) != sizeof(resp)) { 
+	if (MtmWaitSocket(sd, false, MtmHeartbeatSendTimeout) != 1 || MtmReadSocket(sd, &resp, sizeof resp) != sizeof(resp)) { 
 		elog(WARNING, "Arbiter failed to receive response for handshake message from %s:%d: errno=%d", host, port, errno);
 		close(sd);
 		goto Retry;
