@@ -25,9 +25,8 @@ class ClientCollection(object):
             client.start()
 
     def stop(self):
-        print('collection stop called', self._clients)
+        print('Terminating clients')
         for client in self._clients:
-            print('stop coll')
             client.stop()
 
 
@@ -52,26 +51,33 @@ class RaftClient(object):
             value = random.randrange(1, 1000000)
 
             event_id = self.history.register_start('setkey')
+            #print(self.node_id, 'value <- ')
             cur.execute("select raftable('rush', '%d', 100)" % (value))
-            print(self.node_id, 'value <- ', value)
+            #print(self.node_id, 'value <- ', value)
             self.history.register_finish(event_id, 'commit')
 
             event_id = self.history.register_start('readkey')
+            #print(self.node_id, 'value -> ')
             cur.execute("select raftable('rush')")
             value = cur.fetchone()[0]
-            print(self.node_id, 'value -> ', value)
+            #print(self.node_id, 'value -> ', value)
             self.history.register_finish(event_id, 'commit')
 
         cur.close()
         conn.close()
+
+        # we should clear to queue before exit as non-empty queue
+        # will block join()
+        self._history.close()
+
 
     def start(self):
         self.check_process = Process(target=self.check, args=())
         self.check_process.start()
 
     def stop(self):
-        print('Stopping!');
         self.run.value = False
-        self.check_process.join()
+        self.check_process.terminate()
+
 
 

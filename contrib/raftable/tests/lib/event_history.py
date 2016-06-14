@@ -94,4 +94,14 @@ class EventHistory():
     def aggregate_by(self, period):
         return
 
+    def close(self):
+        print('closing queue')
+        self.queue.close()
+        print('clearing queue')
+        self.load_queue()
+        print('joining queue')
+        self.queue.cancel_join_thread()
+
+        
+
 

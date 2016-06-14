@@ -15,44 +15,34 @@ class RecoveryTest(unittest.TestCase):
         self.clients.start()
 
     def tearDown(self):
-        print('tearDown')
         self.clients.stop()
         subprocess.check_call(['blockade','join'])
 
     def test_0_normal_operation(self):
         print('### normalOpsTest ###')
-        print('Waiting 10s to check operability')
-        time.sleep(10)
+        print('Waiting 5s to check operability')
+        time.sleep(5)
 
+        for client in self.clients:
+            agg = client.history.aggregate()
+            print(agg)
+            # naively check that we did at least some set ops
+            self.assertTrue(agg['setkey']['commit'] > 10)
 
-#     def test_1_node_disconnect(self):
-#         print('### disconnectTest ###')
-# 
-#         subprocess.check_call(['blockade','partition','node3'])
-#         print('Node3 disconnected')
-# 
-#         print('Waiting 12s to discover failure')
-#         time.sleep(12)
-#         for client in self.clients:
-#             agg = client.history.aggregate()
-#             print(agg)
-# 
-#         print('Waiting 3s to check operability')
-#         time.sleep(3)
-#         for client in self.clients:
-#             agg = client.history.aggregate()
-#             print(agg)
-# 
-#         subprocess.check_call(['blockade','join'])
-#         print('Node3 connected back')
-# 
-#         print('Waiting 12s for catch-up')
-#         time.sleep(12)
-# 
-#         for client in self.clients:
-#             agg = client.history.aggregate()
-#             print(agg)
+    def test_1_node_disconnect(self):
+        print('### disconnectTest ###')
 
+        subprocess.check_call(['blockade','partition','node3'])
+        print('Node3 disconnected')
+
+        print('Waiting 5s to discover failure')
+        time.sleep(5)
+
+        for client in self.clients:
+            agg = client.history.aggregate()
+            print(agg)
+            # check we didn't stuck in set op
+            self.assertTrue(agg['setkey']['running_latency'] < 3)
 
 if __name__ == '__main__':
     unittest.main()
