@@ -125,7 +125,8 @@ static bool timed_write(int sock, void *data, size_t len, int timeout_ms)
 		if (newbytes == -1)
 		{
 			if (errno == EAGAIN) {
-				if (poll_until_writable(sock, timeout_ms - msec(now - start))) {
+				int remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - msec(now - start);
+				if (poll_until_writable(sock, remaining_ms)) {
 					continue;
 				}
 			}
@@ -157,7 +158,8 @@ static bool timed_read(int sock, void *data, size_t len, int timeout_ms)
 		if (newbytes == -1)
 		{
 			if (errno == EAGAIN) {
-				if (poll_until_readable(sock, timeout_ms - msec(now - start))) {
+				int remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - msec(now - start);
+				if (poll_until_readable(sock, remaining_ms)) {
 					continue;
 				}
 			}
@@ -224,8 +226,9 @@ static bool connect_leader(int timeout_ms)
 				while ((elapsed_ms <= timeout_ms) || (timeout_ms == -1))
 				{
 					TimestampTz past = now;
+					int remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - elapsed_ms;
 
-					if (poll_until_writable(sd, timeout_ms - elapsed_ms))
+					if (poll_until_writable(sd, remaining_ms))
 					{
 						int err;
 						socklen_t optlen = sizeof(err);
@@ -301,7 +304,7 @@ raftable_sql_get(PG_FUNCTION_ARGS)
 
 static bool try_sending_update(RaftableUpdate *ru, size_t size, int timeout_ms)
 {
-	int s, status;
+	int s, status, remaining_ms;
 	TimestampTz start, now;
 
 	now = start = GetCurrentTimestamp();
@@ -310,45 +313,49 @@ static bool try_sending_update(RaftableUpdate *ru, size_t size, int timeout_ms)
 	if (s < 0) return false;
 
 	now = GetCurrentTimestamp();
+	remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - msec(now - start);
 	if ((timeout_ms != -1) && (msec(now - start) > timeout_ms))
 	{
 		elog(WARNING, "update: connect() timed out");
 		return false;
 	}
 
-	if (!timed_write(s, &size, sizeof(size), timeout_ms - msec(now - start)))
+	if (!timed_write(s, &size, sizeof(size), remaining_ms))
 	{
 		elog(WARNING, "failed to send the update size to the leader");
 		return false;
 	}
 
 	now = GetCurrentTimestamp();
+	remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - msec(now - start);
 	if ((timeout_ms != -1) && (msec(now - start) > timeout_ms))
 	{
 		elog(WARNING, "update: send(size) timed out");
 		return false;
 	}
 
-	if (!timed_write(s, ru, size, timeout_ms - msec(now - start)))
+	if (!timed_write(s, ru, size, remaining_ms))
 	{
 		elog(WARNING, "failed to send the update to the leader");
 		return false;
 	}
 
 	now = GetCurrentTimestamp();
+	remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - msec(now - start);
 	if ((timeout_ms != -1) && (msec(now - start) > timeout_ms))
 	{
 		elog(WARNING, "update: send(body) timed out");
 		return false;
 	}
 
-	if (!timed_read(s, &status, sizeof(status), timeout_ms - msec(now - start)))
+	if (!timed_read(s, &status, sizeof(status), remaining_ms))
 	{
 		elog(WARNING, "failed to recv the update status from the leader");
 		return false;
 	}
 
 	now = GetCurrentTimestamp();
+	remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - msec(now - start);
 	if ((timeout_ms != -1) && (msec(now - start) > timeout_ms))
 	{
 		elog(WARNING, "update: recv(status) timed out");
@@ -396,7 +403,8 @@ bool raftable_set(const char *key, const char *value, size_t vallen, int timeout
 	while ((elapsed_ms <= timeout_ms) || (timeout_ms == -1))
 	{
 		TimestampTz past = now;
-		if (try_sending_update(ru, size, timeout_ms - elapsed_ms))
+		int remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - elapsed_ms;
+		if (try_sending_update(ru, size, remaining_ms))
 		{
 			pfree(ru);
 			return true;
