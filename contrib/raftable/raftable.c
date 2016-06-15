@@ -12,7 +12,6 @@
 #include "access/htup_details.h"
 #include "miscadmin.h"
 #include "funcapi.h"
-#include "utils/timestamp.h"
 
 #include "raft.h"
 #include "util.h"
@@ -20,6 +19,7 @@
 #include "raftable.h"
 #include "worker.h"
 #include "state.h"
+#include "timeout.h"
 
 #include <poll.h>
 #include <sys/socket.h>
@@ -81,42 +81,33 @@ static void disconnect_leader(void)
 	leadersock = -1;
 }
 
-static bool poll_until_writable(int sock, int timeout_ms)
+
+static bool poll_until_writable(int sock, timeout_t *timeout)
 {
 	struct pollfd pfd = {sock, POLLOUT, 0};
-	int r = poll(&pfd, 1, timeout_ms);
+	int r = poll(&pfd, 1, timeout_remaining_ms(timeout));
 	if (r != 1) return false;
 	return (pfd.revents & POLLOUT) != 0;
 }
 
-static bool poll_until_readable(int sock, int timeout_ms)
+static bool poll_until_readable(int sock, timeout_t *timeout)
 {
 	struct pollfd pfd = {sock, POLLIN, 0};
-	int r = poll(&pfd, 1, timeout_ms);
+	int remain = timeout_remaining_ms(timeout);
+	int r = poll(&pfd, 1, remain);
 	if (r != 1) return false;
 	return (pfd.revents & POLLIN) != 0;
 }
 
-static long msec(TimestampTz timer)
+static bool timed_write(int sock, void *data, size_t len, timeout_t *timeout)
 {
-	long sec;
-	int usec;
-	TimestampDifference(0, timer, &sec, &usec);
-	return sec * 1000 + usec / 1000;
-}
-
-static bool timed_write(int sock, void *data, size_t len, int timeout_ms)
-{
-	TimestampTz start, now;
 	int sent = 0;
-
-	now = start = GetCurrentTimestamp();
 
 	while (sent < len)
 	{
 		int newbytes;
-		now = GetCurrentTimestamp();
-		if ((timeout_ms != -1) && (msec(now - start) > timeout_ms)) {
+		if (timeout_happened(timeout))
+		{
 			elog(WARNING, "write timed out");
 			return false;
 		}
@@ -125,12 +116,11 @@ static bool timed_write(int sock, void *data, size_t len, int timeout_ms)
 		if (newbytes == -1)
 		{
 			if (errno == EAGAIN) {
-				int remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - msec(now - start);
-				if (poll_until_writable(sock, remaining_ms)) {
+				if (poll_until_writable(sock, timeout)) {
 					continue;
 				}
 			}
-			elog(WARNING, "failed to write: %s", strerror(errno));
+			elog(WARNING, "failed to write: error %d: %s", errno, strerror(errno));
 			return false;
 		}
 		sent += newbytes;
@@ -139,17 +129,15 @@ static bool timed_write(int sock, void *data, size_t len, int timeout_ms)
 	return true;
 }
 
-static bool timed_read(int sock, void *data, size_t len, int timeout_ms)
+static bool timed_read(int sock, void *data, size_t len, timeout_t *timeout)
 {
 	int recved = 0;
-	TimestampTz start, now;
-	now = start = GetCurrentTimestamp();
 
 	while (recved < len)
 	{
 		int newbytes;
-		now = GetCurrentTimestamp();
-		if ((timeout_ms != -1) && (msec(now - start) > timeout_ms)) {
+		if (timeout_happened(timeout))
+		{
 			elog(WARNING, "read timed out");
 			return false;
 		}
@@ -158,12 +146,11 @@ static bool timed_read(int sock, void *data, size_t len, int timeout_ms)
 		if (newbytes == -1)
 		{
 			if (errno == EAGAIN) {
-				int remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - msec(now - start);
-				if (poll_until_readable(sock, remaining_ms)) {
+				if (poll_until_readable(sock, timeout)) {
 					continue;
 				}
 			}
-			elog(WARNING, "failed to read: %s", strerror(errno));
+			elog(WARNING, "failed to read: error %d: %s", errno, strerror(errno));
 			return false;
 		}
 		recved += newbytes;
@@ -172,16 +159,14 @@ static bool timed_read(int sock, void *data, size_t len, int timeout_ms)
 	return true;
 }
 
-static bool connect_leader(int timeout_ms)
+static bool connect_leader(timeout_t *timeout)
 {
 	struct addrinfo *addrs = NULL;
 	struct addrinfo hint;
 	char portstr[6];
 	struct addrinfo *a;
 	int rc;
-
-	TimestampTz now;
-	int elapsed_ms;
+	int sd;
 
 	HostPort *leaderhp;
 
@@ -198,23 +183,21 @@ static bool connect_leader(int timeout_ms)
 	if ((rc = getaddrinfo(leaderhp->host, portstr, &hint, &addrs)))
 	{
 		disconnect_leader();
-		fprintf(stderr, "failed to resolve address '%s:%d': %s",
-				leaderhp->host, leaderhp->port,
-				gai_strerror(rc));
+		elog(WARNING, "failed to resolve address '%s:%d': %s",
+			 leaderhp->host, leaderhp->port,
+			 gai_strerror(rc));
 		return false;
 	}
 
-	fprintf(stderr, "trying [%d] %s:%d\n", *shared.leader, leaderhp->host, leaderhp->port);
-	elapsed_ms = 0;
-	now = GetCurrentTimestamp();
+	elog(WARNING, "trying [%d] %s:%d", *shared.leader, leaderhp->host, leaderhp->port);
 	for (a = addrs; a != NULL; a = a->ai_next)
 	{
 		int one = 1;
 
-		int sd = socket(a->ai_family, SOCK_STREAM | SOCK_NONBLOCK, 0);
+		sd = socket(a->ai_family, SOCK_STREAM | SOCK_NONBLOCK, 0);
 		if (sd == -1)
 		{
-			perror("failed to create a socket");
+			elog(WARNING, "failed to create a socket: %s", strerror(errno));
 			continue;
 		}
 		setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
@@ -223,54 +206,54 @@ static bool connect_leader(int timeout_ms)
 		{
 			if (errno == EINPROGRESS)
 			{
-				while ((elapsed_ms <= timeout_ms) || (timeout_ms == -1))
+				TIMEOUT_LOOP_START(timeout);
 				{
-					TimestampTz past = now;
-					int remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - elapsed_ms;
-
-					if (poll_until_writable(sd, remaining_ms))
+					if (poll_until_writable(sd, timeout))
 					{
 						int err;
 						socklen_t optlen = sizeof(err);
 						getsockopt(sd, SOL_SOCKET, SO_ERROR, &err, &optlen);
-						if (err == 0)
-						{
-							// success
-							break;
-						}
+						if (err == 0) goto success;
 					}
-
-					now = GetCurrentTimestamp();
-					elapsed_ms += msec(now - past);
 				}
+				TIMEOUT_LOOP_END(timeout);
+				elog(WARNING, "connect timed out");
+				goto failure;
 			}
 			else
 			{
-				perror("failed to connect to an address");
+				elog(WARNING, "failed to connect to an address: %s", strerror(errno));
 				close(sd);
 				continue;
 			}
 		}
 
-		/* success */
-		freeaddrinfo(addrs);
-		leadersock = sd;
-		return true;
+		goto success;
 	}
+failure:
 	freeaddrinfo(addrs);
 	disconnect_leader();
-	fprintf(stderr, "could not connect\n");
+	elog(WARNING, "could not connect");
 	return false;
+success:
+	freeaddrinfo(addrs);
+	leadersock = sd;
+	return true;
 }
 
-static int get_connection(int timeout_ms)
+static void wait_ms(int ms)
+{
+		struct timespec ts = {0, ms * 1000000};
+		nanosleep(&ts, NULL);
+}
+
+static int get_connection(timeout_t *timeout)
 {
 	if (leadersock < 0)
 	{
-		if (connect_leader(timeout_ms)) return leadersock;
-//		int timeout_ms = 100;
-//		struct timespec timeout = {0, timeout_ms * 1000000};
-//		nanosleep(&timeout, NULL);
+		if (connect_leader(timeout)) return leadersock;
+		elog(WARNING, "update: connect_leader() failed");
+		wait_ms(100);
 	}
 	return leadersock;
 }
@@ -302,63 +285,34 @@ raftable_sql_get(PG_FUNCTION_ARGS)
 		PG_RETURN_NULL();
 }
 
-static bool try_sending_update(RaftableUpdate *ru, size_t size, int timeout_ms)
+static bool try_sending_update(RaftableUpdate *ru, size_t size, timeout_t *timeout)
 {
-	int s, status, remaining_ms;
-	TimestampTz start, now;
+	int s, status;
 
-	now = start = GetCurrentTimestamp();
-
-	s = get_connection(timeout_ms - (now - start));
+	s = get_connection(timeout);
 	if (s < 0) return false;
 
-	now = GetCurrentTimestamp();
-	remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - msec(now - start);
-	if ((timeout_ms != -1) && (msec(now - start) > timeout_ms))
+	if (timeout_happened(timeout))
 	{
-		elog(WARNING, "update: connect() timed out");
+		elog(WARNING, "update: get_connection() timed out");
 		return false;
 	}
 
-	if (!timed_write(s, &size, sizeof(size), remaining_ms))
+	if (!timed_write(s, &size, sizeof(size), timeout))
 	{
 		elog(WARNING, "failed to send the update size to the leader");
 		return false;
 	}
 
-	now = GetCurrentTimestamp();
-	remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - msec(now - start);
-	if ((timeout_ms != -1) && (msec(now - start) > timeout_ms))
-	{
-		elog(WARNING, "update: send(size) timed out");
-		return false;
-	}
-
-	if (!timed_write(s, ru, size, remaining_ms))
+	if (!timed_write(s, ru, size, timeout))
 	{
 		elog(WARNING, "failed to send the update to the leader");
 		return false;
 	}
 
-	now = GetCurrentTimestamp();
-	remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - msec(now - start);
-	if ((timeout_ms != -1) && (msec(now - start) > timeout_ms))
-	{
-		elog(WARNING, "update: send(body) timed out");
-		return false;
-	}
-
-	if (!timed_read(s, &status, sizeof(status), remaining_ms))
+	if (!timed_read(s, &status, sizeof(status), timeout))
 	{
 		elog(WARNING, "failed to recv the update status from the leader");
-		return false;
-	}
-
-	now = GetCurrentTimestamp();
-	remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - msec(now - start);
-	if ((timeout_ms != -1) && (msec(now - start) > timeout_ms))
-	{
-		elog(WARNING, "update: recv(status) timed out");
 		return false;
 	}
 
@@ -377,8 +331,8 @@ bool raftable_set(const char *key, const char *value, size_t vallen, int timeout
 	RaftableUpdate *ru;
 	size_t size = sizeof(RaftableUpdate);
 	size_t keylen = 0;
-	TimestampTz now;
-	int elapsed_ms;
+	timeout_t timeout;
+	timeout_start(&timeout, timeout_ms);
 
 	Assert(wcfg.id >= 0);
 
@@ -398,27 +352,20 @@ bool raftable_set(const char *key, const char *value, size_t vallen, int timeout
 	memcpy(f->data, key, keylen);
 	memcpy(f->data + keylen, value, vallen);
 
-	elapsed_ms = 0;
-	now = GetCurrentTimestamp();
-	while ((elapsed_ms <= timeout_ms) || (timeout_ms == -1))
+	TIMEOUT_LOOP_START(&timeout);
 	{
-		TimestampTz past = now;
-		int remaining_ms = (timeout_ms == -1) ? -1 : timeout_ms - elapsed_ms;
-		if (try_sending_update(ru, size, remaining_ms))
+		if (try_sending_update(ru, size, &timeout))
 		{
 			pfree(ru);
 			return true;
 		}
 		else
-		{
 			disconnect_leader();
-		}
-		now = GetCurrentTimestamp();
-		elapsed_ms += msec(now - past);
 	}
+	TIMEOUT_LOOP_END(&timeout);
 
 	pfree(ru);
-	elog(WARNING, "failed to set raftable value after %d ms", elapsed_ms);
+	elog(WARNING, "failed to set raftable value after %d ms", timeout_elapsed_ms(&timeout));
 	return false;
 }
 

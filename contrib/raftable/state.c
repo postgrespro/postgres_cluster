@@ -58,7 +58,6 @@ static void state_clear(StateP state)
 		blockmem_forget(state->blockmem, e->block);
 		hash_search(state->hashtable, e->key.data, HASH_REMOVE, NULL);
 	}
-	hash_seq_term(&scan);
 }
 
 void state_set(StateP state, const char *key, const char *value, size_t vallen)
@@ -126,10 +125,11 @@ void state_update(StateP state, RaftableUpdate *update, bool clear)
 	if (clear) state_clear(state);
 
 	for (i = 0; i < update->fieldnum; i++) {
+		char *key, *value;
 		f = (RaftableField *)cursor;
 		cursor = f->data;
-		char *key = cursor; cursor += f->keylen;
-		char *value = cursor; cursor += f->vallen;
+		key = cursor; cursor += f->keylen;
+		value = cursor; cursor += f->vallen;
 		state_set(state, key, value, f->vallen);
 	}
 
@@ -148,7 +148,6 @@ static void state_foreach_entry(StateP state, void (*agg)(StateP, RaftableEntry 
 	while ((e = (RaftableEntry *)hash_seq_search(&scan))) {
 		agg(state, e, arg);
 	}
-	hash_seq_term(&scan);
 }
 
 static void agg_size(StateP state, RaftableEntry *e, void *arg)
@@ -172,15 +171,16 @@ static void agg_snapshot(StateP state, RaftableEntry *e, void *arg)
 	(*cursor) = f->data;
 
 	f->keylen = strlen(e->key.data) + 1;
-	memcpy(cursor, e->key.data, f->keylen - 1);
+	memcpy(*cursor, e->key.data, f->keylen - 1);
 	(*cursor)[f->keylen - 1] = '\0';
 	(*cursor) += f->keylen;
 
 	if (e->block)
 	{
+		char *s;
 		f->isnull = false;
 
-		char *s = state_get_string(state, e, &f->vallen);
+		s = state_get_string(state, e, &f->vallen);
 		memcpy((*cursor), s, f->vallen);
 		pfree(s);
 
@@ -226,10 +226,11 @@ void *state_scan(StateP state)
 
 bool state_next(StateP state, void *scan, char **key, char **value, size_t *len)
 {
+	RaftableEntry *e;
 	Assert(state);
 	Assert(scan);
 	Assert(LWLockHeldByMe(state->lock));
-	RaftableEntry *e = (RaftableEntry *)hash_seq_search((HASH_SEQ_STATUS *)scan);
+	e = (RaftableEntry *)hash_seq_search((HASH_SEQ_STATUS *)scan);
 	if (e)
 	{
 		*key = pstrdup(e->key.data);
@@ -244,7 +245,7 @@ bool state_next(StateP state, void *scan, char **key, char **value, size_t *len)
 	}
 }
 
-void state_shmem_request()
+void state_shmem_request(void)
 {
 	int flags;
 	HASHCTL info;
@@ -256,14 +257,14 @@ void state_shmem_request()
 	RequestNamedLWLockTranche("raftable", 1);
 }
 
-StateP state_shmem_init()
+StateP state_shmem_init(void)
 {
 	State *state;
+	bool found;
 
 	HASHCTL info;
 	info.keysize = sizeof(RaftableKey);
 	info.entrysize = sizeof(RaftableEntry);
-	bool found;
 
 	state = ShmemInitStruct(
 		"raftable_state",

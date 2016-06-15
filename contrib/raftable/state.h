@@ -38,7 +38,7 @@ void *state_make_snapshot(StateP state, size_t *size);
 void *state_scan(StateP state);
 bool state_next(StateP state, void *scan, char **key, char **value, size_t *len);
 
-void state_shmem_request();
-StateP state_shmem_init();
+void state_shmem_request(void);
+StateP state_shmem_init(void);
 
 #endif

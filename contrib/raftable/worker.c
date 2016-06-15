@@ -58,9 +58,9 @@ static void applier(void *state, raft_update_t update, raft_bool_t snapshot)
 
 static raft_update_t snapshooter(void *state)
 {
-	Assert(state);
 	raft_update_t shot;
 	size_t shotlen;
+	Assert(state);
 	shot.data = state_make_snapshot(state, &shotlen);
 	shot.len = shotlen;
 	return shot;
@@ -222,19 +222,23 @@ static bool accept_client(void)
 
 static bool pull_from_socket(Client *c)
 {
+	void *dst;
+	size_t avail, recved;
 	if (!c->good) return false;
 	Assert(c->sock >= 0);
-	void *dst = c->buf + c->bufrecved;
-	size_t avail = BUFLEN - c->bufrecved;
+	Assert(c->bufrecved <= BUFLEN);
+	dst = c->buf + c->bufrecved;
+	avail = BUFLEN - c->bufrecved;
 	if (!avail) return false;
 
-	size_t recved = recv(c->sock, dst, avail, MSG_DONTWAIT);
+	recved = recv(c->sock, dst, avail, MSG_DONTWAIT);
 	if (recved <= 0)
 	{
 		c->good = false;
 		return false;
 	}
 	c->bufrecved += recved;
+	Assert(c->bufrecved <= BUFLEN);
 
 	return true;
 }
@@ -242,8 +246,11 @@ static bool pull_from_socket(Client *c)
 static void shift_buffer(Client *c, size_t bytes)
 {
 	Assert(c->bufrecved >= bytes);
+	Assert(c->bufrecved <= BUFLEN);
+	Assert(bytes <= BUFLEN);
 	memmove(c->buf, c->buf + bytes, c->bufrecved - bytes);
 	c->bufrecved -= bytes;
+	Assert(c->bufrecved <= BUFLEN);
 }
 
 static int extract_nomore(Client *c, void *dst, size_t bytes)
@@ -289,6 +296,7 @@ static void attend(Client *c)
 	if (!pull_from_socket(c)) return;
 	while (get_new_message(c))
 	{
+		int index;
 		raft_update_t u;
 		RaftableUpdate *ru = (RaftableUpdate *)c->msg;
 
@@ -297,7 +305,7 @@ static void attend(Client *c)
 		u.len = c->msglen;
 		u.data = c->msg;
 		c->expect.id = ru->expector;
-		int index = raft_emit(raft, u);
+		index = raft_emit(raft, u);
 		if (index >= 0)
 			c->expect.index = index;
 		else
@@ -312,13 +320,14 @@ static void notify(void)
 	int i = 0;
 	for (i = 0; i < MAX_CLIENTS; i++)
 	{
+		int ok;
 		Client *c = server.clients + i;
 		if (c->sock < 0) continue;
 		if (!c->good) continue;
 		if (c->expect.id == NOBODY) continue;
 		if (!raft_applied(raft, c->expect.id, c->expect.index)) continue;
 
-		int ok = 1;
+		ok = 1;
 		if (send(c->sock, &ok, sizeof(ok), 0) != sizeof(ok))
 		{
 			fprintf(stderr, "failed to notify client\n");
@@ -342,6 +351,7 @@ static void drop_bads(void)
 static bool tick(int timeout_ms)
 {
 	int numready;
+	Client *c;
 	bool raft_ready = false;
 
 	fd_set readfds = server.all;
@@ -365,7 +375,7 @@ static bool tick(int timeout_ms)
 		raft_ready = true;
 	}
 
-	Client *c = server.clients;
+	c = server.clients;
 	while (numready > 0)
 	{
 		Assert(c - server.clients < MAX_CLIENTS);
@@ -391,6 +401,8 @@ static void die(int sig)
 
 static void worker_main(Datum arg)
 {
+	sigset_t sset;
+	mstimer_t t;
 	WorkerConfig *cfg = (WorkerConfig *)(arg);
 	StateP state = (StateP)cfg->getter();
 
@@ -409,7 +421,6 @@ static void worker_main(Datum arg)
     signal(SIGINT, die);
     signal(SIGQUIT, die);
     signal(SIGTERM, die);
-    sigset_t sset;
     sigfillset(&sset);
     sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
@@ -418,7 +429,6 @@ static void worker_main(Datum arg)
 	add_socket(server.listener);
 	if (server.raftsock == -1) elog(ERROR, "couldn't start raft");
 
-	mstimer_t t;
 	mstimer_reset(&t);
 	while (!stop)
 	{

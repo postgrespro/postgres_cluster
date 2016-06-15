@@ -58,7 +58,7 @@ block_fill(void *origin, int id, void *src, size_t len)
 	return len;
 }
 
-void
+static void
 block_clear(void *origin, int id)
 {
 	TAIL(origin, id) = 0;
