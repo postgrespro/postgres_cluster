@@ -86,7 +86,7 @@ static bool poll_until_writable(int sock, int timeout_ms)
 	struct pollfd pfd = {sock, POLLOUT, 0};
 	int r = poll(&pfd, 1, timeout_ms);
 	if (r != 1) return false;
-	return pfd.revents & POLLOUT;
+	return (pfd.revents & POLLOUT) != 0;
 }
 
 static bool poll_until_readable(int sock, int timeout_ms)
@@ -94,7 +94,7 @@ static bool poll_until_readable(int sock, int timeout_ms)
 	struct pollfd pfd = {sock, POLLIN, 0};
 	int r = poll(&pfd, 1, timeout_ms);
 	if (r != 1) return false;
-	return pfd.revents & POLLIN;
+	return (pfd.revents & POLLIN) != 0;
 }
 
 static long msec(TimestampTz timer)
