@@ -320,7 +320,7 @@ bool raft_peer_up(raft_t r, int id, char *host, int port, bool self) {
 static int raft_apply(raft_t raft) {
 	int applied_now = 0;
 	raft_log_t *l = &raft->log;
-	while (l->applied < l->acked) {
+	while ((l->applied < l->acked) && (l->applied <= RAFT_LOG_LAST_INDEX(raft))) {
 		raft_entry_t *e = &RAFT_LOG(raft, l->applied);
 		assert(e->update.len == e->bytes);
 		raft->config.applier(raft->config.userdata, e->update, false);
