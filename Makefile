@@ -1,7 +1,11 @@
 MODULE_big = multimaster
 OBJS = multimaster.o raftable.o arbiter.o bytebuf.o bgwpool.o pglogical_output.o pglogical_proto.o pglogical_receiver.o pglogical_apply.o pglogical_hooks.o pglogical_config.o pglogical_relid_map.o ddd.o bkb.o spill.o
 
-override CPPFLAGS += -I../raftable
+ifndef RAFTABLE_PATH
+RAFTABLE_PATH = ../raftable
+endif
+
+override CPPFLAGS += -I$(RAFTABLE_PATH)
 
 EXTRA_INSTALL = contrib/raftable contrib/mmts
 
@@ -32,4 +36,12 @@ endif
 check:
 	env DESTDIR='$(abs_top_builddir)'/tmp_install make install
 	$(prove_check)
+
+xcheck:
+	#pip install -r tests2/requirements.txt
+	docker build -t pgmmts .
+	cd tests2 && blockade up
+	sleep 10 # wait for mmts init
+	cd tests2 && python test_recovery.py || true
+	cd tests2 && blockade destroy
 
