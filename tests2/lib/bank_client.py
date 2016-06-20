@@ -27,9 +27,7 @@ class ClientCollection(object):
             client.start()
 
     def stop(self):
-        print('collection stop called', self._clients)
         for client in self._clients:
-            print('stop coll')
             client.stop()
 
 
@@ -160,8 +158,8 @@ class BankClient(object):
     def stop(self):
         print('Stopping!');
         self.run.value = False
-        self.total_process.join()
-        self.transfer_process.join()
+        self.total_process.terminate()
+        self.transfer_process.terminate()
         return
 
     def cleanup(self):

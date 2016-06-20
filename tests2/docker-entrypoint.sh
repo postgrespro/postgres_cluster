@@ -71,14 +71,18 @@ if [ "$1" = 'postgres' ]; then
 			max_replication_slots = 10
 			max_wal_senders = 10
 			shared_preload_libraries = 'raftable,multimaster'
+
 			raftable.id = $NODE_ID
 			raftable.peers = '$RAFT_PEERS'
-			multimaster.workers=4
-			multimaster.use_raftable=true
+
+			multimaster.workers = 4
+			multimaster.use_raftable = true
 			multimaster.queue_size=52857600
-			multimaster.ignore_tables_without_pk=1
+			multimaster.ignore_tables_without_pk = 1
 			multimaster.node_id = $NODE_ID
 			multimaster.conn_strings = '$CONNSTRS'
+			multimaster.heartbeat_recv_timeout = 1000
+			multimaster.heartbeat_send_timeout = 250
 		EOF
 
 		tail -n 20 $PGDATA/postgresql.conf
