@@ -842,7 +842,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 
 		timestamp_t start = MtmGetSystemTime();	
 		/* wait votes from all nodes */
-		while (!ts->votingCompleted && start + transTimeout >= MtmGetSystemTime()) 
+		while (!ts->votingCompleted && start + transTimeout < MtmGetSystemTime()) 
 		{
 			MtmUnlock();
 			MtmWatchdog();
