@@ -736,9 +736,13 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	Assert(TransactionIdIsValid(x->xid));
 
 	if (Mtm->disabledNodeMask != 0) { 
-		MtmRefreshClusterStatus(true);
+		timestamp_t now = MtmGetSystemTime();		
+		if (Mtm->lastClusterStatusUpdate + MSEC_TO_USEC(MtmRaftPollDelay) < now) { 
+			Mtm->lastClusterStatusUpdate = now;
+			MtmRefreshClusterStatus(true);
+		}
 		if (!IsBackgroundWorker && Mtm->status != MTM_ONLINE) { 
-			/* Do not take in accoutn bg-workers which are performing recovery */
+			/* Do not take in account bg-workers which are performing recovery */
 			elog(ERROR, "Abort current transaction because this cluster node is in %s status", MtmNodeStatusMnem[Mtm->status]);			
 		}
 	}
@@ -834,8 +838,10 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		time_t transTimeout = Max(Mtm2PCMinTimeout, (ts->csn - ts->snapshot)*Mtm2PCPrepareRatio/100000); /* usec->msec and percents */ 
 		int result = 0;
 		int nConfigChanges = Mtm->nConfigChanges;
+
+		timestamp_t start = MtmGetSystemTime();	
 		/* wait votes from all nodes */
-		while (!ts->votingCompleted && !(result & WL_TIMEOUT)) 
+		while (!ts->votingCompleted && start + transTimeout >= MtmGetSystemTime()) 
 		{
 			MtmUnlock();
 			MtmWatchdog();
@@ -844,7 +850,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 				x->status = TRANSACTION_STATUS_ABORTED;
 				return;
 			}
-			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET|WL_TIMEOUT, transTimeout);
+			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET|WL_TIMEOUT, MtmHeartbeatRecvTimeout);
 			if (result & WL_LATCH_SET) { 
 				ResetLatch(&MyProc->procLatch);			
 			} 
@@ -1568,6 +1574,7 @@ static void MtmInitialize()
 		Mtm->recoverySlot = 0;
 		Mtm->locks = GetNamedLWLockTranche(MULTIMASTER_NAME);
 		Mtm->csn = MtmGetCurrentTime();
+		Mtm->lastClusterStatusUpdate = MtmGetSystemTime();
 		Mtm->lastCsn = INVALID_CSN;
 		Mtm->oldestXid = FirstNormalTransactionId;
         Mtm->nLiveNodes = MtmNodes;
