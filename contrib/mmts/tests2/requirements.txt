@@ -1,2 +1,2 @@
-git+https://github.com/kelvich/blockade.git
+git+https://github.com/kelvich/blockade.git@user-defined-network
 psycopg2

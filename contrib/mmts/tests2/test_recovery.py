@@ -36,27 +36,27 @@ class RecoveryTest(unittest.TestCase):
         subprocess.check_call(['blockade','partition','node3'])
         print('Node3 disconnected')
 
-        print('Waiting 12s to discover failure')
-        time.sleep(12)
+        print('Waiting 20s to discover failure')
+        time.sleep(20)
         for client in self.clients:
             agg = client.history.aggregate()
             print(agg)
 
-        print('Waiting 3s to check operability')
-        time.sleep(3)
-        for client in self.clients:
-            agg = client.history.aggregate()
-            print(agg)
-
-        subprocess.check_call(['blockade','join'])
-        print('Node3 connected back')
-
-        print('Waiting 12s for catch-up')
-        time.sleep(12)
-
-        for client in self.clients:
-            agg = client.history.aggregate()
-            print(agg)
+#        print('Waiting 3s to check operability')
+#        time.sleep(3)
+#        for client in self.clients:
+#            agg = client.history.aggregate()
+#            print(agg)
+#
+#        subprocess.check_call(['blockade','join'])
+#        print('Node3 connected back')
+#
+#        print('Waiting 12s for catch-up')
+#        time.sleep(12)
+#
+#        for client in self.clients:
+#            agg = client.history.aggregate()
+#            print(agg)
 
 
 if __name__ == '__main__':
