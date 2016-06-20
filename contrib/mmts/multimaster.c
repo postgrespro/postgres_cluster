@@ -836,7 +836,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		MtmUnlock();
 		MtmResetTransaction(x);
 	} else { 
-		time_t transTimeout = Max(MSEC_TO_USEC(Mtm2PCMinTimeout), (ts->csn - ts->snapshot)*Mtm2PCPrepareRatio/100); /* usec->msec and percents */ 
+		time_t transTimeout = Max(MSEC_TO_USEC(Mtm2PCMinTimeout), (ts->csn - ts->snapshot)*Mtm2PCPrepareRatio/100); 
 		int result = 0;
 		int nConfigChanges = Mtm->nConfigChanges;
 
@@ -1344,6 +1344,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 	nodemask_t mask, clique;
 	nodemask_t matrix[MAX_NODES];
 	int clique_size;
+	MtmTransState *ts;
 	int i;
 
 	if (!MtmUseRaftable || !MtmBuildConnectivityMatrix(matrix, nowait)) { 
@@ -1379,6 +1380,16 @@ bool MtmRefreshClusterStatus(bool nowait)
 			}
 		}
 		MtmCheckQuorum();
+		/* Interrupt voting for active transaction and abort them */
+		for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
+			if (!ts->votingCompleted) { 
+				if (ts->status != TRANSACTION_STATUS_ABORTED) {
+					MTM_LOG1("Rollback active transaction %d:%d", ts->gtid.node, ts->gtid.xid);
+					MtmAbortTransaction(ts);
+				}						
+				MtmWakeUpBackend(ts);
+			}
+		}
 		MtmUnlock();
 		if (BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId-1)) { 
 			if (Mtm->status == MTM_ONLINE) {
