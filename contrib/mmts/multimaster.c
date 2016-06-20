@@ -836,13 +836,13 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		MtmUnlock();
 		MtmResetTransaction(x);
 	} else { 
-		time_t transTimeout = Max(Mtm2PCMinTimeout, (ts->csn - ts->snapshot)*Mtm2PCPrepareRatio/100000); /* usec->msec and percents */ 
+		time_t transTimeout = Max(MSEC_TO_USEC(Mtm2PCMinTimeout), (ts->csn - ts->snapshot)*Mtm2PCPrepareRatio/100); /* usec->msec and percents */ 
 		int result = 0;
 		int nConfigChanges = Mtm->nConfigChanges;
 
 		timestamp_t start = MtmGetSystemTime();	
 		/* wait votes from all nodes */
-		while (!ts->votingCompleted && start + transTimeout < MtmGetSystemTime()) 
+		while (!ts->votingCompleted && start + transTimeout >= MtmGetSystemTime()) 
 		{
 			MtmUnlock();
 			MtmWatchdog();
