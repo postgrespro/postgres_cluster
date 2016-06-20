@@ -29,4 +29,6 @@ containers:
     ports:
       5434: 5432
 
+network:
+    driver: udn
 
