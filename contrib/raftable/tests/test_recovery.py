@@ -44,6 +44,35 @@ class RecoveryTest(unittest.TestCase):
             # check we didn't stuck in set op
             self.assertTrue(agg['setkey']['running_latency'] < 3)
 
+    def test_1_node_in_node_out(self):
+        print('### InOutTest ###')
+
+        subprocess.check_call(['blockade','partition','node3'])
+        print('Node3 disconnected')
+
+        print('Waiting 5s')
+        time.sleep(5)
+
+        for client in self.clients:
+            agg = client.history.aggregate()
+            print(agg)
+            # check we didn't stuck in set op
+            self.assertTrue(agg['setkey']['running_latency'] < 3)
+
+        subprocess.check_call(['blockade','join'])
+        print('Node3 connected')
+
+        print('Waiting 5s')
+        time.sleep(5)
+
+        for client in self.clients:
+            agg = client.history.aggregate()
+            print(agg)
+            # check we didn't stuck in set op
+            self.assertTrue(agg['setkey']['running_latency'] < 3)
+
+
+
 if __name__ == '__main__':
     unittest.main()
 
