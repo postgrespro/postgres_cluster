@@ -28,6 +28,7 @@
 #include <arpa/inet.h>
 
 #include <unistd.h>
+#include <fcntl.h>
 #include <time.h>
 
 void _PG_init(void);
@@ -194,12 +195,13 @@ static bool connect_leader(timeout_t *timeout)
 	{
 		int one = 1;
 
-		sd = socket(a->ai_family, SOCK_STREAM | SOCK_NONBLOCK, 0);
+		sd = socket(a->ai_family, SOCK_STREAM, 0);
 		if (sd == -1)
 		{
 			elog(WARNING, "failed to create a socket: %s", strerror(errno));
 			continue;
 		}
+		fcntl(sd, F_SETFL, O_NONBLOCK);
 		setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 
 		if (connect(sd, a->ai_addr, a->ai_addrlen) == -1)

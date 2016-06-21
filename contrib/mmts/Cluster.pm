@@ -132,7 +132,18 @@ sub stop
 
 	foreach my $node (@$nodes)
 	{
-		$node->stop();
+		$node->stop('fast');
+	}
+}
+
+sub teardown
+{
+	my ($self) = @_;
+	my $nodes = $self->{nodes};
+
+	foreach my $node (@$nodes)
+	{
+		$node->teardown();
 	}
 }
 

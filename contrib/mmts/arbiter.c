@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <netdb.h>
 #include <time.h>
+#include <fcntl.h>
 
 #include "postgres.h"
 #include "fmgr.h"
@@ -381,10 +382,11 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
     while (1) {
 		int rc = -1;
 
-		sd = socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK, 0);
+		sd = socket(AF_INET, SOCK_STREAM, 0);
 		if (sd < 0) {
 			elog(ERROR, "Arbiter failed to create socket: %d", errno);
 		}
+		fcntl(sd, F_SETFL, O_NONBLOCK);
 		busy_socket = sd;
 		for (i = 0; i < n_addrs; ++i) {
 			memcpy(&sock_inet.sin_addr, &addrs[i], sizeof sock_inet.sin_addr);

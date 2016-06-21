@@ -149,3 +149,6 @@ foreach my $appender (@appenders)
 }
 
 is($anomalies, 0, "no cross anomalies after $selects selects");
+
+$cluster->stop();
+1;
