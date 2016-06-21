@@ -504,6 +504,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 				MtmOnNodeDisconnect(node+1);
 				return false;
 			}
+			BIT_CLEAR(Mtm->reconnectMask, node);
 			MTM_LOG3("Arbiter restablished connection with node %d", node+1);
 		} else { 
 			return true;
