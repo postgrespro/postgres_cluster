@@ -92,3 +92,6 @@ else
 }
 
 query_row($conns[0], "select * from t where k = 1");
+
+$cluster->stop();
+1;
