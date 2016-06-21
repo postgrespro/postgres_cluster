@@ -858,10 +858,10 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 			MtmLock(LW_SHARED);
 		}
 		if (!ts->votingCompleted) { 
-			ts->status = TRANSACTION_STATUS_ABORTED;
+			MtmAbortTransaction(ts);
 			elog(WARNING, "Transaction is aborted because of %d msec timeout expiration, prepare time %d msec", (int)transTimeout, (int)USEC_TO_MSEC(ts->csn - x->snapshot));
 		} else if (nConfigChanges != Mtm->nConfigChanges) {
-			ts->status = TRANSACTION_STATUS_ABORTED;
+			MtmAbortTransaction(ts);
 			elog(WARNING, "Transaction is aborted because cluster configuration is changed during commit");
 		}
 		x->status = ts->status;
@@ -918,12 +918,12 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				}
 				Mtm->lastCsn = ts->csn;
 				ts->status = TRANSACTION_STATUS_COMMITTED;
+				MtmAdjustSubtransactions(ts);
+				Assert(Mtm->nActiveTransactions != 0);
+				Mtm->nActiveTransactions -= 1;
 			} else { 
-				ts->status = TRANSACTION_STATUS_ABORTED;
+				MtmAbortTransaction(ts);
 			}
-			MtmAdjustSubtransactions(ts);
-			Assert(Mtm->nActiveTransactions != 0);
-			Mtm->nActiveTransactions -= 1;
 		}
 		if (!commit && x->isReplicated && TransactionIdIsValid(x->gtid.xid)) { 
 			Assert(Mtm->status != MTM_RECOVERY);
@@ -1067,9 +1067,11 @@ void MtmWakeUpBackend(MtmTransState* ts)
 
 void MtmAbortTransaction(MtmTransState* ts)
 {	
-	ts->status = TRANSACTION_STATUS_ABORTED;
-	MtmAdjustSubtransactions(ts);
-	Mtm->nActiveTransactions -= 1;
+	if (ts->status != TRANSACTION_STATUS_ABORTED) { 
+		ts->status = TRANSACTION_STATUS_ABORTED;
+		MtmAdjustSubtransactions(ts);
+		Mtm->nActiveTransactions -= 1;
+	}
 }
 
 /*
@@ -1343,8 +1345,8 @@ bool MtmRefreshClusterStatus(bool nowait)
 {
 	nodemask_t mask, clique;
 	nodemask_t matrix[MAX_NODES];
-	int clique_size;
 	MtmTransState *ts;
+	int clique_size;
 	int i;
 
 	if (!MtmUseRaftable || !MtmBuildConnectivityMatrix(matrix, nowait)) { 
