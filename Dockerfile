@@ -32,9 +32,9 @@ RUN cd /pg && \
 	./configure  --enable-cassert --enable-debug --prefix=/pg/install && \
 	make -j 4 install
 
-RUN mkdir /pg/data
 ENV PATH /pg/install/bin:$PATH
 ENV PGDATA /pg/data
+RUN mkdir PGDATA
 
 # Here we can insert some ENV var to invalidate subsequent layers
 
@@ -42,7 +42,9 @@ RUN cd /pg/postgres_cluster/contrib/raftable && make install
 
 RUN mkdir /pg/mmts
 COPY ./ /pg/mmts/
-RUN cd /pg/mmts && USE_PGXS=1 RAFTABLE_PATH=/pg/postgres_cluster/contrib/raftable make install
+ENV RAFTABLE_PATH /pg/postgres_cluster/contrib/raftable
+ENV USE_PGXS 1
+RUN cd /pg/mmts && make clean && make install
 
 ENTRYPOINT ["/pg/mmts/tests2/docker-entrypoint.sh"]
 
