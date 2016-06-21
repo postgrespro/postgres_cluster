@@ -177,7 +177,7 @@ static TransactionManager MtmTM = {
 
 char const* const MtmNodeStatusMnem[] = 
 { 
-	"Intialization", 
+	"Initialization", 
 	"Offline", 
 	"Connected",
 	"Online",

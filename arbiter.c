@@ -606,8 +606,13 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 {
 	MtmBuffer* buf = &txBuffer[node];
 	if (buf->used == buf->size) {
-		buf->size = buf->size ? buf->size*2 : INIT_BUFFER_SIZE;
-		buf->data = repalloc(buf->data, buf->size * sizeof(MtmArbiterMessage));
+		if (buf->size == 0) { 
+			buf->size = INIT_BUFFER_SIZE;
+			buf->data = palloc(buf->size * sizeof(MtmArbiterMessage));
+		} else { 
+			buf->size *= 2;
+			buf->data = repalloc(buf->data, buf->size * sizeof(MtmArbiterMessage));
+		}
 	}
 	buf->data[buf->used].dxid = xid;
 
