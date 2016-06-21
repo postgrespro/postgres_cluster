@@ -80,4 +80,5 @@ diag("selected");
 
 is($psql_out, '40', "Check replication after failed node recovery.");
 
-
+$cluster->stop();
+1;
