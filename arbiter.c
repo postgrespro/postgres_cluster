@@ -341,8 +341,10 @@ static void MtmSendHeartbeat()
 	{
 		if (sockets[i] >= 0 && sockets[i] != busy_socket && !BIT_CHECK(Mtm->disabledNodeMask|Mtm->reconnectMask, i))
 		{ 
-			int rc = send(sockets[i], &msg, sizeof(msg), 0);
-			Assert(rc <= 0 || (size_t)rc == sizeof(msg));
+			size_t rc = send(sockets[i], &msg, sizeof(msg), 0);
+			if ((size_t)rc != sizeof(msg)) { 
+				elog(LOG, "Failed to send heartbeat to node %d: %d", i, errno);
+			}
 		}
 	}
 	
