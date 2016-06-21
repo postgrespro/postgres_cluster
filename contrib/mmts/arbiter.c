@@ -73,9 +73,9 @@
 
 #include "multimaster.h"
 
-#define MAX_ROUTES      16
-#define BUFFER_SIZE     1024
-#define HANDSHAKE_MAGIC 0xCAFEDEED
+#define MAX_ROUTES       16
+#define INIT_BUFFER_SIZE 1024
+#define HANDSHAKE_MAGIC  0xCAFEDEED
 
 typedef struct
 {
@@ -97,7 +97,8 @@ typedef struct
 typedef struct 
 {
 	int used;
-	MtmArbiterMessage data[BUFFER_SIZE];
+	int size;
+	MtmArbiterMessage* data;
 } MtmBuffer;
 
 static int*      sockets;
@@ -448,11 +449,14 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 	}
 	
 	/* Some node considered that I am dead, so switch to recovery mode */
+	MtmLock(LW_EXCLUSIVE);
 	if (BIT_CHECK(resp.disabledNodeMask, MtmNodeId-1)) { 
 		elog(WARNING, "Node %d thinks that I was dead", resp.node);
 		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
 		MtmSwitchClusterMode(MTM_RECOVERY);
 	}
+	MtmUnlock();
+
 	return sd;
 }
 
@@ -489,7 +493,9 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 	while (true) {
 		if (sockets[node] >= 0 && BIT_CHECK(Mtm->reconnectMask, node)) {
 			elog(WARNING, "Arbiter is forced to reconnect to node %d", node+1); 
+			MtmLock(LW_EXCLUSIVE);		
 			BIT_CLEAR(Mtm->reconnectMask, node);
+			MtmUnlock();
 			close(sockets[node]);
 			sockets[node] = -1;
 		}
@@ -504,7 +510,9 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 				MtmOnNodeDisconnect(node+1);
 				return false;
 			}
+			MtmLock(LW_EXCLUSIVE);		
 			BIT_CLEAR(Mtm->reconnectMask, node);
+			MtmUnlock();
 			MTM_LOG3("Arbiter restablished connection with node %d", node+1);
 		} else { 
 			return true;
@@ -550,7 +558,6 @@ static void MtmAcceptOneConnection()
 				close(fd);
 			} else { 
 				MTM_LOG1("Arbiter established connection with node %d", req.hdr.node); 
-				BIT_CLEAR(Mtm->connectivityMask, req.hdr.node-1);
 				MtmRegisterSocket(fd, req.hdr.node-1);
 				sockets[req.hdr.node-1] = fd;
 				MtmOnNodeConnect(req.hdr.node);
@@ -596,12 +603,9 @@ static void MtmAcceptIncomingConnections()
 static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, MtmTransState* ts)
 {
 	MtmBuffer* buf = &txBuffer[node];
-	if (buf->used == BUFFER_SIZE) { 
-		if (!MtmSendToNode(node, buf->data, buf->used*sizeof(MtmArbiterMessage))) {			
-			buf->used = 0;
-			return;
-		}
-		buf->used = 0;
+	if (buf->used == buf->size) {
+		buf->size = buf->size ? buf->size*2 : INIT_BUFFER_SIZE;
+		buf->data = repalloc(buf->data, buf->size * sizeof(MtmArbiterMessage));
 	}
 	buf->data[buf->used].dxid = xid;
 
@@ -638,7 +642,7 @@ static void MtmTransSender(Datum arg)
 	int nNodes = MtmMaxNodes;
 	int i;
 
-	MtmBuffer* txBuffer = (MtmBuffer*)palloc(sizeof(MtmBuffer)*nNodes);
+	MtmBuffer* txBuffer = (MtmBuffer*)palloc0(sizeof(MtmBuffer)*nNodes);
 
 	InitializeTimeouts();
 
@@ -652,10 +656,6 @@ static void MtmTransSender(Datum arg)
 	enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 
 	MtmOpenConnections();
-
-	for (i = 0; i < nNodes; i++) { 
-		txBuffer[i].used = 0;
-	}
 
 	while (!stop) {
 		MtmTransState* ts;		
@@ -721,7 +721,7 @@ static void MtmTransReceiver(Datum arg)
 	int nNodes = MtmMaxNodes;
 	int nResponses;
 	int i, j, n, rc;
-	MtmBuffer* rxBuffer = (MtmBuffer*)palloc(sizeof(MtmBuffer)*nNodes);
+	MtmBuffer* rxBuffer = (MtmBuffer*)palloc0(sizeof(MtmBuffer)*nNodes);
 	timestamp_t lastHeartbeatCheck = MtmGetSystemTime();
 	timestamp_t now;
 
@@ -742,7 +742,8 @@ static void MtmTransReceiver(Datum arg)
 	MtmAcceptIncomingConnections();
 
 	for (i = 0; i < nNodes; i++) { 
-		rxBuffer[i].used = 0;
+		rxBuffer[i].size = INIT_BUFFER_SIZE;
+		rxBuffer[i].data = palloc(INIT_BUFFER_SIZE*sizeof(MtmArbiterMessage));
 	}
 
 	while (!stop) {
@@ -786,7 +787,7 @@ static void MtmTransReceiver(Datum arg)
 					continue;
 				}  
 				
-				rc = MtmReadFromNode(i, (char*)rxBuffer[i].data + rxBuffer[i].used, BUFFER_SIZE-rxBuffer[i].used);
+				rc = MtmReadFromNode(i, (char*)rxBuffer[i].data + rxBuffer[i].used, rxBuffer[i].size-rxBuffer[i].used);
 				if (rc <= 0) { 
 					continue;
 				}

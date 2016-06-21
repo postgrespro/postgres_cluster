@@ -1433,8 +1433,11 @@ void MtmOnNodeDisconnect(int nodeId)
 		/* Avoid false detection of node failure and prevent node status blinking */
 		return;
 	}
+	MtmLock(LW_EXCLUSIVE);
 	BIT_SET(Mtm->connectivityMask, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
+	MtmUnlock();
+
 	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
 
 	MtmSleep(MSEC_TO_USEC(MtmRaftPollDelay));
@@ -1461,7 +1464,10 @@ void MtmOnNodeDisconnect(int nodeId)
 
 void MtmOnNodeConnect(int nodeId)
 {
+	MtmLock(LW_EXCLUSIVE);	
 	BIT_CLEAR(Mtm->connectivityMask, nodeId-1);
+	MtmUnlock();
+
 	MTM_LOG1("Reconnect node %d", nodeId);
 	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
 }
@@ -2195,6 +2201,8 @@ void MtmRecoverNode(int nodeId)
 	
 void MtmDropNode(int nodeId, bool dropSlot)
 {
+	MtmLock(LW_EXCLUSIVE);
+
 	if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))
 	{
 		if (nodeId <= 0 || nodeId > Mtm->nLiveNodes) 
@@ -2212,6 +2220,8 @@ void MtmDropNode(int nodeId, bool dropSlot)
 			ReplicationSlotDrop(psprintf(MULTIMASTER_SLOT_PATTERN, nodeId));
 		}		
 	}
+
+	MtmUnlock();
 }
 static void
 MtmOnProcExit(int code, Datum arg)
@@ -2402,7 +2412,9 @@ mtm_add_node(PG_FUNCTION_ARGS)
 	} 
 	else 
 	{ 
-		int nodeId = Mtm->nAllNodes;
+		int nodeId;
+		MtmLock(LW_EXCLUSIVE);	
+		nodeId = Mtm->nAllNodes;
 		elog(NOTICE, "Add node %d: '%s'", nodeId+1, connStr);
 		MtmUpdateNodeConnectionInfo(&Mtm->nodes[nodeId].con, connStr);
 		Mtm->nodes[nodeId].transDelay = 0;
@@ -2412,6 +2424,8 @@ mtm_add_node(PG_FUNCTION_ARGS)
 
 		BIT_SET(Mtm->disabledNodeMask, nodeId);
 		Mtm->nAllNodes += 1;
+		MtmUnlock();
+
 		MtmStartReceiver(nodeId+1, true);
 	}
     PG_RETURN_VOID();
