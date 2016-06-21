@@ -332,7 +332,6 @@ bool raftable_set(const char *key, const char *value, size_t vallen, int timeout
 	size_t size = sizeof(RaftableUpdate);
 	size_t keylen = 0;
 	timeout_t timeout;
-	timeout_start(&timeout, timeout_ms);
 
 	Assert(wcfg.id >= 0);
 
@@ -352,17 +351,37 @@ bool raftable_set(const char *key, const char *value, size_t vallen, int timeout
 	memcpy(f->data, key, keylen);
 	memcpy(f->data + keylen, value, vallen);
 
-	TIMEOUT_LOOP_START(&timeout);
+	if (timeout_ms < 0)
 	{
-		if (try_sending_update(ru, size, &timeout))
+		while (true)
 		{
-			pfree(ru);
-			return true;
+			timeout_start(&timeout, 100);
+
+			if (try_sending_update(ru, size, &timeout))
+			{
+				pfree(ru);
+				return true;
+			}
+			else
+				disconnect_leader();
 		}
-		else
-			disconnect_leader();
 	}
-	TIMEOUT_LOOP_END(&timeout);
+	else
+	{
+		timeout_start(&timeout, timeout_ms);
+
+		TIMEOUT_LOOP_START(&timeout);
+		{
+			if (try_sending_update(ru, size, &timeout))
+			{
+				pfree(ru);
+				return true;
+			}
+			else
+				disconnect_leader();
+		}
+		TIMEOUT_LOOP_END(&timeout);
+	}
 
 	pfree(ru);
 	elog(WARNING, "failed to set raftable value after %d ms", timeout_elapsed_ms(&timeout));
