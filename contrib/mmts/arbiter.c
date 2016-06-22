@@ -102,11 +102,12 @@ typedef struct
 	MtmArbiterMessage* data;
 } MtmBuffer;
 
-static int*      sockets;
-static int       gateway;
-static bool      send_heartbeat;
-static TimeoutId heartbeat_timer;
-static int       busy_socket;
+static int*        sockets;
+static int         gateway;
+static bool        send_heartbeat;
+static timestamp_t last_sent_hearbeat;
+static TimeoutId   heartbeat_timer;
+static int         busy_socket;
 
 static void MtmTransSender(Datum arg);
 static void MtmTransReceiver(Datum arg);
@@ -326,6 +327,8 @@ static void MtmSetSocketOptions(int sd)
 
 static void MtmScheduleHeartbeat()
 {
+	Assert(!last_sent_hearbeat || last_sent_hearbeat + MSEC_TO_USEC(MtmHeartbeatRecvTimeout) >= MtmGetSystemTime());
+	enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 	send_heartbeat = true;
 	PGSemaphoreUnlock(&Mtm->votingSemaphore);
 }
@@ -338,7 +341,8 @@ static void MtmSendHeartbeat()
 	msg.disabledNodeMask = Mtm->disabledNodeMask;
 	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
 	msg.node = MtmNodeId;
-	
+	last_sent_hearbeat = MtmGetSystemTime();
+
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
 		if (sockets[i] >= 0 && sockets[i] != busy_socket && !BIT_CHECK(Mtm->disabledNodeMask|Mtm->reconnectMask, i))
