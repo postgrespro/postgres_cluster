@@ -2,6 +2,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
+#include <unistd.h>
 
 #include <assert.h>
 #include <errno.h>
@@ -203,6 +205,7 @@ static void raft_entry_init(raft_entry_t *e) {
 
 static bool raft_log_init(raft_t raft) {
 	raft_log_t *l = &raft->log;
+	int i;
 	l->first = 0;
 	l->size = 0;
 	l->acked = 0;
@@ -212,7 +215,7 @@ static bool raft_log_init(raft_t raft) {
 		shout("failed to allocate memory for raft log\n");
 		return false;
 	}
-	for (int i = 0; i < raft->config.log_len; i++) {
+	for (i = 0; i < raft->config.log_len; i++) {
 		raft_entry_init(l->entries + i);
 	}
 	raft_entry_init(&l->newentry);
@@ -220,12 +223,13 @@ static bool raft_log_init(raft_t raft) {
 }
 
 static bool raft_peers_init(raft_t raft) {
+	int i;
 	raft->peers = malloc(raft->config.peernum_max * sizeof(raft_peer_t));
 	if (!raft->peers) {
 		shout("failed to allocate memory for raft peers\n");
 		return false;
 	}
-	for (int i = 0; i < raft->config.peernum_max; i++) {
+	for (i = 0; i < raft->config.peernum_max; i++) {
 		raft_peer_init(raft->peers + i);
 	}
 	return true;
@@ -282,27 +286,38 @@ static void raft_reset_timer(raft_t r) {
 }
 
 bool raft_peer_up(raft_t r, int id, char *host, int port, bool self) {
+	raft_peer_t *p = r->peers + id;
+	struct addrinfo hint;
+	struct addrinfo *a = NULL;
+	char portstr[6];
+
 	if (r->peernum >= r->config.peernum_max) {
 		shout("too many peers\n");
 		return false;
 	}
-
-	raft_peer_t *p = r->peers + id;
 
 	raft_peer_init(p);
 	p->up = true;
 	p->host = host;
 	p->port = port;
 
-	if (inet_aton(p->host, &p->addr.sin_addr) == 0) {
+	memset(&hint, 0, sizeof(hint));
+	hint.ai_socktype = SOCK_DGRAM;
+	hint.ai_family = AF_INET;
+	hint.ai_protocol = getprotobyname("udp")->p_proto;
+
+	snprintf(portstr, 6, "%d", port);
+
+	if (getaddrinfo(host, portstr, &hint, &a))
+	{
 		shout(
 			"cannot convert the host string '%s'"
-			" to a valid address\n", p->host
-		);
+			" to a valid address: %s\n", host, strerror(errno));
 		return false;
 	}
-	p->addr.sin_family = AF_INET;
-	p->addr.sin_port = htons(p->port);
+    
+    assert(a != NULL && a->ai_addrlen <= sizeof(p->addr));
+	memcpy(&p->addr, a->ai_addr, a->ai_addrlen);
 
 	if (self) {
 		if (r->me != NOBODY) {
@@ -352,25 +367,20 @@ static void socket_set_reuseaddr(int sock) {
 int raft_create_udp_socket(raft_t r) {
 	assert(r->me != NOBODY);
 	raft_peer_t *me = r->peers + r->me;
+	struct addrinfo hint;
+	struct addrinfo *addrs = NULL;
+	struct addrinfo *a;
+	char portstr[6];
 
-	r->sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (r->sock == -1) {
-		shout(
-			"cannot create the listening"
-			" socket: %s\n",
-			strerror(errno)
-		);
-		return -1;
-	}
+	memset(&hint, 0, sizeof(hint));
+	hint.ai_socktype = SOCK_DGRAM;
+	hint.ai_family = AF_INET;
+	hint.ai_protocol = getprotobyname("udp")->p_proto;
 
-	socket_set_reuseaddr(r->sock);
-	socket_set_recv_timeout(r->sock, r->config.heartbeat_ms);
+	snprintf(portstr, 6, "%d", me->port);
 
-	// zero out the structure
-	memset((char*)&me->addr, 0, sizeof(me->addr));
-
-	me->addr.sin_family = AF_INET;
-	if (inet_aton(me->host, &me->addr.sin_addr) == 0) {
+	if (getaddrinfo(me->host, portstr, &hint, &addrs))
+	{
 		shout(
 			"cannot convert the host string"
 			" '%s' to a valid address\n",
@@ -378,14 +388,33 @@ int raft_create_udp_socket(raft_t r) {
 		);
 		return -1;
 	}
-	me->addr.sin_port = htons(me->port);
-	debug("binding udp %s:%d\n", me->host, me->port);
-	if (bind(r->sock, (struct sockaddr*)&me->addr, sizeof(me->addr)) == -1) {
-		shout("cannot bind the socket: %s\n", strerror(errno));
-		return -1;
+
+	for (a = addrs; a != NULL; a = a->ai_next)
+	{
+		int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		if (sock < 0) {
+			shout("cannot create socket: %s\n", strerror(errno));
+			continue;
+		}
+		socket_set_reuseaddr(sock);
+		socket_set_recv_timeout(sock, r->config.heartbeat_ms);
+
+		debug("binding udp %s:%d\n", me->host, me->port);
+		if (bind(sock, a->ai_addr, a->ai_addrlen) < 0) {			
+			shout("cannot bind the socket: %s\n", strerror(errno));
+			close(sock);
+			continue;
+		}
+		r->sock = sock;
+		assert(a->ai_addrlen <= sizeof(me->addr));
+		memcpy(&me->addr, a->ai_addr, a->ai_addrlen);
+		return sock;
 	}
 
-	return r->sock;
+	shout("cannot resolve the host string '%s' to a valid address\n",
+		  me->host
+		);
+	return -1;
 }
 
 static bool msg_size_is(raft_msg_t m, int mlen) {
@@ -500,13 +529,15 @@ static void raft_beat(raft_t r, int dst) {
 }
 
 static void raft_reset_bytes_acked(raft_t r) {
-	for (int i = 0; i < r->config.peernum_max; i++) {
+	int i;
+	for (i = 0; i < r->config.peernum_max; i++) {
 		r->peers[i].acked.bytes = 0;
 	}
 }
 
 static void raft_reset_silent_time(raft_t r, int id) {
-	for (int i = 0; i < r->config.peernum_max; i++) {
+	int i;
+	for (i = 0; i < r->config.peernum_max; i++) {
 		if ((i == id) || (id == NOBODY)) {
 			r->peers[i].silent_ms = 0;
 		}
@@ -601,8 +632,8 @@ static void raft_refresh_acked(raft_t r) {
 
 static int raft_increase_silent_time(raft_t r, int ms) {
 	int recent_peers = 1; // count myself as recent
-
-	for (int i = 0; i < r->config.peernum_max; i++) {
+	int i;
+	for (i = 0; i < r->config.peernum_max; i++) {
 		if (!r->peers[i].up) continue;
 		if (i == r->me) continue;
 
@@ -655,9 +686,9 @@ void raft_tick(raft_t r, int msec) {
 
 static int raft_compact(raft_t raft) {
 	raft_log_t *l = &raft->log;
-
+	int i;
 	int compacted = 0;
-	for (int i = l->first; i < l->applied; i++) {
+	for (i = l->first; i < l->applied; i++) {
 		raft_entry_t *e = &RAFT_LOG(raft, i);
 
 		e->snapshot = false;
@@ -677,7 +708,7 @@ static int raft_compact(raft_t raft) {
 		assert(l->first == l->applied - 1);
 
 		// reset bytes progress of peers that were receiving the compacted entries
-		for (int i = 0; i < raft->config.peernum_max; i++) {
+		for (i = 0; i < raft->config.peernum_max; i++) {
 			raft_peer_t *p = raft->peers + i;
 			if (!p->up) continue;
 			if (i == raft->me) continue;
@@ -735,9 +766,10 @@ bool raft_applied(raft_t r, int id, int index) {
 }
 
 static bool raft_restore(raft_t r, int previndex, raft_entry_t *e) {
+	int i;
 	assert(e->bytes == e->update.len);
 	assert(e->snapshot);
-	for (int i = RAFT_LOG_FIRST_INDEX(r); i <= RAFT_LOG_LAST_INDEX(r); i++) {
+	for (i = RAFT_LOG_FIRST_INDEX(r); i <= RAFT_LOG_LAST_INDEX(r); i++) {
 		raft_entry_t *victim = &RAFT_LOG(r, i);
 		free(victim->update.data);
 		victim->update.len = 0;
