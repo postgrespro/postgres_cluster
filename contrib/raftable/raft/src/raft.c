@@ -371,7 +371,7 @@ int raft_create_udp_socket(raft_t r) {
 	struct addrinfo *addrs = NULL;
 	struct addrinfo *a;
 	char portstr[6];
-
+	int rc;
 	memset(&hint, 0, sizeof(hint));
 	hint.ai_socktype = SOCK_DGRAM;
 	hint.ai_family = AF_INET;
@@ -379,13 +379,11 @@ int raft_create_udp_socket(raft_t r) {
 
 	snprintf(portstr, 6, "%d", me->port);
 
-	if (getaddrinfo(me->host, portstr, &hint, &addrs))
+	if ((rc = getaddrinfo(me->host, portstr, &hint, &addrs)) != 0)
 	{
 		shout(
-			"cannot convert the host string"
-			" '%s' to a valid address\n",
-			me->host
-		);
+			"cannot convert the host string '%s'"
+			" to a valid address: %s\n", me->host, gai_strerror(rc));
 		return -1;
 	}
 

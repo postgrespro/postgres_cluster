@@ -88,35 +88,53 @@ static void add_peers(WorkerConfig *cfg)
 /* Returns the created socket, or -1 if failed. */
 static int create_listening_socket(const char *host, int port) {
 	int optval;
-	struct sockaddr_in addr;
-	int s = socket(AF_INET, SOCK_STREAM, 0);
-	if (s == -1) {
-		fprintf(stderr, "cannot create the listening socket: %s\n", strerror(errno));
+	struct addrinfo *addrs = NULL;
+	struct addrinfo hint;
+	struct addrinfo *a;
+	char portstr[6];
+	int rc;
+
+	memset(&hint, 0, sizeof(hint));
+	hint.ai_socktype = SOCK_STREAM;
+	hint.ai_family = AF_INET;
+	snprintf(portstr, 6, "%d", port);
+	hint.ai_protocol = getprotobyname("tcp")->p_proto;
+
+	if ((rc = getaddrinfo(host, portstr, &hint, &addrs)))
+	{
+		elog(WARNING, "failed to resolve address '%s:%d': %s",
+			 host, port, gai_strerror(rc));
 		return -1;
 	}
 
-	optval = 1;
-	setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
-	setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char const*)&optval, sizeof(optval));
+	for (a = addrs; a != NULL; a = a->ai_next)
+	{
+		int s = socket(AF_INET, SOCK_STREAM, 0);
+		if (s == -1) {
+			elog(WARNING, "cannot create the listening socket: %s", strerror(errno));
+			continue;
+		}
 
-	addr.sin_family = AF_INET;
-	if (inet_aton(host, &addr.sin_addr) == 0) {
-		fprintf(stderr, "cannot convert the host string '%s' to a valid address\n", host);
-		return -1;
-	}
-	addr.sin_port = htons(port);
-	fprintf(stderr, "binding tcp %s:%d\n", host, port);
-	if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-		fprintf(stderr, "cannot bind the listening socket: %s\n", strerror(errno));
-		return -1;
-	}
+		optval = 1;
+		setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
+		setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char const*)&optval, sizeof(optval));
+		
+		fprintf(stderr, "binding tcp %s:%d\n", host, port);
+		if (bind(s, a->ai_addr, a->ai_addrlen) < 0) {
+			elog(WARNING, "cannot bind the listening socket: %s", strerror(errno));
+			close(s);
+			continue;
+		}
 
-	if (listen(s, LISTEN_QUEUE_SIZE) == -1) {
-		fprintf(stderr, "failed to listen the socket: %s\n", strerror(errno));
-		return -1;
+		if (listen(s, LISTEN_QUEUE_SIZE) == -1) {
+			elog(WARNING, "failed to listen the socket: %s", strerror(errno));
+			close(s);
+			continue;
+		}
+		return s;
 	}
-
-	return s;
+	elog(WARNING, "failed to find proper protocol");
+	return -1;
 }
 
 static bool add_socket(int sock)
