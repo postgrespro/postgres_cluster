@@ -195,7 +195,6 @@ int   MtmReplicationNodeId;
 int   MtmArbiterPort;
 int   MtmConnectTimeout;
 int   MtmReconnectTimeout;
-int   MtmRaftPollDelay;
 int   MtmNodeDisableDelay;
 int   MtmTransSpillThreshold;
 int   MtmMaxNodes;
@@ -736,7 +735,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 
 	if (Mtm->disabledNodeMask != 0) { 
 		timestamp_t now = MtmGetSystemTime();		
-		if (Mtm->lastClusterStatusUpdate + MSEC_TO_USEC(MtmRaftPollDelay) < now) { 
+		if (Mtm->lastClusterStatusUpdate + MSEC_TO_USEC(MtmHeartbeatRecvTimeout) < now) { 
 			Mtm->lastClusterStatusUpdate = now;
 			MtmRefreshClusterStatus(true);
 		}
@@ -1438,7 +1437,7 @@ void MtmOnNodeDisconnect(int nodeId)
 
 	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, true); /* false); -- TODO: raftable is hanged with nowait=true */
 
-	MtmSleep(MSEC_TO_USEC(MtmRaftPollDelay));
+	MtmSleep(MSEC_TO_USEC(MtmHeartbeatSendTimeout));
 
 	if (!MtmUseRaftable) 
 	{
@@ -2058,22 +2057,6 @@ _PG_init(void)
 		NULL,
 		NULL
 	);
-
-	DefineCustomIntVariable(
-		"multimaster.raft_poll_delay",
-		"Multimaster delay of polling cluster state from Raftable after updating local node status",
-		"Timeout in milliseconds before polling state of nodes",
-		&MtmRaftPollDelay,
-		1000,
-		1,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
-
 
 	MtmSplitConnStrs();
     MtmStartReceivers();
