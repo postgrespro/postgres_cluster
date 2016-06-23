@@ -194,10 +194,9 @@ int   MtmNodes;
 int   MtmNodeId;
 int   MtmReplicationNodeId;
 int   MtmArbiterPort;
-int   MtmConnectAttempts;
 int   MtmConnectTimeout;
+int   MtmReconnectTimeout;
 int   MtmRaftPollDelay;
-int   MtmReconnectAttempts;
 int   MtmNodeDisableDelay;
 int   MtmTransSpillThreshold;
 int   MtmMaxNodes;
@@ -2031,9 +2030,24 @@ _PG_init(void)
 	DefineCustomIntVariable(
 		"multimaster.connect_timeout",
 		"Multimaster nodes connect timeout",
-		"Interval in milliseconds between connection attempts",
+		"Interval in milliseconds for establishing connection with cluster node",
 		&MtmConnectTimeout,
-		1000,
+		10000, /* 10 seconds */
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.reconnect_timeout",
+		"Multimaster nodes reconnect timeout",
+		"Interval in milliseconds for establishing connection with cluster node",
+		&MtmReconnectTimeout,
+		5000, /* 5 seconds */
 		1,
 		INT_MAX,
 		PGC_BACKEND,
@@ -2058,35 +2072,6 @@ _PG_init(void)
 		NULL
 	);
 
-	DefineCustomIntVariable(
-		"multimaster.connect_attempts",
-		"Multimaster number of connect attemts",
-		"Maximal number of attempt to establish connection with other node after which multimaster is give up",
-		&MtmConnectAttempts,
-		10,
-		1,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
-
-	DefineCustomIntVariable(
-		"multimaster.reconnect_attempts",
-		"Multimaster number of reconnect attemts",
-		"Maximal number of attempt to reestablish connection with other node after which node is considered to be offline",
-		&MtmReconnectAttempts,
-		10,
-		1,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
 
 	MtmSplitConnStrs();
     MtmStartReceivers();
