@@ -67,9 +67,24 @@ class BankClient(object):
 
     def check_total(self):
         conn, cur = self.connect()
+        i = 0
 
         while self.run.value:
+            i += 1
+
             event_id = self.history.register_start('total')
+
+            if not conn.closed:
+                try :
+                    conn = psycopg2.connect(self.connstr)
+                    cur = conn.cursor()
+                except :
+                    self.history.register_finish(event_id, 'CantConnect')
+                    next
+
+            amount = 1
+            from_uid = random.randrange(1, self.accounts + 1)
+            to_uid = random.randrange(1, self.accounts + 1)
 
             try:
                 cur.execute('select sum(amount) from bank_test')
@@ -77,30 +92,39 @@ class BankClient(object):
                 if res[0] != 0:
                     print("Isolation error, total = %d" % (res[0],))
                     raise BaseException
+            except BaseException:
+                raise BaseException
             except psycopg2.InterfaceError:
-                conn, cur = self.connect(reconnect=True)
-            except:
-                self.print_error(sys.exc_info(),'3')
-                self.history.register_finish(event_id, 'rollback')
-            else:
+                self.history.register_finish(event_id, 'InterfaceError')
+            except :
+                self.history.register_finish(event_id, 'OtherError')
+            else :
                 self.history.register_finish(event_id, 'commit')
 
         cur.close()
         conn.close()
 
     def transfer_money(self):
-        #conn = psycopg2.connect(self.connstr)
-        #cur = conn.cursor()
         conn, cur = self.connect()
 
         i = 0
+
         while self.run.value:
             i += 1
+
+            event_id = self.history.register_start('transfer')
+
+            if not conn.closed:
+                try :
+                    conn = psycopg2.connect(self.connstr)
+                    cur = conn.cursor()
+                except :
+                    self.history.register_finish(event_id, 'CantConnect')
+                    next
+
             amount = 1
             from_uid = random.randrange(1, self.accounts + 1)
             to_uid = random.randrange(1, self.accounts + 1)
-
-            event_id = self.history.register_start('transfer')
 
             try:
                 cur.execute('''update bank_test
@@ -111,14 +135,13 @@ class BankClient(object):
                     set amount = amount + %s
                     where uid = %s''',
                     (amount, to_uid))
-
                 conn.commit()
+
             except psycopg2.InterfaceError:
-                conn, cur = self.connect(reconnect=True)
-            except:
-                self.print_error(sys.exc_info(),'1')
-                self.history.register_finish(event_id, 'rollback')
-            else:
+                self.history.register_finish(event_id, 'InterfaceError')
+            except :
+                self.history.register_finish(event_id, 'OtherError')
+            else :
                 self.history.register_finish(event_id, 'commit')
 
         cur.close()
