@@ -2711,11 +2711,12 @@ static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg)
 	if (!ret) {
 		char *errstr = PQresultErrorMessage(result);
 		int errlen = strlen(errstr);
+		if (errlen > 9) { 
+			*errmsg = palloc0(errlen);
 
-		*errmsg = palloc0(errlen);
-
-		/* Strip "ERROR:  " from beginning and "\n" from end of error string */
-		strncpy(*errmsg, errstr + 8, errlen - 1 - 8);
+			/* Strip "ERROR:  " from beginning and "\n" from end of error string */
+			strncpy(*errmsg, errstr + 8, errlen - 1 - 8);
+		}
 	}
 
 	PQclear(result);
@@ -2783,7 +2784,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 					do { 
 						PQfinish(conns[i]);
 					} while (--i >= 0);                             
-					elog(ERROR, "Failed to establish connection '%s' to node %d", Mtm->nodes[failedNode].con.connStr, failedNode);
+					elog(ERROR, "Failed to establish connection '%s' to node %d", Mtm->nodes[failedNode].con.connStr, failedNode+1);
 				}
 			}
 			PQsetNoticeReceiver(conns[i], MtmNoticeReceiver, &i);
