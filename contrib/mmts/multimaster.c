@@ -1348,7 +1348,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 	int clique_size;
 	int i;
 
-	if (!MtmUseRaftable || !MtmBuildConnectivityMatrix(matrix, nowait)) { 
+	if (!MtmBuildConnectivityMatrix(matrix, nowait)) { 
 		/* RAFT is not available */
 		return false;
 	}
@@ -1437,11 +1437,12 @@ void MtmOnNodeDisconnect(int nodeId)
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	MtmUnlock();
 
-	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
+	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, true); /* false); -- TODO: raftable is hanged with nowait=true */
 
 	MtmSleep(MSEC_TO_USEC(MtmRaftPollDelay));
 
-	if (!MtmRefreshClusterStatus(false)) { 
+	if (!MtmUseRaftable) 
+	{
 		MtmLock(LW_EXCLUSIVE);
 		if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
 			MtmDisableNode(nodeId);
@@ -1458,7 +1459,9 @@ void MtmOnNodeDisconnect(int nodeId)
 			}
 		}
 		MtmUnlock();
-	}
+	} else { 
+		MtmRefreshClusterStatus(true); /* false); -- TODO: raftable can handg in nowait=true */
+    }
 }
 
 void MtmOnNodeConnect(int nodeId)
@@ -1468,7 +1471,7 @@ void MtmOnNodeConnect(int nodeId)
 	MtmUnlock();
 
 	MTM_LOG1("Reconnect node %d", nodeId);
-	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
+	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, true); /* false); -- TODO: raftable is hanged with nowait=true */
 }
 
 
