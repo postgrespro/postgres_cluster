@@ -6,6 +6,8 @@ if [ "${1:0:1}" = '-' ]; then
 	set -- postgres "$@"
 fi
 
+sudo sh -c 'echo "/pg/%p.%s.%c.%P.core" > /proc/sys/kernel/core_pattern'
+
 if [ "$1" = 'postgres' ]; then
 	mkdir -p "$PGDATA"
 	chmod 700 "$PGDATA"
