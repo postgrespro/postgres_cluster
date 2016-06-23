@@ -2783,7 +2783,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 					do { 
 						PQfinish(conns[i]);
 					} while (--i >= 0);                             
-					elog(ERROR, "Failed to establish connection '%s' to node %d", Mtm->nodes[i].con.connStr, failedNode);
+					elog(ERROR, "Failed to establish connection '%s' to node %d", Mtm->nodes[failedNode].con.connStr, failedNode);
 				}
 			}
 			PQsetNoticeReceiver(conns[i], MtmNoticeReceiver, &i);
