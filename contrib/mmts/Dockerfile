@@ -18,10 +18,15 @@ RUN apt-get update && apt-get install -y \
 	libreadline-dev \
 	bison \
 	flex \
-	zlib1g-dev \ 
+	zlib1g-dev \
+	sudo \
 	&& rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /pg && chown postgres:postgres /pg
+# We need that to allow editing of /proc/sys/kernel/core_pattern
+# from docker-entrypoint.sh
+RUN echo "postgres ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers
+
 USER postgres
 ENV CFLAGS -O0
 WORKDIR /pg
@@ -34,7 +39,7 @@ RUN cd /pg && \
 
 ENV PATH /pg/install/bin:$PATH
 ENV PGDATA /pg/data
-RUN mkdir PGDATA
+
 
 # Here we can insert some ENV var to invalidate subsequent layers
 
