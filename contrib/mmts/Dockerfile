@@ -31,6 +31,8 @@ USER postgres
 ENV CFLAGS -O0
 WORKDIR /pg
 
+ENV REBUILD false
+
 RUN cd /pg && \
 	git clone https://github.com/postgrespro/postgres_cluster.git --depth 1 && \
 	cd /pg/postgres_cluster && \
@@ -39,9 +41,6 @@ RUN cd /pg && \
 
 ENV PATH /pg/install/bin:$PATH
 ENV PGDATA /pg/data
-
-
-# Here we can insert some ENV var to invalidate subsequent layers
 
 RUN cd /pg/postgres_cluster/contrib/raftable && make install
 
