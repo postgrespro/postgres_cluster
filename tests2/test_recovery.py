@@ -37,10 +37,12 @@ class RecoveryTest(unittest.TestCase):
         print('Node3 disconnected')
 
         print('Waiting 20s to discover failure')
-        time.sleep(20)
-        for client in self.clients:
-            agg = client.history.aggregate()
-            print(agg)
+
+        while True:
+            time.sleep(3)
+            for client in self.clients:
+                agg = client.history.aggregate()
+                print(agg)
 
 #        print('Waiting 3s to check operability')
 #        time.sleep(3)

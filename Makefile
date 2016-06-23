@@ -40,8 +40,14 @@ check:
 xcheck:
 	#pip install -r tests2/requirements.txt
 	docker build -t pgmmts .
+	cd tests2 && blockade destroy || true
+	cd tests2 && docker rm node1 || true
+	cd tests2 && docker rm node2 || true
+	cd tests2 && docker rm node3 || true
+	cd tests2 && docker network rm tests2_net || true
+	cd tests2 && docker network rm tests2_net || true
 	cd tests2 && blockade up
-	sleep 10 # wait for mmts init
+	sleep 15 # wait for mmts init
 	cd tests2 && python test_recovery.py || true
-	cd tests2 && blockade destroy
+	#cd tests2 && blockade destroy
 
