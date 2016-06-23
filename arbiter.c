@@ -366,7 +366,7 @@ static void MtmCheckHeartbeat()
 }
 
 
-static int MtmConnectSocket(char const* host, int port, int max_attempts)
+static int MtmConnectSocket(char const* host, int port, int timeout)
 {
     struct sockaddr_in sock_inet;
     unsigned addrs[MAX_ROUTES];
@@ -374,6 +374,8 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 	MtmHandshakeMessage req;
 	MtmArbiterMessage   resp;
 	int sd;
+	timestamp_t start = MtmGetSystemTime();
+	
 
     sock_inet.sin_family = AF_INET;
 	sock_inet.sin_port = htons(port);
@@ -390,7 +392,10 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 		if (sd < 0) {
 			elog(ERROR, "Arbiter failed to create socket: %d", errno);
 		}
-		fcntl(sd, F_SETFL, O_NONBLOCK);
+		rc = fcntl(sd, F_SETFL, O_NONBLOCK);
+		if (rc < 0) {
+			elog(ERROR, "Arbiter failed to switch socket to non-blocking mode: %d", errno);
+		}
 		busy_socket = sd;
 		for (i = 0; i < n_addrs; ++i) {
 			memcpy(&sock_inet.sin_addr, &addrs[i], sizeof sock_inet.sin_addr);
@@ -405,17 +410,19 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 		if (rc == 0) {
 			break;
 		}
-		if (errno != EINPROGRESS || max_attempts == 0) {
+		if (errno != EINPROGRESS || start  + MSEC_TO_USEC(timeout) < MtmGetSystemTime()) {
 			elog(WARNING, "Arbiter failed to connect to %s:%d: error=%d", host, port, errno);
 			busy_socket = -1;
+			close(sd);
 			return -1;
 		} else {
-			rc = MtmWaitSocket(sd, true, MtmConnectTimeout);
+			rc = MtmWaitSocket(sd, true, MtmHeartbeatSendTimeout);
 			if (rc == 1) {
 				socklen_t optlen = sizeof(int); 
 				if (getsockopt(sd, SOL_SOCKET, SO_ERROR, (void*)&rc, &optlen) < 0) { 
 					elog(WARNING, "Arbiter failed to getsockopt for %s:%d: error=%d", host, port, errno);
 					busy_socket = -1;
+					close(sd);
 					return -1;
 				}
 				if (rc == 0) { 
@@ -426,8 +433,8 @@ static int MtmConnectSocket(char const* host, int port, int max_attempts)
 			} else { 
 				elog(WARNING, "Arbiter waiting socket to %s:%d: rc=%d, error=%d", host, port, rc, errno);
 			}
-			max_attempts -= 1;
-			MtmSleep(MSEC_TO_USEC(MtmConnectTimeout));
+			close(sd);
+			MtmSleep(MSEC_TO_USEC(MtmHeartbeatSendTimeout));
 		}
 	}
 	MtmSetSocketOptions(sd);
@@ -479,7 +486,7 @@ static void MtmOpenConnections()
 	}
 	for (i = 0; i < nNodes; i++) {
 		if (i+1 != MtmNodeId && i < Mtm->nAllNodes) { 
-			sockets[i] = MtmConnectSocket(Mtm->nodes[i].con.hostName, MtmArbiterPort + i + 1, MtmConnectAttempts);
+			sockets[i] = MtmConnectSocket(Mtm->nodes[i].con.hostName, MtmArbiterPort + i + 1, MtmConnectTimeout);
 			if (sockets[i] < 0) { 
 				MtmOnNodeDisconnect(i+1);
 			} 
@@ -511,7 +518,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 				close(sockets[node]);
 				sockets[node] = -1;
 			}
-			sockets[node] = MtmConnectSocket(Mtm->nodes[node].con.hostName, MtmArbiterPort + node + 1, MtmReconnectAttempts);
+			sockets[node] = MtmConnectSocket(Mtm->nodes[node].con.hostName, MtmArbiterPort + node + 1, MtmReconnectTimeout);
 			if (sockets[node] < 0) { 
 				MtmOnNodeDisconnect(node+1);
 				return false;
