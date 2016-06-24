@@ -112,8 +112,6 @@ static int         busy_socket;
 static void MtmTransSender(Datum arg);
 static void MtmTransReceiver(Datum arg);
 static void MtmSendHeartbeat(void);
-static void MtmCheckHeartbeat(void);
-
 
 
 static char const* const messageText[] = 
@@ -356,7 +354,7 @@ static void MtmSendHeartbeat()
 	
 }
 
-static void MtmCheckHeartbeat()
+void MtmCheckHeartbeat()
 {
 	if (send_heartbeat) {
 		send_heartbeat = false;

@@ -796,8 +796,8 @@ void MtmWatchdog(void)
 			if (Mtm->nodes[i].lastHeartbeat != 0
 				&& now > Mtm->nodes[i].lastHeartbeat + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) 
 			{ 
-				elog(WARNING, "Disable node %d because last heartbeat was received %d msec ago (%ld)", 
-					 i+1, (int)USEC_TO_MSEC(now - Mtm->nodes[i].lastHeartbeat), USEC_TO_MSEC(now));
+				elog(WARNING, "Heartbeat was received from node %d during %d msec", 
+					 i+1, (int)USEC_TO_MSEC(now - Mtm->nodes[i].lastHeartbeat));
 				MtmOnNodeDisconnect(i+1);				
 			}
 		}
@@ -840,24 +840,20 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 
 		timestamp_t start = MtmGetSystemTime();	
 		/* wait votes from all nodes */
-		while (!ts->votingCompleted && start + transTimeout >= MtmGetSystemTime()) 
+		while (!ts->votingCompleted && ts->status != TRANSACTION_STATUS_ABORTED && start + transTimeout >= MtmGetSystemTime()) 
 		{
 			MtmUnlock();
-			MtmWatchdog();
-			if (ts->status == TRANSACTION_STATUS_ABORTED) {
-				elog(WARNING, "Transaction %d(%s) is aborted by watchdog", x->xid, x->gid);				
-				x->status = TRANSACTION_STATUS_ABORTED;
-				return;
-			}
 			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET|WL_TIMEOUT, MtmHeartbeatRecvTimeout);
 			if (result & WL_LATCH_SET) { 
 				ResetLatch(&MyProc->procLatch);			
 			} 
 			MtmLock(LW_SHARED);
 		}
-		if (!ts->votingCompleted) { 
-			MtmAbortTransaction(ts);
-			elog(WARNING, "Transaction is aborted because of %d msec timeout expiration, prepare time %d msec", (int)transTimeout, (int)USEC_TO_MSEC(ts->csn - x->snapshot));
+		if (!ts->votingCompleted) {  
+			if (ts->status != TRANSACTION_STATUS_ABORTED) { 
+				MtmAbortTransaction(ts);
+				elog(WARNING, "Transaction is aborted because of %d msec timeout expiration, prepare time %d msec", (int)transTimeout, (int)USEC_TO_MSEC(ts->csn - x->snapshot));
+			}
 		} else if (nConfigChanges != Mtm->nConfigChanges) {
 			MtmAbortTransaction(ts);
 			elog(WARNING, "Transaction is aborted because cluster configuration is changed during commit");
@@ -1436,7 +1432,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	MtmUnlock();
 
-	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, true); /* false); -- TODO: raftable is hanged with nowait=true */
+	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
 
 	MtmSleep(MSEC_TO_USEC(MtmHeartbeatSendTimeout));
 
@@ -1470,7 +1466,7 @@ void MtmOnNodeConnect(int nodeId)
 	MtmUnlock();
 
 	MTM_LOG1("Reconnect node %d", nodeId);
-	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, true); /* false); -- TODO: raftable is hanged with nowait=true */
+	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false); 
 }
 
 
