@@ -241,7 +241,9 @@ static bool accept_client(void)
 static bool pull_from_socket(Client *c)
 {
 	void *dst;
-	size_t avail, recved;
+	size_t avail;
+	ssize_t recved;
+
 	if (!c->good) return false;
 	Assert(c->sock >= 0);
 	Assert(c->bufrecved <= BUFLEN);
