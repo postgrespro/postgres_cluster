@@ -840,7 +840,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 
 		timestamp_t start = MtmGetSystemTime();	
 		/* wait votes from all nodes */
-		while (!ts->votingCompleted && ts->status != TRANSACTION_STATUS_ABORTED && start + transTimeout >= MtmGetSystemTime()) 
+		while (!ts->votingCompleted && Mtm->status == MTM_ONLINE && ts->status != TRANSACTION_STATUS_ABORTED && start + transTimeout >= MtmGetSystemTime()) 
 		{
 			MtmUnlock();
 			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET|WL_TIMEOUT, MtmHeartbeatRecvTimeout);
