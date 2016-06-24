@@ -5,6 +5,7 @@
 #include "bgwpool.h"
 #include "bkb.h"
 
+#include "access/clog.h"
 #include "pglogical_output/hooks.h"
 
 #define  DEBUG_LEVEL 0
@@ -268,6 +269,8 @@ extern void  MtmHandleApplyError(void);
 extern void  MtmUpdateLsnMapping(int nodeId, XLogRecPtr endLsn);
 extern XLogRecPtr MtmGetFlushPosition(int nodeId);
 extern void MtmWatchdog(void);
+extern void MtmCheckHeartbeat(void);
+
 
 
 #endif
