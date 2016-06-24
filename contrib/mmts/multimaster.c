@@ -1907,7 +1907,7 @@ _PG_init(void)
 		"Use raftable plugin for internode communication",
 		NULL,
 		&MtmUseRaftable,
-		false,
+		true,
 		PGC_BACKEND,
 		0,
 		NULL,
