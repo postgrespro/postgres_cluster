@@ -923,7 +923,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			Assert(Mtm->status != MTM_RECOVERY);
 			/* 
 			 * Send notification only if ABORT happens during transaction processing at replicas, 
-			 * do not send notification if ABORT is receiver from master 
+			 * do not send notification if ABORT is received from master 
 			 */
 			MTM_LOG1("%d: send ABORT notification abort transaction %d to coordinator %d", MyProcPid, x->gtid.xid, x->gtid.node);
 			if (ts == NULL) { 
@@ -1378,7 +1378,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 		MtmCheckQuorum();
 		/* Interrupt voting for active transaction and abort them */
 		for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
-			if (!ts->votingCompleted) { 
+			if (!ts->votingCompleted && MtmIsCoordinator(ts)) { 
 				if (ts->status != TRANSACTION_STATUS_ABORTED) {
 					MTM_LOG1("1) Rollback active transaction %d:%d:%d", ts->gtid.node, ts->gtid.xid, ts->xid);
 					MtmAbortTransaction(ts);
@@ -1444,7 +1444,7 @@ void MtmOnNodeDisconnect(int nodeId)
 			MtmCheckQuorum();
 			/* Interrupt voting for active transaction and abort them */
 			for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
-				if (!ts->votingCompleted) { 
+				if (!ts->votingCompleted && MtmIsCoordinator(ts)) { 
 					if (ts->status != TRANSACTION_STATUS_ABORTED) {
 						MTM_LOG1("2) Rollback active transaction %d:%d", ts->gtid.node, ts->gtid.xid);
 						MtmAbortTransaction(ts);
