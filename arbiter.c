@@ -347,7 +347,7 @@ static void MtmSendHeartbeat()
 		{ 
 			size_t rc = send(sockets[i], &msg, sizeof(msg), 0);
 			if ((size_t)rc != sizeof(msg)) { 
-				elog(LOG, "Failed to send heartbeat to node %d: %d", i, errno);
+				elog(LOG, "Failed to send heartbeat to node %d: %d", i+1, errno);
 			}
 		}
 	}
