@@ -65,106 +65,68 @@ class BankClient(object):
         if self.show_errors:
             print('Node', self.node_id, 'got error', arg, comment)
 
-    def check_total(self):
-        conn, cur = self.connect()
-        i = 0
+    def exec_tx(self, name, tx_block):
+        conn = psycopg2.connect(self.connstr)
+        cur = conn.cursor()
 
         while self.run.value:
-            i += 1
+            event_id = self.history.register_start(name)
 
-            event_id = self.history.register_start('total')
-
-            if not conn.closed:
+            if conn.closed:
+                self.history.register_finish(event_id, 'ReConnect')
                 try :
                     conn = psycopg2.connect(self.connstr)
                     cur = conn.cursor()
                 except :
-                    self.history.register_finish(event_id, 'CantConnect')
-                    next
-
-            amount = 1
-            from_uid = random.randrange(1, self.accounts + 1)
-            to_uid = random.randrange(1, self.accounts + 1)
+                    continue
+                else :
+                    continue 
 
             try:
-                cur.execute('select sum(amount) from bank_test')
-                res = cur.fetchone()
-                if res[0] != 0:
-                    print("Isolation error, total = %d" % (res[0],))
-                    raise BaseException
-            except BaseException:
-                raise BaseException
+                tx_block(conn, cur)
             except psycopg2.InterfaceError:
                 self.history.register_finish(event_id, 'InterfaceError')
+            except psycopg2.Error:
+                self.history.register_finish(event_id, 'PsycopgError')
             except :
+                print(sys.exc_info())
                 self.history.register_finish(event_id, 'OtherError')
             else :
-                self.history.register_finish(event_id, 'commit')
+                self.history.register_finish(event_id, 'Commit')
 
         cur.close()
         conn.close()
+
+    def check_total(self):
+
+        def tx(conn, cur):
+            cur.execute('select sum(amount) from bank_test')
+            res = cur.fetchone()
+            if res[0] != 0:
+                print("Isolation error, total = %d" % (res[0],))
+                raise BaseException
+
+        self.exec_tx('total', tx)
 
     def transfer_money(self):
-        conn, cur = self.connect()
 
-        i = 0
-
-        while self.run.value:
-            i += 1
-
-            event_id = self.history.register_start('transfer')
-
-            if not conn.closed:
-                try :
-                    conn = psycopg2.connect(self.connstr)
-                    cur = conn.cursor()
-                except :
-                    self.history.register_finish(event_id, 'CantConnect')
-                    next
-
+        def tx(conn, cur):
             amount = 1
-            from_uid = random.randrange(1, self.accounts + 1)
-            to_uid = random.randrange(1, self.accounts + 1)
+            from_uid = random.randrange(1, self.accounts - 10)
+            to_uid = from_uid + 1 #random.randrange(1, self.accounts + 1)
 
-            try:
-                cur.execute('''update bank_test
-                    set amount = amount - %s
-                    where uid = %s''',
-                    (amount, from_uid))
-                cur.execute('''update bank_test
-                    set amount = amount + %s
-                    where uid = %s''',
-                    (amount, to_uid))
-                conn.commit()
+            conn.commit()
+            cur.execute('''update bank_test
+                set amount = amount - %s
+                where uid = %s''',
+                (amount, from_uid))
+            cur.execute('''update bank_test
+                set amount = amount + %s
+                where uid = %s''',
+                (amount, to_uid))
+            conn.commit()
 
-            except psycopg2.InterfaceError:
-                self.history.register_finish(event_id, 'InterfaceError')
-            except :
-                self.history.register_finish(event_id, 'OtherError')
-            else :
-                self.history.register_finish(event_id, 'commit')
-
-        cur.close()
-        conn.close()
-
-    def connect(self, reconnect=False):
-        
-        while True:
-            try:
-                conn = psycopg2.connect(self.connstr)
-                cur = conn.cursor()
-                return conn, cur
-            except:
-                self.print_error(sys.exc_info(),'2')
-                if not reconnect:
-                    raise
-                if not self.run.value:
-                    raise
-
-    # def watchdog(self):
-    #    while self.run.value:
-    #        time.sleep(1)
-    #        print('watchdog: ', self.history.aggregate())
+        self.exec_tx('transfer', tx)
 
     def start(self):
         self.transfer_process = Process(target=self.transfer_money, args=())
@@ -172,9 +134,6 @@ class BankClient(object):
 
         self.total_process = Process(target=self.check_total, args=())
         self.total_process.start()
-
-        #self.total_process = Process(target=self.watchdog, args=())
-        #self.total_process.start()
 
         return
 

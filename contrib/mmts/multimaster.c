@@ -927,7 +927,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			 * Send notification only if ABORT happens during transaction processing at replicas, 
 			 * do not send notification if ABORT is received from master 
 			 */
-			MTM_LOG2("%d: send ABORT notification abort transaction %d to coordinator %d", MyProcPid, x->gtid.xid, x->gtid.node);
+			MTM_LOG1("%d: send ABORT notification abort transaction %d to coordinator %d", MyProcPid, x->gtid.xid, x->gtid.node);
 			if (ts == NULL) { 
 				Assert(TransactionIdIsValid(x->xid));
 				ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, NULL);
@@ -1390,6 +1390,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 				}
 			} else if (BIT_CHECK(disabled, ts->gtid.node-1)) { // coordinator of transaction is on disabled node
 				if (ts->status != TRANSACTION_STATUS_ABORTED) {
+					MTM_LOG1("1) Rollback active transaction %d:%d:%d", ts->gtid.node, ts->gtid.xid, ts->xid);
 					MtmAbortTransaction(ts);
 					FinishPreparedTransaction(ts->gid, false);
 				}
@@ -1460,6 +1461,7 @@ void MtmOnNodeDisconnect(int nodeId)
 					}
 				} else if (ts->gtid.node == nodeId) { //coordinator of transaction is on disabled node
 					if (ts->status != TRANSACTION_STATUS_ABORTED) {
+						MTM_LOG1("2) Rollback active transaction %d:%d", ts->gtid.node, ts->gtid.xid);
 						MtmAbortTransaction(ts);
 						FinishPreparedTransaction(ts->gid, false);
 					}
