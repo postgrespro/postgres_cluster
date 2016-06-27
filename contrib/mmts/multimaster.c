@@ -702,10 +702,12 @@ MtmCreateTransState(MtmCurrentTrans* x)
 		if (TransactionIdIsValid(x->gtid.xid)) { 		
 			Assert(x->gtid.node != MtmNodeId);
 			ts->gtid = x->gtid;
+			strcpy(ts->gid, x->gid);
 		} else { 
 			/* I am coordinator of transaction */
 			ts->gtid.xid = x->xid;
 			ts->gtid.node = MtmNodeId;
+			ts->gid[0] = '\0';
 		}
 	}
 	return ts;
@@ -1062,6 +1064,7 @@ void MtmWakeUpBackend(MtmTransState* ts)
 void MtmAbortTransaction(MtmTransState* ts)
 {	
 	if (ts->status != TRANSACTION_STATUS_ABORTED) { 
+		MTM_LOG1("Rollback active transaction %d:%d", ts->gtid.node, ts->gtid.xid);
 		ts->status = TRANSACTION_STATUS_ABORTED;
 		MtmAdjustSubtransactions(ts);
 		Mtm->nActiveTransactions -= 1;
@@ -1337,7 +1340,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
  */
 bool MtmRefreshClusterStatus(bool nowait)
 {
-	nodemask_t mask, clique;
+	nodemask_t mask, clique, disabled;
 	nodemask_t matrix[MAX_NODES];
 	MtmTransState *ts;
 	int clique_size;
@@ -1363,7 +1366,9 @@ bool MtmRefreshClusterStatus(bool nowait)
 
 		MTM_LOG1("Find clique %lx, disabledNodeMask %lx", (long) clique, (long) Mtm->disabledNodeMask);
 		MtmLock(LW_EXCLUSIVE);
-		mask = ~clique & (((nodemask_t)1 << Mtm->nAllNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
+		disabled = ~clique & (((nodemask_t)1 << Mtm->nAllNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
+		
+		mask = disabled;
 		for (i = 0; mask != 0; i++, mask >>= 1) {
 			if (mask & 1) { 
 				MtmDisableNode(i+1);
@@ -1378,12 +1383,17 @@ bool MtmRefreshClusterStatus(bool nowait)
 		MtmCheckQuorum();
 		/* Interrupt voting for active transaction and abort them */
 		for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
-			if (!ts->votingCompleted && MtmIsCoordinator(ts)) { 
+			if (MtmIsCoordinator(ts)) { 
+				if (!ts->votingCompleted && ts->status != TRANSACTION_STATUS_ABORTED) {
+					MtmAbortTransaction(ts);
+					MtmWakeUpBackend(ts);
+				}
+			} else if (BIT_CHECK(disabled, ts->gtid.node-1)) { // coordinator of transaction is on disabled node
 				if (ts->status != TRANSACTION_STATUS_ABORTED) {
 					MTM_LOG1("1) Rollback active transaction %d:%d:%d", ts->gtid.node, ts->gtid.xid, ts->xid);
 					MtmAbortTransaction(ts);
-				}						
-				MtmWakeUpBackend(ts);
+					FinishPreparedTransaction(ts->gid, false);
+				}
 			}
 		}
 		MtmUnlock();
@@ -1444,12 +1454,17 @@ void MtmOnNodeDisconnect(int nodeId)
 			MtmCheckQuorum();
 			/* Interrupt voting for active transaction and abort them */
 			for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
-				if (!ts->votingCompleted && MtmIsCoordinator(ts)) { 
+				if (MtmIsCoordinator(ts)) { 
+					if (!ts->votingCompleted && ts->status != TRANSACTION_STATUS_ABORTED) {
+						MtmAbortTransaction(ts);
+						MtmWakeUpBackend(ts);
+					}
+				} else if (ts->gtid.node == nodeId) { //coordinator of transaction is on disabled node
 					if (ts->status != TRANSACTION_STATUS_ABORTED) {
 						MTM_LOG1("2) Rollback active transaction %d:%d", ts->gtid.node, ts->gtid.xid);
 						MtmAbortTransaction(ts);
-					}						
-					MtmWakeUpBackend(ts);
+						FinishPreparedTransaction(ts->gid, false);
+					}
 				}
 			}
 		}
