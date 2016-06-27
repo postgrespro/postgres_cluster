@@ -567,8 +567,9 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
-			MTM_LOG3("%d: PGLOGICAL_ABORT_PREPARED commit: gid=%s", MyProcPid, gid);
+			MTM_LOG1("%d: PGLOGICAL_ABORT_PREPARED commit: gid=%s", MyProcPid, gid);
 			if (MtmGetGlobalTransactionStatus(gid) != TRANSACTION_STATUS_ABORTED) { 
+				MTM_LOG1("%d: PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", MyProcPid, gid);
 				StartTransactionCommand();
 				MtmSetCurrentTransactionGID(gid);
 				FinishPreparedTransaction(gid, false);
