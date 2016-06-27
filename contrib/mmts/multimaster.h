@@ -140,7 +140,8 @@ typedef struct MtmTransState
 {
     TransactionId  xid;
     XidStatus      status; 
-	GlobalTransactionId gtid;
+	char           gid[MULTIMASTER_MAX_GID_SIZE]; /* Global transaction ID (used for 2PC) */
+	GlobalTransactionId gtid;          /* Transaction id at coordinator */
     csn_t          csn;                /* commit serial number */
     csn_t          snapshot;           /* transaction snapshot, or INVALID_CSN for local transactions */
 	int            nVotes;             /* number of votes received from replcas for this transaction: 
@@ -153,7 +154,7 @@ typedef struct MtmTransState
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
 	bool           votingCompleted;    /* 2PC voting is completed */
 	bool           isLocal;            /* Transaction is either replicated, either doesn't contain DML statements, so it shoudl be ignored by pglogical replication */
-	TransactionId xids[1];             /* [Mtm->nAllNodes]: transaction ID at replicas */
+	TransactionId  xids[1];             /* [Mtm->nAllNodes]: transaction ID at replicas */
 } MtmTransState;
 
 typedef struct
