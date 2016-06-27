@@ -3,7 +3,6 @@ import time
 import subprocess
 from lib.bank_client import *
 
-
 class RecoveryTest(unittest.TestCase):
     def setUp(self):
         #subprocess.check_call(['blockade','up'])
@@ -24,11 +23,11 @@ class RecoveryTest(unittest.TestCase):
         print('### normalOpsTest ###')
         print('Waiting 5s to check operability')
         time.sleep(5)
-        
+
         for client in self.clients:
             agg = client.history.aggregate()
             print(agg)
-            self.assertTrue(agg['transfer']['commit'] > 0)
+            self.assertTrue(agg['transfer']['finish']['Commit'] > 0)
 
     def test_1_node_disconnect(self):
         print('### disconnectTest ###')
@@ -36,29 +35,24 @@ class RecoveryTest(unittest.TestCase):
         subprocess.check_call(['blockade','partition','node3'])
         print('Node3 disconnected')
 
-        print('Waiting 20s to discover failure')
+        print('Waiting 15s to discover failure')
 
-        while True:
+        for i in range(5):
             time.sleep(3)
             for client in self.clients:
                 agg = client.history.aggregate()
                 print(agg)
+            print(" ")
 
-#        print('Waiting 3s to check operability')
-#        time.sleep(3)
-#        for client in self.clients:
-#            agg = client.history.aggregate()
-#            print(agg)
-#
-#        subprocess.check_call(['blockade','join'])
-#        print('Node3 connected back')
-#
-#        print('Waiting 12s for catch-up')
-#        time.sleep(12)
-#
-#        for client in self.clients:
-#            agg = client.history.aggregate()
-#            print(agg)
+        subprocess.check_call(['blockade','join'])
+
+        print('Waiting 15s to join node')
+        for i in range(1000):
+            time.sleep(3)
+            for client in self.clients:
+                agg = client.history.aggregate()
+                print(agg)
+            print(" ")
 
 
 if __name__ == '__main__':
