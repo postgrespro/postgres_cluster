@@ -668,6 +668,13 @@ static void MtmTransSender(Datum arg)
 	sigfillset(&sset);
 	sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
+	/* We're now ready to receive signals */
+	BackgroundWorkerUnblockSignals();
+
+	/* Connect to a database */
+	BackgroundWorkerInitializeConnection(MtmDatabaseName, NULL);
+
+
 	heartbeat_timer = RegisterTimeout(USER_TIMEOUT, MtmScheduleHeartbeat);
 	enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 
@@ -755,6 +762,12 @@ static void MtmTransReceiver(Datum arg)
 	sigfillset(&sset);
 	sigprocmask(SIG_UNBLOCK, &sset, NULL);
 	
+	/* We're now ready to receive signals */
+	BackgroundWorkerUnblockSignals();
+
+	/* Connect to a database */
+	BackgroundWorkerInitializeConnection(MtmDatabaseName, NULL);
+
 	MtmAcceptIncomingConnections();
 
 	for (i = 0; i < nNodes; i++) { 
