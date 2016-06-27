@@ -1064,7 +1064,7 @@ void MtmWakeUpBackend(MtmTransState* ts)
 void MtmAbortTransaction(MtmTransState* ts)
 {	
 	if (ts->status != TRANSACTION_STATUS_ABORTED) { 
-		MTM_LOG1("Rollback active transaction %d:%d", ts->gtid.node, ts->gtid.xid);
+		MTM_LOG1("Rollback active transaction %d:%d (local xid %d)", ts->gtid.node, ts->gtid.xid, ts->xid);
 		ts->status = TRANSACTION_STATUS_ABORTED;
 		MtmAdjustSubtransactions(ts);
 		Mtm->nActiveTransactions -= 1;
@@ -1388,9 +1388,8 @@ bool MtmRefreshClusterStatus(bool nowait)
 					MtmAbortTransaction(ts);
 					MtmWakeUpBackend(ts);
 				}
-			} else if (BIT_CHECK(disabled, ts->gtid.node-1)) { // coordinator of transaction is on disabled node
-				if (ts->status != TRANSACTION_STATUS_ABORTED) {
-					MTM_LOG1("1) Rollback active transaction %d:%d:%d", ts->gtid.node, ts->gtid.xid, ts->xid);
+			} else if (TransactionIdIsValid(ts->gtid.xid) && BIT_CHECK(disabled, ts->gtid.node-1)) { // coordinator of transaction is on disabled node
+				if (ts->gid[0] && ts->status != TRANSACTION_STATUS_ABORTED) {
 					MtmAbortTransaction(ts);
 					FinishPreparedTransaction(ts->gid, false);
 				}
@@ -1459,9 +1458,8 @@ void MtmOnNodeDisconnect(int nodeId)
 						MtmAbortTransaction(ts);
 						MtmWakeUpBackend(ts);
 					}
-				} else if (ts->gtid.node == nodeId) { //coordinator of transaction is on disabled node
-					if (ts->status != TRANSACTION_STATUS_ABORTED) {
-						MTM_LOG1("2) Rollback active transaction %d:%d", ts->gtid.node, ts->gtid.xid);
+				} else if (TransactionIdIsValid(ts->gtid.xid) && ts->gtid.node == nodeId) { //coordinator of transaction is on disabled node
+					if (ts->gid[0] && ts->status != TRANSACTION_STATUS_ABORTED) {
 						MtmAbortTransaction(ts);
 						FinishPreparedTransaction(ts->gid, false);
 					}
