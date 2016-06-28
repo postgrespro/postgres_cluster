@@ -798,7 +798,7 @@ void MtmWatchdog(void)
 			if (Mtm->nodes[i].lastHeartbeat != 0
 				&& now > Mtm->nodes[i].lastHeartbeat + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) 
 			{ 
-				elog(WARNING, "Heartbeat was received from node %d during %d msec", 
+				elog(WARNING, "Heartbeat is not received from node %d during %d msec", 
 					 i+1, (int)USEC_TO_MSEC(now - Mtm->nodes[i].lastHeartbeat));
 				MtmOnNodeDisconnect(i+1);				
 			}

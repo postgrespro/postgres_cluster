@@ -915,15 +915,17 @@ static void MtmTransReceiver(Datum arg)
 					} else { 
 						switch (msg->code) { 
 						  case MSG_PREPARE:
-							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
-								ts->status = TRANSACTION_STATUS_UNKNOWN;
-								ts->csn = MtmAssignCSN();
-								MtmAdjustSubtransactions(ts);
-								MtmSendNotificationMessage(ts, MSG_PREPARED);
+							Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+							ts->status = TRANSACTION_STATUS_UNKNOWN;
+							ts->csn = MtmAssignCSN();
+							MtmAdjustSubtransactions(ts);
+							MtmSendNotificationMessage(ts, MSG_PREPARED);
+#if 0							
 							} else {
 								Assert(ts->status == TRANSACTION_STATUS_ABORTED);
 								MtmSendNotificationMessage(ts, MSG_ABORTED);
 							}
+#endif
 							break;
 						  default:
 							Assert(false);
