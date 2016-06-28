@@ -325,7 +325,7 @@ static void MtmSetSocketOptions(int sd)
 
 static void MtmScheduleHeartbeat()
 {
-	Assert(!last_sent_hearbeat || last_sent_hearbeat + MSEC_TO_USEC(MtmHeartbeatRecvTimeout) >= MtmGetSystemTime());
+//	Assert(!last_sent_hearbeat || last_sent_hearbeat + MSEC_TO_USEC(MtmHeartbeatRecvTimeout) >= MtmGetSystemTime());
 	enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 	send_heartbeat = true;
 	PGSemaphoreUnlock(&Mtm->votingSemaphore);
