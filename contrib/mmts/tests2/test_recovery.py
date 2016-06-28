@@ -19,15 +19,15 @@ class RecoveryTest(unittest.TestCase):
         self.clients[0].cleanup()
         subprocess.check_call(['blockade','join'])
 
-    def test_0_normal_operation(self):
-        print('### normalOpsTest ###')
-        print('Waiting 5s to check operability')
-        time.sleep(5)
-
-        for client in self.clients:
-            agg = client.history.aggregate()
-            print(agg)
-            self.assertTrue(agg['transfer']['finish']['Commit'] > 0)
+#    def test_0_normal_operation(self):
+#        print('### normalOpsTest ###')
+#        print('Waiting 5s to check operability')
+#        time.sleep(5)
+#
+#        for client in self.clients:
+#            agg = client.history.aggregate()
+#            print(agg)
+#            self.assertTrue(agg['transfer']['finish']['Commit'] > 0)
 
     def test_1_node_disconnect(self):
         print('### disconnectTest ###')
