@@ -39,6 +39,35 @@ Typical installation procedure may look like this:
 
 ## Module functions
 
+The functions provided by the **pg_variables** module are shown in the tables
+below. The module supports the following scalar and record types.
+
+To use **pgv_get_()** functions required package and variable must exists. It is
+necessary to set variable with **pgv_set_()** functions to use **pgv_get_()**
+functions.
+
+If a package does not exists you will get the following error:
+
+```sql
+SELECT pgv_get_int('vars', 'int1');
+ERROR:  unrecognized package "vars"
+```
+
+If a variable does not exists you will get the following error:
+
+```sql
+SELECT pgv_get_int('vars', 'int1');
+ERROR:  unrecognized variable "int1"
+```
+
+**pgv_get_()** functions check the variable type. If the variable type does not
+match with the function type the error will be raised:
+
+```sql
+SELECT pgv_get_text('vars', 'int1');
+ERROR:  variable "int1" requires "integer" value
+```
+
 ### Integer variables
 
 Function | Returns
@@ -90,25 +119,37 @@ Function | Returns
 
 ### Records
 
-Function | Returns
--------- | -------
-`pgv_insert(package text, name text, r record)` | `void`
-`pgv_update(package text, name text, r record)` | `boolean`
-`pgv_delete(package text, name text, value anynonarray)` | `boolean`
-`pgv_select(package text, name text)` | `set of record`
-`pgv_select(package text, name text, value anynonarray)` | `record`
-`pgv_select(package text, name text, value anyarray)` | `set of record`
+The following functions are provided by the module to work with collections of
+record types.
+
+To use **pgv_update()**, **pgv_delete()** and **pgv_select()** functions
+required package and variable must exists. Otherwise the error will be raised.
+It is necessary to set variable with **pgv_insert()** function to use these
+functions.
+
+**pgv_update()**, **pgv_delete()** and **pgv_select()** functions check the
+variable type. If the variable type does not **record** type the error will be
+raised.
+
+Function | Returns | Description
+-------- | ------- | -----------
+`pgv_insert(package text, name text, r record)` | `void` | Inserts a record to the variable collection. If package and variable do not exists they will be created. The first column of **r** will be a primary key. If exists a record with the same primary key the error will be raised. If this variable collection has other structure the error will be raised.
+`pgv_update(package text, name text, r record)` | `boolean` | Updates a record with the corresponding primary key (the first column of **r** is a primary key). Returns **true** if a record was found. If this variable collection has other structure the error will be raised.
+`pgv_delete(package text, name text, value anynonarray)` | `boolean` | Deletes a record with the corresponding primary key (the first column of **r** is a primary key). Returns **true** if a record was found.
+`pgv_select(package text, name text)` | `set of record` | Returns the variable collection records.
+`pgv_select(package text, name text, value anynonarray)` | `record` | Returns the record with the corresponding primary key (the first column of **r** is a primary key).
+`pgv_select(package text, name text, value anyarray)` | `set of record` | Returns the variable collection records with the corresponding primary keys (the first column of **r** is a primary key).
 
 ### Miscellaneous functions
 
-Function | Returns
--------- | -------
-`pgv_exists(package text, name text)` | `bool`
-`pgv_remove(package text, name text)` | `void`
-`pgv_remove(package text)` | `void`
-`pgv_free()` | `void`
-`pgv_list()` | `table(package text, name text)`
-`pgv_stats()` | `table(package text, used_memory bigint)`
+Function | Returns | Description
+-------- | ------- | -----------
+`pgv_exists(package text, name text)` | `bool` | Returns **true** if package and variable exists.
+`pgv_remove(package text, name text)` | `void` | Removes the variable with the corresponding name. Required package and variable must exists, otherwise the error will be raised.
+`pgv_remove(package text)` | `void` | Removes the package and all package variables with the corresponding name. Required package must exists, otherwise the error will be raised.
+`pgv_free()` | `void` | Removes all packages and variables.
+`pgv_list()` | `table(package text, name text)` | Returns set of records of assigned packages and variables.
+`pgv_stats()` | `table(package text, used_memory bigint)` | Returns list of assigned packages and used memory in bytes.
 
 Note that **pgv_stats()** works only with the PostgreSQL 9.6 and newer.
 
