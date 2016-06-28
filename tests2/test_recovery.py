@@ -44,7 +44,7 @@ class RecoveryTest(unittest.TestCase):
                 print(agg)
             print(" ")
 
-        subprocess.check_call(['blockade','join'])
+        # subprocess.check_call(['blockade','join'])
 
         print('Waiting 15s to join node')
         for i in range(1000):
