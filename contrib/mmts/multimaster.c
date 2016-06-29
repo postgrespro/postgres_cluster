@@ -695,20 +695,18 @@ MtmCreateTransState(MtmCurrentTrans* x)
 {
 	bool found;
 	MtmTransState* ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, &found);
-	if (!found) {
-		ts->status = TRANSACTION_STATUS_IN_PROGRESS;
-		ts->snapshot = x->snapshot;
-		ts->isLocal = true;
-		if (TransactionIdIsValid(x->gtid.xid)) { 		
-			Assert(x->gtid.node != MtmNodeId);
-			ts->gtid = x->gtid;
-			strcpy(ts->gid, x->gid);
-		} else { 
-			/* I am coordinator of transaction */
-			ts->gtid.xid = x->xid;
-			ts->gtid.node = MtmNodeId;
-			ts->gid[0] = '\0';
-		}
+	ts->status = TRANSACTION_STATUS_IN_PROGRESS;
+	ts->snapshot = x->snapshot;
+	ts->isLocal = true;
+	if (TransactionIdIsValid(x->gtid.xid)) { 		
+		Assert(x->gtid.node != MtmNodeId);
+		ts->gtid = x->gtid;
+		strcpy(ts->gid, x->gid);
+	} else { 
+		/* I am coordinator of transaction */
+		ts->gtid.xid = x->xid;
+		ts->gtid.node = MtmNodeId;
+		ts->gid[0] = '\0';
 	}
 	return ts;
 }
@@ -854,11 +852,11 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		if (!ts->votingCompleted) {  
 			if (ts->status != TRANSACTION_STATUS_ABORTED) { 
 				MtmAbortTransaction(ts);
-				elog(WARNING, "Transaction is aborted because of %d msec timeout expiration, prepare time %d msec", (int)transTimeout, (int)USEC_TO_MSEC(ts->csn - x->snapshot));
+				elog(WARNING, "Transaction %d is aborted because of %d msec timeout expiration, prepare time %d msec", x->xid, (int)transTimeout, (int)USEC_TO_MSEC(ts->csn - x->snapshot));
 			}
 		} else if (nConfigChanges != Mtm->nConfigChanges) {
 			MtmAbortTransaction(ts);
-			elog(WARNING, "Transaction is aborted because cluster configuration is changed during commit");
+			elog(WARNING, "Transaction %d is aborted because cluster configuration is changed during commit", x->xid);
 		}
 		x->status = ts->status;
 		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
@@ -880,9 +878,12 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 		MtmLock(LW_EXCLUSIVE);
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
 		Assert(tm != NULL);
+		MTM_LOG1("Abort prepared transaction %d with gid='%s' is already aborted", x->xid, x->gid);
 		MtmAbortTransaction(tm->state);
 		MtmUnlock();
 		x->status = TRANSACTION_STATUS_ABORTED;
+	} else { 
+		MTM_LOG1("Transaction %d with gid='%s' is already aborted", x->xid, x->gid);
 	}
 }
 
@@ -918,6 +919,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				Assert(Mtm->nActiveTransactions != 0);
 				Mtm->nActiveTransactions -= 1;
 			} else { 
+				MTM_LOG1("%d: abort transaction %d gid='%s' is called from MtmEndTransaction", MyProcPid, x->xid, x->gid);
 				MtmAbortTransaction(ts);
 			}
 		}
@@ -998,7 +1000,7 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 
 void  MtmSetCurrentTransactionGID(char const* gid)
 {
-	MTM_LOG3("Set current transaction GID %s", gid);
+	MTM_LOG3("Set current transaction xid=%d GID %s", MtmTx.xid, gid);
 	strcpy(MtmTx.gid, gid);
 	MtmTx.isDistributed = true;
 	MtmTx.isReplicated = true;
@@ -1383,15 +1385,21 @@ bool MtmRefreshClusterStatus(bool nowait)
 		MtmCheckQuorum();
 		/* Interrupt voting for active transaction and abort them */
 		for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
+			MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%d, gtid.xid=%d",
+					 ts->gid, ts->gtid.node, ts->xid, ts->status, ts->gtid.xid);
 			if (MtmIsCoordinator(ts)) { 
 				if (!ts->votingCompleted && ts->status != TRANSACTION_STATUS_ABORTED) {
 					MtmAbortTransaction(ts);
 					MtmWakeUpBackend(ts);
 				}
 			} else if (TransactionIdIsValid(ts->gtid.xid) && BIT_CHECK(disabled, ts->gtid.node-1)) { // coordinator of transaction is on disabled node
-				if (ts->gid[0] && ts->status != TRANSACTION_STATUS_ABORTED) {
-					MtmAbortTransaction(ts);
-					FinishPreparedTransaction(ts->gid, false);
+				if (ts->gid[0]) { 
+					if (ts->status == TRANSACTION_STATUS_UNKNOWN || ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
+						MTM_LOG1("%d: Abort trasaction %s because its coordinator is at disabled node %d", MyProcPid, ts->gid, ts->gtid.node);
+						MtmAbortTransaction(ts);
+						MtmTx.status = TRANSACTION_STATUS_ABORTED; /* prevent recursive invocation of MtmAbortPreparedTransaction */
+						FinishPreparedTransaction(ts->gid, false);
+					}
 				}
 			}
 		}
@@ -1461,6 +1469,7 @@ void MtmOnNodeDisconnect(int nodeId)
 				} else if (TransactionIdIsValid(ts->gtid.xid) && ts->gtid.node == nodeId) { //coordinator of transaction is on disabled node
 					if (ts->gid[0] && ts->status != TRANSACTION_STATUS_ABORTED) {
 						MtmAbortTransaction(ts);
+						MtmTx.status = TRANSACTION_STATUS_ABORTED; /* prevent recursive invocation of MtmAbortPreparedTransaction */
 						FinishPreparedTransaction(ts->gid, false);
 					}
 				}

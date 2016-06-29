@@ -524,7 +524,7 @@ process_remote_commit(StringInfo in)
 	{
 		case PGLOGICAL_COMMIT:
 		{
-			MTM_LOG3("%d: PGLOGICAL_COMMIT commit", MyProcPid);
+			MTM_LOG1("%d: PGLOGICAL_COMMIT commit", MyProcPid);
 			if (IsTransactionState()) {
 				Assert(TransactionIdIsValid(MtmGetCurrentTransactionId()));
 				MtmBeginSession();
@@ -537,7 +537,7 @@ process_remote_commit(StringInfo in)
 			Assert(IsTransactionState() && TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
 			/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
-			MTM_LOG3("%d: PGLOGICAL_PREPARE commit: gid=%s", MyProcPid, gid);
+			MTM_LOG1("%d: PGLOGICAL_PREPARE commit: gid=%s", MyProcPid, gid);
 			BeginTransactionBlock();
 			CommitTransactionCommand();
 			StartTransactionCommand();
@@ -554,7 +554,7 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			csn = pq_getmsgint64(in); 
 			gid = pq_getmsgstring(in);
-			MTM_LOG3("%d: PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s", MyProcPid, csn, gid);
+			MTM_LOG1("%d: PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s", MyProcPid, csn, gid);
 			StartTransactionCommand();
 			MtmBeginSession();
 			MtmSetCurrentTransactionCSN(csn);
@@ -567,7 +567,7 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
-			MTM_LOG2("%d: PGLOGICAL_ABORT_PREPARED commit: gid=%s", MyProcPid, gid);
+			MTM_LOG1("%d: PGLOGICAL_ABORT_PREPARED commit: gid=%s", MyProcPid, gid);
 			if (MtmGetGlobalTransactionStatus(gid) != TRANSACTION_STATUS_ABORTED) { 
 				MTM_LOG2("%d: PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", MyProcPid, gid);
 				StartTransactionCommand();
