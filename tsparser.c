@@ -1118,6 +1118,7 @@ static const TParserStateActionItem actionTPS_InWord[] = {
 	{p_isspecial, 0, A_NEXT, TPS_Null, 0, NULL},
 	{p_isdigit, 0, A_NEXT, TPS_InNumWord, 0, NULL},
 	{p_iseqC, '-', A_PUSH, TPS_InHyphenWordFirst, 0, NULL},
+	{p_iseqC, '_', A_PUSH, TPS_InHyphenWordFirst, 0, NULL},
 	{NULL, 0, A_BINGO, TPS_Base, WORD_T, NULL}
 };
 
@@ -1641,6 +1642,7 @@ static const TParserStateActionItem actionTPS_InHyphenNumWord[] = {
 	{p_isalnum, 0, A_NEXT, TPS_InHyphenNumWord, 0, NULL},
 	{p_isspecial, 0, A_NEXT, TPS_InHyphenNumWord, 0, NULL},
 	{p_iseqC, '-', A_PUSH, TPS_InHyphenNumWordFirst, 0, NULL},
+	{p_iseqC, '_', A_PUSH, TPS_InHyphenNumWordFirst, 0, NULL},
 	{NULL, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, NUMHWORD, SpecialHyphen}
 };
 
