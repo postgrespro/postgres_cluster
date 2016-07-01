@@ -1351,7 +1351,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
  */
 bool MtmRefreshClusterStatus(bool nowait)
 {
-	nodemask_t mask, clique, disabled;
+	nodemask_t mask, clique, disabled, enabled;
 	nodemask_t matrix[MAX_NODES];
 	MtmTransState *ts;
 	int clique_size;
@@ -1385,29 +1385,34 @@ bool MtmRefreshClusterStatus(bool nowait)
 				MtmDisableNode(i+1);
 			}
 		}
-		mask = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
+		
+		enabled = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
+
+		mask = enabled;
 		for (i = 0; mask != 0; i++, mask >>= 1) {
 			if (mask & 1) { 
 				MtmEnableNode(i+1);
 			}
 		}
-		MtmCheckQuorum();
-		/* Interrupt voting for active transaction and abort them */
-		for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
-			MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%d, gtid.xid=%d",
-					 ts->gid, ts->gtid.node, ts->xid, ts->status, ts->gtid.xid);
-			if (MtmIsCoordinator(ts)) { 
-				if (!ts->votingCompleted && ts->status != TRANSACTION_STATUS_ABORTED) {
-					MtmAbortTransaction(ts);
-					MtmWakeUpBackend(ts);
-				}
-			} else if (TransactionIdIsValid(ts->gtid.xid) && BIT_CHECK(disabled, ts->gtid.node-1)) { // coordinator of transaction is on disabled node
-				if (ts->gid[0]) { 
-					if (ts->status == TRANSACTION_STATUS_UNKNOWN || ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
-						MTM_LOG1("%d: Abort trasaction %s because its coordinator is at disabled node %d", MyProcPid, ts->gid, ts->gtid.node);
+		if (disabled|enabled) { 
+			MtmCheckQuorum();
+			/* Interrupt voting for active transaction and abort them */
+			for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
+				MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%d, gtid.xid=%d",
+						 ts->gid, ts->gtid.node, ts->xid, ts->status, ts->gtid.xid);
+				if (MtmIsCoordinator(ts)) { 
+					if (!ts->votingCompleted && ts->status != TRANSACTION_STATUS_ABORTED) {
 						MtmAbortTransaction(ts);
-						MtmTx.status = TRANSACTION_STATUS_ABORTED; /* prevent recursive invocation of MtmAbortPreparedTransaction */
-						FinishPreparedTransaction(ts->gid, false);
+						MtmWakeUpBackend(ts);
+					}
+				} else if (TransactionIdIsValid(ts->gtid.xid) && BIT_CHECK(disabled, ts->gtid.node-1)) { // coordinator of transaction is on disabled node
+					if (ts->gid[0]) { 
+						if (ts->status == TRANSACTION_STATUS_UNKNOWN || ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
+							MTM_LOG1("%d: Abort trasaction %s because its coordinator is at disabled node %d", MyProcPid, ts->gid, ts->gtid.node);
+							MtmAbortTransaction(ts);
+							MtmTx.status = TRANSACTION_STATUS_ABORTED; /* prevent recursive invocation of MtmAbortPreparedTransaction */
+							FinishPreparedTransaction(ts->gid, false);
+						}
 					}
 				}
 			}
@@ -3288,6 +3293,7 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
     ByteBuffer buf;
     PGXACT* pgxact = &ProcGlobal->allPgXact[proc->pgprocno];
 	bool hasDeadlock = false;
+
     if (TransactionIdIsValid(pgxact->xid)) { 
 		MtmGraph graph;
 		GlobalTransactionId gtid; 
