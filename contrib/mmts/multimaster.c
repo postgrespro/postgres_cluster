@@ -1378,41 +1378,38 @@ bool MtmRefreshClusterStatus(bool nowait)
 		MTM_LOG1("Find clique %lx, disabledNodeMask %lx", (long) clique, (long) Mtm->disabledNodeMask);
 		MtmLock(LW_EXCLUSIVE);
 		disabled = ~clique & (((nodemask_t)1 << Mtm->nAllNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
+		enabled = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
 		
-		mask = disabled;
-		for (i = 0; mask != 0; i++, mask >>= 1) {
+		for (i = 0, mask = disabled; mask != 0; i++, mask >>= 1) {
 			if (mask & 1) { 
 				MtmDisableNode(i+1);
 			}
 		}
 		
-		enabled = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
-
-		mask = enabled;
-		for (i = 0; mask != 0; i++, mask >>= 1) {
+		for (i = 0, mask = enabled; mask != 0; i++, mask >>= 1) {
 			if (mask & 1) { 
 				MtmEnableNode(i+1);
 			}
 		}
 		if (disabled|enabled) { 
 			MtmCheckQuorum();
-			/* Interrupt voting for active transaction and abort them */
-			for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
-				MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%d, gtid.xid=%d",
-						 ts->gid, ts->gtid.node, ts->xid, ts->status, ts->gtid.xid);
-				if (MtmIsCoordinator(ts)) { 
-					if (!ts->votingCompleted && ts->status != TRANSACTION_STATUS_ABORTED) {
+		}
+		/* Interrupt voting for active transaction and abort them */
+		for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
+			MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%d, gtid.xid=%d",
+					 ts->gid, ts->gtid.node, ts->xid, ts->status, ts->gtid.xid);
+			if (MtmIsCoordinator(ts)) { 
+				if (!ts->votingCompleted && (disabled|enabled) != 0 && ts->status != TRANSACTION_STATUS_ABORTED) {
+					MtmAbortTransaction(ts);
+					MtmWakeUpBackend(ts);
+				}
+			} else if (TransactionIdIsValid(ts->gtid.xid) && BIT_CHECK(disabled, ts->gtid.node-1)) { // coordinator of transaction is on disabled node
+				if (ts->gid[0]) { 
+					if (ts->status == TRANSACTION_STATUS_UNKNOWN || ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
+						MTM_LOG1("%d: Abort trasaction %s because its coordinator is at disabled node %d", MyProcPid, ts->gid, ts->gtid.node);
 						MtmAbortTransaction(ts);
-						MtmWakeUpBackend(ts);
-					}
-				} else if (TransactionIdIsValid(ts->gtid.xid) && BIT_CHECK(disabled, ts->gtid.node-1)) { // coordinator of transaction is on disabled node
-					if (ts->gid[0]) { 
-						if (ts->status == TRANSACTION_STATUS_UNKNOWN || ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
-							MTM_LOG1("%d: Abort trasaction %s because its coordinator is at disabled node %d", MyProcPid, ts->gid, ts->gtid.node);
-							MtmAbortTransaction(ts);
-							MtmTx.status = TRANSACTION_STATUS_ABORTED; /* prevent recursive invocation of MtmAbortPreparedTransaction */
-							FinishPreparedTransaction(ts->gid, false);
-						}
+						MtmTx.status = TRANSACTION_STATUS_ABORTED; /* prevent recursive invocation of MtmAbortPreparedTransaction */
+						FinishPreparedTransaction(ts->gid, false);
 					}
 				}
 			}
@@ -1491,7 +1488,7 @@ void MtmOnNodeDisconnect(int nodeId)
 		}
 		MtmUnlock();
 	} else { 
-		MtmRefreshClusterStatus(true); /* false); -- TODO: raftable can handg in nowait=true */
+		MtmRefreshClusterStatus(false);
     }
 }
 
@@ -2684,7 +2681,7 @@ Datum mtm_dump_lock_graph(PG_FUNCTION_ARGS)
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
 		size_t size;
-		char *data = RaftableGet(psprintf("lock-graph-%d", i+1), &size, NULL, true);
+		char *data = RaftableGet(psprintf("lock-graph-%d", i+1), &size, NULL, false);
 		if (data) { 
 			GlobalTransactionId *gtid = (GlobalTransactionId *)data;
 			GlobalTransactionId *last = (GlobalTransactionId *)(data + size);
@@ -3308,7 +3305,7 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 		for (i = 0; i < Mtm->nAllNodes; i++) { 
 			if (i+1 != MtmNodeId && !BIT_CHECK(Mtm->disabledNodeMask, i)) { 
 				size_t size;
-				void* data = RaftableGet(psprintf("lock-graph-%d", i+1), &size, NULL, true);
+				void* data = RaftableGet(psprintf("lock-graph-%d", i+1), &size, NULL, false);
 				if (data == NULL) { 
 					return true; /* If using Raftable is disabled */
 				} else { 
