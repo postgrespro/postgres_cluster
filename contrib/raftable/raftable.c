@@ -144,7 +144,7 @@ static bool timed_read(int sock, void *data, size_t len, timeout_t *timeout)
 		}
 
 		newbytes = read(sock, (char *)data + recved, len - recved);
-		if (newbytes == -1)
+		if (newbytes <= 0)
 		{
 			if (errno == EAGAIN) {
 				if (poll_until_readable(sock, timeout)) {

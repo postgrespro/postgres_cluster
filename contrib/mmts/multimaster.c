@@ -78,6 +78,8 @@ typedef struct {
 
 typedef struct {
 	char gid[MULTIMASTER_MAX_GID_SIZE];
+	bool abort;
+	XidStatus status;
 	MtmTransState* state;
 } MtmTransMap;
 
@@ -275,7 +277,7 @@ timestamp_t MtmGetSystemTime(void)
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    return (timestamp_t)tv.tv_sec*USECS_PER_SEC + tv.tv_usec + Mtm->timeShift;
+    return (timestamp_t)tv.tv_sec*USECS_PER_SEC + tv.tv_usec;
 }
 
 timestamp_t MtmGetCurrentTime(void)
@@ -722,10 +724,11 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
 	TransactionId* subxids;
-	
+
 	if (!x->isDistributed) {
 		return;
 	}
+
 
 	if (Mtm->inject2PCError == 1) { 
 		Mtm->inject2PCError = 0;
@@ -755,7 +758,6 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	if (!x->isReplicated) { 
 		MtmCheckClusterLock();
 	}
-
 	ts = MtmCreateTransState(x);
 	/* 
 	 * Invalid CSN prevent replication of transaction by logical replication 
@@ -780,8 +782,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	MtmAddSubtransactions(ts, subxids, ts->nSubxids);
 	MTM_LOG3("%d: MtmPrePrepareTransaction prepare commit of %d (gtid.xid=%d, gtid.node=%d, CSN=%ld)", 
 			 MyProcPid, x->xid, ts->gtid.xid, ts->gtid.node, ts->csn);
-	MtmUnlock();
-
+	MtmUnlock(); 
 }
 
 /*
@@ -819,7 +820,8 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	Assert(ts != NULL);
 
 	if (!MtmIsCoordinator(ts) || Mtm->status == MTM_RECOVERY) {
-		MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, NULL);
+		bool found;
+		MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, &found);
 		Assert(x->gid[0]);
 		tm->state = ts;	
 		ts->votingCompleted = true;
@@ -877,8 +879,8 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 	if (x->status != TRANSACTION_STATUS_ABORTED) { 
 		MtmLock(LW_EXCLUSIVE);
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
-		Assert(tm != NULL);
-		MTM_LOG1("Abort prepared transaction %d with gid='%s' is already aborted", x->xid, x->gid);
+		Assert(tm != NULL && tm->state != NULL);
+		MTM_LOG1("%ld: Abort prepared transaction %d with gid='%s'", MtmGetSystemTime(), x->xid, x->gid);
 		MtmAbortTransaction(tm->state);
 		MtmUnlock();
 		x->status = TRANSACTION_STATUS_ABORTED;
@@ -1016,21 +1018,26 @@ XidStatus MtmGetCurrentTransactionStatus(void)
 	return MtmTx.status;
 }
 
-XidStatus MtmGetGlobalTransactionStatus(char const* gid)
+XidStatus MtmExchangeGlobalTransactionStatus(char const* gid, XidStatus new_status)
 {
-	XidStatus status;
 	MtmTransMap* tm;
+	bool found;
+	XidStatus old_status = TRANSACTION_STATUS_IN_PROGRESS;
 
 	Assert(gid[0]);
-	MtmLock(LW_SHARED);
-	tm = (MtmTransMap*)hash_search(MtmGid2State, gid, HASH_FIND, NULL);
-	if (tm != NULL) {
-		status = tm->state->status;
+	MtmLock(LW_EXCLUSIVE);
+	tm = (MtmTransMap*)hash_search(MtmGid2State, gid, HASH_ENTER, &found);
+	if (found) {
+		old_status = tm->status;
+		if (old_status != TRANSACTION_STATUS_ABORTED) { 
+			tm->status = new_status;
+		}
 	} else { 
-		status = TRANSACTION_STATUS_ABORTED;
+		tm->state = NULL;
+		tm->status = new_status;
 	}
 	MtmUnlock();
-	return status;
+	return old_status;
 }
 
 void  MtmSetCurrentTransactionCSN(csn_t csn)

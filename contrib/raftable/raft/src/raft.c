@@ -1116,7 +1116,7 @@ raft_msg_t raft_recv_message(raft_t r) {
 		(struct sockaddr*)&addr, &addrlen
 	);
 
-	if (recved == -1) {
+	if (recved <= 0) {
 		if (
 			(errno == EAGAIN) ||
 			(errno == EWOULDBLOCK) ||

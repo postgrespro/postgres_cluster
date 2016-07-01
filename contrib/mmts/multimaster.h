@@ -256,7 +256,7 @@ extern csn_t MtmGetTransactionCSN(TransactionId xid);
 extern void  MtmSetCurrentTransactionCSN(csn_t csn);
 extern TransactionId MtmGetCurrentTransactionId(void);
 extern XidStatus MtmGetCurrentTransactionStatus(void);
-extern XidStatus MtmGetGlobalTransactionStatus(char const* gid);
+extern XidStatus MtmExchangeGlobalTransactionStatus(char const* gid, XidStatus status);
 extern bool  MtmIsRecoveredNode(int nodeId);
 extern bool  MtmRefreshClusterStatus(bool nowait);
 extern void  MtmSwitchClusterMode(MtmNodeStatus mode);
