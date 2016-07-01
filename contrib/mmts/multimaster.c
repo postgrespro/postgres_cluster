@@ -952,7 +952,9 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		MtmUnlock();
 	}
 	MtmResetTransaction(x);
-	MtmCheckSlots();
+	if (!MyReplicationSlot) { 
+		MtmCheckSlots();
+	}
 }
 
 void MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd)
