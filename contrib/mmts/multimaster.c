@@ -3295,7 +3295,7 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 		
         ByteBufferAlloc(&buf);
         EnumerateLocks(MtmSerializeLock, &buf);
-		RaftableSet(psprintf("lock-graph-%d", MtmNodeId), buf.data, buf.used, true);
+		RaftableSet(psprintf("lock-graph-%d", MtmNodeId), buf.data, buf.used, false);
 		MtmGraphInit(&graph);
 		MtmGraphAdd(&graph, (GlobalTransactionId*)buf.data, buf.used/sizeof(GlobalTransactionId));
         ByteBufferFree(&buf);
