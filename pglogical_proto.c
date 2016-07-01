@@ -150,7 +150,8 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 		 * INVALID_CSN means replicated transaction (transaction initiated by some other nodes).
 		 * We do not need to send such transactions unless we perform recovery
 		 */
-		if (csn == INVALID_CSN && !isRecovery) {
+		if (csn == INVALID_CSN && !isRecovery) 
+		{
 			return;
 		}
 		if (MtmRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn)) { 
