@@ -530,7 +530,7 @@ MtmAdjustOldestXid(TransactionId xid)
 		if (prev != NULL) { 
 			Mtm->transListHead = prev;
 			Mtm->oldestXid = xid = prev->xid;            
-			MTM_LOG2("%d: MtmAdjustOldestXid: oldestXid=%d, olderstSnapshot=%ld", MyProcPid, xid, oldestSnapshot);
+			MTM_LOG2("%d: MtmAdjustOldestXid: oldestXid=%d, oldestSnapshot=%ld", MyProcPid, xid, oldestSnapshot);
 		} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) {  
 			xid = Mtm->oldestXid;
 		}
