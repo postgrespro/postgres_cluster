@@ -1,3 +1,4 @@
+from __future__ import print_function
 import psycopg2
 import random
 from multiprocessing import Process, Value, Queue
@@ -29,6 +30,36 @@ class ClientCollection(object):
     def stop(self):
         for client in self._clients:
             client.stop()
+
+    def print_agg(self):
+        aggs = []
+        for client in self._clients:
+            aggs.append(client.history.aggregate())
+
+        columns = ['running', 'running_latency', 'max_latency', 'finish']
+
+        #rows = [ k+str(i+1) for k in agg.keys() for i, agg in enumerate(aggs)]
+
+        print("\t\t", end="")
+        for col in columns:
+            print(col, end="\t")
+        print("\n", end="")
+
+        for i, agg in enumerate(aggs):
+            for k in agg.keys():
+                print("%s_%d:\t" % (k, i+1), end="")
+                for col in columns:
+                    if k in agg and col in agg[k]:
+                        if isinstance(agg[k][col], float):
+                            print("%.2f\t" % (agg[k][col],), end="\t")
+                            #print(agg[k][col], end="\t")
+                        else :
+                            print(agg[k][col], end="\t")
+                    else :
+                        print("-\t", end='')
+                print("\n", end='')
+
+        print("")
 
 
 class BankClient(object):
