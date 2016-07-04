@@ -1,6 +1,9 @@
 #ifndef __RAFTABLE_H__
 #define __RAFTABLE_H__
 
+/* Syncs with the raftable leader. Gives up after 'timeout_ms' milliseconds. */
+bool raftable_sync(int timeout_ms);
+
 /* Gets value by key. Returns the value or NULL if not found. */
 char *raftable_get(const char *key, size_t *vallen);
 

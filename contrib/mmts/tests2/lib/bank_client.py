@@ -133,6 +133,7 @@ class BankClient(object):
         def tx(conn, cur):
             cur.execute('select sum(amount) from bank_test')
             res = cur.fetchone()
+            conn.commit()
             if res[0] != 0:
                 print("Isolation error, total = %d" % (res[0],))
                 raise BaseException

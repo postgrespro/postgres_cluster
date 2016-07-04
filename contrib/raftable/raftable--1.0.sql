@@ -1,6 +1,12 @@
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
 \echo Use "CREATE EXTENSION raftable" to load this file. \quit
 
+-- sync
+CREATE FUNCTION raftable_sync(timeout_ms int)
+RETURNS void
+AS 'MODULE_PATHNAME','raftable_sql_sync'
+LANGUAGE C;
+
 -- get
 CREATE FUNCTION raftable(key varchar(64))
 RETURNS text

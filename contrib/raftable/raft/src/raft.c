@@ -1182,3 +1182,7 @@ bool raft_is_leader(raft_t r) {
 int raft_get_leader(raft_t r) {
 	return r->leader;
 }
+
+int raft_progress(raft_t r) {
+	return r->log.applied;
+}

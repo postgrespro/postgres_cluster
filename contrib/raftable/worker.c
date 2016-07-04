@@ -322,14 +322,30 @@ static void attend(Client *c)
 
 		Assert(c->expect.id == NOBODY); /* client shouldn't send multiple updates at once */
 
-		u.len = c->msglen;
-		u.data = c->msg;
 		c->expect.id = ru->expector;
-		index = raft_emit(raft, u);
-		if (index >= 0)
-			c->expect.index = index;
-		else
-			c->good = false;
+		if (ru->fieldnum > 0) {
+			// an actual update
+			u.len = c->msglen;
+			u.data = c->msg;
+			index = raft_emit(raft, u);
+			if (index >= 0)
+				c->expect.index = index;
+			else
+				c->good = false;
+		} else {
+			// a sync command
+			c->expect.index = raft_progress(raft);
+			if (raft_applied(raft, c->expect.id, c->expect.index))
+			{
+				int ok = 1;
+				if (send(c->sock, &ok, sizeof(ok), 0) != sizeof(ok))
+				{
+					fprintf(stderr, "failed to notify client\n");
+					c->good = false;
+				}
+				c->expect.id = NOBODY;
+			}
+		}
 		pfree(c->msg);
 		c->msg = NULL;
 	}
