@@ -77,7 +77,7 @@ $baker->stop;
 $able->psql('postgres', "select raftable('world', '$tests{world}', $timeout_ms);");
 
 $baker->start;
-sleep(5);
+$baker->psql('postgres', "select raftable_sync($timeout_ms);");
 while (my ($key, $value) = each(%tests))
 {
 	my ($rc, $stdout, $stderr) = $baker->psql('postgres', "select raftable('$key');");

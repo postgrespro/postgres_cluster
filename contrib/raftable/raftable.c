@@ -38,6 +38,7 @@ PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(raftable_sql_get);
 PG_FUNCTION_INFO_V1(raftable_sql_set);
+PG_FUNCTION_INFO_V1(raftable_sql_sync);
 PG_FUNCTION_INFO_V1(raftable_sql_list);
 
 static struct {
@@ -327,6 +328,47 @@ static bool try_sending_update(RaftableUpdate *ru, size_t size, timeout_t *timeo
 	return true;
 }
 
+bool raftable_sync(int timeout_ms)
+{
+	RaftableUpdate ru;
+	size_t size = sizeof(ru);
+	timeout_t timeout;
+
+	Assert(wcfg.id >= 0);
+
+	ru.expector = wcfg.id;
+	ru.fieldnum = 0;
+
+	if (timeout_ms < 0)
+	{
+		while (true)
+		{
+			timeout_start(&timeout, 100);
+
+			if (try_sending_update(&ru, size, &timeout))
+				return true;
+			else
+				disconnect_leader();
+		}
+	}
+	else
+	{
+		timeout_start(&timeout, timeout_ms);
+
+		TIMEOUT_LOOP_START(&timeout);
+		{
+			if (try_sending_update(&ru, size, &timeout))
+				return true;
+			else
+				disconnect_leader();
+		}
+		TIMEOUT_LOOP_END(&timeout);
+	}
+
+	elog(WARNING, "failed to sync after %d ms", timeout_elapsed_ms(&timeout));
+	return false;
+}
+
 bool raftable_set(const char *key, const char *value, size_t vallen, int timeout_ms)
 {
 	RaftableField *f;
@@ -404,6 +446,16 @@ raftable_sql_set(PG_FUNCTION_ARGS)
 		pfree(value);
 	}
 	pfree(key);
+
+	PG_RETURN_VOID();
+}
+
+Datum
+raftable_sql_sync(PG_FUNCTION_ARGS)
+{
+	int timeout_ms = PG_GETARG_INT32(0);
+
+	raftable_sync(timeout_ms);
 
 	PG_RETURN_VOID();
 }
