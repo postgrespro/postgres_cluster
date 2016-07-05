@@ -5,6 +5,8 @@ from multiprocessing import Process, Value, Queue
 import time
 import sys
 from event_history import *
+import select
+import signal
 
 class ClientCollection(object):
     def __init__(self, connstrs):
@@ -59,16 +61,28 @@ class ClientCollection(object):
 
         print("")
 
+    def set_acc_to_tx(self, max_acc):
+        for client in self._clients:
+            client.set_acc_to_tx(max_acc)
+
 
 class BankClient(object):
 
-    def __init__(self, connstr, node_id):
+    def __init__(self, connstr, node_id, accounts = 10000):
         self.connstr = connstr
         self.node_id = node_id
         self.run = Value('b', True)
         self._history = EventHistory()
-        self.accounts = 10000
+        self.accounts = accounts
+        self.accounts_to_tx = accounts
         self.show_errors = True
+
+        #x = self
+        #def on_sigint(sig, frame):
+        #    x.stop()
+        #
+        #signal.signal(signal.SIGINT, on_sigint)
+
 
     def initialize(self):
         conn = psycopg2.connect(self.connstr)
@@ -85,6 +99,22 @@ class BankClient(object):
         conn.commit()
         cur.close()
         conn.close()
+
+    def aconn(self):
+        return psycopg2.connect(self.connstr, async=1)
+
+    @classmethod
+    def wait(cls, conn):
+        while 1:
+            state = conn.poll()
+            if state == psycopg2.extensions.POLL_OK:
+                break
+            elif state == psycopg2.extensions.POLL_WRITE:
+                select.select([], [conn.fileno()], [])
+            elif state == psycopg2.extensions.POLL_READ:
+                select.select([conn.fileno()], [], [])
+            else:
+                raise psycopg2.OperationalError("poll() returned %s" % state)
 
     @property
     def history(self):
@@ -103,25 +133,16 @@ class BankClient(object):
 
             if conn.closed:
                 self.history.register_finish(event_id, 'ReConnect')
-                try :
-                    conn = psycopg2.connect(self.connstr)
-                    cur = conn.cursor()
-                except :
-                    continue
-                else :
-                    continue 
+                conn = psycopg2.connect(self.connstr)
+                cur = conn.cursor()
 
             try:
-                tx_block(conn, cur)
+                tx_block(conn, cur)                
+                self.history.register_finish(event_id, 'Commit')
             except psycopg2.InterfaceError:
                 self.history.register_finish(event_id, 'InterfaceError')
             except psycopg2.Error:
                 self.history.register_finish(event_id, 'PsycopgError')
-            except :
-                print(sys.exc_info())
-                self.history.register_finish(event_id, 'OtherError')
-            else :
-                self.history.register_finish(event_id, 'Commit')
 
         cur.close()
         conn.close()
@@ -133,17 +154,20 @@ class BankClient(object):
             res = cur.fetchone()
             conn.commit()
             if res[0] != 0:
-                print("Isolation error, total = %d" % (res[0],))
+                print("Isolation error, total = %d, node = %d" % (res[0],self.node_id))
                 raise BaseException
 
         self.exec_tx('total', tx)
+
+    def set_acc_to_tx(self, max_acc):
+        self.accounts_to_tx = max_acc
 
     def transfer_money(self):
 
         def tx(conn, cur):
             amount = 1
-            from_uid = random.randrange(1, self.accounts - 10)
-            to_uid = from_uid + 1 #random.randrange(1, self.accounts + 1)
+            from_uid = random.randrange(1, self.accounts_to_tx - 1)
+            to_uid = random.randrange(1, self.accounts_to_tx - 1)
 
             conn.commit()
             cur.execute('''update bank_test
@@ -159,7 +183,10 @@ class BankClient(object):
         self.exec_tx('transfer', tx)
 
     def start(self):
-        self.transfer_process = Process(target=self.transfer_money, args=())
+        print('Starting client');
+        self.run.value = True
+
+        self.transfer_process = Process(target=self.transfer_money, name="txor", args=())
         self.transfer_process.start()
 
         self.total_process = Process(target=self.check_total, args=())
@@ -168,7 +195,7 @@ class BankClient(object):
         return
 
     def stop(self):
-        print('Stopping!');
+        print('Stopping client');
         self.run.value = False
         self.total_process.terminate()
         self.transfer_process.terminate()
