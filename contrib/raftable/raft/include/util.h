@@ -48,6 +48,7 @@ struct timeval ms2tv(int ms);
 
 #define shout(...) \
 	do { \
+		fprintf(stderr, "RAFT: "); \
 		fprintf(stderr, __VA_ARGS__); \
 		fflush(stderr); \
 	} while (0)

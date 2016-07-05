@@ -649,7 +649,7 @@ void raft_tick(raft_t r, int msec) {
 	if (r->timer < 0) {
 		switch (r->role) {
 			case FOLLOWER:
-				debug(
+				shout(
 					"lost the leader,"
 					" claiming leadership\n"
 				);
@@ -659,7 +659,7 @@ void raft_tick(raft_t r, int msec) {
 				raft_claim(r);
 				break;
 			case CANDIDATE:
-				debug(
+				shout(
 					"the vote failed,"
 					" claiming leadership\n"
 				);
@@ -1055,6 +1055,7 @@ static void raft_handle_claim(raft_t r, raft_msg_claim_t *m) {
 		reply.granted = true;
 	}
 finish:
+	shout("voting %s\n", reply.granted ? "yes" : "no");
 	raft_send(r, candidate, &reply, sizeof(reply));
 }
 
