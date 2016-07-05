@@ -38,8 +38,6 @@ class ClientCollection(object):
 
         columns = ['running', 'running_latency', 'max_latency', 'finish']
 
-        #rows = [ k+str(i+1) for k in agg.keys() for i, agg in enumerate(aggs)]
-
         print("\t\t", end="")
         for col in columns:
             print(col, end="\t")

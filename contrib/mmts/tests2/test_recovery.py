@@ -35,9 +35,17 @@ class RecoveryTest(unittest.TestCase):
         subprocess.check_call(['blockade','partition','node3'])
         print('Node3 disconnected')
 
-        for i in range(1000):
+        for i in range(5):
             time.sleep(3)
             self.clients.print_agg()
+
+        subprocess.check_call(['blockade','join'])
+        print("Node3 joined back")
+
+        for i in range(50):
+            time.sleep(3)
+            self.clients.print_agg()
+
 
 if __name__ == '__main__':
     unittest.main()
