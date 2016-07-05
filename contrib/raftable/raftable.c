@@ -46,6 +46,7 @@ static struct {
 	int *leader;
 } shared;
 
+static bool try_next_leader = true;
 static int leadersock = -1;
 static WorkerConfig wcfg;
 static char *peerstr;
@@ -78,8 +79,8 @@ static void disconnect_leader(void)
 	if (leadersock >= 0)
 	{
 		close(leadersock);
+		try_next_leader = true;
 	}
-	select_next_peer();
 	leadersock = -1;
 }
 
@@ -172,7 +173,8 @@ static bool connect_leader(timeout_t *timeout)
 
 	HostPort *leaderhp;
 
-	if (*shared.leader == NOBODY) select_next_peer();
+//	if (*shared.leader == NOBODY) select_next_peer();
+	if (try_next_leader) select_next_peer();
 
 	leaderhp = wcfg.peers + *shared.leader;
 
