@@ -73,6 +73,7 @@ if [ "$1" = 'postgres' ]; then
 			max_replication_slots = 10
 			max_wal_senders = 10
 			shared_preload_libraries = 'raftable,multimaster'
+            default_transaction_isolation = 'repeatable read'
 
 			raftable.id = $NODE_ID
 			raftable.peers = '$RAFT_PEERS'
