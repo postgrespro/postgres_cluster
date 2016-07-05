@@ -1,3 +1,4 @@
+from __future__ import print_function
 import time
 import datetime
 import uuid
@@ -96,7 +97,7 @@ class EventHistory():
             if named_agg['running_latency'] < latency:
                 named_agg['running_latency'] = latency
 
-        self.last_aggregation = datetime.datetime.now()
+        #self.last_aggregation = last_aggregation 
         #print("aggregeted!")
         return agg
 
