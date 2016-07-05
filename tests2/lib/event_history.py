@@ -66,10 +66,6 @@ class EventHistory():
 
         agg = {}
         for ev in self.events:
-            if ev['finished_at'] < self.last_aggregation:
-                #print("cont")
-                continue
-
             if ev['name'] not in agg:
                 agg[ev['name']] = copy.deepcopy(self.agg_template)
                 #print('-=-=-', agg)
@@ -85,6 +81,8 @@ class EventHistory():
             if named_agg['max_latency'] < latency:
                 named_agg['max_latency'] = latency
 
+        self.events = []
+
         for value in self.running_events.itervalues():
 
             if value['name'] not in agg:
@@ -97,8 +95,6 @@ class EventHistory():
             if named_agg['running_latency'] < latency:
                 named_agg['running_latency'] = latency
 
-        #self.last_aggregation = last_aggregation 
-        #print("aggregeted!")
         return agg
 
     def aggregate_by(self, period):
