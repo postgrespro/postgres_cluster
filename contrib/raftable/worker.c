@@ -334,7 +334,7 @@ static void attend(Client *c)
 				c->good = false;
 		} else {
 			// a sync command
-			c->expect.index = raft_progress(raft);
+			c->expect.index = raft_progress(raft) - 1;
 			if (raft_applied(raft, c->expect.id, c->expect.index))
 			{
 				int ok = 1;
