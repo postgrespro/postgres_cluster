@@ -853,61 +853,68 @@ static void MtmTransReceiver(Datum arg)
 					if (MtmIsCoordinator(ts)) {
 						switch (msg->code) { 
 						  case MSG_READY:
-							Assert(ts->nVotes < Mtm->nLiveNodes);
-							Mtm->nodes[msg->node-1].transDelay += MtmGetCurrentTime() - ts->csn;
-							ts->xids[msg->node-1] = msg->sxid;
-
-							if ((~msg->disabledNodeMask & Mtm->disabledNodeMask) != 0) { 
-								/* Coordinator's disabled mask is wider than of this node: so reject such transaction to avoid 
-								   commit on smaller subset of nodes */
-								elog(WARNING, "Coordinator of distributed transaction see less nodes than node %d: %lx instead of %lx",
-									 msg->node, (long) Mtm->disabledNodeMask, (long) msg->disabledNodeMask);
+							if (ts->nVotes >= Mtm->nLiveNodes) {
 								MtmAbortTransaction(ts);
-							}
-
-							if (++ts->nVotes == Mtm->nLiveNodes) { 
-								/* All nodes are finished their transactions */
-								if (ts->status == TRANSACTION_STATUS_ABORTED) { 
-									MtmWakeUpBackend(ts);								
-								} else if (MtmUseDtm) { 
-									Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-									ts->nVotes = 1; /* I voted myself */
-									MtmSendNotificationMessage(ts, MSG_PREPARE);									  
-								} else { 
-									Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-									ts->status = TRANSACTION_STATUS_UNKNOWN;
-									MtmWakeUpBackend(ts);
+								MtmWakeUpBackend(ts);
+							} else { 
+								Mtm->nodes[msg->node-1].transDelay += MtmGetCurrentTime() - ts->csn;
+								ts->xids[msg->node-1] = msg->sxid;
+								
+								if ((~msg->disabledNodeMask & Mtm->disabledNodeMask) != 0) { 
+									/* Coordinator's disabled mask is wider than of this node: so reject such transaction to avoid 
+									   commit on smaller subset of nodes */
+									elog(WARNING, "Coordinator of distributed transaction see less nodes than node %d: %lx instead of %lx",
+										 msg->node, (long) Mtm->disabledNodeMask, (long) msg->disabledNodeMask);
+									MtmAbortTransaction(ts);
+								}
+								
+								if (++ts->nVotes == Mtm->nLiveNodes) { 
+									/* All nodes are finished their transactions */
+									if (ts->status == TRANSACTION_STATUS_ABORTED) { 
+										MtmWakeUpBackend(ts);								
+									} else if (MtmUseDtm) { 
+										Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+										ts->nVotes = 1; /* I voted myself */
+										MtmSendNotificationMessage(ts, MSG_PREPARE);									  
+									} else { 
+										Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+										ts->status = TRANSACTION_STATUS_UNKNOWN;
+										MtmWakeUpBackend(ts);
+									}
 								}
 							}
 							break;						   
 						  case MSG_ABORTED:
-							Assert(ts->nVotes < Mtm->nLiveNodes);
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 								MtmAbortTransaction(ts);
 							}
-							if (++ts->nVotes == Mtm->nLiveNodes) {
+							if (++ts->nVotes >= Mtm->nLiveNodes) {
 								MtmWakeUpBackend(ts);
 							}
 							break;
 						  case MSG_PREPARED:
-							Assert(ts->nVotes < Mtm->nLiveNodes);
-						    if (ts->status != TRANSACTION_STATUS_ABORTED) { 
-								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-								if (msg->csn > ts->csn) {
-									ts->csn = msg->csn;
-									MtmSyncClock(ts->csn);
-								}
-								if (++ts->nVotes == Mtm->nLiveNodes) {
-									ts->csn = MtmAssignCSN();
-									ts->status = TRANSACTION_STATUS_UNKNOWN;
-									MtmWakeUpBackend(ts);
-								}
+							if (ts->nVotes >= Mtm->nLiveNodes) {					
+								MtmAbortTransaction(ts);
+								MtmWakeUpBackend(ts);
 							} else { 
-								if (++ts->nVotes == Mtm->nLiveNodes) {
-									MtmWakeUpBackend(ts);
-								}
-							}								
+								if (ts->status != TRANSACTION_STATUS_ABORTED) { 
+									Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+									if (msg->csn > ts->csn) {
+										ts->csn = msg->csn;
+										MtmSyncClock(ts->csn);
+									}
+									if (++ts->nVotes == Mtm->nLiveNodes) {
+										ts->csn = MtmAssignCSN();
+										ts->status = TRANSACTION_STATUS_UNKNOWN;
+										MtmWakeUpBackend(ts);
+									}
+								} else { 
+									if (++ts->nVotes == Mtm->nLiveNodes) {
+										MtmWakeUpBackend(ts);
+									}
+								}	
+							}							
 							break;
 						  default:
 							Assert(false);
