@@ -36,6 +36,7 @@ void _PG_fini(void);
 
 PG_MODULE_MAGIC;
 
+PG_FUNCTION_INFO_V1(raftable_sql_get_local);
 PG_FUNCTION_INFO_V1(raftable_sql_get);
 PG_FUNCTION_INFO_V1(raftable_sql_set);
 PG_FUNCTION_INFO_V1(raftable_sql_list);
@@ -260,14 +261,14 @@ static int get_connection(timeout_t *timeout)
 	return leadersock;
 }
 
-char *raftable_get(const char *key, size_t *len)
+char *raftable_get_local(const char *key, size_t *len)
 {
 	Assert(wcfg.id >= 0);
 	return state_get(shared.state, key, len);
 }
 
 Datum
-raftable_sql_get(PG_FUNCTION_ARGS)
+raftable_sql_get_local(PG_FUNCTION_ARGS)
 {
 	RaftableKey key;
 	size_t len;
@@ -276,7 +277,7 @@ raftable_sql_get(PG_FUNCTION_ARGS)
 
 	Assert(shared.state);
 
-	s = state_get(shared.state, key.data, &len);
+	s = raftable_get_local(shared.state, key.data, &len);
 	if (s)
 	{
 		text *t = cstring_to_text_with_len(s, len);
@@ -287,71 +288,78 @@ raftable_sql_get(PG_FUNCTION_ARGS)
 		PG_RETURN_NULL();
 }
 
-static bool try_sending_update(RaftableUpdate *ru, size_t size, timeout_t *timeout)
+Datum
+raftable_sql_get(PG_FUNCTION_ARGS)
 {
-	int s, status;
+	RaftableKey key;
+	size_t len;
+	char *s;
+	text_to_cstring_buffer(PG_GETARG_TEXT_P(0), key.data, sizeof(key.data));
+	int timeout_ms = PG_GETARG_INT32(1);
+
+	s = raftable_get(key.data, &len, timeout_ms);
+	if (s)
+	{
+		text *t = cstring_to_text_with_len(s, len);
+		pfree(s);
+		PG_RETURN_TEXT_P(t);
+	}
+	else
+		PG_RETURN_NULL();
+}
+
+static RaftableMessage *raftable_try_query(RaftableMessage *msg, size_t size, size_t *rsize, timeout_t *timeout)
+{
+	int s;
+	RaftableMessage *answer;
 
 	s = get_connection(timeout);
 	if (s < 0) return false;
 
 	if (timeout_happened(timeout))
 	{
-		elog(WARNING, "update: get_connection() timed out");
-		return false;
+		elog(WARNING, "query: get_connection() timed out");
+		return NULL;
 	}
 
 	if (!timed_write(s, &size, sizeof(size), timeout))
 	{
-		elog(WARNING, "failed to send the update size to the leader");
-		return false;
+		elog(WARNING, "query: failed to send the query size to the leader");
+		return NULL;
 	}
 
-	if (!timed_write(s, ru, size, timeout))
+	if (!timed_write(s, msg, size, timeout))
 	{
-		elog(WARNING, "failed to send the update to the leader");
-		return false;
+		elog(WARNING, "query: failed to send the query to the leader");
+		return NULL;
 	}
 
-	if (!timed_read(s, &status, sizeof(status), timeout))
+	if (!timed_read(s, rsize, sizeof(size), timeout))
 	{
-		elog(WARNING, "failed to recv the update status from the leader");
-		return false;
+		elog(WARNING, "query: failed to recv the answer size from the leader");
+		return NULL;
 	}
 
-	if (status != 1)
+	if (*rsize == 0)
 	{
-		elog(WARNING, "update: leader returned status = %d", status);
-		return false;
+		elog(WARNING, "query: the leader returned zero size");
+		return NULL;
 	}
 
-	return true;
+	answer = (RaftableMessage *)palloc(*size);
+	if (!timed_read(s, answer, *size, timeout))
+	{
+		elog(WARNING, "query: failed to recv the answer from the leader");
+		pfree(answer);
+		return NULL;
+	}
+
+	return answer;
 }
 
-bool raftable_set(const char *key, const char *value, size_t vallen, int timeout_ms)
+static RaftableMessage *raftable_query(RaftableMessage *msg, size_t size, size_t *rsize, int timeout_ms)
 {
-	RaftableField *f;
-	RaftableUpdate *ru;
-	size_t size = sizeof(RaftableUpdate);
-	size_t keylen = 0;
 	timeout_t timeout;
-
-	Assert(wcfg.id >= 0);
-
-	keylen = strlen(key) + 1;
-
-	size += sizeof(RaftableField) - 1;
-	size += keylen;
-	size += vallen;
-	ru = palloc(size);
-
-	ru->expector = wcfg.id;
-	ru->fieldnum = 1;
-
-	f = (RaftableField *)ru->data;
-	f->keylen = keylen;
-	f->vallen = vallen;
-	memcpy(f->data, key, keylen);
-	memcpy(f->data + keylen, value, vallen);
 
 	if (timeout_ms < 0)
 	{
@@ -359,11 +367,9 @@ bool raftable_set(const char *key, const char *value, size_t vallen, int timeout
 		{
 			timeout_start(&timeout, 100);
 
-			if (try_sending_update(ru, size, &timeout))
-			{
-				pfree(ru);
-				return true;
-			}
+			answer = raftable_try_query(msg, size, rsize, &timeout);
+			if (answer)
+				return answer;
 			else
 				disconnect_leader();
 		}
@@ -374,20 +380,84 @@ bool raftable_set(const char *key, const char *value, size_t vallen, int timeout
 
 		TIMEOUT_LOOP_START(&timeout);
 		{
-			if (try_sending_update(ru, size, &timeout))
-			{
-				pfree(ru);
-				return true;
-			}
+			answer = raftable_try_query(msg, size, rsize, &timeout);
+			if (answer)
+				return answer;
 			else
 				disconnect_leader();
 		}
 		TIMEOUT_LOOP_END(&timeout);
 	}
 
-	pfree(ru);
-	elog(WARNING, "failed to set raftable value after %d ms", timeout_elapsed_ms(&timeout));
-	return false;
+	elog(WARNING, "raftable query failed after %d ms", timeout_elapsed_ms(&timeout));
+	return NULL;
+}
+
+char *raftable_get(const char *key, size_t *len, int timeout_ms)
+{
+	RaftableMessage *msg, *answer;
+	size_t size;
+	size_t rsize;
+
+	char *value = NULL;
+
+	msg = make_single_value_message(key, NULL, 0, &size);
+
+	Assert(wcfg.id >= 0);
+	msg->expector = wcfg.id;
+	msg->action = ACTION_GET;
+
+	answer = raftable_query(msg, size, &rsize, timeout_ms);
+	pfree(msg);
+
+	if (answer)
+	{
+		if (answer->meaning == MEAN_OK)
+		{
+			RaftableField *f;
+			Assert(answer->fieldnum == 1);
+			f = (RaftableField *)answer->data;
+			*len = f->vallen;
+			if (*len)
+			{
+				value = palloc(*len);
+				memcpy(value, f->data, *len);
+			}
+		}
+		else
+			assert(answer->meaning == MEAN_FAIL);
+		pfree(answer);
+	}
+	return value;
+}
+
+
+bool raftable_set(const char *key, const char *value, size_t vallen, int timeout_ms)
+{
+	RaftableMessage *msg, *answer;
+	size_t size;
+	size_t rsize;
+
+	bool ok = false;
+
+	msg = make_single_value_message(key, value, vallen, &size);
+
+	Assert(wcfg.id >= 0);
+	msg->expector = wcfg.id;
+	msg->action = ACTION_SET;
+
+	answer = raftable_query(msg, size, &rsize, timeout_ms);
+	pfree(msg);
+
+	if (answer)
+	{
+		if (answer->meaning == MEAN_OK)
+			ok = true;
+		else
+			assert(answer->meaning == MEAN_FAIL);
+		pfree(answer);
+	}
+	return ok;
 }
 
 Datum

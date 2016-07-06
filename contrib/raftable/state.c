@@ -113,18 +113,18 @@ char *state_get(StateP state, const char *key, size_t *len)
 	}
 }
 
-void state_update(StateP state, RaftableUpdate *update, bool clear)
+void state_update(StateP state, RaftableMessage *msg, bool clear)
 {
 	RaftableField *f;
 	int i;
-	char *cursor = update->data;
+	char *cursor = message->data;
 
 	Assert(state);
 	LWLockAcquire(state->lock, LW_EXCLUSIVE);
 
 	if (clear) state_clear(state);
 
-	for (i = 0; i < update->fieldnum; i++) {
+	for (i = 0; i < message->fieldnum; i++) {
 		char *key, *value;
 		f = (RaftableField *)cursor;
 		cursor = f->data;
@@ -192,26 +192,26 @@ static void agg_snapshot(StateP state, RaftableEntry *e, void *arg)
 
 static size_t state_estimate_size(StateP state)
 {
-	size_t size = sizeof(RaftableUpdate);
+	size_t size = sizeof(RaftableMessage);
 	state_foreach_entry(state, agg_size, &size);
 	return size;
 }
 
 void *state_make_snapshot(StateP state, size_t *size)
 {
-	RaftableUpdate *update;
+	RaftableMessage *message;
 	char *cursor;
 	Assert(state);
 	LWLockAcquire(state->lock, LW_SHARED);
 
 	*size = state_estimate_size(state);
-	update = malloc(*size);
-	cursor = (char *)update;
+	message = malloc(*size);
+	cursor = (char *)message;
 
 	state_foreach_entry(state, agg_snapshot, &cursor);
 
 	LWLockRelease(state->lock);
-	return update;
+	return message;
 }
 
 void *state_scan(StateP state)
@@ -291,3 +291,30 @@ StateP state_shmem_init(void)
 
 	return state;
 }
+
+RaftableMessage *make_single_value_message(const char *key, const char *value, size_t vallen, size_t *size)
+{
+	RaftableField *f;
+	RaftableMessage *msg;
+	size_t keylen = 0;
+	*size = sizeof(RaftableMessage);
+
+	keylen = strlen(key) + 1;
+
+	*size += sizeof(RaftableField) - 1;
+	*size += keylen;
+	*size += vallen;
+	msg = palloc(*size);
+
+	msg->fieldnum = 1;
+
+	f = (RaftableField *)msg->data;
+	f->keylen = keylen;
+	f->vallen = vallen;
+	memcpy(f->data, key, keylen);
+	if (vallen > 0)
+		memcpy(f->data + keylen, value, vallen);
+
+	return msg;
+}
+

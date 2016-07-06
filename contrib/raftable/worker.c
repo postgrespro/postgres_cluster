@@ -17,21 +17,24 @@
 #define MAX_CLIENTS 1024
 #define LISTEN_QUEUE_SIZE 10
 #define BUFLEN 1024
+#define BUFOPSIZE 128
 
-typedef struct Expectation {
-	int id;
-	int index;
-} Expectation;
+typedef struct Message {
+	size_t cursor;
+	size_t len;
+	char data[1];
+} Message;
 
 typedef struct Client {
 	bool good;
 	int sock;
-	char buf[BUFLEN];
-	size_t bufrecved;
-	char *msg;
-	size_t msgrecved;
-	size_t msglen;
-	Expectation expect;
+
+	Buffer ibuf;
+	Buffer obuf;
+	Message *imsg;
+	Message *omsg;
+
+	int expect;
 } Client;
 
 typedef struct Server {
@@ -165,7 +168,7 @@ static bool add_client(int sock)
 		c->good = true;
 		c->msg = NULL;
 		c->bufrecved = 0;
-		c->expect.id = NOBODY;
+		c->expect = -1;
 		server.clientnum++;
 		return add_socket(sock);
 	}
@@ -238,58 +241,23 @@ static bool accept_client(void)
 	return add_client(fd);
 }
 
-static bool pull_from_socket(Client *c)
+static bool socket_activity(Client *c)
 {
-	void *dst;
-	size_t avail;
-	ssize_t recved;
+	size_t old_ibuf_pos, old_obuf_pos;
 
 	if (!c->good) return false;
 	Assert(c->sock >= 0);
-	Assert(c->bufrecved <= BUFLEN);
-	dst = c->buf + c->bufrecved;
-	avail = BUFLEN - c->bufrecved;
-	if (!avail) return false;
 
-	recved = recv(c->sock, dst, avail, MSG_DONTWAIT);
-	if (recved <= 0)
-	{
-		c->good = false;
-		return false;
-	}
-	c->bufrecved += recved;
-	Assert(c->bufrecved <= BUFLEN);
+	old_ibuf_pos = c->ibuf->bytes_written;
+	old_obuf_pos = c->obuf->bytes_read;
 
-	return true;
-}
+	c->good = buffer_from_socket(c->ibuf, c->sock);
+	if (!c->good) return false;
 
-static void shift_buffer(Client *c, size_t bytes)
-{
-	Assert(c->bufrecved >= bytes);
-	Assert(c->bufrecved <= BUFLEN);
-	Assert(bytes <= BUFLEN);
-	memmove(c->buf, c->buf + bytes, c->bufrecved - bytes);
-	c->bufrecved -= bytes;
-	Assert(c->bufrecved <= BUFLEN);
-}
+	c->good = buffer_to_socket(c->obuf, c->sock);
+	if (!c->good) return false;
 
-static int extract_nomore(Client *c, void *dst, size_t bytes)
-{
-	if (c->bufrecved < bytes) bytes = c->bufrecved;
-	
-	memcpy(dst, c->buf, bytes);
-	shift_buffer(c, bytes);
-
-	return bytes;
-}
-
-static bool extract_exactly(Client *c, void *dst, size_t bytes)
-{
-	if (c->bufrecved < bytes) return false;
-
-	memcpy(dst, c->buf, bytes);
-	shift_buffer(c, bytes);
-	return true;
+	return (c->ibuf_bytes_written > old_ibuf_pos) || (c->obuf->bytes_read > old_obuf_pos);
 }
 
 static bool get_new_message(Client *c)
@@ -313,21 +281,20 @@ static bool get_new_message(Client *c)
 static void attend(Client *c)
 {
 	if (!c->good) return;
-	if (!pull_from_socket(c)) return;
+	if (!socket_activity(c)) return;
 	while (get_new_message(c))
 	{
 		int index;
 		raft_update_t u;
 		RaftableUpdate *ru = (RaftableUpdate *)c->msg;
 
-		Assert(c->expect.id == NOBODY); /* client shouldn't send multiple updates at once */
+		Assert(c->expect == -1); /* client shouldn't send multiple updates at once */
 
 		u.len = c->msglen;
 		u.data = c->msg;
-		c->expect.id = ru->expector;
 		index = raft_emit(raft, u);
 		if (index >= 0)
-			c->expect.index = index;
+			c->expect = index;
 		else
 			c->good = false;
 		pfree(c->msg);
@@ -340,20 +307,23 @@ static void notify(void)
 	int i = 0;
 	for (i = 0; i < MAX_CLIENTS; i++)
 	{
-		int ok;
+		size_t size;
+		RaftableMessage *answer;
 		Client *c = server.clients + i;
 		if (c->sock < 0) continue;
 		if (!c->good) continue;
-		if (c->expect.id == NOBODY) continue;
-		if (!raft_applied(raft, c->expect.id, c->expect.index)) continue;
+		if (c->expect == -1) continue;
+		if (raft_applied(raft, raft->me, c->expect)) continue;
 
-		ok = 1;
-		if (send(c->sock, &ok, sizeof(ok), 0) != sizeof(ok))
+		RaftableMessage *answer = make_single_value_message("", NULL, 0, &size);
+		answer->meaning = MEAN_OK;
+		if (send(c->sock, &ok, sizeof(ok), 0) != size)
 		{
 			fprintf(stderr, "failed to notify client\n");
 			c->good = false;
 		}
-		c->expect.id = NOBODY;
+		c->expect = -1;
+		pfree(answer);
 	}
 }
 
