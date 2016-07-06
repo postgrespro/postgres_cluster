@@ -389,9 +389,12 @@ static bool tick(int timeout_ms)
 	int numready;
 	Client *c;
 	bool raft_ready = false;
-
-	fd_set readfds = server.all;
+	fd_set readfds;
 	struct timeval timeout = ms2tv(timeout_ms);
+
+	drop_bads();
+
+	readfds = server.all;
 	numready = select(server.maxfd + 1, &readfds, NULL, NULL, &timeout);
 	if (numready == -1)
 	{
@@ -422,8 +425,6 @@ static bool tick(int timeout_ms)
 		}
 		c++;
 	}
-
-	drop_bads();
 
 	return raft_ready;
 }
