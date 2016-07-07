@@ -117,14 +117,14 @@ void state_update(StateP state, RaftableMessage *msg, bool clear)
 {
 	RaftableField *f;
 	int i;
-	char *cursor = message->data;
+	char *cursor = msg->data;
 
 	Assert(state);
 	LWLockAcquire(state->lock, LW_EXCLUSIVE);
 
 	if (clear) state_clear(state);
 
-	for (i = 0; i < message->fieldnum; i++) {
+	for (i = 0; i < msg->fieldnum; i++) {
 		char *key, *value;
 		f = (RaftableField *)cursor;
 		cursor = f->data;

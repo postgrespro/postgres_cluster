@@ -277,7 +277,7 @@ raftable_sql_get_local(PG_FUNCTION_ARGS)
 
 	Assert(shared.state);
 
-	s = raftable_get_local(shared.state, key.data, &len);
+	s = raftable_get_local(key.data, &len);
 	if (s)
 	{
 		text *t = cstring_to_text_with_len(s, len);
@@ -294,8 +294,9 @@ raftable_sql_get(PG_FUNCTION_ARGS)
 	RaftableKey key;
 	size_t len;
 	char *s;
+	int timeout_ms;
 	text_to_cstring_buffer(PG_GETARG_TEXT_P(0), key.data, sizeof(key.data));
-	int timeout_ms = PG_GETARG_INT32(1);
+	timeout_ms = PG_GETARG_INT32(1);
 
 	s = raftable_get(key.data, &len, timeout_ms);
 	if (s)
@@ -346,8 +347,8 @@ static RaftableMessage *raftable_try_query(RaftableMessage *msg, size_t size, si
 		return NULL;
 	}
 
-	answer = (RaftableMessage *)palloc(*size);
-	if (!timed_read(s, answer, *size, timeout))
+	answer = (RaftableMessage *)palloc(*rsize);
+	if (!timed_read(s, answer, *rsize, timeout))
 	{
 		elog(WARNING, "query: failed to recv the answer from the leader");
 		pfree(answer);
@@ -359,6 +360,7 @@ static RaftableMessage *raftable_try_query(RaftableMessage *msg, size_t size, si
 
 static RaftableMessage *raftable_query(RaftableMessage *msg, size_t size, size_t *rsize, int timeout_ms)
 {
+	RaftableMessage *answer;
 	timeout_t timeout;
 
 	if (timeout_ms < 0)
@@ -404,8 +406,7 @@ char *raftable_get(const char *key, size_t *len, int timeout_ms)
 	msg = make_single_value_message(key, NULL, 0, &size);
 
 	Assert(wcfg.id >= 0);
-	msg->expector = wcfg.id;
-	msg->action = ACTION_GET;
+	msg->meaning = MEAN_GET;
 
 	answer = raftable_query(msg, size, &rsize, timeout_ms);
 	pfree(msg);
@@ -425,7 +426,7 @@ char *raftable_get(const char *key, size_t *len, int timeout_ms)
 			}
 		}
 		else
-			assert(answer->meaning == MEAN_FAIL);
+			Assert(answer->meaning == MEAN_FAIL);
 		pfree(answer);
 	}
 	return value;
@@ -443,8 +444,7 @@ bool raftable_set(const char *key, const char *value, size_t vallen, int timeout
 	msg = make_single_value_message(key, value, vallen, &size);
 
 	Assert(wcfg.id >= 0);
-	msg->expector = wcfg.id;
-	msg->action = ACTION_SET;
+	msg->meaning = MEAN_SET;
 
 	answer = raftable_query(msg, size, &rsize, timeout_ms);
 	pfree(msg);
@@ -454,7 +454,7 @@ bool raftable_set(const char *key, const char *value, size_t vallen, int timeout
 		if (answer->meaning == MEAN_OK)
 			ok = true;
 		else
-			assert(answer->meaning == MEAN_FAIL);
+			Assert(answer->meaning == MEAN_FAIL);
 		pfree(answer);
 	}
 	return ok;

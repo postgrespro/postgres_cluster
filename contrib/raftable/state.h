@@ -14,23 +14,25 @@ typedef struct RaftableEntry
 	int block;
 } RaftableEntry;
 
-typedef struct RaftableField {
+typedef struct RaftableField
+{
 	size_t keylen;
 	size_t vallen;
 	bool isnull;
 	char data[1];
 } RaftableField;
 
-#define MEAN_FAIL 0
-#define MEAN_OK   1
-#define MEAN_GET  2
-#define MEAN_SET  3
+#define MEAN_FAIL '!'
+#define MEAN_OK   '.'
+#define MEAN_GET  '?'
+#define MEAN_SET  '='
 
-typedef struct RaftableMessage {
-	int meaning;
+typedef struct RaftableMessage
+{
+	char meaning;
 	int fieldnum;
 	char data[1];
-} RaftableQuery;
+} RaftableMessage;
 
 typedef struct State *StateP;
 
