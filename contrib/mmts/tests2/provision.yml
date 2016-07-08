@@ -9,7 +9,7 @@
     pg_dst: "{{pg_prefix}}/install"
     pg_datadir: "{{pg_prefix}}/data_{{pg_port}}"
     pg_repo: https://github.com/postgrespro/postgres_cluster.git
-    pg_version_tag: master
+    pg_version_tag: txtrace
     pg_destroy_and_init: true
     makejobs: 4
 
