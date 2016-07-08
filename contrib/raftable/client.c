@@ -29,6 +29,7 @@ static bool continue_recv(int socket, void *dst, size_t len, size_t *done)
 			}
 		}
 		*done += recved;
+		Assert(*done <= len);
 	}
 	return true;
 }
@@ -55,6 +56,7 @@ static bool continue_send(int socket, void *src, size_t len, size_t *done)
 			}
 		}
 		*done += sent;
+		Assert(*done <= len);
 	}
 	return true;
 }
@@ -72,7 +74,7 @@ void client_recv(Client *client)
 		}
 		if (client->cursor < sizeof(client->msglen)) return; /* continue later */
 
-		client->msg = malloc(sizeof(Message) + client->msglen);
+		client->msg = palloc(sizeof(Message) + client->msglen);
 		client->msg->len = client->msglen;
 		client->cursor = 0;
 	}
@@ -95,7 +97,7 @@ void client_send(Client *client)
 	Assert(client->msg != NULL);
 
 	totallen = client->msg->len + sizeof(client->msg->len);
-	if (client->cursor < client->msg->len)
+	if (client->cursor < totallen)
 	{
 		if (!continue_send(client->socket, client->msg, totallen, &client->cursor))
 			goto failure;

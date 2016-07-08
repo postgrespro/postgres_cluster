@@ -30,6 +30,7 @@ typedef struct Server {
 	Client clients[MAX_CLIENTS];
 } Server;
 
+static StateP state;
 static Server server;
 static raft_t raft;
 
@@ -211,17 +212,73 @@ static bool accept_client(void)
 
 static void on_message_recv(Client *c)
 {
+	int index;
+	raft_update_t u;
+	RaftableMessage *rm;
+
 	Assert(c->state == CLIENT_SENDING);
 	Assert(c->msg != NULL);
 	Assert(c->cursor == c->msg->len);
-	c->state = CLIENT_RECVING;
+	Assert(c->expect == -1);
+
+	rm = (RaftableMessage *)c->msg->data;
+	if (rm->meaning == MEAN_SET)
+	{
+		u.len = c->msg->len;
+		u.data = (char *)rm;
+		index = raft_emit(raft, u); /* raft will copy the data */
+		pfree(c->msg);
+		c->msg = NULL;
+		if (index < 0)
+		{
+			c->expect = index;
+			c->state = CLIENT_WAITING;
+		}
+		else
+		{
+			fprintf(stderr, "failed to emit a raft update\n");
+			c->state = CLIENT_SICK;
+		}
+	}
+	else if (rm->meaning == MEAN_GET)
+	{
+		char *key;
+		char *value;
+		size_t vallen;
+		size_t answersize;
+		RaftableField *f;
+		RaftableMessage *answer;
+		Assert(rm->fieldnum == 1);
+		f = (RaftableField *)rm->data;
+		Assert(f->vallen == 0);
+		key = f->data;
+
+		value = state_get(state, key, &vallen);
+		fprintf(stderr, "query='%s' answer='%.*s'\n", key, (int)vallen, value);
+		answer = make_single_value_message(key, value, vallen, &answersize);
+		answer->meaning = MEAN_OK;
+		pfree(value);
+		pfree(c->msg);
+		c->msg = palloc(sizeof(Message) + answersize);
+		c->msg->len = answersize;
+		memcpy(c->msg->data, answer, answersize);
+		pfree(answer);
+		c->cursor = 0;
+		c->state = CLIENT_RECVING;
+	}
+	else
+	{
+		fprintf(stderr, "unknown meaning %d of the client's message\n", rm->meaning);
+		c->state = CLIENT_SICK;
+	}
 }
 
 static void on_message_send(Client *c)
 {
 	Assert(c->state == CLIENT_RECVING);
 	Assert(c->msg != NULL);
-	Assert(c->cursor == c->msg->len);
+	Assert(c->cursor == c->msg->len + sizeof(c->msg->len));
+	fprintf(stderr, "freeing msg = %p\n", c->msg);
 	pfree(c->msg);
 	c->msg = NULL;
 	c->state = CLIENT_SENDING;
@@ -251,25 +308,6 @@ static void attend(Client *c)
 		default:
 			Assert(false); // should not happen
 	}
-
-//	while (get_new_message(c))
-//	{
-//		int index;
-//		raft_update_t u;
-//		RaftableUpdate *ru = (RaftableUpdate *)c->msg;
-//
-//		Assert(c->expect == -1); /* client shouldn't send multiple updates at once */
-//
-//		u.len = c->msglen;
-//		u.data = c->msg;
-//		index = raft_emit(raft, u);
-//		if (index >= 0)
-//			c->expect = index;
-//		else
-//			c->good = false;
-//		pfree(c->msg);
-//		c->msg = NULL;
-//	}
 }
 
 static void notify(void)
@@ -277,18 +315,20 @@ static void notify(void)
 	int i = 0;
 	for (i = 0; i < MAX_CLIENTS; i++)
 	{
-		size_t size;
+		size_t answersize;
 		RaftableMessage *answer;
 		Client *c = server.clients + i;
 		if (c->state != CLIENT_WAITING) continue;
 		Assert(c->expect >= 0);
 		if (!raft_applied(raft, server.id, c->expect)) continue;
 
-		answer = make_single_value_message("", NULL, 0, &size);
+		answer = make_single_value_message("", NULL, 0, &answersize);
 		answer->meaning = MEAN_OK;
-		c->msg = malloc(sizeof(Message) + size);
-		c->msg->len = size;
-		memcpy(c->msg->data, answer, size);
+		c->msg = palloc(sizeof(Message) + answersize);
+		fprintf(stderr, "allocated msg = %p\n", c->msg);
+		c->msg->len = answersize;
+		memcpy(c->msg->data, answer, answersize);
+		c->cursor = 0;
 		pfree(answer);
 		c->state = CLIENT_RECVING;
 		c->expect = -1;
@@ -412,7 +452,7 @@ static void worker_main(Datum arg)
 	sigset_t sset;
 	mstimer_t t;
 	WorkerConfig *cfg = (WorkerConfig *)(arg);
-	StateP state = (StateP)cfg->getter();
+	state = (StateP)cfg->getter();
 
 	cfg->raft_config.userdata = state;
 	cfg->raft_config.applier = applier;

@@ -81,13 +81,15 @@ sleep(5);
 while (my ($key, $value) = each(%tests))
 {
 	my ($rc, $stdout, $stderr) = $baker->psql('postgres', "select raftable('$key');");
-	is($rc, 0, "Baker returns '$key'");
-	is($stdout, $value, "Baker has the proper value for '$key'");
+	is($stdout, $value, "Baker has the proper value for '$key' in the local state");
+
+	($rc, $stdout, $stderr) = $baker->psql('postgres', "select raftable('$key', $timeout_ms);");
+	is($stdout, $value, "Baker gets the proper value for '$key' from the leader");
 }
 
 my $ok = 1;
 my ($rc, $stdout, $stderr) = $baker->psql('postgres', "select raftable();");
-is($rc, 0, "Baker returns everything");
+is($rc, 0, "Baker has everything in the local state");
 while ($stdout =~ /\((\w+),(\w+)\)/g)
 {
 	if (!exists $tests{$1}) { $ok = 0; last; }
@@ -95,6 +97,6 @@ while ($stdout =~ /\((\w+),(\w+)\)/g)
 	if ($val ne $2) { $ok = 0; last; }
 }
 if (keys %tests > 0) { $ok = 0; }
-is($ok, 1, "Baker has the proper value for everything");
+is($ok, 1, "Baker has the proper value for everything in the local state");
 
 exit(0);

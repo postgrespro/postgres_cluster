@@ -422,7 +422,7 @@ char *raftable_get(const char *key, size_t *len, int timeout_ms)
 			if (*len)
 			{
 				value = palloc(*len);
-				memcpy(value, f->data, *len);
+				memcpy(value, f->data + f->keylen, *len);
 			}
 		}
 		else
@@ -463,19 +463,20 @@ bool raftable_set(const char *key, const char *value, size_t vallen, int timeout
 Datum
 raftable_sql_set(PG_FUNCTION_ARGS)
 {
+	bool ok;
 	char *key = text_to_cstring(PG_GETARG_TEXT_P(0));
 	int timeout_ms = PG_GETARG_INT32(2);
 	if (PG_ARGISNULL(1))
-		raftable_set(key, NULL, 0, timeout_ms);
+		ok = raftable_set(key, NULL, 0, timeout_ms);
 	else
 	{
 		char *value = text_to_cstring(PG_GETARG_TEXT_P(1));
-		raftable_set(key, value, strlen(value), timeout_ms);
+		ok = raftable_set(key, value, strlen(value), timeout_ms);
 		pfree(value);
 	}
 	pfree(key);
 
-	PG_RETURN_VOID();
+	PG_RETURN_BOOL(ok);
 }
 
 void raftable_every(void (*func)(const char *, const char *, size_t, void *), void *arg)

@@ -205,7 +205,7 @@ void *state_make_snapshot(StateP state, size_t *size)
 	LWLockAcquire(state->lock, LW_SHARED);
 
 	*size = state_estimate_size(state);
-	message = malloc(*size);
+	message = malloc(*size); /* this is later freed by raft with a call to plain free() */
 	cursor = (char *)message;
 
 	state_foreach_entry(state, agg_snapshot, &cursor);
