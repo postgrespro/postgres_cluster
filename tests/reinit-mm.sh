@@ -5,20 +5,21 @@ pkill -9 postgres
 pkill -9 arbiter
 
 cd ~/code/postgres_cluster/contrib/mmts/
-make install
+make clean && make install
 cd ~/code/postgres_cluster/contrib/raftable/
-make install
+make clean && make install
 cd ~/code/postgres_cluster/contrib/mmts/tests
 
 
 rm -fr node? *.log dtm
-mkdir dtm
 conn_str=""
 sep=""
 for ((i=1;i<=n_nodes;i++))
 do    
-    port=$((5431+i))
+    port=$((5431 + i))
+	raft_port=$((6665 + i))
     conn_str="$conn_str${sep}dbname=postgres host=localhost port=$port sslmode=disable"
+	raft_conn_str="$raft_conn_str${sep}${i}:localhost:$raft_port"
     sep=","
     initdb node$i
 done
@@ -35,6 +36,9 @@ do
     sed "s/5432/$port/g" < postgresql.conf.mm > node$i/postgresql.conf
     echo "multimaster.conn_strings = '$conn_str'" >> node$i/postgresql.conf
     echo "multimaster.node_id = $i" >> node$i/postgresql.conf
+	echo "raftable.id = $i" >> node$i/postgresql.conf
+	echo "raftable.peers = '$raft_conn_str'" >> node$i/postgresql.conf
+
     cp pg_hba.conf node$i
     pg_ctl -w -D node$i -l node$i.log start
 done
