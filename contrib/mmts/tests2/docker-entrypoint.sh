@@ -88,6 +88,7 @@ if [ "$1" = 'postgres' ]; then
 			multimaster.conn_strings = '$CONNSTRS'
 			multimaster.heartbeat_recv_timeout = 1000
 			multimaster.heartbeat_send_timeout = 250
+			multimaster.twopc_min_timeout = 40000
 		EOF
 
 		tail -n 20 $PGDATA/postgresql.conf
