@@ -652,7 +652,7 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	gettimeofday(&tv, NULL);
 	ts = (int64)tv.tv_sec*USECS_PER_SEC + tv.tv_usec;
 
-	fprintf(stderr, "[MTM_TXTRACE] [%s] [%lld] DecodePrepare Started\n",
+	fprintf(stderr, "[MTM_TXTRACE], %s, %lld, DecodePrepare Started\n",
 									parsed->twophase_gid, (long long) ts);
 
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
