@@ -853,6 +853,7 @@ static void MtmTransReceiver(Datum arg)
 					if (MtmIsCoordinator(ts)) {
 						switch (msg->code) { 
 						  case MSG_READY:
+							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_READY");
 							if (ts->nVotes >= Mtm->nLiveNodes) {
 								MtmAbortTransaction(ts);
 								MtmWakeUpBackend(ts);
@@ -875,6 +876,7 @@ static void MtmTransReceiver(Datum arg)
 									} else if (MtmUseDtm) { 
 										Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 										ts->nVotes = 1; /* I voted myself */
+										MTM_TXTRACE(ts, "MtmTransReceiver send MSG_PREPARE");
 										MtmSendNotificationMessage(ts, MSG_PREPARE);									  
 									} else { 
 										Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
@@ -894,6 +896,7 @@ static void MtmTransReceiver(Datum arg)
 							}
 							break;
 						  case MSG_PREPARED:
+							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_PREPARED");
 							if (ts->nVotes >= Mtm->nLiveNodes) {					
 								MtmAbortTransaction(ts);
 								MtmWakeUpBackend(ts);

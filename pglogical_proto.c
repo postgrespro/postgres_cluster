@@ -178,6 +178,8 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     if (txn->xact_action != XLOG_XACT_COMMIT) { 
     	pq_sendstring(out, txn->gid);
 	}
+
+	MTM_TXTRACE(txn, "pglogical_write_commit Finish");
 }
 
 /*
