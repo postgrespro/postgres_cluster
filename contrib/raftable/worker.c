@@ -488,6 +488,7 @@ static void worker_main(Datum arg)
 			notify();
 		}
 	}
+	elog(LOG, "Raftable worker stopped");
 }
 
 static BackgroundWorker RaftableWorker = {
