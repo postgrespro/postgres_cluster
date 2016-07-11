@@ -465,6 +465,8 @@ static void worker_main(Datum arg)
     sigfillset(&sset);
     sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
+	BackgroundWorkerUnblockSignals();
+
 	server.raftsock = raft_create_udp_socket(raft);
 	add_socket(server.raftsock);
 	add_socket(server.listener);
