@@ -445,7 +445,7 @@ static void worker_main(Datum arg)
 
 	elog(LOG, "Start raftable worker");
 
-	state = (StateP)get_shared_state();
+	state = get_shared_state();
 
 	cfg->raft_config.userdata = state;
 	cfg->raft_config.applier = applier;
@@ -487,6 +487,7 @@ static void worker_main(Datum arg)
 			raft_handle_message(raft, m);
 			notify();
 		}
+		CHECK_FOR_INTERRUPTS();
 	}
 	elog(LOG, "Raftable worker stopped");
 }
