@@ -710,7 +710,9 @@ static void MtmTransSender(Datum arg)
 				txBuffer[i].used = 0;
 			}
 		}		
+		CHECK_FOR_INTERRUPTS();
 	}
+	elog(LOG, "Stop arbiter sender %d", MyProcPid);
 }
 
 
