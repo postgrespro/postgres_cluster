@@ -52,7 +52,7 @@ static WorkerConfig wcfg;
 static char *peerstr;
 static shmem_startup_hook_type PreviousShmemStartupHook;
 
-static void *get_shared_state(void)
+StateP get_shared_state(void)
 {
 	return shared.state;
 }
@@ -543,7 +543,7 @@ static void startup_shmem(void)
 	bool found;
 
 	if (PreviousShmemStartupHook) PreviousShmemStartupHook();
-
+	elog(LOG, "Raftable initialize shared state %d", MyProcPid);
 	shared.state = state_shmem_init();
 	shared.leader = ShmemInitStruct("raftable_leader", sizeof(int), &found);
 	*shared.leader = NOBODY;

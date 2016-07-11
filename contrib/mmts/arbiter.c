@@ -144,6 +144,7 @@ static BackgroundWorker MtmRecevier = {
 
 void MtmArbiterInitialize(void)
 {
+	elog(LOG, "Register background workers");
 	RegisterBackgroundWorker(&MtmSender);
 	RegisterBackgroundWorker(&MtmRecevier);
 }
@@ -659,7 +660,7 @@ static void MtmTransSender(Datum arg)
 	int i;
 
 	MtmBuffer* txBuffer = (MtmBuffer*)palloc0(sizeof(MtmBuffer)*nNodes);
-
+	elog(LOG, "Start arbiter sender %d", MyProcPid);
 	InitializeTimeouts();
 
 	signal(SIGINT, SetStop);

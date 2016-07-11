@@ -441,9 +441,11 @@ static void worker_main(Datum arg)
 	sigset_t sset;
 	mstimer_t t;
 	WorkerConfig *cfg = (WorkerConfig *)(arg);
-	StateP state = (StateP)cfg->getter();
+	StateP state;
 
 	fprintf(stderr, "raftable worker_main(): stop = %d\n", stop);
+
+	state = (StateP)get_shared_state();
 
 	cfg->raft_config.userdata = state;
 	cfg->raft_config.applier = applier;

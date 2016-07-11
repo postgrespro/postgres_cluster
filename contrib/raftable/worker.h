@@ -17,7 +17,9 @@ typedef struct HostPort {
 	int port;
 } HostPort;
 
-typedef void *(*StateGetter)(void);
+struct State;
+
+typedef struct State* (*StateGetter)(void);
 
 typedef struct WorkerConfig {
 	int id;

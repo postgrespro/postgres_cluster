@@ -41,4 +41,6 @@ bool state_next(StateP state, void *scan, char **key, char **value, size_t *len)
 void state_shmem_request(void);
 StateP state_shmem_init(void);
 
+StateP get_shared_state(void);
+
 #endif
