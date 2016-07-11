@@ -27,9 +27,18 @@ class RecoveryTest(unittest.TestCase):
 
         time.sleep(10)
         subprocess.check_call(['blockade','partition','node3'])
+        print('### blockade node3 ###')
 
         self.clients.set_acc_to_tx(10000)
         self.clients.start()
+
+        for i in range(10):
+            time.sleep(3)
+            self.clients.print_agg()
+            print("\n")
+
+        subprocess.check_call(['blockade','join'])
+        print('### deblockade node3 ###')
 
         for i in range(1000):
             time.sleep(3)
