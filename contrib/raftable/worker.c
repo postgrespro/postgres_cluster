@@ -443,7 +443,7 @@ static void worker_main(Datum arg)
 	WorkerConfig *cfg = (WorkerConfig *)(arg);
 	StateP state;
 
-	fprintf(stderr, "raftable worker_main(): stop = %d\n", stop);
+	elog(LOG, "Start raftable worker");
 
 	state = (StateP)get_shared_state();
 
