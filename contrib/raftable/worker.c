@@ -486,8 +486,17 @@ static void worker_main(Datum arg)
 	}
 }
 
+static BackgroundWorker RaftableWorker = {
+	"raftable worker",
+	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
+	BgWorkerStart_ConsistentState,
+	1,
+	worker_main
+};
+
 void worker_register(WorkerConfig *cfg)
 {
+#if 0
 	BackgroundWorker worker = {};
 	strcpy(worker.bgw_name, "raftable worker");
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
@@ -496,6 +505,10 @@ void worker_register(WorkerConfig *cfg)
 	worker.bgw_main = worker_main;
 	worker.bgw_main_arg = PointerGetDatum(cfg);
 	RegisterBackgroundWorker(&worker);
+#else
+	RaftableWorker.bgw_main_arg = PointerGetDatum(cfg);
+	RegisterBackgroundWorker(&RaftableWorker);
+#endif
 }
 
 
