@@ -7,6 +7,7 @@
 
 #include "postgres.h"
 #include "postmaster/bgworker.h"
+#include "miscadmin.h"
 
 #include "raft.h"
 #include "util.h"
