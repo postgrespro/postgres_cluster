@@ -443,6 +443,8 @@ static void worker_main(Datum arg)
 	WorkerConfig *cfg = (WorkerConfig *)(arg);
 	StateP state = (StateP)cfg->getter();
 
+	fprintf(stderr, "raftable worker_main(): stop = %d\n", stop);
+
 	cfg->raft_config.userdata = state;
 	cfg->raft_config.applier = applier;
 	cfg->raft_config.snapshooter = snapshooter;
