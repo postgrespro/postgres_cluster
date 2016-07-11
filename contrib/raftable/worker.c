@@ -491,8 +491,8 @@ static void worker_main(Datum arg)
 }
 
 static BackgroundWorker RaftableWorker = {
-	"raftable worker",
-	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
+	"raftable-worker",
+	BGWORKER_SHMEM_ACCESS, /* do not need connection to the database */
 	BgWorkerStart_ConsistentState,
 	1,
 	worker_main
