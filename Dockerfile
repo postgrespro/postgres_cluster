@@ -31,7 +31,7 @@ USER postgres
 ENV CFLAGS -O0
 WORKDIR /pg
 
-ENV REBUILD 6
+ENV REBUILD 7
 
 RUN cd /pg && \
 	git clone https://github.com/postgrespro/postgres_cluster.git --depth 1 && \
