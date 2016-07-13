@@ -40,6 +40,7 @@
 #include "spill.h"
 
 #define ERRCODE_DUPLICATE_OBJECT_STR  "42710"
+#define RECEIVER_SUSPEND_TIMEOUT (10*USECS_PER_SEC)
 
 /* Signal handling */
 static volatile sig_atomic_t got_sigterm = false;
@@ -355,8 +356,9 @@ pglogical_receiver_main(Datum main_arg)
 			proc_exit(1);
 
 		if (Mtm->status == MTM_OFFLINE || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId)) {
-			ereport(LOG, (errmsg("%s: terminating WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
-			proc_exit(0);
+			ereport(LOG, (errmsg("%s: suspending WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
+			MtmSleep(RECEIVER_SUSPEND_TIMEOUT);
+			continue;
 		}
 			
 

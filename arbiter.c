@@ -81,12 +81,13 @@
 typedef struct
 {
 	MtmMessageCode code; /* Message code: MSG_READY, MSG_PREPARE, MSG_COMMIT, MSG_ABORT */
-    int            node; /* Sender node ID */
+    int            node; /* Sender node ID */	
 	TransactionId  dxid; /* Transaction ID at destination node */
 	TransactionId  sxid; /* Transaction ID at sender node */  
 	csn_t          csn;  /* Local CSN in case of sending data from replica to master, global CSN master->replica */
 	nodemask_t     disabledNodeMask; /* Bitmask of disabled nodes at the sender of message */
 	csn_t          oldestSnapshot; /* Oldest snapshot used by active transactions at this node */
+	uint64         seqno;/* Message sequence number (used to eliminate duplicated messages) */
 } MtmArbiterMessage;
 
 typedef struct 
@@ -112,6 +113,7 @@ static int         busy_socket;
 static void MtmTransSender(Datum arg);
 static void MtmTransReceiver(Datum arg);
 static void MtmSendHeartbeat(void);
+static bool MtmSendToNode(int node, void const* buf, int size);
 
 
 static char const* const messageText[] = 
@@ -248,6 +250,7 @@ static bool MtmWriteSocket(int sd, void const* buf, int size)
 		if (rc == 1) { 
 			int n = send(sd, src, size, 0);
 			if (n < 0) {
+				Assert(errno != EINTR); /* should not happen in non-blocking call */
 				busy_socket = -1;
 				return false;
 			}
@@ -266,6 +269,7 @@ static int MtmReadSocket(int sd, void* buf, int buf_size)
 {
 	int rc = recv(sd, buf, buf_size, 0);
 	if (rc <= 0) { 
+		Assert(errno != EINTR); /* should not happen in non-blocking call */
 		return -1;
 	}
 	return rc;
@@ -346,9 +350,8 @@ static void MtmSendHeartbeat()
 	{
 		if (sockets[i] >= 0 && sockets[i] != busy_socket && !BIT_CHECK(Mtm->disabledNodeMask|Mtm->reconnectMask, i))
 		{ 
-			size_t rc = send(sockets[i], &msg, sizeof(msg), 0);
-			if ((size_t)rc != sizeof(msg)) { 
-				elog(LOG, "Failed to send heartbeat to node %d: %d", i+1, errno);
+			if (!MtmSendToNode(i, &msg, sizeof(msg))) { 
+				elog(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
 			}
 		}
 	}
@@ -629,6 +632,7 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 	MTM_LOG3("Send %s message CSN=%ld to node %d from node %d for global transaction %d/local transaction %d", 
 			 messageText[ts->cmd], ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
 	Assert(ts->cmd != MSG_INVALID);
+	buf->data[buf->used].seqno = ++Mtm->nodes[node].sendSeqNo;
 	buf->data[buf->used].code = ts->cmd;
 	buf->data[buf->used].sxid = ts->xid;
 	buf->data[buf->used].csn  = ts->csn;
@@ -845,10 +849,17 @@ static void MtmTransReceiver(Datum arg)
 						elog(WARNING, "Ignore message from dead node %d\n", msg->node);
 						continue;
 					}
+					if (msg->seqno <= Mtm->nodes[msg->node-1].recvSeqNo) { 
+						elog(WARNING, "Ignore duplicated message %ld from node %d", msg->seqno, msg->node);
+						continue;
+					}
+					Mtm->nodes[msg->node-1].recvSeqNo = msg->seqno;
 
 					ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);
-					Assert(ts != NULL);
-
+					if (ts == NULL) { 
+						elog(WARNING, "Ignore response for unexisted transaction %d from node %d", msg->dxid, msg->node);
+						continue;
+					}
 					if (BIT_CHECK(msg->disabledNodeMask, MtmNodeId-1) && Mtm->status != MTM_RECOVERY) { 
 						elog(PANIC, "Node %d thinks that I was dead: perform hara-kiri not to be a zombie", msg->node);
 					}

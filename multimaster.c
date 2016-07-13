@@ -814,6 +814,10 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	MtmTransState* ts;
 	MTM_TXTRACE(x, "PostPrepareTransaction Start");
 
+	if (!x->isDistributed) {
+		return;
+	}
+
 	if (Mtm->inject2PCError == 2) { 
 		Mtm->inject2PCError = 0;
 		elog(ERROR, "ERROR INJECTION for transaction %d (%s)", x->xid, x->gid);
@@ -1662,6 +1666,8 @@ static void MtmInitialize()
 			Mtm->nodes[i].con = MtmConnections[i];
 			Mtm->nodes[i].flushPos = 0;
 			Mtm->nodes[i].lastHeartbeat = 0;
+			Mtm->nodes[i].sendSeqNo = 0;
+			Mtm->nodes[i].recvSeqNo = 0;
 		}
 		PGSemaphoreCreate(&Mtm->votingSemaphore);
 		PGSemaphoreReset(&Mtm->votingSemaphore);
