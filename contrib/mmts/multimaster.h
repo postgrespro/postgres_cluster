@@ -32,6 +32,13 @@
 #define MTM_LOG4(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
 #endif
 
+#ifndef MTM_TRACE
+#define MTM_TXTRACE(tx, event)
+#else
+#define MTM_TXTRACE(tx, event) \
+		fprintf(stderr, "[MTM_TXTRACE], %s, %lld, %s\n", tx->gid, (long long)MtmGetSystemTime(), event)
+#endif
+
 #define MULTIMASTER_NAME                "multimaster"
 #define MULTIMASTER_SCHEMA_NAME         "mtm"
 #define MULTIMASTER_DDL_TABLE           "ddl_log"

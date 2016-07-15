@@ -708,7 +708,8 @@ MtmCreateTransState(MtmCurrentTrans* x)
 		/* I am coordinator of transaction */
 		ts->gtid.xid = x->xid;
 		ts->gtid.node = MtmNodeId;
-		ts->gid[0] = '\0';
+		//ts->gid[0] = '\0';
+		strcpy(ts->gid, x->gid);
 	}
 	return ts;
 }
@@ -724,6 +725,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
 	TransactionId* subxids;
+	MTM_TXTRACE(x, "PrePrepareTransaction Start");
 
 	if (!x->isDistributed) {
 		return;
@@ -782,7 +784,8 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	MtmAddSubtransactions(ts, subxids, ts->nSubxids);
 	MTM_LOG3("%d: MtmPrePrepareTransaction prepare commit of %d (gtid.xid=%d, gtid.node=%d, CSN=%ld)", 
 			 MyProcPid, x->xid, ts->gtid.xid, ts->gtid.node, ts->csn);
-	MtmUnlock(); 
+	MtmUnlock();
+	MTM_TXTRACE(x, "PrePrepareTransaction Finish");
 }
 
 /*
@@ -810,6 +813,7 @@ static void
 MtmPostPrepareTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
+	MTM_TXTRACE(x, "PostPrepareTransaction Start");
 
 	if (!x->isDistributed) {
 		return;
@@ -849,7 +853,9 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		while (!ts->votingCompleted && Mtm->status == MTM_ONLINE && ts->status != TRANSACTION_STATUS_ABORTED && start + transTimeout >= MtmGetSystemTime()) 
 		{
 			MtmUnlock();
+			MTM_TXTRACE(x, "PostPrepareTransaction WaitLatch Start");
 			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET|WL_TIMEOUT, MtmHeartbeatRecvTimeout);
+			MTM_TXTRACE(x, "PostPrepareTransaction WaitLatch Finish");
 			if (result & WL_LATCH_SET) { 
 				ResetLatch(&MyProc->procLatch);			
 			} 
@@ -872,6 +878,8 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		Mtm->inject2PCError = 0;
 		elog(ERROR, "ERROR INJECTION for transaction %d (%s)", x->xid, x->gid);
 	}
+
+	MTM_TXTRACE(x, "PostPrepareTransaction Finish");
 }
 
 
@@ -1068,8 +1076,9 @@ csn_t MtmGetTransactionCSN(TransactionId xid)
 }
 	
 void MtmWakeUpBackend(MtmTransState* ts)
-{																		
-	if (!ts->votingCompleted) { 
+{
+	if (!ts->votingCompleted) {
+		MTM_TXTRACE(ts, "MtmWakeUpBackend");
 		MTM_LOG3("Wakeup backed procno=%d, pid=%d", ts->procno, ProcGlobal->allProcs[ts->procno].pid);
 		ts->votingCompleted = true;
 		SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 

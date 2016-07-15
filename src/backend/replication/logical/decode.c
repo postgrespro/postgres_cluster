@@ -24,6 +24,9 @@
  *
  * -------------------------------------------------------------------------
  */
+#include <sys/time.h>
+#include <time.h>
+
 #include "postgres.h"
 
 #include "access/heapam.h"
@@ -642,6 +645,15 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
 	int			i;
 	TransactionId xid = parsed->twophase_xid;
+
+	struct timeval tv;
+	int64 ts;
+
+	gettimeofday(&tv, NULL);
+	ts = (int64)tv.tv_sec*USECS_PER_SEC + tv.tv_usec;
+
+	fprintf(stderr, "[MTM_TXTRACE], %s, %lld, DecodePrepare Started\n",
+									parsed->twophase_gid, (long long) ts);
 
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
 	{
