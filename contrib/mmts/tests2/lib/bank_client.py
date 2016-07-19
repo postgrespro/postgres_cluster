@@ -131,18 +131,17 @@ class BankClient(object):
         while self.run.value:
             event_id = self.history.register_start(name)
 
-            if conn.closed:
-                self.history.register_finish(event_id, 'ReConnect')
-                conn = psycopg2.connect(self.connstr)
-                cur = conn.cursor()
-
             try:
+                if conn.closed:
+                    conn = psycopg2.connect(self.connstr)
+                    cur = conn.cursor()
+                    self.history.register_finish(event_id, 'ReConnect')
+                    continue
+
                 tx_block(conn, cur)                
                 self.history.register_finish(event_id, 'Commit')
-            except psycopg2.InterfaceError:
-                self.history.register_finish(event_id, 'InterfaceError')
-            except psycopg2.Error:
-                self.history.register_finish(event_id, 'PsycopgError')
+            except psycopg2.Error as e:
+                self.history.register_finish(event_id, e.pgerror)
 
         cur.close()
         conn.close()
