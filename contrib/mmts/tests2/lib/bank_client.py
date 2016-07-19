@@ -138,7 +138,7 @@ class BankClient(object):
                     self.history.register_finish(event_id, 'ReConnect')
                     continue
 
-                tx_block(conn, cur)                
+                tx_block(conn, cur)    
                 self.history.register_finish(event_id, 'Commit')
             except psycopg2.Error as e:
                 self.history.register_finish(event_id, e.pgerror)
