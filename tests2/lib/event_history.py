@@ -46,6 +46,7 @@ class EventHistory():
                 # finish mark
                 if event['event_id'] not in self.running_events:
                     # found finish event without corresponding start
+                    print(event)
                     print("ololololo!")
                     raise
 
