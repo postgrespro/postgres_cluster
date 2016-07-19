@@ -243,6 +243,7 @@ void MtmLock(LWLockMode mode)
 #else
 	LWLockAcquire((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID], mode);
 #endif
+	Mtm->lastLockHolder = MyProcPid;
 }
 
 void MtmUnlock(void)
@@ -252,6 +253,7 @@ void MtmUnlock(void)
 #else
 	LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
 #endif
+	Mtm->lastLockHolder = 0;
 }
 
 void MtmLockNode(int nodeId)
@@ -550,16 +552,20 @@ MtmAdjustOldestXid(TransactionId xid)
 
 static void MtmTransactionListAppend(MtmTransState* ts)
 {
-    ts->next = NULL;
-	ts->nSubxids = 0;
-    *Mtm->transListTail = ts;
-    Mtm->transListTail = &ts->next;
+	if (!ts->isEnqueued) { 
+		ts->isEnqueued = true;
+		ts->next = NULL;
+		ts->nSubxids = 0;
+		*Mtm->transListTail = ts;
+		Mtm->transListTail = &ts->next;
+	}
 }
 
 static void MtmTransactionListInsertAfter(MtmTransState* after, MtmTransState* ts)
 {
     ts->next = after->next;
     after->next = ts;
+	ts->isEnqueued = true;
     if (Mtm->transListTail == &after->next) { 
         Mtm->transListTail = &ts->next;
     }
@@ -700,6 +706,9 @@ MtmCreateTransState(MtmCurrentTrans* x)
 	ts->status = TRANSACTION_STATUS_IN_PROGRESS;
 	ts->snapshot = x->snapshot;
 	ts->isLocal = true;
+	if (!found) {
+		ts->isEnqueued = false;
+	}
 	if (TransactionIdIsValid(x->gtid.xid)) { 		
 		Assert(x->gtid.node != MtmNodeId);
 		ts->gtid = x->gtid;
@@ -833,6 +842,9 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		Assert(x->gid[0]);
 		tm->state = ts;	
 		ts->votingCompleted = true;
+		if (!found) { 
+			ts->isEnqueued = false;
+		}
 		if (Mtm->status != MTM_RECOVERY) { 
 			MtmSendNotificationMessage(ts, MSG_READY); /* send notification to coordinator */
 			if (!MtmUseDtm) { 
@@ -945,8 +957,12 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			 */
 			MTM_LOG1("%d: send ABORT notification abort transaction %d to coordinator %d", MyProcPid, x->gtid.xid, x->gtid.node);
 			if (ts == NULL) { 
+				bool found;
 				Assert(TransactionIdIsValid(x->xid));
-				ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, NULL);
+				ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, &found);
+				if (!found) { 
+					ts->isEnqueued = false;
+				}
 				ts->status = TRANSACTION_STATUS_ABORTED;
 				ts->isLocal = true;
 				ts->snapshot = x->snapshot;
@@ -1364,7 +1380,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
  */
 bool MtmRefreshClusterStatus(bool nowait)
 {
-	nodemask_t mask, clique, disabled, enabled;
+	nodemask_t mask, clique, disabled;
 	nodemask_t matrix[MAX_NODES];
 	MtmTransState *ts;
 	int clique_size;
@@ -1391,20 +1407,21 @@ bool MtmRefreshClusterStatus(bool nowait)
 		MTM_LOG1("Find clique %lx, disabledNodeMask %lx", (long) clique, (long) Mtm->disabledNodeMask);
 		MtmLock(LW_EXCLUSIVE);
 		disabled = ~clique & (((nodemask_t)1 << Mtm->nAllNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
-		enabled = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
 		
 		for (i = 0, mask = disabled; mask != 0; i++, mask >>= 1) {
 			if (mask & 1) { 
 				MtmDisableNode(i+1);
 			}
-		}
-		
+		}		
+#if 0	/* Do  not enable nodes here: them will be enabled after completion of recovery */
+		enabled = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
 		for (i = 0, mask = enabled; mask != 0; i++, mask >>= 1) {
 			if (mask & 1) { 
 				MtmEnableNode(i+1);
 			}
 		}
-		if (disabled|enabled) { 
+#endif
+		if (disabled) { 
 			MtmCheckQuorum();
 		}
 		/* Interrupt voting for active transaction and abort them */
@@ -1412,7 +1429,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 			MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%d, gtid.xid=%d",
 					 ts->gid, ts->gtid.node, ts->xid, ts->status, ts->gtid.xid);
 			if (MtmIsCoordinator(ts)) { 
-				if (!ts->votingCompleted && (disabled|enabled) != 0 && ts->status != TRANSACTION_STATUS_ABORTED) {
+				if (!ts->votingCompleted && disabled != 0 && ts->status != TRANSACTION_STATUS_ABORTED) {
 					MtmAbortTransaction(ts);
 					MtmWakeUpBackend(ts);
 				}
@@ -2222,6 +2239,7 @@ void MtmDropNode(int nodeId, bool dropSlot)
 	{
 		if (nodeId <= 0 || nodeId > Mtm->nLiveNodes) 
 		{ 
+			MtmUnlock();
 			elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nLiveNodes);
 		}
 		MtmDisableNode(nodeId);
@@ -2287,6 +2305,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			MtmEnableNode(MtmReplicationNodeId);
 			MtmCheckQuorum();
 		} else {
+			MtmUnlock();
 			elog(ERROR, "Disabled node %d tries to reconnect without recovery", MtmReplicationNodeId); 
 		}
 	} else {
