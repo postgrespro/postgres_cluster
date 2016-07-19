@@ -156,7 +156,8 @@ typedef struct MtmTransState
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
 	bool           votingCompleted;    /* 2PC voting is completed */
 	bool           isLocal;            /* Transaction is either replicated, either doesn't contain DML statements, so it shoudl be ignored by pglogical replication */
-	TransactionId  xids[1];             /* [Mtm->nAllNodes]: transaction ID at replicas */
+	bool           isEnqueued;         /* Transaction is inserted in queue */
+	TransactionId  xids[1];            /* [Mtm->nAllNodes]: transaction ID at replicas */
 } MtmTransState;
 
 typedef struct
@@ -173,7 +174,7 @@ typedef struct
 	nodemask_t walSenderLockerMask;    /* Mask of WAL-senders IDs locking the cluster */
 	nodemask_t nodeLockerMask;         /* Mask of node IDs which WAL-senders are locking the cluster */
 	nodemask_t reconnectMask; 	       /* Mask of nodes connection to which has to be reestablished by sender */
-
+	int        lastLockHolder;         /* PID of process last obtaning the node lock */
 	bool   localTablesHashLoaded;      /* Whether data from local_tables table is loaded in shared memory hash table */
 	int    inject2PCError;             /* Simulate error during 2PC commit at this node */
     int    nLiveNodes;                 /* Number of active nodes */

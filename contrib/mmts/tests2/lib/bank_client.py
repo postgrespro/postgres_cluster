@@ -141,7 +141,8 @@ class BankClient(object):
                 self.history.register_finish(event_id, 'Commit')
             except psycopg2.InterfaceError:
                 self.history.register_finish(event_id, 'InterfaceError')
-            except psycopg2.Error:
+            except psycopg2.Error as x:
+		print(x.pgerror)
                 self.history.register_finish(event_id, 'PsycopgError')
 
         cur.close()
