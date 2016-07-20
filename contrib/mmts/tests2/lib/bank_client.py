@@ -141,7 +141,9 @@ class BankClient(object):
                 tx_block(conn, cur)    
                 self.history.register_finish(event_id, 'Commit')
             except psycopg2.Error as e:
+                print("=== node%d: %s" % (self.node_id, e.pgerror))
                 self.history.register_finish(event_id, e.pgerror)
+                time.sleep(0.2)
 
         cur.close()
         conn.close()
