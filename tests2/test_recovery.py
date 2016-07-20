@@ -42,7 +42,9 @@ class RecoveryTest(unittest.TestCase):
 
         for i in range(1000):
             time.sleep(3)
+            t = datetime.datetime.now()
             self.clients.print_agg()
+            print("took %f seconds" % ( (datetime.datetime.now()-t).total_seconds(),))
             print("\n")
 
         self.clients.stop()

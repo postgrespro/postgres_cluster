@@ -85,6 +85,7 @@ class EventHistory():
         self.events = []
 
         for value in self.running_events.itervalues():
+            print(value)
 
             if value['name'] not in agg:
                 agg[value['name']] = copy.deepcopy(self.agg_template)
