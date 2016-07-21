@@ -5,7 +5,7 @@ ifndef RAFTABLE_PATH
 RAFTABLE_PATH = ../raftable
 endif
 
-override CPPFLAGS += -I$(RAFTABLE_PATH)
+override CPPFLAGS += -I$(RAFTABLE_PATH) -I$(RAFTABLE_PATH)/raft/include
 
 EXTRA_INSTALL = contrib/raftable contrib/mmts
 
