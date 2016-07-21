@@ -61,6 +61,7 @@
 #include "ddd.h"
 #include "raftable_wrapper.h"
 #include "raftable.h"
+#include "worker.h"
 
 typedef struct { 
     TransactionId xid;    /* local transaction ID   */
@@ -196,6 +197,7 @@ int   MtmNodes;
 int   MtmNodeId;
 int   MtmReplicationNodeId;
 int   MtmArbiterPort;
+int   MtmRaftablePort;
 int   MtmConnectTimeout;
 int   MtmReconnectTimeout;
 int   MtmNodeDisableDelay;
@@ -1796,6 +1798,33 @@ static void MtmSplitConnStrs(void)
 	pfree(copy);
 }		
 
+static void MtmRaftableInitialize()
+{
+	int i;
+	WorkerConfig wcfg;
+
+	for (i = 0; i < RAFTABLE_PEERS_MAX; i++) 
+	{
+		wcfg.peers[i].up = false;
+	}
+
+	for (i = 0; i < MtmNodes; i++)
+	{
+		char const* raftport = strstr(MtmConnections[i].connStr, "raftport=");
+		if (raftport != NULL) {
+			if (sscanf(raftport+9, "%d", &wcfg.peers[i].port) != 1) { 
+				elog(ERROR, "Invalid raftable port: %s", raftport+9);
+			}
+		} else {
+			wcfg.peers[i].port = MtmRaftablePort + i;
+		}
+		wcfg.peers[i].up = true;
+		strncpy(wcfg.peers[i].host, MtmConnections[i].hostName, sizeof(wcfg.peers[i].host));
+	}
+	wcfg.id = MtmNodeId-1;
+	worker_register(&wcfg);
+}
+
 void
 _PG_init(void)
 {
@@ -2052,7 +2081,22 @@ _PG_init(void)
 		"Base value for assigning arbiter ports",
 		NULL,
 		&MtmArbiterPort,
-		54321,
+		54320,
+	    0,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.raftable_port",
+		"Base value for assigning raftable ports",
+		NULL,
+		&MtmRaftablePort,
+		6543,
 	    0,
 		INT_MAX,
 		PGC_BACKEND,
@@ -2133,6 +2177,7 @@ _PG_init(void)
 
     BgwPoolStart(MtmWorkers, MtmPoolConstructor);
 
+	//MtmRaftableInitialize();
 	MtmArbiterInitialize();
 
 	/*
