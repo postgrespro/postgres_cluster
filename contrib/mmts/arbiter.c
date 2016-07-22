@@ -465,6 +465,7 @@ static int MtmConnectSocket(char const* host, int port, int timeout)
 	
 	/* Some node considered that I am dead, so switch to recovery mode */
 	MtmLock(LW_EXCLUSIVE);
+	Mtm->nodes[resp.node-1].sendSeqNo = resp.seqno;
 	if (BIT_CHECK(resp.disabledNodeMask, MtmNodeId-1)) { 
 		elog(WARNING, "Node %d thinks that I was dead", resp.node);
 		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
@@ -576,6 +577,7 @@ static void MtmAcceptOneConnection()
 			resp.sxid = ShmemVariableCache->nextXid;
 			resp.csn  = MtmGetCurrentTime();
 			resp.node = MtmNodeId;
+			resp.seqno = Mtm->nodes[req.hdr.node-1].recvSeqNo;
 			MtmUpdateNodeConnectionInfo(&Mtm->nodes[req.hdr.node-1].con, req.connStr);
 			if (!MtmWriteSocket(fd, &resp, sizeof resp)) { 
 				elog(WARNING, "Arbiter failed to write response for handshake message to node %d", resp.node);

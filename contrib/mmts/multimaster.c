@@ -664,6 +664,15 @@ MtmResetTransaction(MtmCurrentTrans* x)
 	x->status = TRANSACTION_STATUS_UNKNOWN;
 }
 
+
+static const char* const isoLevelStr[] = 
+{
+	"read uncommitted", 
+	"read committed", 
+	"repeatable read", 
+	"serializable"
+};
+
 static void 
 MtmBeginTransaction(MtmCurrentTrans* x)
 {
@@ -680,12 +689,15 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		x->isPrepared = false;
 		x->isTransactionBlock = IsTransactionBlock();
 		/* Application name can be changed usnig PGAPPNAME environment variable */
-		if (!IsBackgroundWorker && x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
+		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
 			/* Reject all user's transactions at offline cluster. 
 			 * Allow execution of transaction by bg-workers to make it possible to perform recovery.
 			 */
 			MtmUnlock();			
 			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
+		}
+		if (x->isDistributed && XactIsoLevel != XACT_REPEATABLE_READ) { 
+			elog(LOG, "Isolation level %s is not supported by multimaster", isoLevelStr[XactIsoLevel]);
 		}
 		x->containsDML = false;
         x->snapshot = MtmAssignCSN();	
@@ -2163,6 +2175,13 @@ _PG_init(void)
 		NULL,
 		NULL
 	);
+
+	if (DefaultXactIsoLevel != XACT_REPEATABLE_READ) { 
+		elog(ERROR, "Multimaster requires repeatable read default isolation level");
+	}
+	if (synchronous_commit != SYNCHRONOUS_COMMIT_ON) { 
+		elog(ERROR, "Multimaster requires synchronous commit on");
+	}
 
 	MtmSplitConnStrs();
     MtmStartReceivers();
