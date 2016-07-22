@@ -1210,6 +1210,7 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 		stat.st_size > MaxAllocSize)
 	{
 		CloseTransientFile(fd);
+		fprintf(stderr, "wrong size of two-phase file \"%s\"\n", path);
 		return NULL;
 	}
 
@@ -1217,6 +1218,7 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 	if (crc_offset != MAXALIGN(crc_offset))
 	{
 		CloseTransientFile(fd);
+		fprintf(stderr, "wrong crc offset in two-phase file \"%s\"\n", path);
 		return NULL;
 	}
 
@@ -1243,6 +1245,7 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 	if (hdr->magic != TWOPHASE_MAGIC || hdr->total_len != stat.st_size)
 	{
 		pfree(buf);
+		fprintf(stderr, "muggle two-phase file \"%s\": no magic\n", path);
 		return NULL;
 	}
 
@@ -1255,6 +1258,7 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 	if (!EQ_CRC32C(calc_crc, file_crc))
 	{
 		pfree(buf);
+		fprintf(stderr, "wrong crc32 in two-phase file \"%s\"\n", path);
 		return NULL;
 	}
 
