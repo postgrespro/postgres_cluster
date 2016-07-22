@@ -93,6 +93,7 @@ sub configure
 			fsync = off	
 			max_wal_senders = 10
 			wal_sender_timeout = 0
+            default_transaction_isolation = 'repeatable read'
 			max_replication_slots = 10
 			shared_preload_libraries = 'raftable,multimaster'
 			multimaster.workers = 10
