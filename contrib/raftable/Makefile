@@ -1,5 +1,5 @@
 MODULE_big = raftable
-OBJS = raftable.o worker.o client.o state.o blockmem.o timeout.o raft/obj/raft.o raft/obj/util.o
+OBJS = raftable.o worker.o client.o state.o timeout.o raft/obj/raft.o raft/obj/util.o
 EXTENSION = raftable
 DATA = raftable--1.0.sql
 

@@ -53,7 +53,7 @@ static raft_update_t snapshooter(void *state)
 static void add_peers(WorkerConfig *cfg)
 {
 	int i;
-	for (i = 0; i < RAFTABLE_PEERS_MAX; i++)
+	for (i = 0; i < MAX_SERVERS; i++)
 	{
 		HostPort *hp = cfg->peers + i;
 		if (!hp->up) continue;
@@ -231,13 +231,14 @@ static void on_message_recv(Client *c)
 		c->msg = NULL;
 		if (index < 0)
 		{
-			c->expect = index;
-			c->state = CLIENT_WAITING;
+			elog(WARNING, "failed to emit a raft update");
+			c->state = CLIENT_SICK;
 		}
 		else
 		{
-			fprintf(stderr, "failed to emit a raft update\n");
-			c->state = CLIENT_SICK;
+			elog(WARNING, "emitted raft update %d", index);
+			c->expect = index;
+			c->state = CLIENT_WAITING;
 		}
 	}
 	else if (rm->meaning == MEAN_GET)
@@ -254,10 +255,10 @@ static void on_message_recv(Client *c)
 		key = f->data;
 
 		value = state_get(state, key, &vallen);
-		fprintf(stderr, "query='%s' answer='%.*s'\n", key, (int)vallen, value);
+		fprintf(stderr, "query='%s' answer(%d)='%.*s'\n", key, (int)vallen, (int)vallen, value);
 		answer = make_single_value_message(key, value, vallen, &answersize);
 		answer->meaning = MEAN_OK;
-		pfree(value);
+		if (value) pfree(value);
 		pfree(c->msg);
 		c->msg = palloc(sizeof(Message) + answersize);
 		c->msg->len = answersize;
@@ -268,7 +269,7 @@ static void on_message_recv(Client *c)
 	}
 	else
 	{
-		fprintf(stderr, "unknown meaning %d of the client's message\n", rm->meaning);
+		fprintf(stderr, "unknown meaning %d (%c) of the client's message\n", rm->meaning, rm->meaning);
 		c->state = CLIENT_SICK;
 	}
 }
@@ -282,6 +283,7 @@ static void on_message_send(Client *c)
 	pfree(c->msg);
 	c->msg = NULL;
 	c->state = CLIENT_SENDING;
+	c->cursor = 0;
 }
 
 static void attend(Client *c)
@@ -297,6 +299,7 @@ static void attend(Client *c)
 			if (c->state == CLIENT_SICK) return;
 			if (!c->msg) return;
 			if (c->cursor < c->msg->len) return;
+			elog(WARNING, "got %d bytes from client", (int)c->cursor);
 			on_message_recv(c);
 			break;
 		case CLIENT_RECVING:
@@ -322,10 +325,10 @@ static void notify(void)
 		Assert(c->expect >= 0);
 		if (!raft_applied(raft, server.id, c->expect)) continue;
 
+		elog(WARNING, "notify client %d that update %d is applied", i, c->expect);
 		answer = make_single_value_message("", NULL, 0, &answersize);
 		answer->meaning = MEAN_OK;
 		c->msg = palloc(sizeof(Message) + answersize);
-		fprintf(stderr, "allocated msg = %p\n", c->msg);
 		c->msg->len = answersize;
 		memcpy(c->msg->data, answer, answersize);
 		c->cursor = 0;
@@ -357,14 +360,17 @@ static void add_to_fdset(int fd, fd_set *fdset, int *maxfd)
 static bool tick(int timeout_ms)
 {
 	int i;
-	int numready;
+	int numready = 0;
 	Client *c;
 	bool raft_ready = false;
 	int maxfd = 0;
-	struct timeval timeout;
+
+	mstimer_t timer;
 
 	fd_set readfds;
 	fd_set writefds;
+
+	drop_bads();
 
 	FD_ZERO(&readfds);
 	FD_ZERO(&writefds);
@@ -387,11 +393,16 @@ static bool tick(int timeout_ms)
 		}
 	}
 
-	timeout = ms2tv(timeout_ms);
-	numready = select(maxfd + 1, &readfds, &writefds, NULL, &timeout);
-	if (numready == -1)
-	{
-		fprintf(stderr, "failed to select: %s\n", strerror(errno));
+	mstimer_reset(&timer);
+	while (timeout_ms > 0) {
+		struct timeval timeout = ms2tv(timeout_ms);
+		numready = select(maxfd + 1, &readfds, &writefds, NULL, &timeout);
+		timeout_ms -= mstimer_reset(&timer);
+		if (numready >= 0) break;
+		if (errno == EINTR) {
+			continue;
+		}
+		shout("failed to select: %s\n", strerror(errno));
 		return false;
 	}
 
@@ -435,8 +446,6 @@ static bool tick(int timeout_ms)
 		c++;
 	}
 
-	drop_bads();
-
 	return raft_ready;
 }
 
@@ -447,12 +456,12 @@ static void die(int sig)
     stop = 1;
 }
 
-static void worker_main(Datum arg)
+void raftable_worker_main(Datum arg)
 {
 	sigset_t sset;
 	mstimer_t t;
 	WorkerConfig *cfg = (WorkerConfig *)(arg);
-	state = (StateP)cfg->getter();
+	state = state_init();
 
 	cfg->raft_config.userdata = state;
 	cfg->raft_config.applier = applier;
@@ -491,61 +500,4 @@ static void worker_main(Datum arg)
 			notify();
 		}
 	}
-}
-
-void worker_register(WorkerConfig *cfg)
-{
-	BackgroundWorker worker = {};
-	strcpy(worker.bgw_name, "raftable worker");
-	worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
-	worker.bgw_start_time = BgWorkerStart_PostmasterStart;
-	worker.bgw_restart_time = 1;
-	worker.bgw_main = worker_main;
-	worker.bgw_main_arg = PointerGetDatum(cfg);
-	RegisterBackgroundWorker(&worker);
-}
-
-
-void parse_peers(HostPort *peers, char *peerstr)
-{
-	char *state, *substate;
-	char *peer, *s;
-	char *host;
-	int id, port;
-	int i;
-	peerstr = pstrdup(peerstr);
-
-	for (i = 0; i < RAFTABLE_PEERS_MAX; i++)
-		peers[i].up = false;
-
-
-	fprintf(stderr, "parsing '%s'\n", peerstr);
-	peer = strtok_r(peerstr, ",", &state);
-	while (peer)
-	{
-		fprintf(stderr, "peer = '%s'\n", peer);
-
-		s = strtok_r(peer, ":", &substate);
-		if (!s) break;
-		id = atoi(s);
-		fprintf(stderr, "id = %d ('%s')\n", id, s);
-
-		host = strtok_r(NULL, ":", &substate);
-		if (!host) break;
-		fprintf(stderr, "host = '%s'\n", host);
-
-		s = strtok_r(NULL, ":", &substate);
-		if (!s) break;
-		port = atoi(s);
-		fprintf(stderr, "port = %d ('%s')\n", port, s);
-
-		Assert(!peers[id].up);
-		peers[id].up = true;
-		peers[id].port = port;
-		strncpy(peers[id].host, host, sizeof(peers[id].host));
-
-		peer = strtok_r(NULL, ",", &state);
-	}
-
-	pfree(peerstr);
 }

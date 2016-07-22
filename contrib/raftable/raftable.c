@@ -10,6 +10,7 @@
 #include "utils/guc.h"
 #include "storage/ipc.h"
 #include "access/htup_details.h"
+#include "postmaster/bgworker.h"
 #include "miscadmin.h"
 #include "funcapi.h"
 
@@ -36,53 +37,38 @@ void _PG_fini(void);
 
 PG_MODULE_MAGIC;
 
-PG_FUNCTION_INFO_V1(raftable_sql_get_local);
+PG_FUNCTION_INFO_V1(raftable_sql_peer);
+PG_FUNCTION_INFO_V1(raftable_sql_start);
+PG_FUNCTION_INFO_V1(raftable_sql_stop);
+
 PG_FUNCTION_INFO_V1(raftable_sql_get);
 PG_FUNCTION_INFO_V1(raftable_sql_set);
-PG_FUNCTION_INFO_V1(raftable_sql_list);
 
-static struct {
-	void *state;
-	int *leader;
-} shared;
-
-static int leadersock = -1;
-static WorkerConfig wcfg;
-static char *peerstr;
 static shmem_startup_hook_type PreviousShmemStartupHook;
 
-static void *get_shared_state(void)
-{
-	return shared.state;
-}
+static int leader = -1;
+static int leadersock = -1;
+static WorkerConfig wcfg;
+static volatile WorkerConfig *sharedcfg;
 
-static void select_next_peer(void)
+static void select_next_server(void)
 {
-	int orig_leader = *shared.leader;
-	int i;
-	for (i = 0; i < RAFTABLE_PEERS_MAX; i++)
+	int orig_leader = leader;
+	SpinLockAcquire(&sharedcfg->lock);
+	for (int i = 0; i < MAX_SERVERS; i++)
 	{
-		int idx = (orig_leader + i + 1) % RAFTABLE_PEERS_MAX;
-		HostPort *hp = wcfg.peers + idx;
+		int idx = (orig_leader + i + 1) % MAX_SERVERS;
+		volatile HostPort *hp = sharedcfg->peers + idx;
 		if (hp->up)
 		{
-			*shared.leader = idx;
+			leader = idx;
+			SpinLockRelease(&sharedcfg->lock);
 			return;
 		}
 	}
-	elog(WARNING, "all raftable peers down");
+	SpinLockRelease(&sharedcfg->lock);
+	shout("all raftable servers are down\n");
 }
-
-static void disconnect_leader(void)
-{
-	if (leadersock >= 0)
-	{
-		close(leadersock);
-	}
-	select_next_peer();
-	leadersock = -1;
-}
-
 
 static bool poll_until_writable(int sock, timeout_t *timeout)
 {
@@ -108,24 +94,28 @@ static bool timed_write(int sock, void *data, size_t len, timeout_t *timeout)
 	while (sent < len)
 	{
 		int newbytes;
-		if (timeout_happened(timeout))
-		{
-			elog(WARNING, "write timed out");
-			return false;
-		}
+		if (timeout_happened(timeout)) return false;
 
 		newbytes = write(sock, (char *)data + sent, len - sent);
-		if (newbytes == -1)
+		if (newbytes > 0)
 		{
-			if (errno == EAGAIN) {
-				if (poll_until_writable(sock, timeout)) {
-					continue;
-				}
-			}
-			elog(WARNING, "failed to write: error %d: %s", errno, strerror(errno));
+			sent += newbytes;
+		}
+		else if (newbytes == 0)
+		{
 			return false;
 		}
-		sent += newbytes;
+		else
+		{
+			if ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR))
+			{
+				if (!poll_until_writable(sock, timeout)) return false;
+			}
+			else
+			{
+				return false;
+			}
+		}
 	}
 
 	return true;
@@ -138,27 +128,50 @@ static bool timed_read(int sock, void *data, size_t len, timeout_t *timeout)
 	while (recved < len)
 	{
 		int newbytes;
-		if (timeout_happened(timeout))
-		{
-			elog(WARNING, "read timed out");
-			return false;
-		}
+		if (timeout_happened(timeout)) return false;
 
 		newbytes = read(sock, (char *)data + recved, len - recved);
-		if (newbytes <= 0)
+		if (newbytes > 0)
 		{
-			if (errno == EAGAIN) {
-				if (poll_until_readable(sock, timeout)) {
-					continue;
-				}
-			}
-			elog(WARNING, "failed to read: error %d: %s", errno, strerror(errno));
+			recved += newbytes;
+		}
+		else if (newbytes == 0)
+		{
 			return false;
 		}
-		recved += newbytes;
+		else
+		{
+			if ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR))
+			{
+				if (!poll_until_readable(sock, timeout)) return false;
+			}
+			else
+			{
+				return false;
+			}
+		}
 	}
 
 	return true;
+}
+
+static void wait_ms(int ms) {
+	struct timespec ts = {ms / 1000, (ms % 1000) * 1000000};
+	struct timespec rem;
+	while (nanosleep(&ts, &rem) == -1)
+	{
+		if (errno != EINTR) break;
+		ts = rem;
+	}
+}
+
+
+static void disconnect_leader(void)
+{
+	if (leadersock >= 0) close(leadersock);
+	wait_ms(100);
+	select_next_server();
+	leadersock = -1;
 }
 
 static bool connect_leader(timeout_t *timeout)
@@ -172,9 +185,9 @@ static bool connect_leader(timeout_t *timeout)
 
 	HostPort *leaderhp;
 
-	if (*shared.leader == NOBODY) select_next_peer();
+	if (leader == -1) select_next_server();
 
-	leaderhp = wcfg.peers + *shared.leader;
+	leaderhp = (HostPort *)sharedcfg->peers + leader;
 
 	memset(&hint, 0, sizeof(hint));
 	hint.ai_socktype = SOCK_STREAM;
@@ -185,13 +198,16 @@ static bool connect_leader(timeout_t *timeout)
 	if ((rc = getaddrinfo(leaderhp->host, portstr, &hint, &addrs)))
 	{
 		disconnect_leader();
-		elog(WARNING, "failed to resolve address '%s:%d': %s",
-			 leaderhp->host, leaderhp->port,
-			 gai_strerror(rc));
+		elog(
+			WARNING,
+			"raftable client: failed to resolve address '%s:%d': %s",
+			leaderhp->host, leaderhp->port,
+			gai_strerror(rc)
+		);
 		return false;
 	}
 
-	elog(WARNING, "trying [%d] %s:%d", *shared.leader, leaderhp->host, leaderhp->port);
+	elog(WARNING, "raftable client: trying [%d] %s:%d", leader, leaderhp->host, leaderhp->port);
 	for (a = addrs; a != NULL; a = a->ai_next)
 	{
 		int one = 1;
@@ -199,7 +215,7 @@ static bool connect_leader(timeout_t *timeout)
 		sd = socket(a->ai_family, SOCK_STREAM, 0);
 		if (sd == -1)
 		{
-			elog(WARNING, "failed to create a socket: %s", strerror(errno));
+			elog(WARNING, "raftable client: failed to create a socket: %s", strerror(errno));
 			continue;
 		}
 		fcntl(sd, F_SETFL, O_NONBLOCK);
@@ -220,12 +236,12 @@ static bool connect_leader(timeout_t *timeout)
 					}
 				}
 				TIMEOUT_LOOP_END(timeout);
-				elog(WARNING, "connect timed out");
+				elog(WARNING, "raftable client: connect timed out");
 				goto failure;
 			}
 			else
 			{
-				elog(WARNING, "failed to connect to an address: %s", strerror(errno));
+				elog(WARNING, "raftable client: failed to connect to an address: %s", strerror(errno));
 				close(sd);
 				continue;
 			}
@@ -236,7 +252,7 @@ static bool connect_leader(timeout_t *timeout)
 failure:
 	freeaddrinfo(addrs);
 	disconnect_leader();
-	elog(WARNING, "could not connect");
+	elog(WARNING, "raftable client: could not connect");
 	return false;
 success:
 	freeaddrinfo(addrs);
@@ -244,48 +260,48 @@ success:
 	return true;
 }
 
-static void wait_ms(int ms)
-{
-		struct timespec ts = {0, ms * 1000000};
-		nanosleep(&ts, NULL);
-}
-
 static int get_connection(timeout_t *timeout)
 {
 	if (leadersock < 0)
 	{
 		if (connect_leader(timeout)) return leadersock;
-		elog(WARNING, "update: connect_leader() failed");
-		wait_ms(100);
+		elog(WARNING, "raftable client: connect_leader() failed");
 	}
 	return leadersock;
 }
 
-char *raftable_get_local(const char *key, size_t *len)
+Datum
+raftable_sql_peer(PG_FUNCTION_ARGS)
 {
-	Assert(wcfg.id >= 0);
-	return state_get(shared.state, key, len);
+	int id;
+	char *host;
+	int port;
+
+	id = PG_GETARG_INT32(0);
+	host = text_to_cstring(PG_GETARG_TEXT_P(1));
+	port = PG_GETARG_INT32(2);
+
+	raftable_peer(id, host, port);
+	pfree(host);
+
+	PG_RETURN_VOID();
 }
 
 Datum
-raftable_sql_get_local(PG_FUNCTION_ARGS)
+raftable_sql_start(PG_FUNCTION_ARGS)
 {
-	RaftableKey key;
-	size_t len;
-	char *s;
-	text_to_cstring_buffer(PG_GETARG_TEXT_P(0), key.data, sizeof(key.data));
+	int id = PG_GETARG_INT32(0);
 
-	Assert(shared.state);
+	pid_t pid = raftable_start(id);
 
-	s = raftable_get_local(key.data, &len);
-	if (s)
-	{
-		text *t = cstring_to_text_with_len(s, len);
-		pfree(s);
-		PG_RETURN_TEXT_P(t);
-	}
-	else
-		PG_RETURN_NULL();
+	PG_RETURN_INT32(pid);
+}
+
+Datum
+raftable_sql_stop(PG_FUNCTION_ARGS)
+{
+	raftable_stop();
+	PG_RETURN_VOID();
 }
 
 Datum
@@ -404,8 +420,8 @@ char *raftable_get(const char *key, size_t *len, int timeout_ms)
 	char *value = NULL;
 
 	msg = make_single_value_message(key, NULL, 0, &size);
+	elog(WARNING, "message size = %d", (int)size);
 
-	Assert(wcfg.id >= 0);
 	msg->meaning = MEAN_GET;
 
 	answer = raftable_query(msg, size, &rsize, timeout_ms);
@@ -443,7 +459,6 @@ bool raftable_set(const char *key, const char *value, size_t vallen, int timeout
 
 	msg = make_single_value_message(key, value, vallen, &size);
 
-	Assert(wcfg.id >= 0);
 	msg->meaning = MEAN_SET;
 
 	answer = raftable_query(msg, size, &rsize, timeout_ms);
@@ -479,107 +494,49 @@ raftable_sql_set(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(ok);
 }
 
-void raftable_every(void (*func)(const char *, const char *, size_t, void *), void *arg)
-{
-	void *scan;
-	char *key, *value;
-	size_t len;
-	Assert(shared.state);
-	Assert(wcfg.id >= 0);
-
-	scan = state_scan(shared.state);
-	while (state_next(shared.state, scan, &key, &value, &len))
-	{
-		func(key, value, len, arg);
-		pfree(key);
-		pfree(value);
-	}
-}
-
-Datum
-raftable_sql_list(PG_FUNCTION_ARGS)
-{
-	char *key, *value;
-	size_t len;
-	FuncCallContext *funcctx;
-	MemoryContext oldcontext;
-
-	Assert(shared.state);
-	Assert(wcfg.id >= 0);
-
-	if (SRF_IS_FIRSTCALL())
-	{
-		TypeFuncClass tfc;
-		funcctx = SRF_FIRSTCALL_INIT();
-
-		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
-
-		tfc = get_call_result_type(fcinfo, NULL, &funcctx->tuple_desc);
-		if (tfc != TYPEFUNC_COMPOSITE)
-		{
-			elog(ERROR, "raftable listing function should be composite");
-		}
-		funcctx->tuple_desc = BlessTupleDesc(funcctx->tuple_desc);
-
-		funcctx->user_fctx = state_scan(shared.state);
-		Assert(funcctx->user_fctx);
-
-		MemoryContextSwitchTo(oldcontext);
-
-	}
-
-	funcctx = SRF_PERCALL_SETUP();
-
-	if (state_next(shared.state, funcctx->user_fctx, &key, &value, &len))
-	{
-		HeapTuple tuple;
-		Datum  vals[2];
-		bool isnull[2];
-
-		vals[0] = PointerGetDatum(cstring_to_text(key));
-		vals[1] = PointerGetDatum(cstring_to_text_with_len(value, len));
-		isnull[0] = isnull[1] = false;
-
-		tuple = heap_form_tuple(funcctx->tuple_desc, vals, isnull);
-		SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(tuple));
-	}
-	else
-	{
-		SRF_RETURN_DONE(funcctx);
-	}
-}
-
-static void request_shmem(void)
-{
-	RequestAddinShmemSpace(sizeof(int)); /* for 'leader' id */
-	state_shmem_request();
-}
-
-static void startup_shmem(void)
+static void
+raftableShmemStartup(void)
 {
 	bool found;
-
 	if (PreviousShmemStartupHook) PreviousShmemStartupHook();
-
-	shared.state = state_shmem_init();
-	shared.leader = ShmemInitStruct("raftable_leader", sizeof(int), &found);
-	*shared.leader = NOBODY;
+	sharedcfg = (WorkerConfig *)ShmemInitStruct("raftable_config", sizeof(WorkerConfig), &found);
+	if (!found) {
+		*sharedcfg = wcfg;
+		SpinLockInit(&sharedcfg->lock);
+	}
 }
 
 void
 _PG_init(void)
 {
-	wcfg.getter = get_shared_state;
+	int i;
 
+	/*
+	 * In order to create our shared memory area, we have to be loaded via
+	 * shared_preload_libraries.  If not, fall out without hooking into any of
+	 * the main system.  (We don't throw error here because it seems useful to
+	 * allow the cs_* functions to be created even when the
+	 * module isn't active.  The functions must protect themselves against
+	 * being called then, however.)
+	 */
 	if (!process_shared_preload_libraries_in_progress)
-		elog(ERROR, "please add 'raftable' to shared_preload_libraries list");
+		return;
 
-	wcfg.raft_config.peernum_max = RAFTABLE_PEERS_MAX;
+	elog(WARNING, "raftable init");
+
+	for (i = 0; i < MAX_SERVERS; i++)
+		wcfg.peers[i].up = false;
+
+	wcfg.raft_config.peernum_max = MAX_SERVERS;
+
+	RequestAddinShmemSpace(sizeof(WorkerConfig));
+	PreviousShmemStartupHook = shmem_startup_hook;
+	shmem_startup_hook = raftableShmemStartup;
 
 	DefineCustomIntVariable("raftable.id",
 		"Raft peer id of current instance", NULL,
 		&wcfg.id, -1,
-		-1, RAFTABLE_PEERS_MAX-1,
+		-1, MAX_SERVERS-1,
 		PGC_POSTMASTER, 0, NULL, NULL, NULL
 	);
 
@@ -619,34 +576,118 @@ _PG_init(void)
 	);
 
 	DefineCustomIntVariable("raftable.msg_len_max",
-		"Raft chunk length", NULL,
+		"Raft message length", NULL,
 		&wcfg.raft_config.msg_len_max, 500,
 		1, 500,
 		PGC_POSTMASTER, 0, NULL, NULL, NULL
 	);
+}
 
-	DefineCustomStringVariable("raftable.peers",
-		"Raft peer list",
-		"A comma separated list of id:host:port, specifying the Raft peers",
-		&peerstr, "0:127.0.0.1:6543",
-		PGC_POSTMASTER, 0, NULL, NULL, NULL
-	);
+void raftable_peer(int id, const char *host, int port)
+{
+	HostPort *hp;
+	SpinLockAcquire(&sharedcfg->lock);
+	hp = (HostPort *)sharedcfg->peers + id;
+	hp->up = true;
+	strncpy(hp->host, host, sizeof(hp->host));
+	hp->port = port;
+	SpinLockRelease(&sharedcfg->lock);
+}
 
-	PreviousShmemStartupHook = shmem_startup_hook;
+pid_t raftable_start(int id)
+{
+	BackgroundWorkerHandle *handle;
+	BackgroundWorker worker;
 
-	if (wcfg.id >= 0)
+	pid_t workerpid = -1;
+
+	if ((id < 0) || (id >= MAX_SERVERS))
 	{
-		parse_peers(wcfg.peers, peerstr);
-
-		request_shmem();
-		worker_register(&wcfg);
-
-		shmem_startup_hook = startup_shmem;
+		elog(ERROR, "raftable id %d is out of range", id);
+		return -1;
 	}
+
+	if (!sharedcfg->peers[id].up)
+	{
+		elog(ERROR,
+			 "cannot start raftable worker as id %d,"
+			 " the id is not configured", id);
+		return -1;
+	}
+
+	sharedcfg->id = id;
+
+	snprintf(worker.bgw_name, BGW_MAXLEN, "raftable worker %d", sharedcfg->id);
+	worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
+	worker.bgw_start_time = BgWorkerStart_PostmasterStart;
+	worker.bgw_restart_time = BGW_NEVER_RESTART;
+	worker.bgw_main = raftable_worker_main;
+	worker.bgw_main_arg = PointerGetDatum(sharedcfg);
+	worker.bgw_notify_pid = MyProcPid;
+
+	if (!RegisterDynamicBackgroundWorker(&worker, &handle))
+		elog(ERROR, "cannot register background worker for raftabe");
+
+	if (WaitForBackgroundWorkerStartup(handle, &workerpid) != BGWH_STARTED)
+		elog(ERROR, "background worker for raftabe failed to start");
+
+	return workerpid;
+}
+
+void raftable_stop(void)
+{
+	elog(ERROR, "raftable_stop() not implemented");
 }
 
 void
 _PG_fini(void)
 {
+	elog(WARNING, "raftable fini");
 	shmem_startup_hook = PreviousShmemStartupHook;
 }
+
+/*
+static void parse_peers(HostPort *peers, char *peerstr)
+{
+	char *state, *substate;
+	char *peer, *s;
+	char *host;
+	int id, port;
+	int i;
+	peerstr = pstrdup(peerstr);
+
+	for (i = 0; i < MAX_SERVERS; i++)
+		peers[i].up = false;
+
+
+	fprintf(stderr, "parsing '%s'\n", peerstr);
+	peer = strtok_r(peerstr, ",", &state);
+	while (peer)
+	{
+		fprintf(stderr, "peer = '%s'\n", peer);
+
+		s = strtok_r(peer, ":", &substate);
+		if (!s) break;
+		id = atoi(s);
+		fprintf(stderr, "id = %d ('%s')\n", id, s);
+
+		host = strtok_r(NULL, ":", &substate);
+		if (!host) break;
+		fprintf(stderr, "host = '%s'\n", host);
+
+		s = strtok_r(NULL, ":", &substate);
+		if (!s) break;
+		port = atoi(s);
+		fprintf(stderr, "port = %d ('%s')\n", port, s);
+
+		Assert(!peers[id].up);
+		peers[id].up = true;
+		peers[id].port = port;
+		strncpy(peers[id].host, host, sizeof(peers[id].host));
+
+		peer = strtok_r(NULL, ",", &state);
+	}
+
+	pfree(peerstr);
+}
+*/

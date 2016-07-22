@@ -3,9 +3,10 @@
 
 #include <limits.h>
 
+#include "storage/spin.h"
 #include "raft.h"
 
-#define RAFTABLE_PEERS_MAX (64)
+#define MAX_SERVERS 64
 
 #ifndef HOST_NAME_MAX
 #define HOST_NAME_MAX 64
@@ -17,16 +18,13 @@ typedef struct HostPort {
 	int port;
 } HostPort;
 
-typedef void *(*StateGetter)(void);
-
 typedef struct WorkerConfig {
 	int id;
 	raft_config_t raft_config;
-	HostPort peers[RAFTABLE_PEERS_MAX];
-	StateGetter getter;
+	HostPort peers[MAX_SERVERS];
+	slock_t lock;
 } WorkerConfig;
 
-void worker_register(WorkerConfig *cfg);
-void parse_peers(HostPort *peers, char *peerstr);
+void raftable_worker_main(Datum arg);
 
 #endif
