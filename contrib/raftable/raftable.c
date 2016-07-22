@@ -53,9 +53,10 @@ static volatile WorkerConfig *sharedcfg;
 
 static void select_next_server(void)
 {
+	int i;
 	int orig_leader = leader;
 	SpinLockAcquire(&sharedcfg->lock);
-	for (int i = 0; i < MAX_SERVERS; i++)
+	for (i = 0; i < MAX_SERVERS; i++)
 	{
 		int idx = (orig_leader + i + 1) % MAX_SERVERS;
 		volatile HostPort *hp = sharedcfg->peers + idx;
