@@ -1044,6 +1044,11 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 	}
 }
 
+void MtmRollbackAllPreparedTransactions(void)
+{
+}
+
+
 void  MtmSetCurrentTransactionGID(char const* gid)
 {
 	MTM_LOG3("Set current transaction xid=%d GID %s", MtmTx.xid, gid);
