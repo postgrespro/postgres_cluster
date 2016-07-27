@@ -368,7 +368,7 @@ void MtmCheckHeartbeat()
 }
 
 
-static int MtmConnectSocket(char const* host, int port, int timeout)
+static int MtmConnectSocket(int node, int port, int timeout)
 {
     struct sockaddr_in sock_inet;
     unsigned addrs[MAX_ROUTES];
@@ -377,7 +377,7 @@ static int MtmConnectSocket(char const* host, int port, int timeout)
 	MtmArbiterMessage   resp;
 	int sd;
 	timestamp_t start = MtmGetSystemTime();
-	
+	char const* host = Mtm->nodes[node].con.hostName;
 
     sock_inet.sin_family = AF_INET;
 	sock_inet.sin_port = htons(port);
@@ -446,6 +446,7 @@ static int MtmConnectSocket(char const* host, int port, int timeout)
 	req.hdr.sxid = ShmemVariableCache->nextXid;
 	req.hdr.csn  = MtmGetCurrentTime();
 	req.hdr.disabledNodeMask = Mtm->disabledNodeMask;
+	req.hdr.seqno = Mtm->nodes[node].recvSeqNo;
 	strcpy(req.connStr, Mtm->nodes[MtmNodeId-1].con.connStr);
 	if (!MtmWriteSocket(sd, &req, sizeof req)) { 
 		elog(WARNING, "Arbiter failed to send handshake message to %s:%d: %d", host, port, errno);
@@ -464,7 +465,9 @@ static int MtmConnectSocket(char const* host, int port, int timeout)
 	}
 	
 	MtmLock(LW_EXCLUSIVE);
-	Mtm->nodes[resp.node-1].sendSeqNo = resp.seqno;
+	if (Mtm->nodes[resp.node-1].sendSeqNo < resp.seqno) { 
+		Mtm->nodes[resp.node-1].sendSeqNo = resp.seqno;
+	}
 
 	/* Some node considered that I am dead, so switch to recovery mode */
 	if (BIT_CHECK(resp.disabledNodeMask, MtmNodeId-1)) { 
@@ -499,7 +502,7 @@ static void MtmOpenConnections()
 			} else { 
 				arbiterPort = MtmArbiterPort + i + 1;
 			}
-			sockets[i] = MtmConnectSocket(Mtm->nodes[i].con.hostName, arbiterPort, MtmConnectTimeout);
+			sockets[i] = MtmConnectSocket(i, arbiterPort, MtmConnectTimeout);
 			if (sockets[i] < 0) { 
 				MtmOnNodeDisconnect(i+1);
 			} 
@@ -531,7 +534,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 				close(sockets[node]);
 				sockets[node] = -1;
 			}
-			sockets[node] = MtmConnectSocket(Mtm->nodes[node].con.hostName, MtmArbiterPort + node + 1, MtmReconnectTimeout);
+			sockets[node] = MtmConnectSocket(node, MtmArbiterPort + node + 1, MtmReconnectTimeout);
 			if (sockets[node] < 0) { 
 				MtmOnNodeDisconnect(node+1);
 				return false;
@@ -579,6 +582,9 @@ static void MtmAcceptOneConnection()
 			resp.csn  = MtmGetCurrentTime();
 			resp.node = MtmNodeId;
 			resp.seqno = Mtm->nodes[req.hdr.node-1].recvSeqNo;
+			if (Mtm->nodes[req.hdr.node-1].sendSeqNo < req.hdr.seqno) { 
+				Mtm->nodes[req.hdr.node-1].sendSeqNo = req.hdr.seqno;
+			}
 			MtmUpdateNodeConnectionInfo(&Mtm->nodes[req.hdr.node-1].con, req.connStr);
 			if (!MtmWriteSocket(fd, &resp, sizeof resp)) { 
 				elog(WARNING, "Arbiter failed to write response for handshake message to node %d", resp.node);
