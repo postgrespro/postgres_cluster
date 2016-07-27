@@ -67,7 +67,7 @@ if [ "$1" = 'postgres' ]; then
 		cat <<-EOF >> $PGDATA/postgresql.conf
 			listen_addresses='*' 
 			max_prepared_transactions = 100
-			synchronous_commit = off
+			synchronous_commit = on
 			wal_level = logical
 			max_worker_processes = 30
 			max_replication_slots = 10
