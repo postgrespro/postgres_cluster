@@ -27,31 +27,26 @@ RUN mkdir /pg && chown postgres:postgres /pg
 # from docker-entrypoint.sh
 RUN echo "postgres ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers
 
+COPY ./ /pg/src
+RUN chown -R postgres:postgres /pg/src
+
 USER postgres
 ENV CFLAGS -O0
 WORKDIR /pg
 
-ENV REBUILD 5
-
-RUN cd /pg && \
-	git clone https://github.com/postgrespro/postgres_cluster.git --depth 1 && \
-	cd /pg/postgres_cluster && \
+RUN cd /pg/src && \
+	ls -la && \
+	whoami && \
 	./configure  --enable-cassert --enable-debug --prefix=/pg/install && \
 	make -j 4 install
 
 ENV PATH /pg/install/bin:$PATH
 ENV PGDATA /pg/data
 
-RUN cd /pg/postgres_cluster/contrib/raftable && make install
+RUN cd /pg/src/contrib/raftable && make clean && make install
+RUN cd /pg/src/contrib/mmts && make clean && make install
 
-RUN mkdir /pg/mmts
-COPY ./ /pg/mmts/
-ENV RAFTABLE_PATH /pg/postgres_cluster/contrib/raftable
-ENV USE_PGXS 1
-RUN cd /pg/mmts && make clean && make install
-
-ENTRYPOINT ["/pg/mmts/tests2/docker-entrypoint.sh"]
+ENTRYPOINT ["/pg/src/contrib/mmts/tests2/docker-entrypoint.sh"]
 
 EXPOSE 5432
 CMD ["postgres"]
-
