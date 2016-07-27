@@ -87,7 +87,6 @@ typedef struct
 	csn_t          csn;  /* Local CSN in case of sending data from replica to master, global CSN master->replica */
 	nodemask_t     disabledNodeMask; /* Bitmask of disabled nodes at the sender of message */
 	csn_t          oldestSnapshot; /* Oldest snapshot used by active transactions at this node */
-	uint64         seqno;/* Message sequence number (used to eliminate duplicated messages) */
 } MtmArbiterMessage;
 
 typedef struct 
@@ -446,7 +445,6 @@ static int MtmConnectSocket(int node, int port, int timeout)
 	req.hdr.sxid = ShmemVariableCache->nextXid;
 	req.hdr.csn  = MtmGetCurrentTime();
 	req.hdr.disabledNodeMask = Mtm->disabledNodeMask;
-	req.hdr.seqno = Mtm->nodes[node].recvSeqNo;
 	strcpy(req.connStr, Mtm->nodes[MtmNodeId-1].con.connStr);
 	if (!MtmWriteSocket(sd, &req, sizeof req)) { 
 		elog(WARNING, "Arbiter failed to send handshake message to %s:%d: %d", host, port, errno);
@@ -465,9 +463,6 @@ static int MtmConnectSocket(int node, int port, int timeout)
 	}
 	
 	MtmLock(LW_EXCLUSIVE);
-	if (Mtm->nodes[resp.node-1].sendSeqNo < resp.seqno) { 
-		Mtm->nodes[resp.node-1].sendSeqNo = resp.seqno;
-	}
 
 	/* Some node considered that I am dead, so switch to recovery mode */
 	if (BIT_CHECK(resp.disabledNodeMask, MtmNodeId-1)) { 
@@ -582,10 +577,6 @@ static void MtmAcceptOneConnection()
 			resp.sxid = ShmemVariableCache->nextXid;
 			resp.csn  = MtmGetCurrentTime();
 			resp.node = MtmNodeId;
-			resp.seqno = Mtm->nodes[req.hdr.node-1].recvSeqNo;
-			if (Mtm->nodes[req.hdr.node-1].sendSeqNo < req.hdr.seqno) { 
-				Mtm->nodes[req.hdr.node-1].sendSeqNo = req.hdr.seqno;
-			}
 			MtmUpdateNodeConnectionInfo(&Mtm->nodes[req.hdr.node-1].con, req.connStr);
 			if (!MtmWriteSocket(fd, &resp, sizeof resp)) { 
 				elog(WARNING, "Arbiter failed to write response for handshake message to node %d", resp.node);
@@ -651,7 +642,6 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 	MTM_LOG3("Send %s message CSN=%ld to node %d from node %d for global transaction %d/local transaction %d", 
 			 messageText[ts->cmd], ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
 	Assert(ts->cmd != MSG_INVALID);
-	buf->data[buf->used].seqno = ++Mtm->nodes[node].sendSeqNo;
 	buf->data[buf->used].code = ts->cmd;
 	buf->data[buf->used].sxid = ts->xid;
 	buf->data[buf->used].csn  = ts->csn;
@@ -868,12 +858,6 @@ static void MtmTransReceiver(Datum arg)
 						elog(WARNING, "Ignore message from dead node %d\n", msg->node);
 						continue;
 					}
-					if (msg->seqno <= Mtm->nodes[msg->node-1].recvSeqNo) { 
-						elog(WARNING, "Ignore duplicated message %ld (<=%ld) from node %d", msg->seqno, Mtm->nodes[msg->node-1].recvSeqNo, msg->node);
-						continue;
-					}
-					Mtm->nodes[msg->node-1].recvSeqNo = msg->seqno;
-
 					ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);
 					if (ts == NULL) { 
 						elog(WARNING, "Ignore response for unexisted transaction %d from node %d", msg->dxid, msg->node);
