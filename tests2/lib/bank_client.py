@@ -33,10 +33,13 @@ class ClientCollection(object):
         for client in self._clients:
             client.stop()
 
-    def print_agg(self):
+    def aggregate(self, echo=True):
         aggs = []
         for client in self._clients:
             aggs.append(client.history.aggregate())
+
+        if not echo:
+            return aggs
 
         columns = ['running', 'running_latency', 'max_latency', 'finish']
 
@@ -61,6 +64,7 @@ class ClientCollection(object):
 
         print("")
 
+        return aggs
 
 class BankClient(object):
 
@@ -137,7 +141,7 @@ class BankClient(object):
                 tx_block(conn, cur)    
                 self.history.register_finish(event_id, 'Commit')
             except psycopg2.Error as e:
-                print("=== node%d: %s" % (self.node_id, e.pgerror))
+                # print("=== node%d: %s" % (self.node_id, e.pgerror))
                 self.history.register_finish(event_id, e.pgerror)
                 #time.sleep(0.2)
 
