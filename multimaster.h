@@ -281,6 +281,7 @@ extern void  MtmUpdateLsnMapping(int nodeId, XLogRecPtr endLsn);
 extern XLogRecPtr MtmGetFlushPosition(int nodeId);
 extern void MtmWatchdog(void);
 extern void MtmCheckHeartbeat(void);
+extern void MtmRollbackAllPreparedTransactions(void);
 
 
 

@@ -473,6 +473,7 @@ static int MtmConnectSocket(int node, int port, int timeout)
 	if (BIT_CHECK(resp.disabledNodeMask, MtmNodeId-1)) { 
 		elog(WARNING, "Node %d thinks that I was dead", resp.node);
 		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
+		MtmRollbackAllPreparedTransactions();
 		MtmSwitchClusterMode(MTM_RECOVERY);
 	}
 	MtmUnlock();
