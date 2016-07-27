@@ -43,6 +43,7 @@ RUN cd /pg/src && \
 ENV PATH /pg/install/bin:$PATH
 ENV PGDATA /pg/data
 
+RUN cd /pg/src/contrib/raftable && make clean && make install
 RUN cd /pg/src/contrib/mmts && make clean && make install
 
 ENTRYPOINT ["/pg/src/contrib/mmts/tests2/docker-entrypoint.sh"]
