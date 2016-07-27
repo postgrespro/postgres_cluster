@@ -141,8 +141,6 @@ typedef struct
 	int         receiverPid;
 	XLogRecPtr  flushPos;
 	csn_t       oldestSnapshot; /* Oldest snapshot used by active transactions at this node */	
-	uint64      sendSeqNo;
-	uint64      recvSeqNo;
 } MtmNodeInfo;
 
 typedef struct MtmTransState
