@@ -2267,3 +2267,30 @@ GetLockedGlobalTransactionId(void)
 {
 	return MyLockedGxact ? MyLockedGxact->gid : NULL;
 }
+
+int
+FinishAllPreparedTransactions(bool isCommit)
+{
+	int i, count = 0;
+
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	{
+		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
+
+		if (gxact->valid)
+		{
+			FinishPreparedTransaction(gxact->gid, isCommit);
+			count++;
+		}
+	}
+
+	return count;
+}
+
+Datum
+pg_rollback_prepared_xacts(PG_FUNCTION_ARGS)
+{
+	int count;
+	count = FinishAllPreparedTransactions(0);
+	PG_RETURN_INT32(count);
+}
