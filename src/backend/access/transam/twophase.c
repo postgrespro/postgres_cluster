@@ -1218,7 +1218,6 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 	if (crc_offset != MAXALIGN(crc_offset))
 	{
 		CloseTransientFile(fd);
-		fprintf(stderr, "wrong crc offset in two-phase file \"%s\"\n", path);
 		return NULL;
 	}
 
@@ -1245,7 +1244,6 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 	if (hdr->magic != TWOPHASE_MAGIC || hdr->total_len != stat.st_size)
 	{
 		pfree(buf);
-		fprintf(stderr, "muggle two-phase file \"%s\": no magic\n", path);
 		return NULL;
 	}
 
@@ -1621,6 +1619,10 @@ RecreateTwoPhaseFile(TransactionId xid, void *content, int len)
 	char		path[MAXPGPATH];
 	pg_crc32c	statefile_crc;
 	int			fd;
+
+	/* Crutch to fix crc and len check on 2pc file reading */
+	Assert( ((TwoPhaseFileHeader *) content)->total_len - sizeof(pg_crc32c) <= len);
+	len = ((TwoPhaseFileHeader *) content)->total_len - sizeof(pg_crc32c);
 
 	/* Recompute CRC */
 	INIT_CRC32C(statefile_crc);
