@@ -630,7 +630,8 @@ default_text_search_config = 'pg_catalog.english'
 
 listen_addresses='*'
 max_prepared_transactions = 100
-synchronous_commit = off
+synchronous_commit = on
+fsync = off
 wal_level = logical
 max_worker_processes = 15
 max_replication_slots = 10
