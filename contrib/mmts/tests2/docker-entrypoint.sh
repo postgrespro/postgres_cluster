@@ -68,13 +68,15 @@ if [ "$1" = 'postgres' ]; then
 			listen_addresses='*' 
 			max_prepared_transactions = 100
 			synchronous_commit = off
+			fsync = off
 			wal_level = logical
 			max_worker_processes = 30
 			max_replication_slots = 10
 			max_wal_senders = 10
 			shared_preload_libraries = 'raftable,multimaster'
-            		default_transaction_isolation = 'repeatable read'
+			default_transaction_isolation = 'repeatable read'
 			log_checkpoints = on
+			checkpoint_timeout = 30
 			log_autovacuum_min_duration = 0
 
 			raftable.id = $NODE_ID
