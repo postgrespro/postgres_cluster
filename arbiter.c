@@ -463,9 +463,10 @@ static int MtmConnectSocket(char const* host, int port, int timeout)
 		goto Retry;
 	}
 	
-	/* Some node considered that I am dead, so switch to recovery mode */
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->nodes[resp.node-1].sendSeqNo = resp.seqno;
+
+	/* Some node considered that I am dead, so switch to recovery mode */
 	if (BIT_CHECK(resp.disabledNodeMask, MtmNodeId-1)) { 
 		elog(WARNING, "Node %d thinks that I was dead", resp.node);
 		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
@@ -861,7 +862,7 @@ static void MtmTransReceiver(Datum arg)
 						continue;
 					}
 					if (msg->seqno <= Mtm->nodes[msg->node-1].recvSeqNo) { 
-						elog(WARNING, "Ignore duplicated message %ld from node %d", msg->seqno, msg->node);
+						elog(WARNING, "Ignore duplicated message %ld (<=%ld) from node %d", msg->seqno, Mtm->nodes[msg->node-1].recvSeqNo, msg->node);
 						continue;
 					}
 					Mtm->nodes[msg->node-1].recvSeqNo = msg->seqno;
