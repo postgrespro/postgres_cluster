@@ -1,0 +1,63 @@
+PGPRO upgarde system
+====================
+
+This directory contains pgpro_upgrade script which allows to add some
+features (such as internal functions) into catalog of existing database.
+
+HOW TO INVOKE SCRIPT
+--------------------
+
+Script is intended to be run from postinst script of installable
+packages.  It should be invoked as database owning system user
+(typically, 'postgres').
+
+Script expects that PGDATA environment variable points to database
+cluster to be upgraded. 
+
+Script is installed into postgresql bin directory, and user can run it
+manually, if he has database cluster, which are not known by package
+configuration file.
+
+Script should be invoked when instance of PostgreSQL which is upgraded,
+is stopped.
+
+Script doesn't depend of any authentication settings in pg_hba.conf,
+because it starts postgres in single-user mode to perform upgrades.
+
+It is safe to invoke script multiple times, because it does check for
+features it is going to add.
+
+If script is invoked with **--check** argument, it doesn't do any
+changes in the database, just returns 0 if no changes is needed, 
+and 1 if base needs to be upgraded.
+
+HOW TO ADD NEW FEATURE
+----------------------
+
+You need to add two sql files in this directory, if you want to add a
+feature.
+
+Both files should have same base name and one — extension .test and
+other .sql
+
+1. Script with .sql extension contains usual create commands which would
+create neccessary database object(s).
+
+2. Script with .text extension should contain single select query,
+which returns single boolean value (i.e. one column and one row). This
+value should be 'f' if feature is not found in the database and should
+be installed, and 't' if it already exists.
+
+Note that scirpts are invoked using postgres single-user mode, not using
+psql. So, each SQL statement should be in one line or line endings
+should be \ esaped.
+
+Last line of the script should contain newline at the end.
+
+Script naming convention
+------------------------
+
+Scripts are executed in the lexicographical order of their names.
+So, please start name of script with 3-digit number, next one to last
+used, followed by dash.
+
