@@ -701,9 +701,8 @@ process_remote_insert(StringInfo s, Relation rel)
 		MTM_LOG3("%d: Execute utility statement %s", MyProcPid, ddl);
 		rc = SPI_execute(ddl, false, 0);
         SPI_finish();
-		if (rc != SPI_OK_UTILITY) { 
+		if (rc < 0)
 			elog(ERROR, "Failed to execute utility statement %s", ddl);
-		}
 	} else if (strcmp(relname, MULTIMASTER_LOCAL_TABLES_TABLE) == 0) { 
 		char* schema = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_schema-1]);
 		char* name = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_name-1]);
