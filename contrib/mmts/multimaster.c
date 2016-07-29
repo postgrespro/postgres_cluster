@@ -1150,18 +1150,19 @@ void MtmHandleApplyError(void)
 {
 	ErrorData *edata = CopyErrorData();
 	switch (edata->sqlerrcode) { 
-	  case ERRCODE_DISK_FULL:
-	  case ERRCODE_INSUFFICIENT_RESOURCES:
-	  case ERRCODE_IO_ERROR:
-	  case ERRCODE_DATA_CORRUPTED:
-	  case ERRCODE_INDEX_CORRUPTED:
-	  case ERRCODE_SYSTEM_ERROR:
-	  case ERRCODE_INTERNAL_ERROR:
-	  case ERRCODE_OUT_OF_MEMORY:		  
-		  elog(WARNING, "Node is excluded from cluster because of non-recoverable error %d", edata->sqlerrcode);
-		  MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
-		  kill(PostmasterPid, SIGQUIT);
-		  break;
+		case ERRCODE_DISK_FULL:
+		case ERRCODE_INSUFFICIENT_RESOURCES:
+		case ERRCODE_IO_ERROR:
+		case ERRCODE_DATA_CORRUPTED:
+		case ERRCODE_INDEX_CORRUPTED:
+		case ERRCODE_SYSTEM_ERROR:
+		case ERRCODE_INTERNAL_ERROR:
+		case ERRCODE_OUT_OF_MEMORY:
+			elog(WARNING, "Node is excluded from cluster because of non-recoverable error %d, %s, pid=%u",
+				edata->sqlerrcode, edata->message, getpid());
+			MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
+			kill(PostmasterPid, SIGQUIT);
+			break;
 	}
 	FreeErrorData(edata);
 }
@@ -3182,7 +3183,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			{
 				/* Do not replicate temp tables */
 				CreateStmt *stmt = (CreateStmt *) parsetree;
-				skipCommand = stmt->relation->relpersistence == RELPERSISTENCE_TEMP;
+				skipCommand = stmt->relation->relpersistence == RELPERSISTENCE_TEMP ||
+					(stmt->relation->schemaname && strcmp(stmt->relation->schemaname, "pg_temp") == 0);
 			}
 			break;
 		case T_IndexStmt:
