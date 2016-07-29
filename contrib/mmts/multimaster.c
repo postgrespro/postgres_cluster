@@ -914,6 +914,9 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 {
 	MtmTransMap* tm;
 
+	if (Mtm->status == MTM_RECOVERY) { 
+		return;
+	}
 	if (x->status != TRANSACTION_STATUS_ABORTED) { 
 		MtmLock(LW_EXCLUSIVE);
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
@@ -948,7 +951,9 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		}
 		if (ts != NULL) { 
 			if (commit) {
-				Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
+				/* Assert(ts->status == TRANSACTION_STATUS_UNKNOWN); */
+				Assert(ts->status == TRANSACTION_STATUS_UNKNOWN 
+					   || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)); /* ??? Why there is commit without prepare */
 				if (x->csn > ts->csn) {
 					ts->csn = x->csn;
 					MtmSyncClock(ts->csn);
@@ -1014,6 +1019,15 @@ void MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd)
 	}
 }
 
+
+static void MtmStartRecovery()
+{
+	MtmLock(LW_EXCLUSIVE);
+	BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
+	MtmSwitchClusterMode(MTM_RECOVERY);
+	MtmUnlock();
+}
+
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
 	MtmTx.gtid = *gtid;
@@ -1036,18 +1050,14 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 	if (!TransactionIdIsValid(gtid->xid)) { 
 		/* In case of recovery InvalidTransactionId is passed */
 		if (Mtm->status != MTM_RECOVERY) { 
-			elog(PANIC, "Node %d tries to recover node %d which is in %s mode", gtid->node, MtmNodeId,  MtmNodeStatusMnem[Mtm->status]);
+			elog(WARNING, "Node %d tries to recover node %d which is in %s mode", gtid->node, MtmNodeId,  MtmNodeStatusMnem[Mtm->status]);
+			MtmStartRecovery();
 		}
 	} else if (Mtm->status == MTM_RECOVERY) { 
 		/* When recovery is completed we get normal transaction ID and switch to normal mode */
 		MtmRecoveryCompleted();
 	}
 }
-
-void MtmRollbackAllPreparedTransactions(void)
-{
-}
-
 
 void  MtmSetCurrentTransactionGID(char const* gid)
 {
@@ -1440,6 +1450,8 @@ bool MtmRefreshClusterStatus(bool nowait)
 			}
 		}
 #endif
+		Mtm->reconnectMask |= clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
+
 		if (disabled) { 
 			MtmCheckQuorum();
 		}
@@ -1470,8 +1482,8 @@ bool MtmRefreshClusterStatus(bool nowait)
 				MtmSwitchClusterMode(MTM_OFFLINE);
 			}
 		} else if (Mtm->status == MTM_OFFLINE) {
-			/* Should we somehow restart logical receivers? */ 
-			MtmSwitchClusterMode(MTM_RECOVERY);
+			/* Should we somehow restart logical receivers? */ 			
+			MtmStartRecovery();
 		}
 	} else { 
 		MTM_LOG1("Clique %lx has no quorum", (long) clique);
@@ -1500,7 +1512,13 @@ void MtmOnNodeDisconnect(int nodeId)
 { 
 	MtmTransState *ts;
 
-	if (Mtm->nodes[nodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) > MtmGetSystemTime()) { 
+	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))
+	{
+		/* Node is already disabled */
+		return;
+	}
+	if (Mtm->nodes[nodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) > MtmGetSystemTime()) 
+	{ 
 		/* Avoid false detection of node failure and prevent node status blinking */
 		return;
 	}

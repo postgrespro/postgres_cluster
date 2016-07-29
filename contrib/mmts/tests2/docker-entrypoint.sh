@@ -69,6 +69,7 @@ if [ "$1" = 'postgres' ]; then
 			max_prepared_transactions = 100
 			synchronous_commit = on
 			fsync = off
+            log_line_prefix = '%t: '
 			wal_level = logical
 			max_worker_processes = 30
 			max_replication_slots = 10
