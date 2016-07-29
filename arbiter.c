@@ -195,7 +195,7 @@ static void MtmRegisterSocket(int fd, int node)
     ev.events = EPOLLIN;
     ev.data.u32 = node;        
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
-        elog(ERROR, "Arbiter failed to add socket to epoll set: %d", errno);
+        elog(LOG, "Arbiter failed to add socket to epoll set: %d", errno);
     } 
 #else
     FD_SET(fd, &inset);    
@@ -209,7 +209,7 @@ static void MtmUnregisterSocket(int fd)
 {
 #if USE_EPOLL
     if (epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL) < 0) { 
-		elog(ERROR, "Arbiter failed to unregister socket from epoll set: %d", errno);
+		elog(LOG, "Arbiter failed to unregister socket from epoll set: %d", errno);
     } 
 #else
 	FD_CLR(fd, &inset); 
@@ -266,12 +266,17 @@ static bool MtmWriteSocket(int sd, void const* buf, int size)
 
 static int MtmReadSocket(int sd, void* buf, int buf_size)
 {
-	int rc = recv(sd, buf, buf_size, 0);
-	if (rc <= 0) { 
-		Assert(errno != EINTR); /* should not happen in non-blocking call */
-		return -1;
+	int rc = MtmWaitSocket(sd, false, MtmHeartbeatSendTimeout);
+	if (rc == 1) { 
+		int rc = recv(sd, buf, buf_size, 0);
+		if (rc <= 0) { 
+			Assert(errno != EINTR); /* should not happen in non-blocking call */
+			return -1;
+		}
+		return rc;
+	} else { 
+		return 0;
 	}
-	return rc;
 }
 
 
@@ -325,7 +330,16 @@ static void MtmSetSocketOptions(int sd)
 #endif
 }
 
-
+static void MtmCheckResponse(MtmArbiterMessage* resp)
+{
+	if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) && !BIT_CHECK(Mtm->disabledNodeMask, resp->node-1)) { 
+		elog(WARNING, "Node %d thinks that I was dead, while I am %s", resp->node, MtmNodeStatusMnem[Mtm->status]);
+		if (Mtm->status != MTM_RECOVERY) { 
+			BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
+			MtmSwitchClusterMode(MTM_RECOVERY);
+		}
+	}
+}
 
 static void MtmScheduleHeartbeat()
 {
@@ -347,7 +361,8 @@ static void MtmSendHeartbeat()
 
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
-		if (sockets[i] >= 0 && sockets[i] != busy_socket && !BIT_CHECK(Mtm->disabledNodeMask|Mtm->reconnectMask, i))
+		if (i+1 != MtmNodeId && sockets[i] != busy_socket 
+			&& ((sockets[i] >= 0 && !BIT_CHECK(Mtm->disabledNodeMask, i)) || BIT_CHECK(Mtm->reconnectMask, i)))
 		{ 
 			if (!MtmSendToNode(i, &msg, sizeof(msg))) { 
 				elog(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
@@ -382,7 +397,8 @@ static int MtmConnectSocket(int node, int port, int timeout)
 	sock_inet.sin_port = htons(port);
 
 	if (!MtmResolveHostByName(host, addrs, &n_addrs)) {
-		elog(ERROR, "Arbiter failed to resolve host '%s' by name", host);
+		elog(LOG, "Arbiter failed to resolve host '%s' by name", host);
+		return -1;
 	}
 
   Retry:
@@ -391,11 +407,13 @@ static int MtmConnectSocket(int node, int port, int timeout)
 
 		sd = socket(AF_INET, SOCK_STREAM, 0);
 		if (sd < 0) {
-			elog(ERROR, "Arbiter failed to create socket: %d", errno);
+			elog(LOG, "Arbiter failed to create socket: %d", errno);
+			return -1;
 		}
 		rc = fcntl(sd, F_SETFL, O_NONBLOCK);
 		if (rc < 0) {
-			elog(ERROR, "Arbiter failed to switch socket to non-blocking mode: %d", errno);
+			elog(LOG, "Arbiter failed to switch socket to non-blocking mode: %d", errno);
+			return -1;
 		}
 		busy_socket = sd;
 		for (i = 0; i < n_addrs; ++i) {
@@ -463,14 +481,7 @@ static int MtmConnectSocket(int node, int port, int timeout)
 	}
 	
 	MtmLock(LW_EXCLUSIVE);
-
-	/* Some node considered that I am dead, so switch to recovery mode */
-	if (BIT_CHECK(resp.disabledNodeMask, MtmNodeId-1)) { 
-		elog(WARNING, "Node %d thinks that I was dead", resp.node);
-		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
-		MtmRollbackAllPreparedTransactions();
-		MtmSwitchClusterMode(MTM_RECOVERY);
-	}
+	MtmCheckResponse(&resp);
 	MtmUnlock();
 
 	return sd;
@@ -493,7 +504,7 @@ static void MtmOpenConnections()
 			char const* arbiterPortStr = strstr(Mtm->nodes[i].con.connStr, "arbiterport=");
 			if (arbiterPortStr != NULL) {
 				if (sscanf(arbiterPortStr+12, "%d", &arbiterPort) != 1) {
-					elog(ERROR, "Invalid arbiter port: %s", arbiterPortStr+12);
+					elog(ERROR, "Invalid arbiter port: %s", arbiterPortStr+12);					
 				}
 			} else { 
 				arbiterPort = MtmArbiterPort + i + 1;
@@ -518,11 +529,13 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 	while (true) {
 		if (sockets[node] >= 0 && BIT_CHECK(Mtm->reconnectMask, node)) {
 			elog(WARNING, "Arbiter is forced to reconnect to node %d", node+1); 
+			close(sockets[node]);
+			sockets[node] = -1;
+		}
+		if (BIT_CHECK(Mtm->reconnectMask, node)) {
 			MtmLock(LW_EXCLUSIVE);		
 			BIT_CLEAR(Mtm->reconnectMask, node);
 			MtmUnlock();
-			close(sockets[node]);
-			sockets[node] = -1;
 		}
 		if (sockets[node] < 0 || !MtmWriteSocket(sockets[node], buf, size)) { 
 			if (sockets[node] >= 0) { 
@@ -535,9 +548,6 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 				MtmOnNodeDisconnect(node+1);
 				return false;
 			}
-			MtmLock(LW_EXCLUSIVE);		
-			BIT_CLEAR(Mtm->reconnectMask, node);
-			MtmUnlock();
 			MTM_LOG3("Arbiter restablished connection with node %d", node+1);
 		} else { 
 			return true;
@@ -563,7 +573,11 @@ static void MtmAcceptOneConnection()
 	} else { 	
 		MtmHandshakeMessage req;
 		MtmArbiterMessage resp;		
-		int rc = MtmReadSocket(fd, &req, sizeof req);
+		int rc = fcntl(fd, F_SETFL, O_NONBLOCK);
+		if (rc < 0) {
+			elog(ERROR, "Arbiter failed to switch socket to non-blocking mode: %d", errno);
+		}
+		rc = MtmReadSocket(fd, &req, sizeof req);
 		if (rc < sizeof(req)) { 
 			elog(WARNING, "Arbiter failed to handshake socket: %d, errno=%d", rc, errno);
 		} else if (req.hdr.code != MSG_HANDSHAKE && req.hdr.dxid != HANDSHAKE_MAGIC) { 
@@ -571,6 +585,11 @@ static void MtmAcceptOneConnection()
 			close(fd);
 		} else{ 			
 			Assert(req.hdr.node > 0 && req.hdr.node <= Mtm->nAllNodes && req.hdr.node != MtmNodeId);
+
+			MtmLock(LW_EXCLUSIVE);
+			MtmCheckResponse(&req.hdr);
+			MtmUnlock();
+
 			resp.code = MSG_STATUS;
 			resp.disabledNodeMask = Mtm->disabledNodeMask;
 			resp.dxid = HANDSHAKE_MAGIC;
@@ -726,6 +745,7 @@ static void MtmTransSender(Datum arg)
 		CHECK_FOR_INTERRUPTS();
 	}
 	elog(LOG, "Stop arbiter sender %d", MyProcPid);
+	proc_exit(1); /* force restart of this bgwroker */
 }
 
 
@@ -863,9 +883,7 @@ static void MtmTransReceiver(Datum arg)
 						elog(WARNING, "Ignore response for unexisted transaction %d from node %d", msg->dxid, msg->node);
 						continue;
 					}
-					if (BIT_CHECK(msg->disabledNodeMask, MtmNodeId-1) && Mtm->status != MTM_RECOVERY) { 
-						elog(PANIC, "Node %d thinks that I was dead: perform hara-kiri not to be a zombie", msg->node);
-					}
+					MtmCheckResponse(msg);
 					
 					if (MtmIsCoordinator(ts)) {
 						switch (msg->code) { 
@@ -975,5 +993,6 @@ static void MtmTransReceiver(Datum arg)
 			MtmRefreshClusterStatus(false);
 		}
 	}
+	proc_exit(1); /* force restart of this bgwroker */
 }
 

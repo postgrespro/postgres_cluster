@@ -238,354 +238,353 @@ pglogical_receiver_main(Datum main_arg)
 	/* Connect to a database */
 	BackgroundWorkerInitializeConnection(MtmDatabaseName, NULL);
 
-	/* 
-	 * Determine when and how we should open replication slot.
-	 * Druing recovery we need to open only one replication slot from which node should receive all transactions.
-	 * Slots at other nodes should be removed 
+	/* This is main loop of logical replication.
+	 * In case of errors we will try to reestablish connection.
+	 * Also reconnet is forced when node is switch to recovery mode
 	 */
-	mode = MtmReceiverSlotMode(nodeId);	
-    
-	/* Establish connection to remote server */
-	conn = PQconnectdb(connString);
-	if (PQstatus(conn) != CONNECTION_OK)
-	{
-		PQfinish(conn);
-		ereport(WARNING, (errmsg("%s: Could not establish connection to remote server",
-								 worker_proc)));
-		/* Do not make decision about node status here because at startup peer node may just no yet started */
-		/* MtmOnNodeDisconnect(nodeId); */
-		proc_exit(1);
-	}
-
-	query = createPQExpBuffer();
-
-	if (mode == SLOT_CREATE_NEW) {
-		appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", slotName);
-		res = PQexec(conn, query->data);
-		PQclear(res);
-		resetPQExpBuffer(query);
-	}
-	if (mode != SLOT_OPEN_EXISTED) { 
-		appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", slotName, MULTIMASTER_NAME);
-		res = PQexec(conn, query->data);
-		if (PQresultStatus(res) != PGRES_TUPLES_OK)
-		{
-			const char *sqlstate = PQresultErrorField(res, PG_DIAG_SQLSTATE);
-			if (!sqlstate || strcmp(sqlstate, ERRCODE_DUPLICATE_OBJECT_STR) != 0)
-			{
-				PQclear(res);
-				ereport(ERROR, (errmsg("%s: Could not create logical slot",
-									   worker_proc)));
-				/* MtmOnNodeDisconnect(nodeId); */
-				proc_exit(1);
-			}
-		}
-		PQclear(res);
-		resetPQExpBuffer(query);
-	}
-	
-	/* Start logical replication at specified position */
-	StartTransactionCommand();
-	originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
-	originId = replorigin_by_name(originName, true);
-	if (originId == InvalidRepOriginId) { 
-		originId = replorigin_create(originName);
-		/* 
-		 * We are just creating new replication slot.
-		 * It is assumed that state of local and remote nodes is the same at this moment.
-		 * Them are either empty, either new node is synchronized using base_backup.
-		 * So we assume that LSNs are the same for local and remote node
-		 */
-		originStartPos = Mtm->status == MTM_RECOVERY ? GetXLogInsertRecPtr() : 0;
-		MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, nodeId);
-	} else { 
-		originStartPos = replorigin_get_progress(originId, false);
-		MTM_LOG1("Restart logical receiver at position %lx from node %d", originStartPos, nodeId);
-	}
-	CommitTransactionCommand();
-	
-	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %x/%x (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s')",
-					  slotName,
-					  (uint32) (originStartPos >> 32),
-					  (uint32) originStartPos,
-					  MULTIMASTER_MAX_PROTO_VERSION,
-					  MULTIMASTER_MIN_PROTO_VERSION,
-					  MtmReplicationModeName[mode]
-		);
-	res = PQexec(conn, query->data);
-	if (PQresultStatus(res) != PGRES_COPY_BOTH)
-	{
-		PQclear(res);
-		ereport(WARNING, (errmsg("%s: Could not start logical replication",
-								 worker_proc)));
-		/* MtmOnNodeDisconnect(nodeId); */
-		proc_exit(1);
-	}
-	PQclear(res);
-	resetPQExpBuffer(query);
-
-    MtmReceiverStarted(nodeId);
-    ByteBufferAlloc(&buf);
-
 	while (!got_sigterm)
-	{
-		int rc, hdr_len;
-		/* Wait necessary amount of time */
-		rc = WaitLatch(&MyProc->procLatch,
-					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   receiver_idle_time * 1L);
-		ResetLatch(&MyProc->procLatch);
-		/* Process signals */
-		if (got_sighup)
+	{ 
+		/* 
+		 * Determine when and how we should open replication slot.
+		 * Druing recovery we need to open only one replication slot from which node should receive all transactions.
+		 * Slots at other nodes should be removed 
+		 */
+		mode = MtmReceiverSlotMode(nodeId);	
+		
+		/* Establish connection to remote server */
+		conn = PQconnectdb(connString);
+		if (PQstatus(conn) != CONNECTION_OK)
 		{
-			/* Process config file */
-			ProcessConfigFile(PGC_SIGHUP);
-			got_sighup = false;
-			ereport(LOG, (errmsg("%s: processed SIGHUP", worker_proc)));
+			ereport(WARNING, (errmsg("%s: Could not establish connection to remote server",
+									 worker_proc)));
+			goto OnError;
 		}
-
-		if (got_sigterm)
+		
+		query = createPQExpBuffer();
+		
+		if (mode == SLOT_CREATE_NEW) {
+			appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", slotName);
+			res = PQexec(conn, query->data);
+			PQclear(res);
+			resetPQExpBuffer(query);
+		}
+		if (mode != SLOT_OPEN_EXISTED) { 
+			appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", slotName, MULTIMASTER_NAME);
+			res = PQexec(conn, query->data);
+			if (PQresultStatus(res) != PGRES_TUPLES_OK)
+			{
+				const char *sqlstate = PQresultErrorField(res, PG_DIAG_SQLSTATE);
+				if (!sqlstate || strcmp(sqlstate, ERRCODE_DUPLICATE_OBJECT_STR) != 0)
+				{
+					PQclear(res);
+					ereport(ERROR, (errmsg("%s: Could not create logical slot",
+										   worker_proc)));
+					
+					goto OnError;
+				}
+			}
+			PQclear(res);
+			resetPQExpBuffer(query);
+		}
+		
+		/* Start logical replication at specified position */
+		StartTransactionCommand();
+		originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
+		originId = replorigin_by_name(originName, true);
+		if (originId == InvalidRepOriginId) { 
+			originId = replorigin_create(originName);
+			/* 
+			 * We are just creating new replication slot.
+			 * It is assumed that state of local and remote nodes is the same at this moment.
+			 * Them are either empty, either new node is synchronized using base_backup.
+			 * So we assume that LSNs are the same for local and remote node
+			 */
+			originStartPos = Mtm->status == MTM_RECOVERY ? GetXLogInsertRecPtr() : 0;
+			MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, nodeId);
+		} else { 
+			originStartPos = replorigin_get_progress(originId, false);
+			MTM_LOG1("Restart logical receiver at position %lx from node %d", originStartPos, nodeId);
+		}
+		CommitTransactionCommand();
+		
+		appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %x/%x (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s')",
+						  slotName,
+						  (uint32) (originStartPos >> 32),
+						  (uint32) originStartPos,
+						  MULTIMASTER_MAX_PROTO_VERSION,
+						  MULTIMASTER_MIN_PROTO_VERSION,
+						  MtmReplicationModeName[mode]
+			);
+		res = PQexec(conn, query->data);
+		if (PQresultStatus(res) != PGRES_COPY_BOTH)
 		{
-			/* Simply exit */
-			ereport(LOG, (errmsg("%s: processed SIGTERM", worker_proc)));
-			proc_exit(0);
+			PQclear(res);
+			ereport(WARNING, (errmsg("%s: Could not start logical replication",
+								 worker_proc)));
+			goto OnError;
 		}
-
-		/* Emergency bailout if postmaster has died */
-		if (rc & WL_POSTMASTER_DEATH)
-			proc_exit(1);
-
-		if (Mtm->status == MTM_OFFLINE || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId)) {
-			ereport(LOG, (errmsg("%s: suspending WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
-			MtmSleep(RECEIVER_SUSPEND_TIMEOUT);
-			continue;
-		}
+		PQclear(res);
+		resetPQExpBuffer(query);
+		
+		MtmReceiverStarted(nodeId);
+		ByteBufferAlloc(&buf);
+		
+		while (!got_sigterm)
+		{
+			int rc, hdr_len;
+			/* Wait necessary amount of time */
+			rc = WaitLatch(&MyProc->procLatch,
+						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+						   receiver_idle_time * 1L);
+			ResetLatch(&MyProc->procLatch);
+			/* Process signals */
+			if (got_sighup)
+			{
+				/* Process config file */
+				ProcessConfigFile(PGC_SIGHUP);
+				got_sighup = false;
+				ereport(LOG, (errmsg("%s: processed SIGHUP", worker_proc)));
+			}
+			
+			if (got_sigterm)
+			{
+				/* Simply exit */
+				ereport(LOG, (errmsg("%s: processed SIGTERM", worker_proc)));
+				proc_exit(0);
+			}
+			
+			/* Emergency bailout if postmaster has died */
+			if (rc & WL_POSTMASTER_DEATH)
+				proc_exit(1);
+			
+			if (Mtm->status == MTM_OFFLINE || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId)) {
+				ereport(LOG, (errmsg("%s: suspending WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
+				goto OnError;
+			}
 			
 
-		/*
-		 * Receive data.
-		 */
-		while (true)
-		{
-			XLogRecPtr  walEnd;
-            char* stmt;
-
-			/* Some cleanup */
-			if (copybuf != NULL)
-			{
-				PQfreemem(copybuf);
-				copybuf = NULL;
-			}
-
-			rc = PQgetCopyData(conn, &copybuf, 1);
-			if (rc <= 0) {
-				break;
-            }
-
 			/*
-			 * Check message received from server:
-			 * - 'k', keepalive message
-			 * - 'w', check for streaming header
+			 * Receive data.
 			 */
-			if (copybuf[0] == 'k')
+			while (true)
 			{
-				int			pos;
-				bool		replyRequested;
-
-				/*
-				 * Parse the keepalive message, enclosed in the CopyData message.
-				 * We just check if the server requested a reply, and ignore the
-				 * rest.
-				 */
-				pos = 1;	/* skip msgtype 'k' */
-
-				/*
-				 * In this message is the latest WAL position that server has
-				 * considered as sent to this receiver.
-				 */
-				walEnd = fe_recvint64(&copybuf[pos]);
-				pos += 8;	/* read walEnd */
-				pos += 8;	/* skip sendTime */
-				if (rc < pos + 1)
-				{
-					ereport(LOG, (errmsg("%s: streaming header too small: %d",
-										 worker_proc, rc)));
-					/* MtmOnNodeDisconnect(nodeId); */
-					proc_exit(1);
-				}
-				replyRequested = copybuf[pos];
-
-				/* Update written position */
-				output_written_lsn = Max(walEnd, output_written_lsn);
-
-				/*
-				 * If the server requested an immediate reply, send one.
-				 * If sync mode is sent reply in all cases to ensure that
-				 * server knows how far replay has been done.
-				 * In recovery mode also always send reply to provide master with more precise information
-				 * about recovery progress
-				 */
-				if (replyRequested || receiver_sync_mode || Mtm->status == MTM_RECOVERY)
-				{
-					int64 now = feGetCurrentTimestamp();
-
-					/* Leave is feedback is not sent properly */
-					if (!sendFeedback(conn, now, nodeId)) {
-						/* MtmOnNodeDisconnect(nodeId); */
-						proc_exit(1);
-					}
-				}
-				continue;
-			}
-			else if (copybuf[0] != 'w')
-			{
-				ereport(LOG, (errmsg("%s: Incorrect streaming header",
-									 worker_proc)));
-				/* MtmOnNodeDisconnect(nodeId); */
-				proc_exit(1);
-			}
-
-			/* Now fetch the data */
-			hdr_len = 1;		/* msgtype 'w' */
-			fe_recvint64(&copybuf[hdr_len]);
-			hdr_len += 8;		/* dataStart */
-			walEnd = fe_recvint64(&copybuf[hdr_len]);
-			hdr_len += 8;		/* WALEnd */
-			hdr_len += 8;		/* sendTime */
-
-			/*ereport(LOG, (errmsg("%s: receive message %c length %d", worker_proc, copybuf[hdr_len], rc - hdr_len)));*/
-
-            Assert(rc >= hdr_len);
-
-			if (rc > hdr_len)
-			{
-                stmt = copybuf + hdr_len;
+				XLogRecPtr  walEnd;
+				char* stmt;
 				
-				if (buf.used >= MtmTransSpillThreshold*MB) { 
-					if (spill_file < 0) {
-						int file_id;
-						spill_file = MtmCreateSpillFile(nodeId, &file_id);
-						pq_sendbyte(&spill_info, 'F');
-						pq_sendint(&spill_info, nodeId, 4);
-						pq_sendint(&spill_info, file_id, 4);
-					}
-					ByteBufferAppend(&buf, ")", 1);
-					pq_sendbyte(&spill_info, '(');
-					pq_sendint(&spill_info, buf.used, 4);
-					MtmSpillToFile(spill_file, buf.data, buf.used);
-					ByteBufferReset(&buf);
+				/* Some cleanup */
+				if (copybuf != NULL)
+				{
+					PQfreemem(copybuf);
+					copybuf = NULL;
 				}
-                ByteBufferAppend(&buf, stmt, rc - hdr_len);
-                if (stmt[0] == 'C') /* commit */
-                {
-					if (spill_file >= 0) { 
+				
+				rc = PQgetCopyData(conn, &copybuf, 1);
+				if (rc <= 0) {
+					break;
+				}
+				
+				/*
+				 * Check message received from server:
+				 * - 'k', keepalive message
+				 * - 'w', check for streaming header
+				 */
+				if (copybuf[0] == 'k')
+				{
+					int			pos;
+					bool		replyRequested;
+					
+					/*
+					 * Parse the keepalive message, enclosed in the CopyData message.
+					 * We just check if the server requested a reply, and ignore the
+					 * rest.
+					 */
+					pos = 1;	/* skip msgtype 'k' */
+
+					/*
+					 * In this message is the latest WAL position that server has
+					 * considered as sent to this receiver.
+					 */
+					walEnd = fe_recvint64(&copybuf[pos]);
+					pos += 8;	/* read walEnd */
+					pos += 8;	/* skip sendTime */
+					if (rc < pos + 1)
+					{
+						ereport(LOG, (errmsg("%s: streaming header too small: %d",
+											 worker_proc, rc)));
+						goto OnError;
+					}
+					replyRequested = copybuf[pos];
+
+					/* Update written position */
+					output_written_lsn = Max(walEnd, output_written_lsn);
+
+					/*
+					 * If the server requested an immediate reply, send one.
+					 * If sync mode is sent reply in all cases to ensure that
+					 * server knows how far replay has been done.
+					 * In recovery mode also always send reply to provide master with more precise information
+					 * about recovery progress
+					 */
+					if (replyRequested || receiver_sync_mode || Mtm->status == MTM_RECOVERY)
+					{
+						int64 now = feGetCurrentTimestamp();
+
+						/* Leave is feedback is not sent properly */
+						if (!sendFeedback(conn, now, nodeId)) {
+							goto OnError;
+						}
+					}
+					continue;
+				}
+				else if (copybuf[0] != 'w')
+				{
+					ereport(LOG, (errmsg("%s: Incorrect streaming header",
+										 worker_proc)));
+					goto OnError;
+				}
+
+				/* Now fetch the data */
+				hdr_len = 1;		/* msgtype 'w' */
+				fe_recvint64(&copybuf[hdr_len]);
+				hdr_len += 8;		/* dataStart */
+				walEnd = fe_recvint64(&copybuf[hdr_len]);
+				hdr_len += 8;		/* WALEnd */
+				hdr_len += 8;		/* sendTime */
+
+				/*ereport(LOG, (errmsg("%s: receive message %c length %d", worker_proc, copybuf[hdr_len], rc - hdr_len)));*/
+
+				Assert(rc >= hdr_len);
+
+				if (rc > hdr_len)
+				{
+					stmt = copybuf + hdr_len;
+				
+					if (buf.used >= MtmTransSpillThreshold*MB) { 
+						if (spill_file < 0) {
+							int file_id;
+							spill_file = MtmCreateSpillFile(nodeId, &file_id);
+							pq_sendbyte(&spill_info, 'F');
+							pq_sendint(&spill_info, nodeId, 4);
+							pq_sendint(&spill_info, file_id, 4);
+						}
 						ByteBufferAppend(&buf, ")", 1);
 						pq_sendbyte(&spill_info, '(');
 						pq_sendint(&spill_info, buf.used, 4);
 						MtmSpillToFile(spill_file, buf.data, buf.used);
-						MtmCloseSpillFile(spill_file);
-						MtmExecute(spill_info.data, spill_info.len);
-						spill_file = -1;
-						resetStringInfo(&spill_info);
-					} else { 
-						MtmExecute(buf.data, buf.used);
+						ByteBufferReset(&buf);
 					}
-                    ByteBufferReset(&buf);
-                }
-            }
-			/* Update written position */
-			output_written_lsn = Max(walEnd, output_written_lsn);
-		}
+					ByteBufferAppend(&buf, stmt, rc - hdr_len);
+					if (stmt[0] == 'C') /* commit */
+					{
+						if (spill_file >= 0) { 
+							ByteBufferAppend(&buf, ")", 1);
+							pq_sendbyte(&spill_info, '(');
+							pq_sendint(&spill_info, buf.used, 4);
+							MtmSpillToFile(spill_file, buf.data, buf.used);
+							MtmCloseSpillFile(spill_file);
+							MtmExecute(spill_info.data, spill_info.len);
+							spill_file = -1;
+							resetStringInfo(&spill_info);
+						} else { 
+							MtmExecute(buf.data, buf.used);
+						}
+						ByteBufferReset(&buf);
+					}
+				}
+				/* Update written position */
+				output_written_lsn = Max(walEnd, output_written_lsn);
+			}
 
-		/* No data, move to next loop */
-		if (rc == 0)
-		{
-			/*
-			 * In async mode, and no data available. We block on reading but
-			 * not more than the specified timeout, so that we can send a
-			 * response back to the client.
-			 */
-			int			r;
-			fd_set	  input_mask;
-			int64	   message_target = 0;
-			int64	   fsync_target = 0;
-			struct timeval timeout;
-			struct timeval *timeoutptr = NULL;
-			int64	   targettime;
-			long		secs;
-			int		 usecs;
-			int64		now;
-
-			FD_ZERO(&input_mask);
-			FD_SET(PQsocket(conn), &input_mask);
-
-			/* Now compute when to wakeup. */
-			targettime = message_target;
-
-			if (fsync_target > 0 && fsync_target < targettime)
-				targettime = fsync_target;
-			now = feGetCurrentTimestamp();
-			feTimestampDifference(now,
-								  targettime,
-								  &secs,
-								  &usecs);
-			if (secs <= 0)
-				timeout.tv_sec = 1; /* Always sleep at least 1 sec */
-			else
-				timeout.tv_sec = secs;
-			timeout.tv_usec = usecs;
-			timeoutptr = &timeout;
-
-			r = select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr);
-			if (r == 0 || (r < 0 && errno == EINTR))
+			/* No data, move to next loop */
+			if (rc == 0)
 			{
 				/*
-				 * Got a timeout or signal. Continue the loop and either
-				 * deliver a status packet to the server or just go back into
-				 * blocking.
+				 * In async mode, and no data available. We block on reading but
+				 * not more than the specified timeout, so that we can send a
+				 * response back to the client.
 				 */
+				int			r;
+				fd_set	  input_mask;
+				int64	   message_target = 0;
+				int64	   fsync_target = 0;
+				struct timeval timeout;
+				struct timeval *timeoutptr = NULL;
+				int64	   targettime;
+				long		secs;
+				int		 usecs;
+				int64		now;
+
+				FD_ZERO(&input_mask);
+				FD_SET(PQsocket(conn), &input_mask);
+
+				/* Now compute when to wakeup. */
+				targettime = message_target;
+
+				if (fsync_target > 0 && fsync_target < targettime)
+					targettime = fsync_target;
+				now = feGetCurrentTimestamp();
+				feTimestampDifference(now,
+									  targettime,
+									  &secs,
+									  &usecs);
+				if (secs <= 0)
+					timeout.tv_sec = 1; /* Always sleep at least 1 sec */
+				else
+					timeout.tv_sec = secs;
+				timeout.tv_usec = usecs;
+				timeoutptr = &timeout;
+
+				r = select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr);
+				if (r == 0 || (r < 0 && errno == EINTR))
+				{
+					/*
+					 * Got a timeout or signal. Continue the loop and either
+					 * deliver a status packet to the server or just go back into
+					 * blocking.
+					 */
+					continue;
+				}
+				else if (r < 0)
+				{
+					ereport(LOG, (errmsg("%s: Incorrect status received.",
+										 worker_proc)));
+					
+					goto OnError;
+				}
+
+				/* Else there is actually data on the socket */
+				if (PQconsumeInput(conn) == 0)
+				{
+					ereport(LOG, (errmsg("%s: Data remaining on the socket.",
+										 worker_proc)));
+					goto OnError;
+				}
 				continue;
 			}
-			else if (r < 0)
+
+			/* End of copy stream */
+			if (rc == -1)
 			{
-				ereport(LOG, (errmsg("%s: Incorrect status received... Leaving.",
+				ereport(LOG, (errmsg("%s: COPY Stream has abruptly ended...",
 									 worker_proc)));
-				/* MtmOnNodeDisconnect(nodeId); */
-				proc_exit(1);
+				break;
 			}
 
-			/* Else there is actually data on the socket */
-			if (PQconsumeInput(conn) == 0)
+			/* Failure when reading copy stream, leave */
+			if (rc == -2)
 			{
-				ereport(LOG, (errmsg("%s: Data remaining on the socket... Leaving.",
+				ereport(LOG, (errmsg("%s: Failure while receiving changes...",
 									 worker_proc)));
-				/* MtmOnNodeDisconnect(nodeId); */
-				proc_exit(1);
+				goto OnError;
 			}
-			continue;
 		}
-
-		/* End of copy stream */
-		if (rc == -1)
-		{
-			ereport(LOG, (errmsg("%s: COPY Stream has abruptly ended...",
-								 worker_proc)));
-			break;
-		}
-
-		/* Failure when reading copy stream, leave */
-		if (rc == -2)
-		{
-			ereport(LOG, (errmsg("%s: Failure while receiving changes...",
-								 worker_proc)));
-			/* MtmOnNodeDisconnect(nodeId); */
-			proc_exit(1);
-		}
+	  OnError:
+		PQfinish(conn);
+		MtmSleep(RECEIVER_SUSPEND_TIMEOUT);		
 	}
-
     ByteBufferFree(&buf);
-	/* No problems, so clean exit */
-	proc_exit(0);
+	/* Restart this bgworker */
+	proc_exit(1);
 }
 
 void MtmStartReceiver(int nodeId, bool dynamic)

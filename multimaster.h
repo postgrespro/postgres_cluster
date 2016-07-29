@@ -119,7 +119,7 @@ typedef enum
 {
 	SLOT_CREATE_NEW,   /* create new slot (drop existed) */
 	SLOT_OPEN_EXISTED, /* open existed slot */
-	SLOT_OPEN_ALWAYS,  /* open existed slot or create new if noty exists */
+	SLOT_OPEN_ALWAYS,  /* open existed slot or create new if not exists */
 } MtmSlotMode;
 
 typedef struct
@@ -279,7 +279,6 @@ extern void  MtmUpdateLsnMapping(int nodeId, XLogRecPtr endLsn);
 extern XLogRecPtr MtmGetFlushPosition(int nodeId);
 extern void MtmWatchdog(void);
 extern void MtmCheckHeartbeat(void);
-extern void MtmRollbackAllPreparedTransactions(void);
 
 
 

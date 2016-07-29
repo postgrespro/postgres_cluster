@@ -582,7 +582,7 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
 			MTM_LOG2("%ld: PGLOGICAL_ABORT_PREPARED commit: gid=%s",  MtmGetSystemTime(), gid);
-			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED) ==TRANSACTION_STATUS_UNKNOWN) { 
+			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED) == TRANSACTION_STATUS_UNKNOWN) { 
 				MTM_LOG1("%ld: PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", MtmGetSystemTime(), gid);
 				StartTransactionCommand();
 				MtmSetCurrentTransactionGID(gid);
