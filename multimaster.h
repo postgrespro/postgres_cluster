@@ -277,7 +277,7 @@ extern void  MtmMakeTableLocal(char* schema, char* name);
 extern void  MtmHandleApplyError(void);
 extern void  MtmUpdateLsnMapping(int nodeId, XLogRecPtr endLsn);
 extern XLogRecPtr MtmGetFlushPosition(int nodeId);
-extern void MtmWatchdog(void);
+extern bool MtmWatchdog(timestamp_t now);
 extern void MtmCheckHeartbeat(void);
 
 

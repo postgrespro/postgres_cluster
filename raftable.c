@@ -19,12 +19,18 @@ void* RaftableGet(char const* key, size_t* size, RaftableTimestamp* ts, bool now
 void RaftableSet(char const* key, void const* value, size_t size, bool nowait)
 {
 	if (MtmUseRaftable) {
+		timestamp_t start, stop;
+		start = MtmGetSystemTime();
 		if (nowait) {
 			raftable_set(key, value, size, 0);
 		} else { 
 			while (!raftable_set(key, value, size, MtmHeartbeatSendTimeout)) { 
 				MtmCheckHeartbeat();
 			}
+		}
+		stop = MtmGetSystemTime();
+		if (stop > start + MSEC_TO_USEC(MtmHeartbeatSendTimeout)) { 
+			MTM_LOG1("Raftable set nowait=%d takes %ld microseconds", nowait, stop - start);
 		}
 	}		
 }

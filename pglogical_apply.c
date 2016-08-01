@@ -538,11 +538,11 @@ process_remote_commit(StringInfo in)
 			Assert(IsTransactionState() && TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
 			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_IN_PROGRESS) == TRANSACTION_STATUS_ABORTED) { 
-				MTM_LOG1("%ld: avoid prepare of previously aborted global transaction %s", MtmGetSystemTime(), gid);	
+				MTM_LOG1("Avoid prepare of previously aborted global transaction %s", gid);	
 				AbortCurrentTransaction();
 			} else { 				
 				/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
-				MTM_LOG2("%ld: PGLOGICAL_PREPARE commit: gid=%s", MtmGetSystemTime(), gid);
+				MTM_LOG2("PGLOGICAL_PREPARE commit: gid=%s", gid);
 				BeginTransactionBlock();
 				CommitTransactionCommand();
 				StartTransactionCommand();
@@ -554,7 +554,7 @@ process_remote_commit(StringInfo in)
 				CommitTransactionCommand();
 
 				if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_UNKNOWN) == TRANSACTION_STATUS_ABORTED) { 
-					MTM_LOG1("%ld: perform delayed rollback of prepared global transaction %s", MtmGetSystemTime(), gid);	
+					MTM_LOG1("Perform delayed rollback of prepared global transaction %s", gid);	
 					StartTransactionCommand();
 					MtmSetCurrentTransactionGID(gid);
 					FinishPreparedTransaction(gid, false);
@@ -568,7 +568,7 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			csn = pq_getmsgint64(in); 
 			gid = pq_getmsgstring(in);
-			MTM_LOG2("%ld: PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s", MtmGetSystemTime(), csn, gid);
+			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s", csn, gid);
 			StartTransactionCommand();
 			MtmBeginSession();
 			MtmSetCurrentTransactionCSN(csn);
@@ -581,9 +581,9 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
-			MTM_LOG2("%ld: PGLOGICAL_ABORT_PREPARED commit: gid=%s",  MtmGetSystemTime(), gid);
+			MTM_LOG2("PGLOGICAL_ABORT_PREPARED commit: gid=%s",  gid);
 			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED) == TRANSACTION_STATUS_UNKNOWN) { 
-				MTM_LOG1("%ld: PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", MtmGetSystemTime(), gid);
+				MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
 				StartTransactionCommand();
 				MtmSetCurrentTransactionGID(gid);
 				FinishPreparedTransaction(gid, false);
