@@ -1169,6 +1169,7 @@ trailing_pad(int *padlen, PrintfTarget *target)
 int pg_fputs(const char *s, FILE *stream)
 {
 	PrintfTarget target;
+
 	if (stream == NULL)
 	{
 		errno = EINVAL;
@@ -1176,7 +1177,7 @@ int pg_fputs(const char *s, FILE *stream)
 	}
 	target.bufstart = s;
 	target.nchars =  0;
-	target.bufptr= s+strlen(s);
+	target.bufptr= s + strlen(s);
 	target.bufend=NULL;
 	target.failed=false;
 	target.stream = stream;
@@ -1187,11 +1188,11 @@ int pg_fputs(const char *s, FILE *stream)
 /* replacement to puts function which uses flushBuffer */
 int pg_puts(const char *tmps)
 {
+	PrintfTarget target;
 	char *s = NULL;
 
 	s = (char *)malloc(strlen(tmps) + 1);
 	sprintf(s, "%s\n", tmps);
-	PrintfTarget target;
 	target.bufstart = s;
 	target.nchars = 0;
 	target.bufptr = s + strlen(s);
