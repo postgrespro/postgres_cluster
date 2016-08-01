@@ -2273,7 +2273,7 @@ FinishAllPreparedTransactions(bool isCommit)
 {
 	int i, count = 0;
 
-	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	for (i = TwoPhaseState->numPrepXacts; --i >= 0;)
 	{
 		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
 

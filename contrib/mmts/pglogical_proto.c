@@ -161,7 +161,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 	}
     pq_sendbyte(out, 'C');		/* sending COMMIT */
 
-	MTM_LOG2("%ld: PGLOGICAL_SEND commit: event=%d, gid=%s, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", MtmGetSystemTime(), flags, txn->gid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
+	MTM_LOG2("PGLOGICAL_SEND commit: event=%d, gid=%s, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", flags, txn->gid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
 
     /* send the flags field */
     pq_sendbyte(out, flags);

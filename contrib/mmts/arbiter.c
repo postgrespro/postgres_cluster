@@ -59,7 +59,7 @@
 
 #ifndef USE_EPOLL
 #ifdef __linux__
-#define USE_EPOLL 1
+#define USE_EPOLL 0
 #else
 #define USE_EPOLL 0
 #endif
@@ -105,7 +105,7 @@ typedef struct
 static int*        sockets;
 static int         gateway;
 static bool        send_heartbeat;
-static timestamp_t last_sent_hearbeat;
+static timestamp_t last_sent_heartbeat;
 static TimeoutId   heartbeat_timer;
 static int         busy_socket;
 
@@ -266,17 +266,20 @@ static bool MtmWriteSocket(int sd, void const* buf, int size)
 
 static int MtmReadSocket(int sd, void* buf, int buf_size)
 {
-	int rc = MtmWaitSocket(sd, false, MtmHeartbeatSendTimeout);
-	if (rc == 1) { 
-		int rc = recv(sd, buf, buf_size, 0);
-		if (rc <= 0) { 
-			Assert(errno != EINTR); /* should not happen in non-blocking call */
-			return -1;
+	int rc = recv(sd, buf, buf_size, 0);
+	if (rc < 0 && errno == EAGAIN) { 
+		rc = MtmWaitSocket(sd, false, MtmHeartbeatSendTimeout);
+		if (rc == 1) { 
+			rc = recv(sd, buf, buf_size, 0);
+			if (rc < 0) { 
+				Assert(errno != EINTR); /* should not happen in non-blocking call */
+				return -1;
+			}
+		} else { 
+			return 0;
 		}
-		return rc;
-	} else { 
-		return 0;
 	}
+	return rc;
 }
 
 
@@ -343,7 +346,7 @@ static void MtmCheckResponse(MtmArbiterMessage* resp)
 
 static void MtmScheduleHeartbeat()
 {
-//	Assert(!last_sent_hearbeat || last_sent_hearbeat + MSEC_TO_USEC(MtmHeartbeatRecvTimeout) >= MtmGetSystemTime());
+//	Assert(!last_sent_heartbeat || last_sent_heartbeat + MSEC_TO_USEC(MtmHeartbeatRecvTimeout) >= MtmGetSystemTime());
 	enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 	send_heartbeat = true;
 	PGSemaphoreUnlock(&Mtm->votingSemaphore);
@@ -353,11 +356,16 @@ static void MtmSendHeartbeat()
 {
 	int i;
 	MtmArbiterMessage msg;
+	timestamp_t now = MtmGetSystemTime();
 	msg.code = MSG_HEARTBEAT;
 	msg.disabledNodeMask = Mtm->disabledNodeMask;
 	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
 	msg.node = MtmNodeId;
-	last_sent_hearbeat = MtmGetSystemTime();
+	msg.csn = now;
+	if (last_sent_heartbeat + MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2 < now) { 
+		MTM_LOG1("More than %ld microseconds since last heartbeat", now - last_sent_heartbeat);
+	}
+	last_sent_heartbeat = now;
 
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
@@ -366,6 +374,8 @@ static void MtmSendHeartbeat()
 		{ 
 			if (!MtmSendToNode(i, &msg, sizeof(msg))) { 
 				elog(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
+			} else {
+				MTM_LOG1("Send heartbeat to node %d with timestamp %ld", i+1, now);    
 			}
 		}
 	}
@@ -558,7 +568,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 static int MtmReadFromNode(int node, void* buf, int buf_size)
 {
 	int rc = MtmReadSocket(sockets[node], buf, buf_size);
-	if (rc <= 0) { 
+	if (rc < 0) { 
 		elog(WARNING, "Arbiter failed to read from node=%d, rc=%d, errno=%d", node+1, rc, errno);
 		MtmDisconnect(node);
 	}
@@ -812,6 +822,8 @@ static void MtmTransReceiver(Datum arg)
 	}
 
 	while (!stop) {
+		timestamp_t startPolling = MtmGetSystemTime();
+		timestamp_t stopPolling;
 #if USE_EPOLL
         n = epoll_wait(epollfd, events, nNodes, MtmHeartbeatRecvTimeout);
 		if (n < 0) { 
@@ -820,13 +832,17 @@ static void MtmTransReceiver(Datum arg)
 			}
 			elog(ERROR, "Arbiter failed to poll sockets: %d", errno);
 		}
+		stopPolling = MtmGetSystemTime();
+
 		for (j = 0; j < n; j++) {
 			i = events[j].data.u32;
 			if (events[j].events & EPOLLERR) {
 				elog(WARNING, "Arbiter lost connection with node %d", i+1);
 				MtmDisconnect(i);
 			} 
-			else if (events[j].events & EPOLLIN)  
+		}
+		for (j = 0; j < n; j++) {
+			if (events[j].events & EPOLLIN)  
 #else
         fd_set events;
 		do { 
@@ -842,6 +858,8 @@ static void MtmTransReceiver(Datum arg)
 		if (n < 0) {
 			elog(ERROR, "Arbiter failed to select sockets: %d", errno);
 		}
+		stopPolling = MtmGetSystemTime();
+
 		for (i = 0; i < nNodes; i++) { 
 			if (sockets[i] >= 0 && FD_ISSET(sockets[i], &events)) 
 #endif
@@ -871,7 +889,8 @@ static void MtmTransReceiver(Datum arg)
 					Mtm->nodes[msg->node-1].lastHeartbeat = MtmGetSystemTime();
 
 					if (msg->code == MSG_HEARTBEAT) {
-						MTM_LOG3("Receive HEARTBEAT from node %d at %ld", msg->node, USEC_TO_MSEC(MtmGetSystemTime())); 
+						MTM_LOG1("Receive HEARTBEAT from node %d with timestamp %ld delay %ld", 
+								 msg->node, msg->csn, USEC_TO_MSEC(MtmGetSystemTime() - msg->csn)); 
 						continue;
 					}
 					if (BIT_CHECK(msg->disabledNodeMask, msg->node-1)) {
@@ -985,7 +1004,14 @@ static void MtmTransReceiver(Datum arg)
 		}
 		now = MtmGetSystemTime();
 		if (now > lastHeartbeatCheck + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) { 
-			MtmWatchdog();
+			if (!MtmWatchdog(stopPolling)) { 
+				for (i = 0; i < nNodes; i++) { 
+					if (Mtm->nodes[i].lastHeartbeat != 0 && sockets[i] >= 0) {
+						MTM_LOG1("Last hearbeat from node %d received %ld microseconds ago", i+1, now - Mtm->nodes[i].lastHeartbeat);
+					}
+				}
+				MTM_LOG1("epoll started %ld and finished %ld microseconds ago", now - startPolling, now - stopPolling);
+			}
 			lastHeartbeatCheck = now;
 		}
 		if (n == 0 && Mtm->disabledNodeMask != 0) { 

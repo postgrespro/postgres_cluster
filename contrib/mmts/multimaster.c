@@ -243,7 +243,13 @@ void MtmLock(LWLockMode mode)
 #ifdef USE_SPINLOCK
 	SpinLockAcquire(&Mtm->spinlock);
 #else
+	timestamp_t start, stop;
+	start = MtmGetSystemTime();
 	LWLockAcquire((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID], mode);
+	stop = MtmGetSystemTime();
+	if (stop > start + MSEC_TO_USEC(MtmHeartbeatSendTimeout)) { 
+		MTM_LOG1("%d: obtaining %s lock takes %ld microseconds", MyProcPid, (mode == LW_EXCLUSIVE ? "exclusive" : "shared"), stop - start);
+	}	
 #endif
 	Mtm->lastLockHolder = MyProcPid;
 }
@@ -814,10 +820,10 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 /*
  * Check heartbeats
  */
-void MtmWatchdog(void)
+bool MtmWatchdog(timestamp_t now)
 {
 	int i, n = Mtm->nAllNodes;
-	timestamp_t now = MtmGetSystemTime();
+	bool allAlive = true;
 	for (i = 0; i < n; i++) { 
 		if (i+1 != MtmNodeId && !BIT_CHECK(Mtm->disabledNodeMask, i)) {
 			if (Mtm->nodes[i].lastHeartbeat != 0
@@ -826,9 +832,11 @@ void MtmWatchdog(void)
 				elog(WARNING, "Heartbeat is not received from node %d during %d msec", 
 					 i+1, (int)USEC_TO_MSEC(now - Mtm->nodes[i].lastHeartbeat));
 				MtmOnNodeDisconnect(i+1);				
+				allAlive = false;
 			}
 		}
 	}
+	return allAlive;
 }
 
 
@@ -921,7 +929,7 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 		MtmLock(LW_EXCLUSIVE);
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
 		Assert(tm != NULL && tm->state != NULL);
-		MTM_LOG1("%ld: Abort prepared transaction %d with gid='%s'", MtmGetSystemTime(), x->xid, x->gid);
+		MTM_LOG1("Abort prepared transaction %d with gid='%s'", x->xid, x->gid);
 		MtmAbortTransaction(tm->state);
 		MtmUnlock();
 		x->status = TRANSACTION_STATUS_ABORTED;
@@ -1179,6 +1187,7 @@ static void MtmDisableNode(int nodeId)
 static void MtmEnableNode(int nodeId)
 { 
 	BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
+	BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
 	Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 	Mtm->nLiveNodes += 1;			
@@ -1564,6 +1573,7 @@ void MtmOnNodeConnect(int nodeId)
 {
 	MtmLock(LW_EXCLUSIVE);	
 	BIT_CLEAR(Mtm->connectivityMask, nodeId-1);
+	BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
 	MtmUnlock();
 
 	MTM_LOG1("Reconnect node %d", nodeId);
@@ -1876,7 +1886,7 @@ _PG_init(void)
 	DefineCustomIntVariable(
 		"multimaster.heartbeat_send_timeout", 
 		"Timeout in milliseconds of sending heartbeat messages",
-		"Period of broadcasting heartbeat messages by abiter to all nodes",
+		"Period of broadcasting heartbeat messages by arbiter to all nodes",
 		&MtmHeartbeatSendTimeout,
 		1000,
 		1,
@@ -2281,6 +2291,7 @@ MtmSlotMode MtmReceiverSlotMode(int nodeId)
 				/* Choose for recovery first available slot */
 				MTM_LOG1("Start recovery from node %d", nodeId);
 				Mtm->recoverySlot = nodeId;
+				FinishAllPreparedTransactions(false);
 				return SLOT_OPEN_EXISTED;
 			}
 		}
