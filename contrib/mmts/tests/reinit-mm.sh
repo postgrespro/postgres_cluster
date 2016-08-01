@@ -43,7 +43,7 @@ do
     pg_ctl -w -D node$i -l node$i.log start
 done
 
-# sleep 5
-# psql -c "create extension multimaster;" postgres
+sleep 10
+psql postgres < ../../../regress.sql
 
 echo Done

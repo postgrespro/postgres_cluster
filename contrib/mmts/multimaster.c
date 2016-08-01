@@ -56,6 +56,8 @@
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "pglogical_output/hooks.h"
+#include "parser/analyze.h"
+#include "parser/parse_relation.h"
 
 #include "multimaster.h"
 #include "ddd.h"
@@ -148,6 +150,7 @@ static void MtmShmemStartup(void);
 static BgwPool* MtmPoolConstructor(void);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
+static bool MtmProcessDDLCommand(char const* queryString);
 
 MtmState* Mtm;
 
@@ -176,7 +179,8 @@ static TransactionManager MtmTM = {
 	MtmGetTransactionStateSize,
 	MtmSerializeTransactionState,
 	MtmDeserializeTransactionState,
-	MtmInitializeSequence
+	// MtmInitializeSequence
+	PgInitializeSequence
 };
 
 char const* const MtmNodeStatusMnem[] = 
@@ -208,6 +212,8 @@ int   MtmHeartbeatRecvTimeout;
 bool  MtmUseRaftable;
 bool  MtmUseDtm;
 
+// static int   reset_wrokers = 0;
+
 static char* MtmConnStrs;
 static int   MtmQueueSize;
 static int   MtmWorkers;
@@ -229,8 +235,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag);
 
-static StringInfo	MtmGUCBuffer;
-static bool			MtmGUCBufferAllocated = false;
+// static StringInfo	MtmGUCBuffer;
+// static bool			MtmGUCBufferAllocated = false;
 
 /*
  * -------------------------------------------
@@ -615,7 +621,7 @@ MtmXactCallback(XactEvent event, void *arg)
 {
     switch (event) 
     {
-	  case XACT_EVENT_START: 
+	  case XACT_EVENT_START:
 	    MtmBeginTransaction(&MtmTx);
         break;
 	  case XACT_EVENT_PRE_PREPARE:
@@ -1150,8 +1156,8 @@ void MtmHandleApplyError(void)
 		case ERRCODE_OUT_OF_MEMORY:
 			elog(WARNING, "Node is excluded from cluster because of non-recoverable error %d, %s, pid=%u",
 				edata->sqlerrcode, edata->message, getpid());
-			MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
-			kill(PostmasterPid, SIGQUIT);
+			// MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
+			// kill(PostmasterPid, SIGQUIT);
 			break;
 	}
 	FreeErrorData(edata);
@@ -2913,13 +2919,13 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	{ 
 		if (conns[i]) 
 		{
-			if (MtmGUCBufferAllocated && !MtmRunUtilityStmt(conns[i], MtmGUCBuffer->data, &utility_errmsg) && !ignoreError)
-			{
-				errorMsg = "Failed to set GUC variables at node %d";
-				elog(WARNING, "%s", utility_errmsg);
-				failedNode = i;
-				break;
-			}
+			// if (MtmGUCBufferAllocated && !MtmRunUtilityStmt(conns[i], MtmGUCBuffer->data, &utility_errmsg) && !ignoreError)
+			// {
+			// 	errorMsg = "Failed to set GUC variables at node %d";
+			// 	elog(WARNING, "%s", utility_errmsg);
+			// 	failedNode = i;
+			// 	break;
+			// }
 			if (!MtmRunUtilityStmt(conns[i], "BEGIN TRANSACTION", &utility_errmsg) && !ignoreError)
 			{
 				errorMsg = "Failed to start transaction at node %d";
@@ -2983,7 +2989,7 @@ static bool MtmProcessDDLCommand(char const* queryString)
 	bool		nulls[Natts_mtm_ddl_log];
 	TimestampTz ts = GetCurrentTimestamp();
 
-	rv = makeRangeVar(MULTIMASTER_SCHEMA_NAME, MULTIMASTER_DDL_TABLE, -1);
+	rv = makeRangeVar("public", MULTIMASTER_DDL_TABLE, -1);
 	rel = heap_openrv_extended(rv, RowExclusiveLock, true);
 
 	if (rel == NULL) {
@@ -3120,18 +3126,18 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			break;
 		case T_DiscardStmt:
 			{
-				//DiscardStmt *stmt = (DiscardStmt *) parsetree;
-				//skipCommand = stmt->target == DISCARD_TEMP;
+				DiscardStmt *stmt = (DiscardStmt *) parsetree;
+				skipCommand = stmt->target == DISCARD_TEMP;
 
-				skipCommand = true;
+				// skipCommand = true;
 
-				if (MtmGUCBufferAllocated)
-				{
-					// XXX: move allocation somewhere to backend startup and check
-					// where buffer is empty in send routines.
-					MtmGUCBufferAllocated = false;
-					pfree(MtmGUCBuffer);
-				}
+				// if (MtmGUCBufferAllocated)
+				// {
+				// 	// XXX: move allocation somewhere to backend startup and check
+				// 	// where buffer is empty in send routines.
+				// 	MtmGUCBufferAllocated = false;
+				// 	pfree(MtmGUCBuffer);
+				// }
 
 			}
 			break;
@@ -3143,22 +3149,31 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 
 				/* Prevent SET TRANSACTION from replication */
 				if (stmt->kind == VAR_SET_MULTI)
-					break;
+					// break;
+					skipCommand = true;
 
-				if (!MtmGUCBufferAllocated)
-				{
-					MemoryContext oldcontext;
+				// if (!MtmGUCBufferAllocated)
+				// {
+				// 	MemoryContext oldcontext;
 
-					oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-					MtmGUCBuffer = makeStringInfo();
-					MemoryContextSwitchTo(oldcontext);
-					MtmGUCBufferAllocated = true;
-				}
+				// 	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+				// 	MtmGUCBuffer = makeStringInfo();
+				// 	MemoryContextSwitchTo(oldcontext);
+				// 	MtmGUCBufferAllocated = true;
+				// }
 
-				appendStringInfoString(MtmGUCBuffer, queryString);
+				// appendStringInfoString(MtmGUCBuffer, queryString);
 
 				// sometimes there is no ';' char at the end.
-				appendStringInfoString(MtmGUCBuffer, ";");
+				// appendStringInfoString(MtmGUCBuffer, ";");
+			}
+			break;
+		case T_CreateTableAsStmt:
+			{
+				/* Do not replicate temp tables */
+				CreateTableAsStmt *stmt = (CreateTableAsStmt *) parsetree;
+				skipCommand = stmt->into->rel->relpersistence == RELPERSISTENCE_TEMP ||
+					(stmt->into->rel->schemaname && strcmp(stmt->into->rel->schemaname, "pg_temp") == 0);
 			}
 			break;
 		case T_CreateStmt:
@@ -3167,6 +3182,18 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				CreateStmt *stmt = (CreateStmt *) parsetree;
 				skipCommand = stmt->relation->relpersistence == RELPERSISTENCE_TEMP ||
 					(stmt->relation->schemaname && strcmp(stmt->relation->schemaname, "pg_temp") == 0);
+			}
+			break;
+		case T_ViewStmt:
+			{
+				ViewStmt *stmt = (ViewStmt *) parsetree;
+				Query	   *viewParse;
+
+				viewParse = parse_analyze((Node *) copyObject(stmt->query),
+										queryString, NULL, 0);
+				skipCommand = isQueryUsingTempRelation(viewParse);
+				// ||
+					// (stmt->relation->schemaname && strcmp(stmt->relation->schemaname, "pg_temp") == 0);
 			}
 			break;
 		case T_IndexStmt:
@@ -3205,6 +3232,19 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 						Relation	rel = heap_open(relid, ShareLock);
 						skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
 						heap_close(rel, ShareLock);
+					}
+				}
+				else if (stmt->removeType == OBJECT_INDEX)
+				{
+					RangeVar   *rv = makeRangeVarFromNameList(
+										(List *) lfirst(list_head(stmt->objects)));
+					Oid			relid = RelnameGetRelid(rv->relname);
+
+					if (OidIsValid(relid))
+					{
+						Relation	irel = index_open(relid, ShareLock);
+						skipCommand = irel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
+						index_close(irel, ShareLock);
 					}
 				}
 			}
