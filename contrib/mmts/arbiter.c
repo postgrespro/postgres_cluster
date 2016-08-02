@@ -247,14 +247,13 @@ static bool MtmWriteSocket(int sd, void const* buf, int size)
     while (size != 0) {
 		int rc = MtmWaitSocket(sd, true, MtmHeartbeatSendTimeout);
 		if (rc == 1) { 
-			int n = send(sd, src, size, 0);
-			if (n < 0) {
-				Assert(errno != EINTR); /* should not happen in non-blocking call */
+			while ((rc = send(sd, src, size, 0)) < 0 && errno == EINTR);			
+			if (rc < 0) {
 				busy_socket = -1;
 				return false;
 			}
-			size -= n;
-			src += n;
+			size -= rc;
+			src += rc;
 		} else if (rc < 0) { 
 			busy_socket = -1;
 			return false;
@@ -266,15 +265,12 @@ static bool MtmWriteSocket(int sd, void const* buf, int size)
 
 static int MtmReadSocket(int sd, void* buf, int buf_size)
 {
-	int rc = recv(sd, buf, buf_size, 0);
+	int rc;
+	while ((rc = recv(sd, buf, buf_size, 0)) < 0 && errno == EINTR);			
 	if (rc < 0 && errno == EAGAIN) { 
 		rc = MtmWaitSocket(sd, false, MtmHeartbeatSendTimeout);
 		if (rc == 1) { 
-			rc = recv(sd, buf, buf_size, 0);
-			if (rc < 0) { 
-				Assert(errno != EINTR); /* should not happen in non-blocking call */
-				return -1;
-			}
+			while ((rc = recv(sd, buf, buf_size, 0)) < 0 && errno == EINTR);			
 		} else { 
 			return 0;
 		}
@@ -370,12 +366,13 @@ static void MtmSendHeartbeat()
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
 		if (i+1 != MtmNodeId && sockets[i] != busy_socket 
-			&& ((sockets[i] >= 0 && !BIT_CHECK(Mtm->disabledNodeMask, i)) || BIT_CHECK(Mtm->reconnectMask, i)))
+			&& (Mtm->status != MTM_ONLINE 
+				|| (sockets[i] >= 0 && !BIT_CHECK(Mtm->disabledNodeMask, i) && !BIT_CHECK(Mtm->reconnectMask, i))))
 		{ 
 			if (!MtmSendToNode(i, &msg, sizeof(msg))) { 
 				elog(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
 			} else {
-				MTM_LOG1("Send heartbeat to node %d with timestamp %ld", i+1, now);    
+				MTM_LOG2("Send heartbeat to node %d with timestamp %ld", i+1, now);    
 			}
 		}
 	}
@@ -593,8 +590,9 @@ static void MtmAcceptOneConnection()
 		} else if (req.hdr.code != MSG_HANDSHAKE && req.hdr.dxid != HANDSHAKE_MAGIC) { 
 			elog(WARNING, "Arbiter get unexpected handshake message %d", req.hdr.code);
 			close(fd);
-		} else{ 			
-			Assert(req.hdr.node > 0 && req.hdr.node <= Mtm->nAllNodes && req.hdr.node != MtmNodeId);
+		} else { 
+			int node = req.hdr.node-1;
+			Assert(node >= 0 && node < Mtm->nAllNodes && node+1 != MtmNodeId);
 
 			MtmLock(LW_EXCLUSIVE);
 			MtmCheckResponse(&req.hdr);
@@ -606,15 +604,18 @@ static void MtmAcceptOneConnection()
 			resp.sxid = ShmemVariableCache->nextXid;
 			resp.csn  = MtmGetCurrentTime();
 			resp.node = MtmNodeId;
-			MtmUpdateNodeConnectionInfo(&Mtm->nodes[req.hdr.node-1].con, req.connStr);
+			MtmUpdateNodeConnectionInfo(&Mtm->nodes[node].con, req.connStr);
 			if (!MtmWriteSocket(fd, &resp, sizeof resp)) { 
-				elog(WARNING, "Arbiter failed to write response for handshake message to node %d", resp.node);
+				elog(WARNING, "Arbiter failed to write response for handshake message to node %d", node+1);
 				close(fd);
 			} else { 
-				MTM_LOG1("Arbiter established connection with node %d", req.hdr.node); 
-				MtmRegisterSocket(fd, req.hdr.node-1);
-				sockets[req.hdr.node-1] = fd;
-				MtmOnNodeConnect(req.hdr.node);
+				MTM_LOG1("Arbiter established connection with node %d", node+1); 
+				if (sockets[node] >= 0) { 
+					MtmUnregisterSocket(sockets[node]);
+				}
+				sockets[node] = fd;
+				MtmRegisterSocket(fd, node);
+				MtmOnNodeConnect(node+1);
 			}
 		}
 	}
@@ -889,7 +890,7 @@ static void MtmTransReceiver(Datum arg)
 					Mtm->nodes[msg->node-1].lastHeartbeat = MtmGetSystemTime();
 
 					if (msg->code == MSG_HEARTBEAT) {
-						MTM_LOG1("Receive HEARTBEAT from node %d with timestamp %ld delay %ld", 
+						MTM_LOG2("Receive HEARTBEAT from node %d with timestamp %ld delay %ld", 
 								 msg->node, msg->csn, USEC_TO_MSEC(MtmGetSystemTime() - msg->csn)); 
 						continue;
 					}
@@ -1002,21 +1003,23 @@ static void MtmTransReceiver(Datum arg)
 				}
 			}
 		}
-		now = MtmGetSystemTime();
-		if (now > lastHeartbeatCheck + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) { 
-			if (!MtmWatchdog(stopPolling)) { 
-				for (i = 0; i < nNodes; i++) { 
-					if (Mtm->nodes[i].lastHeartbeat != 0 && sockets[i] >= 0) {
-						MTM_LOG1("Last hearbeat from node %d received %ld microseconds ago", i+1, now - Mtm->nodes[i].lastHeartbeat);
+		if (Mtm->status != MTM_RECOVERY) { 
+			now = MtmGetSystemTime();
+			if (now > lastHeartbeatCheck + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) { 
+				if (!MtmWatchdog(stopPolling)) { 
+					for (i = 0; i < nNodes; i++) { 
+						if (Mtm->nodes[i].lastHeartbeat != 0 && sockets[i] >= 0) {
+							MTM_LOG1("Last hearbeat from node %d received %ld microseconds ago", i+1, now - Mtm->nodes[i].lastHeartbeat);
+						}
 					}
+					MTM_LOG1("epoll started %ld and finished %ld microseconds ago", now - startPolling, now - stopPolling);
 				}
-				MTM_LOG1("epoll started %ld and finished %ld microseconds ago", now - startPolling, now - stopPolling);
+				lastHeartbeatCheck = now;
 			}
-			lastHeartbeatCheck = now;
-		}
-		if (n == 0 && Mtm->disabledNodeMask != 0) { 
-			/* If timeout is expired and there are disabled nodes, then recheck cluster's state */
-			MtmRefreshClusterStatus(false);
+			if (n == 0 && Mtm->disabledNodeMask != 0) { 
+				/* If timeout is expired and there are disabled nodes, then recheck cluster's state */
+				MtmRefreshClusterStatus(false);
+			}
 		}
 	}
 	proc_exit(1); /* force restart of this bgwroker */

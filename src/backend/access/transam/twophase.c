@@ -2279,10 +2279,12 @@ FinishAllPreparedTransactions(bool isCommit)
 
 		if (gxact->valid)
 		{
+			elog(LOG, "Finish prepared transaction %s", gxact->gid);
 			FinishPreparedTransaction(gxact->gid, isCommit);
 			count++;
 		}
 	}
+	elog(LOG, "Finish %d prepared transactions", count);
 
 	return count;
 }

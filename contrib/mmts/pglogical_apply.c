@@ -492,7 +492,7 @@ static void
 MtmEndSession(bool unlock)
 {
 	if (replorigin_session_origin != InvalidRepOriginId) { 
-		MTM_LOG3("%d: Begin reset replorigin session: %d", MyProcPid, replorigin_session_origin);
+		MTM_LOG2("%d: Begin reset replorigin session for node %d: %d, progress %lx", MyProcPid, MtmReplicationNodeId, replorigin_session_origin, replorigin_session_get_progress(false));
 		replorigin_session_origin = InvalidRepOriginId;
 		replorigin_session_reset();
 		if (unlock) { 
@@ -568,7 +568,7 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			csn = pq_getmsgint64(in); 
 			gid = pq_getmsgstring(in);
-			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s", csn, gid);
+			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s, lsn=%ld", csn, gid, end_lsn);
 			StartTransactionCommand();
 			MtmBeginSession();
 			MtmSetCurrentTransactionCSN(csn);
@@ -585,6 +585,7 @@ process_remote_commit(StringInfo in)
 			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED) == TRANSACTION_STATUS_UNKNOWN) { 
 				MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
 				StartTransactionCommand();
+				MtmBeginSession();
 				MtmSetCurrentTransactionGID(gid);
 				FinishPreparedTransaction(gid, false);
 				CommitTransactionCommand();
@@ -594,6 +595,12 @@ process_remote_commit(StringInfo in)
 		default:
 			Assert(false);
 	}
+#if 0 /* Do ont need to advance slot position here: it will be done by transaction commit */
+	if (replorigin_session_origin != InvalidRepOriginId) { 
+		replorigin_advance(replorigin_session_origin, end_lsn,
+						   XactLastCommitEnd, false, false);
+	}
+#endif
 	MtmEndSession(true);
 	MtmUpdateLsnMapping(MtmReplicationNodeId, end_lsn);
 	if (flags & PGLOGICAL_CAUGHT_UP) {
@@ -936,6 +943,11 @@ void MtmExecutor(int id, void* work, size_t size)
         while (true) { 
             char action = pq_getmsgbyte(&s);
             MTM_LOG3("%d: REMOTE process action %c", MyProcPid, action);
+#if 0
+			if (Mtm->status == MTM_RECOVERY) { 
+				MTM_LOG1("Replay action %c[%x]",   action, s.data[s.cursor]);
+			}
+#endif
             switch (action) {
                 /* BEGIN */
             case 'B':

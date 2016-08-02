@@ -737,7 +737,6 @@ MtmCreateTransState(MtmCurrentTrans* x)
 		/* I am coordinator of transaction */
 		ts->gtid.xid = x->xid;
 		ts->gtid.node = MtmNodeId;
-		//ts->gid[0] = '\0';
 		strcpy(ts->gid, x->gid);
 	}
 	return ts;
@@ -1181,8 +1180,11 @@ static void MtmDisableNode(int nodeId)
 	BIT_SET(Mtm->disabledNodeMask, nodeId-1);
 	Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
-	Mtm->nLiveNodes -= 1;			
-}
+	if (nodeId != MtmNodeId) { 
+		Mtm->nLiveNodes -= 1;
+	}
+	elog(WARNING, "Disable node %d at xlog position %lx", nodeId, GetXLogInsertRecPtr());
+} 
 	
 static void MtmEnableNode(int nodeId)
 { 
@@ -1190,17 +1192,21 @@ static void MtmEnableNode(int nodeId)
 	BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
 	Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
-	Mtm->nLiveNodes += 1;			
+	if (nodeId != MtmNodeId) { 
+		Mtm->nLiveNodes += 1;			
+	}
+	elog(WARNING, "Enable node %d at xlog position %lx", nodeId, GetXLogInsertRecPtr());
 }
 
 void MtmRecoveryCompleted(void)
 {
-	MTM_LOG1("Recovery of node %d is completed", MtmNodeId);
+	MTM_LOG1("Recovery of node %d is completed, disabled mask=%lx, reconnect mask=%ld, live nodes=%d", 
+			 MtmNodeId, Mtm->disabledNodeMask, Mtm->reconnectMask, Mtm->nLiveNodes);
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
-	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
 	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
-	/* Mode will be changed to online once all locagical reciever are connected */
+	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
+	/* Mode will be changed to online once all logical reciever are connected */
 	MtmSwitchClusterMode(MTM_CONNECTED);
 	MtmUnlock();
 }
@@ -1459,8 +1465,8 @@ bool MtmRefreshClusterStatus(bool nowait)
 				MtmEnableNode(i+1);
 			}
 		}
-#endif
 		Mtm->reconnectMask |= clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
+#endif
 
 		if (disabled) { 
 			MtmCheckQuorum();
@@ -1468,7 +1474,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 		/* Interrupt voting for active transaction and abort them */
 		for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
 			MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%d, gtid.xid=%d",
-					 ts->gid, ts->gtid.node, ts->xid, ts->status, ts->gtid.xid);
+					 ts->gid, ts->gtid.nхode, ts->xid, ts->status, ts->gtid.xid);
 			if (MtmIsCoordinator(ts)) { 
 				if (!ts->votingCompleted && disabled != 0 && ts->status != TRANSACTION_STATUS_ABORTED) {
 					MtmAbortTransaction(ts);
@@ -1723,6 +1729,7 @@ static void MtmInitialize()
 		Mtm->transCount = 0;
 		Mtm->gcCount = 0;
 		Mtm->nConfigChanges = 0;
+		Mtm->recoveryCount = 0;
 		Mtm->localTablesHashLoaded = false;
 		Mtm->inject2PCError = 0;
 		for (i = 0; i < MtmNodes; i++) {
@@ -2266,6 +2273,9 @@ void MtmReceiverStarted(int nodeId)
 	MtmLock(LW_EXCLUSIVE);
 	if (!BIT_CHECK(Mtm->pglogicalNodeMask, nodeId-1)) { 
 		BIT_SET(Mtm->pglogicalNodeMask, nodeId-1);
+		if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
+			MtmEnableNode(nodeId);
+		}
 		if (++Mtm->nReceivers == Mtm->nLiveNodes-1) {
 			if (Mtm->status == MTM_CONNECTED) { 
 				MtmSwitchClusterMode(MTM_ONLINE);
@@ -2291,6 +2301,9 @@ MtmSlotMode MtmReceiverSlotMode(int nodeId)
 				/* Choose for recovery first available slot */
 				MTM_LOG1("Start recovery from node %d", nodeId);
 				Mtm->recoverySlot = nodeId;
+				Mtm->nReceivers = 0;
+				Mtm->recoveryCount += 1;
+				Mtm->pglogicalNodeMask = 0;
 				FinishAllPreparedTransactions(false);
 				return SLOT_OPEN_EXISTED;
 			}
