@@ -174,7 +174,7 @@ typedef struct
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
-	nodemask_t connectivityMask;       /* bitmask of dicconnected nodes */
+	nodemask_t connectivityMask;       /* bitmask of disconnected nodes */
 	nodemask_t pglogicalNodeMask;      /* bitmask of started pglogic receivers */
 	nodemask_t walSenderLockerMask;    /* Mask of WAL-senders IDs locking the cluster */
 	nodemask_t nodeLockerMask;         /* Mask of node IDs which WAL-senders are locking the cluster */
@@ -188,6 +188,7 @@ typedef struct
 	int    nLockers;                   /* Number of lockers */
 	int    nActiveTransactions;        /* Nunmber of active 2PC transactions */
 	int    nConfigChanges;             /* Number of cluster configuration changes */
+	int    recoveryCount;              /* Number of completed recoveries */
 	int64  timeShift;                  /* Local time correction */
 	csn_t  csn;                        /* Last obtained timestamp: used to provide unique acending CSNs based on system time */
 	csn_t  lastCsn;                    /* CSN of last committed transaction */

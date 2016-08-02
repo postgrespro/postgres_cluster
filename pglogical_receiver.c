@@ -244,12 +244,15 @@ pglogical_receiver_main(Datum main_arg)
 	 */
 	while (!got_sigterm)
 	{ 
+		int  count;
+
 		/* 
 		 * Determine when and how we should open replication slot.
 		 * Druing recovery we need to open only one replication slot from which node should receive all transactions.
 		 * Slots at other nodes should be removed 
 		 */
 		mode = MtmReceiverSlotMode(nodeId);	
+		count = Mtm->recoveryCount;
 		
 		/* Establish connection to remote server */
 		conn = PQconnectdb(connString);
@@ -303,7 +306,7 @@ pglogical_receiver_main(Datum main_arg)
 			MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, nodeId);
 		} else { 
 			originStartPos = replorigin_get_progress(originId, false);
-			MTM_LOG1("Restart logical receiver at position %lx from node %d", originStartPos, nodeId);
+			MTM_LOG1("Restart logical receiver at position %lx with origin=%d from node %d", originStartPos, originId, nodeId);
 		}
 		CommitTransactionCommand();
 		
@@ -359,7 +362,12 @@ pglogical_receiver_main(Datum main_arg)
 			
 			if (Mtm->status == MTM_OFFLINE || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId)) 
 			{
-				ereport(LOG, (errmsg("%s: suspending WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
+				ereport(LOG, (errmsg("%s: restart WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
+				break;
+			}
+			if (count != Mtm->recoveryCount) { 
+				
+				ereport(LOG, (errmsg("%s: restart WAL receiver because node was recovered", worker_proc)));
 				break;
 			}
 			
