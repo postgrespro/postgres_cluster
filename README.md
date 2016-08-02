@@ -35,7 +35,7 @@ This is mirror of postgres repo with several changes to the core and few extra e
   * 'wal_level = logical' -- multimaster built on top of logical replication so this is mandatory.
   * 'max_wal_senders' -- this should be at least number of nodes - 1
   * 'max_replication_slots' -- this should be at least number of nodes - 1
-  * 'max_worker_processes' -- at least 2*N + P - 1, where N is number of nodes in cluster, P size of pool of workers(see below) (1 raftable, n-1 receiver, n-1 sender, mtm-sender, mtm-receiver, + number of pool worker).
+  * 'max_worker_processes' -- at least 2*N + 1 + P, where N is number of nodes in cluster, P size of pool of workers(see below) (1 raftable, n-1 receiver, n-1 sender, mtm-sender, mtm-receiver, + number of pool worker).
   * 'default_transaction_isolation = 'repeatable read'' -- multimaster isn't supporting default read commited level.
 1. Multimaster have following configuration parameters:
   * 'multimaster.conn_strings' -- connstrings for all nodes in cluster, separated by comma.
