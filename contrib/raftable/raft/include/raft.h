@@ -61,6 +61,11 @@ raft_t raft_init(raft_config_t *config);
 raft_bool_t raft_peer_up(raft_t r, int id, char *host, int port, raft_bool_t self);
 
 /*
+ * Returns the number of entried applied by the leader.
+ */
+int raft_progress(raft_t r);
+
+/*
  * Remove a previously added peer named 'id'.
  */
 raft_bool_t raft_peer_down(raft_t r, int id);

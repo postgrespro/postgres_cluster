@@ -1,7 +1,7 @@
 #override CC := clang
-override CFLAGS += -fpic -Wall -Wfatal-errors -O0 -g -pedantic -std=c99 -D_POSIX_C_SOURCE=200112L
+override CFLAGS += -fpic -Wall -Wfatal-errors -O0 -g -pedantic -std=c99 -D_POSIX_C_SOURCE=200112L -D_BSD_SOURCE
 override CPPFLAGS += -I. -Iinclude #-DDEBUG
-override HEART_LDFLAGS += -Llib -lraft -ljansson
+override SERVER_LDFLAGS += -Llib -lraft -ljansson
 
 AR = ar
 ARFLAGS = -cru
@@ -11,12 +11,15 @@ ARFLAGS = -cru
 lib/libraft.a: obj/raft.o obj/util.o | libdir objdir
 	$(AR) $(ARFLAGS) lib/libraft.a obj/raft.o obj/util.o
 
-all: lib/libraft.a bin/heart
+all: lib/libraft.a bin/server bin/client
 	@echo Done.
 
-bin/heart: obj/heart.o lib/libraft.a | bindir objdir
-	$(CC) -o bin/heart $(CFLAGS) $(CPPFLAGS) \
-		obj/heart.o $(HEART_LDFLAGS)
+bin/server: obj/server.o lib/libraft.a | bindir objdir
+	$(CC) -o bin/server $(CFLAGS) $(CPPFLAGS) \
+		obj/server.o $(SERVER_LDFLAGS)
+
+bin/client: obj/client.o obj/timeout.o | bindir objdir
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $^
 
 obj/%.o: src/%.c | objdir
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
