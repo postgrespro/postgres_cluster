@@ -25,6 +25,7 @@ cat >> "$PGDATA/postgresql.conf" <<-EOF
 	max_worker_processes = 100
 	wal_level = logical
 	fsync = off	
+    log_line_prefix = '%t: '
 	max_wal_senders = 10
 	wal_sender_timeout = 0
 	max_replication_slots = 10

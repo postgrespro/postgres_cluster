@@ -73,18 +73,30 @@ my %tests = (
 	world => genstr(3000),
 );
 
+my $retries = 100;
 my $timeout_ms = 1000;
 
-diag("settings hello");
-$able->psql('postgres', "select raftable('hello', '$tests{hello}', $timeout_ms);");
-diag("settings and");
-$baker->psql('postgres', "select raftable('and', '$tests{and}', $timeout_ms);");
-diag("settings goodbye");
-$charlie->psql('postgres', "select raftable('goodbye', '$tests{goodbye}', $timeout_ms);");
-diag("stopping baker");
+sub trysql {
+	my ($noderef, $sql) = @_;
+	while ($retries > 0) {
+		diag("try sql: ". substr($sql, 0, 60));
+		my ($rc, $stdout, $stderr) = $noderef->psql('postgres', $sql);
+		if (index($stderr, "after") == -1) {
+			return $rc, $stdout, $stderr;
+		} else {
+			$retries--;
+			diag($stderr);
+			diag("psql failed, $retries retries left");
+		}
+	}
+	BAIL_OUT('no psql retries left');
+}
+
+trysql($able, "select raftable('hello', '$tests{hello}', $timeout_ms);");
+trysql($baker, "select raftable('and', '$tests{and}', $timeout_ms);");
+trysql($charlie, "select raftable('goodbye', '$tests{goodbye}', $timeout_ms);");
 $baker->stop;
-diag("settings world");
-$able->psql('postgres', "select raftable('world', '$tests{world}', $timeout_ms);");
+trysql($able, "select raftable('world', '$tests{world}', $timeout_ms);");
 
 diag("starting baker");
 $baker->start;
@@ -97,7 +109,7 @@ while (my ($i, $cfg1ref) = each(@$cfgref))
 diag("checking baker");
 while (my ($key, $value) = each(%tests))
 {
-	my ($rc, $stdout, $stderr) = $baker->psql('postgres', "select raftable('$key', $timeout_ms);");
+	my ($rc, $stdout, $stderr) = trysql($baker, "select raftable('$key', $timeout_ms);");
 	is($stdout, $value, "Baker gets the proper value for '$key' from the leader");
 }
 

@@ -50,4 +50,6 @@ bool state_next(StateP state, void *scan, char **key, char **value, size_t *len)
 
 RaftableMessage *make_single_value_message(const char *key, const char *value, size_t vallen, size_t *size);
 
+StateP get_shared_state(void);
+
 #endif

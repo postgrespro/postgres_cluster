@@ -10,6 +10,20 @@ include $(top_builddir)/src/Makefile.global
 
 $(call recurse,all install,src config)
 
+xcheck:
+	#pip install -r tests2/requirements.txt
+	# docker build -t pgmmts .
+	cd contrib/mmts/tests2 && blockade destroy || true
+	cd contrib/mmts/tests2 && docker rm node1 || true
+	cd contrib/mmts/tests2 && docker rm node2 || true
+	cd contrib/mmts/tests2 && docker rm node3 || true
+	cd contrib/mmts/tests2 && docker network rm tests2_net || true
+	cd contrib/mmts/tests2 && docker network rm tests2_net || true
+	cd contrib/mmts/tests2 && blockade up
+	sleep 20 # wait for mmts init
+	cd contrib/mmts/tests2 && python test_recovery.py || true
+	#cd contrib/mmts/tests2 && blockade destroy
+
 all:
 	+@echo "All of PostgreSQL successfully made. Ready to install."
 

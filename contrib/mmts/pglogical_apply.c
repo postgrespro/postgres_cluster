@@ -492,7 +492,7 @@ static void
 MtmEndSession(bool unlock)
 {
 	if (replorigin_session_origin != InvalidRepOriginId) { 
-		MTM_LOG3("%d: Begin reset replorigin session: %d", MyProcPid, replorigin_session_origin);
+		MTM_LOG2("%d: Begin reset replorigin session for node %d: %d, progress %lx", MyProcPid, MtmReplicationNodeId, replorigin_session_origin, replorigin_session_get_progress(false));
 		replorigin_session_origin = InvalidRepOriginId;
 		replorigin_session_reset();
 		if (unlock) { 
@@ -538,11 +538,11 @@ process_remote_commit(StringInfo in)
 			Assert(IsTransactionState() && TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
 			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_IN_PROGRESS) == TRANSACTION_STATUS_ABORTED) { 
-				MTM_LOG1("%ld: avoid prepare of previously aborted global transaction %s", MtmGetSystemTime(), gid);	
+				MTM_LOG1("Avoid prepare of previously aborted global transaction %s", gid);	
 				AbortCurrentTransaction();
 			} else { 				
 				/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
-				MTM_LOG2("%ld: PGLOGICAL_PREPARE commit: gid=%s", MtmGetSystemTime(), gid);
+				MTM_LOG2("PGLOGICAL_PREPARE commit: gid=%s", gid);
 				BeginTransactionBlock();
 				CommitTransactionCommand();
 				StartTransactionCommand();
@@ -554,7 +554,7 @@ process_remote_commit(StringInfo in)
 				CommitTransactionCommand();
 
 				if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_UNKNOWN) == TRANSACTION_STATUS_ABORTED) { 
-					MTM_LOG1("%ld: perform delayed rollback of prepared global transaction %s", MtmGetSystemTime(), gid);	
+					MTM_LOG1("Perform delayed rollback of prepared global transaction %s", gid);	
 					StartTransactionCommand();
 					MtmSetCurrentTransactionGID(gid);
 					FinishPreparedTransaction(gid, false);
@@ -568,7 +568,7 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			csn = pq_getmsgint64(in); 
 			gid = pq_getmsgstring(in);
-			MTM_LOG2("%ld: PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s", MtmGetSystemTime(), csn, gid);
+			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s, lsn=%ld", csn, gid, end_lsn);
 			StartTransactionCommand();
 			MtmBeginSession();
 			MtmSetCurrentTransactionCSN(csn);
@@ -581,10 +581,11 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
-			MTM_LOG2("%ld: PGLOGICAL_ABORT_PREPARED commit: gid=%s",  MtmGetSystemTime(), gid);
-			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED) ==TRANSACTION_STATUS_UNKNOWN) { 
-				MTM_LOG1("%ld: PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", MtmGetSystemTime(), gid);
+			MTM_LOG2("PGLOGICAL_ABORT_PREPARED commit: gid=%s",  gid);
+			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED) == TRANSACTION_STATUS_UNKNOWN) { 
+				MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
 				StartTransactionCommand();
+				MtmBeginSession();
 				MtmSetCurrentTransactionGID(gid);
 				FinishPreparedTransaction(gid, false);
 				CommitTransactionCommand();
@@ -594,6 +595,12 @@ process_remote_commit(StringInfo in)
 		default:
 			Assert(false);
 	}
+#if 0 /* Do ont need to advance slot position here: it will be done by transaction commit */
+	if (replorigin_session_origin != InvalidRepOriginId) { 
+		replorigin_advance(replorigin_session_origin, end_lsn,
+						   XactLastCommitEnd, false, false);
+	}
+#endif
 	MtmEndSession(true);
 	MtmUpdateLsnMapping(MtmReplicationNodeId, end_lsn);
 	if (flags & PGLOGICAL_CAUGHT_UP) {
@@ -701,9 +708,8 @@ process_remote_insert(StringInfo s, Relation rel)
 		MTM_LOG3("%d: Execute utility statement %s", MyProcPid, ddl);
 		rc = SPI_execute(ddl, false, 0);
         SPI_finish();
-		if (rc != SPI_OK_UTILITY) { 
+		if (rc < 0)
 			elog(ERROR, "Failed to execute utility statement %s", ddl);
-		}
 	} else if (strcmp(relname, MULTIMASTER_LOCAL_TABLES_TABLE) == 0) { 
 		char* schema = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_schema-1]);
 		char* name = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_name-1]);
@@ -937,6 +943,11 @@ void MtmExecutor(int id, void* work, size_t size)
         while (true) { 
             char action = pq_getmsgbyte(&s);
             MTM_LOG3("%d: REMOTE process action %c", MyProcPid, action);
+#if 0
+			if (Mtm->status == MTM_RECOVERY) { 
+				MTM_LOG1("Replay action %c[%x]",   action, s.data[s.cursor]);
+			}
+#endif
             switch (action) {
                 /* BEGIN */
             case 'B':

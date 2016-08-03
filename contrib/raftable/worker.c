@@ -7,6 +7,7 @@
 
 #include "postgres.h"
 #include "postmaster/bgworker.h"
+#include "miscadmin.h"
 
 #include "raft.h"
 #include "util.h"
@@ -460,7 +461,7 @@ void raftable_worker_main(Datum arg)
 {
 	sigset_t sset;
 	mstimer_t t;
-	WorkerConfig *cfg = (WorkerConfig *)(arg);
+	WorkerConfig *cfg = *(WorkerConfig **)arg;
 	state = state_init();
 
 	cfg->raft_config.userdata = state;
@@ -481,6 +482,8 @@ void raftable_worker_main(Datum arg)
     sigfillset(&sset);
     sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
+	BackgroundWorkerUnblockSignals();
+
 	server.raftsock = raft_create_udp_socket(raft);
 	if (server.raftsock == -1) elog(ERROR, "couldn't start raft");
 
@@ -499,5 +502,8 @@ void raftable_worker_main(Datum arg)
 			raft_handle_message(raft, m);
 			notify();
 		}
+		CHECK_FOR_INTERRUPTS();
 	}
+	elog(LOG, "Raftable worker stopped");
+	exit(1); /* automatically restart raftable */
 }

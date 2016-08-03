@@ -53,7 +53,7 @@ if [ ! -s "$PGDATA/PG_VERSION" ]; then
 
 	############################################################################
 
-	RAFT_PEERS='1:172.19.0.2:6666, 2:172.19.0.4:6666, 3:172.19.0.3:6666'
+	RAFT_PEERS='1:node1:6666, 2:node2:6666, 3:node3:6666'
 
 	cat <<-EOF >> $PGDATA/postgresql.conf
 		listen_addresses='*'

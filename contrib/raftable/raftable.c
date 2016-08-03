@@ -49,7 +49,7 @@ static shmem_startup_hook_type PreviousShmemStartupHook;
 static int leader = -1;
 static int leadersock = -1;
 static WorkerConfig wcfg;
-static volatile WorkerConfig *sharedcfg;
+static volatile WorkerConfig *sharedcfg = &wcfg;
 
 static void select_next_server(void)
 {
@@ -503,7 +503,6 @@ raftableShmemStartup(void)
 	sharedcfg = (WorkerConfig *)ShmemInitStruct("raftable_config", sizeof(WorkerConfig), &found);
 	if (!found) {
 		*sharedcfg = wcfg;
-		SpinLockInit(&sharedcfg->lock);
 	}
 }
 
@@ -511,6 +510,7 @@ void
 _PG_init(void)
 {
 	int i;
+	SpinLockInit(&sharedcfg->lock);
 
 	/*
 	 * In order to create our shared memory area, we have to be loaded via
@@ -597,7 +597,6 @@ void raftable_peer(int id, const char *host, int port)
 
 pid_t raftable_start(int id)
 {
-	BackgroundWorkerHandle *handle;
 	BackgroundWorker worker;
 
 	pid_t workerpid = -1;
@@ -620,17 +619,25 @@ pid_t raftable_start(int id)
 
 	snprintf(worker.bgw_name, BGW_MAXLEN, "raftable worker %d", sharedcfg->id);
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
-	worker.bgw_start_time = BgWorkerStart_PostmasterStart;
+	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
 	worker.bgw_main = raftable_worker_main;
-	worker.bgw_main_arg = PointerGetDatum(sharedcfg);
-	worker.bgw_notify_pid = MyProcPid;
+	worker.bgw_main_arg = PointerGetDatum(&sharedcfg);
 
-	if (!RegisterDynamicBackgroundWorker(&worker, &handle))
-		elog(ERROR, "cannot register background worker for raftabe");
-
-	if (WaitForBackgroundWorkerStartup(handle, &workerpid) != BGWH_STARTED)
-		elog(ERROR, "background worker for raftabe failed to start");
+	if (IsUnderPostmaster)
+	{
+		BackgroundWorkerHandle *handle;
+		worker.bgw_notify_pid = MyProcPid;
+		if (!RegisterDynamicBackgroundWorker(&worker, &handle))
+			elog(ERROR, "cannot register dynamic background worker for raftable");
+		if (WaitForBackgroundWorkerStartup(handle, &workerpid) != BGWH_STARTED)
+			elog(ERROR, "dynamic background worker for raftable failed to start");
+	}
+	else
+	{
+		worker.bgw_notify_pid = 0;
+		RegisterBackgroundWorker(&worker);
+	}
 
 	return workerpid;
 }

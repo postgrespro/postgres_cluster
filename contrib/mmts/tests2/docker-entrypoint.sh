@@ -67,12 +67,18 @@ if [ "$1" = 'postgres' ]; then
 		cat <<-EOF >> $PGDATA/postgresql.conf
 			listen_addresses='*' 
 			max_prepared_transactions = 100
-			synchronous_commit = off
+			synchronous_commit = on
+			fsync = off
+            log_line_prefix = '%t: '
 			wal_level = logical
-			max_worker_processes = 15
+			max_worker_processes = 30
 			max_replication_slots = 10
 			max_wal_senders = 10
 			shared_preload_libraries = 'raftable,multimaster'
+			default_transaction_isolation = 'repeatable read'
+			log_checkpoints = on
+			checkpoint_timeout = 30
+			log_autovacuum_min_duration = 0
 
 			raftable.id = $NODE_ID
 			raftable.peers = '$RAFT_PEERS'
@@ -85,6 +91,7 @@ if [ "$1" = 'postgres' ]; then
 			multimaster.conn_strings = '$CONNSTRS'
 			multimaster.heartbeat_recv_timeout = 1000
 			multimaster.heartbeat_send_timeout = 250
+			multimaster.twopc_min_timeout = 40000
 		EOF
 
 		tail -n 20 $PGDATA/postgresql.conf

@@ -32,6 +32,13 @@
 #define MTM_LOG4(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
 #endif
 
+#ifndef MTM_TRACE
+#define MTM_TXTRACE(tx, event)
+#else
+#define MTM_TXTRACE(tx, event) \
+		fprintf(stderr, "[MTM_TXTRACE], %s, %lld, %s\n", tx->gid, (long long)MtmGetSystemTime(), event)
+#endif
+
 #define MULTIMASTER_NAME                "multimaster"
 #define MULTIMASTER_SCHEMA_NAME         "mtm"
 #define MULTIMASTER_DDL_TABLE           "ddl_log"
@@ -112,7 +119,7 @@ typedef enum
 {
 	SLOT_CREATE_NEW,   /* create new slot (drop existed) */
 	SLOT_OPEN_EXISTED, /* open existed slot */
-	SLOT_OPEN_ALWAYS,  /* open existed slot or create new if noty exists */
+	SLOT_OPEN_ALWAYS,  /* open existed slot or create new if not exists */
 } MtmSlotMode;
 
 typedef struct
@@ -133,7 +140,7 @@ typedef struct
 	int         senderPid;
 	int         receiverPid;
 	XLogRecPtr  flushPos;
-	csn_t  oldestSnapshot; /* Oldest snapshot used by active transactions at this node */	
+	csn_t       oldestSnapshot; /* Oldest snapshot used by active transactions at this node */	
 } MtmNodeInfo;
 
 typedef struct MtmTransState
@@ -154,7 +161,8 @@ typedef struct MtmTransState
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
 	bool           votingCompleted;    /* 2PC voting is completed */
 	bool           isLocal;            /* Transaction is either replicated, either doesn't contain DML statements, so it shoudl be ignored by pglogical replication */
-	TransactionId  xids[1];             /* [Mtm->nAllNodes]: transaction ID at replicas */
+	bool           isEnqueued;         /* Transaction is inserted in queue */
+	TransactionId  xids[1];            /* [Mtm->nAllNodes]: transaction ID at replicas */
 } MtmTransState;
 
 typedef struct
@@ -166,12 +174,12 @@ typedef struct
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
-	nodemask_t connectivityMask;       /* bitmask of dicconnected nodes */
+	nodemask_t connectivityMask;       /* bitmask of disconnected nodes */
 	nodemask_t pglogicalNodeMask;      /* bitmask of started pglogic receivers */
 	nodemask_t walSenderLockerMask;    /* Mask of WAL-senders IDs locking the cluster */
 	nodemask_t nodeLockerMask;         /* Mask of node IDs which WAL-senders are locking the cluster */
 	nodemask_t reconnectMask; 	       /* Mask of nodes connection to which has to be reestablished by sender */
-
+	int        lastLockHolder;         /* PID of process last obtaning the node lock */
 	bool   localTablesHashLoaded;      /* Whether data from local_tables table is loaded in shared memory hash table */
 	int    inject2PCError;             /* Simulate error during 2PC commit at this node */
     int    nLiveNodes;                 /* Number of active nodes */
@@ -180,6 +188,7 @@ typedef struct
 	int    nLockers;                   /* Number of lockers */
 	int    nActiveTransactions;        /* Nunmber of active 2PC transactions */
 	int    nConfigChanges;             /* Number of cluster configuration changes */
+	int    recoveryCount;              /* Number of completed recoveries */
 	int64  timeShift;                  /* Local time correction */
 	csn_t  csn;                        /* Last obtained timestamp: used to provide unique acending CSNs based on system time */
 	csn_t  lastCsn;                    /* CSN of last committed transaction */
@@ -269,7 +278,7 @@ extern void  MtmMakeTableLocal(char* schema, char* name);
 extern void  MtmHandleApplyError(void);
 extern void  MtmUpdateLsnMapping(int nodeId, XLogRecPtr endLsn);
 extern XLogRecPtr MtmGetFlushPosition(int nodeId);
-extern void MtmWatchdog(void);
+extern bool MtmWatchdog(timestamp_t now);
 extern void MtmCheckHeartbeat(void);
 
 

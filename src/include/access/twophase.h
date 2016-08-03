@@ -61,4 +61,6 @@ extern void FinishPreparedTransaction(const char *gid, bool isCommit);
 
 extern const char *GetLockedGlobalTransactionId(void);
 
+extern int FinishAllPreparedTransactions(bool isCommit);
+
 #endif   /* TWOPHASE_H */

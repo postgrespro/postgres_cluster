@@ -1210,6 +1210,7 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 		stat.st_size > MaxAllocSize)
 	{
 		CloseTransientFile(fd);
+		fprintf(stderr, "wrong size of two-phase file \"%s\"\n", path);
 		return NULL;
 	}
 
@@ -1255,6 +1256,7 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 	if (!EQ_CRC32C(calc_crc, file_crc))
 	{
 		pfree(buf);
+		fprintf(stderr, "wrong crc32 in two-phase file \"%s\"\n", path);
 		return NULL;
 	}
 
@@ -1617,6 +1619,10 @@ RecreateTwoPhaseFile(TransactionId xid, void *content, int len)
 	char		path[MAXPGPATH];
 	pg_crc32c	statefile_crc;
 	int			fd;
+
+	/* Crutch to fix crc and len check on 2pc file reading */
+	Assert( ((TwoPhaseFileHeader *) content)->total_len - sizeof(pg_crc32c) <= len);
+	len = ((TwoPhaseFileHeader *) content)->total_len - sizeof(pg_crc32c);
 
 	/* Recompute CRC */
 	INIT_CRC32C(statefile_crc);
@@ -2260,4 +2266,33 @@ const char*
 GetLockedGlobalTransactionId(void)
 {
 	return MyLockedGxact ? MyLockedGxact->gid : NULL;
+}
+
+int
+FinishAllPreparedTransactions(bool isCommit)
+{
+	int i, count = 0;
+
+	for (i = TwoPhaseState->numPrepXacts; --i >= 0;)
+	{
+		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
+
+		if (gxact->valid)
+		{
+			elog(LOG, "Finish prepared transaction %s", gxact->gid);
+			FinishPreparedTransaction(gxact->gid, isCommit);
+			count++;
+		}
+	}
+	elog(LOG, "Finish %d prepared transactions", count);
+
+	return count;
+}
+
+Datum
+pg_rollback_prepared_xacts(PG_FUNCTION_ARGS)
+{
+	int count;
+	count = FinishAllPreparedTransactions(0);
+	PG_RETURN_INT32(count);
 }

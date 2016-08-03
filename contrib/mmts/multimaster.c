@@ -61,6 +61,7 @@
 #include "ddd.h"
 #include "raftable_wrapper.h"
 #include "raftable.h"
+#include "worker.h"
 
 typedef struct { 
     TransactionId xid;    /* local transaction ID   */
@@ -95,6 +96,7 @@ typedef enum
 #define MTM_MAP_SIZE   1003
 #define MIN_WAIT_TIMEOUT 1000
 #define MAX_WAIT_TIMEOUT 100000
+#define MAX_WAIT_LOOPS   100
 #define STATUS_POLL_DELAY USECS_PER_SEC
 
 void _PG_init(void);
@@ -196,6 +198,7 @@ int   MtmNodes;
 int   MtmNodeId;
 int   MtmReplicationNodeId;
 int   MtmArbiterPort;
+int   MtmRaftablePort;
 int   MtmConnectTimeout;
 int   MtmReconnectTimeout;
 int   MtmNodeDisableDelay;
@@ -241,8 +244,15 @@ void MtmLock(LWLockMode mode)
 #ifdef USE_SPINLOCK
 	SpinLockAcquire(&Mtm->spinlock);
 #else
+	timestamp_t start, stop;
+	start = MtmGetSystemTime();
 	LWLockAcquire((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID], mode);
+	stop = MtmGetSystemTime();
+	if (stop > start + MSEC_TO_USEC(MtmHeartbeatSendTimeout)) { 
+		MTM_LOG1("%d: obtaining %s lock takes %ld microseconds", MyProcPid, (mode == LW_EXCLUSIVE ? "exclusive" : "shared"), stop - start);
+	}	
 #endif
+	Mtm->lastLockHolder = MyProcPid;
 }
 
 void MtmUnlock(void)
@@ -252,6 +262,7 @@ void MtmUnlock(void)
 #else
 	LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
 #endif
+	Mtm->lastLockHolder = 0;
 }
 
 void MtmLockNode(int nodeId)
@@ -409,8 +420,9 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     static timestamp_t maxSleepTime;
 #endif
     timestamp_t delay = MIN_WAIT_TIMEOUT;
+	int i;
     Assert(xid != InvalidTransactionId);
-
+	
 	if (!MtmUseDtm) { 
 		return PgXidInMVCCSnapshot(xid, snapshot);
 	}
@@ -421,7 +433,8 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         firstReportTime = MtmGetCurrentTime();
     }
 #endif
-    while (true)
+    
+	for (i = 0; i < MAX_WAIT_LOOPS; i++)
     {
         MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
         if (ts != NULL && ts->status != TRANSACTION_STATUS_IN_PROGRESS)
@@ -474,11 +487,13 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         else
         {
             MTM_LOG4("%d: visibility check is skept for transaction %u in snapshot %lu", MyProcPid, xid, MtmTx.snapshot);
-            break;
+			MtmUnlock();
+			return PgXidInMVCCSnapshot(xid, snapshot);
         }
     }
 	MtmUnlock();
-	return PgXidInMVCCSnapshot(xid, snapshot);
+	elog(ERROR, "Failed to get status of XID %d", xid);
+	return true;
 }    
 
 
@@ -530,7 +545,7 @@ MtmAdjustOldestXid(TransactionId xid)
 		if (prev != NULL) { 
 			Mtm->transListHead = prev;
 			Mtm->oldestXid = xid = prev->xid;            
-			MTM_LOG2("%d: MtmAdjustOldestXid: oldestXid=%d, olderstSnapshot=%ld", MyProcPid, xid, oldestSnapshot);
+			MTM_LOG2("%d: MtmAdjustOldestXid: oldestXid=%d, oldestSnapshot=%ld", MyProcPid, xid, oldestSnapshot);
 		} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) {  
 			xid = Mtm->oldestXid;
 		}
@@ -550,16 +565,20 @@ MtmAdjustOldestXid(TransactionId xid)
 
 static void MtmTransactionListAppend(MtmTransState* ts)
 {
-    ts->next = NULL;
-	ts->nSubxids = 0;
-    *Mtm->transListTail = ts;
-    Mtm->transListTail = &ts->next;
+	if (!ts->isEnqueued) { 
+		ts->isEnqueued = true;
+		ts->next = NULL;
+		ts->nSubxids = 0;
+		*Mtm->transListTail = ts;
+		Mtm->transListTail = &ts->next;
+	}
 }
 
 static void MtmTransactionListInsertAfter(MtmTransState* after, MtmTransState* ts)
 {
     ts->next = after->next;
     after->next = ts;
+	ts->isEnqueued = true;
     if (Mtm->transListTail == &after->next) { 
         Mtm->transListTail = &ts->next;
     }
@@ -656,6 +675,15 @@ MtmResetTransaction(MtmCurrentTrans* x)
 	x->status = TRANSACTION_STATUS_UNKNOWN;
 }
 
+
+static const char* const isoLevelStr[] = 
+{
+	"read uncommitted", 
+	"read committed", 
+	"repeatable read", 
+	"serializable"
+};
+
 static void 
 MtmBeginTransaction(MtmCurrentTrans* x)
 {
@@ -672,12 +700,15 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		x->isPrepared = false;
 		x->isTransactionBlock = IsTransactionBlock();
 		/* Application name can be changed usnig PGAPPNAME environment variable */
-		if (!IsBackgroundWorker && x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
+		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
 			/* Reject all user's transactions at offline cluster. 
 			 * Allow execution of transaction by bg-workers to make it possible to perform recovery.
 			 */
 			MtmUnlock();			
 			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
+		}
+		if (x->isDistributed && XactIsoLevel != XACT_REPEATABLE_READ) { 
+			elog(LOG, "Isolation level %s is not supported by multimaster", isoLevelStr[XactIsoLevel]);
 		}
 		x->containsDML = false;
         x->snapshot = MtmAssignCSN();	
@@ -700,6 +731,9 @@ MtmCreateTransState(MtmCurrentTrans* x)
 	ts->status = TRANSACTION_STATUS_IN_PROGRESS;
 	ts->snapshot = x->snapshot;
 	ts->isLocal = true;
+	if (!found) {
+		ts->isEnqueued = false;
+	}
 	if (TransactionIdIsValid(x->gtid.xid)) { 		
 		Assert(x->gtid.node != MtmNodeId);
 		ts->gtid = x->gtid;
@@ -708,7 +742,7 @@ MtmCreateTransState(MtmCurrentTrans* x)
 		/* I am coordinator of transaction */
 		ts->gtid.xid = x->xid;
 		ts->gtid.node = MtmNodeId;
-		ts->gid[0] = '\0';
+		strcpy(ts->gid, x->gid);
 	}
 	return ts;
 }
@@ -724,6 +758,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
 	TransactionId* subxids;
+	MTM_TXTRACE(x, "PrePrepareTransaction Start");
 
 	if (!x->isDistributed) {
 		return;
@@ -782,16 +817,17 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	MtmAddSubtransactions(ts, subxids, ts->nSubxids);
 	MTM_LOG3("%d: MtmPrePrepareTransaction prepare commit of %d (gtid.xid=%d, gtid.node=%d, CSN=%ld)", 
 			 MyProcPid, x->xid, ts->gtid.xid, ts->gtid.node, ts->csn);
-	MtmUnlock(); 
+	MtmUnlock();
+	MTM_TXTRACE(x, "PrePrepareTransaction Finish");
 }
 
 /*
  * Check heartbeats
  */
-void MtmWatchdog(void)
+bool MtmWatchdog(timestamp_t now)
 {
 	int i, n = Mtm->nAllNodes;
-	timestamp_t now = MtmGetSystemTime();
+	bool allAlive = true;
 	for (i = 0; i < n; i++) { 
 		if (i+1 != MtmNodeId && !BIT_CHECK(Mtm->disabledNodeMask, i)) {
 			if (Mtm->nodes[i].lastHeartbeat != 0
@@ -800,9 +836,11 @@ void MtmWatchdog(void)
 				elog(WARNING, "Heartbeat is not received from node %d during %d msec", 
 					 i+1, (int)USEC_TO_MSEC(now - Mtm->nodes[i].lastHeartbeat));
 				MtmOnNodeDisconnect(i+1);				
+				allAlive = false;
 			}
 		}
 	}
+	return allAlive;
 }
 
 
@@ -810,6 +848,11 @@ static void
 MtmPostPrepareTransaction(MtmCurrentTrans* x)
 { 
 	MtmTransState* ts;
+	MTM_TXTRACE(x, "PostPrepareTransaction Start");
+
+	if (!x->isDistributed) {
+		return;
+	}
 
 	if (Mtm->inject2PCError == 2) { 
 		Mtm->inject2PCError = 0;
@@ -825,6 +868,9 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		Assert(x->gid[0]);
 		tm->state = ts;	
 		ts->votingCompleted = true;
+		if (!found) { 
+			ts->isEnqueued = false;
+		}
 		if (Mtm->status != MTM_RECOVERY) { 
 			MtmSendNotificationMessage(ts, MSG_READY); /* send notification to coordinator */
 			if (!MtmUseDtm) { 
@@ -845,7 +891,9 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		while (!ts->votingCompleted && Mtm->status == MTM_ONLINE && ts->status != TRANSACTION_STATUS_ABORTED && start + transTimeout >= MtmGetSystemTime()) 
 		{
 			MtmUnlock();
+			MTM_TXTRACE(x, "PostPrepareTransaction WaitLatch Start");
 			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET|WL_TIMEOUT, MtmHeartbeatRecvTimeout);
+			MTM_TXTRACE(x, "PostPrepareTransaction WaitLatch Finish");
 			if (result & WL_LATCH_SET) { 
 				ResetLatch(&MyProc->procLatch);			
 			} 
@@ -868,6 +916,8 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		Mtm->inject2PCError = 0;
 		elog(ERROR, "ERROR INJECTION for transaction %d (%s)", x->xid, x->gid);
 	}
+
+	MTM_TXTRACE(x, "PostPrepareTransaction Finish");
 }
 
 
@@ -876,11 +926,14 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 {
 	MtmTransMap* tm;
 
+	if (Mtm->status == MTM_RECOVERY) { 
+		return;
+	}
 	if (x->status != TRANSACTION_STATUS_ABORTED) { 
 		MtmLock(LW_EXCLUSIVE);
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
 		Assert(tm != NULL && tm->state != NULL);
-		MTM_LOG1("%ld: Abort prepared transaction %d with gid='%s'", MtmGetSystemTime(), x->xid, x->gid);
+		MTM_LOG1("Abort prepared transaction %d with gid='%s'", x->xid, x->gid);
 		MtmAbortTransaction(tm->state);
 		MtmUnlock();
 		x->status = TRANSACTION_STATUS_ABORTED;
@@ -910,7 +963,9 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		}
 		if (ts != NULL) { 
 			if (commit) {
-				Assert(ts->status == TRANSACTION_STATUS_UNKNOWN);
+				/* Assert(ts->status == TRANSACTION_STATUS_UNKNOWN); */
+				Assert(ts->status == TRANSACTION_STATUS_UNKNOWN 
+					   || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)); /* ??? Why there is commit without prepare */
 				if (x->csn > ts->csn) {
 					ts->csn = x->csn;
 					MtmSyncClock(ts->csn);
@@ -933,8 +988,12 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			 */
 			MTM_LOG1("%d: send ABORT notification abort transaction %d to coordinator %d", MyProcPid, x->gtid.xid, x->gtid.node);
 			if (ts == NULL) { 
+				bool found;
 				Assert(TransactionIdIsValid(x->xid));
-				ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, NULL);
+				ts = hash_search(MtmXid2State, &x->xid, HASH_ENTER, &found);
+				if (!found) { 
+					ts->isEnqueued = false;
+				}
 				ts->status = TRANSACTION_STATUS_ABORTED;
 				ts->isLocal = true;
 				ts->snapshot = x->snapshot;
@@ -972,6 +1031,15 @@ void MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd)
 	}
 }
 
+
+static void MtmStartRecovery()
+{
+	MtmLock(LW_EXCLUSIVE);
+	BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
+	MtmSwitchClusterMode(MTM_RECOVERY);
+	MtmUnlock();
+}
+
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
 	MtmTx.gtid = *gtid;
@@ -994,7 +1062,8 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 	if (!TransactionIdIsValid(gtid->xid)) { 
 		/* In case of recovery InvalidTransactionId is passed */
 		if (Mtm->status != MTM_RECOVERY) { 
-			elog(PANIC, "Node %d tries to recover node %d which is in %s mode", gtid->node, MtmNodeId,  MtmNodeStatusMnem[Mtm->status]);
+			elog(WARNING, "Node %d tries to recover node %d which is in %s mode", gtid->node, MtmNodeId,  MtmNodeStatusMnem[Mtm->status]);
+			MtmStartRecovery();
 		}
 	} else if (Mtm->status == MTM_RECOVERY) { 
 		/* When recovery is completed we get normal transaction ID and switch to normal mode */
@@ -1064,8 +1133,9 @@ csn_t MtmGetTransactionCSN(TransactionId xid)
 }
 	
 void MtmWakeUpBackend(MtmTransState* ts)
-{																		
-	if (!ts->votingCompleted) { 
+{
+	if (!ts->votingCompleted) {
+		MTM_TXTRACE(ts, "MtmWakeUpBackend");
 		MTM_LOG3("Wakeup backed procno=%d, pid=%d", ts->procno, ProcGlobal->allProcs[ts->procno].pid);
 		ts->votingCompleted = true;
 		SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch); 
@@ -1092,18 +1162,19 @@ void MtmHandleApplyError(void)
 {
 	ErrorData *edata = CopyErrorData();
 	switch (edata->sqlerrcode) { 
-	  case ERRCODE_DISK_FULL:
-	  case ERRCODE_INSUFFICIENT_RESOURCES:
-	  case ERRCODE_IO_ERROR:
-	  case ERRCODE_DATA_CORRUPTED:
-	  case ERRCODE_INDEX_CORRUPTED:
-	  case ERRCODE_SYSTEM_ERROR:
-	  case ERRCODE_INTERNAL_ERROR:
-	  case ERRCODE_OUT_OF_MEMORY:		  
-		  elog(WARNING, "Node is excluded from cluster because of non-recoverable error %d", edata->sqlerrcode);
-		  MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
-		  kill(PostmasterPid, SIGQUIT);
-		  break;
+		case ERRCODE_DISK_FULL:
+		case ERRCODE_INSUFFICIENT_RESOURCES:
+		case ERRCODE_IO_ERROR:
+		case ERRCODE_DATA_CORRUPTED:
+		case ERRCODE_INDEX_CORRUPTED:
+		case ERRCODE_SYSTEM_ERROR:
+		case ERRCODE_INTERNAL_ERROR:
+		case ERRCODE_OUT_OF_MEMORY:
+			elog(WARNING, "Node is excluded from cluster because of non-recoverable error %d, %s, pid=%u",
+				edata->sqlerrcode, edata->message, getpid());
+			MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
+			kill(PostmasterPid, SIGQUIT);
+			break;
 	}
 	FreeErrorData(edata);
 }
@@ -1114,25 +1185,33 @@ static void MtmDisableNode(int nodeId)
 	BIT_SET(Mtm->disabledNodeMask, nodeId-1);
 	Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
-	Mtm->nLiveNodes -= 1;			
-}
+	if (nodeId != MtmNodeId) { 
+		Mtm->nLiveNodes -= 1;
+	}
+	elog(WARNING, "Disable node %d at xlog position %lx", nodeId, GetXLogInsertRecPtr());
+} 
 	
 static void MtmEnableNode(int nodeId)
 { 
 	BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
+	BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
 	Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
-	Mtm->nLiveNodes += 1;			
+	if (nodeId != MtmNodeId) { 
+		Mtm->nLiveNodes += 1;			
+	}
+	elog(WARNING, "Enable node %d at xlog position %lx", nodeId, GetXLogInsertRecPtr());
 }
 
 void MtmRecoveryCompleted(void)
 {
-	MTM_LOG1("Recovery of node %d is completed", MtmNodeId);
+	MTM_LOG1("Recovery of node %d is completed, disabled mask=%lx, reconnect mask=%lx, live nodes=%d", 
+			 MtmNodeId, Mtm->disabledNodeMask, Mtm->reconnectMask, Mtm->nLiveNodes);
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
-	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
 	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
-	/* Mode will be changed to online once all locagical reciever are connected */
+	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
+	/* Mode will be changed to online once all logical reciever are connected */
 	MtmSwitchClusterMode(MTM_CONNECTED);
 	MtmUnlock();
 }
@@ -1351,7 +1430,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
  */
 bool MtmRefreshClusterStatus(bool nowait)
 {
-	nodemask_t mask, clique, disabled, enabled;
+	nodemask_t mask, clique, disabled;
 	nodemask_t matrix[MAX_NODES];
 	MtmTransState *ts;
 	int clique_size;
@@ -1378,28 +1457,31 @@ bool MtmRefreshClusterStatus(bool nowait)
 		MTM_LOG1("Find clique %lx, disabledNodeMask %lx", (long) clique, (long) Mtm->disabledNodeMask);
 		MtmLock(LW_EXCLUSIVE);
 		disabled = ~clique & (((nodemask_t)1 << Mtm->nAllNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
-		enabled = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
 		
 		for (i = 0, mask = disabled; mask != 0; i++, mask >>= 1) {
 			if (mask & 1) { 
 				MtmDisableNode(i+1);
 			}
-		}
-		
+		}		
+#if 0	/* Do  not enable nodes here: them will be enabled after completion of recovery */
+		enabled = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
 		for (i = 0, mask = enabled; mask != 0; i++, mask >>= 1) {
 			if (mask & 1) { 
 				MtmEnableNode(i+1);
 			}
 		}
-		if (disabled|enabled) { 
+		Mtm->reconnectMask |= clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
+#endif
+
+		if (disabled) { 
 			MtmCheckQuorum();
 		}
 		/* Interrupt voting for active transaction and abort them */
 		for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
 			MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%d, gtid.xid=%d",
-					 ts->gid, ts->gtid.node, ts->xid, ts->status, ts->gtid.xid);
+					 ts->gid, ts->gtid.nхode, ts->xid, ts->status, ts->gtid.xid);
 			if (MtmIsCoordinator(ts)) { 
-				if (!ts->votingCompleted && (disabled|enabled) != 0 && ts->status != TRANSACTION_STATUS_ABORTED) {
+				if (!ts->votingCompleted && disabled != 0 && ts->status != TRANSACTION_STATUS_ABORTED) {
 					MtmAbortTransaction(ts);
 					MtmWakeUpBackend(ts);
 				}
@@ -1421,8 +1503,8 @@ bool MtmRefreshClusterStatus(bool nowait)
 				MtmSwitchClusterMode(MTM_OFFLINE);
 			}
 		} else if (Mtm->status == MTM_OFFLINE) {
-			/* Should we somehow restart logical receivers? */ 
-			MtmSwitchClusterMode(MTM_RECOVERY);
+			/* Should we somehow restart logical receivers? */ 			
+			MtmStartRecovery();
 		}
 	} else { 
 		MTM_LOG1("Clique %lx has no quorum", (long) clique);
@@ -1451,7 +1533,13 @@ void MtmOnNodeDisconnect(int nodeId)
 { 
 	MtmTransState *ts;
 
-	if (Mtm->nodes[nodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) > MtmGetSystemTime()) { 
+	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))
+	{
+		/* Node is already disabled */
+		return;
+	}
+	if (Mtm->nodes[nodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) > MtmGetSystemTime()) 
+	{ 
 		/* Avoid false detection of node failure and prevent node status blinking */
 		return;
 	}
@@ -1496,6 +1584,7 @@ void MtmOnNodeConnect(int nodeId)
 {
 	MtmLock(LW_EXCLUSIVE);	
 	BIT_CLEAR(Mtm->connectivityMask, nodeId-1);
+	BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
 	MtmUnlock();
 
 	MTM_LOG1("Reconnect node %d", nodeId);
@@ -1610,6 +1699,26 @@ static void MtmLoadLocalTables(void)
 	}
 }
 	
+static void MtmRaftableInitialize()
+{
+	int i;
+
+	for (i = 0; i < MtmNodes; i++)
+	{
+		char const* raftport = strstr(MtmConnections[i].connStr, "raftport=");
+		int port;
+		if (raftport != NULL) {
+			if (sscanf(raftport+9, "%d", &port) != 1) { 
+				elog(ERROR, "Invalid raftable port: %s", raftport+9);
+			}
+		} else {
+			port = MtmRaftablePort + i;
+		}
+		raftable_peer(i, MtmConnections[i].hostName, port);
+	}
+	raftable_start(MtmNodeId - 1);
+}
+
 
 static void MtmInitialize()
 {
@@ -1645,6 +1754,7 @@ static void MtmInitialize()
 		Mtm->transCount = 0;
 		Mtm->gcCount = 0;
 		Mtm->nConfigChanges = 0;
+		Mtm->recoveryCount = 0;
 		Mtm->localTablesHashLoaded = false;
 		Mtm->inject2PCError = 0;
 		for (i = 0; i < MtmNodes; i++) {
@@ -1781,7 +1891,7 @@ _PG_init(void)
 	DefineCustomIntVariable(
 		"multimaster.heartbeat_send_timeout", 
 		"Timeout in milliseconds of sending heartbeat messages",
-		"Period of broadcasting heartbeat messages by abiter to all nodes",
+		"Period of broadcasting heartbeat messages by arbiter to all nodes",
 		&MtmHeartbeatSendTimeout,
 		1000,
 		1,
@@ -2020,7 +2130,22 @@ _PG_init(void)
 		"Base value for assigning arbiter ports",
 		NULL,
 		&MtmArbiterPort,
-		54321,
+		54320,
+	    0,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.raftable_port",
+		"Base value for assigning raftable ports",
+		NULL,
+		&MtmRaftablePort,
+		6543,
 	    0,
 		INT_MAX,
 		PGC_BACKEND,
@@ -2088,6 +2213,13 @@ _PG_init(void)
 		NULL
 	);
 
+	if (DefaultXactIsoLevel != XACT_REPEATABLE_READ) { 
+		elog(ERROR, "Multimaster requires repeatable read default isolation level");
+	}
+	if (synchronous_commit != SYNCHRONOUS_COMMIT_ON) { 
+		elog(ERROR, "Multimaster requires synchronous commit on");
+	}
+
 	MtmSplitConnStrs();
     MtmStartReceivers();
 		
@@ -2101,6 +2233,7 @@ _PG_init(void)
 
     BgwPoolStart(MtmWorkers, MtmPoolConstructor);
 
+	MtmRaftableInitialize();
 	MtmArbiterInitialize();
 
 	/*
@@ -2138,6 +2271,9 @@ void MtmReceiverStarted(int nodeId)
 	MtmLock(LW_EXCLUSIVE);
 	if (!BIT_CHECK(Mtm->pglogicalNodeMask, nodeId-1)) { 
 		BIT_SET(Mtm->pglogicalNodeMask, nodeId-1);
+		if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
+			MtmEnableNode(nodeId);
+		}
 		if (++Mtm->nReceivers == Mtm->nLiveNodes-1) {
 			if (Mtm->status == MTM_CONNECTED) { 
 				MtmSwitchClusterMode(MTM_ONLINE);
@@ -2163,6 +2299,10 @@ MtmSlotMode MtmReceiverSlotMode(int nodeId)
 				/* Choose for recovery first available slot */
 				MTM_LOG1("Start recovery from node %d", nodeId);
 				Mtm->recoverySlot = nodeId;
+				Mtm->nReceivers = 0;
+				Mtm->recoveryCount += 1;
+				Mtm->pglogicalNodeMask = 0;
+				FinishAllPreparedTransactions(false);
 				return SLOT_OPEN_EXISTED;
 			}
 		}
@@ -2207,6 +2347,7 @@ void MtmDropNode(int nodeId, bool dropSlot)
 	{
 		if (nodeId <= 0 || nodeId > Mtm->nLiveNodes) 
 		{ 
+			MtmUnlock();
 			elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nLiveNodes);
 		}
 		MtmDisableNode(nodeId);
@@ -2272,6 +2413,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			MtmEnableNode(MtmReplicationNodeId);
 			MtmCheckQuorum();
 		} else {
+			MtmUnlock();
 			elog(ERROR, "Disabled node %d tries to reconnect without recovery", MtmReplicationNodeId); 
 		}
 	} else {
@@ -3063,7 +3205,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			{
 				/* Do not replicate temp tables */
 				CreateStmt *stmt = (CreateStmt *) parsetree;
-				skipCommand = stmt->relation->relpersistence == RELPERSISTENCE_TEMP;
+				skipCommand = stmt->relation->relpersistence == RELPERSISTENCE_TEMP ||
+					(stmt->relation->schemaname && strcmp(stmt->relation->schemaname, "pg_temp") == 0);
 			}
 			break;
 		case T_IndexStmt:

@@ -1,3 +1,4 @@
+from __future__ import print_function
 import time
 import datetime
 import uuid
@@ -45,6 +46,7 @@ class EventHistory():
                 # finish mark
                 if event['event_id'] not in self.running_events:
                     # found finish event without corresponding start
+                    print(event)
                     print("ololololo!")
                     raise
 
@@ -65,10 +67,6 @@ class EventHistory():
 
         agg = {}
         for ev in self.events:
-            if ev['finished_at'] < self.last_aggregation:
-                #print("cont")
-                continue
-
             if ev['name'] not in agg:
                 agg[ev['name']] = copy.deepcopy(self.agg_template)
                 #print('-=-=-', agg)
@@ -84,7 +82,10 @@ class EventHistory():
             if named_agg['max_latency'] < latency:
                 named_agg['max_latency'] = latency
 
+        self.events = []
+
         for value in self.running_events.itervalues():
+            # print(value)
 
             if value['name'] not in agg:
                 agg[value['name']] = copy.deepcopy(self.agg_template)
@@ -96,8 +97,6 @@ class EventHistory():
             if named_agg['running_latency'] < latency:
                 named_agg['running_latency'] = latency
 
-        self.last_aggregation = datetime.datetime.now()
-        #print("aggregeted!")
         return agg
 
     def aggregate_by(self, period):

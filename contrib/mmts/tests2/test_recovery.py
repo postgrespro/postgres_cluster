@@ -4,59 +4,59 @@ import subprocess
 from lib.bank_client import *
 
 class RecoveryTest(unittest.TestCase):
-    def setUp(self):
-        #subprocess.check_call(['blockade','up'])
+    @classmethod
+    def setUpClass(self):
         self.clients = ClientCollection([
             "dbname=postgres host=127.0.0.1 user=postgres",
             "dbname=postgres host=127.0.0.1 user=postgres port=5433",
             "dbname=postgres host=127.0.0.1 user=postgres port=5434"
         ])
         self.clients.start()
+        time.sleep(5)
 
-    def tearDown(self):
+    @classmethod
+    def tearDownClass(self):
         print('tearDown')
         self.clients.stop()
-        self.clients[0].cleanup()
-        subprocess.check_call(['blockade','join'])
 
-#    def test_0_normal_operation(self):
-#        print('### normalOpsTest ###')
-#        print('Waiting 5s to check operability')
-#        time.sleep(5)
-#
-#        for client in self.clients:
-#            agg = client.history.aggregate()
-#            print(agg)
-#            self.assertTrue(agg['transfer']['finish']['Commit'] > 0)
+    # def test_normal_operations(self):
+    #     print('### normalOpsTest ###')
 
-    def test_1_node_disconnect(self):
-        print('### disconnectTest ###')
+    #     for i in range(3):
+    #         time.sleep(3)
+    #         aggs = self.clients.aggregate()
+    #         for agg in aggs:
+    #             # there were some commits
+    #             self.assertTrue( agg['transfer'] > 0 )
+
+    def test_node_prtition(self):
+        print('### nodePartitionTest ###')
 
         subprocess.check_call(['blockade','partition','node3'])
-        print('Node3 disconnected')
+        print('### blockade node3 ###')
 
-        print('Waiting 15s to discover failure')
+        # clear tx history
+        self.clients.aggregate(echo=False)
 
-        for i in range(5):
+        for i in range(10):
             time.sleep(3)
-            for client in self.clients:
-                agg = client.history.aggregate()
-                print(agg)
-            print(" ")
+            aggs = self.clients.aggregate()
+            #self.assertTrue( aggs[0]['transfer']['finish']['Commit'] > 0 )
+            #self.assertTrue( aggs[1]['transfer']['finish']['Commit'] > 0 )
+            #self.assertTrue( 'Commit' not in aggs[2]['transfer']['finish'] )
 
-        # subprocess.check_call(['blockade','join'])
+        subprocess.check_call(['blockade','join'])
+        print('### deblockade node3 ###')
 
-        print('Waiting 15s to join node')
+        # clear tx history
+        self.clients.aggregate(echo=False)
+
         for i in range(1000):
             time.sleep(3)
-            for client in self.clients:
-                agg = client.history.aggregate()
-                print(agg)
-            print(" ")
+            aggs = self.clients.aggregate()
+            print(i, aggs)
 
 
 if __name__ == '__main__':
     unittest.main()
-
-
 

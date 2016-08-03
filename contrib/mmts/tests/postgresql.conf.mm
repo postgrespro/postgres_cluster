@@ -61,7 +61,7 @@
 					# defaults to 'localhost'; use '*' for all
 					# (change requires restart)
 port = 5432				# (change requires restart)
-max_connections = 200			# (change requires restart)
+max_connections = 30			# (change requires restart)
 # Note:  Increasing max_connections costs ~400 bytes of shared memory per
 # connection slot, plus lock space (see max_locks_per_transaction).
 #superuser_reserved_connections = 3	# (change requires restart)
@@ -624,6 +624,28 @@ default_text_search_config = 'pg_catalog.english'
 
 # Add settings for extensions here
 
-multimaster.workers=8
-multimaster.queue_size=104857600 # 100mb
-multimaster.ignore_tables_without_pk=1
+#multimaster.workers=8
+#multimaster.queue_size=104857600 # 100mb
+#multimaster.ignore_tables_without_pk=1
+
+listen_addresses='*'
+max_prepared_transactions = 100
+synchronous_commit = on
+fsync = off
+wal_level = logical
+max_worker_processes = 15
+max_replication_slots = 10
+max_wal_senders = 10
+shared_preload_libraries = 'raftable,multimaster'
+default_transaction_isolation = 'repeatable read'
+log_checkpoints = on
+log_autovacuum_min_duration = 0
+
+multimaster.workers = 4
+multimaster.use_raftable = true
+multimaster.queue_size=52857600
+multimaster.ignore_tables_without_pk = 1
+multimaster.heartbeat_recv_timeout = 1000
+multimaster.heartbeat_send_timeout = 250
+multimaster.twopc_min_timeout = 40000
+

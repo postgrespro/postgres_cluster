@@ -758,9 +758,12 @@ int raft_emit(raft_t r, raft_update_t update) {
 }
 
 bool raft_applied(raft_t r, int id, int index) {
-	if (r->me == id) {
+	if (r->me == id)
+	{
 		return r->log.applied > index;
-	} else {
+	}
+	else
+	{
 		raft_peer_t *p = r->peers + id;
 		if (!p->up) return false;
 		return p->applied > index;

@@ -161,7 +161,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 	}
     pq_sendbyte(out, 'C');		/* sending COMMIT */
 
-	MTM_LOG2("%ld: PGLOGICAL_SEND commit: event=%d, gid=%s, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", MtmGetSystemTime(), flags, txn->gid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
+	MTM_LOG2("PGLOGICAL_SEND commit: event=%d, gid=%s, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", flags, txn->gid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
 
     /* send the flags field */
     pq_sendbyte(out, flags);
@@ -178,6 +178,8 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     if (txn->xact_action != XLOG_XACT_COMMIT) { 
     	pq_sendstring(out, txn->gid);
 	}
+
+	MTM_TXTRACE(txn, "pglogical_write_commit Finish");
 }
 
 /*
@@ -422,7 +424,8 @@ decide_datum_transfer(Form_pg_attribute att, Form_pg_type typclass,
 PGLogicalProtoAPI *
 pglogical_init_api(PGLogicalProtoType typ)
 {
-    PGLogicalProtoAPI* res = palloc0(sizeof(PGLogicalProtoAPI));
+    PGLogicalProtoAPI* res = malloc(sizeof(PGLogicalProtoAPI));
+	MemSet(res, 0, sizeof(PGLogicalProtoAPI));
 	sscanf(MyReplicationSlot->data.name.data, MULTIMASTER_SLOT_PATTERN, &MtmReplicationNodeId);
 	MTM_LOG1("%d: PRGLOGICAL init API for slot %s node %d", MyProcPid, MyReplicationSlot->data.name.data, MtmReplicationNodeId);
     res->write_rel = pglogical_write_rel;
