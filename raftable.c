@@ -9,23 +9,36 @@
  */
 void* RaftableGet(char const* key, size_t* size, RaftableTimestamp* ts, bool nowait)
 {
+	void *value;
+	size_t vallen;
 	if (!MtmUseRaftable) { 
 		return NULL;
 	}
-	return raftable_get(key, size);
+	value = raftable_get(key, &vallen, MtmHeartbeatSendTimeout);
+	if (size != NULL) {
+		*size = vallen;
+	}
+	return value;
 }
 
 
 void RaftableSet(char const* key, void const* value, size_t size, bool nowait)
 {
 	if (MtmUseRaftable) {
+		int tries = 10;
 		timestamp_t start, stop;
 		start = MtmGetSystemTime();
 		if (nowait) {
 			raftable_set(key, value, size, 0);
 		} else { 
-			while (!raftable_set(key, value, size, MtmHeartbeatSendTimeout)) { 
+			while (!raftable_set(key, value, size, MtmHeartbeatSendTimeout))
+			{
 				MtmCheckHeartbeat();
+				if (tries-- <= 0)
+				{
+					MTM_LOG1("RaftableSet nowait=%d, all attempts failed", nowait);
+					break;
+				}
 			}
 		}
 		stop = MtmGetSystemTime();
