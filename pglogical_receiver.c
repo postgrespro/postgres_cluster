@@ -468,14 +468,24 @@ pglogical_receiver_main(Datum main_arg)
 				{
 					stmt = copybuf + hdr_len;
 				
-					if (buf.used >= MtmTransSpillThreshold*MB) { 
-						if (spill_file < 0) {
-							int file_id;
-							spill_file = MtmCreateSpillFile(nodeId, &file_id);
-							pq_sendbyte(&spill_info, 'F');
-							pq_sendint(&spill_info, nodeId, 4);
-							pq_sendint(&spill_info, file_id, 4);
-						}
+				if (buf.used >= MtmTransSpillThreshold*MB) { 
+					if (spill_file < 0) {
+						int file_id;
+						spill_file = MtmCreateSpillFile(nodeId, &file_id);
+						pq_sendbyte(&spill_info, 'F');
+						pq_sendint(&spill_info, nodeId, 4);
+						pq_sendint(&spill_info, file_id, 4);
+					}
+					ByteBufferAppend(&buf, ")", 1);
+					pq_sendbyte(&spill_info, '(');
+					pq_sendint(&spill_info, buf.used, 4);
+					MtmSpillToFile(spill_file, buf.data, buf.used);
+					ByteBufferReset(&buf);
+				}
+                ByteBufferAppend(&buf, stmt, rc - hdr_len);
+				if (stmt[0] == 'C') /* commit|prepare */
+                {
+					if (spill_file >= 0) { 
 						ByteBufferAppend(&buf, ")", 1);
 						pq_sendbyte(&spill_info, '(');
 						pq_sendint(&spill_info, buf.used, 4);
