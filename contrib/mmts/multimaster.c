@@ -96,6 +96,7 @@ typedef enum
 #define MTM_MAP_SIZE   1003
 #define MIN_WAIT_TIMEOUT 1000
 #define MAX_WAIT_TIMEOUT 100000
+#define MAX_WAIT_LOOPS   100
 #define STATUS_POLL_DELAY USECS_PER_SEC
 
 void _PG_init(void);
@@ -419,8 +420,9 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     static timestamp_t maxSleepTime;
 #endif
     timestamp_t delay = MIN_WAIT_TIMEOUT;
+	int i;
     Assert(xid != InvalidTransactionId);
-
+	
 	if (!MtmUseDtm) { 
 		return PgXidInMVCCSnapshot(xid, snapshot);
 	}
@@ -431,7 +433,8 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         firstReportTime = MtmGetCurrentTime();
     }
 #endif
-    while (true)
+    
+	for (i = 0; i < MAX_WAIT_LOOPS; i++)
     {
         MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
         if (ts != NULL && ts->status != TRANSACTION_STATUS_IN_PROGRESS)
@@ -484,11 +487,13 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         else
         {
             MTM_LOG4("%d: visibility check is skept for transaction %u in snapshot %lu", MyProcPid, xid, MtmTx.snapshot);
-            break;
+			MtmUnlock();
+			return PgXidInMVCCSnapshot(xid, snapshot);
         }
     }
 	MtmUnlock();
-	return PgXidInMVCCSnapshot(xid, snapshot);
+	elog(ERROR, "Failed to get status of XID %d", xid);
+	return true;
 }    
 
 
@@ -1200,7 +1205,7 @@ static void MtmEnableNode(int nodeId)
 
 void MtmRecoveryCompleted(void)
 {
-	MTM_LOG1("Recovery of node %d is completed, disabled mask=%lx, reconnect mask=%ld, live nodes=%d", 
+	MTM_LOG1("Recovery of node %d is completed, disabled mask=%lx, reconnect mask=%lx, live nodes=%d", 
 			 MtmNodeId, Mtm->disabledNodeMask, Mtm->reconnectMask, Mtm->nLiveNodes);
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
