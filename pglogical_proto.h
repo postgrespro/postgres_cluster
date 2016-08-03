@@ -21,6 +21,8 @@ typedef void (*pglogical_write_rel_fn)(StringInfo out, struct PGLogicalOutputDat
 
 typedef void (*pglogical_write_begin_fn)(StringInfo out, struct PGLogicalOutputData *data,
 							 ReorderBufferTXN *txn);
+typedef void (*pglogical_write_message_fn)(StringInfo out,
+					const char *prefix, Size sz, const char *message);
 typedef void (*pglogical_write_commit_fn)(StringInfo out, struct PGLogicalOutputData *data,
 							 ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
 
@@ -43,6 +45,7 @@ typedef struct PGLogicalProtoAPI
 {
 	pglogical_write_rel_fn		write_rel;
 	pglogical_write_begin_fn	write_begin;
+	pglogical_write_message_fn	write_message;
 	pglogical_write_commit_fn	write_commit;
 	pglogical_write_origin_fn	write_origin;
 	pglogical_write_insert_fn	write_insert;
