@@ -476,7 +476,7 @@ pglogical_receiver_main(Datum main_arg)
 					ByteBufferReset(&buf);
 				}
                 ByteBufferAppend(&buf, stmt, rc - hdr_len);
-                if (stmt[0] == 'C') /* commit */
+				if (stmt[0] == 'C') /* commit|prepare */
                 {
 					if (spill_file >= 0) { 
 						ByteBufferAppend(&buf, ")", 1);

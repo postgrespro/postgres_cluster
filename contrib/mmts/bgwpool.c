@@ -25,7 +25,7 @@ static void BgwPoolMainLoop(Datum arg)
     void* work;
 
     BackgroundWorkerUnblockSignals();
-	BackgroundWorkerInitializeConnection(pool->dbname, NULL);
+	BackgroundWorkerInitializeConnection(pool->dbname, "stas");
 
     while(true) { 
         PGSemaphoreLock(&pool->available);
@@ -98,7 +98,7 @@ void BgwPoolStart(int nWorkers, BgwPoolConstructor constructor)
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_main = BgwPoolMainLoop;
 	worker.bgw_restart_time = MULTIMASTER_BGW_RESTART_TIMEOUT;
-    
+
     for (i = 0; i < nWorkers; i++) { 
         BgwPoolExecutorCtx* ctx = (BgwPoolExecutorCtx*)malloc(sizeof(BgwPoolExecutorCtx));
         snprintf(worker.bgw_name, BGW_MAXLEN, "bgw_pool_worker_%d", i+1);

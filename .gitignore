@@ -39,3 +39,5 @@ lib*.pc
 /Debug/
 /Release/
 /tmp_install/
+/install/
+/contrib/mmts/tests/node*

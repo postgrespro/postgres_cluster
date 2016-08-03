@@ -18,6 +18,7 @@
 #include "utils/builtins.h"
 #include "utils/nabstime.h"
 #include "utils/rel.h"
+#include "access/xact.h"
 
 PG_MODULE_MAGIC;
 
@@ -74,6 +75,37 @@ static EPlan *find_plan(char *ident, EPlan **eplan, int *nplans);
 #define a_ins_user	2
 #define a_upd_user	3
 #define a_del_user	4
+
+static void
+execute(char *ddl)
+{
+	int rc;
+	SPI_connect();
+	fprintf(stderr, "trying to ddl: %s\n", ddl);
+	rc = SPI_execute(ddl, false, 0);
+	SPI_finish();
+	fprintf(stderr, "ddl(rc=%d): %s\n", rc, ddl);
+	if (rc < 0)
+		elog(ERROR, "Failed to execute utility statement %s", ddl);
+}
+
+
+PG_FUNCTION_INFO_V1(spitest);
+
+Datum							/* have to return HeapTuple to Executor */
+spitest(PG_FUNCTION_ARGS)
+{
+	execute("CREATE USER regtest_unpriv_user;");
+	execute("CREATE SCHEMA temp_func_test;");
+	execute("GRANT ALL ON SCHEMA temp_func_test TO public;");
+
+	SetCurrentStatementStartTimestamp();
+	StartTransactionCommand();
+	execute("reset all;SET SESSION AUTHORIZATION regtest_unpriv_user;RESET SESSION AUTHORIZATION;DROP SCHEMA temp_func_test CASCADE;DROP USER regtest_unpriv_user;");
+
+	PG_RETURN_VOID();
+}
+
 
 PG_FUNCTION_INFO_V1(timetravel);
 

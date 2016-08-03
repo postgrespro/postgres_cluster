@@ -1,6 +1,6 @@
 # src/test/regress/serial_schedule
 # This should probably be in an order similar to parallel_schedule.
-test: tablespace
+#test: tablespace
 test: boolean
 test: char
 test: name
@@ -50,7 +50,7 @@ test: oidjoins
 test: type_sanity
 test: opr_sanity
 test: insert
-test: insert_conflict
+#test: insert_conflict
 test: create_function_1
 test: create_type
 test: create_table
@@ -70,7 +70,7 @@ test: triggers
 test: inherit
 test: create_table_like
 test: typed_table
-test: vacuum
+#test: vacuum
 test: drop_if_exists
 test: updatable_views
 test: rolenames
@@ -89,7 +89,7 @@ test: union
 test: case
 test: join
 test: aggregates
-test: transactions
+#test: transactions
 ignore: random
 test: random
 test: portals
@@ -147,7 +147,7 @@ test: indirect_toast
 test: equivclass
 test: plancache
 test: limit
-test: plpgsql
+#test: plpgsql
 test: copy2
 test: temp
 test: domain
@@ -156,7 +156,7 @@ test: prepare
 test: without_oid
 test: conversion
 test: truncate
-test: alter_table
+#test: alter_table
 test: sequence
 test: polymorphism
 test: rowtypes

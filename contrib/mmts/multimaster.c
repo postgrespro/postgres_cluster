@@ -197,6 +197,7 @@ char const* const MtmNodeStatusMnem[] =
 
 bool  MtmDoReplication;
 char* MtmDatabaseName;
+char* MtmUtilityStmt = NULL;
 
 int   MtmNodes;
 int   MtmNodeId;
@@ -212,8 +213,6 @@ int   MtmHeartbeatSendTimeout;
 int   MtmHeartbeatRecvTimeout;
 bool  MtmUseRaftable;
 bool  MtmUseDtm;
-
-// static int   reset_wrokers = 0;
 
 static char* MtmConnStrs;
 static int   MtmQueueSize;
@@ -683,6 +682,10 @@ static const char* const isoLevelStr[] =
 static void 
 MtmBeginTransaction(MtmCurrentTrans* x)
 {
+	if (MtmUtilityStmt)
+		pfree(MtmUtilityStmt);
+	MtmUtilityStmt = NULL;
+
     if (x->snapshot == INVALID_CSN) { 
 		TransactionId xmin = (Mtm->gcCount >= MtmGcPeriod) ? PgGetOldestXmin(NULL, false) : InvalidTransactionId; /* Get oldest xmin outside critical section */
 
@@ -3042,6 +3045,13 @@ MtmGenerateGid(char* gid)
 
 static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 {
+	if (MtmUtilityStmt && !MyXactAccessedTempRel)
+	{
+		MtmProcessDDLCommand(MtmUtilityStmt);
+		pfree(MtmUtilityStmt);
+		MtmUtilityStmt = NULL;
+	}
+
 	if (!x->isReplicated && (x->isDistributed && x->containsDML)) { 
 		MtmGenerateGid(x->gid);
 		if (!x->isTransactionBlock) { 
@@ -3074,6 +3084,9 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 DestReceiver *dest, char *completionTag)
 {
 	bool skipCommand = false;
+
+	// skipCommand = MyXactAccessedTempRel;
+
 	MTM_LOG3("%d: Process utility statement %s", MyProcPid, queryString);
 	switch (nodeTag(parsetree))
 	{
@@ -3157,12 +3170,12 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			}
 			break;
 		case T_CreateTableAsStmt:
-			{
-				/* Do not replicate temp tables */
-				CreateTableAsStmt *stmt = (CreateTableAsStmt *) parsetree;
-				skipCommand = stmt->into->rel->relpersistence == RELPERSISTENCE_TEMP ||
-					(stmt->into->rel->schemaname && strcmp(stmt->into->rel->schemaname, "pg_temp") == 0);
-			}
+			// {
+			// 	/* Do not replicate temp tables */
+			// 	CreateTableAsStmt *stmt = (CreateTableAsStmt *) parsetree;
+			// 	skipCommand = stmt->into->rel->relpersistence == RELPERSISTENCE_TEMP ||
+			// 		(stmt->into->rel->schemaname && strcmp(stmt->into->rel->schemaname, "pg_temp") == 0);
+			// }
 			break;
 		case T_CreateStmt:
 			{
@@ -3265,11 +3278,26 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			skipCommand = false;
 			break;
 	}
-	if (!skipCommand && !MtmTx.isReplicated && context == PROCESS_UTILITY_TOPLEVEL) {
-		if (MtmProcessDDLCommand(queryString)) { 
-			return;
+	if (context == PROCESS_UTILITY_TOPLEVEL)
+	{
+		if (!skipCommand && !MtmTx.isReplicated) {
+			// if (MtmProcessDDLCommand(queryString)) { 
+			// 	return;
+			// }
+
+			MemoryContext oldcontext;
+
+			if (MtmUtilityStmt)
+				pfree(MtmUtilityStmt);
+
+			oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+			MtmUtilityStmt = palloc(strlen(queryString) + 1);
+			MemoryContextSwitchTo(oldcontext);
+
+			strncpy(MtmUtilityStmt, queryString, strlen(queryString) + 1);
 		}
 	}
+
 	if (PreviousProcessUtilityHook != NULL)
 	{
 		PreviousProcessUtilityHook(parsetree, queryString, context,
