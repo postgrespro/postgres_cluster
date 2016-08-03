@@ -70,6 +70,7 @@ static void UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot);
 static void UserTableUpdateIndexes(EState *estate, TupleTableSlot *slot);
 
 static void process_remote_begin(StringInfo s);
+static void process_remote_message(StringInfo s);
 static void process_remote_commit(StringInfo s);
 static void process_remote_insert(StringInfo s, Relation rel);
 static void process_remote_update(StringInfo s, Relation rel);
@@ -338,7 +339,31 @@ process_remote_begin(StringInfo s)
 	StartTransactionCommand();
     MtmJoinTransaction(&gtid, snapshot);
 
-	MTM_LOG3("REMOTE begin node=%d xid=%d snapshot=%ld", gtid.node, gtid.xid, snapshot);
+	MTM_LOG1("REMOTE begin node=%d xid=%d snapshot=%ld", gtid.node, gtid.xid, snapshot);
+}
+
+static void
+process_remote_message(StringInfo s)
+{
+	const char *stmt;
+	int rc;
+
+	stmt = pq_getmsgstring(s);
+	MTM_LOG1("utility: %s", stmt);
+	MTM_LOG3("%d: Execute utility statement %s", MyProcPid, stmt);
+
+	SPI_connect();
+	rc = SPI_execute(stmt, false, 0);
+	SPI_finish();
+	if (rc < 0)
+		elog(ERROR, "Failed to execute utility statement %s", stmt);
+
+	//XXX: create messages for tables localization too.
+	// if (strcmp(relname, MULTIMASTER_LOCAL_TABLES_TABLE) == 0) { 
+	// 	char* schema = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_schema-1]);
+	// 	char* name = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_name-1]);
+	// 	MtmMakeTableLocal(schema, name);
+	// }
 }
 
 static void
@@ -610,7 +635,6 @@ process_remote_insert(StringInfo s, Relation rel)
 	TupleTableSlot *oldslot;
 	ResultRelInfo *relinfo;
 	ScanKey	*index_keys;
-	char* relname = RelationGetRelationName(rel);
 	int	i;
 
 	estate = create_rel_estate(rel);
@@ -693,22 +717,6 @@ process_remote_insert(StringInfo s, Relation rel)
     FreeExecutorState(estate);
 
 	CommandCounterIncrement();
-
-	if (strcmp(relname, MULTIMASTER_DDL_TABLE) == 0) { 
-		char* ddl = TextDatumGetCString(new_tuple.values[Anum_mtm_ddl_log_query-1]);
-		int rc;
-		SPI_connect();
-		MTM_LOG3("%d: Execute utility statement %s", MyProcPid, ddl);
-		rc = SPI_execute(ddl, false, 0);
-        SPI_finish();
-		if (rc < 0)
-			elog(ERROR, "Failed to execute utility statement %s", ddl);
-	} else if (strcmp(relname, MULTIMASTER_LOCAL_TABLES_TABLE) == 0) { 
-		char* schema = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_schema-1]);
-		char* name = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_name-1]);
-		MtmMakeTableLocal(schema, name);
-	}
-
 }
 
 static void
@@ -985,6 +993,11 @@ void MtmExecutor(int id, void* work, size_t size)
 				s.data = work;
   			    s.cursor = save_cursor;
 				s.len = save_len;
+				continue;
+			}
+			case 'G':
+			{
+				process_remote_message(&s);
 				continue;
 			}
             default:

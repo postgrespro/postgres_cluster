@@ -49,6 +49,7 @@
 #include "replication/walsender.h"
 #include "replication/walsender_private.h"
 #include "replication/slot.h"
+#include "replication/message.h"
 #include "port/atomics.h"
 #include "tcop/utility.h"
 #include "nodes/makefuncs.h"
@@ -235,8 +236,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag);
 
-// static StringInfo	MtmGUCBuffer;
-// static bool			MtmGUCBufferAllocated = false;
+static StringInfo	MtmGUCBuffer;
+static bool			MtmGUCBufferAllocated = false;
 
 /*
  * -------------------------------------------
@@ -2979,51 +2980,53 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	}
 }
 
+static void MtmGUCBufferAppend(const char *gucQueryString){
+
+	if (!MtmGUCBufferAllocated)
+	{
+		MemoryContext oldcontext;
+		oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+		MtmGUCBuffer = makeStringInfo();
+		MemoryContextSwitchTo(oldcontext);
+		MtmGUCBufferAllocated = true;
+		appendStringInfoString(MtmGUCBuffer, "RESET SESSION AUTHORIZATION; reset all;");
+	}
+
+	appendStringInfoString(MtmGUCBuffer, gucQueryString);
+	/* sometimes there is no ';' char at the end. */
+	// appendStringInfoString(MtmGUCBuffer, ";");
+}
+
+static char * MtmGUCBufferGet(void){
+	if (!MtmGUCBufferAllocated)
+		MtmGUCBufferAppend("");
+	return MtmGUCBuffer->data;
+}
+
 static bool MtmProcessDDLCommand(char const* queryString)
 {
-	RangeVar   *rv;
-	Relation	rel;
-	TupleDesc	tupDesc;
-	HeapTuple	tup;
-	Datum		values[Natts_mtm_ddl_log];
-	bool		nulls[Natts_mtm_ddl_log];
-	TimestampTz ts = GetCurrentTimestamp();
+	char	   *queryWithContext;
+	char	   *gucContext;
 
-	rv = makeRangeVar("public", MULTIMASTER_DDL_TABLE, -1);
-	rel = heap_openrv_extended(rv, RowExclusiveLock, true);
-
-	if (rel == NULL) {
-		if (!MtmIsBroadcast()) {
-			MtmBroadcastUtilityStmt(queryString, false);
-			return true;
-		}
-		return false;
+	/* Append global GUC to utility stmt. */
+	gucContext = MtmGUCBufferGet();
+	if (gucContext)
+	{
+		queryWithContext = palloc(strlen(gucContext) + strlen(queryString) +  1);
+		strcpy(queryWithContext, gucContext);
+		strcat(queryWithContext, queryString);
 	}
-		
-	tupDesc = RelationGetDescr(rel);
+	else
+	{
+		queryWithContext = (char *) queryString;
+	}
 
-	/* Form a tuple. */
-	memset(nulls, false, sizeof(nulls));
-
-	values[Anum_mtm_ddl_log_issued - 1] = TimestampTzGetDatum(ts);
-	values[Anum_mtm_ddl_log_query - 1] = CStringGetTextDatum(queryString);
-
-	tup = heap_form_tuple(tupDesc, values, nulls);
-
-	/* Insert the tuple to the catalog. */
-	simple_heap_insert(rel, tup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, tup);
-
-	/* Cleanup. */
-	heap_freetuple(tup);
-	heap_close(rel, RowExclusiveLock);
+	MTM_LOG1("Sending utility: %s", queryWithContext);
+	LogLogicalMessage("MTM:GUC", queryWithContext, strlen(queryWithContext), true);
 
 	MtmTx.containsDML = true;
 	return false;
 }
-
 
 
 /*
@@ -3129,43 +3132,28 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				DiscardStmt *stmt = (DiscardStmt *) parsetree;
 				skipCommand = stmt->target == DISCARD_TEMP;
 
-				// skipCommand = true;
-
-				// if (MtmGUCBufferAllocated)
-				// {
-				// 	// XXX: move allocation somewhere to backend startup and check
-				// 	// where buffer is empty in send routines.
-				// 	MtmGUCBufferAllocated = false;
-				// 	pfree(MtmGUCBuffer);
-				// }
-
+				if (!IsTransactionBlock())
+				{
+					skipCommand = true;
+					MtmGUCBufferAppend(queryString);
+				}
 			}
 			break;
 		case T_VariableSetStmt:
 			{
 				VariableSetStmt *stmt = (VariableSetStmt *) parsetree;
 
-				skipCommand = true;
+				// skipCommand = true;
 
 				/* Prevent SET TRANSACTION from replication */
 				if (stmt->kind == VAR_SET_MULTI)
-					// break;
 					skipCommand = true;
 
-				// if (!MtmGUCBufferAllocated)
-				// {
-				// 	MemoryContext oldcontext;
-
-				// 	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-				// 	MtmGUCBuffer = makeStringInfo();
-				// 	MemoryContextSwitchTo(oldcontext);
-				// 	MtmGUCBufferAllocated = true;
-				// }
-
-				// appendStringInfoString(MtmGUCBuffer, queryString);
-
-				// sometimes there is no ';' char at the end.
-				// appendStringInfoString(MtmGUCBuffer, ";");
+				if (!IsTransactionBlock())
+				{
+					skipCommand = true;
+					MtmGUCBufferAppend(queryString);
+				}
 			}
 			break;
 		case T_CreateTableAsStmt:
@@ -3191,7 +3179,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 
 				viewParse = parse_analyze((Node *) copyObject(stmt->query),
 										queryString, NULL, 0);
-				skipCommand = isQueryUsingTempRelation(viewParse);
+				skipCommand = isQueryUsingTempRelation(viewParse) ||
+					stmt->view->relpersistence == RELPERSISTENCE_TEMP;
 				// ||
 					// (stmt->relation->schemaname && strcmp(stmt->relation->schemaname, "pg_temp") == 0);
 			}
