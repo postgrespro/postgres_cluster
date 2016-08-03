@@ -424,8 +424,7 @@ decide_datum_transfer(Form_pg_attribute att, Form_pg_type typclass,
 PGLogicalProtoAPI *
 pglogical_init_api(PGLogicalProtoType typ)
 {
-    PGLogicalProtoAPI* res = malloc(sizeof(PGLogicalProtoAPI));
-	MemSet(res, 0, sizeof(PGLogicalProtoAPI));
+    PGLogicalProtoAPI* res = palloc0(sizeof(PGLogicalProtoAPI));
 	sscanf(MyReplicationSlot->data.name.data, MULTIMASTER_SLOT_PATTERN, &MtmReplicationNodeId);
 	MTM_LOG1("%d: PRGLOGICAL init API for slot %s node %d", MyProcPid, MyReplicationSlot->data.name.data, MtmReplicationNodeId);
     res->write_rel = pglogical_write_rel;

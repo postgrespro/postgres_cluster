@@ -40,7 +40,6 @@
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "commands/dbcommands.h"
-#include "miscadmin.h"
 #include "postmaster/autovacuum.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
@@ -1205,12 +1204,16 @@ static void MtmEnableNode(int nodeId)
 
 void MtmRecoveryCompleted(void)
 {
+	int i;
 	MTM_LOG1("Recovery of node %d is completed, disabled mask=%lx, reconnect mask=%lx, live nodes=%d", 
 			 MtmNodeId, Mtm->disabledNodeMask, Mtm->reconnectMask, Mtm->nLiveNodes);
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
 	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
+	for (i = 0; i < Mtm->nAllNodes; i++) { 
+		Mtm->nodes[i].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
+	}
 	/* Mode will be changed to online once all logical reciever are connected */
 	MtmSwitchClusterMode(MTM_CONNECTED);
 	MtmUnlock();
@@ -2295,7 +2298,7 @@ void MtmReceiverStarted(int nodeId)
  * Druing recovery we need to open only one replication slot from which node should receive all transactions.
  * Slots at other nodes should be removed 
  */
-MtmSlotMode MtmReceiverSlotMode(int nodeId)
+MtmReplicationMode MtmGetReplicationMode(int nodeId)
 {
 	bool recovery = false;
 	while (Mtm->status != MTM_CONNECTED && Mtm->status != MTM_ONLINE) { 		
@@ -2310,7 +2313,7 @@ MtmSlotMode MtmReceiverSlotMode(int nodeId)
 				Mtm->recoveryCount += 1;
 				Mtm->pglogicalNodeMask = 0;
 				FinishAllPreparedTransactions(false);
-				return SLOT_OPEN_EXISTED;
+				return REPLMODE_RECOVERY;
 			}
 		}
 		/* delay opening of other slots until recovery is completed */
@@ -2322,7 +2325,7 @@ MtmSlotMode MtmReceiverSlotMode(int nodeId)
 		MTM_LOG2("%d: Reuse replication slot for node %d", MyProcPid, nodeId);
 	}
 	/* After recovery completion we need to drop all other slots to avoid receive of redundant data */
-	return recovery ? SLOT_CREATE_NEW : SLOT_OPEN_ALWAYS;
+	return recovery ? REPLMODE_RECOVERED : REPLMODE_NORMAL;
 }
 			
 static bool MtmIsBroadcast() 

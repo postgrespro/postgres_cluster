@@ -117,10 +117,10 @@ typedef enum
 
 typedef enum
 {
-	SLOT_CREATE_NEW,   /* create new slot (drop existed) */
-	SLOT_OPEN_EXISTED, /* open existed slot */
-	SLOT_OPEN_ALWAYS,  /* open existed slot or create new if not exists */
-} MtmSlotMode;
+	REPLMODE_RECOVERED,  /* recovery of node is completed so drop old slot and restart replication from the current position in WAL */
+	REPLMODE_RECOVERY,   /* perform recorvery of the node by applying all data from the slot from specified point */
+	REPLMODE_NORMAL      /* normal mode: use existed slot or create new one and start receiving data from it from the specified position */
+} MtmReplicationMode;
 
 typedef struct
 {
@@ -244,7 +244,7 @@ extern csn_t MtmAssignCSN(void);
 extern csn_t MtmSyncClock(csn_t csn);
 extern void  MtmJoinTransaction(GlobalTransactionId* gtid, csn_t snapshot);
 extern void  MtmReceiverStarted(int nodeId);
-extern MtmSlotMode MtmReceiverSlotMode(int nodeId);
+extern MtmReplicationMode MtmGetReplicationMode(int nodeId);
 extern void  MtmExecute(void* work, int size);
 extern void  MtmExecutor(int id, void* work, size_t size);
 extern void  MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd);

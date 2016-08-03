@@ -1003,7 +1003,7 @@ static void MtmTransReceiver(Datum arg)
 				}
 			}
 		}
-		if (Mtm->status != MTM_RECOVERY) { 
+		if (Mtm->status == MTM_ONLINE) { 
 			now = MtmGetSystemTime();
 			if (now > lastHeartbeatCheck + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) { 
 				if (!MtmWatchdog(stopPolling)) { 

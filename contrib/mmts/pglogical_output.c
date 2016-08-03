@@ -46,6 +46,7 @@
 #include "utils/relcache.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
+#include "miscadmin.h"
 
 extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
 
@@ -147,6 +148,8 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				  bool is_init)
 {
 	PGLogicalOutputData  *data = palloc0(sizeof(PGLogicalOutputData));
+
+	elog(LOG, "%d: pg_decode_startup is_init=%d", MyProcPid, is_init);
 
 	data->context = AllocSetContextCreate(TopMemoryContext,
 										  "pglogical conversion context",

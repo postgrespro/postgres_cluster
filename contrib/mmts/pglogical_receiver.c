@@ -193,9 +193,9 @@ feTimestampDifference(int64 start_time, int64 stop_time,
 
 static char const* const MtmReplicationModeName[] = 
 {
-	"recovered", /* SLOT_CREATE_NEW: recovery of node is completed so drop old slot and restart replication from the current position in WAL */
-	"recovery",  /* SLOT_OPEN_EXISTED: perform recorvery of the node by applying all data from theslot from specified point */
-	"normal"     /* SLOT_OPEN_ALWAYS: normal mode: use existed slot or create new one and start receiving data from it from the specified position */
+	"recovered", /* recovery of node is completed so drop old slot and restart replication from the current position in WAL */
+	"recovery",  /* perform recorvery of the node by applying all data from theslot from specified point */
+	"normal"     /* normal mode: use existed slot or create new one and start receiving data from it from the specified position */
 };
 
 static void
@@ -206,7 +206,7 @@ pglogical_receiver_main(Datum main_arg)
 	PQExpBuffer query;
 	PGconn *conn;
 	PGresult *res;
-	MtmSlotMode mode;
+	MtmReplicationMode mode;
 
     ByteBuffer buf;
 	XLogRecPtr originStartPos = 0;
@@ -251,7 +251,7 @@ pglogical_receiver_main(Datum main_arg)
 		 * Druing recovery we need to open only one replication slot from which node should receive all transactions.
 		 * Slots at other nodes should be removed 
 		 */
-		mode = MtmReceiverSlotMode(nodeId);	
+		mode = MtmGetReplicationMode(nodeId);	
 		count = Mtm->recoveryCount;
 		
 		/* Establish connection to remote server */
@@ -264,14 +264,19 @@ pglogical_receiver_main(Datum main_arg)
 		}
 		
 		query = createPQExpBuffer();
-		
-		if (mode == SLOT_CREATE_NEW) {
+#if 1 /* Do we need to recretate slot ? */		
+		if (mode == REPLMODE_RECOVERED) { /* recreate slot */
 			appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", slotName);
 			res = PQexec(conn, query->data);
 			PQclear(res);
 			resetPQExpBuffer(query);
 		}
-		if (mode != SLOT_OPEN_EXISTED) { 
+#endif
+		/* My original assumption was that we can perfrom recovery only fromm existed slot, 
+		 * but unfortunately looks like slots can "disapear" together with WAL-sender.
+		 * So let's try to recreate slot always. */
+		/* if (mode != REPLMODE_REPLICATION) */
+		{ 
 			appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", slotName, MULTIMASTER_NAME);
 			res = PQexec(conn, query->data);
 			if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -291,24 +296,28 @@ pglogical_receiver_main(Datum main_arg)
 		}
 		
 		/* Start logical replication at specified position */
-		StartTransactionCommand();
-		originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
-		originId = replorigin_by_name(originName, true);
-		if (originId == InvalidRepOriginId) { 
-			originId = replorigin_create(originName);
-			/* 
-			 * We are just creating new replication slot.
-			 * It is assumed that state of local and remote nodes is the same at this moment.
-			 * Them are either empty, either new node is synchronized using base_backup.
-			 * So we assume that LSNs are the same for local and remote node
-			 */
-			originStartPos = Mtm->status == MTM_RECOVERY ? GetXLogInsertRecPtr() : 0;
-			MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, nodeId);
+		if (mode == REPLMODE_RECOVERED) {
+			originStartPos = 0;
 		} else { 
-			originStartPos = replorigin_get_progress(originId, false);
-			MTM_LOG1("Restart logical receiver at position %lx with origin=%d from node %d", originStartPos, originId, nodeId);
+			StartTransactionCommand();
+			originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
+			originId = replorigin_by_name(originName, true);
+			if (originId == InvalidRepOriginId) { 
+				originId = replorigin_create(originName);
+				/* 
+				 * We are just creating new replication slot.
+				 * It is assumed that state of local and remote nodes is the same at this moment.
+				 * Them are either empty, either new node is synchronized using base_backup.
+				 * So we assume that LSNs are the same for local and remote node
+				 */
+				originStartPos = Mtm->status == MTM_RECOVERY ? GetXLogInsertRecPtr() : 0;
+				MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, nodeId);
+			} else { 
+				originStartPos = replorigin_get_progress(originId, false);
+				MTM_LOG1("Restart logical receiver at position %lx with origin=%d from node %d", originStartPos, originId, nodeId);
+			}
+			CommitTransactionCommand();
 		}
-		CommitTransactionCommand();
 		
 		appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %x/%x (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s')",
 						  slotName,
