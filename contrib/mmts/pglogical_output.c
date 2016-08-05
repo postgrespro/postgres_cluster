@@ -377,30 +377,31 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 	send_replication_origin &= txn->origin_id != InvalidRepOriginId;
 
 	OutputPluginPrepareWrite(ctx, !send_replication_origin);
-	data->api->write_begin(ctx->out, data, txn);
+	if (data->api) { 
+		data->api->write_begin(ctx->out, data, txn);
 
-	if (send_replication_origin)
-	{
-		char *origin;
-
-		/* Message boundary */
-		OutputPluginWrite(ctx, false);
-		OutputPluginPrepareWrite(ctx, true);
-
-		/*
-		 * XXX: which behaviour we want here?
-		 *
-		 * Alternatives:
-		 *  - don't send origin message if origin name not found
-		 *    (that's what we do now)
-		 *  - throw error - that will break replication, not good
-		 *  - send some special "unknown" origin
-		 */
-		if (data->api->write_origin &&
-			replorigin_by_oid(txn->origin_id, true, &origin))
+		if (send_replication_origin)
+		{
+			char *origin;
+			
+			/* Message boundary */
+			OutputPluginWrite(ctx, false);
+			OutputPluginPrepareWrite(ctx, true);
+			
+			/*
+			 * XXX: which behaviour we want here?
+			 *
+			 * Alternatives:
+			 *  - don't send origin message if origin name not found
+			 *    (that's what we do now)
+			 *  - throw error - that will break replication, not good
+			 *  - send some special "unknown" origin
+			 */
+			if (data->api->write_origin &&
+				replorigin_by_oid(txn->origin_id, true, &origin))
 			data->api->write_origin(ctx->out, origin, txn->origin_lsn);
+		}
 	}
-
 	OutputPluginWrite(ctx, true);
 }
 
@@ -414,7 +415,9 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 
 	OutputPluginPrepareWrite(ctx, true);
-	data->api->write_commit(ctx->out, data, txn, commit_lsn);
+	if (data->api) { 
+		data->api->write_commit(ctx->out, data, txn, commit_lsn);
+	}
 	OutputPluginWrite(ctx, true);
 }
 
@@ -426,7 +429,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	MemoryContext old;
 
 	/* First check the table filter */
-	if (!call_row_filter_hook(data, txn, relation, change))
+	if (!call_row_filter_hook(data, txn, relation, change) || data->api == NULL)
 		return;
 
 	/* Avoid leaking memory by using and resetting our own context */
@@ -520,7 +523,9 @@ send_startup_message(LogicalDecodingContext *ctx,
 	 */
 
 	OutputPluginPrepareWrite(ctx, last_message);
-	data->api->write_startup_message(ctx->out, msg);
+	if (data->api) {
+		data->api->write_startup_message(ctx->out, msg);
+	}
 	OutputPluginWrite(ctx, last_message);
 
 	pfree(msg);

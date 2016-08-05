@@ -153,10 +153,13 @@ class BankClient(object):
         def tx(conn, cur):
             cur.execute('select sum(amount) from bank_test')
             res = cur.fetchone()
+            total = res[0]
+            if total != 0:
+                cur.execute('select mtm.get_snapshot()')
+                res = cur.fetchone()
+                print("Isolation error, total = %d, node = %d, snapshot = %d" % (total,self.node_id,res[0]))
+                #raise BaseException
             conn.commit()
-            if res[0] != 0:
-                print("Isolation error, total = %d, node = %d" % (res[0],self.node_id))
-                raise BaseException
 
         self.exec_tx('total', tx)
 
@@ -175,10 +178,14 @@ class BankClient(object):
                 set amount = amount - %s
                 where uid = %s''',
                 (amount, from_uid))
+            if (cur.rowcount != 1):
+                raise BaseException
             cur.execute('''update bank_test
                 set amount = amount + %s
                 where uid = %s''',
                 (amount, to_uid))
+            if (cur.rowcount != 1):
+                raise BaseException
             conn.commit()
 
         self.exec_tx('transfer', tx)

@@ -512,9 +512,16 @@ MtmAdjustOldestXid(TransactionId xid)
 	MTM_LOG2("%d: MtmAdjustOldestXid(%d): snapshot=%ld, csn=%ld, status=%d", MyProcPid, xid, ts != NULL ? ts->snapshot : 0, ts != NULL ? ts->csn : 0, ts != NULL ? ts->status : -1);
 	Mtm->gcCount = 0;
 
+	//return FirstNormalTransactionId;
+
 	if (ts != NULL) { 
 		oldestSnapshot = ts->snapshot;
-		Mtm->nodes[MtmNodeId-1].oldestSnapshot = oldestSnapshot;
+		Assert(oldestSnapshot != INVALID_CSN);
+		if (Mtm->nodes[MtmNodeId-1].oldestSnapshot < oldestSnapshot) { 
+			Mtm->nodes[MtmNodeId-1].oldestSnapshot = oldestSnapshot;
+		} else {
+			oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
+		}
 		for (i = 0; i < Mtm->nAllNodes; i++) { 
 			if (!BIT_CHECK(Mtm->disabledNodeMask, i)
 				&& Mtm->nodes[i].oldestSnapshot < oldestSnapshot) 
@@ -527,9 +534,11 @@ MtmAdjustOldestXid(TransactionId xid)
 		for (ts = Mtm->transListHead; 
 			 ts != NULL 
 				 && ts->csn < oldestSnapshot
-				 && TransactionIdPrecedes(ts->xid, xid)
+				 && TransactionIdPrecedes(ts->xid, xid);
+/*
 				 && (ts->status == TRANSACTION_STATUS_COMMITTED ||
 					 ts->status == TRANSACTION_STATUS_ABORTED);
+*/
 			 prev = ts, ts = ts->next) 
 		{ 
 			if (prev != NULL) { 
@@ -542,9 +551,10 @@ MtmAdjustOldestXid(TransactionId xid)
 	if (MtmUseDtm) 
 	{ 
 		if (prev != NULL) { 
+			MTM_LOG1("%d: MtmAdjustOldestXid: oldestXid=%d, prev->xid=%d, prev->status=%d, prev->snapshot=%ld, ts->xid=%d, ts->status=%d, ts->snapshot=%ld, oldestSnapshot=%ld", 
+					 MyProcPid, xid, prev->xid, prev->status, prev->snapshot, (ts ? ts->xid : 0), (ts ? ts->status : -1), (ts ? ts->snapshot : -1), oldestSnapshot);
 			Mtm->transListHead = prev;
 			Mtm->oldestXid = xid = prev->xid;            
-			MTM_LOG2("%d: MtmAdjustOldestXid: oldestXid=%d, oldestSnapshot=%ld", MyProcPid, xid, oldestSnapshot);
 		} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) {  
 			xid = Mtm->oldestXid;
 		}
