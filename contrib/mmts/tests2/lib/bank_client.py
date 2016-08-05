@@ -151,6 +151,7 @@ class BankClient(object):
     def check_total(self):
 
         def tx(conn, cur):
+            conn.commit()
             cur.execute('select sum(amount) from bank_test')
             res = cur.fetchone()
             total = res[0]

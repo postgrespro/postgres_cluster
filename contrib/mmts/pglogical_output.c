@@ -376,8 +376,8 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 	/* If the record didn't originate locally, send origin info */
 	send_replication_origin &= txn->origin_id != InvalidRepOriginId;
 
-	OutputPluginPrepareWrite(ctx, !send_replication_origin);
 	if (data->api) { 
+		OutputPluginPrepareWrite(ctx, !send_replication_origin);
 		data->api->write_begin(ctx->out, data, txn);
 
 		if (send_replication_origin)
@@ -401,8 +401,8 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 				replorigin_by_oid(txn->origin_id, true, &origin))
 			data->api->write_origin(ctx->out, origin, txn->origin_lsn);
 		}
+		OutputPluginWrite(ctx, true);
 	}
-	OutputPluginWrite(ctx, true);
 }
 
 /*
@@ -414,11 +414,11 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 
-	OutputPluginPrepareWrite(ctx, true);
 	if (data->api) { 
+		OutputPluginPrepareWrite(ctx, true);
 		data->api->write_commit(ctx->out, data, txn, commit_lsn);
+		OutputPluginWrite(ctx, true);
 	}
-	OutputPluginWrite(ctx, true);
 }
 
 void
@@ -522,11 +522,11 @@ send_startup_message(LogicalDecodingContext *ctx,
 	 * not.
 	 */
 
-	OutputPluginPrepareWrite(ctx, last_message);
 	if (data->api) {
+		OutputPluginPrepareWrite(ctx, last_message);
 		data->api->write_startup_message(ctx->out, msg);
+		OutputPluginWrite(ctx, last_message);
 	}
-	OutputPluginWrite(ctx, last_message);
 
 	pfree(msg);
 
