@@ -3,7 +3,7 @@ use warnings;
 
 use PostgresNode;
 use TestLib;
-use Test::More tests => 10;
+use Test::More tests => 4;
 
 sub genstr
 {
@@ -18,44 +18,49 @@ sub create_nodes
 {
 	my $nodenum = shift;
 	my $nodesref = {};
-	my @cfg = ();
+	my $cfgref = [];
 	for (my $i = 0; $i < $nodenum; $i++)
 	{
 		$nodesref->{$i} = get_new_node();
 		my $extranode = get_new_node(); # just to find an extra port for raft
-		push @cfg, "$i:127.0.0.1:${\$extranode->port}"
+		push @$cfgref, [$i, '127.0.0.1', ${\$extranode->port}]
 	}
-	return $nodesref, join(',', @cfg);
+	return $nodesref, $cfgref;
 }
 
 sub init_nodes
 {
-	my ($nodesref, $cfg) = @_;
-	print("cfg = $cfg\n");
+	my ($nodesref, $cfgref) = @_;
 	while (my ($id, $node) = each(%$nodesref))
 	{
 		$node->init;
 		$node->append_conf("postgresql.conf", qq(
 shared_preload_libraries = raftable
-raftable.id = $id
-raftable.peers = '$cfg'
 ));
 	}
 }
 
 sub start_nodes
 {
-	my $nodesref = shift;
+	my ($nodesref, $cfgref) = @_;
 	while (my ($id, $node) = each(%$nodesref))
 	{
 		$node->start;
 		$node->psql('postgres', "create extension raftable;");
+
+		while (my ($i, $cfg1ref) = each(@$cfgref))
+		{
+			my ($peerid, $host, $port) = @$cfg1ref;
+			diag("select raftable_peer($peerid, '$host', $port);");
+			$node->psql('postgres', "select raftable_peer($peerid, '$host', $port);");
+		}
+		$node->psql('postgres', "select raftable_start($id);");
 	}
 }
 
-my ($nodesref, $cfg) = create_nodes(3);
-init_nodes($nodesref, $cfg);
-start_nodes($nodesref);
+my ($nodesref, $cfgref) = create_nodes(3);
+init_nodes($nodesref, $cfgref);
+start_nodes($nodesref, $cfgref);
 
 my $able = $nodesref->{0};
 my $baker = $nodesref->{1};
@@ -77,7 +82,7 @@ sub trysql {
 		diag("try sql: ". substr($sql, 0, 60));
 		my ($rc, $stdout, $stderr) = $noderef->psql('postgres', $sql);
 		if (index($stderr, "after") == -1) {
-			return;
+			return $rc, $stdout, $stderr;
 		} else {
 			$retries--;
 			diag($stderr);
@@ -93,25 +98,19 @@ trysql($charlie, "select raftable('goodbye', '$tests{goodbye}', $timeout_ms);");
 $baker->stop;
 trysql($able, "select raftable('world', '$tests{world}', $timeout_ms);");
 
+diag("starting baker");
 $baker->start;
-trysql($baker, "select raftable_sync($timeout_ms);");
+while (my ($i, $cfg1ref) = each(@$cfgref))
+{
+	my ($peerid, $host, $port) = @$cfg1ref;
+	diag("select raftable_peer($peerid, '$host', $port);");
+	$baker->psql('postgres', "select raftable_peer($peerid, '$host', $port);");
+}
+diag("checking baker");
 while (my ($key, $value) = each(%tests))
 {
-	my ($rc, $stdout, $stderr) = $baker->psql('postgres', "select raftable('$key');");
-	is($rc, 0, "Baker returns '$key'");
-	is($stdout, $value, "Baker has the proper value for '$key'");
+	my ($rc, $stdout, $stderr) = trysql($baker, "select raftable('$key', $timeout_ms);");
+	is($stdout, $value, "Baker gets the proper value for '$key' from the leader");
 }
-
-my $ok = 1;
-my ($rc, $stdout, $stderr) = $baker->psql('postgres', "select raftable();");
-is($rc, 0, "Baker returns everything");
-while ($stdout =~ /\((\w+),(\w+)\)/g)
-{
-	if (!exists $tests{$1}) { $ok = 0; last; }
-	my $val = delete $tests{$1};
-	if ($val ne $2) { $ok = 0; last; }
-}
-if (keys %tests > 0) { $ok = 0; }
-is($ok, 1, "Baker has the proper value for everything");
 
 exit(0);

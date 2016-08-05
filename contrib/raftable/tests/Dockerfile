@@ -25,12 +25,15 @@ RUN apt-get update && apt-get install -y \
 	&& rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /pg
-RUN chown postgres:postgres /pg
+RUN mkdir /pg/postgres_cluster
+ADD postgrespro.tar /pg/postgres_cluster/
+RUN chown -R postgres:postgres /pg
+
 USER postgres
 WORKDIR /pg
 
 ENV CFLAGS -O0
-RUN git clone https://github.com/postgrespro/postgres_cluster.git --depth 1
+#RUN git clone https://github.com/postgrespro/postgres_cluster.git --depth 1
 WORKDIR /pg/postgres_cluster
 RUN ./configure  --enable-cassert --enable-debug --prefix=/pg/install
 RUN make -j 4

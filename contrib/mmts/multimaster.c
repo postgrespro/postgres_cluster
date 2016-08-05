@@ -1712,6 +1712,26 @@ static void MtmLoadLocalTables(void)
 	}
 }
 	
+static void MtmRaftableInitialize()
+{
+	int i;
+
+	for (i = 0; i < MtmNodes; i++)
+	{
+		char const* raftport = strstr(MtmConnections[i].connStr, "raftport=");
+		int port;
+		if (raftport != NULL) {
+			if (sscanf(raftport+9, "%d", &port) != 1) { 
+				elog(ERROR, "Invalid raftable port: %s", raftport+9);
+			}
+		} else {
+			port = MtmRaftablePort + i;
+		}
+		raftable_peer(i, MtmConnections[i].hostName, port);
+	}
+	raftable_start(MtmNodeId - 1);
+}
+
 
 static void MtmInitialize()
 {
@@ -1866,33 +1886,6 @@ static void MtmSplitConnStrs(void)
     }
 	pfree(copy);
 }		
-
-static void MtmRaftableInitialize()
-{
-	int i;
-	WorkerConfig wcfg;
-
-	for (i = 0; i < RAFTABLE_PEERS_MAX; i++) 
-	{
-		wcfg.peers[i].up = false;
-	}
-
-	for (i = 0; i < MtmNodes; i++)
-	{
-		char const* raftport = strstr(MtmConnections[i].connStr, "raftport=");
-		if (raftport != NULL) {
-			if (sscanf(raftport+9, "%d", &wcfg.peers[i].port) != 1) { 
-				elog(ERROR, "Invalid raftable port: %s", raftport+9);
-			}
-		} else {
-			wcfg.peers[i].port = MtmRaftablePort + i;
-		}
-		wcfg.peers[i].up = true;
-		strncpy(wcfg.peers[i].host, MtmConnections[i].hostName, sizeof(wcfg.peers[i].host));
-	}
-	wcfg.id = MtmNodeId-1;
-	worker_register(&wcfg);
-}
 
 void
 _PG_init(void)
@@ -2253,7 +2246,7 @@ _PG_init(void)
 
     BgwPoolStart(MtmWorkers, MtmPoolConstructor);
 
-	//MtmRaftableInitialize();
+	MtmRaftableInitialize();
 	MtmArbiterInitialize();
 
 	/*
