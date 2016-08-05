@@ -107,7 +107,7 @@ static int create_listening_socket(const char *host, int port)
 		setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
 		setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char const*)&optval, sizeof(optval));
 		
-		fprintf(stderr, "binding tcp %s:%d\n", host, port);
+		elog(DEBUG1, "binding tcp %s:%d\n", host, port);
 		if (bind(s, a->ai_addr, a->ai_addrlen) < 0)
 		{
 			elog(WARNING, "cannot bind the listening socket: %s", strerror(errno));
@@ -133,7 +133,7 @@ static bool add_client(int sock)
 
 	if (server.clientnum >= MAX_CLIENTS)
 	{
-		fprintf(stderr, "client limit hit\n");
+		elog(WARNING, "client limit hit\n");
 		return false;
 	}
 
@@ -193,17 +193,17 @@ static bool accept_client(void)
 {
 	int fd;
 
-	fprintf(stderr, "a new connection is queued\n");
+	elog(DEBUG1, "a new connection is queued\n");
 
 	fd = accept(server.listener, NULL, NULL);
 	if (fd == -1) {
-		fprintf(stderr, "failed to accept a connection: %s\n", strerror(errno));
+		elog(WARNING, "failed to accept a connection: %s\n", strerror(errno));
 		return false;
 	}
-	fprintf(stderr, "a new connection fd=%d accepted\n", fd);
+	elog(DEBUG1, "a new connection fd=%d accepted\n", fd);
 	
 	if (!raft_is_leader(raft)) {
-		fprintf(stderr, "not a leader, disconnecting the accepted connection fd=%d\n", fd);
+		elog(DEBUG1, "not a leader, disconnecting the accepted connection fd=%d\n", fd);
 		close(fd);
 		return false;
 	}
@@ -256,7 +256,6 @@ static void on_message_recv(Client *c)
 		key = f->data;
 
 		value = state_get(state, key, &vallen);
-		fprintf(stderr, "query='%s' answer(%d)='%.*s'\n", key, (int)vallen, (int)vallen, value);
 		answer = make_single_value_message(key, value, vallen, &answersize);
 		answer->meaning = MEAN_OK;
 		if (value) pfree(value);
@@ -270,7 +269,7 @@ static void on_message_recv(Client *c)
 	}
 	else
 	{
-		fprintf(stderr, "unknown meaning %d (%c) of the client's message\n", rm->meaning, rm->meaning);
+		elog(WARNING, "unknown meaning %d (%c) of the client's message\n", rm->meaning, rm->meaning);
 		c->state = CLIENT_SICK;
 	}
 }
@@ -280,7 +279,6 @@ static void on_message_send(Client *c)
 	Assert(c->state == CLIENT_RECVING);
 	Assert(c->msg != NULL);
 	Assert(c->cursor == c->msg->len + sizeof(c->msg->len));
-	fprintf(stderr, "freeing msg = %p\n", c->msg);
 	pfree(c->msg);
 	c->msg = NULL;
 	c->state = CLIENT_SENDING;
