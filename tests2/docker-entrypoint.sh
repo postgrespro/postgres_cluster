@@ -80,9 +80,6 @@ if [ "$1" = 'postgres' ]; then
 			checkpoint_timeout = 30
 			log_autovacuum_min_duration = 0
 
-			raftable.id = $NODE_ID
-			raftable.peers = '$RAFT_PEERS'
-
 			multimaster.workers = 4
 			multimaster.use_raftable = true
 			multimaster.queue_size=52857600

@@ -396,7 +396,7 @@ static int MtmConnectSocket(int node, int port, int timeout)
     unsigned i, n_addrs = sizeof(addrs) / sizeof(addrs[0]);
 	MtmHandshakeMessage req;
 	MtmArbiterMessage   resp;
-	int sd;
+	int rc, sd;
 	timestamp_t start = MtmGetSystemTime();
 	char const* host = Mtm->nodes[node].con.hostName;
 
@@ -476,7 +476,10 @@ static int MtmConnectSocket(int node, int port, int timeout)
 		close(sd);
 		goto Retry;
 	}
-	if (MtmWaitSocket(sd, false, MtmHeartbeatSendTimeout) != 1 || MtmReadSocket(sd, &resp, sizeof resp) != sizeof(resp)) { 
+	while ((rc = MtmWaitSocket(sd, false, MtmHeartbeatSendTimeout)) == 0) { 
+		elog(WARNING, "Arbiter waiting response for handshake message from %s:%d: rc=%d, error=%d", host, port, rc, errno);	
+	}
+	if (rc != 1 || MtmReadSocket(sd, &resp, sizeof resp) != sizeof(resp)) { 
 		elog(WARNING, "Arbiter failed to receive response for handshake message from %s:%d: errno=%d", host, port, errno);
 		close(sd);
 		goto Retry;
