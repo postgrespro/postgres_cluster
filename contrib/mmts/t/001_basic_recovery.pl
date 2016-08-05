@@ -15,7 +15,7 @@ $cluster->start();
 
 my $psql_out;
 # XXX: create extension on start and poll_untill status is Online
-sleep(5);
+sleep(10);
 
 ###############################################################################
 # Replication check
@@ -60,7 +60,7 @@ is($psql_out, '20', "Check replication after node failure.");
 diag("starting node 2");
 $cluster->{nodes}->[2]->start;
 #diag("sleeping 10");
-#sleep(10); # XXX: here we can poll
+sleep(10); # XXX: here we can poll
 
 $cluster->psql(0, 'postgres', "select mtm.poll_node(3);");
 
