@@ -3,6 +3,7 @@ import time
 import subprocess
 # from lib.bank_client import *
 from client2 import MtmClient
+import datetime
 
 class RecoveryTest(unittest.TestCase):
     @classmethod
@@ -40,7 +41,7 @@ class RecoveryTest(unittest.TestCase):
         self.client.get_status()
 
         for i in range(10):
-            print(i)
+            print(i, datetime.datetime.now())
             time.sleep(3)
             aggs = self.client.get_status()
             MtmClient.print_aggregates(aggs)
@@ -55,7 +56,7 @@ class RecoveryTest(unittest.TestCase):
         self.client.get_status()
 
         for i in range(30):
-            print(i)
+            print(i, datetime.datetime.now())
             time.sleep(3)
             aggs = self.client.get_status()
             MtmClient.print_aggregates(aggs)
