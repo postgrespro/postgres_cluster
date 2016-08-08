@@ -117,7 +117,7 @@ class MtmClient(object):
         yield from cur.execute('select sum(amount) from bank_test')
         total = yield from cur.fetchone()
         if total[0] != 0:
-            self.isolation_errors += 1
+            self.isolation += 1
 
     def run(self):
         # asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
