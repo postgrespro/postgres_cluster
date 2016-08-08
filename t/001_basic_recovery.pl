@@ -41,6 +41,8 @@ is($psql_out, '10', "Check replication while all nodes are up.");
 diag("stopping node 2");
 $cluster->{nodes}->[2]->teardown_node;
 
+sleep(5); # Wait until failure of node will be detected
+
 my $ret = $cluster->psql(0, 'postgres', "insert into t values(4, 40);");
 diag "tx1 status = $ret";
 
@@ -59,8 +61,8 @@ is($psql_out, '20', "Check replication after node failure.");
 
 diag("starting node 2");
 $cluster->{nodes}->[2]->start;
-#diag("sleeping 10");
-sleep(10); # XXX: here we can poll
+
+sleep(10); # Wait until recovery of node will be completed
 
 $cluster->psql(0, 'postgres', "select mtm.poll_node(3);");
 
