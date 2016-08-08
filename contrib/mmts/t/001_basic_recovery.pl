@@ -72,12 +72,17 @@ diag("starting node 2");
 $cluster->{nodes}->[2]->start;
 
 $cluster->psql(0, 'postgres', "select mtm.poll_node(3);");
-sleep(5); # Wait until recovery of node will be completed
 
 diag("inserting 6 on node 1 (can fail)");
 $cluster->psql(0, 'postgres', "insert into t values(6, 60);"); 
 diag("inserting 7 on node 2 (can fail)");
 $cluster->psql(1, 'postgres', "insert into t values(7, 70);");
+
+sleep(5); # Wait until recovery of node will be completed
+
+$cluster->psql(0, 'postgres', "select * from mtm.get_cluster_state();");
+$cluster->psql(1, 'postgres', "select * from mtm.get_cluster_state();");
+$cluster->psql(2, 'postgres', "select * from mtm.get_cluster_state();");
 
 diag("inserting 8 on node 1");
 $cluster->psql(0, 'postgres', "insert into t values(8, 80);");
