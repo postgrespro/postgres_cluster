@@ -31,7 +31,7 @@ USER postgres
 ENV CFLAGS -O0
 WORKDIR /pg
 
-ENV REBUILD 6
+ENV REBUILD 1
 
 RUN cd /pg && \
 	git clone https://github.com/postgrespro/postgres_cluster.git --depth 1 && \
@@ -41,6 +41,8 @@ RUN cd /pg && \
 
 ENV PATH /pg/install/bin:$PATH
 ENV PGDATA /pg/data
+
+ENV REBUILD 1
 
 RUN cd /pg/postgres_cluster/contrib/raftable && make install
 
