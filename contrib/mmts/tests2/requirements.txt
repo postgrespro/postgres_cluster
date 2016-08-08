@@ -1,2 +1,4 @@
 git+https://github.com/kelvich/blockade.git@002-allow-cores
 psycopg2
+aiopg
+aioprocessing
