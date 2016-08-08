@@ -66,17 +66,16 @@ $node_master->backup('my_backup');
 # target TXID.
 $node_master->safe_psql('postgres',
 	"INSERT INTO tab_int VALUES (generate_series(1001,2000))");
-my $recovery_txid =
-  $node_master->safe_psql('postgres', "SELECT txid_current()");
-my $lsn2 =
-  $node_master->safe_psql('postgres', "SELECT pg_current_xlog_location();");
+my $ret =
+  $node_master->safe_psql('postgres', "SELECT pg_current_xlog_location(), txid_current();");
+my ($lsn2, $recovery_txid) = split /\|/, $ret;
 
 # More data, with recovery target timestamp
 $node_master->safe_psql('postgres',
 	"INSERT INTO tab_int VALUES (generate_series(2001,3000))");
-my $recovery_time = $node_master->safe_psql('postgres', "SELECT now()");
-my $lsn3 =
-  $node_master->safe_psql('postgres', "SELECT pg_current_xlog_location();");
+$ret =
+  $node_master->safe_psql('postgres', "SELECT pg_current_xlog_location(), now();");
+my ($lsn3, $recovery_time) = split /\|/, $ret;
 
 # Even more data, this time with a recovery target name
 $node_master->safe_psql('postgres',
@@ -98,10 +97,10 @@ test_recovery_standby('immediate target',
 test_recovery_standby('XID', 'standby_2', $node_master, \@recovery_params,
 	"2000", $lsn2);
 @recovery_params = ("recovery_target_time = '$recovery_time'");
-test_recovery_standby('Time', 'standby_3', $node_master, \@recovery_params,
+test_recovery_standby('time', 'standby_3', $node_master, \@recovery_params,
 	"3000", $lsn3);
 @recovery_params = ("recovery_target_name = '$recovery_name'");
-test_recovery_standby('Name', 'standby_4', $node_master, \@recovery_params,
+test_recovery_standby('name', 'standby_4', $node_master, \@recovery_params,
 	"4000", $lsn4);
 
 # Multiple targets
@@ -111,17 +110,17 @@ test_recovery_standby('Name', 'standby_4', $node_master, \@recovery_params,
 	"recovery_target_name = '$recovery_name'",
 	"recovery_target_xid  = '$recovery_txid'",
 	"recovery_target_time = '$recovery_time'");
-test_recovery_standby('Name + XID + Time',
+test_recovery_standby('name + XID + time',
 	'standby_5', $node_master, \@recovery_params, "3000", $lsn3);
 @recovery_params = (
 	"recovery_target_time = '$recovery_time'",
 	"recovery_target_name = '$recovery_name'",
 	"recovery_target_xid  = '$recovery_txid'");
-test_recovery_standby('Time + Name + XID',
+test_recovery_standby('time + name + XID',
 	'standby_6', $node_master, \@recovery_params, "2000", $lsn2);
 @recovery_params = (
 	"recovery_target_xid  = '$recovery_txid'",
 	"recovery_target_time = '$recovery_time'",
 	"recovery_target_name = '$recovery_name'");
-test_recovery_standby('XID + Time + Name',
+test_recovery_standby('XID + time + name',
 	'standby_7', $node_master, \@recovery_params, "4000", $lsn4);

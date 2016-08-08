@@ -1903,7 +1903,7 @@ include_dir 'conf.d'
          cache, where performance might degrade.  This setting may have no
          effect on some platforms.  The valid range is between
          <literal>0</literal>, which disables controlled writeback, and
-         <literal>2MB</literal>.  The default is <literal>512Kb</> on Linux,
+         <literal>2MB</literal>.  The default is <literal>512kB</> on Linux,
          <literal>0</> elsewhere.  (Non-default values of
          <symbol>BLCKSZ</symbol> change the default and maximum.)
          This parameter can only be set in the <filename>postgresql.conf</>
@@ -2006,7 +2006,7 @@ include_dir 'conf.d'
          <literal>Gather</literal> node.  Parallel workers are taken from the
          pool of processes established by
          <xref linkend="guc-max-worker-processes">.  Note that the requested
-         number of workers may not actually be available at runtime.  If this
+         number of workers may not actually be available at run time.  If this
          occurs, the plan will run with fewer workers than expected, which may
          be inefficient.  The default value is 2.  Setting this value to 0
          disables parallel query execution.
@@ -2089,6 +2089,15 @@ include_dir 'conf.d'
          useful for testing.  While a setting as high as <literal>60d</> is
          allowed, please note that in many workloads extreme bloat or
          transaction ID wraparound may occur in much shorter time frames.
+        </para>
+
+        <para>
+         When this feature is enabled, freed space at the end of a relation
+         cannot be released to the operating system, since that could remove
+         information needed to detect the <literal>snapshot too old</>
+         condition.  All space allocated to a relation remains associated with
+         that relation for reuse only within that relation unless explicitly
+         freed (for example, with <command>VACUUM FULL</>).
         </para>
 
         <para>
@@ -2651,7 +2660,7 @@ include_dir 'conf.d'
         than the OS's page cache, where performance might degrade.  This
         setting may have no effect on some platforms.  The valid range is
         between <literal>0</literal>, which disables controlled writeback,
-        and <literal>2MB</literal>.  The default is <literal>256Kb</> on
+        and <literal>2MB</literal>.  The default is <literal>256kB</> on
         Linux, <literal>0</> elsewhere.  (Non-default values of
         <symbol>BLCKSZ</symbol> change the default and maximum.)
         This parameter can only be set in the <filename>postgresql.conf</>

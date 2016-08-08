@@ -14,9 +14,9 @@
 
 #include "postgres.h"
 
+#include "access/parallel.h"
 #include "access/xact.h"
 #include "access/xlog.h"
-#include "access/parallel.h"
 #include "catalog/namespace.h"
 #include "commands/async.h"
 #include "libpq/libpq.h"
@@ -34,6 +34,7 @@
 #include "utils/memutils.h"
 #include "utils/resowner.h"
 #include "utils/snapmgr.h"
+
 
 /*
  * We don't want to waste a lot of memory on an error queue which, most of
@@ -94,7 +95,7 @@ typedef struct FixedParallelState
 int			ParallelWorkerNumber = -1;
 
 /* Is there a parallel message pending which we need to receive? */
-bool		ParallelMessagePending = false;
+volatile bool ParallelMessagePending = false;
 
 /* Are we initializing a parallel worker? */
 bool		InitializingParallelWorker = false;
@@ -106,11 +107,12 @@ static FixedParallelState *MyFixedParallelState;
 static dlist_head pcxt_list = DLIST_STATIC_INIT(pcxt_list);
 
 /* Private functions. */
-static void HandleParallelMessage(ParallelContext *, int, StringInfo msg);
+static void HandleParallelMessage(ParallelContext *pcxt, int i, StringInfo msg);
 static void ParallelErrorContext(void *arg);
 static void ParallelExtensionTrampoline(dsm_segment *seg, shm_toc *toc);
 static void ParallelWorkerMain(Datum main_arg);
 static void WaitForParallelWorkersToExit(ParallelContext *pcxt);
+
 
 /*
  * Establish a new parallel context.  This should be done after entering
@@ -681,17 +683,17 @@ ParallelContextActive(void)
 
 /*
  * Handle receipt of an interrupt indicating a parallel worker message.
+ *
+ * Note: this is called within a signal handler!  All we can do is set
+ * a flag that will cause the next CHECK_FOR_INTERRUPTS() to invoke
+ * HandleParallelMessages().
  */
 void
 HandleParallelMessageInterrupt(void)
 {
-	int			save_errno = errno;
-
 	InterruptPending = true;
 	ParallelMessagePending = true;
 	SetLatch(MyLatch);
-
-	errno = save_errno;
 }
 
 /*
@@ -702,14 +704,21 @@ HandleParallelMessages(void)
 {
 	dlist_iter	iter;
 
+	/*
+	 * This is invoked from ProcessInterrupts(), and since some of the
+	 * functions it calls contain CHECK_FOR_INTERRUPTS(), there is a potential
+	 * for recursive calls if more signals are received while this runs.  It's
+	 * unclear that recursive entry would be safe, and it doesn't seem useful
+	 * even if it is safe, so let's block interrupts until done.
+	 */
+	HOLD_INTERRUPTS();
+
 	ParallelMessagePending = false;
 
 	dlist_foreach(iter, &pcxt_list)
 	{
 		ParallelContext *pcxt;
 		int			i;
-		Size		nbytes;
-		void	   *data;
 
 		pcxt = dlist_container(ParallelContext, node, iter.cur);
 		if (pcxt->worker == NULL)
@@ -719,13 +728,15 @@ HandleParallelMessages(void)
 		{
 			/*
 			 * Read as many messages as we can from each worker, but stop when
-			 * either (1) the error queue goes away, which can happen if we
-			 * receive a Terminate message from the worker; or (2) no more
-			 * messages can be read from the worker without blocking.
+			 * either (1) the worker's error queue goes away, which can happen
+			 * if we receive a Terminate message from the worker; or (2) no
+			 * more messages can be read from the worker without blocking.
 			 */
 			while (pcxt->worker[i].error_mqh != NULL)
 			{
 				shm_mq_result res;
+				Size		nbytes;
+				void	   *data;
 
 				res = shm_mq_receive(pcxt->worker[i].error_mqh, &nbytes,
 									 &data, true);
@@ -742,14 +753,13 @@ HandleParallelMessages(void)
 				}
 				else
 					ereport(ERROR,
-							(errcode(ERRCODE_INTERNAL_ERROR),	/* XXX: wrong errcode? */
-							 errmsg("lost connection to parallel worker")));
-
-				/* This might make the error queue go away. */
-				CHECK_FOR_INTERRUPTS();
+						  (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						   errmsg("lost connection to parallel worker")));
 			}
 		}
 	}
+
+	RESUME_INTERRUPTS();
 }
 
 /*
@@ -833,7 +843,7 @@ HandleParallelMessage(ParallelContext *pcxt, int i, StringInfo msg)
 
 		default:
 			{
-				elog(ERROR, "unknown message type: %c (%d bytes)",
+				elog(ERROR, "unrecognized message type received from parallel worker: %c (message length %d bytes)",
 					 msgtype, msg->len);
 			}
 	}
