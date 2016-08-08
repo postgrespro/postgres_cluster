@@ -80,9 +80,12 @@ $cluster->psql(1, 'postgres', "insert into t values(7, 70);");
 
 sleep(5); # Wait until recovery of node will be completed
 
-$cluster->psql(0, 'postgres', "select * from mtm.get_cluster_state();");
-$cluster->psql(1, 'postgres', "select * from mtm.get_cluster_state();");
-$cluster->psql(2, 'postgres', "select * from mtm.get_cluster_state();");
+$cluster->psql(0, 'postgres', "select * from mtm.get_cluster_state();", stdout => \$psql_out);
+diag("Node 1 status: $psql_out")
+$cluster->psql(1, 'postgres', "select * from mtm.get_cluster_state();", stdout => \$psql_out);
+diag("Node 2 status: $psql_out")
+$cluster->psql(2, 'postgres', "select * from mtm.get_cluster_state();", stdout => \$psql_out);
+diag("Node 3 status: $psql_out")
 
 diag("inserting 8 on node 1");
 $cluster->psql(0, 'postgres', "insert into t values(8, 80);");
