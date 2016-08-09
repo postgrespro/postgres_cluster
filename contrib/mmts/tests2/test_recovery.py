@@ -40,14 +40,14 @@ class RecoveryTest(unittest.TestCase):
         # clear tx history
         self.client.get_status()
 
-        for i in range(10):
+        for i in range(3):
             print(i, datetime.datetime.now())
             time.sleep(3)
             aggs = self.client.get_status()
             MtmClient.print_aggregates(aggs)
-            #self.assertTrue( aggs[0]['transfer']['finish']['Commit'] > 0 )
-            #self.assertTrue( aggs[1]['transfer']['finish']['Commit'] > 0 )
-            #self.assertTrue( 'Commit' not in aggs[2]['transfer']['finish'] )
+            self.assertTrue( aggs['transfer_0']['finish']['commit'] > 0 )
+            self.assertTrue( aggs['transfer_1']['finish']['commit'] > 0 )
+            # self.assertTrue( aggs['transfer_2']['finish']['commit'] == 0 )
 
         subprocess.check_call(['blockade','join'])
         print('### deblockade node3 ###')
@@ -55,11 +55,17 @@ class RecoveryTest(unittest.TestCase):
         # clear tx history
         self.client.get_status()
 
-        for i in range(30):
+        for i in range(20):
             print(i, datetime.datetime.now())
             time.sleep(3)
             aggs = self.client.get_status()
             MtmClient.print_aggregates(aggs)
+
+        # check that during last aggregation all nodes were working
+        self.assertTrue( aggs['transfer_0']['finish']['commit'] > 0 )
+        self.assertTrue( aggs['transfer_1']['finish']['commit'] > 0 )
+        self.assertTrue( aggs['transfer_2']['finish']['commit'] > 0 )
+
 
 
 if __name__ == '__main__':
