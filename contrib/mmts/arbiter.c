@@ -107,7 +107,7 @@ static int         gateway;
 static bool        send_heartbeat;
 static timestamp_t last_sent_heartbeat;
 static TimeoutId   heartbeat_timer;
-static int         busy_socket;
+static nodemask_t  busy_mask;
 
 static void MtmTransSender(Datum arg);
 static void MtmTransReceiver(Datum arg);
@@ -243,23 +243,19 @@ static int MtmWaitSocket(int sd, bool forWrite, time_t timeoutMsec)
 static bool MtmWriteSocket(int sd, void const* buf, int size)
 {
     char* src = (char*)buf;
-	busy_socket = sd;
     while (size != 0) {
 		int rc = MtmWaitSocket(sd, true, MtmHeartbeatSendTimeout);
 		if (rc == 1) { 
 			while ((rc = send(sd, src, size, 0)) < 0 && errno == EINTR);			
 			if (rc < 0) {
-				busy_socket = -1;
 				return false;
 			}
 			size -= rc;
 			src += rc;
 		} else if (rc < 0) { 
-			busy_socket = -1;
 			return false;
 		}
     }
-	busy_socket = -1;
 	return true;
 }
 
@@ -271,8 +267,6 @@ static int MtmReadSocket(int sd, void* buf, int buf_size)
 		rc = MtmWaitSocket(sd, false, MtmHeartbeatSendTimeout);
 		if (rc == 1) { 
 			while ((rc = recv(sd, buf, buf_size, 0)) < 0 && errno == EINTR);			
-		} else { 
-			return 0;
 		}
 	}
 	return rc;
@@ -365,7 +359,7 @@ static void MtmSendHeartbeat()
 
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
-		if (i+1 != MtmNodeId && sockets[i] != busy_socket 
+		if (i+1 != MtmNodeId && !BIT_CHECK(busy_mask, i)
 			&& (Mtm->status != MTM_ONLINE 
 				|| (sockets[i] >= 0 && !BIT_CHECK(Mtm->disabledNodeMask, i) && !BIT_CHECK(Mtm->reconnectMask, i))))
 		{ 
@@ -399,6 +393,7 @@ static int MtmConnectSocket(int node, int port, int timeout)
 	int sd;
 	timestamp_t start = MtmGetSystemTime();
 	char const* host = Mtm->nodes[node].con.hostName;
+	nodemask_t save_mask = busy_mask;
 
     sock_inet.sin_family = AF_INET;
 	sock_inet.sin_port = htons(port);
@@ -407,7 +402,8 @@ static int MtmConnectSocket(int node, int port, int timeout)
 		elog(LOG, "Arbiter failed to resolve host '%s' by name", host);
 		return -1;
 	}
-
+	BIT_SET(busy_mask, node);
+	
   Retry:
     while (1) {
 		int rc = -1;
@@ -415,14 +411,15 @@ static int MtmConnectSocket(int node, int port, int timeout)
 		sd = socket(AF_INET, SOCK_STREAM, 0);
 		if (sd < 0) {
 			elog(LOG, "Arbiter failed to create socket: %d", errno);
+			busy_mask = save_mask;
 			return -1;
 		}
 		rc = fcntl(sd, F_SETFL, O_NONBLOCK);
 		if (rc < 0) {
 			elog(LOG, "Arbiter failed to switch socket to non-blocking mode: %d", errno);
+			busy_mask = save_mask;
 			return -1;
 		}
-		busy_socket = sd;
 		for (i = 0; i < n_addrs; ++i) {
 			memcpy(&sock_inet.sin_addr, &addrs[i], sizeof sock_inet.sin_addr);
 			do {
@@ -438,8 +435,8 @@ static int MtmConnectSocket(int node, int port, int timeout)
 		}
 		if (errno != EINPROGRESS || start  + MSEC_TO_USEC(timeout) < MtmGetSystemTime()) {
 			elog(WARNING, "Arbiter failed to connect to %s:%d: error=%d", host, port, errno);
-			busy_socket = -1;
 			close(sd);
+			busy_mask = save_mask;
 			return -1;
 		} else {
 			rc = MtmWaitSocket(sd, true, MtmHeartbeatSendTimeout);
@@ -447,8 +444,8 @@ static int MtmConnectSocket(int node, int port, int timeout)
 				socklen_t optlen = sizeof(int); 
 				if (getsockopt(sd, SOL_SOCKET, SO_ERROR, (void*)&rc, &optlen) < 0) { 
 					elog(WARNING, "Arbiter failed to getsockopt for %s:%d: error=%d", host, port, errno);
-					busy_socket = -1;
 					close(sd);
+					busy_mask = save_mask;
 					return -1;
 				}
 				if (rc == 0) { 
@@ -490,6 +487,8 @@ static int MtmConnectSocket(int node, int port, int timeout)
 	MtmLock(LW_EXCLUSIVE);
 	MtmCheckResponse(&resp);
 	MtmUnlock();
+
+	busy_mask = save_mask;
 
 	return sd;
 }
@@ -533,6 +532,9 @@ static void MtmOpenConnections()
 
 static bool MtmSendToNode(int node, void const* buf, int size)
 {	
+	bool result = true;
+	nodemask_t save_mask = busy_mask;
+	BIT_SET(busy_mask, node);
 	while (true) {
 		if (sockets[node] >= 0 && BIT_CHECK(Mtm->reconnectMask, node)) {
 			elog(WARNING, "Arbiter is forced to reconnect to node %d", node+1); 
@@ -553,13 +555,17 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 			sockets[node] = MtmConnectSocket(node, MtmArbiterPort + node + 1, MtmReconnectTimeout);
 			if (sockets[node] < 0) { 
 				MtmOnNodeDisconnect(node+1);
-				return false;
+				result = false;
+				break;
 			}
 			MTM_LOG3("Arbiter restablished connection with node %d", node+1);
 		} else { 
-			return true;
+			result = true;
+			break;
 		}
 	}
+	busy_mask = save_mask;
+	return result;
 }
 
 static int MtmReadFromNode(int node, void* buf, int buf_size)

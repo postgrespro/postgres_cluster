@@ -529,7 +529,11 @@ MtmAdjustOldestXid(TransactionId xid)
 				oldestSnapshot = Mtm->nodes[i].oldestSnapshot;
 			}
 		}
-		oldestSnapshot -= MtmVacuumDelay*USECS_PER_SEC;
+		if (oldestSnapshot > MtmVacuumDelay*USECS_PER_SEC) { 
+			oldestSnapshot -= MtmVacuumDelay*USECS_PER_SEC;
+		} else { 
+			oldestSnapshot = 0;
+		}
 		
 		for (ts = Mtm->transListHead; 
 			 ts != NULL 
@@ -1561,7 +1565,16 @@ void MtmOnNodeDisconnect(int nodeId)
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	MtmUnlock();
 
-	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false);
+	if (!RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false))
+	{
+		elog(WARNING, "Disable node which is in minority according to RAFT");
+		MtmLock(LW_EXCLUSIVE);
+		if (Mtm->status == MTM_ONLINE) { 
+			MtmSwitchClusterMode(MTM_IN_MINORITY);
+		}
+		MtmUnlock();
+		return;
+	}
 
 	MtmSleep(MSEC_TO_USEC(MtmHeartbeatSendTimeout));
 

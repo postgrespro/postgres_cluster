@@ -20,8 +20,9 @@ extern void* RaftableGet(char const* key, size_t* size, RaftableTimestamp* ts, b
 /*
  * Set new value for the specified key. IF value is NULL, then key should be deleted.
  * If RAFT master is not accessible, then depending non value of "nowait" parameter, this funciton should either block until RAFT quorum is reached, either report error.
+ * Returns false if rafttable is in minority
  */
-extern void  RaftableSet(char const* key, void const* value, size_t size, bool nowait);
+extern bool RaftableSet(char const* key, void const* value, size_t size, bool nowait);
 
 /* 
  * If key doesn't exists or its value is not equal to the specified value then store this value and return true.

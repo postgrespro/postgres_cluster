@@ -22,10 +22,10 @@ void* RaftableGet(char const* key, size_t* size, RaftableTimestamp* ts, bool now
 }
 
 
-void RaftableSet(char const* key, void const* value, size_t size, bool nowait)
+bool RaftableSet(char const* key, void const* value, size_t size, bool nowait)
 {
 	if (MtmUseRaftable) {
-		int tries = 10;
+		int tries = MtmHeartbeatRecvTimeout/MtmHeartbeatSendTimeout;
 		timestamp_t start, stop;
 		start = MtmGetSystemTime();
 		if (nowait) {
@@ -36,8 +36,8 @@ void RaftableSet(char const* key, void const* value, size_t size, bool nowait)
 				MtmCheckHeartbeat();
 				if (tries-- <= 0)
 				{
-					MTM_LOG1("RaftableSet nowait=%d, all attempts failed", nowait);
-					break;
+					elog(WARNING, "Failed to send data to raftable in %d msec", MtmHeartbeatRecvTimeout);
+					return false;
 				}
 			}
 		}
@@ -46,6 +46,7 @@ void RaftableSet(char const* key, void const* value, size_t size, bool nowait)
 			MTM_LOG1("Raftable set nowait=%d takes %ld microseconds", nowait, stop - start);
 		}
 	}		
+	return true;
 }
 
 bool RaftableCAS(char const* key, char const* value, bool nowait)
