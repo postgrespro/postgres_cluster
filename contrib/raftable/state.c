@@ -39,7 +39,6 @@ static void state_clear(StateP state)
 void state_set(StateP state, const char *key, const char *value, size_t vallen)
 {
 	Assert(state);
-	fprintf(stderr, "setting state[%s] = %.*s\n", key, (int)vallen, value);
 
 	if (value == NULL)
 	{
@@ -68,7 +67,6 @@ void state_set(StateP state, const char *key, const char *value, size_t vallen)
 		}
 		e->vallen = vallen;
 		e->value = memcpy(palloc(vallen), value, vallen);
-		fprintf(stderr, "value set to %.*s\n", (int)e->vallen, e->value);
 	}
 }
 
