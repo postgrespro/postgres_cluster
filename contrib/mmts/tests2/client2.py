@@ -72,11 +72,15 @@ class MtmClient(object):
         while self.running:
             msg = yield from self.child_pipe.coro_recv()
             if msg == 'status':
+                print('evloop: got status request')
                 serialized_aggs = {}
                 for name, aggregate in self.aggregates.items():
                     serialized_aggs[name] = aggregate.as_dict() 
                     aggregate.clear_values()
                 self.child_pipe.send(serialized_aggs)
+                print('evloop: sent status response')
+            else:
+                print('evloop: unknown message')
 
 
     @asyncio.coroutine
@@ -94,6 +98,7 @@ class MtmClient(object):
                 agg.finish_tx('commit')
             except psycopg2.Error as e:
                 agg.finish_tx(e.pgerror)
+        print("We've count to infinity!")
 
     @asyncio.coroutine
     def transfer_tx(self, conn, cur):
@@ -117,6 +122,7 @@ class MtmClient(object):
         yield from cur.execute('select sum(amount) from bank_test')
         total = yield from cur.fetchone()
         if total[0] != 0:
+            print('Isolation error, totel = ', total[0])
             self.isolation += 1
 
     def run(self):
@@ -138,8 +144,12 @@ class MtmClient(object):
         self.evloop_process.start()
 
     def get_status(self):
+        print('test: sending status request')
         self.parent_pipe.send('status')
-        return self.parent_pipe.recv()
+        print('test: awaitng status response')
+        resp = self.parent_pipe.recv()
+        print('test: got status response')
+        return resp
     
     def stop(self):
         self.running = False
