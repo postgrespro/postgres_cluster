@@ -421,7 +421,6 @@ char *raftable_get(const char *key, size_t *len, int timeout_ms)
 	char *value = NULL;
 
 	msg = make_single_value_message(key, NULL, 0, &size);
-	elog(WARNING, "message size = %d", (int)size);
 
 	msg->meaning = MEAN_GET;
 
