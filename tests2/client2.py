@@ -51,6 +51,34 @@ class MtmClient(object):
         self.aggregates = {}
         self.initdb()
         self.running = True
+        self.nodes_state_fields = ["id", "disabled", "disconnected", "catchUp", "slotLag",
+            "avgTransDelay", "lastStatusChange", "oldestSnapshot", "SenderPid",
+            "SenderStartTime ", "ReceiverPid", "ReceiverStartTime", "connStr"]
+        self.oops = '''
+                        . . .                         
+                         \|/                          
+                       `--+--'                        
+                         /|\                          
+                        ' | '                         
+                          |                           
+                          |                           
+                      ,--'#`--.                       
+                      |#######|                       
+                   _.-'#######`-._                    
+                ,-'###############`-.                 
+              ,'#####################`,               
+             /#########################\              
+            |###########################|             
+           |#############################|            
+           |#############################|            
+           |#############################|            
+           |#############################|            
+            |###########################|             
+             \#########################/              
+              `.#####################,'               
+                `._###############_,'                 
+                   `--..#####..--'      
+'''
 
     def initdb(self):
         conn = psycopg2.connect(self.dsns[0])
@@ -94,14 +122,14 @@ class MtmClient(object):
             agg.start_tx()
             try:
                 yield from cur.execute('commit')
-                yield from tx_block(conn, cur)
+                yield from tx_block(conn, cur, agg)
                 agg.finish_tx('commit')
             except psycopg2.Error as e:
                 agg.finish_tx(e.pgerror)
         print("We've count to infinity!")
 
     @asyncio.coroutine
-    def transfer_tx(self, conn, cur):
+    def transfer_tx(self, conn, cur, agg):
         amount = 1
         # to avoid deadlocks:
         from_uid = random.randint(1, self.n_accounts - 2)
@@ -118,12 +146,21 @@ class MtmClient(object):
         yield from cur.execute('commit')
 
     @asyncio.coroutine
-    def total_tx(self, conn, cur):
+    def total_tx(self, conn, cur, agg):
         yield from cur.execute('select sum(amount) from bank_test')
         total = yield from cur.fetchone()
         if total[0] != 0:
-            print('Isolation error, totel = ', total[0])
-            self.isolation += 1
+            agg.isolation += 1
+            print(self.oops)
+            print('Isolation error, total = ', total[0])
+            yield from cur.execute('select * from mtm.get_nodes_state()')
+            nodes_state = yield from cur.fetchall()
+            for i, col in enumerate(self.nodes_state_fields):
+                print("%17s" % col, end="\t")
+                for j in range(3):
+                     print("%19s" % nodes_state[j][i], end="\t")
+                print("\n")
+
 
     def run(self):
         # asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
