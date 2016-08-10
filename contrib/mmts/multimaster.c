@@ -900,8 +900,12 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		int nConfigChanges = Mtm->nConfigChanges;
 
 		timestamp_t start = MtmGetSystemTime();	
-		/* wait votes from all nodes */
-		while (!ts->votingCompleted && Mtm->status == MTM_ONLINE && ts->status != TRANSACTION_STATUS_ABORTED && start + transTimeout >= MtmGetSystemTime()) 
+		/* Wait votes from all nodes until: */
+		while (!ts->votingCompleted                           /* all nodes voted */
+			   && nConfigChanges == Mtm->nConfigChanges       /* configarion is changed */
+			   && Mtm->status == MTM_ONLINE                   /* node is not online */
+			   && ts->status != TRANSACTION_STATUS_ABORTED    /* transaction is aborted */
+			   && start + transTimeout >= MtmGetSystemTime()) /* timeout is expired */
 		{
 			MtmUnlock();
 			MTM_TXTRACE(x, "PostPrepareTransaction WaitLatch Start");
@@ -912,14 +916,13 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 			} 
 			MtmLock(LW_SHARED);
 		}
-		if (!ts->votingCompleted) {  
-			if (ts->status != TRANSACTION_STATUS_ABORTED) { 
-				MtmAbortTransaction(ts);
+		if (ts->status != TRANSACTION_STATUS_ABORTED && (!ts->votingCompleted || nConfigChanges != Mtm->nConfigChanges)) {  
+			if (nConfigChanges != Mtm->nConfigChanges) {
+				elog(WARNING, "Transaction %d is aborted because cluster configuration is changed during commit", x->xid);
+			} else {
 				elog(WARNING, "Transaction %d is aborted because of %d msec timeout expiration, prepare time %d msec", x->xid, (int)transTimeout, (int)USEC_TO_MSEC(ts->csn - x->snapshot));
 			}
-		} else if (nConfigChanges != Mtm->nConfigChanges) {
 			MtmAbortTransaction(ts);
-			elog(WARNING, "Transaction %d is aborted because cluster configuration is changed during commit", x->xid);
 		}
 		x->status = ts->status;
 		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
@@ -2299,6 +2302,7 @@ void MtmReceiverStarted(int nodeId)
 		BIT_SET(Mtm->pglogicalNodeMask, nodeId-1);
 		if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
 			MtmEnableNode(nodeId);
+			MtmCheckQuorum();
 		}
 		if (++Mtm->nReceivers == Mtm->nLiveNodes-1) {
 			if (Mtm->status == MTM_CONNECTED) { 
