@@ -101,6 +101,8 @@ sub configure
 			multimaster.node_id = $id
 			multimaster.conn_strings = '$connstr'
 			multimaster.use_raftable = true
+			multimaster.heartbeat_recv_timeout = 1000
+			multimaster.heartbeat_send_timeout = 250
 			multimaster.ignore_tables_without_pk = true
 			multimaster.twopc_min_timeout = 2000
 			raftable.id = $id
