@@ -2245,9 +2245,11 @@ _PG_init(void)
 	if (DefaultXactIsoLevel != XACT_REPEATABLE_READ) { 
 		elog(ERROR, "Multimaster requires repeatable read default isolation level");
 	}
+#if 0
 	if (synchronous_commit != SYNCHRONOUS_COMMIT_ON) { 
 		elog(ERROR, "Multimaster requires synchronous commit on");
 	}
+#endif
 
 	MtmSplitConnStrs();
     MtmStartReceivers();
