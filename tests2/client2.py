@@ -20,7 +20,7 @@ class MtmTxAggregate(object):
     def clear_values(self):
         self.max_latency = 0.0
         self.finish = {}
-    
+
     def start_tx(self):
         self.start_time = datetime.datetime.now()
 
@@ -34,7 +34,7 @@ class MtmTxAggregate(object):
             self.finish[name] = 1
         else:
             self.finish[name] += 1
-    
+
     def as_dict(self):
         return {
             'running_latency': (datetime.datetime.now() - self.start_time).total_seconds(),
@@ -43,13 +43,24 @@ class MtmTxAggregate(object):
             'finish': copy.deepcopy(self.finish)
         }
 
+def keep_trying(tries, delay, method, name, *args, **kwargs):
+    for t in range(tries):
+        try:
+            return method(*args, **kwargs)
+        except Exception as e:
+            if t == tries - 1:
+                raise Exception("%s failed all %d tries" % (name, tries)) from e
+            print("%s failed [%d of %d]: %s" % (name, t + 1, tries, str(e)))
+            time.sleep(delay)
+    raise Exception("this should not happen")
+
 class MtmClient(object):
 
     def __init__(self, dsns, n_accounts=100000):
         self.n_accounts = n_accounts
         self.dsns = dsns
         self.aggregates = {}
-        self.initdb()
+        keep_trying(40, 1, self.initdb, 'self.initdb')
         self.running = True
         self.nodes_state_fields = ["id", "disabled", "disconnected", "catchUp", "slotLag",
             "avgTransDelay", "lastStatusChange", "oldestSnapshot", "SenderPid",
@@ -173,7 +184,7 @@ class MtmClient(object):
         asyncio.async(self.status())
 
         self.loop.run_forever()
-    
+
     def bgrun(self):
         print('Starting evloop in different process');
         self.parent_pipe, self.child_pipe = aioprocessing.AioPipe()
@@ -187,7 +198,7 @@ class MtmClient(object):
         resp = self.parent_pipe.recv()
         print('test: got status response')
         return resp
-    
+
     def stop(self):
         self.running = False
         self.evloop_process.terminate()
