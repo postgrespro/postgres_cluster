@@ -159,7 +159,7 @@ class BankClient(object):
                 cur.execute('select mtm.get_snapshot()')
                 res = cur.fetchone()
                 print("Isolation error, total = %d, node = %d, snapshot = %d" % (total,self.node_id,res[0]))
-                #raise BaseException
+                raise BaseException
             conn.commit()
 
         self.exec_tx('total', tx)
