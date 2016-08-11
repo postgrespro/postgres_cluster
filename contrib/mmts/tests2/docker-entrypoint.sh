@@ -15,7 +15,7 @@ if [ "$1" = 'postgres' ]; then
 
 	# look specifically for PG_VERSION, as it is expected in the DB dir
 	if [ ! -s "$PGDATA/PG_VERSION" ]; then
-		initdb
+		initdb --nosync
 
 		if [ "$POSTGRES_PASSWORD" ]; then
 			pass="PASSWORD '$POSTGRES_PASSWORD'"
