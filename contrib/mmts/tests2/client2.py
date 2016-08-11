@@ -139,10 +139,12 @@ class MtmClient(object):
             set amount = amount - %s
             where uid = %s''',
             (amount, from_uid))
+        assert(cur.rowcount == 1)
         yield from cur.execute('''update bank_test
             set amount = amount + %s
             where uid = %s''',
             (amount, to_uid))
+        assert(cur.rowcount == 1)
         yield from cur.execute('commit')
 
     @asyncio.coroutine

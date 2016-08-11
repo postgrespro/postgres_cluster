@@ -71,6 +71,8 @@ is($psql_out, '40', "Check replication after node failure.");
 diag("starting node 2");
 $cluster->{nodes}->[2]->start;
 
+sleep(5); # Wait until node is started
+
 diag("inserting 6 on node 1 (can fail)");
 $cluster->psql(0, 'postgres', "insert into t values(6, 60);"); 
 diag("inserting 7 on node 2 (can fail)");

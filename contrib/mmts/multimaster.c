@@ -512,8 +512,6 @@ MtmAdjustOldestXid(TransactionId xid)
 	MTM_LOG2("%d: MtmAdjustOldestXid(%d): snapshot=%ld, csn=%ld, status=%d", MyProcPid, xid, ts != NULL ? ts->snapshot : 0, ts != NULL ? ts->csn : 0, ts != NULL ? ts->status : -1);
 	Mtm->gcCount = 0;
 
-	//return FirstNormalTransactionId;
-
 	if (ts != NULL) { 
 		oldestSnapshot = ts->snapshot;
 		Assert(oldestSnapshot != INVALID_CSN);
