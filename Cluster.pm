@@ -105,8 +105,6 @@ sub configure
 			multimaster.heartbeat_send_timeout = 250
 			multimaster.ignore_tables_without_pk = true
 			multimaster.twopc_min_timeout = 2000
-			raftable.id = $id
-			raftable.peers = '$raftpeers'
 		));
 
 		$node->append_conf("pg_hba.conf", qq(

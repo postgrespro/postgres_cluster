@@ -36,8 +36,6 @@ cat >> "$PGDATA/postgresql.conf" <<-EOF
 	multimaster.conn_strings = '$CONNS'
 	multimaster.use_raftable = true
 	multimaster.ignore_tables_without_pk = true
-	raftable.id = $NODEID
-	raftable.peers = '$PEERS'
 EOF
 
 "$@"
