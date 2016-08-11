@@ -36,8 +36,6 @@ do
     sed "s/5432/$port/g" < postgresql.conf.mm > node$i/postgresql.conf
     echo "multimaster.conn_strings = '$conn_str'" >> node$i/postgresql.conf
     echo "multimaster.node_id = $i" >> node$i/postgresql.conf
-	echo "raftable.id = $i" >> node$i/postgresql.conf
-	echo "raftable.peers = '$raft_conn_str'" >> node$i/postgresql.conf
 
     cp pg_hba.conf node$i
     pg_ctl -w -D node$i -l node$i.log start
