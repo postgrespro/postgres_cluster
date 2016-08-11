@@ -237,7 +237,7 @@ static void on_message_recv(Client *c)
 		}
 		else
 		{
-			elog(WARNING, "emitted raft update %d", index);
+			elog(DEBUG1, "emitted raft update %d", index);
 			c->expect = index;
 			c->state = CLIENT_WAITING;
 		}
@@ -298,7 +298,7 @@ static void attend(Client *c)
 			if (c->state == CLIENT_SICK) return;
 			if (!c->msg) return;
 			if (c->cursor < c->msg->len) return;
-			elog(WARNING, "got %d bytes from client", (int)c->cursor);
+			elog(DEBUG1, "got %d bytes from client", (int)c->cursor);
 			on_message_recv(c);
 			break;
 		case CLIENT_RECVING:
@@ -324,7 +324,7 @@ static void notify(void)
 		Assert(c->expect >= 0);
 		if (!raft_applied(raft, server.id, c->expect)) continue;
 
-		elog(WARNING, "notify client %d that update %d is applied", i, c->expect);
+		elog(DEBUG1, "notify client %d that update %d is applied", i, c->expect);
 		answer = make_single_value_message("", NULL, 0, &answersize);
 		answer->meaning = MEAN_OK;
 		c->msg = palloc(sizeof(Message) + answersize);
