@@ -2262,7 +2262,8 @@ _PG_init(void)
 
     BgwPoolStart(MtmWorkers, MtmPoolConstructor);
 
-	MtmRaftableInitialize();
+	if (MtmUseRaftable)
+		MtmRaftableInitialize();
 	MtmArbiterInitialize();
 
 	/*
