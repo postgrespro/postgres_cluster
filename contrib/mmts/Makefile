@@ -48,6 +48,6 @@ xcheck:
 	cd tests2 && docker network rm tests2_net || true
 	cd tests2 && blockade up
 	sleep 20 # wait for mmts init
-	cd tests2 && python3 test_recovery.py || true
+	cd tests2 && python3 test_recovery.py
 	#cd tests2 && blockade destroy
 
