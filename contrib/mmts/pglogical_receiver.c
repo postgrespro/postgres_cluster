@@ -193,7 +193,7 @@ feTimestampDifference(int64 start_time, int64 stop_time,
 
 static char const* const MtmReplicationModeName[] = 
 {
-	"exit", 
+	"exit",
 	"recovered", /* recovery of node is completed so drop old slot and restart replication from the current position in WAL */
 	"recovery",  /* perform recorvery of the node by applying all data from theslot from specified point */
 	"normal"     /* normal mode: use existed slot or create new one and start receiving data from it from the specified position */
@@ -558,7 +558,13 @@ pglogical_receiver_main(Datum main_arg)
 				timeoutptr = &timeout;
 
 				r = select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr);
-				if (r == 0 || (r < 0 && errno == EINTR))
+				if (r == 0)
+				{
+					int64 now = feGetCurrentTimestamp();
+					sendFeedback(conn, now, nodeId);					
+					continue;
+				}
+				else if (r < 0 && errno == EINTR)
 				{
 					/*
 					 * Got a timeout or signal. Continue the loop and either
