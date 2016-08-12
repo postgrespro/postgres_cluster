@@ -559,7 +559,7 @@ pglogical_receiver_main(Datum main_arg)
 				timeoutptr = &timeout;
 
 				r = select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr);
-				if (r <= 0 && errno == EINTR)
+				if (r == 0 || (r < 0 && errno == EINTR))
 				{
 					/*
 					 * Got a timeout or signal. Continue the loop and either
