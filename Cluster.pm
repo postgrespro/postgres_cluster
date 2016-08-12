@@ -155,4 +155,22 @@ sub psql
 	return $node->psql(@args);
 }
 
+sub poll
+{
+	my ($self, $poller, $dbname, $pollee, $tries, $delay) = @_;
+	my $node = $self->{nodes}->[$poller];
+	for (my $i = 0; $i < $tries; $i++) {
+		my $psql_out;
+		my $pollee_plus_1 = $pollee + 1;
+		$self->psql($poller, $dbname, "select mtm.poll_node($pollee_plus_1, true);", stdout => \$psql_out);
+		if ($psql_out eq "t") {
+			return 1;
+		}
+		my $tries_left = $tries - $i - 1;
+		diag("$poller poll for $pollee failed [$tries_left tries left]");
+		sleep($delay);
+	}
+	return 0;
+}
+
 1;

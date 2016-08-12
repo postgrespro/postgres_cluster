@@ -2,7 +2,7 @@ use strict;
 use warnings;
 use Cluster;
 use TestLib;
-use Test::More tests => 4;
+use Test::More tests => 7;
 
 my $cluster = new Cluster(3);
 $cluster->init();
@@ -78,10 +78,11 @@ $cluster->psql(0, 'postgres', "insert into t values(6, 60);");
 diag("inserting 7 on node 2 (can fail)");
 $cluster->psql(1, 'postgres', "insert into t values(7, 70);");
 
-diag("polling node");
-$cluster->psql(0, 'postgres', "select mtm.poll_node(3);");
-$cluster->psql(1, 'postgres', "select mtm.poll_node(3);");
-$cluster->psql(2, 'postgres', "select mtm.poll_node(3);");
+diag("polling node 2");
+for (my $poller = 0; $poller < 3; $poller++) {
+	my $pollee = 2;
+	ok($cluster->poll($poller, 'postgres', $pollee, 10, 1), "node $pollee is online according to node $poller");
+}
 
 diag("getting cluster state");
 $cluster->psql(0, 'postgres', "select * from mtm.get_cluster_state();", stdout => \$psql_out);
