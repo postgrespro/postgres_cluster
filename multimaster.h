@@ -117,6 +117,7 @@ typedef enum
 
 typedef enum
 {
+	REPLMODE_UNKNOWN,    /* receiver should wait */
 	REPLMODE_RECOVERED,  /* recovery of node is completed so drop old slot and restart replication from the current position in WAL */
 	REPLMODE_RECOVERY,   /* perform recorvery of the node by applying all data from the slot from specified point */
 	REPLMODE_NORMAL      /* normal mode: use existed slot or create new one and start receiving data from it from the specified position */
