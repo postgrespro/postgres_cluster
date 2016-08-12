@@ -106,7 +106,8 @@ static int create_listening_socket(const char *host, int port)
 		optval = 1;
 		setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (char const*)&optval, sizeof(optval));
 		setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char const*)&optval, sizeof(optval));
-		
+		fcntl(s, F_SETFL, O_NONBLOCK);
+
 		elog(DEBUG1, "binding tcp %s:%d\n", host, port);
 		if (bind(s, a->ai_addr, a->ai_addrlen) < 0)
 		{
