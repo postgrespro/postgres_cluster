@@ -252,6 +252,9 @@ pglogical_receiver_main(Datum main_arg)
 		 * Slots at other nodes should be removed 
 		 */
 		mode = MtmGetReplicationMode(nodeId);	
+		if (mode == REPLMODE_UNKNOWN) { 
+			continue;
+		}
 		count = Mtm->recoveryCount;
 		
 		/* Establish connection to remote server */
