@@ -571,6 +571,7 @@ pglogical_receiver_main(Datum main_arg)
 				if (r == 0)
 				{
 					int64 now = feGetCurrentTimestamp();
+					MtmUpdateLsnMapping(nodeId, InvalidXLogRecPtr);
 					sendFeedback(conn, now, nodeId);					
 					continue;
 				}
