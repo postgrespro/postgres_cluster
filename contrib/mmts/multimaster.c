@@ -2475,13 +2475,14 @@ void  MtmUpdateLsnMapping(int node_id, XLogRecPtr end_lsn)
 	XLogRecPtr local_flush = GetFlushRecPtr();
 	MemoryContext old_context = MemoryContextSwitchTo(TopMemoryContext);
 
-	/* Track commit lsn */
-	flushpos = (MtmFlushPosition *) palloc(sizeof(MtmFlushPosition));
-	flushpos->node_id = node_id;
-	flushpos->local_end = XactLastCommitEnd;
-	flushpos->remote_end = end_lsn;
-	dlist_push_tail(&MtmLsnMapping, &flushpos->node);
-
+	if (end_lsn != InvalidXLogRecPtr) {
+		/* Track commit lsn */
+		flushpos = (MtmFlushPosition *) palloc(sizeof(MtmFlushPosition));
+		flushpos->node_id = node_id;
+		flushpos->local_end = XactLastCommitEnd;
+		flushpos->remote_end = end_lsn;
+		dlist_push_tail(&MtmLsnMapping, &flushpos->node);
+	}
 	MtmLock(LW_EXCLUSIVE);
 	dlist_foreach_modify(iter, &MtmLsnMapping)
 	{
