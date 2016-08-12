@@ -259,6 +259,7 @@ extern int	DeadlockTimeout;
 extern int	StatementTimeout;
 extern int	LockTimeout;
 extern int	IdleInTransactionSessionTimeout;
+extern int	IdleSessionTimeout;
 extern bool log_lock_waits;
 
 
