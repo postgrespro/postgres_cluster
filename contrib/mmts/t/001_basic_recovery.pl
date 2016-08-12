@@ -78,10 +78,12 @@ $cluster->psql(0, 'postgres', "insert into t values(6, 60);");
 diag("inserting 7 on node 2 (can fail)");
 $cluster->psql(1, 'postgres', "insert into t values(7, 70);");
 
+diag("polling node");
 $cluster->psql(0, 'postgres', "select mtm.poll_node(3);");
 $cluster->psql(1, 'postgres', "select mtm.poll_node(3);");
 $cluster->psql(2, 'postgres', "select mtm.poll_node(3);");
 
+diag("getting cluster state");
 $cluster->psql(0, 'postgres', "select * from mtm.get_cluster_state();", stdout => \$psql_out);
 diag("Node 1 status: $psql_out");
 $cluster->psql(1, 'postgres', "select * from mtm.get_cluster_state();", stdout => \$psql_out);
