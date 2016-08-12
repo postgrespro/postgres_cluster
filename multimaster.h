@@ -117,7 +117,7 @@ typedef enum
 
 typedef enum
 {
-	REPLMODE_UNKNOWN,    /* receiver should wait */
+	REPLMODE_EXIT,       /* receiver should exit */
 	REPLMODE_RECOVERED,  /* recovery of node is completed so drop old slot and restart replication from the current position in WAL */
 	REPLMODE_RECOVERY,   /* perform recorvery of the node by applying all data from the slot from specified point */
 	REPLMODE_NORMAL      /* normal mode: use existed slot or create new one and start receiving data from it from the specified position */
@@ -245,7 +245,7 @@ extern csn_t MtmAssignCSN(void);
 extern csn_t MtmSyncClock(csn_t csn);
 extern void  MtmJoinTransaction(GlobalTransactionId* gtid, csn_t snapshot);
 extern void  MtmReceiverStarted(int nodeId);
-extern MtmReplicationMode MtmGetReplicationMode(int nodeId);
+extern MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shutdown);
 extern void  MtmExecute(void* work, int size);
 extern void  MtmExecutor(int id, void* work, size_t size);
 extern void  MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd);

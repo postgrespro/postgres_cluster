@@ -193,6 +193,7 @@ feTimestampDifference(int64 start_time, int64 stop_time,
 
 static char const* const MtmReplicationModeName[] = 
 {
+	"exit", 
 	"recovered", /* recovery of node is completed so drop old slot and restart replication from the current position in WAL */
 	"recovery",  /* perform recorvery of the node by applying all data from theslot from specified point */
 	"normal"     /* normal mode: use existed slot or create new one and start receiving data from it from the specified position */
@@ -251,9 +252,10 @@ pglogical_receiver_main(Datum main_arg)
 		 * Druing recovery we need to open only one replication slot from which node should receive all transactions.
 		 * Slots at other nodes should be removed 
 		 */
-		mode = MtmGetReplicationMode(nodeId);	
-		if (mode == REPLMODE_UNKNOWN) { 
-			continue;
+		mode = MtmGetReplicationMode(nodeId, &got_sigterm);	
+		if (mode == REPLMODE_EXIT) 
+		{ 
+			break;
 		}
 		count = Mtm->recoveryCount;
 		
