@@ -453,7 +453,7 @@ pglogical_receiver_main(Datum main_arg)
 						int64 now = feGetCurrentTimestamp();
 
 						/* Leave is feedback is not sent properly */
-						MtmUpdateLsnMapping(nodeId, InvalidXLogRecPtr);
+						MtmUpdateLsnMapping(nodeId, walEnd);
 						if (!sendFeedback(conn, now, nodeId)) {
 							goto OnError;
 						}
