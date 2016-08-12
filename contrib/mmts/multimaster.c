@@ -2322,10 +2322,16 @@ void MtmReceiverStarted(int nodeId)
  * Druing recovery we need to open only one replication slot from which node should receive all transactions.
  * Slots at other nodes should be removed 
  */
-MtmReplicationMode MtmGetReplicationMode(int nodeId)
+MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shutdown)
 {
 	bool recovery = false;
-	if (Mtm->status != MTM_CONNECTED && Mtm->status != MTM_ONLINE) { 		
+
+	while (Mtm->status != MTM_CONNECTED && Mtm->status != MTM_ONLINE) 
+	{ 	
+		if (*shutdown) 
+		{ 
+			return REPLMODE_EXIT;
+		}
 		MTM_LOG2("%d: receiver slot mode %s", MyProcPid, MtmNodeStatusMnem[Mtm->status]);
 		if (Mtm->status == MTM_RECOVERY) { 
 			recovery = true;
@@ -2342,7 +2348,6 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId)
 		}
 		/* delay opening of other slots until recovery is completed */
 		MtmSleep(STATUS_POLL_DELAY);
-		return REPLMODE_UNKNOWN;
 	}
 	if (recovery) { 
 		MTM_LOG1("Recreate replication slot for node %d after end of recovery", nodeId);
