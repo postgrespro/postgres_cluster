@@ -624,6 +624,9 @@
 /* Define to 1 to build with assertion checks. (--enable-cassert) */
 /* #undef USE_ASSERT_CHECKING */
 
+/* Define to 1 to build with rsocket instead socket. (--with-rsocket) */
+/* #undef WITH_RSOCKET */
+
 /* Define to 1 to build with Bonjour support. (--with-bonjour) */
 /* #undef USE_BONJOUR */
 

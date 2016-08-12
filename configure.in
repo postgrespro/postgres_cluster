@@ -575,6 +575,14 @@ PGAC_ARG_BOOL(enable, cassert, no, [enable assertion checks (for debugging)],
 
 
 #
+# Replace socket with rsocket
+#
+PGAC_ARG_BOOL(with, rsocket, no, [replace socket with rsocket (RDMA socket API)],
+              [AC_DEFINE([WITH_RSOCKET], 1,
+                         [Define to 1 to build with rsocket instead socket. (--with-rsocket)])])
+
+
+#
 # Include directories
 #
 ac_save_IFS=$IFS

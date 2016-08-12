@@ -825,6 +825,7 @@ with_wal_segsize
 with_CC
 enable_depend
 enable_cassert
+with_rsocket
 enable_thread_safety
 with_tcl
 with_tclconfig
@@ -1517,6 +1518,7 @@ Optional Packages:
   --with-wal-segsize=SEGSIZE
                           set WAL segment size in MB [16]
   --with-CC=CMD           set compiler (deprecated)
+  --with-rsocket          replace socket with rsocket (RDMA socket API)
   --with-tcl              build Tcl modules (PL/Tcl)
   --with-tclconfig=DIR    tclConfig.sh is in DIR
   --with-perl             build Perl modules (PL/Perl)
@@ -5294,6 +5296,37 @@ $as_echo "#define USE_ASSERT_CHECKING 1" >>confdefs.h
 
 else
   enable_cassert=no
+
+fi
+
+
+
+
+#
+# Replace socket with rsocket
+#
+
+
+
+# Check whether --with-rsocket was given.
+if test "${with_rsocket+set}" = set; then :
+  withval=$with_rsocket;
+  case $withval in
+    yes)
+
+$as_echo "#define WITH_RSOCKET 1" >>confdefs.h
+
+      ;;
+    no)
+      :
+      ;;
+    *)
+      as_fn_error $? "no argument expected for --with-rsocket option" "$LINENO" 5
+      ;;
+  esac
+
+else
+  with_rsocket=no
 
 fi
 
