@@ -6321,7 +6321,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
        Terminate any session with an open transaction that has been idle for
        longer than the specified duration in milliseconds.  When enabled
        this setting overrides <xref linkend="guc-idle-session-timeout"> for
-       open transaction.  This allows any locks held by that session to be
+       open transactions.  This allows any locks held by that session to be
        released and the connection slot to be reused;  it also allows tuples
        visible only to this transaction to be vacuumed.  See
        <xref linkend="routine-vacuuming"> for more details about this.
