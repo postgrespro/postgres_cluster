@@ -2478,8 +2478,8 @@ void  MtmUpdateLsnMapping(int node_id, XLogRecPtr end_lsn)
 		flushpos = dlist_container(MtmFlushPosition, node, iter.cur);
 		if (flushpos->local_end <= local_flush)
 		{
-			if (Mtm->nodes[node_id-1].flushPos < local_flush) { 
-				Mtm->nodes[node_id-1].flushPos = local_flush;
+			if (Mtm->nodes[node_id-1].flushPos < flushpos->remote_end) { 
+				Mtm->nodes[node_id-1].flushPos = flushpos->remote_end;
 			}
 			dlist_delete(iter.cur);
 			pfree(flushpos);
