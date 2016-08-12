@@ -2,7 +2,7 @@ use strict;
 use warnings;
 use Cluster;
 use TestLib;
-use Test::More tests => 4;
+use Test::More tests => 7;
 
 my $cluster = new Cluster(3);
 $cluster->init();
@@ -43,19 +43,19 @@ $cluster->{nodes}->[2]->teardown_node;
 
 sleep(5); # Wait until failure of node will be detected
 
-diag("inserting 2 on node 1");
+diag("inserting 2 on node 0");
 my $ret = $cluster->psql(0, 'postgres', "insert into t values(2, 20);"); # this transaciton may fail
 diag "tx1 status = $ret";
 
-diag("inserting 3 on node 2");
+diag("inserting 3 on node 1");
 my $ret = $cluster->psql(1, 'postgres', "insert into t values(3, 30);"); # this transaciton may fail
 diag "tx2 status = $ret";
 
-diag("inserting 4 on node 1 (can fail)");
+diag("inserting 4 on node 0 (can fail)");
 my $ret = $cluster->psql(0, 'postgres', "insert into t values(4, 40);"); 
 diag "tx1 status = $ret";
 
-diag("inserting 5 on node 2 (can fail)");
+diag("inserting 5 on node 1 (can fail)");
 my $ret = $cluster->psql(1, 'postgres', "insert into t values(5, 50);"); 
 diag "tx2 status = $ret";
 
@@ -73,15 +73,18 @@ $cluster->{nodes}->[2]->start;
 
 sleep(5); # Wait until node is started
 
-diag("inserting 6 on node 1 (can fail)");
+diag("inserting 6 on node 0 (can fail)");
 $cluster->psql(0, 'postgres', "insert into t values(6, 60);"); 
-diag("inserting 7 on node 2 (can fail)");
+diag("inserting 7 on node 1 (can fail)");
 $cluster->psql(1, 'postgres', "insert into t values(7, 70);");
 
-$cluster->psql(0, 'postgres', "select mtm.poll_node(3);");
-$cluster->psql(1, 'postgres', "select mtm.poll_node(3);");
-$cluster->psql(2, 'postgres', "select mtm.poll_node(3);");
+diag("polling node 2");
+for (my $poller = 0; $poller < 3; $poller++) {
+	my $pollee = 2;
+	ok($cluster->poll($poller, 'postgres', $pollee, 10, 1), "node $pollee is online according to node $poller");
+}
 
+diag("getting cluster state");
 $cluster->psql(0, 'postgres', "select * from mtm.get_cluster_state();", stdout => \$psql_out);
 diag("Node 1 status: $psql_out");
 $cluster->psql(1, 'postgres', "select * from mtm.get_cluster_state();", stdout => \$psql_out);
@@ -89,12 +92,12 @@ diag("Node 2 status: $psql_out");
 $cluster->psql(2, 'postgres', "select * from mtm.get_cluster_state();", stdout => \$psql_out);
 diag("Node 3 status: $psql_out");
 
-diag("inserting 8 on node 1");
+diag("inserting 8 on node 0");
 $cluster->psql(0, 'postgres', "insert into t values(8, 80);");
-diag("inserting 9 on node 2");
+diag("inserting 9 on node 1");
 $cluster->psql(1, 'postgres', "insert into t values(9, 90);");
 
-diag("selecting from node 3");
+diag("selecting from node 2");
 $cluster->psql(2, 'postgres', "select v from t where k=8;", stdout => \$psql_out);
 diag("selected");
 

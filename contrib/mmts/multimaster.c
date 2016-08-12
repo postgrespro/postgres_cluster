@@ -1860,7 +1860,10 @@ static void MtmSplitConnStrs(void)
 	}
 	if (i > MAX_NODES) { 
 		elog(ERROR, "Multimaster with more than %d nodes is not currently supported", MAX_NODES);
-	}	
+	}
+	if (MtmNodeId > i) {
+		elog(ERROR, "Multimaster node id %d is out of range [%d..%d]", MtmNodeId, 1, i);
+	}
 	if (i < 2) { 
         elog(ERROR, "Multimaster should have at least two nodes");
 	}	
@@ -2262,7 +2265,8 @@ _PG_init(void)
 
     BgwPoolStart(MtmWorkers, MtmPoolConstructor);
 
-	MtmRaftableInitialize();
+	if (MtmUseRaftable)
+		MtmRaftableInitialize();
 	MtmArbiterInitialize();
 
 	/*
