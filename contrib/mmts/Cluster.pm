@@ -205,7 +205,8 @@ sub stop
 		if (!stopnode($node, $mode)) {
 			$ok = 0;
 			if (!stopnode($node, 'immediate')) {
-				BAIL_OUT("failed to stop $node immediately");
+				my $name = $node->name;
+				BAIL_OUT("failed to stop $name immediately");
 			}
 		}
 	}
