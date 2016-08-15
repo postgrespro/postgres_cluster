@@ -217,8 +217,9 @@ pglogical_receiver_main(Datum main_arg)
 	char	*copybuf = NULL;
 	int spill_file = -1;
 	StringInfoData spill_info;
+	char *slotName;
 	char* connString = psprintf("replication=database %s", Mtm->nodes[nodeId-1].con.connStr);
-	char* slotName = psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId);
+	slotName = psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId);
 
 	initStringInfo(&spill_info);
 
@@ -261,7 +262,7 @@ pglogical_receiver_main(Datum main_arg)
 		count = Mtm->recoveryCount;
 		
 		/* Establish connection to remote server */
-		conn = PQconnectdb(connString);
+		conn = PQconnectdb_safe(connString);
 		status = PQstatus(conn);
 		if (status != CONNECTION_OK)
 		{
