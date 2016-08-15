@@ -28,7 +28,10 @@
 #define accept(s, a, l) raccept(s, a, l)
 #define connect(s, a, l) rconnect(s, a, l)
 #define shutdown(s, h) rshutdown(s, h)
-#define close(s) rclose(s)
+
+#if !defined(WIN32) || defined(__CYGWIN__)
+#define closesocket rclose
+#endif
 
 #define recv(s, b, l, f) rrecv(s, b, l, f)
 #define recvfrom(s, b, l, f, sa, al) rrecvfrom(s, b, l, f, sa, al)
@@ -42,6 +45,10 @@
 
 #define setsockopt(s, l, on, ov, ol) rsetsockopt(s, l, on, ov, ol)
 #define getsockopt(s, l, on, ov, ol) rgetsockopt(s, l, on, ov, ol)
+#else
+#if !defined(WIN32) || defined(__CYGWIN__)
+#define closesocket close
 #endif
+#endif   /* WITH_RSOCKET */
 
 #endif   /* PG_SOCKET_H */
