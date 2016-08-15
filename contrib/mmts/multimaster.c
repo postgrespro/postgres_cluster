@@ -436,7 +436,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 	for (i = 0; i < MAX_WAIT_LOOPS; i++)
     {
         MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-        if (ts != NULL && ts->status != TRANSACTION_STATUS_IN_PROGRESS)
+        if (ts != NULL/* && ts->status != TRANSACTION_STATUS_IN_PROGRESS*/)
         {
             if (ts->csn > MtmTx.snapshot) { 
                 MTM_LOG4("%d: tuple with xid=%d(csn=%ld) is invisibile in snapshot %ld",
@@ -872,7 +872,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	MtmLock(LW_EXCLUSIVE);
 	ts = hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
 	Assert(ts != NULL);
-
+	if (x->gid[0]) MTM_LOG1("Preparing transaction %d (%s) at %ld", x->xid, x->gid, MtmGetCurrentTime());
 	if (!MtmIsCoordinator(ts) || Mtm->status == MTM_RECOVERY) {
 		bool found;
 		MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, &found);
@@ -926,6 +926,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
 		MtmUnlock();
 	}
+	if (x->gid[0]) MTM_LOG1("Prepared transaction %d (%s) csn=%ld at %ld: %d", x->xid, x->gid, ts->csn, MtmGetCurrentTime(), ts->status);
 	if (Mtm->inject2PCError == 3) { 
 		Mtm->inject2PCError = 0;
 		elog(ERROR, "ERROR INJECTION for transaction %d (%s)", x->xid, x->gid);
@@ -1503,6 +1504,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 					MtmAbortTransaction(ts);
 					MtmWakeUpBackend(ts);
 				}
+#if 0
 			} else if (TransactionIdIsValid(ts->gtid.xid) && BIT_CHECK(disabled, ts->gtid.node-1)) { // coordinator of transaction is on disabled node
 				if (ts->gid[0]) { 
 					if (ts->status == TRANSACTION_STATUS_UNKNOWN || ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
@@ -1512,6 +1514,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 						FinishPreparedTransaction(ts->gid, false);
 					}
 				}
+#endif
 			}
 		}
 		MtmUnlock();
@@ -1732,13 +1735,8 @@ static void MtmRaftableInitialize()
 
 	for (i = 0; i < MtmNodes; i++)
 	{
-		char const* raftport = strstr(MtmConnections[i].connStr, "raftport=");
-		int port;
-		if (raftport != NULL) {
-			if (sscanf(raftport+9, "%d", &port) != 1) { 
-				elog(ERROR, "Invalid raftable port: %s", raftport+9);
-			}
-		} else {
+		int port = MtmConnections[i].raftablePort;
+		if (port == 0) {
 			port = MtmRaftablePort + i;
 		}
 		raftable_peer(i, MtmConnections[i].hostName, port);
@@ -1822,10 +1820,12 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 	char const* host;
 	char const* end;
 	int         hostLen;
+	char*       port;
+	int         connStrLen = (int)strlen(connStr);
 
-	if (strlen(connStr) >= MULTIMASTER_MAX_CONN_STR_SIZE) {
+	if (connStrLen >= MULTIMASTER_MAX_CONN_STR_SIZE) {
 		elog(ERROR, "Too long (%d) connection string '%s': limit is %d", 
-				 (int)strlen(connStr), connStr, MULTIMASTER_MAX_CONN_STR_SIZE-1);
+			 connStrLen, connStr, MULTIMASTER_MAX_CONN_STR_SIZE-1);
 	}
 	strcpy(conn->connStr, connStr);
 
@@ -1842,6 +1842,32 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 	}
 	memcpy(conn->hostName, host, hostLen);
 	conn->hostName[hostLen] = '\0';
+
+	port = strstr(connStr, "raftport=");
+	if (port != NULL) {
+		int n;
+		if (sscanf(port+9, "%d%d", &conn->raftablePort, &n) != 1) { 
+			elog(ERROR, "Invalid raftable port: %s", port+9);
+		}
+		n += 9;
+		memmove(port, port+n, connStrLen - n + 1);
+		connStrLen -= n;
+	} else { 
+		conn->raftablePort = 0;
+	}
+
+	port = strstr(connStr, "arbiterport=");
+	if (port != NULL) {
+		int n;
+		if (sscanf(port+12, "%d%d", &conn->arbiterPort, &n) != 1) { 
+			elog(ERROR, "Invalid arbiter port: %s", port+12);
+		}
+		n += 12;
+		memmove(port, port+n, connStrLen - n + 1);
+		connStrLen -= n;
+	} else { 
+		conn->arbiterPort = 0;
+	}
 }
 
 static void MtmSplitConnStrs(void)
