@@ -2,7 +2,7 @@ use strict;
 use warnings;
 use Cluster;
 use TestLib;
-use Test::More tests => 7;
+use Test::More tests => 8;
 
 my $cluster = new Cluster(3);
 $cluster->init();
@@ -108,5 +108,5 @@ diag("selected");
 
 is($psql_out, '90', "Check replication after failed node recovery.");
 
-$cluster->stop();
+ok($cluster->stop(), "cluster stops");
 1;

@@ -1850,8 +1850,6 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 			elog(ERROR, "Invalid raftable port: %s", port+9);
 		}
 		n += 9;
-		memmove(port, port+n, connStrLen - n + 1);
-		connStrLen -= n;
 	} else { 
 		conn->raftablePort = 0;
 	}
@@ -1863,8 +1861,6 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 			elog(ERROR, "Invalid arbiter port: %s", port+12);
 		}
 		n += 12;
-		memmove(port, port+n, connStrLen - n + 1);
-		connStrLen -= n;
 	} else { 
 		conn->arbiterPort = 0;
 	}
@@ -2787,6 +2783,32 @@ typedef struct
 	int       nodeId;
 } MtmGetClusterInfoCtx;
 
+static void erase_option_from_connstr(const char *option, char *connstr)
+{
+	char *needle = psprintf("%s=", option);
+	while (1) {
+		char *found = strstr(connstr, needle);
+		if (found == NULL) break;
+		while (*found != '\0' && *found != ' ') {
+			*found = ' ';
+			found++;
+		}
+	}
+	pfree(needle);
+}
+
+PGconn *PQconnectdb_safe(const char *conninfo)
+{
+	PGconn *conn;
+	char *safe_connstr = pstrdup(conninfo);
+	erase_option_from_connstr("raftport", safe_connstr);
+	erase_option_from_connstr("arbiterport", safe_connstr);
+
+	conn = PQconnectdb(safe_connstr);
+
+	pfree(safe_connstr);
+	return conn;
+}
 
 Datum
 mtm_get_cluster_info(PG_FUNCTION_ARGS)
@@ -2819,9 +2841,9 @@ mtm_get_cluster_info(PG_FUNCTION_ARGS)
 	if (usrfctx->nodeId > Mtm->nAllNodes) {
 		SRF_RETURN_DONE(funcctx);      
 	}	
-	conn = PQconnectdb(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
+	conn = PQconnectdb_safe(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
 	if (PQstatus(conn) != CONNECTION_OK) {
-		elog(ERROR, "Failed to establish connection '%s' to node %d", Mtm->nodes[usrfctx->nodeId-1].con.connStr, usrfctx->nodeId);
+		elog(ERROR, "Failed to establish connection '%s' to node %d: error = %s", Mtm->nodes[usrfctx->nodeId-1].con.connStr, usrfctx->nodeId, PQerrorMessage(conn));
 	}
 	result = PQexec(conn, "select * from mtm.get_cluster_state()");
 
@@ -2996,7 +3018,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	{ 
 		if (!BIT_CHECK(disabledNodeMask, i)) 
 		{
-			conns[i] = PQconnectdb(psprintf("%s application_name=%s", Mtm->nodes[i].con.connStr, MULTIMASTER_BROADCAST_SERVICE));
+			conns[i] = PQconnectdb_safe(psprintf("%s application_name=%s", Mtm->nodes[i].con.connStr, MULTIMASTER_BROADCAST_SERVICE));
 			if (PQstatus(conns[i]) != CONNECTION_OK)
 			{
 				if (ignoreError) 
@@ -3008,7 +3030,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 					do { 
 						PQfinish(conns[i]);
 					} while (--i >= 0);                             
-					elog(ERROR, "Failed to establish connection '%s' to node %d", Mtm->nodes[failedNode].con.connStr, failedNode+1);
+					elog(ERROR, "Failed to establish connection '%s' to node %d, error = %s", Mtm->nodes[failedNode].con.connStr, failedNode+1, PQerrorMessage(conns[i]));
 				}
 			}
 			PQsetNoticeReceiver(conns[i], MtmNoticeReceiver, &i);

@@ -3,7 +3,7 @@ use warnings;
 
 use Cluster;
 use TestLib;
-use Test::More tests => 1;
+use Test::More tests => 2;
 use IPC::Run qw(start finish);
 use Cwd;
 
@@ -150,5 +150,5 @@ foreach my $appender (@appenders)
 
 is($anomalies, 0, "no cross anomalies after $selects selects");
 
-$cluster->stop();
+ok($cluster->stop(), "cluster stops");
 1;

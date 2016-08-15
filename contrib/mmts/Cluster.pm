@@ -126,15 +126,46 @@ sub start
 	}
 }
 
+sub stopnode
+{
+	my ($node, $mode) = @_;
+	my $port   = $node->port;
+	my $pgdata = $node->data_dir;
+	my $name   = $node->name;
+	$mode = 'fast' unless defined $mode;
+	diag("stopping node $name ${mode}ly at $pgdata port $port");
+	next unless defined $node->{_pid};
+	my $ret = TestLib::system_log('pg_ctl', '-D', $pgdata, '-m', 'fast', 'stop');
+	$node->{_pid} = undef;
+	$node->_update_pid;
+
+	if ($ret != 0) {
+		diag("$name failed to stop ${mode}ly");
+		return 0;
+	}
+
+	return 1;
+}
+
 sub stop
 {
-	my ($self) = @_;
+	my ($self, $mode) = @_;
 	my $nodes = $self->{nodes};
+	$mode = 'fast' unless defined $mode;
 
+	my $ok = 1;
+	diag("stopping cluster ${mode}ly");
 	foreach my $node (@$nodes)
 	{
-		$node->stop('fast');
+		if (!stopnode($node, $mode)) {
+			$ok = 0;
+			if (!stopnode($node, 'immediate')) {
+				BAIL_OUT("failed to stop $node immediately");
+			}
+		}
 	}
+
+	return $ok;
 }
 
 sub teardown
