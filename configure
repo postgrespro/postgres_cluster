@@ -12371,7 +12371,7 @@ fi
 ## Header files
 ##
 
-for ac_header in atomic.h crypt.h dld.h fp_class.h getopt.h ieeefp.h ifaddrs.h langinfo.h mbarrier.h poll.h pwd.h rdma/rsocket.h sys/epoll.h sys/ioctl.h sys/ipc.h sys/poll.h sys/pstat.h sys/resource.h sys/select.h sys/sem.h sys/shm.h sys/socket.h sys/sockio.h sys/tas.h sys/time.h sys/un.h termios.h ucred.h utime.h wchar.h wctype.h
+for ac_header in atomic.h crypt.h dld.h fp_class.h getopt.h ieeefp.h ifaddrs.h langinfo.h mbarrier.h poll.h pwd.h sys/epoll.h sys/ioctl.h sys/ipc.h sys/poll.h sys/pstat.h sys/resource.h sys/select.h sys/sem.h sys/shm.h sys/socket.h sys/sockio.h sys/tas.h sys/time.h sys/un.h termios.h ucred.h utime.h wchar.h wctype.h
 do :
   as_ac_Header=`$as_echo "ac_cv_header_$ac_header" | $as_tr_sh`
 ac_fn_c_check_header_mongrel "$LINENO" "$ac_header" "$as_ac_Header" "$ac_includes_default"
@@ -12606,6 +12606,17 @@ done
 fi
 
 done
+
+fi
+
+if test "$with_rsocket" = yes; then
+  ac_fn_c_check_header_mongrel "$LINENO" "rdma/rsocket.h" "ac_cv_header_rdma_rsocket_h" "$ac_includes_default"
+if test "x$ac_cv_header_rdma_rsocket_h" = xyes; then :
+
+else
+  as_fn_error $? "header file <rdma/rsocket.h> is required for RDMA API" "$LINENO" 5
+fi
+
 
 fi
 
