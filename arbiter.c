@@ -129,7 +129,7 @@ static char const* const messageText[] =
 
 static BackgroundWorker MtmSender = {
 	"mtm-sender",
-	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
+	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, 
 	BgWorkerStart_ConsistentState,
 	MULTIMASTER_BGW_RESTART_TIMEOUT,
 	MtmTransSender
@@ -137,7 +137,7 @@ static BackgroundWorker MtmSender = {
 
 static BackgroundWorker MtmRecevier = {
 	"mtm-receiver",
-	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, /* do not need connection to the database */
+	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, 
 	BgWorkerStart_ConsistentState,
 	MULTIMASTER_BGW_RESTART_TIMEOUT,
 	MtmTransReceiver
@@ -337,9 +337,11 @@ static void MtmCheckResponse(MtmArbiterMessage* resp)
 static void MtmScheduleHeartbeat()
 {
 //	Assert(!last_sent_heartbeat || last_sent_heartbeat + MSEC_TO_USEC(MtmHeartbeatRecvTimeout) >= MtmGetSystemTime());
-	enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
-	send_heartbeat = true;
-	PGSemaphoreUnlock(&Mtm->votingSemaphore);
+	if (!stop) { 
+		enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
+		send_heartbeat = true;
+		PGSemaphoreUnlock(&Mtm->votingSemaphore);
+	}
 }
 	
 static void MtmSendHeartbeat()
