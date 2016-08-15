@@ -73,7 +73,7 @@
 #include <grp.h>
 #include <unistd.h>
 #include <sys/file.h>
-#include <sys/socket.h>
+#include "pg_socket.h"
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <netdb.h>

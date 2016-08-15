@@ -20,7 +20,7 @@
 #include <pwd.h>
 #include <fcntl.h>
 #include <sys/param.h>
-#include <sys/socket.h>
+#include "pg_socket.h"
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>

@@ -22,7 +22,7 @@
 #ifndef GETADDRINFO_H
 #define GETADDRINFO_H
 
-#include <sys/socket.h>
+#include "pg_socket.h"
 #include <netdb.h>
 
 

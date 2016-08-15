@@ -15,7 +15,7 @@
 #include "c.h"
 
 #include <sys/param.h>
-#include <sys/socket.h>
+#include "pg_socket.h"
 #include <unistd.h>
 #ifdef HAVE_SYS_UN_H
 #include <sys/un.h>

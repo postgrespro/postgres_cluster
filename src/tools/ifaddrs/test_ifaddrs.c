@@ -10,7 +10,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <sys/socket.h>
+#include "pg_socket.h"
 
 #include "libpq/ip.h"
 

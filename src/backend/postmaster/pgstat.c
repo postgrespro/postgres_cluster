@@ -22,7 +22,7 @@
 #include <fcntl.h>
 #include <sys/param.h>
 #include <sys/time.h>
-#include <sys/socket.h>
+#include "pg_socket.h"
 #include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>

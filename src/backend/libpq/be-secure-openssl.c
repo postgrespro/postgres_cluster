@@ -42,7 +42,7 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <ctype.h>
-#include <sys/socket.h>
+#include "pg_socket.h"
 #include <unistd.h>
 #include <netdb.h>
 #include <netinet/in.h>

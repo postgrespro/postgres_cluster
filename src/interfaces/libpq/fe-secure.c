@@ -35,7 +35,7 @@
 #ifdef WIN32
 #include "win32.h"
 #else
-#include <sys/socket.h>
+#include "pg_socket.h"
 #include <unistd.h>
 #include <netdb.h>
 #include <netinet/in.h>
