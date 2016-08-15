@@ -246,6 +246,7 @@ pglogical_receiver_main(Datum main_arg)
 	while (!got_sigterm)
 	{ 
 		int  count;
+		ConnStatusType status;
 
 		/* 
 		 * Determine when and how we should open replication slot.
@@ -261,10 +262,11 @@ pglogical_receiver_main(Datum main_arg)
 		
 		/* Establish connection to remote server */
 		conn = PQconnectdb(connString);
-		if (PQstatus(conn) != CONNECTION_OK)
+		status = PQstatus(conn);
+		if (status != CONNECTION_OK)
 		{
-			ereport(WARNING, (errmsg("%s: Could not establish connection to remote server",
-									 worker_proc)));
+			ereport(WARNING, (errmsg("%s: Could not establish connection to remote server (%s), status = %d, error = %s",
+									 worker_proc, connString, status, PQerrorMessage(conn))));
 			goto OnError;
 		}
 		
