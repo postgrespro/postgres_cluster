@@ -113,6 +113,7 @@ func postgres(bin string, datadir string, postgresi []string, port int, nodeid i
 		"-c", "max_replication_slots=10",
 		"-c", "max_wal_senders=10",
 		"-c", "max_worker_processes=100",
+		"-c", "max_prepared_transactions=200",
 		"-c", "default_transaction_isolation=repeatable read",
 		"-c", "multimaster.conn_strings=" + strings.Join(postgresi, ","),
 		"-c", "multimaster.node_id=" + strconv.Itoa(nodeid + 1),
