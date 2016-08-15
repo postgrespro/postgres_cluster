@@ -3,7 +3,7 @@ use warnings;
 
 use Cluster;
 use TestLib;
-use Test::More tests => 2;
+use Test::More tests => 3;
 use IPC::Run qw(start finish);
 use Cwd;
 
@@ -110,5 +110,5 @@ is($out, 0, "there is nothing except zeros in reader_log");
 ($rc, $out, $err) = $cluster->psql(0, 'postgres', "select count(*) from reader_log where v = 0;");
 isnt($out, 0, "there are some zeros in reader_log");
 
-$cluster->stop();
+ok($cluster->stop(), "cluster stops");
 1;

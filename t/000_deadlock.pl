@@ -3,7 +3,7 @@ use warnings;
 
 use Cluster;
 use TestLib;
-use Test::More tests => 1;
+use Test::More tests => 2;
 
 use DBI;
 use DBD::Pg ':async';
@@ -93,5 +93,5 @@ else
 
 query_row($conns[0], "select * from t where k = 1");
 
-$cluster->stop();
+ok($cluster->stop(), "cluster stops");
 1;
