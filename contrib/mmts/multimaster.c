@@ -1846,7 +1846,7 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 	port = strstr(connStr, "raftport=");
 	if (port != NULL) {
 		int n;
-		if (sscanf(port+9, "%d%d", &conn->raftablePort, &n) != 1) { 
+		if (sscanf(port+9, "%d%n", &conn->raftablePort, &n) != 1) { 
 			elog(ERROR, "Invalid raftable port: %s", port+9);
 		}
 		n += 9;
@@ -1859,7 +1859,7 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 	port = strstr(connStr, "arbiterport=");
 	if (port != NULL) {
 		int n;
-		if (sscanf(port+12, "%d%d", &conn->arbiterPort, &n) != 1) { 
+		if (sscanf(port+12, "%d%n", &conn->arbiterPort, &n) != 1) { 
 			elog(ERROR, "Invalid arbiter port: %s", port+12);
 		}
 		n += 12;
