@@ -127,6 +127,8 @@ typedef struct
 {
 	char hostName[MULTIMASTER_MAX_HOST_NAME_SIZE];
 	char connStr[MULTIMASTER_MAX_CONN_STR_SIZE];
+	int raftablePort;
+	int arbiterPort;
 } MtmConnectionInfo;
 
 

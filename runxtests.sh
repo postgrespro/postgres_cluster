@@ -11,6 +11,7 @@ do
 		((succeed++))
 	else
 		((failed++))
+		exit
 	fi
 done
 echo "Elapsed time for $iterations iterations: $SECONDS seconds ($succeed succeed, $failed failed)"

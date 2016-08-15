@@ -506,13 +506,8 @@ static void MtmOpenConnections()
 	}
 	for (i = 0; i < nNodes; i++) {
 		if (i+1 != MtmNodeId && i < Mtm->nAllNodes) { 
-			int arbiterPort;
-			char const* arbiterPortStr = strstr(Mtm->nodes[i].con.connStr, "arbiterport=");
-			if (arbiterPortStr != NULL) {
-				if (sscanf(arbiterPortStr+12, "%d", &arbiterPort) != 1) {
-					elog(ERROR, "Invalid arbiter port: %s", arbiterPortStr+12);					
-				}
-			} else { 
+			int arbiterPort = Mtm->nodes[i].con.arbiterPort;
+			if (arbiterPort == 0) {
 				arbiterPort = MtmArbiterPort + i + 1;
 			}
 			sockets[i] = MtmConnectSocket(i, arbiterPort, MtmConnectTimeout);
