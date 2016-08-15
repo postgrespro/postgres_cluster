@@ -7,6 +7,7 @@
 
 #include "access/clog.h"
 #include "pglogical_output/hooks.h"
+#include "libpq-fe.h"
 
 #define  DEBUG_LEVEL 0
 
@@ -283,7 +284,7 @@ extern void  MtmUpdateLsnMapping(int nodeId, XLogRecPtr endLsn);
 extern XLogRecPtr MtmGetFlushPosition(int nodeId);
 extern bool MtmWatchdog(timestamp_t now);
 extern void MtmCheckHeartbeat(void);
-
+extern PGconn *PQconnectdb_safe(const char *conninfo);
 
 
 #endif
