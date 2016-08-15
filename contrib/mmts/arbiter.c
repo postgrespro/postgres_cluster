@@ -377,7 +377,7 @@ static void MtmSendHeartbeat()
 
 void MtmCheckHeartbeat()
 {
-	if (send_heartbeat) {
+	if (send_heartbeat && !stop) {
 		send_heartbeat = false;
 		enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 		MtmSendHeartbeat();
