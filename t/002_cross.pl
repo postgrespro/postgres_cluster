@@ -150,5 +150,5 @@ foreach my $appender (@appenders)
 
 is($anomalies, 0, "no cross anomalies after $selects selects");
 
-ok($cluster->stop('kill'), "cluster stops");
+ok($cluster->stop('fast'), "cluster stops");
 1;
