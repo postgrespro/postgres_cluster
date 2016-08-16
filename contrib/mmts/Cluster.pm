@@ -142,6 +142,9 @@ sub stopnode
 
 	my $pgdata = $node->data_dir;
 	my $ret = TestLib::system_log('pg_ctl', '-D', $pgdata, '-m', 'fast', 'stop');
+	my $pidfile = $node->data_dir . "/postmaster.pid";
+	diag("unlink $pidfile");
+	unlink $pidfile;
 	$node->{_pid} = undef;
 	$node->_update_pid;
 
@@ -151,6 +154,12 @@ sub stopnode
 	}
 
 	return 1;
+}
+
+sub stopid
+{
+	my ($self, $idx, $mode) = @_;
+	return stopnode($self->{nodes}->[$idx]);
 }
 
 sub killtree
