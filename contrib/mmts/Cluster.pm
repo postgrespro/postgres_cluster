@@ -130,18 +130,18 @@ sub start
 sub stopnode
 {
 	my ($node, $mode) = @_;
-	my $port   = $node->port;
-	my $pgdata = $node->data_dir;
-	my $name   = $node->name;
+	return 1 unless defined $node->{_pid};
 	$mode = 'fast' unless defined $mode;
-	diag("stopping node $name ${mode}ly at $pgdata port $port");
-	next unless defined $node->{_pid};
-	my $ret = 0;
+	my $name   = $node->name;
+	diag("stopping $name ${mode}ly");
+
 	if ($mode eq 'kill') {
 		killtree($node->{_pid});
-	} else {
-		$ret = TestLib::system_log('pg_ctl', '-D', $pgdata, '-m', 'fast', 'stop');
+		return 1;
 	}
+
+	my $pgdata = $node->data_dir;
+	my $ret = TestLib::system_log('pg_ctl', '-D', $pgdata, '-m', 'fast', 'stop');
 	$node->{_pid} = undef;
 	$node->_update_pid;
 
@@ -204,9 +204,9 @@ sub stop
 	foreach my $node (@$nodes) {
 		if (!stopnode($node, $mode)) {
 			$ok = 0;
-			if (!stopnode($node, 'immediate')) {
+			if (!stopnode($node, 'kill')) {
 				my $name = $node->name;
-				BAIL_OUT("failed to stop $name immediately");
+				BAIL_OUT("failed to kill $name");
 			}
 		}
 	}
