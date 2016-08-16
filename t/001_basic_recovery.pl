@@ -2,7 +2,7 @@ use strict;
 use warnings;
 use Cluster;
 use TestLib;
-use Test::More tests => 8;
+use Test::More tests => 9;
 
 my $cluster = new Cluster(3);
 $cluster->init();
@@ -39,7 +39,15 @@ is($psql_out, '10', "Check replication while all nodes are up.");
 ###############################################################################
 
 diag("stopping node 2");
-$cluster->{nodes}->[2]->teardown_node;
+if ($cluster->stopid(2, 'immediate')) {
+	pass("node 2 stops");
+} else {
+	fail("node 2 stops");
+	if (!$cluster->stopid(2, 'kill')) {
+		my $name = $cluster->{nodes}->[2]->name;
+		BAIL_OUT("failed to kill $name");
+	}
+}
 
 sleep(5); # Wait until failure of node will be detected
 
