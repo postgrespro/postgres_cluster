@@ -15,6 +15,7 @@ This is a mirror of postgres repo with several changes to the core and a few ext
 ## New extensions:
 
 The following table describes the features and the way they are implemented in our four main extensions:
+
 |                            |commit timestamps             |snapshot sharing                    |
 |---------------------------:|:----------------------------:|:----------------------------------:|
 |**distributed transactions**|[`pg_tsdtm`](contrib/pg_tsdtm)|[`pg_dtm`](contrib/pg_dtm)          |
