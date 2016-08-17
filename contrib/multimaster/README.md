@@ -1,38 +1,33 @@
 # `multimaster`
 
-A synchronous multi-master replication based on **snapshot sharing**.
+An implementation of synchronous **multi-master replication** based on **snapshot sharing**.
 
-## Installing
+## Usage
 
-1. Build and install postgres from this repo on all machines in cluster.
-1. Install contrib/raftable and contrib/mmts extensions.
-1. Right now we need clean postgres installation to spin up multimaster cluster.
-1. Create required database inside postgres before enabling multimaster extension.
-1. We are requiring following postgres configuration:
-  * 'max_prepared_transactions' > 0 -- in multimaster all writing transaction along with ddl are wrapped as two-phase transaction, so this number will limit maximum number of writing transactions in this cluster node.
-  * 'synchronous_commit - off' -- right now we do not support async commit. (one can enable it, but that will not bring desired effect)
-  * 'wal_level = logical' -- multimaster built on top of logical replication so this is mandatory.
-  * 'max_wal_senders' -- this should be at least number of nodes - 1
-  * 'max_replication_slots' -- this should be at least number of nodes - 1
-  * 'max_worker_processes' -- at least 2*N + 1 + P, where N is number of nodes in cluster, P size of pool of workers(see below) (1 raftable, n-1 receiver, n-1 sender, mtm-sender, mtm-receiver, + number of pool worker).
-  * 'default_transaction_isolation = 'repeatable read'' -- multimaster isn't supporting default read commited level.
-1. Multimaster have following configuration parameters:
-  * 'multimaster.conn_strings' -- connstrings for all nodes in cluster, separated by comma.
-  * 'multimaster.node_id' -- id of current node, number starting from one.
-  * 'multimaster.workers' -- number of workers that can apply transactions from neighbouring nodes.
-  * 'multimaster.use_raftable = true' -- just set this to true. Deprecated.
-  * 'multimaster.queue_size = 52857600' -- queue size for applying transactions from neighbouring nodes.
-  * 'multimaster.ignore_tables_without_pk = 1' -- do not replicate tables without primary key
-  * 'multimaster.heartbeat_send_timeout = 250' -- heartbeat period (ms).
-  * 'multimaster.heartbeat_recv_timeout = 1000' -- disconnect node if we miss heartbeats all that time (ms).
-  * 'multimaster.twopc_min_timeout = 40000' -- rollback stalled transaction after this period (ms).
-  * 'raftable.id' -- id of current node, number starting from one.
-  * 'raftable.peers' -- id of current node, number starting from one.
-1. Allow replication in pg_hba.conf.
+1. Install `contrib/arbiter` and `contrib/multimaster` on each instance.
+1. Add these required options to the `postgresql.conf` of each instance in the cluster.
 
-## Status functions
+ ```sh
+ multimaster.workers = 8
+ multimaster.queue_size = 10485760 # 10mb
+ multimaster.local_xid_reserve = 100 # number of xids reserved for local transactions
+ multimaster.buffer_size = 0 # sockhub buffer size, if 0, then direct connection will be used
+ multimaster.arbiters = '127.0.0.1:5431,127.0.0.1:5430'
+                        # comma-separated host:port pairs where arbiters reside
+ multimaster.conn_strings = 'replication=database dbname=postgres ...'
+                            # comma-separated list of connection strings
+ multimaster.node_id = 1 # the 1-based index of the node in the cluster
+ shared_preload_libraries = 'multimaster'
+ max_connections = 200
+ max_replication_slots = 10 # at least the number of nodes
+ wal_level = logical # multimaster is build on top of
+                     # logical replication and will not work otherwise
+ max_worker_processes = 100 # at least (FIXME: need an estimation here)
+ ```
 
-* mtm.get_nodes_state() -- show status of nodes on cluster
-* mtm.get_cluster_state() -- show whole cluster status
-* mtm.get_cluster_info() -- print some debug info
-* mtm.make_table_local(relation regclass) -- stop replication for a given table
+## Testing
+
+1. `cd contrib/multimaster`
+1. Deploy the cluster somewhere. You can use `tests/daemons.go` or one of `tests/*.sh` for that.
+1. `make -C tests`
+1. `tests/dtmbench ...`. See `tests/run.sh` for an example.

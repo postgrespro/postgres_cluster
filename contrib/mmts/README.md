@@ -1,6 +1,6 @@
 # `mmts`
 
-An implementation of synchronous multi-master replication based on **logical decoding** and **xtm**.
+An implementation of synchronous **multi-master replication** based on **commit timestamps**.
 
 ## Usage
 
