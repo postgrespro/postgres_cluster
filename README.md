@@ -15,7 +15,7 @@ This is a mirror of postgres repo with several changes to the core and a few ext
 ## New extensions:
 
 ### [`arbiter`](contrib/arbiter)
-A distributed transaction management daemon.\
+A distributed transaction management daemon.
 Used by `pg_dtm` and `multimaster`.
 
 ### [`mmts`](contrib/mmts)
@@ -31,5 +31,5 @@ A coordinator-based distributed transaction management implementation based on *
 A coordinator-less distributed transaction management implementation based on **commit timestamps**.
 
 ### [`raftable`](contrib/raftable)
-A key-value table replicated over Raft protocol.\
+A key-value table replicated over Raft protocol.
 Used by `mmts`.
