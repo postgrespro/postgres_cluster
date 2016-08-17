@@ -3045,11 +3045,16 @@ MtmGenerateGid(char* gid)
 
 static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 {
-	if (MtmUtilityStmt && !MyXactAccessedTempRel)
+	if (MyXactAccessedTempRel)
 	{
-		MtmProcessDDLCommand(MtmUtilityStmt);
-		pfree(MtmUtilityStmt);
-		MtmUtilityStmt = NULL;
+		/*
+		 * XXX: this tx anyway goes to subscribers later, but without
+		 * surrounding begin/commit. Probably there is more clever way
+		 * to do that.
+		 */
+		x->isDistributed = false;
+		x->csn = NULL;
+		return false;
 	}
 
 	if (!x->isReplicated && (x->isDistributed && x->containsDML)) { 
@@ -3122,7 +3127,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_CreateTableSpaceStmt:
 		case T_AlterTableSpaceOptionsStmt:
 		case T_TruncateStmt:
-		case T_CommentStmt: /* XXX: we could replicate these */;
+		case T_CommentStmt:
 		case T_PrepareStmt:
 		case T_ExecuteStmt:
 		case T_DeallocateStmt:
@@ -3130,7 +3135,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ListenStmt:
 		case T_UnlistenStmt:
 		case T_LoadStmt:
-		case T_ClusterStmt: /* XXX: we could replicate these */;
+		case T_ClusterStmt:
 		case T_VacuumStmt:
 		case T_ExplainStmt:
 		case T_VariableShowStmt:
@@ -3140,6 +3145,16 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ReindexStmt:
 		    skipCommand = true;
 			break;
+
+		/* Do not skip following unless temp object was accessed */
+		case T_CreateTableAsStmt:
+		case T_CreateStmt:
+		case T_ViewStmt:
+		case T_IndexStmt:
+		case T_DropStmt:
+			break;
+
+		/* Save GUC context for consequent DDL execution */
 		case T_DiscardStmt:
 			{
 				DiscardStmt *stmt = (DiscardStmt *) parsetree;
@@ -3156,8 +3171,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			{
 				VariableSetStmt *stmt = (VariableSetStmt *) parsetree;
 
-				// skipCommand = true;
-
 				/* Prevent SET TRANSACTION from replication */
 				if (stmt->kind == VAR_SET_MULTI)
 					skipCommand = true;
@@ -3169,88 +3182,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				}
 			}
 			break;
-		case T_CreateTableAsStmt:
-			// {
-			// 	/* Do not replicate temp tables */
-			// 	CreateTableAsStmt *stmt = (CreateTableAsStmt *) parsetree;
-			// 	skipCommand = stmt->into->rel->relpersistence == RELPERSISTENCE_TEMP ||
-			// 		(stmt->into->rel->schemaname && strcmp(stmt->into->rel->schemaname, "pg_temp") == 0);
-			// }
-			break;
-		case T_CreateStmt:
-			{
-				/* Do not replicate temp tables */
-				CreateStmt *stmt = (CreateStmt *) parsetree;
-				skipCommand = stmt->relation->relpersistence == RELPERSISTENCE_TEMP ||
-					(stmt->relation->schemaname && strcmp(stmt->relation->schemaname, "pg_temp") == 0);
-			}
-			break;
-		case T_ViewStmt:
-			{
-				ViewStmt *stmt = (ViewStmt *) parsetree;
-				Query	   *viewParse;
 
-				viewParse = parse_analyze((Node *) copyObject(stmt->query),
-										queryString, NULL, 0);
-				skipCommand = isQueryUsingTempRelation(viewParse) ||
-					stmt->view->relpersistence == RELPERSISTENCE_TEMP;
-				// ||
-					// (stmt->relation->schemaname && strcmp(stmt->relation->schemaname, "pg_temp") == 0);
-			}
-			break;
-		case T_IndexStmt:
-			{
-				Oid			relid;
-				Relation	rel;
-				IndexStmt *stmt = (IndexStmt *) parsetree;
-				bool		isTopLevel = (context == PROCESS_UTILITY_TOPLEVEL);
-
-				if (stmt->concurrent)
-					PreventTransactionChain(isTopLevel,
-												"CREATE INDEX CONCURRENTLY");
-
-				relid = RelnameGetRelid(stmt->relation->relname);
-
-				if (OidIsValid(relid))
-				{
-					rel = heap_open(relid, ShareLock);
-					skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
-					heap_close(rel, ShareLock);
-				}
-			}
-			break;
-		case T_DropStmt:
-			{
-				DropStmt *stmt = (DropStmt *) parsetree;
-
-				if (stmt->removeType == OBJECT_TABLE)
-				{
-					RangeVar   *rv = makeRangeVarFromNameList(
-										(List *) lfirst(list_head(stmt->objects)));
-					Oid			relid = RelnameGetRelid(rv->relname);
-
-					if (OidIsValid(relid))
-					{
-						Relation	rel = heap_open(relid, ShareLock);
-						skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
-						heap_close(rel, ShareLock);
-					}
-				}
-				else if (stmt->removeType == OBJECT_INDEX)
-				{
-					RangeVar   *rv = makeRangeVarFromNameList(
-										(List *) lfirst(list_head(stmt->objects)));
-					Oid			relid = RelnameGetRelid(rv->relname);
-
-					if (OidIsValid(relid))
-					{
-						Relation	irel = index_open(relid, ShareLock);
-						skipCommand = irel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
-						index_close(irel, ShareLock);
-					}
-				}
-			}
-			break;
+		/* Copy need some special care */
 	    case T_CopyStmt:
 		{
 			CopyStmt *copyStatement = (CopyStmt *) parsetree;
@@ -3281,20 +3214,9 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	if (context == PROCESS_UTILITY_TOPLEVEL)
 	{
 		if (!skipCommand && !MtmTx.isReplicated) {
-			// if (MtmProcessDDLCommand(queryString)) { 
-			// 	return;
-			// }
-
-			MemoryContext oldcontext;
-
-			if (MtmUtilityStmt)
-				pfree(MtmUtilityStmt);
-
-			oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-			MtmUtilityStmt = palloc(strlen(queryString) + 1);
-			MemoryContextSwitchTo(oldcontext);
-
-			strncpy(MtmUtilityStmt, queryString, strlen(queryString) + 1);
+			if (MtmProcessDDLCommand(queryString)) {
+				return;
+			}
 		}
 	}
 
