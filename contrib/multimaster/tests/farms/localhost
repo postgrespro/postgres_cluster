@@ -1,8 +1,0 @@
-[clients]
-localhost
-
-[nodes]
-localhost
-
-[master]
-localhost
