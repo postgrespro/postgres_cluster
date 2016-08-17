@@ -14,21 +14,27 @@ This is a mirror of postgres repo with several changes to the core and a few ext
 
 ## New extensions:
 
+The following table describes the features and the way they are implemented in our four main extensions:
+|                            |commit timestamps             |snapshot sharing                    |
+|---------------------------:|:----------------------------:|:----------------------------------:|
+|**distributed transactions**|[`pg_tsdtm`](contrib/pg_tsdtm)|[`pg_dtm`](contrib/pg_dtm)          |
+|**multimaster replication** |[`mmts`](contrib/mmts)        |[`multimaster`](contrib/multimaster)|
+
+### [`mmts`](contrib/mmts)
+An implementation of synchronous **multi-master replication** based on **commit timestamps**.
+
+### [`multimaster`](contrib/multimaster)
+An implementation of synchronous **multi-master replication** based on **snapshot sharing**.
+
+### [`pg_dtm`](contrib/pg_dtm)
+An implementation of **distributed transaction** management based on **snapshot sharing**.
+
+### [`pg_tsdtm`](contrib/pg_tsdtm)
+An implementation of **distributed transaction** management based on **commit timestamps**.
+
 ### [`arbiter`](contrib/arbiter)
 A distributed transaction management daemon.
 Used by `pg_dtm` and `multimaster`.
-
-### [`mmts`](contrib/mmts)
-A synchronous multi-master replication based on **logical decoding** and **xtm**.
-
-### [`multimaster`](contrib/multimaster)
-A synchronous multi-master replication based on **snapshot sharing**.
-
-### [`pg_dtm`](contrib/pg_dtm)
-A coordinator-based distributed transaction management implementation based on **snapshot sharing**.
-
-### [`pg_tsdtm`](contrib/pg_tsdtm)
-A coordinator-less distributed transaction management implementation based on **commit timestamps**.
 
 ### [`raftable`](contrib/raftable)
 A key-value table replicated over Raft protocol.
