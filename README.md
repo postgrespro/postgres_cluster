@@ -14,22 +14,22 @@ This is a mirror of postgres repo with several changes to the core and a few ext
 
 ## New extensions:
 
-### [`arbiter`](contrib/arbiter/README)
+### [`arbiter`](contrib/arbiter)
 A distributed transaction management daemon.\
 Used by `pg_dtm` and `multimaster`.
 
-### [`mmts`](contrib/mmts/README.md)
+### [`mmts`](contrib/mmts)
 A synchronous multi-master replication based on **logical decoding** and **xtm**.
 
-### [`multimaster`](contrib/multimaster/README.md)
+### [`multimaster`](contrib/multimaster)
 A synchronous multi-master replication based on **snapshot sharing**.
 
-### [`pg_dtm`](contrib/pg_dtm/README.md)
+### [`pg_dtm`](contrib/pg_dtm)
 A coordinator-based distributed transaction management implementation based on **snapshot sharing**.
 
-### [`pg_tsdtm`](contrib/pg_tsdtm/README.md)
+### [`pg_tsdtm`](contrib/pg_tsdtm)
 A coordinator-less distributed transaction management implementation based on **commit timestamps**.
 
-### [`raftable`](contrib/raftable/README)
+### [`raftable`](contrib/raftable)
 A key-value table replicated over Raft protocol.\
 Used by `mmts`.
