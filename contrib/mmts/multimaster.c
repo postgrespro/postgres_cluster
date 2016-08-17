@@ -3006,6 +3006,15 @@ static char * MtmGUCBufferGet(void){
 	return MtmGUCBuffer->data;
 }
 
+static void MtmGUCBufferClear(void)
+{
+	if (MtmGUCBufferAllocated)
+	{
+		resetStringInfo(MtmGUCBuffer);
+		MtmGUCBufferAppend("");
+	}
+}
+
 static bool MtmProcessDDLCommand(char const* queryString)
 {
 	char	   *queryWithContext;
@@ -3174,6 +3183,9 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				/* Prevent SET TRANSACTION from replication */
 				if (stmt->kind == VAR_SET_MULTI)
 					skipCommand = true;
+
+				if (stmt->kind == VAR_RESET && strcmp(stmt->name, "session_authorization") == 0)
+					MtmGUCBufferClear();
 
 				if (!IsTransactionBlock())
 				{
