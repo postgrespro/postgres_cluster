@@ -1,117 +1,38 @@
-# pg_dtm
+# `multimaster`
 
-### Design
+A synchronous multi-master replication based on **snapshot sharing**.
 
-This repo implements distributed transaction manager using Snapshot Sharing mechanism. General concepts and alternative approaches described in postgres wiki https://wiki.postgresql.org/wiki/DTM.
+## Installing
 
-Backend-DTM protocol description can be found in [dtmd/README](dtmd/README).
+1. Build and install postgres from this repo on all machines in cluster.
+1. Install contrib/raftable and contrib/mmts extensions.
+1. Right now we need clean postgres installation to spin up multimaster cluster.
+1. Create required database inside postgres before enabling multimaster extension.
+1. We are requiring following postgres configuration:
+  * 'max_prepared_transactions' > 0 -- in multimaster all writing transaction along with ddl are wrapped as two-phase transaction, so this number will limit maximum number of writing transactions in this cluster node.
+  * 'synchronous_commit - off' -- right now we do not support async commit. (one can enable it, but that will not bring desired effect)
+  * 'wal_level = logical' -- multimaster built on top of logical replication so this is mandatory.
+  * 'max_wal_senders' -- this should be at least number of nodes - 1
+  * 'max_replication_slots' -- this should be at least number of nodes - 1
+  * 'max_worker_processes' -- at least 2*N + 1 + P, where N is number of nodes in cluster, P size of pool of workers(see below) (1 raftable, n-1 receiver, n-1 sender, mtm-sender, mtm-receiver, + number of pool worker).
+  * 'default_transaction_isolation = 'repeatable read'' -- multimaster isn't supporting default read commited level.
+1. Multimaster have following configuration parameters:
+  * 'multimaster.conn_strings' -- connstrings for all nodes in cluster, separated by comma.
+  * 'multimaster.node_id' -- id of current node, number starting from one.
+  * 'multimaster.workers' -- number of workers that can apply transactions from neighbouring nodes.
+  * 'multimaster.use_raftable = true' -- just set this to true. Deprecated.
+  * 'multimaster.queue_size = 52857600' -- queue size for applying transactions from neighbouring nodes.
+  * 'multimaster.ignore_tables_without_pk = 1' -- do not replicate tables without primary key
+  * 'multimaster.heartbeat_send_timeout = 250' -- heartbeat period (ms).
+  * 'multimaster.heartbeat_recv_timeout = 1000' -- disconnect node if we miss heartbeats all that time (ms).
+  * 'multimaster.twopc_min_timeout = 40000' -- rollback stalled transaction after this period (ms).
+  * 'raftable.id' -- id of current node, number starting from one.
+  * 'raftable.peers' -- id of current node, number starting from one.
+1. Allow replication in pg_hba.conf.
 
-### Installation
+## Status functions
 
-* Patch postgres using xtm.patch. After that build and install postgres in usual way.
-```bash
-cd ~/code/postgres
-patch -p1 < ~/code/pg_dtm/xtm.patch
-```
-* Install pg_dtm extension.
-```bash
-export PATH=/path/to/pgsql/bin/:$PATH
-cd ~/code/pg_dtm
-make && make install
-```
-* Run dtmd.
-```bash
-cd ~/code/pg_dtm/dtmd
-make
-mkdir /tmp/clog
-./bin/dtmd &
-```
-* To run something meaningful you need at leat two postgres instances. Also pg_dtm requires presense in ```shared_preload_libraries```.
-```bash
-initdb -D ./install/data1
-initdb -D ./install/data2
-echo "port = 5433" >> ./install/data2/postgresql.conf
-echo "shared_preload_libraries = 'pg_dtm'" >> ./install/data1/postgresql.conf
-echo "shared_preload_libraries = 'pg_dtm'" >> ./install/data2/postgresql.conf
-pg_ctl -D ./install/data1 -l ./install/data1/log start
-pg_ctl -D ./install/data2 -l ./install/data2/log start
-```
-
-#### Automatic provisioning
-
-For a cluster-wide deploy we use ansible, more details in tests/deploy_layouts. (Ansible instructions will be later)
-
-### Usage
-
-Now cluster is running and you can use global tx between two nodes. Let's connect to postgres instances at different ports:
-
-```sql
-create extension pg_dtm; -- node1
-create table accounts(user_id int, amount int); -- node1
-insert into accounts (select 2*generate_series(1,100)-1, 0); -- node1, odd user_id's
-    create extension pg_dtm; -- node2
-    create table accounts(user_id int, amount int); -- node2
-    insert into accounts (select 2*generate_series(1,100), 0); -- node2, even user_id's
-select dtm_begin_transaction(); -- node1, returns global xid, e.g. 42
-	select dtm_join_transaction(42); -- node2, join global tx
-begin; -- node1
-	begin; -- node2
-update accounts set amount=amount-100 where user_id=1; -- node1, transfer money from user#1
-	update accounts set amount=amount+100 where user_id=2; -- node2, to user#2
-commit; -- node1, blocks until second commit happend
-	commit; -- node2
-```
-
-### Consistency testing
-
-To ensure consistency we use simple bank test: perform a lot of simultaneous transfers between accounts on different servers, while constantly checking total amount of money on all accounts. This test can be found in tests/perf.
-
-```bash
-> go run ./tests/perf/*
-  -C value
-    	Connection string (repeat for multiple connections)
-  -a int
-    	The number of bank accounts (default 100000)
-  -b string
-    	Backend to use. Possible optinos: transfers, fdw, pgshard, readers. (default "transfers")
-  -g	Use DTM to keep global consistency
-  -i	Init database
-  -l	Use 'repeatable read' isolation level instead of 'read committed'
-  -n int
-    	The number updates each writer (reader in case of Reades backend) performs (default 10000)
-  -p	Use parallel execs
-  -r int
-    	The number of readers (default 1)
-  -s int
-    	StartID. Script will update rows starting from this value
-  -v	Show progress and other stuff for mortals
-  -w int
-    	The number of writers (default 8)
-```
-
-So previous installation can be initialized with:
-```
-go run ./tests/perf/*.go  \
--C "dbname=postgres port=5432" \
--C "dbname=postgres port=5433" \
--g -i
-```
-and tested with:
-```
-go run ./tests/perf/*.go  \
--C "dbname=postgres port=5432" \
--C "dbname=postgres port=5433" \
--g
-```
-
-### Using with postres_fdw.
-
-We also provide a patch, that enables support of global transactions with postres_fdw. After patching and installing postres_fdw it is possible to run same test via fdw usig key ```-b fdw```.
-
-### Using with pg_shard
-
-Citus Data have branch in their pg_shard repo, that interacts with transaction manager. https://github.com/citusdata/pg_shard/tree/transaction_manager_integration
-To use this feature one should have following line in postgresql.conf (or set it via GUC)
-```
-pg_shard.use_dtm_transactions = 1
-```
+* mtm.get_nodes_state() -- show status of nodes on cluster
+* mtm.get_cluster_state() -- show whole cluster status
+* mtm.get_cluster_info() -- print some debug info
+* mtm.make_table_local(relation regclass) -- stop replication for a given table
