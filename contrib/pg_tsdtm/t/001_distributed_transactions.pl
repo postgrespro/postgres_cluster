@@ -38,17 +38,17 @@ sub query_exec_async
 }
 
 sub PostgresNode::psql_ok {
-   my ($self, $sql, $comment) = @_;
+	my ($self, $sql, $comment) = @_;
 
-   $self->command_ok(['psql', '-A', '-t', '--no-psqlrc',
-   	'-d', $self->connstr, '-c', $sql], $comment);
+	$self->command_ok(['psql', '-A', '-t', '--no-psqlrc',
+	'-d', $self->connstr, '-c', $sql], $comment);
 }
 
 sub PostgresNode::psql_fails {
-   my ($self, $sql, $comment) = @_;
+	my ($self, $sql, $comment) = @_;
 
-   $self->command_ok(['psql', '-A', '-t', '--no-psqlrc',
-   	'-d', $self->connstr, '-c', $sql], $comment);
+	$self->command_ok(['psql', '-A', '-t', '--no-psqlrc',
+	'-d', $self->connstr, '-c', $sql], $comment);
 }
 
 ###############################################################################
@@ -221,7 +221,7 @@ $v1 = query_row($conn1b, "select v from t where id = 1");
 $fail = 1 if $v1 == 101;
 
 if ($v1 != 11) {
-	print "WARNIG: behavior is stricter than in usual read commited\n"
+	print "WARNING: behavior is stricter than in usual read committed\n";
 }
 
 commit_global("G1b-b", $conn1b, $conn2b);
@@ -348,15 +348,3 @@ query_row($conn2a, "select v from t where v = 20");
 commit_global("PMPwp-b", $conn1b, $conn2b);
 
 is($fail, 0, "Predicate-Many-Preceders for write predicates (PMPwp)");
-
-
-
-
-
-
-
-
-
-
-
-
