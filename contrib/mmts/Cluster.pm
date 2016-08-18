@@ -104,6 +104,7 @@ sub configure
 			multimaster.use_raftable = true
 			multimaster.heartbeat_recv_timeout = 1000
 			multimaster.heartbeat_send_timeout = 250
+			multimaster.max_nodes = 3
 			multimaster.ignore_tables_without_pk = true
 			multimaster.twopc_min_timeout = 2000
 		));
