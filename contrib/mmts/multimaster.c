@@ -2110,7 +2110,7 @@ _PG_init(void)
 
 	DefineCustomIntVariable(
 		"multimaster.node_disable_delay",
-		"Minamal amount of time (msec) between node status change",
+		"Minimal amount of time (msec) between node status change",
 		"This delay is used to avoid false detection of node failure and to prevent blinking of node status node",
 		&MtmNodeDisableDelay,
 		1000,
@@ -2125,7 +2125,7 @@ _PG_init(void)
 
 	DefineCustomIntVariable(
 		"multimaster.min_recovery_lag",
-		"Minamal lag of WAL-sender performing recovery after which cluster is locked until recovery is completed",
+		"Minimal lag of WAL-sender performing recovery after which cluster is locked until recovery is completed",
 		"When wal-sender almost catch-up WAL current position we need to stop 'Achilles tortile competition' and "
 		"temporary stop commit of new transactions until node will be completely repared",
 		&MtmMinRecoveryLag,
