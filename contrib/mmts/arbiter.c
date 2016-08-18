@@ -129,7 +129,7 @@ static char const* const messageText[] =
 
 static BackgroundWorker MtmSender = {
 	"mtm-sender",
-	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, 
+	BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION, 
 	BgWorkerStart_ConsistentState,
 	MULTIMASTER_BGW_RESTART_TIMEOUT,
 	MtmTransSender
@@ -137,7 +137,7 @@ static BackgroundWorker MtmSender = {
 
 static BackgroundWorker MtmRecevier = {
 	"mtm-receiver",
-	BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION, 
+	BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION, 
 	BgWorkerStart_ConsistentState,
 	MULTIMASTER_BGW_RESTART_TIMEOUT,
 	MtmTransReceiver

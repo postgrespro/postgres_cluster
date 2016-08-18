@@ -981,7 +981,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				/* Assert(ts->status == TRANSACTION_STATUS_UNKNOWN); */
 				Assert(ts->status == TRANSACTION_STATUS_UNKNOWN 
 					   || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)); /* ??? Why there is commit without prepare */
-				if (x->csn > ts->csn) {
+				if (x->csn > ts->csn || Mtm->status == MTM_RECOVERY) {
 					ts->csn = x->csn;
 					MtmSyncClock(ts->csn);
 				}
@@ -1505,7 +1505,7 @@ bool MtmRefreshClusterStatus(bool nowait)
 					MtmWakeUpBackend(ts);
 				}
 #if 0
-			} else if (TransactionIdIsValid(ts->gtid.xid) && BIT_CHECK(disabled, ts->gtid.node-1)) { // coordinator of transaction is on disabled node
+			} else if (TransactionIdIsValid(ts->gtid.xid) && BIT_CHECK(disabled, ts->gtid.node-1)) { /* coordinator of transaction is on disabled node */
 				if (ts->gid[0]) { 
 					if (ts->status == TRANSACTION_STATUS_UNKNOWN || ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
 						MTM_LOG1("%d: Abort trasaction %s because its coordinator is at disabled node %d", MyProcPid, ts->gid, ts->gtid.node);
@@ -1595,12 +1595,14 @@ void MtmOnNodeDisconnect(int nodeId)
 						MtmAbortTransaction(ts);
 						MtmWakeUpBackend(ts);
 					}
-				} else if (TransactionIdIsValid(ts->gtid.xid) && ts->gtid.node == nodeId) { //coordinator of transaction is on disabled node
+#if 0
+				} else if (TransactionIdIsValid(ts->gtid.xid) && ts->gtid.node == nodeId) { /* coordinator of transaction is on disabled node */
 					if (ts->gid[0] && ts->status != TRANSACTION_STATUS_ABORTED) {
 						MtmAbortTransaction(ts);
 						MtmTx.status = TRANSACTION_STATUS_ABORTED; /* prevent recursive invocation of MtmAbortPreparedTransaction */
 						FinishPreparedTransaction(ts->gid, false);
 					}
+#endif
 				}
 			}
 		}
@@ -2213,11 +2215,11 @@ _PG_init(void)
 		NULL,
 		&MtmConnStrs,
 		"",
-		PGC_BACKEND, // context
-		0, // flags,
-		NULL, // GucStringCheckHook check_hook,
-		NULL, // GucStringAssignHook assign_hook,
-		NULL // GucShowHook show_hook
+		PGC_BACKEND, /* context */
+		0,           /* flags */
+		NULL,        /* GucStringCheckHook check_hook */
+		NULL,        /* GucStringAssignHook assign_hook */
+		NULL         /* GucShowHook show_hook */
 	);
     
 	DefineCustomIntVariable(
@@ -3249,15 +3251,19 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			break;
 		case T_DiscardStmt:
 			{
-				//DiscardStmt *stmt = (DiscardStmt *) parsetree;
-				//skipCommand = stmt->target == DISCARD_TEMP;
+				/*
+				 * DiscardStmt *stmt = (DiscardStmt *) parsetree;
+				 * skipCommand = stmt->target == DISCARD_TEMP;
+				 */
 
 				skipCommand = true;
 
 				if (MtmGUCBufferAllocated)
 				{
-					// XXX: move allocation somewhere to backend startup and check
-					// where buffer is empty in send routines.
+					/*
+					 * XXX: move allocation somewhere to backend startup and check
+					 * where buffer is empty in send routines.
+					 */
 					MtmGUCBufferAllocated = false;
 					pfree(MtmGUCBuffer);
 				}
@@ -3286,7 +3292,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 
 				appendStringInfoString(MtmGUCBuffer, queryString);
 
-				// sometimes there is no ';' char at the end.
+				/* sometimes there is no ';' char at the end. */
 				appendStringInfoString(MtmGUCBuffer, ";");
 			}
 			break;

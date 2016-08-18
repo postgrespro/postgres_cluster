@@ -28,6 +28,7 @@
 #include <time.h>
 
 #include "postgres.h"
+#include "miscadmin.h"
 
 #include "access/heapam.h"
 #include "access/heapam_xlog.h"
@@ -423,6 +424,8 @@ DecodeHeapOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 
 	ReorderBufferProcessXid(ctx->reorder, xid, buf->origptr);
 
+	elog(LOG, "%d: DecodeHeapOp XID=%d, info=%d", MyProcPid, xid, info);
+
 	/* no point in doing anything yet */
 	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT)
 		return;
@@ -813,16 +816,20 @@ DecodeUpdate(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	char	   *data;
 	RelFileNode target_node;
 
+	elog(LOG, "%d: DecodeUpdate XID=%d", MyProcPid);
+
 	xlrec = (xl_heap_update *) XLogRecGetData(r);
 
 	/* only interested in our database */
 	XLogRecGetBlockTag(r, 0, &target_node, NULL, NULL);
-	if (target_node.dbNode != ctx->slot->data.database)
+	if (target_node.dbNode != ctx->slot->data.database) 
 		return;
 
 	/* output plugin doesn't look for this origin, no need to queue */
-	if (FilterByOrigin(ctx, XLogRecGetOrigin(r)))
+	if (FilterByOrigin(ctx, XLogRecGetOrigin(r))) {
+		elog(LOG, "%d: DecodeUpdate XID=%d filtered by origin %lx", MyProcPid, XLogRecGetOrigin(r));
 		return;
+	}
 
 	change = ReorderBufferGetChange(ctx->reorder);
 	change->action = REORDER_BUFFER_CHANGE_UPDATE;

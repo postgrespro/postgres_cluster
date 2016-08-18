@@ -12,7 +12,7 @@ class RecoveryTest(unittest.TestCase):
             "dbname=postgres user=postgres host=127.0.0.1",
             "dbname=postgres user=postgres host=127.0.0.1 port=5433",
             "dbname=postgres user=postgres host=127.0.0.1 port=5434"
-        ], n_accounts=100000)
+        ], n_accounts=1000)
         self.client.bgrun()
         time.sleep(5)
 

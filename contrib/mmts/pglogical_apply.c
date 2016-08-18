@@ -59,6 +59,8 @@ typedef struct TupleData
 	bool		changed[MaxTupleAttributeNumber];
 } TupleData;
 
+static int MtmTransactionRecords;
+
 static Relation read_rel(StringInfo s, LOCKMODE mode);
 static void read_tuple_parts(StringInfo s, Relation rel, TupleData *tup);
 static EState* create_rel_estate(Relation rel);
@@ -509,10 +511,15 @@ process_remote_commit(StringInfo in)
 	csn_t       csn;
 	const char *gid = NULL;	
 	XLogRecPtr  end_lsn;
-
+	int         n_records;
 	/* read flags */
 	flags = pq_getmsgbyte(in);
 	MtmReplicationNodeId = pq_getmsgbyte(in);
+
+	n_records = pq_getmsgint(in, 4);
+	if (MtmTransactionRecords != n_records) { 
+		elog(ERROR, "Transaction %d flags %d contains %d records instead of %d", MtmGetCurrentTransactionId(), flags, MtmTransactionRecords, n_records);
+	}
 
 	/* read fields */
 	replorigin_session_origin_lsn = pq_getmsgint64(in); /* commit_lsn */
@@ -619,6 +626,8 @@ process_remote_insert(StringInfo s, Relation rel)
 	ScanKey	*index_keys;
 	char* relname = RelationGetRelationName(rel);
 	int	i;
+
+	MtmTransactionRecords += 1;
 
 	estate = create_rel_estate(rel);
 	newslot = ExecInitExtraTupleSlot(estate);
@@ -733,6 +742,8 @@ process_remote_update(StringInfo s, Relation rel)
 	Relation	idxrel;
 	ScanKeyData skey[INDEX_MAX_KEYS];
 	HeapTuple	remote_tuple = NULL;
+
+	MtmTransactionRecords += 1;
 
 	action = pq_getmsgbyte(s);
 
@@ -851,6 +862,8 @@ process_remote_delete(StringInfo s, Relation rel)
 	ScanKeyData skey[INDEX_MAX_KEYS];
 	bool		found_old;
 
+	MtmTransactionRecords += 1;
+
 	estate = create_rel_estate(rel);
 	oldslot = ExecInitExtraTupleSlot(estate);
 	ExecSetSlotDescriptor(oldslot, RelationGetDescr(rel));
@@ -938,6 +951,7 @@ void MtmExecutor(int id, void* work, size_t size)
     }
     MemoryContextSwitchTo(ApplyContext);
 	replorigin_session_origin = InvalidRepOriginId;
+	MtmTransactionRecords = 0;
     PG_TRY();
     {    
         while (true) { 
