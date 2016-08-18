@@ -52,4 +52,4 @@ An implementation of synchronous **multi-master replication** based on **commit 
 ## Testing
 
 * `make -C contrib/mmts check` to run TAP-tests.
-* `make -C contrib/mmts xcheck` to run blockade tests. The blockade tests require `docker`, `blockade`, and some other packages installed, see [requirements.txt](tests2/requirements.txt) for the list.
+* `make -C contrib/mmts xcheck` to run blockade tests. The blockade tests require `docker`, `blockade`, and some other packages installed, see [requirements.txt](tests2/requirements.txt) for the list. You might also want to gain superuser privileges to run these tests successfully.

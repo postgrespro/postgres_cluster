@@ -81,6 +81,7 @@ if [ "$1" = 'postgres' ]; then
 			log_autovacuum_min_duration = 0
 
 			multimaster.workers = 4
+			multimaster.max_nodes = 3
 			multimaster.use_raftable = true
 			multimaster.queue_size=52857600
 			multimaster.ignore_tables_without_pk = 1
