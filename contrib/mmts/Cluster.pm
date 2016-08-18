@@ -3,6 +3,7 @@ package Cluster;
 use strict;
 use warnings;
 
+use Proc::ProcessTable;
 use PostgresNode;
 use TestLib;
 use Test::More;
@@ -103,6 +104,7 @@ sub configure
 			multimaster.use_raftable = true
 			multimaster.heartbeat_recv_timeout = 1000
 			multimaster.heartbeat_send_timeout = 250
+			multimaster.max_nodes = 3
 			multimaster.ignore_tables_without_pk = true
 			multimaster.twopc_min_timeout = 2000
 		));
@@ -129,13 +131,21 @@ sub start
 sub stopnode
 {
 	my ($node, $mode) = @_;
-	my $port   = $node->port;
-	my $pgdata = $node->data_dir;
-	my $name   = $node->name;
+	return 1 unless defined $node->{_pid};
 	$mode = 'fast' unless defined $mode;
-	diag("stopping node $name ${mode}ly at $pgdata port $port");
-	next unless defined $node->{_pid};
+	my $name   = $node->name;
+	diag("stopping $name ${mode}ly");
+
+	if ($mode eq 'kill') {
+		killtree($node->{_pid});
+		return 1;
+	}
+
+	my $pgdata = $node->data_dir;
 	my $ret = TestLib::system_log('pg_ctl', '-D', $pgdata, '-m', 'fast', 'stop');
+	my $pidfile = $node->data_dir . "/postmaster.pid";
+	diag("unlink $pidfile");
+	unlink $pidfile;
 	$node->{_pid} = undef;
 	$node->_update_pid;
 
@@ -147,6 +157,51 @@ sub stopnode
 	return 1;
 }
 
+sub stopid
+{
+	my ($self, $idx, $mode) = @_;
+	return stopnode($self->{nodes}->[$idx]);
+}
+
+sub killtree
+{
+	my $root = shift;
+	diag("killtree $root\n");
+
+	my $t = new Proc::ProcessTable;
+
+	my %parent = ();
+	#my %cmd = ();
+	foreach my $p (@{$t->table}) {
+		$parent{$p->pid} = $p->ppid;
+	#	$cmd{$p->pid} = $p->cmndline;
+	}
+
+	if (!defined $root) {
+		return;
+	}
+	my @queue = ($root);
+	my @killist = ();
+
+	while (scalar @queue) {
+		my $victim = shift @queue;
+		while (my ($pid, $ppid) = each %parent) {
+			if ($ppid == $victim) {
+				push @queue, $pid;
+			}
+		}
+		diag("SIGSTOP to $victim");
+		kill 'STOP', $victim;
+		unshift @killist, $victim;
+	}
+
+	diag("SIGKILL to " . join(' ', @killist));
+	kill 'KILL', @killist;
+	#foreach my $victim (@killist) {
+	#	print("kill $victim " . $cmd{$victim} . "\n");
+	#}
+}
+
 sub stop
 {
 	my ($self, $mode) = @_;
@@ -155,12 +210,13 @@ sub stop
 
 	my $ok = 1;
 	diag("stopping cluster ${mode}ly");
-	foreach my $node (@$nodes)
-	{
+	
+	foreach my $node (@$nodes) {
 		if (!stopnode($node, $mode)) {
 			$ok = 0;
-			if (!stopnode($node, 'immediate')) {
-				BAIL_OUT("failed to stop $node immediately");
+			if (!stopnode($node, 'kill')) {
+				my $name = $node->name;
+				BAIL_OUT("failed to kill $name");
 			}
 		}
 	}

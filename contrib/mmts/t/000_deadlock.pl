@@ -93,5 +93,5 @@ else
 
 query_row($conns[0], "select * from t where k = 1");
 
-ok($cluster->stop(), "cluster stops");
+ok($cluster->stop('fast'), "cluster stops");
 1;

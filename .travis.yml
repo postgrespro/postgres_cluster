@@ -5,7 +5,7 @@ os:
 compiler:
   - gcc
   - clang
-install: cpanm IPC::Run DBD::Pg
+install: cpanm IPC::Run DBD::Pg Proc::ProcessTable
 before_script: ./configure --enable-tap-tests && make -j4
 env:
   #- TESTDIR=.

@@ -340,8 +340,8 @@ static void MtmScheduleHeartbeat()
 	if (!stop) { 
 		enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 		send_heartbeat = true;
-		PGSemaphoreUnlock(&Mtm->votingSemaphore);
 	}
+	PGSemaphoreUnlock(&Mtm->votingSemaphore);
 }
 	
 static void MtmSendHeartbeat()
@@ -377,7 +377,7 @@ static void MtmSendHeartbeat()
 
 void MtmCheckHeartbeat()
 {
-	if (send_heartbeat) {
+	if (send_heartbeat && !stop) {
 		send_heartbeat = false;
 		enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 		MtmSendHeartbeat();

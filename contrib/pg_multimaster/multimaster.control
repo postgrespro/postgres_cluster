@@ -1,4 +1,0 @@
-comment = 'Multimaster'
-default_version = '1.0'
-module_pathname = '$libdir/multimaster'
-relocatable = true

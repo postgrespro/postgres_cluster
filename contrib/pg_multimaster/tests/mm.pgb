@@ -1,7 +1,0 @@
-\setrandom id1 1 100000
-\setrandom id2 1 100000
-begin;
---select v from t where u=:id;
-update t set v = v - 1 where u=:id1;
-update t set v = v + 1 where u=:id2;
-commit;

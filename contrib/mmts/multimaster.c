@@ -1928,6 +1928,68 @@ static void MtmSplitConnStrs(void)
 	pfree(copy);
 }		
 
+static bool ConfigIsSane(void)
+{
+	bool ok = true;
+
+	if (DefaultXactIsoLevel != XACT_REPEATABLE_READ)
+	{
+		elog(WARNING, "multimaster requires default_transaction_isolation = 'repeatable read'");
+		ok = false;
+	}
+
+	if (MtmMaxNodes < 1)
+	{
+		elog(WARNING, "multimaster requires multimaster.max_nodes > 0");
+		ok = false;
+	}
+
+	if (max_prepared_xacts < 1)
+	{
+		elog(WARNING,
+			 "multimaster requires max_prepared_transactions > 0, "
+			 "because all transactions are implicitly two-phase");
+		ok = false;
+	}
+
+	{
+		int workers_required = 2 * MtmMaxNodes + MtmWorkers + 1;
+		if (max_worker_processes < workers_required)
+		{
+			elog(WARNING,
+				 "multimaster requires max_worker_processes >= %d",
+				 workers_required);
+			ok = false;
+		}
+	}
+
+	if (wal_level != WAL_LEVEL_LOGICAL)
+	{
+		elog(WARNING,
+			 "multimaster requires wal_level = 'logical', "
+			 "because it is build on top of logical replication");
+		ok = false;
+	}
+
+	if (max_wal_senders < MtmMaxNodes)
+	{
+		elog(WARNING,
+			 "multimaster requires max_wal_senders >= %d (multimaster.max_nodes), ",
+			 MtmMaxNodes);
+		ok = false;
+	}
+
+	if (max_replication_slots < MtmMaxNodes)
+	{
+		elog(WARNING,
+			 "multimaster requires max_replication_slots >= %d (multimaster.max_nodes), ",
+			 MtmMaxNodes);
+		ok = false;
+	}
+
+	return ok;
+}
+
 void
 _PG_init(void)
 {
@@ -2050,7 +2112,7 @@ _PG_init(void)
 
 	DefineCustomIntVariable(
 		"multimaster.node_disable_delay",
-		"Minamal amount of time (msec) between node status change",
+		"Minimal amount of time (msec) between node status change",
 		"This delay is used to avoid false detection of node failure and to prevent blinking of node status node",
 		&MtmNodeDisableDelay,
 		1000,
@@ -2065,7 +2127,7 @@ _PG_init(void)
 
 	DefineCustomIntVariable(
 		"multimaster.min_recovery_lag",
-		"Minamal lag of WAL-sender performing recovery after which cluster is locked until recovery is completed",
+		"Minimal lag of WAL-sender performing recovery after which cluster is locked until recovery is completed",
 		"When wal-sender almost catch-up WAL current position we need to stop 'Achilles tortile competition' and "
 		"temporary stop commit of new transactions until node will be completely repared",
 		&MtmMinRecoveryLag,
@@ -2267,18 +2329,15 @@ _PG_init(void)
 		NULL
 	);
 
-	if (DefaultXactIsoLevel != XACT_REPEATABLE_READ) { 
-		elog(ERROR, "Multimaster requires repeatable read default isolation level");
+	if (!ConfigIsSane()) {
+		elog(ERROR, "Multimaster config is insane, refusing to work");
 	}
-#if 0
-	if (synchronous_commit != SYNCHRONOUS_COMMIT_ON) { 
-		elog(ERROR, "Multimaster requires synchronous commit on");
-	}
-#endif
 
+	/* This will also perform some checks on connection strings */
 	MtmSplitConnStrs();
+
     MtmStartReceivers();
-		
+
 	/*
 	 * Request additional shared resources.  (These are no-ops if we're not in
 	 * the postmaster process.)  We'll allocate or attach to the shared
