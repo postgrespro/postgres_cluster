@@ -13,9 +13,10 @@ CREATE FUNCTION mtm.drop_node(node integer, drop_slot bool default false) RETURN
 AS 'MODULE_PATHNAME','mtm_drop_node'
 LANGUAGE C;
 
-CREATE FUNCTION mtm.add_node(conn_str cstring) RETURNS void
-AS 'MODULE_PATHNAME','mtm_add_node'
-LANGUAGE C;
+-- -- XXX: cstring as an argument breaks sanity check
+-- CREATE FUNCTION mtm.add_node(conn_str cstring) RETURNS void
+-- AS 'MODULE_PATHNAME','mtm_add_node'
+-- LANGUAGE C;
 
 -- Create replication slot for the node which was previously dropped together with it's slot 
 CREATE FUNCTION mtm.recover_node(node integer) RETURNS void
@@ -69,7 +70,7 @@ CREATE FUNCTION mtm.inject_2pc_error(stage integer) RETURNS void
 AS 'MODULE_PATHNAME','mtm_inject_2pc_error'
 LANGUAGE C;
 
-CREATE TABLE IF NOT EXISTS public.ddl_log (issued timestamp with time zone not null, query text);
+-- CREATE TABLE IF NOT EXISTS public.ddl_log (issued timestamp with time zone not null, query text);
 
-CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema text, rel_name text, primary key(rel_schema, rel_name));
+-- CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema text, rel_name text, primary key(rel_schema, rel_name));
 
