@@ -272,7 +272,7 @@ pglogical_receiver_main(Datum main_arg)
 		}
 		
 		query = createPQExpBuffer();
-#if 1 /* Do we need to recreate slot ? */		
+#if 0 /* Do we need to recreate slot ? */		
 		if (mode == REPLMODE_RECOVERED) { /* recreate slot */
 			appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", slotName);
 			res = PQexec(conn, query->data);
@@ -305,7 +305,7 @@ pglogical_receiver_main(Datum main_arg)
 		
 		/* Start logical replication at specified position */
 		if (mode == REPLMODE_RECOVERED) {
-			originStartPos = Mtm->nodes[nodeId].restartLsn;
+			originStartPos = Mtm->nodes[nodeId-1].restartLsn;
 		} 
 		if (originStartPos == 0) { 
 			StartTransactionCommand();
@@ -325,6 +325,7 @@ pglogical_receiver_main(Datum main_arg)
 				originStartPos = replorigin_get_progress(originId, false);
 				MTM_LOG1("Restart logical receiver at position %lx with origin=%d from node %d", originStartPos, originId, nodeId);
 			}
+			Mtm->nodes[nodeId-1].originId = originId;
 			CommitTransactionCommand();
 		}
 		
