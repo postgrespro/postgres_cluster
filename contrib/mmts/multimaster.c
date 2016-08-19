@@ -235,8 +235,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag);
 
-static StringInfo	MtmGUCBuffer;
-static bool			MtmGUCBufferAllocated = false;
+// static StringInfo	MtmGUCBuffer;
+// static bool			MtmGUCBufferAllocated = false;
 
 /*
  * -------------------------------------------
@@ -2983,63 +2983,37 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	}
 }
 
-static void MtmGUCBufferAppend(const char *gucQueryString){
+// static void MtmGUCBufferAppend(const char *gucQueryString){
 
-	if (!MtmGUCBufferAllocated)
-	{
-		MemoryContext oldcontext;
-		oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-		MtmGUCBuffer = makeStringInfo();
-		MemoryContextSwitchTo(oldcontext);
-		MtmGUCBufferAllocated = true;
-		appendStringInfoString(MtmGUCBuffer, "RESET SESSION AUTHORIZATION; reset all;");
-	}
+// 	if (!MtmGUCBufferAllocated)
+// 	{
+// 		MemoryContext oldcontext;
+// 		oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+// 		MtmGUCBuffer = makeStringInfo();
+// 		MemoryContextSwitchTo(oldcontext);
+// 		MtmGUCBufferAllocated = true;
+// 		appendStringInfoString(MtmGUCBuffer, "RESET SESSION AUTHORIZATION; reset all;");
+// 	}
 
-	appendStringInfoString(MtmGUCBuffer, gucQueryString);
-	/* sometimes there is no ';' char at the end. */
-	// appendStringInfoString(MtmGUCBuffer, ";");
-}
+// 	appendStringInfoString(MtmGUCBuffer, gucQueryString);
+// 	/* sometimes there is no ';' char at the end. */
+// 	// appendStringInfoString(MtmGUCBuffer, ";");
+// }
 
-static char * MtmGUCBufferGet(void){
-	if (!MtmGUCBufferAllocated)
-		MtmGUCBufferAppend("");
-	return MtmGUCBuffer->data;
-}
+// static char * MtmGUCBufferGet(void){
+// 	if (!MtmGUCBufferAllocated)
+// 		MtmGUCBufferAppend("");
+// 	return MtmGUCBuffer->data;
+// }
 
-static void MtmGUCBufferClear(void)
-{
-	if (MtmGUCBufferAllocated)
-	{
-		resetStringInfo(MtmGUCBuffer);
-		MtmGUCBufferAppend("");
-	}
-}
-
-static bool MtmProcessDDLCommand(char const* queryString)
-{
-	char	   *queryWithContext;
-	char	   *gucContext;
-
-	/* Append global GUC to utility stmt. */
-	gucContext = MtmGUCBufferGet();
-	if (gucContext)
-	{
-		queryWithContext = palloc(strlen(gucContext) + strlen(queryString) +  1);
-		strcpy(queryWithContext, gucContext);
-		strcat(queryWithContext, queryString);
-	}
-	else
-	{
-		queryWithContext = (char *) queryString;
-	}
-
-	MTM_LOG1("Sending utility: %s", queryWithContext);
-	LogLogicalMessage("MTM:GUC", queryWithContext, strlen(queryWithContext), true);
-
-	MtmTx.containsDML = true;
-	return false;
-}
-
+// static void MtmGUCBufferClear(void)
+// {
+// 	if (MtmGUCBufferAllocated)
+// 	{
+// 		resetStringInfo(MtmGUCBuffer);
+// 		MtmGUCBufferAppend("");
+// 	}
+// }
 
 /*
  * Genenerate global transaction identifier for two-pahse commit.
@@ -3090,6 +3064,167 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 		}
 		return true;
 	}
+	return false;
+}
+
+
+/*
+ * -------------------------------------------
+ * GUC Context Handling
+ * -------------------------------------------
+ */
+
+// XXX: is it defined somewhere?
+#define GUC_KEY_MAXLEN 255
+
+#define MTM_GUC_HASHSIZE 20
+
+typedef struct MtmGucHashEntry
+{
+	char	key[GUC_KEY_MAXLEN];
+	char   *value;
+} MtmGucHashEntry;
+
+static HTAB *MtmGucHash = NULL;
+
+static void MtmGucHashInit(void)
+{
+	HASHCTL		hash_ctl;
+
+	MemSet(&hash_ctl, 0, sizeof(hash_ctl));
+	hash_ctl.keysize = GUC_KEY_MAXLEN;
+	hash_ctl.entrysize = sizeof(MtmGucHashEntry);
+	hash_ctl.hcxt = TopMemoryContext;
+	MtmGucHash = hash_create("MtmGucHash",
+						MTM_GUC_HASHSIZE,
+						&hash_ctl,
+						HASH_ELEM | HASH_CONTEXT);
+}
+
+static void MtmGucSet(VariableSetStmt *stmt, const char *queryStr)
+{
+	MemoryContext oldcontext;
+	MtmGucHashEntry *hentry;
+	bool found;
+	char *key;
+
+	if (!MtmGucHash)
+		MtmGucHashInit();
+
+	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+
+	switch (stmt->kind)
+	{
+		case VAR_SET_VALUE:
+		case VAR_SET_DEFAULT:
+		case VAR_SET_CURRENT:
+			{
+				char *value;
+
+				key = pstrdup(stmt->name);
+				hash_search(MtmGucHash, key, HASH_FIND,  &found);
+				value = ExtractSetVariableArgs(stmt);
+
+				fprintf(stderr, ":MtmGucSet: %s -> %s\n", key, value);
+
+				if (value)
+				{
+					hentry = (MtmGucHashEntry *) hash_search(MtmGucHash, key,
+															 HASH_ENTER,  &found);
+
+					// if (found)
+						// pfree(hentry->value);
+
+					hentry->value = palloc(strlen(value) + 1);
+					strcpy(hentry->value, value);
+				}
+				else if (found)
+				{
+					/* That was SET TO DEFAULT and we already had some value */
+					hash_search(MtmGucHash, key, HASH_REMOVE, NULL);
+				}
+			}
+			break;
+
+		case VAR_RESET:
+			{
+				key = pstrdup(stmt->name);
+				hash_search(MtmGucHash, key, HASH_REMOVE, NULL);
+			}
+			break;
+		case VAR_RESET_ALL:
+			break;
+
+		case VAR_SET_MULTI:
+			break;
+	}
+
+	MemoryContextSwitchTo(oldcontext);
+}
+
+static void MtmGucDiscard(DiscardStmt *stmt)
+{
+
+}
+
+static void MtmGucClear(void)
+{
+
+}
+
+static char * MtmGucSerialize(void)
+{
+	HASH_SEQ_STATUS status;
+	MtmGucHashEntry *hentry;
+	StringInfo serialized_gucs;
+
+	serialized_gucs = makeStringInfo();
+	appendStringInfoString(serialized_gucs, "RESET SESSION AUTHORIZATION; reset all; ");
+
+	if (MtmGucHash)
+	{
+		hash_seq_init(&status, MtmGucHash);
+		while ((hentry = (MtmGucHashEntry *) hash_seq_search(&status)) != NULL)
+		{
+			appendStringInfoString(serialized_gucs, "SET ");
+			appendStringInfoString(serialized_gucs, hentry->key);
+			appendStringInfoString(serialized_gucs, " TO ");
+			appendStringInfoString(serialized_gucs, hentry->value);
+			appendStringInfoString(serialized_gucs, "; ");
+		}
+	}
+
+	return serialized_gucs->data;
+}
+
+/*
+ * -------------------------------------------
+ * DDL Handling
+ * -------------------------------------------
+ */
+
+static bool MtmProcessDDLCommand(char const* queryString)
+{
+	char	   *queryWithContext;
+	char	   *gucContext;
+
+	/* Append global GUC to utility stmt. */
+	gucContext = MtmGucSerialize();
+	if (gucContext)
+	{
+		queryWithContext = palloc(strlen(gucContext) + strlen(queryString) +  1);
+		strcpy(queryWithContext, gucContext);
+		strcat(queryWithContext, queryString);
+	}
+	else
+	{
+		queryWithContext = (char *) queryString;
+	}
+
+	MTM_LOG1("Sending utility: %s", queryWithContext);
+	LogLogicalMessage("MTM:GUC", queryWithContext, strlen(queryWithContext), true);
+
+	MtmTx.containsDML = true;
 	return false;
 }
 
@@ -3155,24 +3290,24 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		    skipCommand = true;
 			break;
 
-		/* Do not skip following unless temp object was accessed */
-		case T_CreateTableAsStmt:
-		case T_CreateStmt:
-		case T_ViewStmt:
-		case T_IndexStmt:
-		case T_DropStmt:
-			break;
+		// /* Do not skip following unless temp object was accessed */
+		// case T_CreateTableAsStmt:
+		// case T_CreateStmt:
+		// case T_ViewStmt:
+		// case T_IndexStmt:
+		// case T_DropStmt:
+		// 	break;
 
 		/* Save GUC context for consequent DDL execution */
 		case T_DiscardStmt:
 			{
 				DiscardStmt *stmt = (DiscardStmt *) parsetree;
-				skipCommand = stmt->target == DISCARD_TEMP;
+				skipCommand = stmt->target == DISCARD_TEMP; // XXX
 
 				if (!IsTransactionBlock())
 				{
 					skipCommand = true;
-					MtmGUCBufferAppend(queryString);
+					MtmGucDiscard(stmt);
 				}
 			}
 			break;
@@ -3185,12 +3320,12 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 					skipCommand = true;
 
 				if (stmt->kind == VAR_RESET && strcmp(stmt->name, "session_authorization") == 0)
-					MtmGUCBufferClear();
+					MtmGucClear();
 
 				if (!IsTransactionBlock())
 				{
 					skipCommand = true;
-					MtmGUCBufferAppend(queryString);
+					MtmGucSet(stmt, queryString);
 				}
 			}
 			break;
@@ -3223,7 +3358,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			skipCommand = false;
 			break;
 	}
-	if (context == PROCESS_UTILITY_TOPLEVEL)
+
+	if (context == PROCESS_UTILITY_TOPLEVEL) // || context == PROCESS_UTILITY_QUERY)
 	{
 		if (!skipCommand && !MtmTx.isReplicated) {
 			if (MtmProcessDDLCommand(queryString)) {
