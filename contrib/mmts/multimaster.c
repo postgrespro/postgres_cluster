@@ -197,6 +197,7 @@ char const* const MtmNodeStatusMnem[] =
 
 bool  MtmDoReplication;
 char* MtmDatabaseName;
+char* MtmDatabaseUser;
 char* MtmUtilityStmt = NULL;
 
 int   MtmNodes;
@@ -1718,7 +1719,7 @@ static void MtmInitialize()
 		PGSemaphoreCreate(&Mtm->votingSemaphore);
 		PGSemaphoreReset(&Mtm->votingSemaphore);
 		SpinLockInit(&Mtm->spinlock);
-        BgwPoolInit(&Mtm->pool, MtmExecutor, MtmDatabaseName, MtmQueueSize, MtmWorkers);
+		BgwPoolInit(&Mtm->pool, MtmExecutor, MtmDatabaseName, MtmDatabaseUser, MtmQueueSize, MtmWorkers);
 		RegisterXactCallback(MtmXactCallback, NULL);
 		MtmTx.snapshot = INVALID_CSN;
 		MtmTx.xid = InvalidTransactionId;		
@@ -1805,19 +1806,31 @@ static void MtmSplitConnStrs(void)
 
 		MtmUpdateNodeConnectionInfo(&MtmConnections[i], connStr);
 
-		if (i+1 == MtmNodeId) { 
-			char* dbName = strstr(connStr, "dbname=");
+		if (i+1 == MtmNodeId) {
+			char* dbName = strstr(connStr, "dbname="); // XXX: shoud we care about string 'itisnotdbname=xxx'?
+			char* dbUser = strstr(connStr, "user=");
 			char* end;
 			size_t len;
-			if (dbName == NULL) { 
-				elog(ERROR, "Database not specified in connection string: '%s'", connStr);
-			}
+
+			if (dbName == NULL)
+				elog(ERROR, "Database is not specified in connection string: '%s'", connStr);
+
+			if (dbUser == NULL)
+				elog(ERROR, "Database user is not specified in connection string: '%s'", connStr);
+
 			dbName += 7;
 			for (end = dbName; *end != ' ' && *end != '\0'; end++);
 			len = end - dbName;
 			MtmDatabaseName = (char*)palloc(len + 1);
 			memcpy(MtmDatabaseName, dbName, len);
 			MtmDatabaseName[len] = '\0';
+
+			dbUser += 5;
+			for (end = dbUser; *end != ' ' && *end != '\0'; end++);
+			len = end - dbUser;
+			MtmDatabaseUser = (char*)palloc(len + 1);
+			memcpy(MtmDatabaseUser, dbUser, len);
+			MtmDatabaseUser[len] = '\0';
 		}
 		connStr = p + 1;
     }
@@ -3287,6 +3300,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_LockStmt:
 		case T_CheckPointStmt:
 		case T_ReindexStmt:
+		case T_RefreshMatViewStmt:
 		    skipCommand = true;
 			break;
 
