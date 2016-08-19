@@ -179,8 +179,7 @@ static TransactionManager MtmTM = {
 	MtmGetTransactionStateSize,
 	MtmSerializeTransactionState,
 	MtmDeserializeTransactionState,
-	// MtmInitializeSequence
-	PgInitializeSequence
+	MtmInitializeSequence
 };
 
 char const* const MtmNodeStatusMnem[] = 
@@ -197,7 +196,6 @@ char const* const MtmNodeStatusMnem[] =
 bool  MtmDoReplication;
 char* MtmDatabaseName;
 char* MtmDatabaseUser;
-char* MtmUtilityStmt = NULL;
 
 int   MtmNodes;
 int   MtmNodeId;
@@ -213,6 +211,7 @@ int   MtmHeartbeatSendTimeout;
 int   MtmHeartbeatRecvTimeout;
 bool  MtmUseRaftable;
 bool  MtmUseDtm;
+bool  MtmVolksWagenMode;
 
 static char* MtmConnStrs;
 static int   MtmQueueSize;
@@ -234,9 +233,6 @@ static void MtmExecutorFinish(QueryDesc *queryDesc);
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag);
-
-// static StringInfo	MtmGUCBuffer;
-// static bool			MtmGUCBufferAllocated = false;
 
 /*
  * -------------------------------------------
@@ -370,8 +366,16 @@ MtmDeserializeTransactionState(void* ctx)
 static void
 MtmInitializeSequence(int64* start, int64* step)
 {
-	*start = MtmNodeId;
-	*step = MtmMaxNodes;
+	if (MtmVolksWagenMode)
+	{
+		*start = 1;
+		*step  = 1;
+	}
+	else
+	{
+		*start = MtmNodeId;
+		*step  = MtmMaxNodes;
+	}
 }
 
 
@@ -704,10 +708,6 @@ static const char* const isoLevelStr[] =
 static void 
 MtmBeginTransaction(MtmCurrentTrans* x)
 {
-	if (MtmUtilityStmt)
-		pfree(MtmUtilityStmt);
-	MtmUtilityStmt = NULL;
-
     if (x->snapshot == INVALID_CSN) { 
 		TransactionId xmin = (Mtm->gcCount >= MtmGcPeriod) ? PgGetOldestXmin(NULL, false) : InvalidTransactionId; /* Get oldest xmin outside critical section */
 
@@ -2218,6 +2218,19 @@ _PG_init(void)
 		NULL
 	);
 
+	DefineCustomBoolVariable(
+		"multimaster.volkswagen_mode",
+		"Pretend to be normal postgres. This means skip some NOTICE's and use local sequences. Default false.",
+		NULL,
+		&MtmVolksWagenMode,
+		false,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
 	DefineCustomIntVariable(
 		"multimaster.workers",
 		"Number of multimaster executor workers per node",
@@ -3128,13 +3141,6 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	{ 
 		if (conns[i]) 
 		{
-			// if (MtmGUCBufferAllocated && !MtmRunUtilityStmt(conns[i], MtmGUCBuffer->data, &utility_errmsg) && !ignoreError)
-			// {
-			// 	errorMsg = "Failed to set GUC variables at node %d";
-			// 	elog(WARNING, "%s", utility_errmsg);
-			// 	failedNode = i;
-			// 	break;
-			// }
 			if (!MtmRunUtilityStmt(conns[i], "BEGIN TRANSACTION", &utility_errmsg) && !ignoreError)
 			{
 				errorMsg = "Failed to start transaction at node %d";
@@ -3188,38 +3194,6 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	}
 }
 
-// static void MtmGUCBufferAppend(const char *gucQueryString){
-
-// 	if (!MtmGUCBufferAllocated)
-// 	{
-// 		MemoryContext oldcontext;
-// 		oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-// 		MtmGUCBuffer = makeStringInfo();
-// 		MemoryContextSwitchTo(oldcontext);
-// 		MtmGUCBufferAllocated = true;
-// 		appendStringInfoString(MtmGUCBuffer, "RESET SESSION AUTHORIZATION; reset all;");
-// 	}
-
-// 	appendStringInfoString(MtmGUCBuffer, gucQueryString);
-// 	/* sometimes there is no ';' char at the end. */
-// 	// appendStringInfoString(MtmGUCBuffer, ";");
-// }
-
-// static char * MtmGUCBufferGet(void){
-// 	if (!MtmGUCBufferAllocated)
-// 		MtmGUCBufferAppend("");
-// 	return MtmGUCBuffer->data;
-// }
-
-// static void MtmGUCBufferClear(void)
-// {
-// 	if (MtmGUCBufferAllocated)
-// 	{
-// 		resetStringInfo(MtmGUCBuffer);
-// 		MtmGUCBufferAppend("");
-// 	}
-// }
-
 /*
  * Genenerate global transaction identifier for two-pahse commit.
  * It should be unique for all nodes
@@ -3237,11 +3211,12 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 	{
 		/*
 		 * XXX: this tx anyway goes to subscribers later, but without
-		 * surrounding begin/commit. Probably there is more clever way
-		 * to do that.
+		 * surrounding begin/commit. Now it will be filtered out on receiver side.
+		 * Probably there is more clever way to do that.
 		 */
 		x->isDistributed = false;
-		x->csn = NULL;
+		if (!MtmVolksWagenMode)
+			elog(NOTICE, "MTM: Transaction was not replicated as it accesed temporary relation");
 		return false;
 	}
 
@@ -3438,8 +3413,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 {
 	bool skipCommand = false;
 
-	// skipCommand = MyXactAccessedTempRel;
-
 	MTM_LOG3("%d: Process utility statement %s", MyProcPid, queryString);
 	switch (nodeTag(parsetree))
 	{
@@ -3492,19 +3465,10 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		    skipCommand = true;
 			break;
 
-		// /* Do not skip following unless temp object was accessed */
-		// case T_CreateTableAsStmt:
-		// case T_CreateStmt:
-		// case T_ViewStmt:
-		// case T_IndexStmt:
-		// case T_DropStmt:
-		// 	break;
-
 		/* Save GUC context for consequent DDL execution */
 		case T_DiscardStmt:
 			{
 				DiscardStmt *stmt = (DiscardStmt *) parsetree;
-				skipCommand = stmt->target == DISCARD_TEMP; // XXX
 
 				if (!IsTransactionBlock())
 				{
