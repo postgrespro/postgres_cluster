@@ -122,6 +122,15 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	}
 }
 
+static void
+pglogical_write_message(StringInfo out,
+					const char *prefix, Size sz, const char *message)
+{
+	pq_sendbyte(out, 'G');
+	pq_sendbytes(out, message, sz);
+	pq_sendbyte(out, '\0');
+}
+
 /*
  * Write COMMIT to the output stream.
  */
@@ -451,6 +460,7 @@ pglogical_init_api(PGLogicalProtoType typ)
 	MTM_LOG1("%d: PRGLOGICAL init API for slot %s node %d", MyProcPid, MyReplicationSlot->data.name.data, MtmReplicationNodeId);
     res->write_rel = pglogical_write_rel;
     res->write_begin = pglogical_write_begin;
+	res->write_message = pglogical_write_message;
     res->write_commit = pglogical_write_commit;
     res->write_insert = pglogical_write_insert;
     res->write_update = pglogical_write_update;

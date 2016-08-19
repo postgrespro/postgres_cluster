@@ -48,6 +48,7 @@
 #include "replication/walsender.h"
 #include "replication/walsender_private.h"
 #include "replication/slot.h"
+#include "replication/message.h"
 #include "port/atomics.h"
 #include "tcop/utility.h"
 #include "nodes/makefuncs.h"
@@ -55,6 +56,8 @@
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "pglogical_output/hooks.h"
+#include "parser/analyze.h"
+#include "parser/parse_relation.h"
 
 #include "multimaster.h"
 #include "ddd.h"
@@ -148,6 +151,7 @@ static void MtmShmemStartup(void);
 static BgwPool* MtmPoolConstructor(void);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
+static bool MtmProcessDDLCommand(char const* queryString);
 
 MtmState* Mtm;
 
@@ -192,6 +196,7 @@ char const* const MtmNodeStatusMnem[] =
 
 bool  MtmDoReplication;
 char* MtmDatabaseName;
+char* MtmDatabaseUser;
 
 int   MtmNodes;
 int   MtmNodeId;
@@ -207,6 +212,7 @@ int   MtmHeartbeatSendTimeout;
 int   MtmHeartbeatRecvTimeout;
 bool  MtmUseRaftable;
 bool  MtmUseDtm;
+bool  MtmVolksWagenMode;
 
 static char* MtmConnStrs;
 static int   MtmQueueSize;
@@ -228,9 +234,6 @@ static void MtmExecutorFinish(QueryDesc *queryDesc);
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag);
-
-static StringInfo	MtmGUCBuffer;
-static bool			MtmGUCBufferAllocated = false;
 
 /*
  * -------------------------------------------
@@ -364,8 +367,16 @@ MtmDeserializeTransactionState(void* ctx)
 static void
 MtmInitializeSequence(int64* start, int64* step)
 {
-	*start = MtmNodeId;
-	*step = MtmMaxNodes;
+	if (MtmVolksWagenMode)
+	{
+		*start = 1;
+		*step  = 1;
+	}
+	else
+	{
+		*start = MtmNodeId;
+		*step  = MtmMaxNodes;
+	}
 }
 
 
@@ -637,7 +648,7 @@ MtmXactCallback(XactEvent event, void *arg)
 {
     switch (event) 
     {
-	  case XACT_EVENT_START: 
+	  case XACT_EVENT_START:
 	    MtmBeginTransaction(&MtmTx);
         break;
 	  case XACT_EVENT_PRE_PREPARE:
@@ -1187,8 +1198,8 @@ void MtmHandleApplyError(void)
 		case ERRCODE_OUT_OF_MEMORY:
 			elog(WARNING, "Node is excluded from cluster because of non-recoverable error %d, %s, pid=%u",
 				edata->sqlerrcode, edata->message, getpid());
-			MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
-			kill(PostmasterPid, SIGQUIT);
+			// MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
+			// kill(PostmasterPid, SIGQUIT);
 			break;
 	}
 	FreeErrorData(edata);
@@ -1795,7 +1806,7 @@ static void MtmInitialize()
 		PGSemaphoreCreate(&Mtm->votingSemaphore);
 		PGSemaphoreReset(&Mtm->votingSemaphore);
 		SpinLockInit(&Mtm->spinlock);
-        BgwPoolInit(&Mtm->pool, MtmExecutor, MtmDatabaseName, MtmQueueSize, MtmWorkers);
+		BgwPoolInit(&Mtm->pool, MtmExecutor, MtmDatabaseName, MtmDatabaseUser, MtmQueueSize, MtmWorkers);
 		RegisterXactCallback(MtmXactCallback, NULL);
 		MtmTx.snapshot = INVALID_CSN;
 		MtmTx.xid = InvalidTransactionId;		
@@ -1909,19 +1920,31 @@ static void MtmSplitConnStrs(void)
 
 		MtmUpdateNodeConnectionInfo(&MtmConnections[i], connStr);
 
-		if (i+1 == MtmNodeId) { 
-			char* dbName = strstr(connStr, "dbname=");
+		if (i+1 == MtmNodeId) {
+			char* dbName = strstr(connStr, "dbname="); // XXX: shoud we care about string 'itisnotdbname=xxx'?
+			char* dbUser = strstr(connStr, "user=");
 			char* end;
 			size_t len;
-			if (dbName == NULL) { 
-				elog(ERROR, "Database not specified in connection string: '%s'", connStr);
-			}
+
+			if (dbName == NULL)
+				elog(ERROR, "Database is not specified in connection string: '%s'", connStr);
+
+			if (dbUser == NULL)
+				elog(ERROR, "Database user is not specified in connection string: '%s'", connStr);
+
 			dbName += 7;
 			for (end = dbName; *end != ' ' && *end != '\0'; end++);
 			len = end - dbName;
 			MtmDatabaseName = (char*)palloc(len + 1);
 			memcpy(MtmDatabaseName, dbName, len);
 			MtmDatabaseName[len] = '\0';
+
+			dbUser += 5;
+			for (end = dbUser; *end != ' ' && *end != '\0'; end++);
+			len = end - dbUser;
+			MtmDatabaseUser = (char*)palloc(len + 1);
+			memcpy(MtmDatabaseUser, dbUser, len);
+			MtmDatabaseUser[len] = '\0';
 		}
 		connStr = p + 1;
     }
@@ -2189,6 +2212,19 @@ _PG_init(void)
 		NULL,
 		&MtmUseDtm,
 		true,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomBoolVariable(
+		"multimaster.volkswagen_mode",
+		"Pretend to be normal postgres. This means skip some NOTICE's and use local sequences. Default false.",
+		NULL,
+		&MtmVolksWagenMode,
+		false,
 		PGC_BACKEND,
 		0,
 		NULL,
@@ -3107,13 +3143,6 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	{ 
 		if (conns[i]) 
 		{
-			if (MtmGUCBufferAllocated && !MtmRunUtilityStmt(conns[i], MtmGUCBuffer->data, &utility_errmsg) && !ignoreError)
-			{
-				errorMsg = "Failed to set GUC variables at node %d";
-				elog(WARNING, "%s", utility_errmsg);
-				failedNode = i;
-				break;
-			}
 			if (!MtmRunUtilityStmt(conns[i], "BEGIN TRANSACTION", &utility_errmsg) && !ignoreError)
 			{
 				errorMsg = "Failed to start transaction at node %d";
@@ -3167,53 +3196,6 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 	}
 }
 
-static bool MtmProcessDDLCommand(char const* queryString)
-{
-	RangeVar   *rv;
-	Relation	rel;
-	TupleDesc	tupDesc;
-	HeapTuple	tup;
-	Datum		values[Natts_mtm_ddl_log];
-	bool		nulls[Natts_mtm_ddl_log];
-	TimestampTz ts = GetCurrentTimestamp();
-
-	rv = makeRangeVar(MULTIMASTER_SCHEMA_NAME, MULTIMASTER_DDL_TABLE, -1);
-	rel = heap_openrv_extended(rv, RowExclusiveLock, true);
-
-	if (rel == NULL) {
-		if (!MtmIsBroadcast()) {
-			MtmBroadcastUtilityStmt(queryString, false);
-			return true;
-		}
-		return false;
-	}
-		
-	tupDesc = RelationGetDescr(rel);
-
-	/* Form a tuple. */
-	memset(nulls, false, sizeof(nulls));
-
-	values[Anum_mtm_ddl_log_issued - 1] = TimestampTzGetDatum(ts);
-	values[Anum_mtm_ddl_log_query - 1] = CStringGetTextDatum(queryString);
-
-	tup = heap_form_tuple(tupDesc, values, nulls);
-
-	/* Insert the tuple to the catalog. */
-	simple_heap_insert(rel, tup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, tup);
-
-	/* Cleanup. */
-	heap_freetuple(tup);
-	heap_close(rel, RowExclusiveLock);
-
-	MtmTx.containsDML = true;
-	return false;
-}
-
-
-
 /*
  * Genenerate global transaction identifier for two-pahse commit.
  * It should be unique for all nodes
@@ -3227,6 +3209,19 @@ MtmGenerateGid(char* gid)
 
 static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 {
+	if (MyXactAccessedTempRel)
+	{
+		/*
+		 * XXX: this tx anyway goes to subscribers later, but without
+		 * surrounding begin/commit. Now it will be filtered out on receiver side.
+		 * Probably there is more clever way to do that.
+		 */
+		x->isDistributed = false;
+		if (!MtmVolksWagenMode)
+			elog(NOTICE, "MTM: Transaction was not replicated as it accesed temporary relation");
+		return false;
+	}
+
 	if (!x->isReplicated && (x->isDistributed && x->containsDML)) { 
 		MtmGenerateGid(x->gid);
 		if (!x->isTransactionBlock) { 
@@ -3254,11 +3249,173 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 	return false;
 }
 
+
+/*
+ * -------------------------------------------
+ * GUC Context Handling
+ * -------------------------------------------
+ */
+
+// XXX: is it defined somewhere?
+#define GUC_KEY_MAXLEN 255
+
+#define MTM_GUC_HASHSIZE 20
+
+typedef struct MtmGucHashEntry
+{
+	char	key[GUC_KEY_MAXLEN];
+	char   *value;
+} MtmGucHashEntry;
+
+static HTAB *MtmGucHash = NULL;
+
+static void MtmGucHashInit(void)
+{
+	HASHCTL		hash_ctl;
+
+	MemSet(&hash_ctl, 0, sizeof(hash_ctl));
+	hash_ctl.keysize = GUC_KEY_MAXLEN;
+	hash_ctl.entrysize = sizeof(MtmGucHashEntry);
+	hash_ctl.hcxt = TopMemoryContext;
+	MtmGucHash = hash_create("MtmGucHash",
+						MTM_GUC_HASHSIZE,
+						&hash_ctl,
+						HASH_ELEM | HASH_CONTEXT);
+}
+
+static void MtmGucSet(VariableSetStmt *stmt, const char *queryStr)
+{
+	MemoryContext oldcontext;
+	MtmGucHashEntry *hentry;
+	bool found;
+	char *key;
+
+	if (!MtmGucHash)
+		MtmGucHashInit();
+
+	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+
+	switch (stmt->kind)
+	{
+		case VAR_SET_VALUE:
+		case VAR_SET_DEFAULT:
+		case VAR_SET_CURRENT:
+			{
+				char *value;
+
+				key = pstrdup(stmt->name);
+				hash_search(MtmGucHash, key, HASH_FIND,  &found);
+				value = ExtractSetVariableArgs(stmt);
+
+				fprintf(stderr, ":MtmGucSet: %s -> %s\n", key, value);
+
+				if (value)
+				{
+					hentry = (MtmGucHashEntry *) hash_search(MtmGucHash, key,
+															 HASH_ENTER,  &found);
+
+					// if (found)
+						// pfree(hentry->value);
+
+					hentry->value = palloc(strlen(value) + 1);
+					strcpy(hentry->value, value);
+				}
+				else if (found)
+				{
+					/* That was SET TO DEFAULT and we already had some value */
+					hash_search(MtmGucHash, key, HASH_REMOVE, NULL);
+				}
+			}
+			break;
+
+		case VAR_RESET:
+			{
+				key = pstrdup(stmt->name);
+				hash_search(MtmGucHash, key, HASH_REMOVE, NULL);
+			}
+			break;
+		case VAR_RESET_ALL:
+			break;
+
+		case VAR_SET_MULTI:
+			break;
+	}
+
+	MemoryContextSwitchTo(oldcontext);
+}
+
+static void MtmGucDiscard(DiscardStmt *stmt)
+{
+
+}
+
+static void MtmGucClear(void)
+{
+
+}
+
+static char * MtmGucSerialize(void)
+{
+	HASH_SEQ_STATUS status;
+	MtmGucHashEntry *hentry;
+	StringInfo serialized_gucs;
+
+	serialized_gucs = makeStringInfo();
+	appendStringInfoString(serialized_gucs, "RESET SESSION AUTHORIZATION; reset all; ");
+
+	if (MtmGucHash)
+	{
+		hash_seq_init(&status, MtmGucHash);
+		while ((hentry = (MtmGucHashEntry *) hash_seq_search(&status)) != NULL)
+		{
+			appendStringInfoString(serialized_gucs, "SET ");
+			appendStringInfoString(serialized_gucs, hentry->key);
+			appendStringInfoString(serialized_gucs, " TO ");
+			appendStringInfoString(serialized_gucs, hentry->value);
+			appendStringInfoString(serialized_gucs, "; ");
+		}
+	}
+
+	return serialized_gucs->data;
+}
+
+/*
+ * -------------------------------------------
+ * DDL Handling
+ * -------------------------------------------
+ */
+
+static bool MtmProcessDDLCommand(char const* queryString)
+{
+	char	   *queryWithContext;
+	char	   *gucContext;
+
+	/* Append global GUC to utility stmt. */
+	gucContext = MtmGucSerialize();
+	if (gucContext)
+	{
+		queryWithContext = palloc(strlen(gucContext) + strlen(queryString) +  1);
+		strcpy(queryWithContext, gucContext);
+		strcat(queryWithContext, queryString);
+	}
+	else
+	{
+		queryWithContext = (char *) queryString;
+	}
+
+	MTM_LOG1("Sending utility: %s", queryWithContext);
+	LogLogicalMessage("MTM:GUC", queryWithContext, strlen(queryWithContext), true);
+
+	MtmTx.containsDML = true;
+	return false;
+}
+
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag)
 {
 	bool skipCommand = false;
+
 	MTM_LOG3("%d: Process utility statement %s", MyProcPid, queryString);
 	switch (nodeTag(parsetree))
 	{
@@ -3294,7 +3451,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_CreateTableSpaceStmt:
 		case T_AlterTableSpaceOptionsStmt:
 		case T_TruncateStmt:
-		case T_CommentStmt: /* XXX: we could replicate these */;
+		case T_CommentStmt:
 		case T_PrepareStmt:
 		case T_ExecuteStmt:
 		case T_DeallocateStmt:
@@ -3302,7 +3459,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ListenStmt:
 		case T_UnlistenStmt:
 		case T_LoadStmt:
-		case T_ClusterStmt: /* XXX: we could replicate these */;
+		case T_ClusterStmt:
 		case T_VacuumStmt:
 		case T_ExplainStmt:
 		case T_VariableShowStmt:
@@ -3310,103 +3467,42 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_LockStmt:
 		case T_CheckPointStmt:
 		case T_ReindexStmt:
+		case T_RefreshMatViewStmt:
 		    skipCommand = true;
 			break;
+
+		/* Save GUC context for consequent DDL execution */
 		case T_DiscardStmt:
 			{
-				/*
-				 * DiscardStmt *stmt = (DiscardStmt *) parsetree;
-				 * skipCommand = stmt->target == DISCARD_TEMP;
-				 */
+				DiscardStmt *stmt = (DiscardStmt *) parsetree;
 
-				skipCommand = true;
-
-				if (MtmGUCBufferAllocated)
+				if (!IsTransactionBlock())
 				{
-					/*
-					 * XXX: move allocation somewhere to backend startup and check
-					 * where buffer is empty in send routines.
-					 */
-					MtmGUCBufferAllocated = false;
-					pfree(MtmGUCBuffer);
+					skipCommand = true;
+					MtmGucDiscard(stmt);
 				}
-
 			}
 			break;
 		case T_VariableSetStmt:
 			{
 				VariableSetStmt *stmt = (VariableSetStmt *) parsetree;
 
-				skipCommand = true;
-
 				/* Prevent SET TRANSACTION from replication */
 				if (stmt->kind == VAR_SET_MULTI)
-					break;
+					skipCommand = true;
 
-				if (!MtmGUCBufferAllocated)
+				if (stmt->kind == VAR_RESET && strcmp(stmt->name, "session_authorization") == 0)
+					MtmGucClear();
+
+				if (!IsTransactionBlock())
 				{
-					MemoryContext oldcontext;
-
-					oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-					MtmGUCBuffer = makeStringInfo();
-					MemoryContextSwitchTo(oldcontext);
-					MtmGUCBufferAllocated = true;
-				}
-
-				appendStringInfoString(MtmGUCBuffer, queryString);
-
-				/* sometimes there is no ';' char at the end. */
-				appendStringInfoString(MtmGUCBuffer, ";");
-			}
-			break;
-		case T_CreateStmt:
-			{
-				/* Do not replicate temp tables */
-				CreateStmt *stmt = (CreateStmt *) parsetree;
-				skipCommand = stmt->relation->relpersistence == RELPERSISTENCE_TEMP ||
-					(stmt->relation->schemaname && strcmp(stmt->relation->schemaname, "pg_temp") == 0);
-			}
-			break;
-		case T_IndexStmt:
-			{
-				Oid			relid;
-				Relation	rel;
-				IndexStmt *stmt = (IndexStmt *) parsetree;
-				bool		isTopLevel = (context == PROCESS_UTILITY_TOPLEVEL);
-
-				if (stmt->concurrent)
-					PreventTransactionChain(isTopLevel,
-												"CREATE INDEX CONCURRENTLY");
-
-				relid = RelnameGetRelid(stmt->relation->relname);
-
-				if (OidIsValid(relid))
-				{
-					rel = heap_open(relid, ShareLock);
-					skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
-					heap_close(rel, ShareLock);
+					skipCommand = true;
+					MtmGucSet(stmt, queryString);
 				}
 			}
 			break;
-		case T_DropStmt:
-			{
-				DropStmt *stmt = (DropStmt *) parsetree;
 
-				if (stmt->removeType == OBJECT_TABLE)
-				{
-					RangeVar   *rv = makeRangeVarFromNameList(
-										(List *) lfirst(list_head(stmt->objects)));
-					Oid			relid = RelnameGetRelid(rv->relname);
-
-					if (OidIsValid(relid))
-					{
-						Relation	rel = heap_open(relid, ShareLock);
-						skipCommand = rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP;
-						heap_close(rel, ShareLock);
-					}
-				}
-			}
-			break;
+		/* Copy need some special care */
 	    case T_CopyStmt:
 		{
 			CopyStmt *copyStatement = (CopyStmt *) parsetree;
@@ -3434,11 +3530,16 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			skipCommand = false;
 			break;
 	}
-	if (!skipCommand && !MtmTx.isReplicated && context == PROCESS_UTILITY_TOPLEVEL) {
-		if (MtmProcessDDLCommand(queryString)) { 
-			return;
+
+	if (context == PROCESS_UTILITY_TOPLEVEL) // || context == PROCESS_UTILITY_QUERY)
+	{
+		if (!skipCommand && !MtmTx.isReplicated) {
+			if (MtmProcessDDLCommand(queryString)) {
+				return;
+			}
 		}
 	}
+
 	if (PreviousProcessUtilityHook != NULL)
 	{
 		PreviousProcessUtilityHook(parsetree, queryString, context,
