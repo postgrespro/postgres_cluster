@@ -281,6 +281,8 @@ update_record(HashVariableEntry* variable, HeapTupleHeader tupleHeader)
 		return false;
 	}
 
+	/* Release old tuple */
+	heap_freetuple(item->tuple);
 	item->tuple = tuple;
 
 	MemoryContextSwitchTo(oldcxt);
