@@ -210,7 +210,6 @@ pglogical_receiver_main(Datum main_arg)
 	MtmReplicationMode mode;
 
     ByteBuffer buf;
-	XLogRecPtr originStartPos = 0;
 	RepOriginId originId;
 	char* originName;
 	/* Buffer for COPY data */
@@ -248,6 +247,7 @@ pglogical_receiver_main(Datum main_arg)
 	{ 
 		int  count;
 		ConnStatusType status;
+		XLogRecPtr originStartPos = 0;
 
 		/* 
 		 * Determine when and how we should open replication slot.
@@ -272,7 +272,7 @@ pglogical_receiver_main(Datum main_arg)
 		}
 		
 		query = createPQExpBuffer();
-#if 1 /* Do we need to recretate slot ? */		
+#if 1 /* Do we need to recreate slot ? */		
 		if (mode == REPLMODE_RECOVERED) { /* recreate slot */
 			appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", slotName);
 			res = PQexec(conn, query->data);
@@ -305,8 +305,9 @@ pglogical_receiver_main(Datum main_arg)
 		
 		/* Start logical replication at specified position */
 		if (mode == REPLMODE_RECOVERED) {
-			originStartPos = 0;
-		} else { 
+			originStartPos = Mtm->nodes[nodeId].restartLsn;
+		} 
+		if (originStartPos == 0) { 
 			StartTransactionCommand();
 			originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
 			originId = replorigin_by_name(originName, true);
@@ -485,7 +486,14 @@ pglogical_receiver_main(Datum main_arg)
 				if (rc > hdr_len)
 				{
 					stmt = copybuf + hdr_len;
-				
+					if (mode == REPLMODE_RECOVERED) {
+						if (stmt[0] != 'B') {
+							output_written_lsn = Max(walEnd, output_written_lsn);
+							continue;
+						}
+						mode = REPLMODE_NORMAL;
+					}
+
 					if (buf.used >= MtmTransSpillThreshold*MB) { 
 						if (spill_file < 0) {
 							int file_id;

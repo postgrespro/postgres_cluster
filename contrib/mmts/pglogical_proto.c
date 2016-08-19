@@ -107,7 +107,7 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 {
 	bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
 	csn_t csn = MtmTransactionSnapshot(txn->xid);
-	MTM_LOG1("%d: pglogical_write_begin XID=%d node=%d CSN=%ld recovery=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
+	MTM_LOG3("%d: pglogical_write_begin XID=%d node=%d CSN=%ld recovery=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
 			 MyProcPid, txn->xid, MtmReplicationNodeId, csn, isRecovery, txn->restart_decoding_lsn, txn->first_lsn, txn->end_lsn, MyReplicationSlot->data.confirmed_flush);
 	
 	if (csn == INVALID_CSN && !isRecovery) { 
@@ -131,7 +131,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 {
     uint8 flags = 0;
 	
-	MTM_LOG1("%d: pglogical_write_commit XID=%d node=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
+	MTM_LOG3("%d: pglogical_write_commit XID=%d node=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
 			 MyProcPid, txn->xid, MtmReplicationNodeId, txn->restart_decoding_lsn, txn->first_lsn, txn->end_lsn, MyReplicationSlot->data.confirmed_flush);
 
 
@@ -178,11 +178,12 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 
 	Assert(txn->xact_action != XLOG_XACT_PREPARE || txn->xid < 1000 || MtmTransactionRecords >= 2);
 	pq_sendint(out, MtmTransactionRecords, 4);
-
+	
     /* send fixed fields */
     pq_sendint64(out, commit_lsn);
     pq_sendint64(out, txn->end_lsn);
     pq_sendint64(out, txn->commit_time);
+	pq_sendint64(out, txn->origin_lsn);
 
 	if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED) { 
 		Assert(MtmTransactionRecords == 0);
@@ -220,7 +221,7 @@ pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
     if (!MtmIsFilteredTxn) { 
 		MtmTransactionRecords += 1;
 
-		MTM_LOG1("%d: pglogical_write_update confirmed_flush=%lx", MyProcPid, MyReplicationSlot->data.confirmed_flush);
+		MTM_LOG3("%d: pglogical_write_update confirmed_flush=%lx", MyProcPid, MyReplicationSlot->data.confirmed_flush);
 
 
 		pq_sendbyte(out, 'U');		/* action UPDATE */

@@ -511,6 +511,7 @@ process_remote_commit(StringInfo in)
 	csn_t       csn;
 	const char *gid = NULL;	
 	XLogRecPtr  end_lsn;
+	XLogRecPtr  origin_lsn;
 	int         n_records;
 	/* read flags */
 	flags = pq_getmsgbyte(in);
@@ -525,6 +526,8 @@ process_remote_commit(StringInfo in)
 	replorigin_session_origin_lsn = pq_getmsgint64(in); /* commit_lsn */
 	end_lsn = pq_getmsgint64(in); /* end_lsn */
 	replorigin_session_origin_timestamp = pq_getmsgint64(in); /* commit_time */
+	origin_lsn = pq_getmsgint64(in); 
+	Mtm->nodes[MtmReplicationNodeId-1].restartLsn = origin_lsn;
 	
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 
