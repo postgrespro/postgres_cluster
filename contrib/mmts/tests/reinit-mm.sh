@@ -55,6 +55,7 @@ do
         multimaster.heartbeat_recv_timeout = 1000
         multimaster.heartbeat_send_timeout = 250
         multimaster.twopc_min_timeout = 400000
+        multimaster.volkswagen_mode = 1
 
         multimaster.conn_strings = '$conn_str'
         multimaster.node_id = $i
