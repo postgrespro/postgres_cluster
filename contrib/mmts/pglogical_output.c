@@ -33,6 +33,7 @@
 
 #include "replication/output_plugin.h"
 #include "replication/logical.h"
+#include "replication/message.h"
 #include "replication/origin.h"
 
 #include "utils/builtins.h"
@@ -65,6 +66,11 @@ static void pg_decode_change(LogicalDecodingContext *ctx,
 static bool pg_decode_origin_filter(LogicalDecodingContext *ctx,
 						RepOriginId origin_id);
 
+static void pg_decode_message(LogicalDecodingContext *ctx,
+							  ReorderBufferTXN *txn, XLogRecPtr message_lsn,
+							  bool transactional, const char *prefix,
+							  Size sz, const char *message);
+
 static void send_startup_message(LogicalDecodingContext *ctx,
 		PGLogicalOutputData *data, bool last_message);
 
@@ -82,6 +88,7 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	cb->commit_cb = pg_decode_commit_txn;
 	cb->filter_by_origin_cb = pg_decode_origin_filter;
 	cb->shutdown_cb = pg_decode_shutdown;
+	cb->message_cb = pg_decode_message;
 }
 
 static bool
@@ -503,6 +510,18 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 	}
 
 	return false;
+}
+
+static void
+pg_decode_message(LogicalDecodingContext *ctx,
+				  ReorderBufferTXN *txn, XLogRecPtr lsn, bool transactional,
+				  const char *prefix, Size sz, const char *message)
+{
+	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
+
+	OutputPluginPrepareWrite(ctx, true);
+	data->api->write_message(ctx->out, prefix, sz, message);
+	OutputPluginWrite(ctx, true);
 }
 
 static void

@@ -18,30 +18,55 @@ for ((i=1;i<=n_nodes;i++))
 do    
     port=$((5431 + i))
 	raft_port=$((6665 + i))
-    conn_str="$conn_str${sep}dbname=postgres host=localhost port=$port sslmode=disable"
+    conn_str="$conn_str${sep}dbname=regression user=stas host=localhost port=$port sslmode=disable"
 	raft_conn_str="$raft_conn_str${sep}${i}:localhost:$raft_port"
     sep=","
     initdb node$i
+    pg_ctl -w -D node$i -l node$i.log start
+    createdb regression
+    pg_ctl -w -D node$i -l node$i.log stop
 done
 
-#echo Start DTM
-#~/postgres_cluster/contrib/arbiter/bin/arbiter -r 0.0.0.0:5431 -i 0 -d dtm 2> dtm.log &
-#sleep 2
 echo "Starting nodes..."
 
 echo Start nodes
 for ((i=1;i<=n_nodes;i++))
 do
     port=$((5431+i))
-    sed "s/5432/$port/g" < postgresql.conf.mm > node$i/postgresql.conf
-    echo "multimaster.conn_strings = '$conn_str'" >> node$i/postgresql.conf
-    echo "multimaster.node_id = $i" >> node$i/postgresql.conf
 
+    cat <<SQL > node$i/postgresql.conf
+        listen_addresses='*'
+        port = '$port'
+        max_prepared_transactions = 100
+        synchronous_commit = on
+        fsync = off
+        wal_level = logical
+        max_worker_processes = 15
+        max_replication_slots = 10
+        max_wal_senders = 10
+        shared_preload_libraries = 'raftable,multimaster'
+        default_transaction_isolation = 'repeatable read'
+        log_checkpoints = on
+        log_autovacuum_min_duration = 0
+        multimaster.workers = 1
+        multimaster.use_raftable = true
+        multimaster.queue_size=52857600
+        multimaster.ignore_tables_without_pk = 1
+        multimaster.heartbeat_recv_timeout = 1000
+        multimaster.heartbeat_send_timeout = 250
+        multimaster.twopc_min_timeout = 400000
+        multimaster.volkswagen_mode = 1
+        multimaster.conn_strings = '$conn_str'
+        multimaster.node_id = $i
+        multimaster.max_nodes = 3
+        raftable.id = $i
+        raftable.peers = '$raft_conn_str'
+SQL
     cp pg_hba.conf node$i
     pg_ctl -w -D node$i -l node$i.log start
 done
 
-# sleep 5
-# psql -c "create extension multimaster;" postgres
+sleep 10
+psql regression < ../../../regress.sql
 
 echo Done

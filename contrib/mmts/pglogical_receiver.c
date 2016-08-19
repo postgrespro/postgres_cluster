@@ -494,7 +494,6 @@ pglogical_receiver_main(Datum main_arg)
 						}
 						mode = REPLMODE_NORMAL;
 					}
-
 					if (buf.used >= MtmTransSpillThreshold*MB) { 
 						if (spill_file < 0) {
 							int file_id;
