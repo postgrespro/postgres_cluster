@@ -18,7 +18,7 @@ for ((i=1;i<=n_nodes;i++))
 do    
     port=$((5431 + i))
 	raft_port=$((6665 + i))
-    conn_str="$conn_str${sep}dbname=regression host=localhost port=$port sslmode=disable"
+    conn_str="$conn_str${sep}dbname=regression user=stas host=localhost port=$port sslmode=disable"
 	raft_conn_str="$raft_conn_str${sep}${i}:localhost:$raft_port"
     sep=","
     initdb node$i

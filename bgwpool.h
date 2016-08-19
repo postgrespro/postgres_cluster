@@ -10,6 +10,7 @@ typedef void(*BgwPoolExecutor)(int id, void* work, size_t size);
 typedef uint64 timestamp_t;
 
 #define MAX_DBNAME_LEN 30
+#define MAX_DBUSER_LEN 30
 #define MULTIMASTER_BGW_RESTART_TIMEOUT 1 /* seconds */
 
 extern timestamp_t MtmGetSystemTime(void);   /* non-adjusted current system time */
@@ -30,6 +31,7 @@ typedef struct
 	time_t lastPeakTime;
     bool   producerBlocked;
     char   dbname[MAX_DBNAME_LEN];
+	char   dbuser[MAX_DBUSER_LEN];
     char*  queue;
 } BgwPool;
 
@@ -37,7 +39,7 @@ typedef BgwPool*(*BgwPoolConstructor)(void);
 
 extern void BgwPoolStart(int nWorkers, BgwPoolConstructor constructor);
 
-extern void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname, size_t queueSize, size_t nWorkers);
+extern void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname, char const* dbuser, size_t queueSize, size_t nWorkers);
 
 extern void BgwPoolExecute(BgwPool* pool, void* work, size_t size);
 
