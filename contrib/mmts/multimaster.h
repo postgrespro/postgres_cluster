@@ -146,6 +146,7 @@ typedef struct
 	XLogRecPtr  flushPos;
 	csn_t       oldestSnapshot; /* Oldest snapshot used by active transactions at this node */	
 	XLogRecPtr  restartLsn;
+	RepOriginId originId;
 } MtmNodeInfo;
 
 typedef struct MtmTransState

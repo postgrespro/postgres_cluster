@@ -183,6 +183,8 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     pq_sendint64(out, commit_lsn);
     pq_sendint64(out, txn->end_lsn);
     pq_sendint64(out, txn->commit_time);
+
+	pq_sendint(out, txn->origin_id, 2);
 	pq_sendint64(out, txn->origin_lsn);
 
 	if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED) { 

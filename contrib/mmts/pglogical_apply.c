@@ -507,11 +507,13 @@ MtmEndSession(bool unlock)
 static void
 process_remote_commit(StringInfo in)
 {
+	int         i;
 	uint8 		flags;
 	csn_t       csn;
 	const char *gid = NULL;	
 	XLogRecPtr  end_lsn;
 	XLogRecPtr  origin_lsn;
+	RepOriginId originId;
 	int         n_records;
 	/* read flags */
 	flags = pq_getmsgbyte(in);
@@ -526,9 +528,21 @@ process_remote_commit(StringInfo in)
 	replorigin_session_origin_lsn = pq_getmsgint64(in); /* commit_lsn */
 	end_lsn = pq_getmsgint64(in); /* end_lsn */
 	replorigin_session_origin_timestamp = pq_getmsgint64(in); /* commit_time */
-	origin_lsn = pq_getmsgint64(in); 
-	Mtm->nodes[MtmReplicationNodeId-1].restartLsn = origin_lsn;
-	
+
+	originId = (RepOriginId)pq_getmsgint(in, 2);
+	origin_lsn = pq_getmsgint64(in);
+
+	if (originId != InvalidRepOriginId) { 
+		for (i = 0; i < Mtm->nAllNodes; i++) { 
+			if (Mtm->nodes[i].originId == originId) { 
+				Mtm->nodes[i].restartLsn = origin_lsn;
+				break;
+			} 
+		}
+		if (i == Mtm->nAllNodes) { 
+			elog(WARNING, "Failed to map origin %d", originId);
+		}
+	}
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 
 	switch(PGLOGICAL_XACT_EVENT(flags))

@@ -1791,6 +1791,8 @@ static void MtmInitialize()
 			Mtm->nodes[i].con = MtmConnections[i];
 			Mtm->nodes[i].flushPos = 0;
 			Mtm->nodes[i].lastHeartbeat = 0;
+			Mtm->nodes[i].restartLsn = 0;
+			Mtm->nodes[i].originId = InvalidRepOriginId;
 		}
 		PGSemaphoreCreate(&Mtm->votingSemaphore);
 		PGSemaphoreReset(&Mtm->votingSemaphore);
