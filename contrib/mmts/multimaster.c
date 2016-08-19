@@ -2407,6 +2407,7 @@ void MtmReceiverStarted(int nodeId)
  */
 MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shutdown)
 {
+	int i;
 	bool recovery = false;
 
 	while (Mtm->status != MTM_CONNECTED && Mtm->status != MTM_ONLINE) 
@@ -2426,6 +2427,9 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 				Mtm->recoveryCount += 1;
 				Mtm->pglogicalNodeMask = 0;
 				FinishAllPreparedTransactions(false);
+				for (i = 0; i < Mtm->nAllNodes; i++) { 
+					Mtm->nodes[i].restartLsn = 0;
+				}
 				return REPLMODE_RECOVERY;
 			}
 		}
