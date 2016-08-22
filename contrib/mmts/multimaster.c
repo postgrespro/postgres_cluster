@@ -13,7 +13,10 @@
 #include "funcapi.h"
 #include "fmgr.h"
 #include "miscadmin.h"
+
 #include "libpq-fe.h"
+#include "common/username.h"
+
 #include "postmaster/postmaster.h"
 #include "postmaster/bgworker.h"
 #include "storage/lwlock.h"
@@ -1932,21 +1935,31 @@ static void MtmSplitConnStrs(void)
 				elog(ERROR, "Database is not specified in connection string: '%s'", connStr);
 
 			if (dbUser == NULL)
-				elog(ERROR, "Database user is not specified in connection string: '%s'", connStr);
+			{
+				char *errstr;
+				const char *username = get_user_name(&errstr);
+				if (!username)
+					elog(FATAL, "Database user is not specified in connection string '%s', fallback failed: %s", connStr, errstr);
+				else
+					elog(WARNING, "Database user is not specified in connection string '%s', fallback to '%s'", connStr, username);
+				MtmDatabaseUser = pstrdup(username);
+			}
+			else
+			{
+				dbUser += 5;
+				end = strchr(dbUser, ' ');
+				if (!end) end = strchr(dbUser, '\0');
+				Assert(end != NULL);
+				len = end - dbUser;
+				MtmDatabaseUser = pnstrdup(dbUser, len);
+			}
 
 			dbName += 7;
-			for (end = dbName; *end != ' ' && *end != '\0'; end++);
+			end = strchr(dbName, ' ');
+			if (!end) end = strchr(dbName, '\0');
+			Assert(end != NULL);
 			len = end - dbName;
-			MtmDatabaseName = (char*)palloc(len + 1);
-			memcpy(MtmDatabaseName, dbName, len);
-			MtmDatabaseName[len] = '\0';
-
-			dbUser += 5;
-			for (end = dbUser; *end != ' ' && *end != '\0'; end++);
-			len = end - dbUser;
-			MtmDatabaseUser = (char*)palloc(len + 1);
-			memcpy(MtmDatabaseUser, dbUser, len);
-			MtmDatabaseUser[len] = '\0';
+			MtmDatabaseName = pnstrdup(dbName, len);
 		}
 		connStr = p + 1;
     }
