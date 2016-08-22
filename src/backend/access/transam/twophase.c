@@ -1304,6 +1304,7 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 	 */
 
 	parsed->xinfo = 0;
+	bufptr = xlrec + hdr->total_len - sizeof(pg_crc32c);
 
 	if (info & XLOG_XACT_HAS_INFO)
 	{
