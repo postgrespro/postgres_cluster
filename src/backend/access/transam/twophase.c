@@ -1066,7 +1066,7 @@ EndPrepare(GlobalTransaction gxact)
 	if (replorigin_session_origin != InvalidRepOriginId)
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_ORIGIN;
-
+		Assert(replorigin_session_origin_lsn != 0);
 		xl_origin.origin_lsn = replorigin_session_origin_lsn;
 		xl_origin.origin_timestamp = replorigin_session_origin_timestamp;
 	}
@@ -1316,6 +1316,7 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 		/* we're only guaranteed 4 byte alignment, so copy onto stack */
 		memcpy(&xl_origin, bufptr, sizeof(xl_origin));
 		parsed->origin_lsn = xl_origin.origin_lsn;
+		Assert(parsed->origin_lsn != 0);
 		parsed->origin_timestamp = xl_origin.origin_timestamp;
 		bufptr += sizeof(xl_xact_origin);
 	}

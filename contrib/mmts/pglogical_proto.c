@@ -199,7 +199,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 			elog(WARNING, "Failed to map origin %d", txn->origin_id);
 			i = MtmNodeId-1;
 		} else { 
-			//Assert(i == MtmNodeId-1 || txn->origin_lsn != InvalidXLogRecPtr);
+			Assert(i == MtmNodeId-1 || txn->origin_lsn != InvalidXLogRecPtr);
 		}
 		pq_sendbyte(out, i+1);
 	} else { 

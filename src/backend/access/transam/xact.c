@@ -5196,7 +5196,6 @@ XactLogCommitRecord(TimestampTz commit_time,
 	if (replorigin_session_origin != InvalidRepOriginId)
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_ORIGIN;
-
 		xl_origin.origin_lsn = replorigin_session_origin_lsn;
 		xl_origin.origin_timestamp = replorigin_session_origin_timestamp;
 	}

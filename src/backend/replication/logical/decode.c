@@ -558,6 +558,7 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
 	{
 		origin_lsn = parsed->origin_lsn;
+		elog(LOG, "DecodeCommit: xid=%d, origin_lsn=%ld", xid, origin_lsn);
 		commit_time = parsed->origin_timestamp;
 	}
 
@@ -658,6 +659,7 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
 	{
 		origin_lsn = parsed->origin_lsn;
+		elog(LOG, "DecodePrepate: xid=%d (%s), origin_lsn=%ld", xid, parsed->twophase_gid, origin_lsn);
 		commit_time = parsed->origin_timestamp;
 	}
 
