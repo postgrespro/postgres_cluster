@@ -1128,7 +1128,9 @@ static char buf[UDP_SAFE_SIZE];
 
 raft_msg_t raft_recv_message(raft_t r) {
 	struct sockaddr_in addr;
-	unsigned int addrlen = sizeof(addr);
+	unsigned int addrlen;
+tryagain:
+	addrlen = sizeof(addr);
 
 	//try to receive some data
 	raft_msg_t m = (raft_msg_t)buf;
@@ -1137,17 +1139,16 @@ raft_msg_t raft_recv_message(raft_t r) {
 		(struct sockaddr*)&addr, &addrlen
 	);
 
-	if (recved <= 0) {
-		if (
-			(errno == EAGAIN) ||
-			(errno == EWOULDBLOCK) ||
-			(errno == EINTR)
-		) {
-			return NULL;
-		} else {
-			shout("failed to recv: %s\n", strerror(errno));
-			return NULL;
-		}
+	if (recved < 0) {
+		if (errno == EINTR) goto tryagain;
+		if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) return NULL;
+		shout("failed to recv: %s\n", strerror(errno));
+		return NULL;
+	}
+
+	if (recved == 0) {
+		shout("failed to recv: recved 0 bytes\n");
+		return NULL;
 	}
 
 	if (!msg_size_is(m, recved)) {
