@@ -50,7 +50,7 @@ test: oidjoins
 test: type_sanity
 test: opr_sanity
 test: insert
-#test: insert_conflict
+# test: insert_conflict # issue#17
 test: create_function_1
 test: create_type
 test: create_table
@@ -70,7 +70,7 @@ test: triggers
 test: inherit
 test: create_table_like
 test: typed_table
-#test: vacuum
+# test: vacuum # issue#18
 test: drop_if_exists
 test: updatable_views
 test: rolenames
@@ -89,7 +89,7 @@ test: union
 test: case
 test: join
 test: aggregates
-#test: transactions
+test: transactions
 ignore: random
 test: random
 test: portals
@@ -111,7 +111,7 @@ test: collate
 test: matview
 test: lock
 test: replica_identity
-# test: rowsecurity
+# test: rowsecurity  # issue#20
 test: object_address
 test: tablesample
 test: groupingsets
@@ -147,16 +147,16 @@ test: indirect_toast
 test: equivclass
 test: plancache
 test: limit
-#test: plpgsql
+# test: plpgsql # issue#21 
 test: copy2
 test: temp
 test: domain
-#test: rangefuncs
+# test: rangefuncs # issue#21
 test: prepare
 test: without_oid
 test: conversion
 test: truncate
-#test: alter_table
+test: alter_table
 test: sequence
 test: polymorphism
 test: rowtypes

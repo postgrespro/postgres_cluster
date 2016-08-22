@@ -3487,7 +3487,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_CheckPointStmt:
 		case T_ReindexStmt:
 		case T_RefreshMatViewStmt:
-		    skipCommand = true;
+			skipCommand = true;
 			break;
 
 		/* Save GUC context for consequent DDL execution */

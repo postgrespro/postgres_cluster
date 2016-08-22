@@ -967,7 +967,7 @@ void MtmExecutor(int id, void* work, size_t size)
     {    
         while (true) { 
             char action = pq_getmsgbyte(&s);
-            MTM_LOG3("%d: REMOTE process action %c", MyProcPid, action);
+            MTM_LOG1("%d: REMOTE process action %c", MyProcPid, action);
 #if 0
 			if (Mtm->status == MTM_RECOVERY) { 
 				MTM_LOG1("Replay action %c[%x]",   action, s.data[s.cursor]);
