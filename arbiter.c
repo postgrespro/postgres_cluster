@@ -912,7 +912,14 @@ static void MtmTransReceiver(Datum arg)
 						switch (msg->code) { 
 						  case MSG_READY:
 							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_READY");
+							if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
+								elog(WARNING, "Receive READY response for already committed transaction %d from node %d",
+									 ts->xid, msg->node);
+								continue;
+							}
 							if (ts->nVotes >= Mtm->nLiveNodes) {
+								elog(WARNING, "Receive deteriorated READY response for transaction %d (%s) from node %d",
+									 ts->xid, ts->gid, msg->node);
 								MtmAbortTransaction(ts);
 								MtmWakeUpBackend(ts);
 							} else { 
@@ -956,6 +963,8 @@ static void MtmTransReceiver(Datum arg)
 						  case MSG_PREPARED:
 							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_PREPARED");
 							if (ts->nVotes >= Mtm->nLiveNodes) {					
+								elog(WARNING, "Receive deteriorated PREPARED response for transaction %d (%s) from node %d",
+									 ts->xid, ts->gid, msg->node);
 								MtmAbortTransaction(ts);
 								MtmWakeUpBackend(ts);
 							} else { 
