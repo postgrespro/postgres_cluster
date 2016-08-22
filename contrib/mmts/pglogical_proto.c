@@ -186,14 +186,25 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     pq_sendbyte(out, MtmNodeId);
 
 	Assert(txn->xact_action != XLOG_XACT_PREPARE || txn->xid < 1000 || MtmTransactionRecords >= 2);
-	pq_sendint(out, MtmTransactionRecords, 4);
-	
+
     /* send fixed fields */
     pq_sendint64(out, commit_lsn);
     pq_sendint64(out, txn->end_lsn);
     pq_sendint64(out, txn->commit_time);
 
-	pq_sendint(out, txn->origin_id, 2);
+	if (txn->origin_id != InvalidRepOriginId) { 
+		int i;
+		for (i = 0; i < Mtm->nAllNodes && Mtm->nodes[i].originId != txn->origin_id; i++);
+		if (i == Mtm->nAllNodes) { 
+			elog(WARNING, "Failed to map origin %d", txn->origin_id);
+			i = MtmNodeId-1;
+		} else { 
+			//Assert(i == MtmNodeId-1 || txn->origin_lsn != InvalidXLogRecPtr);
+		}
+		pq_sendbyte(out, i+1);
+	} else { 
+		pq_sendbyte(out, MtmNodeId);
+	}
 	pq_sendint64(out, txn->origin_lsn);
 
 	if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED) { 

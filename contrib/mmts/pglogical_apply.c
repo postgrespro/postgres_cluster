@@ -59,7 +59,6 @@ typedef struct TupleData
 	bool		changed[MaxTupleAttributeNumber];
 } TupleData;
 
-static int MtmTransactionRecords;
 static bool inside_tx = false;
 
 static Relation read_rel(StringInfo s, LOCKMODE mode);
@@ -529,6 +528,8 @@ MtmEndSession(bool unlock)
 	if (replorigin_session_origin != InvalidRepOriginId) { 
 		MTM_LOG2("%d: Begin reset replorigin session for node %d: %d, progress %lx", MyProcPid, MtmReplicationNodeId, replorigin_session_origin, replorigin_session_get_progress(false));
 		replorigin_session_origin = InvalidRepOriginId;
+		replorigin_session_origin_lsn = InvalidXLogRecPtr;
+		replorigin_session_origin_timestamp = 0;
 		replorigin_session_reset();
 		if (unlock) { 
 			MtmUnlockNode(MtmReplicationNodeId);
@@ -540,42 +541,25 @@ MtmEndSession(bool unlock)
 static void
 process_remote_commit(StringInfo in)
 {
-	int         i;
 	uint8 		flags;
 	csn_t       csn;
 	const char *gid = NULL;	
 	XLogRecPtr  end_lsn;
 	XLogRecPtr  origin_lsn;
-	RepOriginId originId;
-	int         n_records;
+	int         origin_node;
 	/* read flags */
 	flags = pq_getmsgbyte(in);
 	MtmReplicationNodeId = pq_getmsgbyte(in);
-
-	n_records = pq_getmsgint(in, 4);
-	if (MtmTransactionRecords != n_records) { 
-		elog(ERROR, "Transaction %d flags %d contains %d records instead of %d", MtmGetCurrentTransactionId(), flags, MtmTransactionRecords, n_records);
-	}
 
 	/* read fields */
 	replorigin_session_origin_lsn = pq_getmsgint64(in); /* commit_lsn */
 	end_lsn = pq_getmsgint64(in); /* end_lsn */
 	replorigin_session_origin_timestamp = pq_getmsgint64(in); /* commit_time */
 
-	originId = (RepOriginId)pq_getmsgint(in, 2);
+	origin_node = pq_getmsgbyte(in);
 	origin_lsn = pq_getmsgint64(in);
+	Mtm->nodes[origin_node-1].restartLsn = origin_lsn;
 
-	if (originId != InvalidRepOriginId) { 
-		for (i = 0; i < Mtm->nAllNodes; i++) { 
-			if (Mtm->nodes[i].originId == originId) { 
-				Mtm->nodes[i].restartLsn = origin_lsn;
-				break;
-			} 
-		}
-		if (i == Mtm->nAllNodes) { 
-			elog(WARNING, "Failed to map origin %d", originId);
-		}
-	}
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 
 	switch(PGLOGICAL_XACT_EVENT(flags))
@@ -677,8 +661,6 @@ process_remote_insert(StringInfo s, Relation rel)
 	ScanKey	*index_keys;
 	int	i;
 
-	MtmTransactionRecords += 1;
-
 	estate = create_rel_estate(rel);
 	newslot = ExecInitExtraTupleSlot(estate);
 	oldslot = ExecInitExtraTupleSlot(estate);
@@ -776,8 +758,6 @@ process_remote_update(StringInfo s, Relation rel)
 	Relation	idxrel;
 	ScanKeyData skey[INDEX_MAX_KEYS];
 	HeapTuple	remote_tuple = NULL;
-
-	MtmTransactionRecords += 1;
 
 	action = pq_getmsgbyte(s);
 
@@ -896,8 +876,6 @@ process_remote_delete(StringInfo s, Relation rel)
 	ScanKeyData skey[INDEX_MAX_KEYS];
 	bool		found_old;
 
-	MtmTransactionRecords += 1;
-
 	estate = create_rel_estate(rel);
 	oldslot = ExecInitExtraTupleSlot(estate);
 	ExecSetSlotDescriptor(oldslot, RelationGetDescr(rel));
@@ -985,7 +963,6 @@ void MtmExecutor(int id, void* work, size_t size)
     }
     MemoryContextSwitchTo(ApplyContext);
 	replorigin_session_origin = InvalidRepOriginId;
-	MtmTransactionRecords = 0;
     PG_TRY();
     {    
         while (true) { 

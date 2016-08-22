@@ -247,7 +247,7 @@ pglogical_receiver_main(Datum main_arg)
 	{ 
 		int  count;
 		ConnStatusType status;
-		XLogRecPtr originStartPos = 0;
+		XLogRecPtr originStartPos = InvalidXLogRecPtr;
 
 		/* 
 		 * Determine when and how we should open replication slot.
@@ -306,8 +306,9 @@ pglogical_receiver_main(Datum main_arg)
 		/* Start logical replication at specified position */
 		if (mode == REPLMODE_RECOVERED) {
 			originStartPos = Mtm->nodes[nodeId-1].restartLsn;
+			MTM_LOG1("Restart replication from node %d from position %lx", nodeId, originStartPos);
 		} 
-		if (originStartPos == 0) { 
+		if (originStartPos == InvalidXLogRecPtr) { 
 			StartTransactionCommand();
 			originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
 			originId = replorigin_by_name(originName, true);

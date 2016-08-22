@@ -61,7 +61,7 @@ if [ "$1" = 'postgres' ]; then
 
 		############################################################################
 		
-		CONNSTRS='dbname=postgres host=node1, dbname=postgres host=node2, dbname=postgres host=node3'
+		CONNSTRS='dbname=postgres user=postgres host=node1, dbname=postgres user=postgres host=node2, dbname=postgres user=postgres host=node3'
 		RAFT_PEERS='1:node1:6666, 2:node2:6666, 3:node3:6666'
 
 		cat <<-EOF >> $PGDATA/postgresql.conf

@@ -388,16 +388,17 @@ MtmInitializeSequence(int64* start, int64* step)
 
 csn_t MtmTransactionSnapshot(TransactionId xid)
 {
-	MtmTransState* ts;
 	csn_t snapshot = INVALID_CSN;
-
+	
 	MtmLock(LW_SHARED);
-    ts = hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-    if (ts != NULL && !ts->isLocal) { 
-		snapshot = ts->snapshot;
+	if (Mtm->status == MTM_ONLINE) {
+		MtmTransState* ts = hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+		if (ts != NULL && !ts->isLocal) { 
+			snapshot = ts->snapshot;
+			Assert(ts->gtid.node == MtmNodeId || MtmIsRecoverySession); 		
+		}
 	}
 	MtmUnlock();
-
     return snapshot;
 }
 
@@ -1007,7 +1008,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			}
 		}
 		if (!commit && x->isReplicated && TransactionIdIsValid(x->gtid.xid)) { 
-			Assert(Mtm->status != MTM_RECOVERY);
+			Assert(Mtm->status != MTM_RECOVERY || Mtm->recoverySlot != MtmNodeId);
 			/* 
 			 * Send notification only if ABORT happens during transaction processing at replicas, 
 			 * do not send notification if ABORT is received from master 
@@ -2455,29 +2456,32 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 			return REPLMODE_EXIT;
 		}
 		MTM_LOG2("%d: receiver slot mode %s", MyProcPid, MtmNodeStatusMnem[Mtm->status]);
+		MtmLock(LW_EXCLUSIVE);
 		if (Mtm->status == MTM_RECOVERY) { 
 			recovery = true;
 			if (Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId) { 
 				/* Choose for recovery first available slot */
-				MTM_LOG1("Start recovery from node %d", nodeId);
+				elog(WARNING, "Process %d starts recovery from node %d", MyProcPid, nodeId);
 				Mtm->recoverySlot = nodeId;
 				Mtm->nReceivers = 0;
 				Mtm->recoveryCount += 1;
 				Mtm->pglogicalNodeMask = 0;
-				FinishAllPreparedTransactions(false);
 				for (i = 0; i < Mtm->nAllNodes; i++) { 
-					Mtm->nodes[i].restartLsn = 0;
+					Mtm->nodes[i].restartLsn = InvalidXLogRecPtr;
 				}
+				MtmUnlock();
+				FinishAllPreparedTransactions(false);
 				return REPLMODE_RECOVERY;
 			}
 		}
+		MtmUnlock();
 		/* delay opening of other slots until recovery is completed */
 		MtmSleep(STATUS_POLL_DELAY);
 	}
 	if (recovery) { 
-		MTM_LOG1("Recreate replication slot for node %d after end of recovery", nodeId);
+		MTM_LOG1("%d: Restart replication for node %d after end of recovery", MyProcPid, nodeId);
 	} else { 
-		MTM_LOG2("%d: Reuse replication slot for node %d", MyProcPid, nodeId);
+		MTM_LOG1("%d: Continue replication slot for node %d", MyProcPid, nodeId);
 	}
 	/* After recovery completion we need to drop all other slots to avoid receive of redundant data */
 	return recovery ? REPLMODE_RECOVERED : REPLMODE_NORMAL;
