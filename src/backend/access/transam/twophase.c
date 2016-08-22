@@ -1065,8 +1065,8 @@ EndPrepare(GlobalTransaction gxact)
 	/* dump transaction origin information */
 	if (replorigin_session_origin != InvalidRepOriginId)
 	{
-		elog(LOG, "EndPrepare of %d (%s): replorigin_session_origin=%d, replorigin_session_origin_lsn=%ld", 
-			 gxact->xid, gxact->gid, 
+		elog(LOG, "EndPrepare of %s: replorigin_session_origin=%d, replorigin_session_origin_lsn=%ld", 
+			 gxact->gid, 
 			 replorigin_session_origin, replorigin_session_origin_lsn);
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_ORIGIN;
 		Assert(replorigin_session_origin_lsn != 0);
