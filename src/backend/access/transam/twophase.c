@@ -1061,7 +1061,7 @@ EndPrepare(GlobalTransaction gxact)
 	XLogEnsureRecordSpace(0, records.num_chunks);
 
 	START_CRIT_SECTION();
-
+	xl_xinfo.xinfo = 0;
 	/* dump transaction origin information */
 	if (replorigin_session_origin != InvalidRepOriginId)
 	{
