@@ -185,8 +185,6 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     pq_sendbyte(out, flags);
     pq_sendbyte(out, MtmNodeId);
 
-	Assert(txn->xact_action != XLOG_XACT_PREPARE || txn->xid < 1000 || MtmTransactionRecords >= 2);
-
     /* send fixed fields */
     pq_sendint64(out, commit_lsn);
     pq_sendint64(out, txn->end_lsn);
