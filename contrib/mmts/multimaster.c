@@ -2492,9 +2492,9 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 		MtmSleep(STATUS_POLL_DELAY);
 	}
 	if (recovery) { 
-		MTM_LOG1("%d: Restart replication for node %d after end of recovery", MyProcPid, nodeId);
+		MTM_LOG1("%d: Restart replication frim node %d after end of recovery", MyProcPid, nodeId);
 	} else { 
-		MTM_LOG1("%d: Continue replication slot for node %d", MyProcPid, nodeId);
+		MTM_LOG1("%d: Continue replication from node %d", MyProcPid, nodeId);
 	}
 	/* After recovery completion we need to drop all other slots to avoid receive of redundant data */
 	return recovery ? REPLMODE_RECOVERED : REPLMODE_NORMAL;
@@ -2596,7 +2596,10 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			MtmCheckQuorum();
 		} else {
 			MtmUnlock();
-			elog(ERROR, "Disabled node %d tries to reconnect without recovery", MtmReplicationNodeId); 
+			MtmRefreshClusterStatus(true);
+			if (BIT_CHECK(Mtm->disabledNodeMask, MtmReplicationNodeId-1)) {
+				elog(ERROR, "Disabled node %d tries to reconnect without recovery", MtmReplicationNodeId); 
+			}
 		}
 	} else {
 		MTM_LOG1("Node %d start logical replication to node %d in normal mode", MtmNodeId, MtmReplicationNodeId); 

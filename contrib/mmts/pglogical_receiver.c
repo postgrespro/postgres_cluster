@@ -611,7 +611,7 @@ pglogical_receiver_main(Datum main_arg)
 			{
 				ereport(LOG, (errmsg("%s: COPY Stream has abruptly ended...",
 									 worker_proc)));
-				break;
+				goto OnError;
 			}
 
 			/* Failure when reading copy stream, leave */
