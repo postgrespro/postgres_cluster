@@ -89,7 +89,7 @@ $cluster->psql(1, 'postgres', "insert into t values(7, 70);");
 diag("polling node 2");
 for (my $poller = 0; $poller < 3; $poller++) {
 	my $pollee = 2;
-	ok($cluster->poll($poller, 'postgres', $pollee, 10, 1), "node $pollee is online according to node $poller");
+	ok($cluster->poll($poller, 'postgres', $pollee, 1000, 1), "node $pollee is online according to node $poller");
 }
 
 diag("getting cluster state");
