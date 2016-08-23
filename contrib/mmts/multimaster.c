@@ -897,7 +897,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		if (!found) { 
 			ts->isEnqueued = false;
 		}
-		if (Mtm->status != MTM_RECOVERY) { 
+		if (Mtm->status != MTM_RECOVERY || Mtm->recoverySlot != MtmReplicationNodeId) { 
 			MtmSendNotificationMessage(ts, MSG_READY); /* send notification to coordinator */
 			if (!MtmUseDtm) { 
 				ts->status = TRANSACTION_STATUS_UNKNOWN;
