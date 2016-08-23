@@ -3335,7 +3335,7 @@ l1:
 		Assert(!HeapTupleHasExternal(&tp));
 	}
 	else if (HeapTupleHasExternal(&tp))
-		toast_delete(relation, &tp);
+		toast_delete(relation, &tp, false);
 
 	/*
 	 * Mark tuple for invalidation from system caches at next command
@@ -4571,7 +4571,7 @@ heap_lock_tuple(Relation relation, HeapTuple tuple,
 	ItemId		lp;
 	Page		page;
 	Buffer		vmbuffer = InvalidBuffer;
-	BlockNumber	block;
+	BlockNumber block;
 	TransactionId xid,
 				xmax;
 	uint16		old_infomask,
@@ -5643,7 +5643,7 @@ static HTSU_Result
 heap_lock_updated_tuple_rec(Relation rel, ItemPointer tid, TransactionId xid,
 							LockTupleMode mode)
 {
-	HTSU_Result	result;
+	HTSU_Result result;
 	ItemPointerData tupid;
 	HeapTupleData mytup;
 	Buffer		buf;
@@ -6057,7 +6057,8 @@ heap_finish_speculative(Relation relation, HeapTuple tuple)
  * could deadlock with each other, which would not be acceptable.
  *
  * This is somewhat redundant with heap_delete, but we prefer to have a
- * dedicated routine with stripped down requirements.
+ * dedicated routine with stripped down requirements.  Note that this is also
+ * used to delete the TOAST tuples created during speculative insertion.
  *
  * This routine does not affect logical decoding as it only looks at
  * confirmation records.
@@ -6101,7 +6102,7 @@ heap_abort_speculative(Relation relation, HeapTuple tuple)
 	 */
 	if (tp.t_data->t_choice.t_heap.t_xmin != xid)
 		elog(ERROR, "attempted to kill a tuple inserted by another transaction");
-	if (!HeapTupleHeaderIsSpeculative(tp.t_data))
+	if (!(IsToastRelation(relation) || HeapTupleHeaderIsSpeculative(tp.t_data)))
 		elog(ERROR, "attempted to kill a non-speculative tuple");
 	Assert(!HeapTupleHeaderIsHeapOnly(tp.t_data));
 
@@ -6171,7 +6172,10 @@ heap_abort_speculative(Relation relation, HeapTuple tuple)
 	LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 
 	if (HeapTupleHasExternal(&tp))
-		toast_delete(relation, &tp);
+	{
+		Assert(!IsToastRelation(relation));
+		toast_delete(relation, &tp, true);
+	}
 
 	/*
 	 * Never need to mark tuple for invalidation, since catalogs don't support
@@ -6698,6 +6702,7 @@ heap_prepare_freeze_tuple(HeapTupleHeader tuple, TransactionId cutoff_xid,
 	if (tuple->t_infomask & HEAP_MOVED)
 	{
 		xid = HeapTupleHeaderGetXvac(tuple);
+
 		/*
 		 * For Xvac, we ignore the cutoff_xid and just always perform the
 		 * freeze operation.  The oldest release in which such a value can
@@ -8841,9 +8846,9 @@ heap_xlog_lock(XLogReaderState *record)
 	 */
 	if (xlrec->flags & XLH_LOCK_ALL_FROZEN_CLEARED)
 	{
-		RelFileNode	rnode;
+		RelFileNode rnode;
 		Buffer		vmbuffer = InvalidBuffer;
-		BlockNumber	block;
+		BlockNumber block;
 		Relation	reln;
 
 		XLogRecGetBlockTag(record, 0, &rnode, NULL, &block);
@@ -8914,9 +8919,9 @@ heap_xlog_lock_updated(XLogReaderState *record)
 	 */
 	if (xlrec->flags & XLH_LOCK_ALL_FROZEN_CLEARED)
 	{
-		RelFileNode	rnode;
+		RelFileNode rnode;
 		Buffer		vmbuffer = InvalidBuffer;
-		BlockNumber	block;
+		BlockNumber block;
 		Relation	reln;
 
 		XLogRecGetBlockTag(record, 0, &rnode, NULL, &block);

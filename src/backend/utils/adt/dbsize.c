@@ -763,19 +763,13 @@ pg_size_bytes(PG_FUNCTION_ARGS)
 		char	   *cp;
 
 		/*
-		 * Note we might one day support EB units, so if what follows isn't a
-		 * number, just treat it all as a unit to be parsed.
+		 * Note we might one day support EB units, so if what follows 'E'
+		 * isn't a number, just treat it all as a unit to be parsed.
 		 */
 		exponent = strtol(endptr + 1, &cp, 10);
+		(void) exponent;		/* Silence -Wunused-result warnings */
 		if (cp > endptr + 1)
-		{
-			if (exponent > NUMERIC_MAX_PRECISION ||
-				exponent < -NUMERIC_MAX_PRECISION)
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("invalid size: \"%s\"", str)));
 			endptr = cp;
-		}
 	}
 
 	/*
