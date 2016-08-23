@@ -67,7 +67,7 @@ typedef struct toast_compress_header
 #define TOAST_COMPRESS_SET_RAWSIZE(ptr, len) \
 	(((toast_compress_header *) (ptr))->rawsize = (len))
 
-static void toast_delete_datum(Relation rel, Datum value);
+static void toast_delete_datum(Relation rel, Datum value, bool is_speculative);
 static Datum toast_save_datum(Relation rel, Datum value,
 				 struct varlena * oldexternal, int options);
 static bool toastrel_valueid_exists(Relation toastrel, Oid valueid);
@@ -461,7 +461,7 @@ toast_datum_size(Datum value)
  * ----------
  */
 void
-toast_delete(Relation rel, HeapTuple oldtup)
+toast_delete(Relation rel, HeapTuple oldtup, bool is_speculative)
 {
 	TupleDesc	tupleDesc;
 	Form_pg_attribute *att;
@@ -508,7 +508,7 @@ toast_delete(Relation rel, HeapTuple oldtup)
 			if (toast_isnull[i])
 				continue;
 			else if (VARATT_IS_EXTERNAL_ONDISK(PointerGetDatum(value)))
-				toast_delete_datum(rel, value);
+				toast_delete_datum(rel, value, is_speculative);
 		}
 	}
 }
@@ -1064,7 +1064,7 @@ toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 	if (need_delold)
 		for (i = 0; i < numAttrs; i++)
 			if (toast_delold[i])
-				toast_delete_datum(rel, toast_oldvalues[i]);
+				toast_delete_datum(rel, toast_oldvalues[i], false);
 
 	return result_tuple;
 }
@@ -1656,7 +1656,7 @@ toast_save_datum(Relation rel, Datum value,
  * ----------
  */
 static void
-toast_delete_datum(Relation rel, Datum value)
+toast_delete_datum(Relation rel, Datum value, bool is_speculative)
 {
 	struct varlena *attr = (struct varlena *) DatumGetPointer(value);
 	struct varatt_external toast_pointer;
@@ -1667,7 +1667,7 @@ toast_delete_datum(Relation rel, Datum value)
 	HeapTuple	toasttup;
 	int			num_indexes;
 	int			validIndex;
-	SnapshotData	SnapshotToast;
+	SnapshotData SnapshotToast;
 
 	if (!VARATT_IS_EXTERNAL_ONDISK(attr))
 		return;
@@ -1707,7 +1707,10 @@ toast_delete_datum(Relation rel, Datum value)
 		/*
 		 * Have a chunk, delete it
 		 */
-		simple_heap_delete(toastrel, &toasttup->t_self);
+		if (is_speculative)
+			heap_abort_speculative(toastrel, toasttup);
+		else
+			simple_heap_delete(toastrel, &toasttup->t_self);
 	}
 
 	/*
@@ -1734,7 +1737,7 @@ toastrel_valueid_exists(Relation toastrel, Oid valueid)
 	int			num_indexes;
 	int			validIndex;
 	Relation   *toastidxs;
-	SnapshotData	SnapshotToast;
+	SnapshotData SnapshotToast;
 
 	/* Fetch a valid index relation */
 	validIndex = toast_open_indexes(toastrel,
@@ -1819,7 +1822,7 @@ toast_fetch_datum(struct varlena * attr)
 	int32		chunksize;
 	int			num_indexes;
 	int			validIndex;
-	SnapshotData	SnapshotToast;
+	SnapshotData SnapshotToast;
 
 	if (!VARATT_IS_EXTERNAL_ONDISK(attr))
 		elog(ERROR, "toast_fetch_datum shouldn't be called for non-ondisk datums");
@@ -1998,7 +2001,7 @@ toast_fetch_datum_slice(struct varlena * attr, int32 sliceoffset, int32 length)
 	int32		chcpyend;
 	int			num_indexes;
 	int			validIndex;
-	SnapshotData	SnapshotToast;
+	SnapshotData SnapshotToast;
 
 	if (!VARATT_IS_EXTERNAL_ONDISK(attr))
 		elog(ERROR, "toast_fetch_datum_slice shouldn't be called for non-ondisk datums");
@@ -2094,7 +2097,7 @@ toast_fetch_datum_slice(struct varlena * attr, int32 sliceoffset, int32 length)
 	init_toast_snapshot(&SnapshotToast);
 	nextidx = startchunk;
 	toastscan = systable_beginscan_ordered(toastrel, toastidxs[validIndex],
-										 &SnapshotToast, nscankeys, toastkey);
+										&SnapshotToast, nscankeys, toastkey);
 	while ((ttup = systable_getnext_ordered(toastscan, ForwardScanDirection)) != NULL)
 	{
 		/*

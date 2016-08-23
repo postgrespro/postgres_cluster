@@ -299,9 +299,9 @@ struct Tuplesortstate
 	 * Function to read a stored tuple from tape back into memory. 'len' is
 	 * the already-read length of the stored tuple.  Create a palloc'd copy,
 	 * initialize tuple/datum1/isnull1 in the target SortTuple struct, and
-	 * decrease state->availMem by the amount of memory space consumed.
-	 * (See batchUsed notes for details on how memory is handled when
-	 * incremental accounting is abandoned.)
+	 * decrease state->availMem by the amount of memory space consumed. (See
+	 * batchUsed notes for details on how memory is handled when incremental
+	 * accounting is abandoned.)
 	 */
 	void		(*readtup) (Tuplesortstate *state, SortTuple *stup,
 										int tapenum, unsigned int len);
@@ -309,8 +309,8 @@ struct Tuplesortstate
 	/*
 	 * Function to move a caller tuple.  This is usually implemented as a
 	 * memmove() shim, but function may also perform additional fix-up of
-	 * caller tuple where needed.  Batch memory support requires the
-	 * movement of caller tuples from one location in memory to another.
+	 * caller tuple where needed.  Batch memory support requires the movement
+	 * of caller tuples from one location in memory to another.
 	 */
 	void		(*movetup) (void *dest, void *src, unsigned int len);
 
@@ -1443,7 +1443,7 @@ tuplesort_putindextuplevalues(Tuplesortstate *state, Relation rel,
 			mtup->datum1 = index_getattr(tuple,
 										 1,
 										 RelationGetDescr(state->indexRel),
-										 &stup.isnull1);
+										 &mtup->isnull1);
 		}
 	}
 
@@ -4271,7 +4271,7 @@ copytup_cluster(Tuplesortstate *state, SortTuple *stup, void *tup)
 			mtup->datum1 = heap_getattr(tuple,
 									  state->indexInfo->ii_KeyAttrNumbers[0],
 										state->tupDesc,
-										&stup->isnull1);
+										&mtup->isnull1);
 		}
 	}
 }
@@ -4588,7 +4588,7 @@ copytup_index(Tuplesortstate *state, SortTuple *stup, void *tup)
 			mtup->datum1 = index_getattr(tuple,
 										 1,
 										 RelationGetDescr(state->indexRel),
-										 &stup->isnull1);
+										 &mtup->isnull1);
 		}
 	}
 }
