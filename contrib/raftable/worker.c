@@ -497,9 +497,12 @@ void raftable_worker_main(Datum arg)
 		if (tick(cfg->raft_config.heartbeat_ms))
 		{
 			m = raft_recv_message(raft);
-			Assert(m != NULL);
-			raft_handle_message(raft, m);
-			notify();
+			if (m) {
+				raft_handle_message(raft, m);
+				notify();
+			} else {
+				elog(WARNING, "got an empty or corrupt message on raftable port");
+			}
 		}
 		CHECK_FOR_INTERRUPTS();
 	}
