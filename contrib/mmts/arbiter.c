@@ -354,7 +354,7 @@ static void MtmSendHeartbeat()
 	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
 	msg.node = MtmNodeId;
 	msg.csn = now;
-	if (last_sent_heartbeat + MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2 < now) { 
+	if (last_sent_heartbeat != 0 && last_sent_heartbeat + MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2 < now) { 
 		MTM_LOG1("More than %ld microseconds since last heartbeat", now - last_sent_heartbeat);
 	}
 	last_sent_heartbeat = now;
@@ -1024,7 +1024,7 @@ static void MtmTransReceiver(Datum arg)
 							MTM_LOG1("Last hearbeat from node %d received %ld microseconds ago", i+1, now - Mtm->nodes[i].lastHeartbeat);
 						}
 					}
-					MTM_LOG1("epoll started %ld and finished %ld microseconds ago", now - startPolling, now - stopPolling);
+					MTM_LOG2("epoll started %ld and finished %ld microseconds ago", now - startPolling, now - stopPolling);
 				}
 				lastHeartbeatCheck = now;
 			}

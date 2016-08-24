@@ -568,7 +568,7 @@ MtmAdjustOldestXid(TransactionId xid)
 	if (MtmUseDtm) 
 	{ 
 		if (prev != NULL) { 
-			MTM_LOG1("%d: MtmAdjustOldestXid: oldestXid=%d, prev->xid=%d, prev->status=%d, prev->snapshot=%ld, ts->xid=%d, ts->status=%d, ts->snapshot=%ld, oldestSnapshot=%ld", 
+			MTM_LOG2("%d: MtmAdjustOldestXid: oldestXid=%d, prev->xid=%d, prev->status=%d, prev->snapshot=%ld, ts->xid=%d, ts->status=%d, ts->snapshot=%ld, oldestSnapshot=%ld", 
 					 MyProcPid, xid, prev->xid, prev->status, prev->snapshot, (ts ? ts->xid : 0), (ts ? ts->status : -1), (ts ? ts->snapshot : -1), oldestSnapshot);
 			Mtm->transListHead = prev;
 			Mtm->oldestXid = xid = prev->xid;            
@@ -887,7 +887,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	MtmLock(LW_EXCLUSIVE);
 	ts = hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
 	Assert(ts != NULL);
-	if (x->gid[0]) MTM_LOG1("Preparing transaction %d (%s) at %ld", x->xid, x->gid, MtmGetCurrentTime());
+	//if (x->gid[0]) MTM_LOG1("Preparing transaction %d (%s) at %ld", x->xid, x->gid, MtmGetCurrentTime());
 	if (!MtmIsCoordinator(ts) || Mtm->status == MTM_RECOVERY) {
 		bool found;
 		MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, &found);
@@ -941,7 +941,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
 		MtmUnlock();
 	}
-	if (x->gid[0]) MTM_LOG1("Prepared transaction %d (%s) csn=%ld at %ld: %d", x->xid, x->gid, ts->csn, MtmGetCurrentTime(), ts->status);
+	//if (x->gid[0]) MTM_LOG1("Prepared transaction %d (%s) csn=%ld at %ld: %d", x->xid, x->gid, ts->csn, MtmGetCurrentTime(), ts->status);
 	if (Mtm->inject2PCError == 3) { 
 		Mtm->inject2PCError = 0;
 		elog(ERROR, "ERROR INJECTION for transaction %d (%s)", x->xid, x->gid);
@@ -2597,7 +2597,9 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 		} else {
 			MtmUnlock();
 			MtmRefreshClusterStatus(true);
+			MtmLock(LW_SHARED);
 			if (BIT_CHECK(Mtm->disabledNodeMask, MtmReplicationNodeId-1)) {
+				MtmUnlock();
 				elog(ERROR, "Disabled node %d tries to reconnect without recovery", MtmReplicationNodeId); 
 			}
 		}

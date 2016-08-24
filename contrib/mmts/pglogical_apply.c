@@ -343,7 +343,7 @@ process_remote_begin(StringInfo s)
 
 	inside_tx = true;
 
-	MTM_LOG1("REMOTE begin node=%d xid=%d snapshot=%ld", gtid.node, gtid.xid, snapshot);
+	MTM_LOG2("REMOTE begin node=%d xid=%d snapshot=%ld", gtid.node, gtid.xid, snapshot);
 }
 
 static void
@@ -624,7 +624,7 @@ process_remote_commit(StringInfo in)
 			gid = pq_getmsgstring(in);
 			MTM_LOG2("PGLOGICAL_ABORT_PREPARED commit: gid=%s",  gid);
 			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED) == TRANSACTION_STATUS_UNKNOWN) { 
-				MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
+				MTM_LOG2("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
 				StartTransactionCommand();
 				MtmBeginSession();
 				MtmSetCurrentTransactionGID(gid);
@@ -967,7 +967,7 @@ void MtmExecutor(int id, void* work, size_t size)
     {    
         while (true) { 
             char action = pq_getmsgbyte(&s);
-            MTM_LOG1("%d: REMOTE process action %c", MyProcPid, action);
+            MTM_LOG2("%d: REMOTE process action %c", MyProcPid, action);
 #if 0
 			if (Mtm->status == MTM_RECOVERY) { 
 				MTM_LOG1("Replay action %c[%x]",   action, s.data[s.cursor]);
