@@ -83,7 +83,7 @@ sub configure
 		my $raftport = $node->{raftport};
 
 		$node->append_conf("postgresql.conf", qq(
-			log_statement = off
+			log_statement = none
 			listen_addresses = '$host'
 			unix_socket_directories = ''
 			port = $pgport
