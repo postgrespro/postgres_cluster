@@ -802,7 +802,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 		timestamp_t now = MtmGetSystemTime();		
 		if (Mtm->lastClusterStatusUpdate + MSEC_TO_USEC(MtmHeartbeatRecvTimeout) < now) { 
 			Mtm->lastClusterStatusUpdate = now;
-			MtmRefreshClusterStatus(true);
+			MtmRefreshClusterStatus(true, 0);
 		}
 		if (!IsBackgroundWorker && Mtm->status != MTM_ONLINE) { 
 			/* Do not take in account bg-workers which are performing recovery */
@@ -1462,9 +1462,9 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
  * Build connectivity graph, find clique in it and extend disabledNodeMask by nodes not included in clique.
  * This function returns false if current node is excluded from cluster, true otherwise
  */
-bool MtmRefreshClusterStatus(bool nowait)
+bool MtmRefreshClusterStatus(bool nowait, int testNodeId)
 {
-	nodemask_t mask, clique, disabled;
+	nodemask_t mask, clique, disabled, enabled;
 	nodemask_t matrix[MAX_NODES];
 	MtmTransState *ts;
 	int clique_size;
@@ -1497,17 +1497,13 @@ bool MtmRefreshClusterStatus(bool nowait)
 				MtmDisableNode(i+1);
 			}
 		}		
-#if 0	/* Do  not enable nodes here: them will be enabled after completion of recovery */
 		enabled = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
-		for (i = 0, mask = enabled; mask != 0; i++, mask >>= 1) {
-			if (mask & 1) { 
-				MtmEnableNode(i+1);
-			}
+		if (testNodeId != 0 && BIT_CHECK(enabled, testNodeId-1)) { 
+			MtmEnableNode(testNodeId);
 		}
-		Mtm->reconnectMask |= clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
-#endif
+//		Mtm->reconnectMask |= clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
 
-		if (disabled) { 
+		if (disabled|enabled) { 
 			MtmCheckQuorum();
 		}
 		/* Interrupt voting for active transaction and abort them */
@@ -1623,7 +1619,7 @@ void MtmOnNodeDisconnect(int nodeId)
 		}
 		MtmUnlock();
 	} else { 
-		MtmRefreshClusterStatus(false);
+		MtmRefreshClusterStatus(false, 0);
     }
 }
 
@@ -2596,7 +2592,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			MtmCheckQuorum();
 		} else {
 			MtmUnlock();
-			MtmRefreshClusterStatus(true);
+			MtmRefreshClusterStatus(true, MtmReplicationNodeId);
 			MtmLock(LW_SHARED);
 			if (BIT_CHECK(Mtm->disabledNodeMask, MtmReplicationNodeId-1)) {
 				MtmUnlock();
