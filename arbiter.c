@@ -1030,7 +1030,7 @@ static void MtmTransReceiver(Datum arg)
 			}
 			if (n == 0 && Mtm->disabledNodeMask != 0) { 
 				/* If timeout is expired and there are disabled nodes, then recheck cluster's state */
-				MtmRefreshClusterStatus(false);
+				MtmRefreshClusterStatus(false, 0);
 			}
 		}
 	}
