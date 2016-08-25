@@ -952,6 +952,11 @@ static void MtmTransReceiver(Datum arg)
 							}
 							break;						   
 						  case MSG_ABORTED:
+							if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
+								elog(WARNING, "Receive ABORTED response for already committed transaction %d from node %d",
+									 ts->xid, msg->node);
+								continue;
+							}
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 								MtmAbortTransaction(ts);
