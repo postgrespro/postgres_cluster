@@ -950,7 +950,7 @@ SnapBuildAbortTxn(SnapBuild *builder, XLogRecPtr lsn,
  */
 void
 SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
-				   int nsubxacts, TransactionId *subxacts)
+				   int nsubxacts, TransactionId *subxacts, bool isCommit)
 {
 	int			nxact;
 
@@ -1026,7 +1026,8 @@ SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 	 * Make sure toplevel txn is not tracked in running txn's anymore, switch
 	 * state to consistent if possible.
 	 */
-	SnapBuildEndTxn(builder, lsn, xid);
+	if (isCommit)
+		SnapBuildEndTxn(builder, lsn, xid);
 
 	if (forced_timetravel)
 	{

@@ -574,7 +574,7 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	}
 
 	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
-					   parsed->nsubxacts, parsed->subxacts);
+					   parsed->nsubxacts, parsed->subxacts, true);
 
 	/* ----
 	 * Check whether we are interested in this specific transaction, and tell
@@ -678,7 +678,7 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	}
 
 	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
-					   parsed->nsubxacts, parsed->subxacts);
+					   parsed->nsubxacts, parsed->subxacts, false);
 
 	if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) ||
 		(parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) ||
