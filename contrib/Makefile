@@ -57,7 +57,6 @@ SUBDIRS = \
 		hunspell_nl_nl	\
 		hunspell_ru_ru	\
 		shared_ispell	\
-		pg_pathman	\
 		pg_variables
 
 ifeq ($(with_openssl),yes)
