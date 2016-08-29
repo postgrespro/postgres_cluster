@@ -56,7 +56,6 @@ SUBDIRS = \
 		hunspell_fr	\
 		hunspell_nl_nl	\
 		hunspell_ru_ru	\
-		jsquery		\
 		shared_ispell	\
 		pg_pathman	\
 		pg_variables
