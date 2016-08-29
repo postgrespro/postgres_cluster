@@ -56,8 +56,7 @@ SUBDIRS = \
 		hunspell_fr	\
 		hunspell_nl_nl	\
 		hunspell_ru_ru	\
-		shared_ispell	\
-		pg_variables
+		shared_ispell
 
 ifeq ($(with_openssl),yes)
 SUBDIRS += sslinfo
