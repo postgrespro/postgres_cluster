@@ -1,0 +1,34 @@
+{
+   "name": "shared_ispell",
+   "abstract": "Provides a shared ispell dictionary - initialized once and stored in shared segment.",
+   "description": "Allows you to allocate area within a shared segment and use it for ispell dictionaries.",
+   "version": "1.0.0",
+   "maintainer": "Tomas Vondra <tv@fuzzy.cz>",
+   "license": "bsd",
+   "prereqs": {
+      "runtime": {
+         "requires": {
+            "PostgreSQL": "8.4.0"
+         }
+      }
+   },
+   "provides": {
+     "query_histogram": {
+       "file": "shared_ispell--1.0.0.sql",
+       "version": "1.0.0"
+     }
+   },
+   "resources": {
+      "repository": {
+        "url":  "https://github.com:tvondra/shared_ispell.git",
+        "web":  "http://github.com/tvondra/shared_ispell",
+        "type": "git"
+      }
+   },
+   "tags" : ["ispell", "shared", "fulltext", "dictionary"],
+   "meta-spec": {
+      "version": "1.0.0",
+      "url": "http://pgxn.org/meta/spec.txt"
+   },
+   "release_status" : "testing"
+}

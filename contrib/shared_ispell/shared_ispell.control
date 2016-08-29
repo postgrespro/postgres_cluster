@@ -1,0 +1,6 @@
+# shared ispell dictionary
+comment = 'Provides shared ispell dictionaries.'
+default_version = '1.1.0'
+relocatable = true
+
+module_pathname = '$libdir/shared_ispell'
