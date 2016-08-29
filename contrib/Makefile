@@ -51,7 +51,6 @@ SUBDIRS = \
 		unaccent	\
 		vacuumlo	\
 		dump_stat	\
-		sr_plan		\
 		hunspell_en_us	\
 		hunspell_fr	\
 		hunspell_nl_nl	\
