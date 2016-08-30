@@ -56,6 +56,7 @@ SUBDIRS = \
 		hunspell_nl_nl	\
 		hunspell_ru_ru	\
 		pg_variables	\
+		jsquery		\
 		shared_ispell
 
 ifeq ($(with_openssl),yes)
