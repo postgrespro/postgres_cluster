@@ -1,0 +1,84 @@
+CREATE EXTENSION sr_plan;
+CREATE TABLE test_table(test_attr1 int, test_attr2 int);
+SET sr_plan.write_mode = true;
+SELECT * FROM test_table WHERE test_attr1 = _p(10);
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+SELECT * FROM test_table WHERE test_attr1 = 10;
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+SELECT * FROM test_table WHERE test_attr1 = 10;
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+SET sr_plan.write_mode = false;
+SELECT * FROM test_table WHERE test_attr1 = _p(10);
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+SELECT * FROM test_table WHERE test_attr1 = 10;
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+SELECT * FROM test_table WHERE test_attr1 = 15;
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+UPDATE sr_plans SET enable = true;
+SELECT * FROM test_table WHERE test_attr1 = _p(10);
+WARNING:  Ok we find saved plan.
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+SELECT * FROM test_table WHERE test_attr1 = _p(15);
+WARNING:  Ok we find saved plan.
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+SELECT * FROM test_table WHERE test_attr1 = 10;
+WARNING:  Ok we find saved plan.
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+SELECT * FROM test_table WHERE test_attr1 = 15;
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+DROP TABLE test_table;
+WARNING:  Invalidate saved plan with query:
+	SELECT * FROM test_table WHERE test_attr1 = _p(10);
+WARNING:  Invalidate saved plan with query:
+	SELECT * FROM test_table WHERE test_attr1 = 10;
+CREATE TABLE test_table(test_attr1 int, test_attr2 int);
+SELECT * FROM test_table WHERE test_attr1 = _p(10);
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+SELECT * FROM test_table WHERE test_attr1 = 10;
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+SELECT * FROM test_table WHERE test_attr1 = 10;
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
+SELECT * FROM test_table WHERE test_attr1 = 15;
+ test_attr1 | test_attr2 
+------------+------------
+(0 rows)
+
