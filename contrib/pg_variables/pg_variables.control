@@ -1,0 +1,5 @@
+# pg_variables extension
+comment = 'session variables with various types'
+default_version = '1.0'
+module_pathname = '$libdir/pg_variables'
+relocatable = true
