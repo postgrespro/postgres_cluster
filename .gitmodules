@@ -6,3 +6,7 @@
 	path = contrib/jsquery
 	url = https://github.com/postgrespro/jsquery
 	branch = master
+[submodule "contrib/sr_plan"]
+	path = contrib/sr_plan
+	url = https://github.com/postgrespro/sr_plan
+	branch = master
