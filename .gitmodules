@@ -14,3 +14,7 @@
 	path = contrib/pg_pathman
 	url = https://github.com/postgrespro/pg_pathman
 	branch = master
+[submodule "contrib/pg_arman"]
+	path = contrib/pg_arman
+	url = https://github.com/postgrespro/pg_arman
+	branch = ptrack
