@@ -10,3 +10,7 @@
 	path = contrib/sr_plan
 	url = https://github.com/postgrespro/sr_plan
 	branch = master
+[submodule "contrib/pg_pathman"]
+	path = contrib/pg_pathman
+	url = https://github.com/postgrespro/pg_pathman
+	branch = master
