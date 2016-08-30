@@ -1,0 +1,57 @@
+CREATE EXTENSION hunspell_fr;
+CREATE TABLE table1(name varchar);
+INSERT INTO table1 VALUES ('batifoler'), ('batifolant'), ('batifole'), ('batifolait'),
+						('consentant'), ('consentir'), ('consentiriez');
+SELECT d.* FROM table1 AS t, LATERAL ts_debug('french_hunspell', t.name) AS d;
+   alias   |   description   |    token     |         dictionaries          |   dictionary    |         lexemes         
+-----------+-----------------+--------------+-------------------------------+-----------------+-------------------------
+ asciiword | Word, all ASCII | batifoler    | {french_hunspell,french_stem} | french_hunspell | {batifoler}
+ asciiword | Word, all ASCII | batifolant   | {french_hunspell,french_stem} | french_hunspell | {batifolante,batifoler}
+ asciiword | Word, all ASCII | batifole     | {french_hunspell,french_stem} | french_hunspell | {batifoler}
+ asciiword | Word, all ASCII | batifolait   | {french_hunspell,french_stem} | french_hunspell | {batifoler}
+ asciiword | Word, all ASCII | consentant   | {french_hunspell,french_stem} | french_hunspell | {consentante,consentir}
+ asciiword | Word, all ASCII | consentir    | {french_hunspell,french_stem} | french_hunspell | {consentir}
+ asciiword | Word, all ASCII | consentiriez | {french_hunspell,french_stem} | french_hunspell | {consentir}
+(7 rows)
+
+CREATE INDEX name_idx ON table1 USING GIN (to_tsvector('french_hunspell', "name"));
+SELECT * FROM table1 WHERE to_tsvector('french_hunspell', name)
+	@@ to_tsquery('french_hunspell', 'batifolant');
+    name    
+------------
+ batifoler
+ batifolant
+ batifole
+ batifolait
+(4 rows)
+
+SELECT * FROM table1 WHERE to_tsvector('french_hunspell', name)
+	@@ to_tsquery('french_hunspell', 'consentiriez');
+     name     
+--------------
+ consentant
+ consentir
+ consentiriez
+(3 rows)
+
+DROP INDEX name_idx;
+CREATE INDEX name_idx ON table1 USING GIST (to_tsvector('french_hunspell', "name"));
+SELECT * FROM table1 WHERE to_tsvector('french_hunspell', name)
+	@@ to_tsquery('french_hunspell', 'batifolant');
+    name    
+------------
+ batifoler
+ batifolant
+ batifole
+ batifolait
+(4 rows)
+
+SELECT * FROM table1 WHERE to_tsvector('french_hunspell', name)
+	@@ to_tsquery('french_hunspell', 'consentiriez');
+     name     
+--------------
+ consentant
+ consentir
+ consentiriez
+(3 rows)
+

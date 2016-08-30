@@ -1,0 +1,5 @@
+# hunspell_fr extension
+comment = 'French Hunspell Dictionary'
+default_version = '1.0'
+module_pathname = '$libdir/hunspell_fr'
+relocatable = true
