@@ -1,3 +1,8 @@
 [submodule "contrib/pg_variables"]
 	path = contrib/pg_variables
 	url = https://github.com/postgrespro/pg_variables
+	branch = master
+[submodule "contrib/jsquery"]
+	path = contrib/jsquery
+	url = https://github.com/postgrespro/jsquery
+	branch = master
