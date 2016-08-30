@@ -83,7 +83,11 @@ PlannedStmt *sr_planner(Query *parse,
 	sr_plans_table_rv = makeRangeVar("public", "sr_plans", -1);
 	sr_plans_heap = heap_openrv(sr_plans_table_rv, heap_lock);
 
+#if PG_VERSION_NUM >= 90600
+	query_index_rel_oid = DatumGetObjectId(DirectFunctionCall1(to_regclass, PointerGetDatum(cstring_to_text("sr_plans_query_hash_idx"))));
+#else
 	query_index_rel_oid = DatumGetObjectId(DirectFunctionCall1(to_regclass, CStringGetDatum("sr_plans_query_hash_idx")));
+#endif
 	if (query_index_rel_oid == InvalidOid)
 	{
 		elog(WARNING, "Not found sr_plans_query_hash_idx index");
