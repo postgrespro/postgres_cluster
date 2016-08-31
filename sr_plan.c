@@ -264,7 +264,7 @@ void *replace_fake(void *node)
 }
 
 void _PG_init(void) {
-	elog(WARNING, "SP_Plan init");
+        /* elog(WARNING, "SR_Plan init"); */
 	DefineCustomBoolVariable("sr_plan.write_mode",
 							 "Save all plans for all query.",
 							 NULL,
@@ -281,7 +281,7 @@ void _PG_init(void) {
 }
 
 void _PG_fini(void) {
-	elog(WARNING, "SP_Plan finit");
+        /* elog(WARNING, "SR_Plan finit"); */
 	planner_hook = NULL;
 	post_parse_analyze_hook = NULL;
 }
