@@ -341,7 +341,7 @@ process_remote_begin(StringInfo s)
 	Assert(gtid.node > 0);
 
 	MTM_LOG2("REMOTE begin node=%d xid=%d snapshot=%ld", gtid.node, gtid.xid, snapshot);
-#if 0
+#if 1
 	if (BIT_CHECK(Mtm->disabledNodeMask, gtid.node-1)) { 
 		elog(WARNING, "Ignore transaction %d from disabled node %d", gtid.xid, gtid.node);
 		MtmResetTransaction();		
@@ -633,9 +633,9 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
-			MTM_LOG2("PGLOGICAL_ABORT_PREPARED commit: gid=%s",  gid);
+			MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s",  gid);
 			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED) == TRANSACTION_STATUS_UNKNOWN) { 
-				MTM_LOG2("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
+				MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
 				StartTransactionCommand();
 				MtmBeginSession();
 				MtmSetCurrentTransactionGID(gid);

@@ -1317,13 +1317,15 @@ static void MtmPollStatusOfPreparedTransactions(int disabledNodeId)
 
 static void MtmDisableNode(int nodeId)
 {
+	timestamp_t now = MtmGetSystemTime();
+	elog(WARNING, "Disable node %d at xlog position %lx, last status change time %d msec ago", nodeId, GetXLogInsertRecPtr(), 
+		 (int)USEC_TO_MSEC(now - Mtm->nodes[nodeId-1].lastStatusChangeTime));
 	BIT_SET(Mtm->disabledNodeMask, nodeId-1);
-	Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
+	Mtm->nodes[nodeId-1].lastStatusChangeTime = now;
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 	if (nodeId != MtmNodeId) { 
 		Mtm->nLiveNodes -= 1;
 	}
-	elog(WARNING, "Disable node %d at xlog position %lx", nodeId, GetXLogInsertRecPtr());
 	MtmPollStatusOfPreparedTransactions(nodeId);
 } 
 	
@@ -1346,8 +1348,8 @@ void MtmRecoveryCompleted(void)
 			 MtmNodeId, Mtm->disabledNodeMask, Mtm->reconnectMask, Mtm->nLiveNodes);
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
-	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
+	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	for (i = 0; i < Mtm->nAllNodes; i++) { 
 		Mtm->nodes[i].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 	}
@@ -1601,10 +1603,11 @@ bool MtmRefreshClusterStatus(bool nowait, int testNodeId)
 		if (disabled) { 
 			timestamp_t now = MtmGetSystemTime();
 			for (i = 0, mask = disabled; mask != 0; i++, mask >>= 1) {
-				if (mask & 1) { 
-					if (Mtm->nodes[i].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < now) {
-						MtmDisableNode(i+1);
-					}
+				if (i+1 != MtmNodeId 
+					&& (mask & 1) != 0
+					&& Mtm->nodes[i].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < now)
+				{
+					MtmDisableNode(i+1);
 				}
 			}
 		}		
@@ -1616,15 +1619,16 @@ bool MtmRefreshClusterStatus(bool nowait, int testNodeId)
 
 		if (disabled|enabled) { 
 			MtmCheckQuorum();
-		}
-		/* Interrupt voting for active transaction and abort them */
-		for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
-			MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%d, gtid.xid=%d",
-					 ts->gid, ts->gtid.nхode, ts->xid, ts->status, ts->gtid.xid);
-			if (MtmIsCoordinator(ts)) { 
-				if (!ts->votingCompleted && disabled != 0 && ts->status != TRANSACTION_STATUS_ABORTED) {
-					MtmAbortTransaction(ts);
-					MtmWakeUpBackend(ts);
+			
+			/* Interrupt voting for active transaction and abort them */
+			for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
+				MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%d, gtid.xid=%d",
+						 ts->gid, ts->gtid.nхode, ts->xid, ts->status, ts->gtid.xid);
+				if (MtmIsCoordinator(ts)) { 
+					if (!ts->votingCompleted && disabled != 0 && ts->status != TRANSACTION_STATUS_ABORTED) {
+						MtmAbortTransaction(ts);
+						MtmWakeUpBackend(ts);
+					}
 				}
 			}
 		}
@@ -2243,7 +2247,7 @@ _PG_init(void)
 		"Minimal amount of time (msec) between node status change",
 		"This delay is used to avoid false detection of node failure and to prevent blinking of node status node",
 		&MtmNodeDisableDelay,
-		1000,
+		2000,
 		1,
 		INT_MAX,
 		PGC_BACKEND,
