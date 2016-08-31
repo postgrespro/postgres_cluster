@@ -350,14 +350,19 @@ static void MtmSendHeartbeat()
 
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
-		if (i+1 != MtmNodeId && !BIT_CHECK(busy_mask, i)
-			&& (Mtm->status != MTM_ONLINE 
-				|| (sockets[i] >= 0 && !BIT_CHECK(Mtm->disabledNodeMask, i) && !BIT_CHECK(Mtm->reconnectMask, i))))
-		{ 
-			if (!MtmSendToNode(i, &msg, sizeof(msg))) { 
-				elog(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
-			} else {
-				MTM_LOG2("Send heartbeat to node %d with timestamp %ld", i+1, now);    
+		if (i+1 != MtmNodeId) { 
+			if (!BIT_CHECK(busy_mask, i)
+				&& (Mtm->status != MTM_ONLINE 
+					|| (sockets[i] >= 0 && !BIT_CHECK(Mtm->disabledNodeMask, i))
+					|| BIT_CHECK(Mtm->reconnectMask, i)))
+			{ 
+				if (!MtmSendToNode(i, &msg, sizeof(msg))) { 
+					elog(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
+				} else {
+					MTM_LOG2("Send heartbeat to node %d with timestamp %ld", i+1, now);    
+				}
+			} else { 
+				MTM_LOG1("Do not send hearbeat to node %d, busy mask %ld, status %d", i+1, busy_mask, Mtm->status);
 			}
 		}
 	}

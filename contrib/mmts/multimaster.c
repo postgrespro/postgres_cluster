@@ -1349,6 +1349,7 @@ void MtmRecoveryCompleted(void)
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
 	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
+	Mtm->reconnectMask |= Mtm->connectivityMask; /* try to reestablish all connections */
 	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	for (i = 0; i < Mtm->nAllNodes; i++) { 
 		Mtm->nodes[i].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
@@ -1469,6 +1470,7 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 void MtmSwitchClusterMode(MtmNodeStatus mode)
 {
 	Mtm->status = mode;
+	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	MTM_LOG1("Switch to %s mode", MtmNodeStatusMnem[mode]);
 	/* ??? Something else to do here? */
 }
@@ -1603,11 +1605,10 @@ bool MtmRefreshClusterStatus(bool nowait, int testNodeId)
 		if (disabled) { 
 			timestamp_t now = MtmGetSystemTime();
 			for (i = 0, mask = disabled; mask != 0; i++, mask >>= 1) {
-				if (i+1 != MtmNodeId 
-					&& (mask & 1) != 0
-					&& Mtm->nodes[i].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < now)
-				{
-					MtmDisableNode(i+1);
+				if (mask & 1) { 
+					if (Mtm->nodes[i].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < now) {
+						MtmDisableNode(i+1);
+					}
 				}
 			}
 		}		
@@ -1682,6 +1683,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	MtmLock(LW_EXCLUSIVE);
 	BIT_SET(Mtm->connectivityMask, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
+	MTM_LOG1("Disconnect node %d connectivity mask %lx", nodeId, Mtm->connectivityMask);
 	MtmUnlock();
 
 	if (!RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false))
@@ -1726,7 +1728,7 @@ void MtmOnNodeConnect(int nodeId)
 	BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
 	MtmUnlock();
 
-	MTM_LOG1("Reconnect node %d", nodeId);
+	MTM_LOG1("Reconnect node %d, connectivityMask=%lx", nodeId, Mtm->connectivityMask);
 	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false); 
 }
 
