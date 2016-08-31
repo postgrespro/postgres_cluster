@@ -1602,8 +1602,9 @@ bool MtmRefreshClusterStatus(bool nowait, int testNodeId)
 			timestamp_t now = MtmGetSystemTime();
 			for (i = 0, mask = disabled; mask != 0; i++, mask >>= 1) {
 				if (mask & 1) { 
-					if (Mtm->nodes[i].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) > now) 
+					if (Mtm->nodes[i].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < now) {
 						MtmDisableNode(i+1);
+					}
 				}
 			}
 		}		
@@ -2581,7 +2582,7 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 		MtmSleep(STATUS_POLL_DELAY);
 	}
 	if (recovery) { 
-		MTM_LOG1("%d: Restart replication frim node %d after end of recovery", MyProcPid, nodeId);
+		MTM_LOG1("%d: Restart replication from node %d after end of recovery", MyProcPid, nodeId);
 	} else { 
 		MTM_LOG1("%d: Continue replication from node %d", MyProcPid, nodeId);
 	}
