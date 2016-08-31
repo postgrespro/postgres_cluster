@@ -16,6 +16,8 @@ typedef uint64 timestamp_t;
 extern timestamp_t MtmGetSystemTime(void);   /* non-adjusted current system time */
 extern timestamp_t MtmGetCurrentTime(void);  /* adjusted current system time */
 
+extern bool  MtmIsLogicalReceiver;
+
 typedef struct
 {
     BgwPoolExecutor executor;

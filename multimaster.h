@@ -74,6 +74,9 @@
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
 
+
+typedef char pgid_t[MULTIMASTER_MAX_GID_SIZE];
+
 #define PGLOGICAL_COMMIT			0x00
 #define PGLOGICAL_PREPARE			0x01
 #define PGLOGICAL_COMMIT_PREPARED	0x02
@@ -102,7 +105,9 @@ typedef enum
 	MSG_PREPARED,
 	MSG_ABORTED,
 	MSG_STATUS,
-	MSG_HEARTBEAT
+	MSG_HEARTBEAT,
+	MSG_POLL_REQUEST,
+	MSG_POLL_STATUS
 } MtmMessageCode;
 
 typedef enum
@@ -123,6 +128,38 @@ typedef enum
 	REPLMODE_RECOVERY,   /* perform recorvery of the node by applying all data from the slot from specified point */
 	REPLMODE_NORMAL      /* normal mode: use existed slot or create new one and start receiving data from it from the specified position */
 } MtmReplicationMode;
+
+typedef struct
+{
+	MtmMessageCode code;   /* Message code: MSG_READY, MSG_PREPARE, MSG_COMMIT, MSG_ABORT */
+    int            node;   /* Sender node ID */	
+	TransactionId  dxid;   /* Transaction ID at destination node */
+	TransactionId  sxid;   /* Transaction ID at sender node */  
+    XidStatus      status; /* Transaction status */	
+	csn_t          csn;    /* Local CSN in case of sending data from replica to master, global CSN master->replica */
+	nodemask_t     disabledNodeMask; /* Bitmask of disabled nodes at the sender of message */
+	csn_t          oldestSnapshot; /* Oldest snapshot used by active transactions at this node */
+	pgid_t         gid;    /* Global transaction identifier */
+} MtmArbiterMessage;
+
+typedef struct MtmMessageQueue
+{
+	MtmArbiterMessage msg;
+	struct MtmMessageQueue* next;
+} MtmMessageQueue;
+
+typedef struct 
+{
+	MtmArbiterMessage hdr;
+	char connStr[MULTIMASTER_MAX_CONN_STR_SIZE];
+} MtmHandshakeMessage;
+
+typedef struct 
+{
+	int used;
+	int size;
+	MtmArbiterMessage* data;
+} MtmBuffer;
 
 typedef struct
 {
@@ -153,7 +190,7 @@ typedef struct MtmTransState
 {
     TransactionId  xid;
     XidStatus      status; 
-	char           gid[MULTIMASTER_MAX_GID_SIZE]; /* Global transaction ID (used for 2PC) */
+	pgid_t         gid;                /* Global transaction ID (used for 2PC) */
 	GlobalTransactionId gtid;          /* Transaction id at coordinator */
     csn_t          csn;                /* commit serial number */
     csn_t          snapshot;           /* transaction snapshot, or INVALID_CSN for local transactions */
@@ -162,21 +199,29 @@ typedef struct MtmTransState
 	int            procno;             /* pgprocno of transaction coordinator waiting for responses from replicas, 
 							              used to notify coordinator by arbiter */
 	int            nSubxids;           /* Number of subtransanctions */
-	MtmMessageCode cmd;                /* Notification message to be sent */
-  	struct MtmTransState* nextVoting;  /* Next element in L1-list of voting transactions. */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
 	bool           votingCompleted;    /* 2PC voting is completed */
 	bool           isLocal;            /* Transaction is either replicated, either doesn't contain DML statements, so it shoudl be ignored by pglogical replication */
 	bool           isEnqueued;         /* Transaction is inserted in queue */
+	bool           isActive;           /* Transaction is active */
+	nodemask_t     participantsMask;   /* Mask of nodes involved in transaction */
+	nodemask_t     votedMask;          /* Mask of voted nodes */
 	TransactionId  xids[1];            /* [Mtm->nAllNodes]: transaction ID at replicas */
 } MtmTransState;
+
+typedef struct {
+	pgid_t gid;
+	bool   abort;
+	XidStatus status;
+	MtmTransState* state;
+} MtmTransMap;
 
 typedef struct
 {
 	MtmNodeStatus status;              /* Status of this node */
 	int recoverySlot;                  /* NodeId of recovery slot or 0 if none */
 	volatile slock_t spinlock;         /* spinlock used to protect access to hash table */
-	PGSemaphoreData votingSemaphore;   /* semaphore used to notify mtm-sender about new responses to coordinator */
+	PGSemaphoreData sendSemaphore;   /* semaphore used to notify mtm-sender about new responses to coordinator */
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
@@ -206,7 +251,8 @@ typedef struct
 								  		  This list is expected to be in CSN ascending order, by strict order may be violated */
 	uint64 transCount;                 /* Counter of transactions perfromed by this node */	
 	uint64 gcCount;                    /* Number of global transactions performed since last GC */
-    timestamp_t lastClusterStatusUpdate;/* Time of last update of cluster status */
+	MtmMessageQueue* sendQueue;        /* Messages to be sent by arbiter sender */
+	MtmMessageQueue* freeQueue;        /* Free messages */
 	BgwPool pool;                      /* Pool of background workers for applying logical replication patches */
 	MtmNodeInfo nodes[1];              /* [Mtm->nAllNodes]: per-node data */ 
 } MtmState;
@@ -241,6 +287,7 @@ extern int   MtmHeartbeatSendTimeout;
 extern int   MtmHeartbeatRecvTimeout;
 extern bool  MtmUseDtm;
 extern HTAB* MtmXid2State;
+extern HTAB* MtmGid2State;
 
 extern void  MtmArbiterInitialize(void);
 extern void  MtmStartReceivers(void);
@@ -253,8 +300,10 @@ extern void  MtmReceiverStarted(int nodeId);
 extern MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shutdown);
 extern void  MtmExecute(void* work, int size);
 extern void  MtmExecutor(int id, void* work, size_t size);
-extern void  MtmSendNotificationMessage(MtmTransState* ts, MtmMessageCode cmd);
+extern void  MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd);
+extern void  MtmSendMessage(MtmArbiterMessage* msg);
 extern void  MtmAdjustSubtransactions(MtmTransState* ts);
+extern void  MtmBroadcastPollMessage(MtmTransState* ts);
 extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
 extern void  MtmLockNode(int nodeId);
@@ -286,6 +335,7 @@ extern void  MtmUpdateLsnMapping(int nodeId, XLogRecPtr endLsn);
 extern XLogRecPtr MtmGetFlushPosition(int nodeId);
 extern bool MtmWatchdog(timestamp_t now);
 extern void MtmCheckHeartbeat(void);
+extern void MtmResetTransaction(void);
 extern PGconn *PQconnectdb_safe(const char *conninfo);
 
 

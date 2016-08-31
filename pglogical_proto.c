@@ -110,7 +110,7 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	MTM_LOG3("%d: pglogical_write_begin XID=%d node=%d CSN=%ld recovery=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
 			 MyProcPid, txn->xid, MtmReplicationNodeId, csn, isRecovery, txn->restart_decoding_lsn, txn->first_lsn, txn->end_lsn, MyReplicationSlot->data.confirmed_flush);
 	
-	if (csn == INVALID_CSN && !isRecovery) { 
+	if (!isRecovery && csn == INVALID_CSN) { 
 		MtmIsFilteredTxn = true;
 	} else { 
 		pq_sendbyte(out, 'B');		/* BEGIN */
@@ -161,13 +161,10 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 			return;
 		}
 	} else { 
-		csn_t csn = MtmTransactionSnapshot(txn->xid);
+		//csn_t csn = MtmTransactionSnapshot(txn->xid);
 		bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
-		/* 
-		 * INVALID_CSN means replicated transaction (transaction initiated by some other nodes).
-		 * We do not need to send such transactions unless we perform recovery
-		 */
-		if (csn == INVALID_CSN && !isRecovery) 
+
+		if (!isRecovery && txn->origin_id != InvalidRepOriginId) 
 		{
 			Assert(MtmTransactionRecords == 0);
 			return;

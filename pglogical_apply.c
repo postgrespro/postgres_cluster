@@ -71,7 +71,7 @@ static bool build_index_scan_key(ScanKey skey, Relation rel, Relation idxrel, Tu
 static void UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot);
 static void UserTableUpdateIndexes(EState *estate, TupleTableSlot *slot);
 
-static void process_remote_begin(StringInfo s);
+static bool process_remote_begin(StringInfo s);
 static void process_remote_message(StringInfo s);
 static void process_remote_commit(StringInfo s);
 static void process_remote_insert(StringInfo s, Relation rel);
@@ -328,7 +328,7 @@ create_rel_estate(Relation rel)
 	return estate;
 }
 
-static void
+static bool
 process_remote_begin(StringInfo s)
 {
 	GlobalTransactionId gtid;
@@ -337,13 +337,24 @@ process_remote_begin(StringInfo s)
 	gtid.node = pq_getmsgint(s, 4); 
 	gtid.xid = pq_getmsgint(s, 4); 
 	snapshot = pq_getmsgint64(s);    
+
+	Assert(gtid.node > 0);
+
+	MTM_LOG2("REMOTE begin node=%d xid=%d snapshot=%ld", gtid.node, gtid.xid, snapshot);
+#if 0
+	if (BIT_CHECK(Mtm->disabledNodeMask, gtid.node-1)) { 
+		elog(WARNING, "Ignore transaction %d from disabled node %d", gtid.xid, gtid.node);
+		MtmResetTransaction();		
+		return false;
+	}
+#endif
     SetCurrentStatementStartTimestamp();     
 	StartTransactionCommand();
     MtmJoinTransaction(&gtid, snapshot);
 
 	inside_tx = true;
 
-	MTM_LOG2("REMOTE begin node=%d xid=%d snapshot=%ld", gtid.node, gtid.xid, snapshot);
+	return true;
 }
 
 static void
@@ -977,8 +988,11 @@ void MtmExecutor(int id, void* work, size_t size)
             switch (action) {
                 /* BEGIN */
             case 'B':
-                process_remote_begin(&s);
-                continue;
+			    if (process_remote_begin(&s)) { 				   
+					continue;
+				} else { 
+					break;
+				}
                 /* COMMIT */
             case 'C':
                 process_remote_commit(&s);
