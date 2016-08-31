@@ -161,13 +161,21 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 			return;
 		}
 	} else { 
-		//csn_t csn = MtmTransactionSnapshot(txn->xid);
+		csn_t csn = MtmTransactionSnapshot(txn->xid);
 		bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
+
 
 		if (!isRecovery && txn->origin_id != InvalidRepOriginId) 
 		{
+			if (flags == PGLOGICAL_ABORT_PREPARED) { 
+				MTM_LOG1("Skip ABORT_PREPARED for transaction %s to node %d", txn->gid, MtmReplicationNodeId);
+			}
 			Assert(MtmTransactionRecords == 0);
 			return;
+		}
+		if (flags == PGLOGICAL_ABORT_PREPARED) { 
+			MTM_LOG1("Send ABORT_PREPARED for transaction %d (%s) end_lsn=%lx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%ld", 
+					 txn->xid, txn->gid, txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
 		}
 		if (MtmRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn)) { 
 			MTM_LOG1("wal-sender complete recovery of node %d at LSN(commit %lx, end %lx, log %lx) in transaction %s event %d", MtmReplicationNodeId, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr(), txn->gid, flags);
