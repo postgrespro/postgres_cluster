@@ -220,6 +220,8 @@ pglogical_receiver_main(Datum main_arg)
 	char* connString = psprintf("replication=database %s", Mtm->nodes[nodeId-1].con.connStr);
 	slotName = psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId);
 
+	MtmIsLogicalReceiver = true;
+
 	initStringInfo(&spill_info);
 
 	/* Register functions for SIGTERM/SIGHUP management */
@@ -320,7 +322,7 @@ pglogical_receiver_main(Datum main_arg)
 				 * Them are either empty, either new node is synchronized using base_backup.
 				 * So we assume that LSNs are the same for local and remote node
 				 */
-				originStartPos = Mtm->status == MTM_RECOVERY ? GetXLogInsertRecPtr() : 0;
+				originStartPos = Mtm->status == MTM_RECOVERY ? GetXLogInsertRecPtr() : InvalidXLogRecPtr;
 				MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, nodeId);
 			} else { 
 				originStartPos = replorigin_get_progress(originId, false);

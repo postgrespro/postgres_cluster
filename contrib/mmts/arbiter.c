@@ -78,30 +78,6 @@
 #define INIT_BUFFER_SIZE 1024
 #define HANDSHAKE_MAGIC  0xCAFEDEED
 
-typedef struct
-{
-	MtmMessageCode code; /* Message code: MSG_READY, MSG_PREPARE, MSG_COMMIT, MSG_ABORT */
-    int            node; /* Sender node ID */	
-	TransactionId  dxid; /* Transaction ID at destination node */
-	TransactionId  sxid; /* Transaction ID at sender node */  
-	csn_t          csn;  /* Local CSN in case of sending data from replica to master, global CSN master->replica */
-	nodemask_t     disabledNodeMask; /* Bitmask of disabled nodes at the sender of message */
-	csn_t          oldestSnapshot; /* Oldest snapshot used by active transactions at this node */
-} MtmArbiterMessage;
-
-typedef struct 
-{
-	MtmArbiterMessage hdr;
-	char connStr[MULTIMASTER_MAX_CONN_STR_SIZE];
-} MtmHandshakeMessage;
-
-typedef struct 
-{
-	int used;
-	int size;
-	MtmArbiterMessage* data;
-} MtmBuffer;
-
 static int*        sockets;
 static int         gateway;
 static bool        send_heartbeat;
@@ -109,8 +85,9 @@ static timestamp_t last_sent_heartbeat;
 static TimeoutId   heartbeat_timer;
 static nodemask_t  busy_mask;
 
-static void MtmTransSender(Datum arg);
-static void MtmTransReceiver(Datum arg);
+static void MtmSender(Datum arg);
+static void MtmReceiver(Datum arg);
+static void MtmMonitor(Datum arg);
 static void MtmSendHeartbeat(void);
 static bool MtmSendToNode(int node, void const* buf, int size);
 
@@ -124,30 +101,42 @@ static char const* const messageText[] =
 	"PREPARED",
 	"ABORTED",
 	"STATUS",
-	"HEARTBEAT"
+	"HEARTBEAT",
+	"POLL_REQUEST",
+	"POLL_STATUS"
 };
 
-static BackgroundWorker MtmSender = {
+static BackgroundWorker MtmSenderWorker = {
 	"mtm-sender",
 	BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION, 
 	BgWorkerStart_ConsistentState,
 	MULTIMASTER_BGW_RESTART_TIMEOUT,
-	MtmTransSender
+	MtmSender
 };
 
-static BackgroundWorker MtmRecevier = {
+static BackgroundWorker MtmRecevierWorker = {
 	"mtm-receiver",
 	BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION, 
 	BgWorkerStart_ConsistentState,
 	MULTIMASTER_BGW_RESTART_TIMEOUT,
-	MtmTransReceiver
+	MtmReceiver
 };
+
+static BackgroundWorker MtmMonitorWorker = {
+	"mtm-monitor",
+	BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION, 
+	BgWorkerStart_ConsistentState,
+	MULTIMASTER_BGW_RESTART_TIMEOUT,
+	MtmMonitor
+};
+
 
 void MtmArbiterInitialize(void)
 {
 	elog(LOG, "Register background workers");
-	RegisterBackgroundWorker(&MtmSender);
-	RegisterBackgroundWorker(&MtmRecevier);
+	RegisterBackgroundWorker(&MtmSenderWorker);
+	RegisterBackgroundWorker(&MtmRecevierWorker);
+	RegisterBackgroundWorker(&MtmMonitorWorker);
 }
 
 static int 
@@ -341,7 +330,7 @@ static void MtmScheduleHeartbeat()
 		enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 		send_heartbeat = true;
 	}
-	PGSemaphoreUnlock(&Mtm->votingSemaphore);
+	PGSemaphoreUnlock(&Mtm->sendSemaphore);
 }
 	
 static void MtmSendHeartbeat()
@@ -658,9 +647,9 @@ static void MtmAcceptIncomingConnections()
 }
 
 
-static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, MtmTransState* ts)
+static void MtmAppendBuffer(MtmBuffer* txBuffer, MtmArbiterMessage* msg)
 {
-	MtmBuffer* buf = &txBuffer[node];
+	MtmBuffer* buf = &txBuffer[msg->node-1];
 	if (buf->used == buf->size) {
 		if (buf->size == 0) { 
 			buf->size = INIT_BUFFER_SIZE;
@@ -670,36 +659,11 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, TransactionId xid, int node, Mt
 			buf->data = repalloc(buf->data, buf->size * sizeof(MtmArbiterMessage));
 		}
 	}
-	buf->data[buf->used].dxid = xid;
-
-	MTM_LOG3("Send %s message CSN=%ld to node %d from node %d for global transaction %d/local transaction %d", 
-			 messageText[ts->cmd], ts->csn, node+1, MtmNodeId, ts->gtid.xid, ts->xid);
-	Assert(ts->cmd != MSG_INVALID);
-	buf->data[buf->used].code = ts->cmd;
-	buf->data[buf->used].sxid = ts->xid;
-	buf->data[buf->used].csn  = ts->csn;
-	buf->data[buf->used].node = MtmNodeId;
-	buf->data[buf->used].disabledNodeMask = Mtm->disabledNodeMask;
-	buf->data[buf->used].oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
-	buf->used += 1;
+	msg->node = MtmNodeId;
+	buf->data[buf->used++] = *msg;
 }
 
-static void MtmBroadcastMessage(MtmBuffer* txBuffer, MtmTransState* ts)
-{
-	int i;
-	int n = 1;
-	for (i = 0; i < Mtm->nAllNodes; i++)
-	{
-		if (i+1 != MtmNodeId && !BIT_CHECK(Mtm->disabledNodeMask, i) && TransactionIdIsValid(ts->xids[i])) 
-		{ 
-			MtmAppendBuffer(txBuffer, ts->xids[i], i, ts);
-			n += 1;
-		}
-	}
-	Assert(n == Mtm->nLiveNodes);
-}
-
-static void MtmTransSender(Datum arg)
+static void MtmSender(Datum arg)
 {
 	sigset_t sset;
 	int nNodes = MtmMaxNodes;
@@ -728,8 +692,8 @@ static void MtmTransSender(Datum arg)
 	MtmOpenConnections();
 
 	while (!stop) {
-		MtmTransState* ts;		
-		PGSemaphoreLock(&Mtm->votingSemaphore);
+		MtmMessageQueue *curr, *next;		
+		PGSemaphoreLock(&Mtm->sendSemaphore);
 		CHECK_FOR_INTERRUPTS();
 
 		MtmCheckHeartbeat();
@@ -739,14 +703,13 @@ static void MtmTransSender(Datum arg)
 		 */
 		MtmLock(LW_SHARED); 
 
-		for (ts = Mtm->votingTransactions; ts != NULL; ts = ts->nextVoting) {
-			if (MtmIsCoordinator(ts)) {
-				MtmBroadcastMessage(txBuffer, ts);
-			} else {
-				MtmAppendBuffer(txBuffer, ts->gtid.xid, ts->gtid.node-1, ts);
-			}
+		for (curr = Mtm->sendQueue; curr != NULL; curr = next) {
+			next = curr->next;
+			MtmAppendBuffer(txBuffer, &curr->msg);
+			curr->next = Mtm->freeQueue;
+			Mtm->freeQueue = curr;
 		}
-		Mtm->votingTransactions = NULL;
+		Mtm->sendQueue = NULL;
 
 		MtmUnlock();
 
@@ -788,7 +751,32 @@ static bool MtmRecovery()
 }
 #endif
 
-static void MtmTransReceiver(Datum arg)
+static void MtmMonitor(Datum arg)
+{
+	sigset_t sset;
+
+	signal(SIGINT, SetStop);
+	signal(SIGQUIT, SetStop);
+	signal(SIGTERM, SetStop);
+	sigfillset(&sset);
+	sigprocmask(SIG_UNBLOCK, &sset, NULL);
+	
+	/* We're now ready to receive signals */
+	BackgroundWorkerUnblockSignals();
+
+	/* Connect to a database */
+	BackgroundWorkerInitializeConnection(MtmDatabaseName, NULL);
+
+	while (!stop) {
+		int rc = WaitLatch(&MyProc->procLatch, WL_TIMEOUT | WL_POSTMASTER_DEATH, MtmHeartbeatRecvTimeout);
+		if (rc & WL_POSTMASTER_DEATH) { 
+			break;
+		}
+		MtmRefreshClusterStatus(true, 0);
+	}
+}
+
+static void MtmReceiver(Datum arg)
 {
 	sigset_t sset;
 	int nNodes = MtmMaxNodes;
@@ -826,8 +814,6 @@ static void MtmTransReceiver(Datum arg)
 	}
 
 	while (!stop) {
-		timestamp_t startPolling = MtmGetSystemTime();
-		timestamp_t stopPolling;
 #if USE_EPOLL
         n = epoll_wait(epollfd, events, nNodes, MtmHeartbeatRecvTimeout);
 		if (n < 0) { 
@@ -836,8 +822,6 @@ static void MtmTransReceiver(Datum arg)
 			}
 			elog(ERROR, "Arbiter failed to poll sockets: %d", errno);
 		}
-		stopPolling = MtmGetSystemTime();
-
 		for (j = 0; j < n; j++) {
 			i = events[j].data.u32;
 			if (events[j].events & EPOLLERR) {
@@ -862,8 +846,6 @@ static void MtmTransReceiver(Datum arg)
 		if (n < 0) {
 			elog(ERROR, "Arbiter failed to select sockets: %d", errno);
 		}
-		stopPolling = MtmGetSystemTime();
-
 		for (i = 0; i < nNodes; i++) { 
 			if (sockets[i] >= 0 && FD_ISSET(sockets[i], &events)) 
 #endif
@@ -887,23 +869,85 @@ static void MtmTransReceiver(Datum arg)
 				for (j = 0; j < nResponses; j++) { 
 					MtmArbiterMessage* msg = &rxBuffer[i].data[j];
 					MtmTransState* ts;
+					MtmTransMap* tm;
+					int node = msg->node;
 
-					Assert(msg->node > 0 && msg->node <= nNodes && msg->node != MtmNodeId);
-					Mtm->nodes[msg->node-1].oldestSnapshot = msg->oldestSnapshot;
-					Mtm->nodes[msg->node-1].lastHeartbeat = MtmGetSystemTime();
+					Assert(node > 0 && node <= nNodes && node != MtmNodeId);
+					Mtm->nodes[node-1].oldestSnapshot = msg->oldestSnapshot;
+					Mtm->nodes[node-1].lastHeartbeat = MtmGetSystemTime();
 
-					if (msg->code == MSG_HEARTBEAT) {
+					switch (msg->code) {
+					  case MSG_HEARTBEAT:
 						MTM_LOG2("Receive HEARTBEAT from node %d with timestamp %ld delay %ld", 
-								 msg->node, msg->csn, USEC_TO_MSEC(MtmGetSystemTime() - msg->csn)); 
+								 node, msg->csn, USEC_TO_MSEC(MtmGetSystemTime() - msg->csn)); 
 						continue;
+					  case MSG_POLL_REQUEST:
+						Assert(*msg->gid);
+						tm = (MtmTransMap*)hash_search(MtmGid2State, msg->gid, HASH_FIND, NULL);
+						if (tm == NULL || tm->state == NULL) { 
+							elog(WARNING, "Request for unexisted transaction %s from node %d", msg->gid, node);
+							msg->status = TRANSACTION_STATUS_ABORTED;
+						} else {
+							msg->status = tm->state->status;
+							MTM_LOG1("Send response %d for transaction %s to node %d", msg->status, msg->gid, msg->node);
+						}
+						msg->code = MSG_POLL_STATUS;
+						MtmSendMessage(msg);
+						continue;
+					  case MSG_POLL_STATUS:
+						Assert(*msg->gid);
+						tm = (MtmTransMap*)hash_search(MtmGid2State, msg->gid, HASH_FIND, NULL);
+						if (tm == NULL || tm->state == NULL) { 
+							elog(WARNING, "Response for unexisted transaction %s from node %d", msg->gid, node);
+						} else {
+							ts = tm->state;
+							BIT_SET(ts->votedMask, node-1);
+							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
+								if (msg->status == TRANSACTION_STATUS_UNKNOWN || msg->status == TRANSACTION_STATUS_COMMITTED) {
+									elog(LOG, "Commit transaction %s because it is in state %d at node %d",
+										 msg->gid, ts->status, node);
+									Assert(!IsTransactionState());
+									StartTransactionCommand();
+									MtmSetCurrentTransactionGID(ts->gid);
+									ts->status = TRANSACTION_STATUS_UNKNOWN;
+									FinishPreparedTransaction(ts->gid, true);
+									CommitTransactionCommand();
+									Assert(ts->status == TRANSACTION_STATUS_COMMITTED);
+								} else if (msg->status == TRANSACTION_STATUS_ABORTED 
+										   || ((ts->participantsMask & ~Mtm->disabledNodeMask) & ~ts->votedMask) == 0) 
+								{ 
+									if (msg->status == TRANSACTION_STATUS_ABORTED) { 
+										elog(LOG, "Abort transaction %s because it is aborted at node %d", msg->gid, node);
+									} else {
+										elog(LOG, "Abort transaction %s because it is not prepared at any online node", msg->gid);
+									}
+									Assert(!IsTransactionState());
+									StartTransactionCommand();
+									MtmSetCurrentTransactionGID(ts->gid);
+									FinishPreparedTransaction(ts->gid, false);
+									CommitTransactionCommand();
+									Assert(ts->status == TRANSACTION_STATUS_ABORTED);
+								} else {
+									elog(LOG, "Receive response %d for transaction %s for node %d, votedMask=%lx, participantsMask=%lx", msg->status, msg->gid, node, ts->votedMask, ts->participantsMask & ~Mtm->disabledNodeMask);
+									continue;
+								}
+							} else if (ts->status == TRANSACTION_STATUS_ABORTED && msg->status == TRANSACTION_STATUS_COMMITTED) {
+								elog(WARNING, "Transaction %s is aborted at node %d but committed at node %d", msg->gid, MtmNodeId, node);
+							} else if (msg->status == TRANSACTION_STATUS_ABORTED && ts->status == TRANSACTION_STATUS_COMMITTED) {
+								elog(WARNING, "Transaction %s is committed at node %d but aborted at node %d", msg->gid, MtmNodeId, node);
+							}
+						}
+						continue;
+					  default:
+						break;
 					}
-					if (BIT_CHECK(msg->disabledNodeMask, msg->node-1)) {
-						elog(WARNING, "Ignore message from dead node %d\n", msg->node);
+					if (BIT_CHECK(msg->disabledNodeMask, node-1)) {
+						elog(WARNING, "Ignore message from dead node %d\n", node);
 						continue;
 					}
 					ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);
 					if (ts == NULL) { 
-						elog(WARNING, "Ignore response for unexisted transaction %d from node %d", msg->dxid, msg->node);
+						elog(WARNING, "Ignore response for unexisted transaction %d from node %d", msg->dxid, node);
 						continue;
 					}
 					MtmCheckResponse(msg);
@@ -914,23 +958,23 @@ static void MtmTransReceiver(Datum arg)
 							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_READY");
 							if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
 								elog(WARNING, "Receive READY response for already committed transaction %d from node %d",
-									 ts->xid, msg->node);
+									 ts->xid, node);
 								continue;
 							}
 							if (ts->nVotes >= Mtm->nLiveNodes) {
 								elog(WARNING, "Receive deteriorated READY response for transaction %d (%s) from node %d",
-									 ts->xid, ts->gid, msg->node);
+									 ts->xid, ts->gid, node);
 								MtmAbortTransaction(ts);
 								MtmWakeUpBackend(ts);
 							} else { 
-								Mtm->nodes[msg->node-1].transDelay += MtmGetCurrentTime() - ts->csn;
-								ts->xids[msg->node-1] = msg->sxid;
+								Mtm->nodes[node-1].transDelay += MtmGetCurrentTime() - ts->csn;
+								ts->xids[node-1] = msg->sxid;
 								
 								if ((~msg->disabledNodeMask & Mtm->disabledNodeMask) != 0) { 
 									/* Coordinator's disabled mask is wider than of this node: so reject such transaction to avoid 
 									   commit on smaller subset of nodes */
 									elog(WARNING, "Coordinator of distributed transaction see less nodes than node %d: %lx instead of %lx",
-										 msg->node, (long) Mtm->disabledNodeMask, (long) msg->disabledNodeMask);
+										 node, (long) Mtm->disabledNodeMask, (long) msg->disabledNodeMask);
 									MtmAbortTransaction(ts);
 								}
 								
@@ -942,7 +986,7 @@ static void MtmTransReceiver(Datum arg)
 										Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 										ts->nVotes = 1; /* I voted myself */
 										MTM_TXTRACE(ts, "MtmTransReceiver send MSG_PREPARE");
-										MtmSendNotificationMessage(ts, MSG_PREPARE);									  
+										MtmSend2PCMessage(ts, MSG_PREPARE);									  
 									} else { 
 										Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 										ts->status = TRANSACTION_STATUS_UNKNOWN;
@@ -954,7 +998,7 @@ static void MtmTransReceiver(Datum arg)
 						  case MSG_ABORTED:
 							if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
 								elog(WARNING, "Receive ABORTED response for already committed transaction %d from node %d",
-									 ts->xid, msg->node);
+									 ts->xid, node);
 								continue;
 							}
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
@@ -969,7 +1013,7 @@ static void MtmTransReceiver(Datum arg)
 							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_PREPARED");
 							if (ts->nVotes >= Mtm->nLiveNodes) {					
 								elog(WARNING, "Receive deteriorated PREPARED response for transaction %d (%s) from node %d",
-									 ts->xid, ts->gid, msg->node);
+									 ts->xid, ts->gid, node);
 								MtmAbortTransaction(ts);
 								MtmWakeUpBackend(ts);
 							} else { 
@@ -1001,10 +1045,10 @@ static void MtmTransReceiver(Datum arg)
 								ts->status = TRANSACTION_STATUS_UNKNOWN;
 								ts->csn = MtmAssignCSN();
 								MtmAdjustSubtransactions(ts);
-								MtmSendNotificationMessage(ts, MSG_PREPARED);
+								MtmSend2PCMessage(ts, MSG_PREPARED);
 							} else {
 								Assert(ts->status == TRANSACTION_STATUS_ABORTED);
-								MtmSendNotificationMessage(ts, MSG_ABORTED);
+								MtmSend2PCMessage(ts, MSG_ABORTED);
 							}
 							break;
 						  default:
@@ -1023,13 +1067,12 @@ static void MtmTransReceiver(Datum arg)
 		if (Mtm->status == MTM_ONLINE) { 
 			now = MtmGetSystemTime();
 			if (now > lastHeartbeatCheck + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) { 
-				if (!MtmWatchdog(stopPolling)) { 
+				if (!MtmWatchdog(now)) { 
 					for (i = 0; i < nNodes; i++) { 
 						if (Mtm->nodes[i].lastHeartbeat != 0 && sockets[i] >= 0) {
 							MTM_LOG1("Last hearbeat from node %d received %ld microseconds ago", i+1, now - Mtm->nodes[i].lastHeartbeat);
 						}
 					}
-					MTM_LOG2("epoll started %ld and finished %ld microseconds ago", now - startPolling, now - stopPolling);
 				}
 				lastHeartbeatCheck = now;
 			}

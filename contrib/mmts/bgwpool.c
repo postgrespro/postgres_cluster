@@ -10,6 +10,8 @@
 
 #include "bgwpool.h"
 
+bool MtmIsLogicalReceiver;
+
 typedef struct
 {
     BgwPoolConstructor constructor;
@@ -23,6 +25,8 @@ static void BgwPoolMainLoop(Datum arg)
     BgwPool* pool = ctx->constructor();
     int size;
     void* work;
+
+	MtmIsLogicalReceiver = true;
 
     BackgroundWorkerUnblockSignals();
 	BackgroundWorkerInitializeConnection(pool->dbname, pool->dbuser);
