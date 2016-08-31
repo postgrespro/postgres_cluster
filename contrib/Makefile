@@ -57,6 +57,7 @@ SUBDIRS = \
 		hunspell_ru_ru	\
 		pg_variables	\
 		jsquery		\
+		sr_plan		\
 		shared_ispell
 
 ifeq ($(with_openssl),yes)
