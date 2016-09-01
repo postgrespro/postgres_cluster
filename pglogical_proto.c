@@ -155,6 +155,8 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 	else
     	Assert(false);
 
+	Assert(flags != PGLOGICAL_COMMIT_PREPARED || txn->xid < 1000 || MtmTransactionRecords != 1);
+
 	if (flags == PGLOGICAL_COMMIT || flags == PGLOGICAL_PREPARE) { 
 		if (MtmIsFilteredTxn) { 
 			Assert(MtmTransactionRecords == 0);
@@ -164,8 +166,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 		csn_t csn = MtmTransactionSnapshot(txn->xid);
 		bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
 
-
-		if (!isRecovery && txn->origin_id != InvalidRepOriginId) 
+		if (!isRecovery && csn == INVALID_CSN && (flags != PGLOGICAL_ABORT_PREPARED || txn->origin_id != InvalidRepOriginId))
 		{
 			if (flags == PGLOGICAL_ABORT_PREPARED) { 
 				MTM_LOG1("Skip ABORT_PREPARED for transaction %s to node %d", txn->gid, MtmReplicationNodeId);
@@ -182,6 +183,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 			flags |= PGLOGICAL_CAUGHT_UP;
 		}
 	}
+
     pq_sendbyte(out, 'C');		/* sending COMMIT */
 
 	MTM_LOG2("PGLOGICAL_SEND commit: event=%d, gid=%s, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", flags, txn->gid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());

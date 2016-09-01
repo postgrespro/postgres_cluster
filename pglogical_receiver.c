@@ -250,6 +250,7 @@ pglogical_receiver_main(Datum main_arg)
 		int  count;
 		ConnStatusType status;
 		XLogRecPtr originStartPos = InvalidXLogRecPtr;
+		int timeline;
 
 		/* 
 		 * Determine when and how we should open replication slot.
@@ -261,6 +262,7 @@ pglogical_receiver_main(Datum main_arg)
 		{ 
 			break;
 		}
+		timeline = Mtm->nodes[nodeId-1].timeline;
 		count = Mtm->recoveryCount;
 		
 		/* Establish connection to remote server */
@@ -274,14 +276,13 @@ pglogical_receiver_main(Datum main_arg)
 		}
 		
 		query = createPQExpBuffer();
-#if 0 /* Do we need to recreate slot ? */		
-		if (mode == REPLMODE_RECOVERED) { /* recreate slot */
+		if (mode == REPLMODE_NORMAL && timeline != Mtm->nodes[nodeId-1].timeline) { /* recreate slot */
 			appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", slotName);
 			res = PQexec(conn, query->data);
 			PQclear(res);
 			resetPQExpBuffer(query);
+			timeline = Mtm->nodes[nodeId-1].timeline;
 		}
-#endif
 		/* My original assumption was that we can perfrom recovery only fromm existed slot, 
 		 * but unfortunately looks like slots can "disapear" together with WAL-sender.
 		 * So let's try to recreate slot always. */

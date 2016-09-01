@@ -362,7 +362,7 @@ static void MtmSendHeartbeat()
 					MTM_LOG2("Send heartbeat to node %d with timestamp %ld", i+1, now);    
 				}
 			} else { 
-				MTM_LOG1("Do not send hearbeat to node %d, busy mask %ld, status %d", i+1, busy_mask, Mtm->status);
+				MTM_LOG1("Do not send heartbeat to node %d, busy mask %ld, status %d", i+1, busy_mask, Mtm->status);
 			}
 		}
 	}
@@ -484,6 +484,8 @@ static int MtmConnectSocket(int node, int port, int timeout)
 	MtmCheckResponse(&resp);
 	MtmUnlock();
 
+	MtmOnNodeConnect(node+1);
+
 	busy_mask = save_mask;
 
 	return sd;
@@ -539,7 +541,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 		}
 		if (sockets[node] < 0 || !MtmWriteSocket(sockets[node], buf, size)) { 
 			if (sockets[node] >= 0) { 
-				elog(WARNING, "Arbiter failed to write to node %d: %d", node+1, errno);
+				elog(WARNING, "Arbiter fail to write to node %d: %d", node+1, errno);
 				close(sockets[node]);
 				sockets[node] = -1;
 			}
@@ -549,7 +551,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 				result = false;
 				break;
 			}
-			MTM_LOG3("Arbiter restablished connection with node %d", node+1);
+			MTM_LOG3("Arbiter reestablish connection with node %d", node+1);
 		} else { 
 			result = true;
 			break;
@@ -1075,7 +1077,7 @@ static void MtmReceiver(Datum arg)
 				if (!MtmWatchdog(now)) { 
 					for (i = 0; i < nNodes; i++) { 
 						if (Mtm->nodes[i].lastHeartbeat != 0 && sockets[i] >= 0) {
-							MTM_LOG1("Last hearbeat from node %d received %ld microseconds ago", i+1, now - Mtm->nodes[i].lastHeartbeat);
+							MTM_LOG1("Last heartbeat from node %d received %ld microseconds ago", i+1, now - Mtm->nodes[i].lastHeartbeat);
 						}
 					}
 				}
