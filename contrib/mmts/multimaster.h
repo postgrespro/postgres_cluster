@@ -184,6 +184,7 @@ typedef struct
 	csn_t       oldestSnapshot; /* Oldest snapshot used by active transactions at this node */	
 	XLogRecPtr  restartLsn;
 	RepOriginId originId;
+	int         timeline;
 } MtmNodeInfo;
 
 typedef struct MtmTransState

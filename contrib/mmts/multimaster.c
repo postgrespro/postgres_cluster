@@ -451,7 +451,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 	for (i = 0; i < MAX_WAIT_LOOPS; i++)
     {
         MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-        if (ts != NULL/* && ts->status != TRANSACTION_STATUS_IN_PROGRESS*/)
+        if (ts != NULL /*&& ts->status != TRANSACTION_STATUS_IN_PROGRESS*/)
         {
             if (ts->csn > MtmTx.snapshot) { 
                 MTM_LOG4("%d: tuple with xid=%d(csn=%ld) is invisibile in snapshot %ld",
@@ -1243,13 +1243,17 @@ void MtmAbortTransaction(MtmTransState* ts)
 {	
 	Assert(MtmLockCount != 0); /* should be invoked with exclsuive lock */
 	if (ts->status != TRANSACTION_STATUS_ABORTED) { 
-		MTM_LOG1("Rollback active transaction %d:%d (local xid %d)", ts->gtid.node, ts->gtid.xid, ts->xid);
-		ts->status = TRANSACTION_STATUS_ABORTED;
-		MtmAdjustSubtransactions(ts);
-		if (ts->isActive) {
-			ts->isActive = false;
-			Assert(Mtm->nActiveTransactions != 0);
-			Mtm->nActiveTransactions -= 1;
+		if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
+			elog(WARNING, "Attempt to rollback already committed transaction %d (%s)", ts->xid, ts->gid);
+		} else { 
+			MTM_LOG1("Rollback active transaction %d:%d (local xid %d) status %d", ts->gtid.node, ts->gtid.xid, ts->xid, ts->status);
+			ts->status = TRANSACTION_STATUS_ABORTED;
+			MtmAdjustSubtransactions(ts);
+			if (ts->isActive) {
+				ts->isActive = false;
+				Assert(Mtm->nActiveTransactions != 0);
+				Mtm->nActiveTransactions -= 1;
+			}
 		}
 	}
 }
@@ -1321,6 +1325,7 @@ static void MtmDisableNode(int nodeId)
 	elog(WARNING, "Disable node %d at xlog position %lx, last status change time %d msec ago", nodeId, GetXLogInsertRecPtr(), 
 		 (int)USEC_TO_MSEC(now - Mtm->nodes[nodeId-1].lastStatusChangeTime));
 	BIT_SET(Mtm->disabledNodeMask, nodeId-1);
+	Mtm->nodes[nodeId-1].timeline += 1;
 	Mtm->nodes[nodeId-1].lastStatusChangeTime = now;
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 	if (nodeId != MtmNodeId) { 
@@ -1344,8 +1349,8 @@ static void MtmEnableNode(int nodeId)
 void MtmRecoveryCompleted(void)
 {
 	int i;
-	MTM_LOG1("Recovery of node %d is completed, disabled mask=%lx, reconnect mask=%lx, live nodes=%d", 
-			 MtmNodeId, Mtm->disabledNodeMask, Mtm->reconnectMask, Mtm->nLiveNodes);
+	MTM_LOG1("Recovery of node %d is completed, disabled mask=%lx, connectivity mask=%lx, live nodes=%d", 
+			 MtmNodeId, Mtm->disabledNodeMask, Mtm->connectivityMask, Mtm->nLiveNodes);
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
 	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
@@ -1903,6 +1908,7 @@ static void MtmInitialize()
 			Mtm->nodes[i].lastHeartbeat = 0;
 			Mtm->nodes[i].restartLsn = 0;
 			Mtm->nodes[i].originId = InvalidRepOriginId;
+			Mtm->nodes[i].timeline = 0;
 		}
 		PGSemaphoreCreate(&Mtm->sendSemaphore);
 		PGSemaphoreReset(&Mtm->sendSemaphore);
