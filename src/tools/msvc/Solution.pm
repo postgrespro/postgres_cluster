@@ -19,6 +19,7 @@ sub _new
 		options                    => $options,
 		numver                     => '',
 		strver                     => '',
+		pgprover                   => '',
 		VisualStudioVersion        => undef,
 		MinimumVisualStudioVersion => undef,
 		vcver                      => undef,
@@ -131,17 +132,20 @@ sub GenerateFiles
 		if (/^AC_INIT\(\[PostgreSQL\], \[([^\]]+)\]/)
 		{
 			$self->{strver} = $1;
-			if ($self->{strver} !~ /^(\d+)\.(\d+)(?:\.(\d+))?/)
+			if ($self->{strver} !~ /^(\d+)\.(\d+)(?:\.(\d+))*/)
 			{
 				confess "Bad format of version: $self->{strver}\n";
 			}
 			$self->{numver} = sprintf("%d%02d%02d", $1, $2, $3 ? $3 : 0);
 			$self->{majorver} = sprintf("%d.%d", $1, $2);
 		}
+		if ( /^PGPRO_VERSION="\$PACKAGE_VERSION\.(\d+)"/) {
+			$self->{pgprover} = $1;
+		}
 	}
 	close(C);
 	confess "Unable to parse configure.in for all variables!"
-	  if ($self->{strver} eq '' || $self->{numver} eq '');
+	  if ($self->{strver} eq '' || $self->{numver} eq '' || $self->{pgprover} eq '');
 
 	if (IsNewer("src/include/pg_config_os.h", "src/include/port/win32.h"))
 	{
@@ -162,7 +166,10 @@ sub GenerateFiles
 		{
 			s{PG_VERSION "[^"]+"}{PG_VERSION "$self->{strver}$extraver"};
 			s{PG_VERSION_NUM \d+}{PG_VERSION_NUM $self->{numver}};
-s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY(z)\n#define PG_VERSION_STR "PostgreSQL $self->{strver}$extraver, compiled by Visual C++ build " __STRINGIFY2(_MSC_VER) ", $bits-bit"};
+			s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY(z)\n#define PG_VERSION_STR "PostgreSQL $self->{strver}$extraver, compiled by Visual C++ build " __STRINGIFY2(_MSC_VER) ", $bits-bit"};
+			s{PGPRO_PACKAGE_VERSION "[^"]+"}{PGRPO_PACKAGE_VERSION "$self->{strver}.$self->{pgprover}"};
+			s{PGPRO_PACKAGE_STR "[^"]+"}{PGPRO_PACKAGE_STR "PostgresPro $self->{strver}.$self->{pgprover}"};
+			s{#define PGPRO_VERSION_STR "[^"]+"}{#define PGPRO_VERSION_STR PGPRO_PACKAGE_STR " compiled by Visual C++ build" __STRINGIFY2(_MSC_VER) ", $bits-bit"};
 			print O;
 		}
 		print O "#define PG_MAJORVERSION \"$self->{majorver}\"\n";
@@ -243,6 +250,10 @@ s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY
 			print O "#define HAVE_WIN32_LIBEDIT\n";
 			print O "#define HAVE_RL_FILENAME_COMPLETION_FUNCTION\n";
 			print O "#define HAVE_RL_COMPLETION_MATCHES\n";
+		}
+		if ($self->{options}->{icu}) 
+		{
+			print O "#define USE_ICU\n";
 		}
 		print O "#define VAL_CONFIGURE \""
 		  . $self->GetFakeConfigure() . "\"\n";
@@ -571,6 +582,14 @@ sub AddProject
 		$proj->AddLibrary($self->{options}->{libedit} . "\\" .
 			($self->{platform} eq 'x64'? 'lib64': 'lib32').'\edit.lib');
 	}
+	if ($self->{options}->{icu})
+	{
+		my $libdir = $self->{options}->{icu}.'\lib';
+		$libdir .= '\lib64' if $self->{platform} eq 'x64' and -d $libdir.'\lib64';
+		$proj->AddIncludeDir($self->{options}->{icu} . '\include');
+		$proj->AddLibrary($libdir.'\icuin.lib');
+		$proj->AddLibrary($libdir.'\icuuc.lib');
+	}	
 	return $proj;
 }
 
@@ -682,7 +701,7 @@ sub GetFakeConfigure
 	$cfg .= ' --with-tcl'           if ($self->{options}->{tcl});
 	$cfg .= ' --with-perl'          if ($self->{options}->{perl});
 	$cfg .= ' --with-python'        if ($self->{options}->{python});
-
+	$cfg .=' --with-icu'			if ($self->{options}->{icu});
 	return $cfg;
 }
 
