@@ -251,6 +251,7 @@ pglogical_receiver_main(Datum main_arg)
 		ConnStatusType status;
 		XLogRecPtr originStartPos = InvalidXLogRecPtr;
 		int timeline;
+		bool newTimeline = false;
 
 		/* 
 		 * Determine when and how we should open replication slot.
@@ -282,6 +283,7 @@ pglogical_receiver_main(Datum main_arg)
 			PQclear(res);
 			resetPQExpBuffer(query);
 			timeline = Mtm->nodes[nodeId-1].timeline;
+			newTimeline = true;
 		}
 		/* My original assumption was that we can perfrom recovery only fromm existed slot, 
 		 * but unfortunately looks like slots can "disapear" together with WAL-sender.
@@ -311,7 +313,7 @@ pglogical_receiver_main(Datum main_arg)
 			originStartPos = Mtm->nodes[nodeId-1].restartLsn;
 			MTM_LOG1("Restart replication from node %d from position %lx", nodeId, originStartPos);
 		} 
-		if (originStartPos == InvalidXLogRecPtr) { 
+		if (originStartPos == InvalidXLogRecPtr && !newTimeline) { 
 			StartTransactionCommand();
 			originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
 			originId = replorigin_by_name(originName, true);
