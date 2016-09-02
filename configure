@@ -580,11 +580,11 @@ MFLAGS=
 MAKEFLAGS=
 
 # Identity of this package.
-PACKAGE_NAME='PostgreSQL'
-PACKAGE_TARNAME='postgresql'
+PACKAGE_NAME='PostgresPro'
+PACKAGE_TARNAME='postgrespro'
 PACKAGE_VERSION='9.6.beta.4'
-PACKAGE_STRING='PostgreSQL 9.6.beta.4'
-PACKAGE_BUGREPORT='pgsql-bugs@postgresql.org'
+PACKAGE_STRING='PostgresPro 9.6.beta.4'
+PACKAGE_BUGREPORT='bugs@postgrespro.ru'
 PACKAGE_URL=''
 
 ac_unique_file="src/backend/access/common/heaptuple.c"
