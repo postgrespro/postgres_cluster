@@ -17,7 +17,8 @@ dnl Read the Autoconf manual for details.
 dnl
 m4_pattern_forbid(^PGAC_)dnl to catch undefined macros
 
-AC_INIT([PostgreSQL], [9.6rc1], [pgsql-bugs@postgresql.org])
+AC_INIT([PostgreSQL], [9.6rc1], [bugs@postgrespro.ru],[postgrespro])
+PACKAGE_TARNAME=postgrespro
 
 m4_if(m4_defn([m4_PACKAGE_VERSION]), [2.69], [], [m4_fatal([Autoconf version 2.69 is required.
 Untested combinations of 'autoconf' and PostgreSQL versions are not
@@ -2233,6 +2234,9 @@ AC_DEFINE_UNQUOTED(PG_VERSION_STR,
                    ["PostgreSQL $PG_VERSION on $host, compiled by $cc_string, `expr $ac_cv_sizeof_void_p \* 8`-bit"],
                    [A string containing the version number, platform, and C compiler])
 
+AC_DEFINE_UNQUOTED(PGPRO_VERSION_STR,
+                   ["PostgresPro $PGPRO_VERSION on $host, compiled by $cc_string, `expr $ac_cv_sizeof_void_p \* 8`-bit"],
+                   [A string containing the version number, platform, and C compiler])
 # Supply a numeric version string for use by 3rd party add-ons
 # awk -F is a regex on some platforms, and not on others, so make "." a tab
 [PG_VERSION_NUM="`echo "$PACKAGE_VERSION" | sed 's/[A-Za-z].*$//' |
@@ -2267,6 +2271,7 @@ else
 fi
 AC_SUBST(vpath_build)
 
+AC_SUBST(PGPRO_VERSION)
 
 AC_CONFIG_FILES([GNUmakefile src/Makefile.global])
 
