@@ -234,6 +234,10 @@ s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY
 			print O "#define DEF_PGPORT $port\n";
 			print O "#define DEF_PGPORT_STR \"$port\"\n";
 		}
+		if ($self->{options}->{icu}) 
+		{
+			print O "#define USE_ICU\n";
+		}
 		print O "#define VAL_CONFIGURE \""
 		  . $self->GetFakeConfigure() . "\"\n";
 		print O "#endif /* IGNORE_CONFIGURED_SETTINGS */\n";
@@ -555,6 +559,14 @@ sub AddProject
 		$proj->AddIncludeDir($self->{options}->{xslt} . '\include');
 		$proj->AddLibrary($self->{options}->{xslt} . '\lib\libxslt.lib');
 	}
+	if ($self->{options}->{icu})
+	{
+		my $libdir = $self->{options}->{icu}.'\lib';
+		$libdir .= '\lib64' if $self->{platform} eq 'x64' and -d $libdir.'\lib64';
+		$proj->AddIncludeDir($self->{options}->{icu} . '\include');
+		$proj->AddLibrary($libdir.'\icuin.lib');
+		$proj->AddLibrary($libdir.'\icuuc.lib');
+	}	
 	return $proj;
 }
 
@@ -666,7 +678,7 @@ sub GetFakeConfigure
 	$cfg .= ' --with-tcl'           if ($self->{options}->{tcl});
 	$cfg .= ' --with-perl'          if ($self->{options}->{perl});
 	$cfg .= ' --with-python'        if ($self->{options}->{python});
-
+	$cfg .=' --with-icu'			if ($self->{options}->{icu});
 	return $cfg;
 }
 
