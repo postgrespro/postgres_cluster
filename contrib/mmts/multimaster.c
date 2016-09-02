@@ -210,6 +210,8 @@ bool  MtmUseRaftable;
 bool  MtmUseDtm;
 bool  MtmVolksWagenMode;
 
+TransactionId  MtmUtilityProcessedInXid;
+
 static char* MtmConnStrs;
 static int   MtmQueueSize;
 static int   MtmWorkers;
@@ -688,7 +690,12 @@ MtmXactCallback(XactEvent event, void *arg)
 static bool
 MtmIsUserTransaction()
 {
-	return !IsAutoVacuumLauncherProcess() && IsNormalProcessingMode() && MtmDoReplication && !am_walsender && !IsBackgroundWorker && !IsAutoVacuumWorkerProcess();
+	return !IsAutoVacuumLauncherProcess() &&
+		IsNormalProcessingMode() &&
+		MtmDoReplication &&
+		!am_walsender &&
+		!IsBackgroundWorker &&
+		!IsAutoVacuumWorkerProcess();
 }
 
 void 
@@ -699,7 +706,6 @@ MtmResetTransaction()
 	x->xid = InvalidTransactionId;
 	x->gtid.xid = InvalidTransactionId;
 	x->isDistributed = false;
-	x->isPrepared = false;
 	x->isPrepared = false;
 	x->status = TRANSACTION_STATUS_UNKNOWN;
 }
@@ -3335,20 +3341,20 @@ MtmGenerateGid(char* gid)
 
 static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 {
-	if (MyXactAccessedTempRel)
-	{
-		/*
-		 * XXX: this tx anyway goes to subscribers later, but without
-		 * surrounding begin/commit. Now it will be filtered out on receiver side.
-		 * Probably there is more clever way to do that.
-		 */
-		x->isDistributed = false;
-		if (!MtmVolksWagenMode)
-			elog(NOTICE, "MTM: Transaction was not replicated as it accesed temporary relation");
-		return false;
-	}
+	// if (MyXactAccessedTempRel)
+	// {
+	// 	/*
+	// 	 * XXX: this tx anyway goes to subscribers later, but without
+	// 	 * surrounding begin/commit. Now it will be filtered out on receiver side.
+	// 	 * Probably there is more clever way to do that.
+	// 	 */
+	// 	x->isDistributed = false;
+	// 	if (!MtmVolksWagenMode)
+	// 		elog(NOTICE, "MTM: Transaction was not replicated as it accesed temporary relation");
+	// 	return false;
+	// }
 
-	if (!x->isReplicated && (x->isDistributed && x->containsDML)) { 
+	if (!x->isReplicated && x->isDistributed && x->containsDML) {
 		MtmGenerateGid(x->gid);
 		if (!x->isTransactionBlock) { 
 			BeginTransactionBlock();
@@ -3358,7 +3364,8 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 		}
 		if (!PrepareTransactionBlock(x->gid))
 		{
-			elog(WARNING, "Failed to prepare transaction %s", x->gid);
+			if (!MtmVolksWagenMode)
+				elog(WARNING, "Failed to prepare transaction %s", x->gid);
 			/* ??? Should we do explicit rollback */
 		} else { 	
 			CommitTransactionCommand();
@@ -3551,6 +3558,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				switch (stmt->kind)
 				{					
 				case TRANS_STMT_BEGIN:
+				case TRANS_STMT_START:
   				    MtmTx.isTransactionBlock = true;
 				    break;
 				case TRANS_STMT_COMMIT:
@@ -3587,14 +3595,32 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_LoadStmt:
 		case T_ClusterStmt:
 		case T_VacuumStmt:
-		case T_ExplainStmt:
 		case T_VariableShowStmt:
 		case T_ReassignOwnedStmt:
 		case T_LockStmt:
 		case T_CheckPointStmt:
 		case T_ReindexStmt:
-		case T_RefreshMatViewStmt:
 			skipCommand = true;
+			break;
+
+		case T_ExplainStmt:
+			/*
+			 * EXPLAIN ANALYZE can create side-effects.
+			 * Better to catch that by some general mechanism of detecting
+			 * catalog and heap writes.
+			 */
+			{
+				ExplainStmt *stmt = (ExplainStmt *) parsetree;
+				ListCell   *lc;
+
+				skipCommand = true;
+				foreach(lc, stmt->options)
+				{
+					DefElem    *opt = (DefElem *) lfirst(lc);
+					if (strcmp(opt->defname, "analyze") == 0)
+						skipCommand = false;
+				}
+			}
 			break;
 
 		/* Save GUC context for consequent DDL execution */
@@ -3657,12 +3683,15 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			break;
 	}
 
-	if (context == PROCESS_UTILITY_TOPLEVEL) // || context == PROCESS_UTILITY_QUERY)
+	/* XXX: dirty. Clear on new tx */
+	if (!skipCommand && (context == PROCESS_UTILITY_TOPLEVEL || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
+		MtmUtilityProcessedInXid = InvalidTransactionId;
+
+	if (context == PROCESS_UTILITY_TOPLEVEL || context == PROCESS_UTILITY_QUERY)
 	{
-		if (!skipCommand && !MtmTx.isReplicated) {
-			if (MtmProcessDDLCommand(queryString)) {
-				return;
-			}
+		if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {
+			MtmUtilityProcessedInXid = GetCurrentTransactionId();
+			MtmProcessDDLCommand(queryString);
 		}
 	}
 
@@ -3676,12 +3705,22 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		standard_ProcessUtility(parsetree, queryString, context,
 								params, dest, completionTag);
 	}
+
+	if (MyXactAccessedTempRel)
+	{
+		MTM_LOG1("Xact accessed temp table, stopping replication");
+		MtmTx.isDistributed = false; /* Skip */
+	}
+
 }
 
 
 static void
 MtmExecutorFinish(QueryDesc *queryDesc)
 {
+	/*
+	 * If tx didn't wrote to XLOG then there is nothing to commit on other nodes.
+	 */
     if (MtmDoReplication) { 
         CmdType operation = queryDesc->operation;
         EState *estate = queryDesc->estate;
@@ -3699,12 +3738,20 @@ MtmExecutorFinish(QueryDesc *queryDesc)
 							continue;
 						}
 					}
+					MTM_LOG1("MtmTx.containsDML = true // WAL");
 					MtmTx.containsDML = true;
 					break;
 				}
 			}
         }
     }
+
+	// if (MyXactAccessedRel)
+	// {
+	// 	MTM_LOG1("MtmTx.containsDML = true");
+	// 	MtmTx.containsDML = true;
+	// }
+
     if (PreviousExecutorFinishHook != NULL)
     {
         PreviousExecutorFinishHook(queryDesc);
