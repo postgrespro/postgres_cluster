@@ -686,9 +686,9 @@ process_remote_insert(StringInfo s, Relation rel)
 		ExecStoreTuple(tup, newslot, InvalidBuffer, true);
 	}
 
-	if (rel->rd_rel->relkind != RELKIND_RELATION)
-		elog(ERROR, "unexpected relkind '%c' rel \"%s\"",
-			 rel->rd_rel->relkind, RelationGetRelationName(rel));
+	// if (rel->rd_rel->relkind != RELKIND_RELATION) // RELKIND_MATVIEW
+	// 	elog(ERROR, "unexpected relkind '%c' rel \"%s\"",
+	// 		 rel->rd_rel->relkind, RelationGetRelationName(rel));
 
 	/* debug output */
 #ifdef VERBOSE_INSERT
@@ -978,7 +978,7 @@ void MtmExecutor(int id, void* work, size_t size)
     {    
         while (true) { 
             char action = pq_getmsgbyte(&s);
-            MTM_LOG2("%d: REMOTE process action %c", MyProcPid, action);
+            MTM_LOG1("%d: REMOTE process action %c", MyProcPid, action);
 #if 0
 			if (Mtm->status == MTM_RECOVERY) { 
 				MTM_LOG1("Replay action %c[%x]",   action, s.data[s.cursor]);
