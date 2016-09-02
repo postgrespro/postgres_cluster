@@ -247,6 +247,14 @@ sub GenerateFiles
 		{
 			print O "#define USE_ICU\n";
 		}
+		if ($self->{options}->{libedit})
+		{
+			print O "#define HAVE_EDITLINE_READLINE_H\n";
+			print O "#define HAVE_LIBREADLINE\n";
+			print O "#define HAVE_WIN32_LIBEDIT\n";
+			print O "#define HAVE_RL_FILENAME_COMPLETION_FUNCTION\n";
+			print O "#define HAVE_RL_COMPLETION_MATCHES\n";
+		}
 		print O "#define VAL_CONFIGURE \""
 		  . $self->GetFakeConfigure() . "\"\n";
 		print O "#endif /* IGNORE_CONFIGURED_SETTINGS */\n";
@@ -576,6 +584,12 @@ sub AddProject
 		$proj->AddLibrary($libdir.'\icuin.lib');
 		$proj->AddLibrary($libdir.'\icuuc.lib');
 	}	
+	if ($self->{options}->{libedit})
+	{
+		$proj->AddIncludeDir($self->{options}->{libedit} . '\include');
+		$proj->AddLibrary($self->{options}->{libedit} . "\\" .
+			($self->{platform} eq 'x64'? 'lib64': 'lib32').'\edit.lib');
+	}
 	return $proj;
 }
 
