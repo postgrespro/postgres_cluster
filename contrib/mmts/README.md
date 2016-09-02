@@ -32,13 +32,11 @@ other nodes. This is done by using 3 phase commit protocol and heartbeats for fa
 brought back to cluster can be fast-forwaded to actual state automatically in case when transactions log still
 exists since the time when node was excluded from cluster (this depends on checkpoint configuration in postgres).
 
-Read more about internals on [Architechture](/Architechture) page.
+Read more about internals on [architecture](/contrib/mmts/doc/architecture.md) page.
 
 
 
 ## Installation
-
-(Existing db?)
 
 Multi-master consist of patched version of postgres and extension mmts, that provides most of functionality, but
 doesn't requiere changes to postgres core. To run multimaster one need to install postgres and several extensions
@@ -48,13 +46,13 @@ to all nodes in cluster.
 
 Ensure that following prerequisites are installed: 
 
-debian based linux:
+for Debian based linux:
 
 ```sh
 apt-get install -y git make gcc libreadline-dev bison flex zlib1g-dev
 ```
 
-red hat based linux:
+for RedHat based linux:
 
 ```sh
 yum groupinstall 'Development Tools'
@@ -124,7 +122,7 @@ After things go more stable we will release prebuilt packages for major platform
 ```
 1. Allow replication in `pg_hba.conf`.
 
-(link to full doc on config params)
+Read description of all configuration params at [configuration](/contrib/mmts/doc/configuration.md)
 
 ## Management
 
@@ -135,8 +133,7 @@ After things go more stable we will release prebuilt packages for major platform
 * `mtm.get_cluster_info()` -- print some debug info
 * `mtm.make_table_local(relation regclass)` -- stop replication for a given table
 
-(link to full doc on functions)
-
+Read description of all management functions at [functions](/contrib/mmts/doc/functions.md)
 
 
 
@@ -160,6 +157,7 @@ To run tests:
 * `make -C contrib/mmts xcheck` to run blockade tests. The blockade tests require `docker`, `blockade`, and some other packages installed, see [requirements.txt](tests2/requirements.txt) for the list. You might also want to gain superuser privileges to run these tests successfully.
 
 
+
 ## Limitations
 
 * Commit latency.
@@ -181,10 +179,6 @@ but also increases probability of serialization failure during commit. _Serializ
 
 
 
-docs:
+## Credits and Licence
 
-## Architechture
-
-## Configuration params
-
-## Management functions
+Multi-master developed by the PostgresPro team.
