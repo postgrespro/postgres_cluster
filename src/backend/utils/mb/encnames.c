@@ -403,6 +403,118 @@ const pg_enc2gettext pg_enc2gettext_tbl[] =
 };
 
 
+#ifdef USE_ICU
+/*
+ * Try to map most internal character encodings to the proper and
+ * preferred IANA string. Use this in mbutils.c to feed ICU info about
+ * the database's character encoding.
+ *
+ * Palle Girgensohn, 2005
+ */
+
+pg_enc2name pg_enc2iananame_tbl[] =
+{
+	{
+		"US-ASCII", PG_SQL_ASCII
+	},
+	{
+		"EUC-JP", PG_EUC_JP
+	},
+	{
+		"GB2312", PG_EUC_CN
+	},
+	{
+		"EUC-KR", PG_EUC_KR
+	},
+	{
+		"ISO-2022-CN", PG_EUC_TW
+	},
+	{
+		"KS_C_5601-1987", PG_JOHAB  /* either KS_C_5601-1987 or ISO-2022-KR ??? */
+	},
+	{
+		"UTF-8", PG_UTF8
+	},
+	{
+		"MULE_INTERNAL", PG_MULE_INTERNAL  /* is not for real */
+	},
+	{
+		"ISO-8859-1", PG_LATIN1
+	},
+	{
+		"ISO-8859-2", PG_LATIN2
+	},
+	{
+		"ISO-8859-3", PG_LATIN3
+	},
+	{
+		"ISO-8859-4", PG_LATIN4
+	},
+	{
+		"ISO-8859-9", PG_LATIN5
+	},
+	{
+		"ISO-8859-10", PG_LATIN6
+	},
+	{
+		"ISO-8859-13", PG_LATIN7
+	},
+	{
+		"ISO-8859-14", PG_LATIN8
+	},
+	{
+		"ISO-8859-15", PG_LATIN9
+	},
+	{
+		"ISO-8859-16", PG_LATIN10
+	},
+	{
+		"windows-1256", PG_WIN1256
+	},
+	{
+		"windows-874", PG_WIN874
+	},
+	{
+		"KOI8-R", PG_KOI8R
+	},
+	{
+		"windows-1251", PG_WIN1251
+	},
+	{
+		"ISO-8859-5", PG_ISO_8859_5
+	},
+	{
+		"ISO-8859-6", PG_ISO_8859_6
+	},
+	{
+		"ISO-8859-7", PG_ISO_8859_7
+	},
+	{
+		"ISO-8859-8", PG_ISO_8859_8
+	},
+	{
+		"windows-1250", PG_WIN1250
+	},
+	{
+		"Shift_JIS", PG_SJIS
+	},
+	{
+		"Big5", PG_BIG5
+	},
+	{
+		"GBK", PG_GBK
+	},
+	{
+		"cp949", PG_UHC
+	},
+	{
+		"GB18030", PG_GB18030
+	}
+};
+#endif /* USE_ICU */
+
+
+
 /* ----------
  * Encoding checks, for error returns -1 else encoding id
  * ----------

@@ -288,6 +288,12 @@
 /* Define to 1 if you have the `crypto' library (-lcrypto). */
 #undef HAVE_LIBCRYPTO
 
+/* Define to 1 if you have the `icui18n' library (-licui18n). */
+#undef HAVE_LIBICUI18N
+
+/* Define to 1 if you have the `icuuc' library (-licuuc). */
+#undef HAVE_LIBICUUC
+
 /* Define to 1 if you have the `ldap' library (-lldap). */
 #undef HAVE_LIBLDAP
 
@@ -795,6 +801,9 @@
 
 /* Define to 1 to build with BSD Authentication support. (--with-bsd-auth) */
 #undef USE_BSD_AUTH
+
+/* Define to build with ICU support. (--with-icu) */
+#undef USE_ICU
 
 /* Define to 1 if you want float4 values to be passed by value.
    (--enable-float4-byval) */
