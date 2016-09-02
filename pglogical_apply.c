@@ -620,7 +620,7 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			csn = pq_getmsgint64(in); 
 			gid = pq_getmsgstring(in);
-			MTM_LOG1("PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s, lsn=%ld", csn, gid, end_lsn);
+			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s, lsn=%ld", csn, gid, end_lsn);
 			StartTransactionCommand();
 			MtmBeginSession();
 			MtmSetCurrentTransactionCSN(csn);
@@ -633,9 +633,9 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
-			MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s",  gid);
+			MTM_LOG2("PGLOGICAL_ABORT_PREPARED commit: gid=%s",  gid);
 			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED) == TRANSACTION_STATUS_UNKNOWN) { 
-				MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
+				MTM_LOG2("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
 				StartTransactionCommand();
 				MtmBeginSession();
 				MtmSetCurrentTransactionGID(gid);
@@ -978,7 +978,7 @@ void MtmExecutor(int id, void* work, size_t size)
     {    
         while (true) { 
             char action = pq_getmsgbyte(&s);
-            MTM_LOG1("%d: REMOTE process action %c", MyProcPid, action);
+            MTM_LOG3("%d: REMOTE process action %c", MyProcPid, action);
 #if 0
 			if (Mtm->status == MTM_RECOVERY) { 
 				MTM_LOG1("Replay action %c[%x]",   action, s.data[s.cursor]);
