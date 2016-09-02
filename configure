@@ -12,6 +12,7 @@
 # gives unlimited permission to copy, distribute and modify it.
 #
 # Copyright (c) 1996-2016, PostgreSQL Global Development Group
+# Copyright (c) 2015-2016, Postgres Professional
 ## -------------------- ##
 ## M4sh Initialization. ##
 ## -------------------- ##
@@ -580,11 +581,11 @@ MFLAGS=
 MAKEFLAGS=
 
 # Identity of this package.
-PACKAGE_NAME='PostgresPro'
-PACKAGE_TARNAME='postgrespro'
-PACKAGE_VERSION='9.6.rc.1'
-PACKAGE_STRING='PostgresPro 9.6.rc.1'
-PACKAGE_BUGREPORT='bugs@postgrespro.ru'
+PACKAGE_NAME='PostgreSQL'
+PACKAGE_TARNAME='postgresql'
+PACKAGE_VERSION='9.6rc1'
+PACKAGE_STRING='PostgreSQL 9.6rc1'
+PACKAGE_BUGREPORT='pgsql-bugs@postgresql.org'
 PACKAGE_URL=''
 
 ac_unique_file="src/backend/access/common/heaptuple.c"
@@ -754,6 +755,7 @@ build_os
 build_vendor
 build_cpu
 build
+PGPRO_PACKAGE_NAME
 PG_MAJORVERSION
 configure_args
 target_alias
@@ -1626,6 +1628,7 @@ This configure script is free software; the Free Software Foundation
 gives unlimited permission to copy, distribute and modify it.
 
 Copyright (c) 1996-2016, PostgreSQL Global Development Group
+Copyright (c) 2015-2016, Postgres Professional
 _ACEOF
   exit
 fi
@@ -2745,9 +2748,22 @@ else
 fi
 
 
+PGPRO_VERSION="$PACKAGE_VERSION.1"
+PGPRO_PACKAGE_NAME="PostgresPro"
+
 
 cat >>confdefs.h <<_ACEOF
 #define PG_VERSION "$PG_VERSION"
+_ACEOF
+
+
+cat >>confdefs.h <<_ACEOF
+#define PGPRO_PACKAGE_NAME "$PGPRO_PACKAGE_NAME"
+_ACEOF
+
+
+cat >>confdefs.h <<_ACEOF
+#define PGPRO_VERSION "$PGPRO_VERSION"
 _ACEOF
 
 
