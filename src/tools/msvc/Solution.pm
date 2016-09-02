@@ -168,6 +168,8 @@ s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY
 		print O "#define PG_MAJORVERSION \"$self->{majorver}\"\n";
 		print O "#define LOCALEDIR \"/share/locale\"\n"
 		  if ($self->{options}->{nls});
+		print O "#define LC_MESSAGES 6\n"
+			if ($self->{options}->{nls});
 		print O "/* defines added by config steps */\n";
 		print O "#ifndef IGNORE_CONFIGURED_SETTINGS\n";
 		print O "#define USE_ASSERT_CHECKING 1\n"
@@ -233,6 +235,14 @@ s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY
 			print O "#undef DEF_PGPORT_STR\n";
 			print O "#define DEF_PGPORT $port\n";
 			print O "#define DEF_PGPORT_STR \"$port\"\n";
+		}
+		if ($self->{options}->{libedit})
+		{
+			print O "#define HAVE_EDITLINE_READLINE_H\n";
+			print O "#define HAVE_LIBREADLINE\n";
+			print O "#define HAVE_WIN32_LIBEDIT\n";
+			print O "#define HAVE_RL_FILENAME_COMPLETION_FUNCTION\n";
+			print O "#define HAVE_RL_COMPLETION_MATCHES\n";
 		}
 		print O "#define VAL_CONFIGURE \""
 		  . $self->GetFakeConfigure() . "\"\n";
@@ -554,6 +564,12 @@ sub AddProject
 	{
 		$proj->AddIncludeDir($self->{options}->{xslt} . '\include');
 		$proj->AddLibrary($self->{options}->{xslt} . '\lib\libxslt.lib');
+	}
+	if ($self->{options}->{libedit})
+	{
+		$proj->AddIncludeDir($self->{options}->{libedit} . '\include');
+		$proj->AddLibrary($self->{options}->{libedit} . "\\" .
+			($self->{platform} eq 'x64'? 'lib64': 'lib32').'\edit.lib');
 	}
 	return $proj;
 }
