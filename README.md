@@ -6,32 +6,6 @@ disaster recovery.
 
 
 
-## Overview
-
-Multi-master replicates same database to all nodes in cluster and allows writes to each node. Transaction
-isolation is enforced cluster-wide, so in case of concurrent updates on different nodes database will use the
-same conflict resolution rules (mvcc with repeatable read isolation level) as single node uses for concurrent
-backends and always stays in consistent state. Any writing transaction will write to all nodes, hence increasing
-commit latency for amount of time proportional to roundtrip between nodes nedded for synchronization. Read only
-transactions and queries executed locally without measurable overhead. Replication mechanism itself based on
-logical decoding and earlier version of pglogical extension provided for community by 2ndQuadrant team.
-
-Several changes was made in postgres core to implement mentioned functionality:
-* Transaction manager API. (eXtensible Transaction Manager, xtm). Generic interface to plug distributed
-transaction engines.  More info on [postgres wiki](https://wiki.postgresql.org/wiki/DTM) and
-on [the email thread](http://www.postgresql.org/message-id/flat/F2766B97-555D-424F-B29F-E0CA0F6D1D74@postgrespro.ru).
-* Distributed deadlock detection API.
-* Logical decoding of transactions.
-
-Cluster consisting of N nodes can continue to work while majority of initial nodes are alive and reachable by
-other nodes. This is done by using 3 phase commit protocol and heartbeats for failure discovery. Node that is
-brought back to cluster can be fast-forwaded to actual state automatically in case when transactions log still
-exists since the time when node was excluded from cluster (this depends on checkpoint configuration in postgres).
-
-Read more about internals on [Architechture](/Architechture) page.
-
-
-
 ## Features
 
 * Cluster-wide transaction isolation
@@ -43,24 +17,22 @@ Read more about internals on [Architechture](/Architechture) page.
 
 
 
-## Limitations
+## Overview
 
-* Commit latency.
-Current implementation of logical replication sends data to subscriber nodes only after local commit, so in case of
-heavy-write transaction user will wait for transaction processing two times: on local node and al other nodes
-(simultaneosly). We have plans to address this issue in future.
+Multi-master replicates same database to all nodes in cluster and allows writes to each node. Transaction
+isolation is enforced cluster-wide, so in case of concurrent updates on different nodes database will use the
+same conflict resolution rules (mvcc with repeatable read isolation level) as single node uses for concurrent
+backends and always stays in consistent state. Any writing transaction will write to all nodes, hence increasing
+commit latency for amount of time proportional to roundtrip between nodes nedded for synchronization. Read only
+transactions and queries executed locally without measurable overhead. Replication mechanism itself based on
+logical decoding and earlier version of pglogical extension provided for community by 2ndQuadrant team.
 
-* DDL replication.
-While data is replicated on logical level, DDL replicated by statements performing distributed commit with the same
-statement. Some complex DDL scenarious including stored procedures and temp temp tables aren't working properly. We
-are working right now on proving full compatibility with ordinary postgres. Currently we are passing 141 of 164
-postgres regression tests.
+Cluster consisting of N nodes can continue to work while majority of initial nodes are alive and reachable by
+other nodes. This is done by using 3 phase commit protocol and heartbeats for failure discovery. Node that is
+brought back to cluster can be fast-forwaded to actual state automatically in case when transactions log still
+exists since the time when node was excluded from cluster (this depends on checkpoint configuration in postgres).
 
-* Isolation level.
-Multimaster currently support only _repeatable_ _read_ isolation level. This is stricter than default _read_commited_,
-but also increases probability of serialization failure during commit. _Serializable_ level isn't supported yet.
-
-* One database per cluster.
+Read more about internals on [Architechture](/Architechture) page.
 
 
 
@@ -149,7 +121,7 @@ After things go more stable we will release prebuilt packages for major platform
  multimaster.heartbeat_send_timeout = 250
  multimaster.ignore_tables_without_pk = true
  multimaster.twopc_min_timeout = 2000
- ```
+```
 1. Allow replication in `pg_hba.conf`.
 
 (link to full doc on config params)
@@ -186,6 +158,27 @@ Isolation: n/a
 To run tests:
 * `make -C contrib/mmts check` to run TAP-tests.
 * `make -C contrib/mmts xcheck` to run blockade tests. The blockade tests require `docker`, `blockade`, and some other packages installed, see [requirements.txt](tests2/requirements.txt) for the list. You might also want to gain superuser privileges to run these tests successfully.
+
+
+## Limitations
+
+* Commit latency.
+Current implementation of logical replication sends data to subscriber nodes only after local commit, so in case of
+heavy-write transaction user will wait for transaction processing two times: on local node and al other nodes
+(simultaneosly). We have plans to address this issue in future.
+
+* DDL replication.
+While data is replicated on logical level, DDL replicated by statements performing distributed commit with the same
+statement. Some complex DDL scenarious including stored procedures and temp temp tables aren't working properly. We
+are working right now on proving full compatibility with ordinary postgres. Currently we are passing 141 of 164
+postgres regression tests.
+
+* Isolation level.
+Multimaster currently support only _repeatable_ _read_ isolation level. This is stricter than default _read_ _commited_,
+but also increases probability of serialization failure during commit. _Serializable_ level isn't supported yet.
+
+* One database per cluster.
+
 
 
 docs:
