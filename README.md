@@ -1,10 +1,122 @@
-# `mmts`
+# `Postgresql multi-master`
 
-An implementation of synchronous **multi-master replication** based on **commit timestamps**.
+Multi-master is an extension and set of patches to a Postegres database, that turns Postgres into a 
+synchronous shared-nothing cluster to provide OLTP scalability and high availability with automatic
+disaster recovery.
 
-## Usage
 
-1. Install `contrib/raftable` and `contrib/mmts` on each instance.
+
+## Overview
+
+Multi-master replicates same database to all nodes in cluster and allows writes to each node. Transaction
+isolation is enforced cluster-wide, so in case of concurrent updates on different nodes database will use the
+same conflict resolution rules (mvcc with repeatable read isolation level) as single node uses for concurrent
+backends and always stays in consistent state. Any writing transaction will write to all nodes, hence increasing
+commit latency for amount of time proportional to roundtrip between nodes nedded for synchronization. Read only
+transactions and queries executed locally without measurable overhead. Replication mechanism itself based on
+logical decoding and earlier version of pglogical extension provided for community by 2ndQuadrant team.
+
+Several changes was made in postgres core to implement mentioned functionality:
+* Transaction manager API. (eXtensible Transaction Manager, xtm). Generic interface to plug distributed
+transaction engines.  More info on [postgres wiki](https://wiki.postgresql.org/wiki/DTM) and
+on [the email thread](http://www.postgresql.org/message-id/flat/F2766B97-555D-424F-B29F-E0CA0F6D1D74@postgrespro.ru).
+* Distributed deadlock detection API.
+* Logical decoding of transactions.
+
+Cluster consisting of N nodes can continue to work while majority of initial nodes are alive and reachable by
+other nodes. This is done by using 3 phase commit protocol and heartbeats for failure discovery. Node that is
+brought back to cluster can be fast-forwaded to actual state automatically in case when transactions log still
+exists since the time when node was excluded from cluster (this depends on checkpoint configuration in postgres).
+
+Read more about internals on [Architechture](/Architechture) page.
+
+
+
+## Features
+
+* Cluster-wide transaction isolation
+* Synchronous logical replication
+* DDL Replication
+* Distributed sequences
+* Fault tolerance
+* Automatic node recovery
+
+
+
+## Limitations
+
+* Commit latency.
+Current implementation of logical replication sends data to subscriber nodes only after local commit, so in case of
+heavy-write transaction user will wait for transaction processing two times: on local node and al other nodes
+(simultaneosly). We have plans to address this issue in future.
+
+* DDL replication.
+While data is replicated on logical level, DDL replicated by statements performing distributed commit with the same
+statement. Some complex DDL scenarious including stored procedures and temp temp tables aren't working properly. We
+are working right now on proving full compatibility with ordinary postgres. Currently we are passing 141 of 164
+postgres regression tests.
+
+* Isolation level.
+Multimaster currently support only _repeatable_ _read_ isolation level. This is stricter than default _read_commited_,
+but also increases probability of serialization failure during commit. _Serializable_ level isn't supported yet.
+
+* One database per cluster.
+
+
+
+## Installation
+
+(Existing db?)
+
+Multi-master consist of patched version of postgres and extension mmts, that provides most of functionality, but
+doesn't requiere changes to postgres core. To run multimaster one need to install postgres and several extensions
+to all nodes in cluster.
+
+### Sources
+
+Ensure that following prerequisites are installed: 
+
+debian based linux:
+
+```sh
+apt-get install -y git make gcc libreadline-dev bison flex zlib1g-dev
+```
+
+red hat based linux:
+
+```sh
+yum groupinstall 'Development Tools'
+yum install git, automake, libtool, bison, flex readline-devel
+```
+
+After that everything is ready to install postgres along with extensions
+
+```sh
+git clone https://github.com/postgrespro/postgres_cluster.git
+cd postgres_cluster
+./configure && make && make -j 4 install
+cd ./contrib/raftable && make install
+cd ../../contrib/mmts && make install
+```
+
+### Docker
+
+Directort contrib/mmts also includes Dockerfile that is capable of building multi-master and starting 3 node cluster.
+
+```sh
+cd contrib/mmts
+docker-compose build
+docker-compose up
+```
+
+### PgPro packages
+
+After things go more stable we will release prebuilt packages for major platforms.
+
+
+
+## Configuration
+
 1. Add these required options to the `postgresql.conf` of each instance in the cluster.
 
  ```sh
@@ -40,7 +152,9 @@ An implementation of synchronous **multi-master replication** based on **commit 
  ```
 1. Allow replication in `pg_hba.conf`.
 
-## Status functions
+(link to full doc on config params)
+
+## Management
 
 `create extension mmts;` to gain access to these functions:
 
@@ -49,7 +163,35 @@ An implementation of synchronous **multi-master replication** based on **commit 
 * `mtm.get_cluster_info()` -- print some debug info
 * `mtm.make_table_local(relation regclass)` -- stop replication for a given table
 
-## Testing
+(link to full doc on functions)
 
+
+
+
+## Tests
+
+### Performance
+
+(Show TPC-C here on 3 nodes)
+
+### Fault tolerance
+
+(Link to test/failure matrix)
+
+### Postgres compatibility
+
+Regression: 141 of 164
+Isolation: n/a
+
+To run tests:
 * `make -C contrib/mmts check` to run TAP-tests.
 * `make -C contrib/mmts xcheck` to run blockade tests. The blockade tests require `docker`, `blockade`, and some other packages installed, see [requirements.txt](tests2/requirements.txt) for the list. You might also want to gain superuser privileges to run these tests successfully.
+
+
+docs:
+
+## Architechture
+
+## Configuration params
+
+## Management functions
