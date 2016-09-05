@@ -17,7 +17,7 @@
 #include "utils/array.h"
 #include "utils/relfilenodemap.h"
 #include <unistd.h>
-
+#include <sys/stat.h>
 /* Effective data size */
 #define MAPSIZE (BLCKSZ - MAXALIGN(SizeOfPageHeaderData))
 
