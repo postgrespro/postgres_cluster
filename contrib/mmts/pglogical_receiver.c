@@ -523,11 +523,11 @@ pglogical_receiver_main(Datum main_arg)
 							pq_sendint(&spill_info, buf.used, 4);
 							MtmSpillToFile(spill_file, buf.data, buf.used);
 							MtmCloseSpillFile(spill_file);
-							MtmExecute(spill_info.data, spill_info.len);
+							MtmExecute(nodeId, spill_info.data, spill_info.len);
 							spill_file = -1;
 							resetStringInfo(&spill_info);
 						} else { 
-							MtmExecute(buf.data, buf.used);
+							MtmExecute(nodeId, buf.data, buf.used);
 						}
 						ByteBufferReset(&buf);
 					}

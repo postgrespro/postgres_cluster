@@ -37,7 +37,7 @@ typedef struct
     char*  queue;
 } BgwPool;
 
-typedef BgwPool*(*BgwPoolConstructor)(void);
+typedef BgwPool*(*BgwPoolConstructor)(int workerId);
 
 extern void BgwPoolStart(int nWorkers, BgwPoolConstructor constructor);
 

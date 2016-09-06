@@ -68,8 +68,8 @@
 #define Anum_mtm_local_tables_rel_schema 1
 #define Anum_mtm_local_tables_rel_name	 2
 
-#define Natts_mtm_cluster_state 16
-#define Natts_mtm_nodes_state   13
+#define Natts_mtm_cluster_state 13
+#define Natts_mtm_nodes_state   16
 
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
@@ -185,6 +185,7 @@ typedef struct
 	XLogRecPtr  restartLsn;
 	RepOriginId originId;
 	int         timeline;
+	BgwPool     pool;                      /* Pool of background workers for applying logical replication patches */
 } MtmNodeInfo;
 
 typedef struct MtmTransState
@@ -222,7 +223,7 @@ typedef struct
 	MtmNodeStatus status;              /* Status of this node */
 	int recoverySlot;                  /* NodeId of recovery slot or 0 if none */
 	volatile slock_t spinlock;         /* spinlock used to protect access to hash table */
-	PGSemaphoreData sendSemaphore;   /* semaphore used to notify mtm-sender about new responses to coordinator */
+	PGSemaphoreData sendSemaphore;     /* semaphore used to notify mtm-sender about new responses to coordinator */
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
@@ -244,8 +245,6 @@ typedef struct
 	int64  timeShift;                  /* Local time correction */
 	csn_t  csn;                        /* Last obtained timestamp: used to provide unique acending CSNs based on system time */
 	csn_t  lastCsn;                    /* CSN of last committed transaction */
-	MtmTransState* votingTransactions; /* L1-list of replicated transactions sendings notifications to coordinator.
-									 	 This list is used to pass information to mtm-sender BGW */
     MtmTransState* transListHead;      /* L1 list of all finished transactions present in xid2state hash.
 									 	  It is cleanup by MtmGetOldestXmin */
     MtmTransState** transListTail;     /* Tail of L1 list of all finished transactionds, used to append new elements.
@@ -254,7 +253,6 @@ typedef struct
 	uint64 gcCount;                    /* Number of global transactions performed since last GC */
 	MtmMessageQueue* sendQueue;        /* Messages to be sent by arbiter sender */
 	MtmMessageQueue* freeQueue;        /* Free messages */
-	BgwPool pool;                      /* Pool of background workers for applying logical replication patches */
 	MtmNodeInfo nodes[1];              /* [Mtm->nAllNodes]: per-node data */ 
 } MtmState;
 
@@ -299,7 +297,7 @@ extern csn_t MtmSyncClock(csn_t csn);
 extern void  MtmJoinTransaction(GlobalTransactionId* gtid, csn_t snapshot);
 extern void  MtmReceiverStarted(int nodeId);
 extern MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shutdown);
-extern void  MtmExecute(void* work, int size);
+extern void  MtmExecute(int nodeId, void* work, int size);
 extern void  MtmExecutor(int id, void* work, size_t size);
 extern void  MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd);
 extern void  MtmSendMessage(MtmArbiterMessage* msg);

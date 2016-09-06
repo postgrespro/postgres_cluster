@@ -94,7 +94,7 @@ typedef enum
 #define MTM_MAP_SIZE   MTM_HASH_SIZE
 #define MIN_WAIT_TIMEOUT 1000
 #define MAX_WAIT_TIMEOUT 100000
-#define MAX_WAIT_LOOPS   100
+#define MAX_WAIT_LOOPS   100000
 #define STATUS_POLL_DELAY USECS_PER_SEC
 
 void _PG_init(void);
@@ -144,7 +144,7 @@ static void MtmAddSubtransactions(MtmTransState* ts, TransactionId *subxids, int
 
 static void MtmShmemStartup(void);
 
-static BgwPool* MtmPoolConstructor(void);
+static BgwPool* MtmPoolConstructor(int workerId);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
 static bool MtmProcessDDLCommand(char const* queryString);
@@ -1892,7 +1892,6 @@ static void MtmInitialize()
 		Mtm->reconnectMask = 0;
 		Mtm->nLockers = 0;
 		Mtm->nActiveTransactions = 0;
-		Mtm->votingTransactions = NULL;
         Mtm->transListHead = NULL;
         Mtm->transListTail = &Mtm->transListHead;		
         Mtm->nReceivers = 0;
@@ -1915,11 +1914,13 @@ static void MtmInitialize()
 			Mtm->nodes[i].restartLsn = 0;
 			Mtm->nodes[i].originId = InvalidRepOriginId;
 			Mtm->nodes[i].timeline = 0;
+			if (i+1 != MtmNodeId) { 
+				BgwPoolInit(&Mtm->nodes[i].pool, MtmExecutor, MtmDatabaseName, MtmDatabaseUser, MtmQueueSize, MtmWorkers);
+			}
 		}
 		PGSemaphoreCreate(&Mtm->sendSemaphore);
 		PGSemaphoreReset(&Mtm->sendSemaphore);
 		SpinLockInit(&Mtm->spinlock);
-		BgwPoolInit(&Mtm->pool, MtmExecutor, MtmDatabaseName, MtmDatabaseUser, MtmQueueSize, MtmWorkers);
 		RegisterXactCallback(MtmXactCallback, NULL);
 		MtmTx.snapshot = INVALID_CSN;
 		MtmTx.xid = InvalidTransactionId;		
@@ -2096,17 +2097,6 @@ static bool ConfigIsSane(void)
 			 "multimaster requires max_prepared_transactions > 0, "
 			 "because all transactions are implicitly two-phase");
 		ok = false;
-	}
-
-	{
-		int workers_required = 2 * MtmMaxNodes + MtmWorkers + 1;
-		if (max_worker_processes < workers_required)
-		{
-			elog(WARNING,
-				 "multimaster requires max_worker_processes >= %d",
-				 workers_required);
-			ok = false;
-		}
 	}
 
 	if (wal_level != WAL_LEVEL_LOGICAL)
@@ -2502,10 +2492,10 @@ _PG_init(void)
 	 * the postmaster process.)  We'll allocate or attach to the shared
 	 * resources in mtm_shmem_startup().
 	 */
-	RequestAddinShmemSpace(MTM_SHMEM_SIZE + MtmQueueSize);
+	RequestAddinShmemSpace(MTM_SHMEM_SIZE + MtmQueueSize*(MtmMaxNodes-1));
 	RequestNamedLWLockTranche(MULTIMASTER_NAME, 1 + MtmMaxNodes);
 
-    BgwPoolStart(MtmWorkers, MtmPoolConstructor);
+    BgwPoolStart(MtmWorkers*(MtmMaxNodes-1), MtmPoolConstructor);
 
 	if (MtmUseRaftable) {
 		MtmRaftableInitialize();
@@ -2945,7 +2935,7 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	MemoryContext oldcontext;
 	int64 lag;
     bool is_first_call = SRF_IS_FIRSTCALL();
-
+	int node;
     if (is_first_call) { 
 		funcctx = SRF_FIRSTCALL_INIT();
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);       
@@ -2961,21 +2951,25 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	if (usrfctx->nodeId > Mtm->nAllNodes) {
 		SRF_RETURN_DONE(funcctx);      
 	}
-	usrfctx->values[0] = Int32GetDatum(usrfctx->nodeId);
-	usrfctx->values[1] = BoolGetDatum(BIT_CHECK(Mtm->disabledNodeMask, usrfctx->nodeId-1));
-	usrfctx->values[2] = BoolGetDatum(BIT_CHECK(Mtm->connectivityMask, usrfctx->nodeId-1));
-	usrfctx->values[3] = BoolGetDatum(BIT_CHECK(Mtm->nodeLockerMask, usrfctx->nodeId-1));
+	node = usrfctx->nodeId-1;
+	usrfctx->values[0] = Int32GetDatum(node+1);
+	usrfctx->values[1] = BoolGetDatum(BIT_CHECK(Mtm->disabledNodeMask, node));
+	usrfctx->values[2] = BoolGetDatum(BIT_CHECK(Mtm->connectivityMask, node));
+	usrfctx->values[3] = BoolGetDatum(BIT_CHECK(Mtm->nodeLockerMask, node));
 	lag = MtmGetSlotLag(usrfctx->nodeId);
 	usrfctx->values[4] = Int64GetDatum(lag);
 	usrfctx->nulls[4] = lag < 0;
-	usrfctx->values[5] = Int64GetDatum(Mtm->transCount ? Mtm->nodes[usrfctx->nodeId-1].transDelay/Mtm->transCount : 0);
-	usrfctx->values[6] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].lastStatusChangeTime/USECS_PER_SEC));
-	usrfctx->values[7] = Int64GetDatum(Mtm->nodes[usrfctx->nodeId-1].oldestSnapshot);
-	usrfctx->values[8] = Int32GetDatum(Mtm->nodes[usrfctx->nodeId-1].senderPid);
-	usrfctx->values[9] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].senderStartTime/USECS_PER_SEC));
-	usrfctx->values[10] = Int32GetDatum(Mtm->nodes[usrfctx->nodeId-1].receiverPid);
-	usrfctx->values[11] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].receiverStartTime/USECS_PER_SEC));   
-	usrfctx->values[12] = CStringGetTextDatum(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
+	usrfctx->values[5] = Int64GetDatum(Mtm->transCount ? Mtm->nodes[node].transDelay/Mtm->transCount : 0);
+	usrfctx->values[6] = Int32GetDatum((int)Mtm->nodes[node].pool.active);
+	usrfctx->values[7] = Int32GetDatum((int)Mtm->nodes[node].pool.pending);
+	usrfctx->values[8] = Int64GetDatum(BgwPoolGetQueueSize(&Mtm->nodes[node].pool));
+	usrfctx->values[9] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[node].lastStatusChangeTime/USECS_PER_SEC));
+	usrfctx->values[10] = Int64GetDatum(Mtm->nodes[node].oldestSnapshot);
+	usrfctx->values[11] = Int32GetDatum(Mtm->nodes[node].senderPid);
+	usrfctx->values[12] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[node].senderStartTime/USECS_PER_SEC));
+	usrfctx->values[13] = Int32GetDatum(Mtm->nodes[node].receiverPid);
+	usrfctx->values[14] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[node].receiverStartTime/USECS_PER_SEC));   
+	usrfctx->values[15] = CStringGetTextDatum(Mtm->nodes[node].con.connStr);
 	usrfctx->nodeId += 1;
 
 	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(heap_form_tuple(usrfctx->desc, usrfctx->values, usrfctx->nulls)));
@@ -2996,16 +2990,13 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 	values[3] = Int64GetDatum(Mtm->nodeLockerMask);
 	values[4] = Int32GetDatum(Mtm->nLiveNodes);
 	values[5] = Int32GetDatum(Mtm->nAllNodes);
-	values[6] = Int32GetDatum((int)Mtm->pool.active);
-	values[7] = Int32GetDatum((int)Mtm->pool.pending);
-	values[8] = Int64GetDatum(BgwPoolGetQueueSize(&Mtm->pool));
-	values[9] = Int64GetDatum(Mtm->transCount);
-	values[10] = Int64GetDatum(Mtm->timeShift);
-	values[11] = Int32GetDatum(Mtm->recoverySlot);
-	values[12] = Int64GetDatum(hash_get_num_entries(MtmXid2State));
-	values[13] = Int64GetDatum(hash_get_num_entries(MtmGid2State));
-	values[14] = Int32GetDatum(Mtm->oldestXid);
-	values[15] = Int32GetDatum(Mtm->nConfigChanges);
+	values[6] = Int64GetDatum(Mtm->transCount);
+	values[7] = Int64GetDatum(Mtm->timeShift);
+	values[8] = Int32GetDatum(Mtm->recoverySlot);
+	values[9] = Int64GetDatum(hash_get_num_entries(MtmXid2State));
+	values[10] = Int64GetDatum(hash_get_num_entries(MtmGid2State));
+	values[11] = Int32GetDatum(Mtm->oldestXid);
+	values[12] = Int32GetDatum(Mtm->nConfigChanges);
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
 }
@@ -3768,20 +3759,20 @@ MtmExecutorFinish(QueryDesc *queryDesc)
  * -------------------------------------------
  */
 
-void MtmExecute(void* work, int size)
+void MtmExecute(int nodeId, void* work, int size)
 {
 	if (Mtm->status == MTM_RECOVERY) { 
 		/* During recovery apply changes sequentially to preserve commit order */
 		MtmExecutor(0, work, size);
 	} else { 
-		BgwPoolExecute(&Mtm->pool, work, size);
+		BgwPoolExecute(&Mtm->nodes[nodeId-1].pool, work, size);
 	}
 }
     
 static BgwPool* 
-MtmPoolConstructor(void)
+MtmPoolConstructor(int workerId)
 {
-    return &Mtm->pool;
+    return &Mtm->nodes[workerId%MtmMaxNodes].pool;
 }
 
 /*
@@ -3891,6 +3882,7 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 		MtmGetGtid(pgxact->xid, &gtid);
 		hasDeadlock = MtmGraphFindLoop(&graph, &gtid);
 		elog(WARNING, "Distributed deadlock check for %u:%u = %d", gtid.node, gtid.xid, hasDeadlock);
+#if 0
 		if (!hasDeadlock) { 
 			/* There is no deadlock loop in graph, but deadlock can be caused by lack of apply workers: if all of them are busy, then some transactions
 			 * can not be appied just because there are no vacant workers and it cause additional dependency between transactions which is not 
@@ -3903,6 +3895,7 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 					 (int)USEC_TO_MSEC(MtmGetSystemTime() - lastPeekTime));
 			}
 		}
+#endif
 	}
     return hasDeadlock;
 }

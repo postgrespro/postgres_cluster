@@ -22,7 +22,7 @@ static void BgwPoolMainLoop(Datum arg)
 {
     BgwPoolExecutorCtx* ctx = (BgwPoolExecutorCtx*)arg;
     int id = ctx->id;
-    BgwPool* pool = ctx->constructor();
+    BgwPool* pool = ctx->constructor(id);
     int size;
     void* work;
 
