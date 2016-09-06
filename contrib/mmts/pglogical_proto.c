@@ -112,7 +112,6 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	
 	if (!isRecovery && csn == INVALID_CSN) { 
 		MtmIsFilteredTxn = true;
-		MTM_LOG1("MtmIsFilteredTxn");
 	} else { 
 		pq_sendbyte(out, 'B');		/* BEGIN */
 		pq_sendint(out, MtmNodeId, 4);

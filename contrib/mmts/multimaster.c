@@ -3729,7 +3729,7 @@ MtmExecutorFinish(QueryDesc *queryDesc)
 							continue;
 						}
 					}
-					MTM_LOG1("MtmTx.containsDML = true // WAL");
+					MTM_LOG3("MtmTx.containsDML = true // WAL");
 					MtmTx.containsDML = true;
 					break;
 				}
