@@ -243,6 +243,14 @@ sub GenerateFiles
 			print O "#define DEF_PGPORT $port\n";
 			print O "#define DEF_PGPORT_STR \"$port\"\n";
 		}
+		if ($self->{options}->{libedit})
+		{
+			print O "#define HAVE_EDITLINE_READLINE_H\n";
+			print O "#define HAVE_LIBREADLINE\n";
+			print O "#define HAVE_WIN32_LIBEDIT\n";
+			print O "#define HAVE_RL_FILENAME_COMPLETION_FUNCTION\n";
+			print O "#define HAVE_RL_COMPLETION_MATCHES\n";
+		}
 		if ($self->{options}->{icu}) 
 		{
 			print O "#define USE_ICU\n";
@@ -575,6 +583,12 @@ sub AddProject
 	{
 		$proj->AddIncludeDir($self->{options}->{xslt} . '\include');
 		$proj->AddLibrary($self->{options}->{xslt} . '\lib\libxslt.lib');
+	}
+	if ($self->{options}->{libedit})
+	{
+		$proj->AddIncludeDir($self->{options}->{libedit} . '\include');
+		$proj->AddLibrary($self->{options}->{libedit} . "\\" .
+			($self->{platform} eq 'x64'? 'lib64': 'lib32').'\edit.lib');
 	}
 	if ($self->{options}->{icu})
 	{
