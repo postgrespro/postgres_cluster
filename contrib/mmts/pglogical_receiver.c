@@ -527,7 +527,10 @@ pglogical_receiver_main(Datum main_arg)
 							spill_file = -1;
 							resetStringInfo(&spill_info);
 						} else { 
-							MtmExecute(nodeId, buf.data, buf.used);
+							if (buf.used == rc - hdr_len) 
+								MtmExecutor(nodeId, buf.data, buf.used);
+							else 
+								MtmExecute(nodeId, buf.data, buf.used);
 						}
 						ByteBufferReset(&buf);
 					}

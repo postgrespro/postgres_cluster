@@ -94,7 +94,7 @@ typedef enum
 #define MTM_MAP_SIZE   MTM_HASH_SIZE
 #define MIN_WAIT_TIMEOUT 1000
 #define MAX_WAIT_TIMEOUT 100000
-#define MAX_WAIT_LOOPS   100000
+#define MAX_WAIT_LOOPS   100
 #define STATUS_POLL_DELAY USECS_PER_SEC
 
 void _PG_init(void);
@@ -436,7 +436,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     static timestamp_t maxSleepTime;
 #endif
     timestamp_t delay = MIN_WAIT_TIMEOUT;
-	int i;
+	int i, j;
     Assert(xid != InvalidTransactionId);
 	
 	if (!MtmUseDtm) { 
@@ -449,7 +449,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         firstReportTime = MtmGetCurrentTime();
     }
 #endif
-    
+    for (j=0;;j++) { 
 	for (i = 0; i < MAX_WAIT_LOOPS; i++)
     {
         MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
@@ -507,8 +507,9 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 			return PgXidInMVCCSnapshot(xid, snapshot);
         }
     }
+	if (j == 0) elog(WARNING, "%d: failed to get status of XID %d", MyProcPid, xid);
+	}
 	MtmUnlock();
-	elog(ERROR, "Failed to get status of XID %d", xid);
 	return true;
 }    
 
@@ -1914,6 +1915,8 @@ static void MtmInitialize()
 			Mtm->nodes[i].restartLsn = 0;
 			Mtm->nodes[i].originId = InvalidRepOriginId;
 			Mtm->nodes[i].timeline = 0;
+		}
+		for (i = 0; i < MtmMaxNodes; i++) {
 			if (i+1 != MtmNodeId) { 
 				BgwPoolInit(&Mtm->nodes[i].pool, MtmExecutor, MtmDatabaseName, MtmDatabaseUser, MtmQueueSize, MtmWorkers);
 			}
@@ -3772,7 +3775,11 @@ void MtmExecute(int nodeId, void* work, int size)
 static BgwPool* 
 MtmPoolConstructor(int workerId)
 {
-    return &Mtm->nodes[workerId%MtmMaxNodes].pool;
+	int nodeId = workerId / MtmWorkers;
+	if (nodeId+1 >= MtmNodeId) { 
+		nodeId += 1;
+	}
+    return &Mtm->nodes[nodeId].pool;
 }
 
 /*
