@@ -58,7 +58,7 @@
 #define MB (1024*1024L)
 
 #define USEC_TO_MSEC(t) ((t)/1000)
-#define MSEC_TO_USEC(t) ((t)*1000)
+#define MSEC_TO_USEC(t) ((timestamp_t)(t)*1000)
 
 #define Natts_mtm_ddl_log 2
 #define Anum_mtm_ddl_log_issued		1
@@ -287,6 +287,7 @@ extern int   MtmTransSpillThreshold;
 extern int   MtmHeartbeatSendTimeout;
 extern int   MtmHeartbeatRecvTimeout;
 extern bool  MtmUseDtm;
+extern bool  MtmPreserveCommitOrder;
 extern HTAB* MtmXid2State;
 extern HTAB* MtmGid2State;
 
