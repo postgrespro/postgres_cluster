@@ -2370,11 +2370,26 @@ _PG_init(void)
 
 	DefineCustomIntVariable(
 		"multimaster.workers",
-		"Number of multimaster executor workers per node",
+		"Number of multimaster executor workers",
 		NULL,
 		&MtmWorkers,
 		8,
 		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.max_workers",
+		"Maximal number of multimaster dynamic executor workers",
+		NULL,
+		&MtmMaxWorkers,
+		100,
+		0,
 		INT_MAX,
 		PGC_BACKEND,
 		0,
@@ -2918,6 +2933,7 @@ mtm_get_snapshot(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT64(MtmTx.snapshot);
 }
+
 
 Datum
 mtm_get_last_csn(PG_FUNCTION_ARGS)
@@ -3785,7 +3801,7 @@ void MtmExecute(void* work, int size)
 {
 	if (Mtm->status == MTM_RECOVERY) { 
 		/* During recovery apply changes sequentially to preserve commit order */
-		MtmExecutor(0, work, size);
+		MtmExecutor(work, size);
 	} else { 
 		BgwPoolExecute(&Mtm->pool, work, size);
 	}

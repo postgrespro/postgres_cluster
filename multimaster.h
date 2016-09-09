@@ -301,7 +301,7 @@ extern void  MtmJoinTransaction(GlobalTransactionId* gtid, csn_t snapshot);
 extern void  MtmReceiverStarted(int nodeId);
 extern MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shutdown);
 extern void  MtmExecute(void* work, int size);
-extern void  MtmExecutor(int id, void* work, size_t size);
+extern void  MtmExecutor(void* work, size_t size);
 extern void  MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd);
 extern void  MtmSendMessage(MtmArbiterMessage* msg);
 extern void  MtmAdjustSubtransactions(MtmTransState* ts);

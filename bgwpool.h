@@ -5,7 +5,7 @@
 #include "storage/spin.h"
 #include "storage/pg_sema.h"
 
-typedef void(*BgwPoolExecutor)(int id, void* work, size_t size);
+typedef void(*BgwPoolExecutor)(void* work, size_t size);
 
 typedef uint64 timestamp_t;
 
@@ -16,7 +16,8 @@ typedef uint64 timestamp_t;
 extern timestamp_t MtmGetSystemTime(void);   /* non-adjusted current system time */
 extern timestamp_t MtmGetCurrentTime(void);  /* adjusted current system time */
 
-extern bool  MtmIsLogicalReceiver;
+extern bool MtmIsLogicalReceiver;
+extern int  MtmMaxWorkers;
 
 typedef struct
 {
@@ -31,6 +32,7 @@ typedef struct
     size_t pending;
 	size_t nWorkers;
 	time_t lastPeakTime;
+	timestamp_t lastDynamicWorkerStartTime;
     bool   producerBlocked;
     char   dbname[MAX_DBNAME_LEN];
 	char   dbuser[MAX_DBUSER_LEN];
