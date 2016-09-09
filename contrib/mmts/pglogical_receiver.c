@@ -527,7 +527,12 @@ pglogical_receiver_main(Datum main_arg)
 							spill_file = -1;
 							resetStringInfo(&spill_info);
 						} else { 
-							MtmExecute(buf.data, buf.used);
+							if (MtmPreserveCommitOrder && buf.used == rc - hdr_len) {
+								/* Perform commit-prepared and rollback-prepared requested directly in receiver */
+								MtmExecutor(nodeId, buf.data, buf.used);
+							} else {
+								MtmExecute(buf.data, buf.used);
+							}
 						}
 						ByteBufferReset(&buf);
 					}

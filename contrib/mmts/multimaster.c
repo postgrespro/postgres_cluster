@@ -208,6 +208,7 @@ int   MtmHeartbeatSendTimeout;
 int   MtmHeartbeatRecvTimeout;
 bool  MtmUseRaftable;
 bool  MtmUseDtm;
+bool  MtmPreserveCommitOrder;
 bool  MtmVolksWagenMode;
 
 TransactionId  MtmUtilityProcessedInXid;
@@ -2334,6 +2335,19 @@ _PG_init(void)
 		"Use distributed transaction manager",
 		NULL,
 		&MtmUseDtm,
+		true,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomBoolVariable(
+		"multimaster.preserve_commit_order",
+		"Transactions from one node will be committed in same order al all nodes",
+		NULL,
+		&MtmPreserveCommitOrder,
 		true,
 		PGC_BACKEND,
 		0,
