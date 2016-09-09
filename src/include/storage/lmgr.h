@@ -17,6 +17,7 @@
 #include "lib/stringinfo.h"
 #include "storage/itemptr.h"
 #include "storage/lock.h"
+#include "storage/smgr.h"
 #include "utils/rel.h"
 
 
@@ -56,6 +57,9 @@ extern void UnlockRelationForExtension(Relation relation, LOCKMODE lockmode);
 extern bool ConditionalLockRelationForExtension(Relation relation,
 									LOCKMODE lockmode);
 extern int	RelationExtensionLockWaiterCount(Relation relation);
+
+extern void LockSmgrForExtension(SMgrRelation smgr, LOCKMODE lockmode);
+extern void UnlockSmgrForExtension(SMgrRelation smgr, LOCKMODE lockmode);
 
 /* Lock a page (currently only used within indexes) */
 extern void LockPage(Relation relation, BlockNumber blkno, LOCKMODE lockmode);

@@ -215,7 +215,7 @@ CheckIndexCompatible(Oid oldId,
 	}
 
 	/* Any change in operator class or collation breaks compatibility. */
-	old_natts = indexForm->indnatts;
+	old_natts = indexForm->indnkeyatts;
 	Assert(old_natts == numberOfAttributes);
 
 	d = SysCacheGetAttr(INDEXRELID, tuple, Anum_pg_index_indcollation, &isnull);
@@ -329,6 +329,7 @@ DefineIndex(Oid relationId,
 	int16	   *coloptions;
 	IndexInfo  *indexInfo;
 	int			numberOfAttributes;
+	int			numberOfKeyAttributes;
 	TransactionId limitXmin;
 	VirtualTransactionId *old_snapshots;
 	ObjectAddress address;
@@ -339,14 +340,27 @@ DefineIndex(Oid relationId,
 	Snapshot	snapshot;
 	int			i;
 
-	/*
-	 * count attributes in index
-	 */
-	numberOfAttributes = list_length(stmt->indexParams);
-	if (numberOfAttributes <= 0)
+	if(list_intersection(stmt->indexParams, stmt->indexIncludingParams) != NIL)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-				 errmsg("must specify at least one column")));
+				 errmsg("included columns must not intersect with key columns")));
+	/*
+	 * count key attributes in index
+	 */
+	numberOfKeyAttributes = list_length(stmt->indexParams);
+
+	/*
+	 * We append any INCLUDING columns onto the indexParams list so that
+	 * we have one list with all columns. Later we can determine which of these
+	 * are key columns, and which are just part of the INCLUDING list by check
+	 * the list position. A list item in a position less than
+	 * ii_NumIndexKeyAttrs is part of the key columns, and anything equal to
+	 * and over is part of the INCLUDING columns.
+	 */
+	stmt->indexParams = list_concat(stmt->indexParams,
+									stmt->indexIncludingParams);
+	numberOfAttributes = list_length(stmt->indexParams);
+
 	if (numberOfAttributes > INDEX_MAX_KEYS)
 		ereport(ERROR,
 				(errcode(ERRCODE_TOO_MANY_COLUMNS),
@@ -509,6 +523,11 @@ DefineIndex(Oid relationId,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 			   errmsg("access method \"%s\" does not support unique indexes",
 					  accessMethodName)));
+	if (list_length(stmt->indexIncludingParams) > 0 && !amRoutine->amcaninclude)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				errmsg("access method \"%s\" does not support included columns",
+						accessMethodName)));
 	if (numberOfAttributes > 1 && !amRoutine->amcanmulticol)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
@@ -546,6 +565,7 @@ DefineIndex(Oid relationId,
 	 */
 	indexInfo = makeNode(IndexInfo);
 	indexInfo->ii_NumIndexAttrs = numberOfAttributes;
+	indexInfo->ii_NumIndexKeyAttrs = numberOfKeyAttributes;
 	indexInfo->ii_Expressions = NIL;	/* for now */
 	indexInfo->ii_ExpressionsState = NIL;
 	indexInfo->ii_Predicate = make_ands_implicit((Expr *) stmt->whereClause);
@@ -561,7 +581,7 @@ DefineIndex(Oid relationId,
 
 	typeObjectId = (Oid *) palloc(numberOfAttributes * sizeof(Oid));
 	collationObjectId = (Oid *) palloc(numberOfAttributes * sizeof(Oid));
-	classObjectId = (Oid *) palloc(numberOfAttributes * sizeof(Oid));
+	classObjectId = (Oid *) palloc(numberOfKeyAttributes * sizeof(Oid));
 	coloptions = (int16 *) palloc(numberOfAttributes * sizeof(int16));
 	ComputeIndexAttrs(indexInfo,
 					  typeObjectId, collationObjectId, classObjectId,
@@ -1003,16 +1023,15 @@ ComputeIndexAttrs(IndexInfo *indexInfo,
 	ListCell   *nextExclOp;
 	ListCell   *lc;
 	int			attn;
+	int 		nkeycols = indexInfo->ii_NumIndexKeyAttrs;
 
 	/* Allocate space for exclusion operator info, if needed */
 	if (exclusionOpNames)
 	{
-		int			ncols = list_length(attList);
-
-		Assert(list_length(exclusionOpNames) == ncols);
-		indexInfo->ii_ExclusionOps = (Oid *) palloc(sizeof(Oid) * ncols);
-		indexInfo->ii_ExclusionProcs = (Oid *) palloc(sizeof(Oid) * ncols);
-		indexInfo->ii_ExclusionStrats = (uint16 *) palloc(sizeof(uint16) * ncols);
+		Assert(list_length(exclusionOpNames) == nkeycols);
+		indexInfo->ii_ExclusionOps = (Oid *) palloc(sizeof(Oid) * nkeycols);
+		indexInfo->ii_ExclusionProcs = (Oid *) palloc(sizeof(Oid) * nkeycols);
+		indexInfo->ii_ExclusionStrats = (uint16 *) palloc(sizeof(uint16) * nkeycols);
 		nextExclOp = list_head(exclusionOpNames);
 	}
 	else
@@ -1065,6 +1084,11 @@ ComputeIndexAttrs(IndexInfo *indexInfo,
 			Node	   *expr = attribute->expr;
 
 			Assert(expr != NULL);
+
+			if (attn >= nkeycols)
+				ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						errmsg("expressions are not supported in included columns")));
 			atttype = exprType(expr);
 			attcollation = exprCollation(expr);
 
@@ -1141,6 +1165,16 @@ ComputeIndexAttrs(IndexInfo *indexInfo,
 		}
 
 		collationOidP[attn] = attcollation;
+
+		/*
+		 * Skip opclass and ordering options for included columns.
+		 */
+		if (attn >= nkeycols)
+		{
+			colOptionP[attn] = 0;
+			attn++;
+			continue;
+		}
 
 		/*
 		 * Identify the opclass to use.

@@ -1183,6 +1183,11 @@ pg_newlocale_from_collation(Oid collid)
 			result = newlocale(LC_COLLATE_MASK | LC_CTYPE_MASK, collcollate,
 							   NULL);
 #else
+#ifdef USE_ICU
+			if (strcmp(collcollate,"POSIX")==0)
+				result = _create_locale(LC_ALL,"C");
+			else
+#endif
 			result = _create_locale(LC_ALL, collcollate);
 #endif
 			if (!result)

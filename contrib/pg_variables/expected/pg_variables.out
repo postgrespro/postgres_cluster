@@ -1,0 +1,714 @@
+CREATE EXTENSION pg_variables;
+-- Integer variables
+SELECT pgv_get_int('vars', 'int1');
+ERROR:  unrecognized package "vars"
+SELECT pgv_get_int('vars', 'int1', false);
+ pgv_get_int 
+-------------
+            
+(1 row)
+
+SELECT pgv_set_int('vars', 'int1', 101);
+ pgv_set_int 
+-------------
+ 
+(1 row)
+
+SELECT pgv_set_int('vars', 'int2', 102);
+ pgv_set_int 
+-------------
+ 
+(1 row)
+
+SELECT pgv_get_int('vars', 'int1');
+ pgv_get_int 
+-------------
+         101
+(1 row)
+
+SELECT pgv_get_int('vars', 'int2');
+ pgv_get_int 
+-------------
+         102
+(1 row)
+
+SELECT pgv_set_int('vars', 'int1', 103);
+ pgv_set_int 
+-------------
+ 
+(1 row)
+
+SELECT pgv_get_int('vars', 'int1');
+ pgv_get_int 
+-------------
+         103
+(1 row)
+
+SELECT pgv_get_int('vars', 'int3');
+ERROR:  unrecognized variable "int3"
+SELECT pgv_get_int('vars', 'int3', false);
+ pgv_get_int 
+-------------
+            
+(1 row)
+
+SELECT pgv_exists('vars', 'int3');
+ pgv_exists 
+------------
+ f
+(1 row)
+
+SELECT pgv_exists('vars', 'int1');
+ pgv_exists 
+------------
+ t
+(1 row)
+
+SELECT pgv_set_int('vars', 'intNULL', NULL);
+ pgv_set_int 
+-------------
+ 
+(1 row)
+
+SELECT pgv_get_int('vars', 'intNULL');
+ pgv_get_int 
+-------------
+            
+(1 row)
+
+-- Text variables
+SELECT pgv_set_text('vars', 'str1', 's101');
+ pgv_set_text 
+--------------
+ 
+(1 row)
+
+SELECT pgv_set_text('vars', 'int1', 's101');
+ERROR:  variable "int1" requires "integer" value
+SELECT pgv_set_int('vars', 'str1', 101);
+ERROR:  variable "str1" requires "text" value
+SELECT pgv_set_text('vars', 'str2', 's102');
+ pgv_set_text 
+--------------
+ 
+(1 row)
+
+SELECT pgv_get_text('vars', 'str1');
+ pgv_get_text 
+--------------
+ s101
+(1 row)
+
+SELECT pgv_get_text('vars', 'str2');
+ pgv_get_text 
+--------------
+ s102
+(1 row)
+
+SELECT pgv_set_text('vars', 'str1', 's103');
+ pgv_set_text 
+--------------
+ 
+(1 row)
+
+SELECT pgv_get_text('vars', 'str1');
+ pgv_get_text 
+--------------
+ s103
+(1 row)
+
+SELECT pgv_get_text('vars', 'str3');
+ERROR:  unrecognized variable "str3"
+SELECT pgv_get_text('vars', 'str3', false);
+ pgv_get_text 
+--------------
+ 
+(1 row)
+
+SELECT pgv_exists('vars', 'str3');
+ pgv_exists 
+------------
+ f
+(1 row)
+
+SELECT pgv_exists('vars', 'str1');
+ pgv_exists 
+------------
+ t
+(1 row)
+
+SELECT pgv_get_text('vars', 'int1');
+ERROR:  variable "int1" requires "integer" value
+SELECT pgv_get_int('vars', 'str1');
+ERROR:  variable "str1" requires "text" value
+SELECT pgv_set_text('vars', 'strNULL', NULL);
+ pgv_set_text 
+--------------
+ 
+(1 row)
+
+SELECT pgv_get_text('vars', 'strNULL');
+ pgv_get_text 
+--------------
+ 
+(1 row)
+
+-- Numeric variables
+SELECT pgv_set_numeric('vars', 'num1', 1.01);
+ pgv_set_numeric 
+-----------------
+ 
+(1 row)
+
+SELECT pgv_set_numeric('vars', 'num2', 1.02);
+ pgv_set_numeric 
+-----------------
+ 
+(1 row)
+
+SELECT pgv_set_numeric('vars', 'str1', 1.01);
+ERROR:  variable "str1" requires "text" value
+SELECT pgv_get_numeric('vars', 'num1');
+ pgv_get_numeric 
+-----------------
+            1.01
+(1 row)
+
+SELECT pgv_get_numeric('vars', 'num2');
+ pgv_get_numeric 
+-----------------
+            1.02
+(1 row)
+
+SELECT pgv_set_numeric('vars', 'num1', 1.03);
+ pgv_set_numeric 
+-----------------
+ 
+(1 row)
+
+SELECT pgv_get_numeric('vars', 'num1');
+ pgv_get_numeric 
+-----------------
+            1.03
+(1 row)
+
+SELECT pgv_get_numeric('vars', 'num3');
+ERROR:  unrecognized variable "num3"
+SELECT pgv_get_numeric('vars', 'num3', false);
+ pgv_get_numeric 
+-----------------
+                
+(1 row)
+
+SELECT pgv_exists('vars', 'num3');
+ pgv_exists 
+------------
+ f
+(1 row)
+
+SELECT pgv_exists('vars', 'num1');
+ pgv_exists 
+------------
+ t
+(1 row)
+
+SELECT pgv_get_numeric('vars', 'str1');
+ERROR:  variable "str1" requires "text" value
+SELECT pgv_set_numeric('vars', 'numNULL', NULL);
+ pgv_set_numeric 
+-----------------
+ 
+(1 row)
+
+SELECT pgv_get_numeric('vars', 'numNULL');
+ pgv_get_numeric 
+-----------------
+                
+(1 row)
+
+SET timezone = 'Europe/Moscow';
+-- Timestamp variables
+SELECT pgv_set_timestamp('vars', 'ts1', '2016-03-30 10:00:00');
+ pgv_set_timestamp 
+-------------------
+ 
+(1 row)
+
+SELECT pgv_set_timestamp('vars', 'ts2', '2016-03-30 11:00:00');
+ pgv_set_timestamp 
+-------------------
+ 
+(1 row)
+
+SELECT pgv_set_timestamp('vars', 'num1', '2016-03-30 12:00:00');
+ERROR:  variable "num1" requires "numeric" value
+SELECT pgv_get_timestamp('vars', 'ts1');
+    pgv_get_timestamp     
+--------------------------
+ Wed Mar 30 10:00:00 2016
+(1 row)
+
+SELECT pgv_get_timestamp('vars', 'ts2');
+    pgv_get_timestamp     
+--------------------------
+ Wed Mar 30 11:00:00 2016
+(1 row)
+
+SELECT pgv_set_timestamp('vars', 'ts1', '2016-03-30 12:00:00');
+ pgv_set_timestamp 
+-------------------
+ 
+(1 row)
+
+SELECT pgv_get_timestamp('vars', 'ts1');
+    pgv_get_timestamp     
+--------------------------
+ Wed Mar 30 12:00:00 2016
+(1 row)
+
+SELECT pgv_get_timestamp('vars', 'ts3');
+ERROR:  unrecognized variable "ts3"
+SELECT pgv_get_timestamp('vars', 'ts3', false);
+ pgv_get_timestamp 
+-------------------
+ 
+(1 row)
+
+SELECT pgv_exists('vars', 'ts3');
+ pgv_exists 
+------------
+ f
+(1 row)
+
+SELECT pgv_exists('vars', 'ts1');
+ pgv_exists 
+------------
+ t
+(1 row)
+
+SELECT pgv_get_timestamp('vars', 'num1');
+ERROR:  variable "num1" requires "numeric" value
+SELECT pgv_set_timestamp('vars', 'tsNULL', NULL);
+ pgv_set_timestamp 
+-------------------
+ 
+(1 row)
+
+SELECT pgv_get_timestamp('vars', 'tsNULL');
+ pgv_get_timestamp 
+-------------------
+ 
+(1 row)
+
+-- TimestampTZ variables
+SELECT pgv_set_timestamptz('vars', 'tstz1', '2016-03-30 10:00:00 GMT+01');
+ pgv_set_timestamptz 
+---------------------
+ 
+(1 row)
+
+SELECT pgv_set_timestamptz('vars', 'tstz2', '2016-03-30 11:00:00 GMT+02');
+ pgv_set_timestamptz 
+---------------------
+ 
+(1 row)
+
+SELECT pgv_set_timestamptz('vars', 'ts1', '2016-03-30 12:00:00 GMT+03');
+ERROR:  variable "ts1" requires "timestamp without time zone" value
+SELECT pgv_get_timestamptz('vars', 'tstz1');
+     pgv_get_timestamptz      
+------------------------------
+ Wed Mar 30 14:00:00 2016 MSK
+(1 row)
+
+SELECT pgv_get_timestamptz('vars', 'tstz2');
+     pgv_get_timestamptz      
+------------------------------
+ Wed Mar 30 16:00:00 2016 MSK
+(1 row)
+
+SELECT pgv_set_timestamptz('vars', 'tstz1', '2016-03-30 12:00:00 GMT+01');
+ pgv_set_timestamptz 
+---------------------
+ 
+(1 row)
+
+SELECT pgv_get_timestamptz('vars', 'tstz1');
+     pgv_get_timestamptz      
+------------------------------
+ Wed Mar 30 16:00:00 2016 MSK
+(1 row)
+
+SELECT pgv_get_timestamptz('vars', 'tstz3');
+ERROR:  unrecognized variable "tstz3"
+SELECT pgv_get_timestamptz('vars', 'tstz3', false);
+ pgv_get_timestamptz 
+---------------------
+ 
+(1 row)
+
+SELECT pgv_exists('vars', 'tstz3');
+ pgv_exists 
+------------
+ f
+(1 row)
+
+SELECT pgv_exists('vars', 'tstz1');
+ pgv_exists 
+------------
+ t
+(1 row)
+
+SELECT pgv_get_timestamptz('vars', 'ts1');
+ERROR:  variable "ts1" requires "timestamp without time zone" value
+SELECT pgv_set_timestamptz('vars', 'tstzNULL', NULL);
+ pgv_set_timestamptz 
+---------------------
+ 
+(1 row)
+
+SELECT pgv_get_timestamptz('vars', 'tstzNULL');
+ pgv_get_timestamptz 
+---------------------
+ 
+(1 row)
+
+-- Date variables
+SELECT pgv_set_date('vars', 'd1', '2016-03-29');
+ pgv_set_date 
+--------------
+ 
+(1 row)
+
+SELECT pgv_set_date('vars', 'd2', '2016-03-30');
+ pgv_set_date 
+--------------
+ 
+(1 row)
+
+SELECT pgv_set_date('vars', 'tstz1', '2016-04-01');
+ERROR:  variable "tstz1" requires "timestamp with time zone" value
+SELECT pgv_get_date('vars', 'd1');
+ pgv_get_date 
+--------------
+ 03-29-2016
+(1 row)
+
+SELECT pgv_get_date('vars', 'd2');
+ pgv_get_date 
+--------------
+ 03-30-2016
+(1 row)
+
+SELECT pgv_set_date('vars', 'd1', '2016-04-02');
+ pgv_set_date 
+--------------
+ 
+(1 row)
+
+SELECT pgv_get_date('vars', 'd1');
+ pgv_get_date 
+--------------
+ 04-02-2016
+(1 row)
+
+SELECT pgv_get_date('vars', 'd3');
+ERROR:  unrecognized variable "d3"
+SELECT pgv_get_date('vars', 'd3', false);
+ pgv_get_date 
+--------------
+ 
+(1 row)
+
+SELECT pgv_exists('vars', 'd3');
+ pgv_exists 
+------------
+ f
+(1 row)
+
+SELECT pgv_exists('vars', 'd1');
+ pgv_exists 
+------------
+ t
+(1 row)
+
+SELECT pgv_get_date('vars', 'tstz1');
+ERROR:  variable "tstz1" requires "timestamp with time zone" value
+SELECT pgv_set_date('vars', 'dNULL', NULL);
+ pgv_set_date 
+--------------
+ 
+(1 row)
+
+SELECT pgv_get_date('vars', 'dNULL');
+ pgv_get_date 
+--------------
+ 
+(1 row)
+
+-- Jsonb variables
+SELECT pgv_set_jsonb('vars2', 'j1', '[1, 2, "foo", null]');
+ pgv_set_jsonb 
+---------------
+ 
+(1 row)
+
+SELECT pgv_set_jsonb('vars2', 'j2', '{"bar": "baz", "balance": 7.77, "active": false}');
+ pgv_set_jsonb 
+---------------
+ 
+(1 row)
+
+SELECT pgv_set_jsonb('vars', 'd1', '[1, 2, "foo", null]');
+ERROR:  variable "d1" requires "date" value
+SELECT pgv_get_jsonb('vars2', 'j1');
+    pgv_get_jsonb    
+---------------------
+ [1, 2, "foo", null]
+(1 row)
+
+SELECT pgv_get_jsonb('vars2', 'j2');
+                  pgv_get_jsonb                   
+--------------------------------------------------
+ {"bar": "baz", "active": false, "balance": 7.77}
+(1 row)
+
+SELECT pgv_set_jsonb('vars2', 'j1', '{"foo": [true, "bar"], "tags": {"a": 1, "b": null}}');
+ pgv_set_jsonb 
+---------------
+ 
+(1 row)
+
+SELECT pgv_get_jsonb('vars2', 'j1');
+                    pgv_get_jsonb                    
+-----------------------------------------------------
+ {"foo": [true, "bar"], "tags": {"a": 1, "b": null}}
+(1 row)
+
+SELECT pgv_get_jsonb('vars2', 'j3');
+ERROR:  unrecognized variable "j3"
+SELECT pgv_get_jsonb('vars2', 'j3', false);
+ pgv_get_jsonb 
+---------------
+ 
+(1 row)
+
+SELECT pgv_exists('vars2', 'j3');
+ pgv_exists 
+------------
+ f
+(1 row)
+
+SELECT pgv_exists('vars2', 'j1');
+ pgv_exists 
+------------
+ t
+(1 row)
+
+SELECT pgv_get_jsonb('vars', 'd1');
+ERROR:  variable "d1" requires "date" value
+SELECT pgv_set_jsonb('vars', 'jNULL', NULL);
+ pgv_set_jsonb 
+---------------
+ 
+(1 row)
+
+SELECT pgv_get_jsonb('vars', 'jNULL');
+ pgv_get_jsonb 
+---------------
+ 
+(1 row)
+
+-- Record variables
+CREATE TABLE tab (id int, t varchar);
+INSERT INTO tab VALUES (0, 'str00'), (1, 'str11'), (2, NULL), (NULL, 'strNULL');
+SELECT pgv_insert('vars3', 'r1', tab) FROM tab;
+ pgv_insert 
+------------
+ 
+ 
+ 
+ 
+(4 rows)
+
+SELECT pgv_insert('vars2', 'j1', tab) FROM tab;
+ERROR:  variable "j1" requires "jsonb" value
+SELECT pgv_insert('vars3', 'r1', tab) FROM tab;
+ERROR:  there is a record in the variable "r1" with same key
+SELECT pgv_insert('vars3', 'r1', row(1, 'str1', 'str2'));
+ERROR:  new record structure differs from variable "r1" structure
+SELECT pgv_insert('vars3', 'r1', row(1, 1));
+ERROR:  new record structure differs from variable "r1" structure
+SELECT pgv_insert('vars3', 'r1', row('str1', 'str1'));
+ERROR:  new record structure differs from variable "r1" structure
+SELECT pgv_select('vars3', 'r1');
+ pgv_select 
+------------
+ (,strNULL)
+ (1,str11)
+ (2,)
+ (0,str00)
+(4 rows)
+
+SELECT pgv_select('vars3', 'r1', 1);
+ pgv_select 
+------------
+ (1,str11)
+(1 row)
+
+SELECT pgv_select('vars3', 'r1', 0);
+ pgv_select 
+------------
+ (0,str00)
+(1 row)
+
+SELECT pgv_select('vars3', 'r1', NULL::int);
+ pgv_select 
+------------
+ (,strNULL)
+(1 row)
+
+SELECT pgv_select('vars3', 'r1', ARRAY[1, 0, NULL]);
+ pgv_select 
+------------
+ (1,str11)
+ (0,str00)
+ (,strNULL)
+(3 rows)
+
+UPDATE tab SET t = 'str33' WHERE id = 1;
+SELECT pgv_update('vars3', 'r1', tab) FROM tab;
+ pgv_update 
+------------
+ t
+ t
+ t
+ t
+(4 rows)
+
+SELECT pgv_select('vars3', 'r1');
+ pgv_select 
+------------
+ (,strNULL)
+ (1,str33)
+ (2,)
+ (0,str00)
+(4 rows)
+
+SELECT pgv_delete('vars3', 'r1', 1);
+ pgv_delete 
+------------
+ t
+(1 row)
+
+SELECT pgv_select('vars3', 'r1');
+ pgv_select 
+------------
+ (,strNULL)
+ (2,)
+ (0,str00)
+(3 rows)
+
+SELECT pgv_delete('vars3', 'r1', 100);
+ pgv_delete 
+------------
+ f
+(1 row)
+
+SELECT pgv_select('vars3', 'r3');
+ERROR:  unrecognized variable "r3"
+SELECT pgv_exists('vars3', 'r3');
+ pgv_exists 
+------------
+ f
+(1 row)
+
+SELECT pgv_exists('vars3', 'r1');
+ pgv_exists 
+------------
+ t
+(1 row)
+
+SELECT pgv_select('vars2', 'j1');
+ERROR:  variable "j1" requires "jsonb" value
+-- Manipulate variables
+SELECT * FROM pgv_list() order by package, name;
+ package |   name   
+---------+----------
+ vars    | d1
+ vars    | d2
+ vars    | dNULL
+ vars    | int1
+ vars    | int2
+ vars    | intNULL
+ vars    | jNULL
+ vars    | num1
+ vars    | num2
+ vars    | numNULL
+ vars    | str1
+ vars    | str2
+ vars    | strNULL
+ vars    | ts1
+ vars    | ts2
+ vars    | tsNULL
+ vars    | tstz1
+ vars    | tstz2
+ vars    | tstzNULL
+ vars2   | j1
+ vars2   | j2
+ vars3   | r1
+(22 rows)
+
+SELECT pgv_remove('vars', 'int3');
+ERROR:  unrecognized variable "int3"
+SELECT pgv_remove('vars', 'int1');
+ pgv_remove 
+------------
+ 
+(1 row)
+
+SELECT pgv_get_int('vars', 'int1');
+ERROR:  unrecognized variable "int1"
+SELECT pgv_remove('vars2');
+ pgv_remove 
+------------
+ 
+(1 row)
+
+SELECT pgv_get_jsonb('vars2', 'j1');
+ERROR:  unrecognized package "vars2"
+SELECT * FROM pgv_list() order by package, name;
+ package |   name   
+---------+----------
+ vars    | d1
+ vars    | d2
+ vars    | dNULL
+ vars    | int2
+ vars    | intNULL
+ vars    | jNULL
+ vars    | num1
+ vars    | num2
+ vars    | numNULL
+ vars    | str1
+ vars    | str2
+ vars    | strNULL
+ vars    | ts1
+ vars    | ts2
+ vars    | tsNULL
+ vars    | tstz1
+ vars    | tstz2
+ vars    | tstzNULL
+ vars3   | r1
+(19 rows)
+
+SELECT pgv_free();
+ pgv_free 
+----------
+ 
+(1 row)
+
+SELECT * FROM pgv_list() order by package, name;
+ package | name 
+---------+------
+(0 rows)
+

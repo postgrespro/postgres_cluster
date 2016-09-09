@@ -23,6 +23,7 @@
 #include "access/xlog.h"
 #include "access/xlog_internal.h"
 #include "access/xloginsert.h"
+#include "access/ptrack.h"
 #include "catalog/pg_control.h"
 #include "common/pg_lzcompress.h"
 #include "miscadmin.h"
@@ -256,6 +257,10 @@ XLogRegisterBuffer(uint8 block_id, Buffer buffer, uint8 flags)
 #endif
 
 	regbuf->in_use = true;
+	if (ptrack_enable && regbuf->forkno == MAIN_FORKNUM)
+	{
+		ptrack_add_block(regbuf->block, regbuf->rnode);
+	}
 }
 
 /*

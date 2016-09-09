@@ -161,7 +161,8 @@ typedef enum LockTagType
 	 * Also, we use DB OID = 0 for shared objects such as tablespaces.
 	 */
 	LOCKTAG_USERLOCK,			/* reserved for old contrib/userlock code */
-	LOCKTAG_ADVISORY			/* advisory user locks */
+	LOCKTAG_ADVISORY,			/* advisory user locks */
+	LOCKTAG_SMGR /**/
 } LockTagType;
 
 #define LOCKTAG_LAST_TYPE	LOCKTAG_ADVISORY
@@ -205,6 +206,14 @@ typedef struct LOCKTAG
 	 (locktag).locktag_field3 = 0, \
 	 (locktag).locktag_field4 = 0, \
 	 (locktag).locktag_type = LOCKTAG_RELATION_EXTEND, \
+	 (locktag).locktag_lockmethodid = DEFAULT_LOCKMETHOD)
+
+#define SET_LOCKTAG_SMGR(locktag,relfilenode) \
+	((locktag).locktag_field1 = (relfilenode), \
+	 (locktag).locktag_field2 = 0, \
+	 (locktag).locktag_field3 = 0, \
+	 (locktag).locktag_field4 = 0, \
+	 (locktag).locktag_type = LOCKTAG_SMGR, \
 	 (locktag).locktag_lockmethodid = DEFAULT_LOCKMETHOD)
 
 #define SET_LOCKTAG_PAGE(locktag,dboid,reloid,blocknum) \

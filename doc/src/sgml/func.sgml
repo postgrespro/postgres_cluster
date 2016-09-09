@@ -15422,6 +15422,11 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
        <entry><type>text</type></entry>
        <entry><productname>PostgreSQL</> version information. See also <xref linkend="guc-server-version-num"> for a machine-readable version.</entry>
       </row>
+      <row>
+       <entry><literal><function>pgpro_version()</function></literal></entry>
+       <entry><type>text</type></entry>
+       <entry><productname>PostgresPro</> version information.</entry>
+       </row>
      </tbody>
     </tgroup>
    </table>
@@ -15646,7 +15651,13 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
     (available since 8.2) or <xref linkend="libpq-pqserverversion"> instead
     of parsing the text version.
    </para>
-
+  <indexterm>
+  <primary>pgpro_version</primary>
+  </indexterm>
+  <para>
+<literal><function>pgpro_version()</function></literal>
+   returns a string, describing <productname>PostgresPro</> version
+   information.</para>
   <indexterm>
    <primary>privilege</primary>
    <secondary>querying</secondary>

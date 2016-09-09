@@ -1,0 +1,1 @@
+\! bash sql/init.sh

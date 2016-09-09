@@ -24,6 +24,7 @@
 #define MISCADMIN_H
 
 #include "pgtime.h"				/* for pg_time_t */
+#include "access/ptrack.h"
 
 
 #define PG_BACKEND_VERSIONSTR "postgres (PostgreSQL) " PG_VERSION "\n"
@@ -130,6 +131,14 @@ do { \
 #define START_CRIT_SECTION()  (CritSectionCount++)
 
 #define END_CRIT_SECTION() \
+do { \
+	Assert(CritSectionCount > 0); \
+	CritSectionCount--; \
+	if (!CritSectionCount  && ptrack_enable && blocks_track_count > 0) \
+		ptrack_save(); \
+} while(0)
+
+#define END_CRIT_SECTION_WITHOUT_TRACK() \
 do { \
 	Assert(CritSectionCount > 0); \
 	CritSectionCount--; \

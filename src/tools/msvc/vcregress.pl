@@ -34,7 +34,7 @@ if (-e "src/tools/msvc/buildenv.pl")
 
 my $what = shift || "";
 if ($what =~
-/^(check|installcheck|plcheck|contribcheck|modulescheck|ecpgcheck|isolationcheck|upgradecheck|bincheck|recoverycheck)$/i
+/^(check|installcheck|plcheck|contribcheck|modulescheck|ecpgcheck|isolationcheck|upgradecheck|bincheck|recoverycheck|tapcheck)$/i
   )
 {
 	$what = uc $what;
@@ -61,14 +61,7 @@ unless ($schedule)
 	$schedule = "parallel" if ($what eq 'CHECK' || $what =~ /PARALLEL/);
 }
 
-if ($ENV{PERL5LIB})
-{
-	$ENV{PERL5LIB} = "$topdir/src/tools/msvc;$ENV{PERL5LIB}";
-}
-else
-{
-	$ENV{PERL5LIB} = "$topdir/src/tools/msvc";
-}
+$ENV{PERL5LIB} = "$topdir/src/tools/msvc;$ENV{PERL5LIB}";
 
 my $maxconn = "";
 $maxconn = "--max_connections=$ENV{MAX_CONNECTIONS}"
@@ -89,6 +82,7 @@ my %command = (
 	MODULESCHECK   => \&modulescheck,
 	ISOLATIONCHECK => \&isolationcheck,
 	BINCHECK       => \&bincheck,
+	TAPCHECK	   => \&tapcheck,
 	RECOVERYCHECK  => \&recoverycheck,
 	UPGRADECHECK   => \&upgradecheck,);
 
@@ -176,7 +170,46 @@ sub isolationcheck
 	exit $status if $status;
 }
 
-sub tap_check
+sub tapcheck
+{
+	InstallTemp();
+
+	my @args = ( "prove", "--verbose", "t/*.pl");
+
+	$ENV{PATH} = "$tmp_installdir/bin;$ENV{PATH}";
+	$ENV{PERL5LIB} = "$topdir/src/test/perl;$ENV{PERL5LIB}";
+	$ENV{PG_REGRESS} = "$topdir/$Config/pg_regress/pg_regress";
+
+	# Find out all the existing TAP tests by looking for t/ directories
+	# in the tree.
+	my $tap_dirs = [];
+	my @top_dir = ($topdir);
+	File::Find::find(
+		{   wanted => sub {
+				/^t\z/s
+				  && push(@$tap_dirs, $File::Find::name);
+			  }
+		},
+		@top_dir);
+
+	# Process each test
+	foreach my $test_path (@$tap_dirs)
+	{
+		# Like on Unix "make check-world", don't run the SSL test suite
+		# automatically.
+		next if ($test_path =~ /\/src\/test\/ssl\//);
+
+		my $dir = dirname($test_path);
+		chdir $dir;
+		# Reset those values, they may have been changed by another test.
+		$ENV{TESTDIR} = "$dir";
+		system(@args);
+		my $status = $? >> 8;
+		exit $status if $status;
+	}
+}
+
+sub plcheck
 {
 	die "Tap tests not enabled in configuration"
 	  unless $config->{tap_tests};
@@ -341,6 +374,9 @@ sub contribcheck
 		next if ($module eq "hstore_plpython" && !defined($config->{python}));
 		next if ($module eq "ltree_plpython"  && !defined($config->{python}));
 		next if ($module eq "sepgsql");
+		next if ($module eq "pg_arman");
+		# Need database with UTF8 encoding, not SQL_ASCII
+		next if ($module eq "hunspell_ru_ru");
 
 		subdircheck("$topdir/contrib", $module);
 		my $status = $? >> 8;

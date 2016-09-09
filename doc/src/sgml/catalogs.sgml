@@ -3564,6 +3564,14 @@
       <literal>pg_class.relnatts</literal>)</entry>
      </row>
 
+      <row>
+      <entry><structfield>indnkeyatts</structfield></entry>
+      <entry><type>int2</type></entry>
+      <entry></entry>
+      <entry>The number of key columns in the index. "Key columns" are ordinary
+      index columns in contrast with "included" columns.</entry>
+     </row>
+
      <row>
       <entry><structfield>indisunique</structfield></entry>
       <entry><type>bool</type></entry>
@@ -9810,6 +9818,13 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
     </tbody>
    </tgroup>
   </table>
+
+  <para>
+   While most timezone abbreviations represent fixed offsets from UTC,
+   there are some that have historically varied in value
+   (see <xref linkend="datetime-config-files"> for more information).
+   In such cases this view presents their current meaning.
+  </para>
 
  </sect1>
 

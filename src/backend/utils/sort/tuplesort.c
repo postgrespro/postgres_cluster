@@ -821,7 +821,7 @@ tuplesort_begin_cluster(TupleDesc tupDesc,
 			 workMem, randomAccess ? 't' : 'f');
 #endif
 
-	state->nKeys = RelationGetNumberOfAttributes(indexRel);
+	state->nKeys = IndexRelationGetNumberOfKeyAttributes(indexRel);
 
 	TRACE_POSTGRESQL_SORT_START(CLUSTER_SORT,
 								false,	/* no unique check */
@@ -913,7 +913,7 @@ tuplesort_begin_index_btree(Relation heapRel,
 			 workMem, randomAccess ? 't' : 'f');
 #endif
 
-	state->nKeys = RelationGetNumberOfAttributes(indexRel);
+	state->nKeys = IndexRelationGetNumberOfKeyAttributes(indexRel);
 
 	TRACE_POSTGRESQL_SORT_START(INDEX_SORT,
 								enforceUnique,
@@ -933,7 +933,6 @@ tuplesort_begin_index_btree(Relation heapRel,
 	state->enforceUnique = enforceUnique;
 
 	indexScanKey = _bt_mkscankey_nodata(indexRel);
-	state->nKeys = RelationGetNumberOfAttributes(indexRel);
 
 	/* Prepare SortSupport data for each column */
 	state->sortKeys = (SortSupport) palloc0(state->nKeys *

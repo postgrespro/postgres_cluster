@@ -40,6 +40,9 @@
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/syscache.h"
+#ifdef USE_ICU
+#include <unicode/ucnv.h>
+#endif /* USE_ICU */
 
 /*
  * When converting strings between different encodings, we assume that space
@@ -913,6 +916,9 @@ SetDatabaseEncoding(int encoding)
 
 	DatabaseEncoding = &pg_enc2name_tbl[encoding];
 	Assert(DatabaseEncoding->encoding == encoding);
+#ifdef USE_ICU
+	ucnv_setDefaultName((&pg_enc2iananame_tbl[encoding])->name);
+#endif
 }
 
 void

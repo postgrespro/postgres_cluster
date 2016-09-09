@@ -345,6 +345,9 @@ EOF
 		$d =~ s/__CFGNAME__/$cfgname/g;
 		print $f "      <ModuleDefinitionFile>$d</ModuleDefinitionFile>\n";
 	}
+	if ($self->{name} =~ /plperl/ and $self->{platform} eq 'Win32') {
+		print $f "      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>\n";
+	}
 	print $f <<EOF;
     </Link>
     <ResourceCompile>
