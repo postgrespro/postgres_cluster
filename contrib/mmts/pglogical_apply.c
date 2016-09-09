@@ -953,7 +953,7 @@ process_remote_delete(StringInfo s, Relation rel)
 
 static MemoryContext ApplyContext;
 
-void MtmExecutor(int id, void* work, size_t size)
+void MtmExecutor(void* work, size_t size)
 {
     StringInfoData s;
     Relation rel = NULL;

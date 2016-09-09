@@ -7,22 +7,15 @@
 #include "storage/spin.h"
 #include "storage/pg_sema.h"
 #include "storage/shmem.h"
+#include "datatype/timestamp.h"
 
 #include "bgwpool.h"
 
 bool MtmIsLogicalReceiver;
+int  MtmMaxWorkers;
 
-typedef struct
+static void BgwPoolMainLoop(BgwPool* pool)
 {
-    BgwPoolConstructor constructor;
-    int id;
-} BgwPoolExecutorCtx;
-
-static void BgwPoolMainLoop(Datum arg)
-{
-    BgwPoolExecutorCtx* ctx = (BgwPoolExecutorCtx*)arg;
-    int id = ctx->id;
-    BgwPool* pool = ctx->constructor();
     int size;
     void* work;
 
@@ -58,7 +51,7 @@ static void BgwPoolMainLoop(Datum arg)
 			pool->lastPeakTime = 0;
         }
         SpinLockRelease(&pool->lock);
-        pool->executor(id, work, size);
+        pool->executor(work, size);
         free(work);
         SpinLockAcquire(&pool->lock);
         pool->active -= 1;
@@ -84,6 +77,7 @@ void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname,  c
     pool->pending = 0;
 	pool->nWorkers = nWorkers;
 	pool->lastPeakTime = 0;
+	pool->lastDynamicWorkerStartTime = 0;
 	strncpy(pool->dbname, dbname, MAX_DBNAME_LEN);
 	strncpy(pool->dbuser, dbuser, MAX_DBUSER_LEN);
 }
@@ -91,6 +85,17 @@ void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname,  c
 timestamp_t BgwGetLastPeekTime(BgwPool* pool)
 {
 	return pool->lastPeakTime;
+}
+
+static void BgwPoolStaticWorkerMainLoop(Datum arg)
+{
+	BgwPoolConstructor constructor = (BgwPoolConstructor)DatumGetPointer(arg);
+    BgwPoolMainLoop(constructor());
+}
+
+static void BgwPoolDynamicWorkerMainLoop(Datum arg)
+{
+    BgwPoolMainLoop((BgwPool*)DatumGetPointer(arg));
 }
 
 void BgwPoolStart(int nWorkers, BgwPoolConstructor constructor)
@@ -101,15 +106,12 @@ void BgwPoolStart(int nWorkers, BgwPoolConstructor constructor)
 	MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
-	worker.bgw_main = BgwPoolMainLoop;
+	worker.bgw_main = BgwPoolStaticWorkerMainLoop;
 	worker.bgw_restart_time = MULTIMASTER_BGW_RESTART_TIMEOUT;
 
     for (i = 0; i < nWorkers; i++) { 
-        BgwPoolExecutorCtx* ctx = (BgwPoolExecutorCtx*)malloc(sizeof(BgwPoolExecutorCtx));
         snprintf(worker.bgw_name, BGW_MAXLEN, "bgw_pool_worker_%d", i+1);
-        ctx->id = i;
-        ctx->constructor = constructor;
-        worker.bgw_main_arg = (Datum)ctx;
+        worker.bgw_main_arg = PointerGetDatum(constructor);
         RegisterBackgroundWorker(&worker);
     }
 }
@@ -124,6 +126,28 @@ size_t BgwPoolGetQueueSize(BgwPool* pool)
 }
 
 
+static void BgwStartExtraWorker(BgwPool* pool)
+{
+	if (pool->nWorkers < MtmMaxWorkers) { 
+		timestamp_t now = MtmGetSystemTime();
+		if (pool->lastDynamicWorkerStartTime + MULTIMASTER_BGW_RESTART_TIMEOUT*USECS_PER_SEC < now) { 
+			BackgroundWorker worker;
+			BackgroundWorkerHandle* handle;
+			MemSet(&worker, 0, sizeof(BackgroundWorker));
+			worker.bgw_flags = BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION;
+			worker.bgw_start_time = BgWorkerStart_ConsistentState;
+			worker.bgw_main = BgwPoolDynamicWorkerMainLoop;
+			worker.bgw_restart_time = MULTIMASTER_BGW_RESTART_TIMEOUT;
+			snprintf(worker.bgw_name, BGW_MAXLEN, "bgw_pool_dynworker_%d", (int)++pool->nWorkers);
+			worker.bgw_main_arg = PointerGetDatum(pool);
+			pool->lastDynamicWorkerStartTime = now;
+			if (!RegisterDynamicBackgroundWorker(&worker, &handle)) { 
+				elog(WARNING, "Failed to start dynamic background worker");
+			}
+		}
+	}
+}
+
 void BgwPoolExecute(BgwPool* pool, void* work, size_t size)
 {
     if (size+4 > pool->size) {
@@ -131,7 +155,7 @@ void BgwPoolExecute(BgwPool* pool, void* work, size_t size)
 		 * Size of work is larger than size of shared buffer: 
 		 * run it immediately
 		 */
-		pool->executor(0, work, size);
+		pool->executor(work, size);
 		return;
 	}
  
@@ -149,6 +173,9 @@ void BgwPoolExecute(BgwPool* pool, void* work, size_t size)
             SpinLockAcquire(&pool->lock);
         } else {
             pool->pending += 1;
+			if (pool->active == pool->nWorkers) { 
+				BgwStartExtraWorker(pool);				
+			}
 			if (pool->lastPeakTime == 0 && pool->active == pool->nWorkers && pool->pending != 0) {
 				pool->lastPeakTime = MtmGetSystemTime();
 			}

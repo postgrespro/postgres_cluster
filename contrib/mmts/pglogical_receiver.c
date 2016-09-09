@@ -529,7 +529,7 @@ pglogical_receiver_main(Datum main_arg)
 						} else { 
 							if (MtmPreserveCommitOrder && buf.used == rc - hdr_len) {
 								/* Perform commit-prepared and rollback-prepared requested directly in receiver */
-								MtmExecutor(nodeId, buf.data, buf.used);
+								MtmExecutor(buf.data, buf.used);
 							} else {
 								MtmExecute(buf.data, buf.used);
 							}
