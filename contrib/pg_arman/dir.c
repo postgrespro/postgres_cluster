@@ -28,6 +28,7 @@ const char *pgdata_exclude[] =
 	NULL,			/* arclog_path will be set later */
 	NULL,			/* 'pg_tblspc' will be set later */
 	NULL,			/* sentinel */
+	NULL
 };
 
 static pgFile *pgFileNew(const char *path, bool omit_symlink);
@@ -192,6 +193,21 @@ pgFileComparePathDesc(const void *f1, const void *f2)
 	return -pgFileComparePath(f1, f2);
 }
 
+/* Compare two pgFile with their size */
+int
+pgFileCompareSize(const void *f1, const void *f2)
+{
+	pgFile *f1p = *(pgFile **)f1;
+	pgFile *f2p = *(pgFile **)f2;
+
+	if (f1p->size > f2p->size)
+		return 1;
+	else if (f1p->size < f2p->size)
+		return -1;
+	else
+		return 0;
+}
+
 /* Compare two pgFile with their modify timestamp. */
 int
 pgFileCompareMtime(const void *f1, const void *f2)
@@ -260,9 +276,13 @@ dir_list_file(parray *files, const char *root, const char *exclude[], bool omit_
 		fclose(black_list_file);
 		parray_qsort(black_list, BlackListCompare);
 		dir_list_file_internal(files, root, exclude, omit_symlink, add_root, black_list);
+		parray_qsort(files, pgFileComparePath);
 	}
 	else
+	{
 		dir_list_file_internal(files, root, exclude, omit_symlink, add_root, NULL);
+		parray_qsort(files, pgFileComparePath);
+	}
 }
 
 void
@@ -406,8 +426,6 @@ dir_list_file_internal(parray *files, const char *root, const char *exclude[],
 
 		break;	/* pseudo loop */
 	}
-
-	parray_qsort(files, pgFileComparePath);
 }
 
 /* print mkdirs.sh */

@@ -72,6 +72,8 @@ backup_data_file(const char *from_root, const char *to_root,
 	size_t				read_len = 0;
 	pg_crc32			crc;
 	off_t				offset;
+	char				write_buffer[sizeof(header)+BLCKSZ];
+	size_t				write_buffer_real_size;
 
 	INIT_CRC32C(crc);
 
@@ -185,12 +187,14 @@ backup_data_file(const char *from_root, const char *to_root,
 						elog(ERROR, "File: %s blknum %u have wrong page header.", file->path, blknum);
 				}
 
+
 				if(current.checksum_version &&
-				   pg_checksum_page(page.data, header.block) != ((PageHeader) page.data)->pd_checksum)
+				   pg_checksum_page(page.data, file->segno * RELSEG_SIZE + blknum) != ((PageHeader) page.data)->pd_checksum)
 				{
 					if (try_checksum)
 					{
 						elog(WARNING, "File: %s blknum %u have wrong checksum, try again", file->path, blknum);
+						usleep(100);
 						fseek(in, -sizeof(page), SEEK_CUR);
 						fread(&page, 1, sizeof(page), in);
 					}
@@ -211,10 +215,15 @@ backup_data_file(const char *from_root, const char *to_root,
 			upper_offset = header.hole_offset + header.hole_length;
 			upper_length = BLCKSZ - upper_offset;
 
+			write_buffer_real_size = sizeof(header)+header.hole_offset+upper_length;
+			memcpy(write_buffer, &header, sizeof(header));
+			if (header.hole_offset)
+				memcpy(write_buffer+sizeof(header), page.data, header.hole_offset);
+			if (upper_length)
+				memcpy(write_buffer+sizeof(header)+header.hole_offset, page.data + upper_offset, upper_length);
+
 			/* write data page excluding hole */
-			if (fwrite(&header, 1, sizeof(header), out) != sizeof(header) ||
-				fwrite(page.data, 1, header.hole_offset, out) != header.hole_offset ||
-				fwrite(page.data + upper_offset, 1, upper_length, out) != upper_length)
+			if(fwrite(write_buffer, 1, write_buffer_real_size, out) != write_buffer_real_size)
 			{
 				int errno_tmp = errno;
 				/* oops */
@@ -273,8 +282,6 @@ backup_data_file(const char *from_root, const char *to_root,
 					int i;
 
 					for(i=0; i<BLCKSZ && page.data[i] == 0; i++);
-
-
 					if (i == BLCKSZ)
 					{
 						elog(WARNING, "File: %s blknum %u, empty page", file->path, blknum);
@@ -298,6 +305,7 @@ backup_data_file(const char *from_root, const char *to_root,
 					if (try_checksum)
 					{
 						elog(WARNING, "File: %s blknum %u have wrong page header, try again", file->path, blknum);
+						usleep(100);
 						fseek(in, -sizeof(page), SEEK_CUR);
 						fread(&page, 1, sizeof(page), in);
 						continue;
@@ -307,7 +315,7 @@ backup_data_file(const char *from_root, const char *to_root,
 				}
 
 				if(current.checksum_version &&
-				   pg_checksum_page(page.data, header.block) != ((PageHeader) page.data)->pd_checksum)
+				   pg_checksum_page(page.data, file->segno * RELSEG_SIZE + blknum) != ((PageHeader) page.data)->pd_checksum)
 				{
 					if (try_checksum)
 						elog(WARNING, "File: %s blknum %u have wrong checksum, try again", file->path, blknum);
@@ -330,10 +338,15 @@ backup_data_file(const char *from_root, const char *to_root,
 			upper_offset = header.hole_offset + header.hole_length;
 			upper_length = BLCKSZ - upper_offset;
 
+			write_buffer_real_size = sizeof(header)+header.hole_offset+upper_length;
+			memcpy(write_buffer, &header, sizeof(header));
+			if (header.hole_offset)
+				memcpy(write_buffer+sizeof(header), page.data, header.hole_offset);
+			if (upper_length)
+				memcpy(write_buffer+sizeof(header)+header.hole_offset, page.data + upper_offset, upper_length);
+
 			/* write data page excluding hole */
-			if (fwrite(&header, 1, sizeof(header), out) != sizeof(header) ||
-				fwrite(page.data, 1, header.hole_offset, out) != header.hole_offset ||
-				fwrite(page.data + upper_offset, 1, upper_length, out) != upper_length)
+			if(fwrite(write_buffer, 1, write_buffer_real_size, out) != write_buffer_real_size)
 			{
 				int errno_tmp = errno;
 				/* oops */

@@ -244,7 +244,10 @@ absolute paths; relative paths are not allowed.
     Number of threads for backup. 
 
 **--stream**:
-    Enable stream replication for save WAL during backup process. 
+	Enable stream replication for save WAL during backup process.
+
+**--disable-ptrack-clear**:
+	Disable clear ptrack files for postgres without ptrack patch.
 
 ### RESTORE OPTIONS 
 
@@ -272,7 +275,7 @@ the same parameters as the ones in recovery.confin recovery.conf.
 **--stream**:
     Restore without recovery.conf and use pg_xlog WALs. Before you need 
     backup with **--stream** option. This option will disable all **--recovery-**
-    options. 
+	options.
 
 ### CATALOG OPTIONS
 

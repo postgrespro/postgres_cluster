@@ -36,7 +36,10 @@ static int		keep_data_generations = KEEP_INFINITE;
 static int		keep_data_days = KEEP_INFINITE;
 int				num_threads = 1;
 bool			stream_wal = false;
+bool			disable_ptrack_clear = false;
+static bool		backup_logs = false;
 static bool		backup_validate = false;
+bool			progress = false;
 
 /* restore configuration */
 static char		   *target_time;
@@ -59,8 +62,11 @@ static pgut_option options[] =
 	/* common options */
 	{ 'b', 'c', "check",		&check },
 	{ 'i', 'j', "threads",		&num_threads },
-	{ 'b', 8, "stream",		&stream_wal },
+	{ 'b', 8, "stream",			&stream_wal },
+	{ 'b', 11, "progress",		&progress },
 	/* backup options */
+	{ 'b', 9, "disable-ptrack-clear",	&disable_ptrack_clear },
+	{ 'b', 10, "backup-pg-log",			&backup_logs },
 	{ 'f', 'b', "backup-mode",			opt_backup_mode,		SOURCE_ENV },
 	{ 'b', 'C', "smooth-checkpoint",	&smooth_checkpoint,		SOURCE_ENV },
 	/* options with only long name (keep-xxx) */
@@ -168,10 +174,13 @@ main(int argc, char *argv[])
 		elog(ERROR, "delete command needs ARCLOG_PATH (-A, --arclog-path) to be set");
 
 	/* setup exclusion list for file search */
-	for (i = 0; pgdata_exclude[i]; i++)		/* find first empty slot */
-		;
+	for (i = 0; pgdata_exclude[i]; i++);		/* find first empty slot */
+
 	if (arclog_path)
 		pgdata_exclude[i++] = arclog_path;
+
+	if(!backup_logs)
+		pgdata_exclude[i++] = "pg_log";
 
 	/* do actual operation */
 	if (pg_strcasecmp(cmd, "init") == 0)
@@ -232,12 +241,15 @@ pgut_help(bool details)
 	printf(_("  -c, --check               show what would have been done\n"));
 	printf(_("  -j, --threads=NUM         num threads for backup and restore\n"));
 	printf(_("  --stream                  use stream for save/restore WAL during backup\n"));
+	printf(_("  --progress                show progress copy files\n"));
 	printf(_("\nBackup options:\n"));
 	printf(_("  -b, --backup-mode=MODE    full,page,ptrack\n"));
 	printf(_("  -C, --smooth-checkpoint   do smooth checkpoint before backup\n"));
 	printf(_("  --validate                validate backup after taking it\n"));
 	printf(_("  --keep-data-generations=N keep GENERATION of full data backup\n"));
 	printf(_("  --keep-data-days=DAY      keep enough data backup to recover to DAY days age\n"));
+	printf(_("  --disable-ptrack-clear    disable clear ptrack for postgres without ptrack\n"));
+	printf(_("  --backup-pg-log           start backup pg_log directory\n"));
 	printf(_("\nRestore options:\n"));
 	printf(_("  --recovery-target-time    time stamp up to which recovery will proceed\n"));
 	printf(_("  --recovery-target-xid     transaction ID up to which recovery will proceed\n"));
