@@ -214,6 +214,7 @@ bool  MtmVolksWagenMode;
 TransactionId  MtmUtilityProcessedInXid;
 
 static char* MtmConnStrs;
+static char* MtmClusterName;
 static int   MtmQueueSize;
 static int   MtmWorkers;
 static int   MtmVacuumDelay;
@@ -1867,6 +1868,39 @@ static void MtmRaftableInitialize()
 	raftable_start(MtmNodeId - 1);
 }
 
+static void MtmCheckControlFile(void)
+{
+	char controlFilePath[MAXPGPATH];
+	char buf[MULTIMASTER_MAX_CTL_STR_SIZE];
+	FILE* f;
+	snprintf(controlFilePath, MAXPGPATH, "%s/global/mmts_control", DataDir);
+	f = fopen(controlFilePath, "r");
+	if (f != NULL && fgets(buf, sizeof buf, f)) {
+		char* sep = strchr(buf, ':');
+		if (sep == NULL) {
+			elog(FATAL, "File mmts_control doesn't contain cluster name");
+		}
+		*sep = '\0';
+		if (strcmp(buf, MtmClusterName) != 0) { 
+			elog(FATAL, "Database belongs to some other cluster %s rather than %s", buf, MtmClusterName);
+		}
+		if (sscanf(sep+1, "%d", &Mtm->donorNodeId) != 1) { 
+			elog(FATAL, "File mmts_control doesn't contain node id");
+		}
+		fclose(f);
+	} else { 
+		if (f != NULL) { 
+			fclose(f);
+		}
+		f = fopen(controlFilePath, "w");
+		if (f == NULL) { 
+			elog(FATAL, "Failed to create mmts_control file: %m");
+		}
+		Mtm->donorNodeId = -1;
+		fprintf(f, "%s:%d\n", MtmClusterName, Mtm->donorNodeId);
+		fclose(f);
+	}
+}
 
 static void MtmInitialize()
 {
@@ -1931,6 +1965,8 @@ static void MtmInitialize()
     MtmDoReplication = true;
 	TM = &MtmTM;
 	LWLockRelease(AddinShmemInitLock);
+
+	MtmCheckControlFile();
 }
 
 static void 
@@ -2472,6 +2508,19 @@ _PG_init(void)
 		NULL         /* GucShowHook show_hook */
 	);
     
+	DefineCustomStringVariable(
+		"multimaster.cluster_name",
+		"Name of the cluster",
+		NULL,
+		&MtmClusterName,
+		"mmts",
+		PGC_BACKEND, /* context */
+		0,           /* flags */
+		NULL,        /* GucStringCheckHook check_hook */
+		NULL,        /* GucStringAssignHook assign_hook */
+		NULL         /* GucShowHook show_hook */
+	);
+    
 	DefineCustomIntVariable(
 		"multimaster.node_id",
 		"Multimaster node ID",
@@ -2609,8 +2658,10 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 		MtmLock(LW_EXCLUSIVE);
 		if (Mtm->status == MTM_RECOVERY) { 
 			recovery = true;
-			if (Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId) { 
-				/* Choose for recovery first available slot */
+			if ((Mtm->recoverySlot == 0 && (Mtm->donorNodeId < 0 || Mtm->donorNodeId == nodeId))
+				|| Mtm->recoverySlot == nodeId) 
+			{ 
+				/* Choose for recovery first available slot or slot of donor node (if any) */
 				elog(WARNING, "Process %d starts recovery from node %d", MyProcPid, nodeId);
 				Mtm->recoverySlot = nodeId;
 				Mtm->nReceivers = 0;
@@ -2698,6 +2749,8 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 {
 	ListCell *param;
 	bool recoveryCompleted = false;
+	XLogRecPtr recoveryStartPos = InvalidXLogRecPtr;
+
 	MtmIsRecoverySession = false;
 	Mtm->nodes[MtmReplicationNodeId-1].senderPid = MyProcPid;
 	Mtm->nodes[MtmReplicationNodeId-1].senderStartTime = MtmGetSystemTime();
@@ -2717,11 +2770,21 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 				elog(ERROR, "Replication mode is not specified");
 			}				
 			break;
+		} else if (strcmp("mtm_restart_pos", elem->defname) == 0) { 
+			if (elem->arg != NULL && strVal(elem->arg) != NULL) {
+				recoveryStartPos = intVal(elem->arg);
+			} else { 
+				elog(ERROR, "Restart position is not specified");
+			}
 		}
 	}
 	MtmLock(LW_EXCLUSIVE);
-	if (MtmIsRecoverySession) {
-		MTM_LOG1("%d: Node %d start recovery of node %d", MyProcPid, MtmNodeId, MtmReplicationNodeId);
+	if (MtmIsRecoverySession) {		
+		MTM_LOG1("%d: Node %d start recovery of node %d at position %lx", MyProcPid, MtmNodeId, MtmReplicationNodeId, recoveryStartPos);
+		Assert(MyReplicationSlot != NULL);
+		if (recoveryStartPos < MyReplicationSlot->data.restart_lsn) { 
+			elog(ERROR, "Specified recovery start position %lx is beyond restart lsn %lx", recoveryStartPos, MyReplicationSlot->data.restart_lsn);
+		}
 		if (!BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
 			MtmDisableNode(MtmReplicationNodeId);
 			MtmCheckQuorum();

@@ -52,6 +52,7 @@
 #define MULTIMASTER_MAX_CONN_STR_SIZE   128
 #define MULTIMASTER_MAX_HOST_NAME_SIZE  64
 #define MULTIMASTER_MAX_LOCAL_TABLES    256
+#define MULTIMASTER_MAX_CTL_STR_SIZE    256
 #define MULTIMASTER_BROADCAST_SERVICE   "mtm_broadcast"
 #define MULTIMASTER_ADMIN               "mtm_admin"
 
@@ -241,6 +242,7 @@ typedef struct
 	int    nActiveTransactions;        /* Nunmber of active 2PC transactions */
 	int    nConfigChanges;             /* Number of cluster configuration changes */
 	int    recoveryCount;              /* Number of completed recoveries */
+	int    donorNodeId;               /* Cluster node from which this node was populated */
 	int64  timeShift;                  /* Local time correction */
 	csn_t  csn;                        /* Last obtained timestamp: used to provide unique acending CSNs based on system time */
 	csn_t  lastCsn;                    /* CSN of last committed transaction */

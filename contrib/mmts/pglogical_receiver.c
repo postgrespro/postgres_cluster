@@ -285,7 +285,7 @@ pglogical_receiver_main(Datum main_arg)
 			timeline = Mtm->nodes[nodeId-1].timeline;
 			newTimeline = true;
 		}
-		/* My original assumption was that we can perfrom recovery only fromm existed slot, 
+		/* My original assumption was that we can perfrom recovery only from existed slot, 
 		 * but unfortunately looks like slots can "disapear" together with WAL-sender.
 		 * So let's try to recreate slot always. */
 		/* if (mode != REPLMODE_REPLICATION) */
@@ -325,7 +325,7 @@ pglogical_receiver_main(Datum main_arg)
 				 * Them are either empty, either new node is synchronized using base_backup.
 				 * So we assume that LSNs are the same for local and remote node
 				 */
-				originStartPos = Mtm->status == MTM_RECOVERY ? GetXLogInsertRecPtr() : InvalidXLogRecPtr;
+				originStartPos = Mtm->status == MTM_RECOVERY && Mtm->donorNodeId == nodeId ? GetXLogInsertRecPtr() : InvalidXLogRecPtr;
 				MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, nodeId);
 			} else { 
 				originStartPos = replorigin_get_progress(originId, false);
@@ -335,13 +335,14 @@ pglogical_receiver_main(Datum main_arg)
 			CommitTransactionCommand();
 		}
 		
-		appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %x/%x (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s')",
+		appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %x/%x (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s', \"mtm_restart_pos\" '%lx')",
 						  slotName,
 						  (uint32) (originStartPos >> 32),
 						  (uint32) originStartPos,
 						  MULTIMASTER_MAX_PROTO_VERSION,
 						  MULTIMASTER_MIN_PROTO_VERSION,
-						  MtmReplicationModeName[mode]
+						  MtmReplicationModeName[mode],
+						  originStartPos
 			);
 		res = PQexec(conn, query->data);
 		if (PQresultStatus(res) != PGRES_COPY_BOTH)
