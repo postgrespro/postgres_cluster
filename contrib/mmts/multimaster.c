@@ -1358,8 +1358,8 @@ static void MtmEnableNode(int nodeId)
 void MtmRecoveryCompleted(void)
 {
 	int i;
-	MTM_LOG1("Recovery of node %d is completed, disabled mask=%lx, connectivity mask=%lx, live nodes=%d", 
-			 MtmNodeId, Mtm->disabledNodeMask, Mtm->connectivityMask, Mtm->nLiveNodes);
+	MTM_LOG1("Recovery of node %d is completed, disabled mask=%llx, connectivity mask=%llx, live nodes=%d",
+			 MtmNodeId, (long long) Mtm->disabledNodeMask, (long long) Mtm->connectivityMask, Mtm->nLiveNodes);
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
 	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
@@ -1719,7 +1719,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	MtmLock(LW_EXCLUSIVE);
 	BIT_SET(Mtm->connectivityMask, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
-	MTM_LOG1("Disconnect node %d connectivity mask %lx", nodeId, Mtm->connectivityMask);
+	MTM_LOG1("Disconnect node %d connectivity mask %llx", nodeId, (long long) Mtm->connectivityMask);
 	MtmUnlock();
 
 	if (!RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false))
@@ -1764,7 +1764,7 @@ void MtmOnNodeConnect(int nodeId)
 	BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
 	MtmUnlock();
 
-	MTM_LOG1("Reconnect node %d, connectivityMask=%lx", nodeId, Mtm->connectivityMask);
+	MTM_LOG1("Reconnect node %d, connectivityMask=%llx", nodeId, (long long) Mtm->connectivityMask);
 	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false); 
 }
 

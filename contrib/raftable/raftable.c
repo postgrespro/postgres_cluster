@@ -332,7 +332,7 @@ static RaftableMessage *raftable_try_query(RaftableMessage *msg, size_t size, si
 	RaftableMessage *answer;
 
 	s = get_connection(timeout);
-	if (s < 0) return false;
+	if (s < 0) return NULL;
 
 	if (timeout_happened(timeout))
 	{
