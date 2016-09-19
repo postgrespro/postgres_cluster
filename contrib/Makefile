@@ -58,6 +58,7 @@ SUBDIRS = \
 		pg_variables	\
 		jsquery		\
 		sr_plan		\
+		pg_arman	\
 		shared_ispell
 
 ifeq ($(with_openssl),yes)
