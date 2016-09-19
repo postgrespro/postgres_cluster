@@ -91,7 +91,7 @@ static void MtmMonitor(Datum arg);
 static void MtmSendHeartbeat(void);
 static bool MtmSendToNode(int node, void const* buf, int size);
 
-
+/*
 static char const* const messageText[] = 
 {
 	"INVALID",
@@ -105,6 +105,7 @@ static char const* const messageText[] =
 	"POLL_REQUEST",
 	"POLL_STATUS"
 };
+*/
 
 static BackgroundWorker MtmSenderWorker = {
 	"mtm-sender",
@@ -362,7 +363,7 @@ static void MtmSendHeartbeat()
 					MTM_LOG2("Send heartbeat to node %d with timestamp %ld", i+1, now);    
 				}
 			} else { 
-				MTM_LOG1("Do not send heartbeat to node %d, busy mask %ld, status %d", i+1, busy_mask, Mtm->status);
+				MTM_LOG1("Do not send heartbeat to node %d, busy mask %lld, status %d", i+1, (long long) busy_mask, Mtm->status);
 			}
 		}
 	}
@@ -935,7 +936,9 @@ static void MtmReceiver(Datum arg)
 									CommitTransactionCommand();
 									Assert(ts->status == TRANSACTION_STATUS_ABORTED);
 								} else {
-									elog(LOG, "Receive response %d for transaction %s for node %d, votedMask=%lx, participantsMask=%lx", msg->status, msg->gid, node, ts->votedMask, ts->participantsMask & ~Mtm->disabledNodeMask);
+									elog(LOG, "Receive response %d for transaction %s for node %d, votedMask=%llx, participantsMask=%llx",
+										msg->status, msg->gid, node, (long long) ts->votedMask,
+										(long long) (ts->participantsMask & ~Mtm->disabledNodeMask) );
 									continue;
 								}
 							} else if (ts->status == TRANSACTION_STATUS_ABORTED && msg->status == TRANSACTION_STATUS_COMMITTED) {
