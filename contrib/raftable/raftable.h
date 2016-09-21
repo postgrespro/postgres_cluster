@@ -1,6 +1,8 @@
 #ifndef __RAFTABLE_H__
 #define __RAFTABLE_H__
 
+#define RAFTABLE_RESTART_TIMEOUT 1
+
 /*
  * Gets value by key. Returns the value or NULL if not found. Gives up after
  * 'timeout_ms' milliseconds
