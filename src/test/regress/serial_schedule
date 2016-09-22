@@ -70,7 +70,7 @@ test: triggers
 test: inherit
 test: create_table_like
 test: typed_table
-# test: vacuum # issue#18
+test: vacuum
 test: drop_if_exists
 test: updatable_views
 test: rolenames

@@ -672,6 +672,8 @@ process_remote_insert(StringInfo s, Relation rel)
 	ScanKey	*index_keys;
 	int	i;
 
+	PushActiveSnapshot(GetTransactionSnapshot());
+
 	estate = create_rel_estate(rel);
 	newslot = ExecInitExtraTupleSlot(estate);
 	oldslot = ExecInitExtraTupleSlot(estate);
@@ -746,6 +748,9 @@ process_remote_insert(StringInfo s, Relation rel)
     UserTableUpdateOpenIndexes(estate, newslot);
 
 	ExecCloseIndices(estate->es_result_relation_info);
+
+	if (ActiveSnapshotSet())
+		PopActiveSnapshot();
 
     heap_close(rel, NoLock);
     ExecResetTupleTable(estate->es_tupleTable, true);
