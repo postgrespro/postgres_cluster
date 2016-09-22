@@ -112,12 +112,14 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	
 	if (!isRecovery && csn == INVALID_CSN) { 
 		MtmIsFilteredTxn = true;
-	} else { 
+		MTM_LOG3("%d: pglogical_write_begin XID=%d filtered", MyProcPid, txn->xid);
+	} else {
+		MTM_LOG3("%d: pglogical_write_begin XID=%d sent", MyProcPid, txn->xid);
+		MtmIsFilteredTxn = false;
 		pq_sendbyte(out, 'B');		/* BEGIN */
 		pq_sendint(out, MtmNodeId, 4);
 		pq_sendint(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
 		pq_sendint64(out, csn);
-		MtmIsFilteredTxn = false;
 		MtmTransactionRecords = 0;
 	}
 }
@@ -126,6 +128,12 @@ static void
 pglogical_write_message(StringInfo out,
 					const char *prefix, Size sz, const char *message)
 {
+	if (MtmIsFilteredTxn)
+	{
+		MTM_LOG3("%d: pglogical_write_message filtered", MyProcPid);
+		return;
+	}
+
 	pq_sendbyte(out, 'G');
 	pq_sendbytes(out, message, sz);
 	pq_sendbyte(out, '\0');

@@ -1660,7 +1660,7 @@ bool MtmRefreshClusterStatus(bool nowait, int testNodeId)
 			/* Interrupt voting for active transaction and abort them */
 			for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
 				MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%d, gtid.xid=%d",
-						 ts->gid, ts->gtid.nхode, ts->xid, ts->status, ts->gtid.xid);
+						 ts->gid, ts->gtid.node, ts->xid, ts->status, ts->gtid.xid);
 				if (MtmIsCoordinator(ts)) { 
 					if (!ts->votingCompleted && disabled != 0 && ts->status != TRANSACTION_STATUS_ABORTED) {
 						MtmAbortTransaction(ts);
@@ -3826,6 +3826,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	{
 		MTM_LOG1("Xact accessed temp table, stopping replication");
 		MtmTx.isDistributed = false; /* Skip */
+		MtmTx.snapshot = INVALID_CSN;
 	}
 
 }
