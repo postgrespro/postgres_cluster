@@ -55,6 +55,7 @@
 #include "access/xlogutils.h"
 #include "catalog/catalog.h"
 #include "catalog/namespace.h"
+#include "commands/vacuum.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "storage/bufmgr.h"
@@ -90,7 +91,7 @@ static HeapScanDesc heap_beginscan_internal(Relation relation,
 						bool temp_snap);
 static BlockNumber heap_parallelscan_nextpage(HeapScanDesc scan);
 static HeapTuple heap_prepare_insert(Relation relation, HeapTuple tup,
-					TransactionId xid, CommandId cid, int options);
+					CommandId cid, int options);
 static XLogRecPtr log_heap_update(Relation reln, Buffer oldbuf,
 				Buffer newbuf, HeapTuple oldtup,
 				HeapTuple newtup, HeapTuple old_key_tup,
@@ -433,6 +434,7 @@ heapgetpage(HeapScanDesc scan, BlockNumber page)
 			loctup.t_tableOid = RelationGetRelid(scan->rs_rd);
 			loctup.t_data = (HeapTupleHeader) PageGetItem((Page) dp, lpp);
 			loctup.t_len = ItemIdGetLength(lpp);
+			HeapTupleCopyEpochFromPage(&loctup, dp);
 			ItemPointerSet(&(loctup.t_self), page, lineoff);
 
 			if (all_visible)
@@ -627,6 +629,7 @@ heapgettup(HeapScanDesc scan,
 
 		tuple->t_data = (HeapTupleHeader) PageGetItem((Page) dp, lpp);
 		tuple->t_len = ItemIdGetLength(lpp);
+		HeapTupleCopyEpochFromPage(tuple, dp);
 
 		return;
 	}
@@ -646,6 +649,7 @@ heapgettup(HeapScanDesc scan,
 
 				tuple->t_data = (HeapTupleHeader) PageGetItem((Page) dp, lpp);
 				tuple->t_len = ItemIdGetLength(lpp);
+				HeapTupleCopyEpochFromPage(tuple, dp);
 				ItemPointerSet(&(tuple->t_self), page, lineoff);
 
 				/*
@@ -923,6 +927,7 @@ heapgettup_pagemode(HeapScanDesc scan,
 
 		tuple->t_data = (HeapTupleHeader) PageGetItem((Page) dp, lpp);
 		tuple->t_len = ItemIdGetLength(lpp);
+		HeapTupleCopyEpochFromPage(tuple, dp);
 
 		/* check that rs_cindex is in sync */
 		Assert(scan->rs_cindex < scan->rs_ntuples);
@@ -945,6 +950,7 @@ heapgettup_pagemode(HeapScanDesc scan,
 
 			tuple->t_data = (HeapTupleHeader) PageGetItem((Page) dp, lpp);
 			tuple->t_len = ItemIdGetLength(lpp);
+			HeapTupleCopyEpochFromPage(tuple, dp);
 			ItemPointerSet(&(tuple->t_self), page, lineoff);
 
 			/*
@@ -1918,6 +1924,7 @@ heap_fetch(Relation relation,
 	tuple->t_data = (HeapTupleHeader) PageGetItem(page, lp);
 	tuple->t_len = ItemIdGetLength(lp);
 	tuple->t_tableOid = RelationGetRelid(relation);
+	HeapTupleCopyEpochFromPage(tuple, page);
 
 	/*
 	 * check time qualification of tuple, then release lock
@@ -2003,6 +2010,7 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 	skip = !first_call;
 
 	heapTuple->t_self = *tid;
+	HeapTupleCopyEpochFromPage(heapTuple, dp);
 
 	/* Scan through possible multiple members of HOT-chain */
 	for (;;)
@@ -2033,6 +2041,7 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 		heapTuple->t_data = (HeapTupleHeader) PageGetItem(dp, lp);
 		heapTuple->t_len = ItemIdGetLength(lp);
 		heapTuple->t_tableOid = RelationGetRelid(relation);
+		HeapTupleCopyEpochFromPage(heapTuple, dp);
 		ItemPointerSetOffsetNumber(&heapTuple->t_self, offnum);
 
 		/*
@@ -2047,7 +2056,7 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 		 */
 		if (TransactionIdIsValid(prev_xmax) &&
 			!TransactionIdEquals(prev_xmax,
-								 HeapTupleHeaderGetXmin(heapTuple->t_data)))
+								 HeapTupleGetXmin(heapTuple)))
 			break;
 
 		/*
@@ -2105,7 +2114,7 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 				   ItemPointerGetBlockNumber(tid));
 			offnum = ItemPointerGetOffsetNumber(&heapTuple->t_data->t_ctid);
 			at_chain_start = false;
-			prev_xmax = HeapTupleHeaderGetUpdateXid(heapTuple->t_data);
+			prev_xmax = HeapTupleGetUpdateXidAny(heapTuple);
 		}
 		else
 			break;				/* end of chain */
@@ -2224,13 +2233,14 @@ heap_get_latest_tid(Relation relation,
 		tp.t_data = (HeapTupleHeader) PageGetItem(page, lp);
 		tp.t_len = ItemIdGetLength(lp);
 		tp.t_tableOid = RelationGetRelid(relation);
+		HeapTupleCopyEpochFromPage(&tp, page);
 
 		/*
 		 * After following a t_ctid link, we might arrive at an unrelated
 		 * tuple.  Check for XMIN match.
 		 */
 		if (TransactionIdIsValid(priorXmax) &&
-		  !TransactionIdEquals(priorXmax, HeapTupleHeaderGetXmin(tp.t_data)))
+		  !TransactionIdEquals(priorXmax, HeapTupleGetXmin(&tp)))
 		{
 			UnlockReleaseBuffer(buffer);
 			break;
@@ -2249,7 +2259,7 @@ heap_get_latest_tid(Relation relation,
 		 * If there's a valid t_ctid link, follow it, else we're done.
 		 */
 		if ((tp.t_data->t_infomask & HEAP_XMAX_INVALID) ||
-			HeapTupleHeaderIsOnlyLocked(tp.t_data) ||
+			HeapTupleHeaderIsOnlyLocked(&tp) ||
 			ItemPointerEquals(&tp.t_self, &tp.t_data->t_ctid))
 		{
 			UnlockReleaseBuffer(buffer);
@@ -2257,7 +2267,7 @@ heap_get_latest_tid(Relation relation,
 		}
 
 		ctid = tp.t_data->t_ctid;
-		priorXmax = HeapTupleHeaderGetUpdateXid(tp.t_data);
+		priorXmax = HeapTupleGetUpdateXidAny(&tp);
 		UnlockReleaseBuffer(buffer);
 	}							/* end of loop */
 }
@@ -2282,7 +2292,8 @@ heap_get_latest_tid(Relation relation,
 static void
 UpdateXmaxHintBits(HeapTupleHeader tuple, Buffer buffer, TransactionId xid)
 {
-	Assert(TransactionIdEquals(HeapTupleHeaderGetRawXmax(tuple), xid));
+	/* FIXME */
+	/*Assert(TransactionIdEquals(HeapTupleHeaderGetRawXmax(tuple), xid));*/
 	Assert(!(tuple->t_infomask & HEAP_XMAX_IS_MULTI));
 
 	if (!(tuple->t_infomask & (HEAP_XMAX_COMMITTED | HEAP_XMAX_INVALID)))
@@ -2384,7 +2395,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 	 * Note: below this point, heaptup is the data we actually intend to store
 	 * into the relation; tup is the caller's original untoasted data.
 	 */
-	heaptup = heap_prepare_insert(relation, tup, xid, cid, options);
+	heaptup = heap_prepare_insert(relation, tup, cid, options);
 
 	/*
 	 * Find buffer to insert this tuple into.  If the page is all visible,
@@ -2411,11 +2422,14 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 	 */
 	CheckForSerializableConflictIn(relation, NULL, InvalidBuffer);
 
+	heap_page_prepare_for_xid(relation, buffer, xid, false);
+	HeapTupleCopyEpochFromPage(heaptup, BufferGetPage(buffer));
+
 	/* NO EREPORT(ERROR) from here till changes are logged */
 	START_CRIT_SECTION();
 
 	RelationPutHeapTuple(relation, buffer, heaptup,
-						 (options & HEAP_INSERT_SPECULATIVE) != 0);
+						 (options & HEAP_INSERT_SPECULATIVE) != 0, xid);
 
 	if (PageIsAllVisible(BufferGetPage(buffer)))
 	{
@@ -2545,6 +2559,398 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 }
 
 /*
+ * Find minimum and maximum short transaction ids which occurs in the page.
+ */
+static bool
+heap_page_xid_min_max(Page page, bool multi,
+					  ShortTransactionId *min,
+					  ShortTransactionId *max)
+{
+	bool				found = false;
+	OffsetNumber		offnum,
+						maxoff;
+
+	maxoff = PageGetMaxOffsetNumber(page);
+
+	for (offnum = FirstOffsetNumber;
+		 offnum <= maxoff;
+		 offnum = OffsetNumberNext(offnum))
+	{
+		ItemId				itemid;
+		HeapTupleHeader		htup;
+
+		itemid = PageGetItemId(page, offnum);
+
+		if (!ItemIdIsNormal(itemid))
+			continue;
+
+		htup = (HeapTupleHeader) PageGetItem(page, itemid);
+
+		if (!multi)
+		{
+			if (!HeapTupleHeaderXminFrozen(htup) &&
+				TransactionIdIsNormal(htup->t_choice.t_heap.t_xmin))
+			{
+				if (!found)
+				{
+					*min = *max = htup->t_choice.t_heap.t_xmin;
+					found = true;
+				}
+				else
+				{
+					*min = Min(*min, htup->t_choice.t_heap.t_xmin);
+					*max = Max(*max, htup->t_choice.t_heap.t_xmin);
+				}
+			}
+
+			if (TransactionIdIsNormal(htup->t_choice.t_heap.t_xmax) &&
+				!(htup->t_infomask & HEAP_XMAX_IS_MULTI))
+			{
+				if (!found)
+				{
+					*min = *max = htup->t_choice.t_heap.t_xmax;
+					found = true;
+				}
+				else
+				{
+					*min = Min(*min, htup->t_choice.t_heap.t_xmax);
+					*max = Max(*max, htup->t_choice.t_heap.t_xmax);
+				}
+			}
+		}
+		else
+		{
+			if (TransactionIdIsNormal(htup->t_choice.t_heap.t_xmax) &&
+				(htup->t_infomask & HEAP_XMAX_IS_MULTI))
+			{
+				if (!found)
+				{
+					*min = *max = htup->t_choice.t_heap.t_xmax;
+					found = true;
+				}
+				else
+				{
+					*min = Min(*min, htup->t_choice.t_heap.t_xmax);
+					*max = Max(*max, htup->t_choice.t_heap.t_xmax);
+				}
+			}
+		}
+	}
+	return found;
+}
+
+/*
+ * Shift xid epoch in the page.
+ */
+static void
+heap_page_shift_epoch(Page page, bool multi, int64 delta)
+{
+	PageHeader			pageHdr = (PageHeader) page;
+	OffsetNumber		offnum,
+						maxoff;
+
+	maxoff = PageGetMaxOffsetNumber(page);
+
+	for (offnum = FirstOffsetNumber;
+		 offnum <= maxoff;
+		 offnum = OffsetNumberNext(offnum))
+	{
+		ItemId				itemid;
+		HeapTupleHeader		htup;
+
+		itemid = PageGetItemId(page, offnum);
+
+		if (!ItemIdIsNormal(itemid))
+			continue;
+
+		htup = (HeapTupleHeader) PageGetItem(page, itemid);
+
+		if (!multi)
+		{
+			if (!HeapTupleHeaderXminFrozen(htup) &&
+				TransactionIdIsNormal(htup->t_choice.t_heap.t_xmin))
+			{
+				Assert(htup->t_choice.t_heap.t_xmin - delta >= FirstNormalTransactionId);
+				Assert(htup->t_choice.t_heap.t_xmin - delta <= MaxShortTransactionId);
+				htup->t_choice.t_heap.t_xmin -= delta;
+			}
+
+			if (TransactionIdIsNormal(htup->t_choice.t_heap.t_xmax) &&
+				!(htup->t_infomask & HEAP_XMAX_IS_MULTI))
+			{
+				Assert(htup->t_choice.t_heap.t_xmax - delta >= FirstNormalTransactionId);
+				Assert(htup->t_choice.t_heap.t_xmax - delta <= MaxShortTransactionId);
+				htup->t_choice.t_heap.t_xmax -= delta;
+			}
+		}
+		else
+		{
+			if (TransactionIdIsNormal(htup->t_choice.t_heap.t_xmax) &&
+				(htup->t_infomask & HEAP_XMAX_IS_MULTI))
+			{
+				Assert(htup->t_choice.t_heap.t_xmax - delta >= FirstNormalTransactionId);
+				Assert(htup->t_choice.t_heap.t_xmax - delta <= MaxShortTransactionId);
+				htup->t_choice.t_heap.t_xmax -= delta;
+			}
+		}
+	}
+
+	if (!multi)
+		pageHdr->pd_xid_epoch += delta;
+	else
+		pageHdr->pd_multi_epoch += delta;
+}
+
+static int
+freeze_single_heap_page(Relation relation, Buffer buffer)
+{
+	Page					page = BufferGetPage(buffer);
+	OffsetNumber			offnum,
+							maxoff;
+	HeapTupleData			tuple;
+	int						nfrozen = 0;
+	xl_heap_freeze_tuple   *frozen;
+	TransactionId			latestRemovedXid = InvalidTransactionId,
+							OldestXmin,
+							FreezeXid;
+	MultiXactId				MultiXactCutoff;
+
+	vacuum_set_xid_limits(relation, 0, 0, 0, 0,
+						  &OldestXmin, &FreezeXid, NULL, &MultiXactCutoff,
+						  NULL);
+
+	heap_page_prune(relation, buffer, OldestXmin, false, &latestRemovedXid, false);
+
+	/*
+	 * Now scan the page to collect vacuumable items and check for tuples
+	 * requiring freezing.
+	 */
+	maxoff = PageGetMaxOffsetNumber(page);
+	frozen = palloc(sizeof(xl_heap_freeze_tuple) * MaxHeapTuplesPerPage);
+
+	/*
+	 * Note: If you change anything in the loop below, also look at
+	 * heap_page_is_all_visible to see if that needs to be changed.
+	 */
+	for (offnum = FirstOffsetNumber;
+		 offnum <= maxoff;
+		 offnum = OffsetNumberNext(offnum))
+	{
+		ItemId		itemid;
+		bool		tuple_totally_frozen;
+
+		itemid = PageGetItemId(page, offnum);
+
+		if (!ItemIdIsNormal(itemid))
+			continue;
+
+		Assert(ItemIdIsNormal(itemid));
+
+		tuple.t_data = (HeapTupleHeader) PageGetItem(page, itemid);
+		tuple.t_len = ItemIdGetLength(itemid);
+		tuple.t_tableOid = RelationGetRelid(relation);
+		HeapTupleCopyEpochFromPage(&tuple, page);
+
+		/*
+		 * Each non-removable tuple must be checked to see if it needs
+		 * freezing.  Note we already have exclusive buffer lock.
+		 */
+		if (heap_prepare_freeze_tuple(&tuple, FreezeXid,
+									   MultiXactCutoff, &frozen[nfrozen],
+									  &tuple_totally_frozen))
+			frozen[nfrozen++].offset = offnum;
+	}						/* scan along page */
+
+	/*
+	 * If we froze any tuples, mark the buffer dirty, and write a WAL
+	 * record recording the changes.  We must log the changes to be
+	 * crash-safe against future truncation of CLOG.
+	 */
+	if (nfrozen > 0)
+	{
+		int			i;
+
+		START_CRIT_SECTION();
+
+		MarkBufferDirty(buffer);
+
+		/* execute collected freezes */
+		for (i = 0; i < nfrozen; i++)
+		{
+			ItemId		itemid;
+			HeapTupleHeader htup;
+
+			itemid = PageGetItemId(page, frozen[i].offset);
+			htup = (HeapTupleHeader) PageGetItem(page, itemid);
+
+			heap_execute_freeze_tuple_page(page, htup, &frozen[i]);
+		}
+
+		/* Now WAL-log freezing if necessary */
+		if (RelationNeedsWAL(relation))
+		{
+			XLogRecPtr	recptr;
+
+			recptr = log_heap_freeze(relation, buffer, FreezeXid,
+									 frozen, nfrozen);
+			PageSetLSN(page, recptr);
+		}
+
+		END_CRIT_SECTION();
+	}
+
+	return nfrozen;
+}
+
+/*
+ * Ensure that given xid fits epoch of given page.
+ */
+bool
+heap_page_prepare_for_xid(Relation relation, Buffer buffer,
+						  TransactionId xid, bool multi)
+{
+	Page				page = BufferGetPage(buffer);
+	PageHeader			pageHdr = (PageHeader) page;
+	TransactionId		epoch;
+	bool				found;
+	ShortTransactionId	min,
+						max;
+	int					i;
+
+	if (!TransactionIdIsNormal(xid))
+		return false;
+
+	for (i = 0; i < 2; i++)
+	{
+		if (!multi)
+			epoch = pageHdr->pd_xid_epoch;
+		else
+			epoch = pageHdr->pd_multi_epoch;
+
+		/* Can we already store this xid? */
+		if (xid >= epoch + FirstNormalTransactionId && xid <= epoch + MaxShortTransactionId)
+			return false;
+
+		/* Find minimum and maximum xids in the page */
+		found = heap_page_xid_min_max(page, multi, &min, &max);
+
+		/* No items on the page? */
+		if (!found)
+		{
+			if (!multi)
+				pageHdr->pd_xid_epoch = xid - FirstNormalTransactionId;
+			else
+				pageHdr->pd_multi_epoch = xid - FirstNormalTransactionId;
+			MarkBufferDirty(buffer);
+			return false;
+		}
+
+		/* Can we just shift epoch on the page */
+		if (xid < epoch + FirstNormalTransactionId)
+		{
+			int64	freeDelta = MaxShortTransactionId - max,
+					requiredDelta = (epoch + FirstNormalTransactionId) - xid;
+
+			if (requiredDelta <= freeDelta)
+			{
+				heap_page_shift_epoch(page, multi, - (freeDelta + requiredDelta) / 2);
+				MarkBufferDirty(buffer);
+				return true;
+			}
+		}
+		else
+		{
+			int64	freeDelta = min - FirstNormalTransactionId,
+					requiredDelta = xid - (epoch + MaxShortTransactionId);
+
+			if (requiredDelta <= freeDelta)
+			{
+				heap_page_shift_epoch(page, multi, (freeDelta + requiredDelta) / 2);
+				MarkBufferDirty(buffer);
+				return true;
+			}
+		}
+
+		if (i == 1)
+		{
+			break;
+		}
+
+		/* Have to freeze the page... */
+		freeze_single_heap_page(relation, buffer);
+	}
+
+	elog(ERROR, "Can't fit xid into page.");
+	return false;
+}
+
+/*
+ * Ensure that given xid fits epoch of given page.
+ */
+bool
+rewrite_page_prepare_for_xid(Page page, TransactionId xid, bool multi)
+{
+	PageHeader			pageHdr = (PageHeader) page;
+	TransactionId		epoch;
+	bool				found;
+	ShortTransactionId	min,
+						max;
+
+	if (!TransactionIdIsNormal(xid))
+		return false;
+
+	if (!multi)
+		epoch = pageHdr->pd_xid_epoch;
+	else
+		epoch = pageHdr->pd_multi_epoch;
+
+	/* Can we already store this xid? */
+	if (xid >= epoch + FirstNormalTransactionId && xid <= epoch + MaxShortTransactionId)
+		return false;
+
+	/* Find minimum and maximum xids in the page */
+	found = heap_page_xid_min_max(page, multi, &min, &max);
+
+	/* No items on the page? */
+	if (!found)
+	{
+		if (!multi)
+			pageHdr->pd_xid_epoch = xid - FirstNormalTransactionId;
+		else
+			pageHdr->pd_multi_epoch = xid - FirstNormalTransactionId;
+		return false;
+	}
+
+	/* Can we just shift epoch on the page */
+	if (xid < epoch + FirstNormalTransactionId)
+	{
+		int64	freeDelta = MaxShortTransactionId - max,
+				requiredDelta = (epoch + FirstNormalTransactionId) - xid;
+
+		if (requiredDelta <= freeDelta)
+		{
+			heap_page_shift_epoch(page, multi, - (freeDelta + requiredDelta) / 2);
+			return true;
+		}
+	}
+	else
+	{
+		int64	freeDelta = min - FirstNormalTransactionId,
+				requiredDelta = xid - (epoch + MaxShortTransactionId);
+
+		if (requiredDelta <= freeDelta)
+		{
+			heap_page_shift_epoch(page, multi, (freeDelta + requiredDelta) / 2);
+			return true;
+		}
+	}
+
+	elog(ERROR, "Can't fit xid into page.");
+	return false;
+}
+
+
+/*
  * Subroutine for heap_insert(). Prepares a tuple for insertion. This sets the
  * tuple header fields, assigns an OID, and toasts the tuple if necessary.
  * Returns a toasted version of the tuple if it was toasted, or the original
@@ -2552,7 +2958,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
  * the original tuple.
  */
 static HeapTuple
-heap_prepare_insert(Relation relation, HeapTuple tup, TransactionId xid,
+heap_prepare_insert(Relation relation, HeapTuple tup,
 					CommandId cid, int options)
 {
 	/*
@@ -2593,12 +2999,12 @@ heap_prepare_insert(Relation relation, HeapTuple tup, TransactionId xid,
 	tup->t_data->t_infomask &= ~(HEAP_XACT_MASK);
 	tup->t_data->t_infomask2 &= ~(HEAP2_XACT_MASK);
 	tup->t_data->t_infomask |= HEAP_XMAX_INVALID;
-	HeapTupleHeaderSetXmin(tup->t_data, xid);
+	tup->t_data->t_choice.t_heap.t_xmin = InvalidTransactionId;
 	if (options & HEAP_INSERT_FROZEN)
 		HeapTupleHeaderSetXminFrozen(tup->t_data);
 
 	HeapTupleHeaderSetCmin(tup->t_data, cid);
-	HeapTupleHeaderSetXmax(tup->t_data, 0);		/* for cleanliness */
+	HeapTupleSetXmax(tup, 0);		/* for cleanliness */
 	tup->t_tableOid = RelationGetRelid(relation);
 
 	/*
@@ -2651,8 +3057,7 @@ heap_multi_insert(Relation relation, HeapTuple *tuples, int ntuples,
 	/* Toast and set header data in all the tuples */
 	heaptuples = palloc(ntuples * sizeof(HeapTuple));
 	for (i = 0; i < ntuples; i++)
-		heaptuples[i] = heap_prepare_insert(relation, tuples[i],
-											xid, cid, options);
+		heaptuples[i] = heap_prepare_insert(relation, tuples[i], cid, options);
 
 	/*
 	 * Allocate some memory to use for constructing the WAL record. Using
@@ -2706,6 +3111,8 @@ heap_multi_insert(Relation relation, HeapTuple *tuples, int ntuples,
 										   &vmbuffer, NULL);
 		page = BufferGetPage(buffer);
 
+		heap_page_prepare_for_xid(relation, buffer, xid, false);
+
 		/* NO EREPORT(ERROR) from here till changes are logged */
 		START_CRIT_SECTION();
 
@@ -2713,7 +3120,8 @@ heap_multi_insert(Relation relation, HeapTuple *tuples, int ntuples,
 		 * RelationGetBufferForTuple has ensured that the first tuple fits.
 		 * Put that on the page, and then as many other tuples as fit.
 		 */
-		RelationPutHeapTuple(relation, buffer, heaptuples[ndone], false);
+		HeapTupleCopyEpochFromPage(heaptuples[ndone], BufferGetPage(buffer));
+		RelationPutHeapTuple(relation, buffer, heaptuples[ndone], false, xid);
 		for (nthispage = 1; ndone + nthispage < ntuples; nthispage++)
 		{
 			HeapTuple	heaptup = heaptuples[ndone + nthispage];
@@ -2721,7 +3129,8 @@ heap_multi_insert(Relation relation, HeapTuple *tuples, int ntuples,
 			if (PageGetHeapFreeSpace(page) < MAXALIGN(heaptup->t_len) + saveFreeSpace)
 				break;
 
-			RelationPutHeapTuple(relation, buffer, heaptup, false);
+			HeapTupleCopyEpochFromPage(heaptup, BufferGetPage(buffer));
+			RelationPutHeapTuple(relation, buffer, heaptup, false, xid);
 
 			/*
 			 * We don't use heap_multi_insert for catalog tuples yet, but
@@ -3051,6 +3460,7 @@ heap_delete(Relation relation, ItemPointer tid,
 	tp.t_data = (HeapTupleHeader) PageGetItem(page, lp);
 	tp.t_len = ItemIdGetLength(lp);
 	tp.t_self = *tid;
+	HeapTupleCopyEpochFromPage(&tp, page);
 
 l1:
 	result = HeapTupleSatisfiesUpdate(&tp, cid, buffer);
@@ -3068,7 +3478,7 @@ l1:
 		uint16		infomask;
 
 		/* must copy state data before unlocking buffer */
-		xwait = HeapTupleHeaderGetRawXmax(tp.t_data);
+		xwait = HeapTupleGetRawXmax(&tp);
 		infomask = tp.t_data->t_infomask;
 
 		/*
@@ -3108,7 +3518,7 @@ l1:
 				 * for xmax change, and start over if so.
 				 */
 				if (xmax_infomask_changed(tp.t_data->t_infomask, infomask) ||
-					!TransactionIdEquals(HeapTupleHeaderGetRawXmax(tp.t_data),
+					!TransactionIdEquals(HeapTupleGetRawXmax(&tp),
 										 xwait))
 					goto l1;
 			}
@@ -3141,7 +3551,7 @@ l1:
 			 * Check for xmax change, and start over if so.
 			 */
 			if (xmax_infomask_changed(tp.t_data->t_infomask, infomask) ||
-				!TransactionIdEquals(HeapTupleHeaderGetRawXmax(tp.t_data),
+				!TransactionIdEquals(HeapTupleGetRawXmax(&tp),
 									 xwait))
 				goto l1;
 
@@ -3155,7 +3565,7 @@ l1:
 		 */
 		if ((tp.t_data->t_infomask & HEAP_XMAX_INVALID) ||
 			HEAP_XMAX_IS_LOCKED_ONLY(tp.t_data->t_infomask) ||
-			HeapTupleHeaderIsOnlyLocked(tp.t_data))
+			HeapTupleHeaderIsOnlyLocked(&tp))
 			result = HeapTupleMayBeUpdated;
 		else
 			result = HeapTupleUpdated;
@@ -3175,7 +3585,7 @@ l1:
 			   result == HeapTupleBeingUpdated);
 		Assert(!(tp.t_data->t_infomask & HEAP_XMAX_INVALID));
 		hufd->ctid = tp.t_data->t_ctid;
-		hufd->xmax = HeapTupleHeaderGetUpdateXid(tp.t_data);
+		hufd->xmax = HeapTupleGetUpdateXidAny(&tp);
 		if (result == HeapTupleSelfUpdated)
 			hufd->cmax = HeapTupleHeaderGetCmax(tp.t_data);
 		else
@@ -3200,7 +3610,7 @@ l1:
 	CheckForSerializableConflictIn(relation, &tp, buffer);
 
 	/* replace cid with a combo cid if necessary */
-	HeapTupleHeaderAdjustCmax(tp.t_data, &cid, &iscombo);
+	HeapTupleHeaderAdjustCmax(&tp, &cid, &iscombo);
 
 	/*
 	 * Compute replica identity tuple before entering the critical section so
@@ -3218,10 +3628,14 @@ l1:
 	 */
 	MultiXactIdSetOldestMember();
 
-	compute_new_xmax_infomask(HeapTupleHeaderGetRawXmax(tp.t_data),
+	compute_new_xmax_infomask(HeapTupleGetRawXmax(&tp),
 							  tp.t_data->t_infomask, tp.t_data->t_infomask2,
 							  xid, LockTupleExclusive, true,
 							  &new_xmax, &new_infomask, &new_infomask2);
+
+	heap_page_prepare_for_xid(relation, buffer, new_xmax,
+		(new_infomask & HEAP_XMAX_IS_MULTI) ? true : false);
+	HeapTupleCopyEpochFromPage(&tp, page);
 
 	START_CRIT_SECTION();
 
@@ -3248,7 +3662,7 @@ l1:
 	tp.t_data->t_infomask |= new_infomask;
 	tp.t_data->t_infomask2 |= new_infomask2;
 	HeapTupleHeaderClearHotUpdated(tp.t_data);
-	HeapTupleHeaderSetXmax(tp.t_data, new_xmax);
+	HeapTupleSetXmax(&tp, new_xmax);
 	HeapTupleHeaderSetCmax(tp.t_data, cid, iscombo);
 	/* Make sure there is no forward chain link in t_ctid */
 	tp.t_data->t_ctid = tp.t_self;
@@ -3531,9 +3945,11 @@ heap_update(Relation relation, ItemPointer otid, HeapTuple newtup,
 	oldtup.t_data = (HeapTupleHeader) PageGetItem(page, lp);
 	oldtup.t_len = ItemIdGetLength(lp);
 	oldtup.t_self = *otid;
+	HeapTupleCopyEpochFromPage(&oldtup, page);
 
 	/* the new tuple is ready, except for this: */
 	newtup->t_tableOid = RelationGetRelid(relation);
+	HeapTupleCopyEpochFromPage(newtup, page);
 
 	/* Fill in OID for newtup */
 	if (relation->rd_rel->relhasoids)
@@ -3630,7 +4046,7 @@ l2:
 		 */
 
 		/* must copy state data before unlocking buffer */
-		xwait = HeapTupleHeaderGetRawXmax(oldtup.t_data);
+		xwait = HeapTupleGetRawXmax(&oldtup);
 		infomask = oldtup.t_data->t_infomask;
 
 		/*
@@ -3684,7 +4100,7 @@ l2:
 				 */
 				if (xmax_infomask_changed(oldtup.t_data->t_infomask,
 										  infomask) ||
-				!TransactionIdEquals(HeapTupleHeaderGetRawXmax(oldtup.t_data),
+				!TransactionIdEquals(HeapTupleGetRawXmax(&oldtup),
 									 xwait))
 					goto l2;
 			}
@@ -3709,7 +4125,7 @@ l2:
 			 * subxact aborts.
 			 */
 			if (!HEAP_XMAX_IS_LOCKED_ONLY(oldtup.t_data->t_infomask))
-				update_xact = HeapTupleGetUpdateXid(oldtup.t_data);
+				update_xact = HeapTupleGetUpdateXid(&oldtup);
 			else
 				update_xact = InvalidTransactionId;
 
@@ -3764,7 +4180,7 @@ l2:
 			 */
 			if (xmax_infomask_changed(oldtup.t_data->t_infomask, infomask) ||
 				!TransactionIdEquals(xwait,
-								   HeapTupleHeaderGetRawXmax(oldtup.t_data)))
+								   HeapTupleGetRawXmax(&oldtup)))
 				goto l2;
 
 			/* Otherwise check if it committed or aborted */
@@ -3790,7 +4206,7 @@ l2:
 			   result == HeapTupleBeingUpdated);
 		Assert(!(oldtup.t_data->t_infomask & HEAP_XMAX_INVALID));
 		hufd->ctid = oldtup.t_data->t_ctid;
-		hufd->xmax = HeapTupleHeaderGetUpdateXid(oldtup.t_data);
+		hufd->xmax = HeapTupleGetUpdateXidAny(&oldtup);
 		if (result == HeapTupleSelfUpdated)
 			hufd->cmax = HeapTupleHeaderGetCmax(oldtup.t_data);
 		else
@@ -3829,7 +4245,7 @@ l2:
 	 * If the tuple we're updating is locked, we need to preserve the locking
 	 * info in the old tuple's Xmax.  Prepare a new Xmax value for this.
 	 */
-	compute_new_xmax_infomask(HeapTupleHeaderGetRawXmax(oldtup.t_data),
+	compute_new_xmax_infomask(HeapTupleGetRawXmax(&oldtup),
 							  oldtup.t_data->t_infomask,
 							  oldtup.t_data->t_infomask2,
 							  xid, *lockmode, true,
@@ -3848,7 +4264,7 @@ l2:
 		(checked_lockers && !locker_remains))
 		xmax_new_tuple = InvalidTransactionId;
 	else
-		xmax_new_tuple = HeapTupleHeaderGetRawXmax(oldtup.t_data);
+		xmax_new_tuple = HeapTupleGetRawXmax(&oldtup);
 
 	if (!TransactionIdIsValid(xmax_new_tuple))
 	{
@@ -3881,17 +4297,24 @@ l2:
 	 */
 	newtup->t_data->t_infomask &= ~(HEAP_XACT_MASK);
 	newtup->t_data->t_infomask2 &= ~(HEAP2_XACT_MASK);
-	HeapTupleHeaderSetXmin(newtup->t_data, xid);
+	heap_page_prepare_for_xid(relation, buffer, xid, false);
+	HeapTupleCopyEpochFromPage(newtup, page);
+	HeapTupleSetXmin(newtup, xid);
+
+
 	HeapTupleHeaderSetCmin(newtup->t_data, cid);
 	newtup->t_data->t_infomask |= HEAP_UPDATED | infomask_new_tuple;
 	newtup->t_data->t_infomask2 |= infomask2_new_tuple;
-	HeapTupleHeaderSetXmax(newtup->t_data, xmax_new_tuple);
+	heap_page_prepare_for_xid(relation, buffer, xmax_new_tuple,
+		(newtup->t_data->t_infomask & HEAP_XMAX_IS_MULTI) ? true : false);
+	HeapTupleCopyEpochFromPage(newtup, page);
+	HeapTupleSetXmax(newtup, xmax_new_tuple);
 
 	/*
 	 * Replace cid with a combo cid if necessary.  Note that we already put
 	 * the plain cid into the new tuple.
 	 */
-	HeapTupleHeaderAdjustCmax(oldtup.t_data, &cid, &iscombo);
+	HeapTupleHeaderAdjustCmax(&oldtup, &cid, &iscombo);
 
 	/*
 	 * If the toaster needs to be activated, OR if the new tuple will not fit
@@ -3945,7 +4368,7 @@ l2:
 		 * to be done separately from the lock, because the potentially
 		 * created multixact would otherwise be wrong.
 		 */
-		compute_new_xmax_infomask(HeapTupleHeaderGetRawXmax(oldtup.t_data),
+		compute_new_xmax_infomask(HeapTupleGetRawXmax(&oldtup),
 								  oldtup.t_data->t_infomask,
 								  oldtup.t_data->t_infomask2,
 								  xid, *lockmode, false,
@@ -3953,6 +4376,10 @@ l2:
 								  &infomask2_lock_old_tuple);
 
 		Assert(HEAP_XMAX_IS_LOCKED_ONLY(infomask_lock_old_tuple));
+
+		heap_page_prepare_for_xid(relation, buffer, xmax_lock_old_tuple,
+			(infomask_lock_old_tuple & HEAP_XMAX_IS_MULTI) ? true : false);
+		HeapTupleCopyEpochFromPage(&oldtup, page);
 
 		START_CRIT_SECTION();
 
@@ -3962,7 +4389,7 @@ l2:
 		HeapTupleClearHotUpdated(&oldtup);
 		/* ... and store info about transaction updating this tuple */
 		Assert(TransactionIdIsValid(xmax_lock_old_tuple));
-		HeapTupleHeaderSetXmax(oldtup.t_data, xmax_lock_old_tuple);
+		HeapTupleSetXmax(&oldtup, xmax_lock_old_tuple);
 		oldtup.t_data->t_infomask |= infomask_lock_old_tuple;
 		oldtup.t_data->t_infomask2 |= infomask2_lock_old_tuple;
 		HeapTupleHeaderSetCmax(oldtup.t_data, cid, iscombo);
@@ -4124,6 +4551,12 @@ l2:
 	 */
 	old_key_tuple = ExtractReplicaIdentity(relation, &oldtup, !satisfies_id, &old_key_copied);
 
+	heap_page_prepare_for_xid(relation, newbuf, xid, false);
+	HeapTupleCopyEpochFromPage(heaptup, page);
+	heap_page_prepare_for_xid(relation, buffer, xmax_old_tuple,
+		(infomask_old_tuple & HEAP_XMAX_IS_MULTI) ? true : false);
+	HeapTupleCopyEpochFromPage(&oldtup, page);
+
 	/* NO EREPORT(ERROR) from here till changes are logged */
 	START_CRIT_SECTION();
 
@@ -4158,17 +4591,16 @@ l2:
 		HeapTupleClearHeapOnly(newtup);
 	}
 
-	RelationPutHeapTuple(relation, newbuf, heaptup, false);		/* insert new tuple */
-
+	RelationPutHeapTuple(relation, newbuf, heaptup, false, xid);		/* insert new tuple */
 
 	/* Clear obsolete visibility flags, possibly set by ourselves above... */
 	oldtup.t_data->t_infomask &= ~(HEAP_XMAX_BITS | HEAP_MOVED);
 	oldtup.t_data->t_infomask2 &= ~HEAP_KEYS_UPDATED;
 	/* ... and store info about transaction updating this tuple */
 	Assert(TransactionIdIsValid(xmax_old_tuple));
-	HeapTupleHeaderSetXmax(oldtup.t_data, xmax_old_tuple);
 	oldtup.t_data->t_infomask |= infomask_old_tuple;
 	oldtup.t_data->t_infomask2 |= infomask2_old_tuple;
+	HeapTupleSetXmax(&oldtup, xmax_old_tuple);
 	HeapTupleHeaderSetCmax(oldtup.t_data, cid, iscombo);
 
 	/* record address of new tuple in t_ctid of old one */
@@ -4604,6 +5036,7 @@ heap_lock_tuple(Relation relation, HeapTuple tuple,
 	tuple->t_data = (HeapTupleHeader) PageGetItem(page, lp);
 	tuple->t_len = ItemIdGetLength(lp);
 	tuple->t_tableOid = RelationGetRelid(relation);
+	HeapTupleCopyEpochFromPage(tuple, page);
 
 l3:
 	result = HeapTupleSatisfiesUpdate(tuple, cid, *buffer);
@@ -4628,7 +5061,7 @@ l3:
 		ItemPointerData t_ctid;
 
 		/* must copy state data before unlocking buffer */
-		xwait = HeapTupleHeaderGetRawXmax(tuple->t_data);
+		xwait = HeapTupleGetRawXmax(tuple);
 		infomask = tuple->t_data->t_infomask;
 		infomask2 = tuple->t_data->t_infomask2;
 		ItemPointerCopy(&tuple->t_data->t_ctid, &t_ctid);
@@ -4784,7 +5217,7 @@ l3:
 				 * now need to follow the update chain to lock the new
 				 * versions.
 				 */
-				if (!HeapTupleHeaderIsOnlyLocked(tuple->t_data) &&
+				if (!HeapTupleHeaderIsOnlyLocked(tuple) &&
 					((tuple->t_data->t_infomask2 & HEAP_KEYS_UPDATED) ||
 					 !updated))
 					goto l3;
@@ -4840,7 +5273,7 @@ l3:
 					 */
 					LockBuffer(*buffer, BUFFER_LOCK_EXCLUSIVE);
 					if (xmax_infomask_changed(tuple->t_data->t_infomask, infomask) ||
-						!TransactionIdEquals(HeapTupleHeaderGetRawXmax(tuple->t_data),
+						!TransactionIdEquals(HeapTupleGetRawXmax(tuple),
 											 xwait))
 						goto l3;
 
@@ -4855,7 +5288,7 @@ l3:
 				/* if the xmax changed in the meantime, start over */
 				if (xmax_infomask_changed(tuple->t_data->t_infomask, infomask) ||
 					!TransactionIdEquals(
-									HeapTupleHeaderGetRawXmax(tuple->t_data),
+									HeapTupleGetRawXmax(tuple),
 										 xwait))
 					goto l3;
 				/* otherwise, we're good */
@@ -4881,7 +5314,7 @@ l3:
 			/* ... but if the xmax changed in the meantime, start over */
 			LockBuffer(*buffer, BUFFER_LOCK_EXCLUSIVE);
 			if (xmax_infomask_changed(tuple->t_data->t_infomask, infomask) ||
-				!TransactionIdEquals(HeapTupleHeaderGetRawXmax(tuple->t_data),
+				!TransactionIdEquals(HeapTupleGetRawXmax(tuple),
 									 xwait))
 				goto l3;
 			Assert(HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_data->t_infomask));
@@ -5029,7 +5462,7 @@ l3:
 			 * Check for xmax change, and start over if so.
 			 */
 			if (xmax_infomask_changed(tuple->t_data->t_infomask, infomask) ||
-				!TransactionIdEquals(HeapTupleHeaderGetRawXmax(tuple->t_data),
+				!TransactionIdEquals(HeapTupleGetRawXmax(tuple),
 									 xwait))
 				goto l3;
 
@@ -5057,7 +5490,7 @@ l3:
 		if (!require_sleep ||
 			(tuple->t_data->t_infomask & HEAP_XMAX_INVALID) ||
 			HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_data->t_infomask) ||
-			HeapTupleHeaderIsOnlyLocked(tuple->t_data))
+			HeapTupleHeaderIsOnlyLocked(tuple))
 			result = HeapTupleMayBeUpdated;
 		else
 			result = HeapTupleUpdated;
@@ -5070,7 +5503,7 @@ failed:
 			   result == HeapTupleWouldBlock);
 		Assert(!(tuple->t_data->t_infomask & HEAP_XMAX_INVALID));
 		hufd->ctid = tuple->t_data->t_ctid;
-		hufd->xmax = HeapTupleHeaderGetUpdateXid(tuple->t_data);
+		hufd->xmax = HeapTupleGetUpdateXidAny(tuple);
 		if (result == HeapTupleSelfUpdated)
 			hufd->cmax = HeapTupleHeaderGetCmax(tuple->t_data);
 		else
@@ -5095,7 +5528,7 @@ failed:
 		goto l3;
 	}
 
-	xmax = HeapTupleHeaderGetRawXmax(tuple->t_data);
+	xmax = HeapTupleGetRawXmax(tuple);
 	old_infomask = tuple->t_data->t_infomask;
 
 	/*
@@ -5117,6 +5550,10 @@ failed:
 							  GetCurrentTransactionId(), mode, false,
 							  &xid, &new_infomask, &new_infomask2);
 
+	heap_page_prepare_for_xid(relation, *buffer, xid,
+		(new_infomask & HEAP_XMAX_IS_MULTI) ? true : false);
+	HeapTupleCopyEpochFromPage(tuple, page);
+
 	START_CRIT_SECTION();
 
 	/*
@@ -5135,7 +5572,7 @@ failed:
 	tuple->t_data->t_infomask2 |= new_infomask2;
 	if (HEAP_XMAX_IS_LOCKED_ONLY(new_infomask))
 		HeapTupleHeaderClearHotUpdated(tuple->t_data);
-	HeapTupleHeaderSetXmax(tuple->t_data, xid);
+	HeapTupleSetXmax(tuple, xid);
 
 	/*
 	 * Make sure there is no forward chain link in t_ctid.  Note that in the
@@ -5451,7 +5888,7 @@ l5:
 				 * TransactionIdIsInProgress() should have returned false.  We
 				 * assume it's no longer locked in this case.
 				 */
-				elog(WARNING, "LOCK_ONLY found for Xid in progress %u", xmax);
+				elog(WARNING, "LOCK_ONLY found for Xid in progress " XID_FMT, xmax);
 				old_infomask |= HEAP_XMAX_INVALID;
 				old_infomask &= ~HEAP_XMAX_LOCK_ONLY;
 				goto l5;
@@ -5715,7 +6152,7 @@ l4:
 		 * end of the chain, we're done, so return success.
 		 */
 		if (TransactionIdIsValid(priorXmax) &&
-			!TransactionIdEquals(HeapTupleHeaderGetXmin(mytup.t_data),
+			!TransactionIdEquals(HeapTupleGetXmin(&mytup),
 								 priorXmax))
 		{
 			result = HeapTupleMayBeUpdated;
@@ -5727,7 +6164,7 @@ l4:
 		 * (sub)transaction, then we already locked the last live one in the
 		 * chain, thus we're done, so return success.
 		 */
-		if (TransactionIdDidAbort(HeapTupleHeaderGetXmin(mytup.t_data)))
+		if (TransactionIdDidAbort(HeapTupleGetXmin(&mytup)))
 		{
 			UnlockReleaseBuffer(buf);
 			return HeapTupleMayBeUpdated;
@@ -5735,7 +6172,7 @@ l4:
 
 		old_infomask = mytup.t_data->t_infomask;
 		old_infomask2 = mytup.t_data->t_infomask2;
-		xmax = HeapTupleHeaderGetRawXmax(mytup.t_data);
+		xmax = HeapTupleGetRawXmax(&mytup);
 
 		/*
 		 * If this tuple version has been updated or locked by some concurrent
@@ -5748,7 +6185,7 @@ l4:
 			TransactionId rawxmax;
 			bool		needwait;
 
-			rawxmax = HeapTupleHeaderGetRawXmax(mytup.t_data);
+			rawxmax = HeapTupleGetRawXmax(&mytup);
 			if (old_infomask & HEAP_XMAX_IS_MULTI)
 			{
 				int			nmembers;
@@ -5858,14 +6295,18 @@ l4:
 								VISIBILITYMAP_ALL_FROZEN))
 			cleared_all_frozen = true;
 
+		heap_page_prepare_for_xid(rel, buf, new_xmax,
+			(new_infomask & HEAP_XMAX_IS_MULTI) ? true : false);
+		HeapTupleCopyEpochFromPage(&mytup, BufferGetPage(buf));
+
 		START_CRIT_SECTION();
 
 		/* ... and set them */
-		HeapTupleHeaderSetXmax(mytup.t_data, new_xmax);
 		mytup.t_data->t_infomask &= ~HEAP_XMAX_BITS;
 		mytup.t_data->t_infomask2 &= ~HEAP_KEYS_UPDATED;
 		mytup.t_data->t_infomask |= new_infomask;
 		mytup.t_data->t_infomask2 |= new_infomask2;
+		HeapTupleSetXmax(&mytup, new_xmax);
 
 		MarkBufferDirty(buf);
 
@@ -5897,14 +6338,14 @@ l4:
 		/* if we find the end of update chain, we're done. */
 		if (mytup.t_data->t_infomask & HEAP_XMAX_INVALID ||
 			ItemPointerEquals(&mytup.t_self, &mytup.t_data->t_ctid) ||
-			HeapTupleHeaderIsOnlyLocked(mytup.t_data))
+			HeapTupleHeaderIsOnlyLocked(&mytup))
 		{
 			result = HeapTupleMayBeUpdated;
 			goto out_locked;
 		}
 
 		/* tail recursion */
-		priorXmax = HeapTupleHeaderGetUpdateXid(mytup.t_data);
+		priorXmax = HeapTupleGetUpdateXidAny(&mytup);
 		ItemPointerCopy(&(mytup.t_data->t_ctid), &tupid);
 		UnlockReleaseBuffer(buf);
 		if (vmbuffer != InvalidBuffer)
@@ -6108,12 +6549,13 @@ heap_abort_speculative(Relation relation, HeapTuple tuple)
 	tp.t_data = (HeapTupleHeader) PageGetItem(page, lp);
 	tp.t_len = ItemIdGetLength(lp);
 	tp.t_self = *tid;
+	HeapTupleCopyEpochFromPage(&tp, page);
 
 	/*
 	 * Sanity check that the tuple really is a speculatively inserted tuple,
 	 * inserted by us.
 	 */
-	if (tp.t_data->t_choice.t_heap.t_xmin != xid)
+	if (HeapTupleGetRawXmin(&tp) != xid)
 		elog(ERROR, "attempted to kill a tuple inserted by another transaction");
 	if (!(IsToastRelation(relation) || HeapTupleHeaderIsSpeculative(tp.t_data)))
 		elog(ERROR, "attempted to kill a non-speculative tuple");
@@ -6145,7 +6587,7 @@ heap_abort_speculative(Relation relation, HeapTuple tuple)
 	 * tuple immediately invisible everyone.  (In particular, to any
 	 * transactions waiting on the speculative token, woken up later.)
 	 */
-	HeapTupleHeaderSetXmin(tp.t_data, InvalidTransactionId);
+	HeapTupleSetXmin(&tp, InvalidTransactionId);
 
 	/* Clear the speculative insertion token too */
 	tp.t_data->t_ctid = tp.t_self;
@@ -6593,22 +7035,23 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
  * recovery.  We really need to remove old xids.
  */
 bool
-heap_prepare_freeze_tuple(HeapTupleHeader tuple, TransactionId cutoff_xid,
+heap_prepare_freeze_tuple(HeapTuple htup, TransactionId cutoff_xid,
 						  TransactionId cutoff_multi,
 						  xl_heap_freeze_tuple *frz, bool *totally_frozen_p)
 {
 	bool		changed = false;
 	bool		freeze_xmax = false;
 	TransactionId xid;
+	HeapTupleHeader tuple = htup->t_data;
 	bool		totally_frozen = true;
 
 	frz->frzflags = 0;
 	frz->t_infomask2 = tuple->t_infomask2;
 	frz->t_infomask = tuple->t_infomask;
-	frz->xmax = HeapTupleHeaderGetRawXmax(tuple);
+	frz->xmax = HeapTupleGetRawXmax(htup);
 
 	/* Process xmin */
-	xid = HeapTupleHeaderGetXmin(tuple);
+	xid = HeapTupleGetXmin(htup);
 	if (TransactionIdIsNormal(xid))
 	{
 		if (TransactionIdPrecedes(xid, cutoff_xid))
@@ -6629,7 +7072,7 @@ heap_prepare_freeze_tuple(HeapTupleHeader tuple, TransactionId cutoff_xid,
 	 *
 	 * Make sure to keep heap_tuple_needs_freeze in sync with this.
 	 */
-	xid = HeapTupleHeaderGetRawXmax(tuple);
+	xid = HeapTupleGetRawXmax(htup);
 
 	if (tuple->t_infomask & HEAP_XMAX_IS_MULTI)
 	{
@@ -6771,9 +7214,26 @@ heap_prepare_freeze_tuple(HeapTupleHeader tuple, TransactionId cutoff_xid,
  * NB: All code in here must be safe to execute during crash recovery!
  */
 void
-heap_execute_freeze_tuple(HeapTupleHeader tuple, xl_heap_freeze_tuple *frz)
+heap_execute_freeze_tuple(HeapTuple htup, xl_heap_freeze_tuple *frz)
 {
-	HeapTupleHeaderSetXmax(tuple, frz->xmax);
+	HeapTupleHeader tuple = htup->t_data;
+
+	HeapTupleSetXmax(htup, frz->xmax);
+
+	if (frz->frzflags & XLH_FREEZE_XVAC)
+		HeapTupleHeaderSetXvac(tuple, FrozenTransactionId);
+
+	if (frz->frzflags & XLH_INVALID_XVAC)
+		HeapTupleHeaderSetXvac(tuple, InvalidTransactionId);
+
+	tuple->t_infomask = frz->t_infomask;
+	tuple->t_infomask2 = frz->t_infomask2;
+}
+
+void
+heap_execute_freeze_tuple_page(Page page, HeapTupleHeader tuple, xl_heap_freeze_tuple *frz)
+{
+	HeapTupleHeaderSetXmax(page, tuple, frz->xmax);
 
 	if (frz->frzflags & XLH_FREEZE_XVAC)
 		HeapTupleHeaderSetXvac(tuple, FrozenTransactionId);
@@ -6792,7 +7252,7 @@ heap_execute_freeze_tuple(HeapTupleHeader tuple, xl_heap_freeze_tuple *frz)
  * Useful for callers like CLUSTER that perform their own WAL logging.
  */
 bool
-heap_freeze_tuple(HeapTupleHeader tuple, TransactionId cutoff_xid,
+heap_freeze_tuple(HeapTuple tuple, TransactionId cutoff_xid,
 				  TransactionId cutoff_multi)
 {
 	xl_heap_freeze_tuple frz;
@@ -6953,10 +7413,10 @@ MultiXactIdGetUpdateXid(TransactionId xmax, uint16 t_infomask)
  * checking the hint bits.
  */
 TransactionId
-HeapTupleGetUpdateXid(HeapTupleHeader tuple)
+HeapTupleGetUpdateXid(HeapTuple tuple)
 {
-	return MultiXactIdGetUpdateXid(HeapTupleHeaderGetRawXmax(tuple),
-								   tuple->t_infomask);
+	return MultiXactIdGetUpdateXid(HeapTupleGetRawXmax(tuple),
+								   tuple->t_data->t_infomask);
 }
 
 /*
@@ -7174,12 +7634,16 @@ bool
 heap_tuple_needs_eventual_freeze(HeapTupleHeader tuple)
 {
 	TransactionId xid;
+	HeapTupleData htup;
+
+	htup.t_data = tuple;
+	HeapTupleSetInvalidEpoch(&htup);
 
 	/*
 	 * If xmin is a normal transaction ID, this tuple is definitely not
 	 * frozen.
 	 */
-	xid = HeapTupleHeaderGetXmin(tuple);
+	xid = HeapTupleGetXmin(&htup);
 	if (TransactionIdIsNormal(xid))
 		return true;
 
@@ -7190,13 +7654,13 @@ heap_tuple_needs_eventual_freeze(HeapTupleHeader tuple)
 	{
 		MultiXactId multi;
 
-		multi = HeapTupleHeaderGetRawXmax(tuple);
+		multi = HeapTupleGetRawXmax(&htup);
 		if (MultiXactIdIsValid(multi))
 			return true;
 	}
 	else
 	{
-		xid = HeapTupleHeaderGetRawXmax(tuple);
+		xid = HeapTupleGetRawXmax(&htup);
 		if (TransactionIdIsNormal(xid))
 			return true;
 	}
@@ -7224,12 +7688,13 @@ heap_tuple_needs_eventual_freeze(HeapTupleHeader tuple)
  * on a standby.
  */
 bool
-heap_tuple_needs_freeze(HeapTupleHeader tuple, TransactionId cutoff_xid,
+heap_tuple_needs_freeze(HeapTuple htup, TransactionId cutoff_xid,
 						MultiXactId cutoff_multi, Buffer buf)
 {
 	TransactionId xid;
+	HeapTupleHeader tuple = htup->t_data;
 
-	xid = HeapTupleHeaderGetXmin(tuple);
+	xid = HeapTupleGetXmin(htup);
 	if (TransactionIdIsNormal(xid) &&
 		TransactionIdPrecedes(xid, cutoff_xid))
 		return true;
@@ -7243,7 +7708,7 @@ heap_tuple_needs_freeze(HeapTupleHeader tuple, TransactionId cutoff_xid,
 	{
 		MultiXactId multi;
 
-		multi = HeapTupleHeaderGetRawXmax(tuple);
+		multi = HeapTupleGetRawXmax(htup);
 		if (!MultiXactIdIsValid(multi))
 		{
 			/* no xmax set, ignore */
@@ -7278,7 +7743,7 @@ heap_tuple_needs_freeze(HeapTupleHeader tuple, TransactionId cutoff_xid,
 	}
 	else
 	{
-		xid = HeapTupleHeaderGetRawXmax(tuple);
+		xid = HeapTupleGetRawXmax(htup);
 		if (TransactionIdIsNormal(xid) &&
 			TransactionIdPrecedes(xid, cutoff_xid))
 			return true;
@@ -7303,14 +7768,14 @@ heap_tuple_needs_freeze(HeapTupleHeader tuple, TransactionId cutoff_xid,
  * with queries.
  */
 void
-HeapTupleHeaderAdvanceLatestRemovedXid(HeapTupleHeader tuple,
+HeapTupleHeaderAdvanceLatestRemovedXid(HeapTuple tuple,
 									   TransactionId *latestRemovedXid)
 {
-	TransactionId xmin = HeapTupleHeaderGetXmin(tuple);
-	TransactionId xmax = HeapTupleHeaderGetUpdateXid(tuple);
-	TransactionId xvac = HeapTupleHeaderGetXvac(tuple);
+	TransactionId xmin = HeapTupleGetXmin(tuple);
+	TransactionId xmax = HeapTupleGetUpdateXidAny(tuple);
+	TransactionId xvac = HeapTupleHeaderGetXvac(tuple->t_data);
 
-	if (tuple->t_infomask & HEAP_MOVED)
+	if (tuple->t_data->t_infomask & HEAP_MOVED)
 	{
 		if (TransactionIdPrecedes(*latestRemovedXid, xvac))
 			*latestRemovedXid = xvac;
@@ -7324,8 +7789,8 @@ HeapTupleHeaderAdvanceLatestRemovedXid(HeapTupleHeader tuple,
 	 * This needs to work on both master and standby, where it is used to
 	 * assess btree delete records.
 	 */
-	if (HeapTupleHeaderXminCommitted(tuple) ||
-		(!HeapTupleHeaderXminInvalid(tuple) && TransactionIdDidCommit(xmin)))
+	if (HeapTupleHeaderXminCommitted(tuple->t_data) ||
+		(!HeapTupleHeaderXminInvalid(tuple->t_data) && TransactionIdDidCommit(xmin)))
 	{
 		if (xmax != xmin &&
 			TransactionIdFollows(xmax, *latestRemovedXid))
@@ -7609,13 +8074,13 @@ log_heap_update(Relation reln, Buffer oldbuf,
 
 	/* Prepare WAL data for the old page */
 	xlrec.old_offnum = ItemPointerGetOffsetNumber(&oldtup->t_self);
-	xlrec.old_xmax = HeapTupleHeaderGetRawXmax(oldtup->t_data);
+	xlrec.old_xmax = HeapTupleGetRawXmax(oldtup);
 	xlrec.old_infobits_set = compute_infobits(oldtup->t_data->t_infomask,
 											  oldtup->t_data->t_infomask2);
 
 	/* Prepare WAL data for the new page */
 	xlrec.new_offnum = ItemPointerGetOffsetNumber(&newtup->t_self);
-	xlrec.new_xmax = HeapTupleHeaderGetRawXmax(newtup->t_data);
+	xlrec.new_xmax = HeapTupleGetRawXmax(newtup);
 
 	bufflags = REGBUF_STANDARD;
 	if (init)
@@ -7981,7 +8446,8 @@ heap_xlog_clean(XLogReaderState *record)
 		heap_page_prune_execute(buffer,
 								redirected, nredirected,
 								nowdead, ndead,
-								nowunused, nunused);
+								nowunused, nunused,
+								true);
 
 		freespace = PageGetHeapFreeSpace(page); /* needed to update FSM below */
 
@@ -8172,7 +8638,7 @@ heap_xlog_freeze_page(XLogReaderState *record)
 			lp = PageGetItemId(page, xlrec_tp->offset); /* offsets are one-based */
 			tuple = (HeapTupleHeader) PageGetItem(page, lp);
 
-			heap_execute_freeze_tuple(tuple, xlrec_tp);
+			heap_execute_freeze_tuple_page(page, tuple, xlrec_tp);
 		}
 
 		PageSetLSN(page, lsn);
@@ -8259,9 +8725,9 @@ heap_xlog_delete(XLogReaderState *record)
 		fix_infomask_from_infobits(xlrec->infobits_set,
 								   &htup->t_infomask, &htup->t_infomask2);
 		if (!(xlrec->flags & XLH_DELETE_IS_SUPER))
-			HeapTupleHeaderSetXmax(htup, xlrec->xmax);
+			HeapTupleHeaderSetXmax(page, htup, xlrec->xmax);
 		else
-			HeapTupleHeaderSetXmin(htup, InvalidTransactionId);
+			HeapTupleHeaderSetXmin(page, htup, InvalidTransactionId);
 		HeapTupleHeaderSetCmax(htup, FirstCommandId, false);
 
 		/* Mark the page as a candidate for pruning */
@@ -8359,7 +8825,7 @@ heap_xlog_insert(XLogReaderState *record)
 		htup->t_infomask2 = xlhdr.t_infomask2;
 		htup->t_infomask = xlhdr.t_infomask;
 		htup->t_hoff = xlhdr.t_hoff;
-		HeapTupleHeaderSetXmin(htup, XLogRecGetXid(record));
+		HeapTupleHeaderSetXmin(page, htup, XLogRecGetXid(record));
 		HeapTupleHeaderSetCmin(htup, FirstCommandId);
 		htup->t_ctid = target_tid;
 
@@ -8494,7 +8960,7 @@ heap_xlog_multi_insert(XLogReaderState *record)
 			htup->t_infomask2 = xlhdr->t_infomask2;
 			htup->t_infomask = xlhdr->t_infomask;
 			htup->t_hoff = xlhdr->t_hoff;
-			HeapTupleHeaderSetXmin(htup, XLogRecGetXid(record));
+			HeapTupleHeaderSetXmin(page, htup, XLogRecGetXid(record));
 			HeapTupleHeaderSetCmin(htup, FirstCommandId);
 			ItemPointerSetBlockNumber(&htup->t_ctid, blkno);
 			ItemPointerSetOffsetNumber(&htup->t_ctid, offnum);
@@ -8621,6 +9087,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 
 		oldtup.t_data = htup;
 		oldtup.t_len = ItemIdGetLength(lp);
+		HeapTupleCopyEpochFromPage(&oldtup, page);
 
 		htup->t_infomask &= ~(HEAP_XMAX_BITS | HEAP_MOVED);
 		htup->t_infomask2 &= ~HEAP_KEYS_UPDATED;
@@ -8630,7 +9097,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 			HeapTupleHeaderClearHotUpdated(htup);
 		fix_infomask_from_infobits(xlrec->old_infobits_set, &htup->t_infomask,
 								   &htup->t_infomask2);
-		HeapTupleHeaderSetXmax(htup, xlrec->old_xmax);
+		HeapTupleHeaderSetXmax(page, htup, xlrec->old_xmax);
 		HeapTupleHeaderSetCmax(htup, FirstCommandId, false);
 		/* Set forward chain link in t_ctid */
 		htup->t_ctid = newtid;
@@ -8763,9 +9230,9 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 		htup->t_infomask = xlhdr.t_infomask;
 		htup->t_hoff = xlhdr.t_hoff;
 
-		HeapTupleHeaderSetXmin(htup, XLogRecGetXid(record));
+		HeapTupleHeaderSetXmin(page, htup, XLogRecGetXid(record));
 		HeapTupleHeaderSetCmin(htup, FirstCommandId);
-		HeapTupleHeaderSetXmax(htup, xlrec->new_xmax);
+		HeapTupleHeaderSetXmax(page, htup, xlrec->new_xmax);
 		/* Make sure there is no forward chain link in t_ctid */
 		htup->t_ctid = newtid;
 
@@ -8904,7 +9371,7 @@ heap_xlog_lock(XLogReaderState *record)
 						   BufferGetBlockNumber(buffer),
 						   offnum);
 		}
-		HeapTupleHeaderSetXmax(htup, xlrec->locking_xid);
+		HeapTupleHeaderSetXmax(page, htup, xlrec->locking_xid);
 		HeapTupleHeaderSetCmax(htup, FirstCommandId, false);
 		PageSetLSN(page, lsn);
 		MarkBufferDirty(buffer);
@@ -8964,7 +9431,7 @@ heap_xlog_lock_updated(XLogReaderState *record)
 		htup->t_infomask2 &= ~HEAP_KEYS_UPDATED;
 		fix_infomask_from_infobits(xlrec->infobits_set, &htup->t_infomask,
 								   &htup->t_infomask2);
-		HeapTupleHeaderSetXmax(htup, xlrec->xmax);
+		HeapTupleHeaderSetXmax(page, htup, xlrec->xmax);
 
 		PageSetLSN(page, lsn);
 		MarkBufferDirty(buffer);

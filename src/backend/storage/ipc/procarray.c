@@ -736,7 +736,7 @@ ProcArrayApplyRecoveryInfo(RunningTransactions running)
 			else
 				elog(trace_recovery(DEBUG1),
 				  "recovery snapshot waiting for non-overflowed snapshot or "
-				"until oldest active xid on standby is at least %u (now %u)",
+				"until oldest active xid on standby is at least " XID_FMT " (now " XID_FMT ")",
 					 standbySnapshotPendingXmin,
 					 running->oldestRunningXid);
 			return;
@@ -904,7 +904,7 @@ ProcArrayApplyRecoveryInfo(RunningTransactions running)
 	else
 		elog(trace_recovery(DEBUG1),
 			 "recovery snapshot waiting for non-overflowed snapshot or "
-			 "until oldest active xid on standby is at least %u (now %u)",
+			 "until oldest active xid on standby is at least " XID_FMT " (now " XID_FMT ")",
 			 standbySnapshotPendingXmin,
 			 running->oldestRunningXid);
 }
@@ -3012,7 +3012,7 @@ XidCacheRemoveRunningXids(TransactionId xid,
 		 * debug warning.
 		 */
 		if (j < 0 && !MyPgXact->overflowed)
-			elog(WARNING, "did not find subXID %u in MyProc", anxid);
+			elog(WARNING, "did not find subXID " XID_FMT " in MyProc", anxid);
 	}
 
 	for (j = MyPgXact->nxids - 1; j >= 0; j--)
@@ -3025,7 +3025,7 @@ XidCacheRemoveRunningXids(TransactionId xid,
 	}
 	/* Ordinarily we should have found it, unless the cache has overflowed */
 	if (j < 0 && !MyPgXact->overflowed)
-		elog(WARNING, "did not find subXID %u in MyProc", xid);
+		elog(WARNING, "did not find subXID " XID_FMT " in MyProc", xid);
 
 	/* Also advance global latestCompletedXid while holding the lock */
 	if (TransactionIdPrecedes(ShmemVariableCache->latestCompletedXid,
@@ -3131,7 +3131,7 @@ RecordKnownAssignedTransactionIds(TransactionId xid)
 	Assert(TransactionIdIsValid(xid));
 	Assert(TransactionIdIsValid(latestObservedXid));
 
-	elog(trace_recovery(DEBUG4), "record known xact %u latestObservedXid %u",
+	elog(trace_recovery(DEBUG4), "record known xact " XID_FMT " latestObservedXid " XID_FMT,
 		 xid, latestObservedXid);
 
 	/*
@@ -3631,7 +3631,7 @@ KnownAssignedXidsRemove(TransactionId xid)
 {
 	Assert(TransactionIdIsValid(xid));
 
-	elog(trace_recovery(DEBUG4), "remove KnownAssignedXid %u", xid);
+	elog(trace_recovery(DEBUG4), "remove KnownAssignedXid " XID_FMT, xid);
 
 	/*
 	 * Note: we cannot consider it an error to remove an XID that's not
@@ -3692,7 +3692,7 @@ KnownAssignedXidsRemovePreceding(TransactionId removeXid)
 		return;
 	}
 
-	elog(trace_recovery(DEBUG4), "prune KnownAssignedXids to %u", removeXid);
+	elog(trace_recovery(DEBUG4), "prune KnownAssignedXids to " XID_FMT, removeXid);
 
 	/*
 	 * Mark entries invalid starting at the tail.  Since array is sorted, we
@@ -3881,7 +3881,7 @@ KnownAssignedXidsDisplay(int trace_level)
 		if (KnownAssignedXidsValid[i])
 		{
 			nxids++;
-			appendStringInfo(&buf, "[%d]=%u ", i, KnownAssignedXids[i]);
+			appendStringInfo(&buf, "[%d]=" XID_FMT " ", i, KnownAssignedXids[i]);
 		}
 	}
 

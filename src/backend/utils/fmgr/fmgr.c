@@ -515,7 +515,8 @@ lookup_C_func(HeapTuple procedureTuple)
 					NULL);
 	if (entry == NULL)
 		return NULL;			/* no such entry */
-	if (entry->fn_xmin == HeapTupleHeaderGetRawXmin(procedureTuple->t_data) &&
+	/* FIXME */
+	if (/*entry->fn_xmin == HeapTupleHeaderGetRawXmin(procedureTuple->t_data) &&*/
 		ItemPointerEquals(&entry->fn_tid, &procedureTuple->t_self))
 		return entry;			/* OK */
 	return NULL;				/* entry is out of date */
@@ -552,7 +553,8 @@ record_C_func(HeapTuple procedureTuple,
 					HASH_ENTER,
 					&found);
 	/* OID is already filled in */
-	entry->fn_xmin = HeapTupleHeaderGetRawXmin(procedureTuple->t_data);
+	/* FIXME */
+	/*entry->fn_xmin = HeapTupleHeaderGetRawXmin(procedureTuple->t_data);*/
 	entry->fn_tid = procedureTuple->t_self;
 	entry->user_fn = user_fn;
 	entry->inforec = inforec;

@@ -150,6 +150,10 @@ extern void FreeBulkInsertState(BulkInsertState);
 
 extern Oid heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 			int options, BulkInsertState bistate);
+extern bool heap_page_prepare_for_xid(Relation relation, Buffer buffer,
+									  TransactionId xid, bool multi);
+extern bool rewrite_page_prepare_for_xid(Page page, TransactionId xid,
+										 bool multi);
 extern void heap_multi_insert(Relation relation, HeapTuple *tuples, int ntuples,
 				  CommandId cid, int options, BulkInsertState bistate);
 extern HTSU_Result heap_delete(Relation relation, ItemPointer tid,
@@ -166,9 +170,9 @@ extern HTSU_Result heap_lock_tuple(Relation relation, HeapTuple tuple,
 				bool follow_update,
 				Buffer *buffer, HeapUpdateFailureData *hufd);
 extern void heap_inplace_update(Relation relation, HeapTuple tuple);
-extern bool heap_freeze_tuple(HeapTupleHeader tuple, TransactionId cutoff_xid,
+extern bool heap_freeze_tuple(HeapTuple tuple, TransactionId cutoff_xid,
 				  TransactionId cutoff_multi);
-extern bool heap_tuple_needs_freeze(HeapTupleHeader tuple, TransactionId cutoff_xid,
+extern bool heap_tuple_needs_freeze(HeapTuple htup, TransactionId cutoff_xid,
 						MultiXactId cutoff_multi, Buffer buf);
 extern bool heap_tuple_needs_eventual_freeze(HeapTupleHeader tuple);
 
@@ -183,11 +187,13 @@ extern void heap_sync(Relation relation);
 extern void heap_page_prune_opt(Relation relation, Buffer buffer);
 extern int heap_page_prune(Relation relation, Buffer buffer,
 				TransactionId OldestXmin,
-				bool report_stats, TransactionId *latestRemovedXid);
+				bool report_stats, TransactionId *latestRemovedXid,
+				bool repairFragmentation);
 extern void heap_page_prune_execute(Buffer buffer,
 						OffsetNumber *redirected, int nredirected,
 						OffsetNumber *nowdead, int ndead,
-						OffsetNumber *nowunused, int nunused);
+						OffsetNumber *nowunused, int nunused,
+						bool repairFragmentation);
 extern void heap_get_root_tuples(Page page, OffsetNumber *root_offsets);
 
 /* in heap/syncscan.c */

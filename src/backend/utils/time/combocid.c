@@ -107,7 +107,8 @@ HeapTupleHeaderGetCmin(HeapTupleHeader tup)
 	CommandId	cid = HeapTupleHeaderGetRawCommandId(tup);
 
 	Assert(!(tup->t_infomask & HEAP_MOVED));
-	Assert(TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetXmin(tup)));
+	/* FIXME */
+	/*Assert(TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetXmin(tup)));*/
 
 	if (tup->t_infomask & HEAP_COMBOCID)
 		return GetRealCmin(cid);
@@ -128,8 +129,9 @@ HeapTupleHeaderGetCmax(HeapTupleHeader tup)
 	 * weakens the check, but not using GetCmax() inside one would complicate
 	 * things too much.
 	 */
-	Assert(CritSectionCount > 0 ||
-	  TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetUpdateXid(tup)));
+	/* FIXME*/
+	/*Assert(CritSectionCount > 0 ||
+	  TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetUpdateXid(tup)));*/
 
 	if (tup->t_infomask & HEAP_COMBOCID)
 		return GetRealCmax(cid);
@@ -151,7 +153,7 @@ HeapTupleHeaderGetCmax(HeapTupleHeader tup)
  * changes the tuple in shared buffers.
  */
 void
-HeapTupleHeaderAdjustCmax(HeapTupleHeader tup,
+HeapTupleHeaderAdjustCmax(HeapTuple tup,
 						  CommandId *cmax,
 						  bool *iscombo)
 {
@@ -161,10 +163,10 @@ HeapTupleHeaderAdjustCmax(HeapTupleHeader tup,
 	 * Test for HeapTupleHeaderXminCommitted() first, because it's cheaper
 	 * than a TransactionIdIsCurrentTransactionId call.
 	 */
-	if (!HeapTupleHeaderXminCommitted(tup) &&
-		TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetRawXmin(tup)))
+	if (!HeapTupleHeaderXminCommitted(tup->t_data) &&
+		TransactionIdIsCurrentTransactionId(HeapTupleGetRawXmin(tup)))
 	{
-		CommandId	cmin = HeapTupleHeaderGetCmin(tup);
+		CommandId	cmin = HeapTupleHeaderGetCmin(tup->t_data);
 
 		*cmax = GetComboCommandId(cmin, *cmax);
 		*iscombo = true;

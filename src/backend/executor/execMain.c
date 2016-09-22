@@ -2276,7 +2276,7 @@ EvalPlanQualFetch(EState *estate, Relation relation, int lockmode,
 			 * atomic, and Xmin never changes in an existing tuple, except to
 			 * invalid or frozen, and neither of those can match priorXmax.)
 			 */
-			if (!TransactionIdEquals(HeapTupleHeaderGetXmin(tuple.t_data),
+			if (!TransactionIdEquals(HeapTupleGetXmin(&tuple),
 									 priorXmax))
 			{
 				ReleaseBuffer(buffer);
@@ -2424,7 +2424,7 @@ EvalPlanQualFetch(EState *estate, Relation relation, int lockmode,
 		/*
 		 * As above, if xmin isn't what we're expecting, do nothing.
 		 */
-		if (!TransactionIdEquals(HeapTupleHeaderGetXmin(tuple.t_data),
+		if (!TransactionIdEquals(HeapTupleGetXmin(&tuple),
 								 priorXmax))
 		{
 			ReleaseBuffer(buffer);
@@ -2453,7 +2453,7 @@ EvalPlanQualFetch(EState *estate, Relation relation, int lockmode,
 		/* updated, so look at the updated row */
 		tuple.t_self = tuple.t_data->t_ctid;
 		/* updated row should have xmin matching this xmax */
-		priorXmax = HeapTupleHeaderGetUpdateXid(tuple.t_data);
+		priorXmax = HeapTupleGetUpdateXidAny(&tuple);
 		ReleaseBuffer(buffer);
 		/* loop back to fetch next in chain */
 	}
@@ -2663,6 +2663,7 @@ EvalPlanQualFetchRowMarks(EPQState *epqstate)
 			tuple.t_tableOid = erm->relid;
 			/* also copy t_ctid in case there's valid data there */
 			tuple.t_self = td->t_ctid;
+			HeapTupleSetInvalidEpoch(&tuple);
 
 			/* copy and store tuple */
 			EvalPlanQualSetTuple(epqstate, erm->rti,

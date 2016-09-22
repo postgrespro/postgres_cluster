@@ -157,7 +157,7 @@ TransactionIdDidCommit(TransactionId transactionId)
 		parentXid = SubTransGetParent(transactionId);
 		if (!TransactionIdIsValid(parentXid))
 		{
-			elog(WARNING, "no pg_subtrans entry for subcommitted XID %u",
+			elog(WARNING, "no pg_subtrans entry for subcommitted XID " XID_FMT,
 				 transactionId);
 			return false;
 		}
@@ -206,7 +206,7 @@ TransactionIdDidAbort(TransactionId transactionId)
 		if (!TransactionIdIsValid(parentXid))
 		{
 			/* see notes in TransactionIdDidCommit */
-			elog(WARNING, "no pg_subtrans entry for subcommitted XID %u",
+			elog(WARNING, "no pg_subtrans entry for subcommitted XID " XID_FMT,
 				 transactionId);
 			return true;
 		}
@@ -303,12 +303,12 @@ TransactionIdPrecedes(TransactionId id1, TransactionId id2)
 	 * If either ID is a permanent XID then we can just do unsigned
 	 * comparison.  If both are normal, do a modulo-2^32 comparison.
 	 */
-	int32		diff;
+	int64		diff;
 
 	if (!TransactionIdIsNormal(id1) || !TransactionIdIsNormal(id2))
 		return (id1 < id2);
 
-	diff = (int32) (id1 - id2);
+	diff = (int64) (id1 - id2);
 	return (diff < 0);
 }
 
@@ -318,12 +318,12 @@ TransactionIdPrecedes(TransactionId id1, TransactionId id2)
 bool
 TransactionIdPrecedesOrEquals(TransactionId id1, TransactionId id2)
 {
-	int32		diff;
+	int64		diff;
 
 	if (!TransactionIdIsNormal(id1) || !TransactionIdIsNormal(id2))
 		return (id1 <= id2);
 
-	diff = (int32) (id1 - id2);
+	diff = (int64) (id1 - id2);
 	return (diff <= 0);
 }
 
@@ -333,12 +333,12 @@ TransactionIdPrecedesOrEquals(TransactionId id1, TransactionId id2)
 bool
 TransactionIdFollows(TransactionId id1, TransactionId id2)
 {
-	int32		diff;
+	int64		diff;
 
 	if (!TransactionIdIsNormal(id1) || !TransactionIdIsNormal(id2))
 		return (id1 > id2);
 
-	diff = (int32) (id1 - id2);
+	diff = (int64) (id1 - id2);
 	return (diff > 0);
 }
 
@@ -348,12 +348,12 @@ TransactionIdFollows(TransactionId id1, TransactionId id2)
 bool
 TransactionIdFollowsOrEquals(TransactionId id1, TransactionId id2)
 {
-	int32		diff;
+	int64		diff;
 
 	if (!TransactionIdIsNormal(id1) || !TransactionIdIsNormal(id2))
 		return (id1 >= id2);
 
-	diff = (int32) (id1 - id2);
+	diff = (int64) (id1 - id2);
 	return (diff >= 0);
 }
 

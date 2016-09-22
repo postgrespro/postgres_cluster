@@ -1278,7 +1278,7 @@ compile_pltcl_function(Oid fn_oid, Oid tgreloid,
 	{
 		bool		uptodate;
 
-		uptodate = (prodesc->fn_xmin == HeapTupleHeaderGetRawXmin(procTup->t_data) &&
+		uptodate = (prodesc->fn_xmin == HeapTupleGetRawXmin(procTup) &&
 					ItemPointerEquals(&prodesc->fn_tid, &procTup->t_self));
 
 		if (!uptodate)
@@ -1343,7 +1343,7 @@ compile_pltcl_function(Oid fn_oid, Oid tgreloid,
 			ereport(ERROR,
 					(errcode(ERRCODE_OUT_OF_MEMORY),
 					 errmsg("out of memory")));
-		prodesc->fn_xmin = HeapTupleHeaderGetRawXmin(procTup->t_data);
+		prodesc->fn_xmin = HeapTupleGetRawXmin(procTup);
 		prodesc->fn_tid = procTup->t_self;
 
 		/* Remember if function is STABLE/IMMUTABLE */

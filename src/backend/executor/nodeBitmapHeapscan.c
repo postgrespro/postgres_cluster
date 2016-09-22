@@ -264,6 +264,7 @@ BitmapHeapNext(BitmapHeapScanState *node)
 		scan->rs_ctup.t_data = (HeapTupleHeader) PageGetItem((Page) dp, lp);
 		scan->rs_ctup.t_len = ItemIdGetLength(lp);
 		scan->rs_ctup.t_tableOid = scan->rs_rd->rd_id;
+		HeapTupleCopyEpochFromPage(&scan->rs_ctup, dp);
 		ItemPointerSet(&scan->rs_ctup.t_self, tbmres->blockno, targoffset);
 
 		pgstat_count_heap_fetch(scan->rs_rd);
@@ -391,6 +392,7 @@ bitgetpage(HeapScanDesc scan, TBMIterateResult *tbmres)
 			loctup.t_data = (HeapTupleHeader) PageGetItem((Page) dp, lp);
 			loctup.t_len = ItemIdGetLength(lp);
 			loctup.t_tableOid = scan->rs_rd->rd_id;
+			HeapTupleCopyEpochFromPage(&loctup, dp);
 			ItemPointerSet(&loctup.t_self, page, offnum);
 			valid = HeapTupleSatisfiesVisibility(&loctup, snapshot, buffer);
 			if (valid)

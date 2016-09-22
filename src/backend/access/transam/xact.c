@@ -1559,7 +1559,7 @@ RecordTransactionAbort(bool isSubXact)
 	 * Check that we haven't aborted halfway through RecordTransactionCommit.
 	 */
 	if (TransactionIdDidCommit(xid))
-		elog(PANIC, "cannot abort transaction %u, it was already committed",
+		elog(PANIC, "cannot abort transaction " XID_FMT ", it was already committed",
 			 xid);
 
 	/* Fetch the data we need for the abort record */
@@ -4966,9 +4966,9 @@ ShowTransactionStateRec(TransactionState s)
 	{
 		int			i;
 
-		appendStringInfo(&buf, "%u", s->childXids[0]);
+		appendStringInfo(&buf, XID_FMT, s->childXids[0]);
 		for (i = 1; i < s->nChildXids; i++)
-			appendStringInfo(&buf, " %u", s->childXids[i]);
+			appendStringInfo(&buf, " " XID_FMT, s->childXids[i]);
 	}
 
 	if (s->parent)

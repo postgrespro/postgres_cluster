@@ -792,7 +792,7 @@ TwoPhaseGetGXact(TransactionId xid)
 	LWLockRelease(TwoPhaseStateLock);
 
 	if (result == NULL)			/* should not happen */
-		elog(ERROR, "failed to find GlobalTransaction for xid %u", xid);
+		elog(ERROR, "failed to find GlobalTransaction for xid " XID_FMT, xid);
 
 	cached_xid = xid;
 	cached_gxact = result;
@@ -833,7 +833,7 @@ TwoPhaseGetDummyProc(TransactionId xid)
 /************************************************************************/
 
 #define TwoPhaseFilePath(path, xid) \
-	snprintf(path, MAXPGPATH, TWOPHASE_DIR "/%08X", xid)
+	snprintf(path, MAXPGPATH, TWOPHASE_DIR "/%08X%08X", (uint32)(xid >> 32), (uint32)xid)
 
 /*
  * 2PC state file format:
@@ -1951,7 +1951,7 @@ RecoverPreparedTransactions(void)
 			}
 
 			ereport(LOG,
-					(errmsg("recovering prepared transaction %u", xid)));
+					(errmsg("recovering prepared transaction " XID_FMT, xid)));
 
 			/* Deconstruct header */
 			hdr = (TwoPhaseFileHeader *) buf;
@@ -2132,7 +2132,7 @@ RecordTransactionAbortPrepared(TransactionId xid,
 	 * RecordTransactionCommitPrepared ...
 	 */
 	if (TransactionIdDidCommit(xid))
-		elog(PANIC, "cannot abort transaction %u, it was already committed",
+		elog(PANIC, "cannot abort transaction " XID_FMT ", it was already committed",
 			 xid);
 
 	START_CRIT_SECTION();

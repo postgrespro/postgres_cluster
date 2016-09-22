@@ -32,7 +32,8 @@
 #define BootstrapTransactionId		((TransactionId) 1)
 #define FrozenTransactionId			((TransactionId) 2)
 #define FirstNormalTransactionId	((TransactionId) 3)
-#define MaxTransactionId			((TransactionId) 0xFFFFFFFF)
+#define MaxTransactionId			((TransactionId) 0xFFFFFFFFFFFFFFFF)
+#define MaxShortTransactionId		((TransactionId) 0x7FFFFFFF)
 
 /* ----------------
  *		transaction ID manipulation macros
@@ -43,6 +44,13 @@
 #define TransactionIdEquals(id1, id2)	((id1) == (id2))
 #define TransactionIdStore(xid, dest)	(*(dest) = (xid))
 #define StoreInvalidTransactionId(dest) (*(dest) = InvalidTransactionId)
+#define ShortTransactionIdToNormal(epoch, xid) \
+	(TransactionIdIsNormal(xid) ? (TransactionId)(xid) + (epoch) : (TransactionId)(xid))
+#define NormalTransactionIdToShort(epoch, xid) \
+	(TransactionIdIsNormal(xid) ? (ShortTransactionId)( \
+		AssertMacro((xid) >= (epoch) + FirstNormalTransactionId), \
+		AssertMacro((xid) <= (epoch) + MaxShortTransactionId), \
+		(xid) - (epoch)) : (ShortTransactionId)(xid))
 
 /* advance a transaction ID variable, handling wraparound correctly */
 #define TransactionIdAdvance(dest)	\
@@ -61,12 +69,12 @@
 /* compare two XIDs already known to be normal; this is a macro for speed */
 #define NormalTransactionIdPrecedes(id1, id2) \
 	(AssertMacro(TransactionIdIsNormal(id1) && TransactionIdIsNormal(id2)), \
-	(int32) ((id1) - (id2)) < 0)
+	(int64) ((id1) - (id2)) < 0)
 
 /* compare two XIDs already known to be normal; this is a macro for speed */
 #define NormalTransactionIdFollows(id1, id2) \
 	(AssertMacro(TransactionIdIsNormal(id1) && TransactionIdIsNormal(id2)), \
-	(int32) ((id1) - (id2)) > 0)
+	(int64) ((id1) - (id2)) > 0)
 
 /* ----------
  *		Object ID (OID) zero is InvalidOid.

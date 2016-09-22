@@ -28,6 +28,8 @@ CREATE FUNCTION page_header(IN page bytea,
     OUT special smallint,
     OUT pagesize smallint,
     OUT version smallint,
+    OUT xid_epoch xid,
+    OUT multi_epoch xid,
     OUT prune_xid xid)
 AS 'MODULE_PATHNAME', 'page_header'
 LANGUAGE C STRICT PARALLEL SAFE;

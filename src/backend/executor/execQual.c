@@ -1244,6 +1244,7 @@ GetAttributeByNum(HeapTupleHeader tuple,
 	tmptup.t_len = HeapTupleHeaderGetDatumLength(tuple);
 	ItemPointerSetInvalid(&(tmptup.t_self));
 	tmptup.t_tableOid = InvalidOid;
+	HeapTupleSetInvalidEpoch(&tmptup);
 	tmptup.t_data = tuple;
 
 	result = heap_getattr(&tmptup,
@@ -1305,6 +1306,7 @@ GetAttributeByName(HeapTupleHeader tuple, const char *attname, bool *isNull)
 	tmptup.t_len = HeapTupleHeaderGetDatumLength(tuple);
 	ItemPointerSetInvalid(&(tmptup.t_self));
 	tmptup.t_tableOid = InvalidOid;
+	HeapTupleSetInvalidEpoch(&tmptup);
 	tmptup.t_data = tuple;
 
 	result = heap_getattr(&tmptup,
@@ -4232,6 +4234,7 @@ ExecEvalFieldStore(FieldStoreState *fstate,
 		tmptup.t_len = HeapTupleHeaderGetDatumLength(tuphdr);
 		ItemPointerSetInvalid(&(tmptup.t_self));
 		tmptup.t_tableOid = InvalidOid;
+		HeapTupleSetInvalidEpoch(&tmptup);
 		tmptup.t_data = tuphdr;
 
 		heap_deform_tuple(&tmptup, tupDesc, values, isnull);

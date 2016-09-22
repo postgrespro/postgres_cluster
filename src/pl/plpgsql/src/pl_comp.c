@@ -169,7 +169,7 @@ recheck:
 	if (function)
 	{
 		/* We have a compiled function, but is it still valid? */
-		if (function->fn_xmin == HeapTupleHeaderGetRawXmin(procTup->t_data) &&
+		if (function->fn_xmin == HeapTupleGetRawXmin(procTup) &&
 			ItemPointerEquals(&function->fn_tid, &procTup->t_self))
 			function_valid = true;
 		else
@@ -345,7 +345,7 @@ do_compile(FunctionCallInfo fcinfo,
 
 	function->fn_signature = format_procedure(fcinfo->flinfo->fn_oid);
 	function->fn_oid = fcinfo->flinfo->fn_oid;
-	function->fn_xmin = HeapTupleHeaderGetRawXmin(procTup->t_data);
+	function->fn_xmin = HeapTupleGetRawXmin(procTup);
 	function->fn_tid = procTup->t_self;
 	function->fn_input_collation = fcinfo->fncollation;
 	function->fn_cxt = func_cxt;

@@ -455,7 +455,7 @@ PLy_procedure_argument_valid(PLyTypeInfo *arg)
 		elog(ERROR, "cache lookup failed for relation %u", arg->typ_relid);
 
 	/* If it has changed, the cached data is not valid */
-	valid = (arg->typrel_xmin == HeapTupleHeaderGetRawXmin(relTup->t_data) &&
+	valid = (arg->typrel_xmin == HeapTupleGetRawXmin(relTup) &&
 			 ItemPointerEquals(&arg->typrel_tid, &relTup->t_self));
 
 	ReleaseSysCache(relTup);
@@ -476,7 +476,7 @@ PLy_procedure_valid(PLyProcedure *proc, HeapTuple procTup)
 		return false;
 
 	/* If the pg_proc tuple has changed, it's not valid */
-	if (!(proc->fn_xmin == HeapTupleHeaderGetRawXmin(procTup->t_data) &&
+	if (!(proc->fn_xmin == HeapTupleGetRawXmin(procTup) &&
 		  ItemPointerEquals(&proc->fn_tid, &procTup->t_self)))
 		return false;
 

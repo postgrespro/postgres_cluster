@@ -36,11 +36,6 @@
 /* txid will be signed int8 in database, so must limit to 63 bits */
 #define MAX_TXID   ((uint64) PG_INT64_MAX)
 
-/* Use unsigned variant internally */
-typedef uint64 txid;
-
-/* sprintf format code for uint64 */
-#define TXID_FMT UINT64_FORMAT
 
 /*
  * If defined, use bsearch() function for searching for txids in snapshots
@@ -59,62 +54,19 @@ typedef struct
 	 *
 	 * Explicit embedding is ok as we want always correct alignment anyway.
 	 */
-	int32		__varsz;
+	int32				__varsz;
 
-	uint32		nxip;			/* number of txids in xip array */
-	txid		xmin;
-	txid		xmax;
+	uint32				nxip;			/* number of txids in xip array */
+	TransactionId		xmin;
+	TransactionId		xmax;
 	/* in-progress txids, xmin <= xip[i] < xmax: */
-	txid		xip[FLEXIBLE_ARRAY_MEMBER];
+	TransactionId		xip[FLEXIBLE_ARRAY_MEMBER];
 } TxidSnapshot;
 
 #define TXID_SNAPSHOT_SIZE(nxip) \
-	(offsetof(TxidSnapshot, xip) + sizeof(txid) * (nxip))
+	(offsetof(TxidSnapshot, xip) + sizeof(TransactionId) * (nxip))
 #define TXID_SNAPSHOT_MAX_NXIP \
-	((MaxAllocSize - offsetof(TxidSnapshot, xip)) / sizeof(txid))
-
-/*
- * Epoch values from xact.c
- */
-typedef struct
-{
-	TransactionId last_xid;
-	uint32		epoch;
-} TxidEpoch;
-
-
-/*
- * Fetch epoch data from xact.c.
- */
-static void
-load_xid_epoch(TxidEpoch *state)
-{
-	GetNextXidAndEpoch(&state->last_xid, &state->epoch);
-}
-
-/*
- * do a TransactionId -> txid conversion for an XID near the given epoch
- */
-static txid
-convert_xid(TransactionId xid, const TxidEpoch *state)
-{
-	uint64		epoch;
-
-	/* return special xid's as-is */
-	if (!TransactionIdIsNormal(xid))
-		return (txid) xid;
-
-	/* xid can be on either side when near wrap-around */
-	epoch = (uint64) state->epoch;
-	if (xid > state->last_xid &&
-		TransactionIdPrecedes(xid, state->last_xid))
-		epoch--;
-	else if (xid < state->last_xid &&
-			 TransactionIdFollows(xid, state->last_xid))
-		epoch++;
-
-	return (epoch << 32) | xid;
-}
+	((MaxAllocSize - offsetof(TxidSnapshot, xip)) / sizeof(TransactionId))
 
 /*
  * txid comparator for qsort/bsearch
@@ -122,8 +74,8 @@ convert_xid(TransactionId xid, const TxidEpoch *state)
 static int
 cmp_txid(const void *aa, const void *bb)
 {
-	txid		a = *(const txid *) aa;
-	txid		b = *(const txid *) bb;
+	TransactionId	a = *(const TransactionId *) aa;
+	TransactionId	b = *(const TransactionId *) bb;
 
 	if (a < b)
 		return -1;
@@ -142,14 +94,14 @@ cmp_txid(const void *aa, const void *bb)
 static void
 sort_snapshot(TxidSnapshot *snap)
 {
-	txid		last = 0;
-	int			nxip,
-				idx1,
-				idx2;
+	TransactionId	last = 0;
+	int				nxip,
+					idx1,
+					idx2;
 
 	if (snap->nxip > 1)
 	{
-		qsort(snap->xip, snap->nxip, sizeof(txid), cmp_txid);
+		qsort(snap->xip, snap->nxip, sizeof(TransactionId), cmp_txid);
 
 		/* remove duplicates */
 		nxip = snap->nxip;
@@ -169,7 +121,7 @@ sort_snapshot(TxidSnapshot *snap)
  * check txid visibility.
  */
 static bool
-is_visible_txid(txid value, const TxidSnapshot *snap)
+is_visible_txid(TransactionId value, const TxidSnapshot *snap)
 {
 	if (value < snap->xmin)
 		return true;
@@ -180,7 +132,7 @@ is_visible_txid(txid value, const TxidSnapshot *snap)
 	{
 		void	   *res;
 
-		res = bsearch(&value, snap->xip, snap->nxip, sizeof(txid), cmp_txid);
+		res = bsearch(&value, snap->xip, snap->nxip, sizeof(TransactionId), cmp_txid);
 		/* if found, transaction is still in progress */
 		return (res) ? false : true;
 	}
@@ -203,7 +155,7 @@ is_visible_txid(txid value, const TxidSnapshot *snap)
  */
 
 static StringInfo
-buf_init(txid xmin, txid xmax)
+buf_init(TransactionId xmin, TransactionId xmax)
 {
 	TxidSnapshot snap;
 	StringInfo	buf;
@@ -218,7 +170,7 @@ buf_init(txid xmin, txid xmax)
 }
 
 static void
-buf_add_txid(StringInfo buf, txid xid)
+buf_add_txid(StringInfo buf, TransactionId xid)
 {
 	TxidSnapshot *snap = (TxidSnapshot *) buf->data;
 
@@ -245,14 +197,14 @@ buf_finalize(StringInfo buf)
 /*
  * simple number parser.
  *
- * We return 0 on error, which is invalid value for txid.
+ * We return 0 on error, which is invalid value for TransactionId.
  */
-static txid
+static TransactionId
 str2txid(const char *s, const char **endp)
 {
-	txid		val = 0;
-	txid		cutoff = MAX_TXID / 10;
-	txid		cutlim = MAX_TXID % 10;
+	TransactionId		val = 0;
+	TransactionId		cutoff = MAX_TXID / 10;
+	TransactionId		cutlim = MAX_TXID % 10;
 
 	for (; *s; s++)
 	{
@@ -284,13 +236,13 @@ str2txid(const char *s, const char **endp)
 static TxidSnapshot *
 parse_snapshot(const char *str)
 {
-	txid		xmin;
-	txid		xmax;
-	txid		last_val = 0,
-				val;
-	const char *str_start = str;
-	const char *endp;
-	StringInfo	buf;
+	TransactionId	xmin;
+	TransactionId	xmax;
+	TransactionId	last_val = 0,
+					val;
+	const char	   *str_start = str;
+	const char	   *endp;
+	StringInfo		buf;
 
 	xmin = str2txid(str, &endp);
 	if (*endp != ':')
@@ -352,28 +304,12 @@ bad_format:
 /*
  * txid_current() returns int8
  *
- *	Return the current toplevel transaction ID as TXID
- *	If the current transaction does not have one, one is assigned.
+ *	Return the current toplevel transaction ID
  */
 Datum
 txid_current(PG_FUNCTION_ARGS)
 {
-	txid		val;
-	TxidEpoch	state;
-
-	/*
-	 * Must prevent during recovery because if an xid is not assigned we try
-	 * to assign one, which would fail. Programs already rely on this function
-	 * to always return a valid current xid, so we should not change this to
-	 * return NULL or similar invalid xid.
-	 */
-	PreventCommandDuringRecovery("txid_current()");
-
-	load_xid_epoch(&state);
-
-	val = convert_xid(GetTopTransactionId(), &state);
-
-	PG_RETURN_INT64(val);
+	PG_RETURN_INT64(GetTopTransactionId());
 }
 
 /*
@@ -389,14 +325,11 @@ txid_current_snapshot(PG_FUNCTION_ARGS)
 	TxidSnapshot *snap;
 	uint32		nxip,
 				i;
-	TxidEpoch	state;
 	Snapshot	cur;
 
 	cur = GetActiveSnapshot();
 	if (cur == NULL)
 		elog(ERROR, "no active snapshot set");
-
-	load_xid_epoch(&state);
 
 	/*
 	 * Compile-time limits on the procarray (MAX_BACKENDS processes plus
@@ -410,11 +343,11 @@ txid_current_snapshot(PG_FUNCTION_ARGS)
 	snap = palloc(TXID_SNAPSHOT_SIZE(nxip));
 
 	/* fill */
-	snap->xmin = convert_xid(cur->xmin, &state);
-	snap->xmax = convert_xid(cur->xmax, &state);
+	snap->xmin = cur->xmin;
+	snap->xmax = cur->xmax;
 	snap->nxip = nxip;
 	for (i = 0; i < nxip; i++)
-		snap->xip[i] = convert_xid(cur->xip[i], &state);
+		snap->xip[i] = cur->xip[i];
 
 	/*
 	 * We want them guaranteed to be in ascending order.  This also removes
@@ -461,14 +394,14 @@ txid_snapshot_out(PG_FUNCTION_ARGS)
 
 	initStringInfo(&str);
 
-	appendStringInfo(&str, TXID_FMT ":", snap->xmin);
-	appendStringInfo(&str, TXID_FMT ":", snap->xmax);
+	appendStringInfo(&str, XID_FMT ":", snap->xmin);
+	appendStringInfo(&str, XID_FMT ":", snap->xmax);
 
 	for (i = 0; i < snap->nxip; i++)
 	{
 		if (i > 0)
 			appendStringInfoChar(&str, ',');
-		appendStringInfo(&str, TXID_FMT, snap->xip[i]);
+		appendStringInfo(&str, XID_FMT, snap->xip[i]);
 	}
 
 	PG_RETURN_CSTRING(str.data);
@@ -484,13 +417,13 @@ txid_snapshot_out(PG_FUNCTION_ARGS)
 Datum
 txid_snapshot_recv(PG_FUNCTION_ARGS)
 {
-	StringInfo	buf = (StringInfo) PG_GETARG_POINTER(0);
-	TxidSnapshot *snap;
-	txid		last = 0;
-	int			nxip;
-	int			i;
-	txid		xmin,
-				xmax;
+	StringInfo		buf = (StringInfo) PG_GETARG_POINTER(0);
+	TxidSnapshot   *snap;
+	TransactionId	last = 0;
+	int				nxip;
+	int				i;
+	TransactionId	xmin,
+					xmax;
 
 	/* load and validate nxip */
 	nxip = pq_getmsgint(buf, 4);
@@ -508,7 +441,7 @@ txid_snapshot_recv(PG_FUNCTION_ARGS)
 
 	for (i = 0; i < nxip; i++)
 	{
-		txid		cur = pq_getmsgint64(buf);
+		TransactionId	cur = pq_getmsgint64(buf);
 
 		if (cur < last || cur < xmin || cur >= xmax)
 			goto bad_format;
@@ -566,8 +499,8 @@ txid_snapshot_send(PG_FUNCTION_ARGS)
 Datum
 txid_visible_in_snapshot(PG_FUNCTION_ARGS)
 {
-	txid		value = PG_GETARG_INT64(0);
-	TxidSnapshot *snap = (TxidSnapshot *) PG_GETARG_VARLENA_P(1);
+	TransactionId	value = PG_GETARG_INT64(0);
+	TxidSnapshot   *snap = (TxidSnapshot *) PG_GETARG_VARLENA_P(1);
 
 	PG_RETURN_BOOL(is_visible_txid(value, snap));
 }
@@ -607,8 +540,8 @@ Datum
 txid_snapshot_xip(PG_FUNCTION_ARGS)
 {
 	FuncCallContext *fctx;
-	TxidSnapshot *snap;
-	txid		value;
+	TxidSnapshot   *snap;
+	TransactionId	value;
 
 	/* on first call initialize snap_state and get copy of snapshot */
 	if (SRF_IS_FIRSTCALL())

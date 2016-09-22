@@ -4473,6 +4473,7 @@ make_tuple_from_result_row(PGresult *res,
 	 */
 	if (ctid)
 		tuple->t_self = tuple->t_data->t_ctid = *ctid;
+	HeapTupleSetInvalidEpoch(tuple);
 
 	/*
 	 * Stomp on the xmin, xmax, and cmin fields from the tuple created by
@@ -4482,8 +4483,8 @@ make_tuple_from_result_row(PGresult *res,
 	 * assumption.  If we don't do this then, for example, the tuple length
 	 * ends up in the xmin field, which isn't what we want.
 	 */
-	HeapTupleHeaderSetXmax(tuple->t_data, InvalidTransactionId);
-	HeapTupleHeaderSetXmin(tuple->t_data, InvalidTransactionId);
+	HeapTupleSetXmax(tuple, InvalidTransactionId);
+	HeapTupleSetXmin(tuple, InvalidTransactionId);
 	HeapTupleHeaderSetCmin(tuple->t_data, InvalidTransactionId);
 
 	/* Clean up */

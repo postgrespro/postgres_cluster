@@ -292,7 +292,7 @@ TransactionIdGetCommitTsData(TransactionId xid, TimestampTz *ts,
 	if (!TransactionIdIsNormal(xid))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-		errmsg("cannot retrieve commit timestamp for transaction %u", xid)));
+		errmsg("cannot retrieve commit timestamp for transaction " XID_FMT, xid)));
 
 	LWLockAcquire(CommitTsLock, LW_SHARED);
 

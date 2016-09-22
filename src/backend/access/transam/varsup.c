@@ -140,14 +140,14 @@ GetNewTransactionId(bool isSubXact)
 			/* complain even if that DB has disappeared */
 			if (oldest_datname)
 				ereport(WARNING,
-						(errmsg("database \"%s\" must be vacuumed within %u transactions",
+						(errmsg("database \"%s\" must be vacuumed within " XID_FMT " transactions",
 								oldest_datname,
 								xidWrapLimit - xid),
 						 errhint("To avoid a database shutdown, execute a database-wide VACUUM in that database.\n"
 								 "You might also need to commit or roll back old prepared transactions.")));
 			else
 				ereport(WARNING,
-						(errmsg("database with OID %u must be vacuumed within %u transactions",
+						(errmsg("database with OID %u must be vacuumed within " XID_FMT " transactions",
 								oldest_datoid,
 								xidWrapLimit - xid),
 						 errhint("To avoid a database shutdown, execute a database-wide VACUUM in that database.\n"
@@ -343,7 +343,7 @@ SetTransactionIdLimit(TransactionId oldest_datfrozenxid, Oid oldest_datoid)
 
 	/* Log the info */
 	ereport(DEBUG1,
-			(errmsg("transaction ID wrap limit is %u, limited by database with OID %u",
+			(errmsg("transaction ID wrap limit is " XID_FMT ", limited by database with OID %u",
 					xidWrapLimit, oldest_datoid)));
 
 	/*
@@ -378,14 +378,14 @@ SetTransactionIdLimit(TransactionId oldest_datfrozenxid, Oid oldest_datoid)
 
 		if (oldest_datname)
 			ereport(WARNING,
-			(errmsg("database \"%s\" must be vacuumed within %u transactions",
+			(errmsg("database \"%s\" must be vacuumed within " XID_FMT " transactions",
 					oldest_datname,
 					xidWrapLimit - curXid),
 			 errhint("To avoid a database shutdown, execute a database-wide VACUUM in that database.\n"
 					 "You might also need to commit or roll back old prepared transactions.")));
 		else
 			ereport(WARNING,
-					(errmsg("database with OID %u must be vacuumed within %u transactions",
+					(errmsg("database with OID %u must be vacuumed within " XID_FMT " transactions",
 							oldest_datoid,
 							xidWrapLimit - curXid),
 					 errhint("To avoid a database shutdown, execute a database-wide VACUUM in that database.\n"
