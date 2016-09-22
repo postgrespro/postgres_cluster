@@ -27,6 +27,18 @@ my @client_program_files = (
 	'pg_isready',    'pg_receivexlog', 'pg_restore', 'psql',
 	'reindexdb',     'vacuumdb',       @client_contribs);
 
+sub SubstituteMakefileVariables {
+	local $_ = shift; # Line to substitue
+	my $mf = shift; # Makefile text
+	while (/\$\((\w+)\)/) {
+			my $varname = $1;
+			if ($mf =~ /^$varname\s*=\s*(.*)$/mg) {
+			my $varvalue=$1;
+			s/\$\($varname\)/$varvalue/g;
+			}
+	}
+	return $_;
+}
 sub lcopy
 {
 	my $src    = shift;
@@ -80,7 +92,8 @@ sub Install
 	my @client_dirs = ('bin', 'lib', 'share', 'symbols');
 	my @all_dirs = (
 		@client_dirs, 'doc', 'doc/contrib', 'doc/extension', 'share/contrib',
-		'share/extension', 'share/timezonesets', 'share/tsearch_data');
+		'share/extension', 'share/timezonesets', 'share/tsearch_data',
+		'share/pgpro-upgrade');
 	if ($insttype eq "client")
 	{
 		EnsureDirectories($target, @client_dirs);
@@ -163,6 +176,12 @@ sub Install
 			@pldirs);
 		CopySetOfFiles('PL Extension files',
 			$pl_extension_files, $target . '/share/extension/');
+		CopySetOfFiles('Catalog upgrade scripts',
+			[ glob("src\\pgpro-upgrade\\*.sql"),
+			  glob("src\\pgpro-upgrade\\*.test")],
+		      $target . "/share/pgpro-upgrade/");
+		CopyFiles("Upgrade driver script", $target . "/bin/",
+			    "src/pgpro-upgrade/", "pgpro_upgrade");
 	}
 
 	GenerateNLSFiles($target, $config->{nls}, $majorver) if ($config->{nls});
@@ -386,13 +405,11 @@ sub GenerateTimezoneFiles
 
 	print "Generating timezone files...";
 
-	my @args = ("$conf/zic/zic",
-				'-d',
-				"$target/share/timezone");
+	my @args = ("$conf/zic/zic", '-d', "$target/share/timezone");
 	foreach (@tzfiles)
 	{
 		my $tzfile = $_;
-		push(@args, "src/timezone/data/$tzfile")
+		push(@args, "src/timezone/data/$tzfile");
 	}
 
 	system(@args);
@@ -461,6 +478,7 @@ sub CopyContribFiles
 			next if ($d eq "hstore_plpython" && !defined($config->{python}));
 			next if ($d eq "ltree_plpython"  && !defined($config->{python}));
 			next if ($d eq "sepgsql");
+			next if ($d eq 'pg_arman');
 
 			CopySubdirFiles($subdir, $d, $config, $target);
 		}
@@ -503,8 +521,8 @@ sub CopySubdirFiles
 	}
 
 	$flist = '';
-	if ($mf =~ /^DATA_built\s*=\s*(.*)$/m) { $flist .= $1 }
-	if ($mf =~ /^DATA\s*=\s*(.*)$/m)       { $flist .= " $1" }
+	if ($mf =~ /^DATA_built\s*=\s*(.*)$/m) { $flist .= $1; }
+	if ($mf =~ /^DATA\s*=\s*(.*)$/m)       { $flist .= " $1"; }
 	$flist =~ s/^\s*//;    # Remove leading spaces if we had only DATA_built
 
 	if ($flist ne '')
@@ -525,7 +543,7 @@ sub CopySubdirFiles
 	if ($flist ne '')
 	{
 		$flist = ParseAndCleanRule($flist, $mf);
-
+		print STDERR "Installing TSEARCH data for module $module: $flist\n";
 		foreach my $f (split /\s+/, $flist)
 		{
 			lcopy("$subdir/$module/$f",
@@ -577,7 +595,7 @@ sub ParseAndCleanRule
 		    substr($flist, 0, index($flist, '$(addsuffix '))
 		  . substr($flist, $i + 1);
 	}
-	return $flist;
+	return SubstituteMakefileVariables($flist,$mf);
 }
 
 sub CopyIncludeFiles
@@ -643,9 +661,9 @@ sub CopyIncludeFiles
 		next unless (-d "src/include/$d");
 
 		EnsureDirectories("$target/include/server/$d");
-		my @args = ('xcopy', '/s', '/i', '/q', '/r', '/y',
-				 "src\\include\\$d\\*.h",
-				 "$ctarget\\include\\server\\$d\\");
+		my @args = (
+			'xcopy', '/s', '/i', '/q', '/r', '/y', "src\\include\\$d\\*.h",
+			"$ctarget\\include\\server\\$d\\");
 		system(@args) && croak("Failed to copy include directory $d\n");
 	}
 	closedir($D);
@@ -699,10 +717,11 @@ sub GenerateNLSFiles
 
 			EnsureDirectories($target, "share/locale/$lang",
 				"share/locale/$lang/LC_MESSAGES");
-			my @args = ("$nlspath\\bin\\msgfmt",
-			   '-o',
-			   "$target\\share\\locale\\$lang\\LC_MESSAGES\\$prgm-$majorver.mo",
-			   $_);
+			my @args = (
+				"$nlspath\\bin\\msgfmt",
+				'-o',
+"$target\\share\\locale\\$lang\\LC_MESSAGES\\$prgm-$majorver.mo",
+				$_);
 			system(@args) && croak("Could not run msgfmt on $dir\\$_");
 			print ".";
 		}

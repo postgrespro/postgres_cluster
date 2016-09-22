@@ -98,6 +98,7 @@ bthandler(PG_FUNCTION_ARGS)
 	amroutine->amstorage = false;
 	amroutine->amclusterable = true;
 	amroutine->ampredlocks = true;
+	amroutine->amcaninclude = true;
 	amroutine->amkeytype = InvalidOid;
 
 	amroutine->ambuild = btbuild;
@@ -108,6 +109,7 @@ bthandler(PG_FUNCTION_ARGS)
 	amroutine->amcanreturn = btcanreturn;
 	amroutine->amcostestimate = btcostestimate;
 	amroutine->amoptions = btoptions;
+	amroutine->amproperty = btproperty;
 	amroutine->amvalidate = btvalidate;
 	amroutine->ambeginscan = btbeginscan;
 	amroutine->amrescan = btrescan;
@@ -762,9 +764,7 @@ btvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 	/* Create a temporary memory context to run _bt_pagedel in */
 	vstate.pagedelcontext = AllocSetContextCreate(CurrentMemoryContext,
 												  "_bt_pagedel",
-												  ALLOCSET_DEFAULT_MINSIZE,
-												  ALLOCSET_DEFAULT_INITSIZE,
-												  ALLOCSET_DEFAULT_MAXSIZE);
+												  ALLOCSET_DEFAULT_SIZES);
 
 	/*
 	 * The outer loop iterates over all index pages except the metapage, in

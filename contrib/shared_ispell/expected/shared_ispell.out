@@ -1,0 +1,213 @@
+CREATE EXTENSION shared_ispell;
+-- Test ISpell dictionary with ispell affix file
+CREATE TEXT SEARCH DICTIONARY shared_ispell (
+                        Template=shared_ispell,
+                        DictFile=ispell_sample,
+                        AffFile=ispell_sample,
+                        Stopwords=english
+);
+SELECT ts_lexize('shared_ispell', 'skies');
+ ts_lexize 
+-----------
+ {sky}
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'bookings');
+   ts_lexize    
+----------------
+ {booking,book}
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'booking');
+   ts_lexize    
+----------------
+ {booking,book}
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'foot');
+ ts_lexize 
+-----------
+ {foot}
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'foots');
+ ts_lexize 
+-----------
+ {foot}
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'rebookings');
+   ts_lexize    
+----------------
+ {booking,book}
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'rebooking');
+   ts_lexize    
+----------------
+ {booking,book}
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'unbookings');
+ ts_lexize 
+-----------
+ {book}
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'unbooking');
+ ts_lexize 
+-----------
+ {book}
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'unbook');
+ ts_lexize 
+-----------
+ {book}
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'footklubber');
+   ts_lexize    
+----------------
+ {foot,klubber}
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'footballklubber');
+                      ts_lexize                       
+------------------------------------------------------
+ {footballklubber,foot,ball,klubber,football,klubber}
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'ballyklubber');
+   ts_lexize    
+----------------
+ {ball,klubber}
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'footballyklubber');
+      ts_lexize      
+---------------------
+ {foot,ball,klubber}
+(1 row)
+
+-- Test ISpell dictionary with hunspell affix file
+CREATE TEXT SEARCH DICTIONARY shared_hunspell (
+                        Template=shared_ispell,
+                        DictFile=ispell_sample,
+                        AffFile=hunspell_sample
+);
+SELECT ts_lexize('shared_hunspell', 'skies');
+ ts_lexize 
+-----------
+ {sky}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'bookings');
+   ts_lexize    
+----------------
+ {booking,book}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'booking');
+   ts_lexize    
+----------------
+ {booking,book}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'foot');
+ ts_lexize 
+-----------
+ {foot}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'foots');
+ ts_lexize 
+-----------
+ {foot}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'rebookings');
+   ts_lexize    
+----------------
+ {booking,book}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'rebooking');
+   ts_lexize    
+----------------
+ {booking,book}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'unbookings');
+ ts_lexize 
+-----------
+ {book}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'unbooking');
+ ts_lexize 
+-----------
+ {book}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'unbook');
+ ts_lexize 
+-----------
+ {book}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'footklubber');
+   ts_lexize    
+----------------
+ {foot,klubber}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'footballklubber');
+                      ts_lexize                       
+------------------------------------------------------
+ {footballklubber,foot,ball,klubber,football,klubber}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'ballyklubber');
+   ts_lexize    
+----------------
+ {ball,klubber}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'footballyklubber');
+      ts_lexize      
+---------------------
+ {foot,ball,klubber}
+(1 row)
+
+SELECT dict_name, affix_name, words, affixes FROM shared_ispell_dicts();
+   dict_name   |   affix_name    | words | affixes 
+---------------+-----------------+-------+---------
+ ispell_sample | hunspell_sample |     8 |       7
+ ispell_sample | ispell_sample   |     8 |       7
+(2 rows)
+
+SELECT stop_name, words FROM shared_ispell_stoplists();
+ stop_name | words 
+-----------+-------
+ english   |   127
+(1 row)
+
+SELECT shared_ispell_reset();
+ shared_ispell_reset 
+---------------------
+ 
+(1 row)
+
+SELECT ts_lexize('shared_ispell', 'skies');
+ ts_lexize 
+-----------
+ {sky}
+(1 row)
+
+SELECT ts_lexize('shared_hunspell', 'skies');
+ ts_lexize 
+-----------
+ {sky}
+(1 row)
+

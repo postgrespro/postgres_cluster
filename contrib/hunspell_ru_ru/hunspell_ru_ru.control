@@ -1,0 +1,5 @@
+# hunspell_ru_ru extension
+comment = 'Russian Hunspell Dictionary'
+default_version = '1.0'
+module_pathname = '$libdir/hunspell_ru_ru'
+relocatable = true

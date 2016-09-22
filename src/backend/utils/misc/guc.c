@@ -31,6 +31,7 @@
 #include "access/transam.h"
 #include "access/twophase.h"
 #include "access/xact.h"
+#include "access/ptrack.h"
 #include "catalog/namespace.h"
 #include "commands/async.h"
 #include "commands/prepare.h"
@@ -1001,6 +1002,16 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
+		{"ptrack_enable", PGC_SU_BACKEND, WAL_SETTINGS,
+			gettext_noop("Enable page tracking."),
+			NULL
+		},
+		&ptrack_enable,
+		false,
+		NULL, &assign_ptrack_enable, NULL
+	},
+
+	{
 		{"wal_compression", PGC_SUSET, WAL_SETTINGS,
 			gettext_noop("Compresses full-page writes written in WAL file."),
 			NULL
@@ -1210,7 +1221,11 @@ static struct config_bool ConfigureNamesBool[] =
 			gettext_noop("Enables updating of the process title every time a new SQL command is received by the server.")
 		},
 		&update_process_title,
+#ifdef WIN32
+		false,
+#else
 		true,
+#endif
 		NULL, NULL, NULL
 	},
 
@@ -2257,7 +2272,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_S
 		},
 		&CheckPointTimeout,
-		300, 30, 3600,
+		300, 30, 86400,
 		NULL, NULL, NULL
 	},
 
@@ -2663,7 +2678,7 @@ static struct config_int ConfigureNamesInt[] =
 			NULL
 		},
 		&max_parallel_workers_per_gather,
-		2, 0, 1024,
+		0, 0, 1024,
 		NULL, NULL, NULL
 	},
 
@@ -2765,7 +2780,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_BLOCKS,
 		},
 		&min_parallel_relation_size,
-		1024, 0, INT_MAX / 3,
+		(8 * 1024 * 1024) / BLCKSZ, 0, INT_MAX / 3,
 		NULL, NULL, NULL
 	},
 

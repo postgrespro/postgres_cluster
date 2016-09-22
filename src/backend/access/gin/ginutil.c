@@ -47,6 +47,7 @@ ginhandler(PG_FUNCTION_ARGS)
 	amroutine->amstorage = true;
 	amroutine->amclusterable = false;
 	amroutine->ampredlocks = false;
+	amroutine->amcaninclude = false;
 	amroutine->amkeytype = InvalidOid;
 
 	amroutine->ambuild = ginbuild;
@@ -57,6 +58,7 @@ ginhandler(PG_FUNCTION_ARGS)
 	amroutine->amcanreturn = NULL;
 	amroutine->amcostestimate = gincostestimate;
 	amroutine->amoptions = ginoptions;
+	amroutine->amproperty = NULL;
 	amroutine->amvalidate = ginvalidate;
 	amroutine->ambeginscan = ginbeginscan;
 	amroutine->amrescan = ginrescan;

@@ -24,6 +24,7 @@
 #include "access/sysattr.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#include "access/ptrack.h"
 #include "catalog/catalog.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
@@ -201,9 +202,7 @@ PerformAuthentication(Port *port)
 	if (PostmasterContext == NULL)
 		PostmasterContext = AllocSetContextCreate(TopMemoryContext,
 												  "Postmaster",
-												  ALLOCSET_DEFAULT_MINSIZE,
-												  ALLOCSET_DEFAULT_INITSIZE,
-												  ALLOCSET_DEFAULT_MAXSIZE);
+												  ALLOCSET_DEFAULT_SIZES);
 
 	if (!load_hba())
 	{
@@ -566,6 +565,8 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	char		dbname[NAMEDATALEN];
 
 	elog(DEBUG3, "InitPostgres");
+
+	assign_ptrack_enable(ptrack_enable, NULL);
 
 	/*
 	 * Add my PGPROC struct to the ProcArray.

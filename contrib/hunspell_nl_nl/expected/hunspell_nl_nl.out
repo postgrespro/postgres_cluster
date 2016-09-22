@@ -1,0 +1,54 @@
+CREATE EXTENSION hunspell_nl_nl;
+CREATE TABLE table1(name varchar);
+INSERT INTO table1 VALUES ('deuren'), ('deurtje'), ('deur'),
+						('twee'), ('tweehonderd'), ('tweeduizend');
+SELECT d.* FROM table1 AS t, LATERAL ts_debug('dutch_hunspell', t.name) AS d;
+   alias   |   description   |    token    |        dictionaries         |   dictionary   | lexemes 
+-----------+-----------------+-------------+-----------------------------+----------------+---------
+ asciiword | Word, all ASCII | deuren      | {dutch_hunspell,dutch_stem} | dutch_hunspell | {deur}
+ asciiword | Word, all ASCII | deurtje     | {dutch_hunspell,dutch_stem} | dutch_hunspell | {deur}
+ asciiword | Word, all ASCII | deur        | {dutch_hunspell,dutch_stem} | dutch_hunspell | {deur}
+ asciiword | Word, all ASCII | twee        | {dutch_hunspell,dutch_stem} | dutch_hunspell | {twee}
+ asciiword | Word, all ASCII | tweehonderd | {dutch_hunspell,dutch_stem} | dutch_hunspell | {twee}
+ asciiword | Word, all ASCII | tweeduizend | {dutch_hunspell,dutch_stem} | dutch_hunspell | {twee}
+(6 rows)
+
+CREATE INDEX name_idx ON table1 USING GIN (to_tsvector('dutch_hunspell', "name"));
+SELECT * FROM table1 WHERE to_tsvector('dutch_hunspell', name)
+	@@ to_tsquery('dutch_hunspell', 'deurtje');
+  name   
+---------
+ deuren
+ deurtje
+ deur
+(3 rows)
+
+SELECT * FROM table1 WHERE to_tsvector('dutch_hunspell', name)
+	@@ to_tsquery('dutch_hunspell', 'twee');
+    name     
+-------------
+ twee
+ tweehonderd
+ tweeduizend
+(3 rows)
+
+DROP INDEX name_idx;
+CREATE INDEX name_idx ON table1 USING GIST (to_tsvector('dutch_hunspell', "name"));
+SELECT * FROM table1 WHERE to_tsvector('dutch_hunspell', name)
+	@@ to_tsquery('dutch_hunspell', 'deurtje');
+  name   
+---------
+ deuren
+ deurtje
+ deur
+(3 rows)
+
+SELECT * FROM table1 WHERE to_tsvector('dutch_hunspell', name)
+	@@ to_tsquery('dutch_hunspell', 'twee');
+    name     
+-------------
+ twee
+ tweehonderd
+ tweeduizend
+(3 rows)
+

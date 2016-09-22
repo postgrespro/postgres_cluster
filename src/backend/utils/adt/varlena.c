@@ -35,6 +35,21 @@
 #include "utils/pg_locale.h"
 #include "utils/sortsupport.h"
 
+#ifdef USE_ICU
+#include <unicode/utypes.h>   /* Basic ICU data types */
+#include <unicode/ucnv.h>     /* C   Converter API    */
+#include <unicode/ucol.h>
+#include <unicode/uloc.h>
+#include "unicode/uiter.h"
+#define USTACKBUFLEN		(TEXTBUFLEN / sizeof(UChar))
+
+static int strcmp_icu(char *arg1, int len1, char *arg2, int len2);
+static int strxfrm_icu(char *dst, char *src, int len);
+
+/* We are going to use strxfrm from ICU which we trust in */
+#define TRUST_STRXFRM
+#endif /* USE_ICU */
+
 
 /* GUC variable */
 int			bytea_output = BYTEA_OUTPUT_HEX;
@@ -1372,6 +1387,179 @@ text_position_cleanup(TextPositionState *state)
 	}
 }
 
+#ifdef USE_ICU
+
+static UChar*
+convert_icu(UChar dst[USTACKBUFLEN], int *pdstlen, char *src, int srclen)
+{
+	/* We keep a static converter "forever".
+	 * Create it first time we get here. */
+	static UConverter 	*conv = NULL;
+	UChar				*pdst = dst;
+	UErrorCode  		status = U_ZERO_ERROR;
+	int					dstlen;
+
+	if (srclen * 2 >= USTACKBUFLEN)
+		pdst = palloc((srclen + 1) * 2 * sizeof(UChar));
+
+	if (conv == NULL)
+	{
+		conv = ucnv_open(NULL, &status);
+		if (U_FAILURE(status) || conv == NULL)
+			ereport(ERROR,
+					(errcode(status),
+					 errmsg("ICU error: could not get converter for \"%s\"", ucnv_getDefaultName())));
+	}
+
+	dstlen = ucnv_toUChars(conv, pdst, srclen * 2, src, srclen, &status);
+	if(U_FAILURE(status))
+		ereport(WARNING,
+				(errcode(status),
+				 errmsg("ICU Error: varlena.c, could not convert to UChars")));
+
+	if (pdstlen)
+		*pdstlen = dstlen;
+
+	return pdst;
+}
+
+/*
+ * ICU comparator
+ */
+static int
+strcmp_icu(char *arg1, int len1, char *arg2, int len2)
+{
+	int					result;
+	static UCollator 	*collator = NULL;
+	UErrorCode  		status = U_ZERO_ERROR;
+
+	/* We keep a static collator "forever", since it is hard
+	 * coded into the database cluster at initdb time
+	 * anyway. Create it first time we get here. */
+	if (collator == NULL)
+	{
+		/* Expect LC_COLLATE to be set to something that ICU
+		 * will understand. This is quite probable, since ICU
+		 * does a lot of heuristics with this argument. I'd
+		 * rather set this in xlog.c, but it seems ICU forgets
+		 * it??? */
+		uloc_setDefault(setlocale(LC_COLLATE, NULL), &status);
+		if(U_FAILURE(status))
+			ereport(WARNING,
+					(errcode(status),
+					 errmsg("ICU Error: varlena.c, could not set default lc_collate")));
+
+		collator = ucol_open(NULL, &status);
+		if (U_FAILURE(status))
+			ereport(WARNING,
+					(errcode(status),
+					 errmsg("ICU Error: varlena.c, could not open collator")));
+	}
+
+	if (GetDatabaseEncoding() == PG_UTF8)
+	{
+		UCharIterator sIter, tIter;
+		uiter_setUTF8(&sIter, arg1, len1);
+		uiter_setUTF8(&tIter, arg2, len2);
+		result = ucol_strcollIter(collator, &sIter, &tIter, &status);
+		if (U_FAILURE(status))
+		{
+			ereport(WARNING,
+					(errcode(status),
+					 errmsg("ICU Error: varlena.c, could not collate")));
+		}
+	}
+	else
+	{
+		UChar   			a1buf[USTACKBUFLEN],
+							a2buf[USTACKBUFLEN];
+		UChar   			*a1p, *a2p;
+
+		a1p = convert_icu(a1buf, NULL, arg1, len1);
+		a2p = convert_icu(a2buf, NULL, arg2, len2);
+
+		result = ucol_strcoll(collator, a1p, -1, a2p, -1);
+		if(U_FAILURE(status))
+			ereport(WARNING,
+					(errcode(status),
+					 errmsg("ICU Error: varlena.c, could not collate")));
+
+		if (a1p != a1buf)
+			pfree(a1p);
+		if (a2p != a2buf)
+			pfree(a2p);
+	}
+
+	/*
+	 * In some locales wcscoll() can claim that nonidentical strings
+	 * are equal.  Believing that this might be so also for ICU, and
+	 * believing that would be bad news for a number of
+	 * reasons, we follow Perl's lead and sort "equal" strings
+	 * according to strcmp (on the byte representation).
+	 */
+	if (result == 0)
+	{
+		result = strncmp(arg1, arg2, Min(len1, len2));
+		if ((result == 0) && (len1 != len2))
+			result = (len1 < len2) ? -1 : 1;
+	}
+
+	return result;
+}
+
+static int
+strxfrm_icu(char *dst, char *src, int dstlen)
+{
+	static UCollator 	*collator = NULL;
+	int 				reqsize;
+	UChar 				usrc[USTACKBUFLEN], *pusrc;
+	int					usrclen;
+
+	/* We keep a static collator "forever", since it is hard
+	 * coded into the database cluster at initdb time
+	 * anyway. Create it first time we get here. */
+	if (collator == NULL)
+	{
+		UErrorCode  		status = U_ZERO_ERROR;
+
+		/* Expect LC_COLLATE to be set to something that ICU
+		 * will understand. This is quite probable, since ICU
+		 * does a lot of heuristics with this argument. I'd
+		 * rather set this in xlog.c, but it seems ICU forgets
+		 * it??? */
+		uloc_setDefault(setlocale(LC_COLLATE, NULL), &status);
+		if(U_FAILURE(status))
+			ereport(WARNING,
+					(errcode(status),
+					 errmsg("ICU Error: varlena.c, could not set default lc_collate")));
+
+		collator = ucol_open(NULL, &status);
+		if (U_FAILURE(status))
+			ereport(WARNING,
+					(errcode(status),
+					 errmsg("ICU Error: varlena.c, could not open collator")));
+	}
+
+	pusrc = convert_icu(usrc, &usrclen, src, strlen(src));
+
+	reqsize = ucol_getSortKey(collator, pusrc, usrclen, (uint8_t*)dst, dstlen);
+	if (reqsize == 0)
+		ereport(ERROR, /* prevent infinite loop in caller */
+				(ERRCODE_INDETERMINATE_COLLATION,
+				 errmsg("ICU Error: varlena.c, ucol_getSortKey fails")));
+
+	if (pusrc != usrc)
+		pfree(pusrc);
+
+	/*
+	 * ucol_getSortKey() returns length INCLUDING
+	 * terminated zero byte unlike to strxfrm.
+	 */
+	return reqsize - 1;
+}
+
+#endif
+
 /* varstr_cmp()
  * Comparison function for text strings with given lengths.
  * Includes locale support, but must copy strings to temporary memory
@@ -1396,6 +1584,20 @@ varstr_cmp(char *arg1, int len1, char *arg2, int len2, Oid collid)
 		if ((result == 0) && (len1 != len2))
 			result = (len1 < len2) ? -1 : 1;
 	}
+#ifdef USE_ICU
+	else if (pg_database_encoding_max_length() > 1)
+	{
+		/*
+		 * check collation as it done for regular way
+		 */
+		if (collid != DEFAULT_COLLATION_OID && !OidIsValid(collid))
+			ereport(ERROR,
+					(errcode(ERRCODE_INDETERMINATE_COLLATION),
+					 errmsg("could not determine which collation to use for string comparison"),
+					 errhint("Use the COLLATE clause to set the collation explicitly.")));
+		result = strcmp_icu(arg1, len1, arg2, len2);
+	}
+#endif
 	else
 	{
 		char		a1buf[TEXTBUFLEN];
@@ -2089,6 +2291,11 @@ varstrfastcmp_locale(Datum x, Datum y, SortSupport ssup)
 		goto done;
 	}
 
+#ifdef USE_ICU
+	if (pg_database_encoding_max_length() > 1)
+		result = strcmp_icu(sss->buf1, len1, sss->buf2, len2);
+	else
+#endif
 #ifdef HAVE_LOCALE_T
 	if (sss->locale)
 		result = strcoll_l(sss->buf1, sss->buf2, sss->locale);
@@ -2228,6 +2435,12 @@ varstr_abbrev_convert(Datum original, SortSupport ssup)
 
 		for (;;)
 		{
+#ifdef USE_ICU
+			if (pg_database_encoding_max_length() > 1)
+				bsize = strxfrm_icu(sss->buf2, sss->buf1,
+									sss->buflen2);
+			else
+#endif
 #ifdef HAVE_LOCALE_T
 			if (sss->locale)
 				bsize = strxfrm_l(sss->buf2, sss->buf1,
@@ -5004,7 +5217,7 @@ text_format(PG_FUNCTION_ARGS)
 		if (arg >= nargs)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("too few arguments for format")));
+					 errmsg("too few arguments for format()")));
 
 		/* Get the value and type of the selected argument */
 		if (!funcvariadic)

@@ -1,0 +1,5 @@
+# pageinspect extension
+comment = 'move pg_statistic to new instance of PostgreSQL'
+default_version = '1.0'
+module_pathname = '$libdir/dump_stat'
+relocatable = true

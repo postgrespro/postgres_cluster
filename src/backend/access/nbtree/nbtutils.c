@@ -63,17 +63,26 @@ _bt_mkscankey(Relation rel, IndexTuple itup)
 {
 	ScanKey		skey;
 	TupleDesc	itupdesc;
-	int			natts;
+	int     	indnatts,
+				indnkeyatts;
 	int16	   *indoption;
 	int			i;
 
 	itupdesc = RelationGetDescr(rel);
-	natts = RelationGetNumberOfAttributes(rel);
+	indnatts = IndexRelationGetNumberOfAttributes(rel);
+	indnkeyatts = IndexRelationGetNumberOfKeyAttributes(rel);
 	indoption = rel->rd_indoption;
 
-	skey = (ScanKey) palloc(natts * sizeof(ScanKeyData));
+	Assert(indnkeyatts != 0);
+	Assert(indnkeyatts <= indnatts);
 
-	for (i = 0; i < natts; i++)
+	/*
+	 * We'll execute search using ScanKey constructed on key columns.
+	 * Non key (included) columns must be omitted.
+	 */
+	skey = (ScanKey) palloc(indnkeyatts * sizeof(ScanKeyData));
+
+	for (i = 0; i < indnkeyatts; i++)
 	{
 		FmgrInfo   *procinfo;
 		Datum		arg;
@@ -115,16 +124,16 @@ ScanKey
 _bt_mkscankey_nodata(Relation rel)
 {
 	ScanKey		skey;
-	int			natts;
+	int     	indnkeyatts;
 	int16	   *indoption;
 	int			i;
 
-	natts = RelationGetNumberOfAttributes(rel);
+	indnkeyatts = IndexRelationGetNumberOfKeyAttributes(rel);
 	indoption = rel->rd_indoption;
 
-	skey = (ScanKey) palloc(natts * sizeof(ScanKeyData));
+	skey = (ScanKey) palloc(indnkeyatts * sizeof(ScanKeyData));
 
-	for (i = 0; i < natts; i++)
+	for (i = 0; i < indnkeyatts; i++)
 	{
 		FmgrInfo   *procinfo;
 		int			flags;
@@ -232,10 +241,8 @@ _bt_preprocess_array_keys(IndexScanDesc scan)
 	 */
 	if (so->arrayContext == NULL)
 		so->arrayContext = AllocSetContextCreate(CurrentMemoryContext,
-												 "BTree Array Context",
-												 ALLOCSET_SMALL_MINSIZE,
-												 ALLOCSET_SMALL_INITSIZE,
-												 ALLOCSET_SMALL_MAXSIZE);
+												 "BTree array context",
+												 ALLOCSET_SMALL_SIZES);
 	else
 		MemoryContextReset(so->arrayContext);
 
@@ -2040,4 +2047,30 @@ bytea *
 btoptions(Datum reloptions, bool validate)
 {
 	return default_reloptions(reloptions, validate, RELOPT_KIND_BTREE);
+}
+
+/*
+ *	btproperty() -- Check boolean properties of indexes.
+ *
+ * This is optional, but handling AMPROP_RETURNABLE here saves opening the rel
+ * to call btcanreturn.
+ */
+bool
+btproperty(Oid index_oid, int attno,
+		   IndexAMProperty prop, const char *propname,
+		   bool *res, bool *isnull)
+{
+	switch (prop)
+	{
+		case AMPROP_RETURNABLE:
+			/* answer only for columns, not AM or whole index */
+			if (attno == 0)
+				return false;
+			/* otherwise, btree can always return data */
+			*res = true;
+			return true;
+
+		default:
+			return false;		/* punt to generic code */
+	}
 }

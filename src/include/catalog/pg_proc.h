@@ -563,11 +563,18 @@ DATA(insert OID = 334 (  spghandler		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 
 DESCR("spgist index access method handler");
 DATA(insert OID = 335 (  brinhandler	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 325 "2281" _null_ _null_ _null_ _null_ _null_	brinhandler _null_ _null_ _null_ ));
 DESCR("brin index access method handler");
+DATA(insert OID = 3952 (  brin_summarize_new_values PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 23 "2205" _null_ _null_ _null_ _null_ _null_ brin_summarize_new_values _null_ _null_ _null_ ));
+DESCR("brin: standalone scan new table pages");
 
 DATA(insert OID = 338 (  amvalidate		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 16 "26" _null_ _null_ _null_ _null_ _null_	amvalidate _null_ _null_ _null_ ));
 DESCR("validate an operator class");
-DATA(insert OID = 3952 (  brin_summarize_new_values PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 23 "2205" _null_ _null_ _null_ _null_ _null_ brin_summarize_new_values _null_ _null_ _null_ ));
-DESCR("brin: standalone scan new table pages");
+
+DATA(insert OID = 636 (  pg_indexam_has_property		PGNSP PGUID 12 1 0 0 0 f f f f t f s s 2 0 16 "26 25" _null_ _null_ _null_ _null_ _null_	pg_indexam_has_property _null_ _null_ _null_ ));
+DESCR("test property of an index access method");
+DATA(insert OID = 637 (  pg_index_has_property			PGNSP PGUID 12 1 0 0 0 f f f f t f s s 2 0 16 "2205 25" _null_ _null_ _null_ _null_ _null_	pg_index_has_property _null_ _null_ _null_ ));
+DESCR("test property of an index");
+DATA(insert OID = 638 (  pg_index_column_has_property	PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 16 "2205 23 25" _null_ _null_ _null_ _null_ _null_ pg_index_column_has_property _null_ _null_ _null_ ));
+DESCR("test property of an index column");
 
 DATA(insert OID = 339 (  poly_same		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 16 "604 604" _null_ _null_ _null_ _null_ _null_ poly_same _null_ _null_ _null_ ));
 DATA(insert OID = 340 (  poly_contain	   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 16 "604 604" _null_ _null_ _null_ _null_ _null_ poly_contain _null_ _null_ _null_ ));
@@ -3131,6 +3138,12 @@ DATA(insert OID = 2850 ( pg_xlogfile_name_offset	PGNSP PGUID 12 1 0 0 0 f f f f 
 DESCR("xlog filename and byte offset, given an xlog location");
 DATA(insert OID = 2851 ( pg_xlogfile_name			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 25 "3220" _null_ _null_ _null_ _null_ _null_ pg_xlogfile_name _null_ _null_ _null_ ));
 DESCR("xlog filename, given an xlog location");
+DATA(insert OID = 6016 ( pg_ptrack_clear		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 0 0 2278 "" _null_ _null_ _null_ _null_ _null_ pg_ptrack_clear _null_ _null_ _null_ ));
+DESCR("clear ptrack fork files");
+DATA(insert OID = 6017 ( pg_ptrack_test		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 1007 "26" _null_ _null_ _null_ _null_ _null_ pg_ptrack_test _null_ _null_ _null_ ));
+DESCR("test ptrack fork relation");
+DATA(insert OID = 6018 ( pg_ptrack_get_and_clear		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 2 0 17 "26 26" _null_ _null_ _null_ _null_ _null_ pg_ptrack_get_and_clear _null_ _null_ _null_ ));
+DESCR("get ptrack file as bytea and clear him");
 
 DATA(insert OID = 3165 ( pg_xlog_location_diff		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1700 "3220 3220" _null_ _null_ _null_ _null_ _null_ pg_xlog_location_diff _null_ _null_ _null_ ));
 DESCR("difference in bytes, given two xlog locations");
@@ -5295,6 +5308,11 @@ DESCR("get an individual replication origin's replication progress");
 
 DATA(insert OID = 6014 ( pg_show_replication_origin_status PGNSP PGUID 12 1 100 0 0 f f f f f t v r 0 0 2249 "" "{26,25,3220,3220}" "{o,o,o,o}" "{local_id, external_id, remote_lsn, local_lsn}" _null_ _null_ pg_show_replication_origin_status _null_ _null_ _null_ ));
 DESCR("get progress for all replication origins");
+
+/* pgpro version */
+DATA(insert OID =  6015 (  pgpro_version		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ pgpro_version _null_ _null_ _null_ ));
+DESCR("PostgresPro version string");
+
 
 /* rls */
 DATA(insert OID = 3298 (  row_security_active	   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 16 "26" _null_ _null_ _null_ _null_ _null_	row_security_active _null_ _null_ _null_ ));

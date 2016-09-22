@@ -1,0 +1,5 @@
+# sr_plan extension
+comment = 'functions for save and read plan'
+default_version = '1.0'
+module_pathname = '$libdir/sr_plan'
+relocatable = true

@@ -9460,7 +9460,7 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
          <literal><function>ts_filter(<replaceable class="PARAMETER">vector</replaceable> <type>tsvector</>, <replaceable class="PARAMETER">weights</replaceable> <type>"char"[]</>)</function></literal>
         </entry>
         <entry><type>tsvector</type></entry>
-        <entry>Select only elements with given <replaceable class="PARAMETER">weights</replaceable> from <replaceable class="PARAMETER">vector</replaceable></entry>
+        <entry>select only elements with given <replaceable class="PARAMETER">weights</replaceable> from <replaceable class="PARAMETER">vector</replaceable></entry>
         <entry><literal>ts_filter('fat:2,4 cat:3b rat:5A'::tsvector, '{a,b}')</literal></entry>
         <entry><literal>'cat':3B 'rat':5A</literal></entry>
        </row>
@@ -13737,7 +13737,7 @@ SELECT xmlagg(x) FROM (SELECT x FROM test ORDER BY y DESC) AS tab;
       <entry>No</entry>
       <entry>
        multiple continuous percentile: returns an array of results matching
-       the shape of the <literal>fractions</literal> parameter, with each
+       the shape of the <replaceable>fractions</replaceable> parameter, with each
        non-null element replaced by the value corresponding to that percentile
       </entry>
      </row>
@@ -13782,7 +13782,7 @@ SELECT xmlagg(x) FROM (SELECT x FROM test ORDER BY y DESC) AS tab;
       <entry>No</entry>
       <entry>
        multiple discrete percentile: returns an array of results matching the
-       shape of the <literal>fractions</literal> parameter, with each non-null
+       shape of the <replaceable>fractions</replaceable> parameter, with each non-null
        element replaced by the input value corresponding to that percentile
       </entry>
      </row>
@@ -15422,6 +15422,11 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
        <entry><type>text</type></entry>
        <entry><productname>PostgreSQL</> version information. See also <xref linkend="guc-server-version-num"> for a machine-readable version.</entry>
       </row>
+      <row>
+       <entry><literal><function>pgpro_version()</function></literal></entry>
+       <entry><type>text</type></entry>
+       <entry><productname>PostgresPro</> version information.</entry>
+       </row>
      </tbody>
     </tgroup>
    </table>
@@ -15646,7 +15651,13 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
     (available since 8.2) or <xref linkend="libpq-pqserverversion"> instead
     of parsing the text version.
    </para>
-
+  <indexterm>
+  <primary>pgpro_version</primary>
+  </indexterm>
+  <para>
+<literal><function>pgpro_version()</function></literal>
+   returns a string, describing <productname>PostgresPro</> version
+   information.</para>
   <indexterm>
    <primary>privilege</primary>
    <secondary>querying</secondary>
@@ -16290,6 +16301,18 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
    </indexterm>
 
    <indexterm>
+    <primary>pg_index_column_has_property</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>pg_index_has_property</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>pg_indexam_has_property</primary>
+   </indexterm>
+
+   <indexterm>
     <primary>pg_options_to_table</primary>
    </indexterm>
 
@@ -16477,6 +16500,21 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
               number of columns, pretty-printing is implied</entry>
       </row>
       <row>
+       <entry><literal><function>pg_index_column_has_property(<parameter>index_oid</parameter>, <parameter>column_no</>, <parameter>prop_name</>)</function></literal></entry>
+       <entry><type>boolean</type></entry>
+       <entry>test whether an index column has a specified property</entry>
+      </row>
+      <row>
+       <entry><literal><function>pg_index_has_property(<parameter>index_oid</parameter>, <parameter>prop_name</>)</function></literal></entry>
+       <entry><type>boolean</type></entry>
+       <entry>test whether an index has a specified property</entry>
+      </row>
+      <row>
+       <entry><literal><function>pg_indexam_has_property(<parameter>am_oid</parameter>, <parameter>prop_name</>)</function></literal></entry>
+       <entry><type>boolean</type></entry>
+       <entry>test whether an index access method has a specified property</entry>
+      </row>
+      <row>
        <entry><literal><function>pg_options_to_table(<parameter>reloptions</parameter>)</function></literal></entry>
        <entry><type>setof record</type></entry>
        <entry>get the set of storage option name/value pairs</entry>
@@ -16620,9 +16658,147 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
   </para>
 
   <para>
+   <function>pg_index_column_has_property</function>,
+   <function>pg_index_has_property</function>, and
+   <function>pg_indexam_has_property</function> return whether the
+   specified index column, index, or index access method possesses the named
+   property. <literal>NULL</literal> is returned if the property name is not
+   known or does not apply to the particular object, or if the OID or column
+   number does not identify a valid object.  Refer to
+   <xref linkend="functions-info-index-column-props"> for column properties,
+   <xref linkend="functions-info-index-props"> for index properties, and
+   <xref linkend="functions-info-indexam-props"> for access method properties.
+   (Note that extension access methods can define additional property names
+   for their indexes.)
+  </para>
+
+  <table id="functions-info-index-column-props">
+   <title>Index Column Properties</title>
+   <tgroup cols="2">
+    <thead>
+     <row><entry>Name</entry><entry>Description</entry></row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><literal>asc</literal></entry>
+      <entry>Does the column sort in ascending order on a forward scan?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>desc</literal></entry>
+      <entry>Does the column sort in descending order on a forward scan?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>nulls_first</literal></entry>
+      <entry>Does the column sort with nulls first on a forward scan?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>nulls_last</literal></entry>
+      <entry>Does the column sort with nulls last on a forward scan?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>orderable</literal></entry>
+      <entry>Does the column possess any defined sort ordering?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>distance_orderable</literal></entry>
+      <entry>Can the column be scanned in order by a <quote>distance</>
+      operator, for example <literal>ORDER BY col &lt;-&gt; constant</> ?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>returnable</literal></entry>
+      <entry>Can the column value be returned by an index-only scan?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>search_array</literal></entry>
+      <entry>Does the column natively support <literal>col = ANY(array)</>
+      searches?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>search_nulls</literal></entry>
+      <entry>Does the column support <literal>IS NULL</> and
+      <literal>IS NOT NULL</> searches?
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <table id="functions-info-index-props">
+   <title>Index Properties</title>
+   <tgroup cols="2">
+    <thead>
+     <row><entry>Name</entry><entry>Description</entry></row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><literal>clusterable</literal></entry>
+      <entry>Can the index be used in a <literal>CLUSTER</> command?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>index_scan</literal></entry>
+      <entry>Does the index support plain (non-bitmap) scans?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>bitmap_scan</literal></entry>
+      <entry>Does the index support bitmap scans?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>backward_scan</literal></entry>
+      <entry>Can the index be scanned backwards?
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <table id="functions-info-indexam-props">
+   <title>Index Access Method Properties</title>
+   <tgroup cols="2">
+    <thead>
+     <row><entry>Name</entry><entry>Description</entry></row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><literal>can_order</literal></entry>
+      <entry>Does the access method support <literal>ASC</>,
+      <literal>DESC</> and related keywords in
+      <literal>CREATE INDEX</>?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>can_unique</literal></entry>
+      <entry>Does the access method support unique indexes?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>can_multi_col</literal></entry>
+      <entry>Does the access method support indexes with multiple columns?
+      </entry>
+     </row>
+     <row>
+      <entry><literal>can_exclude</literal></entry>
+      <entry>Does the access method support exclusion constraints?
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>
    <function>pg_options_to_table</function> returns the set of storage
    option name/value pairs
-   (<literal>option_name</>/<literal>option_value</>) when passed
+   (<replaceable>option_name</>/<replaceable>option_value</>) when passed
    <structname>pg_class</>.<structfield>reloptions</> or
    <structname>pg_attribute</>.<structfield>attoptions</>.
   </para>
@@ -18343,7 +18519,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         <literal><function>pg_replication_origin_drop(<parameter>node_name</parameter> <type>text</type>)</function></literal>
        </entry>
        <entry>
-        void
+        <type>void</>
        </entry>
        <entry>
         Delete a previously created replication origin, including any
@@ -18375,7 +18551,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         <literal><function>pg_replication_origin_session_setup(<parameter>node_name</parameter> <type>text</type>)</function></literal>
        </entry>
        <entry>
-        void
+        <type>void</>
        </entry>
        <entry>
         Mark the current session as replaying from the given
@@ -18393,7 +18569,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         <literal><function>pg_replication_origin_session_reset()</function></literal>
        </entry>
        <entry>
-        void
+        <type>void</>
        </entry>
        <entry>
         Cancel the effects
@@ -18442,7 +18618,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         <literal><function>pg_replication_origin_xact_setup(<parameter>origin_lsn</parameter> <type>pg_lsn</type>, <parameter>origin_timestamp</parameter> <type>timestamptz</type>)</function></literal>
        </entry>
        <entry>
-        void
+        <type>void</>
        </entry>
        <entry>
         Mark the current transaction as replaying a transaction that has
@@ -18461,7 +18637,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         <literal><function>pg_replication_origin_xact_reset()</function></literal>
        </entry>
        <entry>
-        void
+        <type>void</>
        </entry>
        <entry>
         Cancel the effects of
@@ -18477,7 +18653,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         <literal>pg_replication_origin_advance<function>(<parameter>node_name</parameter> <type>text</type>, <parameter>pos</parameter> <type>pg_lsn</type>)</function></literal>
        </entry>
        <entry>
-        void
+        <type>void</>
        </entry>
        <entry>
         Set replication progress for the given node to the given
@@ -18937,7 +19113,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
      <tbody>
       <row>
        <entry>
-        <literal><function>brin_summarize_new_values(<parameter>index_oid</> <type>regclass</>)</function></literal>
+        <literal><function>brin_summarize_new_values(<parameter>index</> <type>regclass</>)</function></literal>
        </entry>
        <entry><type>integer</type></entry>
        <entry>summarize page ranges not already summarized</entry>
@@ -18954,8 +19130,8 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
    </table>
 
    <para>
-    <function>brin_summarize_new_values</> receives a BRIN index OID as
-    argument and inspects the index to find page ranges in the base table
+    <function>brin_summarize_new_values</> accepts the OID or name of a
+    BRIN index and inspects the index to find page ranges in the base table
     that are not currently summarized by the index; for any such range
     it creates a new summary index tuple by scanning the table pages.
     It returns the number of new page range summaries that were inserted
@@ -18964,12 +19140,12 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
 
    <para>
     <function>gin_clean_pending_list</> accepts the OID or name of
-    a GIN index and cleans up the pending list of the specified GIN index
+    a GIN index and cleans up the pending list of the specified index
     by moving entries in it to the main GIN data structure in bulk.
-    It returns the number of pages cleaned up from the pending list.
-    Note that if the argument is a GIN index built with <literal>fastupdate</>
-    option disabled, the cleanup does not happen and the return value is 0
-    because the index doesn't have a pending list.
+    It returns the number of pages removed from the pending list.
+    Note that if the argument is a GIN index built with
+    the <literal>fastupdate</> option disabled, no cleanup happens and the
+    return value is 0, because the index doesn't have a pending list.
     Please see <xref linkend="gin-fast-update"> and <xref linkend="gin-tips">
     for details of the pending list and <literal>fastupdate</> option.
    </para>

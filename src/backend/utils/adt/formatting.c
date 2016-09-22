@@ -92,6 +92,12 @@
 #include "utils/numeric.h"
 #include "utils/pg_locale.h"
 
+#ifdef USE_ICU
+#include <unicode/utypes.h>   /* Basic ICU data types */
+#include <unicode/ucnv.h>     /* C   Converter API    */
+#include <unicode/ustring.h>
+#endif /* USE_ICU */
+
 /* ----------
  * Routines type
  * ----------
@@ -940,6 +946,12 @@ typedef struct NUMProc
 } NUMProc;
 
 
+#ifdef USE_ICU
+static UConverter *conv = NULL;
+#define STACKBUFLEN		1024 / sizeof(UChar)
+#endif   /* USE_ICU */
+
+
 /* ----------
  * Functions
  * ----------
@@ -1491,6 +1503,82 @@ str_tolower(const char *buff, size_t nbytes, Oid collid)
 	{
 		result = asc_tolower(buff, nbytes);
 	}
+#ifdef USE_ICU
+	/* use ICU only when max encoding length > one */
+	if (pg_database_encoding_max_length() > 1)
+	{
+		UChar       sourcebuf[STACKBUFLEN], destbuf[STACKBUFLEN];
+		UChar      *source, *dest;
+		int			buflen;
+		size_t		result_size, usize;
+		UErrorCode  status = U_ZERO_ERROR;
+
+		if (conv == NULL)
+		{
+			conv = ucnv_open(NULL, &status);
+			if (U_FAILURE(status))
+			{
+				ereport(ERROR,
+						(errcode(status),
+						 errmsg("ICU error: oracle_compat.c, could not get converter for \"%s\"", ucnv_getDefaultName())));
+			}
+		}
+
+		if (nbytes >= STACKBUFLEN / sizeof(UChar))
+		{
+			buflen = (nbytes + 1) * sizeof(UChar);
+ 			source = palloc(buflen);
+			dest = palloc(buflen);
+		}
+		else
+		{
+			buflen = STACKBUFLEN;
+			source = sourcebuf;
+			dest = destbuf;
+		}
+		// convert to UTF-16
+		ucnv_toUChars(conv, source, buflen, buff, nbytes, &status);
+		if (U_FAILURE(status))
+		{
+			ereport(ERROR,
+						(errcode(status),
+						 errmsg("ICU error: Could not convert string")));
+		}
+		
+		// run desired function
+		buflen = u_strToLower(dest, buflen, source, -1, NULL, &status);
+		if (U_FAILURE(status))
+		{
+			ereport(ERROR,
+						(errcode(status),
+						 errmsg("ICU error: Could not modify case")));
+		}
+
+		// and convert modified utf-16 string back to text
+		result_size = UCNV_GET_MAX_BYTES_FOR_STRING(buflen, ucnv_getMaxCharSize(conv));
+		result = palloc(result_size);
+
+		usize = ucnv_fromUChars(conv, result, result_size,
+								 dest, buflen, &status);
+
+		if (U_FAILURE(status))
+		{
+			/* Invalid multibyte character encountered ... shouldn't happen */
+			ereport(ERROR,
+					(errcode(ERRCODE_CHARACTER_NOT_IN_REPERTOIRE),
+					 errmsg("ICU: invalid multibyte character for locale")));
+		}
+
+		Assert(usize <= (size_t) (buflen * sizeof(UChar)));
+
+		if (nbytes >= STACKBUFLEN / sizeof(UChar))
+		{
+			pfree(source);
+			pfree(dest);
+		}
+		return result;
+	}
+#else
 #ifdef USE_WIDE_UPPER_LOWER
 	else if (pg_database_encoding_max_length() > 1)
 	{
@@ -1544,6 +1632,7 @@ str_tolower(const char *buff, size_t nbytes, Oid collid)
 		pfree(workspace);
 	}
 #endif   /* USE_WIDE_UPPER_LOWER */
+#endif   /* USE_ICU */
 	else
 	{
 #ifdef HAVE_LOCALE_T
@@ -1611,6 +1700,82 @@ str_toupper(const char *buff, size_t nbytes, Oid collid)
 	{
 		result = asc_toupper(buff, nbytes);
 	}
+#ifdef USE_ICU
+	/* use ICU only when max encoding length > one */
+	if (pg_database_encoding_max_length() > 1)
+	{
+		UChar       sourcebuf[STACKBUFLEN], destbuf[STACKBUFLEN];
+		UChar      *source, *dest;
+		int			buflen;
+		size_t		result_size, usize;
+		UErrorCode  status = U_ZERO_ERROR;
+
+		if (conv == NULL)
+		{
+			conv = ucnv_open(NULL, &status);
+			if (U_FAILURE(status))
+			{
+				ereport(ERROR,
+						(errcode(status),
+						 errmsg("ICU error: oracle_compat.c, could not get converter for \"%s\"", ucnv_getDefaultName())));
+			}
+		}
+
+		if (nbytes >= STACKBUFLEN / sizeof(UChar))
+		{
+			buflen = (nbytes + 1) * sizeof(UChar);
+ 			source = palloc(buflen);
+			dest = palloc(buflen);
+		}
+		else
+		{
+			buflen = STACKBUFLEN;
+			source = sourcebuf;
+			dest = destbuf;
+		}
+		// convert to UTF-16
+		ucnv_toUChars(conv, source, buflen, buff, nbytes, &status);
+		if (U_FAILURE(status))
+		{
+			ereport(ERROR,
+						(errcode(status),
+						 errmsg("ICU error: Could not convert string")));
+		}
+		
+		// run desired function
+		buflen = u_strToUpper(dest, buflen, source, -1, NULL, &status);
+		if (U_FAILURE(status))
+		{
+			ereport(ERROR,
+						(errcode(status),
+						 errmsg("ICU error: Could not modify case")));
+		}
+
+		// and convert modified utf-16 string back to text
+		result_size = UCNV_GET_MAX_BYTES_FOR_STRING(buflen, ucnv_getMaxCharSize(conv));
+		result = palloc(result_size);
+
+		usize = ucnv_fromUChars(conv, result, result_size,
+								 dest, buflen, &status);
+
+		if (U_FAILURE(status))
+		{
+			/* Invalid multibyte character encountered ... shouldn't happen */
+			ereport(ERROR,
+					(errcode(ERRCODE_CHARACTER_NOT_IN_REPERTOIRE),
+					 errmsg("ICU: invalid multibyte character for locale")));
+		}
+
+		Assert(usize <= (size_t) (buflen * sizeof(UChar)));
+
+		if (nbytes >= STACKBUFLEN / sizeof(UChar))
+		{
+			pfree(source);
+			pfree(dest);
+		}
+		return result;
+	}
+#else
 #ifdef USE_WIDE_UPPER_LOWER
 	else if (pg_database_encoding_max_length() > 1)
 	{
@@ -1664,6 +1829,7 @@ str_toupper(const char *buff, size_t nbytes, Oid collid)
 		pfree(workspace);
 	}
 #endif   /* USE_WIDE_UPPER_LOWER */
+#endif   /* USE_ICU */
 	else
 	{
 #ifdef HAVE_LOCALE_T
@@ -1732,6 +1898,82 @@ str_initcap(const char *buff, size_t nbytes, Oid collid)
 	{
 		result = asc_initcap(buff, nbytes);
 	}
+#ifdef USE_ICU
+	/* use ICU only when max encoding length > one */
+	if (pg_database_encoding_max_length() > 1)
+	{
+		UChar       sourcebuf[STACKBUFLEN], destbuf[STACKBUFLEN];
+		UChar      *source, *dest;
+		int			buflen;
+		size_t		result_size, usize;
+		UErrorCode  status = U_ZERO_ERROR;
+
+		if (conv == NULL)
+		{
+			conv = ucnv_open(NULL, &status);
+			if (U_FAILURE(status))
+			{
+				ereport(ERROR,
+						(errcode(status),
+						 errmsg("ICU error: oracle_compat.c, could not get converter for \"%s\"", ucnv_getDefaultName())));
+			}
+		}
+
+		if (nbytes >= STACKBUFLEN / sizeof(UChar))
+		{
+			buflen = (nbytes + 1) * sizeof(UChar);
+			source = palloc(buflen);
+			dest = palloc(buflen);
+		}
+		else
+		{
+			buflen = STACKBUFLEN;
+			source = sourcebuf;
+			dest = destbuf;
+		}
+		// convert to UTF-16
+		ucnv_toUChars(conv, source, buflen, buff, nbytes, &status);
+		if (U_FAILURE(status))
+		{
+			ereport(ERROR,
+						(errcode(status),
+						 errmsg("ICU error: Could not convert string")));
+		}
+		
+		// run desired function
+		buflen = u_strToTitle(dest, buflen, source, -1, NULL, NULL, &status);
+		if (U_FAILURE(status))
+		{
+			ereport(ERROR,
+						(errcode(status),
+						 errmsg("ICU error: Could not modify case")));
+		}
+
+		// and convert modified utf-16 string back to text
+		result_size = UCNV_GET_MAX_BYTES_FOR_STRING(buflen, ucnv_getMaxCharSize(conv));
+		result = palloc(result_size);
+
+		usize = ucnv_fromUChars(conv, result, result_size,
+								 dest, buflen, &status);
+
+		if (U_FAILURE(status))
+		{
+			/* Invalid multibyte character encountered ... shouldn't happen */
+			ereport(ERROR,
+					(errcode(ERRCODE_CHARACTER_NOT_IN_REPERTOIRE),
+					 errmsg("ICU: invalid multibyte character for locale")));
+		}
+
+		Assert(usize <= (size_t) (buflen * sizeof(UChar)));
+
+		if (nbytes >= STACKBUFLEN / sizeof(UChar))
+		{
+			pfree(source);
+			pfree(dest);
+		}
+		return result;
+	}
+#else
 #ifdef USE_WIDE_UPPER_LOWER
 	else if (pg_database_encoding_max_length() > 1)
 	{
@@ -1797,6 +2039,7 @@ str_initcap(const char *buff, size_t nbytes, Oid collid)
 		pfree(workspace);
 	}
 #endif   /* USE_WIDE_UPPER_LOWER */
+#endif   /* USE_ICU */
 	else
 	{
 #ifdef HAVE_LOCALE_T
@@ -4188,11 +4431,11 @@ NUM_numpart_from_char(NUMProc *Np, int id, int input_len)
 		 (id == NUM_0 || id == NUM_9) ? "NUM_0/9" : id == NUM_DEC ? "NUM_DEC" : "???");
 #endif
 
-	if (*Np->inout_p == ' ')
-		Np->inout_p++;
-
 #define OVERLOAD_TEST	(Np->inout_p >= Np->inout + input_len)
 #define AMOUNT_TEST(_s) (input_len-(Np->inout_p-Np->inout) >= _s)
+
+	if (OVERLOAD_TEST)
+		return;
 
 	if (*Np->inout_p == ' ')
 		Np->inout_p++;
@@ -4331,7 +4574,7 @@ NUM_numpart_from_char(NUMProc *Np, int id, int input_len)
 		 * next char is not digit
 		 */
 		if (IS_LSIGN(Np->Num) && isread &&
-			(Np->inout_p + 1) <= Np->inout + input_len &&
+			(Np->inout_p + 1) < Np->inout + input_len &&
 			!isdigit((unsigned char) *(Np->inout_p + 1)))
 		{
 			int			x;

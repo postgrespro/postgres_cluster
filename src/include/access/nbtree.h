@@ -684,7 +684,8 @@ extern bool _bt_doinsert(Relation rel, IndexTuple itup,
 			 IndexUniqueCheck checkUnique, Relation heapRel);
 extern Buffer _bt_getstackbuf(Relation rel, BTStack stack, int access);
 extern void _bt_finish_split(Relation rel, Buffer bbuf, BTStack stack);
-
+extern bool _bt_pgaddtup(Page page, Size itemsize, IndexTuple itup,
+			 OffsetNumber itup_off);
 /*
  * prototypes for functions in nbtpage.c
  */
@@ -748,6 +749,9 @@ extern void _bt_end_vacuum_callback(int code, Datum arg);
 extern Size BTreeShmemSize(void);
 extern void BTreeShmemInit(void);
 extern bytea *btoptions(Datum reloptions, bool validate);
+extern bool btproperty(Oid index_oid, int attno,
+		   IndexAMProperty prop, const char *propname,
+		   bool *res, bool *isnull);
 
 /*
  * prototypes for functions in nbtvalidate.c

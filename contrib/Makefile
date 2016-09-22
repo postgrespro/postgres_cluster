@@ -49,7 +49,16 @@ SUBDIRS = \
 		tsm_system_time \
 		tsearch2	\
 		unaccent	\
-		vacuumlo
+		vacuumlo	\
+		dump_stat	\
+		hunspell_en_us	\
+		hunspell_fr	\
+		hunspell_nl_nl	\
+		hunspell_ru_ru	\
+		pg_variables	\
+		jsquery		\
+		sr_plan		\
+		shared_ispell
 
 ifeq ($(with_openssl),yes)
 SUBDIRS += sslinfo

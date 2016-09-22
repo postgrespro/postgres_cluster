@@ -462,9 +462,7 @@ AutoVacLauncherMain(int argc, char *argv[])
 	 */
 	AutovacMemCxt = AllocSetContextCreate(TopMemoryContext,
 										  "Autovacuum Launcher",
-										  ALLOCSET_DEFAULT_MINSIZE,
-										  ALLOCSET_DEFAULT_INITSIZE,
-										  ALLOCSET_DEFAULT_MAXSIZE);
+										  ALLOCSET_DEFAULT_SIZES);
 	MemoryContextSwitchTo(AutovacMemCxt);
 
 	/*
@@ -896,14 +894,10 @@ rebuild_database_list(Oid newdb)
 
 	newcxt = AllocSetContextCreate(AutovacMemCxt,
 								   "AV dblist",
-								   ALLOCSET_DEFAULT_MINSIZE,
-								   ALLOCSET_DEFAULT_INITSIZE,
-								   ALLOCSET_DEFAULT_MAXSIZE);
+								   ALLOCSET_DEFAULT_SIZES);
 	tmpcxt = AllocSetContextCreate(newcxt,
 								   "tmp AV dblist",
-								   ALLOCSET_DEFAULT_MINSIZE,
-								   ALLOCSET_DEFAULT_INITSIZE,
-								   ALLOCSET_DEFAULT_MAXSIZE);
+								   ALLOCSET_DEFAULT_SIZES);
 	oldcxt = MemoryContextSwitchTo(tmpcxt);
 
 	/*
@@ -1113,9 +1107,7 @@ do_start_worker(void)
 	 */
 	tmpcxt = AllocSetContextCreate(CurrentMemoryContext,
 								   "Start worker tmp cxt",
-								   ALLOCSET_DEFAULT_MINSIZE,
-								   ALLOCSET_DEFAULT_INITSIZE,
-								   ALLOCSET_DEFAULT_MAXSIZE);
+								   ALLOCSET_DEFAULT_SIZES);
 	oldcxt = MemoryContextSwitchTo(tmpcxt);
 
 	/* use fresh stats */
@@ -1915,9 +1907,7 @@ do_autovacuum(void)
 	 */
 	AutovacMemCxt = AllocSetContextCreate(TopMemoryContext,
 										  "AV worker",
-										  ALLOCSET_DEFAULT_MINSIZE,
-										  ALLOCSET_DEFAULT_INITSIZE,
-										  ALLOCSET_DEFAULT_MAXSIZE);
+										  ALLOCSET_DEFAULT_SIZES);
 	MemoryContextSwitchTo(AutovacMemCxt);
 
 	/*
@@ -2187,9 +2177,7 @@ do_autovacuum(void)
 	 */
 	PortalContext = AllocSetContextCreate(AutovacMemCxt,
 										  "Autovacuum Portal",
-										  ALLOCSET_DEFAULT_INITSIZE,
-										  ALLOCSET_DEFAULT_MINSIZE,
-										  ALLOCSET_DEFAULT_MAXSIZE);
+										  ALLOCSET_DEFAULT_SIZES);
 
 	/*
 	 * Perform operations on collected tables.

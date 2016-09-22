@@ -17,13 +17,15 @@ dnl Read the Autoconf manual for details.
 dnl
 m4_pattern_forbid(^PGAC_)dnl to catch undefined macros
 
-AC_INIT([PostgreSQL], [9.6.beta.3], [pgsql-bugs@postgresql.org])
+AC_INIT([PostgreSQL], [9.6rc1], [bugs@postgrespro.ru],[postgrespro])
+PACKAGE_TARNAME=postgrespro
 
 m4_if(m4_defn([m4_PACKAGE_VERSION]), [2.69], [], [m4_fatal([Autoconf version 2.69 is required.
 Untested combinations of 'autoconf' and PostgreSQL versions are not
 recommended.  You can remove the check from 'configure.in' but it is then
 your responsibility whether the result works or not.])])
-AC_COPYRIGHT([Copyright (c) 1996-2016, PostgreSQL Global Development Group])
+AC_COPYRIGHT([Copyright (c) 1996-2016, PostgreSQL Global Development Group
+Copyright (c) 2015-2016, Postgres Professional])
 AC_CONFIG_SRCDIR([src/backend/access/common/heaptuple.c])
 AC_CONFIG_AUX_DIR(config)
 AC_PREFIX_DEFAULT(/usr/local/pgsql)
@@ -36,7 +38,12 @@ AC_DEFINE_UNQUOTED(PG_MAJORVERSION, "$PG_MAJORVERSION", [PostgreSQL major versio
 PGAC_ARG_REQ(with, extra-version, [STRING], [append STRING to version],
              [PG_VERSION="$PACKAGE_VERSION$withval"],
              [PG_VERSION="$PACKAGE_VERSION"])
+PGPRO_VERSION="$PACKAGE_VERSION.1"
+PGPRO_PACKAGE_NAME="PostgresPro"
+AC_SUBST(PGPRO_PACKAGE_NAME)
 AC_DEFINE_UNQUOTED(PG_VERSION, "$PG_VERSION", [PostgreSQL version as a string])
+AC_DEFINE_UNQUOTED(PGPRO_PACKAGE_NAME, "$PGPRO_PACKAGE_NAME", [PostgresPro name as a string])            
+AC_DEFINE_UNQUOTED(PGPRO_VERSION, "$PGPRO_VERSION", [PostgresPro version as a string])
 
 AC_CANONICAL_HOST
 
@@ -730,6 +737,16 @@ AC_SUBST(with_systemd)
 AC_MSG_RESULT([$with_systemd])
 
 #
+# ICU
+#
+AC_MSG_CHECKING([whether to build with ICU support])
+PGAC_ARG_BOOL(with, icu, no, [  --with-icu              build with ICU support],
+              [AC_DEFINE([USE_ICU], 1, [Define to build with ICU support. (--with-icu)])])
+AC_MSG_RESULT([$with_icu])
+AC_SUBST(with_icu)
+
+
+#
 # Readline
 #
 PGAC_ARG_BOOL(with, readline, yes,
@@ -1112,12 +1129,91 @@ if test "$with_openssl" = yes ; then
   dnl Order matters!
   if test "$PORTNAME" != "win32"; then
      AC_CHECK_LIB(crypto, CRYPTO_new_ex_data, [], [AC_MSG_ERROR([library 'crypto' is required for OpenSSL])])
-     AC_CHECK_LIB(ssl,    SSL_library_init, [], [AC_MSG_ERROR([library 'ssl' is required for OpenSSL])])
+     AC_CHECK_LIB(ssl,    SSL_new, [], [AC_MSG_ERROR([library 'ssl' is required for OpenSSL])])
   else
      AC_SEARCH_LIBS(CRYPTO_new_ex_data, eay32 crypto, [], [AC_MSG_ERROR([library 'eay32' or 'crypto' is required for OpenSSL])])
-     AC_SEARCH_LIBS(SSL_library_init, ssleay32 ssl, [], [AC_MSG_ERROR([library 'ssleay32' or 'ssl' is required for OpenSSL])])
+     AC_SEARCH_LIBS(SSL_new, ssleay32 ssl, [], [AC_MSG_ERROR([library 'ssleay32' or 'ssl' is required for OpenSSL])])
   fi
   AC_CHECK_FUNCS([SSL_get_current_compression])
+  # Functions introduced in OpenSSL 1.1.0. We used to check for
+  # OPENSSL_VERSION_NUMBER, but that didn't work with 1.1.0, because LibreSSL
+  # defines OPENSSL_VERSION_NUMBER to claim version 2.0.0, even though it
+  # doesn't have these OpenSSL 1.1.0 functions. So check for individual
+  # functions.
+  AC_CHECK_FUNCS([OPENSSL_init_ssl BIO_get_data BIO_meth_new ASN1_STRING_get0_data RAND_OpenSSL])
+  # OpenSSL versions before 1.1.0 required setting callback functions, for
+  # thread-safety. In 1.1.0, it's no longer required, and CRYPTO_lock()
+  # function was removed.
+  AC_CHECK_FUNCS([CRYPTO_lock])
+fi
+
+if test "$with_icu" = yes ; then
+ AC_SEARCH_LIBS(ucol_open_57, [icui18n icuin], [], [
+ AC_SEARCH_LIBS(ucol_open_56, [icui18n icuin], [], [
+ AC_SEARCH_LIBS(ucol_open_55, [icui18n icuin], [], [
+ AC_SEARCH_LIBS(ucol_open_54, [icui18n icuin], [], [
+ AC_SEARCH_LIBS(ucol_open_53, [icui18n icuin], [], [
+ AC_SEARCH_LIBS(ucol_open_52, [icui18n icuin], [], [
+  AC_SEARCH_LIBS(ucol_open_50, [icui18n icuin], [], [
+   AC_SEARCH_LIBS(ucol_open_48, [icui18n icuin], [], [
+    AC_SEARCH_LIBS(ucol_open_46, [icui18n icuin], [], [
+      AC_SEARCH_LIBS(ucol_open_44, [icui18n icuin], [], [
+        AC_SEARCH_LIBS(ucol_open_43, [icui18n icuin], [], [
+		AC_SEARCH_LIBS(ucol_open_4_2, [icui18n icuin], [], [
+		AC_SEARCH_LIBS(ucol_open_4_1, [icui18n icuin], [], [
+		 AC_SEARCH_LIBS(ucol_open_4_0, [icui18n icuin], [], [
+          AC_SEARCH_LIBS(ucol_open_3_8, [icui18n icuin], [], [
+            AC_SEARCH_LIBS(ucol_open_3_6, [icui18n icuin], [], [
+              AC_SEARCH_LIBS(ucol_open_3_4, [icui18n icuin], [], [AC_MSG_ERROR([library 'icui18n' is required for ICU])])
+            ])
+          ])
+        ])
+      ])
+    ])
+   ])
+  ])
+  ])
+ ])
+ ])
+ ])
+ ])
+ ])
+ ])
+ ])
+ ])
+ AC_CHECK_LIB(icuuc, ucnv_fromUChars_57, [], [
+ AC_CHECK_LIB(icuuc, ucnv_fromUChars_56, [], [
+ AC_CHECK_LIB(icuuc, ucnv_fromUChars_55, [], [
+ AC_CHECK_LIB(icuuc, ucnv_fromUChars_54, [], [
+ AC_CHECK_LIB(icuuc, ucnv_fromUChars_53, [], [
+ AC_CHECK_LIB(icuuc, ucnv_fromUChars_52, [], [
+  AC_CHECK_LIB(icuuc, ucnv_fromUChars_50, [], [
+   AC_CHECK_LIB(icuuc, ucnv_fromUChars_48, [], [
+    AC_CHECK_LIB(icuuc, ucnv_fromUChars_46, [], [
+      AC_CHECK_LIB(icuuc, ucnv_fromUChars_44, [], [
+        AC_CHECK_LIB(icuuc, ucnv_fromUChars_43, [], [
+		AC_CHECK_LIB(icuuc, ucnv_fromUChars_4_2, [], [
+		AC_CHECK_LIB(icuuc, ucnv_fromUChars_4_1, [], [
+		AC_CHECK_LIB(icuuc, ucnv_fromUChars_4_0, [], [
+          AC_CHECK_LIB(icuuc, ucnv_fromUChars_3_8, [], [
+            AC_CHECK_LIB(icuuc, ucnv_fromUChars_3_6, [], [
+              AC_CHECK_LIB(icuuc, ucnv_fromUChars_3_4, [], [AC_MSG_ERROR([library 'icuuc' is required for ICU])])
+            ])
+          ])
+        ])
+		])
+      ])
+    ])
+   ])
+  ])
+ ])
+ ])
+ ])
+ ])
+ ])
+ ])
+ ])
+ ])
 fi
 
 if test "$with_pam" = yes ; then
@@ -1271,6 +1367,10 @@ fi
 if test "$with_openssl" = yes ; then
   AC_CHECK_HEADER(openssl/ssl.h, [], [AC_MSG_ERROR([header file <openssl/ssl.h> is required for OpenSSL])])
   AC_CHECK_HEADER(openssl/err.h, [], [AC_MSG_ERROR([header file <openssl/err.h> is required for OpenSSL])])
+fi
+
+if test "$with_icu" = yes ; then
+  AC_CHECK_HEADER(unicode/utypes.h, [], [AC_MSG_ERROR([header file <unicode/utypes.h> is required for ICU])])
 fi
 
 if test "$with_pam" = yes ; then
@@ -2144,6 +2244,9 @@ AC_DEFINE_UNQUOTED(PG_VERSION_STR,
                    ["PostgreSQL $PG_VERSION on $host, compiled by $cc_string, `expr $ac_cv_sizeof_void_p \* 8`-bit"],
                    [A string containing the version number, platform, and C compiler])
 
+AC_DEFINE_UNQUOTED(PGPRO_VERSION_STR,
+                   ["PostgresPro $PGPRO_VERSION on $host, compiled by $cc_string, `expr $ac_cv_sizeof_void_p \* 8`-bit"],
+                   [A string containing the version number, platform, and C compiler])
 # Supply a numeric version string for use by 3rd party add-ons
 # awk -F is a regex on some platforms, and not on others, so make "." a tab
 [PG_VERSION_NUM="`echo "$PACKAGE_VERSION" | sed 's/[A-Za-z].*$//' |
@@ -2178,6 +2281,7 @@ else
 fi
 AC_SUBST(vpath_build)
 
+AC_SUBST(PGPRO_VERSION)
 
 AC_CONFIG_FILES([GNUmakefile src/Makefile.global])
 

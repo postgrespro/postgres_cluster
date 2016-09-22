@@ -13,26 +13,26 @@
  * See Knuth, volume 3, for more than you want to know about the external
  * sorting algorithm.  Historically, we divided the input into sorted runs
  * using replacement selection, in the form of a priority tree implemented
- * as a heap (essentially his Algorithm 5.2.3H -- although that strategy is
- * often avoided altogether), but that can now only happen first the first
- * run.  We merge the runs using polyphase merge, Knuth's Algorithm
+ * as a heap (essentially his Algorithm 5.2.3H), but now we only do that
+ * for the first run, and only if the run would otherwise end up being very
+ * short.  We merge the runs using polyphase merge, Knuth's Algorithm
  * 5.4.2D.  The logical "tapes" used by Algorithm D are implemented by
  * logtape.c, which avoids space wastage by recycling disk space as soon
  * as each block is read from its "tape".
  *
- * We never form the initial runs using Knuth's recommended replacement
- * selection data structure (Algorithm 5.4.1R), because it uses a fixed
- * number of records in memory at all times.  Since we are dealing with
- * tuples that may vary considerably in size, we want to be able to vary
- * the number of records kept in memory to ensure full utilization of the
- * allowed sort memory space.  So, we keep the tuples in a variable-size
- * heap, with the next record to go out at the top of the heap.  Like
- * Algorithm 5.4.1R, each record is stored with the run number that it
- * must go into, and we use (run number, key) as the ordering key for the
- * heap.  When the run number at the top of the heap changes, we know that
- * no more records of the prior run are left in the heap.  Note that there
- * are in practice only ever two distinct run numbers, due to the greatly
- * reduced use of replacement selection in PostgreSQL 9.6.
+ * We do not use Knuth's recommended data structure (Algorithm 5.4.1R) for
+ * the replacement selection, because it uses a fixed number of records
+ * in memory at all times.  Since we are dealing with tuples that may vary
+ * considerably in size, we want to be able to vary the number of records
+ * kept in memory to ensure full utilization of the allowed sort memory
+ * space.  So, we keep the tuples in a variable-size heap, with the next
+ * record to go out at the top of the heap.  Like Algorithm 5.4.1R, each
+ * record is stored with the run number that it must go into, and we use
+ * (run number, key) as the ordering key for the heap.  When the run number
+ * at the top of the heap changes, we know that no more records of the prior
+ * run are left in the heap.  Note that there are in practice only ever two
+ * distinct run numbers, because since PostgreSQL 9.6, we only use
+ * replacement selection to form the first run.
  *
  * In PostgreSQL 9.6, a heap (based on Knuth's Algorithm H, with some small
  * customizations) is only used with the aim of producing just one run,
@@ -299,9 +299,9 @@ struct Tuplesortstate
 	 * Function to read a stored tuple from tape back into memory. 'len' is
 	 * the already-read length of the stored tuple.  Create a palloc'd copy,
 	 * initialize tuple/datum1/isnull1 in the target SortTuple struct, and
-	 * decrease state->availMem by the amount of memory space consumed.
-	 * (See batchUsed notes for details on how memory is handled when
-	 * incremental accounting is abandoned.)
+	 * decrease state->availMem by the amount of memory space consumed. (See
+	 * batchUsed notes for details on how memory is handled when incremental
+	 * accounting is abandoned.)
 	 */
 	void		(*readtup) (Tuplesortstate *state, SortTuple *stup,
 										int tapenum, unsigned int len);
@@ -309,8 +309,8 @@ struct Tuplesortstate
 	/*
 	 * Function to move a caller tuple.  This is usually implemented as a
 	 * memmove() shim, but function may also perform additional fix-up of
-	 * caller tuple where needed.  Batch memory support requires the
-	 * movement of caller tuples from one location in memory to another.
+	 * caller tuple where needed.  Batch memory support requires the movement
+	 * of caller tuples from one location in memory to another.
 	 */
 	void		(*movetup) (void *dest, void *src, unsigned int len);
 
@@ -654,9 +654,7 @@ tuplesort_begin_common(int workMem, bool randomAccess)
 	 */
 	sortcontext = AllocSetContextCreate(CurrentMemoryContext,
 										"TupleSort main",
-										ALLOCSET_DEFAULT_MINSIZE,
-										ALLOCSET_DEFAULT_INITSIZE,
-										ALLOCSET_DEFAULT_MAXSIZE);
+										ALLOCSET_DEFAULT_SIZES);
 
 	/*
 	 * Caller tuple (e.g. IndexTuple) memory context.
@@ -669,9 +667,7 @@ tuplesort_begin_common(int workMem, bool randomAccess)
 	 */
 	tuplecontext = AllocSetContextCreate(sortcontext,
 										 "Caller tuples",
-										 ALLOCSET_DEFAULT_MINSIZE,
-										 ALLOCSET_DEFAULT_INITSIZE,
-										 ALLOCSET_DEFAULT_MAXSIZE);
+										 ALLOCSET_DEFAULT_SIZES);
 
 	/*
 	 * Make the Tuplesortstate within the per-sort context.  This way, we
@@ -825,7 +821,7 @@ tuplesort_begin_cluster(TupleDesc tupDesc,
 			 workMem, randomAccess ? 't' : 'f');
 #endif
 
-	state->nKeys = RelationGetNumberOfAttributes(indexRel);
+	state->nKeys = IndexRelationGetNumberOfKeyAttributes(indexRel);
 
 	TRACE_POSTGRESQL_SORT_START(CLUSTER_SORT,
 								false,	/* no unique check */
@@ -917,7 +913,7 @@ tuplesort_begin_index_btree(Relation heapRel,
 			 workMem, randomAccess ? 't' : 'f');
 #endif
 
-	state->nKeys = RelationGetNumberOfAttributes(indexRel);
+	state->nKeys = IndexRelationGetNumberOfKeyAttributes(indexRel);
 
 	TRACE_POSTGRESQL_SORT_START(INDEX_SORT,
 								enforceUnique,
@@ -937,7 +933,6 @@ tuplesort_begin_index_btree(Relation heapRel,
 	state->enforceUnique = enforceUnique;
 
 	indexScanKey = _bt_mkscankey_nodata(indexRel);
-	state->nKeys = RelationGetNumberOfAttributes(indexRel);
 
 	/* Prepare SortSupport data for each column */
 	state->sortKeys = (SortSupport) palloc0(state->nKeys *
@@ -1443,7 +1438,7 @@ tuplesort_putindextuplevalues(Tuplesortstate *state, Relation rel,
 			mtup->datum1 = index_getattr(tuple,
 										 1,
 										 RelationGetDescr(state->indexRel),
-										 &stup.isnull1);
+										 &mtup->isnull1);
 		}
 	}
 
@@ -2870,6 +2865,9 @@ batchmemtuples(Tuplesortstate *state)
 	int64		availMemLessRefund;
 	int			memtupsize = state->memtupsize;
 
+	/* Caller error if we have no tapes */
+	Assert(state->activeTapes > 0);
+
 	/* For simplicity, assume no memtuples are actually currently counted */
 	Assert(state->memtupcount == 0);
 
@@ -2884,6 +2882,20 @@ batchmemtuples(Tuplesortstate *state)
 	availMemLessRefund = state->availMem - refund;
 
 	/*
+	 * We need to be sure that we do not cause LACKMEM to become true, else
+	 * the batch allocation size could be calculated as negative, causing
+	 * havoc.  Hence, if availMemLessRefund is negative at this point, we must
+	 * do nothing.  Moreover, if it's positive but rather small, there's
+	 * little point in proceeding because we could only increase memtuples by
+	 * a small amount, not worth the cost of the repalloc's.  We somewhat
+	 * arbitrarily set the threshold at ALLOCSET_DEFAULT_INITSIZE per tape.
+	 * (Note that this does not represent any assumption about tuple sizes.)
+	 */
+	if (availMemLessRefund <=
+		(int64) state->activeTapes * ALLOCSET_DEFAULT_INITSIZE)
+		return;
+
+	/*
 	 * To establish balanced memory use after refunding palloc overhead,
 	 * temporarily have our accounting indicate that we've allocated all
 	 * memory we're allowed to less that refund, and call grow_memtuples() to
@@ -2892,9 +2904,11 @@ batchmemtuples(Tuplesortstate *state)
 	state->growmemtuples = true;
 	USEMEM(state, availMemLessRefund);
 	(void) grow_memtuples(state);
-	/* Should not matter, but be tidy */
-	FREEMEM(state, availMemLessRefund);
 	state->growmemtuples = false;
+	/* availMem must stay accurate for spacePerTape calculation */
+	FREEMEM(state, availMemLessRefund);
+	if (LACKMEM(state))
+		elog(ERROR, "unexpected out-of-memory situation in tuplesort");
 
 #ifdef TRACE_SORT
 	if (trace_sort)
@@ -4271,7 +4285,7 @@ copytup_cluster(Tuplesortstate *state, SortTuple *stup, void *tup)
 			mtup->datum1 = heap_getattr(tuple,
 									  state->indexInfo->ii_KeyAttrNumbers[0],
 										state->tupDesc,
-										&stup->isnull1);
+										&mtup->isnull1);
 		}
 	}
 }
@@ -4588,7 +4602,7 @@ copytup_index(Tuplesortstate *state, SortTuple *stup, void *tup)
 			mtup->datum1 = index_getattr(tuple,
 										 1,
 										 RelationGetDescr(state->indexRel),
-										 &stup->isnull1);
+										 &mtup->isnull1);
 		}
 	}
 }

@@ -34,7 +34,7 @@ if (-e "src/tools/msvc/buildenv.pl")
 
 my $what = shift || "";
 if ($what =~
-/^(check|installcheck|plcheck|contribcheck|modulescheck|ecpgcheck|isolationcheck|upgradecheck|bincheck|recoverycheck)$/i
+/^(check|installcheck|plcheck|contribcheck|modulescheck|ecpgcheck|isolationcheck|upgradecheck|bincheck|recoverycheck|tapcheck)$/i
   )
 {
 	$what = uc $what;
@@ -61,14 +61,7 @@ unless ($schedule)
 	$schedule = "parallel" if ($what eq 'CHECK' || $what =~ /PARALLEL/);
 }
 
-if ($ENV{PERL5LIB})
-{
-	$ENV{PERL5LIB} = "$topdir/src/tools/msvc;$ENV{PERL5LIB}";
-}
-else
-{
-	$ENV{PERL5LIB} = "$topdir/src/tools/msvc";
-}
+$ENV{PERL5LIB} = "$topdir/src/tools/msvc;$ENV{PERL5LIB}";
 
 my $maxconn = "";
 $maxconn = "--max_connections=$ENV{MAX_CONNECTIONS}"
@@ -89,6 +82,7 @@ my %command = (
 	MODULESCHECK   => \&modulescheck,
 	ISOLATIONCHECK => \&isolationcheck,
 	BINCHECK       => \&bincheck,
+	TAPCHECK	   => \&tapcheck,
 	RECOVERYCHECK  => \&recoverycheck,
 	UPGRADECHECK   => \&upgradecheck,);
 
@@ -176,7 +170,46 @@ sub isolationcheck
 	exit $status if $status;
 }
 
-sub tap_check
+sub tapcheck
+{
+	InstallTemp();
+
+	my @args = ( "prove", "--verbose", "t/*.pl");
+
+	$ENV{PATH} = "$tmp_installdir/bin;$ENV{PATH}";
+	$ENV{PERL5LIB} = "$topdir/src/test/perl;$ENV{PERL5LIB}";
+	$ENV{PG_REGRESS} = "$topdir/$Config/pg_regress/pg_regress";
+
+	# Find out all the existing TAP tests by looking for t/ directories
+	# in the tree.
+	my $tap_dirs = [];
+	my @top_dir = ($topdir);
+	File::Find::find(
+		{   wanted => sub {
+				/^t\z/s
+				  && push(@$tap_dirs, $File::Find::name);
+			  }
+		},
+		@top_dir);
+
+	# Process each test
+	foreach my $test_path (@$tap_dirs)
+	{
+		# Like on Unix "make check-world", don't run the SSL test suite
+		# automatically.
+		next if ($test_path =~ /\/src\/test\/ssl\//);
+
+		my $dir = dirname($test_path);
+		chdir $dir;
+		# Reset those values, they may have been changed by another test.
+		$ENV{TESTDIR} = "$dir";
+		system(@args);
+		my $status = $? >> 8;
+		exit $status if $status;
+	}
+}
+
+sub plcheck
 {
 	die "Tap tests not enabled in configuration"
 	  unless $config->{tap_tests};
@@ -341,6 +374,9 @@ sub contribcheck
 		next if ($module eq "hstore_plpython" && !defined($config->{python}));
 		next if ($module eq "ltree_plpython"  && !defined($config->{python}));
 		next if ($module eq "sepgsql");
+		next if ($module eq "pg_arman");
+		# Need database with UTF8 encoding, not SQL_ASCII
+		next if ($module eq "hunspell_ru_ru");
 
 		subdircheck("$topdir/contrib", $module);
 		my $status = $? >> 8;
@@ -381,6 +417,41 @@ sub standard_initdb
 			$ENV{PGDATA}) == 0);
 }
 
+# This is similar to appendShellString().  Perl system(@args) bypasses
+# cmd.exe, so omit the caret escape layer.
+sub quote_system_arg
+{
+	my $arg = shift;
+
+	# Change N >= 0 backslashes before a double quote to 2N+1 backslashes.
+	$arg =~ s/(\\*)"/${\($1 . $1)}\\"/gs;
+
+	# Change N >= 1 backslashes at end of argument to 2N backslashes.
+	$arg =~ s/(\\+)$/${\($1 . $1)}/gs;
+
+	# Wrap the whole thing in unescaped double quotes.
+	return "\"$arg\"";
+}
+
+# Generate a database with a name made of a range of ASCII characters, useful
+# for testing pg_upgrade.
+sub generate_db
+{
+	my ($prefix, $from_char, $to_char, $suffix) = @_;
+
+	my $dbname = $prefix;
+	for my $i ($from_char .. $to_char)
+	{
+		next if $i == 7 || $i == 10 || $i == 13;    # skip BEL, LF, and CR
+		$dbname = $dbname . sprintf('%c', $i);
+	}
+	$dbname .= $suffix;
+
+	system('createdb', quote_system_arg($dbname));
+	my $status = $? >> 8;
+	exit $status if $status;
+}
+
 sub upgradecheck
 {
 	my $status;
@@ -414,6 +485,12 @@ sub upgradecheck
 	print "\nStarting old cluster\n\n";
 	my @args = ('pg_ctl', 'start', '-l', "$logdir/postmaster1.log", '-w');
 	system(@args) == 0 or exit 1;
+
+	print "\nCreating databases with names covering most ASCII bytes\n\n";
+	generate_db("\\\"\\", 1,  45,  "\\\\\"\\\\\\");
+	generate_db('',       46, 90,  '');
+	generate_db('',       91, 127, '');
+
 	print "\nSetting up data for upgrading\n\n";
 	installcheck();
 
@@ -428,8 +505,9 @@ sub upgradecheck
 	print "\nSetting up new cluster\n\n";
 	standard_initdb() or exit 1;
 	print "\nRunning pg_upgrade\n\n";
-	@args = ('pg_upgrade', '-d', "$data.old", '-D', $data, '-b', $bindir,
-			 '-B', $bindir);
+	@args = (
+		'pg_upgrade', '-d', "$data.old", '-D', $data, '-b',
+		$bindir,      '-B', $bindir);
 	system(@args) == 0 or exit 1;
 	print "\nStarting new cluster\n\n";
 	@args = ('pg_ctl', '-l', "$logdir/postmaster2.log", '-w', 'start');
