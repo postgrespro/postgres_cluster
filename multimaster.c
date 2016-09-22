@@ -3582,7 +3582,12 @@ static void MtmGucSet(VariableSetStmt *stmt, const char *queryStr)
 				hash_search(MtmGucHash, key, HASH_REMOVE, NULL);
 			}
 			break;
+
 		case VAR_RESET_ALL:
+			{
+				hash_destroy(MtmGucHash);
+				MtmGucHashInit();
+			}
 			break;
 
 		case VAR_SET_MULTI:
@@ -3594,7 +3599,11 @@ static void MtmGucSet(VariableSetStmt *stmt, const char *queryStr)
 
 static void MtmGucDiscard(DiscardStmt *stmt)
 {
-
+	if (stmt->target == DISCARD_ALL)
+	{
+		hash_destroy(MtmGucHash);
+		MtmGucHashInit();
+	}
 }
 
 static void MtmGucClear(void)
@@ -3619,7 +3628,18 @@ static char * MtmGucSerialize(void)
 			appendStringInfoString(serialized_gucs, "SET ");
 			appendStringInfoString(serialized_gucs, hentry->key);
 			appendStringInfoString(serialized_gucs, " TO ");
-			appendStringInfoString(serialized_gucs, hentry->value);
+
+			/* quite a crutch */
+			if (strcmp(hentry->key, "work_mem") == 0)
+			{
+				appendStringInfoString(serialized_gucs, "'");
+				appendStringInfoString(serialized_gucs, hentry->value);
+				appendStringInfoString(serialized_gucs, "'");
+			}
+			else
+			{
+				appendStringInfoString(serialized_gucs, hentry->value);
+			}
 			appendStringInfoString(serialized_gucs, "; ");
 		}
 	}
