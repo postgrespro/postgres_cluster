@@ -126,17 +126,14 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 
 static void
 pglogical_write_message(StringInfo out,
-					const char *prefix, Size sz, const char *message)
+						const char *prefix, Size sz, const char *message)
 {
-	if (MtmIsFilteredTxn)
-	{
-		MTM_LOG3("%d: pglogical_write_message filtered", MyProcPid);
-		return;
+	if (*prefix == 'L') { 
+		MTM_LOG1("Send deadlock message to node %d", MtmReplicationNodeId);
 	}
-
-	pq_sendbyte(out, 'G');
+	pq_sendbyte(out, *prefix);
+	pq_sendint(out, sz, 4);
 	pq_sendbytes(out, message, sz);
-	pq_sendbyte(out, '\0');
 }
 
 /*

@@ -130,7 +130,8 @@ static void BgwStartExtraWorker(BgwPool* pool)
 {
 	if (pool->nWorkers < MtmMaxWorkers) { 
 		timestamp_t now = MtmGetSystemTime();
-		if (pool->lastDynamicWorkerStartTime + MULTIMASTER_BGW_RESTART_TIMEOUT*USECS_PER_SEC < now) { 
+		/*if (pool->lastDynamicWorkerStartTime + MULTIMASTER_BGW_RESTART_TIMEOUT*USECS_PER_SEC < now)*/
+		{ 
 			BackgroundWorker worker;
 			BackgroundWorkerHandle* handle;
 			MemSet(&worker, 0, sizeof(BackgroundWorker));
