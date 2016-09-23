@@ -1933,7 +1933,7 @@ static void MtmCheckControlFile(void)
 		if (f == NULL) { 
 			elog(FATAL, "Failed to create mmts_control file: %m");
 		}
-		Mtm->donorNodeId = -1;
+		Mtm->donorNodeId = MtmNodeId;
 		fprintf(f, "%s:%d\n", MtmClusterName, Mtm->donorNodeId);
 		fclose(f);
 	}
@@ -2707,7 +2707,7 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 		MtmLock(LW_EXCLUSIVE);
 		if (Mtm->status == MTM_RECOVERY) { 
 			recovery = true;
-			if ((Mtm->recoverySlot == 0 && (Mtm->donorNodeId < 0 || Mtm->donorNodeId == nodeId))
+			if ((Mtm->recoverySlot == 0 && (Mtm->donorNodeId == MtmNodeId || Mtm->donorNodeId == nodeId))
 				|| Mtm->recoverySlot == nodeId) 
 			{ 
 				/* Choose for recovery first available slot or slot of donor node (if any) */
@@ -2820,7 +2820,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			}				
 		} else if (strcmp("mtm_restart_pos", elem->defname) == 0) { 
 			if (elem->arg != NULL && strVal(elem->arg) != NULL) {
-				recoveryStartPos = intVal(elem->arg);
+				sscanf(strVal(elem->arg), "%lx", &recoveryStartPos);
 			} else { 
 				elog(ERROR, "Restart position is not specified");
 			}
