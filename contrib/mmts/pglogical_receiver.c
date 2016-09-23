@@ -501,6 +501,7 @@ pglogical_receiver_main(Datum main_arg)
 						}
 						mode = REPLMODE_NORMAL;
 					}
+					MTM_LOG3("%ld: Receive message %c from node %d", MtmGetSystemTime(), stmt[0], nodeId);
 					if (buf.used >= MtmTransSpillThreshold*MB) { 
 						if (spill_file < 0) {
 							int file_id;
@@ -515,27 +516,37 @@ pglogical_receiver_main(Datum main_arg)
 						MtmSpillToFile(spill_file, buf.data, buf.used);
 						ByteBufferReset(&buf);
 					}
-					ByteBufferAppend(&buf, stmt, rc - hdr_len);
-					if (stmt[0] == 'C') /* commit */
-					{
-						if (spill_file >= 0) { 
-							ByteBufferAppend(&buf, ")", 1);
-							pq_sendbyte(&spill_info, '(');
-							pq_sendint(&spill_info, buf.used, 4);
-							MtmSpillToFile(spill_file, buf.data, buf.used);
-							MtmCloseSpillFile(spill_file);
-							MtmExecute(spill_info.data, spill_info.len);
-							spill_file = -1;
-							resetStringInfo(&spill_info);
-						} else { 
-							if (MtmPreserveCommitOrder && buf.used == rc - hdr_len) {
-								/* Perform commit-prepared and rollback-prepared requested directly in receiver */
-								MtmExecutor(buf.data, buf.used);
-							} else {
-								MtmExecute(buf.data, buf.used);
+					if (stmt[0] == 'L') { 
+						MTM_LOG3("Process deadlock message from %d", nodeId);
+						MtmExecutor(stmt, rc - hdr_len);
+					} else { 
+						ByteBufferAppend(&buf, stmt, rc - hdr_len);
+						if (stmt[0] == 'C') /* commit */
+						{
+							if (spill_file >= 0) { 
+								ByteBufferAppend(&buf, ")", 1);
+								pq_sendbyte(&spill_info, '(');
+								pq_sendint(&spill_info, buf.used, 4);
+								MtmSpillToFile(spill_file, buf.data, buf.used);
+								MtmCloseSpillFile(spill_file);
+								MtmExecute(spill_info.data, spill_info.len);
+								spill_file = -1;
+								resetStringInfo(&spill_info);
+							} else { 
+								if (MtmPreserveCommitOrder && buf.used == rc - hdr_len) {
+									/* Perform commit-prepared and rollback-prepared requested directly in receiver */
+									timestamp_t stop, start = MtmGetSystemTime();
+									MtmExecutor(buf.data, buf.used);
+									stop = MtmGetSystemTime();
+									if (stop - start > USECS_PER_SEC) { 
+										elog(WARNING, "Commit of prepared transaction takes %ld usec, flags=%x", stop - start, stmt[1]);
+									}
+								} else {
+									MtmExecute(buf.data, buf.used);
+								}
 							}
+							ByteBufferReset(&buf);
 						}
-						ByteBufferReset(&buf);
 					}
 				}
 				/* Update written position */

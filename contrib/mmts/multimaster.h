@@ -53,6 +53,7 @@
 #define MULTIMASTER_MAX_HOST_NAME_SIZE  64
 #define MULTIMASTER_MAX_LOCAL_TABLES    256
 #define MULTIMASTER_MAX_CTL_STR_SIZE    256
+#define MULTIMASTER_LOCK_BUF_INIT_SIZE  4096
 #define MULTIMASTER_BROADCAST_SERVICE   "mtm_broadcast"
 #define MULTIMASTER_ADMIN               "mtm_admin"
 
@@ -138,8 +139,9 @@ typedef struct
 	TransactionId  sxid;   /* Transaction ID at sender node */  
     XidStatus      status; /* Transaction status */	
 	csn_t          csn;    /* Local CSN in case of sending data from replica to master, global CSN master->replica */
-	nodemask_t     disabledNodeMask; /* Bitmask of disabled nodes at the sender of message */
 	csn_t          oldestSnapshot; /* Oldest snapshot used by active transactions at this node */
+	nodemask_t     disabledNodeMask; /* Bitmask of disabled nodes at the sender of message */
+	nodemask_t     connectivityMask; /* Connectivity bittmask at the sender of message */
 	pgid_t         gid;    /* Global transaction identifier */
 } MtmArbiterMessage;
 
@@ -179,13 +181,18 @@ typedef struct
 	timestamp_t receiverStartTime;
 	timestamp_t senderStartTime;
 	timestamp_t lastHeartbeat;
+	nodemask_t  disabledNodeMask;      /* Bitmask of disabled nodes received from this node */
+	nodemask_t  connectivityMask;      /* Connectivity mask at this node */
 	int         senderPid;
 	int         receiverPid;
 	XLogRecPtr  flushPos;
-	csn_t       oldestSnapshot; /* Oldest snapshot used by active transactions at this node */	
+	csn_t       oldestSnapshot;        /* Oldest snapshot used by active transactions at this node */	
 	XLogRecPtr  restartLsn;
 	RepOriginId originId;
 	int         timeline;
+	void*       lockGraphData;
+	int         lockGraphAllocated;
+	int         lockGraphUsed;
 } MtmNodeInfo;
 
 typedef struct MtmTransState
@@ -223,7 +230,7 @@ typedef struct
 	MtmNodeStatus status;              /* Status of this node */
 	int recoverySlot;                  /* NodeId of recovery slot or 0 if none */
 	volatile slock_t spinlock;         /* spinlock used to protect access to hash table */
-	PGSemaphoreData sendSemaphore;   /* semaphore used to notify mtm-sender about new responses to coordinator */
+	PGSemaphoreData sendSemaphore;     /* semaphore used to notify mtm-sender about new responses to coordinator */
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
@@ -310,7 +317,7 @@ extern void  MtmAdjustSubtransactions(MtmTransState* ts);
 extern void  MtmBroadcastPollMessage(MtmTransState* ts);
 extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
-extern void  MtmLockNode(int nodeId);
+extern void  MtmLockNode(int nodeId, LWLockMode mode);
 extern void  MtmUnlockNode(int nodeId);
 extern void  MtmDropNode(int nodeId, bool dropSlot);
 extern void  MtmRecoverNode(int nodeId);
@@ -340,6 +347,7 @@ extern XLogRecPtr MtmGetFlushPosition(int nodeId);
 extern bool MtmWatchdog(timestamp_t now);
 extern void MtmCheckHeartbeat(void);
 extern void MtmResetTransaction(void);
+extern void MtmUpdateLockGraph(int nodeId, void const* messageBody, int messageSize);
 extern PGconn *PQconnectdb_safe(const char *conninfo);
 
 

@@ -340,6 +340,7 @@ static void MtmSendHeartbeat()
 	timestamp_t now = MtmGetSystemTime();
 	msg.code = MSG_HEARTBEAT;
 	msg.disabledNodeMask = Mtm->disabledNodeMask;
+	msg.connectivityMask = Mtm->connectivityMask;
 	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
 	msg.node = MtmNodeId;
 	msg.csn = now;
@@ -463,6 +464,7 @@ static int MtmConnectSocket(int node, int port, int timeout)
 	req.hdr.sxid = ShmemVariableCache->nextXid;
 	req.hdr.csn  = MtmGetCurrentTime();
 	req.hdr.disabledNodeMask = Mtm->disabledNodeMask;
+	req.hdr.connectivityMask = Mtm->connectivityMask;
 	strcpy(req.connStr, Mtm->nodes[MtmNodeId-1].con.connStr);
 	if (!MtmWriteSocket(sd, &req, sizeof req)) { 
 		elog(WARNING, "Arbiter failed to send handshake message to %s:%d: %d", host, port, errno);
@@ -599,6 +601,7 @@ static void MtmAcceptOneConnection()
 
 			resp.code = MSG_STATUS;
 			resp.disabledNodeMask = Mtm->disabledNodeMask;
+			resp.connectivityMask = Mtm->connectivityMask;
 			resp.dxid = HANDSHAKE_MAGIC;
 			resp.sxid = ShmemVariableCache->nextXid;
 			resp.csn  = MtmGetCurrentTime();
@@ -881,6 +884,8 @@ static void MtmReceiver(Datum arg)
 
 					Assert(node > 0 && node <= nNodes && node != MtmNodeId);
 					Mtm->nodes[node-1].oldestSnapshot = msg->oldestSnapshot;
+					Mtm->nodes[node-1].disabledNodeMask = msg->disabledNodeMask;
+					Mtm->nodes[node-1].connectivityMask = msg->connectivityMask;
 					Mtm->nodes[node-1].lastHeartbeat = MtmGetSystemTime();
 
 					switch (msg->code) {

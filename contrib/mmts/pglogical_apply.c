@@ -72,6 +72,7 @@ static void UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot);
 static void UserTableUpdateIndexes(EState *estate, TupleTableSlot *slot);
 
 static bool process_remote_begin(StringInfo s);
+static void process_remote_transactional_message(StringInfo s);
 static void process_remote_message(StringInfo s);
 static void process_remote_commit(StringInfo s);
 static void process_remote_insert(StringInfo s, Relation rel);
@@ -358,34 +359,41 @@ process_remote_begin(StringInfo s)
 }
 
 static void
-process_remote_message(StringInfo s)
+process_remote_transactional_message(StringInfo s)
 {
-	const char *stmt;
 	int rc;
-
-	stmt = pq_getmsgstring(s);
-
+	int messageSize = pq_getmsgint(s, 4);
+	char const* stmt = pq_getmsgbytes(s, messageSize);
 	if (!inside_tx)
 	{
 		MTM_LOG1("%d: Ignoring utility statement %s", MyProcPid, stmt);
 		return;
 	}
-
+	
 	MTM_LOG1("%d: Executing utility statement %s", MyProcPid, stmt);
 	SPI_connect();
 	rc = SPI_execute(stmt, false, 0);
 	SPI_finish();
 	if (rc < 0)
 		elog(ERROR, "Failed to execute utility statement %s", stmt);
-
+	
 	//XXX: create messages for tables localization too.
 	// if (strcmp(relname, MULTIMASTER_LOCAL_TABLES_TABLE) == 0) { 
 	// 	char* schema = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_schema-1]);
 	// 	char* name = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_name-1]);
 	// 	MtmMakeTableLocal(schema, name);
 	// }
-}
+}	
 
+static void
+process_remote_message(StringInfo s)
+{
+	int messageSize = pq_getmsgint(s, 4);
+	char const* messageBody = pq_getmsgbytes(s, messageSize);
+	MTM_LOG3("%ld: Process deadlock message with size %d from %d", MtmGetSystemTime(), messageSize, MtmReplicationNodeId);
+	MtmUpdateLockGraph(MtmReplicationNodeId, messageBody, messageSize);
+}
+	
 static void
 read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 {
@@ -524,7 +532,7 @@ static void
 MtmBeginSession(void)
 {
 	char slot_name[MULTIMASTER_MAX_SLOT_NAME_SIZE];
-	MtmLockNode(MtmReplicationNodeId);
+	MtmLockNode(MtmReplicationNodeId, LW_EXCLUSIVE);
 	sprintf(slot_name, MULTIMASTER_SLOT_PATTERN, MtmReplicationNodeId);
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 	replorigin_session_origin = replorigin_by_name(slot_name, false); 
@@ -1041,8 +1049,13 @@ void MtmExecutor(void* work, size_t size)
 			}
 			case 'G':
 			{
-				process_remote_message(&s);
+				process_remote_transactional_message(&s);
 				continue;
+			}
+			case 'L':
+			{
+				process_remote_message(&s);
+				break;
 			}
             default:
                 elog(ERROR, "unknown action of type %c", action);

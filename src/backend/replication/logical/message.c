@@ -52,7 +52,6 @@ LogLogicalMessage(const char *prefix, const char *message, size_t size,
 				  bool transactional)
 {
 	xl_logical_message	xlrec;
-
 	/*
 	 * Force xid to be allocated if we're emitting a transactional message.
 	 */
