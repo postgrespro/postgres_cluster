@@ -2679,6 +2679,13 @@ void MtmReceiverStarted(int nodeId)
 	MtmUnlock();
 }
 
+void MtmReleaseRecoverySlot(int nodeId)
+{
+	if (Mtm->recoverySlot == nodeId) { 
+		Mtm->recoverySlot = 0;
+	}
+}
+
 /* 
  * Determine when and how we should open replication slot.
  * Druing recovery we need to open only one replication slot from which node should receive all transactions.
@@ -2810,7 +2817,6 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			} else { 
 				elog(ERROR, "Replication mode is not specified");
 			}				
-			break;
 		} else if (strcmp("mtm_restart_pos", elem->defname) == 0) { 
 			if (elem->arg != NULL && strVal(elem->arg) != NULL) {
 				recoveryStartPos = intVal(elem->arg);

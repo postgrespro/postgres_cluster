@@ -108,6 +108,7 @@ sub configure
 			multimaster.max_nodes = 3
 			multimaster.ignore_tables_without_pk = true
 			multimaster.twopc_min_timeout = 2000
+            log_line_prefix = '%t: '
 		));
 
 		$node->append_conf("pg_hba.conf", qq(

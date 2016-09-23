@@ -348,6 +348,7 @@ extern bool MtmWatchdog(timestamp_t now);
 extern void MtmCheckHeartbeat(void);
 extern void MtmResetTransaction(void);
 extern void MtmUpdateLockGraph(int nodeId, void const* messageBody, int messageSize);
+extern void MtmReleaseRecoverySlot(int nodeId);
 extern PGconn *PQconnectdb_safe(const char *conninfo);
 
 
