@@ -232,6 +232,7 @@ static ExecutorFinish_hook_type PreviousExecutorFinishHook;
 static ProcessUtility_hook_type PreviousProcessUtilityHook;
 static shmem_startup_hook_type PreviousShmemStartupHook;
 
+static nodemask_t lastKnownMatrix[MAX_NODES];
 
 static void MtmExecutorFinish(QueryDesc *queryDesc);
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
@@ -1368,8 +1369,8 @@ static void MtmEnableNode(int nodeId)
 void MtmRecoveryCompleted(void)
 {
 	int i;
-	MTM_LOG1("Recovery of node %d is completed, disabled mask=%lx, connectivity mask=%lx, live nodes=%d", 
-			 MtmNodeId, Mtm->disabledNodeMask, Mtm->connectivityMask, Mtm->nLiveNodes);
+	MTM_LOG1("Recovery of node %d is completed, disabled mask=%llx, connectivity mask=%llx, live nodes=%d",
+			 MtmNodeId, (long long) Mtm->disabledNodeMask, (long long) Mtm->connectivityMask, Mtm->nLiveNodes);
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
 	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
@@ -1563,7 +1564,8 @@ static bool
 MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 {
 	int i, j, n = Mtm->nAllNodes;
-	fprintf(stderr, "Connectivity matrix:\n");
+	bool changed = false;
+
 	for (i = 0; i < n; i++) { 
 		if (i+1 != MtmNodeId) { 
 			void* data = RaftableGet(psprintf("node-mask-%d", i+1), NULL, NULL, nowait);
@@ -1574,12 +1576,27 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 		} else { 
 			matrix[i] = Mtm->connectivityMask;
 		}
-		for (j = 0; j < n; j++) { 
-			putc(BIT_CHECK(matrix[i], j) ? 'X' : '+', stderr);
+
+		if (lastKnownMatrix[i] != matrix[i])
+		{
+			changed = true;
+			lastKnownMatrix[i] = matrix[i];
 		}
-		putc('\n', stderr);
 	}
-	fputs("-----------------------\n", stderr);
+
+	/* Print matrix if changed */
+	if (changed)
+	{
+		fprintf(stderr, "Connectivity matrix:\n");
+		for (i = 0; i < n; i++)
+		{
+			for (j = 0; j < n; j++)
+				putc(BIT_CHECK(matrix[i], j) ? 'X' : '+', stderr);
+			putc('\n', stderr);
+		}
+		fputs("-----------------------\n", stderr);
+	}
+
 	/* make matrix symetric: required for Bron–Kerbosch algorithm */
 	for (i = 0; i < n; i++) { 
 		for (j = 0; j < i; j++) { 
@@ -1588,8 +1605,9 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 		}
 		matrix[i] &= ~((nodemask_t)1 << i);
 	}
+
 	return true;
-}	
+}
 
 
 /**
@@ -1610,6 +1628,11 @@ bool MtmRefreshClusterStatus(bool nowait, int testNodeId)
 	}
 
 	clique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &clique_size);
+
+	if ( clique == (~Mtm->disabledNodeMask & (((nodemask_t)1 << Mtm->nAllNodes)-1)) ) 
+		/* Nothing is changed */
+		return false;
+
 	if (clique_size >= Mtm->nAllNodes/2+1) { /* have quorum */
 		fprintf(stderr, "Old mask: ");
 		for (i = 0; i <  Mtm->nAllNodes; i++) { 
@@ -1648,7 +1671,7 @@ bool MtmRefreshClusterStatus(bool nowait, int testNodeId)
 			/* Interrupt voting for active transaction and abort them */
 			for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
 				MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%d, gtid.xid=%d",
-						 ts->gid, ts->gtid.nхode, ts->xid, ts->status, ts->gtid.xid);
+						 ts->gid, ts->gtid.node, ts->xid, ts->status, ts->gtid.xid);
 				if (MtmIsCoordinator(ts)) { 
 					if (!ts->votingCompleted && disabled != 0 && ts->status != TRANSACTION_STATUS_ABORTED) {
 						MtmAbortTransaction(ts);
@@ -1705,7 +1728,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	MtmLock(LW_EXCLUSIVE);
 	BIT_SET(Mtm->connectivityMask, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
-	MTM_LOG1("Disconnect node %d connectivity mask %lx", nodeId, Mtm->connectivityMask);
+	MTM_LOG1("Disconnect node %d connectivity mask %llx", nodeId, (long long) Mtm->connectivityMask);
 	MtmUnlock();
 
 	if (!RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false))
@@ -1755,7 +1778,7 @@ void MtmOnNodeConnect(int nodeId)
 	BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
 	MtmUnlock();
 
-	MTM_LOG1("Reconnect node %d, connectivityMask=%lx", nodeId, Mtm->connectivityMask);
+	MTM_LOG1("Reconnect node %d, connectivityMask=%llx", nodeId, (long long) Mtm->connectivityMask);
 	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false); 
 }
 
@@ -3579,7 +3602,12 @@ static void MtmGucSet(VariableSetStmt *stmt, const char *queryStr)
 				hash_search(MtmGucHash, key, HASH_REMOVE, NULL);
 			}
 			break;
+
 		case VAR_RESET_ALL:
+			{
+				hash_destroy(MtmGucHash);
+				MtmGucHashInit();
+			}
 			break;
 
 		case VAR_SET_MULTI:
@@ -3591,7 +3619,11 @@ static void MtmGucSet(VariableSetStmt *stmt, const char *queryStr)
 
 static void MtmGucDiscard(DiscardStmt *stmt)
 {
-
+	if (stmt->target == DISCARD_ALL)
+	{
+		hash_destroy(MtmGucHash);
+		MtmGucHashInit();
+	}
 }
 
 static void MtmGucClear(void)
@@ -3616,7 +3648,18 @@ static char * MtmGucSerialize(void)
 			appendStringInfoString(serialized_gucs, "SET ");
 			appendStringInfoString(serialized_gucs, hentry->key);
 			appendStringInfoString(serialized_gucs, " TO ");
-			appendStringInfoString(serialized_gucs, hentry->value);
+
+			/* quite a crutch */
+			if (strcmp(hentry->key, "work_mem") == 0)
+			{
+				appendStringInfoString(serialized_gucs, "'");
+				appendStringInfoString(serialized_gucs, hentry->value);
+				appendStringInfoString(serialized_gucs, "'");
+			}
+			else
+			{
+				appendStringInfoString(serialized_gucs, hentry->value);
+			}
 			appendStringInfoString(serialized_gucs, "; ");
 		}
 	}
@@ -3838,6 +3881,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	{
 		MTM_LOG1("Xact accessed temp table, stopping replication");
 		MtmTx.isDistributed = false; /* Skip */
+		MtmTx.snapshot = INVALID_CSN;
 	}
 
 }

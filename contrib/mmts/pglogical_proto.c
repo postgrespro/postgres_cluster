@@ -112,12 +112,14 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	
 	if (!isRecovery && csn == INVALID_CSN) { 
 		MtmIsFilteredTxn = true;
-	} else { 
+		MTM_LOG3("%d: pglogical_write_begin XID=%d filtered", MyProcPid, txn->xid);
+	} else {
+		MTM_LOG3("%d: pglogical_write_begin XID=%d sent", MyProcPid, txn->xid);
+		MtmIsFilteredTxn = false;
 		pq_sendbyte(out, 'B');		/* BEGIN */
 		pq_sendint(out, MtmNodeId, 4);
 		pq_sendint(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
 		pq_sendint64(out, csn);
-		MtmIsFilteredTxn = false;
 		MtmTransactionRecords = 0;
 	}
 }
@@ -128,6 +130,12 @@ pglogical_write_message(StringInfo out,
 {
 	if (*prefix == 'L') { 
 		MTM_LOG1("Send deadlock message to node %d", MtmReplicationNodeId);
+	} else { 
+		if (MtmIsFilteredTxn)
+		{
+			MTM_LOG3("%d: pglogical_write_message filtered", MyProcPid);
+			return;
+		}
 	}
 	pq_sendbyte(out, *prefix);
 	pq_sendint(out, sz, 4);

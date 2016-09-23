@@ -332,7 +332,7 @@ static RaftableMessage *raftable_try_query(RaftableMessage *msg, size_t size, si
 	RaftableMessage *answer;
 
 	s = get_connection(timeout);
-	if (s < 0) return false;
+	if (s < 0) return NULL;
 
 	if (timeout_happened(timeout))
 	{
@@ -619,7 +619,7 @@ pid_t raftable_start(int id)
 	snprintf(worker.bgw_name, BGW_MAXLEN, "raftable worker %d", sharedcfg->id);
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
-	worker.bgw_restart_time = BGW_NEVER_RESTART;
+	worker.bgw_restart_time = RAFTABLE_RESTART_TIMEOUT;
 	worker.bgw_main = raftable_worker_main;
 	worker.bgw_main_arg = PointerGetDatum(&sharedcfg);
 
