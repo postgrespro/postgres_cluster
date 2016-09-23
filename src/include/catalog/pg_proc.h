@@ -5337,13 +5337,13 @@ DESCR("pg_controldata recovery state information as a function");
 DATA(insert OID = 3444 ( pg_control_init PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 2249 "" "{23,23,23,23,23,23,23,23,23,16,16,16,23}" "{o,o,o,o,o,o,o,o,o,o,o,o,o}" "{max_data_alignment,database_block_size,blocks_per_segment,wal_block_size,bytes_per_wal_segment,max_identifier_length,max_index_columns,max_toast_chunk_size,large_object_chunk_size,bigint_timestamps,float4_pass_by_value,float8_pass_by_value,data_page_checksum_version}" _null_ _null_ pg_control_init _null_ _null_ _null_ ));
 DESCR("pg_controldata init state information as a function");
 
-DATA(insert OID = 6015 (  cfs_start_gc		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 23 "23" _null_ _null_ _null_ _null_ _null_ cfs_start_gc _null_ _null_ _null_ ));
+DATA(insert OID = 6100 (  cfs_start_gc		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 23 "23" _null_ _null_ _null_ _null_ _null_ cfs_start_gc _null_ _null_ _null_ ));
 DESCR("cfs_start_gc start CFS garbage collection");
-DATA(insert OID = 6016 (  cfs_version		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ cfs_version _null_ _null_ _null_ ));
+DATA(insert OID = 6101 (  cfs_version		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ cfs_version _null_ _null_ _null_ ));
 DESCR("CFS version string");
-DATA(insert OID = 6017 (  cfs_enable_gc		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 16 "16" _null_ _null_ _null_ _null_ _null_ cfs_enable_gc _null_ _null_ _null_ ));
+DATA(insert OID = 6102 (  cfs_enable_gc		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 16 "16" _null_ _null_ _null_ _null_ _null_ cfs_enable_gc _null_ _null_ _null_ ));
 DESCR("Enable or disable CFS garbage collection");
-DATA(insert OID = 6018 (  cfs_estimate		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 701 "2205" _null_ _null_ _null_ _null_ _null_ cfs_estimate _null_ _null_ _null_ ));
+DATA(insert OID = 6103 (  cfs_estimate		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 701 "2205" _null_ _null_ _null_ _null_ _null_ cfs_estimate _null_ _null_ _null_ ));
 DESCR("Estimate relation compression ratio");
 
 
