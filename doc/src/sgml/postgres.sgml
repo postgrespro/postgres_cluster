@@ -160,6 +160,7 @@
   &diskusage;
   &wal;
   &regress;
+  &cfs;
 
  </part>
 

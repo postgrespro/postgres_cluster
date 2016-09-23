@@ -27,15 +27,19 @@
 
 #include "miscadmin.h"
 #include "access/xlog.h"
+#include "access/transam.h"
 #include "catalog/catalog.h"
+#include "catalog/pg_tablespace.h"
 #include "portability/instr_time.h"
 #include "postmaster/bgwriter.h"
 #include "storage/fd.h"
+#include "storage/cfs.h"
 #include "storage/bufmgr.h"
 #include "storage/relfilenode.h"
 #include "storage/smgr.h"
 #include "utils/hsearch.h"
 #include "utils/memutils.h"
+#include "utils/spccache.h"
 #include "pg_trace.h"
 
 
@@ -199,6 +203,58 @@ static MdfdVec *_mdfd_getseg(SMgrRelation reln, ForkNumber forkno,
 static BlockNumber _mdnblocks(SMgrRelation reln, ForkNumber forknum,
 		   MdfdVec *seg);
 
+typedef struct
+{
+	Oid  tblspOid;
+	bool compressed;
+} TablespaceStatus;
+
+static bool md_use_compression(SMgrRelation reln, ForkNumber forknum)
+{
+	static HTAB* tblspaceMap; 
+	char* compressionFilePath;
+	FILE* compressionFile;
+	bool found;
+	TablespaceStatus* ts;
+
+	/* Do not compress system (catalog) relations created during bootstrap */
+	if (forknum != MAIN_FORKNUM
+		|| reln->smgr_rnode.node.spcNode == DEFAULTTABLESPACE_OID 
+		|| reln->smgr_rnode.node.spcNode == GLOBALTABLESPACE_OID
+		|| reln->smgr_rnode.node.relNode < FirstNormalObjectId)
+	{
+		return false;
+	}
+	if (tblspaceMap == NULL) { 
+		HASHCTL ctl = {0};
+		ctl.keysize = sizeof(Oid);
+		ctl.entrysize = sizeof(TablespaceStatus);
+		tblspaceMap = hash_create("tablespace_map", 256, &ctl, HASH_ELEM);
+	}
+	ts = hash_search(tblspaceMap, &reln->smgr_rnode.node.spcNode, HASH_ENTER, &found);
+	if (!found) { 
+		compressionFilePath = psprintf("pg_tblspc/%u/%s/pg_compression", 
+									   reln->smgr_rnode.node.spcNode,
+									   TABLESPACE_VERSION_DIRECTORY);
+		compressionFile = fopen(compressionFilePath, "r");
+		if (compressionFile != NULL)  { 
+			char algorithm[64];
+			if (fgets(algorithm, sizeof algorithm, compressionFile) == NULL) { 
+				elog(ERROR, "Failed to read compression info file %s: %m", compressionFilePath);
+			}
+			if (strcmp(algorithm, cfs_algorithm()) != 0) { 
+				elog(ERROR, "Tablespace was compressed using %s algorithm, but %s is currently used", 
+					 algorithm, cfs_algorithm());
+			}
+			fclose(compressionFile);
+			ts->compressed = true;
+		} else { 
+			ts->compressed = false;
+		}
+	}
+	return ts->compressed;
+}
+
 
 /*
  *	mdinit() -- Initialize private state for magnetic disk storage manager.
@@ -296,15 +352,21 @@ mdcreate(SMgrRelation reln, ForkNumber forkNum, bool isRedo)
 {
 	char	   *path;
 	File		fd;
+	int         flags = O_RDWR | O_CREAT | O_EXCL | PG_BINARY;
 
 	if (isRedo && reln->md_fd[forkNum] != NULL)
 		return;					/* created and opened already... */
+
+	if (md_use_compression(reln, forkNum))
+	{
+		flags |= PG_COMPRESSION;
+	}
 
 	Assert(reln->md_fd[forkNum] == NULL);
 
 	path = relpath(reln->smgr_rnode, forkNum);
 
-	fd = PathNameOpenFile(path, O_RDWR | O_CREAT | O_EXCL | PG_BINARY, 0600);
+	fd = PathNameOpenFile(path, flags, 0600);
 
 	if (fd < 0)
 	{
@@ -317,7 +379,7 @@ mdcreate(SMgrRelation reln, ForkNumber forkNum, bool isRedo)
 		 * already, even if isRedo is not set.  (See also mdopen)
 		 */
 		if (isRedo || IsBootstrapProcessingMode())
-			fd = PathNameOpenFile(path, O_RDWR | PG_BINARY, 0600);
+			fd = PathNameOpenFile(path, flags & ~(O_CREAT | O_EXCL), 0600);
 		if (fd < 0)
 		{
 			/* be sure to report the error reported by create, not open */
@@ -457,7 +519,7 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 	 */
 	if (ret >= 0)
 	{
-		char	   *segpath = (char *) palloc(strlen(path) + 12);
+		char	   *segpath = (char *) palloc(strlen(path) + 16);
 		BlockNumber segno;
 
 		/*
@@ -476,10 +538,20 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 					   errmsg("could not remove file \"%s\": %m", segpath)));
 				break;
 			}
+			if (forkNum == MAIN_FORKNUM) { 	
+				sprintf(segpath, "%s.%u.cfm", path, segno);
+				unlink(segpath);
+			}
+		}
+		/* 
+		 * Delete map file
+		 */
+		if (forkNum == MAIN_FORKNUM) { 
+			sprintf(segpath, "%s.cfm", path);
+			unlink(segpath);
 		}
 		pfree(segpath);
 	}
-
 	pfree(path);
 }
 
@@ -577,6 +649,7 @@ mdopen(SMgrRelation reln, ForkNumber forknum, int behavior)
 	MdfdVec    *mdfd;
 	char	   *path;
 	File		fd;
+	int         flags = O_RDWR | PG_BINARY;
 
 	/* No work if already open */
 	if (reln->md_fd[forknum])
@@ -584,7 +657,12 @@ mdopen(SMgrRelation reln, ForkNumber forknum, int behavior)
 
 	path = relpath(reln->smgr_rnode, forknum);
 
-	fd = PathNameOpenFile(path, O_RDWR | PG_BINARY, 0600);
+	if (md_use_compression(reln, forknum))
+	{
+		flags |= PG_COMPRESSION;
+	}
+
+	fd = PathNameOpenFile(path, flags, 0600);
 
 	if (fd < 0)
 	{
@@ -595,7 +673,7 @@ mdopen(SMgrRelation reln, ForkNumber forknum, int behavior)
 		 * substitute for mdcreate() in bootstrap mode only. (See mdcreate)
 		 */
 		if (IsBootstrapProcessingMode())
-			fd = PathNameOpenFile(path, O_RDWR | O_CREAT | O_EXCL | PG_BINARY, 0600);
+			fd = PathNameOpenFile(path, O_CREAT | O_EXCL | flags, 0600);
 		if (fd < 0)
 		{
 			if ((behavior & EXTENSION_RETURN_NULL) &&
@@ -1745,6 +1823,11 @@ _mdfd_openseg(SMgrRelation reln, ForkNumber forknum, BlockNumber segno,
 	MdfdVec    *v;
 	int			fd;
 	char	   *fullpath;
+
+	if (md_use_compression(reln, forknum))
+	{
+		oflags |= PG_COMPRESSION;
+	}
 
 	fullpath = _mdfd_segpath(reln, forknum, segno);
 
