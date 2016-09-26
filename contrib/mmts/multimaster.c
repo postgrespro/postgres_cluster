@@ -2082,7 +2082,7 @@ static void MtmSplitConnStrs(void)
 		}
 	} else { 
 		char* p = MtmConnStrs;
-		for (i = 0; *p != '\0'; i++) { 
+		for (i = 0; *p != '\0'; p++, i++) { 
 			if ((p = strchr(p, ',')) == NULL) { 
 				i += 1;
 				break;
@@ -2119,7 +2119,7 @@ static void MtmSplitConnStrs(void)
 		char* connStr = copy;
 		char* connStrEnd = connStr + strlen(connStr);
 
-		for (i = 0; connStr != connStrEnd; i++) { 
+		for (i = 0; connStr < connStrEnd; i++) { 
 			char* p = strchr(connStr, ',');
 			if (p == NULL) { 
 				p = connStrEnd;
