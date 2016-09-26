@@ -2050,22 +2050,18 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 
 	port = strstr(connStr, "raftport=");
 	if (port != NULL) {
-		int n;
-		if (sscanf(port+9, "%d%n", &conn->raftablePort, &n) != 1) { 
+		if (sscanf(port+9, "%d", &conn->raftablePort) != 1) { 
 			elog(ERROR, "Invalid raftable port: %s", port+9);
 		}
-		n += 9;
 	} else { 
 		conn->raftablePort = 0;
 	}
 
 	port = strstr(connStr, "arbiterport=");
 	if (port != NULL) {
-		int n;
-		if (sscanf(port+12, "%d%n", &conn->arbiterPort, &n) != 1) { 
+		if (sscanf(port+12, "%d", &conn->arbiterPort) != 1) { 
 			elog(ERROR, "Invalid arbiter port: %s", port+12);
 		}
-		n += 12;
 	} else { 
 		conn->arbiterPort = 0;
 	}
@@ -2074,22 +2070,28 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 static void MtmSplitConnStrs(void)
 {
 	int i;
-	char* copy =  pstrdup(MtmConnStrs);
-    char* connStr = copy;
-    char* connStrEnd = connStr + strlen(connStr);
+	FILE* f = NULL;
+	char buf[MULTIMASTER_MAX_CTL_STR_SIZE];
 
-	for (i = 0; connStr < connStrEnd; i++) { 
-		char* p = strchr(connStr, ',');
-        if (p == NULL) { 
-            p = connStrEnd;
-        }
-		connStr = p + 1;
+	if (*MtmConnStrs == '@') { 
+		f = fopen(MtmConnStrs+1, "r");
+		for (i = 0; fgets(buf, sizeof buf, f) != NULL; i++) {
+			if (strlen(buf) <= 1) {
+				elog(ERROR, "Empty lines are not allowed in %s file", MtmConnStrs+1);
+			}
+		}
+	} else { 
+		char* p = MtmConnStrs;
+		for (i = 0; *p != '\0'; i++) { 
+			if ((p = strchr(p, ',')) == NULL) { 
+				i += 1;
+				break;
+			}
+		}
 	}
+			
 	if (i > MAX_NODES) { 
 		elog(ERROR, "Multimaster with more than %d nodes is not currently supported", MAX_NODES);
-	}
-	if (MtmNodeId > i) {
-		elog(ERROR, "Multimaster node id %d is out of range [%d..%d]", MtmNodeId, 1, i);
 	}
 	if (i < 2) { 
         elog(ERROR, "Multimaster should have at least two nodes");
@@ -2101,56 +2103,89 @@ static void MtmSplitConnStrs(void)
 	}			
 	MtmNodes = i;
 	MtmConnections = (MtmConnectionInfo*)palloc(MtmMaxNodes*sizeof(MtmConnectionInfo));
-	connStr = copy;
 
-	for (i = 0; connStr < connStrEnd; i++) { 
-        char* p = strchr(connStr, ',');
-        if (p == NULL) { 
-            p = connStrEnd;
-        }
-		*p = '\0';
-
-		MtmUpdateNodeConnectionInfo(&MtmConnections[i], connStr);
-
-		if (i+1 == MtmNodeId) {
-			char* dbName = strstr(connStr, "dbname="); // XXX: shoud we care about string 'itisnotdbname=xxx'?
-			char* dbUser = strstr(connStr, "user=");
-			char* end;
-			size_t len;
-
-			if (dbName == NULL)
-				elog(ERROR, "Database is not specified in connection string: '%s'", connStr);
-
-			if (dbUser == NULL)
-			{
-				char *errstr;
-				const char *username = get_user_name(&errstr);
-				if (!username)
-					elog(FATAL, "Database user is not specified in connection string '%s', fallback failed: %s", connStr, errstr);
-				else
-					elog(WARNING, "Database user is not specified in connection string '%s', fallback to '%s'", connStr, username);
-				MtmDatabaseUser = pstrdup(username);
-			}
-			else
-			{
-				dbUser += 5;
-				end = strchr(dbUser, ' ');
-				if (!end) end = strchr(dbUser, '\0');
-				Assert(end != NULL);
-				len = end - dbUser;
-				MtmDatabaseUser = pnstrdup(dbUser, len);
-			}
-
-			dbName += 7;
-			end = strchr(dbName, ' ');
-			if (!end) end = strchr(dbName, '\0');
-			Assert(end != NULL);
-			len = end - dbName;
-			MtmDatabaseName = pnstrdup(dbName, len);
+	if (f != NULL) { 
+		fseek(f, SEEK_SET, 0);
+		for (i = 0; fgets(buf, sizeof buf, f) != NULL; i++) {
+			size_t len = strlen(buf);
+			if (buf[len-1] == '\n') { 
+				buf[len-1] = '\0';
+			}				
+			MtmUpdateNodeConnectionInfo(&MtmConnections[i], buf);
 		}
-		connStr = p + 1;
+		fclose(f);
+	} else { 												  
+		char* copy = pstrdup(MtmConnStrs);
+		char* connStr = copy;
+		char* connStrEnd = connStr + strlen(connStr);
+
+		for (i = 0; connStr != connStrEnd; i++) { 
+			char* p = strchr(connStr, ',');
+			if (p == NULL) { 
+				p = connStrEnd;
+			}
+			*p = '\0';			
+			MtmUpdateNodeConnectionInfo(&MtmConnections[i], connStr);
+			connStr = p + 1;
+		}
+		pfree(copy);
+	}
+	if (MtmNodeId == INT_MAX) { 
+		if (gethostname(buf, sizeof buf) != 0) {
+			elog(ERROR, "Failed to get host name: %m");
+		}
+		for (i = 0; i < MtmNodes; i++) {
+			if (strcmp(MtmConnections[i].hostName, buf) == 0) { 
+				if (MtmNodeId == INT_MAX) { 
+					MtmNodeId = i+1;
+				} else {
+					elog(ERROR, "multimaster.node_id is not explicitly specified and more than one nodes are configured for host %s", buf);
+				}
+			}
+		}
+		if (MtmNodeId == INT_MAX) { 
+			elog(ERROR, "multimaster.node_id and host name %s can not be located in connection strings list", buf);
+		}
+	} else if (MtmNodeId > i) {
+		elog(ERROR, "Multimaster node id %d is out of range [%d..%d]", MtmNodeId, 1, MtmNodes);
+	}
+	{
+		char* connStr = MtmConnections[MtmNodeId-1].connStr;
+		char* dbName = strstr(connStr, "dbname="); // XXX: shoud we care about string 'itisnotdbname=xxx'?
+		char* dbUser = strstr(connStr, "user=");
+		char* end;
+		size_t len;
+		
+		if (dbName == NULL)
+			elog(ERROR, "Database is not specified in connection string: '%s'", connStr);
+		
+		if (dbUser == NULL)
+		{
+			char *errstr;
+			const char *username = get_user_name(&errstr);
+			if (!username)
+				elog(FATAL, "Database user is not specified in connection string '%s', fallback failed: %s", connStr, errstr);
+			else
+				elog(WARNING, "Database user is not specified in connection string '%s', fallback to '%s'", connStr, username);
+			MtmDatabaseUser = pstrdup(username);
+		}
+		else
+		{
+			dbUser += 5;
+			end = strchr(dbUser, ' ');
+			if (!end) end = strchr(dbUser, '\0');
+			Assert(end != NULL);
+			len = end - dbUser;
+			MtmDatabaseUser = pnstrdup(dbUser, len);
+		}
+		
+		dbName += 7;
+		end = strchr(dbName, ' ');
+		if (!end) end = strchr(dbName, '\0');
+		Assert(end != NULL);
+		len = end - dbName;
+		MtmDatabaseName = pnstrdup(dbName, len);
     }
-	pfree(copy);
 }		
 
 static bool ConfigIsSane(void)
@@ -2994,7 +3029,15 @@ mtm_add_node(PG_FUNCTION_ARGS)
 		MtmLock(LW_EXCLUSIVE);	
 		nodeId = Mtm->nAllNodes;
 		elog(NOTICE, "Add node %d: '%s'", nodeId+1, connStr);
+
 		MtmUpdateNodeConnectionInfo(&Mtm->nodes[nodeId].con, connStr);
+
+		if (*MtmConnStrs == '@') {
+			FILE* f = fopen(MtmConnStrs+1, "a");
+			fprintf(f, "%s\n", connStr);
+			fclose(f);
+		}
+
 		Mtm->nodes[nodeId].transDelay = 0;
 		Mtm->nodes[nodeId].lastStatusChangeTime = MtmGetSystemTime();
 		Mtm->nodes[nodeId].flushPos = 0;
