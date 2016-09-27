@@ -20,12 +20,13 @@ static void BgwPoolMainLoop(BgwPool* pool)
 {
     int size;
     void* work;
+	static PortalData fakePortal;
 
 	MtmIsLogicalReceiver = true;
 
     BackgroundWorkerUnblockSignals();
 	BackgroundWorkerInitializeConnection(pool->dbname, pool->dbuser);
-	ActivePortal = CreatePortal("", true, true);
+	ActivePortal = &fakePortal;
 	ActivePortal->status = PORTAL_ACTIVE;
 	ActivePortal->sourceText = "";
 

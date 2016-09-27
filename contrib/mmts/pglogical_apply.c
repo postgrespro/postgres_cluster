@@ -371,7 +371,8 @@ process_remote_transactional_message(StringInfo s)
 	}
 	
 	MTM_LOG1("%d: Executing utility statement %s", MyProcPid, stmt);
-	SPI_connect();
+	SPI_connect();	
+	ActivePortal->sourceText = stmt;
 	rc = SPI_execute(stmt, false, 0);
 	SPI_finish();
 	if (rc < 0)
@@ -971,8 +972,8 @@ void MtmExecutor(void* work, size_t size)
     StringInfoData s;
     Relation rel = NULL;
 	int spill_file = -1;
-	int save_cursor;
-	int save_len;
+	int save_cursor = 0;
+	int save_len = 0;
     s.data = work;
     s.len = size;
     s.maxlen = -1;
