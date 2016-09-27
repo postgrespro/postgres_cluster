@@ -35,6 +35,8 @@
 #include "utils/memutils.h"
 #include "executor/spi.h"
 #include "replication/origin.h"
+#include "utils/portal.h"
+#include "tcop/pquery.h"
 
 #include "multimaster.h"
 #include "spill.h"
@@ -218,6 +220,8 @@ pglogical_receiver_main(Datum main_arg)
 	StringInfoData spill_info;
 	char *slotName;
 	char* connString = psprintf("replication=database %s", Mtm->nodes[nodeId-1].con.connStr);
+	static PortalData fakePortal;
+
 	slotName = psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId);
 
 	MtmIsLogicalReceiver = true;
@@ -239,7 +243,10 @@ pglogical_receiver_main(Datum main_arg)
 	BackgroundWorkerUnblockSignals();
 
 	/* Connect to a database */
-	BackgroundWorkerInitializeConnection(MtmDatabaseName, NULL);
+	BackgroundWorkerInitializeConnection(MtmDatabaseName, MtmDatabaseUser);
+	ActivePortal = &fakePortal;
+	ActivePortal->status = PORTAL_ACTIVE;
+	ActivePortal->sourceText = "";
 
 	/* This is main loop of logical replication.
 	 * In case of errors we will try to reestablish connection.
