@@ -108,7 +108,7 @@ test: privileges
 test: init_privs
 test: security_label
 test: collate
-test: matview
+# test: matview
 test: lock
 test: replica_identity
 # test: rowsecurity  # issue#20
@@ -147,11 +147,11 @@ test: indirect_toast
 test: equivclass
 test: plancache
 test: limit
-# test: plpgsql # issue#21 
+test: plpgsql
 test: copy2
 test: temp
 test: domain
-# test: rangefuncs # issue#21
+test: rangefuncs
 test: prepare
 test: without_oid
 test: conversion
