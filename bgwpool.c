@@ -8,6 +8,8 @@
 #include "storage/pg_sema.h"
 #include "storage/shmem.h"
 #include "datatype/timestamp.h"
+#include "utils/portal.h"
+#include "tcop/pquery.h"
 
 #include "bgwpool.h"
 
@@ -23,6 +25,9 @@ static void BgwPoolMainLoop(BgwPool* pool)
 
     BackgroundWorkerUnblockSignals();
 	BackgroundWorkerInitializeConnection(pool->dbname, pool->dbuser);
+	ActivePortal = CreatePortal("", true, true);
+	ActivePortal->status = PORTAL_ACTIVE;
+	ActivePortal->sourceText = "";
 
     while(true) { 
         PGSemaphoreLock(&pool->available);
