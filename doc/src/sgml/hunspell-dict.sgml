@@ -118,7 +118,7 @@ SELECT to_tsvector('english_hunspell', 'The blue whale is the largest animal');
 
 <programlisting>
 SELECT to_tsvector('english_hunspell', 'The blue whale is the largest animal')
-  @@ to_tsquery('english_hunspell', 'large & whale');
+  @@ to_tsquery('english_hunspell', 'large &amp; whale');
  ?column? 
 ----------
  t
@@ -144,7 +144,7 @@ CREATE INDEX t_idx ON table1 USING GIN (to_tsvector('english_hunspell', "t"));
 
 <programlisting>
 SELECT * FROM table1 where to_tsvector('english_hunspell', t)
-  @@ to_tsquery('english_hunspell', 'blue & animal');
+  @@ to_tsquery('english_hunspell', 'blue &amp; animal');
                   t                   
 --------------------------------------
  The blue whale is the largest animal
