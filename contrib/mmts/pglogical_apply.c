@@ -413,7 +413,7 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 
 	rnatts = pq_getmsgint(s, 2);
 
-	if (desc->natts != rnatts)
+	if (desc->natts < rnatts)
 		elog(ERROR, "tuple natts mismatch, %u vs %u", desc->natts, rnatts);
 
 	/* FIXME: unaligned data accesses */
@@ -421,9 +421,15 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 	for (i = 0; i < desc->natts; i++)
 	{
 		Form_pg_attribute att = desc->attrs[i];
-		char		kind = pq_getmsgbyte(s);
+		char		kind;
 		const char *data;
 		int			len;
+
+		if (att->atttypid == InvalidOid) { 
+			continue;
+		}
+
+		kind = pq_getmsgbyte(s);
 
 		switch (kind)
 		{
