@@ -114,7 +114,7 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &dblink;
  &dict-int;
  &dict-xsyn;
- &dump_stat;
+ &dump-stat;
  &earthdistance;
  &file-fdw;
  &fuzzystrmatch;
