@@ -31,7 +31,7 @@
     <para>
       In your db:
     </para>
-    <programlisting >
+    <programlisting>
 CREATE EXTENSION sr_plan;
 </programlisting>
     <para>
@@ -52,7 +52,7 @@ shared_preload_libraries = 'sr_plan.so'
       If you want to save the query plan is necessary to set the
       variable:
     </para>
-    <programlisting >
+    <programlisting>
 set sr_plan.write_mode = true;
 </programlisting>
     <para>
@@ -61,19 +61,19 @@ set sr_plan.write_mode = true;
       all queries will be stored including duplicates. Making an example
       query:
     </para>
-    <programlisting >
+    <programlisting>
 select query_hash from sr_plans where query_hash=10;
 </programlisting>
     <para>
       Disable saving the query:
     </para>
-    <programlisting >
+    <programlisting>
 set sr_plan.write_mode = false;
 </programlisting>
     <para>
       Now verify that your query is saved:
     </para>
-    <programlisting >
+    <programlisting>
 select query_hash, enable, valid, query, explain_jsonb_plan(plan) from sr_plans;
 
  query_hash | enable | valid |                        query                         |                 explain_jsonb_plan                 
@@ -96,7 +96,7 @@ select query_hash, enable, valid, query, explain_jsonb_plan(plan) from sr_plans;
     <para>
       To enable use of the saved plan
     </para>
-    <programlisting >
+    <programlisting>
 update sr_plans set enable=true where query_hash=1783086253;
 </programlisting>
     <para>
@@ -112,7 +112,7 @@ update sr_plans set enable=true where query_hash=1783086253;
       During plan saving mode we can mark these constants as query
       parameters using a special function <literal>_p (anyelement)</>. For example:
     </para>
-    <programlisting >
+    <programlisting>
 
 =&gt;create table test_table (a numeric, b text);
 CREATE TABLE
@@ -135,7 +135,7 @@ SET
       query with any value for a, as long as this value is wrapped with
       <literal>_p()</> function.
     </para>
-    <programlisting >
+    <programlisting>
 =&gt;update sr_plans set enable = true where quesry=
   'select a,b from test_table where a = _p(1)';
 UPDATE 1
