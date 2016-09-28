@@ -1,0 +1,166 @@
+<!-- doc/src/sgml/sr_plan.sgml -->
+
+<sect1 id="sr-plan" xreflabel="sr-plan">
+  <title>sr_plan</title>
+  <indexterm zone="sr-plan">
+  <primary>sr_plan</primary>
+  </indexterm>
+  <sect2 id="rationale">
+    <title>Rationale</title>
+    <para>
+    sr_plan is an extension which allows to save query execution plans
+    and use these plans for all repetitions of same query, instead of
+    optimizing identical query again and again/
+    </para>
+    <para>
+      sr_plan looks like Oracle Outline system. It can be used to lock
+      the execution plan. It is necessary if you do not trust the
+      planner or able to form a better plan.
+    </para>
+    <para>
+      Typically, DBA would play with queries interactively, and save
+      their plans and then enable use of saved plans for the queries,
+      where predictable responce time is essential.
+    </para>
+    <para>
+      Then application which uses these queries would use saved plans.
+    </para>
+  </sect2>
+  <sect2>
+    <title>Installation</title>
+    <para>
+      In your db:
+    </para>
+    <programlisting >
+CREATE EXTENSION sr_plan;
+</programlisting>
+    <para>
+      and modify your postgresql.conf:
+    </para>
+    <programlisting>
+shared_preload_libraries = 'sr_plan.so'
+</programlisting>
+    <para>
+      It is essential that library is preloaded during server startup,
+      because use of saved plans is enabled on per-database basis and
+      doesn't require any per-connection actions.
+    </para>
+  </sect2>
+  <sect2>
+    <title>Usage</title>
+    <para>
+      If you want to save the query plan is necessary to set the
+      variable:
+    </para>
+    <programlisting >
+set sr_plan.write_mode = true;
+</programlisting>
+    <para>
+      Now plans for all subsequent queries will be stored in the table
+      sr_plans, until this variable is set to false. Don't forget that
+      all queries will be stored including duplicates. Making an example
+      query:
+    </para>
+    <programlisting >
+select query_hash from sr_plans where query_hash=10;
+</programlisting>
+    <para>
+      Disable saving the query:
+    </para>
+    <programlisting >
+set sr_plan.write_mode = false;
+</programlisting>
+    <para>
+      Now verify that your query is saved:
+    </para>
+    <programlisting >
+select query_hash, enable, valid, query, explain_jsonb_plan(plan) from sr_plans;
+
+ query_hash | enable | valid |                        query                         |                 explain_jsonb_plan                 
+------------+--------+-------+------------------------------------------------------+----------------------------------------------------
+ 1783086253 | f      | t     | select query_hash from sr_plans where query_hash=10; | Bitmap Heap Scan on sr_plans                      +
+            |        |       |                                                      |   Recheck Cond: (query_hash = 10)                 +
+            |        |       |                                                      |   -&gt;  Bitmap Index Scan on sr_plans_query_hash_idx+
+            |        |       |                                                      |         Index Cond: (query_hash = 10)             +
+            |        |       |                                                      | 
+</programlisting>
+    <para>
+      Note use of <literal>explain_jsonb_plan</> function, that allows you to
+      visualize execution plan in the similar way as EXPLAIN command
+      does.
+    </para>
+    <para>
+      In the database plans are stored as jsonb. By default, all the
+      newly saved plans are disabled, you need enable it manually:
+    </para>
+    <para>
+      To enable use of the saved plan
+    </para>
+    <programlisting >
+update sr_plans set enable=true where query_hash=1783086253;
+</programlisting>
+    <para>
+      (1783086253 for example only) After that, the plan for the query
+      will be taken from the <literal>sr_plans</> table.
+    </para>
+    <para>
+      In addition sr plan allows you to save a parameterized query plan.
+      In this case, we have some constants in the query that, as we
+      know, do not affect plan.
+    </para>
+    <para>
+      During plan saving mode we can mark these constants as query
+      parameters using a special function <literal>_p (anyelement)</>. For example:
+    </para>
+    <programlisting >
+
+=&gt;create table test_table (a numeric, b text);
+CREATE TABLE
+=&gt;insert into test_table values (1,'1'),(2,'2'),(3,'3');
+INSERT 0 3 
+=&gt; set sr_plan.write_mode = true;
+SET
+=&gt; select a,b  from test_table where a = _p(1);
+ a | b
+---+---
+ 1 | 1
+(1 row)
+
+=&gt; set sr_plan.write_mode = false;
+SET
+</programlisting>
+    <para>
+      Now plan for query from our table is saved with parameter. So, if
+      we enable saved plan in this table, this plan would be used for
+      query with any value for a, as long as this value is wrapped with
+      <literal>_p()</> function.
+    </para>
+    <programlisting >
+=&gt;update sr_plans set enable = true where quesry=
+  'select a,b from test_table where a = _p(1)';
+UPDATE 1
+-- These queries would use saved plan
+
+=&gt;select a,b from test_table where a = _p(2);
+ a | b
+---+---
+ 2 | 2
+(1 row)
+
+=&gt;select a,b from test_table where a = _p(3);
+ a | b
+---+---
+ 3 | 3
+(1 row)
+
+-- This query wouldn't use saved plan, because constant is not wrapped
+-- with _p()
+
+=&gt;select a,b from test_table where a = 1;
+ a | b
+---+---
+ 1 | 1
+(1 row)
+</programlisting>
+  </sect2>
+</sect1>
