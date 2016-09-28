@@ -3747,6 +3747,11 @@ static bool MtmProcessDDLCommand(char const* queryString)
 	return false;
 }
 
+static void MtmFinishDDLCommand()
+{
+	LogLogicalMessage("E", "", 1, true);
+}
+
 void MtmUpdateLockGraph(int nodeId, void const* messageBody, int messageSize)
 {
 	int allocated;
@@ -3768,6 +3773,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 DestReceiver *dest, char *completionTag)
 {
 	bool skipCommand = false;
+	bool executed = false;
 
 	MTM_LOG3("%d: Process utility statement %s", MyProcPid, queryString);
 	switch (nodeTag(parsetree))
@@ -3912,6 +3918,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {
 			MtmUtilityProcessedInXid = GetCurrentTransactionId();
 			MtmProcessDDLCommand(queryString);
+			executed = true;
 		}
 	}
 
@@ -3933,6 +3940,10 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		MtmTx.snapshot = INVALID_CSN;
 	}
 
+	if (executed)
+	{
+		MtmFinishDDLCommand();
+	}
 }
 
 
@@ -3966,12 +3977,6 @@ MtmExecutorFinish(QueryDesc *queryDesc)
 			}
         }
     }
-
-	// if (MyXactAccessedRel)
-	// {
-	// 	MTM_LOG1("MtmTx.containsDML = true");
-	// 	MtmTx.containsDML = true;
-	// }
 
     if (PreviousExecutorFinishHook != NULL)
     {

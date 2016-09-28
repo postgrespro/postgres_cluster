@@ -59,8 +59,6 @@ typedef struct TupleData
 	bool		changed[MaxTupleAttributeNumber];
 } TupleData;
 
-static bool inside_tx = false;
-
 static Relation read_rel(StringInfo s, LOCKMODE mode);
 static void read_tuple_parts(StringInfo s, Relation rel, TupleData *tup);
 static EState* create_rel_estate(Relation rel);
@@ -353,8 +351,6 @@ process_remote_begin(StringInfo s)
 	StartTransactionCommand();
     MtmJoinTransaction(&gtid, snapshot);
 
-	inside_tx = true;
-
 	return true;
 }
 
@@ -364,11 +360,6 @@ process_remote_transactional_message(StringInfo s)
 	int rc;
 	int messageSize = pq_getmsgint(s, 4);
 	char const* stmt = pq_getmsgbytes(s, messageSize);
-	if (!inside_tx)
-	{
-		MTM_LOG1("%d: Ignoring utility statement %s", MyProcPid, stmt);
-		return;
-	}
 	
 	MTM_LOG1("%d: Executing utility statement %s", MyProcPid, stmt);
 	SPI_connect();	
@@ -667,7 +658,6 @@ process_remote_commit(StringInfo in)
 	if (flags & PGLOGICAL_CAUGHT_UP) {
 		MtmRecoveryCompleted();
 	}
-	inside_tx = false;
 }
 
 static void
@@ -992,7 +982,7 @@ void MtmExecutor(void* work, size_t size)
     {    
         while (true) { 
             char action = pq_getmsgbyte(&s);
-            MTM_LOG3("%d: REMOTE process action %c", MyProcPid, action);
+            MTM_LOG1("%d: REMOTE process action %c", MyProcPid, action);
 #if 0
 			if (Mtm->status == MTM_RECOVERY) { 
 				MTM_LOG1("Replay action %c[%x]",   action, s.data[s.cursor]);
@@ -1054,6 +1044,7 @@ void MtmExecutor(void* work, size_t size)
 				continue;
 			}
 			case 'G':
+			case 'E':
 			{
 				process_remote_transactional_message(&s);
 				continue;

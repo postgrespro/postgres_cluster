@@ -50,7 +50,7 @@ test: oidjoins
 test: type_sanity
 test: opr_sanity
 test: insert
-# test: insert_conflict # issue#17
+# test: insert_conflict
 test: create_function_1
 test: create_type
 test: create_table
@@ -108,7 +108,7 @@ test: privileges
 test: init_privs
 test: security_label
 test: collate
-# test: matview
+test: matview
 test: lock
 test: replica_identity
 # test: rowsecurity  # issue#20
