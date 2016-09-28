@@ -38,8 +38,9 @@
 #include "multimaster.h"
 #include "pglogical_relid_map.h"
 
-static bool MtmIsFilteredTxn;
-static int  MtmTransactionRecords;
+static int MtmTransactionRecords;
+static TransactionId MtmCurrentXid;
+static bool DDLInProress = false;
 
 static void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel);
 
@@ -74,10 +75,17 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
 	const char *relname;
 	uint8		relnamelen;
 	Oid         relid;
-    if (MtmIsFilteredTxn) { 
+
+	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN) {
+		MTM_LOG1("%d: pglogical_write_message filtered", MyProcPid);
 		return;
 	}
-	
+
+	if (DDLInProress) {
+		MTM_LOG1("%d: pglogical_write_message filtered DDLInProress", MyProcPid);
+		return;
+	}
+
 	relid = RelationGetRelid(rel);
 	pq_sendbyte(out, 'R');		/* sending RELATION */	
 	pq_sendint(out, relid, sizeof relid); /* use Oid as relation identifier */
@@ -107,36 +115,42 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 {
 	bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
 	csn_t csn = MtmTransactionSnapshot(txn->xid);
+
+	MtmCurrentXid = txn->xid;
+
 	MTM_LOG3("%d: pglogical_write_begin XID=%d node=%d CSN=%ld recovery=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
 			 MyProcPid, txn->xid, MtmReplicationNodeId, csn, isRecovery, txn->restart_decoding_lsn, txn->first_lsn, txn->end_lsn, MyReplicationSlot->data.confirmed_flush);
-	
-	if (!isRecovery && csn == INVALID_CSN) { 
-		MtmIsFilteredTxn = true;
-		MTM_LOG3("%d: pglogical_write_begin XID=%d filtered", MyProcPid, txn->xid);
-	} else {
-		MTM_LOG3("%d: pglogical_write_begin XID=%d sent", MyProcPid, txn->xid);
-		MtmIsFilteredTxn = false;
-		pq_sendbyte(out, 'B');		/* BEGIN */
-		pq_sendint(out, MtmNodeId, 4);
-		pq_sendint(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
-		pq_sendint64(out, csn);
-		MtmTransactionRecords = 0;
-	}
+
+	MTM_LOG3("%d: pglogical_write_begin XID=%d sent", MyProcPid, txn->xid);
+	pq_sendbyte(out, 'B');		/* BEGIN */
+	pq_sendint(out, MtmNodeId, 4);
+	pq_sendint(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
+	pq_sendint64(out, csn);
+	MtmTransactionRecords = 0;
 }
 
 static void
 pglogical_write_message(StringInfo out,
 						const char *prefix, Size sz, const char *message)
 {
-	if (*prefix == 'L') { 
+	if (*prefix == 'L')
+	{
 		MTM_LOG1("Send deadlock message to node %d", MtmReplicationNodeId);
-	} else { 
-		if (MtmIsFilteredTxn)
+	}
+	else if (*prefix == 'G')
+	{
+		if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN)
 		{
-			MTM_LOG3("%d: pglogical_write_message filtered", MyProcPid);
+			MTM_LOG1("%d: pglogical_write_message filtered", MyProcPid);
 			return;
 		}
+		DDLInProress = true;
 	}
+	else if (*prefix == 'E')
+	{
+		DDLInProress = false;
+	}
+
 	pq_sendbyte(out, *prefix);
 	pq_sendint(out, sz, 4);
 	pq_sendbytes(out, message, sz);
@@ -169,10 +183,10 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 	Assert(flags != PGLOGICAL_COMMIT_PREPARED || txn->xid < 1000 || MtmTransactionRecords != 1);
 
 	if (flags == PGLOGICAL_COMMIT || flags == PGLOGICAL_PREPARE) { 
-		if (MtmIsFilteredTxn) { 
-			Assert(MtmTransactionRecords == 0);
-			return;
-		}
+		// if (MtmIsFilteredTxn) { 
+			// Assert(MtmTransactionRecords == 0);
+			// return;
+		// }
 	} else { 
 		csn_t csn = MtmTransactionSnapshot(txn->xid);
 		bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
@@ -242,11 +256,20 @@ static void
 pglogical_write_insert(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple newtuple)
 {
-    if (!MtmIsFilteredTxn) { 
-		MtmTransactionRecords += 1;
-		pq_sendbyte(out, 'I');		/* action INSERT */
-		pglogical_write_tuple(out, data, rel, newtuple);
+	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN){
+		MTM_LOG1("%d: pglogical_write_insert filtered", MyProcPid);
+		return;
 	}
+
+	if (DDLInProress) {
+		MTM_LOG1("%d: pglogical_write_insert filtered DDLInProress", MyProcPid);
+		return;
+	}
+
+	MtmTransactionRecords += 1;
+	pq_sendbyte(out, 'I');		/* action INSERT */
+	pglogical_write_tuple(out, data, rel, newtuple);
+
 }
 
 /*
@@ -256,23 +279,30 @@ static void
 pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple, HeapTuple newtuple)
 {
-    if (!MtmIsFilteredTxn) { 
-		MtmTransactionRecords += 1;
-
-		MTM_LOG3("%d: pglogical_write_update confirmed_flush=%lx", MyProcPid, MyReplicationSlot->data.confirmed_flush);
-
-
-		pq_sendbyte(out, 'U');		/* action UPDATE */
-		/* FIXME support whole tuple (O tuple type) */
-		if (oldtuple != NULL)
-		{
-			pq_sendbyte(out, 'K');	/* old key follows */
-			pglogical_write_tuple(out, data, rel, oldtuple);
-		}
-		
-		pq_sendbyte(out, 'N');		/* new tuple follows */
-		pglogical_write_tuple(out, data, rel, newtuple);
+	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN){
+		MTM_LOG1("%d: pglogical_write_update filtered", MyProcPid);
+		return;
 	}
+
+	if (DDLInProress) {
+		MTM_LOG1("%d: pglogical_write_update filtered DDLInProress", MyProcPid);
+		return;
+	}
+
+	MtmTransactionRecords += 1;
+
+	MTM_LOG3("%d: pglogical_write_update confirmed_flush=%lx", MyProcPid, MyReplicationSlot->data.confirmed_flush);
+
+	pq_sendbyte(out, 'U');		/* action UPDATE */
+	/* FIXME support whole tuple (O tuple type) */
+	if (oldtuple != NULL)
+	{
+		pq_sendbyte(out, 'K');	/* old key follows */
+		pglogical_write_tuple(out, data, rel, oldtuple);
+	}
+
+	pq_sendbyte(out, 'N');		/* new tuple follows */
+	pglogical_write_tuple(out, data, rel, newtuple);
 }
 	
 /*
@@ -282,11 +312,19 @@ static void
 pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple)
 {
-    if (!MtmIsFilteredTxn) {
-		MtmTransactionRecords += 1;
-		pq_sendbyte(out, 'D');		/* action DELETE */
-		pglogical_write_tuple(out, data, rel, oldtuple);
+	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN){
+		MTM_LOG1("%d: pglogical_write_delete filtered", MyProcPid);
+		return;
 	}
+
+	if (DDLInProress) {
+		MTM_LOG1("%d: pglogical_write_delete filtered DDLInProress", MyProcPid);
+		return;
+	}
+
+	MtmTransactionRecords += 1;
+	pq_sendbyte(out, 'D');		/* action DELETE */
+	pglogical_write_tuple(out, data, rel, oldtuple);
 }
 
 /*
@@ -310,6 +348,16 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 	bool		isnull[MaxTupleAttributeNumber];
 	int			i;
 	uint16		nliveatts = 0;
+
+	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN){
+		MTM_LOG1("%d: pglogical_write_tuple filtered", MyProcPid);
+		return;
+	}
+
+	if (DDLInProress) {
+		MTM_LOG1("%d: pglogical_write_tuple filtered DDLInProress", MyProcPid);
+		return;
+	}
 
 	desc = RelationGetDescr(rel);
 
