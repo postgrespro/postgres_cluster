@@ -1,0 +1,9 @@
+.deps
+isolation_output
+results/pg_pathman.out
+regression.diffs
+regression.out
+*.o
+*.so
+*.pyc
+pg_pathman--*.sql

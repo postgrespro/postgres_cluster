@@ -54,7 +54,7 @@ ifndef XSLTPROC
 XSLTPROC = $(missing) xsltproc
 endif
 
-override XSLTPROCFLAGS += --stringparam pg.version '$(VERSION)'
+override XSLTPROCFLAGS += --stringparam pg.version '$(PGPRO_VERSION)'
 
 
 GENERATED_SGML = bookindex.sgml version.sgml \
@@ -141,7 +141,7 @@ endif
 # changes.
 version.sgml: $(top_srcdir)/configure
 	{ \
-	  echo "<!ENTITY version \"$(VERSION)\">"; \
+	  echo "<!ENTITY version \"$(PGPRO_VERSION)\">"; \
 	  echo "<!ENTITY majorversion \"$(MAJORVERSION)\">"; \
 	} > $@
 
