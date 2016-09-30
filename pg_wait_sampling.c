@@ -102,9 +102,6 @@ setup_gucs()
 				history_period_found = false,
 				profile_period_found = false;
 
-	/* Initialize the guc_variables[] array */
-	build_guc_variables();
-
 	guc_vars = get_guc_variables();
 	numOpts = GetNumConfigOptions();
 
@@ -113,20 +110,26 @@ setup_gucs()
 		mixedStruct *var = (mixedStruct *) guc_vars[i];
 		const char *name = var->generic.name;
 
+		if (var->generic.flags & GUC_CUSTOM_PLACEHOLDER)
+			continue;
+
 		if (!strcmp(name, "pg_wait_sampling.history_size"))
 		{
 			history_size_found = true;
 			var->integer.variable = &collector_hdr->historySize;
+			collector_hdr->historySize = 5000;
 		}
 		else if (!strcmp(name, "pg_wait_sampling.history_period"))
 		{
 			history_period_found = true;
 			var->integer.variable = &collector_hdr->historyPeriod;
+			collector_hdr->historyPeriod = 10;
 		}
 		else if (!strcmp(name, "pg_wait_sampling.profile_period"))
 		{
 			profile_period_found = true;
 			var->integer.variable = &collector_hdr->profilePeriod;
+			collector_hdr->profilePeriod = 10;
 		}
 	}
 
@@ -147,6 +150,9 @@ setup_gucs()
 				"Sets period of waits profile sampling.", NULL,
 				&collector_hdr->profilePeriod, 10, 1, INT_MAX,
 				PGC_SUSET, 0, shmem_int_guc_check_hook, NULL, NULL);
+
+	if (history_size_found || history_period_found || profile_period_found)
+		ProcessConfigFile(PGC_SIGHUP);
 }
 
 /*
