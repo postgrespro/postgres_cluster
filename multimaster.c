@@ -3646,6 +3646,10 @@ static void MtmGucSet(VariableSetStmt *stmt, const char *queryStr)
 
 		case VAR_RESET:
 			{
+				if (strcmp(stmt->name, "session_authorization") == 0)
+				{
+					hash_search(MtmGucHash, "role", HASH_REMOVE, NULL);
+				}
 				key = pstrdup(stmt->name);
 				hash_search(MtmGucHash, key, HASH_REMOVE, NULL);
 			}
@@ -3672,11 +3676,6 @@ static void MtmGucDiscard(DiscardStmt *stmt)
 		hash_destroy(MtmGucHash);
 		MtmGucHashInit();
 	}
-}
-
-static void MtmGucClear(void)
-{
-
 }
 
 static char * MtmGucSerialize(void)
@@ -3867,9 +3866,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				/* Prevent SET TRANSACTION from replication */
 				if (stmt->kind == VAR_SET_MULTI)
 					skipCommand = true;
-
-				if (stmt->kind == VAR_RESET && strcmp(stmt->name, "session_authorization") == 0)
-					MtmGucClear();
 
 				if (!IsTransactionBlock())
 				{
