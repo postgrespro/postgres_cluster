@@ -122,13 +122,13 @@ get_next_observation(History *observations)
 {
 	HistoryItem *result;
 
-	result = &observations->items[observations->index];
-	observations->index++;
 	if (observations->index >= observations->count)
 	{
 		observations->index = 0;
 		observations->wraparound = true;
 	}
+	result = &observations->items[observations->index];
+	observations->index++;
 	return result;
 }
 
