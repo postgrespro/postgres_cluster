@@ -581,6 +581,9 @@ PGAC_ARG_BOOL(with, rsocket, no, [replace socket with rsocket (RDMA socket API)]
               [AC_DEFINE([WITH_RSOCKET], 1,
                          [Define to 1 to build with rsocket instead socket. (--with-rsocket)])])
 
+if test "$with_rsocket" = yes ; then
+  LDFLAGS="$LDFLAGS -lrdmacm"
+fi
 
 #
 # Include directories

@@ -827,9 +827,6 @@
 /* Define to 1 to build with assertion checks. (--enable-cassert) */
 #undef USE_ASSERT_CHECKING
 
-/* Define to 1 to build with rsocket instead socket. (--with-rsocket) */
-#undef WITH_RSOCKET
-
 /* Define to 1 to build with Bonjour support. (--with-bonjour) */
 #undef USE_BONJOUR
 
@@ -905,6 +902,9 @@
 
 /* Define to 6 to use zstd compression library */
 #undef CFS_COMPRESSOR
+
+/* Define to 1 to build with rsocket instead socket. (--with-rsocket) */
+#undef WITH_RSOCKET
 
 /* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most
    significant byte first (like Motorola and SPARC, unlike Intel). */
