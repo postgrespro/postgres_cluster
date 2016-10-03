@@ -211,7 +211,7 @@ pglogical_receiver_main(Datum main_arg)
 	PGresult *res;
 	MtmReplicationMode mode;
 
-    ByteBuffer buf;
+	ByteBuffer buf;
 	RepOriginId originId;
 	char* originName;
 	/* Buffer for COPY data */
@@ -221,6 +221,8 @@ pglogical_receiver_main(Datum main_arg)
 	char *slotName;
 	char* connString = psprintf("replication=database %s", Mtm->nodes[nodeId-1].con.connStr);
 	static PortalData fakePortal;
+
+	ByteBufferAlloc(&buf);
 
 	slotName = psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId);
 
@@ -363,7 +365,6 @@ pglogical_receiver_main(Datum main_arg)
 		resetPQExpBuffer(query);
 		
 		MtmReceiverStarted(nodeId);
-		ByteBufferAlloc(&buf);
 		
 		while (!got_sigterm)
 		{
