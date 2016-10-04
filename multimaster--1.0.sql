@@ -13,7 +13,7 @@ CREATE FUNCTION mtm.drop_node(node integer, drop_slot bool default false) RETURN
 AS 'MODULE_PATHNAME','mtm_drop_node'
 LANGUAGE C;
 
-CREATE FUNCTION mtm.add_node(conn_str cstring) RETURNS void
+CREATE FUNCTION mtm.add_node(conn_str text) RETURNS void
 AS 'MODULE_PATHNAME','mtm_add_node'
 LANGUAGE C;
 
