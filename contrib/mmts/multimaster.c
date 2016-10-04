@@ -3783,17 +3783,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	MTM_LOG3("%d: Process utility statement %s", MyProcPid, queryString);
 	switch (nodeTag(parsetree))
 	{
-	    case T_IndexStmt:
-		    {
-				IndexStmt* stmt = (IndexStmt*) parsetree;
-				if (stmt->concurrent) { 
-					stmt->concurrent = false;
-					elog(WARNING, "Disable concurrent option for index creation");
-				}
-				break;
-			}
-
-	    case T_TransactionStmt:
+		case T_TransactionStmt:
 			{
 				TransactionStmt *stmt = (TransactionStmt *) parsetree;
 				switch (stmt->kind)
