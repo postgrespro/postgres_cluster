@@ -36,6 +36,8 @@ PG_MODULE_MAGIC;
 #define	PG_QS_MODULE_KEY	0xCA94B108
 #define	PG_QUERY_STATE_KEY	0
 
+#define MIN_TIMEOUT   5000
+
 #define TEXT_CSTR_CMP(text, cstr) \
 	(memcmp(VARDATA(text), (cstr), VARSIZE(text) - VARHDRSZ))
 
@@ -847,7 +849,9 @@ GetRemoteBackendWorkers(PGPROC *proc)
 		return NIL;
 
 	mqh = shm_mq_attach(mq, NULL, NULL);
-	mq_receive_result = shm_mq_receive_with_timeout(mqh, &msg_len, (void **) &msg, 1000);
+	mq_receive_result = shm_mq_receive_with_timeout(mqh, &msg_len,
+                                                    (void **) &msg,
+                                                    MIN_TIMEOUT);
 	if (mq_receive_result != SHM_MQ_SUCCESS)
 		return NIL;
 
@@ -943,7 +947,7 @@ GetRemoteBackendQueryStates(List *procs,
 		mq_receive_result = shm_mq_receive_with_timeout(mqh,
 														&len,
 														(void **) &msg,
-														5000);
+														MIN_TIMEOUT);
 		if (mq_receive_result != SHM_MQ_SUCCESS)
 			/* counterpart is died, not consider it */
 			continue;
