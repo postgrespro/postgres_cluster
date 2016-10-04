@@ -62,6 +62,7 @@ typedef struct
 	int				historySize;
 	int				historyPeriod;
 	int				profilePeriod;
+	bool			profilePid;
 } CollectorShmqHeader;
 
 /* pg_wait_sampling.c */

@@ -75,6 +75,14 @@ shmem_int_guc_check_hook(int *newval, void **extra, GucSource source)
 	return true;
 }
 
+static bool
+shmem_bool_guc_check_hook(bool *newval, void **extra, GucSource source)
+{
+	if (UsedShmemSegAddr == NULL)
+		return false;
+	return true;
+}
+
 /*
  * This union allows us to mix the numerous different types of structs
  * that we are organizing.
@@ -100,7 +108,8 @@ setup_gucs()
 				i;
 	bool		history_size_found = false,
 				history_period_found = false,
-				profile_period_found = false;
+				profile_period_found = false,
+				profile_pid_found = false;
 
 	guc_vars = get_guc_variables();
 	numOpts = GetNumConfigOptions();
@@ -131,6 +140,12 @@ setup_gucs()
 			var->integer.variable = &collector_hdr->profilePeriod;
 			collector_hdr->profilePeriod = 10;
 		}
+		else if (!strcmp(name, "pg_wait_sampling.profile_pid"))
+		{
+			profile_pid_found = true;
+			var->_bool.variable = &collector_hdr->profilePid;
+			collector_hdr->profilePid = true;
+		}
 	}
 
 	if (!history_size_found)
@@ -151,7 +166,14 @@ setup_gucs()
 				&collector_hdr->profilePeriod, 10, 1, INT_MAX,
 				PGC_SUSET, 0, shmem_int_guc_check_hook, NULL, NULL);
 
-	if (history_size_found || history_period_found || profile_period_found)
+	if (!profile_pid_found)
+		DefineCustomBoolVariable("pg_wait_sampling.profile_pid",
+				"Sets whether profile should be collected per pid.", NULL,
+				&collector_hdr->profilePid, true,
+				PGC_SUSET, 0, shmem_bool_guc_check_hook, NULL, NULL);
+
+	if (history_size_found || history_period_found
+		|| profile_period_found || profile_pid_found)
 		ProcessConfigFile(PGC_SIGHUP);
 }
 

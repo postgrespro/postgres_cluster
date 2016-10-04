@@ -138,7 +138,7 @@ get_next_observation(History *observations)
  */
 static void
 probe_waits(History *observations, HTAB *profile_hash,
-			bool write_history, bool write_profile)
+			bool write_history, bool write_profile, bool profile_pid)
 {
 	int			i,
 				newSize;
@@ -177,6 +177,9 @@ probe_waits(History *observations, HTAB *profile_hash,
 		{
 			ProfileItem	   *profileItem;
 			bool			found;
+
+			if (!profile_pid)
+				item.pid = 0;
 
 			profileItem = (ProfileItem *) hash_search(profile_hash, &item, HASH_ENTER, &found);
 			if (found)
@@ -325,7 +328,7 @@ collector_main(Datum main_arg)
 		if (write_history || write_profile)
 		{
 			probe_waits(&observations, profile_hash,
-						write_history, write_profile);
+						write_history, write_profile, collector_hdr->profilePid);
 
 			if (write_history)
 			{
