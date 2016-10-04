@@ -718,31 +718,32 @@ shm_mq_receive_with_timeout(shm_mq_handle *mqh,
 							void **datap,
 							long timeout)
 {
-
-#ifdef HAVE_INT64_TIMESTAMP
-#define GetNowFloat()	((float8) GetCurrentTimestamp() / 1000.0)
-#else
-#define GetNowFloat()	1000.0 * GetCurrentTimestamp()
-#endif
-
-	float8 	endtime = GetNowFloat() + timeout;
-	int 	rc = 0;
+	int 		rc = 0;
+	long 		delay = timeout;
 
 	for (;;)
 	{
-		long 		delay;
+		instr_time	start_time;
+		instr_time	cur_time;
 		shm_mq_result mq_receive_result;
 
-		mq_receive_result = shm_mq_receive(mqh, nbytesp, datap, true);
+		elog(INFO, "%ld", delay);
 
+		INSTR_TIME_SET_CURRENT(start_time);
+
+		mq_receive_result = shm_mq_receive(mqh, nbytesp, datap, true);
 		if (mq_receive_result != SHM_MQ_WOULD_BLOCK)
 			return mq_receive_result;
-
-		if (rc & WL_TIMEOUT)
+		if (rc & WL_TIMEOUT || delay <= 0)
 			return SHM_MQ_WOULD_BLOCK;
 
-		delay = (long) (endtime - GetNowFloat());
 		rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT, delay);
+
+		INSTR_TIME_SET_CURRENT(cur_time);
+		INSTR_TIME_SUBTRACT(cur_time, start_time);
+
+		delay = timeout - (long) INSTR_TIME_GET_MILLISEC(cur_time);
+
 		CHECK_FOR_INTERRUPTS();
 		ResetLatch(MyLatch);
 	}
