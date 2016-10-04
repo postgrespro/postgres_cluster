@@ -295,15 +295,24 @@
   <title>Where to Report Bugs</title>
 
   <para>
-   In general, send bug reports to the bug report our support email
-   address at
+   In general, send bug reports to our support email address at
    <email>bugs@postgrespro.ru</email>.
    You are requested to use a descriptive subject for your email
    message, perhaps parts of the error message.
   </para>
 
   <para>
-   Do not send bug reports to any of the user mailing lists, such as
+   Do not send bug reports specific to <productname>Postgres Pro</>
+   to the <productname>PostgreSQL</> support email address,
+   as <productname>Postgres Pro</> is not supported by
+   the <productname>PostgreSQL</> community.
+   But you can send reports to <email>bugs@postgresql.org</email>
+   for any bugs related to <productname>PostgreSQL</>.
+  </para>
+
+  <para>
+   Even if your bug is not specific to <productname>Postgres Pro</>,
+   do not send bug reports to any of the user mailing lists, such as
    <email>pgsql-sql@postgresql.org</email> or
    <email>pgsql-general@postgresql.org</email>.
    These mailing lists are for answering
@@ -316,9 +325,10 @@
    the developers' mailing list <email>pgsql-hackers@postgresql.org</email>.
    This list is for discussing the
    development of <productname>PostgreSQL</productname>, and it would be nice
-   if we could keep the bug reports separate. We might choose to take up a
+   if the community could keep the bug reports separate.
+   The community might choose to take up a
    discussion about your bug report on <literal>pgsql-hackers</literal>,
-   if the problem needs more review.
+   if the <productname>PostgreSQL</>-related problem needs more review.
   </para>
  </sect2>
 </sect1>
