@@ -149,7 +149,7 @@ static void MtmShmemStartup(void);
 static BgwPool* MtmPoolConstructor(void);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
-static bool MtmProcessDDLCommand(char const* queryString);
+static bool MtmProcessDDLCommand(char const* queryString, bool transactional);
 
 MtmState* Mtm;
 
@@ -3721,7 +3721,7 @@ static char * MtmGucSerialize(void)
  * -------------------------------------------
  */
 
-static bool MtmProcessDDLCommand(char const* queryString)
+static bool MtmProcessDDLCommand(char const* queryString, bool transactional)
 {
 	char	   *queryWithContext;
 	char	   *gucContext;
@@ -3740,7 +3740,12 @@ static bool MtmProcessDDLCommand(char const* queryString)
 	}
 
 	MTM_LOG1("Sending utility: %s", queryWithContext);
-	LogLogicalMessage("G", queryWithContext, strlen(queryWithContext)+1, true);
+	if (transactional)
+		/* DDL */
+		LogLogicalMessage("D", queryWithContext, strlen(queryWithContext) + 1, true);
+	else
+		/* CONCURRENT DDL */
+		LogLogicalMessage("C", queryWithContext, strlen(queryWithContext) + 1, false);
 
 	MtmTx.containsDML = true;
 	return false;
@@ -3876,6 +3881,30 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			}
 			break;
 
+		case T_IndexStmt:
+			{
+				IndexStmt *indexStmt = (IndexStmt *) parsetree;
+				if (indexStmt->concurrent && !IsTransactionBlock())
+				{
+					skipCommand = true;
+					MtmProcessDDLCommand(queryString, false);
+					MtmTx.isDistributed = false;
+				}
+			}
+			break;
+
+		case T_DropStmt:
+			{
+				DropStmt *stmt = (DropStmt *) parsetree;
+				if (stmt->removeType == OBJECT_INDEX && stmt->concurrent && !IsTransactionBlock())
+				{
+					skipCommand = true;
+					MtmProcessDDLCommand(queryString, false);
+					MtmTx.isDistributed = false;
+				}
+			}
+			break;
+
 		/* Copy need some special care */
 	    case T_CopyStmt:
 		{
@@ -3913,7 +3942,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	{
 		if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {
 			MtmUtilityProcessedInXid = GetCurrentTransactionId();
-			MtmProcessDDLCommand(queryString);
+			MtmProcessDDLCommand(queryString, true);
 			executed = true;
 		}
 	}
@@ -3936,7 +3965,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		MtmTx.snapshot = INVALID_CSN;
 	}
 
-	if (executed)
+	if (executed && !skipCommand)
 	{
 		MtmFinishDDLCommand();
 	}
