@@ -3777,6 +3777,16 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	MTM_LOG3("%d: Process utility statement %s", MyProcPid, queryString);
 	switch (nodeTag(parsetree))
 	{
+	    case T_IndexStmt:
+		    {
+				IndexStmt* stmt = (IndexStmt*) parsetree;
+				if (stmt->concurrent) { 
+					stmt->concurrent = false;
+					elog(WARNING, "Disable concurrent option for index creation");
+				}
+				break;
+			}
+
 	    case T_TransactionStmt:
 			{
 				TransactionStmt *stmt = (TransactionStmt *) parsetree;
@@ -3792,7 +3802,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 					}
 					break;
 				case TRANS_STMT_PREPARE:
-					elog(ERROR, "Two phase commit is not supported by multimaster");
+				  //elog(ERROR, "Two phase commit is not supported by multimaster");
 					break;
 				case TRANS_STMT_COMMIT_PREPARED:
 				case TRANS_STMT_ROLLBACK_PREPARED:
