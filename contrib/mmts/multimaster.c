@@ -755,9 +755,6 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 			MtmUnlock();			
 			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
 		}
-		if (x->isDistributed && XactIsoLevel != XACT_REPEATABLE_READ) { 
-			elog(LOG, "Isolation level %s is not supported by multimaster", isoLevelStr[XactIsoLevel]);
-		}
 		x->containsDML = false;
         x->snapshot = MtmAssignCSN();	
 		x->gtid.xid = InvalidTransactionId;
@@ -984,9 +981,13 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 	if (x->status != TRANSACTION_STATUS_ABORTED) { 
 		MtmLock(LW_EXCLUSIVE);
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
-		Assert(tm != NULL && tm->state != NULL);
-		MTM_LOG1("Abort prepared transaction %d with gid='%s'", x->xid, x->gid);
-		MtmAbortTransaction(tm->state);
+		if (tm == NULL) { 
+			elog(WARNING, "Global transaciton ID %s is not found", x->gid);
+		} else { 
+			Assert(tm->state != NULL);
+			MTM_LOG1("Abort prepared transaction %d with gid='%s'", x->xid, x->gid);
+			MtmAbortTransaction(tm->state);
+		}
 		MtmUnlock();
 		x->status = TRANSACTION_STATUS_ABORTED;
 	} else { 
@@ -3938,7 +3939,11 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		standard_ProcessUtility(parsetree, queryString, context,
 								params, dest, completionTag);
 	}
-
+	
+	if (MtmTx.isDistributed && XactIsoLevel != XACT_REPEATABLE_READ) { 
+		elog(ERROR, "Isolation level %s is not supported by multimaster", isoLevelStr[XactIsoLevel]);
+	}
+	
 	if (MyXactAccessedTempRel)
 	{
 		MTM_LOG1("Xact accessed temp table, stopping replication");
