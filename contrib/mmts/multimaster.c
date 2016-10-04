@@ -3015,7 +3015,7 @@ mtm_drop_node(PG_FUNCTION_ARGS)
 Datum
 mtm_add_node(PG_FUNCTION_ARGS)
 {
-	char* connStr = PG_GETARG_CSTRING(0);
+	char *connStr = text_to_cstring(PG_GETARG_TEXT_PP(0));
 
 	if (Mtm->nAllNodes == MtmMaxNodes) { 
 		elog(ERROR, "Maximal number of nodes %d is reached", MtmMaxNodes);
