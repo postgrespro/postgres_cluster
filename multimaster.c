@@ -3797,7 +3797,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 					}
 					break;
 				case TRANS_STMT_PREPARE:
-				  //elog(ERROR, "Two phase commit is not supported by multimaster");
+					elog(ERROR, "Two phase commit is not supported by multimaster");
 					break;
 				case TRANS_STMT_COMMIT_PREPARED:
 				case TRANS_STMT_ROLLBACK_PREPARED:
@@ -3957,11 +3957,11 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		standard_ProcessUtility(parsetree, queryString, context,
 								params, dest, completionTag);
 	}
-	
-	if (MtmTx.isDistributed && XactIsoLevel != XACT_REPEATABLE_READ) { 
+
+	if (MtmTx.isDistributed && XactIsoLevel != XACT_REPEATABLE_READ && !MtmVolksWagenMode) {
 		elog(ERROR, "Isolation level %s is not supported by multimaster", isoLevelStr[XactIsoLevel]);
 	}
-	
+
 	if (MyXactAccessedTempRel)
 	{
 		MTM_LOG1("Xact accessed temp table, stopping replication");
