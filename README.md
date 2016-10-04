@@ -109,7 +109,7 @@ GUCs.
 | pg_wait_sampling.history_size   | int4      | Size of history in-memory ring buffer       |          5000 |
 | pg_wait_sampling.history_period | int4      | Period for history sampling in milliseconds |            10 |
 | pg_wait_sampling.profile_period | int4      | Period for profile sampling in milliseconds |            10 |
-| pg_wait_sampling.profile_pid    | int4      | Whether profile should be per pid           |          true |
+| pg_wait_sampling.profile_pid    | bool      | Whether profile should be per pid           |          true |
 
 If pg\_wait\_sampling.profile\_pid is set to false, sampling profile wouldn't be
 collected in per-process manner.  In this case the value of pid could would
