@@ -20,10 +20,11 @@ RETURNS INTEGER AS
 $$
 DECLARE
 	v_child_relname		TEXT;
-	v_type				TEXT;
 	v_plain_schema		TEXT;
 	v_plain_relname		TEXT;
-	v_hashfunc			TEXT;
+	v_atttype			REGTYPE;
+	v_hashfunc			REGPROC;
+	v_init_callback		REGPROCEDURE;
 
 BEGIN
 	IF partition_data = true THEN
@@ -38,12 +39,12 @@ BEGIN
 	attribute := lower(attribute);
 	PERFORM @extschema@.common_relation_checks(parent_relid, attribute);
 
-	v_type := @extschema@.get_attribute_type_name(parent_relid, attribute);
+	/* Fetch atttype and its hash function */
+	v_atttype := @extschema@.get_attribute_type(parent_relid, attribute);
+	v_hashfunc := @extschema@.get_type_hash_func(v_atttype);
 
 	SELECT * INTO v_plain_schema, v_plain_relname
 	FROM @extschema@.get_plain_schema_and_relname(parent_relid);
-
-	v_hashfunc := @extschema@.get_type_hash_func(v_type::regtype)::regproc;
 
 	/* Insert new entry to pathman config */
 	INSERT INTO @extschema@.pathman_config (partrel, attname, parttype)
@@ -56,21 +57,35 @@ BEGIN
 								  quote_ident(v_plain_schema),
 								  quote_ident(v_plain_relname || '_' || partnum));
 
-		EXECUTE format('CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL) INHERITS (%2$s)',
-					   v_child_relname,
-					   parent_relid::TEXT);
+		EXECUTE format(
+			'CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL) INHERITS (%2$s) TABLESPACE %s',
+			v_child_relname,
+			parent_relid::TEXT,
+			@extschema@.get_rel_tablespace_name(parent_relid));
 
 		EXECUTE format('ALTER TABLE %s ADD CONSTRAINT %s
 						CHECK (@extschema@.get_hash_part_idx(%s(%s), %s) = %s)',
 					   v_child_relname,
 					   @extschema@.build_check_constraint_name(v_child_relname::REGCLASS,
 															   attribute),
-					   v_hashfunc,
+					   v_hashfunc::TEXT,
 					   attribute,
 					   partitions_count,
 					   partnum);
 
 		PERFORM @extschema@.copy_foreign_keys(parent_relid, v_child_relname::REGCLASS);
+
+		/* Fetch init_callback from 'params' table */
+		WITH stub_callback(stub) as (values (0))
+		SELECT coalesce(init_callback, 0::REGPROCEDURE)
+		FROM stub_callback
+		LEFT JOIN @extschema@.pathman_config_params AS params
+		ON params.partrel = parent_relid
+		INTO v_init_callback;
+
+		PERFORM @extschema@.invoke_on_partition_created_callback(parent_relid,
+																 v_child_relname::REGCLASS,
+																 v_init_callback);
 	END LOOP;
 
 	/* Notify backend about changes */
@@ -78,10 +93,10 @@ BEGIN
 
 	/* Copy data */
 	IF partition_data = true THEN
-		PERFORM @extschema@.disable_parent(parent_relid);
+		PERFORM @extschema@.set_enable_parent(parent_relid, false);
 		PERFORM @extschema@.partition_data(parent_relid);
 	ELSE
-		PERFORM @extschema@.enable_parent(parent_relid);
+		PERFORM @extschema@.set_enable_parent(parent_relid, true);
 	END IF;
 
 	RETURN partitions_count;
@@ -137,15 +152,14 @@ DECLARE
 	child_relname_format	TEXT;
 	funcname				TEXT;
 	triggername				TEXT;
-	atttype					TEXT;
-	hashfunc				TEXT;
+	atttype					REGTYPE;
 	partitions_count		INTEGER;
 
 BEGIN
 	attr := attname FROM @extschema@.pathman_config WHERE partrel = parent_relid;
 
 	IF attr IS NULL THEN
-		RAISE EXCEPTION 'Table "%" is not partitioned', parent_relid::TEXT;
+		RAISE EXCEPTION 'table "%" is not partitioned', parent_relid::TEXT;
 	END IF;
 
 	SELECT string_agg(attname, ', '),
@@ -180,13 +194,12 @@ BEGIN
 							quote_ident(plain_relname || '_%s');
 
 	/* Fetch base hash function for atttype */
-	atttype := @extschema@.get_attribute_type_name(parent_relid, attr);
-	hashfunc := @extschema@.get_type_hash_func(atttype::regtype)::regproc;
+	atttype := @extschema@.get_attribute_type(parent_relid, attr);
 
 	/* Format function definition and execute it */
-	func := format(func, funcname, attr, partitions_count, att_val_fmt,
-				   old_fields, att_fmt, new_fields, child_relname_format, hashfunc);
-	EXECUTE func;
+	EXECUTE format(func, funcname, attr, partitions_count, att_val_fmt,
+				   old_fields, att_fmt, new_fields, child_relname_format,
+				   @extschema@.get_type_hash_func(atttype)::TEXT);
 
 	/* Create trigger on every partition */
 	FOR num IN 0..partitions_count-1
@@ -205,7 +218,7 @@ $$ LANGUAGE plpgsql;
  * Returns hash function OID for specified type
  */
 CREATE OR REPLACE FUNCTION @extschema@.get_type_hash_func(REGTYPE)
-RETURNS OID AS 'pg_pathman', 'get_type_hash_func'
+RETURNS REGPROC AS 'pg_pathman', 'get_type_hash_func'
 LANGUAGE C STRICT;
 
 /*

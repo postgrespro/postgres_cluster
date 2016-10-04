@@ -17,6 +17,7 @@
 #include "catalog/heap.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_extension.h"
+#include "catalog/pg_proc.h"
 #include "commands/extension.h"
 #include "miscadmin.h"
 #include "optimizer/var.h"
@@ -154,7 +155,9 @@ lock_rows_visitor(Plan *plan, void *context)
 	}
 }
 
-/* NOTE: Used for debug */
+/*
+ * Print Bitmapset as cstring.
+ */
 #ifdef __GNUC__
 __attribute__((unused))
 #endif
@@ -246,6 +249,11 @@ fill_type_cmp_fmgr_info(FmgrInfo *finfo, Oid type1, Oid type2)
 									 type1,
 									 type2,
 									 BTORDER_PROC);
+
+	if (cmp_proc_oid == InvalidOid)
+		elog(ERROR, "missing comparison function for types %s & %s",
+			 format_type_be(type1), format_type_be(type2));
+
 	fmgr_info(cmp_proc_oid, finfo);
 
 	return;
@@ -617,7 +625,7 @@ datum_to_cstring(Datum datum, Oid typid)
 
 	if (HeapTupleIsValid(tup))
 	{
-		Form_pg_type	typtup = (Form_pg_type) GETSTRUCT(tup);
+		Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tup);
 		result = OidOutputFunctionCall(typtup->typoutput, datum);
 		ReleaseSysCache(tup);
 	}
@@ -633,6 +641,82 @@ datum_to_cstring(Datum datum, Oid typid)
 char *
 get_rel_name_or_relid(Oid relid)
 {
-	return DatumGetCString(DirectFunctionCall1(regclassout,
-											   ObjectIdGetDatum(relid)));
+	char *relname = get_rel_name(relid);
+
+	if (!relname)
+		return DatumGetCString(DirectFunctionCall1(oidout,
+												   ObjectIdGetDatum(relid)));
+	return relname;
+}
+
+/*
+ * Try to get opname or at least opid as cstring.
+ */
+char *
+get_op_name_or_opid(Oid opid)
+{
+	char *opname = get_opname(opid);
+
+	if (!opname)
+		return DatumGetCString(DirectFunctionCall1(oidout,
+												   ObjectIdGetDatum(opid)));
+	return opname;
+}
+
+
+#if PG_VERSION_NUM < 90600
+/*
+ * Returns the relpersistence associated with a given relation.
+ *
+ * NOTE: this function is implemented in 9.6
+ */
+char
+get_rel_persistence(Oid relid)
+{
+	HeapTuple		tp;
+	Form_pg_class	reltup;
+	char 			result;
+
+	tp = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for relation %u", relid);
+
+	reltup = (Form_pg_class) GETSTRUCT(tp);
+	result = reltup->relpersistence;
+	ReleaseSysCache(tp);
+
+	return result;
+}
+#endif
+
+/*
+ * Checks that callback function meets specific requirements.
+ * It must have the only JSONB argument and BOOL return type.
+ */
+bool
+validate_on_part_init_cb(Oid procid, bool emit_error)
+{
+	HeapTuple		tp;
+	Form_pg_proc	functup;
+	bool			is_ok = true;
+
+	tp = SearchSysCache1(PROCOID, ObjectIdGetDatum(procid));
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for function %u", procid);
+
+	functup = (Form_pg_proc) GETSTRUCT(tp);
+
+	if (functup->pronargs != 1 ||
+		functup->proargtypes.values[0] != JSONBOID ||
+		functup->prorettype != VOIDOID)
+		is_ok = false;
+
+	ReleaseSysCache(tp);
+
+	if (emit_error && !is_ok)
+		elog(ERROR,
+			 "Callback function must have the following signature: "
+			 "callback(arg JSONB) RETURNS VOID");
+
+	return is_ok;
 }

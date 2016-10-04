@@ -165,12 +165,14 @@ refresh_pathman_relation_info(Oid relid,
 	{
 		prel->enable_parent = param_values[Anum_pathman_config_params_enable_parent - 1];
 		prel->auto_partition = param_values[Anum_pathman_config_params_auto - 1];
+		prel->init_callback = param_values[Anum_pathman_config_params_init_callback - 1];
 	}
 	/* Else set default values if they cannot be found */
 	else
 	{
 		prel->enable_parent = false;
 		prel->auto_partition = true;
+		prel->init_callback = InvalidOid;
 	}
 
 	/* We've successfully built a cache entry */
@@ -625,6 +627,22 @@ DatumGetPartType(Datum datum)
 	return (PartType) val;
 }
 
+Datum
+PartTypeGetTextDatum(PartType parttype)
+{
+	switch(parttype)
+	{
+		case PT_HASH:
+			return CStringGetTextDatum("HASH");
+
+		case PT_RANGE:
+			return CStringGetTextDatum("RANGE");
+
+		default:
+			elog(ERROR, "Unknown partitioning type %u", parttype);
+	}
+}
+
 /*
  * Common PartRelationInfo checks. Emit ERROR if anything is wrong.
  */
@@ -634,7 +652,7 @@ shout_if_prel_is_invalid(Oid parent_oid,
 						 PartType expected_part_type)
 {
 	if (!prel)
-		elog(ERROR, "Relation \"%s\" is not partitioned by pg_pathman",
+		elog(ERROR, "relation \"%s\" is not partitioned by pg_pathman",
 			 get_rel_name_or_relid(parent_oid));
 
 	if (!PrelIsValid(prel))
@@ -665,7 +683,7 @@ shout_if_prel_is_invalid(Oid parent_oid,
 					 expected_part_type);
 		}
 
-		elog(ERROR, "Relation \"%s\" is not partitioned by %s",
+		elog(ERROR, "relation \"%s\" is not partitioned by %s",
 			 get_rel_name_or_relid(parent_oid),
 			 expected_str);
 	}
