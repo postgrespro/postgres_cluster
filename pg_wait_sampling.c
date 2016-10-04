@@ -301,7 +301,6 @@ pg_wait_sampling_get_current(PG_FUNCTION_ARGS)
 {
 	FuncCallContext 	*funcctx;
 	WaitCurrentContext 	*params;
-	HistoryItem 		*currentState;
 
 	check_shmem();
 
@@ -371,7 +370,6 @@ pg_wait_sampling_get_current(PG_FUNCTION_ARGS)
 	/* stuff done on every call of the function */
 	funcctx = SRF_PERCALL_SETUP();
 	params = (WaitCurrentContext *) funcctx->user_fctx;
-	currentState = NULL;
 
 	if (funcctx->call_cntr < funcctx->max_calls)
 	{
