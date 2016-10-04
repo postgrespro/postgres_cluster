@@ -70,7 +70,6 @@ static void UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot);
 static void UserTableUpdateIndexes(EState *estate, TupleTableSlot *slot);
 
 static bool process_remote_begin(StringInfo s);
-static void process_remote_transactional_message(StringInfo s);
 static void process_remote_message(StringInfo s);
 static void process_remote_commit(StringInfo s);
 static void process_remote_insert(StringInfo s, Relation rel);
@@ -355,35 +354,43 @@ process_remote_begin(StringInfo s)
 }
 
 static void
-process_remote_transactional_message(StringInfo s)
-{
-	int rc;
-	int messageSize = pq_getmsgint(s, 4);
-	char const* stmt = pq_getmsgbytes(s, messageSize);
-	
-	MTM_LOG1("%d: Executing utility statement %s", MyProcPid, stmt);
-	SPI_connect();	
-	ActivePortal->sourceText = stmt;
-	rc = SPI_execute(stmt, false, 0);
-	SPI_finish();
-	if (rc < 0)
-		elog(ERROR, "Failed to execute utility statement %s", stmt);
-	
-	//XXX: create messages for tables localization too.
-	// if (strcmp(relname, MULTIMASTER_LOCAL_TABLES_TABLE) == 0) { 
-	// 	char* schema = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_schema-1]);
-	// 	char* name = TextDatumGetCString(new_tuple.values[Anum_mtm_local_tables_rel_name-1]);
-	// 	MtmMakeTableLocal(schema, name);
-	// }
-}	
-
-static void
 process_remote_message(StringInfo s)
 {
+	char action = pq_getmsgbyte(s);
 	int messageSize = pq_getmsgint(s, 4);
 	char const* messageBody = pq_getmsgbytes(s, messageSize);
-	MTM_LOG3("%ld: Process deadlock message with size %d from %d", MtmGetSystemTime(), messageSize, MtmReplicationNodeId);
-	MtmUpdateLockGraph(MtmReplicationNodeId, messageBody, messageSize);
+	
+	switch (action)
+	{
+		case 'C':
+		{
+			MTM_LOG1("%d: Executing non-tx utility statement %s", MyProcPid, messageBody);
+			SetCurrentStatementStartTimestamp();
+			StartTransactionCommand();
+			/* intentional falldown to the next case */
+		}
+		case 'D':
+		{
+			int rc;
+
+			MTM_LOG1("%d: Executing utility statement %s", MyProcPid, messageBody);
+			SPI_connect();
+			ActivePortal->sourceText = messageBody;
+			rc = SPI_execute(messageBody, false, 0);
+			SPI_finish();
+			if (rc < 0)
+				elog(ERROR, "Failed to execute utility statement %s", messageBody);
+			break;
+		}
+		case 'L':
+		{
+			MTM_LOG3("%ld: Process deadlock message with size %d from %d", MtmGetSystemTime(), messageSize, MtmReplicationNodeId);
+			MtmUpdateLockGraph(MtmReplicationNodeId, messageBody, messageSize);
+			break;
+		}
+	}
+	
+
 }
 	
 static void
@@ -1049,16 +1056,10 @@ void MtmExecutor(void* work, size_t size)
 				s.len = save_len;
 				continue;
 			}
-			case 'G':
-			case 'E':
-			{
-				process_remote_transactional_message(&s);
-				continue;
-			}
-			case 'L':
+			case 'M':
 			{
 				process_remote_message(&s);
-				break;
+				continue;
 			}
             default:
                 elog(ERROR, "unknown action of type %c", action);

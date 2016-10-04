@@ -137,7 +137,7 @@ pglogical_write_message(StringInfo out,
 	{
 		MTM_LOG1("Send deadlock message to node %d", MtmReplicationNodeId);
 	}
-	else if (*prefix == 'G')
+	else if (*prefix == 'D')
 	{
 		if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN)
 		{
@@ -149,8 +149,14 @@ pglogical_write_message(StringInfo out,
 	else if (*prefix == 'E')
 	{
 		DDLInProress = false;
+		/*
+		 * we use End message only as indicator of DDL transaction finish,
+		 * so no need to send that to replicas.
+		 */
+		return;
 	}
 
+	pq_sendbyte(out, 'M');
 	pq_sendbyte(out, *prefix);
 	pq_sendint(out, sz, 4);
 	pq_sendbytes(out, message, sz);
