@@ -10,7 +10,7 @@
     <para>
     sr_plan is an extension which allows to save query execution plans
     and use these plans for all repetitions of same query, instead of
-    optimizing identical query again and again/
+    optimizing identical query again and again.
     </para>
     <para>
       sr_plan looks like Oracle Outline system. It can be used to lock

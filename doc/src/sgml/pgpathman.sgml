@@ -94,12 +94,12 @@ WHERE id = 150
       </listitem>
       <listitem>
         <para>
-          LIST-patitioning;
+          LIST-partitioning;
         </para>
       </listitem>
       <listitem>
         <para>
-          HASH-patitioning by non integer attribtes.
+          HASH-partitioning by non-integer attributes.
         </para>
       </listitem>
     </itemizedlist>
