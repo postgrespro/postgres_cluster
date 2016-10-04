@@ -35,6 +35,8 @@ typedef struct ExplainState
 	bool		timing;			/* print detailed node timing */
 	bool		summary;		/* print total planning and execution timing */
 	ExplainFormat format;		/* output format */
+	bool		runtime;		/* print intermediate state of query execution,
+								   not after completion */
 	/* state for output formatting --- not reset for each new plan tree */
 	int			indent;			/* current indentation level */
 	List	   *grouping_stack; /* format-specific grouping state */

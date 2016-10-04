@@ -138,6 +138,7 @@
 <!ENTITY pgfreespacemap  SYSTEM "pgfreespacemap.sgml">
 <!ENTITY pgpathman       SYSTEM "pgpathman.sgml">
 <!ENTITY pgprewarm       SYSTEM "pgprewarm.sgml">
+<!ENTITY pgquerystate    SYSTEM "pgquerystate.sgml">
 <!ENTITY pgrowlocks      SYSTEM "pgrowlocks.sgml">
 <!ENTITY pgstandby       SYSTEM "pgstandby.sgml">
 <!ENTITY pgstatstatements SYSTEM "pgstatstatements.sgml">
