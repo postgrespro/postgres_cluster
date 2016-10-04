@@ -727,8 +727,6 @@ shm_mq_receive_with_timeout(shm_mq_handle *mqh,
 		instr_time	cur_time;
 		shm_mq_result mq_receive_result;
 
-		elog(INFO, "%ld", delay);
-
 		INSTR_TIME_SET_CURRENT(start_time);
 
 		mq_receive_result = shm_mq_receive(mqh, nbytesp, datap, true);
