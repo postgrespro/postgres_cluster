@@ -7750,7 +7750,7 @@ SELECT EXTRACT(YEAR FROM TIMESTAMP '2001-02-16 20:38:40');
      +/-Infinity for monotonically-increasing fields (<literal>epoch</>,
      <literal>julian</>, <literal>year</>, <literal>isoyear</>,
      <literal>decade</>, <literal>century</>, and <literal>millennium</>).
-     For other fields, NULL is returned.  <productname>PostgreSQL</>
+     For other fields, NULL is returned.  <productname>&productname;</>
      versions before 9.6 returned zero for all cases of infinite input.
     </para>
    </note>

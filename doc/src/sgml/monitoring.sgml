@@ -2516,7 +2516,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
   <title>Progress Reporting</title>
 
   <para>
-   <productname>PostgreSQL</> has the ability to report the progress of
+   <productname>&productname;</> has the ability to report the progress of
    certain commands during command execution.  Currently, the only command
    which supports progress reporting is <command>VACUUM</>.  This may be
    expanded in the future.

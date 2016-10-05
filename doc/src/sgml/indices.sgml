@@ -1163,10 +1163,10 @@ CREATE INDEX test1c_content_y_index ON test1c (content COLLATE "y");
   </indexterm>
 
   <para>
-   All indexes in <productname>PostgreSQL</> are <firstterm>secondary</>
+   All indexes in <productname>&productname;</> are <firstterm>secondary</>
    indexes, meaning that each index is stored separately from the table's
    main data area (which is called the table's <firstterm>heap</>
-   in <productname>PostgreSQL</> terminology).  This means that in an
+   in <productname>&productname;</> terminology).  This means that in an
    ordinary index scan, each row retrieval requires fetching data from both
    the index and the heap.  Furthermore, while the index entries that match a
    given indexable <literal>WHERE</> condition are usually close together in
@@ -1179,7 +1179,7 @@ CREATE INDEX test1c_content_y_index ON test1c (content COLLATE "y");
   </para>
 
   <para>
-   To solve this performance problem, <productname>PostgreSQL</>
+   To solve this performance problem, <productname>&productname;</>
    supports <firstterm>index-only scans</>, which can answer queries from an
    index alone without any heap access.  The basic idea is to return values
    directly out of each index entry instead of consulting the associated heap
@@ -1226,14 +1226,14 @@ SELECT x FROM tab WHERE x = 'key' AND z &lt; 42;
    If these two fundamental requirements are met, then all the data values
    required by the query are available from the index, so an index-only scan
    is physically possible.  But there is an additional requirement for any
-   table scan in <productname>PostgreSQL</>: it must verify that each
+   table scan in <productname>&productname;</>: it must verify that each
    retrieved row be <quote>visible</> to the query's MVCC snapshot, as
    discussed in <xref linkend="mvcc">.  Visibility information is not stored
    in index entries, only in heap entries; so at first glance it would seem
    that every row retrieval would require a heap access anyway.  And this is
    indeed the case, if the table row has been modified recently.  However,
    for seldom-changing data there is a way around this
-   problem.  <productname>PostgreSQL</> tracks, for each page in a table's
+   problem.  <productname>&productname;</> tracks, for each page in a table's
    heap, whether all rows stored in that page are old enough to be visible to
    all current and future transactions.  This information is stored in a bit
    in the table's <firstterm>visibility map</>.  An index-only scan, after
@@ -1284,7 +1284,7 @@ SELECT y FROM tab WHERE x = 'key';
 SELECT f(x) FROM tab WHERE f(x) &lt; 1;
 </programlisting>
    as an index-only scan; and this is very attractive if <literal>f()</> is
-   an expensive-to-compute function.  However, <productname>PostgreSQL</>'s
+   an expensive-to-compute function.  However, <productname>&productname;</>'s
    planner is currently not very smart about such cases.  It considers a
    query to be potentially executable by index-only scan only when
    all <emphasis>columns</> needed by the query are available from the index.
@@ -1300,7 +1300,7 @@ SELECT f(x) FROM tab WHERE f(x) &lt; 1;
    indexable <literal>WHERE</> clauses to the index column.  It will usually
    get this right in simple queries such as shown above, but not in queries
    that involve joins.  These deficiencies may be remedied in future versions
-   of <productname>PostgreSQL</>.
+   of <productname>&productname;</>.
   </para>
 
   <para>
@@ -1321,7 +1321,7 @@ SELECT target FROM tests WHERE subject = 'some-subject' AND success;
    not need to recheck that part of the <literal>WHERE</> clause at run time:
    all entries found in the index necessarily have <literal>success = true</>
    so this need not be explicitly checked in the
-   plan.  <productname>PostgreSQL</> versions 9.6 and later will recognize
+   plan.  <productname>&productname;</> versions 9.6 and later will recognize
    such cases and allow index-only scans to be generated, but older versions
    will not.
   </para>

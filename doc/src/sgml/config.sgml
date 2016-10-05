@@ -3056,7 +3056,7 @@ include_dir 'conf.d'
         <literal>s3</> and <literal>s4</>.
         </para>
         <para>
-        The second syntax was used before <productname>PostgreSQL</>
+        The second syntax was used before <productname>&productname;</>
         version 9.6 and is still supported. It's the same as the first syntax
         with <replaceable class="parameter">num_sync</replaceable> equal to 1.
         For example, <literal>1 (s1, s2)</> and
@@ -4519,7 +4519,7 @@ local0.*    /var/log/postgresql
         determines how messages are delivered to syslog.  When on (the
         default), messages are split by lines, and long lines are split so
         that they will fit into 1024 bytes, which is a typical size limit for
-        traditional syslog implementations.  When off, PostgreSQL server log
+        traditional syslog implementations.  When off, &productname; server log
         messages are delivered to the syslog service as is, and it is up to
         the syslog service to cope with the potentially bulky messages.
        </para>

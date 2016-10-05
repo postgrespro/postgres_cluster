@@ -1005,7 +1005,7 @@ UNBOUNDED FOLLOWING
     contains any volatile or expensive functions.  With that behavior, the
     order of function evaluations is more intuitive and there will not be
     evaluations corresponding to rows that never appear in the output.
-    <productname>PostgreSQL</> will effectively evaluate output expressions
+    <productname>&productname;</> will effectively evaluate output expressions
     after sorting and limiting, so long as those expressions are not
     referenced in <literal>DISTINCT</literal>, <literal>ORDER BY</literal>
     or <literal>GROUP BY</literal>.  (As a counterexample, <literal>SELECT
@@ -1018,7 +1018,7 @@ UNBOUNDED FOLLOWING
 
    <note>
     <para>
-     <productname>PostgreSQL</> versions before 9.6 did not provide any
+     <productname>&productname;</> versions before 9.6 did not provide any
      guarantees about the timing of evaluation of output expressions versus
      sorting and limiting; it depended on the form of the chosen query plan.
     </para>

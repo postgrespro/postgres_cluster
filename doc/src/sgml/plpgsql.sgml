@@ -4959,7 +4959,7 @@ CREATE FUNCTION
       <para>
        Data type names often need translation.  For example, in Oracle string
        values are commonly declared as being of type <type>varchar2</>, which
-       is a non-SQL-standard type.  In <productname>PostgreSQL</productname>,
+       is a non-SQL-standard type.  In <productname>&productname;</productname>,
        use type <type>varchar</> or <type>text</> instead.  Similarly, replace
        type <type>number</> with <type>numeric</>, or use some other numeric
        data type if there's a more appropriate one.

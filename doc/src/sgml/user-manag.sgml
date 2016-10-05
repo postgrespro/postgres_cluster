@@ -491,7 +491,7 @@ DROP ROLE doomed_role;
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname> provides a set of default roles
+   <productname>&productname;</productname> provides a set of default roles
    which provide access to certain, commonly needed, privileged capabilities
    and information.  Administrators can GRANT these roles to users and/or
    other roles in their environment, providing those users with access to

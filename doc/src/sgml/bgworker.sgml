@@ -80,7 +80,7 @@ typedef struct BackgroundWorker
       <para>
        <indexterm><primary>BGWORKER_SHMEM_ACCESS</primary></indexterm>
        Requests shared memory access.  Workers without shared memory access
-       cannot access any of <productname>PostgreSQL's</productname> shared
+       cannot access any of <productname>&productname;'s</productname> shared
        data structures, such as heavyweight or lightweight locks, shared
        buffers, or any custom data structures which the worker itself may
        wish to create and use.

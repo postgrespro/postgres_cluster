@@ -701,7 +701,7 @@ ERROR:  could not serialize access due to read/write dependencies among transact
    </para>
 
    <para>
-    While <productname>PostgreSQL</>'s Serializable transaction isolation
+    While <productname>&productname;</>'s Serializable transaction isolation
     level only allows concurrent transactions to commit if it can prove there
     is a serial order of execution that would produce the same effect, it
     doesn't always prevent errors from being raised that would not occur in

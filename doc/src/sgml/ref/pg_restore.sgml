@@ -424,7 +424,7 @@
 
        <note>
         <para>
-         In versions prior to <productname>PostgreSQL</> 9.6, this flag
+         In versions prior to <productname>&productname;</> 9.6, this flag
          matched only tables, not any other type of relation.
         </para>
        </note>

@@ -1034,7 +1034,7 @@ omicron         bryanh                  guest1
         also used.  It is recommended to
         leave <literal>include_realm</literal> set to the default (1) and to
         provide an explicit mapping in <filename>pg_ident.conf</> to convert
-        principal names to <productname>PostgreSQL</> user names.
+        principal names to <productname>&productname;</> user names.
        </para>
       </listitem>
      </varlistentry>
@@ -1115,7 +1115,7 @@ omicron         bryanh                  guest1
         also used.  It is recommended to
         leave <literal>include_realm</literal> set to the default (1) and to
         provide an explicit mapping in <filename>pg_ident.conf</> to convert
-        principal names to <productname>PostgreSQL</> user names.
+        principal names to <productname>&productname;</> user names.
        </para>
       </listitem>
      </varlistentry>
@@ -1752,16 +1752,16 @@ host ... ldap ldapurl="ldap://ldap.example.net/dc=example,dc=net?uid?sub"
    </para>
 
    <para>
-    BSD Authentication in <productname>PostgreSQL</> uses
+    BSD Authentication in <productname>&productname;</> uses
     the <literal>auth-postgresql</literal> login type and authenticates with
     the <literal>postgresql</literal> login class if that's defined
     in <filename>login.conf</filename>. By default that login class does not
-    exist, and <productname>PostgreSQL</> will use the default login class.
+    exist, and <productname>&productname;</> will use the default login class.
    </para>
 
    <note>
     <para>
-     To use BSD Authentication, the PostgreSQL user account (that is, the
+     To use BSD Authentication, the &productname; user account (that is, the
      operating system user running the server) must first be added to
      the <literal>auth</literal> group.  The <literal>auth</literal> group
      exists by default on OpenBSD systems.

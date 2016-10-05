@@ -866,7 +866,7 @@ BETTER: unrecognized node type: 42
    <simplesect>
     <title>C Standard</title>
     <para>
-     Code in <productname>PostgreSQL</> should only rely on language
+     Code in <productname>&productname;</> should only rely on language
      features available in the C89 standard. That means a conforming
      C89 compiler has to be able to compile postgres, at least aside
      from a few platform dependent pieces. Features from later

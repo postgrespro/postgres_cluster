@@ -354,7 +354,7 @@
    </para>
 
    <para>
-    <productname>PostgreSQL</> does not currently support extension scripts
+    <productname>&productname;</> does not currently support extension scripts
     issuing <command>CREATE POLICY</command> or <command>SECURITY LABEL</command>
     statements.  These are expected to be set after the extension has been
     created.  All RLS policies and security labels on extension objects will be

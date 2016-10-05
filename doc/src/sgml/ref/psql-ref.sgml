@@ -4010,7 +4010,7 @@ PSQL_EDITOR_LINENUMBER_ARG='--line '
 
       <listitem>
       <para>
-       Before <productname>PostgreSQL</productname> 9.6,
+       Before <productname>&productname;</productname> 9.6,
        the <option>-c</option> option implied <option>-X</option>
        (<option>--no-psqlrc</>); this is no longer the case.
       </para>

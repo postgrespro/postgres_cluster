@@ -151,7 +151,7 @@ CREATE [ UNIQUE ] INDEX [ CONCURRENTLY ] [ [ IF NOT EXISTS ] <replaceable class=
         from <firstterm>index-only scans</> by including certain columns in the
         index, the value of which would otherwise have to be obtained by reading
         the table's heap. Having these columns in the <literal>INCLUDING</> clause
-        in some cases allows <productname>PostgreSQL</> to skip the heap read
+        in some cases allows <productname>&productname;</> to skip the heap read
         completely. This also allows <literal>UNIQUE</> indexes to be defined on
         one set of columns, which can include another set of column in the
         <literal>INCLUDING</> clause, on which the uniqueness is not enforced upon.

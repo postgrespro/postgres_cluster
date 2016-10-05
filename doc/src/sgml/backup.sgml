@@ -933,7 +933,7 @@ SELECT * FROM pg_stop_backup(false);
      The process for an exclusive backup is mostly the same as for a
      non-exclusive one, but it differs in a few key steps. It does not allow
      more than one concurrent backup to run, and there can be some issues on
-     the server if it crashes during the backup. Prior to PostgreSQL 9.6, this
+     the server if it crashes during the backup. Prior to &productname; 9.6, this
      was the only low-level method available, but it is now recommended that
      all users upgrade their scripts to use non-exclusive backups if possible.
     </para>
