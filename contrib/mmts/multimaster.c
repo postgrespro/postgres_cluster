@@ -229,12 +229,14 @@ static int   MtmGcPeriod;
 static bool  MtmIgnoreTablesWithoutPk;
 static int   MtmLockCount;
 
+static ExecutorStart_hook_type PreviousExecutorStartHook;
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
 static ProcessUtility_hook_type PreviousProcessUtilityHook;
 static shmem_startup_hook_type PreviousShmemStartupHook;
 
 static nodemask_t lastKnownMatrix[MAX_NODES];
 
+static void MtmExecutorStart(QueryDesc *queryDesc, int eflags);
 static void MtmExecutorFinish(QueryDesc *queryDesc);
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
@@ -2675,6 +2677,9 @@ _PG_init(void)
 	PreviousShmemStartupHook = shmem_startup_hook;
 	shmem_startup_hook = MtmShmemStartup;
 
+	PreviousExecutorStartHook = ExecutorStart_hook;
+	ExecutorStart_hook = MtmExecutorStart;
+
 	PreviousExecutorFinishHook = ExecutorFinish_hook;
 	ExecutorFinish_hook = MtmExecutorFinish;
 
@@ -3973,12 +3978,34 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		MtmTx.snapshot = INVALID_CSN;
 	}
 
-	if (executed && !skipCommand)
+	if (executed)
 	{
 		MtmFinishDDLCommand();
 	}
 }
 
+static void
+MtmExecutorStart(QueryDesc *queryDesc, int eflags)
+{
+	bool ddl_generating_call = false;
+	ListCell   *tlist;
+
+	foreach(tlist, queryDesc->plannedstmt->planTree->targetlist)
+	{
+		TargetEntry *tle = (TargetEntry *) lfirst(tlist);
+
+		if (tle->resname && strcmp(tle->resname, "lo_create") == 0)
+			ddl_generating_call = true;
+	}
+
+	if (ddl_generating_call)
+		MtmProcessDDLCommand(ActivePortal->sourceText, true);
+
+	if (PreviousExecutorStartHook != NULL)
+		PreviousExecutorStartHook(queryDesc, eflags);
+	else
+		standard_ExecutorStart(queryDesc, eflags);
+}
 
 static void
 MtmExecutorFinish(QueryDesc *queryDesc)
