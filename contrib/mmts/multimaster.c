@@ -72,6 +72,7 @@
 typedef struct { 
     TransactionId xid;    /* local transaction ID   */
 	GlobalTransactionId gtid; /* global transaction ID assigned by coordinator of transaction */
+	bool  isTwoPhase;     /* user level 2PC */
 	bool  isReplicated;   /* transaction on replica */
 	bool  isDistributed;  /* transaction performed INSERT/UPDATE/DELETE and has to be replicated to other nodes */
 	bool  isPrepared;     /* transaction is perpared at first stage of 2PC */
@@ -719,6 +720,7 @@ MtmResetTransaction()
 	x->gtid.xid = InvalidTransactionId;
 	x->isDistributed = false;
 	x->isPrepared = false;
+	x->isTwoPhase = false;
 	x->status = TRANSACTION_STATUS_UNKNOWN;
 }
 
@@ -746,6 +748,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
         x->isReplicated = MtmIsLogicalReceiver;
         x->isDistributed = MtmIsUserTransaction();
 		x->isPrepared = false;
+		x->isTwoPhase = false;
 		x->isTransactionBlock = IsTransactionBlock();
 		/* Application name can be changed usnig PGAPPNAME environment variable */
 		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
@@ -906,8 +909,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	Assert(ts != NULL);
 	//if (x->gid[0]) MTM_LOG1("Preparing transaction %d (%s) at %ld", x->xid, x->gid, MtmGetCurrentTime());
 	if (!MtmIsCoordinator(ts) || Mtm->status == MTM_RECOVERY) {
-		bool found;
-		MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, &found);
+		MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, NULL);
 		Assert(x->gid[0]);
 		tm->state = ts;	
 		ts->votingCompleted = true;
@@ -925,8 +927,13 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		time_t transTimeout = Max(MSEC_TO_USEC(Mtm2PCMinTimeout), (ts->csn - ts->snapshot)*Mtm2PCPrepareRatio/100); 
 		int result = 0;
 		int nConfigChanges = Mtm->nConfigChanges;
-
 		timestamp_t start = MtmGetSystemTime();	
+		
+		if (x->isTwoPhase) { 
+			MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, NULL);
+			tm->state = ts;	
+		}
+
 		/* Wait votes from all nodes until: */
 		while (!ts->votingCompleted                           /* all nodes voted */
 			   && nConfigChanges == Mtm->nConfigChanges       /* configarion is changed */
@@ -982,7 +989,7 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 		MtmLock(LW_EXCLUSIVE);
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
 		if (tm == NULL) { 
-			elog(WARNING, "Global transaciton ID %s is not found", x->gid);
+			elog(WARNING, "Global transaciton ID '%s' is not found", x->gid);
 		} else { 
 			Assert(tm->state != NULL);
 			MTM_LOG1("Abort prepared transaction %d with gid='%s'", x->xid, x->gid);
@@ -1265,7 +1272,7 @@ void MtmAbortTransaction(MtmTransState* ts)
 	Assert(MtmLockCount != 0); /* should be invoked with exclsuive lock */
 	if (ts->status != TRANSACTION_STATUS_ABORTED) { 
 		if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
-			elog(WARNING, "Attempt to rollback already committed transaction %d (%s)", ts->xid, ts->gid);
+			elog(LOG, "Attempt to rollback already committed transaction %d (%s)", ts->xid, ts->gid);
 		} else { 
 			MTM_LOG1("Rollback active transaction %d:%d (local xid %d) status %d", ts->gtid.node, ts->gtid.xid, ts->xid, ts->status);
 			ts->status = TRANSACTION_STATUS_ABORTED;
@@ -3803,11 +3810,10 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 					}
 					break;
 				case TRANS_STMT_PREPARE:
-				  //elog(ERROR, "Two phase commit is not supported by multimaster");
-					break;
 				case TRANS_STMT_COMMIT_PREPARED:
 				case TRANS_STMT_ROLLBACK_PREPARED:
-  				    skipCommand = true;
+  				    MtmTx.isTwoPhase = true;
+  				    strcpy(MtmTx.gid, stmt->gid);
 					break;
 				default:
 					break;
@@ -3940,7 +3946,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 								params, dest, completionTag);
 	}
 	
-	if (MtmTx.isDistributed && XactIsoLevel != XACT_REPEATABLE_READ) { 
+    if (!MtmVolksWagenMode && MtmTx.isDistributed && XactIsoLevel != XACT_REPEATABLE_READ) { 
 		elog(ERROR, "Isolation level %s is not supported by multimaster", isoLevelStr[XactIsoLevel]);
 	}
 	
@@ -4126,7 +4132,7 @@ MtmDetectGlobalDeadLockFortXid(TransactionId xid)
 		}
 		MtmGetGtid(xid, &gtid);
 		hasDeadlock = MtmGraphFindLoop(&graph, &gtid);
-		elog(WARNING, "Distributed deadlock check by backend %d for %u:%u = %d", MyProcPid, gtid.node, gtid.xid, hasDeadlock);
+		elog(LOG, "Distributed deadlock check by backend %d for %u:%u = %d", MyProcPid, gtid.node, gtid.xid, hasDeadlock);
 		if (!hasDeadlock) { 
 			/* There is no deadlock loop in graph, but deadlock can be caused by lack of apply workers: if all of them are busy, then some transactions
 			 * can not be appied just because there are no vacant workers and it cause additional dependency between transactions which is not 

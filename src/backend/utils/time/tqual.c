@@ -1131,8 +1131,9 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		if (!TransactionIdDidCommit(HeapTupleHeaderGetRawXmax(tuple)))
 		{
 			/* it must have aborted or crashed */
-			SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
-						InvalidTransactionId);
+			if (!TransactionIdIsInProgress(HeapTupleHeaderGetRawXmax(tuple)))
+				SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
+							InvalidTransactionId);
 			return true;
 		}
 
@@ -1271,8 +1272,9 @@ HeapTupleSatisfiesVacuum(HeapTuple htup, TransactionId OldestXmin,
 	 * Okay, the inserter committed, so it was good at some point.  Now what
 	 * about the deleting transaction?
 	 */
-	if (tuple->t_infomask & HEAP_XMAX_INVALID)
+	if (tuple->t_infomask & HEAP_XMAX_INVALID) {
 		return HEAPTUPLE_LIVE;
+	}
 
 	if (HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask))
 	{

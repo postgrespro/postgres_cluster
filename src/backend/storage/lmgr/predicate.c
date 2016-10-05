@@ -3901,6 +3901,7 @@ CheckForSerializableConflictOut(bool visible, Relation relation,
 	 * is going on with it.
 	 */
 	htsvResult = HeapTupleSatisfiesVacuum(tuple, TransactionXmin, buffer);
+	elog(LOG, "HeapTupleSatisfiesVacuum(%d) = %d, TransactionXmin=%d", HeapTupleHeaderGetXmin(tuple->t_data), htsvResult, TransactionXmin);
 	switch (htsvResult)
 	{
 		case HEAPTUPLE_LIVE:
@@ -3939,7 +3940,7 @@ CheckForSerializableConflictOut(bool visible, Relation relation,
 			xid = InvalidTransactionId;
 	}
 	Assert(TransactionIdIsValid(xid));
-	Assert(TransactionIdFollowsOrEquals(xid, TransactionXmin));
+	//Assert(TransactionIdFollowsOrEquals(xid, TransactionXmin));
 
 	/*
 	 * Find top level xid.  Bail out if xid is too early to be a conflict, or
