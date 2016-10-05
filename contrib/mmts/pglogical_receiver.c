@@ -524,7 +524,7 @@ pglogical_receiver_main(Datum main_arg)
 						MtmSpillToFile(spill_file, buf.data, buf.used);
 						ByteBufferReset(&buf);
 					}
-					if (stmt[0] == 'L') { 
+					if (stmt[0] == 'M' && stmt[1] == 'L') {
 						MTM_LOG3("Process deadlock message from %d", nodeId);
 						MtmExecutor(stmt, rc - hdr_len);
 					} else { 
