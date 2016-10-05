@@ -11,8 +11,6 @@
 #ifndef RELATION_INFO_H
 #define RELATION_INFO_H
 
-#include "dsm_array.h"
-
 #include "postgres.h"
 #include "access/attnum.h"
 #include "port/atomics.h"
@@ -49,6 +47,7 @@ typedef struct
 	bool			valid;			/* is this entry valid? */
 	bool			enable_parent;	/* include parent to the plan */
 	bool			auto_partition; /* auto partition creation */
+	Oid				init_callback;	/* callback for partition creation */
 
 	uint32			children_count;
 	Oid			   *children;		/* Oids of child partitions */
@@ -138,6 +137,7 @@ Oid forget_parent_of_partition(Oid partition, PartParentSearch *status);
 Oid get_parent_of_partition(Oid partition, PartParentSearch *status);
 
 PartType DatumGetPartType(Datum datum);
+char * PartTypeToCString(PartType parttype);
 
 void shout_if_prel_is_invalid(Oid parent_oid,
 							  const PartRelationInfo *prel,

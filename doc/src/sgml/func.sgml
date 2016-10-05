@@ -15425,7 +15425,7 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
       <row>
        <entry><literal><function>pgpro_version()</function></literal></entry>
        <entry><type>text</type></entry>
-       <entry><productname>PostgresPro</> version information.</entry>
+       <entry><productname>Postgres Pro</> version information.</entry>
        </row>
      </tbody>
     </tgroup>
@@ -15656,7 +15656,7 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
   </indexterm>
   <para>
 <literal><function>pgpro_version()</function></literal>
-   returns a string, describing <productname>PostgresPro</> version
+   returns a string, describing <productname>Postgres Pro</> version
    information.</para>
   <indexterm>
    <primary>privilege</primary>

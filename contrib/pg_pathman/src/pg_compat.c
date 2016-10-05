@@ -27,10 +27,10 @@ set_append_rel_size_compat(PlannerInfo *root, RelOptInfo *rel,
 
 	foreach(l, root->append_rel_list)
 	{
-		AppendRelInfo *appinfo = (AppendRelInfo *) lfirst(l);
-		Index		childRTindex,
-					parentRTindex = rti;
-		RelOptInfo *childrel;
+		AppendRelInfo  *appinfo = (AppendRelInfo *) lfirst(l);
+		Index			childRTindex,
+						parentRTindex = rti;
+		RelOptInfo	   *childrel;
 
 		/* append_rel_list contains all append rels; ignore others */
 		if (appinfo->parent_relid != parentRTindex)
