@@ -89,7 +89,8 @@ static void SendCurrentUserId(void);
 static void SendBgWorkerPids(void);
 static Oid GetRemoteBackendUserId(PGPROC *proc);
 static List *GetRemoteBackendWorkers(PGPROC *proc);
-static List *GetRemoteBackendQueryStates(List *procs,
+static List *GetRemoteBackendQueryStates(PGPROC *leader,
+										 List *pworkers,
 										 bool verbose,
 										 bool costs,
 										 bool timing,
@@ -533,7 +534,8 @@ pg_query_state(PG_FUNCTION_ARGS)
 
 		bg_worker_procs = GetRemoteBackendWorkers(proc);
 
-		msgs = GetRemoteBackendQueryStates(lcons(proc, bg_worker_procs),
+		msgs = GetRemoteBackendQueryStates(proc,
+										   bg_worker_procs,
 										   verbose,
 										   costs,
 										   timing,
@@ -855,9 +857,7 @@ GetRemoteBackendWorkers(PGPROC *proc)
 		return NIL;
 
 	mqh = shm_mq_attach(mq, NULL, NULL);
-	mq_receive_result = shm_mq_receive_with_timeout(mqh, &msg_len,
-                                                    (void **) &msg,
-                                                    MIN_TIMEOUT);
+	mq_receive_result = shm_mq_receive(mqh, &msg_len, (void **) &msg, false);
 	if (mq_receive_result != SHM_MQ_SUCCESS)
 		return NIL;
 
@@ -884,7 +884,8 @@ copy_msg(shm_mq_msg *msg)
 }
 
 static List *
-GetRemoteBackendQueryStates(List *procs,
+GetRemoteBackendQueryStates(PGPROC *leader,
+							List *pworkers,
 						    bool verbose,
 						    bool costs,
 						    bool timing,
@@ -895,6 +896,11 @@ GetRemoteBackendQueryStates(List *procs,
 	List			*result = NIL;
 	List			*alive_procs = NIL;
 	ListCell		*iter;
+	int		 		 sig_result;
+	shm_mq_handle  	*mqh;
+	shm_mq_result	 mq_receive_result;
+	shm_mq_msg		*msg;
+	Size			 len;
 
 	Assert(QueryStatePollReason != INVALID_PROCSIGNAL);
 	Assert(mq);
@@ -912,10 +918,14 @@ GetRemoteBackendQueryStates(List *procs,
 	 * send signal `QueryStatePollReason` to all processes and define all alive
 	 * 		ones
 	 */
-	foreach(iter, procs)
+	sig_result = SendProcSignal(leader->pid,
+								QueryStatePollReason,
+								leader->backendId);
+	if (sig_result == -1)
+		goto signal_error;
+	foreach(iter, pworkers)
 	{
 		PGPROC 	*proc = (PGPROC *) lfirst(iter);
-		int		 sig_result;
 
 		sig_result = SendProcSignal(proc->pid,
 									QueryStatePollReason,
@@ -930,16 +940,24 @@ GetRemoteBackendQueryStates(List *procs,
 		alive_procs = lappend(alive_procs, proc);
 	}
 
+	/* extract query state from leader process */
+	mq = shm_mq_create(mq, QUEUE_SIZE);
+	shm_mq_set_sender(mq, leader);
+	shm_mq_set_receiver(mq, MyProc);
+	mqh = shm_mq_attach(mq, NULL, NULL);
+	mq_receive_result = shm_mq_receive(mqh, &len, (void **) &msg, false);
+	if (mq_receive_result != SHM_MQ_SUCCESS)
+		goto mq_error;
+	Assert(len == msg->length);
+	result = lappend(result, copy_msg(msg));
+	shm_mq_detach(mq);
+
 	/*
-	 * collect results from all alived processes
+	 * collect results from all alived parallel workers
 	 */
 	foreach(iter, alive_procs)
 	{
 		PGPROC 			*proc = (PGPROC *) lfirst(iter);
-		shm_mq_handle  	*mqh;
-		shm_mq_result	 mq_receive_result;
-		shm_mq_msg		*msg;
-		Size			 len;
 
 		/* prepare message queue to transfer data */
 		mq = shm_mq_create(mq, QUEUE_SIZE);
@@ -953,7 +971,7 @@ GetRemoteBackendQueryStates(List *procs,
 		mq_receive_result = shm_mq_receive_with_timeout(mqh,
 														&len,
 														(void **) &msg,
-														2 * MIN_TIMEOUT);
+														MIN_TIMEOUT);
 		if (mq_receive_result != SHM_MQ_SUCCESS)
 			/* counterpart is died, not consider it */
 			continue;
@@ -971,4 +989,7 @@ GetRemoteBackendQueryStates(List *procs,
 signal_error:
 	ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 				errmsg("invalid send signal")));
+mq_error:
+	ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+				errmsg("error in message queue data transmitting")));
 }
