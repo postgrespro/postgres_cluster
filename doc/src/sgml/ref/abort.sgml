@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/abort.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ABORT">
@@ -82,7 +82,7 @@ ABORT;
   <title>Compatibility</title>
 
   <para>
-   This command is a <productname>PostgreSQL</productname> extension
+   This command is a <productname>&productname;</productname> extension
    present for historical reasons. <command>ROLLBACK</command> is the
    equivalent standard SQL command.
   </para>

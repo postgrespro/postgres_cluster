@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/drop_foreign_data_wrapper.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DROPFOREIGNDATAWRAPPER">
@@ -98,7 +98,7 @@ DROP FOREIGN DATA WRAPPER dbi;
   <para>
    <command>DROP FOREIGN DATA WRAPPER</command> conforms to ISO/IEC
    9075-9 (SQL/MED).  The <literal>IF EXISTS</> clause is
-   a <productname>PostgreSQL</> extension.
+   a <productname>&productname;</> extension.
   </para>
  </refsect1>
 

@@ -78,7 +78,7 @@ INSERT INTO products (name, price, product_no) VALUES ('Cheese', 9.99, 1);
 INSERT INTO products (product_no, name) VALUES (1, 'Cheese');
 INSERT INTO products VALUES (1, 'Cheese');
 </programlisting>
-   The second form is a <productname>PostgreSQL</productname>
+   The second form is a <productname>&productname;</productname>
    extension.  It fills the columns from the left with as many values
    as are given, and the rest will be defaulted.
   </para>

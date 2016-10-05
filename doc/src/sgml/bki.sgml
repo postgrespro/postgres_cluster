@@ -6,7 +6,7 @@
  <para>
   Backend Interface (<acronym>BKI</acronym>) files are scripts in a
   special language that is understood by the
-  <productname>PostgreSQL</productname> backend when running in the
+  <productname>&productname;</productname> backend when running in the
   <quote>bootstrap</quote> mode.  The bootstrap mode allows system catalogs
   to be created and filled from scratch, whereas ordinary SQL commands
   require the catalogs to exist already.
@@ -19,7 +19,7 @@
   <application>initdb</application> uses a <acronym>BKI</acronym> file
   to do part of its job when creating a new database cluster.  The
   input file used by <application>initdb</application> is created as
-  part of building and installing <productname>PostgreSQL</productname>
+  part of building and installing <productname>&productname;</productname>
   by a program named <filename>genbki.pl</filename>, which reads some
   specially formatted C header files in the <filename>src/include/catalog/</>
   directory of the source tree.  The created <acronym>BKI</acronym> file
@@ -37,7 +37,7 @@
   <title><acronym>BKI</acronym> File Format</title>
 
   <para>
-   This section describes how the <productname>PostgreSQL</productname>
+   This section describes how the <productname>&productname;</productname>
    backend interprets <acronym>BKI</acronym> files.  This description
    will be easier to understand if the <filename>postgres.bki</filename>
    file is at hand as an example.

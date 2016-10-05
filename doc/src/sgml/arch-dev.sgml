@@ -1,7 +1,7 @@
 <!-- doc/src/sgml/arch-dev.sgml -->
 
  <chapter id="overview">
-  <title>Overview of PostgreSQL Internals</title>
+  <title>Overview of &productname; Internals</title>
 
   <note>
    <title>Author</title>
@@ -15,11 +15,11 @@
 
   <para>
    This chapter gives an overview of the internal structure of the
-   backend of <productname>PostgreSQL</productname>.  After having
+   backend of <productname>&productname;</productname>.  After having
    read the following sections you should have an idea of how a query
    is processed. This chapter does not aim to provide a detailed
    description of the internal operation of
-   <productname>PostgreSQL</productname>, as such a document would be
+   <productname>&productname;</productname>, as such a document would be
    very extensive. Rather, this chapter is intended to help the reader
    understand the general sequence of operations that occur within the
    backend from the point at which a query is received, to the point
@@ -37,7 +37,7 @@
    <procedure>
     <step>
      <para>
-      A connection from an application program to the <productname>PostgreSQL</productname>
+      A connection from an application program to the <productname>&productname;</productname>
       server has to be established. The application program transmits a
       query to the server and waits to receive the results sent back by the
       server.
@@ -108,7 +108,7 @@
 
    <para>
     In the following sections we will cover each of the above listed items
-    in more detail to give a better understanding of <productname>PostgreSQL</productname>'s internal
+    in more detail to give a better understanding of <productname>&productname;</productname>'s internal
     control and data structures.
    </para>
   </sect1>
@@ -117,7 +117,7 @@
    <title>How Connections are Established</title>
 
    <para>
-    <productname>PostgreSQL</productname> is implemented using a
+    <productname>&productname;</productname> is implemented using a
     simple <quote>process per user</> client/server model.  In this model
     there is one <firstterm>client process</firstterm> connected to
     exactly one <firstterm>server process</firstterm>.  As we do not
@@ -135,7 +135,7 @@
 
    <para>
     The client process can be any program that understands the
-    <productname>PostgreSQL</productname> protocol described in
+    <productname>&productname;</productname> protocol described in
     <xref linkend="protocol">.  Many clients are based on the
     C-language library <application>libpq</>, but several independent
     implementations of the protocol exist, such as the Java
@@ -220,7 +220,7 @@
       <para>
        The mentioned transformations and compilations are normally done
        automatically using the <firstterm>makefiles</firstterm>
-       shipped with the <productname>PostgreSQL</productname>
+       shipped with the <productname>&productname;</productname>
        source distribution.
       </para>
      </note>
@@ -282,13 +282,13 @@
   </sect1>
 
   <sect1 id="rule-system">
-   <title>The <productname>PostgreSQL</productname> Rule System</title>
+   <title>The <productname>&productname;</productname> Rule System</title>
 
    <para>
-    <productname>PostgreSQL</productname> supports a powerful
+    <productname>&productname;</productname> supports a powerful
     <firstterm>rule system</firstterm> for the specification
     of <firstterm>views</firstterm> and ambiguous <firstterm>view updates</firstterm>.
-    Originally the <productname>PostgreSQL</productname>
+    Originally the <productname>&productname;</productname>
     rule system consisted of two implementations:
 
     <itemizedlist>
@@ -346,7 +346,7 @@
      space. In particular, this occurs when executing queries
      involving large numbers of join operations. In order to determine
      a reasonable (not necessarily optimal) query plan in a reasonable amount
-     of time, <productname>PostgreSQL</productname> uses a <firstterm>Genetic
+     of time, <productname>&productname;</productname> uses a <firstterm>Genetic
      Query Optimizer</firstterm> (see <xref linkend="geqo">) when the number of joins
      exceeds a threshold (see <xref linkend="guc-geqo-threshold">).
     </para>

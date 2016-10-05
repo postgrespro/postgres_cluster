@@ -57,7 +57,7 @@
       shared_preload_libraries = 'pg_query_state'
     </programlisting>
     <para>
-      It will require to restart the <productname>PostgreSQL</productname>
+      It will require to restart the <productname>&productname;</productname>
       instance.
     </para>
   </sect2>

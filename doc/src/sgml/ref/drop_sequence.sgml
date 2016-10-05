@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/drop_sequence.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DROPSEQUENCE">
@@ -98,7 +98,7 @@ DROP SEQUENCE serial;
    <command>DROP SEQUENCE</command> conforms to the <acronym>SQL</acronym>
    standard, except that the standard only allows one
    sequence to be dropped per command, and apart from the
-   <literal>IF EXISTS</> option, which is a <productname>PostgreSQL</>
+   <literal>IF EXISTS</> option, which is a <productname>&productname;</>
    extension.
   </para>
  </refsect1>

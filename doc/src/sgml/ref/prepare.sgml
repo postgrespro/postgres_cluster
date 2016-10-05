@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/prepare.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-PREPARE">
@@ -153,7 +153,7 @@ PREPARE <replaceable class="PARAMETER">name</replaceable> [ ( <replaceable class
   </para>
 
   <para>
-   To examine the query plan <productname>PostgreSQL</productname> is using
+   To examine the query plan <productname>&productname;</productname> is using
    for a prepared statement, use <xref linkend="sql-explain">, e.g.
    <command>EXPLAIN EXECUTE</>.
    If a generic plan is in use, it will contain parameter symbols
@@ -165,14 +165,14 @@ PREPARE <replaceable class="PARAMETER">name</replaceable> [ ( <replaceable class
 
   <para>
    For more information on query planning and the statistics collected
-   by <productname>PostgreSQL</productname> for that purpose, see
+   by <productname>&productname;</productname> for that purpose, see
    the <xref linkend="sql-analyze">
    documentation.
   </para>
 
   <para>
    Although the main point of a prepared statement is to avoid repeated parse
-   analysis and planning of the statement, <productname>PostgreSQL</> will
+   analysis and planning of the statement, <productname>&productname;</> will
    force re-analysis and re-planning of the statement before using it
    whenever database objects used in the statement have undergone
    definitional (DDL) changes since the previous use of the prepared

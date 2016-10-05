@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/createuser.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="APP-CREATEUSER">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>createuser</refname>
-  <refpurpose>define a new <productname>PostgreSQL</productname> user account</refpurpose>
+  <refpurpose>define a new <productname>&productname;</productname> user account</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -33,7 +33,7 @@ PostgreSQL documentation
   <title>Description</title>
   <para>
    <application>createuser</application> creates a
-   new <productname>PostgreSQL</productname> user (or more precisely, a role).
+   new <productname>&productname;</productname> user (or more precisely, a role).
    Only superusers and users with <literal>CREATEROLE</> privilege can create
    new users, so <application>createuser</application> must be
    invoked by someone who can connect as a superuser or a user with
@@ -68,10 +68,10 @@ PostgreSQL documentation
       <term><replaceable class="parameter">username</replaceable></term>
       <listitem>
        <para>
-        Specifies the name of the <productname>PostgreSQL</productname> user
+        Specifies the name of the <productname>&productname;</productname> user
         to be created.
         This name must be different from all existing roles in this
-        <productname>PostgreSQL</productname> installation.
+        <productname>&productname;</productname> installation.
        </para>
       </listitem>
      </varlistentry>
@@ -414,7 +414,7 @@ PostgreSQL documentation
   </variablelist>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>

@@ -347,7 +347,7 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
         </term>
         <listitem>
          <para>
-          Specifies whether to start the <productname>PostgreSQL</> server as
+          Specifies whether to start the <productname>&productname;</> server as
           a standby. If this parameter is <literal>on</>, the server will
           not stop recovery when the end of archived WAL is reached, but
           will keep trying to continue recovery by fetching new WAL segments
