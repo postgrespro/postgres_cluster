@@ -540,9 +540,16 @@ pg_query_state(PG_FUNCTION_ARGS)
 										   buffers,
 										   triggers,
 										   format);
-		msg = (shm_mq_msg *) linitial(msgs);
 
 		funcctx = SRF_FIRSTCALL_INIT();
+		if (list_length(msgs) == 0)
+		{
+			elog(WARNING, "backend does not reply");
+			LockRelease(&tag, ExclusiveLock, false);
+			SRF_RETURN_DONE(funcctx);
+		}
+
+		msg = (shm_mq_msg *) linitial(msgs);
 		switch (msg->result_code)
 		{
 			case QUERY_NOT_RUNNING:
@@ -946,7 +953,7 @@ GetRemoteBackendQueryStates(List *procs,
 		mq_receive_result = shm_mq_receive_with_timeout(mqh,
 														&len,
 														(void **) &msg,
-														MIN_TIMEOUT);
+														2 * MIN_TIMEOUT);
 		if (mq_receive_result != SHM_MQ_SUCCESS)
 			/* counterpart is died, not consider it */
 			continue;
