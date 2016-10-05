@@ -3897,7 +3897,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_IndexStmt:
 			{
 				IndexStmt *indexStmt = (IndexStmt *) parsetree;
-				if (indexStmt->concurrent && !IsTransactionBlock())
+				if (indexStmt->concurrent && !IsTransactionBlock() && !MtmTx.isReplicated)
 				{
 					skipCommand = true;
 					MtmProcessDDLCommand(queryString, false);
@@ -3909,7 +3909,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_DropStmt:
 			{
 				DropStmt *stmt = (DropStmt *) parsetree;
-				if (stmt->removeType == OBJECT_INDEX && stmt->concurrent && !IsTransactionBlock())
+				if (stmt->removeType == OBJECT_INDEX && stmt->concurrent && !IsTransactionBlock() && !MtmTx.isReplicated)
 				{
 					skipCommand = true;
 					MtmProcessDDLCommand(queryString, false);
