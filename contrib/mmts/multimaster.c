@@ -62,6 +62,7 @@
 #include "pglogical_output/hooks.h"
 #include "parser/analyze.h"
 #include "parser/parse_relation.h"
+#include "tcop/pquery.h"
 
 #include "multimaster.h"
 #include "ddd.h"
@@ -150,7 +151,7 @@ static void MtmShmemStartup(void);
 static BgwPool* MtmPoolConstructor(void);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
-static bool MtmProcessDDLCommand(char const* queryString);
+static bool MtmProcessDDLCommand(char const* queryString, bool transactional);
 
 MtmState* Mtm;
 
@@ -3022,7 +3023,7 @@ mtm_drop_node(PG_FUNCTION_ARGS)
 Datum
 mtm_add_node(PG_FUNCTION_ARGS)
 {
-	char* connStr = PG_GETARG_CSTRING(0);
+	char *connStr = text_to_cstring(PG_GETARG_TEXT_PP(0));
 
 	if (Mtm->nAllNodes == MtmMaxNodes) { 
 		elog(ERROR, "Maximal number of nodes %d is reached", MtmMaxNodes);
@@ -3729,7 +3730,7 @@ static char * MtmGucSerialize(void)
  * -------------------------------------------
  */
 
-static bool MtmProcessDDLCommand(char const* queryString)
+static bool MtmProcessDDLCommand(char const* queryString, bool transactional)
 {
 	char	   *queryWithContext;
 	char	   *gucContext;
@@ -3748,7 +3749,12 @@ static bool MtmProcessDDLCommand(char const* queryString)
 	}
 
 	MTM_LOG1("Sending utility: %s", queryWithContext);
-	LogLogicalMessage("G", queryWithContext, strlen(queryWithContext)+1, true);
+	if (transactional)
+		/* DDL */
+		LogLogicalMessage("D", queryWithContext, strlen(queryWithContext) + 1, true);
+	else
+		/* CONCURRENT DDL */
+		LogLogicalMessage("C", queryWithContext, strlen(queryWithContext) + 1, false);
 
 	MtmTx.containsDML = true;
 	return false;
@@ -3785,17 +3791,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	MTM_LOG3("%d: Process utility statement %s", MyProcPid, queryString);
 	switch (nodeTag(parsetree))
 	{
-	    case T_IndexStmt:
-		    {
-				IndexStmt* stmt = (IndexStmt*) parsetree;
-				if (stmt->concurrent) { 
-					stmt->concurrent = false;
-					elog(WARNING, "Disable concurrent option for index creation");
-				}
-				break;
-			}
-
-	    case T_TransactionStmt:
+		case T_TransactionStmt:
 			{
 				TransactionStmt *stmt = (TransactionStmt *) parsetree;
 				switch (stmt->kind)
@@ -3893,6 +3889,30 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			}
 			break;
 
+		case T_IndexStmt:
+			{
+				IndexStmt *indexStmt = (IndexStmt *) parsetree;
+				if (indexStmt->concurrent && !IsTransactionBlock())
+				{
+					skipCommand = true;
+					MtmProcessDDLCommand(queryString, false);
+					MtmTx.isDistributed = false;
+				}
+			}
+			break;
+
+		case T_DropStmt:
+			{
+				DropStmt *stmt = (DropStmt *) parsetree;
+				if (stmt->removeType == OBJECT_INDEX && stmt->concurrent && !IsTransactionBlock())
+				{
+					skipCommand = true;
+					MtmProcessDDLCommand(queryString, false);
+					MtmTx.isDistributed = false;
+				}
+			}
+			break;
+
 		/* Copy need some special care */
 	    case T_CopyStmt:
 		{
@@ -3926,13 +3946,15 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	if (!skipCommand && (context == PROCESS_UTILITY_TOPLEVEL || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
 		MtmUtilityProcessedInXid = InvalidTransactionId;
 
-	if (context == PROCESS_UTILITY_TOPLEVEL || context == PROCESS_UTILITY_QUERY)
-	{
-		if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {
-			MtmUtilityProcessedInXid = GetCurrentTransactionId();
-			MtmProcessDDLCommand(queryString);
-			executed = true;
-		}
+	if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {
+		MtmUtilityProcessedInXid = GetCurrentTransactionId();
+
+		if (context == PROCESS_UTILITY_TOPLEVEL)
+			MtmProcessDDLCommand(queryString, true);
+		else
+			MtmProcessDDLCommand(ActivePortal->sourceText, true);
+
+		executed = true;
 	}
 
 	if (PreviousProcessUtilityHook != NULL)
@@ -3945,11 +3967,10 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		standard_ProcessUtility(parsetree, queryString, context,
 								params, dest, completionTag);
 	}
-	
     if (!MtmVolksWagenMode && MtmTx.isDistributed && XactIsoLevel != XACT_REPEATABLE_READ) { 
 		elog(ERROR, "Isolation level %s is not supported by multimaster", isoLevelStr[XactIsoLevel]);
 	}
-	
+
 	if (MyXactAccessedTempRel)
 	{
 		MTM_LOG1("Xact accessed temp table, stopping replication");
@@ -3957,7 +3978,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		MtmTx.snapshot = INVALID_CSN;
 	}
 
-	if (executed)
+	if (executed && !skipCommand)
 	{
 		MtmFinishDDLCommand();
 	}
