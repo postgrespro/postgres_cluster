@@ -77,12 +77,12 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
 	Oid         relid;
 
 	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN) {
-		MTM_LOG1("%d: pglogical_write_message filtered", MyProcPid);
+		MTM_LOG2("%d: pglogical_write_message filtered", MyProcPid);
 		return;
 	}
 
 	if (DDLInProress) {
-		MTM_LOG1("%d: pglogical_write_message filtered DDLInProress", MyProcPid);
+		MTM_LOG2("%d: pglogical_write_message filtered DDLInProress", MyProcPid);
 		return;
 	}
 
@@ -141,7 +141,7 @@ pglogical_write_message(StringInfo out,
 	{
 		if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN)
 		{
-			MTM_LOG1("%d: pglogical_write_message filtered", MyProcPid);
+			MTM_LOG2("%d: pglogical_write_message filtered", MyProcPid);
 			return;
 		}
 		DDLInProress = true;
@@ -263,12 +263,12 @@ pglogical_write_insert(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple newtuple)
 {
 	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN){
-		MTM_LOG1("%d: pglogical_write_insert filtered", MyProcPid);
+		MTM_LOG2("%d: pglogical_write_insert filtered", MyProcPid);
 		return;
 	}
 
 	if (DDLInProress) {
-		MTM_LOG1("%d: pglogical_write_insert filtered DDLInProress", MyProcPid);
+		MTM_LOG2("%d: pglogical_write_insert filtered DDLInProress", MyProcPid);
 		return;
 	}
 
@@ -286,12 +286,12 @@ pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple, HeapTuple newtuple)
 {
 	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN){
-		MTM_LOG1("%d: pglogical_write_update filtered", MyProcPid);
+		MTM_LOG2("%d: pglogical_write_update filtered", MyProcPid);
 		return;
 	}
 
 	if (DDLInProress) {
-		MTM_LOG1("%d: pglogical_write_update filtered DDLInProress", MyProcPid);
+		MTM_LOG2("%d: pglogical_write_update filtered DDLInProress", MyProcPid);
 		return;
 	}
 
@@ -319,12 +319,12 @@ pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple)
 {
 	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN){
-		MTM_LOG1("%d: pglogical_write_delete filtered", MyProcPid);
+		MTM_LOG2("%d: pglogical_write_delete filtered", MyProcPid);
 		return;
 	}
 
 	if (DDLInProress) {
-		MTM_LOG1("%d: pglogical_write_delete filtered DDLInProress", MyProcPid);
+		MTM_LOG2("%d: pglogical_write_delete filtered DDLInProress", MyProcPid);
 		return;
 	}
 
@@ -356,12 +356,12 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 	uint16		nliveatts = 0;
 
 	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN){
-		MTM_LOG1("%d: pglogical_write_tuple filtered", MyProcPid);
+		MTM_LOG2("%d: pglogical_write_tuple filtered", MyProcPid);
 		return;
 	}
 
 	if (DDLInProress) {
-		MTM_LOG1("%d: pglogical_write_tuple filtered DDLInProress", MyProcPid);
+		MTM_LOG2("%d: pglogical_write_tuple filtered DDLInProress", MyProcPid);
 		return;
 	}
 
