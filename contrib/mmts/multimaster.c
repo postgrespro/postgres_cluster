@@ -62,6 +62,7 @@
 #include "pglogical_output/hooks.h"
 #include "parser/analyze.h"
 #include "parser/parse_relation.h"
+#include "tcop/pquery.h"
 
 #include "multimaster.h"
 #include "ddd.h"
@@ -3939,13 +3940,15 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	if (!skipCommand && (context == PROCESS_UTILITY_TOPLEVEL || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
 		MtmUtilityProcessedInXid = InvalidTransactionId;
 
-	if (context == PROCESS_UTILITY_TOPLEVEL || context == PROCESS_UTILITY_QUERY)
-	{
-		if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {
-			MtmUtilityProcessedInXid = GetCurrentTransactionId();
+	if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {
+		MtmUtilityProcessedInXid = GetCurrentTransactionId();
+
+		if (context == PROCESS_UTILITY_TOPLEVEL)
 			MtmProcessDDLCommand(queryString, true);
-			executed = true;
-		}
+		else
+			MtmProcessDDLCommand(ActivePortal->sourceText, true);
+
+		executed = true;
 	}
 
 	if (PreviousProcessUtilityHook != NULL)
