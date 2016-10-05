@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/fetch.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-FETCH">
@@ -318,7 +318,7 @@ FETCH <replaceable class="parameter">count</replaceable>
    option if one intends to use any variants of <command>FETCH</>
    other than <command>FETCH NEXT</> or <command>FETCH FORWARD</> with
    a positive count.  For simple queries
-   <productname>PostgreSQL</productname> will allow backwards fetch
+   <productname>&productname;</productname> will allow backwards fetch
    from cursors not declared with <literal>SCROLL</literal>, but this
    behavior is best not relied on. If the cursor is declared with
    <literal>NO SCROLL</literal>, no backward fetches are allowed.
@@ -396,7 +396,7 @@ COMMIT WORK;
    as the forms <literal>FETCH <replaceable
    class="PARAMETER">count</replaceable></literal> and <literal>FETCH
    ALL</literal>, in which <literal>FORWARD</literal> is implicit, are
-   <productname>PostgreSQL</productname> extensions.
+   <productname>&productname;</productname> extensions.
   </para>
 
   <para>

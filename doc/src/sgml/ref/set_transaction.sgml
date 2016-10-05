@@ -109,7 +109,7 @@ SET SESSION CHARACTERISTICS AS TRANSACTION <replaceable class="parameter">transa
 
    The SQL standard defines one additional level, <literal>READ
    UNCOMMITTED</literal>.
-   In <productname>PostgreSQL</productname> <literal>READ
+   In <productname>&productname;</productname> <literal>READ
    UNCOMMITTED</literal> is treated as <literal>READ COMMITTED</literal>.
   </para>
 
@@ -244,13 +244,13 @@ SET TRANSACTION SNAPSHOT '000003A1-1';
    These commands are defined in the <acronym>SQL</acronym> standard,
    except for the <literal>DEFERRABLE</literal> transaction mode
    and the <command>SET TRANSACTION SNAPSHOT</> form, which are
-   <productname>PostgreSQL</productname> extensions.
+   <productname>&productname;</productname> extensions.
   </para>
 
   <para>
    <literal>SERIALIZABLE</literal> is the default transaction
    isolation level in the standard.  In
-   <productname>PostgreSQL</productname> the default is ordinarily
+   <productname>&productname;</productname> the default is ordinarily
    <literal>READ COMMITTED</literal>, but you can change it as
    mentioned above.
   </para>
@@ -259,13 +259,13 @@ SET TRANSACTION SNAPSHOT '000003A1-1';
    In the SQL standard, there is one other transaction characteristic
    that can be set with these commands: the size of the diagnostics
    area.  This concept is specific to embedded SQL, and therefore is
-   not implemented in the <productname>PostgreSQL</productname> server.
+   not implemented in the <productname>&productname;</productname> server.
   </para>
 
   <para>
    The SQL standard requires commas between successive <replaceable
    class="parameter">transaction_modes</replaceable>, but for historical
-   reasons <productname>PostgreSQL</productname> allows the commas to be
+   reasons <productname>&productname;</productname> allows the commas to be
    omitted.
   </para>
  </refsect1>

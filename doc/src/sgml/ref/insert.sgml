@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/insert.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-INSERT">
@@ -690,7 +690,7 @@ INSERT INTO distributors (did, dname) VALUES (10, 'Conrad International')
   <para>
    <command>INSERT</command> conforms to the SQL standard, except that
    the <literal>RETURNING</> clause is a
-   <productname>PostgreSQL</productname> extension, as is the ability
+   <productname>&productname;</productname> extension, as is the ability
    to use <literal>WITH</> with <command>INSERT</>, and the ability to
    specify an alternative action with <literal>ON CONFLICT</>.
    Also, the case in

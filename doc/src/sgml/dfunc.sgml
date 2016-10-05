@@ -5,7 +5,7 @@
 
  <para>
   Before you are able to use your
-  <productname>PostgreSQL</productname> extension functions written in
+  <productname>&productname;</productname> extension functions written in
   C, they must be compiled and linked in a special way to produce a
   file that can be dynamically loaded by the server.  To be precise, a
   <firstterm>shared library</firstterm> needs to be
@@ -18,11 +18,11 @@
   you should read the documentation of your
   operating system, in particular the manual pages for the C compiler,
   <command>cc</command>, and the link editor, <command>ld</command>.
-  In addition, the <productname>PostgreSQL</productname> source code
+  In addition, the <productname>&productname;</productname> source code
   contains several working examples in the
   <filename>contrib</filename> directory.  If you rely on these
   examples you will make your modules dependent on the availability
-  of the <productname>PostgreSQL</productname> source code, however.
+  of the <productname>&productname;</productname> source code, however.
  </para>
 
  <para>
@@ -50,7 +50,7 @@
 
 <!--
   Note: Reading GNU Libtool sources is generally a good way of
-  figuring out this information.  The methods used within PostgreSQL
+  figuring out this information.  The methods used within &productname;
   source code are not necessarily ideal.
 -->
 
@@ -244,7 +244,7 @@ gcc -shared -o foo.so foo.o
 
  <para>
   The resulting shared library file can then be loaded into
-  <productname>PostgreSQL</productname>.  When specifying the file name
+  <productname>&productname;</productname>.  When specifying the file name
   to the <command>CREATE FUNCTION</command> command, one must give it
   the name of the shared library file, not the intermediate object file.
   Note that the system's standard shared-library extension (usually

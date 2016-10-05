@@ -4,11 +4,11 @@
  <title>Bug Reporting Guidelines</title>
 
  <para>
-  When you find a bug in <productname>PostgreSQL</productname> we want to
+  When you find a bug in <productname>&productname;</productname> we want to
   hear about it. Your bug reports play an important part in making
-  <productname>PostgreSQL</productname> more reliable because even the utmost
+  <productname>&productname;</productname> more reliable because even the utmost
   care cannot guarantee that every part of
-  <productname>PostgreSQL</productname>
+  <productname>&productname;</productname>
   will work on every platform under every circumstance.
  </para>
 
@@ -72,7 +72,7 @@
 
     <listitem>
      <para>
-      <productname>PostgreSQL</productname> fails to compile, build, or
+      <productname>&productname;</productname> fails to compile, build, or
       install according to the instructions on supported platforms.
      </para>
     </listitem>
@@ -219,7 +219,7 @@
 
     <listitem>
      <para>
-      The <productname>PostgreSQL</productname> version. You can run the command
+      The <productname>&productname;</productname> version. You can run the command
       <literal>SELECT version();</literal> to
       find out the version of the server you are connected to.  Most executable
       programs also support a <option>--version</option> option; at least
@@ -236,9 +236,9 @@
       If your version is older than &version; we will almost certainly
       tell you to upgrade. There are many bug fixes and improvements
       in each new release, so it is quite possible that a bug you have
-      encountered in an older release of <productname>PostgreSQL</>
+      encountered in an older release of <productname>&productname;</>
       has already been fixed. We can only provide limited support for
-      sites using older releases of <productname>PostgreSQL</>; if you
+      sites using older releases of <productname>&productname;</>; if you
       require more than we can provide, consider acquiring a
       commercial support contract.
      </para>
@@ -278,10 +278,10 @@
 
   <para>
    When writing a bug report, please avoid confusing terminology.
-   The software package in total is called <quote>PostgreSQL</quote>,
+   The software package in total is called <quote>&productname;</quote>,
    sometimes <quote>Postgres</quote> for short. If you
    are specifically talking about the backend process, mention that, do not
-   just say <quote>PostgreSQL crashes</quote>.  A crash of a single
+   just say <quote>&productname; crashes</quote>.  A crash of a single
    backend process is quite different from crash of the parent
    <quote>postgres</> process; please don't say <quote>the server
    crashed</> when you mean a single backend process went down, nor vice versa.

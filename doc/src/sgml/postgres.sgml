@@ -37,7 +37,7 @@
     use computers.  No particular Unix or programming experience is
     required.  This part is mainly intended to give you some hands-on
     experience with important aspects of the
-    <productname>PostgreSQL</productname> system.  It makes no attempt
+    <productname>&productname;</productname> system.  It makes no attempt
     to be a complete or thorough treatment of the topics it covers.
    </para>
 

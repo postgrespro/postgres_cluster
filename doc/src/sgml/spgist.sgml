@@ -45,7 +45,7 @@
   SP-GiST Indexing Project
   <ulink url="http://www.cs.purdue.edu/spgist/">web site</ulink>.
   The <acronym>SP-GiST</acronym> implementation in
-  <productname>PostgreSQL</productname> is primarily maintained by Teodor
+  <productname>&productname;</productname> is primarily maintained by Teodor
   Sigaev and Oleg Bartunov, and there is more information on their
   <!-- URL will be changed -->
   <ulink url="http://www.sai.msu.su/~megera/wiki/spgist_dev">web site</ulink>.
@@ -57,7 +57,7 @@
  <title>Built-in Operator Classes</title>
 
  <para>
-  The core <productname>PostgreSQL</> distribution
+  The core <productname>&productname;</> distribution
   includes the <acronym>SP-GiST</acronym> operator classes shown in
   <xref linkend="spgist-builtin-opclasses-table">.
  </para>
@@ -868,7 +868,7 @@ typedef struct spgLeafConsistentOut
  <title>Examples</title>
 
  <para>
-  The <productname>PostgreSQL</productname> source distribution includes
+  The <productname>&productname;</productname> source distribution includes
   several examples of index operator classes for <acronym>SP-GiST</acronym>,
   as described in <xref linkend="spgist-builtin-opclasses-table">.  Look
   into <filename>src/backend/access/spgist/</>

@@ -9,7 +9,7 @@
 
   <para>
    To supplement the trigger mechanism discussed in <xref linkend="triggers">,
-   <productname>PostgreSQL</> also provides event triggers.  Unlike regular
+   <productname>&productname;</> also provides event triggers.  Unlike regular
    triggers, which are attached to a single table and capture only DML events,
    event triggers are global to a particular database and are capable of
    capturing DDL events.
@@ -946,7 +946,7 @@ typedef struct EventTriggerData
       <term><structfield>parsetree</></term>
       <listitem>
        <para>
-        A pointer to the parse tree of the command.  Check the PostgreSQL
+        A pointer to the parse tree of the command.  Check the &productname;
         source code for details.  The parse tree structure is subject to change
         without notice.
        </para>

@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/cluster.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CLUSTER">
@@ -30,7 +30,7 @@ CLUSTER [VERBOSE]
   <title>Description</title>
 
   <para>
-   <command>CLUSTER</command> instructs <productname>PostgreSQL</productname>
+   <command>CLUSTER</command> instructs <productname>&productname;</productname>
    to cluster the table specified
    by <replaceable class="parameter">table_name</replaceable>
    based on the index specified by
@@ -52,7 +52,7 @@ CLUSTER [VERBOSE]
   </para>
 
   <para>
-   When a table is clustered, <productname>PostgreSQL</productname>
+   When a table is clustered, <productname>&productname;</productname>
    remembers which index it was clustered by.  The form
    <command>CLUSTER <replaceable class="parameter">table_name</replaceable></command>
    reclusters the table using the same index as before.  You can also

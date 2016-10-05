@@ -13,7 +13,7 @@
 
  <refnamediv>
   <refname>pgbench</refname>
-  <refpurpose>run a benchmark test on <productname>PostgreSQL</productname></refpurpose>
+  <refpurpose>run a benchmark test on <productname>&productname;</productname></refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -34,7 +34,7 @@
   <title>Description</title>
  <para>
   <application>pgbench</application> is a simple program for running benchmark
-  tests on <productname>PostgreSQL</>.  It runs the same sequence of SQL
+  tests on <productname>&productname;</>.  It runs the same sequence of SQL
   commands over and over, possibly in multiple concurrent database sessions,
   and then calculates the average transaction rate (transactions per second).
   By default, <application>pgbench</application> tests a scenario that is

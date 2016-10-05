@@ -10,7 +10,7 @@
 
  <para>
   <xref linkend="keywords-table"> lists all tokens that are key words
-  in the SQL standard and in <productname>PostgreSQL</productname>
+  in the SQL standard and in <productname>&productname;</productname>
   &version;.  Background information can be found in <xref
   linkend="sql-syntax-identifiers">.
   (For space reasons, only the latest two versions of the SQL standard, and
@@ -32,13 +32,13 @@
  </para>
 
  <para>
-  In the <productname>PostgreSQL</productname> parser life is a bit
+  In the <productname>&productname;</productname> parser life is a bit
   more complicated. There are several different classes of tokens
   ranging from those that can never be used as an identifier to those
   that have absolutely no special status in the parser as compared to
   an ordinary identifier.  (The latter is usually the case for
   functions specified by SQL.)  Even reserved key words are not
-  completely reserved in <productname>PostgreSQL</productname>, but
+  completely reserved in <productname>&productname;</productname>, but
   can be used as column labels (for example, <literal>SELECT 55 AS
   CHECK</literal>, even though <token>CHECK</token> is a reserved key
   word).
@@ -46,7 +46,7 @@
 
  <para>
   In <xref linkend="keywords-table"> in the column for
-  <productname>PostgreSQL</productname> we classify as
+  <productname>&productname;</productname> we classify as
   <quote>non-reserved</quote> those key words that are explicitly
   known to the parser but are allowed as column or table names.
   Some key words that are otherwise
@@ -70,7 +70,7 @@
  <para>
   It is important to understand before studying <xref
   linkend="keywords-table"> that the fact that a key word is not
-  reserved in <productname>PostgreSQL</productname> does not mean that
+  reserved in <productname>&productname;</productname> does not mean that
   the feature related to the word is not implemented.  Conversely, the
   presence of a key word does not indicate the existence of a feature.
  </para>
@@ -89,7 +89,7 @@
   <thead>
    <row>
     <entry>Key Word</entry>
-    <entry><productname>PostgreSQL</productname></entry>
+    <entry><productname>&productname;</productname></entry>
     <entry>SQL:2011</entry>
     <entry>SQL:2008</entry>
     <entry>SQL-92</entry>

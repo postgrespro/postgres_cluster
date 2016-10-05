@@ -6,7 +6,7 @@
  <para>
   This chapter describes the available localization features from the
   point of view of the administrator.
-  <productname>PostgreSQL</productname> supports two localization
+  <productname>&productname;</productname> supports two localization
   facilities:
 
    <itemizedlist>
@@ -40,7 +40,7 @@
   <para>
    <firstterm>Locale</> support refers to an application respecting
    cultural preferences regarding alphabets, sorting, number
-   formatting, etc.  <productname>PostgreSQL</> uses the standard ISO
+   formatting, etc.  <productname>&productname;</> uses the standard ISO
    C and <acronym>POSIX</acronym> locale facilities provided by the server operating
    system.  For additional information refer to the documentation of your
    system.
@@ -256,14 +256,14 @@ initdb --locale=sv_SE
 
    <para>
     The drawback of using locales other than <literal>C</> or
-    <literal>POSIX</> in <productname>PostgreSQL</> is its performance
+    <literal>POSIX</> in <productname>&productname;</> is its performance
     impact. It slows character handling and prevents ordinary indexes
     from being used by <literal>LIKE</>. For this reason use locales
     only if you actually need them.
    </para>
 
    <para>
-    As a workaround to allow <productname>PostgreSQL</> to use indexes
+    As a workaround to allow <productname>&productname;</> to use indexes
     with <literal>LIKE</> clauses under a non-C locale, several custom
     operator classes exist. These allow the creation of an index that
     performs a strict character-by-character comparison, ignoring
@@ -286,7 +286,7 @@ initdb --locale=sv_SE
    </para>
 
    <para>
-    Check that <productname>PostgreSQL</> is actually using the locale
+    Check that <productname>&productname;</> is actually using the locale
     that you think it is.  The <envar>LC_COLLATE</> and <envar>LC_CTYPE</>
     settings are determined when a database is created, and cannot be
     changed except by creating a new database.  Other locale
@@ -299,7 +299,7 @@ initdb --locale=sv_SE
    <para>
     The directory <filename>src/test/locale</> in the source
     distribution contains a test suite for
-    <productname>PostgreSQL</>'s locale support.
+    <productname>&productname;</>'s locale support.
    </para>
 
    <para>
@@ -313,7 +313,7 @@ initdb --locale=sv_SE
    <para>
     Maintaining catalogs of message translations requires the on-going
     efforts of many volunteers that want to see
-    <productname>PostgreSQL</> speak their preferred language well.
+    <productname>&productname;</> speak their preferred language well.
     If messages in your language are currently not available or not fully
     translated, your assistance would be appreciated.  If you want to
     help, refer to <xref linkend="nls"> or write to the developers'
@@ -571,7 +571,7 @@ SELECT * FROM test1 ORDER BY a || b COLLATE "fr_FR";
    </para>
 
    <para>
-    <productname>PostgreSQL</productname> considers distinct collation
+    <productname>&productname;</productname> considers distinct collation
     objects to be incompatible even when they have identical properties.
     Thus for example,
 <programlisting>
@@ -590,7 +590,7 @@ SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;
   <indexterm zone="multibyte"><primary>character set</></>
 
   <para>
-   The character set support in <productname>PostgreSQL</productname>
+   The character set support in <productname>&productname;</productname>
    allows you to store text in a variety of character sets (also called
    encodings), including
    single-byte character sets such as the ISO 8859 series and
@@ -599,7 +599,7 @@ SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;
    can be used transparently by clients, but a few are not supported
    for use within the server (that is, as a server-side encoding).
    The default character set is selected while
-   initializing your <productname>PostgreSQL</productname> database
+   initializing your <productname>&productname;</productname> database
    cluster using <command>initdb</>.  It can be overridden when you
    create a database, so you can have multiple
    databases each with a different character set.
@@ -620,11 +620,11 @@ SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;
 
     <para>
      <xref linkend="charset-table"> shows the character sets available
-     for use in <productname>PostgreSQL</productname>.
+     for use in <productname>&productname;</productname>.
     </para>
 
      <table id="charset-table">
-      <title><productname>PostgreSQL</productname> Character Sets</title>
+      <title><productname>&productname;</productname> Character Sets</title>
       <tgroup cols="6">
        <thead>
         <row>
@@ -983,7 +983,7 @@ SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;
 
      <para>
       Not all client <acronym>API</>s support all the listed character sets. For example, the
-      <productname>PostgreSQL</>
+      <productname>&productname;</>
       JDBC driver does not support <literal>MULE_INTERNAL</>, <literal>LATIN6</>,
       <literal>LATIN8</>, and <literal>LATIN10</>.
      </para>
@@ -999,7 +999,7 @@ SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;
       of ignorance about the encoding.  In most cases, if you are
       working with any non-ASCII data, it is unwise to use the
       <literal>SQL_ASCII</> setting because
-      <productname>PostgreSQL</productname> will be unable to help you by
+      <productname>&productname;</productname> will be unable to help you by
       converting or validating non-ASCII characters.
      </para>
     </sect2>
@@ -1009,7 +1009,7 @@ SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;
 
     <para>
      <command>initdb</> defines the default character set (encoding)
-     for a <productname>PostgreSQL</productname> cluster. For example,
+     for a <productname>&productname;</productname> cluster. For example,
 
 <screen>
 initdb -E EUC_JP
@@ -1071,7 +1071,7 @@ $ <userinput>psql -l</userinput>
 
     <important>
      <para>
-      On most modern operating systems, <productname>PostgreSQL</productname>
+      On most modern operating systems, <productname>&productname;</productname>
       can determine which character set is implied by the <envar>LC_CTYPE</>
       setting, and it will enforce that only the matching database encoding is
       used.  On older systems it is your responsibility to ensure that you use
@@ -1081,7 +1081,7 @@ $ <userinput>psql -l</userinput>
      </para>
 
      <para>
-      <productname>PostgreSQL</productname> will allow superusers to create
+      <productname>&productname;</productname> will allow superusers to create
       databases with <literal>SQL_ASCII</> encoding even when
       <envar>LC_CTYPE</> is not <literal>C</> or <literal>POSIX</>.  As noted
       above, <literal>SQL_ASCII</> does not enforce that the data stored in
@@ -1096,10 +1096,10 @@ $ <userinput>psql -l</userinput>
     <title>Automatic Character Set Conversion Between Server and Client</title>
 
     <para>
-     <productname>PostgreSQL</productname> supports automatic
+     <productname>&productname;</productname> supports automatic
      character set conversion between server and client for certain
      character set combinations. The conversion information is stored in the
-     <literal>pg_conversion</> system catalog.  <productname>PostgreSQL</>
+     <literal>pg_conversion</> system catalog.  <productname>&productname;</>
      comes with some predefined conversions, as shown in <xref
      linkend="multibyte-translation-table">. You can create a new
      conversion using the SQL command <command>CREATE CONVERSION</command>.
@@ -1394,7 +1394,7 @@ $ <userinput>psql -l</userinput>
 
     <para>
      To enable automatic character set conversion, you have to
-     tell <productname>PostgreSQL</productname> the character set
+     tell <productname>&productname;</productname> the character set
      (encoding) you would like to use in the client. There are several
      ways to accomplish this:
 
