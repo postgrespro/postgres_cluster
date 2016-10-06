@@ -854,12 +854,12 @@ GetRemoteBackendWorkers(PGPROC *proc)
 
 	sig_result = SendProcSignal(proc->pid, WorkerPollReason, proc->backendId);
 	if (sig_result == -1)
-		return NIL;
+		goto signal_error;
 
 	mqh = shm_mq_attach(mq, NULL, NULL);
 	mq_receive_result = shm_mq_receive(mqh, &msg_len, (void **) &msg, false);
 	if (mq_receive_result != SHM_MQ_SUCCESS)
-		return NIL;
+		goto mq_error;
 
 	for (i = 0; i < msg->number; i++)
 	{
@@ -872,6 +872,13 @@ GetRemoteBackendWorkers(PGPROC *proc)
 	shm_mq_detach(mq);
 
 	return result;
+
+signal_error:
+	ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+				errmsg("invalid send signal")));
+mq_error:
+	ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+				errmsg("error in message queue data transmitting")));
 }
 
 static shm_mq_msg *
@@ -914,6 +921,9 @@ GetRemoteBackendQueryStates(PGPROC *leader,
 	params->format = format;
 	pg_write_barrier();
 
+	/* initialize message queue that will transfer query states */
+	mq = shm_mq_create(mq, QUEUE_SIZE);
+
 	/*
 	 * send signal `QueryStatePollReason` to all processes and define all alive
 	 * 		ones
@@ -941,7 +951,6 @@ GetRemoteBackendQueryStates(PGPROC *leader,
 	}
 
 	/* extract query state from leader process */
-	mq = shm_mq_create(mq, QUEUE_SIZE);
 	shm_mq_set_sender(mq, leader);
 	shm_mq_set_receiver(mq, MyProc);
 	mqh = shm_mq_attach(mq, NULL, NULL);
