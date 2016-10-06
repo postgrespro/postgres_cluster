@@ -3599,6 +3599,7 @@ typedef struct MtmGucHashEntry
 } MtmGucHashEntry;
 
 static HTAB *MtmGucHash = NULL;
+static List *MtmGucList = NULL;
 
 static void MtmGucHashInit(void)
 {
@@ -3619,7 +3620,6 @@ static void MtmGucSet(VariableSetStmt *stmt, const char *queryStr)
 	MemoryContext oldcontext;
 	MtmGucHashEntry *hentry;
 	bool found;
-	char *key;
 
 	if (!MtmGucHash)
 		MtmGucHashInit();
@@ -3629,54 +3629,30 @@ static void MtmGucSet(VariableSetStmt *stmt, const char *queryStr)
 	switch (stmt->kind)
 	{
 		case VAR_SET_VALUE:
+			hentry = (MtmGucHashEntry *) hash_search(MtmGucHash, stmt->name,
+														HASH_ENTER,  &found);
+			if (found)
+				pfree(hentry->value);
+			hentry->value = ExtractSetVariableArgs(stmt);
+			break;
+
 		case VAR_SET_DEFAULT:
-		case VAR_SET_CURRENT:
-			{
-				char *value;
-
-				key = pstrdup(stmt->name);
-				hash_search(MtmGucHash, key, HASH_FIND,  &found);
-				value = ExtractSetVariableArgs(stmt);
-
-				fprintf(stderr, ":MtmGucSet: %s -> %s\n", key, value);
-
-				if (value)
-				{
-					hentry = (MtmGucHashEntry *) hash_search(MtmGucHash, key,
-															 HASH_ENTER,  &found);
-
-					// if (found)
-						// pfree(hentry->value);
-
-					hentry->value = palloc(strlen(value) + 1);
-					strcpy(hentry->value, value);
-				}
-				else if (found)
-				{
-					/* That was SET TO DEFAULT and we already had some value */
-					hash_search(MtmGucHash, key, HASH_REMOVE, NULL);
-				}
-			}
+			hash_search(MtmGucHash, stmt->name, HASH_REMOVE, NULL);
 			break;
 
 		case VAR_RESET:
-			{
-				if (strcmp(stmt->name, "session_authorization") == 0)
-				{
-					hash_search(MtmGucHash, "role", HASH_REMOVE, NULL);
-				}
-				key = pstrdup(stmt->name);
-				hash_search(MtmGucHash, key, HASH_REMOVE, NULL);
-			}
+			if (strcmp(stmt->name, "session_authorization") == 0)
+				hash_search(MtmGucHash, "role", HASH_REMOVE, NULL);
+			hash_search(MtmGucHash, stmt->name, HASH_REMOVE, NULL);
 			break;
 
 		case VAR_RESET_ALL:
-			{
-				hash_destroy(MtmGucHash);
-				MtmGucHashInit();
-			}
+			/* XXX: shouldn't we keep auth/role here? */
+			hash_destroy(MtmGucHash);
+			MtmGucHashInit();
 			break;
 
+		case VAR_SET_CURRENT:
 		case VAR_SET_MULTI:
 			break;
 	}
@@ -4000,10 +3976,19 @@ MtmExecutorStart(QueryDesc *queryDesc, int eflags)
 		TargetEntry *tle = (TargetEntry *) lfirst(tlist);
 
 		if (tle->resname && strcmp(tle->resname, "lo_create") == 0)
+		{
 			ddl_generating_call = true;
+			break;
+		}
+
+		if (tle->resname && strcmp(tle->resname, "lo_unlink") == 0)
+		{
+			ddl_generating_call = true;
+			break;
+		}
 	}
 
-	if (ddl_generating_call)
+	if (ddl_generating_call && !MtmTx.isReplicated)
 		MtmProcessDDLCommand(ActivePortal->sourceText, true);
 
 	if (PreviousExecutorStartHook != NULL)
