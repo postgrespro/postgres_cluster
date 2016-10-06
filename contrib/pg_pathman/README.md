@@ -38,7 +38,6 @@ More interesting features are yet to come. Stay tuned!
 
 ## Roadmap
 
- * Provide a way to create user-defined partition creation\destruction callbacks (issue [#22](https://github.com/postgrespro/pg_pathman/issues/22))
  * Implement LIST partitioning scheme;
  * Optimize hash join (both tables are partitioned by join key).
 
@@ -165,9 +164,9 @@ add_range_partition(relation       REGCLASS,
 Create new RANGE partition for `relation` with specified range bounds.
 
 ```plpgsql
-drop_range_partition(partition TEXT)
+drop_range_partition(partition TEXT, delete_data BOOLEAN DEFAULT TRUE)
 ```
-Drop RANGE partition and all its data.
+Drop RANGE partition and all of its data if `delete_data` is true.
 
 ```plpgsql
 attach_range_partition(relation    REGCLASS,
@@ -209,7 +208,24 @@ Enable/disable auto partition propagation (only for RANGE partitioning). It is e
 ```plpgsql
 set_init_callback(relation REGCLASS, callback REGPROC DEFAULT 0)
 ```
-Set partition creation callback to be invoked for each attached or created partition (both HASH and RANGE).
+Set partition creation callback to be invoked for each attached or created partition (both HASH and RANGE). The callback must have the following signature: `part_init_callback(args JSONB) RETURNS VOID`. Parameter `arg` consists of several fields whose presence depends on partitioning type:
+```json
+/* RANGE-partitioned table abc (child abc_4) */
+{
+    "parent":    "abc",
+    "parttype":  "2",
+    "partition": "abc_4",
+    "range_max": "401",
+    "range_min": "301"
+}
+
+/* HASH-partitioned table abc (child abc_0) */
+{
+    "parent":    "abc",
+    "parttype":  "1",
+    "partition": "abc_0"
+}
+```
 
 ## Views and tables
 
@@ -221,8 +237,7 @@ CREATE TABLE IF NOT EXISTS pathman_config (
     parttype        INTEGER NOT NULL,
     range_interval  TEXT,
 
-    CHECK (parttype IN (1, 2)) /* check for allowed part types */
-);
+    CHECK (parttype IN (1, 2)) /* check for allowed part types */ );
 ```
 This table stores a list of partitioned tables.
 
@@ -232,8 +247,7 @@ CREATE TABLE IF NOT EXISTS pathman_config_params (
     partrel        REGCLASS NOT NULL PRIMARY KEY,
     enable_parent  BOOLEAN NOT NULL DEFAULT TRUE,
     auto           BOOLEAN NOT NULL DEFAULT TRUE,
-    init_callback  REGPROCEDURE NOT NULL DEFAULT 0
-);
+    init_callback  REGPROCEDURE NOT NULL DEFAULT 0);
 ```
 This table stores optional parameters which override standard behavior.
 
@@ -259,7 +273,7 @@ This view lists all currently running concurrent partitioning tasks.
 #### `pathman_partition_list` --- list of all existing partitions
 ```plpgsql
 -- helper SRF function
-CREATE OR REPLACE FUNCTION @extschema@.show_partition_list()
+CREATE OR REPLACE FUNCTION show_partition_list()
 RETURNS TABLE (
     parent     REGCLASS,
     partition  REGCLASS,
@@ -432,6 +446,22 @@ SELECT * FROM pathman_concurrent_part_tasks;
 (1 row)
 ```
 
+- `pathman_partition_list` in conjunction with `drop_range_partition()` can be used to drop RANGE partitions in a more flexible way compared to good old `DROP TABLE`:
+```plpgsql
+SELECT drop_range_partition(partition, false) /* move data to parent */
+FROM pathman_partition_list
+WHERE parent = 'part_test'::regclass AND range_min::int < 500;
+NOTICE:  1 rows copied from part_test_11
+NOTICE:  100 rows copied from part_test_1
+NOTICE:  100 rows copied from part_test_2
+ drop_range_partition 
+----------------------
+ dummy_test_11
+ dummy_test_1
+ dummy_test_2
+(3 rows)
+```
+
 ### HASH partitioning
 Consider an example of HASH partitioning. First create a table with some integer column:
 ```plpgsql
@@ -471,7 +501,7 @@ Notice that the `Append` node contains only one child scan which corresponds to 
 > **Important:** pay attention to the fact that `pg_pathman` excludes the parent table from the query plan.
 
 To access parent table use ONLY modifier:
-```
+```plpgsql
 EXPLAIN SELECT * FROM ONLY items;
                       QUERY PLAN
 ------------------------------------------------------
@@ -484,8 +514,7 @@ CREATE TABLE journal (
     id      SERIAL,
     dt      TIMESTAMP NOT NULL,
     level   INTEGER,
-    msg     TEXT
-);
+    msg     TEXT);
 
 -- similar index will also be created for each partition
 CREATE INDEX ON journal(dt);
@@ -515,8 +544,8 @@ CREATE FOREIGN TABLE journal_archive (
     id      INTEGER NOT NULL,
     dt      TIMESTAMP NOT NULL,
     level   INTEGER,
-    msg     TEXT
-) SERVER archive_server;
+    msg     TEXT)
+SERVER archive_server;
 
 SELECT attach_range_partition('journal', 'journal_archive', '2014-01-01'::date, '2015-01-01'::date);
 ```
@@ -536,7 +565,7 @@ SELECT detach_range_partition('journal_archive');
 ```
 
 Here's an example of the query performing filtering by partitioning key:
-```
+```plpgsql
 SELECT * FROM journal WHERE dt >= '2015-06-01' AND dt < '2015-06-03';
    id   |         dt          | level |               msg
 --------+---------------------+-------+----------------------------------
