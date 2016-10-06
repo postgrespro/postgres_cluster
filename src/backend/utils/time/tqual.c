@@ -989,8 +989,9 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 			{
 				if (TransactionIdDidCommit(xvac))
 				{
-					SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
-								InvalidTransactionId);
+					if (!TransactionIdIsInProgress(xvac))
+						SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
+									InvalidTransactionId);
 					return false;
 				}
 				SetHintBits(tuple, buffer, HEAP_XMIN_COMMITTED,
@@ -1011,8 +1012,9 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 								InvalidTransactionId);
 				else
 				{
-					SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
-								InvalidTransactionId);
+					if (!TransactionIdIsInProgress(xvac))
+						SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
+									InvalidTransactionId);
 					return false;
 				}
 			}
@@ -1067,8 +1069,9 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		else
 		{
 			/* it must have aborted or crashed */
-			SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
-						InvalidTransactionId);
+			if (!TransactionIdIsInProgress(HeapTupleHeaderGetRawXmin(tuple)))
+				SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
+							InvalidTransactionId);
 			return false;
 		}
 	}
