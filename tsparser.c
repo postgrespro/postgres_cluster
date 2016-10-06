@@ -2041,8 +2041,14 @@ typedef struct
 	int			len;
 } hlCheck;
 
+#if PG_VERSION_NUM >= 90600 || defined (PGPRO_VERSION)
+#define USE_PHRASE_SEARCH
+#else
+#undef USE_PHRASE_SEARCH
+#endif
+
 static bool
-#if PG_VERSION_NUM >= 90600
+#ifdef USE_PHRASE_SEARCH
 checkcondition_HL(void *opaque, QueryOperand *val, ExecPhraseData *data)
 #else
 checkcondition_HL(void *opaque, QueryOperand *val)
@@ -2054,7 +2060,7 @@ checkcondition_HL(void *opaque, QueryOperand *val)
 	for (i = 0; i < checkval->len; i++)
 	{
 		if (checkval->words[i].item == val)
-#if PG_VERSION_NUM >= 90600
+#ifdef USE_PHRASE_SEARCH
 		{
 			/* don't need to find all positions */
 			if (!data)
@@ -2078,7 +2084,7 @@ checkcondition_HL(void *opaque, QueryOperand *val)
 #endif
 	}
 
-#if PG_VERSION_NUM >= 90600
+#ifdef USE_PHRASE_SEARCH
 	if (data && data->npos > 0)
 		return true;
 #endif
