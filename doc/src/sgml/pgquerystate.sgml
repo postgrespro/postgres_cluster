@@ -1,0 +1,405 @@
+<sect1 id="pg-query-state">
+  <title>pg_query_state</title>
+  <para>
+    The <literal>pg_query_state</literal> module provides facility to know the
+    current state of query execution on working backend.
+  </para>
+  <sect2 id="pg-query-state-overview">
+    <title>Overview</title>
+    <para>
+      Each nonutility query statement (SELECT/INSERT/UPDATE/DELETE) after
+      optimization/planning stage is translated into plan tree wich is kind of
+      imperative representation of declarative SQL query. EXPLAIN ANALYZE
+      request allows to demonstrate execution statistics gathered from each
+      node of plan tree (full time of execution, number rows emitted to upper
+      nodes, etc). But this statistics is collected after execution of query.
+      This module allows to show actual statistics of query running on external
+      backend. At that, format of resulting output is almost identical to
+      ordinal EXPLAIN ANALYZE. Thus users are able to track of query execution
+      in progress.
+
+      In fact, this module is able to explore external backend and determine
+      its actual state. Particularly it's helpful when backend executes a heavy
+      query or gets stuck.
+    </para>
+  </sect2>
+  <sect2 id="use-cases">
+    <title>Use cases</title>
+    <itemizedlist spacing="compact">
+      <para>
+        Using this module there can help in the following things:
+      </para>
+      <listitem>
+        <para>
+          detect a long query (along with other monitoring tools);
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          overwatch the query execution.
+        </para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2 id="pg-query-state-installation">
+    <title>Installation</title>
+    <para>
+      To install <literal>pg_query_state</literal> run in psql:
+    </para>
+    <programlisting>
+      CREATE EXTENSION pg_query_state;
+    </programlisting>
+    <para>
+      Then modify shared_preload_libraries parameter in postgres.conf as
+      following:
+    </para>
+    <programlisting>
+      shared_preload_libraries = 'pg_query_state'
+    </programlisting>
+    <para>
+      It will require to restart the <productname>&productname;</productname>
+      instance.
+    </para>
+  </sect2>
+  <sect2 id="pg-query-state-function">
+    <title>Function pg_query_state</title>
+    <programlisting>
+      pg_query_state(integer  pid,
+                     verbose  boolean DEFAULT FALSE,
+                     costs    boolean DEFAULT FALSE,
+                     timing   boolean DEFAULT FALSE,
+                     buffers  boolean DEFAULT FALSE,
+                     triggers boolean DEFAULT FALSE,
+                     format   text    DEFAULT 'text')
+        returns TABLE (pid integer,
+                       frame_number integer,
+                       query_text text,
+                       plan text,
+                       leader_pid integer)
+    </programlisting>
+    <para>
+      Extract current query state from backend with specified
+      <literal>pid</literal>. Since parallel query can spawn multiple workers
+      and function call causes nested subqueries so that state of execution may
+      be viewed as stack of running queries, return value of pg_query_state has
+      type <literal>TABLE (pid integer, frame_number integer, query_text text,
+              plan text, leader_pid integer)</literal>. It represents tree
+      structure consisting of leader process and its spawned workers identified
+      by <literal>pid</literal>. Each worker refers to leader through
+      <literal>leader_pid</literal> column. For leader process the value of
+      this column is <literal>null</literal>. The state of each process is
+      represented as stack of function calls. Each frame of that stack is
+      specified as correspondence between <literal>frame_number</literal>
+      starting from zero, <literal>query_text</literal> and
+      <literal>plan</literal> with online statistics columns.
+    </para>
+    <para>
+     Thus, user can see the states of main query and queries generated from
+     function calls for leader process and all workers spawned from it.
+    </para>
+    <para>
+      In process of execution some nodes of plan tree can take loops of full
+      execution. Therefore statistics for each node consists of two parts:
+      average statistics for previous loops just like in EXPLAIN ANALYZE output
+      and statistics for current loop if node have not finished.
+    </para>
+    <itemizedlist spacing="compact">
+      <para>
+        Optional arguments:
+      </para>
+      <listitem>
+        <para>
+          verbose - use EXPLAIN VERBOSE for plan printing;
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          costs - costs for each node;
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          timing - print timing data for each node, if collecting of timing
+          statistics is turned off on called side resulting output will contain
+          WARNING message <literal>timing statistics disabled</literal>;
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          buffers - print buffers usage, if collecting of buffers statistics is
+          turned off on called side resulting output will contain WARNING
+          message <literal>buffers statistics disabled</literal>;
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          triggers - include triggers statistics in result plan trees;
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          format - EXPLAIN format to be used for plans printing, posible values:
+          text, xml, json, yaml.
+        </para>
+      </listitem>
+    </itemizedlist>
+    <para>
+      If callable backend is not executing any query the function prints INFO
+      message about backend's state taken from
+      <literal>pg_stat_activity</literal> view if it exists there.
+    </para>
+    <para>
+      Calling role have to be superuser or member of the role whose backend is
+      being called. Othrewise function prints ERROR message
+      <literal>permission denied</literal>.
+    </para>
+  </sect2>
+  <sect2 id="pg-query-state-guc">
+    <title>Configuration settings</title>
+    <itemizedlist spacing="compact">
+      <para>
+        There are several user-accessible GUC variables designed to toggle the
+        whole module and the collecting of specific statistic parameters while
+        query is running:
+      </para>
+      <listitem>
+        <para>
+          pg_query_state.enable - disable (or enable) pg_query_state completely,
+          default value is <literal>true</literal>
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          pg_query_state.enable_timing - collect timing data for each node,
+          default value is <literal>false</literal>
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          pg_query_state.enable_buffers - collect buffers usage, default value
+          is <literal>false</literal>
+        </para>
+      </listitem>
+    </itemizedlist>
+    <para>
+      This parameters is set on called side before running any queries whose
+      states are attempted to extract. <literal>WARNING</literal>: if
+      pg_query_state.enable_timing is turned off the calling side cannot get
+      time statistics, similarly for pg_query_state.enable_buffers parameter.
+    </para>
+  </sect2>
+  <sect2 id="pg-query-state-examples">
+    <title>Examples</title>
+    <para>
+      Set maximum number of parallel workers on <literal>gather</literal> node
+      equals 2:
+    </para>
+    <programlisting>
+      postgres=# set max_parallel_workers_per_gather = 2;
+    </programlisting>
+    <para>
+      Assume one backend with <literal>pid</literal> = 49265 performs a simple
+      query:
+    </para>
+    <programlisting>
+postgres=# select pg_backend_pid();
+pg_backend_pid
+----------------
+    49265
+(1 row)
+postgres=# select count(*) from foo join bar on foo.c1=bar.c1;
+    </programlisting>
+    <para>
+      Other backend can extract intermediate state of execution that query:
+    </para>
+    <programlisting>
+postgres=# \x
+postgres=# select * from pg_query_state(49265);
+-[ RECORD 1 ]+-------------------------------------------------------------------------------------------------------------------------
+pid          | 49265
+frame_number | 0
+query_text   | select count(*) from foo join bar on foo.c1=bar.c1;
+plan         | Finalize Aggregate (Current loop: actual rows=0, loop number=1)                                                         +
+             |   ->  Gather (Current loop: actual rows=0, loop number=1)                                                               +
+             |         Workers Planned: 2                                                                                              +
+             |         Workers Launched: 2                                                                                             +
+             |         ->  Partial Aggregate (Current loop: actual rows=0, loop number=1)                                              +
+             |               ->  Nested Loop (Current loop: actual rows=12, loop number=1)                                             +
+             |                     Join Filter: (foo.c1 = bar.c1)                                                                      +
+             |                     Rows Removed by Join Filter: 5673232                                                                +
+             |                     ->  Parallel Seq Scan on foo (Current loop: actual rows=12, loop number=1)                          +
+             |                     ->  Seq Scan on bar (actual rows=500000 loops=11) (Current loop: actual rows=173244, loop number=12)
+leader_pid   | (null)
+-[ RECORD 2 ]+-------------------------------------------------------------------------------------------------------------------------
+pid          | 49324
+frame_number | 0
+query_text   | &lt;parallel query&gt;
+plan         | Partial Aggregate (Current loop: actual rows=0, loop number=1)                                                          +
+             |   ->  Nested Loop (Current loop: actual rows=10, loop number=1)                                                         +
+             |         Join Filter: (foo.c1 = bar.c1)                                                                                  +
+             |         Rows Removed by Join Filter: 4896779                                                                            +
+             |         ->  Parallel Seq Scan on foo (Current loop: actual rows=10, loop number=1)                                      +
+             |         ->  Seq Scan on bar (actual rows=500000 loops=9) (Current loop: actual rows=396789, loop number=10)
+leader_pid   | 49265
+-[ RECORD 3 ]+-------------------------------------------------------------------------------------------------------------------------
+pid          | 49323
+frame_number | 0
+query_text   | &lt;parallel query&gt;
+plan         | Partial Aggregate (Current loop: actual rows=0, loop number=1)                                                          +
+             |   ->  Nested Loop (Current loop: actual rows=11, loop number=1)                                                         +
+             |         Join Filter: (foo.c1 = bar.c1)                                                                                  +
+             |         Rows Removed by Join Filter: 5268783                                                                            +
+             |         ->  Parallel Seq Scan on foo (Current loop: actual rows=11, loop number=1)                                      +
+             |         ->  Seq Scan on bar (actual rows=500000 loops=10) (Current loop: actual rows=268794, loop number=11)
+leader_pid   | 49265
+    </programlisting>
+    <para>
+      In example above working backend spawns two parallel workers with pids
+      49324 and 49323. Their <literal>leader_pid</literal> column's values
+      clarify that these workers belong to the main backend.
+      <literal>Seq Scan</literal> node has statistics on passed loops (average
+      number of rows delivered to <literal>Nested Loop</literal> and number of
+      passed loops are shown) and statistics on current loop. Other nodes has
+      statistics only for current loop as this loop is first (loop number = 1).
+    </para>
+    <para>
+      Assume first backend executes some function:
+    </para>
+    <programlisting>
+postgres=# select n_join_foo_bar();
+    </programlisting>
+    <para>
+      Other backend can get the follow output:
+    </para>
+    <programlisting>
+postgres=# select * from pg_query_state(49265);
+-[ RECORD 1 ]+------------------------------------------------------------------------------------------------------------------
+pid          | 49265
+frame_number | 0
+query_text   | select n_join_foo_bar();
+plan         | Result (Current loop: actual rows=0, loop number=1)
+leader_pid   | (null)
+-[ RECORD 2 ]+------------------------------------------------------------------------------------------------------------------
+pid          | 49265
+frame_number | 1
+query_text   | SELECT (select count(*) from foo join bar on foo.c1=bar.c1)
+plan         | Result (Current loop: actual rows=0, loop number=1)                                                              +
+             |   InitPlan 1 (returns $0)                                                                                        +
+             |     ->  Aggregate (Current loop: actual rows=0, loop number=1)                                                   +
+             |           ->  Nested Loop (Current loop: actual rows=51, loop number=1)                                          +
+             |                 Join Filter: (foo.c1 = bar.c1)                                                                   +
+             |                 Rows Removed by Join Filter: 51636304                                                            +
+             |                 ->  Seq Scan on bar (Current loop: actual rows=52, loop number=1)                                +
+             |                 ->  Materialize (actual rows=1000000 loops=51) (Current loop: actual rows=636355, loop number=52)+
+             |                       ->  Seq Scan on foo (Current loop: actual rows=1000000, loop number=1)
+leader_pid   | (null)
+    </programlisting>
+    <para>
+      First row corresponds to function call, second - to query which is in
+      the body of that function.
+    </para>
+    <para>
+      We can get result plans in different format (e.g. json):
+    </para>
+    <programlisting>
+postgres=# select * from pg_query_state(pid := 49265, format := 'json');
+-[ RECORD 1 ]+------------------------------------------------------------
+pid          | 49265
+frame_number | 0
+query_text   | select * from n_join_foo_bar();
+plan         | {                                                          +
+             |   "Plan": {                                                +
+             |     "Node Type": "Function Scan",                          +
+             |     "Parallel Aware": false,                               +
+             |     "Function Name": "n_join_foo_bar",                     +
+             |     "Alias": "n_join_foo_bar",                             +
+             |     "Current loop": {                                      +
+             |       "Actual Loop Number": 1,                             +
+             |       "Actual Rows": 0                                     +
+             |     }                                                      +
+             |   }                                                        +
+             | }
+leader_pid   | (null)
+-[ RECORD 2 ]+------------------------------------------------------------
+pid          | 49265
+frame_number | 1
+query_text   | SELECT (select count(*) from foo join bar on foo.c1=bar.c1)
+plan         | {                                                          +
+             |   "Plan": {                                                +
+             |     "Node Type": "Result",                                 +
+             |     "Parallel Aware": false,                               +
+             |     "Current loop": {                                      +
+             |       "Actual Loop Number": 1,                             +
+             |       "Actual Rows": 0                                     +
+             |     },                                                     +
+             |     "Plans": [                                             +
+             |       {                                                    +
+             |         "Node Type": "Aggregate",                          +
+             |         "Strategy": "Plain",                               +
+             |         "Partial Mode": "Simple",                          +
+             |         "Parent Relationship": "InitPlan",                 +
+             |         "Subplan Name": "InitPlan 1 (returns $0)",         +
+             |         "Parallel Aware": false,                           +
+             |         "Current loop": {                                  +
+             |           "Actual Loop Number": 1,                         +
+             |           "Actual Rows": 0                                 +
+             |         },                                                 +
+             |         "Plans": [                                         +
+             |           {                                                +
+             |             "Node Type": "Nested Loop",                    +
+             |             "Parent Relationship": "Outer",                +
+             |             "Parallel Aware": false,                       +
+             |             "Join Type": "Inner",                          +
+             |             "Current loop": {                              +
+             |               "Actual Loop Number": 1,                     +
+             |               "Actual Rows": 610                           +
+             |             },                                             +
+             |             "Join Filter": "(foo.c1 = bar.c1)",            +
+             |             "Rows Removed by Join Filter": 610072944,      +
+             |             "Plans": [                                     +
+             |               {                                            +
+             |                 "Node Type": "Seq Scan",                   +
+             |                 "Parent Relationship": "Outer",            +
+             |                 "Parallel Aware": false,                   +
+             |                 "Relation Name": "bar",                    +
+             |                 "Alias": "bar",                            +
+             |                 "Current loop": {                          +
+             |                   "Actual Loop Number": 1,                 +
+             |                   "Actual Rows": 611                       +
+             |                 }                                          +
+             |               },                                           +
+             |               {                                            +
+             |                 "Node Type": "Materialize",                +
+             |                 "Parent Relationship": "Inner",            +
+             |                 "Parallel Aware": false,                   +
+             |                 "Actual Rows": 1000000,                    +
+             |                 "Actual Loops": 610,                       +
+             |                 "Current loop": {                          +
+             |                   "Actual Loop Number": 611,               +
+             |                   "Actual Rows": 73554                     +
+             |                 },                                         +
+             |                 "Plans": [                                 +
+             |                   {                                        +
+             |                     "Node Type": "Seq Scan",               +
+             |                     "Parent Relationship": "Outer",        +
+             |                     "Parallel Aware": false,               +
+             |                     "Relation Name": "foo",                +
+             |                     "Alias": "foo",                        +
+             |                     "Current loop": {                      +
+             |                       "Actual Loop Number": 1,             +
+             |                       "Actual Rows": 1000000               +
+             |                     }                                      +
+             |                   }                                        +
+             |                 ]                                          +
+             |               }                                            +
+             |             ]                                              +
+             |           }                                                +
+             |         ]                                                  +
+             |       }                                                    +
+             |     ]                                                      +
+             |   }                                                        +
+             | }
+leader_pid   | (null)
+    </programlisting>
+  </sect2>
+</sect1>

@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_extension.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTEREXTENSION">
@@ -313,7 +313,7 @@ ALTER EXTENSION hstore ADD FUNCTION populate_record(anyelement, hstore);
   <title>Compatibility</title>
 
   <para>
-   <command>ALTER EXTENSION</command> is a <productname>PostgreSQL</>
+   <command>ALTER EXTENSION</command> is a <productname>&productname;</>
    extension.
   </para>
  </refsect1>

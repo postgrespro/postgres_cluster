@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/drop_rule.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DROPRULE">
@@ -106,7 +106,7 @@ DROP RULE newrule ON mytable;
 
   <para>
    <command>DROP RULE</command> is a
-   <productname>PostgreSQL</productname> language extension, as is the
+   <productname>&productname;</productname> language extension, as is the
    entire query rewrite system.
   </para>
  </refsect1>

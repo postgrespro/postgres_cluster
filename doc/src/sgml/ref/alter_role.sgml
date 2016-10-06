@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_role.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERROLE">
@@ -56,7 +56,7 @@ ALTER ROLE { <replaceable class="PARAMETER">role_specification</replaceable> | A
 
   <para>
    <command>ALTER ROLE</command> changes the attributes of a
-   <productname>PostgreSQL</productname> role.
+   <productname>&productname;</productname> role.
   </para>
 
   <para>
@@ -334,7 +334,7 @@ ALTER ROLE fred IN DATABASE devel SET client_min_messages = DEBUG;
 
   <para>
    The <command>ALTER ROLE</command> statement is a
-   <productname>PostgreSQL</productname> extension.
+   <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

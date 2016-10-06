@@ -88,7 +88,7 @@ SET CONSTRAINTS { ALL | <replaceable class="parameter">name</replaceable> [, ...
   <title>Notes</title>
 
   <para>
-   Because <productname>PostgreSQL</productname> does not require constraint
+   Because <productname>&productname;</productname> does not require constraint
    names to be unique within a schema (but only per-table), it is possible
    that there is more than one match for a specified constraint name.
    In this case <command>SET CONSTRAINTS</command> will act on all matches.
@@ -110,9 +110,9 @@ SET CONSTRAINTS { ALL | <replaceable class="parameter">name</replaceable> [, ...
   <para>
    This command complies with the behavior defined in the SQL
    standard, except for the limitation that, in
-   <productname>PostgreSQL</productname>, it does not apply to
+   <productname>&productname;</productname>, it does not apply to
    <literal>NOT NULL</> and <literal>CHECK</> constraints.
-   Also, <productname>PostgreSQL</productname> checks non-deferrable
+   Also, <productname>&productname;</productname> checks non-deferrable
    uniqueness constraints immediately, not at end of statement as the
    standard would suggest.
   </para>

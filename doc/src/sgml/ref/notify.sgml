@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/notify.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-NOTIFY">
@@ -40,7 +40,7 @@ NOTIFY <replaceable class="PARAMETER">channel</replaceable> [ , <replaceable cla
   <para>
    <command>NOTIFY</command> provides a simple
    interprocess communication mechanism for a collection of processes
-   accessing the same <productname>PostgreSQL</productname> database.
+   accessing the same <productname>&productname;</productname> database.
    A payload string can be sent along with the notification, and
    higher-level mechanisms for passing structured data can be built by using
    tables in the database to pass additional data from notifier to listener(s).

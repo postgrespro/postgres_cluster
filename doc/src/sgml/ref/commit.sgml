@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/commit.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-COMMIT">

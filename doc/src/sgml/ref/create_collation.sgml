@@ -126,7 +126,7 @@ CREATE COLLATION <replaceable>name</replaceable> FROM <replaceable>existing_coll
 
   <para>
    See <xref linkend="collation"> for more information about collation
-   support in PostgreSQL.
+   support in &productname;.
   </para>
  </refsect1>
 
@@ -160,7 +160,7 @@ CREATE COLLATION german FROM "de_DE";
    There is a <command>CREATE COLLATION</command> statement in the SQL
    standard, but it is limited to copying an existing collation.  The
    syntax to create a new collation is
-   a <productname>PostgreSQL</productname> extension.
+   a <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

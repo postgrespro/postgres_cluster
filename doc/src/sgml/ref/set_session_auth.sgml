@@ -100,13 +100,13 @@ SELECT SESSION_USER, CURRENT_USER;
   <para>
    The SQL standard allows some other expressions to appear in place
    of the literal <replaceable>user_name</replaceable>, but these options
-   are not important in practice.  <productname>PostgreSQL</productname>
+   are not important in practice.  <productname>&productname;</productname>
    allows identifier syntax (<literal>"<replaceable>username</>"</literal>), which SQL
    does not.  SQL does not allow this command during a transaction;
-   <productname>PostgreSQL</productname> does not make this
+   <productname>&productname;</productname> does not make this
    restriction because there is no reason to.
    The <literal>SESSION</> and <literal>LOCAL</> modifiers are a
-   <productname>PostgreSQL</productname> extension, as is the
+   <productname>&productname;</productname> extension, as is the
    <literal>RESET</> syntax.
   </para>
 

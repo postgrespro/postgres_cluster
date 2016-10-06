@@ -4,7 +4,7 @@
  <title>The Source Code Repository</title>
 
  <para>
-  The <productname>PostgreSQL</productname> source code is stored and managed
+  The <productname>&productname;</productname> source code is stored and managed
   using the <productname>Git</productname> version control system. A public
   mirror of the master repository is available; it is updated within a minute
   of any change to the master repository.
@@ -17,7 +17,7 @@
  </para>
 
   <para>
-   Note that building <productname>PostgreSQL</productname> from the source
+   Note that building <productname>&productname;</productname> from the source
    repository requires reasonably up-to-date versions of <application>bison</>,
    <application>flex</>, and <application>Perl</>. These tools are not needed
    to build from a distribution tarball since the files they are used to build

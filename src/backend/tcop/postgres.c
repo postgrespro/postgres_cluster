@@ -3011,6 +3011,8 @@ ProcessInterrupts(void)
 
 	if (ParallelMessagePending)
 		HandleParallelMessages();
+
+	CheckAndHandleCustomSignals();
 }
 
 

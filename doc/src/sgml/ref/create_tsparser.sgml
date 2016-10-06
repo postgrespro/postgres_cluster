@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_tsparser.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATETSPARSER">

@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_tsconfig.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATETSCONFIG">
