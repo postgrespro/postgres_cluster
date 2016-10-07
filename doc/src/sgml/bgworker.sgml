@@ -8,10 +8,10 @@
  </indexterm>
 
  <para>
-  PostgreSQL can be extended to run user-supplied code in separate processes.
+  &productname; can be extended to run user-supplied code in separate processes.
   Such processes are started, stopped and monitored by <command>postgres</command>,
   which permits them to have a lifetime closely linked to the server's status.
-  These processes have the option to attach to <productname>PostgreSQL</>'s
+  These processes have the option to attach to <productname>&productname;</>'s
   shared memory area and to connect to databases internally; they can also run
   multiple transactions serially, just like a regular client-connected server
   process.  Also, by linking to <application>libpq</> they can connect to the
@@ -31,7 +31,7 @@
 
  <para>
   Background workers can be initialized at the time that
-  <productname>PostgreSQL</> is started by including the module name in
+  <productname>&productname;</> is started by including the module name in
   <varname>shared_preload_libraries</>.  A module wishing to run a background
   worker can register it by calling
   <function>RegisterBackgroundWorker(<type>BackgroundWorker *worker</type>)</function>
@@ -80,7 +80,7 @@ typedef struct BackgroundWorker
       <para>
        <indexterm><primary>BGWORKER_SHMEM_ACCESS</primary></indexterm>
        Requests shared memory access.  Workers without shared memory access
-       cannot access any of <productname>PostgreSQL's</productname> shared
+       cannot access any of <productname>&productname;'s</productname> shared
        data structures, such as heavyweight or lightweight locks, shared
        buffers, or any custom data structures which the worker itself may
        wish to create and use.
@@ -191,7 +191,7 @@ typedef struct BackgroundWorker
   </para>
 
   <para>
-   <structfield>bgw_notify_pid</structfield> is the PID of a PostgreSQL
+   <structfield>bgw_notify_pid</structfield> is the PID of a &productname;
    backend process to which the postmaster should send <literal>SIGUSR1</>
    when the process is started or exits.  It should be 0 for workers registered
    at postmaster startup time, or when the backend registering the worker does

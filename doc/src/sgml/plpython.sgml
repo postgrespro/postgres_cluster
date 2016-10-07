@@ -8,7 +8,7 @@
 
  <para>
   The <application>PL/Python</application> procedural language allows
-  <productname>PostgreSQL</productname> functions to be written in the
+  <productname>&productname;</productname> functions to be written in the
   <ulink url="http://www.python.org">Python language</ulink>.
  </para>
 
@@ -53,7 +53,7 @@
 
   <para>
    PL/Python supports both the Python 2 and Python 3 language
-   variants.  (The PostgreSQL installation instructions might contain
+   variants.  (The &productname; installation instructions might contain
    more precise information about the exact supported minor versions
    of Python.)  Because the Python 2 and Python 3 language variants
    are incompatible in some important aspects, the following naming
@@ -62,14 +62,14 @@
    <itemizedlist>
     <listitem>
      <para>
-      The PostgreSQL language named <literal>plpython2u</literal>
+      The &productname; language named <literal>plpython2u</literal>
       implements PL/Python based on the Python 2 language variant.
      </para>
     </listitem>
 
     <listitem>
      <para>
-      The PostgreSQL language named <literal>plpython3u</literal>
+      The &productname; language named <literal>plpython3u</literal>
       implements PL/Python based on the Python 3 language variant.
      </para>
     </listitem>
@@ -83,7 +83,7 @@
       their <quote>default</quote>, for example,
       what <filename>/usr/bin/python</filename> might be.)  The
       default will probably be changed to Python 3 in a distant future
-      release of PostgreSQL, depending on the progress of the
+      release of &productname;, depending on the progress of the
       migration to Python 3 in the Python community.
      </para>
     </listitem>
@@ -136,7 +136,7 @@
       and don't plan to ever change it can make use of
       the <literal>plpython2u</literal> language name.  This will
       continue to work into the very distant future, until Python 2
-      support might be completely dropped by PostgreSQL.
+      support might be completely dropped by &productname;.
      </para>
     </listitem>
 
@@ -175,7 +175,7 @@
    It is not allowed to use PL/Python based on Python 2 and PL/Python
    based on Python 3 in the same session, because the symbols in the
    dynamic modules would clash, which could result in crashes of the
-   PostgreSQL server process.  There is a check that prevents mixing
+   &productname; server process.  There is a check that prevents mixing
    Python major versions in a session, which will abort the session if
    a mismatch is detected.  It is possible, however, to use both
    PL/Python variants in the same database, from separate sessions.
@@ -236,7 +236,7 @@ def __plpython_procedure_pymax_23456():
 </programlisting>
 
    assuming that 23456 is the OID assigned to the function by
-   <productname>PostgreSQL</productname>.
+   <productname>&productname;</productname>.
   </para>
 
   <para>
@@ -280,7 +280,7 @@ $$ LANGUAGE plpythonu;
   <title>Data Values</title>
   <para>
    Generally speaking, the aim of PL/Python is to provide
-   a <quote>natural</quote> mapping between the PostgreSQL and the
+   a <quote>natural</quote> mapping between the &productname; and the
    Python worlds.  This informs the data mapping rules described
    below.
   </para>
@@ -289,20 +289,20 @@ $$ LANGUAGE plpythonu;
    <title>Data Type Mapping</title>
    <para>
     When a PL/Python function is called, its arguments are converted from
-    their PostgreSQL data type to a corresponding Python type:
+    their &productname; data type to a corresponding Python type:
 
     <itemizedlist>
      <listitem>
       <para>
-       PostgreSQL <type>boolean</type> is converted to Python <type>bool</type>.
+       &productname; <type>boolean</type> is converted to Python <type>bool</type>.
       </para>
      </listitem>
 
      <listitem>
       <para>
-       PostgreSQL <type>smallint</type> and <type>int</type> are
+       &productname; <type>smallint</type> and <type>int</type> are
        converted to Python <type>int</type>.
-       PostgreSQL <type>bigint</type> and <type>oid</type> are converted
+       &productname; <type>bigint</type> and <type>oid</type> are converted
        to <type>long</type> in Python 2 and to <type>int</type> in
        Python 3.
       </para>
@@ -310,14 +310,14 @@ $$ LANGUAGE plpythonu;
 
      <listitem>
       <para>
-       PostgreSQL <type>real</type> and <type>double</type> are converted to
+       &productname; <type>real</type> and <type>double</type> are converted to
        Python <type>float</type>.
       </para>
      </listitem>
 
      <listitem>
       <para>
-       PostgreSQL <type>numeric</type> is converted to
+       &productname; <type>numeric</type> is converted to
        Python <type>Decimal</type>.  This type is imported from
        the <literal>cdecimal</literal> package if that is available.
        Otherwise,
@@ -332,7 +332,7 @@ $$ LANGUAGE plpythonu;
 
      <listitem>
       <para>
-       PostgreSQL <type>bytea</type> is converted to
+       &productname; <type>bytea</type> is converted to
        Python <type>str</type> in Python 2 and to <type>bytes</type>
        in Python 3.  In Python 2, the string should be treated as a
        byte sequence without any character encoding.
@@ -341,9 +341,9 @@ $$ LANGUAGE plpythonu;
 
      <listitem>
       <para>
-       All other data types, including the PostgreSQL character string
+       All other data types, including the &productname; character string
        types, are converted to a Python <type>str</type>.  In Python
-       2, this string will be in the PostgreSQL server encoding; in
+       2, this string will be in the &productname; server encoding; in
        Python 3, it will be a Unicode string like all strings.
       </para>
      </listitem>
@@ -358,12 +358,12 @@ $$ LANGUAGE plpythonu;
 
    <para>
     When a PL/Python function returns, its return value is converted to the
-    function's declared PostgreSQL return data type as follows:
+    function's declared &productname; return data type as follows:
 
     <itemizedlist>
      <listitem>
       <para>
-       When the PostgreSQL return type is <type>boolean</type>, the
+       When the &productname; return type is <type>boolean</type>, the
        return value will be evaluated for truth according to the
        <emphasis>Python</emphasis> rules.  That is, 0 and empty string
        are false, but notably <literal>'f'</literal> is true.
@@ -372,7 +372,7 @@ $$ LANGUAGE plpythonu;
 
      <listitem>
       <para>
-       When the PostgreSQL return type is <type>bytea</type>, the
+       When the &productname; return type is <type>bytea</type>, the
        return value will be converted to a string (Python 2) or bytes
        (Python 3) using the respective Python built-ins, with the
        result being converted to <type>bytea</type>.
@@ -381,17 +381,17 @@ $$ LANGUAGE plpythonu;
 
      <listitem>
       <para>
-       For all other PostgreSQL return types, the return value is converted
+       For all other &productname; return types, the return value is converted
        to a string using the Python built-in <literal>str</literal>, and the
-       result is passed to the input function of the PostgreSQL data type.
+       result is passed to the input function of the &productname; data type.
        (If the Python value is a <type>float</>, it is converted using
        the <literal>repr</> built-in instead of <literal>str</literal>, to
        avoid loss of precision.)
       </para>
 
       <para>
-       Strings in Python 2 are required to be in the PostgreSQL server
-       encoding when they are passed to PostgreSQL.  Strings that are
+       Strings in Python 2 are required to be in the &productname; server
+       encoding when they are passed to &productname;.  Strings that are
        not valid in the current server encoding will raise an error,
        but not all encoding mismatches can be detected, so garbage
        data can still result when this is not done correctly.  Unicode
@@ -408,7 +408,7 @@ $$ LANGUAGE plpythonu;
      </listitem>
     </itemizedlist>
 
-    Note that logical mismatches between the declared PostgreSQL
+    Note that logical mismatches between the declared &productname;
     return type and the Python data type of the actual return object
     are not flagged; the value will be converted in any case.
    </para>
@@ -423,7 +423,7 @@ $$ LANGUAGE plpythonu;
    Python. For example, the function definition of <function>pymax</function>
    shown in <xref linkend="plpython-funcs"> will return the wrong answer for null
    inputs. We could add <literal>STRICT</literal> to the function definition
-   to make <productname>PostgreSQL</productname> do something more reasonable:
+   to make <productname>&productname;</productname> do something more reasonable:
    if a null value is passed, the function will not be called at all,
    but will just return a null result automatically. Alternatively,
    we could check for null inputs in the function body:
@@ -645,7 +645,7 @@ CREATE FUNCTION greet (how text)
 AS $$
   # return tuple containing lists as composite types
   # all other combinations work also
-  return ( [ how, "World" ], [ how, "PostgreSQL" ], [ how, "PL/Python" ] )
+  return ( [ how, "World" ], [ how, "&productname;" ], [ how, "PL/Python" ] )
 $$ LANGUAGE plpythonu;
 </programlisting>
       </para>
@@ -676,7 +676,7 @@ AS $$
         raise StopIteration
       return ( self.how, self.who[self.ndx] )
 
-  return producer(how, [ "World", "PostgreSQL", "PL/Python" ])
+  return producer(how, [ "World", "&productname;", "PL/Python" ])
 $$ LANGUAGE plpythonu;
 </programlisting>
       </para>
@@ -691,7 +691,7 @@ $$ LANGUAGE plpythonu;
 CREATE FUNCTION greet (how text)
   RETURNS SETOF greeting
 AS $$
-  for who in [ "World", "PostgreSQL", "PL/Python" ]:
+  for who in [ "World", "&productname;", "PL/Python" ]:
     yield ( how, who )
 $$ LANGUAGE plpythonu;
 </programlisting>
@@ -702,7 +702,7 @@ $$ LANGUAGE plpythonu;
          <ulink url="http://bugs.python.org/issue1483133">bug #1483133</ulink>,
          some debug versions of Python 2.4
          (configured and compiled with option <literal>--with-pydebug</literal>)
-         are known to crash the <productname>PostgreSQL</productname> server
+         are known to crash the <productname>&productname;</productname> server
          when using an iterator to return a set result.
          Unpatched versions of Fedora 4 contain this bug.
          It does not happen in production versions of Python or on patched
@@ -1028,7 +1028,7 @@ rv = plpy.execute(plan, ["name"], 5)
      </para>
 
      <para>
-      Query parameters and result row fields are converted between PostgreSQL
+      Query parameters and result row fields are converted between &productname;
       and Python data types as described in <xref linkend="plpython-data">.
      </para>
 
@@ -1164,7 +1164,7 @@ $$ LANGUAGE plpythonu;
     to <xref linkend="errcodes-table"> for a list of possible
     conditions.  The module
     <literal>plpy.spiexceptions</literal> defines an exception class
-    for each <productname>PostgreSQL</productname> condition, deriving
+    for each <productname>&productname;</productname> condition, deriving
     their names from the condition name.  For
     instance, <literal>division_by_zero</literal>
     becomes <literal>DivisionByZero</literal>, <literal>unique_violation</literal>
@@ -1273,7 +1273,7 @@ $$ LANGUAGE plpythonu;
     Note that the use of <literal>try/catch</literal> is still
     required.  Otherwise the exception would propagate to the top of
     the Python stack and would cause the whole function to abort with
-    a <productname>PostgreSQL</productname> error, so that the
+    a <productname>&productname;</productname> error, so that the
     <literal>operations</literal> table would not have any row
     inserted into it.  The subtransaction context manager does not
     trap errors, it only assures that all database operations executed
@@ -1431,7 +1431,7 @@ plpy.execute("UPDATE tbl SET %s = %s WHERE key = %s" % (
   <para>
    Some of the environment variables that are accepted by the Python
    interpreter can also be used to affect PL/Python behavior.  They
-   would need to be set in the environment of the main PostgreSQL
+   would need to be set in the environment of the main &productname;
    server process, for example in a start script.  The available
    environment variables depend on the version of Python; see the
    Python documentation for details.  At the time of this writing, the

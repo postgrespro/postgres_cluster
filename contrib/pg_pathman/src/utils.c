@@ -17,6 +17,7 @@
 #include "catalog/heap.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_extension.h"
+#include "catalog/pg_proc.h"
 #include "commands/extension.h"
 #include "miscadmin.h"
 #include "optimizer/var.h"
@@ -39,6 +40,7 @@ static void change_varnos_in_restrinct_info(RestrictInfo *rinfo,
 static bool change_varno_walker(Node *node, change_varno_context *context);
 static List *get_tableoids_list(List *tlist);
 static void lock_rows_visitor(Plan *plan, void *context);
+static bool rowmark_add_tableoids_walker(Node *node, void *context);
 
 
 /*
@@ -154,7 +156,9 @@ lock_rows_visitor(Plan *plan, void *context)
 	}
 }
 
-/* NOTE: Used for debug */
+/*
+ * Print Bitmapset as cstring.
+ */
 #ifdef __GNUC__
 __attribute__((unused))
 #endif
@@ -246,6 +250,11 @@ fill_type_cmp_fmgr_info(FmgrInfo *finfo, Oid type1, Oid type2)
 									 type1,
 									 type2,
 									 BTORDER_PROC);
+
+	if (cmp_proc_oid == InvalidOid)
+		elog(ERROR, "missing comparison function for types %s & %s",
+			 format_type_be(type1), format_type_be(type2));
+
 	fmgr_info(cmp_proc_oid, finfo);
 
 	return;
@@ -443,6 +452,57 @@ plan_tree_walker(Plan *plan,
 	visitor(plan, context);
 }
 
+static bool
+rowmark_add_tableoids_walker(Node *node, void *context)
+{
+	if (node == NULL)
+		return false;
+
+	if (IsA(node, Query))
+	{
+		Query	   *parse = (Query *) node;
+		ListCell   *lc;
+
+		/* Generate 'tableoid' for partitioned table rowmark */
+		foreach (lc, parse->rowMarks)
+		{
+			RowMarkClause  *rc = (RowMarkClause *) lfirst(lc);
+			Oid				parent = getrelid(rc->rti, parse->rtable);
+			Var			   *var;
+			TargetEntry	   *tle;
+			char			resname[64];
+
+			/* Check that table is partitioned */
+			if (!get_pathman_relation_info(parent))
+				continue;
+
+			var = makeVar(rc->rti,
+						  TableOidAttributeNumber,
+						  OIDOID,
+						  -1,
+						  InvalidOid,
+						  0);
+
+			/* Use parent's Oid as TABLEOID_STR's key (%u) */
+			snprintf(resname, sizeof(resname), TABLEOID_STR("%u"), parent);
+
+			tle = makeTargetEntry((Expr *) var,
+								  list_length(parse->targetList) + 1,
+								  pstrdup(resname),
+								  true);
+
+			/* There's no problem here since new attribute is junk */
+			parse->targetList = lappend(parse->targetList, tle);
+		}
+
+		return query_tree_walker((Query *) node,
+								 rowmark_add_tableoids_walker,
+								 NULL, 0);
+	}
+
+	return expression_tree_walker(node, rowmark_add_tableoids_walker, NULL);
+}
+
 /*
  * Add missing 'TABLEOID_STR%u' junk attributes for inherited partitions
  *
@@ -455,56 +515,7 @@ plan_tree_walker(Plan *plan,
 void
 rowmark_add_tableoids(Query *parse)
 {
-	ListCell *lc;
-
-	check_stack_depth();
-
-	foreach(lc, parse->rtable)
-	{
-		RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
-
-		switch(rte->rtekind)
-		{
-			case RTE_SUBQUERY:
-				rowmark_add_tableoids(rte->subquery);
-				break;
-
-			default:
-				break;
-		}
-	}
-
-	/* Generate 'tableoid' for partitioned table rowmark */
-	foreach (lc, parse->rowMarks)
-	{
-		RowMarkClause  *rc = (RowMarkClause *) lfirst(lc);
-		Oid				parent = getrelid(rc->rti, parse->rtable);
-		Var			   *var;
-		TargetEntry	   *tle;
-		char			resname[64];
-
-		/* Check that table is partitioned */
-		if (!get_pathman_relation_info(parent))
-			continue;
-
-		var = makeVar(rc->rti,
-					  TableOidAttributeNumber,
-					  OIDOID,
-					  -1,
-					  InvalidOid,
-					  0);
-
-		/* Use parent's Oid as TABLEOID_STR's key (%u) */
-		snprintf(resname, sizeof(resname), TABLEOID_STR("%u"), parent);
-
-		tle = makeTargetEntry((Expr *) var,
-							  list_length(parse->targetList) + 1,
-							  pstrdup(resname),
-							  true);
-
-		/* There's no problem here since new attribute is junk */
-		parse->targetList = lappend(parse->targetList, tle);
-	}
+	rowmark_add_tableoids_walker((Node *) parse, NULL);
 }
 
 /*
@@ -617,7 +628,7 @@ datum_to_cstring(Datum datum, Oid typid)
 
 	if (HeapTupleIsValid(tup))
 	{
-		Form_pg_type	typtup = (Form_pg_type) GETSTRUCT(tup);
+		Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tup);
 		result = OidOutputFunctionCall(typtup->typoutput, datum);
 		ReleaseSysCache(tup);
 	}
@@ -633,6 +644,85 @@ datum_to_cstring(Datum datum, Oid typid)
 char *
 get_rel_name_or_relid(Oid relid)
 {
-	return DatumGetCString(DirectFunctionCall1(regclassout,
-											   ObjectIdGetDatum(relid)));
+	char *relname = get_rel_name(relid);
+
+	if (!relname)
+		return DatumGetCString(DirectFunctionCall1(oidout,
+												   ObjectIdGetDatum(relid)));
+	return relname;
+}
+
+/*
+ * Try to get opname or at least opid as cstring.
+ */
+char *
+get_op_name_or_opid(Oid opid)
+{
+	char *opname = get_opname(opid);
+
+	if (!opname)
+		return DatumGetCString(DirectFunctionCall1(oidout,
+												   ObjectIdGetDatum(opid)));
+	return opname;
+}
+
+
+#if PG_VERSION_NUM < 90600
+/*
+ * Returns the relpersistence associated with a given relation.
+ *
+ * NOTE: this function is implemented in 9.6
+ */
+char
+get_rel_persistence(Oid relid)
+{
+	HeapTuple		tp;
+	Form_pg_class	reltup;
+	char 			result;
+
+	tp = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for relation %u", relid);
+
+	reltup = (Form_pg_class) GETSTRUCT(tp);
+	result = reltup->relpersistence;
+	ReleaseSysCache(tp);
+
+	return result;
+}
+#endif
+
+/*
+ * Checks that callback function meets specific requirements.
+ * It must have the only JSONB argument and BOOL return type.
+ */
+bool
+validate_on_part_init_cb(Oid procid, bool emit_error)
+{
+	HeapTuple		tp;
+	Form_pg_proc	functup;
+	bool			is_ok = true;
+
+	if (procid == InvalidOid)
+		return true;
+
+	tp = SearchSysCache1(PROCOID, ObjectIdGetDatum(procid));
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for function %u", procid);
+
+	functup = (Form_pg_proc) GETSTRUCT(tp);
+
+	if (functup->pronargs != 1 ||
+		functup->proargtypes.values[0] != JSONBOID ||
+		functup->prorettype != VOIDOID)
+		is_ok = false;
+
+	ReleaseSysCache(tp);
+
+	if (emit_error && !is_ok)
+		elog(ERROR,
+			 "Callback function must have the following signature: "
+			 "callback(arg JSONB) RETURNS VOID");
+
+	return is_ok;
 }

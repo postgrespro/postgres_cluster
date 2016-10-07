@@ -8,7 +8,7 @@
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</> can devise query plans which can leverage
+   <productname>&productname;</> can devise query plans which can leverage
    multiple CPUs in order to answer queries faster.  This feature is known
    as parallel query.  Many queries cannot benefit from parallel query, either
    due to limitations of the current implementation or because there is no
@@ -295,7 +295,7 @@ EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
   </para>
 
   <para>
-    <productname>PostgreSQL</> supports parallel aggregation by aggregating
+    <productname>&productname;</> supports parallel aggregation by aggregating
     twice.  First, each process participating in the parallel portion of the
     query performs an aggregation step, producing a partial result for each
     group of which that process is aware.  This is reflected in the plan as

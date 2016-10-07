@@ -4,7 +4,7 @@
  <title>Documentation</title>
 
  <para>
-  <productname>PostgreSQL</productname> has four primary documentation
+  <productname>&productname;</productname> has four primary documentation
   formats:
 
   <itemizedlist>
@@ -31,7 +31,7 @@
   </itemizedlist>
 
   Additionally, a number of plain-text <filename>README</filename> files can
-  be found throughout the <productname>PostgreSQL</productname> source tree,
+  be found throughout the <productname>&productname;</productname> source tree,
   documenting various implementation issues.
  </para>
 
@@ -123,7 +123,7 @@
        This is another stylesheet for converting DocBook to other
        formats.  We currently use this to produce man pages and
        optionally HTMLHelp.  You can also use this toolchain to
-       produce HTML or PDF output, but official PostgreSQL releases
+       produce HTML or PDF output, but official &productname; releases
        use the DSSSL stylesheets for that.
       </para>
 
@@ -155,7 +155,7 @@
        This library and the <command>xmllint</command> tool it contains are
        used for processing XML.  Many developers will already
        have <application>Libxml2</application> installed, because it is also
-       used when building the PostgreSQL code.  Note, however,
+       used when building the &productname; code.  Note, however,
        that <command>xmllint</command> might need to be installed from a
        separate subpackage.
       </para>
@@ -462,7 +462,7 @@ CATALOG "docbook-dsssl-1.<replaceable>xx</>/catalog"
 </programlisting>
      Because stylesheets change rather often, and it's sometimes
      beneficial to try out alternative versions,
-     <productname>PostgreSQL</productname> doesn't use this catalog
+     <productname>&productname;</productname> doesn't use this catalog
      entry.  See <xref linkend="docguide-toolsets-configure"> for
      information about how to select the stylesheets instead.
     </para>
@@ -499,7 +499,7 @@ CATALOG "docbook-dsssl-1.<replaceable>xx</>/catalog"
 
     <para>
      Before you can use <application>JadeTeX</application> with the
-     <productname>PostgreSQL</productname> documentation sources, you
+     <productname>&productname;</productname> documentation sources, you
      will need to increase the size of
      <application>TeX</application>'s internal data structures.
      Details on this can be found in the <application>JadeTeX</application>
@@ -528,7 +528,7 @@ CATALOG "docbook-dsssl-1.<replaceable>xx</>/catalog"
   <para>
    Before you can build the documentation you need to run the
    <filename>configure</filename> script as you would when building
-   the <productname>PostgreSQL</productname> programs themselves.
+   the <productname>&productname;</productname> programs themselves.
    Check the output near the end of the run, it should look something
    like this:
 <screen>
@@ -667,7 +667,7 @@ make man
    </para>
 
    <para>
-    When using JadeTeX to build the PostgreSQL documentation, you will
+    When using JadeTeX to build the &productname; documentation, you will
     probably need to increase some of TeX's internal parameters.  These
     can be set in the file <filename>texmf.cnf</filename>.  The following
     settings worked at the time of this writing:
@@ -711,7 +711,7 @@ save_size.pdfjadetex = 15000
    <title>Print Output via <acronym>RTF</acronym></title>
 
    <para>
-    You can also create a printable version of the <productname>PostgreSQL</productname>
+    You can also create a printable version of the <productname>&productname;</productname>
     documentation by converting it to <acronym>RTF</acronym> and
     applying minor formatting corrections using an office suite.
     Depending on the capabilities of the particular office suite, you
@@ -722,7 +722,7 @@ save_size.pdfjadetex = 15000
 
    <note>
     <para>
-     It appears that current versions of the <productname>PostgreSQL</productname> documentation
+     It appears that current versions of the <productname>&productname;</productname> documentation
      trigger some bug in or exceed the size limit of OpenJade.  If the
      build process of the <acronym>RTF</acronym> version hangs for a
      long time and the output file still has size 0, then you might have
@@ -1105,7 +1105,7 @@ save_size.pdfjadetex = 15000
     users to find the desired information more quickly, and it also
     encourages writers to document all relevant aspects of a command.
     Consistency is not only desired among
-    <productname>PostgreSQL</productname> reference pages, but also
+    <productname>&productname;</productname> reference pages, but also
     with reference pages provided by the operating system and other
     packages.  Hence the following guidelines have been developed.
     They are for the most part consistent with similar guidelines
@@ -1264,9 +1264,9 @@ save_size.pdfjadetex = 15000
       <listitem>
        <para>
         Cross-references, listed in the following order: other
-        <productname>PostgreSQL</productname> command reference pages,
-        <productname>PostgreSQL</productname> SQL command reference
-        pages, citation of <productname>PostgreSQL</productname>
+        <productname>&productname;</productname> command reference pages,
+        <productname>&productname;</productname> SQL command reference
+        pages, citation of <productname>&productname;</productname>
         manuals, other reference pages (e.g., operating system, other
         packages), other documentation.  Items in the same group are
         listed alphabetically.

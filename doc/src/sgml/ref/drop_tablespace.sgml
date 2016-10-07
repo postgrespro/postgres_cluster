@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/drop_tablespace.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DROPTABLESPACE">
@@ -93,7 +93,7 @@ DROP TABLESPACE mystuff;
   <title>Compatibility</title>
 
   <para>
-   <command>DROP TABLESPACE</command> is a <productname>PostgreSQL</>
+   <command>DROP TABLESPACE</command> is a <productname>&productname;</>
    extension.
   </para>
  </refsect1>

@@ -13,7 +13,7 @@
 
   <para>
    PL/Perl is a loadable procedural language that enables you to write
-   <productname>PostgreSQL</productname> functions in the
+   <productname>&productname;</productname> functions in the
    <ulink url="http://www.perl.org">Perl programming language</ulink>.
   </para>
 
@@ -141,7 +141,7 @@ $$ LANGUAGE plperl;
    above function definition will not behave very nicely with null
    inputs (in fact, it will act as though they are zeroes).  We could
    add <literal>STRICT</> to the function definition to make
-   <productname>PostgreSQL</productname> do something more reasonable:
+   <productname>&productname;</productname> do something more reasonable:
    if a null value is passed, the function will not be called at all,
    but will just return a null result automatically.  Alternatively,
    we could check for undefined inputs in the function body.  For
@@ -168,7 +168,7 @@ $$ LANGUAGE plperl;
 
   <para>
    Anything in a function argument that is not a reference is
-   a string, which is in the standard <productname>PostgreSQL</productname>
+   a string, which is in the standard <productname>&productname;</productname>
    external text representation for the relevant data type. In the case of
    ordinary numeric or text types, Perl will just do the right thing and
    the programmer will normally not have to worry about it. However, in
@@ -179,14 +179,14 @@ $$ LANGUAGE plperl;
   </para>
 
   <para>
-   Similarly, values passed back to <productname>PostgreSQL</productname>
+   Similarly, values passed back to <productname>&productname;</productname>
    must be in the external text representation format. For example, the
    <function>encode_bytea</function> function can be used to
    escape binary data for a return value of type <type>bytea</>.
   </para>
 
   <para>
-   Perl can return <productname>PostgreSQL</productname> arrays as
+   Perl can return <productname>&productname;</productname> arrays as
    references to Perl arrays.  Here is an example:
 
 <programlisting>
@@ -200,7 +200,7 @@ select returns_array();
   </para>
 
   <para>
-   Perl passes <productname>PostgreSQL</productname> arrays as a blessed
+   Perl passes <productname>&productname;</productname> arrays as a blessed
    <type>PostgreSQL::InServer::ARRAY</type> object. This object may be treated as an array
    reference or a string, allowing for backward compatibility with Perl
    code written for <productname>PostgreSQL</productname> versions below 9.1 to
@@ -299,7 +299,7 @@ SELECT * FROM perl_set_int(5);
 CREATE OR REPLACE FUNCTION perl_set()
 RETURNS SETOF testrowperl AS $$
     return_next({ f1 =&gt; 1, f2 =&gt; 'Hello', f3 =&gt; 'World' });
-    return_next({ f1 =&gt; 2, f2 =&gt; 'Hello', f3 =&gt; 'PostgreSQL' });
+    return_next({ f1 =&gt; 2, f2 =&gt; 'Hello', f3 =&gt; '&productname;' });
     return_next({ f1 =&gt; 3, f2 =&gt; 'Hello', f3 =&gt; 'PL/Perl' });
     return undef;
 $$ LANGUAGE plperl;
@@ -321,7 +321,7 @@ SELECT * FROM perl_set_int(5);
 CREATE OR REPLACE FUNCTION perl_set() RETURNS SETOF testrowperl AS $$
     return [
         { f1 =&gt; 1, f2 =&gt; 'Hello', f3 =&gt; 'World' },
-        { f1 =&gt; 2, f2 =&gt; 'Hello', f3 =&gt; 'PostgreSQL' },
+        { f1 =&gt; 2, f2 =&gt; 'Hello', f3 =&gt; '&productname;' },
         { f1 =&gt; 3, f2 =&gt; 'Hello', f3 =&gt; 'PL/Perl' }
     ];
 $$ LANGUAGE plperl;
@@ -867,7 +867,7 @@ SELECT release_hosts_query();
       <para>
         Returns a true value if the given argument may be treated as an
         array reference, that is, if ref of the argument is <literal>ARRAY</> or
-        <literal>PostgreSQL::InServer::ARRAY</>.  Returns false otherwise.
+        <literal>&productname;::InServer::ARRAY</>.  Returns false otherwise.
       </para>
      </listitem>
     </varlistentry>
@@ -1450,7 +1450,7 @@ DO 'elog(WARNING, join ", ", sort keys %INC)' LANGUAGE plperl;
      </para>
      <para>
         A similar problem occurs if a set-returning function passes a
-        large set of rows back to PostgreSQL via <literal>return</literal>. You
+        large set of rows back to &productname; via <literal>return</literal>. You
         can avoid this problem too by instead using
         <literal>return_next</literal> for each row returned, as shown
         previously.

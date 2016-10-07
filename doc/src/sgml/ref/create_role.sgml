@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_role.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATEROLE">
@@ -49,7 +49,7 @@ CREATE ROLE <replaceable class="PARAMETER">name</replaceable> [ [ WITH ] <replac
 
   <para>
    <command>CREATE ROLE</command> adds a new role to a
-   <productname>PostgreSQL</productname> database cluster.  A role is
+   <productname>&productname;</productname> database cluster.  A role is
    an entity that can own database objects and have database privileges;
    a role can be considered a <quote>user</>, a <quote>group</>, or both
    depending on how it is used.  Refer to
@@ -360,7 +360,7 @@ CREATE ROLE <replaceable class="PARAMETER">name</replaceable> [ [ WITH ] <replac
 
   <para>
    The <literal>INHERIT</> attribute is the default for reasons of backwards
-   compatibility: in prior releases of <productname>PostgreSQL</productname>,
+   compatibility: in prior releases of <productname>&productname;</productname>,
    users always had access to all privileges of groups they were members of.
    However, <literal>NOINHERIT</> provides a closer match to the semantics
    specified in the SQL standard.
@@ -380,7 +380,7 @@ CREATE ROLE <replaceable class="PARAMETER">name</replaceable> [ [ WITH ] <replac
   </para>
 
   <para>
-   <productname>PostgreSQL</productname> includes a program <xref
+   <productname>&productname;</productname> includes a program <xref
    linkend="APP-CREATEUSER"> that has
    the same functionality as <command>CREATE ROLE</command> (in fact,
    it calls this command) but can be run from the command shell.
@@ -453,14 +453,14 @@ CREATE ROLE <replaceable class="PARAMETER">name</> [ WITH ADMIN <replaceable cla
 </synopsis>
    Multiple initial administrators, and all the other options of
    <command>CREATE ROLE</command>, are
-   <productname>PostgreSQL</productname> extensions.
+   <productname>&productname;</productname> extensions.
   </para>
 
   <para>
    The SQL standard defines the concepts of users and roles, but it
    regards them as distinct concepts and leaves all commands defining
    users to be specified by each database implementation.  In
-   <productname>PostgreSQL</productname> we have chosen to unify
+   <productname>&productname;</productname> we have chosen to unify
    users and roles into a single kind of entity.  Roles therefore
    have many more optional attributes than they do in the standard.
   </para>

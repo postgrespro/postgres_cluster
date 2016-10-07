@@ -95,7 +95,7 @@ ALTER TEXT SEARCH CONFIGURATION russian_en
 
   <para>
    You can create mixed dictionaries only for languages with different alphabets.
-   If languages have similar alphabets then <productname>PostgresPro</> can not
+   If languages have similar alphabets then <productname>Postgres Pro</> can not
    decide which dictionary should be used.
   </para>
 
