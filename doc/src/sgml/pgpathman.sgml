@@ -600,7 +600,6 @@ WHERE id = (SELECT * FROM some_table LIMIT 1);
 (306 rows)
           </programlisting>
         </para>
-        </listitem>
         <listitem>
         <para>
           <emphasis role="strong"><literal>id = ANY (select ...)</literal></emphasis>
@@ -646,20 +645,20 @@ WHERE id = any (SELECT * FROM some_table limit 4);
 (110 rows)
           </programlisting>
         </para>
-        </listitem>
-        <listitem>
-          <para>
-            <emphasis role="strong"><literal>NestLoop</literal> involving
-              a partitioned table</emphasis>, which is omitted since it's
-            occasionally shown above.
-          </para>
-        </listitem>
-    </itemizedlist>
-    <para>
-      In case you're interested, you can read more about custom nodes at
-      Alexander Korotkov's
-      <ulink url="http://akorotkov.github.io/blog/2016/06/15/pg_pathman-runtime-append/">blog</ulink>.
-    </para>
+        <itemizedlist spacing="compact">
+          <listitem>
+            <para>
+              <emphasis role="strong"><literal>NestLoop</literal> involving
+                a partitioned table</emphasis>, which is omitted since it's
+              occasionally shown above.
+            </para>
+          </listitem>
+        </itemizedlist>
+        <para>
+          In case you're interested, you can read more about custom nodes at
+          Alexander Korotkov's
+          <ulink url="http://akorotkov.github.io/blog/2016/06/15/pg_pathman-runtime-append/">blog</ulink>.
+        </para>
   </sect2>
   <sect2 id="examples">
     <title>Examples</title>
@@ -695,9 +694,9 @@ WHERE id = any (SELECT * FROM some_table limit 4);
           </para>
           <programlisting>
             SELECT * FROM pathman_concurrent_part_tasks;
-            userid | pid  | dbid  | relid | processed | status  
+            userid  | pid  | dbid  | relid | processed | status  
             --------+------+-------+-------+-----------+---------
-            dmitry | 7367 | 16384 | test  |    472000 | working
+            dmitry  | 7367 | 16384 | test  |    472000 | working
             (1 row)
           </programlisting>
         </listitem>
@@ -887,11 +886,11 @@ WHERE id = any (SELECT * FROM some_table limit 4);
       </para>
       <programlisting>
         SELECT * FROM journal WHERE dt &gt;= '2015-06-01' AND dt &lt; '2015-06-03';
-        id   |         dt          | level |               msg
+        id      |         dt          | level |               msg
         --------+---------------------+-------+----------------------------------
-        217441 | 2015-06-01 00:00:00 |     2 | 15053892d993ce19f580a128f87e3dbf
-        217442 | 2015-06-01 00:01:00 |     1 | 3a7c46f18a952d62ce5418ac2056010c
-        217443 | 2015-06-01 00:02:00 |     0 | 92c8de8f82faf0b139a3d99f2792311d
+        217441  | 2015-06-01 00:00:00 |     2 | 15053892d993ce19f580a128f87e3dbf
+        217442  | 2015-06-01 00:01:00 |     1 | 3a7c46f18a952d62ce5418ac2056010c
+        217443  | 2015-06-01 00:02:00 |     0 | 92c8de8f82faf0b139a3d99f2792311d
         ...
         (2880 rows)
 
