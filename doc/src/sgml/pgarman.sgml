@@ -3,7 +3,7 @@
   <sect2 id="pg-arman-name">
     <title>NAME</title>
     <para>
-      pg_arman - Backup and recovery manager for PostgreSQL
+      pg_arman - Backup and recovery manager for &productname;
     </para>
   </sect2>
   <sect2 id="pg-arman-synopsis">
@@ -26,7 +26,7 @@ pg_arman [ OPTIONS ]
   <sect2 id="pg-arman-description">
     <title>DESCRIPTION</title>
     <para>
-      pg_arman is a utility program to backup and restore PostgreSQL
+      pg_arman is a utility program to backup and restore &productname;
       database.
     </para>
     <para>
@@ -99,7 +99,7 @@ Delete backup files.</literallayout>
         initializing the backup catalog. If the variables are
         initialized, pg_arman can adjust the config file to the setting.
         In this case, you have to specify the database cluster path for
-        PostgreSQL. Please specify it in PGDATA environmental variable
+        &productname;. Please specify it in PGDATA environmental variable
         or -D/--pgdata option.
       </para>
       <programlisting>
@@ -146,7 +146,7 @@ $ pg_arman init -B /path/to/backup/
     <sect3 id="pg-arman-restore">
       <title>RESTORE</title>
       <para>
-        PostgreSQL server should be stopped before performing a restore.
+        &productname; server should be stopped before performing a restore.
         If database cluster still exists, restore command will save
         unarchived transaction log and delete all database files. You
         can retry recovery until a new backup is taken. After restoring
@@ -421,7 +421,7 @@ STATUS=OK
     <sect3 id="pg-arman-connection-options">
       <title>CONNECTION OPTIONS</title>
       <para>
-        Parameters to connect PostgreSQL server.
+        Parameters to connect &productname; server.
       </para>
 <literallayout><emphasis role="strong">-d</emphasis> DBNAME / <emphasis role="strong">--dbname</emphasis>=DBNAME:
  The database name to execute pg_start_backup() and pg_stop_backup().</literallayout>
@@ -480,7 +480,7 @@ Short   Long                    Env                     File
       in command line and configuration file for security reason.
     </para>
     <para>
-      This utility, like most other PostgreSQL utilities, also uses the
+      This utility, like most other &productname; utilities, also uses the
       environment variables supported by libpq (see Environment
       Variables).
     </para>
@@ -525,7 +525,7 @@ Short   Long                    Env                     File
       <para>
         pg_arman can recover to point-in-time if timeline, transaction
         ID, or timestamp is specified in recovery.conf. xlogdump is a
-        contrib module of PostgreSQL core that allows checking in the
+        contrib module of &productname; core that allows checking in the
         content of WAL files and determine when to recover. This might
         help.
       </para>
@@ -545,14 +545,14 @@ Short   Long                    Env                     File
       <itemizedlist spacing="compact">
         <listitem>
           <para>
-            In order to work, the PostgreSQL instance on which backups
+            In order to work, the &productname; instance on which backups
             are taken need to have data checksums enabled or to enable
             wal_log_hints.
           </para>
         </listitem>
         <listitem>
           <para>
-            pg_arman is aimed at working with PostgreSQL 9.5 and newer
+            pg_arman is aimed at working with &productname; 9.5 and newer
             versions.
           </para>
         </listitem>
