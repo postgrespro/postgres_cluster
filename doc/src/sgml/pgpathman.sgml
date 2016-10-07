@@ -600,7 +600,8 @@ WHERE id = (SELECT * FROM some_table LIMIT 1);
 (306 rows)
           </programlisting>
         </para>
-        <listitem>
+      </listitem>
+      <listitem>
         <para>
           <emphasis role="strong"><literal>id = ANY (select ...)</literal></emphasis>
           <programlisting>
@@ -645,20 +646,20 @@ WHERE id = any (SELECT * FROM some_table limit 4);
 (110 rows)
           </programlisting>
         </para>
-        <itemizedlist spacing="compact">
-          <listitem>
-            <para>
-              <emphasis role="strong"><literal>NestLoop</literal> involving
-                a partitioned table</emphasis>, which is omitted since it's
-              occasionally shown above.
-            </para>
-          </listitem>
-        </itemizedlist>
+      </listitem>
+      <listitem>
         <para>
-          In case you're interested, you can read more about custom nodes at
-          Alexander Korotkov's
-          <ulink url="http://akorotkov.github.io/blog/2016/06/15/pg_pathman-runtime-append/">blog</ulink>.
+          <emphasis role="strong"><literal>NestLoop</literal> involving
+            a partitioned table</emphasis>, which is omitted since it's
+          occasionally shown above.
         </para>
+          </listitem>
+    </itemizedlist>
+    <para>
+      In case you're interested, you can read more about custom nodes at
+      Alexander Korotkov's
+      <ulink url="http://akorotkov.github.io/blog/2016/06/15/pg_pathman-runtime-append/">blog</ulink>.
+    </para>
   </sect2>
   <sect2 id="examples">
     <title>Examples</title>
