@@ -8,7 +8,7 @@
     The extension is compatible with PostgreSQL 9.5 (9.6 support is
     coming soon).
   </para>
-  <sect2 id="overview">
+  <sect2 id="pg-pathman-overview">
     <title>Overview</title>
     <para>
       <emphasis role="strong">Partitioning</emphasis> means splitting
@@ -225,7 +225,7 @@ stop_concurrent_part_task(relation REGCLASS)
         current batch.
       </para>
     </sect3>
-    <sect3 id="triggers">
+    <sect3 id="pg-pathman-triggers">
       <title>Triggers</title>
       <programlisting>
 create_hash_update_trigger(parent REGCLASS)
@@ -375,7 +375,7 @@ set_init_callback(relation REGCLASS, callback REGPROC DEFAULT 0)
         Parameter <literal>arg</literal> consists of several fields
         whose presence depends on partitioning type:
       </para>
-      <programlisting language="json">
+      <programlisting>
 /* RANGE-partitioned table abc (child abc_4) */
 {
     &quot;parent&quot;:    &quot;abc&quot;,
