@@ -560,84 +560,91 @@ CREATE TABLE some_table AS SELECT generate_series(1, 100) AS VAL;
       <listitem>
         <para>
           <emphasis role="strong"><literal>id = (select ... limit 1)</literal></emphasis>
-          plpgsql EXPLAIN (COSTS OFF, ANALYZE) SELECT * FROM
-          partitioned_table WHERE id = (SELECT * FROM some_table LIMIT
-          1); QUERY PLAN
-          ----------------------------------------------------------------------------------------------------
-          Custom Scan (RuntimeAppend) (actual time=0.030..0.033 rows=1
-          loops=1) InitPlan 1 (returns $0) -&gt; Limit (actual
-          time=0.011..0.011 rows=1 loops=1) -&gt; Seq Scan on some_table
-          (actual time=0.010..0.010 rows=1 loops=1) -&gt; Seq Scan on
-          partitioned_table_70 partitioned_table (actual
-          time=0.004..0.006 rows=1 loops=1) Filter: (id = $0) Rows
-          Removed by Filter: 9 Planning time: 1.131 ms Execution time:
-          0.075 ms (9 rows)
-        </para>
-      </listitem>
-    </itemizedlist>
-    <para>
-      /* disable RuntimeAppend node */ SET
-      pg_pathman.enable_runtimeappend = f;
-    </para>
-    <para>
-      EXPLAIN (COSTS OFF, ANALYZE) SELECT * FROM partitioned_table WHERE
-      id = (SELECT * FROM some_table LIMIT 1); QUERY PLAN
-      ----------------------------------------------------------------------------------
-      Append (actual time=0.196..0.274 rows=1 loops=1) InitPlan 1
-      (returns $0) -&gt; Limit (actual time=0.005..0.005 rows=1 loops=1)
-      -&gt; Seq Scan on some_table (actual time=0.003..0.003 rows=1
-      loops=1) -&gt; Seq Scan on partitioned_table_0 (actual
-      time=0.014..0.014 rows=0 loops=1) Filter: (id = $0) Rows Removed
-      by Filter: 6 -&gt; Seq Scan on partitioned_table_1 (actual
-      time=0.003..0.003 rows=0 loops=1) Filter: (id = $0) Rows Removed
-      by Filter: 5 ... /* more plans follow */ Planning time: 1.140 ms
-      Execution time: 0.855 ms (306 rows)
+          <programlisting>
+plpgsql
+EXPLAIN (COSTS OFF, ANALYZE) SELECT * FROM partitioned_table
+WHERE id = (SELECT * FROM some_table LIMIT 1);
+                                             QUERY PLAN
+----------------------------------------------------------------------------------------------------
+ Custom Scan (RuntimeAppend) (actual time=0.030..0.033 rows=1 loops=1)
+   InitPlan 1 (returns $0)
+     -&gt;  Limit (actual time=0.011..0.011 rows=1 loops=1)
+           -&gt;  Seq Scan on some_table (actual time=0.010..0.010 rows=1 loops=1)
+   -&gt;  Seq Scan on partitioned_table_70 partitioned_table (actual time=0.004..0.006 rows=1 loops=1)
+         Filter: (id = $0)
+         Rows Removed by Filter: 9
+ Planning time: 1.131 ms
+ Execution time: 0.075 ms
+(9 rows)
+
+/* disable RuntimeAppend node */
+SET pg_pathman.enable_runtimeappend = f;
+
+EXPLAIN (COSTS OFF, ANALYZE) SELECT * FROM partitioned_table
+WHERE id = (SELECT * FROM some_table LIMIT 1);
+                                    QUERY PLAN
+----------------------------------------------------------------------------------
+ Append (actual time=0.196..0.274 rows=1 loops=1)
+   InitPlan 1 (returns $0)
+     -&gt;  Limit (actual time=0.005..0.005 rows=1 loops=1)
+           -&gt;  Seq Scan on some_table (actual time=0.003..0.003 rows=1 loops=1)
+   -&gt;  Seq Scan on partitioned_table_0 (actual time=0.014..0.014 rows=0 loops=1)
+         Filter: (id = $0)
+         Rows Removed by Filter: 6
+   -&gt;  Seq Scan on partitioned_table_1 (actual time=0.003..0.003 rows=0 loops=1)
+         Filter: (id = $0)
+         Rows Removed by Filter: 5
+         ... /* more plans follow */
+ Planning time: 1.140 ms
+ Execution time: 0.855 ms
+(306 rows)
+      </programlisting>
     </para>
     <itemizedlist spacing="compact">
       <listitem>
         <para>
           <emphasis role="strong"><literal>id = ANY (select ...)</literal></emphasis>
-          plpgsql EXPLAIN (COSTS OFF, ANALYZE) SELECT * FROM
-          partitioned_table WHERE id = any (SELECT * FROM some_table
-          limit 4); QUERY PLAN
-          -----------------------------------------------------------------------------------------------------------
-          Nested Loop (actual time=0.025..0.060 rows=4 loops=1) -&gt;
-          Limit (actual time=0.009..0.011 rows=4 loops=1) -&gt; Seq Scan
-          on some_table (actual time=0.008..0.010 rows=4 loops=1) -&gt;
-          Custom Scan (RuntimeAppend) (actual time=0.002..0.004 rows=1
-          loops=4) -&gt; Seq Scan on partitioned_table_70
-          partitioned_table (actual time=0.001..0.001 rows=10 loops=1)
-          -&gt; Seq Scan on partitioned_table_26 partitioned_table
-          (actual time=0.002..0.003 rows=9 loops=1) -&gt; Seq Scan on
-          partitioned_table_27 partitioned_table (actual
-          time=0.001..0.002 rows=20 loops=1) -&gt; Seq Scan on
-          partitioned_table_63 partitioned_table (actual
-          time=0.001..0.002 rows=9 loops=1) Planning time: 0.771 ms
-          Execution time: 0.101 ms (10 rows)
-        </para>
-      </listitem>
-    </itemizedlist>
-    <para>
-      /* disable RuntimeAppend node */ SET
-      pg_pathman.enable_runtimeappend = f;
-    </para>
-    <para>
-      EXPLAIN (COSTS OFF, ANALYZE) SELECT * FROM partitioned_table WHERE
-      id = any (SELECT * FROM some_table limit 4); QUERY PLAN
-      -----------------------------------------------------------------------------------------
-      Nested Loop Semi Join (actual time=0.531..1.526 rows=4 loops=1)
-      Join Filter: (partitioned_table.id = some_table.val) Rows Removed
-      by Join Filter: 3990 -&gt; Append (actual time=0.190..0.470
-      rows=1000 loops=1) -&gt; Seq Scan on partitioned_table (actual
-      time=0.187..0.187 rows=0 loops=1) -&gt; Seq Scan on
-      partitioned_table_0 (actual time=0.002..0.004 rows=6 loops=1)
-      -&gt; Seq Scan on partitioned_table_1 (actual time=0.001..0.001
-      rows=5 loops=1) -&gt; Seq Scan on partitioned_table_2 (actual
-      time=0.002..0.004 rows=14 loops=1) ... /* 96 scans follow */ -&gt;
-      Materialize (actual time=0.000..0.000 rows=4 loops=1000) -&gt;
-      Limit (actual time=0.005..0.006 rows=4 loops=1) -&gt; Seq Scan on
-      some_table (actual time=0.003..0.004 rows=4 loops=1) Planning
-      time: 2.169 ms Execution time: 2.059 ms (110 rows)
+          <programlisting>
+plpgsql
+EXPLAIN (COSTS OFF, ANALYZE) SELECT * FROM partitioned_table
+WHERE id = any (SELECT * FROM some_table limit 4);
+                                                QUERY PLAN
+-----------------------------------------------------------------------------------------------------------
+ Nested Loop (actual time=0.025..0.060 rows=4 loops=1)
+   -&gt;  Limit (actual time=0.009..0.011 rows=4 loops=1)
+         -&gt;  Seq Scan on some_table (actual time=0.008..0.010 rows=4 loops=1)
+   -&gt;  Custom Scan (RuntimeAppend) (actual time=0.002..0.004 rows=1 loops=4)
+         -&gt;  Seq Scan on partitioned_table_70 partitioned_table (actual time=0.001..0.001 rows=10 loops=1)
+         -&gt;  Seq Scan on partitioned_table_26 partitioned_table (actual time=0.002..0.003 rows=9 loops=1)
+         -&gt;  Seq Scan on partitioned_table_27 partitioned_table (actual time=0.001..0.002 rows=20 loops=1)
+         -&gt;  Seq Scan on partitioned_table_63 partitioned_table (actual time=0.001..0.002 rows=9 loops=1)
+ Planning time: 0.771 ms
+ Execution time: 0.101 ms
+(10 rows)
+
+/* disable RuntimeAppend node */
+SET pg_pathman.enable_runtimeappend = f;
+
+EXPLAIN (COSTS OFF, ANALYZE) SELECT * FROM partitioned_table
+WHERE id = any (SELECT * FROM some_table limit 4);
+                                       QUERY PLAN
+-----------------------------------------------------------------------------------------
+ Nested Loop Semi Join (actual time=0.531..1.526 rows=4 loops=1)
+   Join Filter: (partitioned_table.id = some_table.val)
+   Rows Removed by Join Filter: 3990
+   -&gt;  Append (actual time=0.190..0.470 rows=1000 loops=1)
+         -&gt;  Seq Scan on partitioned_table (actual time=0.187..0.187 rows=0 loops=1)
+         -&gt;  Seq Scan on partitioned_table_0 (actual time=0.002..0.004 rows=6 loops=1)
+         -&gt;  Seq Scan on partitioned_table_1 (actual time=0.001..0.001 rows=5 loops=1)
+         -&gt;  Seq Scan on partitioned_table_2 (actual time=0.002..0.004 rows=14 loops=1)
+... /* 96 scans follow */
+   -&gt;  Materialize (actual time=0.000..0.000 rows=4 loops=1000)
+         -&gt;  Limit (actual time=0.005..0.006 rows=4 loops=1)
+               -&gt;  Seq Scan on some_table (actual time=0.003..0.004 rows=4 loops=1)
+ Planning time: 2.169 ms
+ Execution time: 2.059 ms
+(110 rows)
+      </programlisting>
     </para>
     <itemizedlist spacing="compact">
       <listitem>
