@@ -128,6 +128,7 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &ltree;
  &pageinspect;
  &passwordcheck;
+ &pgarman;
  &pgbuffercache;
  &pgcrypto;
  &pgfreespacemap;
@@ -199,8 +200,7 @@ pages.
   </para>
 
   &oid2name;
-  &vacuumlo;
-  &pgarman;
+  &vacuumlo;  
  </sect1>
 
  <sect1 id="contrib-prog-server">
