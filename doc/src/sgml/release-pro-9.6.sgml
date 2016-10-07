@@ -31,7 +31,8 @@
         <para><application>hunspell-dict</application> (See <xref linkend="hunspell-dict">)</para>
         <para><application>jsquery</application> (See <xref linkend="jsquery">)</para>
         <para><application>pg_variables</application> (See <xref linkend="pg-variables">)</para>
-        <para><application>pgpathman</application> (See <xref linkend="pg-pathman">)</para>
+        <para><application>pg_pathman</application> (See <xref linkend="pg-pathman">)</para>
+        <para><application>pg_query_state</application> (See <xref linkend="pg-query-state">)</para>
         <para><application>shared-ispell</application> (See <xref linkend="shared-ispell">)</para>
         <para><application>sr_plan</application> (See <xref linkend="sr-plan">)</para>
         <para><application>dump_stat</application> (See <xref linkend="dump-stat">)</para>
