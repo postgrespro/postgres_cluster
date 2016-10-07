@@ -63,6 +63,7 @@
 #include "parser/analyze.h"
 #include "parser/parse_relation.h"
 #include "tcop/pquery.h"
+#include "lib/ilist.h"
 
 #include "multimaster.h"
 #include "ddd.h"
@@ -3589,25 +3590,25 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 
 // XXX: is it defined somewhere?
 #define GUC_KEY_MAXLEN 255
-
 #define MTM_GUC_HASHSIZE 20
 
-typedef struct MtmGucHashEntry
+typedef struct MtmGucEntry
 {
 	char	key[GUC_KEY_MAXLEN];
+	dlist_node	list_node;
 	char   *value;
-} MtmGucHashEntry;
+} MtmGucEntry;
 
 static HTAB *MtmGucHash = NULL;
-static List *MtmGucList = NULL;
+static dlist_head MtmGucList = DLIST_STATIC_INIT(MtmGucList);
 
-static void MtmGucHashInit(void)
+static void MtmGucInit(void)
 {
 	HASHCTL		hash_ctl;
 
 	MemSet(&hash_ctl, 0, sizeof(hash_ctl));
 	hash_ctl.keysize = GUC_KEY_MAXLEN;
-	hash_ctl.entrysize = sizeof(MtmGucHashEntry);
+	hash_ctl.entrysize = sizeof(MtmGucEntry);
 	hash_ctl.hcxt = TopMemoryContext;
 	MtmGucHash = hash_create("MtmGucHash",
 						MTM_GUC_HASHSIZE,
@@ -3615,41 +3616,83 @@ static void MtmGucHashInit(void)
 						HASH_ELEM | HASH_CONTEXT);
 }
 
+static void MtmGucDiscard()
+{
+	dlist_iter iter;
+
+	if (dlist_is_empty(&MtmGucList))
+		return;
+
+	dlist_foreach(iter, &MtmGucList)
+	{
+		MtmGucEntry *cur_entry = dlist_container(MtmGucEntry, list_node, iter.cur);
+		pfree(cur_entry->value);
+	}
+	dlist_init(&MtmGucList);
+
+	hash_destroy(MtmGucHash);
+	MtmGucInit();
+}
+
+static inline void MtmGucUpdate(const char *key, char *value)
+{
+	MtmGucEntry *hentry;
+	bool found;
+
+	hentry = hash_search(MtmGucHash, key, HASH_FIND, &found);
+	if (found)
+	{
+		pfree(hentry->value);
+		dlist_delete(&hentry->list_node);
+	}
+
+	hentry = hash_search(MtmGucHash, key, HASH_ENTER, NULL);
+	hentry->value = value;
+	dlist_push_tail(&MtmGucList, &hentry->list_node);
+}
+
+static inline void MtmGucRemove(const char *key)
+{
+	MtmGucEntry *hentry;
+	bool found;
+
+	hentry = hash_search(MtmGucHash, key, HASH_FIND, &found);
+	if (found)
+	{
+		pfree(hentry->value);
+		dlist_delete(&hentry->list_node);
+		hash_search(MtmGucHash, key, HASH_REMOVE, NULL);
+	}
+}
+
 static void MtmGucSet(VariableSetStmt *stmt, const char *queryStr)
 {
 	MemoryContext oldcontext;
-	MtmGucHashEntry *hentry;
-	bool found;
 
 	if (!MtmGucHash)
-		MtmGucHashInit();
+		MtmGucInit();
 
 	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 
 	switch (stmt->kind)
 	{
 		case VAR_SET_VALUE:
-			hentry = (MtmGucHashEntry *) hash_search(MtmGucHash, stmt->name,
-														HASH_ENTER,  &found);
-			if (found)
-				pfree(hentry->value);
-			hentry->value = ExtractSetVariableArgs(stmt);
+			MtmGucUpdate(stmt->name, ExtractSetVariableArgs(stmt));
 			break;
 
 		case VAR_SET_DEFAULT:
-			hash_search(MtmGucHash, stmt->name, HASH_REMOVE, NULL);
+			MtmGucRemove(stmt->name);
 			break;
 
 		case VAR_RESET:
 			if (strcmp(stmt->name, "session_authorization") == 0)
-				hash_search(MtmGucHash, "role", HASH_REMOVE, NULL);
-			hash_search(MtmGucHash, stmt->name, HASH_REMOVE, NULL);
+				MtmGucRemove("role");
+			MtmGucRemove(stmt->name);
 			break;
 
 		case VAR_RESET_ALL:
 			/* XXX: shouldn't we keep auth/role here? */
-			hash_destroy(MtmGucHash);
-			MtmGucHashInit();
+			MtmGucDiscard();
 			break;
 
 		case VAR_SET_CURRENT:
@@ -3660,46 +3703,36 @@ static void MtmGucSet(VariableSetStmt *stmt, const char *queryStr)
 	MemoryContextSwitchTo(oldcontext);
 }
 
-static void MtmGucDiscard(DiscardStmt *stmt)
-{
-	if (stmt->target == DISCARD_ALL)
-	{
-		hash_destroy(MtmGucHash);
-		MtmGucHashInit();
-	}
-}
-
 static char * MtmGucSerialize(void)
 {
-	HASH_SEQ_STATUS status;
-	MtmGucHashEntry *hentry;
 	StringInfo serialized_gucs;
+	dlist_iter iter;
+	int nvars = 0;
 
 	serialized_gucs = makeStringInfo();
 	appendStringInfoString(serialized_gucs, "RESET SESSION AUTHORIZATION; reset all; ");
 
-	if (MtmGucHash)
+	dlist_foreach(iter, &MtmGucList)
 	{
-		hash_seq_init(&status, MtmGucHash);
-		while ((hentry = (MtmGucHashEntry *) hash_seq_search(&status)) != NULL)
-		{
-			appendStringInfoString(serialized_gucs, "SET ");
-			appendStringInfoString(serialized_gucs, hentry->key);
-			appendStringInfoString(serialized_gucs, " TO ");
+		MtmGucEntry *cur_entry = dlist_container(MtmGucEntry, list_node, iter.cur);
 
-			/* quite a crutch */
-			if (strcmp(hentry->key, "work_mem") == 0)
-			{
-				appendStringInfoString(serialized_gucs, "'");
-				appendStringInfoString(serialized_gucs, hentry->value);
-				appendStringInfoString(serialized_gucs, "'");
-			}
-			else
-			{
-				appendStringInfoString(serialized_gucs, hentry->value);
-			}
-			appendStringInfoString(serialized_gucs, "; ");
+		appendStringInfoString(serialized_gucs, "SET ");
+		appendStringInfoString(serialized_gucs, cur_entry->key);
+		appendStringInfoString(serialized_gucs, " TO ");
+
+		/* quite a crutch */
+		if (strcmp(cur_entry->key, "work_mem") == 0)
+		{
+			appendStringInfoString(serialized_gucs, "'");
+			appendStringInfoString(serialized_gucs, cur_entry->value);
+			appendStringInfoString(serialized_gucs, "'");
 		}
+		else
+		{
+			appendStringInfoString(serialized_gucs, cur_entry->value);
+		}
+		appendStringInfoString(serialized_gucs, "; ");
+		nvars++;
 	}
 
 	return serialized_gucs->data;
@@ -3847,10 +3880,10 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			{
 				DiscardStmt *stmt = (DiscardStmt *) parsetree;
 
-				if (!IsTransactionBlock())
+				if (!IsTransactionBlock() && stmt->target == DISCARD_ALL)
 				{
 					skipCommand = true;
-					MtmGucDiscard(stmt);
+					MtmGucDiscard();
 				}
 			}
 			break;
