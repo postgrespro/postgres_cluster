@@ -396,7 +396,7 @@ set_init_callback(relation REGCLASS, callback REGPROC DEFAULT 0)
   </sect2>
   <sect2 id="views-and-tables">
     <title>Views and tables</title>
-    <sect3 id="pathman_config-----main-config-storage">
+    <sect3 id="pathman_config-main-config-storage">
       <title><literal>pathman_config</literal> --- main config
       storage</title>
       <programlisting>
@@ -412,7 +412,7 @@ CREATE TABLE IF NOT EXISTS pathman_config (
         This table stores a list of partitioned tables.
       </para>
     </sect3>
-    <sect3 id="pathman_config_params-----optional-parameters">
+    <sect3 id="pathman_config_params-optional-parameters">
       <title><literal>pathman_config_params</literal> --- optional
       parameters</title>
       <programlisting>
@@ -427,7 +427,7 @@ CREATE TABLE IF NOT EXISTS pathman_config_params (
         behavior.
       </para>
     </sect3>
-    <sect3 id="pathman_concurrent_part_tasks-----currently-running-partitioning-workers">
+    <sect3 id="pathman_concurrent_part_tasks-currently-running-partitioning-workers">
       <title><literal>pathman_concurrent_part_tasks</literal> ---
       currently running partitioning workers</title>
       <programlisting>
@@ -451,7 +451,7 @@ AS SELECT * FROM show_concurrent_part_tasks();
         tasks.
       </para>
     </sect3>
-    <sect3 id="pathman_partition_list-----list-of-all-existing-partitions">
+    <sect3 id="pathman_partition_list-list-of-all-existing-partitions">
       <title><literal>pathman_partition_list</literal> --- list of all
       existing partitions</title>
       <programlisting>
@@ -555,7 +555,7 @@ SELECT create_hash_partitions('partitioned_table', 'id', 100);
 
 /* create ordinary table */
 CREATE TABLE some_table AS SELECT generate_series(1, 100) AS VAL;
-</programlisting>
+    </programlisting>
     <itemizedlist spacing="compact">
       <listitem>
         <para>
@@ -598,10 +598,10 @@ WHERE id = (SELECT * FROM some_table LIMIT 1);
  Planning time: 1.140 ms
  Execution time: 0.855 ms
 (306 rows)
-      </programlisting>
-    </para>
-    <itemizedlist spacing="compact">
-      <listitem>
+          </programlisting>
+        </para>
+        </listitem>
+        <listitem>
         <para>
           <emphasis role="strong"><literal>id = ANY (select ...)</literal></emphasis>
           <programlisting>
@@ -644,16 +644,16 @@ WHERE id = any (SELECT * FROM some_table limit 4);
  Planning time: 2.169 ms
  Execution time: 2.059 ms
 (110 rows)
-      </programlisting>
-    </para>
-    <itemizedlist spacing="compact">
-      <listitem>
-        <para>
-          <emphasis role="strong"><literal>NestLoop</literal> involving
-          a partitioned table</emphasis>, which is omitted since it's
-          occasionally shown above.
+          </programlisting>
         </para>
-      </listitem>
+        </listitem>
+        <listitem>
+          <para>
+            <emphasis role="strong"><literal>NestLoop</literal> involving
+              a partitioned table</emphasis>, which is omitted since it's
+            occasionally shown above.
+          </para>
+        </listitem>
     </itemizedlist>
     <para>
       In case you're interested, you can read more about custom nodes at
@@ -675,8 +675,8 @@ WHERE id = any (SELECT * FROM some_table limit 4);
             <emphasis role="strong"><emphasis>tableoid</emphasis></emphasis>:
           </para>
           <programlisting>
-SELECT tableoid::regclass AS partition, * FROM partitioned_table;
-</programlisting>
+            SELECT tableoid::regclass AS partition, * FROM partitioned_table;
+          </programlisting>
         </listitem>
         <listitem>
           <para>
@@ -694,12 +694,12 @@ SELECT tableoid::regclass AS partition, * FROM partitioned_table;
             view:
           </para>
           <programlisting>
-SELECT * FROM pathman_concurrent_part_tasks;
- userid | pid  | dbid  | relid | processed | status  
---------+------+-------+-------+-----------+---------
- dmitry | 7367 | 16384 | test  |    472000 | working
-(1 row)
-</programlisting>
+            SELECT * FROM pathman_concurrent_part_tasks;
+            userid | pid  | dbid  | relid | processed | status  
+            --------+------+-------+-------+-----------+---------
+            dmitry | 7367 | 16384 | test  |    472000 | working
+            (1 row)
+          </programlisting>
         </listitem>
         <listitem>
           <para>
@@ -709,19 +709,19 @@ SELECT * FROM pathman_concurrent_part_tasks;
             good old <literal>DROP TABLE</literal>:
           </para>
           <programlisting>
-SELECT drop_range_partition(partition, false) /* move data to parent */
-FROM pathman_partition_list
-WHERE parent = 'part_test'::regclass AND range_min::int &lt; 500;
-NOTICE:  1 rows copied from part_test_11
-NOTICE:  100 rows copied from part_test_1
-NOTICE:  100 rows copied from part_test_2
- drop_range_partition 
-----------------------
- dummy_test_11
- dummy_test_1
- dummy_test_2
-(3 rows)
-</programlisting>
+            SELECT drop_range_partition(partition, false) /* move data to parent */
+            FROM pathman_partition_list
+            WHERE parent = 'part_test'::regclass AND range_min::int &lt; 500;
+            NOTICE:  1 rows copied from part_test_11
+            NOTICE:  100 rows copied from part_test_1
+            NOTICE:  100 rows copied from part_test_2
+            drop_range_partition 
+            ----------------------
+            dummy_test_11
+            dummy_test_1
+            dummy_test_2
+            (3 rows)
+          </programlisting>
         </listitem>
       </itemizedlist>
     </sect3>
@@ -732,22 +732,22 @@ NOTICE:  100 rows copied from part_test_2
         with some integer column:
       </para>
       <programlisting>
-CREATE TABLE items (
-    id       SERIAL PRIMARY KEY,
-    name     TEXT,
-    code     BIGINT);
+        CREATE TABLE items (
+        id       SERIAL PRIMARY KEY,
+        name     TEXT,
+        code     BIGINT);
 
-INSERT INTO items (id, name, code)
-SELECT g, md5(g::text), random() * 100000
-FROM generate_series(1, 100000) as g;
-</programlisting>
+        INSERT INTO items (id, name, code)
+        SELECT g, md5(g::text), random() * 100000
+        FROM generate_series(1, 100000) as g;
+      </programlisting>
       <para>
         Now run the <literal>create_hash_partitions()</literal> function
         with appropriate arguments:
       </para>
       <programlisting>
-SELECT create_hash_partitions('items', 'id', 100);
-</programlisting>
+        SELECT create_hash_partitions('items', 'id', 100);
+      </programlisting>
       <para>
         This will create new partitions and move the data from parent to
         partitions.
@@ -757,19 +757,19 @@ SELECT create_hash_partitions('items', 'id', 100);
         partitioning key:
       </para>
       <programlisting>
-SELECT * FROM items WHERE id = 1234;
-  id  |               name               | code
-------+----------------------------------+------
- 1234 | 81dc9bdb52d04dc20036dbd8313ed055 | 1855
-(1 row)
+        SELECT * FROM items WHERE id = 1234;
+        id  |               name               | code
+        ------+----------------------------------+------
+        1234 | 81dc9bdb52d04dc20036dbd8313ed055 | 1855
+        (1 row)
 
-EXPLAIN SELECT * FROM items WHERE id = 1234;
-                                     QUERY PLAN
-------------------------------------------------------------------------------------
- Append  (cost=0.28..8.29 rows=0 width=0)
-   -&gt;  Index Scan using items_34_pkey on items_34  (cost=0.28..8.29 rows=0 width=0)
-         Index Cond: (id = 1234)
-</programlisting>
+        EXPLAIN SELECT * FROM items WHERE id = 1234;
+        QUERY PLAN
+        ------------------------------------------------------------------------------------
+        Append  (cost=0.28..8.29 rows=0 width=0)
+        -&gt;  Index Scan using items_34_pkey on items_34  (cost=0.28..8.29 rows=0 width=0)
+        Index Cond: (id = 1234)
+      </programlisting>
       <para>
         Notice that the <literal>Append</literal> node contains only one
         child scan which corresponds to the WHERE clause.
@@ -785,11 +785,11 @@ EXPLAIN SELECT * FROM items WHERE id = 1234;
         To access parent table use ONLY modifier:
       </para>
       <programlisting>
-EXPLAIN SELECT * FROM ONLY items;
-                      QUERY PLAN
-------------------------------------------------------
- Seq Scan on items  (cost=0.00..0.00 rows=1 width=45)
-</programlisting>
+        EXPLAIN SELECT * FROM ONLY items;
+        QUERY PLAN
+        ------------------------------------------------------
+        Seq Scan on items  (cost=0.00..0.00 rows=1 width=45)
+      </programlisting>
     </sect3>
     <sect3 id="range-partitioning">
       <title>RANGE partitioning</title>
@@ -798,28 +798,28 @@ EXPLAIN SELECT * FROM ONLY items;
         containing some dummy logs:
       </para>
       <programlisting>
-CREATE TABLE journal (
-    id      SERIAL,
-    dt      TIMESTAMP NOT NULL,
-    level   INTEGER,
-    msg     TEXT);
+        CREATE TABLE journal (
+        id      SERIAL,
+        dt      TIMESTAMP NOT NULL,
+        level   INTEGER,
+        msg     TEXT);
 
--- similar index will also be created for each partition
-CREATE INDEX ON journal(dt);
+        -- similar index will also be created for each partition
+        CREATE INDEX ON journal(dt);
 
--- generate some data
-INSERT INTO journal (dt, level, msg)
-SELECT g, random() * 6, md5(g::text)
-FROM generate_series('2015-01-01'::date, '2015-12-31'::date, '1 minute') as g;
-</programlisting>
+        -- generate some data
+        INSERT INTO journal (dt, level, msg)
+        SELECT g, random() * 6, md5(g::text)
+        FROM generate_series('2015-01-01'::date, '2015-12-31'::date, '1 minute') as g;
+      </programlisting>
       <para>
         Run the <literal>create_range_partitions()</literal> function to
         create partitions so that each partition would contain the data
         for one day:
       </para>
       <programlisting>
-SELECT create_range_partitions('journal', 'dt', '2015-01-01'::date, '1 day'::interval);
-</programlisting>
+        SELECT create_range_partitions('journal', 'dt', '2015-01-01'::date, '1 day'::interval);
+      </programlisting>
       <para>
         It will create 365 partitions and move the data from parent to
         partitions.
@@ -829,12 +829,12 @@ SELECT create_range_partitions('journal', 'dt', '2015-01-01'::date, '1 day'::int
         it can be done manually with the following functions:
       </para>
       <programlisting>
--- add new partition with specified range
-SELECT add_range_partition('journal', '2016-01-01'::date, '2016-01-07'::date);
+        -- add new partition with specified range
+        SELECT add_range_partition('journal', '2016-01-01'::date, '2016-01-07'::date);
 
--- append new partition with default range
-SELECT append_range_partition('journal');
-</programlisting>
+        -- append new partition with default range
+        SELECT append_range_partition('journal');
+      </programlisting>
       <para>
         The first one creates a partition with specified range. The
         second one creates a partition with default interval and appends
@@ -844,15 +844,15 @@ SELECT append_range_partition('journal');
         some outdated data:
       </para>
       <programlisting>
-CREATE FOREIGN TABLE journal_archive (
-    id      INTEGER NOT NULL,
-    dt      TIMESTAMP NOT NULL,
-    level   INTEGER,
-    msg     TEXT)
-SERVER archive_server;
+        CREATE FOREIGN TABLE journal_archive (
+        id      INTEGER NOT NULL,
+        dt      TIMESTAMP NOT NULL,
+        level   INTEGER,
+        msg     TEXT)
+        SERVER archive_server;
 
-SELECT attach_range_partition('journal', 'journal_archive', '2014-01-01'::date, '2015-01-01'::date);
-</programlisting>
+        SELECT attach_range_partition('journal', 'journal_archive', '2014-01-01'::date, '2015-01-01'::date);
+      </programlisting>
       <blockquote>
         <para>
           <emphasis role="strong">Important:</emphasis> the definition
@@ -865,44 +865,44 @@ SELECT attach_range_partition('journal', 'journal_archive', '2014-01-01'::date, 
         <literal>merge_range_partitions()</literal> function:
       </para>
       <programlisting>
-SELECT merge_range_partitions('journal_archive', 'journal_1');
-</programlisting>
+        SELECT merge_range_partitions('journal_archive', 'journal_1');
+      </programlisting>
       <para>
         To split partition by value, use the
         <literal>split_range_partition()</literal> function:
       </para>
       <programlisting>
-SELECT split_range_partition('journal_366', '2016-01-03'::date);
-</programlisting>
+        SELECT split_range_partition('journal_366', '2016-01-03'::date);
+      </programlisting>
       <para>
         To detach partition, use the
         <literal>detach_range_partition()</literal> function:
       </para>
       <programlisting>
-SELECT detach_range_partition('journal_archive');
-</programlisting>
+        SELECT detach_range_partition('journal_archive');
+      </programlisting>
       <para>
         Here's an example of the query performing filtering by
         partitioning key:
       </para>
       <programlisting>
-SELECT * FROM journal WHERE dt &gt;= '2015-06-01' AND dt &lt; '2015-06-03';
-   id   |         dt          | level |               msg
---------+---------------------+-------+----------------------------------
- 217441 | 2015-06-01 00:00:00 |     2 | 15053892d993ce19f580a128f87e3dbf
- 217442 | 2015-06-01 00:01:00 |     1 | 3a7c46f18a952d62ce5418ac2056010c
- 217443 | 2015-06-01 00:02:00 |     0 | 92c8de8f82faf0b139a3d99f2792311d
- ...
-(2880 rows)
+        SELECT * FROM journal WHERE dt &gt;= '2015-06-01' AND dt &lt; '2015-06-03';
+        id   |         dt          | level |               msg
+        --------+---------------------+-------+----------------------------------
+        217441 | 2015-06-01 00:00:00 |     2 | 15053892d993ce19f580a128f87e3dbf
+        217442 | 2015-06-01 00:01:00 |     1 | 3a7c46f18a952d62ce5418ac2056010c
+        217443 | 2015-06-01 00:02:00 |     0 | 92c8de8f82faf0b139a3d99f2792311d
+        ...
+        (2880 rows)
 
-EXPLAIN SELECT * FROM journal WHERE dt &gt;= '2015-06-01' AND dt &lt; '2015-06-03';
-                            QUERY PLAN
-------------------------------------------------------------------
- Append  (cost=0.00..58.80 rows=0 width=0)
-   -&gt;  Seq Scan on journal_152  (cost=0.00..29.40 rows=0 width=0)
-   -&gt;  Seq Scan on journal_153  (cost=0.00..29.40 rows=0 width=0)
-(3 rows)
-</programlisting>
+        EXPLAIN SELECT * FROM journal WHERE dt &gt;= '2015-06-01' AND dt &lt; '2015-06-03';
+        QUERY PLAN
+        ------------------------------------------------------------------
+        Append  (cost=0.00..58.80 rows=0 width=0)
+        -&gt;  Seq Scan on journal_152  (cost=0.00..29.40 rows=0 width=0)
+        -&gt;  Seq Scan on journal_153  (cost=0.00..29.40 rows=0 width=0)
+        (3 rows)
+      </programlisting>
     </sect3>
     <sect3 id="disabling-pg_pathman">
       <title>Disabling <literal>pg_pathman</literal></title>
@@ -964,8 +964,8 @@ EXPLAIN SELECT * FROM journal WHERE dt &gt;= '2015-06-01' AND dt &lt; '2015-06-0
         function:
       </para>
       <programlisting>
-SELECT disable_pathman_for('range_rel');
-</programlisting>
+        SELECT disable_pathman_for('range_rel');
+      </programlisting>
       <para>
         All sections and data will remain unchanged and will be handled
         by the standard &productname; inheritance mechanism.
@@ -983,8 +983,8 @@ SELECT disable_pathman_for('range_rel');
   </sect2>
   <sect2 id="authors">
     <title>Authors</title>
-<literallayout>Ildar Musin <email>i.musin@postgrespro.ru</email> Postgres Professional Ltd., Russia
-Alexander Korotkov <email>a.korotkov@postgrespro.ru</email> Postgres Professional Ltd., Russia
-Dmitry Ivanov <email>d.ivanov@postgrespro.ru</email> Postgres Professional Ltd., Russia</literallayout>
+    <literallayout>Ildar Musin <email>i.musin@postgrespro.ru</email> Postgres Professional Ltd., Russia
+      Alexander Korotkov <email>a.korotkov@postgrespro.ru</email> Postgres Professional Ltd., Russia
+      Dmitry Ivanov <email>d.ivanov@postgrespro.ru</email> Postgres Professional Ltd., Russia</literallayout>
   </sect2>
 </sect1>
