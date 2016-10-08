@@ -213,6 +213,7 @@ typedef struct MtmTransState
 	bool           isLocal;            /* Transaction is either replicated, either doesn't contain DML statements, so it shoudl be ignored by pglogical replication */
 	bool           isEnqueued;         /* Transaction is inserted in queue */
 	bool           isActive;           /* Transaction is active */
+	bool           isTwoPhase;         /* user level 2PC */
 	nodemask_t     participantsMask;   /* Mask of nodes involved in transaction */
 	nodemask_t     votedMask;          /* Mask of voted nodes */
 	TransactionId  xids[1];            /* [Mtm->nAllNodes]: transaction ID at replicas */

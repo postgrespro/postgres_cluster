@@ -130,6 +130,7 @@ static void MtmBeginTransaction(MtmCurrentTrans* x);
 static void MtmPrePrepareTransaction(MtmCurrentTrans* x);
 static void MtmPostPrepareTransaction(MtmCurrentTrans* x);
 static void MtmAbortPreparedTransaction(MtmCurrentTrans* x);
+static void MtmCommitPreparedTransaction(MtmCurrentTrans* x);
 static void MtmEndTransaction(MtmCurrentTrans* x, bool commit);
 static bool MtmTwoPhaseCommit(MtmCurrentTrans* x);
 static TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum);
@@ -685,6 +686,9 @@ MtmXactCallback(XactEvent event, void *arg)
 	  case XACT_EVENT_ABORT_PREPARED:
 		MtmAbortPreparedTransaction(&MtmTx);
 		break;
+	  case XACT_EVENT_COMMIT_PREPARED:
+		MtmCommitPreparedTransaction(&MtmTx);
+		break;
 	  case XACT_EVENT_COMMIT:
 		MtmEndTransaction(&MtmTx, true);
 		break;
@@ -793,6 +797,7 @@ MtmCreateTransState(MtmCurrentTrans* x)
 	ts->status = TRANSACTION_STATUS_IN_PROGRESS;
 	ts->snapshot = x->snapshot;
 	ts->isLocal = true;
+	ts->isTwoPhase = x->isTwoPhase;
 	if (!found) {
 		ts->isEnqueued = false;
 		ts->isActive = false;
@@ -970,6 +975,9 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		x->status = ts->status;
 		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
 		MtmUnlock();
+		if (x->isTwoPhase) { 
+			MtmResetTransaction();
+		}
 	}
 	//if (x->gid[0]) MTM_LOG1("Prepared transaction %d (%s) csn=%ld at %ld: %d", x->xid, x->gid, ts->csn, MtmGetCurrentTime(), ts->status);
 	if (Mtm->inject2PCError == 3) { 
@@ -980,6 +988,74 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	MTM_TXTRACE(x, "PostPrepareTransaction Finish");
 }
 
+static void 
+MtmCommitPreparedTransaction(MtmCurrentTrans* x)
+{
+    MtmTransMap* tm;
+	MtmTransState* ts;
+
+    if (Mtm->status == MTM_RECOVERY || x->isReplicated || x->isPrepared) { /* Ignore auto-2PC originated by multimaster */ 
+        return;
+    }
+	MtmLock(LW_EXCLUSIVE);
+	tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_FIND, NULL);
+	if (tm == NULL) {
+		elog(WARNING, "Global transaciton ID '%s' is not found", x->gid);
+	} else {
+        time_t transTimeout = MSEC_TO_USEC(Mtm2PCMinTimeout);
+        int nConfigChanges = Mtm->nConfigChanges;  
+		timestamp_t start = MtmGetSystemTime();
+		int result = 0;
+
+ 		Assert(tm->state != NULL);
+		MTM_LOG1("Commit prepared transaction %d with gid='%s'", x->xid, x->gid);
+		ts = tm->state;
+
+		Assert(MtmIsCoordinator(ts));
+
+		ts->votingCompleted = false;
+		ts->nVotes = 1; /* I voted myself */
+		ts->procno = MyProc->pgprocno;
+		MTM_TXTRACE(ts, "Coordinator sends MSG_PREPARE");
+		MtmSend2PCMessage(ts, MSG_PREPARE);
+		
+		/* Wait votes from all nodes until: */
+		while (!ts->votingCompleted                           /* all nodes voted */
+			   && nConfigChanges == Mtm->nConfigChanges       /* configarion is changed */
+			   && Mtm->status == MTM_ONLINE                   /* node is not online */
+			   && ts->status != TRANSACTION_STATUS_ABORTED    /* transaction is aborted */
+			   && start + transTimeout >= MtmGetSystemTime()) /* timeout is expired */
+		{
+			MtmUnlock();
+			MTM_TXTRACE(x, "CommitPreparedTransaction WaitLatch Start");
+			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, MtmHeartbeatRecvTimeout);
+			MTM_TXTRACE(x, "CommitPreparedTransaction WaitLatch Finish");
+			/* Emergency bailout if postmaster has died */
+			if (result & WL_POSTMASTER_DEATH) {
+				proc_exit(1);
+			}
+			if (result & WL_LATCH_SET) {
+				MTM_LOG3("Latch signaled at %ld", MtmGetSystemTime());
+				ResetLatch(&MyProc->procLatch);
+			}
+			MtmLock(LW_EXCLUSIVE);
+		}
+		if (ts->status != TRANSACTION_STATUS_ABORTED && (!ts->votingCompleted || nConfigChanges != Mtm->nConfigChanges)) {
+			if (nConfigChanges != Mtm->nConfigChanges) {
+				elog(WARNING, "Transaction %d (%s) is aborted because cluster configuration is changed during commit", x->xid, x->gid);
+			} else {
+				elog(WARNING, "Transaction %d (%s) is aborted because of %d msec timeout expiration, prepare time %d msec",
+					 x->xid, x->gid, (int)USEC_TO_MSEC(transTimeout), (int)USEC_TO_MSEC(ts->csn - x->snapshot));
+			}
+			MtmAbortTransaction(ts);
+		}
+		x->status = ts->status;
+		x->xid = ts->xid;
+		x->isPrepared = true;
+		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
+	}
+	MtmUnlock();
+}
 
 static void 
 MtmAbortPreparedTransaction(MtmCurrentTrans* x)
@@ -1009,9 +1085,9 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
-	MTM_LOG3("%d: End transaction %d, prepared=%d, replicated=%d, distributed=%d, gid=%s -> %s", 
-			 MyProcPid, x->xid, x->isPrepared, x->isReplicated, x->isDistributed, x->gid, commit ? "commit" : "abort");
-	if (x->status != TRANSACTION_STATUS_ABORTED && x->isDistributed && (x->isPrepared || x->isReplicated)) {
+	MTM_LOG1("%d: End transaction %d, prepared=%d, replicated=%d, distributed=%d, 2pc=%d, gid=%s -> %s", 
+			 MyProcPid, x->xid, x->isPrepared, x->isReplicated, x->isDistributed, x->isTwoPhase, x->gid, commit ? "commit" : "abort");
+	if (x->status != TRANSACTION_STATUS_ABORTED && x->isDistributed && (x->isPrepared || x->isReplicated) && !x->isTwoPhase) {
 		MtmTransState* ts = NULL;
 		MtmLock(LW_EXCLUSIVE);
 		if (x->isPrepared) { 
@@ -3820,9 +3896,13 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 					}
 					break;
 				case TRANS_STMT_PREPARE:
+  				    MtmTx.isTwoPhase = true;
+  				    strcpy(MtmTx.gid, stmt->gid);
+					break;
+					/* nobreak */
 				case TRANS_STMT_COMMIT_PREPARED:
 				case TRANS_STMT_ROLLBACK_PREPARED:
-  				    MtmTx.isTwoPhase = true;
+				    Assert(!MtmTx.isTwoPhase);
   				    strcpy(MtmTx.gid, stmt->gid);
 					break;
 				default:
