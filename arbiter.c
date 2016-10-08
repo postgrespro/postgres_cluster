@@ -997,15 +997,18 @@ static void MtmReceiver(Datum arg)
 									/* All nodes are finished their transactions */
 									if (ts->status == TRANSACTION_STATUS_ABORTED) { 
 										MtmWakeUpBackend(ts);								
-									} else if (MtmUseDtm) { 
-										Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-										ts->nVotes = 1; /* I voted myself */
-										MTM_TXTRACE(ts, "MtmTransReceiver send MSG_PREPARE");
-										MtmSend2PCMessage(ts, MSG_PREPARE);									  
 									} else { 
 										Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-										ts->status = TRANSACTION_STATUS_UNKNOWN;
-										MtmWakeUpBackend(ts);
+										if (ts->isTwoPhase) { 
+											MtmWakeUpBackend(ts);										
+										} else if (MtmUseDtm) { 
+											ts->nVotes = 1; /* I voted myself */
+											MTM_TXTRACE(ts, "MtmTransReceiver send MSG_PREPARE");
+											MtmSend2PCMessage(ts, MSG_PREPARE);									  
+										} else { 
+											ts->status = TRANSACTION_STATUS_UNKNOWN;
+											MtmWakeUpBackend(ts);
+										}
 									}
 								}
 							}
