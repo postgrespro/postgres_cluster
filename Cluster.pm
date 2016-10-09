@@ -102,7 +102,7 @@ sub configure
 			multimaster.queue_size = 10485760 # 10mb
 			multimaster.node_id = $id
 			multimaster.conn_strings = '$connstr'
-			multimaster.use_raftable = true
+			multimaster.use_raftable = false
 			multimaster.heartbeat_recv_timeout = 1000
 			multimaster.heartbeat_send_timeout = 250
 			multimaster.max_nodes = 3
