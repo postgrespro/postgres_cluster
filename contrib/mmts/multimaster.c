@@ -1008,7 +1008,7 @@ MtmCommitPreparedTransaction(MtmCurrentTrans* x)
 		int result = 0;
 
  		Assert(tm->state != NULL);
-		MTM_LOG1("Commit prepared transaction %d with gid='%s'", x->xid, x->gid);
+		MTM_LOG3("Commit prepared transaction %d with gid='%s'", x->xid, x->gid);
 		ts = tm->state;
 
 		Assert(MtmIsCoordinator(ts));
@@ -1085,7 +1085,7 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
-	MTM_LOG1("%d: End transaction %d, prepared=%d, replicated=%d, distributed=%d, 2pc=%d, gid=%s -> %s", 
+	MTM_LOG3("%d: End transaction %d, prepared=%d, replicated=%d, distributed=%d, 2pc=%d, gid=%s -> %s", 
 			 MyProcPid, x->xid, x->isPrepared, x->isReplicated, x->isDistributed, x->isTwoPhase, x->gid, commit ? "commit" : "abort");
 	if (x->status != TRANSACTION_STATUS_ABORTED && x->isDistributed && (x->isPrepared || x->isReplicated) && !x->isTwoPhase) {
 		MtmTransState* ts = NULL;
@@ -1226,7 +1226,7 @@ void MtmBroadcastPollMessage(MtmTransState* ts)
 		if (i+1 != MtmNodeId && BIT_CHECK(ts->participantsMask & ~Mtm->disabledNodeMask, i))
 		{
 			msg.node = i+1;
-			MTM_LOG1("Send request for transaction %s to node %d", msg.gid, msg.node);
+			MTM_LOG3("Send request for transaction %s to node %d", msg.gid, msg.node);
 			MtmSendMessage(&msg);
 		}
 	}
@@ -3838,7 +3838,7 @@ static bool MtmProcessDDLCommand(char const* queryString, bool transactional)
 		queryWithContext = (char *) queryString;
 	}
 
-	MTM_LOG1("Sending utility: %s", queryWithContext);
+	MTM_LOG3("Sending utility: %s", queryWithContext);
 	if (transactional)
 		/* DDL */
 		LogLogicalMessage("D", queryWithContext, strlen(queryWithContext) + 1, true);
