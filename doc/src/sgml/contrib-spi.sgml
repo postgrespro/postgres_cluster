@@ -67,7 +67,7 @@
   <title>timetravel &mdash; Functions for Implementing Time Travel</title>
 
   <para>
-   Long ago, <productname>PostgreSQL</> had a built-in time travel feature
+   Long ago, <productname>&productname;</> had a built-in time travel feature
    that kept the insert and delete times for each tuple.  This can be
    emulated using these functions.  To use these functions,
    you must add to a table two columns of <type>abstime</> type to store

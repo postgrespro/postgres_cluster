@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/update.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-UPDATE">
@@ -406,14 +406,14 @@ UPDATE films SET kind = 'Dramatic' WHERE CURRENT OF c_films;
   <para>
    This command conforms to the <acronym>SQL</acronym> standard, except
    that the <literal>FROM</literal> and <literal>RETURNING</> clauses
-   are <productname>PostgreSQL</productname> extensions, as is the ability
+   are <productname>&productname;</productname> extensions, as is the ability
    to use <literal>WITH</> with <command>UPDATE</>.
   </para>
 
   <para>
    Some other database systems offer a <literal>FROM</> option in which
    the target table is supposed to be listed again within <literal>FROM</>.
-   That is not how <productname>PostgreSQL</productname> interprets
+   That is not how <productname>&productname;</productname> interprets
    <literal>FROM</>.  Be careful when porting applications that use this
    extension.
   </para>
@@ -421,7 +421,7 @@ UPDATE films SET kind = 'Dramatic' WHERE CURRENT OF c_films;
   <para>
    According to the standard, the source value for a parenthesized sub-list of
    column names can be any row-valued expression yielding the correct number
-   of columns.  <productname>PostgreSQL</productname> only allows the source
+   of columns.  <productname>&productname;</productname> only allows the source
    value to be a parenthesized list of expressions (a row constructor) or a
    sub-<literal>SELECT</>.  An individual column's updated value can be
    specified as <literal>DEFAULT</> in the row-constructor case, but not

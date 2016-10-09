@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_type.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATETYPE">
@@ -119,7 +119,7 @@ CREATE TYPE <replaceable class="parameter">name</replaceable>
     (enum) type, as described in <xref linkend="datatype-enum">.
     Enum types take a list of one or more quoted labels, each of which
     must be less than <symbol>NAMEDATALEN</symbol> bytes long (64 bytes in a
-    standard <productname>PostgreSQL</productname> build).
+    standard <productname>&productname;</productname> build).
    </para>
   </refsect2>
 
@@ -280,7 +280,7 @@ CREATE TYPE <replaceable class="parameter">name</replaceable>
    and <replaceable class="parameter">type_modifier_output_function</replaceable>
    are needed if the type supports modifiers, that is optional constraints
    attached to a type declaration, such as <literal>char(5)</> or
-   <literal>numeric(30,2)</>.  <productname>PostgreSQL</productname> allows
+   <literal>numeric(30,2)</>.  <productname>&productname;</productname> allows
    user-defined types to take one or more simple constants or identifiers as
    modifiers.  However, this information must be capable of being packed into a
    single non-negative integer value for storage in the system catalogs.  The
@@ -319,7 +319,7 @@ CREATE TYPE <replaceable class="parameter">name</replaceable>
    While the details of the new type's internal representation are only
    known to the I/O functions and other functions you create to work with
    the type, there are several properties of the internal representation
-   that must be declared to <productname>PostgreSQL</productname>.
+   that must be declared to <productname>&productname;</productname>.
    Foremost of these is
    <replaceable class="parameter">internallength</replaceable>.
    Base data types can be fixed-length, in which case
@@ -458,7 +458,7 @@ CREATE TYPE <replaceable class="parameter">name</replaceable>
 
    <para>
     Whenever a user-defined type is created,
-    <productname>PostgreSQL</productname> automatically creates an
+    <productname>&productname;</productname> automatically creates an
     associated array type, whose name consists of the element type's
     name prepended with an underscore, and truncated if necessary to keep
     it less than <symbol>NAMEDATALEN</symbol> bytes long.  (If the name
@@ -934,15 +934,15 @@ CREATE TABLE big_objs (
   <para>
    The first form of the <command>CREATE TYPE</command> command, which
    creates a composite type, conforms to the <acronym>SQL</> standard.
-   The other forms are <productname>PostgreSQL</productname>
+   The other forms are <productname>&productname;</productname>
    extensions.  The <command>CREATE TYPE</command> statement in
    the <acronym>SQL</> standard also defines other forms that are not
-   implemented in <productname>PostgreSQL</>.
+   implemented in <productname>&productname;</>.
   </para>
 
   <para>
    The ability to create a composite type with zero attributes is
-   a <productname>PostgreSQL</productname>-specific deviation from the
+   a <productname>&productname;</productname>-specific deviation from the
    standard (analogous to the same case in <command>CREATE TABLE</command>).
   </para>
  </refsect1>

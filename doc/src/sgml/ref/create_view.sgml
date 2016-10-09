@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_view.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATEVIEW">
@@ -474,7 +474,7 @@ UNION ALL
 
   <para>
    <command>CREATE OR REPLACE VIEW</command> is a
-   <productname>PostgreSQL</productname> language extension.
+   <productname>&productname;</productname> language extension.
    So is the concept of a temporary view.
    The <literal>WITH ( ... )</> clause is an extension as well.
   </para>

@@ -55,7 +55,7 @@
 
  <para>
   The <acronym>GIN</acronym>
-  implementation in <productname>PostgreSQL</productname> is primarily
+  implementation in <productname>&productname;</productname> is primarily
   maintained by Teodor Sigaev and Oleg Bartunov. There is more
   information about <acronym>GIN</acronym> on their
   <ulink url="http://www.sai.msu.su/~megera/wiki/Gin">website</ulink>.
@@ -66,7 +66,7 @@
  <title>Built-in Operator Classes</title>
 
  <para>
-  The core <productname>PostgreSQL</> distribution
+  The core <productname>&productname;</> distribution
   includes the <acronym>GIN</acronym> operator classes shown in
   <xref linkend="gin-builtin-opclasses-table">.
   (Some of the optional modules described in <xref linkend="contrib">
@@ -850,7 +850,7 @@
     <para>
      The primary goal of developing <acronym>GIN</acronym> indexes was
      to create support for highly scalable full-text search in
-     <productname>PostgreSQL</productname>, and there are often situations when
+     <productname>&productname;</productname>, and there are often situations when
      a full-text search returns a very large set of results.  Moreover, this
      often happens when the query contains very frequent words, so that the
      large result set is not even useful.  Since reading many
@@ -900,7 +900,7 @@
  <title>Examples</title>
 
  <para>
-  The <productname>PostgreSQL</productname> source distribution includes
+  The <productname>&productname;</productname> source distribution includes
   <acronym>GIN</acronym> operator classes for <type>tsvector</> and
   for one-dimensional arrays of all internal types.  Prefix searching in
   <type>tsvector</> is implemented using the <acronym>GIN</> partial match

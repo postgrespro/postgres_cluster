@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_trigger.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERTRIGGER">
@@ -117,7 +117,7 @@ ALTER TRIGGER emp_stamp ON emp DEPENDS ON EXTENSION emplib;
   <title>Compatibility</title>
 
   <para>
-   <command>ALTER TRIGGER</command> is a <productname>PostgreSQL</>
+   <command>ALTER TRIGGER</command> is a <productname>&productname;</>
    extension of the SQL standard.
   </para>
  </refsect1>

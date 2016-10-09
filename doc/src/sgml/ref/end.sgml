@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/end.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-END">
@@ -32,7 +32,7 @@ END [ WORK | TRANSACTION ]
    <command>END</command> commits the current transaction. All changes
    made by the transaction become visible to others and are guaranteed
    to be durable if a crash occurs.  This command is a
-   <productname>PostgreSQL</productname> extension
+   <productname>&productname;</productname> extension
    that is equivalent to <xref linkend="sql-commit">.
   </para>
  </refsect1>
@@ -81,7 +81,7 @@ END;
   <title>Compatibility</title>
 
   <para>
-   <command>END</command> is a <productname>PostgreSQL</productname>
+   <command>END</command> is a <productname>&productname;</productname>
    extension that provides functionality equivalent to <xref
    linkend="sql-commit">, which is
    specified in the SQL standard.

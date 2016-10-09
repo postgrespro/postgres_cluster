@@ -9,7 +9,7 @@
 
   <para>
    In  the  sections  that follow, we will discuss how you
-   can extend the <productname>PostgreSQL</productname>
+   can extend the <productname>&productname;</productname>
    <acronym>SQL</acronym> query language by adding:
 
    <itemizedlist spacing="compact" mark="bullet">
@@ -50,7 +50,7 @@
    <title>How Extensibility Works</title>
 
    <para>
-    <productname>PostgreSQL</productname> is extensible because its operation  is
+    <productname>&productname;</productname> is extensible because its operation  is
     catalog-driven.   If  you  are familiar with standard
     relational database systems, you know that  they  store  information
     about  databases,  tables,  columns,  etc., in what are
@@ -58,13 +58,13 @@
     this  the data dictionary.)  The catalogs appear to the
     user as tables like any other, but  the  <acronym>DBMS</acronym>  stores
     its  internal  bookkeeping in them.  One key difference
-    between <productname>PostgreSQL</productname> and  standard  relational database systems  is
-    that <productname>PostgreSQL</productname> stores much more information in its
+    between <productname>&productname;</productname> and  standard  relational database systems  is
+    that <productname>&productname;</productname> stores much more information in its
     catalogs: not only information about tables and  columns,
     but also information about data types, functions, access
     methods, and so on.  These tables can be  modified  by
-    the  user, and since <productname>PostgreSQL</productname> bases its operation
-    on these tables, this means that <productname>PostgreSQL</productname> can  be
+    the  user, and since <productname>&productname;</productname> bases its operation
+    on these tables, this means that <productname>&productname;</productname> can  be
     extended   by   users.    By  comparison,  conventional
     database systems can only be extended by changing hardcoded
     procedures in the source code or by loading modules
@@ -72,21 +72,21 @@
    </para>
 
    <para>
-    The <productname>PostgreSQL</productname> server can moreover
+    The <productname>&productname;</productname> server can moreover
     incorporate user-written code into itself through dynamic loading.
     That is, the user can specify an object code file (e.g., a shared
     library) that implements a new type or function, and
-    <productname>PostgreSQL</productname> will load it as required.
+    <productname>&productname;</productname> will load it as required.
     Code written in <acronym>SQL</acronym> is even more trivial to add
     to the server.  This ability to modify its operation <quote>on the
-    fly</quote> makes <productname>PostgreSQL</productname> uniquely
+    fly</quote> makes <productname>&productname;</productname> uniquely
     suited for rapid prototyping of new applications and storage
     structures.
    </para>
   </sect1>
 
   <sect1 id="extend-type-system">
-   <title>The <productname>PostgreSQL</productname> Type System</title>
+   <title>The <productname>&productname;</productname> Type System</title>
 
    <indexterm zone="extend-type-system">
     <primary>base type</primary>
@@ -107,7 +107,7 @@
    </indexterm>
 
    <para>
-    <productname>PostgreSQL</productname> data types are divided into base
+    <productname>&productname;</productname> data types are divided into base
     types, composite types, domains, and pseudo-types.
    </para>
 
@@ -119,7 +119,7 @@
      implemented below the level of the <acronym>SQL</> language
      (typically in a low-level language such as C).  They generally
      correspond to what are often known as abstract data types.
-     <productname>PostgreSQL</productname> can only operate on such
+     <productname>&productname;</productname> can only operate on such
      types through functions provided by the user and only understands
      the behavior of such types to the extent that the user describes
      them.  Base types are further subdivided into scalar and array
@@ -294,11 +294,11 @@
    </indexterm>
 
    <para>
-    A useful extension to <productname>PostgreSQL</> typically includes
+    A useful extension to <productname>&productname;</> typically includes
     multiple SQL objects; for example, a new data type will require new
     functions, new operators, and probably new index operator classes.
     It is helpful to collect all these objects into a single package
-    to simplify database management.  <productname>PostgreSQL</> calls
+    to simplify database management.  <productname>&productname;</> calls
     such a package an <firstterm>extension</>.  To define an extension,
     you need at least a <firstterm>script file</> that contains the
     <acronym>SQL</> commands to create the extension's objects, and a
@@ -313,7 +313,7 @@
    <para>
     The main advantage of using an extension, rather than just running the
     <acronym>SQL</> script to load a bunch of <quote>loose</> objects
-    into your database, is that <productname>PostgreSQL</> will then
+    into your database, is that <productname>&productname;</> will then
     understand that the objects of the extension go together.  You can
     drop all the objects with a single <xref linkend="sql-dropextension">
     command (no need to maintain a separate <quote>uninstall</> script).
@@ -327,7 +327,7 @@
    </para>
 
    <para>
-    <productname>PostgreSQL</> will not let you drop an individual object
+    <productname>&productname;</> will not let you drop an individual object
     contained in an extension, except by dropping the whole extension.
     Also, while you can change the definition of an extension member object
     (for example, via <command>CREATE OR REPLACE FUNCTION</command> for a
@@ -354,7 +354,7 @@
    </para>
 
    <para>
-    <productname>PostgreSQL</> does not currently support extension scripts
+    <productname>&productname;</> does not currently support extension scripts
     issuing <command>CREATE POLICY</command> or <command>SECURITY LABEL</command>
     statements.  These are expected to be set after the extension has been
     created.  All RLS policies and security labels on extension objects will be
@@ -578,7 +578,7 @@
     <para>
      While the script files can contain any characters allowed by the specified
      encoding, control files should contain only plain ASCII, because there
-     is no way for <productname>PostgreSQL</> to know what encoding a
+     is no way for <productname>&productname;</> to know what encoding a
      control file is in.  In practice this is only an issue if you want to
      use non-ASCII characters in the extension's comment.  Recommended
      practice in that case is to not use the control file <varname>comment</>
@@ -849,7 +849,7 @@ SELECT pg_catalog.pg_extension_config_dump('my_config', 'WHERE NOT standard_entr
     </para>
 
     <para>
-     <productname>PostgreSQL</> doesn't assume anything about the properties
+     <productname>&productname;</> doesn't assume anything about the properties
      of version names: for example, it does not know whether <literal>1.1</>
      follows <literal>1.0</>.  It just matches up the available version names
      and follows the path that requires applying the fewest update scripts.
@@ -971,16 +971,16 @@ include $(PGXS)
 
    <para>
     If you are thinking about distributing your
-    <productname>PostgreSQL</> extension modules, setting up a
+    <productname>&productname;</> extension modules, setting up a
     portable build system for them can be fairly difficult.  Therefore
-    the <productname>PostgreSQL</> installation provides a build
+    the <productname>&productname;</> installation provides a build
     infrastructure for extensions, called <acronym>PGXS</acronym>, so
     that simple extension modules can be built simply against an
     already installed server.  <acronym>PGXS</acronym> is mainly intended
     for extensions that include C code, although it can be used for
     pure-SQL extensions too.  Note that <acronym>PGXS</acronym> is not
     intended to be a universal build system framework that can be used
-    to build any software interfacing to <productname>PostgreSQL</>;
+    to build any software interfacing to <productname>&productname;</>;
     it simply automates common build rules for simple server extension
     modules.  For more complicated packages, you might need to write your
     own build system.
@@ -1193,7 +1193,7 @@ include $(PGXS)
       <listitem>
        <para>
         path to <application>pg_config</> program for the
-        <productname>PostgreSQL</productname> installation to build against
+        <productname>&productname;</productname> installation to build against
         (typically just <literal>pg_config</> to use the first one in your
         <varname>PATH</>)
        </para>
@@ -1208,7 +1208,7 @@ include $(PGXS)
     <literal>make</literal> to compile, and then <literal>make
     install</literal> to install your module.  By default, the extension is
     compiled and installed for the
-    <productname>PostgreSQL</productname> installation that
+    <productname>&productname;</productname> installation that
     corresponds to the first <command>pg_config</command> program
     found in your <varname>PATH</>.  You can use a different installation by
     setting <varname>PG_CONFIG</varname> to point to its
@@ -1247,7 +1247,7 @@ make VPATH=/path/to/extension/source/tree install
     The scripts listed in the <varname>REGRESS</> variable are used for
     regression testing of your module, which can be invoked by <literal>make
     installcheck</literal> after doing <literal>make install</>.  For this to
-    work you must have a running <productname>PostgreSQL</productname> server.
+    work you must have a running <productname>&productname;</productname> server.
     The script files listed in <varname>REGRESS</> must appear in a
     subdirectory named <literal>sql/</literal> in your extension's directory.
     These files must have extension <literal>.sql</literal>, which must not be

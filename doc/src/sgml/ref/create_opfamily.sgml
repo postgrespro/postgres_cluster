@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_opfamily.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATEOPFAMILY">
@@ -98,7 +98,7 @@ CREATE OPERATOR FAMILY <replaceable class="parameter">name</replaceable> USING <
 
   <para>
    <command>CREATE OPERATOR FAMILY</command> is a
-   <productname>PostgreSQL</productname> extension.  There is no
+   <productname>&productname;</productname> extension.  There is no
    <command>CREATE OPERATOR FAMILY</command> statement in the SQL
    standard.
   </para>

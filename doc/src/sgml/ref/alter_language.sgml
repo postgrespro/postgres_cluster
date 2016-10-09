@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_language.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERLANGUAGE">

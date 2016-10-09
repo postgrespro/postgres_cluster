@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/drop_owned.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DROP-OWNED">
@@ -110,7 +110,7 @@ DROP OWNED BY { <replaceable class="PARAMETER">name</replaceable> | CURRENT_USER
 
   <para>
    The <command>DROP OWNED</command> command is a
-   <productname>PostgreSQL</productname> extension.
+   <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

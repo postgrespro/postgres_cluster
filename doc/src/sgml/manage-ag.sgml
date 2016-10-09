@@ -6,7 +6,7 @@
  <indexterm zone="managing-databases"><primary>database</></>
 
  <para>
-  Every instance of a running <productname>PostgreSQL</productname>
+  Every instance of a running <productname>&productname;</productname>
   server manages one or more databases.  Databases are therefore the
   topmost hierarchical level for organizing <acronym>SQL</acronym>
   objects (<quote>database objects</quote>).  This chapter describes
@@ -41,7 +41,7 @@
    connection. However, an application is not restricted in the number of
    connections it opens to the same or other databases.  Databases are
    physically separated and access control is managed at the
-   connection level.  If one <productname>PostgreSQL</> server
+   connection level.  If one <productname>&productname;</> server
    instance is to house projects or users that should be separate and
    for the most part unaware of each other, it is therefore
    recommended to put them into separate databases.  If the projects
@@ -81,7 +81,7 @@ SELECT datname FROM pg_database;
   <indexterm><primary>CREATE DATABASE</></>
 
   <para>
-   In order to create a database, the <productname>PostgreSQL</>
+   In order to create a database, the <productname>&productname;</>
    server must be up and running (see <xref
    linkend="server-start">).
   </para>
@@ -195,7 +195,7 @@ createdb -O <replaceable>rolename</> <replaceable>dbname</>
    database contains the same data as the initial contents of
    <literal>template1</>, that is, only the standard objects
    predefined by your version of
-   <productname>PostgreSQL</productname>.  <literal>template0</>
+   <productname>&productname;</productname>.  <literal>template0</>
    should never be changed after the database cluster has been
    initialized.  By instructing
    <command>CREATE DATABASE</> to copy <literal>template0</> instead
@@ -284,7 +284,7 @@ createdb -T template0 <replaceable>dbname</>
 
   <para>
    Recall from <xref linkend="runtime-config"> that the
-   <productname>PostgreSQL</> server provides a large number of
+   <productname>&productname;</> server provides a large number of
    run-time configuration variables.  You can set database-specific
    default values for many of these settings.
   </para>
@@ -354,7 +354,7 @@ dropdb <replaceable class="parameter">dbname</replaceable>
   </indexterm>
 
   <para>
-   Tablespaces in <productname>PostgreSQL</> allow database administrators to
+   Tablespaces in <productname>&productname;</> allow database administrators to
    define locations in the file system where the files representing
    database objects can be stored. Once created, a tablespace can be referred
    to by name when creating database objects.
@@ -362,7 +362,7 @@ dropdb <replaceable class="parameter">dbname</replaceable>
 
   <para>
    By using tablespaces, an administrator can control the disk layout
-   of a <productname>PostgreSQL</> installation. This is useful in at
+   of a <productname>&productname;</> installation. This is useful in at
    least two ways. First, if the partition or volume on which the
    cluster was initialized runs out of space and cannot be extended,
    a tablespace can be created on a different partition and used
@@ -381,7 +381,7 @@ dropdb <replaceable class="parameter">dbname</replaceable>
 
   <warning>
    <para>
-     Even though located outside the main PostgreSQL data directory,
+     Even though located outside the main &productname; data directory,
      tablespaces are an integral part of the database cluster and
      <emphasis>cannot</emphasis> be treated as an autonomous collection
      of data files. They are dependent on metadata contained in the main
@@ -402,7 +402,7 @@ dropdb <replaceable class="parameter">dbname</replaceable>
 CREATE TABLESPACE fastspace LOCATION '/ssd1/postgresql/data';
 </programlisting>
    The location must be an existing, empty directory that is owned by
-   the <productname>PostgreSQL</> operating system user.  All objects subsequently
+   the <productname>&productname;</> operating system user.  All objects subsequently
    created within the tablespace will be stored in files underneath this
    directory.  The location must not be on removable or transient storage,
    as the cluster might fail to function if the tablespace is missing
@@ -414,7 +414,7 @@ CREATE TABLESPACE fastspace LOCATION '/ssd1/postgresql/data';
     There is usually not much point in making more than one
     tablespace per logical file system, since you cannot control the location
     of individual files within a logical file system.  However,
-    <productname>PostgreSQL</> does not enforce any such limitation, and
+    <productname>&productname;</> does not enforce any such limitation, and
     indeed it is not directly aware of the file system boundaries on your
     system.  It just stores files in the directories you tell it to use.
    </para>
@@ -506,7 +506,7 @@ SELECT spcname FROM pg_tablespace;
   </para>
 
   <para>
-   <productname>PostgreSQL</> makes use of symbolic links
+   <productname>&productname;</> makes use of symbolic links
    to simplify the implementation of tablespaces. This
    means that tablespaces can be used <emphasis>only</> on systems
    that support symbolic links.

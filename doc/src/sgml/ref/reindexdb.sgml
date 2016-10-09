@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/reindexdb.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="APP-REINDEXDB">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname id="reindexdb">reindexdb</refname>
-  <refpurpose>reindex a <productname>PostgreSQL</productname> database</refpurpose>
+  <refpurpose>reindex a <productname>&productname;</productname> database</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -88,7 +88,7 @@ PostgreSQL documentation
 
   <para>
    <application>reindexdb</application> is a utility for rebuilding indexes
-   in a <productname>PostgreSQL</productname> database.
+   in a <productname>&productname;</productname> database.
   </para>
 
   <para>
@@ -345,7 +345,7 @@ PostgreSQL documentation
   </variablelist>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>
@@ -374,7 +374,7 @@ PostgreSQL documentation
 
   <para>
    <application>reindexdb</application> might need to connect several
-   times to the <productname>PostgreSQL</productname> server, asking
+   times to the <productname>&productname;</productname> server, asking
    for a password each time. It is convenient to have a
    <filename>~/.pgpass</> file in such cases. See <xref
    linkend="libpq-pgpass"> for more information.

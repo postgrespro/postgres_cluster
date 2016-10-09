@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_foreign_data_wrapper.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERFOREIGNDATAWRAPPER">
@@ -93,7 +93,7 @@ ALTER FOREIGN DATA WRAPPER <replaceable class="parameter">name</replaceable> REN
      <para>
       Note that it is possible that pre-existing options of the foreign-data
       wrapper, or of dependent servers, user mappings, or foreign tables, are
-      invalid according to the new validator.  <productname>PostgreSQL</> does
+      invalid according to the new validator.  <productname>&productname;</> does
       not check for this.  It is up to the user to make sure that these
       options are correct before using the modified foreign-data wrapper.
       However, any options specified in this <command>ALTER FOREIGN DATA

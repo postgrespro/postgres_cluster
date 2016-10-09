@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/select.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-SELECT">
@@ -354,7 +354,7 @@ TABLE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ]
         should be used to retrieve a subset of the rows in that table.
         This sampling precedes the application of any other filters such
         as <literal>WHERE</> clauses.
-        The standard <productname>PostgreSQL</productname> distribution
+        The standard <productname>&productname;</productname> distribution
         includes two sampling methods, <literal>BERNOULLI</literal>
         and <literal>SYSTEM</literal>, and other sampling methods can be
         installed in the database via extensions.
@@ -965,12 +965,12 @@ UNBOUNDED FOLLOWING
     <literal>AS</> <replaceable class="parameter">output_name</replaceable>
     after the column's expression.  (You can omit <literal>AS</literal>,
     but only if the desired output name does not match any
-    <productname>PostgreSQL</productname> keyword (see <xref
+    <productname>&productname;</productname> keyword (see <xref
     linkend="sql-keywords-appendix">).  For protection against possible
     future keyword additions, it is recommended that you always either
     write <literal>AS</literal> or double-quote the output name.)
     If you do not specify a column name, a name is chosen automatically
-    by <productname>PostgreSQL</productname>.  If the column's expression
+    by <productname>&productname;</productname>.  If the column's expression
     is a simple column reference then the chosen name is the same as that
     column's name.  In more complex cases a function or type name may be
     used, or the system may fall back on a generated name such as
@@ -1005,7 +1005,7 @@ UNBOUNDED FOLLOWING
     contains any volatile or expensive functions.  With that behavior, the
     order of function evaluations is more intuitive and there will not be
     evaluations corresponding to rows that never appear in the output.
-    <productname>PostgreSQL</> will effectively evaluate output expressions
+    <productname>&productname;</> will effectively evaluate output expressions
     after sorting and limiting, so long as those expressions are not
     referenced in <literal>DISTINCT</literal>, <literal>ORDER BY</literal>
     or <literal>GROUP BY</literal>.  (As a counterexample, <literal>SELECT
@@ -1018,7 +1018,7 @@ UNBOUNDED FOLLOWING
 
    <note>
     <para>
-     <productname>PostgreSQL</> versions before 9.6 did not provide any
+     <productname>&productname;</> versions before 9.6 did not provide any
      guarantees about the timing of evaluation of output expressions versus
      sorting and limiting; it depended on the form of the chosen query plan.
     </para>
@@ -1341,7 +1341,7 @@ OFFSET <replaceable class="parameter">start</replaceable>
 
    <para>
     SQL:2008 introduced a different syntax to achieve the same result,
-    which <productname>PostgreSQL</> also supports.  It is:
+    which <productname>&productname;</> also supports.  It is:
 <synopsis>
 OFFSET <replaceable class="parameter">start</replaceable> { ROW | ROWS }
 FETCH { FIRST | NEXT } [ <replaceable class="parameter">count</replaceable> ] { ROW | ROWS } ONLY
@@ -1358,7 +1358,7 @@ FETCH { FIRST | NEXT } [ <replaceable class="parameter">count</replaceable> ] { 
     the effects of these clauses.
     According to the standard, the <literal>OFFSET</literal> clause must come
     before the <literal>FETCH</literal> clause if both are present; but
-    <productname>PostgreSQL</> is laxer and allows either order.
+    <productname>&productname;</> is laxer and allows either order.
    </para>
 
    <para>
@@ -1825,7 +1825,7 @@ FROM manufacturers m LEFT JOIN LATERAL get_product_names(m.id) pname ON true;
    <title>Omitted <literal>FROM</literal> Clauses</title>
 
    <para>
-    <productname>PostgreSQL</productname> allows one to omit the
+    <productname>&productname;</productname> allows one to omit the
     <literal>FROM</literal> clause.  It has a straightforward use to
     compute the results of simple expressions:
 <programlisting>
@@ -1861,7 +1861,7 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
     The list of output expressions after <literal>SELECT</literal> can be
     empty, producing a zero-column result table.
     This is not valid syntax according to the SQL standard.
-    <productname>PostgreSQL</productname> allows it to be consistent with
+    <productname>&productname;</productname> allows it to be consistent with
     allowing zero-column tables.
     However, an empty list is not allowed when <literal>DISTINCT</> is used.
    </para>
@@ -1874,7 +1874,7 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
     In the SQL standard, the optional key word <literal>AS</> can be
     omitted before an output column name whenever the new column name
     is a valid column name (that is, not the same as any reserved
-    keyword).  <productname>PostgreSQL</productname> is slightly more
+    keyword).  <productname>&productname;</productname> is slightly more
     restrictive: <literal>AS</> is required if the new column name
     matches any keyword at all, reserved or not.  Recommended practice is
     to use <literal>AS</> or double-quote output column names, to prevent
@@ -1883,7 +1883,7 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
 
    <para>
     In <literal>FROM</literal> items, both the standard and
-    <productname>PostgreSQL</productname> allow <literal>AS</> to
+    <productname>&productname;</productname> allow <literal>AS</> to
     be omitted before an alias that is an unreserved keyword.  But
     this is impractical for output column names, because of syntactic
     ambiguities.
@@ -1896,12 +1896,12 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
    <para>
     The SQL standard requires parentheses around the table name when
     writing <literal>ONLY</literal>, for example <literal>SELECT * FROM ONLY
-    (tab1), ONLY (tab2) WHERE ...</literal>.  <productname>PostgreSQL</>
+    (tab1), ONLY (tab2) WHERE ...</literal>.  <productname>&productname;</>
     considers these parentheses to be optional.
    </para>
 
    <para>
-    <productname>PostgreSQL</> allows a trailing <literal>*</> to be written to
+    <productname>&productname;</> allows a trailing <literal>*</> to be written to
     explicitly specify the non-<literal>ONLY</literal> behavior of including
     child tables.  The standard does not allow this.
    </para>
@@ -1926,7 +1926,7 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
    <title>Function Calls in <literal>FROM</literal></title>
 
    <para>
-    <productname>PostgreSQL</productname> allows a function call to be
+    <productname>&productname;</productname> allows a function call to be
     written directly as a member of the <literal>FROM</> list.  In the SQL
     standard it would be necessary to wrap such a function call in a
     sub-<command>SELECT</command>; that is, the syntax
@@ -1936,7 +1936,7 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
     Note that <literal>LATERAL</> is considered to be implicit; this is
     because the standard requires <literal>LATERAL</> semantics for an
     <literal>UNNEST()</> item in <literal>FROM</>.
-    <productname>PostgreSQL</productname> treats <literal>UNNEST()</> the
+    <productname>&productname;</productname> treats <literal>UNNEST()</> the
     same as other set-returning functions.
    </para>
   </refsect2>
@@ -1948,10 +1948,10 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
     In the SQL-92 standard, an <literal>ORDER BY</literal> clause can
     only use output column names or numbers, while a <literal>GROUP
     BY</literal> clause can only use expressions based on input column
-    names.  <productname>PostgreSQL</productname> extends each of
+    names.  <productname>&productname;</productname> extends each of
     these clauses to allow the other choice as well (but it uses the
     standard's interpretation if there is ambiguity).
-    <productname>PostgreSQL</productname> also allows both clauses to
+    <productname>&productname;</productname> also allows both clauses to
     specify arbitrary expressions.  Note that names appearing in an
     expression will always be taken as input-column names, not as
     output-column names.
@@ -1960,7 +1960,7 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
    <para>
     SQL:1999 and later use a slightly different definition which is not
     entirely upward compatible with SQL-92.
-    In most cases, however, <productname>PostgreSQL</productname>
+    In most cases, however, <productname>&productname;</productname>
     will interpret an <literal>ORDER BY</literal> or <literal>GROUP
     BY</literal> expression the same way SQL:1999 does.
    </para>
@@ -1970,7 +1970,7 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
    <title>Functional Dependencies</title>
 
    <para>
-    <productname>PostgreSQL</productname> recognizes functional dependency
+    <productname>&productname;</productname> recognizes functional dependency
     (allowing columns to be omitted from <literal>GROUP BY</>) only when
     a table's primary key is included in the <literal>GROUP BY</> list.
     The SQL standard specifies additional conditions that should be
@@ -1984,7 +1984,7 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
    <para>
     The SQL standard provides additional options for the window
     <replaceable class="parameter">frame_clause</>.
-    <productname>PostgreSQL</productname> currently supports only the
+    <productname>&productname;</productname> currently supports only the
     options listed above.
    </para>
   </refsect2>
@@ -1994,7 +1994,7 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
 
    <para>
     The clauses <literal>LIMIT</literal> and <literal>OFFSET</literal>
-    are <productname>PostgreSQL</productname>-specific syntax, also
+    are <productname>&productname;</productname>-specific syntax, also
     used by <productname>MySQL</productname>.  The SQL:2008 standard
     has introduced the clauses <literal>OFFSET ... FETCH {FIRST|NEXT}
     ...</literal> for the same functionality, as shown above
@@ -2003,7 +2003,7 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
     (Applications written for <productname>Oracle</productname>
     frequently use a workaround involving the automatically
     generated <literal>rownum</literal> column, which is not available in
-    PostgreSQL, to implement the effects of these clauses.)
+    &productname;, to implement the effects of these clauses.)
    </para>
   </refsect2>
 
@@ -2013,7 +2013,7 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
    <para>
     Although <literal>FOR UPDATE</> appears in the SQL standard, the
     standard allows it only as an option of <command>DECLARE CURSOR</>.
-    <productname>PostgreSQL</productname> allows it in any <command>SELECT</>
+    <productname>&productname;</productname> allows it in any <command>SELECT</>
     query as well as in sub-<command>SELECT</>s, but this is an extension.
     The <literal>FOR NO KEY UPDATE</>, <literal>FOR SHARE</> and
     <literal>FOR KEY SHARE</> variants, as well as the <literal>NOWAIT</>
@@ -2026,7 +2026,7 @@ SELECT distributors.* WHERE distributors.name = 'Westward';
    <title>Data-Modifying Statements in <literal>WITH</></title>
 
    <para>
-    <productname>PostgreSQL</productname> allows <command>INSERT</>,
+    <productname>&productname;</productname> allows <command>INSERT</>,
     <command>UPDATE</>, and <command>DELETE</> to be used as <literal>WITH</>
     queries.  This is not found in the SQL standard.
    </para>

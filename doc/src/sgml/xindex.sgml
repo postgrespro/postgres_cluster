@@ -32,7 +32,7 @@
    The <classname>pg_am</classname> table contains one row for every
    index method (internally known as access method).  Support for
    regular access to tables is built into
-   <productname>PostgreSQL</productname>, but all index methods are
+   <productname>&productname;</productname>, but all index methods are
    described in <classname>pg_am</classname>.  It is possible to add a
    new index access method by writing the necessary code and
    then creating a row in <classname>pg_am</classname> &mdash; but that is
@@ -89,8 +89,8 @@
    and so operators like <quote>less than</> and <quote>greater than or equal
    to</> are interesting with respect to a B-tree.
    Because
-   <productname>PostgreSQL</productname> allows the user to define operators,
-   <productname>PostgreSQL</productname> cannot look at the name of an operator
+   <productname>&productname;</productname> allows the user to define operators,
+   <productname>&productname;</productname> cannot look at the name of an operator
    (e.g., <literal>&lt;</> or <literal>&gt;=</>) and tell what kind of
    comparison it is.  Instead, the index method defines a set of
    <quote>strategies</>, which can be thought of as generalized operators.
@@ -815,7 +815,7 @@ CREATE OPERATOR &lt; (
 
    <listitem>
     <para>
-     Although <productname>PostgreSQL</productname> can cope with
+     Although <productname>&productname;</productname> can cope with
      functions having the same SQL name as long as they have different
      argument data types, C can only cope with one global function
      having a given name.  So we shouldn't name the C function
@@ -829,7 +829,7 @@ CREATE OPERATOR &lt; (
     <para>
      We could have made the SQL name
      of the function <filename>abs_eq</filename>, relying on
-     <productname>PostgreSQL</productname> to distinguish it by
+     <productname>&productname;</productname> to distinguish it by
      argument data types from any other SQL function of the same name.
      To keep the example simple, we make the function have the same
      names at the C level and SQL level.
@@ -907,7 +907,7 @@ CREATE OPERATOR CLASS complex_abs_ops
   </para>
 
   <para>
-   To handle these needs, <productname>PostgreSQL</productname>
+   To handle these needs, <productname>&productname;</productname>
    uses the concept of an <firstterm>operator
    family</><indexterm><primary>operator family</></indexterm>.
    An operator family contains one or more operator classes, and can also
@@ -938,7 +938,7 @@ CREATE OPERATOR CLASS complex_abs_ops
   </para>
 
   <para>
-   As an example, <productname>PostgreSQL</productname> has a built-in
+   As an example, <productname>&productname;</productname> has a built-in
    B-tree operator family <literal>integer_ops</>, which includes operator
    classes <literal>int8_ops</>, <literal>int4_ops</>, and
    <literal>int2_ops</> for indexes on <type>bigint</> (<type>int8</>),
@@ -1113,7 +1113,7 @@ ALTER OPERATOR FAMILY integer_ops USING btree ADD
    </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname> uses operator classes to infer the
+   <productname>&productname;</productname> uses operator classes to infer the
    properties of operators in more ways than just whether they can be used
    with indexes.  Therefore, you might want to create operator classes
    even if you have no intention of indexing any columns of your data type.
@@ -1123,7 +1123,7 @@ ALTER OPERATOR FAMILY integer_ops USING btree ADD
    In particular, there are SQL features such as <literal>ORDER BY</> and
    <literal>DISTINCT</> that require comparison and sorting of values.
    To implement these features on a user-defined data type,
-   <productname>PostgreSQL</productname> looks for the default B-tree operator
+   <productname>&productname;</productname> looks for the default B-tree operator
    class for the data type.  The <quote>equals</> member of this operator
    class defines the system's notion of equality of values for
    <literal>GROUP BY</> and <literal>DISTINCT</>, and the sort ordering
@@ -1208,7 +1208,7 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
    types, the definition of an ordering operator is required to name
    a B-tree operator family that specifies the sort ordering of the result
    data type.  As was stated in the previous section, B-tree operator families
-   define <productname>PostgreSQL</productname>'s notion of ordering, so
+   define <productname>&productname;</productname>'s notion of ordering, so
    this is a natural representation.  Since the point <literal>&lt;-&gt;</>
    operator returns <type>float8</>, it could be specified in an operator
    class creation command like this:
