@@ -719,9 +719,9 @@ raw_heap_insert(RewriteState state, HeapTuple tup)
 	rewrite_page_prepare_for_xid(page, HeapTupleGetRawXmax(heaptup),
 		(heaptup->t_data->t_infomask & HEAP_XMAX_IS_MULTI) ? true : false);
 
-	HeapTupleHeaderSetXmin(page, heaptup->t_data, HeapTupleGetXmin(heaptup));
-	HeapTupleHeaderSetXmax(page, heaptup->t_data, HeapTupleGetRawXmax(heaptup));
 	HeapTupleCopyEpochFromPage(heaptup, page);
+	HeapTupleSetXmin(heaptup, HeapTupleGetXmin(heaptup));
+	HeapTupleSetXmax(heaptup, HeapTupleGetRawXmax(heaptup));
 
 	/* And now we can insert the tuple into the page */
 	newoff = PageAddItem(page, (Item) heaptup->t_data, heaptup->t_len,

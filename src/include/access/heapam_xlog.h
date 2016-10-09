@@ -32,7 +32,7 @@
 #define XLOG_HEAP_INSERT		0x00
 #define XLOG_HEAP_DELETE		0x10
 #define XLOG_HEAP_UPDATE		0x20
-/* 0x030 is free, was XLOG_HEAP_MOVE */
+#define XLOG_HEAP_EPOCH_SHIFT	0x30
 #define XLOG_HEAP_HOT_UPDATE	0x40
 #define XLOG_HEAP_CONFIRM		0x50
 #define XLOG_HEAP_LOCK			0x60
@@ -366,6 +366,16 @@ typedef struct xl_heap_rewrite_mapping
 	uint32		num_mappings;	/* Number of in-memory mappings */
 	XLogRecPtr	start_lsn;		/* Insert LSN at begin of rewrite */
 } xl_heap_rewrite_mapping;
+
+/* shift the epoch of xids on heap page */
+typedef struct xl_heap_epoch_shift
+{
+	int64		delta;			/* delta value to shift the epoch */
+	bool		multi;			/* true to shift multixact epoch */
+} xl_heap_epoch_shift;
+
+#define SizeOfHeapEpochShift (offsetof(xl_heap_epoch_shift, multi) + sizeof(bool))
+
 
 extern void HeapTupleHeaderAdvanceLatestRemovedXid(HeapTuple tuple,
 									   TransactionId *latestRemovedXid);

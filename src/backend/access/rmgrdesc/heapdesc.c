@@ -63,6 +63,14 @@ heap_desc(StringInfo buf, XLogReaderState *record)
 						 xlrec->new_offnum,
 						 xlrec->new_xmax);
 	}
+	else if (info == XLOG_HEAP_EPOCH_SHIFT)
+	{
+		xl_heap_epoch_shift *xlrec = (xl_heap_epoch_shift *) rec;
+
+		appendStringInfo(buf, "%s delta " INT64_FORMAT " ",
+						 xlrec->multi ? "MultiXactId" : "XactId",
+						 xlrec->delta);
+	}
 	else if (info == XLOG_HEAP_HOT_UPDATE)
 	{
 		xl_heap_update *xlrec = (xl_heap_update *) rec;
@@ -179,6 +187,9 @@ heap_identify(uint8 info)
 			break;
 		case XLOG_HEAP_UPDATE | XLOG_HEAP_INIT_PAGE:
 			id = "UPDATE+INIT";
+			break;
+		case XLOG_HEAP_EPOCH_SHIFT:
+			id = "EPOCH_SHIFT";
 			break;
 		case XLOG_HEAP_HOT_UPDATE:
 			id = "HOT_UPDATE";

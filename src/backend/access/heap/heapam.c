@@ -2640,17 +2640,17 @@ heap_page_xid_min_max(Page page, bool multi,
 }
 
 /*
- * Shift xid epoch in the page.
+ * Shift xid epoch in the page.  WAL-logged if buffer is specified.
  */
 static void
-heap_page_shift_epoch(Page page, bool multi, int64 delta)
+heap_page_shift_epoch(Buffer buffer, Page page, bool multi, int64 delta)
 {
 	PageHeader			pageHdr = (PageHeader) page;
 	OffsetNumber		offnum,
 						maxoff;
 
+	/* Iterate over page items */
 	maxoff = PageGetMaxOffsetNumber(page);
-
 	for (offnum = FirstOffsetNumber;
 		 offnum <= maxoff;
 		 offnum = OffsetNumberNext(offnum))
@@ -2665,6 +2665,7 @@ heap_page_shift_epoch(Page page, bool multi, int64 delta)
 
 		htup = (HeapTupleHeader) PageGetItem(page, itemid);
 
+		/* Apply xid shift to heap tuple */
 		if (!multi)
 		{
 			if (!HeapTupleHeaderXminFrozen(htup) &&
@@ -2695,12 +2696,36 @@ heap_page_shift_epoch(Page page, bool multi, int64 delta)
 		}
 	}
 
+	/* Apply xid shift to epoch as well */
 	if (!multi)
 		pageHdr->pd_xid_epoch += delta;
 	else
 		pageHdr->pd_multi_epoch += delta;
+
+	/* Write WAL record if needed */
+	if (BufferIsValid(buffer))
+	{
+		XLogRecPtr			recptr;
+		xl_heap_epoch_shift	xlrec;
+
+		xlrec.multi = multi;
+		xlrec.delta = delta;
+
+		XLogBeginInsert();
+		XLogRegisterData((char *) &xlrec, SizeOfHeapEpochShift);
+
+		XLogRegisterBuffer(0, buffer, REGBUF_STANDARD);
+
+		recptr = XLogInsert(RM_HEAP_ID, XLOG_HEAP_EPOCH_SHIFT);
+
+		PageSetLSN(page, recptr);
+	}
 }
 
+/*
+ * Freeze xids in the single heap page.  Useful when we can't fit new xid even
+ * with epoch shift.
+ */
 static int
 freeze_single_heap_page(Relation relation, Buffer buffer)
 {
@@ -2853,7 +2878,8 @@ heap_page_prepare_for_xid(Relation relation, Buffer buffer,
 
 			if (requiredDelta <= freeDelta)
 			{
-				heap_page_shift_epoch(page, multi, - (freeDelta + requiredDelta) / 2);
+				heap_page_shift_epoch(RelationNeedsWAL(relation) ? buffer : InvalidBuffer,
+					page, multi, - (freeDelta + requiredDelta) / 2);
 				MarkBufferDirty(buffer);
 				return true;
 			}
@@ -2865,7 +2891,8 @@ heap_page_prepare_for_xid(Relation relation, Buffer buffer,
 
 			if (requiredDelta <= freeDelta)
 			{
-				heap_page_shift_epoch(page, multi, (freeDelta + requiredDelta) / 2);
+				heap_page_shift_epoch(RelationNeedsWAL(relation) ? buffer : InvalidBuffer,
+					page, multi, (freeDelta + requiredDelta) / 2);
 				MarkBufferDirty(buffer);
 				return true;
 			}
@@ -2876,7 +2903,7 @@ heap_page_prepare_for_xid(Relation relation, Buffer buffer,
 			break;
 		}
 
-		/* Have to freeze the page... */
+		/* Have to try freeing the page... */
 		freeze_single_heap_page(relation, buffer);
 	}
 
@@ -2929,7 +2956,8 @@ rewrite_page_prepare_for_xid(Page page, TransactionId xid, bool multi)
 
 		if (requiredDelta <= freeDelta)
 		{
-			heap_page_shift_epoch(page, multi, - (freeDelta + requiredDelta) / 2);
+			heap_page_shift_epoch(InvalidBuffer,
+				page, multi, - (freeDelta + requiredDelta) / 2);
 			return true;
 		}
 	}
@@ -2940,7 +2968,8 @@ rewrite_page_prepare_for_xid(Page page, TransactionId xid, bool multi)
 
 		if (requiredDelta <= freeDelta)
 		{
-			heap_page_shift_epoch(page, multi, (freeDelta + requiredDelta) / 2);
+			heap_page_shift_epoch(InvalidBuffer,
+				page, multi, (freeDelta + requiredDelta) / 2);
 			return true;
 		}
 	}
@@ -9481,6 +9510,31 @@ heap_xlog_inplace(XLogReaderState *record)
 		UnlockReleaseBuffer(buffer);
 }
 
+static void
+heap_xlog_epoch_shift(XLogReaderState *record)
+{
+	XLogRecPtr	lsn = record->EndRecPtr;
+	xl_heap_epoch_shift *xlrec = (xl_heap_epoch_shift *) XLogRecGetData(record);
+	Buffer		buffer;
+	Page		page;
+	BlockNumber blkno;
+	RelFileNode target_node;
+
+	XLogRecGetBlockTag(record, 0, &target_node, NULL, &blkno);
+
+	if (XLogReadBufferForRedo(record, 0, &buffer) == BLK_NEEDS_REDO)
+	{
+		page = BufferGetPage(buffer);
+		heap_page_shift_epoch(InvalidBuffer, page, xlrec->multi, xlrec->delta);
+		PageSetLSN(page, lsn);
+		MarkBufferDirty(buffer);
+	}
+
+	if (BufferIsValid(buffer))
+		UnlockReleaseBuffer(buffer);
+}
+
+
 void
 heap_redo(XLogReaderState *record)
 {
@@ -9501,6 +9555,9 @@ heap_redo(XLogReaderState *record)
 			break;
 		case XLOG_HEAP_UPDATE:
 			heap_xlog_update(record, false);
+			break;
+		case XLOG_HEAP_EPOCH_SHIFT:
+			heap_xlog_epoch_shift(record);
 			break;
 		case XLOG_HEAP_HOT_UPDATE:
 			heap_xlog_update(record, true);
