@@ -30,6 +30,7 @@
 #include "commands/seclabel.h"
 #include "commands/user.h"
 #include "libpq/md5.h"
+#include "libpq/scram.h"
 #include "miscadmin.h"
 #include "storage/lmgr.h"
 #include "utils/acl.h"
@@ -69,9 +70,9 @@ have_createrole_privilege(void)
 /*
  * Encrypt a password if necessary for insertion in pg_authid.
  *
- * If a password is found as already MD5-encrypted, no error is raised
- * to ease the dump and reload of such data. Returns a palloc'ed string
- * holding the encrypted password.
+ * If a password is found as already MD5-encrypted or SCRAM-encrypted, no
+ * error is raised to ease the dump and reload of such data. Returns a
+ * palloc'ed string holding the encrypted password.
  */
 static char *
 encrypt_password(char *password, char *rolname, int passwd_type)
@@ -81,11 +82,11 @@ encrypt_password(char *password, char *rolname, int passwd_type)
 	Assert(password != NULL);
 
 	/*
-	 * If a password is already identified as MD5-encrypted, it is used
-	 * as such.  If the password given is not encrypted, adapt it depending
-	 * on the type wanted by the caller of this routine.
+	 * A password already identified as a SCRAM-encrypted or MD5-encrypted
+	 * those are used as such.  If the password given is not encrypted,
+	 * adapt it depending on the type wanted by the caller of this routine.
 	 */
-	if (isMD5(password))
+	if (isMD5(password) || is_scram_verifier(password))
 		res = pstrdup(password);
 	else
 	{
@@ -100,6 +101,9 @@ encrypt_password(char *password, char *rolname, int passwd_type)
 									strlen(rolname),
 									res))
 					elog(ERROR, "password encryption failed");
+				break;
+			case PASSWORD_TYPE_SCRAM:
+				res = scram_build_verifier(rolname, password, 0);
 				break;
 			default:
 				Assert(0);	/* should not come here */

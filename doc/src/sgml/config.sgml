@@ -1181,7 +1181,8 @@ include_dir 'conf.d'
        <para>
         A value set to <literal>on</> or <literal>md5</> corresponds to a 
         MD5-encrypted password, <literal>off</> or <literal>plain</>
-        corresponds to an unencrypted password.
+        corresponds to an unencrypted password.  Setting this parameter to
+        <literal>scram</> will encrypt the password with SCRAM-SHA-256.
        </para>
        
        <para>
@@ -1259,8 +1260,10 @@ include_dir 'conf.d'
         Authentication checks are always done with the server's user name
         so authentication methods must be configured for the
         server's user name, not the client's.  Because
-        <literal>md5</> uses the user name as salt on both the
-        client and server, <literal>md5</> cannot be used with
+        <literal>md5</>uses the user name as salt on both the
+        client and server, and <literal>scram</> uses the user name as
+        a portion of the salt used on both the client and server,
+        <literal>md5</> and <literal>scram</> cannot be used with
         <varname>db_user_namespace</>.
        </para>
 
