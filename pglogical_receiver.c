@@ -238,6 +238,7 @@ pglogical_receiver_main(Datum main_arg)
 
 	Mtm->nodes[nodeId-1].receiverPid = MyProcPid;
 	Mtm->nodes[nodeId-1].receiverStartTime = MtmGetSystemTime();
+	MtmReplicationNodeId = nodeId;
 
     sprintf(worker_proc, "mtm_pglogical_receiver_%d_%d", MtmNodeId, nodeId);
 
