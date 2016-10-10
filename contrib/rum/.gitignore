@@ -1,0 +1,14 @@
+.deps
+*.o
+*.so
+results
+__pycache__
+*.pyc
+tmp_install
+
+# virtualenv
+bin
+include
+lib
+pip-selfcheck.json
+
