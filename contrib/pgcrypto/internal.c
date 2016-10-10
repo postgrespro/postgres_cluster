@@ -33,9 +33,10 @@
 
 #include <time.h>
 
+#include "common/sha.h"
+
 #include "px.h"
 #include "md5.h"
-#include "sha1.h"
 #include "blf.h"
 #include "rijndael.h"
 #include "fortuna.h"
@@ -63,15 +64,6 @@
 #define MD5_DIGEST_LENGTH 16
 #endif
 
-#ifndef SHA1_DIGEST_LENGTH
-#ifdef SHA1_RESULTLEN
-#define SHA1_DIGEST_LENGTH SHA1_RESULTLEN
-#else
-#define SHA1_DIGEST_LENGTH 20
-#endif
-#endif
-
-#define SHA1_BLOCK_SIZE 64
 #define MD5_BLOCK_SIZE 64
 
 static void init_md5(PX_MD *h);
@@ -152,43 +144,43 @@ int_md5_free(PX_MD *h)
 static unsigned
 int_sha1_len(PX_MD *h)
 {
-	return SHA1_DIGEST_LENGTH;
+	return PG_SHA1_DIGEST_LENGTH;
 }
 
 static unsigned
 int_sha1_block_len(PX_MD *h)
 {
-	return SHA1_BLOCK_SIZE;
+	return PG_SHA1_BLOCK_LENGTH;
 }
 
 static void
 int_sha1_update(PX_MD *h, const uint8 *data, unsigned dlen)
 {
-	SHA1_CTX   *ctx = (SHA1_CTX *) h->p.ptr;
+	pg_sha1_ctx   *ctx = (pg_sha1_ctx *) h->p.ptr;
 
-	SHA1Update(ctx, data, dlen);
+	pg_sha1_update(ctx, data, dlen);
 }
 
 static void
 int_sha1_reset(PX_MD *h)
 {
-	SHA1_CTX   *ctx = (SHA1_CTX *) h->p.ptr;
+	pg_sha1_ctx   *ctx = (pg_sha1_ctx *) h->p.ptr;
 
-	SHA1Init(ctx);
+	pg_sha1_init(ctx);
 }
 
 static void
 int_sha1_finish(PX_MD *h, uint8 *dst)
 {
-	SHA1_CTX   *ctx = (SHA1_CTX *) h->p.ptr;
+	pg_sha1_ctx   *ctx = (pg_sha1_ctx *) h->p.ptr;
 
-	SHA1Final(dst, ctx);
+	pg_sha1_final(ctx, dst);
 }
 
 static void
 int_sha1_free(PX_MD *h)
 {
-	SHA1_CTX   *ctx = (SHA1_CTX *) h->p.ptr;
+	pg_sha1_ctx   *ctx = (pg_sha1_ctx *) h->p.ptr;
 
 	px_memset(ctx, 0, sizeof(*ctx));
 	px_free(ctx);
@@ -220,7 +212,7 @@ init_md5(PX_MD *md)
 static void
 init_sha1(PX_MD *md)
 {
-	SHA1_CTX   *ctx;
+	pg_sha1_ctx   *ctx;
 
 	ctx = px_alloc(sizeof(*ctx));
 	memset(ctx, 0, sizeof(*ctx));
