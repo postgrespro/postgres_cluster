@@ -21,6 +21,7 @@
 #include "access/tuptoaster.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_type.h"
+#include "common/encode_utils.h"
 #include "lib/hyperloglog.h"
 #include "libpq/md5.h"
 #include "libpq/pqformat.h"
