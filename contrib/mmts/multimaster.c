@@ -62,6 +62,9 @@
 #include "pglogical_output/hooks.h"
 #include "parser/analyze.h"
 #include "parser/parse_relation.h"
+#include "parser/parse_type.h"
+#include "catalog/pg_class.h"
+#include "catalog/pg_type.h"
 #include "tcop/pquery.h"
 #include "lib/ilist.h"
 
@@ -3916,7 +3919,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_DoStmt:
 		case T_CreateTableSpaceStmt:
 		case T_AlterTableSpaceOptionsStmt:
-		case T_TruncateStmt:
 		case T_CommentStmt:
 		case T_PrepareStmt:
 		case T_ExecuteStmt:
@@ -3933,6 +3935,43 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_CheckPointStmt:
 		case T_ReindexStmt:
 			skipCommand = true;
+			break;
+
+		case T_CreateDomainStmt:
+			{
+				CreateDomainStmt *stmt = (CreateDomainStmt *) parsetree;
+				HeapTuple	typeTup;
+				Form_pg_type baseType;
+				Form_pg_type elementType;
+				Form_pg_class pgClassStruct;
+				int32		basetypeMod;
+				Oid			elementTypeOid;
+				Oid			tableOid;
+				HeapTuple pgClassTuple;
+				HeapTuple elementTypeTuple;
+
+				typeTup = typenameType(NULL, stmt->typeName, &basetypeMod);
+				baseType = (Form_pg_type) GETSTRUCT(typeTup);
+				elementTypeOid = baseType->typelem;
+				ReleaseSysCache(typeTup);
+
+				if (elementTypeOid == InvalidOid)
+					break;
+
+				elementTypeTuple = SearchSysCache1(TYPEOID, elementTypeOid);
+				elementType = (Form_pg_type) GETSTRUCT(elementTypeTuple);
+				tableOid = elementType->typrelid;
+				ReleaseSysCache(elementTypeTuple);
+
+				if (tableOid == InvalidOid)
+					break;
+
+				pgClassTuple = SearchSysCache1(RELOID, tableOid);
+				pgClassStruct = (Form_pg_class) GETSTRUCT(pgClassTuple);
+				if (pgClassStruct->relpersistence == 't')
+					MyXactAccessedTempRel = true;
+				ReleaseSysCache(pgClassTuple);
+			}
 			break;
 
 		case T_ExplainStmt:
