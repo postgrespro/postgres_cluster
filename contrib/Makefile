@@ -32,6 +32,7 @@ SUBDIRS = \
 		pg_buffercache	\
 		pg_freespacemap \
 		pg_prewarm	\
+		pg_query_state \
 		pg_standby	\
 		pg_stat_statements \
 		pg_trgm		\
