@@ -276,15 +276,16 @@ ptrack_get_and_clear(Oid tablespace_oid, Oid table_oid)
 {
 	bytea *result = NULL;
 	BlockNumber nblock;
+	Relation rel;
+
 	if (table_oid == InvalidOid)
 	{
 		elog(WARNING, "InvalidOid");
 		goto full_end;
 	}
 
-	Relation rel = RelationIdGetRelation(RelidByRelfilenode(tablespace_oid,
+	rel = RelationIdGetRelation(RelidByRelfilenode(tablespace_oid,
 															table_oid));
-
 	if (rel == InvalidRelation)
 	{
 		elog(WARNING, "InvalidRelation");
