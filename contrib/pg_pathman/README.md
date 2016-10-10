@@ -5,12 +5,12 @@
 
 The `pg_pathman` module provides optimized partitioning mechanism and functions to manage partitions.
 
-The extension is compatible with PostgreSQL 9.5 (9.6 support is coming soon).
+The extension is compatible with PostgreSQL 9.5+.
 
 ## Overview
 **Partitioning** means splitting one large table into smaller pieces. Each row in such table is moved to a single partition according to the partitioning key. PostgreSQL supports partitioning via table inheritance: each partition must be created as a child table with CHECK CONSTRAINT. For example:
 
-```
+```plpgsql
 CREATE TABLE test (id SERIAL PRIMARY KEY, title TEXT);
 CREATE TABLE test_1 (CHECK ( id >= 100 AND id < 200 )) INHERITS (test);
 CREATE TABLE test_2 (CHECK ( id >= 200 AND id < 300 )) INHERITS (test);
@@ -25,7 +25,7 @@ VARIABLE OP CONST
 ```
 where `VARIABLE` is a partitioning key, `OP` is a comparison operator (supported operators are =, <, <=, >, >=), `CONST` is a scalar value. For example:
 
-```
+```plpgsql
 WHERE id = 150
 ```
 
@@ -35,6 +35,22 @@ Based on the partitioning type and condition's operator, `pg_pathman` searches f
 * **HASH** - maps rows to partitions using a generic hash function.
 
 More interesting features are yet to come. Stay tuned!
+
+## Feature highlights
+
+ * HASH and RANGE partitioning schemes;
+ * Both automatic and manual partition management;
+ * Support for integer, floating point, date and other types, including domains;
+ * Effective query planning for partitioned tables (JOINs, subselects etc);
+ * `RuntimeAppend` & `RuntimeMergeAppend` custom plan nodes to pick partitions at runtime;
+ * `PartitionFilter`: an efficient drop-in replacement for INSERT triggers;
+ * Automatic partition creation for new INSERTed data (only for RANGE partitioning);
+ * Improved `COPY FROM\TO` statement that is able to insert rows directly into partitions;
+ * UPDATE triggers generation out of the box (will be replaced with custom nodes too);
+ * User-defined callbacks for partition creation event handling;
+ * Non-blocking concurrent table partitioning;
+ * FDW support (foreign partitions);
+ * Various GUC toggles and configurable settings.
 
 ## Roadmap
 
@@ -75,15 +91,15 @@ Performs HASH partitioning for `relation` by integer key `attribute`. The `parti
 create_range_partitions(relation       REGCLASS,
                         attribute      TEXT,
                         start_value    ANYELEMENT,
-                        interval       ANYELEMENT,
-                        count          INTEGER DEFAULT NULL
+                        p_interval     ANYELEMENT,
+                        p_count        INTEGER DEFAULT NULL
                         partition_data BOOLEAN DEFAULT TRUE)
 
 create_range_partitions(relation       REGCLASS,
                         attribute      TEXT,
                         start_value    ANYELEMENT,
-                        interval       INTERVAL,
-                        count          INTEGER DEFAULT NULL,
+                        p_interval     INTERVAL,
+                        p_count        INTEGER DEFAULT NULL,
                         partition_data BOOLEAN DEFAULT TRUE)
 ```
 Performs RANGE partitioning for `relation` by partitioning key `attribute`. `start_value` argument specifies initial value, `interval` sets the range of values in a single partition, `count` is the number of premade partitions (if not set then pathman tries to determine it based on attribute values). Partition creation callback is invoked for each partition if set beforehand.
@@ -93,14 +109,14 @@ create_partitions_from_range(relation       REGCLASS,
                              attribute      TEXT,
                              start_value    ANYELEMENT,
                              end_value      ANYELEMENT,
-                             interval       ANYELEMENT,
+                             p_interval     ANYELEMENT,
                              partition_data BOOLEAN DEFAULT TRUE)
 
 create_partitions_from_range(relation       REGCLASS,
                              attribute      TEXT,
                              start_value    ANYELEMENT,
                              end_value      ANYELEMENT,
-                             interval       INTERVAL,
+                             p_interval     INTERVAL,
                              partition_data BOOLEAN DEFAULT TRUE)
 ```
 Performs RANGE-partitioning from specified range for `relation` by partitioning key `attribute`. Partition creation callback is invoked for each partition if set beforehand.
@@ -108,9 +124,11 @@ Performs RANGE-partitioning from specified range for `relation` by partitioning 
 ### Data migration
 
 ```plpgsql
-partition_table_concurrently(relation REGCLASS)
+partition_table_concurrently(relation   REGCLASS,
+                             batch_size INTEGER DEFAULT 1000,
+                             sleep_time FLOAT8 DEFAULT 1.0)
 ```
-Starts a background worker to move data from parent table to partitions. The worker utilizes short transactions to copy small batches of data (up to 10K rows per transaction) and thus doesn't significantly interfere with user's activity.
+Starts a background worker to move data from parent table to partitions. The worker utilizes short transactions to copy small batches of data (up to 10K rows per transaction) and thus doesn't significantly interfere with user's activity. If the worker is unable to lock rows of a batch, it sleeps for `sleep_time` seconds before the next attempt and tries again up to 60 times, and quits if it's still unable to lock the batch.
 
 ```plpgsql
 stop_concurrent_part_task(relation REGCLASS)
@@ -130,10 +148,10 @@ Same as above, but for a RANGE-partitioned table.
 ### Post-creation partition management
 ```plpgsql
 split_range_partition(partition      REGCLASS,
-                      value          ANYELEMENT,
+                      split_value    ANYELEMENT,
                       partition_name TEXT DEFAULT NULL)
 ```
-Split RANGE `partition` in two by `value`. Partition creation callback is invoked for a new partition if available.
+Split RANGE `partition` in two by `split_value`. Partition creation callback is invoked for a new partition if available.
 
 ```plpgsql
 merge_range_partitions(partition1 REGCLASS, partition2 REGCLASS)
@@ -141,14 +159,14 @@ merge_range_partitions(partition1 REGCLASS, partition2 REGCLASS)
 Merge two adjacent RANGE partitions. First, data from `partition2` is copied to `partition1`, then `partition2` is removed.
 
 ```plpgsql
-append_range_partition(p_relation     REGCLASS,
+append_range_partition(parent         REGCLASS,
                        partition_name TEXT DEFAULT NULL,
                        tablespace     TEXT DEFAULT NULL)
 ```
 Append new RANGE partition with `pathman_config.range_interval` as interval.
 
 ```plpgsql
-prepend_range_partition(p_relation     REGCLASS,
+prepend_range_partition(parent         REGCLASS,
                         partition_name TEXT DEFAULT NULL,
                         tablespace     TEXT DEFAULT NULL)
 ```
@@ -462,6 +480,8 @@ NOTICE:  100 rows copied from part_test_2
 (3 rows)
 ```
 
+- You can turn foreign tables into partitions using the `attach_range_partition()` function. Rows that were meant to be inserted into parent will be redirected to foreign partitions (as usual, PartitionFilter will be involved), though by default it is prohibited to insert rows into partitions provided not by `postgres_fdw`. Only superuser is allowed to set `pg_pathman.insert_into_fdw` GUC variable.
+
 ### HASH partitioning
 Consider an example of HASH partitioning. First create a table with some integer column:
 ```plpgsql
@@ -587,7 +607,7 @@ EXPLAIN SELECT * FROM journal WHERE dt >= '2015-06-01' AND dt < '2015-06-03';
 ### Disabling `pg_pathman`
 There are several user-accessible [GUC](https://www.postgresql.org/docs/9.5/static/config-setting.html) variables designed to toggle the whole module or specific custom nodes on and off:
 
- - `pg_pathman.enable` --- disable (or enable) `pg_pathman` completely
+ - `pg_pathman.enable` --- disable (or enable) `pg_pathman` **completely**
  - `pg_pathman.enable_runtimeappend` --- toggle `RuntimeAppend` custom node on\off
  - `pg_pathman.enable_runtimemergeappend` --- toggle `RuntimeMergeAppend` custom node on\off
  - `pg_pathman.enable_partitionfilter` --- toggle `PartitionFilter` custom node on\off
@@ -596,7 +616,7 @@ There are several user-accessible [GUC](https://www.postgresql.org/docs/9.5/stat
  - `pg_pathman.override_copy` --- toggle COPY statement hooking on\off
 
 To **permanently** disable `pg_pathman` for some previously partitioned table, use the `disable_pathman_for()` function:
-```
+```plpgsql
 SELECT disable_pathman_for('range_rel');
 ```
 All sections and data will remain unchanged and will be handled by the standard PostgreSQL inheritance mechanism.
