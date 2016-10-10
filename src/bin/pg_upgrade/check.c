@@ -211,6 +211,8 @@ void
 check_cluster_versions(void)
 {
 	prep_status("Checking cluster versions");
+	if (strcmp(old_cluster.pgdata, new_cluster.pgdata) == 0)
+		pg_fatal("Old and New cluster data must be different directories\n");
 
 	/* get old and new cluster versions */
 	old_cluster.major_version = get_major_server_version(&old_cluster);
