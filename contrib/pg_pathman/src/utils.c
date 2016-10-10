@@ -693,6 +693,29 @@ get_rel_persistence(Oid relid)
 #endif
 
 /*
+ * Returns relation owner
+ */
+Oid
+get_rel_owner(Oid relid)
+{
+	HeapTuple	tp;
+	Oid 		owner;
+
+	tp = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_class reltup = (Form_pg_class) GETSTRUCT(tp);
+
+		owner = reltup->relowner;
+		ReleaseSysCache(tp);
+
+		return owner;
+	}
+
+	return InvalidOid;
+}
+
+/*
  * Checks that callback function meets specific requirements.
  * It must have the only JSONB argument and BOOL return type.
  */
@@ -725,4 +748,39 @@ validate_on_part_init_cb(Oid procid, bool emit_error)
 			 "callback(arg JSONB) RETURNS VOID");
 
 	return is_ok;
+}
+
+/*
+ * Check if user can alter/drop specified relation. This function is used to
+ * make sure that current user can change pg_pathman's config. Returns true
+ * if user can manage relation, false otherwise.
+ *
+ * XXX currently we just check if user is a table owner. Probably it's
+ * better to check user permissions in order to let other users participate.
+ */
+bool
+check_security_policy_internal(Oid relid, Oid role)
+{
+	Oid owner;
+
+	/* Superuser is allowed to do anything */
+	if (superuser())
+		return true;
+
+	/* Fetch the owner */
+	owner = get_rel_owner(relid);
+
+	/*
+	 * Sometimes the relation doesn't exist anymore but there is still
+	 * a record in config. For instance, it happens in DDL event trigger.
+	 * Still we should be able to remove this record.
+	 */
+	if (owner == InvalidOid)
+		return true;
+
+	/* Check if current user is the owner of the relation */
+	if (owner != role)
+		return false;
+
+	return true;
 }

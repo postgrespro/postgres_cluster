@@ -59,6 +59,8 @@ PG_FUNCTION_INFO_V1( prevent_relation_modification );
 PG_FUNCTION_INFO_V1( validate_on_part_init_callback_pl );
 PG_FUNCTION_INFO_V1( invoke_on_partition_created_callback );
 
+PG_FUNCTION_INFO_V1( check_security_policy );
+
 PG_FUNCTION_INFO_V1( debug_capture );
 
 
@@ -536,7 +538,7 @@ build_check_constraint_name_attname(PG_FUNCTION_ARGS)
 		elog(ERROR, "Invalid relation %u", relid);
 
 	if (attnum == InvalidAttrNumber)
-		elog(ERROR, "Relation \"%s\" has no column '%s'",
+		elog(ERROR, "relation \"%s\" has no column \"%s\"",
 			 get_rel_name_or_relid(relid), text_to_cstring(attname));
 
 	result = build_check_constraint_name_internal(relid, attnum);
@@ -585,7 +587,7 @@ add_to_pathman_config(PG_FUNCTION_ARGS)
 		elog(ERROR, "Invalid relation %u", relid);
 
 	if (get_attnum(relid, text_to_cstring(attname)) == InvalidAttrNumber)
-		elog(ERROR, "Relation \"%s\" has no column '%s'",
+		elog(ERROR, "relation \"%s\" has no column \"%s\"",
 			 get_rel_name_or_relid(relid), text_to_cstring(attname));
 
 	/* Select partitioning type using 'range_interval' */
@@ -858,6 +860,29 @@ invoke_on_partition_created_callback(PG_FUNCTION_ARGS)
 	FunctionCallInvoke(&cb_fcinfo);
 
 	PG_RETURN_VOID();
+}
+
+/*
+ * Function to be used for RLS rules on PATHMAN_CONFIG and
+ * PATHMAN_CONFIG_PARAMS tables.
+ * NOTE: check_security_policy_internal() is used under the hood.
+ */
+Datum
+check_security_policy(PG_FUNCTION_ARGS)
+{
+	Oid relid = PG_GETARG_OID(0);
+
+	if (!check_security_policy_internal(relid, GetUserId()))
+	{
+		elog(WARNING, "only the owner or superuser can change "
+					  "partitioning configuration of table \"%s\"",
+			 get_rel_name_or_relid(relid));
+
+		PG_RETURN_BOOL(false);
+	}
+
+	/* Else return TRUE */
+	PG_RETURN_BOOL(true);
 }
 
 
