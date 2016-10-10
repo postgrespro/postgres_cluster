@@ -337,7 +337,7 @@ ERROR:  variable "int1" requires "integer" value
       </para>
 
       <informaltable>
-        <tgroup cols="2">
+        <tgroup cols="3">
           <thead>
             <row>
               <entry>
@@ -437,7 +437,7 @@ ERROR:  variable "int1" requires "integer" value
     <sect3 id="pg-variables-miscellaneous-functions">
       <title>Miscellaneous functions</title>
       <informaltable>
-        <tgroup cols="2">
+        <tgroup cols="3">
           <thead>
             <row>
               <entry>
