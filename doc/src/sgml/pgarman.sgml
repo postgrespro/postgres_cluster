@@ -389,8 +389,7 @@ STATUS=OK
       <title>RESTORE OPTIONS</title>
       <para>
         The parameters whose name start are started with --recovery
-        refer to the same parameters as the ones in recovery.confin
-        recovery.conf.
+        refer to the same parameters as the ones in recovery.conf.
       </para>
 <literallayout><emphasis role="strong">--recovery-target-timeline</emphasis>=<emphasis>TIMELINE</emphasis>:
  Specifies recovering into a particular timeline. If not specified, the current timeline is used.</literallayout>

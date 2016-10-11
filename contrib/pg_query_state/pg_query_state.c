@@ -477,7 +477,7 @@ pg_query_state(PG_FUNCTION_ARGS)
 	FuncCallContext	*funcctx;
 	MemoryContext	oldcontext;
 	pg_qs_fctx		*fctx;
-	const int		N_ATTRS = 5;
+#define		N_ATTRS  5
 	pid_t			pid = PG_GETARG_INT32(0);
 
 	if (SRF_IS_FIRSTCALL())
