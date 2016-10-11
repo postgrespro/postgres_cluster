@@ -395,7 +395,7 @@ set_init_callback(relation REGCLASS, callback REGPROC DEFAULT 0)
   </sect2>
   <sect2 id="views-and-tables">
     <title>Views and tables</title>
-    <sect3 id="pathman_config-main-config-storage">
+    <sect3 id="pathman-config-main-config-storage">
       <title><literal>pathman_config</literal> --- main config
       storage</title>
       <programlisting>
@@ -411,7 +411,7 @@ CREATE TABLE IF NOT EXISTS pathman_config (
         This table stores a list of partitioned tables.
       </para>
     </sect3>
-    <sect3 id="pathman_config_params-optional-parameters">
+    <sect3 id="pathman-config-params-optional-parameters">
       <title><literal>pathman_config_params</literal> --- optional
       parameters</title>
       <programlisting>
@@ -426,7 +426,7 @@ CREATE TABLE IF NOT EXISTS pathman_config_params (
         behavior.
       </para>
     </sect3>
-    <sect3 id="pathman_concurrent_part_tasks-currently-running-partitioning-workers">
+    <sect3 id="pathman-concurrent-part-tasks-currently-running-partitioning-workers">
       <title><literal>pathman_concurrent_part_tasks</literal> ---
       currently running partitioning workers</title>
       <programlisting>
@@ -450,7 +450,7 @@ AS SELECT * FROM show_concurrent_part_tasks();
         tasks.
       </para>
     </sect3>
-    <sect3 id="pathman_partition_list-list-of-all-existing-partitions">
+    <sect3 id="pathman-partition-list-list-of-all-existing-partitions">
       <title><literal>pathman_partition_list</literal> --- list of all
       existing partitions</title>
       <programlisting>
@@ -903,7 +903,7 @@ WHERE id = any (SELECT * FROM some_table limit 4);
         (3 rows)
       </programlisting>
     </sect3>
-    <sect3 id="disabling-pg_pathman">
+    <sect3 id="disabling-pg-pathman">
       <title>Disabling <literal>pg_pathman</literal></title>
       <para>
         There are several user-accessible
