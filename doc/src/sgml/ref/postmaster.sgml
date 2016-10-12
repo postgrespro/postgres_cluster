@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/postmaster.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="app-postmaster">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname id="postmaster-ref">postmaster</refname>
-  <refpurpose><productname>PostgreSQL</productname> database server</refpurpose>
+  <refpurpose><productname>&productname;</productname> database server</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>

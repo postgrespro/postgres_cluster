@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/vacuumdb.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="APP-VACUUMDB">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname id="vacuumdb">vacuumdb</refname>
-  <refpurpose>garbage-collect and analyze a <productname>PostgreSQL</productname> database</refpurpose>
+  <refpurpose>garbage-collect and analyze a <productname>&productname;</productname> database</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -55,9 +55,9 @@ PostgreSQL documentation
 
   <para>
    <application>vacuumdb</application> is a utility for cleaning a
-   <productname>PostgreSQL</productname> database.
+   <productname>&productname;</productname> database.
    <application>vacuumdb</application> will also generate internal statistics
-   used by the <productname>PostgreSQL</productname> query optimizer.
+   used by the <productname>&productname;</productname> query optimizer.
   </para>
 
   <para>
@@ -370,7 +370,7 @@ PostgreSQL documentation
   </variablelist>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>
@@ -399,7 +399,7 @@ PostgreSQL documentation
 
   <para>
    <application>vacuumdb</application> might need to connect several
-   times to the <productname>PostgreSQL</productname> server, asking
+   times to the <productname>&productname;</productname> server, asking
    for a password each time. It is convenient to have a
    <filename>~/.pgpass</> file in such cases. See <xref
    linkend="libpq-pgpass"> for more information.

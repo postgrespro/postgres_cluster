@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/delete.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DELETE">
@@ -42,7 +42,7 @@ DELETE FROM [ ONLY ] <replaceable class="PARAMETER">table_name</replaceable> [ *
    <tip>
     <para>
      <xref linkend="sql-truncate"> is a
-     <productname>PostgreSQL</productname> extension that provides a
+     <productname>&productname;</productname> extension that provides a
      faster mechanism to remove all rows from a table.
     </para>
    </tip>
@@ -216,7 +216,7 @@ DELETE <replaceable class="parameter">count</replaceable>
   <title>Notes</title>
 
   <para>
-   <productname>PostgreSQL</productname> lets you reference columns of
+   <productname>&productname;</productname> lets you reference columns of
    other tables in the <literal>WHERE</> condition by specifying the
    other tables in the <literal>USING</literal> clause.  For example,
    to delete all films produced by a given producer, one can do:
@@ -275,7 +275,7 @@ DELETE FROM tasks WHERE CURRENT OF c_tasks;
   <para>
    This command conforms to the <acronym>SQL</acronym> standard, except
    that the <literal>USING</literal> and <literal>RETURNING</> clauses
-   are <productname>PostgreSQL</productname> extensions, as is the ability
+   are <productname>&productname;</productname> extensions, as is the ability
    to use <literal>WITH</> with <command>DELETE</>.
   </para>
  </refsect1>

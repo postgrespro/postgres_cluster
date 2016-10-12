@@ -8,16 +8,17 @@
  * ------------------------------------------------------------------------
  */
 
-#include "pg_compat.h"
-
+#include "copy_stmt_hooking.h"
 #include "hooks.h"
 #include "init.h"
 #include "partition_filter.h"
+#include "pg_compat.h"
 #include "runtimeappend.h"
 #include "runtime_merge_append.h"
 #include "utils.h"
 #include "xact_handling.h"
 
+#include "access/transam.h"
 #include "miscadmin.h"
 #include "optimizer/cost.h"
 #include "optimizer/restrictinfo.h"
@@ -29,6 +30,7 @@ set_rel_pathlist_hook_type		set_rel_pathlist_hook_next = NULL;
 planner_hook_type				planner_hook_next = NULL;
 post_parse_analyze_hook_type	post_parse_analyze_hook_next = NULL;
 shmem_startup_hook_type			shmem_startup_hook_next = NULL;
+ProcessUtility_hook_type		process_utility_hook_next = NULL;
 
 
 /* Take care of joins */
@@ -49,7 +51,6 @@ pathman_join_pathlist_hook(PlannerInfo *root,
 	ListCell			   *lc;
 	WalkerContext			context;
 	double					paramsel;
-	bool					innerrel_rinfo_contains_part_attr;
 
 	/* Call hooks set by other extensions */
 	if (set_join_pathlist_next)
@@ -101,11 +102,6 @@ pathman_join_pathlist_hook(PlannerInfo *root,
 		paramsel *= wrap->paramsel;
 	}
 
-	/* Check that innerrel's RestrictInfos contain partitioned column */
-	innerrel_rinfo_contains_part_attr =
-		get_partitioned_attr_clauses(innerrel->baserestrictinfo,
-									 inner_prel, innerrel->relid) != NULL;
-
 	foreach (lc, innerrel->pathlist)
 	{
 		AppendPath	   *cur_inner_path = (AppendPath *) lfirst(lc);
@@ -130,14 +126,10 @@ pathman_join_pathlist_hook(PlannerInfo *root,
 		/* Get the ParamPathInfo for a parameterized path */
 		ppi = get_baserel_parampathinfo(root, innerrel, inner_required);
 
-		/*
-		 * Skip if neither rel->baserestrictinfo nor
-		 * ppi->ppi_clauses reference partition attribute
-		 */
-		if (!(innerrel_rinfo_contains_part_attr ||
-			  (ppi && get_partitioned_attr_clauses(ppi->ppi_clauses,
-												   inner_prel,
-												   innerrel->relid))))
+		/* Skip ppi->ppi_clauses don't reference partition attribute */
+		if (!(ppi && get_partitioned_attr_clauses(ppi->ppi_clauses,
+												  inner_prel,
+												  innerrel->relid)))
 			continue;
 
 		inner = create_runtimeappend_path(root, cur_inner_path, ppi, paramsel);
@@ -169,13 +161,12 @@ pathman_join_pathlist_hook(PlannerInfo *root,
 		 * Currently we use get_parameterized_joinrel_size() since
 		 * it works just fine, but this might change some day.
 		 */
-		nest_path->path.rows = get_parameterized_joinrel_size_compat(
-								root,
-								joinrel,
-								outer,
-								inner,
-								extra->sjinfo,
-								filtered_joinclauses);
+		nest_path->path.rows = get_parameterized_joinrel_size_compat(root,
+																	 joinrel,
+																	 outer,
+																	 inner,
+																	 extra->sjinfo,
+																	 filtered_joinclauses);
 
 		/* Finally we can add the new NestLoop path */
 		add_path(joinrel, (Path *) nest_path);
@@ -184,7 +175,10 @@ pathman_join_pathlist_hook(PlannerInfo *root,
 
 /* Cope with simple relations */
 void
-pathman_rel_pathlist_hook(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry *rte)
+pathman_rel_pathlist_hook(PlannerInfo *root,
+						  RelOptInfo *rel,
+						  Index rti,
+						  RangeTblEntry *rte)
 {
 	const PartRelationInfo *prel;
 	RangeTblEntry		  **new_rte_array;
@@ -209,13 +203,13 @@ pathman_rel_pathlist_hook(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTb
 		ListCell	   *lc;
 		Oid			   *children;
 		List		   *ranges,
-					   *wrappers;
+					   *wrappers,
+					   *rel_partattr_clauses = NIL;
 		PathKey		   *pathkeyAsc = NULL,
 					   *pathkeyDesc = NULL;
 		double			paramsel = 1.0;
 		WalkerContext	context;
 		int				i;
-		bool			rel_rinfo_contains_part_attr = false;
 
 		if (prel->parttype == PT_RANGE)
 		{
@@ -332,20 +326,19 @@ pathman_rel_pathlist_hook(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTb
 			  pg_pathman_enable_runtime_merge_append))
 			return;
 
-		/* Runtime[Merge]Append is pointless if there are no params in clauses */
-		if (!clause_contains_params((Node *) get_actual_clauses(rel->baserestrictinfo)))
-			return;
-
 		/* Check that rel's RestrictInfo contains partitioned column */
-		rel_rinfo_contains_part_attr =
-			get_partitioned_attr_clauses(rel->baserestrictinfo,
-										 prel, rel->relid) != NULL;
+		rel_partattr_clauses = get_partitioned_attr_clauses(rel->baserestrictinfo,
+															prel, rel->relid);
+
+		/* Runtime[Merge]Append is pointless if there are no params in clauses */
+		if (!clause_contains_params((Node *) rel_partattr_clauses))
+			return;
 
 		foreach (lc, rel->pathlist)
 		{
 			AppendPath	   *cur_path = (AppendPath *) lfirst(lc);
 			Relids			inner_required = PATH_REQ_OUTER((Path *) cur_path);
-			ParamPathInfo  *ppi = get_appendrel_parampathinfo(rel, inner_required);
+			ParamPathInfo  *ppi = get_baserel_parampathinfo(root, rel, inner_required);
 			Path		   *inner_path = NULL;
 
 			/* Skip if rel contains some join-related stuff or path type mismatched */
@@ -359,7 +352,7 @@ pathman_rel_pathlist_hook(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTb
 			 * Skip if neither rel->baserestrictinfo nor
 			 * ppi->ppi_clauses reference partition attribute
 			 */
-			if (!(rel_rinfo_contains_part_attr ||
+			if (!(rel_partattr_clauses ||
 				  (ppi && get_partitioned_attr_clauses(ppi->ppi_clauses,
 													   prel, rel->relid))))
 				continue;
@@ -369,8 +362,16 @@ pathman_rel_pathlist_hook(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTb
 													   ppi, paramsel);
 			else if (IsA(cur_path, MergeAppendPath) &&
 					 pg_pathman_enable_runtime_merge_append)
+			{
+				/* Check struct layout compatibility */
+				if (offsetof(AppendPath, subpaths) !=
+						offsetof(MergeAppendPath, subpaths))
+					elog(FATAL, "Struct layouts of AppendPath and "
+								"MergeAppendPath differ");
+
 				inner_path = create_runtimemergeappend_path(root, cur_path,
 															ppi, paramsel);
+			}
 
 			if (inner_path)
 				add_path(rel, inner_path);
@@ -389,17 +390,22 @@ pg_pathman_enable_assign_hook(bool newval, void *extra)
 
 	/* Return quickly if nothing has changed */
 	if (newval == (pg_pathman_init_state.pg_pathman_enable &&
+				   pg_pathman_init_state.auto_partition &&
+				   pg_pathman_init_state.override_copy &&
 				   pg_pathman_enable_runtimeappend &&
 				   pg_pathman_enable_runtime_merge_append &&
 				   pg_pathman_enable_partition_filter))
 		return;
 
+	pg_pathman_init_state.auto_partition = newval;
+	pg_pathman_init_state.override_copy = newval;
 	pg_pathman_enable_runtime_merge_append = newval;
 	pg_pathman_enable_runtimeappend = newval;
 	pg_pathman_enable_partition_filter = newval;
 
 	elog(NOTICE,
-		 "RuntimeAppend, RuntimeMergeAppend and PartitionFilter nodes have been %s",
+		 "RuntimeAppend, RuntimeMergeAppend and PartitionFilter nodes "
+		 "and some other options have been %s",
 		 newval ? "enabled" : "disabled");
 }
 
@@ -514,7 +520,6 @@ pathman_shmem_startup_hook(void)
 
 	/* Allocate shared memory objects */
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
-	init_dsm_config();
 	init_shmem_config();
 	LWLockRelease(AddinShmemInitLock);
 }
@@ -529,6 +534,10 @@ pathman_relcache_hook(Datum arg, Oid relid)
 	Oid					partitioned_table;
 
 	if (!IsPathmanReady())
+		return;
+
+	/* We shouldn't even consider special OIDs */
+	if (relid < FirstNormalObjectId)
 		return;
 
 	/* Invalidation event for PATHMAN_CONFIG table (probably DROP) */
@@ -554,8 +563,8 @@ pathman_relcache_hook(Datum arg, Oid relid)
 		/* Both syscache and pathman's cache say it isn't a partition */
 		case PPS_ENTRY_NOT_FOUND:
 			{
-				/* NOTE: Remove NOT_USED when it's time */
-				delay_invalidation_parent_rel(partitioned_table);
+				if (partitioned_table != InvalidOid)
+					delay_invalidation_parent_rel(partitioned_table);
 #ifdef NOT_USED
 				elog(DEBUG2, "Invalidation message for relation %u [%u]",
 					 relid, MyProcPid);
@@ -574,7 +583,44 @@ pathman_relcache_hook(Datum arg, Oid relid)
 			break;
 
 		default:
-			elog(ERROR, "Not implemented yet");
+			elog(ERROR, "Not implemented yet (%s)",
+				 CppAsString(pathman_relcache_hook));
 			break;
 	}
+}
+
+/*
+ * Utility function invoker hook.
+ */
+void
+pathman_process_utility_hook(Node *parsetree,
+							 const char *queryString,
+							 ProcessUtilityContext context,
+							 ParamListInfo params,
+							 DestReceiver *dest,
+							 char *completionTag)
+{
+	/* Call hooks set by other extensions */
+	if (process_utility_hook_next)
+		process_utility_hook_next(parsetree, queryString,
+								  context, params,
+								  dest, completionTag);
+
+	/* Override standard COPY statement if needed */
+	if (IsPathmanReady() && is_pathman_related_copy(parsetree))
+	{
+		uint64	processed;
+
+		PathmanDoCopy((CopyStmt *) parsetree, queryString, &processed);
+		if (completionTag)
+			snprintf(completionTag, COMPLETION_TAG_BUFSIZE,
+					 "PATHMAN COPY " UINT64_FORMAT, processed);
+
+		return; /* don't call standard_ProcessUtility() */
+	}
+
+	/* Call internal implementation */
+	standard_ProcessUtility(parsetree, queryString,
+							context, params,
+							dest, completionTag);
 }

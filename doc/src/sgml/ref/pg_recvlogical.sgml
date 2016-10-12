@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/pg_recvlogical.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="app-pgrecvlogical">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>pg_recvlogical</refname>
-  <refpurpose>control <productname>PostgreSQL</productname> logical decoding streams</refpurpose>
+  <refpurpose>control <productname>&productname;</productname> logical decoding streams</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -359,7 +359,7 @@ PostgreSQL documentation
   <title>Environment</title>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>

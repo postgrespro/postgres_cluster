@@ -21,7 +21,7 @@
    That functionality covers XML syntax checking and XPath queries,
    which is what this module does, and more, but the API is
    not at all compatible.  It is planned that this module will be
-   removed in a future version of PostgreSQL in favor of the newer standard API, so
+   removed in a future version of &productname; in favor of the newer standard API, so
    you are encouraged to try converting your applications.  If you
    find that some of the functionality of this module is not
    available in an adequate form with the newer API, please explain
@@ -316,7 +316,7 @@ AS t(article_id integer, author text, page_count integer, title text);
    Notice that this example defines the <structname>page_count</> result
    column as an integer.  The function deals internally with string
    representations, so when you say you want an integer in the output, it will
-   take the string representation of the XPath result and use PostgreSQL input
+   take the string representation of the XPath result and use &productname; input
    functions to transform it into an integer (or whatever type the <type>AS</>
    clause requests). An error will result if it can't do this &mdash; for
    example if the result is empty &mdash; so you may wish to just stick to
@@ -460,7 +460,7 @@ xslt_process(text document, text stylesheet, text paramlist) returns text
 
   <para>
    Development of this module was sponsored by Torchbox Ltd. (www.torchbox.com).
-   It has the same BSD license as PostgreSQL.
+   It has the same BSD license as &productname;.
   </para>
  </sect2>
 

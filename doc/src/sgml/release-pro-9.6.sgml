@@ -4,15 +4,15 @@
   <title>Postgres Pro 9.6.0.1</title>
   <note>
     <title>Release Date</title>
-    <simpara>2016-10-XX</simpara>
+    <simpara>2016-10-10</simpara>
   </note>
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>PostgreSQL</productname>
       9.6.0</para>
-    <para>Major enhancements over <productname>Postgres Pro</productname>
-      9.6.0.1 include:</para>
-    <para>Core patches from PostgresPro 9.5 has been applied:</para>
+    <para>Major enhancements over <productname>PostgreSQL</productname>
+      9.6.0 include:</para>
+    <para>Core patches from Postgres Pro 9.5 has been applied:</para>
     <itemizedlist>
       <listitem>
         <para>Covering indices patch by Anastasia Lubennikova (Commit: 91b4e25614247833d7960c49d783f69b90c0c149)
@@ -25,21 +25,51 @@
         <para>Added order by to index_including test to make 32-bit FreeBSD happy (Commit: fd9fc27d40b5dd4db611418bb848760154ec9f55)</para>
       </listitem>
     </itemizedlist>
-    <para>Modules has been ported from PostgresPro 9.5</para>
+    <para>Modules has been ported from Postgres Pro 9.5</para>
     <itemizedlist>
       <listitem>
         <para><application>hunspell-dict</application> (See <xref linkend="hunspell-dict">)</para>
         <para><application>jsquery</application> (See <xref linkend="jsquery">)</para>
         <para><application>pg_variables</application> (See <xref linkend="pg-variables">)</para>
-        <para><application>pgpathman</application> (See <xref linkend="pg-pathman">)</para>
+        <para><application>pg_pathman</application> (See <xref linkend="pg-pathman">)</para>
+        <para><application>pg_query_state</application> (See <xref linkend="pg-query-state">)</para>
         <para><application>shared-ispell</application> (See <xref linkend="shared-ispell">)</para>
         <para><application>sr_plan</application> (See <xref linkend="sr-plan">)</para>
         <para><application>dump_stat</application> (See <xref linkend="dump-stat">)</para>
       </listitem>
     </itemizedlist>
+    <para>Tools has been ported from Postgres Pro 9.5</para>
+    <itemizedlist>
+      <listitem>
+        <para><application>pg_arman</application> (See <xref linkend="pg-arman">)</para>
+      </listitem>
+    </itemizedlist>    
   </sect2>
   <sect2>
     <title>Migration to Version 9.6.0.1</title>
-    <para></para>
+
+    <para>A dump/restore using <xref linkend="app-pg-dumpall">, or
+        use of <xref linkend="pgupgrade">, is required for those
+          wishing to migrate data from any previous release.</para>
+
+    <para>Dump/restore is not neccessary when migrating from PostgreSQL 9.6.x to
+      Postgres Pro 9.6.x.y.</para>
+
+    <para>When upgrading from previous releases of Postgres Pro or from
+      vanilla PostgreSQL 9.6.x, some catalog changes should be applied.</para>
+    
+    <para>If you use binary packages, and your database is in the default
+      location, this upgrade should be performed automatically. If you've
+      compiled Postgres Pro from source or create your database in
+      non-default location, running <literal>initdb</literal> manually, you
+      should run <literal>pgpro_upgrade</literal> script provided in this
+      distribution.
+    </para>
+    
+    <para>Before running script, you should stop postgres service. Script
+      should be run as user, owning the database (typically postgres) and
+      PGDATA environment variable should be set to the directory where
+      database resides.
+    </para>
   </sect2>
 </sect1>

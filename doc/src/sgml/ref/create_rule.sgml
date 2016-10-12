@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_rule.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATERULE">
@@ -43,7 +43,7 @@ CREATE [ OR REPLACE ] RULE <replaceable class="parameter">name</replaceable> AS 
   </para>
 
   <para>
-   The <productname>PostgreSQL</productname> rule system allows one to
+   The <productname>&productname;</productname> rule system allows one to
    define an alternative action to be performed on insertions, updates,
    or deletions in database tables.  Roughly speaking, a rule causes
    additional commands to be executed when a given command on a given
@@ -245,9 +245,9 @@ CREATE [ OR REPLACE ] RULE <replaceable class="parameter">name</replaceable> AS 
   <para>
    It is very important to take care to avoid circular rules.  For
    example, though each of the following two rule definitions are
-   accepted by <productname>PostgreSQL</productname>, the
+   accepted by <productname>&productname;</productname>, the
    <command>SELECT</command> command would cause
-   <productname>PostgreSQL</productname> to report an error because
+   <productname>&productname;</productname> to report an error because
    of recursive expansion of a rule:
 
 <programlisting>
@@ -288,7 +288,7 @@ UPDATE mytable SET name = 'foo' WHERE id = 42;
 
   <para>
    <command>CREATE RULE</command> is a
-   <productname>PostgreSQL</productname> language extension, as is the
+   <productname>&productname;</productname> language extension, as is the
    entire query rewrite system.
   </para>
  </refsect1>

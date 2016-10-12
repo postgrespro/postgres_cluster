@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_materialized_view.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATEMATERIALIZEDVIEW">
@@ -144,7 +144,7 @@ CREATE MATERIALIZED VIEW [ IF NOT EXISTS ] <replaceable>table_name</replaceable>
 
   <para>
    <command>CREATE MATERIALIZED VIEW</command> is a
-   <productname>PostgreSQL</productname> extension.
+   <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

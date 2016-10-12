@@ -26,6 +26,7 @@
 #include "storage/shmem.h"
 #include "storage/sinval.h"
 #include "tcop/tcopprot.h"
+#include "utils/memutils.h"
 
 
 /*
@@ -59,11 +60,16 @@ typedef struct
  */
 #define NumProcSignalSlots	(MaxBackends + NUM_AUXPROCTYPES)
 
+static bool CustomSignalPendings[NUM_CUSTOM_PROCSIGNALS];
+static ProcSignalHandler_type CustomHandlers[NUM_CUSTOM_PROCSIGNALS];
+
 static ProcSignalSlot *ProcSignalSlots = NULL;
 static volatile ProcSignalSlot *MyProcSignalSlot = NULL;
 
 static bool CheckProcSignal(ProcSignalReason reason);
 static void CleanupProcSignalState(int status, Datum arg);
+
+static void CustomSignalInterrupt(ProcSignalReason reason);
 
 /*
  * ProcSignalShmemSize
@@ -165,6 +171,57 @@ CleanupProcSignalState(int status, Datum arg)
 }
 
 /*
+ * RegisterCustomProcSignalHandler
+ * 		Assign specific handler of custom process signal with new ProcSignalReason key.
+ * 		Return INVALID_PROCSIGNAL if all custom signals have been assigned.
+ */
+ProcSignalReason
+RegisterCustomProcSignalHandler(ProcSignalHandler_type handler)
+{
+	ProcSignalReason reason;
+
+	/* iterate through custom signal keys to find free spot */
+	for (reason = PROCSIG_CUSTOM_1; reason <= PROCSIG_CUSTOM_N; reason++)
+		if (!CustomHandlers[reason - PROCSIG_CUSTOM_1])
+		{
+			CustomHandlers[reason - PROCSIG_CUSTOM_1] = handler;
+			return reason;
+		}
+	return INVALID_PROCSIGNAL;
+}
+
+/*
+ * AssignCustomProcSignalHandler
+ * 		Assign handler of custom process signal with specific ProcSignalReason key.
+ * 		Return old ProcSignal handler.
+ * 		Assume incoming reason is one of custom ProcSignals.
+ */
+ProcSignalHandler_type
+AssignCustomProcSignalHandler(ProcSignalReason reason, ProcSignalHandler_type handler)
+{
+	ProcSignalHandler_type old;
+
+	Assert(reason >= PROCSIG_CUSTOM_1 && reason <= PROCSIG_CUSTOM_N);
+
+	old = CustomHandlers[reason - PROCSIG_CUSTOM_1];
+	CustomHandlers[reason - PROCSIG_CUSTOM_1] = handler;
+	return old;
+}
+
+/*
+ * GetCustomProcSignalHandler
+ * 		Get handler of custom process signal.
+ *		Assume incoming reason is one of custom ProcSignals.
+ */
+ProcSignalHandler_type
+GetCustomProcSignalHandler(ProcSignalReason reason)
+{
+	Assert(reason >= PROCSIG_CUSTOM_1 && reason <= PROCSIG_CUSTOM_N);
+
+	return CustomHandlers[reason - PROCSIG_CUSTOM_1];
+}
+
+/*
  * SendProcSignal
  *		Send a signal to a Postgres process
  *
@@ -259,7 +316,8 @@ CheckProcSignal(ProcSignalReason reason)
 void
 procsignal_sigusr1_handler(SIGNAL_ARGS)
 {
-	int			save_errno = errno;
+	int					save_errno = errno;
+	ProcSignalReason 	reason;
 
 	if (CheckProcSignal(PROCSIG_CATCHUP_INTERRUPT))
 		HandleCatchupInterrupt();
@@ -288,9 +346,88 @@ procsignal_sigusr1_handler(SIGNAL_ARGS)
 	if (CheckProcSignal(PROCSIG_RECOVERY_CONFLICT_BUFFERPIN))
 		RecoveryConflictInterrupt(PROCSIG_RECOVERY_CONFLICT_BUFFERPIN);
 
+	for (reason = PROCSIG_CUSTOM_1; reason <= PROCSIG_CUSTOM_N; reason++)
+		if (CheckProcSignal(reason))
+			CustomSignalInterrupt(reason);
+
 	SetLatch(MyLatch);
 
 	latch_sigusr1_handler();
 
 	errno = save_errno;
+}
+
+/*
+ * Handle receipt of an interrupt indicating a custom process signal.
+ */
+static void
+CustomSignalInterrupt(ProcSignalReason reason)
+{
+	int	save_errno = errno;
+
+	Assert(reason >= PROCSIG_CUSTOM_1 && reason <= PROCSIG_CUSTOM_N);
+
+	/* set interrupt flags */
+	InterruptPending = true;
+	CustomSignalPendings[reason - PROCSIG_CUSTOM_1] = true;
+
+	/* make sure the event is processed in due course */
+	SetLatch(MyLatch);
+
+	errno = save_errno;
+}
+
+/*
+ * CheckAndHandleCustomSignals
+ * 		Check custom signal flags and call handler assigned to that signal if it is not NULL.
+ * 		This function is called within CHECK_FOR_INTERRUPTS if interrupt have been occurred.
+ */
+void
+CheckAndHandleCustomSignals(void)
+{
+	int i;
+	MemoryContext oldcontext;
+
+	static MemoryContext hcs_context = NULL;
+
+	/*
+	 * This is invoked from ProcessInterrupts(), and since some of the
+	 * functions it calls contain CHECK_FOR_INTERRUPTS(), there is a potential
+	 * for recursive calls if more signals are received while this runs.  It's
+	 * unclear that recursive entry would be safe, and it doesn't seem useful
+	 * even if it is safe, so let's block interrupts until done.
+	 */
+	HOLD_INTERRUPTS();
+
+	/*
+	 * Moreover, CurrentMemoryContext might be pointing almost anywhere.  We
+	 * don't want to risk leaking data into long-lived contexts, so let's do
+	 * our work here in a private context that we can reset on each use.
+	 */
+	if (hcs_context == NULL)	/* first time through? */
+		hcs_context = AllocSetContextCreate(TopMemoryContext,
+											"HandleCustomSignals",
+											ALLOCSET_DEFAULT_SIZES);
+	else
+		MemoryContextReset(hcs_context);
+
+	oldcontext = MemoryContextSwitchTo(hcs_context);
+
+	for (i = 0; i < NUM_CUSTOM_PROCSIGNALS; i++)
+		if (CustomSignalPendings[i])
+		{
+			ProcSignalHandler_type handler;
+
+			CustomSignalPendings[i] = false;
+			handler = CustomHandlers[i];
+			if (handler)
+				handler();
+		}
+
+	MemoryContextSwitchTo(oldcontext);
+
+	/* Might as well clear the context on our way out */
+	MemoryContextReset(hcs_context);
+
+	RESUME_INTERRUPTS();
 }

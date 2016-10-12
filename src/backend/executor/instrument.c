@@ -129,6 +129,8 @@ InstrEndLoop(Instrumentation *instr)
 	instr->total += totaltime;
 	instr->ntuples += instr->tuplecount;
 	instr->nloops += 1;
+	instr->accum_nfiltered1 += instr->nfiltered1;
+	instr->accum_nfiltered2 += instr->nfiltered2;
 
 	/* Reset for next cycle (if any) */
 	instr->running = false;
@@ -136,6 +138,8 @@ InstrEndLoop(Instrumentation *instr)
 	INSTR_TIME_SET_ZERO(instr->counter);
 	instr->firsttuple = 0;
 	instr->tuplecount = 0;
+	instr->nfiltered1 = 0;
+	instr->nfiltered2 = 0;
 }
 
 /* aggregate instrumentation information */
