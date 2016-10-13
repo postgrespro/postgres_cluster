@@ -2163,6 +2163,7 @@ static void MtmSplitConnStrs(void)
 	int i;
 	FILE* f = NULL;
 	char buf[MULTIMASTER_MAX_CTL_STR_SIZE];
+	MemoryContext old_context = MemoryContextSwitchTo(TopMemoryContext);
 
 	if (*MtmConnStrs == '@') { 
 		f = fopen(MtmConnStrs+1, "r");
@@ -2276,8 +2277,9 @@ static void MtmSplitConnStrs(void)
 		Assert(end != NULL);
 		len = end - dbName;
 		MtmDatabaseName = pnstrdup(dbName, len);
-    }
-}		
+	}
+	MemoryContextSwitchTo(old_context);
+}
 
 static bool ConfigIsSane(void)
 {
