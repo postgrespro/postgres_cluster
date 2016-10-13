@@ -46,10 +46,9 @@ do
         max_wal_senders = 10
         shared_preload_libraries = 'raftable,multimaster'
         default_transaction_isolation = 'repeatable read'
-        log_checkpoints = on
-        log_autovacuum_min_duration = 0
+
         multimaster.workers = 1
-        multimaster.use_raftable = true
+        multimaster.use_raftable = false
         multimaster.queue_size=52857600
         multimaster.ignore_tables_without_pk = 1
         multimaster.heartbeat_recv_timeout = 1000
