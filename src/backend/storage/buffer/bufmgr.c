@@ -821,7 +821,7 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 
 			Assert(buf_state & BM_VALID);
 			buf_state &= ~BM_VALID;
-			pg_atomic_write_u32(&bufHdr->state, buf_state);
+			pg_atomic_unlocked_write_u32(&bufHdr->state, buf_state);
 		}
 		else
 		{
@@ -941,7 +941,7 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 		uint32		buf_state = pg_atomic_read_u32(&bufHdr->state);
 
 		buf_state |= BM_VALID;
-		pg_atomic_write_u32(&bufHdr->state, buf_state);
+		pg_atomic_unlocked_write_u32(&bufHdr->state, buf_state);
 	}
 	else
 	{
@@ -1973,7 +1973,7 @@ BufferSync(int flags)
 		}
 
 		/*
-		 * Measure progress independent of actualy having to flush the buffer
+		 * Measure progress independent of actually having to flush the buffer
 		 * - otherwise writing become unbalanced.
 		 */
 		ts_stat->progress += ts_stat->progress_slice;
@@ -3167,7 +3167,7 @@ FlushRelationBuffers(Relation rel)
 						  false);
 
 				buf_state &= ~(BM_DIRTY | BM_JUST_DIRTIED);
-				pg_atomic_write_u32(&bufHdr->state, buf_state);
+				pg_atomic_unlocked_write_u32(&bufHdr->state, buf_state);
 
 				/* Pop the error context stack */
 				error_context_stack = errcallback.previous;
@@ -3352,7 +3352,7 @@ IncrBufferRefCount(Buffer buffer)
  * This is essentially the same as MarkBufferDirty, except:
  *
  * 1. The caller does not write WAL; so if checksums are enabled, we may need
- *	  to write an XLOG_HINT WAL record to protect against torn pages.
+ *	  to write an XLOG_FPI WAL record to protect against torn pages.
  * 2. The caller might have only share-lock instead of exclusive-lock on the
  *	  buffer's content lock.
  * 3. This function does not guarantee that the buffer is always marked dirty
@@ -4160,12 +4160,10 @@ ts_ckpt_progress_comparator(Datum a, Datum b, void *arg)
 /*
  * Initialize a writeback context, discarding potential previous state.
  *
- * *max_coalesce is a pointer to a variable containing the current maximum
- * number of writeback requests that will be coalesced into a bigger one. A
- * value <= 0 means that no writeback control will be performed. max_pending
- * is a pointer instead of an immediate value, so the coalesce limits can
- * easily changed by the GUC mechanism, and so calling code does not have to
- * check the current configuration.
+ * *max_pending is a pointer instead of an immediate value, so the coalesce
+ * limits can easily changed by the GUC mechanism, and so calling code does
+ * not have to check the current configuration. A value is 0 means that no
+ * writeback control will be performed.
  */
 void
 WritebackContextInit(WritebackContext *context, int *max_pending)
@@ -4290,9 +4288,8 @@ IssuePendingWritebacks(WritebackContext *context)
 void
 TestForOldSnapshot_impl(Snapshot snapshot, Relation relation)
 {
-	if (!IsCatalogRelation(relation)
-	 && !RelationIsAccessibleInLogicalDecoding(relation)
-	 && (snapshot)->whenTaken < GetOldSnapshotThresholdTimestamp())
+	if (RelationAllowsEarlyPruning(relation)
+		&& (snapshot)->whenTaken < GetOldSnapshotThresholdTimestamp())
 		ereport(ERROR,
 				(errcode(ERRCODE_SNAPSHOT_TOO_OLD),
 				 errmsg("snapshot too old")));

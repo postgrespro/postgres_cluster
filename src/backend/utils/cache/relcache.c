@@ -60,8 +60,8 @@
 #include "commands/policy.h"
 #include "commands/trigger.h"
 #include "miscadmin.h"
+#include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
-#include "optimizer/planmain.h"
 #include "optimizer/prep.h"
 #include "optimizer/var.h"
 #include "rewrite/rewriteDefine.h"
@@ -659,14 +659,11 @@ RelationBuildRuleLock(Relation relation)
 	int			maxlocks;
 
 	/*
-	 * Make the private context.  Parameters are set on the assumption that
-	 * it'll probably not contain much data.
+	 * Make the private context.  Assume it'll not contain much data.
 	 */
 	rulescxt = AllocSetContextCreate(CacheMemoryContext,
 									 RelationGetRelationName(relation),
-									 ALLOCSET_SMALL_MINSIZE,
-									 ALLOCSET_SMALL_INITSIZE,
-									 ALLOCSET_SMALL_MAXSIZE);
+									 ALLOCSET_SMALL_SIZES);
 	relation->rd_rulescxt = rulescxt;
 
 	/*
@@ -993,7 +990,7 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 		case RELPERSISTENCE_TEMP:
 			if (isTempOrTempToastNamespace(relation->rd_rel->relnamespace))
 			{
-				relation->rd_backend = MyBackendId;
+				relation->rd_backend = BackendIdForTempRelations();
 				relation->rd_islocaltemp = true;
 			}
 			else
@@ -1048,6 +1045,10 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 		RelationBuildRowSecurity(relation);
 	else
 		relation->rd_rsdesc = NULL;
+
+	/* foreign key data is not loaded till asked for */
+	relation->rd_fkeylist = NIL;
+	relation->rd_fkeyvalid = false;
 
 	/*
 	 * if it's an index, initialize index-related information
@@ -1244,15 +1245,10 @@ RelationInitIndexAccessInfo(Relation relation)
 	 * Make the private context to hold index access info.  The reason we need
 	 * a context, and not just a couple of pallocs, is so that we won't leak
 	 * any subsidiary info attached to fmgr lookup records.
-	 *
-	 * Context parameters are set on the assumption that it'll probably not
-	 * contain much data.
 	 */
 	indexcxt = AllocSetContextCreate(CacheMemoryContext,
 									 RelationGetRelationName(relation),
-									 ALLOCSET_SMALL_MINSIZE,
-									 ALLOCSET_SMALL_INITSIZE,
-									 ALLOCSET_SMALL_MAXSIZE);
+									 ALLOCSET_SMALL_SIZES);
 	relation->rd_indexcxt = indexcxt;
 
 	/*
@@ -2030,12 +2026,12 @@ RelationDestroyRelation(Relation relation, bool remember_tupdesc)
 		else
 			FreeTupleDesc(relation->rd_att);
 	}
+	FreeTriggerDesc(relation->trigdesc);
+	list_free_deep(relation->rd_fkeylist);
 	list_free(relation->rd_indexlist);
-	list_free(relation->rd_fkeylist);
 	bms_free(relation->rd_indexattr);
 	bms_free(relation->rd_keyattr);
 	bms_free(relation->rd_idattr);
-	FreeTriggerDesc(relation->trigdesc);
 	if (relation->rd_options)
 		pfree(relation->rd_options);
 	if (relation->rd_indextuple)
@@ -2971,7 +2967,7 @@ RelationBuildLocalRelation(const char *relname,
 			break;
 		case RELPERSISTENCE_TEMP:
 			Assert(isTempOrTempToastNamespace(relnamespace));
-			rel->rd_backend = MyBackendId;
+			rel->rd_backend = BackendIdForTempRelations();
 			rel->rd_islocaltemp = true;
 			break;
 		default:
@@ -3805,6 +3801,147 @@ CheckConstraintCmp(const void *a, const void *b)
 }
 
 /*
+ * RelationGetFKeyList -- get a list of foreign key info for the relation
+ *
+ * Returns a list of ForeignKeyCacheInfo structs, one per FK constraining
+ * the given relation.  This data is a direct copy of relevant fields from
+ * pg_constraint.  The list items are in no particular order.
+ *
+ * CAUTION: the returned list is part of the relcache's data, and could
+ * vanish in a relcache entry reset.  Callers must inspect or copy it
+ * before doing anything that might trigger a cache flush, such as
+ * system catalog accesses.  copyObject() can be used if desired.
+ * (We define it this way because current callers want to filter and
+ * modify the list entries anyway, so copying would be a waste of time.)
+ */
+List *
+RelationGetFKeyList(Relation relation)
+{
+	List	   *result;
+	Relation	conrel;
+	SysScanDesc conscan;
+	ScanKeyData skey;
+	HeapTuple	htup;
+	List	   *oldlist;
+	MemoryContext oldcxt;
+
+	/* Quick exit if we already computed the list. */
+	if (relation->rd_fkeyvalid)
+		return relation->rd_fkeylist;
+
+	/* Fast path: if it doesn't have any triggers, it can't have FKs */
+	if (!relation->rd_rel->relhastriggers)
+		return NIL;
+
+	/*
+	 * We build the list we intend to return (in the caller's context) while
+	 * doing the scan.  After successfully completing the scan, we copy that
+	 * list into the relcache entry.  This avoids cache-context memory leakage
+	 * if we get some sort of error partway through.
+	 */
+	result = NIL;
+
+	/* Prepare to scan pg_constraint for entries having conrelid = this rel. */
+	ScanKeyInit(&skey,
+				Anum_pg_constraint_conrelid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(RelationGetRelid(relation)));
+
+	conrel = heap_open(ConstraintRelationId, AccessShareLock);
+	conscan = systable_beginscan(conrel, ConstraintRelidIndexId, true,
+								 NULL, 1, &skey);
+
+	while (HeapTupleIsValid(htup = systable_getnext(conscan)))
+	{
+		Form_pg_constraint constraint = (Form_pg_constraint) GETSTRUCT(htup);
+		ForeignKeyCacheInfo *info;
+		Datum		adatum;
+		bool		isnull;
+		ArrayType  *arr;
+		int			nelem;
+
+		/* consider only foreign keys */
+		if (constraint->contype != CONSTRAINT_FOREIGN)
+			continue;
+
+		info = makeNode(ForeignKeyCacheInfo);
+		info->conrelid = constraint->conrelid;
+		info->confrelid = constraint->confrelid;
+
+		/* Extract data from conkey field */
+		adatum = fastgetattr(htup, Anum_pg_constraint_conkey,
+							 conrel->rd_att, &isnull);
+		if (isnull)
+			elog(ERROR, "null conkey for rel %s",
+				 RelationGetRelationName(relation));
+
+		arr = DatumGetArrayTypeP(adatum);		/* ensure not toasted */
+		nelem = ARR_DIMS(arr)[0];
+		if (ARR_NDIM(arr) != 1 ||
+			nelem < 1 ||
+			nelem > INDEX_MAX_KEYS ||
+			ARR_HASNULL(arr) ||
+			ARR_ELEMTYPE(arr) != INT2OID)
+			elog(ERROR, "conkey is not a 1-D smallint array");
+
+		info->nkeys = nelem;
+		memcpy(info->conkey, ARR_DATA_PTR(arr), nelem * sizeof(AttrNumber));
+
+		/* Likewise for confkey */
+		adatum = fastgetattr(htup, Anum_pg_constraint_confkey,
+							 conrel->rd_att, &isnull);
+		if (isnull)
+			elog(ERROR, "null confkey for rel %s",
+				 RelationGetRelationName(relation));
+
+		arr = DatumGetArrayTypeP(adatum);		/* ensure not toasted */
+		nelem = ARR_DIMS(arr)[0];
+		if (ARR_NDIM(arr) != 1 ||
+			nelem != info->nkeys ||
+			ARR_HASNULL(arr) ||
+			ARR_ELEMTYPE(arr) != INT2OID)
+			elog(ERROR, "confkey is not a 1-D smallint array");
+
+		memcpy(info->confkey, ARR_DATA_PTR(arr), nelem * sizeof(AttrNumber));
+
+		/* Likewise for conpfeqop */
+		adatum = fastgetattr(htup, Anum_pg_constraint_conpfeqop,
+							 conrel->rd_att, &isnull);
+		if (isnull)
+			elog(ERROR, "null conpfeqop for rel %s",
+				 RelationGetRelationName(relation));
+
+		arr = DatumGetArrayTypeP(adatum);		/* ensure not toasted */
+		nelem = ARR_DIMS(arr)[0];
+		if (ARR_NDIM(arr) != 1 ||
+			nelem != info->nkeys ||
+			ARR_HASNULL(arr) ||
+			ARR_ELEMTYPE(arr) != OIDOID)
+			elog(ERROR, "conpfeqop is not a 1-D OID array");
+
+		memcpy(info->conpfeqop, ARR_DATA_PTR(arr), nelem * sizeof(Oid));
+
+		/* Add FK's node to the result list */
+		result = lappend(result, info);
+	}
+
+	systable_endscan(conscan);
+	heap_close(conrel, AccessShareLock);
+
+	/* Now save a copy of the completed list in the relcache entry. */
+	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+	oldlist = relation->rd_fkeylist;
+	relation->rd_fkeylist = copyObject(result);
+	relation->rd_fkeyvalid = true;
+	MemoryContextSwitchTo(oldcxt);
+
+	/* Don't leak the old list, if there is one */
+	list_free_deep(oldlist);
+
+	return result;
+}
+
+/*
  * RelationGetIndexList -- get a list of OIDs of indexes on this relation
  *
  * The index list is created only if someone requests it.  We scan pg_index
@@ -3949,79 +4086,6 @@ RelationGetIndexList(Relation relation)
 	else
 		relation->rd_replidindex = InvalidOid;
 	relation->rd_indexvalid = 1;
-	MemoryContextSwitchTo(oldcxt);
-
-	/* Don't leak the old list, if there is one */
-	list_free(oldlist);
-
-	return result;
-}
-
-/*
- * RelationGetFKeyList -- get a list of foreign key oids
- *
- * Use an index scan on pg_constraint to load in FK definitions,
- * intended for use within the planner, not for enforcing FKs.
- *
- * Data is ordered by Oid, though this is not critical at this point
- * since we do not lock the referenced relations.
- */
-List *
-RelationGetFKeyList(Relation relation)
-{
-	Relation	conrel;
-	SysScanDesc conscan;
-	ScanKeyData skey;
-	HeapTuple	htup;
-	List	   *result;
-	List	   *oldlist;
-	MemoryContext oldcxt;
-
-	/* Quick exit if we already computed the list. */
-	if (relation->rd_fkeylist)
-		return list_copy(relation->rd_fkeylist);
-
-	/* Fast path if no FKs... if it doesn't have a trigger, it can't have a FK */
-	if (!relation->rd_rel->relhastriggers)
-		return NIL;
-	/*
-	 * We build the list we intend to return (in the caller's context) while
-	 * doing the scan.  After successfully completing the scan, we copy that
-	 * list into the relcache entry.  This avoids cache-context memory leakage
-	 * if we get some sort of error partway through.
-	 */
-	result = NIL;
-
-	/* Prepare to scan pg_constraint for entries having conrelid = this rel. */
-	ScanKeyInit(&skey,
-				Anum_pg_constraint_conrelid,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(RelationGetRelid(relation)));
-
-	conrel = heap_open(ConstraintRelationId, AccessShareLock);
-	conscan = systable_beginscan(conrel, ConstraintRelidIndexId, true,
-								 NULL, 1, &skey);
-
-	while (HeapTupleIsValid(htup = systable_getnext(conscan)))
-	{
-		Form_pg_constraint constraint = (Form_pg_constraint) GETSTRUCT(htup);
-
-		/* return only foreign keys */
-		if (constraint->contype != CONSTRAINT_FOREIGN)
-			continue;
-
-		/* Add FK's OID to result list in the proper order */
-		result = insert_ordered_oid(result, HeapTupleGetOid(htup));
-	}
-
-	systable_endscan(conscan);
-
-	heap_close(conrel, AccessShareLock);
-
-	/* Now save a copy of the completed list in the relcache entry. */
-	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
-	oldlist = relation->rd_fkeylist;
-	relation->rd_fkeylist = list_copy(result);
 	MemoryContextSwitchTo(oldcxt);
 
 	/* Don't leak the old list, if there is one */
@@ -4876,9 +4940,7 @@ load_relcache_init_file(bool shared)
 			 */
 			indexcxt = AllocSetContextCreate(CacheMemoryContext,
 											 RelationGetRelationName(rel),
-											 ALLOCSET_SMALL_MINSIZE,
-											 ALLOCSET_SMALL_INITSIZE,
-											 ALLOCSET_SMALL_MAXSIZE);
+											 ALLOCSET_SMALL_SIZES);
 			rel->rd_indexcxt = indexcxt;
 
 			/*
@@ -4966,7 +5028,8 @@ load_relcache_init_file(bool shared)
 		 * format is complex and subject to change).  They must be rebuilt if
 		 * needed by RelationCacheInitializePhase3.  This is not expected to
 		 * be a big performance hit since few system catalogs have such. Ditto
-		 * for index expressions, predicates, exclusion info, and FDW info.
+		 * for RLS policy data, index expressions, predicates, exclusion info,
+		 * and FDW info.
 		 */
 		rel->rd_rules = NULL;
 		rel->rd_rulescxt = NULL;
@@ -4988,13 +5051,14 @@ load_relcache_init_file(bool shared)
 		else
 			rel->rd_refcnt = 0;
 		rel->rd_indexvalid = 0;
+		rel->rd_fkeylist = NIL;
+		rel->rd_fkeyvalid = false;
 		rel->rd_indexlist = NIL;
 		rel->rd_oidindex = InvalidOid;
 		rel->rd_replidindex = InvalidOid;
 		rel->rd_indexattr = NULL;
 		rel->rd_keyattr = NULL;
 		rel->rd_idattr = NULL;
-		rel->rd_fkeylist = NIL;
 		rel->rd_createSubid = InvalidSubTransactionId;
 		rel->rd_newRelfilenodeSubid = InvalidSubTransactionId;
 		rel->rd_amcache = NULL;
@@ -5326,9 +5390,9 @@ RelationIdIsInInitFile(Oid relationId)
 bool
 RelationHasUnloggedIndex(Relation rel)
 {
-	List		   *indexoidlist;
-	ListCell	   *indexoidscan;
-	bool			result = false;
+	List	   *indexoidlist;
+	ListCell   *indexoidscan;
+	bool		result = false;
 
 	indexoidlist = RelationGetIndexList(rel);
 

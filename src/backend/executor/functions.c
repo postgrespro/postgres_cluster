@@ -167,7 +167,7 @@ static Datum postquel_get_single_result(TupleTableSlot *slot,
 static void sql_exec_error_callback(void *arg);
 static void ShutdownSQLFunction(Datum arg);
 static void sqlfunction_startup(DestReceiver *self, int operation, TupleDesc typeinfo);
-static void sqlfunction_receive(TupleTableSlot *slot, DestReceiver *self);
+static bool sqlfunction_receive(TupleTableSlot *slot, DestReceiver *self);
 static void sqlfunction_shutdown(DestReceiver *self);
 static void sqlfunction_destroy(DestReceiver *self);
 
@@ -497,8 +497,8 @@ init_execution_state(List *queryTree_list,
 				stmt = queryTree->utilityStmt;
 			else
 				stmt = (Node *) pg_plan_query(queryTree,
-					fcache->readonly_func ? CURSOR_OPT_PARALLEL_OK : 0,
-					NULL);
+						  fcache->readonly_func ? CURSOR_OPT_PARALLEL_OK : 0,
+											  NULL);
 
 			/* Precheck all commands for validity in a function */
 			if (IsA(stmt, TransactionStmt))
@@ -600,9 +600,7 @@ init_sql_fcache(FmgrInfo *finfo, Oid collation, bool lazyEvalOK)
 	 */
 	fcontext = AllocSetContextCreate(finfo->fn_mcxt,
 									 "SQL function data",
-									 ALLOCSET_DEFAULT_MINSIZE,
-									 ALLOCSET_DEFAULT_INITSIZE,
-									 ALLOCSET_DEFAULT_MAXSIZE);
+									 ALLOCSET_DEFAULT_SIZES);
 
 	oldcontext = MemoryContextSwitchTo(fcontext);
 
@@ -1904,7 +1902,7 @@ sqlfunction_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 /*
  * sqlfunction_receive --- receive one tuple
  */
-static void
+static bool
 sqlfunction_receive(TupleTableSlot *slot, DestReceiver *self)
 {
 	DR_sqlfunction *myState = (DR_sqlfunction *) self;
@@ -1914,6 +1912,8 @@ sqlfunction_receive(TupleTableSlot *slot, DestReceiver *self)
 
 	/* Store the filtered tuple into the tuplestore */
 	tuplestore_puttupleslot(myState->tstore, slot);
+
+	return true;
 }
 
 /*

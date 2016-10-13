@@ -14,7 +14,6 @@
 #ifndef BUFMGR_H
 #define BUFMGR_H
 
-#include "catalog/catalog.h"
 #include "storage/block.h"
 #include "storage/buf.h"
 #include "storage/bufpage.h"
@@ -60,11 +59,9 @@ extern PGDLLIMPORT int NBuffers;
 /* FIXME: Also default to on for mmap && msync(MS_ASYNC)? */
 #ifdef HAVE_SYNC_FILE_RANGE
 #define DEFAULT_CHECKPOINT_FLUSH_AFTER 32
-#define DEFAULT_BACKEND_FLUSH_AFTER 16
 #define DEFAULT_BGWRITER_FLUSH_AFTER 64
 #else
 #define DEFAULT_CHECKPOINT_FLUSH_AFTER 0
-#define DEFAULT_BACKEND_FLUSH_AFTER 0
 #define DEFAULT_BGWRITER_FLUSH_AFTER 0
 #endif   /* HAVE_SYNC_FILE_RANGE */
 
@@ -281,7 +278,8 @@ TestForOldSnapshot(Snapshot snapshot, Relation relation, Page page)
 
 	if (old_snapshot_threshold >= 0
 		&& (snapshot) != NULL
-		&& (snapshot)->satisfies == HeapTupleSatisfiesMVCC
+		&& ((snapshot)->satisfies == HeapTupleSatisfiesMVCC
+			|| (snapshot)->satisfies == HeapTupleSatisfiesToast)
 		&& !XLogRecPtrIsInvalid((snapshot)->lsn)
 		&& PageGetLSN(page) > (snapshot)->lsn)
 		TestForOldSnapshot_impl(snapshot, relation);

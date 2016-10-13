@@ -65,9 +65,9 @@ static void pg_decode_change(LogicalDecodingContext *ctx,
 static bool pg_decode_filter(LogicalDecodingContext *ctx,
 				 RepOriginId origin_id);
 static void pg_decode_message(LogicalDecodingContext *ctx,
-							  ReorderBufferTXN *txn, XLogRecPtr message_lsn,
-							  bool transactional, const char *prefix,
-							  Size sz, const char *message);
+				  ReorderBufferTXN *txn, XLogRecPtr message_lsn,
+				  bool transactional, const char *prefix,
+				  Size sz, const char *message);
 
 void
 _PG_init(void)
@@ -102,9 +102,7 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 	data = palloc0(sizeof(TestDecodingData));
 	data->context = AllocSetContextCreate(ctx->context,
 										  "text conversion context",
-										  ALLOCSET_DEFAULT_MINSIZE,
-										  ALLOCSET_DEFAULT_INITSIZE,
-										  ALLOCSET_DEFAULT_MAXSIZE);
+										  ALLOCSET_DEFAULT_SIZES);
 	data->include_xids = true;
 	data->include_timestamp = false;
 	data->skip_empty_xacts = false;

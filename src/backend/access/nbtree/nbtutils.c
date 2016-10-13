@@ -232,10 +232,8 @@ _bt_preprocess_array_keys(IndexScanDesc scan)
 	 */
 	if (so->arrayContext == NULL)
 		so->arrayContext = AllocSetContextCreate(CurrentMemoryContext,
-												 "BTree Array Context",
-												 ALLOCSET_SMALL_MINSIZE,
-												 ALLOCSET_SMALL_INITSIZE,
-												 ALLOCSET_SMALL_MAXSIZE);
+												 "BTree array context",
+												 ALLOCSET_SMALL_SIZES);
 	else
 		MemoryContextReset(so->arrayContext);
 
@@ -2040,4 +2038,30 @@ bytea *
 btoptions(Datum reloptions, bool validate)
 {
 	return default_reloptions(reloptions, validate, RELOPT_KIND_BTREE);
+}
+
+/*
+ *	btproperty() -- Check boolean properties of indexes.
+ *
+ * This is optional, but handling AMPROP_RETURNABLE here saves opening the rel
+ * to call btcanreturn.
+ */
+bool
+btproperty(Oid index_oid, int attno,
+		   IndexAMProperty prop, const char *propname,
+		   bool *res, bool *isnull)
+{
+	switch (prop)
+	{
+		case AMPROP_RETURNABLE:
+			/* answer only for columns, not AM or whole index */
+			if (attno == 0)
+				return false;
+			/* otherwise, btree can always return data */
+			*res = true;
+			return true;
+
+		default:
+			return false;		/* punt to generic code */
+	}
 }

@@ -366,6 +366,81 @@ from tenk1 o;
  9999
 (1 row)
 
+-- Test handling of Params within aggregate arguments in hashed aggregation.
+-- Per bug report from Jeevan Chalke.
+explain (verbose, costs off)
+select s1, s2, sm
+from generate_series(1, 3) s1,
+     lateral (select s2, sum(s1 + s2) sm
+              from generate_series(1, 3) s2 group by s2) ss
+order by 1, 2;
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Sort
+   Output: s1.s1, s2.s2, (sum((s1.s1 + s2.s2)))
+   Sort Key: s1.s1, s2.s2
+   ->  Nested Loop
+         Output: s1.s1, s2.s2, (sum((s1.s1 + s2.s2)))
+         ->  Function Scan on pg_catalog.generate_series s1
+               Output: s1.s1
+               Function Call: generate_series(1, 3)
+         ->  HashAggregate
+               Output: s2.s2, sum((s1.s1 + s2.s2))
+               Group Key: s2.s2
+               ->  Function Scan on pg_catalog.generate_series s2
+                     Output: s2.s2
+                     Function Call: generate_series(1, 3)
+(14 rows)
+
+select s1, s2, sm
+from generate_series(1, 3) s1,
+     lateral (select s2, sum(s1 + s2) sm
+              from generate_series(1, 3) s2 group by s2) ss
+order by 1, 2;
+ s1 | s2 | sm 
+----+----+----
+  1 |  1 |  2
+  1 |  2 |  3
+  1 |  3 |  4
+  2 |  1 |  3
+  2 |  2 |  4
+  2 |  3 |  5
+  3 |  1 |  4
+  3 |  2 |  5
+  3 |  3 |  6
+(9 rows)
+
+explain (verbose, costs off)
+select array(select sum(x+y) s
+            from generate_series(1,3) y group by y order by s)
+  from generate_series(1,3) x;
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Function Scan on pg_catalog.generate_series x
+   Output: (SubPlan 1)
+   Function Call: generate_series(1, 3)
+   SubPlan 1
+     ->  Sort
+           Output: (sum((x.x + y.y))), y.y
+           Sort Key: (sum((x.x + y.y)))
+           ->  HashAggregate
+                 Output: sum((x.x + y.y)), y.y
+                 Group Key: y.y
+                 ->  Function Scan on pg_catalog.generate_series y
+                       Output: y.y
+                       Function Call: generate_series(1, 3)
+(13 rows)
+
+select array(select sum(x+y) s
+            from generate_series(1,3) y group by y order by s)
+  from generate_series(1,3) x;
+  array  
+---------
+ {2,3,4}
+ {3,4,5}
+ {4,5,6}
+(3 rows)
+
 --
 -- test for bitwise integer aggregates
 --
@@ -575,6 +650,12 @@ select max(unique1) from tenk1 where unique1 > 42;
  9999
 (1 row)
 
+-- the planner may choose a generic aggregate here if parallel query is
+-- enabled, since that plan will be parallel safe and the "optimized"
+-- plan, which has almost identical cost, will not be.  we want to test
+-- the optimized plan, so temporarily disable parallel query.
+begin;
+set local max_parallel_workers_per_gather = 0;
 explain (costs off)
   select max(unique1) from tenk1 where unique1 > 42000;
                                 QUERY PLAN                                 
@@ -592,6 +673,7 @@ select max(unique1) from tenk1 where unique1 > 42000;
     
 (1 row)
 
+rollback;
 -- multi-column index (uses tenk1_thous_tenthous)
 explain (costs off)
   select max(tenthous) from tenk1 where thousand = 33;
@@ -750,6 +832,25 @@ select max(unique2), generate_series(1,3) as g from tenk1 order by g desc;
  9999 | 2
  9999 | 1
 (3 rows)
+
+-- interesting corner case: constant gets optimized into a seqscan
+explain (costs off)
+  select max(100) from tenk1;
+                     QUERY PLAN                     
+----------------------------------------------------
+ Result
+   InitPlan 1 (returns $0)
+     ->  Limit
+           ->  Result
+                 One-Time Filter: (100 IS NOT NULL)
+                 ->  Seq Scan on tenk1
+(6 rows)
+
+select max(100) from tenk1;
+ max 
+-----
+ 100
+(1 row)
 
 -- try it on an inheritance tree
 create table minmaxtest(f1 int);

@@ -208,9 +208,7 @@ mdinit(void)
 {
 	MdCxt = AllocSetContextCreate(TopMemoryContext,
 								  "MdSmgr",
-								  ALLOCSET_DEFAULT_MINSIZE,
-								  ALLOCSET_DEFAULT_INITSIZE,
-								  ALLOCSET_DEFAULT_MAXSIZE);
+								  ALLOCSET_DEFAULT_SIZES);
 
 	/*
 	 * Create pending-operations hashtable if we need it.  Currently, we need
@@ -231,10 +229,8 @@ mdinit(void)
 		 * practice.
 		 */
 		pendingOpsCxt = AllocSetContextCreate(MdCxt,
-											  "Pending Ops Context",
-											  ALLOCSET_DEFAULT_MINSIZE,
-											  ALLOCSET_DEFAULT_INITSIZE,
-											  ALLOCSET_DEFAULT_MAXSIZE);
+											  "Pending ops context",
+											  ALLOCSET_DEFAULT_SIZES);
 		MemoryContextAllowInCriticalSection(pendingOpsCxt, true);
 
 		MemSet(&hash_ctl, 0, sizeof(hash_ctl));
@@ -980,6 +976,7 @@ mdtruncate(SMgrRelation reln, ForkNumber forknum, BlockNumber nblocks)
 			v = v->mdfd_chain;
 			Assert(ov != reln->md_fd[forknum]); /* we never drop the 1st
 												 * segment */
+			FileClose(ov->mdfd_vfd);
 			pfree(ov);
 		}
 		else if (priorblocks + ((BlockNumber) RELSEG_SIZE) > nblocks)
@@ -1788,7 +1785,7 @@ _mdfd_getseg(SMgrRelation reln, ForkNumber forknum, BlockNumber blkno,
 	BlockNumber targetseg;
 	BlockNumber nextsegno;
 
-	/* some way to handle non-existant segments needs to be specified */
+	/* some way to handle non-existent segments needs to be specified */
 	Assert(behavior &
 		   (EXTENSION_FAIL | EXTENSION_CREATE | EXTENSION_RETURN_NULL));
 

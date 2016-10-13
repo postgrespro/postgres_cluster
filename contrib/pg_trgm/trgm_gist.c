@@ -296,15 +296,9 @@ gtrgm_consistent(PG_FUNCTION_ARGS)
 
 			if (GIST_LEAF(entry))
 			{					/* all leafs contains orig trgm */
-				/*
-				 * Prevent gcc optimizing the tmpsml variable using volatile
-				 * keyword. Otherwise comparison of nlimit and tmpsml may give
-				 * wrong results.
-				 */
-				float4 volatile tmpsml = cnt_sml(qtrg, key, *recheck);
+				double		tmpsml = cnt_sml(qtrg, key, *recheck);
 
-				/* strange bug at freebsd 5.2.1 and gcc 3.3.3 */
-				res = (*(int *) &tmpsml == *(int *) &nlimit || tmpsml > nlimit);
+				res = (tmpsml >= nlimit);
 			}
 			else if (ISALLTRUE(key))
 			{					/* non-leaf contains signature */
@@ -476,12 +470,14 @@ gtrgm_distance(PG_FUNCTION_ARGS)
 			*recheck = strategy == WordDistanceStrategyNumber;
 			if (GIST_LEAF(entry))
 			{					/* all leafs contains orig trgm */
+
 				/*
 				 * Prevent gcc optimizing the sml variable using volatile
 				 * keyword. Otherwise res can differ from the
 				 * word_similarity_dist_op() function.
 				 */
 				float4 volatile sml = cnt_sml(qtrg, key, *recheck);
+
 				res = 1.0 - sml;
 			}
 			else if (ISALLTRUE(key))

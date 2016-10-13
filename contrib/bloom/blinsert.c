@@ -33,11 +33,11 @@ PG_MODULE_MAGIC;
 typedef struct
 {
 	BloomState	blstate;		/* bloom index state */
-	MemoryContext tmpCtx;		/* temporary memory context reset after
-								 * each tuple */
+	MemoryContext tmpCtx;		/* temporary memory context reset after each
+								 * tuple */
 	char		data[BLCKSZ];	/* cached page */
 	int64		count;			/* number of tuples in cached page */
-}	BloomBuildState;
+} BloomBuildState;
 
 /*
  * Flush page cached in BloomBuildState.
@@ -130,9 +130,7 @@ blbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	initBloomState(&buildstate.blstate, index);
 	buildstate.tmpCtx = AllocSetContextCreate(CurrentMemoryContext,
 											  "Bloom build temporary context",
-											  ALLOCSET_DEFAULT_MINSIZE,
-											  ALLOCSET_DEFAULT_INITSIZE,
-											  ALLOCSET_DEFAULT_MAXSIZE);
+											  ALLOCSET_DEFAULT_SIZES);
 	initCachedPage(&buildstate);
 
 	/* Do the heap scan */
@@ -140,8 +138,8 @@ blbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 								   bloomBuildCallback, (void *) &buildstate);
 
 	/*
-	 * There are could be some items in cached page.  Flush this page
-	 * if needed.
+	 * There are could be some items in cached page.  Flush this page if
+	 * needed.
 	 */
 	if (buildstate.count > 0)
 		flushCachedPage(index, &buildstate);
@@ -204,9 +202,7 @@ blinsert(Relation index, Datum *values, bool *isnull,
 
 	insertCtx = AllocSetContextCreate(CurrentMemoryContext,
 									  "Bloom insert temporary context",
-									  ALLOCSET_DEFAULT_MINSIZE,
-									  ALLOCSET_DEFAULT_INITSIZE,
-									  ALLOCSET_DEFAULT_MAXSIZE);
+									  ALLOCSET_DEFAULT_SIZES);
 
 	oldCtx = MemoryContextSwitchTo(insertCtx);
 
@@ -236,6 +232,13 @@ blinsert(Relation index, Datum *values, bool *isnull,
 
 		state = GenericXLogStart(index);
 		page = GenericXLogRegisterBuffer(state, buffer, 0);
+
+		/*
+		 * We might have found a page that was recently deleted by VACUUM.  If
+		 * so, we can reuse it, but we must reinitialize it.
+		 */
+		if (PageIsNew(page) || BloomPageIsDeleted(page))
+			BloomInitPage(page, 0);
 
 		if (BloomPageAddItem(&blstate, page, itup))
 		{
@@ -294,6 +297,10 @@ blinsert(Relation index, Datum *values, bool *isnull,
 		buffer = ReadBuffer(index, blkno);
 		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 		page = GenericXLogRegisterBuffer(state, buffer, 0);
+
+		/* Basically same logic as above */
+		if (PageIsNew(page) || BloomPageIsDeleted(page))
+			BloomInitPage(page, 0);
 
 		if (BloomPageAddItem(&blstate, page, itup))
 		{

@@ -1276,7 +1276,7 @@ psql_completion(const char *text, int start, int end)
 	static const char *const backslash_commands[] = {
 		"\\a", "\\connect", "\\conninfo", "\\C", "\\cd", "\\copy",
 		"\\copyright", "\\crosstabview",
-		"\\d", "\\da", "\\db", "\\dc", "\\dC", "\\dd", "\\ddp", "\\dD",
+		"\\d", "\\da", "\\dA", "\\db", "\\dc", "\\dC", "\\dd", "\\ddp", "\\dD",
 		"\\des", "\\det", "\\deu", "\\dew", "\\dE", "\\df",
 		"\\dF", "\\dFd", "\\dFp", "\\dFt", "\\dg", "\\di", "\\dl", "\\dL",
 		"\\dm", "\\dn", "\\do", "\\dO", "\\dp", "\\drds", "\\ds", "\\dS",
@@ -1548,7 +1548,7 @@ psql_completion(const char *text, int start, int end)
 	/* ALTER SERVER <name> */
 	else if (Matches3("ALTER", "SERVER", MatchAny))
 		COMPLETE_WITH_LIST4("VERSION", "OPTIONS", "OWNER TO", "RENAME TO");
-	/* ALTER SERVER <name> VERSION <version>*/
+	/* ALTER SERVER <name> VERSION <version> */
 	else if (Matches5("ALTER", "SERVER", MatchAny, "VERSION", MatchAny))
 		COMPLETE_WITH_CONST("OPTIONS");
 	/* ALTER SYSTEM SET, RESET, RESET ALL */
@@ -1784,7 +1784,7 @@ psql_completion(const char *text, int start, int end)
 			"autovacuum_vacuum_scale_factor",
 			"autovacuum_vacuum_threshold",
 			"fillfactor",
-			"parallel_degree",
+			"parallel_workers",
 			"log_autovacuum_min_duration",
 			"toast.autovacuum_enabled",
 			"toast.autovacuum_freeze_max_age",
@@ -1910,7 +1910,8 @@ psql_completion(const char *text, int start, int end)
 	else if (Matches2("COMMENT", "ON"))
 	{
 		static const char *const list_COMMENT[] =
-		{"CAST", "COLLATION", "CONVERSION", "DATABASE", "EVENT TRIGGER", "EXTENSION",
+		{"ACCESS METHOD", "CAST", "COLLATION", "CONVERSION", "DATABASE",
+			"EVENT TRIGGER", "EXTENSION",
 			"FOREIGN DATA WRAPPER", "FOREIGN TABLE",
 			"SERVER", "INDEX", "LANGUAGE", "POLICY", "RULE", "SCHEMA", "SEQUENCE",
 			"TABLE", "TYPE", "VIEW", "MATERIALIZED VIEW", "COLUMN", "AGGREGATE", "FUNCTION",
@@ -1919,6 +1920,8 @@ psql_completion(const char *text, int start, int end)
 
 		COMPLETE_WITH_LIST(list_COMMENT);
 	}
+	else if (Matches4("COMMENT", "ON", "ACCESS", "METHOD"))
+		COMPLETE_WITH_QUERY(Query_for_list_of_access_methods);
 	else if (Matches3("COMMENT", "ON", "FOREIGN"))
 		COMPLETE_WITH_LIST2("DATA WRAPPER", "TABLE");
 	else if (Matches4("COMMENT", "ON", "TEXT", "SEARCH"))
@@ -2027,8 +2030,11 @@ psql_completion(const char *text, int start, int end)
 	/* First off we complete CREATE UNIQUE with "INDEX" */
 	else if (TailMatches2("CREATE", "UNIQUE"))
 		COMPLETE_WITH_CONST("INDEX");
-	/* If we have CREATE|UNIQUE INDEX, then add "ON", "CONCURRENTLY",
-	   and existing indexes */
+
+	/*
+	 * If we have CREATE|UNIQUE INDEX, then add "ON", "CONCURRENTLY", and
+	 * existing indexes
+	 */
 	else if (TailMatches2("CREATE|UNIQUE", "INDEX"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_indexes,
 								   " UNION SELECT 'ON'"
@@ -2037,7 +2043,11 @@ psql_completion(const char *text, int start, int end)
 	else if (TailMatches3("INDEX|CONCURRENTLY", MatchAny, "ON") ||
 			 TailMatches2("INDEX|CONCURRENTLY", "ON"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tm, NULL);
-	/* Complete CREATE|UNIQUE INDEX CONCURRENTLY with "ON" and existing indexes */
+
+	/*
+	 * Complete CREATE|UNIQUE INDEX CONCURRENTLY with "ON" and existing
+	 * indexes
+	 */
 	else if (TailMatches3("CREATE|UNIQUE", "INDEX", "CONCURRENTLY"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_indexes,
 								   " UNION SELECT 'ON'");
@@ -2330,6 +2340,12 @@ psql_completion(const char *text, int start, int end)
 	}
 	else if (Matches5("DROP", "TRIGGER", MatchAny, "ON", MatchAny))
 		COMPLETE_WITH_LIST2("CASCADE", "RESTRICT");
+
+	/* DROP ACCESS METHOD */
+	else if (Matches2("DROP", "ACCESS"))
+		COMPLETE_WITH_CONST("METHOD");
+	else if (Matches3("DROP", "ACCESS", "METHOD"))
+		COMPLETE_WITH_QUERY(Query_for_list_of_access_methods);
 
 	/* DROP EVENT TRIGGER */
 	else if (Matches2("DROP", "EVENT"))
@@ -2931,6 +2947,8 @@ psql_completion(const char *text, int start, int end)
 	}
 	else if (TailMatchesCS1("\\da*"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_aggregates, NULL);
+	else if (TailMatchesCS1("\\dA*"))
+		COMPLETE_WITH_QUERY(Query_for_list_of_access_methods);
 	else if (TailMatchesCS1("\\db*"))
 		COMPLETE_WITH_QUERY(Query_for_list_of_tablespaces);
 	else if (TailMatchesCS1("\\dD*"))
@@ -3001,8 +3019,8 @@ psql_completion(const char *text, int start, int end)
 		static const char *const my_list[] =
 		{"border", "columns", "expanded", "fieldsep", "fieldsep_zero",
 			"footer", "format", "linestyle", "null", "numericlocale",
-			"pager", "recordsep", "recordsep_zero", "tableattr", "title",
-			"tuples_only", "unicode_border_linestyle",
+			"pager", "pager_min_lines", "recordsep", "recordsep_zero",
+			"tableattr", "title", "tuples_only", "unicode_border_linestyle",
 		"unicode_column_linestyle", "unicode_header_linestyle", NULL};
 
 		COMPLETE_WITH_LIST_CS(my_list);
@@ -3215,6 +3233,7 @@ _complete_from_query(int is_schema_query, const char *text, int state)
 	static int	list_index,
 				byte_length;
 	static PGresult *result = NULL;
+
 	/*
 	 * If this is the first time for this completion, we fetch a list of our
 	 * "things" from the backend.
@@ -3231,7 +3250,10 @@ _complete_from_query(int is_schema_query, const char *text, int state)
 		list_index = 0;
 		byte_length = strlen(text);
 
-		/* Count length as number of characters (not bytes), for passing to substring */
+		/*
+		 * Count length as number of characters (not bytes), for passing to
+		 * substring
+		 */
 		while (*pstr)
 		{
 			char_length++;

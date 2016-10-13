@@ -348,7 +348,7 @@ ResolveRecoveryConflictWithDatabase(Oid dbid)
  * We either resolve conflicts immediately or set a timeout to wake us at
  * the limit of our patience.
  *
- * Resolve conflicts by cancelling to all backends holding a conflicting
+ * Resolve conflicts by canceling to all backends holding a conflicting
  * lock.  As we are already queued to be granted the lock, no new lock
  * requests conflicting with ours will be granted in the meantime.
  *
@@ -370,6 +370,7 @@ ResolveRecoveryConflictWithLock(LOCKTAG locktag)
 		 * We're already behind, so clear a path as quickly as possible.
 		 */
 		VirtualTransactionId *backends;
+
 		backends = GetLockConflicts(&locktag, AccessExclusiveLock);
 		ResolveRecoveryConflictWithVirtualXIDs(backends,
 											 PROCSIG_RECOVERY_CONFLICT_LOCK);

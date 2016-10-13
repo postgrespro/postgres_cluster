@@ -40,6 +40,7 @@ AggClauseCosts
 AggHashEntry
 AggInfo
 AggPath
+AggSplit
 AggState
 AggStatePerAgg
 AggStatePerGroup
@@ -123,6 +124,7 @@ ArrayMetaState
 ArrayParseState
 ArrayRef
 ArrayRefExprState
+ArrayRemapInfo
 ArrayType
 AsyncQueueControl
 AsyncQueueEntry
@@ -221,6 +223,7 @@ BloomPageOpaque
 BloomPageOpaqueData
 BloomScanOpaque
 BloomScanOpaqueData
+BloomSignatureWord
 BloomState
 BloomTuple
 BlowfishContext
@@ -428,7 +431,6 @@ CustomScanMethods
 CustomScanState
 CycleCtr
 DBState
-DBWriteRequest
 DCHCacheEntry
 DEADLOCK_INFO
 DECountItem
@@ -493,6 +495,7 @@ DropdbStmt
 DumpComponents
 DumpId
 DumpOptions
+DumpSignalInformation
 DumpableObject
 DumpableObjectType
 DynamicFileList
@@ -574,7 +577,6 @@ ExprStateEvalFunc
 ExtensibleNode
 ExtensibleNodeEntry
 ExtensibleNodeMethods
-ExtensionBehavior
 ExtensionControlFile
 ExtensionInfo
 ExtensionMemberId
@@ -612,6 +614,7 @@ FmgrBuiltin
 FmgrHookEventType
 FmgrInfo
 ForeignDataWrapper
+ForeignKeyCacheInfo
 ForeignKeyOptInfo
 ForeignPath
 ForeignScan
@@ -918,6 +921,7 @@ ImportQual
 InclusionOpaque
 IncrementVarSublevelsUp_context
 Index
+IndexAMProperty
 IndexAmRoutine
 IndexArrayKeyInfo
 IndexAttrBitmapKind
@@ -1240,6 +1244,7 @@ OpFamilyMember
 OpFamilyOpFuncGroup
 OpclassInfo
 Operator
+OperatorElement
 OpfamilyInfo
 OprCacheEntry
 OprCacheKey
@@ -1457,7 +1462,6 @@ ParsedText
 ParsedWord
 ParserSetupHook
 ParserState
-PartialAggType
 Path
 PathClauseUsage
 PathCostComparison
@@ -1652,6 +1656,7 @@ RangeBox
 RangeFunction
 RangeIOData
 RangeQueryClause
+RangeRemapInfo
 RangeSubselect
 RangeTableSample
 RangeTblEntry
@@ -1672,7 +1677,8 @@ RecheckForeignScan_function
 RecordCacheEntry
 RecordCompareData
 RecordIOData
-RecordTypemodMap
+RecordRemapInfo
+RecordTypmodMap
 RecoveryTargetAction
 RecoveryTargetType
 RectBox
@@ -1709,8 +1715,6 @@ RelfilenodeMapEntry
 RelfilenodeMapKey
 Relids
 RelocationBufferInfo
-RemapClass
-RemapInfo
 RenameStmt
 ReopenPtr
 ReorderBuffer
@@ -1888,7 +1892,6 @@ ShmemIndexEnt
 ShutdownInformation
 ShutdownMode
 SignTSVector
-SignType
 SimpleActionList
 SimpleActionListCell
 SimpleEcontextStackEntry
@@ -2125,6 +2128,8 @@ TupleHashEntryData
 TupleHashIterator
 TupleHashTable
 TupleQueueReader
+TupleRemapClass
+TupleRemapInfo
 TupleTableSlot
 Tuplesortstate
 Tuplestorestate
@@ -2325,6 +2330,7 @@ amgettuple_function
 aminsert_function
 ammarkpos_function
 amoptions_function
+amproperty_function
 amrescan_function
 amrestrpos_function
 amvacuumcleanup_function
@@ -2355,6 +2361,7 @@ cashKEY
 celt
 cfp
 check_agg_arguments_context
+check_function_callback
 check_network_data
 check_object_relabel_type
 check_password_hook_type
@@ -2374,8 +2381,8 @@ convert_testexpr_context
 core_YYSTYPE
 core_yy_extra_type
 core_yyscan_t
+corrupt_items
 cost_qual_eval_context
-count_agg_clauses_context
 create_upper_paths_hook_type
 createdb_failure_params
 crosstab_HashEnt
@@ -2453,6 +2460,7 @@ generate_series_numeric_fctx
 generate_series_timestamp_fctx
 generate_series_timestamptz_fctx
 generate_subscripts_fctx
+get_agg_clause_costs_context
 get_attavgwidth_hook_type
 get_index_stats_hook_type
 get_relation_info_hook_type
@@ -2581,7 +2589,6 @@ pairingheap_comparator
 pairingheap_node
 parallel_worker_main_type
 parse_error_callback_arg
-partial_agg_context
 pcolor
 pendingPosition
 pgParameterStatus
@@ -2840,6 +2847,7 @@ vbits
 walrcv_connect_type
 walrcv_disconnect_type
 walrcv_endstreaming_type
+walrcv_get_conninfo_type
 walrcv_identify_system_type
 walrcv_readtimelinehistoryfile_type
 walrcv_receive_type

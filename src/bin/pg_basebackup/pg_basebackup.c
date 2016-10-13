@@ -20,7 +20,9 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <time.h>
-
+#ifdef HAVE_SYS_SELECT_H
+#include <sys/select.h>
+#endif
 #ifdef HAVE_LIBZ
 #include <zlib.h>
 #endif
@@ -1830,6 +1832,7 @@ BaseBackup(void)
 		int			r;
 #else
 		DWORD		status;
+
 		/*
 		 * get a pointer sized version of bgchild to avoid warnings about
 		 * casting to a different size on WIN64.
@@ -2072,7 +2075,7 @@ main(int argc, char **argv)
 				break;
 			case 'Z':
 				compresslevel = atoi(optarg);
-				if (compresslevel <= 0 || compresslevel > 9)
+				if (compresslevel < 0 || compresslevel > 9)
 				{
 					fprintf(stderr, _("%s: invalid compression level \"%s\"\n"),
 							progname, optarg);

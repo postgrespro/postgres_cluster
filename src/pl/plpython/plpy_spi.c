@@ -66,9 +66,7 @@ PLy_spi_prepare(PyObject *self, PyObject *args)
 
 	plan->mcxt = AllocSetContextCreate(TopMemoryContext,
 									   "PL/Python plan context",
-									   ALLOCSET_DEFAULT_MINSIZE,
-									   ALLOCSET_DEFAULT_INITSIZE,
-									   ALLOCSET_DEFAULT_MAXSIZE);
+									   ALLOCSET_DEFAULT_SIZES);
 	oldcontext = MemoryContextSwitchTo(plan->mcxt);
 
 	nargs = list ? PySequence_Length(list) : 0;
@@ -413,9 +411,7 @@ PLy_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 rows, int status)
 
 		cxt = AllocSetContextCreate(CurrentMemoryContext,
 									"PL/Python temp context",
-									ALLOCSET_DEFAULT_MINSIZE,
-									ALLOCSET_DEFAULT_INITSIZE,
-									ALLOCSET_DEFAULT_MAXSIZE);
+									ALLOCSET_DEFAULT_SIZES);
 		PLy_typeinfo_init(&args, cxt);
 
 		oldcontext = CurrentMemoryContext;
@@ -554,7 +550,9 @@ PLy_spi_subtransaction_abort(MemoryContext oldcontext, ResourceOwner oldowner)
 	/* Look up the correct exception */
 	entry = hash_search(PLy_spi_exceptions, &(edata->sqlerrcode),
 						HASH_FIND, NULL);
-	/* This could be a custom error code, if that's the case fallback to
+
+	/*
+	 * This could be a custom error code, if that's the case fallback to
 	 * SPIError
 	 */
 	exc = entry ? entry->exc : PLy_exc_spi_error;
@@ -583,9 +581,9 @@ PLy_spi_exception_set(PyObject *excclass, ErrorData *edata)
 	if (!spierror)
 		goto failure;
 
-	spidata= Py_BuildValue("(izzzizzzzz)", edata->sqlerrcode, edata->detail, edata->hint,
+	spidata = Py_BuildValue("(izzzizzzzz)", edata->sqlerrcode, edata->detail, edata->hint,
 							edata->internalquery, edata->internalpos,
-							edata->schema_name, edata->table_name, edata->column_name,
+				   edata->schema_name, edata->table_name, edata->column_name,
 							edata->datatype_name, edata->constraint_name);
 	if (!spidata)
 		goto failure;

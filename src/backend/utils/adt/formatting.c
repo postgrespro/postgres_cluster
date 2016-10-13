@@ -3146,15 +3146,15 @@ DCH_from_char(FormatNode *node, char *in, TmFromChar *out)
 				{
 					int			matched,
 								years,
-								millenia,
+								millennia,
 								nch;
 
-					matched = sscanf(s, "%d,%03d%n", &millenia, &years, &nch);
+					matched = sscanf(s, "%d,%03d%n", &millennia, &years, &nch);
 					if (matched < 2)
 						ereport(ERROR,
 								(errcode(ERRCODE_INVALID_DATETIME_FORMAT),
 							  errmsg("invalid input string for \"Y,YYY\"")));
-					years += (millenia * 1000);
+					years += (millennia * 1000);
 					from_char_set_int(&out->year, years, n);
 					out->yysz = 4;
 					s += nch;
@@ -4188,11 +4188,11 @@ NUM_numpart_from_char(NUMProc *Np, int id, int input_len)
 		 (id == NUM_0 || id == NUM_9) ? "NUM_0/9" : id == NUM_DEC ? "NUM_DEC" : "???");
 #endif
 
-	if (*Np->inout_p == ' ')
-		Np->inout_p++;
-
 #define OVERLOAD_TEST	(Np->inout_p >= Np->inout + input_len)
 #define AMOUNT_TEST(_s) (input_len-(Np->inout_p-Np->inout) >= _s)
+
+	if (OVERLOAD_TEST)
+		return;
 
 	if (*Np->inout_p == ' ')
 		Np->inout_p++;
@@ -4331,7 +4331,7 @@ NUM_numpart_from_char(NUMProc *Np, int id, int input_len)
 		 * next char is not digit
 		 */
 		if (IS_LSIGN(Np->Num) && isread &&
-			(Np->inout_p + 1) <= Np->inout + input_len &&
+			(Np->inout_p + 1) < Np->inout + input_len &&
 			!isdigit((unsigned char) *(Np->inout_p + 1)))
 		{
 			int			x;
@@ -5074,9 +5074,9 @@ numeric_to_number(PG_FUNCTION_ARGS)
 	{
 		Numeric		x;
 		Numeric		a = DatumGetNumeric(DirectFunctionCall1(int4_numeric,
-													 Int32GetDatum(10)));
+														 Int32GetDatum(10)));
 		Numeric		b = DatumGetNumeric(DirectFunctionCall1(int4_numeric,
-											  Int32GetDatum(-Num.multi)));
+												 Int32GetDatum(-Num.multi)));
 
 		x = DatumGetNumeric(DirectFunctionCall2(numeric_power,
 												NumericGetDatum(a),

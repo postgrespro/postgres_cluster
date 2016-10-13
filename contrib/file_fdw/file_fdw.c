@@ -132,7 +132,7 @@ static bool fileAnalyzeForeignTable(Relation relation,
 						AcquireSampleRowsFunc *func,
 						BlockNumber *totalpages);
 static bool fileIsForeignScanParallelSafe(PlannerInfo *root, RelOptInfo *rel,
-										  RangeTblEntry *rte);
+							  RangeTblEntry *rte);
 
 /*
  * Helper functions
@@ -767,12 +767,12 @@ fileAnalyzeForeignTable(Relation relation,
 
 /*
  * fileIsForeignScanParallelSafe
- * 		Reading a file in a parallel worker should work just the same as
- * 		reading it in the leader, so mark scans safe.
+ *		Reading a file in a parallel worker should work just the same as
+ *		reading it in the leader, so mark scans safe.
  */
 static bool
 fileIsForeignScanParallelSafe(PlannerInfo *root, RelOptInfo *rel,
-								  RangeTblEntry *rte)
+							  RangeTblEntry *rte)
 {
 	return true;
 }
@@ -1061,9 +1061,7 @@ file_acquire_sample_rows(Relation onerel, int elevel,
 	 */
 	tupcontext = AllocSetContextCreate(CurrentMemoryContext,
 									   "file_fdw temporary context",
-									   ALLOCSET_DEFAULT_MINSIZE,
-									   ALLOCSET_DEFAULT_INITSIZE,
-									   ALLOCSET_DEFAULT_MAXSIZE);
+									   ALLOCSET_DEFAULT_SIZES);
 
 	/* Prepare for sampling rows */
 	reservoir_init_selection_state(&rstate, targrows);

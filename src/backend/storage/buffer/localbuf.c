@@ -15,6 +15,7 @@
  */
 #include "postgres.h"
 
+#include "access/parallel.h"
 #include "catalog/catalog.h"
 #include "executor/instrument.h"
 #include "storage/buf_internals.h"
@@ -137,7 +138,7 @@ LocalBufferAlloc(SMgrRelation smgr, ForkNumber forkNum, BlockNumber blockNum,
 			if (BUF_STATE_GET_USAGECOUNT(buf_state) < BM_MAX_USAGE_COUNT)
 			{
 				buf_state += BUF_USAGECOUNT_ONE;
-				pg_atomic_write_u32(&bufHdr->state, buf_state);
+				pg_atomic_unlocked_write_u32(&bufHdr->state, buf_state);
 			}
 		}
 		LocalRefCount[b]++;
@@ -180,7 +181,7 @@ LocalBufferAlloc(SMgrRelation smgr, ForkNumber forkNum, BlockNumber blockNum,
 			if (BUF_STATE_GET_USAGECOUNT(buf_state) > 0)
 			{
 				buf_state -= BUF_USAGECOUNT_ONE;
-				pg_atomic_write_u32(&bufHdr->state, buf_state);
+				pg_atomic_unlocked_write_u32(&bufHdr->state, buf_state);
 				trycounter = NLocBuffer;
 			}
 			else
@@ -221,7 +222,7 @@ LocalBufferAlloc(SMgrRelation smgr, ForkNumber forkNum, BlockNumber blockNum,
 
 		/* Mark not-dirty now in case we error out below */
 		buf_state &= ~BM_DIRTY;
-		pg_atomic_write_u32(&bufHdr->state, buf_state);
+		pg_atomic_unlocked_write_u32(&bufHdr->state, buf_state);
 
 		pgBufferUsage.local_blks_written++;
 	}
@@ -248,7 +249,7 @@ LocalBufferAlloc(SMgrRelation smgr, ForkNumber forkNum, BlockNumber blockNum,
 		/* mark buffer invalid just in case hash insert fails */
 		CLEAR_BUFFERTAG(bufHdr->tag);
 		buf_state &= ~(BM_VALID | BM_TAG_VALID);
-		pg_atomic_write_u32(&bufHdr->state, buf_state);
+		pg_atomic_unlocked_write_u32(&bufHdr->state, buf_state);
 	}
 
 	hresult = (LocalBufferLookupEnt *)
@@ -265,7 +266,7 @@ LocalBufferAlloc(SMgrRelation smgr, ForkNumber forkNum, BlockNumber blockNum,
 	buf_state |= BM_TAG_VALID;
 	buf_state &= ~BUF_USAGECOUNT_MASK;
 	buf_state += BUF_USAGECOUNT_ONE;
-	pg_atomic_write_u32(&bufHdr->state, buf_state);
+	pg_atomic_unlocked_write_u32(&bufHdr->state, buf_state);
 
 	*foundPtr = FALSE;
 	return bufHdr;
@@ -301,7 +302,7 @@ MarkLocalBufferDirty(Buffer buffer)
 
 	buf_state |= BM_DIRTY;
 
-	pg_atomic_write_u32(&bufHdr->state, buf_state);
+	pg_atomic_unlocked_write_u32(&bufHdr->state, buf_state);
 }
 
 /*
@@ -350,7 +351,7 @@ DropRelFileNodeLocalBuffers(RelFileNode rnode, ForkNumber forkNum,
 			CLEAR_BUFFERTAG(bufHdr->tag);
 			buf_state &= ~BUF_FLAG_MASK;
 			buf_state &= ~BUF_USAGECOUNT_MASK;
-			pg_atomic_write_u32(&bufHdr->state, buf_state);
+			pg_atomic_unlocked_write_u32(&bufHdr->state, buf_state);
 		}
 	}
 }
@@ -394,7 +395,7 @@ DropRelFileNodeAllLocalBuffers(RelFileNode rnode)
 			CLEAR_BUFFERTAG(bufHdr->tag);
 			buf_state &= ~BUF_FLAG_MASK;
 			buf_state &= ~BUF_USAGECOUNT_MASK;
-			pg_atomic_write_u32(&bufHdr->state, buf_state);
+			pg_atomic_unlocked_write_u32(&bufHdr->state, buf_state);
 		}
 	}
 }
@@ -411,6 +412,19 @@ InitLocalBuffers(void)
 	int			nbufs = num_temp_buffers;
 	HASHCTL		info;
 	int			i;
+
+	/*
+	 * Parallel workers can't access data in temporary tables, because they
+	 * have no visibility into the local buffers of their leader.  This is a
+	 * convenient, low-cost place to provide a backstop check for that.  Note
+	 * that we don't wish to prevent a parallel worker from accessing catalog
+	 * metadata about a temp table, so checks at higher levels would be
+	 * inappropriate.
+	 */
+	if (IsParallelWorker())
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TRANSACTION_STATE),
+				 errmsg("cannot access temporary tables during a parallel operation")));
 
 	/* Allocate and zero buffer headers and auxiliary arrays */
 	LocalBufferDescriptors = (BufferDesc *) calloc(nbufs, sizeof(BufferDesc));
@@ -497,9 +511,7 @@ GetLocalBufferStorage(void)
 			LocalBufferContext =
 				AllocSetContextCreate(TopMemoryContext,
 									  "LocalBufferContext",
-									  ALLOCSET_DEFAULT_MINSIZE,
-									  ALLOCSET_DEFAULT_INITSIZE,
-									  ALLOCSET_DEFAULT_MAXSIZE);
+									  ALLOCSET_DEFAULT_SIZES);
 
 		/* Start with a 16-buffer request; subsequent ones double each time */
 		num_bufs = Max(num_bufs_in_block * 2, 16);

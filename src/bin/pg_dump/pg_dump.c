@@ -952,10 +952,7 @@ setup_connection(Archive *AH, const char *dumpencoding,
 	const char *std_strings;
 
 	/*
-	 * Set the client encoding if requested. If dumpencoding == NULL then
-	 * either it hasn't been requested or we're a cloned connection and then
-	 * this has already been set in CloneArchive according to the original
-	 * connection encoding.
+	 * Set the client encoding if requested.
 	 */
 	if (dumpencoding)
 	{
@@ -973,7 +970,11 @@ setup_connection(Archive *AH, const char *dumpencoding,
 	std_strings = PQparameterStatus(conn, "standard_conforming_strings");
 	AH->std_strings = (std_strings && strcmp(std_strings, "on") == 0);
 
-	/* Set the role if requested */
+	/*
+	 * Set the role if requested.  In a parallel dump worker, we'll be passed
+	 * use_role == NULL, but AH->use_role is already set (if user specified it
+	 * originally) and we should use that.
+	 */
 	if (!use_role && AH->use_role)
 		use_role = AH->use_role;
 
@@ -986,9 +987,9 @@ setup_connection(Archive *AH, const char *dumpencoding,
 		ExecuteSqlStatement(AH, query->data);
 		destroyPQExpBuffer(query);
 
-		/* save this for later use on parallel connections */
+		/* save it for possible later use by parallel workers */
 		if (!AH->use_role)
-			AH->use_role = strdup(use_role);
+			AH->use_role = pg_strdup(use_role);
 	}
 
 	/* Set the datestyle to ISO to ensure the dump's portability */
@@ -1021,6 +1022,8 @@ setup_connection(Archive *AH, const char *dumpencoding,
 		ExecuteSqlStatement(AH, "SET statement_timeout = 0");
 	if (AH->remoteVersion >= 90300)
 		ExecuteSqlStatement(AH, "SET lock_timeout = 0");
+	if (AH->remoteVersion >= 90600)
+		ExecuteSqlStatement(AH, "SET idle_in_transaction_session_timeout = 0");
 
 	/*
 	 * Quote all identifiers, if requested.
@@ -1074,11 +1077,12 @@ setup_connection(Archive *AH, const char *dumpencoding,
 							"SET TRANSACTION ISOLATION LEVEL SERIALIZABLE");
 
 	/*
-	 * define an export snapshot, either chosen by user or needed for parallel
-	 * dump.
+	 * If user specified a snapshot to use, select that.  In a parallel dump
+	 * worker, we'll be passed dumpsnapshot == NULL, but AH->sync_snapshot_id
+	 * is already set (if the server can handle it) and we should use that.
 	 */
 	if (dumpsnapshot)
-		AH->sync_snapshot_id = strdup(dumpsnapshot);
+		AH->sync_snapshot_id = pg_strdup(dumpsnapshot);
 
 	if (AH->sync_snapshot_id)
 	{
@@ -1104,21 +1108,31 @@ setup_connection(Archive *AH, const char *dumpencoding,
 	}
 }
 
+/* Set up connection for a parallel worker process */
 static void
-setupDumpWorker(Archive *AHX)
+setupDumpWorker(Archive *AH)
 {
-	setup_connection(AHX, NULL, NULL, NULL);
+	/*
+	 * We want to re-select all the same values the master connection is
+	 * using.  We'll have inherited directly-usable values in
+	 * AH->sync_snapshot_id and AH->use_role, but we need to translate the
+	 * inherited encoding value back to a string to pass to setup_connection.
+	 */
+	setup_connection(AH,
+					 pg_encoding_to_char(AH->encoding),
+					 NULL,
+					 NULL);
 }
 
 static char *
 get_synchronized_snapshot(Archive *fout)
 {
-	char	   *query = "SELECT pg_export_snapshot()";
+	char	   *query = "SELECT pg_catalog.pg_export_snapshot()";
 	char	   *result;
 	PGresult   *res;
 
 	res = ExecuteSqlQueryForSingleRow(fout, query);
-	result = strdup(PQgetvalue(res, 0, 0));
+	result = pg_strdup(PQgetvalue(res, 0, 0));
 	PQclear(res);
 
 	return result;
@@ -1288,7 +1302,7 @@ checkExtensionMembership(DumpableObject *dobj, Archive *fout)
 
 	/*
 	 * In 9.6 and above, mark the member object to have any non-initial ACL,
-	 * policies, and security lables dumped.
+	 * policies, and security labels dumped.
 	 *
 	 * Note that any initial ACLs (see pg_init_privs) will be removed when we
 	 * extract the information about the object.  We don't provide support for
@@ -1310,8 +1324,8 @@ checkExtensionMembership(DumpableObject *dobj, Archive *fout)
 			dobj->dump = DUMP_COMPONENT_NONE;
 		else
 			dobj->dump = ext->dobj.dump_contains & (DUMP_COMPONENT_ACL |
-					DUMP_COMPONENT_SECLABEL | DUMP_COMPONENT_POLICY);
-
+													DUMP_COMPONENT_SECLABEL |
+													DUMP_COMPONENT_POLICY);
 	}
 
 	return true;
@@ -1324,15 +1338,11 @@ checkExtensionMembership(DumpableObject *dobj, Archive *fout)
 static void
 selectDumpableNamespace(NamespaceInfo *nsinfo, Archive *fout)
 {
-	if (checkExtensionMembership(&nsinfo->dobj, fout))
-		return;					/* extension membership overrides all else */
-
 	/*
 	 * If specific tables are being dumped, do not dump any complete
 	 * namespaces. If specific namespaces are being dumped, dump just those
 	 * namespaces. Otherwise, dump all non-system namespaces.
 	 */
-
 	if (table_include_oids.head != NULL)
 		nsinfo->dobj.dump_contains = nsinfo->dobj.dump = DUMP_COMPONENT_NONE;
 	else if (schema_include_oids.head != NULL)
@@ -1341,18 +1351,21 @@ selectDumpableNamespace(NamespaceInfo *nsinfo, Archive *fout)
 								   nsinfo->dobj.catId.oid) ?
 			DUMP_COMPONENT_ALL : DUMP_COMPONENT_NONE;
 	else if (fout->remoteVersion >= 90600 &&
-			 strncmp(nsinfo->dobj.name, "pg_catalog",
-					 strlen("pg_catalog")) == 0)
-
+			 strcmp(nsinfo->dobj.name, "pg_catalog") == 0)
+	{
 		/*
 		 * In 9.6 and above, we dump out any ACLs defined in pg_catalog, if
 		 * they are interesting (and not the original ACLs which were set at
 		 * initdb time, see pg_init_privs).
 		 */
 		nsinfo->dobj.dump_contains = nsinfo->dobj.dump = DUMP_COMPONENT_ACL;
+	}
 	else if (strncmp(nsinfo->dobj.name, "pg_", 3) == 0 ||
 			 strcmp(nsinfo->dobj.name, "information_schema") == 0)
+	{
+		/* Other system schemas don't get dumped */
 		nsinfo->dobj.dump_contains = nsinfo->dobj.dump = DUMP_COMPONENT_NONE;
+	}
 	else
 		nsinfo->dobj.dump_contains = nsinfo->dobj.dump = DUMP_COMPONENT_ALL;
 
@@ -1363,6 +1376,15 @@ selectDumpableNamespace(NamespaceInfo *nsinfo, Archive *fout)
 		simple_oid_list_member(&schema_exclude_oids,
 							   nsinfo->dobj.catId.oid))
 		nsinfo->dobj.dump_contains = nsinfo->dobj.dump = DUMP_COMPONENT_NONE;
+
+	/*
+	 * If the schema belongs to an extension, allow extension membership to
+	 * override the dump decision for the schema itself.  However, this does
+	 * not change dump_contains, so this won't change what we do with objects
+	 * within the schema.  (If they belong to the extension, they'll get
+	 * suppressed by it, otherwise not.)
+	 */
+	(void) checkExtensionMembership(&nsinfo->dobj, fout);
 }
 
 /*
@@ -1564,16 +1586,16 @@ static void
 selectDumpableExtension(ExtensionInfo *extinfo, DumpOptions *dopt)
 {
 	/*
-	 * Use DUMP_COMPONENT_ACL for from-initdb extensions, to allow users
-	 * to change permissions on those objects, if they wish to, and have
-	 * those changes preserved.
+	 * Use DUMP_COMPONENT_ACL for from-initdb extensions, to allow users to
+	 * change permissions on those objects, if they wish to, and have those
+	 * changes preserved.
 	 */
 	if (dopt->binary_upgrade && extinfo->dobj.catId.oid < (Oid) FirstNormalObjectId)
 		extinfo->dobj.dump = extinfo->dobj.dump_contains = DUMP_COMPONENT_ACL;
 	else
 		extinfo->dobj.dump = extinfo->dobj.dump_contains =
-			dopt->include_everything ?  DUMP_COMPONENT_ALL :
-				DUMP_COMPONENT_NONE;
+			dopt->include_everything ? DUMP_COMPONENT_ALL :
+			DUMP_COMPONENT_NONE;
 }
 
 /*
@@ -1767,6 +1789,11 @@ dumpTableData_copy(Archive *fout, void *dcontext)
 		exit_nicely(1);
 	}
 	PQclear(res);
+
+	/* Do this to ensure we've pumped libpq back to idle state */
+	if (PQgetResult(conn) != NULL)
+		write_msg(NULL, "WARNING: unexpected extra results during COPY of table \"%s\"\n",
+				  classname);
 
 	destroyPQExpBuffer(q);
 	return 1;
@@ -2533,7 +2560,8 @@ dumpDatabase(Archive *fout)
 		appendPQExpBufferStr(creaQry, " LC_CTYPE = ");
 		appendStringLiteralAH(creaQry, ctype, fout);
 	}
-	if (strlen(tablespace) > 0 && strcmp(tablespace, "pg_default") != 0)
+	if (strlen(tablespace) > 0 && strcmp(tablespace, "pg_default") != 0 &&
+		!dopt->outputNoTablespaces)
 		appendPQExpBuffer(creaQry, " TABLESPACE = %s",
 						  fmtId(tablespace));
 	appendPQExpBufferStr(creaQry, ";\n");
@@ -2847,19 +2875,20 @@ getBlobs(Archive *fout)
 	else if (fout->remoteVersion >= 90000)
 		appendPQExpBuffer(blobQry,
 						  "SELECT oid, (%s lomowner) AS rolname, lomacl, "
-						  "NULL AS rlomacl, NULL as initlomacl, "
-						  "NULL as initrlomacl "
+						  "NULL AS rlomacl, NULL AS initlomacl, "
+						  "NULL AS initrlomacl "
 						  " FROM pg_largeobject_metadata",
 						  username_subquery);
 	else if (fout->remoteVersion >= 70100)
 		appendPQExpBufferStr(blobQry,
-							 "SELECT DISTINCT loid, NULL::oid, NULL, "
-							 "NULL AS rlomacl, NULL AS initlomacl, "
-							 "NULL AS initrlomacl "
+							 "SELECT DISTINCT loid AS oid, "
+							 "NULL::name AS rolname, NULL::oid AS lomacl, "
+							 "NULL::oid AS rlomacl, NULL::oid AS initlomacl, "
+							 "NULL::oid AS initrlomacl "
 							 " FROM pg_largeobject");
 	else
 		appendPQExpBufferStr(blobQry,
-							 "SELECT oid, NULL::oid, NULL, "
+							 "SELECT oid, NULL AS rolname, NULL AS lomacl, "
 							 "NULL AS rlomacl, NULL AS initlomacl, "
 							 "NULL AS initrlomacl "
 							 " FROM pg_class WHERE relkind = 'l'");
@@ -2894,11 +2923,11 @@ getBlobs(Archive *fout)
 		binfo[i].initblobacl = pg_strdup(PQgetvalue(res, i, i_initlomacl));
 		binfo[i].initrblobacl = pg_strdup(PQgetvalue(res, i, i_initrlomacl));
 
-		if (PQgetisnull(res, i, i_lomacl) && PQgetisnull(res, i, i_rlomacl) &&
+		if (PQgetisnull(res, i, i_lomacl) &&
+			PQgetisnull(res, i, i_rlomacl) &&
 			PQgetisnull(res, i, i_initlomacl) &&
 			PQgetisnull(res, i, i_initrlomacl))
 			binfo[i].dobj.dump &= ~DUMP_COMPONENT_ACL;
-
 	}
 
 	/*
@@ -4924,20 +4953,23 @@ getFuncs(Archive *fout, int *numFuncs)
 	selectSourceSchema(fout, "pg_catalog");
 
 	/*
-	 * Find all interesting functions.  We include functions in pg_catalog, if
-	 * they have an ACL different from what we set at initdb time (which is
-	 * saved in pg_init_privs for us to perform this check).  There may also
-	 * be functions which are members of extensions which we must dump if we
-	 * are in binary upgrade mode (we'll mark those functions as to-be-dumped
-	 * when we check if the extension is to-be-dumped and we're in binary
-	 * upgrade mode).
+	 * Find all interesting functions.  This is a bit complicated:
 	 *
-	 * Also, in 9.2 and up, exclude functions that are internally dependent on
-	 * something else, since presumably those will be created as a result of
-	 * creating the something else.  This currently only acts to suppress
-	 * constructor functions for range types.  Note that this is OK only
-	 * because the constructors don't have any dependencies the range type
-	 * doesn't have; otherwise we might not get creation ordering correct.
+	 * 1. Always exclude aggregates; those are handled elsewhere.
+	 *
+	 * 2. Always exclude functions that are internally dependent on something
+	 * else, since presumably those will be created as a result of creating
+	 * the something else.  This currently acts only to suppress constructor
+	 * functions for range types (so we only need it in 9.2 and up).  Note
+	 * this is OK only because the constructors don't have any dependencies
+	 * the range type doesn't have; otherwise we might not get creation
+	 * ordering correct.
+	 *
+	 * 3. Otherwise, we normally exclude functions in pg_catalog.  However, if
+	 * they're members of extensions and we are in binary-upgrade mode then
+	 * include them, since we want to dump extension members individually in
+	 * that mode.  Also, in 9.6 and up, include functions in pg_catalog if
+	 * they have an ACL different from what's shown in pg_init_privs.
 	 */
 	if (fout->remoteVersion >= 90600)
 	{
@@ -4964,14 +4996,14 @@ getFuncs(Archive *fout, int *numFuncs)
 						  "(p.oid = pip.objoid "
 						  "AND pip.classoid = 'pg_proc'::regclass "
 						  "AND pip.objsubid = 0) "
-						  "WHERE NOT proisagg "
-						  "AND NOT EXISTS (SELECT 1 FROM pg_depend "
+						  "WHERE NOT proisagg"
+						  "\n  AND NOT EXISTS (SELECT 1 FROM pg_depend "
 						  "WHERE classid = 'pg_proc'::regclass AND "
-						  "objid = p.oid AND deptype = 'i') AND ("
-						  "pronamespace != "
+						  "objid = p.oid AND deptype = 'i')"
+						  "\n  AND ("
+						  "\n  pronamespace != "
 						  "(SELECT oid FROM pg_namespace "
-						  "WHERE nspname = 'pg_catalog') OR "
-						  "p.proacl IS DISTINCT FROM pip.initprivs",
+						  "WHERE nspname = 'pg_catalog')",
 						  acl_subquery->data,
 						  racl_subquery->data,
 						  initacl_subquery->data,
@@ -4984,6 +5016,8 @@ getFuncs(Archive *fout, int *numFuncs)
 								 "objid = p.oid AND "
 								 "refclassid = 'pg_extension'::regclass AND "
 								 "deptype = 'e')");
+		appendPQExpBufferStr(query,
+						   "\n  OR p.proacl IS DISTINCT FROM pip.initprivs");
 		appendPQExpBufferChar(query, ')');
 
 		destroyPQExpBuffer(acl_subquery);
@@ -5001,16 +5035,18 @@ getFuncs(Archive *fout, int *numFuncs)
 						  "pronamespace, "
 						  "(%s proowner) AS rolname "
 						  "FROM pg_proc p "
-						  "WHERE NOT proisagg AND ("
-						  "pronamespace != "
-						  "(SELECT oid FROM pg_namespace "
-						  "WHERE nspname = 'pg_catalog')",
+						  "WHERE NOT proisagg",
 						  username_subquery);
 		if (fout->remoteVersion >= 90200)
 			appendPQExpBufferStr(query,
 							   "\n  AND NOT EXISTS (SELECT 1 FROM pg_depend "
 								 "WHERE classid = 'pg_proc'::regclass AND "
 								 "objid = p.oid AND deptype = 'i')");
+		appendPQExpBufferStr(query,
+							 "\n  AND ("
+							 "\n  pronamespace != "
+							 "(SELECT oid FROM pg_namespace "
+							 "WHERE nspname = 'pg_catalog')");
 		if (dopt->binary_upgrade && fout->remoteVersion >= 90100)
 			appendPQExpBufferStr(query,
 							   "\n  OR EXISTS(SELECT 1 FROM pg_depend WHERE "
@@ -5226,7 +5262,7 @@ getTables(Archive *fout, int *numTables)
 						dopt->binary_upgrade);
 
 		buildACLQueries(attacl_subquery, attracl_subquery, attinitacl_subquery,
-						attinitracl_subquery, "at.attacl", "c.relowner", "'c'",
+					  attinitracl_subquery, "at.attacl", "c.relowner", "'c'",
 						dopt->binary_upgrade);
 
 		appendPQExpBuffer(query,
@@ -5932,8 +5968,8 @@ getTables(Archive *fout, int *numTables)
 
 		/*
 		 * If the table-level and all column-level ACLs for this table are
-		 * unchanged, then we don't need to worry about including the ACLs
-		 * for this table.  If any column-level ACLs have been changed, the
+		 * unchanged, then we don't need to worry about including the ACLs for
+		 * this table.  If any column-level ACLs have been changed, the
 		 * 'changed_acl' column from the query will indicate that.
 		 *
 		 * This can result in a significant performance improvement in cases
@@ -5960,10 +5996,11 @@ getTables(Archive *fout, int *numTables)
 		 * NOTE: it'd be kinda nice to lock other relations too, not only
 		 * plain tables, but the backend doesn't presently allow that.
 		 *
-		 * We only need to lock the table for certain components; see pg_dump.h
+		 * We only need to lock the table for certain components; see
+		 * pg_dump.h
 		 */
 		if (tblinfo[i].dobj.dump && tblinfo[i].relkind == RELKIND_RELATION &&
-				(tblinfo[i].dobj.dump & DUMP_COMPONENTS_REQUIRING_LOCK))
+			(tblinfo[i].dobj.dump & DUMP_COMPONENTS_REQUIRING_LOCK))
 		{
 			resetPQExpBuffer(query);
 			appendPQExpBuffer(query,
@@ -6015,14 +6052,28 @@ getOwnedSeqs(Archive *fout, TableInfo tblinfo[], int numTables)
 
 		if (!OidIsValid(seqinfo->owning_tab))
 			continue;			/* not an owned sequence */
-		if (seqinfo->dobj.dump & DUMP_COMPONENT_DEFINITION)
-			continue;			/* no need to search */
+
 		owning_tab = findTableByOid(seqinfo->owning_tab);
-		if (owning_tab && owning_tab->dobj.dump)
-		{
+
+		/*
+		 * We need to dump the components that are being dumped for the table
+		 * and any components which the sequence is explicitly marked with.
+		 *
+		 * We can't simply use the set of components which are being dumped
+		 * for the table as the table might be in an extension (and only the
+		 * non-extension components, eg: ACLs if changed, security labels, and
+		 * policies, are being dumped) while the sequence is not (and
+		 * therefore the definition and other components should also be
+		 * dumped).
+		 *
+		 * If the sequence is part of the extension then it should be properly
+		 * marked by checkExtensionMembership() and this will be a no-op as
+		 * the table will be equivalently marked.
+		 */
+		seqinfo->dobj.dump = seqinfo->dobj.dump | owning_tab->dobj.dump;
+
+		if (seqinfo->dobj.dump != DUMP_COMPONENT_NONE)
 			seqinfo->interesting = true;
-			seqinfo->dobj.dump = DUMP_COMPONENT_ALL;
-		}
 	}
 }
 
@@ -8591,7 +8642,7 @@ getForeignDataWrappers(Archive *fout, int *numForeignDataWrappers)
 						  "FROM pg_foreign_data_wrapper f "
 						  "LEFT JOIN pg_init_privs pip ON "
 						  "(f.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_foreign_data_wrapper'::regclass "
+					"AND pip.classoid = 'pg_foreign_data_wrapper'::regclass "
 						  "AND pip.objsubid = 0) ",
 						  username_subquery,
 						  acl_subquery->data,
@@ -12455,20 +12506,25 @@ dumpAccessMethod(Archive *fout, AccessMethodInfo *aminfo)
 	appendPQExpBuffer(labelq, "ACCESS METHOD %s",
 					  qamname);
 
-	ArchiveEntry(fout, aminfo->dobj.catId, aminfo->dobj.dumpId,
-				 aminfo->dobj.name,
-				 NULL,
-				 NULL,
-				 "",
-				 false, "ACCESS METHOD", SECTION_PRE_DATA,
-				 q->data, delq->data, NULL,
-				 NULL, 0,
-				 NULL, NULL);
+	if (dopt->binary_upgrade)
+		binary_upgrade_extension_member(q, &aminfo->dobj, labelq->data);
+
+	if (aminfo->dobj.dump & DUMP_COMPONENT_DEFINITION)
+		ArchiveEntry(fout, aminfo->dobj.catId, aminfo->dobj.dumpId,
+					 aminfo->dobj.name,
+					 NULL,
+					 NULL,
+					 "",
+					 false, "ACCESS METHOD", SECTION_PRE_DATA,
+					 q->data, delq->data, NULL,
+					 NULL, 0,
+					 NULL, NULL);
 
 	/* Dump Access Method Comments */
-	dumpComment(fout, labelq->data,
-				NULL, "",
-				aminfo->dobj.catId, 0, aminfo->dobj.dumpId);
+	if (aminfo->dobj.dump & DUMP_COMPONENT_COMMENT)
+		dumpComment(fout, labelq->data,
+					NULL, "",
+					aminfo->dobj.catId, 0, aminfo->dobj.dumpId);
 
 	pg_free(qamname);
 
@@ -13390,7 +13446,6 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	int			i_aggsortop;
 	int			i_hypothetical;
 	int			i_aggtranstype;
-	int			i_aggserialtype;
 	int			i_aggtransspace;
 	int			i_aggmtranstype;
 	int			i_aggmtransspace;
@@ -13412,7 +13467,6 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	char	   *aggsortconvop;
 	bool		hypothetical;
 	const char *aggtranstype;
-	const char *aggserialtype;
 	const char *aggtransspace;
 	const char *aggmtranstype;
 	const char *aggmtransspace;
@@ -13438,34 +13492,32 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	if (fout->remoteVersion >= 90600)
 	{
 		appendPQExpBuffer(query, "SELECT aggtransfn, "
-			"aggfinalfn, aggtranstype::pg_catalog.regtype, "
-			"aggcombinefn, aggserialfn, aggdeserialfn, aggmtransfn, "
-			"aggminvtransfn, aggmfinalfn, aggmtranstype::pg_catalog.regtype, "
-			"aggfinalextra, aggmfinalextra, "
-			"aggsortop::pg_catalog.regoperator, "
-			"aggserialtype::pg_catalog.regtype, "
-			"(aggkind = 'h') AS hypothetical, "
-			"aggtransspace, agginitval, "
-			"aggmtransspace, aggminitval, "
-			"true AS convertok, "
-			"pg_catalog.pg_get_function_arguments(p.oid) AS funcargs, "
-			"pg_catalog.pg_get_function_identity_arguments(p.oid) AS funciargs, "
-			"p.proparallel "
-			"FROM pg_catalog.pg_aggregate a, pg_catalog.pg_proc p "
-			"WHERE a.aggfnoid = p.oid "
-			"AND p.oid = '%u'::pg_catalog.oid",
-			agginfo->aggfn.dobj.catId.oid);
+						  "aggfinalfn, aggtranstype::pg_catalog.regtype, "
+					"aggcombinefn, aggserialfn, aggdeserialfn, aggmtransfn, "
+		   "aggminvtransfn, aggmfinalfn, aggmtranstype::pg_catalog.regtype, "
+						  "aggfinalextra, aggmfinalextra, "
+						  "aggsortop::pg_catalog.regoperator, "
+						  "(aggkind = 'h') AS hypothetical, "
+						  "aggtransspace, agginitval, "
+						  "aggmtransspace, aggminitval, "
+						  "true AS convertok, "
+				  "pg_catalog.pg_get_function_arguments(p.oid) AS funcargs, "
+		"pg_catalog.pg_get_function_identity_arguments(p.oid) AS funciargs, "
+						  "p.proparallel "
+					  "FROM pg_catalog.pg_aggregate a, pg_catalog.pg_proc p "
+						  "WHERE a.aggfnoid = p.oid "
+						  "AND p.oid = '%u'::pg_catalog.oid",
+						  agginfo->aggfn.dobj.catId.oid);
 	}
 	else if (fout->remoteVersion >= 90400)
 	{
 		appendPQExpBuffer(query, "SELECT aggtransfn, "
 						  "aggfinalfn, aggtranstype::pg_catalog.regtype, "
 						  "'-' AS aggcombinefn, '-' AS aggserialfn, "
-						  "'-' AS aggdeserialfn, aggmtransfn, aggminvtransfn, "
+						"'-' AS aggdeserialfn, aggmtransfn, aggminvtransfn, "
 						  "aggmfinalfn, aggmtranstype::pg_catalog.regtype, "
 						  "aggfinalextra, aggmfinalextra, "
 						  "aggsortop::pg_catalog.regoperator, "
-						  "0 AS aggserialtype, "
 						  "(aggkind = 'h') AS hypothetical, "
 						  "aggtransspace, agginitval, "
 						  "aggmtransspace, aggminitval, "
@@ -13487,7 +13539,6 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 						  "0 AS aggmtranstype, false AS aggfinalextra, "
 						  "false AS aggmfinalextra, "
 						  "aggsortop::pg_catalog.regoperator, "
-						  "0 AS aggserialtype, "
 						  "false AS hypothetical, "
 						  "0 AS aggtransspace, agginitval, "
 						  "0 AS aggmtransspace, NULL AS aggminitval, "
@@ -13509,7 +13560,6 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 						  "0 AS aggmtranstype, false AS aggfinalextra, "
 						  "false AS aggmfinalextra, "
 						  "aggsortop::pg_catalog.regoperator, "
-						  "0 AS aggserialtype, "
 						  "false AS hypothetical, "
 						  "0 AS aggtransspace, agginitval, "
 						  "0 AS aggmtransspace, NULL AS aggminitval, "
@@ -13528,7 +13578,6 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 						  "'-' AS aggminvtransfn, '-' AS aggmfinalfn, "
 						  "0 AS aggmtranstype, false AS aggfinalextra, "
 						  "false AS aggmfinalextra, 0 AS aggsortop, "
-						  "0 AS aggserialtype, "
 						  "false AS hypothetical, "
 						  "0 AS aggtransspace, agginitval, "
 						  "0 AS aggmtransspace, NULL AS aggminitval, "
@@ -13547,7 +13596,6 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 						  "'-' AS aggminvtransfn, '-' AS aggmfinalfn, "
 						  "0 AS aggmtranstype, false AS aggfinalextra, "
 						  "false AS aggmfinalextra, 0 AS aggsortop, "
-						  "0 AS aggserialtype, "
 						  "false AS hypothetical, "
 						  "0 AS aggtransspace, agginitval, "
 						  "0 AS aggmtransspace, NULL AS aggminitval, "
@@ -13566,7 +13614,6 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 						  "'-' AS aggminvtransfn, '-' AS aggmfinalfn, "
 						  "0 AS aggmtranstype, false AS aggfinalextra, "
 						  "false AS aggmfinalextra, 0 AS aggsortop, "
-						  "0 AS aggserialtype, "
 						  "false AS hypothetical, "
 						  "0 AS aggtransspace, agginitval1 AS agginitval, "
 						  "0 AS aggmtransspace, NULL AS aggminitval, "
@@ -13589,7 +13636,6 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	i_aggfinalextra = PQfnumber(res, "aggfinalextra");
 	i_aggmfinalextra = PQfnumber(res, "aggmfinalextra");
 	i_aggsortop = PQfnumber(res, "aggsortop");
-	i_aggserialtype = PQfnumber(res, "aggserialtype");
 	i_hypothetical = PQfnumber(res, "hypothetical");
 	i_aggtranstype = PQfnumber(res, "aggtranstype");
 	i_aggtransspace = PQfnumber(res, "aggtransspace");
@@ -13613,7 +13659,6 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	aggsortop = PQgetvalue(res, 0, i_aggsortop);
 	hypothetical = (PQgetvalue(res, 0, i_hypothetical)[0] == 't');
 	aggtranstype = PQgetvalue(res, 0, i_aggtranstype);
-	aggserialtype = PQgetvalue(res, 0, i_aggserialtype);
 	aggtransspace = PQgetvalue(res, 0, i_aggtransspace);
 	aggmtranstype = PQgetvalue(res, 0, i_aggmtranstype);
 	aggmtransspace = PQgetvalue(res, 0, i_aggmtransspace);
@@ -13700,20 +13745,13 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	}
 
 	if (strcmp(aggcombinefn, "-") != 0)
-	{
-		appendPQExpBuffer(details, ",\n    COMBINEFUNC = %s",	aggcombinefn);
-	}
+		appendPQExpBuffer(details, ",\n    COMBINEFUNC = %s", aggcombinefn);
 
-	/*
-	 * CREATE AGGREGATE should ensure we either have all of these, or none of
-	 * them.
-	 */
 	if (strcmp(aggserialfn, "-") != 0)
-	{
-		appendPQExpBuffer(details, ",\n    SERIALFUNC = %s",	aggserialfn);
-		appendPQExpBuffer(details, ",\n    DESERIALFUNC = %s",	aggdeserialfn);
-		appendPQExpBuffer(details, ",\n    SERIALTYPE = %s",	aggserialtype);
-	}
+		appendPQExpBuffer(details, ",\n    SERIALFUNC = %s", aggserialfn);
+
+	if (strcmp(aggdeserialfn, "-") != 0)
+		appendPQExpBuffer(details, ",\n    DESERIALFUNC = %s", aggdeserialfn);
 
 	if (strcmp(aggmtransfn, "-") != 0)
 	{
@@ -13803,7 +13841,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 		dumpSecLabel(fout, labelq->data,
 					 agginfo->aggfn.dobj.namespace->dobj.name,
 					 agginfo->aggfn.rolname,
-					 agginfo->aggfn.dobj.catId, 0, agginfo->aggfn.dobj.dumpId);
+				   agginfo->aggfn.dobj.catId, 0, agginfo->aggfn.dobj.dumpId);
 
 	/*
 	 * Since there is no GRANT ON AGGREGATE syntax, we have to make the ACL
@@ -15000,7 +15038,7 @@ dumpTable(Archive *fout, TableInfo *tbinfo)
 					   "JOIN pg_catalog.pg_class c ON (at.attrelid = c.oid) "
 							  "LEFT JOIN pg_catalog.pg_init_privs pip ON "
 							  "(at.attrelid = pip.objoid "
-			  "AND pip.classoid = 'pg_catalog.pg_class'::pg_catalog.regclass "
+			 "AND pip.classoid = 'pg_catalog.pg_class'::pg_catalog.regclass "
 							  "AND at.attnum = pip.objsubid) "
 							  "WHERE at.attrelid = '%u'::pg_catalog.oid AND "
 							  "NOT at.attisdropped "
@@ -15031,7 +15069,7 @@ dumpTable(Archive *fout, TableInfo *tbinfo)
 							  "SELECT attname, attacl, NULL as rattacl, "
 							  "NULL AS initattacl, NULL AS initrattacl "
 							  "FROM pg_catalog.pg_attribute "
-							  "WHERE attrelid = '%u'::pg_catalog.oid AND NOT attisdropped "
+				"WHERE attrelid = '%u'::pg_catalog.oid AND NOT attisdropped "
 							  "AND attacl IS NOT NULL "
 							  "ORDER BY attnum",
 							  tbinfo->dobj.catId.oid);
@@ -16461,7 +16499,7 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 	{
 		TableInfo  *owning_tab = findTableByOid(tbinfo->owning_tab);
 
-		if (owning_tab && owning_tab->dobj.dump)
+		if (owning_tab && owning_tab->dobj.dump & DUMP_COMPONENT_DEFINITION)
 		{
 			resetPQExpBuffer(query);
 			appendPQExpBuffer(query, "ALTER SEQUENCE %s",

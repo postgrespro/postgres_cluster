@@ -27,7 +27,7 @@
 #include "utils/inet.h"
 #include "utils/timestamp.h"
 
-#define UINT32_ACCESS_ONCE(var)      ((uint32)(*((volatile uint32 *)&(var))))
+#define UINT32_ACCESS_ONCE(var)		 ((uint32)(*((volatile uint32 *)&(var))))
 
 /* bogus ... these externs should be in a header file */
 extern Datum pg_stat_get_numscans(PG_FUNCTION_ARGS);
@@ -540,7 +540,7 @@ pg_stat_get_progress_info(PG_FUNCTION_ARGS)
 	int			num_backends = pgstat_fetch_stat_numbackends();
 	int			curr_backend;
 	char	   *cmd = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	ProgressCommandType	cmdtype;
+	ProgressCommandType cmdtype;
 	TupleDesc	tupdesc;
 	Tuplestorestate *tupstore;
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
@@ -582,8 +582,8 @@ pg_stat_get_progress_info(PG_FUNCTION_ARGS)
 	/* 1-based index */
 	for (curr_backend = 1; curr_backend <= num_backends; curr_backend++)
 	{
-		LocalPgBackendStatus   *local_beentry;
-		PgBackendStatus		   *beentry;
+		LocalPgBackendStatus *local_beentry;
+		PgBackendStatus *beentry;
 		Datum		values[PG_STAT_GET_PROGRESS_COLS];
 		bool		nulls[PG_STAT_GET_PROGRESS_COLS];
 		int			i;
@@ -613,14 +613,14 @@ pg_stat_get_progress_info(PG_FUNCTION_ARGS)
 		if (has_privs_of_role(GetUserId(), beentry->st_userid))
 		{
 			values[2] = ObjectIdGetDatum(beentry->st_progress_command_target);
-			for(i = 0; i < PGSTAT_NUM_PROGRESS_PARAM; i++)
-				values[i+3] = Int64GetDatum(beentry->st_progress_param[i]);
+			for (i = 0; i < PGSTAT_NUM_PROGRESS_PARAM; i++)
+				values[i + 3] = Int64GetDatum(beentry->st_progress_param[i]);
 		}
 		else
 		{
 			nulls[2] = true;
 			for (i = 0; i < PGSTAT_NUM_PROGRESS_PARAM; i++)
-				nulls[i+3] = true;
+				nulls[i + 3] = true;
 		}
 
 		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
@@ -688,27 +688,17 @@ pg_stat_get_activity(PG_FUNCTION_ARGS)
 		MemSet(values, 0, sizeof(values));
 		MemSet(nulls, 0, sizeof(nulls));
 
-		if (pid != -1)
-		{
-			/* Skip any which are not the one we're looking for. */
-			PgBackendStatus *be = pgstat_fetch_stat_beentry(curr_backend);
-
-			if (!be || be->st_procpid != pid)
-				continue;
-
-		}
-
 		/* Get the next one in the list */
 		local_beentry = pgstat_fetch_stat_local_beentry(curr_backend);
 		if (!local_beentry)
-			continue;
-
-		beentry = &local_beentry->backendStatus;
-		if (!beentry)
 		{
 			int			i;
 
-			for (i = 0; i < sizeof(nulls) / sizeof(nulls[0]); i++)
+			/* Ignore missing entries if looking for specific PID */
+			if (pid != -1)
+				continue;
+
+			for (i = 0; i < lengthof(nulls); i++)
 				nulls[i] = true;
 
 			nulls[5] = false;
@@ -717,6 +707,12 @@ pg_stat_get_activity(PG_FUNCTION_ARGS)
 			tuplestore_putvalues(tupstore, tupdesc, values, nulls);
 			continue;
 		}
+
+		beentry = &local_beentry->backendStatus;
+
+		/* If looking for specific PID, ignore all the others */
+		if (pid != -1 && beentry->st_procpid != pid)
+			continue;
 
 		/* Values available to all callers */
 		values[0] = ObjectIdGetDatum(beentry->st_databaseid);
@@ -787,7 +783,7 @@ pg_stat_get_activity(PG_FUNCTION_ARGS)
 			proc = BackendPidGetProc(beentry->st_procpid);
 			if (proc != NULL)
 			{
-				uint32	raw_wait_event;
+				uint32		raw_wait_event;
 
 				raw_wait_event = UINT32_ACCESS_ONCE(proc->wait_event_info);
 				wait_event_type = pgstat_get_wait_event_type(raw_wait_event);

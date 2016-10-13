@@ -107,15 +107,11 @@ typedef struct GISTSTATE
  * upper index pages; this rule avoids doing extra work during a search that
  * ends early due to LIMIT.
  *
- * To perform an ordered search, we use an RBTree to manage the distance-order
- * queue.  Each GISTSearchTreeItem stores all unvisited items of the same
- * distance; they are GISTSearchItems chained together via their next fields.
- *
- * In a non-ordered search (no order-by operators), the RBTree degenerates
- * to a single item, which we use as a queue of unvisited index pages only.
- * In this case matched heap items from the current index leaf page are
- * remembered in GISTScanOpaqueData.pageData[] and returned directly from
- * there, instead of building a separate GISTSearchItem for each one.
+ * To perform an ordered search, we use a pairing heap to manage the
+ * distance-order queue.  In a non-ordered search (no order-by operators),
+ * we use it to return heap tuples before unvisited index pages, to
+ * ensure depth-first order, but all entries are otherwise considered
+ * equal.
  */
 
 /* Individual heap tuple to be visited */
@@ -298,8 +294,8 @@ typedef struct
 #define GIST_ROOT_BLKNO				0
 
 /*
- * Before PostgreSQL 9.1, we used rely on so-called "invalid tuples" on inner
- * pages to finish crash recovery of incomplete page splits. If a crash
+ * Before PostgreSQL 9.1, we used to rely on so-called "invalid tuples" on
+ * inner pages to finish crash recovery of incomplete page splits. If a crash
  * happened in the middle of a page split, so that the downlink pointers were
  * not yet inserted, crash recovery inserted a special downlink pointer. The
  * semantics of an invalid tuple was that it if you encounter one in a scan,
@@ -465,13 +461,12 @@ extern const char *gist_identify(uint8 info);
 extern void gist_xlog_startup(void);
 extern void gist_xlog_cleanup(void);
 
-extern XLogRecPtr gistXLogUpdate(RelFileNode node, Buffer buffer,
+extern XLogRecPtr gistXLogUpdate(Buffer buffer,
 			   OffsetNumber *todelete, int ntodelete,
 			   IndexTuple *itup, int ntup,
 			   Buffer leftchild);
 
-extern XLogRecPtr gistXLogSplit(RelFileNode node,
-			  BlockNumber blkno, bool page_is_leaf,
+extern XLogRecPtr gistXLogSplit(bool page_is_leaf,
 			  SplitedPageLayout *dist,
 			  BlockNumber origrlink, GistNSN oldnsn,
 			  Buffer leftchild, bool markfollowright);
@@ -493,6 +488,9 @@ extern bool gistvalidate(Oid opclassoid);
 #define GIST_DEFAULT_FILLFACTOR		90
 
 extern bytea *gistoptions(Datum reloptions, bool validate);
+extern bool gistproperty(Oid index_oid, int attno,
+			 IndexAMProperty prop, const char *propname,
+			 bool *res, bool *isnull);
 extern bool gistfitpage(IndexTuple *itvec, int len);
 extern bool gistnospace(Page page, IndexTuple *itvec, int len, OffsetNumber todelete, Size freespace);
 extern void gistcheckpage(Relation rel, Buffer buf);

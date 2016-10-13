@@ -561,11 +561,11 @@ pgfdw_get_result(PGconn *conn, const char *query)
 
 	for (;;)
 	{
-		PGresult *res;
+		PGresult   *res;
 
 		while (PQisBusy(conn))
 		{
-			int		wc;
+			int			wc;
 
 			/* Sleep until there's something to do */
 			wc = WaitLatchOrSocket(MyLatch,
@@ -861,9 +861,9 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					/*
 					 * If a command has been submitted to the remote server by
 					 * using an asynchronous execution function, the command
-					 * might not have yet completed.  Check to see if a command
-					 * is still being processed by the remote server, and if so,
-					 * request cancellation of the command.
+					 * might not have yet completed.  Check to see if a
+					 * command is still being processed by the remote server,
+					 * and if so, request cancellation of the command.
 					 */
 					if (PQtransactionStatus(entry->conn) == PQTRANS_ACTIVE)
 					{
@@ -875,8 +875,8 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 							if (!PQcancel(cancel, errbuf, sizeof(errbuf)))
 								ereport(WARNING,
 										(errcode(ERRCODE_CONNECTION_FAILURE),
-										 errmsg("could not send cancel request: %s",
-												errbuf)));
+								  errmsg("could not send cancel request: %s",
+										 errbuf)));
 							PQfreeCancel(cancel);
 						}
 					}
@@ -994,11 +994,11 @@ pgfdw_subxact_callback(SubXactEvent event, SubTransactionId mySubid,
 			entry->have_error = true;
 
 			/*
-			 * If a command has been submitted to the remote server by using an
-			 * asynchronous execution function, the command might not have yet
-			 * completed.  Check to see if a command is still being processed by
-			 * the remote server, and if so, request cancellation of the
-			 * command.
+			 * If a command has been submitted to the remote server by using
+			 * an asynchronous execution function, the command might not have
+			 * yet completed.  Check to see if a command is still being
+			 * processed by the remote server, and if so, request cancellation
+			 * of the command.
 			 */
 			if (PQtransactionStatus(entry->conn) == PQTRANS_ACTIVE)
 			{

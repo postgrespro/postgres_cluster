@@ -332,9 +332,7 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 	 */
 	anl_context = AllocSetContextCreate(CurrentMemoryContext,
 										"Analyze",
-										ALLOCSET_DEFAULT_MINSIZE,
-										ALLOCSET_DEFAULT_INITSIZE,
-										ALLOCSET_DEFAULT_MAXSIZE);
+										ALLOCSET_DEFAULT_SIZES);
 	caller_context = MemoryContextSwitchTo(anl_context);
 
 	/*
@@ -504,9 +502,7 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 
 		col_context = AllocSetContextCreate(anl_context,
 											"Analyze Column",
-											ALLOCSET_DEFAULT_MINSIZE,
-											ALLOCSET_DEFAULT_INITSIZE,
-											ALLOCSET_DEFAULT_MAXSIZE);
+											ALLOCSET_DEFAULT_SIZES);
 		old_context = MemoryContextSwitchTo(col_context);
 
 		for (i = 0; i < attr_cnt; i++)
@@ -570,7 +566,7 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 	 */
 	if (!inh)
 	{
-		BlockNumber		relallvisible;
+		BlockNumber relallvisible;
 
 		visibilitymap_count(onerel, &relallvisible, NULL);
 
@@ -611,10 +607,13 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 	/*
 	 * Report ANALYZE to the stats collector, too.  However, if doing
 	 * inherited stats we shouldn't report, because the stats collector only
-	 * tracks per-table stats.
+	 * tracks per-table stats.  Reset the changes_since_analyze counter only
+	 * if we analyzed all columns; otherwise, there is still work for
+	 * auto-analyze to do.
 	 */
 	if (!inh)
-		pgstat_report_analyze(onerel, totalrows, totaldeadrows);
+		pgstat_report_analyze(onerel, totalrows, totaldeadrows,
+							  (va_cols == NIL));
 
 	/* If this isn't part of VACUUM ANALYZE, let index AMs do cleanup */
 	if (!(options & VACOPT_VACUUM))
@@ -685,9 +684,7 @@ compute_index_stats(Relation onerel, double totalrows,
 
 	ind_context = AllocSetContextCreate(anl_context,
 										"Analyze Index",
-										ALLOCSET_DEFAULT_MINSIZE,
-										ALLOCSET_DEFAULT_INITSIZE,
-										ALLOCSET_DEFAULT_MAXSIZE);
+										ALLOCSET_DEFAULT_SIZES);
 	old_context = MemoryContextSwitchTo(ind_context);
 
 	for (ind = 0; ind < nindexes; ind++)
@@ -2046,8 +2043,11 @@ compute_distinct_stats(VacAttrStatsP stats,
 
 		if (nmultiple == 0)
 		{
-			/* If we found no repeated values, assume it's a unique column */
-			stats->stadistinct = -1.0;
+			/*
+			 * If we found no repeated non-null values, assume it's a unique
+			 * column; but be sure to discount for any nulls we found.
+			 */
+			stats->stadistinct = -1.0 * (1.0 - stats->stanullfrac);
 		}
 		else if (track_cnt < track_max && toowide_cnt == 0 &&
 				 nmultiple == track_cnt)
@@ -2423,8 +2423,11 @@ compute_scalar_stats(VacAttrStatsP stats,
 
 		if (nmultiple == 0)
 		{
-			/* If we found no repeated values, assume it's a unique column */
-			stats->stadistinct = -1.0;
+			/*
+			 * If we found no repeated non-null values, assume it's a unique
+			 * column; but be sure to discount for any nulls we found.
+			 */
+			stats->stadistinct = -1.0 * (1.0 - stats->stanullfrac);
 		}
 		else if (toowide_cnt == 0 && nmultiple == ndistinct)
 		{
@@ -2750,7 +2753,7 @@ compute_scalar_stats(VacAttrStatsP stats,
 		else
 			stats->stawidth = stats->attrtype->typlen;
 		/* Assume all too-wide values are distinct, so it's a unique column */
-		stats->stadistinct = -1.0;
+		stats->stadistinct = -1.0 * (1.0 - stats->stanullfrac);
 	}
 	else if (null_cnt > 0)
 	{

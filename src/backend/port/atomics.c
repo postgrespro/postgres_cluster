@@ -35,8 +35,7 @@ pg_spinlock_barrier(void)
 	 *
 	 * We use kill(0) for the fallback barrier as we assume that kernels on
 	 * systems old enough to require fallback barrier support will include an
-	 * appropriate barrier while checking the existence of the postmaster
-	 * pid.
+	 * appropriate barrier while checking the existence of the postmaster pid.
 	 */
 	(void) kill(PostmasterPid, 0);
 }
@@ -103,6 +102,19 @@ pg_atomic_init_u32_impl(volatile pg_atomic_uint32 *ptr, uint32 val_)
 	SpinLockInit((slock_t *) &ptr->sema);
 #endif
 	ptr->value = val_;
+}
+
+void
+pg_atomic_write_u32_impl(volatile pg_atomic_uint32 *ptr, uint32 val)
+{
+	/*
+	 * One might think that an unlocked write doesn't need to acquire the
+	 * spinlock, but one would be wrong. Even an unlocked write has to cause a
+	 * concurrent pg_atomic_compare_exchange_u32() (et al) to fail.
+	 */
+	SpinLockAcquire((slock_t *) &ptr->sema);
+	ptr->value = val;
+	SpinLockRelease((slock_t *) &ptr->sema);
 }
 
 bool

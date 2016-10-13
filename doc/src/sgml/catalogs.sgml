@@ -14,11 +14,13 @@
    tables.  You can drop and recreate the tables, add columns, insert
    and update values, and severely mess up your system that way.
    Normally, one should not change the system catalogs by hand, there
-   are always SQL commands to do that.  (For example, <command>CREATE
+   are normally SQL commands to do that.  (For example, <command>CREATE
    DATABASE</command> inserts a row into the
    <structname>pg_database</structname> catalog &mdash; and actually
    creates the database on disk.)  There are some exceptions for
-   particularly esoteric operations, such as adding index access methods.
+   particularly esoteric operations, but many of those have been made
+   available as SQL commands over time, and so the need for direct manipulation
+   of the system catalogs is ever decreasing.
   </para>
 
  <sect1 id="catalogs-overview">
@@ -462,12 +464,6 @@
       <entry>Data type of the aggregate function's internal transition (state) data</entry>
      </row>
      <row>
-      <entry><structfield>aggserialtype</structfield></entry>
-      <entry><type>oid</type></entry>
-      <entry><literal><link linkend="catalog-pg-type"><structname>pg_type</structname></link>.oid</literal></entry>
-      <entry>Return data type of the aggregate function's serialization function (zero if none)</entry>
-     </row>
-     <row>
       <entry><structfield>aggtransspace</structfield></entry>
       <entry><type>int4</type></entry>
       <entry></entry>
@@ -533,10 +529,11 @@
   </indexterm>
 
   <para>
-   The catalog <structname>pg_am</structname> stores information about index
-   access methods.  There is one row for each index access method supported by
-   the system.  The requirements for index access methods are discussed in
-   detail in <xref linkend="indexam">.
+   The catalog <structname>pg_am</structname> stores information about
+   relation access methods.  There is one row for each access method supported
+   by the system.
+   Currently, only indexes have access methods.  The requirements for index
+   access methods are discussed in detail in <xref linkend="indexam">.
   </para>
 
   <table>
@@ -577,9 +574,29 @@
       </entry>
      </row>
 
+     <row>
+      <entry><structfield>amtype</structfield></entry>
+      <entry><type>char</type></entry>
+      <entry></entry>
+      <entry>
+       Currently always <literal>i</literal> to indicate an index access
+       method; other values may be allowed in future
+      </entry>
+     </row>
     </tbody>
    </tgroup>
   </table>
+
+  <note>
+   <para>
+    Before <productname>PostgreSQL</> 9.6, <structname>pg_am</structname>
+    contained many additional columns representing properties of index access
+    methods.  That data is now only directly visible at the C code level.
+    However, <function>pg_index_column_has_property()</function> and related
+    functions have been added to allow SQL queries to inspect index access
+    method properties; see <xref linkend="functions-info-catalog-table">.
+   </para>
+  </note>
 
  </sect1>
 
@@ -3817,7 +3834,7 @@
   </para>
 
   <table>
-   <title><structname>pg_inherits</> Columns</title>
+   <title><structname>pg_init_privs</> Columns</title>
 
    <tgroup cols="4">
     <thead>
@@ -5853,9 +5870,9 @@
       <entry>The number of distinct nonnull data values in the column.
       A value greater than zero is the actual number of distinct values.
       A value less than zero is the negative of a multiplier for the number
-      of rows in the table; for example, a column in which values appear about
-      twice on the average could be represented by
-      <structfield>stadistinct</> = -0.5.
+      of rows in the table; for example, a column in which about 80% of the
+      values are nonnull and each nonnull value appears about twice on
+      average could be represented by <structfield>stadistinct</> = -0.4.
       A zero value means the number of distinct values is unknown.
       </entry>
      </row>
@@ -7579,6 +7596,11 @@
    application.
   </para>
 
+  <para>
+   By default, the <structname>pg_config</structname> view can be read
+   only by superusers.
+  </para>
+
   <table>
    <title><structname>pg_config</> Columns</title>
    <tgroup cols="3">
@@ -7754,8 +7776,8 @@
   </para>
 
   <para>
-   The <structname>pg_file_settings</structname> view can be read only by
-   superusers.
+   By default, the <structname>pg_file_settings</structname> view can be read
+   only by superusers.
   </para>
 
   <table>
@@ -8500,7 +8522,7 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
       <entry><type>boolean</type></entry>
       <entry>
        <literal>true</literal> if the prepared statement was created
-       via the <command>PREPARE</command> SQL statement;
+       via the <command>PREPARE</command> SQL command;
        <literal>false</literal> if the statement was prepared via the
        frontend/backend protocol
       </entry>
@@ -8914,6 +8936,16 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
       <entry></entry>
       <entry>Password expiry time (only used for password authentication);
        null if no expiration</entry>
+     </row>
+
+     <row>
+      <entry><structfield>rolbypassrls</structfield></entry>
+      <entry><type>bool</type></entry>
+      <entry></entry>
+      <entry>
+       Role bypasses every row level security policy, see
+       <xref linkend="ddl-rowsecurity"> for more information.
+      </entry>
      </row>
 
      <row>
@@ -9784,6 +9816,13 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
    </tgroup>
   </table>
 
+  <para>
+   While most timezone abbreviations represent fixed offsets from UTC,
+   there are some that have historically varied in value
+   (see <xref linkend="datetime-config-files"> for more information).
+   In such cases this view presents their current meaning.
+  </para>
+
  </sect1>
 
  <sect1 id="view-pg-timezone-names">
@@ -9798,8 +9837,8 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
    of time zone names that are recognized by <command>SET TIMEZONE</>,
    along with their associated abbreviations, UTC offsets,
    and daylight-savings status.  (Technically,
-   <productname>PostgreSQL</productname> uses <acronym>UT1</> rather
-   than UTC because leap seconds are not handled.)
+   <productname>PostgreSQL</productname> does not use UTC because leap
+   seconds are not handled.)
    Unlike the abbreviations shown in <link
    linkend="view-pg-timezone-abbrevs"><structname>pg_timezone_abbrevs</structname></link>, many of these names imply a set of daylight-savings transition
    date rules.  Therefore, the associated information changes across local DST

@@ -31,6 +31,19 @@
 #define OLD_SNAPSHOT_PADDING_ENTRIES 10
 #define OLD_SNAPSHOT_TIME_MAP_ENTRIES (old_snapshot_threshold + OLD_SNAPSHOT_PADDING_ENTRIES)
 
+/*
+ * Common definition of relation properties that allow early pruning/vacuuming
+ * when old_snapshot_threshold >= 0.
+ */
+#define RelationAllowsEarlyPruning(rel) \
+( \
+	 RelationNeedsWAL(rel) \
+  && !IsCatalogRelation(rel) \
+  && !RelationIsAccessibleInLogicalDecoding(rel) \
+  && !RelationHasUnloggedIndex(rel) \
+)
+
+#define EarlyPruningEnabled(rel) (old_snapshot_threshold >= 0 && RelationAllowsEarlyPruning(rel))
 
 /* GUC variables */
 extern PGDLLIMPORT int old_snapshot_threshold;
@@ -51,6 +64,7 @@ extern TransactionId RecentGlobalDataXmin;
 extern Snapshot GetTransactionSnapshot(void);
 extern Snapshot GetLatestSnapshot(void);
 extern void SnapshotSetCommandId(CommandId curcid);
+extern Snapshot GetOldestSnapshot(void);
 
 extern Snapshot GetCatalogSnapshot(Oid relid);
 extern Snapshot GetNonHistoricCatalogSnapshot(Oid relid);
@@ -78,7 +92,7 @@ extern bool XactHasExportedSnapshots(void);
 extern void DeleteAllExportedSnapshotFiles(void);
 extern bool ThereAreNoPriorRegisteredSnapshots(void);
 extern TransactionId TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
-														 Relation relation);
+									Relation relation);
 extern void MaintainOldSnapshotTimeMapping(int64 whenTaken, TransactionId xmin);
 
 extern char *ExportSnapshot(Snapshot snapshot);

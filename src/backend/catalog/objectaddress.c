@@ -1792,7 +1792,7 @@ get_object_address_defacl(List *objname, List *objargs, bool missing_ok)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				  errmsg("unrecognized default ACL object type %c", objtype),
-				 errhint("Valid object types are \"r\", \"S\", \"f\", and \"T\".")));
+					 errhint("Valid object types are \"r\", \"S\", \"f\", and \"T\".")));
 	}
 
 	/*
@@ -2290,23 +2290,18 @@ get_object_namespace(const ObjectAddress *address)
 int
 read_objtype_from_string(const char *objtype)
 {
-	ObjectType	type;
 	int			i;
 
 	for (i = 0; i < lengthof(ObjectTypeMap); i++)
 	{
 		if (strcmp(ObjectTypeMap[i].tm_name, objtype) == 0)
-		{
-			type = ObjectTypeMap[i].tm_type;
-			break;
-		}
+			return ObjectTypeMap[i].tm_type;
 	}
-	if (i >= lengthof(ObjectTypeMap))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("unrecognized object type \"%s\"", objtype)));
+	ereport(ERROR,
+			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+			 errmsg("unrecognized object type \"%s\"", objtype)));
 
-	return type;
+	return -1;					/* keep compiler quiet */
 }
 
 /*
@@ -4747,9 +4742,7 @@ strlist_to_textarray(List *list)
 
 	memcxt = AllocSetContextCreate(CurrentMemoryContext,
 								   "strlist to array",
-								   ALLOCSET_DEFAULT_MINSIZE,
-								   ALLOCSET_DEFAULT_INITSIZE,
-								   ALLOCSET_DEFAULT_MAXSIZE);
+								   ALLOCSET_DEFAULT_SIZES);
 	oldcxt = MemoryContextSwitchTo(memcxt);
 
 	datums = palloc(sizeof(text *) * list_length(list));

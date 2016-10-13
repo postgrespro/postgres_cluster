@@ -47,9 +47,8 @@
 # clean-lib             delete the static and shared libraries from the build dir
 # maintainer-clean-lib  delete .def files built for win32
 #
-# Since `all-lib' is the first rule in this file you probably want to
-# have the `all' target before including this file. In the most simple
-# case it would look like this:
+# Typically you would add `all-lib' to the `all' target so that `make all'
+# builds the libraries.  In the most simple case it would look like this:
 #
 #     all: all-lib
 #
@@ -338,7 +337,16 @@ endif
 else # PORTNAME == aix
 
 # AIX case
-$(shlib) $(stlib): $(OBJS) | $(SHLIB_PREREQS)
+
+# There is no correct way to write a rule that generates two files.
+# Rules with two targets don't have that meaning, they are merely
+# shorthand for two otherwise separate rules.  To be safe for parallel
+# make, we must chain the dependencies like this.  The semicolon is
+# important, otherwise make will choose some built-in rule.
+
+$(stlib): $(shlib) ;
+
+$(shlib): $(OBJS) | $(SHLIB_PREREQS)
 	rm -f $(stlib)
 	$(LINK.static) $(stlib) $^
 	$(RANLIB) $(stlib)

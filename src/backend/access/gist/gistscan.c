@@ -125,7 +125,7 @@ gistrescan(IndexScanDesc scan, ScanKey key, int nkeys,
 	 * which is created on the second call and reset on later calls.  Thus, in
 	 * the common case where a scan is only rescan'd once, we just put the
 	 * queue in scanCxt and don't pay the overhead of making a second memory
-	 * context.  If we do rescan more than once, the first RBTree is just left
+	 * context.  If we do rescan more than once, the first queue is just left
 	 * for dead until end of scan; this small wastage seems worth the savings
 	 * in the common case.
 	 */
@@ -140,9 +140,7 @@ gistrescan(IndexScanDesc scan, ScanKey key, int nkeys,
 		/* second time through */
 		so->queueCxt = AllocSetContextCreate(so->giststate->scanCxt,
 											 "GiST queue context",
-											 ALLOCSET_DEFAULT_MINSIZE,
-											 ALLOCSET_DEFAULT_INITSIZE,
-											 ALLOCSET_DEFAULT_MAXSIZE);
+											 ALLOCSET_DEFAULT_SIZES);
 		first_time = false;
 	}
 	else
@@ -180,12 +178,10 @@ gistrescan(IndexScanDesc scan, ScanKey key, int nkeys,
 
 		so->pageDataCxt = AllocSetContextCreate(so->giststate->scanCxt,
 												"GiST page data context",
-												ALLOCSET_DEFAULT_MINSIZE,
-												ALLOCSET_DEFAULT_INITSIZE,
-												ALLOCSET_DEFAULT_MAXSIZE);
+												ALLOCSET_DEFAULT_SIZES);
 	}
 
-	/* create new, empty RBTree for search queue */
+	/* create new, empty pairing heap for search queue */
 	oldCxt = MemoryContextSwitchTo(so->queueCxt);
 	so->queue = pairingheap_allocate(pairingheap_GISTSearchItem_cmp, scan);
 	MemoryContextSwitchTo(oldCxt);
@@ -230,8 +226,8 @@ gistrescan(IndexScanDesc scan, ScanKey key, int nkeys,
 			ScanKey		skey = scan->keyData + i;
 
 			/*
-			 * Copy consistent support function to ScanKey structure
-			 * instead of function implementing filtering operator.
+			 * Copy consistent support function to ScanKey structure instead
+			 * of function implementing filtering operator.
 			 */
 			fmgr_info_copy(&(skey->sk_func),
 						   &(so->giststate->consistentFn[skey->sk_attno - 1]),
@@ -303,8 +299,8 @@ gistrescan(IndexScanDesc scan, ScanKey key, int nkeys,
 			so->orderByTypes[i] = get_func_rettype(skey->sk_func.fn_oid);
 
 			/*
-			 * Copy distance support function to ScanKey structure
-			 * instead of function implementing ordering operator.
+			 * Copy distance support function to ScanKey structure instead of
+			 * function implementing ordering operator.
 			 */
 			fmgr_info_copy(&(skey->sk_func), finfo, so->giststate->scanCxt);
 

@@ -34,11 +34,11 @@
 #include "utils/typcache.h"
 
 /* Operations available for setPath */
-#define JB_PATH_NOOP					0x0000
 #define JB_PATH_CREATE					0x0001
 #define JB_PATH_DELETE					0x0002
-#define JB_PATH_INSERT_BEFORE			0x0004
-#define JB_PATH_INSERT_AFTER			0x0008
+#define JB_PATH_REPLACE					0x0004
+#define JB_PATH_INSERT_BEFORE			0x0008
+#define JB_PATH_INSERT_AFTER			0x0010
 #define JB_PATH_CREATE_OR_INSERT \
 	(JB_PATH_INSERT_BEFORE | JB_PATH_INSERT_AFTER | JB_PATH_CREATE)
 
@@ -609,7 +609,7 @@ jsonb_array_element(PG_FUNCTION_ARGS)
 	/* Handle negative subscript */
 	if (element < 0)
 	{
-		uint32	nelements = JB_ROOT_COUNT(jb);
+		uint32		nelements = JB_ROOT_COUNT(jb);
 
 		if (-element > nelements)
 			PG_RETURN_NULL();
@@ -652,7 +652,7 @@ jsonb_array_element_text(PG_FUNCTION_ARGS)
 	/* Handle negative subscript */
 	if (element < 0)
 	{
-		uint32	nelements = JB_ROOT_COUNT(jb);
+		uint32		nelements = JB_ROOT_COUNT(jb);
 
 		if (-element > nelements)
 			PG_RETURN_NULL();
@@ -992,7 +992,7 @@ get_array_start(void *state)
 			_state->path_indexes[lex_level] != INT_MIN)
 		{
 			/* Negative subscript -- convert to positive-wise subscript */
-			int		nelements = json_count_array_elements(_state->lex);
+			int			nelements = json_count_array_elements(_state->lex);
 
 			if (-_state->path_indexes[lex_level] <= nelements)
 				_state->path_indexes[lex_level] += nelements;
@@ -1002,8 +1002,8 @@ get_array_start(void *state)
 	{
 		/*
 		 * Special case: we should match the entire array.  We only need this
-		 * at the outermost level because at nested levels the match will
-		 * have been started by the outer field or array element callback.
+		 * at the outermost level because at nested levels the match will have
+		 * been started by the outer field or array element callback.
 		 */
 		_state->result_start = _state->lex->token_start;
 	}
@@ -1503,9 +1503,7 @@ each_worker_jsonb(FunctionCallInfo fcinfo, const char *funcname, bool as_text)
 
 	tmp_cxt = AllocSetContextCreate(CurrentMemoryContext,
 									"jsonb_each temporary cxt",
-									ALLOCSET_DEFAULT_MINSIZE,
-									ALLOCSET_DEFAULT_INITSIZE,
-									ALLOCSET_DEFAULT_MAXSIZE);
+									ALLOCSET_DEFAULT_SIZES);
 
 	it = JsonbIteratorInit(&jb->root);
 
@@ -1641,9 +1639,7 @@ each_worker(FunctionCallInfo fcinfo, bool as_text)
 	state->lex = lex;
 	state->tmp_cxt = AllocSetContextCreate(CurrentMemoryContext,
 										   "json_each temporary cxt",
-										   ALLOCSET_DEFAULT_MINSIZE,
-										   ALLOCSET_DEFAULT_INITSIZE,
-										   ALLOCSET_DEFAULT_MAXSIZE);
+										   ALLOCSET_DEFAULT_SIZES);
 
 	pg_parse_json(lex, sem);
 
@@ -1822,9 +1818,7 @@ elements_worker_jsonb(FunctionCallInfo fcinfo, const char *funcname,
 
 	tmp_cxt = AllocSetContextCreate(CurrentMemoryContext,
 									"jsonb_array_elements temporary cxt",
-									ALLOCSET_DEFAULT_MINSIZE,
-									ALLOCSET_DEFAULT_INITSIZE,
-									ALLOCSET_DEFAULT_MAXSIZE);
+									ALLOCSET_DEFAULT_SIZES);
 
 	it = JsonbIteratorInit(&jb->root);
 
@@ -1962,9 +1956,7 @@ elements_worker(FunctionCallInfo fcinfo, const char *funcname, bool as_text)
 	state->lex = lex;
 	state->tmp_cxt = AllocSetContextCreate(CurrentMemoryContext,
 										 "json_array_elements temporary cxt",
-										   ALLOCSET_DEFAULT_MINSIZE,
-										   ALLOCSET_DEFAULT_INITSIZE,
-										   ALLOCSET_DEFAULT_MAXSIZE);
+										   ALLOCSET_DEFAULT_SIZES);
 
 	pg_parse_json(lex, sem);
 
@@ -3368,9 +3360,9 @@ jsonb_concat(PG_FUNCTION_ARGS)
 			   *it2;
 
 	/*
-	 * If one of the jsonb is empty, just return the other if it's not
-	 * scalar and both are of the same kind.  If it's a scalar or they are
-	 * of different kinds we need to perform the concatenation even if one is
+	 * If one of the jsonb is empty, just return the other if it's not scalar
+	 * and both are of the same kind.  If it's a scalar or they are of
+	 * different kinds we need to perform the concatenation even if one is
 	 * empty.
 	 */
 	if (JB_ROOT_IS_OBJECT(jb1) == JB_ROOT_IS_OBJECT(jb2))
@@ -3481,7 +3473,7 @@ jsonb_delete_idx(PG_FUNCTION_ARGS)
 	it = JsonbIteratorInit(&in->root);
 
 	r = JsonbIteratorNext(&it, &v, false);
-	Assert (r == WJB_BEGIN_ARRAY);
+	Assert(r == WJB_BEGIN_ARRAY);
 	n = v.val.array.nElems;
 
 	if (idx < 0)
@@ -3553,7 +3545,7 @@ jsonb_set(PG_FUNCTION_ARGS)
 	it = JsonbIteratorInit(&in->root);
 
 	res = setPath(&it, path_elems, path_nulls, path_len, &st,
-				  0, newval, create ? JB_PATH_CREATE : JB_PATH_NOOP);
+				  0, newval, create ? JB_PATH_CREATE : JB_PATH_REPLACE);
 
 	Assert(res != NULL);
 
@@ -3868,8 +3860,8 @@ setPathObject(JsonbIterator **it, Datum *path_elems, bool *path_nulls,
 			if (level == path_len - 1)
 			{
 				/*
-				 * called from jsonb_insert(), it forbids redefining
-				 * an existsing value
+				 * called from jsonb_insert(), it forbids redefining an
+				 * existing value
 				 */
 				if (op_type & (JB_PATH_INSERT_BEFORE | JB_PATH_INSERT_AFTER))
 					ereport(ERROR,
@@ -3878,7 +3870,7 @@ setPathObject(JsonbIterator **it, Datum *path_elems, bool *path_nulls,
 							 errhint("Try using the function jsonb_set "
 									 "to replace key value.")));
 
-				r = JsonbIteratorNext(it, &v, true); /* skip value */
+				r = JsonbIteratorNext(it, &v, true);	/* skip value */
 				if (!(op_type & JB_PATH_DELETE))
 				{
 					(void) pushJsonbValue(st, WJB_KEY, &k);
@@ -4005,13 +3997,13 @@ setPathArray(JsonbIterator **it, Datum *path_elems, bool *path_nulls,
 
 				/*
 				 * We should keep current value only in case of
-				 * JB_PATH_INSERT_BEFORE or JB_PATH_INSERT_AFTER
-				 * because otherwise it should be deleted or replaced
+				 * JB_PATH_INSERT_BEFORE or JB_PATH_INSERT_AFTER because
+				 * otherwise it should be deleted or replaced
 				 */
 				if (op_type & (JB_PATH_INSERT_AFTER | JB_PATH_INSERT_BEFORE))
 					(void) pushJsonbValue(st, r, &v);
 
-				if (op_type & JB_PATH_INSERT_AFTER)
+				if (op_type & (JB_PATH_INSERT_AFTER | JB_PATH_REPLACE))
 					addJsonbToParseState(st, newval);
 
 				done = true;
@@ -4043,7 +4035,7 @@ setPathArray(JsonbIterator **it, Datum *path_elems, bool *path_nulls,
 				}
 			}
 
-			if (op_type & JB_PATH_CREATE_OR_INSERT && !done &&
+			if ((op_type & JB_PATH_CREATE_OR_INSERT) && !done &&
 				level == path_len - 1 && i == nelems - 1)
 			{
 				addJsonbToParseState(st, newval);

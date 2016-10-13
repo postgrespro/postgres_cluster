@@ -14,12 +14,9 @@
  */
 #include "postgres.h"
 
-#include "access/htup_details.h"
-#include "catalog/pg_aggregate.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/tlist.h"
-#include "utils/syscache.h"
 
 
 /*****************************************************************************
@@ -760,55 +757,5 @@ apply_pathtarget_labeling_to_tlist(List *tlist, PathTarget *target)
 			tle->ressortgroupref = target->sortgrouprefs[i];
 		}
 		i++;
-	}
-}
-
-/*
- * apply_partialaggref_adjustment
- *	  Convert PathTarget to be suitable for a partial aggregate node. We simply
- *	  adjust any Aggref nodes found in the target and set the aggoutputtype to
- *	  the aggtranstype or aggserialtype. This allows exprType() to return the
- *	  actual type that will be produced.
- *
- * Note: We expect 'target' to be a flat target list and not have Aggrefs burried
- * within other expressions.
- */
-void
-apply_partialaggref_adjustment(PathTarget *target)
-{
-	ListCell *lc;
-
-	foreach(lc, target->exprs)
-	{
-		Aggref *aggref = (Aggref *) lfirst(lc);
-
-		if (IsA(aggref, Aggref))
-		{
-			HeapTuple	aggTuple;
-			Form_pg_aggregate aggform;
-			Aggref	   *newaggref;
-
-			aggTuple = SearchSysCache1(AGGFNOID,
-									   ObjectIdGetDatum(aggref->aggfnoid));
-			if (!HeapTupleIsValid(aggTuple))
-				elog(ERROR, "cache lookup failed for aggregate %u",
-					 aggref->aggfnoid);
-			aggform = (Form_pg_aggregate) GETSTRUCT(aggTuple);
-
-			newaggref = (Aggref *) copyObject(aggref);
-
-			/* use the serialization type, if one exists */
-			if (OidIsValid(aggform->aggserialtype))
-				newaggref->aggoutputtype = aggform->aggserialtype;
-			else
-				newaggref->aggoutputtype = aggform->aggtranstype;
-
-			/* flag it as partial */
-			newaggref->aggpartial = true;
-
-			lfirst(lc) = newaggref;
-
-			ReleaseSysCache(aggTuple);
-		}
 	}
 }

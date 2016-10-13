@@ -130,7 +130,7 @@ typedef struct
 	slock_t		mutex;			/* spinlock */
 	long		nentries;		/* number of entries */
 	HASHELEMENT *freeList;		/* list of free elements */
-}	FreeListData;
+} FreeListData;
 
 /*
  * Header structure for a hash table --- contains all changeable info
@@ -327,9 +327,7 @@ hash_create(const char *tabname, long nelem, HASHCTL *info, int flags)
 			CurrentDynaHashCxt = TopMemoryContext;
 		CurrentDynaHashCxt = AllocSetContextCreate(CurrentDynaHashCxt,
 												   tabname,
-												   ALLOCSET_DEFAULT_MINSIZE,
-												   ALLOCSET_DEFAULT_INITSIZE,
-												   ALLOCSET_DEFAULT_MAXSIZE);
+												   ALLOCSET_DEFAULT_SIZES);
 	}
 
 	/* Initialize the hash header, plus a copy of the table name */

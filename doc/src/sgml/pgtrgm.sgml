@@ -104,7 +104,7 @@
        the second string a most similar word not a most similar substring.  The
        range of the result is zero (indicating that the two strings are
        completely dissimilar) to one (indicating that the first string is
-       identical to one of the word of the second string).
+       identical to one of the words of the second string).
       </entry>
      </row>
      <row>
@@ -355,9 +355,6 @@ SELECT * FROM test_trgm WHERE t ~ '(foo|bar)';
   <para>
    The choice between GiST and GIN indexing depends on the relative
    performance characteristics of GiST and GIN, which are discussed elsewhere.
-   As a rule of thumb, a GIN index is faster to search than a GiST index, but
-   slower to build or update; so GIN is better suited for static data and GiST
-   for often-updated data.
   </para>
  </sect2>
 
@@ -431,6 +428,9 @@ CREATE INDEX words_idx ON words USING GIN (word gin_trgm_ops);
   </para>
   <para>
    Teodor Sigaev <email>teodor@sigaev.ru</email>, Moscow, Delta-Soft Ltd.,Russia
+  </para>
+  <para>
+   Alexander Korotkov <email>a.korotkov@postgrespro.ru</email>, Moscow, Postgres Professional, Russia
   </para>
   <para>
    Documentation: Christopher Kings-Lynne

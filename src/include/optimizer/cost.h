@@ -54,7 +54,7 @@ extern PGDLLIMPORT double parallel_tuple_cost;
 extern PGDLLIMPORT double parallel_setup_cost;
 extern PGDLLIMPORT int effective_cache_size;
 extern Cost disable_cost;
-extern int	max_parallel_degree;
+extern int	max_parallel_workers_per_gather;
 extern bool enable_seqscan;
 extern bool enable_indexscan;
 extern bool enable_indexonlyscan;
@@ -66,7 +66,6 @@ extern bool enable_nestloop;
 extern bool enable_material;
 extern bool enable_mergejoin;
 extern bool enable_hashjoin;
-extern bool enable_fkey_estimates;
 extern int	constraint_exclusion;
 
 extern double clamp_row_est(double nrows);
@@ -168,8 +167,8 @@ extern double get_parameterized_baserel_size(PlannerInfo *root,
 							   List *param_clauses);
 extern double get_parameterized_joinrel_size(PlannerInfo *root,
 							   RelOptInfo *rel,
-							   double outer_rows,
-							   double inner_rows,
+							   Path *outer_path,
+							   Path *inner_path,
 							   SpecialJoinInfo *sjinfo,
 							   List *restrict_clauses);
 extern void set_joinrel_size_estimates(PlannerInfo *root, RelOptInfo *rel,

@@ -340,9 +340,7 @@ do_compile(FunctionCallInfo fcinfo,
 	 */
 	func_cxt = AllocSetContextCreate(TopMemoryContext,
 									 "PL/pgSQL function context",
-									 ALLOCSET_DEFAULT_MINSIZE,
-									 ALLOCSET_DEFAULT_INITSIZE,
-									 ALLOCSET_DEFAULT_MAXSIZE);
+									 ALLOCSET_DEFAULT_SIZES);
 	plpgsql_compile_tmp_cxt = MemoryContextSwitchTo(func_cxt);
 
 	function->fn_signature = format_procedure(fcinfo->flinfo->fn_oid);
@@ -829,10 +827,8 @@ plpgsql_compile_inline(char *proc_source)
 	 * its own memory context, so it can be reclaimed easily.
 	 */
 	func_cxt = AllocSetContextCreate(CurrentMemoryContext,
-									 "PL/pgSQL function context",
-									 ALLOCSET_DEFAULT_MINSIZE,
-									 ALLOCSET_DEFAULT_INITSIZE,
-									 ALLOCSET_DEFAULT_MAXSIZE);
+									 "PL/pgSQL inline code context",
+									 ALLOCSET_DEFAULT_SIZES);
 	plpgsql_compile_tmp_cxt = MemoryContextSwitchTo(func_cxt);
 
 	function->fn_signature = pstrdup(func_name);
@@ -1326,10 +1322,10 @@ make_datum_param(PLpgSQL_expr *expr, int dno, int location)
 	param->paramkind = PARAM_EXTERN;
 	param->paramid = dno + 1;
 	plpgsql_exec_get_datum_type_info(estate,
-							 datum,
-							 &param->paramtype,
-							 &param->paramtypmod,
-							 &param->paramcollid);
+									 datum,
+									 &param->paramtype,
+									 &param->paramtypmod,
+									 &param->paramcollid);
 	param->location = location;
 
 	return (Node *) param;
@@ -2192,14 +2188,19 @@ build_datatype(HeapTuple typeTup, int32 typmod, Oid collation)
 	/* NB: this is only used to decide whether to apply expand_array */
 	if (typeStruct->typtype == TYPTYPE_BASE)
 	{
-		/* this test should match what get_element_type() checks */
+		/*
+		 * This test should include what get_element_type() checks.  We also
+		 * disallow non-toastable array types (i.e. oidvector and int2vector).
+		 */
 		typ->typisarray = (typeStruct->typlen == -1 &&
-						   OidIsValid(typeStruct->typelem));
+						   OidIsValid(typeStruct->typelem) &&
+						   typeStruct->typstorage != 'p');
 	}
 	else if (typeStruct->typtype == TYPTYPE_DOMAIN)
 	{
 		/* we can short-circuit looking up base types if it's not varlena */
 		typ->typisarray = (typeStruct->typlen == -1 &&
+						   typeStruct->typstorage != 'p' &&
 				 OidIsValid(get_base_element_type(typeStruct->typbasetype)));
 	}
 	else

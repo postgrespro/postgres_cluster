@@ -204,9 +204,7 @@ cluster(ClusterStmt *stmt, bool isTopLevel)
 		 */
 		cluster_context = AllocSetContextCreate(PortalContext,
 												"Cluster",
-												ALLOCSET_DEFAULT_MINSIZE,
-												ALLOCSET_DEFAULT_INITSIZE,
-												ALLOCSET_DEFAULT_MAXSIZE);
+												ALLOCSET_DEFAULT_SIZES);
 
 		/*
 		 * Build the list of relations to cluster.  Note that this lives in
@@ -248,7 +246,7 @@ cluster(ClusterStmt *stmt, bool isTopLevel)
  * swapping the relfilenodes of the new table and the old table, so
  * the OID of the original table is preserved.  Thus we do not lose
  * GRANT, inheritance nor references to this table (this was a bug
- * in releases thru 7.3).
+ * in releases through 7.3).
  *
  * Indexes are rebuilt too, via REINDEX. Since we are effectively bulk-loading
  * the new table, it's better to create the indexes afterwards than to fill

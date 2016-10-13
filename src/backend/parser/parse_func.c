@@ -647,9 +647,10 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 		Aggref	   *aggref = makeNode(Aggref);
 
 		aggref->aggfnoid = funcid;
-		/* default the outputtype to be the same as aggtype */
-		aggref->aggtype = aggref->aggoutputtype = rettype;
+		aggref->aggtype = rettype;
 		/* aggcollid and inputcollid will be set by parse_collate.c */
+		aggref->aggtranstype = InvalidOid;		/* will be set by planner */
+		/* aggargtypes will be set by transformAggregateCall */
 		/* aggdirectargs and args will be set by transformAggregateCall */
 		/* aggorder and aggdistinct will be set by transformAggregateCall */
 		aggref->aggfilter = agg_filter;
@@ -657,6 +658,7 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 		aggref->aggvariadic = func_variadic;
 		aggref->aggkind = aggkind;
 		/* agglevelsup will be set by transformAggregateCall */
+		aggref->aggsplit = AGGSPLIT_SIMPLE;		/* planner might change this */
 		aggref->location = location;
 
 		/*

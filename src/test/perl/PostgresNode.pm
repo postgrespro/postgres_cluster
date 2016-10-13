@@ -103,6 +103,7 @@ our ($test_localhost, $test_pghost, $last_port_assigned, @all_nodes);
 
 INIT
 {
+
 	# PGHOST is set once and for all through a single series of tests when
 	# this module is loaded.
 	$test_localhost = "127.0.0.1";
@@ -474,7 +475,8 @@ sub backup
 	my $name        = $self->name;
 
 	print "# Taking pg_basebackup $backup_name from node \"$name\"\n";
-	TestLib::system_or_bail("pg_basebackup -D $backup_path -p $port -x");
+	TestLib::system_or_bail('pg_basebackup', '-D', $backup_path, '-p', $port,
+		'-x');
 	print "# Backup finished\n";
 }
 
@@ -540,11 +542,12 @@ sub _backup_fs
 
 	if ($hot)
 	{
+
 		# We ignore pg_stop_backup's return value. We also assume archiving
 		# is enabled; otherwise the caller will have to copy the remaining
 		# segments.
-		my $stdout = $self->safe_psql('postgres',
-			'SELECT * FROM pg_stop_backup();');
+		my $stdout =
+		  $self->safe_psql('postgres', 'SELECT * FROM pg_stop_backup();');
 		print "# pg_stop_backup: $stdout\n";
 	}
 
@@ -761,7 +764,7 @@ sub enable_restoring
 	my $copy_command =
 	  $TestLib::windows_os
 	  ? qq{copy "$path\\\\%f" "%p"}
-	  : qq{cp $path/%f %p};
+	  : qq{cp "$path/%f" "%p"};
 
 	$self->append_conf(
 		'recovery.conf', qq(
@@ -789,7 +792,7 @@ sub enable_archiving
 	my $copy_command =
 	  $TestLib::windows_os
 	  ? qq{copy "%p" "$path\\\\%f"}
-	  : qq{cp %p $path/%f};
+	  : qq{cp "%p" "$path/%f"};
 
 	# Enable archive_mode and archive_command on node
 	$self->append_conf(
@@ -842,6 +845,7 @@ sub get_new_node
 
 	while ($found == 0)
 	{
+
 		# advance $port, wrapping correctly around range end
 		$port = 49152 if ++$port >= 65536;
 		print "# Checking port $port\n";
@@ -896,6 +900,7 @@ sub get_new_node
 # order, later when the File::Temp objects are destroyed.
 END
 {
+
 	# take care not to change the script's exit value
 	my $exit_code = $?;
 
@@ -1078,7 +1083,7 @@ sub psql
 	  IPC::Run::timeout($params{timeout}, exception => $timeout_exception)
 	  if (defined($params{timeout}));
 
-	${$params{timed_out}} = 0 if defined $params{timed_out};
+	${ $params{timed_out} } = 0 if defined $params{timed_out};
 
 	# IPC::Run would otherwise append to existing contents:
 	$$stdout = "" if ref($stdout);
@@ -1107,6 +1112,7 @@ sub psql
 		my $exc_save = $@;
 		if ($exc_save)
 		{
+
 			# IPC::Run::run threw an exception. re-throw unless it's a
 			# timeout, which we'll handle by testing is_expired
 			die $exc_save
@@ -1178,7 +1184,7 @@ sub psql
 =item $node->poll_query_until(dbname, query)
 
 Run a query once a second, until it returns 't' (i.e. SQL boolean true).
-Continues polling if psql returns an error result. Times out after 90 seconds.
+Continues polling if psql returns an error result. Times out after 180 seconds.
 
 =cut
 
@@ -1186,7 +1192,7 @@ sub poll_query_until
 {
 	my ($self, $dbname, $query) = @_;
 
-	my $max_attempts = 90;
+	my $max_attempts = 180;
 	my $attempts     = 0;
 	my ($stdout, $stderr);
 
@@ -1208,7 +1214,7 @@ sub poll_query_until
 		$attempts++;
 	}
 
-	# The query result didn't change in 90 seconds. Give up. Print the stderr
+	# The query result didn't change in 180 seconds. Give up. Print the stderr
 	# from the last attempt, hopefully that's useful for debugging.
 	diag $stderr;
 	return 0;

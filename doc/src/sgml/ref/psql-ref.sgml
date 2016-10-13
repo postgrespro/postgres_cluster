@@ -825,26 +825,29 @@ testdb=&gt;
       </varlistentry>
 
       <varlistentry>
-        <term><literal>\c</literal> or <literal>\connect</literal> <literal>[ <replaceable class="parameter">dbname</replaceable> [ <replaceable class="parameter">username</replaceable> ] [ <replaceable class="parameter">host</replaceable> ] [ <replaceable class="parameter">port</replaceable> ] ] | <replaceable class="parameter">conninfo</replaceable> </literal></term>
+        <term><literal>\c</literal> or <literal>\connect [ -reuse-previous=<replaceable class="parameter">on|off</replaceable> ] [ <replaceable class="parameter">dbname</replaceable> [ <replaceable class="parameter">username</replaceable> ] [ <replaceable class="parameter">host</replaceable> ] [ <replaceable class="parameter">port</replaceable> ] | <replaceable class="parameter">conninfo</replaceable> ]</literal></term>
         <listitem>
         <para>
         Establishes a new connection to a <productname>PostgreSQL</>
         server.  The connection parameters to use can be specified either
-        using a positional syntax, or using <literal>conninfo</> connection
+        using a positional syntax, or using <replaceable>conninfo</> connection
         strings as detailed in <xref linkend="libpq-connstring">.
         </para>
 
         <para>
-        When using positional parameters, if any of
-        <replaceable class="parameter">dbname</replaceable>,
+        Where the command omits database name, user, host, or port, the new
+        connection can reuse values from the previous connection.  By default,
+        values from the previous connection are reused except when processing
+        a <replaceable>conninfo</> string.  Passing a first argument
+        of <literal>-reuse-previous=on</>
+        or <literal>-reuse-previous=off</literal> overrides that default.
+        When the command neither specifies nor reuses a particular parameter,
+        the <application>libpq</application> default is used.  Specifying any
+        of <replaceable class="parameter">dbname</replaceable>,
         <replaceable class="parameter">username</replaceable>,
         <replaceable class="parameter">host</replaceable> or
-        <replaceable class="parameter">port</replaceable> are omitted or
-        specified as <literal>-</literal>, the value of that parameter from
-        the previous connection is used; if there is no previous connection,
-        the <application>libpq</application> default for the parameter's value
-        is used.  When using <literal>conninfo</> strings, no values from the
-        previous connection are used for the new connection.
+        <replaceable class="parameter">port</replaceable>
+        as <literal>-</literal> is equivalent to omitting that parameter.
         </para>
 
         <para>
@@ -1130,6 +1133,19 @@ testdb=&gt;
         </listitem>
       </varlistentry>
 
+      <varlistentry>
+        <term><literal>\dA[+] [ <link linkend="APP-PSQL-patterns"><replaceable class="parameter">pattern</replaceable></link> ]</literal></term>
+
+        <listitem>
+        <para>
+        Lists access methods. If <replaceable
+        class="parameter">pattern</replaceable> is specified, only access
+        methods whose names match the pattern are shown. If
+        <literal>+</literal> is appended to the command name, each access
+        method is listed with its associated handler function and description.
+        </para>
+        </listitem>
+      </varlistentry>
 
       <varlistentry>
         <term><literal>\db[+] [ <link linkend="APP-PSQL-patterns"><replaceable class="parameter">pattern</replaceable></link> ]</literal></term>
@@ -1354,9 +1370,9 @@ testdb=&gt;
 
         <listitem>
         <para>
-        Lists functions, together with their arguments, return types, and
-        function types, which are classified as <quote>agg</> (aggregate),
-        <quote>normal</>, <quote>trigger</>, or <quote>window</>.
+        Lists functions, together with their result data types, argument data
+        types, and function types, which are classified as <quote>agg</>
+        (aggregate), <quote>normal</>, <quote>trigger</>, or <quote>window</>.
         To display only functions
         of specific type(s), add the corresponding letters <literal>a</>,
         <literal>n</>, <literal>t</>, or <literal>w</> to the command.
@@ -1367,14 +1383,15 @@ testdb=&gt;
         objects are shown; supply a pattern or the <literal>S</literal>
         modifier to include system objects.
         If the form <literal>\df+</literal> is used, additional information
-        about each function is shown, including security classification,
-        volatility, owner, language, source code and description.
+        about each function is shown, including volatility,
+        parallel safety, owner, security classification, access privileges,
+        language, source code and description.
         </para>
 
         <tip>
         <para>
         To look up functions taking arguments or returning values of a specific
-        type, use your pager's search capability to scroll through the
+        data type, use your pager's search capability to scroll through the
         <literal>\df</> output.
         </para>
         </tip>
@@ -1758,32 +1775,6 @@ Tue Oct 26 21:40:57 CEST 1999
 
 
       <varlistentry>
-        <term><literal>\ev <optional> <replaceable class="parameter">view_name</> <optional>  <replaceable class="parameter">line_number</> </optional> </optional> </literal></term>
-
-        <listitem>
-        <para>
-         This command fetches and edits the definition of the named view,
-         in the form of a <command>CREATE OR REPLACE VIEW</> command.
-         Editing is done in the same way as for <literal>\edit</>.
-         After the editor exits, the updated command waits in the query buffer;
-         type semicolon or <literal>\g</> to send it, or <literal>\r</>
-         to cancel.
-        </para>
-
-        <para>
-         If no view is specified, a blank <command>CREATE VIEW</>
-         template is presented for editing.
-        </para>
-
-        <para>
-         If a line number is specified, <application>psql</application> will
-         position the cursor on the specified line of the view definition.
-        </para>
-        </listitem>
-      </varlistentry>
-
-
-      <varlistentry>
         <term><literal>\encoding [ <replaceable class="parameter">encoding</replaceable> ]</literal></term>
 
         <listitem>
@@ -1804,6 +1795,32 @@ Tue Oct 26 21:40:57 CEST 1999
         verbosity, as though <varname>VERBOSITY</varname> were set
         to <literal>verbose</> and <varname>SHOW_CONTEXT</varname> were
         set to <literal>always</>.
+        </para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\ev <optional> <replaceable class="parameter">view_name</> <optional>  <replaceable class="parameter">line_number</> </optional> </optional> </literal></term>
+
+        <listitem>
+        <para>
+         This command fetches and edits the definition of the named view,
+         in the form of a <command>CREATE OR REPLACE VIEW</> command.
+         Editing is done in the same way as for <literal>\edit</>.
+         After the editor exits, the updated command waits in the query buffer;
+         type semicolon or <literal>\g</> to send it, or <literal>\r</>
+         to cancel.
+        </para>
+
+        <para>
+         If no view is specified, a blank <command>CREATE VIEW</>
+         template is presented for editing.
+        </para>
+
+        <para>
+         If a line number is specified, <application>psql</application> will
+         position the cursor on the specified line of the view definition.
         </para>
         </listitem>
       </varlistentry>
@@ -3522,11 +3539,12 @@ testdb=&gt; <userinput>INSERT INTO my_table VALUES (:'content');</userinput>
     and special escape sequences that describe the appearance of the
     prompt. Prompt 1 is the normal prompt that is issued when
     <application>psql</application> requests a new command. Prompt 2 is
-    issued when more input is expected during command input because the
-    command was not terminated with a semicolon or a quote was not closed.
-    Prompt 3 is issued when you run an <acronym>SQL</acronym>
-    <command>COPY</command> command and you are expected to type in the
-    row values on the terminal.
+    issued when more input is expected during command entry, for example
+    because the command was not terminated with a semicolon or a quote
+    was not closed.
+    Prompt 3 is issued when you are running an <acronym>SQL</acronym>
+    <command>COPY FROM STDIN</command> command and you need to type in
+    a row value on the terminal.
     </para>
 
     <para>
@@ -3558,13 +3576,6 @@ testdb=&gt; <userinput>INSERT INTO my_table VALUES (:'content');</userinput>
           first dot, or <literal>[local]</literal> if the connection is
           over a Unix domain socket.
          </para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term><literal>%p</literal></term>
-        <listitem>
-         <para>The process ID of the backend currently connected to.</para>
         </listitem>
       </varlistentry>
 
@@ -3610,20 +3621,30 @@ testdb=&gt; <userinput>INSERT INTO my_table VALUES (:'content');</userinput>
       </varlistentry>
 
       <varlistentry>
+        <term><literal>%p</literal></term>
+        <listitem>
+         <para>The process ID of the backend currently connected to.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
         <term><literal>%R</literal></term>
         <listitem>
         <para>
-        In prompt 1 normally <literal>=</literal>, but <literal>^</literal> if
-        in single-line mode, and <literal>!</literal> if the session is
-        disconnected from the database (which can happen if
-        <command>\connect</command> fails). In prompt 2 the sequence is
-        replaced by <literal>-</literal>, <literal>*</literal>, a single quote,
-        a double quote, or a dollar sign, depending on whether
-        <application>psql</application> expects more input because the
-        command wasn't terminated yet, because you are inside a
-        <literal>/* ... */</literal> comment, or because you are inside
-        a quoted or dollar-escaped string. In prompt 3 the sequence doesn't
-        produce anything.
+        In prompt 1 normally <literal>=</literal>,
+        but <literal>^</literal> if in single-line mode,
+        or <literal>!</literal> if the session is disconnected from the
+        database (which can happen if <command>\connect</command> fails).
+        In prompt 2 <literal>%R</literal> is replaced by a character that
+        depends on why <application>psql</application> expects more input:
+        <literal>-</literal> if the command simply wasn't terminated yet,
+        but <literal>*</literal> if there is an unfinished
+        <literal>/* ... */</literal> comment,
+        a single quote if there is an unfinished quoted string,
+        a double quote if there is an unfinished quoted identifier,
+        a dollar sign if there is an unfinished dollar-quoted string,
+        or <literal>(</literal> if there is an unmatched left parenthesis.
+        In prompt 3 <literal>%R</literal> doesn't produce anything.
         </para>
         </listitem>
       </varlistentry>
@@ -4146,7 +4167,7 @@ second | four
 
 <para>
   When suitable, query results can be shown in a crosstab representation
-  with the \crosstabview command:
+  with the <command>\crosstabview</command> command:
 <programlisting>
 testdb=&gt; <userinput>SELECT first, second, first &gt; 2 AS gt2 FROM my_table;</userinput>
  first | second | ge2 
@@ -4168,7 +4189,7 @@ testdb=&gt; <userinput>\crosstabview first second</userinput>
 </programlisting>
 
 This second example shows a multiplication table with rows sorted in reverse
-numerical order and columns with an independant, ascending numerical order.
+numerical order and columns with an independent, ascending numerical order.
 <programlisting>
 testdb=&gt; <userinput>SELECT t1.first as "A", t2.first+100 AS "B", t1.first*(t2.first+100) as "AxB",</userinput>
 testdb(&gt; <userinput>row_number() over(order by t2.first) AS ord</userinput>

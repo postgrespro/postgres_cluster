@@ -63,8 +63,8 @@ static void commit_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 static void change_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 				  Relation relation, ReorderBufferChange *change);
 static void message_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
-				  XLogRecPtr message_lsn, bool transactional,
-				  const char *prefix, Size message_size, const char *message);
+				   XLogRecPtr message_lsn, bool transactional,
+				 const char *prefix, Size message_size, const char *message);
 
 static void LoadOutputPlugin(OutputPluginCallbacks *callbacks, char *plugin);
 
@@ -127,10 +127,8 @@ StartupDecodingContext(List *output_plugin_options,
 	slot = MyReplicationSlot;
 
 	context = AllocSetContextCreate(CurrentMemoryContext,
-									"Logical Decoding Context",
-									ALLOCSET_DEFAULT_MINSIZE,
-									ALLOCSET_DEFAULT_INITSIZE,
-									ALLOCSET_DEFAULT_MAXSIZE);
+									"Logical decoding context",
+									ALLOCSET_DEFAULT_SIZES);
 	old_context = MemoryContextSwitchTo(context);
 	ctx = palloc0(sizeof(LogicalDecodingContext));
 
@@ -281,7 +279,7 @@ CreateInitDecodingContext(char *plugin,
 	LWLockRelease(ProcArrayLock);
 
 	/*
-	 * tell the snapshot builder to only assemble snapshot once reaching the a
+	 * tell the snapshot builder to only assemble snapshot once reaching the
 	 * running_xact's record with the respective xmin.
 	 */
 	xmin_horizon = slot->data.catalog_xmin;
@@ -880,7 +878,7 @@ LogicalIncreaseRestartDecodingForSlot(XLogRecPtr current_lsn, XLogRecPtr restart
 }
 
 /*
- * Handle a consumer's conformation having received all changes up to lsn.
+ * Handle a consumer's confirmation having received all changes up to lsn.
  */
 void
 LogicalConfirmReceivedLocation(XLogRecPtr lsn)

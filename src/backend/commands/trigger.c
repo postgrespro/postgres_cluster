@@ -532,8 +532,8 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	 * can skip this for internally generated triggers, since the name
 	 * modification above should be sufficient.
 	 *
-	 * NOTE that this is cool only because we have ShareRowExclusiveLock on the
-	 * relation, so the trigger set won't be changing underneath us.
+	 * NOTE that this is cool only because we have ShareRowExclusiveLock on
+	 * the relation, so the trigger set won't be changing underneath us.
 	 */
 	if (!isInternal)
 	{
@@ -3339,9 +3339,7 @@ afterTriggerAddEvent(AfterTriggerEventList *events,
 			afterTriggers.event_cxt =
 				AllocSetContextCreate(TopTransactionContext,
 									  "AfterTriggerEvents",
-									  ALLOCSET_DEFAULT_MINSIZE,
-									  ALLOCSET_DEFAULT_INITSIZE,
-									  ALLOCSET_DEFAULT_MAXSIZE);
+									  ALLOCSET_DEFAULT_SIZES);
 
 		/*
 		 * Chunk size starts at 1KB and is allowed to increase up to 1MB.
@@ -3780,9 +3778,7 @@ afterTriggerInvokeEvents(AfterTriggerEventList *events,
 	per_tuple_context =
 		AllocSetContextCreate(CurrentMemoryContext,
 							  "AfterTriggerTupleContext",
-							  ALLOCSET_DEFAULT_MINSIZE,
-							  ALLOCSET_DEFAULT_INITSIZE,
-							  ALLOCSET_DEFAULT_MAXSIZE);
+							  ALLOCSET_DEFAULT_SIZES);
 
 	for_each_chunk(chunk, *events)
 	{

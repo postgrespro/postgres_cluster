@@ -532,7 +532,7 @@ pg_sleep(PG_FUNCTION_ARGS)
 	 * By computing the intended stop time initially, we avoid accumulation of
 	 * extra delay across multiple sleeps.  This also ensures we won't delay
 	 * less than the specified time when WaitLatch is terminated early by a
-	 * non-query-cancelling signal such as SIGHUP.
+	 * non-query-canceling signal such as SIGHUP.
 	 */
 
 #ifdef HAVE_INT64_TIMESTAMP
@@ -849,13 +849,13 @@ parse_ident(PG_FUNCTION_ARGS)
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("string is not a valid identifier: \"%s\"",
 								text_to_cstring(qualname)),
-					 errdetail("No valid identifier before \".\" symbol.")));
+						 errdetail("No valid identifier before \".\".")));
 			else if (after_dot)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("string is not a valid identifier: \"%s\"",
 								text_to_cstring(qualname)),
-					  errdetail("No valid identifier after \".\" symbol.")));
+						 errdetail("No valid identifier after \".\".")));
 			else
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),

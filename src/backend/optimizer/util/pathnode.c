@@ -941,7 +941,7 @@ add_partial_path_precheck(RelOptInfo *parent_rel, Cost total_cost,
  */
 Path *
 create_seqscan_path(PlannerInfo *root, RelOptInfo *rel,
-					Relids required_outer, int parallel_degree)
+					Relids required_outer, int parallel_workers)
 {
 	Path	   *pathnode = makeNode(Path);
 
@@ -950,9 +950,9 @@ create_seqscan_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->pathtarget = rel->reltarget;
 	pathnode->param_info = get_baserel_parampathinfo(root, rel,
 													 required_outer);
-	pathnode->parallel_aware = parallel_degree > 0 ? true : false;
+	pathnode->parallel_aware = parallel_workers > 0 ? true : false;
 	pathnode->parallel_safe = rel->consider_parallel;
-	pathnode->parallel_degree = parallel_degree;
+	pathnode->parallel_workers = parallel_workers;
 	pathnode->pathkeys = NIL;	/* seqscan has unordered result */
 
 	cost_seqscan(pathnode, root, rel, pathnode->param_info);
@@ -976,7 +976,7 @@ create_samplescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer
 													 required_outer);
 	pathnode->parallel_aware = false;
 	pathnode->parallel_safe = rel->consider_parallel;
-	pathnode->parallel_degree = 0;
+	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = NIL;	/* samplescan has unordered result */
 
 	cost_samplescan(pathnode, root, rel, pathnode->param_info);
@@ -1033,7 +1033,7 @@ create_index_path(PlannerInfo *root,
 														  required_outer);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel;
-	pathnode->path.parallel_degree = 0;
+	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = pathkeys;
 
 	/* Convert clauses to indexquals the executor can handle */
@@ -1082,7 +1082,7 @@ create_bitmap_heap_path(PlannerInfo *root,
 														  required_outer);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel;
-	pathnode->path.parallel_degree = 0;
+	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = NIL;		/* always unordered */
 
 	pathnode->bitmapqual = bitmapqual;
@@ -1118,7 +1118,7 @@ create_bitmap_and_path(PlannerInfo *root,
 	 */
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel;
-	pathnode->path.parallel_degree = 0;
+	pathnode->path.parallel_workers = 0;
 
 	pathnode->path.pathkeys = NIL;		/* always unordered */
 
@@ -1154,7 +1154,7 @@ create_bitmap_or_path(PlannerInfo *root,
 	 */
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel;
-	pathnode->path.parallel_degree = 0;
+	pathnode->path.parallel_workers = 0;
 
 	pathnode->path.pathkeys = NIL;		/* always unordered */
 
@@ -1183,7 +1183,7 @@ create_tidscan_path(PlannerInfo *root, RelOptInfo *rel, List *tidquals,
 														  required_outer);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel;
-	pathnode->path.parallel_degree = 0;
+	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = NIL;		/* always unordered */
 
 	pathnode->tidquals = tidquals;
@@ -1203,7 +1203,7 @@ create_tidscan_path(PlannerInfo *root, RelOptInfo *rel, List *tidquals,
  */
 AppendPath *
 create_append_path(RelOptInfo *rel, List *subpaths, Relids required_outer,
-				   int parallel_degree)
+				   int parallel_workers)
 {
 	AppendPath *pathnode = makeNode(AppendPath);
 	ListCell   *l;
@@ -1215,7 +1215,7 @@ create_append_path(RelOptInfo *rel, List *subpaths, Relids required_outer,
 															required_outer);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel;
-	pathnode->path.parallel_degree = parallel_degree;
+	pathnode->path.parallel_workers = parallel_workers;
 	pathnode->path.pathkeys = NIL;		/* result is always considered
 										 * unsorted */
 	pathnode->subpaths = subpaths;
@@ -1274,7 +1274,7 @@ create_merge_append_path(PlannerInfo *root,
 															required_outer);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel;
-	pathnode->path.parallel_degree = 0;
+	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = pathkeys;
 	pathnode->subpaths = subpaths;
 
@@ -1357,7 +1357,7 @@ create_result_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->path.param_info = NULL;	/* there are no other rels... */
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel;
-	pathnode->path.parallel_degree = 0;
+	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = NIL;
 	pathnode->quals = resconstantqual;
 
@@ -1398,7 +1398,7 @@ create_material_path(RelOptInfo *rel, Path *subpath)
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
-	pathnode->path.parallel_degree = subpath->parallel_degree;
+	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = subpath->pathkeys;
 
 	pathnode->subpath = subpath;
@@ -1463,7 +1463,7 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
-	pathnode->path.parallel_degree = subpath->parallel_degree;
+	pathnode->path.parallel_workers = subpath->parallel_workers;
 
 	/*
 	 * Assume the output is unsorted, since we don't necessarily have pathkeys
@@ -1681,15 +1681,15 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 														  required_outer);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = false;
-	pathnode->path.parallel_degree = subpath->parallel_degree;
+	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = NIL;		/* Gather has unordered result */
 
 	pathnode->subpath = subpath;
 	pathnode->single_copy = false;
 
-	if (pathnode->path.parallel_degree == 0)
+	if (pathnode->path.parallel_workers == 0)
 	{
-		pathnode->path.parallel_degree = 1;
+		pathnode->path.parallel_workers = 1;
 		pathnode->path.pathkeys = subpath->pathkeys;
 		pathnode->single_copy = true;
 	}
@@ -1718,7 +1718,7 @@ create_subqueryscan_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
-	pathnode->path.parallel_degree = subpath->parallel_degree;
+	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
 	pathnode->subpath = subpath;
 
@@ -1745,7 +1745,7 @@ create_functionscan_path(PlannerInfo *root, RelOptInfo *rel,
 													 required_outer);
 	pathnode->parallel_aware = false;
 	pathnode->parallel_safe = rel->consider_parallel;
-	pathnode->parallel_degree = 0;
+	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = pathkeys;
 
 	cost_functionscan(pathnode, root, rel, pathnode->param_info);
@@ -1771,7 +1771,7 @@ create_valuesscan_path(PlannerInfo *root, RelOptInfo *rel,
 													 required_outer);
 	pathnode->parallel_aware = false;
 	pathnode->parallel_safe = rel->consider_parallel;
-	pathnode->parallel_degree = 0;
+	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = NIL;	/* result is always unordered */
 
 	cost_valuesscan(pathnode, root, rel, pathnode->param_info);
@@ -1796,7 +1796,7 @@ create_ctescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
 													 required_outer);
 	pathnode->parallel_aware = false;
 	pathnode->parallel_safe = rel->consider_parallel;
-	pathnode->parallel_degree = 0;
+	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = NIL;	/* XXX for now, result is always unordered */
 
 	cost_ctescan(pathnode, root, rel, pathnode->param_info);
@@ -1822,7 +1822,7 @@ create_worktablescan_path(PlannerInfo *root, RelOptInfo *rel,
 													 required_outer);
 	pathnode->parallel_aware = false;
 	pathnode->parallel_safe = rel->consider_parallel;
-	pathnode->parallel_degree = 0;
+	pathnode->parallel_workers = 0;
 	pathnode->pathkeys = NIL;	/* result is always unordered */
 
 	/* Cost is the same as for a regular CTE scan */
@@ -1861,7 +1861,7 @@ create_foreignscan_path(PlannerInfo *root, RelOptInfo *rel,
 														  required_outer);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel;
-	pathnode->path.parallel_degree = 0;
+	pathnode->path.parallel_workers = 0;
 	pathnode->path.rows = rows;
 	pathnode->path.startup_cost = startup_cost;
 	pathnode->path.total_cost = total_cost;
@@ -2001,8 +2001,8 @@ create_nestloop_path(PlannerInfo *root,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = joinrel->consider_parallel &&
 		outer_path->parallel_safe && inner_path->parallel_safe;
-	/* This is a foolish way to estimate parallel_degree, but for now... */
-	pathnode->path.parallel_degree = outer_path->parallel_degree;
+	/* This is a foolish way to estimate parallel_workers, but for now... */
+	pathnode->path.parallel_workers = outer_path->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
 	pathnode->jointype = jointype;
 	pathnode->outerjoinpath = outer_path;
@@ -2064,8 +2064,8 @@ create_mergejoin_path(PlannerInfo *root,
 	pathnode->jpath.path.parallel_aware = false;
 	pathnode->jpath.path.parallel_safe = joinrel->consider_parallel &&
 		outer_path->parallel_safe && inner_path->parallel_safe;
-	/* This is a foolish way to estimate parallel_degree, but for now... */
-	pathnode->jpath.path.parallel_degree = outer_path->parallel_degree;
+	/* This is a foolish way to estimate parallel_workers, but for now... */
+	pathnode->jpath.path.parallel_workers = outer_path->parallel_workers;
 	pathnode->jpath.path.pathkeys = pathkeys;
 	pathnode->jpath.jointype = jointype;
 	pathnode->jpath.outerjoinpath = outer_path;
@@ -2126,8 +2126,8 @@ create_hashjoin_path(PlannerInfo *root,
 	pathnode->jpath.path.parallel_aware = false;
 	pathnode->jpath.path.parallel_safe = joinrel->consider_parallel &&
 		outer_path->parallel_safe && inner_path->parallel_safe;
-	/* This is a foolish way to estimate parallel_degree, but for now... */
-	pathnode->jpath.path.parallel_degree = outer_path->parallel_degree;
+	/* This is a foolish way to estimate parallel_workers, but for now... */
+	pathnode->jpath.path.parallel_workers = outer_path->parallel_workers;
 
 	/*
 	 * A hashjoin never has pathkeys, since its output ordering is
@@ -2168,6 +2168,7 @@ create_projection_path(PlannerInfo *root,
 					   PathTarget *target)
 {
 	ProjectionPath *pathnode = makeNode(ProjectionPath);
+	PathTarget *oldtarget = subpath->pathtarget;
 
 	pathnode->path.pathtype = T_Result;
 	pathnode->path.parent = rel;
@@ -2176,21 +2177,55 @@ create_projection_path(PlannerInfo *root,
 	pathnode->path.param_info = NULL;
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
-		subpath->parallel_safe;
-	pathnode->path.parallel_degree = subpath->parallel_degree;
+		subpath->parallel_safe &&
+		!has_parallel_hazard((Node *) target->exprs, false);
+	pathnode->path.parallel_workers = subpath->parallel_workers;
 	/* Projection does not change the sort order */
 	pathnode->path.pathkeys = subpath->pathkeys;
 
 	pathnode->subpath = subpath;
 
 	/*
-	 * The Result node's cost is cpu_tuple_cost per row, plus the cost of
-	 * evaluating the tlist.  There is no qual to worry about.
+	 * We might not need a separate Result node.  If the input plan node type
+	 * can project, we can just tell it to project something else.  Or, if it
+	 * can't project but the desired target has the same expression list as
+	 * what the input will produce anyway, we can still give it the desired
+	 * tlist (possibly changing its ressortgroupref labels, but nothing else).
+	 * Note: in the latter case, create_projection_plan has to recheck our
+	 * conclusion; see comments therein.
 	 */
-	pathnode->path.rows = subpath->rows;
-	pathnode->path.startup_cost = subpath->startup_cost + target->cost.startup;
-	pathnode->path.total_cost = subpath->total_cost + target->cost.startup +
-		(cpu_tuple_cost + target->cost.per_tuple) * subpath->rows;
+	if (is_projection_capable_path(subpath) ||
+		equal(oldtarget->exprs, target->exprs))
+	{
+		/* No separate Result node needed */
+		pathnode->dummypp = true;
+
+		/*
+		 * Set cost of plan as subpath's cost, adjusted for tlist replacement.
+		 */
+		pathnode->path.rows = subpath->rows;
+		pathnode->path.startup_cost = subpath->startup_cost +
+			(target->cost.startup - oldtarget->cost.startup);
+		pathnode->path.total_cost = subpath->total_cost +
+			(target->cost.startup - oldtarget->cost.startup) +
+			(target->cost.per_tuple - oldtarget->cost.per_tuple) * subpath->rows;
+	}
+	else
+	{
+		/* We really do need the Result node */
+		pathnode->dummypp = false;
+
+		/*
+		 * The Result node's cost is cpu_tuple_cost per row, plus the cost of
+		 * evaluating the tlist.  There is no qual to worry about.
+		 */
+		pathnode->path.rows = subpath->rows;
+		pathnode->path.startup_cost = subpath->startup_cost +
+			target->cost.startup;
+		pathnode->path.total_cost = subpath->total_cost +
+			target->cost.startup +
+			(cpu_tuple_cost + target->cost.per_tuple) * subpath->rows;
+	}
 
 	return pathnode;
 }
@@ -2199,18 +2234,17 @@ create_projection_path(PlannerInfo *root,
  * apply_projection_to_path
  *	  Add a projection step, or just apply the target directly to given path.
  *
- * Most plan types include ExecProject, so we can implement a new projection
- * without an extra plan node: just replace the given path's pathtarget with
- * the desired one.  If the given path can't project, add a ProjectionPath.
+ * This has the same net effect as create_projection_path(), except that if
+ * a separate Result plan node isn't needed, we just replace the given path's
+ * pathtarget with the desired one.  This must be used only when the caller
+ * knows that the given path isn't referenced elsewhere and so can be modified
+ * in-place.
  *
- * We can also short-circuit cases where the targetlist expressions are
- * actually equal; this is not an uncommon case, since it may arise from
- * trying to apply a PathTarget with sortgroupref labeling to a derived
- * path without such labeling.
+ * If the input path is a GatherPath, we try to push the new target down to
+ * its input as well; this is a yet more invasive modification of the input
+ * path, which create_projection_path() can't do.
  *
- * This requires knowing that the source path won't be referenced for other
- * purposes (e.g., other possible paths), since we modify it in-place.  Note
- * also that we mustn't change the source path's parent link; so when it is
+ * Note that we mustn't change the source path's parent link; so when it is
  * add_path'd to "rel" things will be a bit inconsistent.  So far that has
  * not caused any trouble.
  *
@@ -2226,9 +2260,11 @@ apply_projection_to_path(PlannerInfo *root,
 {
 	QualCost	oldcost;
 
-	/* Make a separate ProjectionPath if needed */
-	if (!is_projection_capable_path(path) &&
-		!equal(path->pathtarget->exprs, target->exprs))
+	/*
+	 * If given path can't project, we might need a Result node, so make a
+	 * separate ProjectionPath.
+	 */
+	if (!is_projection_capable_path(path))
 		return (Path *) create_projection_path(root, rel, path, target);
 
 	/*
@@ -2245,7 +2281,7 @@ apply_projection_to_path(PlannerInfo *root,
 	/*
 	 * If the path happens to be a Gather path, we'd like to arrange for the
 	 * subpath to return the required target list so that workers can help
-	 * project. But if there is something that is not parallel-safe in the
+	 * project.  But if there is something that is not parallel-safe in the
 	 * target expressions, then we can't.
 	 */
 	if (IsA(path, GatherPath) &&
@@ -2257,19 +2293,27 @@ apply_projection_to_path(PlannerInfo *root,
 		 * We always use create_projection_path here, even if the subpath is
 		 * projection-capable, so as to avoid modifying the subpath in place.
 		 * It seems unlikely at present that there could be any other
-		 * references to the subpath anyway, but better safe than sorry.
-		 * (create_projection_plan will only insert a Result node if the
-		 * subpath is not projection-capable, so we only include the cost of
-		 * that node if it will actually be inserted.  This is a bit grotty
-		 * but we can improve it later if it seems important.)
+		 * references to the subpath, but better safe than sorry.
+		 *
+		 * Note that we don't change the GatherPath's cost estimates; it might
+		 * be appropriate to do so, to reflect the fact that the bulk of the
+		 * target evaluation will happen in workers.
 		 */
-		if (!is_projection_capable_path(gpath->subpath))
-			gpath->path.total_cost += cpu_tuple_cost * gpath->subpath->rows;
 		gpath->subpath = (Path *)
 			create_projection_path(root,
 								   gpath->subpath->parent,
 								   gpath->subpath,
 								   target);
+	}
+	else if (path->parallel_safe &&
+			 has_parallel_hazard((Node *) target->exprs, false))
+	{
+		/*
+		 * We're inserting a parallel-restricted target list into a path
+		 * currently marked parallel-safe, so we have to mark it as no longer
+		 * safe.
+		 */
+		path->parallel_safe = false;
 	}
 
 	return path;
@@ -2303,7 +2347,7 @@ create_sort_path(PlannerInfo *root,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
-	pathnode->path.parallel_degree = subpath->parallel_degree;
+	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
 
 	pathnode->subpath = subpath;
@@ -2348,7 +2392,7 @@ create_group_path(PlannerInfo *root,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
-	pathnode->path.parallel_degree = subpath->parallel_degree;
+	pathnode->path.parallel_workers = subpath->parallel_workers;
 	/* Group doesn't change sort ordering */
 	pathnode->path.pathkeys = subpath->pathkeys;
 
@@ -2405,7 +2449,7 @@ create_upper_unique_path(PlannerInfo *root,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
-	pathnode->path.parallel_degree = subpath->parallel_degree;
+	pathnode->path.parallel_workers = subpath->parallel_workers;
 	/* Unique doesn't change the input ordering */
 	pathnode->path.pathkeys = subpath->pathkeys;
 
@@ -2433,12 +2477,11 @@ create_upper_unique_path(PlannerInfo *root,
  * 'subpath' is the path representing the source of data
  * 'target' is the PathTarget to be computed
  * 'aggstrategy' is the Agg node's basic implementation strategy
+ * 'aggsplit' is the Agg node's aggregate-splitting mode
  * 'groupClause' is a list of SortGroupClause's representing the grouping
  * 'qual' is the HAVING quals if any
  * 'aggcosts' contains cost info about the aggregate functions to be computed
  * 'numGroups' is the estimated number of groups (1 if not grouping)
- * 'combineStates' is set to true if the Agg node should combine agg states
- * 'finalizeAggs' is set to false if the Agg node should not call the finalfn
  */
 AggPath *
 create_agg_path(PlannerInfo *root,
@@ -2446,13 +2489,11 @@ create_agg_path(PlannerInfo *root,
 				Path *subpath,
 				PathTarget *target,
 				AggStrategy aggstrategy,
+				AggSplit aggsplit,
 				List *groupClause,
 				List *qual,
 				const AggClauseCosts *aggcosts,
-				double numGroups,
-				bool combineStates,
-				bool finalizeAggs,
-				bool serialStates)
+				double numGroups)
 {
 	AggPath    *pathnode = makeNode(AggPath);
 
@@ -2464,7 +2505,7 @@ create_agg_path(PlannerInfo *root,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
-	pathnode->path.parallel_degree = subpath->parallel_degree;
+	pathnode->path.parallel_workers = subpath->parallel_workers;
 	if (aggstrategy == AGG_SORTED)
 		pathnode->path.pathkeys = subpath->pathkeys;	/* preserves order */
 	else
@@ -2472,12 +2513,10 @@ create_agg_path(PlannerInfo *root,
 	pathnode->subpath = subpath;
 
 	pathnode->aggstrategy = aggstrategy;
+	pathnode->aggsplit = aggsplit;
 	pathnode->numGroups = numGroups;
 	pathnode->groupClause = groupClause;
 	pathnode->qual = qual;
-	pathnode->finalizeAggs = finalizeAggs;
-	pathnode->combineStates = combineStates;
-	pathnode->serialStates = serialStates;
 
 	cost_agg(&pathnode->path, root,
 			 aggstrategy, aggcosts,
@@ -2532,7 +2571,7 @@ create_groupingsets_path(PlannerInfo *root,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
-	pathnode->path.parallel_degree = subpath->parallel_degree;
+	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->subpath = subpath;
 
 	/*
@@ -2647,7 +2686,7 @@ create_minmaxagg_path(PlannerInfo *root,
 	pathnode->path.parallel_aware = false;
 	/* A MinMaxAggPath implies use of subplans, so cannot be parallel-safe */
 	pathnode->path.parallel_safe = false;
-	pathnode->path.parallel_degree = 0;
+	pathnode->path.parallel_workers = 0;
 	/* Result is one unordered row */
 	pathnode->path.rows = 1;
 	pathnode->path.pathkeys = NIL;
@@ -2705,7 +2744,7 @@ create_windowagg_path(PlannerInfo *root,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
-	pathnode->path.parallel_degree = subpath->parallel_degree;
+	pathnode->path.parallel_workers = subpath->parallel_workers;
 	/* WindowAgg preserves the input sort order */
 	pathnode->path.pathkeys = subpath->pathkeys;
 
@@ -2773,7 +2812,7 @@ create_setop_path(PlannerInfo *root,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
-	pathnode->path.parallel_degree = subpath->parallel_degree;
+	pathnode->path.parallel_workers = subpath->parallel_workers;
 	/* SetOp preserves the input sort order if in sort mode */
 	pathnode->path.pathkeys =
 		(strategy == SETOP_SORTED) ? subpath->pathkeys : NIL;
@@ -2833,7 +2872,7 @@ create_recursiveunion_path(PlannerInfo *root,
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		leftpath->parallel_safe && rightpath->parallel_safe;
 	/* Foolish, but we'll do it like joins for now: */
-	pathnode->path.parallel_degree = leftpath->parallel_degree;
+	pathnode->path.parallel_workers = leftpath->parallel_workers;
 	/* RecursiveUnion result is always unsorted */
 	pathnode->path.pathkeys = NIL;
 
@@ -2871,7 +2910,7 @@ create_lockrows_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->path.param_info = NULL;
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = false;
-	pathnode->path.parallel_degree = 0;
+	pathnode->path.parallel_workers = 0;
 	pathnode->path.rows = subpath->rows;
 
 	/*
@@ -2942,7 +2981,7 @@ create_modifytable_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->path.param_info = NULL;
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = false;
-	pathnode->path.parallel_degree = 0;
+	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = NIL;
 
 	/*
@@ -3029,7 +3068,7 @@ create_limit_path(PlannerInfo *root, RelOptInfo *rel,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel &&
 		subpath->parallel_safe;
-	pathnode->path.parallel_degree = subpath->parallel_degree;
+	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.rows = subpath->rows;
 	pathnode->path.startup_cost = subpath->startup_cost;
 	pathnode->path.total_cost = subpath->total_cost;

@@ -52,9 +52,8 @@ typedef struct
 	Buffer		buffer;			/* registered buffer */
 	int			flags;			/* flags for this buffer */
 	int			deltaLen;		/* space consumed in delta field */
-	char		*image;			/* copy of page image for modification,
-								 * do not do it in-place to have aligned
-								 * memory chunk */
+	char	   *image;			/* copy of page image for modification, do not
+								 * do it in-place to have aligned memory chunk */
 	char		delta[MAX_DELTA_SIZE];	/* delta between page images */
 } PageData;
 
@@ -64,7 +63,7 @@ struct GenericXLogState
 	/*
 	 * page's images. Should be first in this struct to have MAXALIGN'ed
 	 * images addresses, because some code working with pages directly aligns
-	 * addresses, not an offsets from begining of page
+	 * addresses, not offsets from beginning of page
 	 */
 	char		images[MAX_GENERIC_XLOG_PAGES * BLCKSZ];
 	PageData	pages[MAX_GENERIC_XLOG_PAGES];

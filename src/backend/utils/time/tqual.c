@@ -79,7 +79,6 @@
 /* Static variables representing various special snapshot semantics */
 SnapshotData SnapshotSelfData = {HeapTupleSatisfiesSelf};
 SnapshotData SnapshotAnyData = {HeapTupleSatisfiesAny};
-SnapshotData SnapshotToastData = {HeapTupleSatisfiesToast};
 
 /* local functions */
 static bool XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
@@ -420,8 +419,8 @@ HeapTupleSatisfiesToast(HeapTuple htup, Snapshot snapshot,
 
 		/*
 		 * An invalid Xmin can be left behind by a speculative insertion that
-		 * is cancelled by super-deleting the tuple.  We shouldn't see any of
-		 * those in TOAST tables, but better safe than sorry.
+		 * is canceled by super-deleting the tuple.  This also applies to
+		 * TOAST tuples created during speculative insertion.
 		 */
 		else if (!TransactionIdIsValid(HeapTupleHeaderGetXmin(tuple)))
 			return false;
@@ -621,15 +620,12 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
 	{
 		TransactionId xmax;
 
+		if (HEAP_LOCKED_UPGRADED(tuple->t_infomask))
+			return HeapTupleMayBeUpdated;
+
 		if (HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask))
 		{
-			/*
-			 * If it's only locked but neither EXCL_LOCK nor KEYSHR_LOCK is
-			 * set, it cannot possibly be running.  Otherwise need to check.
-			 */
-			if ((tuple->t_infomask & (HEAP_XMAX_EXCL_LOCK |
-									  HEAP_XMAX_KEYSHR_LOCK)) &&
-				MultiXactIdIsRunning(HeapTupleHeaderGetRawXmax(tuple), true))
+			if (MultiXactIdIsRunning(HeapTupleHeaderGetRawXmax(tuple), true))
 				return HeapTupleBeingUpdated;
 
 			SetHintBits(tuple, buffer, HEAP_XMAX_INVALID, InvalidTransactionId);
@@ -1285,26 +1281,21 @@ HeapTupleSatisfiesVacuum(HeapTuple htup, TransactionId OldestXmin,
 		 * "Deleting" xact really only locked it, so the tuple is live in any
 		 * case.  However, we should make sure that either XMAX_COMMITTED or
 		 * XMAX_INVALID gets set once the xact is gone, to reduce the costs of
-		 * examining the tuple for future xacts.  Also, marking dead
-		 * MultiXacts as invalid here provides defense against MultiXactId
-		 * wraparound (see also comments in heap_freeze_tuple()).
+		 * examining the tuple for future xacts.
 		 */
 		if (!(tuple->t_infomask & HEAP_XMAX_COMMITTED))
 		{
 			if (tuple->t_infomask & HEAP_XMAX_IS_MULTI)
 			{
 				/*
-				 * If it's only locked but neither EXCL_LOCK nor KEYSHR_LOCK
-				 * are set, it cannot possibly be running; otherwise have to
-				 * check.
+				 * If it's a pre-pg_upgrade tuple, the multixact cannot
+				 * possibly be running; otherwise have to check.
 				 */
-				if ((tuple->t_infomask & (HEAP_XMAX_EXCL_LOCK |
-										  HEAP_XMAX_KEYSHR_LOCK)) &&
+				if (!HEAP_LOCKED_UPGRADED(tuple->t_infomask) &&
 					MultiXactIdIsRunning(HeapTupleHeaderGetRawXmax(tuple),
 										 true))
 					return HEAPTUPLE_LIVE;
 				SetHintBits(tuple, buffer, HEAP_XMAX_INVALID, InvalidTransactionId);
-
 			}
 			else
 			{

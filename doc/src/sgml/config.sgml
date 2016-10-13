@@ -1227,8 +1227,8 @@ include_dir 'conf.d'
        </para>
 
        <para>
-        If this is on, you should create users as <literal>username@dbname</>.
-        When <literal>username</> is passed by a connecting client,
+        If this is on, you should create users as <replaceable>username@dbname</>.
+        When <replaceable>username</> is passed by a connecting client,
         <literal>@</> and the database name are appended to the user
         name and that database-specific user name is looked up by the
         server. Note that when you create users with names containing
@@ -1603,7 +1603,7 @@ include_dir 'conf.d'
       </term>
       <listitem>
        <para>
-        Specifies the maximum amount of disk space that a session can use
+        Specifies the maximum amount of disk space that a process can use
         for temporary files, such as sort and hash temporary files, or the
         storage file for a held cursor.  A transaction attempting to exceed
         this limit will be canceled.
@@ -1613,7 +1613,7 @@ include_dir 'conf.d'
        </para>
        <para>
         This setting constrains the total space used at any instant by all
-        temporary files used by a given <productname>PostgreSQL</> session.
+        temporary files used by a given <productname>PostgreSQL</> process.
         It should be noted that disk space used for explicit temporary
         tables, as opposed to temporary files used behind-the-scenes in query
         execution, does <emphasis>not</emphasis> count against this limit.
@@ -1903,7 +1903,7 @@ include_dir 'conf.d'
          cache, where performance might degrade.  This setting may have no
          effect on some platforms.  The valid range is between
          <literal>0</literal>, which disables controlled writeback, and
-         <literal>2MB</literal>.  The default is <literal>512Kb</> on Linux,
+         <literal>2MB</literal>.  The default is <literal>512kB</> on Linux,
          <literal>0</> elsewhere.  (Non-default values of
          <symbol>BLCKSZ</symbol> change the default and maximum.)
          This parameter can only be set in the <filename>postgresql.conf</>
@@ -1944,20 +1944,16 @@ include_dir 'conf.d'
         </para>
 
         <para>
-         A good starting point for this setting is the number of separate
+         For magnetic drives, a good starting point for this setting is the
+         number of separate
          drives comprising a RAID 0 stripe or RAID 1 mirror being used for the
          database.  (For RAID 5 the parity drive should not be counted.)
          However, if the database is often busy with multiple queries issued in
          concurrent sessions, lower values may be sufficient to keep the disk
          array busy.  A value higher than needed to keep the disks busy will
          only result in extra CPU overhead.
-        </para>
-
-        <para>
-         For more exotic systems, such as memory-based storage or a RAID array
-         that is limited by bus bandwidth, the correct value might be the
-         number of I/O paths available.  Some experimentation may be needed
-         to find the best value.
+         SSDs and other memory-based storage can often process many
+         concurrent requests, so the best value might be in the hundreds.
         </para>
 
         <para>
@@ -1998,22 +1994,43 @@ include_dir 'conf.d'
        </listitem>
       </varlistentry>
 
-      <varlistentry id="guc-max-parallel-degree" xreflabel="max_parallel_degree">
-       <term><varname>max_parallel_degree</varname> (<type>integer</type>)
+      <varlistentry id="guc-max-parallel-workers-per-gather" xreflabel="max_parallel_workers_per_gather">
+       <term><varname>max_parallel_workers_per_gather</varname> (<type>integer</type>)
        <indexterm>
-        <primary><varname>max_parallel_degree</> configuration parameter</primary>
+        <primary><varname>max_parallel_workers_per_gather</> configuration parameter</primary>
        </indexterm>
        </term>
        <listitem>
         <para>
-         Sets the maximum number of workers that can be started for an
-         individual parallel operation.  Parallel workers are taken from the
+         Sets the maximum number of workers that can be started by a single
+         <literal>Gather</literal> node.  Parallel workers are taken from the
          pool of processes established by
          <xref linkend="guc-max-worker-processes">.  Note that the requested
-         number of workers may not actually be available at runtime.  If this
+         number of workers may not actually be available at run time.  If this
          occurs, the plan will run with fewer workers than expected, which may
-         be inefficient.  The default value is 2.  Setting this value to 0
+         be inefficient.  Setting this value to 0, which is the default,
          disables parallel query execution.
+        </para>
+
+        <para>
+         Note that parallel queries may consume very substantially more
+         resources than non-parallel queries, because each worker process is
+         a completely separate process which has roughly the same impact on the
+         system as an additional user session.  This should be taken into
+         account when choosing a value for this setting, as well as when
+         configuring other settings that control resource utilization, such
+         as <xref linkend="guc-work-mem">.  Resource limits such as
+         <varname>work_mem</> are applied individually to each worker,
+         which means the total utilization may be much higher across all
+         processes than it would normally be for any single process.
+         For example, a parallel query using 4 workers may use up to 5 times
+         as much CPU time, memory, I/O bandwidth, and so forth as a query which
+         uses no workers at all.
+        </para>
+
+        <para>
+         For more information on parallel query, see
+         <xref linkend="parallel-query">.
         </para>
        </listitem>
       </varlistentry>
@@ -2038,9 +2055,9 @@ include_dir 'conf.d'
          than the OS's page cache, where performance might degrade.  This
          setting may have no effect on some platforms.  The valid range is
          between <literal>0</literal>, which disables controlled writeback,
-         and <literal>2MB</literal>.  The default is <literal>128Kb</> on
-         Linux, <literal>0</> elsewhere.  (Non-default values of
-         <symbol>BLCKSZ</symbol> change the default and maximum.)
+         and <literal>2MB</literal>.  The default is <literal>0</> (i.e. no
+         flush control).  (Non-default values of <symbol>BLCKSZ</symbol>
+         change the maximum.)
         </para>
        </listitem>
       </varlistentry>
@@ -2077,6 +2094,15 @@ include_dir 'conf.d'
          useful for testing.  While a setting as high as <literal>60d</> is
          allowed, please note that in many workloads extreme bloat or
          transaction ID wraparound may occur in much shorter time frames.
+        </para>
+
+        <para>
+         When this feature is enabled, freed space at the end of a relation
+         cannot be released to the operating system, since that could remove
+         information needed to detect the <literal>snapshot too old</>
+         condition.  All space allocated to a relation remains associated with
+         that relation for reuse only within that relation unless explicitly
+         freed (for example, with <command>VACUUM FULL</>).
         </para>
 
         <para>
@@ -2518,7 +2544,7 @@ include_dir 'conf.d'
         less than <varname>wal_writer_flush_after</> bytes of WAL have been
         produced since, WAL is only written to the OS, not flushed to disk.
         If <varname>wal_writer_flush_after</> is set to <literal>0</> WAL is
-        flushed everytime the WAL writer has written WAL.  The default is
+        flushed every time the WAL writer has written WAL.  The default is
         <literal>1MB</literal>. This parameter can only be set in the
         <filename>postgresql.conf</> file or on the server command line.
        </para>
@@ -2593,7 +2619,7 @@ include_dir 'conf.d'
       <listitem>
        <para>
         Maximum time between automatic WAL checkpoints, in seconds.
-        The valid range is between 30 seconds and one hour.
+        The valid range is between 30 seconds and one day.
         The default is five minutes (<literal>5min</>).
         Increasing this parameter can increase the amount of time needed
         for crash recovery.
@@ -2639,7 +2665,7 @@ include_dir 'conf.d'
         than the OS's page cache, where performance might degrade.  This
         setting may have no effect on some platforms.  The valid range is
         between <literal>0</literal>, which disables controlled writeback,
-        and <literal>2MB</literal>.  The default is <literal>256Kb</> on
+        and <literal>2MB</literal>.  The default is <literal>256kB</> on
         Linux, <literal>0</> elsewhere.  (Non-default values of
         <symbol>BLCKSZ</symbol> change the default and maximum.)
         This parameter can only be set in the <filename>postgresql.conf</>
@@ -3699,6 +3725,20 @@ include_dir 'conf.d'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-min-parallel-relation-size" xreflabel="min_parallel_relation_size">
+      <term><varname>min_parallel_relation_size</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>min_parallel_relation_size</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Sets the minimum size of relations to be considered for parallel scan.
+        The default is 8 megabytes (<literal>8MB</>).
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-effective-cache-size" xreflabel="effective_cache_size">
       <term><varname>effective_cache_size</varname> (<type>integer</type>)
       <indexterm>
@@ -4453,7 +4493,7 @@ local0.*    /var/log/postgresql
          sequence number (such as <literal>[2]</literal>).  This circumvents
          the <quote>--- last message repeated N times ---</quote> suppression
          that many syslog implementations perform by default.  In more modern
-         syslog implementations, repeat message suppression can be configured
+         syslog implementations, repeated message suppression can be configured
          (for example, <literal>$RepeatedMsgReduction</literal>
          in <productname>rsyslog</productname>), so this might not be
          necessary.  Also, you could turn this off if you actually want to
@@ -5353,9 +5393,10 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
     <title>Process Title</title>
 
     <para>
-     These settings control how the process title as seen
-     by <command>ps</command> is modified.  See <xref linkend="monitoring-ps">
-     for details.
+     These settings control how process titles of server processes are
+     modified.  Process titles are typically viewed using programs like
+     <application>ps</> or, on Windows, <application>Process Explorer</>.
+     See <xref linkend="monitoring-ps"> for details.
     </para>
 
     <variablelist>
@@ -5368,17 +5409,13 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       <listitem>
        <para>
         Sets the cluster name that appears in the process title for all
-        processes in this cluster. The name can be any string of less than
-        <symbol>NAMEDATALEN</> characters (64 characters in a standard
+        server processes in this cluster. The name can be any string of less
+        than <symbol>NAMEDATALEN</> characters (64 characters in a standard
         build). Only printable ASCII characters may be used in the
         <varname>cluster_name</varname> value. Other characters will be
         replaced with question marks (<literal>?</literal>).  No name is shown
         if this parameter is set to the empty string <literal>''</> (which is
         the default). This parameter can only be set at server start.
-       </para>
-       <para>
-        The process title is typically viewed using programs like
-        <application>ps</> or, on Windows, <application>Process Explorer</>.
        </para>
       </listitem>
      </varlistentry>
@@ -5392,9 +5429,10 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       <listitem>
        <para>
         Enables updating of the process title every time a new SQL command
-        is received by the server.  The process title is typically viewed
-        by the <command>ps</> command,
-        or in Windows by using the <application>Process Explorer</>.
+        is received by the server.
+        This setting defaults to <literal>on</> on most platforms, but it
+        defaults to <literal>off</> on Windows due to that platform's larger
+        overhead for updating the process title.
         Only superusers can change this setting.
        </para>
       </listitem>

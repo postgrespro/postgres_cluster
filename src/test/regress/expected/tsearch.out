@@ -555,6 +555,18 @@ SELECT plainto_tsquery('english', 'foo bar') && 'asd | fg';
 (1 row)
 
 -- Check stop word deletion, a and s are stop-words
+SELECT to_tsquery('english', '!(a & !b) & c');
+ to_tsquery 
+------------
+ 'b' & 'c'
+(1 row)
+
+SELECT to_tsquery('english', '!(a & !b)');
+ to_tsquery 
+------------
+ 'b'
+(1 row)
+
 SELECT to_tsquery('english', '(1 <-> 2) <-> a');
  to_tsquery  
 -------------
@@ -778,9 +790,9 @@ SELECT to_tsquery('english', 'foo <-> a <-> the <-> bar');
 (1 row)
 
 SELECT phraseto_tsquery('english', 'PostgreSQL can be extended by the user in many ways');
-                           phraseto_tsquery                            
------------------------------------------------------------------------
- ( ( ( 'postgresql' <3> 'extend' ) <3> 'user' ) <2> 'mani' ) <-> 'way'
+                     phraseto_tsquery                      
+-----------------------------------------------------------
+ 'postgresql' <3> 'extend' <3> 'user' <2> 'mani' <-> 'way'
 (1 row)
 
 SELECT ts_rank_cd(to_tsvector('english', '
@@ -1215,15 +1227,15 @@ SELECT ts_rewrite('1 & (2 <-> 3)', 'SELECT keyword, sample FROM test_tsquery'::t
 (1 row)
 
 SELECT ts_rewrite('1 & (2 <2> 3)', 'SELECT keyword, sample FROM test_tsquery'::text );
-      ts_rewrite       
------------------------
- '1' & ( '2' <2> '3' )
+    ts_rewrite     
+-------------------
+ '1' & '2' <2> '3'
 (1 row)
 
 SELECT ts_rewrite('5 <-> (1 & (2 <-> 3))', 'SELECT keyword, sample FROM test_tsquery'::text );
-                  ts_rewrite                   
------------------------------------------------
- ( '5' <-> '1' ) & ( '5' <-> ( '2' <-> '3' ) )
+              ts_rewrite               
+---------------------------------------
+ '5' <-> '1' & '5' <-> ( '2' <-> '3' )
 (1 row)
 
 SELECT ts_rewrite('5 <-> (6 | 8)', 'SELECT keyword, sample FROM test_tsquery'::text );
@@ -1459,13 +1471,14 @@ select * from pendtest where 'ipi:*'::tsquery @@ ts;
 
 --check OP_PHRASE on index
 create temp table phrase_index_test(fts tsvector);
-insert into phrase_index_test values('A fat cat has just eaten a rat.');
+insert into phrase_index_test values ('A fat cat has just eaten a rat.');
+insert into phrase_index_test values (to_tsvector('english', 'A fat cat has just eaten a rat.'));
 create index phrase_index_test_idx on phrase_index_test using gin(fts);
 set enable_seqscan = off;
 select * from phrase_index_test where fts @@ phraseto_tsquery('english', 'fat cat');
-                       fts                       
--------------------------------------------------
- 'A' 'a' 'cat' 'eaten' 'fat' 'has' 'just' 'rat.'
+                fts                
+-----------------------------------
+ 'cat':3 'eaten':6 'fat':2 'rat':8
 (1 row)
 
 set enable_seqscan = on;

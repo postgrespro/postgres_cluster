@@ -249,6 +249,7 @@ XLogDumpXLogRead(const char *directory, TimeLineID timeline_id,
 		if (sendFile < 0 || !XLByteInSeg(recptr, sendSegNo))
 		{
 			char		fname[MAXFNAMELEN];
+			int			tries;
 
 			/* Switch to another logfile segment */
 			if (sendFile >= 0)
@@ -258,7 +259,30 @@ XLogDumpXLogRead(const char *directory, TimeLineID timeline_id,
 
 			XLogFileName(fname, timeline_id, sendSegNo);
 
-			sendFile = fuzzy_open_file(directory, fname);
+			/*
+			 * In follow mode there is a short period of time after the
+			 * server has written the end of the previous file before the
+			 * new file is available. So we loop for 5 seconds looking
+			 * for the file to appear before giving up.
+			 */
+			for (tries = 0; tries < 10; tries++)
+			{
+				sendFile = fuzzy_open_file(directory, fname);
+				if (sendFile >= 0)
+					break;
+				if (errno == ENOENT)
+				{
+					int			save_errno = errno;
+
+					/* File not there yet, try again */
+					pg_usleep(500 * 1000);
+
+					errno = save_errno;
+					continue;
+				}
+				/* Any other error, fall through and fail */
+				break;
+			}
 
 			if (sendFile < 0)
 				fatal_error("could not find file \"%s\": %s",
@@ -855,7 +879,7 @@ main(int argc, char **argv)
 		if (!verify_directory(private.inpath))
 		{
 			fprintf(stderr,
-					"%s: path \"%s\" cannot be opened: %s",
+					"%s: path \"%s\" cannot be opened: %s\n",
 					progname, private.inpath, strerror(errno));
 			goto bad_argument;
 		}
@@ -949,7 +973,7 @@ main(int argc, char **argv)
 	/* we don't know what to print */
 	if (XLogRecPtrIsInvalid(private.startptr))
 	{
-		fprintf(stderr, "%s: no start log position given in range mode.\n", progname);
+		fprintf(stderr, "%s: no start log position given.\n", progname);
 		goto bad_argument;
 	}
 

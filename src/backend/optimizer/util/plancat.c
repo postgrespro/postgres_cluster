@@ -28,7 +28,6 @@
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
 #include "catalog/pg_am.h"
-#include "catalog/pg_constraint.h"
 #include "foreign/fdwapi.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
@@ -42,7 +41,6 @@
 #include "rewrite/rewriteManip.h"
 #include "storage/bufmgr.h"
 #include "utils/lsyscache.h"
-#include "utils/syscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
@@ -54,6 +52,8 @@ int			constraint_exclusion = CONSTRAINT_EXCLUSION_PARTITION;
 get_relation_info_hook_type get_relation_info_hook = NULL;
 
 
+static void get_relation_foreign_keys(PlannerInfo *root, RelOptInfo *rel,
+						  Relation relation);
 static bool infer_collation_opclass_match(InferenceElem *elem, Relation idxRel,
 							  List *idxExprs);
 static int32 get_rel_data_width(Relation rel, int32 *attr_widths);
@@ -79,6 +79,8 @@ static List *build_index_tlist(PlannerInfo *root, IndexOptInfo *index,
  *	pages		number of pages
  *	tuples		number of tuples
  *
+ * Also, add information about the relation's foreign keys to root->fkey_list.
+ *
  * Also, initialize the attr_needed[] and attr_widths[] arrays.  In most
  * cases these are left as zeroes, but sometimes we need to compute attr
  * widths here, and we may as well cache the results for costsize.c.
@@ -96,9 +98,6 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 	Relation	relation;
 	bool		hasindex;
 	List	   *indexinfos = NIL;
-	List	   *fkinfos = NIL;
-	List	   *fkoidlist;
-	ListCell   *l;
 
 	/*
 	 * We need not lock the relation since it was already locked, either by
@@ -133,8 +132,8 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 		estimate_rel_size(relation, rel->attr_widths - rel->min_attr,
 						  &rel->pages, &rel->tuples, &rel->allvisfrac);
 
-	/* Retrive the parallel_degree reloption, if set. */
-	rel->rel_parallel_degree = RelationGetParallelDegree(relation, -1);
+	/* Retrieve the parallel_workers reloption, or -1 if not set. */
+	rel->rel_parallel_workers = RelationGetParallelWorkers(relation, -1);
 
 	/*
 	 * Make list of indexes.  Ignore indexes on system catalogs if told to.
@@ -149,6 +148,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 	if (hasindex)
 	{
 		List	   *indexoidlist;
+		ListCell   *l;
 		LOCKMODE	lmode;
 
 		indexoidlist = RelationGetIndexList(relation);
@@ -395,85 +395,6 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 
 	rel->indexlist = indexinfos;
 
-	/*
-	 * Load foreign key data. Note this is the definitional data from the
-	 * catalog only and does not lock the referenced tables here. The
-	 * precise definition of the FK is important and may affect the usage
-	 * elsewhere in the planner, e.g. if the constraint is deferred or
-	 * if the constraint is not valid then relying upon this in the executor
-	 * may not be accurate, though might be considered a useful estimate for
-	 * planning purposes.
-	 */
-	fkoidlist = RelationGetFKeyList(relation);
-
-	foreach(l, fkoidlist)
-	{
-		Oid			fkoid = lfirst_oid(l);
-		HeapTuple	htup;
-		Form_pg_constraint constraint;
-		ForeignKeyOptInfo *info;
-		Datum		adatum;
-		bool		isnull;
-		ArrayType  *arr;
-		int			numkeys;
-		int			i;
-
-		htup = SearchSysCache1(CONSTROID, ObjectIdGetDatum(fkoid));
-		if (!HeapTupleIsValid(htup)) /* should not happen */
-			elog(ERROR, "cache lookup failed for constraint %u", fkoid);
-		constraint = (Form_pg_constraint) GETSTRUCT(htup);
-
-		Assert(constraint->contype == CONSTRAINT_FOREIGN);
-
-		info = makeNode(ForeignKeyOptInfo);
-
-		info->conrelid = constraint->conrelid;
-		info->confrelid = constraint->confrelid;
-
-		/* conkey */
-		adatum = SysCacheGetAttr(CONSTROID, htup,
-									Anum_pg_constraint_conkey, &isnull);
-		Assert(!isnull);
-
-		arr = DatumGetArrayTypeP(adatum);
-		numkeys = ARR_DIMS(arr)[0];
-		info->conkeys = (int*)palloc(numkeys * sizeof(int));
-		for (i = 0; i < numkeys; i++)
-			info->conkeys[i] = ((int16 *) ARR_DATA_PTR(arr))[i];
-
-		/* confkey */
-		adatum = SysCacheGetAttr(CONSTROID, htup,
-									Anum_pg_constraint_confkey, &isnull);
-		Assert(!isnull);
-
-		arr = DatumGetArrayTypeP(adatum);
-		Assert(numkeys == ARR_DIMS(arr)[0]);
-		info->confkeys = (int*)palloc(numkeys * sizeof(int));
-		for (i = 0; i < numkeys; i++)
-			info->confkeys[i] = ((int16 *) ARR_DATA_PTR(arr))[i];
-
-		/* conpfeqop */
-		adatum = SysCacheGetAttr(CONSTROID, htup,
-									Anum_pg_constraint_conpfeqop, &isnull);
-		Assert(!isnull);
-
-		arr = DatumGetArrayTypeP(adatum);
-		Assert(numkeys == ARR_DIMS(arr)[0]);
-		info->conpfeqop = (Oid*)palloc(numkeys * sizeof(Oid));
-		for (i = 0; i < numkeys; i++)
-			info->conpfeqop[i] = ((Oid *) ARR_DATA_PTR(arr))[i];
-
-		info->nkeys = numkeys;
-
-		ReleaseSysCache(htup);
-
-		fkinfos = lappend(fkinfos, info);
-	}
-
-	list_free(fkoidlist);
-
-	rel->fkeylist = fkinfos;
-
 	/* Grab foreign-table info using the relcache, while we have it */
 	if (relation->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
 	{
@@ -486,6 +407,9 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 		rel->fdwroutine = NULL;
 	}
 
+	/* Collect info about relation's foreign keys, if relevant */
+	get_relation_foreign_keys(root, rel, relation);
+
 	heap_close(relation, NoLock);
 
 	/*
@@ -495,6 +419,97 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 	 */
 	if (get_relation_info_hook)
 		(*get_relation_info_hook) (root, relationObjectId, inhparent, rel);
+}
+
+/*
+ * get_relation_foreign_keys -
+ *	  Retrieves foreign key information for a given relation.
+ *
+ * ForeignKeyOptInfos for relevant foreign keys are created and added to
+ * root->fkey_list.  We do this now while we have the relcache entry open.
+ * We could sometimes avoid making useless ForeignKeyOptInfos if we waited
+ * until all RelOptInfos have been built, but the cost of re-opening the
+ * relcache entries would probably exceed any savings.
+ */
+static void
+get_relation_foreign_keys(PlannerInfo *root, RelOptInfo *rel,
+						  Relation relation)
+{
+	List	   *rtable = root->parse->rtable;
+	List	   *cachedfkeys;
+	ListCell   *lc;
+
+	/*
+	 * If it's not a baserel, we don't care about its FKs.  Also, if the query
+	 * references only a single relation, we can skip the lookup since no FKs
+	 * could satisfy the requirements below.
+	 */
+	if (rel->reloptkind != RELOPT_BASEREL ||
+		list_length(rtable) < 2)
+		return;
+
+	/*
+	 * Extract data about relation's FKs from the relcache.  Note that this
+	 * list belongs to the relcache and might disappear in a cache flush, so
+	 * we must not do any further catalog access within this function.
+	 */
+	cachedfkeys = RelationGetFKeyList(relation);
+
+	/*
+	 * Figure out which FKs are of interest for this query, and create
+	 * ForeignKeyOptInfos for them.  We want only FKs that reference some
+	 * other RTE of the current query.  In queries containing self-joins,
+	 * there might be more than one other RTE for a referenced table, and we
+	 * should make a ForeignKeyOptInfo for each occurrence.
+	 *
+	 * Ideally, we would ignore RTEs that correspond to non-baserels, but it's
+	 * too hard to identify those here, so we might end up making some useless
+	 * ForeignKeyOptInfos.  If so, match_foreign_keys_to_quals() will remove
+	 * them again.
+	 */
+	foreach(lc, cachedfkeys)
+	{
+		ForeignKeyCacheInfo *cachedfk = (ForeignKeyCacheInfo *) lfirst(lc);
+		Index		rti;
+		ListCell   *lc2;
+
+		/* conrelid should always be that of the table we're considering */
+		Assert(cachedfk->conrelid == RelationGetRelid(relation));
+
+		/* Scan to find other RTEs matching confrelid */
+		rti = 0;
+		foreach(lc2, rtable)
+		{
+			RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc2);
+			ForeignKeyOptInfo *info;
+
+			rti++;
+			/* Ignore if not the correct table */
+			if (rte->rtekind != RTE_RELATION ||
+				rte->relid != cachedfk->confrelid)
+				continue;
+			/* Ignore self-referential FKs; we only care about joins */
+			if (rti == rel->relid)
+				continue;
+
+			/* OK, let's make an entry */
+			info = makeNode(ForeignKeyOptInfo);
+			info->con_relid = rel->relid;
+			info->ref_relid = rti;
+			info->nkeys = cachedfk->nkeys;
+			memcpy(info->conkey, cachedfk->conkey, sizeof(info->conkey));
+			memcpy(info->confkey, cachedfk->confkey, sizeof(info->confkey));
+			memcpy(info->conpfeqop, cachedfk->conpfeqop, sizeof(info->conpfeqop));
+			/* zero out fields to be filled by match_foreign_keys_to_quals */
+			info->nmatched_ec = 0;
+			info->nmatched_rcols = 0;
+			info->nmatched_ri = 0;
+			memset(info->eclass, 0, sizeof(info->eclass));
+			memset(info->rinfos, 0, sizeof(info->rinfos));
+
+			root->fkey_list = lappend(root->fkey_list, info);
+		}
+	}
 }
 
 /*
@@ -792,7 +807,7 @@ infer_collation_opclass_match(InferenceElem *elem, Relation idxRel,
 	AttrNumber	natt;
 	Oid			inferopfamily = InvalidOid;		/* OID of opclass opfamily */
 	Oid			inferopcinputtype = InvalidOid; /* OID of opclass input type */
-	int			nplain = 0;						/* # plain attrs observed */
+	int			nplain = 0;		/* # plain attrs observed */
 
 	/*
 	 * If inference specification element lacks collation/opclass, then no
@@ -1183,7 +1198,13 @@ get_relation_constraints(PlannerInfo *root,
 												  att->attcollation,
 												  0);
 					ntest->nulltesttype = IS_NOT_NULL;
-					ntest->argisrow = type_is_rowtype(att->atttypid);
+
+					/*
+					 * argisrow=false is correct even for a composite column,
+					 * because attnotnull does not represent a SQL-spec IS NOT
+					 * NULL test in such a case, just IS DISTINCT FROM NULL.
+					 */
+					ntest->argisrow = false;
 					ntest->location = -1;
 					result = lappend(result, ntest);
 				}
