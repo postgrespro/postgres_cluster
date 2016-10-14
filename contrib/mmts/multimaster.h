@@ -304,6 +304,7 @@ extern HTAB* MtmXid2State;
 extern HTAB* MtmGid2State;
 extern VacuumStmt* MtmVacuumStmt;
 extern IndexStmt*  MtmIndexStmt;
+extern DropStmt*   MtmDropStmt;
 extern MemoryContext MtmApplyContext;
 
 extern void  MtmArbiterInitialize(void);

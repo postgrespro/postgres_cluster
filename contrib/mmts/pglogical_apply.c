@@ -79,6 +79,8 @@ static void process_remote_insert(StringInfo s, Relation rel);
 static void process_remote_update(StringInfo s, Relation rel);
 static void process_remote_delete(StringInfo s, Relation rel);
 
+static MemoryContext TopContext;
+
 /*
  * Search the index 'idxrel' for a tuple identified by 'skey' in 'rel'.
  *
@@ -377,12 +379,12 @@ process_remote_message(StringInfo s)
 		case 'D':
 		{
 			int rc;
-
 			MTM_LOG1("%d: Executing utility statement %s", MyProcPid, messageBody);
 			SPI_connect();
 			ActivePortal->sourceText = messageBody;
 			MtmVacuumStmt = NULL;
 			MtmIndexStmt = NULL;
+			MtmDropStmt = NULL;
 			rc = SPI_execute(messageBody, false, 0);
 			SPI_finish();
 			if (rc < 0) { 
@@ -390,20 +392,17 @@ process_remote_message(StringInfo s)
 			} else { 
 				if (MtmVacuumStmt != NULL) { 
 					ExecVacuum(MtmVacuumStmt, 1);
-				} else if (MtmIndexStmt != NULL) { 
-					MemoryContext saveCtx = TopTransactionContext;
-					Oid relid;
-
-					TopTransactionContext = MtmApplyContext;
-					relid =	RangeVarGetRelidExtended(MtmIndexStmt->relation, ShareUpdateExclusiveLock,
-													 false, false,
-													 NULL,
-													 NULL);
+				} else if (MtmIndexStmt != NULL) {
+					Oid relid =	RangeVarGetRelidExtended(MtmIndexStmt->relation, ShareUpdateExclusiveLock,
+														 false, false,
+														 NULL,
+														 NULL);
 					
 					/* Run parse analysis ... */
-					MtmIndexStmt = transformIndexStmt(relid, MtmIndexStmt, messageBody);
+					//MtmIndexStmt = transformIndexStmt(relid, MtmIndexStmt, messageBody);
 
 					PushActiveSnapshot(GetTransactionSnapshot());
+
 
 					DefineIndex(relid,		/* OID of heap relation */
 								MtmIndexStmt,
@@ -413,11 +412,11 @@ process_remote_message(StringInfo s)
 								false,		/* skip_build */
 								false);		/* quiet */
 					
-					TopTransactionContext = saveCtx;
-
 					if (ActiveSnapshotSet())
 						PopActiveSnapshot();
 
+				} else if (MtmDropStmt != NULL) { 
+					RemoveObjects(MtmDropStmt);
 				}
 			}
 			if (standalone) { 
@@ -1025,12 +1024,12 @@ void MtmExecutor(void* work, size_t size)
 
     if (MtmApplyContext == NULL) {
         MtmApplyContext = AllocSetContextCreate(TopMemoryContext,
-										   "MessageContext",
-										   ALLOCSET_DEFAULT_MINSIZE,
-										   ALLOCSET_DEFAULT_INITSIZE,
-										   ALLOCSET_DEFAULT_MAXSIZE);
+												"ApplyContext",
+												ALLOCSET_DEFAULT_MINSIZE,
+												ALLOCSET_DEFAULT_INITSIZE,
+												ALLOCSET_DEFAULT_MAXSIZE);
     }
-    MemoryContextSwitchTo(MtmApplyContext);
+    TopContext = MemoryContextSwitchTo(MtmApplyContext);
 	replorigin_session_origin = InvalidRepOriginId;
     PG_TRY();
     {    
