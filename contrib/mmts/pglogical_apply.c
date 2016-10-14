@@ -18,6 +18,9 @@
 #include "catalog/pg_type.h"
 
 #include "executor/spi.h"
+#include "commands/vacuum.h"
+#include "commands/defrem.h"
+#include "parser/parse_utilcmd.h"
 
 #include "libpq/pqformat.h"
 
@@ -70,7 +73,7 @@ static void UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot);
 static void UserTableUpdateIndexes(EState *estate, TupleTableSlot *slot);
 
 static bool process_remote_begin(StringInfo s);
-static void process_remote_message(StringInfo s);
+static bool process_remote_message(StringInfo s);
 static void process_remote_commit(StringInfo s);
 static void process_remote_insert(StringInfo s, Relation rel);
 static void process_remote_update(StringInfo s, Relation rel);
@@ -353,13 +356,14 @@ process_remote_begin(StringInfo s)
 	return true;
 }
 
-static void
+static bool
 process_remote_message(StringInfo s)
 {
 	char action = pq_getmsgbyte(s);
 	int messageSize = pq_getmsgint(s, 4);
 	char const* messageBody = pq_getmsgbytes(s, messageSize);
-	
+	bool standalone = false;
+
 	switch (action)
 	{
 		case 'C':
@@ -367,6 +371,7 @@ process_remote_message(StringInfo s)
 			MTM_LOG1("%d: Executing non-tx utility statement %s", MyProcPid, messageBody);
 			SetCurrentStatementStartTimestamp();
 			StartTransactionCommand();
+			standalone = true;
 			/* intentional falldown to the next case */
 		}
 		case 'D':
@@ -376,21 +381,59 @@ process_remote_message(StringInfo s)
 			MTM_LOG1("%d: Executing utility statement %s", MyProcPid, messageBody);
 			SPI_connect();
 			ActivePortal->sourceText = messageBody;
+			MtmVacuumStmt = NULL;
+			MtmIndexStmt = NULL;
 			rc = SPI_execute(messageBody, false, 0);
 			SPI_finish();
-			if (rc < 0)
+			if (rc < 0) { 
 				elog(ERROR, "Failed to execute utility statement %s", messageBody);
+			} else { 
+				if (MtmVacuumStmt != NULL) { 
+					ExecVacuum(MtmVacuumStmt, 1);
+				} else if (MtmIndexStmt != NULL) { 
+					MemoryContext saveCtx = TopTransactionContext;
+					Oid relid;
+
+					TopTransactionContext = MtmApplyContext;
+					relid =	RangeVarGetRelidExtended(MtmIndexStmt->relation, ShareUpdateExclusiveLock,
+													 false, false,
+													 NULL,
+													 NULL);
+					
+					/* Run parse analysis ... */
+					MtmIndexStmt = transformIndexStmt(relid, MtmIndexStmt, messageBody);
+
+					PushActiveSnapshot(GetTransactionSnapshot());
+
+					DefineIndex(relid,		/* OID of heap relation */
+								MtmIndexStmt,
+								InvalidOid, /* no predefined OID */
+								false,		/* is_alter_table */
+								true,		/* check_rights */
+								false,		/* skip_build */
+								false);		/* quiet */
+					
+					TopTransactionContext = saveCtx;
+
+					if (ActiveSnapshotSet())
+						PopActiveSnapshot();
+
+				}
+			}
+			if (standalone) { 
+				CommitTransactionCommand();
+			}
 			break;
 		}
 		case 'L':
 		{
 			MTM_LOG3("%ld: Process deadlock message with size %d from %d", MtmGetSystemTime(), messageSize, MtmReplicationNodeId);
 			MtmUpdateLockGraph(MtmReplicationNodeId, messageBody, messageSize);
+			standalone = true;
 			break;
 		}
 	}
-	
-
+	return standalone;
 }
 	
 static void
@@ -968,8 +1011,6 @@ process_remote_delete(StringInfo s, Relation rel)
 	CommandCounterIncrement();
 }
 
-static MemoryContext ApplyContext;
-
 void MtmExecutor(void* work, size_t size)
 {
     StringInfoData s;
@@ -982,14 +1023,14 @@ void MtmExecutor(void* work, size_t size)
     s.maxlen = -1;
 	s.cursor = 0;
 
-    if (ApplyContext == NULL) {
-        ApplyContext = AllocSetContextCreate(TopMemoryContext,
+    if (MtmApplyContext == NULL) {
+        MtmApplyContext = AllocSetContextCreate(TopMemoryContext,
 										   "MessageContext",
 										   ALLOCSET_DEFAULT_MINSIZE,
 										   ALLOCSET_DEFAULT_INITSIZE,
 										   ALLOCSET_DEFAULT_MAXSIZE);
     }
-    MemoryContextSwitchTo(ApplyContext);
+    MemoryContextSwitchTo(MtmApplyContext);
 	replorigin_session_origin = InvalidRepOriginId;
     PG_TRY();
     {    
@@ -1058,7 +1099,9 @@ void MtmExecutor(void* work, size_t size)
 			}
 			case 'M':
 			{
-				process_remote_message(&s);
+				if (process_remote_message(&s)) { 
+					break;
+				}
 				continue;
 			}
             default:
@@ -1069,7 +1112,7 @@ void MtmExecutor(void* work, size_t size)
     }
     PG_CATCH();
     {
-		MemoryContext oldcontext = MemoryContextSwitchTo(ApplyContext);
+		MemoryContext oldcontext = MemoryContextSwitchTo(MtmApplyContext);
 		MtmHandleApplyError();
 		MemoryContextSwitchTo(oldcontext);
 		EmitErrorReport();
@@ -1083,6 +1126,6 @@ void MtmExecutor(void* work, size_t size)
 	if (spill_file >= 0) { 
 		MtmCloseSpillFile(spill_file);
 	}
-    MemoryContextResetAndDeleteChildren(ApplyContext);
+    MemoryContextResetAndDeleteChildren(MtmApplyContext);
 }
     

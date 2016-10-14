@@ -160,6 +160,10 @@ static bool MtmProcessDDLCommand(char const* queryString, bool transactional, bo
 
 MtmState* Mtm;
 
+VacuumStmt* MtmVacuumStmt;
+IndexStmt*  MtmIndexStmt;
+MemoryContext MtmApplyContext;
+
 HTAB* MtmXid2State;
 HTAB* MtmGid2State;
 static HTAB* MtmLocalTables;
@@ -3875,8 +3879,8 @@ void MtmUpdateLockGraph(int nodeId, void const* messageBody, int messageSize)
 }
 
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
-							 ProcessUtilityContext context, ParamListInfo params,
-							 DestReceiver *dest, char *completionTag)
+							  ProcessUtilityContext context, ParamListInfo params,
+							  DestReceiver *dest, char *completionTag)
 {
 	bool skipCommand = false;
 	bool executed = false;
@@ -3937,11 +3941,18 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			break;
 
 		case T_VacuumStmt:
-		  context = PROCESS_UTILITY_TOPLEVEL;
-		  MtmProcessDDLCommand(queryString, false, true);
-		  MtmTx.isDistributed = false;
-		  skipCommand = true;		  
-		  break;
+		  if (context == PROCESS_UTILITY_TOPLEVEL) {
+			  MtmProcessDDLCommand(queryString, false, true);
+			  MtmTx.isDistributed = false;
+			  skipCommand = true;		  
+			  break;
+		  } else {
+			  MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
+			  Assert(oldContext != MtmApplyContext);
+			  MtmVacuumStmt = (VacuumStmt*)copyObject(parsetree);
+			  MemoryContextSwitchTo(oldContext);
+			  return;
+		  }
 
 		case T_CreateDomainStmt:
 			{
@@ -4031,11 +4042,19 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_IndexStmt:
 			{
 				IndexStmt *indexStmt = (IndexStmt *) parsetree;
-				if (indexStmt->concurrent && !IsTransactionBlock() && !MtmTx.isReplicated)
+				if (indexStmt->concurrent) 
 				{
-					skipCommand = true;
-					MtmProcessDDLCommand(queryString, false, false);
-					MtmTx.isDistributed = false;
+					 if (context == PROCESS_UTILITY_TOPLEVEL) {
+						 MtmProcessDDLCommand(queryString, false, true);
+						 MtmTx.isDistributed = false;
+						 skipCommand = true;
+					 } else { 
+						 MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
+						 Assert(oldContext != MtmApplyContext);
+						 MtmIndexStmt = (IndexStmt*)copyObject(parsetree);
+						 MemoryContextSwitchTo(oldContext);
+						 return;
+					 }
 				}
 			}
 			break;
