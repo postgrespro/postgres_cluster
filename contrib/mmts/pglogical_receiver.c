@@ -528,6 +528,9 @@ pglogical_receiver_main(Datum main_arg)
 					if (stmt[0] == 'M' && stmt[1] == 'L') {
 						MTM_LOG3("Process deadlock message from %d", nodeId);
 						MtmExecutor(stmt, rc - hdr_len);
+					} else if (stmt[0] == 'M' && stmt[1] == 'C') {
+						MTM_LOG3("Process concurrent DDL message from %d", nodeId);
+						MtmExecutor(stmt, rc - hdr_len);
 					} else { 
 						ByteBufferAppend(&buf, stmt, rc - hdr_len);
 						if (stmt[0] == 'C') /* commit */

@@ -156,7 +156,7 @@ static void MtmShmemStartup(void);
 static BgwPool* MtmPoolConstructor(void);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
-static bool MtmProcessDDLCommand(char const* queryString, bool transactional);
+static bool MtmProcessDDLCommand(char const* queryString, bool transactional, bool contextFree);
 
 MtmState* Mtm;
 
@@ -3825,33 +3825,31 @@ static char * MtmGucSerialize(void)
  * -------------------------------------------
  */
 
-static bool MtmProcessDDLCommand(char const* queryString, bool transactional)
+static bool MtmProcessDDLCommand(char const* queryString, bool transactional, bool contextFree)
 {
-	char	   *queryWithContext;
+	char	   *queryWithContext = (char *) queryString;
 	char	   *gucContext;
 
-	/* Append global GUC to utility stmt. */
-	gucContext = MtmGucSerialize();
-	if (gucContext)
-	{
-		queryWithContext = palloc(strlen(gucContext) + strlen(queryString) +  1);
-		strcpy(queryWithContext, gucContext);
-		strcat(queryWithContext, queryString);
-	}
-	else
-	{
-		queryWithContext = (char *) queryString;
+	if (!contextFree) { 
+		/* Append global GUC to utility stmt. */
+		gucContext = MtmGucSerialize();
+		if (gucContext)
+		{
+			queryWithContext = palloc(strlen(gucContext) + strlen(queryString) +  1);
+			strcpy(queryWithContext, gucContext);
+			strcat(queryWithContext, queryString);
+		}
 	}
 
 	MTM_LOG3("Sending utility: %s", queryWithContext);
-	if (transactional)
+	if (transactional) {
 		/* DDL */
 		LogLogicalMessage("D", queryWithContext, strlen(queryWithContext) + 1, true);
-	else
+		MtmTx.containsDML = true;
+	} else {
 		/* CONCURRENT DDL */
-		LogLogicalMessage("C", queryWithContext, strlen(queryWithContext) + 1, false);
-
-	MtmTx.containsDML = true;
+		XLogFlush(LogLogicalMessage("C", queryWithContext, strlen(queryWithContext) + 1, false));
+	}
 	return false;
 }
 
@@ -3930,7 +3928,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_UnlistenStmt:
 		case T_LoadStmt:
 		case T_ClusterStmt:
-		case T_VacuumStmt:
 		case T_VariableShowStmt:
 		case T_ReassignOwnedStmt:
 		case T_LockStmt:
@@ -3938,6 +3935,13 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ReindexStmt:
 			skipCommand = true;
 			break;
+
+		case T_VacuumStmt:
+		  context = PROCESS_UTILITY_TOPLEVEL;
+		  MtmProcessDDLCommand(queryString, false, true);
+		  MtmTx.isDistributed = false;
+		  skipCommand = true;		  
+		  break;
 
 		case T_CreateDomainStmt:
 			{
@@ -4030,7 +4034,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				if (indexStmt->concurrent && !IsTransactionBlock() && !MtmTx.isReplicated)
 				{
 					skipCommand = true;
-					MtmProcessDDLCommand(queryString, false);
+					MtmProcessDDLCommand(queryString, false, false);
 					MtmTx.isDistributed = false;
 				}
 			}
@@ -4042,7 +4046,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				if (stmt->removeType == OBJECT_INDEX && stmt->concurrent && !IsTransactionBlock() && !MtmTx.isReplicated)
 				{
 					skipCommand = true;
-					MtmProcessDDLCommand(queryString, false);
+					MtmProcessDDLCommand(queryString, false, false);
 					MtmTx.isDistributed = false;
 				}
 			}
@@ -4085,9 +4089,9 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		MtmUtilityProcessedInXid = GetCurrentTransactionId();
 
 		if (context == PROCESS_UTILITY_TOPLEVEL)
-			MtmProcessDDLCommand(queryString, true);
+			MtmProcessDDLCommand(queryString, true, false);
 		else
-			MtmProcessDDLCommand(ActivePortal->sourceText, true);
+			MtmProcessDDLCommand(ActivePortal->sourceText, true, false);
 
 		executed = true;
 	}
@@ -4143,7 +4147,7 @@ MtmExecutorStart(QueryDesc *queryDesc, int eflags)
 	}
 
 	if (ddl_generating_call && !MtmTx.isReplicated)
-		MtmProcessDDLCommand(ActivePortal->sourceText, true);
+		MtmProcessDDLCommand(ActivePortal->sourceText, true, false);
 
 	if (PreviousExecutorStartHook != NULL)
 		PreviousExecutorStartHook(queryDesc, eflags);
