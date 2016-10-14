@@ -41,6 +41,7 @@ SUBDIRS = \
 		pgstattuple	\
 		pg_visibility	\
 		postgres_fdw	\
+		rum		\
 		seg		\
 		spi		\
 		tablefunc	\
