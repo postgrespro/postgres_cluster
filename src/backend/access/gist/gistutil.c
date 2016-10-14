@@ -914,6 +914,7 @@ gistproperty(Oid index_oid, int attno,
  * Temporary and unlogged GiST indexes are not WAL-logged, but we need LSNs
  * to detect concurrent page splits anyway. This function provides a fake
  * sequence of LSNs for that purpose.
+ * Persistent relations are also not WAL-logged while we build index.
  */
 XLogRecPtr
 gistGetFakeLSN(Relation rel)
@@ -934,7 +935,6 @@ gistGetFakeLSN(Relation rel)
 		 * Unlogged relations are accessible from other backends, and survive
 		 * (clean) restarts. GetFakeLSNForUnloggedRel() handles that for us.
 		 */
-		Assert(rel->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED);
 		return GetFakeLSNForUnloggedRel();
 	}
 }

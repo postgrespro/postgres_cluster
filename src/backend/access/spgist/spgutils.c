@@ -531,6 +531,8 @@ SpGistInitMetapage(Page page)
 	/* initialize last-used-page cache to empty */
 	for (i = 0; i < SPGIST_CACHED_PAGES; i++)
 		metadata->lastUsedPages.cachedPage[i].blkno = InvalidBlockNumber;
+
+	((PageHeader) page)->pd_lower += sizeof(SpGistMetaPageData);
 }
 
 /*

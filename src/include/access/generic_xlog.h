@@ -41,4 +41,6 @@ extern void generic_redo(XLogReaderState *record);
 extern const char *generic_identify(uint8 info);
 extern void generic_desc(StringInfo buf, XLogReaderState *record);
 
+/* other utils */
+void generate_xlog_for_rel(Relation rel);
 #endif   /* GENERIC_XLOG_H */
