@@ -7,6 +7,7 @@
 
 #include "access/clog.h"
 #include "pglogical_output/hooks.h"
+#include "commands/vacuum.h"
 #include "libpq-fe.h"
 
 #define  DEBUG_LEVEL 0
@@ -301,6 +302,9 @@ extern bool  MtmUseDtm;
 extern bool  MtmPreserveCommitOrder;
 extern HTAB* MtmXid2State;
 extern HTAB* MtmGid2State;
+extern VacuumStmt* MtmVacuumStmt;
+extern IndexStmt*  MtmIndexStmt;
+extern MemoryContext MtmApplyContext;
 
 extern void  MtmArbiterInitialize(void);
 extern void  MtmStartReceivers(void);
