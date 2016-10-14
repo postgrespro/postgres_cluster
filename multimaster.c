@@ -161,6 +161,7 @@ MtmState* Mtm;
 
 VacuumStmt* MtmVacuumStmt;
 IndexStmt*  MtmIndexStmt;
+DropStmt*   MtmDropStmt;
 MemoryContext MtmApplyContext;
 
 HTAB* MtmXid2State;
@@ -4051,7 +4052,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 					 } else { 
 						 MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
 						 Assert(oldContext != MtmApplyContext);
-						 MtmIndexStmt = (IndexStmt*)copyObject(parsetree);
+						 MtmIndexStmt = indexStmt;
 						 MemoryContextSwitchTo(oldContext);
 						 return;
 					 }
@@ -4062,11 +4063,19 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_DropStmt:
 			{
 				DropStmt *stmt = (DropStmt *) parsetree;
-				if (stmt->removeType == OBJECT_INDEX && stmt->concurrent && !IsTransactionBlock() && !MtmTx.isReplicated)
+				if (stmt->removeType == OBJECT_INDEX && stmt->concurrent)
 				{
-					skipCommand = true;
-					MtmProcessDDLCommand(queryString, false, false);
-					MtmTx.isDistributed = false;
+					if (context == PROCESS_UTILITY_TOPLEVEL) {
+						MtmProcessDDLCommand(queryString, false, true);
+						MtmTx.isDistributed = false;
+						skipCommand = true;
+					} else {
+						 MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
+						 Assert(oldContext != MtmApplyContext);
+						 MtmDropStmt = stmt;
+						 MemoryContextSwitchTo(oldContext);
+						 return;
+					}
 				}
 			}
 			break;
