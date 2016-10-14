@@ -28,7 +28,7 @@ LOAD '<replaceable class="PARAMETER">filename</replaceable>'
   <title>Description</title>
 
   <para>
-   This command loads a shared library file into the <productname>PostgreSQL</>
+   This command loads a shared library file into the <productname>&productname;</>
    server's address space.  If the file has been loaded already,
    the command does nothing.  Shared library files that contain C functions
    are automatically loaded whenever one of their functions is called.
@@ -63,7 +63,7 @@ LOAD '<replaceable class="PARAMETER">filename</replaceable>'
   <title>Compatibility</title>
 
   <para>
-   <command>LOAD</command> is a <productname>PostgreSQL</productname>
+   <command>LOAD</command> is a <productname>&productname;</productname>
    extension.
   </para>
  </refsect1>

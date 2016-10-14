@@ -41,7 +41,12 @@ contain exactly one inner tuple.
 
 When the search traversal algorithm reaches an inner tuple, it chooses a set
 of nodes to continue tree traverse in depth.  If it reaches a leaf page it
-scans a list of leaf tuples to find the ones that match the query.
+scans a list of leaf tuples to find the ones that match the query. SP-GiSTs
+also support ordered searches - that is during the scan is performed,
+implementation can choose to map floating-point distances to inner and leaf
+tuples and the traversal will be performed by the closest-first model. It
+can be usefull e.g. for performing nearest-neighbour searches on the dataset.
+
 
 The insertion algorithm descends the tree similarly, except it must choose
 just one node to descend to from each inner tuple.  Insertion might also have
@@ -371,3 +376,4 @@ AUTHORS
 
     Teodor Sigaev <teodor@sigaev.ru>
     Oleg Bartunov <oleg@sai.msu.su>
+    Vlad Sterzhanov <gliderok@gmail.com>

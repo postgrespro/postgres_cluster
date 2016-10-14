@@ -13,9 +13,9 @@
 
   <para>
    The regression tests are a comprehensive set of tests for the SQL
-   implementation in <productname>PostgreSQL</productname>.  They test
+   implementation in <productname>&productname;</productname>.  They test
    standard SQL operations as well as the extended capabilities of
-   <productname>PostgreSQL</productname>.
+   <productname>&productname;</productname>.
   </para>
 
   <sect1 id="regress-run">
@@ -64,8 +64,8 @@ make check
    </para>
 
    <para>
-    If you have configured <productname>PostgreSQL</productname> to install
-    into a location where an older <productname>PostgreSQL</productname>
+    If you have configured <productname>&productname;</productname> to install
+    into a location where an older <productname>&productname;</productname>
     installation already exists, and you perform <literal>make check</>
     before installing the new version, you might find that the tests fail
     because the new programs try to use the already-installed shared
@@ -129,7 +129,7 @@ make installcheck-parallel
   <para>
    The <literal>make check</> and <literal>make installcheck</> commands
    run only the <quote>core</> regression tests, which test built-in
-   functionality of the <productname>PostgreSQL</> server.  The source
+   functionality of the <productname>&productname;</> server.  The source
    distribution also contains additional test suites, most of them having
    to do with add-on functionality such as optional procedural languages.
   </para>
@@ -323,7 +323,7 @@ make standbycheck
 
    <para>
     Some properly installed and fully functional
-    <productname>PostgreSQL</productname> installations can
+    <productname>&productname;</productname> installations can
     <quote>fail</quote> some of these regression tests due to
     platform-specific artifacts such as varying floating-point representation
     and message wording. The tests are currently evaluated using a simple
@@ -372,7 +372,7 @@ make standbycheck
     <para>
      Some of the regression tests involve intentional invalid input
      values.  Error messages can come from either the
-     <productname>PostgreSQL</productname> code or from the host
+     <productname>&productname;</productname> code or from the host
      platform system routines. In the latter case, the messages can
      vary between platforms, but should reflect similar
      information. These differences in messages will result in a
@@ -465,7 +465,7 @@ make check NO_LOCALE=1
     <para>
      Some systems signal errors from <function>pow()</function> and
      <function>exp()</function> differently from the mechanism
-     expected by the current <productname>PostgreSQL</productname>
+     expected by the current <productname>&productname;</productname>
      code.
     </para>
    </sect2>
@@ -678,7 +678,7 @@ make -C src/bin check PROVE_FLAGS='--reverse'
    <title>Test Coverage Examination</title>
 
    <para>
-    The PostgreSQL source code can be compiled with coverage testing
+    The &productname; source code can be compiled with coverage testing
     instrumentation, so that it becomes possible to examine which
     parts of the code are covered by the regression tests or any other
     test suite that is run with the code.  This is currently supported

@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/pg_xlogdump.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="pgxlogdump">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>pg_xlogdump</refname>
-  <refpurpose>display a human-readable rendering of the write-ahead log of a <productname>PostgreSQL</productname> database cluster</refpurpose>
+  <refpurpose>display a human-readable rendering of the write-ahead log of a <productname>&productname;</productname> database cluster</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>

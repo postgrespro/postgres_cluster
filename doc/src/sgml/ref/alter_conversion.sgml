@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_conversion.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERCONVERSION">

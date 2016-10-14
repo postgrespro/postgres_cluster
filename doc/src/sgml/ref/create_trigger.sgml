@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_trigger.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATETRIGGER">
@@ -495,7 +495,7 @@ CREATE TRIGGER view_insert
 
   <para>
    The <command>CREATE TRIGGER</command> statement in
-   <productname>PostgreSQL</productname> implements a subset of the
+   <productname>&productname;</productname> implements a subset of the
    <acronym>SQL</> standard. The following functionalities are currently
    missing:
 
@@ -506,7 +506,7 @@ CREATE TRIGGER view_insert
       and <quote>new</quote> rows or tables for use in the definition
       of the triggered action (e.g., <literal>CREATE TRIGGER ... ON
       tablename REFERENCING OLD ROW AS somename NEW ROW AS othername
-      ...</literal>).  Since <productname>PostgreSQL</productname>
+      ...</literal>).  Since <productname>&productname;</productname>
       allows trigger procedures to be written in any number of
       user-defined languages, access to the data is handled in a
       language-specific way.
@@ -515,7 +515,7 @@ CREATE TRIGGER view_insert
 
     <listitem>
      <para>
-      <productname>PostgreSQL</productname> does not allow the old and new
+      <productname>&productname;</productname> does not allow the old and new
       tables to be referenced in statement-level triggers, i.e., the tables
       that contain all the old and/or new rows, which are referred to by the
       <literal>OLD TABLE</literal> and <literal>NEW TABLE</literal> clauses in
@@ -524,7 +524,7 @@ CREATE TRIGGER view_insert
     </listitem>
 
     <listitem>
-     <para><productname>PostgreSQL</productname> only allows the execution
+     <para><productname>&productname;</productname> only allows the execution
       of a user-defined function for the triggered action.  The standard
       allows the execution of a number of other SQL commands, such as
       <command>CREATE TABLE</command>, as the triggered action.  This
@@ -538,14 +538,14 @@ CREATE TRIGGER view_insert
 
   <para>
    SQL specifies that multiple triggers should be fired in
-   time-of-creation order.  <productname>PostgreSQL</productname> uses
+   time-of-creation order.  <productname>&productname;</productname> uses
    name order, which was judged to be more convenient.
   </para>
 
   <para>
    SQL specifies that <literal>BEFORE DELETE</literal> triggers on cascaded
    deletes fire <emphasis>after</> the cascaded <literal>DELETE</> completes.
-   The <productname>PostgreSQL</productname> behavior is for <literal>BEFORE
+   The <productname>&productname;</productname> behavior is for <literal>BEFORE
    DELETE</literal> to always fire before the delete action, even a cascading
    one.  This is considered more consistent.  There is also nonstandard
    behavior if <literal>BEFORE</literal> triggers modify rows or prevent
@@ -556,19 +556,19 @@ CREATE TRIGGER view_insert
 
   <para>
    The ability to specify multiple actions for a single trigger using
-   <literal>OR</literal> is a <productname>PostgreSQL</> extension of
+   <literal>OR</literal> is a <productname>&productname;</> extension of
    the SQL standard.
   </para>
 
   <para>
    The ability to fire triggers for <command>TRUNCATE</command> is a
-   <productname>PostgreSQL</> extension of the SQL standard, as is the
+   <productname>&productname;</> extension of the SQL standard, as is the
    ability to define statement-level triggers on views.
   </para>
 
   <para>
    <command>CREATE CONSTRAINT TRIGGER</command> is a
-   <productname>PostgreSQL</productname> extension of the <acronym>SQL</>
+   <productname>&productname;</productname> extension of the <acronym>SQL</>
    standard.
   </para>
 

@@ -10,7 +10,7 @@
  <para>
   The <filename>postgres_fdw</> module provides the foreign-data wrapper
   <literal>postgres_fdw</literal>, which can be used to access data
-  stored in external <productname>PostgreSQL</productname> servers.
+  stored in external <productname>&productname;</productname> servers.
  </para>
 
  <para>
@@ -138,7 +138,7 @@
 
    <para>
     These options can be used to control the names used in SQL statements
-    sent to the remote <productname>PostgreSQL</productname> server.  These
+    sent to the remote <productname>&productname;</productname> server.  These
     options are needed when a foreign table is created with names different
     from the underlying remote table's names.
    </para>
@@ -284,7 +284,7 @@
      <listitem>
       <para>
        This option is a comma-separated list of names
-       of <productname>PostgreSQL</> extensions that are installed, in
+       of <productname>&productname;</> extensions that are installed, in
        compatible versions, on both the local and remote servers.  Functions
        and operators that are immutable and belong to a listed extension will
        be considered shippable to the remote server.
@@ -414,7 +414,7 @@
 
    <para>
     Note that constraints other than <literal>NOT NULL</> will never be
-    imported from the remote tables.  Although <productname>PostgreSQL</>
+    imported from the remote tables.  Although <productname>&productname;</>
     does support <literal>CHECK</> constraints on foreign tables, there is no
     provision for importing them automatically, because of the risk that a
     constraint expression could evaluate differently on the local and remote
@@ -466,7 +466,7 @@
    transaction uses <literal>SERIALIZABLE</> or <literal>REPEATABLE READ</>
    isolation level, but it might be surprising for a <literal>READ
    COMMITTED</> local transaction.  A future
-   <productname>PostgreSQL</productname> release might modify these rules.
+   <productname>&productname;</productname> release might modify these rules.
   </para>
  </sect2>
 
@@ -580,7 +580,7 @@ CREATE EXTENSION postgres_fdw;
 
   <para>
    Then create a foreign server using <xref linkend="sql-createserver">.
-   In this example we wish to connect to a <productname>PostgreSQL</> server
+   In this example we wish to connect to a <productname>&productname;</> server
    on host <literal>192.83.123.89</literal> listening on
    port <literal>5432</literal>.  The database to which the connection is made
    is named <literal>foreign_db</literal> on the remote server:

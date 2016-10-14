@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_database.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERDATABASE">
@@ -85,7 +85,7 @@ ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> RESET ALL
 
   <para>
    The remaining forms change the session default for a run-time
-   configuration variable for a <productname>PostgreSQL</productname>
+   configuration variable for a <productname>&productname;</productname>
    database. Whenever a new session is subsequently started in that
    database, the specified value becomes the session default value.
    The database-specific default overrides whatever setting is present
@@ -222,7 +222,7 @@ ALTER DATABASE test SET enable_indexscan TO off;
 
   <para>
    The <command>ALTER DATABASE</command> statement is a
-   <productname>PostgreSQL</productname> extension.
+   <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

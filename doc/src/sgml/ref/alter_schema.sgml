@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_schema.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERSCHEMA">

@@ -70,4 +70,6 @@ extern Datum numeric_cash(PG_FUNCTION_ARGS);
 extern Datum int4_cash(PG_FUNCTION_ARGS);
 extern Datum int8_cash(PG_FUNCTION_ARGS);
 
+extern Datum cash_dist(PG_FUNCTION_ARGS);
+
 #endif   /* CASH_H */

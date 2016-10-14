@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_table.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERTABLE">
@@ -180,7 +180,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
       to -1 to revert to using the system default statistics
       target (<xref linkend="guc-default-statistics-target">).
       For more information on the use of statistics by the
-      <productname>PostgreSQL</productname> query planner, refer to
+      <productname>&productname;</productname> query planner, refer to
       <xref linkend="planner-stats">.
      </para>
      <para>
@@ -216,7 +216,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
       the multiplication by the number of rows in the table is not performed
       until query planning time.  Specify a value of 0 to revert to estimating
       the number of distinct values normally.  For more information on the use
-      of statistics by the <productname>PostgreSQL</productname> query
+      of statistics by the <productname>&productname;</productname> query
       planner, refer to <xref linkend="planner-stats">.
      </para>
      <para>
@@ -1239,7 +1239,7 @@ ALTER TABLE distributors DROP CONSTRAINT distributors_pkey,
    <literal>DROP</>, <literal>SET DEFAULT</>,
    and <literal>SET DATA TYPE</literal> (without <literal>USING</literal>)
    conform with the SQL standard.  The other forms are
-   <productname>PostgreSQL</productname> extensions of the SQL standard.
+   <productname>&productname;</productname> extensions of the SQL standard.
    Also, the ability to specify more than one manipulation in a single
    <command>ALTER TABLE</> command is an extension.
   </para>

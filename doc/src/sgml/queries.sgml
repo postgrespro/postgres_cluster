@@ -1113,7 +1113,7 @@ SELECT product_id, p.name, (sum(s.units) * p.price) AS sales
 
    <para>
     In strict SQL, <literal>GROUP BY</> can only group by columns of
-    the source table but <productname>PostgreSQL</productname> extends
+    the source table but <productname>&productname;</productname> extends
     this to also allow <literal>GROUP BY</> to group by columns in the
     select list.  Grouping by value expressions instead of simple
     column names is also allowed.
@@ -1499,7 +1499,7 @@ SELECT a AS value, b + c AS sum FROM ...
    <para>
     The <literal>AS</> keyword is optional, but only if the new column
     name does not match any
-    <productname>PostgreSQL</productname> keyword (see <xref
+    <productname>&productname;</productname> keyword (see <xref
     linkend="sql-keywords-appendix">).  To avoid an accidental match to
     a keyword, you can double-quote the column name.  For example,
     <literal>VALUE</> is a keyword, so this does not work:
@@ -1714,7 +1714,7 @@ SELECT a, b FROM table1 ORDER BY a + b, c;
    determined with the <literal>&gt;</literal> operator.
     <footnote>
      <para>
-      Actually, <productname>PostgreSQL</> uses the <firstterm>default B-tree
+      Actually, <productname>&productname;</> uses the <firstterm>default B-tree
       operator class</> for the expression's data type to determine the sort
       ordering for <literal>ASC</> and <literal>DESC</>.  Conventionally,
       data types will be set up so that the <literal>&lt;</literal> and
@@ -1881,7 +1881,7 @@ UNION ALL
 SELECT 3, 'three';
 </programlisting>
 
-   By default, <productname>PostgreSQL</productname> assigns the names
+   By default, <productname>&productname;</productname> assigns the names
    <literal>column1</>, <literal>column2</>, etc. to the columns of a
    <literal>VALUES</> table.  The column names are not specified by the
    SQL standard and different database systems do it differently, so
@@ -2185,7 +2185,7 @@ WITH RECURSIVE t(n) AS (
 SELECT n FROM t LIMIT 100;
 </programlisting>
 
-   This works because <productname>PostgreSQL</productname>'s implementation
+   This works because <productname>&productname;</productname>'s implementation
    evaluates only as many rows of a <literal>WITH</> query as are actually
    fetched by the parent query.  Using this trick in production is not
    recommended, because other systems might work differently.  Also, it

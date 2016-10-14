@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/do.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DO">

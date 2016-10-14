@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_schema.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATESCHEMA">
@@ -188,13 +188,13 @@ CREATE VIEW hollywood.winners AS
    The SQL standard allows a <literal>DEFAULT CHARACTER SET</> clause
    in <command>CREATE SCHEMA</command>, as well as more subcommand
    types than are presently accepted by
-   <productname>PostgreSQL</productname>.
+   <productname>&productname;</productname>.
   </para>
 
   <para>
    The SQL standard specifies that the subcommands in <command>CREATE
    SCHEMA</command> can appear in any order.  The present
-   <productname>PostgreSQL</productname> implementation does not
+   <productname>&productname;</productname> implementation does not
    handle all cases of forward references in subcommands; it might
    sometimes be necessary to reorder the subcommands in order to avoid
    forward references.
@@ -202,7 +202,7 @@ CREATE VIEW hollywood.winners AS
 
   <para>
    According to the SQL standard, the owner of a schema always owns
-   all objects within it.  <productname>PostgreSQL</productname>
+   all objects within it.  <productname>&productname;</productname>
    allows schemas to contain objects owned by users other than the
    schema owner.  This can happen only if the schema owner grants the
    <literal>CREATE</> privilege on their schema to someone else, or a
@@ -211,7 +211,7 @@ CREATE VIEW hollywood.winners AS
 
   <para>
    The <literal>IF NOT EXISTS</literal> option is a
-   <productname>PostgreSQL</productname> extension.
+   <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

@@ -28,6 +28,7 @@
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
 #include "tcop/tcopprot.h"		/* pgrminclude ignore */
+#include "utils/datum.h"
 #include "utils/index_selfuncs.h"
 #include "utils/memutils.h"
 
@@ -85,10 +86,10 @@ bthandler(PG_FUNCTION_ARGS)
 {
 	IndexAmRoutine *amroutine = makeNode(IndexAmRoutine);
 
-	amroutine->amstrategies = BTMaxStrategyNumber;
+	amroutine->amstrategies = BTMaxStrategyNumber2;
 	amroutine->amsupport = BTNProcs;
 	amroutine->amcanorder = true;
-	amroutine->amcanorderbyop = false;
+	amroutine->amcanorderbyop = true;
 	amroutine->amcanbackward = true;
 	amroutine->amcanunique = true;
 	amroutine->amcanmulticol = true;
@@ -291,17 +292,22 @@ bool
 btgettuple(IndexScanDesc scan, ScanDirection dir)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+	BTScanState	state = &so->state;
 	bool		res;
 
 	/* btree indexes are never lossy */
 	scan->xs_recheck = false;
+	scan->xs_recheckorderby = false;
+
+	if (so->scanDirection != NoMovementScanDirection)
+		dir = so->scanDirection;
 
 	/*
 	 * If we have any array keys, initialize them during first call for a
 	 * scan.  We can't do this in btrescan because we don't know the scan
 	 * direction at that time.
 	 */
-	if (so->numArrayKeys && !BTScanPosIsValid(so->currPos))
+	if (so->numArrayKeys && !BTScanPosIsValid(state->currPos))
 	{
 		/* punt if we have any unsatisfiable array keys */
 		if (so->numArrayKeys < 0)
@@ -318,7 +324,8 @@ btgettuple(IndexScanDesc scan, ScanDirection dir)
 		 * the appropriate direction.  If we haven't done so yet, we call
 		 * _bt_first() to get the first item in the scan.
 		 */
-		if (!BTScanPosIsValid(so->currPos))
+		if (!BTScanPosIsValid(state->currPos) &&
+			(!so->knnState || !BTScanPosIsValid(so->knnState->currPos)))
 			res = _bt_first(scan, dir);
 		else
 		{
@@ -336,11 +343,11 @@ btgettuple(IndexScanDesc scan, ScanDirection dir)
 				 * trying to optimize that, so we don't detect it, but instead
 				 * just forget any excess entries.
 				 */
-				if (so->killedItems == NULL)
-					so->killedItems = (int *)
+				if (state->killedItems == NULL)
+					state->killedItems = (int *)
 						palloc(MaxIndexTuplesPerPage * sizeof(int));
-				if (so->numKilled < MaxIndexTuplesPerPage)
-					so->killedItems[so->numKilled++] = so->currPos.itemIndex;
+				if (state->numKilled < MaxIndexTuplesPerPage)
+					state->killedItems[so->state.numKilled++] = state->currPos.itemIndex;
 			}
 
 			/*
@@ -365,6 +372,7 @@ int64
 btgetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+	BTScanPos	currPos = &so->state.currPos;
 	int64		ntids = 0;
 	ItemPointer heapTid;
 
@@ -397,7 +405,7 @@ btgetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 				 * Advance to next tuple within page.  This is the same as the
 				 * easy case in _bt_next().
 				 */
-				if (++so->currPos.itemIndex > so->currPos.lastItem)
+				if (++currPos->itemIndex > currPos->lastItem)
 				{
 					/* let _bt_next do the heavy lifting */
 					if (!_bt_next(scan, ForwardScanDirection))
@@ -405,7 +413,7 @@ btgetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 				}
 
 				/* Save tuple ID, and continue scanning */
-				heapTid = &so->currPos.items[so->currPos.itemIndex].heapTid;
+				heapTid = &currPos->items[currPos->itemIndex].heapTid;
 				tbm_add_tuples(tbm, heapTid, 1, false);
 				ntids++;
 			}
@@ -425,16 +433,13 @@ btbeginscan(Relation rel, int nkeys, int norderbys)
 	IndexScanDesc scan;
 	BTScanOpaque so;
 
-	/* no order by operators allowed */
-	Assert(norderbys == 0);
-
 	/* get the scan */
 	scan = RelationGetIndexScan(rel, nkeys, norderbys);
 
 	/* allocate private workspace */
 	so = (BTScanOpaque) palloc(sizeof(BTScanOpaqueData));
-	BTScanPosInvalidate(so->currPos);
-	BTScanPosInvalidate(so->markPos);
+	BTScanPosInvalidate(so->state.currPos);
+	BTScanPosInvalidate(so->state.markPos);
 	if (scan->numberOfKeys > 0)
 		so->keyData = (ScanKey) palloc(scan->numberOfKeys * sizeof(ScanKeyData));
 	else
@@ -445,21 +450,73 @@ btbeginscan(Relation rel, int nkeys, int norderbys)
 	so->arrayKeys = NULL;
 	so->arrayContext = NULL;
 
-	so->killedItems = NULL;		/* until needed */
-	so->numKilled = 0;
+	so->state.killedItems = NULL;		/* until needed */
+	so->state.numKilled = 0;
 
 	/*
 	 * We don't know yet whether the scan will be index-only, so we do not
 	 * allocate the tuple workspace arrays until btrescan.  However, we set up
 	 * scan->xs_itupdesc whether we'll need it or not, since that's so cheap.
 	 */
-	so->currTuples = so->markTuples = NULL;
+	so->state.currTuples = so->state.markTuples = NULL;
+	so->knnState = NULL;
+	so->distanceTypeByVal = true;
+	so->scanDirection = NoMovementScanDirection;
 
 	scan->xs_itupdesc = RelationGetDescr(rel);
 
 	scan->opaque = so;
 
 	return scan;
+}
+
+static void
+_bt_release_current_position(BTScanState state, Relation indexRelation,
+							 bool invalidate)
+{
+	/* we aren't holding any read locks, but gotta drop the pins */
+	if (BTScanPosIsValid(state->currPos))
+	{
+		/* Before leaving current page, deal with any killed items */
+		if (state->numKilled > 0)
+			_bt_killitems(state, indexRelation);
+
+		BTScanPosUnpinIfPinned(state->currPos);
+
+		if (invalidate)
+			BTScanPosInvalidate(state->currPos);
+	}
+}
+
+static void
+_bt_release_scan_state(IndexScanDesc scan, BTScanState state, bool free)
+{
+	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+
+	/* No need to invalidate positions, if the RAM is about to be freed. */
+	_bt_release_current_position(state, scan->indexRelation, !free);
+
+	state->markItemIndex = -1;
+	BTScanPosUnpinIfPinned(state->markPos);
+
+	if (free)
+	{
+		if (state->killedItems != NULL)
+			pfree(state->killedItems);
+		if (state->currTuples != NULL)
+			pfree(state->currTuples);
+		/* markTuples should not be pfree'd (_bt_allocate_tuple_workspaces) */
+	}
+	else
+		BTScanPosInvalidate(state->markPos);
+
+	if (!so->distanceTypeByVal)
+	{
+		pfree(DatumGetPointer(state->currDistance));
+		state->currDistance = PointerGetDatum(NULL);
+		pfree(DatumGetPointer(state->markDistance));
+		state->markDistance = PointerGetDatum(NULL);
+	}
 }
 
 /*
@@ -470,20 +527,16 @@ btrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 		 ScanKey orderbys, int norderbys)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+	BTScanState state = &so->state;
 
-	/* we aren't holding any read locks, but gotta drop the pins */
-	if (BTScanPosIsValid(so->currPos))
+	_bt_release_scan_state(scan, state, false);
+
+	if (so->knnState)
 	{
-		/* Before leaving current page, deal with any killed items */
-		if (so->numKilled > 0)
-			_bt_killitems(scan);
-		BTScanPosUnpinIfPinned(so->currPos);
-		BTScanPosInvalidate(so->currPos);
+		_bt_release_scan_state(scan, so->knnState, true);
+		pfree(so->knnState);
+		so->knnState = NULL;
 	}
-
-	so->markItemIndex = -1;
-	BTScanPosUnpinIfPinned(so->markPos);
-	BTScanPosInvalidate(so->markPos);
 
 	/*
 	 * Allocate tuple workspace arrays, if needed for an index-only scan and
@@ -501,11 +554,8 @@ btrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 	 * a SIGSEGV is not possible.  Yeah, this is ugly as sin, but it beats
 	 * adding special-case treatment for name_ops elsewhere.
 	 */
-	if (scan->xs_want_itup && so->currTuples == NULL)
-	{
-		so->currTuples = (char *) palloc(BLCKSZ * 2);
-		so->markTuples = so->currTuples + BLCKSZ;
-	}
+	if (scan->xs_want_itup && state->currTuples == NULL)
+		_bt_allocate_tuple_workspaces(state);
 
 	/*
 	 * Reset the scan keys. Note that keys ordering stuff moved to _bt_first.
@@ -516,6 +566,14 @@ btrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 				scankey,
 				scan->numberOfKeys * sizeof(ScanKeyData));
 	so->numberOfKeys = 0;		/* until _bt_preprocess_keys sets it */
+
+	if (orderbys && scan->numberOfOrderBys > 0)
+		memmove(scan->orderByData,
+				orderbys,
+				scan->numberOfOrderBys * sizeof(ScanKeyData));
+
+	so->scanDirection = NoMovementScanDirection;
+	so->distanceTypeByVal = true;
 
 	/* If any keys are SK_SEARCHARRAY type, set up array-key info */
 	_bt_preprocess_array_keys(scan);
@@ -529,19 +587,13 @@ btendscan(IndexScanDesc scan)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
 
-	/* we aren't holding any read locks, but gotta drop the pins */
-	if (BTScanPosIsValid(so->currPos))
+	_bt_release_scan_state(scan, &so->state, true);
+
+	if (so->knnState)
 	{
-		/* Before leaving current page, deal with any killed items */
-		if (so->numKilled > 0)
-			_bt_killitems(scan);
-		BTScanPosUnpinIfPinned(so->currPos);
+		_bt_release_scan_state(scan, so->knnState, true);
+		pfree(so->knnState);
 	}
-
-	so->markItemIndex = -1;
-	BTScanPosUnpinIfPinned(so->markPos);
-
-	/* No need to invalidate positions, the RAM is about to be freed. */
 
 	/* Release storage */
 	if (so->keyData != NULL)
@@ -549,12 +601,44 @@ btendscan(IndexScanDesc scan)
 	/* so->arrayKeyData and so->arrayKeys are in arrayContext */
 	if (so->arrayContext != NULL)
 		MemoryContextDelete(so->arrayContext);
-	if (so->killedItems != NULL)
-		pfree(so->killedItems);
-	if (so->currTuples != NULL)
-		pfree(so->currTuples);
-	/* so->markTuples should not be pfree'd, see btrescan */
+
 	pfree(so);
+}
+
+static void
+_bt_mark_current_position(BTScanOpaque so, BTScanState state)
+{
+	/* There may be an old mark with a pin (but no lock). */
+	BTScanPosUnpinIfPinned(state->markPos);
+
+	/*
+	 * Just record the current itemIndex.  If we later step to next page
+	 * before releasing the marked position, _bt_steppage makes a full copy of
+	 * the currPos struct in markPos.  If (as often happens) the mark is moved
+	 * before we leave the page, we don't have to do that work.
+	 */
+	if (BTScanPosIsValid(state->currPos))
+		state->markItemIndex = state->currPos.itemIndex;
+	else
+	{
+		BTScanPosInvalidate(state->markPos);
+		state->markItemIndex = -1;
+	}
+
+	if (so->knnState)
+	{
+		if (!so->distanceTypeByVal)
+			pfree(DatumGetPointer(state->markDistance));
+
+		state->markIsNull = !BTScanPosIsValid(state->currPos) ||
+							state->currIsNull;
+
+		state->markDistance =
+				state->markIsNull ? PointerGetDatum(NULL)
+								  : datumCopy(state->currDistance,
+											  so->distanceTypeByVal,
+											  so->distanceTypeLen);
+	}
 }
 
 /*
@@ -565,26 +649,72 @@ btmarkpos(IndexScanDesc scan)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
 
-	/* There may be an old mark with a pin (but no lock). */
-	BTScanPosUnpinIfPinned(so->markPos);
+	_bt_mark_current_position(so, &so->state);
 
-	/*
-	 * Just record the current itemIndex.  If we later step to next page
-	 * before releasing the marked position, _bt_steppage makes a full copy of
-	 * the currPos struct in markPos.  If (as often happens) the mark is moved
-	 * before we leave the page, we don't have to do that work.
-	 */
-	if (BTScanPosIsValid(so->currPos))
-		so->markItemIndex = so->currPos.itemIndex;
-	else
+	if (so->knnState)
 	{
-		BTScanPosInvalidate(so->markPos);
-		so->markItemIndex = -1;
+		_bt_mark_current_position(so, so->knnState);
+		so->markRightIsNearest = so->currRightIsNearest;
 	}
 
 	/* Also record the current positions of any array keys */
 	if (so->numArrayKeys)
 		_bt_mark_array_keys(scan);
+}
+
+static void
+_bt_restore_marked_position(IndexScanDesc scan, BTScanState state)
+{
+	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+
+	if (state->markItemIndex >= 0)
+	{
+		/*
+		 * The scan has never moved to a new page since the last mark.  Just
+		 * restore the itemIndex.
+		 *
+		 * NB: In this case we can't count on anything in so->markPos to be
+		 * accurate.
+		 */
+		state->currPos.itemIndex = state->markItemIndex;
+	}
+	else
+	{
+		/*
+		 * The scan moved to a new page after last mark or restore, and we are
+		 * now restoring to the marked page.  We aren't holding any read
+		 * locks, but if we're still holding the pin for the current position,
+		 * we must drop it.
+		 */
+		_bt_release_current_position(state, scan->indexRelation,
+									 !BTScanPosIsValid(state->markPos));
+
+		if (BTScanPosIsValid(state->markPos))
+		{
+			/* bump pin on mark buffer for assignment to current buffer */
+			if (BTScanPosIsPinned(state->markPos))
+				IncrBufferRefCount(state->markPos.buf);
+			memcpy(&state->currPos, &state->markPos,
+				   offsetof(BTScanPosData, items[1]) +
+				   state->markPos.lastItem * sizeof(BTScanPosItem));
+			if (state->currTuples)
+				memcpy(state->currTuples, state->markTuples,
+						state->markPos.nextTupleOffset);
+		}
+	}
+
+	if (so->knnState)
+	{
+		if (!so->distanceTypeByVal)
+			pfree(DatumGetPointer(state->currDistance));
+
+		state->currIsNull = state->markIsNull;
+		state->currDistance =
+				state->markIsNull ? PointerGetDatum(NULL)
+								  : datumCopy(state->markDistance,
+											  so->distanceTypeByVal,
+											  so->distanceTypeLen);
+	}
 }
 
 /*
@@ -599,47 +729,12 @@ btrestrpos(IndexScanDesc scan)
 	if (so->numArrayKeys)
 		_bt_restore_array_keys(scan);
 
-	if (so->markItemIndex >= 0)
-	{
-		/*
-		 * The scan has never moved to a new page since the last mark.  Just
-		 * restore the itemIndex.
-		 *
-		 * NB: In this case we can't count on anything in so->markPos to be
-		 * accurate.
-		 */
-		so->currPos.itemIndex = so->markItemIndex;
-	}
-	else
-	{
-		/*
-		 * The scan moved to a new page after last mark or restore, and we are
-		 * now restoring to the marked page.  We aren't holding any read
-		 * locks, but if we're still holding the pin for the current position,
-		 * we must drop it.
-		 */
-		if (BTScanPosIsValid(so->currPos))
-		{
-			/* Before leaving current page, deal with any killed items */
-			if (so->numKilled > 0)
-				_bt_killitems(scan);
-			BTScanPosUnpinIfPinned(so->currPos);
-		}
+	_bt_restore_marked_position(scan, &so->state);
 
-		if (BTScanPosIsValid(so->markPos))
-		{
-			/* bump pin on mark buffer for assignment to current buffer */
-			if (BTScanPosIsPinned(so->markPos))
-				IncrBufferRefCount(so->markPos.buf);
-			memcpy(&so->currPos, &so->markPos,
-				   offsetof(BTScanPosData, items[1]) +
-				   so->markPos.lastItem * sizeof(BTScanPosItem));
-			if (so->currTuples)
-				memcpy(so->currTuples, so->markTuples,
-					   so->markPos.nextTupleOffset);
-		}
-		else
-			BTScanPosInvalidate(so->currPos);
+	if (so->knnState)
+	{
+		_bt_restore_marked_position(scan, so->knnState);
+		so->currRightIsNearest = so->markRightIsNearest;
 	}
 }
 

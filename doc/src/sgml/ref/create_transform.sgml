@@ -186,10 +186,10 @@ CREATE TRANSFORM FOR hstore LANGUAGE plpythonu (
 
   <para>
    This form of <command>CREATE TRANSFORM</command> is a
-   <productname>PostgreSQL</productname> extension.  There is a <command>CREATE
+   <productname>&productname;</productname> extension.  There is a <command>CREATE
    TRANSFORM</command> command in the <acronym>SQL</acronym> standard, but it
    is for adapting data types to client languages.  That usage is not supported
-   by <productname>PostgreSQL</productname>.
+   by <productname>&productname;</productname>.
   </para>
  </refsect1>
 

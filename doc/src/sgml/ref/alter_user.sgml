@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_user.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERUSER">
@@ -65,7 +65,7 @@ ALTER USER <replaceable class="PARAMETER">role_specification</replaceable> RESET
 
   <para>
    The <command>ALTER USER</command> statement is a
-   <productname>PostgreSQL</productname> extension.  The SQL standard
+   <productname>&productname;</productname> extension.  The SQL standard
    leaves the definition of users to the implementation.
   </para>
  </refsect1>
