@@ -3806,7 +3806,7 @@ static char * MtmGucSerialize(void)
 		appendStringInfoString(serialized_gucs, " TO ");
 
 		/* quite a crutch */
-		if (strcmp(cur_entry->key, "work_mem") == 0)
+		if (strstr(cur_entry->key, "_mem") != NULL)
 		{
 			appendStringInfoString(serialized_gucs, "'");
 			appendStringInfoString(serialized_gucs, cur_entry->value);
@@ -3955,6 +3955,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		  }
 
 		case T_CreateDomainStmt:
+			/* Detect temp tables access */
 			{
 				CreateDomainStmt *stmt = (CreateDomainStmt *) parsetree;
 				HeapTuple	typeTup;
