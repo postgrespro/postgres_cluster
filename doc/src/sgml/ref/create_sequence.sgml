@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_sequence.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATESEQUENCE">
@@ -362,7 +362,7 @@ END;
     </listitem>
     <listitem>
      <para>
-      The <literal>OWNED BY</> clause is a <productname>PostgreSQL</>
+      The <literal>OWNED BY</> clause is a <productname>&productname;</>
       extension.
      </para>
     </listitem>

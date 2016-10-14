@@ -32,7 +32,7 @@
   passwords without re-encrypting them.  If you want the encrypted password
   without the colon then use the <function>raw()</> function.
   This allows you to use the
-  type with things like Apache's <literal>Auth_PostgreSQL</> module.
+  type with things like Apache's <literal>Auth_&productname;</> module.
  </para>
 
  <para>

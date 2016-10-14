@@ -11,13 +11,13 @@
  <para>
   It is recommended that most users download the binary distribution for
   Windows, available as a graphical installer package
-  from the <productname>PostgreSQL</productname> website. Building from source
-  is only intended for people developing <productname>PostgreSQL</productname>
+  from the <productname>&productname;</productname> website. Building from source
+  is only intended for people developing <productname>&productname;</productname>
   or extensions.
  </para>
 
  <para>
-  There are several different ways of building PostgreSQL on
+  There are several different ways of building &productname; on
   <productname>Windows</productname>. The simplest way to build with
   Microsoft tools is to install <productname>Visual Studio Express 2015
   for Windows Desktop</productname> and use the included
@@ -28,7 +28,7 @@
  </para>
 
  <para>
-  It is also possible to build PostgreSQL using the GNU compiler tools
+  It is also possible to build &productname; using the GNU compiler tools
   provided by <productname>MinGW</productname>, or using
   <productname>Cygwin</productname> for older versions of
   <productname>Windows</productname>.
@@ -72,7 +72,7 @@
   <productname>Microsoft Windows SDK</productname></title>
 
  <para>
-  PostgreSQL can be built using the Visual C++ compiler suite from Microsoft.
+  &productname; can be built using the Visual C++ compiler suite from Microsoft.
   These compilers can be either from <productname>Visual Studio</productname>,
   <productname>Visual Studio Express</productname> or some versions of the
   <productname>Microsoft Windows SDK</productname>. If you do not already have a
@@ -84,11 +84,11 @@
 
  <para>
   Both 32-bit and 64-bit builds are possible with the Microsoft Compiler suite.
-  32-bit PostgreSQL builds are possible with
+  32-bit &productname; builds are possible with
   <productname>Visual Studio 2005</productname> to
   <productname>Visual Studio 2015</productname> (including Express editions),
   as well as standalone Windows SDK releases 6.0 to 7.1.
-  64-bit PostgreSQL builds are supported with
+  64-bit &productname; builds are supported with
   <productname>Microsoft Windows SDK</productname> version 6.0a to 7.1 or
   <productname>Visual Studio 2008</productname> and above. Compilation
   is supported down to <productname>Windows XP</productname> and
@@ -149,7 +149,7 @@ $ENV{PATH}=$ENV{PATH} . ';c:\some\where\bison\bin';
   <title>Requirements</title>
   <para>
    The following additional products are required to build
-   <productname>PostgreSQL</productname>. Use the
+   <productname>&productname;</productname>. Use the
    <filename>config.pl</filename> file to specify which directories the libraries
    are available in.
 
@@ -243,7 +243,7 @@ $ENV{PATH}=$ENV{PATH} . ';c:\some\where\bison\bin';
 
      <note>
        <para>
-       The obsolete <literal>winflex</literal> binaries distributed on the PostgreSQL FTP site
+       The obsolete <literal>winflex</literal> binaries distributed on the &productname; FTP site
        and referenced in older documentation will fail with <quote>flex: fatal
        internal error, exec failed</quote> on 64-bit Windows hosts. Use Flex from
        MSYS instead.
@@ -332,14 +332,14 @@ $ENV{PATH}=$ENV{PATH} . ';c:\some\where\bison\bin';
   <title>Special Considerations for 64-bit Windows</title>
 
   <para>
-   PostgreSQL will only build for the x64 architecture on 64-bit Windows, there
+   &productname; will only build for the x64 architecture on 64-bit Windows, there
    is no support for Itanium processors.
   </para>
 
   <para>
    Mixing 32- and 64-bit versions in the same build tree is not supported.
    The build system will automatically detect if it's running in a 32- or
-   64-bit environment, and build PostgreSQL accordingly. For this reason, it
+   64-bit environment, and build &productname; accordingly. For this reason, it
    is important to start the correct command prompt before building.
   </para>
 
@@ -347,9 +347,9 @@ $ENV{PATH}=$ENV{PATH} . ';c:\some\where\bison\bin';
    To use a server-side third party library such as <productname>python</> or
    <productname>openssl</>, this library <emphasis>must</emphasis> also be
    64-bit. There is no support for loading a 32-bit library in a 64-bit
-   server. Several of the third party libraries that PostgreSQL supports may
+   server. Several of the third party libraries that &productname; supports may
    only be available in 32-bit versions, in which case they cannot be used with
-   64-bit PostgreSQL.
+   64-bit &productname;.
   </para>
  </sect2>
 
@@ -357,12 +357,12 @@ $ENV{PATH}=$ENV{PATH} . ';c:\some\where\bison\bin';
   <title>Building</title>
 
   <para>
-   To build all of PostgreSQL in release configuration (the default), run the
+   To build all of &productname; in release configuration (the default), run the
    command:
 <screen>
 <userinput>build</userinput>
 </screen>
-   To build all of PostgreSQL in debug configuration, run the command:
+   To build all of &productname; in debug configuration, run the command:
 <screen>
 <userinput>build DEBUG</userinput>
 </screen>
@@ -487,7 +487,7 @@ $ENV{PERL5LIB}=$ENV{PERL5LIB} . ';c:\IPC-Run-0.94\lib';
   <title>Building the Documentation</title>
 
   <para>
-   Building the PostgreSQL documentation in HTML format requires several tools
+   Building the &productname; documentation in HTML format requires several tools
    and files. Create a root directory for all these files, and store them
    in the subdirectories in the list below.
    <variablelist>

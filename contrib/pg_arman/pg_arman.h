@@ -56,11 +56,12 @@ typedef struct pgFile
 							   that the file existed but was not backed up
 							   because not modified since last backup. */
 	pg_crc32 crc;			/* CRC value of the file, regular file only */
-	char   *linked;			/* path of the linked file */
+	char	*linked;			/* path of the linked file */
 	bool	is_datafile;	/* true if the file is PostgreSQL data file */
 	char	*path;			/* path of the file */
 	char	*ptrack_path;
 	int		segno;			/* Segment number for ptrack */
+	volatile uint32 lock;
 	datapagemap_t pagemap;
 } pgFile;
 
@@ -210,6 +211,8 @@ extern parray *backup_files_list;
 
 extern int num_threads;
 extern bool stream_wal;
+extern bool disable_ptrack_clear;
+extern bool progress;
 
 /* in backup.c */
 extern int do_backup(pgBackupOption bkupopt);
@@ -283,6 +286,7 @@ extern void pgFileFree(void *file);
 extern pg_crc32 pgFileGetCRC(pgFile *file);
 extern int pgFileComparePath(const void *f1, const void *f2);
 extern int pgFileComparePathDesc(const void *f1, const void *f2);
+extern int pgFileCompareSize(const void *f1, const void *f2);
 extern int pgFileCompareMtime(const void *f1, const void *f2);
 extern int pgFileCompareMtimeDesc(const void *f1, const void *f2);
 

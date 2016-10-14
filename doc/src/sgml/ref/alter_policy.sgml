@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_policy.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERPOLICY">
@@ -122,7 +122,7 @@ ALTER POLICY <replaceable class="parameter">name</replaceable> ON <replaceable c
   <title>Compatibility</title>
 
   <para>
-   <command>ALTER POLICY</command> is a <productname>PostgreSQL</productname> extension.
+   <command>ALTER POLICY</command> is a <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

@@ -31,6 +31,7 @@
 #include "access/transam.h"
 #include "access/twophase.h"
 #include "access/xact.h"
+#include "access/ptrack.h"
 #include "catalog/namespace.h"
 #include "commands/async.h"
 #include "commands/prepare.h"
@@ -998,6 +999,16 @@ static struct config_bool ConfigureNamesBool[] =
 		&wal_log_hints,
 		false,
 		NULL, NULL, NULL
+	},
+
+	{
+		{"ptrack_enable", PGC_SU_BACKEND, WAL_SETTINGS,
+			gettext_noop("Enable page tracking."),
+			NULL
+		},
+		&ptrack_enable,
+		false,
+		NULL, &assign_ptrack_enable, NULL
 	},
 
 	{
@@ -2250,7 +2261,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_S
 		},
 		&CheckPointTimeout,
-		300, 30, 3600,
+		300, 30, 86400,
 		NULL, NULL, NULL
 	},
 
@@ -2758,7 +2769,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_BLOCKS,
 		},
 		&min_parallel_relation_size,
-		1024, 0, INT_MAX / 3,
+		(8 * 1024 * 1024) / BLCKSZ, 0, INT_MAX / 3,
 		NULL, NULL, NULL
 	},
 

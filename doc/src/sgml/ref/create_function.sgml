@@ -607,7 +607,7 @@ CREATE [ OR REPLACE ] FUNCTION
   <title>Overloading</title>
 
    <para>
-    <productname>PostgreSQL</productname> allows function
+    <productname>&productname;</productname> allows function
     <firstterm>overloading</firstterm>; that is, the same name can be
     used for several different functions so long as they have distinct
     input argument types.  However, the C names of all functions must be
@@ -818,7 +818,7 @@ COMMIT;
 
   <para>
    A <command>CREATE FUNCTION</command> command is defined in SQL:1999 and later.
-   The <productname>PostgreSQL</productname> version is similar but
+   The <productname>&productname;</productname> version is similar but
    not fully compatible.  The attributes are not portable, neither are the
    different available languages.
   </para>

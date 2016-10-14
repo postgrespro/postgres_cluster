@@ -38,7 +38,9 @@ static XLogRecPtr stop_backup_lsn = InvalidXLogRecPtr;
 const char *progname = "pg_arman";
 
 /* list of files contained in backup */
-parray			*backup_files_list;
+parray	*backup_files_list;
+static volatile uint32	total_copy_files_increment;
+static uint32 total_files_num;
 
 typedef struct
 {
@@ -47,8 +49,6 @@ typedef struct
 	parray *files;
 	parray *prev_files;
 	const XLogRecPtr *lsn;
-	unsigned int start_file_idx;
-	unsigned int end_file_idx;
 } backup_files_args;
 
 /*
@@ -106,6 +106,7 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 	pthread_t	stream_thread;
 	backup_files_args *backup_threads_args[num_threads];
 
+
 	/* repack the options */
 	bool	smooth_checkpoint = bkupopt.smooth_checkpoint;
 	pgBackup   *prev_backup = NULL;
@@ -146,7 +147,7 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 	}
 
 	/* clear ptrack files for FULL and DIFF backup */
-	if (current.backup_mode != BACKUP_MODE_DIFF_PTRACK)
+	if (current.backup_mode != BACKUP_MODE_DIFF_PTRACK && !disable_ptrack_clear)
 		pg_ptrack_clear();
 
 	/* start stream replication */
@@ -310,11 +311,21 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 			if (!check)
 				dir_create_dir(dirpath, DIR_PERMISSION);
 		}
+		else
+		{
+			total_files_num++;
+		}
+
+		__sync_lock_release(&file->lock);
 	}
 
 	if (num_threads < 1)
 		num_threads = 1;
 
+	/* sort by size for load balancing */
+	parray_qsort(backup_files_list, pgFileCompareSize);
+
+	/* init thread args with own file lists */
 	for (i = 0; i < num_threads; i++)
 	{
 		backup_files_args *arg = pg_malloc(sizeof(backup_files_args));
@@ -323,19 +334,17 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 		arg->files = backup_files_list;
 		arg->prev_files = prev_files;
 		arg->lsn = lsn;
-		arg->start_file_idx = i * (parray_num(backup_files_list)/num_threads);
-		if (i == num_threads - 1)
-			arg->end_file_idx = parray_num(backup_files_list);
-		else
-			arg->end_file_idx =  (i + 1) * (parray_num(backup_files_list)/num_threads);
-
-		if (verbose)
-			elog(WARNING, "Start thread for start_file_idx:%i end_file_idx:%i num:%li",
-				arg->start_file_idx,
-				arg->end_file_idx,
-				parray_num(backup_files_list));
 		backup_threads_args[i] = arg;
-		pthread_create(&backup_threads[i], NULL, (void *(*)(void *)) backup_files, arg);
+	}
+
+	total_copy_files_increment = 0;
+
+	/* Run threads */
+	for (i = 0; i < num_threads; i++)
+	{
+		if (verbose)
+			elog(WARNING, "Start thread num:%li", parray_num(backup_threads_args[i]->files));
+		pthread_create(&backup_threads[i], NULL, (void *(*)(void *)) backup_files, backup_threads_args[i]);
 	}
 
 	/* Wait theads */
@@ -344,6 +353,9 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 		pthread_join(backup_threads[i], NULL);
 		pg_free(backup_threads_args[i]);
 	}
+
+	if (progress)
+		fprintf(stderr, "\n");
 
 	/* Notify end of backup */
 	pg_stop_backup(&current);
@@ -911,12 +923,14 @@ backup_files(void *arg)
 	gettimeofday(&tv, NULL);
 
 	/* backup a file or create a directory */
-	for (i = arguments->start_file_idx; i < arguments->end_file_idx; i++)
+	for (i = 0; i < parray_num(arguments->files); i++)
 	{
 		int			ret;
 		struct stat	buf;
 
 		pgFile *file = (pgFile *) parray_get(arguments->files, i);
+		if (__sync_lock_test_and_set(&file->lock, 1) != 0)
+			continue;
 
 		/* If current time is rewinded, abort this backup. */
 		if (tv.tv_sec < file->mtime)
@@ -1007,6 +1021,9 @@ backup_files(void *arg)
 		}
 		else
 			elog(LOG, "unexpected file type %d", buf.st_mode);
+		if (progress)
+			fprintf(stderr, "\rProgress %i/%u", total_copy_files_increment, total_files_num-1);
+		 __sync_fetch_and_add(&total_copy_files_increment, 1);
 	}
 }
 
@@ -1089,6 +1106,27 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 			continue;
 
 		file->is_datafile = true;
+		{
+			int find_dot;
+			int check_digit;
+			char *text_segno;
+			for(find_dot = path_len-1; file->path[find_dot] != '.' && find_dot >= 0; find_dot--);
+			if (find_dot <= 0)
+				continue;
+
+			text_segno = file->path + find_dot + 1;
+			for(check_digit=0; text_segno[check_digit] != '\0'; check_digit++)
+				if (!isdigit(text_segno[check_digit]))
+				{
+					check_digit = -1;
+					break;
+				}
+
+			if (check_digit == -1)
+				continue;
+
+			file->segno = (int) strtol(text_segno, NULL, 10);
+		}
 	}
 	parray_concat(files, list_file);
 }
@@ -1334,13 +1372,13 @@ StreamLog(void *arg)
 	ctl.basedir = basedir;
 	ctl.stream_stop = stop_streaming;
 	ctl.standby_message_timeout = standby_message_timeout;
-	ctl.partial_suffix = ".partial";
+	ctl.partial_suffix = NULL;
 	ctl.synchronous = false;
 	ctl.mark_done = false;
 	ReceiveXlogStream(conn, &ctl);
 #else
 	ReceiveXlogStream(conn, startpos, starttli, NULL, basedir,
-					  stop_streaming, standby_message_timeout, ".partial",
+					  stop_streaming, standby_message_timeout, NULL,
 					  false, false);
 #endif
 

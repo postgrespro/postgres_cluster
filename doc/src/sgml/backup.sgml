@@ -6,7 +6,7 @@
  <indexterm zone="backup"><primary>backup</></>
 
  <para>
-  As with everything that contains valuable data, <productname>PostgreSQL</>
+  As with everything that contains valuable data, <productname>&productname;</>
   databases should be backed up regularly. While the procedure is
   essentially simple, it is important to have a clear understanding of
   the underlying techniques and assumptions.
@@ -14,7 +14,7 @@
 
  <para>
   There are three fundamentally different approaches to backing up
-  <productname>PostgreSQL</> data:
+  <productname>&productname;</> data:
   <itemizedlist>
    <listitem><para><acronym>SQL</> dump</para></listitem>
    <listitem><para>File system level backup</para></listitem>
@@ -31,7 +31,7 @@
    The idea behind this dump method is to generate a file with SQL
    commands that, when fed back to the server, will recreate the
    database in the same state as it was at the time of the dump.
-   <productname>PostgreSQL</> provides the utility program
+   <productname>&productname;</> provides the utility program
    <xref linkend="app-pgdump"> for this purpose. The basic usage of this
    command is:
 <synopsis>
@@ -45,7 +45,7 @@ pg_dump <replaceable class="parameter">dbname</replaceable> &gt; <replaceable cl
   </para>
 
   <para>
-   <application>pg_dump</> is a regular <productname>PostgreSQL</>
+   <application>pg_dump</> is a regular <productname>&productname;</>
    client application (albeit a particularly clever one). This means
    that you can perform this backup procedure from any remote host that has
    access to the database. But remember that <application>pg_dump</>
@@ -72,7 +72,7 @@ pg_dump <replaceable class="parameter">dbname</replaceable> &gt; <replaceable cl
   </para>
 
   <para>
-   Like any other <productname>PostgreSQL</> client application,
+   Like any other <productname>&productname;</> client application,
    <application>pg_dump</> will by default connect with the database
    user name that is equal to the current operating system user name. To override
    this, either specify the <option>-U</option> option or set the
@@ -85,7 +85,7 @@ pg_dump <replaceable class="parameter">dbname</replaceable> &gt; <replaceable cl
   <para>
    An important advantage of <application>pg_dump</> over the other backup
    methods described later is that <application>pg_dump</>'s output can
-   generally be re-loaded into newer versions of <productname>PostgreSQL</>,
+   generally be re-loaded into newer versions of <productname>&productname;</>,
    whereas file-level backups and continuous archiving are both extremely
    server-version-specific.  <application>pg_dump</> is also the only method
    that will work when transferring a database to a different machine
@@ -183,7 +183,7 @@ pg_dump -h <replaceable>host1</> <replaceable>dbname</> | psql -h <replaceable>h
     see <xref linkend="vacuum-for-statistics">
     and <xref linkend="autovacuum"> for more information.
     For more advice on how to load large amounts of data
-    into <productname>PostgreSQL</> efficiently, refer to <xref
+    into <productname>&productname;</> efficiently, refer to <xref
     linkend="populate">.
    </para>
   </sect2>
@@ -290,7 +290,7 @@ cat <replaceable class="parameter">filename</replaceable>* | psql <replaceable c
    <formalpara>
     <title>Use <application>pg_dump</>'s custom dump format.</title>
     <para>
-     If <productname>PostgreSQL</productname> was built on a system with the
+     If <productname>&productname;</productname> was built on a system with the
      <application>zlib</> compression library installed, the custom dump
      format will compress data as it writes it to the output file. This will
      produce dump file sizes similar to using <command>gzip</command>, but it
@@ -344,7 +344,7 @@ pg_dump -j <replaceable class="parameter">num</replaceable> -F d -f <replaceable
 
   <para>
    An alternative backup strategy is to directly copy the files that
-   <productname>PostgreSQL</> uses to store the data in the database;
+   <productname>&productname;</> uses to store the data in the database;
    <xref linkend="creating-cluster"> explains where these files
    are located.  You can use whatever method you prefer
    for doing file system backups; for example:
@@ -471,7 +471,7 @@ tar -cf backup.tar /usr/local/pgsql/data
   </indexterm>
 
   <para>
-   At all times, <productname>PostgreSQL</> maintains a
+   At all times, <productname>&productname;</> maintains a
    <firstterm>write ahead log</> (WAL) in the <filename>pg_xlog/</>
    subdirectory of the cluster's data directory. The log records
    every change made to the database's data files.  This log exists
@@ -558,11 +558,11 @@ tar -cf backup.tar /usr/local/pgsql/data
    <title>Setting Up WAL Archiving</title>
 
    <para>
-    In an abstract sense, a running <productname>PostgreSQL</> system
+    In an abstract sense, a running <productname>&productname;</> system
     produces an indefinitely long sequence of WAL records.  The system
     physically divides this sequence into WAL <firstterm>segment
     files</>, which are normally 16MB apiece (although the segment size
-    can be altered when building <productname>PostgreSQL</>).  The segment
+    can be altered when building <productname>&productname;</>).  The segment
     files are given numeric names that reflect their position in the
     abstract WAL sequence.  When not using WAL archiving, the system
     normally creates just a few segment files and then
@@ -582,8 +582,8 @@ tar -cf backup.tar /usr/local/pgsql/data
     you have a way of identifying the original name of each file), or batch
     them together and burn them onto CDs, or something else entirely.  To
     provide the database administrator with flexibility,
-    <productname>PostgreSQL</> tries not to make any assumptions about how
-    the archiving will be done.  Instead, <productname>PostgreSQL</> lets
+    <productname>&productname;</> tries not to make any assumptions about how
+    the archiving will be done.  Instead, <productname>&productname;</> lets
     the administrator specify a shell command to be executed to copy a
     completed segment file to wherever it needs to go.  The command could be
     as simple as a <literal>cp</>, or it could invoke a complex shell
@@ -623,7 +623,7 @@ test ! -f /mnt/server/archivedir/00000001000000A900000065 &amp;&amp; cp pg_xlog/
 
    <para>
     The archive command will be executed under the ownership of the same
-    user that the <productname>PostgreSQL</> server is running as.  Since
+    user that the <productname>&productname;</> server is running as.  Since
     the series of WAL files being archived contains effectively everything
     in your database, you will want to be sure that the archived data is
     protected from prying eyes; for example, archive into a directory that
@@ -633,9 +633,9 @@ test ! -f /mnt/server/archivedir/00000001000000A900000065 &amp;&amp; cp pg_xlog/
    <para>
     It is important that the archive command return zero exit status if and
     only if it succeeds.  Upon getting a zero result,
-    <productname>PostgreSQL</> will assume that the file has been
+    <productname>&productname;</> will assume that the file has been
     successfully archived, and will remove or recycle it.  However, a nonzero
-    status tells <productname>PostgreSQL</> that the file was not archived;
+    status tells <productname>&productname;</> that the file was not archived;
     it will try again periodically until it succeeds.
    </para>
 
@@ -671,7 +671,7 @@ test ! -f /mnt/server/archivedir/00000001000000A900000065 &amp;&amp; cp pg_xlog/
     resolved reasonably quickly. The <filename>pg_xlog/</> directory will
     continue to fill with WAL segment files until the situation is resolved.
     (If the file system containing <filename>pg_xlog/</> fills up,
-    <productname>PostgreSQL</> will do a PANIC shutdown.  No committed
+    <productname>&productname;</> will do a PANIC shutdown.  No committed
     transactions will be lost, but the database will remain offline until
     you free some space.)
    </para>
@@ -698,7 +698,7 @@ test ! -f /mnt/server/archivedir/00000001000000A900000065 &amp;&amp; cp pg_xlog/
 
    <para>
     Note that although WAL archiving will allow you to restore any
-    modifications made to the data in your <productname>PostgreSQL</> database,
+    modifications made to the data in your <productname>&productname;</> database,
     it will not restore changes made to configuration files (that is,
     <filename>postgresql.conf</>, <filename>pg_hba.conf</> and
     <filename>pg_ident.conf</>), since those are edited manually rather
@@ -933,7 +933,7 @@ SELECT * FROM pg_stop_backup(false);
      The process for an exclusive backup is mostly the same as for a
      non-exclusive one, but it differs in a few key steps. It does not allow
      more than one concurrent backup to run, and there can be some issues on
-     the server if it crashes during the backup. Prior to PostgreSQL 9.6, this
+     the server if it crashes during the backup. Prior to &productname; 9.6, this
      was the only low-level method available, but it is now recommended that
      all users upgrade their scripts to use non-exclusive backups if possible.
     </para>
@@ -1209,7 +1209,7 @@ SELECT pg_stop_backup();
     located in the installation's <filename>share/</> directory) as a
     prototype.  The one thing that you absolutely must specify in
     <filename>recovery.conf</> is the <varname>restore_command</>,
-    which tells <productname>PostgreSQL</> how to retrieve archived
+    which tells <productname>&productname;</> how to retrieve archived
     WAL file segments.  Like the <varname>archive_command</>, this is
     a shell command string.  It can contain <literal>%f</>, which is
     replaced by the name of the desired log file, and <literal>%p</>,
@@ -1332,7 +1332,7 @@ restore_command = 'cp /mnt/server/archivedir/%f %p'
    </para>
 
    <para>
-    To deal with this problem, <productname>PostgreSQL</> has a notion
+    To deal with this problem, <productname>&productname;</> has a notion
     of <firstterm>timelines</>.  Whenever an archive recovery completes,
     a new timeline is created to identify the series of WAL records
     generated after that recovery.  The timeline
@@ -1349,7 +1349,7 @@ restore_command = 'cp /mnt/server/archivedir/%f %p'
    </para>
 
    <para>
-    Every time a new timeline is created, <productname>PostgreSQL</> creates
+    Every time a new timeline is created, <productname>&productname;</> creates
     a <quote>timeline history</> file that shows which timeline it branched
     off from and when.  These history files are necessary to allow the system
     to pick the right WAL segment files when recovering from an archive that
@@ -1384,7 +1384,7 @@ restore_command = 'cp /mnt/server/archivedir/%f %p'
      <title>Standalone Hot Backups</title>
 
      <para>
-      It is possible to use <productname>PostgreSQL</>'s backup facilities to
+      It is possible to use <productname>&productname;</>'s backup facilities to
       produce standalone hot backups. These are backups that cannot be used
       for point-in-time recovery, yet are typically much faster to backup and
       restore than <application>pg_dump</> dumps.  (They are also much larger
@@ -1413,7 +1413,7 @@ archive_command = 'test ! -f /var/lib/pgsql/backup_in_progress || (test ! -f /va
 </programlisting>
       This command will perform archiving when
       <filename>/var/lib/pgsql/backup_in_progress</> exists, and otherwise
-      silently return zero exit status (allowing <productname>PostgreSQL</>
+      silently return zero exit status (allowing <productname>&productname;</>
       to recycle the unwanted WAL file).
      </para>
 

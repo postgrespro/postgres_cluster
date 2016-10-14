@@ -21,15 +21,42 @@ OBJS = backup.o \
 	pgut/pgut.o \
 	pgut/pgut-port.o
 
-EXTRA_CLEAN = datapagemap.c datapagemap.h xlogreader.c receivelog.h streamutil.h logging.h
-
-PG_CPPFLAGS = -I$(libpq_srcdir) ${PTHREAD_CFLAGS}
-override CPPFLAGS := -DFRONTEND $(CPPFLAGS) 
-PG_LIBS = $(libpq_pgport) ${PTHREAD_LIBS} ${PTHREAD_CFLAGS}
+EXTRA_CLEAN = datapagemap.c datapagemap.h xlogreader.c receivelog.c receivelog.h streamutil.c streamutil.h logging.h
 
 REGRESS = init option show delete backup restore
 
 all: checksrcdir datapagemap.h logging.h receivelog.h streamutil.h pg_arman
+
+MAKE_GLOBAL="../../src/Makefile.global"
+TEST_GLOBAL:=$(shell test -e ../../src/Makefile.global)
+ifeq ($(.SHELLSTATUS),1)
+PG_CONFIG = pg_config
+PGXS := $(shell $(PG_CONFIG) --pgxs)
+include $(PGXS)
+
+.PHONY: checksrcdir
+checksrcdir:
+ifndef top_srcdir
+	@echo "You must have PostgreSQL source tree available to compile."
+	@echo "Pass the path to the PostgreSQL source tree to make, in the top_srcdir"
+	@echo "variable: \"make top_srcdir=<path to PostgreSQL source tree>\""
+	@exit 1
+endif
+else
+#TODO: fix me
+REGRESS =
+subdir=contrib/pg_arman
+top_builddir=../..
+include $(top_builddir)/src/Makefile.global
+include $(top_srcdir)/contrib/contrib-global.mk
+endif
+PG_CPPFLAGS = -I$(libpq_srcdir) ${PTHREAD_CFLAGS}
+override CPPFLAGS := -DFRONTEND $(CPPFLAGS) $(PG_CPPFLAGS)
+PG_LIBS = $(libpq_pgport) ${PTHREAD_CFLAGS}
+
+envtest:
+	: top_srcdir=$(top_srcdir)
+	: libpq_srcdir = $(libpq_srcdir)
 
 # This rule's only purpose is to give the user instructions on how to pass
 # the path to PostgreSQL source tree to the makefile.
@@ -61,8 +88,3 @@ streamutil.c: % : $(top_srcdir)/src/bin/pg_basebackup/%
 	rm -f  && $(LN_S) $< .
 streamutil.h: % : $(top_srcdir)/src/bin/pg_basebackup/%
 	rm -f  && $(LN_S) $< .
-
-PG_CONFIG = pg_config
-PGXS := $(shell $(PG_CONFIG) --pgxs)
-include $(PGXS)
-

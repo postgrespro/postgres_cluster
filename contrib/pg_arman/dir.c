@@ -28,6 +28,7 @@ const char *pgdata_exclude[] =
 	NULL,			/* arclog_path will be set later */
 	NULL,			/* 'pg_tblspc' will be set later */
 	NULL,			/* sentinel */
+	NULL
 };
 
 static pgFile *pgFileNew(const char *path, bool omit_symlink);
@@ -192,6 +193,21 @@ pgFileComparePathDesc(const void *f1, const void *f2)
 	return -pgFileComparePath(f1, f2);
 }
 
+/* Compare two pgFile with their size */
+int
+pgFileCompareSize(const void *f1, const void *f2)
+{
+	pgFile *f1p = *(pgFile **)f1;
+	pgFile *f2p = *(pgFile **)f2;
+
+	if (f1p->size > f2p->size)
+		return 1;
+	else if (f1p->size < f2p->size)
+		return -1;
+	else
+		return 0;
+}
+
 /* Compare two pgFile with their modify timestamp. */
 int
 pgFileCompareMtime(const void *f1, const void *f2)
@@ -260,9 +276,13 @@ dir_list_file(parray *files, const char *root, const char *exclude[], bool omit_
 		fclose(black_list_file);
 		parray_qsort(black_list, BlackListCompare);
 		dir_list_file_internal(files, root, exclude, omit_symlink, add_root, black_list);
+		parray_qsort(files, pgFileComparePath);
 	}
 	else
+	{
 		dir_list_file_internal(files, root, exclude, omit_symlink, add_root, NULL);
+		parray_qsort(files, pgFileComparePath);
+	}
 }
 
 void
@@ -406,8 +426,6 @@ dir_list_file_internal(parray *files, const char *root, const char *exclude[],
 
 		break;	/* pseudo loop */
 	}
-
-	parray_qsort(files, pgFileComparePath);
 }
 
 /* print mkdirs.sh */
@@ -529,7 +547,7 @@ dir_read_file_list(const char *root, const char *file_txt)
 		pg_crc32		crc;
 		unsigned int	mode;	/* bit length of mode_t depends on platforms */
 		struct tm		tm;
-		pgFile		   *file;
+		pgFile			*file;
 
 		memset(&tm, 0, sizeof(tm));
 		if (sscanf(buf, "%s %c %lu %u %o %d-%d-%d %d:%d:%d",
@@ -572,6 +590,30 @@ dir_read_file_list(const char *root, const char *file_txt)
 			strcpy(file->path, path);
 
 		parray_append(files, file);
+
+		if(file->is_datafile)
+		{
+			int find_dot;
+			int check_digit;
+			char *text_segno;
+			size_t path_len = strlen(file->path);
+			for(find_dot = path_len-1; file->path[find_dot] != '.' && find_dot >= 0; find_dot--);
+			if (find_dot <= 0)
+				continue;
+
+			text_segno = file->path + find_dot + 1;
+			for(check_digit=0; text_segno[check_digit] != '\0'; check_digit++)
+				if (!isdigit(text_segno[check_digit]))
+				{
+					check_digit = -1;
+					break;
+				}
+
+			if (check_digit == -1)
+				continue;
+
+			file->segno = (int) strtol(text_segno, NULL, 10);
+		}
 	}
 
 	fclose(fp);

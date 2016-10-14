@@ -12,7 +12,7 @@
  </indexterm>
 
   <para>
-   <productname>PostgreSQL</>, like any database software, requires that certain tasks
+   <productname>&productname;</>, like any database software, requires that certain tasks
    be performed regularly to achieve optimum performance. The tasks
    discussed here are <emphasis>required</emphasis>, but they
    are repetitive in nature and can easily be automated using standard
@@ -27,7 +27,7 @@
    regular schedule.  Without a recent backup, you have no chance of recovery
    after a catastrophe (disk failure, fire, mistakenly dropping a critical
    table, etc.).  The backup and recovery mechanisms available in
-   <productname>PostgreSQL</productname> are discussed at length in
+   <productname>&productname;</productname> are discussed at length in
    <xref linkend="backup">.
   </para>
 
@@ -53,7 +53,7 @@
   </para>
 
   <para>
-   <productname>PostgreSQL</productname> is low-maintenance compared
+   <productname>&productname;</productname> is low-maintenance compared
    to some other database management systems.  Nonetheless,
    appropriate attention to these tasks will go far towards ensuring a
    pleasant and productive experience with the system.
@@ -67,7 +67,7 @@
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname> databases require periodic
+   <productname>&productname;</productname> databases require periodic
    maintenance known as <firstterm>vacuuming</>.  For many installations, it
    is sufficient to let vacuuming be performed by the <firstterm>autovacuum
    daemon</>, which is described in <xref linkend="autovacuum">.  You might
@@ -86,7 +86,7 @@
    <title>Vacuuming Basics</title>
 
    <para>
-    <productname>PostgreSQL</productname>'s
+    <productname>&productname;</productname>'s
     <xref linkend="sql-vacuum"> command has to
     process each table on a regular basis for several reasons:
 
@@ -98,7 +98,7 @@
 
      <listitem>
       <simpara>To update data statistics used by the
-      <productname>PostgreSQL</productname> query planner.</simpara>
+      <productname>&productname;</productname> query planner.</simpara>
      </listitem>
 
      <listitem>
@@ -152,7 +152,7 @@
    </indexterm>
 
    <para>
-    In <productname>PostgreSQL</productname>, an
+    In <productname>&productname;</productname>, an
     <command>UPDATE</> or <command>DELETE</> of a row does not
     immediately remove the old version of the row.
     This approach is necessary to gain the benefits of multiversion
@@ -266,7 +266,7 @@
    </indexterm>
 
    <para>
-    The <productname>PostgreSQL</productname> query planner relies on
+    The <productname>&productname;</productname> query planner relies on
     statistical information about the contents of tables in order to
     generate good plans for queries.  These statistics are gathered by
     the <xref linkend="sql-analyze"> command,
@@ -359,9 +359,9 @@
    </para>
 
    <para>
-    Second, it allows <productname>PostgreSQL</productname> to answer some
+    Second, it allows <productname>&productname;</productname> to answer some
     queries using only the index, without reference to the underlying table.
-    Since <productname>PostgreSQL</productname> indexes don't contain tuple
+    Since <productname>&productname;</productname> indexes don't contain tuple
     visibility information, a normal index scan fetches the heap tuple for each
     matching index entry, to check whether it should be seen by the current
     transaction.
@@ -389,7 +389,8 @@
     </indexterm>
 
    <para>
-    <productname>PostgreSQL</productname>'s MVCC transaction semantics
+    <productname>&productname;</productname>'s
+    <link linkend="mvcc-intro">MVCC</link> transaction semantics
     depend on being able to compare transaction ID (<acronym>XID</>)
     numbers: a row version with an insertion XID greater than the current
     transaction's XID is <quote>in the future</> and should not be visible
@@ -407,13 +408,10 @@
    <para>
     The reason that periodic vacuuming solves the problem is that
     <command>VACUUM</> will mark rows as <emphasis>frozen</>, indicating that
-    they were inserted by a transaction which committed sufficiently far in
-    the past that the effects of the inserting transaction is certain to be
-    visible, from an MVCC perspective, to all current and future transactions.
-    <productname>PostgreSQL</> reserves a special XID,
-    <literal>FrozenTransactionId</>, which does not follow the normal XID
-    comparison rules and is always considered older
-    than every normal XID. Normal XIDs are
+    they were inserted by a transaction that committed sufficiently far in
+    the past that the effects of the inserting transaction are certain to be
+    visible to all current and future transactions.
+    Normal XIDs are
     compared using modulo-2<superscript>32</> arithmetic. This means
     that for every normal XID, there are two billion XIDs that are
     <quote>older</> and two billion that are <quote>newer</>; another
@@ -423,16 +421,40 @@
     the next two billion transactions, no matter which normal XID we are
     talking about. If the row version still exists after more than two billion
     transactions, it will suddenly appear to be in the future. To
-    prevent this, frozen row versions are treated as if the inserting XID were
+    prevent this, <productname>PostgreSQL</> reserves a special XID,
+    <literal>FrozenTransactionId</>, which does not follow the normal XID
+    comparison rules and is always considered older
+    than every normal XID.
+    Frozen row versions are treated as if the inserting XID were
     <literal>FrozenTransactionId</>, so that they will appear to be
     <quote>in the past</> to all normal transactions regardless of wraparound
     issues, and so such row versions will be valid until deleted, no matter
     how long that is.
    </para>
 
+   <note>
+    <para>
+     In <productname>PostgreSQL</> versions before 9.4, freezing was
+     implemented by actually replacing a row's insertion XID
+     with <literal>FrozenTransactionId</>, which was visible in the
+     row's <structname>xmin</> system column.  Newer versions just set a flag
+     bit, preserving the row's original <structname>xmin</> for possible
+     forensic use.  However, rows with <structname>xmin</> equal
+     to <literal>FrozenTransactionId</> (2) may still be found
+     in databases <application>pg_upgrade</>'d from pre-9.4 versions.
+    </para>
+    <para>
+     Also, system catalogs may contain rows with <structname>xmin</> equal
+     to <literal>BootstrapTransactionId</> (1), indicating that they were
+     inserted during the first phase of <application>initdb</>.
+     Like <literal>FrozenTransactionId</>, this special XID is treated as
+     older than every normal XID.
+    </para>
+   </note>
+
    <para>
     <xref linkend="guc-vacuum-freeze-min-age">
-    controls how old an XID value has to be before its row version will be
+    controls how old an XID value has to be before rows bearing that XID will be
     frozen.  Increasing this setting may avoid unnecessary work if the
     rows that would otherwise be frozen will soon be modified again,
     but decreasing this setting increases
@@ -442,10 +464,10 @@
 
    <para>
     <command>VACUUM</> uses the <link linkend="storage-vm">visibility map</>
-    to determine which pages of a relation must be scanned.  Normally, it
-    will skips pages that don't have any dead row versions even if those pages
+    to determine which pages of a table must be scanned.  Normally, it
+    will skip pages that don't have any dead row versions even if those pages
     might still have row versions with old XID values.  Therefore, normal
-    scans won't succeed in freezing every row version in the table.
+    <command>VACUUM</>s won't always freeze every old row version in the table.
     Periodically, <command>VACUUM</> will perform an <firstterm>aggressive
     vacuum</>, skipping only those pages which contain neither dead rows nor
     any unfrozen XID or MXID values.
@@ -689,7 +711,7 @@ HINT:  Stop the postmaster and vacuum that database in single-user mode.
     <secondary>general information</secondary>
    </indexterm>
    <para>
-    <productname>PostgreSQL</productname> has an optional but highly
+    <productname>&productname;</productname> has an optional but highly
     recommended feature called <firstterm>autovacuum</firstterm>,
     whose purpose is to automate the execution of
     <command>VACUUM</command> and <command>ANALYZE </command> commands.
@@ -885,7 +907,7 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
    file, you will have log output, but
    the only way to truncate the log file is to stop and restart
    the server. This might be acceptable if you are using
-   <productname>PostgreSQL</productname> in a development environment,
+   <productname>&productname;</productname> in a development environment,
    but few production servers would find this behavior acceptable.
   </para>
 
@@ -906,7 +928,7 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
    program if you have one that you are already using with other
    server software. For example, the <application>rotatelogs</application>
    tool included in the <productname>Apache</productname> distribution
-   can be used with <productname>PostgreSQL</productname>.  To do this,
+   can be used with <productname>&productname;</productname>.  To do this,
    just pipe the server's
    <systemitem>stderr</> output to the desired program.
    If you start the server with

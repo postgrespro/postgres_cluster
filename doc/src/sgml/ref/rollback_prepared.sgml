@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/rollback_prepared.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ROLLBACK-PREPARED">
@@ -88,7 +88,7 @@ ROLLBACK PREPARED 'foobar';
 
   <para>
    <command>ROLLBACK PREPARED</command> is a
-   <productname>PostgreSQL</productname> extension.  It is intended for use by
+   <productname>&productname;</productname> extension.  It is intended for use by
    external transaction management systems, some of which are covered by
    standards (such as X/Open XA), but the SQL side of those systems is not
    standardized.
