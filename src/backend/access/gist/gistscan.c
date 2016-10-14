@@ -107,6 +107,96 @@ gistbeginscan(Relation r, int nkeys, int norderbys)
 	return scan;
 }
 
+static void
+gistupdatekeys(IndexScanDesc scan, ScanKey keys, int nkeys, ScanKey newKeys,
+			   FmgrInfo *funcs, int funcNumber, Oid **funcRetTypes,
+			   bool first_time, bool checkNullKeys)
+{
+	GISTScanOpaque	so = (GISTScanOpaque) scan->opaque;
+	void		  **fn_extras = NULL;
+	int				i;
+
+	if (!newKeys || nkeys <= 0)
+		return;
+
+	/*
+	 * If this isn't the first time through, preserve the fn_extra
+	 * pointers, so that if the funcs are using them to cache
+	 * data, that data is not leaked across a rescan.
+	 */
+	if (!first_time)
+	{
+		fn_extras = (void **) palloc(nkeys * sizeof(void *));
+		for (i = 0; i < nkeys; i++)
+			fn_extras[i] = keys[i].sk_func.fn_extra;
+	}
+
+	memmove(keys, newKeys, nkeys * sizeof(ScanKeyData));
+
+	if (funcRetTypes)
+		*funcRetTypes = (Oid *) palloc(nkeys * sizeof(Oid));
+
+	/*
+	 * Modify the scan key so that the Consistent/Distance method is called
+	 * for all comparisons. The original operator is passed to the Consistent
+	 * function in the form of its strategy number, which is available
+	 * from the sk_strategy field, and its subtype from the sk_subtype
+	 * field.
+	 *
+	 * Next, if any of keys is a NULL and that key is not marked with
+	 * SK_SEARCHNULL/SK_SEARCHNOTNULL then nothing can be found (ie, we
+	 * assume all indexable operators are strict).
+	 */
+
+	for (i = 0; i < nkeys; i++)
+	{
+		ScanKey		skey = keys + i;
+		FmgrInfo   *finfo = &(funcs[skey->sk_attno - 1]);
+
+		/* Check we actually have a function ... */
+		if (!OidIsValid(finfo->fn_oid))
+			elog(ERROR, "missing support function %d for attribute %d of index \"%s\"",
+				 funcNumber, skey->sk_attno,
+				 RelationGetRelationName(scan->indexRelation));
+
+		/*
+		 * Distance function only:
+		 *
+		 * Look up the datatype returned by the original ordering
+		 * operator. GiST always uses a float8 for the distance function,
+		 * but the ordering operator could be anything else.
+		 *
+		 * XXX: The distance function is only allowed to be lossy if the
+		 * ordering operator's result type is float4 or float8.  Otherwise
+		 * we don't know how to return the distance to the executor.  But
+		 * we cannot check that here, as we won't know if the distance
+		 * function is lossy until it returns *recheck = true for the
+		 * first time.
+		 */
+		if (funcRetTypes)
+			(*funcRetTypes)[i] = get_func_rettype(skey->sk_func.fn_oid);
+
+		/*
+		 * Copy consistent support function to ScanKey structure
+		 * instead of function implementing filtering operator.
+		 */
+		fmgr_info_copy(&(skey->sk_func), finfo, so->giststate->scanCxt);
+
+		/* Restore prior fn_extra pointers, if not first time */
+		if (!first_time)
+			skey->sk_func.fn_extra = fn_extras[i];
+
+		if (checkNullKeys && (skey->sk_flags & SK_ISNULL))
+		{
+			if (!(skey->sk_flags & (SK_SEARCHNULL | SK_SEARCHNOTNULL)))
+				so->qual_ok = false;
+		}
+	}
+
+	if (!first_time)
+		pfree(fn_extras);
+}
+
 void
 gistrescan(IndexScanDesc scan, ScanKey key, int nkeys,
 		   ScanKey orderbys, int norderbys)
@@ -114,7 +204,6 @@ gistrescan(IndexScanDesc scan, ScanKey key, int nkeys,
 	/* nkeys and norderbys arguments are ignored */
 	GISTScanOpaque so = (GISTScanOpaque) scan->opaque;
 	bool		first_time;
-	int			i;
 	MemoryContext oldCxt;
 
 	/* rescan an existing indexscan --- reset state */
@@ -187,131 +276,17 @@ gistrescan(IndexScanDesc scan, ScanKey key, int nkeys,
 	MemoryContextSwitchTo(oldCxt);
 
 	so->firstCall = true;
+	so->qual_ok = true;
 
 	/* Update scan key, if a new one is given */
-	if (key && scan->numberOfKeys > 0)
-	{
-		void	  **fn_extras = NULL;
-
-		/*
-		 * If this isn't the first time through, preserve the fn_extra
-		 * pointers, so that if the consistentFns are using them to cache
-		 * data, that data is not leaked across a rescan.
-		 */
-		if (!first_time)
-		{
-			fn_extras = (void **) palloc(scan->numberOfKeys * sizeof(void *));
-			for (i = 0; i < scan->numberOfKeys; i++)
-				fn_extras[i] = scan->keyData[i].sk_func.fn_extra;
-		}
-
-		memmove(scan->keyData, key,
-				scan->numberOfKeys * sizeof(ScanKeyData));
-
-		/*
-		 * Modify the scan key so that the Consistent method is called for all
-		 * comparisons. The original operator is passed to the Consistent
-		 * function in the form of its strategy number, which is available
-		 * from the sk_strategy field, and its subtype from the sk_subtype
-		 * field.
-		 *
-		 * Next, if any of keys is a NULL and that key is not marked with
-		 * SK_SEARCHNULL/SK_SEARCHNOTNULL then nothing can be found (ie, we
-		 * assume all indexable operators are strict).
-		 */
-		so->qual_ok = true;
-
-		for (i = 0; i < scan->numberOfKeys; i++)
-		{
-			ScanKey		skey = scan->keyData + i;
-
-			/*
-			 * Copy consistent support function to ScanKey structure instead
-			 * of function implementing filtering operator.
-			 */
-			fmgr_info_copy(&(skey->sk_func),
-						   &(so->giststate->consistentFn[skey->sk_attno - 1]),
-						   so->giststate->scanCxt);
-
-			/* Restore prior fn_extra pointers, if not first time */
-			if (!first_time)
-				skey->sk_func.fn_extra = fn_extras[i];
-
-			if (skey->sk_flags & SK_ISNULL)
-			{
-				if (!(skey->sk_flags & (SK_SEARCHNULL | SK_SEARCHNOTNULL)))
-					so->qual_ok = false;
-			}
-		}
-
-		if (!first_time)
-			pfree(fn_extras);
-	}
+	gistupdatekeys(scan, scan->keyData, scan->numberOfKeys, key,
+				   so->giststate->consistentFn, GIST_CONSISTENT_PROC,
+				   NULL, first_time, true);
 
 	/* Update order-by key, if a new one is given */
-	if (orderbys && scan->numberOfOrderBys > 0)
-	{
-		void	  **fn_extras = NULL;
-
-		/* As above, preserve fn_extra if not first time through */
-		if (!first_time)
-		{
-			fn_extras = (void **) palloc(scan->numberOfOrderBys * sizeof(void *));
-			for (i = 0; i < scan->numberOfOrderBys; i++)
-				fn_extras[i] = scan->orderByData[i].sk_func.fn_extra;
-		}
-
-		memmove(scan->orderByData, orderbys,
-				scan->numberOfOrderBys * sizeof(ScanKeyData));
-
-		so->orderByTypes = (Oid *) palloc(scan->numberOfOrderBys * sizeof(Oid));
-
-		/*
-		 * Modify the order-by key so that the Distance method is called for
-		 * all comparisons. The original operator is passed to the Distance
-		 * function in the form of its strategy number, which is available
-		 * from the sk_strategy field, and its subtype from the sk_subtype
-		 * field.
-		 */
-		for (i = 0; i < scan->numberOfOrderBys; i++)
-		{
-			ScanKey		skey = scan->orderByData + i;
-			FmgrInfo   *finfo = &(so->giststate->distanceFn[skey->sk_attno - 1]);
-
-			/* Check we actually have a distance function ... */
-			if (!OidIsValid(finfo->fn_oid))
-				elog(ERROR, "missing support function %d for attribute %d of index \"%s\"",
-					 GIST_DISTANCE_PROC, skey->sk_attno,
-					 RelationGetRelationName(scan->indexRelation));
-
-			/*
-			 * Look up the datatype returned by the original ordering
-			 * operator. GiST always uses a float8 for the distance function,
-			 * but the ordering operator could be anything else.
-			 *
-			 * XXX: The distance function is only allowed to be lossy if the
-			 * ordering operator's result type is float4 or float8.  Otherwise
-			 * we don't know how to return the distance to the executor.  But
-			 * we cannot check that here, as we won't know if the distance
-			 * function is lossy until it returns *recheck = true for the
-			 * first time.
-			 */
-			so->orderByTypes[i] = get_func_rettype(skey->sk_func.fn_oid);
-
-			/*
-			 * Copy distance support function to ScanKey structure instead of
-			 * function implementing ordering operator.
-			 */
-			fmgr_info_copy(&(skey->sk_func), finfo, so->giststate->scanCxt);
-
-			/* Restore prior fn_extra pointers, if not first time */
-			if (!first_time)
-				skey->sk_func.fn_extra = fn_extras[i];
-		}
-
-		if (!first_time)
-			pfree(fn_extras);
-	}
+	gistupdatekeys(scan, scan->orderByData, scan->numberOfOrderBys, orderbys,
+				   so->giststate->distanceFn, GIST_DISTANCE_PROC,
+				   &so->orderByTypes, first_time, false);
 }
 
 void

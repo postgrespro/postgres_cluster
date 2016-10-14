@@ -116,8 +116,6 @@ do {															\
 } while(0)
 
 
-extern Interval *abs_interval(Interval *a);
-
 extern bool gbt_num_consistent(const GBT_NUMKEY_R *key, const void *query,
 				   const StrategyNumber *strategy, bool is_leaf,
 				   const gbtree_ninfo *tinfo);

@@ -349,4 +349,6 @@ extern void InstallTimeZoneAbbrevs(TimeZoneAbbrevTable *tbl);
 extern Datum pg_timezone_abbrevs(PG_FUNCTION_ARGS);
 extern Datum pg_timezone_names(PG_FUNCTION_ARGS);
 
+extern Interval *abs_interval(Interval *a);
+
 #endif   /* DATETIME_H */

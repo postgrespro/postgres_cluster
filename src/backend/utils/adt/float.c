@@ -3585,6 +3585,32 @@ width_bucket_float8(PG_FUNCTION_ARGS)
 	PG_RETURN_INT32(result);
 }
 
+Datum
+float4_dist(PG_FUNCTION_ARGS)
+{
+	float4		a = PG_GETARG_FLOAT4(0);
+	float4		b = PG_GETARG_FLOAT4(1);
+	float4		r;
+
+	r = a - b;
+	CHECKFLOATVAL(r, isinf(a) || isinf(b), true);
+
+	PG_RETURN_FLOAT4(Abs(r));
+}
+
+Datum
+float8_dist(PG_FUNCTION_ARGS)
+{
+	float8		a = PG_GETARG_FLOAT8(0);
+	float8		b = PG_GETARG_FLOAT8(1);
+	float8		r;
+
+	r = a - b;
+	CHECKFLOATVAL(r, isinf(a) || isinf(b), true);
+
+	PG_RETURN_FLOAT8(Abs(r));
+}
+
 /* ========== PRIVATE ROUTINES ========== */
 
 #ifndef HAVE_CBRT

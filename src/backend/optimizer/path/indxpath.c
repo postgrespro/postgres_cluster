@@ -983,6 +983,10 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	 * if we are only trying to build bitmap indexscans, nor if we have to
 	 * assume the scan is unordered.
 	 */
+	useful_pathkeys = NIL;
+	orderbyclauses = NIL;
+	orderbyclausecols = NIL;
+
 	pathkeys_possibly_useful = (scantype != ST_BITMAPSCAN &&
 								!found_lower_saop_clause &&
 								has_useful_pathkeys(root, rel));
@@ -993,10 +997,10 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 											  ForwardScanDirection);
 		useful_pathkeys = truncate_useless_pathkeys(root, rel,
 													index_pathkeys);
-		orderbyclauses = NIL;
-		orderbyclausecols = NIL;
 	}
-	else if (index->amcanorderbyop && pathkeys_possibly_useful)
+
+	if (useful_pathkeys == NIL &&
+		index->amcanorderbyop && pathkeys_possibly_useful)
 	{
 		/* see if we can generate ordering operators for query_pathkeys */
 		match_pathkeys_to_index(index, root->query_pathkeys,
@@ -1006,12 +1010,6 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 			useful_pathkeys = root->query_pathkeys;
 		else
 			useful_pathkeys = NIL;
-	}
-	else
-	{
-		useful_pathkeys = NIL;
-		orderbyclauses = NIL;
-		orderbyclausecols = NIL;
 	}
 
 	/*

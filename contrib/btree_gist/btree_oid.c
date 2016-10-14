@@ -96,22 +96,6 @@ static const gbtree_ninfo tinfo =
 };
 
 
-PG_FUNCTION_INFO_V1(oid_dist);
-Datum
-oid_dist(PG_FUNCTION_ARGS)
-{
-	Oid			a = PG_GETARG_OID(0);
-	Oid			b = PG_GETARG_OID(1);
-	Oid			res;
-
-	if (a < b)
-		res = b - a;
-	else
-		res = a - b;
-	PG_RETURN_OID(res);
-}
-
-
 /**************************************************
  * Oid ops
  **************************************************/

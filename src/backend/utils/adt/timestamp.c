@@ -2832,6 +2832,62 @@ timestamp_mi(PG_FUNCTION_ARGS)
 	PG_RETURN_INTERVAL_P(result);
 }
 
+Datum
+ts_dist(PG_FUNCTION_ARGS)
+{
+	Timestamp	a = PG_GETARG_TIMESTAMP(0);
+	Timestamp	b = PG_GETARG_TIMESTAMP(1);
+	Interval   *r;
+
+	if (TIMESTAMP_NOT_FINITE(a) || TIMESTAMP_NOT_FINITE(b))
+	{
+		Interval   *p = palloc(sizeof(Interval));
+
+		p->day = INT_MAX;
+		p->month = INT_MAX;
+#ifdef HAVE_INT64_TIMESTAMP
+		p->time = PG_INT64_MAX;
+#else
+		p->time = DBL_MAX;
+#endif
+		PG_RETURN_INTERVAL_P(p);
+	}
+	else
+		r = DatumGetIntervalP(DirectFunctionCall2(timestamp_mi,
+												  PG_GETARG_DATUM(0),
+												  PG_GETARG_DATUM(1)));
+	PG_RETURN_INTERVAL_P(abs_interval(r));
+}
+
+
+Datum
+tstz_dist(PG_FUNCTION_ARGS)
+{
+	TimestampTz a = PG_GETARG_TIMESTAMPTZ(0);
+	TimestampTz b = PG_GETARG_TIMESTAMPTZ(1);
+	Interval   *r;
+
+	if (TIMESTAMP_NOT_FINITE(a) || TIMESTAMP_NOT_FINITE(b))
+	{
+		Interval   *p = palloc(sizeof(Interval));
+
+		p->day = INT_MAX;
+		p->month = INT_MAX;
+#ifdef HAVE_INT64_TIMESTAMP
+		p->time = PG_INT64_MAX;
+#else
+		p->time = DBL_MAX;
+#endif
+		PG_RETURN_INTERVAL_P(p);
+	}
+
+	r = DatumGetIntervalP(DirectFunctionCall2(timestamp_mi,
+											  PG_GETARG_DATUM(0),
+											  PG_GETARG_DATUM(1)));
+	PG_RETURN_INTERVAL_P(abs_interval(r));
+}
+
+
 /*
  *	interval_justify_interval()
  *
@@ -3635,6 +3691,29 @@ interval_avg(PG_FUNCTION_ARGS)
 							   Float8GetDatum((double) N.time));
 }
 
+Interval *
+abs_interval(Interval *a)
+{
+	static Interval zero = {0, 0, 0};
+
+	if (DatumGetBool(DirectFunctionCall2(interval_lt,
+										 IntervalPGetDatum(a),
+										 IntervalPGetDatum(&zero))))
+		a = DatumGetIntervalP(DirectFunctionCall1(interval_um,
+												  IntervalPGetDatum(a)));
+
+	return a;
+}
+
+Datum
+interval_dist(PG_FUNCTION_ARGS)
+{
+	Datum		diff = DirectFunctionCall2(interval_mi,
+										   PG_GETARG_DATUM(0),
+										   PG_GETARG_DATUM(1));
+
+	PG_RETURN_INTERVAL_P(abs_interval(DatumGetIntervalP(diff)));
+}
 
 /* timestamp_age()
  * Calculate time difference while retaining year/month fields.

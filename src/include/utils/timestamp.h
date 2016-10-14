@@ -213,6 +213,10 @@ extern Datum pg_conf_load_time(PG_FUNCTION_ARGS);
 extern Datum generate_series_timestamp(PG_FUNCTION_ARGS);
 extern Datum generate_series_timestamptz(PG_FUNCTION_ARGS);
 
+extern Datum ts_dist(PG_FUNCTION_ARGS);
+extern Datum tstz_dist(PG_FUNCTION_ARGS);
+extern Datum interval_dist(PG_FUNCTION_ARGS);
+
 /* Internal routines (not fmgr-callable) */
 
 extern TimestampTz GetCurrentTimestamp(void);

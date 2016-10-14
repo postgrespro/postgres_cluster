@@ -254,6 +254,8 @@ extern Datum int2larger(PG_FUNCTION_ARGS);
 extern Datum int2smaller(PG_FUNCTION_ARGS);
 extern Datum int4larger(PG_FUNCTION_ARGS);
 extern Datum int4smaller(PG_FUNCTION_ARGS);
+extern Datum int2_dist(PG_FUNCTION_ARGS);
+extern Datum int4_dist(PG_FUNCTION_ARGS);
 
 extern Datum int4and(PG_FUNCTION_ARGS);
 extern Datum int4or(PG_FUNCTION_ARGS);
@@ -392,6 +394,8 @@ extern Datum float8lt(PG_FUNCTION_ARGS);
 extern Datum float8le(PG_FUNCTION_ARGS);
 extern Datum float8gt(PG_FUNCTION_ARGS);
 extern Datum float8ge(PG_FUNCTION_ARGS);
+extern Datum float4_dist(PG_FUNCTION_ARGS);
+extern Datum float8_dist(PG_FUNCTION_ARGS);
 extern Datum ftod(PG_FUNCTION_ARGS);
 extern Datum i4tod(PG_FUNCTION_ARGS);
 extern Datum i2tod(PG_FUNCTION_ARGS);
@@ -547,6 +551,7 @@ extern Datum oidvectorlt(PG_FUNCTION_ARGS);
 extern Datum oidvectorle(PG_FUNCTION_ARGS);
 extern Datum oidvectorge(PG_FUNCTION_ARGS);
 extern Datum oidvectorgt(PG_FUNCTION_ARGS);
+extern Datum oid_dist(PG_FUNCTION_ARGS);
 extern oidvector *buildoidvector(const Oid *oids, int n);
 extern Oid	oidparse(Node *node);
 
