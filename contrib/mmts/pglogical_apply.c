@@ -390,19 +390,21 @@ process_remote_message(StringInfo s)
 			if (rc < 0) { 
 				elog(ERROR, "Failed to execute utility statement %s", messageBody);
 			} else { 
+				PushActiveSnapshot(GetTransactionSnapshot());
+
 				if (MtmVacuumStmt != NULL) { 
 					ExecVacuum(MtmVacuumStmt, 1);
 				} else if (MtmIndexStmt != NULL) {
+					MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
 					Oid relid =	RangeVarGetRelidExtended(MtmIndexStmt->relation, ShareUpdateExclusiveLock,
 														 false, false,
 														 NULL,
 														 NULL);
 					
 					/* Run parse analysis ... */
-					//MtmIndexStmt = transformIndexStmt(relid, MtmIndexStmt, messageBody);
+					MtmIndexStmt = transformIndexStmt(relid, MtmIndexStmt, messageBody);
 
-					PushActiveSnapshot(GetTransactionSnapshot());
-
+					MemoryContextSwitchTo(oldContext);
 
 					DefineIndex(relid,		/* OID of heap relation */
 								MtmIndexStmt,
@@ -412,12 +414,11 @@ process_remote_message(StringInfo s)
 								false,		/* skip_build */
 								false);		/* quiet */
 					
-					if (ActiveSnapshotSet())
-						PopActiveSnapshot();
-
 				} else if (MtmDropStmt != NULL) { 
 					RemoveObjects(MtmDropStmt);
 				}
+				if (ActiveSnapshotSet())
+					PopActiveSnapshot();
 			}
 			if (standalone) { 
 				CommitTransactionCommand();

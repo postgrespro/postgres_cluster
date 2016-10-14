@@ -3942,18 +3942,18 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			break;
 
 		case T_VacuumStmt:
-		  if (context == PROCESS_UTILITY_TOPLEVEL) {
+		  skipCommand = true;		  
+		  if (context == PROCESS_UTILITY_TOPLEVEL) {			  
 			  MtmProcessDDLCommand(queryString, false, true);
 			  MtmTx.isDistributed = false;
-			  skipCommand = true;		  
-			  break;
-		  } else {
+		  } else if (MtmApplyContext != NULL) {
 			  MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
 			  Assert(oldContext != MtmApplyContext);
 			  MtmVacuumStmt = (VacuumStmt*)copyObject(parsetree);
 			  MemoryContextSwitchTo(oldContext);
 			  return;
 		  }
+		  break;
 
 		case T_CreateDomainStmt:
 			/* Detect temp tables access */
@@ -4050,10 +4050,10 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 						 MtmProcessDDLCommand(queryString, false, true);
 						 MtmTx.isDistributed = false;
 						 skipCommand = true;
-					 } else { 
+					 } else if (MtmApplyContext != NULL) { 
 						 MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
 						 Assert(oldContext != MtmApplyContext);
-						 MtmIndexStmt = indexStmt;
+						 MtmIndexStmt = (IndexStmt*)copyObject(indexStmt);
 						 MemoryContextSwitchTo(oldContext);
 						 return;
 					 }
@@ -4070,10 +4070,10 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 						MtmProcessDDLCommand(queryString, false, true);
 						MtmTx.isDistributed = false;
 						skipCommand = true;
-					} else {
+					} else if (MtmApplyContext != NULL) {
 						 MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
 						 Assert(oldContext != MtmApplyContext);
-						 MtmDropStmt = stmt;
+						 MtmDropStmt = (DropStmt*)copyObject(stmt);
 						 MemoryContextSwitchTo(oldContext);
 						 return;
 					}
