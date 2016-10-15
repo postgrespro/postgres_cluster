@@ -4050,6 +4050,13 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 						 MtmProcessDDLCommand(queryString, false, true);
 						 MtmTx.isDistributed = false;
 						 skipCommand = true;
+						 /* 
+						  * Index is created at replicas completely asynchronously, so to prevent unintended interleaving with subsequent 
+						  * commands in this session, just wait here for a while.
+						  * It will help to pass regression tests but will not be enough for construction of real large indexes
+						  * where difference between completion of this operation at different nodes is unlimited
+						  */
+						 MtmSleep(USECS_PER_SEC);
 					 } else if (MtmApplyContext != NULL) { 
 						 MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
 						 Assert(oldContext != MtmApplyContext);
