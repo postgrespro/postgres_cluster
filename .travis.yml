@@ -1,21 +1,38 @@
-language: perl
-os:
-  - linux
-  #- osx
-compiler:
-  - gcc
-  - clang
-install: cpanm IPC::Run DBD::Pg Proc::ProcessTable
-before_script: ./configure --enable-cassert --enable-tap-tests && make -j4
-env:
-  #- TESTDIR=.
-  #- TESTDIR=src/test/recovery
-  - TESTDIR=contrib/raftable
-  - TESTDIR=contrib/mmts
-script: cd $TESTDIR && make check
+sudo: required
+# language: python
+python:
+  - "3.4"
+
+services:
+  - docker
+
+before_script: pip install -r tests2/requirements.txt
+
+script: cd contrib/mmts && make xcheck
+
 notifications:
   email:
     - s.kelvich@postgrespro.ru
-    - c.pan@postgrespro.ru
-    - k.knizhnik@postgrespro.ru
+
+
+# language: perl
+# os:
+#   - linux
+#   #- osx
+# compiler:
+#   - gcc
+#   - clang
+# install: cpanm IPC::Run DBD::Pg Proc::ProcessTable
+# before_script: ./configure --enable-cassert --enable-tap-tests && make -j4
+# env:
+#   #- TESTDIR=.
+#   #- TESTDIR=src/test/recovery
+#   - TESTDIR=contrib/raftable
+#   - TESTDIR=contrib/mmts
+# script: cd $TESTDIR && make check
+# notifications:
+#   email:
+#     - s.kelvich@postgrespro.ru
+#     - c.pan@postgrespro.ru
+#     - k.knizhnik@postgrespro.ru
 
