@@ -290,7 +290,7 @@
       parameter is non zero, then GC is performed in background and <varname>cfs_start_gc</varname>  function does nothing and returns 0.
     </para>
 
-    </para>
+    <para>
       It is possible to estimate effect of table compression using <varname>cfs_estimate(relation)</varname> function.
       This function takes first ten blocks of relation and tries to compress them ands returns average compress ratio.
       So if returned value is 7.8 then compressed table occupies about eight time less space than original table.
