@@ -341,7 +341,7 @@ PathmanDoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 			PreventCommandIfReadOnly("PATHMAN COPY FROM");
 		PreventCommandIfParallelMode("PATHMAN COPY FROM");
 
-		cstate = BeginCopyFrom(rel, stmt->filename, stmt->is_program,
+		cstate = BeginCopyFrom(NULL,rel, stmt->filename, stmt->is_program,
 							   stmt->attlist, stmt->options);
 		*processed = PathmanCopyFrom(cstate, rel, range_table, is_old_protocol);
 		EndCopyFrom(cstate);
@@ -360,7 +360,7 @@ PathmanDoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 		modified_copy_stmt.query = query;
 
 		/* Call standard DoCopy using a new CopyStmt */
-		DoCopy(&modified_copy_stmt, queryString, processed);
+		DoCopy(NULL,&modified_copy_stmt, processed);
 	}
 
 	/*
