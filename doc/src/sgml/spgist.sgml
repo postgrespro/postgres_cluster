@@ -722,7 +722,7 @@ typedef struct spgLeafConsistentOut
        In particular it is not necessary to check <structfield>sk_flags</> to
        see if the comparison value is NULL, because the SP-GiST core code
        will filter out such conditions.
-       The array <structfield>orderbykeys>, of length <structfield>norderbys</>,
+       The array <structfield>orderbykeys</>, of length <structfield>norderbys</>,
        describes the ordering operators in the same fashion.
        <structfield>reconstructedValue</> is the value reconstructed for the
        parent tuple; it is <literal>(Datum) 0</> at the root level or if the
