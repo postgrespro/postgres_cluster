@@ -6,7 +6,7 @@ python:
 services:
   - docker
 
-before_script: pip install -r contrib/mmts/tests2/requirements.txt
+before_script: pip3 install -r contrib/mmts/tests2/requirements.txt
 
 script: cd contrib/mmts && make xcheck
 
