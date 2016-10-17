@@ -567,7 +567,6 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 		case ObjectIdAttributeNumber:
 			result = ObjectIdGetDatum(HeapTupleGetOid(tup));
 			break;
-		/* FIXME */
 		case MinTransactionIdAttributeNumber:
 			result = TransactionIdGetDatum(HeapTupleGetRawXmin(tup));
 			break;

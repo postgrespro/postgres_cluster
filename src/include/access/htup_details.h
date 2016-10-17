@@ -396,6 +396,13 @@ struct HeapTupleHeaderData
 		(tup)->t_data->t_choice.t_heap.t_xmax) \
 )
 
+#define HeapTupleHeaderGetRawXmax(page, tup) \
+( \
+	ShortTransactionIdToNormal( \
+		((tup)->t_infomask & HEAP_XMAX_IS_MULTI) ? ((PageHeader)(page))->pd_multi_epoch : ((PageHeader)(page))->pd_xid_epoch, \
+		(tup)->t_choice.t_heap.t_xmax) \
+)
+
 #define HeapTupleSetXmax(tup, xid) \
 ( \
 	(tup)->t_data->t_choice.t_heap.t_xmax = \

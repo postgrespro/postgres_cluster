@@ -2292,8 +2292,7 @@ heap_get_latest_tid(Relation relation,
 static void
 UpdateXmaxHintBits(HeapTupleHeader tuple, Buffer buffer, TransactionId xid)
 {
-	/* FIXME */
-	/*Assert(TransactionIdEquals(HeapTupleHeaderGetRawXmax(tuple), xid));*/
+	Assert(TransactionIdEquals(HeapTupleHeaderGetRawXmax(BufferGetPage(buffer), tuple), xid));
 	Assert(!(tuple->t_infomask & HEAP_XMAX_IS_MULTI));
 
 	if (!(tuple->t_infomask & (HEAP_XMAX_COMMITTED | HEAP_XMAX_INVALID)))
