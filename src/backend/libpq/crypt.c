@@ -1,8 +1,8 @@
 /*-------------------------------------------------------------------------
  *
  * crypt.c
- *	  Look into the password file and check the encrypted password with
- *	  the one passed in from the frontend.
+ *	  Set of routines to look into the password file and check the
+ *	  encrypted password with the one passed in from the frontend.
  *
  * Original coding by Todd A. Brandys
  *
@@ -30,22 +30,24 @@
 
 
 /*
- * Check given password for given user, and return STATUS_OK or STATUS_ERROR.
- * In the error case, optionally store a palloc'd string at *logdetail
- * that will be sent to the postmaster log (but not the client).
+ * Fetch information of a given role necessary to check password data,
+ * and return STATUS_OK or STATUS_ERROR. In the case of an error,
+ * optionally store a palloc'd string at *logdetail that will be sent
+ * to the postmaster log (but not the client).
  */
 int
-md5_crypt_verify(const Port *port, const char *role, char *client_pass,
+get_role_details(const char *role,
+				 char **password,
+				 TimestampTz *vuntil,
+				 bool *vuntil_null,
 				 char **logdetail)
 {
-	int			retval = STATUS_ERROR;
-	char	   *shadow_pass,
-			   *crypt_pwd;
-	TimestampTz vuntil = 0;
-	char	   *crypt_client_pass = client_pass;
 	HeapTuple	roleTup;
 	Datum		datum;
 	bool		isnull;
+
+	*vuntil = 0;
+	*vuntil_null = true;
 
 	/* Get role info from pg_authid */
 	roleTup = SearchSysCache1(AUTHNAME, PointerGetDatum(role));
@@ -65,21 +67,48 @@ md5_crypt_verify(const Port *port, const char *role, char *client_pass,
 							  role);
 		return STATUS_ERROR;	/* user has no password */
 	}
-	shadow_pass = TextDatumGetCString(datum);
+	*password = TextDatumGetCString(datum);
 
 	datum = SysCacheGetAttr(AUTHNAME, roleTup,
 							Anum_pg_authid_rolvaliduntil, &isnull);
 	if (!isnull)
-		vuntil = DatumGetTimestampTz(datum);
+	{
+		*vuntil = DatumGetTimestampTz(datum);
+		*vuntil_null = false;
+	}
 
 	ReleaseSysCache(roleTup);
 
-	if (*shadow_pass == '\0')
+	if (**password == '\0')
 	{
 		*logdetail = psprintf(_("User \"%s\" has an empty password."),
 							  role);
 		return STATUS_ERROR;	/* empty password */
 	}
+
+	return STATUS_OK;
+}
+
+/*
+ * Check given password for given user, and return STATUS_OK or STATUS_ERROR.
+ * In the error case, optionally store a palloc'd string at *logdetail
+ * that will be sent to the postmaster log (but not the client).
+ */
+int
+md5_crypt_verify(const Port *port, const char *role, char *client_pass,
+				 char **logdetail)
+{
+	int			retval = STATUS_ERROR;
+	char	   *shadow_pass,
+			   *crypt_pwd;
+	TimestampTz vuntil;
+	char	   *crypt_client_pass = client_pass;
+	bool		vuntil_null;
+
+	/* fetch details about role needed for password checks */
+	if (get_role_details(role, &shadow_pass, &vuntil, &vuntil_null,
+							  logdetail) != STATUS_OK)
+		return STATUS_ERROR;
 
 	/*
 	 * Compare with the encrypted or plain password depending on the
@@ -152,7 +181,7 @@ md5_crypt_verify(const Port *port, const char *role, char *client_pass,
 		/*
 		 * Password OK, now check to be sure we are not past rolvaliduntil
 		 */
-		if (isnull)
+		if (vuntil_null)
 			retval = STATUS_OK;
 		else if (vuntil < GetCurrentTimestamp())
 		{

@@ -22,6 +22,11 @@ extern char *pg_krb_realm;
 
 extern void ClientAuthentication(Port *port);
 
+/* Return codes for SASL authentication functions */
+#define	SASL_EXCHANGE_CONTINUE		0
+#define	SASL_EXCHANGE_SUCCESS		1
+#define	SASL_EXCHANGE_FAILURE		2
+
 /* Hook for plugins to get control in ClientAuthentication() */
 typedef void (*ClientAuthentication_hook_type) (Port *, int);
 extern PGDLLIMPORT ClientAuthentication_hook_type ClientAuthentication_hook;

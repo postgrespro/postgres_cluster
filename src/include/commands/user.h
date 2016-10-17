@@ -13,17 +13,23 @@
 
 #include "catalog/objectaddress.h"
 #include "nodes/parsenodes.h"
+#include "parser/parse_node.h"
 
+/* Types of password */
+typedef enum PasswordType
+{
+	PASSWORD_TYPE_PLAINTEXT = 0,
+	PASSWORD_TYPE_MD5,
+	PASSWORD_TYPE_SCRAM
+} PasswordType;
 
-/* Hook to check passwords in CreateRole() and AlterRole() */
-#define PASSWORD_TYPE_PLAINTEXT		0
-#define PASSWORD_TYPE_MD5			1
+extern int Password_encryption;
 
 typedef void (*check_password_hook_type) (const char *username, const char *password, int password_type, Datum validuntil_time, bool validuntil_null);
 
 extern PGDLLIMPORT check_password_hook_type check_password_hook;
 
-extern Oid	CreateRole(CreateRoleStmt *stmt);
+extern Oid	CreateRole(ParseState *pstate, CreateRoleStmt *stmt);
 extern Oid	AlterRole(AlterRoleStmt *stmt);
 extern Oid	AlterRoleSet(AlterRoleSetStmt *stmt);
 extern void DropRole(DropRoleStmt *stmt);
