@@ -130,7 +130,9 @@ typedef struct spgPickSplitOut
 typedef struct spgInnerConsistentIn
 {
 	ScanKey		scankeys;		/* array of operators and comparison values */
+	ScanKey		orderbyKeys;
 	int			nkeys;			/* length of array */
+	int			norderbys;
 
 	Datum		reconstructedValue;		/* value reconstructed at parent */
 	void	   *traversalValue; /* opclass-specific traverse value */
@@ -153,6 +155,7 @@ typedef struct spgInnerConsistentOut
 	int		   *levelAdds;		/* increment level by this much for each */
 	Datum	   *reconstructedValues;	/* associated reconstructed values */
 	void	  **traversalValues;	/* opclass-specific traverse values */
+	double	  **distances;		/* associated distances */
 } spgInnerConsistentOut;
 
 /*
@@ -161,7 +164,9 @@ typedef struct spgInnerConsistentOut
 typedef struct spgLeafConsistentIn
 {
 	ScanKey		scankeys;		/* array of operators and comparison values */
+	ScanKey		orderbykeys;	/* array of ordering operators and comparison values */
 	int			nkeys;			/* length of array */
+	int			norderbys;
 
 	void	   *traversalValue; /* opclass-specific traverse value */
 	Datum		reconstructedValue;		/* value reconstructed at parent */
@@ -175,6 +180,7 @@ typedef struct spgLeafConsistentOut
 {
 	Datum		leafValue;		/* reconstructed original data, if any */
 	bool		recheck;		/* set true if operator must be rechecked */
+	double	   *distances;		/* associated distances */
 } spgLeafConsistentOut;
 
 

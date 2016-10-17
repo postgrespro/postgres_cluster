@@ -109,32 +109,6 @@ static const gbtree_ninfo tinfo =
 };
 
 
-Interval *
-abs_interval(Interval *a)
-{
-	static Interval zero = {0, 0, 0};
-
-	if (DatumGetBool(DirectFunctionCall2(interval_lt,
-										 IntervalPGetDatum(a),
-										 IntervalPGetDatum(&zero))))
-		a = DatumGetIntervalP(DirectFunctionCall1(interval_um,
-												  IntervalPGetDatum(a)));
-
-	return a;
-}
-
-PG_FUNCTION_INFO_V1(interval_dist);
-Datum
-interval_dist(PG_FUNCTION_ARGS)
-{
-	Datum		diff = DirectFunctionCall2(interval_mi,
-										   PG_GETARG_DATUM(0),
-										   PG_GETARG_DATUM(1));
-
-	PG_RETURN_INTERVAL_P(abs_interval(DatumGetIntervalP(diff)));
-}
-
-
 /**************************************************
  * interval ops
  **************************************************/

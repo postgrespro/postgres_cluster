@@ -115,6 +115,7 @@
 #include "postmaster/syslogger.h"
 #include "replication/walsender.h"
 #include "storage/fd.h"
+#include "storage/cfs.h"
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
 #include "storage/pmsignal.h"
@@ -502,6 +503,7 @@ typedef struct
 	bool		IsBinaryUpgrade;
 	int			max_safe_fds;
 	int			MaxBackends;
+	CfsState	*cfs_state;
 #ifdef WIN32
 	HANDLE		PostmasterHandle;
 	HANDLE		initial_signal_pipe;
@@ -1247,6 +1249,11 @@ PostmasterMain(int argc, char *argv[])
 	 * Initialize the autovacuum subsystem (again, no process start yet)
 	 */
 	autovac_init();
+
+	/*
+	 * Initialize compressed file sysystem support
+	 */
+	cfs_initialize();
 
 	/*
 	 * Load configuration files for client authentication.
@@ -5848,6 +5855,8 @@ save_backend_variables(BackendParameters *param, Port *port,
 
 	param->MaxBackends = MaxBackends;
 
+	param->cfs_state = cfs_state;
+
 #ifdef WIN32
 	param->PostmasterHandle = PostmasterHandle;
 	if (!write_duplicated_handle(&param->initial_signal_pipe,
@@ -6079,6 +6088,8 @@ restore_backend_variables(BackendParameters *param, Port *port)
 	max_safe_fds = param->max_safe_fds;
 
 	MaxBackends = param->MaxBackends;
+
+	cfs_state = param->cfs_state;
 
 #ifdef WIN32
 	PostmasterHandle = param->PostmasterHandle;

@@ -276,7 +276,7 @@ ptrack_get_and_clear(Oid tablespace_oid, Oid table_oid)
 {
 	bytea *result = NULL;
 	BlockNumber nblock;
-	Relation rel;
+        Relation rel = RelationIdGetRelation(RelidByRelfilenode(tablespace_oid, table_oid));
 
 	if (table_oid == InvalidOid)
 	{
@@ -284,8 +284,6 @@ ptrack_get_and_clear(Oid tablespace_oid, Oid table_oid)
 		goto full_end;
 	}
 
-	rel = RelationIdGetRelation(RelidByRelfilenode(tablespace_oid,
-															table_oid));
 	if (rel == InvalidRelation)
 	{
 		elog(WARNING, "InvalidRelation");

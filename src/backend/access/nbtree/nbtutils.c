@@ -20,11 +20,13 @@
 #include "access/nbtree.h"
 #include "access/reloptions.h"
 #include "access/relscan.h"
+#include "catalog/pg_amop.h"
 #include "miscadmin.h"
 #include "utils/array.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
+#include "utils/syscache.h"
 
 
 typedef struct BTSortArrayContext
@@ -1734,26 +1736,26 @@ _bt_check_rowcompare(ScanKey skey, IndexTuple tuple, TupleDesc tupdesc,
  * away and the TID was re-used by a completely different heap tuple.
  */
 void
-_bt_killitems(IndexScanDesc scan)
+_bt_killitems(BTScanState state, Relation indexRelation)
 {
-	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+	BTScanPos	pos = &state->currPos;
 	Page		page;
 	BTPageOpaque opaque;
 	OffsetNumber minoff;
 	OffsetNumber maxoff;
 	int			i;
-	int			numKilled = so->numKilled;
+	int			numKilled = state->numKilled;
 	bool		killedsomething = false;
 
-	Assert(BTScanPosIsValid(so->currPos));
+	Assert(BTScanPosIsValid(state->currPos));
 
 	/*
 	 * Always reset the scan state, so we don't look for same items on other
 	 * pages.
 	 */
-	so->numKilled = 0;
+	state->numKilled = 0;
 
-	if (BTScanPosIsPinned(so->currPos))
+	if (BTScanPosIsPinned(*pos))
 	{
 		/*
 		 * We have held the pin on this page since we read the index tuples,
@@ -1761,28 +1763,28 @@ _bt_killitems(IndexScanDesc scan)
 		 * re-use of any TID on the page, so there is no need to check the
 		 * LSN.
 		 */
-		LockBuffer(so->currPos.buf, BT_READ);
+		LockBuffer(pos->buf, BT_READ);
 
-		page = BufferGetPage(so->currPos.buf);
+		page = BufferGetPage(pos->buf);
 	}
 	else
 	{
 		Buffer		buf;
 
 		/* Attempt to re-read the buffer, getting pin and lock. */
-		buf = _bt_getbuf(scan->indexRelation, so->currPos.currPage, BT_READ);
+		buf = _bt_getbuf(indexRelation, pos->currPage, BT_READ);
 
 		/* It might not exist anymore; in which case we can't hint it. */
 		if (!BufferIsValid(buf))
 			return;
 
 		page = BufferGetPage(buf);
-		if (PageGetLSN(page) == so->currPos.lsn)
-			so->currPos.buf = buf;
+		if (PageGetLSN(page) == pos->lsn)
+			pos->buf = buf;
 		else
 		{
 			/* Modified while not pinned means hinting is not safe. */
-			_bt_relbuf(scan->indexRelation, buf);
+			_bt_relbuf(indexRelation, buf);
 			return;
 		}
 	}
@@ -1793,12 +1795,12 @@ _bt_killitems(IndexScanDesc scan)
 
 	for (i = 0; i < numKilled; i++)
 	{
-		int			itemIndex = so->killedItems[i];
-		BTScanPosItem *kitem = &so->currPos.items[itemIndex];
+		int			itemIndex = state->killedItems[i];
+		BTScanPosItem *kitem = &pos->items[itemIndex];
 		OffsetNumber offnum = kitem->indexOffset;
 
-		Assert(itemIndex >= so->currPos.firstItem &&
-			   itemIndex <= so->currPos.lastItem);
+		Assert(itemIndex >= pos->firstItem &&
+			   itemIndex <= pos->lastItem);
 		if (offnum < minoff)
 			continue;			/* pure paranoia */
 		while (offnum <= maxoff)
@@ -1826,10 +1828,10 @@ _bt_killitems(IndexScanDesc scan)
 	if (killedsomething)
 	{
 		opaque->btpo_flags |= BTP_HAS_GARBAGE;
-		MarkBufferDirtyHint(so->currPos.buf, true);
+		MarkBufferDirtyHint(pos->buf, true);
 	}
 
-	LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);
+	LockBuffer(pos->buf, BUFFER_LOCK_UNLOCK);
 }
 
 
@@ -2070,7 +2072,238 @@ btproperty(Oid index_oid, int attno,
 			*res = true;
 			return true;
 
+		case AMPROP_DISTANCE_ORDERABLE:
+		{
+			Oid		opclass,
+					opfamily,
+					opcindtype;
+
+			/* answer only for columns, not AM or whole index */
+			if (attno == 0)
+				return false;
+
+			opclass = get_index_column_opclass(index_oid, attno);
+
+			if (!OidIsValid(opclass) ||
+				!get_opclass_opfamily_and_input_type(opclass,
+													 &opfamily, &opcindtype))
+			{
+				*isnull = true;
+				return true;
+			}
+
+			*res = SearchSysCacheExists(AMOPSTRATEGY,
+										ObjectIdGetDatum(opfamily),
+										ObjectIdGetDatum(opcindtype),
+										ObjectIdGetDatum(opcindtype),
+										Int16GetDatum(BTKNNSearchStrategyNumber));
+			return true;
+		}
+
 		default:
 			return false;		/* punt to generic code */
 	}
+}
+
+void
+_bt_allocate_tuple_workspaces(BTScanState state)
+{
+	state->currTuples = (char *) palloc(BLCKSZ * 2);
+	state->markTuples = state->currTuples + BLCKSZ;
+}
+
+static Oid
+_bt_get_sortfamily_for_ordering_key(Relation rel, ScanKey skey)
+{
+	HeapTuple		tp;
+	Form_pg_amop	amop_tup;
+	Oid				sortfamily;
+
+	tp = SearchSysCache4(
+			AMOPSTRATEGY,
+			ObjectIdGetDatum(rel->rd_opfamily[skey->sk_attno - 1]),
+			ObjectIdGetDatum(rel->rd_opcintype[skey->sk_attno - 1]),
+			ObjectIdGetDatum(skey->sk_subtype),
+			Int16GetDatum(skey->sk_strategy));
+	if (!HeapTupleIsValid(tp))
+		return InvalidOid;
+	amop_tup = (Form_pg_amop) GETSTRUCT(tp);
+	sortfamily = amop_tup->amopsortfamily;
+	ReleaseSysCache(tp);
+
+	return sortfamily;
+}
+
+static bool
+_bt_compare_row_key_with_ordering_key(ScanKey row, ScanKey ord, bool *result)
+{
+	ScanKey subkey = (ScanKey) DatumGetPointer(row->sk_argument);
+	int32 cmpresult;
+
+	Assert(subkey->sk_attno == 1);
+	Assert(subkey->sk_flags & SK_ROW_MEMBER);
+
+	if (subkey->sk_flags & SK_ISNULL)
+		return false;
+
+	/* Perform the test --- three-way comparison not bool operator */
+	cmpresult = DatumGetInt32(FunctionCall2Coll(&subkey->sk_func,
+												subkey->sk_collation,
+												ord->sk_argument,
+												subkey->sk_argument));
+
+	if (subkey->sk_flags & SK_BT_DESC)
+		cmpresult = -cmpresult;
+
+	/*
+	 * At this point cmpresult indicates the overall result of the row
+	 * comparison, and subkey points to the deciding column (or the last
+	 * column if the result is "=").
+	 */
+	switch (subkey->sk_strategy)
+	{
+		/* EQ and NE cases aren't allowed here */
+		case BTLessStrategyNumber:
+			*result = cmpresult < 0;
+			break;
+		case BTLessEqualStrategyNumber:
+			*result = cmpresult <= 0;
+			break;
+		case BTGreaterEqualStrategyNumber:
+			*result = cmpresult >= 0;
+			break;
+		case BTGreaterStrategyNumber:
+			*result = cmpresult > 0;
+			break;
+		default:
+			elog(ERROR, "unrecognized RowCompareType: %d",
+				 (int) subkey->sk_strategy);
+			*result = false;			/* keep compiler quiet */
+	}
+
+	return true;
+}
+
+static StrategyNumber
+_bt_select_knn_search_strategy(IndexScanDesc scan, ScanKey ord)
+{
+	BTScanOpaque	so = (BTScanOpaque) scan->opaque;
+	ScanKey			cond;
+
+	for (cond = so->keyData; cond < so->keyData + so->numberOfKeys; cond++)
+	{
+		bool result;
+
+		if (cond->sk_attno != 1)
+			break;
+
+		if (cond->sk_strategy == BTEqualStrategyNumber)
+			return BTEqualStrategyNumber;
+
+		if (cond->sk_flags & SK_ROW_HEADER)
+		{
+			if (!_bt_compare_row_key_with_ordering_key(cond, ord, &result))
+				return BTEqualStrategyNumber;
+		}
+		else
+		{
+			if (!_bt_compare_scankey_args(scan, cond, ord, cond, &result))
+				elog(ERROR, "could not compare ordering key");
+		}
+
+		if (!result)
+			return cond->sk_strategy;
+	}
+
+	return BTKNNSearchStrategyNumber;
+}
+
+static void
+_bt_init_distance_comparison(IndexScanDesc scan, ScanKey ord)
+{
+	BTScanOpaque	so = (BTScanOpaque) scan->opaque;
+	Oid				sortfamily;
+	Oid				opno;
+	Oid				distanceType;
+
+	distanceType = get_func_rettype(ord->sk_func.fn_oid);
+
+	sortfamily = _bt_get_sortfamily_for_ordering_key(scan->indexRelation, ord);
+
+	if (!OidIsValid(sortfamily))
+		elog(ERROR, "could not find sort family for btree ordering operator");
+
+	opno = get_opfamily_member(sortfamily,
+							   distanceType,
+							   distanceType,
+							   BTLessEqualStrategyNumber);
+
+	if (!OidIsValid(opno))
+		elog(ERROR, "could not find operator for btree distance comparison");
+
+	so->distanceCmpProc = get_opcode(opno);
+
+	if (!RegProcedureIsValid(so->distanceCmpProc))
+		elog(ERROR,
+			 "could not find procedure for btree distance comparison operator");
+
+	get_typlenbyval(distanceType, &so->distanceTypeLen, &so->distanceTypeByVal);
+
+	if (!so->distanceTypeByVal)
+	{
+		so->state.currDistance = PointerGetDatum(NULL);
+		so->state.markDistance = PointerGetDatum(NULL);
+	}
+}
+
+bool
+_bt_process_orderings(IndexScanDesc scan, ScanKey *startKeys, int *keysCount,
+					  ScanKeyData bufKeys[])
+{
+	BTScanOpaque	so = (BTScanOpaque) scan->opaque;
+	ScanKey			ord = scan->orderByData;
+
+	if (scan->numberOfOrderBys > 1 || ord->sk_attno != 1) /* FIXME */
+		elog(ERROR,
+			 "only one btree ordering operator for the first index column is supported");
+
+	Assert(ord->sk_strategy == BTKNNSearchStrategyNumber);
+
+	switch (_bt_select_knn_search_strategy(scan, ord))
+	{
+		case BTLessStrategyNumber:
+		case BTLessEqualStrategyNumber:
+			so->scanDirection = BackwardScanDirection;
+			return false;
+
+		case BTEqualStrategyNumber:
+			return false;
+
+		case BTGreaterEqualStrategyNumber:
+		case BTGreaterStrategyNumber:
+			so->scanDirection = ForwardScanDirection;
+			return false;
+
+		case BTKNNSearchStrategyNumber:
+			break;
+	}
+
+	_bt_init_distance_comparison(scan, ord);
+
+	/* Init btree search key with ordering key argument. */
+	ScanKeyEntryInitialize(
+			&bufKeys[0],
+			(scan->indexRelation->rd_indoption[ord->sk_attno - 1] <<
+					SK_BT_INDOPTION_SHIFT) |
+				SK_ORDER_BY | SK_SEARCHNULL, /* XXX */
+			ord->sk_attno,
+			BTKNNSearchStrategyNumber,
+			ord->sk_subtype,
+			ord->sk_collation,
+			InvalidOid,
+			ord->sk_argument);
+
+	startKeys[(*keysCount)++] = &bufKeys[0];
+
+	return true;
 }

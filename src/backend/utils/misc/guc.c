@@ -68,6 +68,7 @@
 #include "storage/dsm_impl.h"
 #include "storage/standby.h"
 #include "storage/fd.h"
+#include "storage/cfs.h"
 #include "storage/pg_shmem.h"
 #include "storage/proc.h"
 #include "storage/predicate.h"
@@ -1671,6 +1672,16 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		{"cfs_encryption", PGC_POSTMASTER, UNGROUPED,
+		 gettext_noop("Encrypt CFS pages"),
+		 NULL,
+        },
+		&cfs_encryption,
+        false,
+        NULL, NULL, NULL
+    },	
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL, NULL
@@ -2121,6 +2132,17 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_MS
 		},
 		&IdleInTransactionSessionTimeout,
+		0, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"idle_session_timeout", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Sets the maximum allowed duration of any idling session."),
+			gettext_noop("A value of 0 turns off the timeout."),
+			GUC_UNIT_MS
+		},
+		&IdleSessionTimeout,
 		0, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
@@ -2825,7 +2847,63 @@ static struct config_int ConfigureNamesInt[] =
 		NULL, NULL, NULL
 	},
 
-	/* End-of-list marker */
+	{
+		{"cfs_gc_workers", PGC_POSTMASTER, UNGROUPED,
+		 gettext_noop("Number of CFS background garbage collection workers"),
+		 NULL,
+		 0
+        },
+		&cfs_gc_workers,
+        1, 0, 100,
+        NULL, NULL, NULL
+    },
+
+	{
+		{"cfs_level", PGC_POSTMASTER, UNGROUPED,
+		 gettext_noop("CFS compression level (0 - no compression, 1 - maximal speed,...)"),
+		 NULL,
+		 0
+        },
+		&cfs_level,
+        1, 0, 100,
+        NULL, NULL, NULL
+    },
+
+	{
+		{"cfs_gc_threshold", PGC_POSTMASTER, UNGROUPED,
+		 gettext_noop("Percent of garbage in file after file is comactified"),
+		 NULL,
+		 0
+        },
+		&cfs_gc_threshold,
+        50, 0, 100,
+        NULL, NULL, NULL
+    },
+
+
+	{
+		{"cfs_gc_period", PGC_POSTMASTER, UNGROUPED,
+		 gettext_noop("Interval in milliseconds between CFS garbage collection iterations"),
+		 NULL,
+		 GUC_UNIT_MS
+        },
+		&cfs_gc_period,
+        5000, 0, INT_MAX,
+        NULL, NULL, NULL
+    },
+
+	{
+		{"cfs_gc_delay", PGC_POSTMASTER, UNGROUPED,
+		 gettext_noop("Delay in milliseconds between files defragmentation"),
+		 NULL,
+		 GUC_UNIT_MS
+        },
+		&cfs_gc_delay,
+        0, 0, 10000,
+        NULL, NULL, NULL
+    },
+
+    /* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, 0, 0, 0, NULL, NULL, NULL
 	}

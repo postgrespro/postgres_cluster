@@ -61,6 +61,7 @@
 #include "utils/pg_locale.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "utils/spccache.h"
 #include "utils/tqual.h"
 
 
@@ -1062,6 +1063,8 @@ movedb(const char *dbname, const char *tblspcname)
 	char	   *src_dbpath;
 	char	   *dst_dbpath;
 	DIR		   *dstdir;
+	bool        src_compressed;
+	bool        dst_compressed;
 	struct dirent *xlde;
 	movedb_failure_params fparms;
 
@@ -1135,6 +1138,9 @@ movedb(const char *dbname, const char *tblspcname)
 									 AccessExclusiveLock);
 		return;
 	}
+	
+	src_compressed = is_tablespace_compressed(src_tblspcoid);
+	dst_compressed = is_tablespace_compressed(dst_tblspcoid);
 
 	/*
 	 * Check for other backends in the target database.  (Because we hold the
@@ -1234,7 +1240,11 @@ movedb(const char *dbname, const char *tblspcname)
 		/*
 		 * Copy files from the old tablespace to the new one
 		 */
-		copydir(src_dbpath, dst_dbpath, false);
+		if (src_compressed ^ dst_compressed) { 
+			copyzipdir(src_dbpath, src_compressed, dst_dbpath, dst_compressed);
+		} else { 
+			copydir(src_dbpath, dst_dbpath, false);
+		}
 
 		/*
 		 * Record the filesystem change in XLOG

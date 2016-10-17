@@ -482,6 +482,17 @@ date_mii(PG_FUNCTION_ARGS)
 	PG_RETURN_DATEADT(result);
 }
 
+Datum
+date_dist(PG_FUNCTION_ARGS)
+{
+	/* we assume the difference can't overflow */
+	Datum		diff = DirectFunctionCall2(date_mi,
+										   PG_GETARG_DATUM(0),
+										   PG_GETARG_DATUM(1));
+
+	PG_RETURN_INT32(Abs(DatumGetInt32(diff)));
+}
+
 /*
  * Internal routines for promoting date to timestamp and timestamp with
  * time zone
@@ -1980,6 +1991,16 @@ time_part(PG_FUNCTION_ARGS)
 	}
 
 	PG_RETURN_FLOAT8(result);
+}
+
+Datum
+time_dist(PG_FUNCTION_ARGS)
+{
+	Datum		diff = DirectFunctionCall2(time_mi_time,
+										   PG_GETARG_DATUM(0),
+										   PG_GETARG_DATUM(1));
+
+	PG_RETURN_INTERVAL_P(abs_interval(DatumGetIntervalP(diff)));
 }
 
 

@@ -111,6 +111,7 @@ extern Datum date_smaller(PG_FUNCTION_ARGS);
 extern Datum date_mi(PG_FUNCTION_ARGS);
 extern Datum date_pli(PG_FUNCTION_ARGS);
 extern Datum date_mii(PG_FUNCTION_ARGS);
+extern Datum date_dist(PG_FUNCTION_ARGS);
 extern Datum date_eq_timestamp(PG_FUNCTION_ARGS);
 extern Datum date_ne_timestamp(PG_FUNCTION_ARGS);
 extern Datum date_lt_timestamp(PG_FUNCTION_ARGS);
@@ -176,6 +177,7 @@ extern Datum interval_time(PG_FUNCTION_ARGS);
 extern Datum time_pl_interval(PG_FUNCTION_ARGS);
 extern Datum time_mi_interval(PG_FUNCTION_ARGS);
 extern Datum time_part(PG_FUNCTION_ARGS);
+extern Datum time_dist(PG_FUNCTION_ARGS);
 
 extern Datum timetz_in(PG_FUNCTION_ARGS);
 extern Datum timetz_out(PG_FUNCTION_ARGS);

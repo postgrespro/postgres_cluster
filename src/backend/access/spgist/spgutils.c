@@ -24,6 +24,7 @@
 #include "storage/lmgr.h"
 #include "utils/index_selfuncs.h"
 #include "utils/lsyscache.h"
+#include "utils/syscache.h"
 
 
 /*
@@ -38,7 +39,7 @@ spghandler(PG_FUNCTION_ARGS)
 	amroutine->amstrategies = 0;
 	amroutine->amsupport = SPGISTNProc;
 	amroutine->amcanorder = false;
-	amroutine->amcanorderbyop = false;
+	amroutine->amcanorderbyop = true;
 	amroutine->amcanbackward = false;
 	amroutine->amcanunique = false;
 	amroutine->amcanmulticol = false;
@@ -59,7 +60,7 @@ spghandler(PG_FUNCTION_ARGS)
 	amroutine->amcanreturn = spgcanreturn;
 	amroutine->amcostestimate = spgcostestimate;
 	amroutine->amoptions = spgoptions;
-	amroutine->amproperty = NULL;
+	amroutine->amproperty = spgproperty;
 	amroutine->amvalidate = spgvalidate;
 	amroutine->ambeginscan = spgbeginscan;
 	amroutine->amrescan = spgrescan;
@@ -530,6 +531,8 @@ SpGistInitMetapage(Page page)
 	/* initialize last-used-page cache to empty */
 	for (i = 0; i < SPGIST_CACHED_PAGES; i++)
 		metadata->lastUsedPages.cachedPage[i].blkno = InvalidBlockNumber;
+
+	((PageHeader) page)->pd_lower += sizeof(SpGistMetaPageData);
 }
 
 /*
@@ -906,4 +909,63 @@ SpGistPageAddNewItem(SpGistState *state, Page page, Item item, Size size,
 			 (int) size);
 
 	return offnum;
+}
+
+/*
+ *	spgproperty() -- Check boolean properties of indexes.
+ *
+ * This is optional for most AMs, but is required for SP-GiST because the core
+ * property code doesn't support AMPROP_DISTANCE_ORDERABLE.
+ */
+bool
+spgproperty(Oid index_oid, int attno,
+			IndexAMProperty prop, const char *propname,
+			bool *res, bool *isnull)
+{
+	Oid			opclass,
+				opfamily,
+				opcintype;
+
+	/* Only answer column-level inquiries */
+	if (attno == 0)
+		return false;
+
+	switch (prop)
+	{
+		case AMPROP_DISTANCE_ORDERABLE:
+			break;
+		default:
+			return false;
+	}
+
+	/*
+	 * Currently, SP-GiST distance-ordered scans require that there be a
+	 * distance operator in the opclass with the default types. So we assume
+	 * that if such a operator exists, then there's a reason for it.
+	 */
+
+	/* First we need to know the column's opclass. */
+	opclass = get_index_column_opclass(index_oid, attno);
+	if (!OidIsValid(opclass))
+	{
+		*isnull = true;
+		return true;
+	}
+
+	/* Now look up the opclass family and input datatype. */
+	if (!get_opclass_opfamily_and_input_type(opclass, &opfamily, &opcintype))
+	{
+		*isnull = true;
+		return true;
+	}
+
+	/* And now we can check whether the operator is provided. */
+	*res = SearchSysCacheExists4(AMOPSTRATEGY,
+								 ObjectIdGetDatum(opfamily),
+								 ObjectIdGetDatum(opcintype),
+								 ObjectIdGetDatum(opcintype),
+								 Int16GetDatum(RTKNNSearchStrategyNumber));
+	*isnull = false;
+
+	return true;
 }

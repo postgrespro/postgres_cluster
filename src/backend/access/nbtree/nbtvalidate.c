@@ -22,7 +22,15 @@
 #include "catalog/pg_opfamily.h"
 #include "catalog/pg_type.h"
 #include "utils/builtins.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
+
+#define BTRequiredOperatorSet \
+		((1 << BTLessStrategyNumber) | \
+		 (1 << BTLessEqualStrategyNumber) | \
+		 (1 << BTEqualStrategyNumber) | \
+		 (1 << BTGreaterEqualStrategyNumber) | \
+		 (1 << BTGreaterStrategyNumber))
 
 
 /*
@@ -122,10 +130,11 @@ btvalidate(Oid opclassoid)
 	{
 		HeapTuple	oprtup = &oprlist->members[i]->tuple;
 		Form_pg_amop oprform = (Form_pg_amop) GETSTRUCT(oprtup);
+		Oid			op_rettype;
 
 		/* Check that only allowed strategy numbers exist */
 		if (oprform->amopstrategy < 1 ||
-			oprform->amopstrategy > BTMaxStrategyNumber)
+			oprform->amopstrategy > BTMaxStrategyNumber2)
 		{
 			ereport(INFO,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
@@ -136,20 +145,29 @@ btvalidate(Oid opclassoid)
 			result = false;
 		}
 
-		/* btree doesn't support ORDER BY operators */
-		if (oprform->amoppurpose != AMOP_SEARCH ||
-			OidIsValid(oprform->amopsortfamily))
+		/* btree supports ORDER BY operators */
+		if (oprform->amoppurpose != AMOP_SEARCH)
 		{
-			ereport(INFO,
-					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-					 errmsg("btree operator family \"%s\" contains invalid ORDER BY specification for operator %s",
-							opfamilyname,
-							format_operator(oprform->amopopr))));
-			result = false;
+			/* ... and operator result must match the claimed btree opfamily */
+			op_rettype = get_op_rettype(oprform->amopopr);
+			if (!opfamily_can_sort_type(oprform->amopsortfamily, op_rettype))
+			{
+				ereport(INFO,
+						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+						 errmsg("btree operator family %s contains invalid ORDER BY specification for operator %s",
+								opfamilyname,
+								format_operator(oprform->amopopr))));
+				result = false;
+			}
+		}
+		else
+		{
+			/* Search operators must always return bool */
+			op_rettype = BOOLOID;
 		}
 
 		/* Check operator signature --- same for all btree strategies */
-		if (!check_amop_signature(oprform->amopopr, BOOLOID,
+		if (!check_amop_signature(oprform->amopopr, op_rettype,
 								  oprform->amoplefttype,
 								  oprform->amoprighttype))
 		{
@@ -188,12 +206,8 @@ btvalidate(Oid opclassoid)
 		 * or support functions for this datatype pair.  The only thing that
 		 * is considered optional is the sortsupport function.
 		 */
-		if (thisgroup->operatorset !=
-			((1 << BTLessStrategyNumber) |
-			 (1 << BTLessEqualStrategyNumber) |
-			 (1 << BTEqualStrategyNumber) |
-			 (1 << BTGreaterEqualStrategyNumber) |
-			 (1 << BTGreaterStrategyNumber)))
+		if ((thisgroup->operatorset & BTRequiredOperatorSet) !=
+				BTRequiredOperatorSet)
 		{
 			ereport(INFO,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),

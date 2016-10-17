@@ -123,6 +123,49 @@ transfer_all_new_dbs(DbInfoArr *old_db_arr, DbInfoArr *new_db_arr,
 	return;
 }
 
+static void transfer_compression_files(FileNameMap *map)
+{
+	const char *msg;
+	char		old_file[MAXPGPATH];
+	char		new_file[MAXPGPATH];
+	struct stat statbuf;		
+
+	snprintf(old_file, sizeof(old_file), "%s%s/pg_compression",
+			 map->old_tablespace,
+			 map->old_tablespace_suffix);
+	snprintf(new_file, sizeof(new_file), "%s%s/pg_compression",
+			 map->new_tablespace,
+			 map->new_tablespace_suffix);
+	
+	if (stat(old_file, &statbuf) == 0)
+	{
+		unlink(new_file);
+
+		if (user_opts.transfer_mode == TRANSFER_MODE_COPY)
+		{
+			pg_log(PG_VERBOSE, "copying \"%s\" to \"%s\"\n", old_file, new_file);
+
+			msg = copyFile(old_file, new_file);
+
+			if (msg)
+				pg_fatal("error while copying tablespace (\"%s\" to \"%s\"): %s\n",
+						 old_file, new_file, msg);
+		}
+		else
+		{
+			pg_log(PG_VERBOSE, "linking \"%s\" to \"%s\"\n", old_file, new_file);
+
+			msg = linkFile(old_file, new_file);
+
+			if (msg)
+				pg_fatal("error while creating link for tablespace (\"%s\" to \"%s\"): %s\n",
+						 old_file, new_file, msg);
+		}
+
+		transfer_relfile(map, ".cfm", false);
+	}
+}
+
 /*
  * transfer_single_new_db()
  *
@@ -155,6 +198,8 @@ transfer_single_new_db(FileNameMap *maps, int size, char *old_tablespace)
 		if (old_tablespace == NULL ||
 			strcmp(maps[mapnum].old_tablespace, old_tablespace) == 0)
 		{
+			transfer_compression_files(&maps[mapnum]);
+
 			/* transfer primary file */
 			transfer_relfile(&maps[mapnum], "", vm_must_add_frozenbit);
 
@@ -188,8 +233,8 @@ transfer_relfile(FileNameMap *map, const char *type_suffix, bool vm_must_add_fro
 	char		new_file[MAXPGPATH];
 	int			segno;
 	char		extent_suffix[65];
-	struct stat statbuf;
-
+	struct stat statbuf;		
+		
 	/*
 	 * Now copy/link any related segments as well. Remember, PG breaks large
 	 * files into 1GB segments, the first segment has no extension, subsequent
