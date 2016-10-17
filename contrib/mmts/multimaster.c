@@ -580,10 +580,6 @@ MtmAdjustOldestXid(TransactionId xid)
 			 ts != NULL 
 				 && ts->csn < oldestSnapshot
 				 && TransactionIdPrecedes(ts->xid, xid);
-/*
-				 && (ts->status == TRANSACTION_STATUS_COMMITTED ||
-					 ts->status == TRANSACTION_STATUS_ABORTED);
-*/
 			 prev = ts, ts = ts->next) 
 		{ 
 			if (prev != NULL) { 
@@ -594,7 +590,7 @@ MtmAdjustOldestXid(TransactionId xid)
 		}
 	} 
 
-	if (MtmUseDtm) 
+	if (MtmUseDtm && !MtmVolksWagenMode) 
 	{ 
 		if (prev != NULL) { 
 			MTM_LOG2("%d: MtmAdjustOldestXid: oldestXid=%d, prev->xid=%d, prev->status=%d, prev->snapshot=%ld, ts->xid=%d, ts->status=%d, ts->snapshot=%ld, oldestSnapshot=%ld", 
@@ -606,6 +602,8 @@ MtmAdjustOldestXid(TransactionId xid)
 		}
 	} else { 
 		if (prev != NULL) { 
+			MTM_LOG2("%d: MtmAdjustOldestXid: oldestXid=%d, prev->xid=%d, prev->status=%d, prev->snapshot=%ld, ts->xid=%d, ts->status=%d, ts->snapshot=%ld, oldestSnapshot=%ld", 
+					 MyProcPid, xid, prev->xid, prev->status, prev->snapshot, (ts ? ts->xid : 0), (ts ? ts->status : -1), (ts ? ts->snapshot : -1), oldestSnapshot);
 			Mtm->transListHead = prev;
 		}
 	}
