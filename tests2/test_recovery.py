@@ -9,7 +9,7 @@ class RecoveryTest(unittest.TestCase):
     @classmethod
     def setUpClass(self):
         self.client = MtmClient([
-            "dbname=postgres user=postgres host=127.0.0.1",
+            "dbname=postgres user=postgres host=127.0.0.1 port=5435",
             "dbname=postgres user=postgres host=127.0.0.1 port=5433",
             "dbname=postgres user=postgres host=127.0.0.1 port=5434"
         ], n_accounts=1000)

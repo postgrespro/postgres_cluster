@@ -9,7 +9,7 @@ containers:
       POSTGRES_USER: 'postgres'
       NODE_ID: 1
     ports:
-      5432: 5432
+      5435: 5432
 
   node2:
     container_name: node2
