@@ -7,9 +7,9 @@
 #include "storage/relfilenode.h"
 #include "utils/relcache.h"
 
-extern unsigned int blocks_track_count;
+extern PGDLLIMPORT unsigned int blocks_track_count;
 
-extern bool ptrack_enable;
+extern PGDLLIMPORT bool ptrack_enable;
 
 extern void ptrack_save(void);
 
