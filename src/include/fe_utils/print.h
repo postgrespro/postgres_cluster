@@ -17,12 +17,14 @@
 
 
 /* This is not a particularly great place for this ... */
+/* Let build system to redefine default pager */
+#ifndef DEFAULT_PAGER
 #ifndef __CYGWIN__
 #define DEFAULT_PAGER "more"
 #else
 #define DEFAULT_PAGER "less"
 #endif
-
+#endif
 enum printFormat
 {
 	PRINT_NOTHING = 0,			/* to make sure someone initializes this */

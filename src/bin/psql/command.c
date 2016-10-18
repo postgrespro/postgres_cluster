@@ -1923,7 +1923,13 @@ do_connect(enum trivalue reuse_previous_specification,
 		keywords[++paramnum] = "fallback_application_name";
 		values[paramnum] = pset.progname;
 		keywords[++paramnum] = "client_encoding";
-		values[paramnum] = (pset.notty || getenv("PGCLIENTENCODING")) ? NULL : "auto";
+		values[paramnum] = (pset.notty || getenv("PGCLIENTENCODING")) ?  NULL :
+#ifdef HAVE_WIN32_LIBEDIT
+		"UTF8"
+#else
+		"auto"
+#endif
+		;
 
 		/* add array terminator */
 		keywords[++paramnum] = NULL;
@@ -2105,6 +2111,11 @@ printSSLInfo(void)
 static void
 checkWin32Codepage(void)
 {
+#ifdef HAVE_WIN32_LIBEDIT
+	if (isatty(fileno(stdout)))
+		printf(_("WARNING: Unicode mode enabled. "
+			"You need TTF font in your console window\n"));
+#else
 	unsigned int wincp,
 				concp;
 
@@ -2117,6 +2128,7 @@ checkWin32Codepage(void)
 				 "         page \"Notes for Windows users\" for details.\n"),
 			   concp, wincp);
 	}
+#endif
 }
 #endif
 
