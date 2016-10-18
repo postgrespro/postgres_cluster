@@ -35,6 +35,26 @@
 #include "libpq/libpq.h"
 
 
+/*
+ * Determine whether we should enable COPY or not (PostgresPro has a fix).
+ */
+#if defined(WIN32) && !defined(PGPRO_PATHMAN_AWARE_COPY)
+#define DISABLE_PATHMAN_COPY
+#endif
+
+/*
+ * While building PostgreSQL on Windows the msvc compiler produces .def file
+ * which contains all the symbols that were declared as external except the ones
+ * that were declared but not defined. We redefine variables below to prevent
+ * 'unresolved symbol' errors on Windows. But we have to disable COPY feature
+ * on Windows.
+ */
+#ifdef DISABLE_PATHMAN_COPY
+bool				XactReadOnly = false;
+ProtocolVersion		FrontendProtocol = (ProtocolVersion) 0;
+#endif
+
+
 static uint64 PathmanCopyFrom(CopyState cstate,
 							  Relation parent_rel,
 							  List *range_table,
@@ -94,7 +114,14 @@ is_pathman_related_copy(Node *parsetree)
 				elog(ERROR, "freeze is not supported for partitioned tables");
 		}
 
-		elog(DEBUG1, "Overriding default behavior for COPY [%u]", partitioned_table);
+		/* Emit ERROR if we can't see the necessary symbols */
+		#ifdef DISABLE_PATHMAN_COPY
+			elog(ERROR, "COPY is not supported for partitioned tables on Windows");
+		#else
+			elog(DEBUG1, "Overriding default behavior for COPY [%u]",
+				 partitioned_table);
+		#endif
+
 		return true;
 	}
 
