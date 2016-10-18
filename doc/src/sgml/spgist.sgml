@@ -566,7 +566,7 @@ CREATE FUNCTION my_inner_consistent(internal, internal) RETURNS void ...
 typedef struct spgInnerConsistentIn
 {
     ScanKey     scankeys;       /* array of operators and comparison values */
-    ScanKey		orderbyKeys;	/* array of ordering operators and comparison values */
+    ScanKey     orderbyKeys;    /* array of ordering operators and comparison values */
     int         nkeys;          /* length of array */
     int         norderbys;      /* length of array */
 
@@ -693,7 +693,7 @@ typedef struct spgLeafConsistentIn
     ScanKey     scankeys;       /* array of operators and comparison values */
     ScanKey     orderbykeys;    /* array of ordering operators and comparison values */
     int         nkeys;          /* length of array */
-    int         norderbys;		/* length of array */
+    int         norderbys;      /* length of array */
 
     void       *traversalValue; /* opclass-specific traverse value */
     Datum       reconstructedValue;     /* value reconstructed at parent */
@@ -707,7 +707,7 @@ typedef struct spgLeafConsistentOut
 {
     Datum       leafValue;      /* reconstructed original data, if any */
     bool        recheck;        /* set true if operator must be rechecked */
-    double		*distances;		/* associated distances */
+    double      *distances;     /* associated distances */
 } spgLeafConsistentOut;
 </programlisting>
 
