@@ -24,7 +24,7 @@
 #include "storage/backendid.h"
 
 
-ProtocolVersion FrontendProtocol;
+ProtocolVersion FrontendProtocol = (ProtocolVersion)0;
 
 volatile bool InterruptPending = false;
 volatile bool QueryCancelPending = false;
