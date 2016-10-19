@@ -1,0 +1,37 @@
+version: '2'
+
+services:
+
+  node1:
+    container_name: node1
+    build: ..
+    privileged: true
+    environment:
+      POSTGRES_USER: 'pg'
+      POSTGRES_DB: 'regression'
+      NODE_ID: 1
+    ports:
+      - "5432:5432"
+
+  node2:
+    container_name: node2
+    build: ..
+    privileged: true
+    environment:
+      POSTGRES_USER: 'pg'
+      POSTGRES_DB: 'regression'
+      NODE_ID: 2
+    ports:
+      - "5433:5432"
+
+  node3:
+    container_name: node3
+    build: ..
+    privileged: true
+    environment:
+      POSTGRES_USER: 'pg'
+      POSTGRES_DB: 'regression'
+      NODE_ID: 3
+    ports:
+      - "5434:5432"
+
