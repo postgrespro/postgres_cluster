@@ -16,9 +16,9 @@ if [ "$1" = 'postgres' ]; then
 			-o "-c listen_addresses=''" \
 			-w start
 
-		# : ${POSTGRES_USER:=postgres}
-		# : ${POSTGRES_DB:=$POSTGRES_USER}
-		# export POSTGRES_USER POSTGRES_DB
+		: ${POSTGRES_USER:=postgres}
+		: ${POSTGRES_DB:=$POSTGRES_USER}
+		export POSTGRES_USER POSTGRES_DB
 
 		if [ "$POSTGRES_DB" != 'postgres' ]; then
 			psql -U `whoami` postgres <<-EOSQL
@@ -57,13 +57,14 @@ if [ "$1" = 'postgres' ]; then
 			multimaster.workers = 4
 			multimaster.max_nodes = 3
 			multimaster.use_raftable = false
+			multimaster.volkswagen_mode = 1
 			multimaster.queue_size=52857600
 			multimaster.ignore_tables_without_pk = 1
 			multimaster.node_id = $NODE_ID
 			multimaster.conn_strings = '$CONNSTRS'
 			multimaster.heartbeat_recv_timeout = 1000
 			multimaster.heartbeat_send_timeout = 250
-			multimaster.twopc_min_timeout = 2000
+			multimaster.twopc_min_timeout = 400000
 		EOF
 
 		pg_ctl -D "$PGDATA" -m fast -w stop

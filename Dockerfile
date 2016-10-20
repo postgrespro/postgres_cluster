@@ -1,8 +1,8 @@
-FROM alpine:latest
+FROM alpine:3.4
 
 RUN apk add --update gcc libc-dev bison flex readline-dev zlib-dev perl make
 
-# there is already accidental postgres user in alpine, so call ours pg =/
+# there is already accidental postgres user in alpine
 # RUN addgroup pg && adduser -h /pg -D -G pg pg
 RUN mkdir /pg && chown postgres:postgres pg
 
