@@ -1,220 +1,243 @@
-from __future__ import print_function
-import psycopg2
+#!/usr/bin/env python3
+import asyncio
+# import uvloop
+import aiopg
 import random
-from multiprocessing import Process, Value, Queue
+import psycopg2
 import time
-import sys
-from event_history import *
-import select
-import signal
+import datetime
+import copy
+import aioprocessing
+import multiprocessing
 
-class ClientCollection(object):
-    def __init__(self, connstrs):
-        self._clients = []
+class MtmTxAggregate(object):
 
-        for i, cs in enumerate(connstrs):
-            b = BankClient(cs, i)
-            self._clients.append(b)
+    def __init__(self, name):
+        self.name = name
+        self.isolation = 0
+        self.clear_values()
 
-        self._clients[0].initialize()
+    def clear_values(self):
+        self.max_latency = 0.0
+        self.finish = {}
 
-    @property
-    def clients(self):
-        return self._clients
+    def start_tx(self):
+        self.start_time = datetime.datetime.now()
 
-    def __getitem__(self, index):
-        return self._clients[index]
+    def finish_tx(self, name):
+        latency = (datetime.datetime.now() - self.start_time).total_seconds()
 
-    def start(self):
-        for client in self._clients:
-            client.start()
+        if latency > self.max_latency:
+            self.max_latency = latency
 
-    def stop(self):
-        for client in self._clients:
-            client.stop()
+        if name not in self.finish: 
+            self.finish[name] = 1
+        else:
+            self.finish[name] += 1
 
-    def aggregate(self, echo=True):
-        aggs = []
-        for client in self._clients:
-            aggs.append(client.history.aggregate())
+    def as_dict(self):
+        return {
+            'running_latency': (datetime.datetime.now() - self.start_time).total_seconds(),
+            'max_latency': self.max_latency,
+            'isolation': self.isolation,
+            'finish': copy.deepcopy(self.finish)
+        }
 
-        if not echo:
-            return aggs
+def keep_trying(tries, delay, method, name, *args, **kwargs):
+    for t in range(tries):
+        try:
+            return method(*args, **kwargs)
+        except Exception as e:
+            if t == tries - 1:
+                raise Exception("%s failed all %d tries" % (name, tries)) from e
+            print("%s failed [%d of %d]: %s" % (name, t + 1, tries, str(e)))
+            time.sleep(delay)
+    raise Exception("this should not happen")
 
-        columns = ['running', 'running_latency', 'max_latency', 'finish']
+class MtmClient(object):
 
-        print("\t\t", end="")
-        for col in columns:
-            print(col, end="\t")
-        print("\n", end="")
+    def __init__(self, dsns, n_accounts=100000):
+        self.n_accounts = n_accounts
+        self.dsns = dsns
+        self.aggregates = {}
+        keep_trying(40, 1, self.initdb, 'self.initdb')
+        self.running = True
+        self.nodes_state_fields = ["id", "disabled", "disconnected", "catchUp", "slotLag",
+            "avgTransDelay", "lastStatusChange", "oldestSnapshot", "SenderPid",
+            "SenderStartTime ", "ReceiverPid", "ReceiverStartTime", "connStr"]
+        self.oops = '''
+                        . . .                         
+                         \|/                          
+                       `--+--'                        
+                         /|\                          
+                        ' | '                         
+                          |                           
+                          |                           
+                      ,--'#`--.                       
+                      |#######|                       
+                   _.-'#######`-._                    
+                ,-'###############`-.                 
+              ,'#####################`,               
+             /#########################\              
+            |###########################|             
+           |#############################|            
+           |#############################|            
+           |#############################|            
+           |#############################|            
+            |###########################|             
+             \#########################/              
+              `.#####################,'               
+                `._###############_,'                 
+                   `--..#####..--'      
+'''
 
-        for i, agg in enumerate(aggs):
-            for k in agg.keys():
-                print("%s_%d:\t" % (k, i+1), end="")
-                for col in columns:
-                    if k in agg and col in agg[k]:
-                        if isinstance(agg[k][col], float):
-                            print("%.2f\t" % (agg[k][col],), end="\t")
-                            #print(agg[k][col], end="\t")
-                        else :
-                            print(agg[k][col], end="\t")
-                    else :
-                        print("-\t", end='')
-                print("\n", end='')
-
-        print("")
-
-        return aggs
-
-class BankClient(object):
-
-    def __init__(self, connstr, node_id, accounts = 10000):
-        self.connstr = connstr
-        self.node_id = node_id
-        self.run = Value('b', True)
-        self._history = EventHistory()
-        self.accounts = accounts
-        self.accounts_to_tx = accounts
-        self.show_errors = True
-
-        #x = self
-        #def on_sigint(sig, frame):
-        #    x.stop()
-        #
-        #signal.signal(signal.SIGINT, on_sigint)
-
-
-    def initialize(self):
-        conn = psycopg2.connect(self.connstr)
+    def initdb(self):
+        conn = psycopg2.connect(self.dsns[0])
         cur = conn.cursor()
         cur.execute('create extension if not exists multimaster')
         conn.commit()
-
+        cur.execute('drop table if exists bank_test')
         cur.execute('create table bank_test(uid int primary key, amount int)')
-
         cur.execute('''
                 insert into bank_test
                 select *, 0 from generate_series(0, %s)''',
-                (self.accounts,))
+                (self.n_accounts,))
         conn.commit()
         cur.close()
         conn.close()
 
-    def aconn(self):
-        return psycopg2.connect(self.connstr, async=1)
-
-    @classmethod
-    def wait(cls, conn):
-        while 1:
-            state = conn.poll()
-            if state == psycopg2.extensions.POLL_OK:
-                break
-            elif state == psycopg2.extensions.POLL_WRITE:
-                select.select([], [conn.fileno()], [])
-            elif state == psycopg2.extensions.POLL_READ:
-                select.select([conn.fileno()], [], [])
+    @asyncio.coroutine
+    def status(self):
+        while self.running:
+            msg = yield from self.child_pipe.coro_recv()
+            if msg == 'status':
+                print('evloop: got status request')
+                serialized_aggs = {}
+                for name, aggregate in self.aggregates.items():
+                    serialized_aggs[name] = aggregate.as_dict() 
+                    aggregate.clear_values()
+                self.child_pipe.send(serialized_aggs)
+                print('evloop: sent status response')
             else:
-                raise psycopg2.OperationalError("poll() returned %s" % state)
+                print('evloop: unknown message')
 
-    @property
-    def history(self):
-        return self._history
 
-    def print_error(self, arg, comment=''):
-        if self.show_errors:
-            print('Node', self.node_id, 'got error', arg, comment)
-
-    def exec_tx(self, name, tx_block):
-        conn = psycopg2.connect(self.connstr)
-        cur = conn.cursor()
-
-        while self.run.value:
-            event_id = self.history.register_start(name)
-
+    @asyncio.coroutine
+    def exec_tx(self, tx_block, aggname_prefix, conn_i):
+        aggname = "%s_%i" % (aggname_prefix, conn_i)
+        agg = self.aggregates[aggname] = MtmTxAggregate(aggname)
+        pool = yield from aiopg.create_pool(self.dsns[conn_i])
+        conn = yield from pool.acquire()
+        cur = yield from conn.cursor()
+        while self.running:
+            agg.start_tx()
             try:
-                if conn.closed:
-                    conn = psycopg2.connect(self.connstr)
-                    cur = conn.cursor()
-                    self.history.register_finish(event_id, 'ReConnect')
-                    continue
-
-                tx_block(conn, cur)    
-                self.history.register_finish(event_id, 'Commit')
+                yield from cur.execute('commit')
+                yield from tx_block(conn, cur, agg)
+                agg.finish_tx('commit')
             except psycopg2.Error as e:
-                # print("=== node%d: %s" % (self.node_id, e.pgerror))
-                self.history.register_finish(event_id, e.pgerror)
-                #time.sleep(0.2)
+                agg.finish_tx(e.pgerror)
+        print("We've count to infinity!")
 
-        cur.close()
-        conn.close()
+    @asyncio.coroutine
+    def transfer_tx(self, conn, cur, agg):
+        amount = 1
+        # to avoid deadlocks:
+        from_uid = random.randint(1, self.n_accounts - 2)
+        to_uid = from_uid + 1
+        yield from cur.execute('begin')
+        yield from cur.execute('''update bank_test
+            set amount = amount - %s
+            where uid = %s''',
+            (amount, from_uid))
+        assert(cur.rowcount == 1)
+        yield from cur.execute('''update bank_test
+            set amount = amount + %s
+            where uid = %s''',
+            (amount, to_uid))
+        assert(cur.rowcount == 1)
+        yield from cur.execute('commit')
 
-    def check_total(self):
+    @asyncio.coroutine
+    def total_tx(self, conn, cur, agg):
+        yield from cur.execute('select sum(amount) from bank_test')
+        total = yield from cur.fetchone()
+        if total[0] != 0:
+            agg.isolation += 1
+            print(self.oops)
+            print('Isolation error, total = ', total[0])
+            yield from cur.execute('select * from mtm.get_nodes_state()')
+            nodes_state = yield from cur.fetchall()
+            for i, col in enumerate(self.nodes_state_fields):
+                print("%17s" % col, end="\t")
+                for j in range(3):
+                     print("%19s" % nodes_state[j][i], end="\t")
+                print("\n")
 
-        def tx(conn, cur):
-            conn.commit()
-            cur.execute('select sum(amount) from bank_test')
-            res = cur.fetchone()
-            total = res[0]
-            if total != 0:
-                cur.execute('select mtm.get_snapshot()')
-                res = cur.fetchone()
-                print("Isolation error, total = %d, node = %d, snapshot = %d" % (total,self.node_id,res[0]))
-                raise BaseException
-            conn.commit()
 
-        self.exec_tx('total', tx)
+    def run(self):
+        # asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+        self.loop = asyncio.get_event_loop()
 
-    def set_acc_to_tx(self, max_acc):
-        self.accounts_to_tx = max_acc
+        for i, _ in enumerate(self.dsns):
+            asyncio.async(self.exec_tx(self.transfer_tx, 'transfer', i))
+            asyncio.async(self.exec_tx(self.total_tx, 'sumtotal', i))
 
-    def transfer_money(self):
+        asyncio.async(self.status())
 
-        def tx(conn, cur):
-            amount = 1
-            from_uid = random.randrange(1, self.accounts_to_tx - 1)
-            to_uid = random.randrange(1, self.accounts_to_tx - 1)
+        self.loop.run_forever()
 
-            conn.commit()
-            cur.execute('''update bank_test
-                set amount = amount - %s
-                where uid = %s''',
-                (amount, from_uid))
-            if (cur.rowcount != 1):
-                raise BaseException
-            cur.execute('''update bank_test
-                set amount = amount + %s
-                where uid = %s''',
-                (amount, to_uid))
-            if (cur.rowcount != 1):
-                raise BaseException
-            conn.commit()
+    def bgrun(self):
+        print('Starting evloop in different process');
+        self.parent_pipe, self.child_pipe = aioprocessing.AioPipe()
+        self.evloop_process = multiprocessing.Process(target=self.run, args=())
+        self.evloop_process.start()
 
-        self.exec_tx('transfer', tx)
-
-    def start(self):
-        print('Starting client');
-        self.run.value = True
-
-        self.transfer_process = Process(target=self.transfer_money, name="txor", args=())
-        self.transfer_process.start()
-
-        self.total_process = Process(target=self.check_total, args=())
-        self.total_process.start()
-
-        return
+    def get_status(self):
+        print('test: sending status request')
+        self.parent_pipe.send('status')
+        print('test: awaitng status response')
+        resp = self.parent_pipe.recv()
+        print('test: got status response')
+        return resp
 
     def stop(self):
-        print('Stopping client');
-        self.run.value = False
-        self.total_process.terminate()
-        self.transfer_process.terminate()
-        return
+        self.running = False
+        self.evloop_process.terminate()
 
-    def cleanup(self):
-        conn = psycopg2.connect(self.connstr)
-        cur = conn.cursor()
-        cur.execute('drop table bank_test')
-        conn.commit()
-        cur.close()
-        conn.close()
+    @classmethod
+    def print_aggregates(cls, serialized_agg):
+            columns = ['running_latency', 'max_latency', 'isolation', 'finish']
 
+            # print table header
+            print("\t\t", end="")
+            for col in columns:
+                print(col, end="\t")
+            print("\n", end="")
+
+            serialized_agg
+
+            for aggname in sorted(serialized_agg.keys()):
+                agg = serialized_agg[aggname]
+                print("%s\t" % aggname, end="")
+                for col in columns:
+                    if col in agg:
+                        if isinstance(agg[col], float):
+                            print("%.2f\t" % (agg[col],), end="\t")
+                        else:
+                            print(agg[col], end="\t")
+                    else:
+                        print("-\t", end="")
+                print("")
+            print("")
+
+
+if __name__ == "__main__":
+    c = MtmClient(['dbname=postgres user=postgres host=127.0.0.1',
+        'dbname=postgres user=postgres host=127.0.0.1 port=5433',
+        'dbname=postgres user=postgres host=127.0.0.1 port=5434'], n_accounts=10000)
+    c.bgrun()
+    while True:
+        time.sleep(1)
+        aggs = c.get_status()
+        MtmClient.print_aggregates(aggs)
