@@ -6,9 +6,9 @@ sudo: required
 services:
   - docker
 
-before_script: env && pip3 install -r contrib/mmts/tests2/requirements.txt && which blockade
+before_script: env && pip3 install -r contrib/mmts/tests2/requirements.txt
 
-script: cd contrib/mmts && docker build -t pgmmts . && cd tests2 && sudo env "PATH=$PATH" blockade up && sleep 20 && sudo env "PATH=$PATH" python3 test_recovery.py
+script: cd contrib/mmts/tests2 && python3 test_regression.py
 
 notifications:
   email:
