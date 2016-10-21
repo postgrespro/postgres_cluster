@@ -1,7 +1,4 @@
 sudo: required
-# language: python
-# python:
-#   - "3.4"
 
 services:
   - docker
