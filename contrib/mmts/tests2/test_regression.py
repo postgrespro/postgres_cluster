@@ -19,6 +19,7 @@ class RecoveryTest(unittest.TestCase):
             '--use-existing',
             '--schedule=../../../src/test/regress/parallel_schedule',
             '--host=127.0.0.1',
+            '--port=15432',
             '--user=postgres',
             '--inputdir=../../../src/test/regress/',
             '--outputdir=../../../src/test/regress/',

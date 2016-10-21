@@ -13,6 +13,7 @@ ENV CFLAGS -O0
 ENV PATH /pg/install/bin:$PATH
 
 COPY ./ /pg/src
+RUN chown -R postgres:postgres /pg
 
 RUN cd /pg/src && \
 	./configure  --enable-cassert --enable-debug --prefix=/pg/install && \

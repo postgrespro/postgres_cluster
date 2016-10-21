@@ -6,6 +6,7 @@ RUN cd /pg/src/contrib/raftable && make clean && make install
 
 RUN mkdir /pg/mmts
 COPY ./ /pg/mmts/
+RUN chown -R postgres:postgres /pg/mmts
 
 RUN export RAFTABLE_PATH=/pg/src/contrib/raftable && \
     export USE_PGXS=1 && \
