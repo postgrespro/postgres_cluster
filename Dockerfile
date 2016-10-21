@@ -10,9 +10,9 @@ RUN export RAFTABLE_PATH=/pg/src/contrib/raftable && \
     cd /pg/mmts && make clean && make install
 
 # pg_regress client assumes such dir exists on server
-RUN mkdir /pg/src/src/test/regress/results
 
 USER postgres
+RUN mkdir /pg/src/src/test/regress/results
 ENV PGDATA /pg/data
 ENTRYPOINT ["/pg/mmts/tests2/docker-entrypoint.sh"]
 
