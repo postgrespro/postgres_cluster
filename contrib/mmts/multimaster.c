@@ -2157,8 +2157,10 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 			elog(ERROR, "Invalid arbiter port: %s", port+12);
 		}
 	} else { 
-		conn->arbiterPort = 0;
+		conn->arbiterPort = MULTIMASTER_DEFAULT_ARBITER_PORT;
 	}
+
+	elog(WARNING, "Using arbiter port: %d", conn->arbiterPort);
 }
 
 static void MtmSplitConnStrs(void)
@@ -2643,7 +2645,7 @@ _PG_init(void)
 		"Base value for assigning arbiter ports",
 		NULL,
 		&MtmArbiterPort,
-		54320,
+		MULTIMASTER_DEFAULT_ARBITER_PORT,
 	    0,
 		INT_MAX,
 		PGC_BACKEND,

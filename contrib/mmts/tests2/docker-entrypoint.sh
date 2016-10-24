@@ -70,6 +70,8 @@ if [ "$1" = 'postgres' ]; then
 			multimaster.twopc_min_timeout = 400000
 		EOF
 
+		cat $PGDATA/postgresql.conf
+
 		pg_ctl -D "$PGDATA" -m fast -w stop
 	fi
 fi
