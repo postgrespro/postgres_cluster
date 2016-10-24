@@ -2,7 +2,6 @@ import unittest
 import time
 import subprocess
 from lib.bank_client import MtmClient
-# from client2 import MtmClient
 import datetime
 
 class RecoveryTest(unittest.TestCase):
