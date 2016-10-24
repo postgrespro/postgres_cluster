@@ -145,21 +145,15 @@ static void transfer_compression_files(FileNameMap *map)
 		{
 			pg_log(PG_VERBOSE, "copying \"%s\" to \"%s\"\n", old_file, new_file);
 
-			msg = copyFile(old_file, new_file);
+			copyFile(old_file, new_file, map->nspname, map->relname);
 
-			if (msg)
-				pg_fatal("error while copying tablespace (\"%s\" to \"%s\"): %s\n",
-						 old_file, new_file, msg);
 		}
 		else
 		{
 			pg_log(PG_VERBOSE, "linking \"%s\" to \"%s\"\n", old_file, new_file);
 
-			msg = linkFile(old_file, new_file);
+			linkFile(old_file, new_file, map->nspname, map->relname);
 
-			if (msg)
-				pg_fatal("error while creating link for tablespace (\"%s\" to \"%s\"): %s\n",
-						 old_file, new_file, msg);
 		}
 
 		transfer_relfile(map, ".cfm", false);
