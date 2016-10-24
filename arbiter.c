@@ -507,11 +507,7 @@ static void MtmOpenConnections()
 	}
 	for (i = 0; i < nNodes; i++) {
 		if (i+1 != MtmNodeId && i < Mtm->nAllNodes) { 
-			int arbiterPort = Mtm->nodes[i].con.arbiterPort;
-			if (arbiterPort == 0) {
-				arbiterPort = MtmArbiterPort + i + 1;
-			}
-			sockets[i] = MtmConnectSocket(i, arbiterPort, MtmConnectTimeout);
+			sockets[i] = MtmConnectSocket(i, Mtm->nodes[i].con.arbiterPort, MtmConnectTimeout);
 			if (sockets[i] < 0) { 
 				MtmOnNodeDisconnect(i+1);
 			} 
@@ -542,13 +538,13 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 			BIT_CLEAR(Mtm->reconnectMask, node);
 			MtmUnlock();
 		}
-		if (sockets[node] < 0 || !MtmWriteSocket(sockets[node], buf, size)) { 
+		if (sockets[node] < 0 || !MtmWriteSocket(sockets[node], buf, size)) {
 			if (sockets[node] >= 0) { 
 				elog(WARNING, "Arbiter fail to write to node %d: %d", node+1, errno);
 				close(sockets[node]);
 				sockets[node] = -1;
 			}
-			sockets[node] = MtmConnectSocket(node, MtmArbiterPort + node + 1, MtmReconnectTimeout);
+			sockets[node] = MtmConnectSocket(node, Mtm->nodes[node].con.arbiterPort, MtmReconnectTimeout);
 			if (sockets[node] < 0) { 
 				MtmOnNodeDisconnect(node+1);
 				result = false;
@@ -638,7 +634,7 @@ static void MtmAcceptIncomingConnections()
 	}
 	sock_inet.sin_family = AF_INET;
 	sock_inet.sin_addr.s_addr = htonl(INADDR_ANY);
-	sock_inet.sin_port = htons(MtmArbiterPort + MtmNodeId);
+	sock_inet.sin_port = htons(MtmArbiterPort);
 
     gateway = socket(sock_inet.sin_family, SOCK_STREAM, 0);
 	if (gateway < 0) {

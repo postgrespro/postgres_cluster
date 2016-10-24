@@ -58,6 +58,8 @@
 #define MULTIMASTER_BROADCAST_SERVICE   "mtm_broadcast"
 #define MULTIMASTER_ADMIN               "mtm_admin"
 
+#define MULTIMASTER_DEFAULT_ARBITER_PORT 5433
+
 #define MB (1024*1024L)
 
 #define USEC_TO_MSEC(t) ((t)/1000)

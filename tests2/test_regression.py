@@ -8,6 +8,7 @@ class RecoveryTest(unittest.TestCase):
     def setUpClass(self):
         subprocess.check_call(['docker-compose','up',
             '--force-recreate',
+            '--build',
             '-d'])
 
     @classmethod
