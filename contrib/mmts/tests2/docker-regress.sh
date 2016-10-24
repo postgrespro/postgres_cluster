@@ -2,6 +2,8 @@
 
 cd /pg/src/src/test/regress
 
+cat /etc/hosts
+
 ./pg_regress --use-existing \
     --schedule=parallel_schedule \
     --host=node1 \
