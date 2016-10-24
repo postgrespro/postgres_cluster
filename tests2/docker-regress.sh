@@ -8,7 +8,7 @@ cd /pg/src/src/test/regress
     --user=postgres \
     --dlpath=/pg/src/src/test/regress/
 
-STATUS = $?
+STATUS=$?
 
 cat regression.diffs
 
