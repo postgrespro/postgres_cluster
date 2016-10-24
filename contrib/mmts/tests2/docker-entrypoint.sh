@@ -40,7 +40,10 @@ if [ "$1" = 'postgres' ]; then
 
 		############################################################################
 
-		CONNSTRS="dbname=$POSTGRES_DB user=$POSTGRES_USER host=node1, dbname=$POSTGRES_DB user=$POSTGRES_USER host=node2, dbname=$POSTGRES_DB user=$POSTGRES_USER host=node3"
+		# CONNSTRS="\
+		# 	dbname=$POSTGRES_DB user=$POSTGRES_USER host=node1, \
+		# 	dbname=$POSTGRES_DB user=$POSTGRES_USER host=node2, \
+		# 	dbname=$POSTGRES_DB user=$POSTGRES_USER host=node3"
 
 		cat <<-EOF >> $PGDATA/postgresql.conf
 			listen_addresses='*' 
