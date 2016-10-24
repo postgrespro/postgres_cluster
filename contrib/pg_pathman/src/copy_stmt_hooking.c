@@ -341,6 +341,7 @@ PathmanDoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 	{
 		bool is_old_protocol = PG_PROTOCOL_MAJOR(FrontendProtocol) < 3 &&
 							   stmt->filename == NULL;
+		ParseState *pstate;
 
 		/* There should be relation */
 		if (!rel) elog(FATAL, "No relation for PATHMAN COPY FROM");
@@ -350,15 +351,19 @@ PathmanDoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 			PreventCommandIfReadOnly("PATHMAN COPY FROM");
 		PreventCommandIfParallelMode("PATHMAN COPY FROM");
 
-		cstate = BeginCopyFrom(NULL,rel, stmt->filename, stmt->is_program,
+	    pstate = make_parsestate(NULL);
+	    pstate->p_sourcetext = queryString;
+		cstate = BeginCopyFrom(pstate,rel, stmt->filename, stmt->is_program,
 							   stmt->attlist, stmt->options);
 		*processed = PathmanCopyFrom(cstate, rel, range_table, is_old_protocol);
 		EndCopyFrom(cstate);
+		free_parsestate(pstate);
 	}
 	/* COPY ... TO ... */
 	else
 	{
 		CopyStmt	modified_copy_stmt;
+		ParseState *pstate;
 
 		/* We should've created a query */
 		Assert(query);
@@ -367,9 +372,13 @@ PathmanDoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 		modified_copy_stmt = *stmt;
 		modified_copy_stmt.relation = NULL;
 		modified_copy_stmt.query = query;
+	    pstate = make_parsestate(NULL);
+	    pstate->p_sourcetext = queryString;
+
 
 		/* Call standard DoCopy using a new CopyStmt */
-		DoCopy(NULL,&modified_copy_stmt, processed);
+		DoCopy(pstate,&modified_copy_stmt, processed);
+		free_parsestate(pstate);
 	}
 
 	/*
