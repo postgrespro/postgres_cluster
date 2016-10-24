@@ -31,46 +31,46 @@ class RecoveryTest(unittest.TestCase):
             time.sleep(3)
             aggs = self.client.get_status()
             MtmClient.print_aggregates(aggs)
-            # for agg in aggs:
-            #     # there were some commits
-            #     self.assertTrue( agg['transfer'] > 0 )
+            print(aggs)
+            for agg in aggs:
+                self.assertTrue( aggs[agg]['finish']['commit'] > 0 )
 
-    # def test_node_partition(self):
-    #     print('### nodePartitionTest ###')
+    def test_node_partition(self):
+        print('### nodePartitionTest ###')
 
-    #     subprocess.check_call(['blockade','partition','node3'])
-    #     print('### blockade node3 ###')
+        subprocess.check_call(['blockade','partition','node3'])
+        print('### blockade node3 ###')
 
-    #     # clear tx history
-    #     self.client.get_status()
+        # clear tx history
+        self.client.get_status()
 
-    #     for i in range(3):
-    #         print(i, datetime.datetime.now())
-    #         time.sleep(3)
-    #         aggs = self.client.get_status()
-    #         MtmClient.print_aggregates(aggs)
-    #         # self.assertTrue( aggs['transfer_0']['finish']['commit'] > 0 )
-    #         # self.assertTrue( aggs['transfer_1']['finish']['commit'] > 0 )
-    #         # self.assertTrue( aggs['transfer_2']['finish']['commit'] == 0 )
-    #         self.assertTrue( aggs['sumtotal_0']['isolation']  + aggs['sumtotal_1']['isolation'] + aggs['sumtotal_2']['isolation'] == 0 )
+        for i in range(3):
+            print(i, datetime.datetime.now())
+            time.sleep(3)
+            aggs = self.client.get_status()
+            MtmClient.print_aggregates(aggs)
+            # self.assertTrue( aggs['transfer_0']['finish']['commit'] > 0 )
+            # self.assertTrue( aggs['transfer_1']['finish']['commit'] > 0 )
+            # self.assertTrue( aggs['transfer_2']['finish']['commit'] == 0 )
+            self.assertTrue( aggs['sumtotal_0']['isolation']  + aggs['sumtotal_1']['isolation'] + aggs['sumtotal_2']['isolation'] == 0 )
 
-    #     subprocess.check_call(['blockade','join'])
-    #     print('### deblockade node3 ###')
+        subprocess.check_call(['blockade','join'])
+        print('### deblockade node3 ###')
 
-    #     # clear tx history
-    #     self.client.get_status()
+        # clear tx history
+        self.client.get_status()
 
-    #     for i in range(20):
-    #         print(i, datetime.datetime.now())
-    #         time.sleep(3)
-    #         aggs = self.client.get_status()
-    #         MtmClient.print_aggregates(aggs)
-    #         self.assertTrue( aggs['sumtotal_0']['isolation']  + aggs['sumtotal_1']['isolation'] + aggs['sumtotal_2']['isolation'] == 0 )
+        for i in range(20):
+            print(i, datetime.datetime.now())
+            time.sleep(3)
+            aggs = self.client.get_status()
+            MtmClient.print_aggregates(aggs)
+            self.assertTrue( aggs['sumtotal_0']['isolation']  + aggs['sumtotal_1']['isolation'] + aggs['sumtotal_2']['isolation'] == 0 )
 
-    #     # check that during last aggregation all nodes were working
-    #     self.assertTrue( aggs['transfer_0']['finish']['commit'] > 0 )
-    #     self.assertTrue( aggs['transfer_1']['finish']['commit'] > 0 )
-    #     self.assertTrue( aggs['transfer_2']['finish']['commit'] > 0 )
+        # check that during last aggregation all nodes were working
+        self.assertTrue( aggs['transfer_0']['finish']['commit'] > 0 )
+        self.assertTrue( aggs['transfer_1']['finish']['commit'] > 0 )
+        self.assertTrue( aggs['transfer_2']['finish']['commit'] > 0 )
 
 
 

@@ -11,7 +11,7 @@ services:
       POSTGRES_DB: 'regression'
       NODE_ID: 1
       CONNSTRS: >-
-        dbname=regression user=pg host=node1 arbiterport=5433,
+        dbname=regression user=pg host=node1,
         dbname=regression user=pg host=toxi port=12000 arbiterport=12001,
         dbname=regression user=pg host=toxi port=13000 arbiterport=13001
     ports:
@@ -27,7 +27,7 @@ services:
       NODE_ID: 2
       CONNSTRS: >-
         dbname=regression user=pg host=toxi port=21000 arbiterport=21001,
-        dbname=regression user=pg host=node2 arbiterport=5433,
+        dbname=regression user=pg host=node2,
         dbname=regression user=pg host=toxi port=23000 arbiterport=23001
     ports:
       - "15433:5432"
@@ -43,7 +43,7 @@ services:
       CONNSTRS: >-
         dbname=regression user=pg host=toxi port=31000 arbiterport=31001,
         dbname=regression user=pg host=toxi port=32000 arbiterport=32001,
-        dbname=regression user=pg host=node3 arbiterport=5433
+        dbname=regression user=pg host=node3
     ports:
       - "15434:5432"
 
