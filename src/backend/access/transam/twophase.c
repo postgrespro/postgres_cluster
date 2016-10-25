@@ -1025,6 +1025,10 @@ EndPrepare(GlobalTransaction gxact)
 	xl_xact_origin xl_origin;
 	xl_xact_xinfo xl_xinfo;
 	uint8		info = XLOG_XACT_PREPARE;
+	bool		replorigin;
+
+	replorigin = (replorigin_session_origin != InvalidRepOriginId &&
+				  replorigin_session_origin != DoNotReplicateId);
 
 	/* Add the end sentinel to the list of 2PC records */
 	RegisterTwoPhaseRecord(TWOPHASE_RM_END_ID, 0,
@@ -1089,6 +1093,12 @@ EndPrepare(GlobalTransaction gxact)
 	XLogIncludeOrigin();
 
 	gxact->prepare_end_lsn = XLogInsert(RM_XACT_ID, info);
+
+	if (replorigin)
+		/* Move LSNs forward for this replication origin */
+		replorigin_session_advance(replorigin_session_origin_lsn,
+								   XactLastRecEnd);
+
 	XLogFlush(gxact->prepare_end_lsn);
 
 	/* If we crash now, we have prepared: WAL replay will fix things */
