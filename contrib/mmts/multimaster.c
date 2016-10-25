@@ -1110,9 +1110,14 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		}
 		if (ts != NULL) { 
 			if (commit) {
-				/* Assert(ts->status == TRANSACTION_STATUS_UNKNOWN); */
-				Assert(ts->status == TRANSACTION_STATUS_UNKNOWN 
-					   || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)); /* ??? Why there is commit without prepare */
+				if (!(ts->status == TRANSACTION_STATUS_UNKNOWN 
+					  || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)))  
+				{
+					elog(ERROR, "Attempt to commit %s transaction %d (%s)", 
+						 ts->status == TRANSACTION_STATUS_ABORTED ? "aborted" 
+						 : ts->status == TRANSACTION_STATUS_COMMITTED ? "committed" : "not prepared",
+						 ts->xid, ts->gid);
+				}
 				if (x->csn > ts->csn || Mtm->status == MTM_RECOVERY) {
 					ts->csn = x->csn;
 					MtmSyncClock(ts->csn);
