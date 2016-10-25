@@ -111,16 +111,15 @@ class MtmClient(object):
         while self.running:
             msg = yield from self.child_pipe.coro_recv()
             if msg == 'status':
-                print('evloop: got status request')
+                # print('evloop: got status request')
                 serialized_aggs = {}
                 for name, aggregate in self.aggregates.items():
                     serialized_aggs[name] = aggregate.as_dict() 
                     aggregate.clear_values()
                 self.child_pipe.send(serialized_aggs)
-                print('evloop: sent status response')
+                # print('evloop: sent status response')
             else:
                 print('evloop: unknown message')
-
 
     @asyncio.coroutine
     def exec_tx(self, tx_block, aggname_prefix, conn_i):
@@ -194,11 +193,11 @@ class MtmClient(object):
         self.evloop_process.start()
 
     def get_status(self):
-        print('test: sending status request')
+        # print('test: sending status request')
         self.parent_pipe.send('status')
-        print('test: awaitng status response')
+        # print('test: awaitng status response')
         resp = self.parent_pipe.recv()
-        print('test: got status response')
+        # print('test: got status response')
         return resp
 
     def stop(self):

@@ -1,3 +1,4 @@
 psycopg2
 aiopg
 aioprocessing
+git+git://github.com/douglas/toxiproxy-python.git

@@ -1,8 +1,11 @@
 import unittest
 import time
 import subprocess
-from lib.bank_client import MtmClient
 import datetime
+
+from toxiproxy import Toxiproxy
+from lib.bank_client import MtmClient
+
 
 class RecoveryTest(unittest.TestCase):
     @classmethod
@@ -10,6 +13,8 @@ class RecoveryTest(unittest.TestCase):
         subprocess.check_call(['docker-compose','up',
             '--force-recreate',
             '-d'])
+
+        # XXX: add normal wait here
         time.sleep(30)
         self.client = MtmClient([
             "dbname=regression user=postgres host=127.0.0.1 port=15432",
@@ -17,7 +22,9 @@ class RecoveryTest(unittest.TestCase):
             "dbname=regression user=postgres host=127.0.0.1 port=15434"
         ], n_accounts=1000)
         self.client.bgrun()
-        time.sleep(5)
+
+        self.toxiproxy = Toxiproxy() #Toxiproxy(server_host="toxi")
+
 
     @classmethod
     def tearDownClass(self):
@@ -38,13 +45,14 @@ class RecoveryTest(unittest.TestCase):
     def test_node_partition(self):
         print('### nodePartitionTest ###')
 
-        subprocess.check_call(['blockade','partition','node3'])
-        print('### blockade node3 ###')
+        print('### split node3 ###')
+        for proxy in ['rep31', 'rep32', 'rep23', 'rep13', 'arb31', 'arb32', 'arb23', 'arb13']:
+            self.toxiproxy.get_proxy(proxy).disable()
 
         # clear tx history
         self.client.get_status()
 
-        for i in range(3):
+        for i in range(5):
             print(i, datetime.datetime.now())
             time.sleep(3)
             aggs = self.client.get_status()
@@ -54,13 +62,14 @@ class RecoveryTest(unittest.TestCase):
             # self.assertTrue( aggs['transfer_2']['finish']['commit'] == 0 )
             self.assertTrue( aggs['sumtotal_0']['isolation']  + aggs['sumtotal_1']['isolation'] + aggs['sumtotal_2']['isolation'] == 0 )
 
-        subprocess.check_call(['blockade','join'])
-        print('### deblockade node3 ###')
+        print('### join node3 ###')
+        for proxy in ['rep31', 'rep32', 'rep23', 'rep13', 'arb31', 'arb32', 'arb23', 'arb13']:
+            self.toxiproxy.get_proxy(proxy).enable()
 
         # clear tx history
         self.client.get_status()
 
-        for i in range(20):
+        for i in range(5):
             print(i, datetime.datetime.now())
             time.sleep(3)
             aggs = self.client.get_status()
