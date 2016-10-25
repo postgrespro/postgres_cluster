@@ -91,21 +91,19 @@ static void MtmMonitor(Datum arg);
 static void MtmSendHeartbeat(void);
 static bool MtmSendToNode(int node, void const* buf, int size);
 
-/*
-static char const* const messageText[] = 
+static char const* const messageKindText[] = 
 {
 	"INVALID",
 	"HANDSHAKE",
-	"READY",
-	"PREPARE",
 	"PREPARED",
+	"PRECOMMIT",
+	"PRECOMMITTED",
 	"ABORTED",
 	"STATUS",
 	"HEARTBEAT",
 	"POLL_REQUEST",
 	"POLL_STATUS"
 };
-*/
 
 static BackgroundWorker MtmSenderWorker = {
 	"mtm-sender",
@@ -364,7 +362,7 @@ static void MtmSendHeartbeat()
 					MTM_LOG2("Send heartbeat to node %d with timestamp %ld", i+1, now);    
 				}
 			} else { 
-				MTM_LOG1("Do not send heartbeat to node %d, busy mask %lld, status %d", i+1, (long long) busy_mask, Mtm->status);
+				MTM_LOG2("Do not send heartbeat to node %d, busy mask %lld, status %d", i+1, (long long) busy_mask, Mtm->status);
 			}
 		}
 	}
@@ -902,9 +900,14 @@ static void MtmReceiver(Datum arg)
 							msg->status = TRANSACTION_STATUS_ABORTED;
 						} else {
 							msg->status = tm->state->status;
+							msg->csn  = tm->state->csn;
 							MTM_LOG1("Send response %d for transaction %s to node %d", msg->status, msg->gid, msg->node);
 						}
-						msg->code = MSG_POLL_STATUS;
+						msg->disabledNodeMask = Mtm->disabledNodeMask;
+						msg->connectivityMask = Mtm->connectivityMask;
+						msg->oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
+						msg->code = MSG_POLL_STATUS;	
+						msg->csn = ts->csn;
 						MtmSendMessage(msg);
 						continue;
 					  case MSG_POLL_STATUS:
@@ -915,41 +918,34 @@ static void MtmReceiver(Datum arg)
 						} else {
 							ts = tm->state;
 							BIT_SET(ts->votedMask, node-1);
-							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
-								if (msg->status == TRANSACTION_STATUS_UNKNOWN || msg->status == TRANSACTION_STATUS_COMMITTED) {
-									elog(LOG, "Commit transaction %s because it is in state %d at node %d",
+							if (ts->status == TRANSACTION_STATUS_UNKNOWN) { 
+								if (msg->status == TRANSACTION_STATUS_IN_PROGRESS || msg->status == TRANSACTION_STATUS_ABORTED) {
+									elog(LOG, "Abort transaction %s because it is in state %d at node %d",
 										 msg->gid, ts->status, node);
-									Assert(!IsTransactionState());
-									StartTransactionCommand();
-									MtmSetCurrentTransactionGID(ts->gid);
-									ts->status = TRANSACTION_STATUS_UNKNOWN;
-									FinishPreparedTransaction(ts->gid, true);
-									CommitTransactionCommand();
-									Assert(ts->status == TRANSACTION_STATUS_COMMITTED);
-								} else if (msg->status == TRANSACTION_STATUS_ABORTED 
-										   || ((ts->participantsMask & ~Mtm->disabledNodeMask) & ~ts->votedMask) == 0) 
+									MtmFinishPreparedTransaction(node, ts, false);
+								} 
+								else if (msg->status == TRANSACTION_STATUS_COMMITTED ||  msg->status == TRANSACTION_STATUS_UNKNOWN)
 								{ 
-									if (msg->status == TRANSACTION_STATUS_ABORTED) { 
-										elog(LOG, "Abort transaction %s because it is aborted at node %d", msg->gid, node);
-									} else {
-										elog(LOG, "Abort transaction %s because it is not prepared at any online node", msg->gid);
+									if (msg->csn > ts->csn) {
+										ts->csn = msg->csn;
+										MtmSyncClock(ts->csn);
 									}
-									Assert(!IsTransactionState());
-									StartTransactionCommand();
-									MtmSetCurrentTransactionGID(ts->gid);
-									FinishPreparedTransaction(ts->gid, false);
-									CommitTransactionCommand();
-									Assert(ts->status == TRANSACTION_STATUS_ABORTED);
+									if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
+										elog(LOG, "Commit transaction %s because it is prepared at all live nodes", msg->gid);		
+										MtmFinishPreparedTransaction(node, ts, true);
+									}
 								} else {
 									elog(LOG, "Receive response %d for transaction %s for node %d, votedMask=%llx, participantsMask=%llx",
-										msg->status, msg->gid, node, (long long) ts->votedMask,
-										(long long) (ts->participantsMask & ~Mtm->disabledNodeMask) );
+										msg->status, msg->gid, node, (long long) ts->votedMask, (long long) (ts->participantsMask & ~Mtm->disabledNodeMask));
 									continue;
 								}
 							} else if (ts->status == TRANSACTION_STATUS_ABORTED && msg->status == TRANSACTION_STATUS_COMMITTED) {
 								elog(WARNING, "Transaction %s is aborted at node %d but committed at node %d", msg->gid, MtmNodeId, node);
 							} else if (msg->status == TRANSACTION_STATUS_ABORTED && ts->status == TRANSACTION_STATUS_COMMITTED) {
 								elog(WARNING, "Transaction %s is committed at node %d but aborted at node %d", msg->gid, MtmNodeId, node);
+							} else { 
+								elog(LOG, "Receive response %d for transaction %s status %d for node %d, votedMask=%llx, participantsMask=%llx",
+									 msg->status, msg->gid, ts->status, node, (long long) ts->votedMask, (long long) (ts->participantsMask & ~Mtm->disabledNodeMask) );
 							}
 						}
 						continue;
@@ -965,50 +961,49 @@ static void MtmReceiver(Datum arg)
 						elog(WARNING, "Ignore response for unexisted transaction %d from node %d", msg->dxid, node);
 						continue;
 					}
+					if (BIT_CHECK(ts->votedMask, node-1)) {
+						elog(WARNING, "Receive deteriorated %s response for transaction %d (%s) from node %d",
+							 messageKindText[msg->code], ts->xid, ts->gid, node);
+						continue;
+					}
 					MtmCheckResponse(msg);
-					
+					BIT_SET(ts->votedMask, node-1);
+
 					if (MtmIsCoordinator(ts)) {
 						switch (msg->code) { 
-						  case MSG_READY:
-							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_READY");
+						  case MSG_PREPARED:
+							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_PREPARED");
 							if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
-								elog(WARNING, "Receive READY response for already committed transaction %d from node %d",
+								elog(WARNING, "Receive PREPARED response for already committed transaction %d from node %d",
 									 ts->xid, node);
 								continue;
 							}
-							if (ts->nVotes >= Mtm->nLiveNodes) {
-								elog(WARNING, "Receive deteriorated READY response for transaction %d (%s) from node %d",
-									 ts->xid, ts->gid, node);
+							Mtm->nodes[node-1].transDelay += MtmGetCurrentTime() - ts->csn;
+							ts->xids[node-1] = msg->sxid;
+							
+							if ((~msg->disabledNodeMask & Mtm->disabledNodeMask) != 0) { 
+								/* Coordinator's disabled mask is wider than of this node: so reject such transaction to avoid 
+								   commit on smaller subset of nodes */
+								elog(WARNING, "Coordinator of distributed transaction see less nodes than node %d: %lx instead of %lx",
+									 node, (long) Mtm->disabledNodeMask, (long) msg->disabledNodeMask);
 								MtmAbortTransaction(ts);
-								MtmWakeUpBackend(ts);
-							} else { 
-								Mtm->nodes[node-1].transDelay += MtmGetCurrentTime() - ts->csn;
-								ts->xids[node-1] = msg->sxid;
-								
-								if ((~msg->disabledNodeMask & Mtm->disabledNodeMask) != 0) { 
-									/* Coordinator's disabled mask is wider than of this node: so reject such transaction to avoid 
-									   commit on smaller subset of nodes */
-									elog(WARNING, "Coordinator of distributed transaction see less nodes than node %d: %lx instead of %lx",
-										 node, (long) Mtm->disabledNodeMask, (long) msg->disabledNodeMask);
-									MtmAbortTransaction(ts);
-								}
-								
-								if (++ts->nVotes == Mtm->nLiveNodes) { 
-									/* All nodes are finished their transactions */
-									if (ts->status == TRANSACTION_STATUS_ABORTED) { 
-										MtmWakeUpBackend(ts);								
+							}
+							if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
+								/* All nodes are finished their transactions */
+								if (ts->status == TRANSACTION_STATUS_ABORTED) { 
+									MtmWakeUpBackend(ts);								
+								} else { 
+									Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+									ts->isPrepared = true;
+									if (ts->isTwoPhase) { 
+										MtmWakeUpBackend(ts);										
+									} else if (MtmUseDtm) { 
+										ts->votedMask = 0;
+										MTM_TXTRACE(ts, "MtmTransReceiver send MSG_PRECOMMIT");
+										MtmSend2PCMessage(ts, MSG_PRECOMMIT);									  
 									} else { 
-										Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-										if (ts->isTwoPhase) { 
-											MtmWakeUpBackend(ts);										
-										} else if (MtmUseDtm) { 
-											ts->nVotes = 1; /* I voted myself */
-											MTM_TXTRACE(ts, "MtmTransReceiver send MSG_PREPARE");
-											MtmSend2PCMessage(ts, MSG_PREPARE);									  
-										} else { 
-											ts->status = TRANSACTION_STATUS_UNKNOWN;
-											MtmWakeUpBackend(ts);
-										}
+										ts->status = TRANSACTION_STATUS_UNKNOWN;
+										MtmWakeUpBackend(ts);
 									}
 								}
 							}
@@ -1023,47 +1018,40 @@ static void MtmReceiver(Datum arg)
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 								MtmAbortTransaction(ts);
 							}
-							if (++ts->nVotes >= Mtm->nLiveNodes) {
+							if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
 								MtmWakeUpBackend(ts);
 							}
 							break;
-						  case MSG_PREPARED:
-							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_PREPARED");
-							if (ts->nVotes >= Mtm->nLiveNodes) {					
-								elog(WARNING, "Receive deteriorated PREPARED response for transaction %d (%s) from node %d",
-									 ts->xid, ts->gid, node);
-								MtmAbortTransaction(ts);
-								MtmWakeUpBackend(ts);
+						  case MSG_PRECOMMITTED:
+							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_PRECOMMITTED");
+							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
+								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+								if (msg->csn > ts->csn) {
+									ts->csn = msg->csn;
+									MtmSyncClock(ts->csn);
+								}
+								if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
+									ts->csn = MtmAssignCSN();
+									ts->status = TRANSACTION_STATUS_UNKNOWN;
+									MtmWakeUpBackend(ts);
+								}
 							} else { 
-								if (ts->status != TRANSACTION_STATUS_ABORTED) { 
-									Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-									if (msg->csn > ts->csn) {
-										ts->csn = msg->csn;
-										MtmSyncClock(ts->csn);
-									}
-									if (++ts->nVotes == Mtm->nLiveNodes) {
-										ts->csn = MtmAssignCSN();
-										ts->status = TRANSACTION_STATUS_UNKNOWN;
-										MtmWakeUpBackend(ts);
-									}
-								} else { 
-									if (++ts->nVotes == Mtm->nLiveNodes) {
-										MtmWakeUpBackend(ts);
-									}
-								}	
-							}							
+								if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
+									MtmWakeUpBackend(ts);
+								}
+							}	
 							break;
 						  default:
 							Assert(false);
 						} 
 					} else { 
 						switch (msg->code) { 
-						  case MSG_PREPARE:
+						  case MSG_PRECOMMIT:
 							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
 								ts->status = TRANSACTION_STATUS_UNKNOWN;
 								ts->csn = MtmAssignCSN();
 								MtmAdjustSubtransactions(ts);
-								MtmSend2PCMessage(ts, MSG_PREPARED);
+								MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
 							} else {
 								Assert(ts->status == TRANSACTION_STATUS_ABORTED);
 								MtmSend2PCMessage(ts, MSG_ABORTED);

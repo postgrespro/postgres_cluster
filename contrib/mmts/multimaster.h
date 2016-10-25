@@ -103,9 +103,9 @@ typedef enum
 { 
 	MSG_INVALID,
 	MSG_HANDSHAKE,
-	MSG_READY,
-	MSG_PREPARE,
 	MSG_PREPARED,
+	MSG_PRECOMMIT,
+	MSG_PRECOMMITTED,
 	MSG_ABORTED,
 	MSG_STATUS,
 	MSG_HEARTBEAT,
@@ -134,7 +134,7 @@ typedef enum
 
 typedef struct
 {
-	MtmMessageCode code;   /* Message code: MSG_READY, MSG_PREPARE, MSG_COMMIT, MSG_ABORT */
+	MtmMessageCode code;   /* Message code: MSG_PREPARE, MSG_PRECOMMIT, MSG_COMMIT, MSG_ABORT,... */
     int            node;   /* Sender node ID */	
 	TransactionId  dxid;   /* Transaction ID at destination node */
 	TransactionId  sxid;   /* Transaction ID at sender node */  
@@ -204,8 +204,6 @@ typedef struct MtmTransState
 	GlobalTransactionId gtid;          /* Transaction id at coordinator */
     csn_t          csn;                /* commit serial number */
     csn_t          snapshot;           /* transaction snapshot, or INVALID_CSN for local transactions */
-	int            nVotes;             /* number of votes received from replcas for this transaction: 
-							              finally should be nNodes-1 */
 	int            procno;             /* pgprocno of transaction coordinator waiting for responses from replicas, 
 							              used to notify coordinator by arbiter */
 	int            nSubxids;           /* Number of subtransanctions */
@@ -213,6 +211,7 @@ typedef struct MtmTransState
 	bool           votingCompleted;    /* 2PC voting is completed */
 	bool           isLocal;            /* Transaction is either replicated, either doesn't contain DML statements, so it shoudl be ignored by pglogical replication */
 	bool           isEnqueued;         /* Transaction is inserted in queue */
+	bool           isPrepared;         /* Transaction is prepared: now it is safe to commit transaction */
 	bool           isActive;           /* Transaction is active */
 	bool           isTwoPhase;         /* user level 2PC */
 	nodemask_t     participantsMask;   /* Mask of nodes involved in transaction */
@@ -357,6 +356,8 @@ extern void MtmResetTransaction(void);
 extern void MtmUpdateLockGraph(int nodeId, void const* messageBody, int messageSize);
 extern void MtmReleaseRecoverySlot(int nodeId);
 extern PGconn *PQconnectdb_safe(const char *conninfo);
-
+extern void MtmBeginSession(int nodeId);
+extern void MtmEndSession(int nodeId, bool unlock);
+extern void MtmFinishPreparedTransaction(int nodeId, MtmTransState* ts, bool commit);
 
 #endif

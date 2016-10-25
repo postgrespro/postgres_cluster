@@ -64,12 +64,13 @@ if [ "$1" = 'postgres' ]; then
 		CONNSTRS='dbname=postgres user=postgres host=node1, dbname=postgres user=postgres host=node2, dbname=postgres user=postgres host=node3'
 		RAFT_PEERS='1:node1:6666, 2:node2:6666, 3:node3:6666'
 
+#            log_line_prefix = '%t: '
+
 		cat <<-EOF >> $PGDATA/postgresql.conf
 			listen_addresses='*' 
 			max_prepared_transactions = 100
 			synchronous_commit = on
 			fsync = off
-            log_line_prefix = '%t: '
 			wal_level = logical
 			max_worker_processes = 30
 			max_replication_slots = 10
@@ -81,16 +82,15 @@ if [ "$1" = 'postgres' ]; then
 			log_autovacuum_min_duration = 0
 
 			multimaster.workers = 4
-            multimaster.use_raftable = false
 			multimaster.max_nodes = 3
-			multimaster.use_raftable = true
+			multimaster.use_raftable = false
 			multimaster.queue_size=52857600
 			multimaster.ignore_tables_without_pk = 1
 			multimaster.node_id = $NODE_ID
 			multimaster.conn_strings = '$CONNSTRS'
 			multimaster.heartbeat_recv_timeout = 1000
 			multimaster.heartbeat_send_timeout = 250
-			multimaster.twopc_min_timeout = 2000
+			multimaster.twopc_min_timeout = 200000
 		EOF
 
 		tail -n 20 $PGDATA/postgresql.conf
