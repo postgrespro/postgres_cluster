@@ -5657,9 +5657,20 @@ xact_redo(XLogReaderState *record)
 	}
 	else if (info == XLOG_XACT_PREPARE)
 	{
+		xl_xact_parsed_prepare parsed;
+
+		ParsePrepareRecord(XLogRecGetXid(record), XLogRecGetData(record), &parsed);
+
 		/* the record contents are exactly the 2PC file */
 		RecreateTwoPhaseFile(XLogRecGetXid(record),
 						  XLogRecGetData(record), XLogRecGetDataLen(record));
+
+		if (parsed.xinfo & XACT_XINFO_HAS_ORIGIN)
+		{
+			/* recover apply progress */
+			replorigin_advance(XLogRecGetOrigin(record), parsed.origin_lsn,
+						record->EndRecPtr, false /* backward */ , false /* WAL */ );
+		}
 	}
 	else if (info == XLOG_XACT_ASSIGNMENT)
 	{
