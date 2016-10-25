@@ -45,6 +45,8 @@ if [ "$1" = 'postgres' ]; then
 		# 	dbname=$POSTGRES_DB user=$POSTGRES_USER host=node2, \
 		# 	dbname=$POSTGRES_DB user=$POSTGRES_USER host=node3"
 
+#            log_line_prefix = '%t: '
+
 		cat <<-EOF >> $PGDATA/postgresql.conf
 			listen_addresses='*' 
 			max_prepared_transactions = 100
@@ -60,14 +62,13 @@ if [ "$1" = 'postgres' ]; then
 			multimaster.workers = 4
 			multimaster.max_nodes = 3
 			multimaster.use_raftable = false
-			multimaster.volkswagen_mode = 1
 			multimaster.queue_size=52857600
 			multimaster.ignore_tables_without_pk = 1
 			multimaster.node_id = $NODE_ID
 			multimaster.conn_strings = '$CONNSTRS'
 			multimaster.heartbeat_recv_timeout = 1000
 			multimaster.heartbeat_send_timeout = 250
-			multimaster.twopc_min_timeout = 400000
+			multimaster.twopc_min_timeout = 200000
 		EOF
 
 		cat $PGDATA/postgresql.conf
