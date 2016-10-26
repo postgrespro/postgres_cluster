@@ -2801,14 +2801,14 @@ void MtmRollbackPreparedTransaction(char const* gid)
 
 void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
 {
-	if (Mtm->nodes[MtmNodeId-1].originId == InvalidRepOriginId) { 
-		/* This dummy origin is used for local commits/aborts which should not be replicated */
-		Mtm->nodes[MtmNodeId-1].originId = replorigin_create(psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId));
-	}
 	Assert(ts->votingCompleted);
 	Assert(!IsTransactionState());
 	MtmResetTransaction();
 	StartTransactionCommand();
+	if (Mtm->nodes[MtmNodeId-1].originId == InvalidRepOriginId) { 
+		/* This dummy origin is used for local commits/aborts which should not be replicated */
+		Mtm->nodes[MtmNodeId-1].originId = replorigin_create(psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId));
+	}
 	MtmBeginSession(MtmNodeId);
 	MtmSetCurrentTransactionCSN(ts->csn);
 	MtmSetCurrentTransactionGID(ts->gid);
