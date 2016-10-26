@@ -27,6 +27,7 @@ SUBDIRS = \
 	pl \
 	makefiles \
 	test/regress \
+	test/perl \
 	pgpro-upgrade
 
 # There are too many interdependencies between the subdirectories, so

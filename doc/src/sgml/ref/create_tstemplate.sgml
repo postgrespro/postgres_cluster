@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_tstemplate.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATETSTEMPLATE">

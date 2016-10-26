@@ -1021,7 +1021,7 @@ SELECT thousand, tenthous FROM tenk1
 WHERE thousand < 2 AND tenthous IN (1001,3000)
 ORDER BY thousand;
 
-RESET enable_indexscan;
+RESET enable_indexonlyscan;
 
 --
 -- Check elimination of constant-NULL subexpressions
@@ -1029,6 +1029,52 @@ RESET enable_indexscan;
 
 explain (costs off)
   select * from tenk1 where (thousand, tenthous) in ((1,1001), (null,null));
+
+
+--
+-- Check KNN on sp-gist
+--
+
+SET enable_seqscan = OFF;
+SET enable_indexscan = ON;
+SET enable_bitmapscan = OFF;
+
+DROP INDEX gpointind;
+CREATE INDEX spgqpointind ON point_tbl USING spgist (f1 quad_point_ops);
+
+SELECT * FROM point_tbl ORDER BY f1 <-> '0,1';
+SELECT * FROM point_tbl WHERE f1 IS NOT NULL ORDER BY f1 <-> '0,1';
+SELECT * FROM point_tbl WHERE f1 <@ '(-10,-10),(10,10)':: box ORDER BY f1 <-> '0,1';
+EXPLAIN (COSTS OFF)
+SELECT * FROM point_tbl ORDER BY f1 <-> '0,1';
+SELECT * FROM point_tbl ORDER BY f1 <-> '0,1';
+EXPLAIN (COSTS OFF)
+SELECT * FROM point_tbl WHERE f1 IS NOT NULL ORDER BY f1 <-> '0,1';
+SELECT * FROM point_tbl WHERE f1 IS NOT NULL ORDER BY f1 <-> '0,1';
+EXPLAIN (COSTS OFF)
+SELECT * FROM point_tbl WHERE f1 <@ '(-10,-10),(10,10)':: box ORDER BY f1 <-> '0,1';
+SELECT * FROM point_tbl WHERE f1 <@ '(-10,-10),(10,10)':: box ORDER BY f1 <-> '0,1';
+
+DROP INDEX spgqpointind;
+CREATE INDEX spgkpointind ON point_tbl USING spgist (f1 kd_point_ops);
+
+SELECT * FROM point_tbl ORDER BY f1 <-> '0,1';
+SELECT * FROM point_tbl WHERE f1 IS NOT NULL ORDER BY f1 <-> '0,1';
+SELECT * FROM point_tbl WHERE f1 <@ '(-10,-10),(10,10)':: box ORDER BY f1 <-> '0,1';
+EXPLAIN (COSTS OFF)
+SELECT * FROM point_tbl ORDER BY f1 <-> '0,1';
+SELECT * FROM point_tbl ORDER BY f1 <-> '0,1';
+EXPLAIN (COSTS OFF)
+SELECT * FROM point_tbl WHERE f1 IS NOT NULL ORDER BY f1 <-> '0,1';
+SELECT * FROM point_tbl WHERE f1 IS NOT NULL ORDER BY f1 <-> '0,1';
+EXPLAIN (COSTS OFF)
+SELECT * FROM point_tbl WHERE f1 <@ '(-10,-10),(10,10)':: box ORDER BY f1 <-> '0,1';
+SELECT * FROM point_tbl WHERE f1 <@ '(-10,-10),(10,10)':: box ORDER BY f1 <-> '0,1';
+
+RESET enable_seqscan;
+RESET enable_indexscan;
+RESET enable_bitmapscan;
+
 
 --
 -- REINDEX (VERBOSE)

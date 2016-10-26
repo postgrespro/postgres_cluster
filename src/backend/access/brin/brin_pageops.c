@@ -497,6 +497,7 @@ brin_metapage_init(Page page, BlockNumber pagesPerRange, uint16 version)
 	 * revmap page to be created when the index is.
 	 */
 	metadata->lastRevmapPage = 0;
+	((PageHeader) page)->pd_lower += sizeof(BrinMetaPageData);
 }
 
 /*

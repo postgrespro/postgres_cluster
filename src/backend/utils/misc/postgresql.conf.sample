@@ -85,7 +85,7 @@
 #ssl_key_file = 'server.key'		# (change requires restart)
 #ssl_ca_file = ''			# (change requires restart)
 #ssl_crl_file = ''			# (change requires restart)
-#password_encryption = on
+#password_encryption = md5		# on, off, md5, plain or scram
 #db_user_namespace = off
 #row_security = on
 
@@ -538,6 +538,7 @@
 #session_replication_role = 'origin'
 #statement_timeout = 0			# in milliseconds, 0 is disabled
 #lock_timeout = 0			# in milliseconds, 0 is disabled
+#idle_session_timeout = 0		# in milliseconds, 0 is disabled
 #idle_in_transaction_session_timeout = 0		# in milliseconds, 0 is disabled
 #vacuum_freeze_min_age = 50000000
 #vacuum_freeze_table_age = 150000000

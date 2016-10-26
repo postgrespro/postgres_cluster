@@ -43,11 +43,17 @@ OBJS = $(SUBDIROBJS) $(LOCALOBJS) $(top_builddir)/src/port/libpgport_srv.a \
 LIBS := $(filter-out -lpgport -lpgcommon, $(LIBS)) $(LDAP_LIBS_BE)
 
 # The backend doesn't need everything that's in LIBS, however
-LIBS := $(filter-out -lz -lreadline -ledit -ltermcap -lncurses -lcurses, $(LIBS))
+LIBS := $(filter-out -lreadline -ledit -ltermcap -lncurses -lcurses, $(LIBS)) 
 
 ifeq ($(with_systemd),yes)
 LIBS += -lsystemd
 endif
+
+LIBS += -lzstd
+
+
+# Extra compression libraries  
+#LIBS += -llz4 -lsnappy -llzfse
 
 ##########################################################################
 

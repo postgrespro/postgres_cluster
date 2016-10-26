@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/drop_aggregate.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DROPAGGREGATE">

@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/set.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-SET">
@@ -313,9 +313,9 @@ SET TIME ZONE 'Europe/Rome';
   <para>
    <literal>SET TIME ZONE</literal> extends syntax defined in the SQL
    standard.  The standard allows only numeric time zone offsets while
-   <productname>PostgreSQL</productname> allows more flexible
+   <productname>&productname;</productname> allows more flexible
    time-zone specifications.  All other <literal>SET</literal>
-   features are <productname>PostgreSQL</productname> extensions.
+   features are <productname>&productname;</productname> extensions.
   </para>
  </refsect1>
 

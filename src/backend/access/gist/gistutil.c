@@ -23,6 +23,7 @@
 #include "storage/lmgr.h"
 #include "utils/builtins.h"
 #include "utils/syscache.h"
+#include "utils/lsyscache.h"
 
 
 /*
@@ -851,12 +852,6 @@ gistproperty(Oid index_oid, int attno,
 			 IndexAMProperty prop, const char *propname,
 			 bool *res, bool *isnull)
 {
-	HeapTuple	tuple;
-	Form_pg_index rd_index PG_USED_FOR_ASSERTS_ONLY;
-	Form_pg_opclass rd_opclass;
-	Datum		datum;
-	bool		disnull;
-	oidvector  *indclass;
 	Oid			opclass,
 				opfamily,
 				opcintype;
@@ -890,49 +885,28 @@ gistproperty(Oid index_oid, int attno,
 	}
 
 	/* First we need to know the column's opclass. */
-
-	tuple = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(index_oid));
-	if (!HeapTupleIsValid(tuple))
+	opclass = get_index_column_opclass(index_oid, attno);
+	if (!OidIsValid(opclass))
 	{
 		*isnull = true;
 		return true;
 	}
-	rd_index = (Form_pg_index) GETSTRUCT(tuple);
-
-	/* caller is supposed to guarantee this */
-	Assert(attno > 0 && attno <= rd_index->indnatts);
-
-	datum = SysCacheGetAttr(INDEXRELID, tuple,
-							Anum_pg_index_indclass, &disnull);
-	Assert(!disnull);
-
-	indclass = ((oidvector *) DatumGetPointer(datum));
-	opclass = indclass->values[attno - 1];
-
-	ReleaseSysCache(tuple);
 
 	/* Now look up the opclass family and input datatype. */
-
-	tuple = SearchSysCache1(CLAOID, ObjectIdGetDatum(opclass));
-	if (!HeapTupleIsValid(tuple))
+	if (!get_opclass_opfamily_and_input_type(opclass, &opfamily, &opcintype))
 	{
 		*isnull = true;
 		return true;
 	}
-	rd_opclass = (Form_pg_opclass) GETSTRUCT(tuple);
-
-	opfamily = rd_opclass->opcfamily;
-	opcintype = rd_opclass->opcintype;
-
-	ReleaseSysCache(tuple);
 
 	/* And now we can check whether the function is provided. */
-
 	*res = SearchSysCacheExists4(AMPROCNUM,
 								 ObjectIdGetDatum(opfamily),
 								 ObjectIdGetDatum(opcintype),
 								 ObjectIdGetDatum(opcintype),
 								 Int16GetDatum(procno));
+	isnull = false;
+
 	return true;
 }
 
@@ -940,6 +914,7 @@ gistproperty(Oid index_oid, int attno,
  * Temporary and unlogged GiST indexes are not WAL-logged, but we need LSNs
  * to detect concurrent page splits anyway. This function provides a fake
  * sequence of LSNs for that purpose.
+ * Persistent relations are also not WAL-logged while we build index.
  */
 XLogRecPtr
 gistGetFakeLSN(Relation rel)
@@ -960,7 +935,6 @@ gistGetFakeLSN(Relation rel)
 		 * Unlogged relations are accessible from other backends, and survive
 		 * (clean) restarts. GetFakeLSNForUnloggedRel() handles that for us.
 		 */
-		Assert(rel->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED);
 		return GetFakeLSNForUnloggedRel();
 	}
 }

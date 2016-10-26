@@ -9,7 +9,7 @@
   </indexterm>
 
   <para>
-   Aggregate functions in <productname>PostgreSQL</productname>
+   Aggregate functions in <productname>&productname;</productname>
    are defined in terms of <firstterm>state values</firstterm>
    and <firstterm>state transition functions</firstterm>.
    That is, an aggregate operates using a state value that is updated
@@ -70,7 +70,7 @@ SELECT sum(a) FROM test_complex;
 
    (Notice that we are relying on function overloading: there is more than
     one aggregate named <function>sum</>, but
-   <productname>PostgreSQL</productname> can figure out which kind
+   <productname>&productname;</productname> can figure out which kind
    of sum applies to a column of type <type>complex</type>.)
   </para>
 
@@ -86,7 +86,7 @@ SELECT sum(a) FROM test_complex;
    <function>max</> and <function>min</>,
    it is sufficient to insert the first nonnull input value into
    the state variable and then start applying the transition function
-   at the second nonnull input value.  <productname>PostgreSQL</productname>
+   at the second nonnull input value.  <productname>&productname;</productname>
    will do that automatically if the initial state value is null and
    the transition function is marked <quote>strict</> (i.e., not to be called
    for null inputs).
@@ -268,7 +268,7 @@ FROM (VALUES (1, 1.0e20::float8),
    in <literal>1e20</> again, and so subtracting <literal>1e20</> from that
    yields <literal>0</>, not <literal>1</>.  Note that this is a limitation
    of floating-point arithmetic in general, not a limitation
-   of <productname>PostgreSQL</>.
+   of <productname>&productname;</>.
   </para>
 
  </sect2>
@@ -428,7 +428,7 @@ SELECT myaggregate(a, b, c ORDER BY a) FROM ...
 
   <para>
    The aggregates we have been describing so far are <quote>normal</>
-   aggregates.  <productname>PostgreSQL</> also
+   aggregates.  <productname>&productname;</> also
    supports <firstterm>ordered-set aggregates</>, which differ from
    normal aggregates in two key ways.  First, in addition to ordinary
    aggregated arguments that are evaluated once per input row, an
@@ -641,7 +641,7 @@ if (AggCheckCallContext(fcinfo, NULL))
    for ordered-set aggregates, which can inspect the substructure of
    the <literal>Aggref</> node to find out what sort ordering they are
    supposed to implement.  Examples can be found
-   in <filename>orderedsetaggs.c</> in the <productname>PostgreSQL</>
+   in <filename>orderedsetaggs.c</> in the <productname>&productname;</>
    source code.
   </para>
 

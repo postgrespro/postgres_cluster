@@ -229,7 +229,7 @@
 
   <para>
    The operators <literal>&amp;&amp;</>, <literal>@&gt;</> and
-   <literal>&lt;@</> are equivalent to <productname>PostgreSQL</>'s built-in
+   <literal>&lt;@</> are equivalent to <productname>&productname;</>'s built-in
    operators of the same names, except that they work only on integer arrays
    that do not contain nulls, while the built-in operators work for any array
    type.  This restriction makes them faster than the built-in operators
@@ -307,7 +307,7 @@ SELECT message.mid FROM message WHERE message.sections @@ '1&amp;2'::query_int;
   <para>
    The source directory <filename>contrib/intarray/bench</> contains a
    benchmark test suite, which can be run against an installed
-   <productname>PostgreSQL</> server.  (It also requires <filename>DBD::Pg</>
+   <productname>&productname;</> server.  (It also requires <filename>DBD::Pg</>
    to be installed.)  To run:
   </para>
 

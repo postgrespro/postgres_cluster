@@ -45,7 +45,7 @@
   SP-GiST Indexing Project
   <ulink url="http://www.cs.purdue.edu/spgist/">web site</ulink>.
   The <acronym>SP-GiST</acronym> implementation in
-  <productname>PostgreSQL</productname> is primarily maintained by Teodor
+  <productname>&productname;</productname> is primarily maintained by Teodor
   Sigaev and Oleg Bartunov, and there is more information on their
   <!-- URL will be changed -->
   <ulink url="http://www.sai.msu.su/~megera/wiki/spgist_dev">web site</ulink>.
@@ -57,7 +57,7 @@
  <title>Built-in Operator Classes</title>
 
  <para>
-  The core <productname>PostgreSQL</> distribution
+  The core <productname>&productname;</> distribution
   includes the <acronym>SP-GiST</acronym> operator classes shown in
   <xref linkend="spgist-builtin-opclasses-table">.
  </para>
@@ -83,6 +83,7 @@
        <literal>&gt;&gt;</>
        <literal>&gt;^</>
        <literal>~=</>
+       <literal>&lt;-&gt;</>
       </entry>
      </row>
      <row>
@@ -95,6 +96,7 @@
        <literal>&gt;&gt;</>
        <literal>&gt;^</>
        <literal>~=</>
+       <literal>&lt;-&gt;</>
       </entry>
      </row>
      <row>
@@ -154,6 +156,10 @@
   <literal>quad_point_ops</> is the default.  <literal>kd_point_ops</>
   supports the same operators but uses a different index data structure which
   may offer better performance in some applications.
+ </para>
+ <para>
+  By supporting the ordering &lt;-&gt; operator the quad_point_ops and kd_point_ops provide 
+  a user with the ability to perform a K-nearest-neighbour search over the indexed point dataset.
  </para>
 
 </sect1>
@@ -560,7 +566,9 @@ CREATE FUNCTION my_inner_consistent(internal, internal) RETURNS void ...
 typedef struct spgInnerConsistentIn
 {
     ScanKey     scankeys;       /* array of operators and comparison values */
+    ScanKey     orderbyKeys;    /* array of ordering operators and comparison values */
     int         nkeys;          /* length of array */
+    int         norderbys;      /* length of array */
 
     Datum       reconstructedValue;     /* value reconstructed at parent */
     void       *traversalValue; /* opclass-specific traverse value */
@@ -583,6 +591,7 @@ typedef struct spgInnerConsistentOut
     int        *levelAdds;      /* increment level by this much for each */
     Datum      *reconstructedValues;    /* associated reconstructed values */
     void      **traversalValues;        /* opclass-specific traverse values */
+    double    **distances;              /* associated distances */
 } spgInnerConsistentOut;
 </programlisting>
 
@@ -597,6 +606,8 @@ typedef struct spgInnerConsistentOut
        In particular it is not necessary to check <structfield>sk_flags</> to
        see if the comparison value is NULL, because the SP-GiST core code
        will filter out such conditions.
+       <structfield>orderbyKeys</>, of length <structfield>norderbys</>,
+       describes ordering operators (if any) in the same fashion.
        <structfield>reconstructedValue</> is the value reconstructed for the
        parent tuple; it is <literal>(Datum) 0</> at the root level or if the
        <function>inner_consistent</> function did not provide a value at the
@@ -637,6 +648,11 @@ typedef struct spgInnerConsistentOut
        <structfield>reconstructedValues</> to an array of the values
        reconstructed for each child node to be visited; otherwise, leave
        <structfield>reconstructedValues</> as NULL.
+       <structfield>distances</> if the ordered search is carried out,
+       the implementation is supposed to fill them in accordance to the
+       ordering operators provided in <structfield>orderbyKeys</>
+       (nodes with lowest distances will be processed first). Leave it
+       NULL otherwise.
        If it is desired to pass down additional out-of-band information
        (<quote>traverse values</>) to lower levels of the tree search,
        set <structfield>traversalValues</> to an array of the appropriate
@@ -645,7 +661,7 @@ typedef struct spgInnerConsistentOut
        Note that the <function>inner_consistent</> function is
        responsible for palloc'ing the
        <structfield>nodeNumbers</>, <structfield>levelAdds</>,
-       <structfield>reconstructedValues</>, and
+       <structfield>distances</>, <structfield>reconstructedValues</> and
        <structfield>traversalValues</> arrays in the current memory context.
        However, any output traverse values pointed to by
        the <structfield>traversalValues</> array should be allocated
@@ -675,7 +691,9 @@ CREATE FUNCTION my_leaf_consistent(internal, internal) RETURNS bool ...
 typedef struct spgLeafConsistentIn
 {
     ScanKey     scankeys;       /* array of operators and comparison values */
+    ScanKey     orderbykeys;    /* array of ordering operators and comparison values */
     int         nkeys;          /* length of array */
+    int         norderbys;      /* length of array */
 
     void       *traversalValue; /* opclass-specific traverse value */
     Datum       reconstructedValue;     /* value reconstructed at parent */
@@ -689,6 +707,7 @@ typedef struct spgLeafConsistentOut
 {
     Datum       leafValue;      /* reconstructed original data, if any */
     bool        recheck;        /* set true if operator must be rechecked */
+    double      *distances;     /* associated distances */
 } spgLeafConsistentOut;
 </programlisting>
 
@@ -703,6 +722,8 @@ typedef struct spgLeafConsistentOut
        In particular it is not necessary to check <structfield>sk_flags</> to
        see if the comparison value is NULL, because the SP-GiST core code
        will filter out such conditions.
+       The array <structfield>orderbykeys</>, of length <structfield>norderbys</>,
+       describes the ordering operators in the same fashion.
        <structfield>reconstructedValue</> is the value reconstructed for the
        parent tuple; it is <literal>(Datum) 0</> at the root level or if the
        <function>inner_consistent</> function did not provide a value at the
@@ -728,6 +749,9 @@ typedef struct spgLeafConsistentOut
        <structfield>recheck</> may be set to <literal>true</> if the match
        is uncertain and so the operator(s) must be re-applied to the actual
        heap tuple to verify the match.
+       In case when the ordered search is performed, <structfield>distances</>
+       should be set in accordance with the ordering operator provided, otherwise
+       implementation is supposed to set it to NULL.
       </para>
      </listitem>
     </varlistentry>
@@ -868,7 +892,7 @@ typedef struct spgLeafConsistentOut
  <title>Examples</title>
 
  <para>
-  The <productname>PostgreSQL</productname> source distribution includes
+  The <productname>&productname;</productname> source distribution includes
   several examples of index operator classes for <acronym>SP-GiST</acronym>,
   as described in <xref linkend="spgist-builtin-opclasses-table">.  Look
   into <filename>src/backend/access/spgist/</>

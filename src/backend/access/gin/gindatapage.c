@@ -591,7 +591,7 @@ dataBeginPlaceToPageLeaf(GinBtree btree, Buffer buf, GinBtreeStack *stack,
 		 * Great, all the items fit on a single page.  If needed, prepare data
 		 * for a WAL record describing the changes we'll make.
 		 */
-		if (RelationNeedsWAL(btree->index))
+		if (RelationNeedsWAL(btree->index) && !btree->isBuild)
 			computeLeafRecompressWALData(leaf);
 
 		/*
@@ -628,6 +628,7 @@ dataBeginPlaceToPageLeaf(GinBtree btree, Buffer buf, GinBtreeStack *stack,
 		 * subsequent insertions will probably also go to the end. This packs
 		 * the index somewhat tighter when appending to a table, which is very
 		 * common.
+		 *
 		 */
 		if (!btree->isBuild)
 		{
@@ -717,7 +718,7 @@ dataExecPlaceToPageLeaf(GinBtree btree, Buffer buf, GinBtreeStack *stack,
 	dataPlaceToPageLeafRecompress(buf, leaf);
 
 	/* If needed, register WAL data built by computeLeafRecompressWALData */
-	if (RelationNeedsWAL(btree->index))
+	if (RelationNeedsWAL(btree->index) && !btree->isBuild)
 	{
 		XLogRegisterBufData(0, leaf->walinfo, leaf->walinfolen);
 	}
@@ -1150,7 +1151,7 @@ dataExecPlaceToPageInternal(GinBtree btree, Buffer buf, GinBtreeStack *stack,
 	pitem = (PostingItem *) insertdata;
 	GinDataPageAddPostingItem(page, pitem, off);
 
-	if (RelationNeedsWAL(btree->index))
+	if (RelationNeedsWAL(btree->index) && !btree->isBuild)
 	{
 		/*
 		 * This must be static, because it has to survive until XLogInsert,
@@ -1767,6 +1768,7 @@ createPostingTree(Relation index, ItemPointerData *items, uint32 nitems,
 	Pointer		ptr;
 	int			nrootitems;
 	int			rootsize;
+	bool is_build = (buildStats != NULL);
 
 	/* Construct the new root page in memory first. */
 	tmppage = (Page) palloc(BLCKSZ);
@@ -1814,7 +1816,7 @@ createPostingTree(Relation index, ItemPointerData *items, uint32 nitems,
 	PageRestoreTempPage(tmppage, page);
 	MarkBufferDirty(buffer);
 
-	if (RelationNeedsWAL(index))
+	if (RelationNeedsWAL(index) && !is_build)
 	{
 		XLogRecPtr	recptr;
 		ginxlogCreatePostingTree data;

@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/pg_rewind.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="app-pgrewind">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>pg_rewind</refname>
-  <refpurpose>synchronize a <productname>PostgreSQL</productname> data directory with another data directory that was forked from it</refpurpose>
+  <refpurpose>synchronize a <productname>&productname;</productname> data directory with another data directory that was forked it</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -41,7 +41,7 @@ PostgreSQL documentation
   <title>Description</title>
 
   <para>
-   <application>pg_rewind</> is a tool for synchronizing a PostgreSQL cluster
+   <application>pg_rewind</> is a tool for synchronizing a &productname; cluster
    with another copy of the same cluster, after the clusters' timelines have
    diverged. A typical scenario is to bring an old master server back online
    after failover as a standby that follows the new master.
@@ -133,7 +133,7 @@ PostgreSQL documentation
       <listitem>
        <para>
         Specifies a libpq connection string to connect to the source
-        <productname>PostgreSQL</> server to synchronize the target with.
+        <productname>&productname;</> server to synchronize the target with.
         The connection must be a normal (non-replication) connection
         with superuser access. This option requires the source
         server to be running and not in recovery mode.
@@ -239,7 +239,7 @@ PostgreSQL documentation
       Apply the WAL from the source cluster, starting from the checkpoint
       created at failover. (Strictly speaking, <application>pg_rewind</>
       doesn't apply the WAL, it just creates a backup label file that
-      makes <productname>PostgreSQL</> start by replaying all WAL from
+      makes <productname>&productname;</> start by replaying all WAL from
       that checkpoint forward.)
      </para>
     </step>

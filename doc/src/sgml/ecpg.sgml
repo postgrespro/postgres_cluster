@@ -9,7 +9,7 @@
 
  <para>
   This chapter describes the embedded <acronym>SQL</acronym> package
-  for <productname>PostgreSQL</productname>. It was written by
+  for <productname>&productname;</productname>. It was written by
   Linus Tolke (<email>linus@epact.se</email>) and Michael Meskes
   (<email>meskes@postgresql.org</email>). Originally it was written to work with
   <acronym>C</acronym>. It also works with <acronym>C++</acronym>, but
@@ -34,7 +34,7 @@
    compiler.  (For details about the compiling and linking see <xref linkend="ecpg-process">).
    Converted ECPG applications call functions in the libpq library
    through the embedded SQL library (ecpglib), and communicate with
-   the PostgreSQL server using the normal frontend-backend protocol.
+   the &productname; server using the normal frontend-backend protocol.
   </para>
 
   <para>
@@ -46,10 +46,10 @@
    correctness.  Third, embedded <acronym>SQL</acronym> in C is
    specified in the <acronym>SQL</acronym> standard and supported by
    many other <acronym>SQL</acronym> database systems.  The
-   <productname>PostgreSQL</> implementation is designed to match this
+   <productname>&productname;</> implementation is designed to match this
    standard as much as possible, and it is usually possible to port
    embedded <acronym>SQL</acronym> programs written for other SQL
-   databases to <productname>PostgreSQL</productname> with relative
+   databases to <productname>&productname;</productname> with relative
    ease.
   </para>
 
@@ -461,7 +461,7 @@ EXEC SQL COMMIT;
    <note>
     <para>
      The ECPG <command>DECLARE</command> command does not actually
-     cause a statement to be sent to the PostgreSQL backend.  The
+     cause a statement to be sent to the &productname; backend.  The
      cursor is opened in the backend (using the
      backend's <command>DECLARE</command> command) at the point when
      the <command>OPEN</command> command is executed.
@@ -618,7 +618,7 @@ EXEC SQL DEALLOCATE PREPARE <replaceable>name</replaceable>;
   </para>
 
   <para>
-   Another way to exchange values between PostgreSQL backends and ECPG
+   Another way to exchange values between &productname; backends and ECPG
    applications is the use of SQL descriptors, described
    in <xref linkend="ecpg-descriptors">.
   </para>
@@ -770,10 +770,10 @@ do
    <title>Type Mapping</title>
 
    <para>
-    When ECPG applications exchange values between the PostgreSQL
+    When ECPG applications exchange values between the &productname;
     server and the C application, such as when retrieving query
     results from the server or executing SQL statements with input
-    parameters, the values need to be converted between PostgreSQL
+    parameters, the values need to be converted between &productname;
     data types and host language variable types (C language data
     types, concretely).  One of the main points of ECPG is that it
     takes care of this automatically in most cases.
@@ -781,28 +781,28 @@ do
 
    <para>
     In this respect, there are two kinds of data types: Some simple
-    PostgreSQL data types, such as <type>integer</type>
+    &productname; data types, such as <type>integer</type>
     and <type>text</type>, can be read and written by the application
-    directly.  Other PostgreSQL data types, such
+    directly.  Other &productname; data types, such
     as <type>timestamp</type> and <type>numeric</type> can only be
     accessed through special library functions; see
     <xref linkend="ecpg-special-types">.
    </para>
 
    <para>
-    <xref linkend="ecpg-datatype-hostvars-table"> shows which PostgreSQL
+    <xref linkend="ecpg-datatype-hostvars-table"> shows which &productname;
     data types correspond to which C data types.  When you wish to
-    send or receive a value of a given PostgreSQL data type, you
+    send or receive a value of a given &productname; data type, you
     should declare a C variable of the corresponding C data type in
     the declare section.
    </para>
 
    <table id="ecpg-datatype-hostvars-table">
-    <title>Mapping Between PostgreSQL Data Types and C Variable Types</title>
+    <title>Mapping Between &productname; Data Types and C Variable Types</title>
     <tgroup cols="2">
      <thead>
       <row>
-       <entry>PostgreSQL data type</entry>
+       <entry>&productname; data type</entry>
        <entry>Host variable type</entry>
       </row>
      </thead>
@@ -961,7 +961,7 @@ struct varchar_var { int len; char arr[180]; } var;
 
     <para>
      ECPG contains some special types that help you to interact easily
-     with some special data types from the PostgreSQL server. In
+     with some special data types from the &productname; server. In
      particular, it has implemented support for the
      <type>numeric</>, <type>decimal</type>, <type>date</>, <type>timestamp</>,
      and <type>interval</> types.  These data types cannot usefully be
@@ -1512,7 +1512,7 @@ while (1)
 <programlisting>
 CREATE TYPE comp_t AS (intval integer, textval varchar(32));
 CREATE TABLE t4 (compval comp_t);
-INSERT INTO t4 VALUES ( (256, 'PostgreSQL') );
+INSERT INTO t4 VALUES ( (256, '&productname;') );
 </programlisting>
 
      The most obvious solution is to access each attribute separately.
@@ -1883,10 +1883,10 @@ EXEC SQL DISCONNECT ALL;
   <title>pgtypes Library</title>
 
   <para>
-   The pgtypes library maps <productname>PostgreSQL</productname> database
+   The pgtypes library maps <productname>&productname;</productname> database
    types to C equivalents that can be used in C programs. It also offers
    functions to do basic calculations with those types within C, i.e., without
-   the help of the <productname>PostgreSQL</productname> server. See the
+   the help of the <productname>&productname;</productname> server. See the
    following example:
 <programlisting><![CDATA[
 EXEC SQL BEGIN DECLARE SECTION;
@@ -1911,7 +1911,7 @@ free(out);
    <para>
     The numeric type offers to do calculations with arbitrary precision. See
     <xref linkend="datatype-numeric"> for the equivalent type in the
-    <productname>PostgreSQL</> server. Because of the arbitrary precision this
+    <productname>&productname;</> server. Because of the arbitrary precision this
     variable needs to be able to expand and shrink dynamically. That's why you
     can only create numeric variables on the heap, by means of the
     <function>PGTYPESnumeric_new</> and <function>PGTYPESnumeric_free</>
@@ -2234,7 +2234,7 @@ int PGTYPESnumeric_from_decimal(decimal *src, numeric *dst);
    <para>
     The date type in C enables your programs to deal with data of the SQL type
     date. See <xref linkend="datatype-datetime"> for the equivalent type in the
-    <productname>PostgreSQL</> server.
+    <productname>&productname;</> server.
    </para>
    <para>
     The following functions can be used to work with the date type:
@@ -2711,7 +2711,7 @@ int PGTYPESdate_defmt_asc(date *d, char *fmt, char *str);
    <para>
     The timestamp type in C enables your programs to deal with data of the SQL
     type timestamp. See <xref linkend="datatype-datetime"> for the equivalent
-    type in the <productname>PostgreSQL</> server.
+    type in the <productname>&productname;</> server.
    </para>
    <para>
     The following functions can be used to work with the timestamp type:
@@ -2742,7 +2742,7 @@ timestamp PGTYPEStimestamp_from_asc(char *str, char **endptr);
         date specification, a whitespace character and an allowed time
         specification. Note that time zones are not supported by ECPG. It can
         parse them but does not apply any calculation as the
-        <productname>PostgreSQL</> server does for example. Timezone
+        <productname>&productname;</> server does for example. Timezone
         specifiers are silently discarded.
        </para>
        <para>
@@ -3240,7 +3240,7 @@ int PGTYPEStimestamp_sub_interval(timestamp *tin, interval *span, timestamp *tou
    <para>
     The interval type in C enables your programs to deal with data of the SQL
     type interval. See <xref linkend="datatype-datetime"> for the equivalent
-    type in the <productname>PostgreSQL</> server.
+    type in the <productname>&productname;</> server.
    </para>
    <para>
     The following functions can be used to work with the interval type:
@@ -3544,7 +3544,7 @@ void PGTYPESdecimal_free(decimal *var);
    the data of one row of data together with metadata items into one
    data structure.  The metadata is particularly useful when executing
    dynamic SQL statements, where the nature of the result columns might
-   not be known ahead of time. PostgreSQL provides two ways to use
+   not be known ahead of time. &productname; provides two ways to use
    Descriptor Areas: the named SQL Descriptor Areas and the C-structure
    SQLDAs.
   </para>
@@ -3790,7 +3790,7 @@ EXEC SQL SET DESCRIPTOR <replaceable>name</replaceable> VALUE <replaceable>num</
    </para>
 
    <para>
-    PostgreSQL supports retrieving more that one record in one <command>FETCH</command>
+    &productname; supports retrieving more that one record in one <command>FETCH</command>
     statement and storing the data in host variables in this case assumes that the
     variable is an array. E.g.:
 <programlisting>
@@ -3855,9 +3855,9 @@ EXEC SQL DESCRIBE prepared_statement INTO mysqlda;
 
     <tip>
      <para>
-      PostgreSQL's SQLDA has a similar data structure to the one in
+      &productname;'s SQLDA has a similar data structure to the one in
       IBM DB2 Universal Database, so some technical information on
-      DB2's SQLDA could help understanding PostgreSQL's one better.
+      DB2's SQLDA could help understanding &productname;'s one better.
      </para>
     </tip>
 
@@ -4970,7 +4970,7 @@ sqlstate: 42P01
     condition.  A successful state is indicated by the code
     <literal>00000</literal>.  The <literal>SQLSTATE</literal> codes are for
     the most part defined in the SQL standard.  The
-    <productname>PostgreSQL</productname> server natively supports
+    <productname>&productname;</productname> server natively supports
     <literal>SQLSTATE</literal> error codes; therefore a high degree
     of consistency can be achieved by using this error code scheme
     throughout all applications.  For further information see
@@ -4986,7 +4986,7 @@ sqlstate: 42P01
     affected zero rows, and no specific negative values.  Therefore,
     this scheme can only achieve poor portability and does not have a
     hierarchical code assignment.  Historically, the embedded SQL
-    processor for <productname>PostgreSQL</productname> has assigned
+    processor for <productname>&productname;</productname> has assigned
     some specific <literal>SQLCODE</literal> values for its use, which
     are listed below with their numeric value and their symbolic name.
     Remember that these are not portable to other SQL implementations.
@@ -5195,7 +5195,7 @@ while (1)
      <term>-212 (<symbol>ECPG_EMPTY</symbol>)</term>
      <listitem>
       <para>
-       The statement sent to the <productname>PostgreSQL</productname>
+       The statement sent to the <productname>&productname;</productname>
        server was empty.  (This cannot normally happen in an embedded
        SQL program, so it might point to an internal error.)  (SQLSTATE
        YE002)
@@ -5352,9 +5352,9 @@ while (1)
      <term>-400 (<symbol>ECPG_PGSQL</symbol>)</term>
      <listitem>
       <para>
-       Some error caused by the <productname>PostgreSQL</productname>
+       Some error caused by the <productname>&productname;</productname>
        server.  The message contains the error message from the
-       <productname>PostgreSQL</productname> server.
+       <productname>&productname;</productname> server.
       </para>
      </listitem>
     </varlistentry>
@@ -5363,7 +5363,7 @@ while (1)
      <term>-401 (<symbol>ECPG_TRANS</symbol>)</term>
      <listitem>
       <para>
-       The <productname>PostgreSQL</productname> server signaled that
+       The <productname>&productname;</productname> server signaled that
        we cannot start, commit, or rollback the transaction.
        (SQLSTATE 08007)
       </para>
@@ -5494,7 +5494,7 @@ EXEC SQL INCLUDE "<replaceable>filename</replaceable>";
     <itemizedlist>
      <listitem><simpara>current directory</simpara></listitem>
      <listitem><simpara><filename>/usr/local/include</filename></simpara></listitem>
-     <listitem><simpara>PostgreSQL include directory, defined at build time (e.g., <filename>/usr/local/pgsql/include</filename>)</simpara></listitem>
+     <listitem><simpara>&productname; include directory, defined at build time (e.g., <filename>/usr/local/pgsql/include</filename>)</simpara></listitem>
      <listitem><simpara><filename>/usr/include</filename></simpara></listitem>
     </itemizedlist>
 
@@ -5668,7 +5668,7 @@ EXEC SQL endif;
 
   <para>
    The preprocessor program is called <filename>ecpg</filename> and is
-   included in a normal <productname>PostgreSQL</> installation.
+   included in a normal <productname>&productname;</> installation.
    Embedded SQL programs are typically named with an extension
    <filename>.pgc</filename>.  If you have a program file called
    <filename>prog1.pgc</filename>, you can preprocess it by simply
@@ -5688,8 +5688,8 @@ ecpg prog1.pgc
 cc -c prog1.c
 </programlisting>
    The generated C source files include header files from the
-   <productname>PostgreSQL</> installation, so if you installed
-   <productname>PostgreSQL</> in a location that is not searched by
+   <productname>&productname;</> installation, so if you installed
+   <productname>&productname;</> in a location that is not searched by
    default, you have to add an option such as
    <literal>-I/usr/local/pgsql/include</literal> to the compilation
    command line.
@@ -5758,7 +5758,7 @@ ECPG = ecpg
      is done on <replaceable>stream</replaceable>.  The log contains
      all <acronym>SQL</acronym> statements with all the input
      variables inserted, and the results from the
-     <productname>PostgreSQL</productname> server. This can be very
+     <productname>&productname;</productname> server. This can be very
      useful when searching for errors in your <acronym>SQL</acronym>
      statements.
     </para>
@@ -6052,7 +6052,7 @@ void TestCpp::test()
     directly.  This section describes a way to separate some embedded
     SQL commands from C++ application code with a simple example.  In
     this example, the application is implemented in C++, while C and
-    ECPG is used to connect to the PostgreSQL server.
+    ECPG is used to connect to the &productname; server.
    </para>
 
    <para>
@@ -6235,7 +6235,7 @@ ALLOCATE DESCRIPTOR <replaceable class="PARAMETER">name</replaceable>
     <para>
      <command>ALLOCATE DESCRIPTOR</command> allocates a new named SQL
      descriptor area, which can be used to exchange data between the
-     PostgreSQL server and the host program.
+     &productname; server and the host program.
     </para>
 
     <para>
@@ -6308,7 +6308,7 @@ DATABASE <replaceable>connection_target</replaceable>
 
     <para>
      The <command>CONNECT</command> command establishes a connection
-     between the client and the PostgreSQL server.
+     between the client and the &productname; server.
     </para>
    </refsect1>
 
@@ -7333,7 +7333,7 @@ SET AUTOCOMMIT { = | TO } { ON | OFF }
     <title>Compatibility</title>
 
     <para>
-     <command>SET AUTOCOMMIT</command> is an extension of PostgreSQL ECPG.
+     <command>SET AUTOCOMMIT</command> is an extension of &productname; ECPG.
     </para>
    </refsect1>
   </refentry>
@@ -7661,7 +7661,7 @@ t_ind.i_ind = 0
     <title>Compatibility</title>
 
     <para>
-     The <command>TYPE</command> command is a PostgreSQL extension.
+     The <command>TYPE</command> command is a &productname; extension.
     </para>
    </refsect1>
   </refentry>
@@ -7727,7 +7727,7 @@ EXEC SQL VAR a IS int;
     <title>Compatibility</title>
 
     <para>
-     The <command>VAR</command> command is a PostgreSQL extension.
+     The <command>VAR</command> command is a &productname; extension.
     </para>
    </refsect1>
   </refentry>
@@ -7817,7 +7817,7 @@ main(void)
 
     <para>
      <command>WHENEVER</command> is specified in the SQL standard, but
-     most of the actions are PostgreSQL extensions.
+     most of the actions are &productname; extensions.
     </para>
    </refsect1>
   </refentry>
@@ -7872,7 +7872,7 @@ $COMMIT;
    you functions that have the same name and the same basic behavior but it is
    no drop-in replacement if you are using <productname>Informix</productname> at the moment. Moreover,
    some of the data types are different. For example,
-   <productname>PostgreSQL's</productname> datetime and interval types do not
+   <productname>&productname;'s</productname> datetime and interval types do not
    know about ranges like for example <literal>YEAR TO MINUTE</> so you won't
    find support in ECPG for that either.
   </para>
@@ -7919,7 +7919,7 @@ EXEC SQL CLOSE DATABASE;
         there is no <literal>FREE cursor_name</> statement in ECPG. This is because in ECPG,
         <literal>DECLARE CURSOR</literal> doesn't translate to a function call into
         the run-time library that uses to the cursor name. This means that there's no run-time
-        bookkeeping of SQL cursors in the ECPG run-time library, only in the PostgreSQL server.
+        bookkeeping of SQL cursors in the ECPG run-time library, only in the &productname; server.
        </para>
       </listitem>
      </varlistentry>

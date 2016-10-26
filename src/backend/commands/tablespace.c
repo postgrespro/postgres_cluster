@@ -48,6 +48,7 @@
 
 #include <unistd.h>
 #include <dirent.h>
+#include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -65,6 +66,7 @@
 #include "catalog/objectaccess.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_tablespace.h"
+#include "commands/defrem.h"
 #include "commands/comment.h"
 #include "commands/seclabel.h"
 #include "commands/tablecmds.h"
@@ -72,6 +74,7 @@
 #include "miscadmin.h"
 #include "postmaster/bgwriter.h"
 #include "storage/fd.h"
+#include "storage/cfs.h"
 #include "storage/lmgr.h"
 #include "storage/standby.h"
 #include "utils/acl.h"
@@ -79,6 +82,7 @@
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
+#include "utils/spccache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/tqual.h"
@@ -90,7 +94,7 @@ char	   *temp_tablespaces = NULL;
 
 
 static void create_tablespace_directories(const char *location,
-							  const Oid tablespaceoid);
+										  const Oid tablespaceoid, bool compressed);
 static bool destroy_tablespace_directories(Oid tablespaceoid, bool redo);
 
 
@@ -222,6 +226,23 @@ TablespaceCreateDbspace(Oid spcNode, Oid dbNode, bool isRedo)
 	pfree(dir);
 }
 
+static bool
+getBoolOption(List* options, char const* name, bool defaultValue)
+{
+	ListCell   *cell;
+	foreach(cell, options)
+	{
+		DefElem    *def = (DefElem *) lfirst(cell);
+		if (strcmp(def->defname, name) == 0) 
+		{
+			return defGetBoolean(def);
+		}
+	}
+	return defaultValue;
+}
+
+
+
 /*
  * Create a table space
  *
@@ -241,6 +262,7 @@ CreateTableSpace(CreateTableSpaceStmt *stmt)
 	char	   *location;
 	Oid			ownerId;
 	Datum		newOptions;
+	bool        compressed;
 
 	/* Must be super user */
 	if (!superuser())
@@ -255,6 +277,9 @@ CreateTableSpace(CreateTableSpaceStmt *stmt)
 		ownerId = get_rolespec_oid(stmt->owner, false);
 	else
 		ownerId = GetUserId();
+
+	/* If tablespace should be compressed */
+	compressed = getBoolOption(stmt->options, "compression", false);
 
 	/* Unix-ify the offered path, and strip any trailing slashes */
 	location = pstrdup(stmt->location);
@@ -355,14 +380,14 @@ CreateTableSpace(CreateTableSpaceStmt *stmt)
 	/* Post creation hook for new tablespace */
 	InvokeObjectPostCreateHook(TableSpaceRelationId, tablespaceoid, 0);
 
-	create_tablespace_directories(location, tablespaceoid);
+	create_tablespace_directories(location, tablespaceoid, getBoolOption(stmt->options, "compression", false));
 
 	/* Record the filesystem change in XLOG */
 	{
 		xl_tblspc_create_rec xlrec;
 
 		xlrec.ts_id = tablespaceoid;
-
+		xlrec.ts_compressed = compressed;
 		XLogBeginInsert();
 		XLogRegisterData((char *) &xlrec,
 						 offsetof(xl_tblspc_create_rec, ts_path));
@@ -562,7 +587,7 @@ DropTableSpace(DropTableSpaceStmt *stmt)
  *	to the specified directory
  */
 static void
-create_tablespace_directories(const char *location, const Oid tablespaceoid)
+create_tablespace_directories(const char *location, const Oid tablespaceoid, bool compressed)
 {
 	char	   *linkloc;
 	char	   *location_with_version_dir;
@@ -626,6 +651,16 @@ create_tablespace_directories(const char *location, const Oid tablespaceoid)
 							location_with_version_dir)));
 	}
 
+	if (compressed)
+	{
+		char* compressionFilePath = psprintf("%s/pg_compression", location_with_version_dir);
+		FILE* comp = fopen(compressionFilePath, "w");
+		elog(LOG, "Create compressed tablespace at %s", location);
+		fputs(cfs_algorithm(), comp);
+		fclose(comp);
+		pfree(compressionFilePath);
+	}
+
 	/*
 	 * In recovery, remove old symlink, in case it points to the wrong place.
 	 */
@@ -664,6 +699,7 @@ destroy_tablespace_directories(Oid tablespaceoid, bool redo)
 {
 	char	   *linkloc;
 	char	   *linkloc_with_version_dir;
+	char       *compression_file;
 	DIR		   *dirdesc;
 	struct dirent *de;
 	char	   *subfile;
@@ -671,6 +707,9 @@ destroy_tablespace_directories(Oid tablespaceoid, bool redo)
 
 	linkloc_with_version_dir = psprintf("pg_tblspc/%u/%s", tablespaceoid,
 										TABLESPACE_VERSION_DIRECTORY);
+
+	compression_file = psprintf("%s/pg_compression", linkloc_with_version_dir);
+	unlink(compression_file);
 
 	/*
 	 * Check if the tablespace still contains any files.  We try to rmdir each
@@ -840,7 +879,8 @@ directory_is_empty(const char *path)
 	while ((de = ReadDir(dirdesc, path)) != NULL)
 	{
 		if (strcmp(de->d_name, ".") == 0 ||
-			strcmp(de->d_name, "..") == 0)
+			strcmp(de->d_name, "..") == 0 ||
+			strcmp(de->d_name, "pg_compression") == 0)
 			continue;
 		FreeDir(dirdesc);
 		return false;
@@ -1000,6 +1040,7 @@ AlterTableSpaceOptions(AlterTableSpaceOptionsStmt *stmt)
 	bool		repl_null[Natts_pg_tablespace];
 	bool		repl_repl[Natts_pg_tablespace];
 	HeapTuple	newtuple;
+	bool        compressed;
 
 	/* Search pg_tablespace */
 	rel = heap_open(TableSpaceRelationId, RowExclusiveLock);
@@ -1017,6 +1058,27 @@ AlterTableSpaceOptions(AlterTableSpaceOptionsStmt *stmt)
 						stmt->tablespacename)));
 
 	tablespaceoid = HeapTupleGetOid(tup);
+
+	/* If tablespace should be compressed */
+	compressed = getBoolOption(stmt->options, "compression", false);
+	
+	if (compressed ^ is_tablespace_compressed(tablespaceoid)) {
+		char* tbsdir = psprintf("pg_tblspc/%u/%s", tablespaceoid, TABLESPACE_VERSION_DIRECTORY);
+		if (!directory_is_empty(tbsdir)) {
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("It is not possible to toggle compression option for tablespace")));
+		} else { 
+			char* compressionFilePath = psprintf("%s/pg_compression", tbsdir);
+			if (compressed) { 
+				FILE* comp = fopen(compressionFilePath, "w");
+				fputs(cfs_algorithm(), comp);
+				fclose(comp);
+			} else {
+				unlink(compressionFilePath);
+			}
+		}
+	}
 
 	/* Must be owner of the existing object */
 	if (!pg_tablespace_ownercheck(HeapTupleGetOid(tup), GetUserId()))
@@ -1478,7 +1540,7 @@ tblspc_redo(XLogReaderState *record)
 		xl_tblspc_create_rec *xlrec = (xl_tblspc_create_rec *) XLogRecGetData(record);
 		char	   *location = xlrec->ts_path;
 
-		create_tablespace_directories(location, xlrec->ts_id);
+		create_tablespace_directories(location, xlrec->ts_id, xlrec->ts_compressed);
 	}
 	else if (info == XLOG_TBLSPC_DROP)
 	{

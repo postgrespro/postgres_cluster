@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/show.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-SHOW">
@@ -184,7 +184,7 @@ SHOW ALL;
 
   <para>
    The <command>SHOW</command> command is a
-   <productname>PostgreSQL</productname> extension.
+   <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

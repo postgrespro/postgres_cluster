@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_server.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERSERVER">
@@ -128,7 +128,7 @@ ALTER SERVER foo VERSION '8.4' OPTIONS (SET host 'baz');
   <para>
    <command>ALTER SERVER</command> conforms to ISO/IEC 9075-9 (SQL/MED).
    The <literal>OWNER TO</literal> and <literal>RENAME</literal> forms are
-   PostgreSQL extensions.
+   &productname; extensions.
   </para>
  </refsect1>
 

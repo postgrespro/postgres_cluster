@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/set_role.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-SET-ROLE">
@@ -126,14 +126,14 @@ SELECT SESSION_USER, CURRENT_USER;
   <title>Compatibility</title>
 
   <para>
-   <productname>PostgreSQL</productname>
+   <productname>&productname;</productname>
    allows identifier syntax (<literal>"<replaceable>rolename</>"</literal>), while
    the SQL standard requires the role name to be written as a string
    literal.  SQL does not allow this command during a transaction;
-   <productname>PostgreSQL</productname> does not make this
+   <productname>&productname;</productname> does not make this
    restriction because there is no reason to.
    The <literal>SESSION</> and <literal>LOCAL</> modifiers are a
-   <productname>PostgreSQL</productname> extension, as is the
+   <productname>&productname;</productname> extension, as is the
    <literal>RESET</> syntax.
   </para>
  </refsect1>

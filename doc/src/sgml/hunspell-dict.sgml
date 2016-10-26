@@ -1,0 +1,157 @@
+<!-- doc/src/sgml/hunspell-dict.sgml -->
+
+<sect1 id="hunspell-dict" xreflabel="Hunspell Dictionaries Modules">
+ <title><application>Hunspell</> Dictionaries Modules</title>
+
+ <indexterm zone="hunspell-dict">
+  <primary>Hunspell Dictionaries</primary>
+ </indexterm>
+
+ <para>
+  These modules provide <application>Hunspell</> dictionaries for various languages.
+  Upon installation of the module into database using
+  <command>CREATE EXTENSION</> command, text search dictionary and configuration
+  objects in the public schema appear.
+ </para>
+
+ <table id="hunspell-dict-table">
+  <title>Modules</title>
+  <tgroup cols="4">
+   <thead>
+     <row>
+      <entry>Language</entry>
+      <entry>Extension name</entry>
+      <entry>Dictionary name</entry>
+      <entry>Configuration name</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry>American English</entry>
+      <entry><filename>hunspell_en_us</filename></entry>
+      <entry><literal>english_hunspell</literal></entry>
+      <entry><literal>english_hunspell</literal></entry>
+     </row>
+     <row>
+      <entry>Dutch</entry>
+      <entry><filename>hunspell_nl_nl</filename></entry>
+      <entry><literal>dutch_hunspell</literal></entry>
+      <entry><literal>dutch_hunspell</literal></entry>
+     </row>
+     <row>
+      <entry>French</entry>
+      <entry><filename>hunspell_fr</filename></entry>
+      <entry><literal>french_hunspell</literal></entry>
+      <entry><literal>french_hunspell</literal></entry>
+     </row>
+     <row>
+      <entry>Russian</entry>
+      <entry><filename>hunspell_ru_ru</filename></entry>
+      <entry><literal>russian_hunspell</literal></entry>
+      <entry><literal>russian_hunspell</literal></entry>
+     </row>
+    </tbody>
+  </tgroup>
+ </table>
+
+ <sect2>
+  <title>Examples</title>
+
+  <para>
+   Text search objects will be created after installation of a dictionary module.
+   We can test created configuration:
+
+<programlisting>
+SELECT * FROM ts_debug('english_hunspell', 'abilities');
+   alias   |   description   |   token   |          dictionaries           |    dictionary    |  lexemes  
+-----------+-----------------+-----------+---------------------------------+------------------+-----------
+ asciiword | Word, all ASCII | abilities | {english_hunspell,english_stem} | english_hunspell | {ability}
+(1 row)
+</programlisting>
+
+  </para>
+
+  <para>
+   Or you can create your own text search configuration. For example, with
+   the created dictionaries and with the <literal>Snowball</> dictionary you can
+   create mixed russian-english configuration:
+
+<programlisting>
+CREATE TEXT SEARCH CONFIGURATION russian_en (
+  COPY = simple
+);
+
+ALTER TEXT SEARCH CONFIGURATION russian_en
+  ALTER MAPPING FOR asciiword, asciihword, hword_asciipart
+  WITH english_hunspell, english_stem;
+
+ALTER TEXT SEARCH CONFIGURATION russian_en
+  ALTER MAPPING FOR word, hword, hword_part
+  WITH russian_hunspell, russian_stem;
+</programlisting>
+
+  </para>
+
+  <para>
+   You can create mixed dictionaries only for languages with different alphabets.
+   If languages have similar alphabets then <productname>Postgres Pro</> can not
+   decide which dictionary should be used.
+  </para>
+
+  <para>
+   A text search configuration which is created with a dictionary module is ready
+   to use. For example, in this text you can search some words:
+
+<programlisting>
+SELECT to_tsvector('english_hunspell', 'The blue whale is the largest animal');
+               to_tsvector               
+-----------------------------------------
+ 'animal':7 'blue':2 'large':6 'whale':3
+(1 row)
+</programlisting>
+
+  </para>
+
+  <para>
+   Search query might looks like this:
+
+<programlisting>
+SELECT to_tsvector('english_hunspell', 'The blue whale is the largest animal')
+  @@ to_tsquery('english_hunspell', 'large &amp; whale');
+ ?column? 
+----------
+ t
+(1 row)
+</programlisting>
+
+  </para>
+
+  <para>
+   With this configurations you can search a text using GIN or GIST indexes.
+   For example, there is a table with GIN index:
+
+<programlisting>
+CREATE TABLE table1 (t varchar);
+INSERT INTO table1 VALUES ('The blue whale is the largest animal');
+CREATE INDEX t_idx ON table1 USING GIN (to_tsvector('english_hunspell', "t"));
+</programlisting>
+
+  </para>
+
+  <para>
+   For this table you can execute the following query:
+
+<programlisting>
+SELECT * FROM table1 where to_tsvector('english_hunspell', t)
+  @@ to_tsquery('english_hunspell', 'blue &amp; animal');
+                  t                   
+--------------------------------------
+ The blue whale is the largest animal
+(1 row)
+</programlisting>
+
+  </para>
+ </sect2>
+
+</sect1>

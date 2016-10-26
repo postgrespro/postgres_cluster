@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/reindex.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-REINDEX">
@@ -48,7 +48,7 @@ REINDEX [ ( VERBOSE ) ] { INDEX | TABLE | SCHEMA | DATABASE | SYSTEM } <replacea
      <para>
       An index has become <quote>bloated</>, that is it contains many
       empty or nearly-empty pages.  This can occur with B-tree indexes in
-      <productname>PostgreSQL</productname> under certain uncommon access
+      <productname>&productname;</productname> under certain uncommon access
       patterns. <command>REINDEX</command> provides a way to reduce
       the space consumption of the index by writing a new version of
       the index without the dead pages. See <xref
@@ -184,7 +184,7 @@ REINDEX [ ( VERBOSE ) ] { INDEX | TABLE | SCHEMA | DATABASE | SYSTEM } <replacea
 
   <para>
    One way to do this is to shut down the server and start a single-user
-   <productname>PostgreSQL</productname> server
+   <productname>&productname;</productname> server
    with the <option>-P</option> option included on its command line.
    Then, <command>REINDEX DATABASE</>, <command>REINDEX SYSTEM</>,
    <command>REINDEX TABLE</>, or <command>REINDEX INDEX</> can be

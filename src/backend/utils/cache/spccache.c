@@ -210,3 +210,14 @@ get_tablespace_io_concurrency(Oid spcid)
 	else
 		return spc->opts->effective_io_concurrency;
 }
+
+bool
+is_tablespace_compressed(Oid spcid)
+{
+	TableSpaceCacheEntry *spc = get_tablespace(spcid);
+
+	if (!spc->opts)
+		return false;
+	else
+		return spc->opts->compression;
+}

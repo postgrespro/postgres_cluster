@@ -96,21 +96,6 @@ static const gbtree_ninfo tinfo =
 	gbt_float8_dist
 };
 
-
-PG_FUNCTION_INFO_V1(float8_dist);
-Datum
-float8_dist(PG_FUNCTION_ARGS)
-{
-	float8		a = PG_GETARG_FLOAT8(0);
-	float8		b = PG_GETARG_FLOAT8(1);
-	float8		r;
-
-	r = a - b;
-	CHECKFLOATVAL(r, isinf(a) || isinf(b), true);
-
-	PG_RETURN_FLOAT8(Abs(r));
-}
-
 /**************************************************
  * float8 ops
  **************************************************/

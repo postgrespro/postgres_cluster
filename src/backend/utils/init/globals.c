@@ -24,13 +24,13 @@
 #include "storage/backendid.h"
 
 
-ProtocolVersion FrontendProtocol;
+ProtocolVersion FrontendProtocol = (ProtocolVersion)0;
 
 volatile bool InterruptPending = false;
 volatile bool QueryCancelPending = false;
 volatile bool ProcDiePending = false;
 volatile bool ClientConnectionLost = false;
-volatile bool IdleInTransactionSessionTimeoutPending = false;
+volatile bool IdleSessionTimeoutPending = false;
 volatile uint32 InterruptHoldoffCount = 0;
 volatile uint32 QueryCancelHoldoffCount = 0;
 volatile uint32 CritSectionCount = 0;

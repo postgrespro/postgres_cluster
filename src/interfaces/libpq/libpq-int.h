@@ -77,7 +77,7 @@ typedef struct
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-#if (SSLEAY_VERSION_NUMBER >= 0x00907000L) && !defined(OPENSSL_NO_ENGINE)
+#if (OPENSSL_VERSION_NUMBER >= 0x00907000L) && !defined(OPENSSL_NO_ENGINE)
 #define USE_SSL_ENGINE
 #endif
 #endif   /* USE_OPENSSL */
@@ -422,7 +422,12 @@ struct pg_conn
 	PGresult   *result;			/* result being constructed */
 	PGresult   *next_result;	/* next result (used in single-row mode) */
 
+	/* Buffer to hold incoming authentication request data */
+	char	   *auth_req_inbuf;
+	int			auth_req_inlen;
+
 	/* Assorted state for SSL, GSS, etc */
+	void	   *sasl_state;
 
 #ifdef USE_SSL
 	bool		allow_ssl_try;	/* Allowed to try SSL negotiation */

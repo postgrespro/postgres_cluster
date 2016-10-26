@@ -31,7 +31,7 @@ LIBS := $(LIBS:-lpgport=)
 
 # We can't use Makefile variables here because the MSVC build system scrapes
 # OBJS from this file.
-OBJS=	fe-auth.o fe-connect.o fe-exec.o fe-misc.o fe-print.o fe-lobj.o \
+OBJS=	fe-auth.o fe-auth-scram.o fe-connect.o fe-exec.o fe-misc.o fe-print.o fe-lobj.o \
 	fe-protocol2.o fe-protocol3.o pqexpbuffer.o fe-secure.o \
 	libpq-events.o
 # libpgport C files we always use
@@ -40,12 +40,14 @@ OBJS += chklocale.o inet_net_ntop.o noblock.o pgstrcasecmp.o pqsignal.o \
 # libpgport C files that are needed if identified by configure
 OBJS += $(filter crypt.o getaddrinfo.o getpeereid.o inet_aton.o open.o system.o snprintf.o strerror.o strlcpy.o win32error.o win32setlocale.o, $(LIBOBJS))
 # backend/libpq
-OBJS += ip.o md5.o
+OBJS += ip.o md5.o encode_utils.o scram-common.o
 # utils/mb
 OBJS += encnames.o wchar.o
 
 ifeq ($(with_openssl),yes)
-OBJS += fe-secure-openssl.o
+OBJS += fe-secure-openssl.o sha_openssl.o
+else
+OBJS += sha.o
 endif
 
 ifeq ($(PORTNAME), cygwin)
@@ -100,6 +102,9 @@ ip.c md5.c: % : $(backend_src)/libpq/%
 	rm -f $@ && $(LN_S) $< .
 
 encnames.c wchar.c: % : $(backend_src)/utils/mb/%
+	rm -f $@ && $(LN_S) $< .
+
+encode_utils.c scram-common.c sha.c sha_openssl.c: % : $(top_srcdir)/src/common/%
 	rm -f $@ && $(LN_S) $< .
 
 
