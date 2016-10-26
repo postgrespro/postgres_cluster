@@ -756,6 +756,7 @@ build_os
 build_vendor
 build_cpu
 build
+PGPRO_EDITION
 PGPRO_PACKAGE_NAME
 PG_MAJORVERSION
 configure_args
@@ -2752,6 +2753,8 @@ fi
 
 PGPRO_VERSION="$PACKAGE_VERSION.1"
 PGPRO_PACKAGE_NAME="PostgresPro"
+PGPRO_EDITION="standard"
+
 
 
 cat >>confdefs.h <<_ACEOF
@@ -2761,6 +2764,11 @@ _ACEOF
 
 cat >>confdefs.h <<_ACEOF
 #define PGPRO_PACKAGE_NAME "$PGPRO_PACKAGE_NAME"
+_ACEOF
+
+
+cat >>confdefs.h <<_ACEOF
+#define PGPRO_EDITION "$PGPRO_EDITION"
 _ACEOF
 
 
