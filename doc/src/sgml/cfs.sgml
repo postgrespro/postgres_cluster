@@ -107,8 +107,8 @@
     <listitem>
      <para>
        We should implement our own allocator of file space. Usually, to reduce fragmentation, fixed size block allocator is used.
-       it means that we allocates pace using some fixed quantum. For example if compressed page size is 932 bytes, then we will 
-       allocate 1024 block for it in the file.
+       It means that we allocates place using some fixed quantum. For example if compressed page size is 932 bytes, then we will 
+       allocate 1024 bytes for it in the file.
      </para>
     </listitem>
    </varlistentry>
@@ -128,18 +128,18 @@
   </variablelist>
 
   <para>
-    As far as page location is not fixed and page an be moved, we can not any more access page directly by its address and need 
-    to use extra level of indirection to map logical address of the page to it physical location in the disk.
-    It is done using memory-mapped files. In most cases this mapped will be kept in memory (size of the map is 1000 times smaller size
+    As far as page location is not fixed and page can be moved, we can not anymore access the page directly by its address and need 
+    to use extra level of indirection to map logical address of the page to it's physical location on the disk.
+    It is done using mapping files. In most cases the mapping will be kept in memory (size of the map is 1000 times smaller size
     of the file) and address translation adds almost no overhead to page access time.
-    But we need to maintain this extra files: flush them during checkpoint, remove when table is dropped, include them in backup and 
+    But we need to maintain these extra files: flush them during checkpoint, remove when table is dropped, include them in backup and 
     so on... 
   </para>
 
   <para>
     PostgreSQL stores relation in a set of files, size of each file is not exceeding 2Gb. Separate page map is constructed for each file.
     Garbage collection in CFS is done by several background workers. Number of this workers and pauses in their work can be 
-    configured by database administrator. This workers are splitting work based on inode hash, so them do not conflict with each other.
+    configured by database administrator. These workers are splitting work based on inode hash, so them do not conflict with each other.
     Each file is proceeded separately. The files is blocked for access at the time of garbage collection but complete relation is not 
     blocked. To ensure data consistency GC creates copies of original data and map files. Once them are flushed to the disk,
     new version of data file is atomically renamed to original file name. And then new page map data is copied to memory-mapped file
@@ -152,7 +152,7 @@
   <para>
     CFS can be build with several compression libraries: PostgreSQL lz, zlib, lz4, snappy, lzfse...
     But this is build time choice: it is not possible now to dynamically choose compression algorithm.
-    CFS stores in tablespace information about used compression algorithm and produce error if PostgreSQL is build with different
+    CFS stores information about the compression algorithm used in a tablespace and produces error if PostgreSQL is built with different
     library.
   </para>
     
@@ -168,13 +168,13 @@
     
   <para>
     Compression can be enabled for particular tablespaces. System relations are not compressed in any case.
-    It is not currently possible to alter tablespace compression option, i.e. it is not possible to compress existed tablespace
-    or visa versa - decompress compressed tablespace.
+    It is not currently possible to alter tablespace compression option, i.e. it is not possible to compress existing tablespace
+    or vice versa - decompress compressed tablespace.
   </para>
 
   <para>
-    So to use compression/encryption you need to create table space with <varname>compression=true</varname> option.
-    You can make this table space default tablespace - in this case all tables will be implicitly created in this database:
+    So to use compression/encryption you need to create a tablespace with <varname>compression=true</varname> option.
+    You can make this tablespace your default tablespace - in this case all tables will be implicitly created in this database:
   </para>
 
   <programlisting>
@@ -282,7 +282,7 @@
       The file is locked at the period of defragmentation, preventing any access to this part of relation.
       When defragmentation is completed, garbage collection waits <varname>cfs_gc_delay</varname> milliseconds and continue directory traversal.
       After the end of traversal, GC waits <varname>cfs_gc_period</varname> milliseconds and starts new GC iteration.
-      If there are more than one GC workers, then them split work based on hash of file inode.
+      If there are more than one GC workers, then they split work based on hash of file inode.
     </para>
 
     <para>
