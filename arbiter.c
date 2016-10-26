@@ -314,7 +314,7 @@ static void MtmSetSocketOptions(int sd)
 static void MtmCheckResponse(MtmArbiterMessage* resp)
 {
 	if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) && !BIT_CHECK(Mtm->disabledNodeMask, resp->node-1)) { 
-		elog(WARNING, "Node %d thinks that I was dead, while I am %s", resp->node, MtmNodeStatusMnem[Mtm->status]);
+		elog(WARNING, "Node %d thinks that I was dead, while I am %s (message %s)", resp->node, MtmNodeStatusMnem[Mtm->status], messageKindText[resp->code]);
 		if (Mtm->status != MTM_RECOVERY) { 
 			BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
 			MtmSwitchClusterMode(MTM_RECOVERY);
@@ -918,7 +918,7 @@ static void MtmReceiver(Datum arg)
 								if (msg->status == TRANSACTION_STATUS_IN_PROGRESS || msg->status == TRANSACTION_STATUS_ABORTED) {
 									elog(LOG, "Abort transaction %s because it is in state %d at node %d",
 										 msg->gid, ts->status, node);
-									MtmFinishPreparedTransaction(node, ts, false);
+									MtmFinishPreparedTransaction(ts, false);
 								} 
 								else if (msg->status == TRANSACTION_STATUS_COMMITTED ||  msg->status == TRANSACTION_STATUS_UNKNOWN)
 								{ 
@@ -928,7 +928,7 @@ static void MtmReceiver(Datum arg)
 									}
 									if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
 										elog(LOG, "Commit transaction %s because it is prepared at all live nodes", msg->gid);		
-										MtmFinishPreparedTransaction(node, ts, true);
+										MtmFinishPreparedTransaction(ts, true);
 									}
 								} else {
 									elog(LOG, "Receive response %d for transaction %s for node %d, votedMask=%llx, participantsMask=%llx",
