@@ -1,6 +1,6 @@
 FROM alpine:3.4
 
-RUN apk add --update gcc libc-dev bison flex readline-dev zlib-dev perl make diffutils
+RUN apk add --update gcc libc-dev bison flex readline-dev zlib-dev perl make diffutils gdb iproute2
 
 # there is already accidental postgres user in alpine
 # RUN addgroup pg && adduser -h /pg -D -G pg pg
@@ -14,5 +14,5 @@ COPY ./ /pg/src
 RUN chown -R postgres:postgres /pg
 
 RUN cd /pg/src && \
-	./configure  --enable-cassert --enable-debug --prefix=/pg/install && \
+	./configure --enable-cassert --enable-debug --prefix=/pg/install && \
 	make -j 4 install

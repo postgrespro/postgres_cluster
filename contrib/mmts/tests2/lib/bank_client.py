@@ -131,9 +131,12 @@ class MtmClient(object):
         while self.running:
             agg.start_tx()
             try:
-                yield from cur.execute('commit')
+                # yield from cur.execute('commit')
                 yield from tx_block(conn, cur, agg)
                 agg.finish_tx('commit')
+            except psycopg2.OperationalError as e:
+                yield from cur.execute('rollback')
+                agg.finish_tx('operational_rollback')
             except psycopg2.Error as e:
                 agg.finish_tx(e.pgerror)
         print("We've count to infinity!")
