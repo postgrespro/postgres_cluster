@@ -358,6 +358,6 @@ extern void MtmReleaseRecoverySlot(int nodeId);
 extern PGconn *PQconnectdb_safe(const char *conninfo);
 extern void MtmBeginSession(int nodeId);
 extern void MtmEndSession(int nodeId, bool unlock);
-extern void MtmFinishPreparedTransaction(int nodeId, MtmTransState* ts, bool commit);
-
+extern void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit);
+extern void MtmRollbackPreparedTransaction(char const* gid);
 #endif

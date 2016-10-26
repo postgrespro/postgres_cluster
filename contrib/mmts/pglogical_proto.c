@@ -133,21 +133,22 @@ static void
 pglogical_write_message(StringInfo out,
 						const char *prefix, Size sz, const char *message)
 {
-	if (*prefix == 'L')
-	{
-		MTM_LOG1("Send deadlock message to node %d", MtmReplicationNodeId);
-	}
-	else if (*prefix == 'D')
-	{
-		if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN)
-		{
+	switch (*prefix) { 
+	  case 'L':
+		if (MtmIsRecoveredNode(MtmReplicationNodeId)) { 			
+			return;
+		} else { 
+			MTM_LOG1("Send deadlock message to node %d", MtmReplicationNodeId);
+		}
+		break;
+	  case 'D':
+		if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN)	{
 			MTM_LOG2("%d: pglogical_write_message filtered", MyProcPid);
 			return;
 		}
 		DDLInProress = true;
-	}
-	else if (*prefix == 'E')
-	{
+		break;
+	  case 'E':
 		DDLInProress = false;
 		/*
 		 * we use End message only as indicator of DDL transaction finish,
@@ -155,7 +156,6 @@ pglogical_write_message(StringInfo out,
 		 */
 		return;
 	}
-
 	pq_sendbyte(out, 'M');
 	pq_sendbyte(out, *prefix);
 	pq_sendint(out, sz, 4);
