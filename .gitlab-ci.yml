@@ -1,0 +1,79 @@
+image: debian
+
+stages:
+  - sanitize
+  - build
+  - test
+  - package
+
+before_script:
+  - export DEBIAN_FRONTEND=noninteractive
+  - uname -a
+  - df -h
+
+build:debian-7:
+  stage: build
+  image: debian:7
+  only:
+    - master
+  before_script:
+    - apt-get update && apt-get install -y gcc make flex bison libreadline-dev zlib1g-dev jade
+  script:
+    - ./configure
+    - make -j 2
+    - make install
+  when: always
+
+build:debian-8:
+  stage: build
+  image: debian:8
+  only:
+    - master
+  before_script:
+    - apt update && apt -y install gcc make flex bison libreadline-dev zlib1g-dev jade
+  script:
+    - ./configure
+    - make -j 2
+    - make install
+  when: always
+
+sanitize:clang:
+  stage: sanitize
+  only:
+    - master
+  before_script:
+   - apt update && apt -y install clang libfindbin-libs-perl
+  script:
+   - scan-build ./configure
+   - scan-build make -j 2
+  when: always
+
+sanitize:cppcheck:
+  stage: sanitize
+  only:
+    - master
+  before_script:
+   - apt update && apt -y install cppcheck
+  script:
+   - cppcheck --enable=all --std=c11 --std=c++11 --std=posix --error-exitcode=1 -i $(find . -name "*.[c,cpp]")
+  when: always
+
+test:
+  stage: test
+  only:
+    - master
+  before_script:
+    - apt update && apt -y install gcc make flex bison libreadline-dev zlib1g-dev jade
+  script:
+    - ./configure
+    - make -j 2
+    - make check
+  when: always
+
+package:
+  stage: package
+  only:
+    - master
+  script:
+    - echo "Building deb package here"
+  when: always
