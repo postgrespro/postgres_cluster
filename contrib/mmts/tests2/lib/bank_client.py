@@ -37,7 +37,7 @@ class MtmTxAggregate(object):
 
     def as_dict(self):
         return {
-            'running_latency': (datetime.datetime.now() - self.start_time).total_seconds(),
+            'running_latency': 'xxx', #(datetime.datetime.now() - self.start_time).total_seconds(),
             'max_latency': self.max_latency,
             'isolation': self.isolation,
             'finish': copy.deepcopy(self.finish)

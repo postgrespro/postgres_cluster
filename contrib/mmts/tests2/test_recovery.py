@@ -23,7 +23,7 @@ class RecoveryTest(unittest.TestCase):
         ], n_accounts=1000)
         self.client.bgrun()
 
-        self.toxiproxy = Toxiproxy() #Toxiproxy(server_host="toxi")
+        # self.toxiproxy = Toxiproxy() #Toxiproxy(server_host="toxi")
 
 
     @classmethod
