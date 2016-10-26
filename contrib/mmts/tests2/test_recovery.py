@@ -61,7 +61,9 @@ class RecoveryTest(unittest.TestCase):
             # self.assertTrue( aggs['transfer_0']['finish']['commit'] > 0 )
             # self.assertTrue( aggs['transfer_1']['finish']['commit'] > 0 )
             # self.assertTrue( aggs['transfer_2']['finish']['commit'] == 0 )
-            self.assertTrue( aggs['sumtotal_0']['isolation']  + aggs['sumtotal_1']['isolation'] + aggs['sumtotal_2']['isolation'] == 0 )
+            self.assertTrue( aggs['sumtotal_0']['isolation']  == 0)
+            self.assertTrue( aggs['sumtotal_1']['isolation']  == 0)
+            self.assertTrue( aggs['sumtotal_2']['isolation']  == 0)
 
         # print('### join node3 ###')
         # for proxy in ['rep31', 'rep32', 'rep23', 'rep13', 'arb31', 'arb32', 'arb23', 'arb13']:
@@ -75,7 +77,9 @@ class RecoveryTest(unittest.TestCase):
             time.sleep(3)
             aggs = self.client.get_status()
             MtmClient.print_aggregates(aggs)
-            self.assertTrue( aggs['sumtotal_0']['isolation']  + aggs['sumtotal_1']['isolation'] + aggs['sumtotal_2']['isolation'] == 0 )
+            self.assertTrue( aggs['sumtotal_0']['isolation']  == 0)
+            self.assertTrue( aggs['sumtotal_1']['isolation']  == 0)
+            self.assertTrue( aggs['sumtotal_2']['isolation']  == 0)
 
         # check that during last aggregation all nodes were working
         self.assertTrue( aggs['transfer_0']['finish']['commit'] > 0 )

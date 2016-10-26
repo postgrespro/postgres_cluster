@@ -5667,6 +5667,7 @@ xact_redo(XLogReaderState *record)
 
 		if (parsed.xinfo & XACT_XINFO_HAS_ORIGIN)
 		{
+			Assert(XLogRecGetOrigin(record) != InvalidRepOriginId);
 			/* recover apply progress */
 			replorigin_advance(XLogRecGetOrigin(record), parsed.origin_lsn,
 						record->EndRecPtr, false /* backward */ , false /* WAL */ );

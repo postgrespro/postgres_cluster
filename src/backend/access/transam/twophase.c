@@ -1097,7 +1097,7 @@ EndPrepare(GlobalTransaction gxact)
 	if (replorigin)
 		/* Move LSNs forward for this replication origin */
 		replorigin_session_advance(replorigin_session_origin_lsn,
-								   XactLastRecEnd);
+								   gxact->prepare_end_lsn);
 
 	XLogFlush(gxact->prepare_end_lsn);
 
