@@ -13,7 +13,7 @@
     <para>Major enhancements over <productname>Postgres Pro</productname>
       9.6.0.1 include:</para>
     <para>Added fix for <application>pg_buffercache</application> module,
-      which improves response database in the case of connected
+      which improves database response in the case of connected
       monitoring tools.</para>
     <para>Added new <application>pgpro_edition()</application> function,
       which returns a name of <productname>Postgres Pro</productname> edition,
