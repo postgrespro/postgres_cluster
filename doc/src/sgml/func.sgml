@@ -15660,7 +15660,7 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
   <primary>pgpro_edition</primary>
   </indexterm>
   <para>
-<literal><function>pgpro_edutuib()</function></literal>
+<literal><function>pgpro_edition()</function></literal>
    returns a string, describing <productname>Postgres Pro</> edition
    i.e. <literal>standard</literal> or <literal>enterprise</literal> </para>
   <indexterm>
