@@ -28,3 +28,9 @@ pgpro_version(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_TEXT_P(cstring_to_text(PGPRO_VERSION_STR));
 }
+
+Datum
+pgpro_edition(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_TEXT_P(cstring_to_text(PGPRO_EDITION));
+}	
