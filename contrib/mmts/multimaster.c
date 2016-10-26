@@ -1104,7 +1104,7 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
-	MTM_LOG1("%d: End transaction %d, prepared=%d, replicated=%d, distributed=%d, 2pc=%d, gid=%s -> %s", 
+	MTM_LOG2("%d: End transaction %d, prepared=%d, replicated=%d, distributed=%d, 2pc=%d, gid=%s -> %s", 
 			 MyProcPid, x->xid, x->isPrepared, x->isReplicated, x->isDistributed, x->isTwoPhase, x->gid, commit ? "commit" : "abort");
 	if (x->status != TRANSACTION_STATUS_ABORTED && x->isDistributed && (x->isPrepared || x->isReplicated) && !x->isTwoPhase) {
 		MtmTransState* ts = NULL;
@@ -1122,7 +1122,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		}
 		if (ts != NULL) { 
 			if (*ts->gid)  
-				MTM_LOG1("TRANSLOG: %s transaction %s status %d", (commit ? "commit" : "rollback"), ts->gid, ts->status);
+				MTM_LOG2("TRANSLOG: %s transaction %s status %d", (commit ? "commit" : "rollback"), ts->gid, ts->status);
 			if (commit) {
 				if (!(ts->status == TRANSACTION_STATUS_UNKNOWN 
 					  || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)))  
@@ -1177,6 +1177,9 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 					Mtm->nActiveTransactions -= 1;
 				}
 				MtmTransactionListAppend(ts);
+				if (*x->gid) { 
+					LogLogicalMessage("A", x->gid, strlen(x->gid) + 1, false);
+				}
 			}
 			MtmSend2PCMessage(ts, MSG_ABORTED); /* send notification to coordinator */
 		} else if (x->status == TRANSACTION_STATUS_ABORTED && x->isReplicated && !x->isPrepared) {
@@ -1230,7 +1233,7 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 				MtmSendMessage(&msg);
 			}
 		}
-	} else {
+	} else if (!BIT_CHECK(Mtm->disabledNodeMask, ts->gtid.node-1)) {
 		msg.node = ts->gtid.node;
 		msg.dxid = ts->gtid.xid;
 		MtmSendMessage(&msg);
@@ -1436,7 +1439,7 @@ static void MtmPollStatusOfPreparedTransactions(int disabledNodeId)
 			Assert(ts->gid[0]);
 			if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
 				elog(LOG, "Abort transaction %s because its coordinator is disabled and it is not prepared at node %d", ts->gid, MtmNodeId);
-				MtmFinishPreparedTransaction(disabledNodeId, ts, false);
+				MtmFinishPreparedTransaction(ts, false);
 			} else {
 				MTM_LOG1("Poll state of transaction %d (%s)", ts->xid, ts->gid);				
 				MtmBroadcastPollMessage(ts);
@@ -1459,7 +1462,9 @@ static void MtmDisableNode(int nodeId)
 	if (nodeId != MtmNodeId) { 
 		Mtm->nLiveNodes -= 1;
 	}
+	MtmUnlock();
 	MtmPollStatusOfPreparedTransactions(nodeId);
+	MtmLock(LW_EXCLUSIVE);
 } 
 	
 static void MtmEnableNode(int nodeId)
@@ -2780,33 +2785,40 @@ void MtmReleaseRecoverySlot(int nodeId)
 	}
 }
 
-void MtmFinishPreparedTransaction(int nodeId, MtmTransState* ts, bool commit)
+void MtmRollbackPreparedTransaction(char const* gid)
+{
+	MTM_LOG1("Abort prepared transaction %s", gid);
+	if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED) == TRANSACTION_STATUS_UNKNOWN) { 
+		MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
+		MtmResetTransaction();
+		StartTransactionCommand();
+		MtmBeginSession(MtmReplicationNodeId);
+		MtmSetCurrentTransactionGID(gid);
+		FinishPreparedTransaction(gid, false);
+		CommitTransactionCommand();
+		MtmEndSession(MtmReplicationNodeId, true);
+	}
+}	
+
+
+void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
 {
 	Assert(ts->votingCompleted);
 	Assert(!IsTransactionState());
 	MtmResetTransaction();
 	StartTransactionCommand();
-	MtmBeginSession(nodeId);
+	if (Mtm->nodes[MtmNodeId-1].originId == InvalidRepOriginId) { 
+		/* This dummy origin is used for local commits/aborts which should not be replicated */
+		Mtm->nodes[MtmNodeId-1].originId = replorigin_create(psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId));
+	}
+	MtmBeginSession(MtmNodeId);
 	MtmSetCurrentTransactionCSN(ts->csn);
 	MtmSetCurrentTransactionGID(ts->gid);
 	FinishPreparedTransaction(ts->gid, commit);
 	CommitTransactionCommand();
-	MtmEndSession(nodeId, true);
+	MtmEndSession(MtmNodeId, true);
 	Assert(ts->status == commit ? TRANSACTION_STATUS_COMMITTED : TRANSACTION_STATUS_ABORTED);
 }
-
-#if 0
-static void MtmFinishAllPreparedTransactions(void)
-{
-	MtmTransState* ts;
-	for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) {
-		if (ts->status != TRANSACTION_STATUS_COMMITTED && ts->status != TRANSACTION_STATUS_ABORTED) {
-			MtmFinishPreparedTransaction(MtmReplicationNodeId, ts, false);
-		}
-	}
-}
-#endif
-
 
 /* 
  * Determine when and how we should open replication slot.
@@ -2841,11 +2853,6 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 					Mtm->nodes[i].restartLsn = InvalidXLogRecPtr;
 				}
 				MtmUnlock();
-#if 0
-				MtmBeginSession(MtmReplicationNodeId);
-				FinishAllPreparedTransactions(false);
-				MtmEndSession(MtmReplicationNodeId, true);				
-#endif
 				return REPLMODE_RECOVERY;
 			}
 		}

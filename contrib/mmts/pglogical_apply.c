@@ -425,6 +425,12 @@ process_remote_message(StringInfo s)
 			}
 			break;
 		}
+	    case 'A':
+		{
+		    MtmRollbackPreparedTransaction(messageBody);
+			standalone = true;
+			break;
+		}
 		case 'L':
 		{
 			MTM_LOG3("%ld: Process deadlock message with size %d from %d", MtmGetSystemTime(), messageSize, MtmReplicationNodeId);
@@ -590,8 +596,8 @@ process_remote_commit(StringInfo in)
 	MtmReplicationNodeId = pq_getmsgbyte(in);
 
 	/* read fields */
-	replorigin_session_origin_lsn = pq_getmsgint64(in); /* commit_lsn */
-	end_lsn = pq_getmsgint64(in); /* end_lsn */
+	pq_getmsgint64(in); /* commit_lsn */
+	replorigin_session_origin_lsn = end_lsn = pq_getmsgint64(in); /* end_lsn */
 	replorigin_session_origin_timestamp = pq_getmsgint64(in); /* commit_time */
 
 	origin_node = pq_getmsgbyte(in);
@@ -609,6 +615,7 @@ process_remote_commit(StringInfo in)
 				Assert(TransactionIdIsValid(MtmGetCurrentTransactionId()));
 				MtmBeginSession(MtmReplicationNodeId);
 				CommitTransactionCommand();
+				MtmEndSession(MtmReplicationNodeId, true);
 			}
 			break;
 		}
@@ -639,6 +646,7 @@ process_remote_commit(StringInfo in)
 					FinishPreparedTransaction(gid, false);
 					CommitTransactionCommand();					
 				}	
+				MtmEndSession(MtmReplicationNodeId, true);
 			}
 			break;
 		}
@@ -655,34 +663,19 @@ process_remote_commit(StringInfo in)
 			MtmSetCurrentTransactionGID(gid);
 			FinishPreparedTransaction(gid, true);
 			CommitTransactionCommand();
+			MtmEndSession(MtmReplicationNodeId, true);
 			break;
 		}
 		case PGLOGICAL_ABORT_PREPARED:
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
-			MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s",  gid);
-			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED) == TRANSACTION_STATUS_UNKNOWN) { 
-				MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
-				MtmResetTransaction();
-				StartTransactionCommand();
-				MtmBeginSession(MtmReplicationNodeId);
-				MtmSetCurrentTransactionGID(gid);
-				FinishPreparedTransaction(gid, false);
-				CommitTransactionCommand();
-			}
+			MtmRollbackPreparedTransaction(gid);
 			break;
 		}
 		default:
 			Assert(false);
 	}
-#if 0 /* Do ont need to advance slot position here: it will be done by transaction commit */
-	if (replorigin_session_origin != InvalidRepOriginId) { 
-		replorigin_advance(replorigin_session_origin, end_lsn,
-						   XactLastCommitEnd, false, false);
-	}
-#endif
-	MtmEndSession(MtmReplicationNodeId, true);
 	MtmUpdateLsnMapping(MtmReplicationNodeId, end_lsn);
 	if (flags & PGLOGICAL_CAUGHT_UP) {
 		MtmRecoveryCompleted();
