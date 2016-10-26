@@ -15662,7 +15662,7 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
   <para>
 <literal><function>pgpro_edition()</function></literal>
    returns a string, describing <productname>Postgres Pro</> edition
-   i.e. <literal>standard</literal> or <literal>enterprise</literal> </para>
+   i.e. <literal>standard</literal> or <literal>enterprise</literal>.</para>
   <indexterm>
   <primary>pgpro_version</primary>
   </indexterm>
