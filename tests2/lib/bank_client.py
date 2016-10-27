@@ -195,12 +195,16 @@ class MtmClient(object):
         self.evloop_process = multiprocessing.Process(target=self.run, args=())
         self.evloop_process.start()
 
-    def get_status(self):
+    # XXX: rename to start/get aggregation
+    # XXX: introduce periodic report from client
+    def get_status(self, print=True):
         # print('test: sending status request')
         self.parent_pipe.send('status')
         # print('test: awaitng status response')
         resp = self.parent_pipe.recv()
         # print('test: got status response')
+        if print:
+            MtmClient.print_aggregates(resp)
         return resp
 
     def stop(self):
