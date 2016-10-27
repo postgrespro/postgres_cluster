@@ -15,7 +15,7 @@ build:debian-7:
   stage: build
   image: debian:7
   only:
-    - master
+    - PGPROEE9_6
   before_script:
     - apt-get update && apt-get install -y gcc make flex bison libreadline-dev zlib1g-dev jade
   script:
@@ -28,7 +28,7 @@ build:debian-8:
   stage: build
   image: debian:8
   only:
-    - master
+    - PGPROEE9_6
   before_script:
     - apt update && apt -y install gcc make flex bison libreadline-dev zlib1g-dev jade
   script:
@@ -40,7 +40,7 @@ build:debian-8:
 sanitize:clang:
   stage: sanitize
   only:
-    - master
+    - PGPROEE9_6
   before_script:
    - apt update && apt -y install clang libfindbin-libs-perl
   script:
@@ -51,7 +51,7 @@ sanitize:clang:
 sanitize:cppcheck:
   stage: sanitize
   only:
-    - master
+    - PGPROEE9_6
   before_script:
    - apt update && apt -y install cppcheck
   script:
@@ -61,7 +61,7 @@ sanitize:cppcheck:
 test:
   stage: test
   only:
-    - master
+    - PGPROEE9_6
   before_script:
     - apt update && apt -y install gcc make flex bison libreadline-dev zlib1g-dev jade
   script:
@@ -73,7 +73,7 @@ test:
 package:
   stage: package
   only:
-    - master
+    - PGPROEE9_6
   script:
     - echo "Building deb package here"
   when: always
