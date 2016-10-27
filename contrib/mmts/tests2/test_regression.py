@@ -21,7 +21,7 @@ class RecoveryTest(unittest.TestCase):
         subprocess.check_call(['docker', 'run',
             '--network=tests2_default',
             'tests2_node1',
-            '/pg/mmts/tests2/docker-regress.sh',
+            '/pg/mmts/tests2/support/docker-regress.sh',
         ])
 
 if __name__ == '__main__':
