@@ -96,6 +96,10 @@ class RecoveryTest(unittest.TestCase):
         self.assertTrue( aggs['sumtotal_1']['isolation'] == 0)
         self.assertTrue( aggs['sumtotal_2']['isolation'] == 0)
 
+    def test_edge_partition(self):
+        #
+
+
 
         subprocess.check_call(['blockade','join'])
         print("Node3 joined back")
