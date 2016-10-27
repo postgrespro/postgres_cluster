@@ -31,6 +31,8 @@ LANGUAGE C VOLATILE STRICT;
 CREATE VIEW pg_wait_sampling_history AS
 	SELECT * FROM pg_wait_sampling_get_history();
 
+GRANT SELECT ON pg_wait_sampling_history TO PUBLIC;
+
 CREATE FUNCTION pg_wait_sampling_get_profile (
 	OUT pid int4,
 	OUT event_type text,
@@ -43,6 +45,8 @@ LANGUAGE C VOLATILE STRICT;
 
 CREATE VIEW pg_wait_sampling_profile AS
 	SELECT * FROM pg_wait_sampling_get_profile();
+
+GRANT SELECT ON pg_wait_sampling_profile TO PUBLIC;
 
 CREATE FUNCTION pg_wait_sampling_reset_profile()
 RETURNS void
