@@ -1065,7 +1065,7 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		else
 		{
 			/* it must have aborted or crashed */
-			if (!TransactionIdIsInProgress(HeapTupleHeaderGetRawXmin(tuple)))
+			//if (!TransactionIdIsInProgress(HeapTupleHeaderGetRawXmin(tuple)))
 				SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
 							InvalidTransactionId);
 			return false;
@@ -1130,7 +1130,7 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		if (!TransactionIdDidCommit(HeapTupleHeaderGetRawXmax(tuple)))
 		{
 			/* it must have aborted or crashed */
-			if (!TransactionIdIsInProgress(HeapTupleHeaderGetRawXmax(tuple)))
+			//if (!TransactionIdIsInProgress(HeapTupleHeaderGetRawXmax(tuple)))
 				SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
 							InvalidTransactionId);
 			return true;

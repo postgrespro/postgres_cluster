@@ -101,7 +101,7 @@ typedef enum
 #define MTM_MAP_SIZE   MTM_HASH_SIZE
 #define MIN_WAIT_TIMEOUT 1000
 #define MAX_WAIT_TIMEOUT 100000
-#define MAX_WAIT_LOOPS   100 // 1000000 
+#define MAX_WAIT_LOOPS   10000 // 1000000 
 #define STATUS_POLL_DELAY USECS_PER_SEC
 
 void _PG_init(void);
@@ -2913,6 +2913,7 @@ void MtmDropNode(int nodeId, bool dropSlot)
 
 	MtmUnlock();
 }
+
 static void
 MtmOnProcExit(int code, Datum arg)
 {
@@ -3076,9 +3077,7 @@ void MtmSetupReplicationHooks(struct PGLogicalHooks* hooks)
 
 void MtmBeginSession(int nodeId)
 {
-	char slot_name[MULTIMASTER_MAX_SLOT_NAME_SIZE];
 	MtmLockNode(nodeId, LW_EXCLUSIVE);
-	sprintf(slot_name, MULTIMASTER_SLOT_PATTERN, nodeId);
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 	replorigin_session_origin = Mtm->nodes[nodeId-1].originId;
 	Assert(replorigin_session_origin != InvalidRepOriginId);
