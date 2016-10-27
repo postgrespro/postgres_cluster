@@ -8,7 +8,14 @@ PostgreSQL 9.6+ provides an information about current wait event of particular
 process.  However, in order to gather descriptive statistics of server
 behavior user have to sample current wait event multiple times.
 pg\_wait\_sampling is an extension for collecting sampling statistics of wait
-events.  It collects two kinds of statistics.
+events.
+
+The module must be loaded by adding pg\_wait\_sampling to
+shared\_preload\_libraries in postgresql.conf, because it requires additional
+shared memory and launches background worker.  This means that a server restart
+is needed to add or remove the module.
+
+When pg\_wait\_sampling is enabled, it collects two kinds of statistics.
 
  * History of waits events.  It's implemented as in-memory ring buffer where
    samples of each process wait events are written with given (configurable)
