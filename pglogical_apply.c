@@ -602,7 +602,14 @@ process_remote_commit(StringInfo in)
 
 	origin_node = pq_getmsgbyte(in);
 	origin_lsn = pq_getmsgint64(in);
-	Mtm->nodes[origin_node-1].restartLsn = origin_lsn;
+
+	if (Mtm->nodes[origin_node-1].restartLsn < origin_lsn) { 
+		Mtm->nodes[origin_node-1].restartLsn = origin_lsn;
+	}
+	if (origin_node != MtmReplicationNodeId) {
+		replorigin_advance(Mtm->nodes[origin_node-1].originId, origin_lsn, GetXLogInsertRecPtr(),
+						   false /* backward */ , false /* WAL */ );
+	}
 
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 
