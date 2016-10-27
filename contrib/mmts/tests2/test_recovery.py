@@ -1,11 +1,18 @@
+#
+# Based on Aphyr's test for CockroachDB.
+#
+
 import unittest
 import time
 import subprocess
 import datetime
+import docker
 
-from toxiproxy import Toxiproxy
 from lib.bank_client import MtmClient
+from lib.failure_injector import *
 
+TEST_DURATION = 10
+TEST_RECOVERY_TIME = 10
 
 class RecoveryTest(unittest.TestCase):
     @classmethod
@@ -23,69 +30,71 @@ class RecoveryTest(unittest.TestCase):
         ], n_accounts=1000)
         self.client.bgrun()
 
-        # self.toxiproxy = Toxiproxy() #Toxiproxy(server_host="toxi")
-
-
     @classmethod
     def tearDownClass(self):
         print('tearDown')
         self.client.stop()
+        # XXX: check nodes data identity here
+
         # subprocess.check_call(['docker-compose','down'])
 
-    # def test_normal_operations(self):
-    #     print('### normalOpsTest ###')
+    def test_normal_operations(self):
+        print('### normal_operations ###')
 
-    #     for i in range(3):
-    #         time.sleep(3)
-    #         aggs = self.client.get_status()
-    #         MtmClient.print_aggregates(aggs)
-    #         print(aggs)
-    #         for agg in aggs:
-    #             self.assertTrue( aggs[agg]['finish']['commit'] > 0 )
+        # nofailure here
+        # clean aggregates
+        self.client.get_status()
+
+        time.sleep(TEST_DURATION)
+        aggs = self.client.get_status()
+
+        for agg in aggs:
+            self.assertTrue( aggs[agg]['finish']['commit'] > 0 )
+
+        # nofailure ends here
+        self.client.get_status()
+
+        time.sleep(TEST_RECOVERY_TIME)
+        aggs = self.client.get_status()
+
+        for agg in aggs:
+            self.assertTrue( aggs[agg]['finish']['commit'] > 0 )
+
 
     def test_node_partition(self):
         print('### nodePartitionTest ###')
 
-        # print('### split node3 ###')
-        # for proxy in ['rep31', 'rep32', 'rep23', 'rep13', 'arb31', 'arb32', 'arb23', 'arb13']:
-        #     self.toxiproxy.get_proxy(proxy).disable()
+        failure = SingleNodePartition('node3')
 
+        # split one node
+        failure.start()
+        # clean aggregates
+        self.client.get_status(print=False)
+
+        time.sleep(TEST_DURATION)
+        aggs = self.client.get_status()
+
+        self.assertTrue( aggs['transfer_0']['finish']['commit'] > 0 )
+        self.assertTrue( aggs['transfer_1']['finish']['commit'] > 0 )
+        self.assertTrue( 'commit' not in aggs['transfer_2']['finish'] )
+        self.assertTrue( aggs['sumtotal_0']['isolation'] == 0)
+        self.assertTrue( aggs['sumtotal_1']['isolation'] == 0)
+        self.assertTrue( aggs['sumtotal_2']['isolation'] == 0)
+
+        # join splitted node
+        failure.stop()
         # clear tx history
-        self.client.get_status()
+        self.client.get_status(print=False)
 
-        for i in range(1000):
-            print(i, datetime.datetime.now())
-            time.sleep(3)
-            aggs = self.client.get_status()
-            MtmClient.print_aggregates(aggs)
-            # self.assertTrue( aggs['transfer_0']['finish']['commit'] > 0 )
-            # self.assertTrue( aggs['transfer_1']['finish']['commit'] > 0 )
-            # self.assertTrue( aggs['transfer_2']['finish']['commit'] == 0 )
-            self.assertTrue( aggs['sumtotal_0']['isolation']  == 0)
-            self.assertTrue( aggs['sumtotal_1']['isolation']  == 0)
-            self.assertTrue( aggs['sumtotal_2']['isolation']  == 0)
+        time.sleep(TEST_RECOVERY_TIME)
+        aggs = self.client.get_status()
 
-        # print('### join node3 ###')
-        # for proxy in ['rep31', 'rep32', 'rep23', 'rep13', 'arb31', 'arb32', 'arb23', 'arb13']:
-        #     self.toxiproxy.get_proxy(proxy).enable()
-
-        # clear tx history
-        self.client.get_status()
-
-        for i in range(5):
-            print(i, datetime.datetime.now())
-            time.sleep(3)
-            aggs = self.client.get_status()
-            MtmClient.print_aggregates(aggs)
-            self.assertTrue( aggs['sumtotal_0']['isolation']  == 0)
-            self.assertTrue( aggs['sumtotal_1']['isolation']  == 0)
-            self.assertTrue( aggs['sumtotal_2']['isolation']  == 0)
-
-        # check that during last aggregation all nodes were working
         self.assertTrue( aggs['transfer_0']['finish']['commit'] > 0 )
         self.assertTrue( aggs['transfer_1']['finish']['commit'] > 0 )
         self.assertTrue( aggs['transfer_2']['finish']['commit'] > 0 )
-
+        self.assertTrue( aggs['sumtotal_0']['isolation'] == 0)
+        self.assertTrue( aggs['sumtotal_1']['isolation'] == 0)
+        self.assertTrue( aggs['sumtotal_2']['isolation'] == 0)
 
 
 if __name__ == '__main__':
