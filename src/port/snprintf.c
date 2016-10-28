@@ -1186,20 +1186,30 @@ int pg_fputs(const char *s, FILE *stream)
 }
 
 /* replacement to puts function which uses flushBuffer */
-int pg_puts(const char *tmps)
+int pg_puts(const char *s)
 {
 	PrintfTarget target;
-	char *s = NULL;
-
-	s = (char *)malloc(strlen(tmps) + 1);
-	sprintf(s, "%s\n", tmps);
-	target.bufstart = s;
+	char *t = NULL;
+	size_t len = strlen(s);
+	
+	t = (char *)malloc(len + 2);
+	if (t == NULL) {
+		return -1;
+	}
+	
+	memcpy(t,s,len);
+	t[len]   = '\n';
+	t[len+1] = '\0';
+	
+	target.bufstart = t;
 	target.nchars = 0;
-	target.bufptr = s + strlen(s);
+	target.bufptr = t + len + 1;
 	target.bufend = NULL;
 	target.failed = false;
 	target.stream = stdout;
 	flushbuffer(&target);
+
+	free(t);
 	return target.failed ? -1 : target.nchars;
 }
 #endif
