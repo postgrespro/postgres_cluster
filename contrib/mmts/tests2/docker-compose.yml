@@ -6,6 +6,8 @@ services:
     container_name: node1
     build: ..
     privileged: true
+    ulimits:
+      core: 14294967296
     environment:
       POSTGRES_USER: 'pg'
       POSTGRES_DB: 'regression'
@@ -25,6 +27,8 @@ services:
     container_name: node2
     build: ..
     privileged: true
+    ulimits:
+      core: 14294967296
     environment:
       POSTGRES_USER: 'pg'
       POSTGRES_DB: 'regression'
@@ -44,6 +48,8 @@ services:
     container_name: node3
     build: ..
     privileged: true
+    ulimits:
+      core: 14294967296
     environment:
       POSTGRES_USER: 'pg'
       POSTGRES_DB: 'regression'
