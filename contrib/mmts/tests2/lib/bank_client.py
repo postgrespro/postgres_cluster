@@ -135,7 +135,8 @@ class MtmClient(object):
                 yield from tx_block(conn, cur, agg)
                 agg.finish_tx('commit')
             except psycopg2.OperationalError as e:
-                yield from cur.execute('rollback')
+                if not cur.closed:
+                    yield from cur.execute('rollback')
                 agg.finish_tx('operational_rollback')
             except psycopg2.Error as e:
                 agg.finish_tx(e.pgerror)
