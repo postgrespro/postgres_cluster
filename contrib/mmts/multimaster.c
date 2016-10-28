@@ -2081,6 +2081,7 @@ static void MtmInitialize()
 			Mtm->nodes[i].originId = InvalidRepOriginId;
 			Mtm->nodes[i].timeline = 0;
 		}
+		Mtm->nodes[MtmNodeId-1].originId = DoNotReplicateId;
 		PGSemaphoreCreate(&Mtm->sendSemaphore);
 		PGSemaphoreReset(&Mtm->sendSemaphore);
 		SpinLockInit(&Mtm->spinlock);
@@ -2807,10 +2808,12 @@ void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
 	Assert(!IsTransactionState());
 	MtmResetTransaction();
 	StartTransactionCommand();
+#if 0
 	if (Mtm->nodes[MtmNodeId-1].originId == InvalidRepOriginId) { 
 		/* This dummy origin is used for local commits/aborts which should not be replicated */
 		Mtm->nodes[MtmNodeId-1].originId = replorigin_create(psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId));
 	}
+#endif
 	MtmBeginSession(MtmNodeId);
 	MtmSetCurrentTransactionCSN(ts->csn);
 	MtmSetCurrentTransactionGID(ts->gid);
