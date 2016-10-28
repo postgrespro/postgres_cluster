@@ -6,7 +6,7 @@ class FailureInjector(object):
         self.docker_api = docker.Client()
 
     def container_exec(self, node, command):
-        exec_id = self.docker_api.exec_create(node, command)
+        exec_id = self.docker_api.exec_create(node, command, user='root')
         output = self.docker_api.exec_start(exec_id)
         print(command, ' -> ', output)
 

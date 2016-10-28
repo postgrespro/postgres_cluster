@@ -1,4 +1,4 @@
 psycopg2
 aiopg
 aioprocessing
-docker
+docker-py
