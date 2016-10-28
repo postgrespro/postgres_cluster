@@ -8,7 +8,7 @@ class FailureInjector(object):
     def container_exec(self, node, command):
         exec_id = self.docker_api.exec_create(node, command, user='root')
         output = self.docker_api.exec_start(exec_id)
-        print(command, ' -> ', output)
+        # print(command, ' -> ', output)
 
 
 class SingleNodePartition(FailureInjector):
@@ -39,8 +39,8 @@ class EdgePartition(FailureInjector):
         self.container_exec(self.nodeA, "iptables -A OUTPUT -s {} -j DROP".format(self.nodeB) )
 
     def stop(self):
-        self.container_exec(self.nodeA, "iptables -D INPUT -j DROP")
-        self.container_exec(self.nodeA, "iptables -D OUTPUT -j DROP")
+        self.container_exec(self.nodeA, "iptables -D INPUT  -s {} -j DROP".format(self.nodeB))
+        self.container_exec(self.nodeA, "iptables -D OUTPUT -s {} -j DROP".format(self.nodeB))
 
 
 class RestartNode(FailureInjector):

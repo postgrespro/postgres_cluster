@@ -167,15 +167,15 @@ class MtmClient(object):
         total = yield from cur.fetchone()
         if total[0] != 0:
             agg.isolation += 1
-            print(self.oops)
-            print('Isolation error, total = ', total[0])
-            yield from cur.execute('select * from mtm.get_nodes_state()')
-            nodes_state = yield from cur.fetchall()
-            for i, col in enumerate(self.nodes_state_fields):
-                print("%17s" % col, end="\t")
-                for j in range(3):
-                     print("%19s" % nodes_state[j][i], end="\t")
-                print("\n")
+            # print(self.oops)
+            # print('Isolation error, total = ', total[0])
+            # yield from cur.execute('select * from mtm.get_nodes_state()')
+            # nodes_state = yield from cur.fetchall()
+            # for i, col in enumerate(self.nodes_state_fields):
+            #     print("%17s" % col, end="\t")
+            #     for j in range(3):
+            #          print("%19s" % nodes_state[j][i], end="\t")
+            #     print("\n")
 
 
     def run(self):
@@ -196,9 +196,8 @@ class MtmClient(object):
         self.evloop_process = multiprocessing.Process(target=self.run, args=())
         self.evloop_process.start()
 
-    # XXX: rename to start/get aggregation
-    # XXX: introduce periodic report from client
-    def get_status(self, print=True):
+    # XXX: introduce periodic report from client?
+    def get_aggregates(self, print=True):
         # print('test: sending status request')
         self.parent_pipe.send('status')
         # print('test: awaitng status response')
@@ -207,6 +206,10 @@ class MtmClient(object):
         if print:
             MtmClient.print_aggregates(resp)
         return resp
+
+    def clean_aggregates(self, print=True):
+        self.parent_pipe.send('status')
+        self.parent_pipe.recv()
 
     def stop(self):
         self.running = False
