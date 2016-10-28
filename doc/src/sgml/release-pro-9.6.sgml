@@ -12,12 +12,12 @@
       9.6.0.1</para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
       9.6.0 include:</para>
-    <para>Added k-nearest neighbors algorithm (KNN) for SP-GiST and B-tree (See: <xref linkend="spgist">)</para>
-    <para>Added new index RUM, based on GIN, as separate module (See: <xref linkend="rum">)</para>
+    <para>Added k-nearest neighbors algorithm (KNN) for SP-GiST and B-tree (<xref linkend="spgist">)</para>
+    <para>Added RUM index, based on GIN, as separate module (<xref linkend="rum">)</para>
     <para>WAL size has been reduced on <command>CREATE INDEX</command> operation in the GiST, GIT, SP-GiST</para>
-    <para>Added timeout for idle sessions on the server side (See: <xref linkend="config">)</para>
-    <para>Added SHA-2 algorithm for password encryption (See: <xref linkend="config"> and <xref linkend="SQL-CREATEROLE">)</para>
-    <para>Added page level compression (CFS)(See: <xref linkend="cfs">)</para>
+    <para>Added timeout for idle sessions on the server side (<xref linkend="config">)</para>
+    <para>Added SHA-2 algorithm for password encryption (<xref linkend="config"> and <xref linkend="SQL-CREATEROLE">)</para>
+    <para>Added page level compression (CFS) (<xref linkend="cfs">)</para>
   </sect2>
   <sect2>
     <title>Migration to Version &productname; 9.6.0.1</title>
