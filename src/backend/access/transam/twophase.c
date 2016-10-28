@@ -1067,10 +1067,10 @@ EndPrepare(GlobalTransaction gxact)
 	START_CRIT_SECTION();
 	xl_xinfo.xinfo = 0;
 	/* dump transaction origin information */
-	if (replorigin_session_origin != InvalidRepOriginId)
+	if (replorigin)
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_ORIGIN;
-		Assert(replorigin_session_origin_lsn != 0);
+		Assert(replorigin_session_origin_lsn != InvalidXLogRecPtr);
 		xl_origin.origin_lsn = replorigin_session_origin_lsn;
 		xl_origin.origin_timestamp = replorigin_session_origin_timestamp;
 	}
