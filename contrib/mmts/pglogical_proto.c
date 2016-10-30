@@ -187,6 +187,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     	Assert(false);
 
 	if (flags == PGLOGICAL_COMMIT || flags == PGLOGICAL_PREPARE) { 
+		Assert(txn->xid < 1000 || MtmTransactionRecords >= 2);
 		// if (MtmIsFilteredTxn) { 
 			// Assert(MtmTransactionRecords == 0);
 			// return;
