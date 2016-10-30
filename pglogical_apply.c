@@ -344,10 +344,10 @@ process_remote_begin(StringInfo s)
 	Assert(gtid.node > 0);
 
 	MTM_LOG2("REMOTE begin node=%d xid=%d snapshot=%ld", gtid.node, gtid.xid, snapshot);
+	MtmResetTransaction();		
 #if 1
 	if (BIT_CHECK(Mtm->disabledNodeMask, gtid.node-1)) { 
 		elog(WARNING, "Ignore transaction %d from disabled node %d", gtid.xid, gtid.node);
-		MtmResetTransaction();		
 		return false;
 	}
 #endif
@@ -603,9 +603,6 @@ process_remote_commit(StringInfo in)
 	origin_node = pq_getmsgbyte(in);
 	origin_lsn = pq_getmsgint64(in);
 
-	if (Mtm->nodes[origin_node-1].restartLsn < origin_lsn) { 
-		Mtm->nodes[origin_node-1].restartLsn = origin_lsn;
-	}
 	if (origin_node != MtmReplicationNodeId) {
 		replorigin_advance(Mtm->nodes[origin_node-1].originId, origin_lsn, GetXLogInsertRecPtr(),
 						   false /* backward */ , false /* WAL */ );

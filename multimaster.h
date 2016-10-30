@@ -362,4 +362,6 @@ extern void MtmBeginSession(int nodeId);
 extern void MtmEndSession(int nodeId, bool unlock);
 extern void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit);
 extern void MtmRollbackPreparedTransaction(char const* gid);
+extern bool MtmFilterTransaction(char* record, int size);
+
 #endif

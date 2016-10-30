@@ -339,6 +339,9 @@ pglogical_receiver_main(Datum main_arg)
 				MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, nodeId);
 			} else { 
 				originStartPos = replorigin_get_progress(originId, false);
+				if (Mtm->nodes[nodeId-1].restartLsn < originStartPos) { 
+					Mtm->nodes[nodeId-1].restartLsn = originStartPos;
+				}
 				MTM_LOG1("Restart logical receiver at position %lx with origin=%d from node %d", originStartPos, originId, nodeId);
 			}
 			Mtm->nodes[nodeId-1].originId = originId;
@@ -535,27 +538,32 @@ pglogical_receiver_main(Datum main_arg)
 						ByteBufferAppend(&buf, stmt, rc - hdr_len);
 						if (stmt[0] == 'C') /* commit */
 						{
-							if (spill_file >= 0) { 
-								ByteBufferAppend(&buf, ")", 1);
-								pq_sendbyte(&spill_info, '(');
-								pq_sendint(&spill_info, buf.used, 4);
-								MtmSpillToFile(spill_file, buf.data, buf.used);
-								MtmCloseSpillFile(spill_file);
-								MtmExecute(spill_info.data, spill_info.len);
-								spill_file = -1;
-								resetStringInfo(&spill_info);
-							} else { 
-								if (MtmPreserveCommitOrder && buf.used == rc - hdr_len) {
-									/* Perform commit-prepared and rollback-prepared requested directly in receiver */
-									timestamp_t stop, start = MtmGetSystemTime();
-									MtmExecutor(buf.data, buf.used);
-									stop = MtmGetSystemTime();
-									if (stop - start > USECS_PER_SEC) { 
-										elog(WARNING, "Commit of prepared transaction takes %ld usec, flags=%x", stop - start, stmt[1]);
+							if (!MtmFilterTransaction(stmt, rc - hdr_len)) { 
+								if (spill_file >= 0) { 
+									ByteBufferAppend(&buf, ")", 1);
+									pq_sendbyte(&spill_info, '(');
+									pq_sendint(&spill_info, buf.used, 4);
+									MtmSpillToFile(spill_file, buf.data, buf.used);
+									MtmCloseSpillFile(spill_file);
+									MtmExecute(spill_info.data, spill_info.len);
+									spill_file = -1;
+									resetStringInfo(&spill_info);
+								} else { 
+									if (MtmPreserveCommitOrder && buf.used == rc - hdr_len) {
+										/* Perform commit-prepared and rollback-prepared requested directly in receiver */
+										timestamp_t stop, start = MtmGetSystemTime();
+										MtmExecutor(buf.data, buf.used);
+										stop = MtmGetSystemTime();
+										if (stop - start > USECS_PER_SEC) { 
+											elog(WARNING, "Commit of prepared transaction takes %ld usec, flags=%x", stop - start, stmt[1]);
+										}
+									} else {
+										MtmExecute(buf.data, buf.used);
 									}
-								} else {
-									MtmExecute(buf.data, buf.used);
 								}
+							} else if (spill_file >= 0) { 
+								MtmCloseSpillFile(spill_file);
+								spill_file = -1;
 							}
 							ByteBufferReset(&buf);
 						}

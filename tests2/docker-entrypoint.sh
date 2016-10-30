@@ -45,7 +45,6 @@ if [ "$1" = 'postgres' ]; then
 		# 	dbname=$POSTGRES_DB user=$POSTGRES_USER host=node2, \
 		# 	dbname=$POSTGRES_DB user=$POSTGRES_USER host=node3"
 
-#            log_line_prefix = '%t: '
 
 		cat <<-EOF >> $PGDATA/postgresql.conf
 			listen_addresses='*' 
@@ -58,6 +57,10 @@ if [ "$1" = 'postgres' ]; then
 			max_wal_senders = 10
 			shared_preload_libraries = 'raftable,multimaster'
 			default_transaction_isolation = 'repeatable read'
+			log_checkpoints = on
+			checkpoint_timeout = 30
+			log_autovacuum_min_duration = 0
+            log_line_prefix = '%t: '
 
 			multimaster.workers = 4
 			multimaster.max_nodes = 3
