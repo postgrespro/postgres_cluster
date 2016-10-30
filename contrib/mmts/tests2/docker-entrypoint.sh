@@ -64,7 +64,6 @@ if [ "$1" = 'postgres' ]; then
 		CONNSTRS='dbname=postgres user=postgres host=node1, dbname=postgres user=postgres host=node2, dbname=postgres user=postgres host=node3'
 		RAFT_PEERS='1:node1:6666, 2:node2:6666, 3:node3:6666'
 
-#            log_line_prefix = '%t: '
 
 		cat <<-EOF >> $PGDATA/postgresql.conf
 			listen_addresses='*' 
@@ -80,6 +79,7 @@ if [ "$1" = 'postgres' ]; then
 			log_checkpoints = on
 			checkpoint_timeout = 30
 			log_autovacuum_min_duration = 0
+            log_line_prefix = '%t: '
 
 			multimaster.workers = 4
 			multimaster.max_nodes = 3

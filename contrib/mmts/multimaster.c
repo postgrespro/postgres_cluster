@@ -15,6 +15,8 @@
 #include "miscadmin.h"
 
 #include "libpq-fe.h"
+#include "lib/stringinfo.h"
+#include "libpq/pqformat.h"
 #include "common/username.h"
 
 #include "postmaster/postmaster.h"
@@ -926,7 +928,9 @@ MtmVotingCompleted(MtmTransState* ts)
 			ts->votingCompleted = true;
 			ts->status = TRANSACTION_STATUS_UNKNOWN;
 			return true;
-		} else { 
+		} else {
+			MTM_LOG1("Transaction %s is considered as prepared (status=%d participants=%lx disabled=%lx, voted=%lx)", 
+					 ts->gid, ts->status, ts->participantsMask, Mtm->disabledNodeMask, ts->votedMask);
 			ts->isPrepared = true;
 			if (ts->isTwoPhase) {
 				ts->votingCompleted = true;
@@ -980,9 +984,10 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		MtmResetTransaction();
 	} else { 
 		int result = 0;
-		
+		int nConfigChanges = Mtm->nConfigChanges;
 		/* Wait votes from all nodes until: */
-		while (!MtmVotingCompleted(ts)) 
+		while (!MtmVotingCompleted(ts)
+			   && (ts->isPrepared || nConfigChanges == Mtm->nConfigChanges))
 		{ 
 			MtmUnlock();
 			MTM_TXTRACE(x, "PostPrepareTransaction WaitLatch Start");
@@ -998,8 +1003,15 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 			MtmLock(LW_EXCLUSIVE);
 		}
 		if (ts->status != TRANSACTION_STATUS_ABORTED && !ts->votingCompleted) { 
+			if (ts->isPrepared) { 
+				elog(ERROR, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);
+			}
+			if (Mtm->status != MTM_ONLINE) { 
+				elog(WARNING, "Commit of distributed transaction is canceled because node is switched to %s mode", MtmNodeStatusMnem[Mtm->status]);
+			} else {
+				elog(WARNING, "Commit of distributed transaction is canceled because cluster configuration was changed");
+			}
 			MtmAbortTransaction(ts);
-			elog(WARNING, "Commit of distributed transaction is canceled because node is switched to %s mode", MtmNodeStatusMnem[Mtm->status]);
 		}
 		x->status = ts->status;
 		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
@@ -1032,6 +1044,7 @@ MtmCommitPreparedTransaction(MtmCurrentTrans* x)
 		elog(WARNING, "Global transaciton ID '%s' is not found", x->gid);
 	} else {
 		int result = 0;
+		int nConfigChanges = Mtm->nConfigChanges;
 
  		Assert(tm->state != NULL);
 		MTM_LOG3("Commit prepared transaction %d with gid='%s'", x->xid, x->gid);
@@ -1046,7 +1059,8 @@ MtmCommitPreparedTransaction(MtmCurrentTrans* x)
 		MtmSend2PCMessage(ts, MSG_PRECOMMIT);
 		
 		/* Wait votes from all nodes until: */
-		while (!MtmVotingCompleted(ts))
+		while (!MtmVotingCompleted(ts)
+			   && (ts->isPrepared || nConfigChanges == Mtm->nConfigChanges))
 		{
 			MtmUnlock();
 			MTM_TXTRACE(x, "CommitPreparedTransaction WaitLatch Start");
@@ -1063,8 +1077,15 @@ MtmCommitPreparedTransaction(MtmCurrentTrans* x)
 			}
 		}
 		if (ts->status != TRANSACTION_STATUS_ABORTED && !ts->votingCompleted) { 
+			if (ts->isPrepared) { 
+				elog(ERROR, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);
+			}
+			if (Mtm->status != MTM_ONLINE) { 
+				elog(WARNING, "Commit of distributed transaction is canceled because node is switched to %s mode", MtmNodeStatusMnem[Mtm->status]);
+			} else {
+				elog(WARNING, "Commit of distributed transaction is canceled because cluster configuration was changed");
+			}
 			MtmAbortTransaction(ts);
-			elog(WARNING, "Commit of distributed transaction is canceled because node is switched to %s mode", MtmNodeStatusMnem[Mtm->status]);
 		}
 		x->status = ts->status;
 		x->xid = ts->xid;
@@ -1166,11 +1187,14 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				}
 				ts->status = TRANSACTION_STATUS_ABORTED;
 				ts->isLocal = true;
+				ts->isPrepared = false;
 				ts->snapshot = x->snapshot;
+				ts->isTwoPhase = x->isTwoPhase;
 				ts->csn = MtmAssignCSN();	
 				ts->gtid = x->gtid;
 				ts->nSubxids = 0;
 				ts->votingCompleted = true;
+				strcpy(ts->gid, x->gid);
 				if (ts->isActive) { 
 					ts->isActive = false;
 					Assert(Mtm->nActiveTransactions != 0);
@@ -1226,8 +1250,9 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 		int i;
 		for (i = 0; i < Mtm->nAllNodes; i++)
 		{
-			if (BIT_CHECK(ts->participantsMask & ~Mtm->disabledNodeMask, i) && TransactionIdIsValid(ts->xids[i]))
+			if (BIT_CHECK(ts->participantsMask & ~Mtm->disabledNodeMask, i))
 			{
+				Assert(TransactionIdIsValid(ts->xids[i]));
 				msg.node = i+1;
 				msg.dxid = ts->xids[i];
 				MtmSendMessage(&msg);
@@ -1655,7 +1680,7 @@ MtmCheckClusterLock()
 				continue;
 			} else {  
 				/* All lockers are synchronized their logs */
-				/* Remove lock and mark them as rceovered */
+				/* Remove lock and mark them as recovered */
 				MTM_LOG1("Complete recovery of %d nodes (node mask %lx)", Mtm->nLockers, (long) Mtm->nodeLockerMask);
 				Assert(Mtm->walSenderLockerMask == 0);
 				Assert((Mtm->nodeLockerMask & Mtm->disabledNodeMask) == Mtm->nodeLockerMask);
@@ -2082,6 +2107,8 @@ static void MtmInitialize()
 			Mtm->nodes[i].timeline = 0;
 		}
 		Mtm->nodes[MtmNodeId-1].originId = DoNotReplicateId;
+		/* All transaction originated from the current node should be ignored during recovery */
+		Mtm->nodes[MtmNodeId-1].restartLsn = (XLogRecPtr)PG_UINT64_MAX;
 		PGSemaphoreCreate(&Mtm->sendSemaphore);
 		PGSemaphoreReset(&Mtm->sendSemaphore);
 		SpinLockInit(&Mtm->spinlock);
@@ -2806,12 +2833,7 @@ void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
 	Assert(!IsTransactionState());
 	MtmResetTransaction();
 	StartTransactionCommand();
-#if 0
-	if (Mtm->nodes[MtmNodeId-1].originId == InvalidRepOriginId) { 
-		/* This dummy origin is used for local commits/aborts which should not be replicated */
-		Mtm->nodes[MtmNodeId-1].originId = replorigin_create(psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId));
-	}
-#endif
+
 	MtmBeginSession(MtmNodeId);
 	MtmSetCurrentTransactionCSN(ts->csn);
 	MtmSetCurrentTransactionGID(ts->gid);
@@ -2828,7 +2850,6 @@ void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
  */
 MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shutdown)
 {
-	int i;
 	bool recovery = false;
 
 	while (Mtm->status != MTM_CONNECTED && Mtm->status != MTM_ONLINE) 
@@ -2850,9 +2871,6 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 				Mtm->nReceivers = 0;
 				Mtm->recoveryCount += 1;
 				Mtm->pglogicalNodeMask = 0;
-				for (i = 0; i < Mtm->nAllNodes; i++) { 
-					Mtm->nodes[i].restartLsn = InvalidXLogRecPtr;
-				}
 				MtmUnlock();
 				return REPLMODE_RECOVERY;
 			}
@@ -3067,6 +3085,67 @@ MtmReplicationRowFilterHook(struct PGLogicalRowFilterArgs* args)
 	isDistributed = hash_search(MtmLocalTables, &RelationGetRelid(args->changed_rel), HASH_FIND, NULL) == NULL;
 	MtmUnlock();
 	return isDistributed;
+}
+
+bool MtmFilterTransaction(char* record, int size)
+{
+	StringInfoData s;
+	uint8       flags;
+	XLogRecPtr  origin_lsn;
+	XLogRecPtr  end_lsn;
+	int         replication_node;
+	int         origin_node;
+	char const* gid = "";
+	bool        duplicate;
+
+    s.data = record;
+    s.len = size;
+    s.maxlen = -1;
+	s.cursor = 0;
+
+	Assert(pq_getmsgbyte(&s) == 'C');
+	flags = pq_getmsgbyte(&s); /* flags */
+	replication_node = pq_getmsgbyte(&s);
+
+	/* read fields */
+	pq_getmsgint64(&s); /* commit_lsn */
+	end_lsn = pq_getmsgint64(&s); /* end_lsn */
+	pq_getmsgint64(&s); /* commit_time */
+	
+	origin_node = pq_getmsgbyte(&s);
+	origin_lsn = pq_getmsgint64(&s);
+
+	Assert(replication_node == MtmReplicationNodeId && 
+		   origin_node != 0 &&
+		   (Mtm->status == MTM_RECOVERY || origin_node == replication_node));	
+
+    switch(PGLOGICAL_XACT_EVENT(flags))
+    {
+	  case PGLOGICAL_PREPARE:
+	  case PGLOGICAL_ABORT_PREPARED:
+		gid = pq_getmsgstring(&s);
+		break;
+	  case PGLOGICAL_COMMIT_PREPARED:
+		pq_getmsgint64(&s); /* CSN */
+		gid = pq_getmsgstring(&s);
+		break;
+	  default:
+		break;
+	}
+	duplicate = Mtm->status == MTM_RECOVERY && origin_lsn != InvalidXLogRecPtr && origin_lsn <= Mtm->nodes[origin_node-1].restartLsn;
+	
+	MTM_LOG1("%s transaction %s from node %d lsn %lx, origin node %d, original lsn=%lx, current lsn=%lx", 
+			 duplicate ? "Ignore" : "Apply", gid, replication_node, end_lsn, origin_node, origin_lsn, Mtm->nodes[origin_node-1].restartLsn);
+	if (Mtm->status == MTM_RECOVERY) { 
+		if (Mtm->nodes[origin_node-1].restartLsn < origin_lsn) { 
+			Mtm->nodes[origin_node-1].restartLsn = origin_lsn;
+		}
+	} else { 
+		if (Mtm->nodes[replication_node-1].restartLsn < end_lsn) { 
+			Mtm->nodes[replication_node-1].restartLsn = end_lsn;
+		}
+	}
+	return duplicate;
 }
 
 void MtmSetupReplicationHooks(struct PGLogicalHooks* hooks)
