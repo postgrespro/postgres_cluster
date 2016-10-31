@@ -1,79 +1,41 @@
 image: debian
 
 stages:
-  - sanitize
   - build
   - test
-  - package
 
 before_script:
   - export DEBIAN_FRONTEND=noninteractive
+  - export CORES=$(grep -c ^processor /proc/cpuinfo)
   - uname -a
   - df -h
 
-build:debian-7:
+build:ubuntu-16.04:
   stage: build
-  image: debian:7
+  image: ubuntu:16.04
   only:
     - PGPROEE9_6
   before_script:
-    - apt-get update && apt-get install -y gcc make flex bison libreadline-dev zlib1g-dev jade
+    - apt-get update && apt-get install -y gcc make flex bison libreadline-dev zlib1g-dev jade libzstd0 libzstd-dev
   script:
     - ./configure
-    - make -j 2
-    - make install
-  when: always
-
-build:debian-8:
-  stage: build
-  image: debian:8
-  only:
-    - PGPROEE9_6
-  before_script:
-    - apt update && apt -y install gcc make flex bison libreadline-dev zlib1g-dev jade
-  script:
-    - ./configure
-    - make -j 2
-    - make install
-  when: always
-
-sanitize:clang:
-  stage: sanitize
-  only:
-    - PGPROEE9_6
-  before_script:
-   - apt update && apt -y install clang libfindbin-libs-perl
-  script:
-   - scan-build ./configure
-   - scan-build make -j 2
-  when: always
-
-sanitize:cppcheck:
-  stage: sanitize
-  only:
-    - PGPROEE9_6
-  before_script:
-   - apt update && apt -y install cppcheck
-  script:
-   - cppcheck --enable=all --std=c11 --std=c++11 --std=posix --error-exitcode=1 -i $(find . -name "*.[c,cpp]")
+    - make -j $CORES
+    - apt-get install sudo
+    - sudo make install
   when: always
 
 test:
   stage: test
+  image: ubuntu:16.04
   only:
     - PGPROEE9_6
   before_script:
-    - apt update && apt -y install gcc make flex bison libreadline-dev zlib1g-dev jade
+    - apt-get update && apt-get install -y gcc make flex bison libreadline-dev zlib1g-dev jade libzstd0 libzstd-dev
   script:
     - ./configure
-    - make -j 2
-    - make check
-  when: always
-
-package:
-  stage: package
-  only:
-    - PGPROEE9_6
-  script:
-    - echo "Building deb package here"
+    - make -j $CORES
+    - apt-get install sudo
+    - adduser --disabled-password --gecos '' postgres
+    - echo '%postgres ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+    - su -m postgres -c make check
   when: always
