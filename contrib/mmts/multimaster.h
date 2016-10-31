@@ -126,10 +126,11 @@ typedef enum
 
 typedef enum
 {
-	REPLMODE_EXIT,       /* receiver should exit */
-	REPLMODE_RECOVERED,  /* recovery of node is completed so drop old slot and restart replication from the current position in WAL */
-	REPLMODE_RECOVERY,   /* perform recorvery of the node by applying all data from the slot from specified point */
-	REPLMODE_NORMAL      /* normal mode: use existed slot or create new one and start receiving data from it from the specified position */
+	REPLMODE_EXIT,         /* receiver should exit */
+	REPLMODE_RECOVERED,    /* recovery of receiver node is completed so drop old slot and restart replication from the current position in WAL */
+	REPLMODE_RECOVERY,     /* perform recorvery of the node by applying all data from the slot from specified point */
+	REPLMODE_CREATE_NEW,   /* destination node is recovered: drop old slot and restart from roveredLsn position */
+	REPLMODE_OPEN_EXISTED  /* normal mode: use existed slot or create new one and start receiving data from it from the rememered position */
 } MtmReplicationMode;
 
 typedef struct
@@ -188,12 +189,13 @@ typedef struct
 	int         receiverPid;
 	XLogRecPtr  flushPos;
 	csn_t       oldestSnapshot;        /* Oldest snapshot used by active transactions at this node */	
-	XLogRecPtr  restartLsn;
+	XLogRecPtr  restartLSN;
 	RepOriginId originId;
 	int         timeline;
 	void*       lockGraphData;
 	int         lockGraphAllocated;
 	int         lockGraphUsed;
+	XLogRecPtr  recoveredLSN;
 } MtmNodeInfo;
 
 typedef struct MtmTransState
@@ -264,6 +266,7 @@ typedef struct
 	uint64 gcCount;                    /* Number of global transactions performed since last GC */
 	MtmMessageQueue* sendQueue;        /* Messages to be sent by arbiter sender */
 	MtmMessageQueue* freeQueue;        /* Free messages */
+	XLogRecPtr recoveredLSN;           /* LSN at the moment of recovery completion */
 	BgwPool pool;                      /* Pool of background workers for applying logical replication patches */
 	MtmNodeInfo nodes[1];              /* [Mtm->nAllNodes]: per-node data */ 
 } MtmState;

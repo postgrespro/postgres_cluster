@@ -196,9 +196,10 @@ feTimestampDifference(int64 start_time, int64 stop_time,
 static char const* const MtmReplicationModeName[] = 
 {
 	"exit",
-	"recovered", /* recovery of node is completed so drop old slot and restart replication from the current position in WAL */
-	"recovery",  /* perform recorvery of the node by applying all data from theslot from specified point */
-	"normal"     /* normal mode: use existed slot or create new one and start receiving data from it from the specified position */
+	"recovered",   /* recovery of node is completed so drop old slot and restart replication from the current position in WAL */
+	"recovery",    /* perform recorvery of the node by applying all data from theslot from specified point */
+	"create_new",  /* destination node is recovered: drop old slot and restart from roveredLsn position */
+	"open_existed" /* normal mode: use existed slot or create new one and start receiving data from it from the rememered position */
 };
 
 static void
@@ -275,7 +276,7 @@ pglogical_receiver_main(Datum main_arg)
 		}
 		timeline = Mtm->nodes[nodeId-1].timeline;
 		count = Mtm->recoveryCount;
-		
+	   
 		/* Establish connection to remote server */
 		conn = PQconnectdb_safe(connString);
 		status = PQstatus(conn);
@@ -287,7 +288,9 @@ pglogical_receiver_main(Datum main_arg)
 		}
 		
 		query = createPQExpBuffer();
-		if (mode == REPLMODE_NORMAL && timeline != Mtm->nodes[nodeId-1].timeline) { /* recreate slot */
+		if ((mode == REPLMODE_OPEN_EXISTED && timeline != Mtm->nodes[nodeId-1].timeline)
+			|| mode == REPLMODE_CREATE_NEW) 
+		{ /* recreate slot */
 			appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", slotName);
 			res = PQexec(conn, query->data);
 			PQclear(res);
@@ -320,7 +323,7 @@ pglogical_receiver_main(Datum main_arg)
 		
 		/* Start logical replication at specified position */
 		if (mode == REPLMODE_RECOVERED) {
-			originStartPos = Mtm->nodes[nodeId-1].restartLsn;
+			originStartPos = Mtm->nodes[nodeId-1].restartLSN;
 			MTM_LOG1("Restart replication from node %d from position %lx", nodeId, originStartPos);
 		} 
 		if (originStartPos == InvalidXLogRecPtr && !newTimeline) { 
@@ -339,23 +342,26 @@ pglogical_receiver_main(Datum main_arg)
 				MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, nodeId);
 			} else { 
 				originStartPos = replorigin_get_progress(originId, false);
-				if (Mtm->nodes[nodeId-1].restartLsn < originStartPos) { 
-					Mtm->nodes[nodeId-1].restartLsn = originStartPos;
+				if (Mtm->nodes[nodeId-1].restartLSN < originStartPos) { 
+					Mtm->nodes[nodeId-1].restartLSN = originStartPos;
 				}
 				MTM_LOG1("Restart logical receiver at position %lx with origin=%d from node %d", originStartPos, originId, nodeId);
 			}
 			Mtm->nodes[nodeId-1].originId = originId;
 			CommitTransactionCommand();
+		} else if (mode == REPLMODE_CREATE_NEW) { 
+			originStartPos = Mtm->nodes[nodeId-1].recoveredLSN;
 		}
 		
-		appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %x/%x (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s', \"mtm_restart_pos\" '%lx')",
+		appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %x/%x (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s', \"mtm_restart_pos\" '%lx', \"mtm_recovered_pos\" '%lx')",
 						  slotName,
 						  (uint32) (originStartPos >> 32),
 						  (uint32) originStartPos,
 						  MULTIMASTER_MAX_PROTO_VERSION,
 						  MULTIMASTER_MIN_PROTO_VERSION,
 						  MtmReplicationModeName[mode],
-						  originStartPos
+						  originStartPos,
+						  Mtm->recoveredLSN
 			);
 		res = PQexec(conn, query->data);
 		if (PQresultStatus(res) != PGRES_COPY_BOTH)
@@ -511,7 +517,7 @@ pglogical_receiver_main(Datum main_arg)
 							output_written_lsn = Max(walEnd, output_written_lsn);
 							continue;
 						}
-						mode = REPLMODE_NORMAL;
+						mode = REPLMODE_OPEN_EXISTED;
 					}
 					MTM_LOG3("%ld: Receive message %c from node %d", MtmGetSystemTime(), stmt[0], nodeId);
 					if (buf.used >= MtmTransSpillThreshold*MB) { 
