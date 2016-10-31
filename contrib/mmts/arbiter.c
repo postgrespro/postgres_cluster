@@ -313,12 +313,14 @@ static void MtmSetSocketOptions(int sd)
 
 static void MtmCheckResponse(MtmArbiterMessage* resp)
 {
-	if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) && !BIT_CHECK(Mtm->disabledNodeMask, resp->node-1)) { 
+	if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) 
+		&& !BIT_CHECK(Mtm->disabledNodeMask, resp->node-1)
+		&& Mtm->status != MTM_RECOVERY
+		&& Mtm->nodes[MtmNodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < MtmGetSystemTime()) 
+	{ 
 		elog(WARNING, "Node %d thinks that I was dead, while I am %s (message %s)", resp->node, MtmNodeStatusMnem[Mtm->status], messageKindText[resp->code]);
-		if (Mtm->status != MTM_RECOVERY) { 
-			BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
-			MtmSwitchClusterMode(MTM_RECOVERY);
-		}
+		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
+		MtmSwitchClusterMode(MTM_RECOVERY);
 	}
 }
 
@@ -561,7 +563,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 static int MtmReadFromNode(int node, void* buf, int buf_size)
 {
 	int rc = MtmReadSocket(sockets[node], buf, buf_size);
-	if (rc < 0) { 
+	if (rc <= 0) { 
 		elog(WARNING, "Arbiter failed to read from node=%d, rc=%d, errno=%d", node+1, rc, errno);
 		MtmDisconnect(node);
 	}
@@ -957,6 +959,7 @@ static void MtmReceiver(Datum arg)
 						elog(WARNING, "Ignore response for unexisted transaction %d from node %d", msg->dxid, node);
 						continue;
 					}
+					Assert(msg->code == MSG_ABORTED || strcmp(msg->gid, ts->gid) == 0);
 					if (BIT_CHECK(ts->votedMask, node-1)) {
 						elog(WARNING, "Receive deteriorated %s response for transaction %d (%s) from node %d",
 							 messageKindText[msg->code], ts->xid, ts->gid, node);
@@ -990,6 +993,8 @@ static void MtmReceiver(Datum arg)
 									MtmWakeUpBackend(ts);								
 								} else { 
 									Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+									MTM_LOG1("Transaction %s is prepared (status=%d participants=%lx disabled=%lx, voted=%lx)", 
+											 ts->gid, ts->status, ts->participantsMask, Mtm->disabledNodeMask, ts->votedMask);
 									ts->isPrepared = true;
 									if (ts->isTwoPhase) { 
 										MtmWakeUpBackend(ts);										
@@ -1048,9 +1053,11 @@ static void MtmReceiver(Datum arg)
 								ts->csn = MtmAssignCSN();
 								MtmAdjustSubtransactions(ts);
 								MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
-							} else {
-								Assert(ts->status == TRANSACTION_STATUS_ABORTED);
+							} else if (ts->status == TRANSACTION_STATUS_ABORTED) {
 								MtmSend2PCMessage(ts, MSG_ABORTED);
+							} else { 
+								elog(WARNING, "Transaction %s is already %s",
+									 ts->gid, ts->status == TRANSACTION_STATUS_COMMITTED ? "committed" : "prepared");
 							}
 							break;
 						  default:
