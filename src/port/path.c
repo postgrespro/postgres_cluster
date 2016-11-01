@@ -796,6 +796,31 @@ get_man_path(const char *my_exec_path, char *ret_path)
 	make_relative_path(ret_path, MANDIR, PGBINDIR, my_exec_path);
 }
 
+#ifdef WIN32
+/*
+ *  make_wc_name
+ */
+
+const wchar_t* make_wc_name(const char* name) {
+	int wlen;
+	size_t size = (size_t)strlen(name) + 1;
+	size_t wsize = size * sizeof(wchar_t);
+	wchar_t *p = (wchar_t*)malloc(wsize);
+	wlen = MultiByteToWideChar(CP_ACP,0,(LPCCH)name,(int)size,(LPWSTR)p,(int)wsize);
+	return p;
+}
+
+/*
+ *  make_utf8_path
+ */
+const char* make_utf8_path(const wchar_t* s) {
+	int len;
+	size_t size = (size_t)wcslen(s) + 1;
+	char *p = (char*)malloc(size * 6);
+	len = WideCharToMultiByte(CP_UTF8,0,s,size,p,size * sizeof(wchar_t),NULL,NULL);
+	return p;
+}
+#endif
 
 /*
  *	get_home_path
@@ -817,8 +842,10 @@ get_home_path(char *ret_path)
 	strlcpy(ret_path, pwd->pw_dir, MAXPGPATH);
 	return true;
 #else
-	char	   *tmppath;
-
+	wchar_t *tmppath;
+	wchar_t *vname;
+	const char *utf8_path;
+	
 	/*
 	 * Note: We use getenv() here because the more modern SHGetFolderPath()
 	 * would force the backend to link with shell32.lib, which eats valuable
@@ -826,10 +853,16 @@ get_home_path(char *ret_path)
 	 * brings in shell32 via libpq.  Moving this function to its own file
 	 * would keep it out of the backend, freeing it from this concern.
 	 */
-	tmppath = getenv("APPDATA");
+	
+	vname = make_wc_name("APPDATA");
+	tmppath = _wgetenv(vname);
+	free(vname);
+	
 	if (!tmppath)
 		return false;
-	snprintf(ret_path, MAXPGPATH, "%s/postgresql", tmppath);
+	utf8_path = make_utf8_path(tmppath);
+	snprintf(ret_path, MAXPGPATH, "%s\\postgresql", utf8_path);
+	free(utf8_path);
 	return true;
 #endif
 }
