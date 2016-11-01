@@ -427,7 +427,14 @@ process_remote_message(StringInfo s)
 		}
 	    case 'A':
 		{
-		    MtmRollbackPreparedTransaction(messageBody);
+			MtmAbortLogicalMessage* msg = (MtmAbortLogicalMessage*)messageBody;
+			int origin_node = msg->origin_node;
+			Assert(messageSize == sizeof(MtmAbortLogicalMessage));
+			if (Mtm->nodes[origin_node-1].restartLSN < msg->origin_lsn) { 
+				Mtm->nodes[origin_node-1].restartLSN = msg->origin_lsn;
+			}
+			replorigin_session_origin_lsn = msg->origin_lsn; 
+			MtmRollbackPreparedTransaction(origin_node, msg->gid);
 			standalone = true;
 			break;
 		}
@@ -597,17 +604,16 @@ process_remote_commit(StringInfo in)
 
 	/* read fields */
 	pq_getmsgint64(in); /* commit_lsn */
-	replorigin_session_origin_lsn = end_lsn = pq_getmsgint64(in); /* end_lsn */
+	end_lsn = pq_getmsgint64(in); /* end_lsn */
 	replorigin_session_origin_timestamp = pq_getmsgint64(in); /* commit_time */
 
 	origin_node = pq_getmsgbyte(in);
 	origin_lsn = pq_getmsgint64(in);
 
-	if (origin_node != MtmReplicationNodeId) {
-		replorigin_advance(Mtm->nodes[origin_node-1].originId, origin_lsn, GetXLogInsertRecPtr(),
-						   false /* backward */ , false /* WAL */ );
+	replorigin_session_origin_lsn = origin_node == MtmReplicationNodeId ? end_lsn : origin_lsn;
+	if (Mtm->nodes[origin_node-1].restartLSN < replorigin_session_origin_lsn) { 
+		Mtm->nodes[origin_node-1].restartLSN = replorigin_session_origin_lsn;
 	}
-
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 
 	switch(PGLOGICAL_XACT_EVENT(flags))
@@ -617,9 +623,9 @@ process_remote_commit(StringInfo in)
 			MTM_LOG2("%d: PGLOGICAL_COMMIT commit", MyProcPid);
 			if (IsTransactionState()) {
 				Assert(TransactionIdIsValid(MtmGetCurrentTransactionId()));
-				MtmBeginSession(MtmReplicationNodeId);
+				MtmBeginSession(origin_node);
 				CommitTransactionCommand();
-				MtmEndSession(MtmReplicationNodeId, true);
+				MtmEndSession(origin_node, true);
 			}
 			break;
 		}
@@ -632,12 +638,12 @@ process_remote_commit(StringInfo in)
 				AbortCurrentTransaction();
 			} else { 				
 				/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
-				MTM_LOG2("PGLOGICAL_PREPARE commit: gid=%s", gid);
+				MTM_LOG1("PGLOGICAL_PREPARE commit: gid=%s", gid);
 				BeginTransactionBlock();
 				CommitTransactionCommand();
 				StartTransactionCommand();
 				
-				MtmBeginSession(MtmReplicationNodeId);
+				MtmBeginSession(origin_node);
 				/* PREPARE itself */
 				MtmSetCurrentTransactionGID(gid);
 				PrepareTransactionBlock(gid);
@@ -650,7 +656,7 @@ process_remote_commit(StringInfo in)
 					FinishPreparedTransaction(gid, false);
 					CommitTransactionCommand();					
 				}	
-				MtmEndSession(MtmReplicationNodeId, true);
+				MtmEndSession(origin_node, true);
 			}
 			break;
 		}
@@ -659,22 +665,22 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			csn = pq_getmsgint64(in); 
 			gid = pq_getmsgstring(in);
-			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s, lsn=%ld", csn, gid, end_lsn);
+			MTM_LOG1("PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s, lsn=%lx", csn, gid, end_lsn);
 			MtmResetTransaction();
 			StartTransactionCommand();
-			MtmBeginSession(MtmReplicationNodeId);
+			MtmBeginSession(origin_node);
 			MtmSetCurrentTransactionCSN(csn);
 			MtmSetCurrentTransactionGID(gid);
 			FinishPreparedTransaction(gid, true);
 			CommitTransactionCommand();
-			MtmEndSession(MtmReplicationNodeId, true);
+			MtmEndSession(origin_node, true);
 			break;
 		}
 		case PGLOGICAL_ABORT_PREPARED:
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
-			MtmRollbackPreparedTransaction(gid);
+			MtmRollbackPreparedTransaction(origin_node, gid);
 			break;
 		}
 		default:
