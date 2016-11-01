@@ -1134,6 +1134,16 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 }
 
 static void 
+MtmLogAbortLogicalMessage(int nodeId, char const* gid)
+{
+	MtmAbortLogicalMessage msg;
+	strcpy(msg.gid, gid);
+	msg.origin_node = nodeId;
+	msg.origin_lsn = replorigin_session_origin_lsn;
+	XLogFlush(LogLogicalMessage("A", (char*)&msg, sizeof msg, false)); 
+}
+
+static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
 	MTM_LOG2("%d: End transaction %d, prepared=%d, replicated=%d, distributed=%d, 2pc=%d, gid=%s -> %s", 
@@ -1154,7 +1164,8 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		}
 		if (ts != NULL) { 
 			if (*ts->gid)  
-				MTM_LOG2("TRANSLOG: %s transaction %s status %d", (commit ? "commit" : "rollback"), ts->gid, ts->status);
+				MTM_LOG1("TRANSLOG: %s transaction git=%s xid=%d node=%d dxid=%d status %d", 
+						 (commit ? "commit" : "rollback"), ts->gid, ts->xid, ts->gtid.node, ts->gtid.xid, ts->status);
 			if (commit) {
 				if (!(ts->status == TRANSACTION_STATUS_UNKNOWN 
 					  || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)))  
@@ -1213,7 +1224,8 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				}
 				MtmTransactionListAppend(ts);
 				if (*x->gid) { 
-					LogLogicalMessage("A", x->gid, strlen(x->gid) + 1, false);
+					replorigin_session_origin_lsn = InvalidXLogRecPtr;
+					MtmLogAbortLogicalMessage(MtmNodeId, x->gid);
 				}
 			}
 			MtmSend2PCMessage(ts, MSG_ABORTED); /* send notification to coordinator */
@@ -2824,20 +2836,23 @@ void MtmReleaseRecoverySlot(int nodeId)
 	if (Mtm->recoverySlot == nodeId) { 
 		Mtm->recoverySlot = 0;
 	}
-}
+}		
 
-void MtmRollbackPreparedTransaction(char const* gid)
+void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 {
-	MTM_LOG1("Abort prepared transaction %s", gid);
-	if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED) == TRANSACTION_STATUS_UNKNOWN) { 
+	XidStatus status = MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED);
+	MTM_LOG1("Abort prepared transaction %s status %d", gid, status);
+	if (status == TRANSACTION_STATUS_UNKNOWN) { 
 		MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
 		MtmResetTransaction();
 		StartTransactionCommand();
-		MtmBeginSession(MtmReplicationNodeId);
+		MtmBeginSession(nodeId);
 		MtmSetCurrentTransactionGID(gid);
 		FinishPreparedTransaction(gid, false);
 		CommitTransactionCommand();
-		MtmEndSession(MtmReplicationNodeId, true);
+		MtmEndSession(nodeId, true);
+	} else if (status == TRANSACTION_STATUS_IN_PROGRESS) {
+		MtmLogAbortLogicalMessage(nodeId, gid);
 	}
 }	
 
@@ -3157,19 +3172,11 @@ bool MtmFilterTransaction(char* record, int size)
 	  default:
 		break;
 	}
-	duplicate = Mtm->status == MTM_RECOVERY && origin_lsn != InvalidXLogRecPtr && origin_lsn <= Mtm->nodes[origin_node-1].restartLSN;
+	//duplicate = Mtm->status == MTM_RECOVERY && origin_lsn != InvalidXLogRecPtr && origin_lsn <= Mtm->nodes[origin_node-1].restartLSN;
+	duplicate = origin_lsn != InvalidXLogRecPtr && origin_lsn <= Mtm->nodes[origin_node-1].restartLSN;
 	
-	MTM_LOG1("%s transaction %s from node %d lsn %lx, origin node %d, original lsn=%lx, current lsn=%lx", 
-			 duplicate ? "Ignore" : "Apply", gid, replication_node, end_lsn, origin_node, origin_lsn, Mtm->nodes[origin_node-1].restartLSN);
-	if (Mtm->status == MTM_RECOVERY) { 
-		if (Mtm->nodes[origin_node-1].restartLSN < origin_lsn) { 
-			Mtm->nodes[origin_node-1].restartLSN = origin_lsn;
-		}
-	} else { 
-		if (Mtm->nodes[replication_node-1].restartLSN < end_lsn) { 
-			Mtm->nodes[replication_node-1].restartLSN = end_lsn;
-		}
-	}
+	MTM_LOG1("%s transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
+			 duplicate ? "Ignore" : "Apply", gid, replication_node, end_lsn, flags, origin_node, origin_lsn, Mtm->nodes[origin_node-1].restartLSN);
 	return duplicate;
 }
 

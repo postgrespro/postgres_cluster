@@ -147,6 +147,13 @@ typedef struct
 	pgid_t         gid;    /* Global transaction identifier */
 } MtmArbiterMessage;
 
+typedef struct MtmAbortLogicalMessage
+{
+	pgid_t         gid;
+	int            origin_node;
+	XLogRecPtr     origin_lsn;
+} MtmAbortLogicalMessage;
+
 typedef struct MtmMessageQueue
 {
 	MtmArbiterMessage msg;
@@ -362,7 +369,7 @@ extern PGconn *PQconnectdb_safe(const char *conninfo);
 extern void MtmBeginSession(int nodeId);
 extern void MtmEndSession(int nodeId, bool unlock);
 extern void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit);
-extern void MtmRollbackPreparedTransaction(char const* gid);
+extern void MtmRollbackPreparedTransaction(int nodeId, char const* gid);
 extern bool MtmFilterTransaction(char* record, int size);
 
 #endif
