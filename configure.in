@@ -17,7 +17,7 @@ dnl Read the Autoconf manual for details.
 dnl
 m4_pattern_forbid(^PGAC_)dnl to catch undefined macros
 
-AC_INIT([PostgreSQL], [9.6.0], [bugs@postgrespro.ru],[postgrespro])
+AC_INIT([PostgreSQL], [9.6.1], [bugs@postgrespro.ru],[postgrespro])
 PACKAGE_TARNAME=postgrespro
 
 m4_if(m4_defn([m4_PACKAGE_VERSION]), [2.69], [], [m4_fatal([Autoconf version 2.69 is required.
@@ -40,9 +40,12 @@ PGAC_ARG_REQ(with, extra-version, [STRING], [append STRING to version],
              [PG_VERSION="$PACKAGE_VERSION"])
 PGPRO_VERSION="$PACKAGE_VERSION.1"
 PGPRO_PACKAGE_NAME="PostgresPro"
+PGPRO_EDITION="standard"
 AC_SUBST(PGPRO_PACKAGE_NAME)
+AC_SUBST(PGPRO_EDITION)
 AC_DEFINE_UNQUOTED(PG_VERSION, "$PG_VERSION", [PostgreSQL version as a string])
 AC_DEFINE_UNQUOTED(PGPRO_PACKAGE_NAME, "$PGPRO_PACKAGE_NAME", [PostgresPro name as a string])            
+AC_DEFINE_UNQUOTED(PGPRO_EDITION,"$PGPRO_EDITION",[PostgresPro edition])
 AC_DEFINE_UNQUOTED(PGPRO_VERSION, "$PGPRO_VERSION", [PostgresPro version as a string])
 
 AC_CANONICAL_HOST
