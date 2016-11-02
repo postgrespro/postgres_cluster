@@ -1535,6 +1535,7 @@ void MtmRecoveryCompleted(void)
 			 MtmNodeId, (long long) Mtm->disabledNodeMask, (long long) Mtm->connectivityMask, Mtm->nLiveNodes);
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
+	Mtm->recoveredLSN = GetXLogInsertRecPtr();
 	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
 	Mtm->reconnectMask |= Mtm->connectivityMask; /* try to reestablish all connections */
 	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
@@ -1628,7 +1629,6 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 				MTM_LOG1("%d: node %d is caugth-up without locking cluster", MyProcPid, nodeId);	
 				/* We are lucky: caugth-up without locking cluster! */
 			}
-			Mtm->recoveredLSN = walLSN;
 			MtmEnableNode(nodeId);
 			Mtm->nConfigChanges += 1;
 			caughtUp = true;
