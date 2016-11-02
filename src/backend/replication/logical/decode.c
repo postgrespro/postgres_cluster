@@ -606,6 +606,18 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		(parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) ||
 		FilterByOrigin(ctx, origin_id))
 	{
+		if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr)) {
+			elog(LOG, "Skip transaction %d at %lx because it's origptr %lx is not in snapshot", 
+				 xid, buf->endptr, buf->origptr);
+		}
+		if (parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) {
+			elog(LOG, "Skip transaction  %d at %lx because database id is not matched", 
+				 xid, buf->endptr);
+		}
+		if (FilterByOrigin(ctx, origin_id)) { 
+			elog(LOG, "Skip transaction  %d at %lx is filtered by origin_id %d", 
+				 xid, buf->endptr, origin_id);
+		}
 		for (i = 0; i < parsed->nsubxacts; i++)
 		{
 			ReorderBufferForget(ctx->reorder, parsed->subxacts[i], buf->origptr);

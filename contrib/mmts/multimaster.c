@@ -83,6 +83,7 @@ typedef struct {
 	bool  isReplicated;   /* transaction on replica */
 	bool  isDistributed;  /* transaction performed INSERT/UPDATE/DELETE and has to be replicated to other nodes */
 	bool  isPrepared;     /* transaction is perpared at first stage of 2PC */
+	bool  isSuspended;    /* prepared transaction is suspended because coordinator node is switch to offline */
     bool  isTransactionBlock; /* is transaction block */
 	bool  containsDML;    /* transaction contains DML statements */
 	XidStatus status;     /* transaction status */
@@ -712,7 +713,7 @@ MtmXactCallback(XactEvent event, void *arg)
 }
 
 /* 
- * Check if this is "normal" user trnsaction which should be distributed to other nodes
+ * Check if this is "normal" user transaction which should be distributed to other nodes
  */
 static bool
 MtmIsUserTransaction()
@@ -734,6 +735,7 @@ MtmResetTransaction()
 	x->gtid.xid = InvalidTransactionId;
 	x->isDistributed = false;
 	x->isPrepared = false;
+	x->isSuspended = false;
 	x->isTwoPhase = false;
 	x->csn = 
 	x->status = TRANSACTION_STATUS_UNKNOWN;
@@ -763,6 +765,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
         x->isReplicated = MtmIsLogicalReceiver;
         x->isDistributed = MtmIsUserTransaction();
 		x->isPrepared = false;
+		x->isSuspended = false;
 		x->isTwoPhase = false;
 		x->isTransactionBlock = IsTransactionBlock();
 		/* Application name can be changed usnig PGAPPNAME environment variable */
@@ -1004,14 +1007,18 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		}
 		if (ts->status != TRANSACTION_STATUS_ABORTED && !ts->votingCompleted) { 
 			if (ts->isPrepared) { 
-				elog(ERROR, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);
+				// GetNewTransactionId(false); /* force increment of transaction counter */
+				// elog(ERROR, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);
+				elog(WARNING, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);				
+				x->isSuspended = true;
+			} else { 
+				if (Mtm->status != MTM_ONLINE) { 
+					elog(WARNING, "Commit of distributed transaction is canceled because node is switched to %s mode", MtmNodeStatusMnem[Mtm->status]);
+				} else {
+					elog(WARNING, "Commit of distributed transaction is canceled because cluster configuration was changed");
+				}
+				MtmAbortTransaction(ts);
 			}
-			if (Mtm->status != MTM_ONLINE) { 
-				elog(WARNING, "Commit of distributed transaction is canceled because node is switched to %s mode", MtmNodeStatusMnem[Mtm->status]);
-			} else {
-				elog(WARNING, "Commit of distributed transaction is canceled because cluster configuration was changed");
-			}
-			MtmAbortTransaction(ts);
 		}
 		x->status = ts->status;
 		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
@@ -1078,14 +1085,18 @@ MtmCommitPreparedTransaction(MtmCurrentTrans* x)
 		}
 		if (ts->status != TRANSACTION_STATUS_ABORTED && !ts->votingCompleted) { 
 			if (ts->isPrepared) { 
-				elog(ERROR, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);
+				// GetNewTransactionId(false); /* force increment of transaction counter */
+				// elog(ERROR, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);
+				elog(WARNING, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);				
+				x->isSuspended = true;
+			} else { 
+				if (Mtm->status != MTM_ONLINE) { 
+					elog(WARNING, "Commit of distributed transaction is canceled because node is switched to %s mode", MtmNodeStatusMnem[Mtm->status]);
+				} else {
+					elog(WARNING, "Commit of distributed transaction is canceled because cluster configuration was changed");
+				}
+				MtmAbortTransaction(ts);
 			}
-			if (Mtm->status != MTM_ONLINE) { 
-				elog(WARNING, "Commit of distributed transaction is canceled because node is switched to %s mode", MtmNodeStatusMnem[Mtm->status]);
-			} else {
-				elog(WARNING, "Commit of distributed transaction is canceled because cluster configuration was changed");
-			}
-			MtmAbortTransaction(ts);
 		}
 		x->status = ts->status;
 		x->xid = ts->xid;
@@ -1123,6 +1134,16 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 }
 
 static void 
+MtmLogAbortLogicalMessage(int nodeId, char const* gid)
+{
+	MtmAbortLogicalMessage msg;
+	strcpy(msg.gid, gid);
+	msg.origin_node = nodeId;
+	msg.origin_lsn = replorigin_session_origin_lsn;
+	XLogFlush(LogLogicalMessage("A", (char*)&msg, sizeof msg, false)); 
+}
+
+static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
 	MTM_LOG2("%d: End transaction %d, prepared=%d, replicated=%d, distributed=%d, 2pc=%d, gid=%s -> %s", 
@@ -1143,7 +1164,8 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		}
 		if (ts != NULL) { 
 			if (*ts->gid)  
-				MTM_LOG2("TRANSLOG: %s transaction %s status %d", (commit ? "commit" : "rollback"), ts->gid, ts->status);
+				MTM_LOG1("TRANSLOG: %s transaction git=%s xid=%d node=%d dxid=%d status %d", 
+						 (commit ? "commit" : "rollback"), ts->gid, ts->xid, ts->gtid.node, ts->gtid.xid, ts->status);
 			if (commit) {
 				if (!(ts->status == TRANSACTION_STATUS_UNKNOWN 
 					  || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)))  
@@ -1202,7 +1224,8 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				}
 				MtmTransactionListAppend(ts);
 				if (*x->gid) { 
-					LogLogicalMessage("A", x->gid, strlen(x->gid) + 1, false);
+					replorigin_session_origin_lsn = InvalidXLogRecPtr;
+					MtmLogAbortLogicalMessage(MtmNodeId, x->gid);
 				}
 			}
 			MtmSend2PCMessage(ts, MSG_ABORTED); /* send notification to coordinator */
@@ -1293,6 +1316,7 @@ static void MtmStartRecovery()
 	MtmLock(LW_EXCLUSIVE);
 	BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
 	MtmSwitchClusterMode(MTM_RECOVERY);
+	Mtm->recoveredLSN = InvalidXLogRecPtr;
 	MtmUnlock();
 }
 
@@ -1604,6 +1628,7 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 				MTM_LOG1("%d: node %d is caugth-up without locking cluster", MyProcPid, nodeId);	
 				/* We are lucky: caugth-up without locking cluster! */
 			}
+			Mtm->recoveredLSN = walLSN;
 			MtmEnableNode(nodeId);
 			Mtm->nConfigChanges += 1;
 			caughtUp = true;
@@ -2075,6 +2100,7 @@ static void MtmInitialize()
 		Mtm->walSenderLockerMask = 0;
 		Mtm->nodeLockerMask = 0;
 		Mtm->reconnectMask = 0;
+		Mtm->recoveredLSN = InvalidXLogRecPtr;
 		Mtm->nLockers = 0;
 		Mtm->nActiveTransactions = 0;
 		Mtm->votingTransactions = NULL;
@@ -2102,13 +2128,14 @@ static void MtmInitialize()
 			Mtm->nodes[i].con = MtmConnections[i];
 			Mtm->nodes[i].flushPos = 0;
 			Mtm->nodes[i].lastHeartbeat = 0;
-			Mtm->nodes[i].restartLsn = 0;
+			Mtm->nodes[i].restartLSN = InvalidXLogRecPtr;
 			Mtm->nodes[i].originId = InvalidRepOriginId;
 			Mtm->nodes[i].timeline = 0;
+			Mtm->nodes[i].recoveredLSN = InvalidXLogRecPtr;
 		}
 		Mtm->nodes[MtmNodeId-1].originId = DoNotReplicateId;
 		/* All transaction originated from the current node should be ignored during recovery */
-		Mtm->nodes[MtmNodeId-1].restartLsn = (XLogRecPtr)PG_UINT64_MAX;
+		Mtm->nodes[MtmNodeId-1].restartLSN = (XLogRecPtr)PG_UINT64_MAX;
 		PGSemaphoreCreate(&Mtm->sendSemaphore);
 		PGSemaphoreReset(&Mtm->sendSemaphore);
 		SpinLockInit(&Mtm->spinlock);
@@ -2811,20 +2838,23 @@ void MtmReleaseRecoverySlot(int nodeId)
 	if (Mtm->recoverySlot == nodeId) { 
 		Mtm->recoverySlot = 0;
 	}
-}
+}		
 
-void MtmRollbackPreparedTransaction(char const* gid)
+void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 {
-	MTM_LOG1("Abort prepared transaction %s", gid);
-	if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED) == TRANSACTION_STATUS_UNKNOWN) { 
+	XidStatus status = MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED);
+	MTM_LOG1("Abort prepared transaction %s status %d", gid, status);
+	if (status == TRANSACTION_STATUS_UNKNOWN) { 
 		MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
 		MtmResetTransaction();
 		StartTransactionCommand();
-		MtmBeginSession(MtmReplicationNodeId);
+		MtmBeginSession(nodeId);
 		MtmSetCurrentTransactionGID(gid);
 		FinishPreparedTransaction(gid, false);
 		CommitTransactionCommand();
-		MtmEndSession(MtmReplicationNodeId, true);
+		MtmEndSession(nodeId, true);
+	} else if (status == TRANSACTION_STATUS_IN_PROGRESS) {
+		MtmLogAbortLogicalMessage(nodeId, gid);
 	}
 }	
 
@@ -2852,18 +2882,21 @@ void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
  */
 MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shutdown)
 {
-	bool recovery = false;
+	MtmReplicationMode mode = REPLMODE_OPEN_EXISTED;
 
-	while (Mtm->status != MTM_CONNECTED && Mtm->status != MTM_ONLINE) 
+	while ((Mtm->status != MTM_CONNECTED && Mtm->status != MTM_ONLINE) || BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) 
 	{ 	
 		if (*shutdown) 
 		{ 
 			return REPLMODE_EXIT;
 		}
-		MTM_LOG2("%d: receiver slot mode %s", MyProcPid, MtmNodeStatusMnem[Mtm->status]);
 		MtmLock(LW_EXCLUSIVE);
+		if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
+			mode = REPLMODE_CREATE_NEW;
+		}
+		MTM_LOG2("%d: receiver slot mode %s", MyProcPid, MtmNodeStatusMnem[Mtm->status]);
 		if (Mtm->status == MTM_RECOVERY) { 
-			recovery = true;
+			mode = REPLMODE_RECOVERED;
 			if ((Mtm->recoverySlot == 0 && (Mtm->donorNodeId == MtmNodeId || Mtm->donorNodeId == nodeId))
 				|| Mtm->recoverySlot == nodeId) 
 			{ 
@@ -2881,13 +2914,14 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 		/* delay opening of other slots until recovery is completed */
 		MtmSleep(STATUS_POLL_DELAY);
 	}
-	if (recovery) { 
+	if (mode == REPLMODE_RECOVERED) { 
 		MTM_LOG1("%d: Restart replication from node %d after end of recovery", MyProcPid, nodeId);
+	} else if (mode == REPLMODE_CREATE_NEW) { 
+		MTM_LOG1("%d: Start replication from recovered node %d", MyProcPid, nodeId);
 	} else { 
 		MTM_LOG1("%d: Continue replication from node %d", MyProcPid, nodeId);
 	}
-	/* After recovery completion we need to drop all other slots to avoid receive of redundant data */
-	return recovery ? REPLMODE_RECOVERED : REPLMODE_NORMAL;
+	return mode;		
 }
 			
 static bool MtmIsBroadcast() 
@@ -2966,7 +3000,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 					MtmIsRecoverySession = true;
 				} else if (strcmp(strVal(elem->arg), "recovered") == 0) { 
 					recoveryCompleted = true;
-				} else if (strcmp(strVal(elem->arg), "normal") != 0) { 
+				} else if (strcmp(strVal(elem->arg), "open_existed") != 0 && strcmp(strVal(elem->arg), "create_new") != 0) { 
 					elog(ERROR, "Illegal recovery mode %s", strVal(elem->arg));
 				}
 			} else { 
@@ -2978,6 +3012,12 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			} else { 
 				elog(ERROR, "Restart position is not specified");
 			}
+		} else if (strcmp("mtm_recovered_pos", elem->defname) == 0) { 
+			if (elem->arg != NULL && strVal(elem->arg) != NULL) {
+				sscanf(strVal(elem->arg), "%lx", &Mtm->nodes[MtmReplicationNodeId-1].recoveredLSN);
+			} else { 
+				elog(ERROR, "Recovered position is not specified");
+			}
 		}
 	}
 	MtmLock(LW_EXCLUSIVE);
@@ -2985,7 +3025,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 		MTM_LOG1("%d: Node %d start recovery of node %d at position %lx", MyProcPid, MtmNodeId, MtmReplicationNodeId, recoveryStartPos);
 		Assert(MyReplicationSlot != NULL);
 		if (recoveryStartPos < MyReplicationSlot->data.restart_lsn) { 
-			elog(ERROR, "Specified recovery start position %lx is beyond restart lsn %lx", recoveryStartPos, MyReplicationSlot->data.restart_lsn);
+			elog(WARNING, "Specified recovery start position %lx is beyond restart lsn %lx", recoveryStartPos, MyReplicationSlot->data.restart_lsn);
 		}
 		if (!BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
 			MtmDisableNode(MtmReplicationNodeId);
@@ -3134,19 +3174,11 @@ bool MtmFilterTransaction(char* record, int size)
 	  default:
 		break;
 	}
-	duplicate = Mtm->status == MTM_RECOVERY && origin_lsn != InvalidXLogRecPtr && origin_lsn <= Mtm->nodes[origin_node-1].restartLsn;
+	//duplicate = Mtm->status == MTM_RECOVERY && origin_lsn != InvalidXLogRecPtr && origin_lsn <= Mtm->nodes[origin_node-1].restartLSN;
+	duplicate = origin_lsn != InvalidXLogRecPtr && origin_lsn <= Mtm->nodes[origin_node-1].restartLSN;
 	
-	MTM_LOG1("%s transaction %s from node %d lsn %lx, origin node %d, original lsn=%lx, current lsn=%lx", 
-			 duplicate ? "Ignore" : "Apply", gid, replication_node, end_lsn, origin_node, origin_lsn, Mtm->nodes[origin_node-1].restartLsn);
-	if (Mtm->status == MTM_RECOVERY) { 
-		if (Mtm->nodes[origin_node-1].restartLsn < origin_lsn) { 
-			Mtm->nodes[origin_node-1].restartLsn = origin_lsn;
-		}
-	} else { 
-		if (Mtm->nodes[replication_node-1].restartLsn < end_lsn) { 
-			Mtm->nodes[replication_node-1].restartLsn = end_lsn;
-		}
-	}
+	MTM_LOG1("%s transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
+			 duplicate ? "Ignore" : "Apply", gid, replication_node, end_lsn, flags, origin_node, origin_lsn, Mtm->nodes[origin_node-1].restartLSN);
 	return duplicate;
 }
 
@@ -3759,12 +3791,16 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 			/* ??? Should we do explicit rollback */
 		} else { 	
 			CommitTransactionCommand();
-			StartTransactionCommand();
-			if (MtmGetCurrentTransactionStatus() == TRANSACTION_STATUS_ABORTED) { 
-				FinishPreparedTransaction(x->gid, false);
-				elog(ERROR, "Transaction %s is aborted by DTM", x->gid);
-			} else {
-				FinishPreparedTransaction(x->gid, true);
+			if (x->isSuspended) { 
+				elog(WARNING, "Transaction %s is left in prepared state because coordinator onde is not online", x->gid);
+			} else { 				
+				StartTransactionCommand();
+				if (x->status == TRANSACTION_STATUS_ABORTED) { 
+					FinishPreparedTransaction(x->gid, false);
+					elog(ERROR, "Transaction %s is aborted by DTM", x->gid);
+				} else {
+					FinishPreparedTransaction(x->gid, true);
+				}
 			}
 		}
 		return true;
