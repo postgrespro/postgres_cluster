@@ -63,6 +63,8 @@ worker_spi_sigterm(SIGNAL_ARGS)
 	errno = save_errno;
 }
 
+/** Some utils **/
+
 TimestampTz timestamp_add_seconds(TimestampTz to, int add)
 {
 	if(to == 0) to = GetCurrentTimestamp();
@@ -71,6 +73,63 @@ TimestampTz timestamp_add_seconds(TimestampTz to, int add)
 #endif
 	return add + to;
 }
+
+int get_integer_from_string(char *s, int start, int len)
+{
+	char buff[100];
+
+	memcpy(buff, s + start, len);
+	buff[len] = 0;
+	return atoi(buff);
+}
+
+char *make_date_from_timestamp(TimestampTz ts)
+{
+	struct pg_tm dt;
+	char *str = worker_alloc(sizeof(char) * 17);
+	int tz;
+	fsec_t fsec;
+	const char *tzn;
+
+	timestamp2tm(ts, &tz, &dt, &fsec, &tzn, NULL ); /* TODO ERROR */
+	sprintf(str, "%04d-%02d-%02d %02d:%02d", dt.tm_year , dt.tm_mon,
+			dt.tm_mday, dt.tm_hour, dt.tm_min);
+	return str;
+}
+
+TimestampTz get_timestamp_from_string(char *str)
+{
+    struct pg_tm dt;
+    int tz;
+    TimestampTz ts;
+
+    memset(&dt, 0, sizeof(struct tm));
+    dt.tm_year  = get_integer_from_string(str,  0, 4);
+    dt.tm_mon   = get_integer_from_string(str,  5, 2);
+    dt.tm_mday  = get_integer_from_string(str,  8, 2);
+    dt.tm_hour  = get_integer_from_string(str, 11, 2);
+    dt.tm_min   = get_integer_from_string(str, 14, 2);
+
+    tz = DetermineTimeZoneOffset(&dt, session_timezone);
+
+    tm2timestamp(&dt, 0, &tz, &ts);
+
+    return ts;
+}
+
+TimestampTz _round_timestamp_to_minute(TimestampTz ts)
+{
+#ifdef HAVE_INT64_TIMESTAMP
+	return ts - ts % USECS_PER_MINUTE;
+#else
+	return ts - ts % SECS_PER_MINUTE;
+#endif
+}
+
+
+/** END of SOME UTILS **/
+
+
 
 char_array_t *readBasesToCheck(void)
 {

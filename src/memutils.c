@@ -15,6 +15,12 @@ MemoryContext init_worker_mem_ctx(const char *name)
 	return SchedulerWorkerContext;
 }
 
+MemoryContext switch_to_worker_context(void)
+{
+	AssertState(SchedulerWorkerContext != NULL);
+	return MemoryContextSwitchTo(SchedulerWorkerContext);
+}
+
 void *worker_alloc(Size size)
 {
 	AssertState(SchedulerWorkerContext != NULL);

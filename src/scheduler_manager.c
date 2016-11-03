@@ -334,58 +334,6 @@ int get_integer_from_jsonbval(JsonbValue *ai, int def)
 	return def;
 }
 
-TimestampTz _round_timestamp_to_minute(TimestampTz ts)
-{
-#ifdef HAVE_INT64_TIMESTAMP
-	return ts - ts % USECS_PER_MINUTE;
-#else
-	return ts - ts % SECS_PER_MINUTE;
-#endif
-}
-
-int get_integer_from_string(char *s, int start, int len)
-{
-	char buff[100];
-
-	memcpy(buff, s + start, len);
-	buff[len] = 0;
-	return atoi(buff);
-}
-
-char *make_date_from_timestamp(TimestampTz ts)
-{
-	struct pg_tm dt;
-	char *str = worker_alloc(sizeof(char) * 17);
-	int tz;
-	fsec_t fsec;
-	const char *tzn;
-
-	timestamp2tm(ts, &tz, &dt, &fsec, &tzn, NULL ); /* TODO ERROR */
-	sprintf(str, "%04d-%02d-%02d %02d:%02d", dt.tm_year , dt.tm_mon,
-								dt.tm_mday, dt.tm_hour, dt.tm_min);
-	return str;
-}
-
-TimestampTz get_timestamp_from_string(char *str)
-{
-	struct pg_tm dt;
-	int tz;
-	TimestampTz ts;
-
-	memset(&dt, 0, sizeof(struct tm));
-	dt.tm_year  = get_integer_from_string(str,  0, 4);
-	dt.tm_mon   = get_integer_from_string(str,  5, 2);
-	dt.tm_mday  = get_integer_from_string(str,  8, 2);
-	dt.tm_hour  = get_integer_from_string(str, 11, 2);
-	dt.tm_min   = get_integer_from_string(str, 14, 2);
-
-	tz = DetermineTimeZoneOffset(&dt, session_timezone);
-
-	tm2timestamp(&dt, 0, &tz, &ts);
-
-	return ts;
-}
-
 bool _is_in_rule_array(Jsonb *J, const char *name, int value)
 {
 	JsonbValue  kval;
@@ -411,8 +359,6 @@ bool _is_in_rule_array(Jsonb *J, const char *name, int value)
 
 	return false;
 }
-
-/* TODO check dow which one is zero */
 
 bool is_cron_fit_timestamp(bit_array_t *cron, TimestampTz timestamp)
 {
@@ -505,11 +451,11 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 	nextarray = worker_alloc(sizeof(TimestampTz) * REALLOC_STEP);
 	convert_rule_to_cron(task->rule, cron);
 
-	elog(LOG, "minutes: %s", bit_array_string(&cron[CEO_MIN_POS]));
+/*	elog(LOG, "minutes: %s", bit_array_string(&cron[CEO_MIN_POS]));
 	elog(LOG, "hours: %s", bit_array_string(&cron[CEO_HRS_POS]));
 	elog(LOG, "days: %s", bit_array_string(&cron[CEO_DAY_POS]));
 	elog(LOG, "months: %s", bit_array_string(&cron[CEO_MON_POS]));
-	elog(LOG, "dows: %s", bit_array_string(&cron[CEO_DOW_POS])); 
+	elog(LOG, "dows: %s", bit_array_string(&cron[CEO_DOW_POS]));  */
 
 	while(curr <= stop)
 	{
@@ -560,7 +506,7 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 	const char *sql = "update schedule.at set started = 'now'::timestamp, active = true where cron = $1 and start_at = $2";
 	Datum values[2];
 	Oid argtypes[2] = {INT4OID, TIMESTAMPTZOID};
-	int ret, rrr;
+	int ret;
 
 	if(ctx->free_slots == 0)
 	{
@@ -624,7 +570,10 @@ int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_
 	shm_data->status = SchdExecutorInit;
 	memcpy(shm_data->database, ctx->database, strlen(ctx->database));
 	memcpy(shm_data->nodename, ctx->nodename, strlen(ctx->nodename));
+	shm_data->cron_id = item->job->cron_id;
+	shm_data->start_at = item->job->start_at;
 	shm_data->message[0] = 0;
+	shm_data->next_time = 0;
 
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
 					BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -954,6 +903,7 @@ int scheduler_make_at_record(scheduler_manager_ctx_t *ctx)
 	char  nulls[4] = { ' ', ' ', ' ', ' ' };
 	Oid argtypes[4];
 	char *insert_sql = "insert into schedule.at (start_at, last_start_available, node, retry, cron, active) values ($1, $2, $3, 0, $4, false)";
+	char *error;
 
 	start = GetCurrentTimestamp();
 	stop = timestamp_add_seconds(0, 600);
@@ -1060,7 +1010,11 @@ elog(LOG, "=== next times  = %d", ntimes);
 					nulls[1] = 'n';
 					values[1] = 0;
 				}
-				execute_spi_sql_with_args(insert_sql, 4, argtypes, values, nulls );
+				execute_spi_sql_with_args(insert_sql, 4, argtypes, values, nulls, &error);
+				if(error)
+				{
+					elog(ERROR, "Cannot insert AT task: %s", error);
+				}
 				resetStringInfo(&sql);
 			}
 			elog(LOG, "free times next");

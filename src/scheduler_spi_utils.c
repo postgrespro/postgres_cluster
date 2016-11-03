@@ -4,6 +4,7 @@
 #include "scheduler_spi_utils.h"
 #include "utils/timestamp.h"
 #include "utils/array.h"
+#include "utils/elog.h"
 #include "utils/lsyscache.h"
 #include "utils/builtins.h"
 #include "catalog/pg_type.h"
@@ -186,23 +187,46 @@ int select_oneintvalue_sql(const char *sql, int def)
 	return DatumGetInt32(d);
 }
 
-int execute_spi_sql(const char *sql)
+int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *values, char *nulls, char **error)
 {
-	int ret;
-	elog(LOG, "do execute: %s", sql);
+	int ret = -100;
+	ErrorData *edata;
+	MemoryContext old;
 
-	ret = SPI_exec(sql, 0);
-	if(ret == SPI_OK_SELECT) return 1;
-	return 0;
+	*error = NULL;
+
+	PG_TRY();
+	{
+		ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, false, 0);
+	}
+	PG_CATCH();
+	{
+		old = switch_to_worker_context();
+
+		edata = CopyErrorData();
+		if(edata->message)
+		{
+			*error = _copy_string(edata->message);
+		}
+		else if(edata->detail)
+		{
+			*error = _copy_string(edata->detail);
+		}
+		else
+		{
+			*error = _copy_string("unknown error");
+		}
+		FreeErrorData(edata);
+		MemoryContextSwitchTo(old);
+		FlushErrorState();
+	}
+	PG_END_TRY();
+
+	return ret;
 }
 
-int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *values, char *nulls)
+int execute_spi(const char *sql, char **error)
 {
-	int ret;
-	elog(LOG, "do execute: %s", sql);
-
-	ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, false, 0);
-	if(ret == SPI_OK_SELECT) return 1;
-	return 0;
+	return execute_spi_sql_with_args(sql, 0, NULL, NULL, NULL, error);
 }
 

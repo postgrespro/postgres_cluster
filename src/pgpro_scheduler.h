@@ -23,6 +23,11 @@ void parent_scheduler_main(Datum) pg_attribute_noreturn();
 int checkSchedulerNamespace(void);
 void manager_worker_main(Datum arg);
 pid_t registerManagerWorker(schd_manager_t *man);
+
 TimestampTz timestamp_add_seconds(TimestampTz to, int add);
+char *make_date_from_timestamp(TimestampTz ts);
+int get_integer_from_string(char *s, int start, int len);
+TimestampTz get_timestamp_from_string(char *str);
+TimestampTz _round_timestamp_to_minute(TimestampTz ts);
 
 #endif

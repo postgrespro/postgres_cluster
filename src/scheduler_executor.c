@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdarg.h>
 #include "postgres.h"
 
 #include "miscadmin.h"
@@ -27,7 +28,7 @@
 #include "scheduler_job.h"
 #include "scheduler_spi_utils.h"
 #include "memutils.h"
-#include  "utils/elog.h"
+#include "utils/elog.h"
 
 extern volatile sig_atomic_t got_sighup;
 extern volatile sig_atomic_t got_sigterm;
@@ -55,9 +56,17 @@ void executor_worker_main(Datum arg)
 {
 	schd_executor_share_t *shared;
 	dsm_segment *seg;
-	int rc = 0;
 	job_t *job;
 	int i;
+	bool success = true;
+	executor_error_t EE;
+	int ret;
+	char *error;
+	bool use_pg_vars = true;
+	/* int rc = 0; */
+
+	EE.n = 0;
+	EE.errors = NULL;
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_executor");
 	seg = dsm_attach(DatumGetInt32(arg));
@@ -88,75 +97,265 @@ void executor_worker_main(Datum arg)
 											"Cannot retrive job information");
 		delete_worker_mem_ctx();
 		dsm_detach(seg);
-		proc_exit(1);
+		proc_exit(0);
 	}
 
 	pqsignal(SIGTERM, handle_sigterm);
 	BackgroundWorkerUnblockSignals();
 
 	pgstat_report_activity(STATE_RUNNING, "process job");
-	while(!got_sigterm)
+	CHECK_FOR_INTERRUPTS();
+	/* rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
+	ResetLatch(MyLatch); */
+
+	if(job->same_transaction)
 	{
+		START_SPI_SNAP();
+	}
+	for(i=0; i < job->dosql_n; i++)
+	{
+		pgstat_report_activity(STATE_RUNNING, job->dosql[i]);
 		CHECK_FOR_INTERRUPTS();
-		if(rc)
-		{
-			if(rc & WL_POSTMASTER_DEATH) proc_exit(1);
-		}
-		rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
-		ResetLatch(MyLatch);
-		for(i=0; i < job->dosql_n; i++)
-		{
-			pgstat_report_activity(STATE_RUNNING, job->dosql[i]);
-			CHECK_FOR_INTERRUPTS();
-			START_SPI_SNAP();
+		if(!job->same_transaction) START_SPI_SNAP();
 
-			SPI_execute(job->dosql[i], true, 0);
+		ret = execute_spi(job->dosql[i], &error);
+		if(ret < 0)
+		{
+			success = false;
+			shared->status = SchdExecutorError;
+			if(error)
+			{
+				push_executor_error(&EE, "error on %d: %s", i+1, error);
+				pfree(error);
+			}
+			else
+			{
+				push_executor_error(&EE, "error on %d: code: %d", i+1, ret);
+			}
+			ABORT_SPI_SNAP();
+			executor_onrollback(job, &EE);
 
-			STOP_SPI_SNAP();
+			break;
 		}
+		else
+		{
+			if(!job->same_transaction) STOP_SPI_SNAP();
+		}
+	}
+	if(shared->status != SchdExecutorError)
+	{
+		if(job->same_transaction) STOP_SPI_SNAP();
 		shared->status = SchdExecutorDone;
-		pgstat_report_activity(STATE_RUNNING, "finish job processing");
-		break;
+	}
+	if(job->next_time_statement)
+	{
+		if(use_pg_vars)  /* may be to define custom var is better */
+		{
+			set_pg_var(success, &EE);
+		}
+		shared->next_time = get_next_excution_time(job->next_time_statement, &EE);
+	}
+	pgstat_report_activity(STATE_RUNNING, "finish job processing");
+
+	if(EE.n > 0)
+	{
+		set_shared_message(shared, &EE);
 	}
 
 	delete_worker_mem_ctx();
 	dsm_detach(seg);
-	proc_exit(1);
+	proc_exit(0);
+}
+
+void set_shared_message(schd_executor_share_t *shared, executor_error_t *ee)
+{
+	int left = PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX;
+	char *ptr;
+	int i, elen, tlen;
+
+	ptr = shared->message;
+
+	for(i = 0; i < ee->n; i++)
+	{
+		elen = strlen(ee->errors[i]);
+		tlen = left > elen ? elen: left-1;
+
+		if(tlen <= 1)
+		{
+			ptr[0] = 0;
+			break;
+		}
+
+		memcpy(ptr, ee->errors[i], tlen);
+		ptr += tlen; left -= tlen;
+		if(left < 3)
+		{
+			ptr[0] = 0;
+			break;
+		}
+		if(ee->n == i+1)
+		{
+			ptr[0] = 0;
+		}
+		else
+		{
+			memcpy(ptr, ", ", 2);
+			left -= 2;
+			ptr += 2;
+		}
+	}
+}
+
+TimestampTz get_next_excution_time(char *sql, executor_error_t *ee)
+{
+	char *error;
+	int ret;
+	TimestampTz ts = 0;
+	Datum d;
+	bool isnull;
+
+	START_SPI_SNAP();
+	pgstat_report_activity(STATE_RUNNING, "finish job processing");
+	ret = execute_spi(sql, &error);
+	if(ret < 0)
+	{
+		if(error)
+		{
+			push_executor_error(ee, "next time error: %s", error);
+			pfree(error);
+		}
+		else
+		{
+			push_executor_error(ee, "next time error: code = %d", ret);
+		}
+		ABORT_SPI_SNAP();
+		return 0;
+	}
+	if(SPI_processed == 0)
+	{	
+		push_executor_error(ee, "next time statement returns 0 rows");
+	}
+	else if(SPI_gettypeid(SPI_tuptable->tupdesc, 1) != TIMESTAMPTZOID)
+	{
+		push_executor_error(ee, "next time statement column 1 type is not timestamp with timezone");
+	}
+	else
+	{
+		d = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc,
+								1, &isnull);
+		if(isnull)
+		{
+			push_executor_error(ee, "next time statement row 0 column 1 ihas NULL value");
+		}
+		else
+		{
+			ts = DatumGetTimestampTz(d);
+		}
+	}
+
+	STOP_SPI_SNAP();
+	return ts;
+}
+
+int executor_onrollback(job_t *job, executor_error_t *ee)
+{
+	char *error = NULL;
+	int ret;
+
+	if(!job->onrollback) return 0;
+	pgstat_report_activity(STATE_RUNNING, "execure onrollback");
+
+	START_SPI_SNAP();
+	ret = execute_spi(job->onrollback, &error);
+	if(ret < 0)
+	{
+		if(error)
+		{
+			elog(LOG, "EXECUTOR: onrollback error: %s", error);
+			push_executor_error(ee, "onrollback error: %s", error);
+			pfree(error);
+		}
+		else
+		{
+			push_executor_error(ee, "onrollback error: unknown: %d", ret);
+		}
+		ABORT_SPI_SNAP();
+	}
+	else
+	{
+		STOP_SPI_SNAP();
+	}
+	return ret;
+}
+
+void set_pg_var(bool result, executor_error_t *ee)
+{
+	char *sql = "select pgv_set_text('pgpro_scheduler', 'transaction', $1)";
+	Oid argtypes[1] = { TEXTOID };
+	Datum vals[1];
+	char *error = NULL;
+	int ret;
+
+	pgstat_report_activity(STATE_RUNNING, "set pg_valiable");
+
+	vals[0] = PointerGetDatum(cstring_to_text(result ? "success": "failure"));
+
+	ret = execute_spi_sql_with_args(sql, 1, argtypes, vals, NULL, &error);
+	if(ret < 0)
+	{
+		if(error)
+		{
+			push_executor_error(ee, "set variable: %s", error);
+		}
+		else
+		{
+			push_executor_error(ee, "set variable: code: %d", ret);
+		}
+	}
 }
 
 job_t *initializeExecutorJob(schd_executor_share_t *data)
 {
 	const char *sql = "select at.last_start_available, cron.same_transaction, cron.do_sql, cron.executor, cron.postpone, cron.max_run_time as time_limit, cron.max_instances, cron.onrollback_statement , cron.next_time_statement from schedule.at at, schedule.cron cron where start_at = $1 and  at.active and at.cron = cron.id AND cron.node = $2 AND cron.id = $3";
-	Oid argtypes[3] = { TIMESTAMPTZOID, CSTRINGOID, INT4OID};
+	Oid argtypes[3] = { TIMESTAMPTZOID, TEXTOID, INT4OID};
 	Datum args[3];
 	job_t *J;
 	int ret;
+	char *error = NULL;
+	char *ts;
 
 	args[0] = TimestampTzGetDatum(data->start_at);
-	args[1] = CStringGetTextDatum(data->nodename);
+	args[1] = PointerGetDatum(cstring_to_text(data->nodename));
 	args[2] = Int32GetDatum(data->cron_id);
 
 	START_SPI_SNAP();
-	PG_TRY();
+	ret = execute_spi_sql_with_args(sql, 3, argtypes, args, NULL, &error);
+
+	if(error)
 	{
-		ret = SPI_execute_with_args(sql, 3, argtypes, args, NULL, true, 1);
-	}
-	PG_CATCH();
-	{
-		elog(LOG, "Executor error while retrive job information, ret: %d", data->cron_id);
+		snprintf(data->message,
+			PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
+			"cannot retrive job: %s", error);
+		elog(LOG, "EXECUTOR: %s", data->message);
+		pfree(error);
 		PopActiveSnapshot();
 		AbortCurrentTransaction();
 		SPI_finish();
 		return NULL;
 	}
-	PG_END_TRY();
 
-	if(ret == SPI_OK_INSERT)
+	if(ret == SPI_OK_SELECT)
 	{
 		if(SPI_processed == 0)
 		{
 			STOP_SPI_SNAP();
-			elog(LOG, "Executor cannot find job");
+			ts = make_date_from_timestamp(data->start_at);
+			snprintf(data->message,
+				PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
+				"cannot find job: %d @ %s [%s]",
+				data->cron_id, ts, data->nodename);
+			elog(LOG, "EXECUTOR: %s", data->message);
+			pfree(ts);
 			return NULL;
 		}
 		J = worker_alloc(sizeof(job_t));
@@ -174,9 +373,40 @@ job_t *initializeExecutorJob(schd_executor_share_t *data)
 
 		return J;
 	}
-	elog(LOG, "Executor error while retrive job information, ret: %d", data->cron_id);
+	snprintf(data->message,
+		PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
+		"error while retrive job information: %d", ret);
+	elog(LOG, "EXECUTOR: %s", data->message);
+
 	PopActiveSnapshot();
 	AbortCurrentTransaction();
 	SPI_finish();
 	return NULL;
+}
+
+int push_executor_error(executor_error_t *e, char *fmt, ...)
+{
+	va_list arglist;
+	char buf[1024];
+	int len;
+
+	va_start(arglist, fmt);
+	len = vsnprintf(buf, 1024, fmt, arglist);
+	va_end(arglist);
+
+	if(e->n == 0)
+	{
+		e->errors = worker_alloc(sizeof(char *));
+	}
+	else
+	{
+		e->errors = repalloc(e->errors, sizeof(char *) * (e->n+1));
+	}
+	e->errors[e->n] = worker_alloc(sizeof(char)*(len + 1));
+	memcpy(e->errors[e->n], buf, len+1);
+
+	elog(LOG, "EXECUTOR: %s", e->errors[e->n]);
+	e->n++;
+
+	return e->n;
 }
