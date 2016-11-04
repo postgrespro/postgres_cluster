@@ -1531,8 +1531,8 @@ static void MtmEnableNode(int nodeId)
 void MtmRecoveryCompleted(void)
 {
 	int i;
-	MTM_LOG1("Recovery of node %d is completed, disabled mask=%llx, connectivity mask=%llx, live nodes=%d",
-			 MtmNodeId, (long long) Mtm->disabledNodeMask, (long long) Mtm->connectivityMask, Mtm->nLiveNodes);
+	MTM_LOG1("Recovery of node %d is completed, disabled mask=%llx, connectivity mask=%llx, endLSN=%lx, live nodes=%d",
+			 MtmNodeId, (long long) Mtm->disabledNodeMask, (long long) Mtm->connectivityMask, GetXLogInsertRecPtr(), Mtm->nLiveNodes);
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
 	Mtm->recoveredLSN = GetXLogInsertRecPtr();
@@ -1542,7 +1542,7 @@ void MtmRecoveryCompleted(void)
 	for (i = 0; i < Mtm->nAllNodes; i++) { 
 		Mtm->nodes[i].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 	}
-	/* Mode will be changed to online once all logical reciever are connected */
+	/* Mode will be changed to online once all logical receiver are connected */
 	MtmSwitchClusterMode(MTM_CONNECTED);
 	MtmUnlock();
 }
@@ -2131,7 +2131,6 @@ static void MtmInitialize()
 			Mtm->nodes[i].restartLSN = InvalidXLogRecPtr;
 			Mtm->nodes[i].originId = InvalidRepOriginId;
 			Mtm->nodes[i].timeline = 0;
-			Mtm->nodes[i].recoveredLSN = InvalidXLogRecPtr;
 		}
 		Mtm->nodes[MtmNodeId-1].originId = DoNotReplicateId;
 		/* All transaction originated from the current node should be ignored during recovery */
@@ -2884,13 +2883,14 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 {
 	MtmReplicationMode mode = REPLMODE_OPEN_EXISTED;
 
+	MtmLock(LW_EXCLUSIVE);
 	while ((Mtm->status != MTM_CONNECTED && Mtm->status != MTM_ONLINE) || BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) 
 	{ 	
 		if (*shutdown) 
 		{ 
+			MtmUnlock();
 			return REPLMODE_EXIT;
 		}
-		MtmLock(LW_EXCLUSIVE);
 		if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
 			mode = REPLMODE_CREATE_NEW;
 		}
@@ -2913,6 +2913,7 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 		MtmUnlock();
 		/* delay opening of other slots until recovery is completed */
 		MtmSleep(STATUS_POLL_DELAY);
+		MtmLock(LW_EXCLUSIVE);
 	}
 	if (mode == REPLMODE_RECOVERED) { 
 		MTM_LOG1("%d: Restart replication from node %d after end of recovery", MyProcPid, nodeId);
@@ -2921,6 +2922,7 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 	} else { 
 		MTM_LOG1("%d: Continue replication from node %d", MyProcPid, nodeId);
 	}
+	MtmUnlock();
 	return mode;		
 }
 			
@@ -3014,7 +3016,12 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			}
 		} else if (strcmp("mtm_recovered_pos", elem->defname) == 0) { 
 			if (elem->arg != NULL && strVal(elem->arg) != NULL) {
-				sscanf(strVal(elem->arg), "%lx", &Mtm->nodes[MtmReplicationNodeId-1].recoveredLSN);
+				XLogRecPtr recoveredLSN;
+				sscanf(strVal(elem->arg), "%lx", &recoveredLSN);
+				MTM_LOG1("Recovered position of node %d is %lx", MtmReplicationNodeId, recoveredLSN); 
+				if (Mtm->nodes[MtmReplicationNodeId-1].restartLSN < recoveredLSN) { 
+					Mtm->nodes[MtmReplicationNodeId-1].restartLSN = recoveredLSN;
+				}
 			} else { 
 				elog(ERROR, "Recovered position is not specified");
 			}
@@ -3129,16 +3136,21 @@ MtmReplicationRowFilterHook(struct PGLogicalRowFilterArgs* args)
 	return isDistributed;
 }
 
+/*
+ * Filter received transacyions at destination side.
+ * This function is executed by receiver, so there are no race conditions and it is possible to update nodes[i].restaetLSN without lock
+ */
 bool MtmFilterTransaction(char* record, int size)
 {
 	StringInfoData s;
 	uint8       flags;
 	XLogRecPtr  origin_lsn;
 	XLogRecPtr  end_lsn;
+	XLogRecPtr  restart_lsn;
 	int         replication_node;
 	int         origin_node;
 	char const* gid = "";
-	bool        duplicate;
+	bool        duplicate = false;
 
     s.data = record;
     s.len = size;
@@ -3174,11 +3186,17 @@ bool MtmFilterTransaction(char* record, int size)
 	  default:
 		break;
 	}
+	restart_lsn = origin_node == MtmReplicationNodeId ? end_lsn : origin_lsn;
+    if (Mtm->nodes[origin_node-1].restartLSN < restart_lsn) {
+		Mtm->nodes[origin_node-1].restartLSN = restart_lsn;
+    } else {
+		duplicate = true;
+	}
+		
 	//duplicate = Mtm->status == MTM_RECOVERY && origin_lsn != InvalidXLogRecPtr && origin_lsn <= Mtm->nodes[origin_node-1].restartLSN;
-	duplicate = origin_lsn != InvalidXLogRecPtr && origin_lsn <= Mtm->nodes[origin_node-1].restartLSN;
 	
 	MTM_LOG1("%s transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
-			 duplicate ? "Ignore" : "Apply", gid, replication_node, end_lsn, flags, origin_node, origin_lsn, Mtm->nodes[origin_node-1].restartLSN);
+			 duplicate ? "Ignore" : "Apply", gid, replication_node, end_lsn, flags, origin_node, origin_lsn, restart_lsn);
 	return duplicate;
 }
 

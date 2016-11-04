@@ -430,11 +430,17 @@ process_remote_message(StringInfo s)
 			MtmAbortLogicalMessage* msg = (MtmAbortLogicalMessage*)messageBody;
 			int origin_node = msg->origin_node;
 			Assert(messageSize == sizeof(MtmAbortLogicalMessage));
+			/* This function is called directly by receiver, so there is no race condition and we can update
+			 * restartLSN without locks
+			 */
 			if (Mtm->nodes[origin_node-1].restartLSN < msg->origin_lsn) { 
 				Mtm->nodes[origin_node-1].restartLSN = msg->origin_lsn;
+				replorigin_session_origin_lsn = msg->origin_lsn; 
+				MtmRollbackPreparedTransaction(origin_node, msg->gid);
+			} else { 
+				MTM_LOG1("Ignore rollback of transaction %s from node %d because it's LSN %lx <= %lx", 
+						 msg->gid, origin_node, msg->origin_lsn, Mtm->nodes[origin_node-1].restartLSN);
 			}
-			replorigin_session_origin_lsn = msg->origin_lsn; 
-			MtmRollbackPreparedTransaction(origin_node, msg->gid);
 			standalone = true;
 			break;
 		}
@@ -611,9 +617,6 @@ process_remote_commit(StringInfo in)
 	origin_lsn = pq_getmsgint64(in);
 
 	replorigin_session_origin_lsn = origin_node == MtmReplicationNodeId ? end_lsn : origin_lsn;
-	if (Mtm->nodes[origin_node-1].restartLSN < replorigin_session_origin_lsn) { 
-		Mtm->nodes[origin_node-1].restartLSN = replorigin_session_origin_lsn;
-	}
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 
 	switch(PGLOGICAL_XACT_EVENT(flags))

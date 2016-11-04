@@ -260,9 +260,8 @@ pglogical_receiver_main(Datum main_arg)
 	{ 
 		int  count;
 		ConnStatusType status;
-		XLogRecPtr originStartPos = InvalidXLogRecPtr;
+		XLogRecPtr originStartPos = Mtm->nodes[nodeId-1].restartLSN;
 		int timeline;
-		bool newTimeline = false;
 
 		/* 
 		 * Determine when and how we should open replication slot.
@@ -291,12 +290,12 @@ pglogical_receiver_main(Datum main_arg)
 		if ((mode == REPLMODE_OPEN_EXISTED && timeline != Mtm->nodes[nodeId-1].timeline)
 			|| mode == REPLMODE_CREATE_NEW) 
 		{ /* recreate slot */
+			elog(LOG, "Recreate replication slot %s", slotName);
 			appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", slotName);
 			res = PQexec(conn, query->data);
 			PQclear(res);
 			resetPQExpBuffer(query);
 			timeline = Mtm->nodes[nodeId-1].timeline;
-			newTimeline = true;
 		}
 		/* My original assumption was that we can perfrom recovery only from existed slot, 
 		 * but unfortunately looks like slots can "disapear" together with WAL-sender.
@@ -322,11 +321,7 @@ pglogical_receiver_main(Datum main_arg)
 		}
 		
 		/* Start logical replication at specified position */
-		if (mode == REPLMODE_RECOVERED) {
-			originStartPos = Mtm->nodes[nodeId-1].restartLSN;
-			MTM_LOG1("Restart replication from node %d from position %lx", nodeId, originStartPos);
-		} 
-		if (originStartPos == InvalidXLogRecPtr && !newTimeline) { 
+		if (originStartPos == InvalidXLogRecPtr) { 
 			StartTransactionCommand();
 			originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
 			originId = replorigin_by_name(originName, true);
@@ -349,10 +344,11 @@ pglogical_receiver_main(Datum main_arg)
 			}
 			Mtm->nodes[nodeId-1].originId = originId;
 			CommitTransactionCommand();
-		} else if (mode == REPLMODE_CREATE_NEW) { 
-			originStartPos = Mtm->nodes[nodeId-1].recoveredLSN;
-		}
+		}		
 		
+		MTM_LOG1("Start replication on slot %s from node %d at position %lx, mode %s, recovered lsn %lx", 
+				 slotName, nodeId, originStartPos, MtmReplicationModeName[mode], Mtm->recoveredLSN);
+
 		appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %x/%x (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s', \"mtm_restart_pos\" '%lx', \"mtm_recovered_pos\" '%lx')",
 						  slotName,
 						  (uint32) (originStartPos >> 32),
@@ -409,13 +405,16 @@ pglogical_receiver_main(Datum main_arg)
 				ereport(LOG, (errmsg("%s: restart WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
 				break;
 			}
-			if (count != Mtm->recoveryCount) { 
-				
+			if (count != Mtm->recoveryCount) { 				
 				ereport(LOG, (errmsg("%s: restart WAL receiver because node was recovered", worker_proc)));
 				break;
 			}
 			
-
+			if (timeline != Mtm->nodes[nodeId-1].timeline) {
+                ereport(LOG, (errmsg("%s: restart WAL receiver because node %d timeline is changed", worker_proc, nodeId)));
+                break;
+            }
+				
 			/*
 			 * Receive data.
 			 */
