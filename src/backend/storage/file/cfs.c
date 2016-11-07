@@ -238,6 +238,7 @@ static void cfs_rc4_init(void)
 	if (cipher_key == NULL) { 
 		elog(ERROR, "PG_CIPHER_KEY environment variable is not set");
 	} 
+	unsetenv("PG_CIPHER_KEY"); /* make it not possible to inspect this environment variable through plperl */
     key_length = strlen(cipher_key);
 	for (i = 0; i < CFS_CIPHER_KEY_SIZE; ++i) {
         rc4_init_state[i] = (uint8)i;
