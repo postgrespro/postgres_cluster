@@ -1276,6 +1276,7 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 	
 	parsed->origin_lsn = hdr->xl_origin.origin_lsn;
 	parsed->origin_timestamp = hdr->xl_origin.origin_timestamp;
+	parsed->xinfo = hdr->xl_origin.origin_lsn != InvalidXLogRecPtr ? XACT_XINFO_HAS_ORIGIN : 0;
 
 	strncpy(parsed->twophase_gid, bufptr, hdr->gidlen);
 	bufptr += MAXALIGN(hdr->gidlen);
@@ -1285,7 +1286,7 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 	parsed->nsubxacts = hdr->nsubxacts;
 	parsed->nrels = hdr->ncommitrels;
 	parsed->nmsgs = hdr->ninvalmsgs;
-
+	
 	parsed->subxacts = (TransactionId *) bufptr;
 	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 
