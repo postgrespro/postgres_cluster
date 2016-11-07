@@ -871,6 +871,7 @@ typedef struct TwoPhaseFileHeader
 	int32		ninvalmsgs;		/* number of cache invalidation messages */
 	bool		initfileinval;	/* does relcache init file need invalidation? */
 	uint16		gidlen;			/* length of the GID - GID follows the header */
+	xl_xact_origin xl_origin;   /* replication origin information */
 } TwoPhaseFileHeader;
 
 /*
@@ -1022,12 +1023,10 @@ EndPrepare(GlobalTransaction gxact)
 {
 	TwoPhaseFileHeader *hdr;
 	StateFileChunk *record;
-	xl_xact_origin xl_origin;
-	xl_xact_xinfo xl_xinfo;
 	uint8		info = XLOG_XACT_PREPARE;
-	bool		replorigin;
+    bool            replorigin;
 
-	replorigin = (replorigin_session_origin != InvalidRepOriginId &&
+    replorigin = (replorigin_session_origin != InvalidRepOriginId &&
 				  replorigin_session_origin != DoNotReplicateId);
 
 	/* Add the end sentinel to the list of 2PC records */
@@ -1038,6 +1037,15 @@ EndPrepare(GlobalTransaction gxact)
 	hdr = (TwoPhaseFileHeader *) records.head->data;
 	Assert(hdr->magic == TWOPHASE_MAGIC);
 	hdr->total_len = records.total_len + sizeof(pg_crc32c);
+
+	if (replorigin) { 
+		Assert(replorigin_session_origin_lsn != InvalidXLogRecPtr);
+		hdr->xl_origin.origin_lsn = replorigin_session_origin_lsn;
+		hdr->xl_origin.origin_timestamp = replorigin_session_origin_timestamp;
+	} else {
+		hdr->xl_origin.origin_lsn = InvalidXLogRecPtr;
+		hdr->xl_origin.origin_timestamp = 0;
+	}
 
 	/*
 	 * If the data size exceeds MaxAllocSize, we won't be able to read it in
@@ -1065,30 +1073,11 @@ EndPrepare(GlobalTransaction gxact)
 	XLogEnsureRecordSpace(0, records.num_chunks);
 
 	START_CRIT_SECTION();
-	xl_xinfo.xinfo = 0;
-	/* dump transaction origin information */
-	if (replorigin)
-	{
-		xl_xinfo.xinfo |= XACT_XINFO_HAS_ORIGIN;
-		Assert(replorigin_session_origin_lsn != InvalidXLogRecPtr);
-		xl_origin.origin_lsn = replorigin_session_origin_lsn;
-		xl_origin.origin_timestamp = replorigin_session_origin_timestamp;
-	}
-
-	if (xl_xinfo.xinfo != 0)
-		info |= XLOG_XACT_HAS_INFO;
-
 	MyPgXact->delayChkpt = true;
 
 	XLogBeginInsert();
 	for (record = records.head; record != NULL; record = record->next)
 		XLogRegisterData(record->data, record->len);
-
-	if (xl_xinfo.xinfo != 0)
-		XLogRegisterData((char *) (&xl_xinfo.xinfo), sizeof(xl_xinfo.xinfo));
-
-	if (xl_xinfo.xinfo & XACT_XINFO_HAS_ORIGIN)
-		XLogRegisterData((char *) (&xl_origin), sizeof(xl_xact_origin));
 
 	XLogIncludeOrigin();
 
@@ -1285,6 +1274,9 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 	hdr = (TwoPhaseFileHeader *) xlrec;
 	bufptr = xlrec + MAXALIGN(sizeof(TwoPhaseFileHeader));
 	
+	parsed->origin_lsn = hdr->xl_origin.origin_lsn;
+	parsed->origin_timestamp = hdr->xl_origin.origin_timestamp;
+
 	strncpy(parsed->twophase_gid, bufptr, hdr->gidlen);
 	bufptr += MAXALIGN(hdr->gidlen);
 
@@ -1305,33 +1297,6 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 
 	parsed->msgs = (SharedInvalidationMessage *) bufptr;
 	bufptr += MAXALIGN(hdr->ninvalmsgs * sizeof(SharedInvalidationMessage));
-
-	/*
-	 * Parse xinfo now.
-	 */
-
-	parsed->xinfo = 0;
-	bufptr = xlrec + hdr->total_len - sizeof(pg_crc32c);
-
-	if (info & XLOG_XACT_HAS_INFO)
-	{
-		xl_xact_xinfo *xl_xinfo = (xl_xact_xinfo *) bufptr;
-		parsed->xinfo = xl_xinfo->xinfo;
-		bufptr += sizeof(xl_xact_xinfo);
-	}
-
-
-	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
-	{
-		xl_xact_origin xl_origin;
-		/* we're only guaranteed 4 byte alignment, so copy onto stack */
-		memcpy(&xl_origin, bufptr, sizeof(xl_origin));
-		parsed->origin_lsn = xl_origin.origin_lsn;
-		Assert(parsed->origin_lsn != 0);
-		parsed->origin_timestamp = xl_origin.origin_timestamp;
-		bufptr += sizeof(xl_xact_origin);
-	}
-
 }
 
 
