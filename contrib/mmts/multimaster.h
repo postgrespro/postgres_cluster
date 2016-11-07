@@ -204,7 +204,6 @@ typedef struct
 	void*       lockGraphData;
 	int         lockGraphAllocated;
 	int         lockGraphUsed;
-	XLogRecPtr  recoveredLSN;
 } MtmNodeInfo;
 
 typedef struct MtmTransState
