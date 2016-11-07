@@ -737,8 +737,9 @@ MtmResetTransaction()
 	x->isPrepared = false;
 	x->isSuspended = false;
 	x->isTwoPhase = false;
-	x->csn = 
+	x->csn = INVALID_CSN;
 	x->status = TRANSACTION_STATUS_UNKNOWN;
+	x->gid[0] = '\0';
 }
 
 
@@ -1177,7 +1178,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 						 : ts->status == TRANSACTION_STATUS_COMMITTED ? "committed" : "not prepared",
 						 ts->xid, ts->gid);
 				}
-				Assert(ts->xid != 10000);
+				//Assert(ts->xid != 10000);
 				if (x->csn > ts->csn || Mtm->status == MTM_RECOVERY) {
 					Assert(x->csn != INVALID_CSN);
 					ts->csn = x->csn;
