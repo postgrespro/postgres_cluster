@@ -223,6 +223,8 @@ int   MtmTransSpillThreshold;
 int   MtmMaxNodes;
 int   MtmHeartbeatSendTimeout;
 int   MtmHeartbeatRecvTimeout;
+int   MtmMin2PCTimeout;
+int   MtmMax2PCRatio;
 bool  MtmUseRaftable;
 bool  MtmUseDtm;
 bool  MtmPreserveCommitOrder;
@@ -954,6 +956,62 @@ MtmVotingCompleted(MtmTransState* ts)
 		|| ts->status == TRANSACTION_STATUS_ABORTED; /* or transaction was aborted */
 }
 
+static void
+Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
+{
+	int result = 0;
+	int nConfigChanges = Mtm->nConfigChanges;
+	timestamp_t elapsed, start = MtmGetSystemTime();
+	timestamp_t deadline = 0;
+	/* Wait votes from all nodes until: */
+	while (!MtmVotingCompleted(ts)
+		   && (ts->isPrepared || nConfigChanges == Mtm->nConfigChanges))
+	{ 
+		MtmUnlock();
+		MTM_TXTRACE(x, "PostPrepareTransaction WaitLatch Start");
+		result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, MtmHeartbeatRecvTimeout);
+		MTM_TXTRACE(x, "PostPrepareTransaction WaitLatch Finish");
+		/* Emergency bailout if postmaster has died */
+		if (result & WL_POSTMASTER_DEATH) { 
+			proc_exit(1);
+		}
+		if (result & WL_LATCH_SET) { 
+			ResetLatch(&MyProc->procLatch);			
+		}
+		elapsed = MtmGetSystemTime() - start;
+		MtmLock(LW_EXCLUSIVE);
+		if (deadline == 0 && ts->votedMask != 0) { 
+			deadline = Max(MSEC_TO_USEC(MtmMin2PCTimeout), elapsed*MtmMax2PCRatio/100);
+		} else { 
+			if (ts->isPrepared) { 
+				/* reset precommit message */
+				MtmSend2PCMessage(ts, MSG_PRECOMMIT);
+			} else {
+				if (elapsed > deadline) { 
+					elog(WARNING, "Commit of distributed transaction is canceled because of %ld msec timeout expiration", USEC_TO_MSEC(elapsed));
+					MtmAbortTransaction(ts);
+				}
+			}
+		}
+	}
+	if (ts->status != TRANSACTION_STATUS_ABORTED && !ts->votingCompleted) { 
+		if (ts->isPrepared) { 
+			// GetNewTransactionId(false); /* force increment of transaction counter */
+			// elog(ERROR, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);
+			elog(WARNING, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);				
+			x->isSuspended = true;
+		} else { 
+			if (Mtm->status != MTM_ONLINE) { 
+				elog(WARNING, "Commit of distributed transaction is canceled because node is switched to %s mode", MtmNodeStatusMnem[Mtm->status]);
+			} else if (nConfigChanges != Mtm->nConfigChanges) { 
+				elog(WARNING, "Commit of distributed transaction is canceled because cluster configuration was changed");
+			} 
+			MtmAbortTransaction(ts);
+		}
+	}
+	x->status = ts->status;
+	MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
+}
 		
 static void
 MtmPostPrepareTransaction(MtmCurrentTrans* x)
@@ -987,42 +1045,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		MtmUnlock();
 		MtmResetTransaction();
 	} else { 
-		int result = 0;
-		int nConfigChanges = Mtm->nConfigChanges;
-		/* Wait votes from all nodes until: */
-		while (!MtmVotingCompleted(ts)
-			   && (ts->isPrepared || nConfigChanges == Mtm->nConfigChanges))
-		{ 
-			MtmUnlock();
-			MTM_TXTRACE(x, "PostPrepareTransaction WaitLatch Start");
-			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, MtmHeartbeatRecvTimeout);
-			MTM_TXTRACE(x, "PostPrepareTransaction WaitLatch Finish");
-			/* Emergency bailout if postmaster has died */
-			if (result & WL_POSTMASTER_DEATH) { 
-				proc_exit(1);
-			}
-			if (result & WL_LATCH_SET) { 
-				ResetLatch(&MyProc->procLatch);			
-			}
-			MtmLock(LW_EXCLUSIVE);
-		}
-		if (ts->status != TRANSACTION_STATUS_ABORTED && !ts->votingCompleted) { 
-			if (ts->isPrepared) { 
-				// GetNewTransactionId(false); /* force increment of transaction counter */
-				// elog(ERROR, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);
-				elog(WARNING, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);				
-				x->isSuspended = true;
-			} else { 
-				if (Mtm->status != MTM_ONLINE) { 
-					elog(WARNING, "Commit of distributed transaction is canceled because node is switched to %s mode", MtmNodeStatusMnem[Mtm->status]);
-				} else {
-					elog(WARNING, "Commit of distributed transaction is canceled because cluster configuration was changed");
-				}
-				MtmAbortTransaction(ts);
-			}
-		}
-		x->status = ts->status;
-		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
+		Mtm2PCVoting(x, ts);
 		MtmUnlock();
 		if (x->isTwoPhase) { 
 			MtmResetTransaction();
@@ -1051,9 +1074,6 @@ MtmCommitPreparedTransaction(MtmCurrentTrans* x)
 	if (tm == NULL) {
 		elog(WARNING, "Global transaciton ID '%s' is not found", x->gid);
 	} else {
-		int result = 0;
-		int nConfigChanges = Mtm->nConfigChanges;
-
  		Assert(tm->state != NULL);
 		MTM_LOG3("Commit prepared transaction %d with gid='%s'", x->xid, x->gid);
 		ts = tm->state;
@@ -1065,44 +1085,11 @@ MtmCommitPreparedTransaction(MtmCurrentTrans* x)
 		ts->procno = MyProc->pgprocno;
 		MTM_TXTRACE(ts, "Coordinator sends MSG_PRECOMMIT");
 		MtmSend2PCMessage(ts, MSG_PRECOMMIT);
-		
-		/* Wait votes from all nodes until: */
-		while (!MtmVotingCompleted(ts)
-			   && (ts->isPrepared || nConfigChanges == Mtm->nConfigChanges))
-		{
-			MtmUnlock();
-			MTM_TXTRACE(x, "CommitPreparedTransaction WaitLatch Start");
-			result = WaitLatch(&MyProc->procLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, MtmHeartbeatRecvTimeout);
-			MTM_TXTRACE(x, "CommitPreparedTransaction WaitLatch Finish");
-			/* Emergency bailout if postmaster has died */
-			if (result & WL_POSTMASTER_DEATH) {
-				proc_exit(1);
-			}
-			MtmLock(LW_EXCLUSIVE);
-			if (result & WL_LATCH_SET) {
-				MTM_LOG3("Latch signaled at %ld", MtmGetSystemTime());
-				ResetLatch(&MyProc->procLatch);
-			}
-		}
-		if (ts->status != TRANSACTION_STATUS_ABORTED && !ts->votingCompleted) { 
-			if (ts->isPrepared) { 
-				// GetNewTransactionId(false); /* force increment of transaction counter */
-				// elog(ERROR, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);
-				elog(WARNING, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);				
-				x->isSuspended = true;
-			} else { 
-				if (Mtm->status != MTM_ONLINE) { 
-					elog(WARNING, "Commit of distributed transaction is canceled because node is switched to %s mode", MtmNodeStatusMnem[Mtm->status]);
-				} else {
-					elog(WARNING, "Commit of distributed transaction is canceled because cluster configuration was changed");
-				}
-				MtmAbortTransaction(ts);
-			}
-		}
-		x->status = ts->status;
+
+		Mtm2PCVoting(x, ts);
+
 		x->xid = ts->xid;
 		x->isPrepared = true;
-		MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
 	}
 	MtmUnlock();
 }
@@ -1202,7 +1189,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			 * Send notification only if ABORT happens during transaction processing at replicas, 
 			 * do not send notification if ABORT is received from master 
 			 */
-			MTM_LOG2("%d: send ABORT notification for transaction %d to coordinator %d", MyProcPid, x->gtid.xid, x->gtid.node);
+			MTM_LOG1("%d: send ABORT notification for transaction %d to coordinator %d", MyProcPid, x->gtid.xid, x->gtid.node);
 			if (ts == NULL) { 
 				bool found;
 				Assert(TransactionIdIsValid(x->xid));
@@ -1277,7 +1264,7 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 		int i;
 		for (i = 0; i < Mtm->nAllNodes; i++)
 		{
-			if (BIT_CHECK(ts->participantsMask & ~Mtm->disabledNodeMask, i))
+			if (BIT_CHECK(ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask, i))
 			{
 				Assert(TransactionIdIsValid(ts->xids[i]));
 				msg.node = i+1;
@@ -2634,6 +2621,36 @@ _PG_init(void)
 		NULL,
 		&MtmVacuumDelay,
 		1,
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.min_2pc_timeout",
+		"Minimal timeout between receiving PREPARED message from nodes participated in transaction to coordinator (milliseconds)",
+		NULL,
+		&MtmMin2PCTimeout,
+		2000, /* 2 seconds */
+		1,
+		INT_MAX,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomIntVariable(
+		"multimaster.max_2pc_ratio",
+		"Maximal ratio (in percents) between prepare time at different nodes: if T is time of preparing transaction at some node, then transaction can be aborted if prepared responce was not received in T*MtmMax2PCRatio/100",
+		NULL,
+		&MtmMax2PCRatio,
+		200, /* 2 times */
 		1,
 		INT_MAX,
 		PGC_BACKEND,
