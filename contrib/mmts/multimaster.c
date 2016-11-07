@@ -265,8 +265,10 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 void MtmLock(LWLockMode mode)
 {
 	timestamp_t start, stop;
-	if (mode == LW_EXCLUSIVE && MtmLockCount++ != 0) { 
-		return;
+	if (mode == LW_EXCLUSIVE || MtmLockCount != 0) { 
+		if (MtmLockCount++ != 0) { 
+			return;
+		}
 	}
 #ifdef USE_SPINLOCK
 	SpinLockAcquire(&Mtm->spinlock);
@@ -984,7 +986,7 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 			deadline = Max(MSEC_TO_USEC(MtmMin2PCTimeout), elapsed*MtmMax2PCRatio/100);
 		} else { 
 			if (ts->isPrepared) { 
-				/* reset precommit message */
+				/* resend precommit message */
 				MtmSend2PCMessage(ts, MSG_PRECOMMIT);
 			} else {
 				if (elapsed > deadline) { 
@@ -1291,7 +1293,7 @@ void MtmBroadcastPollMessage(MtmTransState* ts)
 
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
-		if (BIT_CHECK(ts->participantsMask & ~Mtm->disabledNodeMask, i) && !BIT_CHECK(ts->votedMask, i))
+		if (BIT_CHECK(ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask, i))
 		{
 			msg.node = i+1;
 			MTM_LOG3("Send request for transaction %s to node %d", msg.gid, msg.node);
@@ -1478,13 +1480,16 @@ static void MtmPollStatusOfPreparedTransactions(int disabledNodeId)
 			Assert(ts->gid[0]);
 			if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
 				elog(LOG, "Abort transaction %s because its coordinator is disabled and it is not prepared at node %d", ts->gid, MtmNodeId);
+				//MtmUnlock();
 				MtmFinishPreparedTransaction(ts, false);
+				//MtmLock(LW_EXCLUSIVE);				
 			} else {
 				MTM_LOG1("Poll state of transaction %d (%s)", ts->xid, ts->gid);				
 				MtmBroadcastPollMessage(ts);
 			}
 		} else {
-			MTM_LOG2("Skip transaction %d (%s) with status %d gtid.node=%d gtid.xid=%d votedMask=%lx", ts->xid, ts->gid, ts->status, ts->gtid.node, ts->gtid.xid, ts->votedMask);
+			MTM_LOG2("Skip transaction %d (%s) with status %d gtid.node=%d gtid.xid=%d votedMask=%lx", 
+					 ts->xid, ts->gid, ts->status, ts->gtid.node, ts->gtid.xid, ts->votedMask);
 		}
 	}
 }
@@ -1501,9 +1506,7 @@ static void MtmDisableNode(int nodeId)
 	if (nodeId != MtmNodeId) { 
 		Mtm->nLiveNodes -= 1;
 	}
-	MtmUnlock();
 	MtmPollStatusOfPreparedTransactions(nodeId);
-	MtmLock(LW_EXCLUSIVE);
 } 
 	
 static void MtmEnableNode(int nodeId)
