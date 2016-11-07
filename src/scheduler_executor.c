@@ -61,8 +61,9 @@ void executor_worker_main(Datum arg)
 	bool success = true;
 	executor_error_t EE;
 	int ret;
-	char *error;
+	char *error = NULL;
 	bool use_pg_vars = true;
+	schd_executor_status_t status;
 	/* int rc = 0; */
 
 	EE.n = 0;
@@ -82,7 +83,7 @@ void executor_worker_main(Datum arg)
 			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			 errmsg("executor corrupted dynamic shared memory segment")));
 	}
-	shared->status = SchdExecutorWork;
+	status = shared->status = SchdExecutorWork;
 	SetConfigOption("application_name", "pgp-s executor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "initialize");
 	init_worker_mem_ctx("ExecutorMemoryContext");
@@ -92,9 +93,28 @@ void executor_worker_main(Datum arg)
 	job = initializeExecutorJob(shared);
 	if(!job)
 	{
-		shared->status = SchdExecutorError;
 		snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX, 
 											"Cannot retrive job information");
+		shared->status = SchdExecutorError;
+		delete_worker_mem_ctx();
+		dsm_detach(seg);
+		proc_exit(0);
+	}
+
+	if(set_session_authorization(job->executor, &error) < 0)
+	{
+		if(error)
+		{
+			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
+				"Cannot set session auth: %s", error);
+			pfree(error);
+		}
+		else
+		{
+			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
+				"Cannot set session auth: unknown error");
+		}
+		shared->status = SchdExecutorError;
 		delete_worker_mem_ctx();
 		dsm_detach(seg);
 		proc_exit(0);
@@ -116,13 +136,15 @@ void executor_worker_main(Datum arg)
 	{
 		pgstat_report_activity(STATE_RUNNING, job->dosql[i]);
 		CHECK_FOR_INTERRUPTS();
-		if(!job->same_transaction) START_SPI_SNAP();
-
+		if(!job->same_transaction)
+		{
+			START_SPI_SNAP();
+		}
 		ret = execute_spi(job->dosql[i], &error);
 		if(ret < 0)
 		{
 			success = false;
-			shared->status = SchdExecutorError;
+			status = SchdExecutorError;
 			if(error)
 			{
 				push_executor_error(&EE, "error on %d: %s", i+1, error);
@@ -139,13 +161,19 @@ void executor_worker_main(Datum arg)
 		}
 		else
 		{
-			if(!job->same_transaction) STOP_SPI_SNAP();
+			if(!job->same_transaction)
+			{
+				STOP_SPI_SNAP();
+			}
 		}
 	}
-	if(shared->status != SchdExecutorError)
+	if(status != SchdExecutorError)
 	{
-		if(job->same_transaction) STOP_SPI_SNAP();
-		shared->status = SchdExecutorDone;
+		if(job->same_transaction)
+		{
+			STOP_SPI_SNAP();
+		}
+		status = SchdExecutorDone;
 	}
 	if(job->next_time_statement)
 	{
@@ -161,10 +189,44 @@ void executor_worker_main(Datum arg)
 	{
 		set_shared_message(shared, &EE);
 	}
+	shared->status = status;
 
 	delete_worker_mem_ctx();
 	dsm_detach(seg);
 	proc_exit(0);
+}
+
+int set_session_authorization(char *username, char **error)
+{
+	Oid types[1] = { TEXTOID };
+	Oid useroid;
+	Datum values[1];
+	bool is_superuser;
+	int ret;
+	char *sql = "select usesysid, usesuper from pg_catalog.pg_user where usename = $1";
+	char buff[1024];
+
+	values[0] = CStringGetTextDatum(username);	
+	START_SPI_SNAP();
+	ret = execute_spi_sql_with_args(sql, 1, types, values, NULL, error);
+
+	if(ret < 0) return ret;
+	if(SPI_processed == 0)
+	{
+		STOP_SPI_SNAP();
+		sprintf(buff, "Cannot find user with name: %s", username);
+		*error = _copy_string(buff);
+
+		return -200;
+	}
+	useroid = get_oid_from_spi(0, 1, 0);
+	is_superuser = get_boolean_from_spi(0, 2, false);
+
+	STOP_SPI_SNAP();
+
+	SetSessionAuthorization(useroid, is_superuser);
+
+	return 1;
 }
 
 void set_shared_message(schd_executor_share_t *shared, executor_error_t *ee)

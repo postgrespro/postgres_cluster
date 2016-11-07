@@ -17,6 +17,7 @@ typedef enum {
 typedef struct {
 	char database[PGPRO_SCHEDULER_DBNAME_MAX];
 	char nodename[PGPRO_SCHEDULER_NODENAME_MAX];
+	char user[NAMEDATALEN];
 
 	int cron_id;
 	TimestampTz start_at;
@@ -41,6 +42,7 @@ TimestampTz get_next_excution_time(char *sql, executor_error_t *ee);
 int executor_onrollback(job_t *job, executor_error_t *ee);
 void set_pg_var(bool resulti, executor_error_t *ee);
 int push_executor_error(executor_error_t *e, char *fmt, ...)  __attribute__ ((format (gnu_printf, 2, 3)));
+int set_session_authorization(char *username, char **error);
 
 
 #endif

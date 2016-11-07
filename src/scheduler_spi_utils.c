@@ -23,6 +23,17 @@ char *_copy_string(char *str)
 	return cpy;
 }
 
+Oid get_oid_from_spi(int row_n, int pos, Oid def)
+{
+	Datum datum;
+	bool is_null;
+
+	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
+	                        pos, &is_null);
+	if(is_null) return def;
+	return DatumGetObjectId(datum);
+}
+
 bool get_boolean_from_spi(int row_n, int pos, bool def)
 {
 	Datum datum;

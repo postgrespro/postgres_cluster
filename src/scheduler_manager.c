@@ -503,7 +503,7 @@ int how_many_instances_on_work(scheduler_manager_ctx_t *ctx, int cron_id)
 int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 {
 	scheduler_manager_slot_t *item;
-	const char *sql = "update schedule.at set started = 'now'::timestamp, active = true where cron = $1 and start_at = $2";
+	const char *sql = "update schedule.at set started = 'now'::timestamp with time zone, active = true where cron = $1 and start_at = $2";
 	Datum values[2];
 	Oid argtypes[2] = {INT4OID, TIMESTAMPTZOID};
 	int ret;
@@ -514,6 +514,8 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 	}
 	values[0] = Int32GetDatum(job->cron_id);
 	values[1] = TimestampTzGetDatum(job->start_at);
+
+	START_SPI_SNAP();
 
 	ret = SPI_execute_with_args(sql, 2, argtypes, values, NULL, false, 0);
 	if(ret == SPI_OK_UPDATE)
@@ -527,6 +529,7 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 		item->stop_it = job->timelimit ?
 						timestamp_add_seconds(0, job->timelimit): 0;
 
+		STOP_SPI_SNAP();
 		if(launch_executor_worker(ctx, item) == 0)
 		{
 			pfree(item->job);
@@ -544,6 +547,7 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 
 		return 1;
 	}
+	STOP_SPI_SNAP();
 	return 0;
 }
 
@@ -570,6 +574,7 @@ int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_
 	shm_data->status = SchdExecutorInit;
 	memcpy(shm_data->database, ctx->database, strlen(ctx->database));
 	memcpy(shm_data->nodename, ctx->nodename, strlen(ctx->nodename));
+	memcpy(shm_data->user, item->job->executor, NAMEDATALEN);
 	shm_data->cron_id = item->job->cron_id;
 	shm_data->start_at = item->job->start_at;
 	shm_data->message[0] = 0;
@@ -627,22 +632,17 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx)
 		return -2;
 	}
 
-	START_SPI_SNAP();
-
 	jobs = get_jobs_to_do(ctx->nodename, &njobs, &is_error);
+
 	nwaiting = njobs;
-	elog(LOG, "*** found %d jobs to start ***", njobs);
 	if(is_error)
 	{
 		ctx->next_checkjob_time = timestamp_add_seconds(0, interval);
-		STOP_SPI_SNAP();
-		/* TODO rollback transaction ??? */
 		elog(LOG, "Error while retrieving jobs");
 		return -3;
 	}
 	if(nwaiting == 0)
 	{
-		STOP_SPI_SNAP();
 		ctx->next_checkjob_time = timestamp_add_seconds(0, interval);
 
 		return 0;
@@ -659,22 +659,26 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx)
 			ni = how_many_instances_on_work(ctx, jobs[i].cron_id);
 			if(ni >= jobs[i].max_instances)
 			{
+				START_SPI_SNAP();
 				set_job_error(&jobs[i], "Max instances limit reached");
 				move_job_to_log(&jobs[i], false);
 				destroy_job(&jobs[i], 0);
+				STOP_SPI_SNAP();
 				jobs[i].cron_id = -1;
 			}
 			else
 			{
-				if(!set_job_on_free_slot(ctx, &jobs[i]))
+				if(set_job_on_free_slot(ctx, &jobs[i]) <= 0)
 				{
 					ts = make_date_from_timestamp(jobs[i].start_at);
 					set_job_error(&jobs[i], "Cannot set job %d@%s:00 to worker",
 											jobs[i].cron_id, ts);
 					pfree(ts);
+					START_SPI_SNAP();
 					move_job_to_log(&jobs[i], false);
 					destroy_job(&jobs[i], 0);
 					jobs[i].cron_id = -1;
+					STOP_SPI_SNAP();
 				}
 			}
 		}
@@ -689,16 +693,12 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx)
 			nwaiting = 0;
 		}
 	}
-	STOP_SPI_SNAP();
-	elog(LOG, "--- slots: %d, free: %d ---", ctx->slots_len, ctx->free_slots);
 	for(i = 0; i < njobs; i++)
 	{
 		if(jobs[i].cron_id != -1) destroy_job(&jobs[i], 0);
 	}
-	elog(LOG, "+++ free array");
 	pfree(jobs);
 
-	elog(LOG, "+++ jobs waiting: %d", nwaiting);
 
 	if(nwaiting > 0)
 	{
@@ -802,7 +802,15 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx)
 			}
 			else if(toremove[i].reason == RmError)
 			{
-				/* to get error from shared && set */
+			    shm_data = dsm_segment_address(item->shared);
+				if(strlen(shm_data->message) > 0)
+				{
+					set_job_error(item->job, "%s", shm_data->message);
+				}
+				else
+				{
+					set_job_error(item->job, "unknown error occured" );
+				}
 			}
 			else
 			{
@@ -812,7 +820,6 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx)
 			if(removeJob)
 			{
 				START_SPI_SNAP();
-				elog(LOG, "move to log %d at %d", item->job->cron_id, toremove[i].pos);
 				move_job_to_log(item->job, job_status);
 				STOP_SPI_SNAP();
 
@@ -912,7 +919,6 @@ int scheduler_make_at_record(scheduler_manager_ctx_t *ctx)
 	{
 		return -1;
 	}
-	elog(LOG, "*** make at records");
 	START_SPI_SNAP();
 	pgstat_report_activity(STATE_RUNNING, "make 'at' tasks");
 	tasks = scheduler_get_active_tasks(ctx, &ntasks);
@@ -923,7 +929,6 @@ int scheduler_make_at_record(scheduler_manager_ctx_t *ctx)
 		return 0;
 	}
 	pgstat_report_activity(STATE_RUNNING, "calc next runtime");
-	elog(LOG, "*** found %d to make", ntasks);
 
 	initStringInfo(&sql);
 	for(i = 0; i < ntasks; i++)
@@ -931,14 +936,11 @@ int scheduler_make_at_record(scheduler_manager_ctx_t *ctx)
 		next_times = scheduler_calc_next_task_time(&(tasks[i]),
 				GetCurrentTimestamp(), timestamp_add_seconds(0, 600),
 				(ctx->next_at_time > 0 ? 0: 1), &ntimes);
-elog(LOG, "=== next times  = %d", ntimes);
 		exec_dates = get_dates_array_from_rule(&(tasks[i]), &n_exec_dates);
 		if(n_exec_dates > 0)
 		{
-			elog(LOG, "FOUND DATES %d", n_exec_dates);
 			date1 = make_date_from_timestamp(start);
 			date2 = make_date_from_timestamp(stop);
-			elog(LOG, "start - %s, stop - %s", date1, date2);
 	
 			for(j=0; j < n_exec_dates; j++)
 			{
@@ -961,17 +963,14 @@ elog(LOG, "=== next times  = %d", ntimes);
 					tt = get_timestamp_from_string(exec_dates[j]);
 					next_times[ntimes++] = tt;
 				}
-				elog(LOG, "free date on %d", j);
 				pfree(exec_dates[j]);
 			}
 			pfree(date1);
 			pfree(date2);
-			elog(LOG, "free exec dates");
 			pfree(exec_dates);
 		}
 		if(ntimes > 0)
 		{
-			elog(LOG, "will check %d records", ntimes);
 			for(j=0; j < ntimes; j++)
 			{
 				argtypes[0] = INT4OID;
@@ -1017,7 +1016,6 @@ elog(LOG, "=== next times  = %d", ntimes);
 				}
 				resetStringInfo(&sql);
 			}
-			elog(LOG, "free times next");
 			pfree(next_times);
 		}
 	}

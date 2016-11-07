@@ -7,6 +7,7 @@
 #include "lib/stringinfo.h"
 #include "scheduler_spi_utils.h"
 #include "utils/timestamp.h"
+#include "utils/builtins.h"
 #include "memutils.h"
 
 job_t *init_scheduler_job(job_t *j)
@@ -22,12 +23,13 @@ job_t *get_jobs_to_do(char *nodename, int *n, int *is_error)
 {
 	job_t *jobs = NULL;
 	int ret, got, i;
-	Oid argtypes[1] = { CSTRINGOID };
+	Oid argtypes[1] = { TEXTOID };
 	Datum values[1];
-	const char *get_job_sql = "select at.start_at, at.last_start_available, at.cron, max_run_time, cron.max_instances from schedule.at at, schedule.cron cron where start_at <= 'now' and not at.active and (last_start_available is NULL OR last_start_available > 'now') and at.cron = cron.id AND cron.node = $1::text";
+	const char *get_job_sql = "select at.start_at, at.last_start_available, at.cron, max_run_time, cron.max_instances, cron.executor from schedule.at at, schedule.cron cron where start_at <= 'now' and not at.active and (last_start_available is NULL OR last_start_available > 'now') and at.cron = cron.id AND cron.node = $1 order by at.start_at";
 
 	*is_error = *n = 0;
-	values[0] = CStringGetDatum(nodename);
+	START_SPI_SNAP();
+	values[0] = CStringGetTextDatum(nodename);
 	ret = SPI_execute_with_args(get_job_sql, 1, argtypes, values, NULL, true, 0);
 	if(ret == SPI_OK_SELECT)
 	{
@@ -45,6 +47,7 @@ job_t *get_jobs_to_do(char *nodename, int *n, int *is_error)
 				jobs[i].timelimit = get_interval_seconds_from_spi(i, 4, 0);
 				jobs[i].max_instances = get_int_from_spi(i, 5, 1);
 				jobs[i].node = _copy_string(nodename);
+				jobs[i].executor = get_text_from_spi(i, 6);
 			}
 		}
 	}
@@ -52,6 +55,7 @@ job_t *get_jobs_to_do(char *nodename, int *n, int *is_error)
 	{
 		*is_error = 1;
 	}
+	STOP_SPI_SNAP();
 	return jobs;
 }
 
@@ -107,8 +111,8 @@ job_t *set_job_error(job_t *j, const char *fmt, ...)
 int move_job_to_log(job_t *j, bool status)
 {
 	Datum values[4];	
-	char  nulls[4] = { 0, 0, 0, 0 };	
-	Oid argtypes[4] = { BOOLOID, CSTRINGOID, INT4OID, TIMESTAMPTZOID };
+	char  nulls[4] = { ' ', ' ', ' ', ' ' };	
+	Oid argtypes[4] = { BOOLOID, TEXTOID, INT4OID, TIMESTAMPTZOID };
 	int ret;
 	const char *del_sql = "delete from schedule.at where start_at = $1 and cron = $2";
 	const char *sql = "insert into schedule.log (start_at,  last_start_available, retry, cron, node, started, status, finished, message)  SELECT start_at, last_start_available, retry, cron, node, started, $1 as status, 'now'::timestamp as finished, $2 as message from schedule.at where cron = $3 and start_at = $4";
@@ -118,11 +122,11 @@ int move_job_to_log(job_t *j, bool status)
 	values[0] = BoolGetDatum(status);
 	if(j->error)
 	{
-		values[1] = CStringGetDatum(j->error);
+		values[1] = CStringGetTextDatum(j->error);
 	}
 	else
 	{
-		nulls[1] = 1;
+		nulls[1] = 'n'; 
 	}
 	values[2] = Int32GetDatum(j->cron_id);
 	values[3] = TimestampTzGetDatum(j->start_at);
@@ -134,7 +138,7 @@ int move_job_to_log(job_t *j, bool status)
 		argtypes[1] = INT4OID;
 		values[0] = TimestampTzGetDatum(j->start_at);
 		values[1] = Int32GetDatum(j->cron_id);
-		ret = SPI_execute_with_args(del_sql, 2, argtypes, values, nulls, false, 0);
+		ret = SPI_execute_with_args(del_sql, 2, argtypes, values, NULL, false, 0);
 		if(ret == SPI_OK_DELETE)
 		{
 			return 1;
