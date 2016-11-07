@@ -1154,17 +1154,18 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		if (x->isPrepared) { 
 			ts = hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
 			Assert(ts != NULL);
+			Assert(strcmp(x->gid, ts->gid) == 0);
 		} else if (x->gid[0]) { 
 			MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_FIND, NULL);
 			if (tm != NULL) {
 				ts = tm->state;
 			} else { 
-				MTM_LOG3("%d: GID %s not found", MyProcPid, x->gid);
+				MTM_LOG1("%d: GID %s not found", MyProcPid, x->gid);
 			}
 		}
 		if (ts != NULL) { 
 			if (*ts->gid)  
-				MTM_LOG1("TRANSLOG: %s transaction git=%s xid=%d node=%d dxid=%d status %d", 
+				MTM_LOG2("TRANSLOG: %s transaction gid=%s xid=%d node=%d dxid=%d status %d", 
 						 (commit ? "commit" : "rollback"), ts->gid, ts->xid, ts->gtid.node, ts->gtid.xid, ts->status);
 			if (commit) {
 				if (!(ts->status == TRANSACTION_STATUS_UNKNOWN 
@@ -1177,6 +1178,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 						 ts->xid, ts->gid);
 				}
 				if (x->csn > ts->csn || Mtm->status == MTM_RECOVERY) {
+					Assert(x->csn != INVALID_CSN);
 					ts->csn = x->csn;
 					MtmSyncClock(ts->csn);
 				}
@@ -2842,7 +2844,7 @@ void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 	XidStatus status = MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED);
 	MTM_LOG1("Abort prepared transaction %s status %d", gid, status);
 	if (status == TRANSACTION_STATUS_UNKNOWN) { 
-		MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
+		MTM_LOG2("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
 		MtmResetTransaction();
 		StartTransactionCommand();
 		MtmBeginSession(nodeId);
@@ -3191,9 +3193,7 @@ bool MtmFilterTransaction(char* record, int size)
 		duplicate = true;
 	}
 		
-	//duplicate = Mtm->status == MTM_RECOVERY && origin_lsn != InvalidXLogRecPtr && origin_lsn <= Mtm->nodes[origin_node-1].restartLSN;
-	
-	MTM_LOG1("%s transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
+	MTM_LOG2("%s transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
 			 duplicate ? "Ignore" : "Apply", gid, replication_node, end_lsn, flags, origin_node, origin_lsn, restart_lsn);
 	return duplicate;
 }

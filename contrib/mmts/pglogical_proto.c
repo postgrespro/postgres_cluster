@@ -39,8 +39,9 @@
 #include "pglogical_relid_map.h"
 
 static int MtmTransactionRecords;
+static bool MtmIsFilteredTxn;
 static TransactionId MtmCurrentXid;
-static bool DDLInProress = false;
+static bool DDLInProgress = false;
 
 static void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel);
 
@@ -76,13 +77,13 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
 	uint8		relnamelen;
 	Oid         relid;
 
-	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN) {
+	if (MtmIsFilteredTxn) {
 		MTM_LOG2("%d: pglogical_write_message filtered", MyProcPid);
 		return;
 	}
 
-	if (DDLInProress) {
-		MTM_LOG2("%d: pglogical_write_message filtered DDLInProress", MyProcPid);
+	if (DDLInProgress) {
+		MTM_LOG2("%d: pglogical_write_message filtered DDLInProgress", MyProcPid);
 		return;
 	}
 
@@ -116,17 +117,22 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
 	csn_t csn = MtmTransactionSnapshot(txn->xid);
 
-	MtmCurrentXid = txn->xid;
-
-	MTM_LOG3("%d: pglogical_write_begin XID=%d node=%d CSN=%ld recovery=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
-			 MyProcPid, txn->xid, MtmReplicationNodeId, csn, isRecovery, txn->restart_decoding_lsn, txn->first_lsn, txn->end_lsn, MyReplicationSlot->data.confirmed_flush);
-
-	MTM_LOG3("%d: pglogical_write_begin XID=%d sent", MyProcPid, txn->xid);
-	pq_sendbyte(out, 'B');		/* BEGIN */
-	pq_sendint(out, MtmNodeId, 4);
-	pq_sendint(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
-	pq_sendint64(out, csn);
-	MtmTransactionRecords = 0;
+	if (!isRecovery && csn == INVALID_CSN) { 
+		MtmIsFilteredTxn = true;
+		MTM_LOG3("%d: pglogical_write_begin XID=%d filtered", MyProcPid, txn->xid);
+	} else {
+		MtmCurrentXid = txn->xid;
+		MtmIsFilteredTxn = false;
+		MTM_LOG3("%d: pglogical_write_begin XID=%d node=%d CSN=%ld recovery=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
+				 MyProcPid, txn->xid, MtmReplicationNodeId, csn, isRecovery, txn->restart_decoding_lsn, txn->first_lsn, txn->end_lsn, MyReplicationSlot->data.confirmed_flush);
+		
+		MTM_LOG3("%d: pglogical_write_begin XID=%d sent", MyProcPid, txn->xid);
+		pq_sendbyte(out, 'B');		/* BEGIN */
+		pq_sendint(out, MtmNodeId, 4);
+		pq_sendint(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
+		pq_sendint64(out, csn);
+		MtmTransactionRecords = 0;
+	}
 }
 
 static void
@@ -142,14 +148,14 @@ pglogical_write_message(StringInfo out,
 		}
 		break;
 	  case 'D':
-		if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN)	{
+		if (MtmIsFilteredTxn) {
 			MTM_LOG2("%d: pglogical_write_message filtered", MyProcPid);
 			return;
 		}
-		DDLInProress = true;
+		DDLInProgress = true;
 		break;
 	  case 'E':
-		DDLInProress = false;
+		DDLInProgress = false;
 		/*
 		 * we use End message only as indicator of DDL transaction finish,
 		 * so no need to send that to replicas.
@@ -187,11 +193,10 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     	Assert(false);
 
 	if (flags == PGLOGICAL_COMMIT || flags == PGLOGICAL_PREPARE) { 
-		//Assert(txn->xid < 1000 || MtmTransactionRecords != 1);
-		// if (MtmIsFilteredTxn) { 
-			// Assert(MtmTransactionRecords == 0);
-			// return;
-		// }
+		if (MtmIsFilteredTxn) { 
+			Assert(MtmTransactionRecords == 0);
+			return;
+		}
 	} else { 
 		csn_t csn = MtmTransactionSnapshot(txn->xid);
 		bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
@@ -261,13 +266,13 @@ static void
 pglogical_write_insert(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple newtuple)
 {
-	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN){
+	if (MtmIsFilteredTxn) {
 		MTM_LOG2("%d: pglogical_write_insert filtered", MyProcPid);
 		return;
 	}
 
-	if (DDLInProress) {
-		MTM_LOG2("%d: pglogical_write_insert filtered DDLInProress", MyProcPid);
+	if (DDLInProgress) {
+		MTM_LOG2("%d: pglogical_write_insert filtered DDLInProgress", MyProcPid);
 		return;
 	}
 
@@ -284,13 +289,13 @@ static void
 pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple, HeapTuple newtuple)
 {
-	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN){
+	if (MtmIsFilteredTxn) {
 		MTM_LOG2("%d: pglogical_write_update filtered", MyProcPid);
 		return;
 	}
 
-	if (DDLInProress) {
-		MTM_LOG2("%d: pglogical_write_update filtered DDLInProress", MyProcPid);
+	if (DDLInProgress) {
+		MTM_LOG2("%d: pglogical_write_update filtered DDLInProgress", MyProcPid);
 		return;
 	}
 
@@ -317,13 +322,13 @@ static void
 pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple)
 {
-	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN){
+	if (MtmIsFilteredTxn) {
 		MTM_LOG2("%d: pglogical_write_delete filtered", MyProcPid);
 		return;
 	}
 
-	if (DDLInProress) {
-		MTM_LOG2("%d: pglogical_write_delete filtered DDLInProress", MyProcPid);
+	if (DDLInProgress) {
+		MTM_LOG2("%d: pglogical_write_delete filtered DDLInProgress", MyProcPid);
 		return;
 	}
 
@@ -354,13 +359,13 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 	int			i;
 	uint16		nliveatts = 0;
 
-	if (MtmTransactionSnapshot(MtmCurrentXid) == INVALID_CSN){
+	if (MtmIsFilteredTxn) {
 		MTM_LOG2("%d: pglogical_write_tuple filtered", MyProcPid);
 		return;
 	}
 
-	if (DDLInProress) {
-		MTM_LOG2("%d: pglogical_write_tuple filtered DDLInProress", MyProcPid);
+	if (DDLInProgress) {
+		MTM_LOG2("%d: pglogical_write_tuple filtered DDLInProgress", MyProcPid);
 		return;
 	}
 

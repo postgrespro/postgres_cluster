@@ -641,7 +641,7 @@ process_remote_commit(StringInfo in)
 				AbortCurrentTransaction();
 			} else { 				
 				/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
-				MTM_LOG1("PGLOGICAL_PREPARE commit: gid=%s", gid);
+				MTM_LOG2("PGLOGICAL_PREPARE commit: gid=%s", gid);
 				BeginTransactionBlock();
 				CommitTransactionCommand();
 				StartTransactionCommand();
@@ -668,7 +668,7 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			csn = pq_getmsgint64(in); 
 			gid = pq_getmsgstring(in);
-			MTM_LOG1("PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s, lsn=%lx", csn, gid, end_lsn);
+			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s, lsn=%lx", csn, gid, end_lsn);
 			MtmResetTransaction();
 			StartTransactionCommand();
 			MtmBeginSession(origin_node);

@@ -902,14 +902,13 @@ static void MtmReceiver(Datum arg)
 							msg->status = TRANSACTION_STATUS_ABORTED;
 						} else {
 							msg->status = tm->state->status;
-							msg->csn  = tm->state->csn;
+							msg->csn = tm->state->csn;
 							MTM_LOG1("Send response %d for transaction %s to node %d", msg->status, msg->gid, msg->node);
 						}
 						msg->disabledNodeMask = Mtm->disabledNodeMask;
 						msg->connectivityMask = Mtm->connectivityMask;
 						msg->oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
 						msg->code = MSG_POLL_STATUS;	
-						msg->csn = ts->csn;
 						MtmSendMessage(msg);
 						continue;
 					  case MSG_POLL_STATUS:
@@ -922,11 +921,11 @@ static void MtmReceiver(Datum arg)
 							BIT_SET(ts->votedMask, node-1);
 							if (ts->status == TRANSACTION_STATUS_UNKNOWN) { 
 								if (msg->status == TRANSACTION_STATUS_IN_PROGRESS || msg->status == TRANSACTION_STATUS_ABORTED) {
-									elog(LOG, "Abort transaction %s because it is in state %d at node %d",
-										 msg->gid, ts->status, node);
+									elog(LOG, "Abort prepared transaction %s because it is in state %s at node %d",
+										 msg->gid, MtmNodeStatusMnem[msg->status], node);
 									MtmFinishPreparedTransaction(ts, false);
 								} 
-								else if (msg->status == TRANSACTION_STATUS_COMMITTED ||  msg->status == TRANSACTION_STATUS_UNKNOWN)
+								else if (msg->status == TRANSACTION_STATUS_COMMITTED || msg->status == TRANSACTION_STATUS_UNKNOWN)
 								{ 
 									if (msg->csn > ts->csn) {
 										ts->csn = msg->csn;
@@ -937,8 +936,8 @@ static void MtmReceiver(Datum arg)
 										MtmFinishPreparedTransaction(ts, true);
 									}
 								} else {
-									elog(LOG, "Receive response %d for transaction %s for node %d, votedMask=%llx, participantsMask=%llx",
-										msg->status, msg->gid, node, (long long) ts->votedMask, (long long) (ts->participantsMask & ~Mtm->disabledNodeMask));
+									elog(LOG, "Receive response %s for transaction %s for node %d, votedMask %llx, participantsMask %llx",
+										MtmNodeStatusMnem[msg->status], msg->gid, node, (long long)ts->votedMask, (long long)(ts->participantsMask & ~Mtm->disabledNodeMask));
 									continue;
 								}
 							} else if (ts->status == TRANSACTION_STATUS_ABORTED && msg->status == TRANSACTION_STATUS_COMMITTED) {
@@ -946,8 +945,8 @@ static void MtmReceiver(Datum arg)
 							} else if (msg->status == TRANSACTION_STATUS_ABORTED && ts->status == TRANSACTION_STATUS_COMMITTED) {
 								elog(WARNING, "Transaction %s is committed at node %d but aborted at node %d", msg->gid, MtmNodeId, node);
 							} else { 
-								elog(LOG, "Receive response %d for transaction %s status %d for node %d, votedMask=%llx, participantsMask=%llx",
-									 msg->status, msg->gid, ts->status, node, (long long) ts->votedMask, (long long) (ts->participantsMask & ~Mtm->disabledNodeMask) );
+								elog(LOG, "Receive response %s for transaction %s status %s for node %d, votedMask %llx, participantsMask %llx",
+									 MtmNodeStatusMnem[msg->status], msg->gid, MtmNodeStatusMnem[ts->status], node, (long long)ts->votedMask, (long long)(ts->participantsMask & ~Mtm->disabledNodeMask) );
 							}
 						}
 						continue;
@@ -987,8 +986,8 @@ static void MtmReceiver(Datum arg)
 							if ((~msg->disabledNodeMask & Mtm->disabledNodeMask) != 0) { 
 								/* Coordinator's disabled mask is wider than of this node: so reject such transaction to avoid 
 								   commit on smaller subset of nodes */
-								elog(WARNING, "Coordinator of distributed transaction see less nodes than node %d: %lx instead of %lx",
-									 node, (long) Mtm->disabledNodeMask, (long) msg->disabledNodeMask);
+								elog(WARNING, "Coordinator of distributed transaction see less nodes than node %d: %llx instead of %llx",
+									 node, (long long) Mtm->disabledNodeMask, (long long) msg->disabledNodeMask);
 								MtmAbortTransaction(ts);
 							}
 							if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
@@ -997,7 +996,7 @@ static void MtmReceiver(Datum arg)
 									MtmWakeUpBackend(ts);								
 								} else { 
 									Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-									MTM_LOG1("Transaction %s is prepared (status=%d participants=%lx disabled=%lx, voted=%lx)", 
+									MTM_LOG2("Transaction %s is prepared (status=%d participants=%lx disabled=%lx, voted=%lx)", 
 											 ts->gid, ts->status, ts->participantsMask, Mtm->disabledNodeMask, ts->votedMask);
 									ts->isPrepared = true;
 									if (ts->isTwoPhase) { 
