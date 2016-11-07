@@ -7,28 +7,28 @@
    <title>Installation</title>
 
    <para>
-    Before you can use <productname>PostgreSQL</productname> you need
+    Before you can use <productname>&productname;</productname> you need
     to install it, of course.  It is possible that
-    <productname>PostgreSQL</productname> is already installed at your
+    <productname>&productname;</productname> is already installed at your
     site, either because it was included in your operating system
     distribution or because the system administrator already installed
     it.  If that is the case, you should obtain information from the
     operating system documentation or your system administrator about
-    how to access <productname>PostgreSQL</productname>.
+    how to access <productname>&productname;</productname>.
    </para>
 
    <para>
-    If you are not sure whether <productname>PostgreSQL</productname>
+    If you are not sure whether <productname>&productname;</productname>
     is already available or whether you can use it for your
     experimentation then you can install it yourself.  Doing so is not
     hard and it can be a good exercise.
-    <productname>PostgreSQL</productname> can be installed by any
+    <productname>&productname;</productname> can be installed by any
     unprivileged user; no superuser (<systemitem>root</systemitem>)
     access is required.
    </para>
 
    <para>
-    If you are installing <productname>PostgreSQL</productname>
+    If you are installing <productname>&productname;</productname>
     yourself, then refer to <xref linkend="installation">
     for instructions on installation, and return to
     this guide when the installation is complete.  Be sure to follow
@@ -57,15 +57,15 @@
 
    <para>
     Before we proceed, you should understand the basic
-    <productname>PostgreSQL</productname> system architecture.
+    <productname>&productname;</productname> system architecture.
     Understanding how the parts of
-    <productname>PostgreSQL</productname> interact will make this
+    <productname>&productname;</productname> interact will make this
     chapter somewhat clearer.
    </para>
 
    <para>
-    In database jargon, <productname>PostgreSQL</productname> uses a
-    client/server model.  A <productname>PostgreSQL</productname>
+    In database jargon, <productname>&productname;</productname> uses a
+    client/server model.  A <productname>&productname;</productname>
     session consists of the following cooperating processes
     (programs):
 
@@ -89,7 +89,7 @@
        application, a web server that accesses the database to
        display web pages, or a specialized database maintenance tool.
        Some client applications are supplied with the
-       <productname>PostgreSQL</productname> distribution; most are
+       <productname>&productname;</productname> distribution; most are
        developed by users.
       </para>
      </listitem>
@@ -107,7 +107,7 @@
    </para>
 
    <para>
-    The <productname>PostgreSQL</productname> server can handle
+    The <productname>&productname;</productname> server can handle
     multiple concurrent connections from clients.  To achieve this it
     starts (<quote>forks</quote>) a new process for each connection.
     From that point on, the client and the new server process
@@ -136,7 +136,7 @@
    <para>
     The first test to see whether you can access the database server
     is to try to create a database.  A running
-    <productname>PostgreSQL</productname> server can manage many
+    <productname>&productname;</productname> server can manage many
     databases.  Typically, a separate database is used for each
     project or for each user.
    </para>
@@ -162,7 +162,7 @@
 <screen>
 createdb: command not found
 </screen>
-    then <productname>PostgreSQL</> was not installed properly.  Either it was not
+    then <productname>&productname;</> was not installed properly.  Either it was not
     installed at all or your shell's search path was not set to include it.
     Try calling the command with an absolute path instead:
 <screen>
@@ -191,17 +191,17 @@ createdb: could not connect to database postgres: could not connect to server: N
 createdb: could not connect to database postgres: FATAL:  role "joe" does not exist
 </screen>
     where your own login name is mentioned.  This will happen if the
-    administrator has not created a <productname>PostgreSQL</> user account
-    for you.  (<productname>PostgreSQL</> user accounts are distinct from
+    administrator has not created a <productname>&productname;</> user account
+    for you.  (<productname>&productname;</> user accounts are distinct from
     operating system user accounts.)  If you are the administrator, see
     <xref linkend="user-manag"> for help creating accounts.  You will need to
-    become the operating system user under which <productname>PostgreSQL</>
+    become the operating system user under which <productname>&productname;</>
     was installed (usually <literal>postgres</>) to create the first user
     account.  It could also be that you were assigned a
-    <productname>PostgreSQL</> user name that is different from your
+    <productname>&productname;</> user name that is different from your
     operating system user name; in that case you need to use the <option>-U</>
     switch or set the <envar>PGUSER</> environment variable to specify your
-    <productname>PostgreSQL</> user name.
+    <productname>&productname;</> user name.
    </para>
 
    <para>
@@ -211,35 +211,35 @@ createdb: could not connect to database postgres: FATAL:  role "joe" does not ex
 createdb: database creation failed: ERROR:  permission denied to create database
 </screen>
     Not every user has authorization to create new databases.  If
-    <productname>PostgreSQL</productname> refuses to create databases
+    <productname>&productname;</productname> refuses to create databases
     for you then the site administrator needs to grant you permission
     to create databases.  Consult your site administrator if this
-    occurs.  If you installed <productname>PostgreSQL</productname>
+    occurs.  If you installed <productname>&productname;</productname>
     yourself then you should log in for the purposes of this tutorial
     under the user account that you started the server as.
 
     <footnote>
      <para>
       As an explanation for why this works:
-      <productname>PostgreSQL</productname> user names are separate
+      <productname>&productname;</productname> user names are separate
       from operating system user accounts.  When you connect to a
       database, you can choose what
-      <productname>PostgreSQL</productname> user name to connect as;
+      <productname>&productname;</productname> user name to connect as;
       if you don't, it will default to the same name as your current
       operating system account.  As it happens, there will always be a
-      <productname>PostgreSQL</productname> user account that has the
+      <productname>&productname;</productname> user account that has the
       same name as the operating system user that started the server,
       and it also happens that that user always has permission to
       create databases.  Instead of logging in as that user you can
       also specify the <option>-U</option> option everywhere to select
-      a <productname>PostgreSQL</productname> user name to connect as.
+      a <productname>&productname;</productname> user name to connect as.
      </para>
     </footnote>
    </para>
 
    <para>
     You can also create databases with other names.
-    <productname>PostgreSQL</productname> allows you to create any
+    <productname>&productname;</productname> allows you to create any
     number of databases at a given site.  Database names must have an
     alphabetic first character and are limited to 63 bytes in
     length.  A convenient choice is to create a database with the same
@@ -287,7 +287,7 @@ createdb: database creation failed: ERROR:  permission denied to create database
     <itemizedlist spacing="compact" mark="bullet">
      <listitem>
       <para>
-       Running the <productname>PostgreSQL</productname> interactive
+       Running the <productname>&productname;</productname> interactive
        terminal program, called <application><firstterm>psql</></application>, which allows you
        to interactively enter, edit, and execute
        <acronym>SQL</acronym> commands.
@@ -339,7 +339,7 @@ mydb=&gt;
 mydb=#
 </screen>
     That would mean you are a database superuser, which is most likely
-    the case if you installed the <productname>PostgreSQL</productname> instance
+    the case if you installed the <productname>&productname;</productname> instance
     yourself.  Being a superuser means that you are not subject to
     access controls.  For the purposes of this tutorial that is not
     important.
@@ -363,7 +363,7 @@ mydb=#
 <prompt>mydb=&gt;</prompt> <userinput>SELECT version();</userinput>
                                          version
 ------------------------------------------------------------------------------------------
- PostgreSQL &version; on x86_64-pc-linux-gnu, compiled by gcc (Debian 4.9.2-10) 4.9.2, 64-bit
+ &productname; &version; on x86_64-pc-linux-gnu, compiled by gcc (Debian 4.9.2-10) 4.9.2, 64-bit
 (1 row)
 
 <prompt>mydb=&gt;</prompt> <userinput>SELECT current_date;</userinput>
@@ -386,7 +386,7 @@ mydb=#
     character, <quote><literal>\</literal></quote>.
     For example,
     you can get help on the syntax of various
-    <productname>PostgreSQL</productname> <acronym>SQL</acronym>
+    <productname>&productname;</productname> <acronym>SQL</acronym>
     commands by typing:
 <screen>
 <prompt>mydb=&gt;</prompt> <userinput>\h</userinput>

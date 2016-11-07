@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/dropdb.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="APP-DROPDB">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>dropdb</refname>
-  <refpurpose>remove a <productname>PostgreSQL</productname> database</refpurpose>
+  <refpurpose>remove a <productname>&productname;</productname> database</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -34,7 +34,7 @@ PostgreSQL documentation
 
   <para>
    <application>dropdb</application> destroys an existing
-   <productname>PostgreSQL</productname> database.
+   <productname>&productname;</productname> database.
    The user who executes this command must be a database
    superuser or the owner of the database.
   </para>
@@ -231,7 +231,7 @@ PostgreSQL documentation
   </variablelist>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>

@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/drop_domain.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DROPDOMAIN">
@@ -97,7 +97,7 @@ DROP DOMAIN box;
 
   <para>
    This command conforms to the SQL standard, except for the
-   <literal>IF EXISTS</> option, which is a <productname>PostgreSQL</>
+   <literal>IF EXISTS</> option, which is a <productname>&productname;</>
    extension.
   </para>
  </refsect1>

@@ -4,9 +4,9 @@
   <title>External Projects</title>
 
   <para>
-   <productname>PostgreSQL</productname> is a complex software project,
+   <productname>&productname;</productname> is a complex software project,
    and managing the project is difficult. We have found that many
-   enhancements to <productname>PostgreSQL</productname> can be more
+   enhancements to <productname>&productname;</productname> can be more
    efficiently developed separately from the core project.
   </para>
 
@@ -20,7 +20,7 @@
 
   <para>
    There are only two client interfaces included in the base
-   <productname>PostgreSQL</productname> distribution:
+   <productname>&productname;</productname> distribution:
    <itemizedlist>
     <listitem>
      <para>
@@ -34,7 +34,7 @@
      <para>
       <link linkend="ecpg">ECPG</link> is included because it depends on the
       server-side SQL grammar, and is therefore sensitive to changes in
-      <productname>PostgreSQL</productname> itself.
+      <productname>&productname;</productname> itself.
      </para>
     </listitem>
    </itemizedlist>
@@ -42,7 +42,7 @@
    All other language interfaces are external projects and are distributed
    separately. <xref linkend="language-interface-table"> includes a list of
    some of these projects. Note that some of these packages might not be
-   released under the same license as <productname>PostgreSQL</>. For more
+   released under the same license as <productname>&productname;</>. For more
    information on each language interface, including licensing terms, refer to
    its website and documentation.
   </para>
@@ -124,7 +124,7 @@
 
   <para>
    There are several administration tools available for
-   <productname>PostgreSQL</>. The most popular is
+   <productname>&productname;</>. The most popular is
    <application><ulink url="http://www.pgadmin.org/">pgAdmin III</ulink></>,
    and there are several commercially available ones as well.
   </para>
@@ -139,7 +139,7 @@
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname> includes several procedural
+   <productname>&productname;</productname> includes several procedural
    languages with the base distribution: <link
    linkend="plpgsql">PL/pgSQL</link>, <link linkend="pltcl">PL/Tcl</link>,
    <link linkend="plperl">PL/Perl</link>, and <link
@@ -148,10 +148,10 @@
 
   <para>
    In addition, there are a number of procedural languages that are developed
-   and maintained outside the core <productname>PostgreSQL</productname>
+   and maintained outside the core <productname>&productname;</productname>
    distribution. <xref linkend="pl-language-table"> lists some of these
    packages. Note that some of these projects might not be released under the same
-   license as <productname>PostgreSQL</>. For more information on each
+   license as <productname>&productname;</>. For more information on each
    procedural language, including licensing information, refer to its website
    and documentation.
   </para>
@@ -224,7 +224,7 @@
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</> is designed to be easily extensible. For
+   <productname>&productname;</> is designed to be easily extensible. For
    this reason, extensions loaded into the database can function
    just like features that are built in. The
    <filename>contrib/</> directory shipped with the source code
@@ -232,7 +232,7 @@
    <xref linkend="contrib">.  Other extensions are developed
    independently, like <application><ulink
    url="http://postgis.net/">PostGIS</ulink></>.  Even
-   <productname>PostgreSQL</> replication solutions can be developed
+   <productname>&productname;</> replication solutions can be developed
    externally. For example, <application> <ulink
    url="http://www.slony.info">Slony-I</ulink></> is a popular
    master/standby replication solution that is developed independently

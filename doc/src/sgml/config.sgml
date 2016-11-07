@@ -166,7 +166,7 @@ shared_buffers = 128MB
 
     <para>
      In addition to <filename>postgresql.conf</>,
-     a <productname>PostgreSQL</productname> data directory contains a file
+     a <productname>&productname;</productname> data directory contains a file
      <filename>postgresql.auto.conf</><indexterm><primary>postgresql.auto.conf</></>,
      which has the same format as <filename>postgresql.conf</> but should
      never be edited manually.  This file holds settings provided through
@@ -189,7 +189,7 @@ shared_buffers = 128MB
     <title>Parameter Interaction via SQL</title>
 
      <para>
-      <productname>PostgreSQL</productname> provides three SQL
+      <productname>&productname;</productname> provides three SQL
       commands to establish configuration defaults.
       The already-mentioned <xref linkend="SQL-ALTERSYSTEM"> command
       provides a SQL-accessible means of changing global defaults; it is
@@ -224,7 +224,7 @@ shared_buffers = 128MB
     </para>
 
      <para>
-      Once a client is connected to the database, <productname>PostgreSQL</>
+      Once a client is connected to the database, <productname>&productname;</>
       provides two additional SQL commands (and equivalent functions) to
       interact with session-local configuration settings:
     </para>
@@ -288,7 +288,7 @@ UPDATE pg_settings SET setting = reset_val WHERE name = 'configuration_parameter
      <para>
       In addition to setting global defaults or attaching
       overrides at the database or role level, you can pass settings to
-      <productname>PostgreSQL</productname> via shell facilities.
+      <productname>&productname;</productname> via shell facilities.
       Both the server and <application>libpq</> client library
       accept parameter values via the shell.
      </para>
@@ -338,7 +338,7 @@ env PGOPTIONS="-c geqo=off -c statement_timeout=5min" psql
     <title>Managing Configuration File Contents</title>
 
      <para>
-      <productname>PostgreSQL</> provides several features for breaking
+      <productname>&productname;</> provides several features for breaking
       down complex <filename>postgresql.conf</> files into sub-files.
       These features are especially useful when managing multiple servers
       with related, but not identical, configurations.
@@ -467,7 +467,7 @@ include_dir 'conf.d'
 
      <para>
       In addition to the <filename>postgresql.conf</filename> file
-      already mentioned, <productname>PostgreSQL</productname> uses
+      already mentioned, <productname>&productname;</productname> uses
       two other manually-edited configuration files, which control
       client authentication (their use is discussed in <xref
       linkend="client-authentication">).  By default, all three
@@ -684,7 +684,7 @@ include_dir 'conf.d'
       <listitem>
        <para>
         Determines the number of connection <quote>slots</quote> that
-        are reserved for connections by <productname>PostgreSQL</>
+        are reserved for connections by <productname>&productname;</>
         superusers.  At most <xref linkend="guc-max-connections">
         connections can ever be active simultaneously.  Whenever the
         number of active concurrent connections is at least
@@ -977,7 +977,7 @@ include_dir 'conf.d'
         Specifies the name of the file containing the SSL server certificate
         authority (CA).  The default is empty, meaning no CA file is loaded,
         and client certificate verification is not performed.  (In previous
-        releases of PostgreSQL, the name of this file was hard-coded
+        releases of &productname;, the name of this file was hard-coded
         as <filename>root.crt</filename>.)  Relative paths are relative to the
         data directory.  This parameter can only be set at server start.
        </para>
@@ -1010,7 +1010,7 @@ include_dir 'conf.d'
        <para>
         Specifies the name of the file containing the SSL server certificate
         revocation list (CRL).  The default is empty, meaning no CRL file is
-        loaded.  (In previous releases of PostgreSQL, the name of this file was
+        loaded.  (In previous releases of &productname;, the name of this file was
         hard-coded as <filename>root.crl</filename>.)  Relative paths are
         relative to the data directory.  This parameter can only be set at
         server start.
@@ -1124,7 +1124,7 @@ include_dir 'conf.d'
        </para>
 
        <para>
-        Older PostgreSQL versions do not have this setting and always use the
+        Older &productname; versions do not have this setting and always use the
         client's preferences.  This setting is mainly for backward
         compatibility with those versions.  Using the server's preferences is
         usually better because it is more likely that the server is appropriately
@@ -1163,7 +1163,7 @@ include_dir 'conf.d'
      </varlistentry>
 
      <varlistentry id="guc-password-encryption" xreflabel="password_encryption">
-      <term><varname>password_encryption</varname> (<type>boolean</type>)
+      <term><varname>password_encryption</varname> (<type>enum</type>)
       <indexterm>
        <primary><varname>password_encryption</> configuration parameter</primary>
       </indexterm>
@@ -1175,8 +1175,18 @@ include_dir 'conf.d'
         <xref linkend="sql-alterrole">
         without writing either <literal>ENCRYPTED</> or
         <literal>UNENCRYPTED</>, this parameter determines whether the
-        password is to be encrypted. The default is <literal>on</>
-        (encrypt the password).
+        password is to be encrypted.
+       </para>
+
+       <para>
+        A value set to <literal>on</> or <literal>md5</> corresponds to a 
+        MD5-encrypted password, <literal>off</> or <literal>plain</>
+        corresponds to an unencrypted password.  Setting this parameter to
+        <literal>scram</> will encrypt the password with SCRAM-SHA-256.
+       </para>
+       
+       <para>
+        The default is <literal>md5</>.
        </para>
       </listitem>
      </varlistentry>
@@ -1251,7 +1261,9 @@ include_dir 'conf.d'
         so authentication methods must be configured for the
         server's user name, not the client's.  Because
         <literal>md5</> uses the user name as salt on both the
-        client and server, <literal>md5</> cannot be used with
+        client and server, and <literal>scram</> uses the user name as
+        a portion of the salt used on both the client and server,
+        <literal>md5</> and <literal>scram</> cannot be used with
         <varname>db_user_namespace</>.
        </para>
 
@@ -1299,7 +1311,7 @@ include_dir 'conf.d'
         reasonable starting value for <varname>shared_buffers</varname> is 25%
         of the memory in your system.  There are some workloads where even
         large settings for <varname>shared_buffers</varname> are effective, but
-        because <productname>PostgreSQL</productname> also relies on the
+        because <productname>&productname;</productname> also relies on the
         operating system cache, it is unlikely that an allocation of more than
         40% of RAM to <varname>shared_buffers</varname> will work better than a
         smaller amount.  Larger settings for <varname>shared_buffers</varname>
@@ -1553,7 +1565,7 @@ include_dir 'conf.d'
         Setting <varname>max_stack_depth</> higher than
         the actual kernel limit will mean that a runaway recursive function
         can crash an individual backend process.  On platforms where
-        <productname>PostgreSQL</productname> can determine the kernel limit,
+        <productname>&productname;</productname> can determine the kernel limit,
         the server will not allow this variable to be set to an unsafe
         value.  However, not all platforms provide the information,
         so caution is recommended in selecting a value.
@@ -1613,7 +1625,7 @@ include_dir 'conf.d'
        </para>
        <para>
         This setting constrains the total space used at any instant by all
-        temporary files used by a given <productname>PostgreSQL</> process.
+        temporary files used by a given <productname>&productname;</> process.
         It should be noted that disk space used for explicit temporary
         tables, as opposed to temporary files used behind-the-scenes in query
         execution, does <emphasis>not</emphasis> count against this limit.
@@ -1935,9 +1947,9 @@ include_dir 'conf.d'
        <listitem>
         <para>
          Sets the number of concurrent disk I/O operations that
-         <productname>PostgreSQL</> expects can be executed
+         <productname>&productname;</> expects can be executed
          simultaneously.  Raising this value will increase the number of I/O
-         operations that any individual <productname>PostgreSQL</> session
+         operations that any individual <productname>&productname;</> session
          attempts to initiate in parallel.  The allowed range is 1 to 1000,
          or zero to disable issuance of asynchronous I/O requests. Currently,
          this setting only affects bitmap heap scans.
@@ -2026,6 +2038,11 @@ include_dir 'conf.d'
          For example, a parallel query using 4 workers may use up to 5 times
          as much CPU time, memory, I/O bandwidth, and so forth as a query which
          uses no workers at all.
+        </para>
+
+        <para>
+         For more information on parallel query, see
+         <xref linkend="parallel-query">.
         </para>
        </listitem>
       </varlistentry>
@@ -2190,7 +2207,7 @@ include_dir 'conf.d'
       </term>
       <listitem>
        <para>
-        If this parameter is on, the <productname>PostgreSQL</> server
+        If this parameter is on, the <productname>&productname;</> server
         will try to make sure that updates are physically written to
         disk, by issuing <function>fsync()</> system calls or various
         equivalent methods (see <xref linkend="guc-wal-sync-method">).
@@ -2289,7 +2306,7 @@ include_dir 'conf.d'
         received the commit record of the transaction and written it out to
         their operating system. This setting is sufficient to
         ensure data preservation even if a standby instance of
-        <productname>PostgreSQL</> were to crash, but not if the standby
+        <productname>&productname;</> were to crash, but not if the standby
         suffers an operating-system-level crash, since the data has not
         necessarily reached stable storage on the standby.
         Finally, the setting <literal>local</> causes commits to wait for
@@ -2379,7 +2396,7 @@ include_dir 'conf.d'
       </term>
       <listitem>
        <para>
-        When this parameter is on, the <productname>PostgreSQL</> server
+        When this parameter is on, the <productname>&productname;</> server
         writes the entire content of each disk page to WAL during the
         first modification of that page after a checkpoint.
         This is needed because
@@ -2426,7 +2443,7 @@ include_dir 'conf.d'
       </term>
       <listitem>
        <para>
-        When this parameter is <literal>on</>, the <productname>PostgreSQL</>
+        When this parameter is <literal>on</>, the <productname>&productname;</>
         server writes the entire content of each disk page to WAL during the
         first modification of that page after a checkpoint, even for
         non-critical modifications of so-called hint bits.
@@ -2453,7 +2470,7 @@ include_dir 'conf.d'
       </term>
       <listitem>
        <para>
-        When this parameter is <literal>on</>, the <productname>PostgreSQL</>
+        When this parameter is <literal>on</>, the <productname>&productname;</>
         server compresses a full page image written to WAL when
         <xref linkend="guc-full-page-writes"> is on or during a base backup.
         A compressed page image will be decompressed during WAL replay.
@@ -3051,7 +3068,7 @@ include_dir 'conf.d'
         <literal>s3</> and <literal>s4</>.
         </para>
         <para>
-        The second syntax was used before <productname>PostgreSQL</>
+        The second syntax was used before <productname>&productname;</>
         version 9.6 and is still supported. It's the same as the first syntax
         with <replaceable class="parameter">num_sync</replaceable> equal to 1.
         For example, <literal>1 (s1, s2)</> and
@@ -3748,13 +3765,13 @@ include_dir 'conf.d'
         higher value makes it more likely index scans will be used, a
         lower value makes it more likely sequential scans will be
         used. When setting this parameter you should consider both
-        <productname>PostgreSQL</productname>'s shared buffers and the
+        <productname>&productname;</productname>'s shared buffers and the
         portion of the kernel's disk cache that will be used for
-        <productname>PostgreSQL</productname> data files.  Also, take
+        <productname>&productname;</productname> data files.  Also, take
         into account the expected number of concurrent queries on different
         tables, since they will have to share the available
         space.  This parameter has no effect on the size of shared
-        memory allocated by <productname>PostgreSQL</productname>, nor
+        memory allocated by <productname>&productname;</productname>, nor
         does it reserve kernel disk cache; it is used only for estimation
         purposes.  The system also does not assume data remains in
         the disk cache between queries.  The default is 4 gigabytes
@@ -3938,7 +3955,7 @@ include_dir 'conf.d'
         SET STATISTICS</>.  Larger values increase the time needed to
         do <command>ANALYZE</>, but might improve the quality of the
         planner's estimates. The default is 100. For more information
-        on the use of statistics by the <productname>PostgreSQL</>
+        on the use of statistics by the <productname>&productname;</>
         query planner, refer to <xref linkend="planner-stats">.
        </para>
       </listitem>
@@ -4154,7 +4171,7 @@ SELECT * FROM parent WHERE key = 2400;
       </term>
       <listitem>
        <para>
-        <productname>PostgreSQL</productname> supports several methods
+        <productname>&productname;</productname> supports several methods
          for logging server messages, including
          <systemitem>stderr</systemitem>, <systemitem>csvlog</systemitem> and
          <systemitem>syslog</systemitem>. On Windows,
@@ -4180,7 +4197,7 @@ SELECT * FROM parent WHERE key = 2400;
          On most Unix systems, you will need to alter the configuration of
          your system's <application>syslog</application> daemon in order
          to make use of the <systemitem>syslog</systemitem> option for
-         <varname>log_destination</>.  <productname>PostgreSQL</productname>
+         <varname>log_destination</>.  <productname>&productname;</productname>
          can log to <application>syslog</application> facilities
          <literal>LOCAL0</> through <literal>LOCAL7</> (see <xref
          linkend="guc-syslog-facility">), but the default
@@ -4398,7 +4415,7 @@ local0.*    /var/log/postgresql
       <listitem>
        <para>
         When <varname>logging_collector</varname> is enabled,
-        this parameter will cause <productname>PostgreSQL</productname> to truncate (overwrite),
+        this parameter will cause <productname>&productname;</productname> to truncate (overwrite),
         rather than append to, any existing log file of the same name.
         However, truncation will occur only when a new file is being opened
         due to time-based rotation, not during server startup or size-based
@@ -4465,7 +4482,7 @@ local0.*    /var/log/postgresql
         <para>
          When logging to <application>syslog</> is enabled, this parameter
          determines the program name used to identify
-         <productname>PostgreSQL</productname> messages in
+         <productname>&productname;</productname> messages in
          <application>syslog</application> logs. The default is
          <literal>postgres</literal>.
          This parameter can only be set in the <filename>postgresql.conf</>
@@ -4514,7 +4531,7 @@ local0.*    /var/log/postgresql
         determines how messages are delivered to syslog.  When on (the
         default), messages are split by lines, and long lines are split so
         that they will fit into 1024 bytes, which is a typical size limit for
-        traditional syslog implementations.  When off, PostgreSQL server log
+        traditional syslog implementations.  When off, &productname; server log
         messages are delivered to the syslog service as is, and it is up to
         the syslog service to cope with the potentially bulky messages.
        </para>
@@ -4545,8 +4562,8 @@ local0.*    /var/log/postgresql
        <para>
         When logging to <application>event log</> is enabled, this parameter
         determines the program name used to identify
-        <productname>PostgreSQL</productname> messages in
-        the log. The default is <literal>PostgreSQL</literal>.
+        <productname>&productname;</productname> messages in
+        the log. The default is <literal>&productname;</literal>.
         This parameter can only be set in the <filename>postgresql.conf</>
         file or on the server command line.
        </para>
@@ -4678,7 +4695,7 @@ local0.*    /var/log/postgresql
 
     <para>
      <xref linkend="runtime-config-severity-levels"> explains the message
-     severity levels used by <productname>PostgreSQL</>.  If logging output
+     severity levels used by <productname>&productname;</>.  If logging output
      is sent to <systemitem>syslog</systemitem> or Windows'
      <systemitem>eventlog</systemitem>, the severity levels are translated
      as shown in the table.
@@ -5291,7 +5308,7 @@ FROM pg_stat_activity;
         user query that led to the error (if any and enabled by
         <varname>log_min_error_statement</>),
         character count of the error position therein,
-        location of the error in the PostgreSQL source code
+        location of the error in the &productname; source code
         (if <varname>log_error_verbosity</> is set to <literal>verbose</>),
         and application name.
         Here is a sample table definition for storing CSV-format log output:
@@ -6037,7 +6054,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
         The value is either the name of a tablespace, or an empty string
         to specify using the default tablespace of the current database.
         If the value does not match the name of any existing tablespace,
-        <productname>PostgreSQL</> will automatically use the default
+        <productname>&productname;</> will automatically use the default
         tablespace of the current database.  If a nondefault tablespace
         is specified, the user must have <literal>CREATE</> privilege
         for it, or creation attempts will fail.
@@ -6079,12 +6096,12 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
 
        <para>
         The value is a list of names of tablespaces.  When there is more than
-        one name in the list, <productname>PostgreSQL</> chooses a random
+        one name in the list, <productname>&productname;</> chooses a random
         member of the list each time a temporary object is to be created;
         except that within a transaction, successively created temporary
         objects are placed in successive tablespaces from the list.
         If the selected element of the list is an empty string,
-        <productname>PostgreSQL</> will automatically use the default
+        <productname>&productname;</> will automatically use the default
         tablespace of the current database instead.
        </para>
 
@@ -6291,6 +6308,23 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-idle-session-timeout" xreflabel="idle_session_timeout">
+      <term><varname>idle_session_timeout</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>idle_session_timeout</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+       Terminate any session that has been idle for longer than the specified
+       duration in milliseconds.
+       </para>
+       <para>
+       The default value of 0 disables this feature.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-idle-in-transaction-session-timeout" xreflabel="idle_in_transaction_session_timeout">
       <term><varname>idle_in_transaction_session_timeout</varname> (<type>integer</type>)
       <indexterm>
@@ -6300,9 +6334,11 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       <listitem>
        <para>
        Terminate any session with an open transaction that has been idle for
-       longer than the specified duration in milliseconds. This allows any
-       locks held by that session to be released and the connection slot to be reused;
-       it also allows tuples visible only to this transaction to be vacuumed.  See
+       longer than the specified duration in milliseconds.  When enabled
+       this setting overrides <xref linkend="guc-idle-session-timeout"> for
+       open transactions.  This allows any locks held by that session to be
+       released and the connection slot to be reused;  it also allows tuples
+       visible only to this transaction to be vacuumed.  See
        <xref linkend="routine-vacuuming"> for more details about this.
        </para>
        <para>
@@ -6414,7 +6450,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
        <para>
         Sets the output format for values of type <type>bytea</type>.
         Valid values are <literal>hex</literal> (the default)
-        and <literal>escape</literal> (the traditional PostgreSQL
+        and <literal>escape</literal> (the traditional &productname;
         format).  See <xref linkend="datatype-binary"> for more
         information.  The <type>bytea</type> type always
         accepts both formats on input, regardless of this setting.
@@ -6478,7 +6514,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
 <synopsis>
 SET XML OPTION { DOCUMENT | CONTENT };
 </synopsis>
-        This syntax is also available in PostgreSQL.
+        This syntax is also available in &productname;.
        </para>
       </listitem>
      </varlistentry>
@@ -6646,7 +6682,7 @@ SET XML OPTION { DOCUMENT | CONTENT };
        <para>
         Sets the client-side encoding (character set).
         The default is to use the database encoding.
-        The character sets supported by the <productname>PostgreSQL</productname>
+        The character sets supported by the <productname>&productname;</productname>
         server are described in <xref linkend="multibyte-charset-supported">.
        </para>
       </listitem>
@@ -6781,7 +6817,7 @@ SET XML OPTION { DOCUMENT | CONTENT };
      </para>
 
      <para>
-      <productname>PostgreSQL</productname> procedural language libraries can
+      <productname>&productname;</productname> procedural language libraries can
       be preloaded in this way, typically by using the
       syntax <literal>'$libdir/plXXX'</literal> where
       <literal>XXX</literal> is <literal>pgsql</>, <literal>perl</>,
@@ -6795,10 +6831,10 @@ SET XML OPTION { DOCUMENT | CONTENT };
      </para>
 
      <para>
-      Only shared libraries specifically intended to be used with PostgreSQL
-      can be loaded this way.  Every PostgreSQL-supported library has
+      Only shared libraries specifically intended to be used with &productname;
+      can be loaded this way.  Every &productname;-supported library has
       a <quote>magic block</> that is checked to guarantee compatibility.  For
-      this reason, non-PostgreSQL libraries cannot be loaded in this way.  You
+      this reason, non-&productname; libraries cannot be loaded in this way.  You
       might be able to use operating-system facilities such
       as <envar>LD_PRELOAD</envar> for that.
      </para>
@@ -6971,10 +7007,10 @@ SET XML OPTION { DOCUMENT | CONTENT };
         list of absolute directory paths separated by colons (or semi-colons
         on Windows).  If a list element starts
         with the special string <literal>$libdir</literal>, the
-        compiled-in <productname>PostgreSQL</productname> package
+        compiled-in <productname>&productname;</productname> package
         library directory is substituted for <literal>$libdir</literal>; this
         is where the modules provided by the standard
-        <productname>PostgreSQL</productname> distribution are installed.
+        <productname>&productname;</productname> distribution are installed.
         (Use <literal>pg_config --pkglibdir</literal> to find out the name of
         this directory.) For example:
 <programlisting>
@@ -7135,7 +7171,7 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
     <title>Version and Platform Compatibility</title>
 
     <sect2 id="runtime-config-compatible-version">
-     <title>Previous PostgreSQL Versions</title>
+     <title>Previous &productname; Versions</title>
 
      <variablelist>
 
@@ -7177,7 +7213,7 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
         This controls whether a quote mark can be represented by
         <literal>\'</> in a string literal.  The preferred, SQL-standard way
         to represent a quote mark is by doubling it (<literal>''</>) but
-        <productname>PostgreSQL</> has historically also accepted
+        <productname>&productname;</> has historically also accepted
         <literal>\'</>. However, use of <literal>\'</> creates security risks
         because in some client character set encodings, there are multibyte
         characters in which the last byte is numerically equivalent to ASCII
@@ -7487,11 +7523,11 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </term>
       <listitem>
        <para>
-        When set to true, which is the default, <productname>PostgreSQL</>
+        When set to true, which is the default, <productname>&productname;</>
         will automatically reinitialize after a backend crash.  Leaving this
         value set to true is normally the best way to maximize the availability
         of the database.  However, in some circumstances, such as when
-        <productname>PostgreSQL</> is being invoked by clusterware, it may be
+        <productname>&productname;</> is being invoked by clusterware, it may be
         useful to disable the restart so that the clusterware can gain
         control and take any actions it deems appropriate.
        </para>
@@ -7507,10 +7543,10 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
 
     <para>
      The following <quote>parameters</> are read-only, and are determined
-     when <productname>PostgreSQL</productname> is compiled or when it is
+     when <productname>&productname;</productname> is compiled or when it is
      installed. As such, they have been excluded from the sample
      <filename>postgresql.conf</> file.  These options report
-     various aspects of <productname>PostgreSQL</productname> behavior
+     various aspects of <productname>&productname;</productname> behavior
      that might be of interest to certain applications, particularly
      administrative front-ends.
     </para>
@@ -7557,13 +7593,13 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </term>
       <listitem>
        <para>
-        Reports whether <productname>PostgreSQL</productname> has been built
+        Reports whether <productname>&productname;</productname> has been built
         with assertions enabled. That is the case if the
         macro <symbol>USE_ASSERT_CHECKING</symbol> is defined
-        when <productname>PostgreSQL</productname> is built (accomplished
+        when <productname>&productname;</productname> is built (accomplished
         e.g. by the <command>configure</command> option
         <option>--enable-cassert</option>). By
-        default <productname>PostgreSQL</productname> is built without
+        default <productname>&productname;</productname> is built without
         assertions.
        </para>
       </listitem>
@@ -7577,10 +7613,10 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </term>
       <listitem>
        <para>
-        Reports whether <productname>PostgreSQL</> was built with
+        Reports whether <productname>&productname;</> was built with
         support for 64-bit-integer dates and times.  This can be
         disabled by configuring with <literal>--disable-integer-datetimes</>
-        when building <productname>PostgreSQL</>.  The default value is
+        when building <productname>&productname;</>.  The default value is
         <literal>on</literal>.
        </para>
       </listitem>
@@ -7768,7 +7804,7 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
 
     <para>
      This feature was designed to allow parameters not normally known to
-     <productname>PostgreSQL</productname> to be added by add-on modules
+     <productname>&productname;</productname> to be added by add-on modules
      (such as procedural languages).  This allows extension modules to be
      configured in the standard ways.
     </para>
@@ -7781,7 +7817,7 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
 
     <para>
      Because custom options may need to be set in processes that have not
-     loaded the relevant extension module, <productname>PostgreSQL</>
+     loaded the relevant extension module, <productname>&productname;</>
      will accept a setting for any two-part parameter name.  Such variables
      are treated as placeholders and have no function until the module that
      defines them is loaded. When an extension module is loaded, it will add
@@ -7796,7 +7832,7 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
 
     <para>
      The following parameters are intended for work on the
-     <productname>PostgreSQL</productname> source code, and in some cases
+     <productname>&productname;</productname> source code, and in some cases
      to assist with recovery of severely damaged databases.  There
      should be no reason to use them on a production database.
      As such, they have been excluded from the sample
@@ -7926,7 +7962,7 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
        <para>
         If on, emit information about resource usage during sort operations.
         This parameter is only available if the <symbol>TRACE_SORT</symbol> macro
-        was defined when <productname>PostgreSQL</productname> was compiled.
+        was defined when <productname>&productname;</productname> was compiled.
         (However, <symbol>TRACE_SORT</symbol> is currently defined by default.)
        </para>
       </listitem>
@@ -7967,7 +8003,7 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
        </para>
        <para>
         This parameter is only available if the <symbol>LOCK_DEBUG</symbol>
-        macro was defined when <productname>PostgreSQL</productname> was
+        macro was defined when <productname>&productname;</productname> was
         compiled.
        </para>
       </listitem>
@@ -7987,7 +8023,7 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
        </para>
        <para>
         This parameter is only available if the <symbol>LOCK_DEBUG</symbol>
-        macro was defined when <productname>PostgreSQL</productname> was
+        macro was defined when <productname>&productname;</productname> was
         compiled.
        </para>
       </listitem>
@@ -8006,7 +8042,7 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
        </para>
        <para>
         This parameter is only available if the <symbol>LOCK_DEBUG</symbol>
-        macro was defined when <productname>PostgreSQL</productname> was
+        macro was defined when <productname>&productname;</productname> was
         compiled.
        </para>
       </listitem>
@@ -8025,7 +8061,7 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
        </para>
        <para>
         This parameter is only available if the <symbol>LOCK_DEBUG</symbol>
-        macro was defined when <productname>PostgreSQL</productname> was
+        macro was defined when <productname>&productname;</productname> was
         compiled.
        </para>
       </listitem>
@@ -8043,7 +8079,7 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
        </para>
        <para>
         This parameter is only available if the <symbol>LOCK_DEBUG</symbol>
-        macro was defined when <productname>PostgreSQL</productname> was
+        macro was defined when <productname>&productname;</productname> was
         compiled.
        </para>
       </listitem>
@@ -8062,7 +8098,7 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
        </para>
        <para>
         This parameter is only available if the <symbol>LOCK_DEBUG</symbol>
-        macro was defined when <productname>PostgreSQL</productname> was
+        macro was defined when <productname>&productname;</productname> was
         compiled.
        </para>
       </listitem>
@@ -8081,7 +8117,7 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
        </para>
        <para>
         This parameter is only available if the <symbol>BTREE_BUILD_STATS</symbol>
-        macro was defined when <productname>PostgreSQL</productname> was
+        macro was defined when <productname>&productname;</productname> was
         compiled.
        </para>
       </listitem>
@@ -8097,7 +8133,7 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
        <para>
         If on, emit WAL-related debugging output. This parameter is
         only available if the <symbol>WAL_DEBUG</symbol> macro was
-        defined when <productname>PostgreSQL</productname> was
+        defined when <productname>&productname;</productname> was
         compiled.
        </para>
       </listitem>
@@ -8115,7 +8151,7 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
        </para>
        <para>
         Detection of a checksum failure during a read normally causes
-        <productname>PostgreSQL</> to report an error, aborting the current
+        <productname>&productname;</> to report an error, aborting the current
         transaction.  Setting <varname>ignore_checksum_failure</> to on causes
         the system to ignore the failure (but still report a warning), and
         continue processing.  This behavior may <emphasis>cause crashes, propagate
@@ -8137,7 +8173,7 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
       <listitem>
        <para>
         Detection of a damaged page header normally causes
-        <productname>PostgreSQL</> to report an error, aborting the current
+        <productname>&productname;</> to report an error, aborting the current
         transaction.  Setting <varname>zero_damaged_pages</> to on causes
         the system to instead report a warning, zero out the damaged
         page in memory, and continue processing.  This behavior <emphasis>will destroy data</>,

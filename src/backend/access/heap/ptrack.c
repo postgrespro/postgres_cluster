@@ -276,14 +276,13 @@ ptrack_get_and_clear(Oid tablespace_oid, Oid table_oid)
 {
 	bytea *result = NULL;
 	BlockNumber nblock;
+        Relation rel = RelationIdGetRelation(RelidByRelfilenode(tablespace_oid, table_oid));
+
 	if (table_oid == InvalidOid)
 	{
 		elog(WARNING, "InvalidOid");
 		goto full_end;
 	}
-
-	Relation rel = RelationIdGetRelation(RelidByRelfilenode(tablespace_oid,
-															table_oid));
 
 	if (rel == InvalidRelation)
 	{
@@ -349,12 +348,16 @@ SetPtrackClearLSN(bool set_invalid)
 {
 	int			fd;
 	XLogRecPtr	ptr;
+	char		file_path[MAXPGPATH];
 	if (set_invalid)
 		ptr = InvalidXLogRecPtr;
 	else
 		ptr = GetXLogInsertRecPtr();
-	//LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
-	fd = BasicOpenFile("global/ptrack_control",
+
+	join_path_components(file_path, DataDir, "global/ptrack_control");
+	canonicalize_path(file_path);
+
+	fd = BasicOpenFile(file_path,
 					   O_RDWR | O_CREAT | PG_BINARY,
 					   S_IRUSR | S_IWUSR);
 	if (fd < 0)
@@ -383,7 +386,6 @@ SetPtrackClearLSN(bool set_invalid)
 		ereport(PANIC,
 				(errcode_for_file_access(),
 				 errmsg("could not close ptrack control file: %m")));
-	//LWLockRelease(ControlFileLock);
 }
 
 /* Test ptrack file */

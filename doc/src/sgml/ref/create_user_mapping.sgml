@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_user_mapping.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATEUSERMAPPING">

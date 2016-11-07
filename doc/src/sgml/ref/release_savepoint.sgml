@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/release_savepoint.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-RELEASE-SAVEPOINT">
@@ -111,7 +111,7 @@ COMMIT;
   <para>
    This command conforms to the <acronym>SQL</> standard.  The standard
    specifies that the key word <literal>SAVEPOINT</literal> is
-   mandatory, but <productname>PostgreSQL</productname> allows it to
+   mandatory, but <productname>&productname;</productname> allows it to
    be omitted.
   </para>
  </refsect1>

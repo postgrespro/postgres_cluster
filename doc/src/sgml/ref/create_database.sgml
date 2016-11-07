@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_database.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATEDATABASE">
@@ -39,7 +39,7 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
 
   <para>
    <command>CREATE DATABASE</command> creates a new
-   <productname>PostgreSQL</productname> database.
+   <productname>&productname;</productname> database.
   </para>
 
   <para>
@@ -55,7 +55,7 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
    <replaceable class="parameter">name</replaceable></literal>.  In particular,
    by writing <literal>TEMPLATE template0</>, you can create a virgin
    database containing only the standard objects predefined by your
-   version of <productname>PostgreSQL</productname>.  This is useful
+   version of <productname>&productname;</productname>.  This is useful
    if you wish to avoid copying
    any installation-local objects that might have been added to
    <literal>template1</>.
@@ -105,7 +105,7 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
         or an integer encoding number, or <literal>DEFAULT</literal>
         to use the default encoding (namely, the encoding of the
         template database). The character sets supported by the
-        <productname>PostgreSQL</productname> server are described in
+        <productname>&productname;</productname> server are described in
         <xref linkend="multibyte-charset-supported">. See below for
         additional restrictions.
        </para>

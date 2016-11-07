@@ -13,7 +13,7 @@
 
  <refnamediv>
   <refname>oid2name</refname>
-  <refpurpose>resolve OIDs and file nodes in a <productname>PostgreSQL</productname> data directory</refpurpose>
+  <refpurpose>resolve OIDs and file nodes in a <productname>&productname;</productname> data directory</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -28,7 +28,7 @@
 
  <para>
   <application>oid2name</> is a utility program that helps administrators to
-  examine the file structure used by PostgreSQL.  To make use of it, you need
+  examine the file structure used by &productname;.  To make use of it, you need
   to be familiar with the database file structure, which is described in
   <xref linkend="storage">.
  </para>

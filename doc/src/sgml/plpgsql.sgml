@@ -12,7 +12,7 @@
 
  <para>
   <application>PL/pgSQL</application> is a loadable procedural
-  language for the <productname>PostgreSQL</productname> database
+  language for the <productname>&productname;</productname> database
   system.  The design goals of <application>PL/pgSQL</> were to create
   a loadable procedural language that
 
@@ -69,7 +69,7 @@
    <title>Advantages of Using <application>PL/pgSQL</application></title>
 
     <para>
-     <acronym>SQL</acronym> is the language <productname>PostgreSQL</>
+     <acronym>SQL</acronym> is the language <productname>&productname;</>
      and most other relational databases use as query language. It's
      portable and easy to learn. But every <acronym>SQL</acronym>
      statement must be executed individually by the database server.
@@ -640,7 +640,7 @@ user_id users.user_id%TYPE;
     <replaceable>table_name</replaceable><literal>%ROWTYPE</literal>
     notation; or it can be declared by giving a composite type's name.
     (Since every table has an associated composite type of the same name,
-    it actually does not matter in <productname>PostgreSQL</> whether you
+    it actually does not matter in <productname>&productname;</> whether you
     write <literal>%ROWTYPE</literal> or not.  But the form with
     <literal>%ROWTYPE</literal> is more portable.)
    </para>
@@ -1014,7 +1014,7 @@ DELETE ... RETURNING <replaceable>expressions</replaceable> INTO <optional>STRIC
    <tip>
     <para>
      Note that this interpretation of <command>SELECT</> with <literal>INTO</>
-     is quite different from <productname>PostgreSQL</>'s regular
+     is quite different from <productname>&productname;</>'s regular
      <command>SELECT INTO</command> command, wherein the <literal>INTO</>
      target is a newly created table.  If you want to create a table from a
      <command>SELECT</> result inside a
@@ -1267,7 +1267,7 @@ EXECUTE format('SELECT count(*) FROM %I '
      <command>EXECUTE</command> statement is not related to the
      <xref linkend="sql-execute"> SQL
      statement supported by the
-     <productname>PostgreSQL</productname> server. The server's
+     <productname>&productname;</productname> server. The server's
      <command>EXECUTE</command> statement cannot be used directly within
      <application>PL/pgSQL</> functions (and is not needed).
     </para>
@@ -1623,7 +1623,7 @@ END;
     Control structures are probably the most useful (and
     important) part of <application>PL/pgSQL</>. With
     <application>PL/pgSQL</>'s control structures,
-    you can manipulate <productname>PostgreSQL</> data in a very
+    you can manipulate <productname>&productname;</> data in a very
     flexible and powerful way.
    </para>
 
@@ -4258,7 +4258,7 @@ SELECT * FROM sales_summary_bytime;
    <para>
     <application>PL/pgSQL</application> can be used to define
     <link linkend="event-triggers">event triggers</>.
-    <productname>PostgreSQL</> requires that a procedure that
+    <productname>&productname;</> requires that a procedure that
     is to be called as an event trigger must be declared as a function with
     no arguments and a return type of <literal>event_trigger</>.
    </para>
@@ -4619,7 +4619,7 @@ $$ LANGUAGE plpgsql;
 
     <para>
      In the case of <function>logfunc1</function>, the
-     <productname>PostgreSQL</productname> main parser knows when
+     <productname>&productname;</productname> main parser knows when
      analyzing the <command>INSERT</command> that the
      string <literal>'now'</literal> should be interpreted as
      <type>timestamp</type>, because the target column of
@@ -4635,7 +4635,7 @@ $$ LANGUAGE plpgsql;
 
     <para>
      In the case of <function>logfunc2</function>, the
-     <productname>PostgreSQL</productname> main parser does not know
+     <productname>&productname;</productname> main parser does not know
      what type <literal>'now'</literal> should become and therefore
      it returns a data value of type <type>text</type> containing the string
      <literal>now</literal>. During the ensuing assignment
@@ -4915,10 +4915,10 @@ CREATE FUNCTION
 
   <para>
    This section explains differences between
-   <productname>PostgreSQL</>'s <application>PL/pgSQL</application>
+   <productname>&productname;</>'s <application>PL/pgSQL</application>
    language and Oracle's <application>PL/SQL</application> language,
    to help developers who port applications from
-   <trademark class="registered">Oracle</> to <productname>PostgreSQL</>.
+   <trademark class="registered">Oracle</> to <productname>&productname;</>.
   </para>
 
   <para>
@@ -4948,7 +4948,7 @@ CREATE FUNCTION
 
      <listitem>
       <para>
-       In <productname>PostgreSQL</> the function body must be written as
+       In <productname>&productname;</> the function body must be written as
        a string literal.  Therefore you need to use dollar quoting or escape
        single quotes in the function body. (See <xref
        linkend="plpgsql-quote-tips">.)
@@ -4959,7 +4959,7 @@ CREATE FUNCTION
       <para>
        Data type names often need translation.  For example, in Oracle string
        values are commonly declared as being of type <type>varchar2</>, which
-       is a non-SQL-standard type.  In <productname>PostgreSQL</productname>,
+       is a non-SQL-standard type.  In <productname>&productname;</productname>,
        use type <type>varchar</> or <type>text</> instead.  Similarly, replace
        type <type>number</> with <type>numeric</>, or use some other numeric
        data type if there's a more appropriate one.
@@ -5060,7 +5060,7 @@ show errors;
         The <literal>RETURN</literal> key word in the function
         prototype (not the function body) becomes
         <literal>RETURNS</literal> in
-        <productname>PostgreSQL</productname>.
+        <productname>&productname;</productname>.
         Also, <literal>IS</> becomes <literal>AS</>, and you need to
         add a <literal>LANGUAGE</> clause because <application>PL/pgSQL</>
         is not the only possible function language.
@@ -5069,7 +5069,7 @@ show errors;
 
       <listitem>
        <para>
-        In <productname>PostgreSQL</>, the function body is considered
+        In <productname>&productname;</>, the function body is considered
         to be a string literal, so you need to use quote marks or dollar
         quotes around it.  This substitutes for the terminating <literal>/</>
         in the Oracle approach.
@@ -5079,7 +5079,7 @@ show errors;
       <listitem>
        <para>
         The <literal>show errors</literal> command does not exist in
-        <productname>PostgreSQL</>, and is not needed since errors are
+        <productname>&productname;</>, and is not needed since errors are
         reported automatically.
        </para>
       </listitem>
@@ -5088,7 +5088,7 @@ show errors;
 
     <para>
      This is how this function would look when ported to
-     <productname>PostgreSQL</>:
+     <productname>&productname;</>:
 
 <programlisting>
 CREATE OR REPLACE FUNCTION cs_fmt_browser_version(v_name varchar,
@@ -5151,7 +5151,7 @@ show errors;
     </para>
 
     <para>
-     Here is how this function would end up in <productname>PostgreSQL</>:
+     Here is how this function would end up in <productname>&productname;</>:
 <programlisting>
 CREATE OR REPLACE FUNCTION cs_update_referrer_type_proc() RETURNS void AS $func$
 DECLARE
@@ -5203,7 +5203,7 @@ $func$ LANGUAGE plpgsql;
    <para>
     <xref linkend="plpgsql-porting-ex3"> shows how to port a function
     with <literal>OUT</> parameters and string manipulation.
-    <productname>PostgreSQL</> does not have a built-in
+    <productname>&productname;</> does not have a built-in
     <function>instr</function> function, but you can create one
     using a combination of other
     functions. In <xref linkend="plpgsql-porting-appendix"> there is a
@@ -5356,14 +5356,14 @@ show errors
    </para>
 
    <para>
-    Procedures like this can easily be converted into <productname>PostgreSQL</>
+    Procedures like this can easily be converted into <productname>&productname;</>
     functions returning <type>void</type>. This procedure in
     particular is interesting because it can teach us some things:
 
     <calloutlist>
      <callout arearefs="co.plpgsql-porting-pragma">
       <para>
-       There is no <literal>PRAGMA</literal> statement in <productname>PostgreSQL</>.
+       There is no <literal>PRAGMA</literal> statement in <productname>&productname;</>.
       </para>
      </callout>
 
@@ -5453,7 +5453,7 @@ $$ LANGUAGE plpgsql;
    <para>
     This section explains a few other things to watch for when porting
     Oracle <application>PL/SQL</> functions to
-    <productname>PostgreSQL</productname>.
+    <productname>&productname;</productname>.
    </para>
 
    <sect3 id="plpgsql-porting-exceptions">
@@ -5507,7 +5507,7 @@ END;
     <title>Optimizing <application>PL/pgSQL</application> Functions</title>
 
     <para>
-     <productname>PostgreSQL</> gives you two function creation
+     <productname>&productname;</> gives you two function creation
      modifiers to optimize execution: <quote>volatility</> (whether
      the function always returns the same result when given the same
      arguments) and <quote>strictness</quote> (whether the function

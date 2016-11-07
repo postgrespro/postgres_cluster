@@ -13,7 +13,7 @@
 
  <refnamediv>
   <refname>pg_standby</refname>
-  <refpurpose>supports the creation of a <productname>PostgreSQL</productname> warm standby server</refpurpose>
+  <refpurpose>supports the creation of a <productname>&productname;</productname> warm standby server</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>

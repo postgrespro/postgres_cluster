@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_function.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERFUNCTION">
@@ -348,7 +348,7 @@ ALTER FUNCTION check_password(text) RESET search_path;
    attach configuration parameter values to a function,
    or change the owner, schema, or volatility of a function. The standard also
    requires the <literal>RESTRICT</> key word, which is optional in
-   <productname>PostgreSQL</>.
+   <productname>&productname;</>.
   </para>
  </refsect1>
 

@@ -8,7 +8,7 @@
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname> allows user-defined functions
+   <productname>&productname;</productname> allows user-defined functions
    to be written in other languages besides SQL and C.  These other
    languages are generically called <firstterm>procedural
    languages</firstterm> (<acronym>PL</>s).  For a function
@@ -18,7 +18,7 @@
    the details of the language.  The handler could either do all the
    work of parsing, syntax analysis, execution, etc. itself, or it
    could serve as <quote>glue</quote> between
-   <productname>PostgreSQL</productname> and an existing implementation
+   <productname>&productname;</productname> and an existing implementation
    of a programming language.  The handler itself is a
    C language function compiled into a shared object and
    loaded on demand, just like any other C function.
@@ -26,7 +26,7 @@
 
   <para>
    There are currently four procedural languages available in the
-   standard <productname>PostgreSQL</productname> distribution:
+   standard <productname>&productname;</productname> distribution:
    <application>PL/pgSQL</application> (<xref linkend="plpgsql">),
    <application>PL/Tcl</application> (<xref linkend="pltcl">),
    <application>PL/Perl</application> (<xref linkend="plperl">), and
@@ -219,7 +219,7 @@ CREATE TRUSTED PROCEDURAL LANGUAGE plperl
   </example>
 
    <para>
-    In a default <productname>PostgreSQL</productname> installation,
+    In a default <productname>&productname;</productname> installation,
     the handler for the <application>PL/pgSQL</application> language
     is built and installed into the <quote>library</quote>
     directory; furthermore, the <application>PL/pgSQL</application> language

@@ -12,7 +12,7 @@
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname> provides a large number of
+   <productname>&productname;</productname> provides a large number of
    functions and operators for the built-in data types.  Users can also
    define their own functions and operators, as described in
    <xref linkend="server-programming">.  The
@@ -457,7 +457,7 @@
     be modified to comply with the SQL standard. However, if that
     cannot be done the <xref linkend="guc-transform-null-equals">
     configuration variable is available. If it is enabled,
-    <productname>PostgreSQL</productname> will convert <literal>x =
+    <productname>&productname;</productname> will convert <literal>x =
     NULL</literal> clauses to <literal>x IS NULL</literal>.
    </para>
   </tip>
@@ -584,7 +584,7 @@
 
    <para>
     Mathematical operators are provided for many
-    <productname>PostgreSQL</productname> types. For types without
+    <productname>&productname;</productname> types. For types without
     standard mathematical conventions
     (e.g., date/time types) we
     describe the actual behavior in subsequent sections.
@@ -1329,7 +1329,7 @@
     key words, rather than commas, to separate
     arguments.  Details are in
     <xref linkend="functions-string-sql">.
-    <productname>PostgreSQL</> also provides versions of these functions
+    <productname>&productname;</> also provides versions of these functions
     that use the regular function invocation syntax
     (see <xref linkend="functions-string-other">).
    </para>
@@ -1374,7 +1374,7 @@
         </indexterm>
        </entry>
        <entry><literal>'Post' || 'greSQL'</literal></entry>
-       <entry><literal>PostgreSQL</literal></entry>
+       <entry><literal>&productname;</literal></entry>
       </row>
 
       <row>
@@ -3315,7 +3315,7 @@ SELECT format('|%1$*2$s|', 'foo', 10, 'bar');
 
     <para>
      Unlike the standard C function <function>sprintf</>,
-     <productname>PostgreSQL</>'s <function>format</> function allows format
+     <productname>&productname;</>'s <function>format</> function allows format
      specifiers with and without <replaceable>position</> fields to be mixed
      in the same format string.  A format specifier without a
      <replaceable>position</> field always uses the next argument after the
@@ -3358,7 +3358,7 @@ SELECT format('Testing %3$s, %2$s, %s', 'one', 'two', 'three');
     key words, rather than commas, to separate
     arguments.  Details are in
     <xref linkend="functions-binarystring-sql">.
-    <productname>PostgreSQL</> also provides versions of these functions
+    <productname>&productname;</> also provides versions of these functions
     that use the regular function invocation syntax
     (see <xref linkend="functions-binarystring-other">).
    </para>
@@ -3367,7 +3367,7 @@ SELECT format('Testing %3$s, %2$s, %s', 'one', 'two', 'three');
     <para>
      The sample results shown on this page assume that the server parameter
      <link linkend="guc-bytea-output"><varname>bytea_output</></link> is set
-     to <literal>escape</literal> (the traditional PostgreSQL format).
+     to <literal>escape</literal> (the traditional &productname; format).
     </para>
    </note>
 
@@ -3817,7 +3817,7 @@ cast(-44 as bit(12))           <lineannotation>111111010100</lineannotation>
 
    <para>
     There are three separate approaches to pattern matching provided
-    by <productname>PostgreSQL</productname>: the traditional
+    by <productname>&productname;</productname>: the traditional
     <acronym>SQL</acronym> <function>LIKE</function> operator, the
     more recent <function>SIMILAR TO</function> operator (added in
     SQL:1999), and <acronym>POSIX</acronym>-style regular
@@ -3934,7 +3934,7 @@ cast(-44 as bit(12))           <lineannotation>111111010100</lineannotation>
     The key word <token>ILIKE</token> can be used instead of
     <token>LIKE</token> to make the match case-insensitive according
     to the active locale.  This is not in the <acronym>SQL</acronym> standard but is a
-    <productname>PostgreSQL</productname> extension.
+    <productname>&productname;</productname> extension.
    </para>
 
    <para>
@@ -3944,7 +3944,7 @@ cast(-44 as bit(12))           <lineannotation>111111010100</lineannotation>
     <literal>!~~</literal> and <literal>!~~*</literal> operators that
     represent <function>NOT LIKE</function> and <function>NOT
     ILIKE</function>, respectively.  All of these operators are
-    <productname>PostgreSQL</productname>-specific.
+    <productname>&productname;</productname>-specific.
    </para>
   </sect2>
 
@@ -4418,7 +4418,7 @@ SELECT foo FROM regexp_split_to_table('the quick brown fox', E'\\s*') AS foo;
     <title>Regular Expression Details</title>
 
    <para>
-    <productname>PostgreSQL</productname>'s regular expressions are implemented
+    <productname>&productname;</productname>'s regular expressions are implemented
     using a software package written by Henry Spencer.  Much of
     the description of regular expressions below is copied verbatim from his
     manual.
@@ -4431,7 +4431,7 @@ SELECT foo FROM regexp_split_to_table('the quick brown fox', E'\\s*') AS foo;
     (roughly those of <command>egrep</command>), and
     <firstterm>basic</> <acronym>RE</acronym>s or <acronym>BRE</>s
     (roughly those of <command>ed</command>).
-    <productname>PostgreSQL</productname> supports both forms, and
+    <productname>&productname;</productname> supports both forms, and
     also implements some extensions
     that are not in the POSIX standard, but have become widely used
     due to their availability in programming languages such as Perl and Tcl.
@@ -4446,7 +4446,7 @@ SELECT foo FROM regexp_split_to_table('the quick brown fox', E'\\s*') AS foo;
 
    <note>
     <para>
-     <productname>PostgreSQL</> always initially presumes that a regular
+     <productname>&productname;</> always initially presumes that a regular
      expression follows the ARE rules.  However, the more limited ERE or
      BRE rules can be chosen by prepending an <firstterm>embedded option</>
      to the RE pattern, as described in <xref linkend="posix-metasyntax">.
@@ -4789,7 +4789,7 @@ SELECT foo FROM regexp_split_to_table('the quick brown fox', E'\\s*') AS foo;
 
    <note>
     <para>
-     <productname>PostgreSQL</> currently does not support multi-character collating
+     <productname>&productname;</> currently does not support multi-character collating
      elements. This information describes possible future behavior.
     </para>
    </note>
@@ -5202,7 +5202,7 @@ SELECT foo FROM regexp_split_to_table('the quick brown fox', E'\\s*') AS foo;
     An RE can begin with one of two special <firstterm>director</> prefixes.
     If an RE begins with <literal>***:</>,
     the rest of the RE is taken as an ARE.  (This normally has no effect in
-    <productname>PostgreSQL</>, since REs are assumed to be AREs;
+    <productname>&productname;</>, since REs are assumed to be AREs;
     but it does have an effect if ERE or BRE mode had been specified by
     the <replaceable>flags</> parameter to a regex function.)
     If an RE begins with <literal>***=</>,
@@ -5667,7 +5667,7 @@ SELECT regexp_matches('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
    </indexterm>
 
    <para>
-    The <productname>PostgreSQL</productname> formatting functions
+    The <productname>&productname;</productname> formatting functions
     provide a powerful set of tools for converting various data types
     (date/time, integer, floating point, numeric) to formatted strings
     and for converting from formatted strings to specific data types.
@@ -6064,7 +6064,7 @@ SELECT regexp_matches('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
       <para>
        <literal>FM</literal> suppresses leading zeroes and trailing blanks
        that would otherwise be added to make the output of a pattern be
-       fixed-width.  In <productname>PostgreSQL</productname>,
+       fixed-width.  In <productname>&productname;</productname>,
        <literal>FM</literal> modifies only the next specification, while in
        Oracle <literal>FM</literal> affects all subsequent
        specifications, and repeated <literal>FM</literal> modifiers
@@ -6375,7 +6375,7 @@ SELECT regexp_matches('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
      <listitem>
       <para>
        <literal>PL</literal>, <literal>SG</literal>, and
-       <literal>TH</literal> are <productname>PostgreSQL</productname>
+       <literal>TH</literal> are <productname>&productname;</productname>
        extensions.
       </para>
      </listitem>
@@ -7293,7 +7293,7 @@ SELECT (DATE '2001-10-30', DATE '2001-10-30') OVERLAPS
   <para>
    Note there can be ambiguity in the <literal>months</> field returned by
    <function>age</> because different months have different numbers of
-   days.  <productname>PostgreSQL</>'s approach uses the month from the
+   days.  <productname>&productname;</>'s approach uses the month from the
    earlier of the two dates when calculating partial months.  For example,
    <literal>age('2004-06-01', '2004-04-30')</> uses April to yield
    <literal>1 mon 1 day</>, while using May would yield <literal>1 mon 2
@@ -7675,7 +7675,7 @@ SELECT EXTRACT(SECOND FROM TIME '17:12:28.5');
         The time zone offset from UTC, measured in seconds.  Positive values
         correspond to time zones east of UTC, negative values to
         zones west of UTC.  (Technically,
-        <productname>PostgreSQL</productname> does not use UTC because
+        <productname>&productname;</productname> does not use UTC because
         leap seconds are not handled.)
        </para>
       </listitem>
@@ -7750,7 +7750,7 @@ SELECT EXTRACT(YEAR FROM TIMESTAMP '2001-02-16 20:38:40');
      +/-Infinity for monotonically-increasing fields (<literal>epoch</>,
      <literal>julian</>, <literal>year</>, <literal>isoyear</>,
      <literal>decade</>, <literal>century</>, and <literal>millennium</>).
-     For other fields, NULL is returned.  <productname>PostgreSQL</>
+     For other fields, NULL is returned.  <productname>&productname;</>
      versions before 9.6 returned zero for all cases of infinite input.
     </para>
    </note>
@@ -7946,7 +7946,7 @@ SELECT TIMESTAMP WITH TIME ZONE '2001-02-16 20:38:40-05' AT TIME ZONE 'MST';
    </indexterm>
 
    <para>
-    <productname>PostgreSQL</productname> provides a number of functions
+    <productname>&productname;</productname> provides a number of functions
     that return values related to the current date and time.  These
     SQL-standard functions all return values based on the start time of
     the current transaction:
@@ -8019,7 +8019,7 @@ SELECT LOCALTIMESTAMP;
    </note>
 
    <para>
-    <productname>PostgreSQL</productname> also provides functions that
+    <productname>&productname;</productname> also provides functions that
     return the start time of the current statement, as well as the actual
     current time at the instant the function is called.  The complete list
     of non-SQL-standard time functions is:
@@ -8045,11 +8045,11 @@ now()
     <function>clock_timestamp()</> returns the actual current time, and
     therefore its value changes even within a single SQL command.
     <function>timeofday()</> is a historical
-    <productname>PostgreSQL</productname> function.  Like
+    <productname>&productname;</productname> function.  Like
     <function>clock_timestamp()</>, it returns the actual current time,
     but as a formatted <type>text</> string rather than a <type>timestamp
     with time zone</> value.
-    <function>now()</> is a traditional <productname>PostgreSQL</productname>
+    <function>now()</> is a traditional <productname>&productname;</productname>
     equivalent to <function>transaction_timestamp()</function>.
    </para>
 
@@ -8302,12 +8302,12 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
        <row>
         <entry> <literal>#</literal> </entry>
         <entry>Point or box of intersection</entry>
-        <entry><literal>'((1,-1),(-1,1))' # '((1,1),(-1,-1))'</literal></entry>
+        <entry><literal>box '((1,-1),(-1,1))' # box '((1,1),(-2,-2))'</literal></entry>
        </row>
        <row>
         <entry> <literal>#</literal> </entry>
         <entry>Number of points in path or polygon</entry>
-        <entry><literal># '((1,0),(0,1),(-1,0))'</literal></entry>
+        <entry><literal># path '((1,0),(0,1),(-1,0))'</literal></entry>
        </row>
        <row>
         <entry> <literal>@-@</literal> </entry>
@@ -9172,7 +9172,7 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
    <xref linkend="textsearch-functions-debug-table">
    summarize the functions and operators that are provided
    for full text searching.  See <xref linkend="textsearch"> for a detailed
-   explanation of <productname>PostgreSQL</productname>'s text search
+   explanation of <productname>&productname;</productname>'s text search
    facility.
   </para>
 
@@ -9913,7 +9913,7 @@ SELECT xmlelement(name foo, xmlattributes('xyz' as bar),
      encoding, depending on the setting of the configuration parameter
      <xref linkend="guc-xmlbinary">.  The particular behavior for
      individual data types is expected to evolve in order to align the
-     SQL and PostgreSQL data types with the XML Schema specification,
+     SQL and &productname; data types with the XML Schema specification,
      at which point a more precise description will appear.
     </para>
    </sect3>
@@ -10158,12 +10158,12 @@ SELECT xmlexists('//town[text() = ''Toronto'']' PASSING BY REF '<towns><town>Tor
 
     <para>
      The <literal>BY REF</literal> clauses have no effect in
-     PostgreSQL, but are allowed for SQL conformance and compatibility
+     &productname;, but are allowed for SQL conformance and compatibility
      with other implementations.  Per SQL standard, the
      first <literal>BY REF</literal> is required, the second is
      optional.  Also note that the SQL standard specifies
      the <function>xmlexists</function> construct to take an XQuery
-     expression as first argument, but PostgreSQL currently only
+     expression as first argument, but &productname; currently only
      supports XPath, which is a subset of XQuery.
     </para>
    </sect3>
@@ -10255,7 +10255,7 @@ SELECT xml_is_well_formed_document('<pg:foo xmlns:pg="http://postgresql.org/stuf
    </indexterm>
 
    <para>
-    To process values of data type <type>xml</type>, PostgreSQL offers
+    To process values of data type <type>xml</type>, &productname; offers
     the functions <function>xpath</function> and
     <function>xpath_exists</function>, which evaluate XPath 1.0
     expressions.
@@ -10869,7 +10869,7 @@ table2-mapping
          <literal>array_to_json(anyarray [, pretty_bool])</literal>
        </entry>
        <entry>
-         Returns the array as a JSON array. A PostgreSQL multidimensional array
+         Returns the array as a JSON array. A &productname; multidimensional array
          becomes a JSON array of arrays. Line feeds will be added between
          dimension-1 elements if <parameter>pretty_bool</parameter> is true.
        </entry>
@@ -11730,7 +11730,7 @@ SELECT setval('foo', 42, false);    <lineannotation>Next <function>nextval</> wi
 
   <para>
    This section describes the <acronym>SQL</acronym>-compliant conditional expressions
-   available in <productname>PostgreSQL</productname>.
+   available in <productname>&productname;</productname>.
   </para>
 
   <tip>
@@ -13190,7 +13190,7 @@ SELECT b1 = ANY((SELECT b2 FROM t2 ...)) FROM t1 ...;
 SELECT count(*) FROM sometable;
 </programlisting>
     will require effort proportional to the size of the table:
-    <productname>PostgreSQL</productname> will need to scan either the
+    <productname>&productname;</productname> will need to scan either the
     entire table or the entirety of an index which includes all rows in
     the table.
    </para>
@@ -14281,7 +14281,7 @@ SELECT xmlagg(x) FROM (SELECT x FROM test ORDER BY y DESC) AS tab;
     <literal>IGNORE NULLS</> option for <function>lead</>, <function>lag</>,
     <function>first_value</>, <function>last_value</>, and
     <function>nth_value</>.  This is not implemented in
-    <productname>PostgreSQL</productname>: the behavior is always the
+    <productname>&productname;</productname>: the behavior is always the
     same as the standard's default, namely <literal>RESPECT NULLS</>.
     Likewise, the standard's <literal>FROM FIRST</> or <literal>FROM LAST</>
     option for <function>nth_value</> is not implemented: only the
@@ -14326,7 +14326,7 @@ SELECT xmlagg(x) FROM (SELECT x FROM test ORDER BY y DESC) AS tab;
 
   <para>
    This section describes the <acronym>SQL</acronym>-compliant subquery
-   expressions available in <productname>PostgreSQL</productname>.
+   expressions available in <productname>&productname;</productname>.
    All of the expression forms documented in this section return
    Boolean (true/false) results.
   </para>
@@ -14700,7 +14700,7 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
    syntactically related to the subquery forms of the previous section,
    but do not involve subqueries.
    The forms involving array subexpressions are
-   <productname>PostgreSQL</productname> extensions; the rest are
+   <productname>&productname;</productname> extensions; the rest are
    <acronym>SQL</acronym>-compliant.
    All of the expression forms documented in this section return
    Boolean (true/false) results.
@@ -14946,7 +14946,7 @@ AND
   <para>
    The SQL specification requires row-wise comparison to return NULL if the
    result depends on comparing two NULL values or a NULL and a non-NULL.
-   <productname>PostgreSQL</productname> does this only when comparing the
+   <productname>&productname;</productname> does this only when comparing the
    results of two row constructors (as in
    <xref linkend="row-wise-comparison">) or comparing a row constructor
    to the output of a subquery (as in <xref linkend="functions-subquery">).
@@ -15401,7 +15401,7 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
       <row>
        <entry><literal><function>pg_trigger_depth()</function></literal></entry>
        <entry><type>int</type></entry>
-       <entry>current nesting level of <productname>PostgreSQL</> triggers
+       <entry>current nesting level of <productname>&productname;</> triggers
        (0 if not called, directly or indirectly, from inside a trigger)</entry>
       </row>
 
@@ -15425,7 +15425,12 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
       <row>
        <entry><literal><function>pgpro_version()</function></literal></entry>
        <entry><type>text</type></entry>
-       <entry><productname>PostgresPro</> version information.</entry>
+       <entry><productname>Postgres Pro</> version information.</entry>
+       </row>
+      <row>
+       <entry><literal><function>pgpro_edition()</function></literal></entry>
+       <entry><type>text</type></entry>
+       <entry>Name  of <productname>Postgres Pro</> edition.</entry>
        </row>
      </tbody>
     </tgroup>
@@ -15437,7 +15442,7 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
      <function>current_user</function>, <function>session_user</function>,
      and <function>user</function> have special syntactic status
      in <acronym>SQL</acronym>: they must be called without trailing
-     parentheses.  (In PostgreSQL, parentheses can optionally be used with
+     parentheses.  (In &productname;, parentheses can optionally be used with
      <function>current_schema</function>, but not with the others.)
     </para>
    </note>
@@ -15644,7 +15649,7 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
 
    <para>
     <function>version</function> returns a string describing the
-    <productname>PostgreSQL</productname> server's version. You can also
+    <productname>&productname;</productname> server's version. You can also
     get this information from <xref linkend="guc-server-version"> or
     for a machine-readable version, <xref linkend="guc-server-version-num">.
     Software developers should use <literal>server_version_num</literal>
@@ -15652,11 +15657,18 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
     of parsing the text version.
    </para>
   <indexterm>
+  <primary>pgpro_edition</primary>
+  </indexterm>
+  <para>
+<literal><function>pgpro_edition()</function></literal>
+   returns a string, describing <productname>Postgres Pro</> edition
+   i.e. <literal>standard</literal> or <literal>enterprise</literal>.</para>
+  <indexterm>
   <primary>pgpro_version</primary>
   </indexterm>
   <para>
 <literal><function>pgpro_version()</function></literal>
-   returns a string, describing <productname>PostgresPro</> version
+   returns a string, describing <productname>Postgres Pro</> version
    information.</para>
   <indexterm>
    <primary>privilege</primary>
@@ -15846,6 +15858,21 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
        <entry>does current user have privilege for tablespace</entry>
       </row>
       <row>
+       <entry><literal><function>has_type_privilege</function>(<parameter>user</parameter>,
+                                  <parameter>type</parameter>,
+                                  <parameter>privilege</parameter>)</literal>
+       </entry>
+       <entry><type>boolean</type></entry>
+       <entry>does user have privilege for type</entry>
+      </row>
+      <row>
+       <entry><literal><function>has_type_privilege</function>(<parameter>type</parameter>,
+                                  <parameter>privilege</parameter>)</literal>
+       </entry>
+       <entry><type>boolean</type></entry>
+       <entry>does current user have privilege for type</entry>
+      </row>
+      <row>
        <entry><literal><function>pg_has_role</function>(<parameter>user</parameter>,
                                   <parameter>role</parameter>,
                                   <parameter>privilege</parameter>)</literal>
@@ -15902,6 +15929,9 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
    </indexterm>
    <indexterm>
     <primary>has_tablespace_privilege</primary>
+   </indexterm>
+   <indexterm>
+    <primary>has_type_privilege</primary>
    </indexterm>
    <indexterm>
     <primary>pg_has_role</primary>
@@ -16055,6 +16085,18 @@ SELECT has_function_privilege('joeuser', 'myfunc(int, text)', 'execute');
     are analogous to <function>has_table_privilege</function>.
     The desired access privilege type must evaluate to
     <literal>CREATE</literal>.
+   </para>
+
+   <para>
+    <function>has_type_privilege</function> checks whether a user
+    can access a type in a particular way.
+    Its argument possibilities
+    are analogous to <function>has_table_privilege</function>.
+    When specifying a type by a text string rather than by OID,
+    the allowed input is the same as for the <type>regtype</> data type
+    (see <xref linkend="datatype-oid">).
+    The desired access privilege type must evaluate to
+    <literal>USAGE</literal>.
    </para>
 
    <para>
@@ -16615,7 +16657,7 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
    one of which can optionally <quote>pretty-print</> the result.  The
    pretty-printed format is more readable, but the default format is more
    likely to be interpreted the same way by future versions of
-   <productname>PostgreSQL</>; avoid using pretty-printed output for dump
+   <productname>&productname;</>; avoid using pretty-printed output for dump
    purposes.  Passing <literal>false</> for the pretty-print parameter yields
    the same result as the variant that does not have the parameter at all.
   </para>
@@ -17602,7 +17644,7 @@ SELECT collation for ('foo' COLLATE "de_DE");
 
    <para>
     The functions described in this section are used to control and
-    monitor a <productname>PostgreSQL</> installation.
+    monitor a <productname>&productname;</> installation.
    </para>
 
   <sect2 id="functions-admin-set">
@@ -18251,7 +18293,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
    </indexterm>
 
    <para>
-    <productname>PostgreSQL</> allows database sessions to synchronize their
+    <productname>&productname;</> allows database sessions to synchronize their
     snapshots. A <firstterm>snapshot</> determines which data is visible to the
     transaction that is using the snapshot. Synchronized snapshots are
     necessary when two or more sessions need to see identical content in the
@@ -18263,7 +18305,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
    </para>
 
    <para>
-    To solve this problem, <productname>PostgreSQL</> allows a transaction to
+    To solve this problem, <productname>&productname;</> allows a transaction to
     <firstterm>export</> the snapshot it is using.  As long as the exporting
     transaction remains open, other transactions can <firstterm>import</> its
     snapshot, and thereby be guaranteed that they see exactly the same view
@@ -19572,7 +19614,7 @@ SELECT (pg_stat_file('filename')).modification;
    </indexterm>
 
    <para>
-      Currently <productname>PostgreSQL</> provides one built in trigger
+      Currently <productname>&productname;</> provides one built in trigger
       function, <function>suppress_redundant_updates_trigger</>,
       which will prevent any update
       that does not actually change the data in the row from taking place, in
@@ -19620,7 +19662,7 @@ FOR EACH ROW EXECUTE PROCEDURE suppress_redundant_updates_trigger();
    <title>Event Trigger Functions</title>
 
    <para>
-    <productname>PostgreSQL</> provides these helper functions
+    <productname>&productname;</> provides these helper functions
     to retrieve information from event triggers.
    </para>
 

@@ -13,7 +13,7 @@
 
  <refnamediv>
   <refname>vacuumlo</refname>
-  <refpurpose>remove orphaned large objects from a <productname>PostgreSQL</productname> database</refpurpose>
+  <refpurpose>remove orphaned large objects from a <productname>&productname;</productname> database</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -30,7 +30,7 @@
  <para>
   <application>vacuumlo</> is a simple utility program that will remove any
   <quote>orphaned</> large objects from a
-  <productname>PostgreSQL</> database.  An orphaned large object (LO) is
+  <productname>&productname;</> database.  An orphaned large object (LO) is
   considered to be any LO whose OID does not appear in any <type>oid</> or
   <type>lo</> data column of the database.
  </para>

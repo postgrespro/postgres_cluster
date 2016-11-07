@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/declare.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DECLARE">
@@ -80,7 +80,7 @@ DECLARE <replaceable class="parameter">name</replaceable> [ BINARY ] [ INSENSITI
      <para>
       Indicates that data retrieved from the cursor should be
       unaffected by updates to the table(s) underlying the cursor that occur
-      after the cursor is created.  In <productname>PostgreSQL</productname>,
+      after the cursor is created.  In <productname>&productname;</productname>,
       this is the default behavior; so this key word has no
       effect and is only accepted for compatibility with the SQL standard.
      </para>
@@ -180,7 +180,7 @@ DECLARE <replaceable class="parameter">name</replaceable> [ BINARY ] [ INSENSITI
     transaction.  Thus, <command>DECLARE</> without <literal>WITH
     HOLD</literal> is useless outside a transaction block: the cursor would
     survive only to the completion of the statement.  Therefore
-    <productname>PostgreSQL</productname> reports an error if such a
+    <productname>&productname;</productname> reports an error if such a
     command is used outside a transaction block.
     Use
     <xref linkend="sql-begin"> and
@@ -211,7 +211,7 @@ DECLARE <replaceable class="parameter">name</replaceable> [ BINARY ] [ INSENSITI
     The <literal>SCROLL</> option should be specified when defining a
     cursor that will be used to fetch backwards.  This is required by
     the SQL standard.  However, for compatibility with earlier
-    versions, <productname>PostgreSQL</productname> will allow
+    versions, <productname>&productname;</productname> will allow
     backward fetches without <literal>SCROLL</>, if the cursor's query
     plan is simple enough that no extra overhead is needed to support
     it. However, application developers are advised not to rely on
@@ -285,11 +285,11 @@ DECLARE <replaceable class="parameter">name</replaceable> [ BINARY ] [ INSENSITI
 
    <para>
     The SQL standard only makes provisions for cursors in embedded
-    <acronym>SQL</acronym>.  The <productname>PostgreSQL</productname>
+    <acronym>SQL</acronym>.  The <productname>&productname;</productname>
     server does not implement an <command>OPEN</command> statement for
     cursors; a cursor is considered to be open when it is declared.
     However, <application>ECPG</application>, the embedded SQL
-    preprocessor for <productname>PostgreSQL</productname>, supports
+    preprocessor for <productname>&productname;</productname>, supports
     the standard SQL cursor conventions, including those involving
     <command>DECLARE</command> and <command>OPEN</command> statements.
    </para>
@@ -320,19 +320,19 @@ DECLARE liahona CURSOR FOR SELECT * FROM films;
   <para>
    The SQL standard says that it is implementation-dependent whether cursors
    are sensitive to concurrent updates of the underlying data by default.  In
-   <productname>PostgreSQL</productname>, cursors are insensitive by default,
+   <productname>&productname;</productname>, cursors are insensitive by default,
    and can be made sensitive by specifying <literal>FOR UPDATE</>.  Other
    products may work differently.
   </para>
 
   <para>
    The SQL standard allows cursors only in embedded
-   <acronym>SQL</acronym> and in modules. <productname>PostgreSQL</>
+   <acronym>SQL</acronym> and in modules. <productname>&productname;</>
    permits cursors to be used interactively.
   </para>
 
   <para>
-   Binary cursors are a <productname>PostgreSQL</productname>
+   Binary cursors are a <productname>&productname;</productname>
    extension.
   </para>
  </refsect1>

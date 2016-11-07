@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/begin.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-BEGIN">
@@ -41,7 +41,7 @@ BEGIN [ WORK | TRANSACTION ] [ <replaceable class="parameter">transaction_mode</
    linkend="sql-commit"> or <xref
    linkend="sql-rollback"> is given.
    By default (without <command>BEGIN</command>),
-   <productname>PostgreSQL</productname> executes
+   <productname>&productname;</productname> executes
    transactions in <quote>autocommit</quote> mode, that is, each
    statement is executed in its own transaction and a commit is
    implicitly performed at the end of the statement (if execution was
@@ -129,7 +129,7 @@ BEGIN;
   <title>Compatibility</title>
 
   <para>
-   <command>BEGIN</command> is a <productname>PostgreSQL</productname>
+   <command>BEGIN</command> is a <productname>&productname;</productname>
    language extension.  It is equivalent to the SQL-standard command
    <xref linkend="sql-start-transaction">, whose reference page
    contains additional compatibility information.
@@ -138,7 +138,7 @@ BEGIN;
   <para>
    The <literal>DEFERRABLE</literal>
    <replaceable class="parameter">transaction_mode</replaceable>
-   is a <productname>PostgreSQL</productname> language extension.
+   is a <productname>&productname;</productname> language extension.
   </para>
 
   <para>

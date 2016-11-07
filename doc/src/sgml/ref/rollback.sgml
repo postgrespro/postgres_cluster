@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/rollback.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ROLLBACK">

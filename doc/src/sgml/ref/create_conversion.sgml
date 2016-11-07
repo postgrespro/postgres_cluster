@@ -149,7 +149,7 @@ CREATE CONVERSION myconv FOR 'UTF8' TO 'LATIN1' FROM myfunc;
 
   <para>
     <command>CREATE CONVERSION</command>
-    is a <productname>PostgreSQL</productname> extension.
+    is a <productname>&productname;</productname> extension.
     There is no <command>CREATE CONVERSION</command>
     statement in the SQL standard, but a <command>CREATE TRANSLATION</command>
     statement that is very similar in purpose and syntax.

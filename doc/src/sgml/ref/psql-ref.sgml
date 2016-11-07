@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/psql-ref.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="APP-PSQL">
@@ -17,7 +17,7 @@ PostgreSQL documentation
   <refnamediv>
     <refname><application>psql</application></refname>
     <refpurpose>
-      <productname>PostgreSQL</productname> interactive terminal
+      <productname>&productname;</productname> interactive terminal
     </refpurpose>
   </refnamediv>
 
@@ -35,9 +35,9 @@ PostgreSQL documentation
 
     <para>
      <application>psql</application> is a terminal-based front-end to
-     <productname>PostgreSQL</productname>. It enables you to type in
+     <productname>&productname;</productname>. It enables you to type in
      queries interactively, issue them to
-     <productname>PostgreSQL</productname>, and see the query results.
+     <productname>&productname;</productname>, and see the query results.
      Alternatively, input can be from a file or from command line
      arguments. In addition, <application>psql</application> provides a
      number of meta-commands and various shell-like features to
@@ -628,7 +628,7 @@ EOF
 
     <para>
     <application>psql</application> is a regular
-    <productname>PostgreSQL</productname> client application. In order
+    <productname>&productname;</productname> client application. In order
     to connect to a database you need to know the name of your target
     database, the host name and port number of the server, and what user
     name you want to connect as. <application>psql</application> can be
@@ -828,7 +828,7 @@ testdb=&gt;
         <term><literal>\c</literal> or <literal>\connect [ -reuse-previous=<replaceable class="parameter">on|off</replaceable> ] [ <replaceable class="parameter">dbname</replaceable> [ <replaceable class="parameter">username</replaceable> ] [ <replaceable class="parameter">host</replaceable> ] [ <replaceable class="parameter">port</replaceable> ] | <replaceable class="parameter">conninfo</replaceable> ]</literal></term>
         <listitem>
         <para>
-        Establishes a new connection to a <productname>PostgreSQL</>
+        Establishes a new connection to a <productname>&productname;</>
         server.  The connection parameters to use can be specified either
         using a positional syntax, or using <replaceable>conninfo</> connection
         strings as detailed in <xref linkend="libpq-connstring">.
@@ -987,7 +987,7 @@ testdb=&gt;
         <listitem>
         <para>
         Shows the copyright and distribution terms of
-        <productname>PostgreSQL</productname>.
+        <productname>&productname;</productname>.
         </para>
         </listitem>
       </varlistentry>
@@ -2069,7 +2069,7 @@ hello 10
 
         <listitem>
         <para>
-        Stores the file into a <productname>PostgreSQL</productname>
+        Stores the file into a <productname>&productname;</productname>
         large object. Optionally, it associates the given
         comment with the object. Example:
 <programlisting>
@@ -2097,7 +2097,7 @@ lo_import 152801
         <term><literal>\lo_list</literal></term>
         <listitem>
         <para>
-        Shows a list of all <productname>PostgreSQL</productname>
+        Shows a list of all <productname>&productname;</productname>
         large objects currently stored in the database,
         along with any comments provided for them.
         </para>
@@ -3092,7 +3092,7 @@ bar
 
         <note>
         <para>
-         The autocommit-on mode is <productname>PostgreSQL</>'s traditional
+         The autocommit-on mode is <productname>&productname;</>'s traditional
          behavior, but autocommit-off is closer to the SQL spec.  If you
          prefer autocommit-off, you might wish to set it in the system-wide
          <filename>psqlrc</filename> file or your
@@ -3156,7 +3156,7 @@ bar
         When this variable is set to <literal>on</> and a backslash command
         queries the database, the query is first shown.
         This feature helps you to study
-        <productname>PostgreSQL</productname> internals and provide
+        <productname>&productname;</productname> internals and provide
         similar functionality in your own programs. (To select this behavior
         on program start-up, use the switch <option>-E</option>.)  If you set
         the variable to the value <literal>noexec</literal>, the queries are
@@ -3521,7 +3521,7 @@ testdb=&gt; <userinput>INSERT INTO my_table VALUES (:'content');</userinput>
     The colon syntax for variables is standard <acronym>SQL</acronym> for
     embedded query languages, such as <application>ECPG</application>.
     The colon syntaxes for array slices and type casts are
-    <productname>PostgreSQL</productname> extensions, which can sometimes
+    <productname>&productname;</productname> extensions, which can sometimes
     conflict with the standard usage.  The colon-quote syntax for escaping a
     variable's value as an SQL literal or identifier is a
     <application>psql</application> extension.
@@ -3908,7 +3908,7 @@ PSQL_EDITOR_LINENUMBER_ARG='--line '
   </variablelist>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>
@@ -3939,7 +3939,7 @@ PSQL_EDITOR_LINENUMBER_ARG='--line '
      which is most reliably identified by running <literal>pg_config
      --sysconfdir</>.  By default this directory will be <filename>../etc/</>
      relative to the directory containing
-     the <productname>PostgreSQL</productname> executables.  The name of this
+     the <productname>&productname;</productname> executables.  The name of this
      directory can be set explicitly via the <envar>PGSYSCONFDIR</envar>
      environment variable.
     </para>
@@ -3954,7 +3954,7 @@ PSQL_EDITOR_LINENUMBER_ARG='--line '
     <para>
      Both the system-wide startup file and the user's personal startup file
      can be made <application>psql</application>-version-specific
-     by appending a dash and the <productname>PostgreSQL</productname>
+     by appending a dash and the <productname>&productname;</productname>
      major or minor release number to the file name,
      for example <filename>~/.psqlrc-9.2</filename> or
      <filename>~/.psqlrc-9.2.5</filename>.  The most specific
@@ -4010,7 +4010,7 @@ PSQL_EDITOR_LINENUMBER_ARG='--line '
 
       <listitem>
       <para>
-       Before <productname>PostgreSQL</productname> 9.6,
+       Before <productname>&productname;</productname> 9.6,
        the <option>-c</option> option implied <option>-X</option>
        (<option>--no-psqlrc</>); this is no longer the case.
       </para>

@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/pg_basebackup.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="app-pgbasebackup">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>pg_basebackup</refname>
-  <refpurpose>take a base backup of a <productname>PostgreSQL</productname> cluster</refpurpose>
+  <refpurpose>take a base backup of a <productname>&productname;</productname> cluster</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -32,7 +32,7 @@ PostgreSQL documentation
   </title>
   <para>
    <application>pg_basebackup</application> is used to take base backups of
-   a running <productname>PostgreSQL</productname> database cluster. These
+   a running <productname>&productname;</productname> database cluster. These
    are taken without affecting other clients to the database, and can be used
    both for point-in-time recovery (see <xref linkend="continuous-archiving">)
    and as the starting point for a log shipping or streaming replication standby
@@ -49,7 +49,7 @@ PostgreSQL documentation
   </para>
 
   <para>
-   The backup is made over a regular <productname>PostgreSQL</productname>
+   The backup is made over a regular <productname>&productname;</productname>
    connection, and uses the replication protocol. The connection must be made
    with a superuser or a user having <literal>REPLICATION</literal>
    permissions (see <xref linkend="role-attributes">),
@@ -579,7 +579,7 @@ PostgreSQL documentation
   <title>Environment</title>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>
@@ -610,7 +610,7 @@ PostgreSQL documentation
 
   <para>
    When tar format mode is used, it is the user's responsibility to unpack each
-   tar file before starting the PostgreSQL server. If there are additional tablespaces, the
+   tar file before starting the &productname; server. If there are additional tablespaces, the
    tar files for them need to be unpacked in the correct locations. In this
    case the symbolic links for those tablespaces will be created by the server
    according to the contents of the <filename>tablespace_map</> file that is

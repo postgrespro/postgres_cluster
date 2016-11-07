@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/listen.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-LISTEN">
@@ -53,7 +53,7 @@ LISTEN <replaceable class="PARAMETER">channel</replaceable>
 
   <para>
    The method a client application must use to detect notification events depends on
-   which <productname>PostgreSQL</productname> application programming interface it
+   which <productname>&productname;</productname> application programming interface it
    uses.  With the <application>libpq</> library, the application issues
    <command>LISTEN</command> as an ordinary SQL command, and then must
    periodically call the function <function>PQnotifies</function> to find out

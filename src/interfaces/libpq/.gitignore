@@ -1,6 +1,7 @@
 /exports.list
 /chklocale.c
 /crypt.c
+/encode_utils.c
 /getaddrinfo.c
 /getpeereid.c
 /inet_aton.c
@@ -9,6 +10,9 @@
 /open.c
 /pgstrcasecmp.c
 /pqsignal.c
+/scram-common.c
+/sha.c
+/sha_openssl.c
 /snprintf.c
 /strerror.c
 /strlcpy.c

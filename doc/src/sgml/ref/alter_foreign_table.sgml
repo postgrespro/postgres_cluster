@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/rel/alter_foreign_table.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERFOREIGNTABLE">
@@ -101,7 +101,7 @@ ALTER FOREIGN TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceab
      <para>
       This form changes the type of a column of a foreign table.
       Again, this has no effect on any underlying storage: this action simply
-      changes the type that <productname>PostgreSQL</> believes the column to
+      changes the type that <productname>&productname;</> believes the column to
       have.
      </para>
     </listitem>
@@ -555,7 +555,7 @@ ALTER FOREIGN TABLE myschema.distributors OPTIONS (ADD opt1 'value', SET opt2 'v
    The forms <literal>ADD</literal>, <literal>DROP</>,
    and <literal>SET DATA TYPE</literal>
    conform with the SQL standard.  The other forms are
-   <productname>PostgreSQL</productname> extensions of the SQL standard.
+   <productname>&productname;</productname> extensions of the SQL standard.
    Also, the ability to specify more than one manipulation in a single
    <command>ALTER FOREIGN TABLE</> command is an extension.
   </para>

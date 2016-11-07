@@ -28,6 +28,7 @@
 #include "mainloop.h"
 #include "fe_utils/print.h"
 #include "settings.h"
+#include "mb/pg_wchar.h"
 
 
 
@@ -142,7 +143,11 @@ main(int argc, char *argv[])
 	/* We rely on unmentioned fields of pset.popt to start out 0/false/NULL */
 	pset.popt.topt.format = PRINT_ALIGNED;
 	pset.popt.topt.border = 1;
+#ifdef WIN32
+	pset.popt.topt.pager = 0;
+#else
 	pset.popt.topt.pager = 1;
+#endif
 	pset.popt.topt.pager_min_lines = 0;
 	pset.popt.topt.start_table = true;
 	pset.popt.topt.stop_table = true;
@@ -158,7 +163,11 @@ main(int argc, char *argv[])
 	pset.popt.topt.env_columns = getenv("COLUMNS") ? atoi(getenv("COLUMNS")) : 0;
 
 	pset.notty = (!isatty(fileno(stdin)) || !isatty(fileno(stdout)));
-
+#ifdef HAVE_WIN32_LIBEDIT
+	if (!pset.notty && pset.encoding == PG_SQL_ASCII) {
+		pset.encoding = PG_UTF8;
+	}
+#endif
 	pset.getPassword = TRI_DEFAULT;
 
 	EstablishVariableSpace();
@@ -233,7 +242,13 @@ main(int argc, char *argv[])
 		keywords[5] = "fallback_application_name";
 		values[5] = pset.progname;
 		keywords[6] = "client_encoding";
-		values[6] = (pset.notty || getenv("PGCLIENTENCODING")) ? NULL : "auto";
+		values[6] = (pset.notty || getenv("PGCLIENTENCODING")) ? NULL :
+#ifdef HAVE_WIN32_LIBEDIT
+		"UTF8"
+#else
+		"auto"
+#endif
+		;
 		keywords[7] = NULL;
 		values[7] = NULL;
 
@@ -992,3 +1007,4 @@ EstablishVariableSpace(void)
 	SetVariableAssignHook(pset.vars, "VERBOSITY", verbosity_hook);
 	SetVariableAssignHook(pset.vars, "SHOW_CONTEXT", show_context_hook);
 }
+

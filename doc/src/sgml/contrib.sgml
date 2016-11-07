@@ -6,9 +6,9 @@
  <para>
   This appendix and the next one contain information regarding the modules that
   can be found in the <literal>contrib</literal> directory of the
-  <productname>PostgreSQL</> distribution.
+  <productname>&productname;</> distribution.
   These include porting tools, analysis utilities,
-  and plug-in features that are not part of the core PostgreSQL system,
+  and plug-in features that are not part of the core &productname; system,
   mainly because they address a limited audience or are too experimental
   to be part of the main source tree.  This does not preclude their
   usefulness.
@@ -41,11 +41,11 @@
 <screen>
 <userinput>make installcheck</userinput>
 </screen>
-  once you have a <productname>PostgreSQL</> server running.
+  once you have a <productname>&productname;</> server running.
  </para>
 
  <para>
-  If you are using a pre-packaged version of <productname>PostgreSQL</>,
+  If you are using a pre-packaged version of <productname>&productname;</>,
   these modules are typically made available as a separate subpackage,
   such as <literal>postgresql-contrib</>.
  </para>
@@ -54,7 +54,7 @@
   Many modules supply new user-defined functions, operators, or types.
   To make use of one of these modules, after you have installed the code
   you need to register the new SQL objects in the database system.
-  In <productname>PostgreSQL</> 9.1 and later, this is done by executing
+  In <productname>&productname;</>, and <productname>PostgreSQL</> 9.1 and later, this is done by executing
   a <xref linkend="sql-createextension"> command.  In a fresh database,
   you can simply do
 
@@ -114,30 +114,40 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &dblink;
  &dict-int;
  &dict-xsyn;
+ &dump-stat;
  &earthdistance;
  &file-fdw;
  &fuzzystrmatch;
  &hstore;
+ &hunspell-dict;
  &intagg;
  &intarray;
  &isn;
+ &jsquery;
  &lo;
  &ltree;
  &pageinspect;
  &passwordcheck;
+ &pgarman;
  &pgbuffercache;
  &pgcrypto;
  &pgfreespacemap;
+ &pgpathman;
  &pgprewarm;
+ &pgquerystate;
  &pgrowlocks;
  &pgstatstatements;
  &pgstattuple;
  &pgtrgm;
+ &pgvariables;
  &pgvisibility;
  &postgres-fdw;
+ &rum;
  &seg;
  &sepgsql;
+ &shared-ispell;
  &contrib-spi;
+ &sr-plan;
  &sslinfo;
  &tablefunc;
  &tcn;
@@ -164,7 +174,7 @@ pages.
  <para>
   This appendix and the previous one contain information regarding the modules that
   can be found in the <literal>contrib</literal> directory of the
-  <productname>PostgreSQL</> distribution.  See <xref linkend="contrib"> for
+  <productname>&productname;</> distribution.  See <xref linkend="contrib"> for
   more information about the <literal>contrib</literal> section in general and
   server extensions and plug-ins found in <literal>contrib</literal>
   specifically.
@@ -174,7 +184,7 @@ pages.
   This appendix covers utility programs found in <literal>contrib</literal>.
   Once installed, either from source or a packaging system, they are found in
   the <filename>bin</filename> directory of the
-  <productname>PostgreSQL</productname> installation and can be used like any
+  <productname>&productname;</productname> installation and can be used like any
   other program.
  </para>
 
@@ -182,27 +192,27 @@ pages.
   <title>Client Applications</title>
 
   <para>
-   This section covers <productname>PostgreSQL</productname> client
+   This section covers <productname>&productname;</productname> client
    applications in <literal>contrib</literal>.  They can be run from anywhere,
    independent of where the database server resides.  See
    also <xref linkend="reference-client"> for information about client
-   applications that part of the core <productname>PostgreSQL</productname>
+   applications that part of the core <productname>&productname;</productname>
    distribution.
   </para>
 
- &oid2name;
- &vacuumlo;
+  &oid2name;
+  &vacuumlo;  
  </sect1>
 
  <sect1 id="contrib-prog-server">
   <title>Server Applications</title>
 
   <para>
-   This section covers <productname>PostgreSQL</productname> server-related
+   This section covers <productname>&productname;</productname> server-related
    applications in <literal>contrib</literal>.  They are typically run on the
    host where the database server resides.  See also <xref
    linkend="reference-server"> for information about server applications that
-   part of the core <productname>PostgreSQL</productname> distribution.
+   part of the core <productname>&productname;</productname> distribution.
   </para>
 
  &pgstandby;

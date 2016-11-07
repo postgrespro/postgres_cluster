@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_domain.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERDOMAIN">
@@ -332,9 +332,9 @@ ALTER DOMAIN zipcode SET SCHEMA customers;
    <command>ALTER DOMAIN</command> conforms to the <acronym>SQL</acronym>
    standard, except for the <literal>OWNER</>, <literal>RENAME</literal>, <literal>SET SCHEMA</>, and
    <literal>VALIDATE CONSTRAINT</> variants, which are
-   <productname>PostgreSQL</productname> extensions.  The <literal>NOT VALID</>
+   <productname>&productname;</productname> extensions.  The <literal>NOT VALID</>
    clause of the <literal>ADD CONSTRAINT</> variant is also a
-   <productname>PostgreSQL</productname> extension.
+   <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

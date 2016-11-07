@@ -16,8 +16,10 @@
 
 #include "access/itup.h"
 #include "access/spgist.h"
+#include "lib/rbtree.h"
 #include "nodes/tidbitmap.h"
 #include "storage/buf.h"
+#include "storage/relfilenode.h"
 #include "utils/relcache.h"
 
 
@@ -129,12 +131,39 @@ typedef struct SpGistState
 	bool		isBuild;		/* true if doing index build */
 } SpGistState;
 
+typedef enum SPGistSEARCHITEMSTATE
+{
+	HEAP_RECHECK,		/* SearchItem is heap item and rechek is needed before reporting */
+	HEAP_NORECHECK,	  /* SearchItem is heap item and no rechek is needed */
+	INNER			   /* SearchItem is inner tree item - rechek irrelevant */
+} SPGistSEARCHITEMSTATE;
+
+typedef struct SpGistSearchItem
+{
+	pairingheap_node phNode;
+	SPGistSEARCHITEMSTATE itemState;	/* see above */
+	Datum value;						/* value reconstructed from parent or leafValue if heaptuple */
+	void *traversalValue;				/* opclass-specific traverse value */
+	int level;						  /* level of items on this page */
+	ItemPointerData heap;			   /* heap info, if heap tuple */
+	bool isnull;
+	double distances[FLEXIBLE_ARRAY_MEMBER];	/* array with numberOfOrderBys entries */
+} SpGistSearchItem;
+
+#define SpGistSearchItemIsHeap(item) 	((item).itemState == HEAP_RECHECK \
+									  || (item).itemState == HEAP_NORECHECK)
+
+#define SizeOfSpGistSearchItem(n_distances) \
+	(offsetof(SpGistSearchItem, distances) + sizeof(double) * (n_distances))
+
 /*
  * Private state of an index scan
  */
 typedef struct SpGistScanOpaqueData
 {
 	SpGistState state;			/* see above */
+	pairingheap	 *queue;		/* queue of unvisited items */
+	MemoryContext queueCxt;		/* context holding the queue */
 	MemoryContext tempCxt;		/* short-lived memory context */
 
 	/* Control flags showing whether to search nulls and/or non-nulls */
@@ -144,9 +173,16 @@ typedef struct SpGistScanOpaqueData
 	/* Index quals to be passed to opclass (null-related quals removed) */
 	int			numberOfKeys;	/* number of index qualifier conditions */
 	ScanKey		keyData;		/* array of index qualifier descriptors */
+	int			numberOfOrderBys;
+	ScanKey		orderByData;
 
-	/* Stack of yet-to-be-visited pages */
-	List	   *scanStack;		/* List of ScanStackEntrys */
+	FmgrInfo	innerConsistentFn;
+	FmgrInfo	leafConsistentFn;
+	Oid			indexCollation;
+
+	/* Pre-allocated workspace arrays: */
+	double	   *zeroDistances;
+	double	   *infDistances;
 
 	/* These fields are only used in amgetbitmap scans: */
 	TIDBitmap  *tbm;			/* bitmap being filled */
@@ -637,6 +673,9 @@ extern OffsetNumber SpGistPageAddNewItem(SpGistState *state, Page page,
 					 Item item, Size size,
 					 OffsetNumber *startOffset,
 					 bool errorOK);
+extern bool spgproperty(Oid index_oid, int attno,
+						IndexAMProperty prop, const char *propname,
+						bool *res, bool *isnull);
 
 /* spgdoinsert.c */
 extern void spgUpdateNodeLink(SpGistInnerTuple tup, int nodeN,

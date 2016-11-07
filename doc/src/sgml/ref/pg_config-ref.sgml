@@ -13,7 +13,7 @@
 
  <refnamediv>
   <refname>pg_config</refname>
-  <refpurpose>retrieve information about the installed version of <productname>PostgreSQL</></refpurpose>
+  <refpurpose>retrieve information about the installed version of <productname>&productname;</></refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -27,9 +27,9 @@
   <title>Description</>
   <para>
    The <application>pg_config</> utility prints configuration parameters
-   of the currently installed version of <productname>PostgreSQL</>. It is
+   of the currently installed version of <productname>&productname;</>. It is
    intended, for example, to be used by software packages that want to interface
-   to <productname>PostgreSQL</> to facilitate finding the required header files
+   to <productname>&productname;</> to facilitate finding the required header files
    and libraries.
   </para>
  </refsect1>
@@ -125,7 +125,7 @@
       <para>
        Print the location of locale support files.  (This will be an empty
        string if locale support was not configured when
-       <productname>PostgreSQL</> was built.)
+       <productname>&productname;</> was built.)
       </para>
      </listitem>
     </varlistentry>
@@ -171,7 +171,7 @@
      <listitem>
       <para>
        Print the options that were given to the <filename>configure</>
-       script when <productname>PostgreSQL</> was configured for building.
+       script when <productname>&productname;</> was configured for building.
        This can be used to reproduce the identical configuration, or
        to find out with what options a binary package was built. (Note
        however that binary packages often contain vendor-specific custom
@@ -185,7 +185,7 @@
      <listitem>
       <para>
        Print the value of the <varname>CC</varname> variable that was used for building
-       <productname>PostgreSQL</>.  This shows the C compiler used.
+       <productname>&productname;</>.  This shows the C compiler used.
       </para>
      </listitem>
     </varlistentry>
@@ -195,7 +195,7 @@
      <listitem>
       <para>
        Print the value of the <varname>CPPFLAGS</varname> variable that was used for building
-       <productname>PostgreSQL</>.  This shows C compiler switches needed
+       <productname>&productname;</>.  This shows C compiler switches needed
        at preprocessing time (typically, <literal>-I</> switches).
       </para>
      </listitem>
@@ -206,7 +206,7 @@
      <listitem>
       <para>
        Print the value of the <varname>CFLAGS</varname> variable that was used for building
-       <productname>PostgreSQL</>.  This shows C compiler switches.
+       <productname>&productname;</>.  This shows C compiler switches.
       </para>
      </listitem>
     </varlistentry>
@@ -216,7 +216,7 @@
      <listitem>
       <para>
        Print the value of the <varname>CFLAGS_SL</varname> variable that was used for building
-       <productname>PostgreSQL</>.  This shows extra C compiler switches
+       <productname>&productname;</>.  This shows extra C compiler switches
        used for building shared libraries.
       </para>
      </listitem>
@@ -227,7 +227,7 @@
      <listitem>
       <para>
        Print the value of the <varname>LDFLAGS</varname> variable that was used for building
-       <productname>PostgreSQL</>.  This shows linker switches.
+       <productname>&productname;</>.  This shows linker switches.
       </para>
      </listitem>
     </varlistentry>
@@ -237,7 +237,7 @@
      <listitem>
       <para>
        Print the value of the <varname>LDFLAGS_EX</varname> variable that was used for building
-       <productname>PostgreSQL</>.  This shows linker switches
+       <productname>&productname;</>.  This shows linker switches
        used for building executables only.
       </para>
      </listitem>
@@ -248,7 +248,7 @@
      <listitem>
       <para>
        Print the value of the <varname>LDFLAGS_SL</varname> variable that was used for building
-       <productname>PostgreSQL</>.  This shows linker switches
+       <productname>&productname;</>.  This shows linker switches
        used for building shared libraries only.
       </para>
      </listitem>
@@ -259,8 +259,8 @@
      <listitem>
       <para>
        Print the value of the <varname>LIBS</varname> variable that was used for building
-       <productname>PostgreSQL</>.  This normally contains <literal>-l</>
-       switches for external libraries linked into <productname>PostgreSQL</>.
+       <productname>&productname;</>.  This normally contains <literal>-l</>
+       switches for external libraries linked into <productname>&productname;</>.
       </para>
      </listitem>
     </varlistentry>
@@ -269,7 +269,7 @@
      <term><option>--version</option></>
      <listitem>
       <para>
-       Print the version of <productname>PostgreSQL</>.
+       Print the version of <productname>&productname;</>.
       </para>
      </listitem>
     </varlistentry>
@@ -314,7 +314,7 @@
   <title>Example</title>
 
   <para>
-   To reproduce the build configuration of the current PostgreSQL
+   To reproduce the build configuration of the current &productname;
    installation, run the following command:
 <programlisting>
 eval ./configure `pg_config --configure`

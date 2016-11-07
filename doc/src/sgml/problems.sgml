@@ -4,11 +4,11 @@
  <title>Bug Reporting Guidelines</title>
 
  <para>
-  When you find a bug in <productname>PostgreSQL</productname> we want to
+  When you find a bug in <productname>&productname;</productname> we want to
   hear about it. Your bug reports play an important part in making
-  <productname>PostgreSQL</productname> more reliable because even the utmost
+  <productname>&productname;</productname> more reliable because even the utmost
   care cannot guarantee that every part of
-  <productname>PostgreSQL</productname>
+  <productname>&productname;</productname>
   will work on every platform under every circumstance.
  </para>
 
@@ -72,7 +72,7 @@
 
     <listitem>
      <para>
-      <productname>PostgreSQL</productname> fails to compile, build, or
+      <productname>&productname;</productname> fails to compile, build, or
       install according to the instructions on supported platforms.
      </para>
     </listitem>
@@ -219,7 +219,7 @@
 
     <listitem>
      <para>
-      The <productname>PostgreSQL</productname> version. You can run the command
+      The <productname>&productname;</productname> version. You can run the command
       <literal>SELECT version();</literal> to
       find out the version of the server you are connected to.  Most executable
       programs also support a <option>--version</option> option; at least
@@ -236,9 +236,9 @@
       If your version is older than &version; we will almost certainly
       tell you to upgrade. There are many bug fixes and improvements
       in each new release, so it is quite possible that a bug you have
-      encountered in an older release of <productname>PostgreSQL</>
+      encountered in an older release of <productname>&productname;</>
       has already been fixed. We can only provide limited support for
-      sites using older releases of <productname>PostgreSQL</>; if you
+      sites using older releases of <productname>&productname;</>; if you
       require more than we can provide, consider acquiring a
       commercial support contract.
      </para>
@@ -278,10 +278,10 @@
 
   <para>
    When writing a bug report, please avoid confusing terminology.
-   The software package in total is called <quote>PostgreSQL</quote>,
+   The software package in total is called <quote>&productname;</quote>,
    sometimes <quote>Postgres</quote> for short. If you
    are specifically talking about the backend process, mention that, do not
-   just say <quote>PostgreSQL crashes</quote>.  A crash of a single
+   just say <quote>&productname; crashes</quote>.  A crash of a single
    backend process is quite different from crash of the parent
    <quote>postgres</> process; please don't say <quote>the server
    crashed</> when you mean a single backend process went down, nor vice versa.
@@ -295,29 +295,24 @@
   <title>Where to Report Bugs</title>
 
   <para>
-   In general, send bug reports to the bug report mailing list at
-   <email>pgsql-bugs@postgresql.org</email>.
+   In general, send bug reports to our support email address at
+   <email>bugs@postgrespro.ru</email>.
    You are requested to use a descriptive subject for your email
    message, perhaps parts of the error message.
   </para>
 
   <para>
-   Another method is to fill in the bug report web-form available
-   at the project's
-   <ulink url="http://www.postgresql.org/">web site</ulink>.
-   Entering a bug report this way causes it to be mailed to the
-   <email>pgsql-bugs@postgresql.org</email> mailing list.
+   Do not send bug reports specific to <productname>Postgres Pro</>
+   to the <productname>PostgreSQL</> support email address,
+   as <productname>Postgres Pro</> is not supported by
+   the <productname>PostgreSQL</> community.
+   But you can send reports to <email>bugs@postgresql.org</email>
+   for any bugs related to <productname>PostgreSQL</>.
   </para>
 
   <para>
-   If your bug report has security implications and you'd prefer that it
-   not become immediately visible in public archives, don't send it to
-   <literal>pgsql-bugs</literal>.  Security issues can be
-   reported privately to <email>security@postgresql.org</email>.
-  </para>
-
-  <para>
-   Do not send bug reports to any of the user mailing lists, such as
+   Even if your bug is not specific to <productname>Postgres Pro</>,
+   do not send bug reports to any of the user mailing lists, such as
    <email>pgsql-sql@postgresql.org</email> or
    <email>pgsql-general@postgresql.org</email>.
    These mailing lists are for answering
@@ -330,37 +325,10 @@
    the developers' mailing list <email>pgsql-hackers@postgresql.org</email>.
    This list is for discussing the
    development of <productname>PostgreSQL</productname>, and it would be nice
-   if we could keep the bug reports separate. We might choose to take up a
+   if the community could keep the bug reports separate.
+   The community might choose to take up a
    discussion about your bug report on <literal>pgsql-hackers</literal>,
-   if the problem needs more review.
+   if the <productname>PostgreSQL</>-related problem needs more review.
   </para>
-
-  <para>
-   If you have a problem with the documentation, the best place to report it
-   is the documentation mailing list <email>pgsql-docs@postgresql.org</email>.
-   Please be specific about what part of the documentation you are unhappy
-   with.
-  </para>
-
-  <para>
-   If your bug is a portability problem on a non-supported platform,
-   send mail to <email>pgsql-hackers@postgresql.org</email>,
-   so we (and you) can work on
-   porting <productname>PostgreSQL</productname> to your platform.
-  </para>
-
-  <note>
-   <para>
-    Due to the unfortunate amount of spam going around, all of the above
-    email addresses are closed mailing lists. That is, you need to be
-    subscribed to a list to be allowed to post on it.  (You need not be
-    subscribed to use the bug-report web form, however.)
-    If you would like to send mail but do not want to receive list traffic,
-    you can subscribe and set your subscription option to <literal>nomail</>.
-    For more information send mail to
-    <email>majordomo@postgresql.org</email>
-    with the single word <literal>help</> in the body of the message.
-   </para>
-  </note>
  </sect2>
 </sect1>

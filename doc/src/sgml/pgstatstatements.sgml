@@ -286,7 +286,7 @@
    The hashing process is also sensitive to differences in
    machine architecture and other facets of the platform.
    Furthermore, it is not safe to assume that <structfield>queryid</>
-   will be stable across major versions of <productname>PostgreSQL</>.
+   will be stable across major versions of <productname>&productname;</>.
   </para>
 
   <para>

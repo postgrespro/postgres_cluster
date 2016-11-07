@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/pg_isready.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="app-pg-isready">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>pg_isready</refname>
-  <refpurpose>check the connection status of a <productname>PostgreSQL</productname> server</refpurpose>
+  <refpurpose>check the connection status of a <productname>&productname;</productname> server</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -32,7 +32,7 @@ PostgreSQL documentation
   <title>Description</title>
   <para>
    <application>pg_isready</application> is a utility for checking the connection
-   status of a <productname>PostgreSQL</productname> database server. The exit
+   status of a <productname>&productname;</productname> database server. The exit
    status specifies the result of the connection check.
   </para>
  </refsect1>
@@ -159,7 +159,7 @@ PostgreSQL documentation
   <title>Environment</title>
 
   <para>
-   <command>pg_isready</command>, like most other <productname>PostgreSQL</>
+   <command>pg_isready</command>, like most other <productname>&productname;</>
    utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
@@ -190,7 +190,7 @@ PostgreSQL documentation
   </para>
 
   <para>
-   Running with connection parameters to a <productname>PostgreSQL</productname> cluster in startup:
+   Running with connection parameters to a <productname>&productname;</productname> cluster in startup:
 <screen>
 <prompt>$ </prompt><userinput>pg_isready -h localhost -p 5433</userinput>
 <computeroutput>localhost:5433 - rejecting connections</computeroutput>
@@ -200,7 +200,7 @@ PostgreSQL documentation
   </para>
 
   <para>
-   Running with connection parameters to a non-responsive <productname>PostgreSQL</productname> cluster:
+   Running with connection parameters to a non-responsive <productname>&productname;</productname> cluster:
 <screen>
 <prompt>$ </prompt><userinput>pg_isready -h someremotehost</userinput>
 <computeroutput>someremotehost:5432 - no response</computeroutput>

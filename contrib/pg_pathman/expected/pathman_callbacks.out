@@ -1,0 +1,85 @@
+\set VERBOSITY terse
+CREATE EXTENSION pg_pathman;
+CREATE SCHEMA callbacks;
+/* Check callbacks */
+CREATE OR REPLACE FUNCTION callbacks.abc_on_part_created_callback(
+	args JSONB)
+RETURNS VOID AS $$
+BEGIN
+	RAISE WARNING 'callback arg: %', args::TEXT;
+END
+$$ language plpgsql;
+/* set callback to be called on RANGE partitions */
+CREATE TABLE callbacks.abc(a serial, b int);
+SELECT create_range_partitions('callbacks.abc', 'a', 1, 100, 2);
+NOTICE:  sequence "abc_seq" does not exist, skipping
+ create_range_partitions 
+-------------------------
+                       2
+(1 row)
+
+SELECT set_init_callback('callbacks.abc',
+						 'callbacks.abc_on_part_created_callback');
+ set_init_callback 
+-------------------
+ 
+(1 row)
+
+INSERT INTO callbacks.abc VALUES (123, 1);
+INSERT INTO callbacks.abc VALUES (223, 1);
+SELECT append_range_partition('callbacks.abc');
+WARNING:  callback arg: {"parent": "abc", "parttype": "2", "partition": "abc_4", "range_max": "401", "range_min": "301"}
+ append_range_partition 
+------------------------
+ callbacks.abc_4
+(1 row)
+
+SELECT prepend_range_partition('callbacks.abc');
+WARNING:  callback arg: {"parent": "abc", "parttype": "2", "partition": "abc_5", "range_max": "1", "range_min": "-99"}
+ prepend_range_partition 
+-------------------------
+ callbacks.abc_5
+(1 row)
+
+SELECT add_range_partition('callbacks.abc', 401, 502);
+WARNING:  callback arg: {"parent": "abc", "parttype": "2", "partition": "abc_6", "range_max": "502", "range_min": "401"}
+ add_range_partition 
+---------------------
+ callbacks.abc_6
+(1 row)
+
+SELECT drop_partitions('callbacks.abc');
+NOTICE:  function callbacks.abc_upd_trig_func() does not exist, skipping
+NOTICE:  0 rows copied from callbacks.abc_1
+NOTICE:  1 rows copied from callbacks.abc_2
+NOTICE:  1 rows copied from callbacks.abc_3
+NOTICE:  0 rows copied from callbacks.abc_4
+NOTICE:  0 rows copied from callbacks.abc_5
+NOTICE:  0 rows copied from callbacks.abc_6
+ drop_partitions 
+-----------------
+               6
+(1 row)
+
+/* set callback to be called on HASH partitions */
+SELECT set_init_callback('callbacks.abc',
+						 'callbacks.abc_on_part_created_callback');
+ set_init_callback 
+-------------------
+ 
+(1 row)
+
+SELECT create_hash_partitions('callbacks.abc', 'a', 5);
+WARNING:  callback arg: {"parent": "abc", "parttype": "1", "partition": "abc_0"}
+WARNING:  callback arg: {"parent": "abc", "parttype": "1", "partition": "abc_1"}
+WARNING:  callback arg: {"parent": "abc", "parttype": "1", "partition": "abc_2"}
+WARNING:  callback arg: {"parent": "abc", "parttype": "1", "partition": "abc_3"}
+WARNING:  callback arg: {"parent": "abc", "parttype": "1", "partition": "abc_4"}
+ create_hash_partitions 
+------------------------
+                      5
+(1 row)
+
+DROP SCHEMA callbacks CASCADE;
+NOTICE:  drop cascades to 8 other objects
+DROP EXTENSION pg_pathman CASCADE;

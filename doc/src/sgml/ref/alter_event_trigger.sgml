@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_event_trigger.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTEREVENTTRIGGER">

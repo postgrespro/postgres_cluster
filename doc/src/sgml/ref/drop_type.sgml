@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/drop_type.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DROPTYPE">
@@ -97,10 +97,10 @@ DROP TYPE box;
   <para>
    This command is similar to the corresponding command in the SQL
    standard, apart from the <literal>IF EXISTS</>
-   option, which is a <productname>PostgreSQL</> extension.
+   option, which is a <productname>&productname;</> extension.
    But note that much of the <command>CREATE TYPE</command> command
    and the data type extension mechanisms in
-   <productname>PostgreSQL</productname> differ from the SQL standard.
+   <productname>&productname;</productname> differ from the SQL standard.
   </para>
  </refsect1>
 

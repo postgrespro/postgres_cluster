@@ -13,7 +13,7 @@
 
  <refnamediv>
   <refname>pg_upgrade</refname>
-  <refpurpose>upgrade a <productname>PostgreSQL</productname> server instance</refpurpose>
+  <refpurpose>upgrade a <productname>&productname;</productname> server instance</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -36,15 +36,15 @@
 
  <para>
   <application>pg_upgrade</> (formerly called <application>pg_migrator</>) allows data
-  stored in <productname>PostgreSQL</> data files to be upgraded to a later <productname>PostgreSQL</>
+  stored in <productname>PostgreSQL</> or <productname>&productname;</> data files to be upgraded to a later <productname>&productname;</>
   major version without the data dump/reload typically required for
   major version upgrades, e.g. from 8.4.7 to the current major release
-  of <productname>PostgreSQL</>.  It is not required for minor version upgrades, e.g. from
+  of <productname>&productname;</>.  It is not required for minor version upgrades, e.g. from
   9.0.1 to 9.0.4.
  </para>
 
  <para>
-  Major PostgreSQL releases regularly add new features that often
+  Major &productname; releases regularly add new features that often
   change the layout of the system tables, but the internal data storage
   format rarely changes.  <application>pg_upgrade</> uses this fact
   to perform rapid upgrades by creating new system tables and simply
@@ -66,7 +66,7 @@
 
   <para>
    pg_upgrade supports upgrades from 8.4.X and later to the current
-   major release of <productname>PostgreSQL</>, including snapshot and alpha releases.
+   major release of <productname>&productname;</>, including snapshot and alpha releases.
   </para>
  </refsect1>
 
@@ -81,14 +81,14 @@
      <varlistentry>
       <term><option>-b</option> <replaceable>bindir</></term>
       <term><option>--old-bindir=</option><replaceable>bindir</></term>
-      <listitem><para>the old PostgreSQL executable directory;
+      <listitem><para>the old &productname; executable directory;
       environment variable <envar>PGBINOLD</></para></listitem>
      </varlistentry>
 
      <varlistentry>
       <term><option>-B</option> <replaceable>bindir</></term>
       <term><option>--new-bindir=</option><replaceable>bindir</></term>
-      <listitem><para>the new PostgreSQL executable directory;
+      <listitem><para>the new &productname; executable directory;
       environment variable <envar>PGBINNEW</></para></listitem>
      </varlistentry>
 
@@ -213,10 +213,10 @@
 
     <para>
      If your installation directory is not version-specific, e.g.
-     <filename>/usr/local/pgsql</>, it is necessary to move the current PostgreSQL install
-     directory so it does not interfere with the new <productname>PostgreSQL</> installation.
-     Once the current <productname>PostgreSQL</> server is shut down, it is safe to rename the
-     PostgreSQL installation directory; assuming the old directory is
+     <filename>/usr/local/pgsql</>, it is necessary to move the current &productname; install
+     directory so it does not interfere with the new <productname>&productname;</> installation.
+     Once the current <productname>&productname;</> server is shut down, it is safe to rename the
+     &productname; installation directory; assuming the old directory is
      <filename>/usr/local/pgsql</>, you can do:
 
 <programlisting>
@@ -230,14 +230,14 @@ mv /usr/local/pgsql /usr/local/pgsql.old
     <title>For source installs, build the new version</title>
 
     <para>
-     Build the new PostgreSQL source with <command>configure</> flags that are compatible
+     Build the new &productname; source with <command>configure</> flags that are compatible
      with the old cluster. <application>pg_upgrade</> will check <command>pg_controldata</> to make
      sure all settings are compatible before starting the upgrade.
     </para>
    </step>
 
    <step>
-    <title>Install the new PostgreSQL binaries</title>
+    <title>Install the new &productname; binaries</title>
 
     <para>
      Install the new server's binaries and support
@@ -254,7 +254,7 @@ make prefix=/usr/local/pgsql.new install
    </step>
 
    <step>
-    <title>Initialize the new PostgreSQL cluster</title>
+    <title>Initialize the new &productname; cluster</title>
 
     <para>
      Initialize the new cluster using <command>initdb</command>.
@@ -424,7 +424,7 @@ pg_upgrade.exe
     <substeps>
 
      <step>
-      <title>Install the new PostgreSQL binaries on standby servers</title>
+      <title>Install the new &productname; binaries on standby servers</title>
 
       <para>
        Make sure the new binaries and support files are installed on all

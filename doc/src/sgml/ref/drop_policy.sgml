@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/drop_policy.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DROPPOLICY">
@@ -104,7 +104,7 @@ DROP POLICY p1 ON my_table;
   <title>Compatibility</title>
 
   <para>
-   <command>DROP POLICY</command> is a <productname>PostgreSQL</productname> extension.
+   <command>DROP POLICY</command> is a <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

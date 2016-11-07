@@ -1508,3 +1508,23 @@ generate_series_step_int8(PG_FUNCTION_ARGS)
 		/* do when there is no more left */
 		SRF_RETURN_DONE(funcctx);
 }
+
+Datum
+int8_dist(PG_FUNCTION_ARGS)
+{
+	int64		a = PG_GETARG_INT64(0);
+	int64		b = PG_GETARG_INT64(1);
+	int64		r;
+	int64		ra;
+
+	r = a - b;
+	ra = Abs(r);
+
+	/* Overflow check. */
+	if (ra < 0 || (!SAMESIGN(a, b) && !SAMESIGN(r, a)))
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("bigint out of range")));
+
+	PG_RETURN_INT64(ra);
+}

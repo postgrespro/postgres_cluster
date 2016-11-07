@@ -5313,6 +5313,8 @@ DESCR("get progress for all replication origins");
 DATA(insert OID =  6015 (  pgpro_version		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ pgpro_version _null_ _null_ _null_ ));
 DESCR("PostgresPro version string");
 
+DATA(insert OID =  6019 (  pgpro_edition		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ pgpro_edition _null_ _null_ _null_ ));
+DESCR("PostgresPro edition");
 
 /* rls */
 DATA(insert OID = 3298 (  row_security_active	   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 16 "26" _null_ _null_ _null_ _null_ _null_	row_security_active _null_ _null_ _null_ ));
@@ -5337,6 +5339,7 @@ DESCR("pg_controldata recovery state information as a function");
 DATA(insert OID = 3444 ( pg_control_init PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 2249 "" "{23,23,23,23,23,23,23,23,23,16,16,16,23}" "{o,o,o,o,o,o,o,o,o,o,o,o,o}" "{max_data_alignment,database_block_size,blocks_per_segment,wal_block_size,bytes_per_wal_segment,max_identifier_length,max_index_columns,max_toast_chunk_size,large_object_chunk_size,bigint_timestamps,float4_pass_by_value,float8_pass_by_value,data_page_checksum_version}" _null_ _null_ pg_control_init _null_ _null_ _null_ ));
 DESCR("pg_controldata init state information as a function");
 
+/* cfs */
 DATA(insert OID = 6100 (  cfs_start_gc		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 23 "23" _null_ _null_ _null_ _null_ _null_ cfs_start_gc _null_ _null_ _null_ ));
 DESCR("cfs_start_gc start CFS garbage collection");
 DATA(insert OID = 6101 (  cfs_version		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ cfs_version _null_ _null_ _null_ ));
@@ -5346,6 +5349,19 @@ DESCR("Enable or disable CFS garbage collection");
 DATA(insert OID = 6103 (  cfs_estimate		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 701 "2205" _null_ _null_ _null_ _null_ _null_ cfs_estimate _null_ _null_ _null_ ));
 DESCR("Estimate relation compression ratio");
 
+/* distance functions */
+DATA(insert OID = 3343 ( int2_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0   21 "21 21"		_null_ _null_ _null_ _null_ _null_	int2_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 3344 ( int4_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0   23 "23 23"		_null_ _null_ _null_ _null_ _null_	int4_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 3345 ( int8_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0   20 "20 20"		_null_ _null_ _null_ _null_ _null_	int8_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 3346 ( oid_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0   26 "26 26"		_null_ _null_ _null_ _null_ _null_	oid_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 3347 ( float4_dist	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0  700 "700 700"	_null_ _null_ _null_ _null_ _null_	float4_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 3367 ( float8_dist	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0  701 "701 701"	_null_ _null_ _null_ _null_ _null_	float8_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 3349 ( cash_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0  790 "790 790"	_null_ _null_ _null_ _null_ _null_	cash_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 3350 ( date_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0   23 "1082 1082"	_null_ _null_ _null_ _null_ _null_	date_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 3351 ( time_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1083 1083"	_null_ _null_ _null_ _null_ _null_	time_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 3352 ( ts_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1114 1114"	_null_ _null_ _null_ _null_ _null_	ts_dist		_null_ _null_ _null_ ));
+DATA(insert OID = 3353 ( tstz_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1184 1184"	_null_ _null_ _null_ _null_ _null_	tstz_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 3354 ( interval_dist	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1186 1186"	_null_ _null_ _null_ _null_ _null_	interval_dist _null_ _null_ _null_ ));
 
 
 /*

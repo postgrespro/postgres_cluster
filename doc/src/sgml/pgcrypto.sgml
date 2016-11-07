@@ -14,7 +14,7 @@
 
  <para>
   The <filename>pgcrypto</> module provides cryptographic functions for
-  <productname>PostgreSQL</>.
+  <productname>&productname;</>.
  </para>
 
  <sect2>
@@ -768,7 +768,7 @@ Applies to: pgp_sym_encrypt, pgp_pub_encrypt
 
    <para>
     Which compression algorithm to use.  Only available if
-    <productname>PostgreSQL</productname> was built with zlib.
+    <productname>&productname;</productname> was built with zlib.
    </para>
 <literallayout>
 Values:
@@ -1144,7 +1144,7 @@ gen_random_uuid() returns uuid
 
    <para>
     <filename>pgcrypto</> configures itself according to the findings of the
-    main PostgreSQL <literal>configure</literal> script.  The options that
+    main &productname; <literal>configure</literal> script.  The options that
     affect it are <literal>--with-zlib</literal> and
     <literal>--with-openssl</literal>.
    </para>

@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/pg_ctl-ref.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="app-pg-ctl">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>pg_ctl</refname>
-  <refpurpose>initialize, start, stop, or control a <productname>PostgreSQL</productname> server</refpurpose>
+  <refpurpose>initialize, start, stop, or control a <productname>&productname;</productname> server</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -133,8 +133,8 @@ PostgreSQL documentation
   <title>Description</title>
   <para>
    <application>pg_ctl</application> is a utility for initializing a
-   <productname>PostgreSQL</productname> database cluster, starting,
-   stopping, or restarting the <productname>PostgreSQL</productname>
+   <productname>&productname;</productname> database cluster, starting,
+   stopping, or restarting the <productname>&productname;</productname>
    database server (<xref linkend="app-postgres">), or displaying the
    status of a running server.  Although the server can be started
    manually, <application>pg_ctl</application> encapsulates tasks such
@@ -145,7 +145,7 @@ PostgreSQL documentation
 
   <para>
    The <option>init</option> or <option>initdb</option> mode creates a new
-   <productname>PostgreSQL</productname> database cluster.  A database
+   <productname>&productname;</productname> database cluster.  A database
    cluster is a collection of databases that are managed by a single
    server instance.  This mode invokes the <command>initdb</command>
    command.  See <xref linkend="app-initdb"> for details.
@@ -428,12 +428,12 @@ PostgreSQL documentation
       <para>
        Name of the event source for <application>pg_ctl</application> to use
        for logging to the event log when running as a Windows service.  The
-       default is <literal>PostgreSQL</literal>.  Note that this only controls
+       default is <literal>&productname;</literal>.  Note that this only controls
        the logging from <application>pg_ctl</application> itself; once
        started, the server will use the event source specified
        by <xref linkend="guc-event-source">.  Should the server fail during
        early startup, it might also log using the default event
-       source <literal>PostgreSQL</literal>.
+       source <literal>&productname;</literal>.
       </para>
      </listitem>
     </varlistentry>
@@ -512,7 +512,7 @@ PostgreSQL documentation
   </variablelist>
 
   <para>
-   <command>pg_ctl</command>, like most other <productname>PostgreSQL</>
+   <command>pg_ctl</command>, like most other <productname>&productname;</>
    utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).

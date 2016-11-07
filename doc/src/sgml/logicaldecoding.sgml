@@ -5,7 +5,7 @@
    <primary>Logical Decoding</primary>
   </indexterm>
   <para>
-   PostgreSQL provides infrastructure to stream the modifications performed
+   &productname; provides infrastructure to stream the modifications performed
    via SQL to external consumers.  This functionality can be used for a
    variety of purposes, including replication solutions and auditing.
   </para>
@@ -16,7 +16,7 @@
 
   <para>
    The format in which those changes are streamed is determined by the output
-   plugin used.  An example plugin is provided in the PostgreSQL distribution.
+   plugin used.  An example plugin is provided in the &productname; distribution.
    Additional plugins can be
    written to extend the choice of available formats without modifying any
    core code.
@@ -146,7 +146,7 @@ postgres=# SELECT pg_drop_replication_slot('regression_slot');
    <para>
     The following example shows how logical decoding is controlled over the
     streaming replication protocol, using the
-    program <xref linkend="app-pgrecvlogical"> included in the PostgreSQL
+    program <xref linkend="app-pgrecvlogical"> included in the &productname;
     distribution.  This requires that client authentication is set up to allow
     replication connections
     (see <xref linkend="streaming-replication-authentication">) and
@@ -184,7 +184,7 @@ $ pg_recvlogical -d postgres --slot test --drop-slot
     </para>
 
     <para>
-     In <productname>PostgreSQL</productname>, logical decoding is implemented
+     In <productname>&productname;</productname>, logical decoding is implemented
      by decoding the contents of the <link linkend="wal">write-ahead
      log</link>, which describe changes on a storage level, into an
      application-specific form such as a stream of tuples or SQL statements.
@@ -207,7 +207,7 @@ $ pg_recvlogical -d postgres --slot test --drop-slot
     </para>
 
     <note>
-     <para><productname>PostgreSQL</productname> also has streaming replication slots
+     <para><productname>&productname;</productname> also has streaming replication slots
      (see <xref linkend="streaming-replication">), but they are used somewhat
      differently there.
      </para>
@@ -215,7 +215,7 @@ $ pg_recvlogical -d postgres --slot test --drop-slot
 
     <para>
      A replication slot has an identifier that is unique across all databases
-     in a <productname>PostgreSQL</productname> cluster. Slots persist
+     in a <productname>&productname;</productname> cluster. Slots persist
      independently of the connection using them and are crash-safe.
     </para>
 
@@ -352,7 +352,7 @@ $ pg_recvlogical -d postgres --slot test --drop-slot
     <link linkend="test-decoding">
      <filename>contrib/test_decoding</filename>
     </link>
-    subdirectory of the PostgreSQL source tree.
+    subdirectory of the &productname; source tree.
    </para>
    <sect2 id="logicaldecoding-output-init">
     <title>Initialization Function</title>

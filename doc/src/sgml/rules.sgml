@@ -9,7 +9,7 @@
 
 <para>
      This chapter discusses the rule system in
-     <productname>PostgreSQL</productname>.  Production rule systems
+     <productname>&productname;</productname>.  Production rule systems
      are conceptually simple, but there are many subtle points
      involved in actually using them.
 </para>
@@ -17,7 +17,7 @@
 <para>
      Some other database systems define active database rules, which
      are usually stored procedures and triggers.  In
-     <productname>PostgreSQL</productname>, these can be implemented
+     <productname>&productname;</productname>, these can be implemented
      using functions and triggers as well.
 </para>
 
@@ -279,7 +279,7 @@
 </indexterm>
 
 <para>
-    Views in <productname>PostgreSQL</productname> are implemented
+    Views in <productname>&productname;</productname> are implemented
     using the rule system. In fact, there is essentially no difference
     between:
 
@@ -298,7 +298,7 @@ CREATE RULE "_RETURN" AS ON SELECT TO myview DO INSTEAD
     because this is exactly what the <command>CREATE VIEW</command>
     command does internally.  This has some side effects. One of them
     is that the information about a view in the
-    <productname>PostgreSQL</productname> system catalogs is exactly
+    <productname>&productname;</productname> system catalogs is exactly
     the same as it is for a table. So for the parser, there is
     absolutely no difference between a table and a view. They are the
     same thing: relations.
@@ -755,7 +755,7 @@ SELECT t1.a, t2.b FROM t1, t2 WHERE t1.a = t2.a;
 SELECT t1.a, t2.b, t1.ctid FROM t1, t2 WHERE t1.a = t2.a;
 </programlisting>
 
-    Now another detail of <productname>PostgreSQL</productname> enters
+    Now another detail of <productname>&productname;</productname> enters
     the stage. Old table rows aren't overwritten, and this
     is why <command>ROLLBACK</command> is fast. In an <command>UPDATE</command>,
     the new result row is inserted into the table (after stripping the
@@ -774,7 +774,7 @@ SELECT t1.a, t2.b, t1.ctid FROM t1, t2 WHERE t1.a = t2.a;
 </sect2>
 
 <sect2>
-<title>The Power of Views in <productname>PostgreSQL</productname></title>
+<title>The Power of Views in <productname>&productname;</productname></title>
 
 <para>
     The above demonstrates how the rule system incorporates view
@@ -796,7 +796,7 @@ SELECT t1.a, t2.b, t1.ctid FROM t1, t2 WHERE t1.a = t2.a;
     The planner has to decide which is
     the best path to execute the query, and the more information
     the planner has, the better this decision can be. And
-    the rule system as implemented in <productname>PostgreSQL</productname>
+    the rule system as implemented in <productname>&productname;</productname>
     ensures, that this is all information available about the query
     up to that point.
 </para>
@@ -811,7 +811,7 @@ SELECT t1.a, t2.b, t1.ctid FROM t1, t2 WHERE t1.a = t2.a;
     <command>DELETE</command>?  Doing the substitutions
     described above would give a query tree in which the result
     relation points at a subquery range-table entry, which will not
-    work.  There are several ways in which <productname>PostgreSQL</>
+    work.  There are several ways in which <productname>&productname;</>
     can support the appearance of updating a view, however.
 </para>
 
@@ -912,7 +912,7 @@ SELECT t1.a, t2.b, t1.ctid FROM t1, t2 WHERE t1.a = t2.a;
 </indexterm>
 
 <para>
-    Materialized views in <productname>PostgreSQL</productname> use the
+    Materialized views in <productname>&productname;</productname> use the
     rule system like views do, but persist the results in a table-like form.
     The main differences between:
 
@@ -936,7 +936,7 @@ REFRESH MATERIALIZED VIEW mymatview;
 </programlisting>
 
     The information about a materialized view in the
-    <productname>PostgreSQL</productname> system catalogs is exactly
+    <productname>&productname;</productname> system catalogs is exactly
     the same as it is for a table or view. So for the parser, a
     materialized view is a relation, just like a table or a view.  When
     a materialized view is referenced in a query, the data is returned
@@ -1906,7 +1906,7 @@ Merge Join
 
 <para>
     Now we make a final demonstration of the
-    <productname>PostgreSQL</productname> rule system and its power.
+    <productname>&productname;</productname> rule system and its power.
     Say you add some shoelaces with extraordinary colors to your
     database:
 
@@ -1940,7 +1940,7 @@ SELECT * FROM shoelace_mismatch;
    <para>
     Now we want to set it up so that mismatching shoelaces that are
     not in stock are deleted from the database.
-    To make it a little harder for <productname>PostgreSQL</productname>,
+    To make it a little harder for <productname>&productname;</productname>,
     we don't delete it directly. Instead we create one more view:
 
 <programlisting>
@@ -2009,7 +2009,7 @@ SELECT * FROM shoelace;
 </indexterm>
 
 <para>
-    Due to rewriting of queries by the <productname>PostgreSQL</productname>
+    Due to rewriting of queries by the <productname>&productname;</productname>
     rule system, other tables/views than those used in the original
     query get accessed. When update rules are used, this can include write access
     to tables.
@@ -2019,7 +2019,7 @@ SELECT * FROM shoelace;
     Rewrite rules don't have a separate owner. The owner of
     a relation (table or view) is automatically the owner of the
     rewrite rules that are defined for it.
-    The <productname>PostgreSQL</productname> rule system changes the
+    The <productname>&productname;</productname> rule system changes the
     behavior of the default access control system. Relations that
     are used due to rules get checked against the
     privileges of the rule owner, not the user invoking the rule.
@@ -2188,7 +2188,7 @@ CREATE VIEW phone_number WITH (security_barrier) AS
 <title>Rules and Command Status</title>
 
 <para>
-    The <productname>PostgreSQL</productname> server returns a command
+    The <productname>&productname;</productname> server returns a command
     status string, such as <literal>INSERT 149592 1</>, for each
     command it receives.  This is simple enough when there are no rules
     involved, but what happens when the query is rewritten by rules?
@@ -2250,7 +2250,7 @@ CREATE VIEW phone_number WITH (security_barrier) AS
 
 <para>
     Many things that can be done using triggers can also be
-    implemented using the <productname>PostgreSQL</productname>
+    implemented using the <productname>&productname;</productname>
     rule system.  One of the things that cannot be implemented by
     rules are some kinds of constraints, especially foreign keys. It is possible
     to place a qualified rule that rewrites a command to <literal>NOTHING</>

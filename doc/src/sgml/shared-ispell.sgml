@@ -1,0 +1,195 @@
+<!-- doc/src/sgml/shared-ispell.sgml -->
+
+<sect1 id="shared-ispell" xreflabel="shared_ispell">
+ <title>shared_ispell</title>
+
+ <indexterm zone="shared-ispell">
+  <primary>shared_ispell</primary>
+ </indexterm>
+
+ <para>
+  The <filename>shared_ispell</filename> module provides a shared ispell
+  dictionary, i.e. a dictionary that's stored in shared segment. The traditional
+  ispell implementation means that each session initializes and stores the
+  dictionary on it's own, which means a lot of CPU/RAM is wasted.
+ </para>
+
+ <para>
+  This extension allocates an area in shared segment (you have to choose the
+  size in advance) and then loads the dictionary into it when it's used for the
+  first time.
+ </para>
+
+ <sect2>
+  <title>Functions</title>
+
+  <para>
+   The functions provided by the <filename>shared_ispell</filename> module
+   are shown in <xref linkend="shared-ispell-func-table">.
+  </para>
+
+  <table id="shared-ispell-func-table">
+   <title><filename>shared_ispell</filename> Functions</title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Function</entry>
+      <entry>Returns</entry>
+      <entry>Description</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><function>shared_ispell_reset()</function><indexterm><primary>shared_ispell_reset</primary></indexterm></entry>
+      <entry><type>void</type></entry>
+      <entry>
+       Resets the dictionaries (e.g. so that you can reload the updated files
+       from disk). The sessions that already use the dictionaries will be forced
+       to reinitialize them.
+      </entry>
+     </row>
+     <row>
+      <entry><function>shared_ispell_mem_used()</function><indexterm><primary>shared_ispell_mem_used</primary></indexterm></entry>
+      <entry><type>int</type></entry>
+      <entry>
+       Returns a value of used memory of the shared segment by loaded shared
+       dictionaries in bytes.
+      </entry>
+     </row>
+     <row>
+      <entry><function>shared_ispell_mem_available()</function><indexterm><primary>shared_ispell_mem_available</primary></indexterm></entry>
+      <entry><type>int</type></entry>
+      <entry>
+       Returns a value of available memory of the shared segment.
+      </entry>
+     </row>
+     <row>
+      <entry><function>shared_ispell_dicts()</function><indexterm><primary>shared_ispell_dicts</primary></indexterm></entry>
+      <entry><type>setof(dict_name varchar, affix_name varchar, words int, affixes int, bytes int)</type></entry>
+      <entry>
+       Returns a list of dictionaries loaded in the shared segment.
+      </entry>
+     </row>
+     <row>
+      <entry><function>shared_ispell_stoplists()</function><indexterm><primary>shared_ispell_stoplists</primary></indexterm></entry>
+      <entry><type>setof(stop_name varchar, words int, bytes int)</type></entry>
+      <entry>
+       Returns a list of stopwords loaded in the shared segment.
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect2>
+
+ <sect2>
+  <title>GUC Parameters</title>
+
+  <variablelist>
+   <varlistentry id="guc-shared-ispell-max-size" xreflabel="shared_ispell.max_size">
+    <term>
+     <varname>shared_ispell.max_size</> (<type>int</type>)
+     <indexterm>
+      <primary><varname>shared_ispell.max_size</> configuration parameter</primary>
+     </indexterm>
+    </term>
+    <listitem>
+     <para>
+      Defines the maximum size of the shared segment. This is a hard limit, the
+      shared segment is not extensible and you need to set it so that all the
+      dictionaries fit into it and not much memory is wasted.
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect2>
+
+ <sect2>
+  <title>Using the dictionary</title>
+
+  <para>
+   The module needs to allocate space in the shared memory segment. So add this
+   to the config file (or update the current values):
+
+<programlisting>
+# libraries to load
+shared_preload_libraries = 'shared_ispell'
+
+# config of the shared memory
+shared_ispell.max_size = 32MB
+</programlisting>
+  </para>
+
+  <para>
+   To find out how much memory you actually need, use a large value (e.g. 200MB)
+   and load all the dictionaries you want to use. Then use the
+   <function>shared_ispell_mem_used()</function> function to find out how much
+   memory was actually used (and set the <varname>shared_ispell.max_size</varname>
+   GUC variable accordingly).
+  </para>
+
+  <para>
+   Don't set it exactly to that value, leave there some free space, so that you
+   can reload the dictionaries without changing the GUC max_size limit
+   (which requires a restart of the DB). Something like 512kB should be just fine.
+  </para>
+
+  <para>
+   The extension defines a <literal>shared_ispell</literal> template that you
+   may use to define custom dictionaries. E.g. you may do this:
+
+<programlisting>
+CREATE TEXT SEARCH DICTIONARY english_shared (
+    TEMPLATE = shared_ispell,
+    DictFile = en_us,
+    AffFile = en_us,
+    StopWords = english
+);
+
+CREATE TEXT SEARCH CONFIGURATION public.english_shared
+    ( COPY = pg_catalog.simple );
+
+ALTER TEXT SEARCH CONFIGURATION english_shared
+    ALTER MAPPING FOR asciiword, asciihword, hword_asciipart,
+                    word, hword, hword_part
+    WITH english_shared, english_stem;
+</programlisting>
+  </para>
+
+  <para>
+   We can test created configuration:
+
+<programlisting>
+SELECT * FROM ts_debug('english_shared', 'abilities');
+   alias   |   description   |   token   |         dictionaries          |   dictionary   |  lexemes  
+-----------+-----------------+-----------+-------------------------------+----------------+-----------
+ asciiword | Word, all ASCII | abilities | {english_shared,english_stem} | english_shared | {ability}
+(1 row)
+</programlisting>
+  </para>
+
+  <para>
+   Or you can update your own text search configuration. For example, you have
+   the <literal>public.english</literal> dictionary. You can update it to use
+   the <literal>shared_ispell</literal> template:
+
+<programlisting>
+ALTER TEXT SEARCH CONFIGURATION public.english
+    ALTER MAPPING FOR asciiword, asciihword, hword_asciipart,
+                    word, hword, hword_part
+    WITH english_shared, english_stem;
+</programlisting>
+  </para>
+
+ </sect2>
+
+ <sect2>
+  <title>Author</title>
+
+  <para>
+   Tomas Vondra <email>tomas.vondra@2ndquadrant.com</email>, Prague, Czech Republic
+  </para>
+ </sect2>
+
+</sect1>

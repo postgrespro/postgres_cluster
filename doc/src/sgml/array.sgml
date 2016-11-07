@@ -8,7 +8,7 @@
  </indexterm>
 
  <para>
-  <productname>PostgreSQL</productname> allows columns of a table to be
+  <productname>&productname;</productname> allows columns of a table to be
   defined as variable-length multidimensional arrays. Arrays of any
   built-in or user-defined base type, enum type, or composite type
   can be created.
@@ -80,7 +80,7 @@ CREATE TABLE tictactoe (
 <programlisting>
     pay_by_quarter  integer ARRAY,
 </programlisting>
-  As before, however, <productname>PostgreSQL</> does not enforce the
+  As before, however, <productname>&productname;</> does not enforce the
   size restriction in any case.
  </para>
  </sect2>
@@ -107,7 +107,7 @@ CREATE TABLE tictactoe (
    where <replaceable>delim</replaceable> is the delimiter character
    for the type, as recorded in its <literal>pg_type</literal> entry.
    Among the standard data types provided in the
-   <productname>PostgreSQL</productname> distribution, all use a comma
+   <productname>&productname;</productname> distribution, all use a comma
    (<literal>,</>), except for type <type>box</> which uses a semicolon
    (<literal>;</>). Each <replaceable>val</replaceable> is
    either a constant of the array element type, or a subarray. An example
@@ -221,7 +221,7 @@ SELECT name FROM sal_emp WHERE pay_by_quarter[1] &lt;&gt; pay_by_quarter[2];
 </programlisting>
 
   The array subscript numbers are written within square brackets.
-  By default <productname>PostgreSQL</productname> uses a
+  By default <productname>&productname;</productname> uses a
   one-based numbering convention for arrays, that is,
   an array of <replaceable>n</> elements starts with <literal>array[1]</literal> and
   ends with <literal>array[<replaceable>n</>]</literal>.
@@ -709,7 +709,7 @@ SELECT array_positions(ARRAY[1, 4, 3, 1, 3, 4, 2, 1], 1);
    The delimiter character is usually a comma (<literal>,</>) but can be
    something else: it is determined by the <literal>typdelim</> setting
    for the array's element type.  Among the standard data types provided
-   in the <productname>PostgreSQL</productname> distribution, all use a comma,
+   in the <productname>&productname;</productname> distribution, all use a comma,
    except for type <type>box</>, which uses a semicolon (<literal>;</>).
    In a multidimensional array, each dimension (row, plane,
    cube, etc.) gets its own level of curly braces, and delimiters

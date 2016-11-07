@@ -84,7 +84,7 @@
    </para>
 
    <para>
-    <productname>PostgreSQL</productname> offers both <firstterm>per-row</>
+    <productname>&productname;</productname> offers both <firstterm>per-row</>
     triggers and <firstterm>per-statement</> triggers.  With a per-row
     trigger, the trigger function
     is invoked once for each row that is affected by the statement

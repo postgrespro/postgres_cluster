@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/select_into.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-SELECTINTO">
@@ -134,7 +134,7 @@ SELECT * INTO films_recent FROM films WHERE date_prod &gt;= '2002-01-01';
    rather than creating a new table.  This indeed is the usage found
    in <application>ECPG</application> (see <xref linkend="ecpg">) and
    <application>PL/pgSQL</application> (see <xref linkend="plpgsql">).
-   The <productname>PostgreSQL</productname> usage of <command>SELECT
+   The <productname>&productname;</productname> usage of <command>SELECT
    INTO</command> to represent table creation is historical.  It is
    best to use <command>CREATE TABLE AS</command> for this purpose in
    new code.

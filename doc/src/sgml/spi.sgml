@@ -985,7 +985,7 @@ SPIPlanPtr SPI_prepare(const char * <parameter>command</parameter>, int <paramet
 
   <para>
    Although the main point of a prepared statement is to avoid repeated parse
-   analysis and planning of the statement, <productname>PostgreSQL</> will
+   analysis and planning of the statement, <productname>&productname;</> will
    force re-analysis and re-planning of the statement before using it
    whenever database objects used in the statement have undergone
    definitional (DDL) changes since the previous use of the prepared
@@ -1005,7 +1005,7 @@ SPIPlanPtr SPI_prepare(const char * <parameter>command</parameter>, int <paramet
    <type>SPIPlanPtr</> is declared as a pointer to an opaque struct type in
    <filename>spi.h</>.  It is unwise to try to access its contents
    directly, as that makes your code much more likely to break in
-   future revisions of <productname>PostgreSQL</productname>.
+   future revisions of <productname>&productname;</productname>.
   </para>
 
   <para>
@@ -3329,7 +3329,7 @@ char * SPI_getnspname(Relation <parameter>rel</parameter>)
      <primary>memory context</primary>
      <secondary>in SPI</secondary>
     </indexterm>
-   <productname>PostgreSQL</productname> allocates memory within
+   <productname>&productname;</productname> allocates memory within
    <firstterm>memory contexts</firstterm>, which provide a convenient method of
    managing allocations made in many different places that need to
    live for differing amounts of time.  Destroying a context releases

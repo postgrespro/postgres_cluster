@@ -13,7 +13,7 @@
 
   <para>
    Reliability is an important property of any serious database
-   system, and <productname>PostgreSQL</> does everything possible to
+   system, and <productname>&productname;</> does everything possible to
    guarantee reliable operation. One aspect of reliable operation is
    that all data recorded by a committed transaction should be stored
    in a nonvolatile area that is safe from power loss, operating
@@ -34,7 +34,7 @@
    First, there is the operating system's buffer cache, which caches
    frequently requested disk blocks and combines disk writes. Fortunately,
    all operating systems give applications a way to force writes from
-   the buffer cache to disk, and <productname>PostgreSQL</> uses those
+   the buffer cache to disk, and <productname>&productname;</> uses those
    features.  (See the <xref linkend="guc-wal-sync-method"> parameter
    to adjust how this is done.)
   </para>
@@ -126,7 +126,7 @@
    offer a drive cache flush command (<command>FLUSH CACHE EXT</>),
    while SCSI drives have long supported a similar command
    <command>SYNCHRONIZE CACHE</>.  These commands are not directly
-   accessible to <productname>PostgreSQL</>, but some file systems
+   accessible to <productname>&productname;</>, but some file systems
    (e.g., <acronym>ZFS</>, <acronym>ext4</>) can use them to flush
    data to the platters on write-back-enabled drives.  Unfortunately, such
    file systems behave suboptimally when combined with battery-backup unit
@@ -164,13 +164,13 @@
    commonly 512 bytes each.  Every physical read or write operation
    processes a whole sector.
    When a write request arrives at the drive, it might be for some multiple
-   of 512 bytes (<productname>PostgreSQL</> typically writes 8192 bytes, or
+   of 512 bytes (<productname>&productname;</> typically writes 8192 bytes, or
    16 sectors, at a time), and the process of writing could fail due
    to power loss at any time, meaning some of the 512-byte sectors were
    written while others were not.  To guard against such failures,
-   <productname>PostgreSQL</> periodically writes full page images to
+   <productname>&productname;</> periodically writes full page images to
    permanent WAL storage <emphasis>before</> modifying the actual page on
-   disk. By doing this, during crash recovery <productname>PostgreSQL</> can
+   disk. By doing this, during crash recovery <productname>&productname;</> can
    restore partially-written pages from WAL.  If you have file-system software
    that prevents partial page writes (e.g., ZFS),  you can turn off
    this page imaging by turning off the <xref
@@ -179,7 +179,7 @@
    they guarantee that data is written to the BBU as full (8kB) pages.
   </para>
   <para>
-   <productname>PostgreSQL</> also protects against some kinds of data corruption
+   <productname>&productname;</> also protects against some kinds of data corruption
    on storage devices that may occur because of hardware errors or media failure over time,
    such as reading/writing garbage data.
    <itemizedlist>
@@ -224,7 +224,7 @@
    </itemizedlist>
   </para>
   <para>
-   <productname>PostgreSQL</> does not protect against correctable memory errors
+   <productname>&productname;</> does not protect against correctable memory errors
    and it is assumed you will operate using RAM that uses industry standard
    Error Correcting Codes (ECC) or better protection.
   </para>
@@ -408,10 +408,10 @@
    <xref linkend="guc-fsync"> = off.
    <varname>fsync</varname> is a server-wide
    setting that will alter the behavior of all transactions.  It disables
-   all logic within <productname>PostgreSQL</> that attempts to synchronize
+   all logic within <productname>&productname;</> that attempts to synchronize
    writes to different portions of the database, and therefore a system
    crash (that is, a hardware or operating system crash, not a failure of
-   <productname>PostgreSQL</> itself) could result in arbitrarily bad
+   <productname>&productname;</> itself) could result in arbitrarily bad
    corruption of the database state.  In many scenarios, asynchronous
    commit provides most of the performance improvement that could be
    obtained by turning off <varname>fsync</varname>, but without the risk
@@ -530,7 +530,7 @@
    <varname>checkpoint_timeout</varname> seconds have elapsed, or before
    <varname>max_wal_size</varname> is exceeded, whichever is sooner.
    With the default value of 0.5,
-   <productname>PostgreSQL</> can be expected to complete each checkpoint
+   <productname>&productname;</> can be expected to complete each checkpoint
    in about half the time before the next checkpoint starts.  On a system
    that's very close to maximum I/O throughput during normal operation,
    you might want to increase <varname>checkpoint_completion_target</varname>
@@ -699,7 +699,7 @@
 
   <para>
    The <xref linkend="guc-wal-sync-method"> parameter determines how
-   <productname>PostgreSQL</productname> will ask the kernel to force
+   <productname>&productname;</productname> will ask the kernel to force
    <acronym>WAL</acronym> updates out to disk.
    All the options should be the same in terms of reliability, with
    the exception of <literal>fsync_writethrough</>, which can sometimes
@@ -713,7 +713,7 @@
 
   <para>
    Enabling the <xref linkend="guc-wal-debug"> configuration parameter
-   (provided that <productname>PostgreSQL</productname> has been
+   (provided that <productname>&productname;</productname> has been
    compiled with support for it) will result in each
    <function>XLogInsertRecord</function> and <function>XLogFlush</function>
    <acronym>WAL</acronym> call being logged to the server log. This
@@ -764,7 +764,7 @@
    when in fact they have only cached the data and not yet stored it
    on the disk.  A power failure in such a situation might lead to
    irrecoverable data corruption.  Administrators should try to ensure
-   that disks holding <productname>PostgreSQL</productname>'s
+   that disks holding <productname>&productname;</productname>'s
    <acronym>WAL</acronym> log files do not make such false reports.
    (See <xref linkend="wal-reliability">.)
   </para>

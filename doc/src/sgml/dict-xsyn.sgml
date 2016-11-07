@@ -50,7 +50,7 @@
      <literal>rules</> is the base name of the file containing the list of
      synonyms.  This file must be stored in
      <filename>$SHAREDIR/tsearch_data/</> (where <literal>$SHAREDIR</> means
-     the <productname>PostgreSQL</> installation's shared-data directory).
+     the <productname>&productname;</> installation's shared-data directory).
      Its name must end in <literal>.rules</> (which is not to be included in
      the <literal>rules</> parameter).
     </para>

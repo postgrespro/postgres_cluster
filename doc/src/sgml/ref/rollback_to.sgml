@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/rollback_to.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ROLLBACK-TO">
@@ -134,12 +134,12 @@ COMMIT;
 
   <para>
    The <acronym>SQL</> standard specifies that the key word
-   <literal>SAVEPOINT</> is mandatory, but <productname>PostgreSQL</>
+   <literal>SAVEPOINT</> is mandatory, but <productname>&productname;</>
    and <productname>Oracle</> allow it to be omitted.  SQL allows
    only <literal>WORK</>, not <literal>TRANSACTION</>, as a noise word
    after <literal>ROLLBACK</>.  Also, SQL has an optional clause
    <literal>AND [ NO ] CHAIN</> which is not currently supported by
-   <productname>PostgreSQL</>.  Otherwise, this command conforms to
+   <productname>&productname;</>.  Otherwise, this command conforms to
    the SQL standard.
   </para>
  </refsect1>

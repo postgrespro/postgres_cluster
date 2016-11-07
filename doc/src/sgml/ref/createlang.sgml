@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/createlang.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="APP-CREATELANG">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>createlang</refname>
-  <refpurpose>install a <productname>PostgreSQL</productname> procedural language</refpurpose>
+  <refpurpose>install a <productname>&productname;</productname> procedural language</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -41,7 +41,7 @@ PostgreSQL documentation
 
   <para>
    <application>createlang</application> is a utility for adding a
-   procedural language to a <productname>PostgreSQL</productname> database.
+   procedural language to a <productname>&productname;</productname> database.
   </para>
 
   <para>
@@ -52,7 +52,7 @@ PostgreSQL documentation
   <caution>
    <para>
     <application>createlang</application> is deprecated and may be removed
-    in a future <productname>PostgreSQL</productname> release.  Direct use
+    in a future <productname>&productname;</productname> release.  Direct use
     of the <command>CREATE EXTENSION</> command is recommended instead.
    </para>
   </caution>
@@ -232,7 +232,7 @@ PostgreSQL documentation
   </variablelist>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>

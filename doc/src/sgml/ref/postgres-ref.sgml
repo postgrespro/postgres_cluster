@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/postgres-ref.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="app-postgres">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>postgres</refname>
-  <refpurpose><productname>PostgreSQL</productname> database server</refpurpose>
+  <refpurpose><productname>&productname;</productname> database server</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -31,7 +31,7 @@ PostgreSQL documentation
 
   <para>
    <command>postgres</command> is the
-   <productname>PostgreSQL</productname> database server.  In order
+   <productname>&productname;</productname> database server.  In order
    for a client application to access a database it connects (over a
    network or locally) to a running <command>postgres</command> instance.
    The <command>postgres</command> instance then starts a separate server
@@ -119,7 +119,7 @@ PostgreSQL documentation
       <listitem>
        <para>
         Sets a named run-time parameter. The configuration parameters
-        supported by <productname>PostgreSQL</productname> are
+        supported by <productname>&productname;</productname> are
         described in <xref linkend="runtime-config">. Most of the
         other command line options are in fact short forms of such a
         parameter assignment.  <option>-c</> can appear multiple times
@@ -259,7 +259,7 @@ PostgreSQL documentation
       <listitem>
        <para>
         Enables secure connections using <acronym>SSL</acronym>.
-        <productname>PostgreSQL</productname> must have been compiled with
+        <productname>&productname;</productname> must have been compiled with
         support for <acronym>SSL</acronym> for this option to be
         available. For more information on using <acronym>SSL</acronym>,
         refer to <xref linkend="ssl-tcp">.
@@ -398,7 +398,7 @@ PostgreSQL documentation
      mainly for debugging purposes, and in some cases to assist with
      recovery of severely damaged databases. There should be no reason
      to use them in a production database setup.  They are listed
-     here only for use by <productname>PostgreSQL</productname>
+     here only for use by <productname>&productname;</productname>
      system developers.  Furthermore, these options might
      change or be removed in a future release without notice.
     </para>
@@ -649,7 +649,7 @@ PostgreSQL documentation
     discussion see <xref linkend="kernel-resources">.  You might be able
     to postpone reconfiguring your kernel by decreasing <xref
     linkend="guc-shared-buffers"> to reduce the shared memory
-    consumption of <productname>PostgreSQL</>, and/or by reducing
+    consumption of <productname>&productname;</>, and/or by reducing
     <xref linkend="guc-max-connections"> to reduce the semaphore
     consumption.
    </para>
@@ -672,7 +672,7 @@ PostgreSQL documentation
    <para>
     A failure message indicating inability to bind to a port might
     indicate that that port is already in use by some
-    non-<productname>PostgreSQL</productname> process.  You might also
+    non-<productname>&productname;</productname> process.  You might also
     get this error if you terminate <command>postgres</command>
     and immediately restart it using the same port; in this case, you
     must simply wait a few seconds until the operating system closes
@@ -748,7 +748,7 @@ PostgreSQL documentation
    The <option>--</> options will not work on <systemitem
    class="osname">FreeBSD</> or <systemitem class="osname">OpenBSD</>.
    Use <option>-c</> instead. This is a bug in the affected operating
-   systems; a future release of <productname>PostgreSQL</productname>
+   systems; a future release of <productname>&productname;</productname>
    will provide a workaround if this is not fixed.
   </para>
  </refsect1>

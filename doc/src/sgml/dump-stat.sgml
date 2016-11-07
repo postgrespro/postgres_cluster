@@ -1,0 +1,309 @@
+<!-- doc/src/sgml/dump_stat.sgml -->
+
+<sect1 id="dump-stat" xreflabel="dump-stat">
+    <title>dump_stat</title>
+
+    <indexterm zone="dump-stat">
+        <primary>dump_stat</primary>
+    </indexterm>
+
+    <para>
+        The <filename>dump_stat</> module provides functions that allow you to
+        backup and recover the contents of the
+        <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
+        table. The <function>dump_statistic</> function generates <literal>INSERT</>
+        statements which can later be applied to a compatible database. The extension
+        should be installed on the recipient server in order to successfuly restore
+        statistical data since these statements heavily rely on the provided functions.
+    </para>
+    
+    <para>
+        Note that the definition of the
+        <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
+        table might change occasionally, which means that generated dump might be incompatible
+        with future releases of <productname>&productname;</productname>.
+    </para>
+
+    <sect2>
+        <title>Functions</title>
+
+        <variablelist>
+            <varlistentry>
+                <term>
+                    <function>dump_statistic() returns setof text</function>
+                    <indexterm>
+                        <primary>dump_statistic</primary>
+                    </indexterm>
+                </term>
+
+                <listitem>
+                    <para>
+                        <function>dump_statistic</function> dumps the contents of the
+                        <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
+                        system catalog. It produces an <literal>INSERT</> statement
+                        per each tuple of the
+                        <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>,
+                        excluding the ones that contain statistical data for tables in the
+                        <literal>information_schema</> and <literal>pg_catalog</> schemas.
+                    </para>
+                    
+                    <para>
+                        The <literal>INSERT</> statement takes form of
+<screen>
+WITH upsert as (
+  UPDATE pg_catalog.pg_statistic SET <replaceable class="PARAMETER">column_name</> = <replaceable class="PARAMETER">expression</> [, ...]
+  WHERE to_schema_qualified_relation(starelid) = <replaceable class="PARAMETER">t_relname</>
+    AND to_attname(<replaceable class="PARAMETER">t_relname</>, staattnum) = <replaceable class="PARAMETER">t_attname</>
+    AND to_atttype(<replaceable class="PARAMETER">t_relname</>, staattnum) = <replaceable class="PARAMETER">t_atttype</>
+    AND stainherit = <replaceable class="PARAMETER">t_stainherit</>
+  RETURNING *)
+ins as (
+  SELECT <replaceable class="PARAMETER">expression</> [, ...]
+  WHERE NOT EXISTS (SELECT * FROM upsert)
+    AND to_attnum(<replaceable class="PARAMETER">t_relname</>, <replaceable class="PARAMETER">t_attname</>) IS NOT NULL
+    AND to_atttype(<replaceable class="PARAMETER">t_relname</>, <replaceable class="PARAMETER">t_attname</>) = <replaceable class="PARAMETER">t_atttype</>)
+INSERT INTO pg_catalog.pg_statistic SELECT * FROM ins;
+
+where <replaceable class="PARAMETER">expression</> can be one of:
+
+array_in(<replaceable class="PARAMETER">array_text</>, <replaceable class="PARAMETER">type_name</>::regtype::oid, -1)
+<replaceable class="PARAMETER">value</>::<replaceable class="PARAMETER">type_name</>
+</screen>
+                    </para>
+                    
+                    <para>
+                        Produced statements could be saved to a file, e.g.
+<screen>
+&dollar; psql test -A
+test=# \t
+test=# \o dump_stat.sql
+test=# select dump_statistic();
+</screen>
+                    </para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>dump_statistic(schema_name text) returns setof text</function>
+                </term>
+
+                <listitem>
+                    <para>
+                        <function>dump_statistic</function> dumps the contents of the
+                        <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
+                        system catalog. It produces an <literal>INSERT</> statement
+                        per each tuple of the
+                        <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
+                        that relates to some table in the <literal>schema_name</> schema.
+                    </para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>dump_statistic(schema_name text, table_name text) returns setof text</function>
+                </term>
+
+                <listitem>
+                    <para>
+                        <function>dump_statistic</function> dumps the contents of the
+                        <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
+                        system catalog. It produces an <literal>INSERT</> statement
+                        per each tuple of the
+                        <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
+                        that relates to the specified <literal>schema_name.table_name</> table.
+                    </para>
+                </listitem>
+            </varlistentry>
+            
+            <varlistentry>
+                <term>
+                    <function>dump_statistic(relid oid) returns setof text</function>
+                </term>
+
+                <listitem>
+                    <para>
+                        <function>dump_statistic</function> dumps the contents of the
+                        <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
+                        system catalog. It produces an <literal>INSERT</> statement
+                        per each tuple of the
+                        <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
+                        that contains statistical data for the relation referenced by <literal>relid</>.
+                    </para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_schema_qualified_operator(opid oid) returns text</function>
+                    <indexterm>
+                        <primary>to_schema_qualified_operator</primary>
+                    </indexterm>
+                </term>
+
+                <listitem>
+                    <para>
+                        Fetches the schema-qualified operator name by operator id <literal>opid</>. For example:
+                    </para>
+<screen>
+test=# SELECT to_schema_qualified_operator('+(int,int)'::regoperator);
+          to_schema_qualified_operator          
+------------------------------------------------
+ pg_catalog.+(pg_catalog.int4, pg_catalog.int4)
+(1 row)
+</screen>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_schema_qualified_type(typid oid) returns text</function>
+                    <indexterm>
+                        <primary>to_schema_qualified_type</primary>
+                    </indexterm>
+                </term>
+
+                <listitem>
+                    <para>
+                        Fetches the schema-qualified type name by type id <literal>typid</>.
+                    </para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_schema_qualified_relation(relid oid) returns text</function>
+                    <indexterm>
+                        <primary>to_schema_qualified_relation</primary>
+                    </indexterm>
+                </term>
+
+                <listitem>
+                    <para>
+                        Fetches the schema-qualified relation name by relation id <literal>relid</>.
+                    </para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>anyarray_elemtype(arr anyarray) returns oid</function>
+                    <indexterm>
+                        <primary>anyarray_elemtype</primary>
+                    </indexterm>
+                </term>
+
+                <listitem>
+                    <para>
+                        Returns the element type of the given array as <literal>oid</>. For example:
+                    </para>
+<screen>
+test=# SELECT anyarray_elemtype(array_in('{1,2,3}', 'int'::regtype, -1));
+ anyarray_elemtype 
+-------------------
+                23
+(1 row)
+</screen>                  
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_attname(relation text, colnum int2) returns text</function>
+                    <indexterm>
+                        <primary>to_attname</primary>
+                    </indexterm>
+                </term>
+
+                <listitem>
+                    <para>
+                        Given a relation name <literal>relation</> and a column number
+                        <literal>colnum</>, returns the column name as <literal>text</>.
+                    </para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_attnum(relation text, col text) returns int2</function>
+                    <indexterm>
+                        <primary>to_attnum</primary>
+                    </indexterm>
+                </term>
+
+                <listitem>
+                    <para>
+                        Given a relation name <literal>relation</> and a column name
+                        <literal>col</>, returns the column number as <literal>int2</>.
+                    </para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_atttype(relation text, col text) returns text</function>
+                    <indexterm>
+                        <primary>to_atttype</primary>
+                    </indexterm>
+                </term>
+
+                <listitem>
+                    <para>
+                        Given a relation name <literal>relation</> and a column name
+                        <literal>col</>, returns the schema-qualified column type as <literal>text</>.
+                    </para>
+                </listitem>
+            </varlistentry>
+            
+            <varlistentry>
+                <term>
+                    <function>to_atttype(relation text, colnum int2) returns text</function>
+                </term>
+
+                <listitem>
+                    <para>
+                        Given a relation name <literal>relation</> and a column number
+                        <literal>colnum</>, returns the schema-qualified column type as <literal>text</>.
+                    </para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_namespace(nsp text) returns oid</function>
+                    <indexterm>
+                        <primary>to_namespace</primary>
+                    </indexterm>
+                </term>
+
+                <listitem>
+                    <para>
+                        <function>to_namespace</function> duplicates the behavior of
+                        the cast to the
+                        <link linkend="datatype-oid"><structname>regnamespace</structname></link>
+                        type, which is not present in the
+                        <productname>PostgreSQL</productname> 9.4 release (and prior releases).
+                        This function returns the <literal>oid</> of the given schema.
+                    </para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>get_namespace(relation oid) returns oid</function>
+                    <indexterm>
+                        <primary>get_namespace</primary>
+                    </indexterm>
+                </term>
+
+                <listitem>
+                    <para>
+                        <function>get_namespace</function> returns the schema
+                        of the given relation as <literal>oid</>.
+                    </para>
+                </listitem>
+            </varlistentry>
+        </variablelist>
+    </sect2>
+</sect1>

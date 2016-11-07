@@ -342,6 +342,8 @@ GinInitMetabuffer(Buffer b)
 	metadata->nDataPages = 0;
 	metadata->nEntries = 0;
 	metadata->ginVersion = GIN_CURRENT_VERSION;
+
+	((PageHeader) page)->pd_lower += sizeof(GinMetaPageData);
 }
 
 /*
@@ -626,7 +628,7 @@ ginGetStats(Relation index, GinStatsData *stats)
  * Note: nPendingPages and ginVersion are *not* copied over
  */
 void
-ginUpdateStats(Relation index, const GinStatsData *stats)
+ginUpdateStats(Relation index, const GinStatsData *stats, bool is_build)
 {
 	Buffer		metabuffer;
 	Page		metapage;
@@ -646,7 +648,7 @@ ginUpdateStats(Relation index, const GinStatsData *stats)
 
 	MarkBufferDirty(metabuffer);
 
-	if (RelationNeedsWAL(index))
+	if (RelationNeedsWAL(index) && !is_build)
 	{
 		XLogRecPtr	recptr;
 		ginxlogUpdateMeta data;

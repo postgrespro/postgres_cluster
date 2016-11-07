@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/deallocate.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DEALLOCATE">

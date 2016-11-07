@@ -405,7 +405,7 @@ static int	initMasks(fd_set *rmask);
 static void report_fork_failure_to_client(Port *port, int errnum);
 static CAC_state canAcceptConnections(void);
 static long PostmasterRandom(void);
-static void RandomSalt(char *md5Salt);
+static void RandomSalt(char *salt, int len);
 static void signal_child(pid_t pid, int signal);
 static bool SignalSomeChildren(int signal, int targets);
 static void TerminateChildren(int signal);
@@ -576,6 +576,16 @@ PostmasterMain(int argc, char *argv[])
 	 * for security, no dir or file created can be group or other accessible
 	 */
 	umask(S_IRWXG | S_IRWXO);
+
+	/*
+	 * Initialize random(3) so we don't get the same values in every run.
+	 *
+	 * Note: the seed is pretty predictable from externally-visible facts such
+	 * as postmaster start time, so avoid using random() for security-critical
+	 * random values during postmaster startup.  At the time of first
+	 * connection, PostmasterRandom will select a hopefully-more-random seed.
+	 */
+	srandom((unsigned int) (MyProcPid ^ MyStartTime));
 
 	/*
 	 * By default, palloc() requests in the postmaster will be allocated in
@@ -2347,7 +2357,7 @@ ConnCreate(int serverFd)
 	 * after.  Else the postmaster's random sequence won't get advanced, and
 	 * all backends would end up using the same salt...
 	 */
-	RandomSalt(port->md5Salt);
+	RandomSalt(port->scramNonce, sizeof(port->scramNonce));
 
 	/*
 	 * Allocate GSSAPI specific state struct
@@ -4632,9 +4642,16 @@ SubPostmasterMain(int argc, char *argv[])
 	/* Setup essential subsystems (to ensure elog() behaves sanely) */
 	InitializeGUCOptions();
 
+	/* Check we got appropriate args */
+	if (argc < 3)
+		elog(FATAL, "invalid subpostmaster invocation");
+
 	/* Read in the variables file */
 	memset(&port, 0, sizeof(Port));
 	read_backend_variables(argv[2], &port);
+
+	/* Close the postmaster's sockets (as soon as we know them) */
+	ClosePostmasterPorts(strcmp(argv[1], "--forklog") == 0);
 
 	/*
 	 * Set reference point for stack-depth checking
@@ -4653,15 +4670,21 @@ SubPostmasterMain(int argc, char *argv[])
 				 errmsg("out of memory")));
 #endif
 
-	/* Check we got appropriate args */
-	if (argc < 3)
-		elog(FATAL, "invalid subpostmaster invocation");
-
 	/*
 	 * If appropriate, physically re-attach to shared memory segment. We want
 	 * to do this before going any further to ensure that we can attach at the
 	 * same address the postmaster used.  On the other hand, if we choose not
 	 * to re-attach, we may have other cleanup to do.
+	 *
+	 * If testing EXEC_BACKEND on Linux, you should run this as root before
+	 * starting the postmaster:
+	 *
+	 * echo 0 >/proc/sys/kernel/randomize_va_space
+	 *
+	 * This prevents using randomized stack and code addresses that cause the
+	 * child process's memory map to be different from the parent's, making it
+	 * sometimes impossible to attach to shared memory at the desired address.
+	 * Return the setting to its old value (usually '1' or '2') when finished.
 	 */
 	if (strcmp(argv[1], "--forkbackend") == 0 ||
 		strcmp(argv[1], "--forkavlauncher") == 0 ||
@@ -4707,9 +4730,6 @@ SubPostmasterMain(int argc, char *argv[])
 	{
 		Assert(argc == 3);		/* shouldn't be any more args */
 
-		/* Close the postmaster's sockets */
-		ClosePostmasterPorts(false);
-
 		/*
 		 * Need to reinitialize the SSL library in the backend, since the
 		 * context structures contain function pointers and cannot be passed
@@ -4740,17 +4760,7 @@ SubPostmasterMain(int argc, char *argv[])
 		/* Need a PGPROC to run CreateSharedMemoryAndSemaphores */
 		InitProcess();
 
-		/*
-		 * Attach process to shared data structures.  If testing EXEC_BACKEND
-		 * on Linux, you must run this as root before starting the postmaster:
-		 *
-		 * echo 0 >/proc/sys/kernel/randomize_va_space
-		 *
-		 * This prevents a randomized stack base address that causes child
-		 * shared memory to be at a different address than the parent, making
-		 * it impossible to attached to shared memory.  Return the value to
-		 * '1' when finished.
-		 */
+		/* Attach process to shared data structures */
 		CreateSharedMemoryAndSemaphores(false, 0);
 
 		/* And run the backend */
@@ -4758,9 +4768,6 @@ SubPostmasterMain(int argc, char *argv[])
 	}
 	if (strcmp(argv[1], "--forkboot") == 0)
 	{
-		/* Close the postmaster's sockets */
-		ClosePostmasterPorts(false);
-
 		/* Restore basic shared memory pointers */
 		InitShmemAccess(UsedShmemSegAddr);
 
@@ -4774,9 +4781,6 @@ SubPostmasterMain(int argc, char *argv[])
 	}
 	if (strcmp(argv[1], "--forkavlauncher") == 0)
 	{
-		/* Close the postmaster's sockets */
-		ClosePostmasterPorts(false);
-
 		/* Restore basic shared memory pointers */
 		InitShmemAccess(UsedShmemSegAddr);
 
@@ -4790,9 +4794,6 @@ SubPostmasterMain(int argc, char *argv[])
 	}
 	if (strcmp(argv[1], "--forkavworker") == 0)
 	{
-		/* Close the postmaster's sockets */
-		ClosePostmasterPorts(false);
-
 		/* Restore basic shared memory pointers */
 		InitShmemAccess(UsedShmemSegAddr);
 
@@ -4811,9 +4812,6 @@ SubPostmasterMain(int argc, char *argv[])
 		/* do this as early as possible; in particular, before InitProcess() */
 		IsBackgroundWorker = true;
 
-		/* Close the postmaster's sockets */
-		ClosePostmasterPorts(false);
-
 		/* Restore basic shared memory pointers */
 		InitShmemAccess(UsedShmemSegAddr);
 
@@ -4831,27 +4829,18 @@ SubPostmasterMain(int argc, char *argv[])
 	}
 	if (strcmp(argv[1], "--forkarch") == 0)
 	{
-		/* Close the postmaster's sockets */
-		ClosePostmasterPorts(false);
-
 		/* Do not want to attach to shared memory */
 
 		PgArchiverMain(argc, argv);		/* does not return */
 	}
 	if (strcmp(argv[1], "--forkcol") == 0)
 	{
-		/* Close the postmaster's sockets */
-		ClosePostmasterPorts(false);
-
 		/* Do not want to attach to shared memory */
 
 		PgstatCollectorMain(argc, argv);		/* does not return */
 	}
 	if (strcmp(argv[1], "--forklog") == 0)
 	{
-		/* Close the postmaster's sockets */
-		ClosePostmasterPorts(true);
-
 		/* Do not want to attach to shared memory */
 
 		SysLoggerMain(argc, argv);		/* does not return */
@@ -5088,27 +5077,29 @@ StartupPacketTimeoutHandler(void)
  * RandomSalt
  */
 static void
-RandomSalt(char *md5Salt)
+RandomSalt(char *salt, int len)
 {
 	long		rand;
+	int			i;
 
 	/*
 	 * We use % 255, sacrificing one possible byte value, so as to ensure that
 	 * all bits of the random() value participate in the result. While at it,
 	 * add one to avoid generating any null bytes.
 	 */
-	rand = PostmasterRandom();
-	md5Salt[0] = (rand % 255) + 1;
-	rand = PostmasterRandom();
-	md5Salt[1] = (rand % 255) + 1;
-	rand = PostmasterRandom();
-	md5Salt[2] = (rand % 255) + 1;
-	rand = PostmasterRandom();
-	md5Salt[3] = (rand % 255) + 1;
+	for (i = 0; i < len; i++)
+	{
+		rand = PostmasterRandom();
+		salt[i] = (rand % 255) + 1;
+	}
 }
 
 /*
  * PostmasterRandom
+ *
+ * Caution: use this only for values needed during connection-request
+ * processing.  Otherwise, the intended property of having an unpredictable
+ * delay between random_start_time and random_stop_time will be broken.
  */
 static long
 PostmasterRandom(void)

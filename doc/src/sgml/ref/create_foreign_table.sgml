@@ -115,7 +115,7 @@ CHECK ( <replaceable class="PARAMETER">expression</replaceable> ) [ NO INHERIT ]
      <para>
       The data type of the column. This can include array
       specifiers. For more information on the data types supported by
-      <productname>PostgreSQL</productname>, refer to <xref
+      <productname>&productname;</productname>, refer to <xref
       linkend="datatype">.
      </para>
     </listitem>
@@ -266,7 +266,7 @@ CHECK ( <replaceable class="PARAMETER">expression</replaceable> ) [ NO INHERIT ]
    <para>
     Constraints on foreign tables (such as <literal>CHECK</>
     or <literal>NOT NULL</> clauses) are not enforced by the
-    core <productname>PostgreSQL</> system, and most foreign data wrappers
+    core <productname>&productname;</> system, and most foreign data wrappers
     do not attempt to enforce them either; that is, the constraint is
     simply assumed to hold true.  There would be little point in such
     enforcement since it would only apply to rows inserted or updated via
@@ -285,7 +285,7 @@ CHECK ( <replaceable class="PARAMETER">expression</replaceable> ) [ NO INHERIT ]
    </para>
 
    <para>
-    Although <productname>PostgreSQL</> does not attempt to enforce
+    Although <productname>&productname;</> does not attempt to enforce
     constraints on foreign tables, it does assume that they are correct
     for purposes of query optimization.  If there are rows visible in the
     foreign table that do not satisfy a declared constraint, queries on
@@ -325,8 +325,8 @@ SERVER film_server;
    <link linkend="sql-createtable"><command>CREATE TABLE</></link>,
    <literal>NULL</> constraints and zero-column foreign tables are permitted.
    The ability to specify column default values is also
-   a <productname>PostgreSQL</> extension.  Table inheritance, in the form
-   defined by <productname>PostgreSQL</productname>, is nonstandard.
+   a <productname>&productname;</> extension.  Table inheritance, in the form
+   defined by <productname>&productname;</productname>, is nonstandard.
   </para>
 
  </refsect1>

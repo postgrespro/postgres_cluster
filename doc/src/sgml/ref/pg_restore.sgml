@@ -15,7 +15,7 @@
   <refname>pg_restore</refname>
 
   <refpurpose>
-   restore a <productname>PostgreSQL</productname> database from an
+   restore a <productname>&productname;</productname> database from an
    archive file created by <application>pg_dump</application>
   </refpurpose>
  </refnamediv>
@@ -35,7 +35,7 @@
 
   <para>
    <application>pg_restore</application> is a utility for restoring a
-   <productname>PostgreSQL</productname> database from an archive
+   <productname>&productname;</productname> database from an archive
    created by <xref linkend="app-pgdump"> in one of the non-plain-text
    formats.  It will issue the commands necessary to reconstruct the
    database to the state it was in at the time it was saved.  The
@@ -424,7 +424,7 @@
 
        <note>
         <para>
-         In versions prior to <productname>PostgreSQL</> 9.6, this flag
+         In versions prior to <productname>&productname;</> 9.6, this flag
          matched only tables, not any other type of relation.
         </para>
        </note>
@@ -504,7 +504,7 @@
         <option>--disable-triggers</> must be done as superuser.  So you
         should also specify a superuser name with <option>-S</> or,
         preferably, run <application>pg_restore</application> as a
-        <productname>PostgreSQL</> superuser.
+        <productname>&productname;</> superuser.
        </para>
       </listitem>
      </varlistentry>
@@ -552,7 +552,7 @@
         With this option, data for such a table is skipped.
         This behavior is useful if the target database already
         contains the desired table contents.  For example,
-        auxiliary tables for <productname>PostgreSQL</> extensions
+        auxiliary tables for <productname>&productname;</> extensions
         such as <productname>PostGIS</> might already be loaded in
         the target database; specifying this option prevents duplicate
         or obsolete data from being loaded into them.
@@ -763,7 +763,7 @@
   </variablelist>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).  However, it does not read
    <envar>PGDATABASE</envar> when a database name is not supplied.

@@ -52,14 +52,16 @@ typedef struct Instrumentation
 	instr_time	counter;		/* Accumulated runtime for this node */
 	double		firsttuple;		/* Time for first tuple of this cycle */
 	double		tuplecount;		/* Tuples emitted so far this cycle */
+	double		nfiltered1;		/* # tuples removed by scanqual or joinqual */
+	double		nfiltered2;		/* # tuples removed by "other" quals */
 	BufferUsage bufusage_start; /* Buffer usage at start */
 	/* Accumulated statistics across all completed cycles: */
 	double		startup;		/* Total startup time (in seconds) */
 	double		total;			/* Total total time (in seconds) */
 	double		ntuples;		/* Total tuples produced */
 	double		nloops;			/* # of run cycles for this node */
-	double		nfiltered1;		/* # tuples removed by scanqual or joinqual */
-	double		nfiltered2;		/* # tuples removed by "other" quals */
+	double		accum_nfiltered1;	/* # tuples removed by scanqual or joinqual on previous loops */
+	double		accum_nfiltered2;	/* # tuples removed by "other" quals on previous loops */
 	BufferUsage bufusage;		/* Total buffer usage */
 } Instrumentation;
 

@@ -9,7 +9,7 @@
 
  <para>
   <filename>dblink</> is a module that supports connections to
-  other <productname>PostgreSQL</> databases from within a database
+  other <productname>&productname;</> databases from within a database
   session.
  </para>
 
@@ -45,7 +45,7 @@ dblink_connect(text connname, text connstr) returns text
 
    <para>
     <function>dblink_connect()</> establishes a connection to a remote
-    <productname>PostgreSQL</> database.  The server and database to
+    <productname>&productname;</> database.  The server and database to
     be contacted are identified through a standard <application>libpq</>
     connection string.  Optionally, a name can be assigned to the
     connection.  Multiple named connections can be open at once, but
@@ -217,7 +217,7 @@ dblink_connect_u(text connname, text connstr) returns text
     If the remote server selects an authentication method that does not
     involve a password, then impersonation and subsequent escalation of
     privileges can occur, because the session will appear to have
-    originated from the user as which the local <productname>PostgreSQL</>
+    originated from the user as which the local <productname>&productname;</>
     server runs.  Also, even if the remote server does demand a password,
     it is possible for the password to be supplied from the server
     environment, such as a <filename>~/.pgpass</> file belonging to the
@@ -411,7 +411,7 @@ dblink(text sql [, bool fail_on_error]) returns setof record
     to return <type>record</>, rather than specifying any particular
     set of columns.  This means that you must specify the expected
     set of columns in the calling query &mdash; otherwise
-    <productname>PostgreSQL</> would not know what to expect.
+    <productname>&productname;</> would not know what to expect.
     Here is an example:
 
 <programlisting>
@@ -424,7 +424,7 @@ SELECT *
     The <quote>alias</> part of the <literal>FROM</> clause must
     specify the column names and types that the function will return.
     (Specifying column names in an alias is actually standard SQL
-    syntax, but specifying column types is a <productname>PostgreSQL</>
+    syntax, but specifying column types is a <productname>&productname;</>
     extension.)  This allows the system to understand what
     <literal>*</> should expand to, and what <structname>proname</>
     in the <literal>WHERE</> clause refers to, in advance of trying

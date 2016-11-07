@@ -7,7 +7,7 @@
   <indexterm><primary>BLOB</><see>large object</></>
 
    <para>
-    <productname>PostgreSQL</productname> has a <firstterm>large object</>
+    <productname>&productname;</productname> has a <firstterm>large object</>
     facility, which provides stream-style access to user data that is stored
     in a special large-object structure.  Streaming access is useful
     when working with data values that are too large to manipulate
@@ -16,10 +16,10 @@
 
    <para>
     This chapter describes the implementation and the programming and
-    query language interfaces to <productname>PostgreSQL</productname>
+    query language interfaces to <productname>&productname;</productname>
     large object data.  We use the <application>libpq</application> C
     library for the examples in this chapter, but most programming
-    interfaces native to <productname>PostgreSQL</productname> support
+    interfaces native to <productname>&productname;</productname> support
     equivalent functionality.  Other interfaces might use the large
     object interface internally to provide generic support for large
     values.  This is not described here.
@@ -43,7 +43,7 @@
    </para>
 
    <para>
-    <productname>PostgreSQL</productname> also supports a storage system called
+    <productname>&productname;</productname> also supports a storage system called
     <link
     linkend="storage-toast"><quote><acronym>TOAST</acronym></quote></link>,
     which automatically stores values
@@ -101,9 +101,9 @@
 
    <para>
     This section describes the facilities that
-    <productname>PostgreSQL</productname>'s <application>libpq</>
+    <productname>&productname;</productname>'s <application>libpq</>
     client interface library provides for accessing large objects.
-    The <productname>PostgreSQL</productname> large object interface is
+    The <productname>&productname;</productname> large object interface is
     modeled after the <acronym>Unix</acronym> file-system interface, with
     analogues of <function>open</function>,  <function>read</function>,
     <function>write</function>,

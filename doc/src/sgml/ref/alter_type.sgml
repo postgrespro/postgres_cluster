@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_type.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERTYPE">
@@ -329,7 +329,7 @@ ALTER TYPE colors ADD VALUE 'orange' AFTER 'red';
 
   <para>
    The variants to add and drop attributes are part of the SQL
-   standard; the other variants are PostgreSQL extensions.
+   standard; the other variants are &productname; extensions.
   </para>
  </refsect1>
 

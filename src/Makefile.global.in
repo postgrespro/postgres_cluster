@@ -40,6 +40,9 @@ VERSION = @PACKAGE_VERSION@
 MAJORVERSION = @PG_MAJORVERSION@
 VERSION_NUM = @PG_VERSION_NUM@
 
+PGPRO_VERSION = @PGPRO_VERSION@
+PGPRO_PACKAGE_NAME = @PGPRO_PACKAGE_NAME@
+
 # Set top_srcdir, srcdir, and VPATH.
 ifdef PGXS
 top_srcdir = $(top_builddir)
@@ -332,7 +335,9 @@ endif
 endif
 
 PROVE = @PROVE@
-PG_PROVE_FLAGS = -I $(top_srcdir)/src/test/perl/
+# There are common routines in src/test/perl, and some test suites have
+# extra perl modules in their own directory.
+PG_PROVE_FLAGS = -I $(top_srcdir)/src/test/perl/ -I $(srcdir)
 PROVE_FLAGS = --verbose
 
 # prepend to path if already set, else just set it

@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/drop_extension.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DROPEXTENSION">
@@ -106,7 +106,7 @@ DROP EXTENSION hstore;
   <title>Compatibility</title>
 
   <para>
-   <command>DROP EXTENSION</command> is a <productname>PostgreSQL</>
+   <command>DROP EXTENSION</command> is a <productname>&productname;</>
    extension.
   </para>
  </refsect1>

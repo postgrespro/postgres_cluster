@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/analyze.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ANALYZE">
@@ -101,7 +101,7 @@ ANALYZE [ VERBOSE ] [ <replaceable class="PARAMETER">table_name</replaceable> [ 
   </para>
 
   <para>
-   In the default <productname>PostgreSQL</productname> configuration,
+   In the default <productname>&productname;</productname> configuration,
    the autovacuum daemon (see <xref linkend="autovacuum">)
    takes care of automatic analyzing of tables when they are first loaded
    with data, and as they change throughout regular operation.

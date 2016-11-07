@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/pg_resetxlog.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="APP-PGRESETXLOG">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>pg_resetxlog</refname>
-  <refpurpose>reset the write-ahead log and other control information of a <productname>PostgreSQL</productname> database cluster</refpurpose>
+  <refpurpose>reset the write-ahead log and other control information of a <productname>&productname;</productname> database cluster</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>

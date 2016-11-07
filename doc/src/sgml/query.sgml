@@ -13,7 +13,7 @@
     way a complete tutorial on <acronym>SQL</acronym>.  Numerous books
     have been written on <acronym>SQL</acronym>, including <xref
     linkend="MELT93"> and <xref linkend="DATE97">.
-    You should be aware that some <productname>PostgreSQL</productname>
+    You should be aware that some <productname>&productname;</productname>
     language features are extensions to the standard.
    </para>
 
@@ -25,9 +25,9 @@
 
    <para>
     Examples in this manual can also be found in the
-    <productname>PostgreSQL</productname> source distribution
+    <productname>&productname;</productname> source distribution
     in the directory <filename>src/tutorial/</filename>.  (Binary
-    distributions of <productname>PostgreSQL</productname> might not
+    distributions of <productname>&productname;</productname> might not
     compile these files.)  To use those
     files, first change to that directory and run <application>make</>:
 
@@ -68,7 +68,7 @@
     <indexterm><primary>relation</primary></indexterm>
     <indexterm><primary>table</primary></indexterm>
 
-    <productname>PostgreSQL</productname> is a <firstterm>relational
+    <productname>&productname;</productname> is a <firstterm>relational
     database management system</firstterm> (<acronym>RDBMS</acronym>).
     That means it is a system for managing data stored in
     <firstterm>relations</firstterm>.  Relation is essentially a
@@ -98,7 +98,7 @@
     <indexterm><primary>cluster</primary><secondary>of databases</secondary><see>database cluster</see></indexterm>
 
     Tables are grouped into databases, and a collection of databases
-    managed by a single <productname>PostgreSQL</productname> server
+    managed by a single <productname>&productname;</productname> server
     instance constitutes a database <firstterm>cluster</firstterm>.
    </para>
   </sect1>
@@ -152,7 +152,7 @@ CREATE TABLE weather (
    </para>
 
    <para>
-    <productname>PostgreSQL</productname> supports the standard
+    <productname>&productname;</productname> supports the standard
     <acronym>SQL</acronym> types <type>int</type>,
     <type>smallint</type>, <type>real</type>, <type>double
     precision</type>, <type>char(<replaceable>N</>)</type>,
@@ -160,7 +160,7 @@ CREATE TABLE weather (
     <type>time</type>, <type>timestamp</type>, and
     <type>interval</type>, as well as other types of general utility
     and a rich set of geometric types.
-    <productname>PostgreSQL</productname> can be customized with an
+    <productname>&productname;</productname> can be customized with an
     arbitrary number of user-defined data types.  Consequently, type
     names are not key words in the syntax, except where required to
     support special cases in the <acronym>SQL</acronym> standard.
@@ -176,7 +176,7 @@ CREATE TABLE cities (
 );
 </programlisting>
     The <type>point</type> type is an example of a
-    <productname>PostgreSQL</productname>-specific data type.
+    <productname>&productname;</productname>-specific data type.
    </para>
 
    <para>
@@ -413,11 +413,11 @@ SELECT DISTINCT city
      <footnote>
       <para>
        In some database systems, including older versions of
-       <productname>PostgreSQL</productname>, the implementation of
+       <productname>&productname;</productname>, the implementation of
        <literal>DISTINCT</literal> automatically orders the rows and
        so <literal>ORDER BY</literal> is unnecessary.  But this is not
        required by the SQL standard, and current
-       <productname>PostgreSQL</productname> does not guarantee that
+       <productname>&productname;</productname> does not guarantee that
        <literal>DISTINCT</literal> causes the rows to be ordered.
       </para>
      </footnote>
@@ -643,7 +643,7 @@ SELECT *
 
    <para>
     Like  most  other relational database products,
-    <productname>PostgreSQL</productname> supports
+    <productname>&productname;</productname> supports
     <firstterm>aggregate functions</>.
     An aggregate function computes a single result from multiple input rows.
     For example, there are aggregates to compute the

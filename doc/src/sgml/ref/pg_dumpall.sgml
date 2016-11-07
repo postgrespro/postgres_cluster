@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/pg_dumpall.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="APP-PG-DUMPALL">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>pg_dumpall</refname>
-  <refpurpose>extract a <productname>PostgreSQL</productname> database cluster into a script file</refpurpose>
+  <refpurpose>extract a <productname>&productname;</productname> database cluster into a script file</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -32,7 +32,7 @@ PostgreSQL documentation
 
   <para>
    <application>pg_dumpall</application> is a utility for writing out
-   (<quote>dumping</quote>) all <productname>PostgreSQL</> databases
+   (<quote>dumping</quote>) all <productname>&productname;</> databases
    of a cluster into one script file.  The script file contains
    <acronym>SQL</acronym> commands that can be used as input to <xref
    linkend="app-psql"> to restore the databases.  It does this by
@@ -60,7 +60,7 @@ PostgreSQL documentation
 
   <para>
   <application>pg_dumpall</application> needs to connect several
-  times to the <productname>PostgreSQL</productname> server (once per
+  times to the <productname>&productname;</productname> server (once per
   database).  If you use password authentication it will ask for
   a password each time. It is convenient to have a
   <filename>~/.pgpass</> file in such cases. See <xref
@@ -254,7 +254,7 @@ PostgreSQL documentation
         (<replaceable>column</replaceable>, ...) VALUES
         ...</literal>).  This will make restoration very slow; it is mainly
         useful for making dumps that can be loaded into
-        non-<productname>PostgreSQL</productname> databases.
+        non-<productname>&productname;</productname> databases.
        </para>
       </listitem>
      </varlistentry>
@@ -308,7 +308,7 @@ PostgreSQL documentation
         Dump data as <command>INSERT</command> commands (rather
         than <command>COPY</command>).  This will make restoration very slow;
         it is mainly useful for making dumps that can be loaded into
-        non-<productname>PostgreSQL</productname> databases.  Note that
+        non-<productname>&productname;</productname> databases.  Note that
         the restore might fail altogether if you have rearranged column order.
         The <option>--column-inserts</option> option is safer, though even
         slower.
@@ -564,7 +564,7 @@ PostgreSQL documentation
   </variablelist>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>

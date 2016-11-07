@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_group.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATEGROUP">

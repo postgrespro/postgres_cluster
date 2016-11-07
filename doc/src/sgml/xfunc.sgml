@@ -9,7 +9,7 @@
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname> provides four kinds of
+   <productname>&productname;</productname> provides four kinds of
    functions:
 
    <itemizedlist>
@@ -67,7 +67,7 @@
    understand the examples better.  Some examples from this chapter
    can be found in <filename>funcs.sql</filename> and
    <filename>funcs.c</filename> in the <filename>src/tutorial</>
-   directory in the <productname>PostgreSQL</productname> source
+   directory in the <productname>&productname;</productname> source
    distribution.
   </para>
   </sect1>
@@ -670,7 +670,7 @@ LANGUAGE SQL;
     <para>
      Notice that output parameters are not included in the calling argument
      list when invoking such a function from SQL.  This is because
-     <productname>PostgreSQL</productname> considers only the input
+     <productname>&productname;</productname> considers only the input
      parameters to define the function's calling signature.  That means
      also that only the input parameters matter when referencing the function
      for purposes such as dropping it.  We could drop the above function
@@ -1473,7 +1473,7 @@ CREATE FUNCTION test(int, int) RETURNS int
     a function containing only <command>SELECT</> commands can safely be
     marked <literal>STABLE</>, even if it selects from tables that might be
     undergoing modifications by concurrent queries.
-    <productname>PostgreSQL</productname> will execute all commands of a
+    <productname>&productname;</productname> will execute all commands of a
     <literal>STABLE</> function using the snapshot established for the
     calling query, and so it will see a fixed view of the database throughout
     that query.
@@ -1484,7 +1484,7 @@ CREATE FUNCTION test(int, int) RETURNS int
     within <literal>IMMUTABLE</> functions.  It is generally unwise to select
     from database tables within an <literal>IMMUTABLE</> function at all,
     since the immutability will be broken if the table contents ever change.
-    However, <productname>PostgreSQL</productname> does not enforce that you
+    However, <productname>&productname;</productname> does not enforce that you
     do not do that.
    </para>
 
@@ -1498,7 +1498,7 @@ CREATE FUNCTION test(int, int) RETURNS int
 
    <note>
     <para>
-     <productname>PostgreSQL</productname> requires that <literal>STABLE</>
+     <productname>&productname;</productname> requires that <literal>STABLE</>
      and <literal>IMMUTABLE</> functions contain no SQL commands other
      than <command>SELECT</> to prevent data modification.
      (This is not a completely bulletproof test, since such functions could
@@ -1514,12 +1514,12 @@ CREATE FUNCTION test(int, int) RETURNS int
    <title>Procedural Language Functions</title>
 
    <para>
-    <productname>PostgreSQL</productname> allows user-defined functions
+    <productname>&productname;</productname> allows user-defined functions
     to be written in other languages besides SQL and C.  These other
     languages are generically called <firstterm>procedural
     languages</firstterm> (<acronym>PL</>s).
     Procedural languages aren't built into the
-    <productname>PostgreSQL</productname> server; they are offered
+    <productname>&productname;</productname> server; they are offered
     by loadable modules.
     See <xref linkend="xplang"> and following chapters for more
     information.
@@ -1533,7 +1533,7 @@ CREATE FUNCTION test(int, int) RETURNS int
 
    <para>
     Internal functions are functions written in C that have been statically
-    linked into the <productname>PostgreSQL</productname> server.
+    linked into the <productname>&productname;</productname> server.
     The <quote>body</quote> of the function definition
     specifies the C-language name of the function, which need not be the
     same as the name being declared for SQL use.
@@ -1635,7 +1635,7 @@ CREATE FUNCTION square_root(double precision) RETURNS double precision
      <listitem>
       <para>
        If the name starts with the string <literal>$libdir</literal>,
-       that part is replaced by the <productname>PostgreSQL</> package
+       that part is replaced by the <productname>&productname;</> package
         library directory
        name, which is determined at build time.<indexterm><primary>$libdir</></>
       </para>
@@ -1675,7 +1675,7 @@ CREATE FUNCTION square_root(double precision) RETURNS double precision
    </para>
 
    <para>
-    The user ID the <productname>PostgreSQL</productname> server runs
+    The user ID the <productname>&productname;</productname> server runs
     as must be able to traverse the path to the file you intend to
     load.  Making the file or a higher-level directory not readable
     and/or not executable by the <systemitem>postgres</systemitem>
@@ -1691,7 +1691,7 @@ CREATE FUNCTION square_root(double precision) RETURNS double precision
 
    <note>
     <para>
-     <productname>PostgreSQL</productname> will not compile a C function
+     <productname>&productname;</productname> will not compile a C function
      automatically.  The object file must be compiled before it is referenced
      in a <command>CREATE
      FUNCTION</> command.  See <xref linkend="dfunc"> for additional
@@ -1705,11 +1705,11 @@ CREATE FUNCTION square_root(double precision) RETURNS double precision
 
    <para>
     To ensure that a dynamically loaded object file is not loaded into an
-    incompatible server, <productname>PostgreSQL</productname> checks that the
+    incompatible server, <productname>&productname;</productname> checks that the
     file contains a <quote>magic block</> with the appropriate contents.
     This allows the server to detect obvious incompatibilities, such as code
     compiled for a different major version of
-    <productname>PostgreSQL</productname>.  A magic block is required as of
+    <productname>&productname;</productname>.  A magic block is required as of
     <productname>PostgreSQL</productname> 8.2.  To include a magic block,
     write this in one (and only one) of the module source files, after having
     included the header <filename>fmgr.h</>:
@@ -1772,13 +1772,13 @@ PG_MODULE_MAGIC;
 
     <para>
      To know how to write C-language functions, you need to know how
-     <productname>PostgreSQL</productname> internally represents base
+     <productname>&productname;</productname> internally represents base
      data types and how they can be passed to and from functions.
-     Internally, <productname>PostgreSQL</productname> regards a base
+     Internally, <productname>&productname;</productname> regards a base
      type as a <quote>blob of memory</quote>.  The user-defined
      functions that you define over a type in turn define the way that
-     <productname>PostgreSQL</productname> can operate on it.  That
-     is, <productname>PostgreSQL</productname> will only store and
+     <productname>&productname;</productname> can operate on it.  That
+     is, <productname>&productname;</productname> will only store and
      retrieve the data from disk and use your user-defined functions
      to input, process, and output the data.
     </para>
@@ -1820,7 +1820,7 @@ PG_MODULE_MAGIC;
 typedef int int4;
 </programlisting>
 
-     (The actual PostgreSQL C code calls this type <type>int32</type>, because
+     (The actual &productname; C code calls this type <type>int32</type>, because
      it is a convention in C that <type>int<replaceable>XX</replaceable></type>
      means <replaceable>XX</replaceable> <emphasis>bits</emphasis>.  Note
      therefore also that the C type <type>int8</type> is 1 byte in size.  The
@@ -1831,7 +1831,7 @@ typedef int int4;
     <para>
      On  the  other hand, fixed-length types of any size can
      be passed by-reference.  For example, here is a  sample
-     implementation of a <productname>PostgreSQL</productname> type:
+     implementation of a <productname>&productname;</productname> type:
 
 <programlisting>
 /* 16-byte structure, passed by reference */
@@ -1842,7 +1842,7 @@ typedef struct
 </programlisting>
 
      Only  pointers  to  such types can be used when passing
-     them in and out of <productname>PostgreSQL</productname> functions.
+     them in and out of <productname>&productname;</productname> functions.
      To return a value of such a type, allocate the right amount of
      memory with <literal>palloc</literal>, fill in the allocated memory,
      and return a pointer to it.  (Also, if you just want to return the
@@ -1926,7 +1926,7 @@ memcpy(destination->data, buffer, 40);
     <para>
      <xref linkend="xfunc-c-type-table"> specifies which C type
      corresponds to which SQL type when writing a C-language function
-     that uses a built-in type of <productname>PostgreSQL</>.
+     that uses a built-in type of <productname>&productname;</>.
      The <quote>Defined In</quote> column gives the header file that
      needs to be included to get the type definition.  (The actual
      definition might be in a different file that is included by the
@@ -2211,7 +2211,7 @@ concat_text(text *arg1, text *arg2)
     <para>
      Supposing that the above code has been prepared in file
      <filename>funcs.c</filename> and compiled into a shared object,
-     we could define the functions to <productname>PostgreSQL</productname>
+     we could define the functions to <productname>&productname;</productname>
      with commands like this:
 
 <programlisting>
@@ -2241,7 +2241,7 @@ CREATE FUNCTION concat_text(text, text) RETURNS text
     <para>
      Here, <replaceable>DIRECTORY</replaceable> stands for the
      directory of the shared library file (for instance the
-     <productname>PostgreSQL</productname> tutorial directory, which
+     <productname>&productname;</productname> tutorial directory, which
      contains the code for the examples used in this section).
      (Better style would be to use just <literal>'funcs'</> in the
      <literal>AS</> clause, after having added
@@ -2289,7 +2289,7 @@ PG_FUNCTION_INFO_V1(funcname);
      must appear in the same source file.  (Conventionally, it's
      written just before the function itself.)  This macro call is not
      needed for <literal>internal</>-language functions, since
-     <productname>PostgreSQL</> assumes that all internal functions
+     <productname>&productname;</> assumes that all internal functions
      use the version-1 convention.  It is, however, required for
      dynamically-loaded functions.
     </para>
@@ -2481,10 +2481,10 @@ concat_text(PG_FUNCTION_ARGS)
 
     <para>
      Before we turn to the more advanced topics, we should discuss
-     some coding rules for <productname>PostgreSQL</productname>
+     some coding rules for <productname>&productname;</productname>
      C-language functions.  While it might be possible to load functions
      written in languages other than C into
-     <productname>PostgreSQL</productname>, this is usually difficult
+     <productname>&productname;</productname>, this is usually difficult
      (when it is possible at all) because other languages, such as
      C++, FORTRAN, or Pascal often do not follow the same calling
      convention as C.  That is, other languages do not pass argument
@@ -2501,7 +2501,7 @@ concat_text(PG_FUNCTION_ARGS)
        <para>
         Use <literal>pg_config
         --includedir-server</literal><indexterm><primary>pg_config</><secondary>with user-defined C functions</></>
-        to find out where the <productname>PostgreSQL</> server header
+        to find out where the <productname>&productname;</> server header
         files are installed on your system (or the system that your
         users will be running on).
        </para>
@@ -2510,7 +2510,7 @@ concat_text(PG_FUNCTION_ARGS)
       <listitem>
        <para>
         Compiling and linking your code so that it can be dynamically
-        loaded into <productname>PostgreSQL</productname> always
+        loaded into <productname>&productname;</productname> always
         requires special flags.  See <xref linkend="dfunc"> for a
         detailed explanation of how to do it for your particular
         operating system.
@@ -2527,7 +2527,7 @@ concat_text(PG_FUNCTION_ARGS)
       <listitem>
        <para>
         When allocating memory, use the
-        <productname>PostgreSQL</productname> functions
+        <productname>&productname;</productname> functions
         <function>palloc</function><indexterm><primary>palloc</></> and <function>pfree</function><indexterm><primary>pfree</></>
         instead of the corresponding C library functions
         <function>malloc</function> and <function>free</function>.
@@ -2554,7 +2554,7 @@ concat_text(PG_FUNCTION_ARGS)
 
       <listitem>
        <para>
-        Most of the internal <productname>PostgreSQL</productname>
+        Most of the internal <productname>&productname;</productname>
         types are declared in <filename>postgres.h</filename>, while
         the function manager interfaces
         (<symbol>PG_FUNCTION_ARGS</symbol>, etc.)  are in
@@ -2572,7 +2572,7 @@ concat_text(PG_FUNCTION_ARGS)
        <para>
         Symbol names defined within object files must not conflict
         with each other or with symbols defined in the
-        <productname>PostgreSQL</productname> server executable.  You
+        <productname>&productname;</productname> server executable.  You
         will have to rename your functions or variables if you get
         error messages to this effect.
        </para>
@@ -2592,7 +2592,7 @@ concat_text(PG_FUNCTION_ARGS)
      addition, composite types that are part of an inheritance
      hierarchy can have different fields than other members of the
      same inheritance hierarchy.  Therefore,
-     <productname>PostgreSQL</productname> provides a function
+     <productname>&productname;</productname> provides a function
      interface for accessing fields of composite types from C.
     </para>
 
@@ -2664,7 +2664,7 @@ c_overpaid(PG_FUNCTION_ARGS)
 
     <para>
      <function>GetAttributeByName</function> is the
-     <productname>PostgreSQL</productname> system function that
+     <productname>&productname;</productname> system function that
      returns attributes out of the specified row.  It has
      three arguments: the argument of type <type>HeapTupleHeader</type> passed
      into
@@ -3309,7 +3309,7 @@ CREATE FUNCTION make_array(anyelement) RETURNS anyarray
     </para>
 
     <para>
-     We make no guarantee that <productname>PostgreSQL</> will never call the
+     We make no guarantee that <productname>&productname;</> will never call the
      primary function in cases that the transform function could simplify.
      Ensure rigorous equivalence between the simplified expression and an
      actual call to the primary function.
@@ -3379,7 +3379,7 @@ if (!ptr)
     </indexterm>
 
     <para>
-     Although the <productname>PostgreSQL</productname> backend is written in
+     Although the <productname>&productname;</productname> backend is written in
      C, it is possible to write extensions in C++ if these guidelines are
      followed:
 

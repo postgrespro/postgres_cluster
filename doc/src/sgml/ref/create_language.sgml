@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_language.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATELANGUAGE">
@@ -32,7 +32,7 @@ CREATE [ OR REPLACE ] [ TRUSTED ] [ PROCEDURAL ] LANGUAGE <replaceable class="pa
 
   <para>
    <command>CREATE LANGUAGE</command> registers a new
-   procedural language with a <productname>PostgreSQL</productname>
+   procedural language with a <productname>&productname;</productname>
    database.  Subsequently, functions and trigger procedures can be
    defined in this new language.
   </para>
@@ -62,7 +62,7 @@ CREATE [ OR REPLACE ] [ TRUSTED ] [ PROCEDURAL ] LANGUAGE <replaceable class="pa
   <para>
    There are two forms of the <command>CREATE LANGUAGE</command> command.
    In the first form, the user supplies just the name of the desired
-   language, and the <productname>PostgreSQL</productname> server consults
+   language, and the <productname>&productname;</productname> server consults
    the <link linkend="catalog-pg-pltemplate"><structname>pg_pltemplate</structname></link>
    system catalog to determine the correct parameters.  In the second form,
    the user supplies the language parameters along with the language name.
@@ -80,7 +80,7 @@ CREATE [ OR REPLACE ] [ TRUSTED ] [ PROCEDURAL ] LANGUAGE <replaceable class="pa
 
   <para>
    Ordinarily, the user must have the
-   <productname>PostgreSQL</productname> superuser privilege to
+   <productname>&productname;</productname> superuser privilege to
    register a new language.  However, the owner of a database can register
    a new language within that database if the language is listed in
    the <structname>pg_pltemplate</structname> catalog and is marked
@@ -122,7 +122,7 @@ CREATE [ OR REPLACE ] [ TRUSTED ] [ PROCEDURAL ] LANGUAGE <replaceable class="pa
        not grant access to data that the user would not otherwise
        have.  If this key word is omitted
        when registering the language, only users with the
-       <productname>PostgreSQL</productname> superuser privilege can
+       <productname>&productname;</productname> superuser privilege can
        use this language to create new functions.
       </para>
      </listitem>
@@ -163,7 +163,7 @@ CREATE [ OR REPLACE ] [ TRUSTED ] [ PROCEDURAL ] LANGUAGE <replaceable class="pa
        called to execute the procedural language's functions.  The call
        handler for a procedural language must be written in a compiled
        language such as C with version 1 call convention and
-       registered with <productname>PostgreSQL</productname> as a
+       registered with <productname>&productname;</productname> as a
        function taking no arguments and returning the
        <type>language_handler</type> type, a placeholder type that is
        simply used to identify the function as a call handler.
@@ -312,7 +312,7 @@ CREATE LANGUAGE plsample
 
   <para>
    <command>CREATE LANGUAGE</command> is a
-   <productname>PostgreSQL</productname> extension.
+   <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

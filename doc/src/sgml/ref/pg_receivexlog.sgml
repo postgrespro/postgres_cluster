@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/pg_receivexlog.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="app-pgreceivexlog">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>pg_receivexlog</refname>
-  <refpurpose>stream transaction logs from a <productname>PostgreSQL</productname> server</refpurpose>
+  <refpurpose>stream transaction logs from a <productname>&productname;</productname> server</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -32,7 +32,7 @@ PostgreSQL documentation
   </title>
   <para>
    <application>pg_receivexlog</application> is used to stream the transaction log
-   from a running <productname>PostgreSQL</productname> cluster. The transaction
+   from a running <productname>&productname;</productname> cluster. The transaction
    log is streamed using the streaming replication protocol, and is written
    to a local directory of files. This directory can be used as the archive
    location for doing a restore using point-in-time recovery (see
@@ -49,7 +49,7 @@ PostgreSQL documentation
   </para>
 
   <para>
-   Unlike the WAL receiver of a PostgreSQL standby server, <application>pg_receivexlog</>
+   Unlike the WAL receiver of a &productname; standby server, <application>pg_receivexlog</>
    by default flushes WAL data only when a WAL file is closed.
    The option <option>--synchronous</> must be specified to flush WAL data
    in real time.
@@ -57,7 +57,7 @@ PostgreSQL documentation
 
   <para>
    The transaction log is streamed over a regular
-   <productname>PostgreSQL</productname> connection and uses the replication
+   <productname>&productname;</productname> connection and uses the replication
    protocol. The connection must be made with a superuser or a user
    having <literal>REPLICATION</literal> permissions (see
    <xref linkend="role-attributes">), and <filename>pg_hba.conf</filename>
@@ -339,7 +339,7 @@ PostgreSQL documentation
   <title>Environment</title>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>

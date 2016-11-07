@@ -6,7 +6,7 @@
 
 <para>
 This chapter provides an overview of the physical storage format used by
-<productname>PostgreSQL</productname> databases.
+<productname>&productname;</productname> databases.
 </para>
 
 <sect1 id="storage-file-layout">
@@ -52,7 +52,7 @@ Item
 
 <row>
  <entry><filename>PG_VERSION</></entry>
- <entry>A file containing the major version number of <productname>PostgreSQL</productname></entry>
+ <entry>A file containing the major version number of <productname>&productname;</productname></entry>
 </row>
 
 <row>
@@ -223,7 +223,7 @@ filenode; subsequent segments are named filenode.1, filenode.2, etc.
 This arrangement avoids problems on platforms that have file size limitations.
 (Actually, 1 GB is just the default segment size.  The segment size can be
 adjusted using the configuration option <option>--with-segsize</option>
-when building <productname>PostgreSQL</>.)
+when building <productname>&productname;</>.)
 In principle, free space map and visibility map forks could require multiple
 segments as well, though this is unlikely to happen in practice.
 </para>
@@ -249,7 +249,7 @@ directory, which points to the physical tablespace directory (i.e., the
 location specified in the tablespace's <command>CREATE TABLESPACE</> command).
 This symbolic link is named after
 the tablespace's OID.  Inside the physical tablespace directory there is
-a subdirectory with a name that depends on the <productname>PostgreSQL</>
+a subdirectory with a name that depends on the <productname>&productname;</>
 server version, such as <literal>PG_9.0_201008051</>.  (The reason for using
 this subdirectory is so that successive versions of the database can use
 the same <command>CREATE TABLESPACE</> location value without conflicts.)
@@ -302,7 +302,7 @@ Oversized-Attribute Storage Technique).
 </para>
 
 <para>
-<productname>PostgreSQL</productname> uses a fixed page size (commonly
+<productname>&productname;</productname> uses a fixed page size (commonly
 8 kB), and does not allow tuples to span multiple pages.  Therefore, it is
 not possible to store very large field values directly.  To overcome
 this limitation, large field values are compressed and/or broken up into
@@ -523,7 +523,7 @@ and there is no infrastructure to help with this.
 Expanded <acronym>TOAST</> pointers are useful for complex data types
 whose on-disk representation is not especially suited for computational
 purposes.  As an example, the standard varlena representation of a
-<productname>PostgreSQL</> array includes dimensionality information, a
+<productname>&productname;</> array includes dimensionality information, a
 nulls bitmap if there are any null elements, then the values of all the
 elements in order.  When the element type itself is variable-length, the
 only way to find the <replaceable>N</>'th element is to scan through all the
@@ -681,7 +681,7 @@ erased (they will be recreated automatically as needed).
 
 <para>
 This section provides an overview of the page format used within
-<productname>PostgreSQL</productname> tables and indexes.<footnote>
+<productname>&productname;</productname> tables and indexes.<footnote>
   <para>
     Actually, index access methods need not use this page format.
     All the existing index methods do use this basic format,
@@ -881,7 +881,7 @@ data. Empty in ordinary tables.</entry>
   around on the page to compact free space.  In fact, every pointer to an
   item (<type>ItemPointer</type>, also known as
   <type>CTID</type>) created by
-  <productname>PostgreSQL</productname> consists of a page number and the
+  <productname>&productname;</productname> consists of a page number and the
   index of an item identifier.
 
  </para>

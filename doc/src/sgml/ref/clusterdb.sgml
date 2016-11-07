@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/clusterdb.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="APP-CLUSTERDB">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname id="clusterdb">clusterdb</refname>
-  <refpurpose>cluster a <productname>PostgreSQL</productname> database</refpurpose>
+  <refpurpose>cluster a <productname>&productname;</productname> database</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -52,7 +52,7 @@ PostgreSQL documentation
 
   <para>
    <application>clusterdb</application> is a utility for reclustering tables
-   in a <productname>PostgreSQL</productname> database.  It finds tables
+   in a <productname>&productname;</productname> database.  It finds tables
    that have previously been clustered, and clusters them again on the same
    index that was last used.  Tables that have never been clustered are not
    affected.
@@ -277,7 +277,7 @@ PostgreSQL documentation
   </variablelist>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>

@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/pg_dump.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="APP-PGDUMP">
@@ -18,7 +18,7 @@ PostgreSQL documentation
   <refname>pg_dump</refname>
 
   <refpurpose>
-   extract a <productname>PostgreSQL</productname> database into a script file or other archive file
+   extract a <productname>&productname;</productname> database into a script file or other archive file
   </refpurpose>
  </refnamediv>
 
@@ -39,7 +39,7 @@ PostgreSQL documentation
 
   <para>
    <application>pg_dump</application> is a utility for backing up a
-   <productname>PostgreSQL</productname> database. It makes consistent
+   <productname>&productname;</productname> database. It makes consistent
    backups even if the database is being used concurrently.
    <application>pg_dump</application> does not block other users
    accessing the database (readers or writers).
@@ -640,7 +640,7 @@ PostgreSQL documentation
         (<replaceable>column</replaceable>, ...) VALUES
         ...</literal>).  This will make restoration very slow; it is mainly
         useful for making dumps that can be loaded into
-        non-<productname>PostgreSQL</productname> databases.
+        non-<productname>&productname;</productname> databases.
         However, since this option generates a separate command for each row,
         an error in reloading a row causes only that row to be lost rather
         than the entire table contents.
@@ -738,7 +738,7 @@ PostgreSQL documentation
         Dump data as <command>INSERT</command> commands (rather
         than <command>COPY</command>).  This will make restoration very slow;
         it is mainly useful for making dumps that can be loaded into
-        non-<productname>PostgreSQL</productname> databases.
+        non-<productname>&productname;</productname> databases.
         However, since this option generates a separate command for each row,
         an error in reloading a row causes only that row to be lost rather
         than the entire table contents.
@@ -1097,7 +1097,7 @@ PostgreSQL documentation
   </variablelist>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>
@@ -1167,14 +1167,14 @@ CREATE DATABASE foo WITH TEMPLATE template0;
 
   <para>
    Because <application>pg_dump</application> is used to transfer data
-   to newer versions of <productname>PostgreSQL</>, the output of
+   to newer versions of <productname>&productname;</>, the output of
    <application>pg_dump</application> can be expected to load into
-   <productname>PostgreSQL</> server versions newer than
+   <productname>&productname;</> server versions newer than
    <application>pg_dump</>'s version.  <application>pg_dump</> can also
-   dump from <productname>PostgreSQL</> servers older than its own version.
+   dump from <productname>&productname;</> servers older than its own version.
    (Currently, servers back to version 7.0 are supported.)
    However, <application>pg_dump</> cannot dump from
-   <productname>PostgreSQL</> servers newer than its own major version;
+   <productname>&productname;</> servers newer than its own major version;
    it will refuse to even try, rather than risk making an invalid dump.
    Also, it is not guaranteed that <application>pg_dump</>'s output can
    be loaded into a server of an older major version &mdash; not even if the

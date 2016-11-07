@@ -1,7 +1,7 @@
 <!-- doc/src/sgml/errcodes.sgml -->
 
 <appendix id="errcodes-appendix">
- <title><productname>PostgreSQL</productname> Error Codes</title>
+ <title><productname>&productname;</productname> Error Codes</title>
 
  <indexterm zone="errcodes-appendix">
   <primary>error codes</primary>
@@ -9,15 +9,15 @@
  </indexterm>
 
  <para>
-  All messages emitted by the <productname>PostgreSQL</productname>
+  All messages emitted by the <productname>&productname;</productname>
   server are assigned five-character error codes that follow the SQL
   standard's conventions for <quote>SQLSTATE</> codes.  Applications
   that need to know which error condition has occurred should usually
   test the error code, rather than looking at the textual error
   message.  The error codes are less likely to change across
-  <productname>PostgreSQL</> releases, and also are not subject to
+  <productname>&productname;</> releases, and also are not subject to
   change due to localization of error messages. Note that some, but
-  not all, of the error codes produced by <productname>PostgreSQL</>
+  not all, of the error codes produced by <productname>&productname;</>
   are defined by the SQL standard; some additional error codes for
   conditions not defined by the standard have been invented or
   borrowed from other databases.
@@ -33,7 +33,7 @@
 
  <para>
   <xref linkend="errcodes-table"> lists all the error codes defined in
-  <productname>PostgreSQL</productname> &version;.  (Some are not actually
+  <productname>&productname;</productname> &version;.  (Some are not actually
   used at present, but are defined by the SQL standard.)
   The error classes are also shown.  For each error class there is a
   <quote>standard</> error code having the last three characters
@@ -63,7 +63,7 @@
 
 
 <table id="errcodes-table">
- <title><productname>PostgreSQL</productname> Error Codes</title>
+ <title><productname>&productname;</productname> Error Codes</title>
 
  <tgroup cols="2">
   <colspec colnum="1" colname="errorcode">

@@ -35,6 +35,7 @@
 #include "catalog/namespace.h"
 #include "commands/async.h"
 #include "commands/prepare.h"
+#include "commands/user.h"
 #include "commands/vacuum.h"
 #include "commands/variable.h"
 #include "commands/trigger.h"
@@ -395,6 +396,21 @@ static const struct config_enum_entry force_parallel_mode_options[] = {
 	{NULL, 0, false}
 };
 
+static const struct config_enum_entry password_encryption_options[] = {
+	{"off", PASSWORD_TYPE_PLAINTEXT, false},
+	{"on", PASSWORD_TYPE_MD5, false},
+	{"md5", PASSWORD_TYPE_MD5, false},
+	{"scram", PASSWORD_TYPE_SCRAM, false},
+	{"plain", PASSWORD_TYPE_PLAINTEXT, false},
+	{"true", PASSWORD_TYPE_MD5, true},
+	{"false", PASSWORD_TYPE_PLAINTEXT, true},
+	{"yes", PASSWORD_TYPE_MD5, true},
+	{"no", PASSWORD_TYPE_PLAINTEXT, true},
+	{"1", PASSWORD_TYPE_MD5, true},
+	{"0", PASSWORD_TYPE_PLAINTEXT, true},
+	{NULL, 0, false}
+};
+
 /*
  * Options for enum values stored in other modules
  */
@@ -424,8 +440,6 @@ bool		row_security;
 bool		check_function_bodies = true;
 bool		default_with_oids = false;
 bool		SQL_inheritance = true;
-
-bool		Password_encryption = true;
 
 int			log_min_error_statement = ERROR;
 int			log_min_messages = WARNING;
@@ -1326,17 +1340,6 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
-		{"password_encryption", PGC_USERSET, CONN_AUTH_SECURITY,
-			gettext_noop("Encrypt passwords."),
-			gettext_noop("When a password is specified in CREATE USER or "
-			   "ALTER USER without writing either ENCRYPTED or UNENCRYPTED, "
-						 "this parameter determines whether the password is to be encrypted.")
-		},
-		&Password_encryption,
-		true,
-		NULL, NULL, NULL
-	},
-	{
 		{"transform_null_equals", PGC_USERSET, COMPAT_OPTIONS_CLIENT,
 			gettext_noop("Treats \"expr=NULL\" as \"expr IS NULL\"."),
 			gettext_noop("When turned on, expressions of the form expr = NULL "
@@ -2129,6 +2132,17 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_MS
 		},
 		&IdleInTransactionSessionTimeout,
+		0, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"idle_session_timeout", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Sets the maximum allowed duration of any idling session."),
+			gettext_noop("A value of 0 turns off the timeout."),
+			GUC_UNIT_MS
+		},
+		&IdleSessionTimeout,
 		0, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
@@ -3885,6 +3899,18 @@ static struct config_enum ConfigureNamesEnum[] =
 		},
 		&force_parallel_mode,
 		FORCE_PARALLEL_OFF, force_parallel_mode_options,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"password_encryption", PGC_USERSET, CONN_AUTH_SECURITY,
+			gettext_noop("Encrypt passwords."),
+			gettext_noop("When a password is specified in CREATE USER or "
+			   "ALTER USER without writing either ENCRYPTED or UNENCRYPTED, "
+						 "this parameter determines whether the password is to be encrypted.")
+		},
+		&Password_encryption,
+		PASSWORD_TYPE_MD5, password_encryption_options,
 		NULL, NULL, NULL
 	},
 
@@ -8076,20 +8102,23 @@ GetConfigOptionByNum(int varnum, const char **values, bool *noshow)
 	/* unit */
 	if (conf->vartype == PGC_INT)
 	{
-		static char buf[8];
-
 		switch (conf->flags & (GUC_UNIT_MEMORY | GUC_UNIT_TIME))
 		{
 			case GUC_UNIT_KB:
 				values[2] = "kB";
 				break;
 			case GUC_UNIT_BLOCKS:
-				snprintf(buf, sizeof(buf), "%dkB", BLCKSZ / 1024);
-				values[2] = buf;
+				snprintf(buffer, sizeof(buffer), "%dkB", BLCKSZ / 1024);
+				values[2] = pstrdup(buffer);
 				break;
 			case GUC_UNIT_XBLOCKS:
-				snprintf(buf, sizeof(buf), "%dkB", XLOG_BLCKSZ / 1024);
-				values[2] = buf;
+				snprintf(buffer, sizeof(buffer), "%dkB", XLOG_BLCKSZ / 1024);
+				values[2] = pstrdup(buffer);
+				break;
+			case GUC_UNIT_XSEGS:
+				snprintf(buffer, sizeof(buffer), "%dMB",
+						 XLOG_SEG_SIZE / (1024 * 1024));
+				values[2] = pstrdup(buffer);
 				break;
 			case GUC_UNIT_MS:
 				values[2] = "ms";
@@ -8100,7 +8129,12 @@ GetConfigOptionByNum(int varnum, const char **values, bool *noshow)
 			case GUC_UNIT_MIN:
 				values[2] = "min";
 				break;
+			case 0:
+				values[2] = NULL;
+				break;
 			default:
+				elog(ERROR, "unrecognized GUC units value: %d",
+					 conf->flags & (GUC_UNIT_MEMORY | GUC_UNIT_TIME));
 				values[2] = NULL;
 				break;
 		}

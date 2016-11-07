@@ -1,0 +1,135 @@
+<!-- doc/src/sgml/rum.sgml -->
+
+<sect1 id="rum">
+  <title>RUM - RUM access method</title>
+  <sect2 id="run-introduction">
+    <title>Introduction</title>
+    <para>
+      The <emphasis role="strong">rum</emphasis> module provides access
+      method to work with RUM index. It is based on the GIN access
+      methods code.
+    </para>
+  </sect2>
+  <sect2 id="rum-license">
+    <title>License</title>
+    <para>
+      This module available under the same license as
+      <ulink url="http://www.postgresql.org/about/licence/">PostgreSQL</ulink>.
+    </para>
+  </sect2>
+  <sect2 id="rum-new-access-method-and-operator-class">
+    <title>New access method and operator class</title>
+    <para>
+      The <emphasis role="strong">rum</emphasis> module provides the
+      access method <emphasis role="strong">rum</emphasis> and the
+      operator class
+      <emphasis role="strong">rum_tsvector_ops</emphasis>.
+    </para>
+    <para>
+      The module provides new operators.
+    </para>
+    <informaltable>
+      <tgroup cols="3">
+      <colspec align="left" >
+      <colspec align="left" >
+      <colspec align="left" >
+        <thead>
+          <row>
+            <entry>
+              Operator
+            </entry>
+            <entry>
+              Returns
+            </entry>
+            <entry>
+              Description
+            </entry>
+          </row>
+        </thead>
+        <tbody>
+          <row>
+            <entry>
+              tsvector &lt;=&gt; tsquery
+            </entry>
+            <entry>
+              float4
+            </entry>
+            <entry>
+              Returns distance between tsvector and tsquery.
+            </entry>
+          </row>
+        </tbody>
+      </tgroup>
+    </informaltable>
+  </sect2>
+  <sect2 id="rum-examples">
+    <title>Examples</title>
+    <para>
+      Let us assume we have the table:
+    </para>
+    <programlisting>
+CREATE TABLE test_rum(t text, a tsvector);
+
+CREATE TRIGGER tsvectorupdate
+BEFORE UPDATE OR INSERT ON test_rum
+FOR EACH ROW EXECUTE PROCEDURE tsvector_update_trigger('a', 'pg_catalog.english', 't');
+
+INSERT INTO test_rum(t) VALUES ('The situation is most beautiful');
+INSERT INTO test_rum(t) VALUES ('It is a beautiful');
+INSERT INTO test_rum(t) VALUES ('It looks like a beautiful place');
+</programlisting>
+    <para>
+      To create the <emphasis role="strong">rum</emphasis> index we need
+      create an extension:
+    </para>
+    <programlisting>
+CREATE EXTENSION rum;
+</programlisting>
+    <para>
+      Then we can create new index:
+    </para>
+    <programlisting>
+CREATE INDEX rumidx ON test_rum USING rum (a rum_tsvector_ops);
+</programlisting>
+    <para>
+      And we can execute the following queries:
+    </para>
+    <programlisting>
+=# SELECT t, a &lt;=&gt; to_tsquery('english', 'beautiful | place') AS rank
+    FROM test_rum
+    WHERE a @@ to_tsquery('english', 'beautiful | place')
+    ORDER BY a &lt;=&gt; to_tsquery('english', 'beautiful | place');
+                t                |   rank
+---------------------------------+-----------
+ The situation is most beautiful | 0.0303964
+ It is a beautiful               | 0.0303964
+ It looks like a beautiful place | 0.0607927
+(3 rows)
+
+=# SELECT t, a &lt;=&gt; to_tsquery('english', 'place | situation') AS rank
+    FROM test_rum
+    WHERE a @@ to_tsquery('english', 'place | situation')
+    ORDER BY a &lt;=&gt; to_tsquery('english', 'place | situation');
+                t                |   rank
+---------------------------------+-----------
+ The situation is most beautiful | 0.0303964
+ It looks like a beautiful place | 0.0303964
+(2 rows)
+</programlisting>
+  </sect2>
+  <sect2 id="rum-authors">
+    <title>Authors</title>
+    <para>
+      Alexander Korotkov <email>a.korotkov@postgrespro.ru</email>
+      Postgres Professional Ltd., Russia
+    </para>
+    <para>
+      Oleg Bartunov <email>oleg@sai.msu.su</email> Postgres Professional
+      Ltd., Russia
+    </para>
+    <para>
+      Teodor Sigaev <email>teodor@sigaev.ru</email> Postgres
+      Professional Ltd., Russia
+    </para>
+  </sect2>
+</sect1>

@@ -14,7 +14,7 @@
  <para>
   A <firstterm>composite type</> represents the structure of a row or record;
   it is essentially just a list of field names and their data types.
-  <productname>PostgreSQL</productname> allows  composite types to be
+  <productname>&productname;</productname> allows  composite types to be
   used in many of the same ways that simple types can be used.  For example, a
   column of a table can be declared to be of a composite type.
  </para>

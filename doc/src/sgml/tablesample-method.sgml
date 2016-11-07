@@ -12,7 +12,7 @@
  </indexterm>
 
  <para>
-  <productname>PostgreSQL</>'s implementation of the <literal>TABLESAMPLE</>
+  <productname>&productname;</>'s implementation of the <literal>TABLESAMPLE</>
   clause supports custom table sampling methods, in addition to
   the <literal>BERNOULLI</> and <literal>SYSTEM</> methods that are required
   by the SQL standard.  The sampling method determines which rows of the

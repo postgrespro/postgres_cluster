@@ -5,20 +5,20 @@
 
  <para>
   This book is the official documentation of
-  <productname>PostgreSQL</productname>.  It has been written by the
-  <productname>PostgreSQL</productname> developers and other
+  <productname>&productname;</productname>.  It has been written by the
+  <productname>&productname;</productname> developers and other
   volunteers in parallel to the development of the
-  <productname>PostgreSQL</productname> software.  It describes all
+  <productname>&productname;</productname> software.  It describes all
   the functionality that the current version of
-  <productname>PostgreSQL</productname> officially supports.
+  <productname>&productname;</productname> officially supports.
  </para>
 
  <para>
   To make the large amount of information about
-  <productname>PostgreSQL</productname> manageable, this book has been
+  <productname>&productname;</productname> manageable, this book has been
   organized in several parts.  Each part is targeted at a different
   class of users, or at users in different stages of their
-  <productname>PostgreSQL</productname> experience:
+  <productname>&productname;</productname> experience:
 
   <itemizedlist>
    <listitem>
@@ -32,7 +32,7 @@
      <xref linkend="sql"> documents the <acronym>SQL</acronym> query
      language environment, including data types and functions, as well
      as user-level performance tuning.  Every
-     <productname>PostgreSQL</> user should read this.
+     <productname>&productname;</> user should read this.
     </para>
    </listitem>
 
@@ -40,7 +40,7 @@
     <para>
      <xref linkend="admin"> describes the installation and
      administration of the server.  Everyone who runs a
-     <productname>PostgreSQL</productname> server, be it for private
+     <productname>&productname;</productname> server, be it for private
      use or for others, should read this part.
     </para>
    </listitem>
@@ -48,7 +48,7 @@
    <listitem>
     <para>
      <xref linkend="client-interfaces"> describes the programming
-     interfaces for <productname>PostgreSQL</productname> client
+     interfaces for <productname>&productname;</productname> client
      programs.
     </para>
    </listitem>
@@ -75,18 +75,19 @@
    <listitem>
     <para>
      <xref linkend="internals"> contains assorted information that might be of
-     use to <productname>PostgreSQL</> developers.
+     use to <productname>&productname;</> developers.
     </para>
    </listitem>
   </itemizedlist>
  </para>
 
  <sect1 id="intro-whatis">
-  <title> What is <productname>PostgreSQL</productname>?</title>
+  <title> What is <productname>&productname;</productname>?</title>
 
   <para>
-   <productname>PostgreSQL</productname> is an object-relational
-   database management system (<acronym>ORDBMS</acronym>) based on
+   <productname>&productname;</productname> is an object-relational
+   database management system (<acronym>ORDBMS</acronym>), developed by Postgres Professional on the base of<ulink
+   url="http://postgresql.org"><productname>PostgreSQL</productname></ulink>, which is in turn based on
    <ulink url="http://db.cs.berkeley.edu/postgres.html">
    <productname>POSTGRES, Version 4.2</productname></ulink>,
    developed at the University of California at Berkeley Computer Science
@@ -120,7 +121,7 @@
     </listitem>
    </itemizedlist>
 
-   Also, <productname>PostgreSQL</productname> can be extended by the
+   Also, <productname>&productname;</productname>, as well as <productname>PostgreSQL</productname>, can be extended by the
    user in many ways, for example by adding new
 
    <itemizedlist spacing="compact">
@@ -145,12 +146,57 @@
    </itemizedlist>
   </para>
 
+  </sect1>
+
+  <sect1 id="intro-pgpro-vs-pg">
+  <title> Difference between <productname>&productname;</productname> and PostgreSQL</title>
+
   <para>
-   And because of the liberal license,
-   <productname>PostgreSQL</productname> can be used, modified, and
-   distributed by anyone free of charge for any purpose, be it
-   private, commercial, or academic.
+    <productname>&productname;</productname> is the most actual PostgreSQL version with some additional patches applied and extensions added.
+      Mostly, these are patches already accepted by the PostgreSQL community and committed into PostgreSQL. 
+      Also there some patches and extensions developed by Postgres Professional.
+      Users of <productname>&productname;</productname> thus have early access to some important features and fixes.
   </para>
+
+  <para>Currently the difference between <productname>&productname;</productname> and PostgreSQL is the following:
+   <itemizedlist spacing="compact">
+    <listitem>
+     <simpara>Performance improvement on multicore systems (buffer manager and locks optimization).</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Full text search improvements: phrase search, hunspell morphology, 
+              some dictionaries are bundled with distribution and can be enabled by a single SQL statement, 
+              <application>shared_ispell</application> allowing to store dictionaries in shared memory.</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Covering indexes.</simpara>
+    </listitem>
+    <listitem>
+     <simpara><application>libicu</application> support on all platforms, providing platform-independent sort for various locales.</simpara>
+    </listitem>
+    <listitem>
+     <simpara><application>pg_trgm</application> module supporting fuzzy string comparison and substring search.</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Improved <application>pageinspect</application> module provides access to internal data storage structure.</simpara>
+    </listitem>
+    <listitem>
+     <simpara><application>sr_plan</application> module allows to save and restore query plans.</simpara>
+    </listitem>
+    <listitem>
+     <simpara><application>dump_stat</application> module allowing to save and restore database statistics when dumping/restoring the database. </simpara>
+    </listitem>
+    <listitem>
+     <simpara><application>jsquery</application> module provides a specific language for effective index-supported querying of JSONB data.</simpara>
+    </listitem>
+   </itemizedlist>
+  </para>
+
+  <para>
+     <productname>&productname;</productname> releases are following the PostgreSQL releases, though sometimes occur more frequently. 
+     The <productname>&productname;</productname> versioning scheme is based on the PostgreSQL one and has an additional decimal place.
+  </para>
+
  </sect1>
 
  &history;

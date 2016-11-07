@@ -108,19 +108,6 @@ static const gbtree_ninfo tinfo =
 };
 
 
-PG_FUNCTION_INFO_V1(date_dist);
-Datum
-date_dist(PG_FUNCTION_ARGS)
-{
-	/* we assume the difference can't overflow */
-	Datum		diff = DirectFunctionCall2(date_mi,
-										   PG_GETARG_DATUM(0),
-										   PG_GETARG_DATUM(1));
-
-	PG_RETURN_INT32(Abs(DatumGetInt32(diff)));
-}
-
-
 /**************************************************
  * date ops
  **************************************************/

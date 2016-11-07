@@ -63,7 +63,7 @@
     <listitem>
      <para>
       <function>page_header</function> shows fields that are common to all
-      <productname>PostgreSQL</> heap and index pages.
+      <productname>&productname;</> heap and index pages.
      </para>
 
      <para>

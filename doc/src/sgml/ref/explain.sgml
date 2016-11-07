@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/explain.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-EXPLAIN">
@@ -50,7 +50,7 @@ EXPLAIN [ ANALYZE ] [ VERBOSE ] <replaceable class="parameter">statement</replac
 
   <para>
    This command displays the execution plan that the
-   <productname>PostgreSQL</productname> planner generates for the
+   <productname>&productname;</productname> planner generates for the
    supplied statement.  The execution plan shows how the table(s)
    referenced by the statement will be scanned &mdash; by plain sequential scan,
    index scan, etc. &mdash; and if multiple tables are referenced, what join
@@ -252,7 +252,7 @@ ROLLBACK;
   <title>Notes</title>
 
   <para>
-   In order to allow the <productname>PostgreSQL</productname> query
+   In order to allow the <productname>&productname;</productname> query
    planner to make reasonably informed decisions when optimizing
    queries, the <link
    linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
@@ -413,7 +413,7 @@ EXPLAIN ANALYZE EXECUTE query(100, 200);
    Of course, the specific numbers shown here depend on the actual
    contents of the tables involved.  Also note that the numbers, and
    even the selected query strategy, might vary between
-   <productname>PostgreSQL</productname> releases due to planner
+   <productname>&productname;</productname> releases due to planner
    improvements. In addition, the <command>ANALYZE</command> command
    uses random sampling to estimate data statistics; therefore, it is
    possible for cost estimates to change after a fresh run of

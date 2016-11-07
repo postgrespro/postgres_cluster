@@ -92,7 +92,7 @@ CREATE INDEX test1_id_index ON test1 (id);
 
   <para>
    Creating an index on a large table can take a long time.  By default,
-   <productname>PostgreSQL</productname> allows reads (<command>SELECT</command> statements) to occur
+   <productname>&productname;</productname> allows reads (<command>SELECT</command> statements) to occur
    on the table in parallel with index creation, but writes (<command>INSERT</command>,
    <command>UPDATE</command>, <command>DELETE</command>) are blocked until the index build is finished.
    In production environments this is often unacceptable.
@@ -115,7 +115,7 @@ CREATE INDEX test1_id_index ON test1 (id);
   <title>Index Types</title>
 
   <para>
-   <productname>PostgreSQL</productname> provides several index types:
+   <productname>&productname;</productname> provides several index types:
    B-tree, Hash, GiST, SP-GiST, GIN and BRIN.
    Each index type uses a different
    algorithm that is best suited to different types of queries.
@@ -134,7 +134,7 @@ CREATE INDEX test1_id_index ON test1 (id);
    </indexterm>
    B-trees can handle equality and range queries on data that can be sorted
    into some ordering.
-   In particular, the <productname>PostgreSQL</productname> query planner
+   In particular, the <productname>&productname;</productname> query planner
    will consider using a B-tree index whenever an indexed column is
    involved in a comparison using one of these operators:
 
@@ -219,7 +219,7 @@ CREATE INDEX <replaceable>name</replaceable> ON <replaceable>table</replaceable>
    Accordingly, the particular operators with which a GiST index can be
    used vary depending on the indexing strategy (the <firstterm>operator
    class</>).  As an example, the standard distribution of
-   <productname>PostgreSQL</productname> includes GiST operator classes
+   <productname>&productname;</productname> includes GiST operator classes
    for several two-dimensional geometric data types, which support indexed
    queries using these operators:
 
@@ -273,7 +273,7 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
    various kinds of searches.  SP-GiST permits implementation of a wide range
    of different non-balanced disk-based data structures, such as quadtrees,
    k-d trees, and radix trees (tries).  As an example, the standard distribution of
-   <productname>PostgreSQL</productname> includes SP-GiST operator classes
+   <productname>&productname;</productname> includes SP-GiST operator classes
    for two-dimensional points, which support indexed
    queries using these operators:
 
@@ -315,7 +315,7 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
    operators with which a GIN index can be used vary depending on the
    indexing strategy.
    As an example, the standard distribution of
-   <productname>PostgreSQL</productname> includes GIN operator classes
+   <productname>&productname;</productname> includes GIN operator classes
    for one-dimensional arrays, which support indexed
    queries using these operators:
 
@@ -405,7 +405,7 @@ CREATE INDEX test2_mm_idx ON test2 (major, minor);
    Currently, only the B-tree, GiST, GIN, and BRIN
    index types support multicolumn
    indexes.  Up to 32 columns can be specified.  (This limit can be
-   altered when building <productname>PostgreSQL</productname>; see the
+   altered when building <productname>&productname;</productname>; see the
    file <filename>pg_config_manual.h</filename>.)
   </para>
 
@@ -487,7 +487,7 @@ CREATE INDEX test2_mm_idx ON test2 (major, minor);
    an index may be able to deliver them in a specific sorted order.
    This allows a query's <literal>ORDER BY</> specification to be honored
    without a separate sorting step.  Of the index types currently
-   supported by <productname>PostgreSQL</productname>, only B-tree
+   supported by <productname>&productname;</productname>, only B-tree
    can produce sorted output &mdash; the other index types return
    matching rows in an unspecified, implementation-dependent order.
   </para>
@@ -580,7 +580,7 @@ CREATE INDEX test3_desc_index ON test3 (id DESC NULLS LAST);
 
   <para>
    Fortunately,
-   <productname>PostgreSQL</> has the ability to combine multiple indexes
+   <productname>&productname;</> has the ability to combine multiple indexes
    (including multiple uses of the same index) to handle cases that cannot
    be implemented by single index scans.  The system can form <literal>AND</>
    and <literal>OR</> conditions across several index scans.  For example,
@@ -667,7 +667,7 @@ CREATE UNIQUE INDEX <replaceable>name</replaceable> ON <replaceable>table</repla
   </para>
 
   <para>
-   <productname>PostgreSQL</productname> automatically creates a unique
+   <productname>&productname;</productname> automatically creates a unique
    index when a unique constraint or primary key is defined for a table.
    The index covers the columns that make up the primary key or unique
    constraint (a multicolumn index, if appropriate), and is the mechanism
@@ -896,7 +896,7 @@ SELECT * FROM orders WHERE order_nr = 3501;
   <para>
    <xref linkend="indexes-partial-ex2"> also illustrates that the
    indexed column and the column used in the predicate do not need to
-   match.  <productname>PostgreSQL</productname> supports partial
+   match.  <productname>&productname;</productname> supports partial
    indexes with arbitrary predicates, so long as only columns of the
    table being indexed are involved.  However, keep in mind that the
    predicate must match the conditions used in the queries that
@@ -904,7 +904,7 @@ SELECT * FROM orders WHERE order_nr = 3501;
    index can be used in a query only if the system can recognize that
    the <literal>WHERE</> condition of the query mathematically implies
    the predicate of the index.
-   <productname>PostgreSQL</productname> does not have a sophisticated
+   <productname>&productname;</productname> does not have a sophisticated
    theorem prover that can recognize mathematically equivalent
    expressions that are written in different forms.  (Not
    only is such a general theorem prover extremely difficult to
@@ -960,7 +960,7 @@ CREATE UNIQUE INDEX tests_success_constraint ON tests (subject, target)
    distributions might cause the system to use an index when it really
    should not.  In that case the index can be set up so that it is not
    available for the offending query.  Normally,
-   <productname>PostgreSQL</> makes reasonable choices about index
+   <productname>&productname;</> makes reasonable choices about index
    usage (e.g., it avoids them when retrieving common values, so the
    earlier example really only saves index size, it is not required to
    avoid index usage), and grossly incorrect plan choices are cause
@@ -972,7 +972,7 @@ CREATE UNIQUE INDEX tests_success_constraint ON tests (subject, target)
    know at least as much as the query planner knows, in particular you
    know when an index might be profitable.  Forming this knowledge
    requires experience and understanding of how indexes in
-   <productname>PostgreSQL</> work.  In most cases, the advantage of a
+   <productname>&productname;</> work.  In most cases, the advantage of a
    partial index over a regular index will be minimal.
   </para>
 
@@ -1163,10 +1163,10 @@ CREATE INDEX test1c_content_y_index ON test1c (content COLLATE "y");
   </indexterm>
 
   <para>
-   All indexes in <productname>PostgreSQL</> are <firstterm>secondary</>
+   All indexes in <productname>&productname;</> are <firstterm>secondary</>
    indexes, meaning that each index is stored separately from the table's
    main data area (which is called the table's <firstterm>heap</>
-   in <productname>PostgreSQL</> terminology).  This means that in an
+   in <productname>&productname;</> terminology).  This means that in an
    ordinary index scan, each row retrieval requires fetching data from both
    the index and the heap.  Furthermore, while the index entries that match a
    given indexable <literal>WHERE</> condition are usually close together in
@@ -1179,7 +1179,7 @@ CREATE INDEX test1c_content_y_index ON test1c (content COLLATE "y");
   </para>
 
   <para>
-   To solve this performance problem, <productname>PostgreSQL</>
+   To solve this performance problem, <productname>&productname;</>
    supports <firstterm>index-only scans</>, which can answer queries from an
    index alone without any heap access.  The basic idea is to return values
    directly out of each index entry instead of consulting the associated heap
@@ -1226,14 +1226,14 @@ SELECT x FROM tab WHERE x = 'key' AND z &lt; 42;
    If these two fundamental requirements are met, then all the data values
    required by the query are available from the index, so an index-only scan
    is physically possible.  But there is an additional requirement for any
-   table scan in <productname>PostgreSQL</>: it must verify that each
+   table scan in <productname>&productname;</>: it must verify that each
    retrieved row be <quote>visible</> to the query's MVCC snapshot, as
    discussed in <xref linkend="mvcc">.  Visibility information is not stored
    in index entries, only in heap entries; so at first glance it would seem
    that every row retrieval would require a heap access anyway.  And this is
    indeed the case, if the table row has been modified recently.  However,
    for seldom-changing data there is a way around this
-   problem.  <productname>PostgreSQL</> tracks, for each page in a table's
+   problem.  <productname>&productname;</> tracks, for each page in a table's
    heap, whether all rows stored in that page are old enough to be visible to
    all current and future transactions.  This information is stored in a bit
    in the table's <firstterm>visibility map</>.  An index-only scan, after
@@ -1284,7 +1284,7 @@ SELECT y FROM tab WHERE x = 'key';
 SELECT f(x) FROM tab WHERE f(x) &lt; 1;
 </programlisting>
    as an index-only scan; and this is very attractive if <literal>f()</> is
-   an expensive-to-compute function.  However, <productname>PostgreSQL</>'s
+   an expensive-to-compute function.  However, <productname>&productname;</>'s
    planner is currently not very smart about such cases.  It considers a
    query to be potentially executable by index-only scan only when
    all <emphasis>columns</> needed by the query are available from the index.
@@ -1300,7 +1300,7 @@ SELECT f(x) FROM tab WHERE f(x) &lt; 1;
    indexable <literal>WHERE</> clauses to the index column.  It will usually
    get this right in simple queries such as shown above, but not in queries
    that involve joins.  These deficiencies may be remedied in future versions
-   of <productname>PostgreSQL</>.
+   of <productname>&productname;</>.
   </para>
 
   <para>
@@ -1321,7 +1321,7 @@ SELECT target FROM tests WHERE subject = 'some-subject' AND success;
    not need to recheck that part of the <literal>WHERE</> clause at run time:
    all entries found in the index necessarily have <literal>success = true</>
    so this need not be explicitly checked in the
-   plan.  <productname>PostgreSQL</> versions 9.6 and later will recognize
+   plan.  <productname>&productname;</> versions 9.6 and later will recognize
    such cases and allow index-only scans to be generated, but older versions
    will not.
   </para>
@@ -1337,7 +1337,7 @@ SELECT target FROM tests WHERE subject = 'some-subject' AND success;
   </indexterm>
 
   <para>
-   Although indexes in <productname>PostgreSQL</> do not need
+   Although indexes in <productname>&productname;</> do not need
    maintenance or tuning, it is still important to check
    which indexes are actually used by the real-life query workload.
    Examining index usage for an individual query is done with the
@@ -1444,7 +1444,7 @@ SELECT target FROM tests WHERE subject = 'some-subject' AND success;
      If you do not succeed in adjusting the costs to be more
      appropriate, then you might have to resort to forcing index usage
      explicitly.  You might also want to contact the
-     <productname>PostgreSQL</> developers to examine the issue.
+     <productname>&productname;</> developers to examine the issue.
     </para>
    </listitem>
   </itemizedlist>

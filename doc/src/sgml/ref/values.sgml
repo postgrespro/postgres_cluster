@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/values.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-VALUES">
@@ -200,7 +200,7 @@ UPDATE employees SET salary = salary * v.increase
    <command>SELECT</>.  It is not required that the <literal>AS</> clause
    specify names for all the columns, but it's good practice to do so.
    (The default column names for <command>VALUES</> are <literal>column1</>,
-   <literal>column2</>, etc in <productname>PostgreSQL</productname>, but
+   <literal>column2</>, etc in <productname>&productname;</productname>, but
    these names might be different in other database systems.)
   </para>
 
@@ -232,7 +232,7 @@ WHERE ip_address IN (VALUES('192.168.0.1'::inet), ('192.168.0.10'), ('192.168.1.
 
   <para><command>VALUES</command> conforms to the SQL standard.
    <literal>LIMIT</literal> and <literal>OFFSET</literal> are
-   <productname>PostgreSQL</productname> extensions; see also
+   <productname>&productname;</productname> extensions; see also
    under <xref linkend="sql-select">.
   </para>
  </refsect1>

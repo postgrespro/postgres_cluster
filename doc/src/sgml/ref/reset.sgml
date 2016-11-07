@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/reset.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-RESET">
@@ -98,7 +98,7 @@ RESET timezone;
   <title>Compatibility</title>
 
   <para>
-   <command>RESET</command> is a <productname>PostgreSQL</productname> extension.
+   <command>RESET</command> is a <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

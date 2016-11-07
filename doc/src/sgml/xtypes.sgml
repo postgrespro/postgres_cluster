@@ -10,7 +10,7 @@
 
   <para>
    As described in <xref linkend="extend-type-system">,
-   <productname>PostgreSQL</productname> can be extended to support new
+   <productname>&productname;</productname> can be extended to support new
    data types.  This section describes how to define new base types,
    which are data types defined below the level of the <acronym>SQL</>
    language.  Creating a new base type requires implementing functions
@@ -219,7 +219,7 @@ CREATE TYPE complex (
     <secondary>of user-defined type</secondary>
   </indexterm>
   When you define a new base type,
-  <productname>PostgreSQL</productname> automatically provides support
+  <productname>&productname;</productname> automatically provides support
   for arrays of that type.  The array type typically
   has the same name as the base type with the underscore character
   (<literal>_</>) prepended.
@@ -308,7 +308,7 @@ CREATE TYPE complex (
   is ultimately just a blob of bytes; it cannot for example contain
   pointers, since it may get copied to other locations in memory.
   For complex data types, the flat format may be quite expensive to work
-  with, so <productname>PostgreSQL</> provides a way to <quote>expand</>
+  with, so <productname>&productname;</> provides a way to <quote>expand</>
   the flat format into a representation that is more suited to computation,
   and then pass that format in-memory between functions of the data type.
  </para>

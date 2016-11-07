@@ -59,7 +59,7 @@
   </para>
 
   <para>
-   <productname>PostgreSQL</productname> includes a sizable set of
+   <productname>&productname;</productname> includes a sizable set of
    built-in data types that fit many applications.  Users can also
    define their own data types.  Most built-in data types have obvious
    names and semantics, so we defer a detailed explanation to <xref
@@ -209,7 +209,7 @@ CREATE TABLE products (
    is for a <type>timestamp</type> column to have a default of <literal>CURRENT_TIMESTAMP</>,
    so that it gets set to the time of row insertion.  Another common
    example is generating a <quote>serial number</> for each row.
-   In <productname>PostgreSQL</productname> this is typically done by
+   In <productname>&productname;</productname> this is typically done by
    something like:
 <programlisting>
 CREATE TABLE products (
@@ -345,7 +345,7 @@ CREATE TABLE products (
     from any one column definition.  Column constraints can also be
     written as table constraints, while the reverse is not necessarily
     possible, since a column constraint is supposed to refer to only the
-    column it is attached to.  (<productname>PostgreSQL</productname> doesn't
+    column it is attached to.  (<productname>&productname;</productname> doesn't
     enforce that rule, but you should follow it if you want your table
     definitions to work with other database systems.)  The above example could
     also be written as:
@@ -433,7 +433,7 @@ CREATE TABLE products (
     not-null constraint is functionally equivalent to creating a check
     constraint <literal>CHECK (<replaceable>column_name</replaceable>
     IS NOT NULL)</literal>, but in
-    <productname>PostgreSQL</productname> creating an explicit
+    <productname>&productname;</productname> creating an explicit
     not-null constraint is more efficient.  The drawback is that you
     cannot give explicit names to not-null constraints created this
     way.
@@ -460,7 +460,7 @@ CREATE TABLE products (
     simply selects the default behavior that the column might be null.
     The <literal>NULL</literal> constraint is not present in the SQL
     standard and should not be used in portable applications.  (It was
-    only added to <productname>PostgreSQL</productname> to be
+    only added to <productname>&productname;</productname> to be
     compatible with some other database systems.)  Some users, however,
     like it because it makes it easy to toggle the constraint in a
     script file.  For example, you could start with:
@@ -631,7 +631,7 @@ CREATE TABLE example (
     same thing, but only one can be identified as the primary key.)
     Relational database theory
     dictates that every table must have a primary key.  This rule is
-    not enforced by <productname>PostgreSQL</productname>, but it is
+    not enforced by <productname>&productname;</productname>, but it is
     usually best to follow it.
    </para>
 
@@ -1129,7 +1129,7 @@ CREATE TABLE circles (
    table and create it again.  But this is not a convenient option if
    the table is already filled with data, or if the table is
    referenced by other database objects (for instance a foreign key
-   constraint).  Therefore <productname>PostgreSQL</productname>
+   constraint).  Therefore <productname>&productname;</productname>
    provides a family of commands to make modifications to existing
    tables.  Note that this is conceptually distinct from altering
    the data contained in the table: here we are interested in altering
@@ -1206,7 +1206,7 @@ ALTER TABLE products ADD COLUMN description text CHECK (description &lt;&gt; '')
    <para>
     Adding a column with a default requires updating each row of the
     table (to store the new column value).  However, if no default is
-    specified, <productname>PostgreSQL</productname> is able to avoid
+    specified, <productname>&productname;</productname> is able to avoid
     the physical update.  So if you intend to fill the column with
     mostly nondefault values, it's best to add the column with no default,
     insert the correct values using <command>UPDATE</>, and then add any
@@ -1231,7 +1231,7 @@ ALTER TABLE products DROP COLUMN description;
     Whatever data was in the column disappears.  Table constraints involving
     the column are dropped, too.  However, if the column is referenced by a
     foreign key constraint of another table,
-    <productname>PostgreSQL</productname> will not silently drop that
+    <productname>&productname;</productname> will not silently drop that
     constraint.  You can authorize dropping everything that depends on
     the column by adding <literal>CASCADE</>:
 <programlisting>
@@ -1360,7 +1360,7 @@ ALTER TABLE products ALTER COLUMN price TYPE numeric(10,2);
    </para>
 
    <para>
-    <productname>PostgreSQL</> will attempt to convert the column's
+    <productname>&productname;</> will attempt to convert the column's
     default value (if any) to the new type, as well as any constraints
     that involve the column.  But these conversions might fail, or might
     produce surprising results.  It's often best to drop any constraints
@@ -1444,7 +1444,7 @@ ALTER TABLE products RENAME TO items;
    The privileges applicable to a particular
    object vary depending on the object's type (table, function, etc).
    For complete information on the different types of privileges
-   supported by <productname>PostgreSQL</productname>, refer to the
+   supported by <productname>&productname;</productname>, refer to the
    <xref linkend="sql-grant"> reference
    page.  The following sections and chapters will also show you how
    those privileges are used.
@@ -1912,7 +1912,7 @@ SELECT * FROM information WHERE group_id = 2 FOR UPDATE;
   </indexterm>
 
   <para>
-   A <productname>PostgreSQL</productname> database cluster
+   A <productname>&productname;</productname> database cluster
    contains one or more named databases.  Users and groups of users are
    shared across the entire cluster, but no other data is shared across
    databases.  Any given client connection to the server can access
@@ -2345,7 +2345,7 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
     standard.  Therefore, many users consider qualified names to
     really consist of
     <literal><replaceable>user_name</>.<replaceable>table_name</></literal>.
-    This is how <productname>PostgreSQL</productname> will effectively
+    This is how <productname>&productname;</productname> will effectively
     behave if you create a per-user schema for every user.
    </para>
 
@@ -2378,7 +2378,7 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname> implements table inheritance,
+   <productname>&productname;</productname> implements table inheritance,
    which can be a useful tool for database designers.  (SQL:1999 and
    later define a type inheritance feature, which differs in many
    respects from the features described here.)
@@ -2415,7 +2415,7 @@ CREATE TABLE capitals (
   </para>
 
   <para>
-   In <productname>PostgreSQL</productname>, a table can inherit from
+   In <productname>&productname;</productname>, a table can inherit from
    zero or more other tables, and a query can reference either all
    rows of a table or all rows of a table plus all of its descendant tables.
    The latter behavior is the default.
@@ -2429,7 +2429,7 @@ SELECT name, altitude
     WHERE altitude &gt; 500;
 </programlisting>
 
-   Given the sample data from the <productname>PostgreSQL</productname>
+   Given the sample data from the <productname>&productname;</productname>
    tutorial (see <xref linkend="tutorial-sql-intro">), this returns:
 
 <programlisting>
@@ -2724,7 +2724,7 @@ VALUES ('Albany', NULL, NULL, 'NY');
    </indexterm>
 
    <para>
-    <productname>PostgreSQL</productname> supports basic table
+    <productname>&productname;</productname> supports basic table
     partitioning. This section describes why and how to implement
     partitioning as part of your database design.
    </para>
@@ -2783,7 +2783,7 @@ VALUES ('Albany', NULL, NULL, 'NY');
    </para>
 
    <para>
-    Currently, <productname>PostgreSQL</productname> supports partitioning
+    Currently, <productname>&productname;</productname> supports partitioning
     via table inheritance.  Each partition must be created as a child
     table of a single parent table.  The parent table itself is normally
     empty; it exists just to represent the entire data set.  You should be
@@ -2793,7 +2793,7 @@ VALUES ('Albany', NULL, NULL, 'NY');
 
    <para>
     The following forms of partitioning can be implemented in
-    <productname>PostgreSQL</productname>:
+    <productname>&productname;</productname>:
 
     <variablelist>
      <varlistentry>
@@ -2852,7 +2852,7 @@ VALUES ('Albany', NULL, NULL, 'NY');
 
        <para>
         We will refer to the child tables as partitions, though they
-        are in every way normal <productname>PostgreSQL</> tables
+        are in every way normal <productname>&productname;</> tables
         (or, possibly, foreign tables).
        </para>
       </listitem>
@@ -3452,9 +3452,9 @@ ANALYZE measurement;
    </indexterm>
 
    <para>
-    <productname>PostgreSQL</productname> implements portions of the SQL/MED
+    <productname>&productname;</productname> implements portions of the SQL/MED
     specification, allowing you to access data that resides outside
-    PostgreSQL using regular SQL queries.  Such data is referred to as
+    &productname; using regular SQL queries.  Such data is referred to as
     <firstterm>foreign data</>.  (Note that this usage is not to be confused
     with foreign keys, which are a type of constraint within the database.)
    </para>
@@ -3478,8 +3478,8 @@ ANALYZE measurement;
     wrapper. Then you need to create one or more <firstterm>foreign
     tables</firstterm>, which define the structure of the remote data. A
     foreign table can be used in queries just like a normal table, but a
-    foreign table has no storage in the PostgreSQL server.  Whenever it is
-    used, <productname>PostgreSQL</productname> asks the foreign data wrapper
+    foreign table has no storage in the &productname; server.  Whenever it is
+    used, <productname>&productname;</productname> asks the foreign data wrapper
     to fetch data from the external source, or transmit data to the external
     source in the case of update commands.
    </para>
@@ -3489,7 +3489,7 @@ ANALYZE measurement;
     data source.  This information can be provided by a
     <firstterm>user mapping</>, which can provide additional data
     such as user names and passwords based
-    on the current <productname>PostgreSQL</productname> role.
+    on the current <productname>&productname;</productname> role.
    </para>
 
    <para>
@@ -3569,7 +3569,7 @@ ANALYZE measurement;
 
   <para>
    To ensure the integrity of the entire database structure,
-   <productname>PostgreSQL</productname> makes sure that you cannot
+   <productname>&productname;</productname> makes sure that you cannot
    drop objects that other objects still depend on.  For example,
    attempting to drop the products table we considered in <xref
    linkend="ddl-constraints-fk">, with the orders table depending on
@@ -3596,7 +3596,7 @@ DROP TABLE products CASCADE;
   </para>
 
   <para>
-   Almost all <command>DROP</> commands in <productname>PostgreSQL</> support
+   Almost all <command>DROP</> commands in <productname>&productname;</> support
    specifying <literal>CASCADE</literal>.  Of course, the nature of
    the possible dependencies varies with the type of the object.  You
    can also write <literal>RESTRICT</literal> instead of
@@ -3625,7 +3625,7 @@ DROP TABLE products CASCADE;
   </para>
 
   <para>
-   For user-defined functions, <productname>PostgreSQL</productname> tracks
+   For user-defined functions, <productname>&productname;</productname> tracks
    dependencies associated with a function's externally-visible properties,
    such as its argument and result types, but <emphasis>not</> dependencies
    that could only be known by examining the function body.  As an example,
@@ -3643,10 +3643,10 @@ CREATE FUNCTION get_color_note (rainbow) RETURNS text AS
 </programlisting>
 
    (See <xref linkend="xfunc-sql"> for an explanation of SQL-language
-   functions.)  <productname>PostgreSQL</productname> will be aware that
+   functions.)  <productname>&productname;</productname> will be aware that
    the <function>get_color_note</> function depends on the <type>rainbow</>
    type: dropping the type would force dropping the function, because its
-   argument type would no longer be defined.  But <productname>PostgreSQL</>
+   argument type would no longer be defined.  But <productname>&productname;</>
    will not consider <function>get_color_note</> to depend on
    the <structname>my_colors</> table, and so will not drop the function if
    the table is dropped.  While there are disadvantages to this approach,

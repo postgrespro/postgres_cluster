@@ -4,8 +4,8 @@
  <title>Acronyms</title>
 
  <para>
-  This is a list of acronyms commonly used in the <productname>PostgreSQL</>
-  documentation and in discussions about <productname>PostgreSQL</>.
+  This is a list of acronyms commonly used in the <productname>&productname;</>
+  documentation and in discussions about <productname>&productname;</>.
 
   <variablelist>
 
@@ -185,7 +185,7 @@
     <term><acronym>ECPG</acronym></term>
     <listitem>
      <para>
-      <link linkend="ecpg">Embedded C for PostgreSQL</link>
+      <link linkend="ecpg">Embedded C for &productname;</link>
      </para>
     </listitem>
    </varlistentry>
@@ -281,7 +281,7 @@
     <listitem>
      <para>
       <link linkend="config-setting">Grand Unified Configuration</link>,
-      the <productname>PostgreSQL</> subsystem that handles server configuration
+      the <productname>&productname;</> subsystem that handles server configuration
      </para>
     </listitem>
    </varlistentry>
@@ -476,7 +476,7 @@
     <term><acronym>PGSQL</acronym></term>
     <listitem>
      <para>
-      <link linkend="postgres"><productname>PostgreSQL</></link>
+      <link linkend="postgres"><productname>&productname;</></link>
      </para>
     </listitem>
    </varlistentry>
@@ -485,7 +485,7 @@
     <term><acronym>PGXS</acronym></term>
     <listitem>
      <para>
-      <link linkend="extend-pgxs"><productname>PostgreSQL</> Extension System</link>
+      <link linkend="extend-pgxs"><productname>&productname;</> Extension System</link>
      </para>
     </listitem>
    </varlistentry>

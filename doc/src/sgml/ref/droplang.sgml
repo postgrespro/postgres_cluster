@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/droplang.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="APP-DROPLANG">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>droplang</refname>
-  <refpurpose>remove a <productname>PostgreSQL</productname> procedural language</refpurpose>
+  <refpurpose>remove a <productname>&productname;</productname> procedural language</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -43,7 +43,7 @@ PostgreSQL documentation
   <para>
    <application>droplang</application> is a utility for removing an
    existing procedural language from a
-   <productname>PostgreSQL</productname> database.
+   <productname>&productname;</productname> database.
   </para>
 
   <para>
@@ -54,7 +54,7 @@ PostgreSQL documentation
   <caution>
    <para>
     <application>droplang</application> is deprecated and may be removed
-    in a future <productname>PostgreSQL</productname> release.  Direct use
+    in a future <productname>&productname;</productname> release.  Direct use
     of the <command>DROP EXTENSION</> command is recommended instead.
    </para>
   </caution>
@@ -234,7 +234,7 @@ PostgreSQL documentation
   </variablelist>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>

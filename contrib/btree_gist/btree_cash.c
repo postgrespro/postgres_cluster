@@ -90,27 +90,6 @@ static const gbtree_ninfo tinfo =
 };
 
 
-PG_FUNCTION_INFO_V1(cash_dist);
-Datum
-cash_dist(PG_FUNCTION_ARGS)
-{
-	Cash		a = PG_GETARG_CASH(0);
-	Cash		b = PG_GETARG_CASH(1);
-	Cash		r;
-	Cash		ra;
-
-	r = a - b;
-	ra = Abs(r);
-
-	/* Overflow check. */
-	if (ra < 0 || (!SAMESIGN(a, b) && !SAMESIGN(r, a)))
-		ereport(ERROR,
-				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
-				 errmsg("money out of range")));
-
-	PG_RETURN_CASH(ra);
-}
-
 /**************************************************
  * Cash ops
  **************************************************/

@@ -36,9 +36,15 @@ override CPPFLAGS += -DVAL_LDFLAGS_EX="\"$(LDFLAGS_EX)\""
 override CPPFLAGS += -DVAL_LDFLAGS_SL="\"$(LDFLAGS_SL)\""
 override CPPFLAGS += -DVAL_LIBS="\"$(LIBS)\""
 
-OBJS_COMMON = config_info.o controldata_utils.o exec.o keywords.o \
-	pg_lzcompress.o pgfnames.o psprintf.o relpath.o rmtree.o \
+OBJS_COMMON = config_info.o controldata_utils.o exec.o encode_utils.o keywords.o \
+	pg_lzcompress.o pgfnames.o psprintf.o relpath.o rmtree.o scram-common.o \
 	string.o username.o wait_error.o
+
+ifeq ($(with_openssl),yes)
+OBJS_COMMON += sha_openssl.o
+else
+OBJS_COMMON += sha.o
+endif
 
 OBJS_FRONTEND = $(OBJS_COMMON) fe_memutils.o restricted_token.o
 

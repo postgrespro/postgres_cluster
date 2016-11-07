@@ -32,6 +32,7 @@ SUBDIRS = \
 		pg_buffercache	\
 		pg_freespacemap \
 		pg_prewarm	\
+		pg_query_state \
 		pg_standby	\
 		pg_stat_statements \
 		pg_trgm		\
@@ -40,6 +41,7 @@ SUBDIRS = \
 		pgstattuple	\
 		pg_visibility	\
 		postgres_fdw	\
+		rum		\
 		seg		\
 		spi		\
 		tablefunc	\
@@ -58,6 +60,8 @@ SUBDIRS = \
 		pg_variables	\
 		jsquery		\
 		sr_plan		\
+		pg_arman	\
+		pg_pathman	\
 		shared_ispell
 
 ifeq ($(with_openssl),yes)

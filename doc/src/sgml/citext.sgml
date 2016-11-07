@@ -19,7 +19,7 @@
 
   <para>
    The standard approach to doing case-insensitive matches
-   in <productname>PostgreSQL</> has been to use the <function>lower</>
+   in <productname>&productname;</> has been to use the <function>lower</>
    function when comparing values, for example
 
 <programlisting>

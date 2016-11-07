@@ -144,7 +144,8 @@ typedef struct Port
 	 * Information that needs to be held during the authentication cycle.
 	 */
 	HbaLine    *hba;
-	char		md5Salt[4];		/* Password salt */
+	char		md5Salt[4];		/* MD5 password salt */
+	char		scramNonce[10];	/* SCRAM server-nonce, size of SCRAM_NONCE_LEN */
 
 	/*
 	 * Information that really has no business at all being in struct Port,
@@ -214,7 +215,7 @@ extern void be_tls_get_cipher(Port *port, char *ptr, size_t len);
 extern void be_tls_get_peerdn_name(Port *port, char *ptr, size_t len);
 #endif
 
-extern ProtocolVersion FrontendProtocol;
+extern PGDLLIMPORT ProtocolVersion FrontendProtocol;
 
 /* TCP keepalives configuration. These are no-ops on an AF_UNIX socket. */
 

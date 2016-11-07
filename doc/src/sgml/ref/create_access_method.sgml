@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_access_method.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="sql-create-access-method">
@@ -102,7 +102,7 @@ CREATE ACCESS METHOD heptree TYPE INDEX HANDLER heptree_handler;
 
   <para>
    <command>CREATE ACCESS METHOD</command> is a
-   <productname>PostgreSQL</> extension.
+   <productname>&productname;</> extension.
   </para>
  </refsect1>
 

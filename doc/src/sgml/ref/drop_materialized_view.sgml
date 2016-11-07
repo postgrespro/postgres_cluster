@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/drop_materialized_view.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DROPMATERIALIZEDVIEW">
@@ -99,7 +99,7 @@ DROP MATERIALIZED VIEW order_summary;
 
   <para>
    <command>DROP MATERIALIZED VIEW</command> is a
-   <productname>PostgreSQL</productname> extension.
+   <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

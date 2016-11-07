@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_rule.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERRULE">
@@ -88,7 +88,7 @@ ALTER RULE notify_all ON emp RENAME TO notify_me;
 
   <para>
    <command>ALTER RULE</command> is a
-   <productname>PostgreSQL</productname> language extension, as is the
+   <productname>&productname;</productname> language extension, as is the
    entire query rewrite system.
   </para>
  </refsect1>

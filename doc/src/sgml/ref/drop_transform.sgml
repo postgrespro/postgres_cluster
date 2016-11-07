@@ -109,7 +109,7 @@ DROP TRANSFORM FOR hstore LANGUAGE plpythonu;
 
   <para>
    This form of <command>DROP TRANSFORM</command> is a
-   <productname>PostgreSQL</productname> extension.  See <xref
+   <productname>&productname;</productname> extension.  See <xref
    linkend="sql-createtransform"> for details.
   </para>
  </refsect1>

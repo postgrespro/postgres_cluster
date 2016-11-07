@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/truncate.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-TRUNCATE">

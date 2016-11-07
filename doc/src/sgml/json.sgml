@@ -53,7 +53,7 @@
  </para>
 
  <para>
-  <productname>PostgreSQL</productname> allows only one character set
+  <productname>&productname;</productname> allows only one character set
   encoding per database.  It is therefore not possible for the JSON
   types to conform rigidly to the JSON specification unless the database
   encoding is UTF8. Attempts to directly include characters that
@@ -72,7 +72,7 @@
   Unicode escapes for non-ASCII characters (those above <literal>U+007F</>)
   unless the database encoding is UTF8.  The <type>jsonb</> type also
   rejects <literal>\u0000</> (because that cannot be represented in
-  <productname>PostgreSQL</productname>'s <type>text</> type), and it insists
+  <productname>&productname;</productname>'s <type>text</> type), and it insists
   that any use of Unicode surrogate pairs to designate characters outside
   the Unicode Basic Multilingual Plane be correct.  Valid Unicode escapes
   are converted to the equivalent ASCII or UTF8 character for storage;
@@ -97,14 +97,14 @@
  <para>
   When converting textual JSON input into <type>jsonb</>, the primitive
   types described by <acronym>RFC</> 7159 are effectively mapped onto
-  native <productname>PostgreSQL</productname> types, as shown
+  native <productname>&productname;</productname> types, as shown
   in <xref linkend="json-type-mapping-table">.
   Therefore, there are some minor additional constraints on what
   constitutes valid <type>jsonb</type> data that do not apply to
   the <type>json</type> type, nor to JSON in the abstract, corresponding
   to limits on what can be represented by the underlying data type.
   Notably, <type>jsonb</> will reject numbers that are outside the
-  range of the <productname>PostgreSQL</productname> <type>numeric</> data
+  range of the <productname>&productname;</productname> <type>numeric</> data
   type, while <type>json</> will not.  Such implementation-defined
   restrictions are permitted by <acronym>RFC</> 7159.  However, in
   practice such problems are far more likely to occur in other
@@ -113,22 +113,22 @@
   (which <acronym>RFC</> 7159 explicitly anticipates and allows for).
   When using JSON as an interchange format with such systems, the danger
   of losing numeric precision compared to data originally stored
-  by <productname>PostgreSQL</productname> should be considered.
+  by <productname>&productname;</productname> should be considered.
  </para>
 
  <para>
   Conversely, as noted in the table there are some minor restrictions on
   the input format of JSON primitive types that do not apply to
-  the corresponding <productname>PostgreSQL</productname> types.
+  the corresponding <productname>&productname;</productname> types.
  </para>
 
   <table id="json-type-mapping-table">
-     <title>JSON primitive types and corresponding <productname>PostgreSQL</productname> types</title>
+     <title>JSON primitive types and corresponding <productname>&productname;</productname> types</title>
      <tgroup cols="3">
       <thead>
        <row>
         <entry>JSON primitive type</entry>
-        <entry><productname>PostgreSQL</productname> type</entry>
+        <entry><productname>&productname;</productname> type</entry>
         <entry>Notes</entry>
        </row>
       </thead>
@@ -565,7 +565,7 @@ SELECT jdoc-&gt;'guid', jdoc-&gt;'name' FROM api WHERE jdoc @&gt; '{"tags": ["qu
 </synopsis>
       Primitive JSON values are compared using the same
       comparison rules as for the underlying
-      <productname>PostgreSQL</productname> data type.  Strings are
+      <productname>&productname;</productname> data type.  Strings are
       compared using the default database collation.
   </para>
  </sect2>

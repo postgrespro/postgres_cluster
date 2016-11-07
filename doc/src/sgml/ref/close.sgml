@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/close.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CLOSE">
@@ -81,7 +81,7 @@ CLOSE { <replaceable class="PARAMETER">name</replaceable> | ALL }
   <title>Notes</title>
 
   <para>
-   <productname>PostgreSQL</productname> does not have an explicit
+   <productname>&productname;</productname> does not have an explicit
    <command>OPEN</command> cursor statement; a cursor is considered
    open when it is declared.  Use the
    <xref linkend="sql-declare">
@@ -115,7 +115,7 @@ CLOSE liahona;
 
   <para>
    <command>CLOSE</command> is fully conforming with the SQL
-   standard. <command>CLOSE ALL</> is a <productname>PostgreSQL</>
+   standard. <command>CLOSE ALL</> is a <productname>&productname;</>
    extension.
   </para>
  </refsect1>

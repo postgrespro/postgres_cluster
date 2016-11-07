@@ -140,7 +140,7 @@ SELECT uuid_generate_v3(uuid_ns_url(), 'http://www.postgresql.org');
        <para>
         Constant designating the ISO object identifier (OID) namespace for
         UUIDs.  (This pertains to ASN.1 OIDs, which are unrelated to the OIDs
-        used in <productname>PostgreSQL</>.)
+        used in <productname>&productname;</>.)
        </para>
       </entry>
      </row>

@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/initdb.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="APP-INITDB">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>initdb</refname>
-  <refpurpose>create a new <productname>PostgreSQL</productname> database cluster</refpurpose>
+  <refpurpose>create a new <productname>&productname;</productname> database cluster</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -39,7 +39,7 @@ PostgreSQL documentation
   </title>
   <para>
    <command>initdb</command> creates a new
-   <productname>PostgreSQL</productname> database cluster.  A database
+   <productname>&productname;</productname> database cluster.  A database
    cluster is a collection of databases that are managed by a single
    server instance.
   </para>
@@ -176,7 +176,7 @@ PostgreSQL documentation
         be the default encoding of any database you create later,
         unless you override it there.  The default is derived from the locale, or
         <literal>SQL_ASCII</literal> if that does not work. The character sets supported by
-        the <productname>PostgreSQL</productname> server are described
+        the <productname>&productname;</productname> server are described
         in <xref linkend="multibyte-charset-supported">.
        </para>
       </listitem>
@@ -428,7 +428,7 @@ PostgreSQL documentation
   </variablelist>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>

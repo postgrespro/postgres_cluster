@@ -9,7 +9,7 @@
  </para>
 
  <sect1 id="postgres-user">
-  <title>The <productname>PostgreSQL</productname> User Account</title>
+  <title>The <productname>&productname;</productname> User Account</title>
 
   <indexterm>
    <primary>postgres user</primary>
@@ -17,7 +17,7 @@
 
   <para>
    As with any server daemon that is accessible to the outside world,
-   it is advisable to run <productname>PostgreSQL</productname> under a
+   it is advisable to run <productname>&productname;</productname> under a
    separate user account. This user account should only own the data
    that is managed by the server, and should not be shared with other
    daemons. (For example, using the user <literal>nobody</literal> is a bad
@@ -74,14 +74,14 @@
    <filename>/var/lib/pgsql/data</filename> are popular. To initialize a
    database cluster, use the command <xref
    linkend="app-initdb">,<indexterm><primary>initdb</></> which is
-   installed with <productname>PostgreSQL</productname>. The desired
+   installed with <productname>&productname;</productname>. The desired
    file system location of your database cluster is indicated by the
    <option>-D</option> option, for example:
 <screen>
 <prompt>$</> <userinput>initdb -D /usr/local/pgsql/data</userinput>
 </screen>
    Note that you must execute this command while logged into the
-   <productname>PostgreSQL</productname> user account, which is
+   <productname>&productname;</productname> user account, which is
    described in the previous section.
   </para>
 
@@ -112,7 +112,7 @@
    specify if it does not already exist.  Of course, this will fail if
    <command>initdb</command> does not have permissions to write in the
    parent directory.  It's generally recommendable that the
-   <productname>PostgreSQL</productname> user own not just the data
+   <productname>&productname;</productname> user own not just the data
    directory but its parent directory as well, so that this should not
    be a problem.  If the desired parent directory doesn't exist either,
    you will need to create it first, using root privileges if the
@@ -137,7 +137,7 @@ postgres$ <userinput>initdb -D /usr/local/pgsql/data</userinput>
    database, it is essential that it be secured from unauthorized
    access. <command>initdb</command> therefore revokes access
    permissions from everyone but the
-   <productname>PostgreSQL</productname> user.
+   <productname>&productname;</productname> user.
   </para>
 
   <para>
@@ -205,7 +205,7 @@ postgres$ <userinput>initdb -D /usr/local/pgsql/data</userinput>
     choose to do this, it is not advisable to try to use the secondary
     volume's topmost directory (mount point) as the data directory.
     Best practice is to create a directory within the mount-point
-    directory that is owned by the <productname>PostgreSQL</productname>
+    directory that is owned by the <productname>&productname;</productname>
     user, and then create the data directory within that.  This avoids
     permissions problems, particularly for operations such
     as <application>pg_upgrade</>, and it also ensures clean failures if
@@ -227,7 +227,7 @@ postgres$ <userinput>initdb -D /usr/local/pgsql/data</userinput>
     Many installations create their database clusters on network file
     systems.  Sometimes this is done via <acronym>NFS</>, or by using a
     Network Attached Storage (<acronym>NAS</>) device that uses
-    <acronym>NFS</> internally.  <productname>PostgreSQL</> does nothing
+    <acronym>NFS</> internally.  <productname>&productname;</> does nothing
     special for <acronym>NFS</> file systems, meaning it assumes
     <acronym>NFS</> behaves exactly like locally-connected drives.
     If the client or server <acronym>NFS</> implementation does not
@@ -246,7 +246,7 @@ postgres$ <userinput>initdb -D /usr/local/pgsql/data</userinput>
     protocols other than <acronym>NFS</>, and may or may not be subject
     to hazards of this sort.  It's advisable to consult the vendor's
     documentation concerning data consistency guarantees.
-    <productname>PostgreSQL</productname> cannot be more reliable than
+    <productname>&productname;</productname> cannot be more reliable than
     the file system it's using.
    </para>
 
@@ -269,7 +269,7 @@ postgres$ <userinput>initdb -D /usr/local/pgsql/data</userinput>
 $ <userinput>postgres -D /usr/local/pgsql/data</userinput>
 </screen>
    which will leave the server running in the foreground. This must be
-   done while logged into the <productname>PostgreSQL</productname> user
+   done while logged into the <productname>&productname;</productname> user
    account. Without <option>-D</option>, the server will try to use
    the data directory named by the environment variable <envar>PGDATA</envar>.
    If that variable is not provided either, it will fail.
@@ -317,7 +317,7 @@ pg_ctl start -l logfile
    </indexterm>
    Autostart scripts are operating-system-specific.
    There are a few distributed with
-   <productname>PostgreSQL</productname> in the
+   <productname>&productname;</productname> in the
    <filename>contrib/start-scripts</> directory. Installing one will require
    root privileges.
   </para>
@@ -328,7 +328,7 @@ pg_ctl start -l logfile
    <filename>/etc/rc.local</filename> or
    <filename>/etc/rc.d/rc.local</filename>. Others use <filename>init.d</filename> or
    <filename>rc.d</> directories. Whatever you do, the server must be
-   run by the <productname>PostgreSQL</productname> user account
+   run by the <productname>&productname;</productname> user account
    <emphasis>and not by root</emphasis> or any other user. Therefore you
    probably should form your commands using
    <literal>su postgres -c '...'</literal>.  For example:
@@ -347,7 +347,7 @@ su postgres -c 'pg_ctl start -D /usr/local/pgsql/data -l serverlog'
      <para>
       For <productname>FreeBSD</productname>, look at the file
       <filename>contrib/start-scripts/freebsd</filename> in the
-      <productname>PostgreSQL</productname> source distribution.
+      <productname>&productname;</productname> source distribution.
       <indexterm><primary>FreeBSD</><secondary>start script</secondary></>
      </para>
     </listitem>
@@ -376,7 +376,7 @@ fi
       to <filename>/etc/rc.d/rc.local</filename>
       or <filename>/etc/rc.local</filename> or look at the file
       <filename>contrib/start-scripts/linux</filename> in the
-      <productname>PostgreSQL</productname> source distribution.
+      <productname>&productname;</productname> source distribution.
      </para>
 
      <para>
@@ -385,7 +385,7 @@ fi
       at <filename>/etc/systemd/system/postgresql.service</filename>):<indexterm><primary>systemd</primary></indexterm>
 <programlisting>
 [Unit]
-Description=PostgreSQL database server
+Description=&productname; database server
 Documentation=man:postgres(1)
 
 [Service]
@@ -408,7 +408,7 @@ WantedBy=multi-user.target
       Consider carefully the timeout
       setting.  <application>systemd</application> has a default timeout of 90
       seconds as of this writing and will kill a process that does not notify
-      readiness within that time.  But a <productname>PostgreSQL</productname>
+      readiness within that time.  But a <productname>&productname;</productname>
       server that might have to perform crash recovery at startup could take
       much longer to become ready.  The suggested value of 0 disables the
       timeout logic.
@@ -489,7 +489,7 @@ FATAL:  could not create shared memory segment: Invalid argument
 DETAIL:  Failed system call was shmget(key=5440001, size=4011376640, 03600).
 </screen>
      probably means your kernel's limit on the size of shared memory is
-     smaller than the work area <productname>PostgreSQL</productname>
+     smaller than the work area <productname>&productname;</productname>
      is trying to create (4011376640 bytes in this example). Or it could
      mean that you do not have System-V-style shared memory support
      configured into your kernel at all. As a temporary workaround, you
@@ -510,7 +510,7 @@ DETAIL:  Failed system call was semget(5440126, 17, 03600).
      does <emphasis>not</emphasis> mean you've run out of disk
      space. It means your kernel's limit on the number of <systemitem
      class="osname">System V</> semaphores is smaller than the number
-     <productname>PostgreSQL</productname> wants to create. As above,
+     <productname>&productname;</productname> wants to create. As above,
      you might be able to work around the problem by starting the
      server with a reduced number of allowed connections
      (<xref linkend="guc-max-connections">), but you'll eventually want to
@@ -586,10 +586,10 @@ psql: could not connect to server: No such file or directory
   <title>Managing Kernel Resources</title>
 
   <para>
-   <productname>PostgreSQL</> can sometimes exhaust various operating system
+   <productname>&productname;</> can sometimes exhaust various operating system
    resource limits, especially when multiple copies of the server are running
    on the same system, or in very large installations.  This section explains
-   the kernel resources used by <productname>PostgreSQL</> and the steps you
+   the kernel resources used by <productname>&productname;</> and the steps you
    can take to resolve problems related to kernel resource consumption.
   </para>
 
@@ -608,23 +608,23 @@ psql: could not connect to server: No such file or directory
     Shared memory and semaphores are collectively referred to as
     <quote><systemitem class="osname">System V</>
     <acronym>IPC</></quote> (together with message queues, which are not
-    relevant for <productname>PostgreSQL</>).  Except on
-    <systemitem class="osname">Windows</>, where <productname>PostgreSQL</>
+    relevant for <productname>&productname;</>).  Except on
+    <systemitem class="osname">Windows</>, where <productname>&productname;</>
     provides its own replacement implementation of these facilities, these
     facilities are required in order to run
-    <productname>PostgreSQL</>.
+    <productname>&productname;</>.
    </para>
 
    <para>
     The complete lack of these facilities is usually manifested by an
     <errorname>Illegal system call</> error upon server start. In
     that case there is no alternative but to reconfigure your
-    kernel.  <productname>PostgreSQL</> won't work without them.
+    kernel.  <productname>&productname;</> won't work without them.
     This situation is rare, however, among modern operating systems.
    </para>
 
    <para>
-    When <productname>PostgreSQL</> exceeds one of the various hard
+    When <productname>&productname;</> exceeds one of the various hard
     <acronym>IPC</> limits, the server will refuse to start and
     should leave an instructive error message describing the problem
     and what to do about it. (See also <xref
@@ -721,7 +721,7 @@ psql: could not connect to server: No such file or directory
    </table>
 
    <para>
-    <productname>PostgreSQL</> requires a few bytes of System V shared memory
+    <productname>&productname;</> requires a few bytes of System V shared memory
     (typically 48 bytes, on 64-bit platforms) for each copy of the server.
     On most modern operating systems, this amount can easily be allocated.
     However, if you are running many copies of the server, or if other
@@ -735,7 +735,7 @@ psql: could not connect to server: No such file or directory
    <para>
     Less likely to cause problems is the minimum size for shared
     memory segments (<varname>SHMMIN</>), which should be at most
-    approximately 32 bytes for <productname>PostgreSQL</> (it is
+    approximately 32 bytes for <productname>&productname;</> (it is
     usually just 1). The maximum number of segments system-wide
     (<varname>SHMMNI</>) or per-process (<varname>SHMSEG</>) are unlikely
     to cause a problem unless your system has them set to zero.
@@ -781,13 +781,13 @@ psql: could not connect to server: No such file or directory
    <para>
     The <varname>SEMMSL</> parameter, which determines how many
     semaphores can be in a set, must be at least 17 for
-    <productname>PostgreSQL</>.
+    <productname>&productname;</>.
    </para>
 
    <para>
     Various other settings related to <quote>semaphore undo</>, such as
     <varname>SEMMNU</> and <varname>SEMUME</>, do not affect
-    <productname>PostgreSQL</>.
+    <productname>&productname;</>.
    </para>
 
 
@@ -862,7 +862,7 @@ kern.ipc.semmnu=256
         running in different jails should be run by different operating system
         users.  This improves security because it prevents non-root users
         from interfering with shared memory or semaphores in different jails,
-        and it allows the PostgreSQL IPC cleanup code to function properly.
+        and it allows the &productname; IPC cleanup code to function properly.
         (In FreeBSD 6.0 and later the IPC cleanup code does not properly detect
         processes in other jails, preventing the running of postmasters on the
         same port in different jails.)
@@ -1132,13 +1132,13 @@ set semsys:seminfo_semmsl=32
        <para>
         In Solaris 10 and later, and OpenSolaris, the default shared memory and
         semaphore settings are good enough for most
-        <productname>PostgreSQL</> applications.  Solaris now defaults
+        <productname>&productname;</> applications.  Solaris now defaults
         to a <varname>SHMMAX</> of one-quarter of system <acronym>RAM</>.
         To further adjust this setting, use a project setting associated
         with the <literal>postgres</> user.  For example, run the
         following as <literal>root</>:
 <programlisting>
-projadd -c "PostgreSQL DB User" -K "project.max-shm-memory=(privileged,8GB,deny)" -U postgres -G postgres user.postgres
+projadd -c "&productname; DB User" -K "project.max-shm-memory=(privileged,8GB,deny)" -U postgres -G postgres user.postgres
 </programlisting>
        </para>
 
@@ -1146,8 +1146,8 @@ projadd -c "PostgreSQL DB User" -K "project.max-shm-memory=(privileged,8GB,deny)
         This command adds the <literal>user.postgres</> project and
         sets the shared memory maximum for the <literal>postgres</>
         user to 8GB, and takes effect the next time that user logs
-        in, or when you restart <productname>PostgreSQL</> (not reload).
-        The above assumes that <productname>PostgreSQL</> is run by
+        in, or when you restart <productname>&productname;</> (not reload).
+        The above assumes that <productname>&productname;</> is run by
         the <literal>postgres</> user in the <literal>postgres</>
         group.  No server reboot is required.
        </para>
@@ -1163,7 +1163,7 @@ project.max-msg-ids=(priv,4096,deny)
        </para>
 
        <para>
-        Additionally, if you are running <productname>PostgreSQL</>
+        Additionally, if you are running <productname>&productname;</>
         inside a zone, you may need to raise the zone resource usage
         limits as well.  See "Chapter2:  Projects and Tasks" in the
         <citetitle>System Administrator's Guide</> for more
@@ -1212,7 +1212,7 @@ project.max-msg-ids=(priv,4096,deny)
    <para>
     Unix-like operating systems enforce various kinds of resource limits
     that might interfere with the operation of your
-    <productname>PostgreSQL</productname> server. Of particular
+    <productname>&productname;</productname> server. Of particular
     importance are limits on the number of processes per user, the
     number of open files per process, and the amount of memory available
     to each process. Each of these have a <quote>hard</quote> and a
@@ -1261,7 +1261,7 @@ default:\
    </para>
 
    <para>
-    The <productname>PostgreSQL</productname> server uses one process
+    The <productname>&productname;</productname> server uses one process
     per connection so you should provide for at least as many processes
     as allowed connections, in addition to what you need for the rest
     of your system.  This is usually not a problem but if you run
@@ -1282,7 +1282,7 @@ default:\
     processes to open large numbers of files; if more than a few
     processes do so then the system-wide limit can easily be exceeded.
     If you find this happening, and you do not want to alter the
-    system-wide limit, you can set <productname>PostgreSQL</>'s <xref
+    system-wide limit, you can set <productname>&productname;</>'s <xref
     linkend="guc-max-files-per-process"> configuration parameter to
     limit the consumption of open files.
    </para>
@@ -1305,11 +1305,11 @@ default:\
 
    <para>
     In Linux 2.4 and later, the default virtual memory behavior is not
-    optimal for <productname>PostgreSQL</productname>. Because of the
+    optimal for <productname>&productname;</productname>. Because of the
     way that the kernel implements memory overcommit, the kernel might
-    terminate the <productname>PostgreSQL</productname> postmaster (the
+    terminate the <productname>&productname;</productname> postmaster (the
     master server process) if the memory demands of either
-    <productname>PostgreSQL</productname> or another process cause the
+    <productname>&productname;</productname> or another process cause the
     system to run out of virtual memory.
    </para>
 
@@ -1324,12 +1324,12 @@ Out of Memory: Killed process 12345 (postgres).
     has been terminated due to memory pressure.
     Although existing database connections will continue to function
     normally, no new connections will be accepted.  To recover,
-    <productname>PostgreSQL</productname> will need to be restarted.
+    <productname>&productname;</productname> will need to be restarted.
    </para>
 
    <para>
     One way to avoid this problem is to run
-    <productname>PostgreSQL</productname> on a machine where you can
+    <productname>&productname;</productname> on a machine where you can
     be sure that other processes will not run the machine out of
     memory.  If memory is tight, increasing the swap space of the
     operating system can help avoid the problem, because the
@@ -1338,7 +1338,7 @@ Out of Memory: Killed process 12345 (postgres).
    </para>
 
    <para>
-    If <productname>PostgreSQL</productname> itself is the cause of the
+    If <productname>&productname;</productname> itself is the cause of the
     system running out of memory, you can avoid the problem by changing
     your configuration.  In some cases, it may help to lower memory-related
     configuration parameters, particularly
@@ -1422,53 +1422,67 @@ export PG_OOM_ADJUST_VALUE=0
   </sect2>
 
   <sect2 id="linux-huge-pages">
-   <title>Linux huge pages</title>
+   <title>Linux Huge Pages</title>
 
    <para>
     Using huge pages reduces overhead when using large contiguous chunks of
-    memory, like <productname>PostgreSQL</productname> does. To enable this
-    feature in <productname>PostgreSQL</productname> you need a kernel
+    memory, as <productname>&productname;</productname> does, particularly when
+    using large values of <xref linkend="guc-shared-buffers">.  To use this
+    feature in <productname>&productname;</productname> you need a kernel
     with <varname>CONFIG_HUGETLBFS=y</varname> and
-    <varname>CONFIG_HUGETLB_PAGE=y</varname>. You also have to tune the system
-    setting <varname>vm.nr_hugepages</varname>. To estimate the number of
-    necessary huge pages start <productname>PostgreSQL</productname> without
-    huge pages enabled and check the <varname>VmPeak</varname> value from the
-    proc file system:
+    <varname>CONFIG_HUGETLB_PAGE=y</varname>. You will also have to adjust
+    the kernel setting <varname>vm.nr_hugepages</varname>. To estimate the
+    number of huge pages needed, start <productname>&productname;</productname>
+    without huge pages enabled and check the
+    postmaster's <varname>VmPeak</varname> value, as well as the system's
+    huge page size, using the <filename>/proc</> file system.  This might
+    look like:
 <programlisting>
-$ <userinput>head -1 /path/to/data/directory/postmaster.pid</userinput>
+$ <userinput>head -1 $PGDATA/postmaster.pid</userinput>
 4170
 $ <userinput>grep ^VmPeak /proc/4170/status</userinput>
 VmPeak:  6490428 kB
+$ <userinput>grep ^Hugepagesize /proc/meminfo</userinput>
+Hugepagesize:       2048 kB
 </programlisting>
-     <literal>6490428</literal> / <literal>2048</literal>
-     (<varname>PAGE_SIZE</varname> is <literal>2MB</literal> in this case) are
-     roughly <literal>3169.154</literal> huge pages, so you will need at
-     least <literal>3170</literal> huge pages:
+     <literal>6490428</literal> / <literal>2048</literal> gives approximately
+     <literal>3169.154</literal>, so in this example we need at
+     least <literal>3170</literal> huge pages, which we can set with:
 <programlisting>
 $ <userinput>sysctl -w vm.nr_hugepages=3170</userinput>
 </programlisting>
-    Sometimes the kernel is not able to allocate the desired number of huge
-    pages, so it might be necessary to repeat that command or to reboot. Don't
-    forget to add an entry to <filename>/etc/sysctl.conf</filename> to persist
-    this setting through reboots.
+    A larger setting would be appropriate if other programs on the machine
+    also need huge pages.  Don't forget to add this setting
+    to <filename>/etc/sysctl.conf</filename> so that it will be reapplied
+    after reboots.
    </para>
 
    <para>
-    It is also necessary to give the database server operating system
+    Sometimes the kernel is not able to allocate the desired number of huge
+    pages immediately, so it might be necessary to repeat the command or to
+    reboot.  (Immediately after a reboot, most of the machine's memory
+    should be available to convert into huge pages.)  To verify the huge
+    page allocation situation, use:
+<programlisting>
+$ <userinput>grep Huge /proc/meminfo</userinput>
+</programlisting>
+   </para>
+
+   <para>
+    It may also be necessary to give the database server's operating system
     user permission to use huge pages by setting
-    <varname>vm.hugetlb_shm_group</> via <application>sysctl</>, and
-    permission to lock memory with <command>ulimit -l</>.
+    <varname>vm.hugetlb_shm_group</> via <application>sysctl</>, and/or
+    give permission to lock memory with <command>ulimit -l</>.
    </para>
 
    <para>
     The default behavior for huge pages in
-    <productname>PostgreSQL</productname> is to use them when possible and
-    to fallback to normal pages when failing. To enforce the use of huge
-    pages, you can set
-    <link linkend="guc-huge-pages"><varname>huge_pages</varname></link>
-    to <literal>on</literal>. Note that in this case
-    <productname>PostgreSQL</productname> will fail to start if not enough huge
-    pages are available.
+    <productname>&productname;</productname> is to use them when possible and
+    to fall back to normal pages when failing. To enforce the use of huge
+    pages, you can set <xref linkend="guc-huge-pages">
+    to <literal>on</literal> in <filename>postgresql.conf</>.
+    Note that with this setting <productname>&productname;</> will fail to
+    start if not enough huge pages are available.
    </para>
 
    <para>
@@ -1584,7 +1598,7 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
  </sect1>
 
  <sect1 id="upgrading">
-  <title>Upgrading a <productname>PostgreSQL</> Cluster</title>
+  <title>Upgrading a <productname>&productname;</> Cluster</title>
 
   <indexterm zone="upgrading">
    <primary>upgrading</primary>
@@ -1597,13 +1611,13 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
 
   <para>
    This section discusses how to upgrade your database data from one
-   <productname>PostgreSQL</> release to a newer one.
+   <productname>&productname;</> release to a newer one.
   </para>
 
   <para>
-   <productname>PostgreSQL</> major versions are represented by the
+   <productname>&productname;</> major versions are represented by the
    first two digit groups of the version number, e.g., 8.4.
-   <productname>PostgreSQL</> minor versions are represented by the
+   <productname>&productname;</> minor versions are represented by the
    third group of version digits, e.g., 8.4.2 is the second minor
    release of 8.4.  Minor releases never change the internal storage
    format and are always compatible with earlier and later minor
@@ -1615,7 +1629,7 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
   </para>
 
   <para>
-   For <emphasis>major</> releases of <productname>PostgreSQL</>, the
+   For <emphasis>major</> releases of <productname>&productname;</>, the
    internal data storage format is subject to change, thus complicating
    upgrades.  The traditional method for moving data to a new major version
    is to dump and reload the database, though this can be slow.  A
@@ -1637,7 +1651,7 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
    Cautious users will want to test their client applications on the new
    version before switching over fully; therefore, it's often a good idea to
    set up concurrent installations of old and new versions.  When
-   testing a <productname>PostgreSQL</> major upgrade, consider the
+   testing a <productname>&productname;</> major upgrade, consider the
    following categories of possible changes:
   </para>
 
@@ -1700,12 +1714,12 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
 
    <para>
     One upgrade method is to dump data from one major version of
-    <productname>PostgreSQL</> and reload it in another &mdash;  to do
+    <productname>&productname;</> and reload it in another &mdash;  to do
     this, you must use a <emphasis>logical</> backup tool like
     <application>pg_dumpall</>; file system
     level backup methods will not work. (There are checks in place that prevent
     you from using a data directory with an incompatible version of
-    <productname>PostgreSQL</productname>, so no great harm can be done by
+    <productname>&productname;</productname>, so no great harm can be done by
     trying to start the wrong server version on a data directory.)
    </para>
 
@@ -1713,7 +1727,7 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
     It is recommended that you use the <application>pg_dump</> and
     <application>pg_dumpall</> programs from the <emphasis>newer</>
     version of
-    <productname>PostgreSQL</>, to take advantage of enhancements
+    <productname>&productname;</>, to take advantage of enhancements
     that might have been made in these programs.  Current releases of the
     dump programs can read data from any server version back to 7.0.
    </para>
@@ -1754,7 +1768,7 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
       command from the version you are currently running;  see <xref
       linkend="backup-dump-all"> for more details.  For best
       results, however, try to use the <application>pg_dumpall</application>
-      command from <productname>PostgreSQL</productname> &version;,
+      command from <productname>&productname;</productname> &version;,
       since this version contains bug fixes and improvements over older
       versions.  While this advice might seem idiosyncratic since you
       haven't installed the new version yet, it is advisable to follow
@@ -1771,7 +1785,7 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
 <screen>
 <userinput>pg_ctl stop</>
 </screen>
-      On systems that have <productname>PostgreSQL</> started at boot time,
+      On systems that have <productname>&productname;</> started at boot time,
       there is probably a start-up file that will accomplish the same thing. For
       example, on a <systemitem class="osname">Red Hat Linux</> system one
       might find that this works:
@@ -1801,7 +1815,7 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
 
     <step>
      <para>
-      Install the new version of <productname>PostgreSQL</productname> as
+      Install the new version of <productname>&productname;</productname> as
       outlined in <![%standalone-include[the next section.]]>
       <![%standalone-ignore[<xref linkend="install-procedure">.]]>
      </para>
@@ -1864,7 +1878,7 @@ pg_dumpall -p 5432 | psql -d postgres -p 5433
 
    <para>
     The <xref linkend="pgupgrade"> module allows an installation to
-    be migrated in-place from one major <productname>PostgreSQL</>
+    be migrated in-place from one major <productname>&productname;</>
     version to another.  Upgrades can be performed in minutes,
     particularly with <option>--link</> mode.  It requires steps similar to
     <application>pg_dumpall</> above, e.g.  starting/stopping the server,
@@ -1880,11 +1894,11 @@ pg_dumpall -p 5432 | psql -d postgres -p 5433
    <para>
     It is also possible to use certain replication methods, such as
     <productname>Slony</>, to create a standby server with the updated version of
-    <productname>PostgreSQL</>.  This is possible because Slony supports
+    <productname>&productname;</>.  This is possible because Slony supports
     replication between different major versions of
-    <productname>PostgreSQL</>.  The standby can be on the same computer or
+    <productname>&productname;</>.  The standby can be on the same computer or
     a different computer.  Once it has synced up with the master server
-    (running the older version of <productname>PostgreSQL</>), you can
+    (running the older version of <productname>&productname;</>), you can
     switch masters and make the standby the master and shut down the older
     database instance.  Such a switch-over results in only several seconds
     of downtime for an upgrade.
@@ -1953,7 +1967,7 @@ pg_dumpall -p 5432 | psql -d postgres -p 5433
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname> offers encryption at several
+   <productname>&productname;</productname> offers encryption at several
    levels, and provides flexibility in protecting data from disclosure
    due to database server theft, unscrupulous administrators, and
    insecure networks. Encryption might also be required to secure
@@ -2106,17 +2120,17 @@ pg_dumpall -p 5432 | psql -d postgres -p 5433
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</> has native support for using
+   <productname>&productname;</> has native support for using
    <acronym>SSL</> connections to encrypt client/server communications
    for increased security. This requires that
    <productname>OpenSSL</productname> is installed on both client and
-   server systems and that support in <productname>PostgreSQL</> is
+   server systems and that support in <productname>&productname;</> is
    enabled at build time (see <xref linkend="installation">).
   </para>
 
   <para>
    With <acronym>SSL</> support compiled in, the
-   <productname>PostgreSQL</> server can be started with
+   <productname>&productname;</> server can be started with
    <acronym>SSL</> enabled by setting the parameter
    <xref linkend="guc-ssl"> to <literal>on</> in
    <filename>postgresql.conf</>.  The server will listen for both normal
@@ -2128,7 +2142,7 @@ pg_dumpall -p 5432 | psql -d postgres -p 5433
   </para>
 
   <para>
-   <productname>PostgreSQL</productname> reads the system-wide
+   <productname>&productname;</productname> reads the system-wide
    <productname>OpenSSL</productname> configuration file. By default, this
    file is named <filename>openssl.cnf</filename> and is located in the
    directory reported by <literal>openssl version -d</>.
@@ -2172,7 +2186,7 @@ pg_dumpall -p 5432 | psql -d postgres -p 5433
    owned by root and have group read access (that is, <literal>0640</literal>
    permissions).  That setup is intended for installations where certificate
    and key files are managed by the operating system.  The user under which
-   the <productname>PostgreSQL</productname> server runs should then be made a
+   the <productname>&productname;</productname> server runs should then be made a
    member of the group that has access to those certificate and key files.
   </para>
 
@@ -2369,7 +2383,7 @@ chmod og-rwx server.key
   <para>
    It is possible to use <application>SSH</application> to encrypt the network
    connection between clients and a
-   <productname>PostgreSQL</productname> server. Done properly, this
+   <productname>&productname;</productname> server. Done properly, this
    provides an adequately secure network connection, even for non-SSL-capable
    clients.
   </para>
@@ -2377,7 +2391,7 @@ chmod og-rwx server.key
   <para>
    First make sure that an <application>SSH</application> server is
    running properly on the same machine as the
-   <productname>PostgreSQL</productname> server and that you can log in using
+   <productname>&productname;</productname> server and that you can log in using
    <command>ssh</command> as some user. Then you can establish a secure
    tunnel with a command like this from the client machine:
 <programlisting>
@@ -2404,7 +2418,7 @@ psql -h localhost -p 63333 postgres
    think the connection is SSL-encrypted, since in fact it is not
    encrypted between the
    <application>SSH</application> server and the
-   <productname>PostgreSQL</productname> server.  This should not pose any
+   <productname>&productname;</productname> server.  This should not pose any
    extra security risk as long as they are on the same machine.
   </para>
 
@@ -2468,7 +2482,7 @@ ssh -L 63333:db.foo.com:5432 joe@shell.foo.com
 <userinput>regsvr32 <replaceable>pgsql_library_directory</>/pgevent.dll</>
 </screen>
    This creates registry entries used by the event viewer, under the default
-   event source named <literal>PostgreSQL</literal>.
+   event source named <literal>&productname;</literal>.
   </para>
 
   <para>

@@ -4,7 +4,7 @@
   <title>Date/Time Support</title>
 
   <para>
-   <productname>PostgreSQL</productname> uses an internal heuristic
+   <productname>&productname;</productname> uses an internal heuristic
    parser for all date/time input support. Dates and times are input as
    strings, and are broken up into distinct fields with a preliminary
    determination of what kind of information can be in the
@@ -347,7 +347,7 @@
 
    <para>
     Since timezone abbreviations are not well standardized,
-    <productname>PostgreSQL</productname> provides a means to customize
+    <productname>&productname;</productname> provides a means to customize
     the set of abbreviations accepted by the server.  The
     <xref linkend="guc-timezone-abbreviations"> run-time parameter
     determines the active set of abbreviations.  While this parameter
@@ -459,7 +459,7 @@
    <caution>
     <para>
      Time zone abbreviations defined in the configuration file override
-     non-timezone meanings built into <productname>PostgreSQL</productname>.
+     non-timezone meanings built into <productname>&productname;</productname>.
      For example, the <filename>Australia</> configuration file defines
      <literal>SAT</> (for South Australian Standard Time).  When this
      file is active, <literal>SAT</> will not be recognized as an abbreviation
@@ -492,7 +492,7 @@
    <quote>datetime literal</quote>, the <quote>datetime
    values</quote> are constrained by the natural rules for dates and
    times according to the Gregorian calendar</quote>.
-   <productname>PostgreSQL</> follows the SQL
+   <productname>&productname;</> follows the SQL
    standard's lead by counting dates exclusively in the Gregorian
    calendar, even for years before that calendar was in use.
    This rule is known as the <firstterm>proleptic Gregorian calendar</>.
@@ -569,7 +569,7 @@ $ <userinput>cal 9 1752</userinput>
    dominions, not other places.
    Since it would be difficult and confusing to try to track the actual
    calendars that were in use in various places at various times,
-   <productname>PostgreSQL</> does not try, but rather follows the Gregorian
+   <productname>&productname;</> does not try, but rather follows the Gregorian
    calendar rules for all dates, even though this method is not historically
    accurate.
   </para>
@@ -607,10 +607,10 @@ $ <userinput>cal 9 1752</userinput>
   </para>
 
   <para>
-   Although <productname>PostgreSQL</> supports Julian Date notation for
+   Although <productname>&productname;</> supports Julian Date notation for
    input and output of dates (and also uses Julian dates for some internal
    datetime calculations), it does not observe the nicety of having dates
-   run from noon to noon.  <productname>PostgreSQL</> treats a Julian Date
+   run from noon to noon.  <productname>&productname;</> treats a Julian Date
    as running from midnight to midnight.
   </para>
 

@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_user.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATEUSER">
@@ -63,7 +63,7 @@ CREATE USER <replaceable class="PARAMETER">name</replaceable> [ [ WITH ] <replac
 
   <para>
    The <command>CREATE USER</command> statement is a
-   <productname>PostgreSQL</productname> extension.  The SQL standard
+   <productname>&productname;</productname> extension.  The SQL standard
    leaves the definition of users to the implementation.
   </para>
  </refsect1>

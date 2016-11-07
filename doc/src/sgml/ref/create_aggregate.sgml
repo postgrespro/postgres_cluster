@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_aggregate.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATEAGGREGATE">
@@ -123,7 +123,7 @@ CREATE AGGREGATE <replaceable class="PARAMETER">name</replaceable> (
   </para>
 
   <para>
-   <productname>PostgreSQL</productname> creates a temporary variable
+   <productname>&productname;</productname> creates a temporary variable
    of data type <replaceable class="PARAMETER">stype</replaceable>
    to hold the current internal state of the aggregate.  At each input row,
    the aggregate argument value(s) are calculated and
@@ -666,10 +666,10 @@ SELECT col FROM tab ORDER BY col USING sortop LIMIT 1;
    <para>
     If no moving-aggregate implementation is supplied,
     the aggregate can still be used with moving frames,
-    but <productname>PostgreSQL</productname> will recompute the whole
+    but <productname>&productname;</productname> will recompute the whole
     aggregation whenever the start of the frame moves.
     Note that whether or not the aggregate supports moving-aggregate
-    mode, <productname>PostgreSQL</productname> can handle a moving frame
+    mode, <productname>&productname;</productname> can handle a moving frame
     end without recalculation; this is done by continuing to add new values
     to the aggregate's state.  It is assumed that the final function does
     not damage the aggregate's state value, so that the aggregation can be
@@ -722,7 +722,7 @@ SELECT col FROM tab ORDER BY col USING sortop LIMIT 1;
 
   <para>
    <command>CREATE AGGREGATE</command> is a
-   <productname>PostgreSQL</productname> language extension.  The SQL
+   <productname>&productname;</productname> language extension.  The SQL
    standard does not provide for user-defined aggregate functions.
   </para>
  </refsect1>

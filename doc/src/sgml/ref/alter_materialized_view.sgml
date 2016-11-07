@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_materialized_view.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERMATERIALIZEDVIEW">
@@ -170,7 +170,7 @@ ALTER MATERIALIZED VIEW foo RENAME TO bar;
 
   <para>
    <command>ALTER MATERIALIZED VIEW</command> is a
-   <productname>PostgreSQL</productname> extension.
+   <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

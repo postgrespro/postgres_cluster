@@ -58,7 +58,7 @@ CHECKPOINT
 
   <para>
    The <command>CHECKPOINT</command> command is a
-   <productname>PostgreSQL</productname> language extension.
+   <productname>&productname;</productname> language extension.
   </para>
  </refsect1>
 </refentry>

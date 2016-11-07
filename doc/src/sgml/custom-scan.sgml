@@ -9,7 +9,7 @@
  </indexterm>
 
  <para>
-  <productname>PostgreSQL</> supports a set of experimental facilities which
+  <productname>&productname;</> supports a set of experimental facilities which
   are intended to allow extension modules to add new scan types to the system.
   Unlike a <link linkend="fdwhandler">foreign data wrapper</>, which is only
   responsible for knowing how to scan its own foreign tables, a custom scan

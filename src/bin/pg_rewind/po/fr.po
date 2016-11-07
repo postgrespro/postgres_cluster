@@ -7,15 +7,15 @@ msgid ""
 msgstr ""
 "Project-Id-Version: pg_rewind (PostgreSQL) 9.6\n"
 "Report-Msgid-Bugs-To: pgsql-bugs@postgresql.org\n"
-"POT-Creation-Date: 2016-05-08 21:14+0000\n"
-"PO-Revision-Date: 2016-05-09 10:30+0200\n"
+"POT-Creation-Date: 2016-09-23 20:14+0000\n"
+"PO-Revision-Date: 2016-09-24 18:08+0200\n"
 "Last-Translator: Guillaume Lelarge <guillaume@lelarge.info>\n"
 "Language-Team: \n"
 "Language: fr\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"X-Generator: Poedit 1.8.7.1\n"
+"X-Generator: Poedit 1.8.7\n"
 
 #: ../../common/fe_memutils.c:35 ../../common/fe_memutils.c:75
 #: ../../common/fe_memutils.c:98 parsexlog.c:74 parsexlog.c:127 parsexlog.c:179
@@ -612,8 +612,8 @@ msgstr "le répertoire de données source doit être arrêté proprement\n"
 
 #: pg_rewind.c:462
 #, c-format
-msgid "Invalid control file"
-msgstr "Fichier de contrôle invalide."
+msgid "invalid control file"
+msgstr "Fichier de contrôle invalide"
 
 #: pg_rewind.c:473
 #, c-format
@@ -631,30 +631,34 @@ msgstr "Historique de la ligne de temps cible :\n"
 msgid "%d: %X/%X - %X/%X\n"
 msgstr "%d : %X/%X - %X/%X\n"
 
-#: pg_rewind.c:547
+#: pg_rewind.c:548
 #, c-format
 msgid "could not find common ancestor of the source and target cluster's timelines\n"
 msgstr "n'a pas pu trouver l'ancêtre commun des lignes de temps des instances source et cible\n"
 
-#: pg_rewind.c:588
+#: pg_rewind.c:589
 #, c-format
 msgid "backup label buffer too small\n"
 msgstr "tampon du label de sauvegarde trop petit\n"
 
-#: pg_rewind.c:611
+#: pg_rewind.c:612
 #, c-format
 msgid "unexpected control file CRC\n"
 msgstr "CRC inattendu pour le fichier de contrôle\n"
 
-#: pg_rewind.c:621
+#: pg_rewind.c:622
 #, c-format
 msgid "unexpected control file size %d, expected %d\n"
 msgstr "taille %d inattendue du fichier de contrôle, %d attendu\n"
 
-#: pg_rewind.c:688
-#, c-format
+#: pg_rewind.c:689
+#, fuzzy, c-format
+#| msgid ""
+#| "The program \"initdb\" is needed by %s but was \n"
+#| "not found in the same directory as \"%s\".\n"
+#| "Check your installation.\n"
 msgid ""
-"The program \"initdb\" is needed by %s but was \n"
+"The program \"initdb\" is needed by %s but was\n"
 "not found in the same directory as \"%s\".\n"
 "Check your installation.\n"
 msgstr ""
@@ -662,7 +666,7 @@ msgstr ""
 "dans le même répertoire que « %s ».\n"
 "Vérifiez votre installation.\n"
 
-#: pg_rewind.c:692
+#: pg_rewind.c:693
 #, c-format
 msgid ""
 "The program \"initdb\" was found by \"%s\"\n"
@@ -673,7 +677,7 @@ msgstr ""
 "que %s.\n"
 "Vérifiez votre installation.\n"
 
-#: pg_rewind.c:710
+#: pg_rewind.c:711
 #, c-format
 msgid "sync of target directory failed\n"
 msgstr "échec de la synchronisation du répertoire cible\n"
@@ -795,57 +799,57 @@ msgstr "pageaddr %X/%X inattendue dans le journal de transactions %s, segment %u
 msgid "out-of-sequence timeline ID %u (after %u) in log segment %s, offset %u"
 msgstr "identifiant timeline %u hors de la séquence (après %u) dans le segment %s, décalage %u"
 
-#: xlogreader.c:1044
+#: xlogreader.c:1081
 #, c-format
 msgid "out-of-order block_id %u at %X/%X"
 msgstr "block_id %u désordonné à %X/%X"
 
-#: xlogreader.c:1066
+#: xlogreader.c:1103
 #, c-format
 msgid "BKPBLOCK_HAS_DATA set, but no data included at %X/%X"
 msgstr "BKPBLOCK_HAS_DATA configuré, mais aucune donnée inclus à %X/%X"
 
-#: xlogreader.c:1073
+#: xlogreader.c:1110
 #, c-format
 msgid "BKPBLOCK_HAS_DATA not set, but data length is %u at %X/%X"
 msgstr "BKPBLOCK_HAS_DATA non configuré, mais la longueur des données est %u à %X/%X"
 
-#: xlogreader.c:1106
+#: xlogreader.c:1143
 #, c-format
 msgid "BKPIMAGE_HAS_HOLE set, but hole offset %u length %u block image length %u at %X/%X"
 msgstr "BKPIMAGE_HAS_HOLE activé, mais décalage trou %u longueur %u longueur image bloc %u à %X/%X"
 
-#: xlogreader.c:1122
+#: xlogreader.c:1159
 #, c-format
 msgid "BKPIMAGE_HAS_HOLE not set, but hole offset %u length %u at %X/%X"
 msgstr "BKPIMAGE_HAS_HOLE désactivé, mais décalage trou %u longueur %u à %X/%X"
 
-#: xlogreader.c:1137
+#: xlogreader.c:1174
 #, c-format
 msgid "BKPIMAGE_IS_COMPRESSED set, but block image length %u at %X/%X"
 msgstr "BKPIMAGE_IS_COMPRESSED configuré, mais la longueur de l'image du bloc est %u à %X/%X"
 
-#: xlogreader.c:1152
+#: xlogreader.c:1189
 #, c-format
 msgid "neither BKPIMAGE_HAS_HOLE nor BKPIMAGE_IS_COMPRESSED set, but block image length is %u at %X/%X"
 msgstr "ni BKPIMAGE_HAS_HOLE ni BKPIMAGE_IS_COMPRESSED configuré, mais la longueur de l'image du bloc est %u à %X/%X"
 
-#: xlogreader.c:1168
+#: xlogreader.c:1205
 #, c-format
 msgid "BKPBLOCK_SAME_REL set but no previous rel at %X/%X"
 msgstr "BKPBLOCK_SAME_REL configuré, mais pas de relation précédente à %X/%X"
 
-#: xlogreader.c:1180
+#: xlogreader.c:1217
 #, c-format
 msgid "invalid block_id %u at %X/%X"
 msgstr "block_id %u invalide à %X/%X"
 
-#: xlogreader.c:1245
+#: xlogreader.c:1282
 #, c-format
 msgid "record with invalid length at %X/%X"
 msgstr "enregistrement de longueur invalide à %X/%X"
 
-#: xlogreader.c:1334
+#: xlogreader.c:1371
 #, c-format
 msgid "invalid compressed image at %X/%X, block %d"
 msgstr "image compressée invalide à %X/%X, bloc %d"

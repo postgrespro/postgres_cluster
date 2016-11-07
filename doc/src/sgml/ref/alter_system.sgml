@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_system.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERSYSTEM">
@@ -128,7 +128,7 @@ ALTER SYSTEM RESET wal_level;
 
   <para>
    The <command>ALTER SYSTEM</command> statement is a
-   <productname>PostgreSQL</productname> extension.
+   <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

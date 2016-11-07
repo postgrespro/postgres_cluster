@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/createdb.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="APP-CREATEDB">
@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>createdb</refname>
-  <refpurpose>create a new <productname>PostgreSQL</productname> database</refpurpose>
+  <refpurpose>create a new <productname>&productname;</productname> database</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -35,7 +35,7 @@ PostgreSQL documentation
    Description
   </title>
   <para>
-   <application>createdb</application> creates a new <productname>PostgreSQL</productname>
+   <application>createdb</application> creates a new <productname>&productname;</productname>
    database.
   </para>
 
@@ -68,7 +68,7 @@ PostgreSQL documentation
       <listitem>
        <para>
         Specifies the name of the database to be created.  The name must be
-        unique among all <productname>PostgreSQL</productname> databases in this cluster.
+        unique among all <productname>&productname;</productname> databases in this cluster.
         The default is to create a database with the same name as the
         current system user.
        </para>
@@ -114,7 +114,7 @@ PostgreSQL documentation
        <para>
         Specifies the character encoding scheme to be used in this
         database. The character sets supported by the
-        <productname>PostgreSQL</productname> server are described in
+        <productname>&productname;</productname> server are described in
         <xref linkend="multibyte-charset-supported">.
        </para>
       </listitem>
@@ -325,7 +325,7 @@ PostgreSQL documentation
   </variablelist>
 
   <para>
-   This utility, like most other <productname>PostgreSQL</> utilities,
+   This utility, like most other <productname>&productname;</> utilities,
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
   </para>

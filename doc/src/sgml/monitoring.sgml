@@ -22,12 +22,12 @@
   <para>
    Several tools are available for monitoring database activity and
    analyzing performance.  Most of this chapter is devoted to describing
-   <productname>PostgreSQL</productname>'s statistics collector,
+   <productname>&productname;</productname>'s statistics collector,
    but one should not neglect regular Unix monitoring programs such as
    <command>ps</>, <command>top</>, <command>iostat</>, and <command>vmstat</>.
    Also, once one has identified a
    poorly-performing query, further investigation might be needed using
-   <productname>PostgreSQL</productname>'s <xref linkend="sql-explain"> command.
+   <productname>&productname;</productname>'s <xref linkend="sql-explain"> command.
    <xref linkend="using-explain"> discusses <command>EXPLAIN</>
    and other methods for understanding the behavior of an individual
    query.
@@ -42,7 +42,7 @@
   </indexterm>
 
   <para>
-   On most Unix platforms, <productname>PostgreSQL</productname> modifies its
+   On most Unix platforms, <productname>&productname;</productname> modifies its
    command title as reported by <command>ps</>, so that individual server
    processes can readily be identified.  A sample display is
 
@@ -137,7 +137,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname>'s <firstterm>statistics collector</>
+   <productname>&productname;</productname>'s <firstterm>statistics collector</>
    is a subsystem that supports collection and reporting of information about
    server activity.  Presently, the collector can count accesses to tables
    and indexes in both disk-block and individual-row terms.  It also tracks
@@ -147,7 +147,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
   </para>
 
   <para>
-   <productname>PostgreSQL</productname> also supports reporting dynamic
+   <productname>&productname;</productname> also supports reporting dynamic
    information about exactly what is going on in the system right now, such as
    the exact command currently being executed by other server processes, and
    which other connections exist in the system.  This facility is independent
@@ -197,7 +197,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
 
   <para>
    The statistics collector transmits the collected information to other
-   <productname>PostgreSQL</productname> processes through temporary files.
+   <productname>&productname;</productname> processes through temporary files.
    These files are stored in the directory named by the
    <xref linkend="guc-stats-temp-directory"> parameter,
    <filename>pg_stat_tmp</filename> by default.
@@ -528,13 +528,13 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
    of actual disk reads is much smaller than the number of buffer
    hits, then the cache is satisfying most read requests without
    invoking a kernel call. However, these statistics do not give the
-   entire story: due to the way in which <productname>PostgreSQL</>
+   entire story: due to the way in which <productname>&productname;</>
    handles disk I/O, data that is not in the
-   <productname>PostgreSQL</> buffer cache might still reside in the
+   <productname>&productname;</> buffer cache might still reside in the
    kernel's I/O cache, and might therefore still be fetched without
    requiring a physical read. Users interested in obtaining more
-   detailed information on <productname>PostgreSQL</> I/O behavior are
-   advised to use the <productname>PostgreSQL</> statistics collector
+   detailed information on <productname>&productname;</> I/O behavior are
+   advised to use the <productname>&productname;</> statistics collector
    in combination with operating system utilities that allow insight
    into the kernel's handling of I/O.
   </para>
@@ -1590,7 +1590,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
      <entry><type>bigint</></entry>
      <entry>Number of times disk blocks were found already in the buffer
       cache, so that a read was not necessary (this only includes hits in the
-      PostgreSQL buffer cache, not the operating system's file system cache)
+      &productname; buffer cache, not the operating system's file system cache)
      </entry>
     </row>
     <row>
@@ -2484,7 +2484,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
       View all the locks currently outstanding, all the locks on
       relations in a particular database, all the locks on a
       particular relation, or all the locks held by a particular
-      <productname>PostgreSQL</productname> session.
+      <productname>&productname;</productname> session.
      </para>
     </listitem>
 
@@ -2508,7 +2508,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
    Details of the <structname>pg_locks</structname> view appear in
    <xref linkend="view-pg-locks">.
    For more information on locking and managing concurrency with
-   <productname>PostgreSQL</productname>, refer to <xref linkend="mvcc">.
+   <productname>&productname;</productname>, refer to <xref linkend="mvcc">.
   </para>
  </sect1>
 
@@ -2516,7 +2516,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
   <title>Progress Reporting</title>
 
   <para>
-   <productname>PostgreSQL</> has the ability to report the progress of
+   <productname>&productname;</> has the ability to report the progress of
    certain commands during command execution.  Currently, the only command
    which supports progress reporting is <command>VACUUM</>.  This may be
    expanded in the future.
@@ -2721,7 +2721,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
  </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname> provides facilities to support
+   <productname>&productname;</productname> provides facilities to support
    dynamic tracing of the database server. This allows an external
    utility to be called at specific points in the code and thereby trace
    execution.
@@ -2731,7 +2731,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
    A number of probes or trace points are already inserted into the source
    code. These probes are intended to be used by database developers and
    administrators. By default the probes are not compiled into
-   <productname>PostgreSQL</productname>; the user needs to explicitly tell
+   <productname>&productname;</productname>; the user needs to explicitly tell
    the configure script to make the probes available.
   </para>
 
@@ -2752,7 +2752,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
   <para>
    By default, probes are not available, so you will need to
    explicitly tell the configure script to make the probes available
-   in <productname>PostgreSQL</productname>. To include DTrace support
+   in <productname>&productname;</productname>. To include DTrace support
    specify <option>--enable-dtrace</> to configure.  See <xref
    linkend="install-procedure"> for further information.
   </para>
@@ -2766,7 +2766,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
    as shown in <xref linkend="dtrace-probe-point-table">;
    <xref linkend="typedefs-table">
    shows the types used in the probes.  More probes can certainly be
-   added to enhance <productname>PostgreSQL</>'s observability.
+   added to enhance <productname>&productname;</>'s observability.
   </para>
 
  <table id="dtrace-probe-point-table">
@@ -3429,7 +3429,7 @@ TRACE_POSTGRESQL_TRANSACTION_START(vxid.localTransactionId);
 
     <listitem>
      <para>
-      On most platforms, if <productname>PostgreSQL</productname> is
+      On most platforms, if <productname>&productname;</productname> is
       built with <option>--enable-dtrace</>, the arguments to a trace
       macro will be evaluated whenever control passes through the
       macro, <emphasis>even if no tracing is being done</>.  This is

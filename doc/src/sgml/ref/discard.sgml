@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/discard.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DISCARD">
@@ -112,7 +112,7 @@ DISCARD TEMP;
   <title>Compatibility</title>
 
   <para>
-   <command>DISCARD</command> is a <productname>PostgreSQL</productname> extension.
+   <command>DISCARD</command> is a <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 </refentry>

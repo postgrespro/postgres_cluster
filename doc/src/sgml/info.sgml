@@ -5,7 +5,7 @@
 
  <para>
   Besides the documentation, that is, this book, there are other
-  resources about <productname>PostgreSQL</productname>:
+  resources about <productname>&productname;</productname>:
 
   <variablelist>
 
@@ -27,11 +27,11 @@
     <term>Web Site</term>
     <listitem>
      <para>
-      The <productname>PostgreSQL</productname>
+      The <productname>&productname;</productname>
       <ulink url="http://www.postgresql.org">web site</ulink>
       carries details on the latest release and other
       information to make your work or play with
-      <productname>PostgreSQL</productname> more productive.
+      <productname>&productname;</productname> more productive.
      </para>
     </listitem>
    </varlistentry>
@@ -42,7 +42,7 @@
      <para>
       The mailing lists are a good place to have your questions
       answered, to share experiences with other users, and to contact
-      the developers.  Consult the <productname>PostgreSQL</> web site
+      the developers.  Consult the <productname>&productname;</> web site
       for details.
      </para>
     </listitem>
@@ -52,9 +52,9 @@
     <term>Yourself!</term>
     <listitem>
      <para>
-      <productname>PostgreSQL</productname> is an open-source project.
+      <productname>&productname;</productname> is an open-source project.
       As such, it depends on the user community for ongoing support.
-      As you begin to use <productname>PostgreSQL</productname>, you
+      As you begin to use <productname>&productname;</productname>, you
       will rely on others for help, either through the documentation
       or through the mailing lists.  Consider contributing your
       knowledge back. Read the mailing lists and answer questions.  If

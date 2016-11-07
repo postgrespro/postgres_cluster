@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/drop_event_trigger.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-DROPEVENTTRIGGER">

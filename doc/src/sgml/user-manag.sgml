@@ -4,7 +4,7 @@
  <title>Database Roles</title>
 
  <para>
-  <productname>PostgreSQL</productname> manages database access permissions
+  <productname>&productname;</productname> manages database access permissions
   using the concept of <firstterm>roles</>.  A role can be thought of as
   either a database user, or a group of database users, depending on how
   the role is set up.  Roles can own database objects (for example, tables
@@ -286,7 +286,7 @@ ALTER ROLE myname SET enable_indexscan TO off;
   <para>
    It is frequently convenient to group users together to ease
    management of privileges: that way, privileges can be granted to, or
-   revoked from, a group as a whole.  In <productname>PostgreSQL</productname>
+   revoked from, a group as a whole.  In <productname>&productname;</productname>
    this is done by creating a role that represents the group, and then
    granting <firstterm>membership</> in the group role to individual user
    roles.
@@ -375,10 +375,10 @@ RESET ROLE;
    <para>
     In the SQL standard, there is a clear distinction between users and roles,
     and users do not automatically inherit privileges while roles do.  This
-    behavior can be obtained in <productname>PostgreSQL</productname> by giving
+    behavior can be obtained in <productname>&productname;</productname> by giving
     roles being used as SQL roles the <literal>INHERIT</> attribute, while
     giving roles being used as SQL users the <literal>NOINHERIT</> attribute.
-    However, <productname>PostgreSQL</productname> defaults to giving all roles
+    However, <productname>&productname;</productname> defaults to giving all roles
     the <literal>INHERIT</> attribute, for backward compatibility with pre-8.1
     releases in which users always had use of permissions granted to groups
     they were members of.
@@ -491,7 +491,7 @@ DROP ROLE doomed_role;
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname> provides a set of default roles
+   <productname>&productname;</productname> provides a set of default roles
    which provide access to certain, commonly needed, privileged capabilities
    and information.  Administrators can GRANT these roles to users and/or
    other roles in their environment, providing those users with access to
@@ -554,7 +554,7 @@ GRANT pg_signal_backend TO admin_user;
    Hence, among many other things, such functions can circumvent any
    system access controls.  Function languages that allow such access
    are considered <quote>untrusted</>, and
-   <productname>PostgreSQL</productname> allows only superusers to
+   <productname>&productname;</productname> allows only superusers to
    create functions written in those languages.
   </para>
  </sect1>

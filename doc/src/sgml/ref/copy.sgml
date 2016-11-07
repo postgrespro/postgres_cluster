@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/copy.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 
@@ -52,7 +52,7 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
 
   <para>
    <command>COPY</command> moves data between
-   <productname>PostgreSQL</productname> tables and standard file-system
+   <productname>&productname;</productname> tables and standard file-system
    files. <command>COPY TO</command> copies the contents of a table
    <emphasis>to</> a file, while <command>COPY FROM</command> copies
    data <emphasis>from</> a file to a table (appending the data to
@@ -70,15 +70,15 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
 
   <para>
    <command>COPY</command> with a file name instructs the
-   <productname>PostgreSQL</productname> server to directly read from
+   <productname>&productname;</productname> server to directly read from
    or write to a file. The file must be accessible by the
-   <productname>PostgreSQL</productname> user (the user ID the server
+   <productname>&productname;</productname> user (the user ID the server
    runs as) and the name must be specified from the viewpoint of the
    server. When <literal>PROGRAM</literal> is specified, the server
    executes the given command and reads from the standard output of the
    program, or writes to the standard input of the program. The command
    must be specified from the viewpoint of the server, and be executable
-   by the <productname>PostgreSQL</productname> user.  When
+   by the <productname>&productname;</productname> user.  When
    <literal>STDIN</literal> or <literal>STDOUT</literal> is
    specified, data is transmitted via the connection between the
    client and the server.
@@ -423,11 +423,11 @@ COPY <replaceable class="parameter">count</replaceable>
     directly by the server, not by the client application. Therefore,
     they must reside on or be accessible to the database server machine,
     not the client. They must be accessible to and readable or writable
-    by the <productname>PostgreSQL</productname> user (the user ID the
+    by the <productname>&productname;</productname> user (the user ID the
     server runs as), not the client. Similarly,
     the command specified with <literal>PROGRAM</literal> is executed directly
     by the server, not by the client application, must be executable by the
-    <productname>PostgreSQL</productname> user.
+    <productname>&productname;</productname> user.
     <command>COPY</command> naming a file or command is only allowed to
     database superusers, since it allows reading or writing any file that the
     server has privileges to access.
@@ -467,7 +467,7 @@ COPY <replaceable class="parameter">count</replaceable>
    <para>
     <command>COPY</command> input and output is affected by
     <varname>DateStyle</varname>. To ensure portability to other
-    <productname>PostgreSQL</productname> installations that might use
+    <productname>&productname;</productname> installations that might use
     non-default <varname>DateStyle</varname> settings,
     <varname>DateStyle</varname> should be set to <literal>ISO</> before
     using <command>COPY TO</>.  It is also a good idea to avoid dumping
@@ -650,7 +650,7 @@ COPY <replaceable class="parameter">count</replaceable>
     This format option is used for importing and exporting the Comma
     Separated Value (<literal>CSV</>) file format used by many other
     programs, such as spreadsheets. Instead of the escaping rules used by
-    <productname>PostgreSQL</productname>'s standard text format, it
+    <productname>&productname;</productname>'s standard text format, it
     produces and recognizes the common CSV escaping mechanism.
    </para>
 
@@ -669,7 +669,7 @@ COPY <replaceable class="parameter">count</replaceable>
    <para>
     The <literal>CSV</> format has no standard way to distinguish a
     <literal>NULL</> value from an empty string.
-    <productname>PostgreSQL</>'s <command>COPY</> handles this by quoting.
+    <productname>&productname;</>'s <command>COPY</> handles this by quoting.
     A <literal>NULL</> is output as the <literal>NULL</> parameter string
     and is not quoted, while a non-<literal>NULL</> value matching the
     <literal>NULL</> parameter string is quoted.  For example, with the
@@ -703,7 +703,7 @@ COPY <replaceable class="parameter">count</replaceable>
      lines with white space out to some fixed width. If such a situation
      arises you might need to preprocess the <literal>CSV</> file to remove
      the trailing white space, before importing the data into
-     <productname>PostgreSQL</>.
+     <productname>&productname;</>.
     </para>
    </note>
 
@@ -736,7 +736,7 @@ COPY <replaceable class="parameter">count</replaceable>
     stored/read as binary format rather than as text.  It is
     somewhat faster than the text and <literal>CSV</> formats,
     but a binary-format file is less portable across machine architectures and
-    <productname>PostgreSQL</productname> versions.
+    <productname>&productname;</productname> versions.
     Also, the binary format is very data type specific; for example
     it will not work to output binary data from a <type>smallint</> column
     and read it into an <type>integer</> column, even though that would work
@@ -857,7 +857,7 @@ to be specified.
 
     <para>
 To determine the appropriate binary format for the actual tuple data you
-should consult the <productname>PostgreSQL</productname> source, in
+should consult the <productname>&productname;</productname> source, in
 particular the <function>*send</> and <function>*recv</> functions for
 each column's data type (typically these functions are found in the
 <filename>src/backend/utils/adt/</filename> directory of the source

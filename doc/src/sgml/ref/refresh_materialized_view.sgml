@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/refresh_materialized_view.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-REFRESHMATERIALIZEDVIEW">
@@ -127,7 +127,7 @@ REFRESH MATERIALIZED VIEW annual_statistics_basis WITH NO DATA;
 
   <para>
    <command>REFRESH MATERIALIZED VIEW</command> is a
-   <productname>PostgreSQL</productname> extension.
+   <productname>&productname;</productname> extension.
   </para>
  </refsect1>
 

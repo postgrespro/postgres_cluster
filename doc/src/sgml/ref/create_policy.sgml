@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/create_policy.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-CREATEPOLICY">
@@ -424,7 +424,7 @@ CREATE POLICY <replaceable class="parameter">name</replaceable> ON <replaceable 
   <title>Compatibility</title>
 
   <para>
-   <command>CREATE POLICY</command> is a <productname>PostgreSQL</productname>
+   <command>CREATE POLICY</command> is a <productname>&productname;</productname>
    extension.
   </para>
  </refsect1>

@@ -10,7 +10,7 @@
  <para>
   The <filename>sslinfo</> module provides information about the SSL
   certificate that the current client provided when connecting to
-  <productname>PostgreSQL</>.  The module is useless (most functions
+  <productname>&productname;</>.  The module is useless (most functions
   will return NULL) if the current connection does not use SSL.
  </para>
 

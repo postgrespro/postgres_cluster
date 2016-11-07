@@ -13,7 +13,7 @@
 
  <refnamediv>
   <refname>pg_archivecleanup</refname>
-  <refpurpose>clean up <productname>PostgreSQL</productname> WAL archive files</refpurpose>
+  <refpurpose>clean up <productname>&productname;</productname> WAL archive files</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>

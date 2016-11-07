@@ -254,8 +254,8 @@ protocol to make nodes agree on a serializable transactional order.
     </para>
 
     <para>
-     <productname>PostgreSQL</> does not offer this type of replication,
-     though <productname>PostgreSQL</> two-phase commit (<xref
+     <productname>&productname;</> does not offer this type of replication,
+     though <productname>&productname;</> two-phase commit (<xref
      linkend="sql-prepare-transaction"> and <xref
      linkend="sql-commit-prepared">)
      can be used to implement this in application code or middleware.
@@ -268,8 +268,8 @@ protocol to make nodes agree on a serializable transactional order.
    <listitem>
 
     <para>
-     Because <productname>PostgreSQL</> is open source and easily
-     extended, a number of companies have taken <productname>PostgreSQL</>
+     Because <productname>&productname;</> is open source and easily
+     extended, a number of companies have taken <productname>&productname;</>
      and created commercial closed-source solutions with unique
      failover, replication, and load balancing capabilities.
     </para>
@@ -486,7 +486,7 @@ protocol to make nodes agree on a serializable transactional order.
 
   <para>
    Directly moving WAL records from one database server to another
-   is typically described as log shipping. <productname>PostgreSQL</>
+   is typically described as log shipping. <productname>&productname;</>
    implements file-based log shipping by transferring WAL records
    one file (WAL segment) at a time. WAL files (16MB) can be
    shipped easily and cheaply over any distance, whether it be to an
@@ -570,8 +570,8 @@ protocol to make nodes agree on a serializable transactional order.
 
    <para>
     In general, log shipping between servers running different major
-    <productname>PostgreSQL</> release
-    levels is not possible. It is the policy of the PostgreSQL Global
+    <productname>&productname;</> release
+    levels is not possible. It is the policy of the &productname; Global
     Development Group not to make changes to disk formats during minor release
     upgrades, so it is likely that running different minor release levels
     on primary and standby servers will work successfully. However, no
@@ -1017,7 +1017,7 @@ primary_slot_name = 'node_a_slot'
    </indexterm>
 
    <para>
-    <productname>PostgreSQL</> streaming replication is asynchronous by
+    <productname>&productname;</> streaming replication is asynchronous by
     default. If the primary server
     crashes then some transactions that were committed may not have been
     replicated to the standby server, causing data loss. The amount
@@ -1105,7 +1105,7 @@ primary_slot_name = 'node_a_slot'
     for the data to be flushed to disk on the standby.  This
     setting provides a weaker guarantee of durability than <literal>on</>
     does: the standby could lose the data in the event of an operating system
-    crash, though not a <productname>PostgreSQL</> crash.
+    crash, though not a <productname>&productname;</> crash.
     However, it's a useful setting in practice
     because it can decrease the response time for the transaction.
     Data loss could only occur if both the primary and the standby crash and
@@ -1176,7 +1176,7 @@ synchronous_standby_names = '2 (s1, s2, s3)'
    </para>
 
    <para>
-    <productname>PostgreSQL</> allows the application developer
+    <productname>&productname;</> allows the application developer
     to specify the durability level required via replication. This can be
     specified for the system overall, though it can also be specified for
     specific users or connections, or even individual transactions.
@@ -1351,7 +1351,7 @@ synchronous_standby_names = '2 (s1, s2, s3)'
    </para>
 
    <para>
-    <productname>PostgreSQL</productname> does not provide the system
+    <productname>&productname;</productname> does not provide the system
     software required to identify a failure on the primary and notify
     the standby database server.  Many such tools exist and are well
     integrated with the operating system facilities required for
@@ -1499,7 +1499,7 @@ if (!triggered)
       <para>
        Set up primary and standby systems as nearly identical as
        possible, including two identical copies of
-       <productname>PostgreSQL</> at the same release level.
+       <productname>&productname;</> at the same release level.
       </para>
      </listitem>
      <listitem>
@@ -1950,7 +1950,7 @@ if (!triggered)
 
    <para>
     The most common reason for conflict between standby queries and WAL replay
-    is <quote>early cleanup</>.  Normally, <productname>PostgreSQL</> allows
+    is <quote>early cleanup</>.  Normally, <productname>&productname;</> allows
     cleanup of old row versions when there are no transactions that need to
     see them to ensure correct visibility of data according to MVCC rules.
     However, this rule can only be applied for transactions executing on the

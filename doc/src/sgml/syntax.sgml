@@ -18,7 +18,7 @@
   We also advise users who are already familiar with SQL to read this
   chapter carefully because it contains several rules and concepts that
   are implemented inconsistently among SQL databases or that are
-  specific to <productname>PostgreSQL</productname>.
+  specific to <productname>&productname;</productname>.
  </para>
 
  <sect1 id="sql-syntax-lexical">
@@ -255,10 +255,10 @@ U&amp;"d!0061t!+000061" UESCAPE '!'
     unquoted names are always folded to lower case.  For example, the
     identifiers <literal>FOO</literal>, <literal>foo</literal>, and
     <literal>"foo"</literal> are considered the same by
-    <productname>PostgreSQL</productname>, but
+    <productname>&productname;</productname>, but
     <literal>"Foo"</literal> and <literal>"FOO"</literal> are
     different from these three and each other.  (The folding of
-    unquoted names to lower case in <productname>PostgreSQL</> is
+    unquoted names to lower case in <productname>&productname;</> is
     incompatible with the SQL standard, which says that unquoted names
     should be folded to upper case.  Thus, <literal>foo</literal>
     should be equivalent to <literal>"FOO"</literal> not
@@ -278,7 +278,7 @@ U&amp;"d!0061t!+000061" UESCAPE '!'
 
    <para>
     There are three kinds of <firstterm>implicitly-typed
-    constants</firstterm> in <productname>PostgreSQL</productname>:
+    constants</firstterm> in <productname>&productname;</productname>:
     strings, bit strings, and numbers.
     Constants can also be specified with explicit types, which can
     enable more accurate representation and more efficient handling by
@@ -327,7 +327,7 @@ SELECT 'foobar';
 SELECT 'foo'      'bar';
 </programlisting>
      is not valid syntax.  (This slightly bizarre behavior is specified
-     by <acronym>SQL</acronym>; <productname>PostgreSQL</productname> is
+     by <acronym>SQL</acronym>; <productname>&productname;</productname> is
      following the standard.)
     </para>
    </sect3>
@@ -343,7 +343,7 @@ SELECT 'foo'      'bar';
      </indexterm>
 
     <para>
-     <productname>PostgreSQL</productname> also accepts <quote>escape</>
+     <productname>&productname;</productname> also accepts <quote>escape</>
      string constants, which are an extension to the SQL standard.
      An escape string constant is specified by writing the letter
      <literal>E</literal> (upper or lower case) just before the opening single
@@ -452,7 +452,7 @@ SELECT 'foo'      'bar';
     <para>
      If the configuration parameter
      <xref linkend="guc-standard-conforming-strings"> is <literal>off</>,
-     then <productname>PostgreSQL</productname> recognizes backslash escapes
+     then <productname>&productname;</productname> recognizes backslash escapes
      in both regular and escape string constants.  However, as of
      <productname>PostgreSQL</> 9.1, the default is <literal>on</>, meaning
      that backslash escapes are recognized only in escape string constants.
@@ -486,7 +486,7 @@ SELECT 'foo'      'bar';
     </indexterm>
 
     <para>
-     <productname>PostgreSQL</productname> also supports another type
+     <productname>&productname;</productname> also supports another type
      of escape syntax for strings that allows specifying arbitrary
      Unicode characters by code point.  A Unicode escape string
      constant starts with <literal>U&amp;</literal> (upper or lower case
@@ -565,7 +565,7 @@ U&amp;'d!0061t!+000061' UESCAPE '!'
      convenient, it can be difficult to understand when the desired string
      contains many single quotes or backslashes, since each of those must
      be doubled. To allow more readable queries in such situations,
-     <productname>PostgreSQL</productname> provides another way, called
+     <productname>&productname;</productname> provides another way, called
      <quote>dollar quoting</quote>, to write string constants.
      A dollar-quoted string constant
      consists of a dollar sign (<literal>$</literal>), an optional
@@ -601,7 +601,7 @@ $function$
      Here, the sequence <literal>$q$[\t\r\n\v\\]$q$</> represents a
      dollar-quoted literal string <literal>[\t\r\n\v\\]</>, which will
      be recognized when the function body is executed by
-     <productname>PostgreSQL</>.  But since the sequence does not match
+     <productname>&productname;</>.  But since the sequence does not match
      the outer dollar quoting delimiter <literal>$function$</>, it is
      just some more characters within the constant so far as the outer
      string is concerned.
@@ -728,7 +728,7 @@ $function$
 
 <programlisting>
 REAL '1.23'  -- string style
-1.23::REAL   -- PostgreSQL (historical) style
+1.23::REAL   -- &productname; (historical) style
 </programlisting>
 
      These are actually just special cases of the general casting
@@ -792,9 +792,9 @@ CAST ( '<replaceable>string</replaceable>' AS <replaceable>type</replaceable> )
      The <literal>CAST()</> syntax conforms to SQL.  The
      <literal><replaceable>type</> '<replaceable>string</>'</literal>
      syntax is a generalization of the standard: SQL specifies this syntax only
-     for a few data types, but <productname>PostgreSQL</productname> allows it
+     for a few data types, but <productname>&productname;</productname> allows it
      for all types.  The syntax with
-     <literal>::</literal> is historical <productname>PostgreSQL</productname>
+     <literal>::</literal> is historical <productname>&productname;</productname>
      usage, as is the function-call syntax.
     </para>
    </sect3>
@@ -834,7 +834,7 @@ CAST ( '<replaceable>string</replaceable>' AS <replaceable>type</replaceable> )
 </literallayout>
        For example, <literal>@-</literal> is an allowed operator name,
        but <literal>*-</literal> is not.  This restriction allows
-       <productname>PostgreSQL</productname> to parse SQL-compliant
+       <productname>&productname;</productname> to parse SQL-compliant
        queries without requiring spaces between tokens.
       </para>
      </listitem>
@@ -847,7 +847,7 @@ CAST ( '<replaceable>string</replaceable>' AS <replaceable>type</replaceable> )
     For example, if you have defined a left unary operator named <literal>@</literal>,
     you cannot write <literal>X*@Y</literal>; you must write
     <literal>X* @Y</literal> to ensure that
-    <productname>PostgreSQL</productname> reads it as two operator names
+    <productname>&productname;</productname> reads it as two operator names
     not one.
    </para>
   </sect2>
@@ -981,7 +981,7 @@ CAST ( '<replaceable>string</replaceable>' AS <replaceable>type</replaceable> )
 
    <para>
     <xref linkend="sql-precedence-table"> shows the precedence and
-    associativity of the operators in <productname>PostgreSQL</>.
+    associativity of the operators in <productname>&productname;</>.
     Most operators have the same precedence and are left-associative.
     The precedence and associativity of the operators is hard-wired
     into the parser.
@@ -1030,7 +1030,7 @@ SELECT (5 !) - 6;
       <row>
        <entry><token>::</token></entry>
        <entry>left</entry>
-       <entry><productname>PostgreSQL</productname>-style typecast</entry>
+       <entry><productname>&productname;</productname>-style typecast</entry>
       </row>
 
       <row>
@@ -1529,7 +1529,7 @@ sqrt(2)
      field selection can be written in functional style.  That is, the
      notations <literal>col(table)</> and <literal>table.col</> are
      interchangeable.  This behavior is not SQL-standard but is provided
-     in <productname>PostgreSQL</> because it allows use of functions to
+     in <productname>&productname;</> because it allows use of functions to
      emulate <quote>computed fields</>.  For more information see
      <xref linkend="xfunc-sql-composite-functions">.
     </para>
@@ -1656,7 +1656,7 @@ SELECT string_agg(a ORDER BY a, ',') FROM table;  -- incorrect
    <note>
     <para>
      The ability to specify both <literal>DISTINCT</> and <literal>ORDER BY</>
-     in an aggregate function is a <productname>PostgreSQL</> extension.
+     in an aggregate function is a <productname>&productname;</> extension.
     </para>
    </note>
 
@@ -1691,7 +1691,7 @@ SELECT string_agg(a ORDER BY a, ',') FROM table;  -- incorrect
     percentile fractions, which only make sense as a single value per
     aggregation calculation.  The direct argument list can be empty; in this
     case, write just <literal>()</> not <literal>(*)</>.
-    (<productname>PostgreSQL</> will actually accept either spelling, but
+    (<productname>&productname;</> will actually accept either spelling, but
     only the first way conforms to the SQL standard.)
     An example of an ordered-set aggregate call is:
 
@@ -1959,14 +1959,14 @@ UNBOUNDED FOLLOWING
 
    <para>
     A type cast specifies a conversion from one data type to another.
-    <productname>PostgreSQL</productname> accepts two equivalent syntaxes
+    <productname>&productname;</productname> accepts two equivalent syntaxes
     for type casts:
 <synopsis>
 CAST ( <replaceable>expression</replaceable> AS <replaceable>type</replaceable> )
 <replaceable>expression</replaceable>::<replaceable>type</replaceable>
 </synopsis>
     The <literal>CAST</> syntax conforms to SQL; the syntax with
-    <literal>::</literal> is historical <productname>PostgreSQL</productname>
+    <literal>::</literal> is historical <productname>&productname;</productname>
     usage.
    </para>
 
@@ -2488,7 +2488,7 @@ SELECT CASE WHEN min(employees) > 0
    </indexterm>
 
    <para>
-    <productname>PostgreSQL</productname> allows functions that have named
+    <productname>&productname;</productname> allows functions that have named
     parameters to be called using either <firstterm>positional</firstterm> or
     <firstterm>named</firstterm> notation.  Named notation is especially
     useful for functions that have a large number of parameters, since it
@@ -2509,7 +2509,7 @@ SELECT CASE WHEN min(employees) > 0
    </para>
 
    <para>
-    <productname>PostgreSQL</productname> also supports
+    <productname>&productname;</productname> also supports
     <firstterm>mixed</firstterm> notation, which combines positional and
     named notation.  In this case, positional parameters are written first
     and named parameters appear after them.
@@ -2551,7 +2551,7 @@ LANGUAGE SQL IMMUTABLE STRICT;
 
     <para>
      Positional notation is the traditional mechanism for passing arguments
-     to functions in <productname>PostgreSQL</productname>.  An example is:
+     to functions in <productname>&productname;</productname>.  An example is:
 <screen>
 SELECT concat_lower_or_upper('Hello', 'World', true);
  concat_lower_or_upper 

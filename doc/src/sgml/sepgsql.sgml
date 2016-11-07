@@ -27,13 +27,13 @@
   <para>
    This module integrates with <productname>SELinux</> to provide an
    additional layer of security checking above and beyond what is normally
-   provided by <productname>PostgreSQL</productname>.  From the perspective of
+   provided by <productname>&productname;</productname>.  From the perspective of
    <productname>SELinux</>, this module allows
-   <productname>PostgreSQL</productname> to function as a user-space object
+   <productname>&productname;</productname> to function as a user-space object
    manager.  Each table or function access initiated by a DML query will be
    checked against the system security policy.  This check is in addition to
    the usual SQL permissions checking performed by
-   <productname>PostgreSQL</productname>.
+   <productname>&productname;</productname>.
   </para>
 
   <para>
@@ -87,7 +87,7 @@ Policy from config file:        targeted
 
   <para>
    To build this module, include the option <literal>--with-selinux</> in
-   your PostgreSQL <literal>configure</> command.  Be sure that the
+   your &productname; <literal>configure</> command.  Be sure that the
    <filename>libselinux-devel</> RPM is installed at build time.
   </para>
 
@@ -153,7 +153,7 @@ $ for DBNAME in template0 template1 postgres; do
    <literal>make check</> or <literal>make installcheck</> command; you must
    set up the configuration and then invoke the test script manually.
    The tests must be run in the <filename>contrib/sepgsql</> directory
-   of a configured PostgreSQL build tree.  Although they require a build tree,
+   of a configured &productname; build tree.  Although they require a build tree,
    the tests are designed to be executed against an installed server,
    that is they are comparable to <literal>make installcheck</> not
    <literal>make check</>.
@@ -726,7 +726,7 @@ ERROR:  SELinux: security policy violation
     <term>Row-level access control</term>
     <listitem>
      <para>
-      <productname>PostgreSQL</> supports row-level access, but
+      <productname>&productname;</> supports row-level access, but
       <filename>sepgsql</filename> does not.
      </para>
     </listitem>

@@ -13,9 +13,9 @@
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname> has a rich set of native data
+   <productname>&productname;</productname> has a rich set of native data
    types available to users.  Users can add new types to
-   <productname>PostgreSQL</productname> using the <xref
+   <productname>&productname;</productname> using the <xref
    linkend="sql-createtype"> command.
   </para>
 
@@ -23,7 +23,7 @@
    <xref linkend="datatype-table"> shows all the built-in general-purpose data
    types. Most of the alternative names listed in the
    <quote>Aliases</quote> column are the names used internally by
-   <productname>PostgreSQL</productname> for historical reasons.  In
+   <productname>&productname;</productname> for historical reasons.  In
    addition, some internally used or deprecated types are available,
    but are not listed here.
   </para>
@@ -189,7 +189,7 @@
       <row>
        <entry><type>pg_lsn</type></entry>
        <entry></entry>
-       <entry><productname>PostgreSQL</productname> Log Sequence Number</entry>
+       <entry><productname>&productname;</productname> Log Sequence Number</entry>
       </row>
 
       <row>
@@ -311,7 +311,7 @@
    Each data type has an external representation determined by its input
    and output functions.  Many of the built-in types have
    obvious external formats.  However, several types are either unique
-   to <productname>PostgreSQL</productname>, such as geometric
+   to <productname>&productname;</productname>, such as geometric
    paths, or have several possible formats, such as the date
    and time types.
    Some of the input and output functions are not invertible, i.e.,
@@ -601,7 +601,7 @@ NUMERIC
       <literal>NaN</> is not considered equal to any other numeric
       value (including <literal>NaN</>).  In order to allow
       <type>numeric</> values to be sorted and used in tree-based
-      indexes, <productname>PostgreSQL</> treats <literal>NaN</>
+      indexes, <productname>&productname;</> treats <literal>NaN</>
       values as equal, and greater than all non-<literal>NaN</>
       values.
      </para>
@@ -726,7 +726,7 @@ FROM generate_series(-3.5, 3.5, 1) as x;
       number of extra significant digits included when a floating point
       value is converted to text for output.  With the default value of
       <literal>0</literal>, the output is the same on every platform
-      supported by PostgreSQL.  Increasing it will produce output that
+      supported by &productname;.  Increasing it will produce output that
       more accurately represents the stored value, but may be unportable.
      </para>
     </note>
@@ -759,19 +759,19 @@ FROM generate_series(-3.5, 3.5, 1) as x;
       IEEE754 specifies that <literal>NaN</> should not compare equal
       to any other floating-point value (including <literal>NaN</>).
       In order to allow floating-point values to be sorted and used
-      in tree-based indexes, <productname>PostgreSQL</> treats
+      in tree-based indexes, <productname>&productname;</> treats
       <literal>NaN</> values as equal, and greater than all
       non-<literal>NaN</> values.
      </para>
     </note>
 
     <para>
-     <productname>PostgreSQL</productname> also supports the SQL-standard
+     <productname>&productname;</productname> also supports the SQL-standard
      notations <type>float</type> and
      <type>float(<replaceable>p</replaceable>)</type> for specifying
      inexact numeric types.  Here, <replaceable>p</replaceable> specifies
      the minimum acceptable precision in <emphasis>binary</> digits.
-     <productname>PostgreSQL</productname> accepts
+     <productname>&productname;</productname> accepts
      <type>float(1)</type> to <type>float(24)</type> as selecting the
      <type>real</type> type, while
      <type>float(25)</type> to <type>float(53)</type> select
@@ -1046,7 +1046,7 @@ SELECT '52093.89'::money::numeric::float8;
    <para>
     <xref linkend="datatype-character-table"> shows the
     general-purpose character types available in
-    <productname>PostgreSQL</productname>.
+    <productname>&productname;</productname>.
    </para>
 
    <para>
@@ -1083,11 +1083,11 @@ SELECT '52093.89'::money::numeric::float8;
     <type>character</type> without length specifier is equivalent to
     <type>character(1)</type>. If <type>character varying</type> is used
     without length specifier, the type accepts strings of any size. The
-    latter is a <productname>PostgreSQL</> extension.
+    latter is a <productname>&productname;</> extension.
    </para>
 
    <para>
-    In addition, <productname>PostgreSQL</productname> provides the
+    In addition, <productname>&productname;</productname> provides the
     <type>text</type> type, which stores strings of any length.
     Although the type <type>text</type> is not in the
     <acronym>SQL</acronym> standard, several other SQL database
@@ -1138,7 +1138,7 @@ SELECT '52093.89'::money::numeric::float8;
      a length-constrained column.  While
      <type>character(<replaceable>n</>)</type> has performance
      advantages in some other database systems, there is no such advantage in
-     <productname>PostgreSQL</productname>; in fact
+     <productname>&productname;</productname>; in fact
      <type>character(<replaceable>n</>)</type> is usually the slowest of
      the three because of its additional storage costs.  In most situations
      <type>text</type> or <type>character varying</type> should be used
@@ -1195,7 +1195,7 @@ SELECT b, char_length(b) FROM test2;
 
    <para>
     There are two other fixed-length character types in
-    <productname>PostgreSQL</productname>, shown in <xref
+    <productname>&productname;</productname>, shown in <xref
     linkend="datatype-character-special-table">. The <type>name</type>
     type exists <emphasis>only</emphasis> for the storage of identifiers
     in the internal system catalogs and is not intended for use by the general user. Its
@@ -1291,7 +1291,7 @@ SELECT b, char_length(b) FROM test2;
 
    <para>
     The <type>bytea</type> type supports two external formats for
-    input and output: <productname>PostgreSQL</productname>'s historical
+    input and output: <productname>&productname;</productname>'s historical
     <quote>escape</quote> format, and <quote>hex</quote> format.  Both
     of these are always accepted on input.  The output format depends
     on the configuration parameter <xref linkend="guc-bytea-output">;
@@ -1340,7 +1340,7 @@ SELECT E'\\xDEADBEEF';
 
    <para>
     The <quote>escape</quote> format is the traditional
-    <productname>PostgreSQL</productname> format for the <type>bytea</type>
+    <productname>&productname;</productname> format for the <type>bytea</type>
     type.  It
     takes the approach of representing a binary string as a sequence
     of ASCII characters, while converting those bytes that cannot be
@@ -1433,7 +1433,7 @@ SELECT E'\\xDEADBEEF';
     The reason multiple backslashes are required, as shown
     in <xref linkend="datatype-binary-sqlesc">, is that an input
     string written as a string literal must pass through two parse
-    phases in the <productname>PostgreSQL</productname> server.
+    phases in the <productname>&productname;</productname> server.
     The first backslash of each pair is interpreted as an escape
     character by the string-literal parser (assuming escape string
     syntax is used) and is therefore consumed, leaving the second backslash of the
@@ -1505,7 +1505,7 @@ SELECT E'\\xDEADBEEF';
    </table>
 
    <para>
-    Depending on the front end to <productname>PostgreSQL</> you use,
+    Depending on the front end to <productname>&productname;</> you use,
     you might have additional work to do in terms of escaping and
     unescaping <type>bytea</type> strings. For example, you might also
     have to escape line feeds and carriage returns if your interface
@@ -1550,7 +1550,7 @@ SELECT E'\\xDEADBEEF';
    </indexterm>
 
    <para>
-    <productname>PostgreSQL</productname> supports the full set of
+    <productname>&productname;</productname> supports the full set of
     <acronym>SQL</acronym> date and time types, shown in <xref
     linkend="datatype-datetime-table">.  The operations available
     on these data types are described in
@@ -1630,10 +1630,10 @@ SELECT E'\\xDEADBEEF';
     <para>
      The SQL standard requires that writing just <type>timestamp</type>
      be equivalent to <type>timestamp without time
-     zone</type>, and <productname>PostgreSQL</productname> honors that
+     zone</type>, and <productname>&productname;</productname> honors that
      behavior.  <type>timestamptz</type> is accepted as an
      abbreviation for <type>timestamp with time zone</type>; this is a
-     <productname>PostgreSQL</productname> extension.
+     <productname>&productname;</productname> extension.
     </para>
    </note>
 
@@ -1737,7 +1737,7 @@ MINUTE TO SECOND
     </para>
 
     <para>
-     <productname>PostgreSQL</productname> is more flexible in
+     <productname>&productname;</productname> is more flexible in
      handling date/time input than the
      <acronym>SQL</acronym> standard requires.
      See <xref linkend="datetime-appendix">
@@ -2064,7 +2064,7 @@ January 8 04:05:06 1999 PST
       <programlisting>TIMESTAMP '2004-10-19 10:23:54+02'</programlisting>
 
       is a <type>timestamp with time zone</type>.
-      <productname>PostgreSQL</productname> never examines the content of a
+      <productname>&productname;</productname> never examines the content of a
       literal string before determining its type, and therefore will treat
       both of the above as <type>timestamp without time zone</type>.  To
       ensure that a literal is treated as <type>timestamp with time
@@ -2073,7 +2073,7 @@ January 8 04:05:06 1999 PST
       <programlisting>TIMESTAMP WITH TIME ZONE '2004-10-19 10:23:54+02'</programlisting>
 
       In a literal that has been determined to be <type>timestamp without time
-      zone</type>, <productname>PostgreSQL</productname> will silently ignore
+      zone</type>, <productname>&productname;</productname> will silently ignore
       any time zone indication.
       That is, the resulting value is derived from the date/time
       fields in the input value, and is not adjusted for time zone.
@@ -2123,7 +2123,7 @@ January 8 04:05:06 1999 PST
      </indexterm>
 
      <para>
-      <productname>PostgreSQL</productname> supports several
+      <productname>&productname;</productname> supports several
       special date/time input values for convenience, as shown in <xref
       linkend="datatype-datetime-special-table">.  The values
       <literal>infinity</literal> and <literal>-infinity</literal>
@@ -2277,7 +2277,7 @@ January 8 04:05:06 1999 PST
     <note>
      <para>
       ISO 8601 specifies the use of uppercase letter <literal>T</> to separate
-      the date and time.  <productname>PostgreSQL</> accepts that format on
+      the date and time.  <productname>&productname;</> accepts that format on
       input, but on output it uses a space rather than <literal>T</>, as shown
       above.  This is for readability and for consistency with RFC 3339 as
       well as some other database systems.
@@ -2352,7 +2352,7 @@ January 8 04:05:06 1999 PST
     world became somewhat standardized during the 1900s,
     but continue to be prone to arbitrary changes, particularly with
     respect to daylight-savings rules.
-    <productname>PostgreSQL</productname> uses the widely-used
+    <productname>&productname;</productname> uses the widely-used
     IANA (Olson) time zone database for information about
     historical time zone rules.  For times in the future, the assumption
     is that the latest known rules for a given time zone will
@@ -2360,7 +2360,7 @@ January 8 04:05:06 1999 PST
    </para>
 
     <para>
-     <productname>PostgreSQL</productname> endeavors to be compatible with
+     <productname>&productname;</productname> endeavors to be compatible with
      the <acronym>SQL</acronym> standard definitions for typical usage.
      However, the <acronym>SQL</acronym> standard has an odd mix of date and
      time types and capabilities. Two obvious problems are:
@@ -2395,9 +2395,9 @@ January 8 04:05:06 1999 PST
      that contain both date and time when using time zones. We
      do <emphasis>not</> recommend using the type <type>time with
      time zone</type> (though it is supported by
-     <productname>PostgreSQL</productname> for legacy applications and
+     <productname>&productname;</productname> for legacy applications and
      for compliance with the <acronym>SQL</acronym> standard).
-     <productname>PostgreSQL</productname> assumes
+     <productname>&productname;</productname> assumes
      your local time zone for any type containing only date or time.
     </para>
 
@@ -2409,7 +2409,7 @@ January 8 04:05:06 1999 PST
     </para>
 
     <para>
-     <productname>PostgreSQL</productname> allows you to specify time zones in
+     <productname>&productname;</productname> allows you to specify time zones in
      three different forms:
      <itemizedlist>
       <listitem>
@@ -2418,7 +2418,7 @@ January 8 04:05:06 1999 PST
         The recognized time zone names are listed in the
         <literal>pg_timezone_names</literal> view (see <xref
         linkend="view-pg-timezone-names">).
-        <productname>PostgreSQL</productname> uses the widely-used IANA
+        <productname>&productname;</productname> uses the widely-used IANA
         time zone data for this purpose, so the same time zone
         names are also recognized by much other software.
        </para>
@@ -2441,7 +2441,7 @@ January 8 04:05:06 1999 PST
       <listitem>
        <para>
         In addition to the timezone names and abbreviations,
-        <productname>PostgreSQL</productname> will accept POSIX-style time zone
+        <productname>&productname;</productname> will accept POSIX-style time zone
         specifications of the form <replaceable>STD</><replaceable>offset</> or
         <replaceable>STD</><replaceable>offset</><replaceable>DST</>, where
         <replaceable>STD</> is a zone abbreviation, <replaceable>offset</> is a
@@ -2456,7 +2456,7 @@ January 8 04:05:06 1999 PST
         it is assumed to be used
         according to the same daylight-savings transition rules used in the
         IANA time zone database's <filename>posixrules</> entry.
-        In a standard <productname>PostgreSQL</productname> installation,
+        In a standard <productname>&productname;</productname> installation,
         <filename>posixrules</> is the same as <literal>US/Eastern</>, so
         that POSIX-style time zone specifications follow USA daylight-savings
         rules.  If needed, you can adjust this behavior by replacing the
@@ -2481,7 +2481,7 @@ January 8 04:05:06 1999 PST
      To complicate matters, some jurisdictions have used the same timezone
      abbreviation to mean different UTC offsets at different times; for
      example, in Moscow <literal>MSK</> has meant UTC+3 in some years and
-     UTC+4 in others.  <application>PostgreSQL</> interprets such
+     UTC+4 in others.  <application>&productname;</> interprets such
      abbreviations according to whatever they meant (or had most recently
      meant) on the specified date; but, as with the <literal>EST</> example
      above, this is not necessarily the same as local civil time on that date.
@@ -2495,7 +2495,7 @@ January 8 04:05:06 1999 PST
      a rather peculiar abbreviation for UTC.
      Another issue to keep in mind is that in POSIX time zone names,
      positive offsets are used for locations <emphasis>west</> of Greenwich.
-     Everywhere else, <productname>PostgreSQL</productname> follows the
+     Everywhere else, <productname>&productname;</productname> follows the
      ISO-8601 convention that positive timezone offsets are <emphasis>east</>
      of Greenwich.
     </para>
@@ -2672,13 +2672,13 @@ P <optional> <replaceable>years</>-<replaceable>months</>-<replaceable>days</> <
      value must have the same sign, so a leading negative sign applies to all
      fields; for example the negative sign in the interval literal
      <literal>'-1 2:03:04'</> applies to both the days and hour/minute/second
-     parts.  <productname>PostgreSQL</> allows the fields to have different
+     parts.  <productname>&productname;</> allows the fields to have different
      signs, and traditionally treats each field in the textual representation
      as independently signed, so that the hour/minute/second part is
      considered positive in this example.  If <varname>IntervalStyle</> is
      set to <literal>sql_standard</literal> then a leading sign is considered
      to apply to all fields (but only if no additional signs appear).
-     Otherwise the traditional <productname>PostgreSQL</> interpretation is
+     Otherwise the traditional <productname>&productname;</> interpretation is
      used.  To avoid ambiguity, it's recommended to attach an explicit sign
      to each field if any field is negative.
     </para>
@@ -2857,7 +2857,7 @@ P <optional> <replaceable>years</>-<replaceable>months</>-<replaceable>days</> <
    </indexterm>
 
    <para>
-    <productname>PostgreSQL</productname> provides the
+    <productname>&productname;</productname> provides the
     standard <acronym>SQL</acronym> type <type>boolean</type>;
     see <xref linkend="datatype-boolean-table">.
     The <type>boolean</type> type can have several states:
@@ -3075,7 +3075,7 @@ SELECT person.name, holidays.num_weeks FROM person, holidays
     <para>
      An enum value occupies four bytes on disk.  The length of an enum
      value's textual label is limited by the <symbol>NAMEDATALEN</symbol>
-     setting compiled into <productname>PostgreSQL</productname>; in standard
+     setting compiled into <productname>&productname;</productname>; in standard
      builds this means at most 63 bytes.
     </para>
 
@@ -3101,7 +3101,7 @@ SELECT person.name, holidays.num_weeks FROM person, holidays
    <para>
     Geometric data types represent two-dimensional spatial
     objects. <xref linkend="datatype-geo-table"> shows the geometric
-    types available in <productname>PostgreSQL</productname>.
+    types available in <productname>&productname;</productname>.
    </para>
 
     <table id="datatype-geo-table">
@@ -3422,7 +3422,7 @@ SELECT person.name, holidays.num_weeks FROM person, holidays
    </indexterm>
 
    <para>
-    <productname>PostgreSQL</> offers data types to store IPv4, IPv6, and MAC
+    <productname>&productname;</> offers data types to store IPv4, IPv6, and MAC
     addresses, as shown in <xref linkend="datatype-net-types-table">.  It
     is better to use these types instead of plain text types to store
     network addresses, because
@@ -3690,7 +3690,7 @@ SELECT person.name, holidays.num_weeks FROM person, holidays
      form (with colons) as the bit-reversed notation, so that
      08-00-2b-01-02-03 = 01:00:4D:08:04:0C.  This convention is widely
      ignored nowadays, and it is relevant only for obsolete network
-     protocols (such as Token Ring).  PostgreSQL makes no provisions
+     protocols (such as Token Ring).  &productname; makes no provisions
      for bit reversal, and all accepted formats use the canonical LSB
      order.
     </para>
@@ -3792,7 +3792,7 @@ SELECT * FROM test;
    </indexterm>
 
    <para>
-    <productname>PostgreSQL</productname> provides two data types that
+    <productname>&productname;</productname> provides two data types that
     are designed to support full text search, which is the activity of
     searching through a collection of natural-language <firstterm>documents</>
     to locate those that best match a <firstterm>query</>.
@@ -4062,7 +4062,7 @@ SELECT to_tsvector( 'postgraduate' ), to_tsquery( 'postgres:*' );
 <programlisting>
 a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
 </programlisting>
-    <productname>PostgreSQL</productname> also accepts the following
+    <productname>&productname;</productname> also accepts the following
     alternative forms for input:
     use of upper-case digits, the standard format surrounded by
     braces, omitting some or all hyphens, adding a hyphen after any
@@ -4078,7 +4078,7 @@ a0ee-bc99-9c0b-4ef8-bb6d-6bb9-bd38-0a11
    </para>
 
    <para>
-    <productname>PostgreSQL</productname> provides storage and comparison
+    <productname>&productname;</productname> provides storage and comparison
     functions for UUIDs, but the core database does not include any
     function for generating UUIDs, because no single algorithm is well
     suited for every application.  The <xref
@@ -4135,7 +4135,7 @@ XMLPARSE (DOCUMENT '<?xml version="1.0"?><book><title>Manual</title><chapter>...
 XMLPARSE (CONTENT 'abc<foo>bar</foo><bar>foo</bar>')
 ]]></programlisting>
     While this is the only way to convert character strings into XML
-    values according to the SQL standard, the PostgreSQL-specific
+    values according to the SQL standard, the &productname;-specific
     syntaxes:
 <programlisting><![CDATA[
 xml '<foo>bar</foo>'
@@ -4164,7 +4164,7 @@ XMLSERIALIZE ( { DOCUMENT | CONTENT } <replaceable>value</replaceable> AS <repla
     <type>character</type>, <type>character varying</type>, or
     <type>text</type> (or an alias for one of those).  Again, according
     to the SQL standard, this is the only way to convert between type
-    <type>xml</type> and character types, but PostgreSQL also allows
+    <type>xml</type> and character types, but &productname; also allows
     you to simply cast the value.
    </para>
 
@@ -4180,7 +4180,7 @@ XMLSERIALIZE ( { DOCUMENT | CONTENT } <replaceable>value</replaceable> AS <repla
 <synopsis>
 SET XML OPTION { DOCUMENT | CONTENT };
 </synopsis>
-    or the more PostgreSQL-like syntax
+    or the more &productname;-like syntax
 <synopsis>
 SET xmloption TO { DOCUMENT | CONTENT };
 </synopsis>
@@ -4206,7 +4206,7 @@ SET xmloption TO { DOCUMENT | CONTENT };
     Care must be taken when dealing with multiple character encodings
     on the client, server, and in the XML data passed through them.
     When using the text mode to pass queries to the server and query
-    results to the client (which is the normal mode), PostgreSQL
+    results to the client (which is the normal mode), &productname;
     converts all character data passed between the client and the
     server and vice versa to the character encoding of the respective
     end; see <xref linkend="multibyte">.  This includes string
@@ -4235,14 +4235,14 @@ SET xmloption TO { DOCUMENT | CONTENT };
     is performed, so the situation is different.  In this case, an
     encoding declaration in the XML data will be observed, and if it
     is absent, the data will be assumed to be in UTF-8 (as required by
-    the XML standard; note that PostgreSQL does not support UTF-16).
+    the XML standard; note that &productname; does not support UTF-16).
     On output, data will have an encoding declaration
     specifying the client encoding, unless the client encoding is
     UTF-8, in which case it will be omitted.
    </para>
 
    <para>
-    Needless to say, processing XML data with PostgreSQL will be less
+    Needless to say, processing XML data with &productname; will be less
     error-prone and more efficient if the XML data encoding, client encoding,
     and server encoding are the same.  Since XML data is internally
     processed in UTF-8, computations will be most efficient if the
@@ -4285,9 +4285,9 @@ SET xmloption TO { DOCUMENT | CONTENT };
    </para>
 
    <para>
-    The text-search functionality in PostgreSQL can also be used to speed
+    The text-search functionality in &productname; can also be used to speed
     up full-document searches of XML data.  The necessary
-    preprocessing support is, however, not yet available in the PostgreSQL
+    preprocessing support is, however, not yet available in the &productname;
     distribution.
    </para>
    </sect2>
@@ -4359,7 +4359,7 @@ SET xmloption TO { DOCUMENT | CONTENT };
 
    <para>
     Object identifiers (OIDs) are used internally by
-    <productname>PostgreSQL</productname> as primary keys for various
+    <productname>&productname;</productname> as primary keys for various
     system tables.  OIDs are not added to user-created tables, unless
     <literal>WITH OIDS</literal> is specified when the table is
     created, or the <xref linkend="guc-default-with-oids">
@@ -4528,7 +4528,7 @@ SELECT * FROM pg_attribute
     (such as a column default expression or view), it creates a dependency
     on the referenced object.  For example, if a column has a default
     expression <literal>nextval('my_seq'::regclass)</>,
-    <productname>PostgreSQL</productname>
+    <productname>&productname;</productname>
     understands that the default expression depends on the sequence
     <literal>my_seq</>; the system will not let the sequence be dropped
     without first removing the default expression.
@@ -4581,7 +4581,7 @@ SELECT * FROM pg_attribute
     The <type>pg_lsn</type> data type can be used to store LSN (Log Sequence
     Number) data which is a pointer to a location in the XLOG. This type is a
     representation of <type>XLogRecPtr</type> and an internal system type of
-    <productname>PostgreSQL</productname>.
+    <productname>&productname;</productname>.
    </para>
 
    <para>
@@ -4672,7 +4672,7 @@ SELECT * FROM pg_attribute
    </indexterm>
 
    <para>
-    The <productname>PostgreSQL</productname> type system contains a
+    The <productname>&productname;</productname> type system contains a
     number of special-purpose entries that are collectively called
     <firstterm>pseudo-types</>.  A pseudo-type cannot be used as a
     column data type, but it can be used to declare a function's

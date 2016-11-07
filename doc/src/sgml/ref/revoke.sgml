@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/revoke.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-REVOKE">
@@ -285,7 +285,7 @@ REVOKE admins FROM joe;
     The compatibility notes of the <xref linkend="sql-grant"> command
     apply analogously to <command>REVOKE</command>.
     The keyword <literal>RESTRICT</literal> or <literal>CASCADE</literal>
-    is required according to the standard, but <productname>PostgreSQL</>
+    is required according to the standard, but <productname>&productname;</>
     assumes <literal>RESTRICT</literal> by default.
    </para>
  </refsect1>

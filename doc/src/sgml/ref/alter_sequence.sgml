@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_sequence.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERSEQUENCE">
@@ -303,7 +303,7 @@ ALTER SEQUENCE serial RESTART WITH 105;
    standard, except for the <literal>START WITH</>,
    <literal>OWNED BY</>, <literal>OWNER TO</>, <literal>RENAME TO</>, and
    <literal>SET SCHEMA</literal> clauses, which are
-   <productname>PostgreSQL</productname> extensions.
+   <productname>&productname;</productname> extensions.
   </para>
  </refsect1>
 

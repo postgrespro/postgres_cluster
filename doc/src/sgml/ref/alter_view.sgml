@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/alter_view.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-ALTERVIEW">
@@ -185,7 +185,7 @@ INSERT INTO a_view(id) VALUES(2);  -- ts will receive the current time
   <title>Compatibility</title>
 
   <para>
-   <command>ALTER VIEW</command> is a <productname>PostgreSQL</>
+   <command>ALTER VIEW</command> is a <productname>&productname;</>
    extension of the SQL standard.
   </para>
  </refsect1>
