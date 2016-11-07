@@ -1177,6 +1177,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 						 : ts->status == TRANSACTION_STATUS_COMMITTED ? "committed" : "not prepared",
 						 ts->xid, ts->gid);
 				}
+				Assert(ts->xid != 10000);
 				if (x->csn > ts->csn || Mtm->status == MTM_RECOVERY) {
 					Assert(x->csn != INVALID_CSN);
 					ts->csn = x->csn;
