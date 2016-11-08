@@ -443,7 +443,7 @@ usage(const char *progname)
 	printf("  -w             never prompt for password\n");
 	printf("  -W             force password prompt\n");
 	printf("\n");
-	printf("Report bugs to <pgsql-bugs@postgresql.org>.\n");
+	printf("Report bugs to <" PACKAGE_BUGREPORT ">.\n");
 }
 
 

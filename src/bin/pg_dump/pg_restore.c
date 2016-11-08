@@ -490,5 +490,5 @@ usage(const char *progname)
 			 "The options -I, -n, -P, -t, -T, and --section can be combined and specified\n"
 			 "multiple times to select multiple objects.\n"));
 	printf(_("\nIf no input file name is supplied, then standard input is used.\n\n"));
-	printf(_("Report bugs to <pgsql-bugs@postgresql.org>.\n"));
+	printf(_("Report bugs to <" PACKAGE_BUGREPORT ">.\n"));
 }

@@ -171,10 +171,10 @@ msgstr ""
 #, c-format
 msgid ""
 "\n"
-"Report bugs to <pgsql-bugs@postgresql.org>.\n"
+"Report bugs to <bugs@postgrespro.ru>.\n"
 msgstr ""
 "\n"
-"Об ошибках сообщайте по адресу <pgsql-bugs@postgresql.org>.\n"
+"Об ошибках сообщайте по адресу <bugs@postgrespro.ru>.\n"
 
 #: ecpg.c:139
 #, c-format
