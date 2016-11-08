@@ -5,6 +5,7 @@
 #include "postmaster/bgworker.h"
 #include "storage/s_lock.h"
 #include "storage/spin.h"
+#include "storage/proc.h"
 #include "storage/pg_sema.h"
 #include "storage/shmem.h"
 #include "datatype/timestamp.h"
@@ -16,13 +17,28 @@
 bool MtmIsLogicalReceiver;
 int  MtmMaxWorkers;
 
+static BgwPool* pool;
+
+static void BgwShutdownWorker(int sig)
+{
+	BgwPoolStop(pool);
+}
+
 static void BgwPoolMainLoop(BgwPool* pool)
 {
     int size;
     void* work;
 	static PortalData fakePortal;
+	sigset_t sset;
 
 	MtmIsLogicalReceiver = true;
+
+	signal(SIGINT, BgwShutdownWorker);
+	signal(SIGQUIT, BgwShutdownWorker);
+	signal(SIGTERM, BgwShutdownWorker);
+
+	sigfillset(&sset);
+	sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
     BackgroundWorkerUnblockSignals();
 	BackgroundWorkerInitializeConnection(pool->dbname, pool->dbuser);
@@ -30,9 +46,12 @@ static void BgwPoolMainLoop(BgwPool* pool)
 	ActivePortal->status = PORTAL_ACTIVE;
 	ActivePortal->sourceText = "";
 
-    while(true) { 
+    while (true) { 
         PGSemaphoreLock(&pool->available);
         SpinLockAcquire(&pool->lock);
+		if (pool->shutdown) { 
+			break;
+		}
         size = *(int*)&pool->queue[pool->head];
         Assert(size < pool->size);
         work = malloc(size);
@@ -64,6 +83,7 @@ static void BgwPoolMainLoop(BgwPool* pool)
 		pool->lastPeakTime = 0;
         SpinLockRelease(&pool->lock);
     }
+	SpinLockRelease(&pool->lock);
 }
 
 void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname,  char const* dbuser, size_t queueSize, size_t nWorkers)
@@ -75,6 +95,7 @@ void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname,  c
     PGSemaphoreReset(&pool->available);
     PGSemaphoreReset(&pool->overflow);
     SpinLockInit(&pool->lock);
+	pool->shutdown = false;
     pool->producerBlocked = false;
     pool->head = 0;
     pool->tail = 0;
@@ -167,7 +188,7 @@ void BgwPoolExecute(BgwPool* pool, void* work, size_t size)
 	}
  
     SpinLockAcquire(&pool->lock);
-    while (true) { 
+    while (!pool->shutdown) { 
         if ((pool->head <= pool->tail && pool->size - pool->tail < size + 4 && pool->head < size) 
             || (pool->head > pool->tail && pool->head - pool->tail < size + 4))
         {
@@ -204,3 +225,11 @@ void BgwPoolExecute(BgwPool* pool, void* work, size_t size)
     SpinLockRelease(&pool->lock);            
 }
 
+void BgwPoolStop(BgwPool* pool)
+{
+    SpinLockAcquire(&pool->lock);
+	pool->shutdown = true;
+    SpinLockRelease(&pool->lock);            
+	PGSemaphoreUnlock(&pool->available);
+	PGSemaphoreUnlock(&pool->overflow);
+}
