@@ -583,7 +583,9 @@ MtmAdjustOldestXid(TransactionId xid)
 		
 		for (ts = Mtm->transListHead; 
 			 ts != NULL 
+				 && (ts->status == TRANSACTION_STATUS_ABORTED || ts->status == TRANSACTION_STATUS_COMMITTED) 
 				 && ts->csn < oldestSnapshot
+				 && !ts->isPinned
 				 && TransactionIdPrecedes(ts->xid, xid);
 			 prev = ts, ts = ts->next) 
 		{ 
@@ -653,6 +655,7 @@ static void MtmAddSubtransactions(MtmTransState* ts, TransactionId* subxids, int
         sts = (MtmTransState*)hash_search(MtmXid2State, &subxids[i], HASH_ENTER, &found);
         Assert(!found);
 		sts->isActive = false;
+		sts->isPinned = false;
         sts->status = ts->status;
         sts->csn = ts->csn;
 		sts->votingCompleted = true;
@@ -814,6 +817,7 @@ MtmCreateTransState(MtmCurrentTrans* x)
 	ts->isLocal = true;
 	ts->isPrepared = false;
 	ts->isTwoPhase = x->isTwoPhase;
+	ts->isPinned = false;
 	ts->votingCompleted = false;
 	if (!found) {
 		ts->isEnqueued = false;
@@ -963,8 +967,13 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 {
 	int result = 0;
 	int nConfigChanges = Mtm->nConfigChanges;
-	timestamp_t elapsed, start = MtmGetSystemTime();
-	timestamp_t deadline = 0;
+	timestamp_t prepareTime = ts->csn - ts->snapshot;
+	timestamp_t timeout = Max(prepareTime + MSEC_TO_USEC(MtmMin2PCTimeout), prepareTime*MtmMax2PCRatio/100);
+	timestamp_t deadline = MtmGetSystemTime() + timeout;
+	timestamp_t now;
+	
+	Assert(ts->csn > ts->snapshot);
+
 	/* Wait votes from all nodes until: */
 	while (!MtmVotingCompleted(ts)
 		   && (ts->isPrepared || nConfigChanges == Mtm->nConfigChanges))
@@ -980,19 +989,16 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 		if (result & WL_LATCH_SET) { 
 			ResetLatch(&MyProc->procLatch);			
 		}
-		elapsed = MtmGetSystemTime() - start;
+		now = MtmGetSystemTime();
 		MtmLock(LW_EXCLUSIVE);
-		if (deadline == 0 && ts->votedMask != 0) { 
-			deadline = Max(MSEC_TO_USEC(MtmMin2PCTimeout), elapsed*MtmMax2PCRatio/100);
-		} else { 
+		if (now > deadline) { 
 			if (ts->isPrepared) { 
 				/* resend precommit message */
 				MtmSend2PCMessage(ts, MSG_PRECOMMIT);
 			} else {
-				if (elapsed > deadline) { 
-					elog(WARNING, "Commit of distributed transaction is canceled because of %ld msec timeout expiration", USEC_TO_MSEC(elapsed));
-					MtmAbortTransaction(ts);
-				}
+				elog(WARNING, "Commit of distributed transaction is canceled because of %ld msec timeout expiration", USEC_TO_MSEC(timeout));
+				MtmAbortTransaction(ts);
+				break;
 			}
 		}
 	}
@@ -1005,7 +1011,7 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 		} else { 
 			if (Mtm->status != MTM_ONLINE) { 
 				elog(WARNING, "Commit of distributed transaction is canceled because node is switched to %s mode", MtmNodeStatusMnem[Mtm->status]);
-			} else if (nConfigChanges != Mtm->nConfigChanges) { 
+			} else { 
 				elog(WARNING, "Commit of distributed transaction is canceled because cluster configuration was changed");
 			} 
 			MtmAbortTransaction(ts);
@@ -1202,6 +1208,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				ts->status = TRANSACTION_STATUS_ABORTED;
 				ts->isLocal = true;
 				ts->isPrepared = false;
+				ts->isPinned = false;
 				ts->snapshot = x->snapshot;
 				ts->isTwoPhase = x->isTwoPhase;
 				ts->csn = MtmAssignCSN();	
@@ -1280,7 +1287,7 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 	}
 }
 
-void MtmBroadcastPollMessage(MtmTransState* ts)
+static void MtmBroadcastPollMessage(MtmTransState* ts)
 {
 	int i;
 	MtmArbiterMessage msg;
@@ -1293,7 +1300,7 @@ void MtmBroadcastPollMessage(MtmTransState* ts)
 
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
-		if (BIT_CHECK(ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask, i))
+		if (BIT_CHECK(ts->participantsMask & ~Mtm->disabledNodeMask, i))
 		{
 			msg.node = i+1;
 			MTM_LOG3("Send request for transaction %s to node %d", msg.gid, msg.node);
@@ -1480,15 +1487,17 @@ static void MtmPollStatusOfPreparedTransactions(int disabledNodeId)
 			Assert(ts->gid[0]);
 			if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
 				elog(LOG, "Abort transaction %s because its coordinator is disabled and it is not prepared at node %d", ts->gid, MtmNodeId);
-				//MtmUnlock();
+				ts->isPinned = true;
+				MtmUnlock();
 				MtmFinishPreparedTransaction(ts, false);
-				//MtmLock(LW_EXCLUSIVE);				
+				MtmLock(LW_EXCLUSIVE);				
+				ts->isPinned = false;
 			} else {
 				MTM_LOG1("Poll state of transaction %d (%s)", ts->xid, ts->gid);				
 				MtmBroadcastPollMessage(ts);
 			}
 		} else {
-			MTM_LOG2("Skip transaction %d (%s) with status %d gtid.node=%d gtid.xid=%d votedMask=%lx", 
+			MTM_LOG1("Skip transaction %d (%s) with status %d gtid.node=%d gtid.xid=%d votedMask=%lx", 
 					 ts->xid, ts->gid, ts->status, ts->gtid.node, ts->gtid.xid, ts->votedMask);
 		}
 	}
@@ -3214,8 +3223,13 @@ bool MtmFilterTransaction(char* record, int size)
 		duplicate = true;
 	}
 		
-	MTM_LOG2("%s transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
-			 duplicate ? "Ignore" : "Apply", gid, replication_node, end_lsn, flags, origin_node, origin_lsn, restart_lsn);
+	if (duplicate) {
+		MTM_LOG1("Ignore transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
+				 gid, replication_node, end_lsn, flags, origin_node, origin_lsn, restart_lsn);
+	} else {
+		MTM_LOG2("Apply transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
+				 gid, replication_node, end_lsn, flags, origin_node, origin_lsn, restart_lsn);
+	}
 	return duplicate;
 }
 
@@ -3829,7 +3843,7 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 		} else { 	
 			CommitTransactionCommand();
 			if (x->isSuspended) { 
-				elog(WARNING, "Transaction %s is left in prepared state because coordinator onde is not online", x->gid);
+				elog(WARNING, "Transaction %s is left in prepared state because coordinator node is not online", x->gid);
 			} else { 				
 				StartTransactionCommand();
 				if (x->status == TRANSACTION_STATUS_ABORTED) { 

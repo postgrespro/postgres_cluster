@@ -221,7 +221,8 @@ typedef struct MtmTransState
 	bool           isEnqueued;         /* Transaction is inserted in queue */
 	bool           isPrepared;         /* Transaction is prepared: now it is safe to commit transaction */
 	bool           isActive;           /* Transaction is active */
-	bool           isTwoPhase;         /* user level 2PC */
+	bool           isTwoPhase;         /* User level 2PC */
+	bool           isPinned;           /* Transaction oid potected from GC */
 	nodemask_t     participantsMask;   /* Mask of nodes involved in transaction */
 	nodemask_t     votedMask;          /* Mask of voted nodes */
 	TransactionId  xids[1];            /* [Mtm->nAllNodes]: transaction ID at replicas */
@@ -329,7 +330,6 @@ extern void  MtmExecutor(void* work, size_t size);
 extern void  MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd);
 extern void  MtmSendMessage(MtmArbiterMessage* msg);
 extern void  MtmAdjustSubtransactions(MtmTransState* ts);
-extern void  MtmBroadcastPollMessage(MtmTransState* ts);
 extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
 extern void  MtmLockNode(int nodeId, LWLockMode mode);
