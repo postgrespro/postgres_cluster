@@ -143,11 +143,7 @@ main(int argc, char *argv[])
 	/* We rely on unmentioned fields of pset.popt to start out 0/false/NULL */
 	pset.popt.topt.format = PRINT_ALIGNED;
 	pset.popt.topt.border = 1;
-#ifdef WIN32
-	pset.popt.topt.pager = 0;
-#else
 	pset.popt.topt.pager = 1;
-#endif
 	pset.popt.topt.pager_min_lines = 0;
 	pset.popt.topt.start_table = true;
 	pset.popt.topt.stop_table = true;
