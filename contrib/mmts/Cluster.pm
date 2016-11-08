@@ -209,17 +209,17 @@ sub stop
 	my $nodes = $self->{nodes};
 	$mode = 'fast' unless defined $mode;
 
-	diag("Dumping logs:");
-	foreach my $node (@$nodes) {
-		diag("##################################################################");
-		diag($node->{_logfile});
-		diag("##################################################################");
-		my $filename = $node->{_logfile};
-		open my $fh, '<', $filename or die "error opening $filename: $!";
-		my $data = do { local $/; <$fh> };
-		diag($data);
-		diag("##################################################################\n\n");
-	}
+	#diag("Dumping logs:");
+	#foreach my $node (@$nodes) {
+		#diag("##################################################################");
+		#diag($node->{_logfile});
+		#diag("##################################################################");
+		#my $filename = $node->{_logfile};
+		#open my $fh, '<', $filename or die "error opening $filename: $!";
+		#my $data = do { local $/; <$fh> };
+		#diag($data);
+		#diag("##################################################################\n\n");
+	#}
 
 	my $ok = 1;
 	diag("stopping cluster ${mode}ly");
@@ -233,7 +233,7 @@ sub stop
 			}
 		}
 	}
-
+	sleep(2);
 	return $ok;
 }
 
