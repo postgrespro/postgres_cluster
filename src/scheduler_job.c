@@ -25,7 +25,7 @@ job_t *get_jobs_to_do(char *nodename, int *n, int *is_error)
 	int ret, got, i;
 	Oid argtypes[1] = { TEXTOID };
 	Datum values[1];
-	const char *get_job_sql = "select at.start_at, at.last_start_available, at.cron, max_run_time, cron.max_instances, cron.executor from schedule.at at, schedule.cron cron where start_at <= 'now' and not at.active and (last_start_available is NULL OR last_start_available > 'now') and at.cron = cron.id AND cron.node = $1 order by at.start_at";
+	const char *get_job_sql = "select at.start_at, at.last_start_available, at.cron, max_run_time, cron.max_instances, cron.executor, cron.next_time_statement from schedule.at at, schedule.cron cron where start_at <= 'now' and not at.active and (last_start_available is NULL OR last_start_available > 'now') and at.cron = cron.id AND cron.node = $1 order by at.start_at";
 
 	*is_error = *n = 0;
 	START_SPI_SNAP();
@@ -48,6 +48,7 @@ job_t *get_jobs_to_do(char *nodename, int *n, int *is_error)
 				jobs[i].max_instances = get_int_from_spi(i, 5, 1);
 				jobs[i].node = _copy_string(nodename);
 				jobs[i].executor = get_text_from_spi(i, 6);
+				jobs[i].next_time_statement = get_text_from_spi(i, 7);
 			}
 		}
 	}

@@ -24,7 +24,8 @@ CREATE TABLE schedule.cron(
    max_instances integer default 1,
    start_date timestamp with time zone,
    end_date timestamp with time zone,
-   reason text
+   reason text,
+   _next_exec_time timestamp with time zone
 );
 
 CREATE TABLE schedule.at(

@@ -39,6 +39,7 @@ volatile sig_atomic_t got_sigterm = false;
 
 static char *sched_databases = "";
 static char *sched_nodename = "master";
+static char *sched_transaction_state = "undefined";
 static int sched_max_workers = 2;
 
 extern void
@@ -91,7 +92,7 @@ char *make_date_from_timestamp(TimestampTz ts)
 	fsec_t fsec;
 	const char *tzn;
 
-	timestamp2tm(ts, &tz, &dt, &fsec, &tzn, NULL ); /* TODO ERROR */
+	timestamp2tm(ts, &tz, &dt, &fsec, &tzn, NULL ); 
 	sprintf(str, "%04d-%02d-%02d %02d:%02d", dt.tm_year , dt.tm_mon,
 			dt.tm_mday, dt.tm_hour, dt.tm_min);
 	return str;
@@ -180,13 +181,11 @@ char_array_t *readBasesToCheck(void)
 		pfree(clean_value);
 		return result;
 	}
-	elog(LOG, "clean value: %s [%d,%d]", clean_value, cv_len, nnames);
 	names = makeCharArray();
 	for(i=0; i < cv_len + 1; i++)
 	{
 		if(clean_value[i] == 0)
 		{
-			elog(LOG, "start position: %d", start_pos);
 			ptr = clean_value + start_pos;
 			if(strlen(ptr)) pushCharArray(names, ptr);
 			start_pos = i + 1;
@@ -259,7 +258,6 @@ void parent_scheduler_main(Datum arg)
 
 	BackgroundWorkerInitializeConnection("postgres", NULL);
 	names = readBasesToCheck();
-	elog(LOG, "GOT NAMES");
 	poll = initSchedulerManagerPool(names);
 	destroyCharArray(names);
 
@@ -369,6 +367,18 @@ void _PG_init(void)
 		&sched_nodename,
 		"master",
 		PGC_SUSET,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+	DefineCustomStringVariable(
+		"schedule.transaction_state",
+		"State of scheduler executor transaction",
+		"If not under scheduler executor process the variable has no mean and has a value = 'undefined', possible values: progress, success, failure",
+		&sched_transaction_state , 
+		"undefined",
+		PGC_INTERNAL,
 		0,
 		NULL,
 		NULL,

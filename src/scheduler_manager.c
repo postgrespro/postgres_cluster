@@ -109,21 +109,10 @@ int get_scheduler_maxworkers(void)
 
 char *get_scheduler_nodename(void)
 {
-	char *ret;
 	const char *opt;
 	opt = GetConfigOption("scheduler.nodename", true, false);
-	if(opt == NULL || strlen(opt) == 0)
-	{
-		ret = worker_alloc(sizeof(char) * 7);
-		memcpy(ret, "master\0", 7);
-	}
-	else
-	{
-		ret = worker_alloc(sizeof(char) * (strlen(opt) + 1));
-		memcpy(ret, opt, strlen(opt) + 1);
-	}
 
-	return ret;
+	return _copy_string((char *)(opt == NULL || strlen(opt) == 0 ? "master": opt));
 }
 
 scheduler_manager_ctx_t *initialize_scheduler_manager_context(char *dbname)
@@ -182,7 +171,7 @@ void destroy_scheduler_manager_context(scheduler_manager_ctx_t *ctx)
 
 void scheduler_manager_stop(scheduler_manager_ctx_t *ctx)
 {
-	pgstat_report_activity(STATE_RUNNING, "stop ececutors");
+	pgstat_report_activity(STATE_RUNNING, "stop executors");
 	/* TODO stop worker but before stop all started kid workers */
 }
 
@@ -193,14 +182,14 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 	TupleDesc tupdesc;
 	Datum dat;
 	bool is_null;
-	int num_id, num_rule, num_pp;
 	int ret;
 	int processed;
 	int i;
+	char *statement = NULL;
 
 	*nt = 0;
 	initStringInfo(&sql);
-	appendStringInfo(&sql, "select *, EXTRACT(EPOCH from coalesce(postpone, '0'::interval))::int as pp  from schedule.cron where active and not broken and (start_date <= 'now' or start_date is null) and (end_date <= 'now' or end_date is null) and node = '%s'", ctx->nodename);
+	appendStringInfo(&sql, "select id, rule, postpone, _next_exec_time, next_time_statement from schedule.cron where active and not broken and (start_date <= 'now' or start_date is null) and (end_date <= 'now' or end_date is null) and node = '%s'", ctx->nodename);
 
 	pgstat_report_activity(STATE_RUNNING, "select 'at' tasks");
 
@@ -214,20 +203,28 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 			processed = SPI_processed;
 			tupdesc = SPI_tuptable->tupdesc;
 
-			num_id = SPI_fnumber(tupdesc, "id");
-			num_rule = SPI_fnumber(tupdesc, "rule");
-			num_pp = SPI_fnumber(tupdesc, "postpone");
 			tasks = worker_alloc(sizeof(scheduler_task_t) * processed);
-
 			elog(LOG, "Found %d tasks", processed);
 
 			for(i = 0; i < processed; i++)
 			{
-				tasks[i].id = get_int_from_spi(i, num_id, 0);
-				dat = SPI_getbinval(SPI_tuptable->vals[i], tupdesc, num_rule,
+				tasks[i].id = get_int_from_spi(i, 1, 0);
+				dat = SPI_getbinval(SPI_tuptable->vals[i], tupdesc, 2,
 						&is_null);
 				tasks[i].rule = is_null ? NULL: DatumGetJsonb(dat);
-				tasks[i].postpone = get_interval_seconds_from_spi(i, num_pp, 0);
+				tasks[i].postpone = get_interval_seconds_from_spi(i, 3, 0);
+				tasks[i].next = get_timestamp_from_spi(i, 4, 0);
+				statement = get_text_from_spi(i, 5);
+				if(statement)
+				{
+					tasks[i].has_next_time_statement = true;
+					pfree(statement);
+					statement = NULL;
+				}
+				else
+				{
+					tasks[i].has_next_time_statement = false;
+				}
 			}
 			*nt = processed;
 		}
@@ -399,7 +396,6 @@ char **get_dates_array_from_rule(scheduler_task_t *task, int *num)
 	v = findJsonbValueFromContainer(&task->rule->root, JB_FOBJECT, &kval);
 	if(v && v->type == jbvBinary && v->val.binary.data->header & JB_FARRAY)
 	{
-	elog(LOG, "got dates array");
 		VN = v->val.binary.data->header & JB_CMASK;
 		dates = worker_alloc(sizeof(char *) * VN);
 		for(i=0; i < VN; i++)
@@ -412,7 +408,7 @@ char **get_dates_array_from_rule(scheduler_task_t *task, int *num)
 				memcpy(dates[*num], ai->val.string.val, slen);
 				dates[*num][16] = 0;
 				if(dates[*num][10] == 'T') dates[*num][10] = ' ';
-				elog(LOG, " ### %s", dates[*num]);
+				/* elog(LOG, " ### %s", dates[*num]); */
 
 
 				(*num)++;
@@ -446,6 +442,18 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 
 		return nextarray;
 	}
+	if(task->next > 0)
+	{
+		if(task->next >= start && stop >= task->next)
+		{
+			*ntimes  = 1;
+			nextarray = worker_alloc(sizeof(TimestampTz));
+			nextarray[0] = task->next;
+
+			return nextarray;
+		}
+		return NULL;
+	}
 
 	curr = start;
 	nextarray = worker_alloc(sizeof(TimestampTz) * REALLOC_STEP);
@@ -466,6 +474,7 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 			{
 				nextarray = repalloc(nextarray, sizeof(TimestampTz) * (*ntimes + REALLOC_STEP));
 			}
+			if(task->has_next_time_statement) break;
 		}
 #ifdef HAVE_INT64_TIMESTAMP
 		curr += USECS_PER_MINUTE;
@@ -660,7 +669,7 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx)
 			if(ni >= jobs[i].max_instances)
 			{
 				START_SPI_SNAP();
-				set_job_error(&jobs[i], "Max instances limit reached");
+				set_job_error(&jobs[i], "max instances limit reached");
 				move_job_to_log(&jobs[i], false);
 				destroy_job(&jobs[i], 0);
 				STOP_SPI_SNAP();
@@ -736,6 +745,9 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx)
 	pid_t tmppid;
 	bool job_status;
 	schd_executor_share_t *shm_data;
+	TimestampTz next_time;
+	char *next_time_str;
+	char *error;
 
 	if(ctx->free_slots == ctx->slots_len) return 0;
 	busy = ctx->slots_len - ctx->free_slots;
@@ -755,7 +767,6 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx)
 			toremove[nremove].pos = i;
 			toremove[nremove].reason = RmTimeout;
 			nremove++;
-			elog(LOG, "TIME OUT ON %d", i);
 		}
 		else
 		{
@@ -764,7 +775,6 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx)
 			{
 				toremove[nremove].pos = i;
 				toremove[nremove].reason = shm_data->status == SchdExecutorDone ? RmDone: RmError;
-				elog(LOG, "Catch %d reason", toremove[nremove].reason);
 				nremove++;
 			}
 		}
@@ -820,6 +830,26 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx)
 			if(removeJob)
 			{
 				START_SPI_SNAP();
+				if(item->job->next_time_statement)
+				{
+					shm_data = dsm_segment_address(item->shared);
+					if(shm_data->next_time > 0)
+					{
+						next_time = _round_timestamp_to_minute(shm_data->next_time);
+						next_time_str = make_date_from_timestamp(next_time);
+						if(insert_at_record(ctx->nodename, item->job->cron_id, next_time, 0, &error) < 0)
+						{
+							elog(ERROR, "Cannot insert next time at record: %s",
+											error ? error: "unknown error");
+						}
+						update_cron_texttime(item->job->cron_id, next_time);
+						if(!item->job->error)
+						{
+							set_job_error(item->job, "set next exec time: %s", next_time_str);
+							pfree(next_time_str);
+						}
+					}
+				}
 				move_job_to_log(item->job, job_status);
 				STOP_SPI_SNAP();
 
@@ -838,6 +868,33 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx)
 	return 1;
 }
 
+int update_cron_texttime(int cron_id, TimestampTz next)
+{
+	Oid types[2] = { INT4OID, TIMESTAMPTZOID };
+	Datum values[2];
+	bool nulls[2] = { ' ', ' ' };
+	char *error;
+	int ret;
+	char *sql = "update schedule.cron set _next_exec_time = $2 where id = $1";
+
+	values[0] = Int32GetDatum(cron_id);
+	if(next > 0)
+	{
+		values[1] = TimestampTzGetDatum(next);
+	}
+	else
+	{
+		nulls[1] = 'n';
+	}
+	ret = execute_spi_sql_with_args(sql, 2, types, values, nulls, &error);
+	if(ret < 0)
+	{
+		elog(ERROR, "Cannot update cron %d next time: %s", cron_id, error);
+	}
+
+	return ret;
+}
+
 int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx)
 { 
 	job_t *expired;
@@ -850,11 +907,8 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx)
 
 	if(ctx->next_expire_time > GetCurrentTimestamp()) return -1;
 	pgstat_report_activity(STATE_RUNNING, "vanish expired tasks");
-	elog(LOG, "Start vanish");
 	START_SPI_SNAP();
-	elog(LOG, "Going to get expired");
 	expired = get_expired_jobs(ctx->nodename, &nexpired, &is_error);
-	elog(LOG, "Found %d expired", nexpired);
 
 	if(is_error)
 	{
@@ -868,7 +922,6 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx)
 		{
 			ts = make_date_from_timestamp(expired[i].last_start_avail); 
 			set_job_error(&expired[i], "job cron = %d start time (%s:00) expired", expired[i].cron_id, ts);
-			elog(LOG, "ERROR: %s", expired[i].error);
 			move_ret  = move_job_to_log(&expired[i], 0);
 			if(move_ret < 0)
 			{
@@ -892,24 +945,62 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx)
 	return ret;
 }
 
+int insert_at_record(char *nodename, int cron_id, TimestampTz start_at, TimestampTz postpone, char **error)
+{
+	Datum values[4];
+	char  nulls[4] = { ' ', ' ', ' ', ' ' };
+	Oid argtypes[4];
+	char *insert_sql = "insert into schedule.at (start_at, last_start_available, node, retry, cron, active) values ($1, $2, $3, 0, $4, false)";
+	char *at_sql = "select count(start_at) from schedule.at where cron = $1 and start_at = $2";
+	char *log_sql = "select count(start_at) from schedule.log where cron = $1 and start_at = $2";
+	int count, ret;
+
+	argtypes[0] = INT4OID;
+	argtypes[1] = TIMESTAMPTZOID;
+	values[0] = Int32GetDatum(cron_id);
+	values[1] = TimestampTzGetDatum(start_at);
+
+	count = select_count_with_args(at_sql, 2, argtypes, values, NULL);
+	if(count == 0) count = select_count_with_args(log_sql, 2, argtypes, values, NULL);
+	if(count > 0) return 0;
+
+	argtypes[0] = TIMESTAMPTZOID;
+	argtypes[1] = TIMESTAMPTZOID;
+	argtypes[2] = CSTRINGOID;
+	argtypes[3] = INT4OID;
+
+	values[0] = TimestampTzGetDatum(start_at);
+	values[2] = CStringGetDatum(nodename);
+	values[3] = Int32GetDatum(cron_id);
+
+	if(postpone > 0)
+	{
+		values[1] = TimestampTzGetDatum(timestamp_add_seconds(start_at, postpone));
+		nulls[1] = ' ';
+	}
+	else
+	{
+		nulls[1] = 'n';
+		values[1] = 0;
+	}
+	ret = execute_spi_sql_with_args(insert_sql, 4, argtypes, values, nulls, error);
+
+	if(ret < 0) return ret;
+	return 1;
+}
+
 int scheduler_make_at_record(scheduler_manager_ctx_t *ctx)
 {
 	scheduler_task_t *tasks;
 	int ntasks = 0, ntimes = 0;
 	TimestampTz *next_times;
-	int count;
-	StringInfoData sql;
 	int i, j, r1, r2;
-	char **exec_dates;
+	char **exec_dates = NULL;
 	int n_exec_dates = 0;
 	char *date1;
 	char *date2;
 	TimestampTz start, stop, tt;
 	bool realloced = false;
-	Datum values[4];
-	char  nulls[4] = { ' ', ' ', ' ', ' ' };
-	Oid argtypes[4];
-	char *insert_sql = "insert into schedule.at (start_at, last_start_available, node, retry, cron, active) values ($1, $2, $3, 0, $4, false)";
 	char *error;
 
 	start = GetCurrentTimestamp();
@@ -930,13 +1021,16 @@ int scheduler_make_at_record(scheduler_manager_ctx_t *ctx)
 	}
 	pgstat_report_activity(STATE_RUNNING, "calc next runtime");
 
-	initStringInfo(&sql);
 	for(i = 0; i < ntasks; i++)
 	{
+		n_exec_dates = 0;
+		ntimes = 0;
+
 		next_times = scheduler_calc_next_task_time(&(tasks[i]),
 				GetCurrentTimestamp(), timestamp_add_seconds(0, 600),
 				(ctx->next_at_time > 0 ? 0: 1), &ntimes);
-		exec_dates = get_dates_array_from_rule(&(tasks[i]), &n_exec_dates);
+		if(tasks[i].next == 0)
+			exec_dates = get_dates_array_from_rule(&(tasks[i]), &n_exec_dates);
 		if(n_exec_dates > 0)
 		{
 			date1 = make_date_from_timestamp(start);
@@ -973,48 +1067,10 @@ int scheduler_make_at_record(scheduler_manager_ctx_t *ctx)
 		{
 			for(j=0; j < ntimes; j++)
 			{
-				argtypes[0] = INT4OID;
-				argtypes[1] = TIMESTAMPTZOID;
-				values[0] = Int32GetDatum(tasks[i].id);
-				values[1] = TimestampTzGetDatum(next_times[j]);
-
-				count = select_count_with_args(
-					"select count(start_at) from schedule.at where cron = $1 and start_at = $2",
-					2, argtypes, values, NULL);
-				resetStringInfo(&sql);
-				if(count == 0)
+				if(insert_at_record(ctx->nodename, tasks[i].id, next_times[j], tasks[i].postpone, &error) < 0)
 				{
-					count = select_count_with_args(
-						"select count(start_at) from schedule.log where cron = $1 and start_at = $2",
-						2, argtypes, values, nulls);
-					resetStringInfo(&sql);
+					elog(ERROR, "Cannot insert AT task: %s", error ? error: "unknown error");
 				}
-				if(count > 0) continue;
-
-				argtypes[0] = TIMESTAMPTZOID;
-				argtypes[1] = TIMESTAMPTZOID;
-				argtypes[2] = CSTRINGOID;
-				argtypes[3] = INT4OID;
-
-				values[0] = TimestampTzGetDatum(next_times[j]);
-				values[2] = CStringGetDatum(ctx->nodename);
-				values[3] = Int32GetDatum(tasks[i].id);
-
-				if(tasks[i].postpone > 0)
-				{
-					values[1] = TimestampTzGetDatum(timestamp_add_seconds(next_times[j], tasks[i].postpone));
-				}
-				else
-				{
-					nulls[1] = 'n';
-					values[1] = 0;
-				}
-				execute_spi_sql_with_args(insert_sql, 4, argtypes, values, nulls, &error);
-				if(error)
-				{
-					elog(ERROR, "Cannot insert AT task: %s", error);
-				}
-				resetStringInfo(&sql);
 			}
 			pfree(next_times);
 		}
@@ -1025,6 +1081,22 @@ int scheduler_make_at_record(scheduler_manager_ctx_t *ctx)
 
 	ctx->next_at_time = timestamp_add_seconds(0, 25);
 	return ntasks;
+}
+
+void clean_at_table(void)
+{
+	char *error = NULL;
+
+	START_SPI_SNAP();
+	if(execute_spi("truncate schedule.at", &error) < 0)
+	{
+		elog(ERROR, "Cannot clean 'at' table: %s", error);
+	}
+	if(execute_spi("update schedule.cron set _next_exec_time = NULL where _next_exec_time is not NULL", &error) < 0)
+	{
+		elog(ERROR, "Cannot clean cron _next time: %s", error);
+	}
+	STOP_SPI_SNAP();
 }
 
 void manager_worker_main(Datum arg)
@@ -1089,6 +1161,7 @@ void manager_worker_main(Datum arg)
 	changeChildBgwState(shared, SchdManagerConnected);
 	init_worker_mem_ctx("WorkerMemoryContext");
 	ctx = initialize_scheduler_manager_context(database);
+	clean_at_table();
 
 	while(!got_sigterm)
 	{

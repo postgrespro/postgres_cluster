@@ -58,13 +58,12 @@ void executor_worker_main(Datum arg)
 	dsm_segment *seg;
 	job_t *job;
 	int i;
-	bool success = true;
 	executor_error_t EE;
 	int ret;
 	char *error = NULL;
-	bool use_pg_vars = true;
+	/* bool use_pg_vars = true; */
+	/* bool success = true; */
 	schd_executor_status_t status;
-	/* int rc = 0; */
 
 	EE.n = 0;
 	EE.errors = NULL;
@@ -127,6 +126,7 @@ void executor_worker_main(Datum arg)
 	CHECK_FOR_INTERRUPTS();
 	/* rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
 	ResetLatch(MyLatch); */
+	SetConfigOption("schedule.transaction_state", "running", PGC_INTERNAL, PGC_S_SESSION);
 
 	if(job->same_transaction)
 	{
@@ -143,8 +143,9 @@ void executor_worker_main(Datum arg)
 		ret = execute_spi(job->dosql[i], &error);
 		if(ret < 0)
 		{
-			success = false;
+			/* success = false; */
 			status = SchdExecutorError;
+			SetConfigOption("schedule.transaction_state", "failure", PGC_INTERNAL, PGC_S_SESSION);
 			if(error)
 			{
 				push_executor_error(&EE, "error on %d: %s", i+1, error);
@@ -174,13 +175,15 @@ void executor_worker_main(Datum arg)
 			STOP_SPI_SNAP();
 		}
 		status = SchdExecutorDone;
+		SetConfigOption("schedule.transaction_state", "success", PGC_INTERNAL, PGC_S_SESSION);
 	}
 	if(job->next_time_statement)
 	{
-		if(use_pg_vars)  /* may be to define custom var is better */
+/*		if(use_pg_vars)  
 		{
 			set_pg_var(success, &EE);
 		}
+*/
 		shared->next_time = get_next_excution_time(job->next_time_statement, &EE);
 	}
 	pgstat_report_activity(STATE_RUNNING, "finish job processing");
@@ -261,7 +264,7 @@ void set_shared_message(schd_executor_share_t *shared, executor_error_t *ee)
 		}
 		else
 		{
-			memcpy(ptr, ", ", 2);
+			memcpy(ptr, "; ", 2);
 			left -= 2;
 			ptr += 2;
 		}
@@ -277,7 +280,7 @@ TimestampTz get_next_excution_time(char *sql, executor_error_t *ee)
 	bool isnull;
 
 	START_SPI_SNAP();
-	pgstat_report_activity(STATE_RUNNING, "finish job processing");
+	pgstat_report_activity(STATE_RUNNING, "culc next time execution time");
 	ret = execute_spi(sql, &error);
 	if(ret < 0)
 	{
@@ -333,7 +336,6 @@ int executor_onrollback(job_t *job, executor_error_t *ee)
 	{
 		if(error)
 		{
-			elog(LOG, "EXECUTOR: onrollback error: %s", error);
 			push_executor_error(ee, "onrollback error: %s", error);
 			pfree(error);
 		}
@@ -371,7 +373,7 @@ void set_pg_var(bool result, executor_error_t *ee)
 		}
 		else
 		{
-			push_executor_error(ee, "set variable: code: %d", ret);
+			push_executor_error(ee, "set variable error code: %d", ret);
 		}
 	}
 }

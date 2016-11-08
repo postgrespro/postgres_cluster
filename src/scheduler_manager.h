@@ -20,6 +20,8 @@ typedef struct {
 	int id;
 	Jsonb *rule;
 	TimestampTz postpone;
+	TimestampTz next;
+	bool has_next_time_statement;
 } scheduler_task_t;
 
 typedef enum {
@@ -34,7 +36,7 @@ typedef struct {
 	schd_remove_reason_t reason;  
 } scheduler_rm_item_t;
 
-typedef struct {  /* TODO */
+typedef struct {  
 	TimestampTz started;
 	TimestampTz stop_it;
 
@@ -79,10 +81,13 @@ char **get_dates_array_from_rule(scheduler_task_t *task, int *num);
 int get_integer_from_jsonbval(JsonbValue *ai, int def);
 int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx);
 int how_many_instances_on_work(scheduler_manager_ctx_t *ctx, int cron_id);
+int insert_at_record(char *nodename, int cron_id, TimestampTz start_at, TimestampTz postpone, char **error);
 int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job);
 int scheduler_start_jobs(scheduler_manager_ctx_t *ctx);
 int scheduler_check_slots(scheduler_manager_ctx_t *ctx);
 void destroy_slot_item(scheduler_manager_slot_t *item);
 int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_t *item);
+void clean_at_table(void);
+int update_cron_texttime(int cron_id, TimestampTz next);
 
 #endif
