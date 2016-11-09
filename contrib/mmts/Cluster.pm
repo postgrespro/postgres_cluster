@@ -233,7 +233,7 @@ sub stop
 			}
 		}
 	}
-
+	sleep(2);
 	return $ok;
 }
 

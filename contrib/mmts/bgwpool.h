@@ -34,6 +34,7 @@ typedef struct
 	time_t lastPeakTime;
 	timestamp_t lastDynamicWorkerStartTime;
     bool   producerBlocked;
+	bool   shutdown;
     char   dbname[MAX_DBNAME_LEN];
 	char   dbuser[MAX_DBUSER_LEN];
     char*  queue;
@@ -51,4 +52,5 @@ extern size_t BgwPoolGetQueueSize(BgwPool* pool);
 
 extern timestamp_t BgwGetLastPeekTime(BgwPool* pool);
 
+extern void BgwPoolStop(BgwPool* pool);
 #endif
