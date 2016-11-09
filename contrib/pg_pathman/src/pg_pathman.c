@@ -83,6 +83,7 @@ static void handle_binary_opexpr_param(const PartRelationInfo *prel, WrapperNode
 static WrapperNode *handle_opexpr(const OpExpr *expr, WalkerContext *context);
 static WrapperNode *handle_boolexpr(const BoolExpr *expr, WalkerContext *context);
 static WrapperNode *handle_arrexpr(const ScalarArrayOpExpr *expr, WalkerContext *context);
+static double estimate_paramsel_using_prel(const PartRelationInfo *prel, int strategy);
 static RestrictInfo *rebuild_restrictinfo(Node *clause, RestrictInfo *old_rinfo);
 static bool pull_var_param(const WalkerContext *ctx, const OpExpr *expr, Node **var_ptr, Node **param_ptr);
 
@@ -874,6 +875,10 @@ create_partitions_internal(Oid relid, Datum value, Oid value_type)
 			min_rvalue = PrelGetRangesArray(prel)[0].min;
 			max_rvalue = PrelGetRangesArray(prel)[PrelLastChild(prel)].max;
 
+			/* Copy datums on order to protect them from cache invalidation */
+			min_rvalue = datumCopy(min_rvalue, prel->attbyval, prel->attlen);
+			max_rvalue = datumCopy(max_rvalue, prel->attbyval, prel->attlen);
+
 			/* Retrieve interval as TEXT from tuple */
 			interval_text = values[Anum_pathman_config_range_interval - 1];
 
@@ -1185,6 +1190,7 @@ handle_binary_opexpr(WalkerContext *context, WrapperNode *result,
 				uint32	idx = hash_to_part_index(DatumGetInt32(value),
 												 PrelChildrenCount(prel));
 
+				result->paramsel = estimate_paramsel_using_prel(prel, strategy);
 				result->rangeset = list_make1_irange(make_irange(idx, idx, true));
 
 				return; /* exit on equal */
@@ -1199,6 +1205,7 @@ handle_binary_opexpr(WalkerContext *context, WrapperNode *result,
 										PrelChildrenCount(context->prel),
 										strategy,
 										result);
+				result->paramsel = estimate_paramsel_using_prel(prel, strategy);
 				return;
 			}
 
@@ -1233,19 +1240,25 @@ handle_binary_opexpr_param(const PartRelationInfo *prel,
 	strategy = get_op_opfamily_strategy(expr->opno, tce->btree_opf);
 
 	result->rangeset = list_make1_irange(make_irange(0, PrelLastChild(prel), true));
+	result->paramsel = estimate_paramsel_using_prel(prel, strategy);
+}
 
+/*
+ * Extracted common 'paramsel' estimator.
+ */
+static double
+estimate_paramsel_using_prel(const PartRelationInfo *prel, int strategy)
+{
+	/* If it's "=", divide by partitions number */
 	if (strategy == BTEqualStrategyNumber)
-	{
-		result->paramsel = 1.0 / (double) PrelChildrenCount(prel);
-	}
+		return 1.0 / (double) PrelChildrenCount(prel);
+
+	/* Default selectivity estimate for inequalities */
 	else if (prel->parttype == PT_RANGE && strategy > 0)
-	{
-		result->paramsel = DEFAULT_INEQ_SEL;
-	}
-	else
-	{
-		result->paramsel = 1.0;
-	}
+		return DEFAULT_INEQ_SEL;
+
+	/* Else there's not much to do */
+	else return 1.0;
 }
 
 /*
@@ -1320,6 +1333,7 @@ handle_const(const Const *c, WalkerContext *context)
 {
 	const PartRelationInfo *prel = context->prel;
 	WrapperNode			   *result = (WrapperNode *) palloc(sizeof(WrapperNode));
+	int						strategy = BTEqualStrategyNumber;
 
 	result->orig = (const Node *) c;
 
@@ -1344,6 +1358,8 @@ handle_const(const Const *c, WalkerContext *context)
 				Datum	value = OidFunctionCall1(prel->hash_proc, c->constvalue);
 				uint32	idx = hash_to_part_index(DatumGetInt32(value),
 												 PrelChildrenCount(prel));
+
+				result->paramsel = estimate_paramsel_using_prel(prel, strategy);
 				result->rangeset = list_make1_irange(make_irange(idx, idx, true));
 			}
 			break;
@@ -1358,8 +1374,10 @@ handle_const(const Const *c, WalkerContext *context)
 										&tce->cmp_proc_finfo,
 										PrelGetRangesArray(context->prel),
 										PrelChildrenCount(context->prel),
-										BTEqualStrategyNumber,
+										strategy,
 										result);
+
+				result->paramsel = estimate_paramsel_using_prel(prel, strategy);
 			}
 			break;
 

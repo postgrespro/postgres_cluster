@@ -184,7 +184,7 @@ PLy_procedure_create(HeapTuple procTup, Oid fn_oid, bool is_trigger)
 
 		proc->proname = pstrdup(NameStr(procStruct->proname));
 		proc->pyname = pstrdup(procName);
-		proc->fn_xmin = HeapTupleHeaderGetRawXmin(procTup->t_data);
+		proc->fn_xmin = HeapTupleGetRawXmin(procTup);
 		proc->fn_tid = procTup->t_self;
 		proc->fn_readonly = (procStruct->provolatile != PROVOLATILE_VOLATILE);
 		proc->is_setof = procStruct->proretset;

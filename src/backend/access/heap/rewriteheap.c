@@ -1259,7 +1259,7 @@ CheckPointLogicalRewriteHeap(void)
 		if (sscanf(mapping_de->d_name, LOGICAL_REWRITE_FORMAT,
 				   &dboid, &relid, &lsn_hi, &lsn_lo,
 				   &rewrite_xid_hi, &rewrite_xid_lo,
-				   &create_xid_hi, &create_xid_lo) != 6)
+				   &create_xid_hi, &create_xid_lo) != 8)
 			elog(ERROR, "could not parse filename \"%s\"", mapping_de->d_name);
 
 		lsn = ((uint64) lsn_hi) << 32 | lsn_lo;

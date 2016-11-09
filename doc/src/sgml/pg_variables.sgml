@@ -337,7 +337,7 @@ ERROR:  variable "int1" requires "integer" value
       </para>
 
       <informaltable>
-        <tgroup cols="2">
+        <tgroup cols="3">
           <thead>
             <row>
               <entry>
@@ -437,7 +437,7 @@ ERROR:  variable "int1" requires "integer" value
     <sect3 id="pg-variables-miscellaneous-functions">
       <title>Miscellaneous functions</title>
       <informaltable>
-        <tgroup cols="2">
+        <tgroup cols="3">
           <thead>
             <row>
               <entry>
@@ -527,7 +527,7 @@ ERROR:  variable "int1" requires "integer" value
       </informaltable>
       <para>
         Note that <literal>pgv_stats()</literal> works only with the
-        PostgreSQL 9.6 and newer.
+        &productname; 9.6 and newer.
       </para>
     </sect3>
   </sect2>

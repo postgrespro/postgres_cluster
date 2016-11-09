@@ -59,18 +59,23 @@ PG_FUNCTION_INFO_V1( prevent_relation_modification );
 PG_FUNCTION_INFO_V1( validate_on_part_init_callback_pl );
 PG_FUNCTION_INFO_V1( invoke_on_partition_created_callback );
 
+PG_FUNCTION_INFO_V1( check_security_policy );
+
 PG_FUNCTION_INFO_V1( debug_capture );
 
 
+/*
+ * User context for function show_partition_list_internal().
+ */
 typedef struct
 {
 	Relation				pathman_config;
 	HeapScanDesc			pathman_config_scan;
 	Snapshot				snapshot;
 
-	const PartRelationInfo *current_prel;
+	const PartRelationInfo *current_prel;	/* selected PartRelationInfo */
 
-	uint32					child_number;
+	uint32					child_number;	/* child we're looking at */
 } show_partition_list_cxt;
 
 
@@ -106,13 +111,13 @@ on_partitions_created_internal(Oid partitioned_table, bool add_callbacks)
 static void
 on_partitions_updated_internal(Oid partitioned_table, bool add_callbacks)
 {
-	bool found;
+	bool entry_found;
 
 	elog(DEBUG2, "on_partitions_updated() [add_callbacks = %s] "
 				 "triggered for relation %u",
 		 (add_callbacks ? "true" : "false"), partitioned_table);
 
-	invalidate_pathman_relation_info(partitioned_table, &found);
+	invalidate_pathman_relation_info(partitioned_table, &entry_found);
 }
 
 static void
@@ -173,7 +178,7 @@ get_parent_of_partition_pl(PG_FUNCTION_ARGS)
 		PG_RETURN_OID(parent);
 	else
 	{
-		elog(ERROR, "\%s\" is not pg_pathman's partition",
+		elog(ERROR, "\"%s\" is not a partition",
 			 get_rel_name_or_relid(partition));
 
 		PG_RETURN_NULL();
@@ -348,6 +353,7 @@ show_partition_list_internal(PG_FUNCTION_ARGS)
 		/* Alias to 'usercxt->current_prel' */
 		prel = usercxt->current_prel;
 
+		/* If we've run out of partitions, switch to the next 'prel' */
 		if (usercxt->child_number >= PrelChildrenCount(prel))
 		{
 			usercxt->current_prel = NULL;
@@ -359,10 +365,12 @@ show_partition_list_internal(PG_FUNCTION_ARGS)
 		partattr_cstr = get_attname(PrelParentRelid(prel), prel->attnum);
 		if (!partattr_cstr)
 		{
+			/* Parent does not exist, go to the next 'prel' */
 			usercxt->current_prel = NULL;
 			continue;
 		}
 
+		/* Fill in common values */
 		values[Anum_pathman_pl_parent - 1]		= PrelParentRelid(prel);
 		values[Anum_pathman_pl_parttype - 1]	= prel->parttype;
 		values[Anum_pathman_pl_partattr - 1]	= CStringGetTextDatum(partattr_cstr);
@@ -530,7 +538,7 @@ build_check_constraint_name_attname(PG_FUNCTION_ARGS)
 		elog(ERROR, "Invalid relation %u", relid);
 
 	if (attnum == InvalidAttrNumber)
-		elog(ERROR, "Relation \"%s\" has no column '%s'",
+		elog(ERROR, "relation \"%s\" has no column \"%s\"",
 			 get_rel_name_or_relid(relid), text_to_cstring(attname));
 
 	result = build_check_constraint_name_internal(relid, attnum);
@@ -579,7 +587,7 @@ add_to_pathman_config(PG_FUNCTION_ARGS)
 		elog(ERROR, "Invalid relation %u", relid);
 
 	if (get_attnum(relid, text_to_cstring(attname)) == InvalidAttrNumber)
-		elog(ERROR, "Relation \"%s\" has no column '%s'",
+		elog(ERROR, "relation \"%s\" has no column \"%s\"",
 			 get_rel_name_or_relid(relid), text_to_cstring(attname));
 
 	/* Select partitioning type using 'range_interval' */
@@ -852,6 +860,29 @@ invoke_on_partition_created_callback(PG_FUNCTION_ARGS)
 	FunctionCallInvoke(&cb_fcinfo);
 
 	PG_RETURN_VOID();
+}
+
+/*
+ * Function to be used for RLS rules on PATHMAN_CONFIG and
+ * PATHMAN_CONFIG_PARAMS tables.
+ * NOTE: check_security_policy_internal() is used under the hood.
+ */
+Datum
+check_security_policy(PG_FUNCTION_ARGS)
+{
+	Oid relid = PG_GETARG_OID(0);
+
+	if (!check_security_policy_internal(relid, GetUserId()))
+	{
+		elog(WARNING, "only the owner or superuser can change "
+					  "partitioning configuration of table \"%s\"",
+			 get_rel_name_or_relid(relid));
+
+		PG_RETURN_BOOL(false);
+	}
+
+	/* Else return TRUE */
+	PG_RETURN_BOOL(true);
 }
 
 

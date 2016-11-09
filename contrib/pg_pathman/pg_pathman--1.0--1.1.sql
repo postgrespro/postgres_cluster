@@ -1,38 +1,666 @@
 /* ------------------------------------------------------------------------
  *
- * range.sql
- *      RANGE partitioning functions
+ * pg_pathman--1.0--1.1.sql
+ *		Migration scripts to version 1.1
  *
  * Copyright (c) 2015-2016, Postgres Professional
  *
  * ------------------------------------------------------------------------
  */
 
-CREATE OR REPLACE FUNCTION @extschema@.get_sequence_name(
-	plain_schema	TEXT,
-	plain_relname	TEXT)
-RETURNS TEXT AS
+
+/* ------------------------------------------------------------------------
+ * Modify config params table
+ * ----------------------------------------------------------------------*/
+ALTER TABLE @extschema@.pathman_config_params ADD COLUMN init_callback REGPROCEDURE NOT NULL DEFAULT 0;
+ALTER TABLE @extschema@.pathman_config_params ALTER COLUMN enable_parent SET DEFAULT FALSE;
+
+
+/* ------------------------------------------------------------------------
+ * Enable permissions
+ * ----------------------------------------------------------------------*/
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON @extschema@.pathman_config, @extschema@.pathman_config_params
+TO public;
+
+CREATE OR REPLACE FUNCTION @extschema@.check_security_policy(relation regclass)
+RETURNS BOOL AS 'pg_pathman', 'check_security_policy' LANGUAGE C STRICT;
+
+CREATE POLICY deny_modification ON @extschema@.pathman_config
+FOR ALL USING (check_security_policy(partrel));
+
+CREATE POLICY deny_modification ON @extschema@.pathman_config_params
+FOR ALL USING (check_security_policy(partrel));
+
+CREATE POLICY allow_select ON @extschema@.pathman_config FOR SELECT USING (true);
+
+CREATE POLICY allow_select ON @extschema@.pathman_config_params FOR SELECT USING (true);
+
+ALTER TABLE @extschema@.pathman_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE @extschema@.pathman_config_params ENABLE ROW LEVEL SECURITY;
+
+GRANT SELECT ON @extschema@.pathman_concurrent_part_tasks TO PUBLIC;
+
+
+/* ------------------------------------------------------------------------
+ * Drop irrelevant functions
+ * ----------------------------------------------------------------------*/
+DROP FUNCTION @extschema@.pathman_set_param(REGCLASS, TEXT, BOOLEAN);
+DROP FUNCTION @extschema@.enable_parent(REGCLASS);
+DROP FUNCTION @extschema@.disable_parent(relation REGCLASS);
+DROP FUNCTION @extschema@.enable_auto(relation REGCLASS);
+DROP FUNCTION @extschema@.disable_auto(relation REGCLASS);
+DROP FUNCTION @extschema@.partition_table_concurrently(relation regclass);
+DROP FUNCTION @extschema@._partition_data_concurrent(REGCLASS, ANYELEMENT, ANYELEMENT, INT, OUT BIGINT);
+DROP FUNCTION @extschema@.common_relation_checks(REGCLASS, TEXT);
+DROP FUNCTION @extschema@.get_attribute_type_name(REGCLASS, TEXT);
+DROP FUNCTION @extschema@.get_type_hash_func(REGTYPE);
+DROP FUNCTION @extschema@.check_boundaries(REGCLASS, TEXT, ANYELEMENT, ANYELEMENT);
+DROP FUNCTION @extschema@.create_range_partitions(REGCLASS, TEXT, ANYELEMENT, INTERVAL, INTEGER, BOOLEAN);
+DROP FUNCTION @extschema@.create_range_partitions(REGCLASS, TEXT, ANYELEMENT, ANYELEMENT, INTEGER, BOOLEAN);
+DROP FUNCTION @extschema@.create_partitions_from_range(REGCLASS, TEXT, ANYELEMENT, ANYELEMENT, ANYELEMENT, BOOLEAN);
+DROP FUNCTION @extschema@.create_partitions_from_range(REGCLASS, TEXT, ANYELEMENT, ANYELEMENT, INTERVAL, BOOLEAN);
+DROP FUNCTION @extschema@.create_single_range_partition(REGCLASS, ANYELEMENT, ANYELEMENT, TEXT);
+DROP FUNCTION @extschema@.split_range_partition(REGCLASS, ANYELEMENT, TEXT, OUT ANYARRAY);
+DROP FUNCTION @extschema@.merge_range_partitions(REGCLASS, REGCLASS);
+DROP FUNCTION @extschema@.append_range_partition(REGCLASS, TEXT);
+DROP FUNCTION @extschema@.append_partition_internal(REGCLASS, TEXT, TEXT, ANYARRAY, TEXT);
+DROP FUNCTION @extschema@.prepend_range_partition(REGCLASS, TEXT);
+DROP FUNCTION @extschema@.prepend_partition_internal(REGCLASS, TEXT, TEXT, ANYARRAY, TEXT);
+DROP FUNCTION @extschema@.add_range_partition(REGCLASS, ANYELEMENT, ANYELEMENT, TEXT);
+DROP FUNCTION @extschema@.drop_range_partition(REGCLASS);
+DROP FUNCTION @extschema@.attach_range_partition(REGCLASS, REGCLASS, ANYELEMENT, ANYELEMENT);
+DROP FUNCTION @extschema@.detach_range_partition(REGCLASS);
+DROP FUNCTION @extschema@.build_range_condition(TEXT, ANYELEMENT, ANYELEMENT);
+DROP FUNCTION @extschema@.get_range_by_idx(REGCLASS, INTEGER, ANYELEMENT);
+DROP FUNCTION @extschema@.get_range_by_part_oid(REGCLASS, REGCLASS, ANYELEMENT);
+DROP FUNCTION @extschema@.get_min_range_value(REGCLASS, ANYELEMENT);
+DROP FUNCTION @extschema@.get_max_range_value(REGCLASS, ANYELEMENT);
+
+
+/* ------------------------------------------------------------------------
+ * Alter functions' modifiers
+ * ----------------------------------------------------------------------*/
+ALTER FUNCTION @extschema@.partitions_count(REGCLASS) STRICT;
+ALTER FUNCTION @extschema@.partition_data(REGCLASS, OUT	BIGINT) STRICT;
+ALTER FUNCTION @extschema@.disable_pathman_for(REGCLASS) STRICT;
+ALTER FUNCTION @extschema@.get_plain_schema_and_relname(REGCLASS, OUT TEXT, OUT TEXT) STRICT;
+ALTER FUNCTION @extschema@.get_schema_qualified_name(REGCLASS, TEXT, TEXT) STRICT;
+ALTER FUNCTION @extschema@.drop_triggers(REGCLASS) STRICT;
+ALTER FUNCTION @extschema@.check_overlap(REGCLASS, ANYELEMENT, ANYELEMENT) CALLED ON NULL INPUT;
+ALTER FUNCTION @extschema@.find_or_create_range_partition(REGCLASS, ANYELEMENT) CALLED ON NULL INPUT;
+
+
+/* ------------------------------------------------------------------------
+ * Add new views
+ * ----------------------------------------------------------------------*/
+CREATE OR REPLACE FUNCTION @extschema@.show_partition_list()
+RETURNS TABLE (
+	 parent		REGCLASS,
+	 partition	REGCLASS,
+	 parttype	INT4,
+	 partattr	TEXT,
+	 range_min	TEXT,
+	 range_max	TEXT)
+AS 'pg_pathman', 'show_partition_list_internal' LANGUAGE C STRICT;
+
+CREATE OR REPLACE VIEW @extschema@.pathman_partition_list
+AS SELECT * FROM @extschema@.show_partition_list();
+
+GRANT SELECT ON @extschema@.pathman_partition_list TO PUBLIC;
+
+
+/* ------------------------------------------------------------------------
+ * (Re)create functions
+ * ----------------------------------------------------------------------*/
+CREATE OR REPLACE FUNCTION @extschema@.pathman_set_param(
+	relation	REGCLASS,
+	param		TEXT,
+	value		ANYELEMENT)
+RETURNS VOID AS
 $$
 BEGIN
-	RETURN format('%s.%s',
-				  quote_ident(plain_schema),
-				  quote_ident(format('%s_seq', plain_relname)));
+	EXECUTE format('INSERT INTO @extschema@.pathman_config_params
+					(partrel, %1$s) VALUES ($1, $2)
+					ON CONFLICT (partrel) DO UPDATE SET %1$s = $2', param)
+	USING relation, value;
 END
 $$
 LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION @extschema@.create_or_replace_sequence(
-	plain_schema	TEXT,
-	plain_relname	TEXT,
-	OUT seq_name	TEXT)
-AS $$
+CREATE OR REPLACE FUNCTION @extschema@.set_enable_parent(
+	relation	REGCLASS,
+	value		BOOLEAN)
+RETURNS VOID AS
+$$
 BEGIN
-	seq_name := @extschema@.get_sequence_name(plain_schema, plain_relname);
-	EXECUTE format('DROP SEQUENCE IF EXISTS %s', seq_name);
-	EXECUTE format('CREATE SEQUENCE %s START 1', seq_name);
+	PERFORM @extschema@.pathman_set_param(relation, 'enable_parent', value);
+END
+$$
+LANGUAGE plpgsql STRICT;
+
+/*
+ * Partition table using ConcurrentPartWorker.
+ */
+CREATE OR REPLACE FUNCTION @extschema@.partition_table_concurrently(
+	relation		REGCLASS,
+	batch_size		INTEGER DEFAULT 1000,
+	sleep_time		FLOAT8 DEFAULT 1.0)
+RETURNS VOID AS 'pg_pathman', 'partition_table_concurrently'
+LANGUAGE C STRICT;
+
+/*
+ * Copy rows to partitions concurrently.
+ */
+CREATE OR REPLACE FUNCTION @extschema@._partition_data_concurrent(
+	relation		REGCLASS,
+	p_min			ANYELEMENT DEFAULT NULL::text,
+	p_max			ANYELEMENT DEFAULT NULL::text,
+	p_limit			INT DEFAULT NULL,
+	OUT p_total		BIGINT)
+AS
+$$
+DECLARE
+	v_attr			TEXT;
+	v_limit_clause	TEXT := '';
+	v_where_clause	TEXT := '';
+	ctids			TID[];
+
+BEGIN
+	SELECT attname INTO v_attr
+	FROM @extschema@.pathman_config WHERE partrel = relation;
+
+	p_total := 0;
+
+	/* Format LIMIT clause if needed */
+	IF NOT p_limit IS NULL THEN
+		v_limit_clause := format('LIMIT %s', p_limit);
+	END IF;
+
+	/* Format WHERE clause if needed */
+	IF NOT p_min IS NULL THEN
+		v_where_clause := format('%1$s >= $1', v_attr);
+	END IF;
+
+	IF NOT p_max IS NULL THEN
+		IF NOT p_min IS NULL THEN
+			v_where_clause := v_where_clause || ' AND ';
+		END IF;
+		v_where_clause := v_where_clause || format('%1$s < $2', v_attr);
+	END IF;
+
+	IF v_where_clause != '' THEN
+		v_where_clause := 'WHERE ' || v_where_clause;
+	END IF;
+
+	/* Lock rows and copy data */
+	RAISE NOTICE 'Copying data to partitions...';
+	EXECUTE format('SELECT array(SELECT ctid FROM ONLY %1$s %2$s %3$s FOR UPDATE NOWAIT)',
+				   relation, v_where_clause, v_limit_clause)
+	USING p_min, p_max
+	INTO ctids;
+
+	EXECUTE format('
+		WITH data AS (
+			DELETE FROM ONLY %1$s WHERE ctid = ANY($1) RETURNING *)
+		INSERT INTO %1$s SELECT * FROM data',
+		relation)
+	USING ctids;
+
+	/* Get number of inserted rows */
+	GET DIAGNOSTICS p_total = ROW_COUNT;
+	RETURN;
+END
+$$
+LANGUAGE plpgsql
+SET pg_pathman.enable_partitionfilter = on; /* ensures that PartitionFilter is ON */
+
+/*
+ * Aggregates several common relation checks before partitioning.
+ * Suitable for every partitioning type.
+ */
+CREATE OR REPLACE FUNCTION @extschema@.common_relation_checks(
+	relation		REGCLASS,
+	p_attribute		TEXT)
+RETURNS BOOLEAN AS
+$$
+DECLARE
+	v_rec			RECORD;
+	is_referenced	BOOLEAN;
+	rel_persistence	CHAR;
+
+BEGIN
+	/* Ignore temporary tables */
+	SELECT relpersistence FROM pg_catalog.pg_class
+	WHERE oid = relation INTO rel_persistence;
+
+	IF rel_persistence = 't'::CHAR THEN
+		RAISE EXCEPTION 'temporary table "%" cannot be partitioned',
+						relation::TEXT;
+	END IF;
+
+	IF EXISTS (SELECT * FROM @extschema@.pathman_config
+			   WHERE partrel = relation) THEN
+		RAISE EXCEPTION 'relation "%" has already been partitioned', relation;
+	END IF;
+
+	IF @extschema@.is_attribute_nullable(relation, p_attribute) THEN
+		RAISE EXCEPTION 'partitioning key ''%'' must be NOT NULL', p_attribute;
+	END IF;
+
+	/* Check if there are foreign keys that reference the relation */
+	FOR v_rec IN (SELECT * FROM pg_catalog.pg_constraint
+				  WHERE confrelid = relation::REGCLASS::OID)
+	LOOP
+		is_referenced := TRUE;
+		RAISE WARNING 'foreign key "%" references relation "%"',
+				v_rec.conname, relation;
+	END LOOP;
+
+	IF is_referenced THEN
+		RAISE EXCEPTION 'relation "%" is referenced from other relations', relation;
+	END IF;
+
+	RETURN TRUE;
 END
 $$
 LANGUAGE plpgsql;
+
+/*
+ * DDL trigger that removes entry from pathman_config table.
+ */
+CREATE OR REPLACE FUNCTION @extschema@.pathman_ddl_trigger_func()
+RETURNS event_trigger AS
+$$
+DECLARE
+	obj				record;
+	pg_class_oid	oid;
+	relids			regclass[];
+BEGIN
+	pg_class_oid = 'pg_catalog.pg_class'::regclass;
+
+	/* Find relids to remove from config */
+	SELECT array_agg(cfg.partrel) INTO relids
+	FROM pg_event_trigger_dropped_objects() AS events
+	JOIN @extschema@.pathman_config AS cfg ON cfg.partrel::oid = events.objid
+	WHERE events.classid = pg_class_oid;
+
+	/* Cleanup pathman_config */
+	DELETE FROM @extschema@.pathman_config WHERE partrel = ANY(relids);
+
+	/* Cleanup params table too */
+	DELETE FROM @extschema@.pathman_config_params WHERE partrel = ANY(relids);
+END
+$$
+LANGUAGE plpgsql;
+
+/*
+ * Drop partitions. If delete_data set to TRUE, partitions
+ * will be dropped with all the data.
+ */
+CREATE OR REPLACE FUNCTION @extschema@.drop_partitions(
+	parent_relid	REGCLASS,
+	delete_data		BOOLEAN DEFAULT FALSE)
+RETURNS INTEGER AS
+$$
+DECLARE
+	v_rec			RECORD;
+	v_rows			BIGINT;
+	v_part_count	INTEGER := 0;
+	conf_num_del	INTEGER;
+	v_relkind		CHAR;
+
+BEGIN
+	PERFORM @extschema@.validate_relname(parent_relid);
+
+	/* Drop trigger first */
+	PERFORM @extschema@.drop_triggers(parent_relid);
+
+	WITH config_num_deleted AS (DELETE FROM @extschema@.pathman_config
+								WHERE partrel = parent_relid
+								RETURNING *)
+	SELECT count(*) from config_num_deleted INTO conf_num_del;
+
+	DELETE FROM @extschema@.pathman_config_params WHERE partrel = parent_relid;
+
+	IF conf_num_del = 0 THEN
+		RAISE EXCEPTION 'relation "%" has no partitions', parent_relid::TEXT;
+	END IF;
+
+	FOR v_rec IN (SELECT inhrelid::REGCLASS AS tbl
+				  FROM pg_catalog.pg_inherits
+				  WHERE inhparent::regclass = parent_relid
+				  ORDER BY inhrelid ASC)
+	LOOP
+		IF NOT delete_data THEN
+			EXECUTE format('INSERT INTO %s SELECT * FROM %s',
+							parent_relid::TEXT,
+							v_rec.tbl::TEXT);
+			GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+			/* Show number of copied rows */
+			RAISE NOTICE '% rows copied from %', v_rows, v_rec.tbl::TEXT;
+		END IF;
+
+		SELECT relkind FROM pg_catalog.pg_class
+		WHERE oid = v_rec.tbl
+		INTO v_relkind;
+
+		/*
+		 * Determine the kind of child relation. It can be either regular
+		 * table (r) or foreign table (f). Depending on relkind we use
+		 * DROP TABLE or DROP FOREIGN TABLE.
+		 */
+		IF v_relkind = 'f' THEN
+			EXECUTE format('DROP FOREIGN TABLE %s', v_rec.tbl::TEXT);
+		ELSE
+			EXECUTE format('DROP TABLE %s', v_rec.tbl::TEXT);
+		END IF;
+
+		v_part_count := v_part_count + 1;
+	END LOOP;
+
+	/* Notify backend about changes */
+	PERFORM @extschema@.on_remove_partitions(parent_relid);
+
+	RETURN v_part_count;
+END
+$$ LANGUAGE plpgsql
+SET pg_pathman.enable_partitionfilter = off; /* ensures that PartitionFilter is OFF */
+
+/*
+ * Copy all of parent's foreign keys.
+ */
+CREATE OR REPLACE FUNCTION @extschema@.copy_foreign_keys(
+	parent_relid	REGCLASS,
+	partition		REGCLASS)
+RETURNS VOID AS
+$$
+DECLARE
+	rec		RECORD;
+
+BEGIN
+	PERFORM @extschema@.validate_relname(parent_relid);
+	PERFORM @extschema@.validate_relname(partition);
+
+	FOR rec IN (SELECT oid as conid FROM pg_catalog.pg_constraint
+				WHERE conrelid = parent_relid AND contype = 'f')
+	LOOP
+		EXECUTE format('ALTER TABLE %s ADD %s',
+					   partition::TEXT,
+					   pg_catalog.pg_get_constraintdef(rec.conid));
+	END LOOP;
+END
+$$ LANGUAGE plpgsql STRICT;
+
+/*
+ * Extract basic type of a domain.
+ */
+CREATE OR REPLACE FUNCTION @extschema@.get_base_type(REGTYPE)
+RETURNS REGTYPE AS 'pg_pathman', 'get_base_type_pl'
+LANGUAGE C STRICT;
+
+/*
+ * Returns attribute type name for relation.
+ */
+CREATE OR REPLACE FUNCTION @extschema@.get_attribute_type(
+	REGCLASS, TEXT)
+RETURNS REGTYPE AS 'pg_pathman', 'get_attribute_type_pl'
+LANGUAGE C STRICT;
+
+/*
+ * Return tablespace name for specified relation.
+ */
+CREATE OR REPLACE FUNCTION @extschema@.get_rel_tablespace_name(REGCLASS)
+RETURNS TEXT AS 'pg_pathman', 'get_rel_tablespace_name'
+LANGUAGE C STRICT;
+
+
+/*
+ * Checks that callback function meets specific requirements. Particularly it
+ * must have the only JSONB argument and VOID return type.
+ */
+CREATE OR REPLACE FUNCTION @extschema@.validate_on_partition_created_callback(
+	callback		REGPROC)
+RETURNS VOID AS 'pg_pathman', 'validate_on_part_init_callback_pl'
+LANGUAGE C STRICT;
+
+
+/*
+ * Invoke init_callback on RANGE partition.
+ */
+CREATE OR REPLACE FUNCTION @extschema@.invoke_on_partition_created_callback(
+	parent_relid	REGCLASS,
+	partition		REGCLASS,
+	init_callback	REGPROCEDURE,
+	start_value		ANYELEMENT,
+	end_value		ANYELEMENT)
+RETURNS VOID AS 'pg_pathman', 'invoke_on_partition_created_callback'
+LANGUAGE C;
+
+/*
+ * Invoke init_callback on HASH partition.
+ */
+CREATE OR REPLACE FUNCTION @extschema@.invoke_on_partition_created_callback(
+	parent_relid	REGCLASS,
+	partition		REGCLASS,
+	init_callback	REGPROCEDURE)
+RETURNS VOID AS 'pg_pathman', 'invoke_on_partition_created_callback'
+LANGUAGE C;
+
+/*
+ * Creates hash partitions for specified relation
+ */
+CREATE OR REPLACE FUNCTION @extschema@.create_hash_partitions(
+	parent_relid		REGCLASS,
+	attribute			TEXT,
+	partitions_count	INTEGER,
+	partition_data		BOOLEAN DEFAULT TRUE)
+RETURNS INTEGER AS
+$$
+DECLARE
+	v_child_relname		TEXT;
+	v_plain_schema		TEXT;
+	v_plain_relname		TEXT;
+	v_atttype			REGTYPE;
+	v_hashfunc			REGPROC;
+	v_init_callback		REGPROCEDURE;
+
+BEGIN
+	PERFORM @extschema@.validate_relname(parent_relid);
+
+	IF partition_data = true THEN
+		/* Acquire data modification lock */
+		PERFORM @extschema@.prevent_relation_modification(parent_relid);
+	ELSE
+		/* Acquire lock on parent */
+		PERFORM @extschema@.lock_partitioned_relation(parent_relid);
+	END IF;
+
+	attribute := lower(attribute);
+	PERFORM @extschema@.common_relation_checks(parent_relid, attribute);
+
+	/* Fetch atttype and its hash function */
+	v_atttype := @extschema@.get_attribute_type(parent_relid, attribute);
+	v_hashfunc := @extschema@.get_type_hash_func(v_atttype);
+
+	SELECT * INTO v_plain_schema, v_plain_relname
+	FROM @extschema@.get_plain_schema_and_relname(parent_relid);
+
+	/* Insert new entry to pathman config */
+	INSERT INTO @extschema@.pathman_config (partrel, attname, parttype)
+	VALUES (parent_relid, attribute, 1);
+
+	/* Create partitions and update pg_pathman configuration */
+	FOR partnum IN 0..partitions_count-1
+	LOOP
+		v_child_relname := format('%s.%s',
+								  quote_ident(v_plain_schema),
+								  quote_ident(v_plain_relname || '_' || partnum));
+
+		EXECUTE format(
+			'CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL) INHERITS (%2$s) TABLESPACE %s',
+			v_child_relname,
+			parent_relid::TEXT,
+			@extschema@.get_rel_tablespace_name(parent_relid));
+
+		EXECUTE format('ALTER TABLE %s ADD CONSTRAINT %s
+						CHECK (@extschema@.get_hash_part_idx(%s(%s), %s) = %s)',
+					   v_child_relname,
+					   @extschema@.build_check_constraint_name(v_child_relname::REGCLASS,
+															   attribute),
+					   v_hashfunc::TEXT,
+					   attribute,
+					   partitions_count,
+					   partnum);
+
+		PERFORM @extschema@.copy_foreign_keys(parent_relid, v_child_relname::REGCLASS);
+
+		/* Fetch init_callback from 'params' table */
+		WITH stub_callback(stub) as (values (0))
+		SELECT coalesce(init_callback, 0::REGPROCEDURE)
+		FROM stub_callback
+		LEFT JOIN @extschema@.pathman_config_params AS params
+		ON params.partrel = parent_relid
+		INTO v_init_callback;
+
+		PERFORM @extschema@.invoke_on_partition_created_callback(parent_relid,
+																 v_child_relname::REGCLASS,
+																 v_init_callback);
+	END LOOP;
+
+	/* Notify backend about changes */
+	PERFORM @extschema@.on_create_partitions(parent_relid);
+
+	/* Copy data */
+	IF partition_data = true THEN
+		PERFORM @extschema@.set_enable_parent(parent_relid, false);
+		PERFORM @extschema@.partition_data(parent_relid);
+	ELSE
+		PERFORM @extschema@.set_enable_parent(parent_relid, true);
+	END IF;
+
+	RETURN partitions_count;
+END
+$$ LANGUAGE plpgsql
+SET client_min_messages = WARNING;
+
+/*
+ * Creates an update trigger
+ */
+CREATE OR REPLACE FUNCTION @extschema@.create_hash_update_trigger(
+	parent_relid	REGCLASS)
+RETURNS TEXT AS
+$$
+DECLARE
+	func TEXT := 'CREATE OR REPLACE FUNCTION %1$s()
+				  RETURNS TRIGGER AS
+				  $body$
+				  DECLARE
+					old_idx		INTEGER; /* partition indices */
+					new_idx		INTEGER;
+
+				  BEGIN
+					old_idx := @extschema@.get_hash_part_idx(%9$s(OLD.%2$s), %3$s);
+					new_idx := @extschema@.get_hash_part_idx(%9$s(NEW.%2$s), %3$s);
+
+					IF old_idx = new_idx THEN
+						RETURN NEW;
+					END IF;
+
+					EXECUTE format(''DELETE FROM %8$s WHERE %4$s'', old_idx)
+					USING %5$s;
+
+					EXECUTE format(''INSERT INTO %8$s VALUES (%6$s)'', new_idx)
+					USING %7$s;
+
+					RETURN NULL;
+				  END $body$
+				  LANGUAGE plpgsql';
+
+	trigger					TEXT := 'CREATE TRIGGER %s
+									 BEFORE UPDATE ON %s
+									 FOR EACH ROW EXECUTE PROCEDURE %s()';
+
+	att_names				TEXT;
+	old_fields				TEXT;
+	new_fields				TEXT;
+	att_val_fmt				TEXT;
+	att_fmt					TEXT;
+	attr					TEXT;
+	plain_schema			TEXT;
+	plain_relname			TEXT;
+	child_relname_format	TEXT;
+	funcname				TEXT;
+	triggername				TEXT;
+	atttype					REGTYPE;
+	partitions_count		INTEGER;
+
+BEGIN
+	attr := attname FROM @extschema@.pathman_config WHERE partrel = parent_relid;
+
+	IF attr IS NULL THEN
+		RAISE EXCEPTION 'table "%" is not partitioned', parent_relid::TEXT;
+	END IF;
+
+	SELECT string_agg(attname, ', '),
+		   string_agg('OLD.' || attname, ', '),
+		   string_agg('NEW.' || attname, ', '),
+		   string_agg('CASE WHEN NOT $' || attnum || ' IS NULL THEN ' ||
+							attname || ' = $' || attnum || ' ' ||
+					  'ELSE ' ||
+							attname || ' IS NULL END',
+					  ' AND '),
+		   string_agg('$' || attnum, ', ')
+	FROM pg_catalog.pg_attribute
+	WHERE attrelid = parent_relid AND attnum > 0
+	INTO   att_names,
+		   old_fields,
+		   new_fields,
+		   att_val_fmt,
+		   att_fmt;
+
+	partitions_count := COUNT(*) FROM pg_catalog.pg_inherits
+						WHERE inhparent = parent_relid::oid;
+
+	/* Build trigger & trigger function's names */
+	funcname := @extschema@.build_update_trigger_func_name(parent_relid);
+	triggername := @extschema@.build_update_trigger_name(parent_relid);
+
+	/* Build partition name template */
+	SELECT * INTO plain_schema, plain_relname
+	FROM @extschema@.get_plain_schema_and_relname(parent_relid);
+
+	child_relname_format := quote_ident(plain_schema) || '.' ||
+							quote_ident(plain_relname || '_%s');
+
+	/* Fetch base hash function for atttype */
+	atttype := @extschema@.get_attribute_type(parent_relid, attr);
+
+	/* Format function definition and execute it */
+	EXECUTE format(func, funcname, attr, partitions_count, att_val_fmt,
+				   old_fields, att_fmt, new_fields, child_relname_format,
+				   @extschema@.get_type_hash_func(atttype)::TEXT);
+
+	/* Create trigger on every partition */
+	FOR num IN 0..partitions_count-1
+	LOOP
+		EXECUTE format(trigger,
+					   triggername,
+					   format(child_relname_format, num),
+					   funcname);
+	END LOOP;
+
+	return funcname;
+END
+$$ LANGUAGE plpgsql;
+
+/*
+ * Returns hash function OID for specified type
+ */
+CREATE OR REPLACE FUNCTION @extschema@.get_type_hash_func(REGTYPE)
+RETURNS REGPROC AS 'pg_pathman', 'get_type_hash_func'
+LANGUAGE C STRICT;
 
 /*
  * Check RANGE partition boundaries.
@@ -640,7 +1268,6 @@ END
 $$
 LANGUAGE plpgsql;
 
-
 /*
  * Merge RANGE partitions
  */
@@ -700,7 +1327,6 @@ BEGIN
 END
 $$
 LANGUAGE plpgsql;
-
 
 /*
  * Merge two partitions. All data will be copied to the first one. Second
@@ -769,7 +1395,6 @@ BEGIN
 	EXECUTE format('DROP TABLE %s', partition2::TEXT);
 END
 $$ LANGUAGE plpgsql;
-
 
 /*
  * Append new partition.
@@ -880,7 +1505,6 @@ END
 $$
 LANGUAGE plpgsql;
 
-
 /*
  * Prepend new partition.
  */
@@ -990,7 +1614,6 @@ END
 $$
 LANGUAGE plpgsql;
 
-
 /*
  * Add new partition
  */
@@ -1033,7 +1656,6 @@ BEGIN
 END
 $$
 LANGUAGE plpgsql;
-
 
 /*
  * Drop range partition
@@ -1100,7 +1722,6 @@ END
 $$
 LANGUAGE plpgsql
 SET pg_pathman.enable_partitionfilter = off; /* ensures that PartitionFilter is OFF */
-
 
 /*
  * Attach range partition
@@ -1180,7 +1801,6 @@ END
 $$
 LANGUAGE plpgsql;
 
-
 /*
  * Detach range partition
  */
@@ -1223,7 +1843,6 @@ BEGIN
 END
 $$
 LANGUAGE plpgsql;
-
 
 /*
  * Creates an update trigger
@@ -1351,21 +1970,11 @@ RETURNS ANYARRAY AS 'pg_pathman', 'get_part_range_by_oid'
 LANGUAGE C;
 
 /*
- * Checks if range overlaps with existing partitions.
- * Returns TRUE if overlaps and FALSE otherwise.
+ * Returns min and max values for specified RANGE partition.
  */
-CREATE OR REPLACE FUNCTION @extschema@.check_overlap(
-	parent_relid	REGCLASS,
-	range_min		ANYELEMENT,
-	range_max		ANYELEMENT)
-RETURNS BOOLEAN AS 'pg_pathman', 'check_overlap'
+CREATE OR REPLACE FUNCTION @extschema@.get_part_range(
+	partition_relid	REGCLASS,
+	dummy			ANYELEMENT)
+RETURNS ANYARRAY AS 'pg_pathman', 'get_part_range_by_oid'
 LANGUAGE C;
 
-/*
- * Needed for an UPDATE trigger.
- */
-CREATE OR REPLACE FUNCTION @extschema@.find_or_create_range_partition(
-	parent_relid	REGCLASS,
-	value			ANYELEMENT)
-RETURNS REGCLASS AS 'pg_pathman', 'find_or_create_range_partition'
-LANGUAGE C;

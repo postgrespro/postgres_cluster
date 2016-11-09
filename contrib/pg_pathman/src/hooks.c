@@ -18,6 +18,7 @@
 #include "utils.h"
 #include "xact_handling.h"
 
+#include "access/transam.h"
 #include "miscadmin.h"
 #include "optimizer/cost.h"
 #include "optimizer/restrictinfo.h"
@@ -50,7 +51,6 @@ pathman_join_pathlist_hook(PlannerInfo *root,
 	ListCell			   *lc;
 	WalkerContext			context;
 	double					paramsel;
-	bool					innerrel_rinfo_contains_part_attr;
 
 	/* Call hooks set by other extensions */
 	if (set_join_pathlist_next)
@@ -102,11 +102,6 @@ pathman_join_pathlist_hook(PlannerInfo *root,
 		paramsel *= wrap->paramsel;
 	}
 
-	/* Check that innerrel's RestrictInfos contain partitioned column */
-	innerrel_rinfo_contains_part_attr =
-		get_partitioned_attr_clauses(innerrel->baserestrictinfo,
-									 inner_prel, innerrel->relid) != NULL;
-
 	foreach (lc, innerrel->pathlist)
 	{
 		AppendPath	   *cur_inner_path = (AppendPath *) lfirst(lc);
@@ -131,14 +126,10 @@ pathman_join_pathlist_hook(PlannerInfo *root,
 		/* Get the ParamPathInfo for a parameterized path */
 		ppi = get_baserel_parampathinfo(root, innerrel, inner_required);
 
-		/*
-		 * Skip if neither rel->baserestrictinfo nor
-		 * ppi->ppi_clauses reference partition attribute
-		 */
-		if (!(innerrel_rinfo_contains_part_attr ||
-			  (ppi && get_partitioned_attr_clauses(ppi->ppi_clauses,
-												   inner_prel,
-												   innerrel->relid))))
+		/* Skip ppi->ppi_clauses don't reference partition attribute */
+		if (!(ppi && get_partitioned_attr_clauses(ppi->ppi_clauses,
+												  inner_prel,
+												  innerrel->relid)))
 			continue;
 
 		inner = create_runtimeappend_path(root, cur_inner_path, ppi, paramsel);
@@ -212,13 +203,13 @@ pathman_rel_pathlist_hook(PlannerInfo *root,
 		ListCell	   *lc;
 		Oid			   *children;
 		List		   *ranges,
-					   *wrappers;
+					   *wrappers,
+					   *rel_partattr_clauses = NIL;
 		PathKey		   *pathkeyAsc = NULL,
 					   *pathkeyDesc = NULL;
 		double			paramsel = 1.0;
 		WalkerContext	context;
 		int				i;
-		bool			rel_rinfo_contains_part_attr = false;
 
 		if (prel->parttype == PT_RANGE)
 		{
@@ -335,20 +326,19 @@ pathman_rel_pathlist_hook(PlannerInfo *root,
 			  pg_pathman_enable_runtime_merge_append))
 			return;
 
-		/* Runtime[Merge]Append is pointless if there are no params in clauses */
-		if (!clause_contains_params((Node *) get_actual_clauses(rel->baserestrictinfo)))
-			return;
-
 		/* Check that rel's RestrictInfo contains partitioned column */
-		rel_rinfo_contains_part_attr =
-			get_partitioned_attr_clauses(rel->baserestrictinfo,
-										 prel, rel->relid) != NULL;
+		rel_partattr_clauses = get_partitioned_attr_clauses(rel->baserestrictinfo,
+															prel, rel->relid);
+
+		/* Runtime[Merge]Append is pointless if there are no params in clauses */
+		if (!clause_contains_params((Node *) rel_partattr_clauses))
+			return;
 
 		foreach (lc, rel->pathlist)
 		{
 			AppendPath	   *cur_path = (AppendPath *) lfirst(lc);
 			Relids			inner_required = PATH_REQ_OUTER((Path *) cur_path);
-			ParamPathInfo  *ppi = get_appendrel_parampathinfo(rel, inner_required);
+			ParamPathInfo  *ppi = get_baserel_parampathinfo(root, rel, inner_required);
 			Path		   *inner_path = NULL;
 
 			/* Skip if rel contains some join-related stuff or path type mismatched */
@@ -362,7 +352,7 @@ pathman_rel_pathlist_hook(PlannerInfo *root,
 			 * Skip if neither rel->baserestrictinfo nor
 			 * ppi->ppi_clauses reference partition attribute
 			 */
-			if (!(rel_rinfo_contains_part_attr ||
+			if (!(rel_partattr_clauses ||
 				  (ppi && get_partitioned_attr_clauses(ppi->ppi_clauses,
 													   prel, rel->relid))))
 				continue;
@@ -546,6 +536,10 @@ pathman_relcache_hook(Datum arg, Oid relid)
 	if (!IsPathmanReady())
 		return;
 
+	/* We shouldn't even consider special OIDs */
+	if (relid < FirstNormalObjectId)
+		return;
+
 	/* Invalidation event for PATHMAN_CONFIG table (probably DROP) */
 	if (relid == get_pathman_config_relid())
 		delay_pathman_shutdown();
@@ -569,7 +563,8 @@ pathman_relcache_hook(Datum arg, Oid relid)
 		/* Both syscache and pathman's cache say it isn't a partition */
 		case PPS_ENTRY_NOT_FOUND:
 			{
-				delay_invalidation_parent_rel(partitioned_table);
+				if (partitioned_table != InvalidOid)
+					delay_invalidation_parent_rel(partitioned_table);
 #ifdef NOT_USED
 				elog(DEBUG2, "Invalidation message for relation %u [%u]",
 					 relid, MyProcPid);
@@ -588,7 +583,8 @@ pathman_relcache_hook(Datum arg, Oid relid)
 			break;
 
 		default:
-			elog(ERROR, "Not implemented yet");
+			elog(ERROR, "Not implemented yet (%s)",
+				 CppAsString(pathman_relcache_hook));
 			break;
 	}
 }

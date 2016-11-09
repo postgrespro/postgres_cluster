@@ -50,6 +50,7 @@ bool clause_contains_params(Node *clause);
 bool is_date_type_internal(Oid typid);
 bool is_string_type_internal(Oid typid);
 bool validate_on_part_init_cb(Oid procid, bool emit_error);
+bool check_security_policy_internal(Oid relid, Oid role);
 
 /*
  * Misc.
@@ -60,6 +61,7 @@ List * list_reverse(List *l);
 #if PG_VERSION_NUM < 90600
 char get_rel_persistence(Oid relid);
 #endif
+Oid get_rel_owner(Oid relid);
 
 /*
  * Handy execution-stage functions.

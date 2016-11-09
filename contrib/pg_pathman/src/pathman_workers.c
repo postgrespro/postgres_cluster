@@ -213,7 +213,7 @@ handle_exec_state:
 		case BGW_PM_DIED:
 			ereport(ERROR,
 					(errmsg("Postmaster died during the pg_pathman background worker process"),
-					errhint("More details may be available in the server log.")));
+					 errhint("More details may be available in the server log.")));
 			break;
 
 		default:
@@ -251,8 +251,7 @@ create_partitions_bg_worker_segment(Oid relid, Datum value, Oid value_type)
 	/* Initialize BGW args */
 	args = (SpawnPartitionArgs *) dsm_segment_address(segment);
 
-	args->userid = GetAuthenticatedUserId();
-
+	args->userid = get_rel_owner(relid);
 	args->result = InvalidOid;
 	args->dbid = MyDatabaseId;
 	args->partitioned_table = relid;
@@ -300,9 +299,10 @@ create_partitions_bg_worker(Oid relid, Datum value, Oid value_type)
 	dsm_detach(segment);
 
 	if (child_oid == InvalidOid)
-		elog(ERROR,
-			 "Attempt to append new partitions to relation \"%s\" failed",
-			 get_rel_name_or_relid(relid));
+		ereport(ERROR,
+				(errmsg("Attempt to spawn new partitions of relation \"%s\" failed",
+						get_rel_name_or_relid(relid)),
+				 errhint("See server log for more details.")));
 
 	return child_oid;
 }
@@ -574,8 +574,19 @@ Datum
 partition_table_concurrently(PG_FUNCTION_ARGS)
 {
 	Oid		relid = PG_GETARG_OID(0);
+	int32	batch_size = PG_GETARG_INT32(1);
+	float8	sleep_time = PG_GETARG_FLOAT8(2);
 	int		empty_slot_idx = -1,		/* do we have a slot for BGWorker? */
 			i;
+
+	/* Check batch_size */
+	if (batch_size < 1 || batch_size > 10000)
+		elog(ERROR, "\"batch_size\" should not be less than 1 "
+					"or greater than 10000");
+
+	/* Check sleep_time */
+	if (sleep_time < 0.5)
+		elog(ERROR, "\"sleep_time\" should not be less than 0.5");
 
 	/* Check if relation is a partitioned table */
 	shout_if_prel_is_invalid(relid,
@@ -631,8 +642,8 @@ partition_table_concurrently(PG_FUNCTION_ARGS)
 	{
 		/* Initialize concurrent part slot */
 		InitConcurrentPartSlot(&concurrent_part_slots[empty_slot_idx],
-							   GetAuthenticatedUserId(), CPS_WORKING,
-							   MyDatabaseId, relid, 1000, 1.0);
+							   GetUserId(), CPS_WORKING, MyDatabaseId,
+							   relid, batch_size, sleep_time);
 
 		/* Now we can safely unlock slot for new BGWorker */
 		SpinLockRelease(&concurrent_part_slots[empty_slot_idx].mutex);
