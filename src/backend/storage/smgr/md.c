@@ -209,7 +209,7 @@ typedef struct
 	bool compressed;
 } TablespaceStatus;
 
-static bool md_use_compression(SMgrRelation reln, ForkNumber forknum)
+static bool md_use_compression(RelFileNodeBackend rnode, ForkNumber forknum)
 {
 	static HTAB* tblspaceMap; 
 	char* compressionFilePath;
@@ -219,9 +219,9 @@ static bool md_use_compression(SMgrRelation reln, ForkNumber forknum)
 
 	/* Do not compress system (catalog) relations created during bootstrap */
 	if (forknum != MAIN_FORKNUM
-		|| reln->smgr_rnode.node.spcNode == DEFAULTTABLESPACE_OID 
-		|| reln->smgr_rnode.node.spcNode == GLOBALTABLESPACE_OID
-		|| reln->smgr_rnode.node.relNode < FirstNormalObjectId)
+		|| rnode.node.spcNode == DEFAULTTABLESPACE_OID 
+		|| rnode.node.spcNode == GLOBALTABLESPACE_OID
+		|| rnode.node.relNode < FirstNormalObjectId)
 	{
 		return false;
 	}
@@ -231,10 +231,10 @@ static bool md_use_compression(SMgrRelation reln, ForkNumber forknum)
 		ctl.entrysize = sizeof(TablespaceStatus);
 		tblspaceMap = hash_create("tablespace_map", 256, &ctl, HASH_ELEM);
 	}
-	ts = hash_search(tblspaceMap, &reln->smgr_rnode.node.spcNode, HASH_ENTER, &found);
+	ts = hash_search(tblspaceMap, &rnode.node.spcNode, HASH_ENTER, &found);
 	if (!found) { 
 		compressionFilePath = psprintf("pg_tblspc/%u/%s/pg_compression", 
-									   reln->smgr_rnode.node.spcNode,
+									   rnode.node.spcNode,
 									   TABLESPACE_VERSION_DIRECTORY);
 		compressionFile = fopen(compressionFilePath, "r");
 		if (compressionFile != NULL)  { 
@@ -357,7 +357,7 @@ mdcreate(SMgrRelation reln, ForkNumber forkNum, bool isRedo)
 	if (isRedo && reln->md_fd[forkNum] != NULL)
 		return;					/* created and opened already... */
 
-	if (md_use_compression(reln, forkNum))
+	if (md_use_compression(reln->smgr_rnode, forkNum))
 	{
 		flags |= PG_COMPRESSION;
 	}
@@ -473,9 +473,11 @@ static void
 mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 {
 	char	   *path;
+	char	   *segpath;
 	int			ret;
 
 	path = relpath(rnode, forkNum);
+	segpath = (char *) palloc(strlen(path) + 16);
 
 	/*
 	 * Delete or truncate the first segment.
@@ -484,32 +486,54 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 	{
 		ret = unlink(path);
 		if (ret < 0 && errno != ENOENT)
+		{
 			ereport(WARNING,
 					(errcode_for_file_access(),
 					 errmsg("could not remove file \"%s\": %m", path)));
+		} 
+		else if (forkNum == MAIN_FORKNUM) 
+		{ 	
+			sprintf(segpath, "%s.cfm", path);
+			unlink(segpath);
+		}
 	}
 	else
 	{
-		/* truncate(2) would be easier here, but Windows hasn't got it */
-		int			fd;
-
-		fd = OpenTransientFile(path, O_RDWR | PG_BINARY, 0);
-		if (fd >= 0)
+		if (md_use_compression(rnode, forkNum))
 		{
-			int			save_errno;
-
-			ret = ftruncate(fd, 0);
-			save_errno = errno;
-			CloseTransientFile(fd);
-			errno = save_errno;
+			File file = PathNameOpenFile(path, O_RDWR | PG_BINARY | PG_COMPRESSION, 0);
+			if (file >= 0) {
+				elog(LOG, "Truncate file %s", path);
+				if (FileTruncate(file, 0) < 0) { 
+					ereport(WARNING,
+							(errcode_for_file_access(),
+							 errmsg("could not truncate file \"%s\": %m", path)));
+				}
+			}
+			FileClose(file);
+		} 
+		else 
+		{
+			/* truncate(2) would be easier here, but Windows hasn't got it */
+			int                     fd;
+ 
+			fd = OpenTransientFile(path, O_RDWR | PG_BINARY, 0);
+			if (fd >= 0)
+			{
+				int                     save_errno;
+				
+				ret = ftruncate(fd, 0);
+				save_errno = errno;
+				CloseTransientFile(fd);
+				errno = save_errno;					   
+			}
+			else
+				ret = -1;
+			if (ret < 0 && errno != ENOENT)
+				ereport(WARNING,
+						(errcode_for_file_access(),
+						 errmsg("could not truncate file \"%s\": %m", path)));
 		}
-		else
-			ret = -1;
-		if (ret < 0 && errno != ENOENT)
-			ereport(WARNING,
-					(errcode_for_file_access(),
-					 errmsg("could not truncate file \"%s\": %m", path)));
-
 		/* Register request to unlink first segment later */
 		register_unlink(rnode);
 	}
@@ -519,7 +543,6 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 	 */
 	if (ret >= 0)
 	{
-		char	   *segpath = (char *) palloc(strlen(path) + 16);
 		BlockNumber segno;
 
 		/*
@@ -550,8 +573,8 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 			sprintf(segpath, "%s.cfm", path);
 			unlink(segpath);
 		}
-		pfree(segpath);
 	}
+	pfree(segpath);
 	pfree(path);
 }
 
@@ -657,7 +680,7 @@ mdopen(SMgrRelation reln, ForkNumber forknum, int behavior)
 
 	path = relpath(reln->smgr_rnode, forknum);
 
-	if (md_use_compression(reln, forknum))
+	if (md_use_compression(reln->smgr_rnode, forknum))
 	{
 		flags |= PG_COMPRESSION;
 	}
@@ -1824,7 +1847,7 @@ _mdfd_openseg(SMgrRelation reln, ForkNumber forknum, BlockNumber segno,
 	int			fd;
 	char	   *fullpath;
 
-	if (md_use_compression(reln, forknum))
+	if (md_use_compression(reln->smgr_rnode, forknum))
 	{
 		oflags |= PG_COMPRESSION;
 	}
