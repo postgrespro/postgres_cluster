@@ -115,7 +115,7 @@ char *get_scheduler_nodename(void)
 	return _copy_string((char *)(opt == NULL || strlen(opt) == 0 ? "master": opt));
 }
 
-scheduler_manager_ctx_t *initialize_scheduler_manager_context(char *dbname)
+scheduler_manager_ctx_t *initialize_scheduler_manager_context(char *dbname, dsm_segment *seg)
 {
 	int i;
 	scheduler_manager_ctx_t *ctx;
@@ -125,6 +125,8 @@ scheduler_manager_ctx_t *initialize_scheduler_manager_context(char *dbname)
 	ctx->free_slots = ctx->slots_len;
 	ctx->nodename = get_scheduler_nodename();
 	ctx->database = _copy_string(dbname);
+
+	ctx->seg = seg;
 
 	ctx->slots = worker_alloc(sizeof(scheduler_manager_slot_t *) * ctx->slots_len);
 	for(i=0; i < ctx->slots_len; i++)
@@ -169,10 +171,22 @@ void destroy_scheduler_manager_context(scheduler_manager_ctx_t *ctx)
 	pfree(ctx); 
 }
 
-void scheduler_manager_stop(scheduler_manager_ctx_t *ctx)
+int scheduler_manager_stop(scheduler_manager_ctx_t *ctx)
 {
+	int i;
+	int onwork;
+
+	onwork = ctx->slots_len - ctx->free_slots;
+	if(onwork == 0) return 0;
+
 	pgstat_report_activity(STATE_RUNNING, "stop executors");
-	/* TODO stop worker but before stop all started kid workers */
+	for(i=0; i < onwork; i++)
+	{
+		elog(LOG, "Schedule manager: terminate bgworker %d",
+												ctx->slots[i]->pid);
+		TerminateBackgroundWorker(ctx->slots[i]->handler);
+	}
+	return onwork;
 }
 
 scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *nt)
@@ -588,6 +602,8 @@ int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_
 	shm_data->start_at = item->job->start_at;
 	shm_data->message[0] = 0;
 	shm_data->next_time = 0;
+	shm_data->set_invalid = false;
+	shm_data->set_invalid_reason[0] = 0;
 
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
 					BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -808,12 +824,17 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx)
 			}
 			else if(toremove[i].reason == RmDone)
 			{
+			    shm_data = dsm_segment_address(item->shared);
 				job_status = true;
+				if(shm_data->message[0] != 0)
+				{
+					set_job_error(item->job, "%s", shm_data->message);
+				}
 			}
 			else if(toremove[i].reason == RmError)
 			{
 			    shm_data = dsm_segment_address(item->shared);
-				if(strlen(shm_data->message) > 0)
+				if(shm_data->message[0] != 0)
 				{
 					set_job_error(item->job, "%s", shm_data->message);
 				}
@@ -830,19 +851,23 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx)
 			if(removeJob)
 			{
 				START_SPI_SNAP();
+				shm_data = dsm_segment_address(item->shared);
+
+				if(shm_data->set_invalid)
+				{
+					mark_job_broken(ctx, item->job->cron_id, shm_data->set_invalid_reason);
+				}
 				if(item->job->next_time_statement)
 				{
-					shm_data = dsm_segment_address(item->shared);
 					if(shm_data->next_time > 0)
 					{
 						next_time = _round_timestamp_to_minute(shm_data->next_time);
 						next_time_str = make_date_from_timestamp(next_time);
 						if(insert_at_record(ctx->nodename, item->job->cron_id, next_time, 0, &error) < 0)
 						{
-							elog(ERROR, "Cannot insert next time at record: %s",
-											error ? error: "unknown error");
+							manager_fatal_error(ctx, 0, "Cannot insert next time at record: %s", error ? error: "unknown error");
 						}
-						update_cron_texttime(item->job->cron_id, next_time);
+						update_cron_texttime(ctx,item->job->cron_id, next_time);
 						if(!item->job->error)
 						{
 							set_job_error(item->job, "set next exec time: %s", next_time_str);
@@ -868,7 +893,25 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx)
 	return 1;
 }
 
-int update_cron_texttime(int cron_id, TimestampTz next)
+int mark_job_broken(scheduler_manager_ctx_t *ctx, int cron_id, char *reason)
+{
+	Oid types[2] = { INT4OID, TEXTOID };
+	Datum values[2];
+	char *error;
+	char *sql = "update schedule.cron set reason = $2, broken = true where id = $1";
+	int ret;
+
+	values[0] = Int32GetDatum(cron_id);
+	values[1] = CStringGetTextDatum(reason);
+	ret = execute_spi_sql_with_args(sql, 2, types, values, NULL, &error);
+	if(ret < 0)
+	{
+		manager_fatal_error(ctx, 0, "Cannot set cron %d broken: %s", cron_id, error);
+	}
+	return ret;
+}
+
+int update_cron_texttime(scheduler_manager_ctx_t *ctx, int cron_id, TimestampTz next)
 {
 	Oid types[2] = { INT4OID, TIMESTAMPTZOID };
 	Datum values[2];
@@ -889,7 +932,7 @@ int update_cron_texttime(int cron_id, TimestampTz next)
 	ret = execute_spi_sql_with_args(sql, 2, types, values, nulls, &error);
 	if(ret < 0)
 	{
-		elog(ERROR, "Cannot update cron %d next time: %s", cron_id, error);
+		manager_fatal_error(ctx, 0, "Cannot update cron %d next time: %s", cron_id, error);
 	}
 
 	return ret;
@@ -1025,6 +1068,7 @@ int scheduler_make_at_record(scheduler_manager_ctx_t *ctx)
 	{
 		n_exec_dates = 0;
 		ntimes = 0;
+		realloced = false;
 
 		next_times = scheduler_calc_next_task_time(&(tasks[i]),
 				GetCurrentTimestamp(), timestamp_add_seconds(0, 600),
@@ -1035,12 +1079,13 @@ int scheduler_make_at_record(scheduler_manager_ctx_t *ctx)
 		{
 			date1 = make_date_from_timestamp(start);
 			date2 = make_date_from_timestamp(stop);
+
 	
 			for(j=0; j < n_exec_dates; j++)
 			{
 				r1 = strcmp(date1, exec_dates[j]);
 				r2 = strcmp(exec_dates[j], date2);
-				if((r1 == 0 || r1 == -1) && (r2 == 0 || r2 == -1))
+				if(r1 <= 0 && r2 <= 0)
 				{
 					if(!realloced)
 					{
@@ -1069,7 +1114,7 @@ int scheduler_make_at_record(scheduler_manager_ctx_t *ctx)
 			{
 				if(insert_at_record(ctx->nodename, tasks[i].id, next_times[j], tasks[i].postpone, &error) < 0)
 				{
-					elog(ERROR, "Cannot insert AT task: %s", error ? error: "unknown error");
+					manager_fatal_error(ctx, 0, "Cannot insert AT task: %s", error ? error: "unknown error");
 				}
 			}
 			pfree(next_times);
@@ -1083,18 +1128,18 @@ int scheduler_make_at_record(scheduler_manager_ctx_t *ctx)
 	return ntasks;
 }
 
-void clean_at_table(void)
+void clean_at_table(scheduler_manager_ctx_t *ctx)
 {
 	char *error = NULL;
 
 	START_SPI_SNAP();
 	if(execute_spi("truncate schedule.at", &error) < 0)
 	{
-		elog(ERROR, "Cannot clean 'at' table: %s", error);
+		manager_fatal_error(ctx, 0, "Cannot clean 'at' table: %s", error);
 	}
 	if(execute_spi("update schedule.cron set _next_exec_time = NULL where _next_exec_time is not NULL", &error) < 0)
 	{
-		elog(ERROR, "Cannot clean cron _next time: %s", error);
+		manager_fatal_error(ctx, 0, "Cannot clean cron _next time: %s", error);
 	}
 	STOP_SPI_SNAP();
 }
@@ -1120,6 +1165,7 @@ void manager_worker_main(Datum arg)
 
 	if(shared->status != SchdManagerInit && !(shared->setbyparent))
 	{
+		dsm_detach(seg);
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("corrupted dynamic shared memory segment")));
@@ -1150,6 +1196,7 @@ void manager_worker_main(Datum arg)
 		dsm_detach(seg);
 		proc_exit(0); 
 	}
+	elog(LOG, "ON");
 	SetCurrentStatementStartTimestamp();
 	pgstat_report_activity(STATE_RUNNING, "initialize.");
 
@@ -1160,9 +1207,9 @@ void manager_worker_main(Datum arg)
 	pgstat_report_activity(STATE_RUNNING, "initialize context");
 	changeChildBgwState(shared, SchdManagerConnected);
 	init_worker_mem_ctx("WorkerMemoryContext");
-	ctx = initialize_scheduler_manager_context(database);
-	clean_at_table();
-
+	ctx = initialize_scheduler_manager_context(database, seg);
+	clean_at_table(ctx);
+	elog(LOG, "Start main loop");
 	while(!got_sigterm)
 	{
 		if(rc)
@@ -1194,12 +1241,35 @@ void manager_worker_main(Datum arg)
 			WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1000L);
 		ResetLatch(MyLatch);
 	}
+	scheduler_manager_stop(ctx);
 	delete_worker_mem_ctx();
-	/* destroy_scheduler_manager_context(ctx); -  no need any more */
 	changeChildBgwState(shared, SchdManagerDie);
 	pfree(database);
     dsm_detach(seg);
 	proc_exit(0);
+}
+
+void manager_fatal_error(scheduler_manager_ctx_t *ctx, int ecode, char *message, ...)
+{
+	va_list arglist;
+	char buf[1024];
+
+	scheduler_manager_stop(ctx);
+	changeChildBgwState((schd_manager_share_t *)(dsm_segment_address(ctx->seg)), SchdManagerDie);
+    dsm_detach(ctx->seg);
+
+	va_start(arglist, message);
+	vsnprintf(buf, 1024, message, arglist);
+	va_end(arglist);
+
+
+	delete_worker_mem_ctx();
+	if(ecode == 0)
+	{
+		ecode = ERRCODE_INTERNAL_ERROR;
+	}
+
+	ereport(ERROR, (errcode(ecode), errmsg("%s", buf)));
 }
 
 

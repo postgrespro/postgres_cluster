@@ -28,6 +28,9 @@ typedef struct {
 	char message[PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX];
 
 	TimestampTz next_time;
+
+	bool set_invalid;
+	char set_invalid_reason[PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX];
 } schd_executor_share_t;
 
 typedef struct {
@@ -41,7 +44,7 @@ void set_shared_message(schd_executor_share_t *shared, executor_error_t *ee);
 TimestampTz get_next_excution_time(char *sql, executor_error_t *ee);
 int executor_onrollback(job_t *job, executor_error_t *ee);
 void set_pg_var(bool resulti, executor_error_t *ee);
-int push_executor_error(executor_error_t *e, char *fmt, ...)  __attribute__ ((format (gnu_printf, 2, 3)));
+int push_executor_error(executor_error_t *e, char *fmt, ...)  pg_attribute_printf(2, 3);
 int set_session_authorization(char *username, char **error);
 
 

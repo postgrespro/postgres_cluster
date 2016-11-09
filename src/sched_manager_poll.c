@@ -88,8 +88,15 @@ void changeChildBgwState(schd_manager_share_t *s, schd_manager_status_t status)
 	s->setbychild = true;
 
 	parent = BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid);
-	if(parent) SetLatch(&parent->procLatch);
-	elog(LOG, "set LATCH %d - %d" , MyBgworkerEntry->bgw_notify_pid, status);
+	if(parent)
+	{
+		SetLatch(&parent->procLatch);
+		elog(LOG, "set LATCH to %d - status = %d" , MyBgworkerEntry->bgw_notify_pid, status);
+	}
+	else
+	{
+		elog(LOG, "unable to set LATCH to %d", MyBgworkerEntry->bgw_notify_pid);
+	}
 }
 
 int stopAllManagers(schd_managers_poll_t *poll)
@@ -97,6 +104,8 @@ int stopAllManagers(schd_managers_poll_t *poll)
 	int i;
 	PGPROC *child;
 	schd_manager_share_t *shared;
+
+	elog(LOG, "Stop all managers");
 
 	for(i=0; i < poll->n; i++)
 	{
@@ -108,7 +117,10 @@ int stopAllManagers(schd_managers_poll_t *poll)
 		{
 			elog(LOG, "cannot get PGRPOC of %s scheduler", poll->workers[i]->dbname);
 		}
-		SetLatch(&child->procLatch);
+		else
+		{
+			SetLatch(&child->procLatch);
+		}
 	}
 
 	/* MAYBE:  WAIT? */
@@ -212,7 +224,7 @@ void _sortPollManagers(schd_managers_poll_t *poll)
 		qsort(poll->workers, poll->n, sizeof(schd_manager_t *), __cmp_managers);
 }
 
-int removeManagerFromPoll(schd_managers_poll_t *poll, char *name, char sort)
+int removeManagerFromPoll(schd_managers_poll_t *poll, char *name, char sort, bool stop_worker)
 {
 	int found  = 0;
 	int i;
@@ -230,8 +242,11 @@ int removeManagerFromPoll(schd_managers_poll_t *poll, char *name, char sort)
 	if(found == 0) return 0;
 	mng = poll->workers[i];
 
-	elog(LOG, "Stop scheduler manager for %s", mng->dbname);
-	TerminateBackgroundWorker(mng->handler);
+	if(stop_worker)
+	{
+		elog(LOG, "Stop scheduler manager for %s", mng->dbname);
+		TerminateBackgroundWorker(mng->handler);
+	}
 
 	if(poll->n == 1)
 	{
@@ -357,7 +372,7 @@ int refreshManagers(char_array_t *names, schd_managers_poll_t *poll)
 	{
 		for(i = 0; i < delete->n; i++)
 		{
-			removeManagerFromPoll(poll, delete->data[i], 0);
+			removeManagerFromPoll(poll, delete->data[i], 0, true);
 		}
 	}
 	if(new->n)

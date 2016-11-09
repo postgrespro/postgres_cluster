@@ -41,7 +41,7 @@ void destroyManagerRecord(schd_manager_t *man);
 int stopAllManagers(schd_managers_poll_t *poll);
 int isBaseListChanged(char_array_t *names, schd_managers_poll_t *pool);
 void _sortPollManagers(schd_managers_poll_t *poll);
-int removeManagerFromPoll(schd_managers_poll_t *poll, char *name, char sort);
+int removeManagerFromPoll(schd_managers_poll_t *poll, char *name, char sort, bool stop_worker);
 int addManagerToPoll(schd_managers_poll_t *poll, char *name, int sort);
 int refreshManagers(char_array_t *names, schd_managers_poll_t *poll);
 char *poll_dbnames(schd_managers_poll_t *poll);

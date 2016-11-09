@@ -59,16 +59,18 @@ typedef struct {
 	int free_slots;
 	int slots_len;
 	scheduler_manager_slot_t **slots;
+
+	dsm_segment *seg;
 } scheduler_manager_ctx_t;
 
 int checkSchedulerNamespace(void);
 void manager_worker_main(Datum arg);
 int get_scheduler_maxworkers(void);
 char *get_scheduler_nodename(void);
-scheduler_manager_ctx_t *initialize_scheduler_manager_context(char *dbname);
+scheduler_manager_ctx_t *initialize_scheduler_manager_context(char *dbname, dsm_segment *seg);
 void refresh_scheduler_manager_context(scheduler_manager_ctx_t *ctx);
 void destroy_scheduler_manager_context(scheduler_manager_ctx_t *ctx);
-void scheduler_manager_stop(scheduler_manager_ctx_t *ctx);
+int scheduler_manager_stop(scheduler_manager_ctx_t *ctx);
 scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *nt);
 bool jsonb_has_key(Jsonb *J, const char *name);
 bool _is_in_rule_array(Jsonb *J, const char *name, int value);
@@ -87,7 +89,9 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx);
 int scheduler_check_slots(scheduler_manager_ctx_t *ctx);
 void destroy_slot_item(scheduler_manager_slot_t *item);
 int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_t *item);
-void clean_at_table(void);
-int update_cron_texttime(int cron_id, TimestampTz next);
+void clean_at_table(scheduler_manager_ctx_t *ctx);
+int update_cron_texttime(scheduler_manager_ctx_t *ctx, int cron_id, TimestampTz next);
+int mark_job_broken(scheduler_manager_ctx_t *ctx, int cron_id, char *reason);
+void manager_fatal_error(scheduler_manager_ctx_t *ctx, int ecode, char *message, ...) pg_attribute_printf(3, 4);
 
 #endif

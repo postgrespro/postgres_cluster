@@ -185,6 +185,11 @@ void executor_worker_main(Datum arg)
 		}
 */
 		shared->next_time = get_next_excution_time(job->next_time_statement, &EE);
+		if(shared->next_time == 0)
+		{
+			shared->set_invalid = true;
+			sprintf(shared->set_invalid_reason, "unable to execute next time statement");
+		}
 	}
 	pgstat_report_activity(STATE_RUNNING, "finish job processing");
 

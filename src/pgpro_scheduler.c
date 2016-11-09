@@ -287,8 +287,6 @@ void parent_scheduler_main(Datum arg)
 		{
 			for(i=0; i < poll->n; i++)
 			{
-				/* toc = shm_toc_attach(PGPRO_SHM_TOC_MAGIC, dsm_segment_address(poll->workers[i]->shared));
-				shared = shm_toc_lookup(toc, 0); */
 				shared = dsm_segment_address(poll->workers[i]->shared);
 
 				if(shared->setbychild)
@@ -301,7 +299,12 @@ void parent_scheduler_main(Datum arg)
 					}
 					else if(shared->status == SchdManagerQuit)
 					{
-						removeManagerFromPoll(poll, poll->workers[i]->dbname, 1);
+						removeManagerFromPoll(poll, poll->workers[i]->dbname, 1, true);
+						set_supervisor_pgstatus(poll);
+					}
+					else if(shared->status == SchdManagerDie)
+					{
+						removeManagerFromPoll(poll, poll->workers[i]->dbname, 1, false);
 						set_supervisor_pgstatus(poll);
 					}
 					else
@@ -320,7 +323,7 @@ void parent_scheduler_main(Datum arg)
 	stopAllManagers(poll);
 	delete_worker_mem_ctx();
 
-	proc_exit(1);
+	proc_exit(0);
 }
 
 void
