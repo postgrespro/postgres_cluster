@@ -171,7 +171,7 @@ extern PGDLLIMPORT int MyProcPid;
 extern PGDLLIMPORT pg_time_t MyStartTime;
 extern PGDLLIMPORT struct Port *MyProcPort;
 extern PGDLLIMPORT struct Latch *MyLatch;
-extern long MyCancelKey;
+extern uint32 MyCancelKey;
 extern int	MyPMChildSlot;
 
 extern char OutputFileName[];
