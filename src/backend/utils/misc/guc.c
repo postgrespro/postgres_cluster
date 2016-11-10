@@ -400,7 +400,6 @@ static const struct config_enum_entry password_encryption_options[] = {
 	{"off", PASSWORD_TYPE_PLAINTEXT, false},
 	{"on", PASSWORD_TYPE_MD5, false},
 	{"md5", PASSWORD_TYPE_MD5, false},
-	{"scram", PASSWORD_TYPE_SCRAM, false},
 	{"plain", PASSWORD_TYPE_PLAINTEXT, false},
 	{"true", PASSWORD_TYPE_MD5, true},
 	{"false", PASSWORD_TYPE_PLAINTEXT, true},

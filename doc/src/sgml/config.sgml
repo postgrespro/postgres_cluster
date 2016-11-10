@@ -1181,8 +1181,7 @@ include_dir 'conf.d'
        <para>
         A value set to <literal>on</> or <literal>md5</> corresponds to a 
         MD5-encrypted password, <literal>off</> or <literal>plain</>
-        corresponds to an unencrypted password.  Setting this parameter to
-        <literal>scram</> will encrypt the password with SCRAM-SHA-256.
+        corresponds to an unencrypted password.
        </para>
        
        <para>

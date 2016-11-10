@@ -18,8 +18,7 @@
 typedef enum PasswordType
 {
 	PASSWORD_TYPE_PLAINTEXT = 0,
-	PASSWORD_TYPE_MD5,
-	PASSWORD_TYPE_SCRAM
+	PASSWORD_TYPE_MD5
 } PasswordType;
 
 extern int Password_encryption;
