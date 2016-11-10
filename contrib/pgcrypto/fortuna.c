@@ -34,9 +34,9 @@
 #include <sys/time.h>
 #include <time.h>
 
-#include "common/sha.h"
 #include "px.h"
 #include "rijndael.h"
+#include "sha2.h"
 #include "fortuna.h"
 
 
@@ -112,7 +112,7 @@
 #define CIPH_BLOCK		16
 
 /* for internal wrappers */
-#define MD_CTX			pg_sha256_ctx
+#define MD_CTX			SHA256_CTX
 #define CIPH_CTX		rijndael_ctx
 
 struct fortuna_state
@@ -154,22 +154,22 @@ ciph_encrypt(CIPH_CTX * ctx, const uint8 *in, uint8 *out)
 static void
 md_init(MD_CTX * ctx)
 {
-	pg_sha256_init(ctx);
+	SHA256_Init(ctx);
 }
 
 static void
 md_update(MD_CTX * ctx, const uint8 *data, int len)
 {
-	pg_sha256_update(ctx, data, len);
+	SHA256_Update(ctx, data, len);
 }
 
 static void
 md_result(MD_CTX * ctx, uint8 *dst)
 {
-	pg_sha256_ctx	tmp;
+	SHA256_CTX	tmp;
 
 	memcpy(&tmp, ctx, sizeof(*ctx));
-	pg_sha256_final(&tmp, dst);
+	SHA256_Final(dst, &tmp);
 	px_memset(&tmp, 0, sizeof(tmp));
 }
 
