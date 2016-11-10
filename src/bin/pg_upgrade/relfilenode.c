@@ -125,7 +125,6 @@ transfer_all_new_dbs(DbInfoArr *old_db_arr, DbInfoArr *new_db_arr,
 
 static void transfer_compression_files(FileNameMap *map)
 {
-	const char *msg;
 	char		old_file[MAXPGPATH];
 	char		new_file[MAXPGPATH];
 	struct stat statbuf;		
