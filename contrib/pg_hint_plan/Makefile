@@ -27,7 +27,7 @@ subdir = contrib/pg_hint_plan
 top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
-override CFLAGS += -I$(top_builddir)/src/pl/plpgsql/src
+override CFLAGS += -I$(top_srcdir)/src/pl/plpgsql/src
 REGRESS = init base_plan
 endif
 
