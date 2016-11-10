@@ -287,6 +287,8 @@ gets_fromFile(FILE *source)
 		for (VARNAME = current_history(); VARNAME != NULL; \
 			 VARNAME = use_prev_ ? previous_history() : next_history()) \
 		{ \
+			if (VARNAME -> line == NULL) \
+			   continue; \
 			(void) 0
 
 #define END_ITERATE_HISTORY() \
@@ -355,7 +357,9 @@ initializeInput(int flags)
 
 		/* these two things must be done in this order: */
 		initialize_readline();
+#ifndef HAVE_WIN32_LIBEDIT
 		rl_initialize();
+#endif
 
 		useHistory = true;
 		using_history();
@@ -459,8 +463,10 @@ saveHistory(char *fname, int max_lines)
 #else							/* don't have append support */
 		{
 			/* truncate what we have ... */
+#ifndef HAVE_WIN32_LIBEDIT
 			if (max_lines >= 0)
 				stifle_history(max_lines);
+#endif
 			/* ... and overwrite file.  Tough luck for concurrent sessions. */
 			errnum = write_history(fname);
 			if (errnum == 0)

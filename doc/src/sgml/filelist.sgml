@@ -149,6 +149,7 @@
 <!ENTITY pgvariables     SYSTEM "pg_variables.sgml">
 <!ENTITY pgvisibility    SYSTEM "pgvisibility.sgml">
 <!ENTITY postgres-fdw    SYSTEM "postgres-fdw.sgml">
+<!ENTITY rum             SYSTEM "rum.sgml">
 <!ENTITY seg             SYSTEM "seg.sgml">
 <!ENTITY contrib-spi     SYSTEM "contrib-spi.sgml">
 <!ENTITY sepgsql         SYSTEM "sepgsql.sgml">

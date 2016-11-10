@@ -36,13 +36,20 @@
 
 
 /*
+ * Determine whether we should enable COPY or not (PostgresPro has a fix).
+ */
+#if defined(WIN32) && !defined(PGPRO_PATHMAN_AWARE_COPY)
+#define DISABLE_PATHMAN_COPY
+#endif
+
+/*
  * While building PostgreSQL on Windows the msvc compiler produces .def file
  * which contains all the symbols that were declared as external except the ones
  * that were declared but not defined. We redefine variables below to prevent
  * 'unresolved symbol' errors on Windows. But we have to disable COPY feature
- * on Windows
+ * on Windows.
  */
-#ifdef WIN32
+#ifdef DISABLE_PATHMAN_COPY
 bool				XactReadOnly = false;
 ProtocolVersion		FrontendProtocol = (ProtocolVersion) 0;
 #endif
@@ -107,10 +114,12 @@ is_pathman_related_copy(Node *parsetree)
 				elog(ERROR, "freeze is not supported for partitioned tables");
 		}
 
-		elog(DEBUG1, "Overriding default behavior for COPY [%u]", partitioned_table);
-
-		#ifdef WIN32
+		/* Emit ERROR if we can't see the necessary symbols */
+		#ifdef DISABLE_PATHMAN_COPY
 			elog(ERROR, "COPY is not supported for partitioned tables on Windows");
+		#else
+			elog(DEBUG1, "Overriding default behavior for COPY [%u]",
+				 partitioned_table);
 		#endif
 
 		return true;
@@ -332,6 +341,7 @@ PathmanDoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 	{
 		bool is_old_protocol = PG_PROTOCOL_MAJOR(FrontendProtocol) < 3 &&
 							   stmt->filename == NULL;
+		ParseState *pstate;
 
 		/* There should be relation */
 		if (!rel) elog(FATAL, "No relation for PATHMAN COPY FROM");
@@ -341,15 +351,19 @@ PathmanDoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 			PreventCommandIfReadOnly("PATHMAN COPY FROM");
 		PreventCommandIfParallelMode("PATHMAN COPY FROM");
 
-		cstate = BeginCopyFrom(NULL,rel, stmt->filename, stmt->is_program,
+	    pstate = make_parsestate(NULL);
+	    pstate->p_sourcetext = queryString;
+		cstate = BeginCopyFrom(pstate,rel, stmt->filename, stmt->is_program,
 							   stmt->attlist, stmt->options);
 		*processed = PathmanCopyFrom(cstate, rel, range_table, is_old_protocol);
 		EndCopyFrom(cstate);
+		free_parsestate(pstate);
 	}
 	/* COPY ... TO ... */
 	else
 	{
 		CopyStmt	modified_copy_stmt;
+		ParseState *pstate;
 
 		/* We should've created a query */
 		Assert(query);
@@ -358,9 +372,13 @@ PathmanDoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 		modified_copy_stmt = *stmt;
 		modified_copy_stmt.relation = NULL;
 		modified_copy_stmt.query = query;
+	    pstate = make_parsestate(NULL);
+	    pstate->p_sourcetext = queryString;
+
 
 		/* Call standard DoCopy using a new CopyStmt */
-		DoCopy(NULL,&modified_copy_stmt, processed);
+		DoCopy(pstate,&modified_copy_stmt, processed);
+		free_parsestate(pstate);
 	}
 
 	/*
@@ -466,7 +484,7 @@ PathmanCopyFrom(CopyState cstate, Relation parent_rel,
 		/* Search for a matching partition */
 		rri_holder_child = select_partition_for_insert(prel, &parts_storage,
 													   values[prel->attnum - 1],
-													   estate, false);
+													   estate, true);
 		child_result_rel = rri_holder_child->result_rel_info;
 		estate->es_result_relation_info = child_result_rel;
 
@@ -555,6 +573,9 @@ PathmanCopyFrom(CopyState cstate, Relation parent_rel,
 
 	/* Close partitions and destroy hash table */
 	fini_result_parts_storage(&parts_storage, true);
+
+	/* Close parent's indices */
+	ExecCloseIndices(parent_result_rel);
 
 	FreeExecutorState(estate);
 

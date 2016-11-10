@@ -15427,6 +15427,11 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
        <entry><type>text</type></entry>
        <entry><productname>Postgres Pro</> version information.</entry>
        </row>
+      <row>
+       <entry><literal><function>pgpro_edition()</function></literal></entry>
+       <entry><type>text</type></entry>
+       <entry>Name  of <productname>Postgres Pro</> edition.</entry>
+       </row>
      </tbody>
     </tgroup>
    </table>
@@ -15651,6 +15656,13 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
     (available since 8.2) or <xref linkend="libpq-pqserverversion"> instead
     of parsing the text version.
    </para>
+  <indexterm>
+  <primary>pgpro_edition</primary>
+  </indexterm>
+  <para>
+<literal><function>pgpro_edition()</function></literal>
+   returns a string, describing <productname>Postgres Pro</> edition
+   i.e. <literal>standard</literal> or <literal>enterprise</literal>.</para>
   <indexterm>
   <primary>pgpro_version</primary>
   </indexterm>

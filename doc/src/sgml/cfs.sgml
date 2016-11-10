@@ -13,15 +13,15 @@
     
   <para>
     Databases are used to store larger number of text and duplicated information. This is why compression of most of databases
-    can be quite efficient and reduce used storage size 3..5 times. Postgres performs compression of TOAST data, but small 
+    can be quite efficient and reduce used storage size 3..5 times. PostgreSQL performs compression of TOAST data, but small 
     text fields which fits in the page are not compressed. Also not only heap pages can be compressed, indexes on text keys 
     or indexes with larger number of duplicate values are also good candidates for compression.
   </para>
 
   <para>
-    Postgres is working with disk data through buffer pool which accumulates most frequently used buffers.
+    PostgreSQL is working with disk data through buffer pool which accumulates most frequently used buffers.
     Interface between buffer manager and file system is the most natural place for performing compression.
-    Buffers are stored on the disk in compressed for reducing disk usage and minimizing amount of data to be read.
+    Buffers are stored on the disk in compressed form for reducing disk usage and minimizing amount of data to be read.
     And in-memory buffer pool contains uncompressed buffers, providing access to the records at the same speed as without 
     compression. As far as modern server have large enough size of RAM, substantial part of the database can be cached in
     memory and accessed without any compression overhead penalty.
@@ -37,9 +37,9 @@
     <term>Reducing amount of disk IO</term>
     <listitem>
      <para>
-       Compression help to reduce size of data which should be written to the disk or read from it.
+       Compression helps to reduce size of data which should be written to the disk or read from it.
        Compression ratio 3 actually means that you need to read 3 times less data or same number of records can be fetched 
-       3 times faster
+       3 times faster.
      </para>
     </listitem>
    </varlistentry>
@@ -48,8 +48,8 @@
     <term>Improving locality</term>
     <listitem>
      <para>
-       When modified buffers are flushed from buffer pool to the disk, them are now written to the random locations
-       on the disk. Postgres cache replacement algorithm makes a decision about throwing away buffer from the pool
+       When modified buffers are flushed from buffer pool to the disk, they are written to the random locations
+       on the disk. PostgreSQL cache replacement algorithm makes a decision about throwing away buffer from the pool
        based on its access frequency and ignoring its location on the disk. So two subsequently written buffers can be 
        located in completely different parts of the disk. For HDD seek time is quite large - about 10msec, which corresponds
        to 100 random writes per second. And speed of sequential write can be about 100Mb/sec, which corresponds to
@@ -58,10 +58,10 @@
        Size of buffer in PostgreSQL is fixed (8kb by default). Size of compressed buffer depends on the content of the buffer.
        So updated buffer can not always fit in its old location on the disk. This is why we can not access pages directly 
        by its address. Instead of it we have to use map which translates logical address of the page to its physical location
-       on the disk. Definitely this extra level of indirection adds overhead. For in most cases this map can fir in memory, 
+       on the disk. Definitely this extra level of indirection adds overhead. But in most cases this map can fit in memory, 
        so page lookup is nothing more than just accessing array element. But presence of this map also have positive effect:
        we can now write updated pages sequentially, just updating their map entries.
-       Postgres is doing much to avoid "write storm" intensive flushing of data to the disk when buffer poll space is 
+       PostgreSQL is doing much to avoid "write storm" intensive flushing of data to the disk when buffer pool space is 
        exhausted. Compression allows to significantly reduce disk load.
      </para>
     </listitem>
@@ -72,7 +72,8 @@
     Another useful feature which can be combined with compression is database encryption.
     Encryption allows to protected you database from unintended access (if somebody stole your notebook, hard drive or make 
     copy from it, thief will not be able to extract information from your database if it is encrypted).
-    Postgres provide contrib module pgcrypto, allowing you to encrypt some particular types/columns.
+    PostgreSQL provide contrib module pgcrypto, allowing you to encrypt some particular types/columns.
+
     But safer and convenient way is to encrypt all data in the database. Encryption can be combined with compression.
     Data should be stored at disk in encrypted form and decrypted when page is loaded in buffer pool.
     It is essential that compression should be performed before encryption, otherwise encryption eliminates regularities in 
@@ -80,20 +81,20 @@
   </para>
 
   <para>
-    Why do we need to perform compression/encryption in Postgres and do not use correspondent features of underlying file 
+    Why do we need to perform compression/encryption in PostgreSQL and do not use correspondent features of underlying file 
     systems? First answer is that there are not so much file system supporting compression and encryption for all OSes.
     And even if such file systems are available, it is not always possible/convenient to install such file system just
     to compress/protect your database. Second question is that performing compression at database level can be more efficient, 
-    because here we can here use knowledge about size of database page and performs compression more efficiently.
+    because here we can use knowledge about size of database page and can perform compression more efficiently.
   </para>
 
  </sect1>
     
  <sect1 id="cfs-implementation">
-  <title>How compression/encryption are integrated in Postgres</title>
+  <title>How compression/encryption are integrated in PostgreSQL</title>
     
   <para>
-    To improve efficiency of disk IO, Postgres is working with files through buffer manager, which  pins in memory
+    To improve efficiency of disk IO, PostgreSQL is working with files through buffer manager, which  pins in memory
     most frequently used pages. Each page is fixed size (8kb by default). But if we compress page, then
     its size will depend on its content. So updated page can require more (or less) space than original page.
     So we may not always perform in-place update of the page. Instead of it we have to locate new space for the page and somehow release
@@ -106,8 +107,8 @@
     <listitem>
      <para>
        We should implement our own allocator of file space. Usually, to reduce fragmentation, fixed size block allocator is used.
-       it means that we allocates pace using some fixed quantum. For example if compressed page size is 932 bytes, then we will 
-       allocate 1024 block for it in the file.
+       It means that we allocates place using some fixed quantum. For example if compressed page size is 932 bytes, then we will 
+       allocate 1024 bytes for it in the file.
      </para>
     </listitem>
    </varlistentry>
@@ -127,18 +128,18 @@
   </variablelist>
 
   <para>
-    As far as page location is not fixed and page an be moved, we can not any more access page directly by its address and need 
-    to use extra level of indirection to map logical address of the page to it physical location in the disk.
-    It is done using memory-mapped files. In most cases this mapped will be kept in memory (size of the map is 1000 times smaller size
+    As far as page location is not fixed and page can be moved, we can not anymore access the page directly by its address and need 
+    to use extra level of indirection to map logical address of the page to it's physical location on the disk.
+    It is done using mapping files. In most cases the mapping will be kept in memory (size of the map is 1000 times smaller size
     of the file) and address translation adds almost no overhead to page access time.
-    But we need to maintain this extra files: flush them during checkpoint, remove when table is dropped, include them in backup and 
+    But we need to maintain these extra files: flush them during checkpoint, remove when table is dropped, include them in backup and 
     so on... 
   </para>
 
   <para>
-    Postgres is storing relation in set of files, size of each file is not exceeding 2Gb. Separate page map is constructed for each file.
+    PostgreSQL stores relation in a set of files, size of each file is not exceeding 2Gb. Separate page map is constructed for each file.
     Garbage collection in CFS is done by several background workers. Number of this workers and pauses in their work can be 
-    configured by database administrator. This workers are splitting work based on inode hash, so them do not conflict with each other.
+    configured by database administrator. These workers are splitting work based on inode hash, so them do not conflict with each other.
     Each file is proceeded separately. The files is blocked for access at the time of garbage collection but complete relation is not 
     blocked. To ensure data consistency GC creates copies of original data and map files. Once them are flushed to the disk,
     new version of data file is atomically renamed to original file name. And then new page map data is copied to memory-mapped file
@@ -149,9 +150,9 @@
   </para>
     
   <para>
-    CFS can be build with several compression libraries: Postgres lz, zlib, lz4, snappy, lzfse...
+    CFS can be build with several compression libraries: PostgreSQL lz, zlib, lz4, snappy, lzfse...
     But this is build time choice: it is not possible now to dynamically choose compression algorithm.
-    CFS stores in tablespace information about used compression algorithm and produce error if Postgres is build with different
+    CFS stores information about the compression algorithm used in a tablespace and produces error if PostgreSQL is built with different
     library.
   </para>
     
@@ -167,13 +168,13 @@
     
   <para>
     Compression can be enabled for particular tablespaces. System relations are not compressed in any case.
-    It is not currently possible to alter tablespace compression option, i.e. it is not possible to compress existed tablespace
-    or visa versa - decompress compressed tablespace.
+    It is not currently possible to alter tablespace compression option, i.e. it is not possible to compress existing tablespace
+    or vice versa - decompress compressed tablespace.
   </para>
 
   <para>
-    So to use compression/encryption you need to create table space with <varname>compression=true</varname> option.
-    You can make this table space default tablespace - in this case all tables will be implicitly created in this database:
+    So to use compression/encryption you need to create a tablespace with <varname>compression=true</varname> option.
+    You can make this tablespace your default tablespace - in this case all tables will be implicitly created in this database:
   </para>
 
   <programlisting>
@@ -281,7 +282,7 @@
       The file is locked at the period of defragmentation, preventing any access to this part of relation.
       When defragmentation is completed, garbage collection waits <varname>cfs_gc_delay</varname> milliseconds and continue directory traversal.
       After the end of traversal, GC waits <varname>cfs_gc_period</varname> milliseconds and starts new GC iteration.
-      If there are more than one GC workers, then them split work based on hash of file inode.
+      If there are more than one GC workers, then they split work based on hash of file inode.
     </para>
 
     <para>

@@ -318,8 +318,19 @@ format_numeric_locale(const char *my_str)
 static void
 fputnbytes(FILE *f, const char *str, size_t n)
 {
+
+#ifdef HAVE_WIN32_LIBEDIT
+	char buffer[1024];
+	char *buf = buffer;
+	if (n>1023) buf=malloc(n+1);
+	strncpy(buf,str,n);
+	buf[n]=0;
+	fputs(buf,f);
+	if (n>1023) free(buf);
+#else
 	while (n-- > 0)
 		fputc(*str++, f);
+#endif		
 }
 
 

@@ -188,7 +188,7 @@ help(const char *progname)
 		   "  -x             extended (show additional columns)\n"
 		   "  -?, --help     show this help, then exit\n"
 		   "\nThe default action is to show all database OIDs.\n\n"
-		   "Report bugs to <pgsql-bugs@postgresql.org>.\n",
+		   "Report bugs to <" PACKAGE_BUGREPORT ">.\n",
 		   progname, progname);
 }
 

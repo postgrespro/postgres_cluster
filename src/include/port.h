@@ -152,6 +152,9 @@ extern unsigned char pg_ascii_tolower(unsigned char ch);
 #ifdef printf
 #undef printf
 #endif
+#ifdef fputs
+#undef fputs
+#endif
 
 extern int	pg_vsnprintf(char *str, size_t count, const char *fmt, va_list args);
 extern int	pg_snprintf(char *str, size_t count, const char *fmt,...) pg_attribute_printf(3, 4);
@@ -160,6 +163,10 @@ extern int	pg_vfprintf(FILE *stream, const char *fmt, va_list args);
 extern int	pg_fprintf(FILE *stream, const char *fmt,...) pg_attribute_printf(2, 3);
 extern int	pg_printf(const char *fmt,...) pg_attribute_printf(1, 2);
 
+#ifdef HAVE_WIN32_LIBEDIT
+extern int pg_fputs(const char *s, FILE *stream);
+extern int pg_puts(const char *s);
+#endif
 /*
  *	The GCC-specific code below prevents the pg_attribute_printf above from
  *	being replaced, and this is required because gcc doesn't know anything
@@ -179,6 +186,11 @@ extern int	pg_printf(const char *fmt,...) pg_attribute_printf(1, 2);
 #define vfprintf		pg_vfprintf
 #define fprintf			pg_fprintf
 #define printf			pg_printf
+#endif
+#ifdef HAVE_WIN32_LIBEDIT
+/* Catch fputs as well so we can use WriteConsole for table output */
+#define fputs(s,f)		pg_fputs(s,f)
+#define puts(s)			pg_puts(s)
 #endif
 #endif   /* USE_REPL_SNPRINTF */
 

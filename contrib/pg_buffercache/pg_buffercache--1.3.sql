@@ -1,4 +1,4 @@
-/* contrib/pg_buffercache/pg_buffercache--1.2.sql */
+/* contrib/pg_buffercache/pg_buffercache--1.3.sql */
 
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
 \echo Use "CREATE EXTENSION pg_buffercache" to load this file. \quit

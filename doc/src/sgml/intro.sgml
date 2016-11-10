@@ -146,12 +146,6 @@
    </itemizedlist>
   </para>
 
-  <para>
-   And because of the liberal license,
-   <productname>&productname;</productname> and <productname>PostgreSQL</productname> can be used, modified, and
-   distributed by anyone free of charge for any purpose, be it
-   private, commercial, or academic.
-  </para>
   </sect1>
 
   <sect1 id="intro-pgpro-vs-pg">

@@ -5313,6 +5313,8 @@ DESCR("get progress for all replication origins");
 DATA(insert OID =  6015 (  pgpro_version		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ pgpro_version _null_ _null_ _null_ ));
 DESCR("PostgresPro version string");
 
+DATA(insert OID =  6019 (  pgpro_edition		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ pgpro_edition _null_ _null_ _null_ ));
+DESCR("PostgresPro edition");
 
 /* rls */
 DATA(insert OID = 3298 (  row_security_active	   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 16 "26" _null_ _null_ _null_ _null_ _null_	row_security_active _null_ _null_ _null_ ));
