@@ -14,14 +14,10 @@
 #include "catalog/objectaddress.h"
 #include "nodes/parsenodes.h"
 
-/* Types of password */
-typedef enum PasswordType
-{
-	PASSWORD_TYPE_PLAINTEXT = 0,
-	PASSWORD_TYPE_MD5
-} PasswordType;
 
-extern int Password_encryption;
+/* Hook to check passwords in CreateRole() and AlterRole() */
+#define PASSWORD_TYPE_PLAINTEXT		0
+#define PASSWORD_TYPE_MD5			1
 
 typedef void (*check_password_hook_type) (const char *username, const char *password, int password_type, Datum validuntil_time, bool validuntil_null);
 
