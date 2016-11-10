@@ -831,6 +831,7 @@ PG_FUNCTION_INFO_V1(cfs_start_gc);
 PG_FUNCTION_INFO_V1(cfs_enable_gc);
 PG_FUNCTION_INFO_V1(cfs_version);
 PG_FUNCTION_INFO_V1(cfs_estimate);
+PG_FUNCTION_INFO_V1(cfs_compression_ratio);
 
 Datum cfs_start_gc(PG_FUNCTION_ARGS)
 {
@@ -923,3 +924,53 @@ Datum cfs_estimate(PG_FUNCTION_ARGS)
 	}
 	PG_RETURN_FLOAT8(avgRatio);
 }
+
+Datum cfs_compression_ratio(PG_FUNCTION_ARGS)
+{
+    Oid oid =  PG_GETARG_OID(0);
+    Relation rel = try_relation_open(oid, AccessShareLock);
+	uint64 virtSize = 0;
+	uint64 physSize = 0;
+
+    if (rel != NULL) {
+        char* path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
+        char* map_path = (char*)palloc(strlen(path) + 16);
+        int i = 0;
+
+        while (true) {
+            int md;
+			FileMap* map;
+
+            if (i == 0) {
+                sprintf(map_path, "%s.cfm", path);
+            } else {
+                sprintf(map_path, "%s.%u.cfm", path, i);
+            }
+			md = open(map_path, O_RDONLY|PG_BINARY, 0);
+            if (md < 0) {
+				break;
+			}
+			map = cfs_mmap(md);
+			if (map == MAP_FAILED) {
+				elog(LOG, "cfs_compression_ration failed to map file %s: %m", map_path);
+				close(md);
+				break;
+			}
+			virtSize += pg_atomic_read_u32(&map->virtSize);
+			physSize += pg_atomic_read_u32(&map->physSize);
+			
+			if (cfs_munmap(map) < 0) {
+				elog(LOG, "Failed to unmap file %s: %m", map_path);
+			}
+			if (close(md) < 0) {
+				elog(LOG, "Failed to close file %s: %m", map_path);
+			}
+			i += 1;
+		}
+		pfree(path);
+		pfree(map_path);
+		relation_close(rel, AccessShareLock);
+	}
+	PG_RETURN_FLOAT8((double)virtSize/physSize);
+}
+
