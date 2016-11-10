@@ -839,7 +839,10 @@ PG_FUNCTION_INFO_V1(cfs_enable_gc);
 PG_FUNCTION_INFO_V1(cfs_version);
 PG_FUNCTION_INFO_V1(cfs_estimate);
 PG_FUNCTION_INFO_V1(cfs_compression_ratio);
-PG_FUNCTION_INFO_V1(cfs_gc_activity);
+PG_FUNCTION_INFO_V1(cfs_gc_activity_processed_bytes);
+PG_FUNCTION_INFO_V1(cfs_gc_activity_processed_pages);
+PG_FUNCTION_INFO_V1(cfs_gc_activity_processed_files);
+PG_FUNCTION_INFO_V1(cfs_gc_activity_scanned_files);
 
 Datum cfs_start_gc(PG_FUNCTION_ARGS)
 {
@@ -982,7 +985,22 @@ Datum cfs_compression_ratio(PG_FUNCTION_ARGS)
 	PG_RETURN_FLOAT8((double)virtSize/physSize);
 }
 
-Datum cfs_gc_activity(PG_FUNCTION_ARGS)
+Datum cfs_gc_activity_processed_bytes(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT64(cfs_state->gc_stat.processedBytes);
+}
+
+Datum cfs_gc_activity_processed_pages(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(cfs_state->gc_stat.processedPages);
+}
+
+Datum cfs_gc_activity_processed_files(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(cfs_state->gc_stat.processedFiles);
+}
+
+Datum cfs_gc_activity_scanned_files(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(cfs_state->gc_stat.scannedFiles);
 }
