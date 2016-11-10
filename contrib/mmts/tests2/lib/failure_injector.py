@@ -2,12 +2,14 @@ import docker
 
 class FailureInjector(object):
 
-    def __init__(self):
-        self.docker_api = docker.Client()
+    # def __init__(self):
+    #     self.docker_api = docker.Client()
 
     def container_exec(self, node, command):
+        self.docker_api = docker.Client()
         exec_id = self.docker_api.exec_create(node, command, user='root')
         output = self.docker_api.exec_start(exec_id)
+        self.docker_api.close()
         # print(command, ' -> ', output)
 
 
@@ -39,7 +41,7 @@ class EdgePartition(FailureInjector):
         self.container_exec(self.nodeA, "iptables -A OUTPUT -s {} -j DROP".format(self.nodeB) )
 
     def stop(self):
-        self.container_exec(self.nodeA, "iptables -D INPUT  -s {} -j DROP".format(self.nodeB))
+        self.container_exec(self.nodeA, "iptables -D INPUT -s {} -j DROP".format(self.nodeB))
         self.container_exec(self.nodeA, "iptables -D OUTPUT -s {} -j DROP".format(self.nodeB))
 
 
