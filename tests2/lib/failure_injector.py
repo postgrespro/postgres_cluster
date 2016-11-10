@@ -35,7 +35,7 @@ class EdgePartition(FailureInjector):
         super().__init__()
 
     def start(self):
-        self.container_exec(self.nodeA, "iptables -A INPUT  -s {} -j DROP".format(self.nodeB) )
+        self.container_exec(self.nodeA, "iptables -A INPUT -s {} -j DROP".format(self.nodeB) )
         self.container_exec(self.nodeA, "iptables -A OUTPUT -s {} -j DROP".format(self.nodeB) )
 
     def stop(self):

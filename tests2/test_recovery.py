@@ -12,7 +12,7 @@ from lib.bank_client import MtmClient
 from lib.failure_injector import *
 
 TEST_DURATION = 10
-TEST_RECOVERY_TIME = 10
+TEST_RECOVERY_TIME = 20
 
 class RecoveryTest(unittest.TestCase):
     @classmethod
@@ -86,37 +86,6 @@ class RecoveryTest(unittest.TestCase):
         self.assertTrue( aggs['sumtotal_2']['isolation'] == 0)
 
 
-    def test_node_partition(self):
-        print('### nodePartitionTest ###')
-
-        failure = SingleNodePartition('node3')
-        failure.start()
-
-        self.client.clean_aggregates()
-        time.sleep(TEST_DURATION)
-        aggs_failure = self.client.get_aggregates()
-
-        failure.stop()
-
-        self.client.clean_aggregates()
-        time.sleep(TEST_RECOVERY_TIME)
-        aggs = self.client.get_aggregates()
-
-        self.assertTrue( 'commit' in aggs_failure['transfer_0']['finish'] )
-        self.assertTrue( 'commit' in aggs_failure['transfer_1']['finish'] )
-        self.assertTrue( 'commit' not in aggs_failure['transfer_2']['finish'] )
-        self.assertTrue( aggs_failure['sumtotal_0']['isolation'] == 0)
-        self.assertTrue( aggs_failure['sumtotal_1']['isolation'] == 0)
-        self.assertTrue( aggs_failure['sumtotal_2']['isolation'] == 0)
-
-        self.assertTrue( 'commit' in aggs['transfer_0']['finish'] )
-        self.assertTrue( 'commit' in aggs['transfer_1']['finish'] )
-        self.assertTrue( 'commit' in aggs['transfer_2']['finish'] )
-        self.assertTrue( aggs['sumtotal_0']['isolation'] == 0)
-        self.assertTrue( aggs['sumtotal_1']['isolation'] == 0)
-        self.assertTrue( aggs['sumtotal_2']['isolation'] == 0)
-
-
     def test_edge_partition(self):
         print('### edgePartitionTest ###')
 
@@ -133,8 +102,8 @@ class RecoveryTest(unittest.TestCase):
         time.sleep(TEST_RECOVERY_TIME)
         aggs = self.client.get_aggregates()
 
-        self.assertTrue( ('commit' in aggs_failure['transfer_0']['finish']) or ('commit' in aggs_failure['transfer_1']['finish']) )
-        self.assertTrue( 'commit' not in aggs_failure['transfer_2']['finish'] )
+        self.assertTrue( ('commit' in aggs_failure['transfer_2']['finish']) or ('commit' in aggs_failure['transfer_1']['finish']) )
+        self.assertTrue( 'commit' in aggs_failure['transfer_0']['finish'] )
         self.assertTrue( aggs_failure['sumtotal_0']['isolation'] == 0)
         self.assertTrue( aggs_failure['sumtotal_1']['isolation'] == 0)
         self.assertTrue( aggs_failure['sumtotal_2']['isolation'] == 0)
