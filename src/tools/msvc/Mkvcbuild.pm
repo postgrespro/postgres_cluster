@@ -113,7 +113,7 @@ sub mkvcbuild
 	}
 
 	our @pgcommonallfiles = qw(
-	  config_info.c controldata_utils.c encode_utils.c exec.c keywords.c
+	  config_info.c controldata_utils.c exec.c keywords.c
 	  pg_lzcompress.c pgfnames.c psprintf.c relpath.c rmtree.c
 	  scram-common.c string.c username.c wait_error.c);
 
@@ -124,7 +124,7 @@ sub mkvcbuild
 	else
 	{
 		push(@pgcommonallfiles, 'sha.c');
-	}
++	}
 
 	our @pgcommonfrontendfiles = (
 		@pgcommonallfiles, qw(fe_memutils.c

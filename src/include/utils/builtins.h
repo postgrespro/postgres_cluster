@@ -161,6 +161,8 @@ extern int	errdomainconstraint(Oid datatypeOid, const char *conname);
 /* encode.c */
 extern Datum binary_encode(PG_FUNCTION_ARGS);
 extern Datum binary_decode(PG_FUNCTION_ARGS);
+extern unsigned hex_encode(const char *src, unsigned len, char *dst);
+extern unsigned hex_decode(const char *src, unsigned len, char *dst);
 
 /* enum.c */
 extern Datum enum_in(PG_FUNCTION_ARGS);
