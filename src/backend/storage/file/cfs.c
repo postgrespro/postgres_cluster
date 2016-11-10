@@ -279,6 +279,7 @@ void cfs_decrypt(void* block, uint32 offs, uint32 size)
 void cfs_initialize()
 {
 	cfs_state = (CfsState*)ShmemAlloc(sizeof(CfsState));
+	memset(&cfs_state->gc_stat, 0, sizeof cfs_state->gc_stat);
 	pg_atomic_init_flag(&cfs_state->gc_started);
 	cfs_state->n_workers = 0;
 	cfs_state->gc_enabled = true;
@@ -492,7 +493,9 @@ static bool cfs_gc_file(char* map_path)
 	usedSize = pg_atomic_read_u32(&map->usedSize);
 	physSize = pg_atomic_read_u32(&map->physSize);
 	virtSize = pg_atomic_read_u32(&map->virtSize);
-		
+	
+	cfs_state->gc_stat.scannedFiles += 1;
+
 	if ((physSize - usedSize)*100 > physSize*cfs_gc_threshold) /* do we need to perform defragmentation? */
 	{ 
 		long delay = CFS_LOCK_MIN_TIMEOUT;		
@@ -577,7 +580,8 @@ static bool cfs_gc_file(char* map_path)
 		if (fd2 < 0) { 
 			goto Cleanup;
 		}
-		
+		cfs_state->gc_stat.processedFiles += 1;
+
 		for (i = 0; i < n_pages; i++) { 
 			int size = CFS_INODE_SIZE(*inodes[i]);
 			if (size != 0) { 
@@ -587,7 +591,7 @@ static bool cfs_gc_file(char* map_path)
 				Assert(size <= BLCKSZ);	
 				rc = lseek(fd, offs, SEEK_SET);
 				Assert(rc == offs);
-				
+
 				if (!cfs_read_file(fd, block, size)) { 
 					elog(LOG, "Failed to read file %s: %m", file_path);
 					goto Cleanup;
@@ -597,6 +601,9 @@ static bool cfs_gc_file(char* map_path)
 					elog(LOG, "Failed to write file %s: %m", file_bck_path);
 					goto Cleanup;
 				}
+				cfs_state->gc_stat.processedBytes += size;
+				cfs_state->gc_stat.processedPages += 1;
+
 				offs = newSize;
 				newSize += size;
 				*inodes[i] = CFS_INODE(size, offs);
@@ -832,6 +839,7 @@ PG_FUNCTION_INFO_V1(cfs_enable_gc);
 PG_FUNCTION_INFO_V1(cfs_version);
 PG_FUNCTION_INFO_V1(cfs_estimate);
 PG_FUNCTION_INFO_V1(cfs_compression_ratio);
+PG_FUNCTION_INFO_V1(cfs_gc_activity);
 
 Datum cfs_start_gc(PG_FUNCTION_ARGS)
 {
@@ -974,3 +982,7 @@ Datum cfs_compression_ratio(PG_FUNCTION_ARGS)
 	PG_RETURN_FLOAT8((double)virtSize/physSize);
 }
 
+Datum cfs_gc_activity(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(cfs_state->gc_stat.processedBytes);
+}

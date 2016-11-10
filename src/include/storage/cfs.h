@@ -39,12 +39,26 @@ size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size
 size_t cfs_decompress(void* dst, size_t dst_size, void const* src, size_t src_size);
 char const* cfs_algorithm(void);
 
+/* 
+ * This structure is concurrently updated by several workers,
+ * but since we collect this information only for statistic - do not use atomics here
+ * Some inaccuracy is less critical than extra synchronization overhead.
+ */
+typedef struct
+{
+	uint64 scannedFiles;
+	uint64 processedFiles;
+	uint64 processedPages;
+	uint64 processedBytes;
+} CfsStatistic;
+
 typedef struct
 {
 	pg_atomic_flag gc_started;
 	int            n_workers;
 	int            max_iterations;
 	bool           gc_enabled;
+	CfsStatistic   gc_stat;
 	uint8          rc4_init_state[CFS_CIPHER_KEY_SIZE];
 } CfsState;
 

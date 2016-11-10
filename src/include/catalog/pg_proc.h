@@ -5350,6 +5350,8 @@ DATA(insert OID = 6103 (  cfs_estimate		   PGNSP PGUID 12 1 0 0 0 f f f f t f v 
 DESCR("Estimate relation compression ratio");
 DATA(insert OID = 6019 (  cfs_compression_ratio  PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 701 "2205" _null_ _null_ _null_ _null_ _null_ cfs_compression_ratio _null_ _null_ _null_ ));
 DESCR("Compression ration of relation");
+DATA(insert OID = 6020 (  cfs_gc_activity		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 20 "" _null_ _null_ _null_ _null_ _null_ cfs_gc_activity _null_ _null_ _null_ ));
+DESCR("Number of bytes proceeded by CFS garbage collectors since system start");
 
 /* distance functions */
 DATA(insert OID = 3343 ( int2_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0   21 "21 21"		_null_ _null_ _null_ _null_ _null_	int2_dist	_null_ _null_ _null_ ));
