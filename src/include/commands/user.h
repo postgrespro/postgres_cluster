@@ -13,7 +13,6 @@
 
 #include "catalog/objectaddress.h"
 #include "nodes/parsenodes.h"
-#include "parser/parse_node.h"
 
 /* Types of password */
 typedef enum PasswordType
@@ -29,7 +28,7 @@ typedef void (*check_password_hook_type) (const char *username, const char *pass
 
 extern PGDLLIMPORT check_password_hook_type check_password_hook;
 
-extern Oid	CreateRole(ParseState *pstate, CreateRoleStmt *stmt);
+extern Oid	CreateRole(CreateRoleStmt *stmt);
 extern Oid	AlterRole(AlterRoleStmt *stmt);
 extern Oid	AlterRoleSet(AlterRoleSetStmt *stmt);
 extern void DropRole(DropRoleStmt *stmt);

@@ -34,7 +34,6 @@ ALTER ROLE <replaceable class="PARAMETER">role_specification</replaceable> [ WIT
     | BYPASSRLS | NOBYPASSRLS
     | CONNECTION LIMIT <replaceable class="PARAMETER">connlimit</replaceable>
     | [ ENCRYPTED | UNENCRYPTED ] PASSWORD '<replaceable class="PARAMETER">password</replaceable>'
-    | PASSWORD '<replaceable class="PARAMETER">password</replaceable>' USING '<replaceable class="PARAMETER">protocol</replaceable>'
     | VALID UNTIL '<replaceable class="PARAMETER">timestamp</replaceable>'
 
 ALTER ROLE <replaceable class="PARAMETER">name</replaceable> RENAME TO <replaceable>new_name</replaceable>
@@ -170,7 +169,6 @@ ALTER ROLE { <replaceable class="PARAMETER">role_specification</replaceable> | A
       <term><literal>NOBYPASSRLS</literal></term>
       <term><literal>CONNECTION LIMIT</literal> <replaceable class="parameter">connlimit</replaceable></term>
       <term><literal>PASSWORD</> <replaceable class="parameter">password</replaceable></term>
-      <term><literal>PASSWORD</> <replaceable class="parameter">password</replaceable> USING <replaceable class="parameter">protocol</replaceable></term>
       <term><literal>ENCRYPTED</></term>
       <term><literal>UNENCRYPTED</></term>
       <term><literal>VALID UNTIL</literal> '<replaceable class="parameter">timestamp</replaceable>'</term>

@@ -18,7 +18,6 @@
 #include "fmgr.h"
 #include "lib/stringinfo.h"
 #include "nodes/parsenodes.h"
-#include "parser/parse_node.h"
 #include "storage/relfilenode.h"
 
 
@@ -74,8 +73,8 @@ extern Datum lastval(PG_FUNCTION_ARGS);
 
 extern Datum pg_sequence_parameters(PG_FUNCTION_ARGS);
 
-extern ObjectAddress DefineSequence(ParseState *pstate, CreateSeqStmt *stmt);
-extern ObjectAddress AlterSequence(ParseState *pstate, AlterSeqStmt *stmt);
+extern ObjectAddress DefineSequence(CreateSeqStmt *stmt);
+extern ObjectAddress AlterSequence(AlterSeqStmt *stmt);
 extern void ResetSequence(Oid seq_relid);
 extern void ResetSequenceCaches(void);
 

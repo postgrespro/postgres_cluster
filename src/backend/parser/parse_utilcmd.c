@@ -294,8 +294,7 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
 		 * overridden if an inherited table has oids.
 		 */
 		stmt->options = lcons(makeDefElem("oids",
-										  (Node *) makeInteger(cxt.hasoids), -1),
-							  stmt->options);
+						  (Node *) makeInteger(cxt.hasoids)), stmt->options);
 	}
 
 	foreach(elements, stmt->tableElts)
@@ -483,7 +482,7 @@ transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
 								 makeString(cxt->relation->relname),
 								 makeString(column->colname));
 		altseqstmt->options = list_make1(makeDefElem("owned_by",
-													 (Node *) attnamelist, -1));
+													 (Node *) attnamelist));
 
 		cxt->alist = lappend(cxt->alist, altseqstmt);
 

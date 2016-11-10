@@ -117,7 +117,7 @@ encrypt_password(char *password, char *rolname, int passwd_type)
  * CREATE ROLE
  */
 Oid
-CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
+CreateRole(CreateRoleStmt *stmt)
 {
 	Relation	pg_authid_rel;
 	TupleDesc	pg_authid_dsc;
@@ -179,51 +179,17 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 
 		if (strcmp(defel->defname, "password") == 0 ||
 			strcmp(defel->defname, "encryptedPassword") == 0 ||
-			strcmp(defel->defname, "unencryptedPassword") == 0 ||
-			strcmp(defel->defname, "protocolPassword") == 0)
+			strcmp(defel->defname, "unencryptedPassword") == 0)
 		{
 			if (dpassword)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			dpassword = defel;
 			if (strcmp(defel->defname, "encryptedPassword") == 0)
-			{
 				password_type = PASSWORD_TYPE_MD5;
-				if (dpassword && dpassword->arg)
-					password = strVal(dpassword->arg);
-			}
 			else if (strcmp(defel->defname, "unencryptedPassword") == 0)
-			{
 				password_type = PASSWORD_TYPE_PLAINTEXT;
-				if (dpassword && dpassword->arg)
-					password = strVal(dpassword->arg);
-			}
-			else if (strcmp(defel->defname, "protocolPassword") == 0)
-			{
-				/*
-				 * This is a list of two elements, the password is first and
-				 * then there is the protocol wanted by caller.
-				 */
-				if (dpassword && dpassword->arg)
-				{
-					char *protocol = strVal(lsecond((List *) dpassword->arg));
-
-					password = strVal(linitial((List *) dpassword->arg));
-
-					if (strcmp(protocol, "md5") == 0)
-						password_type = PASSWORD_TYPE_MD5;
-					else if (strcmp(protocol, "plain") == 0)
-						password_type = PASSWORD_TYPE_PLAINTEXT;
-					else if (strcmp(protocol, "scram") == 0)
-						password_type = PASSWORD_TYPE_SCRAM;
-					else
-						ereport(ERROR,
-							(errcode(ERRCODE_SYNTAX_ERROR),
-							 errmsg("unsupported password protocol %s", protocol)));
-				}
-			}
 		}
 		else if (strcmp(defel->defname, "sysid") == 0)
 		{
@@ -235,8 +201,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 			if (dissuper)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			dissuper = defel;
 		}
 		else if (strcmp(defel->defname, "inherit") == 0)
@@ -244,8 +209,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 			if (dinherit)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			dinherit = defel;
 		}
 		else if (strcmp(defel->defname, "createrole") == 0)
@@ -253,8 +217,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 			if (dcreaterole)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			dcreaterole = defel;
 		}
 		else if (strcmp(defel->defname, "createdb") == 0)
@@ -262,8 +225,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 			if (dcreatedb)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			dcreatedb = defel;
 		}
 		else if (strcmp(defel->defname, "canlogin") == 0)
@@ -271,8 +233,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 			if (dcanlogin)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			dcanlogin = defel;
 		}
 		else if (strcmp(defel->defname, "isreplication") == 0)
@@ -280,8 +241,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 			if (disreplication)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			disreplication = defel;
 		}
 		else if (strcmp(defel->defname, "connectionlimit") == 0)
@@ -289,8 +249,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 			if (dconnlimit)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			dconnlimit = defel;
 		}
 		else if (strcmp(defel->defname, "addroleto") == 0)
@@ -298,8 +257,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 			if (daddroleto)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			daddroleto = defel;
 		}
 		else if (strcmp(defel->defname, "rolemembers") == 0)
@@ -307,8 +265,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 			if (drolemembers)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			drolemembers = defel;
 		}
 		else if (strcmp(defel->defname, "adminmembers") == 0)
@@ -316,8 +273,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 			if (dadminmembers)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			dadminmembers = defel;
 		}
 		else if (strcmp(defel->defname, "validUntil") == 0)
@@ -325,8 +281,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 			if (dvalidUntil)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			dvalidUntil = defel;
 		}
 		else if (strcmp(defel->defname, "bypassrls") == 0)
@@ -334,8 +289,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 			if (dbypassRLS)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			dbypassRLS = defel;
 		}
 		else
@@ -343,6 +297,8 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 				 defel->defname);
 	}
 
+	if (dpassword && dpassword->arg)
+		password = strVal(dpassword->arg);
 	if (dissuper)
 		issuper = intVal(dissuper->arg) != 0;
 	if (dinherit)
@@ -617,7 +573,6 @@ AlterRole(AlterRoleStmt *stmt)
 
 		if (strcmp(defel->defname, "password") == 0 ||
 			strcmp(defel->defname, "encryptedPassword") == 0 ||
-			strcmp(defel->defname, "protocolPassword") == 0 ||
 			strcmp(defel->defname, "unencryptedPassword") == 0)
 		{
 			if (dpassword)
@@ -626,41 +581,9 @@ AlterRole(AlterRoleStmt *stmt)
 						 errmsg("conflicting or redundant options")));
 			dpassword = defel;
 			if (strcmp(defel->defname, "encryptedPassword") == 0)
-			{
 				password_type = PASSWORD_TYPE_MD5;
-				if (dpassword && dpassword->arg)
-					password = strVal(dpassword->arg);
-			}
 			else if (strcmp(defel->defname, "unencryptedPassword") == 0)
-			{
 				password_type = PASSWORD_TYPE_PLAINTEXT;
-				if (dpassword && dpassword->arg)
-					password = strVal(dpassword->arg);
-			}
-			else if (strcmp(defel->defname, "protocolPassword") == 0)
-			{
-				/*
-				 * This is a list of two elements, the password is first and
-				 * then there is the protocol wanted by caller.
-				 */
-				if (dpassword && dpassword->arg)
-				{
-					char *protocol = strVal(lsecond((List *) dpassword->arg));
-
-					if (strcmp(protocol, "md5") == 0)
-						password_type = PASSWORD_TYPE_MD5;
-					else if (strcmp(protocol, "plain") == 0)
-						password_type = PASSWORD_TYPE_PLAINTEXT;
-					else if (strcmp(protocol, "scram") == 0)
-						password_type = PASSWORD_TYPE_SCRAM;
-					else
-						ereport(ERROR,
-							(errcode(ERRCODE_SYNTAX_ERROR),
-							 errmsg("unsupported password protocol %s", protocol)));
-
-					password = strVal(linitial((List *) dpassword->arg));
-				}
-			}
 		}
 		else if (strcmp(defel->defname, "superuser") == 0)
 		{
@@ -748,6 +671,8 @@ AlterRole(AlterRoleStmt *stmt)
 				 defel->defname);
 	}
 
+	if (dpassword && dpassword->arg)
+		password = strVal(dpassword->arg);
 	if (dissuper)
 		issuper = intVal(dissuper->arg);
 	if (dinherit)

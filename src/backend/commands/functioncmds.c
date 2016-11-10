@@ -167,6 +167,7 @@ compute_return_type(TypeName *returnType, Oid languageOid,
  * parameters: list of FunctionParameter structs
  * languageOid: OID of function language (InvalidOid if it's CREATE AGGREGATE)
  * is_aggregate: needed only to determine error handling
+ * queryString: likewise, needed only for error handling
  *
  * Results are stored into output parameters.  parameterTypes must always
  * be created, but the other arrays are set to NULL if not needed.
@@ -176,10 +177,10 @@ compute_return_type(TypeName *returnType, Oid languageOid,
  * else it is set to the OID of the implied result type.
  */
 void
-interpret_function_parameter_list(ParseState *pstate,
-								  List *parameters,
+interpret_function_parameter_list(List *parameters,
 								  Oid languageOid,
 								  bool is_aggregate,
+								  const char *queryString,
 								  oidvector **parameterTypes,
 								  ArrayType **allParameterTypes,
 								  ArrayType **parameterModes,
@@ -200,6 +201,7 @@ interpret_function_parameter_list(ParseState *pstate,
 	bool		have_defaults = false;
 	ListCell   *x;
 	int			i;
+	ParseState *pstate;
 
 	*variadicArgType = InvalidOid;		/* default result */
 	*requiredResultType = InvalidOid;	/* default result */
@@ -209,6 +211,10 @@ interpret_function_parameter_list(ParseState *pstate,
 	paramModes = (Datum *) palloc(parameterCount * sizeof(Datum));
 	paramNames = (Datum *) palloc0(parameterCount * sizeof(Datum));
 	*parameterDefaults = NIL;
+
+	/* may need a pstate for parse analysis of default exprs */
+	pstate = make_parsestate(NULL);
+	pstate->p_sourcetext = queryString;
 
 	/* Scan the list and extract data into work arrays */
 	i = 0;
@@ -407,6 +413,8 @@ interpret_function_parameter_list(ParseState *pstate,
 		i++;
 	}
 
+	free_parsestate(pstate);
+
 	/* Now construct the proper outputs as needed */
 	*parameterTypes = buildoidvector(inTypes, inCount);
 
@@ -450,8 +458,7 @@ interpret_function_parameter_list(ParseState *pstate,
  * SET parameters though --- if you're redundant, the last one wins.)
  */
 static bool
-compute_common_attribute(ParseState *pstate,
-						 DefElem *defel,
+compute_common_attribute(DefElem *defel,
 						 DefElem **volatility_item,
 						 DefElem **strict_item,
 						 DefElem **security_item,
@@ -523,8 +530,7 @@ compute_common_attribute(ParseState *pstate,
 duplicate_error:
 	ereport(ERROR,
 			(errcode(ERRCODE_SYNTAX_ERROR),
-			 errmsg("conflicting or redundant options"),
-			 parser_errposition(pstate, defel->location)));
+			 errmsg("conflicting or redundant options")));
 	return false;				/* keep compiler quiet */
 }
 
@@ -603,8 +609,7 @@ update_proconfig_value(ArrayType *a, List *set_items)
  * attributes.
  */
 static void
-compute_attributes_sql_style(ParseState *pstate,
-							 List *options,
+compute_attributes_sql_style(List *options,
 							 List **as,
 							 char **language,
 							 Node **transform,
@@ -641,8 +646,7 @@ compute_attributes_sql_style(ParseState *pstate,
 			if (as_item)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			as_item = defel;
 		}
 		else if (strcmp(defel->defname, "language") == 0)
@@ -650,8 +654,7 @@ compute_attributes_sql_style(ParseState *pstate,
 			if (language_item)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			language_item = defel;
 		}
 		else if (strcmp(defel->defname, "transform") == 0)
@@ -659,8 +662,7 @@ compute_attributes_sql_style(ParseState *pstate,
 			if (transform_item)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			transform_item = defel;
 		}
 		else if (strcmp(defel->defname, "window") == 0)
@@ -668,12 +670,10 @@ compute_attributes_sql_style(ParseState *pstate,
 			if (windowfunc_item)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
+						 errmsg("conflicting or redundant options")));
 			windowfunc_item = defel;
 		}
-		else if (compute_common_attribute(pstate,
-										  defel,
+		else if (compute_common_attribute(defel,
 										  &volatility_item,
 										  &strict_item,
 										  &security_item,
@@ -763,7 +763,7 @@ compute_attributes_sql_style(ParseState *pstate,
  *------------
  */
 static void
-compute_attributes_with_style(ParseState *pstate, List *parameters, bool *isStrict_p, char *volatility_p)
+compute_attributes_with_style(List *parameters, bool *isStrict_p, char *volatility_p)
 {
 	ListCell   *pl;
 
@@ -783,8 +783,7 @@ compute_attributes_with_style(ParseState *pstate, List *parameters, bool *isStri
 			ereport(WARNING,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("unrecognized function attribute \"%s\" ignored",
-							param->defname),
-					 parser_errposition(pstate, param->location)));
+							param->defname)));
 	}
 }
 
@@ -859,7 +858,7 @@ interpret_AS_clause(Oid languageOid, const char *languageName,
  *	 Execute a CREATE FUNCTION utility statement.
  */
 ObjectAddress
-CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
+CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
 {
 	char	   *probin_str;
 	char	   *prosrc_str;
@@ -916,8 +915,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 	parallel = PROPARALLEL_UNSAFE;
 
 	/* override attributes from explicit list */
-	compute_attributes_sql_style(pstate,
-								 stmt->options,
+	compute_attributes_sql_style(stmt->options,
 								 &as_clause, &language, &transformDefElem,
 								 &isWindowFunc, &volatility,
 								 &isStrict, &security, &isLeakProof,
@@ -989,10 +987,10 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 	 * Convert remaining parameters of CREATE to form wanted by
 	 * ProcedureCreate.
 	 */
-	interpret_function_parameter_list(pstate,
-									  stmt->parameters,
+	interpret_function_parameter_list(stmt->parameters,
 									  languageOid,
 									  false,	/* not an aggregate */
+									  queryString,
 									  &parameterTypes,
 									  &allParameterTypes,
 									  &parameterModes,
@@ -1047,7 +1045,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 		trftypes = NULL;
 	}
 
-	compute_attributes_with_style(pstate, stmt->withClause, &isStrict, &volatility);
+	compute_attributes_with_style(stmt->withClause, &isStrict, &volatility);
 
 	interpret_AS_clause(languageOid, language, funcname, as_clause,
 						&prosrc_str, &probin_str);
@@ -1165,7 +1163,7 @@ RemoveFunctionById(Oid funcOid)
  * ALTER framework).
  */
 ObjectAddress
-AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
+AlterFunction(AlterFunctionStmt *stmt)
 {
 	HeapTuple	tup;
 	Oid			funcOid;
@@ -1210,8 +1208,7 @@ AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
 	{
 		DefElem    *defel = (DefElem *) lfirst(l);
 
-		if (compute_common_attribute(pstate,
-									 defel,
+		if (compute_common_attribute(defel,
 									 &volatility_item,
 									 &strict_item,
 									 &security_def_item,

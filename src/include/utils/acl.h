@@ -26,7 +26,6 @@
 
 #include "access/htup.h"
 #include "nodes/parsenodes.h"
-#include "parser/parse_node.h"
 #include "utils/array.h"
 #include "utils/snapshot.h"
 
@@ -260,7 +259,7 @@ extern Datum aclexplode(PG_FUNCTION_ARGS);
  * prototypes for functions in aclchk.c
  */
 extern void ExecuteGrantStmt(GrantStmt *stmt);
-extern void ExecAlterDefaultPrivilegesStmt(ParseState *pstate, AlterDefaultPrivilegesStmt *stmt);
+extern void ExecAlterDefaultPrivilegesStmt(AlterDefaultPrivilegesStmt *stmt);
 
 extern void RemoveRoleFromObjectACL(Oid roleid, Oid classid, Oid objid);
 extern void RemoveDefaultACLById(Oid defaclOid);

@@ -38,7 +38,7 @@
  * CREATE COLLATION
  */
 ObjectAddress
-DefineCollation(ParseState *pstate, List *names, List *parameters)
+DefineCollation(List *names, List *parameters)
 {
 	char	   *collName;
 	Oid			collNamespace;
@@ -78,8 +78,7 @@ DefineCollation(ParseState *pstate, List *names, List *parameters)
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("collation attribute \"%s\" not recognized",
-							defel->defname),
-					 parser_errposition(pstate, defel->location)));
+							defel->defname)));
 			break;
 		}
 

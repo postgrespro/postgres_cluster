@@ -2415,7 +2415,6 @@ _equalDefElem(const DefElem *a, const DefElem *b)
 	COMPARE_STRING_FIELD(defname);
 	COMPARE_NODE_FIELD(arg);
 	COMPARE_SCALAR_FIELD(defaction);
-	COMPARE_LOCATION_FIELD(location);
 
 	return true;
 }
@@ -2426,7 +2425,6 @@ _equalLockingClause(const LockingClause *a, const LockingClause *b)
 	COMPARE_NODE_FIELD(lockedRels);
 	COMPARE_SCALAR_FIELD(strength);
 	COMPARE_SCALAR_FIELD(waitPolicy);
-	COMPARE_LOCATION_FIELD(location);
 
 	return true;
 }
