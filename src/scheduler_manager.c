@@ -98,19 +98,24 @@ int checkSchedulerNamespace(void)
 int get_scheduler_maxworkers(void)
 {
 	const char *opt;
+	int var;
 
-	opt = GetConfigOption("scheduler.max_workers", true, false);
+	opt = GetConfigOption("schedule.max_workers", true, false);
+	/* opt = GetConfigOptionByName("schedule.max_workers", NULL); */
 	if(opt == NULL)
 	{
 		return 2;
 	}
-	return atoi(opt);
+
+	var =  atoi(opt);
+	/* pfree(opt); */
+	return var;
 }
 
 char *get_scheduler_nodename(void)
 {
 	const char *opt;
-	opt = GetConfigOption("scheduler.nodename", true, false);
+	opt = GetConfigOption("schedule.nodename", true, false);
 
 	return _copy_string((char *)(opt == NULL || strlen(opt) == 0 ? "master": opt));
 }
@@ -140,13 +145,74 @@ scheduler_manager_ctx_t *initialize_scheduler_manager_context(char *dbname, dsm_
 	return ctx;
 }
 
-void refresh_scheduler_manager_context(scheduler_manager_ctx_t *ctx)
+int refresh_scheduler_manager_context(scheduler_manager_ctx_t *ctx)
 {
-	/* TODO  set new nodename , if changed kill all kids workers, change 
-	   max-workers resize slots
-	   if less then was and all slots are buisy [ ??? ]
-	   kill youngest (?)
-	*/
+	int rc = 0;
+	int N, i, busy;
+	scheduler_manager_slot_t **old;
+
+	N = get_scheduler_maxworkers();
+	if(N != ctx->slots_len)
+	{
+		elog(LOG, "Change available workers number %d => %d", ctx->slots_len, N);
+	}
+
+	if(N > ctx->slots_len)
+	{
+		pgstat_report_activity(STATE_RUNNING, "extend the number of workers");
+
+		old = ctx->slots;
+		ctx->slots = worker_alloc(sizeof(scheduler_manager_slot_t *) * N);
+		for(i=0; i < N; i++)
+		{
+			ctx->slots[i] = NULL;
+		}
+		for(i=0; i < ctx->slots_len; i++)
+		{
+			ctx->slots[i] = old[i];
+		}
+		pfree(old);
+		ctx->free_slots += (N - ctx->slots_len);
+		ctx->slots_len = N;
+	}
+	else if(N < ctx->slots_len)
+	{
+		pgstat_report_activity(STATE_RUNNING, "shrink the number of workers");
+		busy = ctx->slots_len - ctx->free_slots;
+		if(N >= busy)
+		{
+			ctx->slots = repalloc(ctx->slots, sizeof(scheduler_manager_slot_t *) * N);
+			ctx->slots_len = N;
+			ctx->free_slots = N - busy;
+		}
+		else
+		{
+			pgstat_report_activity(STATE_RUNNING, "wait for some workers free slots");
+			while(!got_sigterm)
+			{
+				CHECK_FOR_INTERRUPTS();
+				scheduler_check_slots(ctx);
+				busy = ctx->slots_len - ctx->free_slots;
+				if(N >= busy)
+				{
+					ctx->slots = repalloc(ctx->slots, sizeof(scheduler_manager_slot_t *) * N);
+					ctx->slots_len = N;
+					ctx->free_slots = N - busy;
+					break;
+				}
+				if(rc)
+				{
+					if(rc & WL_POSTMASTER_DEATH) proc_exit(1);
+					if(got_sigterm || got_sighup) return 0;
+				}
+				rc = WaitLatch(MyLatch,
+					WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 500L);
+				ResetLatch(MyLatch);
+			}
+		}
+	}
+
+	return 1;
 }
 
 void destroy_scheduler_manager_context(scheduler_manager_ctx_t *ctx)
@@ -218,7 +284,6 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 			tupdesc = SPI_tuptable->tupdesc;
 
 			tasks = worker_alloc(sizeof(scheduler_task_t) * processed);
-			elog(LOG, "Found %d tasks", processed);
 
 			for(i = 0; i < processed; i++)
 			{
@@ -496,7 +561,6 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 		curr += SECS_PER_MINUTE;
 #endif
 	}
-	elog(LOG, "made: %d", *ntimes);
 	for(i=0; i < 5 ; i++) destroy_bit_array(&cron[i], 0);
 	if(*ntimes == 0)
 	{
@@ -1144,6 +1208,14 @@ void clean_at_table(scheduler_manager_ctx_t *ctx)
 	STOP_SPI_SNAP();
 }
 
+void set_slots_stat_report(scheduler_manager_ctx_t *ctx)
+{
+	char state[128];
+	snprintf(state, 128, "slots busy: %d, free: %d", 
+			ctx->slots_len - ctx->free_slots, ctx->free_slots);
+	pgstat_report_activity(STATE_RUNNING, state);
+}
+
 void manager_worker_main(Datum arg)
 {
 	char *database;
@@ -1196,7 +1268,6 @@ void manager_worker_main(Datum arg)
 		dsm_detach(seg);
 		proc_exit(0); 
 	}
-	elog(LOG, "ON");
 	SetCurrentStatementStartTimestamp();
 	pgstat_report_activity(STATE_RUNNING, "initialize.");
 
@@ -1209,7 +1280,8 @@ void manager_worker_main(Datum arg)
 	init_worker_mem_ctx("WorkerMemoryContext");
 	ctx = initialize_scheduler_manager_context(database, seg);
 	clean_at_table(ctx);
-	elog(LOG, "Start main loop");
+	set_slots_stat_report(ctx);
+
 	while(!got_sigterm)
 	{
 		if(rc)
@@ -1220,12 +1292,14 @@ void manager_worker_main(Datum arg)
 				got_sighup = false;
 				ProcessConfigFile(PGC_SIGHUP);
 				refresh_scheduler_manager_context(ctx);
+				set_slots_stat_report(ctx);
 			}
 			if(!got_sighup && !got_sigterm)
 			{
 				if(rc & WL_LATCH_SET)
 				{
 					scheduler_check_slots(ctx);
+					set_slots_stat_report(ctx);
 				}
 				else if(rc & WL_TIMEOUT)
 				{
@@ -1233,7 +1307,7 @@ void manager_worker_main(Datum arg)
 					scheduler_vanish_expired_jobs(ctx);
 					scheduler_start_jobs(ctx);
 					scheduler_check_slots(ctx);
-					pgstat_report_activity(STATE_IDLE, "");
+					set_slots_stat_report(ctx);
 				}
 			}
 		}

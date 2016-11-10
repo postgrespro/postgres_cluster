@@ -737,6 +737,29 @@ $BODY$
 LANGUAGE plpgsql
    SECURITY DEFINER;
 
+CREATE FUNCTION schedule.get_cron() RETURNS SETOF schedule.cron_rec AS
+$BODY$
+DECLARE
+	ii schedule.cron;
+	oo schedule.cron_rec;
+	is_superuser boolean;
+BEGIN
+	EXECUTE 'SELECT usesuper FROM pg_user WHERE usename = session_user'
+		INTO is_superuser;
+	IF NOT is_superuser THEN
+		RAISE EXCEPTION 'access denied: only superuser allowed';
+	END IF;
+
+	FOR ii IN SELECT * FROM schedule.cron LOOP
+		oo := schedule._make_cron_rec(ii);
+		RETURN NEXT oo;
+	END LOOP;
+	RETURN;
+END
+$BODY$
+LANGUAGE plpgsql
+   SECURITY DEFINER;
+
 CREATE FUNCTION schedule.get_user_owned_cron() RETURNS SETOF schedule.cron_rec AS
 $BODY$
 DECLARE

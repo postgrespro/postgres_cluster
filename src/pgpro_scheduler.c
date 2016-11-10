@@ -205,7 +205,6 @@ char_array_t *readBasesToCheck(void)
 		if(i + 1  != names->n) appendStringInfo(&sql, ",");
 	} 
 	appendStringInfo(&sql, ")");
-	elog(LOG, "SQL: %s", sql.data);
 	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
 	SPI_connect();

@@ -68,7 +68,7 @@ void manager_worker_main(Datum arg);
 int get_scheduler_maxworkers(void);
 char *get_scheduler_nodename(void);
 scheduler_manager_ctx_t *initialize_scheduler_manager_context(char *dbname, dsm_segment *seg);
-void refresh_scheduler_manager_context(scheduler_manager_ctx_t *ctx);
+int refresh_scheduler_manager_context(scheduler_manager_ctx_t *ctx);
 void destroy_scheduler_manager_context(scheduler_manager_ctx_t *ctx);
 int scheduler_manager_stop(scheduler_manager_ctx_t *ctx);
 scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *nt);
@@ -93,5 +93,6 @@ void clean_at_table(scheduler_manager_ctx_t *ctx);
 int update_cron_texttime(scheduler_manager_ctx_t *ctx, int cron_id, TimestampTz next);
 int mark_job_broken(scheduler_manager_ctx_t *ctx, int cron_id, char *reason);
 void manager_fatal_error(scheduler_manager_ctx_t *ctx, int ecode, char *message, ...) pg_attribute_printf(3, 4);
+void set_slots_stat_report(scheduler_manager_ctx_t *ctx);
 
 #endif
