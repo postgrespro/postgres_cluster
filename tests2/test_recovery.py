@@ -71,19 +71,19 @@ class RecoveryTest(unittest.TestCase):
         time.sleep(TEST_RECOVERY_TIME)
         aggs = self.client.get_aggregates()
 
-        self.assertTrue( 'commit' in aggs_failure['transfer_0']['finish'] )
-        self.assertTrue( 'commit' in aggs_failure['transfer_1']['finish'] )
-        self.assertTrue( 'commit' not in aggs_failure['transfer_2']['finish'] )
-        self.assertTrue( aggs_failure['sumtotal_0']['isolation'] == 0)
-        self.assertTrue( aggs_failure['sumtotal_1']['isolation'] == 0)
-        self.assertTrue( aggs_failure['sumtotal_2']['isolation'] == 0)
+        self.assertTrue( 'commit' in aggs_failure[0]['transfer']['finish'] )
+        self.assertTrue( 'commit' in aggs_failure[1]['transfer']['finish'] )
+        self.assertTrue( 'commit' not in aggs_failure[2]['transfer']['finish'] )
+        self.assertTrue( aggs_failure[0]['sumtotal']['isolation'] == 0)
+        self.assertTrue( aggs_failure[1]['sumtotal']['isolation'] == 0)
+        self.assertTrue( aggs_failure[2]['sumtotal']['isolation'] == 0)
 
-        self.assertTrue( 'commit' in aggs['transfer_0']['finish'] )
-        self.assertTrue( 'commit' in aggs['transfer_1']['finish'] )
-        self.assertTrue( 'commit' in aggs['transfer_2']['finish'] )
-        self.assertTrue( aggs['sumtotal_0']['isolation'] == 0)
-        self.assertTrue( aggs['sumtotal_1']['isolation'] == 0)
-        self.assertTrue( aggs['sumtotal_2']['isolation'] == 0)
+        self.assertTrue( 'commit' in aggs[0]['transfer']['finish'] )
+        self.assertTrue( 'commit' in aggs[1]['transfer']['finish'] )
+        self.assertTrue( 'commit' in aggs[2]['transfer']['finish'] )
+        self.assertTrue( aggs[0]['sumtotal']['isolation'] == 0)
+        self.assertTrue( aggs[1]['sumtotal']['isolation'] == 0)
+        self.assertTrue( aggs[2]['sumtotal']['isolation'] == 0)
 
 
     def test_edge_partition(self):
