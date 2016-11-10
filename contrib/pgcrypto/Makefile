@@ -4,7 +4,7 @@ INT_SRCS = md5.c sha1.c sha2.c internal.c internal-sha2.c blf.c rijndael.c \
 		fortuna.c random.c pgp-mpi-internal.c imath.c
 INT_TESTS = sha2
 
-OSSL_SRCS = openssl.c pgp-mpi-openssl.c
+OSSL_SRCS = openssl.c pgp-mpi-openssl.c sha2_openssl.c
 OSSL_TESTS = sha2 des 3des cast5
 
 ZLIB_TST = pgp-compression
@@ -58,6 +58,9 @@ SHLIB_LINK += $(filter -leay32, $(LIBS))
 # those must be at the end
 SHLIB_LINK += -lws2_32
 endif
+
+sha2.c sha2_openssl.c: % : $(top_srcdir)/src/common/%
+	rm -f $@ && $(LN_S) $< .
 
 rijndael.o: rijndael.tbl
 

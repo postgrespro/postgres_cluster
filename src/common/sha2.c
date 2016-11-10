@@ -1,4 +1,18 @@
-/*	$OpenBSD: sha2.c,v 1.6 2004/05/03 02:57:36 millert Exp $	*/
+/*-------------------------------------------------------------------------
+ *
+ * sha2.c
+ *	  Set of SHA functions for SHA-224, SHA-256, SHA-384 and SHA-512.
+ *
+ * This is the set of in-core functions used when there are no other
+ * alternative options like OpenSSL.
+ *
+ * Portions Copyright (c) 2016, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  src/common/sha2.c
+ *
+ *-------------------------------------------------------------------------
+ */
 
 /*
  * FILE:	sha2.c
@@ -33,15 +47,19 @@
  *
  * $From: sha2.c,v 1.1 2001/11/08 00:01:51 adg Exp adg $
  *
- * contrib/pgcrypto/sha2.c
+ * src/common/sha2.c
  */
 
+
+#ifndef FRONTEND
 #include "postgres.h"
+#else
+#include "postgres_fe.h"
+#endif
 
 #include <sys/param.h>
 
-#include "px.h"
-#include "sha2.h"
+#include "common/sha2.h"
 
 /*
  * UNROLLED TRANSFORM LOOP NOTE:
@@ -58,11 +76,9 @@
  */
 
 /*** SHA-256/384/512 Various Length Definitions ***********************/
-/* NOTE: Most of these are in sha2.h */
-#define SHA256_SHORT_BLOCK_LENGTH	(SHA256_BLOCK_LENGTH - 8)
-#define SHA384_SHORT_BLOCK_LENGTH	(SHA384_BLOCK_LENGTH - 16)
-#define SHA512_SHORT_BLOCK_LENGTH	(SHA512_BLOCK_LENGTH - 16)
-
+#define PG_SHA256_SHORT_BLOCK_LENGTH	(PG_SHA256_BLOCK_LENGTH - 8)
+#define PG_SHA384_SHORT_BLOCK_LENGTH	(PG_SHA384_BLOCK_LENGTH - 16)
+#define PG_SHA512_SHORT_BLOCK_LENGTH	(PG_SHA512_BLOCK_LENGTH - 16)
 
 /*** ENDIAN REVERSAL MACROS *******************************************/
 #ifndef WORDS_BIGENDIAN
@@ -130,10 +146,9 @@
  * library -- they are intended for private internal visibility/use
  * only.
  */
-static void SHA512_Last(SHA512_CTX *);
-static void SHA256_Transform(SHA256_CTX *, const uint8 *);
-static void SHA512_Transform(SHA512_CTX *, const uint8 *);
-
+static void pg_sha512_last(pg_sha512_ctx *ctx);
+static void pg_sha256_transform(pg_sha256_ctx *ctx, const uint8 *data);
+static void pg_sha512_transform(pg_sha512_ctx *ctx, const uint8 *data);
 
 /*** SHA-XYZ INITIAL HASH VALUES AND CONSTANTS ************************/
 /* Hash constant words K for SHA-256: */
@@ -249,15 +264,54 @@ static const uint64 sha512_initial_hash_value[8] = {
 };
 
 
-/*** SHA-256: *********************************************************/
-void
-SHA256_Init(SHA256_CTX *context)
+static void
+pg_sha512_last(pg_sha512_ctx *ctx)
 {
-	if (context == NULL)
-		return;
-	memcpy(context->state, sha256_initial_hash_value, SHA256_DIGEST_LENGTH);
-	memset(context->buffer, 0, SHA256_BLOCK_LENGTH);
-	context->bitcount = 0;
+	unsigned int usedspace;
+
+	usedspace = (ctx->bitcount[0] >> 3) % PG_SHA512_BLOCK_LENGTH;
+#ifndef WORDS_BIGENDIAN
+	/* Convert FROM host byte order */
+	REVERSE64(ctx->bitcount[0], ctx->bitcount[0]);
+	REVERSE64(ctx->bitcount[1], ctx->bitcount[1]);
+#endif
+	if (usedspace > 0)
+	{
+		/* Begin padding with a 1 bit: */
+		ctx->buffer[usedspace++] = 0x80;
+
+		if (usedspace <= PG_SHA512_SHORT_BLOCK_LENGTH)
+		{
+			/* Set-up for the last transform: */
+			memset(&ctx->buffer[usedspace], 0, PG_SHA512_SHORT_BLOCK_LENGTH - usedspace);
+		}
+		else
+		{
+			if (usedspace < PG_SHA512_BLOCK_LENGTH)
+			{
+				memset(&ctx->buffer[usedspace], 0, PG_SHA512_BLOCK_LENGTH - usedspace);
+			}
+			/* Do second-to-last transform: */
+			pg_sha512_transform(ctx, ctx->buffer);
+
+			/* And set-up for the last transform: */
+			memset(ctx->buffer, 0, PG_SHA512_BLOCK_LENGTH - 2);
+		}
+	}
+	else
+	{
+		/* Prepare for final transform: */
+		memset(ctx->buffer, 0, PG_SHA512_SHORT_BLOCK_LENGTH);
+
+		/* Begin padding with a 1 bit: */
+		*ctx->buffer = 0x80;
+	}
+	/* Store the length of input data (in bits): */
+	*(uint64 *) &ctx->buffer[PG_SHA512_SHORT_BLOCK_LENGTH] = ctx->bitcount[1];
+	*(uint64 *) &ctx->buffer[PG_SHA512_SHORT_BLOCK_LENGTH + 8] = ctx->bitcount[0];
+
+	/* Final transform: */
+	pg_sha512_transform(ctx, ctx->buffer);
 }
 
 #ifdef SHA2_UNROLL_TRANSFORM
@@ -286,8 +340,13 @@ SHA256_Init(SHA256_CTX *context)
 	j++;									\
 } while(0)
 
+/*
+ * Perform a round of transformation on a SHA-256 by using the given input
+ * data.  This basically shuffles data around and uses the input data to
+ * add some extra randomness in the SHA-256 generation.
+ */
 static void
-SHA256_Transform(SHA256_CTX *context, const uint8 *data)
+pg_sha256_transform(pg_sha256_ctx *ctx, const uint8 *data)
 {
 	uint32		a,
 				b,
@@ -303,17 +362,17 @@ SHA256_Transform(SHA256_CTX *context, const uint8 *data)
 			   *W256;
 	int			j;
 
-	W256 = (uint32 *) context->buffer;
+	W256 = (uint32 *) ctx->buffer;
 
 	/* Initialize registers with the prev. intermediate value */
-	a = context->state[0];
-	b = context->state[1];
-	c = context->state[2];
-	d = context->state[3];
-	e = context->state[4];
-	f = context->state[5];
-	g = context->state[6];
-	h = context->state[7];
+	a = ctx->state[0];
+	b = ctx->state[1];
+	c = ctx->state[2];
+	d = ctx->state[3];
+	e = ctx->state[4];
+	f = ctx->state[5];
+	g = ctx->state[6];
+	h = ctx->state[7];
 
 	j = 0;
 	do
@@ -343,22 +402,27 @@ SHA256_Transform(SHA256_CTX *context, const uint8 *data)
 	} while (j < 64);
 
 	/* Compute the current intermediate hash value */
-	context->state[0] += a;
-	context->state[1] += b;
-	context->state[2] += c;
-	context->state[3] += d;
-	context->state[4] += e;
-	context->state[5] += f;
-	context->state[6] += g;
-	context->state[7] += h;
+	ctx->state[0] += a;
+	ctx->state[1] += b;
+	ctx->state[2] += c;
+	ctx->state[3] += d;
+	ctx->state[4] += e;
+	ctx->state[5] += f;
+	ctx->state[6] += g;
+	ctx->state[7] += h;
 
 	/* Clean up */
 	a = b = c = d = e = f = g = h = T1 = 0;
 }
 #else							/* SHA2_UNROLL_TRANSFORM */
 
+/*
+ * Perform a round of transformation on a SHA-256 by using the given input
+ * data.  This basically shuffles data around and uses the input data to
+ * add some extra randomness in the SHA-256 generation.
+ */
 static void
-SHA256_Transform(SHA256_CTX *context, const uint8 *data)
+pg_sha256_transform(pg_sha256_ctx *ctx, const uint8 *data)
 {
 	uint32		a,
 				b,
@@ -375,17 +439,17 @@ SHA256_Transform(SHA256_CTX *context, const uint8 *data)
 			   *W256;
 	int			j;
 
-	W256 = (uint32 *) context->buffer;
+	W256 = (uint32 *) ctx->buffer;
 
 	/* Initialize registers with the prev. intermediate value */
-	a = context->state[0];
-	b = context->state[1];
-	c = context->state[2];
-	d = context->state[3];
-	e = context->state[4];
-	f = context->state[5];
-	g = context->state[6];
-	h = context->state[7];
+	a = ctx->state[0];
+	b = ctx->state[1];
+	c = ctx->state[2];
+	d = ctx->state[3];
+	e = ctx->state[4];
+	f = ctx->state[5];
+	g = ctx->state[6];
+	h = ctx->state[7];
 
 	j = 0;
 	do
@@ -433,158 +497,19 @@ SHA256_Transform(SHA256_CTX *context, const uint8 *data)
 	} while (j < 64);
 
 	/* Compute the current intermediate hash value */
-	context->state[0] += a;
-	context->state[1] += b;
-	context->state[2] += c;
-	context->state[3] += d;
-	context->state[4] += e;
-	context->state[5] += f;
-	context->state[6] += g;
-	context->state[7] += h;
+	ctx->state[0] += a;
+	ctx->state[1] += b;
+	ctx->state[2] += c;
+	ctx->state[3] += d;
+	ctx->state[4] += e;
+	ctx->state[5] += f;
+	ctx->state[6] += g;
+	ctx->state[7] += h;
 
 	/* Clean up */
 	a = b = c = d = e = f = g = h = T1 = T2 = 0;
 }
 #endif   /* SHA2_UNROLL_TRANSFORM */
-
-void
-SHA256_Update(SHA256_CTX *context, const uint8 *data, size_t len)
-{
-	size_t		freespace,
-				usedspace;
-
-	/* Calling with no data is valid (we do nothing) */
-	if (len == 0)
-		return;
-
-	usedspace = (context->bitcount >> 3) % SHA256_BLOCK_LENGTH;
-	if (usedspace > 0)
-	{
-		/* Calculate how much free space is available in the buffer */
-		freespace = SHA256_BLOCK_LENGTH - usedspace;
-
-		if (len >= freespace)
-		{
-			/* Fill the buffer completely and process it */
-			memcpy(&context->buffer[usedspace], data, freespace);
-			context->bitcount += freespace << 3;
-			len -= freespace;
-			data += freespace;
-			SHA256_Transform(context, context->buffer);
-		}
-		else
-		{
-			/* The buffer is not yet full */
-			memcpy(&context->buffer[usedspace], data, len);
-			context->bitcount += len << 3;
-			/* Clean up: */
-			usedspace = freespace = 0;
-			return;
-		}
-	}
-	while (len >= SHA256_BLOCK_LENGTH)
-	{
-		/* Process as many complete blocks as we can */
-		SHA256_Transform(context, data);
-		context->bitcount += SHA256_BLOCK_LENGTH << 3;
-		len -= SHA256_BLOCK_LENGTH;
-		data += SHA256_BLOCK_LENGTH;
-	}
-	if (len > 0)
-	{
-		/* There's left-overs, so save 'em */
-		memcpy(context->buffer, data, len);
-		context->bitcount += len << 3;
-	}
-	/* Clean up: */
-	usedspace = freespace = 0;
-}
-
-static void
-SHA256_Last(SHA256_CTX *context)
-{
-	unsigned int usedspace;
-
-	usedspace = (context->bitcount >> 3) % SHA256_BLOCK_LENGTH;
-#ifndef WORDS_BIGENDIAN
-	/* Convert FROM host byte order */
-	REVERSE64(context->bitcount, context->bitcount);
-#endif
-	if (usedspace > 0)
-	{
-		/* Begin padding with a 1 bit: */
-		context->buffer[usedspace++] = 0x80;
-
-		if (usedspace <= SHA256_SHORT_BLOCK_LENGTH)
-		{
-			/* Set-up for the last transform: */
-			memset(&context->buffer[usedspace], 0, SHA256_SHORT_BLOCK_LENGTH - usedspace);
-		}
-		else
-		{
-			if (usedspace < SHA256_BLOCK_LENGTH)
-			{
-				memset(&context->buffer[usedspace], 0, SHA256_BLOCK_LENGTH - usedspace);
-			}
-			/* Do second-to-last transform: */
-			SHA256_Transform(context, context->buffer);
-
-			/* And set-up for the last transform: */
-			memset(context->buffer, 0, SHA256_SHORT_BLOCK_LENGTH);
-		}
-	}
-	else
-	{
-		/* Set-up for the last transform: */
-		memset(context->buffer, 0, SHA256_SHORT_BLOCK_LENGTH);
-
-		/* Begin padding with a 1 bit: */
-		*context->buffer = 0x80;
-	}
-	/* Set the bit count: */
-	*(uint64 *) &context->buffer[SHA256_SHORT_BLOCK_LENGTH] = context->bitcount;
-
-	/* Final transform: */
-	SHA256_Transform(context, context->buffer);
-}
-
-void
-SHA256_Final(uint8 digest[], SHA256_CTX *context)
-{
-	/* If no digest buffer is passed, we don't bother doing this: */
-	if (digest != NULL)
-	{
-		SHA256_Last(context);
-
-#ifndef WORDS_BIGENDIAN
-		{
-			/* Convert TO host byte order */
-			int			j;
-
-			for (j = 0; j < 8; j++)
-			{
-				REVERSE32(context->state[j], context->state[j]);
-			}
-		}
-#endif
-		memcpy(digest, context->state, SHA256_DIGEST_LENGTH);
-	}
-
-	/* Clean up state data: */
-	px_memset(context, 0, sizeof(*context));
-}
-
-
-/*** SHA-512: *********************************************************/
-void
-SHA512_Init(SHA512_CTX *context)
-{
-	if (context == NULL)
-		return;
-	memcpy(context->state, sha512_initial_hash_value, SHA512_DIGEST_LENGTH);
-	memset(context->buffer, 0, SHA512_BLOCK_LENGTH);
-	context->bitcount[0] = context->bitcount[1] = 0;
-}
 
 #ifdef SHA2_UNROLL_TRANSFORM
 
@@ -615,8 +540,13 @@ SHA512_Init(SHA512_CTX *context)
 	j++;									\
 } while(0)
 
+/*
+ * Perform a round of transformation on a SHA-512 by using the given input
+ * data.  This basically shuffles data around and uses the input data to
+ * add some extra randomness in the SHA-512 generation.
+ */
 static void
-SHA512_Transform(SHA512_CTX *context, const uint8 *data)
+pg_sha512_transform(pg_sha512_ctx *ctx, const uint8 *data)
 {
 	uint64		a,
 				b,
@@ -629,18 +559,18 @@ SHA512_Transform(SHA512_CTX *context, const uint8 *data)
 				s0,
 				s1;
 	uint64		T1,
-			   *W512 = (uint64 *) context->buffer;
+			   *W512 = (uint64 *) ctx->buffer;
 	int			j;
 
 	/* Initialize registers with the prev. intermediate value */
-	a = context->state[0];
-	b = context->state[1];
-	c = context->state[2];
-	d = context->state[3];
-	e = context->state[4];
-	f = context->state[5];
-	g = context->state[6];
-	h = context->state[7];
+	a = ctx->state[0];
+	b = ctx->state[1];
+	c = ctx->state[2];
+	d = ctx->state[3];
+	e = ctx->state[4];
+	f = ctx->state[5];
+	g = ctx->state[6];
+	h = ctx->state[7];
 
 	j = 0;
 	do
@@ -669,22 +599,27 @@ SHA512_Transform(SHA512_CTX *context, const uint8 *data)
 	} while (j < 80);
 
 	/* Compute the current intermediate hash value */
-	context->state[0] += a;
-	context->state[1] += b;
-	context->state[2] += c;
-	context->state[3] += d;
-	context->state[4] += e;
-	context->state[5] += f;
-	context->state[6] += g;
-	context->state[7] += h;
+	ctx->state[0] += a;
+	ctx->state[1] += b;
+	ctx->state[2] += c;
+	ctx->state[3] += d;
+	ctx->state[4] += e;
+	ctx->state[5] += f;
+	ctx->state[6] += g;
+	ctx->state[7] += h;
 
 	/* Clean up */
 	a = b = c = d = e = f = g = h = T1 = 0;
 }
 #else							/* SHA2_UNROLL_TRANSFORM */
 
+/*
+ * Perform a round of transformation on a SHA-512 by using the given input
+ * data.  This basically shuffles data around and uses the input data to
+ * add some extra randomness in the SHA-512 generation.
+ */
 static void
-SHA512_Transform(SHA512_CTX *context, const uint8 *data)
+pg_sha512_transform(pg_sha512_ctx *ctx, const uint8 *data)
 {
 	uint64		a,
 				b,
@@ -698,18 +633,18 @@ SHA512_Transform(SHA512_CTX *context, const uint8 *data)
 				s1;
 	uint64		T1,
 				T2,
-			   *W512 = (uint64 *) context->buffer;
+			   *W512 = (uint64 *) ctx->buffer;
 	int			j;
 
 	/* Initialize registers with the prev. intermediate value */
-	a = context->state[0];
-	b = context->state[1];
-	c = context->state[2];
-	d = context->state[3];
-	e = context->state[4];
-	f = context->state[5];
-	g = context->state[6];
-	h = context->state[7];
+	a = ctx->state[0];
+	b = ctx->state[1];
+	c = ctx->state[2];
+	d = ctx->state[3];
+	e = ctx->state[4];
+	f = ctx->state[5];
+	g = ctx->state[6];
+	h = ctx->state[7];
 
 	j = 0;
 	do
@@ -759,22 +694,89 @@ SHA512_Transform(SHA512_CTX *context, const uint8 *data)
 	} while (j < 80);
 
 	/* Compute the current intermediate hash value */
-	context->state[0] += a;
-	context->state[1] += b;
-	context->state[2] += c;
-	context->state[3] += d;
-	context->state[4] += e;
-	context->state[5] += f;
-	context->state[6] += g;
-	context->state[7] += h;
+	ctx->state[0] += a;
+	ctx->state[1] += b;
+	ctx->state[2] += c;
+	ctx->state[3] += d;
+	ctx->state[4] += e;
+	ctx->state[5] += f;
+	ctx->state[6] += g;
+	ctx->state[7] += h;
 
 	/* Clean up */
 	a = b = c = d = e = f = g = h = T1 = T2 = 0;
 }
 #endif   /* SHA2_UNROLL_TRANSFORM */
 
+static void
+pg_sha256_last(pg_sha256_ctx *ctx)
+{
+	unsigned int usedspace;
+
+	usedspace = (ctx->bitcount >> 3) % PG_SHA256_BLOCK_LENGTH;
+#ifndef WORDS_BIGENDIAN
+	/* Convert FROM host byte order */
+	REVERSE64(ctx->bitcount, ctx->bitcount);
+#endif
+	if (usedspace > 0)
+	{
+		/* Begin padding with a 1 bit: */
+		ctx->buffer[usedspace++] = 0x80;
+
+		if (usedspace <= PG_SHA256_SHORT_BLOCK_LENGTH)
+		{
+			/* Set-up for the last transform: */
+			memset(&ctx->buffer[usedspace], 0, PG_SHA256_SHORT_BLOCK_LENGTH - usedspace);
+		}
+		else
+		{
+			if (usedspace < PG_SHA256_BLOCK_LENGTH)
+			{
+				memset(&ctx->buffer[usedspace], 0, PG_SHA256_BLOCK_LENGTH - usedspace);
+			}
+			/* Do second-to-last transform: */
+			pg_sha256_transform(ctx, ctx->buffer);
+
+			/* And set-up for the last transform: */
+			memset(ctx->buffer, 0, PG_SHA256_SHORT_BLOCK_LENGTH);
+		}
+	}
+	else
+	{
+		/* Set-up for the last transform: */
+		memset(ctx->buffer, 0, PG_SHA256_SHORT_BLOCK_LENGTH);
+
+		/* Begin padding with a 1 bit: */
+		*ctx->buffer = 0x80;
+	}
+	/* Set the bit count: */
+	*(uint64 *) &ctx->buffer[PG_SHA256_SHORT_BLOCK_LENGTH] = ctx->bitcount;
+
+	/* Final transform: */
+	pg_sha256_transform(ctx, ctx->buffer);
+}
+
+/*
+ * pg_sha256_init
+ * Initialize calculation of SHA-256.
+ */
 void
-SHA512_Update(SHA512_CTX *context, const uint8 *data, size_t len)
+pg_sha256_init(pg_sha256_ctx *ctx)
+{
+	if (ctx == NULL)
+		return;
+	memcpy(ctx->state, sha256_initial_hash_value, PG_SHA256_DIGEST_LENGTH);
+	memset(ctx->buffer, 0, PG_SHA256_BLOCK_LENGTH);
+	ctx->bitcount = 0;
+}
+
+
+/*
+ * pg_sha256_update
+ * Update SHA-256 using given input data.
+ */
+void
+pg_sha256_update(pg_sha256_ctx *ctx, const uint8 *data, size_t len)
 {
 	size_t		freespace,
 				usedspace;
@@ -783,106 +785,165 @@ SHA512_Update(SHA512_CTX *context, const uint8 *data, size_t len)
 	if (len == 0)
 		return;
 
-	usedspace = (context->bitcount[0] >> 3) % SHA512_BLOCK_LENGTH;
+	usedspace = (ctx->bitcount >> 3) % PG_SHA256_BLOCK_LENGTH;
 	if (usedspace > 0)
 	{
 		/* Calculate how much free space is available in the buffer */
-		freespace = SHA512_BLOCK_LENGTH - usedspace;
+		freespace = PG_SHA256_BLOCK_LENGTH - usedspace;
 
 		if (len >= freespace)
 		{
 			/* Fill the buffer completely and process it */
-			memcpy(&context->buffer[usedspace], data, freespace);
-			ADDINC128(context->bitcount, freespace << 3);
+			memcpy(&ctx->buffer[usedspace], data, freespace);
+			ctx->bitcount += freespace << 3;
 			len -= freespace;
 			data += freespace;
-			SHA512_Transform(context, context->buffer);
+			pg_sha256_transform(ctx, ctx->buffer);
 		}
 		else
 		{
 			/* The buffer is not yet full */
-			memcpy(&context->buffer[usedspace], data, len);
-			ADDINC128(context->bitcount, len << 3);
+			memcpy(&ctx->buffer[usedspace], data, len);
+			ctx->bitcount += len << 3;
 			/* Clean up: */
 			usedspace = freespace = 0;
 			return;
 		}
 	}
-	while (len >= SHA512_BLOCK_LENGTH)
+	while (len >= PG_SHA256_BLOCK_LENGTH)
 	{
 		/* Process as many complete blocks as we can */
-		SHA512_Transform(context, data);
-		ADDINC128(context->bitcount, SHA512_BLOCK_LENGTH << 3);
-		len -= SHA512_BLOCK_LENGTH;
-		data += SHA512_BLOCK_LENGTH;
+		pg_sha256_transform(ctx, data);
+		ctx->bitcount += PG_SHA256_BLOCK_LENGTH << 3;
+		len -= PG_SHA256_BLOCK_LENGTH;
+		data += PG_SHA256_BLOCK_LENGTH;
 	}
 	if (len > 0)
 	{
 		/* There's left-overs, so save 'em */
-		memcpy(context->buffer, data, len);
-		ADDINC128(context->bitcount, len << 3);
+		memcpy(ctx->buffer, data, len);
+		ctx->bitcount += len << 3;
 	}
 	/* Clean up: */
 	usedspace = freespace = 0;
 }
 
-static void
-SHA512_Last(SHA512_CTX *context)
-{
-	unsigned int usedspace;
 
-	usedspace = (context->bitcount[0] >> 3) % SHA512_BLOCK_LENGTH;
+/*
+ * pg_sha256_final
+ * Finalize calculation of SHA-256 and save result to be reused by caller.
+ */
+void
+pg_sha256_final(pg_sha256_ctx *ctx, uint8 *dest)
+{
+	/* If no destination buffer is passed, we don't bother doing this: */
+	if (dest != NULL)
+	{
+		pg_sha256_last(ctx);
+
 #ifndef WORDS_BIGENDIAN
-	/* Convert FROM host byte order */
-	REVERSE64(context->bitcount[0], context->bitcount[0]);
-	REVERSE64(context->bitcount[1], context->bitcount[1]);
+		{
+			/* Convert TO host byte order */
+			int			j;
+
+			for (j = 0; j < 8; j++)
+			{
+				REVERSE32(ctx->state[j], ctx->state[j]);
+			}
+		}
 #endif
+		memcpy(dest, ctx->state, PG_SHA256_DIGEST_LENGTH);
+	}
+
+	/* Clean up state data: */
+	memset(ctx, 0, sizeof(pg_sha256_ctx));
+}
+
+
+/*
+ * pg_sha512_init
+ * Initialize calculation of SHA-512.
+ */
+void
+pg_sha512_init(pg_sha512_ctx *ctx)
+{
+	if (ctx == NULL)
+		return;
+	memcpy(ctx->state, sha512_initial_hash_value, PG_SHA512_DIGEST_LENGTH);
+	memset(ctx->buffer, 0, PG_SHA512_BLOCK_LENGTH);
+	ctx->bitcount[0] = ctx->bitcount[1] = 0;
+}
+
+
+/*
+ * pg_sha512_update
+ * Update SHA-512 using given input data.
+ */
+void
+pg_sha512_update(pg_sha512_ctx *ctx, const uint8 *data, size_t len)
+{
+	size_t		freespace,
+				usedspace;
+
+	/* Calling with no data is valid (we do nothing) */
+	if (len == 0)
+		return;
+
+	usedspace = (ctx->bitcount[0] >> 3) % PG_SHA512_BLOCK_LENGTH;
 	if (usedspace > 0)
 	{
-		/* Begin padding with a 1 bit: */
-		context->buffer[usedspace++] = 0x80;
+		/* Calculate how much free space is available in the buffer */
+		freespace = PG_SHA512_BLOCK_LENGTH - usedspace;
 
-		if (usedspace <= SHA512_SHORT_BLOCK_LENGTH)
+		if (len >= freespace)
 		{
-			/* Set-up for the last transform: */
-			memset(&context->buffer[usedspace], 0, SHA512_SHORT_BLOCK_LENGTH - usedspace);
+			/* Fill the buffer completely and process it */
+			memcpy(&ctx->buffer[usedspace], data, freespace);
+			ADDINC128(ctx->bitcount, freespace << 3);
+			len -= freespace;
+			data += freespace;
+			pg_sha512_transform(ctx, ctx->buffer);
 		}
 		else
 		{
-			if (usedspace < SHA512_BLOCK_LENGTH)
-			{
-				memset(&context->buffer[usedspace], 0, SHA512_BLOCK_LENGTH - usedspace);
-			}
-			/* Do second-to-last transform: */
-			SHA512_Transform(context, context->buffer);
-
-			/* And set-up for the last transform: */
-			memset(context->buffer, 0, SHA512_BLOCK_LENGTH - 2);
+			/* The buffer is not yet full */
+			memcpy(&ctx->buffer[usedspace], data, len);
+			ADDINC128(ctx->bitcount, len << 3);
+			/* Clean up: */
+			usedspace = freespace = 0;
+			return;
 		}
 	}
-	else
+	while (len >= PG_SHA512_BLOCK_LENGTH)
 	{
-		/* Prepare for final transform: */
-		memset(context->buffer, 0, SHA512_SHORT_BLOCK_LENGTH);
-
-		/* Begin padding with a 1 bit: */
-		*context->buffer = 0x80;
+		/* Process as many complete blocks as we can */
+		pg_sha512_transform(ctx, data);
+		ADDINC128(ctx->bitcount, PG_SHA512_BLOCK_LENGTH << 3);
+		len -= PG_SHA512_BLOCK_LENGTH;
+		data += PG_SHA512_BLOCK_LENGTH;
 	}
-	/* Store the length of input data (in bits): */
-	*(uint64 *) &context->buffer[SHA512_SHORT_BLOCK_LENGTH] = context->bitcount[1];
-	*(uint64 *) &context->buffer[SHA512_SHORT_BLOCK_LENGTH + 8] = context->bitcount[0];
-
-	/* Final transform: */
-	SHA512_Transform(context, context->buffer);
+	if (len > 0)
+	{
+		/* There's left-overs, so save 'em */
+		memcpy(ctx->buffer, data, len);
+		ADDINC128(ctx->bitcount, len << 3);
+	}
+	/* Clean up: */
+	usedspace = freespace = 0;
 }
 
+
+/*
+ * pg_sha512_final
+ * Finalize calculation of SHA-512 and save result to be reused by caller.
+ */
 void
-SHA512_Final(uint8 digest[], SHA512_CTX *context)
+pg_sha512_final(pg_sha512_ctx *ctx, uint8 *dest)
 {
-	/* If no digest buffer is passed, we don't bother doing this: */
-	if (digest != NULL)
+	/* If no destination buffer is passed, we don't bother doing this: */
+	if (dest != NULL)
 	{
-		SHA512_Last(context);
+		pg_sha512_last(ctx);
 
 		/* Save the hash data for output: */
 #ifndef WORDS_BIGENDIAN
@@ -892,42 +953,55 @@ SHA512_Final(uint8 digest[], SHA512_CTX *context)
 
 			for (j = 0; j < 8; j++)
 			{
-				REVERSE64(context->state[j], context->state[j]);
+				REVERSE64(ctx->state[j], ctx->state[j]);
 			}
 		}
 #endif
-		memcpy(digest, context->state, SHA512_DIGEST_LENGTH);
+		memcpy(dest, ctx->state, PG_SHA512_DIGEST_LENGTH);
 	}
 
 	/* Zero out state data */
-	px_memset(context, 0, sizeof(*context));
+	memset(ctx, 0, sizeof(pg_sha512_ctx));
 }
 
 
-/*** SHA-384: *********************************************************/
+/*
+ * pg_sha384_init
+ * Initialize calculation of SHA-384.
+ */
 void
-SHA384_Init(SHA384_CTX *context)
+pg_sha384_init(pg_sha384_ctx *ctx)
 {
-	if (context == NULL)
+	if (ctx == NULL)
 		return;
-	memcpy(context->state, sha384_initial_hash_value, SHA512_DIGEST_LENGTH);
-	memset(context->buffer, 0, SHA384_BLOCK_LENGTH);
-	context->bitcount[0] = context->bitcount[1] = 0;
+	memcpy(ctx->state, sha384_initial_hash_value, PG_SHA512_DIGEST_LENGTH);
+	memset(ctx->buffer, 0, PG_SHA384_BLOCK_LENGTH);
+	ctx->bitcount[0] = ctx->bitcount[1] = 0;
 }
 
+
+/*
+ * pg_sha384_update
+ * Update SHA-384 using given input data.
+ */
 void
-SHA384_Update(SHA384_CTX *context, const uint8 *data, size_t len)
+pg_sha384_update(pg_sha384_ctx *ctx, const uint8 *data, size_t len)
 {
-	SHA512_Update((SHA512_CTX *) context, data, len);
+	pg_sha512_update((pg_sha512_ctx *) ctx, data, len);
 }
 
+
+/*
+ * pg_sha384_final
+ * Finalize calculation of SHA-384 and save result to be reused by caller.
+ */
 void
-SHA384_Final(uint8 digest[], SHA384_CTX *context)
+pg_sha384_final(pg_sha384_ctx *ctx, uint8 *dest)
 {
-	/* If no digest buffer is passed, we don't bother doing this: */
-	if (digest != NULL)
+	/* If no destination buffer is passed, we don't bother doing this: */
+	if (dest != NULL)
 	{
-		SHA512_Last((SHA512_CTX *) context);
+		pg_sha512_last((pg_sha512_ctx *) ctx);
 
 		/* Save the hash data for output: */
 #ifndef WORDS_BIGENDIAN
@@ -937,41 +1011,55 @@ SHA384_Final(uint8 digest[], SHA384_CTX *context)
 
 			for (j = 0; j < 6; j++)
 			{
-				REVERSE64(context->state[j], context->state[j]);
+				REVERSE64(ctx->state[j], ctx->state[j]);
 			}
 		}
 #endif
-		memcpy(digest, context->state, SHA384_DIGEST_LENGTH);
+		memcpy(dest, ctx->state, PG_SHA384_DIGEST_LENGTH);
 	}
 
 	/* Zero out state data */
-	px_memset(context, 0, sizeof(*context));
+	memset(ctx, 0, sizeof(pg_sha384_ctx));
 }
 
-/*** SHA-224: *********************************************************/
+
+/*
+ * pg_sha224_init
+ * Initialize calculation of SHA-224.
+ */
 void
-SHA224_Init(SHA224_CTX *context)
+pg_sha224_init(pg_sha224_ctx *ctx)
 {
-	if (context == NULL)
+	if (ctx == NULL)
 		return;
-	memcpy(context->state, sha224_initial_hash_value, SHA256_DIGEST_LENGTH);
-	memset(context->buffer, 0, SHA256_BLOCK_LENGTH);
-	context->bitcount = 0;
+	memcpy(ctx->state, sha224_initial_hash_value, PG_SHA256_DIGEST_LENGTH);
+	memset(ctx->buffer, 0, PG_SHA256_BLOCK_LENGTH);
+	ctx->bitcount = 0;
 }
 
+
+/*
+ * pg_sha224_update
+ * Update SHA-224 using given input data.
+ */
 void
-SHA224_Update(SHA224_CTX *context, const uint8 *data, size_t len)
+pg_sha224_update(pg_sha224_ctx *ctx, const uint8 *data, size_t len)
 {
-	SHA256_Update((SHA256_CTX *) context, data, len);
+	pg_sha256_update((pg_sha256_ctx *) ctx, data, len);
 }
 
+
+/*
+ * pg_sha224_final
+ * Finalize calculation of SHA-224 and save result to be reused by caller.
+ */
 void
-SHA224_Final(uint8 digest[], SHA224_CTX *context)
+pg_sha224_final(pg_sha224_ctx *ctx, uint8 *dest)
 {
-	/* If no digest buffer is passed, we don't bother doing this: */
-	if (digest != NULL)
+	/* If no destination buffer is passed, we don't bother doing this: */
+	if (dest != NULL)
 	{
-		SHA256_Last(context);
+		pg_sha256_last(ctx);
 
 #ifndef WORDS_BIGENDIAN
 		{
@@ -980,13 +1068,13 @@ SHA224_Final(uint8 digest[], SHA224_CTX *context)
 
 			for (j = 0; j < 8; j++)
 			{
-				REVERSE32(context->state[j], context->state[j]);
+				REVERSE32(ctx->state[j], ctx->state[j]);
 			}
 		}
 #endif
-		memcpy(digest, context->state, SHA224_DIGEST_LENGTH);
+		memcpy(dest, ctx->state, PG_SHA224_DIGEST_LENGTH);
 	}
 
 	/* Clean up state data: */
-	px_memset(context, 0, sizeof(*context));
+	memset(ctx, 0, sizeof(pg_sha224_ctx));
 }

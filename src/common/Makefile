@@ -40,6 +40,12 @@ OBJS_COMMON = config_info.o controldata_utils.o exec.o keywords.o \
 	pg_lzcompress.o pgfnames.o psprintf.o relpath.o rmtree.o \
 	string.o username.o wait_error.o
 
+ifeq ($(with_openssl),yes)
+OBJS_COMMON += sha2_openssl.o
+else
+OBJS_COMMON += sha2.o
+endif
+
 OBJS_FRONTEND = $(OBJS_COMMON) fe_memutils.o restricted_token.o
 
 OBJS_SRV = $(OBJS_COMMON:%.o=%_srv.o)
