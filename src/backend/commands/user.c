@@ -175,7 +175,8 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 
 		if (strcmp(defel->defname, "password") == 0 ||
 			strcmp(defel->defname, "encryptedPassword") == 0 ||
-			strcmp(defel->defname, "unencryptedPassword") == 0)
+			strcmp(defel->defname, "unencryptedPassword") == 0 ||
+			strcmp(defel->defname, "protocolPassword") == 0)
 		{
 			if (dpassword)
 				ereport(ERROR,
@@ -183,10 +184,49 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 						 errmsg("conflicting or redundant options"),
 						 parser_errposition(pstate, defel->location)));
 			dpassword = defel;
-			if (strcmp(defel->defname, "encryptedPassword") == 0)
+			if (strcmp(defel->defname, "password") == 0)
+			{
+				/*
+				 * Password type is enforced with GUC password_encryption
+				 * here.
+				 */
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
+			else if (strcmp(defel->defname, "encryptedPassword") == 0)
+			{
 				password_type = PASSWORD_TYPE_MD5;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
 			else if (strcmp(defel->defname, "unencryptedPassword") == 0)
+			{
 				password_type = PASSWORD_TYPE_PLAINTEXT;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
+			else if (strcmp(defel->defname, "protocolPassword") == 0)
+			{
+				/*
+				 * This is a list of two elements, the password is first and
+				 * then there is the protocol wanted by caller.
+				 */
+				if (dpassword && dpassword->arg)
+				{
+					char *protocol = strVal(lsecond((List *) dpassword->arg));
+
+					password = strVal(linitial((List *) dpassword->arg));
+
+					if (strcmp(protocol, "md5") == 0)
+						password_type = PASSWORD_TYPE_MD5;
+					else if (strcmp(protocol, "plain") == 0)
+						password_type = PASSWORD_TYPE_PLAINTEXT;
+					else
+						ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("unsupported password protocol %s", protocol)));
+				}
+			}
 		}
 		else if (strcmp(defel->defname, "sysid") == 0)
 		{
@@ -306,8 +346,6 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 				 defel->defname);
 	}
 
-	if (dpassword && dpassword->arg)
-		password = strVal(dpassword->arg);
 	if (dissuper)
 		issuper = intVal(dissuper->arg) != 0;
 	if (dinherit)
@@ -582,6 +620,7 @@ AlterRole(AlterRoleStmt *stmt)
 
 		if (strcmp(defel->defname, "password") == 0 ||
 			strcmp(defel->defname, "encryptedPassword") == 0 ||
+			strcmp(defel->defname, "protocolPassword") == 0 ||
 			strcmp(defel->defname, "unencryptedPassword") == 0)
 		{
 			if (dpassword)
@@ -589,10 +628,49 @@ AlterRole(AlterRoleStmt *stmt)
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
 			dpassword = defel;
-			if (strcmp(defel->defname, "encryptedPassword") == 0)
+			if (strcmp(defel->defname, "password") == 0)
+			{
+				/*
+				 * Password type is enforced with GUC password_encryption
+				 * here.
+				 */
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
+			else if (strcmp(defel->defname, "encryptedPassword") == 0)
+			{
 				password_type = PASSWORD_TYPE_MD5;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
 			else if (strcmp(defel->defname, "unencryptedPassword") == 0)
+			{
 				password_type = PASSWORD_TYPE_PLAINTEXT;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
+			else if (strcmp(defel->defname, "protocolPassword") == 0)
+			{
+				/*
+				 * This is a list of two elements, the password is first and
+				 * then there is the protocol wanted by caller.
+				 */
+				if (dpassword && dpassword->arg)
+				{
+					char *protocol = strVal(lsecond((List *) dpassword->arg));
+
+					if (strcmp(protocol, "md5") == 0)
+						password_type = PASSWORD_TYPE_MD5;
+					else if (strcmp(protocol, "plain") == 0)
+						password_type = PASSWORD_TYPE_PLAINTEXT;
+					else
+						ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("unsupported password protocol %s", protocol)));
+
+					password = strVal(linitial((List *) dpassword->arg));
+				}
+			}
 		}
 		else if (strcmp(defel->defname, "superuser") == 0)
 		{
@@ -680,8 +758,6 @@ AlterRole(AlterRoleStmt *stmt)
 				 defel->defname);
 	}
 
-	if (dpassword && dpassword->arg)
-		password = strVal(dpassword->arg);
 	if (dissuper)
 		issuper = intVal(dissuper->arg);
 	if (dinherit)
