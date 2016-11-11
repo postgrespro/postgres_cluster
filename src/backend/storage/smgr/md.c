@@ -566,13 +566,6 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 				unlink(segpath);
 			}
 		}
-		/* 
-		 * Delete map file
-		 */
-		if (forkNum == MAIN_FORKNUM) { 
-			sprintf(segpath, "%s.cfm", path);
-			unlink(segpath);
-		}
 	}
 	pfree(segpath);
 	pfree(path);
@@ -1465,6 +1458,7 @@ mdpostckpt(void)
 	{
 		PendingUnlinkEntry *entry = (PendingUnlinkEntry *) linitial(pendingUnlinks);
 		char	   *path;
+		char	   *map_path;
 
 		/*
 		 * New entries are appended to the end, so if the entry is new we've
@@ -1494,6 +1488,13 @@ mdpostckpt(void)
 						(errcode_for_file_access(),
 						 errmsg("could not remove file \"%s\": %m", path)));
 		}
+		/* 
+		 * Remove compression map if any 
+		 */
+		map_path = psprintf("%s.cfm", path);
+		unlink(map_path);
+		pfree(map_path);
+		
 		pfree(path);
 
 		/* And remove the list entry */
