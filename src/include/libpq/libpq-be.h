@@ -144,7 +144,9 @@ typedef struct Port
 	 * Information that needs to be held during the authentication cycle.
 	 */
 	HbaLine    *hba;
-	char		md5Salt[4];		/* Password salt */
+	char		md5Salt[4];		/* MD5 password salt */
+	char		SASLSalt[10];	/* SASL password salt, size of
+								 * SCRAM_SALT_LEN */
 
 	/*
 	 * Information that really has no business at all being in struct Port,
