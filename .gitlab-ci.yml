@@ -1,7 +1,6 @@
 image: debian
 
 stages:
-  - build
   - test
 
 before_script:
@@ -10,32 +9,18 @@ before_script:
   - uname -a
   - df -h
 
-build:ubuntu-16.04:
-  stage: build
-  image: ubuntu:16.04
-  only:
-    - PGPROEE9_6
-  before_script:
-    - apt-get update && apt-get install -y gcc make flex bison libreadline-dev zlib1g-dev jade libzstd0 libzstd-dev
-  script:
-    - ./configure
-    - make -j $CORES
-    - apt-get install sudo
-    - sudo make install
-  when: always
-
-test:
+test:ubuntu-16.04:
   stage: test
   image: ubuntu:16.04
   only:
     - PGPROEE9_6
   before_script:
-    - apt-get update && apt-get install -y gcc make flex bison libreadline-dev zlib1g-dev jade libzstd0 libzstd-dev
+    - apt-get update && apt-get install -y sudo gcc make flex bison libreadline-dev zlib1g-dev jade libzstd0 libzstd-dev
   script:
-    - ./configure
-    - make -j $CORES
-    - apt-get install sudo
-    - adduser --disabled-password --gecos '' postgres
-    - echo '%postgres ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-    - su -m postgres -c make check
+    - ./configure --prefix=/opt/pgproee
+    - make -j $CORES world
+    - sudo make install-world
+    - make check
+    - cd contrib
+    - make check
   when: always
