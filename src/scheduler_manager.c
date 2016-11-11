@@ -816,7 +816,7 @@ void destroy_slot_item(scheduler_manager_slot_t *item)
 
 int scheduler_check_slots(scheduler_manager_ctx_t *ctx)
 {
-	int i, busy;
+	int i, j, busy;
 	scheduler_rm_item_t *toremove;
 	int nremove = 0;
 	scheduler_manager_slot_t *item;
@@ -861,11 +861,14 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx)
 	}
 	if(nremove)
 	{
+		_pdebug("do need to remove: %d", nremove);
 		for(i=0; i < nremove; i++)
 		{
 			removeJob = true;
 			job_status = false;
+			_pdebug("=== remove position: %d", toremove[i].pos);
 			item = ctx->slots[toremove[i].pos];
+			_pdebug("=== remove cron_id: %d", item->job->cron_id);
 
 			if(toremove[i].reason == RmTimeout)  /* TIME OUT */
 			{
@@ -947,11 +950,23 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx)
 
 				if(toremove[i].pos != last)
 				{
+					_pdebug("--- move from %d to %d", last, toremove[i].pos);
 					ctx->slots[toremove[i].pos] = ctx->slots[last];
+					ctx->slots[last] = NULL;
+					for(j=i+1; j < nremove; j++)
+					{
+						if(toremove[j].pos == last) 
+						{
+							toremove[j].pos = toremove[i].pos;
+							break;
+						}
+					}
 				}
 				ctx->free_slots++;
+				_pdebug("--- free slots: %d", ctx->free_slots);
 			}
 		}
+		_pdebug("done remove: %d", nremove);
 	}
 	pfree(toremove);
 	return 1;
@@ -1298,8 +1313,10 @@ void manager_worker_main(Datum arg)
 			{
 				if(rc & WL_LATCH_SET)
 				{
+					_pdebug("got latch from some bgworker");
 					scheduler_check_slots(ctx);
 					set_slots_stat_report(ctx);
+					_pdebug("quit got latch");
 				}
 				else if(rc & WL_TIMEOUT)
 				{

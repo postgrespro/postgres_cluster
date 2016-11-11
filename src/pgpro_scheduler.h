@@ -10,7 +10,17 @@
 #define PGPRO_SCHEDULER_DBNAME_MAX 128
 #define PGPRO_SCHEDULER_NODENAME_MAX 128
 #define PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX 1024
+#define PPGS_DEBUG 1
 
+#ifdef PPGS_DEBUG 
+#ifdef HAVE__VA_ARGS
+#define _pdebug(...) elog(LOG, __VA_ARGS__);
+#else
+#define _pdebug(...)
+#endif
+#else
+#define _pdebug(...)
+#endif
 
 extern void worker_spi_sighup(SIGNAL_ARGS);
 extern void worker_spi_sigterm(SIGNAL_ARGS);
