@@ -118,9 +118,9 @@
  * The situation for members is a bit more complex: we store one byte of
  * additional flag bits for each TransactionId.  To do this without getting
  * into alignment issues, we store eight bytes of flags, and then the
- * corresponding 8 Xids.  Each such 9-word (20-byte) set we call a "group", and
- * are stored as a whole in pages.  Thus, with 8kB BLCKSZ, we keep 409 groups
- * per page.  This wastes 12 bytes per page, but that's OK -- simplicity (and
+ * corresponding 8 Xids.  Each such 9-word (72-byte) set we call a "group", and
+ * are stored as a whole in pages.  Thus, with 8kB BLCKSZ, we keep 113 groups
+ * per page.  This wastes 56 bytes per page, but that's OK -- simplicity (and
  * performance) trumps space efficiency here.
  *
  * Note that the "offset" macros work with byte offset, not array indexes, so
@@ -878,8 +878,8 @@ RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
 	for (i = 0; i < nmembers; i++, offset++)
 	{
 		TransactionId *memberptr;
-		uint32	   *flagsptr;
-		uint32		flagsval;
+		uint64	   *flagsptr;
+		uint64		flagsval;
 		int			bshift;
 		int			flagsoff;
 		int			memberoff;
@@ -903,12 +903,12 @@ RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
 
 		*memberptr = members[i].xid;
 
-		flagsptr = (uint32 *)
+		flagsptr = (uint64 *)
 			(MultiXactMemberCtl->shared->page_buffer[slotno] + flagsoff);
 
 		flagsval = *flagsptr;
-		flagsval &= ~(((1 << MXACT_MEMBER_BITS_PER_XACT) - 1) << bshift);
-		flagsval |= (members[i].status << bshift);
+		flagsval &= ~((uint64)((1 << MXACT_MEMBER_BITS_PER_XACT) - 1) << bshift);
+		flagsval |= ((uint64)members[i].status << bshift);
 		*flagsptr = flagsval;
 
 		MultiXactMemberCtl->shared->page_dirty[slotno] = true;
@@ -1388,7 +1388,7 @@ retry:
 	for (i = 0; i < length; i++, offset++)
 	{
 		TransactionId *xactptr;
-		uint32	   *flagsptr;
+		uint64	   *flagsptr;
 		int			flagsoff;
 		int			bshift;
 		int			memberoff;
@@ -1414,7 +1414,7 @@ retry:
 
 		flagsoff = MXOffsetToFlagsOffset(offset);
 		bshift = MXOffsetToFlagsBitShift(offset);
-		flagsptr = (uint32 *) (MultiXactMemberCtl->shared->page_buffer[slotno] + flagsoff);
+		flagsptr = (uint64 *) (MultiXactMemberCtl->shared->page_buffer[slotno] + flagsoff);
 
 		ptr[truelength].xid = *xactptr;
 		ptr[truelength].status = (*flagsptr >> bshift) & MXACT_MEMBER_XACT_BITMASK;
