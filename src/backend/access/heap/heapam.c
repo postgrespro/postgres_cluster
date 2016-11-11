@@ -3890,7 +3890,8 @@ heap_update(Relation relation, ItemPointer otid, HeapTuple newtup,
 	HeapTuple	heaptup;
 	HeapTuple	old_key_tuple = NULL;
 	bool		old_key_copied = false;
-	Page		page;
+	Page		page,
+				newpage;
 	BlockNumber block;
 	MultiXactStatus mxact_status;
 	Buffer		buffer,
@@ -4120,6 +4121,7 @@ l2:
 				checked_lockers = true;
 				locker_remains = remain != 0;
 				LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
+				HeapTupleCopyEpochFromPage(&oldtup, page);
 
 				/*
 				 * If xwait had just locked the tuple then some other xact
@@ -4201,6 +4203,8 @@ l2:
 			checked_lockers = true;
 			LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 
+			HeapTupleCopyEpochFromPage(&oldtup, page);
+
 			/*
 			 * xwait is done, but if xwait had just locked the tuple then some
 			 * other xact could update this tuple before we get to this point.
@@ -4264,6 +4268,7 @@ l2:
 		LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 		visibilitymap_pin(relation, block, &vmbuffer);
 		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
+		HeapTupleCopyEpochFromPage(&oldtup, page);
 		goto l2;
 	}
 
@@ -4325,14 +4330,13 @@ l2:
 	 */
 	newtup->t_data->t_infomask &= ~(HEAP_XACT_MASK);
 	newtup->t_data->t_infomask2 &= ~(HEAP2_XACT_MASK);
-	heap_page_prepare_for_xid(relation, buffer, xid, false);
-	HeapTupleCopyEpochFromPage(newtup, page);
-	HeapTupleSetXmin(newtup, xid);
-
-
 	HeapTupleHeaderSetCmin(newtup->t_data, cid);
 	newtup->t_data->t_infomask |= HEAP_UPDATED | infomask_new_tuple;
 	newtup->t_data->t_infomask2 |= infomask2_new_tuple;
+
+	heap_page_prepare_for_xid(relation, buffer, xid, false);
+	HeapTupleCopyEpochFromPage(newtup, page);
+	HeapTupleSetXmin(newtup, xid);
 	heap_page_prepare_for_xid(relation, buffer, xmax_new_tuple,
 		(newtup->t_data->t_infomask & HEAP_XMAX_IS_MULTI) ? true : false);
 	HeapTupleCopyEpochFromPage(newtup, page);
@@ -4617,6 +4621,20 @@ l2:
 		HeapTupleClearHotUpdated(&oldtup);
 		HeapTupleClearHeapOnly(heaptup);
 		HeapTupleClearHeapOnly(newtup);
+	}
+
+	newpage = BufferGetPage(newbuf);
+
+	if (newbuf != buffer)
+	{
+		/* Prepare new page for xids */
+		heap_page_prepare_for_xid(relation, newbuf, xid, false);
+		HeapTupleCopyEpochFromPage(heaptup, newpage);
+		HeapTupleSetXmin(heaptup, xid);
+		heap_page_prepare_for_xid(relation, newbuf, xmax_new_tuple,
+			(heaptup->t_data->t_infomask & HEAP_XMAX_IS_MULTI) ? true : false);
+		HeapTupleCopyEpochFromPage(heaptup, newpage);
+		HeapTupleSetXmax(heaptup, xmax_new_tuple);
 	}
 
 	RelationPutHeapTuple(relation, newbuf, heaptup, false, xid);		/* insert new tuple */
