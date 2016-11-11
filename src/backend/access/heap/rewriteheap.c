@@ -632,6 +632,7 @@ raw_heap_insert(RewriteState state, HeapTuple tup)
 	Size		len;
 	OffsetNumber newoff;
 	HeapTuple	heaptup;
+	TransactionId xmin, xmax;
 
 	/*
 	 * If the new tuple is too big for storage or contains already toasted
@@ -719,9 +720,11 @@ raw_heap_insert(RewriteState state, HeapTuple tup)
 	rewrite_page_prepare_for_xid(page, HeapTupleGetRawXmax(heaptup),
 		(heaptup->t_data->t_infomask & HEAP_XMAX_IS_MULTI) ? true : false);
 
+	xmin = HeapTupleGetXmin(heaptup);
+	xmax = HeapTupleGetRawXmax(heaptup);
 	HeapTupleCopyEpochFromPage(heaptup, page);
-	HeapTupleSetXmin(heaptup, HeapTupleGetXmin(heaptup));
-	HeapTupleSetXmax(heaptup, HeapTupleGetRawXmax(heaptup));
+	HeapTupleSetXmin(heaptup, xmin);
+	HeapTupleSetXmax(heaptup, xmax);
 
 	/* And now we can insert the tuple into the page */
 	newoff = PageAddItem(page, (Item) heaptup->t_data, heaptup->t_len,
