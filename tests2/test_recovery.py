@@ -14,7 +14,47 @@ from lib.failure_injector import *
 TEST_DURATION = 10
 TEST_RECOVERY_TIME = 20
 
-class RecoveryTest(unittest.TestCase):
+class TestHelper(object):
+
+    def assertIsolation(self, aggs):
+        isolated = True
+        for conn_id, agg in enumerate(aggs):
+            isolated = isolated and agg['sumtotal']['isolation'] == 0
+        if not isolated:
+            raise AssertionError('Isolation failure')
+
+    def assertCommits(self, aggs):
+        commits = True
+        for conn_id, agg in enumerate(aggs):
+            commits = commits and 'commit' in agg['transfer']['finish']
+        if not commits:
+            raise AssertionError('No commits during aggregation interval')
+
+    def assertNoCommits(self, aggs):
+        commits = True
+        for conn_id, agg in enumerate(aggs):
+            commits = commits and 'commit' in agg['transfer']['finish']
+        if commits:
+            raise AssertionError('There are commits during aggregation interval')
+
+    def performFailure(self, failure):
+        failure.start()
+
+        self.client.clean_aggregates()
+        time.sleep(TEST_DURATION)
+        aggs_failure = self.client.get_aggregates()
+
+        failure.stop()
+
+        self.client.clean_aggregates()
+        time.sleep(TEST_RECOVERY_TIME)
+        aggs = self.client.get_aggregates()
+
+        return (aggs_failure, aggs)
+
+
+class RecoveryTest(unittest.TestCase, TestHelper):
+
     @classmethod
     def setUpClass(self):
         # subprocess.check_call(['docker-compose','up',
@@ -58,32 +98,14 @@ class RecoveryTest(unittest.TestCase):
     def test_node_partition(self):
         print('### nodePartitionTest ###')
 
-        failure = SingleNodePartition('node3')
-        failure.start()
+        aggs_failure, aggs = self.performFailure(SingleNodePartition('node3'))
 
-        self.client.clean_aggregates()
-        time.sleep(TEST_DURATION)
-        aggs_failure = self.client.get_aggregates()
+        self.assertCommits(aggs_failure[:2])
+        self.assertNoCommits(aggs_failure[2:])
+        self.assertIsolation(aggs_failure)
 
-        failure.stop()
-
-        self.client.clean_aggregates()
-        time.sleep(TEST_RECOVERY_TIME)
-        aggs = self.client.get_aggregates()
-
-        self.assertTrue( 'commit' in aggs_failure[0]['transfer']['finish'] )
-        self.assertTrue( 'commit' in aggs_failure[1]['transfer']['finish'] )
-        self.assertTrue( 'commit' not in aggs_failure[2]['transfer']['finish'] )
-        self.assertTrue( aggs_failure[0]['sumtotal']['isolation'] == 0)
-        self.assertTrue( aggs_failure[1]['sumtotal']['isolation'] == 0)
-        self.assertTrue( aggs_failure[2]['sumtotal']['isolation'] == 0)
-
-        self.assertTrue( 'commit' in aggs[0]['transfer']['finish'] )
-        self.assertTrue( 'commit' in aggs[1]['transfer']['finish'] )
-        self.assertTrue( 'commit' in aggs[2]['transfer']['finish'] )
-        self.assertTrue( aggs[0]['sumtotal']['isolation'] == 0)
-        self.assertTrue( aggs[1]['sumtotal']['isolation'] == 0)
-        self.assertTrue( aggs[2]['sumtotal']['isolation'] == 0)
+        self.assertCommits(aggs)
+        self.assertIsolation(aggs)
 
 
     def test_edge_partition(self):

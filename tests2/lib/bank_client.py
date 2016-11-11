@@ -111,10 +111,10 @@ class MtmClient(object):
         while self.running:
             msg = yield from self.child_pipe.coro_recv()
             if msg == 'status':
-                serialized_aggs = {}
+                serialized_aggs = []
 
                 for conn_id, conn_aggs in self.aggregates.items():
-                    serialized_aggs[conn_id] = {}
+                    serialized_aggs.append({})
                     for aggname, agg in conn_aggs.items():
                         serialized_aggs[conn_id][aggname] = agg.as_dict()
                         agg.clear_values()
@@ -224,9 +224,8 @@ class MtmClient(object):
                 print(col, end="\t")
             print("\n", end="")
 
-            for conn_id in aggs.keys():
-                for aggname in aggs[conn_id].keys():
-                    agg = aggs[conn_id][aggname]
+            for conn_id, agg_conn in enumerate(aggs):
+                for aggname, agg in agg_conn.items():
                     print("Node %d: %s\t" % (conn_id + 1, aggname), end="")
                     for col in columns:
                         if isinstance(agg[col], float):
