@@ -1223,6 +1223,23 @@ void clean_at_table(scheduler_manager_ctx_t *ctx)
 	STOP_SPI_SNAP();
 }
 
+bool check_parent_stop_signal(scheduler_manager_ctx_t *ctx)
+{
+	schd_manager_share_t *shared;
+
+	shared = dsm_segment_address(ctx->seg);
+	if(shared->setbyparent)
+	{
+		shared->setbyparent = false;
+		if(shared->status == SchdManagerStop)
+		{
+			elog(LOG, "Recieve stop signal from parent");
+			return true;
+		}
+	}
+	return false;
+}
+
 void set_slots_stat_report(scheduler_manager_ctx_t *ctx)
 {
 	char state[128];
@@ -1314,6 +1331,7 @@ void manager_worker_main(Datum arg)
 				if(rc & WL_LATCH_SET)
 				{
 					_pdebug("got latch from some bgworker");
+					if(check_parent_stop_signal(ctx)) break;
 					scheduler_check_slots(ctx);
 					set_slots_stat_report(ctx);
 					_pdebug("quit got latch");

@@ -39,5 +39,6 @@ char *make_date_from_timestamp(TimestampTz ts);
 int get_integer_from_string(char *s, int start, int len);
 TimestampTz get_timestamp_from_string(char *str);
 TimestampTz _round_timestamp_to_minute(TimestampTz ts);
+bool is_scheduler_enabled(void);
 
 #endif

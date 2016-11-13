@@ -14,6 +14,7 @@
 #include "storage/procarray.h"
 #include "pgpro_scheduler.h"
 #include "utils/resowner.h"
+#include "memutils.h"
 
 #include "postmaster/bgworker.h"
 
@@ -39,6 +40,14 @@ char *supervisor_state(schd_managers_poll_t *poll)
 	char *dbnames = poll_dbnames(poll);
 	char *status;
 	int len;
+
+	if(!poll->enabled)
+	{
+		status = palloc(sizeof(char) * 9);
+		memcpy(status, "disabled", 8);
+		status[8] = 0;
+		return status;
+	}
 
 	len = dbnames ? strlen(dbnames): 0;
 	if(len == 0)
@@ -130,7 +139,8 @@ int stopAllManagers(schd_managers_poll_t *poll)
 		destroyManagerRecord(poll->workers[i]);
 	}
 	pfree(poll->workers);
-	pfree(poll);
+	poll->workers = NULL;
+	poll->n = 0;
 
 	return 1;
 }
@@ -145,10 +155,17 @@ void destroyManagerRecord(schd_manager_t *man)
 schd_managers_poll_t *initSchedulerManagerPool(char_array_t *names)
 {
 	int i;
-	schd_managers_poll_t *p = palloc(sizeof(schd_managers_poll_t));
+	schd_managers_poll_t *p = worker_alloc(sizeof(schd_managers_poll_t));
 
 	p->n = 0;
 	p->workers = NULL;
+	p->enabled = true;
+
+	if(!is_scheduler_enabled())
+	{
+		p->enabled = false;
+		return p;
+	}
 
 	if(names->n > 0)
 	{
@@ -334,8 +351,6 @@ int refreshManagers(char_array_t *names, schd_managers_poll_t *poll)
 	char_array_t *new = makeCharArray();
 	char_array_t *same = makeCharArray();
 	char_array_t *delete = makeCharArray();
-
-	elog(LOG, "NEW names: %d", names->n);
 
 	for(i=0; i < names->n; i++)
 	{

@@ -94,5 +94,6 @@ int update_cron_texttime(scheduler_manager_ctx_t *ctx, int cron_id, TimestampTz 
 int mark_job_broken(scheduler_manager_ctx_t *ctx, int cron_id, char *reason);
 void manager_fatal_error(scheduler_manager_ctx_t *ctx, int ecode, char *message, ...) pg_attribute_printf(3, 4);
 void set_slots_stat_report(scheduler_manager_ctx_t *ctx);
+bool check_parent_stop_signal(scheduler_manager_ctx_t *ctx);
 
 #endif

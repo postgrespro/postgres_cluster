@@ -32,6 +32,7 @@ typedef struct {
 typedef struct {
 	int n;
 	schd_manager_t **workers;
+	bool enabled;
 } schd_managers_poll_t;
 
 void changeChildBgwState(schd_manager_share_t *, schd_manager_status_t);

@@ -36,11 +36,13 @@ PG_MODULE_MAGIC;
 volatile sig_atomic_t got_sighup = false;
 volatile sig_atomic_t got_sigterm = false;
 
-
-static char *sched_databases = "";
-static char *sched_nodename = "master";
-static char *sched_transaction_state = "undefined";
-static int sched_max_workers = 2;
+/* Custom GUC variables */
+static char *scheduler_databases = "";
+static char *scheduler_nodename = "master";
+static char *scheduler_transaction_state = "undefined";
+static int  scheduler_max_workers = 2;
+static bool scheduler_service_enabled = false;
+/* Custom GUC done */
 
 extern void
 worker_spi_sighup(SIGNAL_ARGS)
@@ -125,6 +127,15 @@ TimestampTz _round_timestamp_to_minute(TimestampTz ts)
 #else
 	return ts - ts % SECS_PER_MINUTE;
 #endif
+}
+
+bool is_scheduler_enabled(void)
+{
+	const char *opt;
+
+	opt = GetConfigOption("schedule.enabled", false, true);
+	if(memcmp(opt, "on", 2) == 0) return true;
+	return false;
 }
 
 
@@ -242,9 +253,10 @@ char_array_t *readBasesToCheck(void)
 void parent_scheduler_main(Datum arg)
 {
 	int rc = 0, i;
-	char_array_t *names;
+	char_array_t *names = NULL;
 	schd_managers_poll_t *poll;
 	schd_manager_share_t *shared;
+	bool refresh = false;
 
 	init_worker_mem_ctx("Parent scheduler context");
 
@@ -270,17 +282,36 @@ void parent_scheduler_main(Datum arg)
 		{
 			got_sighup = false;
 			ProcessConfigFile(PGC_SIGHUP);
-			names = readBasesToCheck();
-			if(isBaseListChanged(names, poll))
+			refresh = false;
+			names = NULL;
+			if(is_scheduler_enabled() != poll->enabled)
+			{
+				if(poll->enabled)
+				{
+					poll->enabled = false;
+					stopAllManagers(poll);
+					set_supervisor_pgstatus(poll);
+				}
+				else
+				{
+					refresh = true;
+					poll->enabled = true;
+					names = readBasesToCheck();
+				}
+			}
+			else
+			{
+				names = readBasesToCheck();
+				if(isBaseListChanged(names, poll)) refresh = true;
+				else destroyCharArray(names);
+			}
+
+			if(refresh)
 			{
 				refreshManagers(names, poll);
 				set_supervisor_pgstatus(poll);
+				destroyCharArray(names);
 			}
-			destroyCharArray(names);
-		}
-		else if(got_sigterm)
-		{
-			/* TODO STOP ALL MANAGERS */
 		}
 		else 
 		{
@@ -341,7 +372,7 @@ pg_scheduler_startup(void)
 	worker.bgw_main_arg = 0;
 	strcpy(worker.bgw_name, "pgpro scheduler");
 
-	elog(LOG, "Register WORKER");
+	/* elog(LOG, "Register WORKER"); */
 
 
 	RegisterBackgroundWorker(&worker); 
@@ -354,9 +385,9 @@ void _PG_init(void)
 		"schedule.database",
 		"On which databases scheduler could be run",
 		NULL,
-		&sched_databases,
+		&scheduler_databases,
 		"",
-		PGC_SUSET,
+		PGC_SIGHUP,
 		0,
 		NULL,
 		NULL,
@@ -366,9 +397,9 @@ void _PG_init(void)
 		"schedule.nodename",
 		"The name of scheduler node",
 		NULL,
-		&sched_nodename,
+		&scheduler_nodename,
 		"master",
-		PGC_SUSET,
+		PGC_SIGHUP,
 		0,
 		NULL,
 		NULL,
@@ -378,7 +409,7 @@ void _PG_init(void)
 		"schedule.transaction_state",
 		"State of scheduler executor transaction",
 		"If not under scheduler executor process the variable has no mean and has a value = 'undefined', possible values: progress, success, failure",
-		&sched_transaction_state , 
+		&scheduler_transaction_state , 
 		"undefined",
 		PGC_INTERNAL,
 		0,
@@ -390,11 +421,23 @@ void _PG_init(void)
 		"schedule.max_workers",
 		"How much workers can serve scheduler on one database",
 		NULL,
-		&sched_max_workers,
+		&scheduler_max_workers,
 		2,
 		1,
 		100,
-		PGC_SUSET,
+		PGC_SIGHUP,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+	DefineCustomBoolVariable(
+		"schedule.enabled",
+		"Enable schedule service",
+		NULL,
+		&scheduler_service_enabled,
+		false,
+		PGC_SIGHUP,
 		0,
 		NULL,
 		NULL,
