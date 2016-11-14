@@ -1,0 +1,61 @@
+\set ECHO none
+select 4::int == 4;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 4::int == 5;
+ ?column? 
+----------
+ f
+(1 row)
+
+select 4::int == NULL;
+ ?column? 
+----------
+ f
+(1 row)
+
+select NULL::int == 5;
+ ?column? 
+----------
+ f
+(1 row)
+
+select NULL::int == NULL;
+ ?column? 
+----------
+ t
+(1 row)
+
+select '4'::text == '4';
+ ?column? 
+----------
+ t
+(1 row)
+
+select '4'::text == '5';
+ ?column? 
+----------
+ f
+(1 row)
+
+select '4'::text == NULL;
+ ?column? 
+----------
+ f
+(1 row)
+
+select NULL::text == '5';
+ ?column? 
+----------
+ f
+(1 row)
+
+select NULL::text == NULL;
+ ?column? 
+----------
+ t
+(1 row)
+

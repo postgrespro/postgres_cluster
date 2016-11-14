@@ -61,7 +61,14 @@ SUBDIRS = \
 		sr_plan		\
 		pg_arman	\
 		pg_pathman	\
-		shared_ispell
+		shared_ispell   \
+                vacuumlo        \
+                mchar           \
+                fulleq          \
+                fasttrun        \
+                online_analyze  \
+                plantuner
+
 
 ifeq ($(with_openssl),yes)
 SUBDIRS += sslinfo

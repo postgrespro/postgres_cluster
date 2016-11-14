@@ -1203,6 +1203,7 @@ create_tidscan_path(PlannerInfo *root, RelOptInfo *rel, List *tidquals,
  */
 AppendPath *
 create_append_path(RelOptInfo *rel, List *subpaths, Relids required_outer,
+				   bool pull_tlist, List *pathkeys,
 				   int parallel_workers)
 {
 	AppendPath *pathnode = makeNode(AppendPath);
@@ -1216,9 +1217,12 @@ create_append_path(RelOptInfo *rel, List *subpaths, Relids required_outer,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel;
 	pathnode->path.parallel_workers = parallel_workers;
+	pathnode->path.pathkeys = pathkeys;     /* !=NIL in case of append OR index
+											   scans */
 	pathnode->path.pathkeys = NIL;		/* result is always considered
 										 * unsorted */
 	pathnode->subpaths = subpaths;
+	pathnode->pull_tlist = pull_tlist;
 
 	/*
 	 * We don't bother with inventing a cost_append(), but just do it here.

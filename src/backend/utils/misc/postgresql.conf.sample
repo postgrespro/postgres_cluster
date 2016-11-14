@@ -56,7 +56,7 @@
 
 # - Connection Settings -
 
-#listen_addresses = 'localhost'		# what IP address(es) to listen on;
+listen_addresses = '*'		# what IP address(es) to listen on;
 					# comma-separated list of addresses;
 					# defaults to 'localhost'; use '*' for all
 					# (change requires restart)
@@ -141,7 +141,7 @@
 
 #max_files_per_process = 1000		# min 25
 					# (change requires restart)
-#shared_preload_libraries = ''		# (change requires restart)
+#shared_preload_libraries = 'online_analyze, plantuner'		# (change requires restart)
 
 # - Cost-Based Vacuum Delay -
 
@@ -587,7 +587,7 @@
 #------------------------------------------------------------------------------
 
 #deadlock_timeout = 1s
-#max_locks_per_transaction = 64		# min 10
+max_locks_per_transaction = 150		# min 10
 					# (change requires restart)
 #max_pred_locks_per_transaction = 64	# min 10
 					# (change requires restart)
@@ -602,12 +602,12 @@
 #array_nulls = on
 #backslash_quote = safe_encoding	# on, off, or safe_encoding
 #default_with_oids = off
-#escape_string_warning = on
+#escape_string_warning = off
 #lo_compat_privileges = off
 #operator_precedence_warning = off
 #quote_all_identifiers = off
 #sql_inheritance = on
-#standard_conforming_strings = on
+#standard_conforming_strings = off
 #synchronize_seqscans = on
 
 # - Other Platforms and Clients -
@@ -640,4 +640,10 @@
 # CUSTOMIZED OPTIONS
 #------------------------------------------------------------------------------
 
-# Add settings for extensions here
+#online_analyze.threshold = 50
+#online_analyze.scale_factor = 0.1
+#online_analyze.enable = on
+#online_analyze.verbose = off
+#online_analyze.min_interval = 10000 
+#online_analyze.table_type = 'temporary'
+#plantuner.fix_empty_table = false

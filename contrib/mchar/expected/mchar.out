@@ -1,0 +1,363 @@
+-- I/O tests
+select '1'::mchar;
+ mchar 
+-------
+ 1
+(1 row)
+
+select '2  '::mchar;
+ mchar 
+-------
+ 2
+(1 row)
+
+select '10          '::mchar;
+ mchar 
+-------
+ 10
+(1 row)
+
+select '1'::mchar(2);
+ mchar 
+-------
+ 1 
+(1 row)
+
+select '2 '::mchar(2);
+ mchar 
+-------
+ 2 
+(1 row)
+
+select '3  '::mchar(2);
+ mchar 
+-------
+ 3 
+(1 row)
+
+select '10          '::mchar(2);
+ mchar 
+-------
+ 10
+(1 row)
+
+select '                  '::mchar(10); 
+   mchar    
+------------
+           
+(1 row)
+
+select '                  '::mchar; 
+ mchar 
+-------
+ 
+(1 row)
+
+-- operations & functions
+select length('1'::mchar);
+ length 
+--------
+      1
+(1 row)
+
+select length('2  '::mchar);
+ length 
+--------
+      1
+(1 row)
+
+select length('10          '::mchar);
+ length 
+--------
+      2
+(1 row)
+
+select length('1'::mchar(2));
+ length 
+--------
+      1
+(1 row)
+
+select length('2 '::mchar(2));
+ length 
+--------
+      1
+(1 row)
+
+select length('3  '::mchar(2));
+ length 
+--------
+      1
+(1 row)
+
+select length('10          '::mchar(2));
+ length 
+--------
+      2
+(1 row)
+
+select length('                  '::mchar(10)); 
+ length 
+--------
+      0
+(1 row)
+
+select length('                  '::mchar); 
+ length 
+--------
+      0
+(1 row)
+
+select 'asd'::mchar(10) || '>'::mchar(10);
+       ?column?       
+----------------------
+ asd       >         
+(1 row)
+
+select length('asd'::mchar(10) || '>'::mchar(10));
+ length 
+--------
+     11
+(1 row)
+
+select 'asd'::mchar(2)  || '>'::mchar(10);
+   ?column?   
+--------------
+ as>         
+(1 row)
+
+select length('asd'::mchar(2) || '>'::mchar(10));
+ length 
+--------
+      3
+(1 row)
+
+-- Comparisons
+select 'asdf'::mchar = 'aSdf'::mchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar = 'aSdf '::mchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar = 'aSdf 1'::mchar(4);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar = 'aSdf 1'::mchar(5);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar = 'aSdf 1'::mchar(6);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mchar(3) = 'aSdf 1'::mchar(5);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mchar(3) = 'aSdf 1'::mchar(3);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar < 'aSdf'::mchar;
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mchar < 'aSdf '::mchar;
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mchar < 'aSdf 1'::mchar(4);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mchar < 'aSdf 1'::mchar(5);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mchar < 'aSdf 1'::mchar(6);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar <= 'aSdf'::mchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar <= 'aSdf '::mchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar <= 'aSdf 1'::mchar(4);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar <= 'aSdf 1'::mchar(5);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar <= 'aSdf 1'::mchar(6);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar >= 'aSdf'::mchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar >= 'aSdf '::mchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar >= 'aSdf 1'::mchar(4);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar >= 'aSdf 1'::mchar(5);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mchar >= 'aSdf 1'::mchar(6);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mchar > 'aSdf'::mchar;
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mchar > 'aSdf '::mchar;
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mchar > 'aSdf 1'::mchar(4);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mchar > 'aSdf 1'::mchar(5);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mchar > 'aSdf 1'::mchar(6);
+ ?column? 
+----------
+ f
+(1 row)
+
+select max(ch) from chvch;
+     max      
+--------------
+ One space   
+(1 row)
+
+select min(ch) from chvch;
+     min      
+--------------
+ 1 space     
+(1 row)
+
+select substr('1234567890'::mchar, 3) = '34567890' as "34567890";
+ 34567890 
+----------
+ f
+(1 row)
+
+select substr('1234567890'::mchar, 4, 3) = '456' as "456";
+ 456 
+-----
+ t
+(1 row)
+
+select lower('asdfASDF'::mchar);
+  lower   
+----------
+ asdfasdf
+(1 row)
+
+select upper('asdfASDF'::mchar);
+  upper   
+----------
+ ASDFASDF
+(1 row)
+
+select 'asd'::mchar == 'aSd'::mchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asd'::mchar == 'aCd'::mchar;
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asd'::mchar == NULL;
+ ?column? 
+----------
+ f
+(1 row)
+
+select NULL == 'aCd'::mchar;
+ ?column? 
+----------
+ f
+(1 row)
+
+select NULL::mchar == NULL;
+ ?column? 
+----------
+ t
+(1 row)
+

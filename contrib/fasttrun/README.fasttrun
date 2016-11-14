@@ -1,0 +1,17 @@
+select fasttruncate('TABLE_NAME');
+
+Function truncates the temporary table and doesn't grow
+pg_class size.
+
+Warning: function isn't transaction safe!
+
+For tests:
+create or replace function f() returns void as $$
+begin
+for i in 1..1000
+loop
+         PERFORM fasttruncate('tt1');
+end loop;
+end;
+$$ language plpgsql;
+

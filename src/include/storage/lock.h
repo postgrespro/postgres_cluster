@@ -83,7 +83,7 @@ typedef struct
 	 (vxid).localTransactionId = (proc).lxid)
 
 /* MAX_LOCKMODES cannot be larger than the # of bits in LOCKMASK */
-#define MAX_LOCKMODES		10
+#define MAX_LOCKMODES		12
 
 #define LOCKBIT_ON(lockmode) (1 << (lockmode))
 #define LOCKBIT_OFF(lockmode) (~(1 << (lockmode)))

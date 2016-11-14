@@ -565,7 +565,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 /* ordinary key words in alphabetical order */
 %token <keyword> ABORT_P ABSOLUTE_P ACCESS ACTION ADD_P ADMIN AFTER
-	AGGREGATE ALL ALSO ALTER ALWAYS ANALYSE ANALYZE AND ANY ARRAY AS ASC
+	AGGREGATE ALL ALSO ALTER ALWAYS ANALYSE ANALYZE AND ANY APPLICATION ARRAY AS ASC
 	ASSERTION ASSIGNMENT ASYMMETRIC AT ATTRIBUTE AUTHORIZATION
 
 	BACKWARD BEFORE BEGIN_P BETWEEN BIGINT BINARY BIT
@@ -9826,6 +9826,8 @@ opt_lock:	IN_P lock_type MODE				{ $$ = $2; }
 lock_type:	ACCESS SHARE					{ $$ = AccessShareLock; }
 			| ROW SHARE						{ $$ = RowShareLock; }
 			| ROW EXCLUSIVE					{ $$ = RowExclusiveLock; }
+			| APPLICATION SHARE             { $$ = ApplicationShareLock; }
+			| APPLICATION EXCLUSIVE         { $$ = ApplicationExclusiveLock; }
 			| SHARE UPDATE EXCLUSIVE		{ $$ = ShareUpdateExclusiveLock; }
 			| SHARE							{ $$ = ShareLock; }
 			| SHARE ROW EXCLUSIVE			{ $$ = ShareRowExclusiveLock; }
@@ -11683,7 +11685,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr LIKE a_expr ESCAPE a_expr					%prec LIKE
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("like_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("like_escape")),
 											   list_make2($3, $5),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_LIKE, "~~",
@@ -11696,7 +11698,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr NOT_LA LIKE a_expr ESCAPE a_expr			%prec NOT_LA
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("like_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("like_escape")),
 											   list_make2($4, $6),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_LIKE, "!~~",
@@ -11709,7 +11711,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr ILIKE a_expr ESCAPE a_expr					%prec ILIKE
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("like_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("like_escape")),
 											   list_make2($3, $5),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_ILIKE, "~~*",
@@ -11722,7 +11724,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr NOT_LA ILIKE a_expr ESCAPE a_expr			%prec NOT_LA
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("like_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("like_escape")),
 											   list_make2($4, $6),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_ILIKE, "!~~*",
@@ -11731,7 +11733,7 @@ a_expr:		c_expr									{ $$ = $1; }
 
 			| a_expr SIMILAR TO a_expr							%prec SIMILAR
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("similar_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("similar_escape")),
 											   list_make2($4, makeNullAConst(-1)),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_SIMILAR, "~",
@@ -11739,7 +11741,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr SIMILAR TO a_expr ESCAPE a_expr			%prec SIMILAR
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("similar_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("similar_escape")),
 											   list_make2($4, $6),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_SIMILAR, "~",
@@ -11747,7 +11749,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr NOT_LA SIMILAR TO a_expr					%prec NOT_LA
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("similar_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("similar_escape")),
 											   list_make2($5, makeNullAConst(-1)),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_SIMILAR, "!~",
@@ -11755,7 +11757,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr NOT_LA SIMILAR TO a_expr ESCAPE a_expr		%prec NOT_LA
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("similar_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("similar_escape")),
 											   list_make2($5, $7),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_SIMILAR, "!~",
@@ -13770,6 +13772,7 @@ unreserved_keyword:
 			| ALSO
 			| ALTER
 			| ALWAYS
+			| APPLICATION
 			| ASSERTION
 			| ASSIGNMENT
 			| AT

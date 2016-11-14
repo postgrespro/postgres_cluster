@@ -149,6 +149,33 @@ UNION ALL
 TABLE int8_tbl;
 
 --
+-- test order by NULLS (FIRST|LAST)
+--
+
+select unique1, unique2 into onek_with_null from onek;
+insert into onek_with_null (unique1,unique2) values (NULL, -1), (NULL, NULL);
+
+
+select * from onek_with_null order by unique1 nulls first	, unique2				limit 3;
+select * from onek_with_null order by unique1 nulls last	, unique2				limit 3;
+select * from onek_with_null order by unique1 nulls first	, unique2	nulls first	limit 3;
+select * from onek_with_null order by unique1 nulls last	, unique2	nulls first	limit 3;
+select * from onek_with_null order by unique1 nulls first	, unique2	nulls last	limit 3;
+select * from onek_with_null order by unique1 nulls last	, unique2	nulls last	limit 3;
+
+select * from onek_with_null order by unique1 desc nulls first	, unique2	desc 			limit 3;
+select * from onek_with_null order by unique1 desc nulls last	, unique2	desc 			limit 3;
+select * from onek_with_null order by unique1 desc nulls first	, unique2	desc nulls first	limit 3;
+select * from onek_with_null order by unique1 desc nulls last	, unique2	desc nulls first	limit 3;
+select * from onek_with_null order by unique1 desc nulls first	, unique2	desc nulls last	limit 3;
+select * from onek_with_null order by unique1 desc nulls last	, unique2	desc nulls last	limit 3;
+
+select unique1 as u1, unique2 as u2 from onek_with_null order by u1 nulls first	, u2	nulls first	limit 3;
+select unique1 as u1, unique2 as u2 from onek_with_null order by u1 asc nulls first	, u2 desc	nulls first	limit 3;
+
+drop table onek_with_null;
+
+--
 -- Test ORDER BY options
 --
 

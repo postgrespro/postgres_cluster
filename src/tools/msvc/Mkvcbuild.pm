@@ -66,6 +66,7 @@ my $frontend_extralibs = {
 	'initdb'     => ['ws2_32.lib'],
 	'pg_restore' => ['ws2_32.lib'],
 	'pgbench'    => ['ws2_32.lib'],
+	'mchar'		 => ['icuin.lib', 'icuuc.lib'],
 	'psql'       => ['ws2_32.lib'] };
 my $frontend_extraincludes = {
 	'initdb' => ['src/timezone'],
