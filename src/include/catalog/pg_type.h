@@ -331,7 +331,7 @@ DATA(insert OID = 27 (	tid		   PGNSP PGUID	6 f b U f t \054 0	 0 1010 tidin tido
 DESCR("(block, offset), physical location of tuple");
 #define TIDOID		27
 
-DATA(insert OID = 28 (	xid		   PGNSP PGUID	8 t b U f t \054 0	 0 1011 xidin xidout xidrecv xidsend - - - d p f 0 -1 0 0 _null_ _null_ _null_ ));
+DATA(insert OID = 28 (	xid		   PGNSP PGUID	8 FLOAT8PASSBYVAL b U f t \054 0	 0 1011 xidin xidout xidrecv xidsend - - - d p f 0 -1 0 0 _null_ _null_ _null_ ));
 DESCR("transaction id");
 #define XIDOID 28
 
