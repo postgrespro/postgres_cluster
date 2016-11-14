@@ -150,7 +150,7 @@ static FormData_pg_attribute a2 = {
 static FormData_pg_attribute a3 = {
 	0, {"xmin"}, XIDOID, 0, sizeof(TransactionId),
 	MinTransactionIdAttributeNumber, 0, -1, -1,
-	true, 'p', 'd', true, false, false, true, 0
+	FLOAT8PASSBYVAL, 'p', 'd', true, false, false, true, 0
 };
 
 static FormData_pg_attribute a4 = {
@@ -162,7 +162,7 @@ static FormData_pg_attribute a4 = {
 static FormData_pg_attribute a5 = {
 	0, {"xmax"}, XIDOID, 0, sizeof(TransactionId),
 	MaxTransactionIdAttributeNumber, 0, -1, -1,
-	true, 'p', 'd', true, false, false, true, 0
+	FLOAT8PASSBYVAL, 'p', 'd', true, false, false, true, 0
 };
 
 static FormData_pg_attribute a6 = {
