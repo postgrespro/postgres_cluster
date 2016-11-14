@@ -533,7 +533,7 @@ typedef Datum *DatumPtr;
  *		Returns datum representation for a multixact identifier.
  */
 
-#define MultiXactIdGetDatum(X) ((Datum) (X))
+#define MultiXactIdGetDatum(X) (UInt64GetDatum(X))
 
 /*
  * DatumGetCommandId
