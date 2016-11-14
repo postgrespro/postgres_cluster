@@ -197,7 +197,7 @@ WHERE p1.oid != p2.oid AND
 ORDER BY 1, 2;
  proargtypes | proargtypes 
 -------------+-------------
-          23 |          28
+          20 |          28
         1114 |        1184
         1560 |        1562
 (3 rows)
@@ -615,7 +615,7 @@ interval_gt(interval,interval)
 charlt("char","char")
 tidne(tid,tid)
 tideq(tid,tid)
-xideqint4(xid,integer)
+xideqint8(xid,bigint)
 timetz_eq(time with time zone,time with time zone)
 timetz_ne(time with time zone,time with time zone)
 timetz_lt(time with time zone,time with time zone)
@@ -684,7 +684,7 @@ uuid_ge(uuid,uuid)
 uuid_gt(uuid,uuid)
 uuid_ne(uuid,uuid)
 xidneq(xid,xid)
-xidneqint4(xid,integer)
+xidneqint8(xid,bigint)
 -- restore normal output mode
 \a\t
 -- List of functions used by libpq's fe-lobj.c

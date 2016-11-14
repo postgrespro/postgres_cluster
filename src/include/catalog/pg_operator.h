@@ -144,11 +144,11 @@ DESCR("concatenate");
 
 DATA(insert OID = 352 (  "="	   PGNSP PGUID b f t	28	28	16	352   3315 xideq eqsel eqjoinsel ));
 DESCR("equal");
-DATA(insert OID = 353 (  "="	   PGNSP PGUID b f f	28	23	16	0	  3316 xideqint4 eqsel eqjoinsel ));
+DATA(insert OID = 353 (  "="	   PGNSP PGUID b f f	28	20	16	0	  3316 xideqint8 eqsel eqjoinsel ));
 DESCR("equal");
 DATA(insert OID = 3315 (  "<>"	   PGNSP PGUID b f f	28	28	16	3315   352 xidneq neqsel neqjoinsel ));
 DESCR("not equal");
-DATA(insert OID = 3316 (  "<>"	   PGNSP PGUID b f f	28	23	16	0	   353 xidneqint4 neqsel neqjoinsel ));
+DATA(insert OID = 3316 (  "<>"	   PGNSP PGUID b f f	28	20	16	0	   353 xidneqint8 neqsel neqjoinsel ));
 DESCR("not equal");
 DATA(insert OID = 388 (  "!"	   PGNSP PGUID r f f	20	 0	1700  0  0 numeric_fac - - ));
 DESCR("factorial");
