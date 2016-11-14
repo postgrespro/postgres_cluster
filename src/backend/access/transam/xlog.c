@@ -39,6 +39,7 @@
 #include "catalog/pg_control.h"
 #include "catalog/pg_database.h"
 #include "commands/tablespace.h"
+#include "commands/waitlsn.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/bgwriter.h"
@@ -6948,6 +6949,11 @@ StartupXLOG(void)
 					reachedStopPoint = true;
 					break;
 				}
+
+				/*
+				 * After update lastReplayedEndRecPtr set Latches in SHMEM array
+				 */
+				WaitLSNSetLatch();
 
 				/* Else, try to fetch the next WAL record */
 				record = ReadRecord(xlogreader, InvalidXLogRecPtr, LOG, false);
