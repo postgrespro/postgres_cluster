@@ -240,3 +240,4 @@ int execute_spi(const char *sql, char **error)
 	return execute_spi_sql_with_args(sql, 0, NULL, NULL, NULL, error);
 }
 
+

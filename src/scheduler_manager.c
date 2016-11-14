@@ -1323,8 +1323,12 @@ void manager_worker_main(Datum arg)
 			if(rc & WL_POSTMASTER_DEATH) proc_exit(1);
 			if(got_sighup)
 			{
+			elog(LOG, "manager got sighup");
 				got_sighup = false;
 				ProcessConfigFile(PGC_SIGHUP);
+				elog(LOG, "DONE CONFIG");
+				reload_db_role_config(database);
+				elog(LOG, "DONE role");
 				refresh_scheduler_manager_context(ctx);
 				set_slots_stat_report(ctx);
 			}

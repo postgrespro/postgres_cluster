@@ -21,6 +21,7 @@
 #include "utils/snapmgr.h"
 #include "utils/datetime.h"
 #include "catalog/pg_db_role_setting.h"
+#include "commands/dbcommands.h"
 
 #include "char_array.h"
 #include "sched_manager_poll.h"
@@ -28,6 +29,7 @@
 #include "pgpro_scheduler.h"
 #include "scheduler_manager.h"
 #include "memutils.h"
+#include "scheduler_spi_utils.h"
 
 
 #ifdef PG_MODULE_MAGIC
@@ -69,16 +71,23 @@ worker_spi_sigterm(SIGNAL_ARGS)
 
 /** Some utils **/
 
-void reload_db_role_config(Oid databaseid)
+void reload_db_role_config(char *dbname)
 {
 	Relation    relsetting;
 	Snapshot    snapshot;
+	Oid databaseid;
 
+	StartTransactionCommand();
+	databaseid = get_database_oid(dbname, false);
+
+	elog(LOG, "start read");
 	relsetting = heap_open(DbRoleSettingRelationId, AccessShareLock);
 	snapshot = RegisterSnapshot(GetCatalogSnapshot(DbRoleSettingRelationId));
 	ApplySetting(snapshot, databaseid, InvalidOid, relsetting, PGC_S_DATABASE);
 	UnregisterSnapshot(snapshot);
 	heap_close(relsetting, AccessShareLock);
+	CommitTransactionCommand();
+	elog(LOG, "got read");
 }
 
 TimestampTz timestamp_add_seconds(TimestampTz to, int add)
