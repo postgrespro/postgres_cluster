@@ -358,97 +358,167 @@ SQL для вычисления следующего времени запуск
 
 Функция возвращает идентификатор созданной задачи.
 
-### schedule.set_job_attributes(integer, jsonb)
+### schedule.set_job_attributes(job_id integer, data jsonb)
 
-The function allows to edit settings of existing job. 
+Данная функция позволяет редактировать свойства уже созданной задачи.
 
-First argument is ID of existing job, second argument is jsonb object 
-described in function `schedule.create_job`. Some of keys may be omitted.
+Аргументы:
 
-Function returns boolean value - true on success and false on failure.
+*	**job_id** - идентификатор задачи
+*	**data** - JSONB объект, описывающий изменяемые свойства. Описание ключей и
+	их структуру вы можете найти в описании функции `schedule.create_job`.
 
-User can edit only jobs it owns unless it's a superuser.
+Функция возвращает значение типа boolean - true - в случае удачи, false - 
+в случае, если не удалось изменить свойства.
 
-### schedule.set_job_attribute(integer, text, text || anyarray)
+Пользователю, если он не суперпользователь, позволено менять свойства только
+тех задач, владельцем которых он является.
+
+### schedule.set_job_attribute(job_id integer, name text, value text || anyarray)
 
 The function allows to set exact property of existing job.
+Функция редактирует какое-то одно конкретное свойство существующей задачи.
 
-First argument is ID of existing job, second is name of the property - one 
-of the keys described in function `schedule.create_job`.
+Аргументы:
 
-Function returns boolean value - true on success and false on failure.
+*	**job_id** - идентификатор задачи
+*	**name** - название свойства
+*	**value** - значение свойства
 
-### schedule.deactivate_job(integer)
+Полный список свойств вы можете найти в описании функции `schedule.create_job`.
+Значения некоторых свойств являются массивами, в этом случае вы можете 
+передавать аргумент **value** как массив. Если свойство не массив, а значение
+передано как массив, возникнет ошибка.
 
-The function allows to set cron job inactive. The job is not to be deleted 
-from cron table but its execution will be disabled.
+Функция возвращает двоичное значение, true, если изменение успешное, false -
+в случае неуспеха.
 
-The first argument is ID of existing job.
+### schedule.deactivate_job(job_id integer)
+
+Функция деактивирует задачу и приостанавливает ее последующее выполнение.
+
+Аргументы:
+
+*	**job_id** - идентификатор задачи
+
+Возвращает true в случае успеха.
 
 ### schedule.activate_job(integer) 
 
-The function allows to set cron job active. 
+Функция активирует задачу. После чего задача начинает выполняться по расписанию.
 
-The first argument is ID of existing job.
+Аргументы:
+
+*	**job_id** - идентификатор задачи
+
+Возвращает true в случае успеха.
+
 
 ### schedule.drop_job(jobId integer)
 
-The function deletes cron job. 
+Функция удаляет задачу. 
 
-The first argument is ID of existing job.
+Аргументы:
 
-### schedule.get_job(int)
+*	**job_id** - идентификатор задачи
 
-The function returns information about exact cron record.
+Возвращает true в случае успеха.
 
-It returns record of type `cron_rec`. See description above.
+### schedule.get_job(job_id integer)
 
-### schedule.get_user_owned_cron(text)
+Функция возвращает информацию о задаче.
 
-The function returns list of the jobs in cron table owned by user 
-passed in first argument or by session user if no user passed.
+Аргументы:
 
-It returns set of records of `cron_rec` type. See description above.
+*	**job_id** - идентификатор задачи
 
-### schedule.get_user_cron(text)
+Возвращает информацию о задаче в виде записи типа `cron_rec`. Описание вы 
+можете найти в разделе **SQL типы**.
 
-The function returns list of the jobs in cron table which will be executed
-as  user passed in first argument or by session user if no user passed.
+### schedule.get_user_owned_cron(username text)
 
-It returns set of records of `cron_rec` type. See description above.
+Функция возвращает список задач, принадлежащих пользователю.
 
-### schedule.get_user_active_jobs(text)
+Аргументы:
 
-The function returns all jobs executed at the moment as user passed in first 
-argument. If no user specified - session user used.
+*	**username** - имя пользователя, опционально 
 
-It returns set of records of `cron_job` type. See description above.
+Возвращает набор записей типа `cron_rec`, которые принадлежат пользователю,
+указанному в аргументах. Если пользователь не указан, то возвращаются 
+задачи, принадлежащие пользователю сессии.
+
+Просматривать задачи, принадлежащие другим пользователям, может только 
+суперпользователь.
+
+Описание типа `cron_rec` смотрие в разделе **SQL типы**.
+
+### schedule.get_user_cron(username text)
+
+Функция возвращает список задач, которые будут выполнены с правами пользователя.
+
+Аргументы:
+
+*	**username** - имя пользователя, опционально 
+
+Возвращает набор записей типа `cron_rec`, которые описывают задачи, которые 
+будут выполняться с правами пользователя, указанного в аргументах.
+Если пользователь не указан, то то будет использоваться имя пользователя сессии.
+
+Просматривать задачи, исполняемые другими пользователями,  может только 
+суперпользователь.
+
+Описание типа `cron_rec` смотрие в разделе **SQL типы**.
+
+### schedule.get_user_active_jobs(username text)
+
+Функция возвращает список задач, которые исполняются в данный момент с правами
+пользователя переданного в аргументах.
+
+Аргументы:
+
+*	**username** - имя пользователя, опционально 
+
+Если не указано имя пользователя, то берется имя пользователя сессии. Чужие з
+задачи может просматривать только суперпользователь.
+
+Задачи возвращаются в виде набора записей типа `cron_job`. Описание типа вы
+можете найти в разделе **SQL типы**.
 
 ### schedule.get_active_jobs()
 
-The function returns all jobs executed at the moment. Can be executed only
-by superuser.
+Функция возвращает список всех задач, которые исполняются в данный момент.
+Может быть выполнена только пользователем с правами суперпользователя.
 
-It returns set of records of `cron_job` type. See description above.
+Задачи возвращаются в виде набора записей типа `cron_job`. Описание типа вы
+можете найти в разделе **SQL типы**.
 
 ### schedule.get_log()
 
-The function returns all jobs which was executed. Can be executed only
-by superuser.
+Функция возвращает список всех выполненых задач.
+Может быть выполнена только пользователем с правами суперпользователя.
 
-It returns set of records of `cron_job` type. See description above.
+Задачи возвращаются в виде набора записей типа `cron_job`. Описание типа вы
+можете найти в разделе **SQL типы**.
 
-### schedule.get_user_log(text) 
+### schedule.get_user_log(username text) 
 
-The function returns all jobs which was executed as user passed in first
-argument. If no user specified - session user used.
+Функция возвращает список всех выполненых задач, которые выполнялись с правами
+пользователя, переданного в аргументах.
 
-It returns set of records of `cron_job` type. See description above.
+Аргументы:
+
+*	**username** - имя пользователя, опционально 
+
+Если не указано имя пользователя, то используется имя пользователя сессии.
+Чужие задачи может просматривать только суперпользователь.
+
+Задачи возвращаются в виде набора записей типа `cron_job`. Описание типа вы
+можете найти в разделе **SQL типы**.
 
 ### schedule.clean_log()
 
-The function deletes all records in log table. Can be executed only by 
-superuser.
+Удаляет все записи о выполненных задачах. Может быть выполнена только с правами
+суперпользователя.
 
-Returns number of records deleted.
+Возвращает количество удаленных записей
 
