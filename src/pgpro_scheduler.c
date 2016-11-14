@@ -20,6 +20,7 @@
 #include "access/xact.h"
 #include "utils/snapmgr.h"
 #include "utils/datetime.h"
+#include "catalog/pg_db_role_setting.h"
 
 #include "char_array.h"
 #include "sched_manager_poll.h"
@@ -67,6 +68,18 @@ worker_spi_sigterm(SIGNAL_ARGS)
 }
 
 /** Some utils **/
+
+void reload_db_role_config(Oid databaseid)
+{
+	Relation    relsetting;
+	Snapshot    snapshot;
+
+	relsetting = heap_open(DbRoleSettingRelationId, AccessShareLock);
+	snapshot = RegisterSnapshot(GetCatalogSnapshot(DbRoleSettingRelationId));
+	ApplySetting(snapshot, databaseid, InvalidOid, relsetting, PGC_S_DATABASE);
+	UnregisterSnapshot(snapshot);
+	heap_close(relsetting, AccessShareLock);
+}
 
 TimestampTz timestamp_add_seconds(TimestampTz to, int add)
 {
@@ -227,7 +240,6 @@ char_array_t *readBasesToCheck(void)
 		SPI_finish();
 		PopActiveSnapshot();
 		CommitTransactionCommand();
-		elog(FATAL, "Cannot get databases list: error code %d", ret);
 	}
 	destroyCharArray(names);
 	processed  = SPI_processed;
@@ -299,7 +311,7 @@ void parent_scheduler_main(Datum arg)
 					names = readBasesToCheck();
 				}
 			}
-			else
+			else if(poll->enabled)
 			{
 				names = readBasesToCheck();
 				if(isBaseListChanged(names, poll)) refresh = true;
@@ -321,7 +333,7 @@ void parent_scheduler_main(Datum arg)
 
 				if(shared->setbychild)
 				{
-				elog(LOG, "got status change from: %s", poll->workers[i]->dbname);
+				/* elog(LOG, "got status change from: %s", poll->workers[i]->dbname); */
 					shared->setbychild = false;
 					if(shared->status == SchdManagerConnected)
 					{
@@ -340,7 +352,6 @@ void parent_scheduler_main(Datum arg)
 					else
 					{
 						elog(WARNING, "manager: %s set strange status: %d", poll->workers[i]->dbname, shared->status);
-						/* MAYBE kill the creep */
 					}
 				}
 			}
@@ -361,7 +372,7 @@ pg_scheduler_startup(void)
 {
 	BackgroundWorker worker;
 
-	elog(LOG, "start up");
+	elog(LOG, "Start PostgresPro scheduler");
 
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -425,7 +436,7 @@ void _PG_init(void)
 		2,
 		1,
 		100,
-		PGC_SIGHUP,
+		PGC_SUSET,
 		0,
 		NULL,
 		NULL,
@@ -470,10 +481,10 @@ temp_now(PG_FUNCTION_ARGS)
 	timestamp2tm(ts, &tz, &info, &fsec, &tzn, session_timezone );
 	info.tm_wday = j2day(date2j(info.tm_year, info.tm_mon, info.tm_mday));
 
-	elog(NOTICE, "WDAY: %d, MON: %d, MDAY: %d, HOUR: %d, MIN: %d, YEAR: %d (%ld)", 
+/*	elog(NOTICE, "WDAY: %d, MON: %d, MDAY: %d, HOUR: %d, MIN: %d, YEAR: %d (%ld)", 
 		info.tm_wday, info.tm_mon, info.tm_mday, info.tm_hour, info.tm_min,
 		info.tm_year, info.tm_gmtoff);
-	elog(NOTICE, "TZP: %d, ZONE: %s", tz, tzn);
+	elog(NOTICE, "TZP: %d, ZONE: %s", tz, tzn); */
 
 	cp.tm_mon = info.tm_mon;
 	cp.tm_mday = info.tm_mday;
@@ -483,7 +494,7 @@ temp_now(PG_FUNCTION_ARGS)
 	cp.tm_sec = info.tm_sec;
 
 	toff = DetermineTimeZoneOffset(&cp, session_timezone);
-	elog(NOTICE, "Detect: offset = %ld", toff);
+/*	elog(NOTICE, "Detect: offset = %ld", toff); */
 
 	cp.tm_gmtoff = -toff;
 	tm2timestamp(&cp, 0, &tz, &ts);

@@ -68,23 +68,23 @@ int checkSchedulerNamespace(void)
 		}
 		else if(isnull)
 		{
-			elog(LOG, "%s: cannot check namespace: count return null",
+			elog(LOG, "Scheduler manager: %s: cannot check namespace: count return null",
 				MyBgworkerEntry->bgw_name);
 		}
 		else if(ntup > 1)
 		{
-			elog(LOG, "%s: cannot check namespace: found %d namespaces",
+			elog(LOG, "Scheduler manager: %s: cannot check namespace: found %d namespaces",
 				MyBgworkerEntry->bgw_name, ntup);
 		}
 	}
 	else if(ret != SPI_OK_SELECT)
 	{
-		elog(LOG, "%s: cannot check namespace: error code %d",
+		elog(LOG, "Scheduler manager: %s: cannot check namespace: error code %d",
 				MyBgworkerEntry->bgw_name, ret);
 	}
 	else if(SPI_processed != 1)
 	{
-		elog(LOG, "%s: cannot check namespace: count return %ud tups",
+		elog(LOG, "Scheduler manager: %s: cannot check namespace: count return %ud tups",
 				MyBgworkerEntry->bgw_name,
 				(unsigned)SPI_processed);
 	}
@@ -100,7 +100,7 @@ int get_scheduler_maxworkers(void)
 	const char *opt;
 	int var;
 
-	opt = GetConfigOption("schedule.max_workers", true, false);
+	opt = GetConfigOption("schedule.max_workers", false, false);
 	/* opt = GetConfigOptionByName("schedule.max_workers", NULL); */
 	if(opt == NULL)
 	{
@@ -152,10 +152,11 @@ int refresh_scheduler_manager_context(scheduler_manager_ctx_t *ctx)
 	scheduler_manager_slot_t **old;
 
 	N = get_scheduler_maxworkers();
+	elog(LOG, "max-workers: %d", N);
 	if(N != ctx->slots_len)
 	{
 		elog(LOG, "Change available workers number %d => %d", ctx->slots_len, N);
-	}
+	} 
 
 	if(N > ctx->slots_len)
 	{
@@ -314,7 +315,7 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 	}
 	else if(ret != SPI_OK_SELECT)
 	{
-		elog(LOG, "%s: cannot get \"at\" tasks: error code %d",
+		elog(LOG, "Scheduler manager: %s: cannot get \"at\" tasks: error code %d",
 				MyBgworkerEntry->bgw_name, ret);
 
         scheduler_manager_stop(ctx);
@@ -1047,7 +1048,8 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx)
 			move_ret  = move_job_to_log(&expired[i], 0);
 			if(move_ret < 0)
 			{
-				elog(LOG, "cannot move job %d@%s:00 to log", expired[i].cron_id, ts);
+				elog(LOG, "Scheduler manager: cannot move job %d@%s:00 to log",
+								expired[i].cron_id, ts);
 				ret--;
 			}
 			pfree(ts);
@@ -1233,7 +1235,7 @@ bool check_parent_stop_signal(scheduler_manager_ctx_t *ctx)
 		shared->setbyparent = false;
 		if(shared->status == SchdManagerStop)
 		{
-			elog(LOG, "Recieve stop signal from parent");
+			elog(LOG, "Scheduler manager: receive stop signal from supervisor");
 			return true;
 		}
 	}

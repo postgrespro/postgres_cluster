@@ -153,7 +153,6 @@ Datum select_onedatumvalue_sql(const char *sql, bool *is_null)
 	int ret;
 	Datum datum = 0;
 
-	elog(LOG, "do one val: %s", sql);
 	ret = SPI_execute(sql, true, 0);
 	if(ret == SPI_OK_SELECT)
 	{

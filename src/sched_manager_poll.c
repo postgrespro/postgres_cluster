@@ -100,11 +100,11 @@ void changeChildBgwState(schd_manager_share_t *s, schd_manager_status_t status)
 	if(parent)
 	{
 		SetLatch(&parent->procLatch);
-		elog(LOG, "set LATCH to %d - status = %d" , MyBgworkerEntry->bgw_notify_pid, status);
+		/* elog(LOG, "set LATCH to %d - status = %d" , MyBgworkerEntry->bgw_notify_pid, status); */
 	}
 	else
 	{
-		elog(LOG, "unable to set LATCH to %d", MyBgworkerEntry->bgw_notify_pid);
+		/* elog(LOG, "unable to set LATCH to %d", MyBgworkerEntry->bgw_notify_pid); */
 	}
 }
 
@@ -114,7 +114,7 @@ int stopAllManagers(schd_managers_poll_t *poll)
 	PGPROC *child;
 	schd_manager_share_t *shared;
 
-	elog(LOG, "Stop all managers");
+	elog(LOG, "Scheduler stops all managers");
 
 	for(i=0; i < poll->n; i++)
 	{
@@ -124,15 +124,13 @@ int stopAllManagers(schd_managers_poll_t *poll)
 		child = BackendPidGetProc(poll->workers[i]->pid);
 		if(!child)
 		{
-			elog(LOG, "cannot get PGRPOC of %s scheduler", poll->workers[i]->dbname);
+			/* elog(LOG, "cannot get PGRPOC of %s scheduler", poll->workers[i]->dbname); */
 		}
 		else
 		{
 			SetLatch(&child->procLatch);
 		}
 	}
-
-	/* MAYBE:  WAIT? */
 
 	for(i=0; i < poll->n; i++)
 	{
@@ -382,7 +380,7 @@ int refreshManagers(char_array_t *names, schd_managers_poll_t *poll)
 			if(found == 0) pushCharArray(delete, poll->workers[i]->dbname);
 		}
 	}
-	elog(LOG, "WORK RESULT: same: %d, new: %d, delete: %d", same->n, new->n, delete->n);
+	/* elog(LOG, "WORK RESULT: same: %d, new: %d, delete: %d", same->n, new->n, delete->n); */
 	if(delete->n)
 	{
 		for(i = 0; i < delete->n; i++)

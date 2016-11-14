@@ -1037,6 +1037,42 @@ $BODY$
 LANGUAGE plpgsql
    SECURITY DEFINER;
 
+-- CREATE FUNCTION schedule.enable() RETURNS boolean AS 
+-- $BODY$
+-- DECLARE
+-- 	value text;
+-- BEGIN
+-- 	EXECUTE 'show schedule.enabled' INTO value; 
+-- 	IF value = 'on' THEN
+-- 		RAISE NOTICE 'Scheduler already enabled';
+-- 		RETURN false;
+-- 	ELSE 
+-- 		ALTER SYSTEM SET schedule.enabled = true;
+-- 		SELECT pg_reload_conf();
+-- 	END IF;
+-- 	RETURN true;
+-- END
+-- $BODY$
+-- LANGUAGE plpgsql;
+-- 
+-- CREATE FUNCTION schedule.disable() RETURNS boolean AS 
+-- $BODY$
+-- DECLARE
+-- 	value text;
+-- BEGIN
+-- 	EXECUTE 'show schedule.enabled' INTO value; 
+-- 	IF value = 'off' THEN
+-- 		RAISE NOTICE 'Scheduler already disabled';
+-- 		RETURN false;
+-- 	ELSE 
+-- 		ALTER SYSTEM SET schedule.enabled = false;
+-- 		SELECT pg_reload_conf();
+-- 	END IF;
+-- 	RETURN true;
+-- END
+-- $BODY$
+-- LANGUAGE plpgsql;
+
 CREATE FUNCTION schedule.cron2jsontext(CSTRING)
   RETURNS text 
   AS 'MODULE_PATHNAME', 'cron_string_to_json_text'

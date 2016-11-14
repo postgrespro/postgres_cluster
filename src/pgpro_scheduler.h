@@ -10,7 +10,7 @@
 #define PGPRO_SCHEDULER_DBNAME_MAX 128
 #define PGPRO_SCHEDULER_NODENAME_MAX 128
 #define PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX 1024
-#define PPGS_DEBUG 1
+#define PPGS_NODEBUG 1
 
 #ifdef PPGS_DEBUG 
 #ifdef HAVE__VA_ARGS
@@ -34,6 +34,7 @@ int checkSchedulerNamespace(void);
 void manager_worker_main(Datum arg);
 pid_t registerManagerWorker(schd_manager_t *man);
 
+void reload_db_role_config(Oid databaseid);
 TimestampTz timestamp_add_seconds(TimestampTz to, int add);
 char *make_date_from_timestamp(TimestampTz ts);
 int get_integer_from_string(char *s, int start, int len);
