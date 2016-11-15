@@ -3,7 +3,7 @@
   <sect2 id="pg-hint-plan-name">
     <title>Name</title>
     <para>
-      pg_hint_plan – controls execution plan with hinting phrases in
+      pg_hint_plan - controls execution plan with hinting phrases in
       comment of special form.
     </para>
   </sect2>
@@ -15,7 +15,7 @@
       costs of each possible execution plans for a SQL statement then
       the execution plan with the lowest cost finally be executed. The
       planner does its best to select the best best execution plan, but
-      not perfect, since it doesn’t count some properties of the data,
+      not perfect, since it doesn't count some properties of the data,
       for example, correlation between columns.
     </para>
     <para>
@@ -72,7 +72,7 @@ postgres=#
         joining order, row number correction and GUC setting. You will
         see the lists of hint phrases of each type in Hint list (See <xref linkend="pg-hint-plan-hint-list">).
       </para>
-      <sect4 id="">
+      <sect4>
         <title>Hints for scan methods</title>
         <para>
           Scan method hints enforce the scanning method on the table
@@ -88,7 +88,7 @@ postgres=#
           Sub-enquiries.
         </para>
       </sect4>
-      <sect4 id="">
+      <sect4>
         <title>Hints for join methods</title>
         <para>
           Join method hints enforces the join methods of the joins
@@ -101,7 +101,7 @@ postgres=#
           to be in the parameter list. But views and sub query are not.
         </para>
       </sect4>
-      <sect4 id="">
+      <sect4>
         <title>Hint for joining order</title>
         <para>
           Joining in specific order can be enforced using the
@@ -109,15 +109,15 @@ postgres=#
           order of the objects in the parameter list.
         </para>
       </sect4>
-      <sect4 id="">
+      <sect4>
         <title>Hint for row number correction</title>
         <para>
-          From the restriction of the planner’s capability, it
+          From the restriction of the planner's capability, it
           misestimates the number of results on some conditions. This
           type of hint corrects it.
         </para>
       </sect4>
-      <sect4 id="">
+      <sect4>
         <title>GUC parameters temporarily setting</title>
         <para>
           <quote>Set</quote> hint changes GUC parameters just while
@@ -126,10 +126,10 @@ postgres=#
           Planning</ulink> can have the expected effects on planning
           unless any other hint conflicts with the planner method
           configuration parameters. The last one among hints on the same
-          GUC parameter makes effect. <link linkend="hint-GUC">GUC
+          GUC parameter makes effect. <link linkend="pg-hint-plan-hint-GUC">GUC
           parameters for pg_hint_plan</link> are also settable by this
-          hint but it won’t work as your expectation. See
-          <link linkend="restrictions">Restrictions</link> for details.
+          hint but it won't work as your expectation. See
+          <link linkend="pg-hint-plan-restrictions">Restrictions</link> for details.
         </para>
       </sect4>
     </sect3>
@@ -186,12 +186,12 @@ postgres=#
       </para>
     </sect3>
   </sect2>
-  <sect2 id="install">
+  <sect2 id="pg-hint-plan-install">
     <title>Installation</title>
     <para>
       This section describes the installation steps.
     </para>
-    <sect3 id="build">
+    <sect3 id="pg-hint-plan-build">
       <title>building binary module</title>
       <para>
         Simplly run <quote>make</quote> in the top of the source tree,
@@ -207,7 +207,7 @@ $ su
 # make install
 </programlisting>
     </sect3>
-    <sect3 id="hint-load">
+    <sect3 id="pg-hint-plan-hint-load">
       <title>Loding pg_hint_plan</title>
       <para>
         Basically pg_hint_plan does not requires CREATE EXTENSION.
@@ -228,7 +228,7 @@ postgres=#
       </para>
     </sect3>
   </sect2>
-  <sect2 id="uninstall">
+  <sect2 id="pg-hint-plan-uninstall">
     <title>Unistallation</title>
     <para>
       <quote>make uninstall</quote> in the top directory of source tree
@@ -241,12 +241,12 @@ $ su
 # make uninstall
 </programlisting>
   </sect2>
-  <sect2 id="examples">
+  <sect2 id="pg-hint-plan-examples">
     <title>Hint descriptions</title>
     <para>
       This section explains how to spell each type of hints.
     </para>
-    <sect3 id="">
+    <sect3>
       <title>Scan method hints</title>
       <para>
         Scan hints have basically has one parameter to specify the
@@ -264,7 +264,7 @@ postgres*#  */
 postgres-# SELECT * FROM table1 t1 JOIN table table2 t2 ON (t1.key = t2.key);
 </programlisting>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Join method hints</title>
       <para>
         Join hints have two or more objects which compose the join as
@@ -285,11 +285,11 @@ postgres-#     JOIN table table2 t2 ON (t1.key = t2.key)
 postgres-#     JOIN table table3 t3 ON (t2.key = t3.key);
 </programlisting>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Joining order hints</title>
       <para>
         Although there might be the case that table2 and 3 are joined
-        first and table1 after that and the NestLoop hint won’t be in
+        first and table1 after that and the NestLoop hint won't be in
         effect after all. <quote>Leading</quote> hint enforces the
         joining order for the cases. The Leading hint in the above
         example enforces the joining order to table1, 2, 3 then both
@@ -311,7 +311,7 @@ postgres=# /*+ Leading((t1 (t2 t3))) */ SELECT...
         driven or inner.
       </para>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Row number correction hints</title>
       <para>
         Planner misestimates the number of the records for joins on some
@@ -329,7 +329,7 @@ postgres=# /*+ Rows(a b -10) */ SELECT... ; Subtracts 10 from the row number.
 postgres=# /*+ Rows(a b *10) */ SELECT... ; Makes the number 10 times larger.
 </programlisting>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>GUC temporarily setting</title>
       <para>
         <quote>Set</quote> hint sets GUC parameter values during the
@@ -345,9 +345,9 @@ postgres-# SELECT * FROM table1 t1 WHERE key = 'value';
 </programlisting>
     </sect3>
   </sect2>
-  <sect2 id="hint_syntax">
+  <sect2 id="pg-hint-plan-hint-syntax">
     <title>Hint syntax</title>
-    <sect3 id="">
+    <sect3>
       <title>Hint comment location</title>
       <para>
         pg_hint_plan reads hints from only the first block comment, and
@@ -380,7 +380,7 @@ postgres-#   ORDER BY a.aid;
 postgres=# 
 </programlisting>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Escaping special chacaters in object names</title>
       <para>
         The objects as the hint parameter should be enclosed by double
@@ -388,7 +388,7 @@ postgres=#
         spaces. The escaping rule is the same as PostgreSQL.
       </para>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Distinction among table occurrences with the same
       name</title>
       <para>
@@ -417,7 +417,7 @@ DETAIL:  Relation name &quot;t1&quot; is ambiguous.
    -&gt;  Sort  (cost=168.75..174.75 rows=2400 width=4)
          Sort Key: public.t1.id
          -&gt;  Seq Scan on t1  (cost=0.00..34.00 rows=2400 width=4)
-(8 行)
+(8 rows)
 
 postgres=# /*+ HashJoin(pt st) */
 postgres-# EXPLAIN SELECT * FROM s1.t1 st
@@ -429,15 +429,15 @@ postgres-# JOIN public.t1 pt ON (st.id=pt.id);
    -&gt;  Seq Scan on t1 st  (cost=0.00..34.00 rows=2400 width=4)
    -&gt;  Hash  (cost=34.00..34.00 rows=2400 width=4)
          -&gt;  Seq Scan on t1 pt  (cost=0.00..34.00 rows=2400 width=4)
-(5 行)
+(5 rows)
 
 postgres=#
 </programlisting>
     </sect3>
   </sect2>
-  <sect2 id="restrictions">
+  <sect2 id="pg-hint-plan-restrictions">
     <title>Restrictions</title>
-    <sect3 id="">
+    <sect3>
       <title>Limitations on multiple VALUES lists in FROM
       clauses</title>
       <para>
@@ -448,18 +448,18 @@ postgres=#
         query.
       </para>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Hinting on inheritance children</title>
       <para>
         Inheritnce children cannot be hinted individually. They share
         the same hints on their parent.
       </para>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Setting pg_hint_plan parameters by Set hints</title>
       <para>
         pg_hint_plan paramters changes the behavior of itself so some
-        parameters doesn’t work as expected.
+        parameters doesn't work as expected.
       </para>
       <itemizedlist spacing="compact">
         <listitem>
@@ -478,14 +478,14 @@ postgres=#
       </itemizedlist>
     </sect3>
   </sect2>
-  <sect2 id="technics">
+  <sect2 id="pg-hint-plan-technics">
     <title>Technics to hint on desired targets</title>
-    <sect3 id="">
+    <sect3>
       <title>Hinting on objecects implicitly used in the target
       query</title>
       <para>
         Hints are effective on any objects with the target name even if
-        they aren’t aparent in the query, specifically objects in views.
+        they aren't aparent in the query, specifically objects in views.
         For that reason, you should create different views in which
         targetted objects have distinct aliases if you want to hint them
         differently from the first view.
@@ -526,7 +526,7 @@ postgres=# EXPLAIN SELECT * FROM table1 t3 JOIN view1 t2 ON (t1.key = t2.key) WH
 (5 rows)
 </programlisting>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Hinting on the hinheritance children</title>
       <para>
         Hints targeted on inheritance parents automatically affect on
@@ -534,7 +534,7 @@ postgres=# EXPLAIN SELECT * FROM table1 t3 JOIN view1 t2 ON (t1.key = t2.key) WH
         specified.
       </para>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Scope of hints on multistatement</title>
       <para>
         One multistatement description can have exactly one hint comment
@@ -546,7 +546,7 @@ postgres=# EXPLAIN SELECT * FROM table1 t3 JOIN view1 t2 ON (t1.key = t2.key) WH
         hint comments affect on them.
       </para>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Subqueries in some contexts</title>
       <para>
         Subqueries in the following context also can be hinted.
@@ -579,7 +579,7 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
 (6 rows)
 </programlisting>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Using IndexOnlyScan hint (PostgreSQL 9.2 and later)</title>
       <para>
         You shoud explicitly specify an index that can perform index
@@ -588,7 +588,7 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
         pg_hint_plan may select them.
       </para>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Precaution points for NoIndexScan hint (PostgreSQL 9.2 and
       later)</title>
       <para>
@@ -596,13 +596,13 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
       </para>
     </sect3>
   </sect2>
-  <sect2 id="errors">
+  <sect2 id="pg-hint-plan-errors">
     <title>Errors of hints</title>
     <para>
       pg_hint_plan stops parsing on any error and uses hints already
       parsed on the most cases. Followings are the typical errors.
     </para>
-    <sect3 id="">
+    <sect3>
       <title>Syntax errors</title>
       <para>
         Any syntactical errors or wrong hint names are reported as an
@@ -611,7 +611,7 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
         if pg_hint_plan.debug_print is on and aboves.
       </para>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Object misspecifications</title>
       <para>
         Object misspecifications results silent ingorance of the hints.
@@ -619,7 +619,7 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
         in the server log by the same condtion to syntax errors.
       </para>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Redundant or conflicting hints</title>
       <para>
         The last hint will be active when redundant hints or hints
@@ -628,7 +628,7 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
         condition to syntax errors.
       </para>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Nested comments</title>
       <para>
         Hint comment cannot include another block comment within. If
@@ -638,9 +638,9 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
       </para>
     </sect3>
   </sect2>
-  <sect2 id="func_limits">
+  <sect2 id="pg-hint-plan-func-limits">
     <title>Functional limitations</title>
-    <sect3 id="">
+    <sect3>
       <title>Influences of some planner GUC parameters</title>
       <para>
         The planner does not try to consider joining order for FROM
@@ -648,7 +648,7 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
         cannot affect joining order as expected for the case.
       </para>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Cases that pg_hint_plan essentially cannot affect</title>
       <para>
         By the nature of pg_hint_plan, it cannot affect some cases that
@@ -672,7 +672,7 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
         </listitem>
       </itemizedlist>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Queries in ECPG</title>
       <para>
         ECPG removes comments in queries written as embedded SQLs so
@@ -681,7 +681,7 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
         consider hint tables for this case.
       </para>
     </sect3>
-    <sect3 id="">
+    <sect3>
       <title>Effects on query fingerprints</title>
       <para>
         The same queries with different commnets yields the same
@@ -694,7 +694,7 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
   </sect2>
   <sect2 id="pg-hint-plan-requirement">
     <title>Requirements</title>
-    <variablelist spacing="compact">
+    <variablelist>
       <varlistentry>
         <term>
           PostgreSQL versions tested
@@ -728,13 +728,13 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
     <para>Forces sequential scan on the table</para>
     <para>TidScan(table)</para>
     <para>Forces TID scan on the table.</para>
-    <para>IndexScan(table[ index…])</para>
+    <para>IndexScan(table[ index...])</para>
     <para>Forces index scan on the table. Restricts to specified indexes if any.</para>
-    <para>IndexOnlyScan(table[ index…])</para>
+    <para>IndexOnlyScan(table[ index...])</para>
     <para>Forces index only scan on the table. Rstricts to specfied indexes
       if any. Index scan may be used if index only scan is not
       available. Available for PostgreSQL 9.2 and later.</para>
-    <para>BitmapScan(table[ index…])</para>
+    <para>BitmapScan(table[ index...])</para>
     <para>Forces bitmap scan on the table. Restoricts to specfied indexes if any.</para>
     <para>NoSeqScan(table)</para>
     <para>Forces not to do sequential scan on the table.</para>
@@ -749,28 +749,28 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
     <para>NoBitmapScan(table)</para>
     <para>Forces not to do bitmap scan on the table.</para>
     <para>Join method</para>
-    <para>NestLoop(table table[ table…])</para>
+    <para>NestLoop(table table[ table...])</para>
     <para>Forces nested loop for the joins consist of the specifiled tables.</para>
-    <para>HashJoin(table table[ table…])</para>
+    <para>HashJoin(table table[ table...])</para>
     <para>Forces hash join for the joins consist of the specifiled tables.</para>
-    <para>MergeJoin(table table[ table…])</para>
+    <para>MergeJoin(table table[ table...])</para>
     <para>Forces merge join for the joins consist of the specifiled tables.</para>
-    <para>NoNestLoop(table table[ table…])</para>
+    <para>NoNestLoop(table table[ table...])</para>
     <para>Forces not to do nested loop for the joins consist of the
       specifiled tables.</para>
-    <para>NoHashJoin(table table[ table…])</para>
+    <para>NoHashJoin(table table[ table...])</para>
     <para>Forces not to do hash join for the joins consist of the specifiled tables.</para>
-    <para>NoMergeJoin(table table[ table…])</para>
+    <para>NoMergeJoin(table table[ table...])</para>
     <para>Forces not to do merge join for the joins consist of the specifiled tables.</para>
     <para>Join order</para>
-    <para>Leading(table table[ table…])</para>
+    <para>Leading(table table[ table...])</para>
     <para>Forces join order as specified.</para>
     <para>Leading(&lt;join pair&gt;)</para>
     <para>Forces join order and directions as specified. A join pair is a
       pair of tables and/or other join pairs enclosed by parentheses,
       which can make a nested structure.</para>
     <para>Row number correction</para>
-    <para>Rows(table table[ table…] correction)</para>
+    <para>Rows(table table[ table...] correction)</para>
     <para>Corrects row number of a result of the joins consist of the
       specfied tables. The available correction methods are absolute
       (#&amp;ltn&gt;), addition (+&amp;ltn&gt;), subtract
