@@ -957,7 +957,7 @@ Datum cfs_compression_ratio(PG_FUNCTION_ARGS)
             } else {
                 sprintf(map_path, "%s.%u.cfm", path, i);
             }
-			md = open(map_path, O_RDONLY|PG_BINARY, 0);
+			md = open(map_path, O_RDWR|PG_BINARY, 0);
             if (md < 0) {
 				break;
 			}
