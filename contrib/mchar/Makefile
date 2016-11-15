@@ -24,4 +24,4 @@ else
 ICUNAME=icui18n
 endif
 
-SHLIB_LINK += -L/usr/local/lib -licuuc -l$(ICUNAME) -Wl,-rpath,'$$ORIGIN'
+SHLIB_LINK += -L/usr/local/lib -licuuc -l$(ICUNAME) -Wl,-R,'$$ORIGIN'
