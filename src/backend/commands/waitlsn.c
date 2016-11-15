@@ -110,7 +110,7 @@ void
 WaitLSNShmemInit(void)
 {
 	bool	found;
-	uint	i;
+	uint32	i;
 
 	state = (GlobState *) ShmemInitStruct("pg_wait_lsn",
 										  GetSHMEMSize(),
@@ -129,7 +129,7 @@ WaitLSNShmemInit(void)
 void
 WaitLSNSetLatch(void)
 {
-	uint i;
+	uint32 i;
 	for (i = 0; i < (MaxConnections+1); i++)
 	{
 		SpinLockAcquire(&state->l_arr[i].slock);
