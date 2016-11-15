@@ -220,7 +220,7 @@
     <listitem>
      <para>
       The <productname>&productname;</productname> version. You can run the command
-      <literal>SELECT version();</literal> to
+      <literal>SELECT pgpro_version();</literal> to
       find out the version of the server you are connected to.  Most executable
       programs also support a <option>--version</option> option; at least
       <literal>postgres --version</literal> and <literal>psql --version</literal>
