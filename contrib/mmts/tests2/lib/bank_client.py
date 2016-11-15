@@ -111,20 +111,24 @@ class MtmClient(object):
         while self.running:
             msg = yield from self.child_pipe.coro_recv()
             if msg == 'status':
-                # print('evloop: got status request')
-                serialized_aggs = {}
-                for name, aggregate in self.aggregates.items():
-                    serialized_aggs[name] = aggregate.as_dict() 
-                    aggregate.clear_values()
+                serialized_aggs = []
+
+                for conn_id, conn_aggs in self.aggregates.items():
+                    serialized_aggs.append({})
+                    for aggname, agg in conn_aggs.items():
+                        serialized_aggs[conn_id][aggname] = agg.as_dict()
+                        agg.clear_values()
+
                 self.child_pipe.send(serialized_aggs)
-                # print('evloop: sent status response')
             else:
                 print('evloop: unknown message')
 
     @asyncio.coroutine
     def exec_tx(self, tx_block, aggname_prefix, conn_i):
         aggname = "%s_%i" % (aggname_prefix, conn_i)
-        agg = self.aggregates[aggname] = MtmTxAggregate(aggname)
+        if conn_i not in self.aggregates:
+            self.aggregates[conn_i] = {}
+        agg = self.aggregates[conn_i][aggname_prefix] = MtmTxAggregate(aggname)
         pool = yield from aiopg.create_pool(self.dsns[conn_i])
         conn = yield from pool.acquire()
         cur = yield from conn.cursor()
@@ -167,8 +171,8 @@ class MtmClient(object):
         total = yield from cur.fetchone()
         if total[0] != 0:
             agg.isolation += 1
-            # print(self.oops)
-            # print('Isolation error, total = ', total[0])
+            print(self.oops)
+            print('Isolation error, total = ', total[0])
             # yield from cur.execute('select * from mtm.get_nodes_state()')
             # nodes_state = yield from cur.fetchall()
             # for i, col in enumerate(self.nodes_state_fields):
@@ -176,7 +180,6 @@ class MtmClient(object):
             #     for j in range(3):
             #          print("%19s" % nodes_state[j][i], end="\t")
             #     print("\n")
-
 
     def run(self):
         # asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -196,13 +199,9 @@ class MtmClient(object):
         self.evloop_process = multiprocessing.Process(target=self.run, args=())
         self.evloop_process.start()
 
-    # XXX: introduce periodic report from client?
     def get_aggregates(self, print=True):
-        # print('test: sending status request')
         self.parent_pipe.send('status')
-        # print('test: awaitng status response')
         resp = self.parent_pipe.recv()
-        # print('test: got status response')
         if print:
             MtmClient.print_aggregates(resp)
         return resp
@@ -216,7 +215,7 @@ class MtmClient(object):
         self.evloop_process.terminate()
 
     @classmethod
-    def print_aggregates(cls, serialized_agg):
+    def print_aggregates(cls, aggs):
             columns = ['running_latency', 'max_latency', 'isolation', 'finish']
 
             # print table header
@@ -225,22 +224,16 @@ class MtmClient(object):
                 print(col, end="\t")
             print("\n", end="")
 
-            serialized_agg
-
-            for aggname in sorted(serialized_agg.keys()):
-                agg = serialized_agg[aggname]
-                print("%s\t" % aggname, end="")
-                for col in columns:
-                    if col in agg:
+            for conn_id, agg_conn in enumerate(aggs):
+                for aggname, agg in agg_conn.items():
+                    print("Node %d: %s\t" % (conn_id + 1, aggname), end="")
+                    for col in columns:
                         if isinstance(agg[col], float):
                             print("%.2f\t" % (agg[col],), end="\t")
                         else:
                             print(agg[col], end="\t")
-                    else:
-                        print("-\t", end="")
-                print("")
+                    print("")
             print("")
-
 
 if __name__ == "__main__":
     c = MtmClient(['dbname=postgres user=postgres host=127.0.0.1',
