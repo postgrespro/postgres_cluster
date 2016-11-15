@@ -152,10 +152,9 @@ int refresh_scheduler_manager_context(scheduler_manager_ctx_t *ctx)
 	scheduler_manager_slot_t **old;
 
 	N = get_scheduler_maxworkers();
-	elog(LOG, "max-workers: %d", N);
 	if(N != ctx->slots_len)
 	{
-		elog(LOG, "Change available workers number %d => %d", ctx->slots_len, N);
+		elog(LOG, "Scheduler Manager %s: Change available workers number %d => %d", ctx->database, ctx->slots_len, N);
 	} 
 
 	if(N > ctx->slots_len)
@@ -315,8 +314,8 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 	}
 	else if(ret != SPI_OK_SELECT)
 	{
-		elog(LOG, "Scheduler manager: %s: cannot get \"at\" tasks: error code %d",
-				MyBgworkerEntry->bgw_name, ret);
+		elog(LOG, "Scheduler manager %s: cannot get \"at\" tasks: error code %d",
+				ctx->database, ret);
 
         scheduler_manager_stop(ctx);
 		return NULL;
@@ -1048,8 +1047,8 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx)
 			move_ret  = move_job_to_log(&expired[i], 0);
 			if(move_ret < 0)
 			{
-				elog(LOG, "Scheduler manager: cannot move job %d@%s:00 to log",
-								expired[i].cron_id, ts);
+				elog(LOG, "Scheduler manager %s: cannot move job %d@%s:00 to log",
+								ctx->database, expired[i].cron_id, ts);
 				ret--;
 			}
 			pfree(ts);
@@ -1235,7 +1234,7 @@ bool check_parent_stop_signal(scheduler_manager_ctx_t *ctx)
 		shared->setbyparent = false;
 		if(shared->status == SchdManagerStop)
 		{
-			elog(LOG, "Scheduler manager: receive stop signal from supervisor");
+			elog(LOG, "Scheduler manager %s: receive stop signal from supervisor", ctx->database);
 			return true;
 		}
 	}
@@ -1323,12 +1322,9 @@ void manager_worker_main(Datum arg)
 			if(rc & WL_POSTMASTER_DEATH) proc_exit(1);
 			if(got_sighup)
 			{
-			elog(LOG, "manager got sighup");
 				got_sighup = false;
 				ProcessConfigFile(PGC_SIGHUP);
-				elog(LOG, "DONE CONFIG");
 				reload_db_role_config(database);
-				elog(LOG, "DONE role");
 				refresh_scheduler_manager_context(ctx);
 				set_slots_stat_report(ctx);
 			}

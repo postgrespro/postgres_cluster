@@ -114,6 +114,8 @@ int stopAllManagers(schd_managers_poll_t *poll)
 	PGPROC *child;
 	schd_manager_share_t *shared;
 
+	if(poll->n == 0) return 0;
+
 	elog(LOG, "Scheduler stops all managers");
 
 	for(i=0; i < poll->n; i++)
@@ -136,6 +138,7 @@ int stopAllManagers(schd_managers_poll_t *poll)
 	{
 		destroyManagerRecord(poll->workers[i]);
 	}
+
 	pfree(poll->workers);
 	poll->workers = NULL;
 	poll->n = 0;

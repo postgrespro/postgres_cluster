@@ -80,14 +80,12 @@ void reload_db_role_config(char *dbname)
 	StartTransactionCommand();
 	databaseid = get_database_oid(dbname, false);
 
-	elog(LOG, "start read");
 	relsetting = heap_open(DbRoleSettingRelationId, AccessShareLock);
 	snapshot = RegisterSnapshot(GetCatalogSnapshot(DbRoleSettingRelationId));
 	ApplySetting(snapshot, databaseid, InvalidOid, relsetting, PGC_S_DATABASE);
 	UnregisterSnapshot(snapshot);
 	heap_close(relsetting, AccessShareLock);
 	CommitTransactionCommand();
-	elog(LOG, "got read");
 }
 
 TimestampTz timestamp_add_seconds(TimestampTz to, int add)

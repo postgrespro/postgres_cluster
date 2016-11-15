@@ -147,12 +147,14 @@ void executor_worker_main(Datum arg)
 			status = SchdExecutorError;
 			if(error)
 			{
-				push_executor_error(&EE, "error on %d: %s", i+1, error);
+				push_executor_error(&EE, "error in command #%d: %s",
+															i+1, error);
 				pfree(error);
 			}
 			else
 			{
-				push_executor_error(&EE, "error on %d: code: %d", i+1, ret);
+				push_executor_error(&EE, "error in command #%d: code: %d",
+															i+1, ret);
 			}
 			ABORT_SPI_SNAP();
 			SetConfigOption("schedule.transaction_state", "failure", PGC_INTERNAL, PGC_S_SESSION);
