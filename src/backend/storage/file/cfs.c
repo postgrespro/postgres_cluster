@@ -702,10 +702,11 @@ static bool cfs_gc_file(char* map_path)
 		endTime = GetCurrentTimestamp();
 		TimestampDifference(startTime, endTime, &secs, &usecs);
 
-		elog(LOG, "%d: defragment file %s: old size %d, new size %d, logical size %d, used %d, compression ratio %f, time %ld usec",
-			 MyProcPid, file_path, physSize, newSize, virtSize, usedSize, (double)virtSize/newSize,
-			 secs*USECS_PER_SEC + usecs);
-
+		if (succeed) { 
+			elog(LOG, "%d: defragment file %s: old size %d, new size %d, logical size %d, used %d, compression ratio %f, time %ld usec",
+				 MyProcPid, file_path, physSize, newSize, virtSize, usedSize, (double)virtSize/newSize,
+				 secs*USECS_PER_SEC + usecs);
+		}
 		pfree(file_path);
 		pfree(file_bck_path);
 		pfree(map_bck_path);
@@ -839,6 +840,7 @@ PG_FUNCTION_INFO_V1(cfs_enable_gc);
 PG_FUNCTION_INFO_V1(cfs_version);
 PG_FUNCTION_INFO_V1(cfs_estimate);
 PG_FUNCTION_INFO_V1(cfs_compression_ratio);
+PG_FUNCTION_INFO_V1(cfs_fragmentation);
 PG_FUNCTION_INFO_V1(cfs_gc_activity_processed_bytes);
 PG_FUNCTION_INFO_V1(cfs_gc_activity_processed_pages);
 PG_FUNCTION_INFO_V1(cfs_gc_activity_processed_files);
@@ -983,6 +985,55 @@ Datum cfs_compression_ratio(PG_FUNCTION_ARGS)
 		relation_close(rel, AccessShareLock);
 	}
 	PG_RETURN_FLOAT8((double)virtSize/physSize);
+}
+
+Datum cfs_fragmentation(PG_FUNCTION_ARGS)
+{
+    Oid oid =  PG_GETARG_OID(0);
+    Relation rel = try_relation_open(oid, AccessShareLock);
+	uint64 usedSize = 0;
+	uint64 physSize = 0;
+
+    if (rel != NULL) {
+        char* path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
+        char* map_path = (char*)palloc(strlen(path) + 16);
+        int i = 0;
+
+        while (true) {
+            int md;
+			FileMap* map;
+
+            if (i == 0) {
+                sprintf(map_path, "%s.cfm", path);
+            } else {
+                sprintf(map_path, "%s.%u.cfm", path, i);
+            }
+			md = open(map_path, O_RDWR|PG_BINARY, 0);
+            if (md < 0) {
+				break;
+			}
+			map = cfs_mmap(md);
+			if (map == MAP_FAILED) {
+				elog(LOG, "cfs_compression_ration failed to map file %s: %m", map_path);
+				close(md);
+				break;
+			}
+			usedSize += pg_atomic_read_u32(&map->usedSize);
+			physSize += pg_atomic_read_u32(&map->physSize);
+			
+			if (cfs_munmap(map) < 0) {
+				elog(LOG, "Failed to unmap file %s: %m", map_path);
+			}
+			if (close(md) < 0) {
+				elog(LOG, "Failed to close file %s: %m", map_path);
+			}
+			i += 1;
+		}
+		pfree(path);
+		pfree(map_path);
+		relation_close(rel, AccessShareLock);
+	}
+	PG_RETURN_FLOAT8((double)physSize/usedSize);
 }
 
 Datum cfs_gc_activity_processed_bytes(PG_FUNCTION_ARGS)
