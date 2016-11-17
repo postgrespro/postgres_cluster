@@ -5210,6 +5210,9 @@ XactLogCommitRecord(TimestampTz commit_time,
 						 nsubxacts * sizeof(TransactionId));
 	}
 
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
+		XLogRegisterData((char *) (&xl_twophase), sizeof(xl_xact_twophase));
+
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_RELFILENODES)
 	{
 		XLogRegisterData((char *) (&xl_relfilenodes),
@@ -5224,9 +5227,6 @@ XactLogCommitRecord(TimestampTz commit_time,
 		XLogRegisterData((char *) msgs,
 						 nmsgs * sizeof(SharedInvalidationMessage));
 	}
-
-	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
-		XLogRegisterData((char *) (&xl_twophase), sizeof(xl_xact_twophase));
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_ORIGIN)
 		XLogRegisterData((char *) (&xl_origin), sizeof(xl_xact_origin));
@@ -5310,6 +5310,9 @@ XactLogAbortRecord(TimestampTz abort_time,
 						 nsubxacts * sizeof(TransactionId));
 	}
 
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
+		XLogRegisterData((char *) (&xl_twophase), sizeof(xl_xact_twophase));
+
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_RELFILENODES)
 	{
 		XLogRegisterData((char *) (&xl_relfilenodes),
@@ -5317,9 +5320,6 @@ XactLogAbortRecord(TimestampTz abort_time,
 		XLogRegisterData((char *) rels,
 						 nrels * sizeof(RelFileNode));
 	}
-
-	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
-		XLogRegisterData((char *) (&xl_twophase), sizeof(xl_xact_twophase));
 
 	return XLogInsert(RM_XACT_ID, info);
 }
