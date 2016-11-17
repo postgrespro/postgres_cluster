@@ -126,10 +126,9 @@ postgres=#
           Planning</ulink> can have the expected effects on planning
           unless any other hint conflicts with the planner method
           configuration parameters. The last one among hints on the same
-          GUC parameter makes effect. <link linkend="pg-hint-plan-hint-GUC">GUC
-          parameters for pg_hint_plan</link> are also settable by this
-          hint but it won't work as your expectation. See
-          <link linkend="pg-hint-plan-restrictions">Restrictions</link> for details.
+          GUC parameter makes effect. GUC parameters for pg_hint_plan are also settable by this
+          hint but it won't work as your expectation. See restrictions for
+          details <xref linkend="pg-hint-plan-restrictions">.
         </para>
       </sect4>
     </sect3>
