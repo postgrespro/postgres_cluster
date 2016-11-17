@@ -2151,6 +2151,10 @@ fix_join_expr_mutator(Node *node, fix_join_expr_context *context)
 	{
 		Var		   *var = (Var *) node;
 
+		/* join_references_mutator already checks this node */
+		if (var->varno == OUTER_VAR)
+			return (Node*)copyObject(var);
+
 		/* Look for the var in the input tlists, first in the outer */
 		if (context->outer_itlist)
 		{
@@ -2165,6 +2169,9 @@ fix_join_expr_mutator(Node *node, fix_join_expr_context *context)
 		/* then in the inner. */
 		if (context->inner_itlist)
 		{
+			if (var->varno == INNER_VAR)
+				return (Node*)copyObject(var);
+
 			newvar = search_indexed_tlist_for_var(var,
 												  context->inner_itlist,
 												  INNER_VAR,

@@ -1,0 +1,66 @@
+--- table based checks
+select '<' || ch || '>', '<' || vch || '>' from chvch;
+    ?column?    |   ?column?   
+----------------+--------------
+ <No spaces   > | <No spaces>
+ <One space   > | <One space >
+ <1 space     > | <1 space >
+(3 rows)
+
+select * from chvch where vch = 'One space';
+      ch      |    vch     
+--------------+------------
+ One space    | One space 
+(1 row)
+
+select * from chvch where vch = 'One space ';
+      ch      |    vch     
+--------------+------------
+ One space    | One space 
+(1 row)
+
+select * from ch where chcol = 'abcd' order by chcol;
+              chcol               
+----------------------------------
+ abcd                            
+ AbcD                            
+(2 rows)
+
+select * from ch t1 join ch t2 on t1.chcol = t2.chcol order by t1.chcol, t2.chcol;
+              chcol               |              chcol               
+----------------------------------+----------------------------------
+ abcd                             | AbcD                            
+ abcd                             | abcd                            
+ AbcD                             | AbcD                            
+ AbcD                             | abcd                            
+ abcz                             | abcz                            
+ defg                             | dEfg                            
+ defg                             | defg                            
+ dEfg                             | dEfg                            
+ dEfg                             | defg                            
+ ee                               | Ee                              
+ ee                               | ee                              
+ Ee                               | Ee                              
+ Ee                               | ee                              
+(13 rows)
+
+select * from ch where chcol > 'abcd' and chcol<'ee';
+              chcol               
+----------------------------------
+ abcz                            
+ defg                            
+ dEfg                            
+(3 rows)
+
+select * from ch order by chcol;
+              chcol               
+----------------------------------
+ abcd                            
+ AbcD                            
+ abcz                            
+ defg                            
+ dEfg                            
+ ee                              
+ Ee                              
+(7 rows)
+

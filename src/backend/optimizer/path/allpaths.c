@@ -666,6 +666,9 @@ set_plain_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 	/* Consider index scans */
 	create_index_paths(root, rel);
 
+	/* Consider index scans with rewrited quals */
+	keybased_rewrite_index_paths(root, rel);
+
 	/* Consider TID scans */
 	create_tidscan_paths(root, rel);
 }
@@ -1268,7 +1271,8 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	 * if we have zero or one live subpath due to constraint exclusion.)
 	 */
 	if (subpaths_valid)
-		add_path(rel, (Path *) create_append_path(rel, subpaths, NULL, 0));
+		add_path(rel, (Path *) create_append_path(rel, subpaths, NULL, false,
+												  NIL, 0));
 
 	/*
 	 * Consider an append of partial unordered, unparameterized partial paths.
@@ -1295,7 +1299,7 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 
 		/* Generate a partial append path. */
 		appendpath = create_append_path(rel, partial_subpaths, NULL,
-										parallel_workers);
+										false, NIL, parallel_workers);
 		add_partial_path(rel, (Path *) appendpath);
 	}
 
@@ -1347,7 +1351,8 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 
 		if (subpaths_valid)
 			add_path(rel, (Path *)
-					 create_append_path(rel, subpaths, required_outer, 0));
+					 create_append_path(rel, subpaths, required_outer, false,
+										NIL, 0));
 	}
 }
 
@@ -1577,7 +1582,7 @@ set_dummy_rel_pathlist(RelOptInfo *rel)
 	rel->pathlist = NIL;
 	rel->partial_pathlist = NIL;
 
-	add_path(rel, (Path *) create_append_path(rel, NIL, NULL, 0));
+	add_path(rel, (Path *) create_append_path(rel, NIL, NULL, false, NIL, 0));
 
 	/*
 	 * We set the cheapest path immediately, to ensure that IS_DUMMY_REL()

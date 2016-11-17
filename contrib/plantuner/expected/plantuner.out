@@ -1,0 +1,49 @@
+LOAD 'plantuner';
+SHOW	plantuner.disable_index;
+ plantuner.disable_index 
+-------------------------
+ 
+(1 row)
+
+CREATE TABLE wow (i int, j int);
+CREATE INDEX i_idx ON wow (i);
+CREATE INDEX j_idx ON wow (j);
+SET enable_seqscan=off;
+SELECT * FROM wow;
+ i | j 
+---+---
+(0 rows)
+
+SET plantuner.disable_index="i_idx, j_idx";
+SELECT * FROM wow;
+ i | j 
+---+---
+(0 rows)
+
+SHOW plantuner.disable_index;
+  plantuner.disable_index   
+----------------------------
+ public.i_idx, public.j_idx
+(1 row)
+
+SET plantuner.disable_index="i_idx, nonexistent, public.j_idx, wow";
+WARNING:  'nonexistent' does not exist
+WARNING:  'wow' is not an index
+SHOW plantuner.disable_index;
+  plantuner.disable_index   
+----------------------------
+ public.i_idx, public.j_idx
+(1 row)
+
+SET plantuner.enable_index="i_idx";
+SHOW plantuner.enable_index;
+ plantuner.enable_index 
+------------------------
+ public.i_idx
+(1 row)
+
+SELECT * FROM wow;
+ i | j 
+---+---
+(0 rows)
+

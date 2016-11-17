@@ -3383,6 +3383,7 @@ create_grouping_paths(PlannerInfo *root,
 				create_append_path(grouped_rel,
 								   paths,
 								   NULL,
+								   false, NIL,
 								   0);
 			path->pathtarget = target;
 		}

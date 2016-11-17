@@ -1,0 +1,5 @@
+# fasttrun extension
+comment = 'Functions to truncates the temporary table and does not grow pg_class size'
+default_version = '1.0'
+module_pathname = '$libdir/fasttrun'
+relocatable = true

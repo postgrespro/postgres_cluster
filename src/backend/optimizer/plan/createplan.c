@@ -151,7 +151,6 @@ static void process_subquery_nestloop_params(PlannerInfo *root,
 								 List *subplan_params);
 static List *fix_indexqual_references(PlannerInfo *root, IndexPath *index_path);
 static List *fix_indexorderby_references(PlannerInfo *root, IndexPath *index_path);
-static Node *fix_indexqual_operand(Node *node, IndexOptInfo *index, int indexcol);
 static List *get_switched_clauses(List *clauses, Relids outerrelids);
 static List *order_qual_clauses(PlannerInfo *root, List *clauses);
 static void copy_generic_path_info(Plan *dest, Path *src);
@@ -954,7 +953,7 @@ static Plan *
 create_append_plan(PlannerInfo *root, AppendPath *best_path)
 {
 	Append	   *plan;
-	List	   *tlist = build_path_tlist(root, &best_path->path);
+	List	   *tlist;
 	List	   *subplans = NIL;
 	ListCell   *subpaths;
 
@@ -972,6 +971,7 @@ create_append_plan(PlannerInfo *root, AppendPath *best_path)
 		/* Generate a Result plan with constant-FALSE gating qual */
 		Plan	   *plan;
 
+		tlist = build_path_tlist(root, &best_path->path);
 		plan = (Plan *) make_result(tlist,
 									(Node *) list_make1(makeBoolConst(false,
 																	  false)),
@@ -1000,6 +1000,11 @@ create_append_plan(PlannerInfo *root, AppendPath *best_path)
 	 * not work because the varno of the child scan plan won't match the
 	 * parent-rel Vars it'll be asked to emit.
 	 */
+
+	if ( best_path->pull_tlist )
+		tlist = copyObject( ((Plan*)linitial(subplans))->targetlist );
+	else
+		tlist = build_path_tlist(root, &best_path->path);
 
 	plan = make_append(subplans, tlist);
 
@@ -4368,7 +4373,7 @@ fix_indexorderby_references(PlannerInfo *root, IndexPath *index_path)
  * Most of the code here is just for sanity cross-checking that the given
  * expression actually matches the index column it's claimed to.
  */
-static Node *
+Node *
 fix_indexqual_operand(Node *node, IndexOptInfo *index, int indexcol)
 {
 	Var		   *result;

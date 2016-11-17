@@ -167,7 +167,7 @@ sub GenerateFiles
 			s{PG_VERSION "[^"]+"}{PG_VERSION "$self->{strver}$extraver"};
 			s{PG_VERSION_NUM \d+}{PG_VERSION_NUM $self->{numver}};
 			s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY(z)\n#define PG_VERSION_STR "PostgreSQL $self->{strver}$extraver, compiled by Visual C++ build " __STRINGIFY2(_MSC_VER) ", $bits-bit"};
-			s{PGPRO_PACKAGE_VERSION "[^"]+"}{PGRPO_PACKAGE_VERSION "$self->{strver}.$self->{pgprover}"};
+			s{PGPRO_VERSION "[^"]+"}{PGPRO_VERSION "$self->{strver}.$self->{pgprover}"};
 			s{PGPRO_PACKAGE_STR "[^"]+"}{PGPRO_PACKAGE_STR "PostgresPro $self->{strver}.$self->{pgprover}"};
 			s{#define PGPRO_VERSION_STR "[^"]+"}{#define PGPRO_VERSION_STR PGPRO_PACKAGE_STR " compiled by Visual C++ build" __STRINGIFY2(_MSC_VER) ", $bits-bit"};
 			print O;
