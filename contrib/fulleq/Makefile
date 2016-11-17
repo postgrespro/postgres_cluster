@@ -23,12 +23,11 @@ include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
 
-fulleq--1.0.sql:	fulleq--1.0.sql.in
-	echo 'BEGIN;' >	$@ 
+fulleq--1.0.sql:	fulleq--1.0.sql.in.in
+	echo '\echo Use "CREATE EXTENSION fulleq" to load this file. \quit' >	$@
 	echo 'SET search_path = public;' >> $@
 	for type in	$(ARGTYPE);	\
 	do	\
 		sed -e "s/ARGTYPE/$$type/g" < $< >> $@;	\
 	done
-	echo 'COMMIT;' >>  $@
 
