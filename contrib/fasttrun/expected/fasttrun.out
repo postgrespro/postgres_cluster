@@ -1,4 +1,4 @@
-\set ECHO none
+CREATE EXTENSION fasttrun;
 create table persist ( a int );
 insert into persist values (1);
 select fasttruncate('persist');

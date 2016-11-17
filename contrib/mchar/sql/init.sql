@@ -1,14 +1,6 @@
+CREATE EXTENSION mchar;
 
---
--- first, define the datatype.  Turn off echoing so that expected file
--- does not depend on contents of mchar.sql.
---
-
-\set ECHO none
-\i mchar.sql
---- load for table based checks
 SET search_path = public;
-\set ECHO all
 
 create table ch (
 	chcol mchar(32)

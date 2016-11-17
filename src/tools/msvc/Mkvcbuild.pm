@@ -48,7 +48,7 @@ my @contrib_excludes = (
 	'ltree_plpython',  'pgcrypto',
 	'sepgsql',         'brin',
 	'test_extensions', 'test_pg_dump',
-	'pg_arman', 
+	'pg_arman',
 	'snapshot_too_old');
 
 # Set of variables for frontend modules

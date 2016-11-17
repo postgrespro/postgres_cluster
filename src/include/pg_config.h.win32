@@ -574,7 +574,7 @@
 
 #define PGPRO_EDITION "standard"
 
-#define PGPRO_PACKAGE_VERSION "9.6.1.1"
+#define PGPRO_VERSION "9.6.1.1"
 
 #define PGPRO_PACKAGE_STR "PostgresPro 9.6.1.1"
 

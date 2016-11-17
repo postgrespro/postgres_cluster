@@ -1,6 +1,4 @@
-\set ECHO none
-\i fasttrun.sql
-\set ECHO all
+CREATE EXTENSION fasttrun;
 
 create table persist ( a int );
 insert into persist values (1);

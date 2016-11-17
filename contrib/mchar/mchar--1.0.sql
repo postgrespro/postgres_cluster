@@ -1,7 +1,5 @@
 SET search_path = public;
 
-BEGIN;
-
 -- I/O functions
 
 CREATE FUNCTION mchartypmod_in(cstring[])
@@ -1322,7 +1320,3 @@ CREATE OPERATOR CLASS mvarchar_fill_ops
  FOR TYPE mvarchar USING hash AS
     OPERATOR    1   ==,
     FUNCTION    1   fullhash_mvarchar(mvarchar);
-
-COMMIT;
-SET search_path = public;
-

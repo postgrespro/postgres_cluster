@@ -1,6 +1,4 @@
-\set ECHO none
-\i fulleq.sql
-\set ECHO all
+CREATE EXTENSION fulleq;
 
 select 4::int == 4;
 select 4::int == 5;

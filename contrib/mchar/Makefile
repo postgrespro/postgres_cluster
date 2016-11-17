@@ -1,10 +1,11 @@
 MODULE_big = mchar
 OBJS = mchar_io.o mchar_proc.o mchar_op.o mchar_recode.o \
 	   mchar_like.o
-DATA_built = mchar.sql
-DATA = uninstall_mchar.sql
+EXTENSION = mchar
+DATA = mchar--1.0.sql uninstall_mchar--1.0.sql
 DOCS = README.mchar
 REGRESS = init mchar mvarchar mm like compat
+PGFIELDDESC = "mchar - mchar type implementation"
 
 PG_CPPFLAGS=-I/usr/local/include
 

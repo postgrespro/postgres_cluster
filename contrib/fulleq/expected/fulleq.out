@@ -1,4 +1,4 @@
-\set ECHO none
+CREATE EXTENSION fulleq;
 select 4::int == 4;
  ?column? 
 ----------
