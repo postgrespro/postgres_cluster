@@ -727,7 +727,7 @@ tuple_all_visible(HeapTuple tup, TransactionId OldestXmin, Buffer buffer)
 	 * be set here.  So just check the xmin.
 	 */
 
-	xmin = HeapTupleHeaderGetXmin(tup->t_data);
+	xmin = HeapTupleGetXmin(tup);
 	if (!TransactionIdPrecedes(xmin, OldestXmin))
 		return false;			/* xmin not old enough for all to see */
 
