@@ -214,14 +214,14 @@ typedef struct xl_xact_twophase
 
 typedef struct xl_xact_relfilenodes
 {
-	int64			nrels;			/* number of subtransaction XIDs */
+	int			nrels;			/* number of subtransaction XIDs */
 	RelFileNode xnodes[FLEXIBLE_ARRAY_MEMBER];
 } xl_xact_relfilenodes;
 #define MinSizeOfXactRelfilenodes offsetof(xl_xact_relfilenodes, xnodes)
 
 typedef struct xl_xact_invals
 {
-	int64			nmsgs;			/* number of shared inval msgs */
+	int			nmsgs;			/* number of shared inval msgs */
 	SharedInvalidationMessage msgs[FLEXIBLE_ARRAY_MEMBER];
 } xl_xact_invals;
 #define MinSizeOfXactInvals offsetof(xl_xact_invals, msgs)
