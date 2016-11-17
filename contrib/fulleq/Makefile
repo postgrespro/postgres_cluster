@@ -11,7 +11,7 @@ ARGTYPE = bool bytea char name int8 int2 int2vector int4 text \
 	inet cidr varchar date time timestamp timestamptz \
 	interval timetz
 
-EXTRA_CLEAN = fulleq--1.0.sql
+#EXTRA_CLEAN = fulleq--1.0.sql
 
 ifdef USE_PGXS
 PGXS := $(shell pg_config --pgxs)
