@@ -499,10 +499,12 @@ pg_ptrack_test(PG_FUNCTION_ARGS)
 			if(ptrack_control_lsn < main_page_lsn)
 			{
 				necessary_data_counter++;
-				elog(WARNING, "Block %ud not track. Ptrack lsn:%lx page lsn:%lx",
+				elog(WARNING, "Block %ud not track. Ptrack lsn:%X/%X page lsn:%X/%X",
 					nblock,
-					ptrack_control_lsn,
-					main_page_lsn);
+					(uint32) (ptrack_control_lsn >> 32),
+					(uint32) ptrack_control_lsn,
+					(uint32) (main_page_lsn >> 32),
+					(uint32) main_page_lsn);
 			}
 			else
 				continue;
@@ -517,20 +519,24 @@ pg_ptrack_test(PG_FUNCTION_ARGS)
 			if (ptrack_control_lsn >= main_page_lsn)
 			{
 				excess_data_counter++;
-				elog(WARNING, "Block %ud not needed. Ptrack lsn:%lx page lsn:%lx",
+				elog(WARNING, "Block %ud not needed. Ptrack lsn:%X/%X page lsn:%X/%X",
 					nblock,
-					ptrack_control_lsn,
-					main_page_lsn);
+					(uint32) (ptrack_control_lsn >> 32),
+					(uint32) ptrack_control_lsn,
+					(uint32) (main_page_lsn >> 32),
+					(uint32) main_page_lsn);
 			}
 		}
 		/* not tracked data */
 		else if (ptrack_control_lsn < main_page_lsn)
 		{
 			necessary_data_counter++;
-			elog(WARNING, "Block %ud not tracked. Ptrack lsn:%lx page lsn:%lx",
+			elog(WARNING, "Block %ud not tracked. Ptrack lsn:%X/%X page lsn:%X/%X",
 				nblock,
-				ptrack_control_lsn,
-				main_page_lsn);
+				 (uint32) (ptrack_control_lsn >> 32),
+				 (uint32) ptrack_control_lsn,
+				 (uint32) (main_page_lsn >> 32),
+				 (uint32) main_page_lsn);
 		}
 		LockBuffer(ptrack_buf, BUFFER_LOCK_UNLOCK);
 	}
