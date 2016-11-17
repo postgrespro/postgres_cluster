@@ -5110,9 +5110,9 @@ XactLogCommitRecord(TimestampTz commit_time,
 	xl_xact_xinfo xl_xinfo;
 	xl_xact_dbinfo xl_dbinfo;
 	xl_xact_subxacts xl_subxacts;
+	xl_xact_twophase xl_twophase;
 	xl_xact_relfilenodes xl_relfilenodes;
 	xl_xact_invals xl_invals;
-	xl_xact_twophase xl_twophase;
 	xl_xact_origin xl_origin;
 
 	uint8		info;
@@ -5160,6 +5160,12 @@ XactLogCommitRecord(TimestampTz commit_time,
 		xl_subxacts.nsubxacts = nsubxacts;
 	}
 
+	if (TransactionIdIsValid(twophase_xid))
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_TWOPHASE;
+		xl_twophase.xid = twophase_xid;
+	}
+
 	if (nrels > 0)
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_RELFILENODES;
@@ -5170,12 +5176,6 @@ XactLogCommitRecord(TimestampTz commit_time,
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_INVALS;
 		xl_invals.nmsgs = nmsgs;
-	}
-
-	if (TransactionIdIsValid(twophase_xid))
-	{
-		xl_xinfo.xinfo |= XACT_XINFO_HAS_TWOPHASE;
-		xl_twophase.xid = twophase_xid;
 	}
 
 	/* dump transaction origin information */
@@ -5252,8 +5252,8 @@ XactLogAbortRecord(TimestampTz abort_time,
 	xl_xact_abort xlrec;
 	xl_xact_xinfo xl_xinfo;
 	xl_xact_subxacts xl_subxacts;
-	xl_xact_relfilenodes xl_relfilenodes;
 	xl_xact_twophase xl_twophase;
+	xl_xact_relfilenodes xl_relfilenodes;
 
 	uint8		info;
 
@@ -5278,16 +5278,16 @@ XactLogAbortRecord(TimestampTz abort_time,
 		xl_subxacts.nsubxacts = nsubxacts;
 	}
 
-	if (nrels > 0)
-	{
-		xl_xinfo.xinfo |= XACT_XINFO_HAS_RELFILENODES;
-		xl_relfilenodes.nrels = nrels;
-	}
-
 	if (TransactionIdIsValid(twophase_xid))
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_TWOPHASE;
 		xl_twophase.xid = twophase_xid;
+	}
+
+	if (nrels > 0)
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_RELFILENODES;
+		xl_relfilenodes.nrels = nrels;
 	}
 
 	if (xl_xinfo.xinfo != 0)

@@ -73,6 +73,15 @@ ParseCommitRecord(uint8 info, xl_xact_commit *xlrec, xl_xact_parsed_commit *pars
 		data += parsed->nsubxacts * sizeof(TransactionId);
 	}
 
+	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
+	{
+		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
+
+		parsed->twophase_xid = xl_twophase->xid;
+
+		data += sizeof(xl_xact_twophase);
+	}
+
 	if (parsed->xinfo & XACT_XINFO_HAS_RELFILENODES)
 	{
 		xl_xact_relfilenodes *xl_relfilenodes = (xl_xact_relfilenodes *) data;
@@ -93,15 +102,6 @@ ParseCommitRecord(uint8 info, xl_xact_commit *xlrec, xl_xact_parsed_commit *pars
 
 		data += MinSizeOfXactInvals;
 		data += xl_invals->nmsgs * sizeof(SharedInvalidationMessage);
-	}
-
-	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
-	{
-		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
-
-		parsed->twophase_xid = xl_twophase->xid;
-
-		data += sizeof(xl_xact_twophase);
 	}
 
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
@@ -150,6 +150,15 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 		data += parsed->nsubxacts * sizeof(TransactionId);
 	}
 
+	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
+	{
+		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
+
+		parsed->twophase_xid = xl_twophase->xid;
+
+		data += sizeof(xl_xact_twophase);
+	}
+
 	if (parsed->xinfo & XACT_XINFO_HAS_RELFILENODES)
 	{
 		xl_xact_relfilenodes *xl_relfilenodes = (xl_xact_relfilenodes *) data;
@@ -159,15 +168,6 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 
 		data += MinSizeOfXactRelfilenodes;
 		data += xl_relfilenodes->nrels * sizeof(RelFileNode);
-	}
-
-	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
-	{
-		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
-
-		parsed->twophase_xid = xl_twophase->xid;
-
-		data += sizeof(xl_xact_twophase);
 	}
 }
 
