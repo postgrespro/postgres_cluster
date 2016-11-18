@@ -227,6 +227,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	struct ImportQual	*importqual;
 	InsertStmt			*istmt;
 	VariableSetStmt		*vsetstmt;
+	PartitionInfo		*partinfo;
 }
 
 %type <node>	stmt schema_stmt
@@ -543,6 +544,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <str>		opt_existing_window_name
 %type <boolean> opt_if_not_exists
 
+%type <partinfo> partitionType;
+
 /*
  * Non-keyword token types.  These are hard-wired into the "flex" lexer.
  * They must be listed first so that their numeric codes do not depend on
@@ -594,7 +597,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 	GLOBAL GRANT GRANTED GREATEST GROUP_P GROUPING
 
-	HANDLER HAVING HEADER_P HOLD HOUR_P
+	HANDLER HASH HAVING HEADER_P HOLD HOUR_P
 
 	IDENTITY_P IF_P ILIKE IMMEDIATE IMMUTABLE IMPLICIT_P IMPORT_P IN_P
 	INCLUDING INCREMENT INDEX INDEXES INHERIT INHERITS INITIALLY INLINE_P
@@ -618,7 +621,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	OBJECT_P OF OFF OFFSET OIDS ON ONLY OPERATOR OPTION OPTIONS OR
 	ORDER ORDINALITY OUT_P OUTER_P OVER OVERLAPS OVERLAY OWNED OWNER
 
-	PARALLEL PARSER PARTIAL PARTITION PASSING PASSWORD PLACING PLANS POLICY
+	PARALLEL PARSER PARTIAL PARTITION PARTITIONS PASSING PASSWORD PLACING PLANS POLICY
 	POSITION PRECEDING PRECISION PRESERVE PREPARE PREPARED PRIMARY
 	PRIOR PRIVILEGES PROCEDURAL PROCEDURE PROGRAM
 
@@ -2888,6 +2891,42 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->if_not_exists = true;
 					$$ = (Node *)n;
 				}
+		| CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
+			OptInherit OptWith OnCommitOption OptTableSpace
+			PARTITION BY partitionType
+				{
+					CreateStmt *n = makeNode(CreateStmt);
+					$4->relpersistence = $2;
+					n->relation = $4;
+					n->tableElts = $6;
+					n->inhRelations = $8;
+					n->ofTypename = NULL;
+					n->constraints = NIL;
+					n->options = $9;
+					n->oncommit = $10;
+					n->tablespacename = $11;
+					n->if_not_exists = false;
+					n->partition_info = $14;
+					$$ = (Node *)n;
+				}
+		;
+
+/*partitionType:	HASH '(' columnref ')' PARTITIONS '(' Iconst ')'*/
+partitionType:	HASH '(' a_expr ')' PARTITIONS '(' Iconst ')'
+					{
+						PartitionInfo *n = (PartitionInfo *) palloc(sizeof(PartitionInfo));
+						n->partition_type = PT_HASH;
+						n->key = $3;
+						n->partitions_count = $7;
+						$$ = (PartitionInfo *)n;
+					}
+				| RANGE '(' columnref ')'
+					{
+						PartitionInfo *n = (PartitionInfo *) palloc(sizeof(PartitionInfo));
+						n->partition_type = PT_RANGE;
+						n->key = $3;
+						$$ = (PartitionInfo *)n;
+					}
 		;
 
 /*
@@ -13934,6 +13973,7 @@ unreserved_keyword:
 			| GLOBAL
 			| GRANTED
 			| HANDLER
+			| HASH
 			| HEADER_P
 			| HOLD
 			| HOUR_P
@@ -14003,6 +14043,7 @@ unreserved_keyword:
 			| PARSER
 			| PARTIAL
 			| PARTITION
+			| PARTITIONS
 			| PASSING
 			| PASSWORD
 			| PLANS

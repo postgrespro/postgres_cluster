@@ -990,6 +990,7 @@ ProcessUtilitySlow(Node *parsetree,
 						{
 							Datum		toast_options;
 							static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
+							CreateStmt  *createStmt = (CreateStmt *) stmt;
 
 							/* Create the table itself */
 							address = DefineRelation((CreateStmt *) stmt,

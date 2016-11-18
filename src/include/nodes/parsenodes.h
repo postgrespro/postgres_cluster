@@ -1735,6 +1735,28 @@ typedef struct VariableShowStmt
 	char	   *name;
 } VariableShowStmt;
 
+
+/* ----------------------
+ *		///
+ *
+ * Partition type defines is it HASH or RANGE partition, partitioning key,
+ * interval (for RANGE) or partitions count (for HASH)
+ * ----------------------
+ */
+
+typedef enum PartitionType
+{
+	PT_HASH = 1,
+	PT_RANGE
+} PartitionType;
+
+typedef struct PartitionInfo
+{
+	PartitionType	partition_type;		/* partition type */
+	Node		   *key;				/* ColumnRef (Expr in future) */
+	uint32			partitions_count;	/* for PT_HASH only */
+} PartitionInfo;
+
 /* ----------------------
  *		Create Table Statement
  *
@@ -1759,7 +1781,9 @@ typedef struct CreateStmt
 	OnCommitAction oncommit;	/* what do we do at COMMIT? */
 	char	   *tablespacename; /* table space to use, or NULL */
 	bool		if_not_exists;	/* just do nothing if it already exists? */
+	PartitionInfo *partition_info;
 } CreateStmt;
+
 
 /* ----------
  * Definitions for constraints in CreateStmt

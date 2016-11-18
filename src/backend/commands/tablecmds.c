@@ -57,6 +57,7 @@
 #include "commands/trigger.h"
 #include "commands/typecmds.h"
 #include "commands/user.h"
+#include "commands/partition.h"
 #include "executor/executor.h"
 #include "foreign/foreign.h"
 #include "miscadmin.h"
@@ -718,6 +719,45 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	 * visible to anyone else anyway, until commit).
 	 */
 	relation_close(rel, NoLock);
+
+	/* Handle partitioning */
+	if (stmt->partition_info)
+	{
+		(void) create_partitions(stmt, rel->rd_id);
+
+		// PartitionInfo *pinfo = (PartitionInfo *) stmt->partition_info;
+		// // PartitionTable();
+		// if (SPI_connect() != SPI_OK_CONNECT)
+		// 	elog(ERROR, "could not connect using SPI");
+
+
+		// // switch (pinfo->partition_type)
+		// // {
+		// // 	case PT_HASH:
+		// // 		{
+		// // 			// char *attname = ((ColumnRef *) pinfo->key)->fields;
+		// // 			Value  *attname = (Value *) linitial(((ColumnRef *) pinfo->key)->fields);
+		// // 			int		nargs = 3;
+		// // 			Oid		types[3] = {OIDOID, TEXTOID, INT4OID};
+		// // 			Datum	values[3] = {
+		// // 				ObjectIdGetDatum(rel->rd_id),
+		// // 				CStringGetTextDatum(strVal(attname)),
+		// // 				UInt32GetDatum(pinfo->partitions_count)};
+
+		// // 			SPI_execute_with_args(
+		// // 				"SELECT create_hash_partitions($1, $2, $3)",
+		// // 				nargs, types, values, NULL, false, 0);
+		// // 			// elog(ERROR, "HASH doesn't implemented yet");
+		// // 			break;
+		// // 		}
+		// // 	case PT_RANGE:
+		// // 		// SPI_exec("SELECT create_range_partitions()")
+		// // 		elog(ERROR, "RANGE doesn't implemented yet");
+		// // 		break;
+		// // }
+
+		// SPI_finish(); /* close SPI connection */
+	}
 
 	return address;
 }
