@@ -34,10 +34,10 @@
  * digits.  This sets a lower bound on the segment size (64K transactions
  * for 32-bit TransactionIds).
  */
-#define SLRU_PAGES_PER_SEGMENT	32
+#define SLRU_PAGES_PER_SEGMENT	2048
 
 /* Maximum length of an SLRU name */
-#define SLRU_MAX_NAME_LENGTH	32
+#define SLRU_MAX_NAME_LENGTH	64
 
 /*
  * Page status codes.  Note that these do not include the "dirty" bit.
@@ -70,7 +70,7 @@ typedef struct SlruSharedData
 	char	  **page_buffer;
 	SlruPageStatus *page_status;
 	bool	   *page_dirty;
-	int		   *page_number;
+	int64	   *page_number;
 	int		   *page_lru_count;
 
 	/*
@@ -100,7 +100,7 @@ typedef struct SlruSharedData
 	 * this is not critical data, since we use it only to avoid swapping out
 	 * the latest page.
 	 */
-	int			latest_page_number;
+	int64		latest_page_number;
 
 	/* LWLocks */
 	int			lwlock_tranche_id;
@@ -126,13 +126,6 @@ typedef struct SlruCtlData
 	bool		do_fsync;
 
 	/*
-	 * Decide which of two page numbers is "older" for truncation purposes. We
-	 * need to use comparison of TransactionIds here in order to do the right
-	 * thing with wraparound XID arithmetic.
-	 */
-	bool		(*PagePrecedes) (int, int);
-
-	/*
 	 * Dir is set during SimpleLruInit and does not change thereafter. Since
 	 * it's always the same, it doesn't need to be in shared memory.
 	 */
@@ -145,25 +138,25 @@ typedef SlruCtlData *SlruCtl;
 extern Size SimpleLruShmemSize(int nslots, int nlsns);
 extern void SimpleLruInit(SlruCtl ctl, const char *name, int nslots, int nlsns,
 			  LWLock *ctllock, const char *subdir, int tranche_id);
-extern int	SimpleLruZeroPage(SlruCtl ctl, int pageno);
-extern int SimpleLruReadPage(SlruCtl ctl, int pageno, bool write_ok,
+extern int	SimpleLruZeroPage(SlruCtl ctl, int64 pageno);
+extern int SimpleLruReadPage(SlruCtl ctl, int64 pageno, bool write_ok,
 				  TransactionId xid);
-extern int SimpleLruReadPage_ReadOnly(SlruCtl ctl, int pageno,
+extern int SimpleLruReadPage_ReadOnly(SlruCtl ctl, int64 pageno,
 						   TransactionId xid);
 extern void SimpleLruWritePage(SlruCtl ctl, int slotno);
 extern void SimpleLruFlush(SlruCtl ctl, bool allow_redirtied);
-extern void SimpleLruTruncate(SlruCtl ctl, int cutoffPage);
-extern bool SimpleLruDoesPhysicalPageExist(SlruCtl ctl, int pageno);
+extern void SimpleLruTruncate(SlruCtl ctl, int64 cutoffPage);
+extern bool SimpleLruDoesPhysicalPageExist(SlruCtl ctl, int64 pageno);
 
-typedef bool (*SlruScanCallback) (SlruCtl ctl, char *filename, int segpage,
+typedef bool (*SlruScanCallback) (SlruCtl ctl, char *filename, int64 segpage,
 											  void *data);
 extern bool SlruScanDirectory(SlruCtl ctl, SlruScanCallback callback, void *data);
-extern void SlruDeleteSegment(SlruCtl ctl, int segno);
+extern void SlruDeleteSegment(SlruCtl ctl, int64 segno);
 
 /* SlruScanDirectory public callbacks */
 extern bool SlruScanDirCbReportPresence(SlruCtl ctl, char *filename,
-							int segpage, void *data);
-extern bool SlruScanDirCbDeleteAll(SlruCtl ctl, char *filename, int segpage,
+							int64 segpage, void *data);
+extern bool SlruScanDirCbDeleteAll(SlruCtl ctl, char *filename, int64 segpage,
 					   void *data);
 
 #endif   /* SLRU_H */

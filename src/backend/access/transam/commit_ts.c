@@ -103,16 +103,15 @@ bool		track_commit_timestamp;
 
 static void SetXidCommitTsInPage(TransactionId xid, int nsubxids,
 					 TransactionId *subxids, TimestampTz ts,
-					 RepOriginId nodeid, int pageno);
+					 RepOriginId nodeid, int64 pageno);
 static void TransactionIdSetCommitTs(TransactionId xid, TimestampTz ts,
 						 RepOriginId nodeid, int slotno);
 static void error_commit_ts_disabled(void);
-static int	ZeroCommitTsPage(int pageno, bool writeXlog);
-static bool CommitTsPagePrecedes(int page1, int page2);
+static int	ZeroCommitTsPage(int64 pageno, bool writeXlog);
 static void ActivateCommitTs(void);
 static void DeactivateCommitTs(void);
-static void WriteZeroPageXlogRec(int pageno);
-static void WriteTruncateXlogRec(int pageno);
+static void WriteZeroPageXlogRec(int64 pageno);
+static void WriteTruncateXlogRec(int64 pageno);
 static void WriteSetTimestampXlogRec(TransactionId mainxid, int nsubxids,
 						 TransactionId *subxids, TimestampTz timestamp,
 						 RepOriginId nodeid);
@@ -185,7 +184,7 @@ TransactionTreeSetCommitTsData(TransactionId xid, int nsubxids,
 	 */
 	for (i = 0, headxid = xid;;)
 	{
-		int			pageno = TransactionIdToCTsPage(headxid);
+		int64		pageno = TransactionIdToCTsPage(headxid);
 		int			j;
 
 		for (j = i; j < nsubxids; j++)
@@ -229,7 +228,7 @@ TransactionTreeSetCommitTsData(TransactionId xid, int nsubxids,
 static void
 SetXidCommitTsInPage(TransactionId xid, int nsubxids,
 					 TransactionId *subxids, TimestampTz ts,
-					 RepOriginId nodeid, int pageno)
+					 RepOriginId nodeid, int64 pageno)
 {
 	int			slotno;
 	int			i;
@@ -281,7 +280,7 @@ bool
 TransactionIdGetCommitTsData(TransactionId xid, TimestampTz *ts,
 							 RepOriginId *nodeid)
 {
-	int			pageno = TransactionIdToCTsPage(xid);
+	int64		pageno = TransactionIdToCTsPage(xid);
 	int			entryno = TransactionIdToCTsEntry(xid);
 	int			slotno;
 	CommitTimestampEntry entry;
@@ -483,7 +482,6 @@ CommitTsShmemInit(void)
 {
 	bool		found;
 
-	CommitTsCtl->PagePrecedes = CommitTsPagePrecedes;
 	SimpleLruInit(CommitTsCtl, "commit_timestamp", CommitTsShmemBuffers(), 0,
 				  CommitTsControlLock, "pg_commit_ts",
 				  LWTRANCHE_COMMITTS_BUFFERS);
@@ -531,7 +529,7 @@ BootStrapCommitTs(void)
  * Control lock must be held at entry, and will be held at exit.
  */
 static int
-ZeroCommitTsPage(int pageno, bool writeXlog)
+ZeroCommitTsPage(int64 pageno, bool writeXlog)
 {
 	int			slotno;
 
@@ -625,7 +623,7 @@ static void
 ActivateCommitTs(void)
 {
 	TransactionId xid;
-	int			pageno;
+	int64		pageno;
 
 	/* If we've done this already, there's nothing to do */
 	LWLockAcquire(CommitTsLock, LW_EXCLUSIVE);
@@ -764,7 +762,7 @@ CheckPointCommitTs(void)
 void
 ExtendCommitTs(TransactionId newestXact)
 {
-	int			pageno;
+	int64		pageno;
 
 	/*
 	 * Nothing to do if module not enabled.  Note we do an unlocked read of
@@ -802,7 +800,7 @@ ExtendCommitTs(TransactionId newestXact)
 void
 TruncateCommitTs(TransactionId oldestXact)
 {
-	int			cutoffPage;
+	int64		cutoffPage;
 
 	/*
 	 * The cutoff point is the start of the segment containing oldestXact. We
@@ -862,37 +860,13 @@ AdvanceOldestCommitTsXid(TransactionId oldestXact)
 
 
 /*
- * Decide which of two CLOG page numbers is "older" for truncation purposes.
- *
- * We need to use comparison of TransactionIds here in order to do the right
- * thing with wraparound XID arithmetic.  However, if we are asked about
- * page number zero, we don't want to hand InvalidTransactionId to
- * TransactionIdPrecedes: it'll get weird about permanent xact IDs.  So,
- * offset both xids by FirstNormalTransactionId to avoid that.
- */
-static bool
-CommitTsPagePrecedes(int page1, int page2)
-{
-	TransactionId xid1;
-	TransactionId xid2;
-
-	xid1 = ((TransactionId) page1) * COMMIT_TS_XACTS_PER_PAGE;
-	xid1 += FirstNormalTransactionId;
-	xid2 = ((TransactionId) page2) * COMMIT_TS_XACTS_PER_PAGE;
-	xid2 += FirstNormalTransactionId;
-
-	return TransactionIdPrecedes(xid1, xid2);
-}
-
-
-/*
  * Write a ZEROPAGE xlog record
  */
 static void
-WriteZeroPageXlogRec(int pageno)
+WriteZeroPageXlogRec(int64 pageno)
 {
 	XLogBeginInsert();
-	XLogRegisterData((char *) (&pageno), sizeof(int));
+	XLogRegisterData((char *) (&pageno), sizeof(int64));
 	(void) XLogInsert(RM_COMMIT_TS_ID, COMMIT_TS_ZEROPAGE);
 }
 
@@ -900,10 +874,10 @@ WriteZeroPageXlogRec(int pageno)
  * Write a TRUNCATE xlog record
  */
 static void
-WriteTruncateXlogRec(int pageno)
+WriteTruncateXlogRec(int64 pageno)
 {
 	XLogBeginInsert();
-	XLogRegisterData((char *) (&pageno), sizeof(int));
+	XLogRegisterData((char *) (&pageno), sizeof(int64));
 	(void) XLogInsert(RM_COMMIT_TS_ID, COMMIT_TS_TRUNCATE);
 }
 
@@ -942,10 +916,10 @@ commit_ts_redo(XLogReaderState *record)
 
 	if (info == COMMIT_TS_ZEROPAGE)
 	{
-		int			pageno;
+		int64		pageno;
 		int			slotno;
 
-		memcpy(&pageno, XLogRecGetData(record), sizeof(int));
+		memcpy(&pageno, XLogRecGetData(record), sizeof(int64));
 
 		LWLockAcquire(CommitTsControlLock, LW_EXCLUSIVE);
 
@@ -957,9 +931,9 @@ commit_ts_redo(XLogReaderState *record)
 	}
 	else if (info == COMMIT_TS_TRUNCATE)
 	{
-		int			pageno;
+		int64		pageno;
 
-		memcpy(&pageno, XLogRecGetData(record), sizeof(int));
+		memcpy(&pageno, XLogRecGetData(record), sizeof(int64));
 
 		/*
 		 * During XLOG replay, latest_page_number isn't set up yet; insert a

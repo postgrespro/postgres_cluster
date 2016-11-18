@@ -60,7 +60,8 @@
 
 
 #define SlruFileName(ctl, path, seg) \
-	snprintf(path, MAXPGPATH, "%s/%04X", (ctl)->Dir, seg)
+	snprintf(path, MAXPGPATH, "%s/%04X%08X", (ctl)->Dir, \
+		(uint32) ((seg) & (int64)0xFFFFFFFF), (uint32) ((seg) >> 32))
 
 /*
  * During SimpleLruFlush(), we will usually not need to write/fsync more
@@ -75,7 +76,7 @@ typedef struct SlruFlushData
 {
 	int			num_files;		/* # files actually open */
 	int			fd[MAX_FLUSH_BUFFERS];	/* their FD's */
-	int			segno[MAX_FLUSH_BUFFERS];		/* their log seg#s */
+	int64		segno[MAX_FLUSH_BUFFERS];		/* their log seg#s */
 } SlruFlushData;
 
 typedef struct SlruFlushData *SlruFlush;
@@ -126,14 +127,14 @@ static int	slru_errno;
 static void SimpleLruZeroLSNs(SlruCtl ctl, int slotno);
 static void SimpleLruWaitIO(SlruCtl ctl, int slotno);
 static void SlruInternalWritePage(SlruCtl ctl, int slotno, SlruFlush fdata);
-static bool SlruPhysicalReadPage(SlruCtl ctl, int pageno, int slotno);
-static bool SlruPhysicalWritePage(SlruCtl ctl, int pageno, int slotno,
+static bool SlruPhysicalReadPage(SlruCtl ctl, int64 pageno, int slotno);
+static bool SlruPhysicalWritePage(SlruCtl ctl, int64 pageno, int slotno,
 					  SlruFlush fdata);
-static void SlruReportIOError(SlruCtl ctl, int pageno, TransactionId xid);
-static int	SlruSelectLRUPage(SlruCtl ctl, int pageno);
+static void SlruReportIOError(SlruCtl ctl, int64 pageno, TransactionId xid);
+static int	SlruSelectLRUPage(SlruCtl ctl, int64 pageno);
 
 static bool SlruScanDirCbDeleteCutoff(SlruCtl ctl, char *filename,
-						  int segpage, void *data);
+						  int64 segpage, void *data);
 static void SlruInternalDeleteSegment(SlruCtl ctl, char *filename);
 
 /*
@@ -150,7 +151,7 @@ SimpleLruShmemSize(int nslots, int nlsns)
 	sz += MAXALIGN(nslots * sizeof(char *));	/* page_buffer[] */
 	sz += MAXALIGN(nslots * sizeof(SlruPageStatus));	/* page_status[] */
 	sz += MAXALIGN(nslots * sizeof(bool));		/* page_dirty[] */
-	sz += MAXALIGN(nslots * sizeof(int));		/* page_number[] */
+	sz += MAXALIGN(nslots * sizeof(int64));		/* page_number[] */
 	sz += MAXALIGN(nslots * sizeof(int));		/* page_lru_count[] */
 	sz += MAXALIGN(nslots * sizeof(LWLockPadded));		/* buffer_locks[] */
 
@@ -199,7 +200,7 @@ SimpleLruInit(SlruCtl ctl, const char *name, int nslots, int nlsns,
 		offset += MAXALIGN(nslots * sizeof(SlruPageStatus));
 		shared->page_dirty = (bool *) (ptr + offset);
 		offset += MAXALIGN(nslots * sizeof(bool));
-		shared->page_number = (int *) (ptr + offset);
+		shared->page_number = (int64 *) (ptr + offset);
 		offset += MAXALIGN(nslots * sizeof(int));
 		shared->page_lru_count = (int *) (ptr + offset);
 		offset += MAXALIGN(nslots * sizeof(int));
@@ -257,7 +258,7 @@ SimpleLruInit(SlruCtl ctl, const char *name, int nslots, int nlsns,
  * Control lock must be held at entry, and will be held at exit.
  */
 int
-SimpleLruZeroPage(SlruCtl ctl, int pageno)
+SimpleLruZeroPage(SlruCtl ctl, int64 pageno)
 {
 	SlruShared	shared = ctl->shared;
 	int			slotno;
@@ -369,7 +370,7 @@ SimpleLruWaitIO(SlruCtl ctl, int slotno)
  * Control lock must be held at entry, and will be held at exit.
  */
 int
-SimpleLruReadPage(SlruCtl ctl, int pageno, bool write_ok,
+SimpleLruReadPage(SlruCtl ctl, int64 pageno, bool write_ok,
 				  TransactionId xid)
 {
 	SlruShared	shared = ctl->shared;
@@ -461,7 +462,7 @@ SimpleLruReadPage(SlruCtl ctl, int pageno, bool write_ok,
  * It is unspecified whether the lock will be shared or exclusive.
  */
 int
-SimpleLruReadPage_ReadOnly(SlruCtl ctl, int pageno, TransactionId xid)
+SimpleLruReadPage_ReadOnly(SlruCtl ctl, int64 pageno, TransactionId xid)
 {
 	SlruShared	shared = ctl->shared;
 	int			slotno;
@@ -504,7 +505,7 @@ static void
 SlruInternalWritePage(SlruCtl ctl, int slotno, SlruFlush fdata)
 {
 	SlruShared	shared = ctl->shared;
-	int			pageno = shared->page_number[slotno];
+	int64		pageno = shared->page_number[slotno];
 	bool		ok;
 
 	/* If a write is in progress, wait for it to finish */
@@ -584,9 +585,9 @@ SimpleLruWritePage(SlruCtl ctl, int slotno)
  * large enough to contain the given page.
  */
 bool
-SimpleLruDoesPhysicalPageExist(SlruCtl ctl, int pageno)
+SimpleLruDoesPhysicalPageExist(SlruCtl ctl, int64 pageno)
 {
-	int			segno = pageno / SLRU_PAGES_PER_SEGMENT;
+	int64		segno = pageno / SLRU_PAGES_PER_SEGMENT;
 	int			rpageno = pageno % SLRU_PAGES_PER_SEGMENT;
 	int			offset = rpageno * BLCKSZ;
 	char		path[MAXPGPATH];
@@ -633,10 +634,10 @@ SimpleLruDoesPhysicalPageExist(SlruCtl ctl, int pageno)
  * read/write operations.  We could cache one virtual file pointer ...
  */
 static bool
-SlruPhysicalReadPage(SlruCtl ctl, int pageno, int slotno)
+SlruPhysicalReadPage(SlruCtl ctl, int64 pageno, int slotno)
 {
 	SlruShared	shared = ctl->shared;
-	int			segno = pageno / SLRU_PAGES_PER_SEGMENT;
+	int64		segno = pageno / SLRU_PAGES_PER_SEGMENT;
 	int			rpageno = pageno % SLRU_PAGES_PER_SEGMENT;
 	int			offset = rpageno * BLCKSZ;
 	char		path[MAXPGPATH];
@@ -710,10 +711,10 @@ SlruPhysicalReadPage(SlruCtl ctl, int pageno, int slotno)
  * SimpleLruFlush.
  */
 static bool
-SlruPhysicalWritePage(SlruCtl ctl, int pageno, int slotno, SlruFlush fdata)
+SlruPhysicalWritePage(SlruCtl ctl, int64 pageno, int slotno, SlruFlush fdata)
 {
 	SlruShared	shared = ctl->shared;
-	int			segno = pageno / SLRU_PAGES_PER_SEGMENT;
+	int64		segno = pageno / SLRU_PAGES_PER_SEGMENT;
 	int			rpageno = pageno % SLRU_PAGES_PER_SEGMENT;
 	int			offset = rpageno * BLCKSZ;
 	char		path[MAXPGPATH];
@@ -878,9 +879,9 @@ SlruPhysicalWritePage(SlruCtl ctl, int pageno, int slotno, SlruFlush fdata)
  * SlruPhysicalWritePage.  Call this after cleaning up shared-memory state.
  */
 static void
-SlruReportIOError(SlruCtl ctl, int pageno, TransactionId xid)
+SlruReportIOError(SlruCtl ctl, int64 pageno, TransactionId xid)
 {
-	int			segno = pageno / SLRU_PAGES_PER_SEGMENT;
+	int64		segno = pageno / SLRU_PAGES_PER_SEGMENT;
 	int			rpageno = pageno % SLRU_PAGES_PER_SEGMENT;
 	int			offset = rpageno * BLCKSZ;
 	char		path[MAXPGPATH];
@@ -952,7 +953,7 @@ SlruReportIOError(SlruCtl ctl, int pageno, TransactionId xid)
  * Control lock must be held at entry, and will be held at exit.
  */
 static int
-SlruSelectLRUPage(SlruCtl ctl, int pageno)
+SlruSelectLRUPage(SlruCtl ctl, int64 pageno)
 {
 	SlruShared	shared = ctl->shared;
 
@@ -963,10 +964,10 @@ SlruSelectLRUPage(SlruCtl ctl, int pageno)
 		int			cur_count;
 		int			bestvalidslot = 0;	/* keep compiler quiet */
 		int			best_valid_delta = -1;
-		int			best_valid_page_number = 0; /* keep compiler quiet */
+		int64		best_valid_page_number = 0; /* keep compiler quiet */
 		int			bestinvalidslot = 0;		/* keep compiler quiet */
 		int			best_invalid_delta = -1;
-		int			best_invalid_page_number = 0;		/* keep compiler quiet */
+		int64		best_invalid_page_number = 0;		/* keep compiler quiet */
 
 		/* See if page already has a buffer assigned */
 		for (slotno = 0; slotno < shared->num_slots; slotno++)
@@ -1007,7 +1008,7 @@ SlruSelectLRUPage(SlruCtl ctl, int pageno)
 		for (slotno = 0; slotno < shared->num_slots; slotno++)
 		{
 			int			this_delta;
-			int			this_page_number;
+			int64		this_page_number;
 
 			if (shared->page_status[slotno] == SLRU_PAGE_EMPTY)
 				return slotno;
@@ -1031,8 +1032,7 @@ SlruSelectLRUPage(SlruCtl ctl, int pageno)
 			{
 				if (this_delta > best_valid_delta ||
 					(this_delta == best_valid_delta &&
-					 ctl->PagePrecedes(this_page_number,
-									   best_valid_page_number)))
+					 this_page_number < best_valid_page_number))
 				{
 					bestvalidslot = slotno;
 					best_valid_delta = this_delta;
@@ -1043,8 +1043,7 @@ SlruSelectLRUPage(SlruCtl ctl, int pageno)
 			{
 				if (this_delta > best_invalid_delta ||
 					(this_delta == best_invalid_delta &&
-					 ctl->PagePrecedes(this_page_number,
-									   best_invalid_page_number)))
+					 this_page_number < best_invalid_page_number))
 				{
 					bestinvalidslot = slotno;
 					best_invalid_delta = this_delta;
@@ -1094,7 +1093,7 @@ SimpleLruFlush(SlruCtl ctl, bool allow_redirtied)
 	SlruShared	shared = ctl->shared;
 	SlruFlushData fdata;
 	int			slotno;
-	int			pageno = 0;
+	int64		pageno = 0;
 	int			i;
 	bool		ok;
 
@@ -1152,7 +1151,7 @@ SimpleLruFlush(SlruCtl ctl, bool allow_redirtied)
  * Remove all segments before the one holding the passed page number
  */
 void
-SimpleLruTruncate(SlruCtl ctl, int cutoffPage)
+SimpleLruTruncate(SlruCtl ctl, int64 cutoffPage)
 {
 	SlruShared	shared = ctl->shared;
 	int			slotno;
@@ -1178,7 +1177,7 @@ restart:;
 	 * have already wrapped around, and proceeding with the truncation would
 	 * risk removing the current segment.
 	 */
-	if (ctl->PagePrecedes(shared->latest_page_number, cutoffPage))
+	if (shared->latest_page_number < cutoffPage)
 	{
 		LWLockRelease(shared->ControlLock);
 		ereport(LOG,
@@ -1191,7 +1190,7 @@ restart:;
 	{
 		if (shared->page_status[slotno] == SLRU_PAGE_EMPTY)
 			continue;
-		if (!ctl->PagePrecedes(shared->page_number[slotno], cutoffPage))
+		if (shared->page_number[slotno] >= cutoffPage)
 			continue;
 
 		/*
@@ -1245,7 +1244,7 @@ SlruInternalDeleteSegment(SlruCtl ctl, char *filename)
  * Delete an individual SLRU segment, identified by the segment number.
  */
 void
-SlruDeleteSegment(SlruCtl ctl, int segno)
+SlruDeleteSegment(SlruCtl ctl, int64 segno)
 {
 	SlruShared	shared = ctl->shared;
 	int			slotno;
@@ -1305,13 +1304,13 @@ restart:
  *		containing the page passed as "data".
  */
 bool
-SlruScanDirCbReportPresence(SlruCtl ctl, char *filename, int segpage, void *data)
+SlruScanDirCbReportPresence(SlruCtl ctl, char *filename, int64 segpage, void *data)
 {
-	int			cutoffPage = *(int *) data;
+	int64		cutoffPage = *(int64 *) data;
 
 	cutoffPage -= cutoffPage % SLRU_PAGES_PER_SEGMENT;
 
-	if (ctl->PagePrecedes(segpage, cutoffPage))
+	if (segpage < cutoffPage)
 		return true;			/* found one; don't iterate any more */
 
 	return false;				/* keep going */
@@ -1322,11 +1321,11 @@ SlruScanDirCbReportPresence(SlruCtl ctl, char *filename, int segpage, void *data
  *		This callback deletes segments prior to the one passed in as "data".
  */
 static bool
-SlruScanDirCbDeleteCutoff(SlruCtl ctl, char *filename, int segpage, void *data)
+SlruScanDirCbDeleteCutoff(SlruCtl ctl, char *filename, int64 segpage, void *data)
 {
-	int			cutoffPage = *(int *) data;
+	int64		cutoffPage = *(int64 *) data;
 
-	if (ctl->PagePrecedes(segpage, cutoffPage))
+	if (segpage < cutoffPage)
 		SlruInternalDeleteSegment(ctl, filename);
 
 	return false;				/* keep going */
@@ -1337,7 +1336,7 @@ SlruScanDirCbDeleteCutoff(SlruCtl ctl, char *filename, int segpage, void *data)
  *		This callback deletes all segments.
  */
 bool
-SlruScanDirCbDeleteAll(SlruCtl ctl, char *filename, int segpage, void *data)
+SlruScanDirCbDeleteAll(SlruCtl ctl, char *filename, int64 segpage, void *data)
 {
 	SlruInternalDeleteSegment(ctl, filename);
 
@@ -1365,8 +1364,8 @@ SlruScanDirectory(SlruCtl ctl, SlruScanCallback callback, void *data)
 	bool		retval = false;
 	DIR		   *cldir;
 	struct dirent *clde;
-	int			segno;
-	int			segpage;
+	int64		segno;
+	int64		segpage;
 
 	cldir = AllocateDir(ctl->Dir);
 	while ((clde = ReadDir(cldir, ctl->Dir)) != NULL)
@@ -1375,10 +1374,10 @@ SlruScanDirectory(SlruCtl ctl, SlruScanCallback callback, void *data)
 
 		len = strlen(clde->d_name);
 
-		if ((len == 4 || len == 5 || len == 6) &&
+		if ((len == 12 || len == 13 || len == 14) &&
 			strspn(clde->d_name, "0123456789ABCDEF") == len)
 		{
-			segno = (int) strtol(clde->d_name, NULL, 16);
+			segno = strtoq(clde->d_name, NULL, 16);
 			segpage = segno * SLRU_PAGES_PER_SEGMENT;
 
 			elog(DEBUG2, "SlruScanDirectory invoking callback on %s/%s",
