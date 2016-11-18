@@ -51,7 +51,7 @@ typedef struct LogicalRewriteMappingData
  * 6) xid of the xact performing the mapping
  * ---
  */
-#define LOGICAL_REWRITE_FORMAT "map-%x-%x-%X_%X-%x-%x"
+#define LOGICAL_REWRITE_FORMAT "map-%x-%x-%X_%X-%x_%x-%x_%x"
 void		CheckPointLogicalRewriteHeap(void);
 
 #endif   /* REWRITE_HEAP_H */

@@ -112,15 +112,15 @@
 	((xid) / (MultiXactOffset) MULTIXACT_OFFSETS_PER_PAGE)
 #define MultiXactIdToOffsetEntry(xid) \
 	((xid) % (MultiXactOffset) MULTIXACT_OFFSETS_PER_PAGE)
-#define MultiXactIdToOffsetSegment(xid) (MultiXactIdToOffsetPage(xid) / SLRU_PAGES_PER_SEGMENT)
+#define MultiXactIdToOffsetSegment(xid) ((uint32)(MultiXactIdToOffsetPage(xid) / SLRU_PAGES_PER_SEGMENT))
 
 /*
  * The situation for members is a bit more complex: we store one byte of
  * additional flag bits for each TransactionId.  To do this without getting
- * into alignment issues, we store four bytes of flags, and then the
- * corresponding 4 Xids.  Each such 5-word (20-byte) set we call a "group", and
- * are stored as a whole in pages.  Thus, with 8kB BLCKSZ, we keep 409 groups
- * per page.  This wastes 12 bytes per page, but that's OK -- simplicity (and
+ * into alignment issues, we store eight bytes of flags, and then the
+ * corresponding 8 Xids.  Each such 9-word (72-byte) set we call a "group", and
+ * are stored as a whole in pages.  Thus, with 8kB BLCKSZ, we keep 113 groups
+ * per page.  This wastes 56 bytes per page, but that's OK -- simplicity (and
  * performance) trumps space efficiency here.
  *
  * Note that the "offset" macros work with byte offset, not array indexes, so
@@ -132,7 +132,7 @@
 #define MXACT_MEMBER_XACT_BITMASK	((1 << MXACT_MEMBER_BITS_PER_XACT) - 1)
 
 /* how many full bytes of flags are there in a group? */
-#define MULTIXACT_FLAGBYTES_PER_GROUP		4
+#define MULTIXACT_FLAGBYTES_PER_GROUP	 	8	
 #define MULTIXACT_MEMBERS_PER_MEMBERGROUP	\
 	(MULTIXACT_FLAGBYTES_PER_GROUP * MXACT_MEMBER_FLAGS_PER_BYTE)
 /* size in bytes of a complete group */
@@ -157,7 +157,7 @@
 
 /* page in which a member is to be found */
 #define MXOffsetToMemberPage(xid) ((xid) / (TransactionId) MULTIXACT_MEMBERS_PER_PAGE)
-#define MXOffsetToMemberSegment(xid) (MXOffsetToMemberPage(xid) / SLRU_PAGES_PER_SEGMENT)
+#define MXOffsetToMemberSegment(xid) ((uint32)(MXOffsetToMemberPage(xid) / SLRU_PAGES_PER_SEGMENT))
 
 /* Location (byte offset within page) of flag word for a given member */
 #define MXOffsetToFlagsOffset(xid) \
@@ -878,8 +878,8 @@ RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
 	for (i = 0; i < nmembers; i++, offset++)
 	{
 		TransactionId *memberptr;
-		uint32	   *flagsptr;
-		uint32		flagsval;
+		uint64	   *flagsptr;
+		uint64		flagsval;
 		int			bshift;
 		int			flagsoff;
 		int			memberoff;
@@ -900,14 +900,15 @@ RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
 		memberptr = (TransactionId *)
 			(MultiXactMemberCtl->shared->page_buffer[slotno] + memberoff);
 
+
 		*memberptr = members[i].xid;
 
-		flagsptr = (uint32 *)
+		flagsptr = (uint64 *)
 			(MultiXactMemberCtl->shared->page_buffer[slotno] + flagsoff);
 
 		flagsval = *flagsptr;
-		flagsval &= ~(((1 << MXACT_MEMBER_BITS_PER_XACT) - 1) << bshift);
-		flagsval |= (members[i].status << bshift);
+		flagsval &= ~((uint64)((1 << MXACT_MEMBER_BITS_PER_XACT) - 1) << bshift);
+		flagsval |= ((uint64)members[i].status << bshift);
 		*flagsptr = flagsval;
 
 		MultiXactMemberCtl->shared->page_dirty[slotno] = true;
@@ -1025,8 +1026,8 @@ GetNewMultiXactId(int nmembers, MultiXactOffset *offset)
 			/* complain even if that DB has disappeared */
 			if (oldest_datname)
 				ereport(WARNING,
-						(errmsg_plural("database \"%s\" must be vacuumed before %u more MultiXactId is used",
-									   "database \"%s\" must be vacuumed before %u more MultiXactIds are used",
+						(errmsg_plural("database \"%s\" must be vacuumed before " XID_FMT " more MultiXactId is used",
+									   "database \"%s\" must be vacuumed before " XID_FMT " more MultiXactIds are used",
 									   multiWrapLimit - result,
 									   oldest_datname,
 									   multiWrapLimit - result),
@@ -1034,8 +1035,8 @@ GetNewMultiXactId(int nmembers, MultiXactOffset *offset)
 						 "You might also need to commit or roll back old prepared transactions.")));
 			else
 				ereport(WARNING,
-						(errmsg_plural("database with OID %u must be vacuumed before %u more MultiXactId is used",
-									   "database with OID %u must be vacuumed before %u more MultiXactIds are used",
+						(errmsg_plural("database with OID %u must be vacuumed before " XID_FMT " more MultiXactId is used",
+									   "database with OID %u must be vacuumed before " XID_FMT " more MultiXactIds are used",
 									   multiWrapLimit - result,
 									   oldest_datoid,
 									   multiWrapLimit - result),
@@ -1274,7 +1275,7 @@ GetMultiXactIdMembers(MultiXactId multi, MultiXactMember **members,
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
-		 errmsg("MultiXactId %u does no longer exist -- apparent wraparound",
+		 errmsg("MultiXactId " XID_FMT " does no longer exist -- apparent wraparound",
 				multi)));
 		return -1;
 	}
@@ -1282,7 +1283,7 @@ GetMultiXactIdMembers(MultiXactId multi, MultiXactMember **members,
 	if (!MultiXactIdPrecedes(multi, nextMXact))
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("MultiXactId %u has not been created yet -- apparent wraparound",
+				 errmsg("MultiXactId " XID_FMT " has not been created yet -- apparent wraparound",
 						multi)));
 
 	/*
@@ -1387,7 +1388,7 @@ retry:
 	for (i = 0; i < length; i++, offset++)
 	{
 		TransactionId *xactptr;
-		uint32	   *flagsptr;
+		uint64	   *flagsptr;
 		int			flagsoff;
 		int			bshift;
 		int			memberoff;
@@ -1413,7 +1414,7 @@ retry:
 
 		flagsoff = MXOffsetToFlagsOffset(offset);
 		bshift = MXOffsetToFlagsBitShift(offset);
-		flagsptr = (uint32 *) (MultiXactMemberCtl->shared->page_buffer[slotno] + flagsoff);
+		flagsptr = (uint64 *) (MultiXactMemberCtl->shared->page_buffer[slotno] + flagsoff);
 
 		ptr[truelength].xid = *xactptr;
 		ptr[truelength].status = (*flagsptr >> bshift) & MXACT_MEMBER_XACT_BITMASK;
@@ -1639,11 +1640,11 @@ mxid_to_string(MultiXactId multi, int nmembers, MultiXactMember *members)
 
 	initStringInfo(&buf);
 
-	appendStringInfo(&buf, "%u %d[%u (%s)", multi, nmembers, members[0].xid,
+	appendStringInfo(&buf, XID_FMT " %d[" XID_FMT " (%s)", multi, nmembers, members[0].xid,
 					 mxstatus_to_string(members[0].status));
 
 	for (i = 1; i < nmembers; i++)
-		appendStringInfo(&buf, ", %u (%s)", members[i].xid,
+		appendStringInfo(&buf, ", " XID_FMT " (%s)", members[i].xid,
 						 mxstatus_to_string(members[i].status));
 
 	appendStringInfoChar(&buf, ']');
@@ -2261,7 +2262,7 @@ SetMultiXactIdLimit(MultiXactId oldest_datminmxid, Oid oldest_datoid)
 
 	/* Log the info */
 	ereport(DEBUG1,
-	 (errmsg("MultiXactId wrap limit is %u, limited by database with OID %u",
+	 (errmsg("MultiXactId wrap limit is " XID_FMT ", limited by database with OID %u",
 			 multiWrapLimit, oldest_datoid)));
 
 	/*
@@ -2311,8 +2312,8 @@ SetMultiXactIdLimit(MultiXactId oldest_datminmxid, Oid oldest_datoid)
 
 		if (oldest_datname)
 			ereport(WARNING,
-					(errmsg_plural("database \"%s\" must be vacuumed before %u more MultiXactId is used",
-								   "database \"%s\" must be vacuumed before %u more MultiXactIds are used",
+					(errmsg_plural("database \"%s\" must be vacuumed before " XID_FMT " more MultiXactId is used",
+								   "database \"%s\" must be vacuumed before " XID_FMT " more MultiXactIds are used",
 								   multiWrapLimit - curMulti,
 								   oldest_datname,
 								   multiWrapLimit - curMulti),
@@ -2320,8 +2321,8 @@ SetMultiXactIdLimit(MultiXactId oldest_datminmxid, Oid oldest_datoid)
 							 "You might also need to commit or roll back old prepared transactions.")));
 		else
 			ereport(WARNING,
-					(errmsg_plural("database with OID %u must be vacuumed before %u more MultiXactId is used",
-								   "database with OID %u must be vacuumed before %u more MultiXactIds are used",
+					(errmsg_plural("database with OID %u must be vacuumed before " XID_FMT " more MultiXactId is used",
+								   "database with OID %u must be vacuumed before " XID_FMT " more MultiXactIds are used",
 								   multiWrapLimit - curMulti,
 								   oldest_datoid,
 								   multiWrapLimit - curMulti),
@@ -2599,7 +2600,7 @@ SetOffsetVacuumLimit(void)
 							oldestOffset)));
 		else
 			ereport(LOG,
-					(errmsg("MultiXact member wraparound protections are disabled because oldest checkpointed MultiXact %u does not exist on disk",
+					(errmsg("MultiXact member wraparound protections are disabled because oldest checkpointed MultiXact " XID_FMT " does not exist on disk",
 							oldestMultiXactId)));
 	}
 
@@ -2623,7 +2624,7 @@ SetOffsetVacuumLimit(void)
 			ereport(LOG,
 					(errmsg("MultiXact member wraparound protections are now enabled")));
 		ereport(DEBUG1,
-		(errmsg("MultiXact member stop limit is now %u based on MultiXact %u",
+		(errmsg("MultiXact member stop limit is now %u based on MultiXact " XID_FMT,
 				offsetStopLimit, oldestMultiXactId)));
 	}
 	else if (prevOldestOffsetKnown)
@@ -3003,7 +3004,7 @@ TruncateMultiXact(MultiXactId newOldestMulti, Oid newOldestMultiDB)
 	else if (!find_multixact_start(oldestMulti, &oldestOffset))
 	{
 		ereport(LOG,
-				(errmsg("oldest MultiXact %u not found, earliest MultiXact %u, skipping truncation",
+				(errmsg("oldest MultiXact " XID_FMT " not found, earliest MultiXact " XID_FMT ", skipping truncation",
 						oldestMulti, earliest)));
 		LWLockRelease(MultiXactTruncationLock);
 		return;
@@ -3021,14 +3022,14 @@ TruncateMultiXact(MultiXactId newOldestMulti, Oid newOldestMultiDB)
 	else if (!find_multixact_start(newOldestMulti, &newOldestOffset))
 	{
 		ereport(LOG,
-				(errmsg("cannot truncate up to MultiXact %u because it does not exist on disk, skipping truncation",
+				(errmsg("cannot truncate up to MultiXact " XID_FMT " because it does not exist on disk, skipping truncation",
 						newOldestMulti)));
 		LWLockRelease(MultiXactTruncationLock);
 		return;
 	}
 
 	elog(DEBUG1, "performing multixact truncation: "
-		 "offsets [%u, %u), offsets segments [%x, %x), "
+		 "offsets [" XID_FMT ", " XID_FMT "), offsets segments [%x, %x), "
 		 "members [%u, %u), members segments [%x, %x)",
 		 oldestMulti, newOldestMulti,
 		 MultiXactIdToOffsetSegment(oldestMulti),
@@ -3296,7 +3297,7 @@ multixact_redo(XLogReaderState *record)
 			   SizeOfMultiXactTruncate);
 
 		elog(DEBUG1, "replaying multixact truncation: "
-			 "offsets [%u, %u), offsets segments [%x, %x), "
+			 "offsets [" XID_FMT ", " XID_FMT "), offsets segments [%x, %x), "
 			 "members [%u, %u), members segments [%x, %x)",
 			 xlrec.startTruncOff, xlrec.endTruncOff,
 			 MultiXactIdToOffsetSegment(xlrec.startTruncOff),
@@ -3347,7 +3348,7 @@ pg_get_multixact_members(PG_FUNCTION_ARGS)
 	if (mxid < FirstMultiXactId)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("invalid MultiXactId: %u", mxid)));
+				 errmsg("invalid MultiXactId: " XID_FMT, mxid)));
 
 	if (SRF_IS_FIRSTCALL())
 	{
@@ -3383,7 +3384,7 @@ pg_get_multixact_members(PG_FUNCTION_ARGS)
 		HeapTuple	tuple;
 		char	   *values[2];
 
-		values[0] = psprintf("%u", multi->members[multi->iter].xid);
+		values[0] = psprintf(XID_FMT, multi->members[multi->iter].xid);
 		values[1] = mxstatus_to_string(multi->members[multi->iter].status);
 
 		tuple = BuildTupleFromCStrings(funccxt->attinmeta, values);

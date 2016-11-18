@@ -527,7 +527,6 @@ typedef struct XLogCtlData
 	/* Protected by info_lck: */
 	XLogwrtRqst LogwrtRqst;
 	XLogRecPtr	RedoRecPtr;		/* a recent copy of Insert->RedoRecPtr */
-	uint32		ckptXidEpoch;	/* nextXID & epoch of latest checkpoint */
 	TransactionId ckptXid;
 	XLogRecPtr	asyncXactLSN;	/* LSN of newest async commit/abort */
 	XLogRecPtr	replicationSlotMinLSN;	/* oldest LSN needed by any slot */
@@ -4801,7 +4800,6 @@ BootStrapXLOG(void)
 	checkPoint.ThisTimeLineID = ThisTimeLineID;
 	checkPoint.PrevTimeLineID = ThisTimeLineID;
 	checkPoint.fullPageWrites = fullPageWrites;
-	checkPoint.nextXidEpoch = 0;
 	checkPoint.nextXid = FirstNormalTransactionId;
 	checkPoint.nextOid = FirstBootstrapObjectId;
 	checkPoint.nextMulti = FirstMultiXactId;
@@ -5043,7 +5041,7 @@ readRecoveryCommandFile(void)
 				  errmsg("recovery_target_xid is not a valid number: \"%s\"",
 						 item->value)));
 			ereport(DEBUG2,
-					(errmsg_internal("recovery_target_xid = %u",
+					(errmsg_internal("recovery_target_xid = " XID_FMT,
 									 recoveryTargetXid)));
 			recoveryTarget = RECOVERY_TARGET_XID;
 		}
@@ -5484,14 +5482,14 @@ recoveryStopsBefore(XLogReaderState *record)
 		if (isCommit)
 		{
 			ereport(LOG,
-					(errmsg("recovery stopping before commit of transaction %u, time %s",
+					(errmsg("recovery stopping before commit of transaction " XID_FMT ", time %s",
 							recoveryStopXid,
 							timestamptz_to_str(recoveryStopTime))));
 		}
 		else
 		{
 			ereport(LOG,
-					(errmsg("recovery stopping before abort of transaction %u, time %s",
+					(errmsg("recovery stopping before abort of transaction " XID_FMT ", time %s",
 							recoveryStopXid,
 							timestamptz_to_str(recoveryStopTime))));
 		}
@@ -5604,7 +5602,7 @@ recoveryStopsAfter(XLogReaderState *record)
 				xact_info == XLOG_XACT_COMMIT_PREPARED)
 			{
 				ereport(LOG,
-						(errmsg("recovery stopping after commit of transaction %u, time %s",
+						(errmsg("recovery stopping after commit of transaction " XID_FMT ", time %s",
 								recoveryStopXid,
 								timestamptz_to_str(recoveryStopTime))));
 			}
@@ -5612,7 +5610,7 @@ recoveryStopsAfter(XLogReaderState *record)
 					 xact_info == XLOG_XACT_ABORT_PREPARED)
 			{
 				ereport(LOG,
-						(errmsg("recovery stopping after abort of transaction %u, time %s",
+						(errmsg("recovery stopping after abort of transaction " XID_FMT ", time %s",
 								recoveryStopXid,
 								timestamptz_to_str(recoveryStopTime))));
 			}
@@ -6045,7 +6043,7 @@ StartupXLOG(void)
 					(errmsg("entering standby mode")));
 		else if (recoveryTarget == RECOVERY_TARGET_XID)
 			ereport(LOG,
-					(errmsg("starting point-in-time recovery to XID %u",
+					(errmsg("starting point-in-time recovery to XID " XID_FMT,
 							recoveryTargetXid)));
 		else if (recoveryTarget == RECOVERY_TARGET_TIME)
 			ereport(LOG,
@@ -6326,22 +6324,22 @@ StartupXLOG(void)
 				  (uint32) (checkPoint.redo >> 32), (uint32) checkPoint.redo,
 							 wasShutdown ? "TRUE" : "FALSE")));
 	ereport(DEBUG1,
-			(errmsg_internal("next transaction ID: %u:%u; next OID: %u",
-							 checkPoint.nextXidEpoch, checkPoint.nextXid,
-							 checkPoint.nextOid)));
+			(errmsg_internal("next transaction ID: " XID_FMT " next OID: %u",
+					checkPoint.nextXid,
+					checkPoint.nextOid)));
 	ereport(DEBUG1,
-			(errmsg_internal("next MultiXactId: %u; next MultiXactOffset: %u",
-						 checkPoint.nextMulti, checkPoint.nextMultiOffset)));
+			(errmsg_internal("next MultiXactId: " XID_FMT "; next MultiXactOffset: %u",
+					checkPoint.nextMulti, checkPoint.nextMultiOffset)));
 	ereport(DEBUG1,
-	   (errmsg_internal("oldest unfrozen transaction ID: %u, in database %u",
-						checkPoint.oldestXid, checkPoint.oldestXidDB)));
+			(errmsg_internal("oldest unfrozen transaction ID: " XID_FMT ", in database %u",
+					checkPoint.oldestXid, checkPoint.oldestXidDB)));
 	ereport(DEBUG1,
-			(errmsg_internal("oldest MultiXactId: %u, in database %u",
-						 checkPoint.oldestMulti, checkPoint.oldestMultiDB)));
+			(errmsg_internal("oldest MultiXactId: " XID_FMT ", in database %u",
+					checkPoint.oldestMulti, checkPoint.oldestMultiDB)));
 	ereport(DEBUG1,
-			(errmsg_internal("commit timestamp Xid oldest/newest: %u/%u",
-							 checkPoint.oldestCommitTsXid,
-							 checkPoint.newestCommitTsXid)));
+			(errmsg_internal("commit timestamp Xid oldest/newest: " XID_FMT "/" XID_FMT,
+					checkPoint.oldestCommitTsXid,
+					checkPoint.newestCommitTsXid)));
 	if (!TransactionIdIsNormal(checkPoint.nextXid))
 		ereport(PANIC,
 				(errmsg("invalid next transaction ID")));
@@ -6355,7 +6353,6 @@ StartupXLOG(void)
 	SetMultiXactIdLimit(checkPoint.oldestMulti, checkPoint.oldestMultiDB);
 	SetCommitTsLimit(checkPoint.oldestCommitTsXid,
 					 checkPoint.newestCommitTsXid);
-	XLogCtl->ckptXidEpoch = checkPoint.nextXidEpoch;
 	XLogCtl->ckptXid = checkPoint.nextXid;
 
 	/*
@@ -7128,7 +7125,7 @@ StartupXLOG(void)
 		 */
 		if (recoveryTarget == RECOVERY_TARGET_XID)
 			snprintf(reason, sizeof(reason),
-					 "%s transaction %u",
+					 "%s transaction " XID_FMT,
 					 recoveryStopAfter ? "after" : "before",
 					 recoveryStopXid);
 		else if (recoveryTarget == RECOVERY_TARGET_TIME)
@@ -7939,7 +7936,7 @@ GetLastSegSwitchTime(void)
 }
 
 /*
- * GetNextXidAndEpoch - get the current nextXid value and associated epoch
+ * GetNextXid - get the current nextXid value and associated epoch
  *
  * This is exported for use by code that would like to have 64-bit XIDs.
  * We don't really support such things, but all XIDs within the system
@@ -7947,30 +7944,20 @@ GetLastSegSwitchTime(void)
  * with them can be determined.
  */
 void
-GetNextXidAndEpoch(TransactionId *xid, uint32 *epoch)
+GetNextXid(TransactionId *xid)
 {
-	uint32		ckptXidEpoch;
 	TransactionId ckptXid;
 	TransactionId nextXid;
 
 	/* Must read checkpoint info first, else have race condition */
 	SpinLockAcquire(&XLogCtl->info_lck);
-	ckptXidEpoch = XLogCtl->ckptXidEpoch;
 	ckptXid = XLogCtl->ckptXid;
 	SpinLockRelease(&XLogCtl->info_lck);
 
 	/* Now fetch current nextXid */
 	nextXid = ReadNewTransactionId();
 
-	/*
-	 * nextXid is certainly logically later than ckptXid.  So if it's
-	 * numerically less, it must have wrapped into the next epoch.
-	 */
-	if (nextXid < ckptXid)
-		ckptXidEpoch++;
-
 	*xid = nextXid;
-	*epoch = ckptXidEpoch;
 }
 
 /*
@@ -8381,11 +8368,6 @@ CreateCheckPoint(int flags)
 	checkPoint.newestCommitTsXid = ShmemVariableCache->newestCommitTsXid;
 	LWLockRelease(CommitTsLock);
 
-	/* Increase XID epoch if we've wrapped around since last checkpoint */
-	checkPoint.nextXidEpoch = ControlFile->checkPointCopy.nextXidEpoch;
-	if (checkPoint.nextXid < ControlFile->checkPointCopy.nextXid)
-		checkPoint.nextXidEpoch++;
-
 	LWLockAcquire(OidGenLock, LW_SHARED);
 	checkPoint.nextOid = ShmemVariableCache->nextOid;
 	if (!shutdown)
@@ -8530,7 +8512,6 @@ CreateCheckPoint(int flags)
 
 	/* Update shared-memory copy of checkpoint XID/epoch */
 	SpinLockAcquire(&XLogCtl->info_lck);
-	XLogCtl->ckptXidEpoch = checkPoint.nextXidEpoch;
 	XLogCtl->ckptXid = checkPoint.nextXid;
 	SpinLockRelease(&XLogCtl->info_lck);
 
@@ -9323,12 +9304,10 @@ xlog_redo(XLogReaderState *record)
 		}
 
 		/* ControlFile->checkPointCopy always tracks the latest ckpt XID */
-		ControlFile->checkPointCopy.nextXidEpoch = checkPoint.nextXidEpoch;
 		ControlFile->checkPointCopy.nextXid = checkPoint.nextXid;
 
 		/* Update shared-memory copy of checkpoint XID/epoch */
 		SpinLockAcquire(&XLogCtl->info_lck);
-		XLogCtl->ckptXidEpoch = checkPoint.nextXidEpoch;
 		XLogCtl->ckptXid = checkPoint.nextXid;
 		SpinLockRelease(&XLogCtl->info_lck);
 
@@ -9373,12 +9352,10 @@ xlog_redo(XLogReaderState *record)
 			SetTransactionIdLimit(checkPoint.oldestXid,
 								  checkPoint.oldestXidDB);
 		/* ControlFile->checkPointCopy always tracks the latest ckpt XID */
-		ControlFile->checkPointCopy.nextXidEpoch = checkPoint.nextXidEpoch;
 		ControlFile->checkPointCopy.nextXid = checkPoint.nextXid;
 
 		/* Update shared-memory copy of checkpoint XID/epoch */
 		SpinLockAcquire(&XLogCtl->info_lck);
-		XLogCtl->ckptXidEpoch = checkPoint.nextXidEpoch;
 		XLogCtl->ckptXid = checkPoint.nextXid;
 		SpinLockRelease(&XLogCtl->info_lck);
 

@@ -1164,6 +1164,7 @@ do_start_worker(void)
 		avw_dbase  *tmp = lfirst(cell);
 		dlist_iter	iter;
 
+#ifdef NOT_USED
 		/* Check to see if this one is at risk of wraparound */
 		if (TransactionIdPrecedes(tmp->adw_frozenxid, xidForceLimit))
 		{
@@ -1186,6 +1187,7 @@ do_start_worker(void)
 		}
 		else if (for_multi_wrap)
 			continue;			/* ignore not-at-risk DBs */
+#endif
 
 		/* Find pgstat entry if any */
 		tmp->adw_entry = pgstat_fetch_stat_dbentry(tmp->adw_datid);
@@ -2659,7 +2661,6 @@ relation_needs_vacanalyze(Oid relid,
 						  bool *doanalyze,
 						  bool *wraparound)
 {
-	bool		force_vacuum;
 	bool		av_enabled;
 	float4		reltuples;		/* pg_class.reltuples */
 
@@ -2680,8 +2681,6 @@ relation_needs_vacanalyze(Oid relid,
 	/* freeze parameters */
 	int			freeze_max_age;
 	int			multixact_freeze_max_age;
-	TransactionId xidForceLimit;
-	MultiXactId multiForceLimit;
 
 	AssertArg(classForm != NULL);
 	AssertArg(OidIsValid(relid));
@@ -2719,25 +2718,8 @@ relation_needs_vacanalyze(Oid relid,
 
 	av_enabled = (relopts ? relopts->enabled : true);
 
-	/* Force vacuum if table is at risk of wraparound */
-	xidForceLimit = recentXid - freeze_max_age;
-	if (xidForceLimit < FirstNormalTransactionId)
-		xidForceLimit -= FirstNormalTransactionId;
-	force_vacuum = (TransactionIdIsNormal(classForm->relfrozenxid) &&
-					TransactionIdPrecedes(classForm->relfrozenxid,
-										  xidForceLimit));
-	if (!force_vacuum)
-	{
-		multiForceLimit = recentMulti - multixact_freeze_max_age;
-		if (multiForceLimit < FirstMultiXactId)
-			multiForceLimit -= FirstMultiXactId;
-		force_vacuum = MultiXactIdPrecedes(classForm->relminmxid,
-										   multiForceLimit);
-	}
-	*wraparound = force_vacuum;
-
 	/* User disabled it in pg_class.reloptions?  (But ignore if at risk) */
-	if (!av_enabled && !force_vacuum)
+	if (!av_enabled)
 	{
 		*doanalyze = false;
 		*dovacuum = false;
@@ -2770,18 +2752,8 @@ relation_needs_vacanalyze(Oid relid,
 			 vactuples, vacthresh, anltuples, anlthresh);
 
 		/* Determine if this table needs vacuum or analyze. */
-		*dovacuum = force_vacuum || (vactuples > vacthresh);
+		*dovacuum = (vactuples > vacthresh);
 		*doanalyze = (anltuples > anlthresh);
-	}
-	else
-	{
-		/*
-		 * Skip a table not found in stat hash, unless we have to force vacuum
-		 * for anti-wrap purposes.  If it's not acted upon, there's no need to
-		 * vacuum it.
-		 */
-		*dovacuum = force_vacuum;
-		*doanalyze = false;
 	}
 
 	/* ANALYZE refuses to work with pg_statistics */

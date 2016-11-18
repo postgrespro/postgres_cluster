@@ -433,7 +433,7 @@ XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 	if (id == NULL)
 		id = psprintf("UNKNOWN (%x)", info & ~XLR_INFO_MASK);
 
-	printf("rmgr: %-11s len (rec/tot): %6u/%6u, tx: %10u, lsn: %X/%08X, prev %X/%08X, ",
+	printf("rmgr: %-11s len (rec/tot): %6u/%6u, tx: " XID_FMT ", lsn: %X/%08X, prev %X/%08X, ",
 		   desc->rm_name,
 		   XLogRecGetDataLen(record), XLogRecGetTotalLen(record),
 		   XLogRecGetXid(record),
@@ -837,7 +837,7 @@ main(int argc, char **argv)
 				exit(EXIT_SUCCESS);
 				break;
 			case 'x':
-				if (sscanf(optarg, "%u", &config.filter_by_xid) != 1)
+				if (sscanf(optarg, XID_FMT, &config.filter_by_xid) != 1)
 				{
 					fprintf(stderr, "%s: could not parse \"%s\" as a valid xid\n",
 							progname, optarg);

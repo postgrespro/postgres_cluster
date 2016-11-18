@@ -135,9 +135,9 @@ typedef void (*SubXactCallback) (SubXactEvent event, SubTransactionId mySubid,
  */
 #define XACT_XINFO_HAS_DBINFO			(1U << 0)
 #define XACT_XINFO_HAS_SUBXACTS			(1U << 1)
-#define XACT_XINFO_HAS_RELFILENODES		(1U << 2)
-#define XACT_XINFO_HAS_INVALS			(1U << 3)
-#define XACT_XINFO_HAS_TWOPHASE			(1U << 4)
+#define XACT_XINFO_HAS_TWOPHASE			(1U << 2)
+#define XACT_XINFO_HAS_RELFILENODES		(1U << 3)
+#define XACT_XINFO_HAS_INVALS			(1U << 4)
 #define XACT_XINFO_HAS_ORIGIN			(1U << 5)
 
 /*
@@ -193,7 +193,7 @@ typedef struct xl_xact_xinfo
 	 * four so following records don't have to care about alignment. Commit
 	 * records can be large, so copying large portions isn't attractive.
 	 */
-	uint32		xinfo;
+	uint64		xinfo;
 } xl_xact_xinfo;
 
 typedef struct xl_xact_dbinfo
@@ -209,6 +209,11 @@ typedef struct xl_xact_subxacts
 } xl_xact_subxacts;
 #define MinSizeOfXactSubxacts offsetof(xl_xact_subxacts, subxacts)
 
+typedef struct xl_xact_twophase
+{
+	TransactionId xid;
+} xl_xact_twophase;
+
 typedef struct xl_xact_relfilenodes
 {
 	int			nrels;			/* number of subtransaction XIDs */
@@ -221,12 +226,6 @@ typedef struct xl_xact_invals
 	int			nmsgs;			/* number of shared inval msgs */
 	SharedInvalidationMessage msgs[FLEXIBLE_ARRAY_MEMBER];
 } xl_xact_invals;
-#define MinSizeOfXactInvals offsetof(xl_xact_invals, msgs)
-
-typedef struct xl_xact_twophase
-{
-	TransactionId xid;
-} xl_xact_twophase;
 #define MinSizeOfXactInvals offsetof(xl_xact_invals, msgs)
 
 typedef struct xl_xact_origin
@@ -242,9 +241,9 @@ typedef struct xl_xact_commit
 	/* xl_xact_xinfo follows if XLOG_XACT_HAS_INFO */
 	/* xl_xact_dbinfo follows if XINFO_HAS_DBINFO */
 	/* xl_xact_subxacts follows if XINFO_HAS_SUBXACT */
+	/* xl_xact_twophase follows if XINFO_HAS_TWOPHASE */
 	/* xl_xact_relfilenodes follows if XINFO_HAS_RELFILENODES */
 	/* xl_xact_invals follows if XINFO_HAS_INVALS */
-	/* xl_xact_twophase follows if XINFO_HAS_TWOPHASE */
 	/* xl_xact_origin follows if XINFO_HAS_ORIGIN, stored unaligned! */
 } xl_xact_commit;
 #define MinSizeOfXactCommit (offsetof(xl_xact_commit, xact_time) + sizeof(TimestampTz))
@@ -256,9 +255,9 @@ typedef struct xl_xact_abort
 	/* xl_xact_xinfo follows if XLOG_XACT_HAS_INFO */
 	/* No db_info required */
 	/* xl_xact_subxacts follows if HAS_SUBXACT */
+	/* xl_xact_twophase follows if XINFO_HAS_TWOPHASE */
 	/* xl_xact_relfilenodes follows if HAS_RELFILENODES */
 	/* No invalidation messages needed. */
-	/* xl_xact_twophase follows if XINFO_HAS_TWOPHASE */
 } xl_xact_abort;
 #define MinSizeOfXactAbort sizeof(xl_xact_abort)
 

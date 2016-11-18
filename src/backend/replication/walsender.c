@@ -1629,22 +1629,17 @@ PhysicalReplicationSlotNewXmin(TransactionId feedbackXmin)
 static void
 ProcessStandbyHSFeedbackMessage(void)
 {
-	TransactionId nextXid;
-	uint32		nextEpoch;
 	TransactionId feedbackXmin;
-	uint32		feedbackEpoch;
 
 	/*
 	 * Decipher the reply message. The caller already consumed the msgtype
 	 * byte.
 	 */
 	(void) pq_getmsgint64(&reply_message);		/* sendTime; not used ATM */
-	feedbackXmin = pq_getmsgint(&reply_message, 4);
-	feedbackEpoch = pq_getmsgint(&reply_message, 4);
+	feedbackXmin = pq_getmsgint64(&reply_message);
 
-	elog(DEBUG2, "hot standby feedback xmin %u epoch %u",
-		 feedbackXmin,
-		 feedbackEpoch);
+	elog(DEBUG2, "hot standby feedback xmin " XID_FMT,
+		 feedbackXmin);
 
 	/* Unset WalSender's xmin if the feedback message value is invalid */
 	if (!TransactionIdIsNormal(feedbackXmin))
@@ -1654,29 +1649,6 @@ ProcessStandbyHSFeedbackMessage(void)
 			PhysicalReplicationSlotNewXmin(feedbackXmin);
 		return;
 	}
-
-	/*
-	 * Check that the provided xmin/epoch are sane, that is, not in the future
-	 * and not so far back as to be already wrapped around.  Ignore if not.
-	 *
-	 * Epoch of nextXid should be same as standby, or if the counter has
-	 * wrapped, then one greater than standby.
-	 */
-	GetNextXidAndEpoch(&nextXid, &nextEpoch);
-
-	if (feedbackXmin <= nextXid)
-	{
-		if (feedbackEpoch != nextEpoch)
-			return;
-	}
-	else
-	{
-		if (feedbackEpoch + 1 != nextEpoch)
-			return;
-	}
-
-	if (!TransactionIdPrecedesOrEquals(feedbackXmin, nextXid))
-		return;					/* epoch OK, but it's wrapped around */
 
 	/*
 	 * Set the WalSender's xmin equal to the standby's requested xmin, so that

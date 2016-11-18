@@ -55,23 +55,31 @@ heap_desc(StringInfo buf, XLogReaderState *record)
 	{
 		xl_heap_update *xlrec = (xl_heap_update *) rec;
 
-		appendStringInfo(buf, "off %u xmax %u ",
+		appendStringInfo(buf, "off %u xmax " XID_FMT " ",
 						 xlrec->old_offnum,
 						 xlrec->old_xmax);
 		out_infobits(buf, xlrec->old_infobits_set);
-		appendStringInfo(buf, "; new off %u xmax %u",
+		appendStringInfo(buf, "; new off %u xmax " XID_FMT,
 						 xlrec->new_offnum,
 						 xlrec->new_xmax);
+	}
+	else if (info == XLOG_HEAP_EPOCH_SHIFT)
+	{
+		xl_heap_epoch_shift *xlrec = (xl_heap_epoch_shift *) rec;
+
+		appendStringInfo(buf, "%s delta " INT64_FORMAT " ",
+						 xlrec->multi ? "MultiXactId" : "XactId",
+						 xlrec->delta);
 	}
 	else if (info == XLOG_HEAP_HOT_UPDATE)
 	{
 		xl_heap_update *xlrec = (xl_heap_update *) rec;
 
-		appendStringInfo(buf, "off %u xmax %u ",
+		appendStringInfo(buf, "off %u xmax " XID_FMT " ",
 						 xlrec->old_offnum,
 						 xlrec->old_xmax);
 		out_infobits(buf, xlrec->old_infobits_set);
-		appendStringInfo(buf, "; new off %u xmax %u",
+		appendStringInfo(buf, "; new off %u xmax " XID_FMT,
 						 xlrec->new_offnum,
 						 xlrec->new_xmax);
 	}
@@ -85,7 +93,7 @@ heap_desc(StringInfo buf, XLogReaderState *record)
 	{
 		xl_heap_lock *xlrec = (xl_heap_lock *) rec;
 
-		appendStringInfo(buf, "off %u: xid %u: flags %u ",
+		appendStringInfo(buf, "off %u: xid " XID_FMT ": flags %u ",
 						 xlrec->offnum, xlrec->locking_xid, xlrec->flags);
 		out_infobits(buf, xlrec->infobits_set);
 	}
@@ -107,26 +115,26 @@ heap2_desc(StringInfo buf, XLogReaderState *record)
 	{
 		xl_heap_clean *xlrec = (xl_heap_clean *) rec;
 
-		appendStringInfo(buf, "remxid %u", xlrec->latestRemovedXid);
+		appendStringInfo(buf, "remxid " XID_FMT, xlrec->latestRemovedXid);
 	}
 	else if (info == XLOG_HEAP2_FREEZE_PAGE)
 	{
 		xl_heap_freeze_page *xlrec = (xl_heap_freeze_page *) rec;
 
-		appendStringInfo(buf, "cutoff xid %u ntuples %u",
+		appendStringInfo(buf, "cutoff xid " XID_FMT " ntuples %u",
 						 xlrec->cutoff_xid, xlrec->ntuples);
 	}
 	else if (info == XLOG_HEAP2_CLEANUP_INFO)
 	{
 		xl_heap_cleanup_info *xlrec = (xl_heap_cleanup_info *) rec;
 
-		appendStringInfo(buf, "remxid %u", xlrec->latestRemovedXid);
+		appendStringInfo(buf, "remxid " XID_FMT, xlrec->latestRemovedXid);
 	}
 	else if (info == XLOG_HEAP2_VISIBLE)
 	{
 		xl_heap_visible *xlrec = (xl_heap_visible *) rec;
 
-		appendStringInfo(buf, "cutoff xid %u flags %d",
+		appendStringInfo(buf, "cutoff xid " XID_FMT " flags %d",
 						 xlrec->cutoff_xid, xlrec->flags);
 	}
 	else if (info == XLOG_HEAP2_MULTI_INSERT)
@@ -139,7 +147,7 @@ heap2_desc(StringInfo buf, XLogReaderState *record)
 	{
 		xl_heap_lock_updated *xlrec = (xl_heap_lock_updated *) rec;
 
-		appendStringInfo(buf, "off %u: xmax %u: flags %u ",
+		appendStringInfo(buf, "off %u: xmax " XID_FMT ": flags %u ",
 						 xlrec->offnum, xlrec->xmax, xlrec->flags);
 		out_infobits(buf, xlrec->infobits_set);
 	}
@@ -179,6 +187,9 @@ heap_identify(uint8 info)
 			break;
 		case XLOG_HEAP_UPDATE | XLOG_HEAP_INIT_PAGE:
 			id = "UPDATE+INIT";
+			break;
+		case XLOG_HEAP_EPOCH_SHIFT:
+			id = "EPOCH_SHIFT";
 			break;
 		case XLOG_HEAP_HOT_UPDATE:
 			id = "HOT_UPDATE";

@@ -1126,7 +1126,7 @@ ExecOnConflictUpdate(ModifyTableState *mtstate,
 			 * that for SQL MERGE, an exception must be raised in the event of
 			 * an attempt to update the same row twice.
 			 */
-			if (TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetXmin(tuple.t_data)))
+			if (TransactionIdIsCurrentTransactionId(HeapTupleGetXmin(&tuple)))
 				ereport(ERROR,
 						(errcode(ERRCODE_CARDINALITY_VIOLATION),
 						 errmsg("ON CONFLICT DO UPDATE command cannot affect row a second time"),
@@ -1488,6 +1488,7 @@ ExecModifyTable(ModifyTableState *node)
 						HeapTupleHeaderGetDatumLength(oldtupdata.t_data);
 					ItemPointerSetInvalid(&(oldtupdata.t_self));
 					/* Historically, view triggers see invalid t_tableOid. */
+					HeapTupleSetInvalidEpoch(&oldtupdata);
 					oldtupdata.t_tableOid =
 						(relkind == RELKIND_VIEW) ? InvalidOid :
 						RelationGetRelid(resultRelInfo->ri_RelationDesc);

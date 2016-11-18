@@ -1653,7 +1653,7 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 
 		/* this is just a sanity check against bad output plugin behaviour */
 		if (GetCurrentTransactionIdIfAny() != InvalidTransactionId)
-			elog(ERROR, "output plugin used XID %u",
+			elog(ERROR, "output plugin used XID " XID_FMT,
 				 GetCurrentTransactionId());
 
 		/* cleanup */
@@ -1768,7 +1768,7 @@ ReorderBufferAbortOld(ReorderBuffer *rb, TransactionId oldestRunningXid)
 
 		if (TransactionIdPrecedes(txn->xid, oldestRunningXid))
 		{
-			elog(DEBUG1, "aborting old transaction %u", txn->xid);
+			elog(DEBUG1, "aborting old transaction " XID_FMT, txn->xid);
 
 			/* remove potential on-disk data, and deallocate this tx */
 			ReorderBufferCleanupTXN(rb, txn);
@@ -2104,7 +2104,7 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	Size		spilled = 0;
 	char		path[MAXPGPATH];
 
-	elog(DEBUG2, "spill %u changes in XID %u to disk",
+	elog(DEBUG2, "spill %u changes in XID " XID_FMT " to disk",
 		 (uint32) txn->nentries_mem, txn->xid);
 
 	/* do the same to all child TXs */
@@ -2141,7 +2141,7 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 			 * No need to care about TLIs here, only used during a single run,
 			 * so each LSN only maps to a specific WAL record.
 			 */
-			sprintf(path, "pg_replslot/%s/xid-%u-lsn-%X-%X.snap",
+			sprintf(path, "pg_replslot/%s/xid-" XID_FMT "-lsn-%X-%X.snap",
 					NameStr(MyReplicationSlot->data.name), txn->xid,
 					(uint32) (recptr >> 32), (uint32) recptr);
 
@@ -2327,7 +2327,7 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		errno = save_errno;
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("could not write to data file for XID %u: %m",
+				 errmsg("could not write to data file for XID " XID_FMT ": %m",
 						txn->xid)));
 	}
 
@@ -2385,7 +2385,7 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 			 * No need to care about TLIs here, only used during a single run,
 			 * so each LSN only maps to a specific WAL record.
 			 */
-			sprintf(path, "pg_replslot/%s/xid-%u-lsn-%X-%X.snap",
+			sprintf(path, "pg_replslot/%s/xid-" XID_FMT "-lsn-%X-%X.snap",
 					NameStr(MyReplicationSlot->data.name), txn->xid,
 					(uint32) (recptr >> 32), (uint32) recptr);
 
@@ -2623,7 +2623,7 @@ ReorderBufferRestoreCleanup(ReorderBuffer *rb, ReorderBufferTXN *txn)
 
 		XLogSegNoOffsetToRecPtr(cur, 0, recptr);
 
-		sprintf(path, "pg_replslot/%s/xid-%u-lsn-%X-%X.snap",
+		sprintf(path, "pg_replslot/%s/xid-" XID_FMT "-lsn-%X-%X.snap",
 				NameStr(MyReplicationSlot->data.name), txn->xid,
 				(uint32) (recptr >> 32), (uint32) recptr);
 		if (unlink(path) != 0 && errno != ENOENT)
@@ -3202,8 +3202,12 @@ UpdateLogicalMappings(HTAB *tuplecid_data, Oid relid, Snapshot snapshot)
 		TransactionId f_mapped_xid;
 		TransactionId f_create_xid;
 		XLogRecPtr	f_lsn;
-		uint32		f_hi,
-					f_lo;
+		uint32		f_lsn_hi,
+					f_lsn_lo,
+					f_mapped_xid_hi,
+					f_mapped_xid_lo,
+					f_create_xid_hi,
+					f_create_xid_lo;
 		RewriteMappingFile *f;
 
 		if (strcmp(mapping_de->d_name, ".") == 0 ||
@@ -3215,11 +3219,14 @@ UpdateLogicalMappings(HTAB *tuplecid_data, Oid relid, Snapshot snapshot)
 			continue;
 
 		if (sscanf(mapping_de->d_name, LOGICAL_REWRITE_FORMAT,
-				   &f_dboid, &f_relid, &f_hi, &f_lo,
-				   &f_mapped_xid, &f_create_xid) != 6)
+				   &f_dboid, &f_relid, &f_lsn_hi, &f_lsn_lo,
+				   &f_mapped_xid_hi, &f_mapped_xid_lo,
+				   &f_create_xid_hi, &f_create_xid_lo) != 8)
 			elog(ERROR, "could not parse filename \"%s\"", mapping_de->d_name);
 
-		f_lsn = ((uint64) f_hi) << 32 | f_lo;
+		f_lsn = ((uint64) f_lsn_hi) << 32 | f_lsn_lo;
+		f_mapped_xid = ((uint64) f_mapped_xid_hi) << 32 | f_mapped_xid_lo;
+		f_create_xid = ((uint64) f_create_xid_hi) << 32 | f_create_xid_lo;
 
 		/* mapping for another database */
 		if (f_dboid != dboid)
@@ -3261,7 +3268,7 @@ UpdateLogicalMappings(HTAB *tuplecid_data, Oid relid, Snapshot snapshot)
 	{
 		RewriteMappingFile *f = files_a[off];
 
-		elog(DEBUG1, "applying mapping: \"%s\" in %u", f->fname,
+		elog(DEBUG1, "applying mapping: \"%s\" in " XID_FMT, f->fname,
 			 snapshot->subxip[0]);
 		ApplyLogicalMappingFile(tuplecid_data, relid, f->fname);
 		pfree(f);

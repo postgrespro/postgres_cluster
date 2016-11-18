@@ -892,41 +892,41 @@ SlruReportIOError(SlruCtl ctl, int pageno, TransactionId xid)
 		case SLRU_OPEN_FAILED:
 			ereport(ERROR,
 					(errcode_for_file_access(),
-					 errmsg("could not access status of transaction %u", xid),
+					 errmsg("could not access status of transaction " XID_FMT, xid),
 					 errdetail("Could not open file \"%s\": %m.", path)));
 			break;
 		case SLRU_SEEK_FAILED:
 			ereport(ERROR,
 					(errcode_for_file_access(),
-					 errmsg("could not access status of transaction %u", xid),
+					 errmsg("could not access status of transaction " XID_FMT, xid),
 				 errdetail("Could not seek in file \"%s\" to offset %u: %m.",
 						   path, offset)));
 			break;
 		case SLRU_READ_FAILED:
 			ereport(ERROR,
 					(errcode_for_file_access(),
-					 errmsg("could not access status of transaction %u", xid),
+					 errmsg("could not access status of transaction " XID_FMT, xid),
 			   errdetail("Could not read from file \"%s\" at offset %u: %m.",
 						 path, offset)));
 			break;
 		case SLRU_WRITE_FAILED:
 			ereport(ERROR,
 					(errcode_for_file_access(),
-					 errmsg("could not access status of transaction %u", xid),
+					 errmsg("could not access status of transaction " XID_FMT, xid),
 				errdetail("Could not write to file \"%s\" at offset %u: %m.",
 						  path, offset)));
 			break;
 		case SLRU_FSYNC_FAILED:
 			ereport(ERROR,
 					(errcode_for_file_access(),
-					 errmsg("could not access status of transaction %u", xid),
+					 errmsg("could not access status of transaction " XID_FMT, xid),
 					 errdetail("Could not fsync file \"%s\": %m.",
 							   path)));
 			break;
 		case SLRU_CLOSE_FAILED:
 			ereport(ERROR,
 					(errcode_for_file_access(),
-					 errmsg("could not access status of transaction %u", xid),
+					 errmsg("could not access status of transaction " XID_FMT, xid),
 					 errdetail("Could not close file \"%s\": %m.",
 							   path)));
 			break;
@@ -1291,7 +1291,7 @@ restart:
 	if (did_write)
 		goto restart;
 
-	snprintf(path, MAXPGPATH, "%s/%04X", ctl->Dir, segno);
+	SlruFileName(ctl, path, segno);
 	ereport(DEBUG2,
 			(errmsg("removing file \"%s\"", path)));
 	unlink(path);

@@ -292,7 +292,7 @@ TransactionIdGetCommitTsData(TransactionId xid, TimestampTz *ts,
 	if (!TransactionIdIsNormal(xid))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-		errmsg("cannot retrieve commit timestamp for transaction %u", xid)));
+		errmsg("cannot retrieve commit timestamp for transaction " XID_FMT, xid)));
 
 	LWLockAcquire(CommitTsLock, LW_SHARED);
 
@@ -396,7 +396,7 @@ error_commit_ts_disabled(void)
 Datum
 pg_xact_commit_timestamp(PG_FUNCTION_ARGS)
 {
-	TransactionId xid = PG_GETARG_UINT32(0);
+	TransactionId xid = PG_GETARG_TRANSACTIONID(0);
 	TimestampTz ts;
 	bool		found;
 

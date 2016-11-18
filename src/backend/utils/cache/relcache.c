@@ -1977,8 +1977,9 @@ RelationReloadIndexInfo(Relation relation)
 		relation->rd_index->indislive = index->indislive;
 
 		/* Copy xmin too, as that is needed to make sense of indcheckxmin */
-		HeapTupleHeaderSetXmin(relation->rd_indextuple->t_data,
-							   HeapTupleHeaderGetXmin(tuple->t_data));
+		relation->rd_indextuple->t_xid_epoch = tuple->t_xid_epoch;
+		HeapTupleSetXmin(relation->rd_indextuple,
+						 HeapTupleGetXmin(tuple));
 
 		ReleaseSysCache(tuple);
 	}

@@ -396,6 +396,7 @@ rewrite_heap_tuple(RewriteState state,
 		   &old_tuple->t_data->t_choice.t_heap,
 		   sizeof(HeapTupleFields));
 
+	HeapTupleCopyEpoch(new_tuple, old_tuple);
 	new_tuple->t_data->t_infomask &= ~HEAP_XACT_MASK;
 	new_tuple->t_data->t_infomask2 &= ~HEAP2_XACT_MASK;
 	new_tuple->t_data->t_infomask |=
@@ -405,7 +406,7 @@ rewrite_heap_tuple(RewriteState state,
 	 * While we have our hands on the tuple, we may as well freeze any
 	 * eligible xmin or xmax, so that future VACUUM effort can be saved.
 	 */
-	heap_freeze_tuple(new_tuple->t_data, state->rs_freeze_xid,
+	heap_freeze_tuple(new_tuple, state->rs_freeze_xid,
 					  state->rs_cutoff_multi);
 
 	/*
@@ -418,14 +419,14 @@ rewrite_heap_tuple(RewriteState state,
 	 * If the tuple has been updated, check the old-to-new mapping hash table.
 	 */
 	if (!((old_tuple->t_data->t_infomask & HEAP_XMAX_INVALID) ||
-		  HeapTupleHeaderIsOnlyLocked(old_tuple->t_data)) &&
+		  HeapTupleHeaderIsOnlyLocked(old_tuple)) &&
 		!(ItemPointerEquals(&(old_tuple->t_self),
 							&(old_tuple->t_data->t_ctid))))
 	{
 		OldToNewMapping mapping;
 
 		memset(&hashkey, 0, sizeof(hashkey));
-		hashkey.xmin = HeapTupleHeaderGetUpdateXid(old_tuple->t_data);
+		hashkey.xmin = HeapTupleGetUpdateXidAny(old_tuple);
 		hashkey.tid = old_tuple->t_data->t_ctid;
 
 		mapping = (OldToNewMapping)
@@ -498,7 +499,7 @@ rewrite_heap_tuple(RewriteState state,
 		 * RECENTLY_DEAD if and only if the xmin is not before OldestXmin.
 		 */
 		if ((new_tuple->t_data->t_infomask & HEAP_UPDATED) &&
-			!TransactionIdPrecedes(HeapTupleHeaderGetXmin(new_tuple->t_data),
+			!TransactionIdPrecedes(HeapTupleGetXmin(new_tuple),
 								   state->rs_oldest_xmin))
 		{
 			/*
@@ -507,7 +508,7 @@ rewrite_heap_tuple(RewriteState state,
 			UnresolvedTup unresolved;
 
 			memset(&hashkey, 0, sizeof(hashkey));
-			hashkey.xmin = HeapTupleHeaderGetXmin(new_tuple->t_data);
+			hashkey.xmin = HeapTupleGetXmin(new_tuple);
 			hashkey.tid = old_tid;
 
 			unresolved = hash_search(state->rs_unresolved_tups, &hashkey,
@@ -595,7 +596,7 @@ rewrite_heap_dead_tuple(RewriteState state, HeapTuple old_tuple)
 	bool		found;
 
 	memset(&hashkey, 0, sizeof(hashkey));
-	hashkey.xmin = HeapTupleHeaderGetXmin(old_tuple->t_data);
+	hashkey.xmin = HeapTupleGetXmin(old_tuple);
 	hashkey.tid = old_tuple->t_self;
 
 	unresolved = hash_search(state->rs_unresolved_tups, &hashkey,
@@ -631,6 +632,7 @@ raw_heap_insert(RewriteState state, HeapTuple tup)
 	Size		len;
 	OffsetNumber newoff;
 	HeapTuple	heaptup;
+	TransactionId xmin, xmax;
 
 	/*
 	 * If the new tuple is too big for storage or contains already toasted
@@ -707,8 +709,22 @@ raw_heap_insert(RewriteState state, HeapTuple tup)
 	{
 		/* Initialize a new empty page */
 		PageInit(page, BLCKSZ, 0);
+		/* FIXME */
+		((PageHeader) page)->pd_xid_epoch = 0;
+		((PageHeader) page)->pd_multi_epoch = 0;
 		state->rs_buffer_valid = true;
 	}
+
+	/* FIXME */
+	rewrite_page_prepare_for_xid(page, HeapTupleGetXmin(heaptup), false);
+	rewrite_page_prepare_for_xid(page, HeapTupleGetRawXmax(heaptup),
+		(heaptup->t_data->t_infomask & HEAP_XMAX_IS_MULTI) ? true : false);
+
+	xmin = HeapTupleGetXmin(heaptup);
+	xmax = HeapTupleGetRawXmax(heaptup);
+	HeapTupleCopyEpochFromPage(heaptup, page);
+	HeapTupleSetXmin(heaptup, xmin);
+	HeapTupleSetXmax(heaptup, xmax);
 
 	/* And now we can insert the tuple into the page */
 	newoff = PageAddItem(page, (Item) heaptup->t_data, heaptup->t_len,
@@ -1003,7 +1019,10 @@ logical_rewrite_log_mapping(RewriteState state, TransactionId xid,
 				 dboid, relid,
 				 (uint32) (state->rs_begin_lsn >> 32),
 				 (uint32) state->rs_begin_lsn,
-				 xid, GetCurrentTransactionId());
+				 (uint32) (xid >> 32),
+				 (uint32) xid,
+				 (uint32) (GetCurrentTransactionId() >> 32),
+				 (uint32) GetCurrentTransactionId());
 
 		dlist_init(&src->mappings);
 		src->num_mappings = 0;
@@ -1053,9 +1072,9 @@ logical_rewrite_heap_tuple(RewriteState state, ItemPointerData old_tid,
 	if (!state->rs_logical_rewrite)
 		return;
 
-	xmin = HeapTupleHeaderGetXmin(new_tuple->t_data);
+	xmin = HeapTupleGetXmin(new_tuple);
 	/* use *GetUpdateXid to correctly deal with multixacts */
-	xmax = HeapTupleHeaderGetUpdateXid(new_tuple->t_data);
+	xmax = HeapTupleGetUpdateXidAny(new_tuple);
 
 	/*
 	 * Log the mapping iff the tuple has been created recently.
@@ -1127,7 +1146,10 @@ heap_xlog_logical_rewrite(XLogReaderState *r)
 			 xlrec->mapped_db, xlrec->mapped_rel,
 			 (uint32) (xlrec->start_lsn >> 32),
 			 (uint32) xlrec->start_lsn,
-			 xlrec->mapped_xid, XLogRecGetXid(r));
+			 (uint32) (xlrec->mapped_xid >> 32),
+			 (uint32) xlrec->mapped_xid,
+			 (uint32) (XLogRecGetXid(r) >> 32),
+			 (uint32) XLogRecGetXid(r));
 
 	fd = OpenTransientFile(path,
 						   O_CREAT | O_WRONLY | PG_BINARY,
@@ -1218,8 +1240,12 @@ CheckPointLogicalRewriteHeap(void)
 		XLogRecPtr	lsn;
 		TransactionId rewrite_xid;
 		TransactionId create_xid;
-		uint32		hi,
-					lo;
+		uint32		lsn_hi,
+					lsn_lo,
+					rewrite_xid_hi,
+					rewrite_xid_lo,
+					create_xid_hi,
+					create_xid_lo;
 
 		if (strcmp(mapping_de->d_name, ".") == 0 ||
 			strcmp(mapping_de->d_name, "..") == 0)
@@ -1234,10 +1260,14 @@ CheckPointLogicalRewriteHeap(void)
 			continue;
 
 		if (sscanf(mapping_de->d_name, LOGICAL_REWRITE_FORMAT,
-				   &dboid, &relid, &hi, &lo, &rewrite_xid, &create_xid) != 6)
+				   &dboid, &relid, &lsn_hi, &lsn_lo,
+				   &rewrite_xid_hi, &rewrite_xid_lo,
+				   &create_xid_hi, &create_xid_lo) != 8)
 			elog(ERROR, "could not parse filename \"%s\"", mapping_de->d_name);
 
-		lsn = ((uint64) hi) << 32 | lo;
+		lsn = ((uint64) lsn_hi) << 32 | lsn_lo;
+		rewrite_xid = ((uint64) rewrite_xid_hi) << 32 | rewrite_xid_lo;
+		create_xid = ((uint64) create_xid_hi) << 32 | create_xid_lo;
 
 		if (lsn < cutoff || cutoff == InvalidXLogRecPtr)
 		{

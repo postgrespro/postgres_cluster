@@ -991,7 +991,7 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex, bool verbose,
 				 * case we had better copy it.
 				 */
 				if (!is_system_catalog &&
-					!TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetXmin(tuple->t_data)))
+					!TransactionIdIsCurrentTransactionId(HeapTupleGetXmin(tuple)))
 					elog(WARNING, "concurrent insert in progress within table \"%s\"",
 						 RelationGetRelationName(OldHeap));
 				/* treat as live */
@@ -1003,7 +1003,7 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex, bool verbose,
 				 * Similar situation to INSERT_IN_PROGRESS case.
 				 */
 				if (!is_system_catalog &&
-					!TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetUpdateXid(tuple->t_data)))
+					!TransactionIdIsCurrentTransactionId(HeapTupleGetUpdateXidAny(tuple)))
 					elog(WARNING, "concurrent delete in progress within table \"%s\"",
 						 RelationGetRelationName(OldHeap));
 				/* treat as recently dead */
