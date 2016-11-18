@@ -1291,7 +1291,7 @@ restart:
 	if (did_write)
 		goto restart;
 
-	snprintf(path, MAXPGPATH, "%s/%04X", ctl->Dir, segno);
+	SlruFileName(ctl, path, segno);
 	ereport(DEBUG2,
 			(errmsg("removing file \"%s\"", path)));
 	unlink(path);
