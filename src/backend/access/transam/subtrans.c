@@ -339,8 +339,6 @@ ExtendSUBTRANS(TransactionId newestXact)
 void
 TruncateSUBTRANS(TransactionId oldestXact)
 {
-	int64		cutoffPage;
-
 	/*
 	 * The cutoff point is the start of the segment containing oldestXact. We
 	 * pass the *page* containing oldestXact to SimpleLruTruncate.  We step
@@ -349,8 +347,16 @@ TruncateSUBTRANS(TransactionId oldestXact)
 	 * a page and oldestXact == next XID.  In that case, if we didn't subtract
 	 * one, we'd trigger SimpleLruTruncate's wraparound detection.
 	 */
-	TransactionIdRetreat(oldestXact);
-	cutoffPage = TransactionIdToPage(oldestXact);
+	if (oldestXact > FirstNormalTransactionId)
+	{
+		int64		cutoffPage;
+		TransactionIdRetreat(oldestXact);
+		cutoffPage = TransactionIdToPage(oldestXact);
 
-	SimpleLruTruncate(SubTransCtl, cutoffPage);
+		SimpleLruTruncate(SubTransCtl, cutoffPage);
+	}
+	else
+	{
+		SimpleLruTruncate(SubTransCtl, 0);
+	}
 }

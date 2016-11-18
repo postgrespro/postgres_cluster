@@ -220,7 +220,7 @@ main(int argc, char *argv[])
 		   ControlFile->checkPointCopy.nextOid);
 	printf(_("Latest checkpoint's NextMultiXactId:  " XID_FMT "\n"),
 		   ControlFile->checkPointCopy.nextMulti);
-	printf(_("Latest checkpoint's NextMultiOffset:  %u\n"),
+	printf(_("Latest checkpoint's NextMultiOffset:  " INT64_FORMAT "\n"),
 		   ControlFile->checkPointCopy.nextMultiOffset);
 	printf(_("Latest checkpoint's oldestXID:        " XID_FMT "\n"),
 		   ControlFile->checkPointCopy.oldestXid);

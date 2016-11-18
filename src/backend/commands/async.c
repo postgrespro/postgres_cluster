@@ -199,13 +199,13 @@ typedef struct QueuePosition
 
 /* choose logically smaller QueuePosition */
 #define QUEUE_POS_MIN(x,y) \
-	(asyncQueuePagePrecedes((x).page, (y).page) ? (x) : \
+	(((x).page < (y).page) ? (x) : \
 	 (x).page != (y).page ? (y) : \
 	 (x).offset < (y).offset ? (x) : (y))
 
 /* choose logically larger QueuePosition */
 #define QUEUE_POS_MAX(x,y) \
-	(asyncQueuePagePrecedes((x).page, (y).page) ? (y) : \
+	(((x).page < (y).page) ? (y) : \
 	 (x).page != (y).page ? (x) : \
 	 (x).offset > (y).offset ? (x) : (y))
 

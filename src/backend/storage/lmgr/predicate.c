@@ -416,7 +416,6 @@ static void SetPossibleUnsafeConflict(SERIALIZABLEXACT *roXact, SERIALIZABLEXACT
 static void ReleaseRWConflict(RWConflict conflict);
 static void FlagSxactUnsafe(SERIALIZABLEXACT *sxact);
 
-static bool OldSerXidPagePrecedesLogically(int p, int q);
 static void OldSerXidInit(void);
 static void OldSerXidAdd(TransactionId xid, SerCommitSeqNo minConflictCommitSeqNo);
 static SerCommitSeqNo OldSerXidGetMinConflictCommitSeqNo(TransactionId xid);
@@ -756,32 +755,6 @@ FlagSxactUnsafe(SERIALIZABLEXACT *sxact)
 	}
 }
 
-/*------------------------------------------------------------------------*/
-
-/*
- * We will work on the page range of 0..OLDSERXID_MAX_PAGE.
- * Compares using wraparound logic, as is required by slru.c.
- */
-static bool
-OldSerXidPagePrecedesLogically(int p, int q)
-{
-	int			diff;
-
-	/*
-	 * We have to compare modulo (OLDSERXID_MAX_PAGE+1)/2.  Both inputs should
-	 * be in the range 0..OLDSERXID_MAX_PAGE.
-	 */
-	Assert(p >= 0 && p <= OLDSERXID_MAX_PAGE);
-	Assert(q >= 0 && q <= OLDSERXID_MAX_PAGE);
-
-	diff = p - q;
-	if (diff >= ((OLDSERXID_MAX_PAGE + 1) / 2))
-		diff -= OLDSERXID_MAX_PAGE + 1;
-	else if (diff < -((int) (OLDSERXID_MAX_PAGE + 1) / 2))
-		diff += OLDSERXID_MAX_PAGE + 1;
-	return diff < 0;
-}
-
 /*
  * Initialize for the tracking of old serializable committed xids.
  */
@@ -793,7 +766,6 @@ OldSerXidInit(void)
 	/*
 	 * Set up SLRU management of the pg_serial data.
 	 */
-	OldSerXidSlruCtl->PagePrecedes = OldSerXidPagePrecedesLogically;
 	SimpleLruInit(OldSerXidSlruCtl, "oldserxid",
 				  NUM_OLDSERXID_BUFFERS, 0, OldSerXidLock, "pg_serial",
 				  LWTRANCHE_OLDSERXID_BUFFERS);
@@ -860,8 +832,7 @@ OldSerXidAdd(TransactionId xid, SerCommitSeqNo minConflictCommitSeqNo)
 	else
 	{
 		firstZeroPage = OldSerXidNextPage(oldSerXidControl->headPage);
-		isNewPage = OldSerXidPagePrecedesLogically(oldSerXidControl->headPage,
-												   targetPage);
+		isNewPage = oldSerXidControl->headPage < targetPage;
 	}
 
 	if (!TransactionIdIsValid(oldSerXidControl->headXid)

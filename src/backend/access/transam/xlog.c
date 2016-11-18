@@ -6328,7 +6328,7 @@ StartupXLOG(void)
 					checkPoint.nextXid,
 					checkPoint.nextOid)));
 	ereport(DEBUG1,
-			(errmsg_internal("next MultiXactId: " XID_FMT "; next MultiXactOffset: %u",
+			(errmsg_internal("next MultiXactId: " XID_FMT "; next MultiXactOffset: " INT64_FORMAT,
 					checkPoint.nextMulti, checkPoint.nextMultiOffset)));
 	ereport(DEBUG1,
 			(errmsg_internal("oldest unfrozen transaction ID: " XID_FMT ", in database %u",
