@@ -4801,6 +4801,7 @@ BootStrapXLOG(void)
 	checkPoint.PrevTimeLineID = ThisTimeLineID;
 	checkPoint.fullPageWrites = fullPageWrites;
 	checkPoint.nextXid = FirstNormalTransactionId;
+	TransactionIdAdvance(checkPoint.nextXid);
 	checkPoint.nextOid = FirstBootstrapObjectId;
 	checkPoint.nextMulti = FirstMultiXactId;
 	checkPoint.nextMultiOffset = 0;
