@@ -195,26 +195,7 @@ get_control_data(ClusterInfo *cluster, bool live_check)
 				pg_fatal("%d: controldata retrieval problem\n", __LINE__);
 
 			p++;				/* remove ':' char */
-			cluster->controldata.chkpnt_nxtepoch = str2uint(p);
-
-			/*
-			 * Delimiter changed from '/' to ':' in 9.6.  We don't test for
-			 * the catalog version of the change because the catalog version
-			 * is pulled from pg_controldata too, and it isn't worth adding an
-			 * order dependency for this --- we just check the string.
-			 */
-			if (strchr(p, '/') != NULL)
-				p = strchr(p, '/');
-			else if (GET_MAJOR_VERSION(cluster->major_version) >= 906)
-				p = strchr(p, ':');
-			else
-				p = NULL;
-
-			if (p == NULL || strlen(p) <= 1)
-				pg_fatal("%d: controldata retrieval problem\n", __LINE__);
-
-			p++;				/* remove '/' or ':' char */
-			cluster->controldata.chkpnt_nxtxid = str2uint(p);
+			cluster->controldata.chkpnt_nxtxid = str2uint64(p);
 			got_xid = true;
 		}
 		else if ((p = strstr(bufin, "Latest checkpoint's NextOID:")) != NULL)
@@ -236,7 +217,7 @@ get_control_data(ClusterInfo *cluster, bool live_check)
 				pg_fatal("%d: controldata retrieval problem\n", __LINE__);
 
 			p++;				/* remove ':' char */
-			cluster->controldata.chkpnt_nxtmulti = str2uint(p);
+			cluster->controldata.chkpnt_nxtmulti = str2uint64(p);
 			got_multi = true;
 		}
 		else if ((p = strstr(bufin, "Latest checkpoint's oldestMultiXid:")) != NULL)
@@ -247,7 +228,7 @@ get_control_data(ClusterInfo *cluster, bool live_check)
 				pg_fatal("%d: controldata retrieval problem\n", __LINE__);
 
 			p++;				/* remove ':' char */
-			cluster->controldata.chkpnt_oldstMulti = str2uint(p);
+			cluster->controldata.chkpnt_oldstMulti = str2uint64(p);
 			got_oldestmulti = true;
 		}
 		else if ((p = strstr(bufin, "Latest checkpoint's NextMultiOffset:")) != NULL)
@@ -258,7 +239,7 @@ get_control_data(ClusterInfo *cluster, bool live_check)
 				pg_fatal("%d: controldata retrieval problem\n", __LINE__);
 
 			p++;				/* remove ':' char */
-			cluster->controldata.chkpnt_nxtmxoff = str2uint(p);
+			cluster->controldata.chkpnt_nxtmxoff = str2uint64(p);
 			got_mxoff = true;
 		}
 		else if ((p = strstr(bufin, "First log segment after reset:")) != NULL)

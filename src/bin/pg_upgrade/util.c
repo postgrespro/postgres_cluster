@@ -260,6 +260,18 @@ str2uint(const char *str)
 
 
 /*
+ *	str2uint64()
+ *
+ *	convert string to 64-bit unsigned int
+ */
+uint64
+str2uint64(const char *str)
+{
+	return strtouq(str, NULL, 10);
+}
+
+
+/*
  *	pg_putenv()
  *
  *	This is like putenv(), but takes two arguments.
