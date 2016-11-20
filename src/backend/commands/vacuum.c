@@ -483,7 +483,7 @@ vacuum_set_xid_limits(Relation rel,
 	int			mxid_freezemin;
 	int			effective_multixact_freeze_max_age;
 	TransactionId limit;
-	TransactionId safeLimit;
+	TransactionId safeLimit, nextXid;
 	MultiXactId mxactLimit;
 	MultiXactId safeMxactLimit;
 
@@ -525,8 +525,10 @@ vacuum_set_xid_limits(Relation rel,
 	 * autovacuum_freeze_max_age / 2 XIDs old), complain and force a minimum
 	 * freeze age of zero.
 	 */
-	safeLimit = ReadNewTransactionId() - autovacuum_freeze_max_age;
-	if (!TransactionIdIsNormal(safeLimit))
+	nextXid = ReadNewTransactionId();
+	if (nextXid > FirstNormalTransactionId + autovacuum_freeze_max_age)
+		safeLimit = ReadNewTransactionId() - autovacuum_freeze_max_age;
+	else
 		safeLimit = FirstNormalTransactionId;
 
 	if (TransactionIdPrecedes(limit, safeLimit))
