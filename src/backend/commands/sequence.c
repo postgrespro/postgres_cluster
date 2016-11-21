@@ -94,7 +94,7 @@ static void create_seq_hashtable(void);
 static void init_sequence(Oid relid, SeqTable *p_elm, Relation *p_rel);
 static Form_pg_sequence read_seq_tuple(SeqTable elm, Relation rel,
 			   Buffer *buf, HeapTuple seqtuple);
-static void init_params(List *options, bool isInit,
+static void init_params(ParseState *pstate, List *options, bool isInit,
 			Form_pg_sequence new, List **owned_by);
 static void do_setval(Oid relid, int64 next, bool iscalled);
 static void process_owned_by(Relation seqrel, List *owned_by);
@@ -105,7 +105,7 @@ static void process_owned_by(Relation seqrel, List *owned_by);
  *				Creates a new sequence relation
  */
 ObjectAddress
-DefineSequence(CreateSeqStmt *seq)
+DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 {
 	FormData_pg_sequence new;
 	List	   *owned_by;
@@ -145,7 +145,7 @@ DefineSequence(CreateSeqStmt *seq)
 	}
 
 	/* Check and set all option values */
-	init_params(seq->options, true, &new, &owned_by);
+	init_params(pstate, seq->options, true, &new, &owned_by);
 
 	/*
 	 * Create relation (and fill value[] and null[] for the tuple)
@@ -404,7 +404,7 @@ fill_seq_with_data(Relation rel, HeapTuple tuple)
  * Modify the definition of a sequence relation
  */
 ObjectAddress
-AlterSequence(AlterSeqStmt *stmt)
+AlterSequence(ParseState *pstate, AlterSeqStmt *stmt)
 {
 	Oid			relid;
 	SeqTable	elm;
@@ -440,7 +440,7 @@ AlterSequence(AlterSeqStmt *stmt)
 	memcpy(&new, seq, sizeof(FormData_pg_sequence));
 
 	/* Check and set new values */
-	init_params(stmt->options, false, &new, &owned_by);
+	init_params(pstate, stmt->options, false, &new, &owned_by);
 
 	/* Clear local cache so that we don't think we have cached numbers */
 	/* Note that we do not change the currval() state */
@@ -1164,7 +1164,7 @@ read_seq_tuple(SeqTable elm, Relation rel, Buffer *buf, HeapTuple seqtuple)
  * otherwise, do not change existing options that aren't explicitly overridden.
  */
 static void
-init_params(List *options, bool isInit,
+init_params(ParseState *pstate, List *options, bool isInit,
 			Form_pg_sequence new, List **owned_by)
 {
 	DefElem    *start_value = NULL;
@@ -1187,7 +1187,8 @@ init_params(List *options, bool isInit,
 			if (increment_by)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			increment_by = defel;
 		}
 		else if (strcmp(defel->defname, "start") == 0)
@@ -1195,7 +1196,8 @@ init_params(List *options, bool isInit,
 			if (start_value)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			start_value = defel;
 		}
 		else if (strcmp(defel->defname, "restart") == 0)
@@ -1203,7 +1205,8 @@ init_params(List *options, bool isInit,
 			if (restart_value)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			restart_value = defel;
 		}
 		else if (strcmp(defel->defname, "maxvalue") == 0)
@@ -1211,7 +1214,8 @@ init_params(List *options, bool isInit,
 			if (max_value)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			max_value = defel;
 		}
 		else if (strcmp(defel->defname, "minvalue") == 0)
@@ -1219,7 +1223,8 @@ init_params(List *options, bool isInit,
 			if (min_value)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			min_value = defel;
 		}
 		else if (strcmp(defel->defname, "cache") == 0)
@@ -1227,7 +1232,8 @@ init_params(List *options, bool isInit,
 			if (cache_value)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			cache_value = defel;
 		}
 		else if (strcmp(defel->defname, "cycle") == 0)
@@ -1235,7 +1241,8 @@ init_params(List *options, bool isInit,
 			if (is_cycled)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			is_cycled = defel;
 		}
 		else if (strcmp(defel->defname, "owned_by") == 0)
@@ -1243,7 +1250,8 @@ init_params(List *options, bool isInit,
 			if (*owned_by)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			*owned_by = defGetQualifiedName(defel);
 		}
 		else

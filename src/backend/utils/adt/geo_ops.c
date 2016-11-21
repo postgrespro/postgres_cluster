@@ -41,7 +41,6 @@ enum path_delim
 static int	point_inside(Point *p, int npts, Point *plist);
 static int	lseg_crossing(double x, double y, double px, double py);
 static BOX *box_construct(double x1, double x2, double y1, double y2);
-static BOX *box_copy(BOX *box);
 static BOX *box_fill(BOX *result, double x1, double x2, double y1, double y2);
 static bool box_ov(BOX *box1, BOX *box2);
 static double box_ht(BOX *box);
@@ -438,6 +437,23 @@ box_send(PG_FUNCTION_ARGS)
 	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }
 
+BOX *
+box_init(BOX *box, double xlo, double xhi, double ylo, double yhi)
+{
+	box->low.x = xlo;
+	box->low.y = ylo;
+	box->high.x = xhi;
+	box->high.y = yhi;
+
+	return box;
+}
+
+BOX *
+box_create(double xlo, double xhi, double ylo, double yhi)
+{
+	return box_init((BOX *) palloc(sizeof(BOX)), xlo, xhi, ylo, yhi);
+}
+
 
 /*		box_construct	-		fill in a new box.
  */
@@ -482,8 +498,8 @@ box_fill(BOX *result, double x1, double x2, double y1, double y2)
 
 /*		box_copy		-		copy a box
  */
-static BOX *
-box_copy(BOX *box)
+BOX *
+box_copy(const BOX *box)
 {
 	BOX		   *result = (BOX *) palloc(sizeof(BOX));
 

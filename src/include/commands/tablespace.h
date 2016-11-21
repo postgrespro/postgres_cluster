@@ -26,6 +26,7 @@
 typedef struct xl_tblspc_create_rec
 {
 	Oid			ts_id;
+	bool        ts_compressed;
 	char		ts_path[FLEXIBLE_ARRAY_MEMBER]; /* null-terminated string */
 } xl_tblspc_create_rec;
 
@@ -40,6 +41,7 @@ typedef struct TableSpaceOpts
 	float8		random_page_cost;
 	float8		seq_page_cost;
 	int			effective_io_concurrency;
+	bool        compression;
 } TableSpaceOpts;
 
 extern Oid	CreateTableSpace(CreateTableSpaceStmt *stmt);

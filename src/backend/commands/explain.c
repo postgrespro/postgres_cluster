@@ -140,7 +140,7 @@ static void escape_yaml(StringInfo buf, const char *str);
  *	  execute an EXPLAIN command
  */
 void
-ExplainQuery(ExplainStmt *stmt, const char *queryString,
+ExplainQuery(ParseState *pstate, ExplainStmt *stmt, const char *queryString,
 			 ParamListInfo params, DestReceiver *dest)
 {
 	ExplainState *es = NewExplainState();
@@ -183,13 +183,15 @@ ExplainQuery(ExplainStmt *stmt, const char *queryString,
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				errmsg("unrecognized value for EXPLAIN option \"%s\": \"%s\"",
-					   opt->defname, p)));
+					   opt->defname, p),
+						 parser_errposition(pstate, opt->location)));
 		}
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("unrecognized EXPLAIN option \"%s\"",
-							opt->defname)));
+							opt->defname),
+					 parser_errposition(pstate, opt->location)));
 	}
 
 	if (es->buffers && !es->analyze)
@@ -3414,13 +3416,15 @@ ExplainSeparatePlans(ExplainState *es)
  * Optionally, OR in X_NOWHITESPACE to suppress the whitespace we'd normally
  * add.
  *
- * XML tag names can't contain white space, so we replace any spaces in
- * "tagname" with dashes.
+ * XML restricts tag names more than our other output formats, eg they can't
+ * contain white space or slashes.  Replace invalid characters with dashes,
+ * so that for example "I/O Read Time" becomes "I-O-Read-Time".
  */
 static void
 ExplainXMLTag(const char *tagname, int flags, ExplainState *es)
 {
 	const char *s;
+	const char *valid = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.";
 
 	if ((flags & X_NOWHITESPACE) == 0)
 		appendStringInfoSpaces(es->str, 2 * es->indent);
@@ -3428,7 +3432,7 @@ ExplainXMLTag(const char *tagname, int flags, ExplainState *es)
 	if ((flags & X_CLOSING) != 0)
 		appendStringInfoCharMacro(es->str, '/');
 	for (s = tagname; *s; s++)
-		appendStringInfoCharMacro(es->str, (*s == ' ') ? '-' : *s);
+		appendStringInfoChar(es->str, strchr(valid, *s) ? *s : '-');
 	if ((flags & X_CLOSE_IMMEDIATE) != 0)
 		appendStringInfoString(es->str, " /");
 	appendStringInfoCharMacro(es->str, '>');

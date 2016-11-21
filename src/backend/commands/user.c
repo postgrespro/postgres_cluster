@@ -30,6 +30,7 @@
 #include "commands/seclabel.h"
 #include "commands/user.h"
 #include "libpq/md5.h"
+#include "libpq/scram.h"
 #include "miscadmin.h"
 #include "storage/lmgr.h"
 #include "utils/acl.h"
@@ -44,7 +45,7 @@ Oid			binary_upgrade_next_pg_authid_oid = InvalidOid;
 
 
 /* GUC parameter */
-extern bool Password_encryption;
+int Password_encryption = PASSWORD_TYPE_MD5;
 
 /* Hook to check passwords in CreateRole() and AlterRole() */
 check_password_hook_type check_password_hook = NULL;
@@ -55,6 +56,8 @@ static void AddRoleMems(const char *rolename, Oid roleid,
 static void DelRoleMems(const char *rolename, Oid roleid,
 			List *memberSpecs, List *memberIds,
 			bool admin_opt);
+static char *encrypt_password(char *passwd, char *rolname,
+			int passwd_type);
 
 
 /* Check if current user has createrole privileges */
@@ -64,12 +67,57 @@ have_createrole_privilege(void)
 	return has_createrole_privilege(GetUserId());
 }
 
+/*
+ * Encrypt a password if necessary for insertion in pg_authid.
+ *
+ * If a password is found as already MD5-encrypted or SCRAM-encrypted, no
+ * error is raised to ease the dump and reload of such data. Returns a
+ * palloc'ed string holding the encrypted password.
+ */
+static char *
+encrypt_password(char *password, char *rolname, int passwd_type)
+{
+	char *res;
+
+	Assert(password != NULL);
+
+	/*
+	 * A password already identified as a SCRAM-encrypted or MD5-encrypted
+	 * those are used as such.  If the password given is not encrypted,
+	 * adapt it depending on the type wanted by the caller of this routine.
+	 */
+	if (isMD5(password) || is_scram_verifier(password))
+		res = pstrdup(password);
+	else
+	{
+		switch (passwd_type)
+		{
+			case PASSWORD_TYPE_PLAINTEXT:
+				res = pstrdup(password);
+				break;
+			case PASSWORD_TYPE_MD5:
+				res = (char *) palloc(MD5_PASSWD_LEN + 1);
+				if (!pg_md5_encrypt(password, rolname,
+									strlen(rolname),
+									res))
+					elog(ERROR, "password encryption failed");
+				break;
+			case PASSWORD_TYPE_SCRAM:
+				res = scram_build_verifier(rolname, password, 0);
+				break;
+			default:
+				Assert(0);	/* should not come here */
+		}
+	}
+
+	return res;
+}
 
 /*
  * CREATE ROLE
  */
 Oid
-CreateRole(CreateRoleStmt *stmt)
+CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 {
 	Relation	pg_authid_rel;
 	TupleDesc	pg_authid_dsc;
@@ -80,8 +128,8 @@ CreateRole(CreateRoleStmt *stmt)
 	ListCell   *item;
 	ListCell   *option;
 	char	   *password = NULL;	/* user password */
-	bool		encrypt_password = Password_encryption; /* encrypt password? */
-	char		encrypted_password[MD5_PASSWD_LEN + 1];
+	int			password_type = Password_encryption;
+	char	   *encrypted_passwd;
 	bool		issuper = false;	/* Make the user a superuser? */
 	bool		inherit = true; /* Auto inherit privileges? */
 	bool		createrole = false;		/* Can this user create roles? */
@@ -131,17 +179,51 @@ CreateRole(CreateRoleStmt *stmt)
 
 		if (strcmp(defel->defname, "password") == 0 ||
 			strcmp(defel->defname, "encryptedPassword") == 0 ||
-			strcmp(defel->defname, "unencryptedPassword") == 0)
+			strcmp(defel->defname, "unencryptedPassword") == 0 ||
+			strcmp(defel->defname, "protocolPassword") == 0)
 		{
 			if (dpassword)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dpassword = defel;
 			if (strcmp(defel->defname, "encryptedPassword") == 0)
-				encrypt_password = true;
+			{
+				password_type = PASSWORD_TYPE_MD5;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
 			else if (strcmp(defel->defname, "unencryptedPassword") == 0)
-				encrypt_password = false;
+			{
+				password_type = PASSWORD_TYPE_PLAINTEXT;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
+			else if (strcmp(defel->defname, "protocolPassword") == 0)
+			{
+				/*
+				 * This is a list of two elements, the password is first and
+				 * then there is the protocol wanted by caller.
+				 */
+				if (dpassword && dpassword->arg)
+				{
+					char *protocol = strVal(lsecond((List *) dpassword->arg));
+
+					password = strVal(linitial((List *) dpassword->arg));
+
+					if (strcmp(protocol, "md5") == 0)
+						password_type = PASSWORD_TYPE_MD5;
+					else if (strcmp(protocol, "plain") == 0)
+						password_type = PASSWORD_TYPE_PLAINTEXT;
+					else if (strcmp(protocol, "scram") == 0)
+						password_type = PASSWORD_TYPE_SCRAM;
+					else
+						ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("unsupported password protocol %s", protocol)));
+				}
+			}
 		}
 		else if (strcmp(defel->defname, "sysid") == 0)
 		{
@@ -153,7 +235,8 @@ CreateRole(CreateRoleStmt *stmt)
 			if (dissuper)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dissuper = defel;
 		}
 		else if (strcmp(defel->defname, "inherit") == 0)
@@ -161,7 +244,8 @@ CreateRole(CreateRoleStmt *stmt)
 			if (dinherit)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dinherit = defel;
 		}
 		else if (strcmp(defel->defname, "createrole") == 0)
@@ -169,7 +253,8 @@ CreateRole(CreateRoleStmt *stmt)
 			if (dcreaterole)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dcreaterole = defel;
 		}
 		else if (strcmp(defel->defname, "createdb") == 0)
@@ -177,7 +262,8 @@ CreateRole(CreateRoleStmt *stmt)
 			if (dcreatedb)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dcreatedb = defel;
 		}
 		else if (strcmp(defel->defname, "canlogin") == 0)
@@ -185,7 +271,8 @@ CreateRole(CreateRoleStmt *stmt)
 			if (dcanlogin)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dcanlogin = defel;
 		}
 		else if (strcmp(defel->defname, "isreplication") == 0)
@@ -193,7 +280,8 @@ CreateRole(CreateRoleStmt *stmt)
 			if (disreplication)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			disreplication = defel;
 		}
 		else if (strcmp(defel->defname, "connectionlimit") == 0)
@@ -201,7 +289,8 @@ CreateRole(CreateRoleStmt *stmt)
 			if (dconnlimit)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dconnlimit = defel;
 		}
 		else if (strcmp(defel->defname, "addroleto") == 0)
@@ -209,7 +298,8 @@ CreateRole(CreateRoleStmt *stmt)
 			if (daddroleto)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			daddroleto = defel;
 		}
 		else if (strcmp(defel->defname, "rolemembers") == 0)
@@ -217,7 +307,8 @@ CreateRole(CreateRoleStmt *stmt)
 			if (drolemembers)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			drolemembers = defel;
 		}
 		else if (strcmp(defel->defname, "adminmembers") == 0)
@@ -225,7 +316,8 @@ CreateRole(CreateRoleStmt *stmt)
 			if (dadminmembers)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dadminmembers = defel;
 		}
 		else if (strcmp(defel->defname, "validUntil") == 0)
@@ -233,7 +325,8 @@ CreateRole(CreateRoleStmt *stmt)
 			if (dvalidUntil)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dvalidUntil = defel;
 		}
 		else if (strcmp(defel->defname, "bypassrls") == 0)
@@ -241,7 +334,8 @@ CreateRole(CreateRoleStmt *stmt)
 			if (dbypassRLS)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dbypassRLS = defel;
 		}
 		else
@@ -249,8 +343,6 @@ CreateRole(CreateRoleStmt *stmt)
 				 defel->defname);
 	}
 
-	if (dpassword && dpassword->arg)
-		password = strVal(dpassword->arg);
 	if (dissuper)
 		issuper = intVal(dissuper->arg) != 0;
 	if (dinherit)
@@ -357,7 +449,7 @@ CreateRole(CreateRoleStmt *stmt)
 	if (check_password_hook && password)
 		(*check_password_hook) (stmt->role,
 								password,
-			   isMD5(password) ? PASSWORD_TYPE_MD5 : PASSWORD_TYPE_PLAINTEXT,
+								password_type,
 								validUntil_datum,
 								validUntil_null);
 
@@ -380,17 +472,13 @@ CreateRole(CreateRoleStmt *stmt)
 
 	if (password)
 	{
-		if (!encrypt_password || isMD5(password))
-			new_record[Anum_pg_authid_rolpassword - 1] =
-				CStringGetTextDatum(password);
-		else
-		{
-			if (!pg_md5_encrypt(password, stmt->role, strlen(stmt->role),
-								encrypted_password))
-				elog(ERROR, "password encryption failed");
-			new_record[Anum_pg_authid_rolpassword - 1] =
-				CStringGetTextDatum(encrypted_password);
-		}
+		encrypted_passwd = encrypt_password(password,
+											stmt->role,
+											password_type);
+
+		new_record[Anum_pg_authid_rolpassword - 1] =
+			CStringGetTextDatum(encrypted_passwd);
+		pfree(encrypted_passwd);
 	}
 	else
 		new_record_nulls[Anum_pg_authid_rolpassword - 1] = true;
@@ -492,8 +580,8 @@ AlterRole(AlterRoleStmt *stmt)
 	ListCell   *option;
 	char	   *rolename = NULL;
 	char	   *password = NULL;	/* user password */
-	bool		encrypt_password = Password_encryption; /* encrypt password? */
-	char		encrypted_password[MD5_PASSWD_LEN + 1];
+	int			password_type = Password_encryption;
+	char	   *encrypted_passwd;
 	int			issuper = -1;	/* Make the user a superuser? */
 	int			inherit = -1;	/* Auto inherit privileges? */
 	int			createrole = -1;	/* Can this user create roles? */
@@ -529,6 +617,7 @@ AlterRole(AlterRoleStmt *stmt)
 
 		if (strcmp(defel->defname, "password") == 0 ||
 			strcmp(defel->defname, "encryptedPassword") == 0 ||
+			strcmp(defel->defname, "protocolPassword") == 0 ||
 			strcmp(defel->defname, "unencryptedPassword") == 0)
 		{
 			if (dpassword)
@@ -537,9 +626,41 @@ AlterRole(AlterRoleStmt *stmt)
 						 errmsg("conflicting or redundant options")));
 			dpassword = defel;
 			if (strcmp(defel->defname, "encryptedPassword") == 0)
-				encrypt_password = true;
+			{
+				password_type = PASSWORD_TYPE_MD5;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
 			else if (strcmp(defel->defname, "unencryptedPassword") == 0)
-				encrypt_password = false;
+			{
+				password_type = PASSWORD_TYPE_PLAINTEXT;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
+			else if (strcmp(defel->defname, "protocolPassword") == 0)
+			{
+				/*
+				 * This is a list of two elements, the password is first and
+				 * then there is the protocol wanted by caller.
+				 */
+				if (dpassword && dpassword->arg)
+				{
+					char *protocol = strVal(lsecond((List *) dpassword->arg));
+
+					if (strcmp(protocol, "md5") == 0)
+						password_type = PASSWORD_TYPE_MD5;
+					else if (strcmp(protocol, "plain") == 0)
+						password_type = PASSWORD_TYPE_PLAINTEXT;
+					else if (strcmp(protocol, "scram") == 0)
+						password_type = PASSWORD_TYPE_SCRAM;
+					else
+						ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("unsupported password protocol %s", protocol)));
+
+					password = strVal(linitial((List *) dpassword->arg));
+				}
+			}
 		}
 		else if (strcmp(defel->defname, "superuser") == 0)
 		{
@@ -627,8 +748,6 @@ AlterRole(AlterRoleStmt *stmt)
 				 defel->defname);
 	}
 
-	if (dpassword && dpassword->arg)
-		password = strVal(dpassword->arg);
 	if (dissuper)
 		issuper = intVal(dissuper->arg);
 	if (dinherit)
@@ -732,7 +851,7 @@ AlterRole(AlterRoleStmt *stmt)
 	if (check_password_hook && password)
 		(*check_password_hook) (rolename,
 								password,
-			   isMD5(password) ? PASSWORD_TYPE_MD5 : PASSWORD_TYPE_PLAINTEXT,
+								password_type,
 								validUntil_datum,
 								validUntil_null);
 
@@ -791,18 +910,14 @@ AlterRole(AlterRoleStmt *stmt)
 	/* password */
 	if (password)
 	{
-		if (!encrypt_password || isMD5(password))
-			new_record[Anum_pg_authid_rolpassword - 1] =
-				CStringGetTextDatum(password);
-		else
-		{
-			if (!pg_md5_encrypt(password, rolename, strlen(rolename),
-								encrypted_password))
-				elog(ERROR, "password encryption failed");
-			new_record[Anum_pg_authid_rolpassword - 1] =
-				CStringGetTextDatum(encrypted_password);
-		}
+		encrypted_passwd = encrypt_password(password,
+											rolename,
+											password_type);
+
+		new_record[Anum_pg_authid_rolpassword - 1] =
+			CStringGetTextDatum(encrypted_passwd);
 		new_record_repl[Anum_pg_authid_rolpassword - 1] = true;
+		pfree(encrypted_passwd);
 	}
 
 	/* unset password */

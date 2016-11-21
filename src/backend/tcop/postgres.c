@@ -2991,15 +2991,21 @@ ProcessInterrupts(void)
 		}
 	}
 
-	if (IdleInTransactionSessionTimeoutPending)
+	if (IdleSessionTimeoutPending)
 	{
 		/* Has the timeout setting changed since last we looked? */
-		if (IdleInTransactionSessionTimeout > 0)
+		if (IdleInTransactionSessionTimeout > 0
+			&& (IsAbortedTransactionBlockState()
+				|| IsTransactionOrTransactionBlock()))
 			ereport(FATAL,
 					(errcode(ERRCODE_IDLE_IN_TRANSACTION_SESSION_TIMEOUT),
 					 errmsg("terminating connection due to idle-in-transaction timeout")));
+		else if (IdleSessionTimeout > 0)
+			ereport(FATAL,
+					(errcode(ERRCODE_IDLE_IN_TRANSACTION_SESSION_TIMEOUT),
+					 errmsg("terminating connection due to idle timeout")));
 		else
-			IdleInTransactionSessionTimeoutPending = false;
+			IdleSessionTimeoutPending = false;
 
 	}
 
@@ -3580,7 +3586,7 @@ PostgresMain(int argc, char *argv[],
 	StringInfoData input_message;
 	sigjmp_buf	local_sigjmp_buf;
 	volatile bool send_ready_for_query = true;
-	bool		disable_idle_in_transaction_timeout = false;
+	bool		disable_idle_timeout = false;
 
 	/* Initialize startup process environment if necessary. */
 	if (!IsUnderPostmaster)
@@ -3968,30 +3974,31 @@ PostgresMain(int argc, char *argv[],
 		 */
 		if (send_ready_for_query)
 		{
-			if (IsAbortedTransactionBlockState())
+			if (IsAbortedTransactionBlockState() || IsTransactionOrTransactionBlock())
 			{
-				set_ps_display("idle in transaction (aborted)", false);
-				pgstat_report_activity(STATE_IDLEINTRANSACTION_ABORTED, NULL);
+				if (IsAbortedTransactionBlockState())
+				{
+					set_ps_display("idle in transaction (aborted)", false);
+					pgstat_report_activity(STATE_IDLEINTRANSACTION_ABORTED, NULL);
+				}
+				else
+				{
+					set_ps_display("idle in transaction", false);
+					pgstat_report_activity(STATE_IDLEINTRANSACTION, NULL);
+				}
 
 				/* Start the idle-in-transaction timer */
 				if (IdleInTransactionSessionTimeout > 0)
 				{
-					disable_idle_in_transaction_timeout = true;
-					enable_timeout_after(IDLE_IN_TRANSACTION_SESSION_TIMEOUT,
+					disable_idle_timeout = true;
+					enable_timeout_after(IDLE_SESSION_TIMEOUT,
 										 IdleInTransactionSessionTimeout);
 				}
-			}
-			else if (IsTransactionOrTransactionBlock())
-			{
-				set_ps_display("idle in transaction", false);
-				pgstat_report_activity(STATE_IDLEINTRANSACTION, NULL);
-
-				/* Start the idle-in-transaction timer */
-				if (IdleInTransactionSessionTimeout > 0)
+				else if (IdleSessionTimeout > 0)
 				{
-					disable_idle_in_transaction_timeout = true;
-					enable_timeout_after(IDLE_IN_TRANSACTION_SESSION_TIMEOUT,
-										 IdleInTransactionSessionTimeout);
+					disable_idle_timeout = true;
+					enable_timeout_after(IDLE_SESSION_TIMEOUT,
+										 IdleSessionTimeout);
 				}
 			}
 			else
@@ -4001,6 +4008,13 @@ PostgresMain(int argc, char *argv[],
 
 				set_ps_display("idle", false);
 				pgstat_report_activity(STATE_IDLE, NULL);
+				if (IdleSessionTimeout > 0)
+				{
+					disable_idle_timeout = true;
+					enable_timeout_after(IDLE_SESSION_TIMEOUT,
+										 IdleSessionTimeout);
+				}
+
 			}
 
 			ReadyForQuery(whereToSendOutput);
@@ -4035,10 +4049,10 @@ PostgresMain(int argc, char *argv[],
 		/*
 		 * (5) turn off the idle-in-transaction timeout
 		 */
-		if (disable_idle_in_transaction_timeout)
+		if (disable_idle_timeout)
 		{
-			disable_timeout(IDLE_IN_TRANSACTION_SESSION_TIMEOUT, false);
-			disable_idle_in_transaction_timeout = false;
+			disable_timeout(IDLE_SESSION_TIMEOUT, false);
+			disable_idle_timeout = false;
 		}
 
 		/*

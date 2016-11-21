@@ -1,0 +1,26 @@
+image: debian
+
+stages:
+  - test
+
+before_script:
+  - export DEBIAN_FRONTEND=noninteractive
+  - export CORES=$(grep -c ^processor /proc/cpuinfo)
+  - uname -a
+  - df -h
+
+test:ubuntu-16.04:
+  stage: test
+  image: ubuntu:16.04
+  only:
+    - PGPROEE9_6
+  before_script:
+    - apt-get update && apt-get install -y sudo gcc make flex bison libreadline-dev zlib1g-dev openjade libzstd0 libzstd-dev opensp
+  script:
+    - ./configure --prefix=/opt/pgproee
+    - make -j $CORES world
+    - sudo make install-world
+    - make check
+    - cd contrib
+    - make check
+  when: always

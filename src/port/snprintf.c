@@ -1,4 +1,4 @@
-/*
+ /*
  * Copyright (c) 1983, 1995, 1996 Eric P. Allman
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -103,7 +103,9 @@
 #undef	vfprintf
 #undef	fprintf
 #undef	printf
-
+#ifdef HAVE_WIN32_LIBEDIT
+#undef fputs
+#endif
 /* Info about where the formatted output is going */
 typedef struct
 {
@@ -262,13 +264,35 @@ flushbuffer(PrintfTarget *target)
 	if (!target->failed && nc > 0)
 	{
 		size_t		written;
-
+#ifdef HAVE_WIN32_LIBEDIT
+		/*With Win32 libedit we use WriteW API to write to
+		 * console instead of fwrite*/
+		if (isatty(fileno(target->stream)))
+		{
+			/* Convert message from buffer (expected as utf8)
+			   to widechar */
+			HANDLE consoleHandle = _get_osfhandle(_fileno(target->stream));
+			DWORD actuallyWritten;
+			wchar_t *widebuf= (wchar_t *)malloc(nc*sizeof(wchar_t));
+			written = MultiByteToWideChar(CP_UTF8,0,target->bufstart,nc,widebuf,nc);
+			WriteConsoleW(consoleHandle,widebuf,written,&actuallyWritten,NULL);
+			if (actuallyWritten == written)
+				target->nchars += nc;
+			else
+				target->failed = true;
+			free(widebuf);
+		} else {
+#endif
 		written = fwrite(target->bufstart, 1, nc, target->stream);
 		target->nchars += written;
 		if (written != nc)
 			target->failed = true;
+#ifdef HAVE_WIN32_LIBEDIT
+		}
+#endif
 	}
 	target->bufptr = target->bufstart;
+	fflush(target->stream);
 }
 
 
@@ -1139,3 +1163,53 @@ trailing_pad(int *padlen, PrintfTarget *target)
 		++(*padlen);
 	}
 }
+
+#ifdef HAVE_WIN32_LIBEDIT
+/* replacement to fputs function which uses flushBuffer */
+int pg_fputs(const char *s, FILE *stream)
+{
+	PrintfTarget target;
+
+	if (stream == NULL)
+	{
+		errno = EINVAL;
+		return -1;
+	}
+	target.bufstart = s;
+	target.nchars =  0;
+	target.bufptr= s + strlen(s);
+	target.bufend=NULL;
+	target.failed=false;
+	target.stream = stream;
+	flushbuffer(&target);
+	return target.failed ? -1 : target.nchars;
+}
+
+/* replacement to puts function which uses flushBuffer */
+int pg_puts(const char *s)
+{
+	PrintfTarget target;
+	char *t = NULL;
+	size_t len = strlen(s);
+	
+	t = (char *)malloc(len + 2);
+	if (t == NULL) {
+		return -1;
+	}
+	
+	memcpy(t,s,len);
+	t[len]   = '\n';
+	t[len+1] = '\0';
+	
+	target.bufstart = t;
+	target.nchars = 0;
+	target.bufptr = t + len + 1;
+	target.bufend = NULL;
+	target.failed = false;
+	target.stream = stdout;
+	flushbuffer(&target);
+
+	free(t);
+	return target.failed ? -1 : target.nchars;
+}
+#endif

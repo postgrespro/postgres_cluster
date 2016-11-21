@@ -1146,5 +1146,5 @@ usage(void)
 	printf(_("  -V, --version    output version information, then exit\n"));
 	printf(_("  -x XID           set next transaction ID\n"));
 	printf(_("  -?, --help       show this help, then exit\n"));
-	printf(_("\nReport bugs to <pgsql-bugs@postgresql.org>.\n"));
+	printf(_("\nReport bugs to <" PACKAGE_BUGREPORT ">.\n"));
 }

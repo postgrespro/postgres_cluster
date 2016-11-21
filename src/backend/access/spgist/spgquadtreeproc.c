@@ -17,6 +17,7 @@
 
 #include "access/spgist.h"
 #include "access/stratnum.h"
+#include "access/spgist_proc.h"
 #include "catalog/pg_type.h"
 #include "utils/builtins.h"
 #include "utils/geo_decls.h"
@@ -77,6 +78,37 @@ getQuadrant(Point *centroid, Point *tst)
 	return 0;
 }
 
+static BOX *
+getQuadrantArea(BOX *area, Point *centroid, int quadrant)
+{
+	BOX *box = (BOX *) palloc(sizeof(BOX));
+
+	switch (quadrant)
+	{
+		case 1:
+			box->high = area->high;
+			box->low = *centroid;
+			break;
+		case 2:
+			box->high.y = centroid->y;
+			box->high.x = area->high.x;
+			box->low.y = area->low.y;
+			box->low.x = centroid->x;
+			break;
+		case 3:
+			box->high = *centroid;
+			box->low = area->low;
+			break;
+		case 4:
+			box->high.x = centroid->x;
+			box->high.y = area->high.y;
+			box->low.x = area->low.x;
+			box->low.y = centroid->y;
+			break;
+	}
+
+	return box;
+}
 
 Datum
 spg_quad_choose(PG_FUNCTION_ARGS)
@@ -196,11 +228,14 @@ spg_quad_inner_consistent(PG_FUNCTION_ARGS)
 	spgInnerConsistentIn *in = (spgInnerConsistentIn *) PG_GETARG_POINTER(0);
 	spgInnerConsistentOut *out = (spgInnerConsistentOut *) PG_GETARG_POINTER(1);
 	Point	   *centroid;
+	BOX			infArea;
+	BOX		   *area = NULL;
 	int			which;
 	int			i;
 
 	Assert(in->hasPrefix);
 	centroid = DatumGetPointP(in->prefixDatum);
+	out->distances = NULL;
 
 	if (in->allTheSame)
 	{
@@ -213,6 +248,12 @@ spg_quad_inner_consistent(PG_FUNCTION_ARGS)
 	}
 
 	Assert(in->nNodes == 4);
+
+	if (in->norderbys > 0)
+	{
+		out->distances = (double **) palloc(sizeof(double *) * in->nNodes);
+		out->traversalValues = (void **) palloc(sizeof(void *) * in->nNodes);
+	}
 
 	/* "which" is a bitmask of quadrants that satisfy all constraints */
 	which = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4);
@@ -253,7 +294,7 @@ spg_quad_inner_consistent(PG_FUNCTION_ARGS)
 				boxQuery = DatumGetBoxP(in->scankeys[i].sk_argument);
 
 				if (DatumGetBool(DirectFunctionCall2(box_contain_pt,
-												   PointerGetDatum(boxQuery),
+												  PointerGetDatum(boxQuery),
 												 PointerGetDatum(centroid))))
 				{
 					/* centroid is in box, so all quadrants are OK */
@@ -286,13 +327,51 @@ spg_quad_inner_consistent(PG_FUNCTION_ARGS)
 			break;				/* no need to consider remaining conditions */
 	}
 
+	out->levelAdds = palloc(sizeof(int) * 4);
+	for (i = 0; i < 4; ++i) out->levelAdds[i] = 1;
+
 	/* We must descend into the quadrant(s) identified by which */
 	out->nodeNumbers = (int *) palloc(sizeof(int) * 4);
 	out->nNodes = 0;
+
+	if (in->norderbys > 0 && which)
+	{
+		if (in->level == 0)
+		{
+			double inf = get_float8_infinity();
+			area = box_init(&infArea, -inf, inf, -inf, inf);
+		}
+		else
+		{
+			area = in->traversalValue;
+			Assert(area);
+		}
+	}
+
 	for (i = 1; i <= 4; i++)
 	{
 		if (which & (1 << i))
-			out->nodeNumbers[out->nNodes++] = i - 1;
+		{
+			out->nodeNumbers[out->nNodes] = i - 1;
+
+			if (in->norderbys > 0)
+			{
+				MemoryContext oldCtx =
+						MemoryContextSwitchTo(in->traversalMemoryContext);
+
+				out->traversalValues[out->nNodes] =
+						getQuadrantArea(area, centroid, i);
+
+				MemoryContextSwitchTo(oldCtx);
+
+				spg_point_distance(
+						BoxPGetDatum(out->traversalValues[out->nNodes]),
+						in->norderbys, in->orderbyKeys,
+						&out->distances[out->nNodes], false);
+			}
+
+			out->nNodes++;
+		}
 	}
 
 	PG_RETURN_VOID();
@@ -307,6 +386,8 @@ spg_quad_leaf_consistent(PG_FUNCTION_ARGS)
 	Point	   *datum = DatumGetPointP(in->leafDatum);
 	bool		res;
 	int			i;
+
+	out->distances = NULL;
 
 	/* all tests are exact */
 	out->recheck = false;
@@ -355,6 +436,11 @@ spg_quad_leaf_consistent(PG_FUNCTION_ARGS)
 		if (!res)
 			break;
 	}
+
+	if (res && in->norderbys > 0)
+		/* ok, it passes -> let's compute the distances */
+		spg_point_distance(in->leafDatum,
+			in->norderbys, in->orderbykeys, &out->distances, true);
 
 	PG_RETURN_BOOL(res);
 }

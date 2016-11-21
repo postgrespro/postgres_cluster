@@ -72,7 +72,7 @@ usage(const char *progname)
 	printf(_("      --debug                    write a lot of debug messages\n"));
 	printf(_("  -V, --version                  output version information, then exit\n"));
 	printf(_("  -?, --help                     show this help, then exit\n"));
-	printf(_("\nReport bugs to <pgsql-bugs@postgresql.org>.\n"));
+	printf(_("\nReport bugs to <" PACKAGE_BUGREPORT ">.\n"));
 }
 
 
@@ -158,6 +158,13 @@ main(int argc, char **argv)
 	if (datadir_source == NULL && connstr_source == NULL)
 	{
 		fprintf(stderr, _("%s: no source specified (--source-pgdata or --source-server)\n"), progname);
+		fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
+		exit(1);
+	}
+
+	if (datadir_source != NULL && connstr_source != NULL)
+	{
+		fprintf(stderr, _("%s: only one of --source-pgdata or --source-server can be specified\n"), progname);
 		fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 		exit(1);
 	}

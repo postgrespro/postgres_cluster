@@ -27,7 +27,7 @@ tblspc_desc(StringInfo buf, XLogReaderState *record)
 	{
 		xl_tblspc_create_rec *xlrec = (xl_tblspc_create_rec *) rec;
 
-		appendStringInfo(buf, "%u \"%s\"", xlrec->ts_id, xlrec->ts_path);
+		appendStringInfo(buf, "%u %s\"%s\"", xlrec->ts_id, xlrec->ts_compressed ? "compressed " : "", xlrec->ts_path);
 	}
 	else if (info == XLOG_TBLSPC_DROP)
 	{

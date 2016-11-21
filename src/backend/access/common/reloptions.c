@@ -56,6 +56,15 @@ static relopt_bool boolRelOpts[] =
 {
 	{
 		{
+			"compression",
+			"Enables compression for this table space",
+			RELOPT_KIND_TABLESPACE,
+			AccessExclusiveLock
+		},
+		false
+	},
+	{
+		{
 			"autovacuum_enabled",
 			"Enables autovacuum in this relation",
 			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
@@ -888,7 +897,7 @@ untransformRelOptions(Datum options)
 			*p++ = '\0';
 			val = (Node *) makeString(pstrdup(p));
 		}
-		result = lappend(result, makeDefElem(pstrdup(s), val));
+		result = lappend(result, makeDefElem(pstrdup(s), val, -1));
 	}
 
 	return result;
@@ -1451,7 +1460,8 @@ tablespace_reloptions(Datum reloptions, bool validate)
 	static const relopt_parse_elt tab[] = {
 		{"random_page_cost", RELOPT_TYPE_REAL, offsetof(TableSpaceOpts, random_page_cost)},
 		{"seq_page_cost", RELOPT_TYPE_REAL, offsetof(TableSpaceOpts, seq_page_cost)},
-		{"effective_io_concurrency", RELOPT_TYPE_INT, offsetof(TableSpaceOpts, effective_io_concurrency)}
+		{"effective_io_concurrency", RELOPT_TYPE_INT, offsetof(TableSpaceOpts, effective_io_concurrency)},
+		{"compression", RELOPT_TYPE_BOOL, offsetof(TableSpaceOpts, compression)}
 	};
 
 	options = parseRelOptions(reloptions, validate, RELOPT_KIND_TABLESPACE,

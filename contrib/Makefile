@@ -41,6 +41,7 @@ SUBDIRS = \
 		pgstattuple	\
 		pg_visibility	\
 		postgres_fdw	\
+		rum		\
 		seg		\
 		spi		\
 		tablefunc	\
@@ -61,7 +62,8 @@ SUBDIRS = \
 		sr_plan		\
 		pg_arman	\
 		pg_pathman	\
-		shared_ispell
+		shared_ispell   \
+		pg_hint_plan
 
 ifeq ($(with_openssl),yes)
 SUBDIRS += sslinfo

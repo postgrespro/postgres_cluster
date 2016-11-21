@@ -1163,7 +1163,7 @@ include_dir 'conf.d'
      </varlistentry>
 
      <varlistentry id="guc-password-encryption" xreflabel="password_encryption">
-      <term><varname>password_encryption</varname> (<type>boolean</type>)
+      <term><varname>password_encryption</varname> (<type>enum</type>)
       <indexterm>
        <primary><varname>password_encryption</> configuration parameter</primary>
       </indexterm>
@@ -1175,8 +1175,18 @@ include_dir 'conf.d'
         <xref linkend="sql-alterrole">
         without writing either <literal>ENCRYPTED</> or
         <literal>UNENCRYPTED</>, this parameter determines whether the
-        password is to be encrypted. The default is <literal>on</>
-        (encrypt the password).
+        password is to be encrypted.
+       </para>
+
+       <para>
+        A value set to <literal>on</> or <literal>md5</> corresponds to a 
+        MD5-encrypted password, <literal>off</> or <literal>plain</>
+        corresponds to an unencrypted password.  Setting this parameter to
+        <literal>scram</> will encrypt the password with SCRAM-SHA-256.
+       </para>
+       
+       <para>
+        The default is <literal>md5</>.
        </para>
       </listitem>
      </varlistentry>
@@ -1251,7 +1261,9 @@ include_dir 'conf.d'
         so authentication methods must be configured for the
         server's user name, not the client's.  Because
         <literal>md5</> uses the user name as salt on both the
-        client and server, <literal>md5</> cannot be used with
+        client and server, and <literal>scram</> uses the user name as
+        a portion of the salt used on both the client and server,
+        <literal>md5</> and <literal>scram</> cannot be used with
         <varname>db_user_namespace</>.
        </para>
 
@@ -6296,6 +6308,23 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-idle-session-timeout" xreflabel="idle_session_timeout">
+      <term><varname>idle_session_timeout</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>idle_session_timeout</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+       Terminate any session that has been idle for longer than the specified
+       duration in milliseconds.
+       </para>
+       <para>
+       The default value of 0 disables this feature.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-idle-in-transaction-session-timeout" xreflabel="idle_in_transaction_session_timeout">
       <term><varname>idle_in_transaction_session_timeout</varname> (<type>integer</type>)
       <indexterm>
@@ -6305,9 +6334,11 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       <listitem>
        <para>
        Terminate any session with an open transaction that has been idle for
-       longer than the specified duration in milliseconds. This allows any
-       locks held by that session to be released and the connection slot to be reused;
-       it also allows tuples visible only to this transaction to be vacuumed.  See
+       longer than the specified duration in milliseconds.  When enabled
+       this setting overrides <xref linkend="guc-idle-session-timeout"> for
+       open transactions.  This allows any locks held by that session to be
+       released and the connection slot to be reused;  it also allows tuples
+       visible only to this transaction to be vacuumed.  See
        <xref linkend="routine-vacuuming"> for more details about this.
        </para>
        <para>

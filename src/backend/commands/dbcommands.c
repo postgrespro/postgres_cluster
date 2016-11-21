@@ -61,6 +61,7 @@
 #include "utils/pg_locale.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "utils/spccache.h"
 #include "utils/tqual.h"
 
 
@@ -96,7 +97,7 @@ static int	errdetail_busy_db(int notherbackends, int npreparedxacts);
  * CREATE DATABASE
  */
 Oid
-createdb(const CreatedbStmt *stmt)
+createdb(ParseState *pstate, const CreatedbStmt *stmt)
 {
 	HeapScanDesc scan;
 	Relation	rel;
@@ -152,7 +153,8 @@ createdb(const CreatedbStmt *stmt)
 			if (dtablespacename)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dtablespacename = defel;
 		}
 		else if (strcmp(defel->defname, "owner") == 0)
@@ -160,7 +162,8 @@ createdb(const CreatedbStmt *stmt)
 			if (downer)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			downer = defel;
 		}
 		else if (strcmp(defel->defname, "template") == 0)
@@ -168,7 +171,8 @@ createdb(const CreatedbStmt *stmt)
 			if (dtemplate)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dtemplate = defel;
 		}
 		else if (strcmp(defel->defname, "encoding") == 0)
@@ -176,7 +180,8 @@ createdb(const CreatedbStmt *stmt)
 			if (dencoding)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dencoding = defel;
 		}
 		else if (strcmp(defel->defname, "lc_collate") == 0)
@@ -184,7 +189,8 @@ createdb(const CreatedbStmt *stmt)
 			if (dcollate)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dcollate = defel;
 		}
 		else if (strcmp(defel->defname, "lc_ctype") == 0)
@@ -192,7 +198,8 @@ createdb(const CreatedbStmt *stmt)
 			if (dctype)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dctype = defel;
 		}
 		else if (strcmp(defel->defname, "is_template") == 0)
@@ -200,7 +207,8 @@ createdb(const CreatedbStmt *stmt)
 			if (distemplate)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			distemplate = defel;
 		}
 		else if (strcmp(defel->defname, "allow_connections") == 0)
@@ -208,7 +216,8 @@ createdb(const CreatedbStmt *stmt)
 			if (dallowconnections)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dallowconnections = defel;
 		}
 		else if (strcmp(defel->defname, "connection_limit") == 0)
@@ -216,7 +225,8 @@ createdb(const CreatedbStmt *stmt)
 			if (dconnlimit)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dconnlimit = defel;
 		}
 		else if (strcmp(defel->defname, "location") == 0)
@@ -224,12 +234,14 @@ createdb(const CreatedbStmt *stmt)
 			ereport(WARNING,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("LOCATION is not supported anymore"),
-					 errhint("Consider using tablespaces instead.")));
+					 errhint("Consider using tablespaces instead."),
+					 parser_errposition(pstate, defel->location)));
 		}
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
-					 errmsg("option \"%s\" not recognized", defel->defname)));
+					 errmsg("option \"%s\" not recognized", defel->defname),
+					 parser_errposition(pstate, defel->location)));
 	}
 
 	if (downer && downer->arg)
@@ -249,7 +261,8 @@ createdb(const CreatedbStmt *stmt)
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_OBJECT),
 						 errmsg("%d is not a valid encoding code",
-								encoding)));
+								encoding),
+						 parser_errposition(pstate, dencoding->location)));
 		}
 		else
 		{
@@ -259,7 +272,8 @@ createdb(const CreatedbStmt *stmt)
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_OBJECT),
 						 errmsg("%s is not a valid encoding name",
-								encoding_name)));
+								encoding_name),
+						 parser_errposition(pstate, dencoding->location)));
 		}
 	}
 	if (dcollate && dcollate->arg)
@@ -1049,6 +1063,8 @@ movedb(const char *dbname, const char *tblspcname)
 	char	   *src_dbpath;
 	char	   *dst_dbpath;
 	DIR		   *dstdir;
+	bool        src_compressed;
+	bool        dst_compressed;
 	struct dirent *xlde;
 	movedb_failure_params fparms;
 
@@ -1122,6 +1138,9 @@ movedb(const char *dbname, const char *tblspcname)
 									 AccessExclusiveLock);
 		return;
 	}
+	
+	src_compressed = is_tablespace_compressed(src_tblspcoid);
+	dst_compressed = is_tablespace_compressed(dst_tblspcoid);
 
 	/*
 	 * Check for other backends in the target database.  (Because we hold the
@@ -1221,7 +1240,11 @@ movedb(const char *dbname, const char *tblspcname)
 		/*
 		 * Copy files from the old tablespace to the new one
 		 */
-		copydir(src_dbpath, dst_dbpath, false);
+		if (src_compressed ^ dst_compressed) { 
+			copyzipdir(src_dbpath, src_compressed, dst_dbpath, dst_compressed);
+		} else { 
+			copydir(src_dbpath, dst_dbpath, false);
+		}
 
 		/*
 		 * Record the filesystem change in XLOG
@@ -1364,7 +1387,7 @@ movedb_failure_callback(int code, Datum arg)
  * ALTER DATABASE name ...
  */
 Oid
-AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
+AlterDatabase(ParseState *pstate, AlterDatabaseStmt *stmt, bool isTopLevel)
 {
 	Relation	rel;
 	Oid			dboid;
@@ -1394,7 +1417,8 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 			if (distemplate)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			distemplate = defel;
 		}
 		else if (strcmp(defel->defname, "allow_connections") == 0)
@@ -1402,7 +1426,8 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 			if (dallowconnections)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dallowconnections = defel;
 		}
 		else if (strcmp(defel->defname, "connection_limit") == 0)
@@ -1410,7 +1435,8 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 			if (dconnlimit)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dconnlimit = defel;
 		}
 		else if (strcmp(defel->defname, "tablespace") == 0)
@@ -1418,13 +1444,15 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 			if (dtablespace)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			dtablespace = defel;
 		}
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
-					 errmsg("option \"%s\" not recognized", defel->defname)));
+					 errmsg("option \"%s\" not recognized", defel->defname),
+					 parser_errposition(pstate, defel->location)));
 	}
 
 	if (dtablespace)
@@ -1438,7 +1466,8 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 			   errmsg("option \"%s\" cannot be specified with other options",
-					  dtablespace->defname)));
+					  dtablespace->defname),
+					 parser_errposition(pstate, dtablespace->location)));
 		/* this case isn't allowed within a transaction block */
 		PreventTransactionChain(isTopLevel, "ALTER DATABASE SET TABLESPACE");
 		movedb(stmt->dbname, defGetString(dtablespace));

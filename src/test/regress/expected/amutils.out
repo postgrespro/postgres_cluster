@@ -24,7 +24,7 @@ select prop,
  nulls_first        |    |       | f
  nulls_last         |    |       | t
  orderable          |    |       | t
- distance_orderable |    |       | f
+ distance_orderable |    |       | t
  returnable         |    |       | t
  search_array       |    |       | t
  search_nulls       |    |       | t
@@ -97,7 +97,7 @@ select prop,
  nulls_first        | f     | f    | f    | f      | f   | f
  nulls_last         | t     | f    | f    | f      | f   | f
  orderable          | t     | f    | f    | f      | f   | f
- distance_orderable | f     | f    | t    | f      | f   | f
+ distance_orderable | t     | f    | t    | t      | f   | f
  returnable         | t     | f    | f    | t      | f   | f
  search_array       | t     | f    | f    | f      | f   | f
  search_nulls       | t     | f    | t    | t      | f   | t

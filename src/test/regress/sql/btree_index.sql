@@ -92,3 +92,97 @@ vacuum btree_tall_tbl;
 -- need to insert some rows to cause the fast root page to split.
 insert into btree_tall_tbl (id, t)
   select g, repeat('x', 100) from generate_series(1, 500) g;
+
+---
+--- Test B-tree distance ordering
+---
+
+SET enable_bitmapscan = OFF;
+
+CREATE INDEX bt_i4_heap_random_idx ON bt_i4_heap USING btree(random, seqno);
+
+EXPLAIN (COSTS OFF)
+SELECT * FROM bt_i4_heap
+WHERE random > 1000000 AND (random, seqno) < (6000000, 0)
+ORDER BY random <-> 4000000;
+
+SELECT * FROM bt_i4_heap
+WHERE random > 1000000 AND (random, seqno) < (6000000, 0)
+ORDER BY random <-> 4000000;
+
+SELECT * FROM bt_i4_heap
+WHERE random > 1000000 AND (random, seqno) < (6000000, 0)
+ORDER BY random <-> 10000000;
+
+SELECT * FROM bt_i4_heap
+WHERE random > 1000000 AND (random, seqno) < (6000000, 0)
+ORDER BY random <-> 0;
+
+DROP INDEX bt_i4_heap_random_idx;
+
+CREATE INDEX bt_i4_heap_random_idx ON bt_i4_heap USING btree(random DESC, seqno);
+
+SELECT * FROM bt_i4_heap
+WHERE random > 1000000 AND (random, seqno) < (6000000, 0)
+ORDER BY random <-> 4000000;
+
+SELECT * FROM bt_i4_heap
+WHERE random > 1000000 AND (random, seqno) < (6000000, 0)
+ORDER BY random <-> 10000000;
+
+SELECT * FROM bt_i4_heap
+WHERE random > 1000000 AND (random, seqno) < (6000000, 0)
+ORDER BY random <-> 0;
+
+DROP INDEX bt_i4_heap_random_idx;
+
+
+CREATE TABLE tenk3 AS SELECT thousand, tenthous FROM tenk1;
+
+INSERT INTO tenk3 VALUES (NULL, 1), (NULL, 2), (NULL, 3);
+
+-- Test distance ordering by ASC index
+CREATE INDEX tenk3_idx ON tenk3 USING btree(thousand, tenthous);
+
+SELECT thousand, tenthous FROM tenk3
+WHERE (thousand, tenthous) >= (997, 5000)
+ORDER BY thousand <-> 998;
+
+SELECT thousand, tenthous FROM tenk3
+WHERE (thousand, tenthous) >= (997, 5000)
+ORDER BY thousand <-> 0;
+
+SELECT thousand, tenthous FROM tenk3
+WHERE (thousand, tenthous) >= (997, 5000) AND thousand < 1000
+ORDER BY thousand <-> 10000;
+
+SELECT thousand, tenthous FROM tenk3
+ORDER BY thousand <-> 500
+OFFSET 9970;
+
+DROP INDEX tenk3_idx;
+
+-- Test distance ordering by DESC index
+CREATE INDEX tenk3_idx ON tenk3 USING btree(thousand DESC, tenthous);
+
+SELECT thousand, tenthous FROM tenk3
+WHERE (thousand, tenthous) >= (997, 5000)
+ORDER BY thousand <-> 998;
+
+SELECT thousand, tenthous FROM tenk3
+WHERE (thousand, tenthous) >= (997, 5000)
+ORDER BY thousand <-> 0;
+
+SELECT thousand, tenthous FROM tenk3
+WHERE (thousand, tenthous) >= (997, 5000) AND thousand < 1000
+ORDER BY thousand <-> 10000;
+
+SELECT thousand, tenthous FROM tenk3
+ORDER BY thousand <-> 500
+OFFSET 9970;
+
+DROP INDEX tenk3_idx;
+
+DROP TABLE tenk3;
+
+RESET enable_bitmapscan;

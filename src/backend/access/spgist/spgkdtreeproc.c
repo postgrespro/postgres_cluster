@@ -17,10 +17,10 @@
 
 #include "access/spgist.h"
 #include "access/stratnum.h"
+#include "access/spgist_proc.h"
 #include "catalog/pg_type.h"
 #include "utils/builtins.h"
 #include "utils/geo_decls.h"
-
 
 Datum
 spg_kd_config(PG_FUNCTION_ARGS)
@@ -162,6 +162,9 @@ spg_kd_inner_consistent(PG_FUNCTION_ARGS)
 	double		coord;
 	int			which;
 	int			i;
+	BOX			boxes[2];
+
+	out->distances = NULL;
 
 	Assert(in->hasPrefix);
 	coord = DatumGetFloat8(in->prefixDatum);
@@ -170,6 +173,12 @@ spg_kd_inner_consistent(PG_FUNCTION_ARGS)
 		elog(ERROR, "allTheSame should not occur for k-d trees");
 
 	Assert(in->nNodes == 2);
+
+	if (in->norderbys > 0)
+	{
+		out->distances = (double **) palloc(sizeof(double *) * in->nNodes);
+		out->traversalValues = (void **) palloc(sizeof(void *) * in->nNodes);
+	}
 
 	/* "which" is a bitmask of children that satisfy all constraints */
 	which = (1 << 1) | (1 << 2);
@@ -250,10 +259,64 @@ spg_kd_inner_consistent(PG_FUNCTION_ARGS)
 	/* We must descend into the children identified by which */
 	out->nodeNumbers = (int *) palloc(sizeof(int) * 2);
 	out->nNodes = 0;
+
+	if (in->norderbys > 0 && which)
+	{
+		BOX  infArea;
+		BOX *area;
+
+		if (in->level == 0)
+		{
+			float8 inf = get_float8_infinity();
+			area = box_init(&infArea, -inf, inf, -inf, inf);
+		}
+		else
+		{
+			area = (BOX *) in->traversalValue;
+			Assert(area);
+		}
+
+		boxes[0].low = area->low;
+		boxes[1].high = area->high;
+
+		switch (in->level % 2)
+		{
+			case 0:
+				boxes[0].high.x = boxes[1].low.x = coord;
+				boxes[0].high.y = area->high.y;
+				boxes[1].low.y = area->low.y;
+				break;
+			case 1:
+				boxes[0].high.y = boxes[1].low.y = coord;
+				boxes[0].high.x = area->high.x;
+				boxes[1].low.x = area->low.x;
+				break;
+		}
+	}
+
 	for (i = 1; i <= 2; i++)
 	{
 		if (which & (1 << i))
-			out->nodeNumbers[out->nNodes++] = i - 1;
+		{
+			out->nodeNumbers[out->nNodes] = i - 1;
+
+			if (in->norderbys > 0)
+			{
+				MemoryContext oldCtx =
+						MemoryContextSwitchTo(in->traversalMemoryContext);
+
+				out->traversalValues[out->nNodes] = box_copy(&boxes[i - 1]);
+
+				MemoryContextSwitchTo(oldCtx);
+
+				spg_point_distance(
+					BoxPGetDatum(out->traversalValues[out->nNodes]),
+					in->norderbys, in->orderbyKeys,
+					&out->distances[out->nNodes], false);
+			}
+
+			out->nNodes++;
+		}
 	}
 
 	/* Set up level increments, too */

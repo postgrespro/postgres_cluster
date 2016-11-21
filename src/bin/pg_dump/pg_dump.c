@@ -940,7 +940,7 @@ help(const char *progname)
 
 	printf(_("\nIf no database name is supplied, then the PGDATABASE environment\n"
 			 "variable value is used.\n\n"));
-	printf(_("Report bugs to <pgsql-bugs@postgresql.org>.\n"));
+	printf(_("Report bugs to <" PACKAGE_BUGREPORT ">.\n"));
 }
 
 static void
@@ -1023,7 +1023,10 @@ setup_connection(Archive *AH, const char *dumpencoding,
 	if (AH->remoteVersion >= 90300)
 		ExecuteSqlStatement(AH, "SET lock_timeout = 0");
 	if (AH->remoteVersion >= 90600)
+	{
 		ExecuteSqlStatement(AH, "SET idle_in_transaction_session_timeout = 0");
+		ExecuteSqlStatement(AH, "SET idle_session_timeout = 0");
+	}
 
 	/*
 	 * Quote all identifiers, if requested.
@@ -2875,19 +2878,20 @@ getBlobs(Archive *fout)
 	else if (fout->remoteVersion >= 90000)
 		appendPQExpBuffer(blobQry,
 						  "SELECT oid, (%s lomowner) AS rolname, lomacl, "
-						  "NULL AS rlomacl, NULL as initlomacl, "
-						  "NULL as initrlomacl "
+						  "NULL AS rlomacl, NULL AS initlomacl, "
+						  "NULL AS initrlomacl "
 						  " FROM pg_largeobject_metadata",
 						  username_subquery);
 	else if (fout->remoteVersion >= 70100)
 		appendPQExpBufferStr(blobQry,
-							 "SELECT DISTINCT loid, NULL::oid, NULL, "
-							 "NULL AS rlomacl, NULL AS initlomacl, "
-							 "NULL AS initrlomacl "
+							 "SELECT DISTINCT loid AS oid, "
+							 "NULL::name AS rolname, NULL::oid AS lomacl, "
+							 "NULL::oid AS rlomacl, NULL::oid AS initlomacl, "
+							 "NULL::oid AS initrlomacl "
 							 " FROM pg_largeobject");
 	else
 		appendPQExpBufferStr(blobQry,
-							 "SELECT oid, NULL::oid, NULL, "
+							 "SELECT oid, NULL AS rolname, NULL AS lomacl, "
 							 "NULL AS rlomacl, NULL AS initlomacl, "
 							 "NULL AS initrlomacl "
 							 " FROM pg_class WHERE relkind = 'l'");
@@ -2922,11 +2926,11 @@ getBlobs(Archive *fout)
 		binfo[i].initblobacl = pg_strdup(PQgetvalue(res, i, i_initlomacl));
 		binfo[i].initrblobacl = pg_strdup(PQgetvalue(res, i, i_initrlomacl));
 
-		if (PQgetisnull(res, i, i_lomacl) && PQgetisnull(res, i, i_rlomacl) &&
+		if (PQgetisnull(res, i, i_lomacl) &&
+			PQgetisnull(res, i, i_rlomacl) &&
 			PQgetisnull(res, i, i_initlomacl) &&
 			PQgetisnull(res, i, i_initrlomacl))
 			binfo[i].dobj.dump &= ~DUMP_COMPONENT_ACL;
-
 	}
 
 	/*
@@ -12556,6 +12560,9 @@ dumpAccessMethod(Archive *fout, AccessMethodInfo *aminfo)
 
 	appendPQExpBuffer(labelq, "ACCESS METHOD %s",
 					  qamname);
+
+	if (dopt->binary_upgrade)
+		binary_upgrade_extension_member(q, &aminfo->dobj, labelq->data);
 
 	if (aminfo->dobj.dump & DUMP_COMPONENT_DEFINITION)
 		ArchiveEntry(fout, aminfo->dobj.catId, aminfo->dobj.dumpId,

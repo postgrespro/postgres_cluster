@@ -90,28 +90,6 @@ static const gbtree_ninfo tinfo =
 };
 
 
-PG_FUNCTION_INFO_V1(int4_dist);
-Datum
-int4_dist(PG_FUNCTION_ARGS)
-{
-	int32		a = PG_GETARG_INT32(0);
-	int32		b = PG_GETARG_INT32(1);
-	int32		r;
-	int32		ra;
-
-	r = a - b;
-	ra = Abs(r);
-
-	/* Overflow check. */
-	if (ra < 0 || (!SAMESIGN(a, b) && !SAMESIGN(r, a)))
-		ereport(ERROR,
-				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
-				 errmsg("integer out of range")));
-
-	PG_RETURN_INT32(ra);
-}
-
-
 /**************************************************
  * int32 ops
  **************************************************/

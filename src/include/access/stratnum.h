@@ -31,8 +31,10 @@ typedef uint16 StrategyNumber;
 #define BTEqualStrategyNumber			3
 #define BTGreaterEqualStrategyNumber	4
 #define BTGreaterStrategyNumber			5
+#define BTKNNSearchStrategyNumber		6
 
 #define BTMaxStrategyNumber				5
+#define BTMaxStrategyNumber2			6	/* FIXME rename BTMaxStrategyNumber */
 
 
 /*

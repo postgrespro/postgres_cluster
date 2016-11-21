@@ -305,6 +305,11 @@ extern Datum box_div(PG_FUNCTION_ARGS);
 extern Datum point_box(PG_FUNCTION_ARGS);
 extern Datum boxes_bound_box(PG_FUNCTION_ARGS);
 
+/* private box routines */
+extern BOX *box_init(BOX *box, double xlo, double xhi, double ylo, double yhi);
+extern BOX *box_create(double xlo, double xhi, double ylo, double yhi);
+extern BOX *box_copy(const BOX *box);
+
 /* public path routines */
 extern Datum path_area(PG_FUNCTION_ARGS);
 extern Datum path_in(PG_FUNCTION_ARGS);

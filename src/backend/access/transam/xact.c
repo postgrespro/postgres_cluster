@@ -72,7 +72,11 @@ int			DefaultXactIsoLevel = XACT_READ_COMMITTED;
 int			XactIsoLevel;
 
 bool		DefaultXactReadOnly = false;
-bool		XactReadOnly;
+/* 
+ * We need initialization because only initialized vars appear in
+ * postges.def  and accssible from loadable extension
+ */
+bool		XactReadOnly = false;
 
 bool		DefaultXactDeferrable = false;
 bool		XactDeferrable;

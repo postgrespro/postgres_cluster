@@ -1175,7 +1175,7 @@ find_update_path(List *evi_list,
  * invocation; thus allowing to error out if there's a cyclic dependency.
  */
 static ObjectAddress
-CreateExtensionInternal(CreateExtensionStmt *stmt, List *parents)
+CreateExtensionInternal(ParseState *pstate, CreateExtensionStmt *stmt, List *parents)
 {
 	DefElem    *d_schema = NULL;
 	DefElem    *d_new_version = NULL;
@@ -1215,7 +1215,8 @@ CreateExtensionInternal(CreateExtensionStmt *stmt, List *parents)
 			if (d_schema)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			d_schema = defel;
 		}
 		else if (strcmp(defel->defname, "new_version") == 0)
@@ -1223,7 +1224,8 @@ CreateExtensionInternal(CreateExtensionStmt *stmt, List *parents)
 			if (d_new_version)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			d_new_version = defel;
 		}
 		else if (strcmp(defel->defname, "old_version") == 0)
@@ -1231,7 +1233,8 @@ CreateExtensionInternal(CreateExtensionStmt *stmt, List *parents)
 			if (d_old_version)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			d_old_version = defel;
 		}
 		else if (strcmp(defel->defname, "cascade") == 0)
@@ -1239,7 +1242,8 @@ CreateExtensionInternal(CreateExtensionStmt *stmt, List *parents)
 			if (d_cascade)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			d_cascade = defel;
 			cascade = defGetBoolean(d_cascade);
 		}
@@ -1459,7 +1463,7 @@ CreateExtensionInternal(CreateExtensionStmt *stmt, List *parents)
 					lappend(list_copy(parents), stmt->extname);
 
 				/* Create the required extension. */
-				addr = CreateExtensionInternal(ces, cascade_parents);
+				addr = CreateExtensionInternal(pstate, ces, cascade_parents);
 				reqext = addr.objectId;
 			}
 			else
@@ -1514,7 +1518,7 @@ CreateExtensionInternal(CreateExtensionStmt *stmt, List *parents)
  * CREATE EXTENSION
  */
 ObjectAddress
-CreateExtension(CreateExtensionStmt *stmt)
+CreateExtension(ParseState *pstate, CreateExtensionStmt *stmt)
 {
 	/* Check extension name validity before any filesystem access */
 	check_valid_extension_name(stmt->extname);
@@ -1553,7 +1557,7 @@ CreateExtension(CreateExtensionStmt *stmt)
 
 
 	/* Finally create the extension. */
-	return CreateExtensionInternal(stmt, NIL);
+	return CreateExtensionInternal(pstate, stmt, NIL);
 }
 
 /*
@@ -2671,7 +2675,7 @@ AlterExtensionNamespace(List *names, const char *newschema, Oid *oldschema)
  * Execute ALTER EXTENSION UPDATE
  */
 ObjectAddress
-ExecAlterExtensionStmt(AlterExtensionStmt *stmt)
+ExecAlterExtensionStmt(ParseState *pstate, AlterExtensionStmt *stmt)
 {
 	DefElem    *d_new_version = NULL;
 	char	   *versionName;
@@ -2757,7 +2761,8 @@ ExecAlterExtensionStmt(AlterExtensionStmt *stmt)
 			if (d_new_version)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
 			d_new_version = defel;
 		}
 		else

@@ -524,7 +524,7 @@ usage(void)
 		   "  restore_command = 'pg_standby [OPTION]... ARCHIVELOCATION %%f %%p %%r'\n"
 		   "e.g.\n"
 	"  restore_command = 'pg_standby /mnt/server/archiverdir %%f %%p %%r'\n");
-	printf("\nReport bugs to <pgsql-bugs@postgresql.org>.\n");
+	printf("\nReport bugs to <" PACKAGE_BUGREPORT ">.\n");
 }
 
 #ifndef WIN32

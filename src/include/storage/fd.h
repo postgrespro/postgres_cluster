@@ -41,6 +41,7 @@
 
 #include <dirent.h>
 
+#define PG_COMPRESSION 0100000000
 
 /*
  * FileSeek uses the standard UNIX lseek(2) flags.
