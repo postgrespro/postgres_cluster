@@ -518,8 +518,10 @@ vacuum_set_xid_limits(Relation rel,
 	/*
 	 * Compute the cutoff XID, being careful not to generate a "permanent" XID
 	 */
-	limit = *oldestXmin - freezemin;
-	if (!TransactionIdIsNormal(limit))
+	limit = *oldestXmin;
+	if (limit > FirstNormalTransactionId + freezemin)
+		limit -= freezemin;
+	else
 		limit = FirstNormalTransactionId;
 
 	/*
@@ -607,8 +609,10 @@ vacuum_set_xid_limits(Relation rel,
 		 * Compute XID limit causing a full-table vacuum, being careful not to
 		 * generate a "permanent" XID.
 		 */
-		limit = ReadNewTransactionId() - freezetable;
-		if (!TransactionIdIsNormal(limit))
+		limit = ReadNewTransactionId();
+		if (limit > FirstNormalTransactionId + freezetable)
+			limit -= freezetable;
+		else
 			limit = FirstNormalTransactionId;
 
 		*xidFullScanLimit = limit;
@@ -632,8 +636,10 @@ vacuum_set_xid_limits(Relation rel,
 		 * Compute MultiXact limit causing a full-table vacuum, being careful
 		 * to generate a valid MultiXact value.
 		 */
-		mxactLimit = ReadNextMultiXactId() - freezetable;
-		if (mxactLimit < FirstMultiXactId)
+		mxactLimit = ReadNextMultiXactId();
+		if (mxactLimit > FirstMultiXactId + freezetable)
+			mxactLimit -= freezetable;
+		else
 			mxactLimit = FirstMultiXactId;
 
 		*mxactFullScanLimit = mxactLimit;
