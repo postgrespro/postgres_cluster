@@ -483,9 +483,11 @@ vacuum_set_xid_limits(Relation rel,
 	int			mxid_freezemin;
 	int			effective_multixact_freeze_max_age;
 	TransactionId limit;
-	TransactionId safeLimit, nextXid;
+	TransactionId safeLimit;
+	TransactionId nextXid;
 	MultiXactId mxactLimit;
 	MultiXactId safeMxactLimit;
+	MultiXactId nextMxactId;
 
 	/*
 	 * We can always ignore processes running lazy vacuum.  This is because we
@@ -562,13 +564,14 @@ vacuum_set_xid_limits(Relation rel,
 	Assert(mxid_freezemin >= 0);
 
 	/* compute the cutoff multi, being careful to generate a valid value */
-	mxactLimit = GetOldestMultiXactId() - mxid_freezemin;
-	if (mxactLimit < FirstMultiXactId)
-		mxactLimit = FirstMultiXactId;
+	mxactLimit = GetOldestMultiXactId();
+	if (mxactLimit > FirstMultiXactId + mxid_freezemin)
+		mxactLimit -= mxid_freezemin;
 
-	safeMxactLimit =
-		ReadNextMultiXactId() - effective_multixact_freeze_max_age;
-	if (safeMxactLimit < FirstMultiXactId)
+	nextMxactId = ReadNextMultiXactId();
+	if (nextMxactId > FirstMultiXactId + effective_multixact_freeze_max_age)
+		safeMxactLimit = nextMxactId - effective_multixact_freeze_max_age;
+	else
 		safeMxactLimit = FirstMultiXactId;
 
 	if (MultiXactIdPrecedes(mxactLimit, safeMxactLimit))
