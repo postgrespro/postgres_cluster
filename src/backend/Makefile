@@ -49,7 +49,9 @@ ifeq ($(with_systemd),yes)
 LIBS += -lsystemd
 endif
 
+ifeq ($(with_zstd),yes)
 LIBS += -lzstd
+endif
 
 
 # Extra compression libraries  
