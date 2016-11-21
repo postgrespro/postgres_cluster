@@ -1377,7 +1377,7 @@ SlruScanDirectory(SlruCtl ctl, SlruScanCallback callback, void *data)
 		if ((len == 12 || len == 13 || len == 14) &&
 			strspn(clde->d_name, "0123456789ABCDEF") == len)
 		{
-			segno = strtoq(clde->d_name, NULL, 16);
+			segno = pg_strtouint64(clde->d_name, NULL, 16);
 			segpage = segno * SLRU_PAGES_PER_SEGMENT;
 
 			elog(DEBUG2, "SlruScanDirectory invoking callback on %s/%s",

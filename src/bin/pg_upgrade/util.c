@@ -267,7 +267,13 @@ str2uint(const char *str)
 uint64
 str2uint64(const char *str)
 {
-	return strtouq(str, NULL, 10);
+#ifdef _MSC_VER					/* MSVC only */
+	return _strtoui64(str, NULL, 10);
+#elif defined(HAVE_STRTOULL) && SIZEOF_LONG < 8
+	return strtoull(str, NULL, 10);
+#else
+	return strtoul(str, NULL, 10);
+#endif
 }
 
 
