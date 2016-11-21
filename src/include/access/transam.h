@@ -28,11 +28,11 @@
  * Note: if you need to change it, you must change pg_class.h as well.
  * ----------------
  */
-#define InvalidTransactionId		((TransactionId) 0)
-#define BootstrapTransactionId		((TransactionId) 1)
-#define FrozenTransactionId			((TransactionId) 2)
-#define FirstNormalTransactionId	((TransactionId) 3)
-#define MaxTransactionId			((TransactionId) 0xFFFFFFFFFFFFFFFF)
+#define InvalidTransactionId		UINT64CONST(0)
+#define BootstrapTransactionId		UINT64CONST(1)
+#define FrozenTransactionId			UINT64CONST(2)
+#define FirstNormalTransactionId	UINT64CONST(3)
+#define MaxTransactionId			UINT64CONST(0xFFFFFFFFFFFFFFFF)
 #define MaxShortTransactionId		((TransactionId) 0x7FFFFFFF)
 
 /* ----------------

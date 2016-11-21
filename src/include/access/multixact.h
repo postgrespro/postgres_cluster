@@ -20,13 +20,13 @@
  * and epoch of the first segment, so we start assigning multixact values from
  * 2.
  */
-#define InvalidMultiXactId	((MultiXactId) 0)
-#define FirstMultiXactId	((MultiXactId) 1)
-#define MaxMultiXactId		((MultiXactId) 0xFFFFFFFF)
+#define InvalidMultiXactId	UINT64CONST(0)
+#define FirstMultiXactId	UINT64CONST(1)
+#define MaxMultiXactId		UINT64CONST(0xFFFFFFFFFFFFFFFF)
 
 #define MultiXactIdIsValid(multi) ((multi) != InvalidMultiXactId)
 
-#define MaxMultiXactOffset	((MultiXactOffset) 0xFFFFFFFF)
+#define MaxMultiXactOffset	UINT64CONST(0xFFFFFFFFFFFFFFFF)
 
 /* Number of SLRU buffers to use for multixact */
 #define NUM_MXACTOFFSET_BUFFERS		8
