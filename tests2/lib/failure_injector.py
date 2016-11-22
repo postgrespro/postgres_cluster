@@ -9,6 +9,13 @@ class FailureInjector(object):
         exec_id = self.docker_api.exec_create(node, command, user='root')
         output = self.docker_api.exec_start(exec_id)
 
+class NoFailure(FailureInjector):
+
+    def start(self):
+        return
+
+    def stop(self):
+        return
 
 class SingleNodePartition(FailureInjector):
 
