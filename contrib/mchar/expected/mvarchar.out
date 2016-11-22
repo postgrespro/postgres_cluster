@@ -1,0 +1,363 @@
+-- I/O tests
+select '1'::mvarchar;
+ mvarchar 
+----------
+ 1
+(1 row)
+
+select '2  '::mvarchar;
+ mvarchar 
+----------
+ 2  
+(1 row)
+
+select '10          '::mvarchar;
+   mvarchar   
+--------------
+ 10          
+(1 row)
+
+select '1'::mvarchar(2);
+ mvarchar 
+----------
+ 1
+(1 row)
+
+select '2 '::mvarchar(2);
+ mvarchar 
+----------
+ 2 
+(1 row)
+
+select '3  '::mvarchar(2);
+ mvarchar 
+----------
+ 3 
+(1 row)
+
+select '10          '::mvarchar(2);
+ mvarchar 
+----------
+ 10
+(1 row)
+
+select '                  '::mvarchar(10); 
+  mvarchar  
+------------
+           
+(1 row)
+
+select '                  '::mvarchar; 
+      mvarchar      
+--------------------
+                   
+(1 row)
+
+-- operations & functions
+select length('1'::mvarchar);
+ length 
+--------
+      1
+(1 row)
+
+select length('2  '::mvarchar);
+ length 
+--------
+      1
+(1 row)
+
+select length('10          '::mvarchar);
+ length 
+--------
+      2
+(1 row)
+
+select length('1'::mvarchar(2));
+ length 
+--------
+      1
+(1 row)
+
+select length('2 '::mvarchar(2));
+ length 
+--------
+      1
+(1 row)
+
+select length('3  '::mvarchar(2));
+ length 
+--------
+      1
+(1 row)
+
+select length('10          '::mvarchar(2));
+ length 
+--------
+      2
+(1 row)
+
+select length('                  '::mvarchar(10)); 
+ length 
+--------
+      0
+(1 row)
+
+select length('                  '::mvarchar); 
+ length 
+--------
+      0
+(1 row)
+
+select 'asd'::mvarchar(10) || '>'::mvarchar(10);
+ ?column? 
+----------
+ asd>
+(1 row)
+
+select length('asd'::mvarchar(10) || '>'::mvarchar(10));
+ length 
+--------
+      4
+(1 row)
+
+select 'asd'::mvarchar(2)  || '>'::mvarchar(10);
+ ?column? 
+----------
+ as>
+(1 row)
+
+select length('asd'::mvarchar(2) || '>'::mvarchar(10));
+ length 
+--------
+      3
+(1 row)
+
+-- Comparisons
+select 'asdf'::mvarchar = 'aSdf'::mvarchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar = 'aSdf '::mvarchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar = 'aSdf 1'::mvarchar(4);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar = 'aSdf 1'::mvarchar(5);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar = 'aSdf 1'::mvarchar(6);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mvarchar(3) = 'aSdf 1'::mvarchar(5);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mvarchar(3) = 'aSdf 1'::mvarchar(3);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar < 'aSdf'::mvarchar;
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mvarchar < 'aSdf '::mvarchar;
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mvarchar < 'aSdf 1'::mvarchar(4);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mvarchar < 'aSdf 1'::mvarchar(5);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mvarchar < 'aSdf 1'::mvarchar(6);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar <= 'aSdf'::mvarchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar <= 'aSdf '::mvarchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar <= 'aSdf 1'::mvarchar(4);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar <= 'aSdf 1'::mvarchar(5);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar <= 'aSdf 1'::mvarchar(6);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar >= 'aSdf'::mvarchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar >= 'aSdf '::mvarchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar >= 'aSdf 1'::mvarchar(4);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar >= 'aSdf 1'::mvarchar(5);
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asdf'::mvarchar >= 'aSdf 1'::mvarchar(6);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mvarchar > 'aSdf'::mvarchar;
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mvarchar > 'aSdf '::mvarchar;
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mvarchar > 'aSdf 1'::mvarchar(4);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mvarchar > 'aSdf 1'::mvarchar(5);
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asdf'::mvarchar > 'aSdf 1'::mvarchar(6);
+ ?column? 
+----------
+ f
+(1 row)
+
+select max(vch) from chvch;
+    max     
+------------
+ One space 
+(1 row)
+
+select min(vch) from chvch;
+   min    
+----------
+ 1 space 
+(1 row)
+
+select substr('1234567890'::mvarchar, 3) = '34567890' as "34567890";
+ 34567890 
+----------
+ f
+(1 row)
+
+select substr('1234567890'::mvarchar, 4, 3) = '456' as "456";
+ 456 
+-----
+ t
+(1 row)
+
+select lower('asdfASDF'::mvarchar);
+  lower   
+----------
+ asdfasdf
+(1 row)
+
+select upper('asdfASDF'::mvarchar);
+  upper   
+----------
+ ASDFASDF
+(1 row)
+
+select 'asd'::mvarchar == 'aSd'::mvarchar;
+ ?column? 
+----------
+ t
+(1 row)
+
+select 'asd'::mvarchar == 'aCd'::mvarchar;
+ ?column? 
+----------
+ f
+(1 row)
+
+select 'asd'::mvarchar == NULL;
+ ?column? 
+----------
+ f
+(1 row)
+
+select NULL == 'aCd'::mvarchar;
+ ?column? 
+----------
+ f
+(1 row)
+
+select NULL::mvarchar == NULL;
+ ?column? 
+----------
+ t
+(1 row)
+

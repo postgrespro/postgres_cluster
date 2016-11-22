@@ -100,7 +100,13 @@ static const LOCKMASK LockConflicts[] = {
 	LOCKBIT_ON(AccessShareLock) | LOCKBIT_ON(RowShareLock) |
 	LOCKBIT_ON(RowExclusiveLock) | LOCKBIT_ON(ShareUpdateExclusiveLock) |
 	LOCKBIT_ON(ShareLock) | LOCKBIT_ON(ShareRowExclusiveLock) |
-	LOCKBIT_ON(ExclusiveLock) | LOCKBIT_ON(AccessExclusiveLock)
+	LOCKBIT_ON(ExclusiveLock) | LOCKBIT_ON(AccessExclusiveLock),
+
+	/* ApplicationShareLock*/
+	LOCKBIT_ON(ApplicationExclusiveLock),
+
+	/* ApplicationExclusiveLock*/
+	LOCKBIT_ON(ApplicationExclusiveLock) | LOCKBIT_ON(ApplicationShareLock)
 
 };
 
@@ -115,7 +121,9 @@ static const char *const lock_mode_names[] =
 	"ShareLock",
 	"ShareRowExclusiveLock",
 	"ExclusiveLock",
-	"AccessExclusiveLock"
+	"AccessExclusiveLock",
+	"ApplicationShareLock",
+	"ApplicationExclusiveLock"
 };
 
 #ifndef LOCK_DEBUG
@@ -123,7 +131,7 @@ static bool Dummy_trace = false;
 #endif
 
 static const LockMethodData default_lockmethod = {
-	AccessExclusiveLock,		/* highest valid lock mode number */
+	ApplicationExclusiveLock,		/* highest valid lock mode number */
 	LockConflicts,
 	lock_mode_names,
 #ifdef LOCK_DEBUG
@@ -134,7 +142,7 @@ static const LockMethodData default_lockmethod = {
 };
 
 static const LockMethodData user_lockmethod = {
-	AccessExclusiveLock,		/* highest valid lock mode number */
+	ApplicationExclusiveLock,		/* highest valid lock mode number */
 	LockConflicts,
 	lock_mode_names,
 #ifdef LOCK_DEBUG

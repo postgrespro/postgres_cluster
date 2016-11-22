@@ -1740,6 +1740,7 @@ _outAppendPath(StringInfo str, const AppendPath *node)
 	_outPathInfo(str, (const Path *) node);
 
 	WRITE_NODE_FIELD(subpaths);
+	WRITE_BOOL_FIELD(pull_tlist);
 }
 
 static void

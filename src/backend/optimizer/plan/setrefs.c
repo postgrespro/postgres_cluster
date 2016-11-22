@@ -1823,6 +1823,19 @@ set_dummy_tlist_references(Plan *plan, int rtoffset)
 		Var		   *oldvar = (Var *) tle->expr;
 		Var		   *newvar;
 
+		/*
+		 * As in search_indexed_tlist_for_non_var(), we prefer to keep Consts
+		 * as Consts, not Vars referencing Consts.  Here, there's no speed
+		 * advantage to be had, but it makes EXPLAIN output look cleaner, and
+		 * again it avoids confusing the executor.
+		 */
+		if (IsA(oldvar, Const))
+		{
+			/* just reuse the existing TLE node */
+			output_targetlist = lappend(output_targetlist, tle);
+			continue;
+		}
+
 		newvar = makeVar(OUTER_VAR,
 						 tle->resno,
 						 exprType((Node *) oldvar),
@@ -2010,6 +2023,16 @@ search_indexed_tlist_for_non_var(Node *node,
 {
 	TargetEntry *tle;
 
+	/*
+	 * If it's a simple Const, replacing it with a Var is silly, even if there
+	 * happens to be an identical Const below; a Var is more expensive to
+	 * execute than a Const.  What's more, replacing it could confuse some
+	 * places in the executor that expect to see simple Consts for, eg,
+	 * dropped columns.
+	 */
+	if (IsA(node, Const))
+		return NULL;
+
 	tle = tlist_member(node, itlist->tlist);
 	if (tle)
 	{
@@ -2128,6 +2151,10 @@ fix_join_expr_mutator(Node *node, fix_join_expr_context *context)
 	{
 		Var		   *var = (Var *) node;
 
+		/* join_references_mutator already checks this node */
+		if (var->varno == OUTER_VAR)
+			return (Node*)copyObject(var);
+
 		/* Look for the var in the input tlists, first in the outer */
 		if (context->outer_itlist)
 		{
@@ -2142,6 +2169,9 @@ fix_join_expr_mutator(Node *node, fix_join_expr_context *context)
 		/* then in the inner. */
 		if (context->inner_itlist)
 		{
+			if (var->varno == INNER_VAR)
+				return (Node*)copyObject(var);
+
 			newvar = search_indexed_tlist_for_var(var,
 												  context->inner_itlist,
 												  INNER_VAR,
