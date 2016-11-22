@@ -5,7 +5,8 @@ services:
 
 before_script: env && pip3 install -r contrib/mmts/tests2/requirements.txt
 
-script: cd contrib/mmts/tests2 && python3 test_regression.py
+# script: cd contrib/mmts/tests2 && python3 test_regression.py
+script: cd contrib/mmts/tests2 && python3 test_recovery.py
 
 notifications:
   email:

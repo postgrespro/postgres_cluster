@@ -30,7 +30,7 @@ class MtmTxAggregate(object):
         if latency > self.max_latency:
             self.max_latency = latency
 
-        if name not in self.finish: 
+        if name not in self.finish:
             self.finish[name] = 1
         else:
             self.finish[name] += 1
@@ -194,7 +194,7 @@ class MtmClient(object):
         self.loop.run_forever()
 
     def bgrun(self):
-        print('Starting evloop in different process');
+        print('Starting evloop in different process')
         self.parent_pipe, self.child_pipe = aioprocessing.AioPipe()
         self.evloop_process = multiprocessing.Process(target=self.run, args=())
         self.evloop_process.start()
