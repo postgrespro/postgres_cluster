@@ -17,7 +17,7 @@ dnl Read the Autoconf manual for details.
 dnl
 m4_pattern_forbid(^PGAC_)dnl to catch undefined macros
 
-AC_INIT([PostgreSQL], [9.6.0], [bugs@postgrespro.ru],[postgrespro])
+AC_INIT([PostgreSQL], [9.6.1], [bugs@postgrespro.ru],[postgrespro])
 PACKAGE_TARNAME=postgrespro
 
 m4_if(m4_defn([m4_PACKAGE_VERSION]), [2.69], [], [m4_fatal([Autoconf version 2.69 is required.
@@ -853,6 +853,17 @@ AC_SUBST(with_system_tzdata)
 PGAC_ARG_BOOL(with, zlib, yes,
               [do not use Zlib])
 AC_SUBST(with_zlib)
+
+#
+# ZStd
+#
+PGAC_ARG_BOOL(with, zstd, no, [build with libzstd], [AC_DEFINE([CFS_COMPRESSOR], 6, [Define to 6 to use libzstd support when building CFS. (--with-zstd)])])
+AC_SUBST(with_zstd)
+
+if test "$with_zstd" = yes ; then
+  AC_CHECK_LIB(zstd, ZSTD_compress, [], [AC_MSG_ERROR([library 'zstd' is required for ZSTD support])])
+fi
+
 
 #
 # Elf

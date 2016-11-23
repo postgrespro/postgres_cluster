@@ -1,17 +1,17 @@
 <!-- doc/src/sgml/release-pro-9.6.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
-<sect1 id="release-pro-enterprise-9-6-0-1">
-  <title>&productname; 9.6.0.1</title>
+<sect1 id="release-pro-enterprise-9-6-1-1">
+  <title>&productname; 9.6.1.1</title>
   <note>
     <title>Release Date</title>
-    <simpara>2016-10-28</simpara>
+    <simpara>2016-11-__</simpara>
   </note>
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>Postgres Pro</productname>
-      9.6.0.1</para>
+      9.6.1.1</para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
-      9.6.0 include:</para>
+      9.6.1.1 include:</para>
     <para>Added k-nearest neighbors algorithm (KNN) for SP-GiST and B-tree
     (See <xref linkend="spgist">)</para>
     <para>Added RUM index, based on GIN, as separate module (See <xref linkend="rum">)</para>
@@ -21,7 +21,7 @@
     <para>Added page level compression (CFS) (See <xref linkend="cfs">)</para>
   </sect2>
   <sect2>
-    <title>Migration to Version &productname; 9.6.0.1</title>
+    <title>Migration to Version &productname; 9.6.1.1</title>
 
     <para>A dump/restore using <xref linkend="app-pg-dumpall">, or
         use of <xref linkend="pgupgrade">, is required for those
@@ -40,7 +40,51 @@
       should run <literal>pgpro_upgrade</literal> script provided in this
       distribution.
     </para>
-    
+
+    <para>Before running script, you should stop postgres service. Script
+      should be run as user, owning the database (typically postgres) and
+      PGDATA environment variable should be set to the directory where
+      database resides.
+    </para>
+  </sect2>
+</sect1>
+<sect1 id="release-pro-9-6-1-1">
+  <title>Postgres Pro 9.6.1.1</title>
+  <note>
+    <title>Release Date</title>
+    <simpara>2016-11-01</simpara>
+  </note>
+  <sect2>
+    <title>Overview</title>
+    <para>This release is based on <productname>PostgreSQL</productname>
+      9.6.1</para>
+    <para>Major enhancements over <productname>Postgres Pro</productname>
+      9.6.0.1 include:</para>
+    <para>Added fix for <application>pg_buffercache</application> module,
+      which improves database response in the case of connected
+      monitoring tools.</para>
+    <para>Added new <application>pgpro_edition()</application> function,
+      which returns a name of <productname>Postgres Pro</productname> edition,
+      i.e. <literal>standard</literal> or <literal>enterprise</literal>.
+    </para>
+  </sect2>
+  <sect2>
+    <title>Migration to Version 9.6.1.1</title>
+    <para>A dump/restore using <xref linkend="app-pg-dumpall">, or
+        use of <xref linkend="pgupgrade">, is required for those
+        wishing to migrate data from any previous major release.
+    </para>
+    <para>A dump/restore is not required for those running 9.6.0.1.</para>
+    <para>However, if you are upgrading from vanilla PostgreSQL 9.6.x, some
+      catalog changes should be applied.
+    </para>    
+    <para>If you use binary packages, and your database is in the default
+      location, this upgrade should be performed automatically. If you've
+      compiled Postgres Pro from source or create your database in
+      non-default location, running <literal>initdb</literal> manually, you
+      should run <literal>pgpro_upgrade</literal> script provided in this
+      distribution.
+    </para>
     <para>Before running script, you should stop postgres service. Script
       should be run as user, owning the database (typically postgres) and
       PGDATA environment variable should be set to the directory where

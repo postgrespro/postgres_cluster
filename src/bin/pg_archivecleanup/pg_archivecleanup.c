@@ -278,7 +278,7 @@ usage(void)
 		   "Or for use as a standalone archive cleaner:\n"
 		   "e.g.\n"
 		   "  pg_archivecleanup /mnt/server/archiverdir 000000010000000000000010.00000020.backup\n");
-	printf("\nReport bugs to <pgsql-bugs@postgresql.org>.\n");
+	printf("\nReport bugs to <" PACKAGE_BUGREPORT ">.\n");
 }
 
 /*------------ MAIN ----------------------------------------*/

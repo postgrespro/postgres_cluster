@@ -4871,7 +4871,7 @@ ExitPostmaster(int status)
 		ereport(LOG,
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg_internal("postmaster became multithreaded"),
-		   errdetail("Please report this to <pgsql-bugs@postgresql.org>.")));
+		   errdetail("Please report this to <" PACKAGE_BUGREPORT ">.")));
 #endif
 
 	/* should cleanup shared memory and kill all backends */
