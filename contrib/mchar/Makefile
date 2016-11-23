@@ -1,6 +1,6 @@
 MODULE_big = mchar
 OBJS = mchar_io.o mchar_proc.o mchar_op.o mchar_recode.o \
-	   mchar_like.o
+	   mchar_like.o $(WIN32RES)
 EXTENSION = mchar
 DATA = mchar--1.0.sql
 DOCS = README.mchar

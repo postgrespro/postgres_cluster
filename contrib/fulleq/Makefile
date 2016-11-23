@@ -1,5 +1,5 @@
 MODULE_big = fulleq
-OBJS = fulleq.o	
+OBJS = fulleq.o  $(WIN32RES)	
 EXTENSION = fulleq
 DATA = fulleq--1.0.sql
 DOCS = README.fulleq
