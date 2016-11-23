@@ -55,6 +55,7 @@ typedef struct
 typedef struct
 {
 	pg_atomic_flag gc_started;
+	pg_atomic_uint32 n_active_gc;
 	int            n_workers;
 	int            max_iterations;
 	bool           gc_enabled;
@@ -77,7 +78,7 @@ void     cfs_lock_file(FileMap* map, char const* path);
 void     cfs_unlock_file(FileMap* map);
 uint32   cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize);
 void     cfs_extend(FileMap* map, uint32 pos);
-
+bool     cfs_control_gc(bool enabled);
 int      cfs_msync(FileMap* map);
 FileMap* cfs_mmap(int md);
 int      cfs_munmap(FileMap* map);

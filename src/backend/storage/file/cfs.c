@@ -281,9 +281,11 @@ void cfs_initialize()
 	cfs_state = (CfsState*)ShmemAlloc(sizeof(CfsState));
 	memset(&cfs_state->gc_stat, 0, sizeof cfs_state->gc_stat);
 	pg_atomic_init_flag(&cfs_state->gc_started);
+	pg_atomic_init_u32(&cfs_state->n_active_gc, 0);
 	cfs_state->n_workers = 0;
 	cfs_state->gc_enabled = true;
 	cfs_state->max_iterations = 0;
+	
 	if (cfs_encryption) { 
 		cfs_rc4_init();
 	}
@@ -470,26 +472,34 @@ static bool cfs_gc_file(char* map_path)
 	uint32 virtSize;
 	int suf = strlen(map_path)-4;
 	int fd = -1, fd2 = -1, md2 = -1;
-	bool succeed = true;
+	bool succeed = false;
+
+	pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
 
 	while (!cfs_state->gc_enabled) { 
-		int rc = WaitLatch(MyLatch,
-						   WL_TIMEOUT | WL_POSTMASTER_DEATH,
-						   CFS_DISABLE_TIMEOUT /* ms */ );
+		int rc;
+
+		pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
+
+		rc = WaitLatch(MyLatch,
+					   WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   CFS_DISABLE_TIMEOUT /* ms */,
+					   WAIT_EVENT_CFS_GC_ENABLE);
 		if (cfs_stop || (rc & WL_POSTMASTER_DEATH)) {
 			exit(1);
 		}		
 	}
 	if (md < 0) { 
 		elog(LOG, "Failed to open map file %s: %m", map_path);
-		return false;
+		goto FinishGC;
 	}
 	map = cfs_mmap(md);
 	if (map == MAP_FAILED) {
 		elog(LOG, "Failed to map file %s: %m", map_path);
 		close(md);
-		return false;
+		goto FinishGC;
 	}
+	succeed = true;
 	usedSize = pg_atomic_read_u32(&map->usedSize);
 	physSize = pg_atomic_read_u32(&map->physSize);
 	virtSize = pg_atomic_read_u32(&map->virtSize);
@@ -525,7 +535,8 @@ static bool cfs_gc_file(char* map_path)
 				break;
 			}
 			if (cfs_stop) { 
-				return false;
+				succeed = false;
+				goto FinishGC;
 			}
 			if (access_count >= CFS_GC_LOCK) { 
 				/* Uhhh... looks like last GC was interrupted.
@@ -734,6 +745,8 @@ static bool cfs_gc_file(char* map_path)
 		elog(LOG, "Failed to close file %s: %m", map_path);
 		succeed = false;
 	}
+  FinishGC:	
+	pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
 	return succeed;
 }
 
@@ -833,6 +846,25 @@ void cfs_start_background_gc()
 	elog(LOG, "Start %d background CFS background workers", i);
 }
 
+bool cfs_control_gc(bool enabled) 
+{ 
+	bool was_enabled = cfs_state->gc_enabled;	
+	cfs_state->gc_enabled = enabled;
+	if (was_enabled && !enabled) { 
+		/* Wait until there are no active GC workers */
+		while (pg_atomic_read_u32(&cfs_state->n_active_gc) != 0) { 
+			int rc = WaitLatch(MyLatch,
+							   WL_TIMEOUT | WL_POSTMASTER_DEATH,
+							   CFS_DISABLE_TIMEOUT /* ms */,
+							   WAIT_EVENT_CFS_GC_ENABLE);
+			if (rc & WL_POSTMASTER_DEATH) {
+				exit(1);
+			}		
+		}
+	}
+	return was_enabled;
+}
+
 PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(cfs_start_gc);
@@ -883,11 +915,10 @@ Datum cfs_start_gc(PG_FUNCTION_ARGS)
 	PG_RETURN_INT32(i);
 }
 
+
 Datum cfs_enable_gc(PG_FUNCTION_ARGS)
-{												
-	bool prev = cfs_state->gc_enabled;
-	cfs_state->gc_enabled = PG_GETARG_BOOL(0);
-	PG_RETURN_BOOL(prev);
+{
+	PG_RETURN_BOOL(cfs_control_gc(PG_GETARG_BOOL(0)));											
 }
 
 Datum cfs_version(PG_FUNCTION_ARGS)
