@@ -487,6 +487,8 @@ static bool cfs_gc_file(char* map_path)
 		if (cfs_stop || (rc & WL_POSTMASTER_DEATH)) {
 			exit(1);
 		}		
+
+		pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
 	}
 	if (md < 0) { 
 		elog(LOG, "Failed to open map file %s: %m", map_path);
