@@ -25,7 +25,7 @@ job_t *get_jobs_to_do(char *nodename, int *n, int *is_error)
 	int ret, got, i;
 	Oid argtypes[1] = { TEXTOID };
 	Datum values[1];
-	const char *get_job_sql = "select at.start_at, at.last_start_available, at.cron, max_run_time, cron.max_instances, cron.executor, cron.next_time_statement from schedule.at at, schedule.cron cron where start_at <= 'now' and not at.active and (last_start_available is NULL OR last_start_available > 'now') and at.cron = cron.id AND cron.node = $1 order by at.start_at";
+	const char *get_job_sql = "select at.start_at, at.last_start_available, at.cron, max_run_time, cron.max_instances, cron.executor, cron.next_time_statement from at at, cron cron where start_at <= 'now' and not at.active and (last_start_available is NULL OR last_start_available > 'now') and at.cron = cron.id AND cron.node = $1 order by at.start_at";
 
 	*is_error = *n = 0;
 	START_SPI_SNAP();
@@ -68,7 +68,7 @@ job_t *get_expired_jobs(char *nodename, int *n, int *is_error)
 	
 	*n = *is_error = 0;
 	initStringInfo(&sql);
-	appendStringInfo(&sql, "select start_at, last_start_available, cron, started, active from schedule.at where last_start_available < 'now' and not active and node = '%s'", nodename);
+	appendStringInfo(&sql, "select start_at, last_start_available, cron, started, active from at where last_start_available < 'now' and not active and node = '%s'", nodename);
 	ret = SPI_execute(sql.data, true, 0);
 	if(ret == SPI_OK_SELECT)
 	{
@@ -115,8 +115,8 @@ int move_job_to_log(job_t *j, bool status)
 	char  nulls[4] = { ' ', ' ', ' ', ' ' };	
 	Oid argtypes[4] = { BOOLOID, TEXTOID, INT4OID, TIMESTAMPTZOID };
 	int ret;
-	const char *del_sql = "delete from schedule.at where start_at = $1 and cron = $2";
-	const char *sql = "insert into schedule.log (start_at,  last_start_available, retry, cron, node, started, status, finished, message)  SELECT start_at, last_start_available, retry, cron, node, started, $1 as status, 'now'::timestamp as finished, $2 as message from schedule.at where cron = $3 and start_at = $4";
+	const char *del_sql = "delete from at where start_at = $1 and cron = $2";
+	const char *sql = "insert into log (start_at,  last_start_available, retry, cron, node, started, status, finished, message)  SELECT start_at, last_start_available, retry, cron, node, started, $1 as status, 'now'::timestamp as finished, $2 as message from at where cron = $3 and start_at = $4";
 
 	/* in perl was this at first $status = 0 if $job->{spoiled}; skip so far */
 

@@ -40,11 +40,12 @@ volatile sig_atomic_t got_sighup = false;
 volatile sig_atomic_t got_sigterm = false;
 
 /* Custom GUC variables */
-static char *scheduler_databases = "";
-static char *scheduler_nodename = "master";
-static char *scheduler_transaction_state = "undefined";
+static char *scheduler_databases = NULL;
+static char *scheduler_nodename = NULL;
+static char *scheduler_transaction_state = NULL;
 static int  scheduler_max_workers = 2;
 static bool scheduler_service_enabled = false;
+static char *scheduler_schema = NULL;
 /* Custom GUC done */
 
 extern void
@@ -398,7 +399,18 @@ pg_scheduler_startup(void)
 
 void _PG_init(void)
 {
-	RequestAddinShmemSpace(1000);
+	DefineCustomStringVariable(
+		"schedule.schema",
+		"The name of scheduler schema",
+		NULL,
+		&scheduler_schema,
+		"schedule",
+		PGC_POSTMASTER,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
 	DefineCustomStringVariable(
 		"schedule.database",
 		"On which databases scheduler could be run",

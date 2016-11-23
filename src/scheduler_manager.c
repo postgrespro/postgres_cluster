@@ -44,55 +44,51 @@ extern volatile sig_atomic_t got_sigterm;
 
 int checkSchedulerNamespace(void)
 {
-	const char *sql = "select count(*) from pg_namespace where nspname = 'schedule'";
-	int found  = 0;
-	int ret;
-	int ntup;
-	bool isnull;
+	const char *sql = "select count(*) from pg_catalog.pg_namespace where nspname = $1";
+	int count  = 0;
+	const char *schema;
+	Oid argtypes[1] = { TEXTOID };
+	Datum values[1];
 
-	pgstat_report_activity(STATE_RUNNING, "initialize: check namespace");
 	SetCurrentStatementStartTimestamp();
+	pgstat_report_activity(STATE_RUNNING, "initialize: check namespace");
+
+	schema = GetConfigOption("schedule.schema", false, true);
+
 	StartTransactionCommand();
 	SPI_connect();
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	ret = SPI_execute(sql, true, 0);
-	if(ret == SPI_OK_SELECT && SPI_processed == 1)
+	values[0] = CStringGetTextDatum(schema);
+	count = select_count_with_args(sql, 1, argtypes, values, NULL);
+
+	if(count == -1)
 	{
-		ntup = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0],
-					SPI_tuptable->tupdesc, 1, &isnull)
-		);
-		if(!isnull && ntup == 1)
-		{
-			found =  1;
-		}
-		else if(isnull)
-		{
-			elog(LOG, "Scheduler manager: %s: cannot check namespace: count return null",
-				MyBgworkerEntry->bgw_name);
-		}
-		else if(ntup > 1)
-		{
-			elog(LOG, "Scheduler manager: %s: cannot check namespace: found %d namespaces",
-				MyBgworkerEntry->bgw_name, ntup);
-		}
+		elog(ERROR, "Scheduler manager: %s: cannot check namespace: sql error",
+													MyBgworkerEntry->bgw_name); 
 	}
-	else if(ret != SPI_OK_SELECT)
+	else if(count > 1 || count == 0 )
 	{
-		elog(LOG, "Scheduler manager: %s: cannot check namespace: error code %d",
-				MyBgworkerEntry->bgw_name, ret);
+		elog(LOG, "Scheduler manager: %s: cannot check namespace: found %d namespaces",
+											MyBgworkerEntry->bgw_name, count);
 	}
-	else if(SPI_processed != 1)
+	else if(count == -2)
 	{
-		elog(LOG, "Scheduler manager: %s: cannot check namespace: count return %ud tups",
-				MyBgworkerEntry->bgw_name,
-				(unsigned)SPI_processed);
+		elog(LOG, "Scheduler manager: %s: cannot check namespace: count return null",
+											MyBgworkerEntry->bgw_name);
 	}
+	else if(count != 1)
+	{
+		elog(ERROR, "Scheduler manager: %s: cannot check namespace: unknown error %d",
+											MyBgworkerEntry->bgw_name, count); 
+	}
+
 	SPI_finish();
 	PopActiveSnapshot();
 	CommitTransactionCommand();
+	if(count) SetConfigOption("search_path", "schedule", PGC_USERSET, PGC_S_SESSION);
 
-	return found;
+	return count;
 }
 
 int get_scheduler_maxworkers(void)
@@ -269,7 +265,7 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 
 	*nt = 0;
 	initStringInfo(&sql);
-	appendStringInfo(&sql, "select id, rule, postpone, _next_exec_time, next_time_statement from schedule.cron where active and not broken and (start_date <= 'now' or start_date is null) and (end_date <= 'now' or end_date is null) and node = '%s'", ctx->nodename);
+	appendStringInfo(&sql, "select id, rule, postpone, _next_exec_time, next_time_statement from cron where active and not broken and (start_date <= 'now' or start_date is null) and (end_date <= 'now' or end_date is null) and node = '%s'", ctx->nodename);
 
 	pgstat_report_activity(STATE_RUNNING, "select 'at' tasks");
 
@@ -590,7 +586,7 @@ int how_many_instances_on_work(scheduler_manager_ctx_t *ctx, int cron_id)
 int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 {
 	scheduler_manager_slot_t *item;
-	const char *sql = "update schedule.at set started = 'now'::timestamp with time zone, active = true where cron = $1 and start_at = $2";
+	const char *sql = "update at set started = 'now'::timestamp with time zone, active = true where cron = $1 and start_at = $2";
 	Datum values[2];
 	Oid argtypes[2] = {INT4OID, TIMESTAMPTZOID};
 	int ret;
@@ -977,7 +973,7 @@ int mark_job_broken(scheduler_manager_ctx_t *ctx, int cron_id, char *reason)
 	Oid types[2] = { INT4OID, TEXTOID };
 	Datum values[2];
 	char *error;
-	char *sql = "update schedule.cron set reason = $2, broken = true where id = $1";
+	char *sql = "update cron set reason = $2, broken = true where id = $1";
 	int ret;
 
 	values[0] = Int32GetDatum(cron_id);
@@ -997,7 +993,7 @@ int update_cron_texttime(scheduler_manager_ctx_t *ctx, int cron_id, TimestampTz 
 	bool nulls[2] = { ' ', ' ' };
 	char *error;
 	int ret;
-	char *sql = "update schedule.cron set _next_exec_time = $2 where id = $1";
+	char *sql = "update cron set _next_exec_time = $2 where id = $1";
 
 	values[0] = Int32GetDatum(cron_id);
 	if(next > 0)
@@ -1073,9 +1069,9 @@ int insert_at_record(char *nodename, int cron_id, TimestampTz start_at, Timestam
 	Datum values[4];
 	char  nulls[4] = { ' ', ' ', ' ', ' ' };
 	Oid argtypes[4];
-	char *insert_sql = "insert into schedule.at (start_at, last_start_available, node, retry, cron, active) values ($1, $2, $3, 0, $4, false)";
-	char *at_sql = "select count(start_at) from schedule.at where cron = $1 and start_at = $2";
-	char *log_sql = "select count(start_at) from schedule.log where cron = $1 and start_at = $2";
+	char *insert_sql = "insert into at (start_at, last_start_available, node, retry, cron, active) values ($1, $2, $3, 0, $4, false)";
+	char *at_sql = "select count(start_at) from at where cron = $1 and start_at = $2";
+	char *log_sql = "select count(start_at) from log where cron = $1 and start_at = $2";
 	int count, ret;
 
 	argtypes[0] = INT4OID;
@@ -1213,11 +1209,11 @@ void clean_at_table(scheduler_manager_ctx_t *ctx)
 	char *error = NULL;
 
 	START_SPI_SNAP();
-	if(execute_spi("truncate schedule.at", &error) < 0)
+	if(execute_spi("truncate at", &error) < 0)
 	{
 		manager_fatal_error(ctx, 0, "Cannot clean 'at' table: %s", error);
 	}
-	if(execute_spi("update schedule.cron set _next_exec_time = NULL where _next_exec_time is not NULL", &error) < 0)
+	if(execute_spi("update cron set _next_exec_time = NULL where _next_exec_time is not NULL", &error) < 0)
 	{
 		manager_fatal_error(ctx, 0, "Cannot clean cron _next time: %s", error);
 	}
