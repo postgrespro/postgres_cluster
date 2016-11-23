@@ -483,8 +483,7 @@ static bool cfs_gc_file(char* map_path)
 
 		rc = WaitLatch(MyLatch,
 					   WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   CFS_DISABLE_TIMEOUT /* ms */,
-					   WAIT_EVENT_CFS_GC_ENABLE);
+					   CFS_DISABLE_TIMEOUT /* ms */);
 		if (cfs_stop || (rc & WL_POSTMASTER_DEATH)) {
 			exit(1);
 		}		
@@ -855,8 +854,7 @@ bool cfs_control_gc(bool enabled)
 		while (pg_atomic_read_u32(&cfs_state->n_active_gc) != 0) { 
 			int rc = WaitLatch(MyLatch,
 							   WL_TIMEOUT | WL_POSTMASTER_DEATH,
-							   CFS_DISABLE_TIMEOUT /* ms */,
-							   WAIT_EVENT_CFS_GC_ENABLE);
+							   CFS_DISABLE_TIMEOUT /* ms */);
 			if (rc & WL_POSTMASTER_DEATH) {
 				exit(1);
 			}		
