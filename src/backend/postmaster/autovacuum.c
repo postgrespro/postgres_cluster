@@ -115,8 +115,8 @@ int			autovacuum_vac_thresh;
 double		autovacuum_vac_scale;
 int			autovacuum_anl_thresh;
 double		autovacuum_anl_scale;
-int			autovacuum_freeze_max_age;
-int			autovacuum_multixact_freeze_max_age;
+int64		autovacuum_freeze_max_age;
+int64		autovacuum_multixact_freeze_max_age;
 
 int			autovacuum_vac_cost_delay;
 int			autovacuum_vac_cost_limit;
@@ -144,10 +144,10 @@ static TransactionId recentXid;
 static MultiXactId recentMulti;
 
 /* Default freeze ages to use for autovacuum (varies by database) */
-static int	default_freeze_min_age;
-static int	default_freeze_table_age;
-static int	default_multixact_freeze_min_age;
-static int	default_multixact_freeze_table_age;
+static int64	default_freeze_min_age;
+static int64	default_freeze_table_age;
+static int64	default_multixact_freeze_min_age;
+static int64	default_multixact_freeze_table_age;
 
 /* Memory context for long-lived data */
 static MemoryContext AutovacMemCxt;
@@ -302,11 +302,11 @@ static void FreeWorkerInfo(int code, Datum arg);
 
 static autovac_table *table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 					  TupleDesc pg_class_desc,
-					  int effective_multixact_freeze_max_age);
+					  int64 effective_multixact_freeze_max_age);
 static void relation_needs_vacanalyze(Oid relid, AutoVacOpts *relopts,
 						  Form_pg_class classForm,
 						  PgStat_StatTabEntry *tabentry,
-						  int effective_multixact_freeze_max_age,
+						  int64 effective_multixact_freeze_max_age,
 						  bool *dovacuum, bool *doanalyze, bool *wraparound);
 
 static void autovacuum_do_vac_analyze(autovac_table *tab,
@@ -1900,7 +1900,7 @@ do_autovacuum(void)
 	BufferAccessStrategy bstrategy;
 	ScanKeyData key;
 	TupleDesc	pg_class_desc;
-	int			effective_multixact_freeze_max_age;
+	int64		effective_multixact_freeze_max_age;
 
 	/*
 	 * StartTransactionCommand and CommitTransactionCommand will automatically
@@ -2471,7 +2471,7 @@ get_pgstat_tabentry_relid(Oid relid, bool isshared, PgStat_StatDBEntry *shared,
 static autovac_table *
 table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 					  TupleDesc pg_class_desc,
-					  int effective_multixact_freeze_max_age)
+					  int64 effective_multixact_freeze_max_age)
 {
 	Form_pg_class classForm;
 	HeapTuple	classTup;
@@ -2527,10 +2527,10 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 	/* OK, it needs something done */
 	if (doanalyze || dovacuum)
 	{
-		int			freeze_min_age;
-		int			freeze_table_age;
-		int			multixact_freeze_min_age;
-		int			multixact_freeze_table_age;
+		int64		freeze_min_age;
+		int64		freeze_table_age;
+		int64		multixact_freeze_min_age;
+		int64		multixact_freeze_table_age;
 		int			vac_cost_limit;
 		int			vac_cost_delay;
 		int			log_min_duration;
@@ -2655,7 +2655,7 @@ relation_needs_vacanalyze(Oid relid,
 						  AutoVacOpts *relopts,
 						  Form_pg_class classForm,
 						  PgStat_StatTabEntry *tabentry,
-						  int effective_multixact_freeze_max_age,
+						  int64 effective_multixact_freeze_max_age,
  /* output params below */
 						  bool *dovacuum,
 						  bool *doanalyze,
@@ -2679,8 +2679,8 @@ relation_needs_vacanalyze(Oid relid,
 				anltuples;
 
 	/* freeze parameters */
-	int			freeze_max_age;
-	int			multixact_freeze_max_age;
+	int64		freeze_max_age;
+	int64		multixact_freeze_max_age;
 
 	AssertArg(classForm != NULL);
 	AssertArg(OidIsValid(relid));

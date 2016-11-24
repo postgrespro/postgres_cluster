@@ -393,7 +393,7 @@ pg_ltostr(char *str, int32 value)
  * pg_strtouint64
  *		Converts 'str' into an unsigned 64-bit integer.
  *
- * This has the identical API to strtoul(3), except that it will handle
+ * This has the identical API to strtoull(3), except that it will handle
  * 64-bit ints even where "long" is narrower than that.
  *
  * For the moment it seems sufficient to assume that the platform has

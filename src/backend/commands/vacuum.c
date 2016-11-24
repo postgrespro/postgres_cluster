@@ -54,10 +54,10 @@
 /*
  * GUC parameters
  */
-int			vacuum_freeze_min_age;
-int			vacuum_freeze_table_age;
-int			vacuum_multixact_freeze_min_age;
-int			vacuum_multixact_freeze_table_age;
+int64		vacuum_freeze_min_age;
+int64		vacuum_freeze_table_age;
+int64		vacuum_multixact_freeze_min_age;
+int64		vacuum_multixact_freeze_table_age;
 
 
 /* A few variables that don't seem worth passing around as parameters */
@@ -469,19 +469,19 @@ get_rel_oids(Oid relid, const RangeVar *vacrel)
  */
 void
 vacuum_set_xid_limits(Relation rel,
-					  int freeze_min_age,
-					  int freeze_table_age,
-					  int multixact_freeze_min_age,
-					  int multixact_freeze_table_age,
+					  int64 freeze_min_age,
+					  int64 freeze_table_age,
+					  int64 multixact_freeze_min_age,
+					  int64 multixact_freeze_table_age,
 					  TransactionId *oldestXmin,
 					  TransactionId *freezeLimit,
 					  TransactionId *xidFullScanLimit,
 					  MultiXactId *multiXactCutoff,
 					  MultiXactId *mxactFullScanLimit)
 {
-	int			freezemin;
-	int			mxid_freezemin;
-	int			effective_multixact_freeze_max_age;
+	int64		freezemin;
+	int64		mxid_freezemin;
+	int64		effective_multixact_freeze_max_age;
 	TransactionId limit;
 	TransactionId safeLimit;
 	TransactionId nextXid;
