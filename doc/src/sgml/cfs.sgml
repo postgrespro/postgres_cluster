@@ -308,7 +308,7 @@
        As it was mentioned before, CFS always appends updated blocks to the end of the compressed file. So physical size of the file
        can be greater than used size in this file. I.e. CFS file is fragmented and defragmentation is periodically performed by CFS
        garbage collector. <varname>cfs_fragmentation(relation)</varname> functions returns average fragmentation of relation files.
-       It is calculated as rum of physical sizes of the files divided by sum of used size of the files. 
+       It is calculated as sum of physical sizes of the files minus sum of used size of the files divided by sum of physical sizes of the files. 
      </para>
  
      <para>

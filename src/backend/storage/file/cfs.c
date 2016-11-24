@@ -1064,7 +1064,7 @@ Datum cfs_fragmentation(PG_FUNCTION_ARGS)
 		pfree(map_path);
 		relation_close(rel, AccessShareLock);
 	}
-	PG_RETURN_FLOAT8((double)physSize/usedSize);
+	PG_RETURN_FLOAT8((double)(physSize - usedSize)/physSize);
 }
 
 Datum cfs_gc_activity_processed_bytes(PG_FUNCTION_ARGS)
