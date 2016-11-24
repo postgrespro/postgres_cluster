@@ -1,0 +1,76 @@
+<sect1 id="online-analyze">
+  <title>online-analyze</title>
+  <para>
+    The <literal>online_analyze</literal> module provides set of
+    changes, which immediately update stats after INSERT, UPDATE, DELETE
+    or SELECT INTO operations applied for affected tables.
+  </para>
+
+  <sect2 id="online-analyze-loading">
+    <title>Module loading</title>
+    <para>
+      To use <literal>online_analyze</literal> module the first thing you need to
+      load shared library:
+
+      <programlisting>
+        LOAD 'online_analyze';
+      </programlisting>
+    </para>    
+  </sect2>
+
+  <sect2 id="online-analyze-configuration">
+    <title>Module configuration</title>
+
+    <para>
+      Custom variables (defaults values are shown):
+      
+      <itemizedlist>
+        <listitem>
+          <para>online_analyze.enable = on</para>
+          <para>Enables on-line analyze</para>
+        </listitem>
+        <listitem>
+          <para>online_analyze.verbose = on</para>
+          <para>Execute ANALYZE VERBOSE</para>
+        </listitem>
+        <listitem>
+          <para>online_analyze.scale_factor = 0.1</para>
+          <para>Fraction of table size to start on-line analyze (similar to autovacuum_analyze_scale_factor)</para>
+        </listitem>
+
+        <listitem>
+          <para>online_analyze.threshold = 50</para>
+          <para>Min number of row updates before on-line analyze (similar to autovacuum_analyze_threshold)</para>
+        </listitem>
+
+        <listitem>
+          <para>online_analyze.min_interval = 10000</para>
+          <para>Minimum time interval between analyze call per table (in milliseconds)</para>
+        </listitem>
+        
+        <listitem>
+          <para>online_analyze.table_type = "all"</para>
+          <para>Type(s) of table for online analyze: all, persistent, temporary, none</para>
+        </listitem>
+
+        <listitem>
+          <para>online_analyze.exclude_tables = ""</para>
+          <para>List of tables which will not online analyze</para>
+        </listitem>
+        
+        <listitem>
+          <para>online_analyze.include_tables = ""</para>
+          <para>List of tables which will online analyze online_analyze.include_tables overwrites online_analyze.exclude_tables.</para>
+        </listitem>
+      </itemizedlist>
+    </para>
+  </sect2>
+  
+  <sect2 id="online-analyze-authors">
+    <title>Authors</title>
+    <literallayout>
+      Teodor Sigaev <email>teodor@sigaev.ru</email>
+    </literallayout>
+  </sect2>
+
+</sect1>
