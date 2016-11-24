@@ -5937,7 +5937,7 @@ parse_and_validate_value(struct config_generic * record,
 					return false;
 				}
 
-				if (!call_int_check_hook(conf, &newval->int64val, newextra,
+				if (!call_int64_check_hook(conf, &newval->int64val, newextra,
 										 source, elevel))
 					return false;
 			}
