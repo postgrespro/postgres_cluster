@@ -429,6 +429,12 @@ initialize_reloptions(void)
 								   intRelOpts[i].gen.lockmode));
 		j++;
 	}
+	for (i = 0; int64RelOpts[i].gen.name; i++)
+	{
+		Assert(DoLockModesConflict(int64RelOpts[i].gen.lockmode,
+								   int64RelOpts[i].gen.lockmode));
+		j++;
+	}
 	for (i = 0; realRelOpts[i].gen.name; i++)
 	{
 		Assert(DoLockModesConflict(realRelOpts[i].gen.lockmode,
