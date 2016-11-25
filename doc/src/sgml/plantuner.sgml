@@ -2,24 +2,24 @@
   <title>plantuner</title>
   <para>
     The <literal>plantuner</literal> module provides hits for planner,
-    which can do disable or enable indexes for query execution.
+    which can disable or enable indexes for query execution.
   </para>
 
   <sect2 id="plantuner-motivation">
     <title>Motivation</title>
     <para>
       Whether somebody think it's bad or not, but sometime it's very
-      interesting to be able to control planner (provide hints, which tells
+      interesting to be able to control planner (provide hints, which tell
       optimizer to ignore its algorithm in part), which is currently
-      impossible in PostgreSQL. Oracle, for example, has over 120 hints, SQL
-      Server also provides hints.      
+      impossible in PostgreSQL. Oracle, for example, has over 120 hints,
+      and Microsoft SQL Server also supports hints.
     </para>
     <para>
       This first version of plantuner provides a possibility to hide
-      specified indexes from PostgreSQL planner, so it will not use them.      
+      specified indexes from PostgreSQL planner, so it will not use them.
     </para>
     <para>
-      There are many situation, when developer want to temporarily disable
+      There are many situations when developer want to temporarily disable
       specific index(es), without dropping them, or to instruct planner to
       use specific index.
     </para>
@@ -27,15 +27,15 @@
       Next, for some workload PostgreSQL could be too pessimistic for
       newly created tables and assumes much more rows in table than
       it actually has. If plantuner.fix_empty_table GUC variable is set
-      to true then module will set to zero number of pages/tuples of
-      table which hasn't blocks in file.
+      to true then module will set to zero the number of pages/tuples of
+      table which hasn't blocks in a file.
     </para>
   </sect2>
 
   <sect2 id="plantuner-syntax">
     <title>Syntax</title>
-    <para>plantuner.disable_index - List of indexes invisible to planner</para>
-    <para>plantuner.enable_index - List of indexes visible to planner even they are hided by plantuner.disable_index.</para>
+    <para>plantuner.disable_index &mdash; List of indexes invisible to planner</para>
+    <para>plantuner.enable_index &mdash; List of indexes visible to planner even they are hidden by plantuner.disable_index.</para>
   </sect2>
 
   <sect2 id="plantuner-usage-example">
@@ -94,11 +94,11 @@ Indexes:
       </programlisting>
     </para>
   </sect2>
-  
+
   <sect2 id="plantuner-authors">
     <title>Authors</title>
     <para>All work was done by Teodor Sigaev (teodor@sigaev.ru) and Oleg Bartunov (oleg@sai.msu.su).</para>
-    <para>Sponsor: Nomao project (http://www.nomao.com)</para>
+    <para>The work sponsored by Nomao project (http://www.nomao.com).</para>
   </sect2>
 
 </sect1>

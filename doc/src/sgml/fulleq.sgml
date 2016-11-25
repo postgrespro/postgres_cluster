@@ -2,7 +2,7 @@
   <title>fulleq</title>
   <para>
     The <literal>fulleq</literal> module provides additional equivalence
-    operator to compatibility with Microsoft SQL Server.
+    operator for compatibility with Microsoft SQL Server.
   </para>
    <para>
    This module is required for 1C Enterprise support.
@@ -11,17 +11,17 @@
     <title>Overview</title>
     <para>
       The <productname>&productname;</productname> equivalence operator is
-      defined to returns NULL when both operands are NULLs. However, the Microsoft
-      SQL Servers family traditionaly defined other semantic for equivalence
+      defined to return NULL when both operands are NULLs. However, the Microsoft
+      SQL Servers family traditionaly defines other semantic for equivalence
       operator, where operator returns TRUE in the case of both nulled operands.
       This module provides such operator with MSSQL semantic.
     </para>
   </sect2>
-  
+
   <sect2 id="fulleq-operator">
     <title>Operator fulleq</title>
     <para>
-      This operator <emphasis>==</emphasis> is defined for following data
+      The <literal>==</literal> operator is defined for the following data
       types:
       <itemizedlist>
         <listitem><para>bool</para></listitem>
@@ -52,9 +52,9 @@
         <listitem><para>interval</para></listitem>
         <listitem><para>timetz</para></listitem>
       </itemizedlist>
-    </para>      
+    </para>
   </sect2>
-  
+
   <sect2 id="fulleq-authors">
     <title>Authors</title>
     <literallayout>

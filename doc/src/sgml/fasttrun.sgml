@@ -2,14 +2,14 @@
   <title>fasttrun</title>
   <para>
     The <literal>fasttrun</literal> module provides transaction unsafe
-    function to truncate tempory tables without growing pg_class size.
+    function to truncate temporary tables without growing pg_class size.
   </para>
   <para>
   This module is required for 1C Enterprise support.
   </para>
   <para>
   Fast truncate operation is not transactional, so its results cannot be
-  rolled back and became immediately visible in all sessions regardless
+  rolled back and become immediately visible in all sessions regardless
   of isolation level.
   </para>
   <sect2 id="fasttrun-function">
@@ -38,7 +38,7 @@ $$ language plpgsql;
       </programlisting>
     </para>
   </sect2>
-  
+
   <sect2 id="fasttrun-authors">
     <title>Authors</title>
     <literallayout>
