@@ -5683,11 +5683,11 @@ parse_int64(const char *value, int64 *result, int flags, const char **hintmsg)
 	/* We assume here that int64 is at least as wide as long */
 	errno = 0;
 #ifdef _MSC_VER					/* MSVC only */
-	val = _strtoui64(value, &endptr, 10);
-#elif defined(HAVE_STRTOULL) && SIZEOF_LONG < 8
-	val = strtoull(value, &endptr, 10);
+	val = _strtoi64(value, &endptr, 10);
+#elif defined(HAVE_STRTOLL) && SIZEOF_LONG < 8
+	val = strtoll(value, &endptr, 10);
 #else
-	val = strtoul(value, &endptr, 10);
+	val = strtol(value, &endptr, 10);
 #endif
 
 	if (endptr == value)
@@ -5701,7 +5701,7 @@ parse_int64(const char *value, int64 *result, int flags, const char **hintmsg)
 	}
 
 	if (result)
-		*result = (int) val;
+		*result = val;
 	return true;
 }
 
