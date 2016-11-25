@@ -569,6 +569,8 @@ vacuum_set_xid_limits(Relation rel,
 	mxactLimit = GetOldestMultiXactId();
 	if (mxactLimit > FirstMultiXactId + mxid_freezemin)
 		mxactLimit -= mxid_freezemin;
+	else
+		mxactLimit = FirstMultiXactId;
 
 	nextMxactId = ReadNextMultiXactId();
 	if (nextMxactId > FirstMultiXactId + effective_multixact_freeze_max_age)
