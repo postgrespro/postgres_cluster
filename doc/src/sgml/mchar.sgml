@@ -29,10 +29,10 @@
     <title>MCHAR and MVARCHAR features</title>
     <itemizedlist>
       <listitem>
-        <para>defined <function>length(str)<function> function</para>
+        <para>defined <function>length(str)</function> function</para>
       </listitem>
       <listitem>
-        <para>defined <function>substr(str, pos[, length])<function> function</para>
+        <para>defined <function>substr(str, pos[, length])</function> function</para>
       </listitem>
       <listitem>
         <para>defined operator <emphasis>||<emphasis>, which would be applied to concatenation any (mchar and mvarchar) arguments</para>
