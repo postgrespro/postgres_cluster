@@ -531,7 +531,7 @@ vacuum_set_xid_limits(Relation rel,
 	 */
 	nextXid = ReadNewTransactionId();
 	if (nextXid > FirstNormalTransactionId + autovacuum_freeze_max_age)
-		safeLimit = ReadNewTransactionId() - autovacuum_freeze_max_age;
+		safeLimit = nextXid - autovacuum_freeze_max_age;
 	else
 		safeLimit = FirstNormalTransactionId;
 

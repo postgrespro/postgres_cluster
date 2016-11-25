@@ -4296,6 +4296,9 @@ build_guc_variables(void)
 	for (i = 0; ConfigureNamesInt[i].gen.name; i++)
 		guc_vars[num_vars++] = &ConfigureNamesInt[i].gen;
 
+	for (i = 0; ConfigureNamesInt64[i].gen.name; i++)
+		guc_vars[num_vars++] = &ConfigureNamesInt64[i].gen;
+
 	for (i = 0; ConfigureNamesReal[i].gen.name; i++)
 		guc_vars[num_vars++] = &ConfigureNamesReal[i].gen;
 
