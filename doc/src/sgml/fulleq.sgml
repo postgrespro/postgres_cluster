@@ -4,8 +4,10 @@
     The <literal>fulleq</literal> module provides additional equivalence
     operator to compatibility with Microsoft SQL Server.
   </para>
-
-  <sect2 id="fulleq-overview">
+   <para>
+   This module is required for 1C Enterprise support.
+   </para>
+   <sect2 id="fulleq-overview">
     <title>Overview</title>
     <para>
       The <productname>&productname;</productname> equivalence operator is

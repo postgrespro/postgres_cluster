@@ -16,11 +16,28 @@
     <itemizedlist>
       <listitem>
         <para><application>mchar</application> (See <xref linkend="mchar">)</para>
+      </listitem>
+      <listitem>
         <para><application>fulleq</application> (See <xref linkend="fulleq">)</para>
-        <para><application>fasttrun</application> (See <xref linkend="fasttrun">)</para>
+      </listitem>
+      <listitem>
+      <para><application>fasttrun</application> (See <xref linkend="fasttrun">)</para>
+      </listitem>
+      <listitem>
         <para><application>online_analyze</application> (See <xref linkend="online-analyze">)</para>
+      </listitem>
+      <listitem>
         <para><application>plantuner</application> (See <xref linkend="plantuner">)</para>
       </listitem>
+    </itemizedlist>
+    <para>Also, following core changes were added to support 1C</para>
+    <itemizedlist>
+     <listitem>
+     <para>Application level locks</para>
+     </listitem>
+     <listitem>
+     <para>Optimization of range conditions in the WHERE clause</para>
+     </listitem>
     </itemizedlist>
   </sect2>
   <sect2>
