@@ -6,6 +6,7 @@
   </para>
 
   <sect2 id="fasttrun-function">
+    <title>Function</title>
     <para>
       There is a function call example:
       <programlisting>
@@ -15,6 +16,7 @@
   </sect2>
 
   <sect2 id="fasttrun-test">
+    <title>Text example</title>
     <para>
       For tests you can use this example:
       <programlisting>

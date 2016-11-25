@@ -6,11 +6,14 @@
   </para>
 
   <sect2 id="fulleq-overview">
-    The <productname>&productname;</productname> equivalence operator is
-    defined to returns NULL when both operands are NULLs. However, the Microsoft
-    SQL Servers family traditionaly defined other semantic for equivalence
-    operator, where operator returns TRUE in the case of both nulled operands.    
-    This module provides such operator with MSSQL semantic.
+    <title>Overview</title>
+    <para>
+      The <productname>&productname;</productname> equivalence operator is
+      defined to returns NULL when both operands are NULLs. However, the Microsoft
+      SQL Servers family traditionaly defined other semantic for equivalence
+      operator, where operator returns TRUE in the case of both nulled operands.    
+      This module provides such operator with MSSQL semantic.
+    </para>
   </sect2>
   
   <sect2 id="fulleq-operator">

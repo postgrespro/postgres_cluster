@@ -56,10 +56,10 @@
         <para>Operator <emphasis>SIMILAR TO [ESCAPE]</emphasis> support</para>
       </listitem>
       <listitem>
-        <para>Operator <empasis>~</emphasis> (POSIX regexp) supoprt</para>
+        <para>Operator <emphasis>~</emphasis> (POSIX regexp) supoprt</para>
       </listitem>
       <listitem>
-        <para>Index support for <empasis>LIKE</emphasis> operator</para>
+        <para>Index support for <emphasis>LIKE</emphasis> operator</para>
       </listitem>
     </itemizedlist>
   </sect2>
