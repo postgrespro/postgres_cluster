@@ -2290,7 +2290,7 @@ find_multixact_start(MultiXactId multi, MultiXactOffset *result)
  * exist.  Return false if unable to determine.
  */
 static bool
-ReadMultiXactCounts(uint32 *multixacts, MultiXactOffset *members)
+ReadMultiXactCounts(uint64 *multixacts, MultiXactOffset *members)
 {
 	MultiXactOffset nextOffset;
 	MultiXactOffset oldestOffset;
@@ -2345,12 +2345,12 @@ ReadMultiXactCounts(uint32 *multixacts, MultiXactOffset *members)
  * It's possible that these thresholds should be user-tunable, but for now
  * we keep it simple.
  */
-int
+int64
 MultiXactMemberFreezeThreshold(void)
 {
 	MultiXactOffset members;
-	uint32		multixacts;
-	uint32		victim_multixacts;
+	uint64		multixacts;
+	uint64		victim_multixacts;
 	double		fraction;
 
 	/* If we can't determine member space utilization, assume the worst. */

@@ -1083,6 +1083,7 @@ do_start_worker(void)
 	ListCell   *cell;
 	TransactionId xidForceLimit;
 	MultiXactId multiForceLimit;
+	int64		multiMembersThreshold;
 	bool		for_xid_wrap;
 	bool		for_multi_wrap;
 	avw_dbase  *avdb;
@@ -1122,17 +1123,18 @@ do_start_worker(void)
 	 * particular tables, but not loosened.)
 	 */
 	recentXid = ReadNewTransactionId();
-	xidForceLimit = recentXid - autovacuum_freeze_max_age;
-	/* ensure it's a "normal" XID, else TransactionIdPrecedes misbehaves */
-	/* this can cause the limit to go backwards by 3, but that's OK */
-	if (xidForceLimit < FirstNormalTransactionId)
-		xidForceLimit -= FirstNormalTransactionId;
+	if (recentXid > FirstNormalTransactionId + autovacuum_freeze_max_age)
+		xidForceLimit = recentXid - autovacuum_freeze_max_age;
+	else
+		xidForceLimit = FirstNormalTransactionId;
 
 	/* Also determine the oldest datminmxid we will consider. */
 	recentMulti = ReadNextMultiXactId();
-	multiForceLimit = recentMulti - MultiXactMemberFreezeThreshold();
-	if (multiForceLimit < FirstMultiXactId)
-		multiForceLimit -= FirstMultiXactId;
+	multiMembersThreshold = MultiXactMemberFreezeThreshold();
+	if (recentMulti > FirstMultiXactId + multiMembersThreshold)
+		multiForceLimit = recentMulti - multiMembersThreshold;
+	else
+		multiForceLimit = FirstMultiXactId;
 
 	/*
 	 * Choose a database to connect to.  We pick the database that was least
