@@ -1130,7 +1130,7 @@ do_start_worker(void)
 
 	/* Also determine the oldest datminmxid we will consider. */
 	recentMulti = ReadNextMultiXactId();
-	multiMembersThreshold = MultiXactMemberFreezeThreshold();
+	multiMembersThreshold = autovacuum_multixact_freeze_max_age;
 	if (recentMulti > FirstMultiXactId + multiMembersThreshold)
 		multiForceLimit = recentMulti - multiMembersThreshold;
 	else
@@ -1935,7 +1935,7 @@ do_autovacuum(void)
 	 * normally autovacuum_multixact_freeze_max_age, but may be less if we are
 	 * short of multixact member space.
 	 */
-	effective_multixact_freeze_max_age = MultiXactMemberFreezeThreshold();
+	effective_multixact_freeze_max_age = autovacuum_multixact_freeze_max_age;
 
 	/*
 	 * Find the pg_database entry and select the default freeze ages. We use
