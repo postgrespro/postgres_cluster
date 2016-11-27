@@ -485,6 +485,7 @@ vacuum_set_xid_limits(Relation rel,
 	TransactionId limit;
 	TransactionId safeLimit;
 	TransactionId nextXid;
+	MultiXactId oldestMxact;
 	MultiXactId mxactLimit;
 	MultiXactId safeMxactLimit;
 	MultiXactId nextMxactId;
@@ -566,9 +567,9 @@ vacuum_set_xid_limits(Relation rel,
 	Assert(mxid_freezemin >= 0);
 
 	/* compute the cutoff multi, being careful to generate a valid value */
-	mxactLimit = GetOldestMultiXactId();
-	if (mxactLimit > FirstMultiXactId + mxid_freezemin)
-		mxactLimit -= mxid_freezemin;
+	oldestMxact = GetOldestMultiXactId();
+	if (oldestMxact > FirstMultiXactId + mxid_freezemin)
+		mxactLimit = oldestMxact - mxid_freezemin;
 	else
 		mxactLimit = FirstMultiXactId;
 
@@ -581,7 +582,11 @@ vacuum_set_xid_limits(Relation rel,
 	if (MultiXactIdPrecedes(mxactLimit, safeMxactLimit))
 	{
 		ereport(WARNING,
-				(errmsg("oldest multixact is far in the past"),
+				(errmsg("oldest multixact is far in the past: "
+					INT64_FORMAT " " INT64_FORMAT " " INT64_FORMAT " "
+					INT64_FORMAT " " INT64_FORMAT " " INT64_FORMAT " ",
+					mxactLimit, mxid_freezemin, oldestMxact,
+					safeMxactLimit, effective_multixact_freeze_max_age, nextMxactId),
 				 errhint("Close open transactions with multixacts soon to avoid wraparound problems.")));
 		mxactLimit = safeMxactLimit;
 	}
