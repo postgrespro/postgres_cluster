@@ -11,6 +11,38 @@
       This module has been designed to imporving <application>1C Enterprise</application>
       support, most popular russian CRM and ERP systems.
     </para>
+    <para>
+    It implements types MCHAR and MVARCHAR, which are bug-to-bug
+    compatible with MSSQL CHAR and VARCHAR respectively. Additionaly, 
+    these types use libicu for comparation and case conversion, so their
+    behavoir is identical across different operating system.
+    </para>
+    <para>
+    PostgresPro also includes <xref linkend="citext"> extension which
+    provides types similar to MCHAR. But this extension doesn't emulate
+    MS-SQL behavoir concerning end-of-value whitespace.
+    </para>
+    <para>
+    Differences from PostgreSQL standard CHAR and VARCHAR are:
+    </para>
+    <itemizedlist>
+    <listitem>
+    <para>
+    Case insensitive comparation
+    </para>
+    </listitem>
+    <listitem>
+    <para>
+    Handling of the whitespace at the end of string
+    </para>
+    </listitem>
+    <listitem>
+    <para>
+    These types are always stored as two-byte unicode value regradless
+    of database encoding.
+    </para>
+    </listitem>
+    </itemizedlist>
   </sect2>
 
   <sect2 id="mchar-types">
