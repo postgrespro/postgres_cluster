@@ -139,7 +139,6 @@
 #include "utils/ps_status.h"
 #include "utils/timestamp.h"
 
-
 /*
  * Maximum size of a NOTIFY payload, including terminating NULL.  This
  * must be kept small enough so that a notification message fits on one

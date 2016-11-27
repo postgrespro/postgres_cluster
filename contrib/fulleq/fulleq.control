@@ -1,0 +1,5 @@
+# fulleq extension
+comment = 'Introduce operator == which returns true when operands are equal or both are nulls.'
+default_version = '1.0'
+module_pathname = '$libdir/fulleq'
+relocatable = true

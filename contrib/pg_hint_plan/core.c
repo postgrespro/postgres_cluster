@@ -181,7 +181,7 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	 * if we have zero or one live subpath due to constraint exclusion.)
 	 */
 	if (subpaths_valid)
-		add_path(rel, (Path *) create_append_path(rel, subpaths, NULL, 0));
+		add_path(rel, (Path *) create_append_path(rel, subpaths, NULL, false, NIL, 0));
 
 	/*
 	 * Consider an append of partial unordered, unparameterized partial paths.
@@ -207,7 +207,7 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 		Assert(parallel_workers > 0);
 
 		/* Generate a partial append path. */
-		appendpath = create_append_path(rel, partial_subpaths, NULL,
+		appendpath = create_append_path(rel, partial_subpaths, NULL, false, NIL,
 										parallel_workers);
 		add_partial_path(rel, (Path *) appendpath);
 	}
@@ -260,7 +260,7 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 
 		if (subpaths_valid)
 			add_path(rel, (Path *)
-					 create_append_path(rel, subpaths, required_outer, 0));
+					 create_append_path(rel, subpaths, required_outer, false, NIL, 0));
 	}
 }
 
@@ -1270,7 +1270,7 @@ mark_dummy_rel(RelOptInfo *rel)
 	rel->partial_pathlist = NIL;
 
 	/* Set up the dummy path */
-	add_path(rel, (Path *) create_append_path(rel, NIL, NULL, 0));
+	add_path(rel, (Path *) create_append_path(rel, NIL, NULL, false, NIL, 0));
 
 	/* Set or update cheapest_total_path and related fields */
 	set_cheapest(rel);

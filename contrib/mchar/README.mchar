@@ -1,0 +1,20 @@
+MCHAR & VARCHAR
+	type modifier
+	length()
+	substr(str, pos[, length])
+	|| - concatenation with any (mchar,mvarchar) arguments
+	< <= = >= >  - case-insensitive comparisons (libICU)
+	&< &<= &= &>= &>  - case-sensitive comparisons (libICU)
+	implicit casting  mchar<->mvarchar
+	B-tree and hash index
+	LIKE [ESCAPE]
+	SIMILAR TO [ESCAPE]
+	~ (POSIX regexp)
+	index support for LIKE
+
+
+Authors:
+	Oleg Bartunov <oleg@sai.msu.ru>
+	Teodor Sigaev <teodor@sigaev.ru>
+
+

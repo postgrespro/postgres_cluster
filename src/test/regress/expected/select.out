@@ -518,6 +518,124 @@ TABLE int8_tbl;
 (9 rows)
 
 --
+-- test order by NULLS (FIRST|LAST)
+--
+select unique1, unique2 into onek_with_null from onek;
+insert into onek_with_null (unique1,unique2) values (NULL, -1), (NULL, NULL);
+select * from onek_with_null order by unique1 nulls first	, unique2				limit 3;
+ unique1 | unique2 
+---------+---------
+         |      -1
+         |        
+       0 |     998
+(3 rows)
+
+select * from onek_with_null order by unique1 nulls last	, unique2				limit 3;
+ unique1 | unique2 
+---------+---------
+       0 |     998
+       1 |     214
+       2 |     326
+(3 rows)
+
+select * from onek_with_null order by unique1 nulls first	, unique2	nulls first	limit 3;
+ unique1 | unique2 
+---------+---------
+         |        
+         |      -1
+       0 |     998
+(3 rows)
+
+select * from onek_with_null order by unique1 nulls last	, unique2	nulls first	limit 3;
+ unique1 | unique2 
+---------+---------
+       0 |     998
+       1 |     214
+       2 |     326
+(3 rows)
+
+select * from onek_with_null order by unique1 nulls first	, unique2	nulls last	limit 3;
+ unique1 | unique2 
+---------+---------
+         |      -1
+         |        
+       0 |     998
+(3 rows)
+
+select * from onek_with_null order by unique1 nulls last	, unique2	nulls last	limit 3;
+ unique1 | unique2 
+---------+---------
+       0 |     998
+       1 |     214
+       2 |     326
+(3 rows)
+
+select * from onek_with_null order by unique1 desc nulls first	, unique2	desc 			limit 3;
+ unique1 | unique2 
+---------+---------
+         |        
+         |      -1
+     999 |     152
+(3 rows)
+
+select * from onek_with_null order by unique1 desc nulls last	, unique2	desc 			limit 3;
+ unique1 | unique2 
+---------+---------
+     999 |     152
+     998 |     549
+     997 |      21
+(3 rows)
+
+select * from onek_with_null order by unique1 desc nulls first	, unique2	desc nulls first	limit 3;
+ unique1 | unique2 
+---------+---------
+         |        
+         |      -1
+     999 |     152
+(3 rows)
+
+select * from onek_with_null order by unique1 desc nulls last	, unique2	desc nulls first	limit 3;
+ unique1 | unique2 
+---------+---------
+     999 |     152
+     998 |     549
+     997 |      21
+(3 rows)
+
+select * from onek_with_null order by unique1 desc nulls first	, unique2	desc nulls last	limit 3;
+ unique1 | unique2 
+---------+---------
+         |      -1
+         |        
+     999 |     152
+(3 rows)
+
+select * from onek_with_null order by unique1 desc nulls last	, unique2	desc nulls last	limit 3;
+ unique1 | unique2 
+---------+---------
+     999 |     152
+     998 |     549
+     997 |      21
+(3 rows)
+
+select unique1 as u1, unique2 as u2 from onek_with_null order by u1 nulls first	, u2	nulls first	limit 3;
+ u1 | u2  
+----+-----
+    |    
+    |  -1
+  0 | 998
+(3 rows)
+
+select unique1 as u1, unique2 as u2 from onek_with_null order by u1 asc nulls first	, u2 desc	nulls first	limit 3;
+ u1 | u2  
+----+-----
+    |    
+    |  -1
+  0 | 998
+(3 rows)
+
+drop table onek_with_null;
+--
 -- Test ORDER BY options
 --
 CREATE TEMP TABLE foo (f1 int);

@@ -1459,7 +1459,7 @@ right_merge_direction(PlannerInfo *root, PathKey *pathkey)
  * no good to order by just the first key(s) of the requested ordering.
  * So the result is always either 0 or list_length(root->query_pathkeys).
  */
-static int
+int
 pathkeys_useful_for_ordering(PlannerInfo *root, List *pathkeys)
 {
 	if (root->query_pathkeys == NIL)
