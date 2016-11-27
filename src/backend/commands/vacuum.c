@@ -583,8 +583,10 @@ vacuum_set_xid_limits(Relation rel,
 	{
 		ereport(WARNING,
 				(errmsg("oldest multixact is far in the past: "
+					INT64_FORMAT " " INT64_FORMAT " "
 					INT64_FORMAT " " INT64_FORMAT " " INT64_FORMAT " "
 					INT64_FORMAT " " INT64_FORMAT " " INT64_FORMAT " ",
+					multixact_freeze_min_age, vacuum_multixact_freeze_min_age,
 					mxactLimit, mxid_freezemin, oldestMxact,
 					safeMxactLimit, effective_multixact_freeze_max_age, nextMxactId),
 				 errhint("Close open transactions with multixacts soon to avoid wraparound problems.")));
