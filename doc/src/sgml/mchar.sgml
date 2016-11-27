@@ -2,14 +2,14 @@
   <title>mchar</title>
   <para>
     The <literal>mchar</literal> module provides additional data types
-    to compatibility with Microsoft SQL Server (MSSQL).
+    for compatibility with Microsoft SQL Server (MSSQL).
   </para>
-  
+
   <sect2 id="mchar-overview">
     <title>Overview</title>
     <para>
-      This module has been designed to imporving <application>1C Enterprise</application>
-      support, most popular russian CRM and ERP systems.
+      This module has been designed to improve <application>1C Enterprise</application>
+      support, most popular Russian CRM and ERP system.
     </para>
     <para>
     It implements types MCHAR and MVARCHAR, which are bug-to-bug
@@ -49,10 +49,10 @@
     <title>Additional types</title>
     <itemizedlist>
       <listitem>
-        <para><type>mchar</type> - analog of the MSSQL char type</para>
+        <para><type>mchar</type> &mdash; analog of the MSSQL char type</para>
       </listitem>
       <listitem>
-        <para><type>mvarchar</type> - analog of the MSSQL varchar type</para>
+        <para><type>mvarchar</type> &mdash; analog of the MSSQL varchar type</para>
       </listitem>
     </itemizedlist>
   </sect2>
@@ -61,41 +61,41 @@
     <title>MCHAR and MVARCHAR features</title>
     <itemizedlist>
       <listitem>
-        <para>defined <function>length(str)</function> function</para>
+        <para>Defines <function>length(str)</function> function</para>
       </listitem>
       <listitem>
-        <para>defined <function>substr(str, pos[, length])</function> function</para>
+        <para>Defines <function>substr(str, pos[, length])</function> function</para>
       </listitem>
       <listitem>
-        <para>defined operator <emphasis>||</emphasis>, which would be applied to concatenation any (mchar and mvarchar) arguments</para>
+        <para>Defines <literal>||</literal> operator, which would be applied to concatenate any (mchar and mvarchar) arguments</para>
       </listitem>
       <listitem>
-        <para>defined set of operators: <emphasis>&lt; &lt;= = &gt;= &gt;</emphasis> to case-insensitive comparations (LibICU)</para>
+        <para>Defines set of operators: <literal>&lt;</>, <literal>&lt;=</> <literal>=</>, <literal>&gt;=</>, <literal>&gt;</> for case-insensitive comparison (LibICU)</para>
       </listitem>
       <listitem>
-        <para>defined set of operators: <emphasis>&amp;&lt; &amp;&lt;= &amp;= &amp;&gt;= &amp;&gt;</emphasis> to case-sensitive comparations (LibICU)</para>
+        <para>Defines set of operators: <literal>&amp;&lt;</>, <literal>&amp;&lt;=</>, <literal>&amp;=</>, <literal>&amp;&gt;=</>, <literal>&amp;&gt;</> to case-sensitive comparison (LibICU)</para>
       </listitem>
       <listitem>
-        <para>implicit casting between <type>mchar</type> and <type>mvarchar</type> types</para>
+        <para>Implicit cast between <type>mchar</type> and <type>mvarchar</type> types</para>
       </listitem>
       <listitem>
         <para>B-tree and Hash-index support</para>
       </listitem>
       <listitem>
-        <para>Operator <emphasis>LIKE [ESCAPE]</emphasis> support</para>
-      </listitem>      
-      <listitem>
-        <para>Operator <emphasis>SIMILAR TO [ESCAPE]</emphasis> support</para>
+        <para>The <literal>LIKE [ESCAPE]</literal> operator support</para>
       </listitem>
       <listitem>
-        <para>Operator <emphasis>~</emphasis> (POSIX regexp) supoprt</para>
+        <para>The <literal>SIMILAR TO [ESCAPE]</literal> operator support</para>
       </listitem>
       <listitem>
-        <para>Index support for <emphasis>LIKE</emphasis> operator</para>
+        <para>The <emphasis>~</emphasis> operator (POSIX regexp) support</para>
+      </listitem>
+      <listitem>
+        <para>Index support for the <emphasis>LIKE</emphasis> operator</para>
       </listitem>
     </itemizedlist>
   </sect2>
-  
+
   <sect2 id="mchar-authors">
     <title>Authors</title>
     <literallayout>
@@ -103,5 +103,5 @@
       Teodor Sigaev <email>teodor@sigaev.ru</email>
     </literallayout>
   </sect2>
-  
+
 </sect1>

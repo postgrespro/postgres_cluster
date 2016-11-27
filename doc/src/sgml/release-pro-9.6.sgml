@@ -12,7 +12,7 @@
       9.6.1.1 and upstream PostgreSQL patches.</para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
       9.6.1.1 include:</para>
-    <para>Added several modules to support 1C Enterprise:</para>
+    <para>Several modules to support 1C Enterprise added:</para>
     <itemizedlist>
       <listitem>
         <para><application>mchar</application> (See <xref linkend="mchar">)</para>
@@ -30,7 +30,7 @@
         <para><application>plantuner</application> (See <xref linkend="plantuner">)</para>
       </listitem>
     </itemizedlist>
-    <para>Also, following core changes were added to support 1C</para>
+    <para>Also, following core changes were added to support 1C:</para>
     <itemizedlist>
      <listitem>
      <para>Application level locks</para>
