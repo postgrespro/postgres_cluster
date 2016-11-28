@@ -261,7 +261,6 @@ extern void GetFullPageWriteInfo(XLogRecPtr *RedoRecPtr_p, bool *doPageWrites_p)
 extern XLogRecPtr GetRedoRecPtr(void);
 extern XLogRecPtr GetInsertRecPtr(void);
 extern XLogRecPtr GetFlushRecPtr(void);
-extern void GetNextXid(TransactionId *xid);
 extern void RemovePromoteSignalFiles(void);
 
 extern bool CheckPromoteSignal(void);

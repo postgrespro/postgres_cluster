@@ -3063,7 +3063,7 @@ static struct config_int64 ConfigureNamesInt64[] =
 		},
 		&autovacuum_freeze_max_age,
 		/* see pg_resetxlog if you change the upper-limit value */
-		INT64CONST(200000000), INT64CONST(100000), INT64CONST(2000000000),
+		INT64CONST(10000000000), INT64CONST(100000), INT64CONST(0x7FFFFFFFFFFFFFFF),
 		NULL, NULL, NULL
 	},
 	{
@@ -3073,7 +3073,7 @@ static struct config_int64 ConfigureNamesInt64[] =
 			NULL
 		},
 		&autovacuum_multixact_freeze_max_age,
-		INT64CONST(400000000), INT64CONST(10000), INT64CONST(2000000000),
+		INT64CONST(20000000000), INT64CONST(10000), INT64CONST(0x7FFFFFFFFFFFFFFF),
 		NULL, NULL, NULL
 	},
 

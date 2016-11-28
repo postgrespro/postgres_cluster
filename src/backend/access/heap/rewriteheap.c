@@ -1238,8 +1238,6 @@ CheckPointLogicalRewriteHeap(void)
 		Oid			dboid;
 		Oid			relid;
 		XLogRecPtr	lsn;
-		TransactionId rewrite_xid;
-		TransactionId create_xid;
 		uint32		lsn_hi,
 					lsn_lo,
 					rewrite_xid_hi,
@@ -1266,8 +1264,6 @@ CheckPointLogicalRewriteHeap(void)
 			elog(ERROR, "could not parse filename \"%s\"", mapping_de->d_name);
 
 		lsn = ((uint64) lsn_hi) << 32 | lsn_lo;
-		rewrite_xid = ((uint64) rewrite_xid_hi) << 32 | rewrite_xid_lo;
-		create_xid = ((uint64) create_xid_hi) << 32 | create_xid_lo;
 
 		if (lsn < cutoff || cutoff == InvalidXLogRecPtr)
 		{

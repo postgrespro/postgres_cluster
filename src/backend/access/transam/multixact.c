@@ -203,22 +203,8 @@ typedef struct MultiXactStateData
 	MultiXactId oldestMultiXactId;
 	Oid			oldestMultiXactDB;
 
-	/*
-	 * Oldest multixact offset that is potentially referenced by a multixact
-	 * referenced by a relation.  We don't always know this value, so there's
-	 * a flag here to indicate whether or not we currently do.
-	 */
-	MultiXactOffset oldestOffset;
-	bool		oldestOffsetKnown;
-
 	/* support for anti-wraparound measures */
 	MultiXactId multiVacLimit;
-	MultiXactId multiWarnLimit;
-	MultiXactId multiStopLimit;
-	MultiXactId multiWrapLimit;
-
-	/* support for members anti-wraparound measures */
-	MultiXactOffset offsetStopLimit;	/* known if oldestOffsetKnown */
 
 	/*
 	 * Per-backend data starts here.  We have two arrays stored in the area
@@ -707,9 +693,6 @@ ReadNextMultiXactId(void)
 	mxid = MultiXactState->nextMXact;
 	LWLockRelease(MultiXactGenLock);
 
-	if (mxid < FirstMultiXactId)
-		mxid = FirstMultiXactId;
-
 	return mxid;
 }
 
@@ -933,6 +916,42 @@ GetNewMultiXactId(int nmembers, MultiXactOffset *offset)
 	/* Assign the MXID */
 	result = MultiXactState->nextMXact;
 
+	/*----------
+	 * Check to see if it's safe to assign another MultiXactId.  This protects
+	 * against catastrophic data loss due to multixact wraparound.  The basic
+	 * rules are:
+	 *
+	 * If we're past multiVacLimit or the safe threshold for member storage
+	 * space, or we don't know what the safe threshold for member storage is,
+	 * start trying to force autovacuum cycles.
+	 *
+	 * Note these are pretty much the same protections in GetNewTransactionId.
+	 *----------
+	 */
+	if (!MultiXactIdPrecedes(result, MultiXactState->multiVacLimit))
+	{
+		/*
+		 * For safety's sake, we release MultiXactGenLock while sending
+		 * signals, warnings, etc.  This is not so much because we care about
+		 * preserving concurrency in this situation, as to avoid any
+		 * possibility of deadlock while doing get_database_name(). First,
+		 * copy all the shared values we'll need in this path.
+		 */
+		LWLockRelease(MultiXactGenLock);
+
+		/*
+		 * To avoid swamping the postmaster with signals, we issue the autovac
+		 * request only once per 64K multis generated.  This still gives
+		 * plenty of chances before we get into real trouble.
+		 */
+		if (IsUnderPostmaster && (result % 65536) == 0)
+			SendPostmasterSignal(PMSIGNAL_START_AUTOVAC_LAUNCHER);
+
+		/* Re-acquire lock and start over */
+		LWLockAcquire(MultiXactGenLock, LW_EXCLUSIVE);
+		result = MultiXactState->nextMXact;
+	}
+
 	/* Make sure there is room for the MXID in the file.  */
 	ExtendMultiXactOffset(result);
 
@@ -1016,7 +1035,6 @@ GetMultiXactIdMembers(MultiXactId multi, MultiXactMember **members,
 	int			length;
 	int			truelength;
 	int			i;
-	MultiXactId oldestMXact;
 	MultiXactId nextMXact;
 	MultiXactId tmpMXact;
 	MultiXactOffset nextOffset;
@@ -1069,7 +1087,6 @@ GetMultiXactIdMembers(MultiXactId multi, MultiXactMember **members,
 	 */
 	LWLockAcquire(MultiXactGenLock, LW_SHARED);
 
-	oldestMXact = MultiXactState->oldestMultiXactId;
 	nextMXact = MultiXactState->nextMXact;
 	nextOffset = MultiXactState->nextOffset;
 
@@ -1974,49 +1991,8 @@ void
 SetMultiXactIdLimit(MultiXactId oldest_datminmxid, Oid oldest_datoid)
 {
 	MultiXactId multiVacLimit;
-	MultiXactId multiWarnLimit;
-	MultiXactId multiStopLimit;
-	MultiXactId multiWrapLimit;
-	MultiXactId curMulti;
 
 	Assert(MultiXactIdIsValid(oldest_datminmxid));
-
-	/*
-	 * We pretend that a wrap will happen halfway through the multixact ID
-	 * space, but that's not really true, because multixacts wrap differently
-	 * from transaction IDs.  Note that, separately from any concern about
-	 * multixact IDs wrapping, we must ensure that multixact members do not
-	 * wrap.  Limits for that are set in DetermineSafeOldestOffset, not here.
-	 */
-	multiWrapLimit = oldest_datminmxid + (MaxMultiXactId >> 1);
-	if (multiWrapLimit < FirstMultiXactId)
-		multiWrapLimit += FirstMultiXactId;
-
-	/*
-	 * We'll refuse to continue assigning MultiXactIds once we get within 100
-	 * multi of data loss.
-	 *
-	 * Note: This differs from the magic number used in
-	 * SetTransactionIdLimit() since vacuum itself will never generate new
-	 * multis.  XXX actually it does, if it needs to freeze old multis.
-	 */
-	multiStopLimit = multiWrapLimit - 100;
-	if (multiStopLimit < FirstMultiXactId)
-		multiStopLimit -= FirstMultiXactId;
-
-	/*
-	 * We'll start complaining loudly when we get within 10M multis of the
-	 * stop point.   This is kind of arbitrary, but if you let your gas gauge
-	 * get down to 1% of full, would you be looking for the next gas station?
-	 * We need to be fairly liberal about this number because there are lots
-	 * of scenarios where most transactions are done by automatic clients that
-	 * won't pay attention to warnings. (No, we're not gonna make this
-	 * configurable.  If you know enough to configure it, you know enough to
-	 * not get in this kind of trouble in the first place.)
-	 */
-	multiWarnLimit = multiStopLimit - 10000000;
-	if (multiWarnLimit < FirstMultiXactId)
-		multiWarnLimit -= FirstMultiXactId;
 
 	/*
 	 * We'll start trying to force autovacuums when oldest_datminmxid gets to
@@ -2027,24 +2003,13 @@ SetMultiXactIdLimit(MultiXactId oldest_datminmxid, Oid oldest_datoid)
 	 * its value.  See SetTransactionIdLimit.
 	 */
 	multiVacLimit = oldest_datminmxid + autovacuum_multixact_freeze_max_age;
-	if (multiVacLimit < FirstMultiXactId)
-		multiVacLimit += FirstMultiXactId;
 
 	/* Grab lock for just long enough to set the new limit values */
 	LWLockAcquire(MultiXactGenLock, LW_EXCLUSIVE);
 	MultiXactState->oldestMultiXactId = oldest_datminmxid;
 	MultiXactState->oldestMultiXactDB = oldest_datoid;
 	MultiXactState->multiVacLimit = multiVacLimit;
-	MultiXactState->multiWarnLimit = multiWarnLimit;
-	MultiXactState->multiStopLimit = multiStopLimit;
-	MultiXactState->multiWrapLimit = multiWrapLimit;
-	curMulti = MultiXactState->nextMXact;
 	LWLockRelease(MultiXactGenLock);
-
-	/* Log the info */
-	ereport(DEBUG1,
-	 (errmsg("MultiXactId wrap limit is " XID_FMT ", limited by database with OID %u",
-			 multiWrapLimit, oldest_datoid)));
 
 	/*
 	 * Computing the actual limits is only possible once the data directory is
@@ -2282,35 +2247,6 @@ find_multixact_start(MultiXactId multi, MultiXactOffset *result)
 	LWLockRelease(MultiXactOffsetControlLock);
 
 	*result = offset;
-	return true;
-}
-
-/*
- * Determine how many multixacts, and how many multixact members, currently
- * exist.  Return false if unable to determine.
- */
-static bool
-ReadMultiXactCounts(uint64 *multixacts, MultiXactOffset *members)
-{
-	MultiXactOffset nextOffset;
-	MultiXactOffset oldestOffset;
-	MultiXactId oldestMultiXactId;
-	MultiXactId nextMultiXactId;
-	bool		oldestOffsetKnown;
-
-	LWLockAcquire(MultiXactGenLock, LW_SHARED);
-	nextOffset = MultiXactState->nextOffset;
-	oldestMultiXactId = MultiXactState->oldestMultiXactId;
-	nextMultiXactId = MultiXactState->nextMXact;
-	oldestOffset = MultiXactState->oldestOffset;
-	oldestOffsetKnown = MultiXactState->oldestOffsetKnown;
-	LWLockRelease(MultiXactGenLock);
-
-	if (!oldestOffsetKnown)
-		return false;
-
-	*members = nextOffset - oldestOffset;
-	*multixacts = nextMultiXactId - oldestMultiXactId;
 	return true;
 }
 

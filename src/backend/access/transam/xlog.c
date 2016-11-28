@@ -7947,31 +7947,6 @@ GetLastSegSwitchTime(void)
 }
 
 /*
- * GetNextXid - get the current nextXid value and associated epoch
- *
- * This is exported for use by code that would like to have 64-bit XIDs.
- * We don't really support such things, but all XIDs within the system
- * can be presumed "close to" the result, and thus the epoch associated
- * with them can be determined.
- */
-void
-GetNextXid(TransactionId *xid)
-{
-	TransactionId ckptXid;
-	TransactionId nextXid;
-
-	/* Must read checkpoint info first, else have race condition */
-	SpinLockAcquire(&XLogCtl->info_lck);
-	ckptXid = XLogCtl->ckptXid;
-	SpinLockRelease(&XLogCtl->info_lck);
-
-	/* Now fetch current nextXid */
-	nextXid = ReadNewTransactionId();
-
-	*xid = nextXid;
-}
-
-/*
  * This must be called ONCE during postmaster or standalone-backend shutdown
  */
 void

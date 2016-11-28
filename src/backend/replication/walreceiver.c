@@ -1160,7 +1160,6 @@ static void
 XLogWalRcvSendHSFeedback(bool immed)
 {
 	TimestampTz now;
-	TransactionId nextXid;
 	TransactionId xmin;
 	static TimestampTz sendTime = 0;
 	static bool master_has_standby_xmin = false;
@@ -1205,12 +1204,6 @@ XLogWalRcvSendHSFeedback(bool immed)
 		xmin = GetOldestXmin(NULL, false);
 	else
 		xmin = InvalidTransactionId;
-
-	/*
-	 * Get epoch and adjust if nextXid and oldestXmin are different sides of
-	 * the epoch boundary.
-	 */
-	GetNextXid(&nextXid);
 
 	elog(DEBUG2, "sending hot standby feedback xmin " XID_FMT,
 		 xmin);
