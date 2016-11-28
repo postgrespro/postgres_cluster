@@ -38,3 +38,7 @@ lib*.pc
 /Debug/
 /Release/
 /tmp_install/
+
+# Contrib
+/contrib/*/log/
+/contrib/*/results/
