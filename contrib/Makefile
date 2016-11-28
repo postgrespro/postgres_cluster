@@ -65,7 +65,6 @@ SUBDIRS = \
 		shared_ispell   \
 		pg_hint_plan	\
                 vacuumlo        \
-                mchar           \
                 fulleq          \
                 fasttrun        \
                 online_analyze  \
@@ -105,6 +104,12 @@ ifeq ($(with_python),yes)
 SUBDIRS += hstore_plpython ltree_plpython
 else
 ALWAYS_SUBDIRS += hstore_plpython ltree_plpython
+endif
+
+ifeq ($(with_icu),yes)
+SUBDIRS += mchar
+else
+ALWAYS_SUBDIRS += mchar
 endif
 
 # Missing:
