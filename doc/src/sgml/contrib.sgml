@@ -110,13 +110,16 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &btree-gist;
  &chkpass;
  &citext;
+ &contrib-spi;
  &cube;
  &dblink;
  &dict-int;
  &dict-xsyn;
  &dump-stat;
  &earthdistance;
+ &fasttrun;
  &file-fdw;
+ &fulleq;
  &fuzzystrmatch;
  &hstore;
  &hunspell-dict;
@@ -126,6 +129,8 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &jsquery;
  &lo;
  &ltree;
+ &mchar;
+ &online-analyze;
  &pageinspect;
  &passwordcheck;
  &pgarman;
@@ -142,12 +147,12 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &pgtrgm;
  &pgvariables;
  &pgvisibility;
+ &plantuner; 
  &postgres-fdw;
  &rum;
  &seg;
  &sepgsql;
  &shared-ispell;
- &contrib-spi;
  &sr-plan;
  &sslinfo;
  &tablefunc;
@@ -159,7 +164,7 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &unaccent;
  &uuid-ossp;
  &xml2;
-
+ 
 </appendix>
 
 <!--

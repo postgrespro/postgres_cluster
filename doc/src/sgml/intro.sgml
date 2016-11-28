@@ -189,6 +189,35 @@
     <listitem>
      <simpara><application>jsquery</application> module provides a specific language for effective index-supported querying of JSONB data.</simpara>
     </listitem>
+    <listitem>
+     <simpara><application>pg_variables</application> module provides functions to work with variables of various types.</simpara>
+    </listitem>
+    <listitem>
+     <simpara><application>pg_pathman</application> module provides optimized partitioning mechanism and functions to manage partitions.</simpara>
+    </listitem>
+    <listitem>
+     <simpara><application>pg_query_state</application> module provides a facility to know the current state of query execution on working backend.</simpara>
+    </listitem>
+    <listitem>
+     <simpara><application>pg_probackup</application> is a backup and recovery manager.</simpara>
+    </listitem>
+    <listitem>
+     <simpara><application>mchar</application> module provides additional data type to compatibility with Microsoft SQL Server.</simpara>
+    </listitem>
+    <listitem>
+     <simpara><application>fulleq</application> module provides additional equivalence operator to compatibility with Microsoft SQL Server.</simpara>
+    </listitem>
+    <listitem>
+     <simpara><application>fasttrun</application> module provides transaction unsafe function to truncate tempory tables without growing pg_class size.</simpara>
+    </listitem>
+    <listitem>
+     <simpara><application>online_analyze</application> module provides set of
+     changes, which immediately update stats after INSERT, UPDATE, DELETE
+     or SELECT INTO operations applied for affected tables.</simpara>
+    </listitem>
+    <listitem>
+     <simpara><application>plantuner</application> module provides hits for planner, which can do disable or enable indexes for query execution.</simpara>
+    </listitem>    
    </itemizedlist>
   </para>
 
