@@ -1,10 +1,7 @@
-pg_arman fork from Postgres Professional
+pg_probackup fork of pg_arman by Postgres Professional
 ========================================
 
-This repository contains fork of pg_arman by Postgres Professional with
-block level incremental backup support.
-
-pg_arman is a backup and recovery manager for PostgreSQL servers able to do
+pg_probackup is a backup and recovery manager for PostgreSQL servers able to do
 differential and full backup as well as restore a cluster to a
 state defined by a given recovery target. It is designed to perform
 periodic backups of an existing PostgreSQL server, combined with WAL
@@ -13,17 +10,28 @@ server because of a reason or another. Its differential backup
 facility reduces the amount of data necessary to be taken between
 two consecutive backups.
 
+Main features:
+* incremental backup from WAL and PTRACK
+* backup from replica
+* multithreaded backup and restore
+* autonomous backup without archive command (will need slot replication)
+
+Requirements:
+* >=PostgreSQL 9.5
+* >=gcc 4.4 or >=clang 3.6 or >= XLC 12.1
+* pthread
+
 Download
 --------
 
 The latest version of this software can be found on the project website at
-https://github.com/postgrespro/pg_arman.  Original fork of pg_arman can be
+https://github.com/postgrespro/pg_probackup.  Original fork of pg_probackup can be
 found at https://github.com/michaelpq/pg_arman.
 
 Installation
 ------------
 
-Compiling pg_arman requires a PostgreSQL installation to be in place
+Compiling pg_probackup requires a PostgreSQL installation to be in place
 as well as a raw source tree. Pass the path to the PostgreSQL source tree
 to make, in the top_srcdir variable:
 
@@ -31,23 +39,23 @@ to make, in the top_srcdir variable:
 
 In addition, you must have pg_config in $PATH.
 
-The current version of pg_arman is compatible with PostgreSQL 9.5 and
+The current version of pg_probackup is compatible with PostgreSQL 9.5 and
 upper versions.
 
 Platforms
 ---------
 
-pg_arman has been tested on Linux and Unix-based platforms.
+pg_probackup has been tested on Linux and Unix-based platforms.
 
 Documentation
 -------------
 
-All the documentation you can find [here](doc/pg_arman.md).
+All the documentation you can find [here](doc/pg_probackup.md).
 
 Regression tests
 ----------------
 
-The test suite of pg_arman is available in the code tree and can be
+The test suite of pg_probackup is available in the code tree and can be
 launched in a way similar to common PostgreSQL extensions and modules:
 
     make installcheck
@@ -74,13 +82,15 @@ of these approach is requirement to have WAL archive.
 some overhead to PostgreSQL performance.  On our experiments it appears to be
 less than 3%.
 
-These two approaches were implemented in this fork of pg_arman.  The second
-approach requires [patch for PostgreSQL 9.5](https://gist.github.com/stalkerg/44703dbcbac1da08f448b7e6966646c0).
+These two approaches were implemented in this fork of pg_probackup.  The second
+approach requires [patch for PostgreSQL 9.5](https://gist.github.com/stalkerg/44703dbcbac1da08f448b7e6966646c0) or
+[patch for PostgreSQL 10](https://gist.github.com/stalkerg/ab833d94e2f64df241f1835651e06e4b).
 
 Testing block level incremental backup
 --------------------------------------
 
-You need build and install [PGPRO9_5 branch of PostgreSQL](https://github.com/postgrespro/postgrespro) or [apply this patch to PostgreSQL 9.5](https://gist.github.com/stalkerg/44703dbcbac1da08f448b7e6966646c0).
+You need build and install [PGPRO9_5 or PGPRO9_6 branch of PostgreSQL](https://github.com/postgrespro/postgrespro) or apply this patch to
+[PostgreSQL 9.5](https://gist.github.com/stalkerg/44703dbcbac1da08f448b7e6966646c0) or [PostgreSQL 10](https://gist.github.com/stalkerg/ab833d94e2f64df241f1835651e06e4b).
 
 ### Retrieving changed blocks from WAL archive
 
@@ -88,36 +98,29 @@ You need to enable WAL archive by adding following lines to postgresql.conf:
 
 ```
 wal_level = archive
-archive_command = 'test ! -f /home/postgres/backup/arman/wal/%f && cp %p /home/postgres/backup/arman/wal/%f'
-wal_log_hints = on
+archive_command = 'test ! -f /home/postgres/backup/wal/%f && cp %p /home/postgres/backup/wal/%f'
 ```
 
 Example backup (assuming PostgreSQL is running):
 ```bash
 # Init pg_aramn backup folder
-pg_arman init -B /home/postgres/backup/pgarman
-cat << __EOF__ >> /home/postgres/backup/pgarman/pg_arman.ini
-ARCLOG_PATH = '/home/postgres/backup/arman/wal'
-__EOF__
+pg_probackup init -B /home/postgres/backup
 # Make full backup with 2 thread and verbose mode.
-pg_arman backup -B /home/postgres/backup/pgarman -D /home/postgres/pgdata/arman -b full -v -j 2
-# Validate backup
-pg_arman validate -B /home/postgres/backup/pgarman -D /home/postgres/pgdata/arman
+pg_probackup backup -B /home/postgres/backup -D /home/postgres/pgdata -b full -v -j 2
 # Show backups information
-pg_arman show -B /home/postgres/backup/pgarman
+pg_probackup show -B /home/postgres/backup
 
 # Now you can insert or update some data in your database
 
 # Then start the incremental backup.
-pg_arman backup -B /home/postgres/backup/pgarman -D /home/postgres/pgdata/arman -b page -v -j 2
-pg_arman validate -B /home/postgres/backup/pgarman -D /home/postgres/pgdata/arman
+pg_probackup backup -B /home/postgres/backup -D /home/postgres/pgdata -b page -v -j 2
 # You should see that increment is really small
-pg_arman show -B /home/postgres/backup/pgarman
+pg_probackup show -B /home/postgres/backup
 ```
 
 For restore after remove your pgdata you can use:
 ```
-pg_arman restore -B /home/postgres/backup/pgarman -D /home/postgres/pgdata/arman -j 4 --verbose
+pg_probackup restore -B /home/postgres/backup -D /home/postgres/pgdata -j 4 --verbose
 ```
 
 ### Retrieving changed blocks from ptrack
@@ -128,39 +131,33 @@ The advantage of this approach is that you don't have to save WAL archive.  You 
 ptrack_enable = on
 ```
 
-Also, some WALs still need to be fetched in order to get consistent backup.  pg_arman can fetch them trough the streaming replication protocol.  Thus, you also need to [enable streaming replication connection](https://wiki.postgresql.org/wiki/Streaming_Replication).
+Also, some WALs still need to be fetched in order to get consistent backup.  pg_probackup can fetch them trough the streaming replication protocol.  Thus, you also need to [enable streaming replication connection](https://wiki.postgresql.org/wiki/Streaming_Replication).
 
 Example backup (assuming PostgreSQL is running):
 ```bash
 # Init pg_aramn backup folder
-pg_arman init -B /home/postgres/backup/pgarman
-cat << __EOF__ >> /home/postgres/backup/pgarman/pg_arman.ini
-ARCLOG_PATH = '/home/postgres/backup/arman/wal'
-__EOF__
+pg_probackup init -B /home/postgres/backup
 # Make full backup with 2 thread and verbose mode.
-pg_arman backup -B /home/postgres/backup/pgarman -D /home/postgres/pgdata/arman -b full -v -j 2 --stream
-# Validate backup
-pg_arman validate -B /home/postgres/backup/pgarman -D /home/postgres/pgdata/arman
+pg_probackup backup -B /home/postgres/backup -D /home/postgres/pgdata -b full -v -j 2 --stream
 # Show backups information
-pg_arman show -B /home/postgres/backup/pgarman
+pg_probackup show -B /home/postgres/backup
 
 # Now you can insert or update some data in your database
 
 # Then start the incremental backup.
-pg_arman backup -B /home/postgres/backup/pgarman -D /home/postgres/pgdata/arman -b ptrack -v -j 2 --stream
-pg_arman validate -B /home/postgres/backup/pgarman -D /home/postgres/pgdata/arman
+pg_probackup backup -B /home/postgres/backup -D /home/postgres/pgdata -b ptrack -v -j 2 --stream
 # You should see that increment is really small
-pg_arman show -B /home/postgres/backup/pgarman
+pg_probackup show -B /home/postgres/backup
 ```
 
 For restore after remove your pgdata you can use:
 ```
-pg_arman restore -B /home/postgres/backup/pgarman -D /home/postgres/pgdata/arman -j 4 --verbose --stream
+pg_probackup restore -B /home/postgres/backup -D /home/postgres/pgdata -j 4 --verbose --stream
 ```
 
 License
 -------
 
-pg_arman can be distributed under the PostgreSQL license. See COPYRIGHT
+pg_probackup can be distributed under the PostgreSQL license. See COPYRIGHT
 file for more information. pg_arman is a fork of the existing project
 pg_rman, initially created and maintained by NTT and Itagaki Takahiro.

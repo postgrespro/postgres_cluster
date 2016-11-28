@@ -7,30 +7,39 @@
  *-------------------------------------------------------------------------
  */
 
-#include "pg_arman.h"
+#include "pg_probackup.h"
 
 #include <sys/stat.h>
+#include <pthread.h>
 
-static bool pgBackupValidateFiles(parray *files, const char *root, bool size_only);
+static void pgBackupValidateFiles(void *arg);
+
+typedef struct
+{
+	parray *files;
+	const char *root;
+	bool size_only;
+	bool corrupted;
+} validate_files_args;
 
 /*
  * Validate files in the backup and update its status to OK.
  * If any of files are corrupted, update its stutus to CORRUPT.
  */
 int
-do_validate(pgBackupRange *range)
+do_validate(time_t backup_id)
 {
 	int		i;
 	parray *backup_list;
 	int ret;
-	bool another_pg_arman = false;
+	bool another_pg_probackup = false;
 
 	ret = catalog_lock();
 	if (ret == 1)
-		another_pg_arman = true;
+		another_pg_probackup = true;
 
 	/* get backup list matches given range */
-	backup_list = catalog_get_backup_list(range);
+	backup_list = catalog_get_backup_list(backup_id);
 	if (!backup_list)
 		elog(ERROR, "cannot process any more.");
 
@@ -40,7 +49,7 @@ do_validate(pgBackupRange *range)
 		pgBackup *backup = (pgBackup *)parray_get(backup_list, i);
 
 		/* clean extra backups (switch STATUS to ERROR) */
-		if (!another_pg_arman &&
+		if (!another_pg_probackup &&
 			(backup->status == BACKUP_STATUS_RUNNING ||
 			 backup->status == BACKUP_STATUS_DELETING))
 		{
@@ -49,11 +58,18 @@ do_validate(pgBackupRange *range)
 		}
 
 		/* Validate completed backups only. */
-		if (backup->status != BACKUP_STATUS_DONE)
+		if (backup_id == 0 && backup->status != BACKUP_STATUS_DONE)
 			continue;
 
-		/* validate with CRC value and update status to OK */
-		pgBackupValidate(backup, false, false);
+		if (backup_id != 0 && backup->start_time == backup_id)
+		{
+			pgBackupValidate(backup, false, false);
+			break;
+		}
+		else
+			/* validate with CRC value and update status to OK */
+			pgBackupValidate(backup, false, false);
+
 	}
 
 	/* cleanup */
@@ -78,8 +94,10 @@ pgBackupValidate(pgBackup *backup,
 	char	path[MAXPGPATH];
 	parray *files;
 	bool	corrupted = false;
+	pthread_t	validate_threads[num_threads];
+	validate_files_args *validate_threads_args[num_threads];
 
-	time2iso(timestamp, lengthof(timestamp), backup->start_time);
+	time2iso(timestamp, lengthof(timestamp), backup->recovery_time);
 	if (!for_get_timeline)
 	{
 		if (backup->backup_mode == BACKUP_MODE_FULL ||
@@ -95,13 +113,41 @@ pgBackupValidate(pgBackup *backup,
 			backup->backup_mode == BACKUP_MODE_DIFF_PAGE ||
 			backup->backup_mode == BACKUP_MODE_DIFF_PTRACK)
 		{
+			int i;
 			elog(LOG, "database files...");
 			pgBackupGetPath(backup, base_path, lengthof(base_path), DATABASE_DIR);
 			pgBackupGetPath(backup, path, lengthof(path),
 				DATABASE_FILE_LIST);
 			files = dir_read_file_list(base_path, path);
-			if (!pgBackupValidateFiles(files, base_path, size_only))
-				corrupted = true;
+
+			/* setup threads */
+			for (i = 0; i < parray_num(files); i++)
+			{
+				pgFile *file = (pgFile *) parray_get(files, i);
+				__sync_lock_release(&file->lock);
+			}
+
+			/* restore files into $PGDATA */
+			for (i = 0; i < num_threads; i++)
+			{
+				validate_files_args *arg = pg_malloc(sizeof(validate_files_args));
+				arg->files = files;
+				arg->root = base_path;
+				arg->size_only = size_only;
+				arg->corrupted = false;
+
+				validate_threads_args[i] = arg;
+				pthread_create(&validate_threads[i], NULL, (void *(*)(void *)) pgBackupValidateFiles, arg);
+			}
+
+			/* Wait theads */
+			for (i = 0; i < num_threads; i++)
+			{
+				pthread_join(validate_threads[i], NULL);
+				if (validate_threads_args[i]->corrupted)
+					corrupted = true;
+				pg_free(validate_threads_args[i]);
+			}
 			parray_walk(files, pgFileFree);
 			parray_free(files);
 		}
@@ -133,16 +179,21 @@ get_relative_path(const char *path, const char *root)
 /*
  * Validate files in the backup with size or CRC.
  */
-static bool
-pgBackupValidateFiles(parray *files, const char *root, bool size_only)
+static void
+pgBackupValidateFiles(void *arg)
 {
 	int		i;
 
-	for (i = 0; i < parray_num(files); i++)
+	validate_files_args *arguments = (validate_files_args *)arg;
+
+
+	for (i = 0; i < parray_num(arguments->files); i++)
 	{
 		struct stat st;
 
-		pgFile *file = (pgFile *) parray_get(files, i);
+		pgFile *file = (pgFile *) parray_get(arguments->files, i);
+		if (__sync_lock_test_and_set(&file->lock, 1) != 0)
+			continue;
 
 		if (interrupted)
 			elog(ERROR, "interrupted during validate");
@@ -152,8 +203,8 @@ pgBackupValidateFiles(parray *files, const char *root, bool size_only)
 			continue;
 
 		/* print progress */
-		elog(LOG, "(%d/%lu) %s", i + 1, (unsigned long) parray_num(files),
-			get_relative_path(file->path, root));
+		elog(LOG, "(%d/%lu) %s", i + 1, (unsigned long) parray_num(arguments->files),
+			get_relative_path(file->path, arguments->root));
 
 		/* always validate file size */
 		if (stat(file->path, &st) == -1)
@@ -162,20 +213,22 @@ pgBackupValidateFiles(parray *files, const char *root, bool size_only)
 				elog(WARNING, "backup file \"%s\" vanished", file->path);
 			else
 				elog(ERROR, "cannot stat backup file \"%s\": %s",
-					get_relative_path(file->path, root), strerror(errno));
-			return false;
+					get_relative_path(file->path, arguments->root), strerror(errno));
+			arguments->corrupted = true;
+			return;
 		}
 		if (file->write_size != st.st_size)
 		{
 			elog(WARNING, "size of backup file \"%s\" must be %lu but %lu",
-				get_relative_path(file->path, root),
+				get_relative_path(file->path, arguments->root),
 				(unsigned long) file->write_size,
 				(unsigned long) st.st_size);
-			return false;
+			arguments->corrupted = true;
+			return;
 		}
 
 		/* validate CRC too */
-		if (!size_only)
+		if (!arguments->size_only)
 		{
 			pg_crc32	crc;
 
@@ -183,11 +236,10 @@ pgBackupValidateFiles(parray *files, const char *root, bool size_only)
 			if (crc != file->crc)
 			{
 				elog(WARNING, "CRC of backup file \"%s\" must be %X but %X",
-					get_relative_path(file->path, root), file->crc, crc);
-				return false;
+					get_relative_path(file->path, arguments->root), file->crc, crc);
+				arguments->corrupted = true;
+				return;
 			}
 		}
 	}
-
-	return true;
 }

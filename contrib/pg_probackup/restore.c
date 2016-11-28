@@ -7,7 +7,7 @@
  *-------------------------------------------------------------------------
  */
 
-#include "pg_arman.h"
+#include "pg_probackup.h"
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -23,9 +23,9 @@ typedef struct
 	pgBackup *backup;
 } restore_files_args;
 
-static void backup_online_files(bool re_recovery);
 static void restore_database(pgBackup *backup);
-static void create_recovery_conf(const char *target_time,
+static void create_recovery_conf(time_t backup_id,
+								 const char *target_time,
 								 const char *target_xid,
 								 const char *target_inclusive,
 								 TimeLineID target_tli);
@@ -44,9 +44,13 @@ static void search_next_wal(const char *path,
 							parray *timelines);
 static void restore_files(void *arg);
 
+TimeLineID findNewestTimeLine(TimeLineID startTLI);
+bool existsTimeLineHistory(TimeLineID probeTLI);
+
 
 int
-do_restore(const char *target_time,
+do_restore(time_t backup_id,
+		   const char *target_time,
 		   const char *target_xid,
 		   const char *target_inclusive,
 		   TimeLineID target_tli)
@@ -57,20 +61,19 @@ do_restore(const char *target_time,
 	int ret;
 	TimeLineID	cur_tli;
 	TimeLineID	backup_tli;
+	TimeLineID	newest_tli;
 	parray *backups;
 	pgBackup *base_backup = NULL;
 	parray *files;
 	parray *timelines;
 	pgRecoveryTarget *rt = NULL;
 	XLogRecPtr need_lsn;
+	bool backup_id_found = false;
 
 	/* PGDATA and ARCLOG_PATH are always required */
 	if (pgdata == NULL)
 		elog(ERROR,
 			 "required parameter not specified: PGDATA (-D, --pgdata)");
-	if (arclog_path == NULL)
-		elog(ERROR,
-			 "required parameter not specified: ARCLOG_PATH (-A, --arclog-path)");
 
 	elog(LOG, "========================================");
 	elog(LOG, "restore start");
@@ -81,7 +84,7 @@ do_restore(const char *target_time,
 		elog(ERROR, "cannot lock backup catalog.");
 	else if (ret == 1)
 		elog(ERROR,
-			"another pg_arman is running, stop restore.");
+			"another pg_probackup is running, stop restore.");
 
 	/* confirm the PostgreSQL server is not running */
 	if (is_pg_running())
@@ -92,23 +95,60 @@ do_restore(const char *target_time,
 		elog(ERROR, "cannot create recovery.conf. specified args are invalid.");
 
 	/* get list of backups. (index == 0) is the last backup */
-	backups = catalog_get_backup_list(NULL);
+	backups = catalog_get_backup_list(0);
 	if (!backups)
 		elog(ERROR, "cannot process any more.");
 
 	cur_tli = get_current_timeline(true);
+	newest_tli = findNewestTimeLine(1);
 	backup_tli = get_fullbackup_timeline(backups, rt);
 
 	/* determine target timeline */
 	if (target_tli == 0)
-		target_tli = cur_tli != 0 ? cur_tli : backup_tli;
+		target_tli = newest_tli != 1 ? newest_tli : backup_tli;
 
-	elog(LOG, "current timeline ID = %u", cur_tli);
+	elog(LOG, "current instance timeline ID = %u", cur_tli);
+	elog(LOG, "newest timeline ID for wal dir = %u", newest_tli);
 	elog(LOG, "latest full backup timeline ID = %u", backup_tli);
 	elog(LOG, "target timeline ID = %u", target_tli);
 
-	/* backup online WAL */
-	backup_online_files(cur_tli != 0 && cur_tli != backup_tli);
+
+	/* Read timeline history files from archives */
+	timelines = readTimeLineHistory(target_tli);
+
+	/* find last full backup which can be used as base backup. */
+	elog(LOG, "searching recent full backup");
+	for (i = 0; i < parray_num(backups); i++)
+	{
+		base_backup = (pgBackup *) parray_get(backups, i);
+
+		if (backup_id && base_backup->start_time > backup_id)
+			continue;
+
+		if (backup_id == base_backup->start_time &&
+			base_backup->status == BACKUP_STATUS_OK
+		)
+			backup_id_found = true;
+
+		if (backup_id == base_backup->start_time &&
+			base_backup->status != BACKUP_STATUS_OK
+		)
+			elog(ERROR, "given backup %s is %s", base36enc(backup_id), status2str(base_backup->status));
+
+		if (base_backup->backup_mode < BACKUP_MODE_FULL ||
+			base_backup->status != BACKUP_STATUS_OK)
+			continue;
+
+		if (satisfy_timeline(timelines, base_backup) &&
+			satisfy_recovery_target(base_backup, rt) &&
+			(backup_id_found || backup_id == 0))
+			goto base_backup_found;
+	}
+	/* no full backup found, cannot restore */
+	elog(ERROR, "no full backup found, cannot restore.");
+
+base_backup_found:
+	base_index = i;
 
 	/*
 	 * Clear restore destination, but don't remove $PGDATA.
@@ -132,30 +172,10 @@ do_restore(const char *target_time,
 		parray_free(files);
 	}
 
-	/* Read timeline history files from archives */
-	timelines = readTimeLineHistory(target_tli);
-
-	/* find last full backup which can be used as base backup. */
-	elog(LOG, "searching recent full backup");
-	for (i = 0; i < parray_num(backups); i++)
-	{
-		base_backup = (pgBackup *) parray_get(backups, i);
-
-		if (base_backup->backup_mode < BACKUP_MODE_FULL ||
-			base_backup->status != BACKUP_STATUS_OK)
-			continue;
-
-		if (satisfy_timeline(timelines, base_backup) &&
-			satisfy_recovery_target(base_backup, rt))
-			goto base_backup_found;
-	}
-	/* no full backup found, cannot restore */
-	elog(ERROR, "no full backup found, cannot restore.");
-
-base_backup_found:
-	base_index = i;
-
 	print_backup_lsn(base_backup);
+
+	if (backup_id != 0)
+		stream_wal = base_backup->stream;
 
 	/* restore base backup */
 	restore_database(base_backup);
@@ -174,6 +194,12 @@ base_backup_found:
 			backup->tli != base_backup->tli)
 			continue;
 
+		if (backup->backup_mode == BACKUP_MODE_FULL)
+			break;
+
+		if (backup_id && backup->start_time > backup_id)
+			break;
+
 		/* use database backup only */
 		if (backup->backup_mode != BACKUP_MODE_DIFF_PAGE &&
 			backup->backup_mode != BACKUP_MODE_DIFF_PTRACK)
@@ -184,30 +210,27 @@ base_backup_found:
 			!satisfy_recovery_target(backup, rt))
 			continue;
 
-		print_backup_lsn(backup);
+		if (backup_id != 0)
+			stream_wal = backup->stream;
 
+		print_backup_lsn(backup);
 		restore_database(backup);
 		last_restored_index = i;
 	}
 
-	for (i = last_restored_index; i >= 0; i--)
-	{
-		char	xlogpath[MAXPGPATH];
-		elog(LOG, "searching archived WAL...");
+	if (!stream_wal || target_time != NULL || target_xid != NULL)
+		for (i = last_restored_index; i >= 0; i--)
+		{
+			elog(LOG, "searching archived WAL...");
 
-		search_next_wal(arclog_path, &need_lsn, timelines);
+			search_next_wal(arclog_path, &need_lsn, timelines);
 
-		elog(LOG, "searching online WAL...");
-
-		join_path_components(xlogpath, pgdata, PG_XLOG_DIR);
-		search_next_wal(xlogpath, &need_lsn, timelines);
-
-		elog(LOG, "all necessary files are found");
-	}
+			elog(LOG, "all necessary files are found");
+		}
 
 	/* create recovery.conf */
-	if (!stream_wal)
-		create_recovery_conf(target_time, target_xid, target_inclusive, target_tli);
+	if (!stream_wal || target_time != NULL || target_xid != NULL)
+		create_recovery_conf(backup_id, target_time, target_xid, target_inclusive, target_tli);
 
 	/* release catalog lock */
 	catalog_unlock();
@@ -311,9 +334,6 @@ restore_database(pgBackup *backup)
 		if (file->write_size == BYTES_INVALID)
 			pgFileFree(parray_remove(files, i));
 	}
-
-	if (num_threads < 1)
-		num_threads = 1;
 
 	for (i = 0; i < parray_num(files); i++)
 	{
@@ -445,7 +465,8 @@ restore_files(void *arg)
 }
 
 static void
-create_recovery_conf(const char *target_time,
+create_recovery_conf(time_t backup_id,
+					 const char *target_time,
 					 const char *target_xid,
 					 const char *target_inclusive,
 					 TimeLineID target_tli)
@@ -467,63 +488,28 @@ create_recovery_conf(const char *target_time,
 			elog(ERROR, "cannot open recovery.conf \"%s\": %s", path,
 				strerror(errno));
 
-		fprintf(fp, "# recovery.conf generated by pg_arman %s\n",
+		fprintf(fp, "# recovery.conf generated by pg_probackup %s\n",
 			PROGRAM_VERSION);
 		fprintf(fp, "restore_command = 'cp %s/%%f %%p'\n", arclog_path);
 
 		if (target_time)
 			fprintf(fp, "recovery_target_time = '%s'\n", target_time);
-		if (target_xid)
+		else if (target_xid)
 			fprintf(fp, "recovery_target_xid = '%s'\n", target_xid);
+		else if (backup_id != 0)
+		{
+			fprintf(fp, "recovery_target = 'immediate'\n");
+			fprintf(fp, "recovery_target_action = 'promote'\n");
+		}
+
 		if (target_inclusive)
 			fprintf(fp, "recovery_target_inclusive = '%s'\n", target_inclusive);
-		/*fprintf(fp, "recovery_target = 'immediate'\n");*/
+
 		fprintf(fp, "recovery_target_timeline = '%u'\n", target_tli);
 
 		fclose(fp);
 	}
 }
-
-static void
-backup_online_files(bool re_recovery)
-{
-	char work_path[MAXPGPATH];
-	char pg_xlog_path[MAXPGPATH];
-	bool files_exist;
-	parray *files;
-
-	if (!check)
-	{
-		elog(LOG, "----------------------------------------");
-		elog(LOG, "backup online WAL start");
-	}
-
-	/* get list of files in $BACKUP_PATH/backup/pg_xlog */
-	files = parray_new();
-	snprintf(work_path, lengthof(work_path), "%s/%s/%s", backup_path,
-		RESTORE_WORK_DIR, PG_XLOG_DIR);
-	dir_list_file(files, work_path, NULL, true, false);
-
-	files_exist = parray_num(files) > 0;
-
-	parray_walk(files, pgFileFree);
-	parray_free(files);
-
-	/* If files exist in RESTORE_WORK_DIR and not re-recovery, use them. */
-	if (files_exist && !re_recovery)
-	{
-		elog(LOG, "online WALs have been already backed up, use them");
-		return;
-	}
-
-	/* backup online WAL */
-	snprintf(pg_xlog_path, lengthof(pg_xlog_path), "%s/pg_xlog", pgdata);
-	snprintf(work_path, lengthof(work_path), "%s/%s/%s", backup_path,
-		RESTORE_WORK_DIR, PG_XLOG_DIR);
-	dir_create_dir(work_path, DIR_PERMISSION);
-	dir_copy_files(pg_xlog_path, work_path);
-}
-
 
 /*
  * Try to read a timeline's history file.
@@ -549,23 +535,13 @@ readTimeLineHistory(TimeLineID targetTLI)
 	/* search from arclog_path first */
 	snprintf(path, lengthof(path), "%s/%08X.history", arclog_path,
 		targetTLI);
+
 	fd = fopen(path, "rt");
 	if (fd == NULL)
 	{
 		if (errno != ENOENT)
 			elog(ERROR, "could not open file \"%s\": %s", path,
 				strerror(errno));
-
-		/* search from restore work directory next */
-		snprintf(path, lengthof(path), "%s/%s/%s/%08X.history", backup_path,
-			RESTORE_WORK_DIR, PG_XLOG_DIR, targetTLI);
-		fd = fopen(path, "rt");
-		if (fd == NULL)
-		{
-			if (errno != ENOENT)
-				elog(ERROR, "could not open file \"%s\": %s", path,
-						strerror(errno));
-		}
 	}
 
 	/*
@@ -835,4 +811,68 @@ checkIfCreateRecoveryConf(const char *target_time,
 
 	return rt;
 
+}
+
+
+/*
+ * Probe whether a timeline history file exists for the given timeline ID
+ */
+bool
+existsTimeLineHistory(TimeLineID probeTLI)
+{
+	char		path[MAXPGPATH];
+	FILE		*fd;
+
+	/* Timeline 1 does not have a history file, so no need to check */
+	if (probeTLI == 1)
+		return false;
+
+	snprintf(path, lengthof(path), "%s/%08X.history", arclog_path, probeTLI);
+	fd = fopen(path, "r");
+	if (fd != NULL)
+	{
+		fclose(fd);
+		return true;
+	}
+	else
+	{
+		if (errno != ENOENT)
+			elog(ERROR, "Failed directory for path: %s", path);
+		return false;
+	}
+}
+
+/*
+ * Find the newest existing timeline, assuming that startTLI exists.
+ *
+ * Note: while this is somewhat heuristic, it does positively guarantee
+ * that (result + 1) is not a known timeline, and therefore it should
+ * be safe to assign that ID to a new timeline.
+ */
+TimeLineID
+findNewestTimeLine(TimeLineID startTLI)
+{
+	TimeLineID	newestTLI;
+	TimeLineID	probeTLI;
+
+	/*
+	 * The algorithm is just to probe for the existence of timeline history
+	 * files.  XXX is it useful to allow gaps in the sequence?
+	 */
+	newestTLI = startTLI;
+
+	for (probeTLI = startTLI + 1;; probeTLI++)
+	{
+		if (existsTimeLineHistory(probeTLI))
+		{
+			newestTLI = probeTLI;		/* probeTLI exists */
+		}
+		else
+		{
+			/* doesn't exist, assume we're done */
+			break;
+		}
+	}
+
+	return newestTLI;
 }

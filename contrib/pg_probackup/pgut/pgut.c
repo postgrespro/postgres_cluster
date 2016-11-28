@@ -880,6 +880,16 @@ prompt_for_password(const char *username)
 		password = NULL;
 	}
 
+#if PG_VERSION_NUM >= 100000
+	if (username == NULL)
+		simple_prompt("Password: ", password, 100, false);
+	else
+	{
+		char	message[256];
+		snprintf(message, lengthof(message), "Password for user %s: ", username);
+		simple_prompt(message, password, 100, false);
+	}
+#else
 	if (username == NULL)
 		password = simple_prompt("Password: ", 100, false);
 	else
@@ -888,6 +898,7 @@ prompt_for_password(const char *username)
 		snprintf(message, lengthof(message), "Password for user %s: ", username);
 		password = simple_prompt(message, 100, false);
 	}
+#endif
 }
 #endif
 
@@ -1442,8 +1453,8 @@ help(bool details)
 		printf("  -q, --quiet               don't write any messages\n");
 		printf("  -v, --verbose             verbose mode\n");
 	}
-	printf("  --help                    show this help, then exit\n");
-	printf("  --version                 output version information, then exit\n");
+		printf("      --help                show this help, then exit\n");
+		printf("      --version             output version information and exit\n");
 
 	if (details && (PROGRAM_URL || PROGRAM_EMAIL))
 	{

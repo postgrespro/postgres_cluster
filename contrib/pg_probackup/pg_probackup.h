@@ -1,13 +1,13 @@
 /*-------------------------------------------------------------------------
  *
- * pg_arman.h: Backup/Recovery manager for PostgreSQL.
+ * pg_probackup.h: Backup/Recovery manager for PostgreSQL.
  *
  * Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
  *
  *-------------------------------------------------------------------------
  */
-#ifndef PG_RMAN_H
-#define PG_RMAN_H
+#ifndef PG_PROBACKUP_H
+#define PG_PROBACKUP_H
 
 #include "postgres_fe.h"
 
@@ -27,17 +27,18 @@
 
 /* Query to fetch current transaction ID */
 #define TXID_CURRENT_SQL	"SELECT txid_current();"
+#define TXID_CURRENT_IF_SQL	"SELECT txid_snapshot_xmax(txid_current_snapshot());"
 
 /* Directory/File names */
 #define DATABASE_DIR			"database"
-#define RESTORE_WORK_DIR		"backup"
-#define PG_XLOG_DIR			"pg_xlog"
+#define BACKUPS_DIR				"backups"
+#define PG_XLOG_DIR				"pg_xlog"
 #define PG_TBLSPC_DIR			"pg_tblspc"
-#define BACKUP_INI_FILE			"backup.ini"
-#define PG_RMAN_INI_FILE		"pg_arman.ini"
+#define BACKUP_INI_FILE			"backup.conf"
+#define PG_RMAN_INI_FILE		"pg_probackup.conf"
 #define MKDIRS_SH_FILE			"mkdirs.sh"
 #define DATABASE_FILE_LIST		"file_database.txt"
-#define PG_BACKUP_LABEL_FILE		"backup_label"
+#define PG_BACKUP_LABEL_FILE	"backup_label"
 #define PG_BLACK_LIST			"black_list"
 
 /* Direcotry/File permission */
@@ -64,17 +65,6 @@ typedef struct pgFile
 	volatile uint32 lock;
 	datapagemap_t pagemap;
 } pgFile;
-
-typedef struct pgBackupRange
-{
-	time_t	begin;
-	time_t	end;			/* begin +1 when one backup is target */
-} pgBackupRange;
-
-#define pgBackupRangeIsValid(range)	\
-	(((range)->begin != (time_t) 0) || ((range)->end != (time_t) 0))
-#define pgBackupRangeIsSingle(range) \
-	(pgBackupRangeIsValid(range) && (range)->begin == ((range)->end))
 
 #define IsValidTime(tm)	\
 	((tm.tm_sec >= 0 && tm.tm_sec <= 60) && 	/* range check for tm_sec (0-60)  */ \
@@ -103,14 +93,14 @@ typedef enum BackupStatus
 
 typedef enum BackupMode
 {
-	BACKUP_MODE_INVALID,
+	BACKUP_MODE_INVALID = 0,
 	BACKUP_MODE_DIFF_PAGE,		/* differential page backup */
 	BACKUP_MODE_DIFF_PTRACK,	/* differential page backup with ptrack system*/
 	BACKUP_MODE_FULL			/* full backup */
 } BackupMode;
 
 /*
- * pg_arman takes backup into the directroy $BACKUP_PATH/<date>/<time>.
+ * pg_probackup takes backup into the directroy $BACKUP_PATH/<date>/<time>.
  *
  * status == -1 indicates the pgBackup is invalid.
  */
@@ -143,6 +133,7 @@ typedef struct pgBackup
 	uint32		block_size;
 	uint32		wal_block_size;
 	uint32		checksum_version;
+	bool		stream;
 } pgBackup;
 
 typedef struct pgBackupOption
@@ -195,7 +186,7 @@ typedef union DataPage
 /* path configuration */
 extern char *backup_path;
 extern char *pgdata;
-extern char *arclog_path;
+extern char arclog_path[MAXPGPATH];
 
 /* common configuration */
 extern bool check;
@@ -211,8 +202,10 @@ extern parray *backup_files_list;
 
 extern int num_threads;
 extern bool stream_wal;
-extern bool disable_ptrack_clear;
+extern bool from_replica;
 extern bool progress;
+extern bool delete_wal;
+extern uint64 system_identifier;
 
 /* in backup.c */
 extern int do_backup(pgBackupOption bkupopt);
@@ -223,7 +216,8 @@ extern void process_block_change(ForkNumber forknum, RelFileNode rnode,
 								 BlockNumber blkno);
 
 /* in restore.c */
-extern int do_restore(const char *target_time,
+extern int do_restore(time_t backup_id,
+					  const char *target_time,
 					  const char *target_xid,
 					  const char *target_inclusive,
 					  TimeLineID target_tli);
@@ -232,11 +226,12 @@ extern int do_restore(const char *target_time,
 extern int do_init(void);
 
 /* in show.c */
-extern int do_show(pgBackupRange *range, bool show_all);
+extern int do_show(time_t backup_id);
 
 /* in delete.c */
-extern int do_delete(pgBackupRange *range);
+extern int do_delete(time_t backup_id);
 extern void pgBackupDelete(int keep_generations, int keep_days);
+extern int do_deletewal(time_t backup_id, bool strict);
 
 /* in fetch.c */
 extern char *slurpFile(const char *datadir,
@@ -245,14 +240,14 @@ extern char *slurpFile(const char *datadir,
 					   bool safe);
 
 /* in validate.c */
-extern int do_validate(pgBackupRange *range);
+extern int do_validate(time_t backup_id);
 extern void pgBackupValidate(pgBackup *backup,
 							 bool size_only,
 							 bool for_get_timeline);
 
 /* in catalog.c */
 extern pgBackup *catalog_get_backup(time_t timestamp);
-extern parray *catalog_get_backup_list(const pgBackupRange *range);
+extern parray *catalog_get_backup_list(time_t backup_id);
 extern pgBackup *catalog_get_last_data_backup(parray *backup_list,
 											  TimeLineID tli);
 
@@ -281,6 +276,7 @@ extern parray *dir_read_file_list(const char *root, const char *file_txt);
 extern int dir_create_dir(const char *path, mode_t mode);
 extern void dir_copy_files(const char *from_root, const char *to_root);
 
+extern pgFile *pgFileNew(const char *path, bool omit_symlink);
 extern void pgFileDelete(pgFile *file);
 extern void pgFileFree(void *file);
 extern pg_crc32 pgFileGetCRC(pgFile *file);
@@ -313,8 +309,11 @@ extern void remove_trailing_space(char *buf, int comment_mark);
 extern void remove_not_digit(char *buf, size_t len, const char *str);
 extern XLogRecPtr get_last_ptrack_lsn(void);
 extern uint32 get_data_checksum_version(bool safe);
+extern char *base36enc(long unsigned int value);
+extern long unsigned int base36dec(const char *text);
+extern uint64 get_system_identifier(bool safe);
 
 /* in status.c */
 extern bool is_pg_running(void);
 
-#endif /* PG_RMAN_H */
+#endif /* PG_PROBACKUP_H */

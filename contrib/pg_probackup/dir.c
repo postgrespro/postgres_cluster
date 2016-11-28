@@ -7,7 +7,7 @@
  *-------------------------------------------------------------------------
  */
 
-#include "pg_arman.h"
+#include "pg_probackup.h"
 
 #include <libgen.h>
 #include <unistd.h>
@@ -25,13 +25,14 @@ const char *pgdata_exclude[] =
 	"pg_xlog",
 	"pg_stat_tmp",
 	"pgsql_tmp",
+	"recovery.conf",
 	NULL,			/* arclog_path will be set later */
 	NULL,			/* 'pg_tblspc' will be set later */
 	NULL,			/* sentinel */
 	NULL
 };
 
-static pgFile *pgFileNew(const char *path, bool omit_symlink);
+pgFile *pgFileNew(const char *path, bool omit_symlink);
 static int BlackListCompare(const void *str1, const void *str2);
 
 /* create directory, also create parent directories if necessary */
@@ -60,7 +61,7 @@ dir_create_dir(const char *dir, mode_t mode)
 	return 0;
 }
 
-static pgFile *
+pgFile *
 pgFileNew(const char *path, bool omit_symlink)
 {
 	struct stat		st;
@@ -439,11 +440,13 @@ dir_print_mkdirs_sh(FILE *out, const parray *files, const char *root)
 		pgFile *file = (pgFile *) parray_get(files, i);
 		if (S_ISDIR(file->mode))
 		{
-			if (strstr(file->path, root) == file->path) {
-				fprintf(out, "mkdir -m 700 -p %s\n", file->path + strlen(root)
-					+ 1);
+			if (strstr(file->path, root) == file->path &&
+				*(file->path + strlen(root)) == '/')
+			{
+				fprintf(out, "mkdir -m 700 -p %s\n", file->path + strlen(root) + 1);
 			}
-			else {
+			else
+			{
 				fprintf(out, "mkdir -m 700 -p %s\n", file->path);
 			}
 		}

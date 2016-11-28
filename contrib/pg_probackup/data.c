@@ -7,7 +7,7 @@
  *-------------------------------------------------------------------------
  */
 
-#include "pg_arman.h"
+#include "pg_probackup.h"
 
 #include <unistd.h>
 #include <time.h>
@@ -152,7 +152,7 @@ backup_data_file(const char *from_root, const char *to_root,
 					for(i=0; i<BLCKSZ && page.data[i] == 0; i++);
 					if (i == BLCKSZ)
 					{
-						elog(WARNING, "File: %s blknum %u, empty page", file->path, blknum);
+						elog(LOG, "File: %s blknum %u, empty page", file->path, blknum);
 						goto end_checks;
 					}
 
@@ -284,7 +284,7 @@ backup_data_file(const char *from_root, const char *to_root,
 					for(i=0; i<BLCKSZ && page.data[i] == 0; i++);
 					if (i == BLCKSZ)
 					{
-						elog(WARNING, "File: %s blknum %u, empty page", file->path, blknum);
+						elog(LOG, "File: %s blknum %u, empty page", file->path, blknum);
 						goto end_checks2;
 					}
 
@@ -318,7 +318,7 @@ backup_data_file(const char *from_root, const char *to_root,
 				   pg_checksum_page(page.data, file->segno * RELSEG_SIZE + blknum) != ((PageHeader) page.data)->pd_checksum)
 				{
 					if (try_checksum)
-						elog(WARNING, "File: %s blknum %u have wrong checksum, try again", file->path, blknum);
+						elog(LOG, "File: %s blknum %u have wrong checksum, try again", file->path, blknum);
 					else
 						elog(ERROR, "File: %s blknum %u have wrong checksum.", file->path, blknum);
 				}
@@ -722,14 +722,16 @@ calc_file(pgFile *file)
 
 	for (;;)
 	{
-		if ((read_len = fread(buf, 1, sizeof(buf), in)) != sizeof(buf))
+		read_len = fread(buf, 1, sizeof(buf), in);
+
+		if(read_len == 0)
 			break;
 
 		/* update CRC */
 		COMP_CRC32C(crc, buf, read_len);
 
-		file->write_size += sizeof(buf);
-		file->read_size += sizeof(buf);
+		file->write_size += read_len;
+		file->read_size += read_len;
 	}
 
 	errno_tmp = errno;

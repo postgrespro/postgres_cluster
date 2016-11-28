@@ -7,26 +7,26 @@
  *-------------------------------------------------------------------------
  */
 
-#include "pg_arman.h"
+#include "pg_probackup.h"
 
 #include <dirent.h>
 #include <unistd.h>
 
 static int pgBackupDeleteFiles(pgBackup *backup);
+int do_deletewal(time_t backup_id, bool strict);
 
 int
-do_delete(pgBackupRange *range)
+do_delete(time_t backup_id)
 {
 	int			i;
+	int			b_index;
 	int			ret;
-	parray	   *backup_list;
-	bool		do_delete = false;
-	XLogRecPtr	oldest_lsn = InvalidXLogRecPtr;
-	TimeLineID	oldest_tli;
+	parray		*backup_list;
+	pgBackup	*last_backup = NULL;
 
 	/* DATE are always required */
-	if (!pgBackupRangeIsValid(range))
-		elog(ERROR, "required delete range option not specified: delete DATE");
+	if (backup_id == 0)
+		elog(ERROR, "required backup ID not specified");
 
 	/* Lock backup catalog */
 	ret = catalog_lock();
@@ -34,38 +34,45 @@ do_delete(pgBackupRange *range)
 		elog(ERROR, "can't lock backup catalog.");
 	else if (ret == 1)
 		elog(ERROR,
-			"another pg_arman is running, stop delete.");
+			"another pg_probackup is running, stop delete.");
 
 	/* Get complete list of backups */
-	backup_list = catalog_get_backup_list(NULL);
+	backup_list = catalog_get_backup_list(0);
 	if (!backup_list)
 		elog(ERROR, "No backup list found, can't process any more.");
 
-	/* Find backups to be deleted */
+	/* Find backup to be deleted */
 	for (i = 0; i < parray_num(backup_list); i++)
 	{
+		last_backup = (pgBackup *) parray_get(backup_list, i);
+		if (last_backup->start_time == backup_id)
+			goto found_backup;
+	}
+
+	elog(ERROR, "no backup found, cannot delete.");
+
+found_backup:
+	b_index = i;
+	/* check for interrupt */
+	if (interrupted)
+		elog(ERROR, "interrupted during delete backup");
+
+	/* just do it */
+	pgBackupDeleteFiles(last_backup);
+
+	if (last_backup->status == BACKUP_STATUS_ERROR)
+		return 0;
+
+	/* remove all increments after removed backup */
+	for (i = b_index - 1; i >= 0; i--)
+	{
 		pgBackup *backup = (pgBackup *) parray_get(backup_list, i);
-
-		/* delete backup and update status to DELETED */
-		if (do_delete)
-		{
-			/* check for interrupt */
-			if (interrupted)
-				elog(ERROR, "interrupted during delete backup");
-
+		if (backup->backup_mode >= BACKUP_MODE_FULL)
+			break;
+		if ((backup->status == BACKUP_STATUS_OK || backup->status == BACKUP_STATUS_CORRUPT) &&
+			(backup->backup_mode == BACKUP_MODE_DIFF_PAGE || backup->backup_mode == BACKUP_MODE_DIFF_PTRACK)
+		)
 			pgBackupDeleteFiles(backup);
-			continue;
-		}
-
-		/* Found the latest full backup */
-		if (backup->backup_mode >= BACKUP_MODE_FULL &&
-			backup->status == BACKUP_STATUS_OK &&
-			backup->start_time <= range->begin)
-		{
-			do_delete = true;
-			oldest_lsn = backup->start_lsn;
-			oldest_tli = backup->tli;
-		}
 	}
 
 	/* release catalog lock */
@@ -75,11 +82,56 @@ do_delete(pgBackupRange *range)
 	parray_walk(backup_list, pgBackupFree);
 	parray_free(backup_list);
 
+	if (delete_wal)
+		do_deletewal(backup_id, false);
+
+	return 0;
+}
+
+int do_deletewal(time_t backup_id, bool strict)
+{
+	int			i;
+	int			ret;
+	parray		*backup_list;
+	XLogRecPtr	oldest_lsn = InvalidXLogRecPtr;
+	TimeLineID	oldest_tli;
+	pgBackup	*last_backup;
+	bool		backup_found = false;
+
 	/*
 	 * Delete in archive WAL segments that are not needed anymore. The oldest
 	 * segment to be kept is the first segment that the oldest full backup
 	 * found around needs to keep.
 	 */
+	/* Lock backup catalog */
+	ret = catalog_lock();
+	if (ret == -1)
+		elog(ERROR, "can't lock backup catalog.");
+	else if (ret == 1)
+		elog(ERROR,
+			"another pg_probackup is running, stop delete.");
+
+	backup_list = catalog_get_backup_list(0);
+	for (i = 0; i < parray_num(backup_list); i++)
+	{
+		last_backup = (pgBackup *) parray_get(backup_list, i);
+		if (last_backup->status == BACKUP_STATUS_OK)
+		{
+			oldest_lsn = last_backup->start_lsn;
+			oldest_tli = last_backup->tli;
+			if (strict && backup_id != 0 && backup_id >= last_backup->start_time)
+			{
+				backup_found = true;
+				break;
+			}
+		}
+	}
+	if (strict && backup_id != 0 && backup_found == false)
+		elog(ERROR, "not found backup for deletwal command");
+	catalog_unlock();
+	parray_walk(backup_list, pgBackupFree);
+	parray_free(backup_list);
+
 	if (!XLogRecPtrIsInvalid(oldest_lsn))
 	{
 		XLogSegNo   targetSegNo;
@@ -87,8 +139,12 @@ do_delete(pgBackupRange *range)
 		DIR		   *arcdir;
 		struct dirent *arcde;
 		char		wal_file[MAXPGPATH];
+		char		max_wal_file[MAXPGPATH];
+		char		min_wal_file[MAXPGPATH];
 		int			rc;
 
+		max_wal_file[0] = '\0';
+		min_wal_file[0] = '\0';
 		XLByteToSeg(oldest_lsn, targetSegNo);
 		XLogFileName(oldestSegmentNeeded, oldest_tli, targetSegNo);
 		elog(LOG, "Removing segments older than %s", oldestSegmentNeeded);
@@ -133,9 +189,28 @@ do_delete(pgBackupRange *range)
 							 wal_file, strerror(errno));
 						break;
 					}
-					elog(LOG, "removed WAL segment \"%s\"", wal_file);
+					if (verbose)
+						elog(LOG, "removed WAL segment \"%s\"", wal_file);
+
+					if (max_wal_file[0] == '\0' ||
+						strcmp(max_wal_file + 8, arcde->d_name + 8) < 0)
+					{
+						strcpy(max_wal_file, arcde->d_name);
+					}
+
+					if (min_wal_file[0] == '\0' ||
+						strcmp(min_wal_file + 8, arcde->d_name + 8) > 0)
+					{
+						strcpy(min_wal_file, arcde->d_name);
+					}
 				}
 			}
+
+			if (!verbose && min_wal_file[0] != '\0')
+				elog(NOTICE, "removed min WAL segment \"%s\"", min_wal_file);
+			if (!verbose && max_wal_file[0] != '\0')
+				elog(NOTICE, "removed max WAL segment \"%s\"", max_wal_file);
+
 			if (errno)
 				elog(WARNING, "could not read archive location \"%s\": %s",
 					 arclog_path, strerror(errno));
@@ -192,7 +267,7 @@ pgBackupDelete(int keep_generations, int keep_days)
 	}
 
 	/* Get a complete list of backups. */
-	backup_list = catalog_get_backup_list(NULL);
+	backup_list = catalog_get_backup_list(0);
 
 	/* Find target backups to be deleted */
 	backup_num = 0;
@@ -263,7 +338,8 @@ pgBackupDeleteFiles(pgBackup *backup)
 
 	time2iso(timestamp, lengthof(timestamp), backup->start_time);
 
-	elog(INFO, "delete: %s", timestamp);
+	elog(INFO, "delete: %s %s", base36enc(backup->start_time), timestamp);
+
 
 	/*
 	 * Update STATUS to BACKUP_STATUS_DELETING in preparation for the case which
@@ -277,7 +353,7 @@ pgBackupDeleteFiles(pgBackup *backup)
 
 	/* list files to be deleted */
 	files = parray_new();
-	pgBackupGetPath(backup, path, lengthof(path), DATABASE_DIR);
+	pgBackupGetPath(backup, path, lengthof(path), NULL);
 	dir_list_file(files, path, NULL, true, true);
 
 	/* delete leaf node first */
@@ -302,16 +378,6 @@ pgBackupDeleteFiles(pgBackup *backup)
 				return 1;
 			}
 		}
-	}
-
-	/*
-	 * After deleting all of the backup files, update STATUS to
-	 * BACKUP_STATUS_DELETED.
-	 */
-	if (!check)
-	{
-		backup->status = BACKUP_STATUS_DELETED;
-		pgBackupWriteIni(backup);
 	}
 
 	parray_walk(files, pgFileFree);

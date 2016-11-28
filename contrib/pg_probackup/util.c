@@ -7,11 +7,31 @@
  *-------------------------------------------------------------------------
  */
 
-#include "pg_arman.h"
+#include "pg_probackup.h"
 
 #include <time.h>
 
 #include "storage/bufpage.h"
+
+char *base36enc(long unsigned int value)
+{
+	char base36[36] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	/* log(2**64) / log(36) = 12.38 => max 13 char + '\0' */
+	char buffer[14];
+	unsigned int offset = sizeof(buffer);
+
+	buffer[--offset] = '\0';
+	do {
+		buffer[--offset] = base36[value % 36];
+	} while (value /= 36);
+
+	return strdup(&buffer[offset]); // warning: this must be free-d by the user
+}
+
+long unsigned int base36dec(const char *text)
+{
+	return strtoul(text, NULL, 36);
+}
 
 static void
 checkControlFile(ControlFileData *ControlFile)
@@ -24,7 +44,7 @@ checkControlFile(ControlFileData *ControlFile)
 	FIN_CRC32C(crc);
 
 	/* Then compare it */
-    if (!EQ_CRC32C(crc, ControlFile->crc))
+	if (!EQ_CRC32C(crc, ControlFile->crc))
 		elog(ERROR, "Calculated CRC checksum does not match value stored in file.\n"
 			 "Either the file is corrupt, or it has a different layout than this program\n"
 			 "is expecting. The results below are untrustworthy.");
@@ -64,15 +84,6 @@ sanityChecks(void)
 	digestControlFile(&ControlFile, buffer, size);
 	pg_free(buffer);
 
-	/*
-	 * Node work is done on need to use checksums or hint bit wal-logging
-	 * this to prevent from data corruption that could occur because of
-	 * hint bits.
-	 */
-	if (ControlFile.data_checksum_version != PG_DATA_CHECKSUM_VERSION &&
-		!ControlFile.wal_log_hints)
-		elog(ERROR,
-			 "target master need to use either data checksums or \"wal_log_hints = on\".");
 }
 
 XLogRecPtr
@@ -109,6 +120,23 @@ get_current_timeline(bool safe)
 	pg_free(buffer);
 
 	return ControlFile.checkPointCopy.ThisTimeLineID;
+}
+
+uint64
+get_system_identifier(bool safe)
+{
+	ControlFileData ControlFile;
+	char       *buffer;
+	size_t      size;
+
+	/* First fetch file... */
+	buffer = slurpFile(pgdata, "global/pg_control", &size, safe);
+	if (buffer == NULL)
+		return 0;
+	digestControlFile(&ControlFile, buffer, size);
+	pg_free(buffer);
+
+	return ControlFile.system_identifier;
 }
 
 uint32

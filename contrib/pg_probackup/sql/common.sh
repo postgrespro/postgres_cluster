@@ -6,7 +6,7 @@
 
 TEST_NAME=$1
 
-# Unset environment variables usable by both Postgres and pg_arman
+# Unset environment variables usable by both Postgres and pg_probackup
 unset PGUSER
 unset PGPORT
 unset PGDATABASE
@@ -26,7 +26,7 @@ BASE_PATH=`pwd`
 TEST_BASE=${BASE_PATH}/results/${TEST_NAME}
 PGDATA_PATH=${TEST_BASE}/data
 BACKUP_PATH=${TEST_BASE}/backup
-ARCLOG_PATH=${TEST_BASE}/arclog
+ARCLOG_PATH=${BACKUP_PATH}/wal
 TBLSPC_PATH=${TEST_BASE}/tblspc
 TEST_PGPORT=54321
 export PGDATA=${PGDATA_PATH}
@@ -55,7 +55,7 @@ function cleanup()
 function init_catalog()
 {
 	rm -fr ${BACKUP_PATH}
-	pg_arman init -B ${BACKUP_PATH} --quiet
+	pg_probackup init -B ${BACKUP_PATH} --quiet
 }
 
 function init_backup()
@@ -70,7 +70,7 @@ function init_backup()
 port = ${TEST_PGPORT}
 logging_collector = on
 wal_level = hot_standby
-wal_log_hints = on
+wal_log_hints = off
 archive_mode = on
 archive_command = 'cp %p ${ARCLOG_PATH}/%f'
 ptrack_enable = on
@@ -95,8 +95,8 @@ function get_time_last_backup()
 	name_os=`uname`
 	if [ "$name_os" == "SunOS" ]
 	then
-		pg_arman -B ${BACKUP_PATH} show | gtail -n +4 | head -n 1 | awk '{print($1, $2)}'
+		pg_probackup -B ${BACKUP_PATH} show | gtail -n +4 | head -n 1 | awk '{print($1)}'
 	else
-		pg_arman -B ${BACKUP_PATH} show | tail -n +4 | head -n 1 | awk '{print($1, $2)}'
+		pg_probackup -B ${BACKUP_PATH} show | tail -n +4 | head -n 1 | awk '{print($1)}'
 	fi
 }

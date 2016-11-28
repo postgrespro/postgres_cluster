@@ -7,7 +7,7 @@
  *-------------------------------------------------------------------------
  */
 
-#include "pg_arman.h"
+#include "pg_probackup.h"
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -28,7 +28,7 @@ static pgBackup *catalog_read_ini(const char *path);
 static int lock_fd = -1;
 
 /*
- * Lock of the catalog with pg_arman.ini file and return 0.
+ * Lock of the catalog with pg_probackup.conf file and return 0.
  * If the lock is held by another one, return 1 immediately.
  */
 int
@@ -106,38 +106,22 @@ IsDir(const char *dirpath, const char *entry)
  * The list is sorted in order of descending start time.
  */
 parray *
-catalog_get_backup_list(const pgBackupRange *range)
+catalog_get_backup_list(time_t backup_id)
 {
-	const pgBackupRange range_all = { 0, 0 };
 	DIR			   *date_dir = NULL;
 	struct dirent  *date_ent = NULL;
 	DIR			   *time_dir = NULL;
-	struct dirent  *time_ent = NULL;
+	char			backups_path[MAXPGPATH];
 	char			date_path[MAXPGPATH];
 	parray		   *backups = NULL;
 	pgBackup	   *backup = NULL;
-	struct tm	   *tm;
-	char			begin_date[100];
-	char			begin_time[100];
-	char			end_date[100];
-	char			end_time[100];
-
-	if (range == NULL)
-		range = &range_all;
-
-	/* make date/time string */
-	tm = localtime(&range->begin);
-	strftime(begin_date, lengthof(begin_date), "%Y%m%d", tm);
-	strftime(begin_time, lengthof(begin_time), "%H%M%S", tm);
-	tm = localtime(&range->end);
-	strftime(end_date, lengthof(end_date), "%Y%m%d", tm);
-	strftime(end_time, lengthof(end_time), "%H%M%S", tm);
 
 	/* open backup root directory */
-	date_dir = opendir(backup_path);
+	join_path_components(backups_path, backup_path, BACKUPS_DIR);
+	date_dir = opendir(backups_path);
 	if (date_dir == NULL)
 	{
-		elog(WARNING, "cannot open directory \"%s\": %s", backup_path,
+		elog(WARNING, "cannot open directory \"%s\": %s", backups_path,
 			strerror(errno));
 		goto err_proc;
 	}
@@ -146,54 +130,29 @@ catalog_get_backup_list(const pgBackupRange *range)
 	backups = parray_new();
 	for (; (date_ent = readdir(date_dir)) != NULL; errno = 0)
 	{
+		char ini_path[MAXPGPATH];
+
 		/* skip not-directory entries and hidden entries */
-		if (!IsDir(backup_path, date_ent->d_name) || date_ent->d_name[0] == '.')
-			continue;
-
-		/* skip online WAL backup directory */
-		if (strcmp(date_ent->d_name, RESTORE_WORK_DIR) == 0)
-			continue;
-
-		/* If the date is out of range, skip it. */
-		if (pgBackupRangeIsValid(range) &&
-				(strcmp(begin_date, date_ent->d_name) > 0 ||
-								strcmp(end_date, date_ent->d_name) < 0))
+		if (!IsDir(backups_path, date_ent->d_name) || date_ent->d_name[0] == '.')
 			continue;
 
 		/* open subdirectory (date directory) and search time directory */
-		join_path_components(date_path, backup_path, date_ent->d_name);
-		time_dir = opendir(date_path);
-		if (time_dir == NULL)
+		join_path_components(date_path, backups_path, date_ent->d_name);
+
+		/* read backup information from backup.ini */
+		snprintf(ini_path, MAXPGPATH, "%s/%s", date_path, BACKUP_INI_FILE);
+		backup = catalog_read_ini(ini_path);
+
+		/* ignore corrupted backup */
+		if (backup)
 		{
-			elog(WARNING, "cannot open directory \"%s\": %s",
-				date_ent->d_name, strerror(errno));
-			goto err_proc;
-		}
-		for (; (time_ent = readdir(time_dir)) != NULL; errno = 0)
-		{
-			char ini_path[MAXPGPATH];
-
-			/* skip entries that are directories and hidden directories */
-			if (!IsDir(date_path, time_ent->d_name) || time_ent->d_name[0] == '.')
-				continue;
-
-			/* If the time is out of range, skip it. */
-			if (pgBackupRangeIsValid(range) &&
-				(strcmp(begin_time, time_ent->d_name) > 0 ||
-				 strcmp(end_time, time_ent->d_name) < 0))
-				continue;
-
-			/* read backup information from backup.ini */
-			snprintf(ini_path, MAXPGPATH, "%s/%s/%s", date_path,
-					 time_ent->d_name, BACKUP_INI_FILE);
-			backup = catalog_read_ini(ini_path);
-
-			/* ignore corrupted backup */
-			if (backup)
+			if (backup_id != 0 && backup_id != backup->start_time)
 			{
-				parray_append(backups, backup);
-				backup = NULL;
+				pgBackupFree(backup);
+				continue;
 			}
+			parray_append(backups, backup);
+			backup = NULL;
 		}
 		if (errno && errno != ENOENT)
 		{
@@ -201,13 +160,11 @@ catalog_get_backup_list(const pgBackupRange *range)
 				date_ent->d_name, strerror(errno));
 			goto err_proc;
 		}
-		closedir(time_dir);
-		time_dir = NULL;
 	}
 	if (errno)
 	{
 		elog(WARNING, "cannot read backup root directory \"%s\": %s",
-			backup_path, strerror(errno));
+			backups_path, strerror(errno));
 		goto err_proc;
 	}
 
@@ -330,6 +287,7 @@ pgBackupWriteResultSection(FILE *out, pgBackup *backup)
 	fprintf(out, "BLOCK_SIZE=%u\n", backup->block_size);
 	fprintf(out, "XLOG_BLOCK_SIZE=%u\n", backup->wal_block_size);
 	fprintf(out, "CHECKSUM_VERSION=%u\n", backup->checksum_version);
+	fprintf(out, "STREAM=%u\n", backup->stream);
 
 	fprintf(out, "STATUS=%s\n", status2str(backup->status));
 }
@@ -385,6 +343,7 @@ catalog_read_ini(const char *path)
 		{ 'u', 0, "block-size"			, NULL, SOURCE_ENV },
 		{ 'u', 0, "xlog-block-size"		, NULL, SOURCE_ENV },
 		{ 'u', 0, "checksum_version"		, NULL, SOURCE_ENV },
+		{ 'u', 0, "stream"				, NULL, SOURCE_ENV },
 		{ 's', 0, "status"				, NULL, SOURCE_ENV },
 		{ 0 }
 	};
@@ -408,6 +367,7 @@ catalog_read_ini(const char *path)
 	options[i++].var = &backup->block_size;
 	options[i++].var = &backup->wal_block_size;
 	options[i++].var = &backup->checksum_version;
+	options[i++].var = &backup->stream;
 	options[i++].var = &status;
 	Assert(i == lengthof(options) - 1);
 
@@ -526,16 +486,14 @@ pgBackupCompareIdDesc(const void *l, const void *r)
 void
 pgBackupGetPath(const pgBackup *backup, char *path, size_t len, const char *subdir)
 {
-	char		datetime[20];
-	struct tm  *tm;
+	char	*datetime;
 
-	/* generate $BACKUP_PATH/date/time path */
-	tm = localtime(&backup->start_time);
-	strftime(datetime, lengthof(datetime), "%Y%m%d/%H%M%S", tm);
+	datetime = base36enc(backup->start_time);
 	if (subdir)
-		snprintf(path, len, "%s/%s/%s", backup_path, datetime, subdir);
+		snprintf(path, len, "%s/%s/%s/%s", backup_path, BACKUPS_DIR, datetime, subdir);
 	else
-		snprintf(path, len, "%s/%s", backup_path, datetime);
+		snprintf(path, len, "%s/%s/%s", backup_path, BACKUPS_DIR, datetime);
+	free(datetime);
 }
 
 void
@@ -551,4 +509,5 @@ catalog_init_config(pgBackup *backup)
 	backup->recovery_xid = 0;
 	backup->recovery_time = (time_t) 0;
 	backup->data_bytes = BYTES_INVALID;
+	backup->stream = false;
 }
