@@ -264,7 +264,7 @@
  * facilitate catching code that depends on the contents of uninitialized
  * memory.  Caution: this is horrendously expensive.
  */
-#define RANDOMIZE_ALLOCATED_MEMORY
+/* #define RANDOMIZE_ALLOCATED_MEMORY */
 
 /*
  * Define this to force all parse and plan trees to be passed through
