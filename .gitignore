@@ -42,3 +42,4 @@ lib*.pc
 # Contrib
 /contrib/*/log/
 /contrib/*/results/
+/comtrib/*/tmp_check/
