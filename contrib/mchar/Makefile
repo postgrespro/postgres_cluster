@@ -7,8 +7,6 @@ DOCS = README.mchar
 REGRESS = init mchar mvarchar mm like compat
 PGFIELDDESC = "mchar - mchar type implementation"
 
-PG_CPPFLAGS=-I/usr/local/include
-
 ifdef USE_PGXS
 PGXS := $(shell pg_config --pgxs)
 include $(PGXS)
@@ -18,11 +16,3 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
-
-ifeq ($(PORTNAME),win32)
-ICUNAME=icuin
-else
-ICUNAME=icui18n
-endif
-
-SHLIB_LINK += -L/usr/local/lib -licuuc -l$(ICUNAME) -Wl,-R,'$$ORIGIN'
