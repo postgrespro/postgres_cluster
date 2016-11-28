@@ -59,7 +59,7 @@ SUBDIRS = \
 		pg_variables	\
 		jsquery		\
 		sr_plan		\
-		pg_arman	\
+		pg_probackup	\
 		pg_pathman	\
 		shared_ispell   \
                 vacuumlo        \
