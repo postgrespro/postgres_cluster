@@ -42,3 +42,4 @@ lib*.pc
 # Contrib
 /contrib/*/log/
 /contrib/*/results/
+/contrib/pg_query_state/isolation_output/
