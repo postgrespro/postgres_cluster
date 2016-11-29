@@ -7,6 +7,7 @@ import time
 import subprocess
 import datetime
 import docker
+import warnings
 
 from lib.bank_client import MtmClient
 from lib.failure_injector import *
@@ -63,6 +64,7 @@ class RecoveryTest(unittest.TestCase, TestHelper):
 
         # XXX: add normal wait here
         time.sleep(20)
+        print('started')
         self.client = MtmClient([
             "dbname=regression user=postgres host=127.0.0.1 port=15432",
             "dbname=regression user=postgres host=127.0.0.1 port=15433",
@@ -77,8 +79,11 @@ class RecoveryTest(unittest.TestCase, TestHelper):
         # XXX: check nodes data identity here
         subprocess.check_call(['docker-compose','down'])
 
+    def setUp(self):
+        warnings.simplefilter("ignore", ResourceWarning)
+
     def test_normal_operations(self):
-        print('### normal_operations ###')
+        print('### test_normal_operations ###')
 
         aggs_failure, aggs = self.performFailure(NoFailure())
 
@@ -90,7 +95,7 @@ class RecoveryTest(unittest.TestCase, TestHelper):
 
 
     def test_node_partition(self):
-        print('### nodePartitionTest ###')
+        print('### test_node_partition ###')
 
         aggs_failure, aggs = self.performFailure(SingleNodePartition('node3'))
 
@@ -103,12 +108,38 @@ class RecoveryTest(unittest.TestCase, TestHelper):
 
 
     def test_edge_partition(self):
-        print('### edgePartitionTest ###')
+        print('### test_edge_partition ###')
 
         aggs_failure, aggs = self.performFailure(EdgePartition('node2', 'node3'))
 
         self.assertTrue( ('commit' in aggs_failure[1]['transfer']['finish']) or ('commit' in aggs_failure[2]['transfer']['finish']) )
         self.assertCommits(aggs_failure[0:1]) # first node
+        self.assertIsolation(aggs_failure)
+
+        self.assertCommits(aggs)
+        self.assertIsolation(aggs)
+
+    def test_node_restart(self):
+        print('### test_node_restart ###')
+
+        time.sleep(3)
+
+        aggs_failure, aggs = self.performFailure(RestartNode('node3'))
+
+        self.assertCommits(aggs_failure[:2])
+        self.assertNoCommits(aggs_failure[2:])
+        self.assertIsolation(aggs_failure)
+
+        self.assertCommits(aggs)
+        self.assertIsolation(aggs)
+
+    def test_node_crash(self):
+        print('### test_node_crash ###')
+
+        aggs_failure, aggs = self.performFailure(CrashRecoverNode('node3'))
+
+        self.assertCommits(aggs_failure[:2])
+        self.assertNoCommits(aggs_failure[2:])
         self.assertIsolation(aggs_failure)
 
         self.assertCommits(aggs)
