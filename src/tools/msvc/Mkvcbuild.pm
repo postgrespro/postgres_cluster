@@ -421,6 +421,10 @@ sub mkvcbuild
 		push @contrib_excludes, 'uuid-ossp';
 	}
 
+	if (!$solution->{options}->{icu})
+	{
+		push @contrib_excludes, 'mchar';
+	}
 	# AddProject() does not recognize the constructs used to populate OBJS in
 	# the pgcrypto Makefile, so it will discover no files.
 	my $pgcrypto =
