@@ -263,6 +263,10 @@ sub GenerateFiles
 			print O "#define HAVE_RL_FILENAME_COMPLETION_FUNCTION\n";
 			print O "#define HAVE_RL_COMPLETION_MATCHES\n";
 		}
+		if ($self->{options}->{zstd})
+		{
+			print O "#define CFS_COMPRESSION 6\n";
+		}	
 		print O "#define VAL_CONFIGURE \""
 		  . $self->GetFakeConfigure() . "\"\n";
 		print O "#endif /* IGNORE_CONFIGURED_SETTINGS */\n";
@@ -604,6 +608,13 @@ sub AddProject
 		$proj->AddLibrary($self->{options}->{libedit} . "\\" .
 			($self->{platform} eq 'x64'? 'lib64': 'lib32').'\edit.lib');
 	}
+	if ($self->{options}->{zstd})
+	{
+		$proj->AddIncludeDir($self->{options}->{zstd});
+		$proj->AddLibrary($self->{options}->{zstd}. "\\".
+			($self->{platform} eq 'x64'? "zstdlib_x64.lib" : "zstdlib_x86.lib")
+	    );
+	}
 	return $proj;
 }
 
@@ -715,7 +726,8 @@ sub GetFakeConfigure
 	$cfg .= ' --with-tcl'           if ($self->{options}->{tcl});
 	$cfg .= ' --with-perl'          if ($self->{options}->{perl});
 	$cfg .= ' --with-python'        if ($self->{options}->{python});
-	$cfg .=' --with-icu'			if ($self->{options}->{icu});
+	$cfg .= ' --with-icu'			if ($self->{options}->{icu});
+	$cfg .= ' --with-zstd'          if ($self->{options}->{zstd});
 	return $cfg;
 }
 
