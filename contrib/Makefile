@@ -62,7 +62,6 @@ SUBDIRS = \
 		pg_probackup	\
 		pg_pathman	\
 		shared_ispell   \
-                vacuumlo        \
                 fulleq          \
                 fasttrun        \
                 online_analyze  \
