@@ -3850,7 +3850,7 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 				StartTransactionCommand();
 				if (x->status == TRANSACTION_STATUS_ABORTED) { 
 					FinishPreparedTransaction(x->gid, false);
-					elog(ERROR, "Transaction %s is aborted by DTM", x->gid);
+					elog(ERROR, "Transaction aborted by DTM");
 				} else {
 					FinishPreparedTransaction(x->gid, true);
 				}

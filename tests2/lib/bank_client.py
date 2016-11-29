@@ -4,11 +4,13 @@ import asyncio
 import aiopg
 import random
 import psycopg2
+from psycopg2.extensions import *
 import time
 import datetime
 import copy
 import aioprocessing
 import multiprocessing
+import logging
 
 class MtmTxAggregate(object):
 
@@ -57,6 +59,7 @@ def keep_trying(tries, delay, method, name, *args, **kwargs):
 class MtmClient(object):
 
     def __init__(self, dsns, n_accounts=100000):
+        # logging.basicConfig(level=logging.DEBUG)
         self.n_accounts = n_accounts
         self.dsns = dsns
         self.aggregates = {}
@@ -129,21 +132,41 @@ class MtmClient(object):
         if conn_i not in self.aggregates:
             self.aggregates[conn_i] = {}
         agg = self.aggregates[conn_i][aggname_prefix] = MtmTxAggregate(aggname)
-        pool = yield from aiopg.create_pool(self.dsns[conn_i])
-        conn = yield from pool.acquire()
-        cur = yield from conn.cursor()
+        dsn = self.dsns[conn_i]
+
+        conn = cur = False
+
         while self.running:
             agg.start_tx()
+
             try:
-                # yield from cur.execute('commit')
+                if (not conn) or conn.closed:
+                        # enable_hstore tries to perform select from database
+                        # which in case of select's failure will lead to exception
+                        # and stale connection to the database
+                        conn = yield from aiopg.connect(dsn, enable_hstore=False)
+                        print("reconnected")
+
+                if (not cur) or cur.closed:
+                        cur = yield from conn.cursor()
+
+                # ROLLBACK tx after previous exception.
+                # Doing this here instead of except handler to stay inside try
+                # block.
+                status = yield from conn.get_transaction_status()
+                if status != TRANSACTION_STATUS_IDLE:
+                    yield from cur.execute('rollback')
+
                 yield from tx_block(conn, cur, agg)
                 agg.finish_tx('commit')
-            except psycopg2.OperationalError as e:
-                if not cur.closed:
-                    yield from cur.execute('rollback')
-                agg.finish_tx('operational_rollback')
+
             except psycopg2.Error as e:
-                agg.finish_tx(e.pgerror)
+                agg.finish_tx(str(e).strip())
+                # Give evloop some free time.
+                # In case of continuous excetions we can loop here without returning
+                # back to event loop and block it
+                yield from asyncio.sleep(0.01)
+
         print("We've count to infinity!")
 
     @asyncio.coroutine
@@ -199,14 +222,14 @@ class MtmClient(object):
         self.evloop_process = multiprocessing.Process(target=self.run, args=())
         self.evloop_process.start()
 
-    def get_aggregates(self, print=True):
+    def get_aggregates(self, _print=True):
         self.parent_pipe.send('status')
         resp = self.parent_pipe.recv()
-        if print:
+        if _print:
             MtmClient.print_aggregates(resp)
         return resp
 
-    def clean_aggregates(self, print=True):
+    def clean_aggregates(self):
         self.parent_pipe.send('status')
         self.parent_pipe.recv()
 
