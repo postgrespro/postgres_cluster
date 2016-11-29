@@ -896,6 +896,9 @@
 /* Define to 1 if `wcstombs_l' requires <xlocale.h>. */
 #undef WCSTOMBS_L_IN_XLOCALE
 
+/* Define to 6 to use zstd compression library */
+#undef CFS_COMPRESSOR
+
 /* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most
    significant byte first (like Motorola and SPARC, unlike Intel). */
 #if defined AC_APPLE_UNIVERSAL_BUILD
