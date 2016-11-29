@@ -106,6 +106,8 @@ endif
 
 ifeq ($(with_icu),yes)
 SUBDIRS += mchar
+else
+ALWAYS_SUBDIRS += mchar
 endif
 
 # Missing:
