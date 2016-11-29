@@ -865,8 +865,6 @@ bool cfs_control_gc(bool enabled)
 	return was_enabled;
 }
 
-PG_MODULE_MAGIC;
-
 PG_FUNCTION_INFO_V1(cfs_start_gc);
 PG_FUNCTION_INFO_V1(cfs_enable_gc);
 PG_FUNCTION_INFO_V1(cfs_version);
