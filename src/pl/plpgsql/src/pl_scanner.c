@@ -67,6 +67,7 @@ IdentifierLookup plpgsql_IdentifierLookup = IDENTIFIER_LOOKUP_NORMAL;
 
 static const ScanKeyword reserved_keywords[] = {
 	PG_KEYWORD("all", K_ALL, RESERVED_KEYWORD)
+	PG_KEYWORD("autonomous", K_AUTONOMOUS, RESERVED_KEYWORD)
 	PG_KEYWORD("begin", K_BEGIN, RESERVED_KEYWORD)
 	PG_KEYWORD("by", K_BY, RESERVED_KEYWORD)
 	PG_KEYWORD("case", K_CASE, RESERVED_KEYWORD)

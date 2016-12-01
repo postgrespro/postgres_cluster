@@ -485,6 +485,7 @@ extern Datum pg_tablespace_size_name(PG_FUNCTION_ARGS);
 extern Datum pg_database_size_oid(PG_FUNCTION_ARGS);
 extern Datum pg_database_size_name(PG_FUNCTION_ARGS);
 extern Datum pg_relation_size(PG_FUNCTION_ARGS);
+extern Datum pg_temp_relation_size(PG_FUNCTION_ARGS);
 extern Datum pg_total_relation_size(PG_FUNCTION_ARGS);
 extern Datum pg_size_pretty(PG_FUNCTION_ARGS);
 extern Datum pg_size_pretty_numeric(PG_FUNCTION_ARGS);
@@ -1297,6 +1298,11 @@ extern Datum tsm_system_handler(PG_FUNCTION_ARGS);
 
 /* access/transam/twophase.c */
 extern Datum pg_prepared_xact(PG_FUNCTION_ARGS);
+
+/* access/transam/xact.c */
+extern Datum pg_current_tx_nest_level(PG_FUNCTION_ARGS);
+extern Datum pg_current_atx_nest_level(PG_FUNCTION_ARGS);
+extern Datum pg_current_atx_has_ancestor(PG_FUNCTION_ARGS);
 
 /* access/transam/multixact.c */
 extern Datum pg_get_multixact_members(PG_FUNCTION_ARGS);

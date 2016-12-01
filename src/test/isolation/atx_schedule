@@ -1,0 +1,5 @@
+test: atx-deadlock-0
+test: atx-deadlock-1
+test: atx-deadlock-2
+test: atx-iso-0
+test: atx-iso-1

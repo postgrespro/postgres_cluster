@@ -1853,6 +1853,16 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"max_autonomous_transactions", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
+			gettext_noop("Sets the maximum number of concurrent autonomous transactions."),
+			NULL
+		},
+		&MaxATX,
+		100, 1, MAX_BACKENDS,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"superuser_reserved_connections", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the number of connection slots reserved for superusers."),
 			NULL
@@ -2264,7 +2274,6 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_BLOCKS
 		},
 		&checkpoint_flush_after,
-		/* see bufmgr.h: OS dependent default */
 		DEFAULT_CHECKPOINT_FLUSH_AFTER, 0, WRITEBACK_MAX_PENDING_FLUSHES,
 		NULL, NULL, NULL
 	},
@@ -2293,12 +2302,12 @@ static struct config_int ConfigureNamesInt[] =
 
 	{
 		{"wal_writer_flush_after", PGC_SIGHUP, WAL_SETTINGS,
-			gettext_noop("Amount of WAL written out by WAL writer triggering a flush."),
+			gettext_noop("Amount of WAL written out by WAL writer that triggers a flush."),
 			NULL,
 			GUC_UNIT_XBLOCKS
 		},
 		&WalWriterFlushAfter,
-		128, 0, INT_MAX,
+		(1024*1024) / XLOG_BLCKSZ, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
 
@@ -2422,7 +2431,6 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_BLOCKS
 		},
 		&bgwriter_flush_after,
-		/* see bufmgr.h: OS dependent default */
 		DEFAULT_BGWRITER_FLUSH_AFTER, 0, WRITEBACK_MAX_PENDING_FLUSHES,
 		NULL, NULL, NULL
 	},
@@ -2450,7 +2458,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_BLOCKS
 		},
 		&backend_flush_after,
-		0, 0, WRITEBACK_MAX_PENDING_FLUSHES,
+		DEFAULT_BACKEND_FLUSH_AFTER, 0, WRITEBACK_MAX_PENDING_FLUSHES,
 		NULL, NULL, NULL
 	},
 
@@ -5119,10 +5127,7 @@ AtStart_GUC(void)
 	 * didn't call AtEOXact_GUC, or called it with the wrong nestLevel.  We
 	 * throw a warning but make no other effort to clean up.
 	 */
-	if (GUCNestLevel != 0)
-		elog(WARNING, "GUC nest level = %d at transaction start",
-			 GUCNestLevel);
-	GUCNestLevel = 1;
+	NewGUCNestLevel();
 }
 
 /*
@@ -9329,7 +9334,9 @@ can_skip_gucvar(struct config_generic * gconf)
 
 /*
  * estimate_variable_size:
- * Estimate max size for dumping the given GUC variable.
+ *		Compute space needed for dumping the given GUC variable.
+ *
+ * It's OK to overestimate, but not to underestimate.
  */
 static Size
 estimate_variable_size(struct config_generic * gconf)
@@ -9340,9 +9347,8 @@ estimate_variable_size(struct config_generic * gconf)
 	if (can_skip_gucvar(gconf))
 		return 0;
 
-	size = 0;
-
-	size = add_size(size, strlen(gconf->name) + 1);
+	/* Name, plus trailing zero byte. */
+	size = strlen(gconf->name) + 1;
 
 	/* Get the maximum display length of the GUC value. */
 	switch (gconf->vartype)
@@ -9363,7 +9369,7 @@ estimate_variable_size(struct config_generic * gconf)
 				 * small values.  Maximum value is 2147483647, i.e. 10 chars.
 				 * Include one byte for sign.
 				 */
-				if (abs(*conf->variable) < 1000)
+				if (Abs(*conf->variable) < 1000)
 					valsize = 3 + 1;
 				else
 					valsize = 10 + 1;
@@ -9391,11 +9397,12 @@ estimate_variable_size(struct config_generic * gconf)
 		case PGC_REAL:
 			{
 				/*
-				 * We are going to print it with %.17g. Account for sign,
-				 * decimal point, and e+nnn notation. E.g.
-				 * -3.9932904234000002e+110
+				 * We are going to print it with %e with REALTYPE_PRECISION
+				 * fractional digits.  Account for sign, leading digit,
+				 * decimal point, and exponent with up to 3 digits.  E.g.
+				 * -3.99329042340000021e+110
 				 */
-				valsize = REALTYPE_PRECISION + 1 + 1 + 5;
+				valsize = 1 + 1 + 1 + REALTYPE_PRECISION + 5;
 			}
 			break;
 
@@ -9403,7 +9410,15 @@ estimate_variable_size(struct config_generic * gconf)
 			{
 				struct config_string *conf = (struct config_string *) gconf;
 
-				valsize = strlen(*conf->variable);
+				/*
+				 * If the value is NULL, we transmit it as an empty string.
+				 * Although this is not physically the same value, GUC
+				 * generally treats a NULL the same as empty string.
+				 */
+				if (*conf->variable)
+					valsize = strlen(*conf->variable);
+				else
+					valsize = 0;
 			}
 			break;
 
@@ -9416,17 +9431,17 @@ estimate_variable_size(struct config_generic * gconf)
 			break;
 	}
 
-	/* Allow space for terminating zero-byte */
+	/* Allow space for terminating zero-byte for value */
 	size = add_size(size, valsize + 1);
 
 	if (gconf->sourcefile)
 		size = add_size(size, strlen(gconf->sourcefile));
 
-	/* Allow space for terminating zero-byte */
+	/* Allow space for terminating zero-byte for sourcefile */
 	size = add_size(size, 1);
 
-	/* Include line whenever we include file. */
-	if (gconf->sourcefile)
+	/* Include line whenever file is nonempty. */
+	if (gconf->sourcefile && gconf->sourcefile[0])
 		size = add_size(size, sizeof(gconf->sourceline));
 
 	size = add_size(size, sizeof(gconf->source));
@@ -9552,7 +9567,7 @@ serialize_variable(char **destptr, Size *maxbytes,
 			{
 				struct config_real *conf = (struct config_real *) gconf;
 
-				do_serialize(destptr, maxbytes, "%.*g",
+				do_serialize(destptr, maxbytes, "%.*e",
 							 REALTYPE_PRECISION, *conf->variable);
 			}
 			break;
@@ -9561,7 +9576,9 @@ serialize_variable(char **destptr, Size *maxbytes,
 			{
 				struct config_string *conf = (struct config_string *) gconf;
 
-				do_serialize(destptr, maxbytes, "%s", *conf->variable);
+				/* NULL becomes empty string, see estimate_variable_size() */
+				do_serialize(destptr, maxbytes, "%s",
+							 *conf->variable ? *conf->variable : "");
 			}
 			break;
 
@@ -9578,7 +9595,7 @@ serialize_variable(char **destptr, Size *maxbytes,
 	do_serialize(destptr, maxbytes, "%s",
 				 (gconf->sourcefile ? gconf->sourcefile : ""));
 
-	if (gconf->sourcefile)
+	if (gconf->sourcefile && gconf->sourcefile[0])
 		do_serialize_binary(destptr, maxbytes, &gconf->sourceline,
 							sizeof(gconf->sourceline));
 
@@ -9645,7 +9662,7 @@ read_gucstate(char **srcptr, char *srcend)
 	for (ptr = *srcptr; ptr < srcend && *ptr != '\0'; ptr++)
 		;
 
-	if (ptr > srcend)
+	if (ptr >= srcend)
 		elog(ERROR, "could not find null terminator in GUC state");
 
 	/* Set the new position to the byte following the terminating NUL */
@@ -9699,9 +9716,7 @@ RestoreGUCState(void *gucstate)
 	{
 		int			result;
 
-		if ((varname = read_gucstate(&srcptr, srcend)) == NULL)
-			break;
-
+		varname = read_gucstate(&srcptr, srcend);
 		varvalue = read_gucstate(&srcptr, srcend);
 		varsourcefile = read_gucstate(&srcptr, srcend);
 		if (varsourcefile[0])

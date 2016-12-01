@@ -1270,3 +1270,14 @@ PrintDSMLeakWarning(dsm_segment *seg)
 	elog(WARNING, "dynamic shared memory leak: segment %u still referenced",
 		 dsm_segment_handle(seg));
 }
+
+
+void
+DebugResourceOwner(ResourceOwner owner, const char *prefix)
+{
+	if (owner == NULL)
+		elog(LOG, "resource owner '%s' = NULL", prefix);
+	else
+		elog(LOG, "resource owner '%s' = %p (%s), snapshots = %d",
+			prefix, owner, owner->name, owner->snapshotarr.nitems);
+}

@@ -60,16 +60,15 @@ SUBDIRS = \
 		pg_variables	\
 		jsquery		\
 		sr_plan		\
-		pg_arman	\
+		pg_probackup	\
 		pg_pathman	\
 		shared_ispell   \
+        vacuumlo        \
 		pg_hint_plan	\
-                vacuumlo        \
-                mchar           \
-                fulleq          \
-                fasttrun        \
-                online_analyze  \
-                plantuner
+        fulleq          \
+        fasttrun        \
+        online_analyze  \
+        plantuner
 
 ifeq ($(with_openssl),yes)
 SUBDIRS += sslinfo
@@ -105,6 +104,12 @@ ifeq ($(with_python),yes)
 SUBDIRS += hstore_plpython ltree_plpython
 else
 ALWAYS_SUBDIRS += hstore_plpython ltree_plpython
+endif
+
+ifeq ($(with_icu),yes)
+SUBDIRS += mchar
+else
+ALWAYS_SUBDIRS += mchar
 endif
 
 # Missing:

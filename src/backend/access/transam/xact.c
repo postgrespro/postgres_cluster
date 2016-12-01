@@ -62,6 +62,7 @@
 #include "utils/snapmgr.h"
 #include "utils/timeout.h"
 #include "utils/timestamp.h"
+#include "utils/builtins.h"
 #include "pg_trace.h"
 
 
@@ -378,6 +379,18 @@ IsAbortedTransactionBlockState(void)
 
 	return false;
 }
+
+bool
+TransactionIdIsAncestorOfCurrentATX(TransactionId xid)
+{
+	PGXACT *pgxact;
+	for (pgxact = MyPgXact; pgxact != NULL; pgxact = pgxact->parent)
+	{
+		if (xid == pgxact->xid) return true;
+	}
+	return false;
+}
+
 
 
 /*
@@ -1795,6 +1808,52 @@ AtSubCleanup_Memory(void)
  * ----------------------------------------------------------------
  */
 
+
+#define MAX_SUSPENDED_XACTS 128
+typedef struct {
+	int XactIsoLevel;
+	bool XactReadOnly;
+	bool XactDeferrable;
+	int synchronous_commit;
+
+	TransactionId XactTopTransactionId;
+
+	bool MyXactAccessedTempRel;
+
+	int nUnreportedXids;
+	TransactionId unreportedXids[PGPROC_MAX_CACHED_SUBXIDS];
+
+	TransactionStateData TopTransactionStateData;
+	TransactionState CurrentTransactionState;
+	SubTransactionId currentSubTransactionId;
+	CommandId currentCommandId;
+	bool currentCommandIdUsed;
+
+	TimestampTz xactStartTimestamp;
+	TimestampTz stmtStartTimestamp;
+	TimestampTz xactStopTimestamp;
+
+	char *prepareGID;
+	bool forceSyncCommit;
+
+	MemoryContext TopTransactionContext;
+	MemoryContext CurTransactionContext;
+	MemoryContext TransactionAbortContext;
+
+	ResourceOwner CurrentResourceOwner;
+	ResourceOwner CurTransactionResourceOwner;
+	ResourceOwner TopTransactionResourceOwner;
+
+	VirtualTransactionId vxid;
+
+	void *PgStatState;
+	void *TriggerState;
+	void *SPIState;
+	void *SnapshotState;
+} SuspendedTransactionState;
+static int suspendedXactNum = 0;
+static SuspendedTransactionState suspendedXacts[MAX_SUSPENDED_XACTS];
+
 /*
  *	StartTransaction
  */
@@ -1930,6 +1989,10 @@ StartTransaction(void)
 	ShowTransactionState("StartTransaction");
 }
 
+int getNestLevelATX(void)
+{
+	return suspendedXactNum;
+}
 
 /*
  *	CommitTransaction
@@ -2089,8 +2152,11 @@ CommitTransaction(void)
 						 RESOURCE_RELEASE_BEFORE_LOCKS,
 						 true, true);
 
-	/* Check we've released all buffer pins */
-	AtEOXact_Buffers(true);
+	if (getNestLevelATX() == 0)
+	{
+		/* Check we've released all buffer pins */
+		AtEOXact_Buffers(true);
+	}
 
 	/* Clean up the relation cache */
 	AtEOXact_RelationCache(true);
@@ -2128,12 +2194,14 @@ CommitTransaction(void)
 	AtEOXact_CatCache(true);
 
 	AtCommit_Notify();
-	AtEOXact_GUC(true, 1);
-	AtEOXact_SPI(true);
+	AtEOXact_GUC(true, s->gucNestLevel);
+	if (getNestLevelATX() == 0) 
+		AtEOXact_SPI(true);
 	AtEOXact_on_commit_actions(true);
 	AtEOXact_Namespace(true, is_parallel_worker);
 	AtEOXact_SMgr();
-	AtEOXact_Files();
+	if (getNestLevelATX() == 0) 
+		AtEOXact_Files();
 	AtEOXact_ComboCid();
 	AtEOXact_HashTables(true);
 	AtEOXact_PgStat(true);
@@ -2536,7 +2604,10 @@ AbortTransaction(void)
 	 * do abort processing
 	 */
 	AfterTriggerEndXact(false); /* 'false' means it's abort */
-	AtAbort_Portals();
+	if (getNestLevelATX() == 0)
+	{
+		AtAbort_Portals();
+	}
 	AtEOXact_LargeObject(false);
 	AtAbort_Notify();
 	AtEOXact_RelationMap(false);
@@ -2586,7 +2657,10 @@ AbortTransaction(void)
 		ResourceOwnerRelease(TopTransactionResourceOwner,
 							 RESOURCE_RELEASE_BEFORE_LOCKS,
 							 false, true);
-		AtEOXact_Buffers(false);
+		if (getNestLevelATX() == 0)
+		{
+			AtEOXact_Buffers(false);
+		}
 		AtEOXact_RelationCache(false);
 		AtEOXact_Inval(false);
 		AtEOXact_MultiXact();
@@ -2599,7 +2673,7 @@ AbortTransaction(void)
 		smgrDoPendingDeletes(false);
 		AtEOXact_CatCache(false);
 
-		AtEOXact_GUC(false, 1);
+		AtEOXact_GUC(false, s->gucNestLevel);
 		AtEOXact_SPI(false);
 		AtEOXact_on_commit_actions(false);
 		AtEOXact_Namespace(false, is_parallel_worker);
@@ -2635,7 +2709,8 @@ CleanupTransaction(void)
 	/*
 	 * do abort cleanup processing
 	 */
-	AtCleanup_Portals();		/* now safe to release portal memory */
+	if (getNestLevelATX() == 0)
+		AtCleanup_Portals();		/* now safe to release portal memory */
 	AtEOXact_Snapshot(false);	/* and release the transaction's snapshots */
 
 	CurrentResourceOwner = NULL;	/* and resource owner */
@@ -2765,6 +2840,7 @@ CommitTransactionCommand(void)
 		case TBLOCK_STARTED:
 			CommitTransaction();
 			s->blockState = TBLOCK_DEFAULT;
+			ResumeTransaction();
 			break;
 
 			/*
@@ -2794,6 +2870,7 @@ CommitTransactionCommand(void)
 		case TBLOCK_END:
 			CommitTransaction();
 			s->blockState = TBLOCK_DEFAULT;
+			ResumeTransaction();
 			break;
 
 			/*
@@ -2813,6 +2890,7 @@ CommitTransactionCommand(void)
 		case TBLOCK_ABORT_END:
 			CleanupTransaction();
 			s->blockState = TBLOCK_DEFAULT;
+			ResumeTransaction();
 			break;
 
 			/*
@@ -2824,6 +2902,7 @@ CommitTransactionCommand(void)
 			AbortTransaction();
 			CleanupTransaction();
 			s->blockState = TBLOCK_DEFAULT;
+			ResumeTransaction();
 			break;
 
 			/*
@@ -2833,6 +2912,7 @@ CommitTransactionCommand(void)
 		case TBLOCK_PREPARE:
 			PrepareTransaction();
 			s->blockState = TBLOCK_DEFAULT;
+			ResumeTransaction();
 			break;
 
 			/*
@@ -2884,12 +2964,14 @@ CommitTransactionCommand(void)
 				Assert(s->parent == NULL);
 				CommitTransaction();
 				s->blockState = TBLOCK_DEFAULT;
+				ResumeTransaction();
 			}
 			else if (s->blockState == TBLOCK_PREPARE)
 			{
 				Assert(s->parent == NULL);
 				PrepareTransaction();
 				s->blockState = TBLOCK_DEFAULT;
+				ResumeTransaction();
 			}
 			else
 				elog(ERROR, "CommitTransactionCommand: unexpected state %s",
@@ -3004,6 +3086,7 @@ AbortCurrentTransaction(void)
 				AbortTransaction();
 				CleanupTransaction();
 			}
+			ResumeTransaction();
 			break;
 
 			/*
@@ -3014,6 +3097,7 @@ AbortCurrentTransaction(void)
 			AbortTransaction();
 			CleanupTransaction();
 			s->blockState = TBLOCK_DEFAULT;
+			ResumeTransaction();
 			break;
 
 			/*
@@ -3027,6 +3111,7 @@ AbortCurrentTransaction(void)
 			AbortTransaction();
 			CleanupTransaction();
 			s->blockState = TBLOCK_DEFAULT;
+			ResumeTransaction();
 			break;
 
 			/*
@@ -3050,6 +3135,7 @@ AbortCurrentTransaction(void)
 			AbortTransaction();
 			CleanupTransaction();
 			s->blockState = TBLOCK_DEFAULT;
+			ResumeTransaction();
 			break;
 
 			/*
@@ -3069,6 +3155,7 @@ AbortCurrentTransaction(void)
 		case TBLOCK_ABORT_END:
 			CleanupTransaction();
 			s->blockState = TBLOCK_DEFAULT;
+			ResumeTransaction();
 			break;
 
 			/*
@@ -3079,6 +3166,7 @@ AbortCurrentTransaction(void)
 			AbortTransaction();
 			CleanupTransaction();
 			s->blockState = TBLOCK_DEFAULT;
+			ResumeTransaction();
 			break;
 
 			/*
@@ -3090,6 +3178,7 @@ AbortCurrentTransaction(void)
 			AbortTransaction();
 			CleanupTransaction();
 			s->blockState = TBLOCK_DEFAULT;
+			ResumeTransaction();
 			break;
 
 			/*
@@ -3403,14 +3492,202 @@ CallSubXactCallbacks(SubXactEvent event,
  * ----------------------------------------------------------------
  */
 
+#define MOVELEFT(A, B, C) do { (A) = (B); (B) = (C); } while (0)
+void SuspendTransaction(void)
+{
+	//Assert(XactTopTransactionId != InvalidTransactionId);
+	Assert(nParallelCurrentXids == 0);
+
+	SuspendPgXact(MyPgXact);
+	{
+		TransactionState tts;
+		SuspendedTransactionState *sus = suspendedXacts + suspendedXactNum++;
+
+		sus->TopTransactionStateData = TopTransactionStateData;
+		sus->SnapshotState = SuspendSnapshot(); /* only before the resource-owner stuff */
+
+		tts = &TopTransactionStateData;
+		tts->state = TRANS_INPROGRESS;
+		tts->blockState = TBLOCK_STARTED;
+		tts->transactionId = InvalidTransactionId;
+		tts->subTransactionId = InvalidSubTransactionId;
+		tts->nestingLevel = 1;
+		tts->childXids = NULL;
+		tts->nChildXids = 0;
+		tts->maxChildXids = 0;
+
+		MOVELEFT(sus->CurrentTransactionState, CurrentTransactionState, tts);
+
+		sus->XactIsoLevel = XactIsoLevel;
+		sus->XactReadOnly = XactReadOnly;
+		sus->XactDeferrable = XactDeferrable;
+		sus->synchronous_commit = synchronous_commit;
+
+		MOVELEFT(sus->XactTopTransactionId, XactTopTransactionId, InvalidTransactionId);
+
+		sus->MyXactAccessedTempRel = MyXactAccessedTempRel;
+
+		sus->nUnreportedXids = nUnreportedXids;
+		memcpy(sus->unreportedXids, unreportedXids, sizeof(unreportedXids));
+
+		sus->currentSubTransactionId = currentSubTransactionId;
+		sus->currentCommandId = currentCommandId;
+		sus->currentCommandIdUsed = currentCommandIdUsed;
+
+		sus->xactStartTimestamp = xactStartTimestamp;
+		sus->stmtStartTimestamp = stmtStartTimestamp;
+		sus->xactStopTimestamp = xactStopTimestamp;
+
+		sus->prepareGID = prepareGID;
+		sus->forceSyncCommit = forceSyncCommit;
+
+		MOVELEFT(sus->TopTransactionContext, TopTransactionContext, NULL);
+		MOVELEFT(sus->CurTransactionContext, CurTransactionContext, NULL);
+		MOVELEFT(sus->TransactionAbortContext, TransactionAbortContext, NULL);
+
+		MemoryContextSwitchTo(CurTransactionContext);
+		MOVELEFT(sus->CurrentResourceOwner, CurrentResourceOwner, NULL);
+		MOVELEFT(sus->CurTransactionResourceOwner, CurTransactionResourceOwner, NULL);
+		MOVELEFT(sus->TopTransactionResourceOwner, TopTransactionResourceOwner, NULL);
+
+		MOVELEFT(sus->vxid.backendId, MyProc->backendId, MyBackendId);
+		MOVELEFT(sus->vxid.localTransactionId, MyProc->lxid, GetNextLocalTransactionId());
+
+		sus->PgStatState = PgStatSuspend();
+		sus->TriggerState = TriggerSuspend();
+		sus->SPIState = SuspendSPI();
+	}
+
+	AtStart_Memory();
+	AtStart_ResourceOwner();
+
+	TopTransactionStateData.gucNestLevel = NewGUCNestLevel();
+}
+
+bool ResumeTransaction(void)
+{
+	if (suspendedXactNum < 1) return false;
+
+	Assert(XactTopTransactionId == InvalidTransactionId);
+
+	{
+		SuspendedTransactionState *sus = suspendedXacts + --suspendedXactNum;
+		ResumeSPI(sus->SPIState);
+		TriggerResume(sus->TriggerState);
+		PgStatResume(sus->PgStatState);
+
+		TopTransactionStateData = sus->TopTransactionStateData;
+		CurrentTransactionState = sus->CurrentTransactionState;
+
+		XactIsoLevel = sus->XactIsoLevel;
+		XactReadOnly = sus->XactReadOnly;
+		XactDeferrable = sus->XactDeferrable;
+		synchronous_commit = sus->synchronous_commit;
+
+		XactTopTransactionId = sus->XactTopTransactionId;
+
+		MyXactAccessedTempRel = sus->MyXactAccessedTempRel;
+
+		nUnreportedXids = sus->nUnreportedXids;
+		memcpy(unreportedXids, sus->unreportedXids, sizeof(unreportedXids));
+
+		currentSubTransactionId = sus->currentSubTransactionId;
+		currentCommandId = sus->currentCommandId;
+		currentCommandIdUsed = sus->currentCommandIdUsed;
+
+		xactStartTimestamp = sus->xactStartTimestamp;
+		stmtStartTimestamp = sus->stmtStartTimestamp;
+		xactStopTimestamp = sus->xactStopTimestamp;
+
+		prepareGID = sus->prepareGID;
+		forceSyncCommit = sus->forceSyncCommit;
+
+		TopTransactionContext = sus->TopTransactionContext;
+		CurTransactionContext = sus->CurTransactionContext;
+		TransactionAbortContext = sus->TransactionAbortContext;
+
+		//MemoryContextSwitchTo(CurTransactionContext);
+		CurrentResourceOwner = sus->CurrentResourceOwner;
+		Assert(*(unsigned long long*)CurrentResourceOwner != 0x7f7f7f7f7f7f7f7f);
+		CurTransactionResourceOwner = sus->CurTransactionResourceOwner;
+		TopTransactionResourceOwner = sus->TopTransactionResourceOwner;
+
+		ResumeSnapshot(sus->SnapshotState); /* only after the resource-owner stuff */
+
+		MyProc->backendId = sus->vxid.backendId;
+		MyProc->lxid = sus->vxid.localTransactionId;
+	}
+
+	ResumePgXact(MyPgXact);
+
+//	/*
+//	 * Advertise it in the proc array.  We assume assignment of
+//	 * LocalTransactionID is atomic, and the backendId should be set already.
+//	 */
+//	Assert(MyProc->backendId == vxid.backendId);
+//	MyProc->lxid = vxid.localTransactionId;
+//
+//	TRACE_POSTGRESQL_TRANSACTION_START(vxid.localTransactionId);
+
+	/*
+	 * initialize other subsystems for new transaction
+	 */
+	//AtStart_GUC();
+	//AfterTriggerBeginXact();
+
+	return true;
+}
+
 /*
  *	BeginTransactionBlock
  *		This executes a BEGIN command.
  */
 void
-BeginTransactionBlock(void)
+BeginTransactionBlock(bool autonomous)
 {
 	TransactionState s = CurrentTransactionState;
+
+	if (autonomous)
+	{
+		switch (s->blockState)
+		{
+				/*
+				 * We are not inside a transaction block, the transaction will not be autonomous.
+				 */
+			case TBLOCK_STARTED:
+				elog(WARNING, "not inside transaction block, resetting autonomous flag");
+				autonomous = false;
+				break;
+
+				/*
+				 * Already a transaction block in progress, suspend it.
+				 */
+			case TBLOCK_INPROGRESS:
+			case TBLOCK_PARALLEL_INPROGRESS:
+			case TBLOCK_SUBINPROGRESS:
+			case TBLOCK_ABORT:
+			case TBLOCK_SUBABORT:
+				SuspendTransaction();
+				break;
+				/* These cases are invalid. */
+			case TBLOCK_DEFAULT:
+			case TBLOCK_BEGIN:
+			case TBLOCK_SUBBEGIN:
+			case TBLOCK_END:
+			case TBLOCK_SUBRELEASE:
+			case TBLOCK_SUBCOMMIT:
+			case TBLOCK_ABORT_END:
+			case TBLOCK_SUBABORT_END:
+			case TBLOCK_ABORT_PENDING:
+			case TBLOCK_SUBABORT_PENDING:
+			case TBLOCK_SUBRESTART:
+			case TBLOCK_SUBABORT_RESTART:
+			case TBLOCK_PREPARE:
+				elog(FATAL, "BeginTransactionBlock(autonomous): unexpected state %s",
+					 BlockStateAsString(s->blockState));
+				break;
+		}
+	}
 
 	switch (s->blockState)
 	{
@@ -3473,7 +3750,7 @@ PrepareTransactionBlock(char *gid)
 	bool		result;
 
 	/* Set up to commit the current transaction */
-	result = EndTransactionBlock();
+	result = EndTransactionBlock(false);
 
 	/* If successful, change outer tblock state to PREPARE */
 	if (result)
@@ -3518,7 +3795,7 @@ PrepareTransactionBlock(char *gid)
  * resource owner, etc while executing inside a Portal.
  */
 bool
-EndTransactionBlock(void)
+EndTransactionBlock(bool autonomous)
 {
 	TransactionState s = CurrentTransactionState;
 	bool		result = false;
@@ -3530,6 +3807,11 @@ EndTransactionBlock(void)
 			 * to COMMIT.
 			 */
 		case TBLOCK_INPROGRESS:
+		    if (autonomous && getNestLevelATX() == 0) { 
+				ereport(WARNING,
+						(errcode(ERRCODE_NO_ACTIVE_SQL_TRANSACTION),
+						 errmsg("there is no autonomous transaction in progress")));
+		    }
 			s->blockState = TBLOCK_END;
 			result = true;
 			break;
@@ -3642,7 +3924,7 @@ EndTransactionBlock(void)
  * As above, we don't actually do anything here except change blockState.
  */
 void
-UserAbortTransactionBlock(void)
+UserAbortTransactionBlock(bool autonomous)
 {
 	TransactionState s = CurrentTransactionState;
 
@@ -3654,6 +3936,11 @@ UserAbortTransactionBlock(void)
 			 * exit the transaction block.
 			 */
 		case TBLOCK_INPROGRESS:
+		    if (autonomous && getNestLevelATX() == 0) { 
+				ereport(WARNING,
+						(errcode(ERRCODE_NO_ACTIVE_SQL_TRANSACTION),
+						 errmsg("there is no autonomous transaction in progress")));
+		    }
 			s->blockState = TBLOCK_ABORT_PENDING;
 			break;
 
@@ -5646,3 +5933,20 @@ xact_redo(XLogReaderState *record)
 	else
 		elog(PANIC, "xact_redo: unknown op code %u", info);
 }
+
+Datum pg_current_tx_nest_level(PG_FUNCTION_ARGS)
+{	
+	PG_RETURN_INT64(GetCurrentTransactionNestLevel());
+}
+
+Datum pg_current_atx_nest_level(PG_FUNCTION_ARGS)
+{	
+	PG_RETURN_INT64(getNestLevelATX());
+}
+
+Datum pg_current_atx_has_ancestor(PG_FUNCTION_ARGS)
+{	
+	int64 xid = PG_GETARG_INT64(0);
+	PG_RETURN_BOOL(TransactionIdIsAncestorOfCurrentATX(xid));
+}
+

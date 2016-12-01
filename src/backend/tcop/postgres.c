@@ -2477,6 +2477,12 @@ finish_xact_command(void)
  * ones that we allow in transaction-aborted state.
  */
 
+static bool
+IsBeginATX(TransactionStmt *stmt)
+{
+	return (stmt->kind == TRANS_STMT_BEGIN || stmt->kind == TRANS_STMT_START) && stmt->autonomous;
+}
+
 /* Test a bare parsetree */
 static bool
 IsTransactionExitStmt(Node *parsetree)
@@ -2488,7 +2494,8 @@ IsTransactionExitStmt(Node *parsetree)
 		if (stmt->kind == TRANS_STMT_COMMIT ||
 			stmt->kind == TRANS_STMT_PREPARE ||
 			stmt->kind == TRANS_STMT_ROLLBACK ||
-			stmt->kind == TRANS_STMT_ROLLBACK_TO)
+			stmt->kind == TRANS_STMT_ROLLBACK_TO ||
+			IsBeginATX(stmt))
 			return true;
 	}
 	return false;
@@ -3958,6 +3965,12 @@ PostgresMain(int argc, char *argv[],
 		MemoryContextResetAndDeleteChildren(MessageContext);
 
 		initStringInfo(&input_message);
+
+		/*
+		 * Also consider releasing our catalog snapshot if any, so that it's
+		 * not preventing advance of global xmin while we wait for the client.
+		 */
+		InvalidateCatalogSnapshotConditionally();
 
 		/*
 		 * (1) If we've reached idle state, tell the frontend we're ready for

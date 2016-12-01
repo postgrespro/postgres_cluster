@@ -56,6 +56,7 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/syscache.h"
+#include "storage/bufmgr.h"
 
 
 /*
@@ -3879,6 +3880,7 @@ RemoveTempRelations(Oid tempNamespaceId)
 	object.objectId = tempNamespaceId;
 	object.objectSubId = 0;
 
+	drop_temptableinfo_hashtable();
 	deleteWhatDependsOn(&object, false);
 }
 

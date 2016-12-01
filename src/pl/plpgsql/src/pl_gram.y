@@ -176,6 +176,8 @@ static	void			check_raise_parameters(PLpgSQL_stmt_raise *stmt);
 %type <list>	decl_cursor_arglist
 %type <nsitem>	decl_aliasitem
 
+%type <boolean> opt_autonomous
+
 %type <expr>	expr_until_semi expr_until_rightbracket
 %type <expr>	expr_until_then expr_until_loop opt_expr_until_when
 %type <expr>	opt_exitcond
@@ -249,6 +251,7 @@ static	void			check_raise_parameters(PLpgSQL_stmt_raise *stmt);
 %token <keyword>	K_ALL
 %token <keyword>	K_ARRAY
 %token <keyword>	K_ASSERT
+%token <keyword>	K_AUTONOMOUS
 %token <keyword>	K_BACKWARD
 %token <keyword>	K_BEGIN
 %token <keyword>	K_BY
@@ -396,7 +399,17 @@ opt_semi		:
 				| ';'
 				;
 
-pl_block		: decl_sect K_BEGIN proc_sect exception_sect K_END opt_label
+opt_autonomous : K_AUTONOMOUS
+				{
+					$$ = TRUE;
+				}
+			| /*EMPTY*/
+				{
+					$$ = FALSE;
+				}
+		;
+
+pl_block		: decl_sect K_BEGIN opt_autonomous proc_sect exception_sect K_END opt_label
 					{
 						PLpgSQL_stmt_block *new;
 
@@ -407,10 +420,11 @@ pl_block		: decl_sect K_BEGIN proc_sect exception_sect K_END opt_label
 						new->label		= $1.label;
 						new->n_initvars = $1.n_initvars;
 						new->initvarnos = $1.initvarnos;
-						new->body		= $3;
-						new->exceptions	= $4;
+						new->autonomous = $3;
+						new->body		= $4;
+						new->exceptions	= $5;
 
-						check_labels($1.label, $6, @6);
+						check_labels($1.label, $7, @7);
 						plpgsql_ns_pop();
 
 						$$ = (PLpgSQL_stmt *)new;

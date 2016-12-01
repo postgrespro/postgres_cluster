@@ -422,6 +422,8 @@ typedef struct LOCALLOCK
 	int			maxLockOwners;	/* allocated size of array */
 	bool		holdsStrongLockCount;	/* bumped FastPathStrongRelationLocks */
 	LOCALLOCKOWNER *lockOwners; /* dynamically resizable array */
+
+	int			atx_nest_level;
 } LOCALLOCK;
 
 #define LOCALLOCK_LOCKMETHOD(llock) ((llock).tag.lock.locktag_lockmethodid)

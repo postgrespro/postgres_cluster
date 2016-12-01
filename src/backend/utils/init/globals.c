@@ -123,6 +123,7 @@ int			NBuffers = 1000;
 int			MaxConnections = 90;
 int			max_worker_processes = 8;
 int			MaxBackends = 0;
+int			MaxATX = 0;
 
 int			VacuumCostPageHit = 1;		/* GUC parameters for vacuum */
 int			VacuumCostPageMiss = 10;

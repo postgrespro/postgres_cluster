@@ -50,7 +50,7 @@ my @contrib_excludes = (
 	'ltree_plpython',  'pgcrypto',
 	'sepgsql',         'brin',
 	'test_extensions', 'test_pg_dump',
-	'pg_arman',
+	'pg_probackup',
 	'snapshot_too_old');
 
 # Set of variables for frontend modules
@@ -438,6 +438,10 @@ sub mkvcbuild
 		push @contrib_excludes, 'uuid-ossp';
 	}
 
+	if (!$solution->{options}->{icu})
+	{
+		push @contrib_excludes, 'mchar';
+	}
 	# AddProject() does not recognize the constructs used to populate OBJS in
 	# the pgcrypto Makefile, so it will discover no files.
 	my $pgcrypto =

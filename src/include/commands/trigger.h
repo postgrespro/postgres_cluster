@@ -193,6 +193,10 @@ extern void AfterTriggerSetState(ConstraintsSetStmt *stmt);
 extern bool AfterTriggerPendingOnRel(Oid relid);
 
 
+void *TriggerSuspend(void);
+void TriggerResume(void *state);
+
+
 /*
  * in utils/adt/ri_triggers.c
  */

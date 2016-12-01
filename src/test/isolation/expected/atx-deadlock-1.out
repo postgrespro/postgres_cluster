@@ -1,0 +1,14 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1la s2lb s1atxb s2la s1lb s1atxc s1c s2c
+step s1la: lock table a in access exclusive mode;
+step s2lb: lock table b in access exclusive mode;
+step s1atxb: begin autonomous;
+step s2la: lock table a in access exclusive mode; <waiting ...>
+step s1lb: lock table b in access exclusive mode; <waiting ...>
+step s1lb: <... completed>
+step s2la: <... completed>
+error in steps s1lb s2la: ERROR:  deadlock detected
+step s1atxc: commit;
+step s1c: commit;
+step s2c: commit;

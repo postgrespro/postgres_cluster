@@ -114,3 +114,6 @@ SELECT a <=> to_tsquery('pg_catalog.english', 'b:*'), *
 	FROM test_rum
 	WHERE a @@ to_tsquery('pg_catalog.english', 'b:*')
 	ORDER BY a <=> to_tsquery('pg_catalog.english', 'b:*');
+
+DROP TABLE test_rum CASCADE;
+DROP TABLE tst CASCADE;

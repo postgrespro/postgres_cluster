@@ -560,6 +560,18 @@ XactLockTableDelete(TransactionId xid)
 	LockRelease(&tag, ExclusiveLock, false);
 }
 
+inline static void
+LOCKTAG_PRINT(const char *where, const LOCKTAG *tag, LOCKMODE type)
+{
+	elog(LOG, "%s: locktag(%p) id(%u,%u,%u,%u,%u,%u) type(%s)",
+		 where, tag,
+		 tag->locktag_field1, tag->locktag_field2,
+		 tag->locktag_field3, tag->locktag_field4,
+		 tag->locktag_type, tag->locktag_lockmethodid,
+		 GetLockmodeName(tag->locktag_lockmethodid, type)
+	);
+}
+
 /*
  *		XactLockTableWait
  *
@@ -581,6 +593,12 @@ XactLockTableWait(TransactionId xid, Relation rel, ItemPointer ctid,
 	LOCKTAG		tag;
 	XactLockTableWaitInfo info;
 	ErrorContextCallback callback;
+
+	Assert(TransactionIdIsValid(xid));
+	if (TransactionIdIsAncestorOfCurrentATX(xid))
+	{
+		elog(ERROR, "an ATX waiting for an ancestor transaction will cause a deadlock");
+	}
 
 	/*
 	 * If an operation is specified, set up our verbose error context
@@ -608,7 +626,9 @@ XactLockTableWait(TransactionId xid, Relation rel, ItemPointer ctid,
 
 		SET_LOCKTAG_TRANSACTION(tag, xid);
 
+		LOCKTAG_PRINT("XactLockTableWait", &tag, ShareLock);
 		(void) LockAcquire(&tag, ShareLock, false, false);
+		elog(LOG, "XactLockTableWait acquired");
 
 		LockRelease(&tag, ShareLock, false);
 

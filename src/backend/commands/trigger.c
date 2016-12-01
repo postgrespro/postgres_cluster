@@ -5014,6 +5014,23 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 	}
 }
 
+void *
+TriggerSuspend(void)
+{
+	AfterTriggersData *state = malloc(sizeof(AfterTriggersData));
+	*state = afterTriggers;
+	memset(&afterTriggers, 0, sizeof(afterTriggers));
+	AfterTriggerBeginXact();
+	return state;
+}
+
+void
+TriggerResume(void *state)
+{
+	afterTriggers = *(AfterTriggersData *)state;
+	free(state);
+}
+
 Datum
 pg_trigger_depth(PG_FUNCTION_ARGS)
 {
