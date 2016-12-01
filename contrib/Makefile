@@ -60,15 +60,15 @@ SUBDIRS = \
 		pg_variables	\
 		jsquery		\
 		sr_plan		\
-		pg_arman	\
+		pg_probackup	\
 		pg_pathman	\
 		shared_ispell   \
+        vacuumlo        \
 		pg_hint_plan	\
-                vacuumlo        \
-                fulleq          \
-                fasttrun        \
-                online_analyze  \
-                plantuner
+        fulleq          \
+        fasttrun        \
+        online_analyze  \
+        plantuner
 
 ifeq ($(with_openssl),yes)
 SUBDIRS += sslinfo
