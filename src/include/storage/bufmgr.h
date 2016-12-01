@@ -200,6 +200,10 @@ extern void DropRelFileNodeBuffers(RelFileNodeBackend rnode,
 					   ForkNumber forkNum, BlockNumber firstDelBlock);
 extern void DropRelFileNodesAllBuffers(RelFileNodeBackend *rnodes, int nnodes);
 extern void DropDatabaseBuffers(Oid dbid);
+extern void drop_temptableinfo_hashtable(void);
+extern void delete_temptableinfo_from_hashtable(RelFileNode rnode);
+extern void insert_temptableinfo_hashtable(RelFileNode rnode,
+										   BlockNumber nblocks);
 
 #define RelationGetNumberOfBlocks(reln) \
 	RelationGetNumberOfBlocksInFork(reln, MAIN_FORKNUM)

@@ -3653,6 +3653,8 @@ DATA(insert OID = 2332 ( pg_relation_size		PGNSP PGUID 12 1 0 0 0 f f f f t f v 
 DESCR("disk space usage for the specified fork of a table or index");
 DATA(insert OID = 2286 ( pg_total_relation_size PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 20 "2205" _null_ _null_ _null_ _null_ _null_ pg_total_relation_size _null_ _null_ _null_ ));
 DESCR("total disk space usage for the specified table and associated indexes");
+DATA(insert OID = 7000 ( pg_temp_relation_size PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 20 "2205" _null_ _null_ _null_ _null_ _null_ pg_temp_relation_size _null_ _null_ _null_ ));
+DESCR("real size of the main fork of the specified temp table");
 DATA(insert OID = 2288 ( pg_size_pretty			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 25 "20" _null_ _null_ _null_ _null_ _null_ pg_size_pretty _null_ _null_ _null_ ));
 DESCR("convert a long int to a human readable text using size units");
 DATA(insert OID = 3166 ( pg_size_pretty			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 25 "1700" _null_ _null_ _null_ _null_ _null_ pg_size_pretty_numeric _null_ _null_ _null_ ));

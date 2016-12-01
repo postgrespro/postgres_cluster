@@ -156,6 +156,10 @@ RelationDropStorage(Relation rel)
 	pending->next = pendingDeletes;
 	pendingDeletes = pending;
 
+	/* Delete cache entry from tempTableHashTab for this rel */
+	if (rel->rd_rel->relkind == RELKIND_RELATION
+		&& rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP)
+		delete_temptableinfo_from_hashtable(rel->rd_node);
 	/*
 	 * NOTE: if the relation was created in this transaction, it will now be
 	 * present in the pending-delete list twice, once with atCommit true and
@@ -239,6 +243,7 @@ RelationTruncate(Relation rel, BlockNumber nblocks)
 	rel->rd_smgr->smgr_fsm_nblocks = InvalidBlockNumber;
 	rel->rd_smgr->smgr_vm_nblocks = InvalidBlockNumber;
 	rel->rd_smgr->smgr_ptrack_nblocks = InvalidBlockNumber;
+	rel->rd_smgr->smgr_main_nblocks = InvalidBlockNumber;
 
 	/* Truncate the FSM first if it exists */
 	fsm = smgrexists(rel->rd_smgr, FSM_FORKNUM);
@@ -249,6 +254,16 @@ RelationTruncate(Relation rel, BlockNumber nblocks)
 	vm = smgrexists(rel->rd_smgr, VISIBILITYMAP_FORKNUM);
 	if (vm)
 		visibilitymap_truncate(rel, nblocks);
+
+	/*
+	 * Update cached number of blocks of temp relation,
+	 * but don't delete the entry from tempTableHashTab
+	 */
+	if (rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP
+		&& rel->rd_rel->relkind == RELKIND_RELATION)
+	{
+		insert_temptableinfo_hashtable(rel->rd_node, 0);
+	}
 
 	/*
 	 * We WAL-log the truncation before actually truncating, which means

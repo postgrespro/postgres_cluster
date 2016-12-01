@@ -485,6 +485,7 @@ extern Datum pg_tablespace_size_name(PG_FUNCTION_ARGS);
 extern Datum pg_database_size_oid(PG_FUNCTION_ARGS);
 extern Datum pg_database_size_name(PG_FUNCTION_ARGS);
 extern Datum pg_relation_size(PG_FUNCTION_ARGS);
+extern Datum pg_temp_relation_size(PG_FUNCTION_ARGS);
 extern Datum pg_total_relation_size(PG_FUNCTION_ARGS);
 extern Datum pg_size_pretty(PG_FUNCTION_ARGS);
 extern Datum pg_size_pretty_numeric(PG_FUNCTION_ARGS);

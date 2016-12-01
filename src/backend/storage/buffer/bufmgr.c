@@ -428,7 +428,7 @@ ForgetPrivateRefCountEntry(PrivateRefCountEntry *ref)
 )
 
 
-static Buffer ReadBuffer_common(SMgrRelation reln, char relpersistence,
+static Buffer ReadBuffer_common(SMgrRelation reln, char relpersistence, char relkind,
 				  ForkNumber forkNum, BlockNumber blockNum,
 				  ReadBufferMode mode, BufferAccessStrategy strategy,
 				  bool *hit);
@@ -457,6 +457,95 @@ static int	rnode_comparator(const void *p1, const void *p2);
 static int	buffertag_comparator(const void *p1, const void *p2);
 static int	ckpt_buforder_comparator(const void *pa, const void *pb);
 static int	ts_ckpt_progress_comparator(Datum a, Datum b, void *arg);
+
+/* ----------------------------
+ * TODO Replace it somewhere. BEGIN.
+ * ----------------------------
+ */
+
+typedef struct TempTableInfoData
+{
+	RelFileNode	rnode;			/* relfilenode of this temp table (hash key) */
+	BlockNumber	main_nblocks;	/* number of blocks in the rel */
+} TempTableInfoData;
+
+typedef TempTableInfoData *TempTableInfo;
+
+static HTAB *tempTableHashTab = NULL; /* hash table for tracking temp table's length */
+
+/*
+ * Creates the hash table for storing the actual length of temp tables
+ */
+static void
+create_temptableinfo_hashtable(void)
+{
+	HASHCTL		ctl;
+
+	memset(&ctl, 0, sizeof(ctl));
+	ctl.keysize = sizeof(RelFileNode);
+	ctl.entrysize = sizeof(TempTableInfoData);
+
+	tempTableHashTab = hash_create("Temp table's lengts", 16, &ctl,
+								   HASH_ELEM | HASH_BLOBS);
+}
+
+void
+drop_temptableinfo_hashtable(void)
+{
+	if (tempTableHashTab)
+	{
+		hash_destroy(tempTableHashTab);
+		tempTableHashTab = NULL;
+	}
+}
+
+void
+delete_temptableinfo_from_hashtable(RelFileNode rnode)
+{
+	elog(DEBUG1, "delete entry from tempTableHashTab");
+
+	if (tempTableHashTab == NULL)
+		return;
+
+	if (hash_search(tempTableHashTab,
+					(void *) &rnode,
+					HASH_REMOVE, NULL) == NULL)
+		elog(DEBUG1, "tempTableHashTab has no entry to delete");
+}
+
+void
+insert_temptableinfo_hashtable(RelFileNode rnode, BlockNumber nblocks)
+{
+	TempTableInfo tti;
+	bool ttiIsFound;
+	elog(DEBUG1, "insert entry to tempTableHashTab, nblocks %u", nblocks);
+	elog(DEBUG1, "insert entry. spcNode %u, dbNode %u, relNode %u",rnode.spcNode, rnode.dbNode, rnode.relNode);
+
+	/* hash table must already exist, when we are rewriting temp rel */
+	if (tempTableHashTab == NULL)
+	{
+		//TODO add some check here.
+		return;
+	}
+	/* Create a hash table entry for this temp table */
+	tti = (TempTableInfo) hash_search(tempTableHashTab, &rnode,
+										HASH_ENTER, &ttiIsFound);
+
+	if (!ttiIsFound)
+	{
+		elog(DEBUG1, "tempTableHashTab entry is not found");
+	}
+	else
+	{
+		elog(DEBUG1, "tempTableHashTab entry is found. main_nblocks %u, nblocks %u", tti->main_nblocks, nblocks);
+	}
+	tti->main_nblocks = nblocks;
+}
+
+/* ----------------------------
+ * TODO Replace it somewhere. END.
+ * ----------------------------
+ */
 
 
 /*
@@ -662,6 +751,7 @@ ReadBufferExtended(Relation reln, ForkNumber forkNum, BlockNumber blockNum,
 	 */
 	pgstat_count_buffer_read(reln);
 	buf = ReadBuffer_common(reln->rd_smgr, reln->rd_rel->relpersistence,
+							reln->rd_rel->relkind,
 							forkNum, blockNum, mode, strategy, &hit);
 	if (hit)
 		pgstat_count_buffer_hit(reln);
@@ -689,7 +779,7 @@ ReadBufferWithoutRelcache(RelFileNode rnode, ForkNumber forkNum,
 
 	Assert(InRecovery);
 
-	return ReadBuffer_common(smgr, RELPERSISTENCE_PERMANENT, forkNum, blockNum,
+	return ReadBuffer_common(smgr, RELPERSISTENCE_PERMANENT, RELKIND_UNKNOWN, forkNum, blockNum,
 							 mode, strategy, &hit);
 }
 
@@ -711,15 +801,17 @@ ReadBufferWithoutRelcache2(SMgrRelation smgr, ForkNumber forkNum,
  * *hit is set to true if the request was satisfied from shared buffer cache.
  */
 static Buffer
-ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
-				  BlockNumber blockNum, ReadBufferMode mode,
-				  BufferAccessStrategy strategy, bool *hit)
+ReadBuffer_common(SMgrRelation smgr, char relpersistence, char relkind,
+                                 ForkNumber forkNum, BlockNumber blockNum, ReadBufferMode mode,
+                                 BufferAccessStrategy strategy, bool* hit)
 {
 	BufferDesc *bufHdr;
 	Block		bufBlock;
 	bool		found;
 	bool		isExtend;
 	bool		isLocalBuf = SmgrIsTemp(smgr);
+        bool            isTempTableMainFork  = false;
+        TempTableInfo tti;
 
 	*hit = false;
 
@@ -736,12 +828,70 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 									   isExtend);
 
 	/* Substitute proper block number if caller asked for P_NEW */
+
+	/*
+	 * It's unnecessary to create a physical file for a local temp
+	 * relation when all buffers can be kept in memory.
+	 * Track actual number of blocks in tempTableHashTab and don't
+	 * use smgrnblocks to compute it.
+	 * Here we do all the work needed for cache initialization.
+	 */
+	if (isLocalBuf
+		&& relkind == RELKIND_RELATION
+		&& forkNum == MAIN_FORKNUM)
+	{
+		bool ttiIsFound;
+		RelFileNode rnode = smgr->smgr_rnode.node;
+
+		elog(DEBUG1, "ReadBuffer_common. spcNode %u, dbNode %u, relNode %u",rnode.spcNode, rnode.dbNode, rnode.relNode);
+		/* use the flag instead of "if" constructions like above */
+		isTempTableMainFork = true;
+
+		/* Create hash table if it's the first call */
+		if (tempTableHashTab == NULL)
+		{
+			create_temptableinfo_hashtable();
+			elog(DEBUG1, "tempTableHashTab is created");
+		}
+		/* Find or create a hash table entry for this temp table */
+		tti = (TempTableInfo) hash_search(tempTableHashTab, &rnode,
+										  HASH_ENTER, &ttiIsFound);
+
+		/*
+		 * If it's the first time we're going to extend rel,
+		 * fill the cache entry with number of blocks = 0
+		 */
+		if (!ttiIsFound)
+		{
+			elog(DEBUG1, "tempTableHashTab entry is not found");
+			/* tti->rnode already filled in */
+			tti->main_nblocks = 0;
+		}
+		else
+		{
+			elog(DEBUG1, "tempTableHashTab is found. nblocks %u",tti->main_nblocks);
+		}
+
+		/* And finally fill up the smgr cache value */
+		smgr->smgr_main_nblocks = tti->main_nblocks;
+		elog(DEBUG1, "We're done with a cache entry. smgr->smgr_main_nblocks %u tti->main_nblocks %u",
+			 smgr->smgr_main_nblocks, tti->main_nblocks);
+	}
+
 	if (isExtend)
-		blockNum = smgrnblocks(smgr, forkNum);
+	{
+		if (isTempTableMainFork)
+			blockNum = smgr->smgr_main_nblocks;
+		else
+			blockNum = smgrnblocks(smgr, forkNum);
+
+		elog(DEBUG1, "isExtend. blockNum %u smgr->smgr_main_nblocks %u", blockNum, smgr->smgr_main_nblocks);
+	}
 
 	if (isLocalBuf)
 	{
 		bufHdr = LocalBufferAlloc(smgr, forkNum, blockNum, &found);
+
 		if (found)
 			pgBufferUsage.local_blks_hit++;
 		else
@@ -873,7 +1023,23 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 		/* new buffers are zero-filled */
 		MemSet((char *) bufBlock, 0, BLCKSZ);
 		/* don't set checksum for all-zero page */
-		smgrextend(smgr, forkNum, blockNum, (char *) bufBlock, false);
+
+
+                /* Do not extend physical file for temp tables while table fits
+                 * into temp_buffers cache. We'll do it on demand, when buffer
+                 * will be flushed out to disk.
+                 * NOTE Currently works only for plain tables.
+                 */
+                if (isTempTableMainFork)
+                {
+                        smgr->smgr_main_nblocks++;
+                        tti->main_nblocks++;
+                }
+                else
+                        smgrextend(smgr, forkNum, blockNum, (char *) bufBlock, false);
+
+                elog(DEBUG1, "isExtend 2. relnode %u smgr->smgr_main_nblocks %u",
+                         smgr->smgr_rnode.node.relNode, smgr->smgr_main_nblocks);
 
 		/*
 		 * NB: we're *not* doing a ScheduleBufferTagForWriteback here;
@@ -2784,6 +2950,31 @@ RelationGetNumberOfBlocksInFork(Relation relation, ForkNumber forkNum)
 	/* Open it at the smgr level if not already done */
 	RelationOpenSmgr(relation);
 
+	/* Handle temp tables separately */
+	if (SmgrIsTemp(relation->rd_smgr)
+		&& forkNum == MAIN_FORKNUM
+		&& relation->rd_rel->relkind == RELKIND_RELATION)
+	{
+		TempTableInfo tti;
+		bool ttiIsFound;
+		RelFileNode rnode = relation->rd_smgr->smgr_rnode.node;
+
+		/* If we have no hash table, the relation is definitely new and empty. */
+		if (tempTableHashTab == NULL)
+			return 0;
+
+		tti = (TempTableInfo) hash_search(tempTableHashTab, &rnode,
+										  HASH_FIND, &ttiIsFound);
+		if (!ttiIsFound)
+		{
+			elog(DEBUG1, "No cache entry for this temp relation");
+// 			/* It's essential to fill the entry here */
+// 			tti->main_nblocks = 0;
+			return 0;
+		}
+		else
+			return tti->main_nblocks;
+	}
 	return smgrnblocks(relation->rd_smgr, forkNum);
 }
 
