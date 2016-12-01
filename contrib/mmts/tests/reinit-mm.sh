@@ -18,7 +18,8 @@ for ((i=1;i<=n_nodes;i++))
 do    
     port=$((5431 + i))
 	raft_port=$((6665 + i))
-    conn_str="$conn_str${sep}dbname=regression user=stas host=localhost port=$port sslmode=disable"
+    arbiter_port=$((7000 + i))
+    conn_str="$conn_str${sep}dbname=regression user=stas host=127.0.0.1 port=$port arbiterport=$arbiter_port sslmode=disable"
 	raft_conn_str="$raft_conn_str${sep}${i}:localhost:$raft_port"
     sep=","
     initdb node$i
@@ -33,6 +34,7 @@ echo Start nodes
 for ((i=1;i<=n_nodes;i++))
 do
     port=$((5431+i))
+    arbiter_port=$((7000 + i))
 
     cat <<SQL > node$i/postgresql.conf
         listen_addresses='*'
@@ -54,10 +56,12 @@ do
         multimaster.heartbeat_recv_timeout = 1000
         multimaster.heartbeat_send_timeout = 250
         multimaster.twopc_min_timeout = 400000
+        multimaster.min_2pc_timeout = 400000
         multimaster.volkswagen_mode = 1
         multimaster.conn_strings = '$conn_str'
         multimaster.node_id = $i
         multimaster.max_nodes = 3
+        multimaster.arbiter_port = $arbiter_port
         raftable.id = $i
         raftable.peers = '$raft_conn_str'
 SQL
