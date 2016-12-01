@@ -3182,6 +3182,7 @@ bool MtmFilterTransaction(char* record, int size)
 	int         replication_node;
 	int         origin_node;
 	char const* gid = "";
+	char 		msgtype;
 	bool        duplicate = false;
 
     s.data = record;
@@ -3189,7 +3190,8 @@ bool MtmFilterTransaction(char* record, int size)
     s.maxlen = -1;
 	s.cursor = 0;
 
-	Assert(pq_getmsgbyte(&s) == 'C');
+	msgtype = pq_getmsgbyte(&s);
+	Assert(msgtype == 'C');
 	flags = pq_getmsgbyte(&s); /* flags */
 	replication_node = pq_getmsgbyte(&s);
 
@@ -3224,7 +3226,7 @@ bool MtmFilterTransaction(char* record, int size)
     } else {
 		duplicate = true;
 	}
-		
+
 	if (duplicate) {
 		MTM_LOG1("Ignore transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
 				 gid, replication_node, end_lsn, flags, origin_node, origin_lsn, restart_lsn);
