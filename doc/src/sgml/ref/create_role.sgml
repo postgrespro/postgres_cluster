@@ -34,6 +34,7 @@ CREATE ROLE <replaceable class="PARAMETER">name</replaceable> [ [ WITH ] <replac
     | BYPASSRLS | NOBYPASSRLS
     | CONNECTION LIMIT <replaceable class="PARAMETER">connlimit</replaceable>
     | [ ENCRYPTED | UNENCRYPTED ] PASSWORD '<replaceable class="PARAMETER">password</replaceable>'
+    | PASSWORD ( '<replaceable class="PARAMETER">password</replaceable>' USING '<replaceable class="PARAMETER">method</replaceable>' )
     | VALID UNTIL '<replaceable class="PARAMETER">timestamp</replaceable>'
     | IN ROLE <replaceable class="PARAMETER">role_name</replaceable> [, ...]
     | IN GROUP <replaceable class="PARAMETER">role_name</replaceable> [, ...]
@@ -245,6 +246,23 @@ CREATE ROLE <replaceable class="PARAMETER">name</replaceable> [ [ WITH ] <replac
      </varlistentry>
 
      <varlistentry>
+      <term><literal>PASSWORD</> ( '<replaceable class="parameter">password</replaceable>' USING '<replaceable class="parameter">method</replaceable>' )</term>
+      <listitem>
+       <para>
+        Sets the role's password using the requested method.  (A password
+        is only of use for roles having the <literal>LOGIN</literal>
+        attribute, but you can nonetheless define one for roles without it.)
+        If you do not plan to use password authentication you can omit this
+        option. The methods supported are <literal>md5</> to enforce
+        a password to be MD5-encrypted, and <literal>plain</> to use an
+        unencrypted password.  If the password string is already in
+        MD5-encrypted format, then it is stored encrypted even if
+        <literal>plain</> is specified.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><literal>VALID UNTIL</literal> '<replaceable class="parameter">timestamp</replaceable>'</term>
       <listitem>
        <para>
@@ -423,6 +441,14 @@ CREATE USER davide WITH PASSWORD 'jw8s0F4';
 </programlisting>
    (<command>CREATE USER</> is the same as <command>CREATE ROLE</> except
    that it implies <literal>LOGIN</>.)
+  </para>
+
+  <para>
+   Create a role with a MD5-encrypted password:
+
+<programlisting>
+CREATE USER lionel WITH PASSWORD ('asdh7as' USING 'md5');
+</programlisting>
   </para>
 
   <para>
