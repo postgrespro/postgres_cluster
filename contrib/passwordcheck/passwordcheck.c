@@ -21,9 +21,8 @@
 #endif
 
 #include "commands/user.h"
-#include "libpq/md5.h"
-#include "libpq/scram.h"
 #include "fmgr.h"
+#include "libpq/md5.h"
 
 PG_MODULE_MAGIC;
 
@@ -58,7 +57,7 @@ check_password(const char *username,
 {
 	int			namelen = strlen(username);
 	int			pwdlen = strlen(password);
-	char	   *encrypted;
+	char		encrypted[MD5_PASSWD_LEN + 1];
 	int			i;
 	bool		pwd_has_letter,
 				pwd_has_nonletter;
@@ -66,7 +65,6 @@ check_password(const char *username,
 	switch (password_type)
 	{
 		case PASSWORD_TYPE_MD5:
-		case PASSWORD_TYPE_SCRAM:
 
 			/*
 			 * Unfortunately we cannot perform exhaustive checks on encrypted
@@ -76,23 +74,12 @@ check_password(const char *username,
 			 *
 			 * We only check for username = password.
 			 */
-			if (password_type == PASSWORD_TYPE_MD5)
-			{
-				encrypted = palloc(MD5_PASSWD_LEN + 1);
-				if (pg_md5_encrypt(username, username, namelen, encrypted))
-					elog(ERROR, "password encryption failed");
-			}
-			else if (password_type == PASSWORD_TYPE_SCRAM)
-			{
-				encrypted = scram_build_verifier(username, password, 0);
-			}
-			else
-				Assert(0); /* should not happen */
+			if (!pg_md5_encrypt(username, username, namelen, encrypted))
+				elog(ERROR, "password encryption failed");
 			if (strcmp(password, encrypted) == 0)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("password must not contain user name")));
-			pfree(encrypted);
 			break;
 
 		case PASSWORD_TYPE_PLAINTEXT:

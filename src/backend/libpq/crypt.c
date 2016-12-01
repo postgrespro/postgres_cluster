@@ -1,8 +1,8 @@
 /*-------------------------------------------------------------------------
  *
  * crypt.c
- *	  Set of routines to look into the password file and check the
- *	  encrypted password with the one passed in from the frontend.
+ *	  Look into the password file and check the encrypted password with
+ *	  the one passed in from the frontend.
  *
  * Original coding by Todd A. Brandys
  *
@@ -30,66 +30,6 @@
 
 
 /*
- * Fetch information of a given role necessary to check password data,
- * and returns status code describing the error. In the case of an error,
- * store a palloc'd string at *logdetail that will be sent to the postmaster
- * log (but not the client!).
- */
-int
-get_role_details(const char *role,
-				 char **password,
-				 TimestampTz *vuntil,
-				 bool *vuntil_null,
-				 char **logdetail)
-{
-	HeapTuple	roleTup;
-	Datum		datum;
-	bool		isnull;
-
-	*vuntil = 0;
-	*vuntil_null = true;
-
-	/* Get role info from pg_authid */
-	roleTup = SearchSysCache1(AUTHNAME, PointerGetDatum(role));
-	if (!HeapTupleIsValid(roleTup))
-	{
-		*logdetail = psprintf(_("Role \"%s\" does not exist."), role);
-		return PG_ROLE_NOT_DEFINED;	/* no such user */
-	}
-
-	datum = SysCacheGetAttr(AUTHNAME, roleTup,
-							Anum_pg_authid_rolpassword, &isnull);
-	if (isnull)
-	{
-		ReleaseSysCache(roleTup);
-		*logdetail = psprintf(_("User \"%s\" has no password assigned."),
-							  role);
-		return PG_ROLE_NO_PASSWORD;	/* user has no password */
-	}
-	*password = TextDatumGetCString(datum);
-
-	datum = SysCacheGetAttr(AUTHNAME, roleTup,
-							Anum_pg_authid_rolvaliduntil, &isnull);
-	if (!isnull)
-	{
-		*vuntil = DatumGetTimestampTz(datum);
-		*vuntil_null = false;
-	}
-
-	ReleaseSysCache(roleTup);
-
-	if (**password == '\0')
-	{
-		*logdetail = psprintf(_("User \"%s\" has an empty password."),
-							  role);
-		pfree(*password);
-		return PG_ROLE_EMPTY_PASSWORD;	/* empty password */
-	}
-
-	return PG_ROLE_OK;
-}
-
-/*
  * Check given password for given user, and return STATUS_OK or STATUS_ERROR.
  * In the error case, optionally store a palloc'd string at *logdetail
  * that will be sent to the postmaster log (but not the client).
@@ -101,14 +41,45 @@ md5_crypt_verify(const Port *port, const char *role, char *client_pass,
 	int			retval = STATUS_ERROR;
 	char	   *shadow_pass,
 			   *crypt_pwd;
-	TimestampTz vuntil;
+	TimestampTz vuntil = 0;
 	char	   *crypt_client_pass = client_pass;
-	bool		vuntil_null;
+	HeapTuple	roleTup;
+	Datum		datum;
+	bool		isnull;
 
-	/* fetch details about role needed for password checks */
-	if (get_role_details(role, &shadow_pass, &vuntil, &vuntil_null,
-						 logdetail) != PG_ROLE_OK)
-		return STATUS_ERROR;
+	/* Get role info from pg_authid */
+	roleTup = SearchSysCache1(AUTHNAME, PointerGetDatum(role));
+	if (!HeapTupleIsValid(roleTup))
+	{
+		*logdetail = psprintf(_("Role \"%s\" does not exist."),
+							  role);
+		return STATUS_ERROR;	/* no such user */
+	}
+
+	datum = SysCacheGetAttr(AUTHNAME, roleTup,
+							Anum_pg_authid_rolpassword, &isnull);
+	if (isnull)
+	{
+		ReleaseSysCache(roleTup);
+		*logdetail = psprintf(_("User \"%s\" has no password assigned."),
+							  role);
+		return STATUS_ERROR;	/* user has no password */
+	}
+	shadow_pass = TextDatumGetCString(datum);
+
+	datum = SysCacheGetAttr(AUTHNAME, roleTup,
+							Anum_pg_authid_rolvaliduntil, &isnull);
+	if (!isnull)
+		vuntil = DatumGetTimestampTz(datum);
+
+	ReleaseSysCache(roleTup);
+
+	if (*shadow_pass == '\0')
+	{
+		*logdetail = psprintf(_("User \"%s\" has an empty password."),
+							  role);
+		return STATUS_ERROR;	/* empty password */
+	}
 
 	/*
 	 * Compare with the encrypted or plain password depending on the
@@ -181,7 +152,7 @@ md5_crypt_verify(const Port *port, const char *role, char *client_pass,
 		/*
 		 * Password OK, now check to be sure we are not past rolvaliduntil
 		 */
-		if (vuntil_null)
+		if (isnull)
 			retval = STATUS_OK;
 		else if (vuntil < GetCurrentTimestamp())
 		{

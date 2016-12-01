@@ -1179,10 +1179,8 @@ include_dir 'conf.d'
         password is to be encrypted. The default value is <literal>md5</>, which
         stores the password as an MD5 hash. Setting this to <literal>plain</> stores
         it in plaintext. <literal>on</> and <literal>off</> are also accepted, as
-        aliases for <literal>md5</> and <literal>plain</>, respectively.  Setting
-        this parameter to <literal>scram</> will encrypt the password with
-        SCRAM-SHA-256.
-       </para>       
+        aliases for <literal>md5</> and <literal>plain</>, respectively.
+       </para>
        
       </listitem>
      </varlistentry>
@@ -1256,7 +1254,7 @@ include_dir 'conf.d'
         Authentication checks are always done with the server's user name
         so authentication methods must be configured for the
         server's user name, not the client's.  Because
-        <literal>md5</>uses the user name as salt on both the
+        <literal>md5</> uses the user name as salt on both the
         client and server, and <literal>scram</> uses the user name as
         a portion of the salt used on both the client and server,
         <literal>md5</> and <literal>scram</> cannot be used with
