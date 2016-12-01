@@ -1,11 +1,9 @@
-CREATE EXTENSION rum;
-
 CREATE TABLE test_rum( t text, a tsvector );
 
 CREATE TRIGGER tsvectorupdate
 BEFORE UPDATE OR INSERT ON test_rum
 FOR EACH ROW EXECUTE PROCEDURE tsvector_update_trigger('a', 'pg_catalog.english', 't');
-CREATE INDEX rumidx ON test_rum USING rum (a rum_tsvector_ops);
+CREATE INDEX rumidx ON test_rum USING rum (a rum_tsvector_hash_ops);
 
 \copy test_rum(t) from 'data/rum.data';
 
@@ -78,7 +76,7 @@ SELECT a <=> to_tsquery('pg_catalog.english', 'ever|wrote') FROM test_rum ORDER 
 
 CREATE TABLE tst (i int4, t tsvector);
 INSERT INTO tst SELECT i%10, to_tsvector('simple', substr(md5(i::text), 1, 1)) FROM generate_series(1,100000) i;
-CREATE INDEX tstidx ON tst USING rum (t rum_tsvector_ops);
+CREATE INDEX tstidx ON tst USING rum (t rum_tsvector_hash_ops);
 
 DELETE FROM tst WHERE i = 1;
 VACUUM tst;
@@ -110,10 +108,6 @@ SELECT a <=> to_tsquery('pg_catalog.english', 'w:*'), *
 	FROM test_rum
 	WHERE a @@ to_tsquery('pg_catalog.english', 'w:*')
 	ORDER BY a <=> to_tsquery('pg_catalog.english', 'w:*');
-SELECT a <=> to_tsquery('pg_catalog.english', 'b:*'), *
-	FROM test_rum
-	WHERE a @@ to_tsquery('pg_catalog.english', 'b:*')
-	ORDER BY a <=> to_tsquery('pg_catalog.english', 'b:*');
 
 DROP TABLE test_rum CASCADE;
 DROP TABLE tst CASCADE;

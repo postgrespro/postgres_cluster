@@ -11,6 +11,7 @@
 
 #include "postgres.h"
 
+#include "access/hash.h"
 #include "access/htup_details.h"
 #include "catalog/pg_type.h"
 #include "funcapi.h"
@@ -26,7 +27,9 @@
 #include <math.h>
 
 PG_FUNCTION_INFO_V1(rum_extract_tsvector);
+PG_FUNCTION_INFO_V1(rum_extract_tsvector_hash);
 PG_FUNCTION_INFO_V1(rum_extract_tsquery);
+PG_FUNCTION_INFO_V1(rum_extract_tsquery_hash);
 PG_FUNCTION_INFO_V1(rum_tsvector_config);
 PG_FUNCTION_INFO_V1(rum_tsquery_pre_consistent);
 PG_FUNCTION_INFO_V1(rum_tsquery_consistent);
@@ -41,6 +44,23 @@ PG_FUNCTION_INFO_V1(tsquery_to_distance_query);
 
 static int	count_pos(char *ptr, int len);
 static char *decompress_pos(char *ptr, WordEntryPos *pos);
+static Datum build_tsvector_entry(TSVector vector, WordEntry *we);
+static Datum build_tsvector_hash_entry(TSVector vector, WordEntry *we);
+static Datum build_tsquery_entry(TSQuery query, QueryOperand *operand);
+static Datum build_tsquery_hash_entry(TSQuery query, QueryOperand *operand);
+
+typedef Datum (*TSVectorEntryBuilder)(TSVector vector, WordEntry *we);
+typedef Datum (*TSQueryEntryBuilder)(TSQuery query, QueryOperand *operand);
+
+static Datum *rum_extract_tsvector_internal(TSVector vector, int32 *nentries,
+							  				Datum **addInfo,
+											bool **addInfoIsNull,
+							  				TSVectorEntryBuilder build_tsvector_entry);
+static Datum *rum_extract_tsquery_internal(TSQuery query, int32 *nentries,
+							 			   bool **ptr_partialmatch,
+										   Pointer **extra_data,
+										   int32 *searchMode,
+										   TSQueryEntryBuilder build_tsquery_entry);
 
 typedef struct
 {
@@ -480,13 +500,21 @@ SortAndUniqItems(TSQuery q, int *size)
 	return res;
 }
 
-Datum
-rum_extract_tsvector(PG_FUNCTION_ARGS)
+/*
+ * Extracting tsvector lexems.
+ */
+
+/*
+ * Extracts tsvector lexemes from **vector**. Uses **build_tsvector_entry**
+ * callback to extract entry.
+ */
+static Datum *
+rum_extract_tsvector_internal(TSVector	vector,
+							  int32	   *nentries,
+							  Datum   **addInfo,
+							  bool	  **addInfoIsNull,
+							  TSVectorEntryBuilder build_tsvector_entry)
 {
-	TSVector	vector = PG_GETARG_TSVECTOR(0);
-	int32	   *nentries = (int32 *) PG_GETARG_POINTER(1);
-	Datum	  **addInfo = (Datum **) PG_GETARG_POINTER(3);
-	bool	  **addInfoIsNull = (bool **) PG_GETARG_POINTER(4);
 	Datum	   *entries = NULL;
 
 	*nentries = vector->size;
@@ -502,12 +530,11 @@ rum_extract_tsvector(PG_FUNCTION_ARGS)
 
 		for (i = 0; i < vector->size; i++)
 		{
-			text	   *txt;
 			bytea	   *posData;
 			int			posDataSize;
 
-			txt = cstring_to_text_with_len(STRPTR(vector) + we->pos, we->len);
-			entries[i] = PointerGetDatum(txt);
+			/* Extract entry using specified method */
+			entries[i] = build_tsvector_entry(vector, we);
 
 			if (we->haspos)
 			{
@@ -529,22 +556,91 @@ rum_extract_tsvector(PG_FUNCTION_ARGS)
 		}
 	}
 
+	return entries;
+}
+
+/*
+ * Used as callback for rum_extract_tsvector_internal().
+ * Just extract entry from tsvector.
+ */
+static Datum
+build_tsvector_entry(TSVector vector, WordEntry *we)
+{
+	text   *txt;
+
+	txt = cstring_to_text_with_len(STRPTR(vector) + we->pos, we->len);
+	return PointerGetDatum(txt);
+}
+
+/*
+ * Used as callback for rum_extract_tsvector_internal.
+ * Returns hashed entry from tsvector.
+ */
+static Datum
+build_tsvector_hash_entry(TSVector vector, WordEntry *we)
+{
+	int32	hash_value;
+
+	hash_value = hash_any((const unsigned char *) (STRPTR(vector) + we->pos),
+						  we->len);
+	return Int32GetDatum(hash_value);
+}
+
+/*
+ * Extracts lexemes from tsvector with additional information.
+ */
+Datum
+rum_extract_tsvector(PG_FUNCTION_ARGS)
+{
+	TSVector	vector = PG_GETARG_TSVECTOR(0);
+	int32	   *nentries = (int32 *) PG_GETARG_POINTER(1);
+	Datum	  **addInfo = (Datum **) PG_GETARG_POINTER(3);
+	bool	  **addInfoIsNull = (bool **) PG_GETARG_POINTER(4);
+	Datum	   *entries = NULL;
+
+	entries = rum_extract_tsvector_internal(vector, nentries, addInfo,
+											addInfoIsNull,
+											build_tsvector_entry);
 	PG_FREE_IF_COPY(vector, 0);
 	PG_RETURN_POINTER(entries);
 }
 
+/*
+ * Extracts hashed lexemes from tsvector with additional information.
+ */
 Datum
-rum_extract_tsquery(PG_FUNCTION_ARGS)
+rum_extract_tsvector_hash(PG_FUNCTION_ARGS)
 {
-	TSQuery		query = PG_GETARG_TSQUERY(0);
+	TSVector	vector = PG_GETARG_TSVECTOR(0);
 	int32	   *nentries = (int32 *) PG_GETARG_POINTER(1);
+	Datum	  **addInfo = (Datum **) PG_GETARG_POINTER(3);
+	bool	  **addInfoIsNull = (bool **) PG_GETARG_POINTER(4);
+	Datum	   *entries = NULL;
 
-	/* StrategyNumber strategy = PG_GETARG_UINT16(2); */
-	bool	  **ptr_partialmatch = (bool **) PG_GETARG_POINTER(3);
-	Pointer   **extra_data = (Pointer **) PG_GETARG_POINTER(4);
+	entries = rum_extract_tsvector_internal(vector, nentries, addInfo,
+											addInfoIsNull,
+											build_tsvector_hash_entry);
 
-	/* bool   **nullFlags = (bool **) PG_GETARG_POINTER(5); */
-	int32	   *searchMode = (int32 *) PG_GETARG_POINTER(6);
+	PG_FREE_IF_COPY(vector, 0);
+	PG_RETURN_POINTER(entries);
+}
+
+/*
+ * Extracting tsquery lexemes.
+ */
+
+/*
+ * Extracts tsquery lexemes from **query**. Uses **build_tsquery_entry**
+ * callback to extract lexeme.
+ */
+static Datum *
+rum_extract_tsquery_internal(TSQuery query,
+							 int32 *nentries,
+							 bool **ptr_partialmatch,
+							 Pointer **extra_data,
+							 int32 *searchMode,
+							 TSQueryEntryBuilder build_tsquery_entry)
+{
 	Datum	   *entries = NULL;
 
 	*nentries = 0;
@@ -585,11 +681,7 @@ rum_extract_tsquery(PG_FUNCTION_ARGS)
 
 		for (i = 0; i < (*nentries); i++)
 		{
-			text	   *txt;
-
-			txt = cstring_to_text_with_len(GETOPERAND(query) + operands[i]->distance,
-										   operands[i]->length);
-			entries[i] = PointerGetDatum(txt);
+			entries[i] = build_tsquery_entry(query, operands[i]);
 			partialmatch[i] = operands[i]->prefix;
 			(*extra_data)[i] = (Pointer) map_item_operand;
 		}
@@ -620,10 +712,92 @@ rum_extract_tsquery(PG_FUNCTION_ARGS)
 		}
 	}
 
+	return entries;
+}
+
+/*
+ * Extract lexeme from tsquery.
+ */
+static Datum
+build_tsquery_entry(TSQuery query, QueryOperand *operand)
+{
+	text   *txt;
+
+	txt = cstring_to_text_with_len(GETOPERAND(query) + operand->distance,
+								   operand->length);
+	return PointerGetDatum(txt);
+}
+
+/*
+ * Extract hashed lexeme from tsquery.
+ */
+static Datum
+build_tsquery_hash_entry(TSQuery query, QueryOperand *operand)
+{
+	int32	hash_value;
+
+	hash_value = hash_any(
+			(const unsigned char *) (GETOPERAND(query) + operand->distance),
+			operand->length);
+	return hash_value;
+}
+
+/*
+ * Extracts lexemes from tsquery with information about prefix search syntax.
+ */
+Datum
+rum_extract_tsquery(PG_FUNCTION_ARGS)
+{
+	TSQuery		query = PG_GETARG_TSQUERY(0);
+	int32	   *nentries = (int32 *) PG_GETARG_POINTER(1);
+
+	/* StrategyNumber strategy = PG_GETARG_UINT16(2); */
+	bool	  **ptr_partialmatch = (bool **) PG_GETARG_POINTER(3);
+	Pointer   **extra_data = (Pointer **) PG_GETARG_POINTER(4);
+
+	/* bool   **nullFlags = (bool **) PG_GETARG_POINTER(5); */
+	int32	   *searchMode = (int32 *) PG_GETARG_POINTER(6);
+	Datum	   *entries = NULL;
+
+	entries = rum_extract_tsquery_internal(query, nentries, ptr_partialmatch,
+										   extra_data, searchMode,
+										   build_tsquery_entry);
+
 	PG_FREE_IF_COPY(query, 0);
 
 	PG_RETURN_POINTER(entries);
 }
+
+/*
+ * Extracts hashed lexemes from tsquery with information about prefix search
+ * syntax.
+ */
+Datum
+rum_extract_tsquery_hash(PG_FUNCTION_ARGS)
+{
+	TSQuery		query = PG_GETARG_TSQUERY(0);
+	int32	   *nentries = (int32 *) PG_GETARG_POINTER(1);
+
+	/* StrategyNumber strategy = PG_GETARG_UINT16(2); */
+	bool	  **ptr_partialmatch = (bool **) PG_GETARG_POINTER(3);
+	Pointer   **extra_data = (Pointer **) PG_GETARG_POINTER(4);
+
+	/* bool   **nullFlags = (bool **) PG_GETARG_POINTER(5); */
+	int32	   *searchMode = (int32 *) PG_GETARG_POINTER(6);
+	Datum	   *entries = NULL;
+
+	entries = rum_extract_tsquery_internal(query, nentries, ptr_partialmatch,
+										   extra_data, searchMode,
+										   build_tsquery_hash_entry);
+
+	PG_FREE_IF_COPY(query, 0);
+
+	PG_RETURN_POINTER(entries);
+}
+
+/*
+ * Functions used for ranking.
+ */
 
 static int
 compareDocR(const void *va, const void *vb)
@@ -1176,6 +1350,10 @@ calc_score(float4 *arrdata, TSVector txt, TSQuery query, int method)
 	return (float4) Wdoc;
 }
 
+/*
+ * Calculates distance inside index. Uses additional information with lexemes
+ * positions.
+ */
 Datum
 rum_tsquery_distance(PG_FUNCTION_ARGS)
 {
@@ -1199,6 +1377,9 @@ rum_tsquery_distance(PG_FUNCTION_ARGS)
 		PG_RETURN_FLOAT8(1.0 / res);
 }
 
+/*
+ * Implementation of <=> operator. Uses default normalization method.
+ */
 Datum
 rum_ts_distance_tt(PG_FUNCTION_ARGS)
 {
@@ -1216,6 +1397,9 @@ rum_ts_distance_tt(PG_FUNCTION_ARGS)
 		PG_RETURN_FLOAT4(1.0 / res);
 }
 
+/*
+ * Implementation of <=> operator. Uses specified normalization method.
+ */
 Datum
 rum_ts_distance_ttf(PG_FUNCTION_ARGS)
 {
@@ -1234,6 +1418,9 @@ rum_ts_distance_ttf(PG_FUNCTION_ARGS)
 		PG_RETURN_FLOAT4(1.0 / res);
 }
 
+/*
+ * Implementation of <=> operator. Uses specified normalization method.
+ */
 Datum
 rum_ts_distance_td(PG_FUNCTION_ARGS)
 {
@@ -1280,6 +1467,9 @@ rum_ts_distance_td(PG_FUNCTION_ARGS)
 		PG_RETURN_FLOAT4(1.0 / res);
 }
 
+/*
+ * Casts tsquery to rum_distance_query type.
+ */
 Datum
 tsquery_to_distance_query(PG_FUNCTION_ARGS)
 {
@@ -1305,6 +1495,9 @@ tsquery_to_distance_query(PG_FUNCTION_ARGS)
 	PG_RETURN_DATUM(HeapTupleGetDatum(htup));
 }
 
+/*
+ * Specifies additional information type for operator class.
+ */
 Datum
 rum_tsvector_config(PG_FUNCTION_ARGS)
 {
