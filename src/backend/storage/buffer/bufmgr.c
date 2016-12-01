@@ -790,7 +790,7 @@ ReadBufferWithoutRelcache2(SMgrRelation smgr, ForkNumber forkNum,
 {
 	bool		hit;
 
-	return ReadBuffer_common(smgr, RELPERSISTENCE_PERMANENT, forkNum, blockNum,
+	return ReadBuffer_common(smgr, RELPERSISTENCE_PERMANENT, RELKIND_UNKNOWN, forkNum, blockNum,
 							 mode, strategy, &hit);
 }
 
