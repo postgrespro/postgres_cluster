@@ -30,6 +30,7 @@ OBJS = \
 	plpy_resultobject.o \
 	plpy_spi.o \
 	plpy_subxactobject.o \
+	plpy_atxobject.o \
 	plpy_typeio.o \
 	plpy_util.o \
 	$(WIN32RES)

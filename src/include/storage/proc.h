@@ -205,6 +205,9 @@ typedef struct PGXACT
 								 * previously called InCommit */
 
 	uint8		nxids;
+
+	bool		used;
+	struct PGXACT *parent;		/* supertransaction, if the current one is autonomous */
 } PGXACT;
 
 /*
@@ -216,6 +219,8 @@ typedef struct PROC_HDR
 	PGPROC	   *allProcs;
 	/* Array of PGXACT structures (not including dummies for prepared txns) */
 	PGXACT	   *allPgXact;
+	/* Array of PGXACT structures for ATX */
+	PGXACT	   *allATX;
 	/* Length of allProcs array */
 	uint32		allProcCount;
 	/* Head of list of free PGPROC structures */

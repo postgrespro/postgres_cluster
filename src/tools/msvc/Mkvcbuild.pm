@@ -37,7 +37,9 @@ my @contrib_uselibpgcommon = ('oid2name', 'pg_standby', 'vacuumlo');
 my $contrib_extralibs      = undef;
 my $contrib_extraincludes =
   { 'tsearch2' => ['contrib/tsearch2'], 'dblink' => ['src/backend'],
-  	'jsquery' => ['contrib/jsquery' ] };
+	'jsquery' => ['contrib/jsquery' ],
+	'pg_hint_plan' => ['src/pl/plpgsql/src']
+ };
 my $contrib_extrasource = {
 	'cube' => [ 'contrib/cube/cubescan.l', 'contrib/cube/cubeparse.y' ],
 	'seg'  => [ 'contrib/seg/segscan.l',   'contrib/seg/segparse.y' ],
@@ -48,7 +50,7 @@ my @contrib_excludes = (
 	'ltree_plpython',  'pgcrypto',
 	'sepgsql',         'brin',
 	'test_extensions', 'test_pg_dump',
-	'pg_arman', 
+	'pg_probackup',
 	'snapshot_too_old');
 
 # Set of variables for frontend modules
@@ -66,6 +68,7 @@ my $frontend_extralibs = {
 	'initdb'     => ['ws2_32.lib'],
 	'pg_restore' => ['ws2_32.lib'],
 	'pgbench'    => ['ws2_32.lib'],
+	'mchar'		 => ['icuin.lib', 'icuuc.lib'],
 	'psql'       => ['ws2_32.lib'] };
 my $frontend_extraincludes = {
 	'initdb' => ['src/timezone'],
@@ -435,6 +438,10 @@ sub mkvcbuild
 		push @contrib_excludes, 'uuid-ossp';
 	}
 
+	if (!$solution->{options}->{icu})
+	{
+		push @contrib_excludes, 'mchar';
+	}
 	# AddProject() does not recognize the constructs used to populate OBJS in
 	# the pgcrypto Makefile, so it will discover no files.
 	my $pgcrypto =

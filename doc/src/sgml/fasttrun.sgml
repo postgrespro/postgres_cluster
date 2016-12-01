@@ -1,0 +1,49 @@
+<sect1 id="fasttrun">
+  <title>fasttrun</title>
+  <para>
+    The <literal>fasttrun</literal> module provides transaction unsafe
+    function to truncate temporary tables without growing pg_class size.
+  </para>
+  <para>
+  This module is required for 1C Enterprise support.
+  </para>
+  <para>
+  Fast truncate operation is not transactional, so its results cannot be
+  rolled back and become immediately visible in all sessions regardless
+  of isolation level.
+  </para>
+  <sect2 id="fasttrun-function">
+    <title>Function</title>
+    <para>
+      There is a function call example:
+      <programlisting>
+        select fasttruncate('TABLE_NAME');
+      </programlisting>
+    </para>
+  </sect2>
+
+  <sect2 id="fasttrun-test">
+    <title>Test example</title>
+    <para>
+      For tests you can use this example:
+      <programlisting>
+create or replace function f() returns void as $$
+begin
+  for i in 1..1000
+    loop
+      PERFORM fasttruncate('tt1');
+    end loop;
+  end;
+$$ language plpgsql;
+      </programlisting>
+    </para>
+  </sect2>
+
+  <sect2 id="fasttrun-authors">
+    <title>Authors</title>
+    <literallayout>
+      Teodor Sigaev <email>teodor@sigaev.ru</email>
+    </literallayout>
+  </sect2>
+
+</sect1>

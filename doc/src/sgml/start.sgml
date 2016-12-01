@@ -360,7 +360,7 @@ mydb=#
     commands:
     <indexterm><primary>version</primary></indexterm>
 <screen>
-<prompt>mydb=&gt;</prompt> <userinput>SELECT version();</userinput>
+<prompt>mydb=&gt;</prompt> <userinput>SELECT pgpro_version();</userinput>
                                          version
 ------------------------------------------------------------------------------------------
  &productname; &version; on x86_64-pc-linux-gnu, compiled by gcc (Debian 4.9.2-10) 4.9.2, 64-bit

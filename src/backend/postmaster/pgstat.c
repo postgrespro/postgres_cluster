@@ -2406,7 +2406,7 @@ pgstat_fetch_stat_beentry(int beid)
 /* ----------
  * pgstat_fetch_stat_local_beentry() -
  *
- *	Like pgstat_fetch_stat_beentry() but with locally computed addtions (like
+ *	Like pgstat_fetch_stat_beentry() but with locally computed additions (like
  *	xid and xmin values of the backend)
  *
  *	NB: caller is responsible for a check if the user is permitted to see
@@ -5535,4 +5535,41 @@ pgstat_db_requested(Oid databaseid)
 		return true;
 
 	return false;
+}
+
+typedef struct {
+	PgStat_SubXactStatus *pgStatXactStack;
+	int pgStatXactCommit;
+	int pgStatXactRollback;
+	PgStat_Counter pgStatBlockReadTime;
+	PgStat_Counter pgStatBlockWriteTime;
+} SuspendedPgStat;
+
+#define MOVELEFT(A, B, C) do { (A) = (B); (B) = (C); } while (0)
+void *
+PgStatSuspend(void)
+{
+	SuspendedPgStat *sus = malloc(sizeof(SuspendedPgStat));
+
+	MOVELEFT(sus->pgStatXactStack, pgStatXactStack, NULL);
+	MOVELEFT(sus->pgStatXactCommit, pgStatXactCommit, 0);
+	MOVELEFT(sus->pgStatXactRollback, pgStatXactRollback, 0);
+	MOVELEFT(sus->pgStatBlockReadTime, pgStatBlockReadTime, 0);
+	MOVELEFT(sus->pgStatBlockWriteTime, pgStatBlockWriteTime, 0);
+
+	return sus;
+}
+
+void
+PgStatResume(void *src)
+{
+	SuspendedPgStat *sus = (SuspendedPgStat *)src;
+
+	pgStatXactStack = sus->pgStatXactStack;
+	pgStatXactCommit = sus->pgStatXactCommit;
+	pgStatXactRollback = sus->pgStatXactRollback;
+	pgStatBlockReadTime = sus->pgStatBlockReadTime;
+	pgStatBlockWriteTime = sus->pgStatBlockWriteTime;
+
+	free(src);
 }

@@ -200,6 +200,7 @@
    &update;
    &vacuum;
    &values;
+   &waitlsn;
 
  </reference>
 

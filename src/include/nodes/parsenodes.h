@@ -2666,6 +2666,7 @@ typedef struct TransactionStmt
 {
 	NodeTag		type;
 	TransactionStmtKind kind;	/* see above */
+	bool		autonomous;		/* for BEGIN/START */
 	List	   *options;		/* for BEGIN/START and savepoint commands */
 	char	   *gid;			/* for two-phase-commit related commands */
 } TransactionStmt;
@@ -3104,5 +3105,16 @@ typedef struct AlterTSConfigurationStmt
 	bool		replace;		/* if true - replace dictionary by another */
 	bool		missing_ok;		/* for DROP - skip error if missing? */
 } AlterTSConfigurationStmt;
+
+/* ----------------------
+ *		WaitLSN Statement
+ * ----------------------
+ */
+typedef struct WaitLSNStmt
+{
+	NodeTag		type;
+	char	   *lsn;			/* Taraget LSN to wait for */
+	int		   *delay;			/* Delay to wait for LSN*/
+} WaitLSNStmt;
 
 #endif   /* PARSENODES_H */

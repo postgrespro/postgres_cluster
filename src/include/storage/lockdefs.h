@@ -46,6 +46,9 @@ typedef int LOCKMODE;
 #define AccessExclusiveLock		8		/* ALTER TABLE, DROP TABLE, VACUUM
 										 * FULL, and unqualified LOCK TABLE */
 
+#define ApplicationShareLock       9    /* requested explicitly */
+#define ApplicationExclusiveLock   10   /* requested explicitly */
+
 typedef struct xl_standby_lock
 {
 	TransactionId xid;			/* xid of holder of AccessExclusiveLock */

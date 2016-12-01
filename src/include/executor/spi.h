@@ -147,4 +147,7 @@ extern void SPI_cursor_close(Portal portal);
 extern void AtEOXact_SPI(bool isCommit);
 extern void AtEOSubXact_SPI(bool isCommit, SubTransactionId mySubid);
 
+extern void *SuspendSPI(void);
+extern void ResumeSPI(void *state);
+
 #endif   /* SPI_H */

@@ -167,7 +167,7 @@ sub GenerateFiles
 			s{PG_VERSION "[^"]+"}{PG_VERSION "$self->{strver}$extraver"};
 			s{PG_VERSION_NUM \d+}{PG_VERSION_NUM $self->{numver}};
 			s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY(z)\n#define PG_VERSION_STR "PostgreSQL $self->{strver}$extraver, compiled by Visual C++ build " __STRINGIFY2(_MSC_VER) ", $bits-bit"};
-			s{PGPRO_PACKAGE_VERSION "[^"]+"}{PGRPO_PACKAGE_VERSION "$self->{strver}.$self->{pgprover}"};
+			s{PGPRO_VERSION "[^"]+"}{PGPRO_VERSION "$self->{strver}.$self->{pgprover}"};
 			s{PGPRO_PACKAGE_STR "[^"]+"}{PGPRO_PACKAGE_STR "PostgresPro $self->{strver}.$self->{pgprover}"};
 			s{#define PGPRO_VERSION_STR "[^"]+"}{#define PGPRO_VERSION_STR PGPRO_PACKAGE_STR " compiled by Visual C++ build" __STRINGIFY2(_MSC_VER) ", $bits-bit"};
 			print O;
@@ -263,6 +263,10 @@ sub GenerateFiles
 			print O "#define HAVE_RL_FILENAME_COMPLETION_FUNCTION\n";
 			print O "#define HAVE_RL_COMPLETION_MATCHES\n";
 		}
+		if ($self->{options}->{zstd})
+		{
+			print O "#define CFS_COMPRESSION 6\n";
+		}	
 		print O "#define VAL_CONFIGURE \""
 		  . $self->GetFakeConfigure() . "\"\n";
 		print O "#endif /* IGNORE_CONFIGURED_SETTINGS */\n";
@@ -604,6 +608,13 @@ sub AddProject
 		$proj->AddLibrary($self->{options}->{libedit} . "\\" .
 			($self->{platform} eq 'x64'? 'lib64': 'lib32').'\edit.lib');
 	}
+	if ($self->{options}->{zstd})
+	{
+		$proj->AddIncludeDir($self->{options}->{zstd});
+		$proj->AddLibrary($self->{options}->{zstd}. "\\".
+			($self->{platform} eq 'x64'? "zstdlib_x64.lib" : "zstdlib_x86.lib")
+	    );
+	}
 	return $proj;
 }
 
@@ -715,7 +726,8 @@ sub GetFakeConfigure
 	$cfg .= ' --with-tcl'           if ($self->{options}->{tcl});
 	$cfg .= ' --with-perl'          if ($self->{options}->{perl});
 	$cfg .= ' --with-python'        if ($self->{options}->{python});
-	$cfg .=' --with-icu'			if ($self->{options}->{icu});
+	$cfg .= ' --with-icu'			if ($self->{options}->{icu});
+	$cfg .= ' --with-zstd'          if ($self->{options}->{zstd});
 	return $cfg;
 }
 

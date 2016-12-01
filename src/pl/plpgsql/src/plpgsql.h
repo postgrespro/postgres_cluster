@@ -386,6 +386,7 @@ typedef struct
 	List	   *body;			/* List of statements */
 	int			n_initvars;
 	int		   *initvarnos;
+	bool		autonomous;
 	PLpgSQL_exception_block *exceptions;
 } PLpgSQL_stmt_block;
 

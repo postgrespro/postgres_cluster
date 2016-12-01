@@ -39,6 +39,14 @@
 #include "utils/pg_locale.h"
 #include "utils/selfuncs.h"
 
+/*
+ * index support for LIKE mchar
+ */
+#include "fmgr.h"
+#include "access/htup_details.h"
+#include "utils/catcache.h"
+#include "utils/syscache.h"
+#include "parser/parse_type.h"
 
 #define IsBooleanOpfamily(opfamily) \
 	((opfamily) == BOOL_BTREE_FAM_OID || (opfamily) == BOOL_HASH_FAM_OID)
@@ -116,8 +124,6 @@ static List *build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 				  bool *skip_lower_saop);
 static List *build_paths_for_OR(PlannerInfo *root, RelOptInfo *rel,
 				   List *clauses, List *other_clauses);
-static List *generate_bitmap_or_paths(PlannerInfo *root, RelOptInfo *rel,
-						 List *clauses, List *other_clauses);
 static Path *choose_bitmap_and(PlannerInfo *root, RelOptInfo *rel,
 				  List *paths);
 static int	path_usage_comparator(const void *a, const void *b);
@@ -1194,7 +1200,7 @@ build_paths_for_OR(PlannerInfo *root, RelOptInfo *rel,
  * for the purpose of generating indexquals, but are not to be searched for
  * ORs.  (See build_paths_for_OR() for motivation.)
  */
-static List *
+List *
 generate_bitmap_or_paths(PlannerInfo *root, RelOptInfo *rel,
 						 List *clauses, List *other_clauses)
 {
@@ -3108,6 +3114,208 @@ match_index_to_operand(Node *operand,
 }
 
 /****************************************************************************
+ *			----  ROUTINES FOR "SPECIAL" INDEXABLE OPERATORS  FOR 
+ *                 SPECIAL USER_DEFINED TYPES ----
+ *									-- teodor
+ ****************************************************************************/
+
+static Oid mmPFPOid = InvalidOid; 
+static Oid mmGTOid = InvalidOid; 
+static Oid mcharOid = InvalidOid; 
+static Oid mvarcharOid = InvalidOid;
+
+static bool
+fillMCharOIDS() {
+	CatCList    *catlist;
+	HeapTuple   tup;
+	char        *funcname = "mchar_pattern_fixed_prefix";
+	int			n_members;
+
+	catlist = SearchSysCacheList(PROCNAMEARGSNSP, 1,
+									CStringGetDatum(funcname),
+									0, 0, 0);
+	n_members = catlist->n_members;
+
+	if ( n_members != 1 ) {
+		ReleaseSysCacheList(catlist);
+		if ( n_members > 1 ) 
+			elog(ERROR,"There are %d candidates for '%s' function'", n_members, funcname);
+		return false;
+	}
+
+	tup = &catlist->members[0]->tuple;
+
+	if ( HeapTupleGetOid(tup) != mmPFPOid ) {
+		TypeName	*typename;
+		Type		typtup;
+		char        *quals_funcname = "mchar_greaterstring";
+		Oid			tmp_mmPFPOid = HeapTupleGetOid(tup);
+
+		ReleaseSysCacheList(catlist);
+
+		typename = makeTypeName("mchar");
+		typtup = LookupTypeName(NULL, typename, NULL, true);
+		if ( typtup ) {
+			mcharOid = typeTypeId(typtup);
+			ReleaseSysCache(typtup);
+		}
+
+		typename = makeTypeName("mvarchar");
+		typtup = LookupTypeName(NULL, typename, NULL, true);
+		if ( typtup ) {
+			mvarcharOid = typeTypeId(typtup);
+			ReleaseSysCache(typtup);
+		}
+
+
+		if ( mcharOid == InvalidOid || mvarcharOid == InvalidOid ) {
+			elog(LOG,"Can't find mchar/mvarvarchar types: mchar=%d mvarchar=%d", 
+					mcharOid, mvarcharOid);
+			return false;
+		}
+
+		catlist = SearchSysCacheList(PROCNAMEARGSNSP, 1,
+										CStringGetDatum(quals_funcname),
+										0, 0, 0);
+		n_members = catlist->n_members;
+
+		if ( n_members != 1 ) {
+			ReleaseSysCacheList(catlist);
+			if ( n_members > 1 ) 
+				elog(ERROR,"There are %d candidates for '%s' function'", n_members, quals_funcname);
+			return false;
+		}
+
+		tup = &catlist->members[0]->tuple;
+		mmGTOid  = HeapTupleGetOid(tup); 
+		mmPFPOid = tmp_mmPFPOid;
+	}
+
+	ReleaseSysCacheList(catlist);
+
+	return true;
+}
+
+static Pattern_Prefix_Status
+mchar_pattern_fixed_prefix(Oid opOid, Oid opfamilyOid, Const *patt, Pattern_Type ptype,
+                     Const **prefix, Oid *leftTypeOid) {
+	HeapTuple	tup;
+    Form_pg_operator oprForm;
+	bool	isMCharLike = true;
+	 
+	if ( !fillMCharOIDS() )
+		return Pattern_Prefix_None;
+
+	tup = SearchSysCache(OPEROID, opOid, 0, 0, 0);
+	oprForm	= (Form_pg_operator) GETSTRUCT(tup);
+
+	if ( strncmp(oprForm->oprname.data, "~~", 2) != 0 ) 
+		isMCharLike	= false;
+
+	if ( oprForm->oprright != mvarcharOid )
+		isMCharLike = false;
+
+	if ( !( oprForm->oprleft == mcharOid || oprForm->oprleft == mvarcharOid ) )
+		isMCharLike = false;
+
+	if ( patt->consttype != mvarcharOid )
+		isMCharLike = false;
+
+	if (leftTypeOid) 
+		*leftTypeOid = oprForm->oprleft;
+
+	ReleaseSysCache(tup);
+
+	if ( !isMCharLike )
+		return Pattern_Prefix_None;
+
+	if ( opfamilyOid != InvalidOid ) {
+		Form_pg_opfamily claForm;
+
+		tup = SearchSysCache(OPFAMILYOID, opfamilyOid, 0, 0, 0);
+		claForm = (Form_pg_opfamily) GETSTRUCT(tup);
+
+		if ( claForm->opfmethod != BTREE_AM_OID )
+			isMCharLike = false;
+
+		if ( mcharOid && strncmp(claForm->opfname.data, "icase_ops", 9 /* strlen(icase_ops) */ ) != 0 )
+			isMCharLike = false;
+
+		ReleaseSysCache(tup);
+	}
+
+	if ( !isMCharLike )
+		return Pattern_Prefix_None;
+
+	return (Pattern_Prefix_Status)DatumGetInt32( OidFunctionCall3(
+		mmPFPOid,
+		PointerGetDatum( patt ),
+		Int32GetDatum( ptype ),
+		PointerGetDatum( prefix )
+	) );
+}
+
+static Oid
+get_opclass_member_mchar(Oid opclass, Oid leftTypeOid, int strategy) {
+	Oid	oproid;
+
+	oproid = get_opfamily_member(opclass, leftTypeOid, mvarcharOid, strategy);
+
+	if ( oproid == InvalidOid )
+		elog(ERROR, "no operator for opclass %u for strategy %u for left type %u", opclass, strategy, leftTypeOid);
+
+	return oproid;
+}
+
+static List *
+mchar_prefix_quals(Node *leftop, Oid leftTypeOid, Oid opclass,
+             Const *prefix_const, Pattern_Prefix_Status pstatus) {
+	Oid		oproid;
+	Expr	*expr;
+	List	*result;
+	Const	*greaterstr;
+
+	Assert(pstatus != Pattern_Prefix_None);
+	if ( pstatus == Pattern_Prefix_Exact ) {
+		oproid = get_opclass_member_mchar(opclass, leftTypeOid, BTEqualStrategyNumber);
+
+		expr = make_opclause(oproid, BOOLOID, false,
+								(Expr *) leftop, (Expr *) prefix_const,
+								InvalidOid, InvalidOid);
+		result = list_make1(make_simple_restrictinfo(expr));
+		return result;
+	}
+	
+	/* We can always say "x >= prefix". */
+	oproid = get_opclass_member_mchar(opclass, leftTypeOid, BTGreaterEqualStrategyNumber);
+
+	expr = make_opclause(oproid, BOOLOID, false,
+							(Expr *) leftop, (Expr *) prefix_const,
+							InvalidOid, InvalidOid);
+	result = list_make1(make_simple_restrictinfo(expr));
+
+	/* If we can create a string larger than the prefix, we can say
+	 * "x < greaterstr". */
+
+	greaterstr = (Const*)DatumGetPointer( OidFunctionCall1(
+		mmGTOid,
+		PointerGetDatum( prefix_const )
+	) );
+
+	if (greaterstr) {
+		oproid = get_opclass_member_mchar(opclass, leftTypeOid, BTLessStrategyNumber);
+
+		expr = make_opclause(oproid, BOOLOID, false,
+								(Expr *) leftop, (Expr *) greaterstr,
+								InvalidOid, InvalidOid);
+		result = lappend(result, make_simple_restrictinfo(expr));
+	}
+
+	return result;
+}
+
+
+/****************************************************************************
  *			----  ROUTINES FOR "SPECIAL" INDEXABLE OPERATORS  ----
  ****************************************************************************/
 
@@ -3299,9 +3507,16 @@ match_special_index_operator(Expr *clause, Oid opfamily, Oid idxcollation,
 		pfree(prefix);
 	}
 
-	/* done if the expression doesn't look indexable */
-	if (!isIndexable)
+	if ( !isIndexable ) {
+		/* done if the expression doesn't look indexable,
+			but we should previously check it for mchar/mvarchar types */
+		if ( mchar_pattern_fixed_prefix(expr_op, InvalidOid,
+								patt, Pattern_Type_Like,
+								&prefix, NULL) != Pattern_Prefix_None ) {
+			return true;
+		}
 		return false;
+	}
 
 	/*
 	 * Must also check that index's opfamily supports the operators we will
@@ -3552,6 +3767,14 @@ expand_indexqual_opclause(RestrictInfo *rinfo, Oid opfamily, Oid idxcollation)
 	Const	   *patt = (Const *) rightop;
 	Const	   *prefix = NULL;
 	Pattern_Prefix_Status pstatus;
+	Oid			leftTypeOid;
+
+	pstatus = mchar_pattern_fixed_prefix(expr_op, opfamily,
+											patt, Pattern_Type_Like,
+											&prefix, &leftTypeOid);
+
+	if ( pstatus != Pattern_Prefix_None )
+		return mchar_prefix_quals(leftop, leftTypeOid, opfamily, prefix, pstatus);
 
 	/*
 	 * LIKE and regex operators are not members of any btree index opfamily,

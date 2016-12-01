@@ -89,6 +89,33 @@ LocalPrefetchBuffer(SMgrRelation smgr, ForkNumber forkNum,
 #endif   /* USE_PREFETCH */
 }
 
+/*
+ * We extend physical file for temp tables when table doesn't fit
+ * into temp_buffers cache anymore. If blockNum (the number of the
+ * buffer we are writing out) is larger than number of blocks in physical
+ * file (nblocks), we must allocate all blocks between nblocks and
+ * blockNum. Fill them up with a stub page.
+ * TODO Is it possible that someone would read these pages?
+ */
+static void
+LocalBufExtendRel(SMgrRelation smgr, ForkNumber forkNum, BlockNumber blockNum, Page page)
+{
+	BlockNumber blockNumIter;
+	BlockNumber nblocks = smgrnblocks(smgr, forkNum);
+	Page dummypage = palloc0(PageGetPageSize(page));
+
+	/*
+	 * Allocate blocks one by one and write out an empty dummy page.
+	 */
+	for (blockNumIter = nblocks; blockNumIter <= blockNum; blockNumIter++)
+	{
+		smgrextend(smgr, forkNum, blockNumIter, (char *) dummypage, false);
+		elog(DEBUG1, "LocalBufExtendRel. nblocks %u blockNum %u, smgr_main_nblocks %u, blockNumIter %u",
+					  nblocks, blockNum, smgr->smgr_main_nblocks, blockNumIter);
+	}
+
+	pfree(dummypage);
+}
 
 /*
  * LocalBufferAlloc -
@@ -149,6 +176,9 @@ LocalBufferAlloc(SMgrRelation smgr, ForkNumber forkNum, BlockNumber blockNum,
 		else
 		{
 			/* Previous read attempt must have failed; try again */
+			/* TODO check this case */
+			elog(DEBUG1, "LocalBufferAlloc. founded buffer is not valid. smgr->smgr_main_nblocks %u",
+				 smgr->smgr_main_nblocks);
 			*foundPtr = FALSE;
 		}
 		return bufHdr;
@@ -212,6 +242,17 @@ LocalBufferAlloc(SMgrRelation smgr, ForkNumber forkNum, BlockNumber blockNum,
 		oreln = smgropen(bufHdr->tag.rnode, MyBackendId);
 
 		PageSetChecksumInplace(localpage, bufHdr->tag.blockNum);
+		elog(DEBUG1, "LocalBufferAlloc 1. Write dirty buffer. relnode %d blockNum %u smgrnblocks %u smgr_main_nblocks %u",
+			bufHdr->tag.rnode.relNode, bufHdr->tag.blockNum, smgrnblocks(oreln, bufHdr->tag.forkNum), oreln->smgr_main_nblocks);
+
+		/*
+		 * We do not allocate blocks for temp relations in advance,
+		 * so we can run out of free space on disk.
+		 * Things happen. Just thow an error.
+		 * TODO test it.
+		 */
+		if (bufHdr->tag.blockNum >= smgrnblocks(oreln, bufHdr->tag.forkNum))
+			LocalBufExtendRel(oreln, bufHdr->tag.forkNum, bufHdr->tag.blockNum, localpage);
 
 		/* And write... */
 		smgrwrite(oreln,
@@ -219,6 +260,9 @@ LocalBufferAlloc(SMgrRelation smgr, ForkNumber forkNum, BlockNumber blockNum,
 				  bufHdr->tag.blockNum,
 				  localpage,
 				  false);
+
+		elog(DEBUG1, "LocalBufferAlloc 2. Write dirty buffer. blockNum %u smgrnblocks %u smgr_main_nblocks %u",
+			 bufHdr->tag.blockNum, smgrnblocks(oreln, bufHdr->tag.forkNum), oreln->smgr_main_nblocks);
 
 		/* Mark not-dirty now in case we error out below */
 		buf_state &= ~BM_DIRTY;

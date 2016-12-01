@@ -1080,6 +1080,18 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex, bool verbose,
 	/* Write out any remaining tuples, and fsync if needed */
 	end_heap_rewrite(rwstate);
 
+	/*
+	 * Create new entry for temptable to track number of blocks
+	 * in the new relation
+	 */
+	if (NewHeap->rd_rel->relpersistence == RELPERSISTENCE_TEMP
+		&& NewHeap->rd_rel->relkind == RELKIND_RELATION)
+	{
+		RelationOpenSmgr(NewHeap);
+		insert_temptableinfo_hashtable(NewHeap->rd_node,
+									   smgrnblocks(NewHeap->rd_smgr, MAIN_FORKNUM));
+	}
+
 	/* Reset rd_toastoid just to be tidy --- it shouldn't be looked at again */
 	NewHeap->rd_toastoid = InvalidOid;
 
@@ -1578,7 +1590,6 @@ finish_heap_swap(Oid OIDOldHeap, Oid OIDNewHeap,
 	 * depends on it, so DROP_RESTRICT should be OK.
 	 */
 	performDeletion(&object, DROP_RESTRICT, PERFORM_DELETION_INTERNAL);
-
 	/* performDeletion does CommandCounterIncrement at end */
 
 	/*

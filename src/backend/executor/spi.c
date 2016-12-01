@@ -47,6 +47,15 @@ static int	_SPI_stack_depth = 0;		/* allocated size of _SPI_stack */
 static int	_SPI_connected = -1;
 static int	_SPI_curid = -1;
 
+typedef struct SuspendedSPI
+{
+	_SPI_connection *_SPI_stack;
+	_SPI_connection *_SPI_current;
+	int _SPI_stack_depth;
+	int _SPI_connected;
+	int _SPI_curid;
+} SuspendedSPI;
+
 static Portal SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 						 ParamListInfo paramLI, bool read_only);
 
@@ -2730,4 +2739,33 @@ _SPI_save_plan(SPIPlanPtr plan)
 	}
 
 	return newplan;
+}
+
+#define MOVELEFT(A, B, C) do { (A) = (B); } while (0)
+void *
+SuspendSPI(void)
+{
+	SuspendedSPI *s = malloc(sizeof(SuspendedSPI));
+
+	MOVELEFT(s->_SPI_stack, _SPI_stack, NULL);
+	MOVELEFT(s->_SPI_current, _SPI_current, NULL);
+	MOVELEFT(s->_SPI_stack_depth, _SPI_stack_depth, 0);
+	MOVELEFT(s->_SPI_connected, _SPI_connected, -1);
+	MOVELEFT(s->_SPI_curid, _SPI_curid, -1);
+
+	return s;
+}
+
+void
+ResumeSPI(void *state)
+{
+	SuspendedSPI *s = (SuspendedSPI *)state;
+
+	_SPI_stack = s->_SPI_stack;
+	_SPI_current = s->_SPI_current;
+	_SPI_stack_depth = s->_SPI_stack_depth;
+	_SPI_connected = s->_SPI_connected;
+	_SPI_curid = s->_SPI_curid;
+
+	free(state);
 }

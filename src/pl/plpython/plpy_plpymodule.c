@@ -19,6 +19,7 @@
 #include "plpy_resultobject.h"
 #include "plpy_spi.h"
 #include "plpy_subxactobject.h"
+#include "plpy_atxobject.h"
 
 
 HTAB	   *PLy_spi_exceptions = NULL;
@@ -86,6 +87,7 @@ static PyMethodDef PLy_methods[] = {
 	 * create the subtransaction context manager
 	 */
 	{"subtransaction", PLy_subtransaction_new, METH_NOARGS, NULL},
+	{"autonomous", PLy_atx_new, METH_NOARGS, NULL},
 
 	/*
 	 * create a cursor
@@ -156,6 +158,7 @@ PLy_init_plpy(void)
 	PLy_plan_init_type();
 	PLy_result_init_type();
 	PLy_subtransaction_init_type();
+	PLy_atx_init_type();
 	PLy_cursor_init_type();
 
 #if PY_MAJOR_VERSION >= 3

@@ -1108,6 +1108,11 @@ typedef struct AppendPath
 {
 	Path		path;
 	List	   *subpaths;		/* list of component Paths */
+	bool		pull_tlist;		/* if = true, create_append_plan()
+									should get targetlist from any
+									subpath - they are the same,
+									because the only place - append
+									index scan for range OR */
 } AppendPath;
 
 #define IS_DUMMY_PATH(p) \

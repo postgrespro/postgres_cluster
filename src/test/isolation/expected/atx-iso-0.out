@@ -1,0 +1,274 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1atxb s1atxu s1atxc s1s s1c s2u s2c
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              1              
+2              0              
+step s1c: commit;
+step s2u: update t set b = 0 where a = 1;
+step s2c: commit;
+
+starting permutation: s1atxb s1atxu s1atxc s1s s2u s1c s2c
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              1              
+2              0              
+step s2u: update t set b = 0 where a = 1;
+step s1c: commit;
+step s2c: commit;
+
+starting permutation: s1atxb s1atxu s1atxc s1s s2u s2c s1c
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              1              
+2              0              
+step s2u: update t set b = 0 where a = 1;
+step s2c: commit;
+step s1c: commit;
+
+starting permutation: s1atxb s1atxu s1atxc s2u s1s s1c s2c
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s2u: update t set b = 0 where a = 1;
+step s1s: select * from t;
+a              b              
+
+1              1              
+2              0              
+step s1c: commit;
+step s2c: commit;
+
+starting permutation: s1atxb s1atxu s1atxc s2u s1s s2c s1c
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s2u: update t set b = 0 where a = 1;
+step s1s: select * from t;
+a              b              
+
+1              1              
+2              0              
+step s2c: commit;
+step s1c: commit;
+
+starting permutation: s1atxb s1atxu s1atxc s2u s2c s1s s1c
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s2u: update t set b = 0 where a = 1;
+step s2c: commit;
+step s1s: select * from t;
+a              b              
+
+2              0              
+1              0              
+step s1c: commit;
+
+starting permutation: s1atxb s1atxu s2u s1atxc s1s s1c s2c
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s2u: update t set b = 0 where a = 1;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              1              
+2              0              
+step s1c: commit;
+step s2c: commit;
+
+starting permutation: s1atxb s1atxu s2u s1atxc s1s s2c s1c
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s2u: update t set b = 0 where a = 1;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              1              
+2              0              
+step s2c: commit;
+step s1c: commit;
+
+starting permutation: s1atxb s1atxu s2u s1atxc s2c s1s s1c
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s2u: update t set b = 0 where a = 1;
+step s1atxc: commit;
+step s2c: commit;
+step s1s: select * from t;
+a              b              
+
+2              0              
+1              0              
+step s1c: commit;
+
+starting permutation: s1atxb s1atxu s2u s2c s1atxc s1s s1c
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s2u: update t set b = 0 where a = 1;
+step s2c: commit;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+2              0              
+1              0              
+step s1c: commit;
+
+starting permutation: s1atxb s2u s1atxu s1atxc s1s s1c s2c
+step s1atxb: begin autonomous;
+step s2u: update t set b = 0 where a = 1;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              1              
+2              0              
+step s1c: commit;
+step s2c: commit;
+
+starting permutation: s1atxb s2u s1atxu s1atxc s1s s2c s1c
+step s1atxb: begin autonomous;
+step s2u: update t set b = 0 where a = 1;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              1              
+2              0              
+step s2c: commit;
+step s1c: commit;
+
+starting permutation: s1atxb s2u s1atxu s1atxc s2c s1s s1c
+step s1atxb: begin autonomous;
+step s2u: update t set b = 0 where a = 1;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s2c: commit;
+step s1s: select * from t;
+a              b              
+
+1              0              
+2              0              
+step s1c: commit;
+
+starting permutation: s1atxb s2u s1atxu s2c s1atxc s1s s1c
+step s1atxb: begin autonomous;
+step s2u: update t set b = 0 where a = 1;
+step s1atxu: update t set b = 0 where a = 2;
+step s2c: commit;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              0              
+2              0              
+step s1c: commit;
+
+starting permutation: s1atxb s2u s2c s1atxu s1atxc s1s s1c
+step s1atxb: begin autonomous;
+step s2u: update t set b = 0 where a = 1;
+step s2c: commit;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              0              
+2              0              
+step s1c: commit;
+
+starting permutation: s2u s1atxb s1atxu s1atxc s1s s1c s2c
+step s2u: update t set b = 0 where a = 1;
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              1              
+2              0              
+step s1c: commit;
+step s2c: commit;
+
+starting permutation: s2u s1atxb s1atxu s1atxc s1s s2c s1c
+step s2u: update t set b = 0 where a = 1;
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              1              
+2              0              
+step s2c: commit;
+step s1c: commit;
+
+starting permutation: s2u s1atxb s1atxu s1atxc s2c s1s s1c
+step s2u: update t set b = 0 where a = 1;
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s2c: commit;
+step s1s: select * from t;
+a              b              
+
+1              0              
+2              0              
+step s1c: commit;
+
+starting permutation: s2u s1atxb s1atxu s2c s1atxc s1s s1c
+step s2u: update t set b = 0 where a = 1;
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s2c: commit;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              0              
+2              0              
+step s1c: commit;
+
+starting permutation: s2u s1atxb s2c s1atxu s1atxc s1s s1c
+step s2u: update t set b = 0 where a = 1;
+step s1atxb: begin autonomous;
+step s2c: commit;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              0              
+2              0              
+step s1c: commit;
+
+starting permutation: s2u s2c s1atxb s1atxu s1atxc s1s s1c
+step s2u: update t set b = 0 where a = 1;
+step s2c: commit;
+step s1atxb: begin autonomous;
+step s1atxu: update t set b = 0 where a = 2;
+step s1atxc: commit;
+step s1s: select * from t;
+a              b              
+
+1              0              
+2              0              
+step s1c: commit;

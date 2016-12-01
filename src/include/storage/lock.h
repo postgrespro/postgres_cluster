@@ -83,7 +83,7 @@ typedef struct
 	 (vxid).localTransactionId = (proc).lxid)
 
 /* MAX_LOCKMODES cannot be larger than the # of bits in LOCKMASK */
-#define MAX_LOCKMODES		10
+#define MAX_LOCKMODES		12
 
 #define LOCKBIT_ON(lockmode) (1 << (lockmode))
 #define LOCKBIT_OFF(lockmode) (~(1 << (lockmode)))
@@ -422,6 +422,8 @@ typedef struct LOCALLOCK
 	int			maxLockOwners;	/* allocated size of array */
 	bool		holdsStrongLockCount;	/* bumped FastPathStrongRelationLocks */
 	LOCALLOCKOWNER *lockOwners; /* dynamically resizable array */
+
+	int			atx_nest_level;
 } LOCALLOCK;
 
 #define LOCALLOCK_LOCKMETHOD(llock) ((llock).tag.lock.locktag_lockmethodid)

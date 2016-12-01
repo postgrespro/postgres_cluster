@@ -57,6 +57,16 @@ typedef struct SMgrRelationData
 	BlockNumber smgr_vm_nblocks;	/* last known size of vm fork */
 	BlockNumber smgr_ptrack_nblocks;	/* last known size of vm fork */
 
+	/*
+	 * It's unnecessary to create a physical file for a local temp
+	 * relation when all buffers can be kept in memory. Track actual
+	 * number of blocks in smgr_main_nblocks.
+	 */
+	BlockNumber smgr_main_nblocks;	/* last known size of main fork
+										WARNING Hardcode: This field must be
+										InvalidBlockNumber for all relations
+										except temp tables */
+
 	/* additional public fields may someday exist here */
 
 	/*
