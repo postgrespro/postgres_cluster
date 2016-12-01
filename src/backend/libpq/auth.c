@@ -710,7 +710,7 @@ CheckMD5Auth(Port *port, char **logdetail)
 		return STATUS_ERROR;
 	}
 
-	sendAuthRequest(port, AUTH_REQ_MD5);
+	sendAuthRequest(port, AUTH_REQ_MD5, NULL, 0);
 	return recv_and_check_password_packet(port, logdetail);
 }
 
