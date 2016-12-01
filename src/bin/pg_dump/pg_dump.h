@@ -78,7 +78,8 @@ typedef enum
 	DO_POST_DATA_BOUNDARY,
 	DO_EVENT_TRIGGER,
 	DO_REFRESH_MATVIEW,
-	DO_POLICY
+	DO_POLICY,
+	DO_TRANSFER_REL
 } DumpableObjectType;
 
 /* component types of an object which can be selected for dumping */

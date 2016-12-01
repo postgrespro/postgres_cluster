@@ -1543,6 +1543,15 @@ finish_heap_swap(Oid OIDOldHeap, Oid OIDNewHeap,
 		reindex_flags |= REINDEX_REL_FORCE_INDEXES_UNLOGGED;
 	else if (newrelpersistence == RELPERSISTENCE_PERMANENT)
 		reindex_flags |= REINDEX_REL_FORCE_INDEXES_PERMANENT;
+	else if (newrelpersistence == RELPERSISTENCE_CONSTANT)
+	{
+		/*
+		 * Actually, there is no need in rebuilding CONSTANT indexes,
+		 * but if someone forced CLUSTER or VACUUM FULL on CONSTANT
+		 * relation, we must do it.
+		 */
+		reindex_flags |= REINDEX_REL_FORCE_INDEXES_CONSTANT;
+	}
 
 	reindex_relation(OIDOldHeap, reindex_flags, 0);
 

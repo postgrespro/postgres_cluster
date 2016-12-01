@@ -2015,6 +2015,14 @@ do_autovacuum(void)
 			classForm->relkind != RELKIND_MATVIEW)
 			continue;
 
+		/* Do not apply autovacuum to CONSTANT relations. */
+		if (classForm->relpersistence == RELPERSISTENCE_CONSTANT)
+		{
+			elog(DEBUG3, "Autovacuum skipped constant relation '%s'. First pass.",
+						 NameStr(classForm->relname));
+			continue;
+		}
+
 		relid = HeapTupleGetOid(tuple);
 
 		/* Fetch reloptions and the pgstat entry for this table */
@@ -2130,6 +2138,14 @@ do_autovacuum(void)
 		 */
 		if (classForm->relpersistence == RELPERSISTENCE_TEMP)
 			continue;
+
+		/* Do not apply autovacuum to CONSTANT relations. */
+		if (classForm->relpersistence == RELPERSISTENCE_CONSTANT)
+		{
+			elog(DEBUG3, "Autovacuum skipped constant relation '%s'. Second pass.",
+						 NameStr(classForm->relname));
+			continue;
+		}
 
 		relid = HeapTupleGetOid(tuple);
 

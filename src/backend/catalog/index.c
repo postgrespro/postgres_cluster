@@ -3509,6 +3509,9 @@ reindex_index(Oid indexId, bool skip_constraint_checks, char persistence,
  * REINDEX_REL_FORCE_INDEXES_PERMANENT: if true, set the persistence of the
  * rebuilt indexes to permanent.
  *
+ * REINDEX_REL_FORCE_INDEXES_CONSTANT: if true, set the persistence of the
+ * rebuilt indexes to constant.
+ *
  * Returns true if any indexes were rebuilt (including toast table's index
  * when relevant).  Note that a CommandCounterIncrement will occur after each
  * index rebuild.
@@ -3592,6 +3595,8 @@ reindex_relation(Oid relid, int flags, int options)
 			persistence = RELPERSISTENCE_UNLOGGED;
 		else if (flags & REINDEX_REL_FORCE_INDEXES_PERMANENT)
 			persistence = RELPERSISTENCE_PERMANENT;
+		else if (flags & REINDEX_REL_FORCE_INDEXES_CONSTANT)
+			persistence = RELPERSISTENCE_CONSTANT;
 		else
 			persistence = rel->rd_rel->relpersistence;
 

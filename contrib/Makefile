@@ -35,6 +35,7 @@ SUBDIRS = \
 		pg_query_state \
 		pg_standby	\
 		pg_stat_statements \
+		pg_transfer		\
 		pg_trgm		\
 		pgcrypto	\
 		pgrowlocks	\
