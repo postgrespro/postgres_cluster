@@ -94,6 +94,7 @@ extern int cfs_gc_period;
 extern int cfs_gc_workers;
 extern int cfs_gc_threshold;
 extern int cfs_level;
+extern bool cfs_gc_verify_file;
 extern bool cfs_encryption;
 #endif
 

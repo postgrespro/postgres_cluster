@@ -312,6 +312,13 @@
      </para>
  
      <para>
+       Particular relation can be defragmented using <varname>cfs_gc_relation(relation)</varname> function.
+       This function can be used only if there are no active GC workers (<varname>cfs_gc_workers</varname> equals to zero).
+       It returns number of defragmented segments of relation. If there is on relation with such OID or it is not compressed
+       or some other GC process is active, 0 is returned.
+     </para>
+       
+     <para>
        There are several functions allowing to monitors garbage collection activity: 
        <varname>cfs_gc_activity_scanned_files</varname> returns number of files scanned by GC, 
        <varname>cfs_gc_activity_processed_files</varname> returns number of file compacted by GC, 

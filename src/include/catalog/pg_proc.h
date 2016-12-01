@@ -5360,6 +5360,8 @@ DATA(insert OID = 6108 (  cfs_gc_activity_scanned_files		   PGNSP PGUID 12 1 0 0
 DESCR("Number of files scanned by CFS garbage collectors since system start");
 DATA(insert OID = 6109 (  cfs_fragmentation  PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 701 "2205" _null_ _null_ _null_ _null_ _null_ cfs_fragmentation _null_ _null_ _null_ ));
 DESCR("Fragmentation level of relation");
+DATA(insert OID = 6110 (  cfs_gc_relation  PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 20 "2205" _null_ _null_ _null_ _null_ _null_ cfs_gc_relation _null_ _null_ _null_ ));
+DESCR("Perform garbage collection of particular relation");
 
 /* distance functions */
 DATA(insert OID = 3343 ( int2_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0   21 "21 21"		_null_ _null_ _null_ _null_ _null_	int2_dist	_null_ _null_ _null_ ));
