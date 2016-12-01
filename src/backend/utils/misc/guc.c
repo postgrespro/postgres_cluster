@@ -1850,6 +1850,16 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"max_autonomous_transactions", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
+			gettext_noop("Sets the maximum number of concurrent autonomous transactions."),
+			NULL
+		},
+		&MaxATX,
+		100, 1, MAX_BACKENDS,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"superuser_reserved_connections", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the number of connection slots reserved for superusers."),
 			NULL
@@ -5054,10 +5064,7 @@ AtStart_GUC(void)
 	 * didn't call AtEOXact_GUC, or called it with the wrong nestLevel.  We
 	 * throw a warning but make no other effort to clean up.
 	 */
-	if (GUCNestLevel != 0)
-		elog(WARNING, "GUC nest level = %d at transaction start",
-			 GUCNestLevel);
-	GUCNestLevel = 1;
+	NewGUCNestLevel();
 }
 
 /*

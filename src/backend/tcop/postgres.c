@@ -2477,6 +2477,12 @@ finish_xact_command(void)
  * ones that we allow in transaction-aborted state.
  */
 
+static bool
+IsBeginATX(TransactionStmt *stmt)
+{
+	return (stmt->kind == TRANS_STMT_BEGIN || stmt->kind == TRANS_STMT_START) && stmt->autonomous;
+}
+
 /* Test a bare parsetree */
 static bool
 IsTransactionExitStmt(Node *parsetree)
@@ -2488,7 +2494,8 @@ IsTransactionExitStmt(Node *parsetree)
 		if (stmt->kind == TRANS_STMT_COMMIT ||
 			stmt->kind == TRANS_STMT_PREPARE ||
 			stmt->kind == TRANS_STMT_ROLLBACK ||
-			stmt->kind == TRANS_STMT_ROLLBACK_TO)
+			stmt->kind == TRANS_STMT_ROLLBACK_TO ||
+			IsBeginATX(stmt))
 			return true;
 	}
 	return false;

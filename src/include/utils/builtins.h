@@ -1299,6 +1299,11 @@ extern Datum tsm_system_handler(PG_FUNCTION_ARGS);
 /* access/transam/twophase.c */
 extern Datum pg_prepared_xact(PG_FUNCTION_ARGS);
 
+/* access/transam/xact.c */
+extern Datum pg_current_tx_nest_level(PG_FUNCTION_ARGS);
+extern Datum pg_current_atx_nest_level(PG_FUNCTION_ARGS);
+extern Datum pg_current_atx_has_ancestor(PG_FUNCTION_ARGS);
+
 /* access/transam/multixact.c */
 extern Datum pg_get_multixact_members(PG_FUNCTION_ARGS);
 

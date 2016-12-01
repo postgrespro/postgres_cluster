@@ -4919,6 +4919,7 @@ DESCR("get set of in-progress txids in snapshot");
 DATA(insert OID = 2948 (  txid_visible_in_snapshot	PGNSP PGUID 12 1  0 0 0 f f f f t f i s 2 0 16 "20 2970" _null_ _null_ _null_ _null_ _null_ txid_visible_in_snapshot _null_ _null_ _null_ ));
 DESCR("is txid visible in snapshot?");
 
+
 /* record comparison using normal comparison rules */
 DATA(insert OID = 2981 (  record_eq		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 16 "2249 2249" _null_ _null_ _null_ _null_ _null_ record_eq _null_ _null_ _null_ ));
 DATA(insert OID = 2982 (  record_ne		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 16 "2249 2249" _null_ _null_ _null_ _null_ _null_ record_ne _null_ _null_ _null_ ));
@@ -5274,6 +5275,7 @@ DESCR("for use by pg_upgrade");
 DATA(insert OID = 4083 ( binary_upgrade_set_record_init_privs PGNSP PGUID	12 1 0 0 0 f f f f t f v r 1 0 2278 "16" _null_ _null_ _null_ _null_ _null_ binary_upgrade_set_record_init_privs _null_ _null_ _null_ ));
 DESCR("for use by pg_upgrade");
 
+
 /* replication/origin.h */
 DATA(insert OID = 6003 ( pg_replication_origin_create PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 26 "25" _null_ _null_ _null_ _null_ _null_ pg_replication_origin_create _null_ _null_ _null_ ));
 DESCR("create a replication origin");
@@ -5364,6 +5366,14 @@ DATA(insert OID = 3351 ( time_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1
 DATA(insert OID = 3352 ( ts_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1114 1114"	_null_ _null_ _null_ _null_ _null_	ts_dist		_null_ _null_ _null_ ));
 DATA(insert OID = 3353 ( tstz_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1184 1184"	_null_ _null_ _null_ _null_ _null_	tstz_dist	_null_ _null_ _null_ ));
 DATA(insert OID = 3354 ( interval_dist	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1186 1186"	_null_ _null_ _null_ _null_ _null_	interval_dist _null_ _null_ _null_ ));
+
+
+DATA(insert OID = 6050 (   pg_current_tx_nest_level				PGNSP PGUID 12 1  0 0 0 f f f f t f s u 0 0 20 "" _null_ _null_ _null_ _null_ _null_  pg_current_tx_nest_level _null_ _null_ _null_ ));
+DESCR("get current transaction nesting level");
+DATA(insert OID = 6051 (   pg_current_atx_nest_level				PGNSP PGUID 12 1  0 0 0 f f f f t f s u 0 0 20 "" _null_ _null_ _null_ _null_ _null_  pg_current_atx_nest_level _null_ _null_ _null_ ));
+DESCR("get current autonomous transaction nesting level");
+DATA(insert OID = 6052 (   pg_current_atx_has_ancestor				PGNSP PGUID 12 1  0 0 0 f f f f t f s u 1 0 16 "20" _null_ _null_ _null_ _null_ _null_  pg_current_atx_has_ancestor _null_ _null_ _null_ ));
+DESCR("check if xid is ancestor of the current autonomous transaction");
 
 
 /*

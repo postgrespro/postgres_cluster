@@ -390,7 +390,7 @@ standard_ProcessUtility(Node *parsetree,
 						{
 							ListCell   *lc;
 
-							BeginTransactionBlock();
+							BeginTransactionBlock(stmt->autonomous);
 							foreach(lc, stmt->options)
 							{
 								DefElem    *item = (DefElem *) lfirst(lc);
@@ -412,7 +412,7 @@ standard_ProcessUtility(Node *parsetree,
 						break;
 
 					case TRANS_STMT_COMMIT:
-						if (!EndTransactionBlock())
+						if (!EndTransactionBlock(stmt->autonomous))
 						{
 							/* report unsuccessful commit in completionTag */
 							if (completionTag)
@@ -443,7 +443,7 @@ standard_ProcessUtility(Node *parsetree,
 						break;
 
 					case TRANS_STMT_ROLLBACK:
-						UserAbortTransactionBlock();
+						UserAbortTransactionBlock(stmt->autonomous);
 						break;
 
 					case TRANS_STMT_SAVEPOINT:

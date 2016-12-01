@@ -409,6 +409,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <list>	opt_interval interval_second
 %type <node>	overlay_placing substr_from substr_for
 
+%type <boolean> opt_autonomous
 %type <boolean> opt_instead
 %type <boolean> opt_unique opt_concurrently opt_verbose opt_full
 %type <boolean> opt_freeze opt_default opt_recheck
@@ -566,7 +567,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 /* ordinary key words in alphabetical order */
 %token <keyword> ABORT_P ABSOLUTE_P ACCESS ACTION ADD_P ADMIN AFTER
 	AGGREGATE ALL ALSO ALTER ALWAYS ANALYSE ANALYZE AND ANY APPLICATION ARRAY AS ASC
-	ASSERTION ASSIGNMENT ASYMMETRIC AT ATTRIBUTE AUTHORIZATION
+	ASSERTION ASSIGNMENT ASYMMETRIC AT ATTRIBUTE AUTHORIZATION AUTONOMOUS
 
 	BACKWARD BEFORE BEGIN_P BETWEEN BIGINT BINARY BIT
 	BOOLEAN_P BOTH BY
@@ -8697,24 +8698,42 @@ TransactionStmt:
 					n->options = NIL;
 					$$ = (Node *)n;
 				}
-			| BEGIN_P opt_transaction transaction_mode_list_or_empty
+			| ABORT_P AUTONOMOUS TRANSACTION
+				{
+					TransactionStmt *n = makeNode(TransactionStmt);
+					n->kind = TRANS_STMT_ROLLBACK;
+					n->autonomous = true;
+					n->options = NIL;
+					$$ = (Node *)n;
+				}
+			| BEGIN_P opt_autonomous opt_transaction transaction_mode_list_or_empty
 				{
 					TransactionStmt *n = makeNode(TransactionStmt);
 					n->kind = TRANS_STMT_BEGIN;
-					n->options = $3;
+					n->autonomous = $2;
+					n->options = $4;
 					$$ = (Node *)n;
 				}
-			| START TRANSACTION transaction_mode_list_or_empty
+			| START opt_autonomous TRANSACTION transaction_mode_list_or_empty
 				{
 					TransactionStmt *n = makeNode(TransactionStmt);
 					n->kind = TRANS_STMT_START;
-					n->options = $3;
+					n->autonomous = $2;
+					n->options = $4;
 					$$ = (Node *)n;
 				}
 			| COMMIT opt_transaction
 				{
 					TransactionStmt *n = makeNode(TransactionStmt);
 					n->kind = TRANS_STMT_COMMIT;
+					n->options = NIL;
+					$$ = (Node *)n;
+				}
+			| COMMIT AUTONOMOUS TRANSACTION
+				{
+					TransactionStmt *n = makeNode(TransactionStmt);
+					n->kind = TRANS_STMT_COMMIT;
+					n->autonomous = true;
 					n->options = NIL;
 					$$ = (Node *)n;
 				}
@@ -8725,10 +8744,26 @@ TransactionStmt:
 					n->options = NIL;
 					$$ = (Node *)n;
 				}
+			| END_P AUTONOMOUS TRANSACTION
+				{
+					TransactionStmt *n = makeNode(TransactionStmt);
+					n->kind = TRANS_STMT_COMMIT;
+					n->autonomous = true;
+					n->options = NIL;
+					$$ = (Node *)n;
+				}
 			| ROLLBACK opt_transaction
 				{
 					TransactionStmt *n = makeNode(TransactionStmt);
 					n->kind = TRANS_STMT_ROLLBACK;
+					n->options = NIL;
+					$$ = (Node *)n;
+				}
+			| ROLLBACK AUTONOMOUS TRANSACTION
+				{
+					TransactionStmt *n = makeNode(TransactionStmt);
+					n->kind = TRANS_STMT_ROLLBACK;
+					n->autonomous = true;
 					n->options = NIL;
 					$$ = (Node *)n;
 				}
@@ -8798,6 +8833,11 @@ TransactionStmt:
 opt_transaction:	WORK							{}
 			| TRANSACTION							{}
 			| /*EMPTY*/								{}
+		;
+
+opt_autonomous:
+			AUTONOMOUS								{ $$ = TRUE; }
+			| /*EMPTY*/								{ $$ = FALSE; }
 		;
 
 transaction_mode_item:
@@ -14136,6 +14176,7 @@ col_name_keyword:
  */
 type_func_name_keyword:
 			  AUTHORIZATION
+			| AUTONOMOUS
 			| BINARY
 			| COLLATION
 			| CONCURRENTLY

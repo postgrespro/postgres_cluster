@@ -66,6 +66,7 @@ typedef struct ProcArrayStruct
 {
 	int			numProcs;		/* number of valid procs entries */
 	int			maxProcs;		/* allocated size of procs array */
+	int			maxATX;		/* allocated size of procs array */
 
 	/*
 	 * Known assigned XIDs handling
@@ -383,6 +384,68 @@ ProcArrayRemove(PGPROC *proc, TransactionId latestXid)
 	elog(LOG, "failed to find proc %p in ProcArray", proc);
 }
 
+static struct PGXACT *
+FindUnusedPgXact(void)
+{
+	int i;
+	volatile struct PGXACT *atx;
+	uint32		TotalProcs = MaxBackends + NUM_AUXILIARY_PROCS + max_prepared_xacts;
+	uint32		TotalXacts = TotalProcs + MaxATX;
+	Assert(LWLockHeldByMe(ProcArrayLock));
+
+	/*
+	 * Everything between TotalProcs and TotalXacts is for
+	 * the stack of PGXACT for autonomous transactions.
+	 */
+	for (i = TotalProcs; i < TotalXacts; i++)
+	{
+		atx = allPgXact + i;
+		if (!atx->used)
+			return (struct PGXACT *)atx;
+	}
+
+	return NULL;
+}
+
+void
+SuspendPgXact(struct PGXACT *pgxact)
+{
+	/* pgxact -> [B] -> [C] */
+	struct PGXACT *fresh;
+	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+	fresh = FindUnusedPgXact();
+	if (fresh == NULL)
+	{
+		LWLockRelease(ProcArrayLock);
+		elog(ERROR, "all PGXACTs for ATX occupied");
+	}
+
+	*fresh = *pgxact;
+	fresh->used = true;
+	pgxact->parent = fresh;
+	pgxact->xid = InvalidTransactionId;
+	pgxact->xmin = InvalidTransactionId;
+	pgxact->vacuumFlags &= ~PROC_VACUUM_STATE_MASK;
+	pgxact->delayChkpt = false;
+	pgxact->nxids = 0;
+	pgxact->overflowed = false;
+	LWLockRelease(ProcArrayLock);
+	/* pgxact -> [A] -> [B] -> [C] */
+}
+
+void
+ResumePgXact(struct PGXACT *pgxact)
+{
+	/* pgxact -> [A] -> [B] -> [C] */
+	struct PGXACT *parent;
+	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+	parent = pgxact->parent;
+	Assert(parent);
+	*pgxact = *parent;
+	parent->used = false;
+	LWLockRelease(ProcArrayLock);
+	/* pgxact -> [B] -> [C], parent -> [unused] */
+}
 
 /*
  * ProcArrayEndTransaction -- mark a transaction as no longer running
@@ -400,7 +463,7 @@ ProcArrayRemove(PGPROC *proc, TransactionId latestXid)
 void
 ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid)
 {
-	PGXACT	   *pgxact = &allPgXact[proc->pgprocno];
+	PGXACT *pgxact = &allPgXact[proc->pgprocno];
 
 	if (TransactionIdIsValid(latestXid))
 	{
@@ -410,7 +473,7 @@ ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid)
 		 * else is taking a snapshot.  See discussion in
 		 * src/backend/access/transam/README.
 		 */
-		Assert(TransactionIdIsValid(allPgXact[proc->pgprocno].xid));
+		Assert(TransactionIdIsValid(pgxact->xid));
 
 		/*
 		 * If we can immediately acquire ProcArrayLock, we clear our own XID
@@ -1078,61 +1141,66 @@ TransactionIdIsInProgress(TransactionId xid)
 	{
 		int			pgprocno = arrayP->pgprocnos[i];
 		volatile PGPROC *proc = &allProcs[pgprocno];
-		volatile PGXACT *pgxact = &allPgXact[pgprocno];
-		TransactionId pxid;
-
-		/* Ignore my own proc --- dealt with it above */
-		if (proc == MyProc)
-			continue;
-
-		/* Fetch xid just once - see GetNewTransactionId */
-		pxid = pgxact->xid;
-
-		if (!TransactionIdIsValid(pxid))
-			continue;
-
-		/*
-		 * Step 1: check the main Xid
-		 */
-		if (TransactionIdEquals(pxid, xid))
+		volatile PGXACT *pgxact;
+		
+		for (pgxact = &allPgXact[pgprocno]; pgxact != NULL; pgxact = pgxact->parent)
 		{
-			LWLockRelease(ProcArrayLock);
-			xc_by_main_xid_inc();
-			return true;
-		}
+			TransactionId pxid;
 
-		/*
-		 * We can ignore main Xids that are younger than the target Xid, since
-		 * the target could not possibly be their child.
-		 */
-		if (TransactionIdPrecedes(xid, pxid))
-			continue;
+			// FIXME-ATX
+//			/* Ignore my own transacion --- dealt with it above */
+//			if ((proc == MyProc) && (pgxact->atx == NULL))
+//				continue;
 
-		/*
-		 * Step 2: check the cached child-Xids arrays
-		 */
-		for (j = pgxact->nxids - 1; j >= 0; j--)
-		{
 			/* Fetch xid just once - see GetNewTransactionId */
-			TransactionId cxid = proc->subxids.xids[j];
+			pxid = pgxact->xid;
 
-			if (TransactionIdEquals(cxid, xid))
+			if (!TransactionIdIsValid(pxid))
+				continue;
+
+			/*
+			 * Step 1: check the main Xid
+			 */
+			if (TransactionIdEquals(pxid, xid))
 			{
 				LWLockRelease(ProcArrayLock);
-				xc_by_child_xid_inc();
+				xc_by_main_xid_inc();
 				return true;
 			}
-		}
 
-		/*
-		 * Save the main Xid for step 4.  We only need to remember main Xids
-		 * that have uncached children.  (Note: there is no race condition
-		 * here because the overflowed flag cannot be cleared, only set, while
-		 * we hold ProcArrayLock.  So we can't miss an Xid that we need to
-		 * worry about.)
-		 */
-		if (pgxact->overflowed)
-			xids[nxids++] = pxid;
+			/*
+			 * We can ignore main Xids that are younger than the target Xid, since
+			 * the target could not possibly be their child.
+			 */
+			if (TransactionIdPrecedes(xid, pxid))
+				continue;
+
+			/*
+			 * Step 2: check the cached child-Xids arrays
+			 */
+			for (j = pgxact->nxids - 1; j >= 0; j--)
+			{
+				/* Fetch xid just once - see GetNewTransactionId */
+				TransactionId cxid = proc->subxids.xids[j];
+
+				if (TransactionIdEquals(cxid, xid))
+				{
+					LWLockRelease(ProcArrayLock);
+					xc_by_child_xid_inc();
+					return true;
+				}
+			}
+
+			/*
+			 * Save the main Xid for step 4.  We only need to remember main Xids
+			 * that have uncached children.  (Note: there is no race condition
+			 * here because the overflowed flag cannot be cleared, only set, while
+			 * we hold ProcArrayLock.  So we can't miss an Xid that we need to
+			 * worry about.)
+			 */
+			if (pgxact->overflowed)
+				xids[nxids++] = pxid;
+		}
 	}
 
 	/*
@@ -1234,24 +1302,29 @@ TransactionIdIsActive(TransactionId xid)
 	{
 		int			pgprocno = arrayP->pgprocnos[i];
 		volatile PGPROC *proc = &allProcs[pgprocno];
-		volatile PGXACT *pgxact = &allPgXact[pgprocno];
-		TransactionId pxid;
-
-		/* Fetch xid just once - see GetNewTransactionId */
-		pxid = pgxact->xid;
-
-		if (!TransactionIdIsValid(pxid))
-			continue;
+		volatile PGXACT *pgxact;
 
 		if (proc->pid == 0)
 			continue;			/* ignore prepared transactions */
 
-		if (TransactionIdEquals(pxid, xid))
+		for (pgxact = &allPgXact[pgprocno]; pgxact != NULL; pgxact = pgxact->parent)
 		{
-			result = true;
-			break;
+			TransactionId pxid;
+
+			/* Fetch xid just once - see GetNewTransactionId */
+			pxid = pgxact->xid;
+
+			if (!TransactionIdIsValid(pxid))
+				continue;
+
+			if (TransactionIdEquals(pxid, xid))
+			{
+				result = true;
+				goto end;
+			}
 		}
 	}
+end:
 
 	LWLockRelease(ProcArrayLock);
 
@@ -1344,7 +1417,7 @@ GetOldestXmin(Relation rel, bool ignoreVacuum)
 	{
 		int			pgprocno = arrayP->pgprocnos[index];
 		volatile PGPROC *proc = &allProcs[pgprocno];
-		volatile PGXACT *pgxact = &allPgXact[pgprocno];
+		volatile PGXACT *pgxact = &allPgXact[pgprocno]; // FIXME-ATX: should we go through all atx here?
 
 		/*
 		 * Backend is doing logical decoding which manages xmin separately,
@@ -1456,7 +1529,7 @@ GetOldestXmin(Relation rel, bool ignoreVacuum)
 int
 GetMaxSnapshotXidCount(void)
 {
-	return procArray->maxProcs;
+	return procArray->maxProcs + MaxATX;
 }
 
 /*
@@ -1583,82 +1656,85 @@ GetSnapshotData(Snapshot snapshot)
 		for (index = 0; index < numProcs; index++)
 		{
 			int			pgprocno = pgprocnos[index];
-			volatile PGXACT *pgxact = &allPgXact[pgprocno];
-			TransactionId xid;
-
-			/*
-			 * Backend is doing logical decoding which manages xmin
-			 * separately, check below.
-			 */
-			if (pgxact->vacuumFlags & PROC_IN_LOGICAL_DECODING)
-				continue;
-
-			/* Ignore procs running LAZY VACUUM */
-			if (pgxact->vacuumFlags & PROC_IN_VACUUM)
-				continue;
-
-			/* Update globalxmin to be the smallest valid xmin */
-			xid = pgxact->xmin; /* fetch just once */
-			if (TransactionIdIsNormal(xid) &&
-				NormalTransactionIdPrecedes(xid, globalxmin))
-				globalxmin = xid;
-
-			/* Fetch xid just once - see GetNewTransactionId */
-			xid = pgxact->xid;
-
-			/*
-			 * If the transaction has no XID assigned, we can skip it; it
-			 * won't have sub-XIDs either.  If the XID is >= xmax, we can also
-			 * skip it; such transactions will be treated as running anyway
-			 * (and any sub-XIDs will also be >= xmax).
-			 */
-			if (!TransactionIdIsNormal(xid)
-				|| !NormalTransactionIdPrecedes(xid, xmax))
-				continue;
-
-			/*
-			 * We don't include our own XIDs (if any) in the snapshot, but we
-			 * must include them in xmin.
-			 */
-			if (NormalTransactionIdPrecedes(xid, xmin))
-				xmin = xid;
-			if (pgxact == MyPgXact)
-				continue;
-
-			/* Add XID to snapshot. */
-			snapshot->xip[count++] = xid;
-
-			/*
-			 * Save subtransaction XIDs if possible (if we've already
-			 * overflowed, there's no point).  Note that the subxact XIDs must
-			 * be later than their parent, so no need to check them against
-			 * xmin.  We could filter against xmax, but it seems better not to
-			 * do that much work while holding the ProcArrayLock.
-			 *
-			 * The other backend can add more subxids concurrently, but cannot
-			 * remove any.  Hence it's important to fetch nxids just once.
-			 * Should be safe to use memcpy, though.  (We needn't worry about
-			 * missing any xids added concurrently, because they must postdate
-			 * xmax.)
-			 *
-			 * Again, our own XIDs are not included in the snapshot.
-			 */
-			if (!suboverflowed)
+			volatile PGXACT *pgxact;// = &allPgXact[pgprocno];
+			for (pgxact = &allPgXact[pgprocno]; pgxact != NULL; pgxact = pgxact->parent)
 			{
-				if (pgxact->overflowed)
-					suboverflowed = true;
-				else
+				TransactionId xid;
+
+				/*
+				 * Backend is doing logical decoding which manages xmin
+				 * separately, check below.
+				 */
+				if (pgxact->vacuumFlags & PROC_IN_LOGICAL_DECODING)
+					continue;
+
+				/* Ignore procs running LAZY VACUUM */
+				if (pgxact->vacuumFlags & PROC_IN_VACUUM)
+					continue;
+
+				/* Update globalxmin to be the smallest valid xmin */
+				xid = pgxact->xmin; /* fetch just once */
+				if (TransactionIdIsNormal(xid) &&
+					NormalTransactionIdPrecedes(xid, globalxmin))
+					globalxmin = xid;
+
+				/* Fetch xid just once - see GetNewTransactionId */
+				xid = pgxact->xid;
+
+				/*
+				 * If the transaction has no XID assigned, we can skip it; it
+				 * won't have sub-XIDs either.  If the XID is >= xmax, we can also
+				 * skip it; such transactions will be treated as running anyway
+				 * (and any sub-XIDs will also be >= xmax).
+				 */
+				if (!TransactionIdIsNormal(xid)
+					|| !NormalTransactionIdPrecedes(xid, xmax))
+					continue;
+
+				/*
+				 * We don't include our own XIDs (if any) in the snapshot, but we
+				 * must include them in xmin.
+				 */
+				if (NormalTransactionIdPrecedes(xid, xmin))
+					xmin = xid;
+				if (pgxact == MyPgXact)
+					continue;
+
+				/* Add XID to snapshot. */
+				snapshot->xip[count++] = xid;
+
+				/*
+				 * Save subtransaction XIDs if possible (if we've already
+				 * overflowed, there's no point).  Note that the subxact XIDs must
+				 * be later than their parent, so no need to check them against
+				 * xmin.  We could filter against xmax, but it seems better not to
+				 * do that much work while holding the ProcArrayLock.
+				 *
+				 * The other backend can add more subxids concurrently, but cannot
+				 * remove any.  Hence it's important to fetch nxids just once.
+				 * Should be safe to use memcpy, though.  (We needn't worry about
+				 * missing any xids added concurrently, because they must postdate
+				 * xmax.)
+				 *
+				 * Again, our own XIDs are not included in the snapshot.
+				 */
+				if (!suboverflowed)
 				{
-					int			nxids = pgxact->nxids;
-
-					if (nxids > 0)
+					if (pgxact->overflowed)
+						suboverflowed = true;
+					else
 					{
-						volatile PGPROC *proc = &allProcs[pgprocno];
+						int			nxids = pgxact->nxids;
 
-						memcpy(snapshot->subxip + subcount,
-							   (void *) proc->subxids.xids,
-							   nxids * sizeof(TransactionId));
-						subcount += nxids;
+						if (nxids > 0)
+						{
+							volatile PGPROC *proc = &allProcs[pgprocno];
+
+							memcpy(snapshot->subxip + subcount,
+								   (void *) proc->subxids.xids,
+								   nxids * sizeof(TransactionId));
+							subcount += nxids;
+						}
 					}
 				}
 			}
@@ -1811,45 +1887,50 @@ ProcArrayInstallImportedXmin(TransactionId xmin, TransactionId sourcexid)
 	{
 		int			pgprocno = arrayP->pgprocnos[index];
 		volatile PGPROC *proc = &allProcs[pgprocno];
-		volatile PGXACT *pgxact = &allPgXact[pgprocno];
-		TransactionId xid;
+		volatile PGXACT *pgxact;// = &allPgXact[pgprocno];
 
-		/* Ignore procs running LAZY VACUUM */
-		if (pgxact->vacuumFlags & PROC_IN_VACUUM)
-			continue;
+		for (pgxact = &allPgXact[pgprocno]; pgxact != NULL; pgxact = pgxact->parent)
+		{
+			TransactionId xid;
 
-		xid = pgxact->xid;		/* fetch just once */
-		if (xid != sourcexid)
-			continue;
+			/* Ignore procs running LAZY VACUUM */
+			if (pgxact->vacuumFlags & PROC_IN_VACUUM)
+				continue;
 
-		/*
-		 * We check the transaction's database ID for paranoia's sake: if it's
-		 * in another DB then its xmin does not cover us.  Caller should have
-		 * detected this already, so we just treat any funny cases as
-		 * "transaction not found".
-		 */
-		if (proc->databaseId != MyDatabaseId)
-			continue;
+			xid = pgxact->xid;		/* fetch just once */
+			if (xid != sourcexid)
+				continue;
 
-		/*
-		 * Likewise, let's just make real sure its xmin does cover us.
-		 */
-		xid = pgxact->xmin;		/* fetch just once */
-		if (!TransactionIdIsNormal(xid) ||
-			!TransactionIdPrecedesOrEquals(xid, xmin))
-			continue;
+			/*
+			 * We check the transaction's database ID for paranoia's sake: if it's
+			 * in another DB then its xmin does not cover us.  Caller should have
+			 * detected this already, so we just treat any funny cases as
+			 * "transaction not found".
+			 */
+			if (proc->databaseId != MyDatabaseId)
+				continue;
 
-		/*
-		 * We're good.  Install the new xmin.  As in GetSnapshotData, set
-		 * TransactionXmin too.  (Note that because snapmgr.c called
-		 * GetSnapshotData first, we'll be overwriting a valid xmin here, so
-		 * we don't check that.)
-		 */
-		MyPgXact->xmin = TransactionXmin = xmin;
+			/*
+			 * Likewise, let's just make real sure its xmin does cover us.
+			 */
+			xid = pgxact->xmin;		/* fetch just once */
+			if (!TransactionIdIsNormal(xid) ||
+				!TransactionIdPrecedesOrEquals(xid, xmin))
+				continue;
 
-		result = true;
-		break;
+			/*
+			 * We're good.  Install the new xmin.  As in GetSnapshotData, set
+			 * TransactionXmin too.  (Note that because snapmgr.c called
+			 * GetSnapshotData first, we'll be overwriting a valid xmin here, so
+			 * we don't check that.)
+			 */
+			MyPgXact->xmin = TransactionXmin = xmin;
+
+			result = true;
+			goto end;
+		}
 	}
+end:
 
 	LWLockRelease(ProcArrayLock);
 
@@ -1878,21 +1959,22 @@ ProcArrayInstallRestoredXmin(TransactionId xmin, PGPROC *proc)
 	/* Get lock so source xact can't end while we're doing this */
 	LWLockAcquire(ProcArrayLock, LW_SHARED);
 
-	pgxact = &allPgXact[proc->pgprocno];
-
-	/*
-	 * Be certain that the referenced PGPROC has an advertised xmin which is
-	 * no later than the one we're installing, so that the system-wide xmin
-	 * can't go backwards.  Also, make sure it's running in the same database,
-	 * so that the per-database xmin cannot go backwards.
-	 */
-	xid = pgxact->xmin;			/* fetch just once */
-	if (proc->databaseId == MyDatabaseId &&
-		TransactionIdIsNormal(xid) &&
-		TransactionIdPrecedesOrEquals(xid, xmin))
+	for (pgxact = &allPgXact[proc->pgprocno]; pgxact != NULL; pgxact = pgxact->parent)
 	{
-		MyPgXact->xmin = TransactionXmin = xmin;
-		result = true;
+		/*
+		 * Be certain that the referenced PGPROC has an advertised xmin which is
+		 * no later than the one we're installing, so that the system-wide xmin
+		 * can't go backwards.  Also, make sure it's running in the same database,
+		 * so that the per-database xmin cannot go backwards.
+		 */
+		xid = pgxact->xmin;			/* fetch just once */
+		if (proc->databaseId == MyDatabaseId &&
+			TransactionIdIsNormal(xid) &&
+			TransactionIdPrecedesOrEquals(xid, xmin))
+		{
+			MyPgXact->xmin = TransactionXmin = xmin;
+			result = true;
+		}
 	}
 
 	LWLockRelease(ProcArrayLock);

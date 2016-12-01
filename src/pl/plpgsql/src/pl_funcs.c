@@ -893,7 +893,7 @@ dump_block(PLpgSQL_stmt_block *block)
 		name = block->label;
 
 	dump_ind();
-	printf("BLOCK <<%s>>\n", name);
+	printf("%sBLOCK <<%s>>\n", block->autonomous ? "AUTONOMOUS " : "", name);
 
 	dump_stmts(block->body);
 

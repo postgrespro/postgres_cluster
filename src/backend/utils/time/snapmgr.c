@@ -2133,3 +2133,82 @@ RestoreTransactionSnapshot(Snapshot snapshot, void *master_pgproc)
 {
 	SetTransactionSnapshot(snapshot, InvalidTransactionId, master_pgproc);
 }
+
+typedef struct SuspendedSnapshotState
+{
+	SnapshotData CurrentSnapshotData;
+	SnapshotData SecondarySnapshotData;
+	SnapshotData CatalogSnapshotData;
+
+	Snapshot CurrentSnapshot;
+	Snapshot SecondarySnapshot;
+	Snapshot CatalogSnapshot;
+	Snapshot HistoricSnapshot;
+
+	bool FirstSnapshotSet;
+	Snapshot FirstXactSnapshot;
+	pairingheap RegisteredSnapshots;
+
+	ActiveSnapshotElt *ActiveSnapshot;
+	ActiveSnapshotElt *OldestActiveSnapshot;
+} SuspendedSnapshotState;
+
+#define MOVELEFT(A, B, C) do { (A) = (B); (B) = (C); } while (0)
+void *SuspendSnapshot(void)
+{
+	SnapshotData mvcc = {HeapTupleSatisfiesMVCC};
+	pairingheap fresh_regsnap = {&xmin_cmp, NULL, NULL};
+	SuspendedSnapshotState *s = malloc(sizeof(SuspendedSnapshotState));
+
+	MOVELEFT(s->CurrentSnapshotData, CurrentSnapshotData, mvcc);
+	MOVELEFT(s->SecondarySnapshotData, SecondarySnapshotData, mvcc);
+	MOVELEFT(s->CatalogSnapshotData, CatalogSnapshotData, mvcc);
+
+	MOVELEFT(s->CurrentSnapshot, CurrentSnapshot, NULL);
+	MOVELEFT(s->SecondarySnapshot, SecondarySnapshot, NULL);
+	MOVELEFT(s->CatalogSnapshot, CatalogSnapshot, NULL);
+	MOVELEFT(s->HistoricSnapshot, HistoricSnapshot, NULL);
+
+	MOVELEFT(s->FirstSnapshotSet, FirstSnapshotSet, false);
+	MOVELEFT(s->FirstXactSnapshot, FirstXactSnapshot, NULL);
+	MOVELEFT(s->RegisteredSnapshots, RegisteredSnapshots, fresh_regsnap);
+
+	MOVELEFT(s->ActiveSnapshot, ActiveSnapshot, NULL);
+	MOVELEFT(s->OldestActiveSnapshot, OldestActiveSnapshot, NULL);
+
+	RelationCacheInvalidate();
+	ResetCatalogCaches();
+
+	return s;
+}
+
+void ResumeSnapshot(void *data)
+{
+	SuspendedSnapshotState *s = (SuspendedSnapshotState *)data;
+
+	//UnregisterSnapshot(CurrentSnapshot);
+	//UnregisterSnapshot(SecondarySnapshot);
+	//UnregisterSnapshot(CatalogSnapshot);
+	//UnregisterSnapshot(HistoricSnapshot);
+
+	CurrentSnapshotData = s->CurrentSnapshotData;
+	SecondarySnapshotData = s->SecondarySnapshotData;
+	CatalogSnapshotData = s->CatalogSnapshotData;
+
+	CurrentSnapshot = s->CurrentSnapshot;
+	SecondarySnapshot = s->SecondarySnapshot;
+	CatalogSnapshot = s->CatalogSnapshot;
+	HistoricSnapshot = s->HistoricSnapshot;
+
+	FirstSnapshotSet = s->FirstSnapshotSet;
+	FirstXactSnapshot = s->FirstXactSnapshot;
+	RegisteredSnapshots = s->RegisteredSnapshots;
+
+	ActiveSnapshot = s->ActiveSnapshot;
+	OldestActiveSnapshot = s->OldestActiveSnapshot;
+
+	RelationCacheInvalidate();
+	ResetCatalogCaches();
+
+	free(s);
+}

@@ -560,7 +560,7 @@ PortalDrop(Portal portal, bool isTopCommit)
 	 * eventually ends.
 	 */
 	if (portal->resowner &&
-		(!isTopCommit || portal->status == PORTAL_FAILED))
+		(!isTopCommit || portal->status == PORTAL_FAILED) && getNestLevelATX() == 0)
 	{
 		bool		isCommit = (portal->status != PORTAL_FAILED);
 
@@ -676,7 +676,8 @@ PreCommit_Portals(bool isPrepare)
 		 */
 		if (portal->status == PORTAL_ACTIVE)
 		{
-			portal->resowner = NULL;
+			if (getNestLevelATX() == 0)
+				portal->resowner = NULL; // only clean the pointer if not in ATX
 			continue;
 		}
 
