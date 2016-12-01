@@ -1,0 +1,14 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1u1 s2u2 s1atxb s2u1 s1u2 s1atxc s1c s2c
+step s1u1: update t set b = 11 where a = 1;
+step s2u2: update t set b = 22 where a = 2;
+step s1atxb: begin autonomous;
+step s2u1: update t set b = 11 where a = 1; <waiting ...>
+step s1u2: update t set b = 21 where a = 2; <waiting ...>
+step s1u2: <... completed>
+step s2u1: <... completed>
+error in steps s1u2 s2u1: ERROR:  deadlock detected
+step s1atxc: commit;
+step s1c: commit;
+step s2c: commit;
