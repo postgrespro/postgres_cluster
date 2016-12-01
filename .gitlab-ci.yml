@@ -15,7 +15,7 @@ test:ubuntu-16.04:
   only:
     - PGPROEE9_6
   before_script:
-    - apt-get update && apt-get install -y sudo gcc make flex bison libreadline-dev zlib1g-dev openjade libzstd0 libzstd-dev opensp
+    - apt-get update && apt-get install -y sudo gcc make flex bison libreadline-dev zlib1g-dev openjade libzstd0 libzstd-dev opensp docbook docbook-xml docbook-xsl
   script:
     - ./configure --prefix=/opt/pgproee
     - make -j $CORES world
