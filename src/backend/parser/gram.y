@@ -936,13 +936,6 @@ AlterOptRoleElem:
 				{
 					$$ = makeDefElem("password", NULL, @1);
 				}
-			| PASSWORD Sconst USING Sconst
-				{
-					$$ = makeDefElem("protocolPassword",
-									 (Node *)list_make2(makeString($2),
-														makeString($4)),
-									 @1);
-				}
 			| ENCRYPTED PASSWORD Sconst
 				{
 					$$ = makeDefElem("encryptedPassword",
