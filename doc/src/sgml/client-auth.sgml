@@ -421,6 +421,17 @@ hostnossl  <replaceable>database</replaceable>  <replaceable>user</replaceable> 
        </varlistentry>
 
        <varlistentry>
+        <term><literal>scram</></term>
+        <listitem>
+         <para>
+          Require the client to supply a password encrypted with
+          SCRAM-SHA-256 for authentication.
+          See <xref linkend="auth-password"> for details.
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
         <term><literal>password</></term>
         <listitem>
          <para>
@@ -902,6 +913,17 @@ omicron         bryanh                  guest1
     protected by SSL encryption then <literal>password</> can be used
     safely (though SSL certificate authentication might be a better
     choice if one is depending on using SSL).
+   </para>
+
+   <para>
+    <literal>scram</> has more advantages than <literal>md5</> as it
+    protects from cases where the hashed password is taken directly from
+    <structname>pg_authid</structname> in which case a connection using
+    only the stolen hash is possible without knowing the password behind
+    it.  It protects as well from password interception and data sniffing
+    where the password data could be directly obtained from the network
+    as well as man-in-the-middle (MITM) attacks.  So it is strongly
+    encouraged to use it over <literal>md5</> for password-based deployments.
    </para>
 
    <para>

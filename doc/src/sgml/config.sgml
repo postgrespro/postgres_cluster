@@ -1254,7 +1254,7 @@ include_dir 'conf.d'
         Authentication checks are always done with the server's user name
         so authentication methods must be configured for the
         server's user name, not the client's.  Because
-        <literal>md5</> uses the user name as salt on both the
+        <literal>md5</>uses the user name as salt on both the
         client and server, and <literal>scram</> uses the user name as
         a portion of the salt used on both the client and server,
         <literal>md5</> and <literal>scram</> cannot be used with
