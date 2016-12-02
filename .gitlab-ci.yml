@@ -15,7 +15,7 @@ test:ubuntu-16.04:
   only:
     - PGPROEE9_6
   before_script:
-    - apt-get update && apt-get install -y sudo gcc make flex bison libreadline-dev zlib1g-dev openjade libzstd0 libzstd-dev opensp docbook docbook-xml docbook-xsl libxml2-utils xsltproc python-dev
+    - apt-get update && apt-get install -y sudo gcc make flex bison libreadline-dev zlib1g-dev openjade libzstd0 libzstd-dev opensp docbook docbook-xml docbook-xsl libxml2-utils xsltproc python-dev libicu-dev
   script:
     - ./configure --prefix=/opt/pgproee  --with-zstd --with-icu --with-python
     - make -j $CORES world
