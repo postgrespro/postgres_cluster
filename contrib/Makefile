@@ -29,6 +29,7 @@ SUBDIRS = \
 		oid2name	\
 		pageinspect	\
 		passwordcheck	\
+		pgpro_scheduler \
 		pg_buffercache	\
 		pg_freespacemap \
 		pg_prewarm	\
