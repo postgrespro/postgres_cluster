@@ -2532,7 +2532,6 @@ _outDefElem(StringInfo str, const DefElem *node)
 	WRITE_STRING_FIELD(defname);
 	WRITE_NODE_FIELD(arg);
 	WRITE_ENUM_FIELD(defaction, DefElemAction);
-	WRITE_LOCATION_FIELD(location);
 }
 
 static void

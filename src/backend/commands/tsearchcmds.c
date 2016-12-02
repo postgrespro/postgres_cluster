@@ -1700,7 +1700,7 @@ deserialize_deflist(Datum txt)
 						*wsptr++ = '\0';
 						result = lappend(result,
 										 makeDefElem(pstrdup(workspace),
-													 (Node *) makeString(pstrdup(startvalue)), -1));
+								  (Node *) makeString(pstrdup(startvalue))));
 						state = CS_WAITKEY;
 					}
 				}
@@ -1732,7 +1732,7 @@ deserialize_deflist(Datum txt)
 						*wsptr++ = '\0';
 						result = lappend(result,
 										 makeDefElem(pstrdup(workspace),
-													 (Node *) makeString(pstrdup(startvalue)), -1));
+								  (Node *) makeString(pstrdup(startvalue))));
 						state = CS_WAITKEY;
 					}
 				}
@@ -1747,7 +1747,7 @@ deserialize_deflist(Datum txt)
 					*wsptr++ = '\0';
 					result = lappend(result,
 									 makeDefElem(pstrdup(workspace),
-												 (Node *) makeString(pstrdup(startvalue)), -1));
+								  (Node *) makeString(pstrdup(startvalue))));
 					state = CS_WAITKEY;
 				}
 				else
@@ -1766,7 +1766,7 @@ deserialize_deflist(Datum txt)
 		*wsptr++ = '\0';
 		result = lappend(result,
 						 makeDefElem(pstrdup(workspace),
-									 (Node *) makeString(pstrdup(startvalue)), -1));
+								  (Node *) makeString(pstrdup(startvalue))));
 	}
 	else if (state != CS_WAITKEY)
 		ereport(ERROR,

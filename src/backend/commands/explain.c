@@ -140,7 +140,7 @@ static void escape_yaml(StringInfo buf, const char *str);
  *	  execute an EXPLAIN command
  */
 void
-ExplainQuery(ParseState *pstate, ExplainStmt *stmt, const char *queryString,
+ExplainQuery(ExplainStmt *stmt, const char *queryString,
 			 ParamListInfo params, DestReceiver *dest)
 {
 	ExplainState *es = NewExplainState();
@@ -183,15 +183,13 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt, const char *queryString,
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				errmsg("unrecognized value for EXPLAIN option \"%s\": \"%s\"",
-					   opt->defname, p),
-						 parser_errposition(pstate, opt->location)));
+					   opt->defname, p)));
 		}
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("unrecognized EXPLAIN option \"%s\"",
-							opt->defname),
-					 parser_errposition(pstate, opt->location)));
+							opt->defname)));
 	}
 
 	if (es->buffers && !es->analyze)

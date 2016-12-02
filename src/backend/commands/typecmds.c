@@ -111,7 +111,7 @@ static char *domainAddConstraint(Oid domainOid, Oid domainNamespace,
  *		Registers a new base type.
  */
 ObjectAddress
-DefineType(ParseState *pstate, List *names, List *parameters)
+DefineType(List *names, List *parameters)
 {
 	char	   *typeName;
 	Oid			typeNamespace;
@@ -286,15 +286,13 @@ DefineType(ParseState *pstate, List *names, List *parameters)
 			ereport(WARNING,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("type attribute \"%s\" not recognized",
-							defel->defname),
-					 parser_errposition(pstate, defel->location)));
+							defel->defname)));
 			continue;
 		}
 		if (*defelp != NULL)
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
-					 errmsg("conflicting or redundant options"),
-					 parser_errposition(pstate, defel->location)));
+					 errmsg("conflicting or redundant options")));
 		*defelp = defel;
 	}
 
