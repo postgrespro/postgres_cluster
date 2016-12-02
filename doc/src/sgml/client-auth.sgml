@@ -661,16 +661,23 @@ host    all             all             localhost               trust
 host    postgres        all             192.168.93.0/24         ident
 
 # Allow any user from host 192.168.12.10 to connect to database
-# "postgres" if the user's password is correctly supplied.
+# "postgres" if the user's password is correctly supplied and is
+# using the correct password method.
 #
 # TYPE  DATABASE        USER            ADDRESS                 METHOD
 host    postgres        all             192.168.12.10/32        md5
+host    postgres        all             192.168.12.10/32        scram
 
 # Allow any user from hosts in the example.com domain to connect to
-# any database if the user's password is correctly supplied.
+# any database if the user's password is correctly supplied and is using
+# a MD5-encrypted password.
 #
 # TYPE  DATABASE        USER            ADDRESS                 METHOD
 host    all             all             .example.com            md5
+
+# Same as previous entry, except that the supplied password must be
+# encrypted with SCRAM-SHA-256.
+host    all             all             .example.com            scram
 
 # In the absence of preceding "host" lines, these two lines will
 # reject all connections from 192.168.54.1 (since that entry will be
@@ -899,9 +906,9 @@ omicron         bryanh                  guest1
 
    <para>
     The password-based authentication methods are <literal>md5</>
-    and <literal>password</>. These methods operate
+    <literal>scram</> and <literal>password</>. These methods operate
     similarly except for the way that the password is sent across the
-    connection, namely MD5-hashed and clear-text respectively.
+    connection, namely MD5-hashed, SCRAM-SHA-256 and clear-text respectively.
    </para>
 
    <para>

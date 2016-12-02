@@ -229,16 +229,16 @@ CREATE ROLE <replaceable class="PARAMETER">name</replaceable> [ [ WITH ] <replac
         encrypted in the system catalogs.  (If neither is specified,
         the default behavior is determined by the configuration
         parameter <xref linkend="guc-password-encryption">.)  If the
-        presented password string is already in MD5-encrypted format,
-        then it is stored encrypted as-is, regardless of whether
-        <literal>ENCRYPTED</> or <literal>UNENCRYPTED</> is specified
-        (since the system cannot decrypt the specified encrypted
-        password string).  This allows reloading of encrypted
-        passwords during dump/restore.
+        presented password string is already in MD5-encrypted or
+        SCRAM-encrypted format, then it is stored encrypted as-is,
+        regardless of whether <literal>ENCRYPTED</> or <literal>UNENCRYPTED</>
+        is specified (since the system cannot decrypt the specified encrypted
+        password string).  This allows reloading of encrypted passwords
+        during dump/restore.
        </para>
 
        <para>
-        Note that older clients might lack support for the MD5
+        Note that older clients might lack support for the MD5 or SCRAM
         authentication mechanism that is needed to work with passwords
         that are stored encrypted.
        </para>
@@ -254,10 +254,11 @@ CREATE ROLE <replaceable class="PARAMETER">name</replaceable> [ [ WITH ] <replac
         attribute, but you can nonetheless define one for roles without it.)
         If you do not plan to use password authentication you can omit this
         option. The methods supported are <literal>md5</> to enforce
-        a password to be MD5-encrypted, and <literal>plain</> to use an
-        unencrypted password.  If the password string is already in
-        MD5-encrypted format, then it is stored encrypted even if
-        <literal>plain</> is specified.
+        a password to be MD5-encrypted, <literal>scram</> to enforce a password
+        to be encrypted with SCRAM-SHA-256, and <literal>plain</> to use
+        an unencrypted password.  If the password string is already in
+        MD5-encrypted or SCRAM-SHA-256 format, then it is stored encrypted
+        even if another protocol is specified.
        </para>
       </listitem>
      </varlistentry>

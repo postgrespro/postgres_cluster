@@ -30,6 +30,7 @@
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
 #include "libpq/md5.h"
+#include "libpq/scram.h"
 #include "miscadmin.h"
 #include "replication/walsender.h"
 #include "storage/ipc.h"
@@ -210,6 +211,12 @@ static int	CheckRADIUSAuth(Port *port);
 
 
 /*----------------------------------------------------------------
+ * SASL authentication
+ *----------------------------------------------------------------
+ */
+static int CheckSASLAuth(Port *port, char **logdetail);
+
+/*----------------------------------------------------------------
  * Global authentication functions
  *----------------------------------------------------------------
  */
@@ -271,6 +278,7 @@ auth_failed(Port *port, int status, char *logdetail)
 			break;
 		case uaPassword:
 		case uaMD5:
+		case uaSASL:
 			errstr = gettext_noop("password authentication failed for user \"%s\"");
 			/* We use it to indicate if a .pgpass password failed. */
 			errcode_return = ERRCODE_INVALID_PASSWORD;
@@ -549,6 +557,10 @@ ClientAuthentication(Port *port)
 			status = recv_and_check_password_packet(port, &logdetail);
 			break;
 
+		case uaSASL:
+			status = CheckSASLAuth(port, &logdetail);
+			break;
+
 		case uaPAM:
 #ifdef USE_PAM
 			status = CheckPAMAuth(port, port->user_name, "");
@@ -738,6 +750,105 @@ recv_and_check_password_packet(Port *port, char **logdetail)
 	return result;
 }
 
+/*----------------------------------------------------------------
+ * SASL authentication system
+ *----------------------------------------------------------------
+ */
+static int
+CheckSASLAuth(Port *port, char **logdetail)
+{
+	int			mtype;
+	StringInfoData buf;
+	void	   *scram_opaq;
+	char	   *output = NULL;
+	int			outputlen = 0;
+	int			result;
+
+	/*
+	 * SASL auth is not supported for protocol versions before 3, because it
+	 * relies on the overall message length word to determine the SASL payload
+	 * size in AuthenticationSASLContinue and PasswordMessage messages. (We
+	 * used to have a hard rule that protocol messages must be parsable
+	 * without relying on the length word, but we hardly care about protocol
+	 * version or older anymore.)
+	 */
+	if (PG_PROTOCOL_MAJOR(FrontendProtocol) < 3)
+		ereport(FATAL,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("SASL authentication is not supported in protocol version 2")));
+
+	/*
+	 * Send first the authentication request to user. As for MD5, we want
+	 * the user to send its password first even if nothing has been done
+	 * yet.  This avoids consistency issues where a user would be able to
+	 * guess that a server is expecting SASL or MD5 depending on the answer
+	 * given by the backend without the user providing a password first.
+	 */
+	sendAuthRequest(port, AUTH_REQ_SASL, SCRAM_SHA256_NAME,
+					strlen(SCRAM_SHA256_NAME) + 1);
+
+	/* Initialize the status tracker for message exchanges */
+	scram_opaq = pg_be_scram_init(port->user_name);
+
+	/*
+	 * Loop through SASL message exchange. This exchange can consist of
+	 * multiple messages sent in both directions.  First message is always
+	 * from the client.  All messages from client to server are password packets
+	 * (type 'p').
+	 */
+	do
+	{
+		pq_startmsgread();
+		mtype = pq_getbyte();
+		if (mtype != 'p')
+		{
+			/* Only log error if client didn't disconnect. */
+			if (mtype != EOF)
+				ereport(COMMERROR,
+						(errcode(ERRCODE_PROTOCOL_VIOLATION),
+						 errmsg("expected SASL response, got message type %d",
+								mtype)));
+			return STATUS_ERROR;
+		}
+
+		/* Get the actual SASL token */
+		initStringInfo(&buf);
+		if (pq_getmessage(&buf, PG_MAX_AUTH_TOKEN_LENGTH))
+		{
+			/* EOF - pq_getmessage already logged error */
+			pfree(buf.data);
+			return STATUS_ERROR;
+		}
+
+		elog(DEBUG4, "Processing received SASL token of length %d", buf.len);
+
+		result = pg_be_scram_exchange(scram_opaq, buf.data, buf.len,
+									  &output, &outputlen, logdetail);
+
+		/* input buffer no longer used */
+		pfree(buf.data);
+
+		if (outputlen > 0)
+		{
+			/*
+			 * Negotiation generated data to be sent to the client.
+			 */
+			elog(DEBUG4, "sending SASL response token of length %u", outputlen);
+
+			sendAuthRequest(port, AUTH_REQ_SASL_CONT, output, outputlen);
+		}
+	} while (result == SASL_EXCHANGE_CONTINUE);
+
+	/* Oops, Something bad happened */
+	if (result != SASL_EXCHANGE_SUCCESS)
+	{
+		/* an error should have been set during the exchange checks */
+		Assert(*logdetail != NULL);
+		return STATUS_ERROR;
+	}
+
+	return STATUS_OK;
+}
 
 
 /*----------------------------------------------------------------
