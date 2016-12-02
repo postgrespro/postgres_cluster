@@ -117,6 +117,9 @@ typedef struct _restoreOptions
 
 	bool	   *idWanted;		/* array showing which dump IDs to emit */
 	int			enable_row_security;
+	const char	*transfer_dir;
+	int			generate_wal;
+	int			copy_mode_transfer;
 } RestoreOptions;
 
 typedef struct _dumpOptions
@@ -150,7 +153,8 @@ typedef struct _dumpOptions
 	int			outputNoTablespaces;
 	int			use_setsessauth;
 	int			enable_row_security;
-
+	const char	*transfer_dir;
+	
 	/* default, if no "inclusion" switches appear, is to dump everything */
 	bool		include_everything;
 
@@ -159,6 +163,8 @@ typedef struct _dumpOptions
 	bool		outputBlobs;
 	int			outputNoOwner;
 	char	   *outputSuperuser;
+
+	int			copy_mode_transfer;
 } DumpOptions;
 
 /*
@@ -288,5 +294,27 @@ extern int	archprintf(Archive *AH, const char *fmt,...) pg_attribute_printf(2, 3
 
 #define appendStringLiteralAH(buf,str,AH) \
 	appendStringLiteral(buf, str, (AH)->encoding, (AH)->std_strings)
+
+typedef struct RelFileMap
+{
+	const char *datadir;
+	const char *tablespace;
+	Oid			db_oid;
+	Oid			reloid;
+	Oid			relfilenode;
+	char	   *relname;
+	Oid 		reltoastrelid;
+} RelFileMap;
+
+extern RelFileMap* fillRelFileMap(Archive* fout, int* nrels, int* ntoastrels,
+								  const char* dbname, const char* tblname);
+extern RelFileMap* fillRelFileMapSeq(Archive *fout, int *nrels,
+							 const char *dbname, const char *tblname);
+extern RelFileMap * fillRelFileMapToast(Archive *fout, RelFileMap *map,
+										int nrels, int ntoastrels);
+extern void transfer_relfile(RelFileMap *map, const char *type_suffix,
+							 const char *transfer_dir, bool is_restore,
+							 bool is_copy_mode, bool is_verbose);
+extern void transferCheckControlData(Archive *fout, const char *transfer_dir, bool isRestore);
 
 #endif   /* PG_BACKUP_H */

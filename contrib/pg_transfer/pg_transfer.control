@@ -1,0 +1,5 @@
+# pg_transfer extension
+comment = 'support transfer of CONSTANT relations between databases'
+default_version = '1.0'
+module_pathname = '$libdir/pg_transfer'
+relocatable = true

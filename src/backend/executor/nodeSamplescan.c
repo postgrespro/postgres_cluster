@@ -463,6 +463,7 @@ tablesample_getnext(SampleScanState *scanstate)
 
 			tuple->t_data = (HeapTupleHeader) PageGetItem(page, itemid);
 			tuple->t_len = ItemIdGetLength(itemid);
+			HeapTupleCopyEpochFromPage(tuple, page);
 			ItemPointerSet(&(tuple->t_self), blockno, tupoffset);
 
 			if (all_visible)

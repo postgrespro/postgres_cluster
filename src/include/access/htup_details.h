@@ -115,13 +115,13 @@
 
 typedef struct HeapTupleFields
 {
-	TransactionId t_xmin;		/* inserting xact ID */
-	TransactionId t_xmax;		/* deleting or locking xact ID */
+	ShortTransactionId t_xmin;		/* inserting xact ID */
+	ShortTransactionId t_xmax;		/* deleting or locking xact ID */
 
 	union
 	{
 		CommandId	t_cid;		/* inserting or deleting command ID, or both */
-		TransactionId t_xvac;	/* old-style VACUUM FULL xact ID */
+		ShortTransactionId t_xvac;	/* old-style VACUUM FULL xact ID */
 	}			t_field3;
 } HeapTupleFields;
 
@@ -291,6 +291,24 @@ struct HeapTupleHeaderData
  * macros evaluate their other argument only once.
  */
 
+#define HeapTupleCopyEpochFromPage(tup, page) \
+{ \
+	(tup)->t_xid_epoch = ((PageHeader)(page))->pd_xid_epoch; \
+	(tup)->t_multi_epoch = ((PageHeader)(page))->pd_multi_epoch; \
+}
+
+#define HeapTupleCopyEpoch(dest, src) \
+{ \
+	(dest)->t_xid_epoch = (src)->t_xid_epoch; \
+	(dest)->t_multi_epoch = (src)->t_xid_epoch; \
+}
+
+#define HeapTupleSetInvalidEpoch(tup) \
+{ \
+	(tup)->t_xid_epoch = InvalidTransactionId; \
+	(tup)->t_multi_epoch = InvalidTransactionId; \
+}
+
 /*
  * HeapTupleHeaderGetRawXmin returns the "raw" xmin field, which is the xid
  * originally used to insert the tuple.  However, the tuple might actually
@@ -299,20 +317,25 @@ struct HeapTupleHeaderData
  * the xmin to FrozenTransactionId, and that value may still be encountered
  * on disk.
  */
-#define HeapTupleHeaderGetRawXmin(tup) \
+#define HeapTupleGetRawXmin(tup) \
 ( \
-	(tup)->t_choice.t_heap.t_xmin \
+	ShortTransactionIdToNormal((tup)->t_xid_epoch, (tup)->t_data->t_choice.t_heap.t_xmin) \
 )
 
-#define HeapTupleHeaderGetXmin(tup) \
+#define HeapTupleGetXmin(tup) \
 ( \
-	HeapTupleHeaderXminFrozen(tup) ? \
-		FrozenTransactionId : HeapTupleHeaderGetRawXmin(tup) \
+	HeapTupleHeaderXminFrozen((tup)->t_data) ? \
+		FrozenTransactionId : HeapTupleGetRawXmin(tup) \
 )
 
-#define HeapTupleHeaderSetXmin(tup, xid) \
+#define HeapTupleSetXmin(tup, xid) \
 ( \
-	(tup)->t_choice.t_heap.t_xmin = (xid) \
+	(tup)->t_data->t_choice.t_heap.t_xmin = NormalTransactionIdToShort((tup)->t_xid_epoch, (xid)) \
+)
+
+#define HeapTupleHeaderSetXmin(page, tup, xid) \
+( \
+	(tup)->t_choice.t_heap.t_xmin = NormalTransactionIdToShort(((PageHeader)(page))->pd_xid_epoch, (xid)) \
 )
 
 #define HeapTupleHeaderXminCommitted(tup) \
@@ -356,24 +379,44 @@ struct HeapTupleHeaderData
  * to resolve the MultiXactId if necessary.  This might involve multixact I/O,
  * so it should only be used if absolutely necessary.
  */
-#define HeapTupleHeaderGetUpdateXid(tup) \
+#define HeapTupleGetUpdateXidAny(tup) \
 ( \
-	(!((tup)->t_infomask & HEAP_XMAX_INVALID) && \
-	 ((tup)->t_infomask & HEAP_XMAX_IS_MULTI) && \
-	 !((tup)->t_infomask & HEAP_XMAX_LOCK_ONLY)) ? \
+	(!((tup)->t_data->t_infomask & HEAP_XMAX_INVALID) && \
+	 ((tup)->t_data->t_infomask & HEAP_XMAX_IS_MULTI) && \
+	 !((tup)->t_data->t_infomask & HEAP_XMAX_LOCK_ONLY)) ? \
 		HeapTupleGetUpdateXid(tup) \
 	: \
-		HeapTupleHeaderGetRawXmax(tup) \
+		HeapTupleGetRawXmax(tup) \
 )
 
-#define HeapTupleHeaderGetRawXmax(tup) \
+#define HeapTupleGetRawXmax(tup) \
 ( \
-	(tup)->t_choice.t_heap.t_xmax \
+	ShortTransactionIdToNormal( \
+		((tup)->t_data->t_infomask & HEAP_XMAX_IS_MULTI) ? (tup)->t_multi_epoch : (tup)->t_xid_epoch, \
+		(tup)->t_data->t_choice.t_heap.t_xmax) \
 )
 
-#define HeapTupleHeaderSetXmax(tup, xid) \
+#define HeapTupleHeaderGetRawXmax(page, tup) \
 ( \
-	(tup)->t_choice.t_heap.t_xmax = (xid) \
+	ShortTransactionIdToNormal( \
+		((tup)->t_infomask & HEAP_XMAX_IS_MULTI) ? ((PageHeader)(page))->pd_multi_epoch : ((PageHeader)(page))->pd_xid_epoch, \
+		(tup)->t_choice.t_heap.t_xmax) \
+)
+
+#define HeapTupleSetXmax(tup, xid) \
+( \
+	(tup)->t_data->t_choice.t_heap.t_xmax = \
+		NormalTransactionIdToShort( \
+			((tup)->t_data->t_infomask & HEAP_XMAX_IS_MULTI) ? (tup)->t_multi_epoch : (tup)->t_xid_epoch, \
+			(xid)) \
+)
+
+#define HeapTupleHeaderSetXmax(page, tup, xid) \
+( \
+	(tup)->t_choice.t_heap.t_xmax = \
+		NormalTransactionIdToShort( \
+			((tup)->t_infomask & HEAP_XMAX_IS_MULTI) ? ((PageHeader)(page))->pd_multi_epoch : ((PageHeader)(page))->pd_xid_epoch, \
+			(xid)) \
 )
 
 /*

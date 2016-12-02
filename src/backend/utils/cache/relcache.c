@@ -983,6 +983,7 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	switch (relation->rd_rel->relpersistence)
 	{
 		case RELPERSISTENCE_UNLOGGED:
+		case RELPERSISTENCE_CONSTANT:
 		case RELPERSISTENCE_PERMANENT:
 			relation->rd_backend = InvalidBackendId;
 			relation->rd_islocaltemp = false;
@@ -1977,8 +1978,9 @@ RelationReloadIndexInfo(Relation relation)
 		relation->rd_index->indislive = index->indislive;
 
 		/* Copy xmin too, as that is needed to make sense of indcheckxmin */
-		HeapTupleHeaderSetXmin(relation->rd_indextuple->t_data,
-							   HeapTupleHeaderGetXmin(tuple->t_data));
+		relation->rd_indextuple->t_xid_epoch = tuple->t_xid_epoch;
+		HeapTupleSetXmin(relation->rd_indextuple,
+						 HeapTupleGetXmin(tuple));
 
 		ReleaseSysCache(tuple);
 	}
@@ -2963,6 +2965,7 @@ RelationBuildLocalRelation(const char *relname,
 	switch (relpersistence)
 	{
 		case RELPERSISTENCE_UNLOGGED:
+		case RELPERSISTENCE_CONSTANT:
 		case RELPERSISTENCE_PERMANENT:
 			rel->rd_backend = InvalidBackendId;
 			rel->rd_islocaltemp = false;

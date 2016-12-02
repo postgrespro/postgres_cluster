@@ -62,8 +62,10 @@ typedef MinimalTupleData *MinimalTuple;
 typedef struct HeapTupleData
 {
 	uint32		t_len;			/* length of *t_data */
-	ItemPointerData t_self;		/* SelfItemPointer */
 	Oid			t_tableOid;		/* table the tuple came from */
+	TransactionId	t_xid_epoch;
+	TransactionId	t_multi_epoch;
+	ItemPointerData t_self;		/* SelfItemPointer */
 	HeapTupleHeader t_data;		/* -> tuple header and data */
 } HeapTupleData;
 
@@ -79,10 +81,10 @@ typedef HeapTupleData *HeapTuple;
 /* HeapTupleHeader functions implemented in utils/time/combocid.c */
 extern CommandId HeapTupleHeaderGetCmin(HeapTupleHeader tup);
 extern CommandId HeapTupleHeaderGetCmax(HeapTupleHeader tup);
-extern void HeapTupleHeaderAdjustCmax(HeapTupleHeader tup,
+extern void HeapTupleHeaderAdjustCmax(HeapTuple tup,
 						  CommandId *cmax, bool *iscombo);
 
 /* Prototype for HeapTupleHeader accessors in heapam.c */
-extern TransactionId HeapTupleGetUpdateXid(HeapTupleHeader tuple);
+extern TransactionId HeapTupleGetUpdateXid(HeapTuple tuple);
 
 #endif   /* HTUP_H */

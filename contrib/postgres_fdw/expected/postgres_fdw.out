@@ -2784,7 +2784,9 @@ UPDATE ft2 SET c2 = c2 + 400, c3 = c3 || '_update7' WHERE c1 % 10 = 7 RETURNING 
          Remote SQL: UPDATE "S 1"."T 1" SET c2 = (c2 + 400), c3 = (c3 || '_update7'::text) WHERE ((("C 1" % 10) = 7)) RETURNING "C 1", c2, c3, c4, c5, c6, c7, c8
 (4 rows)
 
-UPDATE ft2 SET c2 = c2 + 400, c3 = c3 || '_update7' WHERE c1 % 10 = 7 RETURNING *;
+WITH updated AS (
+  UPDATE ft2 SET c2 = c2 + 400, c3 = c3 || '_update7' WHERE c1 % 10 = 7 RETURNING *
+) SELECT * FROM updated ORDER BY c1;
   c1  | c2  |         c3         |              c4              |            c5            | c6 |     c7     | c8  
 ------+-----+--------------------+------------------------------+--------------------------+----+------------+-----
     7 | 407 | 00007_update7      | Thu Jan 08 00:00:00 1970 PST | Thu Jan 08 00:00:00 1970 | 7  | 7          | foo
@@ -2927,7 +2929,9 @@ EXPLAIN (verbose, costs off)
          Remote SQL: DELETE FROM "S 1"."T 1" WHERE ((("C 1" % 10) = 5)) RETURNING "C 1", c4
 (4 rows)
 
-DELETE FROM ft2 WHERE c1 % 10 = 5 RETURNING c1, c4;
+WITH deleted AS (
+  DELETE FROM ft2 WHERE c1 % 10 = 5 RETURNING c1, c4
+) SELECT * FROM deleted ORDER BY c1;
   c1  |              c4              
 ------+------------------------------
     5 | Tue Jan 06 00:00:00 1970 PST
@@ -3953,7 +3957,9 @@ INSERT INTO ft2 (c1,c2,c3,c6) VALUES (1218, 818, 'ggg', '(--;') RETURNING *;
  1218 | 818 | ggg_trig_update |    |    | (--; | ft2        | 
 (1 row)
 
-UPDATE ft2 SET c2 = c2 + 600 WHERE c1 % 10 = 8 AND c1 < 1200 RETURNING *;
+WITH updated AS (
+  UPDATE ft2 SET c2 = c2 + 600 WHERE c1 % 10 = 8 AND c1 < 1200 RETURNING *
+) SELECT * FROM updated ORDER BY c1;
   c1  | c2  |           c3           |              c4              |            c5            | c6 |     c7     | c8  
 ------+-----+------------------------+------------------------------+--------------------------+----+------------+-----
     8 | 608 | 00008_trig_update      | Fri Jan 09 00:00:00 1970 PST | Fri Jan 09 00:00:00 1970 | 8  | 8          | foo

@@ -125,6 +125,11 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("unlogged sequences are not supported")));
+	/* CONSTANT sequences are not implemented -- not clear if useful. */
+	if (seq->sequence->relpersistence == RELPERSISTENCE_CONSTANT)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("CONSTANT sequences are not supported")));
 
 	/*
 	 * If if_not_exists was given and a relation with the same name already
@@ -354,10 +359,10 @@ fill_seq_with_data(Relation rel, HeapTuple tuple)
 	 * because if the current transaction aborts, no other xact will ever
 	 * examine the sequence tuple anyway.
 	 */
-	HeapTupleHeaderSetXmin(tuple->t_data, FrozenTransactionId);
+	HeapTupleSetXmin(tuple, FrozenTransactionId);
 	HeapTupleHeaderSetXminFrozen(tuple->t_data);
 	HeapTupleHeaderSetCmin(tuple->t_data, FirstCommandId);
-	HeapTupleHeaderSetXmax(tuple->t_data, InvalidTransactionId);
+	HeapTupleSetXmax(tuple, InvalidTransactionId);
 	tuple->t_data->t_infomask |= HEAP_XMAX_INVALID;
 	ItemPointerSet(&tuple->t_data->t_ctid, 0, FirstOffsetNumber);
 
@@ -1128,6 +1133,7 @@ read_seq_tuple(SeqTable elm, Relation rel, Buffer *buf, HeapTuple seqtuple)
 	/* Note we currently only bother to set these two fields of *seqtuple */
 	seqtuple->t_data = (HeapTupleHeader) PageGetItem(page, lp);
 	seqtuple->t_len = ItemIdGetLength(lp);
+	HeapTupleCopyEpochFromPage(seqtuple, page);
 
 	/*
 	 * Previous releases of Postgres neglected to prevent SELECT FOR UPDATE on
@@ -1138,9 +1144,9 @@ read_seq_tuple(SeqTable elm, Relation rel, Buffer *buf, HeapTuple seqtuple)
 	 * this again if the update gets lost.
 	 */
 	Assert(!(seqtuple->t_data->t_infomask & HEAP_XMAX_IS_MULTI));
-	if (HeapTupleHeaderGetRawXmax(seqtuple->t_data) != InvalidTransactionId)
+	if (HeapTupleGetRawXmax(seqtuple) != InvalidTransactionId)
 	{
-		HeapTupleHeaderSetXmax(seqtuple->t_data, InvalidTransactionId);
+		HeapTupleSetXmax(seqtuple, InvalidTransactionId);
 		seqtuple->t_data->t_infomask &= ~HEAP_XMAX_COMMITTED;
 		seqtuple->t_data->t_infomask |= HEAP_XMAX_INVALID;
 		MarkBufferDirtyHint(*buf, true);

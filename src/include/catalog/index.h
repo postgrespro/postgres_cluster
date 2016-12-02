@@ -124,6 +124,7 @@ extern void reindex_index(Oid indexId, bool skip_constraint_checks,
 #define REINDEX_REL_CHECK_CONSTRAINTS		0x04
 #define REINDEX_REL_FORCE_INDEXES_UNLOGGED	0x08
 #define REINDEX_REL_FORCE_INDEXES_PERMANENT 0x10
+#define REINDEX_REL_FORCE_INDEXES_CONSTANT	0x20
 
 extern bool reindex_relation(Oid relid, int flags, int options);
 

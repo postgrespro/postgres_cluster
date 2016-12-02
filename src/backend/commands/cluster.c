@@ -991,7 +991,7 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex, bool verbose,
 				 * case we had better copy it.
 				 */
 				if (!is_system_catalog &&
-					!TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetXmin(tuple->t_data)))
+					!TransactionIdIsCurrentTransactionId(HeapTupleGetXmin(tuple)))
 					elog(WARNING, "concurrent insert in progress within table \"%s\"",
 						 RelationGetRelationName(OldHeap));
 				/* treat as live */
@@ -1003,7 +1003,7 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex, bool verbose,
 				 * Similar situation to INSERT_IN_PROGRESS case.
 				 */
 				if (!is_system_catalog &&
-					!TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetUpdateXid(tuple->t_data)))
+					!TransactionIdIsCurrentTransactionId(HeapTupleGetUpdateXidAny(tuple)))
 					elog(WARNING, "concurrent delete in progress within table \"%s\"",
 						 RelationGetRelationName(OldHeap));
 				/* treat as recently dead */
@@ -1543,6 +1543,15 @@ finish_heap_swap(Oid OIDOldHeap, Oid OIDNewHeap,
 		reindex_flags |= REINDEX_REL_FORCE_INDEXES_UNLOGGED;
 	else if (newrelpersistence == RELPERSISTENCE_PERMANENT)
 		reindex_flags |= REINDEX_REL_FORCE_INDEXES_PERMANENT;
+	else if (newrelpersistence == RELPERSISTENCE_CONSTANT)
+	{
+		/*
+		 * Actually, there is no need in rebuilding CONSTANT indexes,
+		 * but if someone forced CLUSTER or VACUUM FULL on CONSTANT
+		 * relation, we must do it.
+		 */
+		reindex_flags |= REINDEX_REL_FORCE_INDEXES_CONSTANT;
+	}
 
 	reindex_relation(OIDOldHeap, reindex_flags, 0);
 

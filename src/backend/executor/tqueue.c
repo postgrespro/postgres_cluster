@@ -436,6 +436,7 @@ TQExamineRecord(TQueueDestReceiver *tqueue, RecordRemapInfo *remapinfo,
 		ItemPointerSetInvalid(&(tdata.t_self));
 		tdata.t_tableOid = InvalidOid;
 		tdata.t_data = tup;
+		HeapTupleSetInvalidEpoch(&tdata);
 		heap_deform_tuple(&tdata, tupledesc, values, isnull);
 
 		/* Recursively check each interesting non-NULL attribute. */
@@ -745,6 +746,7 @@ TupleQueueHandleDataMessage(TupleQueueReader *reader,
 	htup.t_tableOid = InvalidOid;
 	htup.t_len = nbytes;
 	htup.t_data = data;
+	HeapTupleSetInvalidEpoch(&htup);
 
 	/*
 	 * Either just copy the data into a regular palloc'd tuple, or remap it,

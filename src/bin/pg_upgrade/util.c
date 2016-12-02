@@ -245,6 +245,24 @@ str2uint(const char *str)
 
 
 /*
+ *	str2uint64()
+ *
+ *	convert string to 64-bit unsigned int
+ */
+uint64
+str2uint64(const char *str)
+{
+#ifdef _MSC_VER					/* MSVC only */
+	return _strtoui64(str, NULL, 10);
+#elif defined(HAVE_STRTOULL) && SIZEOF_LONG < 8
+	return strtoull(str, NULL, 10);
+#else
+	return strtoul(str, NULL, 10);
+#endif
+}
+
+
+/*
  *	pg_putenv()
  *
  *	This is like putenv(), but takes two arguments.

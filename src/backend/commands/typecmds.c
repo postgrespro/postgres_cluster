@@ -1251,7 +1251,7 @@ AlterEnum(AlterEnumStmt *stmt, bool isTopLevel)
 	 * cases that could theoretically be safe; but fortunately pg_dump only
 	 * needs the simplest case.
 	 */
-	if (HeapTupleHeaderGetXmin(tup->t_data) == GetCurrentTransactionId() &&
+	if (HeapTupleGetXmin(tup) == GetCurrentTransactionId() &&
 		!(tup->t_data->t_infomask & HEAP_UPDATED))
 		 /* safe to do inside transaction block */ ;
 	else

@@ -233,8 +233,8 @@ typedef struct LOCKTAG
 	 (locktag).locktag_lockmethodid = DEFAULT_LOCKMETHOD)
 
 #define SET_LOCKTAG_TRANSACTION(locktag,xid) \
-	((locktag).locktag_field1 = (xid), \
-	 (locktag).locktag_field2 = 0, \
+	((locktag).locktag_field1 = (uint32)((xid) & 0xFFFFFFFF), \
+	 (locktag).locktag_field2 = (uint32)((xid) >> 32), \
 	 (locktag).locktag_field3 = 0, \
 	 (locktag).locktag_field4 = 0, \
 	 (locktag).locktag_type = LOCKTAG_TRANSACTION, \
@@ -242,16 +242,16 @@ typedef struct LOCKTAG
 
 #define SET_LOCKTAG_VIRTUALTRANSACTION(locktag,vxid) \
 	((locktag).locktag_field1 = (vxid).backendId, \
-	 (locktag).locktag_field2 = (vxid).localTransactionId, \
-	 (locktag).locktag_field3 = 0, \
+	 (locktag).locktag_field2 = (uint32)((vxid).localTransactionId & 0xFFFFFFFF), \
+	 (locktag).locktag_field3 = (uint32)((vxid).localTransactionId >> 32), \
 	 (locktag).locktag_field4 = 0, \
 	 (locktag).locktag_type = LOCKTAG_VIRTUALTRANSACTION, \
 	 (locktag).locktag_lockmethodid = DEFAULT_LOCKMETHOD)
 
 #define SET_LOCKTAG_SPECULATIVE_INSERTION(locktag,xid,token) \
-	((locktag).locktag_field1 = (xid), \
-	 (locktag).locktag_field2 = (token),		\
-	 (locktag).locktag_field3 = 0, \
+	((locktag).locktag_field1 = (uint32)((xid) & 0xFFFFFFFF), \
+	 (locktag).locktag_field2 = (uint32)((xid) >> 32), \
+	 (locktag).locktag_field3 = (token),		\
 	 (locktag).locktag_field4 = 0, \
 	 (locktag).locktag_type = LOCKTAG_SPECULATIVE_TOKEN, \
 	 (locktag).locktag_lockmethodid = DEFAULT_LOCKMETHOD)

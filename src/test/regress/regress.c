@@ -771,6 +771,7 @@ make_tuple_indirect(PG_FUNCTION_ARGS)
 	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
 	ItemPointerSetInvalid(&(tuple.t_self));
 	tuple.t_tableOid = InvalidOid;
+	HeapTupleSetInvalidEpoch(&tuple);
 	tuple.t_data = rec;
 
 	values = (Datum *) palloc(ncolumns * sizeof(Datum));

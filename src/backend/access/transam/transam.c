@@ -157,7 +157,7 @@ TransactionIdDidCommit(TransactionId transactionId)
 		parentXid = SubTransGetParent(transactionId);
 		if (!TransactionIdIsValid(parentXid))
 		{
-			elog(WARNING, "no pg_subtrans entry for subcommitted XID %u",
+			elog(WARNING, "no pg_subtrans entry for subcommitted XID " XID_FMT,
 				 transactionId);
 			return false;
 		}
@@ -206,7 +206,7 @@ TransactionIdDidAbort(TransactionId transactionId)
 		if (!TransactionIdIsValid(parentXid))
 		{
 			/* see notes in TransactionIdDidCommit */
-			elog(WARNING, "no pg_subtrans entry for subcommitted XID %u",
+			elog(WARNING, "no pg_subtrans entry for subcommitted XID " XID_FMT,
 				 transactionId);
 			return true;
 		}
@@ -291,70 +291,6 @@ TransactionIdAbortTree(TransactionId xid, int nxids, TransactionId *xids)
 {
 	TransactionIdSetTreeStatus(xid, nxids, xids,
 							   TRANSACTION_STATUS_ABORTED, InvalidXLogRecPtr);
-}
-
-/*
- * TransactionIdPrecedes --- is id1 logically < id2?
- */
-bool
-TransactionIdPrecedes(TransactionId id1, TransactionId id2)
-{
-	/*
-	 * If either ID is a permanent XID then we can just do unsigned
-	 * comparison.  If both are normal, do a modulo-2^32 comparison.
-	 */
-	int32		diff;
-
-	if (!TransactionIdIsNormal(id1) || !TransactionIdIsNormal(id2))
-		return (id1 < id2);
-
-	diff = (int32) (id1 - id2);
-	return (diff < 0);
-}
-
-/*
- * TransactionIdPrecedesOrEquals --- is id1 logically <= id2?
- */
-bool
-TransactionIdPrecedesOrEquals(TransactionId id1, TransactionId id2)
-{
-	int32		diff;
-
-	if (!TransactionIdIsNormal(id1) || !TransactionIdIsNormal(id2))
-		return (id1 <= id2);
-
-	diff = (int32) (id1 - id2);
-	return (diff <= 0);
-}
-
-/*
- * TransactionIdFollows --- is id1 logically > id2?
- */
-bool
-TransactionIdFollows(TransactionId id1, TransactionId id2)
-{
-	int32		diff;
-
-	if (!TransactionIdIsNormal(id1) || !TransactionIdIsNormal(id2))
-		return (id1 > id2);
-
-	diff = (int32) (id1 - id2);
-	return (diff > 0);
-}
-
-/*
- * TransactionIdFollowsOrEquals --- is id1 logically >= id2?
- */
-bool
-TransactionIdFollowsOrEquals(TransactionId id1, TransactionId id2)
-{
-	int32		diff;
-
-	if (!TransactionIdIsNormal(id1) || !TransactionIdIsNormal(id2))
-		return (id1 >= id2);
-
-	diff = (int32) (id1 - id2);
-	return (diff >= 0);
 }
 
 

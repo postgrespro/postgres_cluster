@@ -148,6 +148,7 @@ statapprox_heap(Relation rel, output_type *stat)
 			tuple.t_data = (HeapTupleHeader) PageGetItem(page, itemid);
 			tuple.t_len = ItemIdGetLength(itemid);
 			tuple.t_tableOid = RelationGetRelid(rel);
+			HeapTupleCopyEpochFromPage(&tuple, page);
 
 			/*
 			 * We count live and dead tuples, but we also need to add up

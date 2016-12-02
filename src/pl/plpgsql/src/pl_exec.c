@@ -6102,6 +6102,7 @@ get_tuple_from_datum(Datum value)
 	tmptup.t_len = HeapTupleHeaderGetDatumLength(td);
 	ItemPointerSetInvalid(&(tmptup.t_self));
 	tmptup.t_tableOid = InvalidOid;
+	HeapTupleSetInvalidEpoch(&tmptup);
 	tmptup.t_data = td;
 
 	/* Build a copy and return it */
@@ -6158,6 +6159,7 @@ exec_move_row_from_datum(PLpgSQL_execstate *estate,
 	tmptup.t_len = HeapTupleHeaderGetDatumLength(td);
 	ItemPointerSetInvalid(&(tmptup.t_self));
 	tmptup.t_tableOid = InvalidOid;
+	HeapTupleSetInvalidEpoch(&tmptup);
 	tmptup.t_data = td;
 
 	/* Do the move */
