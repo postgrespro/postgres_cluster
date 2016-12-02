@@ -55,17 +55,6 @@ struct WritebackContext;
 extern PGDLLIMPORT int NBuffers;
 
 /* in bufmgr.c */
-#define WRITEBACK_MAX_PENDING_FLUSHES 256
-
-/* FIXME: Also default to on for mmap && msync(MS_ASYNC)? */
-#ifdef HAVE_SYNC_FILE_RANGE
-#define DEFAULT_CHECKPOINT_FLUSH_AFTER 32
-#define DEFAULT_BGWRITER_FLUSH_AFTER 64
-#else
-#define DEFAULT_CHECKPOINT_FLUSH_AFTER 0
-#define DEFAULT_BGWRITER_FLUSH_AFTER 0
-#endif   /* HAVE_SYNC_FILE_RANGE */
-
 extern bool zero_damaged_pages;
 extern int	bgwriter_lru_maxpages;
 extern double bgwriter_lru_multiplier;
@@ -211,6 +200,10 @@ extern void DropRelFileNodeBuffers(RelFileNodeBackend rnode,
 					   ForkNumber forkNum, BlockNumber firstDelBlock);
 extern void DropRelFileNodesAllBuffers(RelFileNodeBackend *rnodes, int nnodes);
 extern void DropDatabaseBuffers(Oid dbid);
+extern void drop_temptableinfo_hashtable(void);
+extern void delete_temptableinfo_from_hashtable(RelFileNode rnode);
+extern void insert_temptableinfo_hashtable(RelFileNode rnode,
+										   BlockNumber nblocks);
 
 #define RelationGetNumberOfBlocks(reln) \
 	RelationGetNumberOfBlocksInFork(reln, MAIN_FORKNUM)

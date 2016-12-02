@@ -27,7 +27,8 @@ our $config = {
 	xslt      => undef,    # --with-libxslt=<path>
 	iconv     => undef,    # (not in configure, path to iconv)
 	zlib      => undef,    # --with-zlib=<path>
-	icu       => undef     # --with-icu=<path>
+	icu       => undef,    # --with-icu=<path>
+	zstd      => undef     # --with-zstd=<path>
 };
 
 1;

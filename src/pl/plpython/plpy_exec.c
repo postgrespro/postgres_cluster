@@ -24,6 +24,7 @@
 #include "plpy_main.h"
 #include "plpy_procedure.h"
 #include "plpy_subxactobject.h"
+#include "plpy_atxobject.h"
 
 
 /* saved state for a set-returning function */

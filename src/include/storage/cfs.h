@@ -1,6 +1,8 @@
 #ifndef __CFS_H__
 #define __CFS_H__
 
+#include "pg_config.h"
+
 #include "port/atomics.h"
 
 #define CFS_VERSION "0.21"

@@ -79,4 +79,6 @@ extern void RegisterResourceReleaseCallback(ResourceReleaseCallback callback,
 extern void UnregisterResourceReleaseCallback(ResourceReleaseCallback callback,
 								  void *arg);
 
+extern void DebugResourceOwner(ResourceOwner owner, const char *prefix);
+
 #endif   /* RESOWNER_H */

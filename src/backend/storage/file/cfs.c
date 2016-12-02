@@ -165,7 +165,7 @@ size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size
 
 size_t cfs_decompress(void* dst, size_t dst_size, void const* src, size_t src_size)
 {
-    return ZSTD_decompress(dst, dest_size, src, src_size);
+    return ZSTD_decompress(dst, dst_size, src, src_size);
 }
 
 char const* cfs_algorithm()

@@ -100,7 +100,13 @@ static const LOCKMASK LockConflicts[] = {
 	LOCKBIT_ON(AccessShareLock) | LOCKBIT_ON(RowShareLock) |
 	LOCKBIT_ON(RowExclusiveLock) | LOCKBIT_ON(ShareUpdateExclusiveLock) |
 	LOCKBIT_ON(ShareLock) | LOCKBIT_ON(ShareRowExclusiveLock) |
-	LOCKBIT_ON(ExclusiveLock) | LOCKBIT_ON(AccessExclusiveLock)
+	LOCKBIT_ON(ExclusiveLock) | LOCKBIT_ON(AccessExclusiveLock),
+
+	/* ApplicationShareLock*/
+	LOCKBIT_ON(ApplicationExclusiveLock),
+
+	/* ApplicationExclusiveLock*/
+	LOCKBIT_ON(ApplicationExclusiveLock) | LOCKBIT_ON(ApplicationShareLock)
 
 };
 
@@ -115,7 +121,9 @@ static const char *const lock_mode_names[] =
 	"ShareLock",
 	"ShareRowExclusiveLock",
 	"ExclusiveLock",
-	"AccessExclusiveLock"
+	"AccessExclusiveLock",
+	"ApplicationShareLock",
+	"ApplicationExclusiveLock"
 };
 
 #ifndef LOCK_DEBUG
@@ -123,7 +131,7 @@ static bool Dummy_trace = false;
 #endif
 
 static const LockMethodData default_lockmethod = {
-	AccessExclusiveLock,		/* highest valid lock mode number */
+	ApplicationExclusiveLock,		/* highest valid lock mode number */
 	LockConflicts,
 	lock_mode_names,
 #ifdef LOCK_DEBUG
@@ -134,7 +142,7 @@ static const LockMethodData default_lockmethod = {
 };
 
 static const LockMethodData user_lockmethod = {
-	AccessExclusiveLock,		/* highest valid lock mode number */
+	ApplicationExclusiveLock,		/* highest valid lock mode number */
 	LockConflicts,
 	lock_mode_names,
 #ifdef LOCK_DEBUG
@@ -685,7 +693,17 @@ LockAcquire(const LOCKTAG *locktag,
 			bool sessionLock,
 			bool dontWait)
 {
-	return LockAcquireExtended(locktag, lockmode, sessionLock, dontWait, true);
+	LockAcquireResult r;
+
+	if (locktag->locktag_type == LOCKTAG_TRANSACTION)
+		elog(DEBUG1, "waiting for transaction %u", locktag->locktag_field1);
+
+	r = LockAcquireExtended(locktag, lockmode, sessionLock, dontWait, true);
+
+	if (locktag->locktag_type == LOCKTAG_TRANSACTION)
+		elog(DEBUG1, "transaction %u finished? %d", locktag->locktag_field1, r);
+
+	return r;
 }
 
 /*
@@ -773,6 +791,7 @@ LockAcquireExtended(const LOCKTAG *locktag,
 		locallock->lockOwners = (LOCALLOCKOWNER *)
 			MemoryContextAlloc(TopMemoryContext,
 						  locallock->maxLockOwners * sizeof(LOCALLOCKOWNER));
+		locallock->atx_nest_level = getNestLevelATX();
 	}
 	else
 	{
@@ -794,6 +813,29 @@ LockAcquireExtended(const LOCKTAG *locktag,
 	 */
 	if (locallock->nLocks > 0)
 	{
+		Assert(locallock->atx_nest_level <= getNestLevelATX());
+		if (locallock->atx_nest_level < getNestLevelATX())
+		{
+			/*
+			 * The lock is held by this backend, but in an outer autonomous
+			 * transaction, this is a sure deadlock.
+			 */
+			if (lockMethodTable->conflictTab[lockmode] & LOCKBIT_ON(lockmode))
+			{
+				elog(ERROR, "lockmode %d:%s conflicts with itself, "
+					"acquiring the same lock in that mode again "
+					"in an autonomous transaction will lead to a sure deadlock",
+					lockmode, lockMethodTable->lockModeNames[lockmode]
+				);
+			}
+			else
+			{
+				elog(DEBUG1, "lockmode %d:%s does not conflict with itself: conflict tab = %x, lockbit on = %x",
+					lockmode, lockMethodTable->lockModeNames[lockmode],
+					lockMethodTable->conflictTab[lockmode], LOCKBIT_ON(lockmode)
+				);
+			}
+		}
 		GrantLockLocal(locallock, owner);
 		return LOCKACQUIRE_ALREADY_HELD;
 	}
@@ -3806,8 +3848,10 @@ GetRunningTransactionLocks(int *nlocks)
 			proclock->tag.myLock->tag.locktag_type == LOCKTAG_RELATION)
 		{
 			PGPROC	   *proc = proclock->tag.myProc;
-			PGXACT	   *pgxact = &ProcGlobal->allPgXact[proc->pgprocno];
 			LOCK	   *lock = proclock->tag.myLock;
+
+			PGXACT	   *pgxact = &ProcGlobal->allPgXact[proc->pgprocno];
+
 			TransactionId xid = pgxact->xid;
 
 			/*

@@ -14,6 +14,7 @@
 #ifndef PROCARRAY_H
 #define PROCARRAY_H
 
+#include "storage/proc.h"
 #include "storage/lock.h"
 #include "storage/standby.h"
 #include "utils/relcache.h"
@@ -87,5 +88,8 @@ extern void ProcArraySetReplicationSlotXmin(TransactionId xmin,
 
 extern void ProcArrayGetReplicationSlotXmin(TransactionId *xmin,
 								TransactionId *catalog_xmin);
+
+extern void ResumePgXact(PGXACT *pgxact);
+extern void SuspendPgXact(PGXACT *pgxact);
 
 #endif   /* PROCARRAY_H */

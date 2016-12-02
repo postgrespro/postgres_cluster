@@ -819,7 +819,7 @@ typedef struct PgBackendStatus
 	/*
 	 * Command progress reporting.  Any command which wishes can advertise
 	 * that it is running by setting st_progress_command,
-	 * st_progress_command_target, and st_progress_command[].
+	 * st_progress_command_target, and st_progress_param[].
 	 * st_progress_command_target should be the OID of the relation which the
 	 * command targets (we assume there's just one, as this is meant for
 	 * utility commands), but the meaning of each element in the
@@ -1141,5 +1141,8 @@ extern PgStat_StatFuncEntry *pgstat_fetch_stat_funcentry(Oid funcid);
 extern int	pgstat_fetch_stat_numbackends(void);
 extern PgStat_ArchiverStats *pgstat_fetch_stat_archiver(void);
 extern PgStat_GlobalStats *pgstat_fetch_global(void);
+
+extern void *PgStatSuspend(void);
+extern void PgStatResume(void *src);
 
 #endif   /* PGSTAT_H */

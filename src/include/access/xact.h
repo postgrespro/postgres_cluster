@@ -227,7 +227,6 @@ typedef struct xl_xact_twophase
 {
 	TransactionId xid;
 } xl_xact_twophase;
-#define MinSizeOfXactInvals offsetof(xl_xact_invals, msgs)
 
 typedef struct xl_xact_origin
 {
@@ -312,6 +311,11 @@ typedef struct xl_xact_parsed_abort
  */
 extern bool IsTransactionState(void);
 extern bool IsAbortedTransactionBlockState(void);
+extern bool TransactionIdIsAncestorOfCurrentATX(TransactionId xid);
+
+extern void SuspendTransaction(void);
+extern bool ResumeTransaction(void);
+
 extern TransactionId GetTopTransactionId(void);
 extern TransactionId GetTopTransactionIdIfAny(void);
 extern TransactionId GetCurrentTransactionId(void);
@@ -332,10 +336,10 @@ extern void ForceSyncCommit(void);
 extern void StartTransactionCommand(void);
 extern void CommitTransactionCommand(void);
 extern void AbortCurrentTransaction(void);
-extern void BeginTransactionBlock(void);
-extern bool EndTransactionBlock(void);
+extern void BeginTransactionBlock(bool autonomous);
+extern bool EndTransactionBlock(bool autonomous);
 extern bool PrepareTransactionBlock(char *gid);
-extern void UserAbortTransactionBlock(void);
+extern void UserAbortTransactionBlock(bool autonomous);
 extern void ReleaseSavepoint(List *options);
 extern void DefineSavepoint(char *name);
 extern void RollbackToSavepoint(List *options);
@@ -386,5 +390,7 @@ extern void ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_ab
 extern void EnterParallelMode(void);
 extern void ExitParallelMode(void);
 extern bool IsInParallelMode(void);
+
+extern int getNestLevelATX(void);
 
 #endif   /* XACT_H */

@@ -1,0 +1,9 @@
+Parsed test spec with 1 sessions
+
+starting permutation: s1la s1atxb s1lb s1atxc s1c
+step s1la: lock table a in access exclusive mode;
+step s1atxb: begin autonomous;
+step s1lb: lock table a in access exclusive mode;
+ERROR:  lockmode 8:AccessExclusiveLock conflicts with itself, acquiring the same lock in that mode again in an autonomous transaction will lead to a sure deadlock
+step s1atxc: commit;
+step s1c: commit;

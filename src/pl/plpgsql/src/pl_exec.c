@@ -17,9 +17,11 @@
 
 #include <ctype.h>
 
+#include <unistd.h>
 #include "access/htup_details.h"
 #include "access/transam.h"
 #include "access/tupconvert.h"
+#include "access/xact.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "executor/spi.h"
@@ -1071,7 +1073,6 @@ exception_matches_conditions(ErrorData *edata, PLpgSQL_condition *cond)
 	return false;
 }
 
-
 /* ----------
  * exec_stmt_block			Execute a block of statements
  * ----------
@@ -1165,7 +1166,137 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 		}
 	}
 
-	if (block->exceptions)
+	if (block->autonomous)
+	{
+		MemoryContext oldcontext = CurrentMemoryContext;
+		ExprContext *old_eval_econtext = estate->eval_econtext;
+		ErrorData  *save_cur_error = estate->cur_error;
+
+		estate->err_text = gettext_noop("during autonomous statement block entry");
+
+		SuspendTransaction();
+
+		PG_TRY();
+		{
+			EState *old_shared_estate;
+			plpgsql_create_econtext(estate);
+			estate->err_text = NULL;
+
+			rc = exec_stmts(estate, block->body);
+			estate->err_text = gettext_noop("during autonomous statement block exit");
+			/*
+			 * If the block ended with RETURN, we may need to copy the return
+			 * value out of the subtransaction eval_context.  This is
+			 * currently only needed for scalar result types --- rowtype
+			 * values will always exist in the function's main memory context,
+			 * cf. exec_stmt_return().  We can avoid a physical copy if the
+			 * value happens to be a R/W expanded object.
+			 */
+			if (rc == PLPGSQL_RC_RETURN &&
+				!estate->retisset &&
+				!estate->retisnull &&
+				estate->rettupdesc == NULL)
+			{
+				int16		resTypLen;
+				bool		resTypByVal;
+
+				get_typlenbyval(estate->rettype, &resTypLen, &resTypByVal);
+				estate->retval = datumTransfer(estate->retval,
+											   resTypByVal, resTypLen);
+			}
+
+			plpgsql_destroy_econtext(estate);
+
+			old_shared_estate = shared_simple_eval_estate;
+			shared_simple_eval_estate = NULL;
+			CommitTransactionCommand();
+			shared_simple_eval_estate = old_shared_estate;
+
+			/*
+			 * Revert to outer eval_econtext.  (The inner one was
+			 * automatically cleaned up during subxact exit.)
+			 */
+			estate->eval_econtext = old_eval_econtext;
+		}
+		PG_CATCH();
+		{
+			EState *old_shared_estate;
+			ErrorData  *edata;
+			ListCell   *e = NULL;
+
+			estate->err_text = gettext_noop("during exception cleanup");
+
+			MemoryContextSwitchTo(oldcontext);
+			edata = CopyErrorData();
+			FlushErrorState();
+
+			plpgsql_destroy_econtext(estate);
+
+			old_shared_estate = shared_simple_eval_estate;
+			shared_simple_eval_estate = NULL;
+			AbortCurrentTransaction();
+			shared_simple_eval_estate = old_shared_estate;
+
+			estate->eval_econtext = old_eval_econtext;
+
+			if (block->exceptions)
+			{
+				/* Look for a matching exception handler */
+				foreach(e, block->exceptions->exc_list)
+				{
+					PLpgSQL_exception *exception = (PLpgSQL_exception *) lfirst(e);
+
+					if (exception_matches_conditions(edata, exception->conditions))
+					{
+						/*
+						 * Initialize the magic SQLSTATE and SQLERRM variables for
+						 * the exception block; this also frees values from any
+						 * prior use of the same exception. We needn't do this
+						 * until we have found a matching exception.
+						 */
+						PLpgSQL_var *state_var;
+						PLpgSQL_var *errm_var;
+
+						state_var = (PLpgSQL_var *)
+							estate->datums[block->exceptions->sqlstate_varno];
+						errm_var = (PLpgSQL_var *)
+							estate->datums[block->exceptions->sqlerrm_varno];
+
+						assign_text_var(estate, state_var,
+										unpack_sql_state(edata->sqlerrcode));
+						assign_text_var(estate, errm_var, edata->message);
+
+						/*
+						 * Also set up cur_error so the error data is accessible
+						 * inside the handler.
+						 */
+						estate->cur_error = edata;
+
+						estate->err_text = NULL;
+
+						rc = exec_stmts(estate, exception->action);
+
+						break;
+					}
+				}
+			}
+
+			/*
+			 * Restore previous state of cur_error, whether or not we executed
+			 * a handler.  This is needed in case an error got thrown from
+			 * some inner block's exception handler.
+			 */
+			estate->cur_error = save_cur_error;
+
+			/* If no match found, re-throw the error */
+			if (e == NULL)
+			{
+				ReThrowError(edata);
+			}
+		}
+		PG_END_TRY();
+	}
+	else if (block->exceptions)
 	{
 		/*
 		 * Execute the statements in the block's body inside a sub-transaction
@@ -6102,6 +6233,8 @@ exec_cast_value(PLpgSQL_execstate *estate,
 			ExprContext *econtext = estate->eval_econtext;
 			MemoryContext oldcontext;
 
+			SPI_push();
+
 			oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
 
 			econtext->caseValue_datum = value;
@@ -6115,6 +6248,8 @@ exec_cast_value(PLpgSQL_execstate *estate,
 			cast_entry->cast_in_use = false;
 
 			MemoryContextSwitchTo(oldcontext);
+
+			SPI_pop();
 		}
 	}
 
@@ -6897,6 +7032,18 @@ plpgsql_destroy_econtext(PLpgSQL_execstate *estate)
 
 	FreeExprContext(estate->eval_econtext, true);
 	estate->eval_econtext = NULL;
+
+	if ((getNestLevelATX() > 0) && (shared_simple_eval_estate != NULL))
+	{
+		MemoryContext context = GetMemoryChunkContext(shared_simple_eval_estate);
+		MemoryContext parent = MemoryContextGetParent(context);
+		if (parent == TopTransactionContext)
+		{
+			/* need to do this, since shared_simple_eval_estate is going to be freed on ATX commit */
+			shared_simple_eval_estate = NULL;
+			estate->simple_eval_estate = NULL;
+		}
+	}
 }
 
 /*
@@ -6917,7 +7064,8 @@ plpgsql_xact_cb(XactEvent event, void *arg)
 	if (event == XACT_EVENT_COMMIT || event == XACT_EVENT_PREPARE)
 	{
 		/* Shouldn't be any econtext stack entries left at commit */
-		Assert(simple_econtext_stack == NULL);
+		if (getNestLevelATX() == 0)
+			Assert(simple_econtext_stack == NULL);
 
 		if (shared_simple_eval_estate)
 			FreeExecutorState(shared_simple_eval_estate);
@@ -6925,7 +7073,8 @@ plpgsql_xact_cb(XactEvent event, void *arg)
 	}
 	else if (event == XACT_EVENT_ABORT)
 	{
-		simple_econtext_stack = NULL;
+		if (getNestLevelATX() == 0)
+			simple_econtext_stack = NULL;
 		shared_simple_eval_estate = NULL;
 	}
 }

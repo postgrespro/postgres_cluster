@@ -166,6 +166,7 @@ InitProcGlobal(void)
 				j;
 	bool		found;
 	uint32		TotalProcs = MaxBackends + NUM_AUXILIARY_PROCS + max_prepared_xacts;
+	uint32		TotalXacts = TotalProcs + MaxATX;
 
 	/* Create the ProcGlobal shared structure */
 	ProcGlobal = (PROC_HDR *)
@@ -210,10 +211,10 @@ InitProcGlobal(void)
 	 * stored contiguously in memory in as few cache lines as possible. This
 	 * provides significant performance benefits, especially on a
 	 * multiprocessor system.  There is one PGXACT structure for every PGPROC
-	 * structure.
+	 * structure. Also there are MaxATX additional PGXACT structures which are not related to PGPROCs.
 	 */
-	pgxacts = (PGXACT *) ShmemAlloc(TotalProcs * sizeof(PGXACT));
-	MemSet(pgxacts, 0, TotalProcs * sizeof(PGXACT));
+	pgxacts = (PGXACT *) ShmemAlloc(TotalXacts * sizeof(PGXACT));
+	MemSet(pgxacts, 0, TotalXacts * sizeof(PGXACT));
 	ProcGlobal->allPgXact = pgxacts;
 
 	for (i = 0; i < TotalProcs; i++)
@@ -368,6 +369,7 @@ InitProcess(void)
 	MyProc->fpLocalTransactionId = InvalidLocalTransactionId;
 	MyPgXact->xid = InvalidTransactionId;
 	MyPgXact->xmin = InvalidTransactionId;
+	MyPgXact->parent = NULL;
 	MyProc->pid = MyProcPid;
 	/* backendId, databaseId and roleId will be filled in later */
 	MyProc->backendId = InvalidBackendId;
@@ -542,6 +544,7 @@ InitAuxiliaryProcess(void)
 	MyProc->fpLocalTransactionId = InvalidLocalTransactionId;
 	MyPgXact->xid = InvalidTransactionId;
 	MyPgXact->xmin = InvalidTransactionId;
+	MyPgXact->parent = NULL;
 	MyProc->backendId = InvalidBackendId;
 	MyProc->databaseId = InvalidOid;
 	MyProc->roleId = InvalidOid;
@@ -771,6 +774,18 @@ static void
 RemoveProcFromArray(int code, Datum arg)
 {
 	Assert(MyProc != NULL);
+	if (MyPgXact)
+	{
+		struct PGXACT *pgxact = MyPgXact->parent;
+		LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+		while (pgxact != NULL)
+		{
+			elog(WARNING, "RemoveProcFromArray: marking an ATX PGXACT as unused");
+			pgxact->used = false;
+			pgxact = pgxact->parent;
+		}
+		LWLockRelease(ProcArrayLock);
+	}
 	ProcArrayRemove(MyProc, InvalidTransactionId);
 }
 

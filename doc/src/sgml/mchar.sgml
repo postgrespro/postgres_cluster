@@ -1,0 +1,107 @@
+<sect1 id="mchar">
+  <title>mchar</title>
+  <para>
+    The <literal>mchar</literal> module provides additional data types
+    for compatibility with Microsoft SQL Server (MSSQL).
+  </para>
+
+  <sect2 id="mchar-overview">
+    <title>Overview</title>
+    <para>
+      This module has been designed to improve <application>1C Enterprise</application>
+      support, most popular Russian CRM and ERP system.
+    </para>
+    <para>
+    It implements types MCHAR and MVARCHAR, which are bug-to-bug
+    compatible with MSSQL CHAR and VARCHAR respectively. Additionaly, 
+    these types use libicu for comparation and case conversion, so their
+    behavoir is identical across different operating system.
+    </para>
+    <para>
+    PostgresPro also includes <xref linkend="citext"> extension which
+    provides types similar to MCHAR. But this extension doesn't emulate
+    MS-SQL behavoir concerning end-of-value whitespace.
+    </para>
+    <para>
+    Differences from PostgreSQL standard CHAR and VARCHAR are:
+    </para>
+    <itemizedlist>
+    <listitem>
+    <para>
+    Case insensitive comparation
+    </para>
+    </listitem>
+    <listitem>
+    <para>
+    Handling of the whitespace at the end of string
+    </para>
+    </listitem>
+    <listitem>
+    <para>
+    These types are always stored as two-byte unicode value regradless
+    of database encoding.
+    </para>
+    </listitem>
+    </itemizedlist>
+  </sect2>
+
+  <sect2 id="mchar-types">
+    <title>Additional types</title>
+    <itemizedlist>
+      <listitem>
+        <para><type>mchar</type> &mdash; analog of the MSSQL char type</para>
+      </listitem>
+      <listitem>
+        <para><type>mvarchar</type> &mdash; analog of the MSSQL varchar type</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+
+  <sect2 id="mchar-features">
+    <title>MCHAR and MVARCHAR features</title>
+    <itemizedlist>
+      <listitem>
+        <para>Defines <function>length(str)</function> function</para>
+      </listitem>
+      <listitem>
+        <para>Defines <function>substr(str, pos[, length])</function> function</para>
+      </listitem>
+      <listitem>
+        <para>Defines <literal>||</literal> operator, which would be applied to concatenate any (mchar and mvarchar) arguments</para>
+      </listitem>
+      <listitem>
+        <para>Defines set of operators: <literal>&lt;</>, <literal>&lt;=</> <literal>=</>, <literal>&gt;=</>, <literal>&gt;</> for case-insensitive comparison (LibICU)</para>
+      </listitem>
+      <listitem>
+        <para>Defines set of operators: <literal>&amp;&lt;</>, <literal>&amp;&lt;=</>, <literal>&amp;=</>, <literal>&amp;&gt;=</>, <literal>&amp;&gt;</> to case-sensitive comparison (LibICU)</para>
+      </listitem>
+      <listitem>
+        <para>Implicit cast between <type>mchar</type> and <type>mvarchar</type> types</para>
+      </listitem>
+      <listitem>
+        <para>B-tree and Hash-index support</para>
+      </listitem>
+      <listitem>
+        <para>The <literal>LIKE [ESCAPE]</literal> operator support</para>
+      </listitem>
+      <listitem>
+        <para>The <literal>SIMILAR TO [ESCAPE]</literal> operator support</para>
+      </listitem>
+      <listitem>
+        <para>The <emphasis>~</emphasis> operator (POSIX regexp) support</para>
+      </listitem>
+      <listitem>
+        <para>Index support for the <emphasis>LIKE</emphasis> operator</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+
+  <sect2 id="mchar-authors">
+    <title>Authors</title>
+    <literallayout>
+      Oleg Bartunov <email>oleg@sai.msu.ru</email>
+      Teodor Sigaev <email>teodor@sigaev.ru</email>
+    </literallayout>
+  </sect2>
+
+</sect1>

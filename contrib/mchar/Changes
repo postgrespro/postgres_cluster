@@ -1,0 +1,19 @@
+0.17  add == operation:
+		a == b   =>   ( a = b or a is null and b is null )
+0.16  fix pg_dump - now mchar in pg_catalog scheme, not public
+ 	  fix bug in mvarchar_substr()
+0.15  add upper()/lower()
+0.14  Add ESCAPE for LIKE, SIMILAR TO [ESCAPE], POSIX regexp 
+0.13  Outer binary format is now different from
+	  inner: it's just a UTF-16 string
+0.12  Fix copy binary
+0.11  Force UTF-8 convertor if server_encoding='UTF8'
+0.10  add (mchar|mvarchar)_(send|recv) functions to
+      allow binary copying. Note: that functions
+	  don't recode values.
+0.9	index support for like, improve recoding functions
+0.8 initial suport for like optimizioation with index:
+    still thres no algo to find the nearest greater string
+0.7	hash indexes and enable a hash joins
+0.6	implicit casting mchar-mvarchar
+	cross type comparison operations
