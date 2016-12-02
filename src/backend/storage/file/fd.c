@@ -1816,6 +1816,7 @@ FileWrite(File file, char *buffer, int amount)
 	int  returnCode;	
 	char compressedBuffer[CFS_MAX_COMPRESSED_SIZE(BLCKSZ)];
 	inode_t inode = 0;
+	/*inode_t prev_inode;*/
 	off_t   seekPos;
 
 	Assert(FileIsValid(file));
@@ -1867,6 +1868,7 @@ FileWrite(File file, char *buffer, int amount)
 			return -1;
 		}
 		inode = map->inodes[VfdCache[file].seekPos / BLCKSZ];
+		/*prev_inode = inode;*/
 		if (compressedSize > 0 && compressedSize < CFS_MIN_COMPRESSED_SIZE(BLCKSZ)) { 
 			Assert((VfdCache[file].seekPos & (BLCKSZ-1)) == 0);
 			/* Do not check that new image of compressed page fits into 
@@ -1907,8 +1909,14 @@ retry:
 	{
 		if (VfdCache[file].fileFlags & PG_COMPRESSION) { 
 			if (returnCode == amount)
-			{				
+			{	
+                /* Verify that there is no race condition 
+				bool rc = pg_atomic_compare_exchange_u64((pg_atomic_uint64*)&VfdCache[file].map->inodes[VfdCache[file].seekPos / BLCKSZ],
+														 &prev_inode, inode);
+				Assert(rc);
+				*/
 				VfdCache[file].map->inodes[VfdCache[file].seekPos / BLCKSZ] = inode;
+				/**/
 				VfdCache[file].seekPos += BLCKSZ;
 				cfs_extend(VfdCache[file].map, VfdCache[file].seekPos);
 				returnCode = BLCKSZ;

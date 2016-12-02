@@ -1682,6 +1682,16 @@ static struct config_bool ConfigureNamesBool[] =
         NULL, NULL, NULL
     },	
 
+	{
+		{"cfs_gc_verify_file", PGC_USERSET, UNGROUPED,
+		 gettext_noop("Verify correctness of data written by GC"),
+		 NULL,
+        },
+		&cfs_gc_verify_file,
+        false,
+        NULL, NULL, NULL
+    },	
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL, NULL
@@ -2867,7 +2877,7 @@ static struct config_int ConfigureNamesInt[] =
     },
 
 	{
-		{"cfs_level", PGC_POSTMASTER, UNGROUPED,
+		{"cfs_level", PGC_USERSET, UNGROUPED,
 		 gettext_noop("CFS compression level (0 - no compression, 1 - maximal speed,...)"),
 		 NULL,
 		 0
@@ -2878,7 +2888,7 @@ static struct config_int ConfigureNamesInt[] =
     },
 
 	{
-		{"cfs_gc_threshold", PGC_POSTMASTER, UNGROUPED,
+		{"cfs_gc_threshold", PGC_USERSET, UNGROUPED,
 		 gettext_noop("Percent of garbage in file after file is comactified"),
 		 NULL,
 		 0
@@ -2890,7 +2900,7 @@ static struct config_int ConfigureNamesInt[] =
 
 
 	{
-		{"cfs_gc_period", PGC_POSTMASTER, UNGROUPED,
+		{"cfs_gc_period", PGC_USERSET, UNGROUPED,
 		 gettext_noop("Interval in milliseconds between CFS garbage collection iterations"),
 		 NULL,
 		 GUC_UNIT_MS
@@ -2901,7 +2911,7 @@ static struct config_int ConfigureNamesInt[] =
     },
 
 	{
-		{"cfs_gc_delay", PGC_POSTMASTER, UNGROUPED,
+		{"cfs_gc_delay", PGC_USERSET, UNGROUPED,
 		 gettext_noop("Delay in milliseconds between files defragmentation"),
 		 NULL,
 		 GUC_UNIT_MS

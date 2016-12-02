@@ -55,6 +55,7 @@
 #include "storage/barrier.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
+#include "storage/cfs.h"
 #include "storage/ipc.h"
 #include "storage/large_object.h"
 #include "storage/latch.h"
@@ -122,6 +123,7 @@ int			CheckPointSegments;
 /* Estimated distance between checkpoints, in bytes */
 static double CheckPointDistanceEstimate = 0;
 static double PrevCheckPointDistance = 0;
+static bool SavedGCState = false;
 
 /*
  * GUC support
@@ -9905,6 +9907,8 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 	XLogCtl->Insert.forcePageWrites = true;
 	WALInsertLockRelease();
 
+	SavedGCState = cfs_control_gc(false); /* disable GC during backup */
+
 	/* Ensure we release forcePageWrites if fail below */
 	PG_ENSURE_ERROR_CLEANUP(pg_start_backup_callback, (Datum) BoolGetDatum(exclusive));
 	{
@@ -10267,6 +10271,8 @@ pg_start_backup_callback(int code, Datum arg)
 		XLogCtl->Insert.forcePageWrites = false;
 	}
 	WALInsertLockRelease();
+	
+	cfs_control_gc(SavedGCState); /* Restore CFS GC activity */
 }
 
 /*
@@ -10626,6 +10632,8 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 	else if (waitforarchive)
 		ereport(NOTICE,
 				(errmsg("WAL archiving is not enabled; you must ensure that all required WAL segments are copied through other means to complete the backup")));
+
+	cfs_control_gc(SavedGCState); /* Restore CFS GC activity */
 
 	/*
 	 * We're done.  As a convenience, return the ending WAL location.

@@ -430,11 +430,20 @@ parse_filename_for_nontemp_relation(const char *name, int *oidchars,
 	{
 		int			segchar;
 
+		/* .cfm is used by compression */
+		if (strcmp(name+pos, ".cfm") == 0) {
+			return true;
+		}
 		for (segchar = 1; isdigit((unsigned char) name[pos + segchar]); ++segchar)
 			;
 		if (segchar <= 1)
 			return false;
 		pos += segchar;
+	}
+
+	/* .cfm is used by compression */
+	if (strcmp(name+pos, ".cfm") == 0) {
+		return true;
 	}
 
 	/* Now we should be at the end. */
