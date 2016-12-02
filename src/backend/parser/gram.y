@@ -940,8 +940,7 @@ AlterOptRoleElem:
 				{
 					$$ = makeDefElem("methodPassword",
 									 (Node *)list_make2(makeString($3),
-														makeString($5)),
-									 @1);
+														makeString($5)));
 				}
 			| ENCRYPTED PASSWORD Sconst
 				{
