@@ -519,21 +519,21 @@ typedef Datum *DatumPtr;
  *		Returns transaction identifier value of a datum.
  */
 
-#define DatumGetTransactionId(X) ((TransactionId) GET_4_BYTES(X))
+#define DatumGetTransactionId(X) (DatumGetUInt64(X))
 
 /*
  * TransactionIdGetDatum
  *		Returns datum representation for a transaction identifier.
  */
 
-#define TransactionIdGetDatum(X) ((Datum) SET_4_BYTES((X)))
+#define TransactionIdGetDatum(X) (UInt64GetDatum(X))
 
 /*
  * MultiXactIdGetDatum
  *		Returns datum representation for a multixact identifier.
  */
 
-#define MultiXactIdGetDatum(X) ((Datum) SET_4_BYTES((X)))
+#define MultiXactIdGetDatum(X) (UInt64GetDatum(X))
 
 /*
  * DatumGetCommandId

@@ -20,6 +20,10 @@
 
 #include <unistd.h>
 #include <ctype.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+
 #ifdef HAVE_TERMIOS_H
 #include <termios.h>
 #endif
@@ -447,6 +451,24 @@ ExecuteSqlQueryForSingleRow(Archive *fout, char *query)
 	return res;
 }
 
+PGresult *
+ExecuteSqlQueryBin(Archive *AHX, const char *command, int nParams,
+				   const Oid *paramTypes, const char * const *paramValues,
+				   const int *paramLengths, const int *paramFormats,
+				   int resultFormat, ExecStatusType status)
+{
+	ArchiveHandle *AH = (ArchiveHandle *) AHX;
+	PGresult   *res;
+
+	res = PQexecParams(AH->connection, command,
+					   nParams, paramTypes,
+					   paramValues, paramLengths,
+					   paramFormats, resultFormat);
+	if (PQresultStatus(res) != status)
+		die_on_query_failure(AH, modulename, command);
+	return res;
+}
+
 /*
  * Convenience function to send a query.
  * Monitors result to detect COPY statements
@@ -573,6 +595,73 @@ ExecuteSimpleCommands(ArchiveHandle *AH, const char *buf, size_t bufLen)
 	}
 }
 
+/*
+ * Restore given table and its indexes, fsm and vm in transfer mode.
+ * Also, generate wal files for each restored file, if necessary.
+ */
+void
+doTransferRelRestore(ArchiveHandle *AH, TocEntry *te)
+{
+	Archive *AHX = (Archive *) AH;
+	RestoreOptions *ropt = AHX->ropt;
+	RelFileMap *map;
+	RelFileMap *sequencemap;
+	RelFileMap *toastmap;
+	bool is_restore = true;
+	bool copy_mode = ropt->copy_mode_transfer;
+	bool is_verbose = ropt->verbose;
+	int nrels;
+	int nseqrels;
+	int ntoastrels;
+	int i;
+
+	/* Find files to restore and map them to schema */
+	map = fillRelFileMap(AHX, &nrels, &ntoastrels, ropt->dbname, fmtId(te->tag));
+	sequencemap = fillRelFileMapSeq(AHX, &nseqrels, ropt->dbname, fmtId(te->tag));
+	if (ntoastrels > 0)
+		toastmap = fillRelFileMapToast(AHX, map, nrels, ntoastrels);
+
+	/* Restore plain relations */
+	for (i = 0; i < nrels; i++)
+	{
+		ahprintf(AH, "SELECT pg_transfer_cleanup_shmem(%u::oid);", (&map[i])->reloid);
+
+		transfer_relfile(&map[i], "", ropt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&map[i], "_fsm", ropt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&map[i], "_vm", ropt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		if (ropt->generate_wal)
+			ahprintf(AH, "SELECT pg_transfer_wal(%u::oid);", (&map[i])->reloid);
+	}
+
+	/* Restore sequences */
+	for (i = 0; i < nseqrels; i++)
+	{
+		ahprintf(AH, "SELECT pg_transfer_cleanup_shmem(%u::oid);", (&sequencemap[i])->reloid);
+
+		transfer_relfile(&sequencemap[i], "", ropt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		if (ropt->generate_wal)
+			ahprintf(AH, "SELECT pg_transfer_wal(%u::oid);", (&sequencemap[i])->reloid);
+	}
+
+	/* Restore toast relations */
+	for (i = 0; i < ntoastrels*2; i++)
+	{
+		ahprintf(AH, "SELECT pg_transfer_cleanup_shmem(%u::oid);", (&toastmap[i])->reloid);
+
+		transfer_relfile(&toastmap[i], "", ropt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&toastmap[i], "_fsm", ropt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&toastmap[i], "_vm", ropt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		if (ropt->generate_wal)
+			ahprintf(AH, "SELECT pg_transfer_wal(%u::oid);", (&toastmap[i])->reloid);
+	}
+}
 
 /*
  * Implement ahwrite() for direct-to-DB restore
@@ -702,4 +791,622 @@ DropBlobIfExists(ArchiveHandle *AH, Oid oid)
 				 ") THEN pg_catalog.lo_unlink('%u') END;\n",
 				 oid, oid);
 	}
+}
+
+/* fillRelFileMap. get all parts of filepath */
+RelFileMap *
+fillRelFileMap(Archive *fout, int *nrels, int *ntoastrels,
+			   const char *dbname, const char *tblname)
+{
+	PQExpBuffer query;
+	PGresult	*res;
+	int			i_dboid;
+	int 		ntups;
+	int			i_oid;
+	int			i_relfilenode;
+	int			i_relname;
+	int			i_tablespace;
+	int			i_reltoastrelid;
+	int			i_data_directory;
+	int 		i_tablespace_location;
+	int 		i_relpersistence;
+	const char *data_directory;
+	Oid			dboid;
+	int i;
+	RelFileMap *map;
+
+	*nrels = *ntoastrels = 0;
+	query = createPQExpBuffer();
+
+	/*
+	 * At first get $PGDATA.
+	 */
+	appendPQExpBuffer(query, "SHOW data_directory;");
+	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	i_data_directory =  PQfnumber(res, "data_directory");
+	data_directory = strdup(PQgetvalue(res, 0, i_data_directory));
+
+	PQclear(res);
+	resetPQExpBuffer(query);
+
+	/*
+	 * Next: get db_oid to construct filepath
+	 */
+	appendPQExpBuffer(query, "select oid from pg_database where datname = '%s'",
+								dbname);
+	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+
+	i_dboid = PQfnumber(res, "oid");
+	dboid= atooid(PQgetvalue(res, 0, i_dboid));
+
+	PQclear(res);
+	resetPQExpBuffer(query);
+
+	/*
+	 * Next: get relfilenode and reltablespace to construct filepath
+	 */
+	appendPQExpBuffer(query, "WITH tableoid AS (SELECT oid FROM pg_class WHERE relname = '%s'), \n"
+					 "indoid AS (SELECT indexrelid FROM pg_index WHERE indrelid IN \n"
+					 "(SELECT oid FROM tableoid)) \n"
+					 "SELECT oid, pg_tablespace_location(reltablespace), relname, relfilenode, \n"
+					 "reltablespace, reltoastrelid, relpersistence FROM pg_class WHERE \n"
+					 "oid IN (SELECT oid FROM tableoid) OR \n"
+					 "oid IN (SELECT indexrelid FROM indoid)", tblname);
+
+	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	ntups = PQntuples(res);
+
+	if (ntups == 0)
+		exit_horribly(NULL, "Relation '%s' is not found \n", tblname);
+
+	*nrels = ntups;
+
+	i_oid = PQfnumber(res, "oid");
+	i_relfilenode = PQfnumber(res, "relfilenode");
+	i_relname = PQfnumber(res, "relname");
+	i_tablespace = PQfnumber(res, "reltablespace");
+	i_reltoastrelid = PQfnumber(res, "reltoastrelid");
+	i_tablespace_location = PQfnumber(res, "pg_tablespace_location");
+	i_relpersistence = PQfnumber(res, "relpersistence");
+
+	map = pg_malloc(sizeof(RelFileMap) * ntups);
+
+	for (i = 0; i < ntups; i++)
+	{
+		RelFileMap *cur = map + i;
+
+		cur->db_oid = dboid;
+
+		cur->reloid = atooid(PQgetvalue(res, i, i_oid));
+		cur->relfilenode = atooid(PQgetvalue(res, i, i_relfilenode));
+		cur->relname = strdup(PQgetvalue(res, i, i_relname));
+		cur->reltoastrelid = atooid(PQgetvalue(res, i, i_reltoastrelid));
+
+		/* 'c' is for RELPERSISTENCE_CONSTANT */
+		if (*PQgetvalue(res, i, i_relpersistence) != 'c')
+			exit_horribly(NULL, "Cannot transfer non-constant relation '%s' \n",
+						  cur->relname);
+
+		if (cur->reltoastrelid != 0)
+			*ntoastrels += 1;
+
+		if (atoi(PQgetvalue(res, i, i_tablespace)) == 0)
+		{
+			cur->datadir = strdup(data_directory);
+			cur->tablespace = strdup("/base");
+		}
+		else
+		{
+			char tblsp_path[MAXPGPATH];
+
+			#define CATALOG_VERSION_NO	201608191
+			#define TABLESPACE_VERSION_DIRECTORY	"PG_" PG_MAJORVERSION "_" \
+										CppAsString2(CATALOG_VERSION_NO)
+			/*
+			 * We need special treatment for tablespaces other than pg_global.
+			 * There are symllinks stored in the tablespce dir,
+			 * but we need to get locations of real files.
+			 */
+			cur->datadir = strdup("");
+			snprintf(tblsp_path, sizeof(tblsp_path),
+					 "%s/%s", PQgetvalue(res, i, i_tablespace_location), TABLESPACE_VERSION_DIRECTORY);
+			cur->tablespace = strdup(tblsp_path);
+		}
+	}
+
+	PQclear(res);
+	destroyPQExpBuffer(query);
+	return map;
+}
+
+RelFileMap *
+fillRelFileMapSeq(Archive *fout, int *nrels,
+			   const char *dbname, const char *tblname)
+{
+	PQExpBuffer query;
+	PGresult	*res;
+	int			i_dboid;
+	int 		ntups;
+	int			i_oid;
+	int			i_relfilenode;
+	int			i_relname;
+	int			i_tablespace;
+	int			i_data_directory;
+	int 		i_tablespace_location;
+	int 		i_relpersistence;
+	const char *data_directory;
+	Oid			dboid;
+	int i;
+	RelFileMap *map;
+
+	*nrels = 0;
+	query = createPQExpBuffer();
+
+	/*
+	 * At first get $PGDATA.
+	 */
+	appendPQExpBuffer(query, "SHOW data_directory;");
+	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	i_data_directory =  PQfnumber(res, "data_directory");
+	data_directory = strdup(PQgetvalue(res, 0, i_data_directory));
+
+	PQclear(res);
+	resetPQExpBuffer(query);
+
+	/*
+	 * Next: get db_oid to construct filepath
+	 */
+	appendPQExpBuffer(query, "select oid from pg_database where datname = '%s'",
+								dbname);
+	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+
+	i_dboid = PQfnumber(res, "oid");
+	dboid= atooid(PQgetvalue(res, 0, i_dboid));
+
+	PQclear(res);
+	resetPQExpBuffer(query);
+
+	/*
+	 * Find all sequences related to the table,
+	 * add them to the list
+	 */
+	appendPQExpBuffer(query, "SELECT s.oid, pg_tablespace_location(s.reltablespace), s.relname, s.relfilenode, \n"
+								"s.reltablespace, s.relpersistence \n"
+					 "FROM pg_class s  \n"
+					 "JOIN pg_depend d ON d.objid=s.oid AND d.classid='pg_class'::regclass  \n"
+					 "AND d.refclassid='pg_class'::regclass \n"
+					 "JOIN pg_class t ON t.oid=d.refobjid \n"
+					 "JOIN pg_namespace n on n.oid=t.relnamespace \n"
+					 "JOIN pg_attribute a on a.attrelid=t.oid AND a.attnum=d.refobjsubid \n"
+					 "WHERE s.relkind='S' AND d.deptype='a' AND t.relname = '%s' \n", tblname);
+	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+	ntups = PQntuples(res);
+
+	if (ntups == 0)
+		return NULL;
+	*nrels = ntups;
+
+	i_oid = PQfnumber(res, "oid");
+	i_relfilenode = PQfnumber(res, "relfilenode");
+	i_relname = PQfnumber(res, "relname");
+	i_tablespace = PQfnumber(res, "reltablespace");
+	i_tablespace_location = PQfnumber(res, "pg_tablespace_location");
+	i_relpersistence = PQfnumber(res, "relpersistence");
+	map = pg_malloc(sizeof(RelFileMap) * ntups);
+
+	for (i = 0; i < ntups; i++)
+	{
+		RelFileMap *cur = map + i;
+
+		cur->db_oid = dboid;
+		cur->reloid = atooid(PQgetvalue(res, i, i_oid));
+		cur->relfilenode = atooid(PQgetvalue(res, i, i_relfilenode));
+		cur->relname = strdup(PQgetvalue(res, i, i_relname));
+
+		/* 'c' is for RELPERSISTENCE_CONSTANT. */
+// 		if (*PQgetvalue(res, i, i_relpersistence) != 'c')
+// 			exit_horribly(NULL, "Cannot transfer non-constant relation '%s' \n", cur->relname);
+
+		if (atoi(PQgetvalue(res, i, i_tablespace)) == 0)
+		{
+			cur->datadir = strdup(data_directory);
+			cur->tablespace = strdup("/base");
+		}
+		else
+		{
+			char tblsp_path[MAXPGPATH];
+
+			#define CATALOG_VERSION_NO	201608191
+			#define TABLESPACE_VERSION_DIRECTORY	"PG_" PG_MAJORVERSION "_" \
+										CppAsString2(CATALOG_VERSION_NO)
+			/*
+			 * We need special treatment for tablespaces other than pg_global.
+			 * There are symllinks stored in the tablespce dir,
+			 * but we need to get locations of real files.
+			 */
+			cur->datadir = strdup("");
+			snprintf(tblsp_path, sizeof(tblsp_path),
+					 "%s/%s", PQgetvalue(res, i, i_tablespace_location), TABLESPACE_VERSION_DIRECTORY);
+			cur->tablespace = strdup(tblsp_path);
+		}
+	}
+
+	PQclear(res);
+	destroyPQExpBuffer(query);
+	return map;
+}
+
+/*
+ * fillRelFileMapToast()
+ * 		find all toast relations and fill mapping for them
+ */
+RelFileMap *
+fillRelFileMapToast(Archive *fout, RelFileMap *map,
+					int nrels, int ntoastrels)
+{
+	PGresult   *res;
+	PQExpBuffer query;
+	int			i_oid;
+	int			i_relfilenode;
+	int i;
+	RelFileMap *toastmap;
+	RelFileMap *curtoast;
+
+	/* Each toast table has an index, so double toastmap size */
+	toastmap = pg_malloc(sizeof(RelFileMap) * ntoastrels*2);
+
+	query = createPQExpBuffer();
+
+	/* fill mapping for toast rel */
+	curtoast = toastmap;
+
+	for (i = 0; i < nrels; i++)
+	{
+		if(map[i].reltoastrelid != 0)
+		{
+			/* Next: get relfilenode of toast table to construct filepath */
+			appendPQExpBuffer(query, "SELECT relname, relfilenode FROM pg_class WHERE \n"
+									"oid = %d",
+									map[i].reltoastrelid);
+			res = ExecuteSqlQueryForSingleRow(fout, query->data);
+
+			if (PQntuples(res) == 0)
+				exit_horribly(NULL, "No toast relation with oid %d \n",map[i].reltoastrelid);
+
+			i_relfilenode = PQfnumber(res, "relfilenode");
+
+			curtoast->datadir = strdup(map[i].datadir);
+			curtoast->tablespace = strdup(map[i].tablespace);
+			curtoast->db_oid = map[i].db_oid;
+
+			curtoast->reloid = map[i].reltoastrelid;
+			curtoast->relfilenode = atooid(PQgetvalue(res, 0, i_relfilenode));
+
+			curtoast->relname = palloc(NAMEDATALEN);
+			sprintf(curtoast->relname, "pg_toast_%s", map[i].relname);
+
+			PQclear(res);
+			resetPQExpBuffer(query);
+
+			/* Next: get relfilenode of toast index to construct filepath */
+			curtoast += 1;
+
+			appendPQExpBuffer(query, "WITH indoid AS (SELECT indexrelid FROM pg_index WHERE indrelid = %d) \n"
+									  "SELECT oid, relname, relfilenode  FROM pg_class \n"
+									  "WHERE oid IN (SELECT indexrelid FROM indoid)",
+									  map[i].reltoastrelid);
+			res = ExecuteSqlQueryForSingleRow(fout, query->data);
+
+			if (PQntuples(res) == 0)
+				exit_horribly(NULL, "No toast index relation with oid %d \n",map[i].reltoastrelid);
+
+			curtoast->datadir = strdup(map[i].datadir);
+			curtoast->tablespace = strdup(map[i].tablespace);
+			curtoast->db_oid = map[i].db_oid;
+
+			i_oid = PQfnumber(res, "oid");
+			i_relfilenode = PQfnumber(res, "relfilenode");
+
+			curtoast->reloid = atooid(PQgetvalue(res, 0, i_oid));
+			curtoast->relfilenode = atooid(PQgetvalue(res, 0, i_relfilenode));
+
+			curtoast->relname = palloc(NAMEDATALEN);
+			sprintf(curtoast->relname, "pg_toast_%s_index", map[i].relname);
+
+			PQclear(res);
+			resetPQExpBuffer(query);
+
+			curtoast += 1;
+		}
+	}
+
+	destroyPQExpBuffer(query);
+
+	return toastmap;
+}
+
+static int
+copy_file(const char *srcfile, const char *dstfile, bool create_file)
+{
+#define COPY_BUF_SIZE (50 * BLCKSZ)
+
+	int			src_fd;
+	int			dest_fd;
+	char	   *buffer;
+	int			ret = 0;
+	int			save_errno = 0;
+	int dest_flags = 0;
+
+	if ((srcfile == NULL) || (dstfile == NULL))
+	{
+		errno = EINVAL;
+		return -1;
+	}
+
+	if ((src_fd = open(srcfile, O_RDONLY, 0)) < 0)
+		return -1;
+
+	if (create_file)
+		dest_flags = O_RDWR | O_CREAT | O_EXCL;
+	else
+		dest_flags = O_RDWR | O_CREAT;
+
+	if ((dest_fd = open(dstfile, dest_flags, S_IRUSR | S_IWUSR)) < 0)
+	{
+		save_errno = errno;
+
+		if (src_fd != 0)
+			close(src_fd);
+
+		errno = save_errno;
+		return -1;
+	}
+
+	buffer = (char *) pg_malloc(COPY_BUF_SIZE);
+
+	/* perform data copying i.e read src source, write to destination */
+	while (true)
+	{
+		ssize_t		nbytes = read(src_fd, buffer, COPY_BUF_SIZE);
+
+		if (nbytes < 0)
+		{
+			save_errno = errno;
+			ret = -1;
+			break;
+		}
+
+		if (nbytes == 0)
+			break;
+
+		errno = 0;
+
+		if (write(dest_fd, buffer, nbytes) != nbytes)
+		{
+			/* if write didn't set errno, assume problem is no disk space */
+			if (errno == 0)
+				errno = ENOSPC;
+			save_errno = errno;
+			ret = -1;
+			break;
+		}
+	}
+
+	pg_free(buffer);
+
+	if (src_fd != 0)
+		close(src_fd);
+
+	if (dest_fd != 0)
+		close(dest_fd);
+
+	if (save_errno != 0)
+		errno = save_errno;
+
+	return ret;
+}
+
+/*
+ * Transfer relation fork, specified by type_suffix, to transfer subdir.
+ * In copy mode, just move relfiles to transfer_dir (if dump) or
+ * from transfer_dir to database (if restore).
+ */
+void
+transfer_relfile(RelFileMap *map, const char *type_suffix,
+				 const char *transfer_dir, bool is_restore,
+				 bool is_copy_mode, bool is_verbose)
+{
+	char		db_file[MAXPGPATH];
+	char		transfer_file[MAXPGPATH];
+	int			segno;
+	char		extent_suffix[65];
+	struct stat statbuf;
+
+	/*
+	 * Now copy/link any related segments as well. Remember, PG breaks large
+	 * files into 1GB segments, the first segment has no extension, subsequent
+	 * segments are named relfilenode.1, relfilenode.2, relfilenode.3. copied.
+	 */
+	for (segno = 0;; segno++)
+	{
+		if (segno == 0)
+			extent_suffix[0] = '\0';
+		else
+			snprintf(extent_suffix, sizeof(extent_suffix), ".%d", segno);
+
+		snprintf(db_file, sizeof(db_file), "%s%s/%u/%u%s%s",
+				 map->datadir,
+				 map->tablespace,
+				 map->db_oid,
+				 map->relfilenode,
+				 type_suffix,
+				 extent_suffix);
+		snprintf(transfer_file, sizeof(transfer_file), "%s%s%s%s",
+				 transfer_dir,
+				 map->relname,
+				 type_suffix,
+				 extent_suffix);
+
+		/* Did file open fail? */
+		if (!is_restore)
+		{
+			if (stat(db_file, &statbuf) != 0)
+			{
+				/*
+				 * vm or fsm or non-first segment file does not exist?
+				 * That's OK, just return
+				 */
+				if (type_suffix[0] != '\0' || segno != 0)
+				{
+					if (errno == ENOENT)
+						return;
+				}
+				exit_horribly(NULL, "error while checking for file existence \"%s\" (\"%s\" to \"%s\")\n",
+									map->relname, db_file, transfer_file);
+			}
+		}
+		else
+		{
+			if (stat(transfer_file, &statbuf) != 0)
+			{
+				/*
+				 * vm or fsm or non-first segment file does not exist?
+				 * That's OK, just return
+				 */
+				if (type_suffix[0] != '\0' || segno != 0)
+				{
+					if (errno == ENOENT)
+						return;
+				}
+				exit_horribly(NULL, "error while checking for file existence \"%s\" (\"%s\" to \"%s\")\n",
+									map->relname, transfer_file, db_file);
+			}
+
+			if ((statbuf.st_nlink > 1) && (!is_copy_mode))
+				exit_horribly(NULL, "file \"%s\" has more than one link.\n"
+							"You're probably trying to restore files on the same filesystem "
+							"they were dumped.\nIt is not allowed.\n Use --copy-mode-transfer option.\n", transfer_file);
+		}
+
+		/* We do symmetric actions on dump and restore. */
+		if (!is_restore)
+		{
+			/* If dump, transfer file from database to transfer_dir */
+			if (is_verbose)
+				write_msg(NULL, "dump file (%s) \"%s\" to \"%s\"\n",
+					is_copy_mode?"copy":"link", db_file, transfer_file);
+
+			if (is_copy_mode)
+			{
+				if (copy_file(db_file, transfer_file, true) != 0)
+				{
+					exit_horribly(NULL, "cannot dump file (copy mode) %s to %s : %s \n",
+								db_file, transfer_file, strerror(errno));
+				}
+			}
+			else
+			{
+				if (link(db_file, transfer_file) != 0)
+				{
+					exit_horribly(NULL, "cannot dump file (link mode) %s to %s : %s \n",
+								db_file, transfer_file, strerror(errno));
+				}
+
+			}
+		}
+		else
+		{
+			/* If restore, transfer file from transfer_dir to database */
+			if (is_verbose)
+				write_msg(NULL, "restore file (%s) \"%s\" to \"%s\"\n",
+					is_copy_mode?"copy":"link", transfer_file, db_file);
+
+			if (is_copy_mode)
+			{
+				if (copy_file(transfer_file, db_file, false) != 0)
+				{
+					exit_horribly(NULL, "cannot restore file (copy mode) %s to %s : %s \n",
+								transfer_file, db_file, strerror(errno));
+				}
+			}
+			else
+			{
+				if (rename(transfer_file, db_file) != 0)
+				{
+					exit_horribly(NULL, "cannot restore file (rename mode) %s to %s : %s \n",
+								transfer_file, db_file, strerror(errno));
+				}
+			}
+		}
+	}
+	return;
+}
+
+/*
+ * dumpControlData: put the info from pg_control into
+ * the special file in transfer directory
+ */
+void
+transferCheckControlData(Archive *fout, const char *transfer_dir, bool isRestore)
+{
+	int		fd;
+	char		controlefilepath[MAXPGPATH];
+	PQExpBuffer q = createPQExpBuffer();
+	PGresult   *res;
+	const char *serverInfo;
+	size_t serverInfoLen = 0;
+
+	appendPQExpBuffer(q, "SELECT pg_control_init();");
+	res = ExecuteSqlQueryForSingleRow(fout, q->data);
+	serverInfo = pg_strdup(PQgetvalue(res, 0, 0));
+	destroyPQExpBuffer(q);
+
+	snprintf(controlefilepath, sizeof(controlefilepath), "%spg_control.init", transfer_dir);
+
+	if (!isRestore)
+	{
+		fd = open(controlefilepath,
+				O_RDWR | O_CREAT | O_EXCL | PG_BINARY,
+					   S_IRUSR | S_IWUSR);
+		if (fd < 0)
+			exit_horribly(NULL,"could not create control file dump \"%s\" \n",
+						controlefilepath);
+
+		errno = 0;
+		/* In dump mode copy info to the pg_control in transfer_dir */
+		if (write(fd, serverInfo, strlen(serverInfo)) != strlen(serverInfo))
+		{
+			/* if write didn't set errno, assume problem is no disk space */
+			if (errno == 0)
+				errno = ENOSPC;
+			exit_horribly(NULL,"could not write to control file dump");
+		}
+
+		if (fsync(fd) != 0)
+			exit_horribly(NULL,"could not fsync control file dump");
+	}
+	else
+	{
+		char dumpedInfo[strlen(serverInfo)];
+		/*
+		 * In restore mode read info from pg_control in transfer_dir
+		 * and compare it with the result of select. In case of any
+		 * inconsistensy throw an error and stop restore process.
+		 */
+
+		fd = open(controlefilepath, O_RDONLY | PG_BINARY, 0);
+		if (fd < 0)
+			exit_horribly(NULL,"could not open control file dump \"%s\" \n",
+						controlefilepath);
+
+		if (read(fd, dumpedInfo, strlen(serverInfo)) != strlen(serverInfo))
+			exit_horribly(NULL,"could not read control file dump \n");
+
+		if (strncmp(serverInfo, dumpedInfo, strlen(serverInfo)) != 0)
+			exit_horribly(NULL,"could not read control file dump. dumpedInfo: %s \n serverInfo: %s\n",
+						  dumpedInfo, serverInfo);
+	}
+
+	if (close(fd))
+		exit_horribly(NULL,"could not close control file dump \n");
 }

@@ -135,11 +135,11 @@ typedef struct VacAttrStats
  */
 typedef struct VacuumParams
 {
-	int			freeze_min_age; /* min freeze age, -1 to use default */
-	int			freeze_table_age;		/* age at which to scan whole table */
-	int			multixact_freeze_min_age;		/* min multixact freeze age,
+	int64		freeze_min_age; /* min freeze age, -1 to use default */
+	int64		freeze_table_age;		/* age at which to scan whole table */
+	int64		multixact_freeze_min_age;		/* min multixact freeze age,
 												 * -1 to use default */
-	int			multixact_freeze_table_age;		/* multixact age at which to
+	int64		multixact_freeze_table_age;		/* multixact age at which to
 												 * scan whole table */
 	bool		is_wraparound;	/* force a for-wraparound vacuum */
 	int			log_min_duration;		/* minimum execution threshold in ms
@@ -150,10 +150,10 @@ typedef struct VacuumParams
 /* GUC parameters */
 extern PGDLLIMPORT int default_statistics_target;		/* PGDLLIMPORT for
 														 * PostGIS */
-extern int	vacuum_freeze_min_age;
-extern int	vacuum_freeze_table_age;
-extern int	vacuum_multixact_freeze_min_age;
-extern int	vacuum_multixact_freeze_table_age;
+extern int64	vacuum_freeze_min_age;
+extern int64	vacuum_freeze_table_age;
+extern int64	vacuum_multixact_freeze_min_age;
+extern int64	vacuum_multixact_freeze_table_age;
 
 
 /* in commands/vacuum.c */
@@ -177,9 +177,9 @@ extern void vac_update_relstats(Relation relation,
 					MultiXactId minmulti,
 					bool in_outer_xact);
 extern void vacuum_set_xid_limits(Relation rel,
-					  int freeze_min_age, int freeze_table_age,
-					  int multixact_freeze_min_age,
-					  int multixact_freeze_table_age,
+					  int64 freeze_min_age, int64 freeze_table_age,
+					  int64 multixact_freeze_min_age,
+					  int64 multixact_freeze_table_age,
 					  TransactionId *oldestXmin,
 					  TransactionId *freezeLimit,
 					  TransactionId *xidFullScanLimit,

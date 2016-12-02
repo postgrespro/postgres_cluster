@@ -331,7 +331,7 @@ DATA(insert OID = 27 (	tid		   PGNSP PGUID	6 f b U f t \054 0	 0 1010 tidin tido
 DESCR("(block, offset), physical location of tuple");
 #define TIDOID		27
 
-DATA(insert OID = 28 (	xid		   PGNSP PGUID	4 t b U f t \054 0	 0 1011 xidin xidout xidrecv xidsend - - - i p f 0 -1 0 0 _null_ _null_ _null_ ));
+DATA(insert OID = 28 (	xid		   PGNSP PGUID	8 FLOAT8PASSBYVAL b U f t \054 0	 0 1011 xidin xidout xidrecv xidsend - - - d p f 0 -1 0 0 _null_ _null_ _null_ ));
 DESCR("transaction id");
 #define XIDOID 28
 
@@ -460,7 +460,7 @@ DATA(insert OID = 1009 (  _text		 PGNSP PGUID -1 f b A f t \054 0	25 0 array_in 
 DATA(insert OID = 1028 (  _oid		 PGNSP PGUID -1 f b A f t \054 0	26 0 array_in array_out array_recv array_send - - array_typanalyze i x f 0 -1 0 0 _null_ _null_ _null_ ));
 #define OIDARRAYOID			1028
 DATA(insert OID = 1010 (  _tid		 PGNSP PGUID -1 f b A f t \054 0	27 0 array_in array_out array_recv array_send - - array_typanalyze i x f 0 -1 0 0 _null_ _null_ _null_ ));
-DATA(insert OID = 1011 (  _xid		 PGNSP PGUID -1 f b A f t \054 0	28 0 array_in array_out array_recv array_send - - array_typanalyze i x f 0 -1 0 0 _null_ _null_ _null_ ));
+DATA(insert OID = 1011 (  _xid		 PGNSP PGUID -1 f b A f t \054 0	28 0 array_in array_out array_recv array_send - - array_typanalyze d x f 0 -1 0 0 _null_ _null_ _null_ ));
 DATA(insert OID = 1012 (  _cid		 PGNSP PGUID -1 f b A f t \054 0	29 0 array_in array_out array_recv array_send - - array_typanalyze i x f 0 -1 0 0 _null_ _null_ _null_ ));
 DATA(insert OID = 1013 (  _oidvector PGNSP PGUID -1 f b A f t \054 0	30 0 array_in array_out array_recv array_send - - array_typanalyze i x f 0 -1 0 0 _null_ _null_ _null_ ));
 DATA(insert OID = 1014 (  _bpchar	 PGNSP PGUID -1 f b A f t \054 0 1042 0 array_in array_out array_recv array_send bpchartypmodin bpchartypmodout array_typanalyze i x f 0 -1 0 100 _null_ _null_ _null_ ));

@@ -324,6 +324,7 @@ record_out(PG_FUNCTION_ARGS)
 	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
 	ItemPointerSetInvalid(&(tuple.t_self));
 	tuple.t_tableOid = InvalidOid;
+	HeapTupleSetInvalidEpoch(&tuple);
 	tuple.t_data = rec;
 
 	/*
@@ -669,6 +670,7 @@ record_send(PG_FUNCTION_ARGS)
 	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
 	ItemPointerSetInvalid(&(tuple.t_self));
 	tuple.t_tableOid = InvalidOid;
+	HeapTupleSetInvalidEpoch(&tuple);
 	tuple.t_data = rec;
 
 	/*
@@ -818,10 +820,12 @@ record_cmp(FunctionCallInfo fcinfo)
 	tuple1.t_len = HeapTupleHeaderGetDatumLength(record1);
 	ItemPointerSetInvalid(&(tuple1.t_self));
 	tuple1.t_tableOid = InvalidOid;
+	HeapTupleSetInvalidEpoch(&tuple1);
 	tuple1.t_data = record1;
 	tuple2.t_len = HeapTupleHeaderGetDatumLength(record2);
 	ItemPointerSetInvalid(&(tuple2.t_self));
 	tuple2.t_tableOid = InvalidOid;
+	HeapTupleSetInvalidEpoch(&tuple2);
 	tuple2.t_data = record2;
 
 	/*
@@ -1057,10 +1061,12 @@ record_eq(PG_FUNCTION_ARGS)
 	ItemPointerSetInvalid(&(tuple1.t_self));
 	tuple1.t_tableOid = InvalidOid;
 	tuple1.t_data = record1;
+	HeapTupleSetInvalidEpoch(&tuple1);
 	tuple2.t_len = HeapTupleHeaderGetDatumLength(record2);
 	ItemPointerSetInvalid(&(tuple2.t_self));
 	tuple2.t_tableOid = InvalidOid;
 	tuple2.t_data = record2;
+	HeapTupleSetInvalidEpoch(&tuple2);
 
 	/*
 	 * We arrange to look up the needed comparison info just once per series
@@ -1316,10 +1322,12 @@ record_image_cmp(FunctionCallInfo fcinfo)
 	ItemPointerSetInvalid(&(tuple1.t_self));
 	tuple1.t_tableOid = InvalidOid;
 	tuple1.t_data = record1;
+	HeapTupleSetInvalidEpoch(&tuple1);
 	tuple2.t_len = HeapTupleHeaderGetDatumLength(record2);
 	ItemPointerSetInvalid(&(tuple2.t_self));
 	tuple2.t_tableOid = InvalidOid;
 	tuple2.t_data = record2;
+	HeapTupleSetInvalidEpoch(&tuple2);
 
 	/*
 	 * We arrange to look up the needed comparison info just once per series
@@ -1593,10 +1601,12 @@ record_image_eq(PG_FUNCTION_ARGS)
 	ItemPointerSetInvalid(&(tuple1.t_self));
 	tuple1.t_tableOid = InvalidOid;
 	tuple1.t_data = record1;
+	HeapTupleSetInvalidEpoch(&tuple1);
 	tuple2.t_len = HeapTupleHeaderGetDatumLength(record2);
 	ItemPointerSetInvalid(&(tuple2.t_self));
 	tuple2.t_tableOid = InvalidOid;
 	tuple2.t_data = record2;
+	HeapTupleSetInvalidEpoch(&tuple2);
 
 	/*
 	 * We arrange to look up the needed comparison info just once per series

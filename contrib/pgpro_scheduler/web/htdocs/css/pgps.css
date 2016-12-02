@@ -1,0 +1,33 @@
+td.done {
+	color: green;
+}
+
+td.error {
+	color: red;
+}
+
+td.time {
+	font-size: 80%;
+}
+
+td.td-dig {
+	text-align: right;
+}
+
+h1.centered {
+	text-align: center;
+}
+	
+div.container {
+	margin-left:20px;
+	margin-right:20px;
+}
+
+div.uplod-indicator {
+	float: right;
+	margin-left: 10px;
+}
+
+img#pj-ind, img#aj-ind {
+	display: none;
+}

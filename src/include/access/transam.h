@@ -28,11 +28,12 @@
  * Note: if you need to change it, you must change pg_class.h as well.
  * ----------------
  */
-#define InvalidTransactionId		((TransactionId) 0)
-#define BootstrapTransactionId		((TransactionId) 1)
-#define FrozenTransactionId			((TransactionId) 2)
-#define FirstNormalTransactionId	((TransactionId) 3)
-#define MaxTransactionId			((TransactionId) 0xFFFFFFFF)
+#define InvalidTransactionId		UINT64CONST(0)
+#define BootstrapTransactionId		UINT64CONST(1)
+#define FrozenTransactionId			UINT64CONST(2)
+#define FirstNormalTransactionId	UINT64CONST(3)
+#define MaxTransactionId			UINT64CONST(0xFFFFFFFFFFFFFFFF)
+#define MaxShortTransactionId		((TransactionId) 0x7FFFFFFF)
 
 /* ----------------
  *		transaction ID manipulation macros
@@ -43,30 +44,37 @@
 #define TransactionIdEquals(id1, id2)	((id1) == (id2))
 #define TransactionIdStore(xid, dest)	(*(dest) = (xid))
 #define StoreInvalidTransactionId(dest) (*(dest) = InvalidTransactionId)
+#define ShortTransactionIdToNormal(epoch, xid) \
+	(TransactionIdIsNormal(xid) ? (TransactionId)(xid) + (epoch) : (TransactionId)(xid))
+#define NormalTransactionIdToShort(epoch, xid) \
+	(TransactionIdIsNormal(xid) ? (ShortTransactionId)( \
+		AssertMacro((xid) >= (epoch) + FirstNormalTransactionId), \
+		AssertMacro((xid) <= (epoch) + MaxShortTransactionId), \
+		(xid) - (epoch)) : (ShortTransactionId)(xid))
 
 /* advance a transaction ID variable, handling wraparound correctly */
 #define TransactionIdAdvance(dest)	\
 	do { \
 		(dest)++; \
-		if ((dest) < FirstNormalTransactionId) \
-			(dest) = FirstNormalTransactionId; \
+		Assert((dest) > FirstNormalTransactionId); \
 	} while(0)
 
 /* back up a transaction ID variable, handling wraparound correctly */
 #define TransactionIdRetreat(dest)	\
 	do { \
+		Assert((dest) > FirstNormalTransactionId); \
 		(dest)--; \
-	} while ((dest) < FirstNormalTransactionId)
+	} while(0)
 
 /* compare two XIDs already known to be normal; this is a macro for speed */
 #define NormalTransactionIdPrecedes(id1, id2) \
 	(AssertMacro(TransactionIdIsNormal(id1) && TransactionIdIsNormal(id2)), \
-	(int32) ((id1) - (id2)) < 0)
+	(int64) ((id1) - (id2)) < 0)
 
 /* compare two XIDs already known to be normal; this is a macro for speed */
 #define NormalTransactionIdFollows(id1, id2) \
 	(AssertMacro(TransactionIdIsNormal(id1) && TransactionIdIsNormal(id2)), \
-	(int32) ((id1) - (id2)) > 0)
+	(int64) ((id1) - (id2)) > 0)
 
 /* ----------
  *		Object ID (OID) zero is InvalidOid.
@@ -118,9 +126,6 @@ typedef struct VariableCacheData
 
 	TransactionId oldestXid;	/* cluster-wide minimum datfrozenxid */
 	TransactionId xidVacLimit;	/* start forcing autovacuums here */
-	TransactionId xidWarnLimit; /* start complaining here */
-	TransactionId xidStopLimit; /* refuse to advance nextXid beyond here */
-	TransactionId xidWrapLimit; /* where the world ends */
 	Oid			oldestXidDB;	/* database with minimum datfrozenxid */
 
 	/*
@@ -160,10 +165,6 @@ extern void TransactionIdAbort(TransactionId transactionId);
 extern void TransactionIdCommitTree(TransactionId xid, int nxids, TransactionId *xids);
 extern void TransactionIdAsyncCommitTree(TransactionId xid, int nxids, TransactionId *xids, XLogRecPtr lsn);
 extern void TransactionIdAbortTree(TransactionId xid, int nxids, TransactionId *xids);
-extern bool TransactionIdPrecedes(TransactionId id1, TransactionId id2);
-extern bool TransactionIdPrecedesOrEquals(TransactionId id1, TransactionId id2);
-extern bool TransactionIdFollows(TransactionId id1, TransactionId id2);
-extern bool TransactionIdFollowsOrEquals(TransactionId id1, TransactionId id2);
 extern TransactionId TransactionIdLatest(TransactionId mainxid,
 					int nxids, const TransactionId *xids);
 extern XLogRecPtr TransactionIdGetCommitLSN(TransactionId xid);

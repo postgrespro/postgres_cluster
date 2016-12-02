@@ -215,7 +215,7 @@ pg_output_begin(LogicalDecodingContext *ctx, TestDecodingData *data, ReorderBuff
 {
 	OutputPluginPrepareWrite(ctx, last_write);
 	if (data->include_xids)
-		appendStringInfo(ctx->out, "BEGIN %u", txn->xid);
+		appendStringInfo(ctx->out, "BEGIN " XID_FMT, txn->xid);
 	else
 		appendStringInfoString(ctx->out, "BEGIN");
 	OutputPluginWrite(ctx, last_write);
@@ -233,7 +233,7 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 	OutputPluginPrepareWrite(ctx, true);
 	if (data->include_xids)
-		appendStringInfo(ctx->out, "COMMIT %u", txn->xid);
+		appendStringInfo(ctx->out, "COMMIT " XID_FMT, txn->xid);
 	else
 		appendStringInfoString(ctx->out, "COMMIT");
 

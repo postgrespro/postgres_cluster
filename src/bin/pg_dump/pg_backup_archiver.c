@@ -86,7 +86,7 @@ static void SetOutput(ArchiveHandle *AH, const char *filename, int compression);
 static OutputContext SaveOutput(ArchiveHandle *AH);
 static void RestoreOutput(ArchiveHandle *AH, OutputContext savedContext);
 
-static int	restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel);
+static int	restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel, int transfer_data);
 static void restore_toc_entries_prefork(ArchiveHandle *AH);
 static void restore_toc_entries_parallel(ArchiveHandle *AH, ParallelState *pstate,
 							 TocEntry *pending_list);
@@ -389,6 +389,8 @@ RestoreArchive(Archive *AHX)
 						ropt->pghost, ropt->pgport, ropt->username,
 						ropt->promptPassword);
 
+		if(ropt->transfer_dir)
+			transferCheckControlData(AHX, ropt->transfer_dir, true);
 		/*
 		 * If we're talking to the DB directly, don't send comments since they
 		 * obscure SQL when displaying errors
@@ -621,6 +623,11 @@ RestoreArchive(Archive *AHX)
 	 *
 	 * In parallel mode, turn control over to the parallel-restore logic.
 	 */
+
+	/* No parallel mode for transfer mode restore. */
+	if(AHX->ropt->transfer_dir)
+		parallel_mode = false;
+
 	if (parallel_mode)
 	{
 		ParallelState *pstate;
@@ -643,8 +650,18 @@ RestoreArchive(Archive *AHX)
 	}
 	else
 	{
-		for (te = AH->toc->next; te != AH->toc; te = te->next)
-			(void) restore_toc_entry(AH, te, false);
+		if (ropt->transfer_dir)
+		{
+			for (te = AH->toc->next; te != AH->toc; te = te->next)
+				(void) restore_toc_entry(AH, te, false, -1);
+			for (te = AH->toc->next; te != AH->toc; te = te->next)
+				(void) restore_toc_entry(AH, te, false, 1);
+		}
+		else
+		{
+			for (te = AH->toc->next; te != AH->toc; te = te->next)
+				(void) restore_toc_entry(AH, te, false, 0);
+		}
 	}
 
 	/*
@@ -699,9 +716,14 @@ RestoreArchive(Archive *AHX)
  *
  * Returns 0 normally, but WORKER_CREATE_DONE or WORKER_INHIBIT_DATA if
  * the parallel parent has to make the corresponding status update.
+ *
+ * transfer_data is a flag for separate passes in transfer mode.
+ * if transfer_data < 0 restore schema entries only
+ * if transfer_data = 0 ignore the flag, we are not in transfer mode
+ * if transfer_data > 0 restore only data entries (transfer files to db)
  */
 static int
-restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel)
+restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel, int transfer_data)
 {
 	RestoreOptions *ropt = AH->public.ropt;
 	int			status = WORKER_OK;
@@ -709,7 +731,7 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel)
 	bool		defnDumped;
 
 	AH->currentTE = te;
-
+	
 	/* Work out what, if anything, we want from this entry */
 	if (_tocEntryIsACL(te))
 		reqs = 0;				/* ACLs are never restored here */
@@ -735,7 +757,8 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel)
 
 	defnDumped = false;
 
-	if ((reqs & REQ_SCHEMA) != 0)		/* We want the schema */
+	if ((reqs & REQ_SCHEMA) != 0
+		&& transfer_data <= 0)		/* We want the schema */
 	{
 		/* Show namespace if available */
 		if (te->namespace)
@@ -743,7 +766,6 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel)
 				  te->desc, te->namespace, te->tag);
 		else
 			ahlog(AH, 1, "creating %s \"%s\"\n", te->desc, te->tag);
-
 
 		_printTocEntry(AH, te, false, false);
 		defnDumped = true;
@@ -800,10 +822,21 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel)
 		}
 	}
 
+	/* Second pass to upload data files in transfer mode. */
+	if (transfer_data > 0)
+	{
+		Assert(ropt->transfer_dir != NULL);
+
+		/* Restore table data. */
+		if (strcmp(te->desc, "TABLE") == 0)
+			doTransferRelRestore(AH, te);
+	}
+
 	/*
 	 * If we have a data component, then process it
+	 * There is no data component for transfer mode.
 	 */
-	if ((reqs & REQ_DATA) != 0)
+	if ((reqs & REQ_DATA) != 0 && !ropt->transfer_dir)
 	{
 		/*
 		 * hadDumper will be set if there is genuine data component for this
@@ -3739,7 +3772,7 @@ restore_toc_entries_prefork(ArchiveHandle *AH)
 			  next_work_item->dumpId,
 			  next_work_item->desc, next_work_item->tag);
 
-		(void) restore_toc_entry(AH, next_work_item, false);
+		(void) restore_toc_entry(AH, next_work_item, false, 0);
 
 		/* there should be no touch of ready_list here, so pass NULL */
 		reduce_dependencies(AH, next_work_item, NULL);
@@ -3942,7 +3975,7 @@ restore_toc_entries_postfork(ArchiveHandle *AH, TocEntry *pending_list)
 	{
 		ahlog(AH, 1, "processing missed item %d %s %s\n",
 			  te->dumpId, te->desc, te->tag);
-		(void) restore_toc_entry(AH, te, false);
+		(void) restore_toc_entry(AH, te, false, 0);
 	}
 
 	/* The ACLs will be handled back in RestoreArchive. */
@@ -4115,7 +4148,7 @@ parallel_restore(ParallelArgs *args)
 	AH->public.n_errors = 0;
 
 	/* Restore the TOC item */
-	status = restore_toc_entry(AH, te, true);
+	status = restore_toc_entry(AH, te, true, 0);
 
 	return status;
 }
@@ -4342,7 +4375,8 @@ identify_locking_dependencies(ArchiveHandle *AH, TocEntry *te)
 		  strcmp(te->desc, "CHECK CONSTRAINT") == 0 ||
 		  strcmp(te->desc, "FK CONSTRAINT") == 0 ||
 		  strcmp(te->desc, "RULE") == 0 ||
-		  strcmp(te->desc, "TRIGGER") == 0))
+		  strcmp(te->desc, "TRIGGER") == 0) ||
+		  strcmp(te->desc, "TABLE STATS"))
 		return;
 
 	/*

@@ -32,7 +32,7 @@
 #define XLOG_HEAP_INSERT		0x00
 #define XLOG_HEAP_DELETE		0x10
 #define XLOG_HEAP_UPDATE		0x20
-/* 0x030 is free, was XLOG_HEAP_MOVE */
+#define XLOG_HEAP_EPOCH_SHIFT	0x30
 #define XLOG_HEAP_HOT_UPDATE	0x40
 #define XLOG_HEAP_CONFIRM		0x50
 #define XLOG_HEAP_LOCK			0x60
@@ -367,7 +367,17 @@ typedef struct xl_heap_rewrite_mapping
 	XLogRecPtr	start_lsn;		/* Insert LSN at begin of rewrite */
 } xl_heap_rewrite_mapping;
 
-extern void HeapTupleHeaderAdvanceLatestRemovedXid(HeapTupleHeader tuple,
+/* shift the epoch of xids on heap page */
+typedef struct xl_heap_epoch_shift
+{
+	int64		delta;			/* delta value to shift the epoch */
+	bool		multi;			/* true to shift multixact epoch */
+} xl_heap_epoch_shift;
+
+#define SizeOfHeapEpochShift (offsetof(xl_heap_epoch_shift, multi) + sizeof(bool))
+
+
+extern void HeapTupleHeaderAdvanceLatestRemovedXid(HeapTuple tuple,
 									   TransactionId *latestRemovedXid);
 
 extern void heap_redo(XLogReaderState *record);
@@ -388,12 +398,14 @@ extern XLogRecPtr log_heap_clean(Relation reln, Buffer buffer,
 extern XLogRecPtr log_heap_freeze(Relation reln, Buffer buffer,
 				TransactionId cutoff_xid, xl_heap_freeze_tuple *tuples,
 				int ntuples);
-extern bool heap_prepare_freeze_tuple(HeapTupleHeader tuple,
+extern bool heap_prepare_freeze_tuple(HeapTuple tuple,
 						  TransactionId cutoff_xid,
 						  TransactionId cutoff_multi,
 						  xl_heap_freeze_tuple *frz,
 						  bool *totally_frozen);
-extern void heap_execute_freeze_tuple(HeapTupleHeader tuple,
+extern void heap_execute_freeze_tuple(HeapTuple tuple,
+						  xl_heap_freeze_tuple *xlrec_tp);
+extern void heap_execute_freeze_tuple_page(Page page, HeapTupleHeader tuple,
 						  xl_heap_freeze_tuple *xlrec_tp);
 extern XLogRecPtr log_heap_visible(RelFileNode rnode, Buffer heap_buffer,
 				 Buffer vm_buffer, TransactionId cutoff_xid, uint8 flags);

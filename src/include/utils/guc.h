@@ -173,12 +173,14 @@ struct config_enum_entry
  */
 typedef bool (*GucBoolCheckHook) (bool *newval, void **extra, GucSource source);
 typedef bool (*GucIntCheckHook) (int *newval, void **extra, GucSource source);
+typedef bool (*GucInt64CheckHook) (int64 *newval, void **extra, GucSource source);
 typedef bool (*GucRealCheckHook) (double *newval, void **extra, GucSource source);
 typedef bool (*GucStringCheckHook) (char **newval, void **extra, GucSource source);
 typedef bool (*GucEnumCheckHook) (int *newval, void **extra, GucSource source);
 
 typedef void (*GucBoolAssignHook) (bool newval, void *extra);
 typedef void (*GucIntAssignHook) (int newval, void *extra);
+typedef void (*GucInt64AssignHook) (int64 newval, void *extra);
 typedef void (*GucRealAssignHook) (double newval, void *extra);
 typedef void (*GucStringAssignHook) (const char *newval, void *extra);
 typedef void (*GucEnumAssignHook) (int newval, void *extra);
@@ -304,6 +306,20 @@ extern void DefineCustomIntVariable(
 						GucIntAssignHook assign_hook,
 						GucShowHook show_hook);
 
+extern void DefineCustomInt64Variable(
+						const char *name,
+						const char *short_desc,
+						const char *long_desc,
+						int64 *valueAddr,
+						int64 bootValue,
+						int64 minValue,
+						int64 maxValue,
+						GucContext context,
+						int flags,
+						GucInt64CheckHook check_hook,
+						GucInt64AssignHook assign_hook,
+						GucShowHook show_hook);
+
 extern void DefineCustomRealVariable(
 						 const char *name,
 						 const char *short_desc,
@@ -358,6 +374,8 @@ extern void AtEOXact_GUC(bool isCommit, int nestLevel);
 extern void BeginReportingGUCOptions(void);
 extern void ParseLongOption(const char *string, char **name, char **value);
 extern bool parse_int(const char *value, int *result, int flags,
+		  const char **hintmsg);
+extern bool parse_int64(const char *value, int64 *result, int flags,
 		  const char **hintmsg);
 extern bool parse_real(const char *value, double *result);
 extern int set_config_option(const char *name, const char *value,

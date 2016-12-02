@@ -36,7 +36,8 @@ void
 RelationPutHeapTuple(Relation relation,
 					 Buffer buffer,
 					 HeapTuple tuple,
-					 bool token)
+					 bool token,
+					 TransactionId xid)
 {
 	Page		pageHeader;
 	OffsetNumber offnum;
@@ -49,6 +50,9 @@ RelationPutHeapTuple(Relation relation,
 
 	/* Add the tuple to the page */
 	pageHeader = BufferGetPage(buffer);
+
+	/* FIXME */
+	tuple->t_data->t_choice.t_heap.t_xmin = NormalTransactionIdToShort(((PageHeader) pageHeader)->pd_xid_epoch, xid);
 
 	offnum = PageAddItem(pageHeader, (Item) tuple->t_data,
 						 tuple->t_len, InvalidOffsetNumber, false, true);
@@ -68,8 +72,9 @@ RelationPutHeapTuple(Relation relation,
 	{
 		ItemId		itemId = PageGetItemId(pageHeader, offnum);
 		Item		item = PageGetItem(pageHeader, itemId);
+		HeapTupleHeader	tup = (HeapTupleHeader) item;
 
-		((HeapTupleHeader) item)->t_ctid = tuple->t_self;
+		tup->t_ctid = tuple->t_self;
 	}
 }
 

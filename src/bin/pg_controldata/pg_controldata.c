@@ -214,28 +214,27 @@ main(int argc, char *argv[])
 		   ControlFile->checkPointCopy.PrevTimeLineID);
 	printf(_("Latest checkpoint's full_page_writes: %s\n"),
 		   ControlFile->checkPointCopy.fullPageWrites ? _("on") : _("off"));
-	printf(_("Latest checkpoint's NextXID:          %u:%u\n"),
-		   ControlFile->checkPointCopy.nextXidEpoch,
+	printf(_("Latest checkpoint's NextXID:          " XID_FMT "\n"),
 		   ControlFile->checkPointCopy.nextXid);
 	printf(_("Latest checkpoint's NextOID:          %u\n"),
 		   ControlFile->checkPointCopy.nextOid);
-	printf(_("Latest checkpoint's NextMultiXactId:  %u\n"),
+	printf(_("Latest checkpoint's NextMultiXactId:  " XID_FMT "\n"),
 		   ControlFile->checkPointCopy.nextMulti);
-	printf(_("Latest checkpoint's NextMultiOffset:  %u\n"),
+	printf(_("Latest checkpoint's NextMultiOffset:  " INT64_FORMAT "\n"),
 		   ControlFile->checkPointCopy.nextMultiOffset);
-	printf(_("Latest checkpoint's oldestXID:        %u\n"),
+	printf(_("Latest checkpoint's oldestXID:        " XID_FMT "\n"),
 		   ControlFile->checkPointCopy.oldestXid);
 	printf(_("Latest checkpoint's oldestXID's DB:   %u\n"),
 		   ControlFile->checkPointCopy.oldestXidDB);
-	printf(_("Latest checkpoint's oldestActiveXID:  %u\n"),
+	printf(_("Latest checkpoint's oldestActiveXID:  " XID_FMT "\n"),
 		   ControlFile->checkPointCopy.oldestActiveXid);
-	printf(_("Latest checkpoint's oldestMultiXid:   %u\n"),
+	printf(_("Latest checkpoint's oldestMultiXid:   " XID_FMT "\n"),
 		   ControlFile->checkPointCopy.oldestMulti);
 	printf(_("Latest checkpoint's oldestMulti's DB: %u\n"),
 		   ControlFile->checkPointCopy.oldestMultiDB);
-	printf(_("Latest checkpoint's oldestCommitTsXid:%u\n"),
+	printf(_("Latest checkpoint's oldestCommitTsXid:" XID_FMT "\n"),
 		   ControlFile->checkPointCopy.oldestCommitTsXid);
-	printf(_("Latest checkpoint's newestCommitTsXid:%u\n"),
+	printf(_("Latest checkpoint's newestCommitTsXid:" XID_FMT "\n"),
 		   ControlFile->checkPointCopy.newestCommitTsXid);
 	printf(_("Time of latest checkpoint:            %s\n"),
 		   ckpttime_str);

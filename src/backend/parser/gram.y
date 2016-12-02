@@ -575,7 +575,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	CACHE CALLED CASCADE CASCADED CASE CAST CATALOG_P CHAIN CHAR_P
 	CHARACTER CHARACTERISTICS CHECK CHECKPOINT CLASS CLOSE
 	CLUSTER COALESCE COLLATE COLLATION COLUMN COMMENT COMMENTS COMMIT
-	COMMITTED CONCURRENTLY CONFIGURATION CONFLICT CONNECTION CONSTRAINT
+	COMMITTED CONCURRENTLY CONFIGURATION CONFLICT CONNECTION CONSTANT CONSTRAINT
 	CONSTRAINTS CONTENT_P CONTINUE_P CONVERSION_P COPY COST CREATE
 	CROSS CSV CUBE CURRENT_P
 	CURRENT_CATALOG CURRENT_DATE CURRENT_ROLE CURRENT_SCHEMA
@@ -2176,6 +2176,12 @@ alter_table_cmd:
 					n->subtype = AT_SetUnLogged;
 					$$ = (Node *)n;
 				}
+			| SET CONSTANT
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_SetConstant;
+					$$ = (Node *)n;
+				}
 			/* ALTER TABLE <name> ENABLE TRIGGER <trig> */
 			| ENABLE_P TRIGGER name
 				{
@@ -2914,6 +2920,7 @@ OptTemp:	TEMPORARY					{ $$ = RELPERSISTENCE_TEMP; }
 					$$ = RELPERSISTENCE_TEMP;
 				}
 			| UNLOGGED					{ $$ = RELPERSISTENCE_UNLOGGED; }
+			| CONSTANT					{ $$ = RELPERSISTENCE_CONSTANT; }
 			| /*EMPTY*/					{ $$ = RELPERSISTENCE_PERMANENT; }
 		;
 
@@ -3571,6 +3578,7 @@ create_mv_target:
 		;
 
 OptNoLog:	UNLOGGED					{ $$ = RELPERSISTENCE_UNLOGGED; }
+			| CONSTANT					{ $$ = RELPERSISTENCE_CONSTANT; }
 			| /*EMPTY*/					{ $$ = RELPERSISTENCE_PERMANENT; }
 		;
 
@@ -10384,6 +10392,11 @@ OptTempTableName:
 					$$ = $3;
 					$$->relpersistence = RELPERSISTENCE_UNLOGGED;
 				}
+			| CONSTANT opt_table qualified_name
+				{
+					$$ = $3;
+					$$->relpersistence = RELPERSISTENCE_CONSTANT;
+				}
 			| TABLE qualified_name
 				{
 					$$ = $2;
@@ -13865,6 +13878,7 @@ unreserved_keyword:
 			| CONFIGURATION
 			| CONFLICT
 			| CONNECTION
+			| CONSTANT
 			| CONSTRAINTS
 			| CONTENT_P
 			| CONTINUE_P

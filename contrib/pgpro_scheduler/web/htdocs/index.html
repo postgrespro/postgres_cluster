@@ -1,0 +1,51 @@
+<HTML>
+  <HEAD>
+    <link rel="stylesheet" href="http://yui.yahooapis.com/pure/0.6.0/base-min.css">
+    <link rel="stylesheet" href="http://yui.yahooapis.com/pure/0.6.0/tables-min.css">
+    <link rel="stylesheet" href="/css/pgps.css">
+	<script src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
+	<script src="/js/pgps.js"></script>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>PostgresPro Scheduler</title>
+  </HEAD>
+  <BODY>
+  <h1 class="centered">*** PostgresPro Scheduler jobs ***</h1>
+  <div class="container">
+  <h2>Active jobs <img id="pj-ind" src="/img/ajax-loader.gif"></h2>
+  <table class="pure-table pure-table-bordered" id="aj" width="100%">
+   <thead>
+    <tr>
+     <th>cron_id</th>
+	 <th>start_at</th>
+	 <th>started</th>
+	 <th>running</th>
+	 <th>name</th>
+	 <th>user</th>
+	 <th>owner</th>
+    </tr>
+   </thead>
+   <tbody>
+   </tbody>
+  </table>
+
+  <h2>Processed jobs <img id="pj-ind" src="/img/ajax-loader.gif"></h2>
+  <table class="pure-table pure-table-bordered" id="pj" width="100%">
+   <thead>
+    <tr>
+     <th>cron_id</th>
+	 <th>start_at</th>
+	 <th>started</th>
+	 <th>finished</th>
+	 <th>name</th>
+	 <th>user</th>
+	 <th>owner</th>
+	 <th>status</th>
+	 <th>message</th>
+    </tr>
+   </thead>
+   <tbody>
+   </tbody>
+  </table>
+  </div>
+  </BODY>
+</HTML>

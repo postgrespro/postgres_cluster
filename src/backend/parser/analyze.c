@@ -2470,7 +2470,11 @@ transformCreateTableAsStmt(ParseState *pstate, CreateTableAsStmt *stmt)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("materialized views cannot be UNLOGGED")));
-
+		/* Constant materialized views are not implemented. */
+		if (stmt->into->rel->relpersistence == RELPERSISTENCE_CONSTANT)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("materialized views cannot be CONSTANT")));
 		/*
 		 * At runtime, we'll need a copy of the parsed-but-not-rewritten Query
 		 * for purposes of creating the view's ON SELECT rule.  We stash that

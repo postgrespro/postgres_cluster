@@ -296,6 +296,36 @@
       This function takes first ten blocks of relation and tries to compress them ands returns average compress ratio.
       So if returned value is 7.8 then compressed table occupies about eight time less space than original table.
     </para>
-      
+
+     <para>
+       Function <varname>cfs_compression_ratio(relation)</varname> allows to check how precise was estimation of 
+       <varname>cfs_estimate(relation)</varname> function. It returns real compression ration for all segments of the compressed 
+       relation. Compression ration is total sum of virtual size of all relation segments (number of blocks multiplied by 8kb) divided
+       by sum of physical size of the segment files. 
+     </para>
+ 
+     <para>
+       As it was mentioned before, CFS always appends updated blocks to the end of the compressed file. So physical size of the file
+       can be greater than used size in this file. I.e. CFS file is fragmented and defragmentation is periodically performed by CFS
+       garbage collector. <varname>cfs_fragmentation(relation)</varname> functions returns average fragmentation of relation files.
+       It is calculated as sum of physical sizes of the files minus sum of used size of the files divided by sum of physical sizes of the files. 
+     </para>
+ 
+     <para>
+       Particular relation can be defragmented using <varname>cfs_gc_relation(relation)</varname> function.
+       This function can be used only if there are no active GC workers (<varname>cfs_gc_workers</varname> equals to zero).
+       It returns number of defragmented segments of relation. If there is on relation with such OID or it is not compressed
+       or some other GC process is active, 0 is returned.
+     </para>
+       
+     <para>
+       There are several functions allowing to monitors garbage collection activity: 
+       <varname>cfs_gc_activity_scanned_files</varname> returns number of files scanned by GC, 
+       <varname>cfs_gc_activity_processed_files</varname> returns number of file compacted by GC, 
+       <varname>cfs_gc_activity_processed_pages</varname> returns number of pages transferred by GC during files defragmentation, 
+       <varname>cfs_gc_activity_processed_bytes</varname> returns total size of transferred pages.
+       All this functions calculate their values since system start. 
+     </para>
+ 
  </sect1>
 </chapter>

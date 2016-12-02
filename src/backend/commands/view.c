@@ -505,6 +505,11 @@ DefineView(ViewStmt *stmt, const char *queryString)
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
 		errmsg("views cannot be unlogged because they do not have storage")));
+	/* CONSTANT views are not sensible. */
+	if (stmt->view->relpersistence == RELPERSISTENCE_CONSTANT)
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+		errmsg("views cannot be CONSTANT because they do not have storage")));
 
 	/*
 	 * If the user didn't explicitly ask for a temporary view, check whether

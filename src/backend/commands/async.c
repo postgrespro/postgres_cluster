@@ -198,13 +198,13 @@ typedef struct QueuePosition
 
 /* choose logically smaller QueuePosition */
 #define QUEUE_POS_MIN(x,y) \
-	(asyncQueuePagePrecedes((x).page, (y).page) ? (x) : \
+	(((x).page < (y).page) ? (x) : \
 	 (x).page != (y).page ? (y) : \
 	 (x).offset < (y).offset ? (x) : (y))
 
 /* choose logically larger QueuePosition */
 #define QUEUE_POS_MAX(x,y) \
-	(asyncQueuePagePrecedes((x).page, (y).page) ? (y) : \
+	(((x).page < (y).page) ? (y) : \
 	 (x).page != (y).page ? (x) : \
 	 (x).offset > (y).offset ? (x) : (y))
 
@@ -367,7 +367,6 @@ static bool backendHasSentNotifications = false;
 bool		Trace_notify = false;
 
 /* local function prototypes */
-static bool asyncQueuePagePrecedes(int p, int q);
 static void queue_listen(ListenActionKind action, const char *channel);
 static void Async_UnlistenOnExit(int code, Datum arg);
 static void Exec_ListenPreCommit(void);
@@ -391,29 +390,6 @@ static void asyncQueueAdvanceTail(void);
 static void ProcessIncomingNotify(void);
 static bool AsyncExistsPendingNotify(const char *channel, const char *payload);
 static void ClearPendingActionsAndNotifies(void);
-
-/*
- * We will work on the page range of 0..QUEUE_MAX_PAGE.
- */
-static bool
-asyncQueuePagePrecedes(int p, int q)
-{
-	int			diff;
-
-	/*
-	 * We have to compare modulo (QUEUE_MAX_PAGE+1)/2.  Both inputs should be
-	 * in the range 0..QUEUE_MAX_PAGE.
-	 */
-	Assert(p >= 0 && p <= QUEUE_MAX_PAGE);
-	Assert(q >= 0 && q <= QUEUE_MAX_PAGE);
-
-	diff = p - q;
-	if (diff >= ((QUEUE_MAX_PAGE + 1) / 2))
-		diff -= QUEUE_MAX_PAGE + 1;
-	else if (diff < -((QUEUE_MAX_PAGE + 1) / 2))
-		diff += QUEUE_MAX_PAGE + 1;
-	return diff < 0;
-}
 
 /*
  * Report space needed for our shared memory area
@@ -474,7 +450,6 @@ AsyncShmemInit(void)
 	/*
 	 * Set up SLRU management of the pg_notify data.
 	 */
-	AsyncCtl->PagePrecedes = asyncQueuePagePrecedes;
 	SimpleLruInit(AsyncCtl, "async", NUM_ASYNC_BUFFERS, 0,
 				  AsyncCtlLock, "pg_notify", LWTRANCHE_ASYNC_BUFFERS);
 	/* Override default assumption that writes should be fsync'd */
@@ -1233,7 +1208,7 @@ asyncQueueIsFull(void)
 		nexthead = 0;			/* wrap around */
 	boundary = QUEUE_POS_PAGE(QUEUE_TAIL);
 	boundary -= boundary % SLRU_PAGES_PER_SEGMENT;
-	return asyncQueuePagePrecedes(nexthead, boundary);
+	return (nexthead < boundary);
 }
 
 /*
@@ -2011,7 +1986,7 @@ asyncQueueAdvanceTail(void)
 	 */
 	newtailpage = QUEUE_POS_PAGE(min);
 	boundary = newtailpage - (newtailpage % SLRU_PAGES_PER_SEGMENT);
-	if (asyncQueuePagePrecedes(oldtailpage, boundary))
+	if (oldtailpage < boundary)
 	{
 		/*
 		 * SimpleLruTruncate() will ask for AsyncCtlLock but will also release

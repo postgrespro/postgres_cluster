@@ -2468,6 +2468,7 @@ CopyFrom(CopyState cstate)
 		 * t_tableOid before evaluating them.
 		 */
 		tuple->t_tableOid = RelationGetRelid(resultRelInfo->ri_RelationDesc);
+		HeapTupleSetInvalidEpoch(tuple);
 
 		/* Triggers and stuff need to be invoked in query context. */
 		MemoryContextSwitchTo(oldcontext);

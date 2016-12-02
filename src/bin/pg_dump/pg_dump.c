@@ -63,7 +63,6 @@
 #include "pg_dump.h"
 #include "fe_utils/string_utils.h"
 
-
 typedef struct
 {
 	const char *descr;			/* comment for an object */
@@ -144,6 +143,7 @@ static void expand_table_name_patterns(Archive *fout,
 						   bool strict_names);
 static NamespaceInfo *findNamespace(Archive *fout, Oid nsoid, Oid objoid);
 static void dumpTableData(Archive *fout, TableDataInfo *tdinfo);
+static void dumpStatistic(Archive *fout, DumpOptions *dopt, TableInfo *tbinfo);
 static void refreshMatViewData(Archive *fout, TableDataInfo *tdinfo);
 static void guessConstraintInheritance(TableInfo *tblinfo, int numTables);
 static void dumpComment(Archive *fout, const char *target,
@@ -266,7 +266,6 @@ static void appendReloptionsArrayAH(PQExpBuffer buffer, const char *reloptions,
 static char *get_synchronized_snapshot(Archive *fout);
 static void setupDumpWorker(Archive *AHX);
 
-
 int
 main(int argc, char **argv)
 {
@@ -349,7 +348,8 @@ main(int argc, char **argv)
 		{"no-security-labels", no_argument, &dopt.no_security_labels, 1},
 		{"no-synchronized-snapshots", no_argument, &dopt.no_synchronized_snapshots, 1},
 		{"no-unlogged-table-data", no_argument, &dopt.no_unlogged_table_data, 1},
-
+		{"transfer-dir", required_argument, NULL, 7},
+		{"copy-mode-transfer", no_argument, &dopt.copy_mode_transfer, 1},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -528,7 +528,9 @@ main(int argc, char **argv)
 			case 6:				/* snapshot */
 				dumpsnapshot = pg_strdup(optarg);
 				break;
-
+			case 7:
+				dopt.transfer_dir =  pg_strdup(optarg);
+				break;
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 				exit_nicely(1);
@@ -577,6 +579,13 @@ main(int argc, char **argv)
 
 	if (dopt.if_exists && !dopt.outputClean)
 		exit_horribly(NULL, "option --if-exists requires option -c/--clean\n");
+
+	if (dopt.transfer_dir)
+	{
+		if (g_verbose)
+			write_msg(NULL, "start transfer rels to transfer_dir '%s'.\n",
+						 dopt.transfer_dir);
+	}
 
 	/* Identify archive format to emit */
 	archiveFormat = parseArchiveFormat(format, &archiveMode);
@@ -810,6 +819,12 @@ main(int argc, char **argv)
 		dumpDumpableObject(fout, dobjs[i]);
 
 	/*
+	 * Dump information about system to ensure that transferred files
+	 * will be read correctly after restore.
+	 */
+	if (fout->dopt->transfer_dir)
+		transferCheckControlData(fout, fout->dopt->transfer_dir, false);
+	/*
 	 * Set up options info to ensure we dump what we want.
 	 */
 	ropt = NewRestoreOptions();
@@ -928,6 +943,9 @@ help(const char *progname)
 	printf(_("  --use-set-session-authorization\n"
 			 "                               use SET SESSION AUTHORIZATION commands instead of\n"
 			 "                               ALTER OWNER commands to set ownership\n"));
+	printf(_(" --transfer-dir				 transfer files of the relation(s) (with indexes and toast)\n"
+			 "								 to the given directory\n"));
+	printf(_(" --copy-mode-transfer			 copy files into the transfer-dir instead of linking."));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -d, --dbname=DBNAME      database to dump\n"));
@@ -1067,6 +1085,7 @@ setup_connection(Archive *AH, const char *dumpencoding,
 			ExecuteSqlStatement(AH,
 								"SET TRANSACTION ISOLATION LEVEL "
 								"REPEATABLE READ, READ ONLY");
+
 	}
 	else if (AH->remoteVersion >= 70400)
 	{
@@ -1990,6 +2009,69 @@ dumpTableData_insert(Archive *fout, void *dcontext)
 	return 1;
 }
 
+/*
+ * doTransferRel
+ * Transfer table, its toast table (with toast index),
+ * fsm and vm forks and all indexes.
+ */
+static int
+doTransferRelDump(Archive *fout, void *dcontext)
+{
+	TableDataInfo *tdinfo = (TableDataInfo *) dcontext;
+	RelFileMap *map;
+	RelFileMap *sequencemap;
+	RelFileMap *toastmap;
+	bool is_restore = false;
+	bool copy_mode = fout->dopt->copy_mode_transfer;
+	bool is_verbose = fout->verbose;
+	int i;
+	int nrels;
+	int nseqrels;
+	int ntoastrels;
+
+	/* compute filepath for tables and indexes */
+	map = fillRelFileMap(fout, &nrels, &ntoastrels, fout->dopt->dbname, tdinfo->dobj.name);
+	sequencemap = fillRelFileMapSeq(fout, &nseqrels, fout->dopt->dbname, tdinfo->dobj.name);
+	if (ntoastrels > 0)
+		toastmap = fillRelFileMapToast(fout, map, nrels, ntoastrels);
+
+	/*
+	 * By now we have all the information about the tables, indexes and toast relations.
+	 * Move files to 'transfer' subdir.
+	 * At first, move all regular relations (tables and indexes).
+	 */
+	for (i = 0; i < nrels; i++)
+	{
+		transfer_relfile(&map[i], "", fout->dopt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&map[i], "_fsm", fout->dopt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&map[i], "_vm", fout->dopt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+	}
+
+	for (i = 0; i < nseqrels; i++)
+	{
+		transfer_relfile(&sequencemap[i], "", fout->dopt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+	}
+
+	/*
+	 * Dump all toast tables and their indexes.
+	 * Each table has one toast index, so multiply ntoastrels by 2
+	 */
+	for (i = 0; i < ntoastrels*2; i++)
+	{
+		transfer_relfile(&toastmap[i], "", fout->dopt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&toastmap[i], "_fsm", fout->dopt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&toastmap[i], "_vm", fout->dopt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+	}
+
+	return 1;
+}
 
 /*
  * dumpTableData -
@@ -2007,24 +2089,35 @@ dumpTableData(Archive *fout, TableDataInfo *tdinfo)
 	DataDumperPtr dumpFn;
 	char	   *copyStmt;
 
-	if (!dopt->dump_inserts)
+	if (dopt->transfer_dir)
 	{
-		/* Dump/restore using COPY */
-		dumpFn = dumpTableData_copy;
-		/* must use 2 steps here 'cause fmtId is nonreentrant */
-		appendPQExpBuffer(copyBuf, "COPY %s ",
-						  fmtId(tbinfo->dobj.name));
-		appendPQExpBuffer(copyBuf, "%s %sFROM stdin;\n",
-						  fmtCopyColumnList(tbinfo, clistBuf),
-					  (tdinfo->oids && tbinfo->hasoids) ? "WITH OIDS " : "");
-		copyStmt = copyBuf->data;
+		dumpFn = doTransferRelDump;
+		copyStmt = NULL;
+
+		dumpStatistic(fout, dopt, tbinfo);
 	}
 	else
 	{
-		/* Restore using INSERT */
-		dumpFn = dumpTableData_insert;
-		copyStmt = NULL;
+		if (!dopt->dump_inserts)
+		{
+			/* Dump/restore using COPY */
+			dumpFn = dumpTableData_copy;
+			/* must use 2 steps here 'cause fmtId is nonreentrant */
+			appendPQExpBuffer(copyBuf, "COPY %s ",
+							fmtId(tbinfo->dobj.name));
+			appendPQExpBuffer(copyBuf, "%s %sFROM stdin;\n",
+							fmtCopyColumnList(tbinfo, clistBuf),
+						(tdinfo->oids && tbinfo->hasoids) ? "WITH OIDS " : "");
+			copyStmt = copyBuf->data;
+		}
+		else
+		{
+			/* Restore using INSERT */
+			dumpFn = dumpTableData_insert;
+			copyStmt = NULL;
+		}
 	}
+
 
 	/*
 	 * Note: although the TableDataInfo is a full DumpableObject, we treat its
@@ -2146,6 +2239,9 @@ makeTableDataInfo(DumpOptions *dopt, TableInfo *tbinfo, bool oids)
 		tdinfo->dobj.objType = DO_REFRESH_MATVIEW;
 	else
 		tdinfo->dobj.objType = DO_TABLE_DATA;
+
+	if (dopt->transfer_dir)
+		tdinfo->dobj.objType = DO_TRANSFER_REL;
 
 	/*
 	 * Note: use tableoid 0 so that this object won't be mistaken for
@@ -9496,6 +9592,9 @@ dumpDumpableObject(Archive *fout, DumpableObject *dobj)
 							 NULL, 0,
 							 dumpBlobs, NULL);
 			break;
+		case DO_TRANSFER_REL:
+			dumpTableData(fout, (TableDataInfo *) dobj);
+			break;
 		case DO_POLICY:
 			dumpPolicy(fout, (PolicyInfo *) dobj);
 			break;
@@ -9503,6 +9602,7 @@ dumpDumpableObject(Archive *fout, DumpableObject *dobj)
 		case DO_POST_DATA_BOUNDARY:
 			/* never dumped, nothing to do */
 			break;
+
 	}
 }
 
@@ -15233,6 +15333,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 	TableInfo **parents;
 	int			actual_atts;	/* number of attrs in this CREATE statement */
 	const char *reltypename;
+	const char *relpersistence;
 	char	   *storage;
 	char	   *srvname;
 	char	   *ftoptions;
@@ -15350,9 +15451,15 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 			binary_upgrade_set_pg_class_oids(fout, q,
 											 tbinfo->dobj.catId.oid, false);
 
+		if (tbinfo->relpersistence == RELPERSISTENCE_UNLOGGED)
+			relpersistence = "UNLOGGED ";
+		else if (tbinfo->relpersistence == RELPERSISTENCE_CONSTANT)
+			relpersistence = "CONSTANT ";
+		else
+			relpersistence = "";
+
 		appendPQExpBuffer(q, "CREATE %s%s %s",
-						  tbinfo->relpersistence == RELPERSISTENCE_UNLOGGED ?
-						  "UNLOGGED " : "",
+						  relpersistence,
 						  reltypename,
 						  fmtId(tbinfo->dobj.name));
 
@@ -17477,6 +17584,17 @@ getDependencies(Archive *fout)
 			continue;
 		}
 
+		if (fout->dopt->transfer_dir
+			&& dobj->objType == DO_TABLE
+			&& refdobj->objType == DO_TYPE)
+		{
+			const char *nspname = (refdobj->namespace)->dobj.name;
+			const char *inf = "information_schema";
+
+			if (strcmp(nspname, inf) != 0)
+				exit_horribly(NULL, "Cannot transfer TABLE %s depending on TYPE %s.%s \n",
+					dobj->name, nspname, refdobj->name);
+		}
 		/*
 		 * Ordinarily, table rowtypes have implicit dependencies on their
 		 * tables.  However, for a composite type the implicit dependency goes
@@ -17575,6 +17693,7 @@ addBoundaryDependencies(DumpableObject **dobjs, int numObjs,
 				break;
 			case DO_TABLE_DATA:
 			case DO_BLOB_DATA:
+			case DO_TRANSFER_REL:
 				/* Data objects: must come between the boundaries */
 				addObjectDependency(dobj, preDataBound->dumpId);
 				addObjectDependency(postDataBound, dobj->dumpId);
@@ -17960,4 +18079,201 @@ appendReloptionsArrayAH(PQExpBuffer buffer, const char *reloptions,
 								fout->std_strings);
 	if (!res)
 		write_msg(NULL, "WARNING: could not parse reloptions array\n");
+}
+
+/* Dump statistics for each table we have */
+static void
+dumpStatistic(Archive* fout, DumpOptions* dopt, TableInfo *tbinfo)
+{
+	PQExpBuffer q = createPQExpBuffer();
+	PQExpBuffer resq = createPQExpBuffer();
+	PGresult   *res;
+	int			tuple;
+	int			nfields;
+	int			field;
+	int			i_starelid;
+	int			i_staattnum;
+
+	/* Make sure we are in proper schema */
+	selectSourceSchema(fout, "pg_catalog");
+
+	appendPQExpBuffer(q, "DECLARE _pg_dump_cursor CURSOR FOR ");
+
+	/*
+	* We get both textual and binary representations of
+	* the 'stavaluesX' in order to get the elemtype of the anyarray
+	* and replace it with array_in(svX2, elemtype, -1) call.
+	*/
+	appendPQExpBuffer(q,
+					"SELECT "
+						"starelid, staattnum, %s"
+							"stanullfrac::text, stawidth, stadistinct::text, "
+						"stakind1, stakind2, stakind3, stakind4, stakind5, "
+						"staop1, staop2, staop3, staop4, staop5, "
+						"stanumbers1::text, stanumbers2::text, stanumbers3::text, "
+							"stanumbers4::text, stanumbers5::text, "
+						"stavalues1 as sv11, stavalues1::text as sv12, "
+						"stavalues2 as sv21, stavalues2::text as sv22, "
+						"stavalues3 as sv31, stavalues3::text as sv32, "
+						"stavalues4 as sv41, stavalues4::text as sv42, "
+						"stavalues5 as sv51, stavalues5::text as sv52 "
+					"FROM pg_statistic INNER JOIN pg_class "
+							"ON starelid = pg_class.oid "
+					"WHERE relnamespace != 'pg_catalog'::regnamespace "
+							"AND starelid = %u",
+					/*
+					* Prior to 9.0, there was no column
+					* named 'stainherit' in the 'pg_statistic',
+					* so we have to provide the stub value.
+					*/
+					fout->remoteVersion > 90000 ?
+								"stainherit, " :
+								"false::boolean AS stainherit, ",
+					tbinfo->dobj.catId.oid);
+
+	ExecuteSqlStatement(fout, q->data);
+
+	while (1)
+	{
+		res = ExecuteSqlQueryBin(fout,
+							"FETCH 100 FROM _pg_dump_cursor",
+							0,
+							NULL,
+							NULL,
+							NULL,
+							NULL,
+							1,
+							PGRES_TUPLES_OK);
+
+		nfields = PQnfields(res);
+
+		i_starelid = PQfnumber(res, "starelid");
+		i_staattnum = PQfnumber(res, "staattnum");
+
+		for (tuple = 0; tuple < PQntuples(res); tuple++)
+		{
+			resetPQExpBuffer(resq);
+
+			appendPQExpBuffer(resq, "-- Stats for table \"%s.%s\"\n",
+							tbinfo->dobj.namespace->dobj.name,
+							tbinfo->dobj.name);
+			appendPQExpBufferStr(resq, "INSERT INTO pg_catalog.pg_statistic VALUES (");
+
+			for (field = 0; field < nfields; field++)
+			{
+				char *fieldName = PQfname(res, field);
+				/*
+				 * Skip if this is a svX2 field, which is only a textual
+				 * representation of the array svX1
+				 */
+				if (strncmp(fieldName, "sv", 2) == 0 && fieldName[3] == '2')
+					continue;
+
+				if (field > 0)
+					appendPQExpBufferStr(resq, ", ");
+
+				/* Get rid of OID */
+				if (field == i_starelid)
+				{
+					appendPQExpBuffer(resq, "\'%s.%s\'::regclass::oid",
+							tbinfo->dobj.namespace->dobj.name,
+							tbinfo->dobj.name);
+					continue;
+				}
+
+				if (PQgetisnull(res, tuple, field))
+				{
+					appendPQExpBufferStr(resq, "NULL");
+					continue;
+				}
+
+				switch (PQftype(res, field))
+				{
+					case ANYARRAYOID:
+						{
+							char	   *data;
+							uint32		elemtype;
+
+							/*
+							 * If we're here then this field is called 'svX1',
+							 * so we can get elemtype of the anyarray, which
+							 * in fact is the 3rd uint32 (see array_recv()).
+							 */
+							data = PQgetvalue(res, tuple, field);
+							data += 8;
+							memcpy(&elemtype, data, 4); /* copy elemtype */
+
+							resetPQExpBuffer(q);
+							appendPQExpBuffer(q, "array_in(%s, %d, -1)",
+											PQescapeLiteral(
+													((ArchiveHandle *) fout)->connection,
+													PQgetvalue(res, tuple, field + 1),
+													PQgetlength(res, tuple, field + 1)),
+											ntohl(elemtype));
+
+							appendPQExpBufferStr(resq, q->data);
+
+						}
+						break;
+
+					case INT2OID:
+						{
+							uint16 val;
+							memcpy(&val,
+								PQgetvalue(res, tuple, field), 2);
+							appendPQExpBuffer(resq, "%u", ntohs(val));
+						}
+						break;
+
+					case OIDOID:
+					case INT4OID:
+						{
+							uint32 val;
+							memcpy(&val,
+								PQgetvalue(res, tuple, field), 4);
+							appendPQExpBuffer(resq, "%u", ntohl(val));
+						}
+						break;
+
+					case BOOLOID:
+						appendPQExpBufferStr(resq,
+											PQgetvalue(res, tuple, field)[0] ?
+																"true" :
+																"false");
+						break;
+
+					default:
+						/* All other types are printed as string literals. */
+						resetPQExpBuffer(q);
+						appendStringLiteralAH(q,
+											PQgetvalue(res, tuple, field),
+											fout);
+						appendPQExpBufferStr(resq, q->data);
+						break;
+				}
+			}
+
+			appendPQExpBufferStr(resq, ");\n");
+
+			ArchiveEntry(fout, tbinfo->dobj.catId, tbinfo->dobj.dumpId,
+						"pg_statistic", "pg_catalog",
+						NULL, "",
+						false, "TABLE STATS", SECTION_NONE,
+						resq->data, "", "",
+						NULL, 0,
+						NULL, NULL);
+		}
+
+		if (PQntuples(res) <= 0)
+		{
+			PQclear(res);
+			break;
+		}
+		PQclear(res);
+	}
+
+	ExecuteSqlStatement(fout, "CLOSE _pg_dump_cursor");
+
+	destroyPQExpBuffer(q);
+	destroyPQExpBuffer(resq);
 }

@@ -25,10 +25,10 @@ clog_desc(StringInfo buf, XLogReaderState *record)
 
 	if (info == CLOG_ZEROPAGE || info == CLOG_TRUNCATE)
 	{
-		int			pageno;
+		int64		pageno;
 
-		memcpy(&pageno, rec, sizeof(int));
-		appendStringInfo(buf, "%d", pageno);
+		memcpy(&pageno, rec, sizeof(int64));
+		appendStringInfo(buf, INT64_FORMAT, pageno);
 	}
 }
 

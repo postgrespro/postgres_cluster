@@ -416,7 +416,6 @@ static void SetPossibleUnsafeConflict(SERIALIZABLEXACT *roXact, SERIALIZABLEXACT
 static void ReleaseRWConflict(RWConflict conflict);
 static void FlagSxactUnsafe(SERIALIZABLEXACT *sxact);
 
-static bool OldSerXidPagePrecedesLogically(int p, int q);
 static void OldSerXidInit(void);
 static void OldSerXidAdd(TransactionId xid, SerCommitSeqNo minConflictCommitSeqNo);
 static SerCommitSeqNo OldSerXidGetMinConflictCommitSeqNo(TransactionId xid);
@@ -756,32 +755,6 @@ FlagSxactUnsafe(SERIALIZABLEXACT *sxact)
 	}
 }
 
-/*------------------------------------------------------------------------*/
-
-/*
- * We will work on the page range of 0..OLDSERXID_MAX_PAGE.
- * Compares using wraparound logic, as is required by slru.c.
- */
-static bool
-OldSerXidPagePrecedesLogically(int p, int q)
-{
-	int			diff;
-
-	/*
-	 * We have to compare modulo (OLDSERXID_MAX_PAGE+1)/2.  Both inputs should
-	 * be in the range 0..OLDSERXID_MAX_PAGE.
-	 */
-	Assert(p >= 0 && p <= OLDSERXID_MAX_PAGE);
-	Assert(q >= 0 && q <= OLDSERXID_MAX_PAGE);
-
-	diff = p - q;
-	if (diff >= ((OLDSERXID_MAX_PAGE + 1) / 2))
-		diff -= OLDSERXID_MAX_PAGE + 1;
-	else if (diff < -((int) (OLDSERXID_MAX_PAGE + 1) / 2))
-		diff += OLDSERXID_MAX_PAGE + 1;
-	return diff < 0;
-}
-
 /*
  * Initialize for the tracking of old serializable committed xids.
  */
@@ -793,7 +766,6 @@ OldSerXidInit(void)
 	/*
 	 * Set up SLRU management of the pg_serial data.
 	 */
-	OldSerXidSlruCtl->PagePrecedes = OldSerXidPagePrecedesLogically;
 	SimpleLruInit(OldSerXidSlruCtl, "oldserxid",
 				  NUM_OLDSERXID_BUFFERS, 0, OldSerXidLock, "pg_serial",
 				  LWTRANCHE_OLDSERXID_BUFFERS);
@@ -860,8 +832,7 @@ OldSerXidAdd(TransactionId xid, SerCommitSeqNo minConflictCommitSeqNo)
 	else
 	{
 		firstZeroPage = OldSerXidNextPage(oldSerXidControl->headPage);
-		isNewPage = OldSerXidPagePrecedesLogically(oldSerXidControl->headPage,
-												   targetPage);
+		isNewPage = oldSerXidControl->headPage < targetPage;
 	}
 
 	if (!TransactionIdIsValid(oldSerXidControl->headXid)
@@ -1704,7 +1675,7 @@ GetSerializableTransactionSnapshotInt(Snapshot snapshot,
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("could not import the requested snapshot"),
-			   errdetail("The source transaction %u is not running anymore.",
+			   errdetail("The source transaction " XID_FMT " is not running anymore.",
 						 sourcexid)));
 	}
 
@@ -2484,7 +2455,7 @@ PredicateLockTuple(Relation relation, HeapTuple tuple, Snapshot snapshot)
 	{
 		TransactionId myxid;
 
-		targetxmin = HeapTupleHeaderGetXmin(tuple->t_data);
+		targetxmin = HeapTupleGetXmin(tuple);
 
 		myxid = GetTopTransactionIdIfAny();
 		if (TransactionIdIsValid(myxid))
@@ -3906,18 +3877,18 @@ CheckForSerializableConflictOut(bool visible, Relation relation,
 		case HEAPTUPLE_LIVE:
 			if (visible)
 				return;
-			xid = HeapTupleHeaderGetXmin(tuple->t_data);
+			xid = HeapTupleGetXmin(tuple);
 			break;
 		case HEAPTUPLE_RECENTLY_DEAD:
 			if (!visible)
 				return;
-			xid = HeapTupleHeaderGetUpdateXid(tuple->t_data);
+			xid = HeapTupleGetUpdateXidAny(tuple);
 			break;
 		case HEAPTUPLE_DELETE_IN_PROGRESS:
-			xid = HeapTupleHeaderGetUpdateXid(tuple->t_data);
+			xid = HeapTupleGetUpdateXidAny(tuple);
 			break;
 		case HEAPTUPLE_INSERT_IN_PROGRESS:
-			xid = HeapTupleHeaderGetXmin(tuple->t_data);
+			xid = HeapTupleGetXmin(tuple);
 			break;
 		case HEAPTUPLE_DEAD:
 			return;
@@ -3978,7 +3949,7 @@ CheckForSerializableConflictOut(bool visible, Relation relation,
 				ereport(ERROR,
 						(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
 						 errmsg("could not serialize access due to read/write dependencies among transactions"),
-						 errdetail_internal("Reason code: Canceled on conflict out to old pivot %u.", xid),
+						 errdetail_internal("Reason code: Canceled on conflict out to old pivot " XID_FMT ".", xid),
 					  errhint("The transaction might succeed if retried.")));
 
 			if (SxactHasSummaryConflictIn(MySerializableXact)
@@ -3986,7 +3957,7 @@ CheckForSerializableConflictOut(bool visible, Relation relation,
 				ereport(ERROR,
 						(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
 						 errmsg("could not serialize access due to read/write dependencies among transactions"),
-						 errdetail_internal("Reason code: Canceled on identification as a pivot, with conflict out to old committed transaction %u.", xid),
+						 errdetail_internal("Reason code: Canceled on identification as a pivot, with conflict out to old committed transaction " XID_FMT ".", xid),
 					  errhint("The transaction might succeed if retried.")));
 
 			MySerializableXact->flags |= SXACT_FLAG_SUMMARY_CONFLICT_OUT;
@@ -4613,7 +4584,7 @@ OnConflict_CheckForSerializationFailure(const SERIALIZABLEXACT *reader,
 			ereport(ERROR,
 					(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
 					 errmsg("could not serialize access due to read/write dependencies among transactions"),
-					 errdetail_internal("Reason code: Canceled on conflict out to pivot %u, during read.", writer->topXid),
+					 errdetail_internal("Reason code: Canceled on conflict out to pivot " XID_FMT ", during read.", writer->topXid),
 					 errhint("The transaction might succeed if retried.")));
 		}
 		writer->flags |= SXACT_FLAG_DOOMED;

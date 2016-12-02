@@ -905,7 +905,7 @@ gistproperty(Oid index_oid, int attno,
 								 ObjectIdGetDatum(opcintype),
 								 ObjectIdGetDatum(opcintype),
 								 Int16GetDatum(procno));
-	isnull = false;
+	*isnull = false;
 
 	return true;
 }
