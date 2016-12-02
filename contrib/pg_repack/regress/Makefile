@@ -7,7 +7,9 @@
 #
 
 
-REGRESS := init-extension psql repack tablespace issue3
+REGRESS := init-extension plpgsql repack tablespace issue3
+
+check : REGRESS = 
 
 ifdef PGXS
 PG_CONFIG = pg_config
