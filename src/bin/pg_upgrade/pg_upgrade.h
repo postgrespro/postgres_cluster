@@ -209,12 +209,11 @@ typedef struct
 	uint32		ctrl_ver;
 	uint32		cat_ver;
 	char		nextxlogfile[25];
-	uint32		chkpnt_nxtxid;
-	uint32		chkpnt_nxtepoch;
+	uint64		chkpnt_nxtxid;
 	uint32		chkpnt_nxtoid;
-	uint32		chkpnt_nxtmulti;
-	uint32		chkpnt_nxtmxoff;
-	uint32		chkpnt_oldstMulti;
+	uint64		chkpnt_nxtmulti;
+	uint64		chkpnt_nxtmxoff;
+	uint64		chkpnt_oldstMulti;
 	uint32		align;
 	uint32		blocksz;
 	uint32		largesz;
@@ -434,6 +433,7 @@ void		end_progress_output(void);
 void		prep_status(const char *fmt,...) pg_attribute_printf(1, 2);
 void		check_ok(void);
 unsigned int str2uint(const char *str);
+uint64		str2uint64(const char *str);
 void		pg_putenv(const char *var, const char *val);
 
 

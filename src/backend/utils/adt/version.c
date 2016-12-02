@@ -33,4 +33,4 @@ Datum
 pgpro_edition(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_TEXT_P(cstring_to_text(PGPRO_EDITION));
-}	
+}

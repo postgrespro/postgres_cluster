@@ -153,7 +153,7 @@ create or replace function pythonomous() returns void as $$
 	try:
 		with plpy.autonomous():
 			plpy.execute("insert into atx_test values ('bsd', 456)")
-	except plpy.SPIError, e:
+	except (plpy.SPIError, e):
 		print("error: %s" % e.args)
 
 	plpy.execute("insert into atx_test values ('csd', 'csd')")

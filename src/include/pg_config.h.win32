@@ -576,6 +576,8 @@
 
 #define PGPRO_VERSION "9.6.1.1"
 
+#define PGPRO_EE
+
 #define PGPRO_PACKAGE_STR "PostgresPro 9.6.1.1"
 
 /* Define to the one symbol short name of this package. */

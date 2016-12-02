@@ -73,6 +73,15 @@ ParseCommitRecord(uint8 info, xl_xact_commit *xlrec, xl_xact_parsed_commit *pars
 		data += parsed->nsubxacts * sizeof(TransactionId);
 	}
 
+	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
+	{
+		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
+
+		parsed->twophase_xid = xl_twophase->xid;
+
+		data += sizeof(xl_xact_twophase);
+	}
+
 	if (parsed->xinfo & XACT_XINFO_HAS_RELFILENODES)
 	{
 		xl_xact_relfilenodes *xl_relfilenodes = (xl_xact_relfilenodes *) data;
@@ -93,15 +102,6 @@ ParseCommitRecord(uint8 info, xl_xact_commit *xlrec, xl_xact_parsed_commit *pars
 
 		data += MinSizeOfXactInvals;
 		data += xl_invals->nmsgs * sizeof(SharedInvalidationMessage);
-	}
-
-	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
-	{
-		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
-
-		parsed->twophase_xid = xl_twophase->xid;
-
-		data += sizeof(xl_xact_twophase);
 	}
 
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
@@ -150,6 +150,15 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 		data += parsed->nsubxacts * sizeof(TransactionId);
 	}
 
+	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
+	{
+		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
+
+		parsed->twophase_xid = xl_twophase->xid;
+
+		data += sizeof(xl_xact_twophase);
+	}
+
 	if (parsed->xinfo & XACT_XINFO_HAS_RELFILENODES)
 	{
 		xl_xact_relfilenodes *xl_relfilenodes = (xl_xact_relfilenodes *) data;
@@ -159,15 +168,6 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 
 		data += MinSizeOfXactRelfilenodes;
 		data += xl_relfilenodes->nrels * sizeof(RelFileNode);
-	}
-
-	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
-	{
-		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
-
-		parsed->twophase_xid = xl_twophase->xid;
-
-		data += sizeof(xl_xact_twophase);
 	}
 }
 
@@ -181,7 +181,7 @@ xact_desc_commit(StringInfo buf, uint8 info, xl_xact_commit *xlrec, RepOriginId 
 
 	/* If this is a prepared xact, show the xid of the original xact */
 	if (TransactionIdIsValid(parsed.twophase_xid))
-		appendStringInfo(buf, "%u: ", parsed.twophase_xid);
+		appendStringInfo(buf, XID_FMT ": ", parsed.twophase_xid);
 
 	appendStringInfoString(buf, timestamptz_to_str(xlrec->xact_time));
 
@@ -200,7 +200,7 @@ xact_desc_commit(StringInfo buf, uint8 info, xl_xact_commit *xlrec, RepOriginId 
 	{
 		appendStringInfoString(buf, "; subxacts:");
 		for (i = 0; i < parsed.nsubxacts; i++)
-			appendStringInfo(buf, " %u", parsed.subxacts[i]);
+			appendStringInfo(buf, " " XID_FMT, parsed.subxacts[i]);
 	}
 	if (parsed.nmsgs > 0)
 	{
@@ -232,7 +232,7 @@ xact_desc_abort(StringInfo buf, uint8 info, xl_xact_abort *xlrec)
 
 	/* If this is a prepared xact, show the xid of the original xact */
 	if (TransactionIdIsValid(parsed.twophase_xid))
-		appendStringInfo(buf, "%u: ", parsed.twophase_xid);
+		appendStringInfo(buf, XID_FMT ": ", parsed.twophase_xid);
 
 	appendStringInfoString(buf, timestamptz_to_str(xlrec->xact_time));
 	if (parsed.nrels > 0)
@@ -251,7 +251,7 @@ xact_desc_abort(StringInfo buf, uint8 info, xl_xact_abort *xlrec)
 	{
 		appendStringInfoString(buf, "; subxacts:");
 		for (i = 0; i < parsed.nsubxacts; i++)
-			appendStringInfo(buf, " %u", parsed.subxacts[i]);
+			appendStringInfo(buf, " " XID_FMT, parsed.subxacts[i]);
 	}
 }
 
@@ -263,7 +263,7 @@ xact_desc_assignment(StringInfo buf, xl_xact_assignment *xlrec)
 	appendStringInfoString(buf, "subxacts:");
 
 	for (i = 0; i < xlrec->nsubxacts; i++)
-		appendStringInfo(buf, " %u", xlrec->xsub[i]);
+		appendStringInfo(buf, " " XID_FMT, xlrec->xsub[i]);
 }
 
 void
@@ -294,7 +294,7 @@ xact_desc(StringInfo buf, XLogReaderState *record)
 		 * interested in the top-level xid that issued the record and which
 		 * xids are being reported here.
 		 */
-		appendStringInfo(buf, "xtop %u: ", xlrec->xtop);
+		appendStringInfo(buf, "xtop " XID_FMT ": ", xlrec->xtop);
 		xact_desc_assignment(buf, xlrec);
 	}
 }

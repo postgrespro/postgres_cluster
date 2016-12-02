@@ -20,13 +20,13 @@
  * and epoch of the first segment, so we start assigning multixact values from
  * 2.
  */
-#define InvalidMultiXactId	((MultiXactId) 0)
-#define FirstMultiXactId	((MultiXactId) 1)
-#define MaxMultiXactId		((MultiXactId) 0xFFFFFFFF)
+#define InvalidMultiXactId	UINT64CONST(0)
+#define FirstMultiXactId	UINT64CONST(1)
+#define MaxMultiXactId		UINT64CONST(0xFFFFFFFFFFFFFFFF)
 
 #define MultiXactIdIsValid(multi) ((multi) != InvalidMultiXactId)
 
-#define MaxMultiXactOffset	((MultiXactOffset) 0xFFFFFFFF)
+#define MaxMultiXactOffset	UINT64CONST(0xFFFFFFFFFFFFFFFF)
 
 /* Number of SLRU buffers to use for multixact */
 #define NUM_MXACTOFFSET_BUFFERS		8
@@ -112,9 +112,6 @@ extern bool MultiXactIdIsRunning(MultiXactId multi, bool isLockOnly);
 extern void MultiXactIdSetOldestMember(void);
 extern int GetMultiXactIdMembers(MultiXactId multi, MultiXactMember **xids,
 					  bool allow_old, bool isLockOnly);
-extern bool MultiXactIdPrecedes(MultiXactId multi1, MultiXactId multi2);
-extern bool MultiXactIdPrecedesOrEquals(MultiXactId multi1,
-							MultiXactId multi2);
 
 extern void AtEOXact_MultiXact(void);
 extern void AtPrepare_MultiXact(void);
@@ -141,7 +138,6 @@ extern void MultiXactSetNextMXact(MultiXactId nextMulti,
 extern void MultiXactAdvanceNextMXact(MultiXactId minMulti,
 						  MultiXactOffset minMultiOffset);
 extern void MultiXactAdvanceOldest(MultiXactId oldestMulti, Oid oldestMultiDB);
-extern int	MultiXactMemberFreezeThreshold(void);
 
 extern void multixact_twophase_recover(TransactionId xid, uint16 info,
 						   void *recdata, uint32 len);

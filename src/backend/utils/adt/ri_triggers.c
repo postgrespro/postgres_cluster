@@ -2170,7 +2170,7 @@ RI_FKey_fk_upd_check_required(Trigger *trigger, Relation fk_rel,
 			 * UPDATE check.  (We could skip this if we knew the INSERT
 			 * trigger already fired, but there is no easy way to know that.)
 			 */
-			if (TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetXmin(old_row->t_data)))
+			if (TransactionIdIsCurrentTransactionId(HeapTupleGetXmin(old_row)))
 				return true;
 
 			/* If all old and new key values are equal, no check is needed */
@@ -2208,7 +2208,7 @@ RI_FKey_fk_upd_check_required(Trigger *trigger, Relation fk_rel,
 			 * UPDATE check.  (We could skip this if we knew the INSERT
 			 * trigger already fired, but there is no easy way to know that.)
 			 */
-			if (TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetXmin(old_row->t_data)))
+			if (TransactionIdIsCurrentTransactionId(HeapTupleGetXmin(old_row)))
 				return true;
 
 			/* If all old and new key values are equal, no check is needed */

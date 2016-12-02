@@ -30,6 +30,7 @@ typedef enum relopt_type
 {
 	RELOPT_TYPE_BOOL,
 	RELOPT_TYPE_INT,
+	RELOPT_TYPE_INT64,
 	RELOPT_TYPE_REAL,
 	RELOPT_TYPE_STRING
 } relopt_type;
@@ -78,6 +79,7 @@ typedef struct relopt_value
 	{
 		bool		bool_val;
 		int			int_val;
+		int64		int64_val;
 		double		real_val;
 		char	   *string_val; /* allocated separately */
 	}			values;
@@ -97,6 +99,14 @@ typedef struct relopt_int
 	int			min;
 	int			max;
 } relopt_int;
+
+typedef struct relopt_int64
+{
+	relopt_gen	gen;
+	int64		default_val;
+	int64		min;
+	int64		max;
+} relopt_int64;
 
 typedef struct relopt_real
 {
@@ -249,6 +259,8 @@ extern void add_bool_reloption(bits32 kinds, char *name, char *desc,
 				   bool default_val);
 extern void add_int_reloption(bits32 kinds, char *name, char *desc,
 				  int default_val, int min_val, int max_val);
+extern void add_int64_reloption(bits32 kinds, char *name, char *desc,
+				  int64 default_val, int64 min_val, int64 max_val);
 extern void add_real_reloption(bits32 kinds, char *name, char *desc,
 				   double default_val, double min_val, double max_val);
 extern void add_string_reloption(bits32 kinds, char *name, char *desc,

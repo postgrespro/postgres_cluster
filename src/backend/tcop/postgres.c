@@ -3837,6 +3837,10 @@ PostgresMain(int argc, char *argv[],
 	 * were inside a transaction.
 	 */
 
+/*	printf("PID = %u\n", MyProcPid);
+	fflush(stdout);
+	sleep(20);*/
+
 	if (sigsetjmp(local_sigjmp_buf, 1) != 0)
 	{
 		/*

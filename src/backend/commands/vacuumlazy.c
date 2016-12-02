@@ -901,7 +901,7 @@ lazy_scan_heap(Relation onerel, int options, LVRelStats *vacrelstats,
 		 * We count tuples removed by the pruning step as removed by VACUUM.
 		 */
 		tups_vacuumed += heap_page_prune(onerel, buf, OldestXmin, false,
-										 &vacrelstats->latestRemovedXid);
+										 &vacrelstats->latestRemovedXid, true);
 
 		/*
 		 * Now scan the page to collect vacuumable items and check for tuples
@@ -960,6 +960,7 @@ lazy_scan_heap(Relation onerel, int options, LVRelStats *vacrelstats,
 			tuple.t_data = (HeapTupleHeader) PageGetItem(page, itemid);
 			tuple.t_len = ItemIdGetLength(itemid);
 			tuple.t_tableOid = RelationGetRelid(onerel);
+			HeapTupleCopyEpochFromPage(&tuple, page);
 
 			tupgone = false;
 
@@ -1019,7 +1020,7 @@ lazy_scan_heap(Relation onerel, int options, LVRelStats *vacrelstats,
 						 * The inserter definitely committed. But is it old
 						 * enough that everyone sees it as committed?
 						 */
-						xmin = HeapTupleHeaderGetXmin(tuple.t_data);
+						xmin = HeapTupleGetXmin(&tuple);
 						if (!TransactionIdPrecedes(xmin, OldestXmin))
 						{
 							all_visible = false;
@@ -1056,7 +1057,7 @@ lazy_scan_heap(Relation onerel, int options, LVRelStats *vacrelstats,
 			if (tupgone)
 			{
 				lazy_record_dead_tuple(vacrelstats, &(tuple.t_self));
-				HeapTupleHeaderAdvanceLatestRemovedXid(tuple.t_data,
+				HeapTupleHeaderAdvanceLatestRemovedXid(&tuple,
 											 &vacrelstats->latestRemovedXid);
 				tups_vacuumed += 1;
 				has_dead_tuples = true;
@@ -1072,7 +1073,7 @@ lazy_scan_heap(Relation onerel, int options, LVRelStats *vacrelstats,
 				 * Each non-removable tuple must be checked to see if it needs
 				 * freezing.  Note we already have exclusive buffer lock.
 				 */
-				if (heap_prepare_freeze_tuple(tuple.t_data, FreezeLimit,
+				if (heap_prepare_freeze_tuple(&tuple, FreezeLimit,
 										   MultiXactCutoff, &frozen[nfrozen],
 											  &tuple_totally_frozen))
 					frozen[nfrozen++].offset = offnum;
@@ -1102,7 +1103,7 @@ lazy_scan_heap(Relation onerel, int options, LVRelStats *vacrelstats,
 				itemid = PageGetItemId(page, frozen[i].offset);
 				htup = (HeapTupleHeader) PageGetItem(page, itemid);
 
-				heap_execute_freeze_tuple(htup, &frozen[i]);
+				heap_execute_freeze_tuple_page(page, htup, &frozen[i]);
 			}
 
 			/* Now WAL-log freezing if necessary */
@@ -1547,6 +1548,7 @@ lazy_check_needs_freeze(Buffer buf, bool *hastup)
 		 offnum = OffsetNumberNext(offnum))
 	{
 		ItemId		itemid;
+		HeapTupleData htup;
 
 		itemid = PageGetItemId(page, offnum);
 
@@ -1560,7 +1562,10 @@ lazy_check_needs_freeze(Buffer buf, bool *hastup)
 
 		tupleheader = (HeapTupleHeader) PageGetItem(page, itemid);
 
-		if (heap_tuple_needs_freeze(tupleheader, FreezeLimit,
+		htup.t_data = tupleheader;
+		HeapTupleCopyEpochFromPage(&htup, page);
+
+		if (heap_tuple_needs_freeze(&htup, FreezeLimit,
 									MultiXactCutoff, buf))
 			return true;
 	}							/* scan along page */
@@ -2101,6 +2106,7 @@ heap_page_is_all_visible(Relation rel, Buffer buf,
 		tuple.t_data = (HeapTupleHeader) PageGetItem(page, itemid);
 		tuple.t_len = ItemIdGetLength(itemid);
 		tuple.t_tableOid = RelationGetRelid(rel);
+		HeapTupleCopyEpochFromPage(&tuple, page);
 
 		switch (HeapTupleSatisfiesVacuum(&tuple, OldestXmin, buf))
 		{
@@ -2120,7 +2126,7 @@ heap_page_is_all_visible(Relation rel, Buffer buf,
 					 * The inserter definitely committed. But is it old enough
 					 * that everyone sees it as committed?
 					 */
-					xmin = HeapTupleHeaderGetXmin(tuple.t_data);
+					xmin = HeapTupleGetXmin(&tuple);
 					if (!TransactionIdPrecedes(xmin, OldestXmin))
 					{
 						all_visible = false;

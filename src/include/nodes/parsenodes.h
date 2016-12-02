@@ -802,6 +802,7 @@ typedef struct RangeTblEntry
 	 */
 	Oid			relid;			/* OID of the relation */
 	char		relkind;		/* relation kind (see pg_class.relkind) */
+	char		relpersistence;	/* see pg_class.relpersistence */
 	struct TableSampleClause *tablesample;		/* sampling info, or NULL */
 
 	/*
@@ -1497,6 +1498,7 @@ typedef enum AlterTableType
 	AT_DropCluster,				/* SET WITHOUT CLUSTER */
 	AT_SetLogged,				/* SET LOGGED */
 	AT_SetUnLogged,				/* SET UNLOGGED */
+	AT_SetConstant,				/* SET CONSTANT */
 	AT_AddOids,					/* SET WITH OIDS */
 	AT_AddOidsRecurse,			/* internal to commands/tablecmds.c */
 	AT_DropOids,				/* SET WITHOUT OIDS */

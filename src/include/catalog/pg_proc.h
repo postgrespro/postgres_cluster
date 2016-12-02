@@ -1431,8 +1431,8 @@ DESCR("length");
 DATA(insert OID = 1318 (  length			 PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 23 "1042" _null_ _null_ _null_ _null_ _null_ bpcharlen _null_ _null_ _null_ ));
 DESCR("character length");
 
-DATA(insert OID = 1319 (  xideqint4			 PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "28 23" _null_ _null_ _null_ _null_ _null_ xideq _null_ _null_ _null_ ));
-DATA(insert OID = 3309 (  xidneqint4		 PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "28 23" _null_ _null_ _null_ _null_ _null_ xidneq _null_ _null_ _null_ ));
+DATA(insert OID = 1319 (  xideqint8			 PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "28 20" _null_ _null_ _null_ _null_ _null_ xideq _null_ _null_ _null_ ));
+DATA(insert OID = 3309 (  xidneqint8		 PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "28 20" _null_ _null_ _null_ _null_ _null_ xidneq _null_ _null_ _null_ ));
 
 DATA(insert OID = 1326 (  interval_div		 PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1186 701" _null_ _null_ _null_ _null_ _null_	interval_div _null_ _null_ _null_ ));
 
@@ -5352,6 +5352,20 @@ DATA(insert OID = 6102 (  cfs_enable_gc		   PGNSP PGUID 12 1 0 0 0 f f f f t f v
 DESCR("Enable or disable CFS garbage collection");
 DATA(insert OID = 6103 (  cfs_estimate		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 701 "2205" _null_ _null_ _null_ _null_ _null_ cfs_estimate _null_ _null_ _null_ ));
 DESCR("Estimate relation compression ratio");
+DATA(insert OID = 6104 (  cfs_compression_ratio  PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 701 "2205" _null_ _null_ _null_ _null_ _null_ cfs_compression_ratio _null_ _null_ _null_ ));
+DESCR("Compression ration of relation");
+DATA(insert OID = 6105 (  cfs_gc_activity_processed_bytes		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 20 "" _null_ _null_ _null_ _null_ _null_ cfs_gc_activity_processed_bytes _null_ _null_ _null_ ));
+DESCR("Number of bytes proceeded by CFS garbage collectors since system start");
+DATA(insert OID = 6106 (  cfs_gc_activity_processed_files		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 20 "" _null_ _null_ _null_ _null_ _null_ cfs_gc_activity_processed_files _null_ _null_ _null_ ));
+DESCR("Number of files compacted by CFS garbage collectors since system start");
+DATA(insert OID = 6107 (  cfs_gc_activity_processed_pages		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 20 "" _null_ _null_ _null_ _null_ _null_ cfs_gc_activity_processed_pages _null_ _null_ _null_ ));
+DESCR("Number of transferred  pages by CFS garbage collectors since system start");
+DATA(insert OID = 6108 (  cfs_gc_activity_scanned_files		   PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 20 "" _null_ _null_ _null_ _null_ _null_ cfs_gc_activity_scanned_files _null_ _null_ _null_ ));
+DESCR("Number of files scanned by CFS garbage collectors since system start");
+DATA(insert OID = 6109 (  cfs_fragmentation  PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 701 "2205" _null_ _null_ _null_ _null_ _null_ cfs_fragmentation _null_ _null_ _null_ ));
+DESCR("Fragmentation level of relation");
+DATA(insert OID = 6110 (  cfs_gc_relation  PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 20 "2205" _null_ _null_ _null_ _null_ _null_ cfs_gc_relation _null_ _null_ _null_ ));
+DESCR("Perform garbage collection of particular relation");
 
 /* distance functions */
 DATA(insert OID = 3343 ( int2_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0   21 "21 21"		_null_ _null_ _null_ _null_ _null_	int2_dist	_null_ _null_ _null_ ));

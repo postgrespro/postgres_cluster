@@ -390,19 +390,33 @@ typedef double float8;
 typedef Oid regproc;
 typedef regproc RegProcedure;
 
-typedef uint32 TransactionId;
+typedef uint64 TransactionId;
 
-typedef uint32 LocalTransactionId;
+#define TransactionIdPrecedes(id1, id2) ((id1) < (id2))
+#define TransactionIdPrecedesOrEquals(id1, id2) ((id1) <= (id2))
+#define TransactionIdFollows(id1, id2) ((id1) > (id2))
+#define TransactionIdFollowsOrEquals(id1, id2) ((id1) >= (id2))
 
-typedef uint32 SubTransactionId;
+typedef uint32 ShortTransactionId;
+
+typedef uint64 LocalTransactionId;
+
+typedef uint64 SubTransactionId;
 
 #define InvalidSubTransactionId		((SubTransactionId) 0)
 #define TopSubTransactionId			((SubTransactionId) 1)
 
+#define XID_FMT UINT64_FORMAT
+
 /* MultiXactId must be equivalent to TransactionId, to fit in t_xmax */
 typedef TransactionId MultiXactId;
 
-typedef uint32 MultiXactOffset;
+#define MultiXactIdPrecedes(id1, id2) ((id1) < (id2))
+#define MultiXactIdPrecedesOrEquals(id1, id2) ((id1) <= (id2))
+#define MultiXactIdFollows(id1, id2) ((id1) > (id2))
+#define MultiXactIdFollowsOrEquals(id1, id2) ((id1) >= (id2))
+
+typedef uint64 MultiXactOffset;
 
 typedef uint32 CommandId;
 

@@ -2977,6 +2977,16 @@ create_modifytable_path(PlannerInfo *root, RelOptInfo *rel,
 	Assert(returningLists == NIL ||
 		   list_length(resultRelations) == list_length(returningLists));
 
+	foreach(lc, resultRelations)
+	{
+		Index		rti = lfirst_int(lc);
+		RangeTblEntry *rte = planner_rt_fetch(rti, root);
+
+		/* RELPERSISTENCE_CONSTANT */
+		if (rte->relpersistence == 'c')
+			elog(ERROR, "This operation is not allowed on CONSTANT relations");
+	}
+
 	pathnode->path.pathtype = T_ModifyTable;
 	pathnode->path.parent = rel;
 	/* pathtarget is not interesting, just make it minimally valid */
