@@ -7,6 +7,8 @@
 #
 
 
+REGRESS := init-extension psql repack tablespace issue3
+
 ifdef PGXS
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
@@ -25,5 +27,4 @@ endif
 # Test suite
 #
 
-REGRESS := init-extension psql repack tablespace issue3
 
