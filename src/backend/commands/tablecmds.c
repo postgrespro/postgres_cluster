@@ -160,7 +160,7 @@ typedef struct AlteredTableInfo
 	bool		new_notnull;	/* T if we added new NOT NULL constraints */
 	int			rewrite;		/* Reason for forced rewrite, if any */
 	Oid			newTableSpace;	/* new tablespace; 0 means no change */
-	bool		chgPersistence; /* T if SET LOGGED/UNLOGGED is used */
+	bool		chgPersistence; /* T if SET LOGGED/UNLOGGED/CONSTANT is used */
 	char		newrelpersistence;		/* if above is true */
 	/* Objects to rebuild after completing ALTER TYPE operations */
 	List	   *changedConstraintOids;	/* OIDs of constraints to rebuild */
@@ -402,7 +402,8 @@ static void change_owner_recurse_to_sequences(Oid relationOid,
 static ObjectAddress ATExecClusterOn(Relation rel, const char *indexName,
 				LOCKMODE lockmode);
 static void ATExecDropCluster(Relation rel, LOCKMODE lockmode);
-static bool ATPrepChangePersistence(Relation rel, bool toLogged);
+static void ATExecSetConstant(Relation rel, LOCKMODE lockmode);
+static bool ATPrepChangePersistence(Relation rel, char newrelpersistence);
 static void ATPrepSetTableSpace(AlteredTableInfo *tab, Relation rel,
 					char *tablespacename, LOCKMODE lockmode);
 static void ATExecSetTableSpace(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode);
@@ -3036,6 +3037,7 @@ AlterTableGetLockLevel(List *cmds)
 
 			case AT_SetLogged:
 			case AT_SetUnLogged:
+			case AT_SetConstant:
 				cmd_lockmode = AccessExclusiveLock;
 				break;
 
@@ -3258,7 +3260,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			break;
 		case AT_SetLogged:		/* SET LOGGED */
 			ATSimplePermissions(rel, ATT_TABLE);
-			tab->chgPersistence = ATPrepChangePersistence(rel, true);
+			tab->chgPersistence = ATPrepChangePersistence(rel, RELPERSISTENCE_PERMANENT);
 			/* force rewrite if necessary; see comment in ATRewriteTables */
 			if (tab->chgPersistence)
 			{
@@ -3269,13 +3271,21 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			break;
 		case AT_SetUnLogged:	/* SET UNLOGGED */
 			ATSimplePermissions(rel, ATT_TABLE);
-			tab->chgPersistence = ATPrepChangePersistence(rel, false);
+			tab->chgPersistence = ATPrepChangePersistence(rel, RELPERSISTENCE_UNLOGGED);
 			/* force rewrite if necessary; see comment in ATRewriteTables */
 			if (tab->chgPersistence)
 			{
 				tab->rewrite |= AT_REWRITE_ALTER_PERSISTENCE;
 				tab->newrelpersistence = RELPERSISTENCE_UNLOGGED;
 			}
+			pass = AT_PASS_MISC;
+			break;
+		case AT_SetConstant:	/* SET CONSTANT */
+			ATSimplePermissions(rel, ATT_TABLE);
+			tab->chgPersistence = ATPrepChangePersistence(rel, RELPERSISTENCE_CONSTANT);
+			/* We do not rewrite relation, just freeze it in ATExecSetConstant. */
+			if (tab->chgPersistence)
+				tab->newrelpersistence = RELPERSISTENCE_CONSTANT;
 			pass = AT_PASS_MISC;
 			break;
 		case AT_AddOids:		/* SET WITH OIDS */
@@ -3578,6 +3588,9 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			break;
 		case AT_SetLogged:		/* SET LOGGED */
 		case AT_SetUnLogged:	/* SET UNLOGGED */
+			break;
+		case AT_SetConstant:	/* SET CONSTANT */
+			ATExecSetConstant(rel, lockmode);
 			break;
 		case AT_AddOids:		/* SET WITH OIDS */
 			/* Use the ADD COLUMN code, unless prep decided to do nothing */
@@ -6312,6 +6325,12 @@ ATAddForeignKeyConstraint(AlteredTableInfo *tab, Relation rel,
 						(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
 						 errmsg("constraints on temporary tables must involve temporary tables of this session")));
 			break;
+		case RELPERSISTENCE_CONSTANT:
+			ereport(ERROR,
+						(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+						 errmsg("constraints on CONSTANT tables are not supported")));
+			break;
+
 	}
 
 	/*
@@ -9350,6 +9369,74 @@ ATExecDropCluster(Relation rel, LOCKMODE lockmode)
 	mark_index_clustered(rel, InvalidOid, false);
 }
 
+
+static void
+setRelpersistenceConstant(Relation rel)
+{
+	Relation	pg_class;
+	Oid			relid;
+	HeapTuple	tuple;
+
+	relid = RelationGetRelid(rel);
+
+	pg_class = heap_open(RelationRelationId, RowExclusiveLock);
+
+	tuple = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(relid));
+
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation %u", relid);
+
+	((Form_pg_class) GETSTRUCT(tuple))->relpersistence = RELPERSISTENCE_CONSTANT;
+	simple_heap_update(pg_class, &tuple->t_self, tuple);
+
+	/* keep catalog indexes current */
+	CatalogUpdateIndexes(pg_class, tuple);
+	/* Invalidate cached info about relation. */
+	CacheInvalidateRelcache(rel);
+
+	heap_close(pg_class, RowExclusiveLock);
+	heap_freetuple(tuple);
+}
+
+/*
+ * Change relation relpersistence to RELPERSISTENCE_CONSTANT.
+ */
+static void
+ATExecSetConstant(Relation rel, LOCKMODE lockmode)
+{
+	List	   *index_oid_list;
+	ListCell   *i;
+
+	if (rel->rd_rel->relkind != RELKIND_RELATION
+		&& rel->rd_rel->relkind != RELKIND_TOASTVALUE)
+		elog(ERROR, "cannot apply SET CONSTANT to relation %s, because it's not a table.",
+			NameStr(rel->rd_rel->relname));
+	setRelpersistenceConstant(rel);
+
+	/* Find all the indexes belonging to this relation */
+	index_oid_list = RelationGetIndexList(rel);
+
+	/* For each index, change its relpersistence */
+	foreach(i, index_oid_list)
+	{
+		Relation indexRelation = index_open(lfirst_oid(i), lockmode);
+		setRelpersistenceConstant(indexRelation);
+		index_close(indexRelation, NoLock);
+	}
+
+	list_free(index_oid_list);
+
+	/* If it has a toast table, change its relpersistence.
+	 * And also recursevily for toast_index
+	 */
+	if (rel->rd_rel->reltoastrelid != InvalidOid)
+	{
+		Relation toastRelation = heap_open(rel->rd_rel->reltoastrelid, lockmode);
+		ATExecSetConstant(toastRelation, lockmode);
+		heap_close(toastRelation, NoLock);
+	}
+}
+
 /*
  * ALTER TABLE SET TABLESPACE
  */
@@ -11290,46 +11377,55 @@ ATExecGenericOptions(Relation rel, List *options)
 }
 
 /*
- * Preparation phase for SET LOGGED/UNLOGGED
+ * Preparation phase for SET LOGGED/UNLOGGED/CONSTANT
  *
  * This verifies that we're not trying to change a temp table.  Also,
  * existing foreign key constraints are checked to avoid ending up with
  * permanent tables referencing unlogged tables.
+ * Foreign key constraints on CONSTANT tables are not allowed.
  *
  * Return value is false if the operation is a no-op (in which case the
  * checks are skipped), otherwise true.
  */
 static bool
-ATPrepChangePersistence(Relation rel, bool toLogged)
+ATPrepChangePersistence(Relation rel, char newrelpersistence)
 {
 	Relation	pg_constraint;
 	HeapTuple	tuple;
 	SysScanDesc scan;
 	ScanKeyData skey[1];
+	bool toLogged = false;
 
 	/*
-	 * Disallow changing status for a temp table.  Also verify whether we can
-	 * get away with doing nothing; in such cases we don't need to run the
-	 * checks below, either.
+	 * When we track constraints, constant tables behaves just like
+	 * permanent ones.
+	 */
+	if (newrelpersistence == RELPERSISTENCE_PERMANENT
+		|| newrelpersistence == RELPERSISTENCE_CONSTANT)
+		toLogged = true;
+
+	/* Nothing to do */
+	if (rel->rd_rel->relpersistence == newrelpersistence)
+		return false;
+
+	/*
+	 * Disallow changing status for a temp and constant tables.
 	 */
 	switch (rel->rd_rel->relpersistence)
 	{
 		case RELPERSISTENCE_TEMP:
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-					 errmsg("cannot change logged status of table \"%s\" because it is temporary",
+					 errmsg("cannot change persistence of table \"%s\" because it is temporary",
 							RelationGetRelationName(rel)),
 					 errtable(rel)));
 			break;
-		case RELPERSISTENCE_PERMANENT:
-			if (toLogged)
-				/* nothing to do */
-				return false;
-			break;
-		case RELPERSISTENCE_UNLOGGED:
-			if (!toLogged)
-				/* nothing to do */
-				return false;
+		case RELPERSISTENCE_CONSTANT:
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("cannot change persistence of table \"%s\" because it is constant",
+							RelationGetRelationName(rel)),
+					 errtable(rel)));
 			break;
 	}
 
@@ -11363,7 +11459,7 @@ ATPrepChangePersistence(Relation rel, bool toLogged)
 			Relation	foreignrel;
 
 			/* the opposite end of what we used as scankey */
-			foreignrelid = toLogged ? con->confrelid : con->conrelid;
+			foreignrelid = toLogged? con->confrelid : con->conrelid;
 
 			/* ignore if self-referencing */
 			if (RelationGetRelid(rel) == foreignrelid)
@@ -11371,7 +11467,15 @@ ATPrepChangePersistence(Relation rel, bool toLogged)
 
 			foreignrel = relation_open(foreignrelid, AccessShareLock);
 
-			if (toLogged)
+			if (newrelpersistence == RELPERSISTENCE_CONSTANT)
+				ereport(ERROR,
+							(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+							 errmsg("could not change table \"%s\" to constant because it references table \"%s\"",
+									RelationGetRelationName(rel),
+									RelationGetRelationName(foreignrel)),
+							 errtableconstraint(rel, NameStr(con->conname))));
+
+			if (newrelpersistence == RELPERSISTENCE_PERMANENT)
 			{
 				if (foreignrel->rd_rel->relpersistence != RELPERSISTENCE_PERMANENT)
 					ereport(ERROR,
@@ -11381,7 +11485,7 @@ ATPrepChangePersistence(Relation rel, bool toLogged)
 									RelationGetRelationName(foreignrel)),
 							 errtableconstraint(rel, NameStr(con->conname))));
 			}
-			else
+			if (newrelpersistence == RELPERSISTENCE_UNLOGGED)
 			{
 				if (foreignrel->rd_rel->relpersistence == RELPERSISTENCE_PERMANENT)
 					ereport(ERROR,

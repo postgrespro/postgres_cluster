@@ -125,6 +125,11 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("unlogged sequences are not supported")));
+	/* CONSTANT sequences are not implemented -- not clear if useful. */
+	if (seq->sequence->relpersistence == RELPERSISTENCE_CONSTANT)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("CONSTANT sequences are not supported")));
 
 	/*
 	 * If if_not_exists was given and a relation with the same name already

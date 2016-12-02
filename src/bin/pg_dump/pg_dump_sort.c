@@ -75,7 +75,8 @@ static const int oldObjectTypePriority[] =
 	13,							/* DO_POST_DATA_BOUNDARY */
 	20,							/* DO_EVENT_TRIGGER */
 	15,							/* DO_REFRESH_MATVIEW */
-	21							/* DO_POLICY */
+	21,							/* DO_POLICY */
+	11							/* DO_TRANSFER_REL */
 };
 
 /*
@@ -1497,6 +1498,11 @@ describeDumpableObject(DumpableObject *obj, char *buf, int bufsize)
 			snprintf(buf, bufsize,
 					 "POST-DATA BOUNDARY  (ID %d)",
 					 obj->dumpId);
+			return;
+		case DO_TRANSFER_REL:
+			snprintf(buf, bufsize,
+					 "TRANSFER REL %s  (ID %d OID %u)",
+					 obj->name, obj->dumpId, obj->catId.oid);
 			return;
 	}
 	/* shouldn't get here */

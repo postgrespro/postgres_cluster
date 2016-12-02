@@ -78,6 +78,8 @@ main(int argc, char **argv)
 	static int	use_setsessauth = 0;
 	static int	no_security_labels = 0;
 	static int	strict_names = 0;
+	static int	generate_wal = 0;
+	static int	copy_mode_transfer = 0;
 
 	struct option cmdopts[] = {
 		{"clean", 0, NULL, 'c'},
@@ -122,7 +124,9 @@ main(int argc, char **argv)
 		{"strict-names", no_argument, &strict_names, 1},
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
 		{"no-security-labels", no_argument, &no_security_labels, 1},
-
+		{"transfer-dir", required_argument, NULL, 4},
+		{"generate-wal", no_argument, &generate_wal, 1},
+		{"copy-mode-transfer", no_argument, &copy_mode_transfer, 1},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -274,6 +278,9 @@ main(int argc, char **argv)
 			case 3:				/* section */
 				set_dump_section(optarg, &(opts->dumpSections));
 				break;
+			case 4:
+				opts->transfer_dir = pg_strdup(optarg);
+				break;
 
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
@@ -339,6 +346,8 @@ main(int argc, char **argv)
 	opts->noTablespace = outputNoTablespaces;
 	opts->use_setsessauth = use_setsessauth;
 	opts->no_security_labels = no_security_labels;
+	opts->generate_wal = generate_wal;
+	opts->copy_mode_transfer = copy_mode_transfer;
 
 	if (if_exists && !opts->dropSchema)
 	{

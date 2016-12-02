@@ -983,6 +983,7 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	switch (relation->rd_rel->relpersistence)
 	{
 		case RELPERSISTENCE_UNLOGGED:
+		case RELPERSISTENCE_CONSTANT:
 		case RELPERSISTENCE_PERMANENT:
 			relation->rd_backend = InvalidBackendId;
 			relation->rd_islocaltemp = false;
@@ -2964,6 +2965,7 @@ RelationBuildLocalRelation(const char *relname,
 	switch (relpersistence)
 	{
 		case RELPERSISTENCE_UNLOGGED:
+		case RELPERSISTENCE_CONSTANT:
 		case RELPERSISTENCE_PERMANENT:
 			rel->rd_backend = InvalidBackendId;
 			rel->rd_islocaltemp = false;

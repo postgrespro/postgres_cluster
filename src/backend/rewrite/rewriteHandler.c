@@ -183,6 +183,7 @@ AcquireRewriteLocks(Query *parsetree,
 				 * just in case it changed since this rule was made.
 				 */
 				rte->relkind = rel->rd_rel->relkind;
+				rte->relpersistence = rel->rd_rel->relpersistence;
 
 				heap_close(rel, NoLock);
 				break;
