@@ -772,6 +772,8 @@
 /* PostgresPRo version as a string */
 #undef PGPRO_VERSION
 
+#define PGPRO_EE
+
 /* A string containing the version number of Postgres Pro */
 #undef PGPRO_VERSION_STR
 
