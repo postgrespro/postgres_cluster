@@ -5,12 +5,21 @@
 #  Portions Copyright (c) 2011, Itagaki Takahiro
 #  Portions Copyright (c) 2012-2015, The Reorg Development Team
 #
-
-PG_CONFIG ?= pg_config
-
 SRCS = pg_repack.c pgut/pgut.c pgut/pgut-fe.c
 OBJS = $(SRCS:.c=.o)
 PROGRAM = pg_repack
+PG_CPPFLAGS = -I$(libpq_srcdir)
+ifdef USE_PGXS
+PG_CONFIG = pg_config
+PGXS := $(shell $(PG_CONFIG) --pgxs)
+include $(PGXS)
+else
+subdir= contrib/pg_repack/bin
+top_builddir = ../../..
+include $(top_builddir)/src/Makefile.global
+include $(top_srcdir)/contrib/contrib-global.mk
+endif
+
 
 
 # The version number of the program. It should be the same of the library.
@@ -25,10 +34,6 @@ endif
 
 PG_LIBS = $(libpq)
 
-USE_PGXS = 1	# use pgxs if not in contrib directory
-PG_CONFIG = pg_config
-PGXS := $(shell $(PG_CONFIG) --pgxs)
-include $(PGXS)
 
 # remove dependency on libxml2, libxslt, and libpam.
 # XXX: find a better way to make sure we are linking with libraries

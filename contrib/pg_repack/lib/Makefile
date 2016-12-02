@@ -6,16 +6,26 @@
 #  Portions Copyright (c) 2012-2015, The Reorg Development Team
 #
 
-PG_CONFIG ?= pg_config
-
-# version as a number, e.g. 9.1.4 -> 901
-VERSION := $(shell $(PG_CONFIG) --version | awk '{print $$2}')
-INTVERSION := $(shell echo $$(($$(echo $(VERSION) | sed 's/\([[:digit:]]\{1,\}\)\.\([[:digit:]]\{1,\}\).*/\1*100+\2/'))))
-
 EXTENSION = pg_repack
 MODULE_big = $(EXTENSION)
 
 OBJS = repack.o pgut/pgut-be.o pgut/pgut-spi.o
+ifdef USE_PGXS
+PG_CONFIG ?= pg_config
+PGXS := $(shell $(PG_CONFIG) --pgxs)
+VERSION := $(shell $(PG_CONFIG) --version | awk '{print $$2}')
+include $(PGXS)
+else
+subdir= contrib/pg_repack/lib
+top_builddir = ../../..
+include $(top_builddir)/src/Makefile.global
+include $(top_srcdir)/contrib/contrib-global.mk
+endif
+
+
+# version as a number, e.g. 9.1.4 -> 901
+INTVERSION := $(shell echo $$(($$(echo $(VERSION) | sed 's/\([[:digit:]]\{1,\}\)\.\([[:digit:]]\{1,\}\).*/\1*100+\2/'))))
+
 
 SHLIB_EXPORTS = exports.txt
 
@@ -32,10 +42,6 @@ else
 DATA_built = pg_repack.sql
 DATA = uninstall_pg_repack.sql
 endif
-
-USE_PGXS = 1
-PGXS := $(shell $(PG_CONFIG) --pgxs)
-include $(PGXS)
 
 # remove dependency on libxml2, libxslt, and libpam.
 # XXX: find a better way to make sure we are linking with libraries
