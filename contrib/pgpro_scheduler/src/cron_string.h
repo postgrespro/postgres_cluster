@@ -41,7 +41,11 @@ typedef struct {
 } cron_ent_t;
 
 void destroyCronEnt(cron_ent_t *);
-void _cps_set_error(int num, const char *message, ...) __attribute__ ((format (gnu_printf, 2, 3)));;
+void _cps_set_error(int num, const char *message, ...) 
+#ifdef __GNUC__
+__attribute__ ((format (gnu_printf, 2, 3)))
+#endif
+;;
 char *get_cps_error(void);
 int _cps_string_has(char *str, char c);
 char *_cps_append_string(char *str, char *to_add);
