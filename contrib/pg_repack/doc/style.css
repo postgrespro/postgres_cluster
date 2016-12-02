@@ -1,0 +1,62 @@
+﻿body {
+	font-family:
+		Lucida Grande, Verdana, Arial, Helvetica,
+		'メイリオ',
+		'Meiryo',
+		'ヒラギノ角ゴ Pro W3',
+		'Hiragino Kaku Gothic Pro',
+		'Osaka',
+		'ＭＳ Ｐゴシック',
+		sans-serif;
+	color: #202020;
+}
+
+h2, h3, h4, h5, h6 {
+    color: Black;
+    background: none;
+    padding-top: 0.5em;
+    padding-bottom: 0.17em;
+    border-bottom: 1px solid #aaaaaa;
+}
+H1 { font-size: x-large; font-family: Lucida Grande,verdana,arial,helvetica,sans-serif; }
+H2 { font-size: large; font-family: Lucida Grande,verdana,arial,helvetica,sans-serif; }
+H3 { padding-left: 1em; font-size: medium; font-family: Lucida Grande,verdana,arial,helvetica,sans-serif; }
+H4 { padding-left: 2em; font-size: small; font-family: Lucida Grande,verdana,arial,helvetica,sans-serif; }
+H5 { padding-left: 3em; font-size: x-small; font-family: Lucida Grande,verdana,arial,helvetica,sans-serif; }
+H6 { padding-left: 4em; font-size: xx-small; font-family: Lucida Grande,verdana,arial,helvetica,sans-serif; }
+
+pre {
+	font-family: courier,sans-serif;
+	background-color: #FBFBFD;
+	border: 1px dashed #7E7ECB;
+	color: black;
+	line-height: 1.1em; padding: 0.5em;
+	overflow: auto;
+}
+
+li {
+	line-height: 1.4em;
+}
+
+div.contents {
+	float:right;
+	border:thin solid black;
+	background-color: white;
+	padding-top: 0.2em;
+	padding-bottom: 0.2em;
+	padding-left: 1em;
+	padding-right: 1em;
+	margin-left: 0.5em;
+	margin-top: 2.5em !important;
+}
+
+div.contents ul {
+	padding-left: 1em;
+}
+
+dl.diag dt,
+dl.ddl dt {
+	font-weight: bold;
+	margin-top: 1em;
+	margin-bottom: 0.5em;
+}
