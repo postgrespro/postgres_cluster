@@ -15,6 +15,7 @@
  */
 
 #include "init.h"
+#include "partition_creation.h"
 #include "pathman_workers.h"
 #include "relation_info.h"
 #include "utils.h"
@@ -29,6 +30,7 @@
 #include "storage/dsm.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
+#include "storage/proc.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/memutils.h"
@@ -251,10 +253,16 @@ create_partitions_bg_worker_segment(Oid relid, Datum value, Oid value_type)
 	/* Initialize BGW args */
 	args = (SpawnPartitionArgs *) dsm_segment_address(segment);
 
-	args->userid = get_rel_owner(relid);
+	args->userid = GetUserId();
 	args->result = InvalidOid;
 	args->dbid = MyDatabaseId;
 	args->partitioned_table = relid;
+
+#if PG_VERSION_NUM >= 90600
+	/* Initialize args for BecomeLockGroupMember() */
+	args->parallel_master_pgproc = MyProc;
+	args->parallel_master_pid = MyProcPid;
+#endif
 
 	/* Write value-related stuff */
 	args->value_type = value_type;
@@ -274,7 +282,7 @@ create_partitions_bg_worker_segment(Oid relid, Datum value, Oid value_type)
  * NB: This function should not be called directly, use create_partitions() instead.
  */
 Oid
-create_partitions_bg_worker(Oid relid, Datum value, Oid value_type)
+create_partitions_for_value_bg_worker(Oid relid, Datum value, Oid value_type)
 {
 	dsm_segment			   *segment;
 	dsm_handle				segment_handle;
@@ -285,6 +293,11 @@ create_partitions_bg_worker(Oid relid, Datum value, Oid value_type)
 	segment = create_partitions_bg_worker_segment(relid, value, value_type);
 	segment_handle = dsm_segment_handle(segment);
 	bgw_args = (SpawnPartitionArgs *) dsm_segment_address(segment);
+
+#if PG_VERSION_NUM >= 90600
+	/* Become locking group leader */
+	BecomeLockGroupLeader();
+#endif
 
 	/* Start worker and wait for it to finish */
 	start_bg_worker(spawn_partitions_bgw,
@@ -337,6 +350,13 @@ bgw_main_spawn_partitions(Datum main_arg)
 			 spawn_partitions_bgw, MyProcPid);
 	args = dsm_segment_address(segment);
 
+#if PG_VERSION_NUM >= 90600
+	/* Join locking group. If we can't join the group, quit */
+	if (!BecomeLockGroupMember(args->parallel_master_pgproc,
+							   args->parallel_master_pid))
+		return;
+#endif
+
 	/* Establish connection and start transaction */
 	BackgroundWorkerInitializeConnectionByOid(args->dbid, args->userid);
 
@@ -360,9 +380,9 @@ bgw_main_spawn_partitions(Datum main_arg)
 #endif
 
 	/* Create partitions and save the Oid of the last one */
-	args->result = create_partitions_internal(args->partitioned_table,
-											  value, /* unpacked Datum */
-											  args->value_type);
+	args->result = create_partitions_for_value_internal(args->partitioned_table,
+														value, /* unpacked Datum */
+														args->value_type);
 
 	/* Finish transaction in an appropriate way */
 	if (args->result == InvalidOid)
@@ -591,7 +611,7 @@ partition_table_concurrently(PG_FUNCTION_ARGS)
 	/* Check if relation is a partitioned table */
 	shout_if_prel_is_invalid(relid,
 							 /* We also lock the parent relation */
-							 get_pathman_relation_info_after_lock(relid, true),
+							 get_pathman_relation_info_after_lock(relid, true, NULL),
 							 /* Partitioning type does not matter here */
 							 PT_INDIFFERENT);
 	/*
