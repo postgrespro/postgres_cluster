@@ -210,7 +210,7 @@ pid_t registerManagerWorker(schd_manager_t *man)
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
-	worker.bgw_restart_time = BGW_NEVER_RESTART;
+	worker.bgw_restart_time = 1; /* BGW_NEVER_RESTART; */
 	worker.bgw_main = NULL;
 	worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(man->shared));
 	sprintf(worker.bgw_library_name, "pgpro_scheduler");
