@@ -133,7 +133,6 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &online-analyze;
  &pageinspect;
  &passwordcheck;
- &pgarman;
  &pgbuffercache;
  &pgcrypto;
  &pgfreespacemap;
@@ -207,6 +206,7 @@ pages.
   </para>
 
   &oid2name;
+  &pgprobackup;
   &vacuumlo;  
  </sect1>
 
