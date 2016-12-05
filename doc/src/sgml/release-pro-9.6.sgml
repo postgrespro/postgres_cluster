@@ -149,7 +149,7 @@
     <para>Tools has been ported from Postgres Pro 9.5</para>
     <itemizedlist>
       <listitem>
-        <para><application>pg_arman</application> (See <xref linkend="pg-arman">)</para>
+        <para><application>pg_arman</application></para>
       </listitem>
     </itemizedlist>    
   </sect2>
