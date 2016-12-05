@@ -202,7 +202,7 @@ SimpleLruInit(SlruCtl ctl, const char *name, int nslots, int nlsns,
 		shared->page_dirty = (bool *) (ptr + offset);
 		offset += MAXALIGN(nslots * sizeof(bool));
 		shared->page_number = (int64 *) (ptr + offset);
-		offset += MAXALIGN(nslots * sizeof(int));
+		offset += MAXALIGN(nslots * sizeof(int64));
 		shared->page_lru_count = (int *) (ptr + offset);
 		offset += MAXALIGN(nslots * sizeof(int));
 

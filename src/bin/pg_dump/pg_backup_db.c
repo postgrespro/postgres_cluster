@@ -1387,7 +1387,11 @@ transferCheckControlData(Archive *fout, const char *transfer_dir, bool isRestore
 	}
 	else
 	{
+#ifdef __GNUC__		
 		char dumpedInfo[strlen(serverInfo)];
+#else	
+		char dumpedInfo[1024];
+#endif		
 		/*
 		 * In restore mode read info from pg_control in transfer_dir
 		 * and compare it with the result of select. In case of any
