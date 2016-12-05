@@ -1028,6 +1028,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	MTM_TXTRACE(x, "PostPrepareTransaction Start");
 
 	if (!x->isDistributed) {
+		MTM_TXTRACE(x, "not distributed?");
 		return;
 	}
 
@@ -1040,25 +1041,34 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	Assert(ts != NULL);
 	//if (x->gid[0]) MTM_LOG1("Preparing transaction %d (%s) at %ld", x->xid, x->gid, MtmGetCurrentTime());
 	if (!MtmIsCoordinator(ts) || Mtm->status == MTM_RECOVERY) {
+		MTM_TXTRACE(x, "recovery?");
 		Assert(x->gid[0]);
 		ts->votingCompleted = true;
-		if (Mtm->status != MTM_RECOVERY || Mtm->recoverySlot != MtmReplicationNodeId) { 
+		MTM_TXTRACE(x, "recovery? 1");
+		if (Mtm->status != MTM_RECOVERY || Mtm->recoverySlot != MtmReplicationNodeId) {
+			MTM_TXTRACE(x, "recovery? 2"); 
 			MtmSend2PCMessage(ts, MSG_PREPARED); /* send notification to coordinator */
 			if (!MtmUseDtm) { 
 				ts->status = TRANSACTION_STATUS_UNKNOWN;
 			}
 		} else {
+			MTM_TXTRACE(x, "recovery? 3");
 			ts->status = TRANSACTION_STATUS_UNKNOWN;
 		}
+		MTM_TXTRACE(x, "recovery? 4");
 		MtmUnlock();
+		MTM_TXTRACE(x, "recovery? 5");
 		MtmResetTransaction();
+		MTM_TXTRACE(x, "recovery? 6");
 	} else { 
+		MTM_TXTRACE(x, "not recovery?");
 		Mtm2PCVoting(x, ts);
 		MtmUnlock();
 		if (x->isTwoPhase) { 
 			MtmResetTransaction();
 		}
 	}
+	MTM_TXTRACE(x, "recovery? 7");
 	//if (x->gid[0]) MTM_LOG1("Prepared transaction %d (%s) csn=%ld at %ld: %d", x->xid, x->gid, ts->csn, MtmGetCurrentTime(), ts->status);
 	if (Mtm->inject2PCError == 3) { 
 		Mtm->inject2PCError = 0;
@@ -1136,6 +1146,7 @@ MtmLogAbortLogicalMessage(int nodeId, char const* gid)
 	strcpy(msg.gid, gid);
 	msg.origin_node = nodeId;
 	msg.origin_lsn = replorigin_session_origin_lsn;
+	MTM_LOG2("[TRACE] MtmLogAbortLogicalMessage(%d, %s)", nodeId, gid);
 	XLogFlush(LogLogicalMessage("A", (char*)&msg, sizeof msg, false)); 
 }
 
@@ -1224,6 +1235,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				MtmTransactionListAppend(ts);
 				if (*x->gid) { 
 					replorigin_session_origin_lsn = InvalidXLogRecPtr;
+					MTM_TXTRACE(x, "MtmEndTransaction/MtmLogAbortLogicalMessage");
 					MtmLogAbortLogicalMessage(MtmNodeId, x->gid);
 				}
 			}
@@ -2878,7 +2890,9 @@ void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 		CommitTransactionCommand();
 		MtmEndSession(nodeId, true);
 	} else if (status == TRANSACTION_STATUS_IN_PROGRESS) {
+		MtmBeginSession(nodeId);
 		MtmLogAbortLogicalMessage(nodeId, gid);
+		MtmEndSession(nodeId, true);
 	}
 }	
 
@@ -3045,6 +3059,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 				sscanf(strVal(elem->arg), "%lx", &recoveredLSN);
 				MTM_LOG1("Recovered position of node %d is %lx", MtmReplicationNodeId, recoveredLSN); 
 				if (Mtm->nodes[MtmReplicationNodeId-1].restartLSN < recoveredLSN) { 
+					MTM_LOG2("[restartlsn] node %d: %lx -> %lx (MtmReplicationStartupHook)", MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, recoveredLSN);
 					Mtm->nodes[MtmReplicationNodeId-1].restartLSN = recoveredLSN;
 				}
 			} else { 
@@ -3210,18 +3225,20 @@ bool MtmFilterTransaction(char* record, int size)
 	}
 	restart_lsn = origin_node == MtmReplicationNodeId ? end_lsn : origin_lsn;
     if (Mtm->nodes[origin_node-1].restartLSN < restart_lsn) {
+		MTM_LOG2("[restartlsn] node %d: %lx -> %lx (MtmFilterTransaction)", MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, restart_lsn);
 		Mtm->nodes[origin_node-1].restartLSN = restart_lsn;
     } else {
 		duplicate = true;
 	}
 
 	if (duplicate) {
-		MTM_LOG1("Ignore transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
-				 gid, replication_node, end_lsn, flags, origin_node, origin_lsn, restart_lsn);
+		MTM_LOG1("Ignore transaction %s from node %d flags=%x, our restartLSN for node: %lx,restart_lsn = (origin node %d == MtmReplicationNodeId %d) ? end_lsn=%lx, origin_lsn=%lx", 
+				 gid, replication_node, flags, Mtm->nodes[origin_node-1].restartLSN, origin_node, MtmReplicationNodeId, end_lsn, origin_lsn);
 	} else {
 		MTM_LOG2("Apply transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
 				 gid, replication_node, end_lsn, flags, origin_node, origin_lsn, restart_lsn);
 	}
+
 	return duplicate;
 }
 
@@ -4127,16 +4144,16 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 
 		case T_VacuumStmt:
 		  skipCommand = true;		  
-		  if (context == PROCESS_UTILITY_TOPLEVEL) {			  
-			  MtmProcessDDLCommand(queryString, false, true);
-			  MtmTx.isDistributed = false;
-		  } else if (MtmApplyContext != NULL) {
-			  MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
-			  Assert(oldContext != MtmApplyContext);
-			  MtmVacuumStmt = (VacuumStmt*)copyObject(parsetree);
-			  MemoryContextSwitchTo(oldContext);
-			  return;
-		  }
+		//   if (context == PROCESS_UTILITY_TOPLEVEL) {			  
+		// 	  MtmProcessDDLCommand(queryString, false, true);
+		// 	  MtmTx.isDistributed = false;
+		//   } else if (MtmApplyContext != NULL) {
+		// 	  MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
+		// 	  Assert(oldContext != MtmApplyContext);
+		// 	  MtmVacuumStmt = (VacuumStmt*)copyObject(parsetree);
+		// 	  MemoryContextSwitchTo(oldContext);
+		// 	  return;
+		//   }
 		  break;
 
 		case T_CreateDomainStmt:
@@ -4231,7 +4248,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				if (indexStmt->concurrent) 
 				{
 					 if (context == PROCESS_UTILITY_TOPLEVEL) {
-						 MtmProcessDDLCommand(queryString, false, true);
+						//  MtmProcessDDLCommand(queryString, false, true);
 						 MtmTx.isDistributed = false;
 						 skipCommand = true;
 						 /* 
@@ -4258,7 +4275,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				if (stmt->removeType == OBJECT_INDEX && stmt->concurrent)
 				{
 					if (context == PROCESS_UTILITY_TOPLEVEL) {
-						MtmProcessDDLCommand(queryString, false, true);
+						// MtmProcessDDLCommand(queryString, false, true);
 						MtmTx.isDistributed = false;
 						skipCommand = true;
 					} else if (MtmApplyContext != NULL) {

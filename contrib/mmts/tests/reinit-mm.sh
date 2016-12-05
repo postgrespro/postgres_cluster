@@ -53,10 +53,10 @@ do
         multimaster.use_raftable = false
         multimaster.queue_size=52857600
         multimaster.ignore_tables_without_pk = 1
-        multimaster.heartbeat_recv_timeout = 1000
+        multimaster.heartbeat_recv_timeout = 2000
         multimaster.heartbeat_send_timeout = 250
-        multimaster.twopc_min_timeout = 400000
-        multimaster.min_2pc_timeout = 400000
+        multimaster.twopc_min_timeout = 40000000
+        multimaster.min_2pc_timeout = 40000000
         multimaster.volkswagen_mode = 1
         multimaster.conn_strings = '$conn_str'
         multimaster.node_id = $i

@@ -338,6 +338,7 @@ pglogical_receiver_main(Datum main_arg)
 			} else { 
 				originStartPos = replorigin_get_progress(originId, false);
 				if (Mtm->nodes[nodeId-1].restartLSN < originStartPos) { 
+					MTM_LOG2("[restartlsn] node %d: %lx -> %lx (pglogical_receiver_mains)", nodeId, Mtm->nodes[nodeId-1].restartLSN, originStartPos);
 					Mtm->nodes[nodeId-1].restartLSN = originStartPos;
 				}
 				MTM_LOG1("Restart logical receiver at position %lx with origin=%d from node %d", originStartPos, originId, nodeId);
@@ -533,7 +534,7 @@ pglogical_receiver_main(Datum main_arg)
 						MtmSpillToFile(spill_file, buf.data, buf.used);
 						ByteBufferReset(&buf);
 					}
-					if (stmt[0] == 'M' && (stmt[1] == 'L' || stmt[1] == 'C' || stmt[1] == 'A')) {
+					if (stmt[0] == 'M' && (stmt[1] == 'L' || stmt[1] == 'A')) {
 						MTM_LOG3("Process '%c' message from %d", stmt[1], nodeId);
 						MtmExecutor(stmt, rc - hdr_len);
 					} else { 
