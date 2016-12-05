@@ -722,7 +722,7 @@ CheckMD5Auth(Port *port, char **logdetail)
 		return STATUS_ERROR;
 	}
 
-	sendAuthRequest(port, AUTH_REQ_MD5, NULL, 0);
+	sendAuthRequest(port, AUTH_REQ_MD5, port->md5Salt, 4);
 	return recv_and_check_password_packet(port, logdetail);
 }
 
