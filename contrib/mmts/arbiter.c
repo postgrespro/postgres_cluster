@@ -318,10 +318,17 @@ static void MtmCheckResponse(MtmArbiterMessage* resp)
 		&& Mtm->status != MTM_RECOVERY
 		&& Mtm->nodes[MtmNodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < MtmGetSystemTime()) 
 	{ 
-		elog(WARNING, "Node %d thinks that I was dead, while I am %s (message %s)", resp->node, MtmNodeStatusMnem[Mtm->status], messageKindText[resp->code]);
+		elog(WARNING, "Node %d thinks that I am dead, while I am %s (message %s)", resp->node, MtmNodeStatusMnem[Mtm->status], messageKindText[resp->code]);
 		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
 		MtmSwitchClusterMode(MTM_RECOVERY);
-	}
+	} else if (BIT_CHECK(Mtm->disabledNodeMask, resp->node-1) && sockets[resp->node-1] < 0) { 
+		/* We receive heartbeat from dsiable node with 
+		 * Looks like it is restarted.
+		 * Try to reconnect to it.
+		 */
+		elog(WARNING, "Receive heartbeat from disabled node %d", resp->node);		
+		BIT_SET(Mtm->reconnectMask, resp->node-1);
+	}	
 }
 
 static void MtmScheduleHeartbeat()
@@ -355,7 +362,8 @@ static void MtmSendHeartbeat()
 		if (i+1 != MtmNodeId) { 
 			if (!BIT_CHECK(busy_mask, i)
 				&& (Mtm->status != MTM_ONLINE 
-					|| (sockets[i] >= 0 && !BIT_CHECK(Mtm->disabledNodeMask, i))
+					|| sockets[i] >= 0 
+					|| !BIT_CHECK(Mtm->disabledNodeMask, i)
 					|| BIT_CHECK(Mtm->reconnectMask, i)))
 			{ 
 				if (!MtmSendToNode(i, &msg, sizeof(msg))) { 
@@ -885,6 +893,8 @@ static void MtmReceiver(Datum arg)
 					Mtm->nodes[node-1].connectivityMask = msg->connectivityMask;
 					Mtm->nodes[node-1].lastHeartbeat = MtmGetSystemTime();
 
+					MtmCheckResponse(msg);
+
 					switch (msg->code) {
 					  case MSG_HEARTBEAT:
 						MTM_LOG2("Receive HEARTBEAT from node %d with timestamp %ld delay %ld", 
@@ -964,7 +974,6 @@ static void MtmReceiver(Datum arg)
 							 messageKindText[msg->code], ts->xid, ts->gid, node);
 						continue;
 					}
-					MtmCheckResponse(msg);
 					BIT_SET(ts->votedMask, node-1);
 
 					if (MtmIsCoordinator(ts)) {

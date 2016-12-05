@@ -3157,8 +3157,8 @@ MtmReplicationRowFilterHook(struct PGLogicalRowFilterArgs* args)
 }
 
 /*
- * Filter received transacyions at destination side.
- * This function is executed by receiver, so there are no race conditions and it is possible to update nodes[i].restaetLSN without lock
+ * Filter received transactions at destination side.
+ * This function is executed by receiver, so there are no race conditions and it is possible to update nodes[i].restartLSN without lock
  */
 bool MtmFilterTransaction(char* record, int size)
 {

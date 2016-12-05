@@ -1,5 +1,5 @@
 FROM kelvich/postgres_cluster
-
+# RUN sysctl -w kernel.core_pattern=core
 RUN cd /pg/src/contrib/raftable && make clean && make install
 
 RUN mkdir /pg/mmts
