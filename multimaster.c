@@ -1146,6 +1146,7 @@ MtmLogAbortLogicalMessage(int nodeId, char const* gid)
 	strcpy(msg.gid, gid);
 	msg.origin_node = nodeId;
 	msg.origin_lsn = replorigin_session_origin_lsn;
+	MTM_LOG2("[TRACE] MtmLogAbortLogicalMessage(%d, %s)", nodeId, gid);
 	XLogFlush(LogLogicalMessage("A", (char*)&msg, sizeof msg, false)); 
 }
 
@@ -1234,6 +1235,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				MtmTransactionListAppend(ts);
 				if (*x->gid) { 
 					replorigin_session_origin_lsn = InvalidXLogRecPtr;
+					MTM_TXTRACE(x, "MtmEndTransaction/MtmLogAbortLogicalMessage");
 					MtmLogAbortLogicalMessage(MtmNodeId, x->gid);
 				}
 			}
@@ -2888,7 +2890,9 @@ void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 		CommitTransactionCommand();
 		MtmEndSession(nodeId, true);
 	} else if (status == TRANSACTION_STATUS_IN_PROGRESS) {
+		MtmBeginSession(nodeId);
 		MtmLogAbortLogicalMessage(nodeId, gid);
+		MtmEndSession(nodeId, true);
 	}
 }	
 
@@ -3055,6 +3059,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 				sscanf(strVal(elem->arg), "%lx", &recoveredLSN);
 				MTM_LOG1("Recovered position of node %d is %lx", MtmReplicationNodeId, recoveredLSN); 
 				if (Mtm->nodes[MtmReplicationNodeId-1].restartLSN < recoveredLSN) { 
+					MTM_LOG2("[restartlsn] node %d: %lx -> %lx (MtmReplicationStartupHook)", MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, recoveredLSN);
 					Mtm->nodes[MtmReplicationNodeId-1].restartLSN = recoveredLSN;
 				}
 			} else { 
@@ -3220,18 +3225,20 @@ bool MtmFilterTransaction(char* record, int size)
 	}
 	restart_lsn = origin_node == MtmReplicationNodeId ? end_lsn : origin_lsn;
     if (Mtm->nodes[origin_node-1].restartLSN < restart_lsn) {
+		MTM_LOG2("[restartlsn] node %d: %lx -> %lx (MtmFilterTransaction)", MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, restart_lsn);
 		Mtm->nodes[origin_node-1].restartLSN = restart_lsn;
     } else {
 		duplicate = true;
 	}
 
 	if (duplicate) {
-		MTM_LOG1("Ignore transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
-				 gid, replication_node, end_lsn, flags, origin_node, origin_lsn, restart_lsn);
+		MTM_LOG1("Ignore transaction %s from node %d flags=%x, our restartLSN for node: %lx,restart_lsn = (origin node %d == MtmReplicationNodeId %d) ? end_lsn=%lx, origin_lsn=%lx", 
+				 gid, replication_node, flags, Mtm->nodes[origin_node-1].restartLSN, origin_node, MtmReplicationNodeId, end_lsn, origin_lsn);
 	} else {
 		MTM_LOG2("Apply transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
 				 gid, replication_node, end_lsn, flags, origin_node, origin_lsn, restart_lsn);
 	}
+
 	return duplicate;
 }
 
@@ -4137,16 +4144,16 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 
 		case T_VacuumStmt:
 		  skipCommand = true;		  
-		  if (context == PROCESS_UTILITY_TOPLEVEL) {			  
-			  MtmProcessDDLCommand(queryString, false, true);
-			  MtmTx.isDistributed = false;
-		  } else if (MtmApplyContext != NULL) {
-			  MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
-			  Assert(oldContext != MtmApplyContext);
-			  MtmVacuumStmt = (VacuumStmt*)copyObject(parsetree);
-			  MemoryContextSwitchTo(oldContext);
-			  return;
-		  }
+		//   if (context == PROCESS_UTILITY_TOPLEVEL) {			  
+		// 	  MtmProcessDDLCommand(queryString, false, true);
+		// 	  MtmTx.isDistributed = false;
+		//   } else if (MtmApplyContext != NULL) {
+		// 	  MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
+		// 	  Assert(oldContext != MtmApplyContext);
+		// 	  MtmVacuumStmt = (VacuumStmt*)copyObject(parsetree);
+		// 	  MemoryContextSwitchTo(oldContext);
+		// 	  return;
+		//   }
 		  break;
 
 		case T_CreateDomainStmt:
@@ -4241,7 +4248,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				if (indexStmt->concurrent) 
 				{
 					 if (context == PROCESS_UTILITY_TOPLEVEL) {
-						 MtmProcessDDLCommand(queryString, false, true);
+						//  MtmProcessDDLCommand(queryString, false, true);
 						 MtmTx.isDistributed = false;
 						 skipCommand = true;
 						 /* 
@@ -4268,7 +4275,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				if (stmt->removeType == OBJECT_INDEX && stmt->concurrent)
 				{
 					if (context == PROCESS_UTILITY_TOPLEVEL) {
-						MtmProcessDDLCommand(queryString, false, true);
+						// MtmProcessDDLCommand(queryString, false, true);
 						MtmTx.isDistributed = false;
 						skipCommand = true;
 					} else if (MtmApplyContext != NULL) {
