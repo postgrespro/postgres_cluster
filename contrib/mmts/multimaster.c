@@ -1638,8 +1638,8 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 				BIT_CLEAR(Mtm->nodeLockerMask, nodeId-1);
 				Mtm->nLockers -= 1;
 			} else { 
-				MTM_LOG1("%d: node %d is caugth-up without locking cluster", MyProcPid, nodeId);	
-				/* We are lucky: caugth-up without locking cluster! */
+				MTM_LOG1("%d: node %d is caught-up without locking cluster", MyProcPid, nodeId);	
+				/* We are lucky: caught-up without locking cluster! */
 			}
 			MtmEnableNode(nodeId);
 			Mtm->nConfigChanges += 1;
@@ -1789,9 +1789,9 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
  * Build connectivity graph, find clique in it and extend disabledNodeMask by nodes not included in clique.
  * This function returns false if current node is excluded from cluster, true otherwise
  */
-bool MtmRefreshClusterStatus(bool nowait, int testNodeId)
+bool MtmRefreshClusterStatus(bool nowait)
 {
-	nodemask_t mask, clique, disabled, enabled;
+	nodemask_t mask, clique, disabled;
 	nodemask_t matrix[MAX_NODES];
 	int clique_size;
 	int i;
@@ -1832,13 +1832,6 @@ bool MtmRefreshClusterStatus(bool nowait, int testNodeId)
 					}
 				}
 			}
-		}		
-		enabled = clique & Mtm->disabledNodeMask; /* new enabled nodes mask */		
-		if (testNodeId != 0 && BIT_CHECK(enabled, testNodeId-1)) { 
-			MtmEnableNode(testNodeId);
-		}
-
-		if (disabled|enabled) {
 			MtmCheckQuorum();
 		}			
 #if 0
@@ -1918,7 +1911,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	}
 
 	MtmSleep(MSEC_TO_USEC(MtmHeartbeatSendTimeout));
-	MtmRefreshClusterStatus(false, 0);
+	MtmRefreshClusterStatus(false);
 }
 
 void MtmOnNodeConnect(int nodeId)
@@ -3087,12 +3080,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			MtmCheckQuorum();
 		} else {
 			MtmUnlock();
-			MtmRefreshClusterStatus(true, MtmReplicationNodeId);
-			MtmLock(LW_SHARED);
-			if (BIT_CHECK(Mtm->disabledNodeMask, MtmReplicationNodeId-1)) {
-				MtmUnlock();
-				elog(ERROR, "Disabled node %d tries to reconnect without recovery", MtmReplicationNodeId); 
-			}
+			elog(ERROR, "Disabled node %d tries to reconnect without recovery", MtmReplicationNodeId); 
 		}
 	} else {
 		MTM_LOG1("Node %d start logical replication to node %d in normal mode", MtmNodeId, MtmReplicationNodeId); 
