@@ -1,8 +1,0 @@
-# Global excludes across all subdirectories
-*.o
-*.so
-regress/regression.diffs
-regress/regression.out
-regress/results/
-dist/*.zip
-lib/exports.list

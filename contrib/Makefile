@@ -34,7 +34,6 @@ SUBDIRS = \
 		pg_freespacemap \
 		pg_prewarm	\
 		pg_query_state \
-		pg_repack \
 		pg_standby	\
 		pg_stat_statements \
 		pg_transfer		\
