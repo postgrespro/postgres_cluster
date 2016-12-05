@@ -361,7 +361,7 @@ static void MtmSendHeartbeat()
 				if (!MtmSendToNode(i, &msg, sizeof(msg))) { 
 					elog(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
 				} else {
-					MTM_LOG2("Send heartbeat to node %d with timestamp %ld", i+1, now);    
+					MTM_LOG4("Send heartbeat to node %d with timestamp %ld", i+1, now);    
 				}
 			} else { 
 				MTM_LOG2("Do not send heartbeat to node %d, busy mask %lld, status %d", i+1, (long long) busy_mask, Mtm->status);
@@ -887,7 +887,7 @@ static void MtmReceiver(Datum arg)
 
 					switch (msg->code) {
 					  case MSG_HEARTBEAT:
-						MTM_LOG2("Receive HEARTBEAT from node %d with timestamp %ld delay %ld", 
+						MTM_LOG4("Receive HEARTBEAT from node %d with timestamp %ld delay %ld", 
 								 node, msg->csn, USEC_TO_MSEC(MtmGetSystemTime() - msg->csn)); 
 						continue;
 					  case MSG_POLL_REQUEST:
