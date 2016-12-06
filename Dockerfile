@@ -1,6 +1,6 @@
 FROM alpine:3.4
 
-RUN apk add --update gcc libc-dev bison flex readline-dev zlib-dev perl make diffutils gdb iproute2
+RUN apk add --update gcc libc-dev bison flex readline-dev zlib-dev perl make diffutils gdb iproute2 musl-dbg
 
 # there is already accidental postgres user in alpine
 # RUN addgroup pg && adduser -h /pg -D -G pg pg
