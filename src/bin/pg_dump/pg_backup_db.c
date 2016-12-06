@@ -933,7 +933,6 @@ fillRelFileMapSeq(Archive *fout, int *nrels,
 	int			i_tablespace;
 	int			i_data_directory;
 	int 		i_tablespace_location;
-	int 		i_relpersistence;
 	const char *data_directory;
 	Oid			dboid;
 	int i;
@@ -991,7 +990,6 @@ fillRelFileMapSeq(Archive *fout, int *nrels,
 	i_relname = PQfnumber(res, "relname");
 	i_tablespace = PQfnumber(res, "reltablespace");
 	i_tablespace_location = PQfnumber(res, "pg_tablespace_location");
-	i_relpersistence = PQfnumber(res, "relpersistence");
 	map = pg_malloc(sizeof(RelFileMap) * ntups);
 
 	for (i = 0; i < ntups; i++)
@@ -1002,10 +1000,6 @@ fillRelFileMapSeq(Archive *fout, int *nrels,
 		cur->reloid = atooid(PQgetvalue(res, i, i_oid));
 		cur->relfilenode = atooid(PQgetvalue(res, i, i_relfilenode));
 		cur->relname = strdup(PQgetvalue(res, i, i_relname));
-
-		/* 'c' is for RELPERSISTENCE_CONSTANT. */
-// 		if (*PQgetvalue(res, i, i_relpersistence) != 'c')
-// 			exit_horribly(NULL, "Cannot transfer non-constant relation '%s' \n", cur->relname);
 
 		if (atoi(PQgetvalue(res, i, i_tablespace)) == 0)
 		{
@@ -1128,6 +1122,7 @@ fillRelFileMapToast(Archive *fout, RelFileMap *map,
 static int
 copy_file(const char *srcfile, const char *dstfile, bool create_file)
 {
+#ifndef WIN32
 #define COPY_BUF_SIZE (50 * BLCKSZ)
 
 	int			src_fd;
@@ -1204,7 +1199,40 @@ copy_file(const char *srcfile, const char *dstfile, bool create_file)
 		errno = save_errno;
 
 	return ret;
+#else	/* WIN32 */
+
+	/* Last argument of Windows CopyFile func is bFailIfExists.
+	 * If we're asked to create_file, it should not exist. Otherwise, we
+	 * want to rewrite it.
+	 */
+	if (CopyFile(src, dst, create_file) == 0)
+	{
+		_dosmaperr(GetLastError());
+		pg_fatal("error while copying relation \"%s.%s\" (\"%s\" to \"%s\"): %s\n",
+				 schemaName, relName, src, dst, strerror(errno));
+	}
+
+#endif	/* WIN32 */
 }
+
+#ifdef WIN32
+/* implementation of pg_link_file() on Windows */
+static int
+win32_pghardlink(const char *src, const char *dst)
+{
+	/*
+	 * CreateHardLinkA returns zero for failure
+	 * http://msdn.microsoft.com/en-us/library/aa363860(VS.85).aspx
+	 */
+	if (CreateHardLinkA(dst, src, NULL) == 0)
+	{
+		_dosmaperr(GetLastError());
+		return -1;
+	}
+	else
+		return 0;
+}
+#endif
 
 /*
  * Transfer relation fork, specified by type_suffix, to transfer subdir.
@@ -1306,12 +1334,11 @@ transfer_relfile(RelFileMap *map, const char *type_suffix,
 			}
 			else
 			{
-				if (link(db_file, transfer_file) != 0)
+				if (pg_link_file(db_file, transfer_file) != 0)
 				{
 					exit_horribly(NULL, "cannot dump file (link mode) %s to %s : %s \n",
 								db_file, transfer_file, strerror(errno));
 				}
-
 			}
 		}
 		else
@@ -1354,7 +1381,6 @@ transferCheckControlData(Archive *fout, const char *transfer_dir, bool isRestore
 	PQExpBuffer q = createPQExpBuffer();
 	PGresult   *res;
 	const char *serverInfo;
-	size_t serverInfoLen = 0;
 
 	appendPQExpBuffer(q, "SELECT pg_control_init();");
 	res = ExecuteSqlQueryForSingleRow(fout, q->data);

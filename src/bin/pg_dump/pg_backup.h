@@ -306,6 +306,12 @@ typedef struct RelFileMap
 	Oid 		reltoastrelid;
 } RelFileMap;
 
+#ifndef WIN32
+#define pg_link_file		link
+#else
+#define pg_link_file		win32_pghardlink
+#endif
+
 extern RelFileMap* fillRelFileMap(Archive* fout, int* nrels, int* ntoastrels,
 								  const char* dbname, const char* tblname);
 extern RelFileMap* fillRelFileMapSeq(Archive *fout, int *nrels,

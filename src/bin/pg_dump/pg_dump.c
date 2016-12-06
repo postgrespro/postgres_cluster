@@ -18092,7 +18092,6 @@ dumpStatistic(Archive* fout, DumpOptions* dopt, TableInfo *tbinfo)
 	int			nfields;
 	int			field;
 	int			i_starelid;
-	int			i_staattnum;
 
 	/* Make sure we are in proper schema */
 	selectSourceSchema(fout, "pg_catalog");
@@ -18148,7 +18147,6 @@ dumpStatistic(Archive* fout, DumpOptions* dopt, TableInfo *tbinfo)
 		nfields = PQnfields(res);
 
 		i_starelid = PQfnumber(res, "starelid");
-		i_staattnum = PQfnumber(res, "staattnum");
 
 		for (tuple = 0; tuple < PQntuples(res); tuple++)
 		{
