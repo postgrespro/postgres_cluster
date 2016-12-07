@@ -4,21 +4,20 @@ pgpro_scheduler allows to schedule jobs execution and control their activity
 in PostgreSQL database.
 
 The job is the set of SQL commands. Schedule table could be described as a
-crontab-like
-string or as an JSON object. It's possible to use combination of both methods 
-for scheduling settings.
+crontab-like string or as a JSON object. It's possible to use combination
+of both methods for scheduling settings.
 
 Each job could calculate its next start time. The set of SQL commands 
 could be executed in the same transaction or each command could be executed in
-individual transaction. It's possible to set SQL command to be executed on 
+individual one. It's possible to set SQL statement to be executed on 
 failure of main job transaction.
 
 ## Installation
 
-pgpro_scheduler is a regular PostgreSQL extension and require no prerequisites.
+pgpro_scheduler is a regular PostgreSQL extension and requires no prerequisites.
 
-Before build extension from source make sure that the evironment variable 
-PATH includes path to `pg_config` utility. Also make sure that you have 
+Before build extension from the source make sure that the environment variable 
+`PATH` includes path to `pg_config` utility. Also make sure that you have 
 developer version of PostgreSQL installed or PostgrteSQL was built from 
 source code.
 
@@ -27,7 +26,7 @@ Install extension as follows:
 	$ cd pgpro_scheduler
 	$ make USE_PGXS=1
 	$ sudo make USE_PGXS=1 install
-	$ psql <DBNAME> -c "CREATE EXTNESION pgpro_scheduler"
+	$ psql <DBNAME> -c "CREATE EXTENSION pgpro_scheduler"
 
 ## Configuration
 
@@ -42,21 +41,21 @@ help to handle scheduler configuration.
 *	**schedule.scheme** - text, the `scheme` name where scheduler store its
 	tables and functions. To change this value restart required. Normally
 	you should not change this variable but it could be useful if you 
-	want run scheduled jobs on hot-stanbdy database. So you can define 
+	want run scheduled jobs on hot-standby database. So you can define 
 	foreign data wrapper on master system to wrap default scheduler schema
 	to another and use it on replica. Default value: schedule.
 *	**schedule.nodename** - text, node name of this instance. 
 	Default value is `master`. You should not change or use it if you run
-	single server configuration. But it is neccessary to change this name 
+	single server configuration. But it is necessary to change this name 
 	if you run scheduler on hot-standby database.
 *	**schedule.max_workers** - integer, max number of simultaneously running
 	jobs for one database. Default value: 2.
 *	**schedule.transaction_state** - text, this is internal variable.
 	This variable contains state of executed job. This variable was designed 
-	to use with a next job start time calculationi procedure.
+	to use with a next job start time calculation procedure.
 	Possible values are:
-	*	**success** - transaction finished successfully 
-	*	**failure** - transaction failed to finish
+	*	**success** - transaction has finished successfully 
+	*	**failure** - transaction has failed to finish
 	*	**running** - transaction is in progress
 	*	**undefined** - transaction has not started yet
 
@@ -68,7 +67,7 @@ help to handle scheduler configuration.
 You could manage scheduler work by means of PostgreSQL variables described
 above.
 
-For example, you have a fresh PostgreSQL installation with sheduler extension
+For example, you have a fresh PostgreSQL installation with scheduler extension
 installed. You are going to use scheduler with databases called 'database1' and 
 'database2'. You want 'database1' be capable to run 5 jobs in parallel and
 'database2' - 3.
@@ -107,7 +106,7 @@ where:
 
 *	**N<sub>min</sub>** - the minimal acceptable amount of bgworkers in the
 	system. Consider the fact that other systems need to start background 
-	workers too. E.g. parallel queries. So you need to ajust the value to
+	workers too. E.g. parallel queries. So you need to adjust the value to
 	their  needs either.
 *	**N<sub>databases</sub>** - the number of databases scheduler works with
 *	**MAX_WORKERS<sub>n</sub>** - the value of `schedule.max_workers`
@@ -217,7 +216,7 @@ Creates job and sets it active.
 
 Arguments:
 
-* **date** - exect date of execution
+* **date** - exact date of execution
 * **sql** - SQL statement to execute
 * **node** - node name, optional
 
@@ -229,7 +228,7 @@ Creates job and sets it active.
 
 Arguments:
 
-* **date** - exect date of execution
+* **date** - exec date of execution
 * **sqls** - set of SQL statements to be executed
 * **node** - node name, optional
 
@@ -265,7 +264,7 @@ Creates job and sets it active.
 
 The only argument is a JSONB object with information about job. 
 
-The object coubl contains the following keys, some of them could be omitted:
+The object could contains the following keys, some of them could be omitted:
 
 *	**name** - job name;
 *	**node** - node name;
@@ -275,25 +274,25 @@ The object coubl contains the following keys, some of them could be omitted:
 *	**command** - SQL statement to be executed;
 *	**commands** - a set of SQL statements to be executed as an array;
 *	**run\_as** - user to execute command(s);
-*	**start\_date** -  begin of period while command could be executed,
+*	**start\_date** -  begin of period while command can be executed,
 	could be NULL;
-*	**end\_date** - end of period while command could be executed,
+*	**end\_date** - end of period while command can be executed,
 	could be NULL;
 *	**date** - exact date when command will be executed;
 *	**dates** - set of exact dates when command will be executed;
 *	**use\_same\_transaction** - if set of commands will be executed within
 	the same transaction. Default: false;
-*	**last\_start\_available** - for how long could command execution could be
+*	**last\_start\_available** - for how long command execution could be
 	postponed if maximum number of allowed workers reached at the scheduled 
 	moment. Time set in format of `interval`. E.g. '00:02:34' - it is 
-	possible to wait for 2 minutes 34 seconds. If time is NULL or not set will
-	wait forever. Default: NULL;
-*	**max\_run\_time** - for how long scheduled job could be executed. 
+	possible to wait for 2 minutes 34 seconds. If time is NULL or not set 
+	waits forever. Default: NULL;
+*	**max\_run\_time** - for how long scheduled job can be executed. 
 	Format: `interval`. If NULL or not set - there is no time limits.
 	Default: NULL;
 *	**onrollback** - SQL statement to be executed on ROLLBACK if main 
 	transaction failure. Default: not defined;
-*	**next\_time\_statement** - SQL statement to caclulate next start time.
+*	**next\_time\_statement** - SQL statement to calculate next start time.
 
 The rules of scheduling could be set as cron-like string (key `cron`) and 
 also as JSONB object (key `rule`).
@@ -311,21 +310,21 @@ This object contains the following keys:
 Also job could be scheduled on exact date or set of dates. Use keys `date` 
 and `dates` keys accordingly.
 
-All scheduling mwthods could be combined but the use at least one of them is
+All scheduling methods could be combined but the use of at least one of them is
 mandatory.
 
-Key `next_time_statement` should contains SQL statment to be executed 
-after the main transaction to calculate net start time. If key is defined 
+Key `next_time_statement` may contain SQL statement to be executed 
+after the main transaction to calculate next start time. If key is defined 
 the first start time will be calculated by methods described above but 
 successive start times will be derived from this statement. The statement 
 must return record with the first field containing value of type
 `timestamp with time zone`. If returning value be of the different type or
-statement exection produce an error the job will be marked as broken and further
+statement execution produce an error the job will be marked as broken and further
 execution will be prohibited. 
 
-This statment will be executed in spite of main transaction execution state.
+This statement will be executed in spite of main transaction execution state.
 It's possible to get state of main transaction form postgres variable
-schedule.transaction_state`.
+`schedule.transaction_state`.
 
 The possible values are:
 
@@ -338,11 +337,11 @@ The last two values should not appear as a value of the key
 `next_time_statement` within user procedure.
 
 SQL statement to be executed could be set in `command` or `commands` key.
-The first one set the single statement, the second the set of statements.
+The first one sets the single statement, the second - the set of statements.
 In fact the first key could contains the set of commands in one string 
 divided by semicolon. In this case they all be executed in single transaction
 in spite of the value `use_same_transaction`. So for set of the statements 
-is better to use key `commands` key as you get more controll on execution.
+is better to use key `commands` key as you get more control on execution.
 
 Returns id of created job.
 
@@ -375,7 +374,7 @@ Arguments:
 *	**value** - property value
 
 The full list of the properties could be found in `schedule.create_job` 
-function description. Some values are of array types. This **value** could 
+function description. Some values are of array types. Their **value** could 
 be passed as an array, but if the value could not be an array the exception
 will be raised.
 
@@ -416,7 +415,7 @@ Returns true on success, false on failure.
 
 ### schedule.get_job(job_id integer)
 
-Retrieves information about the job
+Retrieves information about the job.
 
 Arguments:
 
@@ -434,12 +433,12 @@ Arguments:
 *	**username** - user name, optional
 
 Returns the set of records of type `cron_rec`. Records contain information
-about jobs owned by user. If user name is not specified session user is 
+about jobs owned by user. If user name is omitted the session user name is 
 used.
 
-Retrive jobs owned by another user is allowed only to superuser.
+Retrieve jobs owned by another user is allowed only to superuser.
 
-Type `cron_rec` description can be found in  **SQL type** section.
+`cron_rec` type description can be found in  **SQL type** section.
 
 ### schedule.get_user_cron(username text)
 
@@ -453,7 +452,7 @@ Returns the set of records of type `cron_rec`. Records contain information
 about jobs executed as user. If user name is not specified session user is 
 used.
 
-Retrive jobs executed as another user is allowed only to superuser.
+Retrieve jobs executed as another user is allowed only to superuser.
 
 Type `cron_rec` description can be found in  **SQL type** section.
 
@@ -465,47 +464,46 @@ Arguments:
 
 *	**username** - user name, optional
 
-If user name not specified the session user name used. To list jobs executed 
+If user name is omitted the session user name used. To list jobs executed 
 as another user allowed only to superuser.
 
 Return value is set of records of type `cron_job`.
-See type description in **SQL types** section.
+See the type description in **SQL types** section.
 
 ### schedule.get_active_jobs()
 
-Функция возвращает список всех задач, которые исполняются в данный момент.
-Может быть выполнена только пользователем с правами суперпользователя.
+Returns list of jobs being executed at that very moment.
+The function call allowed only to superuser.
 
-Задачи возвращаются в виде набора записей типа `cron_job`. Описание типа вы
-можете найти в разделе **SQL типы**.
+Return value is set of records of type `cron_job`.
+See the type description in **SQL types** section.
 
 ### schedule.get_log()
 
-Функция возвращает список всех выполненых задач.
-Может быть выполнена только пользователем с правами суперпользователя.
+Returns list of all completed jobs. 
+The function call allowed only to superuser.
 
-Задачи возвращаются в виде набора записей типа `cron_job`. Описание типа вы
-можете найти в разделе **SQL типы**.
+Return value is set of records of type `cron_job`.
+See the type description in **SQL types** section.
 
 ### schedule.get_user_log(username text) 
 
-Функция возвращает список всех выполненых задач, которые выполнялись с правами
-пользователя, переданного в аргументах.
+Returns list of completed jobs executed as user passed in arguments.
 
 Arguments:
 
-*	**username** - имя пользователя, опционально 
+*	**username** - user name, optional
 
-Если не указано имя пользователя, то используется имя пользователя сессии.
-Чужие задачи может просматривать только суперпользователь.
+If username is omitted the session user name used.
+Jobs executed as another users are accessible only to superuser.
 
-Задачи возвращаются в виде набора записей типа `cron_job`. Описание типа вы
-можете найти в разделе **SQL типы**.
+Return value is set of records of type `cron_job`.
+See the type description in **SQL types** section.
 
 ### schedule.clean_log()
 
-Удаляет все записи о выполненных задачах. Может быть выполнена только с правами
-суперпользователя.
+Delete all records with information about completed jobs.
+Can be called by superuser only.
 
-Возвращает количество удаленных записей
+Returns the number of records deleted.
 
