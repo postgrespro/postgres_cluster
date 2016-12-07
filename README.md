@@ -158,7 +158,7 @@ This type describes information about the job to be scheduled.
 								-- that prevent it's further execution
 	);
 
-###cron_job
+### cron_job
 
 Type describes information about job scheduled execution
 
