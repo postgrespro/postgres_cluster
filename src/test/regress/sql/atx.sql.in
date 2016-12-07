@@ -1,18 +1,16 @@
 --- plain ---
+
 create table atx_test(a int);
 insert into atx_test values (1);
+
 begin;
 	update atx_test set a = 2;
 	begin autonomous;
 		update atx_test set a = 3;
-ERROR:  an ATX waiting for an ancestor transaction will cause a deadlock
 	commit;
 commit;
+
 select * from atx_test; -- you should see (2)
- a 
----
- 2
-(1 row)
 
 delete from atx_test;
 begin;
@@ -36,26 +34,19 @@ begin;
 		rollback;
 	commit;
 rollback;
+
 select * from atx_test; -- you should see (2),(4),(6)
- a 
----
- 2
- 4
- 6
-(3 rows)
 
 begin transaction isolation level repeatable read;
 	begin autonomous transaction isolation level repeatable read;
 		select 1;
- ?column? 
-----------
-        1
-(1 row)
-
 	commit;
 commit;
+
 --- plpgsql ---
+
 create or replace language plpgsql;
+
 create or replace function myatx(x int) returns integer as $$
 begin autonomous
 	insert into atx_test values (123);
@@ -70,19 +61,13 @@ begin autonomous
 	return x + 1;
 end;
 $$ language plpgsql;
+
 select myatx(2000);
-ERROR:  hello world
-CONTEXT:  PL/pgSQL function myatx(integer) line 9 at RAISE
+
 select * from atx_test; -- you should see (124)
-  a  
------
-   2
-   4
-   6
- 124
-(4 rows)
 
 --- audit ---
+
 create table atx_actions (
 	tid serial,
 	table_name text,
@@ -93,6 +78,7 @@ create table atx_actions (
 	new_data text,
 	query text
 );
+
 create or replace function if_modified_func() returns trigger as $body$
 declare
 	v_old_data text;
@@ -135,11 +121,14 @@ begin
 	end if;
 end;
 $body$ language plpgsql;
+
 drop table atx_test;
 create table atx_test(a text, b text);
+
 create trigger atx_test_audit
 after insert or update or delete on atx_test 
 for each row execute procedure if_modified_func();
+
 insert into atx_test values ('asd', 'bsd');
 insert into atx_test values ('hello', 'world');
 begin;
@@ -147,26 +136,17 @@ begin;
 	update atx_test set a = 'goodbye' where a = 'hello';
 	-- atx_actions will keep the actions we performed even though we roll them back
 rollback;
-select * from atx_test;
-   a   |   b   
--------+-------
- asd   | bsd
- hello | world
-(2 rows)
 
+select * from atx_test;
 select tid, table_name, action, old_data, new_data, query from atx_actions;
- tid | table_name | action |   old_data    |    new_data     |                        query                         
------+------------+--------+---------------+-----------------+------------------------------------------------------
-   1 | atx_test   | INSERT |               | (asd,bsd)       | insert into atx_test values ('asd', 'bsd');
-   2 | atx_test   | INSERT |               | (hello,world)   | insert into atx_test values ('hello', 'world');
-   3 | atx_test   | DELETE | (asd,bsd)     |                 | delete from atx_test where a = 'asd';
-   4 | atx_test   | UPDATE | (hello,world) | (goodbye,world) | update atx_test set a = 'goodbye' where a = 'hello';
-(4 rows)
 
 --- plpythonu ---
-create extension if not exists plpythonu;
+
+create extension if not exists plpython@python_majorversion@u;
+
 drop table atx_test;
 create table atx_test(a text, b int);
+
 create or replace function pythonomous() returns void as $$
 	plpy.execute("insert into atx_test values ('asd', 123)")
 
@@ -177,21 +157,10 @@ create or replace function pythonomous() returns void as $$
 		print("error: %s" % e.args)
 
 	plpy.execute("insert into atx_test values ('csd', 'csd')")
-$$ language plpythonu;
+$$ language plpython@python_majorversion@u;
+
 select pythonomous();
-ERROR:  spiexceptions.InvalidTextRepresentation: invalid input syntax for integer: "csd"
-LINE 1: insert into atx_test values ('csd', 'csd')
-                                            ^
-QUERY:  insert into atx_test values ('csd', 'csd')
-CONTEXT:  Traceback (most recent call last):
-  PL/Python function "pythonomous", line 10, in <module>
-    plpy.execute("insert into atx_test values ('csd', 'csd')")
-PL/Python function "pythonomous"
 select * from atx_test; -- you should see (bsd, 456)
-  a  |  b  
------+-----
- bsd | 456
-(1 row)
 
 drop table atx_test;
 drop table atx_actions;
