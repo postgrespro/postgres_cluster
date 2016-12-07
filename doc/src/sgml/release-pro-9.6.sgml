@@ -4,7 +4,7 @@
   <title>Postgres Pro 9.6.1.2</title>
   <note>
     <title>Release Date</title>
-    <simpara>2016-12-__</simpara>
+    <simpara>2016-12-09</simpara>
   </note>
   <sect2>
     <title>Overview</title>
@@ -12,6 +12,7 @@
       9.6.1.1 and upstream PostgreSQL patches.</para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
       9.6.1.1 include:</para>
+
     <para>Several modules to support 1C Enterprise added:</para>
     <itemizedlist>
       <listitem>
@@ -30,6 +31,7 @@
         <para><application>plantuner</application> (See <xref linkend="plantuner">)</para>
       </listitem>
     </itemizedlist>
+
     <para>Also, following core changes were added to support 1C:</para>
     <itemizedlist>
      <listitem>
@@ -39,6 +41,16 @@
      <para>Optimization of range conditions in the WHERE clause</para>
      </listitem>
     </itemizedlist>
+
+    <para>Modules has been updated</para>
+    <itemizedlist>
+      <listitem><para><application>pg_pathman</application> to version 1.2.2 (See <xref linkend="pg-pathman">)</para></listitem>
+    </itemizedlist>
+    
+    <para>
+      Backup manager <application>pg_arman</application> has been replaced
+      to <application>pg_probackup</application> (Version 1.0).
+    </para>
   </sect2>
   <sect2>
     <title>Migration to Version 9.6.1.2</title>
@@ -135,16 +147,14 @@
     </itemizedlist>
     <para>Modules has been ported from Postgres Pro 9.5</para>
     <itemizedlist>
-      <listitem>
-        <para><application>hunspell-dict</application> (See <xref linkend="hunspell-dict">)</para>
-        <para><application>jsquery</application> (See <xref linkend="jsquery">)</para>
-        <para><application>pg_variables</application> (See <xref linkend="pg-variables">)</para>
-        <para><application>pg_pathman</application> (See <xref linkend="pg-pathman">)</para>
-        <para><application>pg_query_state</application> (See <xref linkend="pg-query-state">)</para>
-        <para><application>shared-ispell</application> (See <xref linkend="shared-ispell">)</para>
-        <para><application>sr_plan</application> (See <xref linkend="sr-plan">)</para>
-        <para><application>dump_stat</application> (See <xref linkend="dump-stat">)</para>
-      </listitem>
+      <listitem><para><application>hunspell-dict</application> (See <xref linkend="hunspell-dict">)</para></listitem>
+      <listitem><para><application>jsquery</application> (See <xref linkend="jsquery">)</para></listitem>
+      <listitem><para><application>pg_variables</application> (See <xref linkend="pg-variables">)</para></listitem>
+      <listitem><para><application>pg_pathman</application> (See <xref linkend="pg-pathman">)</para></listitem>
+      <listitem><para><application>pg_query_state</application> (See <xref linkend="pg-query-state">)</para></listitem>
+      <listitem><para><application>shared-ispell</application> (See <xref linkend="shared-ispell">)</para></listitem>
+      <listitem><para><application>sr_plan</application> (See <xref linkend="sr-plan">)</para></listitem>
+      <listitem><para><application>dump_stat</application> (See <xref linkend="dump-stat">)</para></listitem>
     </itemizedlist>
     <para>Tools has been ported from Postgres Pro 9.5</para>
     <itemizedlist>
