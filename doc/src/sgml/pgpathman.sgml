@@ -140,7 +140,6 @@ CREATE EXTENSION pg_pathman;
 create_hash_partitions(relation         REGCLASS,
                        attribute        TEXT,
                        partitions_count INTEGER,
-                       partition_name   TEXT DEFAULT NULL,
                        partition_data   BOOLEAN DEFAULT TRUE)
 </programlisting>
       <para>
@@ -154,8 +153,8 @@ create_hash_partitions(relation         REGCLASS,
         to finish and the table will be locked until transaction
         commits. See <literal>partition_table_concurrently()</literal>
         for a lock-free way to migrate data. Partition creation callback
-        is invoked for each partition if set beforehand (see
-        <literal>set_part_init_callback()</literal>).
+        is invoked for each partition if set beforehand
+        (see <literal>set_init_callback()</literal>).
       </para>
       <programlisting>
 create_range_partitions(relation       REGCLASS,
@@ -243,6 +242,17 @@ create_range_update_trigger(parent REGCLASS)
     </sect3>
     <sect3 id="post-creation-partition-management">
       <title>Post-creation partition management</title>
+      <programlisting>      
+replace_hash_partition(old_partition       REGCLASS,
+                       new_partition       REGCLASS,
+                       lock_parent         BOOL DEFAULT TRUE)
+      </programlisting>
+      <para>
+        Replaces specified partition of HASH-partitioned table with another table.
+        The <literal>lock_parent</literal> parameter will prevent any INSERT/UPDATE/ALTER TABLE
+        queries to parent table.
+      </para>
+
       <programlisting>
 split_range_partition(partition      REGCLASS,
                       value          ANYELEMENT,
@@ -390,7 +400,15 @@ set_init_callback(relation REGCLASS, callback REGPROC DEFAULT 0)
     &quot;parttype&quot;:  &quot;1&quot;,
     &quot;partition&quot;: &quot;abc_0&quot;
 }
-</programlisting>
+      </programlisting>
+      <programlisting>
+set_set_spawn_using_bgw(relation REGCLASS, value BOOLEAN)
+      </programlisting>
+      <para>
+        When INSERTing new data beyond the partitioning range,
+        use SpawnPartitionsWorker to create new partitions in a
+        separate transaction.
+      </para>
     </sect3>
   </sect2>
   <sect2 id="views-and-tables">
@@ -403,9 +421,7 @@ CREATE TABLE IF NOT EXISTS pathman_config (
     partrel         REGCLASS NOT NULL PRIMARY KEY,
     attname         TEXT NOT NULL,
     parttype        INTEGER NOT NULL,
-    range_interval  TEXT,
-
-    CHECK (parttype IN (1, 2)) /* check for allowed part types */ );
+    range_interval  TEXT);
 </programlisting>
       <para>
         This table stores a list of partitioned tables.
@@ -419,7 +435,8 @@ CREATE TABLE IF NOT EXISTS pathman_config_params (
     partrel        REGCLASS NOT NULL PRIMARY KEY,
     enable_parent  BOOLEAN NOT NULL DEFAULT TRUE,
     auto           BOOLEAN NOT NULL DEFAULT TRUE,
-    init_callback  REGPROCEDURE NOT NULL DEFAULT 0);
+    init_callback  REGPROCEDURE NOT NULL DEFAULT 0,
+    spawn_using_bgw BOOLEAN NOT NULL DEFAULT FALSE);
 </programlisting>
       <para>
         This table stores optional parameters which override standard
