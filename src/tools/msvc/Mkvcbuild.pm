@@ -514,9 +514,6 @@ sub mkvcbuild
 		  if (!(defined($pyprefix) && defined($pyver)));
 
 		my $pymajorver = substr($pyver, 0, 1);
-		ProcessTestSubstitutions("python_majorversion",$pymajorver,
-			"src/test/regress/sql/atx.sql",
-			"src/test/regress/expected/atx.out");
 		my $plpython = $solution->AddProject('plpython' . $pymajorver,
 			'dll', 'PLs', 'src/pl/plpython');
 		$plpython->AddIncludeDir($pyprefix . '/include');
@@ -985,21 +982,5 @@ sub AdjustModule
 		}
 	}
 }
-
-sub ProcessTestSubstitutions {
-	my $varname = shift;
-	my $varvalue = shift;
-	for my $file (@_) {
-		open IN,"<","${file}.in" or die "${file}.in not found";
-		open OUT,">",$file;
-		while (<IN>) {
-			s/\@$varname\@/$varvalue/g;
-			print OUT $_;
-		}
-		close IN;
-		close OUT;
-	}
-}
-
 
 1;
