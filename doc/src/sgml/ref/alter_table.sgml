@@ -69,6 +69,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     SET WITHOUT OIDS
     SET TABLESPACE <replaceable class="PARAMETER">new_tablespace</replaceable>
     SET { LOGGED | UNLOGGED }
+    SET CONSTANT
     SET ( <replaceable class="PARAMETER">storage_parameter</replaceable> = <replaceable class="PARAMETER">value</replaceable> [, ... ] )
     RESET ( <replaceable class="PARAMETER">storage_parameter</replaceable> [, ... ] )
     INHERIT <replaceable class="PARAMETER">parent_table</replaceable>
@@ -541,6 +542,18 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
       This form changes the table from unlogged to logged or vice-versa
       (see <xref linkend="SQL-CREATETABLE-UNLOGGED">).  It cannot be applied
       to a temporary table.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET CONSTANT</literal></term>
+    <listitem>
+     <para>
+      This form changes the table into read-only mode. No data can be modified
+      or added to constant tables, and they are not processed by
+      <link linkend="autovacuum">autovacuum</link>. Constant tables cannot be
+      changed back to read-write mode.
      </para>
     </listitem>
    </varlistentry>

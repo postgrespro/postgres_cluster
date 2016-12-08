@@ -21,7 +21,7 @@ doc/src/sgml/ref/create_table.sgml
 
  <refsynopsisdiv>
 <synopsis>
-CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXISTS ] <replaceable class="PARAMETER">table_name</replaceable> ( [
+CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED | CONSTANT ] TABLE [ IF NOT EXISTS ] <replaceable class="PARAMETER">table_name</replaceable> ( [
   { <replaceable class="PARAMETER">column_name</replaceable> <replaceable class="PARAMETER">data_type</replaceable> [ COLLATE <replaceable>collation</replaceable> ] [ <replaceable class="PARAMETER">column_constraint</replaceable> [ ... ] ]
     | <replaceable>table_constraint</replaceable>
     | LIKE <replaceable>source_table</replaceable> [ <replaceable>like_option</replaceable> ... ] }
@@ -32,7 +32,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
 [ ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP } ]
 [ TABLESPACE <replaceable class="PARAMETER">tablespace_name</replaceable> ]
 
-CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXISTS ] <replaceable class="PARAMETER">table_name</replaceable>
+CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED | CONSTANT ] TABLE [ IF NOT EXISTS ] <replaceable class="PARAMETER">table_name</replaceable>
     OF <replaceable class="PARAMETER">type_name</replaceable> [ (
   { <replaceable class="PARAMETER">column_name</replaceable> WITH OPTIONS [ <replaceable class="PARAMETER">column_constraint</replaceable> [ ... ] ]
     | <replaceable>table_constraint</replaceable> }
@@ -183,6 +183,20 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
       of an unlogged table are also not replicated to standby servers.
       Any indexes created on an unlogged table are automatically unlogged as
       well.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="SQL-CREATETABLE-CONSTANT">
+    <term><literal>CONSTANT</></term>
+    <listitem>
+     <para>
+      If specified, the table is created as read-only. No data can be modified
+      or added to constant tables, and they are not processed by
+      <link linkend="autovacuum">autovacuum</link>. Constant tables cannot be
+      changed to read-write mode, so there is no much sense to create them as
+      constant; use <xref linkend="sql-createtableas"> or
+      <xref linkend="sql-altertable"> instead.
      </para>
     </listitem>
    </varlistentry>

@@ -24,7 +24,7 @@ doc/src/sgml/ref/select_into.sgml
 [ WITH [ RECURSIVE ] <replaceable class="parameter">with_query</replaceable> [, ...] ]
 SELECT [ ALL | DISTINCT [ ON ( <replaceable class="parameter">expression</replaceable> [, ...] ) ] ]
     * | <replaceable class="parameter">expression</replaceable> [ [ AS ] <replaceable class="parameter">output_name</replaceable> ] [, ...]
-    INTO [ TEMPORARY | TEMP | UNLOGGED ] [ TABLE ] <replaceable class="parameter">new_table</replaceable>
+    INTO [ TEMPORARY | TEMP | UNLOGGED | CONSTANT ] [ TABLE ] <replaceable class="parameter">new_table</replaceable>
     [ FROM <replaceable class="parameter">from_item</replaceable> [, ...] ]
     [ WHERE <replaceable class="parameter">condition</replaceable> ]
     [ GROUP BY <replaceable class="parameter">expression</replaceable> [, ...] ]
@@ -74,6 +74,16 @@ SELECT [ ALL | DISTINCT [ ON ( <replaceable class="parameter">expression</replac
     </para>
    </listitem>
   </varlistentry>
+
+  <varlistentry>
+    <term><literal>CONSTANT</></term>
+    <listitem>
+     <para>
+      If specified, the table is created as read-only. Refer to
+      <xref linkend="sql-createtable"> for details.
+     </para>
+    </listitem>
+   </varlistentry>
 
    <varlistentry>
     <term><replaceable class="PARAMETER">new_table</replaceable></term>

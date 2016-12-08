@@ -1205,12 +1205,12 @@ copy_file(const char *srcfile, const char *dstfile, bool create_file)
 	 * If we're asked to create_file, it should not exist. Otherwise, we
 	 * want to rewrite it.
 	 */
-	if (CopyFile(src, dst, create_file) == 0)
+	if (CopyFile(srcfile, dstfile, create_file) == 0)
 	{
 		_dosmaperr(GetLastError());
-		pg_fatal("error while copying relation \"%s.%s\" (\"%s\" to \"%s\"): %s\n",
-				 schemaName, relName, src, dst, strerror(errno));
+		return -1;
 	}
+	return 0;
 
 #endif	/* WIN32 */
 }

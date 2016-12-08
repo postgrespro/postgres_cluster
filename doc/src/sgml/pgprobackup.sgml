@@ -1,0 +1,1186 @@
+<!--
+doc/src/sgml/pgprobackup.sgml
+&productname; documentation
+-->
+
+<refentry id="app-pgprobackup">
+ <indexterm zone="app-pgprobackup">
+  <primary>pg_probackup</primary>
+ </indexterm>
+
+ <refmeta>
+  <refentrytitle>pg_probackup</refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Application</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_probackup</refname>
+  <refpurpose>manage backup and recovery of a <productname>&productname;</productname> cluster</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg rep="repeat"><replaceable>option</replaceable></arg>
+   <arg>init</arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg rep="repeat"><replaceable>option</replaceable></arg>
+   <arg>backup</arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg rep="repeat"><replaceable>option</replaceable></arg>
+   <arg>restore</arg>
+   <arg choice="opt"><replaceable>backup_id</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg rep="repeat"><replaceable>option</replaceable></arg>
+   <arg>validate</arg>
+   <arg choice="req"><replaceable>backup_id</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg rep="repeat"><replaceable>option</replaceable></arg>
+   <arg>show</arg>
+   <arg choice="opt"><replaceable>backup_id</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg rep="repeat"><replaceable>option</replaceable></arg>
+   <arg>delete</arg>
+   <arg choice="req"><replaceable>backup_id</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg rep="repeat"><replaceable>option</replaceable></arg>
+   <arg>delwal</arg>
+   <arg choice="opt"><replaceable>backup_id</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>
+   Description
+  </title>
+  <para>
+   <application>pg_basebackup</application> is an utility to manage backup and
+   recovery of a <productname>&productname;</productname> database clusters.
+   It works with server version 9.5 or later.
+  </para>
+
+  <para>
+   The utility makes a binary copy of database cluster files, almost like
+   <application>pg_basebackup</application> does.
+   However <application>pg_probackup</application> provides additional features,
+   required for implementing different backup strategies and
+   dealing with large amount of data:
+   <itemizedlist>
+    <listitem>
+     <para>
+       Single backup catalog for managing backups, including multi-server
+       replication configurations.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+       Support for parallel backup and restore.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+       Support for page-level incremental backups.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+       Consistency checks for database cluster files and backups.
+     </para>
+    </listitem>
+   </itemizedlist>
+  </para>
+
+  <para>
+    <application>pg_probackup</application> understands the structure of
+    database cluster files and works on page level to store only
+    meaningful parts of data pages in backups, and also to check
+    data consistency when checksums are enabled.
+    Backups are also checked for correctness to detect possible disk failures.
+  </para>
+
+  <para>
+    Backups along with additional meta information are created in a special
+    backup directory. Continuous archiving should be directed to that
+    directory too. Backup directory must be accessible in the file system
+    of database server; owner of <productname>&productname;</productname> process
+    must have full access to contents of this directory.
+    Usual practice is to place backup directory on a separate server,
+    in which case some network file system should be used.
+  </para>
+
+  <para>
+    The same backup directory can be used simultaneously by
+    several <productname>&productname;</productname> servers with replication
+    configured between them. Backups can be made from either primary or
+    standby server, and managed in a single backup strategy.
+  </para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Options</title>
+
+   <para>
+     Options for <application>pg_probackup</application> utility can be
+     specified in command line (such options are shown below starting from
+     either one or two minus signs).
+     If not given in command line, values for some options are derived
+     from environment variables (names of environment variables are in uppercase).
+     Otherwise values for some options are taken from
+     <filename>pg_probackup.conf</filename> configuration file, located in
+     the backup directory (such option names are in lowercase).
+   </para>
+
+   <refsect2>
+    <title>Common Options</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><option>-B <replaceable class="parameter">directory</replaceable></option></term>
+      <term><option>--backup-path=<replaceable class="parameter">directory</replaceable></option></term>
+      <listitem>
+       <para>
+         Absolute path to the backup directory. In this directory backups and WAL archive are stored.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-D <replaceable class="parameter">directory</replaceable></option></term>
+      <term><option>--pgdata=<replaceable class="parameter">directory</replaceable></option></term>
+      <term><envar>PGDATA</envar></term>
+      <term><varname>pgdata</varname></term>
+      <listitem>
+       <para>
+         Absolute path to database cluster's data directory.
+       </para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-j <replaceable class="parameter">num_threads</replaceable></option></term>
+      <term><option>--threads=<replaceable class="parameter">num_threads</replaceable></option></term>
+      <listitem>
+       <para>
+         Number of parallel threads for backup, recovery, and backup validation.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--progress</option></term>
+      <listitem>
+       <para>
+         Shows progress of operations.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-q</option></term>
+      <term><option>--quiet</option></term>
+      <listitem>
+       <para>
+         Do not display any messages.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-v</option></term>
+      <term><option>--verbose</option></term>
+      <listitem>
+       <para>
+         Print detailed information during processing.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-V</option></term>
+      <term><option>--version</option></term>
+      <listitem>
+       <para>
+         Print the <application>pg_probackup</application> version and exit.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </refsect2>
+
+   <refsect2>
+    <title>Backup Options</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><option>-b <replaceable class="parameter">mode</replaceable></option></term>
+      <term><option>--backup-mode=<replaceable class="parameter">mode</replaceable></option></term>
+      <term><envar>BACKUP_MODE</envar></term>
+      <term><varname>backup_mode</varname></term>
+      <listitem>
+       <para>
+         Backup mode. Supported modes are: <literal>FULL</literal> (full backup),
+         <literal>PAGE</literal> (incremental backup, tracking changes by scanning WAL files),
+         <literal>PTRACK</literal> (incremental backup, tracking changes on-the-fly).
+         The last mode is not supported with vanilla <productname>PostgreSQL</productname> server.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--stream</option></term>
+      <listitem>
+       <para>
+         Makes an autonomous backup that includes all necessary WAL files,
+         by streaming them from database server via replication protocol.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S <replaceable class="parameter">slot_name</replaceable></option></term>
+      <term><option>--slot=<replaceable class="parameter">slot_name</replaceable></option></term>
+      <listitem>
+       <para>
+         This option causes the WAL streaming to use the specified replication slot,
+         and is used together with <option>--stream</option>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-C</option></term>
+      <term><option>--smooth-checkpoint</option></term>
+      <term><envar>SMOOTH_CHECKPOINT</envar></term>
+      <term><varname>smooth_checkpoint</varname></term>
+      <listitem>
+       <para>
+         Causes checkpoint to be spread out over a period of time
+         (default is to complete checkpoint as soon as possible).
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--backup-pg-log</option></term>
+      <listitem>
+       <para>
+         Includes <filename>pg_log</filename> directory
+         (where the log messages are stored usually)
+         in the backup. By default this directory is excluded.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </refsect2>
+
+   <refsect2>
+    <title>Restore Options</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><option>--time=<replaceable class="parameter">time</replaceable></option></term>
+      <listitem>
+       <para>
+         Specifies the timestamp up to which recovery will proceed.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--xid=<replaceable class="parameter">xid</replaceable></option></term>
+      <listitem>
+       <para>
+         Specifies the transaction ID up to which recovery will proceed.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--inclusive=<replaceable class="parameter">boolean</replaceable></option></term>
+      <listitem>
+       <para>
+         Specifies whether to stop just after the specified recovery target (<literal>true</literal>),
+         or just before the recovery target (<literal>false</literal>).
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--timeline=<replaceable class="parameter">timeline</replaceable></option></term>
+      <listitem>
+       <para>
+         Specifies recovering into a particular timeline.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </refsect2>
+
+   <refsect2>
+    <title>Delete Options</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><option>--wal</option></term>
+      <listitem>
+       <para>
+         Delete WAL files that are no longer necessary to restore from any of existing backups.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </refsect2>
+
+   <refsect2>
+    <title>Connection parameters</title>
+
+    <para>
+     <application>pg_probackup</application> also accepts
+     the following command-line arguments for connection parameters:
+    </para>
+
+    <variablelist>
+     <varlistentry>
+      <term><option>-d <replaceable class="parameter">dbname</replaceable></></term>
+      <term><option>--dbname=<replaceable class="parameter">dbname</replaceable></></term>
+      <term><envar>PGDATABASE</envar></term>
+      <listitem>
+      <para>
+       Specifies the name of the existing database to connect to (any one will do).
+      </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">host</replaceable></></term>
+      <term><option>--host=<replaceable class="parameter">host</replaceable></></term>
+      <listitem>
+       <para>
+        Specifies the host name of the machine on which the server is
+        running.  If the value begins with a slash, it is used as the
+        directory for the Unix domain socket.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">port</replaceable></></term>
+      <term><option>--port=<replaceable class="parameter">port</replaceable></></term>
+      <listitem>
+       <para>
+        Specifies the TCP port or local Unix domain socket file
+        extension on which the server
+        is listening for connections.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable class="parameter">username</replaceable></></term>
+      <term><option>--username=<replaceable class="parameter">username</replaceable></></term>
+      <listitem>
+       <para>
+        User name to connect as.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</></term>
+      <term><option>--no-password</></term>
+      <listitem>
+       <para>
+        Never issue a password prompt.  If the server requires
+        password authentication and a password is not available by
+        other means such as a <filename>.pgpass</filename> file, the
+        connection attempt will fail.  This option can be useful in
+        batch jobs and scripts where no user is present to enter a
+        password.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</></term>
+      <term><option>--password</></term>
+      <listitem>
+       <para>
+        Force <application>pg_probackup</application> to prompt for a
+        password before connecting to a database.
+       </para>
+
+       <para>
+        This option is never essential, since
+        <application>pg_probackup</application> will automatically prompt
+        for a password if the server demands password authentication.
+        However, <application>pg_probackup</application> will waste a
+        connection attempt finding out that the server wants a password.
+        In some cases it is worth typing <option>-W</> to avoid the extra
+        connection attempt.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+    </refsect2>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Exit Status</title>
+
+  <para>
+   On success <application>pg_probackup</application> returns <literal>0</literal> to the shell.
+   Other status codes indicate an error: <literal>1</literal> &mdash; generic error,
+   <literal>2</literal> &mdash; repeated error, and
+   <literal>3</literal> &mdash; unexpected error.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Usage</title>
+
+  <refsect2>
+   <title>Initial Setup</title>
+
+   <para>
+     In any usage scenario, first of all <productname>&productname;</productname> server
+     should be configured and backup catalog should be initialized.
+   </para>
+
+   <para>
+     <application>pg_probackup</application> initial setup, as well as further work
+     with the utility, is performed by <productname>&productname;</productname> process owner
+     (usually <literal>postgres</literal>).
+   </para>
+
+   <para>
+     A connection to database server is required for <application>pg_probackup</application>
+     to take backups. Database user, which <application>pg_probackup</application> is connected as,
+     must have sufficient privileges to execute some administrative functions.
+     The user must also have <literal>REPLICATION</literal> attribute in order
+     to make autonomous backups.
+     <application>pg_probackup</application> can be connected as a superuser,
+     but it is advisable to create a separate user with the following
+     minimum required privileges:
+
+     <programlisting>
+CREATE ROLE backup WITH LOGIN REPLICATION;
+GRANT USAGE ON SCHEMA pg_catalog TO backup;
+GRANT EXECUTE ON FUNCTION current_setting(text) TO backup;
+GRANT EXECUTE ON FUNCTION pg_is_in_recovery() TO backup;
+GRANT EXECUTE ON FUNCTION pg_start_backup(text, boolean, boolean) TO backup;
+GRANT EXECUTE ON FUNCTION pg_stop_backup() TO backup;
+GRANT EXECUTE ON FUNCTION pg_stop_backup(boolean) TO backup;
+GRANT EXECUTE ON FUNCTION pg_switch_xlog() TO backup;
+GRANT EXECUTE ON FUNCTION txid_current() TO backup;
+GRANT EXECUTE ON FUNCTION txid_current_snapshot() TO backup;
+GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;
+     </programlisting>
+   </para>
+
+   <para>
+     When using <productname>Postgres Pro</productname> server,
+     additional privileges are required for taking incremental backups:
+     <programlisting>
+GRANT EXECUTE ON FUNCTION pg_ptrack_clear() TO backup;
+GRANT EXECUTE ON FUNCTION pg_ptrack_get_and_clear(oid, oid) TO backup;
+     </programlisting>
+   </para>
+
+   <para>
+     <productname>&productname;</productname> server configuration must accept
+     connections for the user in <filename>pg_hba.conf</filename>.
+     For autonomous backups, replication connections must also be accepted,
+     and <xref linkend="guc-max-wal-senders"> value should be high enough
+     to allow <application>pg_probackup</application> to connect for
+     streaming WAL files during backup.
+   </para>
+
+   <para>
+     The <xref linkend="guc-wal-level"> parameter must be <literal>replica</literal> of higher
+     (<literal>archive</literal> for versions below 9.5).
+   </para>
+
+   <para>
+     To initialize backup directory, execute the following command:
+     <programlisting>
+pg_probackup init -B <replaceable class="parameter">backup_directory</replaceable>
+     </programlisting>
+   </para>
+
+   <para>
+     The <option>-B</option> option specifies the directory where backups and
+     meta information will be stored.
+     As this option is required for all <application>pg_probackup</application> commands,
+     it makes sense to specify once it in the <envar>BACKUP_PATH</envar> environmental variable.
+   </para>
+
+   <para>
+     The <option>-D</option> option specifies the database cluster's data directory.
+     It is handy to put it in <envar>PGDATA</envar> environmental variable to
+     not specify it every time in command line. In the subsequent examples
+     these options are omitted.
+   </para>
+
+   <para>
+     The utility creates the specified directory and all the necessary files
+     and subdirectories in it:
+
+    <itemizedlist>
+     <listitem>
+      <para>
+        <filename>pg_probackup.conf</filename> &mdash; configuration file
+        with default values for some of the options. Full list of options see below.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       <filename>wal/</filename> &mdash; directory for WAL files;
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+        <filename>backups/</filename> &mdash; directory for backups.
+        The utility will create separate subdirectories for each backup
+        it make, named by the backup identifier.
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+
+   <para>
+     The backup directory can be created beforehand, but in this case it must be empty.
+   </para>
+  </refsect2>
+
+  <refsect2>
+   <title>Autonomous Backups</title>
+
+   <para>
+     Autonomous backups offer the simplest way to make a backup without need
+     to configure <productname>&productname;</productname> for continuous archiving.
+     Such backups contain database cluster files as well as WAL files
+     necessary for recovery.
+   </para>
+
+   <para>
+     Without WAL files archive, database cluster can be restored from
+     an autonomous backup only to its state at the moment the backup was taken.
+   </para>
+
+   <para>
+     To make an autonomous backup, execute the following command:
+     <programlisting>
+pg_probackup backup -b full --stream
+     </programlisting>
+   </para>
+
+   <para>
+     Additionally this command should be supplied with connection options.
+     These options are specified exactly the same way as for other 
+     <productname>&productname;</productname> utilities: either by
+     command line options (<option>-h</option>/<option>--host</option>,
+     <option>-p</option>/<option>--port</option>, <option>-U</option>/<option>--username</option>,
+     <option>-d</option>/<option>--dbname</option>) or by environment variables
+     (<envar>PGHOST</envar>, <envar>PGPORT</envar>, <envar>PGUSER</envar>,
+     <envar>PGDATABASE</envar>). If nothing is given, the default values are taken
+     (local connection, both database user name and database name are the same
+     as operating user name). Any database in the cluster can be specified to connect to.
+   </para>
+
+   <para>
+     To view the existing backups, run the command:
+     <programlisting>
+pg_probackup show
+     </programlisting>
+   </para>
+
+   <para>
+     The following information is given:
+     <itemizedlist>
+      <listitem>
+       <para>
+         ID &mdash; the backup identifier. It is used for pointing to a specific backup in many commands.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+         Recovery time &mdash; the least moment of time, the database cluster's state can be restored at.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+         Mode &mdash; the method used to take this backup 
+         (<literal>FULL</literal>+<literal>STREAM</literal> &mdash; autonomous backup;
+         other modes are described below: <literal>FULL</literal>, <literal>PAGE</literal>,
+         <literal>PTRACK</literal>).
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+         Current/Parent TLI &mdash; current and parent timelines of the database cluster.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+         Time &mdash; time it took to peform the backup.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+         Data &mdash; size of data in this backup.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+         Status &mdash; state of the backup
+         (<literal>OK</literal> &mdash; the backup is created and ready for use,
+         <literal>ERROR</literal> &mdash; an error happened while the backup was being taken,
+         <literal>CORRUPT</literal> &mdash; the backup is corrupted and cannot be used).
+       </para>
+      </listitem>
+    </itemizedlist>
+   </para>
+
+   <para>
+     To get more detailed information about the backup, specify its identifier
+     in <command>show</command> command:
+     <programlisting>
+pg_probackup show <replaceable class="parameter">backup_id</replaceable>
+     </programlisting>
+   </para>
+
+   <para>
+     To make sure a backup is correctly written to disk,
+     <application>pg_probackup</application> automatically checks its checksums
+     immediately after the backup was taken.
+     A backup can be explicitly revalidated by running the following command:
+     <programlisting>
+pg_probackup validate <replaceable class="parameter">backup_id</replaceable>
+     </programlisting>
+   </para>
+
+   <para>
+     To restore the database cluster from the backup,
+     first stop the <productname>&productname;</productname> service (if it is still running)
+     and then execute the following command:
+     <programlisting>
+pg_probackup restore <replaceable class="parameter">backup_id</replaceable>
+     </programlisting>
+   </para>
+
+   <para>
+     After that start the database service. During startup, 
+     <productname>&productname;</productname> will recover a self-consistent state
+     by replaying WAL files and be ready to accept connections.
+   </para>
+
+   <para>
+     Note that restoring from a backup can be performed exclusively by <application>pg_probackup</application> utility.
+     Inside <filename><replaceable>backup_directory</replaceable>/backups/<replaceable>backup_id</replaceable>/database/</filename>
+     directory one can find files, corresponding to those in cluster's data directory. Nevertheless there files
+     cannot be copied directly into the data directory as <application>pg_probackup</application> always stores
+     them compressed to save disk space.
+   </para>
+  </refsect2>
+
+  <refsect2>
+   <title>Continuous Archiving and Full Backups</title>
+
+   <para>
+     <link linkend="continuous-archiving">Continuous archiving</link> allows
+     to restore database cluster's state not only at the moment
+     backup was taken, but at arbitrary point in time.
+     In most cases <application>pg_probackup</application> is used along
+     with continuous archiving.
+   </para>
+
+   <para>
+     Note that autonomous backups can still be useful together with continuous archiving:
+     <itemizedlist>
+      <listitem>
+       <para>
+         Autonomous backup can be restored on the server that for some reasons
+         has no file access to WAL archive;
+        </para>
+      </listitem>
+
+      <listitem>
+       <para>
+         To avoid running out of disk space in WAL archive,
+         it should be periodically cleaned up. An autonomous backup allows to
+         restore cluster's state at some point in time, for which WAL files
+         are no longer available.
+         (However one should prefer logical backups made by
+         <application>pg_dumpall</application> for long-term storage, as it is
+         possible that major release of <productname>&productname;</productname>
+         will change during that period.)
+       </para>
+      </listitem>
+    </itemizedlist>
+   </para>
+
+   <para>
+     To enable continuous archiving on <productname>&productname;</productname> server,
+     configure the following parameters:
+     <itemizedlist>
+      <listitem>
+       <para>
+        <xref linkend="guc-archive-mode"> to '<literal>on</literal>';
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        <xref linkend="guc-archive-command"> to 'test ! -f <replaceable>backup_directory</replaceable>/wal/%f &amp;&amp; cp %p <replaceable>backup_directory</replaceable>/wal/%f';
+       </para>
+      </listitem>
+     </itemizedlist>
+   </para>
+
+   <para>
+     Utilities like <application>rsync</application> that copy WAL files over network,
+     are not currently supported; files must be accessible in server's file system.
+     To access files from a remote server, a network file system can be used.
+   </para>
+
+   <para>
+     To take a backup, execute the following command
+     (specify additional connection options if needed):
+     <programlisting>
+pg_probackup backup -b full
+     </programlisting>
+   </para>
+
+   <para>
+     The backup will only contain database cluster's files.
+     WAL files necessary for recovery will be read from archive in
+     <replaceable>backup_directory</replaceable>/wal/.
+   </para>
+
+   <para>
+     To restore the cluster from a backup, make sure that the database service
+     is stopped and run the following command:
+     <programlisting>
+pg_probackup restore <replaceable class="parameter">backup_id</replaceable>
+     </programlisting>
+   </para>
+
+   <para>
+     The database cluster will be restored from the recent available backup
+     and <filename>recovery.conf</filename> file will be created to access
+     the archived WAL files. When started, <productname>&productname;</productname>
+     server will automatically recover database cluster's state
+     using all available WAL files in the archive.
+   </para>
+
+   <para>
+     To restore the cluster's state at some arbitrary point in time,
+     the following options (which correspond to
+     <link linkend="recovery-target-settings">recovery options</link> in
+     <filename>recovery.conf</filename>) can be added:
+     <itemizedlist>
+      <listitem>
+       <para>
+       <option>--timeline</option> specifies recovering into a particular timeline;
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+       one of <option>--time</option> or <option>--xid</option> options specifies
+       recovery target (either point in time or transaction id)
+       up to which recovery will proceed.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+       <option>--inclusive</option> specifies whether to stop just after
+       the specified recovery target, or just before it.
+       </para>
+      </listitem>
+     </itemizedlist>
+   </para>
+
+   <para>
+     Closest to the specified recovery target backup will be automatically chosen for recovery.
+   </para>
+
+   <para>
+     All the described commands can operate autonomous backups the same way
+     as full ones, using WAL files either from the backup itself or from the archive.
+   </para>
+
+   <para>
+     A backup identifier can be specified right after the <command>restore</command> command
+     to restore database cluster's state at the moment shown in '<literal>Recovery time</literal>'
+     attribute of that backup:
+     <programlisting>
+pg_probackup restore <replaceable class="parameter">backup_id</replaceable>
+     </programlisting>
+   </para>
+
+   <para>
+     For autonomous backups WAL archive will not be used.
+     Full backups will use WAL archive only to recover to self-consistent state.
+   </para>
+
+   <para>
+     When both backup identifier and one of <option>--time</option> or <option>--xid</option> options
+     are specified for <command>restore</command> command, recovery will start
+     from the specified backup and will proceed up to the specified recovery target.
+     Usually there is no need in such mode, as backup identifier can be omitted
+     to allow <application>pg_probackup</application> to choose it automatically.
+   </para>
+  </refsect2>
+
+  <refsect2>
+   <title>Incremental Backups</title>
+
+   <para>
+     In addition to full backups <application>pg_probackup</application> allows
+     to take <emphasis>incremental</emphasis> backups, containing only the pages
+     that have changed since the previous backup was taken.
+     This way backups are smaller and may take less time to complete.
+   </para>
+
+   <para>
+     There are two modes for incremental backups: to track changes
+     by scanning WAL files (<literal>PAGE</literal>),
+     and to track changes on-the-fly (<literal>PTRACK</literal>).
+   </para>
+
+   <para>
+     In the first mode <application>pg_probackup</application> scans all WAL files
+     in archive starting from the moment the previous backup
+     (either full or incremental) was taken. Newly created backup will contain
+     only the pages that were mentioned in WAL records.
+   </para>
+
+   <para>
+     This way of operation requires all the WAL files since the previous backup
+     to be present in the archive. In case the total size of these files is
+     comparable to total size of database cluster's files, there will be no
+     speedup (but still backup can be smaller by size).
+     <programlisting>
+pg_probackup backup -b page
+     </programlisting>
+   </para>
+
+   <para>
+     The second mode (tracking changes on-the-fly) requires <productname>Postgres Pro</productname>
+     server and will not work with <productname>PostgreSQL</productname>;
+     continuous archiving is not necessary for it to operate.
+   </para>
+
+   <para>
+     When <varname>ptrack_enable</varname> parameter is on,
+     <productname>Postgres Pro</productname> server tracks changed in data pages.
+     Each time a WAL record for some relation's page is constructed,
+     this page is marked in a special <literal>ptrack</literal> fork for this relation.
+     As one page requires just one bit in the fork, the fork is quite small but
+     significantly speeds up the process of taking a backup.
+     Tracking implies some minor overhead for the database server.
+   </para>
+
+   <para>
+     While taking a backup (either full or incremental),
+     <application>pg_probackup</application> clears <literal>ptrack</literal> fork
+     of relations being processed. This ensures that the next incremental backup
+     will contain only pages that have changed since the previous backup.
+     <programlisting>
+pg_probackup backup -b ptrack
+     </programlisting>
+   </para>
+
+   <para>
+     If a backup resulted in an error (for example, it was interrupted),
+     some of relations probably have their <literal>ptrack</literal> forks
+     already cleared. In this case next incremental backup will contain
+     just part of all changes, which is useless. The same is true when
+     <varname>ptrack_enable</varname> parameter was turned on after
+     the full backup was taken or when it was turned off for some time.
+     Currently, <application>pg_probackup</application> does not verify
+     that all changes for the increment were actually tracked.
+     Fresh full backup should be taken before incremental ones in such circumstances.
+   </para>
+
+   <para>
+     To restore the database cluster from an incremental backup,
+     <application>pg_probackup</application> first restores the full backup and
+     then sequentially applies all the necessary increments.
+     This is done automatically; restoration is managed exactly
+     the same way as for full backups.
+   </para>
+
+   <para>
+     Incremental backup can be made autonomous by specifying <option>--stream</option>
+     command line option. Such backup is autonomous only in regard to WAL archive:
+     full backup and previous incremental backups are still needed to restore the cluster.
+   </para>
+  </refsect2>
+
+  <refsect2>
+   <title>Deleting of Backups</title>
+
+   <para>
+     Unnecessary backup can be deleted by specifying its identifier in <command>delete</command> command:
+     <programlisting>
+pg_probackup delete <replaceable>backup_id</replaceable>
+     </programlisting>
+   </para>
+
+   <para>
+     This command will delete the specified backup along with all the following
+     <emphasis>incremental</emphasis> backups, if any.
+   </para>
+
+   <para>
+     This way it is possible to delete some recent incremental backups,
+     retaining an underlying full backup and some of incremental backups that follow it.
+     In this case the next backup in <literal>PTRACK</literal> mode will not be correct
+     as some changes since the last retained backup will be lost. Either full backup or
+     incremental backup in <literal>PAGE</literal> mode (given that all
+     necessary WAL files are still in the archive) should be taken then.
+   </para>
+
+   <para>
+     If <option>--wal</option> option is specified, WAL files not necessary
+     to restore any of remaining backups will be deleted as well.
+     This is safe, because deletion of any backup will keep every
+     possibly necessary WAL files.
+   </para>
+
+   <para>
+     To delete unnecessary WAL files without deleting any of backups, execute <command>delwal</command> command:
+     <programlisting>
+pg_probackup delwal
+     </programlisting>
+   </para>
+
+   <para>
+     This command operates the same way as <option>--wal</option> option of <command>delete</command> command,
+     except that it does not delete any backups.
+   </para>
+
+   <para>
+     Backup identifier can be specified in <command>delwal</command> command.
+     In this case all WAL files will be deleted, except for those needed
+     to restore from the specified backup and more recent backups.
+     <programlisting>
+pg_probackup delwal <replaceable>backup_id</replaceable>
+     </programlisting>
+   </para>
+
+   <para>
+     This mode should be used with caution as it allows to delete WAL files required for
+     some of the existing backups.
+   </para>
+  </refsect2>
+
+  <refsect2>
+   <title>Backup from Standby</title>
+
+   <para>
+     If replication is in use, starting with server version 9.6
+     a backup can be taken not only from primary server, but also from standby.
+     Backup taken from standby is absolutely interchangeable with backup taken
+     from primary (bearing in mind possible replication delay).
+   </para>
+
+   <para>
+     Currently it is required for primary database server to have <varname>full_page_writes</varname>
+     turned on (in future this requirement may be relaxed in the case checksums
+     are enabled on data pages).
+   </para>
+
+   <para>
+     The same backup directory can be used for <application>pg_probackup</application>
+     on both servers, primary and standby, as long as it is accessible
+     in both server's file systems. This way all backups, taken from either
+     primary or standby, are shown together and could be managed from one server
+     or from the other.
+   </para>
+
+   <para>
+     A backup can be used to restore primary database server as well as standby.
+     It depends on the server on which <application>pg_probackup</application>
+     is executed with <command>restore</command> command. Note that recovered
+     <productname>&productname;</productname> will always run as primary server
+     if started right after the <application>pg_probackup</application>. To run it
+     as standby, edit <filename>recovery.conf</filename> file created by
+     <application>pg_probackup</application>: at least delete every parameter that
+     specify recovery target (<varname>recovery_target</varname>, <varname>recovery_target_time</varname>,
+     and <varname>recovery_target_xid</varname>), change target timeline to '<literal>latest</literal>',
+     and add <varname>standby_mode</varname> = '<literal>on</literal>'.
+     Probably <varname>primary_conninfo</varname> should be added too for streaming replication,
+     and <varname>hot_standby</varname> = '<literal>on</literal>' in database
+     configuration parameters for hot standby mode.
+   </para>
+  </refsect2>
+ </refsect1>
+
+ <refsect1>
+  <title>Additional Features</title>
+
+  <refsect2>
+   <title>Parallel Execution</title>
+
+   <para>
+     Backup, recovery, and validating process can be executed in several parallel threads.
+     This can significantly speed up the operation given enough resources
+     (CPU cores, disk, and network throughput).
+   </para>
+
+   <para>
+     Parallel execution is controlled by <option>-j</option>/<option>--threads</option>
+     command line option, for example:
+     <programlisting>
+pg_probackup backup -b full -j 4
+     </programlisting>
+     or
+     <programlisting>
+pg_probackup restore -j 4
+     </programlisting>
+   </para>
+
+   <para>
+     Note that parallel recovery applies only to copying data from backup
+     to cluster's data directory. When <productname>&productname;</productname> server is started,
+     it starts to replay WAL records (either from the archive or from local directory),
+     and this currently cannot be done in parallel.
+   </para>
+  </refsect2>
+
+  <refsect2>
+   <title>Checking Cluster and Backup Consistency</title>
+
+   <para>
+     When checksums are enabled for the database cluster, <application>pg_probackup</application>
+     uses this information to check correctness of data files. While reading each page,
+     <application>pg_probackup</application> checks whether calculated checksum coincides
+     with the checksum stored in page. This guarantees that backup is free of corrupted pages;
+     taking full backup effectively checks correctness of all cluster's data files.
+   </para>
+
+   <para>
+     Pages are packed before going to backup, leaving unused parts of pages behind
+     (see <xref linkend="storage-page-layout">).
+     Hence the restored database cluster is not an exact copy of the original, but is binary-compatible with it.
+   </para>
+
+   <para>
+     Whether page checksums are enabled or not, <application>pg_probackup</application> calculates
+     checksums for each file in a backup. Checksums are checked immediately after backup is taken
+     and right before restore, to timely detect possible backup corruptions.
+   </para>
+  </refsect2>
+ </refsect1>
+
+ <refsect1>
+  <title>Notes</title>
+
+  <para>
+    Currently <application>pg_probackup</application> has the following limitations:
+    <itemizedlist>
+     <listitem>
+      <para>
+        The utility can be used only with <productname>PostgreSQL</productname>-compatible
+        servers with the same major release and the same page size.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+        Server version 9.5 or later is supported.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+        <productname>Microsoft Windows</productname> operating system is not supported.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+        Incremental backups in the <literal>PTRACK</literal> mode cannot be taken
+        with vanilla <productname>PostgreSQL</productname> server.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+        Data files from user tablespaces are restored to the same absolute paths
+        as they were during backup.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+        Configuration files outside <productname>&productname;</productname>
+        data directory are not included in backup and should be backed up separately.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+        Only full backups are supported when using
+        <ulink url="https://postgrespro.com/docs/postgresproee/current/cfs.html">compressed tablespaces</ulink>
+        (<productname>Postgres Pro Enterprise</productname> feature).
+      </para>
+     </listitem>
+    </itemizedlist>
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Authors</title>
+
+  <para>
+    <application>pg_probackup</application> utility is based on <application>pg_arman</application>,
+    that was originally written by NTT and then developed and maintained by Michael Paquier.
+  </para>
+
+  <para>
+   Features such as parallel execution, incremental and autonomous backups
+   are developed in Postgres Professional by Yury Zhuravlev (aka stalkerg).
+  </para>
+
+  <para>
+   Please report bugs and requests at <ulink url="https://github.com/postgrespro/pg_probackup/issues"></ulink>.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>See Also</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-pgbasebackup"></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>
