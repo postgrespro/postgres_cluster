@@ -1374,7 +1374,7 @@
         </indexterm>
        </entry>
        <entry><literal>'Post' || 'greSQL'</literal></entry>
-       <entry><literal>&productname;</literal></entry>
+       <entry><literal>PostgreSQL</literal></entry>
       </row>
 
       <row>
