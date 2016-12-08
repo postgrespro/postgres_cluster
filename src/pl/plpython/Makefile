@@ -90,7 +90,8 @@ REGRESS = \
 	plpython_quote \
 	plpython_composite \
 	plpython_subtransaction \
-	plpython_drop
+	plpython_drop \
+	plpython_atx
 
 REGRESS_PLPYTHON3_MANGLE := $(REGRESS)
 
