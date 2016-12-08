@@ -1,0 +1,157 @@
+<!-- doc/src/sgml/pgtransfer.sgml -->
+
+<sect1 id="pgtransfer" xreflabel="pg_transfer">
+ <title>pg_transfer</title>
+
+ <indexterm zone="pgtransfer">
+  <primary>pg_transfer</primary>
+ </indexterm>
+
+ <para>
+  The <filename>pg_transfer</filename> extension enables quick transfer of
+  tables between <productname>&productname;</productname> instances.
+ </para>
+
+ <sect2>
+  <title>Description</title>
+
+  <para>
+  Some applications experience problems loading huge amount of data
+  into a database, for example when consolidating data from regional servers
+  into a central one. Usual method is to copy schema and data by using
+  <application>pg_dump</application> and <application>pg_restore</application>.
+  In this case the receiving server's workload is higher then
+  that of sending server. Data are loaded by <command>INSERT</command> or
+  <command>COPY</command> commands, which creates significant impact
+  on a disk subsystem. Creation of indexes and analysis of tables are
+  performed in a target database after data are loaded.
+  </para>
+
+  <para>
+  The <filename>pg_transfer</filename> extension allows to prepare a table
+  (i. e. creation of indexes and analysis) out of target server and ensures fast load
+  of read-only data. The extension contains additional functions for
+  <application>pg_dump</application> and <application>pg_restore</application> utilities.
+  </para>
+ </sect2>
+
+ <sect2>
+  <title>Installation</title>
+
+  <para>To install the extension execute the following SQL command:
+   <programlisting>
+    CREATE EXTENSION pg_transfer;
+   </programlisting>
+  </para>
+ </sect2>
+
+ <sect2>
+  <title>Usage</title>
+
+  <para>
+   Before table can be transferred, it must be marked as read-only.
+
+   <programlisting>
+    ALTER TABLE <replaceable>table_name</replaceable> SET CONSTANT;
+   </programlisting>
+  </para>
+
+  <para>
+   After that <command>VACUUM (ANALYZE)</command> should be executed to get rid of
+   dead tuples and refresh statistics.
+
+   <programlisting>
+    VACUUM (ANALYZE) <replaceable>table_name</replaceable>;
+   </programlisting>
+  </para>
+
+  <para>
+   Data transfer is performed in two stages.
+   First, logical dump of data schema is taken on auxiliary database server
+   and restored on target server. Second, data on auxiliary server are
+   prepared for transfer, using some information about the restored schema,
+   and the transfer itself is performed.
+  </para>
+
+  <para>
+   When source and target databases are located in the same file system,
+   <option>--copy-mode-transfer</option> option must be specified at least once
+   (for either <application>pg_dump</application> or
+   <application>pg_restore</application>) to get an independent copy of data.
+   When restoring data on primary server, <option>--generate-wal</option> option
+   must be specified for <application>pg_restore</application> for changes
+   to be replicated to standby server.
+  </para>
+
+  <note>
+   <para>
+    Architecture of both servers and configuration of
+    <productname>&productname;</productname> must guarantee binary-compatible
+    file formats. Checks are performed during data restoring for
+    coincidence of alignment, page and segment sizes etc.
+   </para>
+  </note>
+
+  <sect3>
+    <title>Stage 1</title>
+
+    <para>
+     <programlisting>
+      pg_dump <replaceable>database</replaceable> -t <replaceable>table_name</replaceable> --schema-only -f <replaceable>transfer_dir</replaceable>/archive.out
+      pg_restore -d <replaceable>database</replaceable> --schema-only <replaceable>transfer_dir</replaceable>/archive.out
+     </programlisting>
+    </para>
+
+    <para>
+     After the schema is restored, TOAST table's identifier must be determined.
+     <programlisting>
+      psql <replaceable>target_database</replaceable> -c select reltoastrelid from pg_class where relname='<replaceable>table_name</replaceable>'
+     </programlisting>
+    </para>
+  </sect3>
+
+  <sect3>
+    <title>Stage 2</title>
+
+    <para>
+      The <filename>pg_transfer</filename> extension must be installed in both databases.
+    </para>
+
+    <para>
+    Using the TOAST table's identifier from the previous stage (<replaceable>reltoastid</replaceable>),
+    prepare the table for transfer and force data flush to disk.
+     <programlisting>
+      psql -d <replaceable>database</replaceable> -c select pg_transfer_freeze('<replaceable>table_name</replaceable>'::regclass::oid, <replaceable>reltoastrelid</replaceable>::oid);
+     </programlisting>
+    </para>
+
+  </sect3>
+
+  <sect3>
+   <title>Data transfer</title>
+   <para>
+    Preparation is completed. Now the data can be transferred into separate directory using <application>pg_dump</application> utility.
+     <programlisting>
+      pg_dump <replaceable>database</replaceable> -Fc -t <replaceable>table_name</replaceable> --copy-mode-transfer --transfer-dir <replaceable>transfer_dir</replaceable>/ -f <replaceable>transfer_dir</replaceable>/archive.out
+     </programlisting>
+   </para>
+
+   <para>
+     And finally data can be restored in target database.
+     <programlisting>
+      pg_restore -d <replaceable>target_database</replaceable> --data-only --transfer-dir <replaceable>transfer_dir</replaceable>/ <replaceable>transfer_dir</replaceable>/archive.out
+     </programlisting>
+   </para>
+  </sect3>
+ </sect2>
+
+ <sect2>
+  <title>Compatibility</title>
+
+  <para>
+  The extension is compatible with <productname>Postgres Pro</productname> 9.6
+  or newer on Unix-like systems.
+  </para>
+ </sect2>
+
+</sect1>
