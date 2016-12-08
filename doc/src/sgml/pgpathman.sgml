@@ -402,7 +402,7 @@ set_init_callback(relation REGCLASS, callback REGPROC DEFAULT 0)
 }
       </programlisting>
       <programlisting>
-set_set_spawn_using_bgw(relation REGCLASS, value BOOLEAN)
+set_spawn_using_bgw(relation REGCLASS, value BOOLEAN)
       </programlisting>
       <para>
         When INSERTing new data beyond the partitioning range,

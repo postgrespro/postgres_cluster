@@ -255,7 +255,7 @@ Set partition creation callback to be invoked for each attached or created parti
 ```
 
 ```plpgsql
-set_set_spawn_using_bgw(relation REGCLASS, value BOOLEAN)
+set_spawn_using_bgw(relation REGCLASS, value BOOLEAN)
 ```
 When INSERTing new data beyond the partitioning range, use SpawnPartitionsWorker to create new partitions in a separate transaction.
 
