@@ -179,7 +179,6 @@ typedef struct
 {
 	char hostName[MULTIMASTER_MAX_HOST_NAME_SIZE];
 	char connStr[MULTIMASTER_MAX_CONN_STR_SIZE];
-	int raftablePort;
 	int arbiterPort;
 } MtmConnectionInfo;
 
@@ -304,7 +303,6 @@ extern char* MtmDatabaseName;
 extern char* MtmDatabaseUser;
 extern int   MtmConnectTimeout;
 extern int   MtmReconnectTimeout;
-extern int   MtmRaftPollDelay;
 extern int   MtmNodeDisableDelay;
 extern int   MtmTransSpillThreshold;
 extern int   MtmHeartbeatSendTimeout;

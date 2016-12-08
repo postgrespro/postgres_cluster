@@ -54,12 +54,11 @@ if [ "$1" = 'postgres' ]; then
 			max_worker_processes = 30
 			max_replication_slots = 10
 			max_wal_senders = 10
-			shared_preload_libraries = 'raftable,multimaster'
+			shared_preload_libraries = 'multimaster'
 			default_transaction_isolation = 'repeatable read'
 
 			multimaster.workers = 4
 			multimaster.max_nodes = 3
-			multimaster.use_raftable = false
 			multimaster.volkswagen_mode = 1
 			multimaster.queue_size=52857600
 			multimaster.ignore_tables_without_pk = 1
