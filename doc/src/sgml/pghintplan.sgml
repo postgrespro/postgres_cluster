@@ -728,11 +728,11 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
     <para>IndexScan(table[ index...])</para>
     <para>Forces index scan on the table. Restricts to specified indexes if any.</para>
     <para>IndexOnlyScan(table[ index...])</para>
-    <para>Forces index only scan on the table. Restricts to specfied indexes
+    <para>Forces index only scan on the table. Restricts to specified indexes
       if any. Index scan may be used if index only scan is not
       available. Available for PostgreSQL 9.2 and later.</para>
     <para>BitmapScan(table[ index...])</para>
-    <para>Forces bitmap scan on the table. Restricts to specfied indexes if any.</para>
+    <para>Forces bitmap scan on the table. Restricts to specified indexes if any.</para>
     <para>NoSeqScan(table)</para>
     <para>Forces not to do sequential scan on the table.</para>
     <para>NoTidScan(table)</para>
@@ -769,7 +769,7 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
     <para>Row number correction</para>
     <para>Rows(table table[ table...] correction)</para>
     <para>Corrects row number of a result of the joins consist of the
-      specfied tables. The available correction methods are absolute
+      specified tables. The available correction methods are absolute
       (#&lt;n&gt;), addition (+&lt;n&gt;), subtract
       (-&lt;n&gt;) and multiplication (*&lt;n&gt;). &lt;n&gt;
       should be a string that strtod() can read.</para>

@@ -258,7 +258,7 @@ CREATE ROLE <replaceable class="PARAMETER">name</replaceable> [ [ WITH ] <replac
         to be encrypted with SCRAM-SHA-256, and <literal>plain</> to use
         an unencrypted password.  If the password string is already in
         MD5-encrypted or SCRAM-SHA-256 format, then it is stored encrypted
-        even if another protocol is specified.
+        even if another method is specified.
        </para>
       </listitem>
      </varlistentry>

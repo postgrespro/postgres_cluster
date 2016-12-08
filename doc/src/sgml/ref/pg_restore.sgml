@@ -645,6 +645,46 @@
    </para>
 
    <para>
+    The following command-line options control data transfer between
+    databases when <xref linkend="pgtransfer"> extension is used.
+
+    <variablelist>
+     <varlistentry>
+      <term><option>--copy-mode-transfer</></term>
+      <listitem>
+       <para>
+       Use this option to physically copy files, for example when database files
+       and directory specified by <option>--transfer-dir</option> are located on
+       different file systems.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--generate-wal</></term>
+      <listitem>
+       <para>
+       Generate WAL records for all transferred files. When restoring on primary
+       server without this option, changes will not be replicated to standby
+       server.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--transfer-dir</></term>
+      <listitem>
+       <para>
+       Directory to transfer data files from. Data files includes that of the
+       table, its indexes and TOAST. By default files are moved instead of
+       copying them.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+
+   <para>
     <application>pg_restore</application> also accepts
     the following command line arguments for connection parameters:
 

@@ -150,6 +150,7 @@
 <!ENTITY pgstandby       SYSTEM "pgstandby.sgml">
 <!ENTITY pgstatstatements SYSTEM "pgstatstatements.sgml">
 <!ENTITY pgstattuple     SYSTEM "pgstattuple.sgml">
+<!ENTITY pgtransfer      SYSTEM "pgtransfer.sgml">
 <!ENTITY pgtrgm          SYSTEM "pgtrgm.sgml">
 <!ENTITY pgvariables     SYSTEM "pg_variables.sgml">
 <!ENTITY pgvisibility    SYSTEM "pgvisibility.sgml">

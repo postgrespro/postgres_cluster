@@ -905,8 +905,8 @@ omicron         bryanh                  guest1
    </indexterm>
 
    <para>
-    The password-based authentication methods are <literal>md5</>
-    <literal>scram</> and <literal>password</>. These methods operate
+    The password-based authentication methods are <literal>md5</>,
+    <literal>scram</>, and <literal>password</>. These methods operate
     similarly except for the way that the password is sent across the
     connection, namely MD5-hashed, SCRAM-SHA-256 and clear-text respectively.
    </para>

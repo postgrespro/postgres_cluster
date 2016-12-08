@@ -1314,7 +1314,7 @@
        <literal>md5</> followed by a 32-character hexadecimal MD5 hash.
        The MD5 hash will be of the user's password concatenated to their
        user name. For example, if user <literal>joe</> has password
-       <literal>xyzzy</>, <productname>PostgreSQL</> will store the md5
+       <literal>xyzzy</>, <productname>&productname;</> will store the md5
        hash of <literal>xyzzyjoe</>.  If the password is encrypted with
        SCRAM-SHA-256, it is built with 4 fields separated by a colon. The
        first field is a salt encoded in base-64.  The second field is the

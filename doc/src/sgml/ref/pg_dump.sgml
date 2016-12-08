@@ -959,6 +959,36 @@ doc/src/sgml/ref/pg_dump.sgml
     </variablelist>
    </para>
 
+  <para>
+    The following command-line options control data transfer between
+    databases when <xref linkend="pgtransfer"> extension is used.
+
+    <variablelist>
+     <varlistentry>
+      <term><option>--copy-mode-transfer</></term>
+      <listitem>
+       <para>
+       Use this option to physically copy files, for example when database files
+       and directory specified by <option>--transfer-dir</option> are located on
+       different file systems.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--transfer-dir</></term>
+      <listitem>
+       <para>
+       Directory to transfer data files to. Data files includes that of the
+       table, its indexes and TOAST. By default hard links are created instead
+       of copying files. Note that deleting the table by <command>DROP</command>
+       command makes such links invalid.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+
    <para>
     The following command-line options control the database connection parameters.
 
