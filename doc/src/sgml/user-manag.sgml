@@ -227,12 +227,15 @@ CREATE USER <replaceable>name</replaceable>;
        <para>
         A password is only significant if the client authentication
         method requires the user to supply a password when connecting
-        to the database. The <option>password</> and
-        <option>md5</> authentication methods
+        to the database. The <option>password</>, <option>md5</>,
+        and <option>scram</> authentication methods
         make use of passwords. Database passwords are separate from
         operating system passwords. Specify a password upon role
         creation with <literal>CREATE ROLE
-        <replaceable>name</replaceable> PASSWORD '<replaceable>string</>'</literal>.
+        <replaceable>name</replaceable> PASSWORD '<replaceable>string</>'</literal>
+        or <literal>CREATE ROLE
+        <replaceable>name</replaceable> PASSWORD ('<replaceable>string</>'
+        USING '<replaceable>method</>')</literal>.
        </para>
       </listitem>
      </varlistentry>
