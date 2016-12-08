@@ -1,12 +1,6 @@
 MODULE_big = multimaster
 OBJS = multimaster.o arbiter.o bytebuf.o bgwpool.o pglogical_output.o pglogical_proto.o pglogical_receiver.o pglogical_apply.o pglogical_hooks.o pglogical_config.o pglogical_relid_map.o ddd.o bkb.o spill.o
 
-ifndef RAFTABLE_PATH
-RAFTABLE_PATH = ../raftable
-endif
-
-override CPPFLAGS += -I$(RAFTABLE_PATH) -I$(RAFTABLE_PATH)/raft/include
-
 EXTENSION = multimaster
 DATA = multimaster--1.0.sql
 

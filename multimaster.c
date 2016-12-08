@@ -1794,7 +1794,6 @@ bool MtmRefreshClusterStatus(bool nowait)
 	int i;
 
 	if (!MtmBuildConnectivityMatrix(matrix, nowait)) { 
-		/* RAFT is not available */
 		return false;
 	}
 
@@ -4493,7 +4492,7 @@ MtmDetectGlobalDeadLockFortXid(TransactionId xid)
 				MtmUnlockNode(i + MtmMaxNodes);
 
 				if (lockGraphData == NULL) {
-					return true; /* If using Raftable is disabled */
+					return true;
 				} else { 
 					MtmGraphAdd(&graph, (GlobalTransactionId*)lockGraphData, lockGraphSize/sizeof(GlobalTransactionId));
 				}
