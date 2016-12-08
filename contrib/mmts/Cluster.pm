@@ -40,10 +40,10 @@ sub new
 	foreach my $i (1..$nodenum)
 	{
 		my $host = "127.0.0.1";
-		my ($pgport, $raftport) = allocate_ports($host, 2);
+		my ($pgport, $arbiter_port) = allocate_ports($host, 2);
 		my $node = new PostgresNode("node$i", $host, $pgport);
 		$node->{id} = $i;
-		$node->{raftport} = $raftport;
+		$node->{arbiter_port} = $arbiter_port;
 		push(@$nodes, $node);
 	}
 
@@ -71,16 +71,16 @@ sub configure
 {
 	my ($self) = @_;
 	my $nodes = $self->{nodes};
+	my $nnodes = scalar @{ $nodes };
 
-	my $connstr = join(',', map { "${ \$_->connstr('postgres') }" } @$nodes);
-	my $raftpeers = join(',', map { join(':', $_->{id}, $_->host, $_->{raftport}) } @$nodes);
+	my $connstr = join(', ', map { "${ \$_->connstr('postgres') } arbiter_port=${ \$_->{arbiter_port} }" } @$nodes);
 
 	foreach my $node (@$nodes)
 	{
 		my $id = $node->{id};
 		my $host = $node->host;
 		my $pgport = $node->port;
-		my $raftport = $node->{raftport};
+		my $arbiter_port = $node->{arbiter_port};
 
 		$node->append_conf("postgresql.conf", qq(
 			log_statement = none
@@ -94,20 +94,22 @@ sub configure
 			fsync = off	
 			max_wal_senders = 10
 			wal_sender_timeout = 0
-            default_transaction_isolation = 'repeatable read'
+			default_transaction_isolation = 'repeatable read'
 			max_replication_slots = 10
-			shared_preload_libraries = 'raftable,multimaster'
+			shared_preload_libraries = 'multimaster'
+
+			multimaster.arbiter_port = $arbiter_port
 			multimaster.workers = 10
 			multimaster.queue_size = 10485760 # 10mb
 			multimaster.node_id = $id
 			multimaster.conn_strings = '$connstr'
-			multimaster.use_raftable = false
 			multimaster.heartbeat_recv_timeout = 1000
 			multimaster.heartbeat_send_timeout = 250
-			multimaster.max_nodes = 3
+			multimaster.max_nodes = $nnodes
 			multimaster.ignore_tables_without_pk = true
-			multimaster.twopc_min_timeout = 2000
-            log_line_prefix = '%t: '
+			multimaster.twopc_min_timeout = 50000
+			multimaster.min_2pc_timeout = 50000
+			log_line_prefix = '%t: '
 		));
 
 		$node->append_conf("pg_hba.conf", qq(
