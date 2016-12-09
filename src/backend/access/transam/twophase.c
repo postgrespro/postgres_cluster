@@ -1703,7 +1703,7 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 			TransactionId *subxids;
 			int			i;
 
-			xid = (TransactionId) strtoul(clde->d_name, NULL, 16);
+			xid = (TransactionId) pg_strtouint64(clde->d_name, NULL, 16);
 
 			/* Reject XID if too new */
 			if (TransactionIdFollowsOrEquals(xid, origNextXid))
@@ -1839,7 +1839,7 @@ StandbyRecoverPreparedTransactions(bool overwriteOK)
 			TransactionId *subxids;
 			int			i;
 
-			xid = (TransactionId) strtoul(clde->d_name, NULL, 16);
+			xid = (TransactionId) pg_strtouint64(clde->d_name, NULL, 16);
 
 			/* Already processed? */
 			if (TransactionIdDidCommit(xid) || TransactionIdDidAbort(xid))
@@ -1927,7 +1927,7 @@ RecoverPreparedTransactions(void)
 			const char *gid;
 			int			i;
 
-			xid = (TransactionId) strtoul(clde->d_name, NULL, 16);
+			xid = (TransactionId) pg_strtouint64(clde->d_name, NULL, 16);
 
 			/* Already processed? */
 			if (TransactionIdDidCommit(xid) || TransactionIdDidAbort(xid))
