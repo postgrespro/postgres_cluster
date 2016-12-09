@@ -13,7 +13,7 @@
 #ifndef WAITLSN_H
 #define WAITLSN_H
 
-extern void WaitLSNUtility(const char *lsn, const int *delay);
+extern void WaitLSNUtility(const char *lsn, const int delay);
 extern void WaitLSNShmemInit(void);
 extern void WaitLSNSetLatch(void);
 
