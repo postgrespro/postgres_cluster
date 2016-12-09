@@ -140,7 +140,7 @@ WaitLSNSetLatch(void)
 }
 
 void
-WaitLSNUtility(const char *lsn, const int *delay)
+WaitLSNUtility(const char *lsn, const int delay)
 {
 	XLogRecPtr	trg_lsn;
 	XLogRecPtr	cur_lsn;

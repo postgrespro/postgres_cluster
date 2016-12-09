@@ -913,7 +913,7 @@ standard_ProcessUtility(Node *parsetree,
 							"WaitLSN")));
 				}
 				else
-					WaitLSNUtility(stmt->lsn, stmt->delay);
+					WaitLSNUtility(stmt->lsn, *stmt->delay);
 			}
 			break;
 
