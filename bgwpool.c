@@ -17,11 +17,13 @@
 bool MtmIsLogicalReceiver;
 int  MtmMaxWorkers;
 
-static BgwPool* pool;
+static BgwPool* MtmPool;
 
 static void BgwShutdownWorker(int sig)
 {
-	BgwPoolStop(pool);
+	if (MtmPool) { 
+		BgwPoolStop(MtmPool);
+	}
 }
 
 static void BgwPoolMainLoop(BgwPool* pool)
@@ -32,6 +34,7 @@ static void BgwPoolMainLoop(BgwPool* pool)
 	sigset_t sset;
 
 	MtmIsLogicalReceiver = true;
+	MtmPool = pool;
 
 	signal(SIGINT, BgwShutdownWorker);
 	signal(SIGQUIT, BgwShutdownWorker);
@@ -88,6 +91,7 @@ static void BgwPoolMainLoop(BgwPool* pool)
 
 void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname,  char const* dbuser, size_t queueSize, size_t nWorkers)
 {
+	MtmPool = pool;
     pool->queue = (char*)ShmemAlloc(queueSize);
     pool->executor = executor;
     PGSemaphoreCreate(&pool->available);

@@ -184,7 +184,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     if (txn->xact_action == XLOG_XACT_COMMIT) 
     	flags = PGLOGICAL_COMMIT;
 	else if (txn->xact_action == XLOG_XACT_PREPARE)
-    	flags = PGLOGICAL_PREPARE;
+    	flags = strcmp(txn->state_3pc, "precommitted") == 0 ? PGLOGICAL_PRECOMMIT_PREPARED : PGLOGICAL_PREPARE;
 	else if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED)
     	flags = PGLOGICAL_COMMIT_PREPARED;
 	else if (txn->xact_action == XLOG_XACT_ABORT_PREPARED)
@@ -192,7 +192,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 	else
     	Assert(false);
 
-	if (flags == PGLOGICAL_COMMIT || flags == PGLOGICAL_PREPARE) { 
+	if (flags == PGLOGICAL_COMMIT || flags == PGLOGICAL_PREPARE || flags == PGLOGICAL_PRECOMMIT_PREPARED) { 
 		if (MtmIsFilteredTxn) { 
 			Assert(MtmTransactionRecords == 0);
 			return;
