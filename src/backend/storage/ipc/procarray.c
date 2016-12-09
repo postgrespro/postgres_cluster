@@ -2078,7 +2078,8 @@ GetRunningTransactionData(void)
  * We look at all databases, though there is no need to include WALSender
  * since this has no effect on hot standby conflicts.
  *
- * This is never executed during recovery so there is no need to look at
+ * During recovery we need only minimum anong prepared transaction and since
+ * they are registering dummy PGPROC during replay there is no need to look at
  * KnownAssignedXids.
  *
  * We don't worry about updating other counters, we want to keep this as
@@ -2091,8 +2092,6 @@ GetOldestActiveTransactionId(void)
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId oldestRunningXid;
 	int			index;
-
-	Assert(!RecoveryInProgress());
 
 	LWLockAcquire(ProcArrayLock, LW_SHARED);
 

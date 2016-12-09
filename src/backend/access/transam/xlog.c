@@ -5998,7 +5998,6 @@ StartupXLOG(void)
 	TimeLineID	EndOfLogTLI;
 	TimeLineID	PrevTimeLineID;
 	XLogRecord *record;
-	TransactionId oldestActiveXID;
 	bool		backupEndRequired = false;
 	bool		backupFromStandby = false;
 	DBState		dbstate_at_startup;
@@ -6518,6 +6517,24 @@ StartupXLOG(void)
 		InRecovery = true;
 	}
 
+	/*
+	 * Recover two-phase state of old prepared transactions.
+	 *
+	 * Long-running prepared transaction are moved to filesystem during
+	 * checkpoint as commit will need info from prepare record that will
+	 * be unavalable. So here we are following logical order of things and
+	 * restoring transactions that are behind checkpoint horizon before replay
+	 * started.
+	 *
+	 * RecoverPreparedFromFiles and cosequent replay of prepare records
+	 * will need access to SUBTRANCE structures, so init it here using
+	 * checkpoint's oldestActiveXid as it certainly not higher than latest
+	 * prepared xid.
+	 */
+	StartupCLOG();
+	StartupSUBTRANS(checkPoint.oldestActiveXid);
+	RecoverPreparedFromFiles();
+
 	/* REDO */
 	if (InRecovery)
 	{
@@ -6654,30 +6671,15 @@ StartupXLOG(void)
 		 */
 		if (ArchiveRecoveryRequested && EnableHotStandby)
 		{
-			TransactionId *xids;
-			int			nxids;
-
 			ereport(DEBUG1,
 					(errmsg("initializing for hot standby")));
 
 			InitRecoveryTransactionEnvironment();
 
-			if (wasShutdown)
-				oldestActiveXID = PrescanPreparedTransactions(&xids, &nxids);
-			else
-				oldestActiveXID = checkPoint.oldestActiveXid;
-			Assert(TransactionIdIsValid(oldestActiveXID));
+			Assert(TransactionIdIsValid(checkPoint.oldestActiveXid));
 
 			/* Tell procarray about the range of xids it has to deal with */
 			ProcArrayInitRecovery(ShmemVariableCache->nextXid);
-
-			/*
-			 * Startup commit log and subtrans only.  MultiXact and commit
-			 * timestamp have already been started up and other SLRUs are not
-			 * maintained during recovery and need not be started yet.
-			 */
-			StartupCLOG();
-			StartupSUBTRANS(oldestActiveXID);
 
 			/*
 			 * If we're beginning at a shutdown checkpoint, we know that
@@ -6688,7 +6690,11 @@ StartupXLOG(void)
 			if (wasShutdown)
 			{
 				RunningTransactionsData running;
-				TransactionId latestCompletedXid;
+				TransactionId   latestCompletedXid;
+				TransactionId  *xids;
+				int				nxids;
+
+				GetPreparedTransactions(&xids, &nxids);
 
 				/*
 				 * Construct a RunningTransactions snapshot representing a
@@ -6700,7 +6706,7 @@ StartupXLOG(void)
 				running.subxcnt = 0;
 				running.subxid_overflow = false;
 				running.nextXid = checkPoint.nextXid;
-				running.oldestRunningXid = oldestActiveXID;
+				running.oldestRunningXid = checkPoint.oldestActiveXid;
 				latestCompletedXid = checkPoint.nextXid;
 				TransactionIdRetreat(latestCompletedXid);
 				Assert(TransactionIdIsNormal(latestCompletedXid));
@@ -6708,8 +6714,6 @@ StartupXLOG(void)
 				running.xids = xids;
 
 				ProcArrayApplyRecoveryInfo(&running);
-
-				StandbyRecoverPreparedTransactions(false);
 			}
 		}
 
@@ -7017,6 +7021,8 @@ StartupXLOG(void)
 					ereport(FATAL,
 							(errmsg("requested recovery stop point is before consistent recovery point")));
 
+				CleanupPreparedTransactionsOnPITR();
+
 				/*
 				 * This is the last point where we can restart recovery with a
 				 * new recovery target, if we shutdown and begin again. After
@@ -7277,9 +7283,6 @@ StartupXLOG(void)
 	XLogCtl->LogwrtRqst.Write = EndOfLog;
 	XLogCtl->LogwrtRqst.Flush = EndOfLog;
 
-	/* Pre-scan prepared transactions to find out the range of XIDs present */
-	oldestActiveXID = PrescanPreparedTransactions(NULL, NULL);
-
 	/*
 	 * Update full_page_writes in shared memory and write an XLOG_FPW_CHANGE
 	 * record before resource manager writes cleanup WAL records or checkpoint
@@ -7446,23 +7449,10 @@ StartupXLOG(void)
 	LWLockRelease(ProcArrayLock);
 
 	/*
-	 * Start up the commit log and subtrans, if not already done for hot
-	 * standby.  (commit timestamps are started below, if necessary.)
-	 */
-	if (standbyState == STANDBY_DISABLED)
-	{
-		StartupCLOG();
-		StartupSUBTRANS(oldestActiveXID);
-	}
-
-	/*
 	 * Perform end of recovery actions for any SLRUs that need it.
 	 */
 	TrimCLOG();
 	TrimMultiXact();
-
-	/* Reload shared-memory state for prepared transactions */
-	RecoverPreparedTransactions();
 
 	/*
 	 * Shutdown the recovery environment. This must occur after
@@ -8329,14 +8319,16 @@ CreateCheckPoint(int flags)
 	checkPoint.time = (pg_time_t) time(NULL);
 
 	/*
-	 * For Hot Standby, derive the oldestActiveXid before we fix the redo
-	 * pointer. This allows us to begin accumulating changes to assemble our
-	 * starting snapshot of locks and transactions.
+	 * Before recovery we need to start SUBTRANS in a way that it will be
+	 * capable of storing info about possible two-phase transactions that we
+	 * will prepare during xlog replay. We can get here value that is less
+	 * then actual latest prepared transaction, but that is okay.
+	 *
+	 * Also for Hot Standby, this allows us to derive the oldestActiveXid
+	 * before we fix the redo pointer and to begin accumulating changes to
+	 * assemble our starting snapshot of locks and transactions.
 	 */
-	if (!shutdown && XLogStandbyInfoActive())
-		checkPoint.oldestActiveXid = GetOldestActiveTransactionId();
-	else
-		checkPoint.oldestActiveXid = InvalidTransactionId;
+	checkPoint.oldestActiveXid = GetOldestActiveTransactionId();
 
 	/*
 	 * We must block concurrent insertions while examining insert state to
@@ -9394,11 +9386,10 @@ xlog_redo(XLogReaderState *record)
 		{
 			TransactionId *xids;
 			int			nxids;
-			TransactionId oldestActiveXID;
 			TransactionId latestCompletedXid;
 			RunningTransactionsData running;
 
-			oldestActiveXID = PrescanPreparedTransactions(&xids, &nxids);
+			GetPreparedTransactions(&xids, &nxids);
 
 			/*
 			 * Construct a RunningTransactions snapshot representing a shut
@@ -9410,7 +9401,7 @@ xlog_redo(XLogReaderState *record)
 			running.subxcnt = 0;
 			running.subxid_overflow = false;
 			running.nextXid = checkPoint.nextXid;
-			running.oldestRunningXid = oldestActiveXID;
+			running.oldestRunningXid = checkPoint.oldestActiveXid;
 			latestCompletedXid = checkPoint.nextXid;
 			TransactionIdRetreat(latestCompletedXid);
 			Assert(TransactionIdIsNormal(latestCompletedXid));
@@ -9418,8 +9409,6 @@ xlog_redo(XLogReaderState *record)
 			running.xids = xids;
 
 			ProcArrayApplyRecoveryInfo(&running);
-
-			StandbyRecoverPreparedTransactions(true);
 		}
 
 		/* ControlFile->checkPointCopy always tracks the latest ckpt XID */

@@ -50,14 +50,7 @@ typedef struct CheckPoint
 										 * timestamp */
 	TransactionId newestCommitTsXid;	/* newest Xid with valid commit
 										 * timestamp */
-
-	/*
-	 * Oldest XID still running. This is only needed to initialize hot standby
-	 * mode from an online checkpoint, so we only bother calculating this for
-	 * online checkpoints and only when wal_level is replica. Otherwise it's
-	 * set to InvalidTransactionId.
-	 */
-	TransactionId oldestActiveXid;
+	TransactionId oldestActiveXid;		/* Oldest XID still running. */
 } CheckPoint;
 
 /* XLOG info values for XLOG rmgr */

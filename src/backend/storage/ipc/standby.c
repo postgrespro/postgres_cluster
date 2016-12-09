@@ -609,7 +609,8 @@ StandbyAcquireAccessExclusiveLock(TransactionId xid, Oid dbOid, Oid relOid)
 	/* Already processed? */
 	if (!TransactionIdIsValid(xid) ||
 		TransactionIdDidCommit(xid) ||
-		TransactionIdDidAbort(xid))
+		TransactionIdDidAbort(xid) ||
+		StandbyTransactionIdIsPrepared(xid))
 		return;
 
 	elog(trace_recovery(DEBUG4),
