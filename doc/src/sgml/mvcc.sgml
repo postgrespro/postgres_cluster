@@ -1001,12 +1001,12 @@ ERROR:  could not serialize access due to read/write dependencies among transact
        </term>
        <listitem>
         <para>
-         Conflicts with locks of all modes (<literal>ACCESS
+         Conflicts with locks of <literal>ACCESS
          SHARE</literal>, <literal>ROW SHARE</literal>, <literal>ROW
          EXCLUSIVE</literal>, <literal>SHARE UPDATE
          EXCLUSIVE</literal>, <literal>SHARE</literal>, <literal>SHARE
          ROW EXCLUSIVE</literal>, <literal>EXCLUSIVE</literal>, and
-         <literal>ACCESS EXCLUSIVE</literal>).
+         <literal>ACCESS EXCLUSIVE</literal> mode.
          This mode guarantees that the
          holder is the only transaction accessing the table in any way.
         </para>
@@ -1034,6 +1034,40 @@ ERROR:  could not serialize access due to read/write dependencies among transact
       </para>
      </tip>
 
+     <para>
+      Besides, there are two additional lock modes designed to support
+      <application>1C Enterprise</application>. These modes do not conflict
+      with any other lock modes described above. They use is possible, but not
+      encouraged, as <link linkend="advisory-locks">advisory locks</link> provide
+      the same functionality.
+     </para>
+
+     <variablelist>
+      <varlistentry>
+       <term>
+        <literal>APPLICATION SHARE</literal>
+       </term>
+       <listitem>
+        <para>
+         Conflicts with the <literal>APPLICATION EXCLUSIVE</literal> lock
+         mode only.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term>
+        <literal>APPLICATION EXCLUSIVE</literal>
+       </term>
+       <listitem>
+        <para>
+         Conflicts with the <literal>APPLICATION SHARE</literal> and
+         <literal>APPLICATION EXCLUSIVE</literal> lock modes.
+        </para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
+
    <para>
     Once acquired, a lock is normally held till end of transaction.  But if a
     lock is acquired after establishing a savepoint, the lock is released
@@ -1048,9 +1082,9 @@ ERROR:  could not serialize access due to read/write dependencies among transact
 
     <table tocentry="1" id="table-lock-compatibility">
      <title> Conflicting Lock Modes</title>
-     <tgroup cols="9">
+     <tgroup cols="11">
       <colspec colnum="2" colname="lockst">
-      <colspec colnum="9" colname="lockend">
+      <colspec colnum="11" colname="lockend">
       <spanspec namest="lockst" nameend="lockend" spanname="lockreq">
       <thead>
        <row>
@@ -1066,6 +1100,8 @@ ERROR:  could not serialize access due to read/write dependencies among transact
         <entry>SHARE ROW EXCLUSIVE</entry>
         <entry>EXCLUSIVE</entry>
         <entry>ACCESS EXCLUSIVE</entry>
+        <entry>APPLICATION SHARE</entry>
+        <entry>APPLICATION EXCLUSIVE</entry>
        </row>
       </thead>
       <tbody>
@@ -1079,6 +1115,8 @@ ERROR:  could not serialize access due to read/write dependencies among transact
         <entry align="center"></entry>
         <entry align="center"></entry>
         <entry align="center">X</entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
        </row>
        <row>
         <entry>ROW SHARE</entry>
@@ -1090,6 +1128,8 @@ ERROR:  could not serialize access due to read/write dependencies among transact
         <entry align="center"></entry>
         <entry align="center">X</entry>
         <entry align="center">X</entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
        </row>
        <row>
         <entry>ROW EXCLUSIVE</entry>
@@ -1101,6 +1141,8 @@ ERROR:  could not serialize access due to read/write dependencies among transact
         <entry align="center">X</entry>
         <entry align="center">X</entry>
         <entry align="center">X</entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
        </row>
        <row>
         <entry>SHARE UPDATE EXCLUSIVE</entry>
@@ -1112,6 +1154,8 @@ ERROR:  could not serialize access due to read/write dependencies among transact
         <entry align="center">X</entry>
         <entry align="center">X</entry>
         <entry align="center">X</entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
        </row>
        <row>
         <entry>SHARE</entry>
@@ -1123,6 +1167,8 @@ ERROR:  could not serialize access due to read/write dependencies among transact
         <entry align="center">X</entry>
         <entry align="center">X</entry>
         <entry align="center">X</entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
        </row>
        <row>
         <entry>SHARE ROW EXCLUSIVE</entry>
@@ -1134,6 +1180,8 @@ ERROR:  could not serialize access due to read/write dependencies among transact
         <entry align="center">X</entry>
         <entry align="center">X</entry>
         <entry align="center">X</entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
        </row>
        <row>
         <entry>EXCLUSIVE</entry>
@@ -1145,6 +1193,8 @@ ERROR:  could not serialize access due to read/write dependencies among transact
         <entry align="center">X</entry>
         <entry align="center">X</entry>
         <entry align="center">X</entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
        </row>
        <row>
         <entry>ACCESS EXCLUSIVE</entry>
@@ -1154,6 +1204,34 @@ ERROR:  could not serialize access due to read/write dependencies among transact
         <entry align="center">X</entry>
         <entry align="center">X</entry>
         <entry align="center">X</entry>
+        <entry align="center">X</entry>
+        <entry align="center">X</entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+       </row>
+       <row>
+        <entry>APPLICATION SHARE</entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center">X</entry>
+       </row>
+       <row>
+        <entry>APPLICATION EXCLUSIVE</entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
+        <entry align="center"></entry>
         <entry align="center">X</entry>
         <entry align="center">X</entry>
        </row>
