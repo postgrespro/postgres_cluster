@@ -4,18 +4,13 @@ Multi-master is an extension and set of patches to a Postegres database, that tu
 synchronous shared-nothing cluster to provide OLTP scalability and high availability with automatic
 disaster recovery.
 
-
-
 ## Features
 
 * Cluster-wide transaction isolation
 * Synchronous logical replication
 * DDL Replication
-* Distributed sequences
 * Fault tolerance
 * Automatic node recovery
-
-
 
 ## Overview
 
@@ -65,17 +60,15 @@ After that everything is ready to install postgres along with extensions
 git clone https://github.com/postgrespro/postgres_cluster.git
 cd postgres_cluster
 ./configure && make && make -j 4 install
-cd ./contrib/raftable && make install
 cd ../../contrib/mmts && make install
 ```
 
 ### Docker
 
-Directort contrib/mmts also includes Dockerfile that is capable of building multi-master and starting 3 node cluster.
+Directory contrib/mmts also includes docker-compose.yml that is capable of building multi-master and starting 3 node cluster.
 
 ```sh
 cd contrib/mmts
-docker-compose build
 docker-compose up
 ```
 
@@ -83,44 +76,35 @@ docker-compose up
 
 After things go more stable we will release prebuilt packages for major platforms.
 
-
-
 ## Configuration
 
 1. Add these required options to the `postgresql.conf` of each instance in the cluster.
-
  ```sh
- max_prepared_transactions = 200 # should be > 0, because all
-                                 # transactions are implicitly two-phase
- max_connections = 200
- max_worker_processes = 100 # at least (2 * n + p + 1)
-                            # this figure is calculated as:
-                            #   1 raftable worker
-                            #   n-1 receiver
-                            #   n-1 sender
+ wal_level = logical        # multimaster is build on top of
+                            # logical replication and will not work otherwise
+ max_connections = 100
+ max_prepared_transactions = 300 # all transactions are implicitly two-phase, so that's
+                                 # a good idea to set this equal to max_connections*N_nodes.
+ max_wal_senders = 10       # at least the number of nodes
+ max_replication_slots = 10 # at least the number of nodes
+ max_worker_processes = 250 # Each node has:
+                            #   N_nodes-1 receiver
+                            #   N_nodes-1 sender
                             #   1 mtm-sender
                             #   1 mtm-receiver
-                            #   p workers in the pool
- max_parallel_degree = 0
- wal_level = logical # multimaster is build on top of
-                     # logical replication and will not work otherwise
- max_wal_senders = 10 # at least the number of nodes
- wal_sender_timeout = 0
- default_transaction_isolation = 'repeatable read'
- max_replication_slots = 10 # at least the number of nodes
- shared_preload_libraries = 'raftable,multimaster'
- multimaster.workers = 10
- multimaster.queue_size = 10485760 # 10mb
- multimaster.node_id = 1 # the 1-based index of the node in the cluster
- multimaster.conn_strings = 'dbname=... host=....0.0.1 port=... raftport=..., ...'
-                            # comma-separated list of connection strings
- multimaster.use_raftable = true
- multimaster.heartbeat_recv_timeout = 1000
- multimaster.heartbeat_send_timeout = 250
- multimaster.ignore_tables_without_pk = true
- multimaster.twopc_min_timeout = 2000
+                            # Also transactions executed at neighbour nodes can cause spawn of
+                            # background pool worker at our node. At max this will be equal to
+                            # sum of max_connections on neighbour nodes.
+
+
+
+ shared_preload_libraries = 'multimaster'
+ multimaster.max_nodes = 3  # cluster size
+ multimaster.node_id = 1    # the 1-based index of the node in the cluster
+ multimaster.conn_strings = 'dbname=mydb host=node1.mycluster, ...'
+                            # comma-separated list of connection strings to neighbour nodes.
 ```
-1. Allow replication in `pg_hba.conf`.
+2. Allow replication in `pg_hba.conf`.
 
 Read description of all configuration params at [configuration](/contrib/mmts/doc/configuration.md)
 
@@ -146,16 +130,6 @@ Read description of all management functions at [functions](/contrib/mmts/doc/fu
 ### Fault tolerance
 
 (Link to test/failure matrix)
-
-### Postgres compatibility
-
-Regression: 141 of 164
-Isolation: n/a
-
-To run tests:
-* `make -C contrib/mmts check` to run TAP-tests.
-* `make -C contrib/mmts xcheck` to run blockade tests. The blockade tests require `docker`, `blockade`, and some other packages installed, see [requirements.txt](tests2/requirements.txt) for the list. You might also want to gain superuser privileges to run these tests successfully.
-
 
 
 ## Limitations
