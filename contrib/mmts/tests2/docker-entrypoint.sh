@@ -54,13 +54,12 @@ if [ "$1" = 'postgres' ]; then
 			max_worker_processes = 30
 			max_replication_slots = 10
 			max_wal_senders = 10
-			shared_preload_libraries = 'raftable,multimaster'
+			shared_preload_libraries = 'multimaster'
 			default_transaction_isolation = 'repeatable read'
             log_line_prefix = '%t: '
 
 			multimaster.workers = 4
 			multimaster.max_nodes = 3
-			multimaster.use_raftable = false
 			multimaster.volkswagen_mode = 1
 			multimaster.queue_size=52857600
 			multimaster.ignore_tables_without_pk = 1
@@ -68,8 +67,8 @@ if [ "$1" = 'postgres' ]; then
 			multimaster.conn_strings = '$CONNSTRS'
 			multimaster.heartbeat_recv_timeout = 1100
 			multimaster.heartbeat_send_timeout = 250
-			multimaster.twopc_min_timeout = 20000
-			multimaster.min_2pc_timeout = 10000
+			multimaster.twopc_min_timeout = 50000
+			multimaster.min_2pc_timeout = 50000
 		EOF
 
 		cat $PGDATA/postgresql.conf

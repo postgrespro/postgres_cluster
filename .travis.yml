@@ -5,26 +5,24 @@ services:
 
 before_script: env && pip3 install -r contrib/mmts/tests2/requirements.txt
 
-# script: cd contrib/mmts/tests2 && python3 test_regression.py
-script: cd contrib/mmts/tests2 && python3 test_recovery.py
+script: cd contrib/mmts/tests2 && python3 -m unittest discover
 
 notifications:
   email:
     - s.kelvich@postgrespro.ru
+    - k.knizhnik@postgrespro.ru
 
+## Old TAP-based tests:
 
 # language: perl
 # os:
 #   - linux
-#   #- osx
 # compiler:
 #   - gcc
 #   - clang
 # install: cpanm IPC::Run DBD::Pg Proc::ProcessTable
 # before_script: ./configure --enable-cassert --enable-tap-tests && make -j4
 # env:
-#   #- TESTDIR=.
-#   #- TESTDIR=src/test/recovery
 #   - TESTDIR=contrib/raftable
 #   - TESTDIR=contrib/mmts
 # script: cd $TESTDIR && make check
@@ -33,4 +31,3 @@ notifications:
 #     - s.kelvich@postgrespro.ru
 #     - c.pan@postgrespro.ru
 #     - k.knizhnik@postgrespro.ru
-

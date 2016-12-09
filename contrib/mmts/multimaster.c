@@ -72,9 +72,6 @@
 
 #include "multimaster.h"
 #include "ddd.h"
-#include "raftable_wrapper.h"
-#include "raftable.h"
-#include "worker.h"
 
 typedef struct { 
     TransactionId xid;    /* local transaction ID   */
@@ -215,7 +212,6 @@ int   MtmNodes;
 int   MtmNodeId;
 int   MtmReplicationNodeId;
 int   MtmArbiterPort;
-int   MtmRaftablePort;
 int   MtmConnectTimeout;
 int   MtmReconnectTimeout;
 int   MtmNodeDisableDelay;
@@ -225,7 +221,6 @@ int   MtmHeartbeatSendTimeout;
 int   MtmHeartbeatRecvTimeout;
 int   MtmMin2PCTimeout;
 int   MtmMax2PCRatio;
-bool  MtmUseRaftable;
 bool  MtmUseDtm;
 bool  MtmPreserveCommitOrder;
 bool  MtmVolksWagenMode;
@@ -1743,7 +1738,9 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 			BIT_SET(Mtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
 			Mtm->nLockers += 1;
 		} else { 
-			MTM_LOG2("Continue recovery of node %d, slot position %lx, WAL position %lx, WAL sender position %lx, lockers %d, active transactions %d", nodeId, slotLSN, walLSN, MyWalSnd->sentPtr, Mtm->nLockers, Mtm->nActiveTransactions);
+			MTM_LOG2("Continue recovery of node %d, slot position %lx, WAL position %lx,"
+			" WAL sender position %lx, lockers %d, active transactions %d", nodeId, slotLSN,
+			walLSN, MyWalSnd->sentPtr, Mtm->nLockers, Mtm->nActiveTransactions);
 		}
 	}
 	MtmUnlock();
@@ -1826,7 +1823,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 
 	for (i = 0; i < n; i++) { 
 		if (i+1 != MtmNodeId) { 
-			void* data = RaftableGet(psprintf("node-mask-%d", i+1), NULL, NULL, nowait);
+			void *data = &Mtm->nodes[i].connectivityMask;
 			if (data == NULL) { 
 				return false;
 			}
@@ -1880,7 +1877,6 @@ bool MtmRefreshClusterStatus(bool nowait)
 	int i;
 
 	if (!MtmBuildConnectivityMatrix(matrix, nowait)) { 
-		/* RAFT is not available */
 		return false;
 	}
 
@@ -1982,17 +1978,6 @@ void MtmOnNodeDisconnect(int nodeId)
 	MTM_LOG1("Disconnect node %d connectivity mask %llx", nodeId, (long long) Mtm->connectivityMask);
 	MtmUnlock();
 
-	if (!RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false))
-	{
-		elog(WARNING, "Disable node which is in minority according to RAFT");
-		MtmLock(LW_EXCLUSIVE);
-		if (Mtm->status == MTM_ONLINE) { 
-			MtmSwitchClusterMode(MTM_IN_MINORITY);
-		}
-		MtmUnlock();
-		return;
-	}
-
 	MtmSleep(MSEC_TO_USEC(MtmHeartbeatSendTimeout));
 	MtmRefreshClusterStatus(false);
 }
@@ -2003,9 +1988,6 @@ void MtmOnNodeConnect(int nodeId)
 	BIT_CLEAR(Mtm->connectivityMask, nodeId-1);
 	BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
 	MtmUnlock();
-
-	MTM_LOG1("Reconnect node %d, connectivityMask=%llx", nodeId, (long long) Mtm->connectivityMask);
-	RaftableSet(psprintf("node-mask-%d", MtmNodeId), &Mtm->connectivityMask, sizeof Mtm->connectivityMask, false); 
 }
 
 
@@ -2114,21 +2096,6 @@ static void MtmLoadLocalTables(void)
 		systable_endscan(scan);
 		heap_close(rel, RowExclusiveLock);
 	}
-}
-	
-static void MtmRaftableInitialize()
-{
-	int i;
-
-	for (i = 0; i < MtmNodes; i++)
-	{
-		int port = MtmConnections[i].raftablePort;
-		if (port == 0) {
-			port = MtmRaftablePort + i;
-		}
-		raftable_peer(i, MtmConnections[i].hostName, port);
-	}
-	raftable_start(MtmNodeId - 1);
 }
 
 static void MtmCheckControlFile(void)
@@ -2280,19 +2247,10 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 	memcpy(conn->hostName, host, hostLen);
 	conn->hostName[hostLen] = '\0';
 
-	port = strstr(connStr, "raftport=");
+	port = strstr(connStr, "arbiter_port=");
 	if (port != NULL) {
-		if (sscanf(port+9, "%d", &conn->raftablePort) != 1) { 
-			elog(ERROR, "Invalid raftable port: %s", port+9);
-		}
-	} else { 
-		conn->raftablePort = 0;
-	}
-
-	port = strstr(connStr, "arbiterport=");
-	if (port != NULL) {
-		if (sscanf(port+12, "%d", &conn->arbiterPort) != 1) { 
-			elog(ERROR, "Invalid arbiter port: %s", port+12);
+		if (sscanf(port+13, "%d", &conn->arbiterPort) != 1) {
+			elog(ERROR, "Invalid arbiter port: %s", port+13);
 		}
 	} else { 
 		conn->arbiterPort = MULTIMASTER_DEFAULT_ARBITER_PORT;
@@ -2622,19 +2580,6 @@ _PG_init(void)
 	);
 
 	DefineCustomBoolVariable(
-		"multimaster.use_raftable",
-		"Use raftable plugin for internode communication",
-		NULL,
-		&MtmUseRaftable,
-		true,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
-
-	DefineCustomBoolVariable(
 		"multimaster.ignore_tables_without_pk",
 		"Do not replicate tables withpout primary key",
 		NULL,
@@ -2748,7 +2693,8 @@ _PG_init(void)
 
 	DefineCustomIntVariable(
 		"multimaster.max_2pc_ratio",
-		"Maximal ratio (in percents) between prepare time at different nodes: if T is time of preparing transaction at some node, then transaction can be aborted if prepared responce was not received in T*MtmMax2PCRatio/100",
+		"Maximal ratio (in percents) between prepare time at different nodes: if T is time of preparing transaction at some node,"
+			" then transaction can be aborted if prepared responce was not received in T*MtmMax2PCRatio/100",
 		NULL,
 		&MtmMax2PCRatio,
 		200, /* 2 times */
@@ -2782,21 +2728,6 @@ _PG_init(void)
 		NULL,
 		&MtmArbiterPort,
 		MULTIMASTER_DEFAULT_ARBITER_PORT,
-	    0,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
-
-	DefineCustomIntVariable(
-		"multimaster.raftable_port",
-		"Base value for assigning raftable ports",
-		NULL,
-		&MtmRaftablePort,
-		6543,
 	    0,
 		INT_MAX,
 		PGC_BACKEND,
@@ -2896,9 +2827,6 @@ _PG_init(void)
 
     BgwPoolStart(MtmWorkers, MtmPoolConstructor);
 
-	if (MtmUseRaftable) {
-		MtmRaftableInitialize();
-	}
 	MtmArbiterInitialize();
 
 	/*
@@ -3606,8 +3534,7 @@ PGconn *PQconnectdb_safe(const char *conninfo)
 {
 	PGconn *conn;
 	char *safe_connstr = pstrdup(conninfo);
-	erase_option_from_connstr("raftport", safe_connstr);
-	erase_option_from_connstr("arbiterport", safe_connstr);
+	erase_option_from_connstr("arbiter_port", safe_connstr);
 
 	conn = PQconnectdb(safe_connstr);
 
@@ -3716,11 +3643,17 @@ Datum mtm_dump_lock_graph(PG_FUNCTION_ARGS)
 	int i;
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
-		size_t size;
-		char* data = RaftableGet(psprintf("lock-graph-%d", i+1), &size, NULL, false);
-		if (data) { 
-			GlobalTransactionId *gtid = (GlobalTransactionId *)data;
-			GlobalTransactionId *last = (GlobalTransactionId *)(data + size);
+		size_t lockGraphSize;
+		char  *lockGraphData;
+		MtmLockNode(i + MtmMaxNodes, LW_SHARED);
+		lockGraphSize = Mtm->nodes[i].lockGraphUsed;
+		lockGraphData = palloc(lockGraphSize);
+		memcpy(lockGraphData, Mtm->nodes[i].lockGraphData, lockGraphSize);
+		MtmUnlockNode(i + MtmMaxNodes);
+
+		if (lockGraphData) {
+			GlobalTransactionId *gtid = (GlobalTransactionId *) lockGraphData;
+			GlobalTransactionId *last = (GlobalTransactionId *) (lockGraphData + lockGraphSize);
 			appendStringInfo(s, "node-%d lock graph: ", i+1);
 			while (gtid != last) { 
 				GlobalTransactionId *src = gtid++;
@@ -4630,19 +4563,28 @@ MtmDetectGlobalDeadLockForXid(TransactionId xid)
 		
         ByteBufferAlloc(&buf);
         EnumerateLocks(MtmSerializeLock, &buf);
-		RaftableSet(psprintf("lock-graph-%d", MtmNodeId), buf.data, buf.used, false);
+
+		Assert(replorigin_session_origin == InvalidRepOriginId);
+		XLogFlush(LogLogicalMessage("L", buf.data, buf.used, false));
+
 		MtmSleep(MSEC_TO_USEC(DeadlockTimeout));
 		MtmGraphInit(&graph);
 		MtmGraphAdd(&graph, (GlobalTransactionId*)buf.data, buf.used/sizeof(GlobalTransactionId));
         ByteBufferFree(&buf);
 		for (i = 0; i < Mtm->nAllNodes; i++) { 
 			if (i+1 != MtmNodeId && !BIT_CHECK(Mtm->disabledNodeMask, i)) { 
-				size_t size;
-				void* data = RaftableGet(psprintf("lock-graph-%d", i+1), &size, NULL, false);
-				if (data == NULL) { 
-					return true; /* If using Raftable is disabled */
+				size_t lockGraphSize;
+				void* lockGraphData;
+				MtmLockNode(i + MtmMaxNodes, LW_SHARED);
+				lockGraphSize = Mtm->nodes[i].lockGraphUsed;
+				lockGraphData = palloc(lockGraphSize);
+				memcpy(lockGraphData, Mtm->nodes[i].lockGraphData, lockGraphSize);
+				MtmUnlockNode(i + MtmMaxNodes);
+
+				if (lockGraphData == NULL) {
+					return true;
 				} else { 
-					MtmGraphAdd(&graph, (GlobalTransactionId*)data, size/sizeof(GlobalTransactionId));
+					MtmGraphAdd(&graph, (GlobalTransactionId*)lockGraphData, lockGraphSize/sizeof(GlobalTransactionId));
 				}
 			}
 		}
