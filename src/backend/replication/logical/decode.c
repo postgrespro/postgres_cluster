@@ -646,7 +646,9 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		/* replay actions of all transaction + subtransactions in order */
 		ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
 							commit_time, origin_id, origin_lsn);
+		*ctx->reorder->gid = '\0';
 	}
+	*ctx->reorder->state_3pc = '\0';
 }
 
 static void
@@ -677,6 +679,7 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	}
 
 	strcpy(ctx->reorder->gid, parsed->twophase_gid);
+	strcpy(ctx->reorder->state_3pc, parsed->state_3pc);
 
 	/*
 	 * Process invalidation messages, even if we're not interested in the
@@ -743,6 +746,7 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			&& (parsed->dbId == ctx->slot->data.database)) {
 
 		strcpy(ctx->reorder->gid, parsed->twophase_gid);
+		*ctx->reorder->state_3pc = '\0';
 
 		fprintf(stderr, "(!)	aborting: db_id=%d, gid=%s\n", parsed->dbId, parsed->twophase_gid);
 

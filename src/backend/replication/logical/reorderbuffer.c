@@ -1375,7 +1375,8 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 	txn->origin_id = origin_id;
 	txn->origin_lsn = origin_lsn;
 	txn->xact_action = rb->xact_action;
-	memcpy(txn->gid, rb->gid, GIDSIZE);
+	strcpy(txn->gid, rb->gid);
+	strcpy(txn->state_3pc, rb->state_3pc);
 
 	/*
 	 * If this transaction didn't have any real changes in our database, it's
@@ -1733,6 +1734,7 @@ ReorderBufferCommitBareXact(ReorderBuffer *rb, TransactionId xid,
 	txn->origin_lsn = origin_lsn;
 	txn->xact_action = rb->xact_action;
 	strcpy(txn->gid, rb->gid);
+	*txn->gid = '\0';
 
 	rb->commit(rb, txn, commit_lsn);
 }

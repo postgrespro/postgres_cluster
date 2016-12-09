@@ -252,6 +252,17 @@ pglogical_receiver_main(Datum main_arg)
 	ActivePortal->status = PORTAL_ACTIVE;
 	ActivePortal->sourceText = "";
 
+	/* Create originid */
+	StartTransactionCommand();
+	originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
+	originId = replorigin_by_name(originName, true);
+	if (originId == InvalidRepOriginId) { 
+		originId = replorigin_create(originName);
+	}
+	CommitTransactionCommand();
+	Mtm->nodes[nodeId-1].originId = originId;
+	Mtm->nodes[nodeId-1].restartLSN = InvalidXLogRecPtr;
+
 	/* This is main loop of logical replication.
 	 * In case of errors we will try to reestablish connection.
 	 * Also reconnet is forced when node is switch to recovery mode
@@ -322,11 +333,8 @@ pglogical_receiver_main(Datum main_arg)
 		
 		/* Start logical replication at specified position */
 		if (originStartPos == InvalidXLogRecPtr) { 
-			StartTransactionCommand();
-			originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
-			originId = replorigin_by_name(originName, true);
-			if (originId == InvalidRepOriginId) { 
-				originId = replorigin_create(originName);
+			originStartPos = replorigin_get_progress(originId, false);
+			if (originStartPos == InvalidXLogRecPtr) {
 				/* 
 				 * We are just creating new replication slot.
 				 * It is assumed that state of local and remote nodes is the same at this moment.
@@ -336,15 +344,12 @@ pglogical_receiver_main(Datum main_arg)
 				originStartPos = Mtm->status == MTM_RECOVERY && Mtm->donorNodeId == nodeId ? GetXLogInsertRecPtr() : InvalidXLogRecPtr;
 				MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, nodeId);
 			} else { 
-				originStartPos = replorigin_get_progress(originId, false);
 				if (Mtm->nodes[nodeId-1].restartLSN < originStartPos) { 
 					MTM_LOG2("[restartlsn] node %d: %lx -> %lx (pglogical_receiver_mains)", nodeId, Mtm->nodes[nodeId-1].restartLSN, originStartPos);
 					Mtm->nodes[nodeId-1].restartLSN = originStartPos;
 				}
 				MTM_LOG1("Restart logical receiver at position %lx with origin=%d from node %d", originStartPos, originId, nodeId);
 			}
-			Mtm->nodes[nodeId-1].originId = originId;
-			CommitTransactionCommand();
 		}		
 		
 		MTM_LOG1("Start replication on slot %s from node %d at position %lx, mode %s, recovered lsn %lx", 

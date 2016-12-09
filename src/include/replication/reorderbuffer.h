@@ -152,6 +152,7 @@ typedef struct ReorderBufferTXN
 	 */
 	uint8		xact_action;
 	char		gid[GIDSIZE];
+	char		state_3pc[MAX_3PC_STATE_SIZE];
 
 	/* did the TX have catalog changes */
 	bool		has_catalog_changes;
@@ -311,6 +312,7 @@ struct ReorderBuffer
 	/* For twophase tx support we need to pass XACT action to ReorderBufferTXN */
 	uint8		xact_action;
 	char		gid[GIDSIZE];
+	char		state_3pc[MAX_3PC_STATE_SIZE];
 
 	/*
 	 * Transactions that could be a toplevel xact, ordered by LSN of the first

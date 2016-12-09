@@ -27,6 +27,11 @@
 #define GIDSIZE 200
 
 /*
+ * Maximal size of 3PC transaction state
+ */
+#define MAX_3PC_STATE_SIZE 256
+
+/*
  * Xact isolation levels
  */
 #define XACT_READ_UNCOMMITTED	0
@@ -324,6 +329,7 @@ typedef struct xl_xact_parsed_prepare
 
 	TransactionId twophase_xid;
 	char 		twophase_gid[GIDSIZE];
+	char 		state_3pc[MAX_3PC_STATE_SIZE];
 
 	XLogRecPtr	origin_lsn;
 	TimestampTz origin_timestamp;

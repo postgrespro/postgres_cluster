@@ -452,6 +452,7 @@ process_remote_message(StringInfo s)
 			standalone = true;
 			break;
 		}
+
 	}
 	return standalone;
 }
@@ -620,8 +621,14 @@ process_remote_commit(StringInfo in)
 	replorigin_session_origin_lsn = origin_node == MtmReplicationNodeId ? end_lsn : origin_lsn;
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 
-	switch(PGLOGICAL_XACT_EVENT(flags))
+	switch (PGLOGICAL_XACT_EVENT(flags))
 	{
+	    case PGLOGICAL_PRECOMMIT_PREPARED:
+		{
+			gid = pq_getmsgstring(in);
+			MtmPrecommitTransaction(gid);
+			return;
+		}
 		case PGLOGICAL_COMMIT:
 		{
 			MTM_LOG2("%d: PGLOGICAL_COMMIT commit", MyProcPid);

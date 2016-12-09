@@ -2744,7 +2744,7 @@ CommitTransactionCommand(void)
 	TransactionState s = CurrentTransactionState;
 
 	CallXactCallbacks(XACT_EVENT_COMMIT_COMMAND);
-
+	Assert(s->blockState != TBLOCK_DEFAULT);
 	switch (s->blockState)
 	{
 			/*

@@ -11,6 +11,7 @@
 #include "libpq-fe.h"
 
 #define  DEBUG_LEVEL 0
+#define  MTM_TRACE   1
 
 #if DEBUG_LEVEL == 0
 #define MTM_LOG1(fmt, ...) elog(LOG, fmt, ## __VA_ARGS__) 
@@ -82,14 +83,18 @@ typedef uint64 csn_t; /* commit serial number */
 
 typedef char pgid_t[MULTIMASTER_MAX_GID_SIZE];
 
-#define PGLOGICAL_COMMIT			0x00
-#define PGLOGICAL_PREPARE			0x01
-#define PGLOGICAL_COMMIT_PREPARED	0x02
-#define PGLOGICAL_ABORT_PREPARED	0x03
+typedef enum
+{ 
+	PGLOGICAL_COMMIT,
+	PGLOGICAL_PREPARE,
+	PGLOGICAL_COMMIT_PREPARED,
+	PGLOGICAL_ABORT_PREPARED,
+	PGLOGICAL_PRECOMMIT_PREPARED
+} PGLOGICAL_EVENT;
 
-#define PGLOGICAL_XACT_EVENT(flags)	(flags & 0x03)
+#define PGLOGICAL_XACT_EVENT(flags)	(flags & 0x07)
 
-#define PGLOGICAL_CAUGHT_UP	        0x04
+#define PGLOGICAL_CAUGHT_UP	        0x08
 
 
 /* Identifier of global transaction */
@@ -253,6 +258,7 @@ typedef struct
 	nodemask_t reconnectMask; 	       /* Mask of nodes connection to which has to be reestablished by sender */
 	int        lastLockHolder;         /* PID of process last obtaning the node lock */
 	bool   localTablesHashLoaded;      /* Whether data from local_tables table is loaded in shared memory hash table */
+	bool   preparedTransactionsLoaded; /* GIDs of prepared transactions are loaded at startup */
 	int    inject2PCError;             /* Simulate error during 2PC commit at this node */
     int    nLiveNodes;                 /* Number of active nodes */
     int    nAllNodes;                  /* Total numbber of nodes */
@@ -372,5 +378,6 @@ extern void MtmEndSession(int nodeId, bool unlock);
 extern void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit);
 extern void MtmRollbackPreparedTransaction(int nodeId, char const* gid);
 extern bool MtmFilterTransaction(char* record, int size);
+extern void MtmPrecommitTransaction(char const* gid);
 
 #endif

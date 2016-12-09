@@ -536,11 +536,13 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 	nodemask_t save_mask = busy_mask;
 	BIT_SET(busy_mask, node);
 	while (true) {
+#if 0
 		if (sockets[node] >= 0 && BIT_CHECK(Mtm->reconnectMask, node)) {
 			elog(WARNING, "Arbiter is forced to reconnect to node %d", node+1); 
 			close(sockets[node]);
 			sockets[node] = -1;
 		}
+#endif
 		if (BIT_CHECK(Mtm->reconnectMask, node)) {
 			MtmLock(LW_EXCLUSIVE);		
 			BIT_CLEAR(Mtm->reconnectMask, node);
@@ -872,7 +874,8 @@ static void MtmReceiver(Datum arg)
 				}  
 				
 				rc = MtmReadFromNode(i, (char*)rxBuffer[i].data + rxBuffer[i].used, rxBuffer[i].size-rxBuffer[i].used);
-				if (rc <= 0) { 
+				if (rc <= 0) {
+					MTM_LOG1("Failed to read response from node %d", i+1);
 					continue;
 				}
 
@@ -940,6 +943,8 @@ static void MtmReceiver(Datum arg)
 									if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
 										elog(LOG, "Commit transaction %s because it is prepared at all live nodes", msg->gid);		
 										MtmFinishPreparedTransaction(ts, true);
+									} else { 
+										MTM_LOG1("Receive response for transaction %s -> %d, participants=%llx, voted=%llx", msg->gid, msg->status, (long long)ts->participantsMask, (long long)ts->votedMask);		
 									}
 								} else {
 									elog(LOG, "Receive response %s for transaction %s for node %d, votedMask %llx, participantsMask %llx",
@@ -1009,7 +1014,8 @@ static void MtmReceiver(Datum arg)
 									} else if (MtmUseDtm) { 
 										ts->votedMask = 0;
 										MTM_TXTRACE(ts, "MtmTransReceiver send MSG_PRECOMMIT");
-										MtmSend2PCMessage(ts, MSG_PRECOMMIT);									  
+										//MtmSend2PCMessage(ts, MSG_PRECOMMIT);	
+										SetPrepareTransactionState(ts->gid, "precommitted");								  
 									} else { 
 										ts->status = TRANSACTION_STATUS_UNKNOWN;
 										MtmWakeUpBackend(ts);
@@ -1056,6 +1062,7 @@ static void MtmReceiver(Datum arg)
 					} else { 
 						switch (msg->code) { 
 						  case MSG_PRECOMMIT:
+							Assert(false); // Now send through pglogical 
 							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
 								ts->status = TRANSACTION_STATUS_UNKNOWN;
 								ts->csn = MtmAssignCSN();

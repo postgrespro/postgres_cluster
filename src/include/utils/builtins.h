@@ -1292,6 +1292,7 @@ extern Datum tsm_system_handler(PG_FUNCTION_ARGS);
 
 /* access/transam/twophase.c */
 extern Datum pg_prepared_xact(PG_FUNCTION_ARGS);
+extern Datum pg_precommit_prepared(PG_FUNCTION_ARGS);
 extern Datum pg_rollback_prepared_xacts(PG_FUNCTION_ARGS);
 
 /* access/transam/multixact.c */

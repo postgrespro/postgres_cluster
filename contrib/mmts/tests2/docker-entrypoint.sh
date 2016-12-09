@@ -56,6 +56,7 @@ if [ "$1" = 'postgres' ]; then
 			max_wal_senders = 10
 			shared_preload_libraries = 'raftable,multimaster'
 			default_transaction_isolation = 'repeatable read'
+            log_line_prefix = '%t: '
 
 			multimaster.workers = 4
 			multimaster.max_nodes = 3
