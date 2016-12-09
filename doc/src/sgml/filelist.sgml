@@ -32,6 +32,7 @@
 <!ENTITY syntax     SYSTEM "syntax.sgml">
 <!ENTITY textsearch SYSTEM "textsearch.sgml">
 <!ENTITY typeconv   SYSTEM "typeconv.sgml">
+<!ENTITY atx           SYSTEM "atx.sgml">
 
 <!-- administrator's guide -->
 <!ENTITY backup        SYSTEM "backup.sgml">

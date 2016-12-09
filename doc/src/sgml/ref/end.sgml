@@ -21,7 +21,7 @@ doc/src/sgml/ref/end.sgml
 
  <refsynopsisdiv>
 <synopsis>
-END [ WORK | TRANSACTION ]
+END [ AUTONOMOUS ] [ WORK | TRANSACTION ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -44,6 +44,7 @@ END [ WORK | TRANSACTION ]
    <varlistentry>
     <term><literal>WORK</literal></term>
     <term><literal>TRANSACTION</literal></term>
+    <term><literal>AUTONOMOUS</literal></term>
     <listitem>
      <para>
       Optional key words. They have no effect.

@@ -21,7 +21,7 @@ doc/src/sgml/ref/begin.sgml
 
  <refsynopsisdiv>
 <synopsis>
-BEGIN [ WORK | TRANSACTION ] [ <replaceable class="parameter">transaction_mode</replaceable> [, ...] ]
+BEGIN [ AUTONOMOUS ] [ WORK | TRANSACTION ] [ <replaceable class="parameter">transaction_mode</replaceable> [, ...] ]
 
 <phrase>where <replaceable class="parameter">transaction_mode</replaceable> is one of:</phrase>
 
@@ -63,6 +63,13 @@ BEGIN [ WORK | TRANSACTION ] [ <replaceable class="parameter">transaction_mode</
    <xref linkend="sql-set-transaction">
    was executed.
   </para>
+
+  <para>
+   In case of presence of optional <command>AUTONOMOUS</command> keyword, autonomous transaction is started. 
+   Autonomous transaction can be started only within some other transaction.
+   See section <xref linkend="atx"> for more details about autonomous transactions. 
+  </para>
+
  </refsect1>
 
  <refsect1>
@@ -75,6 +82,17 @@ BEGIN [ WORK | TRANSACTION ] [ <replaceable class="parameter">transaction_mode</
     <listitem>
      <para>
       Optional key words. They have no effect.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>AUTONOMOUS</literal></term>
+    <listitem>
+     <para>
+      Optional key words. Cause start of autonomous subtransaction. 
+      Autonomous transaction can be started only within some other transaction.
+      See section <xref linkend="atx"> for more details about autonomous transactions.
      </para>
     </listitem>
    </varlistentry>
