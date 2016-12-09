@@ -774,6 +774,8 @@
 
 #define PGPRO_EE
 
+#define XID_IS_64BIT
+
 /* A string containing the version number of Postgres Pro */
 #undef PGPRO_VERSION_STR
 

@@ -81,6 +81,7 @@ static void KillExistingXLOG(void);
 static void KillExistingArchiveStatus(void);
 static void WriteEmptyXLOG(void);
 static void usage(void);
+static uint64 str2uint64(const char *str, char **endptr, int base);
 
 
 int
@@ -131,7 +132,7 @@ main(int argc, char *argv[])
 				break;
 
 			case 'x':
-				set_xid = strtoul(optarg, &endptr, 0);
+				set_xid = str2uint64(optarg, &endptr, 0);
 				if (endptr == optarg || *endptr != '\0')
 				{
 					fprintf(stderr, _("%s: invalid argument for option %s\n"), progname, "-x");
@@ -146,14 +147,14 @@ main(int argc, char *argv[])
 				break;
 
 			case 'c':
-				set_oldest_commit_ts_xid = strtoul(optarg, &endptr, 0);
+				set_oldest_commit_ts_xid = str2uint64(optarg, &endptr, 0);
 				if (endptr == optarg || *endptr != ',')
 				{
 					fprintf(stderr, _("%s: invalid argument for option %s\n"), progname, "-c");
 					fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 					exit(1);
 				}
-				set_newest_commit_ts_xid = strtoul(endptr + 1, &endptr2, 0);
+				set_newest_commit_ts_xid = str2uint64(endptr + 1, &endptr2, 0);
 				if (endptr2 == endptr + 1 || *endptr2 != '\0')
 				{
 					fprintf(stderr, _("%s: invalid argument for option %s\n"), progname, "-c");
@@ -192,7 +193,7 @@ main(int argc, char *argv[])
 				break;
 
 			case 'm':
-				set_mxid = strtoul(optarg, &endptr, 0);
+				set_mxid = str2uint64(optarg, &endptr, 0);
 				if (endptr == optarg || *endptr != ',')
 				{
 					fprintf(stderr, _("%s: invalid argument for option %s\n"), progname, "-m");
@@ -200,7 +201,7 @@ main(int argc, char *argv[])
 					exit(1);
 				}
 
-				set_oldestmxid = strtoul(endptr + 1, &endptr2, 0);
+				set_oldestmxid = str2uint64(endptr + 1, &endptr2, 0);
 				if (endptr2 == endptr + 1 || *endptr2 != '\0')
 				{
 					fprintf(stderr, _("%s: invalid argument for option %s\n"), progname, "-m");
@@ -226,7 +227,7 @@ main(int argc, char *argv[])
 				break;
 
 			case 'O':
-				set_mxoff = strtoul(optarg, &endptr, 0);
+				set_mxoff = str2uint64(optarg, &endptr, 0);
 				if (endptr == optarg || *endptr != '\0')
 				{
 					fprintf(stderr, _("%s: invalid argument for option %s\n"), progname, "-O");
@@ -1147,4 +1148,22 @@ usage(void)
 	printf(_("  -x XID           set next transaction ID\n"));
 	printf(_("  -?, --help       show this help, then exit\n"));
 	printf(_("\nReport bugs to <" PACKAGE_BUGREPORT ">.\n"));
+}
+
+
+/*
+ *	str2uint64()
+ *
+ *	convert string to 64-bit unsigned int
+ */
+static uint64
+str2uint64(const char *str, char **endptr, int base)
+{
+#ifdef _MSC_VER					/* MSVC only */
+	return _strtoui64(str, endptr, base);
+#elif defined(HAVE_STRTOULL) && SIZEOF_LONG < 8
+	return strtoull(str, endptr, base);
+#else
+	return strtoul(str, endptr, base);
+#endif
 }

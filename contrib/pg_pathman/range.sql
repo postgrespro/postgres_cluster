@@ -1,33 +1,20 @@
 /* ------------------------------------------------------------------------
  *
  * range.sql
- *      RANGE partitioning functions
+ *		RANGE partitioning functions
  *
  * Copyright (c) 2015-2016, Postgres Professional
  *
  * ------------------------------------------------------------------------
  */
 
-CREATE OR REPLACE FUNCTION @extschema@.get_sequence_name(
-	plain_schema	TEXT,
-	plain_relname	TEXT)
-RETURNS TEXT AS
-$$
-BEGIN
-	RETURN format('%s.%s',
-				  quote_ident(plain_schema),
-				  quote_ident(format('%s_seq', plain_relname)));
-END
-$$
-LANGUAGE plpgsql;
-
 CREATE OR REPLACE FUNCTION @extschema@.create_or_replace_sequence(
-	plain_schema	TEXT,
-	plain_relname	TEXT,
+	parent_relid	REGCLASS,
 	OUT seq_name	TEXT)
 AS $$
 BEGIN
-	seq_name := @extschema@.get_sequence_name(plain_schema, plain_relname);
+	seq_name := @extschema@.build_sequence_name(parent_relid);
+
 	EXECUTE format('DROP SEQUENCE IF EXISTS %s', seq_name);
 	EXECUTE format('CREATE SEQUENCE %s START 1', seq_name);
 END
@@ -58,19 +45,17 @@ BEGIN
 
 	/* Check if column has NULL values */
 	IF v_count > 0 AND (v_min IS NULL OR v_max IS NULL) THEN
-		RAISE EXCEPTION '''%'' column contains NULL values', attribute;
+		RAISE EXCEPTION 'column "%" contains NULL values', attribute;
 	END IF;
 
 	/* Check lower boundary */
 	IF start_value > v_min THEN
-		RAISE EXCEPTION 'start value is less than minimum value of ''%''',
-				attribute;
+		RAISE EXCEPTION 'start value is less than min value of "%"', attribute;
 	END IF;
 
 	/* Check upper boundary */
 	IF end_value <= v_max THEN
-		RAISE EXCEPTION 'not enough partitions to fit all values of ''%''',
-				attribute;
+		RAISE EXCEPTION 'not enough partitions to fit all values of "%"', attribute;
 	END IF;
 END
 $$ LANGUAGE plpgsql;
@@ -110,7 +95,7 @@ BEGIN
 	PERFORM @extschema@.common_relation_checks(parent_relid, attribute);
 
 	IF p_count < 0 THEN
-		RAISE EXCEPTION '''p_count'' must not be less than 0';
+		RAISE EXCEPTION '"p_count" must not be less than 0';
 	END IF;
 
 	/* Try to determine partitions count if not set */
@@ -153,13 +138,13 @@ BEGIN
 					   v_atttype::TEXT);
 	END IF;
 
-	/* Create sequence for child partitions names */
-	PERFORM @extschema@.create_or_replace_sequence(schema, relname)
-	FROM @extschema@.get_plain_schema_and_relname(parent_relid);
-
 	/* Insert new entry to pathman config */
 	INSERT INTO @extschema@.pathman_config (partrel, attname, parttype, range_interval)
 	VALUES (parent_relid, attribute, 2, p_interval::TEXT);
+
+	/* Create sequence for child partitions names */
+	PERFORM @extschema@.create_or_replace_sequence(parent_relid)
+	FROM @extschema@.get_plain_schema_and_relname(parent_relid);
 
 	/* Create first partition */
 	FOR i IN 1..p_count
@@ -171,7 +156,7 @@ BEGIN
 			parent_relid,
 			start_value,
 			start_value + p_interval,
-			@extschema@.get_rel_tablespace_name(parent_relid);
+			@extschema@.get_tablespace(parent_relid);
 
 		start_value := start_value + p_interval;
 	END LOOP;
@@ -238,7 +223,7 @@ BEGIN
 		END IF;
 
 		IF v_max IS NULL THEN
-			RAISE EXCEPTION '''%'' column has NULL values', attribute;
+			RAISE EXCEPTION 'column "%" has NULL values', attribute;
 		END IF;
 
 		p_count := 0;
@@ -268,13 +253,13 @@ BEGIN
 											 end_value);
 	END IF;
 
-	/* Create sequence for child partitions names */
-	PERFORM @extschema@.create_or_replace_sequence(schema, relname)
-	FROM @extschema@.get_plain_schema_and_relname(parent_relid);
-
 	/* Insert new entry to pathman config */
 	INSERT INTO @extschema@.pathman_config (partrel, attname, parttype, range_interval)
 	VALUES (parent_relid, attribute, 2, p_interval::TEXT);
+
+	/* Create sequence for child partitions names */
+	PERFORM @extschema@.create_or_replace_sequence(parent_relid)
+	FROM @extschema@.get_plain_schema_and_relname(parent_relid);
 
 	/* create first partition */
 	FOR i IN 1..p_count
@@ -283,7 +268,7 @@ BEGIN
 			parent_relid,
 			start_value,
 			start_value + p_interval,
-			tablespace := @extschema@.get_rel_tablespace_name(parent_relid));
+			tablespace := @extschema@.get_tablespace(parent_relid));
 
 		start_value := start_value + p_interval;
 	END LOOP;
@@ -342,13 +327,13 @@ BEGIN
 										 start_value,
 										 end_value);
 
-	/* Create sequence for child partitions names */
-	PERFORM @extschema@.create_or_replace_sequence(schema, relname)
-	FROM @extschema@.get_plain_schema_and_relname(parent_relid);
-
 	/* Insert new entry to pathman config */
 	INSERT INTO @extschema@.pathman_config (partrel, attname, parttype, range_interval)
 	VALUES (parent_relid, attribute, 2, p_interval::TEXT);
+
+	/* Create sequence for child partitions names */
+	PERFORM @extschema@.create_or_replace_sequence(parent_relid)
+	FROM @extschema@.get_plain_schema_and_relname(parent_relid);
 
 	WHILE start_value <= end_value
 	LOOP
@@ -356,7 +341,7 @@ BEGIN
 			parent_relid,
 			start_value,
 			start_value + p_interval,
-			tablespace := @extschema@.get_rel_tablespace_name(parent_relid));
+			tablespace := @extschema@.get_tablespace(parent_relid));
 
 		start_value := start_value + p_interval;
 		part_count := part_count + 1;
@@ -412,13 +397,13 @@ BEGIN
 										 start_value,
 										 end_value);
 
-	/* Create sequence for child partitions names */
-	PERFORM @extschema@.create_or_replace_sequence(schema, relname)
-	FROM @extschema@.get_plain_schema_and_relname(parent_relid);
-
 	/* Insert new entry to pathman config */
 	INSERT INTO @extschema@.pathman_config (partrel, attname, parttype, range_interval)
 	VALUES (parent_relid, attribute, 2, p_interval::TEXT);
+
+	/* Create sequence for child partitions names */
+	PERFORM @extschema@.create_or_replace_sequence(parent_relid)
+	FROM @extschema@.get_plain_schema_and_relname(parent_relid);
 
 	WHILE start_value <= end_value
 	LOOP
@@ -429,7 +414,7 @@ BEGIN
 			parent_relid,
 			start_value,
 			start_value + p_interval,
-			@extschema@.get_rel_tablespace_name(parent_relid);
+			@extschema@.get_tablespace(parent_relid);
 
 		start_value := start_value + p_interval;
 		part_count := part_count + 1;
@@ -451,108 +436,13 @@ END
 $$ LANGUAGE plpgsql;
 
 /*
- * Creates new RANGE partition. Returns partition name.
- * NOTE: This function SHOULD NOT take xact_handling lock (BGWs in 9.5).
- */
-CREATE OR REPLACE FUNCTION @extschema@.create_single_range_partition(
-	parent_relid	REGCLASS,
-	start_value		ANYELEMENT,
-	end_value		ANYELEMENT,
-	partition_name	TEXT DEFAULT NULL,
-	tablespace		TEXT DEFAULT NULL)
-RETURNS TEXT AS
-$$
-DECLARE
-	v_part_num				INT;
-	v_child_relname			TEXT;
-	v_plain_child_relname	TEXT;
-	v_attname				TEXT;
-	v_plain_schema			TEXT;
-	v_plain_relname			TEXT;
-	v_child_relname_exists	BOOL;
-	v_seq_name				TEXT;
-	v_init_callback			REGPROCEDURE;
-
-BEGIN
-	v_attname := attname FROM @extschema@.pathman_config
-				 WHERE partrel = parent_relid;
-
-	IF v_attname IS NULL THEN
-		RAISE EXCEPTION 'table "%" is not partitioned', parent_relid::TEXT;
-	END IF;
-
-	SELECT * INTO v_plain_schema, v_plain_relname
-	FROM @extschema@.get_plain_schema_and_relname(parent_relid);
-
-	v_seq_name := @extschema@.get_sequence_name(v_plain_schema, v_plain_relname);
-
-	IF partition_name IS NULL THEN
-		/* Get next value from sequence */
-		LOOP
-			v_part_num := nextval(v_seq_name);
-			v_plain_child_relname := format('%s_%s', v_plain_relname, v_part_num);
-			v_child_relname := format('%s.%s',
-									  quote_ident(v_plain_schema),
-									  quote_ident(v_plain_child_relname));
-
-			v_child_relname_exists := count(*) > 0
-									  FROM pg_class
-									  WHERE relname = v_plain_child_relname AND
-											relnamespace = v_plain_schema::regnamespace
-									  LIMIT 1;
-
-			EXIT WHEN v_child_relname_exists = false;
-		END LOOP;
-	ELSE
-		v_child_relname := partition_name;
-	END IF;
-
-	IF tablespace IS NULL THEN
-		tablespace := @extschema@.get_rel_tablespace_name(parent_relid);
-	END IF;
-
-	EXECUTE format('CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL)
-					INHERITS (%2$s) TABLESPACE %3$s',
-				   v_child_relname,
-				   parent_relid::TEXT,
-				   tablespace);
-
-	EXECUTE format('ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s)',
-				   v_child_relname,
-				   @extschema@.build_check_constraint_name(v_child_relname::REGCLASS,
-														   v_attname),
-				   @extschema@.build_range_condition(v_attname,
-													 start_value,
-													 end_value));
-
-	PERFORM @extschema@.copy_foreign_keys(parent_relid, v_child_relname::REGCLASS);
-
-	/* Fetch init_callback from 'params' table */
-	WITH stub_callback(stub) as (values (0))
-	SELECT coalesce(init_callback, 0::REGPROCEDURE)
-	FROM stub_callback
-	LEFT JOIN @extschema@.pathman_config_params AS params
-	ON params.partrel = parent_relid
-	INTO v_init_callback;
-
-	PERFORM @extschema@.invoke_on_partition_created_callback(parent_relid,
-															 v_child_relname::REGCLASS,
-															 v_init_callback,
-															 start_value,
-															 end_value);
-
-	RETURN v_child_relname;
-END
-$$ LANGUAGE plpgsql
-SET client_min_messages = WARNING;
-
-/*
  * Split RANGE partition
  */
 CREATE OR REPLACE FUNCTION @extschema@.split_range_partition(
 	partition		REGCLASS,
 	split_value		ANYELEMENT,
 	partition_name	TEXT DEFAULT NULL,
+	tablespace		TEXT DEFAULT NULL,
 	OUT p_range		ANYARRAY)
 RETURNS ANYARRAY AS
 $$
@@ -611,7 +501,8 @@ BEGIN
 	v_new_partition := @extschema@.create_single_range_partition(v_parent,
 																 split_value,
 																 p_range[2],
-																 partition_name);
+																 partition_name,
+																 tablespace);
 
 	/* Copy data */
 	v_cond := @extschema@.build_range_condition(v_attname, split_value, p_range[2]);
@@ -686,7 +577,7 @@ BEGIN
 
 	/* Check if this is a RANGE partition */
 	IF v_part_type != 2 THEN
-		RAISE EXCEPTION 'specified partitions aren''t RANGE partitions';
+		RAISE EXCEPTION 'specified partitions are not RANGE partitions';
 	END IF;
 
 	v_atttype := @extschema@.get_attribute_type(partition1, v_attname);
@@ -842,7 +733,7 @@ DECLARE
 	v_atttype		REGTYPE;
 
 BEGIN
-	IF @extschema@.partitions_count(parent_relid) = 0 THEN
+	IF @extschema@.get_number_of_partitions(parent_relid) = 0 THEN
 		RAISE EXCEPTION 'cannot append to empty partitions set';
 	END IF;
 
@@ -952,7 +843,7 @@ DECLARE
 	v_atttype		REGTYPE;
 
 BEGIN
-	IF @extschema@.partitions_count(parent_relid) = 0 THEN
+	IF @extschema@.get_number_of_partitions(parent_relid) = 0 THEN
 		RAISE EXCEPTION 'cannot prepend to empty partitions set';
 	END IF;
 
@@ -1016,9 +907,10 @@ BEGIN
 	END IF;
 
 	/* check range overlap */
-	IF @extschema@.partitions_count(parent_relid) > 0
-	   AND @extschema@.check_overlap(parent_relid, start_value, end_value) THEN
-		RAISE EXCEPTION 'specified range overlaps with existing partitions';
+	IF @extschema@.get_number_of_partitions(parent_relid) > 0 THEN
+		PERFORM @extschema@.check_range_available(parent_relid,
+												  start_value,
+												  end_value);
 	END IF;
 
 	/* Create new partition */
@@ -1133,9 +1025,8 @@ BEGIN
 						partition::TEXT;
 	END IF;
 
-	IF @extschema@.check_overlap(parent_relid, start_value, end_value) THEN
-		RAISE EXCEPTION 'specified range overlaps with existing partitions';
-	END IF;
+	/* check range overlap */
+	PERFORM @extschema@.check_range_available(parent_relid, start_value, end_value);
 
 	IF NOT @extschema@.validate_relations_equality(parent_relid, partition) THEN
 		RAISE EXCEPTION 'partition must have the exact same structure as parent';
@@ -1322,13 +1213,32 @@ END
 $$ LANGUAGE plpgsql;
 
 /*
+ * Creates new RANGE partition. Returns partition name.
+ * NOTE: This function SHOULD NOT take xact_handling lock (BGWs in 9.5).
+ */
+CREATE OR REPLACE FUNCTION @extschema@.create_single_range_partition(
+	parent_relid	REGCLASS,
+	start_value		ANYELEMENT,
+	end_value		ANYELEMENT,
+	partition_name	TEXT DEFAULT NULL,
+	tablespace		TEXT DEFAULT NULL)
+RETURNS REGCLASS AS 'pg_pathman', 'create_single_range_partition_pl'
+LANGUAGE C
+SET client_min_messages = WARNING;
+
+/*
  * Construct CHECK constraint condition for a range partition.
  */
 CREATE OR REPLACE FUNCTION @extschema@.build_range_condition(
-	p_attname		TEXT,
+	attribute		TEXT,
 	start_value		ANYELEMENT,
 	end_value		ANYELEMENT)
 RETURNS TEXT AS 'pg_pathman', 'build_range_condition'
+LANGUAGE C STRICT;
+
+CREATE OR REPLACE FUNCTION @extschema@.build_sequence_name(
+	parent_relid	REGCLASS)
+RETURNS TEXT AS 'pg_pathman', 'build_sequence_name'
 LANGUAGE C;
 
 /*
@@ -1354,11 +1264,11 @@ LANGUAGE C;
  * Checks if range overlaps with existing partitions.
  * Returns TRUE if overlaps and FALSE otherwise.
  */
-CREATE OR REPLACE FUNCTION @extschema@.check_overlap(
+CREATE OR REPLACE FUNCTION @extschema@.check_range_available(
 	parent_relid	REGCLASS,
 	range_min		ANYELEMENT,
 	range_max		ANYELEMENT)
-RETURNS BOOLEAN AS 'pg_pathman', 'check_overlap'
+RETURNS VOID AS 'pg_pathman', 'check_range_available_pl'
 LANGUAGE C;
 
 /*

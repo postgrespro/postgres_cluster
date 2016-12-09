@@ -128,7 +128,7 @@ struct _DestReceiver
 	/* Private fields might appear beyond this point... */
 };
 
-extern DestReceiver *None_Receiver;		/* permanent receiver for DestNone */
+extern PGDLLIMPORT DestReceiver *None_Receiver;		/* permanent receiver for DestNone */
 
 /* The primary destination management functions */
 
