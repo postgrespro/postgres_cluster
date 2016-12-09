@@ -1657,7 +1657,9 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 			BIT_SET(Mtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
 			Mtm->nLockers += 1;
 		} else { 
-			MTM_LOG2("Continue recovery of node %d, slot position %lx, WAL position %lx, WAL sender position %lx, lockers %d, active transactions %d", nodeId, slotLSN, walLSN, MyWalSnd->sentPtr, Mtm->nLockers, Mtm->nActiveTransactions);
+			MTM_LOG2("Continue recovery of node %d, slot position %lx, WAL position %lx,"
+			" WAL sender position %lx, lockers %d, active transactions %d", nodeId, slotLSN,
+			walLSN, MyWalSnd->sentPtr, Mtm->nLockers, Mtm->nActiveTransactions);
 		}
 	}
 	MtmUnlock();
@@ -2608,7 +2610,8 @@ _PG_init(void)
 
 	DefineCustomIntVariable(
 		"multimaster.max_2pc_ratio",
-		"Maximal ratio (in percents) between prepare time at different nodes: if T is time of preparing transaction at some node, then transaction can be aborted if prepared responce was not received in T*MtmMax2PCRatio/100",
+		"Maximal ratio (in percents) between prepare time at different nodes: if T is time of preparing transaction at some node,"
+			" then transaction can be aborted if prepared responce was not received in T*MtmMax2PCRatio/100",
 		NULL,
 		&MtmMax2PCRatio,
 		200, /* 2 times */
