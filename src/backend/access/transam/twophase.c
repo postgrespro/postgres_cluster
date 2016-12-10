@@ -216,10 +216,10 @@ TwoPhaseShmemSize(void)
 	/* Need the fixed struct, the array of pointers, and the GTD structs */
 	size = offsetof(TwoPhaseStateData, prepXacts);
 	size = add_size(size, mul_size(max_prepared_xacts,
-								   sizeof(GlobalTransaction)));
+								   sizeof(GlobalTransaction)*2));
 	size = MAXALIGN(size);
 	size = add_size(size, mul_size(max_prepared_xacts,
-								   sizeof(GlobalTransactionData)*2));
+								   sizeof(GlobalTransactionData)));
 
 	return size;
 }
@@ -247,9 +247,9 @@ TwoPhaseShmemInit(void)
 		gxacts = (GlobalTransaction)
 			((char *) TwoPhaseState +
 			 MAXALIGN(offsetof(TwoPhaseStateData, prepXacts) +
-					  sizeof(GlobalTransaction) * max_prepared_xacts));
+					  sizeof(GlobalTransaction) * 2 * max_prepared_xacts));
 		
-		TwoPhaseState->hashTable = (GlobalTransaction*)&gxacts[max_prepared_xacts];
+		TwoPhaseState->hashTable = &TwoPhaseState->prepXacts[max_prepared_xacts];
 
 		for (i = 0; i < max_prepared_xacts; i++)
 		{
@@ -696,9 +696,7 @@ void SetPrepareTransactionState(char const* gid, char const* state)
 	strcpy(gxact->state_3pc, state);
 	EndPrepare(gxact);
 
-	/* Unlock GXact */
-	gxact->locking_backend = InvalidBackendId;
-	MyLockedGxact = NULL;
+	PostPrepare_Twophase();
 }
 
 /* Working status for pg_prepared_xact */

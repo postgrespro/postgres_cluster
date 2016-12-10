@@ -39,7 +39,7 @@
 #define MTM_TXTRACE(tx, event)
 #else
 #define MTM_TXTRACE(tx, event) \
-		fprintf(stderr, "[MTM_TXTRACE], %s, %lld, %s, %d\n", tx->gid, (long long)MtmGetSystemTime(), event, getpid())
+		fprintf(stderr, "[MTM_TXTRACE], %s, %lld, %s, %d\n", tx->gid, (long long)MtmGetSystemTime(), event, MyProcPid)
 #endif
 
 #define MULTIMASTER_NAME                "multimaster"

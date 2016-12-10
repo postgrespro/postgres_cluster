@@ -625,7 +625,9 @@ process_remote_commit(StringInfo in)
 	{
 	    case PGLOGICAL_PRECOMMIT_PREPARED:
 		{
+			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
+			MTM_LOG2("%d: PGLOGICAL_PRECOMMIT_PREPARED %s", MyProcPid, gid);
 			MtmPrecommitTransaction(gid);
 			return;
 		}

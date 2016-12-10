@@ -1346,7 +1346,7 @@ ReorderBufferFreeSnap(ReorderBuffer *rb, Snapshot snap)
  *
  * We currently can only decode a transaction's contents in when their commit
  * record is read because that's currently the only place where we know about
- * cache invalidations. Thus, once a toplevel commit is read, we iterate over
+ * cache invalidati ons. Thus, once a toplevel commit is read, we iterate over
  * the top and subtransactions (using a k-way merge) and replay the changes in
  * lsn order.
  */
@@ -1734,7 +1734,7 @@ ReorderBufferCommitBareXact(ReorderBuffer *rb, TransactionId xid,
 	txn->origin_lsn = origin_lsn;
 	txn->xact_action = rb->xact_action;
 	strcpy(txn->gid, rb->gid);
-	*txn->gid = '\0';
+	*txn->state_3pc = '\0';
 
 	rb->commit(rb, txn, commit_lsn);
 }

@@ -3057,7 +3057,7 @@ DATA(insert OID = 1371 (  pg_lock_status   PGNSP PGUID 12 1 1000 0 0 f f f f t t
 DESCR("view system lock information");
 DATA(insert OID = 2561 (  pg_blocking_pids PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 1007 "23" _null_ _null_ _null_ _null_ _null_ pg_blocking_pids _null_ _null_ _null_ ));
 DESCR("get array of PIDs of sessions blocking specified backend PID");
-DATA(insert OID = 1065 (  pg_prepared_xact PGNSP PGUID 12 1 1000 0 0 f f f f t t v s 0 0 2249 "" "{28,25,1184,26,26,25}" "{o,o,o,o,o,0}" "{transaction,gid,prepared,ownerid,dbid,state_3pc}" _null_ _null_ pg_prepared_xact _null_ _null_ _null_ ));
+DATA(insert OID = 1065 (  pg_prepared_xact PGNSP PGUID 12 1 1000 0 0 f f f f t t v s 0 0 2249 "" "{28,25,1184,26,26,25}" "{o,o,o,o,o,o}" "{transaction,gid,prepared,ownerid,dbid,state3pc}" _null_ _null_ pg_prepared_xact _null_ _null_ _null_ ));
 DESCR("view two-phase transactions");
 DATA(insert OID = 3445 (  pg_precommit_prepared PGNSP PGUID 12 1 0 0 0 f f f f t f v s 2 0 2278 "2275,2275" _null_ _null_ _null_ _null_ _null_ pg_precommit_prepared _null_ _null_ _null_ ));
 DESCR("alter state of prepared transaction (used for 3pc)");
