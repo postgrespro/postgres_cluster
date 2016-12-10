@@ -146,6 +146,7 @@
 <!ENTITY pghintplan      SYSTEM "pghintplan.sgml">
 <!ENTITY pgpathman       SYSTEM "pgpathman.sgml">
 <!ENTITY pgprewarm       SYSTEM "pgprewarm.sgml">
+<!ENTITY pgpro-scheduler SYSTEM "pgpro-scheduler.sgml">
 <!ENTITY pgquerystate    SYSTEM "pgquerystate.sgml">
 <!ENTITY pgrowlocks      SYSTEM "pgrowlocks.sgml">
 <!ENTITY pgstandby       SYSTEM "pgstandby.sgml">

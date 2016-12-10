@@ -139,6 +139,7 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &pghintplan;
  &pgpathman;
  &pgprewarm;
+ &pgpro-scheduler;
  &pgquerystate;
  &pgrowlocks;
  &pgstatstatements;
