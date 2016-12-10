@@ -1311,6 +1311,7 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 
 	if (MtmIsCoordinator(ts)) {
 		int i;
+		Assert(false); // All broadcasts are now done through logical decoding
 		for (i = 0; i < Mtm->nAllNodes; i++)
 		{
 			if (BIT_CHECK(ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask, i))
@@ -3228,9 +3229,10 @@ bool MtmFilterTransaction(char* record, int size)
 		   origin_node != 0 &&
 		   (Mtm->status == MTM_RECOVERY || origin_node == replication_node));	
 
-    switch(PGLOGICAL_XACT_EVENT(flags))
+    switch (PGLOGICAL_XACT_EVENT(flags))
     {
 	  case PGLOGICAL_PREPARE:
+	  case PGLOGICAL_PRECOMMIT_PREPARED:
 	  case PGLOGICAL_ABORT_PREPARED:
 		gid = pq_getmsgstring(&s);
 		break;

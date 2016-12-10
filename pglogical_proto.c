@@ -192,7 +192,8 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 	else
     	Assert(false);
 
-	if (flags == PGLOGICAL_COMMIT || flags == PGLOGICAL_PREPARE || flags == PGLOGICAL_PRECOMMIT_PREPARED) { 
+	if (flags == PGLOGICAL_COMMIT || flags == PGLOGICAL_PREPARE) {
+		/* COMMIT and PREPARE are preceded by BEGIN, which set MtmIsFilteredTxn flag */
 		if (MtmIsFilteredTxn) { 
 			Assert(MtmTransactionRecords == 0);
 			return;
