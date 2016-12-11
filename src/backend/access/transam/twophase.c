@@ -183,6 +183,9 @@ static TwoPhaseStateData *TwoPhaseState;
 static GlobalTransaction MyLockedGxact = NULL;
 
 static bool twophaseExitRegistered = false;
+static TransactionId cached_xid = InvalidTransactionId;
+static GlobalTransaction cached_gxact = NULL;
+
 
 static void RecordTransactionCommitPrepared(TransactionId xid,
 								int nchildren,
@@ -438,6 +441,10 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	proc->lwWaitMode = 0;
 	proc->waitLock = NULL;
 	proc->waitProcLock = NULL;
+	
+	cached_xid = xid;
+	cached_gxact = gxact;
+		
 	for (i = 0; i < NUM_LOCK_PARTITIONS; i++)
 		SHMQueueInit(&(proc->myProcLocks[i]));
 	/* subxid data must be filled later by GXactLoadSubxactData */
@@ -824,9 +831,6 @@ TwoPhaseGetGXact(TransactionId xid)
 {
 	GlobalTransaction result = NULL;
 	int			i;
-
-	static TransactionId cached_xid = InvalidTransactionId;
-	static GlobalTransaction cached_gxact = NULL;
 
 	/*
 	 * During a recovery, COMMIT PREPARED, or ABORT PREPARED, we'll be called

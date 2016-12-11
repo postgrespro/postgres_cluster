@@ -942,6 +942,7 @@ void MtmPrecommitTransaction(char const* gid)
 			ts->csn = MtmAssignCSN();
 			MtmAdjustSubtransactions(ts);
 			MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
+			SetPrepareTransactionState(ts->gid, "precommitted");
 		}
 	}
 	MtmUnlock();
@@ -1561,7 +1562,10 @@ void MtmHandleApplyError(void)
 }
 
 /**
- * Check status of all prepared transactions with coordinator at disabled node
+ * Check status of all prepared transactions with coordinator at disabled node.
+ * Actually, if node is precommitted (state == UNKNOWN) at any of nodes, then is is prepared at all nodes and so can be committed. 
+ * But if coordinator of transaction is crashed, we made a decision about transaction commit only if transaction is precommitted at ALL live nodes.
+ * The reason is that we want to avoid extra polling to obtain maximum CSN from all nodes to assign it to committed transaction.
  * Called only from MtmDisableNode in critical section.
  */
 static void MtmPollStatusOfPreparedTransactions(int disabledNodeId)
@@ -1602,9 +1606,12 @@ static void MtmDisableNode(int nodeId)
 	Mtm->nodes[nodeId-1].lastStatusChangeTime = now;
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 	if (nodeId != MtmNodeId) { 
-		Mtm->nLiveNodes -= 1;
+		Mtm->nLiveNodes -= 1;		
 	}
-	MtmPollStatusOfPreparedTransactions(nodeId);
+	if (Mtm->nLiveNodes >= Mtm->nAllNodes/2+1) {
+		/* Make decision about prepared transaction status only in quorum */
+		MtmPollStatusOfPreparedTransactions(nodeId);
+	}
 } 
 	
 static void MtmEnableNode(int nodeId)

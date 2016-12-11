@@ -628,7 +628,9 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
 			MTM_LOG2("%d: PGLOGICAL_PRECOMMIT_PREPARED %s", MyProcPid, gid);
+			MtmBeginSession(origin_node);
 			MtmPrecommitTransaction(gid);
+			MtmEndSession(origin_node, true);
 			return;
 		}
 		case PGLOGICAL_COMMIT:
@@ -693,6 +695,7 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
+			/* MtmRollbackPreparedTransaction will set origin session itself */
 			MtmRollbackPreparedTransaction(origin_node, gid);
 			break;
 		}
