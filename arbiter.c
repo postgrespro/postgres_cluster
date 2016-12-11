@@ -1051,6 +1051,7 @@ static void MtmReceiver(Datum arg)
 									MtmWakeUpBackend(ts);
 								}
 							} else { 
+								elog(WARNING, "Receive PRECOMMITTED response for aborted transaction"); // How it can happen? SHould we use assert here?
 								if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
 									MtmWakeUpBackend(ts);
 								}

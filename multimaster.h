@@ -154,6 +154,12 @@ typedef struct
 	pgid_t         gid;    /* Global transaction identifier */
 } MtmArbiterMessage;
 
+/*
+ * Abort logical message is send by replica when error is happen while applying prepared transaction.
+ * In this case we do not have prepared transaction and can not do abort-prepared.
+ * But we have to record the fact of abort to be able to replay it in case of crash of coordinator of this transaction.
+ * We are using logical abort message with code 'A' for it
+ */
 typedef struct MtmAbortLogicalMessage
 {
 	pgid_t         gid;
