@@ -209,6 +209,7 @@ pages.
 
   &oid2name;
   &pgprobackup;
+  &pgrepack;
   &vacuumlo;  
  </sect1>
 

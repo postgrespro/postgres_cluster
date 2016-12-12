@@ -1,0 +1,706 @@
+<!--
+doc/src/sgml/pgrepack.sgml
+&productname; documentation
+-->
+
+<refentry id="app-pgrepack">
+  <indexterm zone="app-pgrepack">
+   <primary>pg_repack</primary>
+  </indexterm>
+
+  <refmeta>
+   <refentrytitle>pg_repack</refentrytitle>
+   <manvolnum>1</manvolnum>
+   <refmiscinfo>Application</refmiscinfo>
+  </refmeta>
+
+  <refnamediv>
+    <refname>pg_repack</refname>
+    <refpurpose>utility and <productname>&productname;</productname> extension to reorganize tables</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+   <cmdsynopsis>
+    <command>pg_repack</command>
+    <arg rep="repeat"><replaceable>option</replaceable></arg>
+    <arg choice="opt"><replaceable>dbname</replaceable></arg>
+   </cmdsynopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+     <title>Description</title>
+    <para>
+      <ulink url="http://reorg.github.com/pg_repack">pg_repack</ulink>
+      is a <productname>&productname;</productname> extension which
+      lets you remove bloat from tables and
+      indexes, and optionally restore the physical order of clustered
+      indexes. Unlike <xref linkend="sql-cluster">
+      and <command>VACUUM_ FULL</command> it works online,
+      without holding an exclusive lock on
+      the processed tables during processing. <application>pg_repack</application>
+      is efficient to boot, with performance comparable to using <command>CLUSTER</command> directly.
+    </para>
+    <para>
+      <application>pg_repack</application> is a fork of the previous <ulink
+      url="http://reorg.projects.pgfoundry.org/">http://reorg.projects.pgfoundry.org/</ulink>
+      project. Please check the <ulink
+      url="https://github.com/reorg/pg_repack">https://github.com/reorg/pg_repack</ulink>
+      for bug report and development information.
+    </para>
+    <para>
+      You can choose one of the following methods to reorganize data:
+      <itemizedlist>
+       <listitem>
+        <para>Online <command>CLUSTER</command> (ordered by cluster index)</para>
+       </listitem>
+       <listitem>
+        <para>Ordering by specified columns</para>
+       </listitem>
+       <listitem>
+        <para>Online <command>VACUUM FULL</command> (packing rows only)</para>
+       </listitem>
+       <listitem>
+        <para>Rebuild or relocate only the indexes of a table</para>
+       </listitem>
+      </itemizedlist>
+    </para>
+    <note>
+     <para>Only superusers can use the utility.</para>
+    </note>
+    <note>
+     <para>Target table must have a PRIMARY KEY, or at least a UNIQUE total index on a NOT NULL column.</para>
+    </note>
+  </refsect1>
+
+
+  <refsect1 id="app-pgrepack-installation">
+   <title>Installation</title>
+
+   <para>
+    <application>pg_repack</application> can be built with <application>make</application>
+    on UNIX or Linux. The <acronym>PGXS</acronym> build framework is used automatically.
+    Before building, you might need to install the <productname>&productname;</productname>
+    development packages and add the directory containing <application>pg_config</application>
+    to your <envar>PATH</envar>. Then you can run:
+<screen>
+$ cd pg_repack
+$ make
+$ sudo make install
+</screen>
+   </para>
+
+   <para>
+    You can also use <productname>Microsoft Visual C++ 2010</productname> to build
+    the program on <productname>Windows</productname>.
+    There are project files in the <filename>msvc</filename> folder.
+   </para>
+
+   <para>
+    After installation, load the <filename>pg_repack</filename> extension
+    in the database you want to process. On <productname>PostgreSQL</productname> 9.1
+    and following <filename>pg_repack</filename> is packaged as an extension,
+    so you can execute:
+<screen>
+$ psql -c "CREATE EXTENSION pg_repack" -d <replaceable>your_database</replaceable>
+</screen>
+   </para>
+
+   <para>
+    For previous <productname>PostgreSQL</productname> versions you should
+    load the script <filename>$SHAREDIR/contrib/pg_repack.sql</filename>
+    in the database to process; you can get <replaceable>$SHAREDIR</replaceable>
+    using <command>pg_config --sharedir</command>, e.g.:
+<screen>
+$ psql -f "$(pg_config --sharedir)/contrib/pg_repack.sql" -d <replaceable>your_database</replaceable>
+</screen>
+   </para>
+
+   <para>
+    You can remove <literal>pg_repack</literal> from
+    a <productname>PostgreSQL</productname> 9.1 and following database
+    using <literal>DROP EXTENSION pg_repack</literal>.
+    For previous <productname>PostgreSQL</productname> versions load the
+    <filename>$SHAREDIR/contrib/uninstall_pg_repack.sql</filename> script
+    or just drop the <literal>repack</literal> schema.
+   </para>
+
+   <para>
+    If you are upgrading from a previous version of <application>pg_repack</application>
+    or <application>pg_reorg</application>, just drop the old version from the database
+    as explained above and install the new version.
+   </para>
+  </refsect1>
+
+  <refsect1>
+   <title>Options</title>
+
+    <refsect2>
+     <title>Reorganization Options</title>
+
+     <variablelist>
+      <varlistentry>
+       <term><option>-a</></term>
+       <term><option>--all</></term>
+       <listitem>
+        <para>
+         Attempt to repack all the databases of the cluster.
+         Databases where the <filename>pg_repack</filename> extension
+         is not installed will be skipped.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-t <replaceable class="parameter">table</replaceable></></term>
+       <term><option>--table=<replaceable class="parameter">table</replaceable></></term>
+       <listitem>
+        <para>
+         Reorganize the specified table(s) only. Multiple tables may be
+         reorganized by writing multiple <option>-t</option> switches.
+         By default, all eligible tables in the target databases are reorganized.
+        </para>
+       </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+       <term><option>-c <replaceable class="parameter">schema</replaceable></></term>
+       <term><option>--schema=<replaceable class="parameter">schema</replaceable></></term>
+       <listitem>
+        <para>
+         Repack the tables in the specified schema(s) only. Multiple schemas may
+         be repacked by writing multiple <option>-c</option> switches. Can be used in
+         conjunction with <option>--tablespace</option> to move tables to a different tablespace.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-o <replaceable class="parameter">column</replaceable>[, ...]</></term>
+       <term><option>--order-by=<replaceable class="parameter">column</replaceable>[, ...]</></term>
+       <listitem>
+        <para>
+         Perform an online <command>CLUSTER</command> ordered by the specified columns.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-n</></term>
+       <term><option>--no-order</></term>
+       <listitem>
+        <para>
+         Perform an online <command>VACUUM FULL</command>. Since version 1.2
+         this is the default for non-clustered tables.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-N</></term>
+       <term><option>--dry-run</></term>
+       <listitem>
+        <para>
+         Show what would be repacked and exit.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-j <replaceable class="parameter">num_jobs</replaceable></></term>
+       <term><option>--jobs=<replaceable class="parameter">num_jobs</replaceable></></term>
+       <listitem>
+        <para>
+         Create the specified number of extra connections to <productname>&productname;</productname>,
+         and use these extra connections to parallelize the rebuild of indexes
+         on each table. Parallel index builds are only supported for full-table
+         repacks, not with <option>--index</option> or <option>--only-indexes</option> options.
+         If your server has extra cores and disk I/O available,
+         this can be a useful way to speed up <application>pg_repack</application>.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-s <replaceable class="parameter">tablespace</replaceable></></term>
+       <term><option>--tablespace=<replaceable class="parameter">tablespace</replaceable></></term>
+       <listitem>
+        <para>
+         Move the repacked tables to the specified tablespace: essentially an
+         online version of <command>ALTER TABLE ... SET TABLESPACE</command>.
+         The tables' indexes are left in the original tablespace unless
+         <option>--moveidx</option> is specified too.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-S</></term>
+       <term><option>--moveidx</></term>
+       <listitem>
+        <para>
+         Also move the indexes of the repacked tables to the tablespace specified
+         by the <option>--tablespace</option> option.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-i <replaceable class="parameter">index</replaceable></></term>
+       <term><option>--index=<replaceable class="parameter">index</replaceable></></term>
+       <listitem>
+        <para>
+         Repack the specified index(es) only. Multiple indexes may be repacked
+         by writing multiple <option>-i</option> switches. May be used in conjunction with
+         <option>--tablespace</option> to move the index(es) to a different tablespace.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-x</></term>
+       <term><option>--only-indexes</></term>
+       <listitem>
+        <para>
+         Repack only the indexes of the specified table(s), which must be specified
+         with the <option>--table</option> option.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-T <replaceable class="parameter">secs</replaceable></></term>
+       <term><option>--wait-timeout=<replaceable class="parameter">secs</replaceable></></term>
+       <listitem>
+        <para>
+         <application>pg_repack</application> needs to take an exclusive lock
+         at the end of the reorganization. This setting controls how many seconds
+         <application>pg_repack</application> will wait to acquire this lock.
+         If the lock cannot be taken after this duration, <application>pg_repack</application>
+         will forcibly cancel the conflicting queries. If you are using
+         <productname>&productname;</productname> or <productname>PostgreSQL</productname> version 8.4
+         or newer, <application>pg_repack</application> will fall back to using
+         <function>pg_terminate_backend()</function> to disconnect any remaining backends after
+          this timeout has passed twice. The default is 60 seconds.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-Z</></term>
+       <term><option>--no-analyze</></term>
+       <listitem>
+        <para>
+         Disable <command>ANALYZE</command> after a full-table reorganization.
+         If not specified, <command>ANALYZE</command> is executed after the reorganization.
+        </para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
+    </refsect2>
+
+    <refsect2>
+     <title>Connection Options</title>
+
+     <variablelist>
+      <varlistentry>
+       <term><option><optional>-d</> <replaceable class="parameter">dbname</replaceable></></term>
+       <term><option><optional>--dbname=</><replaceable class="parameter">dbname</replaceable></></term>
+       <listitem>
+        <para>
+         Specifies the name of the database to be reorganized.
+         If this is not specified and <option>-a</option> (or
+         <option>--all</option>) is not used, the database name is read
+         from the environment variable <envar>PGDATABASE</envar>.  If
+         that is not set, the user name specified for the connection is used.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-h <replaceable class="parameter">host</replaceable></></term>
+       <term><option>--host=<replaceable class="parameter">host</replaceable></></term>
+       <listitem>
+        <para>
+         Specifies the host name of the machine on which the server is
+         running.  If the value begins with a slash, it is used as the
+         directory for the Unix domain socket.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-p <replaceable class="parameter">port</replaceable></></term>
+       <term><option>--port=<replaceable class="parameter">port</replaceable></></term>
+       <listitem>
+        <para>
+         Specifies the TCP port or local Unix domain socket file
+         extension on which the server
+         is listening for connections.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-U <replaceable class="parameter">username</replaceable></></term>
+       <term><option>--username=<replaceable class="parameter">username</replaceable></></term>
+       <listitem>
+        <para>
+         User name to connect as.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-w</></term>
+       <term><option>--no-password</></term>
+       <listitem>
+        <para>
+         Never issue a password prompt.  If the server requires
+         password authentication and a password is not available by
+         other means such as a <filename>.pgpass</filename> file, the
+         connection attempt will fail.  This option can be useful in
+         batch jobs and scripts where no user is present to enter a
+         password.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-W</></term>
+       <term><option>--password</></term>
+       <listitem>
+        <para>
+         Force <application>pg_repack</application> to prompt for a
+         password before connecting to a database.
+        </para>
+
+        <para>
+         This option is never essential, since
+         <application>pg_repack</application> will automatically prompt
+         for a password if the server demands password authentication.
+         However, <application>pg_repack</application> will waste a
+         connection attempt finding out that the server wants a password.
+         In some cases it is worth typing <option>-W</> to avoid the extra
+         connection attempt.
+        </para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
+    </refsect2>
+
+    <refsect2>
+     <title>Generic Options</title>
+
+     <variablelist>
+      <varlistentry>
+       <term><option>-e</></term>
+       <term><option>--echo</></term>
+       <listitem>
+        <para>
+         Echo the commands that <application>pg_repack</application> generates
+         and sends to the server.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-E <replaceable class="parameter">level</replaceable></></term>
+       <term><option>--elevel=<replaceable class="parameter">level</replaceable></></term>
+       <listitem>
+        <para>
+         Choose the output message level from <literal>DEBUG</literal>,
+         <literal>INFO</literal>, <literal>NOTICE</literal>, <literal>WARNING</literal>,
+         <literal>ERROR</literal>, <literal>LOG</literal>, <literal>FATAL</literal>,
+         and <literal>PANIC</literal>. The default is <literal>INFO</literal>.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--help</></term>
+       <listitem>
+        <para>
+         Show help about <application>pg_repack</application> command line
+         arguments, and exit.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-V</></term>
+       <term><option>--version</></term>
+       <listitem>
+        <para>
+         Print the <application>pg_repack</application> version and exit.
+        </para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
+    </refsect2>
+  </refsect1>
+
+  <refsect1>
+   <title>Environment</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><envar>PGDATABASE</envar></term>
+     <term><envar>PGHOST</envar></term>
+     <term><envar>PGPORT</envar></term>
+     <term><envar>PGUSER</envar></term>
+
+     <listitem>
+      <para>
+       Default connection parameters
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+   <para>
+    This utility, like most other <productname>&productname;</> utilities,
+    also uses the environment variables supported by <application>libpq</>
+    (see <xref linkend="libpq-envars">).
+   </para>
+  </refsect1>
+
+  <refsect1>
+   <title>Examples</title>
+
+   <para>
+      Perform an online <command>CLUSTER</command> of all the clustered tables
+      in the database <literal>test</literal>, and perform an
+      online <command>VACUUM FULL</command> of all the non-clustered tables:
+<screen>
+$ pg_repack test
+</screen>
+    </para>
+    <para>
+      Perform an online <command>VACUUM FULL</command> on the tables
+      <literal>foo</literal> and <literal>bar</literal> in the database
+      <literal>test</literal> (an eventual cluster index is ignored):
+<screen>
+$ pg_repack --no-order --table foo --table bar test
+</screen>
+    </para>
+    <para>
+      Move all indexes of table <literal>foo</literal> to tablespace
+      <literal>tbs</literal>:
+<screen>
+$ pg_repack -d test --table foo --only-indexes --tablespace tbs
+</screen>
+    </para>
+    <para>
+      Move the specified index to tablespace <literal>tbs</literal>:
+<screen>
+$ pg_repack -d test --index idx --tablespace tbs
+</screen>
+    </para>
+  </refsect1>
+
+  <refsect1>
+   <title>Diagnostics</title>
+
+    <para>
+     Error messages are reported when <application>pg_repack</application> fails.
+     The following list shows the cause of errors.
+    </para>
+
+    <para>
+     You need to cleanup by hand after fatal errors. To cleanup, just
+     remove <literal>pg_repack</literal> from the database and install it again.
+    </para>
+
+    <para>
+     For <productname>&productname;</productname> or PostgreSQL 9.1 and newer execute:
+<programlisting>
+DROP EXTENSION pg_repack CASCADE
+</programlisting>
+     in the database where the error occurred, followed by
+<programlisting>
+CREATE EXTENSION pg_repack
+</programlisting>
+    </para>
+
+    <para>
+     For previous versions load the script
+     <filename>$SHAREDIR/contrib/uninstall_pg_repack.sql</filename> into the database
+     where the error occured and then load <filename>$SHAREDIR/contrib/pg_repack.sql</filename>
+     again.
+    </para>
+
+    <para>
+<screen>
+<computeroutput>
+INFO: database "db" skipped:
+pg_repack VER is not installed in the database:
+pg_repack is not installed in the database when the --all option is specified.
+</computeroutput>
+</screen>
+     Create the <filename>pg_repack</filename> extension in the database.
+    </para>
+
+    <para>
+<screen>
+<computeroutput>
+ERROR: pg_repack VER is not installed in the database:
+pg_repack is not installed in the database specified by --dbname
+</computeroutput>
+</screen>
+     Create the <filename>pg_repack</filename> extension in the database.
+    </para>
+
+    <para>
+<screen>
+<computeroutput>
+ERROR: program 'pg_repack V1' does not match database library 'pg_repack V2':
+There is a mismatch between the pg_repack binary and the database library
+(.so or .dll).
+</computeroutput>
+</screen>
+     The mismatch could be due to the wrong binary in the <envar>PATH</envar>
+     or the wrong database being addressed. Check the program directory and the
+     database; if they are what expected you may need to repeat
+     <filename>pg_repack</filename> installation.
+    </para>
+
+    <para>
+<screen>
+<computeroutput>
+ERROR: extension 'pg_repack V1' required, found extension 'pg_repack V2':
+The SQL extension found in the database does not match the version required by the pg_repack program.
+</computeroutput>
+</screen>
+     You should drop the extension from the database and reload it as described
+     in <xref linkend="app-pgrepack-installation">.
+    </para>
+
+    <para>
+<screen>
+<computeroutput>
+ERROR: relation "table" must have a primary key or not-null unique keys:
+The target table doesn't have a PRIMARY KEY or any UNIQUE constraints defined.
+</computeroutput>
+</screen>
+     Define a PRIMARY KEY or a UNIQUE constraint on the table.
+    </para>
+
+    <para>
+<screen>
+<computeroutput>
+ERROR: query failed: ERROR: column "col" does not exist:
+The target table doesn't have columns specified by --order-by option.
+</computeroutput>
+</screen>
+     Specify existing columns.
+    </para>
+
+    <para>
+<screen>
+<computeroutput>
+WARNING: the table "tbl" already has a trigger called z_repack_trigger:
+The trigger was probably installed during a previous attempt
+to run pg_repack on the table which was interrupted
+and for some reason failed to clean up the temporary objects.
+</computeroutput>
+</screen>
+     You can remove all the temporary objects by dropping and re-creating
+     the extension: see <xref linkend="app-pgrepack-installation"> for the details.
+    </para>
+
+    <para>
+<screen>
+<computeroutput>
+WARNING: trigger "trg" conflicting on table "tbl":
+The target table has a trigger whose name follows z_repack_trigger
+in alphabetical order.
+</computeroutput>
+</screen>
+     The <literal>z_repack_trigger</literal> should be the last BEFORE trigger to fire.
+     Please rename your trigger so that it sorts alphabetically before
+     <filename>pg_repack</filename> one; you can use:
+<programlisting>
+ALTER TRIGGER <replaceable>zzz_my_trigger</replaceable>
+ ON <replaceable>sometable</replaceable> RENAME TO <replaceable>yyy_my_trigger</replaceable>;
+</programlisting>
+    </para>
+
+    <para>
+<screen>
+<computeroutput>
+ERROR: Another pg_repack command may be running on the table. Please try again later.
+</computeroutput>
+</screen>
+     There is a chance of deadlock when two concurrent <command>pg_repack</command>
+     commands are run on the same table. So, try to run the command after some time.
+    </para>
+
+    <para>
+<screen>
+<computeroutput>
+WARNING: Cannot create index "schema"."index_xxxxx", already exists
+DETAIL: An invalid index may have been left behind by a previous
+pg_repack on the table which was interrupted. Please use DROP INDEX
+"schema"."index_xxxxx" to remove this index and try again.
+</computeroutput>
+</screen>
+     A temporary index apparently created by <application>pg_repack</application>
+     has been left behind, and we do not want to risk dropping this index ourselves.
+     If the index was in fact created by an old <application>pg_repack</application>
+     job which didn't get cleaned up, you should just use <command>DROP INDEX</command>
+     and try the <command>repack</command> command again.
+    </para>
+  </refsect1>
+
+  <refsect1>
+   <title>Restrictions</title>
+
+   <para><application>pg_repack</application> comes with the following restrictions.</para>
+
+   <variablelist>
+    <varlistentry>
+     <term>Temporary tables</term>
+
+     <listitem>
+      <para><application>pg_repack</application> cannot reorganize temporary tables.</para>
+     </listitem>
+    </varlistentry>
+    <varlistentry>
+     <term>GiST indexes</term>
+     <listitem>
+      <para>
+       <application>pg_repack</application> cannot reorganize tables
+       using <literal>GiST</literal> indexes.
+      </para>
+     </listitem>
+    </varlistentry>
+    <varlistentry>
+     <term>DDL commands</term>
+     <listitem>
+      <para>
+       You will not be able to perform DDL commands of the target table(s)
+       <emphasis>except</emphasis> <command>VACUUM</command> or <command>ANALYZE</command>
+       while <application>pg_repack</application> is working.
+       <application>pg_repack</application> will hold an <literal>ACCESS SHARE</literal>
+       lock on the target table during a full-table repack, to enforce this restriction.
+      </para>
+      <para>
+       If you are using version 1.1.8 or earlier, you must not
+       attempt to perform any DDL commands on the target table(s)
+       while <application>pg_repack</application> is running.
+       In many cases <application>pg_repack</application> would
+       fail and rollback correctly, but there were some cases in
+       these earlier versions which could result in data corruption.
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1><title>See also</title>
+    <simplelist type="inline">
+      <member><xref linkend="app-clusterdb"></member>
+      <member><xref linkend="app-vacuumdb"></member>
+    </simplelist>
+  </refsect1>
+</refentry>

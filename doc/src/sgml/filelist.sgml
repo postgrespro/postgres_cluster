@@ -148,6 +148,7 @@
 <!ENTITY pgprewarm       SYSTEM "pgprewarm.sgml">
 <!ENTITY pgpro-scheduler SYSTEM "pgpro-scheduler.sgml">
 <!ENTITY pgquerystate    SYSTEM "pgquerystate.sgml">
+<!ENTITY pgrepack        SYSTEM "pgrepack.sgml">
 <!ENTITY pgrowlocks      SYSTEM "pgrowlocks.sgml">
 <!ENTITY pgstandby       SYSTEM "pgstandby.sgml">
 <!ENTITY pgstatstatements SYSTEM "pgstatstatements.sgml">
