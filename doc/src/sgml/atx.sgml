@@ -44,6 +44,7 @@ It is possible to nest subtransactions, up to a global resource limit (e.g. the 
 
 <para>
 The following figure describes an example where a transaction executes a subtransaction. A continuous line denotes an active transaction, while a dotted line denotes a transaction which has been paused and pushed in the AST stack. Time flows downwards.
+</para>
 
 <programlisting>
 BEGIN; -- start ordinary tx T0
