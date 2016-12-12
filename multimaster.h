@@ -10,8 +10,13 @@
 #include "commands/vacuum.h"
 #include "libpq-fe.h"
 
+#ifndef DEBUG_LEVEL
 #define  DEBUG_LEVEL 0
-#define  MTM_TRACE   1
+#endif
+
+#ifndef MTM_TRACE
+#define  MTM_TRACE   0
+#endif
 
 #if DEBUG_LEVEL == 0
 #define MTM_LOG1(fmt, ...) elog(LOG, fmt, ## __VA_ARGS__) 
@@ -35,7 +40,7 @@
 #define MTM_LOG4(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
 #endif
 
-#ifndef MTM_TRACE
+#if MTM_TRACE
 #define MTM_TXTRACE(tx, event)
 #else
 #define MTM_TXTRACE(tx, event) \
@@ -58,6 +63,7 @@
 #define MULTIMASTER_LOCK_BUF_INIT_SIZE  4096
 #define MULTIMASTER_BROADCAST_SERVICE   "mtm_broadcast"
 #define MULTIMASTER_ADMIN               "mtm_admin"
+#define MULTIMASTER_PRECOMMITTED        "precommitted"
 
 #define MULTIMASTER_DEFAULT_ARBITER_PORT 5433
 

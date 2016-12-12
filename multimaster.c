@@ -975,7 +975,7 @@ MtmVotingCompleted(MtmTransState* ts)
 				return true;
 			} else if (MtmUseDtm) {
 				ts->votedMask = 0;
-				SetPrepareTransactionState(ts->gid, "precommitted");
+				SetPrepareTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
 				//MtmSend2PCMessage(ts, MSG_PRECOMMIT);
 				return false;
 			} else {
@@ -1131,7 +1131,7 @@ MtmCommitPreparedTransaction(MtmCurrentTrans* x)
 		ts->votedMask = 0;
 		ts->procno = MyProc->pgprocno;
 		MTM_TXTRACE(ts, "Coordinator sends MSG_PRECOMMIT");
-		SetPrepareTransactionState(ts->gid, "precommitted");
+		SetPrepareTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
 		//MtmSend2PCMessage(ts, MSG_PRECOMMIT);
 
 		Mtm2PCVoting(x, ts);
@@ -1374,7 +1374,7 @@ static void	MtmLoadPreparedTransactions(void)
 			Mtm->nActiveTransactions += 1;
 			ts->isEnqueued = false;
 			ts->isActive = true;
-			ts->status = strcmp(pxacts[i].state_3pc, "precommitted") == 0 ? TRANSACTION_STATUS_UNKNOWN : TRANSACTION_STATUS_IN_PROGRESS;
+			ts->status = strcmp(pxacts[i].state_3pc, MULTIMASTER_PRECOMMITTED) == 0 ? TRANSACTION_STATUS_UNKNOWN : TRANSACTION_STATUS_IN_PROGRESS;
 			ts->isLocal = true;
 			ts->isPrepared = false;
 			ts->isPinned = false;
