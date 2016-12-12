@@ -348,12 +348,18 @@ pg_temp_relation_size(PG_FUNCTION_ARGS)
 		PG_RETURN_NULL();
 
 	size = 0;
-	if (rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP)
+	if (rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP
+		&& rel->rd_rel->relkind == RELKIND_RELATION)
 	{
 		RelationOpenSmgr(rel);
 
 		if (rel->rd_smgr->smgr_main_nblocks != InvalidBlockNumber)
 			size = BLCKSZ * rel->rd_smgr->smgr_main_nblocks;
+	}
+	else
+	{
+		relation_close(rel, AccessShareLock);
+		PG_RETURN_NULL();
 	}
 
 	relation_close(rel, AccessShareLock);

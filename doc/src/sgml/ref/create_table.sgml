@@ -152,6 +152,15 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED | CONSTANT ] TABLE [
      </para>
 
      <para>
+     Unlike for permanent tables, we extend physical file for a temporary table
+     only when it doesn't fit into <literal>temp_buffers</> cache anymore.
+     So total and on-disk size of a temporary table can differ. Blocks are
+     not allocated in advance, so we may run out of free space on disk
+     when trying to evict a temp buffer from cache. It will cause an error.
+     This case is quite unusual, though.
+     </para>
+
+     <para>
       The <link linkend="autovacuum">autovacuum daemon</link> cannot
       access and therefore cannot vacuum or analyze temporary tables.
       For this reason, appropriate vacuum and analyze operations should be

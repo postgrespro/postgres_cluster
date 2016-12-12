@@ -18867,6 +18867,16 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
       </row>
       <row>
        <entry>
+        <literal><function>pg_temp_relation_size(<parameter>relation</parameter> <type>regclass</type>)</function></literal>
+        </entry>
+       <entry><type>bigint</type></entry>
+       <entry>
+        Total space used by <literal>'main'</literal> fork of
+        the specified temporary table.
+       </entry>
+      </row>
+      <row>
+       <entry>
         <literal><function>pg_size_bytes(<type>text</type>)</function></literal>
         </entry>
        <entry><type>bigint</type></entry>
@@ -19002,6 +19012,15 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
       </para>
      </listitem>
     </itemizedlist>
+   </para>
+
+   <para>
+    <function>pg_temp_relation_size</> accepts the OID or name of a temporary table
+    and returns the total size in bytes of <literal>'main'</literal> fork of
+    that relation.  We extend physical file for a temporary table when table doesn't
+    fit into <literal>temp_buffers</literal> cache anymore. So total and on-disk size of a temporary
+    table can differ. For other kinds of relations it will not throw any error,
+    just return NULL.
    </para>
 
    <para>
