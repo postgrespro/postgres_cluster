@@ -183,6 +183,9 @@ static TwoPhaseStateData *TwoPhaseState;
 static GlobalTransaction MyLockedGxact = NULL;
 
 static bool twophaseExitRegistered = false;
+static TransactionId cached_xid = InvalidTransactionId;
+static GlobalTransaction cached_gxact = NULL;
+
 
 static void RecordTransactionCommitPrepared(TransactionId xid,
 								int nchildren,
@@ -216,10 +219,10 @@ TwoPhaseShmemSize(void)
 	/* Need the fixed struct, the array of pointers, and the GTD structs */
 	size = offsetof(TwoPhaseStateData, prepXacts);
 	size = add_size(size, mul_size(max_prepared_xacts,
-								   sizeof(GlobalTransaction)));
+								   sizeof(GlobalTransaction)*2));
 	size = MAXALIGN(size);
 	size = add_size(size, mul_size(max_prepared_xacts,
-								   sizeof(GlobalTransactionData)*2));
+								   sizeof(GlobalTransactionData)));
 
 	return size;
 }
@@ -247,9 +250,9 @@ TwoPhaseShmemInit(void)
 		gxacts = (GlobalTransaction)
 			((char *) TwoPhaseState +
 			 MAXALIGN(offsetof(TwoPhaseStateData, prepXacts) +
-					  sizeof(GlobalTransaction) * max_prepared_xacts));
+					  sizeof(GlobalTransaction) * 2 * max_prepared_xacts));
 		
-		TwoPhaseState->hashTable = (GlobalTransaction*)&gxacts[max_prepared_xacts];
+		TwoPhaseState->hashTable = &TwoPhaseState->prepXacts[max_prepared_xacts];
 
 		for (i = 0; i < max_prepared_xacts; i++)
 		{
@@ -438,6 +441,10 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	proc->lwWaitMode = 0;
 	proc->waitLock = NULL;
 	proc->waitProcLock = NULL;
+	
+	cached_xid = xid;
+	cached_gxact = gxact;
+		
 	for (i = 0; i < NUM_LOCK_PARTITIONS; i++)
 		SHMQueueInit(&(proc->myProcLocks[i]));
 	/* subxid data must be filled later by GXactLoadSubxactData */
@@ -696,9 +703,7 @@ void SetPrepareTransactionState(char const* gid, char const* state)
 	strcpy(gxact->state_3pc, state);
 	EndPrepare(gxact);
 
-	/* Unlock GXact */
-	gxact->locking_backend = InvalidBackendId;
-	MyLockedGxact = NULL;
+	PostPrepare_Twophase();
 }
 
 /* Working status for pg_prepared_xact */
@@ -826,9 +831,6 @@ TwoPhaseGetGXact(TransactionId xid)
 {
 	GlobalTransaction result = NULL;
 	int			i;
-
-	static TransactionId cached_xid = InvalidTransactionId;
-	static GlobalTransaction cached_gxact = NULL;
 
 	/*
 	 * During a recovery, COMMIT PREPARED, or ABORT PREPARED, we'll be called

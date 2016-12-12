@@ -44,7 +44,7 @@
 #define MTM_TXTRACE(tx, event)
 #else
 #define MTM_TXTRACE(tx, event) \
-		fprintf(stderr, "[MTM_TXTRACE], %s, %lld, %s, %d\n", tx->gid, (long long)MtmGetSystemTime(), event, getpid())
+		fprintf(stderr, "[MTM_TXTRACE], %s, %lld, %s, %d\n", tx->gid, (long long)MtmGetSystemTime(), event, MyProcPid)
 #endif
 
 #define MULTIMASTER_NAME                "multimaster"
@@ -160,6 +160,12 @@ typedef struct
 	pgid_t         gid;    /* Global transaction identifier */
 } MtmArbiterMessage;
 
+/*
+ * Abort logical message is send by replica when error is happen while applying prepared transaction.
+ * In this case we do not have prepared transaction and can not do abort-prepared.
+ * But we have to record the fact of abort to be able to replay it in case of crash of coordinator of this transaction.
+ * We are using logical abort message with code 'A' for it
+ */
 typedef struct MtmAbortLogicalMessage
 {
 	pgid_t         gid;
