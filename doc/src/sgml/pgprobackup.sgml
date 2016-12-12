@@ -1149,7 +1149,9 @@ pg_probackup restore -j 4
      <listitem>
       <para>
         Only full backups are supported when using
-        <ulink url="https://postgrespro.com/docs/postgresproee/current/cfs.html">compressed tablespaces</link>
+        <ulink
+        url="https://postgrespro.com/docs/postgresproee/current/cfs.html">compressed
+        tablespaces</ulink>
         (<productname>Postgres Pro Enterprise</productname> feature).
       </para>
      </listitem>
