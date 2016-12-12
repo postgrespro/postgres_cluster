@@ -90,7 +90,7 @@ BEGIN [ AUTONOMOUS ] [ WORK | TRANSACTION ] [ <replaceable class="parameter">tra
     <term><literal>AUTONOMOUS</literal></term>
     <listitem>
      <para>
-      Optional key words. Cause start of autonomous subtransaction. 
+      Optional key word. Cause start of autonomous subtransaction. 
       Autonomous transaction can be started only within some other transaction.
       See section <xref linkend="atx"> for more details about autonomous transactions.
      </para>

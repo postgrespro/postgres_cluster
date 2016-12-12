@@ -1,49 +1,51 @@
 <!-- doc/src/sgml/atx.sgml -->
 
 <chapter id="atx">
- <title>Autonomous transactions.</title>
+ <title>Autonomous transactions</title>
 
 <sect1 id="atx-overview">
   <title>Overview of autonomous transactions</title>
- 
+
 <para>
-Postgres supports nested transactions: them are rarely explicitly used by programmer and mostly used for error handling and stored 
-procedures. It is possible to rollback subtransaction without affecting parent transaction. But commit of subtraction is delayed until 
+&productname; supports nested transactions: they are rarely explicitly used by programmer and mostly used for error handling and stored
+procedures. It is possible to rollback subtransaction without affecting parent transaction. But commit of subtraction is delayed until
 commit of parent transaction.
 </para>
 <para>
 But in some cases application needs to run several independent transactions in one session.
-"Autonomous Subtransactions" (in short AST) denotes the capability of a single session to run multiple independent transactions, as if multiple different sessions were executing each transaction. 
+<quote>Autonomous Subtransactions</quote> (in short <acronym>AST</acronym>) denotes the capability of a single session
+to run multiple independent transactions, as if multiple different sessions were executing each transaction.
 </para>
 <para>
 Autonomous transactions are needed mostly for implementing audits, when the fact of performing audit should be reported regardless
 status of audit itself: whether it was successfully completed or not.
-Autonomous transactions are widely used in Oracle PL-SQL, at porting such procedures to Postgres is problematic without autonomous transaction support.
-</para> 
+Autonomous transactions are widely used in Oracle PL-SQL, so porting such procedures to &productname; is problematic without autonomous transaction support.
+</para>
 
 </sect1>
 
-<sect1 id="behaviour"><title>Behavior</title>
+<sect1><title>Behavior</title>
 <para>
-An AST can happen only inside another transaction.
-Inside an existing transaction (call it T0), the user can decide to start a subtransaction. Then T0 is paused and pushed in an AST stack, and a new transaction (call it T1) is started.
+An <acronym>AST</acronym> can happen only inside another transaction.
+Inside an existing transaction (call it T0), the user can decide to start a subtransaction. Then T0 is paused and pushed in an <acronym>AST</acronym> stack, and a new transaction (call it T1) is started.
 </para>
 <para>
-At some point in the future the user can commit the subtransaction; after T1 is committed then T0 is popped from the AST stack and resumed.
-The user can also decide to COMMIT the parent transaction T0, in which case T1 is committed, then T0 is popped from the AST stack and then committed.
+At some point in the future the user can commit the subtransaction; after T1 is committed then T0 is popped from the <acronym>AST</acronym> stack and resumed.
+The user can also decide to <command>COMMIT</command> the parent transaction T0, in which case T1 is committed, then T0 is popped from the <acronym>AST</acronym> stack and then committed.
 </para>
 <para>
 All the transactions happen synchronously; at any time only one transaction can be active, while in the stack there are zero (or more) paused transactions in the stack.
-All the possible combinations of COMMIT / ROLLBACK for T0 and T1 can happen; for instance, it is possible to COMMIT T1 and ROLLBACK T0.
-It is possible to nest subtransactions, up to a global resource limit (e.g. the AST stack size) which can be set on the server.
+All the possible combinations of <command>COMMIT</command> / <command>ROLLBACK</command> for T0 and T1 can happen;
+for instance, it is possible to COMMIT T1 and ROLLBACK T0.
+It is possible to nest subtransactions, up to a global resource limit (e.g. the <acronym>AST</acronym> stack size) which can be set on the server.
 </para>
 
 </sect1>
 
-<sect1 id="example"><title>Example</title>
+<sect1><title>Example</title>
 
 <para>
-The following figure describes an example where a transaction executes a subtransaction. A continuous line denotes an active transaction, while a dotted line denotes a transaction which has been paused and pushed in the AST stack. Time flows downwards.
+The following figure describes an example where a transaction executes a subtransaction. A continuous line denotes an active transaction, while a dotted line denotes a transaction which has been paused and pushed in the <acronym>AST</acronym> stack. Time flows downwards.
 </para>
 
 <programlisting>
@@ -61,15 +63,15 @@ COMMIT / ROLLBACK; -- ends tx T0
 </programlisting>
 
 <para>
-Depending on the two choices between COMMIT and ROLLBACK we can get 4 different outputs from
-</para>
+Depending on the two choices between <command>COMMIT</command> and <command>ROLLBACK</command> we can get 4 different outputs from:
 
 <programlisting>
 SELECT sum(x) from t;
 </programlisting>
+</para>
 
 </sect1>
-<sect1 id="example2"><title>Example 2 (more than one subtransaction)</title>
+<sect1><title>Example 2 (more than one subtransaction)</title>
 
 <para>
 The parent transaction can have more than one subtransaction, just by repeating the application of the push/pop cycle.
@@ -99,44 +101,45 @@ COMMIT / ROLLBACK; -- ends tx T0
 
 </sect1>
 
-<sect1 id="visibility"><title>Visibility</title>
+<sect1><title>Visibility</title>
 
 <para>
-Visibility rules work as in the case of independent transactions executed via dblink. T1 does not see the effects of T0, because the latter has not been committed yet. T0 might see the effects of T1, depending on its own transaction isolation mode.
-In case of read committed isolation level parent transaction will see changes made by autonomous subtransaction.
-But in case of repeatable read isolation level parent transaction will not see changes made by autonomous subtransaction.
+Visibility rules work as in the case of independent transactions executed via <literal>dblink</literal>.
+T1 does not see the effects of T0, because the latter has not been committed yet. T0 might see the effects of T1, depending on its own transaction isolation mode.
+In case of Read Committed isolation level the parent transaction will see changes made by autonomous subtransaction.
+But in case of Repeatable Read isolation level the parent transaction will not see changes made by autonomous subtransaction.
 </para>
 
 <para>
-Now single-session deadlocks become possible, because an AST can become entangled with one of the paused transactions in its session.
-Autonomous transaction T1 is assumed to depend on parent transaction T1 and if it attempt to obtain any resource locked by T0, then
+Now single-session deadlocks become possible, because an <acronym>AST</acronym> can become entangled with one of the paused transactions in it's session.
+Autonomous transaction T1 is assumed to depend on parent transaction T0 and if it attempts to obtain any resource locked by T0, then
 deadlock is reported.
 </para>
 
 </sect1>
 
-<sect1 id="sql-grammar"><title>SQL grammar extension for autonomous transactions</title>
+<sect1><title>SQL grammar extension for autonomous transactions</title>
 
 <para>
-Postgres <literal>BEGIN</literal>/<literal>END</literal> transaction statements are extended by by optional keyword <literal>autonomous</literal>:
+&productname; <literal>BEGIN</literal>/<literal>END</literal> transaction statements are extended by optional keyword <literal>AUTONOMOUS</literal>:
 </para>
 
 <programlisting>
-    BEGIN [AUTONOMOUS] [TRANSACTION] [isolation-level]
-    END [AUTONOMOUS] [TRANSACTION] 
+    BEGIN [AUTONOMOUS] [TRANSACTION] [<replaceable>isolation-level</replaceable>]
+    END [AUTONOMOUS] [TRANSACTION]
 </programlisting>
 
 <para>
-Specifying autonomous keyword in end transaction clause is optional.
+Specifying <literal>AUTONOMOUS</literal> keyword in <literal>END TRANSACTION</literal> clause is optional.
 It is possible to have several nesting levels of autonomous transactions, but top level transaction can not be autonomous.
 </para>
 
 </sect1>
 
-<sect1 id="plpgsql-grammar"><title>PL/pgSQL grammar extension for autonomous transactions</title>
+<sect1><title>PL/pgSQL grammar extension for autonomous transactions</title>
 
 <para>
-Block construction in PL/pgSQL is extended by optional autonomous keyword.
+Block construction in PL/pgSQL is extended by optional <literal>autonomous</literal> keyword.
 It is possible to treat all function body as autonomous transaction:
 </para>
 
@@ -155,49 +158,49 @@ or create separate begin-end block:
 <programlisting>
 create or replace function myaudit() returns boolean as $$
 begin autonomous
-	begin autonomous
+        begin autonomous
         insert into audit_schedule values ('new audit',now());
-	end;
-	... -- do audit itself
-	return true;
+        end;
+        ... -- do audit itself
+        return true;
 end;
 $$ language plpgsql;
 </programlisting>
 
 <para>
-When exception is raised inside BEGIN AUTONOMOUS block, this autonomous transaction is aborted and standard 
+When exception is raised inside <command>BEGIN AUTONOMOUS</command> block, this autonomous transaction is aborted and standard 
 exception handling procedure is started, unwinding stack and executing exception handlers until exception is caught.
-So exception handling is done i the same way as with normal Postgres subtransactions.
+So exception handling is done in the same way as with normal &productname; subtransactions.
 </para>
 <para>
-When an error is caught by an EXCEPTION clause, the local variables of the PL/pgSQL function remain as they were when the error occurred, but all changes to persistent database state within the block are rolled back.
+When an error is caught by an <literal>EXCEPTION</literal> clause, the local variables of the PL/pgSQL function remain as they were when the error occurred, but all changes to persistent database state within the block are rolled back.
 </para>
 
 </sect1>
 
-<sect1 id="plpython-grammar"><title>PL/python extension for autonomous transactions</title>
+<sect1><title>PL/Python extension for autonomous transactions</title>
 
 <para>
-In addition to <varname>subtransaction</varname> method, Plpython module provides new <varname>autonomous</varname> method
-which can be used in <varname>>WITH</varname> clause to start autonomous transaction:
+In addition to <varname>subtransaction</varname> method, PL/Python module provides new <varname>autonomous</varname> method
+which can be used in <varname>WITH</varname> clause to start autonomous transaction:
 </para>
 
 <programlisting>
 create or replace function pythonomous() returns void as $$
-	plpy.execute("insert into atx_test values ('asd', 123)")
+        plpy.execute("insert into atx_test values ('asd', 123)")
 
-	try:
-		with plpy.autonomous():
-			plpy.execute("insert into atx_test values ('bsd', 456)")
-	except plpy.SPIError, e:
-		print("error: %s" % e.args)
+        try:
+                with plpy.autonomous():
+                        plpy.execute("insert into atx_test values ('bsd', 456)")
+        except plpy.SPIError, e:
+                print("error: %s" % e.args)
 
-	plpy.execute("insert into atx_test values ('csd', 'csd')")
+        plpy.execute("insert into atx_test values ('csd', 'csd')")
 $$ language plpythonu;
 </programlisting>
 
 <para>
-Exception handling for autonomous transaction in plpython is done in the same way as for subtransactions.
+Exception handling for autonomous transaction in PL/Python is done in the same way as for subtransactions.
 </para>
 
 </sect1>
