@@ -1037,7 +1037,7 @@ ERROR:  could not serialize access due to read/write dependencies among transact
      <para>
       Besides, there are two additional lock modes designed to support
       <application>1C Enterprise</application>. These modes do not conflict
-      with any other lock modes described above. They use is possible, but not
+      with any other lock modes described above. Their use is possible, but not
       encouraged, as <link linkend="advisory-locks">advisory locks</link> provide
       the same functionality.
      </para>
