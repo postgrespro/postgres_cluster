@@ -142,14 +142,18 @@ WaitLSNSetLatch(void)
 void
 WaitLSNUtility(const char *lsn, const int delay)
 {
-	XLogRecPtr	trg_lsn;
-	XLogRecPtr	cur_lsn;
-	int			latch_events;
-	int			tdelay = delay;
-	TimestampTz	timer = GetCurrentTimestamp();
-	trg_lsn = DatumGetLSN(DirectFunctionCall1(pg_lsn_in, CStringGetDatum(lsn)));
+	XLogRecPtr		trg_lsn;
+	XLogRecPtr		cur_lsn;
+	int				latch_events;
+	uint_fast64_t	tdelay = delay;
+	long			secs;
+	int				microsecs;
+	TimestampTz		timer = GetCurrentTimestamp();
 
-	tdelay *= 1000;
+	trg_lsn = DatumGetLSN(DirectFunctionCall1(pg_lsn_in, CStringGetDatum(lsn)));
+//	tdelay *= 1000;
+
+	elog(LOG,"ACHTUNG  tdelay %u",tdelay);
 
 	if (delay > 0)
 		latch_events = WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH;
@@ -174,9 +178,11 @@ WaitLSNUtility(const char *lsn, const int delay)
 		/* If Delay time is over */
 		if (latch_events & WL_TIMEOUT)
 		{
-			tdelay -= (GetCurrentTimestamp() - timer);
-			if (tdelay <= 0)
+			if (TimestampDifferenceExceeds(timer,GetCurrentTimestamp(),tdelay))
 				break;
+			TimestampDifference(timer,GetCurrentTimestamp(),&secs, &microsecs);
+			tdelay -= (secs*1000 + microsecs/1000);
+			elog(LOG,"ACHTUNG  tdelay %u, %d",tdelay, TimestampDifferenceExceeds(timer,GetCurrentTimestamp(),tdelay));
 			timer = GetCurrentTimestamp();
 		}
 

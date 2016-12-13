@@ -3112,7 +3112,7 @@ typedef struct WaitLSNStmt
 {
 	NodeTag		type;
 	char	   *lsn;			/* Taraget LSN to wait for */
-	int		   *delay;			/* Delay to wait for LSN*/
+	int			delay;			/* Delay to wait for LSN*/
 } WaitLSNStmt;
 
 #endif   /* PARSENODES_H */
