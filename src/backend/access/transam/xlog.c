@@ -9336,6 +9336,7 @@ xlog_redo(XLogReaderState *record)
 	Assert(info == XLOG_FPI || info == XLOG_FPI_FOR_HINT ||
 		   !XLogRecHasAnyBlockRefs(record));
 
+	elog(WARNING, "2PC: xlog_redo, info=%x", info);
 	if (info == XLOG_NEXTOID)
 	{
 		Oid			nextOid;
@@ -9489,6 +9490,7 @@ xlog_redo(XLogReaderState *record)
 							checkPoint.ThisTimeLineID, ThisTimeLineID)));
 
 		RecoveryRestartPoint(&checkPoint);
+		StandbyCheckPointTwoPhase(checkPoint.redo);
 	}
 	else if (info == XLOG_END_OF_RECOVERY)
 	{
