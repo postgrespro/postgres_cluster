@@ -184,7 +184,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
     if (txn->xact_action == XLOG_XACT_COMMIT) 
     	flags = PGLOGICAL_COMMIT;
 	else if (txn->xact_action == XLOG_XACT_PREPARE)
-    	flags = strcmp(txn->state_3pc, "precommitted") == 0 ? PGLOGICAL_PRECOMMIT_PREPARED : PGLOGICAL_PREPARE;
+    	flags = *txn->state_3pc ? PGLOGICAL_PRECOMMIT_PREPARED : PGLOGICAL_PREPARE;
 	else if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED)
     	flags = PGLOGICAL_COMMIT_PREPARED;
 	else if (txn->xact_action == XLOG_XACT_ABORT_PREPARED)
@@ -212,6 +212,10 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 		}
 		if (flags == PGLOGICAL_ABORT_PREPARED) { 
 			MTM_LOG1("Send ABORT_PREPARED for transaction %d (%s) end_lsn=%lx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%ld", 
+					 txn->xid, txn->gid, txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
+		}
+		if (flags == PGLOGICAL_PRECOMMIT_PREPARED) { 
+			MTM_LOG2("Send PGLOGICAL_PRECOMMIT_PREPARED for transaction %d (%s) end_lsn=%lx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%ld", 
 					 txn->xid, txn->gid, txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
 		}
 		if (MtmRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn)) { 

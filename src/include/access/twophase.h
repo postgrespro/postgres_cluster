@@ -73,6 +73,6 @@ extern int FinishAllPreparedTransactions(bool isCommit);
 
 extern int GetPreparedTransactions(PreparedTransaction* pxacts);
 
-extern void SetPrepareTransactionState(char const* gid, char const* state);
+extern void SetPreparedTransactionState(char const* gid, char const* state);
 
 #endif   /* TWOPHASE_H */

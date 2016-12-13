@@ -204,6 +204,14 @@ char const* const MtmNodeStatusMnem[] =
 	"OutOfService"
 };
 
+char const* const MtmTxnStatusMnem[] = 
+{ 
+	"InProgress", 
+	"Committed", 
+	"Aborted",
+	"Unknown"
+};
+
 bool  MtmDoReplication;
 char* MtmDatabaseName;
 char* MtmDatabaseUser;
@@ -595,8 +603,8 @@ MtmAdjustOldestXid(TransactionId xid)
 	if (MtmUseDtm && !MtmVolksWagenMode) 
 	{ 
 		if (prev != NULL) { 
-			MTM_LOG2("%d: MtmAdjustOldestXid: oldestXid=%d, prev->xid=%d, prev->status=%d, prev->snapshot=%ld, ts->xid=%d, ts->status=%d, ts->snapshot=%ld, oldestSnapshot=%ld", 
-					 MyProcPid, xid, prev->xid, prev->status, prev->snapshot, (ts ? ts->xid : 0), (ts ? ts->status : -1), (ts ? ts->snapshot : -1), oldestSnapshot);
+			MTM_LOG2("%d: MtmAdjustOldestXid: oldestXid=%d, prev->xid=%d, prev->status=%s, prev->snapshot=%ld, ts->xid=%d, ts->status=%d, ts->snapshot=%ld, oldestSnapshot=%ld", 
+					 MyProcPid, xid, prev->xid, MtmTxnStatusMnem[prev->status], prev->snapshot, (ts ? ts->xid : 0), (ts ? ts->status : -1), (ts ? ts->snapshot : -1), oldestSnapshot);
 			Mtm->transListHead = prev;
 			Mtm->oldestXid = xid = prev->xid;            
 		} else if (TransactionIdPrecedes(Mtm->oldestXid, xid)) {  
@@ -604,8 +612,8 @@ MtmAdjustOldestXid(TransactionId xid)
 		}
 	} else { 
 		if (prev != NULL) { 
-			MTM_LOG2("%d: MtmAdjustOldestXid: oldestXid=%d, prev->xid=%d, prev->status=%d, prev->snapshot=%ld, ts->xid=%d, ts->status=%d, ts->snapshot=%ld, oldestSnapshot=%ld", 
-					 MyProcPid, xid, prev->xid, prev->status, prev->snapshot, (ts ? ts->xid : 0), (ts ? ts->status : -1), (ts ? ts->snapshot : -1), oldestSnapshot);
+			MTM_LOG2("%d: MtmAdjustOldestXid: oldestXid=%d, prev->xid=%d, prev->status=%s, prev->snapshot=%ld, ts->xid=%d, ts->status=%d, ts->snapshot=%ld, oldestSnapshot=%ld", 
+					 MyProcPid, xid, prev->xid, MtmTxnStatusMnem[prev->status], prev->snapshot, (ts ? ts->xid : 0), (ts ? ts->status : -1), (ts ? ts->snapshot : -1), oldestSnapshot);
 			Mtm->transListHead = prev;
 		}
 	}
@@ -933,7 +941,8 @@ void MtmPrecommitTransaction(char const* gid)
 	{
 		MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, gid, HASH_FIND, NULL);
 		if (tm == NULL) {
-			elog(WARNING, "MtmPrecommitTransaction: transaciton '%s' is not found", gid);
+			MtmUnlock();
+			elog(WARNING, "MtmPrecommitTransaction: transaction '%s' is not found", gid);
 		} else { 
 			MtmTransState* ts = tm->state;
 			Assert(ts != NULL);
@@ -942,10 +951,11 @@ void MtmPrecommitTransaction(char const* gid)
 			ts->csn = MtmAssignCSN();
 			MtmAdjustSubtransactions(ts);
 			MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
-			SetPrepareTransactionState(ts->gid, "precommitted");
+			Assert(replorigin_session_origin != InvalidRepOriginId);
+			MtmUnlock();
+			SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
 		}
 	}
-	MtmUnlock();
 }
 				
 				
@@ -967,15 +977,18 @@ MtmVotingCompleted(MtmTransState* ts)
 			ts->status = TRANSACTION_STATUS_UNKNOWN;
 			return true;
 		} else {
-			MTM_LOG1("Transaction %s is considered as prepared (status=%d participants=%lx disabled=%lx, voted=%lx)", 
-					 ts->gid, ts->status, ts->participantsMask, Mtm->disabledNodeMask, ts->votedMask);
+			MTM_LOG1("Transaction %s is considered as prepared (status=%s participants=%lx disabled=%lx, voted=%lx)", 
+					 ts->gid, MtmTxnStatusMnem[ts->status], ts->participantsMask, Mtm->disabledNodeMask, ts->votedMask);
 			ts->isPrepared = true;
 			if (ts->isTwoPhase) {
 				ts->votingCompleted = true;
 				return true;
 			} else if (MtmUseDtm) {
 				ts->votedMask = 0;
-				SetPrepareTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
+				Assert(replorigin_session_origin == InvalidRepOriginId);
+				MtmUnlock();
+				SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);	
+				MtmLock(LW_EXCLUSIVE);
 				//MtmSend2PCMessage(ts, MSG_PRECOMMIT);
 				return false;
 			} else {
@@ -1023,7 +1036,7 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 			if (ts->isPrepared) { 
 				/* resend precommit message */
 				// MtmSend2PCMessage(ts, MSG_PRECOMMIT);
-				elog(LOG, "Distributes transaction is not committed in %ld msec", USEC_TO_MSEC(now - start));
+				elog(LOG, "Distributed transaction is not committed in %ld msec", USEC_TO_MSEC(now - start));
 			} else {
 				elog(WARNING, "Commit of distributed transaction is canceled because of %ld msec timeout expiration", USEC_TO_MSEC(timeout));
 				MtmAbortTransaction(ts);
@@ -1047,7 +1060,7 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 		}
 	}
 	x->status = ts->status;
-	MTM_LOG3("%d: Result of vote: %d", MyProcPid, ts->status);
+	MTM_LOG3("%d: Result of vote: %d", MyProcPid, MtmTxnStatusMnem[ts->status]);
 }
 		
 static void
@@ -1071,6 +1084,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	//if (x->gid[0]) MTM_LOG1("Preparing transaction %d (%s) at %ld", x->xid, x->gid, MtmGetCurrentTime());
 	if (!MtmIsCoordinator(ts) || Mtm->status == MTM_RECOVERY) {
 		MTM_TXTRACE(x, "recovery?");
+		MTM_LOG3("Preparing transaction %d (%s) at %ld", x->xid, x->gid, MtmGetCurrentTime());
 		Assert(x->gid[0]);
 		ts->votingCompleted = true;
 		MTM_TXTRACE(x, "recovery? 1");
@@ -1130,9 +1144,12 @@ MtmCommitPreparedTransaction(MtmCurrentTrans* x)
 		ts->votingCompleted = false;
 		ts->votedMask = 0;
 		ts->procno = MyProc->pgprocno;
-		MTM_TXTRACE(ts, "Coordinator sends MSG_PRECOMMIT");
-		SetPrepareTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
+		MTM_LOG2("Coordinator of transaction %s sends MSG_PRECOMMIT", ts->gid);
+		Assert(replorigin_session_origin == InvalidRepOriginId);
+		MtmUnlock();
+		SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
 		//MtmSend2PCMessage(ts, MSG_PRECOMMIT);
+		MtmLock(LW_EXCLUSIVE);
 
 		Mtm2PCVoting(x, ts);
 
@@ -1202,17 +1219,14 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		}
 		if (ts != NULL) { 
 			if (*ts->gid)  
-				MTM_LOG2("TRANSLOG: %s transaction gid=%s xid=%d node=%d dxid=%d status %d", 
-						 (commit ? "commit" : "rollback"), ts->gid, ts->xid, ts->gtid.node, ts->gtid.xid, ts->status);
+				MTM_LOG2("TRANSLOG: %s transaction gid=%s xid=%d node=%d dxid=%d status %s", 
+						 (commit ? "commit" : "rollback"), ts->gid, ts->xid, ts->gtid.node, ts->gtid.xid, MtmTxnStatusMnem[ts->status]);
 			if (commit) {
 				if (!(ts->status == TRANSACTION_STATUS_UNKNOWN 
 					  || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)))  
-				{
-					Assert(false);
+				{					Assert(false);
 					elog(ERROR, "Attempt to commit %s transaction %d (%s)", 
-						 ts->status == TRANSACTION_STATUS_ABORTED ? "aborted" 
-						 : ts->status == TRANSACTION_STATUS_COMMITTED ? "committed" : "not prepared",
-						 ts->xid, ts->gid);
+						 MtmTxnStatusMnem[ts->status], ts->xid, ts->gid);
 				}
 				if (x->csn > ts->csn || Mtm->status == MTM_RECOVERY) {
 					Assert(x->csn != INVALID_CSN);
@@ -1324,6 +1338,7 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 			}
 		}
 	} else if (!BIT_CHECK(Mtm->disabledNodeMask, ts->gtid.node-1)) {
+		MTM_LOG2("Send %s message to node %d xid=%d gid=%s", MtmMessageKindMnem[cmd], ts->gtid.node, ts->gtid.xid, ts->gid);
 		msg.node = ts->gtid.node;
 		msg.dxid = ts->gtid.xid;
 		MtmSendMessage(&msg);
@@ -1522,7 +1537,7 @@ void MtmAbortTransaction(MtmTransState* ts)
 		if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
 			elog(LOG, "Attempt to rollback already committed transaction %d (%s)", ts->xid, ts->gid);
 		} else { 
-			MTM_LOG1("Rollback active transaction %d:%d (local xid %d) status %d", ts->gtid.node, ts->gtid.xid, ts->xid, ts->status);
+			MTM_LOG1("Rollback active transaction %d:%d (local xid %d) status %s", ts->gtid.node, ts->gtid.xid, ts->xid, MtmTxnStatusMnem[ts->status]);
 			ts->status = TRANSACTION_STATUS_ABORTED;
 			MtmAdjustSubtransactions(ts);
 			if (ts->isActive) {
@@ -1590,8 +1605,8 @@ static void MtmPollStatusOfPreparedTransactions(int disabledNodeId)
 				MtmBroadcastPollMessage(ts);
 			}
 		} else {
-			MTM_LOG1("Skip transaction %d (%s) with status %d gtid.node=%d gtid.xid=%d votedMask=%lx", 
-					 ts->xid, ts->gid, ts->status, ts->gtid.node, ts->gtid.xid, ts->votedMask);
+			MTM_LOG1("Skip transaction %d (%s) with status %s gtid.node=%d gtid.xid=%d votedMask=%lx", 
+					 ts->xid, ts->gid, MtmTxnStatusMnem[ts->status], ts->gtid.node, ts->gtid.xid, ts->votedMask);
 		}
 	}
 }
@@ -1926,8 +1941,8 @@ bool MtmRefreshClusterStatus(bool nowait)
 			MtmTransState *ts;
 			/* Interrupt voting for active transaction and abort them */
 			for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
-				MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%d, gtid.xid=%d",
-						 ts->gid, ts->gtid.node, ts->xid, ts->status, ts->gtid.xid);
+				MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%s, gtid.xid=%d",
+						 ts->gid, ts->gtid.node, ts->xid, MtmTxnStatusMnen[ts->status], ts->gtid.xid);
 				if (MtmIsCoordinator(ts) && !ts->votingCompleted && ts->status != TRANSACTION_STATUS_ABORTED) {
 					MtmAbortTransaction(ts);
 					MtmWakeUpBackend(ts);
@@ -2898,7 +2913,7 @@ void MtmReleaseRecoverySlot(int nodeId)
 void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 {
 	XidStatus status = MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED);
-	MTM_LOG1("Abort prepared transaction %s status %d", gid, status);
+	MTM_LOG1("Abort prepared transaction %s status %s", gid, MtmTxnStatusMnem[status]);
 	if (status == TRANSACTION_STATUS_UNKNOWN) { 
 		MTM_LOG2("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
 		MtmResetTransaction();
@@ -3176,6 +3191,9 @@ MtmReplicationTxnFilterHook(struct PGLogicalTxnFilterArgs* args)
 	bool res = Mtm->status != MTM_RECOVERY
 		&& (args->origin_id == InvalidRepOriginId 
 			|| MtmIsRecoveredNode(MtmReplicationNodeId));
+	if (!res) { 
+		MTM_LOG2("Filter transaction with origin_id=%d", args->origin_id);
+	}
 	return res;
 }
 
@@ -3211,7 +3229,7 @@ bool MtmFilterTransaction(char* record, int size)
 	int         replication_node;
 	int         origin_node;
 	char const* gid = "";
-	char 		msgtype;
+	char 		msgtype PG_USED_FOR_ASSERTS_ONLY;
 	bool        duplicate = false;
 
     s.data = record;

@@ -2293,6 +2293,7 @@ PrepareTransaction(void)
 	 */
 	gxact = MarkAsPreparing(xid, prepareGID, prepared_at,
 							GetUserId(), MyDatabaseId);
+	//elog(LOG, "Prepare transaction %s xid %d", prepareGID, xid);
 	prepareGID = NULL;
 
 	/*

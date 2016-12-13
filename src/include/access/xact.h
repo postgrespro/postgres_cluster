@@ -29,7 +29,7 @@
 /*
  * Maximal size of 3PC transaction state
  */
-#define MAX_3PC_STATE_SIZE 256
+#define MAX_3PC_STATE_SIZE 16
 
 /*
  * Xact isolation levels

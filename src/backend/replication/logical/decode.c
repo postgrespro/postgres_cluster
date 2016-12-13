@@ -660,6 +660,7 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	RepOriginId	origin_id = XLogRecGetOrigin(buf->record);
 	int			i;
 	TransactionId xid = parsed->twophase_xid;
+	ReorderBuffer *rb = ctx->reorder;
 
 	// struct timeval tv;
 	// int64 ts;
@@ -678,19 +679,19 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		Assert(origin_id == InvalidRepOriginId);
 	}
 
-	strcpy(ctx->reorder->gid, parsed->twophase_gid);
-	strcpy(ctx->reorder->state_3pc, parsed->state_3pc);
+	strcpy(rb->gid, parsed->twophase_gid);
+	strcpy(rb->state_3pc, parsed->state_3pc);
 
 	/*
 	 * Process invalidation messages, even if we're not interested in the
 	 * transaction's contents, since the various caches need to always be
 	 * consistent.
 	 */
-	if (parsed->nmsgs > 0)
+	if (parsed->nmsgs > 0 && *rb->state_3pc == '\0')
 	{
-		ReorderBufferAddInvalidations(ctx->reorder, xid, buf->origptr,
+		ReorderBufferAddInvalidations(rb, xid, buf->origptr,
 									  parsed->nmsgs, parsed->msgs);
-		ReorderBufferXidSetCatalogChanges(ctx->reorder, xid, buf->origptr);
+		ReorderBufferXidSetCatalogChanges(rb, xid, buf->origptr);
 	}
 
 	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
@@ -702,23 +703,38 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	{
 		for (i = 0; i < parsed->nsubxacts; i++)
 		{
-			ReorderBufferForget(ctx->reorder, parsed->subxacts[i], buf->origptr);
+			ReorderBufferForget(rb, parsed->subxacts[i], buf->origptr);
 		}
-		ReorderBufferForget(ctx->reorder, xid, buf->origptr);
+		ReorderBufferForget(rb, xid, buf->origptr);
 
 		return;
 	}
 
-	/* tell the reorderbuffer about the surviving subtransactions */
-	for (i = 0; i < parsed->nsubxacts; i++)
-	{
-		ReorderBufferCommitChild(ctx->reorder, xid, parsed->subxacts[i],
-								 buf->origptr, buf->endptr);
+	if (*parsed->state_3pc != '\0') { 
+		ReorderBufferTXN txn;
+		txn.xid = xid;
+		txn.first_lsn = buf->origptr;
+		txn.final_lsn = buf->origptr;
+		txn.end_lsn = buf->endptr;
+		txn.commit_time = commit_time;
+		txn.origin_id = origin_id;
+		txn.origin_lsn = origin_lsn;
+		txn.xact_action = rb->xact_action;
+		strcpy(txn.gid, rb->gid);
+		strcpy(txn.state_3pc, rb->state_3pc);		
+		rb->commit(rb, &txn, buf->origptr);
+	} else { 
+		/* tell the reorderbuffer about the surviving subtransactions */
+		for (i = 0; i < parsed->nsubxacts; i++)
+		{
+			ReorderBufferCommitChild(ctx->reorder, xid, parsed->subxacts[i],
+									 buf->origptr, buf->endptr);
+		}
+		
+		/* replay actions of all transaction + subtransactions in order */
+		ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
+							commit_time, origin_id, origin_lsn);
 	}
-
-	/* replay actions of all transaction + subtransactions in order */
-	ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
-						commit_time, origin_id, origin_lsn);
 }
 
 /*
