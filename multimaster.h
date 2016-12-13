@@ -40,7 +40,7 @@
 #define MTM_LOG4(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
 #endif
 
-#if MTM_TRACE
+#if MTM_TRACE == 0
 #define MTM_TXTRACE(tx, event)
 #else
 #define MTM_TXTRACE(tx, event) \
@@ -309,6 +309,8 @@ typedef struct MtmFlushPosition
 #define MtmIsCoordinator(ts) (ts->gtid.node == MtmNodeId)
 
 extern char const* const MtmNodeStatusMnem[];
+extern char const* const MtmTxnStatusMnem[];
+extern char const* const MtmMessageKindMnem[];
 
 extern MtmState* Mtm;
 
