@@ -15,6 +15,7 @@
 #define TWOPHASE_H
 
 #include "access/xlogdefs.h"
+#include "access/xlogreader.h"
 #include "datatype/timestamp.h"
 #include "storage/lock.h"
 
@@ -55,5 +56,9 @@ extern void RemoveTwoPhaseFile(TransactionId xid, bool giveWarning);
 extern void CheckPointTwoPhase(XLogRecPtr redo_horizon);
 
 extern void FinishPreparedTransaction(const char *gid, bool isCommit);
+
+extern void StandbyAtCommit(TransactionId xid);
+extern void StandbyAtPrepare(XLogReaderState *record);
+extern void StandbyCheckPointTwoPhase(XLogRecPtr redo_horizon);
 
 #endif   /* TWOPHASE_H */

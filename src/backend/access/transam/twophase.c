@@ -200,6 +200,83 @@ static void RemoveGXact(GlobalTransaction gxact);
 
 static void XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len);
 
+
+dlist_head StandbyTwoPhaseStateData = DLIST_STATIC_INIT(StandbyTwoPhaseStateData);
+
+typedef struct StandbyPreparedTransaction
+{
+	TransactionId	xid;
+	XLogRecPtr		prepare_start_lsn;
+	XLogRecPtr		prepare_end_lsn;
+	dlist_node		list_node;
+}	StandbyPreparedTransaction;
+
+void
+StandbyCheckPointTwoPhase(XLogRecPtr redo_horizon)
+{
+	dlist_mutable_iter miter;
+	int			serialized_xacts = 0;
+
+	Assert(RecoveryInProgress());
+
+	TRACE_POSTGRESQL_TWOPHASE_CHECKPOINT_START();
+
+	dlist_foreach_modify(miter, &StandbyTwoPhaseStateData)
+	{
+		StandbyPreparedTransaction   *xact = dlist_container(StandbyPreparedTransaction,
+															list_node, miter.cur);
+
+		if (xact->prepare_end_lsn <= redo_horizon)
+		{
+			char	   *buf;
+			int			len;
+
+			XlogReadTwoPhaseData(xact->prepare_start_lsn, &buf, &len);
+			RecreateTwoPhaseFile(xact->xid, buf, len);
+			pfree(buf);
+			dlist_delete(miter.cur);
+			serialized_xacts++;
+		}
+	}
+
+	TRACE_POSTGRESQL_TWOPHASE_CHECKPOINT_DONE();
+
+	if (log_checkpoints && serialized_xacts > 0)
+		ereport(LOG,
+				(errmsg_plural("%u two-phase state file was written "
+							   "for long-running prepared transactions",
+							   "%u two-phase state files were written "
+							   "for long-running prepared transactions",
+							   serialized_xacts,
+							   serialized_xacts)));
+}
+
+// XXX: rename to remove_standby_state
+void
+StandbyAtCommit(TransactionId xid)
+{
+	dlist_mutable_iter miter;
+
+	Assert(RecoveryInProgress());
+
+	dlist_foreach_modify(miter, &StandbyTwoPhaseStateData)
+	{
+		StandbyPreparedTransaction   *xact = dlist_container(StandbyPreparedTransaction,
+															list_node, miter.cur);
+
+		if (xact->xid == xid)
+		{
+			// pfree(xact);
+			dlist_delete(miter.cur);
+			return;
+		}
+	}
+
+	RemoveTwoPhaseFile(xid, false);
+}
+
+
+
 /*
  * Initialization of shared memory
  */
@@ -1252,7 +1329,7 @@ XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
 	XLogReaderState *xlogreader;
 	char	   *errormsg;
 
-	Assert(!RecoveryInProgress());
+	// Assert(!RecoveryInProgress());
 
 	xlogreader = XLogReaderAllocate(&read_local_xlog_page, NULL);
 	if (!xlogreader)
@@ -1651,6 +1728,20 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 							   "for long-running prepared transactions",
 							   serialized_xacts,
 							   serialized_xacts)));
+}
+
+void
+StandbyAtPrepare(XLogReaderState *record)
+{
+	StandbyPreparedTransaction *xact;
+	TwoPhaseFileHeader *hdr = (TwoPhaseFileHeader *) XLogRecGetData(record);
+
+	xact = (StandbyPreparedTransaction *) palloc(sizeof(StandbyPreparedTransaction));
+	xact->xid = hdr->xid;
+	xact->prepare_start_lsn = record->ReadRecPtr;
+	xact->prepare_end_lsn = record->EndRecPtr;
+
+	dlist_push_tail(&StandbyTwoPhaseStateData, &xact->list_node);
 }
 
 /*
