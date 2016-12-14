@@ -2501,6 +2501,11 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 		}
 
 		XLogBeginInsert();
+		if (info & XLOG_HEAP_INIT_PAGE)
+		{
+			PageHeader header = (PageHeader) page;
+			XLogRegisterData((char *) &header->pd_xid_epoch, sizeof(TransactionId));
+		}
 		XLogRegisterData((char *) &xlrec, SizeOfHeapInsert);
 
 		xlhdr.t_infomask2 = heaptup->t_data->t_infomask2;
@@ -3277,6 +3282,11 @@ heap_multi_insert(Relation relation, HeapTuple *tuples, int ntuples,
 				bufflags |= REGBUF_KEEP_DATA;
 
 			XLogBeginInsert();
+			if (info & XLOG_HEAP_INIT_PAGE)
+			{
+				PageHeader header = (PageHeader) page;
+				XLogRegisterData((char *) &header->pd_xid_epoch, sizeof(TransactionId));
+			}
 			XLogRegisterData((char *) xlrec, tupledata - scratch);
 			XLogRegisterBuffer(0, buffer, REGBUF_STANDARD | bufflags);
 
@@ -8138,6 +8148,11 @@ log_heap_update(Relation reln, Buffer oldbuf,
 	if (oldbuf != newbuf)
 		XLogRegisterBuffer(1, oldbuf, REGBUF_STANDARD);
 
+	if (info & XLOG_HEAP_INIT_PAGE)
+	{
+		PageHeader header = (PageHeader) page;
+		XLogRegisterData((char *) &header->pd_xid_epoch, sizeof(TransactionId));
+	}
 	XLogRegisterData((char *) &xlrec, SizeOfHeapUpdate);
 
 	/*
@@ -8795,7 +8810,7 @@ static void
 heap_xlog_insert(XLogReaderState *record)
 {
 	XLogRecPtr	lsn = record->EndRecPtr;
-	xl_heap_insert *xlrec = (xl_heap_insert *) XLogRecGetData(record);
+	xl_heap_insert *xlrec;
 	Buffer		buffer;
 	Page		page;
 	union
@@ -8811,6 +8826,18 @@ heap_xlog_insert(XLogReaderState *record)
 	BlockNumber blkno;
 	ItemPointerData target_tid;
 	XLogRedoAction action;
+	bool		isinit = (XLogRecGetInfo(record) & XLOG_HEAP_INIT_PAGE) != 0;
+	TransactionId pd_xid_epoch = InvalidTransactionId;
+	Pointer		rec_data;
+
+	rec_data = (Pointer) XLogRecGetData(record);
+	if (isinit)
+	{
+		pd_xid_epoch = *((TransactionId *) rec_data);
+		rec_data += sizeof(TransactionId);
+	}
+
+	xlrec = (xl_heap_insert *) rec_data;
 
 	XLogRecGetBlockTag(record, 0, &target_node, NULL, &blkno);
 	ItemPointerSetBlockNumber(&target_tid, blkno);
@@ -8835,11 +8862,15 @@ heap_xlog_insert(XLogReaderState *record)
 	 * If we inserted the first and only tuple on the page, re-initialize the
 	 * page from scratch.
 	 */
-	if (XLogRecGetInfo(record) & XLOG_HEAP_INIT_PAGE)
+	if (isinit)
 	{
+		PageHeader header;
+
 		buffer = XLogInitBufferForRedo(record, 0);
 		page = BufferGetPage(buffer);
 		PageInit(page, BufferGetPageSize(buffer), 0);
+		header = (PageHeader) page;
+		header->pd_xid_epoch = pd_xid_epoch;
 		action = BLK_NEEDS_REDO;
 	}
 	else
@@ -8927,12 +8958,20 @@ heap_xlog_multi_insert(XLogReaderState *record)
 	int			i;
 	bool		isinit = (XLogRecGetInfo(record) & XLOG_HEAP_INIT_PAGE) != 0;
 	XLogRedoAction action;
+	TransactionId pd_xid_epoch = InvalidTransactionId;
+	Pointer		rec_data;
 
 	/*
 	 * Insertion doesn't overwrite MVCC data, so no conflict processing is
 	 * required.
 	 */
-	xlrec = (xl_heap_multi_insert *) XLogRecGetData(record);
+	rec_data = (Pointer) XLogRecGetData(record);
+	if (isinit)
+	{
+		pd_xid_epoch = *((TransactionId *) rec_data);
+		rec_data += sizeof(TransactionId);
+	}
+	xlrec = (xl_heap_multi_insert *) rec_data;
 
 	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
 
@@ -8953,9 +8992,13 @@ heap_xlog_multi_insert(XLogReaderState *record)
 
 	if (isinit)
 	{
+		PageHeader header;
+
 		buffer = XLogInitBufferForRedo(record, 0);
 		page = BufferGetPage(buffer);
 		PageInit(page, BufferGetPageSize(buffer), 0);
+		header = (PageHeader) page;
+		header->pd_xid_epoch = pd_xid_epoch;
 		action = BLK_NEEDS_REDO;
 	}
 	else
@@ -9050,7 +9093,7 @@ static void
 heap_xlog_update(XLogReaderState *record, bool hot_update)
 {
 	XLogRecPtr	lsn = record->EndRecPtr;
-	xl_heap_update *xlrec = (xl_heap_update *) XLogRecGetData(record);
+	xl_heap_update *xlrec;
 	RelFileNode rnode;
 	BlockNumber oldblk;
 	BlockNumber newblk;
@@ -9075,6 +9118,18 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 	Size		freespace = 0;
 	XLogRedoAction oldaction;
 	XLogRedoAction newaction;
+	bool		isinit = (XLogRecGetInfo(record) & XLOG_HEAP_INIT_PAGE) != 0;
+	TransactionId pd_xid_epoch = InvalidTransactionId;
+	Pointer		rec_data;
+
+	rec_data = (Pointer *) XLogRecGetData(record);
+	if (isinit)
+	{
+		pd_xid_epoch = *((TransactionId *) rec_data);
+		rec_data += sizeof(TransactionId);
+	}
+
+	xlrec = (xl_heap_update *) rec_data;
 
 	/* initialize to keep the compiler quiet */
 	oldtup.t_data = NULL;
@@ -9166,11 +9221,15 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 		nbuffer = obuffer;
 		newaction = oldaction;
 	}
-	else if (XLogRecGetInfo(record) & XLOG_HEAP_INIT_PAGE)
+	else if (isinit)
 	{
+		PageHeader header;
+
 		nbuffer = XLogInitBufferForRedo(record, 0);
 		page = (Page) BufferGetPage(nbuffer);
 		PageInit(page, BufferGetPageSize(nbuffer), 0);
+		header = (PageHeader) page;
+		header->pd_xid_epoch = pd_xid_epoch;
 		newaction = BLK_NEEDS_REDO;
 	}
 	else
