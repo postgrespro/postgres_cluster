@@ -946,14 +946,20 @@ void MtmPrecommitTransaction(char const* gid)
 		} else { 
 			MtmTransState* ts = tm->state;
 			Assert(ts != NULL);
-			Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-			ts->status = TRANSACTION_STATUS_UNKNOWN;
-			ts->csn = MtmAssignCSN();
-			MtmAdjustSubtransactions(ts);
-			MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
-			Assert(replorigin_session_origin != InvalidRepOriginId);
-			MtmUnlock();
-			SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
+			if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
+				ts->status = TRANSACTION_STATUS_UNKNOWN;
+				ts->csn = MtmAssignCSN();
+				MtmAdjustSubtransactions(ts);
+				if (Mtm->status != MTM_RECOVERY) {
+					MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
+				}
+				MtmUnlock();
+				Assert(replorigin_session_origin != InvalidRepOriginId);
+				SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
+			} else {
+				elog(WARNING, "MtmPrecommitTransaction: transaction '%s' is already in %s state", gid, MtmTxnStatusMnem[ts->status]);
+				MtmUnlock();
+			}
 		}
 	}
 }
@@ -1038,7 +1044,8 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 				// MtmSend2PCMessage(ts, MSG_PRECOMMIT);
 				elog(LOG, "Distributed transaction is not committed in %ld msec", USEC_TO_MSEC(now - start));
 			} else {
-				elog(WARNING, "Commit of distributed transaction is canceled because of %ld msec timeout expiration", USEC_TO_MSEC(timeout));
+				elog(WARNING, "Commit of distributed transaction %s (%d) is canceled because of %ld msec timeout expiration", 
+					 ts->gid, ts->xid, USEC_TO_MSEC(timeout));
 				MtmAbortTransaction(ts);
 				break;
 			}
@@ -1383,7 +1390,7 @@ static void	MtmLoadPreparedTransactions(void)
 		if (!found) {
 			TransactionId xid = GetNewTransactionId(false);
 			MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_ENTER, &found);
-			MTM_LOG1("Recover prepared transaction %s xid %d", gid, xid);
+			MTM_LOG1("Recover prepared transaction %s xid=%d state=%s", gid, xid, pxacts[i].state_3pc);
 			MyPgXact->xid = InvalidTransactionId; /* dirty hack:((( */
 			Assert(!found);
 			Mtm->nActiveTransactions += 1;
@@ -1391,7 +1398,7 @@ static void	MtmLoadPreparedTransactions(void)
 			ts->isActive = true;
 			ts->status = strcmp(pxacts[i].state_3pc, MULTIMASTER_PRECOMMITTED) == 0 ? TRANSACTION_STATUS_UNKNOWN : TRANSACTION_STATUS_IN_PROGRESS;
 			ts->isLocal = true;
-			ts->isPrepared = false;
+			ts->isPrepared = true;
 			ts->isPinned = false;
 			ts->snapshot = INVALID_CSN;
 			ts->isTwoPhase = false;
@@ -1490,6 +1497,10 @@ XidStatus MtmExchangeGlobalTransactionStatus(char const* gid, XidStatus new_stat
 		old_status = tm->status;
 		if (old_status != TRANSACTION_STATUS_ABORTED) { 
 			tm->status = new_status;
+		}
+		if (tm->state != NULL && old_status == TRANSACTION_STATUS_IN_PROGRESS) { 
+			/* Return UNKNOWN to mark that transaction was prepared */
+			old_status = TRANSACTION_STATUS_UNKNOWN;
 		}
 	} else { 
 		tm->state = NULL;
@@ -1605,7 +1616,7 @@ static void MtmPollStatusOfPreparedTransactions(int disabledNodeId)
 				MtmBroadcastPollMessage(ts);
 			}
 		} else {
-			MTM_LOG1("Skip transaction %d (%s) with status %s gtid.node=%d gtid.xid=%d votedMask=%lx", 
+			MTM_LOG2("Skip transaction %d (%s) with status %s gtid.node=%d gtid.xid=%d votedMask=%lx", 
 					 ts->xid, ts->gid, MtmTxnStatusMnem[ts->status], ts->gtid.node, ts->gtid.xid, ts->votedMask);
 		}
 	}
@@ -1656,7 +1667,8 @@ void MtmRecoveryCompleted(void)
 		Mtm->nodes[i].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 	}
 	/* Mode will be changed to online once all logical receiver are connected */
-	MtmSwitchClusterMode(MTM_CONNECTED);
+	elog(LOG, "Recovery completed with %d active receivers from %d", Mtm->nReceivers, Mtm->nLiveNodes-1);
+	MtmSwitchClusterMode(Mtm->nReceivers == Mtm->nLiveNodes-1 ? MTM_ONLINE : MTM_CONNECTED);
 	MtmUnlock();
 }
 
@@ -2549,7 +2561,7 @@ _PG_init(void)
 		0,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		0,\
 		NULL,
 		NULL,
 		NULL
@@ -2894,6 +2906,7 @@ void MtmReceiverStarted(int nodeId)
 			MtmEnableNode(nodeId);
 			MtmCheckQuorum();
 		}
+		elog(LOG, "Start %d receivers from %d cluster status %s", Mtm->nReceivers+1, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
 		if (++Mtm->nReceivers == Mtm->nLiveNodes-1) {
 			if (Mtm->status == MTM_CONNECTED) { 
 				MtmSwitchClusterMode(MTM_ONLINE);
@@ -3672,11 +3685,11 @@ Datum mtm_dump_lock_graph(PG_FUNCTION_ARGS)
 	{
 		size_t lockGraphSize;
 		char  *lockGraphData;
-		MtmLockNode(i + MtmMaxNodes, LW_SHARED);
+		MtmLockNode(i + 1 + MtmMaxNodes, LW_SHARED);
 		lockGraphSize = Mtm->nodes[i].lockGraphUsed;
 		lockGraphData = palloc(lockGraphSize);
 		memcpy(lockGraphData, Mtm->nodes[i].lockGraphData, lockGraphSize);
-		MtmUnlockNode(i + MtmMaxNodes);
+		MtmUnlockNode(i + 1 + MtmMaxNodes);
 
 		if (lockGraphData) {
 			GlobalTransactionId *gtid = (GlobalTransactionId *) lockGraphData;
@@ -4602,11 +4615,11 @@ MtmDetectGlobalDeadLockForXid(TransactionId xid)
 			if (i+1 != MtmNodeId && !BIT_CHECK(Mtm->disabledNodeMask, i)) { 
 				size_t lockGraphSize;
 				void* lockGraphData;
-				MtmLockNode(i + MtmMaxNodes, LW_SHARED);
+				MtmLockNode(i + 1 + MtmMaxNodes, LW_SHARED);
 				lockGraphSize = Mtm->nodes[i].lockGraphUsed;
 				lockGraphData = palloc(lockGraphSize);
 				memcpy(lockGraphData, Mtm->nodes[i].lockGraphData, lockGraphSize);
-				MtmUnlockNode(i + MtmMaxNodes);
+				MtmUnlockNode(i + 1 + MtmMaxNodes);
 
 				if (lockGraphData == NULL) {
 					return true;

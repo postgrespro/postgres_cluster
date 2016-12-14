@@ -57,6 +57,7 @@ static char worker_proc[BGW_MAXLEN];
 
 /* Lastly written positions */
 static XLogRecPtr output_written_lsn = InvalidXLogRecPtr;
+XLogRecPtr MtmSenderWalEnd;
 
 /* Stream functions */
 static void fe_sendint64(int64 i, char *buf);
@@ -509,6 +510,9 @@ pglogical_receiver_main(Datum main_arg)
 				walEnd = fe_recvint64(&copybuf[hdr_len]);
 				hdr_len += 8;		/* WALEnd */
 				hdr_len += 8;		/* sendTime */
+
+				/* WAL position of the end of this message at WAL sender */
+				MtmSenderWalEnd = walEnd;
 
 				/*ereport(LOG, (errmsg("%s: receive message %c length %d", worker_proc, copybuf[hdr_len], rc - hdr_len)));*/
 

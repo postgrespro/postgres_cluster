@@ -433,14 +433,20 @@ process_remote_message(StringInfo s)
 			/* This function is called directly by receiver, so there is no race condition and we can update
 			 * restartLSN without locks
 			 */
+			if (origin_node == MtmReplicationNodeId) { 
+				Assert(msg->origin_lsn == InvalidXLogRecPtr);
+				msg->origin_lsn = MtmSenderWalEnd;
+			}
 			if (Mtm->nodes[origin_node-1].restartLSN < msg->origin_lsn) { 
 				MTM_LOG2("[restartlsn] node %d: %lx -> %lx (MtmFilterTransaction)", origin_node, Mtm->nodes[origin_node-1].restartLSN, msg->origin_lsn);
 				Mtm->nodes[origin_node-1].restartLSN = msg->origin_lsn;
 				replorigin_session_origin_lsn = msg->origin_lsn; 
 				MtmRollbackPreparedTransaction(origin_node, msg->gid);
 			} else { 
-				MTM_LOG1("Ignore rollback of transaction %s from node %d because it's LSN %lx <= %lx", 
-						 msg->gid, origin_node, msg->origin_lsn, Mtm->nodes[origin_node-1].restartLSN);
+				if (msg->origin_lsn != InvalidXLogRecPtr) { 
+					MTM_LOG1("Ignore rollback of transaction %s from node %d because it's LSN %lx <= %lx", 
+							 msg->gid, origin_node, msg->origin_lsn, Mtm->nodes[origin_node-1].restartLSN);
+				}
 			}
 			standalone = true;
 			break;
