@@ -133,8 +133,10 @@ WaitLSNSetLatch(void)
 	for (i = 0; i < (MaxConnections+1); i++)
 	{
 		SpinLockAcquire(&state->l_arr[i].slock);
-		if (state->l_arr[i].pid != 0)
+		if (state->l_arr[i].pid != 0 && !(TestLatch(&state->l_arr[i].latch)))
+		{
 			SetLatch(&state->l_arr[i].latch);
+		}
 		SpinLockRelease(&state->l_arr[i].slock);
 	}
 }
@@ -151,9 +153,6 @@ WaitLSNUtility(const char *lsn, const int delay)
 	TimestampTz		timer = GetCurrentTimestamp();
 
 	trg_lsn = DatumGetLSN(DirectFunctionCall1(pg_lsn_in, CStringGetDatum(lsn)));
-//	tdelay *= 1000;
-
-	elog(LOG,"ACHTUNG  tdelay %u",tdelay);
 
 	if (delay > 0)
 		latch_events = WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH;
@@ -182,7 +181,6 @@ WaitLSNUtility(const char *lsn, const int delay)
 				break;
 			TimestampDifference(timer,GetCurrentTimestamp(),&secs, &microsecs);
 			tdelay -= (secs*1000 + microsecs/1000);
-			elog(LOG,"ACHTUNG  tdelay %u, %d",tdelay, TimestampDifferenceExceeds(timer,GetCurrentTimestamp(),tdelay));
 			timer = GetCurrentTimestamp();
 		}
 
