@@ -217,7 +217,9 @@ StandbyCheckPointTwoPhase(XLogRecPtr redo_horizon)
 	dlist_mutable_iter miter;
 	int			serialized_xacts = 0;
 
-	Assert(RecoveryInProgress());
+	// Assert(RecoveryInProgress());
+
+	elog(WARNING, "StandbyCheckPointTwoPhase");
 
 	TRACE_POSTGRESQL_TWOPHASE_CHECKPOINT_START();
 
@@ -226,11 +228,13 @@ StandbyCheckPointTwoPhase(XLogRecPtr redo_horizon)
 		StandbyPreparedTransaction   *xact = dlist_container(StandbyPreparedTransaction,
 															list_node, miter.cur);
 
-		if (xact->prepare_end_lsn <= redo_horizon)
+		if (redo_horizon == 0 || xact->prepare_end_lsn <= redo_horizon)
+		// if (true)
 		{
 			char	   *buf;
 			int			len;
 
+			fprintf(stderr, "2PC: checkpoint: %x --> %d (horizon: %x)\n", xact->prepare_start_lsn, xact->xid, redo_horizon);
 			XlogReadTwoPhaseData(xact->prepare_start_lsn, &buf, &len);
 			RecreateTwoPhaseFile(xact->xid, buf, len);
 			pfree(buf);
@@ -267,6 +271,7 @@ StandbyAtCommit(TransactionId xid)
 		if (xact->xid == xid)
 		{
 			// pfree(xact);
+			fprintf(stderr, "2PC: commit: %x/%d\n", xact->prepare_start_lsn, xact->xid);
 			dlist_delete(miter.cur);
 			return;
 		}
@@ -1741,6 +1746,8 @@ StandbyAtPrepare(XLogReaderState *record)
 	xact->prepare_start_lsn = record->ReadRecPtr;
 	xact->prepare_end_lsn = record->EndRecPtr;
 
+	fprintf(stderr, "2PC: at_prepare: %x/%d\n", xact->prepare_start_lsn, xact->xid);
+
 	dlist_push_tail(&StandbyTwoPhaseStateData, &xact->list_node);
 }
 
@@ -1781,6 +1788,9 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	TransactionId *xids = NULL;
 	int			nxids = 0;
 	int			allocsize = 0;
+
+	fprintf(stderr, "--- PrescanPreparedTransactions\n");
+	StandbyCheckPointTwoPhase(0);
 
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
@@ -1918,6 +1928,8 @@ StandbyRecoverPreparedTransactions(bool overwriteOK)
 	DIR		   *cldir;
 	struct dirent *clde;
 
+	fprintf(stderr, "--- StandbyRecoverPreparedTransactions\n");
+
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
 	{
@@ -2000,6 +2012,8 @@ RecoverPreparedTransactions(void)
 	DIR		   *cldir;
 	struct dirent *clde;
 	bool		overwriteOK = false;
+
+	fprintf(stderr, "--- RecoverPreparedTransactions\n");
 
 	snprintf(dir, MAXPGPATH, "%s", TWOPHASE_DIR);
 
