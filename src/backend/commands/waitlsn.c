@@ -133,7 +133,7 @@ WaitLSNSetLatch(void)
 	for (i = 0; i < (MaxConnections+1); i++)
 	{
 		SpinLockAcquire(&state->l_arr[i].slock);
-		if (state->l_arr[i].pid != 0 && !(TestLatch(&state->l_arr[i].latch)))
+		if (state->l_arr[i].pid != 0)
 		{
 			SetLatch(&state->l_arr[i].latch);
 		}
