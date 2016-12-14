@@ -10,7 +10,7 @@
   <sect2 id="pg-hint-plan-synopsis">
     <title>Synopsis</title>
     <para>
-      PostgreSQL uses cost-based optimizer, which utilizes data
+      &productname; uses cost-based optimizer, which utilizes data
       statistics, not static rules. The planner (optimizer) esitimates
       costs of each possible execution plans for a SQL statement then
       the execution plan with the lowest cost finally be executed. The
@@ -194,7 +194,7 @@ postgres=#
         Simply run <quote>make</quote> in the top of the source tree,
         then <quote>make install</quote> as appropriate user. The PATH
         environment variable should be set properly for the target
-        PostgreSQL for this process.
+        &productname; for this process.
       </para>
       <programlisting>
 $ tar xzvf pg_hint_plan-1.x.x.tar.gz

@@ -52,7 +52,7 @@
     <title>Installation</title>
     <para>
       When you installed <productname>Postgres Pro</productname> distribution, jsquery is available
-      as a contrib moudle. Install contrib modules (postgrespro-contrib
+      as a contrib module. Install contrib modules (postgrespro-contrib
       package in the binary distribution for Linux, or make -C contrib
       install if you are building from source), then start psql shell
       and type

@@ -5,7 +5,7 @@
 
  <para>
   This chapter explains page level compression and encryption in
-  <productname>PostgreSQL</> database system.
+  <productname>&productname;</> database system.
  </para>
 
  <sect1 id="cfs-overview">
@@ -13,13 +13,13 @@
     
   <para>
     Databases are used to store larger number of text and duplicated information. This is why compression of most of databases
-    can be quite efficient and reduce used storage size 3..5 times. PostgreSQL performs compression of TOAST data, but small 
+    can be quite efficient and reduce used storage size 3..5 times. &productname; performs compression of TOAST data, but small 
     text fields which fits in the page are not compressed. Also not only heap pages can be compressed, indexes on text keys 
     or indexes with larger number of duplicate values are also good candidates for compression.
   </para>
 
   <para>
-    PostgreSQL is working with disk data through buffer pool which accumulates most frequently used buffers.
+    &productname; is working with disk data through buffer pool which accumulates most frequently used buffers.
     Interface between buffer manager and file system is the most natural place for performing compression.
     Buffers are stored on the disk in compressed form for reducing disk usage and minimizing amount of data to be read.
     And in-memory buffer pool contains uncompressed buffers, providing access to the records at the same speed as without 
@@ -49,19 +49,19 @@
     <listitem>
      <para>
        When modified buffers are flushed from buffer pool to the disk, they are written to the random locations
-       on the disk. PostgreSQL cache replacement algorithm makes a decision about throwing away buffer from the pool
+       on the disk. &productname; cache replacement algorithm makes a decision about throwing away buffer from the pool
        based on its access frequency and ignoring its location on the disk. So two subsequently written buffers can be 
        located in completely different parts of the disk. For HDD seek time is quite large - about 10msec, which corresponds
        to 100 random writes per second. And speed of sequential write can be about 100Mb/sec, which corresponds to
        10000 buffers per second (100 times faster). For SSD gap between sequential and random write speed is smaller, 
        but still sequential writers are more efficient. How it relates to data compression?
-       Size of buffer in PostgreSQL is fixed (8kb by default). Size of compressed buffer depends on the content of the buffer.
+       Size of buffer in &productname; is fixed (8kb by default). Size of compressed buffer depends on the content of the buffer.
        So updated buffer can not always fit in its old location on the disk. This is why we can not access pages directly 
        by its address. Instead of it we have to use map which translates logical address of the page to its physical location
        on the disk. Definitely this extra level of indirection adds overhead. But in most cases this map can fit in memory, 
        so page lookup is nothing more than just accessing array element. But presence of this map also have positive effect:
        we can now write updated pages sequentially, just updating their map entries.
-       PostgreSQL is doing much to avoid "write storm" intensive flushing of data to the disk when buffer pool space is 
+       &productname; is doing much to avoid "write storm" intensive flushing of data to the disk when buffer pool space is 
        exhausted. Compression allows to significantly reduce disk load.
      </para>
     </listitem>
@@ -72,7 +72,7 @@
     Another useful feature which can be combined with compression is database encryption.
     Encryption allows to protected you database from unintended access (if somebody stole your notebook, hard drive or make 
     copy from it, thief will not be able to extract information from your database if it is encrypted).
-    PostgreSQL provide contrib module pgcrypto, allowing you to encrypt some particular types/columns.
+    &productname; provide contrib module pgcrypto, allowing you to encrypt some particular types/columns.
 
     But safer and convenient way is to encrypt all data in the database. Encryption can be combined with compression.
     Data should be stored at disk in encrypted form and decrypted when page is loaded in buffer pool.
@@ -81,7 +81,7 @@
   </para>
 
   <para>
-    Why do we need to perform compression/encryption in PostgreSQL and do not use correspondent features of underlying file 
+    Why do we need to perform compression/encryption in &productname; and do not use correspondent features of underlying file 
     systems? First answer is that there are not so much file system supporting compression and encryption for all OSes.
     And even if such file systems are available, it is not always possible/convenient to install such file system just
     to compress/protect your database. Second question is that performing compression at database level can be more efficient, 
@@ -91,10 +91,10 @@
  </sect1>
     
  <sect1 id="cfs-implementation">
-  <title>How compression/encryption are integrated in PostgreSQL</title>
+  <title>How compression/encryption are integrated in &productname;</title>
     
   <para>
-    To improve efficiency of disk IO, PostgreSQL is working with files through buffer manager, which  pins in memory
+    To improve efficiency of disk IO, &productname; is working with files through buffer manager, which  pins in memory
     most frequently used pages. Each page is fixed size (8kb by default). But if we compress page, then
     its size will depend on its content. So updated page can require more (or less) space than original page.
     So we may not always perform in-place update of the page. Instead of it we have to locate new space for the page and somehow release
@@ -137,7 +137,7 @@
   </para>
 
   <para>
-    PostgreSQL stores relation in a set of files, size of each file is not exceeding 2Gb. Separate page map is constructed for each file.
+    &productname; stores relation in a set of files, size of each file is not exceeding 2Gb. Separate page map is constructed for each file.
     Garbage collection in CFS is done by several background workers. Number of this workers and pauses in their work can be 
     configured by database administrator. These workers are splitting work based on inode hash, so them do not conflict with each other.
     Each file is proceeded separately. The files is blocked for access at the time of garbage collection but complete relation is not 
@@ -150,9 +150,9 @@
   </para>
     
   <para>
-    CFS can be build with several compression libraries: PostgreSQL lz, zlib, lz4, snappy, lzfse...
+    CFS can be build with several compression libraries: &productname; lz, zlib, lz4, snappy, lzfse...
     But this is build time choice: it is not possible now to dynamically choose compression algorithm.
-    CFS stores information about the compression algorithm used in a tablespace and produces error if PostgreSQL is built with different
+    CFS stores information about the compression algorithm used in a tablespace and produces error if &productname; is built with different
     library.
   </para>
     
