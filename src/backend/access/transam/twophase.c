@@ -150,7 +150,7 @@ typedef struct GlobalTransactionData
 	XLogRecPtr	prepare_end_lsn;	/* XLOG offset of prepare record end */
 
 	Oid			owner;			/* ID of user that executed the xact */
-	BackendId	locking_backend;	/* backend currently working on the xact */
+	int 	    locking_pid;	/* backend currently working on the xact */
 	bool		valid;			/* TRUE if PGPROC entry is in proc array */
 	bool		ondisk;			/* TRUE if prepare state file is on disk */
 	int         prep_index;     /* Index of prepXacts array */
@@ -358,6 +358,7 @@ TwoPhaseShmemInit(void)
 			 */
 			gxacts[i].dummyBackendId = MaxBackends + 1 + i;
 			SpinLockInit(&gxacts[i].spinlock);
+			gxacts[i].locking_pid = -1;
 		}
 	}
 	else
@@ -382,7 +383,7 @@ AtAbort_Twophase(void)
 {
 	if (MyLockedGxact == NULL)
 		return;
-
+	Assert(MyLockedGxact->locking_pid >= 0);
 	/*
 	 * What to do with the locked global transaction entry?  If we were in the
 	 * process of preparing the transaction, but haven't written the WAL
@@ -409,7 +410,7 @@ AtAbort_Twophase(void)
 	}
 	else
 	{
-		MyLockedGxact->locking_backend = InvalidBackendId;
+		MyLockedGxact->locking_pid = -1;
 		SpinLockRelease(&MyLockedGxact->spinlock);
 	}
 	MyLockedGxact = NULL;
@@ -422,8 +423,8 @@ AtAbort_Twophase(void)
 void
 PostPrepare_Twophase(void)
 {
-	Assert(MyLockedGxact->locking_backend != InvalidBackendId);
-	MyLockedGxact->locking_backend = InvalidBackendId;
+	Assert(MyLockedGxact->locking_pid >= 0);
+	MyLockedGxact->locking_pid = -1;
 	SpinLockRelease(&MyLockedGxact->spinlock);
 	MyLockedGxact = NULL;
 }
@@ -496,6 +497,8 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	SpinLockAcquire(&gxact->spinlock);
 	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
 
+	Assert(gxact->locking_pid < 0);
+
 	/* Include in collision chain */
 	gxact->next = TwoPhaseState->hashTable[i];
 	TwoPhaseState->hashTable[i] = gxact;
@@ -537,9 +540,9 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	gxact->prepare_start_lsn = InvalidXLogRecPtr;
 	gxact->prepare_end_lsn = InvalidXLogRecPtr;
 	gxact->owner = owner;
-	gxact->locking_backend = MyBackendId;
+	gxact->locking_pid = MyProcPid;
 	gxact->valid = false;
-	gxact->ondisk = false;
+	gxact->ondisk = false;	
 	gxact->prep_index = TwoPhaseState->numPrepXacts;
 	strcpy(gxact->gid, gid);
 	*gxact->state_3pc = '\0';
@@ -646,14 +649,6 @@ LockGXact(const char *gid, Oid user)
 						 errmsg("prepared transaction with identifier \"%s\" is not valid",
 								gid)));
 			}
-			/* Found it, but has someone else got it locked? */
-			if (gxact->locking_backend != InvalidBackendId) {
-				SpinLockRelease(&gxact->spinlock);
-				ereport(ERROR,
-						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-						 errmsg("prepared transaction with identifier \"%s\" is busy",
-								gid)));
-			}
 			
 			if (user != gxact->owner && !superuser_arg(user)) {
 				SpinLockRelease(&gxact->spinlock);
@@ -679,7 +674,8 @@ LockGXact(const char *gid, Oid user)
 
 
 			/* OK for me to lock it */
-			gxact->locking_backend = MyBackendId;
+			Assert(gxact->locking_pid < 0);
+			gxact->locking_pid = MyProcPid;
 			MyLockedGxact = gxact;
 
 			return gxact;
@@ -728,6 +724,8 @@ RemoveGXact(GlobalTransaction gxact)
 			/* and put it back in the freelist */
 			gxact->next = TwoPhaseState->freeGXacts;
 			TwoPhaseState->freeGXacts = gxact;
+
+			gxact->locking_pid = -1;
 
 			LWLockRelease(TwoPhaseStateLock);
 			SpinLockRelease(&gxact->spinlock);
