@@ -198,11 +198,14 @@ void
 BootStrapSUBTRANS(void)
 {
 	int			slotno;
+	int64		pageno;
+
+	pageno = TransactionIdToPage(ShmemVariableCache->nextXid);
 
 	LWLockAcquire(SubtransControlLock, LW_EXCLUSIVE);
 
 	/* Create and zero the first page of the subtrans log */
-	slotno = ZeroSUBTRANSPage(0);
+	slotno = ZeroSUBTRANSPage(pageno);
 
 	/* Make sure it's written out */
 	SimpleLruWritePage(SubTransCtl, slotno);

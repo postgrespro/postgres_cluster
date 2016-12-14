@@ -1666,11 +1666,15 @@ void
 BootStrapMultiXact(void)
 {
 	int			slotno;
+	int64		multiOffsetPageno;
+	int64		multiMemberPageno;
+
+	multiOffsetPageno = MultiXactIdToOffsetPage(MultiXactState->nextMXact);
 
 	LWLockAcquire(MultiXactOffsetControlLock, LW_EXCLUSIVE);
 
 	/* Create and zero the first page of the offsets log */
-	slotno = ZeroMultiXactOffsetPage(0, false);
+	slotno = ZeroMultiXactOffsetPage(multiOffsetPageno, false);
 
 	/* Make sure it's written out */
 	SimpleLruWritePage(MultiXactOffsetCtl, slotno);
@@ -1678,10 +1682,12 @@ BootStrapMultiXact(void)
 
 	LWLockRelease(MultiXactOffsetControlLock);
 
+	multiMemberPageno = MXOffsetToMemberPage(MultiXactState->nextOffset);
+
 	LWLockAcquire(MultiXactMemberControlLock, LW_EXCLUSIVE);
 
 	/* Create and zero the first page of the members log */
-	slotno = ZeroMultiXactMemberPage(0, false);
+	slotno = ZeroMultiXactMemberPage(multiMemberPageno, false);
 
 	/* Make sure it's written out */
 	SimpleLruWritePage(MultiXactMemberCtl, slotno);

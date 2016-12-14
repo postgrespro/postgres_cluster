@@ -4806,13 +4806,12 @@ BootStrapXLOG(void)
 	checkPoint.ThisTimeLineID = ThisTimeLineID;
 	checkPoint.PrevTimeLineID = ThisTimeLineID;
 	checkPoint.fullPageWrites = fullPageWrites;
-	checkPoint.nextXid = FirstNormalTransactionId;
-	TransactionIdAdvance(checkPoint.nextXid);
+	checkPoint.nextXid = FirstNormalTransactionId + 1;
 	checkPoint.nextOid = FirstBootstrapObjectId;
 	checkPoint.nextMulti = FirstMultiXactId;
 	checkPoint.nextMultiOffset = 0;
 	checkPoint.nextMulti++;
-	checkPoint.oldestXid = FirstNormalTransactionId;
+	checkPoint.oldestXid = checkPoint.nextXid - 1;
 	checkPoint.oldestXidDB = TemplateDbOid;
 	checkPoint.oldestMulti = FirstMultiXactId;
 	checkPoint.oldestMultiDB = TemplateDbOid;
