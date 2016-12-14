@@ -335,6 +335,8 @@ extern VacuumStmt* MtmVacuumStmt;
 extern IndexStmt*  MtmIndexStmt;
 extern DropStmt*   MtmDropStmt;
 extern MemoryContext MtmApplyContext;
+extern XLogRecPtr MtmSenderWalEnd;
+
 
 extern void  MtmArbiterInitialize(void);
 extern void  MtmStartReceivers(void);
