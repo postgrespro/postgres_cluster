@@ -5635,6 +5635,7 @@ xact_redo(XLogReaderState *record)
 		// elog(WARNING, "2PC: RecreateTwoPhaseFile");
 		// RecreateTwoPhaseFile(XLogRecGetXid(record),
 		// 				  XLogRecGetData(record), XLogRecGetDataLen(record));
+		elog(WARNING, "reading prepared tx");
 		StandbyAtPrepare(record);
 	}
 	else if (info == XLOG_XACT_ASSIGNMENT)
