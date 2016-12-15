@@ -923,8 +923,7 @@ WHERE id = any (SELECT * FROM some_table limit 4);
     <sect3 id="disabling-pg-pathman">
       <title>Disabling <literal>pg_pathman</literal></title>
       <para>
-        There are several user-accessible
-        <ulink url="https://www.postgresql.org/docs/9.5/static/config-setting.html">GUC</ulink>
+        There are several user-accessible <link linkend="config-setting">GUC</link>
         variables designed to toggle the whole module or specific custom
         nodes on and off:
       </para>
@@ -999,8 +998,16 @@ WHERE id = any (SELECT * FROM some_table limit 4);
   </sect2>
   <sect2 id="authors">
     <title>Authors</title>
-    <literallayout>Ildar Musin <email>i.musin@postgrespro.ru</email> Postgres Professional Ltd., Russia
-      Alexander Korotkov <email>a.korotkov@postgrespro.ru</email> Postgres Professional Ltd., Russia
-      Dmitry Ivanov <email>d.ivanov@postgrespro.ru</email> Postgres Professional Ltd., Russia</literallayout>
+     <itemizedlist spacing="compact">
+      <listitem>
+       <para>Ildar Musin <email>i.musin@postgrespro.ru</email> Postgres Professional Ltd., Russia</para>
+      </listitem>
+      <listitem>
+       <para>Alexander Korotkov <email>a.korotkov@postgrespro.ru</email> Postgres Professional Ltd., Russia</para>
+      </listitem>
+      <listitem>
+       <para>Dmitry Ivanov <email>d.ivanov@postgrespro.ru</email> Postgres Professional Ltd., Russia</para>
+      </listitem>
+     </itemizedlist>
   </sect2>
 </sect1>
