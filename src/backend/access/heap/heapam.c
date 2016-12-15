@@ -5092,9 +5092,9 @@ heap_lock_tuple(Relation relation, HeapTuple tuple,
 	tuple->t_data = (HeapTupleHeader) PageGetItem(page, lp);
 	tuple->t_len = ItemIdGetLength(lp);
 	tuple->t_tableOid = RelationGetRelid(relation);
-	HeapTupleCopyEpochFromPage(tuple, page);
 
 l3:
+	HeapTupleCopyEpochFromPage(tuple, page);
 	result = HeapTupleSatisfiesUpdate(tuple, cid, *buffer);
 
 	if (result == HeapTupleInvisible)
@@ -9122,7 +9122,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 	TransactionId pd_xid_epoch = InvalidTransactionId;
 	Pointer		rec_data;
 
-	rec_data = (Pointer *) XLogRecGetData(record);
+	rec_data = (Pointer) XLogRecGetData(record);
 	if (isinit)
 	{
 		pd_xid_epoch = *((TransactionId *) rec_data);
