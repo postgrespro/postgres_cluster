@@ -146,7 +146,7 @@ WaitLSNUtility(const char *lsn, const int delay)
 	XLogRecPtr		trg_lsn;
 	XLogRecPtr		cur_lsn;
 	int				latch_events;
-	uint64_t		tdelay = delay;
+	uint64  		tdelay = delay;
 	long			secs;
 	int				microsecs;
 	TimestampTz		timer = GetCurrentTimestamp();
