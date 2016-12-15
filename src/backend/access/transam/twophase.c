@@ -45,8 +45,8 @@
  *		  fsynced
  *		* If COMMIT happens after checkpoint then backend reads state data from
  *		  files
- *		* In case of crash replay will move data from xlog to files, if that
- *		  hasn't happened before. XXX TODO - move to shmem in replay also
+ *		* Simplified version of the same scenario happens during recovery and
+ *		  replication. See comments to KnownPreparedXact structure.
  *
  *-------------------------------------------------------------------------
  */
@@ -181,6 +181,35 @@ static GlobalTransaction MyLockedGxact = NULL;
 
 static bool twophaseExitRegistered = false;
 
+/*
+ * During replay and replication KnownPreparedList holds info about active prepared
+ * transactions that weren't moved to files yet. We will need that info by the end of
+ * recovery (including promote) to restore memory state of that transactions.
+ *
+ * Naive approach here is to move each PREPARE record to disk, fsync it and don't have
+ * that list at all, but that provokes a lot of unnecessary fsyncs on small files
+ * causing replica to be slower than master.
+ *
+ * Replay of twophase records happens by the following rules:
+ *		* On PREPARE redo KnownPreparedAdd() is called to add that transaction to
+ *		  KnownPreparedList and no more actions taken.
+ *		* On checkpoint we iterate through KnownPreparedList, move all prepare
+ *		  records that behind redo_horizon to file and deleting items from list.
+ *		* On COMMIT/ABORT we delete file or entry in KnownPreparedList.
+ *		* At the end of recovery we move all known prepared transactions to disk
+ *		  to allow RecoverPreparedTransactions/StandbyRecoverPreparedTransactions
+ *		  do their work.
+ */
+typedef struct KnownPreparedXact
+{
+	TransactionId	xid;
+	XLogRecPtr		prepare_start_lsn;
+	XLogRecPtr		prepare_end_lsn;
+	dlist_node		list_node;
+} KnownPreparedXact;
+
+static dlist_head KnownPreparedList = DLIST_STATIC_INIT(KnownPreparedList);
+
 static void RecordTransactionCommitPrepared(TransactionId xid,
 								int nchildren,
 								TransactionId *children,
@@ -199,82 +228,6 @@ static void ProcessRecords(char *bufptr, TransactionId xid,
 static void RemoveGXact(GlobalTransaction gxact);
 
 static void XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len);
-
-
-dlist_head StandbyTwoPhaseStateData = DLIST_STATIC_INIT(StandbyTwoPhaseStateData);
-
-typedef struct StandbyPreparedTransaction
-{
-	TransactionId	xid;
-	XLogRecPtr		prepare_start_lsn;
-	XLogRecPtr		prepare_end_lsn;
-	dlist_node		list_node;
-}	StandbyPreparedTransaction;
-
-void
-StandbyCheckPointTwoPhase(XLogRecPtr redo_horizon)
-{
-	dlist_mutable_iter miter;
-	int			serialized_xacts = 0;
-
-	// Assert(RecoveryInProgress());
-
-	TRACE_POSTGRESQL_TWOPHASE_CHECKPOINT_START();
-
-	dlist_foreach_modify(miter, &StandbyTwoPhaseStateData)
-	{
-		StandbyPreparedTransaction   *xact = dlist_container(StandbyPreparedTransaction,
-															list_node, miter.cur);
-
-		if (redo_horizon == InvalidXLogRecPtr || xact->prepare_end_lsn <= redo_horizon)
-		{
-			char	   *buf;
-			int			len;
-
-			XlogReadTwoPhaseData(xact->prepare_start_lsn, &buf, &len);
-			RecreateTwoPhaseFile(xact->xid, buf, len);
-			pfree(buf);
-			dlist_delete(miter.cur);
-			serialized_xacts++;
-		}
-	}
-
-	TRACE_POSTGRESQL_TWOPHASE_CHECKPOINT_DONE();
-
-	if (log_checkpoints && serialized_xacts > 0)
-		ereport(LOG,
-				(errmsg_plural("%u two-phase state file was written "
-							   "for long-running prepared transactions",
-							   "%u two-phase state files were written "
-							   "for long-running prepared transactions",
-							   serialized_xacts,
-							   serialized_xacts)));
-}
-
-// XXX: rename to remove_standby_state
-void
-StandbyAtCommit(TransactionId xid)
-{
-	dlist_mutable_iter miter;
-
-	Assert(RecoveryInProgress());
-
-	dlist_foreach_modify(miter, &StandbyTwoPhaseStateData)
-	{
-		StandbyPreparedTransaction   *xact = dlist_container(StandbyPreparedTransaction,
-															list_node, miter.cur);
-
-		if (xact->xid == xid)
-		{
-			dlist_delete(miter.cur);
-			return;
-		}
-	}
-
-	RemoveTwoPhaseFile(xid, false);
-}
-
-
 
 /*
  * Initialization of shared memory
@@ -1729,18 +1682,25 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 							   serialized_xacts)));
 }
 
+/*
+ * KnownPreparedAdd.
+ *
+ * Store correspondence of start/end lsn and xid in KnownPreparedList.
+ * This is called during redo of prepare record to have list of prepared
+ * transactions that aren't yet moved to 2PC files by the end of recovery.
+ */
 void
-StandbyAtPrepare(XLogReaderState *record)
+KnownPreparedAdd(XLogReaderState *record)
 {
-	StandbyPreparedTransaction *xact;
+	KnownPreparedXact *xact;
 	TwoPhaseFileHeader *hdr = (TwoPhaseFileHeader *) XLogRecGetData(record);
 
-	xact = (StandbyPreparedTransaction *) palloc(sizeof(StandbyPreparedTransaction));
+	xact = (KnownPreparedXact *) palloc(sizeof(KnownPreparedXact));
 	xact->xid = hdr->xid;
 	xact->prepare_start_lsn = record->ReadRecPtr;
 	xact->prepare_end_lsn = record->EndRecPtr;
 
-	dlist_push_tail(&StandbyTwoPhaseStateData, &xact->list_node);
+	dlist_push_tail(&KnownPreparedList, &xact->list_node);
 }
 
 /*
@@ -1781,7 +1741,7 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	int			nxids = 0;
 	int			allocsize = 0;
 
-	StandbyCheckPointTwoPhase(0);
+	KnownPreparedRecreateFiles(InvalidXLogRecPtr);
 
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
@@ -2253,4 +2213,89 @@ RecordTransactionAbortPrepared(TransactionId xid,
 	 * in the procarray and continue to hold locks.
 	 */
 	SyncRepWaitForLSN(recptr, false);
+}
+
+/*
+ * KnownPreparedRemoveByXid
+ *
+ * Forget about prepared transaction. Called durind commit/abort.
+ */
+void
+KnownPreparedRemoveByXid(TransactionId xid)
+{
+	dlist_mutable_iter miter;
+
+	Assert(RecoveryInProgress());
+
+	dlist_foreach_modify(miter, &KnownPreparedList)
+	{
+		KnownPreparedXact   *xact = dlist_container(KnownPreparedXact,
+														list_node, miter.cur);
+
+		if (xact->xid == xid)
+		{
+			dlist_delete(miter.cur);
+			/*
+			 * Since we found entry in KnownPreparedList we know that file isn't
+			 * on disk yet and we can end up here.
+			 */
+			return;
+		}
+	}
+
+	/*
+	 * Here we know that file should be moved to disk. But aborting recovery because
+	 * of absence of unnecessary file doesn't seems to be a good idea, so call remove
+	 * with giveWarning=false.
+	 */
+	RemoveTwoPhaseFile(xid, false);
+}
+
+/*
+ * KnownPreparedRecreateFiles
+ *
+ * Moves prepare records from WAL to files. Callend during checkpoint replay
+ * or PrescanPreparedTransactions.
+ *
+ * redo_horizon = InvalidXLogRecPtr indicates that all transactions from
+ *		KnownPreparedList should be moved to disk.
+ */
+void
+KnownPreparedRecreateFiles(XLogRecPtr redo_horizon)
+{
+	dlist_mutable_iter miter;
+	int			serialized_xacts = 0;
+
+	Assert(RecoveryInProgress());
+
+	TRACE_POSTGRESQL_TWOPHASE_CHECKPOINT_START();
+
+	dlist_foreach_modify(miter, &KnownPreparedList)
+	{
+		KnownPreparedXact   *xact = dlist_container(KnownPreparedXact,
+														list_node, miter.cur);
+
+		if (xact->prepare_end_lsn <= redo_horizon || redo_horizon == InvalidXLogRecPtr)
+		{
+			char	   *buf;
+			int			len;
+
+			XlogReadTwoPhaseData(xact->prepare_start_lsn, &buf, &len);
+			RecreateTwoPhaseFile(xact->xid, buf, len);
+			pfree(buf);
+			dlist_delete(miter.cur);
+			serialized_xacts++;
+		}
+	}
+
+	TRACE_POSTGRESQL_TWOPHASE_CHECKPOINT_DONE();
+
+	if (log_checkpoints && serialized_xacts > 0)
+		ereport(LOG,
+				(errmsg_plural("%u two-phase state file was written "
+							   "for long-running prepared transactions",
+							   "%u two-phase state files were written "
+							   "for long-running prepared transactions",
+							   serialized_xacts,
+							   serialized_xacts)));
 }
