@@ -3,7 +3,7 @@
   <title>&productname; 9.6.1.2</title>
   <note>
     <title>Release Date</title>
-    <simpara>2016-12-__</simpara>
+    <simpara>2016-12-15</simpara>
   </note>
   <sect2>
     <title>Overview</title>
@@ -18,6 +18,13 @@
     <para>Added timeout for idle sessions on the server side (See <xref linkend="guc-idle-session-timeout">)</para>
     <para>Added SHA-2 algorithm for password encryption (See <xref linkend="runtime-config"> and <xref linkend="SQL-CREATEROLE">)</para>
     <para>Added page level compression (CFS) (See <xref linkend="cfs">)</para>
+    <para>Added support of autonomous transactions</para>
+    <para>Added new optional background worker to schedule tasks by rules</para>
+    <para>Extension <application>pg_hint_plan</application> has been added</para>
+    <para>Transaction IDs on 64-bit platforms use 64-bit data type</para>
+    <para>Lazy placement of temporary tables on disk</para>
+    <para>Consistent read on slaves (wait for WAL apply)</para>
+    <para>Utility <application>pg_repack</application> has been added</para>
   </sect2>
   <sect2>
     <title>Migration to Version &productname; 9.6.1.2</title>
