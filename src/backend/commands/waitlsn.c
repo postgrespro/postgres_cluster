@@ -56,6 +56,7 @@ typedef struct
 typedef struct
 {
 	char		dummy;
+	int			backend_maxid;
 	BIDLatch	l_arr[FLEXIBLE_ARRAY_MEMBER];
 } GlobState;
 
@@ -68,6 +69,10 @@ WLOwnLatch(void)
 	SpinLockAcquire(&state->l_arr[MyBackendId].slock);
 	OwnLatch(&state->l_arr[MyBackendId].latch);
 	is_latch_owned = true;
+
+	if (state->backend_maxid < MyBackendId)
+		state->backend_maxid = MyBackendId;
+
 	state->l_arr[MyBackendId].pid = MyProcPid;
 	SpinLockRelease(&state->l_arr[MyBackendId].slock);
 }
@@ -75,10 +80,20 @@ WLOwnLatch(void)
 static void
 WLDisownLatch(void)
 {
+	int i;
 	SpinLockAcquire(&state->l_arr[MyBackendId].slock);
 	DisownLatch(&state->l_arr[MyBackendId].latch);
 	is_latch_owned = false;
 	state->l_arr[MyBackendId].pid = 0;
+
+	if (state->backend_maxid == MyBackendId)
+		for (i = (MaxConnections+1); i >=0; i--)
+			if (state->l_arr[i].pid != 0)
+			{
+				state->backend_maxid = i;
+				break;
+			}
+
 	SpinLockRelease(&state->l_arr[MyBackendId].slock);
 }
 
@@ -124,14 +139,15 @@ WaitLSNShmemInit(void)
 			SpinLockInit(&state->l_arr[i].slock);
 			InitSharedLatch(&state->l_arr[i].latch);
 		}
+		state->backend_maxid = 0;
 	}
 }
 
 void
 WaitLSNSetLatch(void)
 {
-	uint32 i;
-	for (i = 0; i < (MaxConnections+1); i++)
+	uint i;
+	for (i = 0; i <= state->backend_maxid; i++)
 	{
 		SpinLockAcquire(&state->l_arr[i].slock);
 		if (state->l_arr[i].pid != 0)
