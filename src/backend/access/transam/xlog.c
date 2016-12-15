@@ -6734,7 +6734,6 @@ StartupXLOG(void)
 
 				ProcArrayApplyRecoveryInfo(&running);
 
-				StandbyCheckPointTwoPhase(0);
 				StandbyRecoverPreparedTransactions(false);
 			}
 		}
@@ -8774,7 +8773,6 @@ CreateEndOfRecoveryRecord(void)
 	END_CRIT_SECTION();
 
 	LocalXLogInsertAllowed = -1;	/* return to "check" state */
-	// StandbyCheckPointTwoPhase(0);
 }
 
 /*
@@ -8798,7 +8796,6 @@ CheckPointGuts(XLogRecPtr checkPointRedo, int flags)
 	CheckPointBuffers(flags);	/* performs all required fsyncs */
 	CheckPointReplicationOrigin();
 	/* We deliberately delay 2PC checkpointing as long as possible */
-	StandbyCheckPointTwoPhase(checkPointRedo);
 	CheckPointTwoPhase(checkPointRedo);
 }
 
@@ -9398,7 +9395,6 @@ xlog_redo(XLogReaderState *record)
 	Assert(info == XLOG_FPI || info == XLOG_FPI_FOR_HINT ||
 		   !XLogRecHasAnyBlockRefs(record));
 
-	elog(WARNING, "2PC: xlog_redo, info=%x", info);
 	if (info == XLOG_NEXTOID)
 	{
 		Oid			nextOid;
@@ -9482,8 +9478,6 @@ xlog_redo(XLogReaderState *record)
 
 			ProcArrayApplyRecoveryInfo(&running);
 
-			fprintf(stderr, "--- aaa\n");
-			StandbyCheckPointTwoPhase(0);
 			StandbyRecoverPreparedTransactions(true);
 		}
 
@@ -9576,7 +9570,6 @@ xlog_redo(XLogReaderState *record)
 			ereport(PANIC,
 					(errmsg("unexpected timeline ID %u (should be %u) in checkpoint record",
 							xlrec.ThisTimeLineID, ThisTimeLineID)));
-		// StandbyCheckPointTwoPhase(0);
 	}
 	else if (info == XLOG_NOOP)
 	{
