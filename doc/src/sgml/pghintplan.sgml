@@ -134,48 +134,52 @@ postgres=#
     <sect3 id="pg-hint-plan-hint-GUC">
       <title>GUC parameters for pg_hint_plan</title>
       <para>
-        GUC parameters below affect the behavior of
+        GUC parameters described below affect the behavior of
         pg_hint_plan.
       </para>
-      <para>
-        Parameter name
-      </para>
-      <para>
-        Description
-      </para>
-      <para>
-        Default value
-      </para>
-      <para>
-        pg_hint_plan.enable_hint
-      </para>
-      <para>
-        Enables or disables the function of pg_hint_plan.
-      </para>
-      <para>
-        on
-      </para>
-      <para>
-        pg_hint_plan.debug_print
-      </para>
-      <para>
-        Enables and select the verbosity of the debug output of
-        pg_hint_plan. off, on, detailed and verbose are valid.
-      </para>
-      <para>
-        off
-      </para>
-      <para>
-        pg_hint_plan.message_level
-      </para>
-      <para>
-        Specifies the message level of debug prints. error, warning,
-        notice, info, log, debug are valid and fatal and panic are
-        inhibited.
-      </para>
-      <para>
-        info
-      </para>
+
+      <table id="pg-hint-plan-hint-GUC-table">
+       <title>GUC Parameters</title>
+       <tgroup cols="3">
+        <thead>
+         <row>
+          <entry>Parameter Name</entry>
+          <entry>Description</entry>
+          <entry>Default Value</entry>
+         </row>
+        </thead>
+
+        <tbody>
+         <row>
+          <entry>pg_hint_plan.enable_hint</entry>
+          <entry>Enables or disables the function of pg_hint_plan.</entry>
+          <entry>on</entry>
+         </row>
+
+         <row>
+          <entry>pg_hint_plan.debug_print</entry>
+          <entry>
+           Enables and selects the verbosity of the debug output of
+           pg_hint_plan. off, on, detailed and verbose are valid.
+          </entry>
+          <entry>off</entry>
+         </row>
+
+         <row>
+          <entry>pg_hint_plan.message_level</entry>
+          <entry>
+           Specifies the message level of debug prints:
+           <literal>error</literal>, <literal>warning</literal>,
+           <literal>notice</literal>, <literal>info</literal>,
+           <literal>log</literal>, <literal>debug</literal> are valid and
+           fatal and panic are inhibited.
+          </entry>
+          <entry>info</entry>
+         </row>
+        </tbody>
+       </tgroup>
+      </table>
+
       <para>
         PostgreSQL 9.1 requires a custom variable class to be defined
         for those GUC parameters. See <xref linkend="runtime-config-custom">
@@ -715,80 +719,175 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
     </variablelist>
   </sect2>
   <sect2 id="pg-hint-plan-hint-list">
-    <title>Hints list</title>
+    <title>Available Hints</title>
+
     <para>The available hints are listed below.</para>
-    <para>Group</para>
-    <para>Format</para>
-    <para>Description</para>
-    <para>Scan method</para>
-    <para>SeqScan(table)</para>
-    <para>Forces sequential scan on the table</para>
-    <para>TidScan(table)</para>
-    <para>Forces TID scan on the table.</para>
-    <para>IndexScan(table[ index...])</para>
-    <para>Forces index scan on the table. Restricts to specified indexes if any.</para>
-    <para>IndexOnlyScan(table[ index...])</para>
-    <para>Forces index only scan on the table. Restricts to specified indexes
-      if any. Index scan may be used if index only scan is not
-      available. Available for PostgreSQL 9.2 and later.</para>
-    <para>BitmapScan(table[ index...])</para>
-    <para>Forces bitmap scan on the table. Restricts to specified indexes if any.</para>
-    <para>NoSeqScan(table)</para>
-    <para>Forces not to do sequential scan on the table.</para>
-    <para>NoTidScan(table)</para>
-    <para>Forces not to do TID scan on the table.</para>
-    <para>NoIndexScan(table)</para>
-    <para>Forces not to do index scan and index only scan (For PostgreSQL
-      9.2 and later) on the table.</para>
-    <para>NoIndexOnlyScan(table)</para>
-    <para>Forces not to do index only scan on the table. Available for
-      PostgreSQL 9.2 and later.</para>
-    <para>NoBitmapScan(table)</para>
-    <para>Forces not to do bitmap scan on the table.</para>
-    <para>Join method</para>
-    <para>NestLoop(table table[ table...])</para>
-    <para>Forces nested loop for the joins consist of the specifiled tables.</para>
-    <para>HashJoin(table table[ table...])</para>
-    <para>Forces hash join for the joins consist of the specifiled tables.</para>
-    <para>MergeJoin(table table[ table...])</para>
-    <para>Forces merge join for the joins consist of the specifiled tables.</para>
-    <para>NoNestLoop(table table[ table...])</para>
-    <para>Forces not to do nested loop for the joins consist of the
-      specifiled tables.</para>
-    <para>NoHashJoin(table table[ table...])</para>
-    <para>Forces not to do hash join for the joins consist of the specifiled tables.</para>
-    <para>NoMergeJoin(table table[ table...])</para>
-    <para>Forces not to do merge join for the joins consist of the specifiled tables.</para>
-    <para>Join order</para>
-    <para>Leading(table table[ table...])</para>
-    <para>Forces join order as specified.</para>
-    <para>Leading(&lt;join pair&gt;)</para>
-    <para>Forces join order and directions as specified. A join pair is a
-      pair of tables and/or other join pairs enclosed by parentheses,
-      which can make a nested structure.</para>
-    <para>Row number correction</para>
-    <para>Rows(table table[ table...] correction)</para>
-    <para>Corrects row number of a result of the joins consist of the
-      specified tables. The available correction methods are absolute
-      (#&lt;n&gt;), addition (+&lt;n&gt;), subtract
-      (-&lt;n&gt;) and multiplication (*&lt;n&gt;). &lt;n&gt;
-      should be a string that strtod() can read.</para>
-    <para>GUC</para>
-    <para>Set(GUC-param value)</para>
-    <para>Set the GUC parameter to the value while planner is running.</para>
+
+    <table id="pg-hint-plan-hint-list-table">
+     <title>Hints list</title>
+
+     <tgroup cols="3">
+      <thead>
+       <row>
+        <entry>Group</entry>
+        <entry>Format</entry>
+        <entry>Description</entry>
+       </row>
+      </thead>
+
+      <tbody>
+       <row>
+        <entry>Scan method</entry>
+        <entry>SeqScan(<replaceable>table</replaceable>)</entry>
+        <entry>Forces sequential scan on the table.</entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>TidScan(<replaceable>table</replaceable>)</entry>
+        <entry>Forces TID scan on the table.</entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>IndexScan(<replaceable>table</replaceable>[ <replaceable>index</replaceable>...])</entry>
+        <entry>Forces index scan on the table. Restricts to specified indexes if any.</entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>IndexOnlyScan(<replaceable>table</replaceable>[ <replaceable>index</replaceable>...])</entry>
+        <entry>
+         Forces index only scan on the table. Restricts to specified indexes
+         if any. Index scan may be used if index only scan is not
+         available. Available for PostgreSQL 9.2 and later.
+        </entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>BitmapScan(<replaceable>table</replaceable>[ <replaceable>index</replaceable>...])</entry>
+        <entry>Forces bitmap scan on the table. Restricts to specified indexes if any.</entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>NoSeqScan(<replaceable>table</replaceable>)</entry>
+        <entry>Forces not to do sequential scan on the table.</entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>NoTidScan(<replaceable>table</replaceable>)</entry>
+        <entry>Forces not to do TID scan on the table.</entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>NoIndexScan(<replaceable>table</replaceable>)</entry>
+        <entry>
+         Forces not to do index scan and index only scan (For PostgreSQL
+         9.2 and later) on the table.
+        </entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>NoIndexOnlyScan(<replaceable>table</replaceable>)</entry>
+        <entry>
+         Forces not to do index only scan on the table. Available for
+         PostgreSQL 9.2 and later.
+        </entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>NoBitmapScan(<replaceable>table</replaceable>)</entry>
+        <entry>Forces not to do bitmap scan on the table.</entry>
+       </row>
+
+       <row>
+        <entry>Join method</entry>
+        <entry>NestLoop(<replaceable>table</replaceable> <replaceable>table</replaceable>[ <replaceable>table</replaceable>...])</entry>
+        <entry>Forces nested loop for the joins with the specified tables.</entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>HashJoin(<replaceable>table</replaceable> <replaceable>table</replaceable>[ <replaceable>table</replaceable>...])</entry>
+        <entry>Forces hash join for the joins with the specified tables.</entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>MergeJoin(<replaceable>table</replaceable> <replaceable>table</replaceable>[ <replaceable>table</replaceable>...])</entry>
+        <entry>Forces merge join for the joins with the specified tables.</entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>NoNestLoop(<replaceable>table</replaceable> <replaceable>table</replaceable>[ <replaceable>table</replaceable>...])</entry>
+        <entry>Forces not to do nested loop for the joins with the specified tables.</entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>NoHashJoin(<replaceable>table</replaceable> <replaceable>table</replaceable>[ <replaceable>table</replaceable>...])</entry>
+        <entry>Forces not to do hash join for the joins with the specified tables.</entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>NoMergeJoin(<replaceable>table</replaceable> <replaceable>table</replaceable>[ <replaceable>table</replaceable>...])</entry>
+        <entry>Forces not to do merge join for the joins with the specified tables.</entry>
+       </row>
+
+       <row>
+        <entry>Join order</entry>
+        <entry>Leading(<replaceable>table</replaceable> <replaceable>table</replaceable>[ <replaceable>table</replaceable>...])</entry>
+        <entry>Forces join order as specified.</entry>
+       </row>
+
+       <row>
+        <entry></entry>
+        <entry>Leading(<replaceable>&lt;join pair&gt;</replaceable>)</entry>
+        <entry>
+         Forces join order and directions as specified. A join pair is a
+         pair of tables and/or other join pairs enclosed in parentheses,
+         which can make a nested structure.
+        </entry>
+       </row>
+
+       <row>
+        <entry>Row number correction</entry>
+        <entry>Rows(<replaceable>table</replaceable> <replaceable>table</replaceable>[ <replaceable>table</replaceable>...] <replaceable>correction</replaceable>)</entry>
+        <entry>
+         Corrects row number of a result of the joins with the
+         specified tables. The available correction methods are absolute
+         (#&lt;n&gt;), addition (+&lt;n&gt;), subtraction
+         (-&lt;n&gt;) and multiplication (*&lt;n&gt;). &lt;n&gt;
+         should be a string that strtod() can read.
+        </entry>
+       </row>
+
+       <row>
+        <entry>GUC</entry>
+        <entry>Set(<replaceable>GUC-parameter</replaceable> <replaceable>value</replaceable>)</entry>
+        <entry>Set the GUC parameter to the value while planner is running.</entry>
+       </row>
+      </tbody>
+     </tgroup>
+    </table>
+
+
   </sect2>
   <sect2 id="pg-hint-plan-seealso">
-    <title>See also</title>
-    <sect3 id="pg-hint-plan-postgresql-document">
-      <title>PostgreSQL documents</title>
-      <para>
-        <ulink url="http://www.postgresql.org/docs/current/static/sql-explain.html">EXPLAIN</ulink>
-        <ulink url="http://www.postgresql.org/docs/current/static/sql-set.html">SET</ulink>
-        <ulink url="http://www.postgresql.org/docs/current/static/runtime-config.html">Server Config</ulink>
-      </para>
-      <para>
-        Copyright (c) 2012, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
-      </para>
-    </sect3>
+   <title>See Also</title>
+
+   <simplelist type="inline">
+    <member><xref linkend="sql-explain"></member>
+    <member><xref linkend="sql-set"></member>
+    <member><xref linkend="runtime-config"></member>
+   </simplelist>
   </sect2>
 </sect1>
