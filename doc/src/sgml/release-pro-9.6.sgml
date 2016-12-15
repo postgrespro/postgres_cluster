@@ -63,7 +63,7 @@
   </note>
   <sect2>
     <title>Overview</title>
-    <para>This release is based on <productname>PostgresPro</productname>
+    <para>This release is based on <productname>Postgres Pro</productname>
       9.6.1.1 and upstream PostgreSQL patches.</para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
       9.6.1.1 include:</para>
