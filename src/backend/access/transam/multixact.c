@@ -326,8 +326,8 @@ static void mXactCachePut(MultiXactId multi, int nmembers,
 static char *mxstatus_to_string(MultiXactStatus status);
 
 /* management of SLRU infrastructure */
-static int	ZeroMultiXactOffsetPage(int pageno, bool writeXlog);
-static int	ZeroMultiXactMemberPage(int pageno, bool writeXlog);
+static int	ZeroMultiXactOffsetPage(int64 pageno, bool writeXlog);
+static int	ZeroMultiXactMemberPage(int64 pageno, bool writeXlog);
 static void ExtendMultiXactOffset(MultiXactId multi);
 static void ExtendMultiXactMember(MultiXactOffset offset, int nmembers);
 static bool find_multixact_start(MultiXactId multi, MultiXactOffset *result);
@@ -1674,11 +1674,21 @@ BootStrapMultiXact(void)
 	LWLockAcquire(MultiXactOffsetControlLock, LW_EXCLUSIVE);
 
 	/* Create and zero the first page of the offsets log */
-	slotno = ZeroMultiXactOffsetPage(multiOffsetPageno, false);
+	slotno = ZeroMultiXactOffsetPage(0, false);
 
 	/* Make sure it's written out */
 	SimpleLruWritePage(MultiXactOffsetCtl, slotno);
 	Assert(!MultiXactOffsetCtl->shared->page_dirty[slotno]);
+
+	if (multiOffsetPageno != 0)
+	{
+		/* Create and zero the first page of the offsets log */
+		slotno = ZeroMultiXactOffsetPage(multiOffsetPageno, false);
+
+		/* Make sure it's written out */
+		SimpleLruWritePage(MultiXactOffsetCtl, slotno);
+		Assert(!MultiXactOffsetCtl->shared->page_dirty[slotno]);
+	}
 
 	LWLockRelease(MultiXactOffsetControlLock);
 
@@ -1687,11 +1697,21 @@ BootStrapMultiXact(void)
 	LWLockAcquire(MultiXactMemberControlLock, LW_EXCLUSIVE);
 
 	/* Create and zero the first page of the members log */
-	slotno = ZeroMultiXactMemberPage(multiMemberPageno, false);
+	slotno = ZeroMultiXactMemberPage(0, false);
 
 	/* Make sure it's written out */
 	SimpleLruWritePage(MultiXactMemberCtl, slotno);
 	Assert(!MultiXactMemberCtl->shared->page_dirty[slotno]);
+
+	if (multiMemberPageno != 0)
+	{
+		/* Create and zero the first page of the members log */
+		slotno = ZeroMultiXactMemberPage(multiMemberPageno, false);
+
+		/* Make sure it's written out */
+		SimpleLruWritePage(MultiXactMemberCtl, slotno);
+		Assert(!MultiXactMemberCtl->shared->page_dirty[slotno]);
+	}
 
 	LWLockRelease(MultiXactMemberControlLock);
 }
@@ -1706,7 +1726,7 @@ BootStrapMultiXact(void)
  * Control lock must be held at entry, and will be held at exit.
  */
 static int
-ZeroMultiXactOffsetPage(int pageno, bool writeXlog)
+ZeroMultiXactOffsetPage(int64 pageno, bool writeXlog)
 {
 	int			slotno;
 
@@ -1722,7 +1742,7 @@ ZeroMultiXactOffsetPage(int pageno, bool writeXlog)
  * Ditto, for MultiXactMember
  */
 static int
-ZeroMultiXactMemberPage(int pageno, bool writeXlog)
+ZeroMultiXactMemberPage(int64 pageno, bool writeXlog)
 {
 	int			slotno;
 
