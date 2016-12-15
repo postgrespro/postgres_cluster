@@ -2100,7 +2100,8 @@ include_dir 'conf.d'
          <literal>1min</>) are only allowed because they may sometimes be
          useful for testing.  While a setting as high as <literal>60d</> is
          allowed, please note that in many workloads extreme bloat or
-         transaction ID wraparound may occur in much shorter time frames.
+         page-level transaction ID wraparound may occur in much shorter time
+         frames.
         </para>
 
         <para>
@@ -5667,8 +5668,8 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
        </para>
        <para>
         Note that even when this parameter is disabled, the system
-        will launch autovacuum processes if necessary to
-        prevent transaction ID wraparound.  See <xref
+        will launch autovacuum processes if necessary to shrink
+        <literal>pg_clog</> and <literal>pg_multixact</>.  See <xref
         linkend="vacuum-for-wraparound"> for more information.
        </para>
       </listitem>
@@ -5822,15 +5823,12 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
         Specifies the maximum age (in transactions) that a table's
         <structname>pg_class</>.<structfield>relfrozenxid</> field can
         attain before a <command>VACUUM</> operation is forced
-        to prevent transaction ID wraparound within the table.
-        Note that the system will launch autovacuum processes to
-        prevent wraparound even when autovacuum is otherwise disabled.
+        to shrink <literal>pg_clog</>.
+        Note that the system will launch autovacuum processes for this purpose
+        even when autovacuum is otherwise disabled.
        </para>
 
        <para>
-        Vacuum also allows removal of old files from the
-        <filename>pg_clog</> subdirectory, which is why the default
-        is a relatively low 200 million transactions.
         This parameter can only be set at server start, but the setting
         can be reduced for individual tables by
         changing table storage parameters.
@@ -5849,17 +5847,13 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
        <para>
         Specifies the maximum age (in multixacts) that a table's
         <structname>pg_class</>.<structfield>relminmxid</> field can
-        attain before a <command>VACUUM</> operation is forced to
-        prevent multixact ID wraparound within the table.
-        Note that the system will launch autovacuum processes to
-        prevent wraparound even when autovacuum is otherwise disabled.
+        attain before a <command>VACUUM</> operation is forced
+        to shrink <literal>pg_multixact</>.
+        Note that the system will launch autovacuum processes for this
+        purpose even when autovacuum is otherwise disabled.
        </para>
 
        <para>
-        Vacuuming multixacts also allows removal of old files from the
-        <filename>pg_multixact/members</> and <filename>pg_multixact/offsets</>
-        subdirectories, which is why the default is a relatively low
-        400 million multixacts.
         This parameter can only be set at server start, but the setting can
         be reduced for individual tables by changing table storage parameters.
         For more information see <xref linkend="vacuum-for-multixact-wraparound">.
@@ -6361,8 +6355,8 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
         will silently limit the effective value to 95% of
         <xref linkend="guc-autovacuum-freeze-max-age">, so that a
         periodical manual <command>VACUUM</> has a chance to run before an
-        anti-wraparound autovacuum is launched for the table. For more
-        information see
+        autovacuum to shrink <literal>pg_clog</> and <literal>pg_multixact</>
+        is launched for the table. For more information see
         <xref linkend="vacuum-for-wraparound">.
        </para>
       </listitem>
@@ -6408,7 +6402,8 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
         <command>VACUUM</> will silently limit the effective value to 95% of
         <xref linkend="guc-autovacuum-multixact-freeze-max-age">, so that a
         periodical manual <command>VACUUM</> has a chance to run before an
-        anti-wraparound is launched for the table.
+        autovacuum to shrink <literal>pg_clog</> and <literal>pg_multixact</>
+        is launched for the table.
         For more information see <xref linkend="vacuum-for-multixact-wraparound">.
        </para>
       </listitem>

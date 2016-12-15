@@ -987,11 +987,12 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED | CONSTANT ] TABLE [
      If true, the autovacuum daemon will perform automatic <command>VACUUM</>
      and/or <command>ANALYZE</> operations on this table following the rules
      discussed in <xref linkend="autovacuum">.
-     If false, this table will not be autovacuumed, except to prevent
-     transaction ID wraparound. See <xref linkend="vacuum-for-wraparound"> for
-     more about wraparound prevention.
-     Note that the autovacuum daemon does not run at all (except to prevent
-     transaction ID wraparound) if the <xref linkend="guc-autovacuum">
+     If false, this table will not be autovacuumed, except to shrink
+     <literal>pg_clog</> and <literal>pg_multixact</>.
+     See <xref linkend="vacuum-for-wraparound"> for more about that.
+     Note that the autovacuum daemon does not run at all (except to shrink
+     <literal>pg_clog</> and <literal>pg_multixact</>) if the
+     <xref linkend="guc-autovacuum">
      parameter is false; setting individual tables' storage parameters does
      not override that.  Therefore there is seldom much point in explicitly
      setting this storage parameter to <literal>true</>, only

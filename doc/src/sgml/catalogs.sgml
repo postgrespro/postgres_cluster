@@ -1851,8 +1851,8 @@
       <entry>
        All transaction IDs before this one have been replaced with a permanent
        (<quote>frozen</>) transaction ID in this table.  This is used to track
-       whether the table needs to be vacuumed in order to prevent transaction
-       ID wraparound or to allow <literal>pg_clog</> to be shrunk.  Zero
+       whether the table needs to be vacuumed in order to allow
+       <literal>pg_clog</> to be shrunk.  Zero
        (<symbol>InvalidTransactionId</symbol>) if the relation is not a table.
       </entry>
      </row>
@@ -1864,8 +1864,8 @@
       <entry>
        All multixact IDs before this one have been replaced by a
        transaction ID in this table.  This is used to track
-       whether the table needs to be vacuumed in order to prevent multixact ID
-       wraparound or to allow <literal>pg_multixact</> to be shrunk.  Zero
+       whether the table needs to be vacuumed in order to allow
+       <literal>pg_multixact</> to be shrunk.  Zero
        (<symbol>InvalidMultiXactId</symbol>) if the relation is not a table.
       </entry>
      </row>
@@ -2518,8 +2518,8 @@
       <entry>
        All transaction IDs before this one have been replaced with a permanent
        (<quote>frozen</>) transaction ID in this database.  This is used to
-       track whether the database needs to be vacuumed in order to prevent
-       transaction ID wraparound or to allow <literal>pg_clog</> to be shrunk.
+       track whether the database needs to be vacuumed in order to allow
+       <literal>pg_clog</> to be shrunk.
        It is the minimum of the per-table
        <structname>pg_class</>.<structfield>relfrozenxid</> values.
       </entry>
@@ -2532,8 +2532,8 @@
       <entry>
        All multixact IDs before this one have been replaced with a
        transaction ID in this database.  This is used to
-       track whether the database needs to be vacuumed in order to prevent
-       multixact ID wraparound or to allow <literal>pg_multixact</> to be shrunk.
+       track whether the database needs to be vacuumed in order to allow
+       <literal>pg_multixact</> to be shrunk.
        It is the minimum of the per-table
        <structname>pg_class</>.<structfield>relminmxid</> values.
       </entry>

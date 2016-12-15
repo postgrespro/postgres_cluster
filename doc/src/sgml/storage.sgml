@@ -640,7 +640,6 @@ This information can also be used
 by <link linkend="indexes-index-only-scans"><firstterm>index-only
 scans</></link> to answer queries using only the index tuple.
 The second bit, if set, means that all tuples on the page have been frozen.
-That means that even an anti-wraparound vacuum need not revisit the page.
 </para>
 
 <para>
@@ -766,7 +765,7 @@ data. Empty in ordinary tables.</entry>
 
  <para>
 
-  The first 24 bytes of each page consists of a page header
+  The first 40 bytes of each page consists of a page header
   (<structname>PageHeaderData</>). Its format is detailed in <xref
   linkend="pageheaderdata-table">. The first field tracks the most
   recent WAL entry related to this page. The second field contains
@@ -776,7 +775,9 @@ data. Empty in ordinary tables.</entry>
   <structfield>pd_upper</structfield>, and
   <structfield>pd_special</structfield>).  These contain byte offsets
   from the page start to the start of unallocated space, to the end of
-  unallocated space, and to the start of the special space.  The next 2
+  unallocated space, and to the start of the special space.
+  Next are two 8-byte fields containing epoch, i. e. an offset, for
+  short (4-byte) transacion IDs in this page. The next 2
   bytes of the page header, <structfield>pd_pagesize_version</structfield>,
   store both the page size and a version indicator.  Beginning with
   <productname>PostgreSQL</productname> 8.3 the version number is 4;
@@ -850,8 +851,20 @@ data. Empty in ordinary tables.</entry>
    <entry>Page size and layout version number information</entry>
   </row>
   <row>
-   <entry>pd_prune_xid</entry>
+   <entry>pd_xid_epoch</entry>
    <entry>TransactionId</entry>
+   <entry>8 bytes</entry>
+   <entry>Epoch for short 4-byte transaction IDs in this page</entry>
+  </row>
+  <row>
+   <entry>pd_multi_epoch</entry>
+   <entry>TransactionId</entry>
+   <entry>8 bytes</entry>
+   <entry>Epoch for short 4-byte multixact IDs in this page</entry>
+  </row>
+  <row>
+   <entry>pd_prune_xid</entry>
+   <entry>ShortTransactionId</entry>
    <entry>4 bytes</entry>
    <entry>Oldest unpruned XMAX on page, or zero if none</entry>
   </row>
@@ -909,7 +922,7 @@ data. Empty in ordinary tables.</entry>
  <para>
 
   All table rows are structured in the same way. There is a fixed-size
-  header (occupying 23 bytes on most machines), followed by an optional null
+  header (occupying 40 bytes on most machines), followed by an optional null
   bitmap, an optional object ID field, and the user data. The header is
   detailed
   in <xref linkend="heaptupleheaderdata-table">.  The actual user data
@@ -947,13 +960,13 @@ data. Empty in ordinary tables.</entry>
  <tbody>
   <row>
    <entry>t_xmin</entry>
-   <entry>TransactionId</entry>
+   <entry>ShortTransactionId</entry>
    <entry>4 bytes</entry>
    <entry>insert XID stamp</entry>
   </row>
   <row>
    <entry>t_xmax</entry>
-   <entry>TransactionId</entry>
+   <entry>ShortTransactionId</entry>
    <entry>4 bytes</entry>
    <entry>delete XID stamp</entry>
   </row>
@@ -965,7 +978,7 @@ data. Empty in ordinary tables.</entry>
   </row>
   <row>
    <entry>t_xvac</entry>
-   <entry>TransactionId</entry>
+   <entry>ShortTransactionId</entry>
    <entry>4 bytes</entry>
    <entry>XID for VACUUM operation moving a row version</entry>
   </row>
