@@ -9547,8 +9547,8 @@ xlog_redo(XLogReaderState *record)
 					(errmsg("unexpected timeline ID %u (should be %u) in checkpoint record",
 							checkPoint.ThisTimeLineID, ThisTimeLineID)));
 
+		KnownPreparedRecreateFiles(checkPoint.redo);
 		RecoveryRestartPoint(&checkPoint);
-		StandbyCheckPointTwoPhase(checkPoint.redo);
 	}
 	else if (info == XLOG_END_OF_RECOVERY)
 	{

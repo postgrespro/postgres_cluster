@@ -57,8 +57,8 @@ extern void CheckPointTwoPhase(XLogRecPtr redo_horizon);
 
 extern void FinishPreparedTransaction(const char *gid, bool isCommit);
 
-extern void StandbyAtCommit(TransactionId xid);
-extern void StandbyAtPrepare(XLogReaderState *record);
-extern void StandbyCheckPointTwoPhase(XLogRecPtr redo_horizon);
+extern void KnownPreparedAdd(XLogReaderState *record);
+extern void KnownPreparedRemoveByXid(TransactionId xid);
+extern void KnownPreparedRecreateFiles(XLogRecPtr redo_horizon);
 
 #endif   /* TWOPHASE_H */
