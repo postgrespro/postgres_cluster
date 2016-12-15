@@ -35,7 +35,7 @@
           wishing to migrate data from any previous major release.</para>
 
     <para>Dump/restore is neccessary when migrating from PostgreSQL
-      or PostgresPro Standard edition.</para>
+      or Postgres Pro Standard edition.</para>
 
     <para>When upgrading from previous releases of Postgres Pro or from
       vanilla PostgreSQL 9.6.x, some catalog changes should be applied.</para>
