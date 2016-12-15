@@ -34,7 +34,8 @@
 #include "access/xlog.h"
 #include "access/xlogdefs.h"
 #include "commands/waitlsn.h"
-
+#include "storage/proc.h"
+#include "access/transam.h"
 
 /* Latches Own-DisownLatch and AbortCаllBack */
 static uint32 GetSHMEMSize(void);
@@ -140,16 +141,17 @@ WaitLSNSetLatch(void)
 }
 
 void
-WaitLSNUtility(const char *lsn, const int *delay)
+WaitLSNUtility(const char *lsn, const int delay)
 {
-	XLogRecPtr	trg_lsn;
-	XLogRecPtr	cur_lsn;
-	int			latch_events;
-	int			tdelay = delay;
-	TimestampTz	timer = GetCurrentTimestamp();
-	trg_lsn = DatumGetLSN(DirectFunctionCall1(pg_lsn_in, CStringGetDatum(lsn)));
+	XLogRecPtr		trg_lsn;
+	XLogRecPtr		cur_lsn;
+	int				latch_events;
+	uint64  		tdelay = delay;
+	long			secs;
+	int				microsecs;
+	TimestampTz		timer = GetCurrentTimestamp();
 
-	tdelay *= 1000;
+	trg_lsn = DatumGetLSN(DirectFunctionCall1(pg_lsn_in, CStringGetDatum(lsn)));
 
 	if (delay > 0)
 		latch_events = WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH;
@@ -160,7 +162,6 @@ WaitLSNUtility(const char *lsn, const int *delay)
 
 	for (;;)
 	{
-		ResetLatch(&state->l_arr[MyBackendId].latch);
 		cur_lsn = GetXLogReplayRecPtr(NULL);
 
 		/* If LSN had been Replayed */
@@ -174,15 +175,17 @@ WaitLSNUtility(const char *lsn, const int *delay)
 		/* If Delay time is over */
 		if (latch_events & WL_TIMEOUT)
 		{
-			tdelay -= (GetCurrentTimestamp() - timer);
-			if (tdelay <= 0)
+			if (TimestampDifferenceExceeds(timer,GetCurrentTimestamp(),tdelay))
 				break;
+			TimestampDifference(timer,GetCurrentTimestamp(),&secs, &microsecs);
+			tdelay -= (secs*1000 + microsecs/1000);
 			timer = GetCurrentTimestamp();
 		}
-
-		/* Tom Lane insists on! Discussion: <1661(dot)1469996911(at)sss(dot)pgh(dot)pa(dot)us> */
-		CHECK_FOR_INTERRUPTS();
+		MyPgXact->xmin = InvalidTransactionId;
 		WaitLatch(&state->l_arr[MyBackendId].latch, latch_events, tdelay);
+		ResetLatch(&state->l_arr[MyBackendId].latch);
+		CHECK_FOR_INTERRUPTS();
+
 	}
 
 	WLDisownLatch();

@@ -36,7 +36,7 @@ SUBDIRS = \
 		pg_query_state \
 		pg_standby	\
 		pg_stat_statements \
-		pg_transfer		\
+		pg_transfer	\
 		pg_trgm		\
 		pgcrypto	\
 		pgrowlocks	\
@@ -65,12 +65,11 @@ SUBDIRS = \
 		pg_probackup	\
 		pg_pathman	\
 		shared_ispell   \
-        vacuumlo        \
 		pg_hint_plan	\
-        fulleq          \
-        fasttrun        \
-        online_analyze  \
-        plantuner
+		fulleq          \
+		fasttrun        \
+		online_analyze  \
+		plantuner
 
 ifeq ($(with_openssl),yes)
 SUBDIRS += sslinfo
