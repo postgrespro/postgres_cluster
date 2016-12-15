@@ -34,7 +34,8 @@
 #include "access/xlog.h"
 #include "access/xlogdefs.h"
 #include "commands/waitlsn.h"
-
+#include "storage/proc.h"
+#include "access/transam.h"
 
 /* Latches Own-DisownLatch and AbortCаllBack */
 static uint32 GetSHMEMSize(void);
@@ -134,9 +135,7 @@ WaitLSNSetLatch(void)
 	{
 		SpinLockAcquire(&state->l_arr[i].slock);
 		if (state->l_arr[i].pid != 0)
-		{
 			SetLatch(&state->l_arr[i].latch);
-		}
 		SpinLockRelease(&state->l_arr[i].slock);
 	}
 }
@@ -163,7 +162,6 @@ WaitLSNUtility(const char *lsn, const int delay)
 
 	for (;;)
 	{
-		ResetLatch(&state->l_arr[MyBackendId].latch);
 		cur_lsn = GetXLogReplayRecPtr(NULL);
 
 		/* If LSN had been Replayed */
@@ -183,10 +181,11 @@ WaitLSNUtility(const char *lsn, const int delay)
 			tdelay -= (secs*1000 + microsecs/1000);
 			timer = GetCurrentTimestamp();
 		}
-
-		/* Tom Lane insists on! Discussion: <1661(dot)1469996911(at)sss(dot)pgh(dot)pa(dot)us> */
-		CHECK_FOR_INTERRUPTS();
+		MyPgXact->xmin = InvalidTransactionId;
 		WaitLatch(&state->l_arr[MyBackendId].latch, latch_events, tdelay);
+		ResetLatch(&state->l_arr[MyBackendId].latch);
+		CHECK_FOR_INTERRUPTS();
+
 	}
 
 	WLDisownLatch();
