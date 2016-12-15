@@ -34,8 +34,8 @@
         use of <xref linkend="pgupgrade">, is required for those
           wishing to migrate data from any previous major release.</para>
 
-    <para>Dump/restore is not neccessary when migrating from PostgreSQL 9.6.x to
-      &productname; 9.6.x.y.</para>
+    <para>Dump/restore is neccessary when migrating from PostgreSQL
+      or PostgresPro Standard edition.</para>
 
     <para>When upgrading from previous releases of Postgres Pro or from
       vanilla PostgreSQL 9.6.x, some catalog changes should be applied.</para>
