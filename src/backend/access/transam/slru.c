@@ -62,7 +62,7 @@
 
 #define SlruFileName(ctl, path, seg) \
 	snprintf(path, MAXPGPATH, "%s/%04X%08X", (ctl)->Dir, \
-		(uint32) ((seg) & (int64)0xFFFFFFFF), (uint32) ((seg) >> 32))
+		(uint32) ((seg) >> 32), (uint32) ((seg) & (int64)0xFFFFFFFF))
 
 /*
  * During SimpleLruFlush(), we will usually not need to write/fsync more
