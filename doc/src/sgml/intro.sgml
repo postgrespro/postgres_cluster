@@ -218,6 +218,48 @@
     <listitem>
      <simpara><application>plantuner</application> module provides hits for planner, which can do disable or enable indexes for query execution.</simpara>
     </listitem>    
+    <listitem>
+      <simpara>Added k-nearest neighbors algorithm (KNN) for SP-GiST and B-tree (See <xref linkend="spgist">)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Added RUM index, based on GIN, as selistitemte module (See <xref linkend="rum">)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>WAL size has been reduced on <command>CREATE INDEX</command> operation in the GiST, GIN, SP-GiST</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Added timeout for idle sessions on the server side (See <xref linkend="guc-idle-session-timeout">)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Added SHA-2 algorithm for password encryption (See <xref linkend="auth-password">)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Added page level compression (CFS) (See <xref linkend="cfs">)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Added support of autonomous transactions (See <xref linkend="atx">)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Added new optional background worker to schedule tasks by rules (See <xref linkend="pgpro-scheduler">)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Added support for relocatable tables (See <xref linkend="pgtransfer">)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Extension <application>pg_hint_plan</application> has been added (See <xref linkend="pg-hint-plan">)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Transaction IDs on 64-bit platforms use 64-bit data type</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Lazy placement of temporary tables on disk</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Consistent read on slaves (wait for WAL apply, see <xref linkend="sql-waitlsn">)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Utility <application>pg_repack</application> has been added (See <xref linkend="app-pgrepack">)</simpara>
+    </listitem>        
    </itemizedlist>
   </para>
 
