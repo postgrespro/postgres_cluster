@@ -89,8 +89,6 @@ typedef struct {
 	pgid_t gid;           /* global transaction identifier (used by 2pc) */
 } MtmCurrentTrans;
 
-/* #define USE_SPINLOCK 1 */
-
 typedef enum 
 {
 	MTM_STATE_LOCK_ID
@@ -245,6 +243,7 @@ static int   MtmMaxRecoveryLag;
 static int   MtmGcPeriod;
 static bool  MtmIgnoreTablesWithoutPk;
 static int   MtmLockCount;
+static int   MtmSenderStarted;
 
 static ExecutorStart_hook_type PreviousExecutorStartHook;
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
@@ -273,16 +272,12 @@ void MtmLock(LWLockMode mode)
 			return;
 		}
 	}
-#ifdef USE_SPINLOCK
-	SpinLockAcquire(&Mtm->spinlock);
-#else
 	start = MtmGetSystemTime();
 	LWLockAcquire((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID], mode);
 	stop = MtmGetSystemTime();
 	if (stop > start + MSEC_TO_USEC(MtmHeartbeatSendTimeout)) { 
 		MTM_LOG1("%d: obtaining %s lock takes %ld microseconds", MyProcPid, (mode == LW_EXCLUSIVE ? "exclusive" : "shared"), stop - start);
 	}	
-#endif
 	Mtm->lastLockHolder = MyProcPid;
 }
 
@@ -291,11 +286,7 @@ void MtmUnlock(void)
 	if (MtmLockCount != 0 && --MtmLockCount != 0) { 
 		return;
 	}
-#ifdef USE_SPINLOCK
-	SpinLockRelease(&Mtm->spinlock);
-#else
 	LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
-#endif
 	Mtm->lastLockHolder = 0;
 }
 
@@ -1231,7 +1222,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			if (commit) {
 				if (!(ts->status == TRANSACTION_STATUS_UNKNOWN 
 					  || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)))  
-				{					Assert(false);
+				{
 					elog(ERROR, "Attempt to commit %s transaction %d (%s)", 
 						 MtmTxnStatusMnem[ts->status], ts->xid, ts->gid);
 				}
@@ -1304,20 +1295,24 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 
 void MtmSendMessage(MtmArbiterMessage* msg) 
 {
-	MtmMessageQueue* mq = Mtm->freeQueue;
-	MtmMessageQueue* sendQueue = Mtm->sendQueue;
-	if (mq == NULL) {
-		mq = (MtmMessageQueue*)ShmemAlloc(sizeof(MtmMessageQueue));
-	} else { 
-		Mtm->freeQueue = mq->next;
+	SpinLockAcquire(&Mtm->queueSpinlock);
+	{
+		MtmMessageQueue* mq = Mtm->freeQueue;
+		MtmMessageQueue* sendQueue = Mtm->sendQueue;
+		if (mq == NULL) {
+			mq = (MtmMessageQueue*)ShmemAlloc(sizeof(MtmMessageQueue));
+		} else { 
+			Mtm->freeQueue = mq->next;
+		}
+		mq->msg = *msg;
+		mq->next = sendQueue;
+		Mtm->sendQueue = mq;
+		if (sendQueue == NULL) { 
+			/* singal semaphore only once for the whole list */
+			PGSemaphoreUnlock(&Mtm->sendSemaphore);
+		}
 	}
-	mq->msg = *msg;
-	mq->next = sendQueue;
-	Mtm->sendQueue = mq;
-	if (sendQueue == NULL) { 
-		/* singal semaphore only once for the whole list */
-		PGSemaphoreUnlock(&Mtm->sendSemaphore);
-	}
+	SpinLockRelease(&Mtm->queueSpinlock);
 }
 
 void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
@@ -1667,8 +1662,8 @@ void MtmRecoveryCompleted(void)
 		Mtm->nodes[i].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 	}
 	/* Mode will be changed to online once all logical receiver are connected */
-	elog(LOG, "Recovery completed with %d active receivers from %d", Mtm->nReceivers, Mtm->nLiveNodes-1);
-	MtmSwitchClusterMode(Mtm->nReceivers == Mtm->nLiveNodes-1 ? MTM_ONLINE : MTM_CONNECTED);
+	elog(LOG, "Recovery completed with %d active receivers and %d started senders from %d", Mtm->nReceivers, Mtm->nSenders, Mtm->nLiveNodes-1);
+	MtmSwitchClusterMode(Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1 ? MTM_ONLINE : MTM_CONNECTED);
 	MtmUnlock();
 }
 
@@ -2010,7 +2005,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	MtmLock(LW_EXCLUSIVE);
 	BIT_SET(Mtm->connectivityMask, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
-	MTM_LOG1("Disconnect node %d connectivity mask %llx", nodeId, (long long) Mtm->connectivityMask);
+	elog(LOG, "Disconnect node %d connectivity mask %llx", nodeId, (long long) Mtm->connectivityMask);
 	MtmUnlock();
 
 	MtmSleep(MSEC_TO_USEC(MtmHeartbeatSendTimeout));
@@ -2020,6 +2015,7 @@ void MtmOnNodeDisconnect(int nodeId)
 void MtmOnNodeConnect(int nodeId)
 {
 	MtmLock(LW_EXCLUSIVE);	
+	elog(LOG, "Connect node %d connectivity mask %llx", nodeId, (long long) Mtm->connectivityMask);
 	BIT_CLEAR(Mtm->connectivityMask, nodeId-1);
 	BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
 	MtmUnlock();
@@ -2198,6 +2194,7 @@ static void MtmInitialize()
         Mtm->transListHead = NULL;
         Mtm->transListTail = &Mtm->transListHead;		
         Mtm->nReceivers = 0;
+        Mtm->nSenders = 0;
 		Mtm->timeShift = 0;		
 		Mtm->transCount = 0;
 		Mtm->gcCount = 0;
@@ -2229,7 +2226,7 @@ static void MtmInitialize()
 		Mtm->nodes[MtmNodeId-1].restartLSN = (XLogRecPtr)PG_UINT64_MAX;
 		PGSemaphoreCreate(&Mtm->sendSemaphore);
 		PGSemaphoreReset(&Mtm->sendSemaphore);
-		SpinLockInit(&Mtm->spinlock);
+		SpinLockInit(&Mtm->queueSpinlock);
 		BgwPoolInit(&Mtm->pool, MtmExecutor, MtmDatabaseName, MtmDatabaseUser, MtmQueueSize, MtmWorkers);
 		RegisterXactCallback(MtmXactCallback, NULL);
 		MtmTx.snapshot = INVALID_CSN;
@@ -2906,11 +2903,9 @@ void MtmReceiverStarted(int nodeId)
 			MtmEnableNode(nodeId);
 			MtmCheckQuorum();
 		}
-		elog(LOG, "Start %d receivers from %d cluster status %s", Mtm->nReceivers+1, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
-		if (++Mtm->nReceivers == Mtm->nLiveNodes-1) {
-			if (Mtm->status == MTM_CONNECTED) { 
-				MtmSwitchClusterMode(MTM_ONLINE);
-			}
+		elog(LOG, "Start %d receivers and %d senders from %d cluster status %s", Mtm->nReceivers+1, Mtm->nSenders, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
+		if (++Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->status == MTM_CONNECTED) { 
+			MtmSwitchClusterMode(MTM_ONLINE);
 		}
 	}
 	MtmUnlock();
@@ -2946,18 +2941,23 @@ void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 
 void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
 {
+	bool insideTransaction = IsTransactionState();
 	Assert(ts->votingCompleted);
-	Assert(!IsTransactionState());
 	MtmResetTransaction();
-	StartTransactionCommand();
-
-	MtmBeginSession(MtmNodeId);
+	
+	if (!insideTransaction) { 
+		StartTransactionCommand();
+	}
+	//MtmBeginSession(MtmNodeId);
 	MtmSetCurrentTransactionCSN(ts->csn);
 	MtmSetCurrentTransactionGID(ts->gid);
 	FinishPreparedTransaction(ts->gid, commit);
-	CommitTransactionCommand();
-	MtmEndSession(MtmNodeId, true);
-	Assert(ts->status == commit ? TRANSACTION_STATUS_COMMITTED : TRANSACTION_STATUS_ABORTED);
+	
+	if (!insideTransaction) { 
+		CommitTransactionCommand();
+		//MtmEndSession(MtmNodeId, true);
+		Assert(ts->status == commit ? TRANSACTION_STATUS_COMMITTED : TRANSACTION_STATUS_ABORTED);
+	}
 }
 
 /* 
@@ -2997,6 +2997,7 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 				elog(WARNING, "Process %d starts recovery from node %d", MyProcPid, nodeId);
 				Mtm->recoverySlot = nodeId;
 				Mtm->nReceivers = 0;
+				Mtm->nSenders = 0;
 				Mtm->recoveryCount += 1;
 				Mtm->pglogicalNodeMask = 0;
 				MtmUnlock();
@@ -3015,6 +3016,7 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 	} else { 
 		MTM_LOG1("%d: Continue replication from node %d", MyProcPid, nodeId);
 	}
+	BIT_SET(Mtm->reconnectMask, nodeId-1); /* arbiter should try to reestblish connection with this node */
 	MtmUnlock();
 	return mode;		
 }
@@ -3144,6 +3146,12 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	} else {
 		MTM_LOG1("Node %d start logical replication to node %d in normal mode", MtmNodeId, MtmReplicationNodeId); 
 	}
+	elog(LOG, "Start %d senders and %d receivers from %d cluster status %s", Mtm->nSenders+1, Mtm->nReceivers, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
+	MtmSenderStarted = 1;
+	if (++Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->status == MTM_CONNECTED) { 
+		MtmSwitchClusterMode(MTM_ONLINE);
+	}
+	BIT_SET(Mtm->reconnectMask, MtmReplicationNodeId-1); /* arbiter should try to reestblish connection with this node */
 	MtmUnlock();
 	on_shmem_exit(MtmOnProcExit, 0);
 }
@@ -3192,6 +3200,9 @@ static void
 MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
 {
 	if (MtmReplicationNodeId >= 0) { 
+		MtmLock(LW_EXCLUSIVE);
+		Mtm->nSenders -= MtmSenderStarted;
+		MtmUnlock();
 		MTM_LOG1("Logical replication to node %d is stopped", MtmReplicationNodeId); 
 		/* MtmOnNodeDisconnect(MtmReplicationNodeId); */
 		MtmReplicationNodeId = -1; /* defuse on_proc_exit hook */
@@ -3290,7 +3301,7 @@ bool MtmFilterTransaction(char* record, int size)
 	}
 
 	if (duplicate) {
-		MTM_LOG1("Ignore transaction %s from node %d flags=%x, our restartLSN for node: %lx,restart_lsn = (origin node %d == MtmReplicationNodeId %d) ? end_lsn=%lx, origin_lsn=%lx", 
+		MTM_LOG2("Ignore transaction %s from node %d flags=%x, our restartLSN for node: %lx,restart_lsn = (origin node %d == MtmReplicationNodeId %d) ? end_lsn=%lx, origin_lsn=%lx", 
 				 gid, replication_node, flags, Mtm->nodes[origin_node-1].restartLSN, origin_node, MtmReplicationNodeId, end_lsn, origin_lsn);
 	} else {
 		MTM_LOG2("Apply transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 

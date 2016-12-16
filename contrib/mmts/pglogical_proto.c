@@ -210,6 +210,10 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 			Assert(MtmTransactionRecords == 0);
 			return;
 		}
+		if (isRecovery) { 
+			MTM_LOG1("PGLOGICAL_SEND recover transaction: event=%d, gid=%s, xid=%d, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", 
+					 flags, txn->gid, txn->xid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
+		}
 		if (flags == PGLOGICAL_ABORT_PREPARED) { 
 			MTM_LOG1("Send ABORT_PREPARED for transaction %d (%s) end_lsn=%lx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%ld", 
 					 txn->xid, txn->gid, txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
