@@ -273,7 +273,8 @@ typedef struct
 	int    inject2PCError;             /* Simulate error during 2PC commit at this node */
     int    nLiveNodes;                 /* Number of active nodes */
     int    nAllNodes;                  /* Total numbber of nodes */
-    int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when Mtm intialization is completed */
+    int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when intialization/recovery is completed) */
+    int    nSenders;                   /* Number of started WAL senders (used to determine moment when recovery) */
 	int    nLockers;                   /* Number of lockers */
 	int    nActiveTransactions;        /* Nunmber of active 2PC transactions */
 	int    nConfigChanges;             /* Number of cluster configuration changes */

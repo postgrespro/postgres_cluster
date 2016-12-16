@@ -245,6 +245,7 @@ static int   MtmMaxRecoveryLag;
 static int   MtmGcPeriod;
 static bool  MtmIgnoreTablesWithoutPk;
 static int   MtmLockCount;
+static int   MtmSenderStarted;
 
 static ExecutorStart_hook_type PreviousExecutorStartHook;
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
@@ -1667,8 +1668,8 @@ void MtmRecoveryCompleted(void)
 		Mtm->nodes[i].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 	}
 	/* Mode will be changed to online once all logical receiver are connected */
-	elog(LOG, "Recovery completed with %d active receivers from %d", Mtm->nReceivers, Mtm->nLiveNodes-1);
-	MtmSwitchClusterMode(Mtm->nReceivers == Mtm->nLiveNodes-1 ? MTM_ONLINE : MTM_CONNECTED);
+	elog(LOG, "Recovery completed with %d active receivers and %d started senders from %d", Mtm->nReceivers, Mtm->nSenders, Mtm->nLiveNodes-1);
+	MtmSwitchClusterMode(Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1 ? MTM_ONLINE : MTM_CONNECTED);
 	MtmUnlock();
 }
 
@@ -2198,6 +2199,7 @@ static void MtmInitialize()
         Mtm->transListHead = NULL;
         Mtm->transListTail = &Mtm->transListHead;		
         Mtm->nReceivers = 0;
+        Mtm->nSenders = 0;
 		Mtm->timeShift = 0;		
 		Mtm->transCount = 0;
 		Mtm->gcCount = 0;
@@ -2906,11 +2908,9 @@ void MtmReceiverStarted(int nodeId)
 			MtmEnableNode(nodeId);
 			MtmCheckQuorum();
 		}
-		elog(LOG, "Start %d receivers from %d cluster status %s", Mtm->nReceivers+1, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
-		if (++Mtm->nReceivers == Mtm->nLiveNodes-1) {
-			if (Mtm->status == MTM_CONNECTED) { 
-				MtmSwitchClusterMode(MTM_ONLINE);
-			}
+		elog(LOG, "Start %d receivers and %d senders from %d cluster status %s", Mtm->nReceivers+1, Mtm->nSenders, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
+		if (++Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->status == MTM_CONNECTED) { 
+			MtmSwitchClusterMode(MTM_ONLINE);
 		}
 	}
 	MtmUnlock();
@@ -2997,6 +2997,7 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 				elog(WARNING, "Process %d starts recovery from node %d", MyProcPid, nodeId);
 				Mtm->recoverySlot = nodeId;
 				Mtm->nReceivers = 0;
+				Mtm->nSenders = 0;
 				Mtm->recoveryCount += 1;
 				Mtm->pglogicalNodeMask = 0;
 				MtmUnlock();
@@ -3075,6 +3076,18 @@ MtmOnProcExit(int code, Datum arg)
 		/* MtmOnNodeDisconnect(MtmReplicationNodeId); */
 	}
 }
+
+static void 
+MtmReplicationStartedHook(struct PGLogicalStartedHookArgs* args)
+{
+	MtmLock(LW_EXCLUSIVE);	
+	MtmSenderStarted = 1;
+	if (++Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->status == MTM_CONNECTED) { 
+		MtmSwitchClusterMode(MTM_ONLINE);
+	}
+	MtmUnlock();	
+}
+
 
 static void 
 MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
@@ -3192,6 +3205,9 @@ static void
 MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
 {
 	if (MtmReplicationNodeId >= 0) { 
+		MtmLock(LW_EXCLUSIVE);
+		Mtm->nSenders -= MtmSenderStarted;
+		MtmUnlock();
 		MTM_LOG1("Logical replication to node %d is stopped", MtmReplicationNodeId); 
 		/* MtmOnNodeDisconnect(MtmReplicationNodeId); */
 		MtmReplicationNodeId = -1; /* defuse on_proc_exit hook */
@@ -3303,6 +3319,7 @@ bool MtmFilterTransaction(char* record, int size)
 void MtmSetupReplicationHooks(struct PGLogicalHooks* hooks)
 {
 	hooks->startup_hook = MtmReplicationStartupHook;
+	hooks->started_hook = MtmReplicationStartedHook;
 	hooks->shutdown_hook = MtmReplicationShutdownHook;
 	hooks->txn_filter_hook = MtmReplicationTxnFilterHook;
 	hooks->row_filter_hook = MtmReplicationRowFilterHook;

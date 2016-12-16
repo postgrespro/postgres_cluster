@@ -54,6 +54,7 @@ extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
 /* These must be available to pg_dlsym() */
 static void pg_decode_startup(LogicalDecodingContext * ctx,
 							  OutputPluginOptions *opt, bool is_init);
+static void pg_decode_started(LogicalDecodingContext * ctx);
 static void pg_decode_shutdown(LogicalDecodingContext * ctx);
 static void pg_decode_begin_txn(LogicalDecodingContext *ctx,
 					ReorderBufferTXN *txn);
@@ -83,6 +84,7 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	AssertVariableIsOfType(&_PG_output_plugin_init, LogicalOutputPluginInit);
 
 	cb->startup_cb = pg_decode_startup;
+	cb->started_cb = pg_decode_started;
 	cb->begin_cb = pg_decode_begin_txn;
 	cb->change_cb = pg_decode_change;
 	cb->commit_cb = pg_decode_commit_txn;
@@ -489,6 +491,15 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	MemoryContextSwitchTo(old);
 	MemoryContextReset(data->context);
 }
+
+static void
+pg_decode_started(LogicalDecodingContext * ctx)
+{
+	PGLogicalOutputData *data = ctx->output_plugin_private;
+	call_started_hook(data);
+}
+	
+
 
 /*
  * Decide if the whole transaction with specific origin should be filtered out.
