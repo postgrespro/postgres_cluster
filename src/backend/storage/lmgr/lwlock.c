@@ -768,6 +768,56 @@ GetLWLockIdentifier(uint8 classId, uint16 eventId)
 	return LWLockTrancheArray[eventId]->name;
 }
 
+#if (defined(__GNUC__) || defined(__INTEL_COMPILER)) && (defined(__ppc__) || defined(__powerpc__) || defined(__ppc64__) || defined(__powerpc64__))
+
+/*
+ * Special optimization for PowerPC processors: put logic dealing with LWLock
+ * state between lwarx/stwcx operations.
+ */
+static bool
+LWLockAttemptLock(LWLock *lock, LWLockMode mode)
+{
+	uint32		mask, increment;
+	bool		result;
+
+	AssertArg(mode == LW_EXCLUSIVE || mode == LW_SHARED);
+
+	if (mode == LW_EXCLUSIVE)
+	{
+		mask = LW_LOCK_MASK;
+		increment = LW_VAL_EXCLUSIVE;
+	}
+	else
+	{
+		mask = LW_VAL_EXCLUSIVE;
+		increment = LW_VAL_SHARED;
+	}
+
+	__asm__ __volatile__(
+"0:	lwarx   3,0,%4		\n"
+"	and     4,3,%2		\n"
+"	cmpwi   4,0			\n"
+"	bne-    1f			\n"
+"	add     3,3,%3		\n"
+"	stwcx.  3,0,%4		\n"
+"	bne-    0b			\n"
+"	li      %0,0		\n"
+"	b       2f			\n"
+"1: li      %0,1		\n"
+#ifdef USE_PPC_LWSYNC
+"2:	lwsync				\n"
+#else
+"2:	isync				\n"
+#endif
+:	"=&r"(result), "+m"(lock->state)
+:	"r"(mask), "r"(increment), "r"(&lock->state)
+:	"memory", "cc", "r3", "r4");
+
+	return result;
+}
+
+#else
+
 /*
  * Internal function that tries to atomically acquire the lwlock in the passed
  * in mode.
@@ -909,6 +959,8 @@ LWLockWaitListUnlock(LWLock *lock)
 
 	Assert(old_state & LW_FLAG_LOCKED);
 }
+
+#endif
 
 /*
  * Wakeup all the lockers that currently have a chance to acquire the lock.
