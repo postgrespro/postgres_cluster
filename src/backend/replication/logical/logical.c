@@ -54,6 +54,7 @@ typedef struct LogicalErrorCallbackState
 
 /* wrappers around output plugin callbacks */
 static void output_plugin_error_callback(void *arg);
+static void started_cb_wrapper(LogicalDecodingContext *ctx);
 static void startup_cb_wrapper(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 				   bool is_init);
 static void shutdown_cb_wrapper(LogicalDecodingContext *ctx);
@@ -413,6 +414,7 @@ DecodingContextReady(LogicalDecodingContext *ctx)
 void
 DecodingContextFindStartpoint(LogicalDecodingContext *ctx)
 {
+	MemoryContext old_context;
 	XLogRecPtr	startptr;
 
 	/* Initialize from where to start reading WAL. */
@@ -447,6 +449,11 @@ DecodingContextFindStartpoint(LogicalDecodingContext *ctx)
 	}
 
 	ctx->slot->data.confirmed_flush = ctx->reader->EndRecPtr;
+
+	old_context = MemoryContextSwitchTo(ctx->context);
+	if (ctx->callbacks.started_cb != NULL)
+		started_cb_wrapper(ctx);
+	MemoryContextSwitchTo(old_context);
 }
 
 /*
@@ -557,6 +564,31 @@ startup_cb_wrapper(LogicalDecodingContext *ctx, OutputPluginOptions *opt, bool i
 
 	/* do the actual work: call callback */
 	ctx->callbacks.startup_cb(ctx, opt, is_init);
+
+	/* Pop the error context stack */
+	error_context_stack = errcallback.previous;
+}
+
+static void
+started_cb_wrapper(LogicalDecodingContext *ctx)
+{
+	LogicalErrorCallbackState state;
+	ErrorContextCallback errcallback;
+
+	/* Push callback + info on the error context stack */
+	state.ctx = ctx;
+	state.callback_name = "startup";
+	state.report_location = InvalidXLogRecPtr;
+	errcallback.callback = output_plugin_error_callback;
+	errcallback.arg = (void *) &state;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
+	/* set output state */
+	ctx->accept_writes = false;
+
+	/* do the actual work: call callback */
+	ctx->callbacks.started_cb(ctx);
 
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;

@@ -76,6 +76,7 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	AssertVariableIsOfType(&_PG_output_plugin_init, LogicalOutputPluginInit);
 
 	cb->startup_cb = pg_decode_startup;
+	cb->started_cb = pg_decode_started;
 	cb->begin_cb = pg_decode_begin_txn;
 	cb->change_cb = pg_decode_change;
 	cb->commit_cb = pg_decode_commit_txn;
