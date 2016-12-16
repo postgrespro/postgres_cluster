@@ -439,7 +439,7 @@
     freezing data by <command>VACUUM</> is still needed for shrink
     <literal>pg_clog</> and <literal>pg_multixact</>.  For historical reasons,
     wording "autovacuum to prevent wraparound" is preserved for forced
-    atuvacuum for shrink <literal>pg_clog</> and <literal>pg_multixact</>.
+    autovacuum for shrink <literal>pg_clog</> and <literal>pg_multixact</>.
    </para>
 
    <note>
