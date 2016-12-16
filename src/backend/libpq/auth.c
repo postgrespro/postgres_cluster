@@ -194,9 +194,6 @@ static int pg_SSPI_make_upn(char *accountname,
  * RADIUS Authentication
  *----------------------------------------------------------------
  */
-#ifdef USE_OPENSSL
-#include <openssl/rand.h>
-#endif
 static int	CheckRADIUSAuth(Port *port);
 
 
@@ -707,6 +704,7 @@ CheckMD5Auth(Port *port, char **logdetail)
 {
 	char		md5Salt[4];		/* Password salt */
 	char	   *passwd;
+	char	   *shadow_pass;
 	int			result;
 
 	if (Db_user_namespace)
@@ -715,17 +713,26 @@ CheckMD5Auth(Port *port, char **logdetail)
 				 errmsg("MD5 authentication is not supported when \"db_user_namespace\" is enabled")));
 
 	/* include the salt to use for computing the response */
-	pg_backend_random(md5Salt, 4);
+	if (!pg_backend_random(md5Salt, 4))
+	{
+		ereport(LOG,
+				(errmsg("could not generate random MD5 salt.")));
+		return STATUS_ERROR;
+	}
 
 	sendAuthRequest(port, AUTH_REQ_MD5, md5Salt, 4);
 
 	passwd = recv_password_packet(port);
-
 	if (passwd == NULL)
 		return STATUS_EOF;		/* client wouldn't send password */
 
-	result = md5_crypt_verify(port->user_name, passwd, md5Salt, 4, logdetail);
+	result = get_role_password(port->user_name, &shadow_pass, logdetail);
+	if (result == STATUS_OK)
+		result = md5_crypt_verify(port->user_name, shadow_pass, passwd,
+								  md5Salt, 4, logdetail);
 
+	if (shadow_pass)
+		pfree(shadow_pass);
 	pfree(passwd);
 
 	return result;
@@ -741,16 +748,21 @@ CheckPasswordAuth(Port *port, char **logdetail)
 {
 	char	   *passwd;
 	int			result;
+	char	   *shadow_pass;
 
 	sendAuthRequest(port, AUTH_REQ_PASSWORD, NULL, 0);
 
 	passwd = recv_password_packet(port);
-
 	if (passwd == NULL)
 		return STATUS_EOF;		/* client wouldn't send password */
 
-	result = md5_crypt_verify(port->user_name, passwd, NULL, 0, logdetail);
+	result = get_role_password(port->user_name, &shadow_pass, logdetail);
+	if (result == STATUS_OK)
+		result = plain_crypt_verify(port->user_name, shadow_pass, passwd,
+									logdetail);
 
+	if (shadow_pass)
+		pfree(shadow_pass);
 	pfree(passwd);
 
 	return result;
@@ -2545,18 +2557,12 @@ CheckRADIUSAuth(Port *port)
 	/* Construct RADIUS packet */
 	packet->code = RADIUS_ACCESS_REQUEST;
 	packet->length = RADIUS_HEADER_LENGTH;
-#ifdef USE_OPENSSL
-	if (RAND_bytes(packet->vector, RADIUS_VECTOR_LENGTH) != 1)
+	if (!pg_backend_random((char *) packet->vector, RADIUS_VECTOR_LENGTH))
 	{
 		ereport(LOG,
 				(errmsg("could not generate random encryption vector")));
 		return STATUS_ERROR;
 	}
-#else
-	for (i = 0; i < RADIUS_VECTOR_LENGTH; i++)
-		/* Use a lower strengh random number of OpenSSL is not available */
-		packet->vector[i] = random() % 255;
-#endif
 	packet->id = packet->vector[0];
 	radius_add_attribute(packet, RADIUS_SERVICE_TYPE, (unsigned char *) &service, sizeof(service));
 	radius_add_attribute(packet, RADIUS_USER_NAME, (unsigned char *) port->user_name, strlen(port->user_name));

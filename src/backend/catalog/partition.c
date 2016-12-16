@@ -950,7 +950,8 @@ RelationGetPartitionDispatchInfo(Relation rel, int lockmode,
 			   *parted_rels;
 	ListCell   *lc;
 	int			i,
-				k;
+				k,
+				offset;
 
 	/*
 	 * Lock partitions and make a list of the partitioned ones to prepare
@@ -990,11 +991,19 @@ RelationGetPartitionDispatchInfo(Relation rel, int lockmode,
 		 */
 	}
 
-	/* Generate PartitionDispatch objects for all partitioned tables */
+	/*
+	 * We want to create two arrays - one for leaf partitions and another for
+	 * partitioned tables (including the root table and internal partitions).
+	 * While we only create the latter here, leaf partition array of suitable
+	 * objects (such as, ResultRelInfo) is created by the caller using the
+	 * list of OIDs we return.  Indexes into these arrays get assigned in a
+	 * breadth-first manner, whereby partitions of any given level are placed
+	 * consecutively in the respective arrays.
+	 */
 	pd = (PartitionDispatchData **) palloc(*num_parted *
 										   sizeof(PartitionDispatchData *));
 	*leaf_part_oids = NIL;
-	i = k = 0;
+	i = k = offset = 0;
 	foreach(lc, parted_rels)
 	{
 		Relation	partrel = lfirst(lc);
@@ -1010,6 +1019,16 @@ RelationGetPartitionDispatchInfo(Relation rel, int lockmode,
 		pd[i]->partdesc = partdesc;
 		pd[i]->indexes = (int *) palloc(partdesc->nparts * sizeof(int));
 
+		/*
+		 * Indexes corresponding to the internal partitions are multiplied by
+		 * -1 to distinguish them from those of leaf partitions.  Encountering
+		 * an index >= 0 means we found a leaf partition, which is immediately
+		 * returned as the partition we are looking for.  A negative index
+		 * means we found a partitioned table, whose PartitionDispatch object
+		 * is located at the above index multiplied back by -1.  Using the
+		 * PartitionDispatch object, search is continued further down the
+		 * partition tree.
+		 */
 		m = 0;
 		for (j = 0; j < partdesc->nparts; j++)
 		{
@@ -1023,14 +1042,22 @@ RelationGetPartitionDispatchInfo(Relation rel, int lockmode,
 			else
 			{
 				/*
-				 * We can assign indexes this way because of the way
-				 * parted_rels has been generated.
+				 * offset denotes the number of partitioned tables of upper
+				 * levels including those of the current level.  Any partition
+				 * of this table must belong to the next level and hence will
+				 * be placed after the last partitioned table of this level.
 				 */
-				pd[i]->indexes[j] = -(i + 1 + m);
+				pd[i]->indexes[j] = -(1 + offset + m);
 				m++;
 			}
 		}
 		i++;
+
+		/*
+		 * This counts the number of partitioned tables at upper levels
+		 * including those of the current level.
+		 */
+		offset += m;
 	}
 
 	return pd;
@@ -1492,7 +1519,7 @@ generate_partition_qual(Relation rel, bool recurse)
  *			Construct values[] and isnull[] arrays for the partition key
  *			of a tuple.
  *
- *	pkinfo			partition key execution info
+ *	pd				Partition dispatch object of the partitioned table
  *	slot			Heap tuple from which to extract partition key
  *	estate			executor state for evaluating any partition key
  *					expressions (must be non-NULL)
@@ -1565,7 +1592,7 @@ FormPartitionKeyDatum(PartitionDispatch pd,
  * the latter case.
  */
 int
-get_partition_for_tuple(PartitionDispatch * pd,
+get_partition_for_tuple(PartitionDispatch *pd,
 						TupleTableSlot *slot,
 						EState *estate,
 						Oid *failed_at)
