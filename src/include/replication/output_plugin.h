@@ -48,15 +48,6 @@ typedef void (*LogicalDecodeStartupCB) (
 );
 
 /*
- * Callback that gets called when WAL-sender is started. ctx->private_data can
- * be set to some private data.
- *
- */
-typedef void (*LogicalDecodeStartedCB) (
-										  struct LogicalDecodingContext *ctx
-);
-
-/*
  * Callback called for every (explicit or implicit) BEGIN of a successful
  * transaction.
  */
@@ -114,7 +105,6 @@ typedef void (*LogicalDecodeShutdownCB) (
 typedef struct OutputPluginCallbacks
 {
 	LogicalDecodeStartupCB startup_cb;
-	LogicalDecodeStartedCB started_cb;
 	LogicalDecodeBeginCB begin_cb;
 	LogicalDecodeChangeCB change_cb;
 	LogicalDecodeCommitCB commit_cb;

@@ -27,12 +27,6 @@ struct PGLogicalStartupHookArgs
 
 typedef void (*pglogical_startup_hook_fn)(struct PGLogicalStartupHookArgs *args);
 
-struct PGLogicalStartedHookArgs
-{
-	void	   *private_data;
-};
-
-typedef void (*pglogical_started_hook_fn)(struct PGLogicalStartedHookArgs *args);
 
 struct PGLogicalTxnFilterArgs
 {
@@ -69,7 +63,6 @@ typedef void (*pglogical_shutdown_hook_fn)(struct PGLogicalShutdownHookArgs *arg
 struct PGLogicalHooks
 {
 	pglogical_startup_hook_fn startup_hook;
-	pglogical_started_hook_fn started_hook;
 	pglogical_shutdown_hook_fn shutdown_hook;
 	pglogical_txn_filter_hook_fn txn_filter_hook;
 	pglogical_row_filter_hook_fn row_filter_hook;

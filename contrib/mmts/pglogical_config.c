@@ -477,8 +477,6 @@ prepare_startup_message(PGLogicalOutputData *data)
 	 */
 	l = add_startup_msg_b(l, "hooks.startup_hook_enabled",
 			data->hooks.startup_hook != NULL);
-	l = add_startup_msg_b(l, "hooks.started_hook_enabled",
-			data->hooks.started_hook != NULL);
 	l = add_startup_msg_b(l, "hooks.shutdown_hook_enabled",
 			data->hooks.shutdown_hook != NULL);
 	l = add_startup_msg_b(l, "hooks.row_filter_enabled",
