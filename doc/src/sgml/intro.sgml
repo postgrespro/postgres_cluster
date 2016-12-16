@@ -222,7 +222,7 @@
       <simpara>Added k-nearest neighbors algorithm (KNN) for SP-GiST and B-tree (See <xref linkend="spgist">)</simpara>
     </listitem>
     <listitem>
-      <simpara>Added RUM index, based on GIN, as selistitemte module (See <xref linkend="rum">)</simpara>
+      <simpara>Added RUM index, based on GIN, as separate module (See <xref linkend="rum">)</simpara>
     </listitem>
     <listitem>
       <simpara>WAL size has been reduced on <command>CREATE INDEX</command> operation in the GiST, GIN, SP-GiST</simpara>
