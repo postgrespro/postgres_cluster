@@ -3082,6 +3082,7 @@ MtmReplicationStartedHook(struct PGLogicalStartedHookArgs* args)
 {
 	MtmLock(LW_EXCLUSIVE);	
 	MtmSenderStarted = 1;
+	elog(LOG, "Start %d senders and %d receivers from %d cluster status %s", Mtm->nSenders+1, Mtm->nReceivers, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
 	if (++Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->status == MTM_CONNECTED) { 
 		MtmSwitchClusterMode(MTM_ONLINE);
 	}
