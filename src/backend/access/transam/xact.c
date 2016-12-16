@@ -5634,7 +5634,7 @@ xact_redo(XLogReaderState *record)
 	else if (info == XLOG_XACT_PREPARE)
 	{
 		/*
-		 * If that transaction will not be commited by the end of recovery then we
+		 * If that transaction will not be committed by the end of recovery then we
 		 * will need 2PC file (the record contents is exactly the 2PC file) to be able
 		 * to commit that later.
 		 * For now store xid and pointers to that record in KnownPreparedList.

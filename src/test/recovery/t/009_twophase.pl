@@ -258,7 +258,7 @@ $node_master->psql('postgres', "commit prepared 'x'");
 
 
 ###############################################################################
-# Check for a lock confcict between prepared tx with DDL inside and replay of
+# Check for a lock conflict between prepared tx with DDL inside and replay of
 # XLOG_STANDBY_LOCK wal record.
 ###############################################################################
 
@@ -279,7 +279,7 @@ is($psql_out, '0', "Replay prepared transaction with DDL.");
 
 
 ###############################################################################
-# Check that replay will correctly set SUBTRANS and properly andvance nextXid
+# Check that replay will correctly set SUBTRANS and properly advance nextXid
 # so it won't conflict with savepoint xids.
 ###############################################################################
 
