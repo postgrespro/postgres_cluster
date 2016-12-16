@@ -369,6 +369,11 @@ static void MtmSendHeartbeat()
 				if (!MtmSendToNode(i, &msg, sizeof(msg))) { 
 					elog(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
 				} else {
+					/* Connectivity mask can be cleared by MtmWatchdog: in this case sockets[i] >= 0 */
+					if (BIT_CHECK(Mtm->connectivityMask, i)) { 
+						MtmDisconnect(i);
+						//MtmOnNodeConnect(i+1);
+					}
 					MTM_LOG4("Send heartbeat to node %d with timestamp %ld", i+1, now);    
 				}
 			} else { 
@@ -560,7 +565,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 				result = false;
 				break;
 			}
-			MTM_LOG3("Arbiter reestablish connection with node %d", node+1);
+			MTM_LOG1("Arbiter reestablish connection with node %d", node+1);
 		} else { 
 			result = true;
 			break;
@@ -718,7 +723,7 @@ static void MtmSender(Datum arg)
 		 * Use shared lock to improve locality,
 		 * because all other process modifying this list are using exclusive lock 
 		 */
-		MtmLock(LW_SHARED); 
+		SpinLockAcquire(&Mtm->queueSpinlock);
 
 		for (curr = Mtm->sendQueue; curr != NULL; curr = next) {
 			next = curr->next;
@@ -728,7 +733,7 @@ static void MtmSender(Datum arg)
 		}
 		Mtm->sendQueue = NULL;
 
-		MtmUnlock();
+		SpinLockRelease(&Mtm->queueSpinlock);
 
 		for (i = 0; i < Mtm->nAllNodes; i++) { 
 			if (txBuffer[i].used != 0) { 
@@ -892,6 +897,11 @@ static void MtmReceiver(Datum arg)
 					int node = msg->node;
 
 					Assert(node > 0 && node <= nNodes && node != MtmNodeId);
+
+					if (Mtm->nodes[node-1].connectivityMask != msg->connectivityMask) { 
+						elog(LOG, "Node %d changes it connectivity mask from %llx to %llx", node, (long long)Mtm->nodes[node-1].connectivityMask, (long long)msg->connectivityMask);
+					}
+
 					Mtm->nodes[node-1].oldestSnapshot = msg->oldestSnapshot;
 					Mtm->nodes[node-1].disabledNodeMask = msg->disabledNodeMask;
 					Mtm->nodes[node-1].connectivityMask = msg->connectivityMask;

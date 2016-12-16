@@ -708,6 +708,9 @@ process_remote_commit(StringInfo in)
 		default:
 			Assert(false);
 	}
+	if (Mtm->status == MTM_RECOVERY) { 
+		MTM_LOG1("Recover transaction %s flags=%d", gid,  flags);
+	}
 	MtmUpdateLsnMapping(MtmReplicationNodeId, end_lsn);
 	if (flags & PGLOGICAL_CAUGHT_UP) {
 		MtmRecoveryCompleted();

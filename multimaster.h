@@ -257,7 +257,7 @@ typedef struct
 {
 	MtmNodeStatus status;              /* Status of this node */
 	int recoverySlot;                  /* NodeId of recovery slot or 0 if none */
-	volatile slock_t spinlock;         /* spinlock used to protect access to hash table */
+	volatile slock_t queueSpinlock;    /* spinlock used to protect sender queue */
 	PGSemaphoreData sendSemaphore;     /* semaphore used to notify mtm-sender about new responses to coordinator */
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
@@ -273,7 +273,8 @@ typedef struct
 	int    inject2PCError;             /* Simulate error during 2PC commit at this node */
     int    nLiveNodes;                 /* Number of active nodes */
     int    nAllNodes;                  /* Total numbber of nodes */
-    int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when Mtm intialization is completed */
+    int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when intialization/recovery is completed) */
+    int    nSenders;                   /* Number of started WAL senders (used to determine moment when recovery) */
 	int    nLockers;                   /* Number of lockers */
 	int    nActiveTransactions;        /* Nunmber of active 2PC transactions */
 	int    nConfigChanges;             /* Number of cluster configuration changes */
