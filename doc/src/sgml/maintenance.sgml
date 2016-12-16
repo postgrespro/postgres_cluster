@@ -525,7 +525,7 @@
     below <varname>autovacuum_freeze_max_age</>, leaving enough gap so that
     a regularly scheduled <command>VACUUM</> or an autovacuum triggered by
     normal delete and update activity is run in that window.  Setting it too
-    close could lead to autovacuums to to shrink <literal>pg_clog</> and
+    close could lead to autovacuums to shrink <literal>pg_clog</> and
     <literal>pg_multixact</>, even though the table
     was recently vacuumed to reclaim space, whereas lower values lead to more
     frequent aggressive vacuuming.
