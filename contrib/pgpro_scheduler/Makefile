@@ -9,7 +9,7 @@ DATA = pgpro_scheduler--1.0.sql
 #SCRIPTS = bin/pgpro_scheduler
 #REGRESS	= install_pgpro_scheduler cron_string
 #REGRESS_OPTS = --create-role=robot --user=postgres
-CFLAGS=-ggdb -Og -g3 -fno-omit-frame-pointer
+#CFLAGS=-ggdb -Og -g3 -fno-omit-frame-pointer
 
 ifdef USE_PGXS
 	PG_CONFIG = pg_config

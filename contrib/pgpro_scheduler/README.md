@@ -1,538 +1,509 @@
-# pgpro_scheduler - расширение PostgreSQL для управления расписанием задач
+# pgpro_scheduler - PostgreSQL extension for job scheduling
 
-pgpro_scheduler это планировщик задач для СУБД PostgreSQL, который позволяет
-планировать выполнение задач в базе и контролировать их исполнение.
+pgpro_scheduler allows to schedule jobs execution and control their activity
+in PostgreSQL database.
 
-Задачи это наборы SQL команд. Расписание выполнения задач задается либо строкой
-cron, либо указанием конкретных дат запуска, либо JSON объектом, в котором
-указывается в какие дни часы и минуты задача должна быть запущена. Возможна
-комбинация методов описания расписания.
+The job is the set of SQL commands. Schedule table could be described as a
+crontab-like string or as a JSON object. It's possible to use combination
+of both methods for scheduling settings.
 
-Каждая задача имеет возможность для вычисления времени следующего своего
-запуска. Набор SQL команд в задаче может обрабатываться в одной транзакции или
-же каждая команда может использовать свою индивидуальную транзакцию.
-Имеется возможность задания SQL команды, которая будет выполняться в случае
-аварийного завершения транзакции.
+Each job could calculate its next start time. The set of SQL commands 
+could be executed in the same transaction or each command could be executed in
+individual one. It's possible to set SQL statement to be executed on 
+failure of main job transaction.
 
 ## Installation
 
-pgpro_scheduler это расширение PostgreSQL и не требует никаких специальных
-пререквизитов.
+pgpro_scheduler is a regular PostgreSQL extension and requires no prerequisites.
 
-Перед сборкой расширения из исходного кода убедитесь, что переменная
-окружения PATH содержит путь к команде `pg_config`. Так же убедитесь, 
-что у вас установлена версия PostgresSQL для разработчиков или PostgreSQL
-собран из исходного кода.
+Before build extension from the source make sure that the environment variable 
+`PATH` includes path to `pg_config` utility. Also make sure that you have 
+developer version of PostgreSQL installed or PostgrteSQL was built from 
+source code.
 
-Процедура установки выглядит следующим образом:
+Install extension as follows:
 
 	$ cd pgpro_scheduler
 	$ make USE_PGXS=1
 	$ sudo make USE_PGXS=1 install
-	$ psql <DBNAME> -c "CREATE EXTNESION pgpro_scheduler"
+	$ psql <DBNAME> -c "CREATE EXTENSION pgpro_scheduler"
 
-## Конфигурация
+## Configuration
 
-Расширение определяет ряд переменных в PostgreSQL (GUC), которые позволяют 
-управлять его конфигурацией.
+The extension defines a number of PostgreSQL variables (GUC). This variables 
+help to handle scheduler configuration.
 
-*	**schedule.enable** - двоичная переменная, которая определяет разрешено ли 
-	выполнение расширения. По умолчанию: false. 
-* 	**schedule.database** - строковая переменная, указывает с какими базам может
-	работать планировщик. Что бы указать несколько баз, нужно перечислить их
-	имена через запятую. По умолчанию - пустая строка.
-*	**schedule.scheme** - строковая переменная, указывает в какой `scheme` 
-	находятся служебные таблицы планировщика. Для изменения требуется
-	перезагрузка. Обычно ее не надо менять. Может использоваться для работы 
-	на реплике, если используется foreign data wrapper. По умолчанию - 
-	schedule.
-*	**schedule.nodename** - строковая переменная, содержит название узла.
-	По умолчанию - master. Если расширение используется на одной машине,
-	то переменная не имеет смысла.
-*	**schedule.max_workers** - целочисленная переменная, содержит максимальное
-	количество одновременно работающих задач для одной базы. По умолчанию - 2.
-*	**schedule.transaction_state** - строковая переменная, устанавливается
-	расширением в процессе работы. По умолчанию - undefined. Переменная
-	используется для определения статуса завершения транзакции при вычислении
-	следующего времени выполнения задачи. Возможные значения:
-	*	**success** - транзакция завершилась успешно
-	*	**failure** - транзакция завершилась аварийно
-	*	**running** - транзакция в процессе исполнения
-	*	**undefined** - транзакция не началась
-	
-	Последние два значения не должны попадать в процедуру определения следующего
-	значения. Это будет означать какую-то внутреннюю ошибку в работе
-	планировщика.
+*	**schedule.enabled** - boolean, if scheduler is enabled in this system.
+	Default value: false. 
+* 	**schedule.database** - text, list of database names on which scheduler 
+	is enabled. Database names should be separated by comma.
+	Default value: empty string.
+*	**schedule.scheme** - text, the `scheme` name where scheduler store its
+	tables and functions. To change this value restart required. Normally
+	you should not change this variable but it could be useful if you 
+	want run scheduled jobs on hot-standby database. So you can define 
+	foreign data wrapper on master system to wrap default scheduler schema
+	to another and use it on replica. Default value: schedule.
+*	**schedule.nodename** - text, node name of this instance. 
+	Default value is `master`. You should not change or use it if you run
+	single server configuration. But it is necessary to change this name 
+	if you run scheduler on hot-standby database.
+*	**schedule.max_workers** - integer, max number of simultaneously running
+	jobs for one database. Default value: 2.
+*	**schedule.transaction_state** - text, this is internal variable.
+	This variable contains state of executed job. This variable was designed 
+	to use with a next job start time calculation procedure.
+	Possible values are:
+	*	**success** - transaction has finished successfully 
+	*	**failure** - transaction has failed to finish
+	*	**running** - transaction is in progress
+	*	**undefined** - transaction has not started yet
 
-## Управление
+	The last two values normally should not appear inside the user procedure. If
+	you got them probably it indicates an internal scheduler error.
 
-Управление работой планировщика задач осуществляется через переменные 
-PostgreSQL, которые описаны в предыдущем разделе.
+## Management
 
-Например, у вас существует свежая инсталляция PostgreSQL с установленным 
-расширением планировщика. И вам требуется запустить планировщик на двух
-базах database1 и database2. При этом вы хотите что бы планировщик для 
-базы database1 мог исполнять 5 задач одновременно, а для базы database2 - 3.
+You could manage scheduler work by means of PostgreSQL variables described
+above.
 
-В `$DATADIR/postgresql.conf` должна присутствовать строка:
+For example, you have a fresh PostgreSQL installation with scheduler extension
+installed. You are going to use scheduler with databases called 'database1' and 
+'database2'. You want 'database1' be capable to run 5 jobs in parallel and
+'database2' - 3.
+
+Put the following string to your `postgresql.conf`:
 
 	shared_preload_libraries = 'pgpro_scheduler'
 
-Далее в `psql` введите следующие команды:
+Then start `psql` and execute the following commands:
 
-	# ALTER SYSTEM SET schedule.enable = true;
+	# ALTER SYSTEM SET schedule.enabled = true;
 	# ALTER SYSTEM SET schedule.database = 'database1,database2';
 	# ALTER DATABASE database1 SET schedule.max_workers = 5;
 	# ALTER DATABASE database2 SET schedule.max_workers = 3;
 	# SELECT pg_reload_conf();
 
-Если вам не нужны указания различных значений для разных баз данных, то все это 
-можно занести в конфигурационный файл PostgreSQL, и перечитать конфигурацию.
-Перезапуска не требуется.
+If you do not need the different values in `max_workers` you could store 
+the same in configuration file. Then ask server to reread configuration. There 
+is no need to restart.
 
-Пример записей в `$DATADIR/postgresql.conf`, если количество одновременно 
-исполняемых задач в обоих базах одинаково:
+Here is an example of `postgresql.conf`:
 
 	shared_preload_libraries = 'pgpro_scheduler'
-	schedule.enable = on
+	schedule.enabled = on
 	schedule.database = 'database1,database2'
 	schedule.max_workers = 5
 
-Планировщик задач работает с помощью Background Worker'ов. Поэтому должно быть 
-правильно установлено значение переменной `max_worker_processes`. Минимальное 
-значение переменной может быть расcчитано по следующей формуле:
+The scheduler is designed as background worker which dynamically starts 
+another bgworkers. That's why you should care about proper value in
+`max_worker_processes` variable. The minimal acceptable value 
+could be calculated using the following formula:
 
 > **N<sub>min</sub> = 1 + N<sub>databases</sub> + MAX_WORKERS<sub>1</sub> + ... + MAX_WORKERS<sub>n</sub>**
 
-Где:
+where:
 
-*	**N<sub>min</sub>** - это минимальное значение переменной, которое
-	требуется для работы конфигурации. Имейте в виду, что Background Workes'ы 
-	могут требоваться для работы других систем, например, параллельных запросов.
-*	**N<sub>databases</sub>** - это количество баз данных, для которых
-	запускается планировщик.
-*	**MAX_WORKERS<sub>n</sub>** - это значение переменной `schedule.max_workers`
-	в контексте каждой базы данных, для которой запускается планировщик.
+*	**N<sub>min</sub>** - the minimal acceptable amount of bgworkers in the
+	system. Consider the fact that other systems need to start background 
+	workers too. E.g. parallel queries. So you need to adjust the value to
+	their  needs either.
+*	**N<sub>databases</sub>** - the number of databases scheduler works with
+*	**MAX_WORKERS<sub>n</sub>** - the value of `schedule.max_workers`
+	variable in context of each database
 
-## SQL Схема
+## SQL Scheme
 
-При установке расширения создается SQL схема `schedule`. Все функции для
-работы с планировщиком и служебные таблицы создаются в ней.
+The extension uses SQL scheme `schedule` to store its internal tables and
+functions. Direct access to tables is forbidden. All manipulations should
+be performed by means of functions defined by extension.
 
-Прямой доступ к внутренним таблицам запрещен. Все управление осуществляется 
-набором SQL функций, о котором будет рассказано далее.
+## SQL Types 
 
-## SQL Типы 
-
-Планировщик определяет 2 SQL типа, которые он использует в качестве типов 
-возвращаемых значений для своих функций.
+The scheduler defines 2 SQL types and use them as types for return values 
+for some of its functions.
 
 ### cron_rec
 
-Тип используется для информации о задаче в таблице расписания.
+This type describes information about the job to be scheduled.
 
 	CREATE TYPE schedule.cron_rec AS(
-		id integer,             -- идентификатор задачи
-		node text,              -- имя узла, на котором она будет выполняться
-		name text,              -- имя задачи
-		comments text,          -- комментарий к задаче
-		rule jsonb,             -- правила построения расписания
-		commands text[],        -- sql команды, которые будут выполнены
-		run_as text,            -- имя пользователя, с которым будет выполняться
-								-- задача
-		owner text,             -- имя пользователя, который создал задачу
-		start_date timestamp,   -- нижняя граница временного периода, во время
-								-- которого допускается выполнение задачи,
-								-- граница считается открытой, если значение NULL
-		end_date timestamp,     -- верхняя граница временного периода, во время
-								-- которого допускается выполнение задачи,
-								-- граница считается открытой, если значение NULL
-		use_same_transaction boolean,   -- если true, то набор команд будет 
-										-- выполняться в одной транзакции
-		last_start_available interval,  -- максимальное время, на которое может 
-										-- быть отложен запуск задачи, если 
-										-- нет свободных workers для ее
-										-- выполнения во время по расписанию
-		max_instances int,		-- максимальное количество копий задачи, которые
-								-- могут быть запущенны одновременно
-		max_run_time interval,  -- максимальное время выполнения задачи
-		onrollback text,        -- SQL команда, которая будет выполнена в случае
-								-- аварийного завершения транзакции
-		next_time_statement text,   -- SQL команда, которая будет выполнена 
-									-- после завершения основного набора SQL 
-									-- команд, которая возвращает следующее
-									-- время выполнения задачи
-		active boolean,         -- true - если задача доступна для запуску по 
-								-- расписанию
-		broken boolean          -- true - задача имеет ошибки в конфигурации,
-								-- которые не позволяют ее выполнять далее
+		id integer,             -- job id
+		node text,              -- node name to be executed on
+		name text,              -- job name 
+		comments text,          -- job's comment
+		rule jsonb,             -- scheduling rules
+		commands text[],        -- sql commands to be executed
+		run_as text,            -- name of executor user
+		owner text,             -- name of owner user
+		start_date timestamp,   -- lower bound of execution window
+								-- NULL if unbound
+		end_date timestamp,     -- upper bound of execution window
+								-- NULL if unbound
+		use_same_transaction boolean,   -- if true the set of sql commands 
+										-- will be executed in same transaction
+		last_start_available interval,  -- max time till scheduled job 
+										-- can wait execution if all allowed 
+										-- workers are busy
+		max_instances int,		-- max number of simultaneous running instances
+								-- of this job
+		max_run_time interval,  -- max execution time
+		onrollback text,        -- SQL command to be performed on transaction
+								-- failure
+		next_time_statement text,   -- SQL command to execute on main 
+									-- transaction end to calculate next 
+									-- start time
+		active boolean,         -- true - job could be scheduled
+		broken boolean          -- true - job has errors in configutration
+								-- that prevent it's further execution
 	);
 
-###cron_job
+### cron_job
 
-Тип используется для информации о конкретном исполнении задачи.
+Type describes information about job scheduled execution
 
 	CREATE TYPE schedule.cron_job AS(
-		cron integer,           -- идентификатор задачи
-		node text,              -- имя узла, на котором она выполняться
-		scheduled_at timestamp, -- запланированное время выполнения
-		name text,              -- имя задачи
-		comments text,          -- комментарий к задаче
-		commands text[],        -- sql команды для выполнения
-		run_as text,            -- имя пользователя, с правами которого будет
-								-- выполнен набор команд
-		owner text,             -- имя пользователя, создавшего задачу
-		use_same_transaction boolean,	-- если true, то набор команд 
-								-- выполняется в одной транзакции
-		started timestamp,      -- время, когда задача была запущена
-		last_start_available timestamp,	-- время, до которого задача должна
-								-- быть запущена
-		finished timestamp,     -- время, когда задача была завершена
-		max_run_time interval,  -- время, за которое задача должна выполнится,
-								-- иначе она будет аварийно остановлена
-		max_instances int,		-- количество возможных одновременных сущностей
-								-- задачи, которые могут работать одновременно
-		onrollback text,        -- SQL, который будет выполнен при аварийном 
-								-- завершении транзакции
-		next_time_statement text,	-- SQL для вычисления следующего времени запуска
-		status text,			-- статус задачи: working, done, error 
-		message text			-- сообщение, это может быть сообщение об
-								-- ошибке, так и какая-то служебная информация
+		cron integer,           -- job id
+		node text,              -- node name to be executed on
+		scheduled_at timestamp, -- scheduled execution time
+		name text,              -- job name
+		comments text,          -- job comments
+		commands text[],        -- sql commands to be executed
+		run_as text,            -- name of executor user
+		owner text,             -- name of owner user
+		use_same_transaction boolean,	-- if true the set of sql commands
+										-- will be executed in same transaction
+		started timestamp,      -- timestamp of this job execution started
+		last_start_available timestamp,	-- time untill job must be started
+		finished timestamp,     -- timestamp of this job execution finished
+		max_run_time interval,  -- max execution time
+		max_instances int,		-- the number of instances run at the same time
+		onrollback text,        -- statement on ROLLBACK
+		next_time_statement text,	-- statement to calculate next start time
+		status text,			-- status of this task: working, done, error 
+		message text			-- error message
 	);
 
-## Функции управления
+## Functions
 
 ### schedule.create_job(cron text, sql text, node text)
 
-Создает задачу и делает ее активной.
+Creates job and sets it active.
 
-Агрументы:
+Arguments:
 
-* **cron** - crontab-like строка для задания расписания выполнения
-* **sql** - строка, SQL команда для выполнения
-* **node** - название узла, опционально
+* **cron** - crontab-like string to set schedule 
+* **sql** - SQL statement to execute
+* **node** - node name, optional
 
-Возвращает идентификатор созданной задачи.
+Returns id of created job.
 
 ### schedule.create_job(cron text, sqls text[], node text)
 
-Создает задачу и делает ее активной.
+Creates job and sets it active.
 
-Агрументы:
+Arguments:
 
-* **cron** - crontab-like строка для задания расписания выполнения
-* **sqls** - набор SQL команд для выполнения в виде массива строк
-* **node** - название узла, опционально
+* **cron** - crontab-like string to set schedule 
+* **sqls** - set of SQL statements to be executed
+* **node** - node name, optional
 
-Возвращает идентификатор созданной задачи.
+Returns id of created job.
 
 ### schedule.create_job(date timestamp with time zone, sql text, node text)
 
-Создает задачу и делает ее активной.
+Creates job and sets it active.
 
-Агрументы:
+Arguments:
 
-* **date** - время исполнения задачи
-* **sql** - строка, SQL команда для выполнения
-* **node** - название узла, опционально
+* **date** - exact date of execution
+* **sql** - SQL statement to execute
+* **node** - node name, optional
 
-Возвращает идентификатор созданной задачи.
+Returns id of created job.
 
 ### schedule.create_job(date timestamp with time zone, sqls text[], node text)
 
-Создает задачу и делает ее активной.
+Creates job and sets it active.
 
-Агрументы:
+Arguments:
 
-* **date** - время исполнения задачи
-* **sqls** - набор SQL команд для выполнения в виде массива строк
-* **node** - название узла, опционально
+* **date** - exec date of execution
+* **sqls** - set of SQL statements to be executed
+* **node** - node name, optional
 
-Возвращает идентификатор созданной задачи.
+Returns id of created job.
 
 ### schedule.create_job(dates timestamp with time zone[], sql text, node text)
 
-Создает задачу и делает ее активной.
+Creates job and sets it active.
 
-Агрументы:
+Arguments:
 
-* **dates** - набор дат для выполнения команды в виде массива
-* **sql** - строка, SQL команда для выполнения
-* **node** - название узла, опционально
+* **dates** - set of execution dates
+* **sql** - SQL statement to execute
+* **node** - node name, optional
 
-Возвращает идентификатор созданной задачи.
+Returns id of created job.
 
 ### schedule.create_job(dates timestamp with time zone[], sqls text[], node text)
 
-Создает задачу и делает ее активной.
+Creates job and sets it active.
 
-Агрументы:
+Arguments:
 
-* **dates** - набор дат для выполнения команды в виде массива
-* **sqls** - набор SQL команд для выполнения в виде массива строк
-* **node** - название узла, опционально
+* **dates** - set of execution dates
+* **sqls** - set of SQL statements to be executed
+* **node** - node name, optional
 
-Возвращает идентификатор созданной задачи.
+Returns id of created job.
 
 ### schedule.create_job(data jsonb) 
 
-Создает задачу и делает ее активной.
+Creates job and sets it active.
 
-Единтвенный принимаемый параметр является объектом JSONB, который содержит
-информацию о создаваемой задаче.
+The only argument is a JSONB object with information about job. 
 
-JSONB объект может содержать следующие ключи, не все они являются обязательными:
+The object could contains the following keys, some of them could be omitted:
 
-*	**name** - имя задачи;
-*	**node** - имя узла, на котором будет выполняться задача;
-*	**comments** - комментарии к задаче;
-*	**cron** - строка cron-like, для описания расписания выполнения;
-*	**rule** - расписание в виде JSONB объекта (смотри далее);
-*	**command** - SQL команда для выполнения;
-*	**commands** - набор SQL команд для выполнения в виде массива;
-*	**run\_as** - пользователь, с правами которого будет выполняться задача
-*	**start\_date** - начало временного периода, во время которого возможен 
-	запуск выполнения задачи, если не указано, то нижняя граница не определена;
-*	**end\_date** - окончание временного периода, во время которого возможен
-	запуск выполнения задачи, если не указано, то верхняя граница не определена;
-*	**date** - конкретная дата запуска задачи;
-*	**dates** - набор дат запуска задачи;
-*	**use\_same\_transaction** - устанавливает будет ли набор команд выполняться
-	в рамках одной транзакции. По умолчанию: false; 
-*	**last\_start\_available** - на какое количество времени может быть отложено
-	выполнение задачи, если в момент запуска по расписанию уже запущено
-	максимально возможное количество задач. Время задается в формате 
-	типа `interval`. Например, '00:02:34' - две минуты тридцать четыре секунды.
-	Если время не определено, то ожидание будет бесконечным. По умолчанию 
-	время не определено;
-*	**max\_run\_time** - определяет максимально возможное время выполнения 
-	задачи. Время задается в формате типа `interval`. Если время не определено,
-	то время исполнения не ограничено. По умолчанию время не определено;
-*	**onrollback** - SQL команда, которая будет выполнена, если транзакция 
-	завершится аварийно. По умолчанию неопределенна;
-*	**next\_time\_statement** - SQL команда, которая будет выполнена для
-	определения следующего времени запуска задачи.
+*	**name** - job name;
+*	**node** - node name;
+*	**comments** - job comments;
+*	**cron** - cron-like string for scheduling settings;
+*	**rule** - scheduling settings as JSONB object (see description later);
+*	**command** - SQL statement to be executed;
+*	**commands** - a set of SQL statements to be executed as an array;
+*	**run\_as** - user to execute command(s);
+*	**start\_date** -  begin of period while command can be executed,
+	could be NULL;
+*	**end\_date** - end of period while command can be executed,
+	could be NULL;
+*	**date** - exact date when command will be executed;
+*	**dates** - set of exact dates when command will be executed;
+*	**use\_same\_transaction** - if set of commands will be executed within
+	the same transaction. Default: false;
+*	**last\_start\_available** - for how long command execution could be
+	postponed if maximum number of allowed workers reached at the scheduled 
+	moment. Time set in format of `interval`. E.g. '00:02:34' - it is 
+	possible to wait for 2 minutes 34 seconds. If time is NULL or not set 
+	waits forever. Default: NULL;
+*	**max\_run\_time** - for how long scheduled job can be executed. 
+	Format: `interval`. If NULL or not set - there is no time limits.
+	Default: NULL;
+*	**onrollback** - SQL statement to be executed on ROLLBACK if main 
+	transaction failure. Default: not defined;
+*	**next\_time\_statement** - SQL statement to calculate next start time.
 
-Правила для вычисления расписания выполнения задачи могут быть заданы в виде 
-строки cron (ключ `cron`), а так же в виде JSONВ объекта (ключ `rule`).
+The rules of scheduling could be set as cron-like string (key `cron`) and 
+also as JSONB object (key `rule`).
 
-Данный объект может содержать следующие поля:
+This object contains the following keys:
 
-* **minutes** - минуты, целочисленный массив со значениями в диапазоне 0-59
-* **hours** -  часы, целочисленный массив со значениями в диапазоне 0-23
-* **days** - дни месяца, целочисленный массив со значениями в диапазоне 1-31
-* **months** - месяцы, целочисленный массив со значениями в диапазоне 1-12
-* **wdays** - дни недели, целочисленный массив со значениями в диапазоне 0-6,
-	где 0 - Воскресенье
-* **onstart** - целое число, со значением 0 или 1, если 1, то задает выполнение
-	задачи на старте планировщика
+* **minutes** - minutes, array of integers in range 0-59
+* **hours** -  hours, array of integers in range 0-23
+* **days** - days of month, array of integers in range 1-31
+* **months** - months, array of integers in range 1-12
+* **wdays** - day of week, array of integers in range 0-6 where 0 - is Sunday
+* **onstart** - integer with value  0 or 1, if value equals to 1 job will be
+	executed on scheduler start only once
 
-Так же расписание может быть задано на конкретную дату или на набор конкретных
-дат. Для этого используйте ключи `date` или `dates` соответственно.
+Also job could be scheduled on exact date or set of dates. Use keys `date` 
+and `dates` keys accordingly.
 
-Все вышеописанные методы задания расписания могут быть скомбинированы между 
-собой. Но использование хотя бы одного из них обязательно.
+All scheduling methods could be combined but the use of at least one of them is
+mandatory.
 
-Ключ `next_time_statement` используется для того, что бы вычислить следующее 
-время выполнения задачи. Если он определен, то первое время выполнения задачи
-будет рассчитано с помощью методов приведенных выше, а последующие запуски будут
-поставлены в расписание в то время, которое вернет SQL команда, указанная 
-в данном ключе. Команда должна возвращать запись, в первом поле которого 
-должно содержаться значение следующего времени запуска типа `timestamp with time
-zone`. Если значение будет другого типа или выполнение данного SQL вызовет
-ошибку, то задача будет помечена как сломанная, и дальнейшее ее выполнение 
-будет запрещено. 
+Key `next_time_statement` may contain SQL statement to be executed 
+after the main transaction to calculate next start time. If key is defined 
+the first start time will be calculated by methods described above but 
+successive start times will be derived from this statement. The statement 
+must return record with the first field containing value of type
+`timestamp with time zone`. If returning value be of the different type or
+statement execution produce an error the job will be marked as broken and further
+execution will be prohibited. 
 
-SQL для вычисления следующего времени запускается в случае удачного и не
-удачного завершения транзакции. О том как завершилась транзакция можно узнать 
-из значения переменной PostgreSQL `schedule.transaction_state`.
+This statement will be executed in spite of main transaction execution state.
+It's possible to get state of main transaction form postgres variable
+`schedule.transaction_state`.
 
-Значение переменной может быть:
+The possible values are:
 
-* **success** - транзакция завершилась успешно
-* **failure** - транзакция завершилась с ошибкой
-* **running** - транзакция в процессе выполнения
-* **undefined** - неопределенна 
+* **success** - transaction is successful
+* **failure** - transaction is failed
+* **running** - transaction is in progress
+* **undefined** - undefined - transaction has not been started yet
 
-Последние два значения не должны появляться внутри выполнения
-`next_time_statement`. Если они появились там, то это скорее всего означает 
-какую-то внутреннюю ошибку планировщика.
+The last two values should not appear as a value of the key
+`next_time_statement` within user procedure.
 
-Сами SQL команды задаются либо ключом `command`, либо ключом `commands`. 
-Первый это одна SQL команда, второй набор команд. На самом деле в ключ 
-`command` можно передать несколько команд, разделенных точкой с запятой. Тогда
-они все исполнятся в одной транзакции. Предпочтительно для набора команд
-использовать ключ `commands`, так как в сочетании с ключом
-`use_same_transaction`, вы можете задавать исполнение команд в одной транзакции
-или выполнять каждую команду в отдельной транзакции, что позволит сохранить 
-результат успешно выполненных команд, если последующая завершается с 
-ошибкой. Так же в сообщении об ошибке будет более точная информация.
+SQL statement to be executed could be set in `command` or `commands` key.
+The first one sets the single statement, the second - the set of statements.
+In fact the first key could contains the set of commands in one string 
+divided by semicolon. In this case they all be executed in single transaction
+in spite of the value `use_same_transaction`. So for set of the statements 
+is better to use key `commands` key as you get more control on execution.
 
-Функция возвращает идентификатор созданной задачи.
+Returns id of created job.
 
 ### schedule.set_job_attributes(job_id integer, data jsonb)
 
-Данная функция позволяет редактировать свойства уже созданной задачи.
+Edits properties of existed job
 
-Аргументы:
+Arguments:
 
-*	**job_id** - идентификатор задачи
-*	**data** - JSONB объект, описывающий изменяемые свойства. Описание ключей и
-	их структуру вы можете найти в описании функции `schedule.create_job`.
+*	**job_id** - job id
+*	**data** - JSONB object with properties to be edited. The description
+	of keys and their structure could be found in function 
+	`schedule.create_job` description.
 
-Функция возвращает значение типа boolean - true - в случае удачи, false - 
-в случае, если не удалось изменить свойства.
+The function returns boolean value:
 
-Пользователю, если он не суперпользователь, позволено менять свойства только
-тех задач, владельцем которых он является.
+* **true** - properties changed successfully
+* **false** - properties unchanged
+
+The user can edit properties of jobs it owns unless the user is superuser.
 
 ### schedule.set_job_attribute(job_id integer, name text, value text || anyarray)
 
-Функция редактирует какое-то одно конкретное свойство существующей задачи.
+Edits one property of existed job.
 
-Аргументы:
+Arguments:
 
-*	**job_id** - идентификатор задачи
-*	**name** - название свойства
-*	**value** - значение свойства
+*	**job_id** - job id
+*	**name** - property name
+*	**value** - property value
 
-Полный список свойств вы можете найти в описании функции `schedule.create_job`.
-Значения некоторых свойств являются массивами, в этом случае вы можете 
-передавать аргумент **value** как массив. Если свойство не массив, а значение
-передано как массив, возникнет ошибка.
+The full list of the properties could be found in `schedule.create_job` 
+function description. Some values are of array types. Their **value** could 
+be passed as an array, but if the value could not be an array the exception
+will be raised.
 
-Функция возвращает двоичное значение, true, если изменение успешное, false -
-в случае неуспеха.
+The function returns boolean value, true on success and false on failure.
 
-Пользователю, если он не суперпользователь, позволено менять свойства только
-тех задач, владельцем которых он является.
+The user can edit properties of jobs it owns unless the user is superuser.
 
 ### schedule.deactivate_job(job_id integer)
 
-Функция деактивирует задачу и приостанавливает ее последующее выполнение.
+Deactivates job and suspends its further scheduling and execution.
 
-Аргументы:
+Arguments:
 
-*	**job_id** - идентификатор задачи
+*	**job_id** - job id
 
-Возвращает true в случае успеха.
+Returns true on success, false on failure.
 
 ### schedule.activate_job(integer) 
 
-Функция активирует задачу. После чего задача начинает выполняться по расписанию.
+Activates job and starts its scheduling and execution.
 
-Аргументы:
+Arguments:
 
-*	**job_id** - идентификатор задачи
+*	**job_id** - job id
 
-Возвращает true в случае успеха.
+Returns true on success, false on failure.
 
 
 ### schedule.drop_job(jobId integer)
 
-Функция удаляет задачу. 
+Deletes job.
 
-Аргументы:
+Arguments:
 
-*	**job_id** - идентификатор задачи
+*	**job_id** - job id
 
-Возвращает true в случае успеха.
+Returns true on success, false on failure.
 
 ### schedule.get_job(job_id integer)
 
-Функция возвращает информацию о задаче.
+Retrieves information about the job.
 
-Аргументы:
+Arguments:
 
-*	**job_id** - идентификатор задачи
+*	**job_id** - job id
 
-Возвращает информацию о задаче в виде записи типа `cron_rec`. Описание вы 
-можете найти в разделе **SQL типы**.
+The return value is of type `cron_rec`. Description of type could be found 
+in  **SQL types** section.
 
 ### schedule.get_user_owned_cron(username text)
 
-Функция возвращает список задач, принадлежащих пользователю.
+Retrieves job list owned by user.
 
-Аргументы:
+Arguments:
 
-*	**username** - имя пользователя, опционально 
+*	**username** - user name, optional
 
-Возвращает набор записей типа `cron_rec`, которые принадлежат пользователю,
-указанному в аргументах. Если пользователь не указан, то возвращаются 
-задачи, принадлежащие пользователю сессии.
+Returns the set of records of type `cron_rec`. Records contain information
+about jobs owned by user. If user name is omitted the session user name is 
+used.
 
-Просматривать задачи, принадлежащие другим пользователям, может только 
-суперпользователь.
+Retrieve jobs owned by another user is allowed only to superuser.
 
-Описание типа `cron_rec` смотрие в разделе **SQL типы**.
+`cron_rec` type description can be found in  **SQL type** section.
 
 ### schedule.get_user_cron(username text)
 
-Функция возвращает список задач, которые будут выполнены с правами пользователя.
+Retrieves job list executed as user.
 
-Аргументы:
+Arguments:
 
-*	**username** - имя пользователя, опционально 
+*	**username** - user name, optional
 
-Возвращает набор записей типа `cron_rec`, которые описывают задачи, которые 
-будут выполняться с правами пользователя, указанного в аргументах.
-Если пользователь не указан, то то будет использоваться имя пользователя сессии.
+Returns the set of records of type `cron_rec`. Records contain information
+about jobs executed as user. If user name is not specified session user is 
+used.
 
-Просматривать задачи, исполняемые другими пользователями,  может только 
-суперпользователь.
+Retrieve jobs executed as another user is allowed only to superuser.
 
-Описание типа `cron_rec` смотрите в разделе **SQL типы**.
+Type `cron_rec` description can be found in  **SQL type** section.
 
 ### schedule.get_user_active_jobs(username text)
 
-Функция возвращает список задач, которые исполняются в данный момент с правами
-пользователя переданного в аргументах.
+Returns jobs list executed in this very moment as user passed in arguments.
 
-Аргументы:
+Arguments:
 
-*	**username** - имя пользователя, опционально 
+*	**username** - user name, optional
 
-Если не указано имя пользователя, то берется имя пользователя сессии. Чужие з
-задачи может просматривать только суперпользователь.
+If user name is omitted the session user name used. To list jobs executed 
+as another user allowed only to superuser.
 
-Задачи возвращаются в виде набора записей типа `cron_job`. Описание типа вы
-можете найти в разделе **SQL типы**.
+Return value is set of records of type `cron_job`.
+See the type description in **SQL types** section.
 
 ### schedule.get_active_jobs()
 
-Функция возвращает список всех задач, которые исполняются в данный момент.
-Может быть выполнена только пользователем с правами суперпользователя.
+Returns list of jobs being executed at that very moment.
+The function call allowed only to superuser.
 
-Задачи возвращаются в виде набора записей типа `cron_job`. Описание типа вы
-можете найти в разделе **SQL типы**.
+Return value is set of records of type `cron_job`.
+See the type description in **SQL types** section.
 
 ### schedule.get_log()
 
-Функция возвращает список всех выполненых задач.
-Может быть выполнена только пользователем с правами суперпользователя.
+Returns list of all completed jobs. 
+The function call allowed only to superuser.
 
-Задачи возвращаются в виде набора записей типа `cron_job`. Описание типа вы
-можете найти в разделе **SQL типы**.
+Return value is set of records of type `cron_job`.
+See the type description in **SQL types** section.
 
 ### schedule.get_user_log(username text) 
 
-Функция возвращает список всех выполненых задач, которые выполнялись с правами
-пользователя, переданного в аргументах.
+Returns list of completed jobs executed as user passed in arguments.
 
-Аргументы:
+Arguments:
 
-*	**username** - имя пользователя, опционально 
+*	**username** - user name, optional
 
-Если не указано имя пользователя, то используется имя пользователя сессии.
-Чужие задачи может просматривать только суперпользователь.
+If username is omitted the session user name used.
+Jobs executed as another users are accessible only to superuser.
 
-Задачи возвращаются в виде набора записей типа `cron_job`. Описание типа вы
-можете найти в разделе **SQL типы**.
+Return value is set of records of type `cron_job`.
+See the type description in **SQL types** section.
 
 ### schedule.clean_log()
 
-Удаляет все записи о выполненных задачах. Может быть выполнена только с правами
-суперпользователя.
+Delete all records with information about completed jobs.
+Can be called by superuser only.
 
-Возвращает количество удаленных записей
+Returns the number of records deleted.
 
