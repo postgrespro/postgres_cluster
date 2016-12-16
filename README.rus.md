@@ -36,7 +36,7 @@ pgpro_scheduler это расширение PostgreSQL и не требует н
 Расширение определяет ряд переменных в PostgreSQL (GUC), которые позволяют 
 управлять его конфигурацией.
 
-*	**schedule.enable** - двоичная переменная, которая определяет разрешено ли 
+*	**schedule.enabled** - двоичная переменная, которая определяет разрешено ли 
 	выполнение расширения. По умолчанию: false. 
 * 	**schedule.database** - строковая переменная, указывает с какими базам может
 	работать планировщик. Что бы указать несколько баз, нужно перечислить их
@@ -80,7 +80,7 @@ PostgreSQL, которые описаны в предыдущем разделе
 
 Далее в `psql` введите следующие команды:
 
-	# ALTER SYSTEM SET schedule.enable = true;
+	# ALTER SYSTEM SET schedule.enabled = true;
 	# ALTER SYSTEM SET schedule.database = 'database1,database2';
 	# ALTER DATABASE database1 SET schedule.max_workers = 5;
 	# ALTER DATABASE database2 SET schedule.max_workers = 3;
@@ -94,7 +94,7 @@ PostgreSQL, которые описаны в предыдущем разделе
 исполняемых задач в обоих базах одинаково:
 
 	shared_preload_libraries = 'pgpro_scheduler'
-	schedule.enable = on
+	schedule.enabled = on
 	schedule.database = 'database1,database2'
 	schedule.max_workers = 5
 

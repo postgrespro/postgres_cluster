@@ -33,7 +33,7 @@ Install extension as follows:
 The extension defines a number of PostgreSQL variables (GUC). This variables 
 help to handle scheduler configuration.
 
-*	**schedule.enable** - boolean, if scheduler is enabled in this system.
+*	**schedule.enabled** - boolean, if scheduler is enabled in this system.
 	Default value: false. 
 * 	**schedule.database** - text, list of database names on which scheduler 
 	is enabled. Database names should be separated by comma.
@@ -78,7 +78,7 @@ Put the following string to your `postgresql.conf`:
 
 Then start `psql` and execute the following commands:
 
-	# ALTER SYSTEM SET schedule.enable = true;
+	# ALTER SYSTEM SET schedule.enabled = true;
 	# ALTER SYSTEM SET schedule.database = 'database1,database2';
 	# ALTER DATABASE database1 SET schedule.max_workers = 5;
 	# ALTER DATABASE database2 SET schedule.max_workers = 3;
@@ -91,7 +91,7 @@ is no need to restart.
 Here is an example of `postgresql.conf`:
 
 	shared_preload_libraries = 'pgpro_scheduler'
-	schedule.enable = on
+	schedule.enabled = on
 	schedule.database = 'database1,database2'
 	schedule.max_workers = 5
 

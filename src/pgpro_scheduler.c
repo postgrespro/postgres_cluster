@@ -399,6 +399,12 @@ pg_scheduler_startup(void)
 
 void _PG_init(void)
 {
+	if(!process_shared_preload_libraries_in_progress)
+	{
+		elog(ERROR, "pgpro_scheduler module must be initialized by Postmaster. "
+					"Put the following line to configuration file: "
+					"shared_preload_libraries='pgpro_scheduler'");
+	}
 	DefineCustomStringVariable(
 		"schedule.schema",
 		"The name of scheduler schema",
