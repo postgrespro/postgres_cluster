@@ -192,9 +192,9 @@ static bool twophaseExitRegistered = false;
  *
  * Replay of twophase records happens by the following rules:
  *		* On PREPARE redo KnownPreparedAdd() is called to add that transaction to
- *		  KnownPreparedList and no more actions taken.
- *		* On checkpoint we iterate through KnownPreparedList, move all prepare
- *		  records that behind redo_horizon to file and deleting items from list.
+ *		  KnownPreparedList and no more actions are taken.
+ *		* On checkpoint redo we iterate through KnownPreparedList and move all prepare
+ *		  records that behind redo_horizon to files and deleting them from list.
  *		* On COMMIT/ABORT we delete file or entry in KnownPreparedList.
  *		* At the end of recovery we move all known prepared transactions to disk
  *		  to allow RecoverPreparedTransactions/StandbyRecoverPreparedTransactions
@@ -1270,9 +1270,9 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
  * Reads 2PC data from xlog. During checkpoint this data will be moved to
  * twophase files and ReadTwoPhaseFile should be used instead.
  *
- * Note clearly that this function accesses WAL during normal operation, similarly
- * to the way WALSender or Logical Decoding would do. It does not run during
- * crash recovery or standby processing.
+ * Note clearly that this function can access WAL during normal operation, similarly
+ * to the way WALSender or Logical Decoding would do.
+ *
  */
 static void
 XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
@@ -1280,8 +1280,6 @@ XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
 	XLogRecord *record;
 	XLogReaderState *xlogreader;
 	char	   *errormsg;
-
-	// Assert(!RecoveryInProgress());
 
 	xlogreader = XLogReaderAllocate(&read_local_xlog_page, NULL);
 	if (!xlogreader)
@@ -1683,27 +1681,6 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 }
 
 /*
- * KnownPreparedAdd.
- *
- * Store correspondence of start/end lsn and xid in KnownPreparedList.
- * This is called during redo of prepare record to have list of prepared
- * transactions that aren't yet moved to 2PC files by the end of recovery.
- */
-void
-KnownPreparedAdd(XLogReaderState *record)
-{
-	KnownPreparedXact *xact;
-	TwoPhaseFileHeader *hdr = (TwoPhaseFileHeader *) XLogRecGetData(record);
-
-	xact = (KnownPreparedXact *) palloc(sizeof(KnownPreparedXact));
-	xact->xid = hdr->xid;
-	xact->prepare_start_lsn = record->ReadRecPtr;
-	xact->prepare_end_lsn = record->EndRecPtr;
-
-	dlist_push_tail(&KnownPreparedList, &xact->list_node);
-}
-
-/*
  * PrescanPreparedTransactions
  *
  * Scan the pg_twophase directory and determine the range of valid XIDs
@@ -1741,6 +1718,13 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	int			nxids = 0;
 	int			allocsize = 0;
 
+	/*
+	 * Move prepared transactions from KnownPreparedList to files, if any.
+	 * It is possible to skip that step and teach subsequent code about
+	 * KnownPreparedList, but whole PrescanPreparedTransactions() happens
+	 * once during end of recovery or promote, so probably it isn't worth
+	 * complications.
+	 */
 	KnownPreparedRecreateFiles(InvalidXLogRecPtr);
 
 	cldir = AllocateDir(TWOPHASE_DIR);
@@ -2216,9 +2200,32 @@ RecordTransactionAbortPrepared(TransactionId xid,
 }
 
 /*
+ * KnownPreparedAdd.
+ *
+ * Store correspondence of start/end lsn and xid in KnownPreparedList.
+ * This is called during redo of prepare record to have list of prepared
+ * transactions that aren't yet moved to 2PC files by the end of recovery.
+ */
+void
+KnownPreparedAdd(XLogReaderState *record)
+{
+	KnownPreparedXact *xact;
+	TwoPhaseFileHeader *hdr = (TwoPhaseFileHeader *) XLogRecGetData(record);
+
+	Assert(RecoveryInProgress());
+
+	xact = (KnownPreparedXact *) palloc(sizeof(KnownPreparedXact));
+	xact->xid = hdr->xid;
+	xact->prepare_start_lsn = record->ReadRecPtr;
+	xact->prepare_end_lsn = record->EndRecPtr;
+
+	dlist_push_tail(&KnownPreparedList, &xact->list_node);
+}
+
+/*
  * KnownPreparedRemoveByXid
  *
- * Forget about prepared transaction. Called durind commit/abort.
+ * Forget about prepared transaction. Called during commit/abort redo.
  */
 void
 KnownPreparedRemoveByXid(TransactionId xid)
@@ -2254,7 +2261,7 @@ KnownPreparedRemoveByXid(TransactionId xid)
 /*
  * KnownPreparedRecreateFiles
  *
- * Moves prepare records from WAL to files. Callend during checkpoint replay
+ * Moves prepare records from WAL to files. Called during checkpoint replay
  * or PrescanPreparedTransactions.
  *
  * redo_horizon = InvalidXLogRecPtr indicates that all transactions from
