@@ -451,8 +451,10 @@ DecodingContextFindStartpoint(LogicalDecodingContext *ctx)
 	ctx->slot->data.confirmed_flush = ctx->reader->EndRecPtr;
 
 	old_context = MemoryContextSwitchTo(ctx->context);
-	if (ctx->callbacks.started_cb != NULL)
+	if (ctx->callbacks.started_cb != NULL) {
+		elog(LOG, "Call started callback");
 		started_cb_wrapper(ctx);
+	}
 	MemoryContextSwitchTo(old_context);
 }
 
@@ -577,7 +579,7 @@ started_cb_wrapper(LogicalDecodingContext *ctx)
 
 	/* Push callback + info on the error context stack */
 	state.ctx = ctx;
-	state.callback_name = "startup";
+	state.callback_name = "started";
 	state.report_location = InvalidXLogRecPtr;
 	errcallback.callback = output_plugin_error_callback;
 	errcallback.arg = (void *) &state;
