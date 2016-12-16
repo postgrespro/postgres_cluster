@@ -96,14 +96,12 @@ load_hooks(PGLogicalOutputData *data)
 
 		elog(DEBUG3, "pglogical_output: Loaded hooks from function %u. Hooks are: \n"
 				"\tstartup_hook: %p\n"
-				"\tstarted_hook: %p\n"
 				"\tshutdown_hook: %p\n"
 				"\trow_filter_hook: %p\n"
 				"\ttxn_filter_hook: %p\n"
 				"\thooks_private_data: %p\n",
 				hooks_func,
 				data->hooks.startup_hook,
-				data->hooks.started_hook,
 				data->hooks.shutdown_hook,
 				data->hooks.row_filter_hook,
 				data->hooks.txn_filter_hook,
@@ -120,21 +118,6 @@ load_hooks(PGLogicalOutputData *data)
 		CommitTransactionCommand();
 }
 
-void
-call_started_hook(PGLogicalOutputData *data)
-{
-	struct PGLogicalStartedHookArgs args;
-	MemoryContext old_ctxt;
-
-	if (data->hooks.started_hook != NULL)
-	{
-		args.private_data = data->hooks.hooks_private_data;
-		old_ctxt = MemoryContextSwitchTo(data->hooks_mctxt);
-		(void) (*data->hooks.started_hook)(&args);
-		MemoryContextSwitchTo(old_ctxt);
-	}
-}
-	
 void
 call_startup_hook(PGLogicalOutputData *data, List *plugin_params)
 {
