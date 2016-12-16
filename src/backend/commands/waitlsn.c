@@ -146,7 +146,7 @@ WaitLSNShmemInit(void)
 void
 WaitLSNSetLatch(void)
 {
-	uint i;
+	uint32 i;
 	for (i = 0; i <= state->backend_maxid; i++)
 	{
 		SpinLockAcquire(&state->l_arr[i].slock);
