@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS result7;
 -- CREATE SCHEMA
 
 CREATE EXTENSION pgpro_scheduler;
+CREATE ROLE hobot;
 
 CREATE TABLE result1 (
 	time_mark	timestamp,
@@ -46,19 +47,19 @@ CREATE TABLE result7 (
 	status		text
 );
 
-GRANT SELECT ON result1 TO robot;
-GRANT SELECT ON result2 TO robot;
-GRANT SELECT ON result3 TO robot;
-GRANT SELECT ON result5 TO robot;
-GRANT SELECT ON result6 TO robot;
-GRANT SELECT ON result7 TO robot;
+GRANT SELECT ON result1 TO hobot;
+GRANT SELECT ON result2 TO hobot;
+GRANT SELECT ON result3 TO hobot;
+GRANT SELECT ON result5 TO hobot;
+GRANT SELECT ON result6 TO hobot;
+GRANT SELECT ON result7 TO hobot;
 
-GRANT INSERT ON result1 TO robot;
-GRANT INSERT ON result2 TO robot;
-GRANT INSERT ON result3 TO robot;
-GRANT INSERT ON result5 TO robot;
-GRANT INSERT ON result6 TO robot;
-GRANT INSERT ON result7 TO robot;
+GRANT INSERT ON result1 TO hobot;
+GRANT INSERT ON result2 TO hobot;
+GRANT INSERT ON result3 TO hobot;
+GRANT INSERT ON result5 TO hobot;
+GRANT INSERT ON result6 TO hobot;
+GRANT INSERT ON result7 TO hobot;
 
 -- CREATE HELPER FUNCTIONS
 
@@ -99,7 +100,7 @@ SELECT schedule.create_job(
 		"name": "Test #1: every minute",
 		"cron": "* * * * *",
 		"command": "insert into result1 (time_mark, text) values (now(), ''result of job'')",
-		"run_as": "robot"
+		"run_as": "hobot"
 	}'
 );
 
@@ -112,7 +113,7 @@ SELECT schedule.create_job(
 			"insert into result2 (time_mark, n, text) values (now(), 1, ''start job'')",
 			"insert into result2 (time_mark, n, text) values (now(), 2, random_finish())"
 		],
-		"run_as": "robot",
+		"run_as": "hobot",
 		"use_same_transaction": "false"
 	}'
 );
@@ -126,7 +127,7 @@ SELECT schedule.create_job(
 			"insert into result3 (time_mark, n, text) values (now(), 1, ''start job'')",
 			"insert into result3 (time_mark, n, text) values (now(), 2, random_finish())"
 		],
-		"run_as": "robot",
+		"run_as": "hobot",
 		"use_same_transaction": "true"
 	}'
 );
@@ -136,7 +137,7 @@ SELECT schedule.create_job(
 		"name": "Test #4: sleep 160 timeout 120",
 		"cron": "* * * * *",
 		"command": "select pg_sleep(160)",
-		"run_as": "robot",
+		"run_as": "hobot",
 		"use_same_transaction": "true",
 		"max_run_time": "120 seconds"
 	}'
@@ -148,7 +149,7 @@ SELECT schedule.create_job(
 		"cron": "* * * * *",
 		"command": "INSERT into result5 (time_mark, text) values (now(), random_finish())",
 		"next_time_statement": "select get_next_time()",
-		"run_as": "robot"
+		"run_as": "hobot"
 	}'
 );
 
@@ -168,7 +169,7 @@ SELECT schedule.create_job(
 			now() + '75 minutes'::interval,
 			now() + '85 minutes'::interval
 		),
-		'run_as', 'robot'
+		'run_as', 'hobot'
 	)
 );
 
@@ -181,6 +182,6 @@ SELECT schedule.create_job(
 			"insert into result7 (time_mark, n, text) values (now(), 2, random_finish())"
 		],
 		"onrollback": "insert into result7 (time_mark,n, text) values (now(),3,  ''on rollback'')",
-		"run_as": "robot"
+		"run_as": "hobot"
 	}'
 );

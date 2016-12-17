@@ -111,6 +111,19 @@ CREATE TYPE schedule.cron_job AS(
 -- FUNCTIONS --
 ---------------
 
+CREATE FUNCTION schedule.onlySuperUser() RETURNS boolean  AS
+$BODY$
+DECLARE
+	is_superuser boolean;
+BEGIN
+	EXECUTE 'SELECT rolsuper FROM pg_roles WHERE rolname = session_user'
+	INTO is_superuser;
+		IF NOT is_superuser THEN
+			RAISE EXCEPTION 'access denied';
+	END IF;
+END
+$BODY$  LANGUAGE plpgsql;
+
 CREATE FUNCTION schedule.on_cron_update() RETURNS TRIGGER
 AS $BODY$
 DECLARE
@@ -148,8 +161,8 @@ BEGIN
 	    RAISE EXCEPTION 'there is no such job with id %', jobId;
          WHEN TOO_MANY_ROWS THEN
 	    RAISE EXCEPTION 'there are more than one job with id %', jobId;
-   END;
-   EXECUTE 'SELECT usesuper FROM pg_user WHERE usename = session_user'
+   END;	
+   EXECUTE 'SELECT rolsuper FROM pg_roles WHERE rolname = session_user'
       INTO is_superuser;
    IF is_superuser THEN
       RETURN true;
@@ -306,7 +319,7 @@ BEGIN
    IF params?'run_as' AND  params->>'run_as' <> session_user THEN
       executor := params->>'run_as';
       BEGIN
-         SELECT * INTO STRICT rec FROM pg_user WHERE usename = executor;
+         SELECT * INTO STRICT rec FROM pg_roles WHERE rolname = executor;
          EXCEPTION
             WHEN NO_DATA_FOUND THEN
 	       RAISE EXCEPTION 'there is no such user %', executor;
@@ -703,14 +716,9 @@ LANGUAGE plpgsql;
 CREATE FUNCTION schedule.clean_log() RETURNS INT  AS
 $BODY$
 DECLARE
-	is_superuser boolean;
 	cnt integer;
 BEGIN
-	EXECUTE 'SELECT usesuper FROM pg_user WHERE usename = session_user'
-		INTO is_superuser;
-	IF NOT is_superuser THEN
-		RAISE EXCEPTION 'access denied';
-	END IF;
+    SELECT onlySuperUser();
 
 	WITH a AS (DELETE FROM schedule.log RETURNING 1)
 		SELECT count(*) INTO cnt FROM a;
@@ -742,13 +750,8 @@ $BODY$
 DECLARE
 	ii schedule.cron;
 	oo schedule.cron_rec;
-	is_superuser boolean;
 BEGIN
-	EXECUTE 'SELECT usesuper FROM pg_user WHERE usename = session_user'
-		INTO is_superuser;
-	IF NOT is_superuser THEN
-		RAISE EXCEPTION 'access denied: only superuser allowed';
-	END IF;
+    SELECT onlySuperUser();
 
 	FOR ii IN SELECT * FROM schedule.cron LOOP
 		oo := schedule._make_cron_rec(ii);
@@ -781,14 +784,9 @@ $BODY$
 DECLARE
 	ii schedule.cron;
 	oo schedule.cron_rec;
-	is_superuser boolean;
 BEGIN
 	IF usename <> session_user THEN
-		EXECUTE 'SELECT usesuper FROM pg_user WHERE usename = session_user'
-			INTO is_superuser;
-		IF NOT is_superuser THEN
-			RAISE EXCEPTION 'access denied';
-		END IF;
+    	SELECT onlySuperUser();
 	END IF;
 
 	FOR ii IN SELECT * FROM schedule.cron WHERE owner = usename LOOP
@@ -822,14 +820,9 @@ $BODY$
 DECLARE
 	ii schedule.cron;
 	oo schedule.cron_rec;
-	is_superuser boolean;
 BEGIN
 	IF usename <> session_user THEN
-		EXECUTE 'SELECT usesuper FROM pg_user WHERE usename = session_user'
-			INTO is_superuser;
-		IF NOT is_superuser THEN
-			RAISE EXCEPTION 'access denied';
-		END IF;
+    	SELECT onlySuperUser();
 	END IF;
 
 	FOR ii IN SELECT * FROM schedule.cron WHERE executor = usename LOOP
@@ -847,7 +840,6 @@ $BODY$
 DECLARE
 	ii record;
 	oo schedule.cron_job;
-	is_superuser boolean;
 BEGIN
 	FOR ii IN SELECT * FROM schedule.at as at, schedule.cron as cron WHERE cron.executor = session_user AND cron.id = at.cron AND at.active LOOP
 		oo.cron = ii.id;
@@ -882,13 +874,8 @@ $BODY$
 DECLARE
 	ii record;
 	oo schedule.cron_job;
-	is_superuser boolean;
 BEGIN
-	EXECUTE 'SELECT usesuper FROM pg_user WHERE usename = session_user'
-		INTO is_superuser;
-	IF NOT is_superuser THEN
-		RAISE EXCEPTION 'access denied';
-	END IF;
+    SELECT onlySuperUser();
 	FOR ii IN SELECT * FROM schedule.at as at, schedule.cron as cron WHERE cron.id = at.cron AND at.active LOOP
 		oo.cron = ii.id;
 		oo.node = ii.node;
@@ -922,14 +909,9 @@ $BODY$
 DECLARE
 	ii record;
 	oo schedule.cron_job;
-	is_superuser boolean;
 BEGIN
 	IF usename <> session_user THEN
-		EXECUTE 'SELECT usesuper FROM pg_user WHERE usename = session_user'
-			INTO is_superuser;
-		IF NOT is_superuser THEN
-			RAISE EXCEPTION 'access denied';
-		END IF;
+    	SELECT onlySuperUser();
 	END IF;
 
 	FOR ii IN SELECT * FROM schedule.at as at, schedule.cron as cron WHERE cron.executor = usename AND cron.id = at.cron AND at.active LOOP
@@ -983,15 +965,10 @@ $BODY$
 DECLARE
 	ii record;
 	oo schedule.cron_job;
-	is_superuser boolean;
 	sql_cmd text;
 BEGIN
 	IF usename <> session_user THEN
-		EXECUTE 'SELECT usesuper FROM pg_user WHERE usename = session_user'
-			INTO is_superuser;
-		IF NOT is_superuser THEN
-			RAISE EXCEPTION 'access denied';
-		END IF;
+    	SELECT onlySuperUser();
 	END IF;
 
 	IF usename = '___all___' THEN

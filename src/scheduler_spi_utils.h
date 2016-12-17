@@ -9,30 +9,11 @@
 
 #define select_count_sql(SQL) select_oneintvalue_sql(SQL, 0);
 
-#define START_SNAP() \
-    SetCurrentStatementStartTimestamp(); \
-	StartTransactionCommand(); \
-	PushActiveSnapshot(GetTransactionSnapshot());
-
-#define STOP_SNAP() \
-	PopActiveSnapshot(); \
-	CommitTransactionCommand(); 
-
-#define START_SPI_SNAP() \
-    SetCurrentStatementStartTimestamp(); \
-	StartTransactionCommand(); \
-	AssertState(SPI_connect() == SPI_OK_CONNECT); \
-	PushActiveSnapshot(GetTransactionSnapshot());
-
-#define STOP_SPI_SNAP() \
-	SPI_finish(); \
-	PopActiveSnapshot(); \
-	CommitTransactionCommand(); 
-
-#define ABORT_SPI_SNAP() \
-	PopActiveSnapshot(); \
-	AbortCurrentTransaction(); \
-	SPI_finish();
+void START_SNAP(void);
+void STOP_SNAP(void);
+void START_SPI_SNAP(void);
+void STOP_SPI_SNAP(void);
+void ABORT_SPI_SNAP(void);
 
 char *_copy_string(char *str);
 TimestampTz get_timestamp_from_spi(int row_n, int pos, TimestampTz def);

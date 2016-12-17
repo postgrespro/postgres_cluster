@@ -69,24 +69,26 @@ int checkSchedulerNamespace(void)
 	}
 	else if(count > 1 || count == 0 )
 	{
-		elog(LOG, "Scheduler manager: %s: cannot check namespace: found %d namespaces",
-											MyBgworkerEntry->bgw_name, count);
+		elog(LOG, "Scheduler manager: %s: cannot check namespace: "
+				  "found %d namespaces", MyBgworkerEntry->bgw_name, count);
 	}
 	else if(count == -2)
 	{
-		elog(LOG, "Scheduler manager: %s: cannot check namespace: count return null",
-											MyBgworkerEntry->bgw_name);
+		elog(LOG, "Scheduler manager: %s: cannot check namespace: "
+				  "count return null", MyBgworkerEntry->bgw_name);
 	}
 	else if(count != 1)
 	{
-		elog(ERROR, "Scheduler manager: %s: cannot check namespace: unknown error %d",
-											MyBgworkerEntry->bgw_name, count); 
+		elog(ERROR, "Scheduler manager: %s: cannot check namespace: "
+					"unknown error %d", MyBgworkerEntry->bgw_name, count); 
 	}
 
 	SPI_finish();
 	PopActiveSnapshot();
 	CommitTransactionCommand();
-	if(count) SetConfigOption("search_path", "schedule", PGC_USERSET, PGC_S_SESSION);
+	if(count) {
+		SetConfigOption("search_path", schema, PGC_USERSET, PGC_S_SESSION);
+	}
 
 	return count;
 }

@@ -10,6 +10,41 @@
 #include "catalog/pg_type.h"
 #include "memutils.h"
 
+void START_SNAP(void)
+{
+	SetCurrentStatementStartTimestamp(); 
+	StartTransactionCommand(); 
+	PushActiveSnapshot(GetTransactionSnapshot());
+}
+
+void STOP_SNAP(void) 
+{
+	PopActiveSnapshot(); 
+	CommitTransactionCommand();
+}
+
+void START_SPI_SNAP(void)
+{
+	SetCurrentStatementStartTimestamp();
+	StartTransactionCommand();
+	PushActiveSnapshot(GetTransactionSnapshot());
+	SPI_connect();
+}
+
+void STOP_SPI_SNAP(void)
+{
+	SPI_finish();
+	PopActiveSnapshot(); 
+	CommitTransactionCommand();
+}
+
+void ABORT_SPI_SNAP(void) 
+{
+	PopActiveSnapshot();
+	AbortCurrentTransaction();
+	SPI_finish();
+}
+
 char *_copy_string(char *str)
 {
 	int len = strlen(str);
@@ -202,8 +237,11 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 	int ret = -100;
 	ErrorData *edata;
 	MemoryContext old;
+	int errorSet = 0;
+	char other[100];
 
 	*error = NULL;
+
 
 	PG_TRY();
 	{
@@ -226,17 +264,43 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 		{
 			*error = _copy_string("unknown error");
 		}
+		errorSet = 1;
 		FreeErrorData(edata);
 		MemoryContextSwitchTo(old);
 		FlushErrorState();
 	}
 	PG_END_TRY();
 
+	if(!errorSet && ret < 0)
+	{
+		if(ret == SPI_ERROR_CONNECT)
+		{
+			*error = _copy_string("Connection error");
+		}
+		else if(ret == SPI_ERROR_COPY)
+		{
+			*error = _copy_string("COPY error");
+		}
+		else if(ret == SPI_ERROR_OPUNKNOWN)
+		{
+			*error = _copy_string("SPI_ERROR_OPUNKNOWN");
+		}
+		else if(ret == SPI_ERROR_UNCONNECTED)
+		{
+			*error = _copy_string("Unconnected call");
+		}
+		else
+		{
+			sprintf(other, "error number: %d", ret);
+			*error = _copy_string(other);
+		}
+	}
+
 	return ret;
 }
 
 int execute_spi(const char *sql, char **error)
-{
+{	
 	return execute_spi_sql_with_args(sql, 0, NULL, NULL, NULL, error);
 }
 

@@ -213,7 +213,7 @@ int set_session_authorization(char *username, char **error)
 	Datum values[1];
 	bool is_superuser;
 	int ret;
-	char *sql = "select usesysid, usesuper from pg_catalog.pg_user where usename = $1";
+	char *sql = "select oid, rolsuper from pg_catalog.pg_roles where rolname = $1";
 	char buff[1024];
 
 	values[0] = CStringGetTextDatum(username);	
