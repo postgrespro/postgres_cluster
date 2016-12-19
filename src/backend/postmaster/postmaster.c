@@ -71,7 +71,7 @@
 #include <sys/wait.h>
 #include <ctype.h>
 #include <sys/stat.h>
-#include "pg_socket.h"
+#include <sys/socket.h>
 #include <fcntl.h>
 #include <sys/param.h>
 #include <netinet/in.h>

@@ -330,6 +330,13 @@ extern FILE *pgwin32_popen(const char *command, const char *type);
 /* Last parameter not used */
 extern int	gettimeofday(struct timeval * tp, struct timezone * tzp);
 #endif
+#else							/* !WIN32 */
+
+/*
+ *	Win32 requires a special close for sockets and pipes, while on Unix
+ *	close() does them all.
+ */
+#define closesocket close
 #endif   /* WIN32 */
 
 /*

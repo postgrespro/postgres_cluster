@@ -28,7 +28,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/param.h>			/* for MAXHOSTNAMELEN on most */
-#include "pg_socket.h"
+#include <sys/socket.h>
 #ifdef HAVE_SYS_UCRED_H
 #include <sys/ucred.h>
 #endif

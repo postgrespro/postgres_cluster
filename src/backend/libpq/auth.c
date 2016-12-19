@@ -16,7 +16,7 @@
 #include "postgres.h"
 
 #include <sys/param.h>
-#include "pg_socket.h"
+#include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>

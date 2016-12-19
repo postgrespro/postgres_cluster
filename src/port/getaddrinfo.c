@@ -24,7 +24,7 @@
 /* This is intended to be used in both frontend and backend, so use c.h */
 #include "c.h"
 
-#include "pg_socket.h"
+#include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>

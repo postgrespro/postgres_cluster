@@ -73,7 +73,7 @@
 #include "signal.h"
 #include <unistd.h>
 #include <fcntl.h>
-#include "pg_socket.h"
+#include <sys/socket.h>
 #endif
 
 /* Mnemonic macros for indexing the fd array returned by pipe(2) */

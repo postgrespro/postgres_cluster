@@ -42,7 +42,7 @@
 #include <mstcpip.h>
 #endif
 #else
-#include "pg_socket.h"
+#include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #ifdef HAVE_NETINET_TCP_H
