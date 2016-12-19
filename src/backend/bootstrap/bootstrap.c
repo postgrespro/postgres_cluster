@@ -219,7 +219,8 @@ AuxiliaryProcessMain(int argc, char *argv[])
 	/* If no -x argument, we are a CheckerProcess */
 	MyAuxProcType = CheckerProcess;
 
-	while ((flag = getopt(argc, argv, "B:c:d:D:Fkr:x:-:")) != -1)
+	start_xid = start_mx_id = start_mx_offset = 0;
+	while ((flag = getopt(argc, argv, "B:c:d:D:Fkm:o:r:X:x:-:")) != -1)
 	{
 		switch (flag)
 		{
@@ -248,8 +249,29 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			case 'k':
 				bootstrap_data_checksum_version = PG_DATA_CHECKSUM_VERSION;
 				break;
+			case 'm':
+				if (sscanf(optarg, "%lx", &start_mx_id) != 1)
+				{
+					fprintf(stderr, "%s: invalid hex value of multixact-id\n", progname);
+					exit(1);
+				}
+				break;
+			case 'o':
+				if (sscanf(optarg, "%lx", &start_mx_offset) != 1)
+				{
+					fprintf(stderr, "%s: invalid hex value of multixact-offset\n", progname);
+					exit(1);
+				}
+				break;
 			case 'r':
 				strlcpy(OutputFileName, optarg, MAXPGPATH);
+				break;
+			case 'X':
+				if (sscanf(optarg, "%lx", &start_xid) != 1)
+				{
+					fprintf(stderr, "%s: invalid hex value of xid\n", progname);
+					exit(1);
+				}
 				break;
 			case 'x':
 				MyAuxProcType = atoi(optarg);

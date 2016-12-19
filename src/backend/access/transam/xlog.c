@@ -103,6 +103,10 @@ int			CommitDelay = 0;	/* precommit delay in microseconds */
 int			CommitSiblings = 5; /* # concurrent xacts needed to sleep */
 int			wal_retrieve_retry_interval = 5000;
 
+TransactionId		start_xid = 0;
+MultiXactId			start_mx_id = 0;
+MultiXactOffset		start_mx_offset = 0;
+
 #ifdef WAL_DEBUG
 bool		XLOG_DEBUG = false;
 #endif
@@ -4806,14 +4810,15 @@ BootStrapXLOG(void)
 	checkPoint.ThisTimeLineID = ThisTimeLineID;
 	checkPoint.PrevTimeLineID = ThisTimeLineID;
 	checkPoint.fullPageWrites = fullPageWrites;
-	checkPoint.nextXid = FirstNormalTransactionId + 1;
+	checkPoint.nextXid = FirstNormalTransactionId + 1 + start_xid;
 	checkPoint.nextOid = FirstBootstrapObjectId;
 	checkPoint.nextMulti = FirstMultiXactId;
-	checkPoint.nextMultiOffset = 0;
-	checkPoint.nextMulti++;
+	checkPoint.nextMulti = (!start_mx_id) ? FirstMultiXactId + 1
+										  : FirstMultiXactId + start_mx_id;
+	checkPoint.nextMultiOffset = start_mx_offset;
 	checkPoint.oldestXid = checkPoint.nextXid - 1;
 	checkPoint.oldestXidDB = TemplateDbOid;
-	checkPoint.oldestMulti = FirstMultiXactId;
+	checkPoint.oldestMulti = checkPoint.nextMulti - 1;
 	checkPoint.oldestMultiDB = TemplateDbOid;
 	checkPoint.oldestCommitTsXid = InvalidTransactionId;
 	checkPoint.newestCommitTsXid = InvalidTransactionId;
