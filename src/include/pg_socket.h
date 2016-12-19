@@ -13,42 +13,20 @@
 #ifndef PG_SOCKET_H
 #define PG_SOCKET_H
 
-#include "pg_config.h"
-
-#ifndef WITH_RSOCKET
-#include <sys/socket.h>
-#else
+#ifdef WITH_RSOCKET
 #include <rdma/rsocket.h>
 #endif
+#include <sys/socket.h>
 
-#ifdef WITH_RSOCKET
-#define socket(d, t, p) rsocket(d, t, p)
-#define bind(s, a, l) rbind(s, a, l)
-#define listen(s, b) rlisten(s, b)
-#define accept(s, a, l) raccept(s, a, l)
-#define connect(s, a, l) rconnect(s, a, l)
-#define shutdown(s, h) rshutdown(s, h)
+#include "pg_config.h"
 
-#if !defined(WIN32) || defined(__CYGWIN__)
-#define closesocket rclose
-#endif
+extern int pg_socket(int domain, int type, int protocol, bool isRdma);
+extern int pg_bind(int socket, const struct sockaddr *addr, socklen_t addrlen,
+				   bool isRdma);
+extern int pg_listen(int socket, int backlog, bool isRdma);
+extern int pg_closesocket(int socket, bool isRdma);
 
-#define recv(s, b, l, f) rrecv(s, b, l, f)
-#define recvfrom(s, b, l, f, sa, al) rrecvfrom(s, b, l, f, sa, al)
-#define recvmsg(s, m, f) rrecvmsg(s, m, f)
-#define send(s, b, l, f) rsend(s, b, l, f)
-#define sendto(s, b, l, f, da, al) rsendto(s, b, l, f, da, al)
-#define sendmsg(s, m, f) rsendmsg(s, m, f)
-
-#define getpeername(s, a, l) rgetpeername(s, a, l)
-#define getsockname(s, a, l) rgetsockname(s, a, l)
-
-#define setsockopt(s, l, on, ov, ol) rsetsockopt(s, l, on, ov, ol)
-#define getsockopt(s, l, on, ov, ol) rgetsockopt(s, l, on, ov, ol)
-#else
-#if !defined(WIN32) || defined(__CYGWIN__)
-#define closesocket close
-#endif
-#endif   /* WITH_RSOCKET */
+extern int pg_setsockopt(int socket, int level, int optname,
+						 const void *optval, socklen_t optlen, bool isRdma);
 
 #endif   /* PG_SOCKET_H */

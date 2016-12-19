@@ -3499,6 +3499,17 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
+		{"listen_rdma_addresses", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
+			gettext_noop("Sets the host name or IP address(es) to listen to using rdma."),
+			NULL,
+			GUC_LIST_INPUT
+		},
+		&ListenRdmaAddresses,
+		"",
+		NULL, NULL, NULL
+	},
+
+	{
 		/*
 		 * Can't be set by ALTER SYSTEM as it can lead to recursive definition
 		 * of data_directory.

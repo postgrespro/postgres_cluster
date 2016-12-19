@@ -197,6 +197,7 @@ char	   *Unix_socket_directories;
 
 /* The TCP listen address(es) */
 char	   *ListenAddresses;
+char	   *ListenRdmaAddresses;
 
 /*
  * ReservedBackends is the number of backends reserved for superuser use.
@@ -212,6 +213,7 @@ int			ReservedBackends;
 /* The socket(s) we're listening to. */
 #define MAXLISTEN	64
 static pgsocket ListenSocket[MAXLISTEN];
+static bool	ListenRdma[MAXLISTEN];
 
 /*
  * Set by the -o option
@@ -462,6 +464,7 @@ typedef struct
 	InheritableSocket portsocket;
 	char		DataDir[MAXPGPATH];
 	pgsocket	ListenSocket[MAXLISTEN];
+	bool		ListenRdma[MAXLISTEN];
 	long		MyCancelKey;
 	int			MyPMChildSlot;
 #ifndef WIN32
@@ -944,7 +947,10 @@ PostmasterMain(int argc, char *argv[])
 	 * charged with closing the sockets again at postmaster shutdown.
 	 */
 	for (i = 0; i < MAXLISTEN; i++)
+	{
 		ListenSocket[i] = PGINVALID_SOCKET;
+		ListenRdma[i] = false;
+	}
 
 	on_proc_exit(CloseServerPorts, 0);
 
@@ -976,12 +982,68 @@ PostmasterMain(int argc, char *argv[])
 				status = StreamServerPort(AF_UNSPEC, NULL,
 										  (unsigned short) PostPortNumber,
 										  NULL,
-										  ListenSocket, MAXLISTEN);
+										  ListenSocket, ListenRdma, MAXLISTEN,
+										  false);
 			else
 				status = StreamServerPort(AF_UNSPEC, curhost,
 										  (unsigned short) PostPortNumber,
 										  NULL,
-										  ListenSocket, MAXLISTEN);
+										  ListenSocket, ListenRdma, MAXLISTEN,
+										  false);
+
+			if (status == STATUS_OK)
+			{
+				success++;
+				/* record the first successful host addr in lockfile */
+				if (!listen_addr_saved)
+				{
+					AddToDataDirLockFile(LOCK_FILE_LINE_LISTEN_ADDR, curhost);
+					listen_addr_saved = true;
+				}
+			}
+			else
+				ereport(WARNING,
+						(errmsg("could not create listen socket for \"%s\"",
+								curhost)));
+		}
+
+		if (!success && elemlist != NIL)
+			ereport(FATAL,
+					(errmsg("could not create any TCP/IP sockets")));
+
+		list_free(elemlist);
+		pfree(rawstring);
+	}
+
+	if (ListenRdmaAddresses)
+	{
+		char	   *rawstring;
+		List	   *elemlist;
+		ListCell   *l;
+		int			success = 0;
+
+		/* Need a modifiable copy of ListenRdma */
+		rawstring = pstrdup(ListenRdmaAddresses);
+
+		/* Parse string into list of hostnames */
+		if (!SplitIdentifierString(rawstring, ',', &elemlist))
+		{
+			/* syntax error in list */
+			ereport(FATAL,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("invalid list syntax in parameter \"%s\"",
+							"listen_rdma")));
+		}
+
+		foreach(l, elemlist)
+		{
+			char	   *curhost = (char *) lfirst(l);
+
+			status = StreamServerPort(AF_UNSPEC, curhost,
+									  (unsigned short) PostPortNumber,
+									  NULL,
+									  ListenSocket, ListenRdma, MAXLISTEN,
+									  true);
 
 			if (status == STATUS_OK)
 			{
@@ -1073,7 +1135,8 @@ PostmasterMain(int argc, char *argv[])
 			status = StreamServerPort(AF_UNIX, NULL,
 									  (unsigned short) PostPortNumber,
 									  socketdir,
-									  ListenSocket, MAXLISTEN);
+									  ListenSocket, ListenRdma, MAXLISTEN,
+									  false);
 
 			if (status == STATUS_OK)
 			{
@@ -1334,6 +1397,7 @@ CloseServerPorts(int status, Datum arg)
 		{
 			StreamClose(ListenSocket[i]);
 			ListenSocket[i] = PGINVALID_SOCKET;
+			ListenRdma[i] = false;
 		}
 	}
 
@@ -2412,6 +2476,7 @@ ClosePostmasterPorts(bool am_syslogger)
 		{
 			StreamClose(ListenSocket[i]);
 			ListenSocket[i] = PGINVALID_SOCKET;
+			ListenRdma[i] = false;
 		}
 	}
 
@@ -5729,6 +5794,7 @@ save_backend_variables(BackendParameters *param, Port *port,
 	strlcpy(param->DataDir, DataDir, MAXPGPATH);
 
 	memcpy(&param->ListenSocket, &ListenSocket, sizeof(ListenSocket));
+	memcpy(&param->ListenRdma, &ListenRdma, sizeof(ListenRdma));
 
 	param->MyCancelKey = MyCancelKey;
 	param->MyPMChildSlot = MyPMChildSlot;
@@ -5964,6 +6030,7 @@ restore_backend_variables(BackendParameters *param, Port *port)
 	SetDataDir(param->DataDir);
 
 	memcpy(&ListenSocket, &param->ListenSocket, sizeof(ListenSocket));
+	memcpy(&ListenRdma, &param->ListenRdma, sizeof(ListenRdma));
 
 	MyCancelKey = param->MyCancelKey;
 	MyPMChildSlot = param->MyPMChildSlot;

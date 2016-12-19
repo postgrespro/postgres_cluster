@@ -92,6 +92,7 @@
 #include "libpq/ip.h"
 #include "libpq/libpq.h"
 #include "miscadmin.h"
+#include "pg_socket.h"
 #include "storage/ipc.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"
@@ -311,7 +312,8 @@ socket_close(int code, Datum arg)
 int
 StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				 char *unixSocketDir,
-				 pgsocket ListenSocket[], int MaxListen)
+				 pgsocket ListenSocket[], bool ListenRdma[], int MaxListen,
+				 bool isRdma)
 {
 	pgsocket	fd;
 	int			err;
@@ -432,7 +434,8 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				break;
 		}
 
-		if ((fd = socket(addr->ai_family, SOCK_STREAM, 0)) == PGINVALID_SOCKET)
+		if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, isRdma))
+			 == PGINVALID_SOCKET)
 		{
 			ereport(LOG,
 					(errcode_for_socket_access(),
@@ -457,13 +460,13 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		 */
 		if (!IS_AF_UNIX(addr->ai_family))
 		{
-			if ((setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-							(char *) &one, sizeof(one))) == -1)
+			if ((pg_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
+							   (char *) &one, sizeof(one), isRdma)) == -1)
 			{
 				ereport(LOG,
 						(errcode_for_socket_access(),
 						 errmsg("setsockopt(SO_REUSEADDR) failed: %m")));
-				closesocket(fd);
+				pg_closesocket(fd, isRdma);
 				continue;
 			}
 		}
@@ -472,13 +475,13 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 #ifdef IPV6_V6ONLY
 		if (addr->ai_family == AF_INET6)
 		{
-			if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
-						   (char *) &one, sizeof(one)) == -1)
+			if (pg_setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
+							  (char *) &one, sizeof(one), isRdma) == -1)
 			{
 				ereport(LOG,
 						(errcode_for_socket_access(),
 						 errmsg("setsockopt(IPV6_V6ONLY) failed: %m")));
-				closesocket(fd);
+				pg_closesocket(fd, isRdma);
 				continue;
 			}
 		}
@@ -490,7 +493,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		 * ipv4 addresses to ipv6.  It will show ::ffff:ipv4 for all ipv4
 		 * connections.
 		 */
-		err = bind(fd, addr->ai_addr, addr->ai_addrlen);
+		err = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, isRdma);
 		if (err < 0)
 		{
 			ereport(LOG,
@@ -505,7 +508,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				  errhint("Is another postmaster already running on port %d?"
 						  " If not, wait a few seconds and retry.",
 						  (int) portNumber)));
-			closesocket(fd);
+			pg_closesocket(fd, isRdma);
 			continue;
 		}
 
@@ -514,7 +517,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		{
 			if (Setup_AF_UNIX(service) != STATUS_OK)
 			{
-				closesocket(fd);
+				pg_closesocket(fd, isRdma);
 				break;
 			}
 		}
@@ -529,7 +532,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		if (maxconn > PG_SOMAXCONN)
 			maxconn = PG_SOMAXCONN;
 
-		err = listen(fd, maxconn);
+		err = pg_listen(fd, maxconn, isRdma);
 		if (err < 0)
 		{
 			ereport(LOG,
@@ -537,10 +540,11 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 			/* translator: %s is IPv4, IPv6, or Unix */
 					 errmsg("could not listen on %s socket: %m",
 							familyDesc)));
-			closesocket(fd);
+			pg_closesocket(fd, isRdma);
 			continue;
 		}
 		ListenSocket[listen_index] = fd;
+		ListenRdma[listen_index] = isRdma;
 		added++;
 	}
 
