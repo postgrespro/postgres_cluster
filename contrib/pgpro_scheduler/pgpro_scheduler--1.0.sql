@@ -121,6 +121,7 @@ BEGIN
 		IF NOT is_superuser THEN
 			RAISE EXCEPTION 'access denied';
 	END IF;
+	RETURN TRUE;
 END
 $BODY$  LANGUAGE plpgsql;
 
@@ -718,7 +719,7 @@ $BODY$
 DECLARE
 	cnt integer;
 BEGIN
-    SELECT onlySuperUser();
+    PERFORM schedule.onlySuperUser();
 
 	WITH a AS (DELETE FROM schedule.log RETURNING 1)
 		SELECT count(*) INTO cnt FROM a;
@@ -751,7 +752,7 @@ DECLARE
 	ii schedule.cron;
 	oo schedule.cron_rec;
 BEGIN
-    SELECT onlySuperUser();
+    PERFORM schedule.onlySuperUser();
 
 	FOR ii IN SELECT * FROM schedule.cron LOOP
 		oo := schedule._make_cron_rec(ii);
@@ -786,7 +787,7 @@ DECLARE
 	oo schedule.cron_rec;
 BEGIN
 	IF usename <> session_user THEN
-    	SELECT onlySuperUser();
+    	PERFORM schedule.onlySuperUser();
 	END IF;
 
 	FOR ii IN SELECT * FROM schedule.cron WHERE owner = usename LOOP
@@ -822,7 +823,7 @@ DECLARE
 	oo schedule.cron_rec;
 BEGIN
 	IF usename <> session_user THEN
-    	SELECT onlySuperUser();
+    	PERFORM schedule.onlySuperUser();
 	END IF;
 
 	FOR ii IN SELECT * FROM schedule.cron WHERE executor = usename LOOP
@@ -875,7 +876,7 @@ DECLARE
 	ii record;
 	oo schedule.cron_job;
 BEGIN
-    SELECT onlySuperUser();
+    PERFORM schedule.onlySuperUser();
 	FOR ii IN SELECT * FROM schedule.at as at, schedule.cron as cron WHERE cron.id = at.cron AND at.active LOOP
 		oo.cron = ii.id;
 		oo.node = ii.node;
@@ -911,7 +912,7 @@ DECLARE
 	oo schedule.cron_job;
 BEGIN
 	IF usename <> session_user THEN
-    	SELECT onlySuperUser();
+    	PERFORM schedule.onlySuperUser();
 	END IF;
 
 	FOR ii IN SELECT * FROM schedule.at as at, schedule.cron as cron WHERE cron.executor = usename AND cron.id = at.cron AND at.active LOOP
@@ -968,7 +969,7 @@ DECLARE
 	sql_cmd text;
 BEGIN
 	IF usename <> session_user THEN
-    	SELECT onlySuperUser();
+    	PERFORM schedule.onlySuperUser();
 	END IF;
 
 	IF usename = '___all___' THEN
