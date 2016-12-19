@@ -13,6 +13,8 @@
 #ifndef _POSTMASTER_H
 #define _POSTMASTER_H
 
+#include "pg_config.h"
+
 /* GUC options */
 extern bool EnableSSL;
 extern int	ReservedBackends;
@@ -21,7 +23,9 @@ extern int	Unix_socket_permissions;
 extern char *Unix_socket_group;
 extern char *Unix_socket_directories;
 extern char *ListenAddresses;
+#ifdef WITH_RSOCKET
 extern char *ListenRdmaAddresses;
+#endif
 extern bool ClientAuthInProgress;
 extern int	PreAuthDelay;
 extern int	AuthenticationTimeout;

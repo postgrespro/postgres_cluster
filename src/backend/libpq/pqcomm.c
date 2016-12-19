@@ -544,7 +544,8 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 			continue;
 		}
 		ListenSocket[listen_index] = fd;
-		ListenRdma[listen_index] = isRdma;
+		if (ListenRdma)
+			ListenRdma[listen_index] = isRdma;
 		added++;
 	}
 

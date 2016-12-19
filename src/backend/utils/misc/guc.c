@@ -3498,6 +3498,7 @@ static struct config_string ConfigureNamesString[] =
 		NULL, NULL, NULL
 	},
 
+#ifdef WITH_RSOCKET
 	{
 		{"listen_rdma_addresses", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the host name or IP address(es) to listen to using rdma."),
@@ -3508,6 +3509,7 @@ static struct config_string ConfigureNamesString[] =
 		"",
 		NULL, NULL, NULL
 	},
+#endif
 
 	{
 		/*

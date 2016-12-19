@@ -197,7 +197,9 @@ char	   *Unix_socket_directories;
 
 /* The TCP listen address(es) */
 char	   *ListenAddresses;
+#ifdef WITH_RSOCKET
 char	   *ListenRdmaAddresses;
+#endif
 
 /*
  * ReservedBackends is the number of backends reserved for superuser use.
@@ -213,7 +215,9 @@ int			ReservedBackends;
 /* The socket(s) we're listening to. */
 #define MAXLISTEN	64
 static pgsocket ListenSocket[MAXLISTEN];
+#ifdef WITH_RSOCKET
 static bool	ListenRdma[MAXLISTEN];
+#endif
 
 /*
  * Set by the -o option
@@ -464,7 +468,9 @@ typedef struct
 	InheritableSocket portsocket;
 	char		DataDir[MAXPGPATH];
 	pgsocket	ListenSocket[MAXLISTEN];
+#ifdef WITH_RSOCKET
 	bool		ListenRdma[MAXLISTEN];
+#endif
 	long		MyCancelKey;
 	int			MyPMChildSlot;
 #ifndef WIN32
@@ -949,7 +955,9 @@ PostmasterMain(int argc, char *argv[])
 	for (i = 0; i < MAXLISTEN; i++)
 	{
 		ListenSocket[i] = PGINVALID_SOCKET;
+#ifdef WITH_RSOCKET
 		ListenRdma[i] = false;
+#endif
 	}
 
 	on_proc_exit(CloseServerPorts, 0);
@@ -982,13 +990,13 @@ PostmasterMain(int argc, char *argv[])
 				status = StreamServerPort(AF_UNSPEC, NULL,
 										  (unsigned short) PostPortNumber,
 										  NULL,
-										  ListenSocket, ListenRdma, MAXLISTEN,
+										  ListenSocket, NULL, MAXLISTEN,
 										  false);
 			else
 				status = StreamServerPort(AF_UNSPEC, curhost,
 										  (unsigned short) PostPortNumber,
 										  NULL,
-										  ListenSocket, ListenRdma, MAXLISTEN,
+										  ListenSocket, NULL, MAXLISTEN,
 										  false);
 
 			if (status == STATUS_OK)
@@ -1015,6 +1023,7 @@ PostmasterMain(int argc, char *argv[])
 		pfree(rawstring);
 	}
 
+#ifdef WITH_RSOCKET
 	if (ListenRdmaAddresses)
 	{
 		char	   *rawstring;
@@ -1068,6 +1077,7 @@ PostmasterMain(int argc, char *argv[])
 		list_free(elemlist);
 		pfree(rawstring);
 	}
+#endif
 
 #ifdef USE_BONJOUR
 	/* Register for Bonjour only if we opened TCP socket(s) */
@@ -1135,7 +1145,7 @@ PostmasterMain(int argc, char *argv[])
 			status = StreamServerPort(AF_UNIX, NULL,
 									  (unsigned short) PostPortNumber,
 									  socketdir,
-									  ListenSocket, ListenRdma, MAXLISTEN,
+									  ListenSocket, NULL, MAXLISTEN,
 									  false);
 
 			if (status == STATUS_OK)
@@ -1397,7 +1407,9 @@ CloseServerPorts(int status, Datum arg)
 		{
 			StreamClose(ListenSocket[i]);
 			ListenSocket[i] = PGINVALID_SOCKET;
+#ifdef WITH_RSOCKET
 			ListenRdma[i] = false;
+#endif
 		}
 	}
 
@@ -2476,7 +2488,9 @@ ClosePostmasterPorts(bool am_syslogger)
 		{
 			StreamClose(ListenSocket[i]);
 			ListenSocket[i] = PGINVALID_SOCKET;
+#ifdef WITH_RSOCKET
 			ListenRdma[i] = false;
+#endif
 		}
 	}
 
@@ -5794,7 +5808,9 @@ save_backend_variables(BackendParameters *param, Port *port,
 	strlcpy(param->DataDir, DataDir, MAXPGPATH);
 
 	memcpy(&param->ListenSocket, &ListenSocket, sizeof(ListenSocket));
+#ifdef WITH_RSOCKET
 	memcpy(&param->ListenRdma, &ListenRdma, sizeof(ListenRdma));
+#endif
 
 	param->MyCancelKey = MyCancelKey;
 	param->MyPMChildSlot = MyPMChildSlot;
@@ -6030,7 +6046,9 @@ restore_backend_variables(BackendParameters *param, Port *port)
 	SetDataDir(param->DataDir);
 
 	memcpy(&ListenSocket, &param->ListenSocket, sizeof(ListenSocket));
+#ifdef WITH_RSOCKET
 	memcpy(&ListenRdma, &param->ListenRdma, sizeof(ListenRdma));
+#endif
 
 	MyCancelKey = param->MyCancelKey;
 	MyPMChildSlot = param->MyPMChildSlot;
