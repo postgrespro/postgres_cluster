@@ -106,6 +106,7 @@
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
 #include "pg_getopt.h"
+#include "pg_socket.h"
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/bgworker_internals.h"
@@ -376,7 +377,7 @@ static void CloseServerPorts(int status, Datum arg);
 static void unlink_external_pid_file(int status, Datum arg);
 static void getInstallationPaths(const char *argv0);
 static void checkDataDir(void);
-static Port *ConnCreate(int serverFd);
+static Port *ConnCreate(int serverFd, bool isRdma);
 static void ConnFree(Port *port);
 static void reset_shared(int port);
 static void SIGHUP_handler(SIGNAL_ARGS);
@@ -1405,7 +1406,13 @@ CloseServerPorts(int status, Datum arg)
 	{
 		if (ListenSocket[i] != PGINVALID_SOCKET)
 		{
-			StreamClose(ListenSocket[i]);
+			StreamClose(ListenSocket[i],
+#ifdef WITH_RSOCKET
+						ListenRdma[i]
+#else
+						false
+#endif
+						);
 			ListenSocket[i] = PGINVALID_SOCKET;
 #ifdef WITH_RSOCKET
 			ListenRdma[i] = false;
@@ -1735,7 +1742,13 @@ ServerLoop(void)
 
 			PG_SETMASK(&UnBlockSig);
 
-			selres = select(nSockets, &rmask, NULL, NULL, &timeout);
+			/*
+			 * rsockets fd's cannot be passed into non-rsocket calls.
+			 * For applications which must mix rsocket fd's with standard
+			 * socket fd's or opened files, rpoll and rselect support polling
+			 * both rsockets and normal fd's.
+			 */
+			selres = pg_select(nSockets, &rmask, NULL, NULL, &timeout);
 
 			PG_SETMASK(&BlockSig);
 		}
@@ -1768,7 +1781,13 @@ ServerLoop(void)
 				{
 					Port	   *port;
 
-					port = ConnCreate(ListenSocket[i]);
+					port = ConnCreate(ListenSocket[i],
+#ifdef WITH_RSOCKET
+									  ListenRdma[i]
+#else
+									  false
+#endif
+									  );
 					if (port)
 					{
 						BackendStartup(port);
@@ -1777,7 +1796,13 @@ ServerLoop(void)
 						 * We no longer need the open socket or port structure
 						 * in this process
 						 */
-						StreamClose(port->sock);
+						StreamClose(port->sock,
+#ifdef WITH_RSOCKET
+									ListenRdma[i]
+#else
+									false
+#endif
+									);
 						ConnFree(port);
 					}
 				}
@@ -2397,7 +2422,7 @@ canAcceptConnections(void)
  * Returns NULL on failure, other than out-of-memory which is fatal.
  */
 static Port *
-ConnCreate(int serverFd)
+ConnCreate(int serverFd, bool isRdma)
 {
 	Port	   *port;
 
@@ -2409,10 +2434,12 @@ ConnCreate(int serverFd)
 		ExitPostmaster(1);
 	}
 
+	port->isRdma = isRdma;
+
 	if (StreamConnection(serverFd, port) != STATUS_OK)
 	{
 		if (port->sock != PGINVALID_SOCKET)
-			StreamClose(port->sock);
+			StreamClose(port->sock, port->isRdma);
 		ConnFree(port);
 		return NULL;
 	}
@@ -2486,7 +2513,13 @@ ClosePostmasterPorts(bool am_syslogger)
 	{
 		if (ListenSocket[i] != PGINVALID_SOCKET)
 		{
-			StreamClose(ListenSocket[i]);
+			StreamClose(ListenSocket[i],
+#ifdef WITH_RSOCKET
+						ListenRdma[i]
+#else
+						false
+#endif
+						);
 			ListenSocket[i] = PGINVALID_SOCKET;
 #ifdef WITH_RSOCKET
 			ListenRdma[i] = false;

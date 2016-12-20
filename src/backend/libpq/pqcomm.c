@@ -670,9 +670,9 @@ StreamConnection(pgsocket server_fd, Port *port)
 {
 	/* accept connection and fill in the client (remote) address */
 	port->raddr.salen = sizeof(port->raddr.addr);
-	if ((port->sock = accept(server_fd,
-							 (struct sockaddr *) & port->raddr.addr,
-							 &port->raddr.salen)) == PGINVALID_SOCKET)
+	if ((port->sock = pg_accept(server_fd,
+								(struct sockaddr *) & port->raddr.addr,
+								&port->raddr.salen, port->isRdma)) == PGINVALID_SOCKET)
 	{
 		ereport(LOG,
 				(errcode_for_socket_access(),
@@ -701,9 +701,9 @@ StreamConnection(pgsocket server_fd, Port *port)
 
 	/* fill in the server (local) address */
 	port->laddr.salen = sizeof(port->laddr.addr);
-	if (getsockname(port->sock,
-					(struct sockaddr *) & port->laddr.addr,
-					&port->laddr.salen) < 0)
+	if (pg_getsockname(port->sock,
+					   (struct sockaddr *) & port->laddr.addr,
+					   &port->laddr.salen, port->isRdma) < 0)
 	{
 		elog(LOG, "getsockname() failed: %m");
 		return STATUS_ERROR;
@@ -721,16 +721,16 @@ StreamConnection(pgsocket server_fd, Port *port)
 
 #ifdef	TCP_NODELAY
 		on = 1;
-		if (setsockopt(port->sock, IPPROTO_TCP, TCP_NODELAY,
-					   (char *) &on, sizeof(on)) < 0)
+		if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_NODELAY,
+						  (char *) &on, sizeof(on), port->isRdma) < 0)
 		{
 			elog(LOG, "setsockopt(TCP_NODELAY) failed: %m");
 			return STATUS_ERROR;
 		}
 #endif
 		on = 1;
-		if (setsockopt(port->sock, SOL_SOCKET, SO_KEEPALIVE,
-					   (char *) &on, sizeof(on)) < 0)
+		if (pg_setsockopt(port->sock, SOL_SOCKET, SO_KEEPALIVE,
+						  (char *) &on, sizeof(on), port->isRdma) < 0)
 		{
 			elog(LOG, "setsockopt(SO_KEEPALIVE) failed: %m");
 			return STATUS_ERROR;
@@ -760,8 +760,8 @@ StreamConnection(pgsocket server_fd, Port *port)
 		 * https://msdn.microsoft.com/en-us/library/bb736549%28v=vs.85%29.aspx
 		 */
 		optlen = sizeof(oldopt);
-		if (getsockopt(port->sock, SOL_SOCKET, SO_SNDBUF, (char *) &oldopt,
-					   &optlen) < 0)
+		if (pg_getsockopt(port->sock, SOL_SOCKET, SO_SNDBUF, (char *) &oldopt,
+						  &optlen, port->isRdma) < 0)
 		{
 			elog(LOG, "getsockopt(SO_SNDBUF) failed: %m");
 			return STATUS_ERROR;
@@ -769,8 +769,8 @@ StreamConnection(pgsocket server_fd, Port *port)
 		newopt = PQ_SEND_BUFFER_SIZE * 4;
 		if (oldopt < newopt)
 		{
-			if (setsockopt(port->sock, SOL_SOCKET, SO_SNDBUF, (char *) &newopt,
-						   sizeof(newopt)) < 0)
+			if (pg_setsockopt(port->sock, SOL_SOCKET, SO_SNDBUF, (char *) &newopt,
+							  sizeof(newopt), port->isRdma) < 0)
 			{
 				elog(LOG, "setsockopt(SO_SNDBUF) failed: %m");
 				return STATUS_ERROR;
@@ -804,9 +804,9 @@ StreamConnection(pgsocket server_fd, Port *port)
  * we do NOT want to send anything to the far end.
  */
 void
-StreamClose(pgsocket sock)
+StreamClose(pgsocket sock, bool isRdma)
 {
-	closesocket(sock);
+	pg_closesocket(sock, isRdma);
 }
 
 /*
@@ -1671,17 +1671,17 @@ pq_getkeepalivesidle(Port *port)
 		ACCEPT_TYPE_ARG3 size = sizeof(port->default_keepalives_idle);
 
 #ifdef TCP_KEEPIDLE
-		if (getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPIDLE,
-					   (char *) &port->default_keepalives_idle,
-					   &size) < 0)
+		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPIDLE,
+						  (char *) &port->default_keepalives_idle,
+						  &size, port->isRdma) < 0)
 		{
 			elog(LOG, "getsockopt(TCP_KEEPIDLE) failed: %m");
 			port->default_keepalives_idle = -1; /* don't know */
 		}
 #else
-		if (getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPALIVE,
-					   (char *) &port->default_keepalives_idle,
-					   &size) < 0)
+		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPALIVE,
+						  (char *) &port->default_keepalives_idle,
+						  &size, port->isRdma) < 0)
 		{
 			elog(LOG, "getsockopt(TCP_KEEPALIVE) failed: %m");
 			port->default_keepalives_idle = -1; /* don't know */
@@ -1725,15 +1725,15 @@ pq_setkeepalivesidle(int idle, Port *port)
 		idle = port->default_keepalives_idle;
 
 #ifdef TCP_KEEPIDLE
-	if (setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPIDLE,
-				   (char *) &idle, sizeof(idle)) < 0)
+	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPIDLE,
+					  (char *) &idle, sizeof(idle), port->isRdma) < 0)
 	{
 		elog(LOG, "setsockopt(TCP_KEEPIDLE) failed: %m");
 		return STATUS_ERROR;
 	}
 #else
-	if (setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPALIVE,
-				   (char *) &idle, sizeof(idle)) < 0)
+	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPALIVE,
+					  (char *) &idle, sizeof(idle), port->isRdma) < 0)
 	{
 		elog(LOG, "setsockopt(TCP_KEEPALIVE) failed: %m");
 		return STATUS_ERROR;
@@ -1769,9 +1769,9 @@ pq_getkeepalivesinterval(Port *port)
 #ifndef WIN32
 		ACCEPT_TYPE_ARG3 size = sizeof(port->default_keepalives_interval);
 
-		if (getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPINTVL,
-					   (char *) &port->default_keepalives_interval,
-					   &size) < 0)
+		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPINTVL,
+						  (char *) &port->default_keepalives_interval,
+						  &size, port->isRdma) < 0)
 		{
 			elog(LOG, "getsockopt(TCP_KEEPINTVL) failed: %m");
 			port->default_keepalives_interval = -1;		/* don't know */
@@ -1813,8 +1813,8 @@ pq_setkeepalivesinterval(int interval, Port *port)
 	if (interval == 0)
 		interval = port->default_keepalives_interval;
 
-	if (setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPINTVL,
-				   (char *) &interval, sizeof(interval)) < 0)
+	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPINTVL,
+					  (char *) &interval, sizeof(interval), port->isRdma) < 0)
 	{
 		elog(LOG, "setsockopt(TCP_KEEPINTVL) failed: %m");
 		return STATUS_ERROR;
@@ -1849,9 +1849,9 @@ pq_getkeepalivescount(Port *port)
 	{
 		ACCEPT_TYPE_ARG3 size = sizeof(port->default_keepalives_count);
 
-		if (getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPCNT,
-					   (char *) &port->default_keepalives_count,
-					   &size) < 0)
+		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPCNT,
+						  (char *) &port->default_keepalives_count,
+						  &size, port->isRdma) < 0)
 		{
 			elog(LOG, "getsockopt(TCP_KEEPCNT) failed: %m");
 			port->default_keepalives_count = -1;		/* don't know */
@@ -1888,8 +1888,8 @@ pq_setkeepalivescount(int count, Port *port)
 	if (count == 0)
 		count = port->default_keepalives_count;
 
-	if (setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPCNT,
-				   (char *) &count, sizeof(count)) < 0)
+	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPCNT,
+					  (char *) &count, sizeof(count), port->isRdma) < 0)
 	{
 		elog(LOG, "setsockopt(TCP_KEEPCNT) failed: %m");
 		return STATUS_ERROR;

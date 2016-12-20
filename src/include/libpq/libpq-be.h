@@ -130,6 +130,8 @@ typedef struct Port
 	char	   *remote_port;	/* text rep of remote port */
 	CAC_state	canAcceptConnections;	/* postmaster connection status */
 
+	bool		isRdma;
+
 	/*
 	 * Information that needs to be saved from the startup packet and passed
 	 * into backend execution.  "char *" fields are NULL if not set.

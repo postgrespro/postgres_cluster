@@ -59,7 +59,7 @@ extern int StreamServerPort(int family, char *hostName,
 				 pgsocket ListenSocket[], bool ListenRdma[], int MaxListen,
 				 bool isRdma);
 extern int	StreamConnection(pgsocket server_fd, Port *port);
-extern void StreamClose(pgsocket sock);
+extern void StreamClose(pgsocket sock, bool isRdma);
 extern void TouchSocketFiles(void);
 extern void RemoveSocketFiles(void);
 extern void pq_init(void);
