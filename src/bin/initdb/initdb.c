@@ -2689,19 +2689,24 @@ usage(const char *progname)
 	printf(_("      --no-locale           equivalent to --locale=C\n"));
 	printf(_("      --pwfile=FILE         read password for the new superuser from file\n"));
 	printf(_("  -T, --text-search-config=CFG\n"
-		 "                            default text search configuration\n"));
+			 "                            default text search configuration\n"));
 	printf(_("  -U, --username=NAME       database superuser name\n"));
 	printf(_("  -W, --pwprompt            prompt for a password for the new superuser\n"));
 	printf(_("  -X, --xlogdir=XLOGDIR     location for the transaction log directory\n"));
-	printf(_("  -x, --xid=START_XID       specify start xid in hex format for new instance to test 64-bit xids, default value is 0\n"));
+	printf(_("  -x, --xid=START_XID       specify start xid value in hex format for new db instance to test 64-bit xids,\n"
+			 "                            default value is 0\n"));
 	printf(_("\nLess commonly used options:\n"));
 	printf(_("  -d, --debug               generate lots of debugging output\n"));
 	printf(_("  -k, --data-checksums      use data page checksums\n"));
 	printf(_("  -L DIRECTORY              where to find the input files\n"));
-	printf(_("  -m, --multixact-id=MX_ID  specify multixact id in hex format for new instance to test 64-bit xids, default value is 0\n"));
+	printf(_("  -m, --multixact-id=START_MX_ID\n"
+			 "                            specify start multixact id value in hex format for new db instance\n"
+			 "                            to test 64-bit xids, default value is 0\n"));
 	printf(_("  -n, --noclean             do not clean up after errors\n"));
 	printf(_("  -N, --nosync              do not wait for changes to be written safely to disk\n"));
-	printf(_("  -o, --multixact-offset=MX_OFFSET  specify multixact offset in hex format for new instance to test 64-bit xids, default value is 0\n"));
+	printf(_("  -o, --multixact-offset=START_MX_OFFSET\n"
+			 "                            specify start multixact offset value in hex format for new db instance\n"
+			 "                            to test 64-bit xids, default value is 0\n"));
 	printf(_("  -s, --show                show internal settings\n"));
 	printf(_("  -S, --sync-only           only sync data directory\n"));
 	printf(_("\nOther options:\n"));
