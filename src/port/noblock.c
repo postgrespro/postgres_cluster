@@ -15,13 +15,21 @@
 #include "c.h"
 
 #include <fcntl.h>
+#ifdef WITH_RSOCKET
+#include <rdma/rsocket.h>
+#endif
 
 
 bool
-pg_set_noblock(pgsocket sock)
+pg_set_noblock(pgsocket sock, bool isRdma)
 {
 #if !defined(WIN32)
-	return (fcntl(sock, F_SETFL, O_NONBLOCK) != -1);
+#ifdef WITH_RSOCKET
+	if (isRdma)
+		return (rfcntl(sock, F_SETFL, O_NONBLOCK) != -1);
+	else
+#endif
+		return (fcntl(sock, F_SETFL, O_NONBLOCK) != -1);
 #else
 	unsigned long ioctlsocket_ret = 1;
 
@@ -32,14 +40,25 @@ pg_set_noblock(pgsocket sock)
 
 
 bool
-pg_set_block(pgsocket sock)
+pg_set_block(pgsocket sock, bool isRdma)
 {
 #if !defined(WIN32)
 	int			flags;
 
-	flags = fcntl(sock, F_GETFL);
-	if (flags < 0 || fcntl(sock, F_SETFL, (long) (flags & ~O_NONBLOCK)))
-		return false;
+#ifdef WITH_RSOCKET
+	if (isRdma)
+	{
+		flags = rfcntl(sock, F_GETFL);
+		if (flags < 0 || rfcntl(sock, F_SETFL, (long) (flags & ~O_NONBLOCK)))
+			return false;
+	}
+	else
+	{
+		flags = fcntl(sock, F_GETFL);
+		if (flags < 0 || fcntl(sock, F_SETFL, (long) (flags & ~O_NONBLOCK)))
+			return false;
+	}
+#endif
 	return true;
 #else
 	unsigned long ioctlsocket_ret = 0;

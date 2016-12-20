@@ -2169,7 +2169,8 @@ keep_going:						/* We will come back to here until there is
 							continue;
 						}
 					}
-					if (!pg_set_noblock(conn->sock))
+					printf("TODO: add isRdma field to PGConn\n");
+					if (!pg_set_noblock(conn->sock, false))
 					{
 						appendPQExpBuffer(&conn->errorMessage,
 										  libpq_gettext("could not set socket to nonblocking mode: %s\n"),

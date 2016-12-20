@@ -71,7 +71,6 @@
 #include <sys/wait.h>
 #include <ctype.h>
 #include <sys/stat.h>
-#include <sys/socket.h>
 #include <fcntl.h>
 #include <sys/param.h>
 #include <netinet/in.h>
@@ -2065,7 +2064,7 @@ ProcessStartupPacket(Port *port, bool SSLdone)
 #endif
 
 retry1:
-		if (send(port->sock, &SSLok, 1, 0) != 1)
+		if (pg_send(port->sock, &SSLok, 1, 0, port->isRdma) != 1)
 		{
 			if (errno == EINTR)
 				goto retry1;	/* if interrupted, just retry */
@@ -4108,13 +4107,13 @@ report_fork_failure_to_client(Port *port, int errnum)
 			 strerror(errnum));
 
 	/* Set port to non-blocking.  Don't do send() if this fails */
-	if (!pg_set_noblock(port->sock))
+	if (!pg_set_noblock(port->sock, port->isRdma))
 		return;
 
 	/* We'll retry after EINTR, but ignore all other failures */
 	do
 	{
-		rc = send(port->sock, buffer, strlen(buffer) + 1, 0);
+		rc = pg_send(port->sock, buffer, strlen(buffer) + 1, 0, port->isRdma);
 	} while (rc < 0 && errno == EINTR);
 }
 

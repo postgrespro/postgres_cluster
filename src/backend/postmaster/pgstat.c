@@ -529,7 +529,7 @@ retry2:
 	 * falls behind, statistics messages will be discarded; backends won't
 	 * block waiting to send messages to the collector.
 	 */
-	if (!pg_set_noblock(pgStatSock))
+	if (!pg_set_noblock(pgStatSock, false))
 	{
 		ereport(LOG,
 				(errcode_for_socket_access(),

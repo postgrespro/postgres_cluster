@@ -73,7 +73,6 @@
 #include <grp.h>
 #include <unistd.h>
 #include <sys/file.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <netdb.h>
@@ -198,7 +197,7 @@ pq_init(void)
 	 * infinite recursion.
 	 */
 #ifndef WIN32
-	if (!pg_set_noblock(MyProcPort->sock))
+	if (!pg_set_noblock(MyProcPort->sock, MyProcPort->isRdma))
 		ereport(COMMERROR,
 				(errmsg("could not set socket to nonblocking mode: %m")));
 #endif
@@ -282,6 +281,7 @@ socket_close(int code, Datum arg)
 		 * though.
 		 */
 		MyProcPort->sock = PGINVALID_SOCKET;
+		MyProcPort->isRdma = false;
 	}
 }
 

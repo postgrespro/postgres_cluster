@@ -13,12 +13,12 @@
 #ifndef PG_SOCKET_H
 #define PG_SOCKET_H
 
+#include "pg_config.h"
+
 #ifdef WITH_RSOCKET
 #include <rdma/rsocket.h>
 #endif
 #include <sys/socket.h>
-
-#include "pg_config.h"
 
 extern int pg_socket(int domain, int type, int protocol, bool isRdma);
 extern int pg_bind(int socket, const struct sockaddr *addr, socklen_t addrlen,
@@ -27,6 +27,11 @@ extern int pg_listen(int socket, int backlog, bool isRdma);
 extern int pg_accept(int socket, struct sockaddr *addr, socklen_t *addrlen,
 					 bool isRdma);
 extern int pg_closesocket(int socket, bool isRdma);
+
+extern ssize_t pg_recv(int socket, void *buf, size_t len, int flags,
+					   bool isRdma);
+extern ssize_t pg_send(int socket, const void *buf, size_t len, int flags,
+					   bool isRdma);
 
 extern int pg_select(int nfds, fd_set *readfds, fd_set *writefds,
 				   fd_set *exceptfds, struct timeval *timeout);

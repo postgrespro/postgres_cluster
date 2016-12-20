@@ -29,8 +29,8 @@ typedef SOCKET pgsocket;
 #endif
 
 /* non-blocking */
-extern bool pg_set_noblock(pgsocket sock);
-extern bool pg_set_block(pgsocket sock);
+extern bool pg_set_noblock(pgsocket sock, bool isRdma);
+extern bool pg_set_block(pgsocket sock, bool isRdma);
 
 /* Portable path handling for Unix/Win32 (in path.c) */
 

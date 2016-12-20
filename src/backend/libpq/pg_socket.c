@@ -72,6 +72,28 @@ pg_closesocket(int socket, bool isRdma)
 		return close(socket);
 }
 
+ssize_t
+pg_recv(int socket, void *buf, size_t len, int flags, bool isRdma)
+{
+#ifdef WITH_RSOCKET
+	if (isRdma)
+		return rrecv(socket, buf, len, flags);
+	else
+#endif
+		return recv(socket, buf, len, flags);
+}
+
+ssize_t
+pg_send(int socket, const void *buf, size_t len, int flags, bool isRdma)
+{
+#ifdef WITH_RSOCKET
+	if (isRdma)
+		return rsend(socket, buf, len, flags);
+	else
+#endif
+		return send(socket, buf, len, flags);
+}
+
 int
 pg_select(int nfds, fd_set *readfds, fd_set *writefds,
 		  fd_set *exceptfds, struct timeval *timeout)

@@ -33,6 +33,7 @@
 
 #include "libpq/libpq.h"
 #include "miscadmin.h"
+#include "pg_socket.h"
 #include "tcop/tcopprot.h"
 #include "utils/memutils.h"
 #include "storage/ipc.h"
@@ -207,7 +208,7 @@ secure_raw_read(Port *port, void *ptr, size_t len)
 #ifdef WIN32
 	pgwin32_noblock = true;
 #endif
-	n = recv(port->sock, ptr, len, 0);
+	n = pg_recv(port->sock, ptr, len, 0, port->isRdma);
 #ifdef WIN32
 	pgwin32_noblock = false;
 #endif
@@ -288,7 +289,7 @@ secure_raw_write(Port *port, const void *ptr, size_t len)
 #ifdef WIN32
 	pgwin32_noblock = true;
 #endif
-	n = send(port->sock, ptr, len, 0);
+	n = pg_send(port->sock, ptr, len, 0, port->isRdma);
 #ifdef WIN32
 	pgwin32_noblock = false;
 #endif
