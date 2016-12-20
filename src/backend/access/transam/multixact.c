@@ -1714,6 +1714,20 @@ BootStrapMultiXact(void)
 	}
 
 	LWLockRelease(MultiXactMemberControlLock);
+
+	/*
+	 * If we're starting not from zero offset, initilize dummy multixact to
+	 * evade too long loop in PerformMembersTruncation().
+	 */
+	if (MultiXactState->nextOffset > 0 && MultiXactState->nextMXact > 0)
+	{
+		RecordNewMultiXact(FirstMultiXactId,
+						   MultiXactState->nextOffset,
+						   0, NULL);
+		RecordNewMultiXact(MultiXactState->nextMXact - 1,
+						   MultiXactState->nextOffset,
+						   0, NULL);
+	}
 }
 
 /*
