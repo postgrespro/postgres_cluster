@@ -627,9 +627,10 @@ LockGXact(const char *gid, Oid user)
 		before_shmem_exit(AtProcExit_Twophase, 0);
 		twophaseExitRegistered = true;
 	}
-
-	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
+	MyLockedGxact = NULL;
 	i = string_hash(gid, 0) % max_prepared_xacts;
+  Retry:
+	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
 	for (gxact = TwoPhaseState->hashTable[i]; gxact != NULL; gxact = gxact->next)
 	{
 		if (strcmp(gxact->gid, gid) == 0)
@@ -639,11 +640,18 @@ LockGXact(const char *gid, Oid user)
 			/* Lock gxact. We have to release TwoPhaseStateLock LW-Lock to avoid deadlock */
 
 			LWLockRelease(TwoPhaseStateLock);
-			SpinLockAcquire(&gxact->spinlock);
+
+			if (MyLockedGxact != gxact) {
+				if (MyLockedGxact != NULL) { 
+					SpinLockRelease(&MyLockedGxact->spinlock);
+				}
+				MyLockedGxact = gxact;
+				SpinLockAcquire(&gxact->spinlock);
+				goto Retry;
+			}
 
 			/* Ignore not-yet-valid GIDs */
 			if (!gxact->valid) {
-				SpinLockRelease(&gxact->spinlock);
 				ereport(ERROR,
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 						 errmsg("prepared transaction with identifier \"%s\" is not valid",
@@ -651,7 +659,6 @@ LockGXact(const char *gid, Oid user)
 			}
 			
 			if (user != gxact->owner && !superuser_arg(user)) {
-				SpinLockRelease(&gxact->spinlock);
 				ereport(ERROR,
 						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 						 errmsg("permission denied to finish prepared transaction"),
@@ -665,7 +672,6 @@ LockGXact(const char *gid, Oid user)
 			 * someone gets motivated to make it work.
 			 */
 			if (MyDatabaseId != proc->databaseId) {
-				SpinLockRelease(&gxact->spinlock);
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("prepared transaction belongs to another database"),
@@ -676,13 +682,16 @@ LockGXact(const char *gid, Oid user)
 			/* OK for me to lock it */
 			Assert(gxact->locking_pid < 0);
 			gxact->locking_pid = MyProcPid;
-			MyLockedGxact = gxact;
 
 			return gxact;
 		}		
 	}
 
 	LWLockRelease(TwoPhaseStateLock);
+	if (MyLockedGxact != NULL) { 
+		SpinLockRelease(&MyLockedGxact->spinlock);
+		MyLockedGxact = NULL;
+	}
 
 	ereport(ERROR,
 			(errcode(ERRCODE_UNDEFINED_OBJECT),
