@@ -262,6 +262,9 @@ usage(void)
 	printf(_("  -d, --dbname=CONNSTR   connection string\n"));
 	printf(_("  -h, --host=HOSTNAME    database server host or socket directory\n"));
 	printf(_("  -p, --port=PORT        database server port number\n"));
+#ifdef WITH_RSOCKET
+	printf(_("      --with-rsocket     use rsocket instead of socket\n"));
+#endif
 	printf(_("  -s, --status-interval=INTERVAL\n"
 			 "                         time between status packets sent to server (in seconds)\n"));
 	printf(_("  -U, --username=NAME    connect as specified database user\n"));
@@ -1967,6 +1970,9 @@ main(int argc, char **argv)
 		{"verbose", no_argument, NULL, 'v'},
 		{"progress", no_argument, NULL, 'P'},
 		{"xlogdir", required_argument, NULL, 1},
+#ifdef WITH_RSOCKET
+		{"with-rsocket", no_argument, NULL, 2},
+#endif
 		{NULL, 0, NULL, 0}
 	};
 	int			c;
@@ -2112,6 +2118,11 @@ main(int argc, char **argv)
 			case 'W':
 				dbgetpassword = 1;
 				break;
+#ifdef WITH_RSOCKET
+			case 2:
+				isRsocket = true;
+				break;
+#endif
 			case 's':
 				standby_message_timeout = atoi(optarg) * 1000;
 				if (standby_message_timeout < 0)

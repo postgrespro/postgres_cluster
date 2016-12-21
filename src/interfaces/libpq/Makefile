@@ -40,7 +40,7 @@ OBJS += chklocale.o inet_net_ntop.o noblock.o pg_strong_random.o \
 # libpgport C files that are needed if identified by configure
 OBJS += $(filter crypt.o getaddrinfo.o getpeereid.o inet_aton.o open.o system.o snprintf.o strerror.o strlcpy.o win32error.o win32setlocale.o, $(LIBOBJS))
 # backend/libpq
-OBJS += base64.o ip.o md5.o scram-common.o
+OBJS += base64.o ip.o md5.o scram-common.o pg_socket.o
 # utils/mb
 OBJS += encnames.o wchar.o
 
@@ -98,7 +98,7 @@ backend_src = $(top_srcdir)/src/backend
 chklocale.c crypt.c getaddrinfo.c getpeereid.c inet_aton.c inet_net_ntop.c noblock.c open.c system.c pgsleep.c pg_strong_random.c pgstrcasecmp.c pqsignal.c snprintf.c strerror.c strlcpy.c thread.c win32error.c win32setlocale.c: % : $(top_srcdir)/src/port/%
 	rm -f $@ && $(LN_S) $< .
 
-ip.c md5.c: % : $(backend_src)/libpq/%
+ip.c md5.c pg_socket.c: % : $(backend_src)/libpq/%
 	rm -f $@ && $(LN_S) $< .
 
 encnames.c wchar.c: % : $(backend_src)/utils/mb/%
@@ -156,7 +156,7 @@ clean distclean: clean-lib
 	rm -f inet_net_ntop.c noblock.c pgstrcasecmp.c pqsignal.c thread.c
 	rm -f chklocale.c crypt.c getaddrinfo.c getpeereid.c inet_aton.c open.c system.c snprintf.c strerror.c strlcpy.c win32error.c win32setlocale.c
 	rm -f pgsleep.c
-	rm -f md5.c ip.c
+	rm -f md5.c ip.c pg_socket.c
 	rm -f encnames.c wchar.c
 
 maintainer-clean: distclean maintainer-clean-lib

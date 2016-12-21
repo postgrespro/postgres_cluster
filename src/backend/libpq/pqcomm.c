@@ -197,7 +197,7 @@ pq_init(void)
 	 * infinite recursion.
 	 */
 #ifndef WIN32
-	if (!pg_set_noblock(MyProcPort->sock, MyProcPort->isRdma))
+	if (!pg_set_noblock(MyProcPort->sock, MyProcPort->isRsocket))
 		ereport(COMMERROR,
 				(errmsg("could not set socket to nonblocking mode: %m")));
 #endif
@@ -281,7 +281,7 @@ socket_close(int code, Datum arg)
 		 * though.
 		 */
 		MyProcPort->sock = PGINVALID_SOCKET;
-		MyProcPort->isRdma = false;
+		MyProcPort->isRsocket = false;
 	}
 }
 
@@ -313,7 +313,7 @@ int
 StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				 char *unixSocketDir,
 				 pgsocket ListenSocket[], bool ListenRdma[], int MaxListen,
-				 bool isRdma)
+				 bool isRsocket)
 {
 	pgsocket	fd;
 	int			err;
@@ -434,7 +434,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				break;
 		}
 
-		if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, isRdma))
+		if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, isRsocket))
 			 == PGINVALID_SOCKET)
 		{
 			ereport(LOG,
@@ -461,12 +461,12 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		if (!IS_AF_UNIX(addr->ai_family))
 		{
 			if ((pg_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-							   (char *) &one, sizeof(one), isRdma)) == -1)
+							   (char *) &one, sizeof(one), isRsocket)) == -1)
 			{
 				ereport(LOG,
 						(errcode_for_socket_access(),
 						 errmsg("setsockopt(SO_REUSEADDR) failed: %m")));
-				pg_closesocket(fd, isRdma);
+				pg_closesocket(fd, isRsocket);
 				continue;
 			}
 		}
@@ -476,12 +476,12 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		if (addr->ai_family == AF_INET6)
 		{
 			if (pg_setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
-							  (char *) &one, sizeof(one), isRdma) == -1)
+							  (char *) &one, sizeof(one), isRsocket) == -1)
 			{
 				ereport(LOG,
 						(errcode_for_socket_access(),
 						 errmsg("setsockopt(IPV6_V6ONLY) failed: %m")));
-				pg_closesocket(fd, isRdma);
+				pg_closesocket(fd, isRsocket);
 				continue;
 			}
 		}
@@ -493,7 +493,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		 * ipv4 addresses to ipv6.  It will show ::ffff:ipv4 for all ipv4
 		 * connections.
 		 */
-		err = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, isRdma);
+		err = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, isRsocket);
 		if (err < 0)
 		{
 			ereport(LOG,
@@ -508,7 +508,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				  errhint("Is another postmaster already running on port %d?"
 						  " If not, wait a few seconds and retry.",
 						  (int) portNumber)));
-			pg_closesocket(fd, isRdma);
+			pg_closesocket(fd, isRsocket);
 			continue;
 		}
 
@@ -517,7 +517,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		{
 			if (Setup_AF_UNIX(service) != STATUS_OK)
 			{
-				pg_closesocket(fd, isRdma);
+				pg_closesocket(fd, isRsocket);
 				break;
 			}
 		}
@@ -532,7 +532,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		if (maxconn > PG_SOMAXCONN)
 			maxconn = PG_SOMAXCONN;
 
-		err = pg_listen(fd, maxconn, isRdma);
+		err = pg_listen(fd, maxconn, isRsocket);
 		if (err < 0)
 		{
 			ereport(LOG,
@@ -540,12 +540,12 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 			/* translator: %s is IPv4, IPv6, or Unix */
 					 errmsg("could not listen on %s socket: %m",
 							familyDesc)));
-			pg_closesocket(fd, isRdma);
+			pg_closesocket(fd, isRsocket);
 			continue;
 		}
 		ListenSocket[listen_index] = fd;
 		if (ListenRdma)
-			ListenRdma[listen_index] = isRdma;
+			ListenRdma[listen_index] = isRsocket;
 		added++;
 	}
 
@@ -672,7 +672,7 @@ StreamConnection(pgsocket server_fd, Port *port)
 	port->raddr.salen = sizeof(port->raddr.addr);
 	if ((port->sock = pg_accept(server_fd,
 								(struct sockaddr *) & port->raddr.addr,
-								&port->raddr.salen, port->isRdma)) == PGINVALID_SOCKET)
+								&port->raddr.salen, port->isRsocket)) == PGINVALID_SOCKET)
 	{
 		ereport(LOG,
 				(errcode_for_socket_access(),
@@ -703,7 +703,7 @@ StreamConnection(pgsocket server_fd, Port *port)
 	port->laddr.salen = sizeof(port->laddr.addr);
 	if (pg_getsockname(port->sock,
 					   (struct sockaddr *) & port->laddr.addr,
-					   &port->laddr.salen, port->isRdma) < 0)
+					   &port->laddr.salen, port->isRsocket) < 0)
 	{
 		elog(LOG, "getsockname() failed: %m");
 		return STATUS_ERROR;
@@ -722,7 +722,7 @@ StreamConnection(pgsocket server_fd, Port *port)
 #ifdef	TCP_NODELAY
 		on = 1;
 		if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_NODELAY,
-						  (char *) &on, sizeof(on), port->isRdma) < 0)
+						  (char *) &on, sizeof(on), port->isRsocket) < 0)
 		{
 			elog(LOG, "setsockopt(TCP_NODELAY) failed: %m");
 			return STATUS_ERROR;
@@ -730,7 +730,7 @@ StreamConnection(pgsocket server_fd, Port *port)
 #endif
 		on = 1;
 		if (pg_setsockopt(port->sock, SOL_SOCKET, SO_KEEPALIVE,
-						  (char *) &on, sizeof(on), port->isRdma) < 0)
+						  (char *) &on, sizeof(on), port->isRsocket) < 0)
 		{
 			elog(LOG, "setsockopt(SO_KEEPALIVE) failed: %m");
 			return STATUS_ERROR;
@@ -761,7 +761,7 @@ StreamConnection(pgsocket server_fd, Port *port)
 		 */
 		optlen = sizeof(oldopt);
 		if (pg_getsockopt(port->sock, SOL_SOCKET, SO_SNDBUF, (char *) &oldopt,
-						  &optlen, port->isRdma) < 0)
+						  &optlen, port->isRsocket) < 0)
 		{
 			elog(LOG, "getsockopt(SO_SNDBUF) failed: %m");
 			return STATUS_ERROR;
@@ -770,7 +770,7 @@ StreamConnection(pgsocket server_fd, Port *port)
 		if (oldopt < newopt)
 		{
 			if (pg_setsockopt(port->sock, SOL_SOCKET, SO_SNDBUF, (char *) &newopt,
-							  sizeof(newopt), port->isRdma) < 0)
+							  sizeof(newopt), port->isRsocket) < 0)
 			{
 				elog(LOG, "setsockopt(SO_SNDBUF) failed: %m");
 				return STATUS_ERROR;
@@ -804,9 +804,9 @@ StreamConnection(pgsocket server_fd, Port *port)
  * we do NOT want to send anything to the far end.
  */
 void
-StreamClose(pgsocket sock, bool isRdma)
+StreamClose(pgsocket sock, bool isRsocket)
 {
-	pg_closesocket(sock, isRdma);
+	pg_closesocket(sock, isRsocket);
 }
 
 /*
@@ -1673,7 +1673,7 @@ pq_getkeepalivesidle(Port *port)
 #ifdef TCP_KEEPIDLE
 		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPIDLE,
 						  (char *) &port->default_keepalives_idle,
-						  &size, port->isRdma) < 0)
+						  &size, port->isRsocket) < 0)
 		{
 			elog(LOG, "getsockopt(TCP_KEEPIDLE) failed: %m");
 			port->default_keepalives_idle = -1; /* don't know */
@@ -1681,7 +1681,7 @@ pq_getkeepalivesidle(Port *port)
 #else
 		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPALIVE,
 						  (char *) &port->default_keepalives_idle,
-						  &size, port->isRdma) < 0)
+						  &size, port->isRsocket) < 0)
 		{
 			elog(LOG, "getsockopt(TCP_KEEPALIVE) failed: %m");
 			port->default_keepalives_idle = -1; /* don't know */
@@ -1726,14 +1726,14 @@ pq_setkeepalivesidle(int idle, Port *port)
 
 #ifdef TCP_KEEPIDLE
 	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPIDLE,
-					  (char *) &idle, sizeof(idle), port->isRdma) < 0)
+					  (char *) &idle, sizeof(idle), port->isRsocket) < 0)
 	{
 		elog(LOG, "setsockopt(TCP_KEEPIDLE) failed: %m");
 		return STATUS_ERROR;
 	}
 #else
 	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPALIVE,
-					  (char *) &idle, sizeof(idle), port->isRdma) < 0)
+					  (char *) &idle, sizeof(idle), port->isRsocket) < 0)
 	{
 		elog(LOG, "setsockopt(TCP_KEEPALIVE) failed: %m");
 		return STATUS_ERROR;
@@ -1771,7 +1771,7 @@ pq_getkeepalivesinterval(Port *port)
 
 		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPINTVL,
 						  (char *) &port->default_keepalives_interval,
-						  &size, port->isRdma) < 0)
+						  &size, port->isRsocket) < 0)
 		{
 			elog(LOG, "getsockopt(TCP_KEEPINTVL) failed: %m");
 			port->default_keepalives_interval = -1;		/* don't know */
@@ -1814,7 +1814,7 @@ pq_setkeepalivesinterval(int interval, Port *port)
 		interval = port->default_keepalives_interval;
 
 	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPINTVL,
-					  (char *) &interval, sizeof(interval), port->isRdma) < 0)
+					  (char *) &interval, sizeof(interval), port->isRsocket) < 0)
 	{
 		elog(LOG, "setsockopt(TCP_KEEPINTVL) failed: %m");
 		return STATUS_ERROR;
@@ -1851,7 +1851,7 @@ pq_getkeepalivescount(Port *port)
 
 		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPCNT,
 						  (char *) &port->default_keepalives_count,
-						  &size, port->isRdma) < 0)
+						  &size, port->isRsocket) < 0)
 		{
 			elog(LOG, "getsockopt(TCP_KEEPCNT) failed: %m");
 			port->default_keepalives_count = -1;		/* don't know */
@@ -1889,7 +1889,7 @@ pq_setkeepalivescount(int count, Port *port)
 		count = port->default_keepalives_count;
 
 	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPCNT,
-					  (char *) &count, sizeof(count), port->isRdma) < 0)
+					  (char *) &count, sizeof(count), port->isRsocket) < 0)
 	{
 		elog(LOG, "setsockopt(TCP_KEEPCNT) failed: %m");
 		return STATUS_ERROR;

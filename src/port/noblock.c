@@ -21,11 +21,11 @@
 
 
 bool
-pg_set_noblock(pgsocket sock, bool isRdma)
+pg_set_noblock(pgsocket sock, bool isRsocket)
 {
 #if !defined(WIN32)
 #ifdef WITH_RSOCKET
-	if (isRdma)
+	if (isRsocket)
 		return (rfcntl(sock, F_SETFL, O_NONBLOCK) != -1);
 	else
 #endif
@@ -40,13 +40,13 @@ pg_set_noblock(pgsocket sock, bool isRdma)
 
 
 bool
-pg_set_block(pgsocket sock, bool isRdma)
+pg_set_block(pgsocket sock, bool isRsocket)
 {
 #if !defined(WIN32)
 	int			flags;
 
 #ifdef WITH_RSOCKET
-	if (isRdma)
+	if (isRsocket)
 	{
 		flags = rfcntl(sock, F_GETFL);
 		if (flags < 0 || rfcntl(sock, F_SETFL, (long) (flags & ~O_NONBLOCK)))

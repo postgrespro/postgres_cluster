@@ -376,7 +376,7 @@ static void CloseServerPorts(int status, Datum arg);
 static void unlink_external_pid_file(int status, Datum arg);
 static void getInstallationPaths(const char *argv0);
 static void checkDataDir(void);
-static Port *ConnCreate(int serverFd, bool isRdma);
+static Port *ConnCreate(int serverFd, bool isRsocket);
 static void ConnFree(Port *port);
 static void reset_shared(int port);
 static void SIGHUP_handler(SIGNAL_ARGS);
@@ -2064,7 +2064,7 @@ ProcessStartupPacket(Port *port, bool SSLdone)
 #endif
 
 retry1:
-		if (pg_send(port->sock, &SSLok, 1, 0, port->isRdma) != 1)
+		if (pg_send(port->sock, &SSLok, 1, 0, port->isRsocket) != 1)
 		{
 			if (errno == EINTR)
 				goto retry1;	/* if interrupted, just retry */
@@ -2421,7 +2421,7 @@ canAcceptConnections(void)
  * Returns NULL on failure, other than out-of-memory which is fatal.
  */
 static Port *
-ConnCreate(int serverFd, bool isRdma)
+ConnCreate(int serverFd, bool isRsocket)
 {
 	Port	   *port;
 
@@ -2433,12 +2433,12 @@ ConnCreate(int serverFd, bool isRdma)
 		ExitPostmaster(1);
 	}
 
-	port->isRdma = isRdma;
+	port->isRsocket = isRsocket;
 
 	if (StreamConnection(serverFd, port) != STATUS_OK)
 	{
 		if (port->sock != PGINVALID_SOCKET)
-			StreamClose(port->sock, port->isRdma);
+			StreamClose(port->sock, port->isRsocket);
 		ConnFree(port);
 		return NULL;
 	}
@@ -4107,13 +4107,13 @@ report_fork_failure_to_client(Port *port, int errnum)
 			 strerror(errnum));
 
 	/* Set port to non-blocking.  Don't do send() if this fails */
-	if (!pg_set_noblock(port->sock, port->isRdma))
+	if (!pg_set_noblock(port->sock, port->isRsocket))
 		return;
 
 	/* We'll retry after EINTR, but ignore all other failures */
 	do
 	{
-		rc = pg_send(port->sock, buffer, strlen(buffer) + 1, 0, port->isRdma);
+		rc = pg_send(port->sock, buffer, strlen(buffer) + 1, 0, port->isRsocket);
 	} while (rc < 0 && errno == EINTR);
 }
 

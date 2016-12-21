@@ -24,6 +24,7 @@ extern char *dbport;
 extern char *dbname;
 extern int	dbgetpassword;
 extern char *replication_slot;
+extern bool	isRsocket;
 
 /* Connection kept global so we can disconnect easily */
 extern PGconn *conn;

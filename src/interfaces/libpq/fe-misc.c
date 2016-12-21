@@ -57,13 +57,15 @@
 #include "libpq-int.h"
 #include "mb/pg_wchar.h"
 #include "pg_config_paths.h"
+#include "pg_socket.h"
 
 
 static int	pqPutMsgBytes(const void *buf, size_t len, PGconn *conn);
 static int	pqSendSome(PGconn *conn, int len);
 static int pqSocketCheck(PGconn *conn, int forRead, int forWrite,
 			  time_t end_time);
-static int	pqSocketPoll(int sock, int forRead, int forWrite, time_t end_time);
+static int	pqSocketPoll(int sock, int forRead, int forWrite, time_t end_time,
+						 bool isRsocket);
 
 /*
  * PQlibVersion: return the libpq version number
@@ -1073,7 +1075,8 @@ pqSocketCheck(PGconn *conn, int forRead, int forWrite, time_t end_time)
 
 	/* We will retry as long as we get EINTR */
 	do
-		result = pqSocketPoll(conn->sock, forRead, forWrite, end_time);
+		result = pqSocketPoll(conn->sock, forRead, forWrite, end_time,
+							  conn->isRsocket);
 	while (result < 0 && SOCK_ERRNO == EINTR);
 
 	if (result < 0)
@@ -1099,7 +1102,8 @@ pqSocketCheck(PGconn *conn, int forRead, int forWrite, time_t end_time)
  * if end_time is 0 (or indeed, any time before now).
  */
 static int
-pqSocketPoll(int sock, int forRead, int forWrite, time_t end_time)
+pqSocketPoll(int sock, int forRead, int forWrite, time_t end_time,
+			 bool isRsocket)
 {
 	/* We use poll(2) if available, otherwise select(2) */
 #ifdef HAVE_POLL
@@ -1131,7 +1135,7 @@ pqSocketPoll(int sock, int forRead, int forWrite, time_t end_time)
 			timeout_ms = 0;
 	}
 
-	return poll(&input_fd, 1, timeout_ms);
+	return pg_poll(&input_fd, 1, timeout_ms, isRsocket);
 #else							/* !HAVE_POLL */
 
 	fd_set		input_mask;

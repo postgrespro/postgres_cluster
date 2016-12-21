@@ -118,6 +118,7 @@ typedef struct
 typedef struct Port
 {
 	pgsocket	sock;			/* File descriptor */
+	bool		isRsocket;		/* Is sock rsocket */
 	bool		noblock;		/* is the socket in non-blocking mode? */
 	ProtocolVersion proto;		/* FE/BE protocol version */
 	SockAddr	laddr;			/* local addr (postmaster) */
@@ -129,8 +130,6 @@ typedef struct Port
 	int			remote_hostname_errcode;		/* see above */
 	char	   *remote_port;	/* text rep of remote port */
 	CAC_state	canAcceptConnections;	/* postmaster connection status */
-
-	bool		isRdma;
 
 	/*
 	 * Information that needs to be saved from the startup packet and passed

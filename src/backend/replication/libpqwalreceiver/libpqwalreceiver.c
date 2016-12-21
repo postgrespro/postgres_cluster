@@ -113,6 +113,7 @@ libpqrcv_connect(char *conninfo)
 	keys[4] = NULL;
 	vals[4] = NULL;
 
+	printf("TODO: use isRsocket\n");
 	streamConn = PQconnectdbParams(keys, vals, /* expand_dbname = */ true);
 	if (PQstatus(streamConn) != CONNECTION_OK)
 		ereport(ERROR,
