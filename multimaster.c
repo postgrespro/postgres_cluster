@@ -2021,6 +2021,13 @@ void MtmOnNodeConnect(int nodeId)
 	MtmUnlock();
 }
 
+void MtmReconnectNode(int nodeId)
+{
+	MtmLock(LW_EXCLUSIVE);	
+	BIT_SET(Mtm->reconnectMask, nodeId-1);
+	MtmUnlock();
+}
+
 
 
 /*
@@ -3301,7 +3308,7 @@ bool MtmFilterTransaction(char* record, int size)
 	}
 
 	if (duplicate) {
-		MTM_LOG2("Ignore transaction %s from node %d flags=%x, our restartLSN for node: %lx,restart_lsn = (origin node %d == MtmReplicationNodeId %d) ? end_lsn=%lx, origin_lsn=%lx", 
+		MTM_LOG1("Ignore transaction %s from node %d flags=%x, our restartLSN for node: %lx,restart_lsn = (origin node %d == MtmReplicationNodeId %d) ? end_lsn=%lx, origin_lsn=%lx", 
 				 gid, replication_node, flags, Mtm->nodes[origin_node-1].restartLSN, origin_node, MtmReplicationNodeId, end_lsn, origin_lsn);
 	} else {
 		MTM_LOG2("Apply transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 

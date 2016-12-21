@@ -358,6 +358,7 @@ extern void  MtmUnlock(void);
 extern void  MtmLockNode(int nodeId, LWLockMode mode);
 extern void  MtmUnlockNode(int nodeId);
 extern void  MtmDropNode(int nodeId, bool dropSlot);
+extern void  MtmReconnectNode(int nodeId);
 extern void  MtmRecoverNode(int nodeId);
 extern void  MtmOnNodeDisconnect(int nodeId);
 extern void  MtmOnNodeConnect(int nodeId);

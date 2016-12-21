@@ -371,7 +371,9 @@ static void MtmSendHeartbeat()
 				} else {
 					/* Connectivity mask can be cleared by MtmWatchdog: in this case sockets[i] >= 0 */
 					if (BIT_CHECK(Mtm->connectivityMask, i)) { 
-						MtmDisconnect(i);
+						close(sockets[i]);
+						sockets[i] = -1;
+						MtmReconnectNode(i+1);
 						//MtmOnNodeConnect(i+1);
 					}
 					MTM_LOG4("Send heartbeat to node %d with timestamp %ld", i+1, now);    
