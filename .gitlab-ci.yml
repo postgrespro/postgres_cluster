@@ -5,23 +5,23 @@ stages:
   - installtest
   - collect_logs
 
-prepare-doc:
-  stage: prepare
-  image: ubuntu:16.04
-  tags: 
-   - deb 
-   - docker
-  only: 
-   - /^PGPRO.*9_[56]$/
-  before_script:
-  - export DEBIAN_FRONTEND=noninteractive
-  - export CORES=$(grep -c ^processor /proc/cpuinfo)
-  - uname -a
-  - df -h
-  script:
-    - echo "Current user id is `id`"
-    - apt-get update && apt-get install -y sudo gcc make flex bison libreadline-dev zlib1g-dev openjade libzstd-dev opensp docbook docbook-xml docbook-xsl libxml2-utils xsltproc python-dev libicu-dev
-    - id -u postgres || adduser --disabled-login --gecos "Postgres"  postgres
+#prepare-deb:
+#  stage: prepare
+#  image: ubuntu:16.04
+#  tags: 
+#   - deb 
+#   - docker
+#  only: 
+#   - /^PGPRO.*9_[56]$/
+#  before_script:
+#  - export DEBIAN_FRONTEND=noninteractive
+#  - export CORES=$(grep -c ^processor /proc/cpuinfo)
+#  - uname -a
+#  - df -h
+#  script:
+#    - echo "Current user id is `id`"
+#    - apt-get update && apt-get install -y sudo gcc make flex bison libreadline-dev zlib1g-dev openjade libzstd-dev opensp docbook docbook-xml docbook-xsl libxml2-utils xsltproc python-dev libicu-dev
+#    - id -u postgres || adduser --disabled-login --gecos "Postgres"  postgres
 build_job:
   stage: build
   tags:
