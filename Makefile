@@ -7,7 +7,7 @@ OBJS = src/pgpro_scheduler.o src/cron_string.o src/sched_manager_poll.o \
 EXTENSION = pgpro_scheduler
 DATA = pgpro_scheduler--1.0.sql
 REGRESS	= install_pgpro_scheduler cron_string
-REGRESS_OPTS = --create-role=__robot__ --user=postgres
+REGRESS_OPTS = --user=postgres
 EXTRA_REGRESS_OPTS=--temp-config=$(top_srcdir)/$(subdir)/conf.add
 
 ifdef USE_PGXS
