@@ -32,7 +32,7 @@ build_job:
     - if [ -z "$PGPORT" ]; then PGPORT=5789; fi
     - ./configure --prefix=$(pwd)/tmp_install  --port=--with-zstd --with-icu --with-python
     - make 
-	- make -C contrib
+    - make -C contrib
   when: always
 
 build_docs_job:
@@ -53,7 +53,7 @@ make_check_job:
   tags:
     - unix
   before_script:
-  	- unset SUCMD
+    - unset SUCMD
     - if [ $(id -u) -eq 0 ]; then SUCMD="sudo -u postgres"; fi
     - export SUCMD
   script:
@@ -64,14 +64,14 @@ make_installcheck_job:
     when: on_success
     only: 
      - /^PGPRO.*9_[56]$/
-	tags:
-	 - unix
+    tags:
+     - unix
     before_script:
-  	 - unset SUCMD
+     - unset SUCMD
      - if [ $(id -u) -eq 0 ]; then SUCMD="sudo -u postgres"; fi
      - export SUCMD
     script:
-	 - $SUCMD ./.ci/run_install_check
+     - $SUCMD ./.ci/run_install_check
 collect_logs_job:
    stage: collect_logs
    when: on_failure
