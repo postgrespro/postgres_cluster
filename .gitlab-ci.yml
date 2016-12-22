@@ -30,7 +30,7 @@ build_job:
     - /^PGPRO.*9_[56]$/
   script:
     - if [ -z "$PGPORT" ]; then PGPORT=5789; fi
-    - ./configure --prefix=$(pwd)/tmp_install --with-perl --with-tcl ${TCLCONFIG:+--with-tclconfig=${TCLCONFIG} --with-zstd --with-icu --with-python
+    - ./configure --prefix=$(pwd)/tmp_install --with-perl --with-tcl ${TCLCONFIG:+--with-tclconfig=${TCLCONFIG}} --with-zstd --with-icu --with-python
     - make 
     - make -C contrib
   when: always
