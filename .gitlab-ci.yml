@@ -15,12 +15,12 @@ test:ubuntu-16.04:
   only:
     - PGPROEE9_6
   before_script:
-  	- echo "Current user id is `id`"
+    - echo "Current user id is `id`"
     - apt-get update && apt-get install -y sudo gcc make flex bison libreadline-dev zlib1g-dev openjade libzstd-dev opensp docbook docbook-xml docbook-xsl libxml2-utils xsltproc python-dev libicu-dev
   script:
     - ./configure --prefix=/opt/pgproee  --with-zstd --with-icu --with-python
     - make -j $CORES world
     - make check-world
   after_script:
-  	- cat src/test/regress/log/initdb.log
+    - cat src/test/regress/log/initdb.log
   when: always
