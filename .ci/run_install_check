@@ -1,0 +1,25 @@
+#!/bin/sh
+# Makes temporary installation and runs installcheck-world on it
+# Should be run as non-privileged user.
+# Exit on all errors
+set -e
+# Install
+make install prefix=`pwd`/tmp_install
+make install prefix=`pwd`/tmp_install -C contrib
+
+# Setup an environment
+LD_LIBRARY_PATH=$(pwd)/tmp_install/lib
+PATH=$(pwd)/tmp_install/bin:${PATH}
+PGDATA=$(pwd)/tmp_base
+export LD_LIBRARY_PATH PATH PG_DATA
+
+# create installation
+PGPORT=`./.ci/find_free_port 5432`
+export PGPORT
+./.ci/make_test_base $PGDATA
+#run checks
+set +e
+make installcheck-world  prefix=`pwd`/tmp_install
+code=$?
+pg_ctl stop -D $PGDATA
+exit $code

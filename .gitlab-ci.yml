@@ -1,27 +1,79 @@
-image: debian
-
 stages:
+  - prepare
+  - build
   - test
+  - installtest
+  - collect_logs
 
-before_script:
+prepare-doc:
+  stage: prepare
+  image: ubuntu:16.04
+  tags: 
+   - deb 
+   - docker
+  only: 
+   - /^PGPRO.*9_[56]$/
+  before_script:
   - export DEBIAN_FRONTEND=noninteractive
   - export CORES=$(grep -c ^processor /proc/cpuinfo)
   - uname -a
   - df -h
-
-test:ubuntu-16.04:
-  stage: test
-  image: ubuntu:16.04
-  only:
-    - PGPROEE9_6
-  before_script:
+  script:
     - echo "Current user id is `id`"
     - apt-get update && apt-get install -y sudo gcc make flex bison libreadline-dev zlib1g-dev openjade libzstd-dev opensp docbook docbook-xml docbook-xsl libxml2-utils xsltproc python-dev libicu-dev
     - id -u postgres || adduser --disabled-login --gecos "Postgres"  postgres
+build_job:
+  stage: build
+  tags:
+    - unix
+  only:
+    - /^PGPRO.*9_[56]$/
   script:
-    - ./configure --prefix=/opt/pgproee  --with-zstd --with-icu --with-python
-    - make -j $CORES world
-    - sudo -u postgres make check-world
-  after_script:
-    - cat src/test/regress/log/initdb.log
+    - if [ -z "$PGPORT" ]; then PGPORT=5789; fi
+    - ./configure --prefix=$(pwd)/tmp_install  --port=--with-zstd --with-icu --with-python
+    - make 
+	- make -C contrib
   when: always
+
+build_docs_job:
+  stage: build
+  when: always
+  only: 
+    - /^PGPRO.*9_[56]$/
+  tags: 
+    - docs
+  script: 
+    - make -C doc
+
+make_check_job:
+  stage: test
+  when: on_success
+  only: 
+    - /^PGPRO.*9_[56]$/
+  tags:
+    - unix
+  before_script:
+  	- unset SUCMD
+    - if [ $(id -u) -eq 0 ]; then SUCMD="sudo -u postgres"; fi
+    - export SUCMD
+  script:
+    - $SUCMD make check-world
+
+make_installcheck_job:  
+    stage: installtest
+    when: on_success
+    only: 
+     - /^PGPRO.*9_[56]$/
+	tags:
+	 - unix
+    before_script:
+  	 - unset SUCMD
+     - if [ $(id -u) -eq 0 ]; then SUCMD="sudo -u postgres"; fi
+     - export SUCMD
+    script:
+	 - $SUCMD ./.ci/run_install_check
+collect_logs_job:
+   stage: collect_logs
+   when: on_failure
+   script:
+     - ./.ci/collect_logs 
