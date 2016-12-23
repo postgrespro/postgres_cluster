@@ -45,13 +45,13 @@ build_docs_job:
 # Here definitions of particular build enviroments start
 
 build_debian_8:
-    <<: build_unix_def
+    <<: *build_unix_def
     tags:
       - jessie
       - 64bit
 
 build_debian_7_32:
-    <<: build_unix_def
+    <<: *build_unix_def
     tags:
       - wheezy
       - 32bit
