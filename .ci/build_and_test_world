@@ -1,0 +1,44 @@
+#!/bin/sh
+
+#
+# script which exececutes all the build stages. If script executed with
+# no arguments and something fails, every bit of logs, stack traces and
+# regression.diffs found would be printed, unless DESKTOP_SESSION
+# environment varible is defined
+# Use -i option to
+#
+#  Following environment variables affect behavoir of this script.
+#  TCLCONFIG - point to directory where tclConfig.sh resides.
+#              required on debian-based system, where configure cannot 
+#              find it automatically
+#  PYTHON    - points to python binary to use. Allows to build with  python3
+#              on systems where default python in PATH is python2 or
+#              vice versa
+#  CC        - C compiler to use
+#  CFLAGS, LDFLAGS - on some systems requried to find 3rd party software
+#  
+stage() {
+	echo ====================================================================
+	printf "==  %-60s  ==\\n" "$*"
+	echo ====================================================================
+}
+
+# Dump logs on exit unless interactive
+[ "$1" = "-i" -o -z "$DESKTOP_SESSION" ]|| trap .ci/collect_logs EXIT
+set -e
+stage configure
+./configure --enable-tap-tests --enable-debug --enable-cassert --enable-nls \
+	--with-openssl --with-perl --with-tcl --with-python \
+	--with-gssapi --with-libxml --with-libxslt --with-ldap \
+	--with-icu --with-zstd ${TCLCONFIG:+--with-tclconfig=${TCLCONFIG}}
+stage make
+make
+stage "make contrib"
+make -C contrib
+stage "make check"
+make check-world
+stage "make installcheck"
+.ci/run_install_check
+trap true EXIT
+
+

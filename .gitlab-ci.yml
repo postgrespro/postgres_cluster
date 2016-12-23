@@ -2,37 +2,33 @@ stages:
   - prepare
   - build
   - test
-  - installtest
-  - collect_logs
 
-#prepare-deb:
-#  stage: prepare
-#  image: ubuntu:16.04
-#  tags: 
-#   - deb 
-#   - docker
-#  only: 
-#   - /^PGPRO.*9_[56]$/
-#  before_script:
-#  - export DEBIAN_FRONTEND=noninteractive
-#  - export CORES=$(grep -c ^processor /proc/cpuinfo)
-#  - uname -a
-#  - df -h
-#  script:
-#    - echo "Current user id is `id`"
-#    - apt-get update && apt-get install -y sudo gcc make flex bison libreadline-dev zlib1g-dev openjade libzstd-dev opensp docbook docbook-xml docbook-xsl libxml2-utils xsltproc python-dev libicu-dev
-#    - id -u postgres || adduser --disabled-login --gecos "Postgres"  postgres
-build_job:
+.prepare-deb:
+  stage: prepare
+  image: ubuntu:16.04
+  tags: 
+   - deb 
+   - docker
+  only: 
+   - /^PGPRO.*9_[56]$/
+  before_script:
+  - export DEBIAN_FRONTEND=noninteractive
+  - export CORES=$(grep -c ^processor /proc/cpuinfo)
+  - uname -a
+  - df -h
+  script:
+    - echo "Current user id is `id`"
+    - apt-get update && apt-get install -y sudo gcc make flex bison libreadline-dev zlib1g-dev openjade libzstd-dev opensp docbook docbook-xml docbook-xsl libxml2-utils xsltproc python-dev libicu-dev
+    - id -u postgres || adduser --disabled-login --gecos "Postgres"  postgres
+# Template build
+.build_unix: &build_unix_def
   stage: build
   tags:
     - unix
   only:
     - /^PGPRO.*9_[56]$/
-  script:
-    - if [ -z "$PGPORT" ]; then PGPORT=5789; fi
-    - ./configure --prefix=$(pwd)/tmp_install --with-perl --with-tcl ${TCLCONFIG:+--with-tclconfig=${TCLCONFIG}} --with-zstd --with-icu --with-python
-    - make 
-    - make -C contrib
+  script: 
+    - .ci/build_and_test_world
   when: always
 
 build_docs_job:
@@ -46,35 +42,17 @@ build_docs_job:
     - ./configure
     - make -C doc
 
-make_check_job:
-  stage: test
-  when: on_success
-  only: 
-    - /^PGPRO.*9_[56]$/
-  tags:
-    - unix
-  before_script:
-    - unset SUCMD
-    - if [ $(id -u) -eq 0 ]; then SUCMD="sudo -u postgres"; fi
-    - export SUCMD
-  script:
-    - $SUCMD make check-world
+# Here definitions of particular build enviroments start
 
-make_installcheck_job:  
-    stage: installtest
-    when: on_success
-    only: 
-     - /^PGPRO.*9_[56]$/
-    tags:
-     - unix
-    before_script:
-     - unset SUCMD
-     - if [ $(id -u) -eq 0 ]; then SUCMD="sudo -u postgres"; fi
-     - export SUCMD
-    script:
-     - $SUCMD ./.ci/run_install_check
-collect_logs_job:
-   stage: collect_logs
-   when: on_failure
-   script:
-     - ./.ci/collect_logs 
+build_debian_8:
+    <<: build_unix_def
+	tags:
+	  - jessie
+	  - 64bit
+
+build_debian_7_32:
+	<<: build_unix_def
+	tags:
+	  - wheezy
+	  - 32bit
+
