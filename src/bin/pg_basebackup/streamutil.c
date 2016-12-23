@@ -141,6 +141,13 @@ GetConnection(void)
 		i++;
 	}
 
+	if (isRsocket)
+	{
+		keywords[i] = "with_rsocket";
+		values[i] = "true";
+		i++;
+	}
+
 	/* If -W was given, force prompt for password, but only the first time */
 	need_password = (dbgetpassword == 1 && dbpassword == NULL);
 

@@ -2288,8 +2288,7 @@ keep_going:						/* We will come back to here until there is
 					}
 
 #ifdef F_SETFD
-					if ((conn->isRsocket && rfcntl(conn->sock, F_SETFD, FD_CLOEXEC) == -1) ||
-						(!conn->isRsocket && fcntl(conn->sock, F_SETFD, FD_CLOEXEC) == -1))
+					if (!conn->isRsocket && fcntl(conn->sock, F_SETFD, FD_CLOEXEC) == -1)
 					{
 						appendPQExpBuffer(&conn->errorMessage,
 										  libpq_gettext("could not set socket to close-on-exec mode: %s\n"),
