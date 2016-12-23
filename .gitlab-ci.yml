@@ -46,13 +46,13 @@ build_docs_job:
 
 build_debian_8:
     <<: build_unix_def
-	tags:
-	  - jessie
-	  - 64bit
+    tags:
+      - jessie
+      - 64bit
 
 build_debian_7_32:
-	<<: build_unix_def
-	tags:
-	  - wheezy
-	  - 32bit
+    <<: build_unix_def
+    tags:
+      - wheezy
+      - 32bit
 
