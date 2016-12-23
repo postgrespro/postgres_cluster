@@ -43,6 +43,7 @@ build_docs_job:
   tags: 
     - docs
   script: 
+    - ./configure
     - make -C doc
 
 make_check_job:
