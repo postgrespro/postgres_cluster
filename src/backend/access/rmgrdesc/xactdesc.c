@@ -98,10 +98,13 @@ ParseCommitRecord(uint8 info, xl_xact_commit *xlrec, xl_xact_parsed_commit *pars
 	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
 	{
 		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
+		uint8 gidlen = xl_twophase->gidlen;
 
 		parsed->twophase_xid = xl_twophase->xid;
+		data += MinSizeOfXactTwophase;
 
-		data += sizeof(xl_xact_twophase);
+		strcpy(parsed->twophase_gid, data);
+		data += gidlen;
 	}
 
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
@@ -139,6 +142,16 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 		data += sizeof(xl_xact_xinfo);
 	}
 
+	if (parsed->xinfo & XACT_XINFO_HAS_DBINFO)
+	{
+		xl_xact_dbinfo *xl_dbinfo = (xl_xact_dbinfo *) data;
+
+		parsed->dbId = xl_dbinfo->dbId;
+		parsed->tsId = xl_dbinfo->tsId;
+
+		data += sizeof(xl_xact_dbinfo);
+	}
+
 	if (parsed->xinfo & XACT_XINFO_HAS_SUBXACTS)
 	{
 		xl_xact_subxacts *xl_subxacts = (xl_xact_subxacts *) data;
@@ -164,10 +177,13 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
 	{
 		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
+		uint8 gidlen = xl_twophase->gidlen;
 
 		parsed->twophase_xid = xl_twophase->xid;
+		data += MinSizeOfXactTwophase;
 
-		data += sizeof(xl_xact_twophase);
+		strcpy(parsed->twophase_gid, data);
+		data += gidlen;
 	}
 }
 
