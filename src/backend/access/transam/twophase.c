@@ -1255,7 +1255,8 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 	parsed->nrels = hdr->ncommitrels;
 	parsed->nmsgs = hdr->ninvalmsgs;
 
-	strcpy(parsed->twophase_gid, hdr->gid);
+	strncpy(parsed->twophase_gid, bufptr, hdr->gidlen);
+	bufptr += MAXALIGN(hdr->gidlen);
 
 	parsed->subxacts = (TransactionId *) bufptr;
 	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
