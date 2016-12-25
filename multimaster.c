@@ -1601,11 +1601,7 @@ static void MtmPollStatusOfPreparedTransactions(int disabledNodeId)
 			Assert(ts->gid[0]);
 			if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
 				elog(LOG, "Abort transaction %s because its coordinator is disabled and it is not prepared at node %d", ts->gid, MtmNodeId);
-				ts->isPinned = true;
-				MtmUnlock();
 				MtmFinishPreparedTransaction(ts, false);
-				MtmLock(LW_EXCLUSIVE);				
-				ts->isPinned = false;
 			} else {
 				MTM_LOG1("Poll state of transaction %d (%s)", ts->xid, ts->gid);				
 				MtmBroadcastPollMessage(ts);
@@ -2017,7 +2013,7 @@ void MtmOnNodeConnect(int nodeId)
 	MtmLock(LW_EXCLUSIVE);	
 	elog(LOG, "Connect node %d connectivity mask %llx", nodeId, (long long) Mtm->connectivityMask);
 	BIT_CLEAR(Mtm->connectivityMask, nodeId-1);
-	BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
+	BIT_SET(Mtm->reconnectMask, nodeId-1); /* force sender to reestablish connection and send heartbeat */
 	MtmUnlock();
 }
 
@@ -2945,26 +2941,36 @@ void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 	}
 }	
 
-
+/*
+ * This function is call with MTM mutex locked.
+ * It shoudl unlock mutex before calling FinishPreparedTransaction to avoid deadlocks.
+ * ts object is pinned to prevent deallocation while lock is released.
+ */
 void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
 {
 	bool insideTransaction = IsTransactionState();
+
 	Assert(ts->votingCompleted);
+
+	ts->isPinned = true;
+	MtmUnlock();
+
 	MtmResetTransaction();
 	
 	if (!insideTransaction) { 
 		StartTransactionCommand();
 	}
-	//MtmBeginSession(MtmNodeId);
 	MtmSetCurrentTransactionCSN(ts->csn);
 	MtmSetCurrentTransactionGID(ts->gid);
 	FinishPreparedTransaction(ts->gid, commit);
 	
 	if (!insideTransaction) { 
 		CommitTransactionCommand();
-		//MtmEndSession(MtmNodeId, true);
 		Assert(ts->status == commit ? TRANSACTION_STATUS_COMMITTED : TRANSACTION_STATUS_ABORTED);
 	}
+
+	MtmLock(LW_EXCLUSIVE);				
+	ts->isPinned = false;
 }
 
 /* 
@@ -2980,6 +2986,7 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 	
 	if (!Mtm->preparedTransactionsLoaded)
 	{
+		/* We must restore state of prepared (but no committed or aborted) transaction before start of recovery. */
 		MtmLoadPreparedTransactions();
 		Mtm->preparedTransactionsLoaded = true;
 	}
@@ -2991,6 +2998,7 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 			MtmUnlock();
 			return REPLMODE_EXIT;
 		}
+		/* We are not interested in receiving any deteriorated logical messages from recovered node, do recreate slot */
 		if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
 			mode = REPLMODE_CREATE_NEW;
 		}
@@ -3147,6 +3155,8 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			MtmEnableNode(MtmReplicationNodeId);
 			MtmCheckQuorum();
 		} else {
+			/* Force arbiter to reestablish connection with this nodem send heartbeat to inform this node that it was disabled and should perform recovery */
+			BIT_SET(Mtm->reconnectMask, MtmReplicationNodeId-1);
 			MtmUnlock();
 			elog(ERROR, "Disabled node %d tries to reconnect without recovery", MtmReplicationNodeId); 
 		}
@@ -3156,9 +3166,10 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	elog(LOG, "Start %d senders and %d receivers from %d cluster status %s", Mtm->nSenders+1, Mtm->nReceivers, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
 	MtmSenderStarted = 1;
 	if (++Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->status == MTM_CONNECTED) { 
+		/* All logical replication connections from and to this node are established, so we can switch cluster to online mode */
 		MtmSwitchClusterMode(MTM_ONLINE);
 	}
-	BIT_SET(Mtm->reconnectMask, MtmReplicationNodeId-1); /* arbiter should try to reestblish connection with this node */
+	BIT_SET(Mtm->reconnectMask, MtmReplicationNodeId-1); /* arbiter should try to reestablish connection with this node */
 	MtmUnlock();
 	on_shmem_exit(MtmOnProcExit, 0);
 }
@@ -3168,6 +3179,16 @@ XLogRecPtr MtmGetFlushPosition(int nodeId)
 	return Mtm->nodes[nodeId-1].flushPos;
 }
 
+/**
+ * Keep track of progress of WAL writer.
+ * We need to notify WAL senders at other nodes which logical records 
+ * are flushed to the disk and so can survive failure. In asynchronous commit mode
+ * WAL is flushed by WAL writer. Current flish position can be obtained by GetFlushRecPtr().
+ * So on applying new logical record we insert it in the MtmLsnMapping and compare
+ * their poistions in local WAL log with current flush position.
+ * The records which are flushed to the disk by WAL writer are removed from the list
+ * and mapping ing mtm->nodes[].flushPos is updated for this node.
+ */
 void  MtmUpdateLsnMapping(int node_id, XLogRecPtr end_lsn)
 {
 	dlist_mutable_iter iter;
@@ -3216,9 +3237,21 @@ MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
 	}
 }
 
+/* 
+ * Filter transactions which should be replicated to other nodes.
+ * This filter is applied at sender side (WAL sender).
+ * Final filtering is also done at destination side by MtmFilterTransaction function.
+ */
 static bool 
 MtmReplicationTxnFilterHook(struct PGLogicalTxnFilterArgs* args)
 {
+	/* Do not replicate any transactions in recovery mode (because we should apply
+	 * changes sent to us rather than send our own pending changes)
+	 * and transactions received from other nodes 
+	 * (originId should be non-zero in this case)
+	 * unless we are performing recovery of disabled node 
+	 * (in this case all transactions should be sent)
+	 */
 	bool res = Mtm->status != MTM_RECOVERY
 		&& (args->origin_id == InvalidRepOriginId 
 			|| MtmIsRecoveredNode(MtmReplicationNodeId));
@@ -3228,6 +3261,9 @@ MtmReplicationTxnFilterHook(struct PGLogicalTxnFilterArgs* args)
 	return res;
 }
 
+/**
+ * Filter record corresponding to local (non-distributed) tables
+ */
 static bool 
 MtmReplicationRowFilterHook(struct PGLogicalRowFilterArgs* args)
 {
@@ -3248,7 +3284,11 @@ MtmReplicationRowFilterHook(struct PGLogicalRowFilterArgs* args)
 
 /*
  * Filter received transactions at destination side.
- * This function is executed by receiver, so there are no race conditions and it is possible to update nodes[i].restartLSN without lock
+ * This function is executed by receiver, 
+ * so there are no race conditions and it is possible to update nodes[i].restartLSN without lock. 
+ * It is more efficient to filter records at senders size (done by MtmReplicationTxnFilterHook) to avoid sending useless data through network. But asynchronous nature of 
+ * logical replications makes it not possible to guarantee (at least I failed to do it)
+ * that replica do not receive deteriorated data.
  */
 bool MtmFilterTransaction(char* record, int size)
 {
@@ -3308,8 +3348,8 @@ bool MtmFilterTransaction(char* record, int size)
 	}
 
 	if (duplicate) {
-		MTM_LOG1("Ignore transaction %s from node %d flags=%x, our restartLSN for node: %lx,restart_lsn = (origin node %d == MtmReplicationNodeId %d) ? end_lsn=%lx, origin_lsn=%lx", 
-				 gid, replication_node, flags, Mtm->nodes[origin_node-1].restartLSN, origin_node, MtmReplicationNodeId, end_lsn, origin_lsn);
+		MTM_LOG1("Ignore transaction %s from node %d flags=%x because our LSN position %lx for origin node %d is greater or equal than LSN %lx of this transaction (end_lsn=%lx, origin_lsn=%lx)", 
+				 gid, replication_node, flags, Mtm->nodes[origin_node-1].restartLSN, origin_node, restart_lsn, end_lsn, origin_lsn);
 	} else {
 		MTM_LOG2("Apply transaction %s from node %d lsn %lx, flags=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
 				 gid, replication_node, end_lsn, flags, origin_node, origin_lsn, restart_lsn);
@@ -3326,7 +3366,11 @@ void MtmSetupReplicationHooks(struct PGLogicalHooks* hooks)
 	hooks->row_filter_hook = MtmReplicationRowFilterHook;
 }
 
-
+/*
+ * Setup replication session origin to include origin location in WAL and 
+ * update slot position.
+ * Sessions are not reetrant so we have to use exclusive lock here.
+ */
 void MtmBeginSession(int nodeId)
 {
 	MtmLockNode(nodeId, LW_EXCLUSIVE);
@@ -3338,6 +3382,9 @@ void MtmBeginSession(int nodeId)
 	MTM_LOG3("%d: End setup replorigin session: %d", MyProcPid, replorigin_session_origin);
 }
 
+/* 
+ * Release replication session
+ */
 void MtmEndSession(int nodeId, bool unlock)
 {
 	if (replorigin_session_origin != InvalidRepOriginId) { 

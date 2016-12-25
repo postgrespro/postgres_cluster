@@ -84,6 +84,7 @@ static bool        send_heartbeat;
 static timestamp_t last_sent_heartbeat;
 static TimeoutId   heartbeat_timer;
 static nodemask_t  busy_mask;
+static timestamp_t last_heartbeat_to_node[MAX_NODES];
 
 static void MtmSender(Datum arg);
 static void MtmReceiver(Datum arg);
@@ -369,11 +370,15 @@ static void MtmSendHeartbeat()
 				if (!MtmSendToNode(i, &msg, sizeof(msg))) { 
 					elog(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
 				} else {
+					if (last_heartbeat_to_node[i] + MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2 < now) { 
+						MTM_LOG1("Last hearbeat to node %d was sent %ld microseconds ago", i+1, now - last_heartbeat_to_node[i]);
+					}
+					last_heartbeat_to_node[i] = now;
 					/* Connectivity mask can be cleared by MtmWatchdog: in this case sockets[i] >= 0 */
 					if (BIT_CHECK(Mtm->connectivityMask, i)) { 
 						close(sockets[i]);
 						sockets[i] = -1;
-						MtmReconnectNode(i+1);
+						MtmReconnectNode(i+1); /* set reconnect mask to force node reconnent */
 						//MtmOnNodeConnect(i+1);
 					}
 					MTM_LOG4("Send heartbeat to node %d with timestamp %ld", i+1, now);    
@@ -386,6 +391,9 @@ static void MtmSendHeartbeat()
 	
 }
 
+/* This function shoudl be called from all places where sender can be blocked.
+ * It checks send_heartbeat flag set by timer and if it is set hthen sends heartbeats to all alive nodes 
+ */
 void MtmCheckHeartbeat()
 {
 	if (send_heartbeat && !stop) {
@@ -544,6 +552,9 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 	BIT_SET(busy_mask, node);
 	while (true) {
 #if 0
+		/* Original intention was to reestablish connectect when reconnet mask is set to avoid hanged-up connection.
+		 * But reconnectMask is set not only when connection is broken, so breaking connection in all this cases cause avalunch of connection failures.
+		 */
 		if (sockets[node] >= 0 && BIT_CHECK(Mtm->reconnectMask, node)) {
 			elog(WARNING, "Arbiter is forced to reconnect to node %d", node+1); 
 			close(sockets[node]);
@@ -687,6 +698,7 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, MtmArbiterMessage* msg)
 	buf->data[buf->used++] = *msg;
 }
 
+
 static void MtmSender(Datum arg)
 {
 	sigset_t sset;
@@ -709,7 +721,7 @@ static void MtmSender(Datum arg)
 	/* Connect to a database */
 	BackgroundWorkerInitializeConnection(MtmDatabaseName, NULL);
 
-
+	/* Start heartbeat times */
 	heartbeat_timer = RegisterTimeout(USER_TIMEOUT, MtmScheduleHeartbeat);
 	enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 
@@ -942,11 +954,14 @@ static void MtmReceiver(Datum arg)
 						} else {
 							ts = tm->state;
 							BIT_SET(ts->votedMask, node-1);
-							if (ts->status == TRANSACTION_STATUS_UNKNOWN) { 
+							if (ts->status == TRANSACTION_STATUS_UNKNOWN || ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
 								if (msg->status == TRANSACTION_STATUS_IN_PROGRESS || msg->status == TRANSACTION_STATUS_ABORTED) {
 									elog(LOG, "Abort prepared transaction %s because it is in state %s at node %d",
 										 msg->gid, MtmTxnStatusMnem[msg->status], node);
+
+									replorigin_session_origin = DoNotReplicateId;
 									MtmFinishPreparedTransaction(ts, false);
+									replorigin_session_origin = InvalidRepOriginId;
 								} 
 								else if (msg->status == TRANSACTION_STATUS_COMMITTED || msg->status == TRANSACTION_STATUS_UNKNOWN)
 								{ 
@@ -956,7 +971,10 @@ static void MtmReceiver(Datum arg)
 									}
 									if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
 										elog(LOG, "Commit transaction %s because it is prepared at all live nodes", msg->gid);		
+
+										replorigin_session_origin = DoNotReplicateId;
 										MtmFinishPreparedTransaction(ts, true);
+										replorigin_session_origin = InvalidRepOriginId;
 									} else { 
 										MTM_LOG1("Receive response for transaction %s -> %s, participants=%llx, voted=%llx", 
 												 msg->gid, MtmTxnStatusMnem[msg->status], (long long)ts->participantsMask, (long long)ts->votedMask);		
@@ -1082,7 +1100,7 @@ static void MtmReceiver(Datum arg)
 					} else { 
 						switch (msg->code) { 
 						  case MSG_PRECOMMIT:
-							Assert(false); // Now send through pglogical 
+							Assert(false); // Now sent through pglogical 
 							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
 								ts->status = TRANSACTION_STATUS_UNKNOWN;
 								ts->csn = MtmAssignCSN();
