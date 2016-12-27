@@ -3009,6 +3009,8 @@ CopyCreateStmtFields(const CreateStmt *from, CreateStmt *newnode)
 	COPY_SCALAR_FIELD(if_not_exists);
 	if (from->partition_info)
 		COPY_POINTER_FIELD(partition_info, sizeof(PartitionInfo));
+	else
+		newnode->partition_info = NULL;
 }
 
 static CreateStmt *

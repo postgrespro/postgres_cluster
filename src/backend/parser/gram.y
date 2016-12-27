@@ -228,6 +228,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	InsertStmt			*istmt;
 	VariableSetStmt		*vsetstmt;
 	PartitionInfo		*partinfo;
+	RangePartitionInfo	*rangeinfo;
 }
 
 %type <node>	stmt schema_stmt
@@ -375,6 +376,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				relation_expr_list dostmt_opt_list
 				transform_element_list transform_type_list
 				optcincluding opt_c_including
+				OptRangePartitionsList OptRangePartitions
 
 %type <list>	group_by_list
 %type <node>	group_by_item empty_grouping_set rollup_clause cube_clause
@@ -545,6 +547,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <boolean> opt_if_not_exists
 
 %type <partinfo> partitionType;
+%type <rangeinfo> OptRangePartitionsListElement;
 
 /*
  * Non-keyword token types.  These are hard-wired into the "flex" lexer.
@@ -609,7 +612,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	KEY
 
 	LABEL LANGUAGE LARGE_P LAST_P LATERAL_P
-	LEADING LEAKPROOF LEAST LEFT LEVEL LIKE LIMIT LISTEN LOAD LOCAL
+	LEADING LEAKPROOF LEAST LEFT LESS LEVEL LIKE LIMIT LISTEN LOAD LOCAL
 	LOCALTIME LOCALTIMESTAMP LOCATION LOCK_P LOCKED LOGGED
 
 	MAPPING MATCH MATERIALIZED MAXVALUE METHOD MINUTE_P MINVALUE MODE MONTH_P MOVE
@@ -638,7 +641,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	STATEMENT STATISTICS STDIN STDOUT STORAGE STRICT_P STRIP_P SUBSTRING
 	SYMMETRIC SYSID SYSTEM_P
 
-	TABLE TABLES TABLESAMPLE TABLESPACE TEMP TEMPLATE TEMPORARY TEXT_P THEN
+	TABLE TABLES TABLESAMPLE TABLESPACE TEMP TEMPLATE TEMPORARY TEXT_P THAN THEN
 	TIME TIMESTAMP TO TRAILING TRANSACTION TRANSFORM TREAT TRIGGER TRIM TRUE_P
 	TRUNCATE TRUSTED TYPE_P TYPES_P
 
@@ -2385,6 +2388,11 @@ alter_table_cmd:
 					n->def = (Node *)$1;
 					$$ = (Node *) n;
 				}
+
+			| ADD_P PARTITION OptRangePartitionsListElement
+				{
+					$$ = NULL;
+				}
 		;
 
 alter_column_default:
@@ -2838,6 +2846,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $10;
 					n->tablespacename = $11;
 					n->if_not_exists = false;
+					n->partition_info = NULL;
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE IF_P NOT EXISTS qualified_name '('
@@ -2855,6 +2864,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $13;
 					n->tablespacename = $14;
 					n->if_not_exists = true;
+					n->partition_info = NULL;
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE qualified_name OF any_name
@@ -2872,6 +2882,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $9;
 					n->tablespacename = $10;
 					n->if_not_exists = false;
+					n->partition_info = NULL;
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE IF_P NOT EXISTS qualified_name OF any_name
@@ -2889,6 +2900,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $12;
 					n->tablespacename = $13;
 					n->if_not_exists = true;
+					n->partition_info = NULL;
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
@@ -2915,18 +2927,61 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 partitionType:	HASH '(' a_expr ')' PARTITIONS '(' Iconst ')'
 					{
 						PartitionInfo *n = (PartitionInfo *) palloc(sizeof(PartitionInfo));
-						n->partition_type = PT_HASH;
+						n->partition_type = P_HASH;
 						n->key = $3;
 						n->partitions_count = $7;
 						$$ = (PartitionInfo *)n;
 					}
-				| RANGE '(' columnref ')'
+				| RANGE '(' columnref ')' INTERVAL '(' AexprConst ')' OptRangePartitions
 					{
 						PartitionInfo *n = (PartitionInfo *) palloc(sizeof(PartitionInfo));
-						n->partition_type = PT_RANGE;
+						n->partition_type = P_RANGE;
 						n->key = $3;
+						n->interval = $7;
+						n->partitions = $9;
 						$$ = (PartitionInfo *)n;
 					}
+		;
+
+OptRangePartitions: '(' OptRangePartitionsList ')'
+			{
+				$$ = $2;
+			}
+		| /*EMPTY*/			{ $$ = NIL; }
+		;
+
+OptRangePartitionsList:
+		OptRangePartitionsListElement
+			{
+				$$ = list_make1($1);
+			}
+		| OptRangePartitionsList ',' OptRangePartitionsListElement
+			{
+				$$ = lappend($1, $3);
+			}
+		;
+
+/*OptHashPartitions: ;*/
+		/* PARTITION '(' AexprConst ')' */
+
+OptRangePartitionsListElement:
+		PARTITION qualified_name VALUES LESS THAN '(' b_expr ')'
+			{
+				RangePartitionInfo *n = (RangePartitionInfo *) palloc(sizeof(RangePartitionInfo));
+				n->relation = $2;
+				n->upper_bound = $7;
+				n->tablespace = NULL;
+				$$ = (RangePartitionInfo *)n;
+			}
+
+		| PARTITION qualified_name VALUES LESS THAN '(' b_expr ')' TABLESPACE name
+			{
+				RangePartitionInfo *n = (RangePartitionInfo *) palloc(sizeof(RangePartitionInfo));
+				n->relation = $2;
+				n->upper_bound = $7;
+				n->tablespace = $10;
+				$$ = (RangePartitionInfo *)n;
+			}
 		;
 
 /*
@@ -14002,6 +14057,7 @@ unreserved_keyword:
 			| LARGE_P
 			| LAST_P
 			| LEAKPROOF
+			| LESS
 			| LEVEL
 			| LISTEN
 			| LOAD
@@ -14119,6 +14175,7 @@ unreserved_keyword:
 			| TEMPLATE
 			| TEMPORARY
 			| TEXT_P
+			| THAN
 			| TRANSACTION
 			| TRANSFORM
 			| TRIGGER

@@ -1746,8 +1746,8 @@ typedef struct VariableShowStmt
 
 typedef enum PartitionType
 {
-	PT_HASH = 1,
-	PT_RANGE
+	P_HASH = 1,
+	P_RANGE
 } PartitionType;
 
 typedef struct PartitionInfo
@@ -1755,7 +1755,16 @@ typedef struct PartitionInfo
 	PartitionType	partition_type;		/* partition type */
 	Node		   *key;				/* ColumnRef (Expr in future) */
 	uint32			partitions_count;	/* for PT_HASH only */
+	Node		   *interval;			/* for PT_RANGE only */
+	List		   *partitions;			/* List of RangePartitionInfo */
 } PartitionInfo;
+
+typedef struct RangePartitionInfo
+{
+	RangeVar	   *relation;
+	Node		   *upper_bound;
+	char		   *tablespace;
+} RangePartitionInfo;
 
 /* ----------------------
  *		Create Table Statement

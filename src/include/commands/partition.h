@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- * partitions.c
+ * partitions.h
  *	  partitioning utilities
  *
  * Copyright (c) 2015-2016, Postgres Professional
