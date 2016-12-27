@@ -9,11 +9,12 @@
  */
 
 #include "postgres.h"
-#include "commands/partition.h"
-#include "executor/spi.h"
-#include "catalog/pg_type.h"
 #include "catalog/heap.h"
+#include "catalog/namespace.h"
+#include "catalog/pg_type.h"
+#include "commands/partition.h"
 #include "commands/pathman_wrapper.h"
+#include "executor/spi.h"
 #include "nodes/value.h"
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
@@ -126,8 +127,6 @@ create_range_partitions(CreateStmt *stmt, Oid relid, const char *attname)
 							   interval_datum,
 							   interval_type);
 
-	/* TODO: Sort and check type */
-
 	/* Add partitions */
 	foreach(lc, pinfo->partitions)
 	{
@@ -152,4 +151,31 @@ create_range_partitions(CreateStmt *stmt, Oid relid, const char *attname)
 		last_bound = ((Const *) bound_expr)->constvalue;
 		last_bound_is_null = false;
 	}
+}
+
+
+void
+merge_range_partitions(List *partitions)
+{
+	ListCell   *lc;
+	List	   *relids = NIL;
+
+	/* There should be exactly two partitions */
+	Assert(list_length(partitions) == 2);
+
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "could not connect using SPI");
+
+	/* Convert rangevars to relids */
+	foreach(lc, partitions)
+	{
+		RangeVar *rangevar = (RangeVar *) lfirst(lc);
+
+		relids = lappend_oid(relids, RangeVarGetRelid(rangevar, NoLock, false));
+	}
+	pm_merge_range_partitions(linitial_oid(relids), lsecond_oid(relids));
+
+	/* TODO: Add INTO clause */
+
+	SPI_finish();
 }

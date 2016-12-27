@@ -615,7 +615,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	LEADING LEAKPROOF LEAST LEFT LESS LEVEL LIKE LIMIT LISTEN LOAD LOCAL
 	LOCALTIME LOCALTIMESTAMP LOCATION LOCK_P LOCKED LOGGED
 
-	MAPPING MATCH MATERIALIZED MAXVALUE METHOD MINUTE_P MINVALUE MODE MONTH_P MOVE
+	MAPPING MATCH MATERIALIZED MAXVALUE MERGE METHOD MINUTE_P MINVALUE MODE MONTH_P MOVE
 
 	NAME_P NAMES NATIONAL NATURAL NCHAR NEXT NO NONE
 	NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF
@@ -2392,6 +2392,13 @@ alter_table_cmd:
 			| ADD_P PARTITION OptRangePartitionsListElement
 				{
 					$$ = NULL;
+				}
+			| MERGE PARTITIONS qualified_name ',' qualified_name
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_MergePartitions;
+					n->partitions = list_make2($3, $5);
+					$$ = (Node *) n;
 				}
 		;
 
@@ -14070,6 +14077,7 @@ unreserved_keyword:
 			| MATCH
 			| MATERIALIZED
 			| MAXVALUE
+			| MERGE
 			| METHOD
 			| MINUTE_P
 			| MINVALUE

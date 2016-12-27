@@ -15,5 +15,6 @@
 #include "nodes/parsenodes.h"
 
 extern void create_partitions(CreateStmt *stmt, Oid relid);
+extern void merge_range_partitions(List *partitions);
 
 // #endif /* PARTITION_H */

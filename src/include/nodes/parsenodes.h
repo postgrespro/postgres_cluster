@@ -1527,7 +1527,10 @@ typedef enum AlterTableType
 	AT_DisableRowSecurity,		/* DISABLE ROW SECURITY */
 	AT_ForceRowSecurity,		/* FORCE ROW SECURITY */
 	AT_NoForceRowSecurity,		/* NO FORCE ROW SECURITY */
-	AT_GenericOptions			/* OPTIONS (...) */
+	AT_GenericOptions,			/* OPTIONS (...) */
+
+	AT_AddPartition,			/* ADD PARTITION */
+	AT_MergePartitions			/* MERGE PARTITIONS */
 } AlterTableType;
 
 typedef struct ReplicaIdentityStmt
@@ -1548,6 +1551,8 @@ typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
 								 * constraint, or parent table */
 	DropBehavior behavior;		/* RESTRICT or CASCADE for DROP cases */
 	bool		missing_ok;		/* skip error if missing? */
+
+	List	   *partitions;		/* For partitions commands */
 } AlterTableCmd;
 
 
