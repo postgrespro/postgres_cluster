@@ -23,6 +23,29 @@
 #include "utils/lsyscache.h"
 
 
+/*
+ * Make pg_pathman's function call
+ */
+static bool
+pathman_invoke(const char *func, const FuncArgs *args)
+{
+	char   *sql;
+	int		ret;
+
+	sql = psprintf("SELECT %s.%s",
+				   get_pathman_schema_name(),
+				   func);
+
+	ret = SPI_execute_with_args(sql,
+								args->nargs,
+								args->types,
+								args->values,
+								args->nulls,
+								false,
+								0);
+	return ret == SPI_OK_SELECT;
+}
+
 void
 InitFuncArgs(FuncArgs *funcargs, uint32 size)
 {
@@ -104,21 +127,18 @@ pm_create_hash_partitions(Oid relid,
 						  const char *attname,
 						  uint32_t partitions_count)
 {
-	int		nargs = 3;
-	Oid		types[3] = {OIDOID, TEXTOID, INT4OID};
-	Datum	values[3] = {
-		ObjectIdGetDatum(relid),
-		CStringGetTextDatum(attname),
-		UInt32GetDatum(partitions_count)};
-	char   *sql;
-	int		ret;
+	FuncArgs		args;
+	bool			ret;
 
-	/* Generate and execute SPI query */
-	sql = psprintf("SELECT %s.create_hash_partitions($1, $2, $3)",
-				   get_pathman_schema_name());
-	ret = SPI_execute_with_args(sql, nargs, types, values, NULL, false, 0);
+	InitFuncArgs(&args, 3);
+	PG_SETARG_DATUM(&args, 0, OIDOID, ObjectIdGetDatum(relid));
+	PG_SETARG_DATUM(&args, 1, TEXTOID, CStringGetTextDatum(attname));
+	PG_SETARG_DATUM(&args, 2, INT4OID, ObjectIdGetDatum(UInt32GetDatum(partitions_count)));
 
-	if (ret != SPI_OK_SELECT)
+	ret = pathman_invoke("create_hash_partitions($1, $2, $3)", &args);
+	FreeFuncArgs(&args);
+
+	if (!ret)
 		elog(ERROR, "Hash partitions creation failed");
 }
 
@@ -132,7 +152,6 @@ pm_create_range_partitions(Oid relid,
 						Datum interval,
 						Oid interval_type)
 {
-	char		   *sql;
 	FuncArgs		args;
 	int				ret;
 
@@ -146,13 +165,10 @@ pm_create_range_partitions(Oid relid,
 	/* Zero partitions */
 	PG_SETARG_DATUM(&args, 4, INT4OID, Int32GetDatum(0));
 
-	/* Generate and run SPI query */
-	sql = psprintf("SELECT %s.create_range_partitions($1, $2, $3, $4, $5)",
-				   get_pathman_schema_name());
-	ret = SPI_execute_with_args(sql, args.nargs, args.types, args.values, NULL, false, 0);
+	ret = pathman_invoke("create_range_partitions($1, $2, $3, $4, $5)", &args);
 	FreeFuncArgs(&args);
 
-	if (ret != SPI_OK_SELECT)
+	if (!ret)
 		elog(ERROR, "Range partitions creation failed");
 }
 
@@ -171,8 +187,7 @@ pm_add_range_partition(Oid relid,
 					const char *tablespace)
 {
 	FuncArgs	args;
-	int			ret;
-	char	   *sql;
+	bool		ret;
 
 	InitFuncArgs(&args, 5);
 
@@ -212,19 +227,31 @@ pm_add_range_partition(Oid relid,
 	else
 		PG_SETARG_NULL(&args, 4, TEXTOID);
 
-	/* Generate an sql query for SPI call and execute it */
-	sql = psprintf("SELECT %s.add_range_partition($1, $2, $3, $4, $5)",
-				   get_pathman_schema_name());
-
-	ret = SPI_execute_with_args(sql,
-								args.nargs,
-								args.types,
-								args.values,
-								args.nulls,
-								false,
-								0);
+	/* Invoke pg_pathman's function */
+	ret = pathman_invoke("add_range_partition($1, $2, $3, $4, $5)", &args);
 	FreeFuncArgs(&args);
 
-	if (ret != SPI_OK_SELECT)
+	if (!ret)
 		elog(ERROR, "Failed to add partition '%s'", partition_name);
+}
+
+
+/*
+ * Merge partitions
+ */
+void
+pm_merge_range_partitions(Oid relid1, Oid relid2)
+{
+	FuncArgs	args;
+	bool		ret;
+
+	InitFuncArgs(&args, 2);
+	PG_SETARG_DATUM(&args, 0, OIDOID, relid1);
+	PG_SETARG_DATUM(&args, 1, OIDOID, relid2);
+
+	ret = pathman_invoke("merge_range_partitions($1, $2)", &args);
+	FreeFuncArgs(&args);
+
+	if (!ret)
+		elog(ERROR, "Unable to merge partitions");
 }

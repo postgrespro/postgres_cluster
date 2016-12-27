@@ -57,3 +57,4 @@ void pm_add_range_partition(Oid relid,
 					bool lower_null,
 					bool upper_null,
 					const char *tablespace);
+void pm_merge_range_partitions(Oid relid1, Oid relid2);
