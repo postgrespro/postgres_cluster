@@ -232,10 +232,25 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		return;
 
 	OutputPluginPrepareWrite(ctx, true);
+
+	switch(txn->xact_action)
+	{
+		case XLOG_XACT_COMMIT:
+			appendStringInfoString(ctx->out, "COMMIT");
+			break;
+		case XLOG_XACT_PREPARE:
+			appendStringInfoString(ctx->out, "PREPARE");
+			break;
+		case XLOG_XACT_COMMIT_PREPARED:
+			appendStringInfoString(ctx->out, "COMMIT PREPARED");
+			break;
+		case XLOG_XACT_ABORT_PREPARED:
+			appendStringInfoString(ctx->out, "ABORT PREPARED");
+			break;
+	}
+
 	if (data->include_xids)
-		appendStringInfo(ctx->out, "COMMIT %u", txn->xid);
-	else
-		appendStringInfoString(ctx->out, "COMMIT");
+		appendStringInfo(ctx->out, " %u", txn->xid);
 
 	if (data->include_timestamp)
 		appendStringInfo(ctx->out, " (at %s)",
