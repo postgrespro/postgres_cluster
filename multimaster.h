@@ -263,7 +263,8 @@ typedef struct
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
 	nodemask_t connectivityMask;       /* bitmask of disconnected nodes */
-	nodemask_t pglogicalNodeMask;      /* bitmask of started pglogic receivers */
+	nodemask_t pglogicalReceiverMask;  /* bitmask of started pglogic receivers */
+	nodemask_t pglogicalSenderMask;    /* bitmask of started pglogic senders */
 	nodemask_t walSenderLockerMask;    /* Mask of WAL-senders IDs locking the cluster */
 	nodemask_t nodeLockerMask;         /* Mask of node IDs which WAL-senders are locking the cluster */
 	nodemask_t reconnectMask; 	       /* Mask of nodes connection to which has to be reestablished by sender */

@@ -211,7 +211,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 			return;
 		}
 		if (isRecovery) { 
-			MTM_LOG1("PGLOGICAL_SEND recover transaction: event=%d, gid=%s, xid=%d, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", 
+			MTM_LOG2("PGLOGICAL_SEND recover transaction: event=%d, gid=%s, xid=%d, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", 
 					 flags, txn->gid, txn->xid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
 		}
 		if (flags == PGLOGICAL_ABORT_PREPARED) { 
