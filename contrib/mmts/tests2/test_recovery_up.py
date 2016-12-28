@@ -12,7 +12,7 @@ import warnings
 from lib.bank_client import MtmClient
 from lib.failure_injector import *
 
-TEST_WARMING_TIME = 10
+TEST_WARMING_TIME = 5
 TEST_DURATION = 10
 TEST_RECOVERY_TIME = 30
 
