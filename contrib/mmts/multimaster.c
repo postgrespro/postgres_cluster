@@ -243,7 +243,6 @@ static int   MtmMaxRecoveryLag;
 static int   MtmGcPeriod;
 static bool  MtmIgnoreTablesWithoutPk;
 static int   MtmLockCount;
-static int   MtmSenderStarted;
 
 static ExecutorStart_hook_type PreviousExecutorStartHook;
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
@@ -261,7 +260,11 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 /*
  * -------------------------------------------
  * Synchronize access to MTM structures.
- * Using LWLock seems to be  more efficient (at our benchmarks)
+ * Using LWLock seems to be more efficient (at our benchmarks)
+ * Multimaster uses trash of 2N+1 lwlocks, where N is number of nodes.
+ * locks[0] is used to synchronize access to multimaster state, 
+ * locks[1..N] are used to provide exclusive access to replication session for each node
+ * locks[N+1..2*N] are used to synchronize access to distributed lock graph at each node
  * -------------------------------------------
  */
 void MtmLock(LWLockMode mode)
@@ -316,6 +319,9 @@ timestamp_t MtmGetSystemTime(void)
     return (timestamp_t)tv.tv_sec*USECS_PER_SEC + tv.tv_usec;
 }
 
+/*
+ * Get adjusted system time: taking in account time shift
+ */
 timestamp_t MtmGetCurrentTime(void)
 {
     return MtmGetSystemTime() + Mtm->timeShift;
@@ -610,12 +616,15 @@ MtmAdjustOldestXid(TransactionId xid)
 	}
     return xid;
 }
+
 /*
  * -------------------------------------------
- * Transaction list manipulation
+ * Transaction list manipulation.
+ * All distributed transactions are linked in L1-list ordered by transaction start time.
+ * This list is inspected by MtmAdjustOldestXid and transactions which are not used in any snapshot at any node
+ * are removed from the list and from the hash.
  * -------------------------------------------
  */
-
 
 static void MtmTransactionListAppend(MtmTransState* ts)
 {
@@ -1293,6 +1302,9 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 	}
 }
 
+/* 
+ * Send arbiter's message
+ */
 void MtmSendMessage(MtmArbiterMessage* msg) 
 {
 	SpinLockAcquire(&Mtm->queueSpinlock);
@@ -1315,6 +1327,11 @@ void MtmSendMessage(MtmArbiterMessage* msg)
 	SpinLockRelease(&Mtm->queueSpinlock);
 }
 
+/*
+ * Send arbiter's 2PC message. Right now only responses to coordinates are 
+ * sent through arbiter. Brodcasts from coordinator to noes are done 
+ * using logical decoding.
+ */
 void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 {
 	MtmArbiterMessage msg;
@@ -1347,6 +1364,11 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 	}
 }
 
+/* 
+ * Broadcase poll state message to all nodes. 
+ * This function is used to gather information about state of prepared transaction
+ * at node startup or after crash of some node.
+ */
 static void MtmBroadcastPollMessage(MtmTransState* ts)
 {
 	int i;
@@ -1370,7 +1392,9 @@ static void MtmBroadcastPollMessage(MtmTransState* ts)
 }
 
 /*
- * Restore state of recovered prepared transaction in memory
+ * Restore state of recovered prepared transaction in memory.
+ * This function is called at system startup to make it possible to 
+ * handle this prepared transactions in normal way.
  */
 static void	MtmLoadPreparedTransactions(void)
 {
@@ -1426,6 +1450,10 @@ static void MtmStartRecovery()
 	MtmUnlock();
 }
 
+
+/*
+ * Prepare context for applying transaction at replica
+ */
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 {
 	MtmTx.gtid = *gtid;
@@ -1479,6 +1507,13 @@ XidStatus MtmGetCurrentTransactionStatus(void)
 	return MtmTx.status;
 }
 
+/* 
+ * Perform atomic exchange of global transaction status.
+ * The problem is that because of concurrent applying transactions at replica by multiple
+ * threads we can proceed ABORT request before PREPARE - when transaction is not yet 
+ * applied at this node and there is MtmTransState associated with this transactions.
+ * We remember information about status of this transaction in MtmTransMap.
+ */
 XidStatus MtmExchangeGlobalTransactionStatus(char const* gid, XidStatus new_status)
 {
 	MtmTransMap* tm;
@@ -1526,6 +1561,9 @@ csn_t MtmGetTransactionCSN(TransactionId xid)
 	return csn;
 }
 	
+/* 
+ * Wakeup coordinator's backend when voting is completed
+ */
 void MtmWakeUpBackend(MtmTransState* ts)
 {
 	if (!ts->votingCompleted) {
@@ -1536,6 +1574,10 @@ void MtmWakeUpBackend(MtmTransState* ts)
 	}
 }
 
+
+/* 
+ * Abort the transaction if it is not yet aborted
+ */
 void MtmAbortTransaction(MtmTransState* ts)
 {	
 	Assert(MtmLockCount != 0); /* should be invoked with exclsuive lock */
@@ -1561,6 +1603,11 @@ void MtmAbortTransaction(MtmTransState* ts)
  * -------------------------------------------
  */
 
+/* 
+ * Handle critical errors while applying transaction at replica.
+ * Such errors should cause shutdown of this cluster node to allow other nodes to continue serving client requests.
+ * Other error will be just reported and ignored
+ */
 void MtmHandleApplyError(void)
 {
 	ErrorData *edata = CopyErrorData();
@@ -1570,13 +1617,15 @@ void MtmHandleApplyError(void)
 		case ERRCODE_IO_ERROR:
 		case ERRCODE_DATA_CORRUPTED:
 		case ERRCODE_INDEX_CORRUPTED:
+		  /* Should we really treate this errors as fatal? 
 		case ERRCODE_SYSTEM_ERROR:
 		case ERRCODE_INTERNAL_ERROR:
 		case ERRCODE_OUT_OF_MEMORY:
+		  */
 			elog(WARNING, "Node is excluded from cluster because of non-recoverable error %d, %s, pid=%u",
 				edata->sqlerrcode, edata->message, getpid());
-			// MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
-			// kill(PostmasterPid, SIGQUIT);
+			MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
+			kill(PostmasterPid, SIGQUIT);
 			break;
 	}
 	FreeErrorData(edata);
@@ -1643,6 +1692,9 @@ static void MtmEnableNode(int nodeId)
 	elog(WARNING, "Enable node %d at xlog position %lx", nodeId, GetXLogInsertRecPtr());
 }
 
+/* 
+ * Function call when recovery of node is completed
+ */
 void MtmRecoveryCompleted(void)
 {
 	int i;
@@ -1712,7 +1764,7 @@ static int64 MtmGetSlotLag(int nodeId)
 
 /*
  * This function is called by WAL sender when start sending new transaction.
- * It returns true if specified node is in recovery mode. In this case we should send all transactions from WAL, 
+ * It returns true if specified node is in recovery mode. In this case we should send to it all transactions from WAL, 
  * not only coordinated by self node as in normal mode.
  */
 bool MtmIsRecoveredNode(int nodeId)
@@ -1728,7 +1780,13 @@ bool MtmIsRecoveredNode(int nodeId)
 	}
 }
 
-
+/* 
+ * Check if wal sender replayed all transactions from WAL log.
+ * It can never happen if there are many active transactions.
+ * In this case we wait until gap between sent and current position in the 
+ * WAL becomes smaller than threshold value MtmMinRecoveryLag and 
+ * after it prohibit start of new transactions until WAL is completely replayed.
+ */
 bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 {
 	bool caughtUp = false;
@@ -1822,7 +1880,7 @@ MtmCheckClusterLock()
 				MtmLock(LW_EXCLUSIVE);
 				continue;
 			} else {  
-				/* All lockers are synchronized their logs */
+				/* All lockers have synchronized their logs */
 				/* Remove lock and mark them as recovered */
 				MTM_LOG1("Complete recovery of %d nodes (node mask %lx)", Mtm->nLockers, (long) Mtm->nodeLockerMask);
 				Assert(Mtm->walSenderLockerMask == 0);
@@ -2186,7 +2244,8 @@ static void MtmInitialize()
         Mtm->nAllNodes = MtmNodes;
 		Mtm->disabledNodeMask = 0;
 		Mtm->connectivityMask = 0;
-		Mtm->pglogicalNodeMask = 0;
+		Mtm->pglogicalReceiverMask = 0;
+		Mtm->pglogicalSenderMask = 0;
 		Mtm->walSenderLockerMask = 0;
 		Mtm->nodeLockerMask = 0;
 		Mtm->reconnectMask = 0;
@@ -2900,8 +2959,8 @@ _PG_fini(void)
 void MtmReceiverStarted(int nodeId)
 {
 	MtmLock(LW_EXCLUSIVE);
-	if (!BIT_CHECK(Mtm->pglogicalNodeMask, nodeId-1)) { 
-		BIT_SET(Mtm->pglogicalNodeMask, nodeId-1);
+	if (!BIT_CHECK(Mtm->pglogicalReceiverMask, nodeId-1)) { 
+		BIT_SET(Mtm->pglogicalReceiverMask, nodeId-1);
 		if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
 			MtmEnableNode(nodeId);
 			MtmCheckQuorum();
@@ -3014,7 +3073,8 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 				Mtm->nReceivers = 0;
 				Mtm->nSenders = 0;
 				Mtm->recoveryCount += 1;
-				Mtm->pglogicalNodeMask = 0;
+				Mtm->pglogicalReceiverMask = 0;
+				Mtm->pglogicalSenderMask = 0;
 				MtmUnlock();
 				return REPLMODE_RECOVERY;
 			}
@@ -3155,7 +3215,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			MtmEnableNode(MtmReplicationNodeId);
 			MtmCheckQuorum();
 		} else {
-			/* Force arbiter to reestablish connection with this nodem send heartbeat to inform this node that it was disabled and should perform recovery */
+			/* Force arbiter to reestablish connection with this node, send heartbeat to inform this node that it was disabled and should perform recovery */
 			BIT_SET(Mtm->reconnectMask, MtmReplicationNodeId-1);
 			MtmUnlock();
 			elog(ERROR, "Disabled node %d tries to reconnect without recovery", MtmReplicationNodeId); 
@@ -3163,11 +3223,13 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	} else {
 		MTM_LOG1("Node %d start logical replication to node %d in normal mode", MtmNodeId, MtmReplicationNodeId); 
 	}
-	elog(LOG, "Start %d senders and %d receivers from %d cluster status %s", Mtm->nSenders+1, Mtm->nReceivers, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
-	MtmSenderStarted = 1;
-	if (++Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->status == MTM_CONNECTED) { 
-		/* All logical replication connections from and to this node are established, so we can switch cluster to online mode */
-		MtmSwitchClusterMode(MTM_ONLINE);
+	if (!BIT_CHECK(Mtm->pglogicalSenderMask, MtmReplicationNodeId-1)) { 
+		elog(LOG, "Start %d senders and %d receivers from %d cluster status %s", Mtm->nSenders+1, Mtm->nReceivers, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
+		BIT_SET(Mtm->pglogicalSenderMask, MtmReplicationNodeId-1);
+		if (++Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->status == MTM_CONNECTED) { 
+			/* All logical replication connections from and to this node are established, so we can switch cluster to online mode */
+			MtmSwitchClusterMode(MTM_ONLINE);
+		}
 	}
 	BIT_SET(Mtm->reconnectMask, MtmReplicationNodeId-1); /* arbiter should try to reestablish connection with this node */
 	MtmUnlock();
@@ -3227,14 +3289,15 @@ void  MtmUpdateLsnMapping(int node_id, XLogRecPtr end_lsn)
 static void 
 MtmReplicationShutdownHook(struct PGLogicalShutdownHookArgs* args)
 {
-	if (MtmReplicationNodeId >= 0) { 
-		MtmLock(LW_EXCLUSIVE);
-		Mtm->nSenders -= MtmSenderStarted;
-		MtmUnlock();
+	MtmLock(LW_EXCLUSIVE);
+	if (MtmReplicationNodeId >= 0 && BIT_CHECK(Mtm->pglogicalSenderMask, MtmReplicationNodeId-1)) { 
+		BIT_CLEAR(Mtm->pglogicalSenderMask, MtmReplicationNodeId-1);
+		Mtm->nSenders -= 1;
 		MTM_LOG1("Logical replication to node %d is stopped", MtmReplicationNodeId); 
 		/* MtmOnNodeDisconnect(MtmReplicationNodeId); */
-		MtmReplicationNodeId = -1; /* defuse on_proc_exit hook */
+		MtmReplicationNodeId = -1; /* defuse MtmOnProcExit hook */
 	}
+	MtmUnlock();
 }
 
 /* 
@@ -3949,6 +4012,10 @@ MtmGenerateGid(char* gid)
 	sprintf(gid, "MTM-%d-%d-%d", MtmNodeId, MyProcPid, ++localCount);
 }
 
+/*
+ * Replace normal commit with two-phase commit.
+ * It is called either for commit of standalone command either for commit of transaction block.
+ */
 static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 {
 	// if (MyXactAccessedTempRel)

@@ -12,6 +12,7 @@ import warnings
 from lib.bank_client import MtmClient
 from lib.failure_injector import *
 
+TEST_WARMING_TIME = 10
 TEST_DURATION = 10
 TEST_RECOVERY_TIME = 30
 
@@ -39,6 +40,9 @@ class TestHelper(object):
             raise AssertionError('There are commits during aggregation interval')
 
     def performFailure(self, failure):
+
+        time.sleep(TEST_WARMING_TIME)
+         
         failure.start()
 
         self.client.clean_aggregates()
@@ -112,8 +116,6 @@ class RecoveryTest(unittest.TestCase, TestHelper):
     def test_node_restart(self):
         print('### test_node_restart ###')
 
-        time.sleep(5)
-
         aggs_failure, aggs = self.performFailure(RestartNode('node3'))
 
         self.assertCommits(aggs_failure[:2])
@@ -125,8 +127,6 @@ class RecoveryTest(unittest.TestCase, TestHelper):
 
     def test_node_crash(self):
         print('### test_node_crash ###')
-
-        time.sleep(5)
 
         aggs_failure, aggs = self.performFailure(CrashRecoverNode('node3'))
 
