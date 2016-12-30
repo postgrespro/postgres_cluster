@@ -1199,11 +1199,13 @@ static void
 MtmLogAbortLogicalMessage(int nodeId, char const* gid)
 {
 	MtmAbortLogicalMessage msg;
+	XLogRecPtr lsn;
 	strcpy(msg.gid, gid);
 	msg.origin_node = nodeId;
 	msg.origin_lsn = replorigin_session_origin_lsn;
-	MTM_LOG2("[TRACE] MtmLogAbortLogicalMessage(%d, %s)", nodeId, gid);
-	XLogFlush(LogLogicalMessage("A", (char*)&msg, sizeof msg, false)); 
+	lsn = LogLogicalMessage("A", (char*)&msg, sizeof msg, false); 
+	XLogFlush(lsn);
+	MTM_LOG1("MtmLogAbortLogicalMessage node=%d transaction=%s lsn=%lx", nodeId, gid, lsn);
 }
 
 static void 
@@ -1260,7 +1262,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			 * Send notification only if ABORT happens during transaction processing at replicas, 
 			 * do not send notification if ABORT is received from master 
 			 */
-			MTM_LOG1("%d: send ABORT notification for transaction %d to coordinator %d", MyProcPid, x->gtid.xid, x->gtid.node);
+			MTM_LOG1("%d: send ABORT notification for transaction %d (%s) to coordinator %d", MyProcPid, x->gtid.xid, x->gid, x->gtid.node);
 			if (ts == NULL) { 
 				bool found;
 				Assert(TransactionIdIsValid(x->xid));
@@ -1408,7 +1410,7 @@ static void	MtmLoadPreparedTransactions(void)
 		bool found;
 		char const* gid = pxacts[i].gid;
 		MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, gid, HASH_ENTER, &found);
-		if (!found) {
+		if (!found || tm->state == NULL) {
 			TransactionId xid = GetNewTransactionId(false);
 			MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_ENTER, &found);
 			MTM_LOG1("Recover prepared transaction %s xid=%d state=%s", gid, xid, pxacts[i].state_3pc);
@@ -1532,9 +1534,11 @@ XidStatus MtmExchangeGlobalTransactionStatus(char const* gid, XidStatus new_stat
 		}
 		if (tm->state != NULL && old_status == TRANSACTION_STATUS_IN_PROGRESS) { 
 			/* Return UNKNOWN to mark that transaction was prepared */
+			MTM_LOG1("Change status of in-progress transaction %s to %s", gid, MtmTxtStatusMnem[new_status]);
 			old_status = TRANSACTION_STATUS_UNKNOWN;
 		}
 	} else { 
+		MTM_LOG1("Set status of unknown transaction %s to %s", gid, MtmTxtStatusMnem[new_status]);
 		tm->state = NULL;
 		tm->status = new_status;
 	}
@@ -2996,6 +3000,8 @@ void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 		CommitTransactionCommand();
 		MtmEndSession(nodeId, true);
 	} else if (status == TRANSACTION_STATUS_IN_PROGRESS) {
+		char state3pc[MAX_3PC_STATE_SIZE];
+		Assert(!GetPreparedTransactionState(gid, state3pc));
 		MtmBeginSession(nodeId);
 		MtmLogAbortLogicalMessage(nodeId, gid);
 		MtmEndSession(nodeId, true);
