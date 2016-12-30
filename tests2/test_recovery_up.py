@@ -62,7 +62,7 @@ class RecoveryTest(unittest.TestCase, TestHelper):
 
     def setUp(self):
         time.sleep(20)
-        print('Start new test')
+        print('Start new test at ',datetime.datetime.now())
         warnings.simplefilter("ignore", ResourceWarning)
         self.client = MtmClient([
             "dbname=regression user=postgres host=127.0.0.1 port=15432",
@@ -72,7 +72,7 @@ class RecoveryTest(unittest.TestCase, TestHelper):
         self.client.bgrun()
 
     def tearDown(self):
-        print('tearDown')
+        print('Finish test at ',datetime.datetime.now())
         self.client.stop()
 
 
