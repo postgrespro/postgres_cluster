@@ -382,6 +382,7 @@ static void MtmSendHeartbeat()
 					last_heartbeat_to_node[i] = now;
 					/* Connectivity mask can be cleared by MtmWatchdog: in this case sockets[i] >= 0 */
 					if (BIT_CHECK(Mtm->connectivityMask, i)) { 
+						MTM_LOG1("Force reconnect to node %d", i+1);    
 						close(sockets[i]);
 						sockets[i] = -1;
 						MtmReconnectNode(i+1); /* set reconnect mask to force node reconnent */
@@ -484,6 +485,7 @@ static int MtmConnectSocket(int node, int port, int timeout)
 				elog(WARNING, "Arbiter waiting socket to %s:%d: rc=%d, error=%d", host, port, rc, errno);
 			}
 			close(sd);
+			MtmCheckHeartbeat();
 			MtmSleep(MSEC_TO_USEC(MtmHeartbeatSendTimeout));
 		}
 	}
@@ -827,6 +829,7 @@ static void MtmReceiver(Datum arg)
 	MtmBuffer* rxBuffer = (MtmBuffer*)palloc0(sizeof(MtmBuffer)*nNodes);
 	timestamp_t lastHeartbeatCheck = MtmGetSystemTime();
 	timestamp_t now;
+	timestamp_t selectTimeout = MtmHeartbeatRecvTimeout;
 
 #if USE_EPOLL
 	struct epoll_event* events = (struct epoll_event*)palloc(sizeof(struct epoll_event)*nNodes);
@@ -857,7 +860,7 @@ static void MtmReceiver(Datum arg)
 
 	while (!stop) {
 #if USE_EPOLL
-        n = epoll_wait(epollfd, events, nNodes, MtmHeartbeatRecvTimeout);
+        n = epoll_wait(epollfd, events, nNodes, selectTimeout);
 		if (n < 0) { 
 			if (errno == EINTR) { 
 				continue;
@@ -871,7 +874,6 @@ static void MtmReceiver(Datum arg)
 				MtmDisconnect(i);
 			} 
 		}
-		now = MtmGetSystemTime();
 		for (j = 0; j < n; j++) {
 			if (events[j].events & EPOLLIN)  
 #else
@@ -879,8 +881,8 @@ static void MtmReceiver(Datum arg)
 		do { 
 			struct timeval tv;
 			events = inset;
-			tv.tv_sec = MtmHeartbeatRecvTimeout/1000;
-			tv.tv_usec = MtmHeartbeatRecvTimeout%1000*1000;
+			tv.tv_sec = selectTimeout/1000;
+			tv.tv_usec = selectTimeout%1000*1000;
 			do { 
 				n = select(max_fd+1, &events, NULL, NULL, &tv);
 			} while (n < 0 && errno == EINTR);
@@ -889,7 +891,6 @@ static void MtmReceiver(Datum arg)
 		if (n < 0) {
 			elog(ERROR, "Arbiter failed to select sockets: %d", errno);
 		}
-		now = MtmGetSystemTime();
 		for (i = 0; i < nNodes; i++) { 
 			if (sockets[i] >= 0 && FD_ISSET(sockets[i], &events)) 
 #endif
@@ -1070,8 +1071,8 @@ static void MtmReceiver(Datum arg)
 							break;						   
 						  case MSG_ABORTED:
 							if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
-								elog(WARNING, "Receive ABORTED response for already committed transaction %d from node %d",
-									 ts->xid, node);
+								elog(WARNING, "Receive ABORTED response for already committed transaction %d (%s) from node %d",
+									 ts->xid, ts->gid, node);
 								continue;
 							}
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
@@ -1084,8 +1085,12 @@ static void MtmReceiver(Datum arg)
 							break;
 						  case MSG_PRECOMMITTED:
 							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_PRECOMMITTED");
-							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
-								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+                            if (ts->status == TRANSACTION_STATUS_COMMITTED) {
+                                elog(WARNING, "Receive PRECOMMITTED response for already committed transaction %d (%s) from node %d",
+                                     ts->xid, ts->gid, node);
+                                continue;
+                            }
+							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
 								if (msg->csn > ts->csn) {
 									ts->csn = msg->csn;
 									MtmSyncClock(ts->csn);
@@ -1096,7 +1101,9 @@ static void MtmReceiver(Datum arg)
 									MtmWakeUpBackend(ts);
 								}
 							} else { 
-								elog(WARNING, "Receive PRECOMMITTED response for aborted transaction"); // How it can happen? SHould we use assert here?
+								Assert(ts->status == TRANSACTION_STATUS_ABORTED);
+								elog(WARNING, "Receive PRECOMMITTED response for aborted transaction %d (%s) from node %d", 
+									 ts->xid, ts->gid, node); // How it can happen? SHould we use assert here?
 								if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
 									MtmWakeUpBackend(ts);
 								}
@@ -1134,21 +1141,34 @@ static void MtmReceiver(Datum arg)
 			}
 		}
 		if (Mtm->status == MTM_ONLINE) { 
-			/* "now" is time of performing select, so that delays in processing should not cause false detection */
-			if (now > lastHeartbeatCheck + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) { 
-				if (!MtmWatchdog(now)) { 
-					for (i = 0; i < nNodes; i++) { 
-						if (Mtm->nodes[i].lastHeartbeat != 0 && sockets[i] >= 0) {
-							MTM_LOG1("Last heartbeat from node %d received %ld microseconds ago", i+1, now - Mtm->nodes[i].lastHeartbeat);
+			/* Check for hearbeat only in case of timeout expiration: it means that we do not have unproceeded events.
+			 * It helps to avoid false node failure detection because of blocking receiver.
+			 */
+			now = MtmGetSystemTime();
+			if (n == 0) {
+				selectTimeout = MtmHeartbeatRecvTimeout; /* restore select timeout */ 
+				if (now > lastHeartbeatCheck + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) { 
+					if (!MtmWatchdog(now)) { 
+						for (i = 0; i < nNodes; i++) { 
+							if (Mtm->nodes[i].lastHeartbeat != 0 && sockets[i] >= 0) {
+								MTM_LOG1("Last heartbeat from node %d received %ld microseconds ago", i+1, now - Mtm->nodes[i].lastHeartbeat);
+							}
 						}
 					}
+					lastHeartbeatCheck = now;
 				}
-				lastHeartbeatCheck = now;
+				if (Mtm->disabledNodeMask != 0) { 
+					/* If timeout is expired and there are disabled nodes, then recheck cluster's state */
+					MtmRefreshClusterStatus(false);
+				}
+			} else {
+				if (now > lastHeartbeatCheck + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) { 
+					/* Switch to non-blocking mode to proceed all pending requests before doing watchdog check */
+					selectTimeout = 0;
+				}
 			}
-			if (n == 0 && Mtm->disabledNodeMask != 0) { 
-				/* If timeout is expired and there are disabled nodes, then recheck cluster's state */
-				MtmRefreshClusterStatus(false);
-			}
+		} else if (n == 0) { 
+			selectTimeout = MtmHeartbeatRecvTimeout; /* restore select timeout */ 
 		}
 	}
 	proc_exit(1); /* force restart of this bgwroker */

@@ -115,6 +115,8 @@ PG_FUNCTION_INFO_V1(mtm_poll_node);
 PG_FUNCTION_INFO_V1(mtm_recover_node);
 PG_FUNCTION_INFO_V1(mtm_get_snapshot);
 PG_FUNCTION_INFO_V1(mtm_get_csn);
+PG_FUNCTION_INFO_V1(mtm_get_trans_by_gid);
+PG_FUNCTION_INFO_V1(mtm_get_trans_by_xid);
 PG_FUNCTION_INFO_V1(mtm_get_last_csn);
 PG_FUNCTION_INFO_V1(mtm_get_nodes_state);
 PG_FUNCTION_INFO_V1(mtm_get_cluster_state);
@@ -3649,7 +3651,89 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(heap_form_tuple(usrfctx->desc, usrfctx->values, usrfctx->nulls)));
 }
 
+Datum
+mtm_get_trans_by_gid(PG_FUNCTION_ARGS)
+{
+	TupleDesc desc;
+    Datum     values[Natts_mtm_trans_state];
+    bool      nulls[Natts_mtm_trans_state] = {false};
+	MtmTransState* ts;
+	MtmTransMap* tm;
+	char *gid = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	int i;
 
+	MtmLock(LW_SHARED);
+	tm = (MtmTransMap*)hash_search(MtmGid2State, gid, HASH_FIND, NULL);
+	if (tm == NULL) {
+		MtmUnlock();
+		PG_RETURN_NULL();
+	}
+
+	values[1] = CStringGetTextDatum(gid);
+
+	ts = tm->state;
+	if (ts == NULL) { 
+		values[0] = CStringGetTextDatum(MtmTxnStatusMnem[tm->status]);
+		for (i = 2; i < Natts_mtm_trans_state; i++) { 
+			nulls[i] = true;
+		}
+	} else { 
+		values[0] = CStringGetTextDatum(MtmTxnStatusMnem[ts->status]);		
+		values[2] = Int32GetDatum(ts->xid);
+		values[3] = Int32GetDatum(ts->gtid.node);
+		values[4] = Int32GetDatum(ts->gtid.xid);
+		values[5] = TimestampTzGetDatum(time_t_to_timestamptz(ts->csn/USECS_PER_SEC));  
+		values[6] = TimestampTzGetDatum(time_t_to_timestamptz(ts->snapshot/USECS_PER_SEC));  
+		values[7] = BoolGetDatum(ts->isLocal);
+		values[8] = BoolGetDatum(ts->isPrepared);
+		values[9] = BoolGetDatum(ts->isActive);
+		values[10] = BoolGetDatum(ts->isTwoPhase);
+		values[11] = BoolGetDatum(ts->votingCompleted);
+		values[12] = Int64GetDatum(ts->participantsMask);
+		values[13] = Int64GetDatum(ts->votedMask);
+	}
+	MtmUnlock();
+
+	get_call_result_type(fcinfo, NULL, &desc);
+	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
+}
+	
+Datum
+mtm_get_trans_by_xid(PG_FUNCTION_ARGS)
+{
+	TupleDesc desc;
+    Datum     values[Natts_mtm_trans_state];
+    bool      nulls[Natts_mtm_trans_state] = {false};
+	TransactionId xid = PG_GETARG_INT32(0);
+	MtmTransState* ts;
+
+	MtmLock(LW_SHARED);
+	ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
+	if (ts == NULL) {
+		MtmUnlock();
+		PG_RETURN_NULL();
+	}
+
+	values[0] = CStringGetTextDatum(MtmTxnStatusMnem[ts->status]);		
+	values[1] = CStringGetTextDatum(ts->gid);	
+	values[2] = Int32GetDatum(ts->xid);
+	values[3] = Int32GetDatum(ts->gtid.node);
+	values[4] = Int32GetDatum(ts->gtid.xid);
+	values[5] = TimestampTzGetDatum(time_t_to_timestamptz(ts->csn/USECS_PER_SEC));  
+	values[6] = TimestampTzGetDatum(time_t_to_timestamptz(ts->snapshot/USECS_PER_SEC));  
+	values[7] = BoolGetDatum(ts->isLocal);
+	values[8] = BoolGetDatum(ts->isPrepared);
+	values[9] = BoolGetDatum(ts->isActive);
+	values[10] = BoolGetDatum(ts->isTwoPhase);
+	values[11] = BoolGetDatum(ts->votingCompleted);
+	values[12] = Int64GetDatum(ts->participantsMask);
+	values[13] = Int64GetDatum(ts->votedMask);
+	MtmUnlock();
+
+	get_call_result_type(fcinfo, NULL, &desc);
+	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
+}
+	
 Datum
 mtm_get_cluster_state(PG_FUNCTION_ARGS)
 {
@@ -4739,7 +4823,6 @@ MtmDetectGlobalDeadLockForXid(TransactionId xid)
 		Assert(replorigin_session_origin == InvalidRepOriginId);
 		XLogFlush(LogLogicalMessage("L", buf.data, buf.used, false));
 
-		MtmSleep(MSEC_TO_USEC(DeadlockTimeout));
 		MtmGraphInit(&graph);
 		MtmGraphAdd(&graph, (GlobalTransactionId*)buf.data, buf.used/sizeof(GlobalTransactionId));
         ByteBufferFree(&buf);
