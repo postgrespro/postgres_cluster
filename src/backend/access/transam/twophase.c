@@ -789,6 +789,26 @@ GetPreparedTransactionList(GlobalTransaction *gxacts)
 	return num;
 }
 
+bool GetPreparedTransactionState(char const* gid, char* state)
+{
+	int i;
+	GlobalTransaction gxact;
+
+	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
+	i = string_hash(gid, 0)  % max_prepared_xacts;
+	for (gxact = TwoPhaseState->hashTable[i]; gxact != NULL; gxact = gxact->next)
+	{
+		if (strcmp(gxact->gid, gid) == 0)
+		{
+			strcpy(state, gxact->state_3pc);
+			return true;
+		}
+	}
+	LWLockRelease(TwoPhaseStateLock);
+	return false;
+}
+
+
 /*
  * SetPrepareTransactionState
  * Alter 3PC state of prepared transaction

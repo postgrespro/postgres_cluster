@@ -75,4 +75,6 @@ extern int GetPreparedTransactions(PreparedTransaction* pxacts);
 
 extern void SetPreparedTransactionState(char const* gid, char const* state);
 
+extern bool GetPreparedTransactionState(char const* gid, char* state);
+
 #endif   /* TWOPHASE_H */
