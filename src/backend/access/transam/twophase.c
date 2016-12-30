@@ -1252,7 +1252,8 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 	parsed->twophase_xid = hdr->xid;
 	parsed->dbId = hdr->database;
 	parsed->nsubxacts = hdr->nsubxacts;
-	parsed->nrels = hdr->ncommitrels;
+	parsed->ncommitrels = hdr->ncommitrels;
+	parsed->nabortrels = hdr->nabortrels;
 	parsed->nmsgs = hdr->ninvalmsgs;
 
 	strncpy(parsed->twophase_gid, bufptr, hdr->gidlen);
@@ -1261,10 +1262,10 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 	parsed->subxacts = (TransactionId *) bufptr;
 	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 
-	parsed->xnodes = (RelFileNode *) bufptr;
+	parsed->commitrels = (RelFileNode *) bufptr;
 	bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
 
-	/* Ignoring abortrels? */
+	parsed->abortrels = (RelFileNode *) bufptr;
 	bufptr += MAXALIGN(hdr->nabortrels * sizeof(RelFileNode));
 
 	parsed->msgs = (SharedInvalidationMessage *) bufptr;

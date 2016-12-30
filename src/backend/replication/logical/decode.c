@@ -289,9 +289,6 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
  				DecodePrepare(ctx, buf, &parsed);
  				break;
 			}
-			// XXX:  do we really need to call that here?
-			ReorderBufferProcessXid(reorder, XLogRecGetXid(r), buf->origptr);
-			break;
 		default:
 			elog(ERROR, "unexpected RM_XACT_ID record type: %u", info);
 	}

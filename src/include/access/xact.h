@@ -303,8 +303,11 @@ typedef struct xl_xact_parsed_prepare
 	int			nsubxacts;
 	TransactionId *subxacts;
 
-	int			nrels;
-	RelFileNode *xnodes;
+	int			ncommitrels;
+	RelFileNode *commitrels;
+
+	int			nabortrels;
+	RelFileNode *abortrels;
 
 	int			nmsgs;
 	SharedInvalidationMessage *msgs;
