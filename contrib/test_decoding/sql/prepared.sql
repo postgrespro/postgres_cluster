@@ -25,6 +25,7 @@ BEGIN;
 INSERT INTO test_prepared1 VALUES (5);
 ALTER TABLE test_prepared1 ADD COLUMN data text;
 INSERT INTO test_prepared1 VALUES (6, 'frakbar');
+LOCK test_prepared1;
 PREPARE TRANSACTION 'test_prepared#3';
 
 -- test that we decode correctly while an uncommitted prepared xact
