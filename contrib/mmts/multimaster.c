@@ -1020,8 +1020,18 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 	timestamp_t start = MtmGetSystemTime();
 	timestamp_t deadline = start + timeout;
 	timestamp_t now;
-	
+	nodemask_t  liveNodesMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask & ~((nodemask_t)1 << (MtmNodeId-1));
+
 	Assert(ts->csn > ts->snapshot);
+
+	if (ts->participantsMask != liveNodesMask) 
+	{ 
+		elog(WARNING, "Abort transaction %d (%s) because cluster configuration is changed from %lx to %lx since transaction start", 
+			 ts->xid, ts->gid, ts->participantsMask, liveNodesMask);
+		MtmAbortTransaction(ts);
+		x->status = TRANSACTION_STATUS_ABORTED;
+		return;
+	}
 
 	/* Wait votes from all nodes until: */
 	while (!MtmVotingCompleted(ts)
@@ -1534,11 +1544,13 @@ XidStatus MtmExchangeGlobalTransactionStatus(char const* gid, XidStatus new_stat
 		}
 		if (tm->state != NULL && old_status == TRANSACTION_STATUS_IN_PROGRESS) { 
 			/* Return UNKNOWN to mark that transaction was prepared */
-			MTM_LOG1("Change status of in-progress transaction %s to %s", gid, MtmTxtStatusMnem[new_status]);
+			if (new_status != TRANSACTION_STATUS_UNKNOWN) { 
+				MTM_LOG1("Change status of in-progress transaction %s to %s", gid, MtmTxnStatusMnem[new_status]);
+			}
 			old_status = TRANSACTION_STATUS_UNKNOWN;
 		}
 	} else { 
-		MTM_LOG1("Set status of unknown transaction %s to %s", gid, MtmTxtStatusMnem[new_status]);
+		MTM_LOG2("Set status of unknown transaction %s to %s", gid, MtmTxnStatusMnem[new_status]);
 		tm->state = NULL;
 		tm->status = new_status;
 	}

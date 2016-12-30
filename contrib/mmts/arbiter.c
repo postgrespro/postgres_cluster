@@ -764,6 +764,7 @@ static void MtmSender(Datum arg)
 			}
 		}		
 		CHECK_FOR_INTERRUPTS();
+		MtmCheckHeartbeat();
 	}
 	elog(LOG, "Stop arbiter sender %d", MyProcPid);
 	proc_exit(1); /* force restart of this bgwroker */
