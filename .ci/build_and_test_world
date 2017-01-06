@@ -24,7 +24,7 @@ stage() {
 }
 
 # Dump logs on exit unless interactive
-[ "$1" = "-i" -o -z "$DESKTOP_SESSION" ]|| trap .ci/collect_logs EXIT
+[ "$1" = "-i" -o -n "$DESKTOP_SESSION" ]|| trap .ci/collect_logs EXIT
 set -e
 stage configure
 ./configure --enable-tap-tests --enable-debug --enable-cassert --enable-nls \
