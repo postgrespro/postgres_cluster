@@ -173,8 +173,9 @@ static bool MtmIsRecoverySession;
 static MtmConnectionInfo* MtmConnections;
 
 static MtmCurrentTrans MtmTx;
-
+static TimeoutId MtmRefreshClusterStatusTimer;
 static dlist_head MtmLsnMapping = DLIST_STATIC_INIT(MtmLsnMapping);
+static bool MtmRefreshClusterStatusTimerCocked;
 
 static TransactionManager MtmTM = { 
 	PgTransactionIdGetStatus, 
@@ -1656,7 +1657,7 @@ void MtmHandleApplyError(void)
  * The reason is that we want to avoid extra polling to obtain maximum CSN from all nodes to assign it to committed transaction.
  * Called only from MtmDisableNode in critical section.
  */
-static void MtmPollStatusOfPreparedTransactions(int disabledNodeId)
+static void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeId)
 {
 	MtmTransState *ts;
 	for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
@@ -1680,6 +1681,34 @@ static void MtmPollStatusOfPreparedTransactions(int disabledNodeId)
 	}
 }
 
+/*
+ * Poll status of all active prepared transaction.
+ * This function is called before start of recovery to prevent blocking of recovery process by some 
+ * prepared transaction which is not recovered
+ */
+static void MtmPollStatusOfPreparedTransactions()
+{
+	MtmTransState *ts;
+	for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) { 
+		if (TransactionIdIsValid(ts->gtid.xid) 
+			&& ts->votingCompleted /* If voting is not yet completed, then there is some backend coordinating this transaction */
+			&& (ts->status == TRANSACTION_STATUS_UNKNOWN || ts->status == TRANSACTION_STATUS_IN_PROGRESS)) 
+		{
+			Assert(ts->gid[0]);
+			MTM_LOG1("Poll state of transaction %d (%s) from node %d", ts->xid, ts->gid, ts->gtid.node);				
+			MtmBroadcastPollMessage(ts);
+		} else {
+			MTM_LOG2("Skip prepared transaction %d (%s) with status %s gtid.node=%d gtid.xid=%d votedMask=%lx", 
+					 ts->xid, ts->gid, MtmTxnStatusMnem[ts->status], ts->gtid.node, ts->gtid.xid, ts->votedMask);
+		}
+	}
+}
+
+/*
+ * Node is disabled if it is not part of clique built using connectivity masks of all nodes.
+ * There is no warranty that all noeds will make the same decision about clique, btu as far as we want to avoid
+ * some global coordinator (which will be SPOF), we have to rely on Bron–Kerbosch algorithm locating maximum clique in graph
+ */
 static void MtmDisableNode(int nodeId)
 {
 	timestamp_t now = MtmGetSystemTime();
@@ -1694,10 +1723,14 @@ static void MtmDisableNode(int nodeId)
 	}
 	if (Mtm->nLiveNodes >= Mtm->nAllNodes/2+1) {
 		/* Make decision about prepared transaction status only in quorum */
-		MtmPollStatusOfPreparedTransactions(nodeId);
+		MtmPollStatusOfPreparedTransactionsForDisabledNode(nodeId);
 	}
 } 
-	
+
+/* 
+ * Node is anabled when it's recovery is completed.
+ * This why node is mostly marked as recovered when logical sender/receiver to this node is (re)started.
+ */
 static void MtmEnableNode(int nodeId)
 { 
 	BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
@@ -1763,6 +1796,9 @@ MtmCheckSlots()
 	}
 }
 
+/*
+ * Get lag between replication slot position (dsata proceeded by WAL sender) and current position in WAL 
+ */
 static int64 MtmGetSlotLag(int nodeId)
 {
 	int i;
@@ -1849,6 +1885,9 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 	return caughtUp;
 }
 
+/*
+ * This function is called inside critical section
+ */
 void MtmSwitchClusterMode(MtmNodeStatus mode)
 {
 	Mtm->status = mode;
@@ -1918,7 +1957,7 @@ MtmCheckClusterLock()
  * Build internode connectivity mask. 1 - means that node is disconnected.
  */
 static bool 
-MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
+MtmBuildConnectivityMatrix(nodemask_t* matrix)
 {
 	int i, j, n = Mtm->nAllNodes;
 	bool changed = false;
@@ -1969,24 +2008,25 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix, bool nowait)
 
 /**
  * Build connectivity graph, find clique in it and extend disabledNodeMask by nodes not included in clique.
- * This function returns false if current node is excluded from cluster, true otherwise
  */
-bool MtmRefreshClusterStatus(bool nowait)
+void MtmRefreshClusterStatus()
 {
 	nodemask_t mask, clique, disabled;
 	nodemask_t matrix[MAX_NODES];
 	int clique_size;
 	int i;
 
-	if (!MtmBuildConnectivityMatrix(matrix, nowait)) { 
-		return false;
+	MtmRefreshClusterStatusTimerCocked = false;
+
+	if (!MtmBuildConnectivityMatrix(matrix)) { 
+		return;
 	}
 
 	clique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &clique_size);
 
 	if ( clique == (~Mtm->disabledNodeMask & (((nodemask_t)1 << Mtm->nAllNodes)-1)) ) 
 		/* Nothing is changed */
-		return false;
+		return;
 
 	if (clique_size >= Mtm->nAllNodes/2+1) { /* have quorum */
 		fprintf(stderr, "Old mask: ");
@@ -2043,9 +2083,11 @@ bool MtmRefreshClusterStatus(bool nowait)
 		MTM_LOG1("Clique %lx has no quorum", (long) clique);
 		MtmSwitchClusterMode(MTM_IN_MINORITY);
 	}
-	return true;
 }
 
+/*
+ * Check if there is quorum: current node see more than half of all nodes
+ */
 void MtmCheckQuorum(void)
 {
 	Mtm->nConfigChanges += 1;
@@ -2062,6 +2104,13 @@ void MtmCheckQuorum(void)
 	}
 }
 			
+/* 
+ * This function is called in case of non-recoverable connection failure with this node.
+ * Non-recoverable means that connections can not be reestablish using specified number of attempts.
+ * It sets bit in connectivity mask and register delayed refresh of cluster status which build connectivity matrix 
+ * and determine clique of connected nodes. Timeout here is needed to allow all nodes to exchanges their connectivity masks (them
+ * are sent together with any arbiter message, including heartbeats.
+ */
 void MtmOnNodeDisconnect(int nodeId)
 { 
 	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))
@@ -2078,12 +2127,16 @@ void MtmOnNodeDisconnect(int nodeId)
 	BIT_SET(Mtm->connectivityMask, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	elog(LOG, "Disconnect node %d connectivity mask %llx", nodeId, (long long) Mtm->connectivityMask);
+	if (!MtmRefreshClusterStatusTimerCocked) {
+		MtmRefreshClusterStatusTimerCocked = true;
+		enable_timeout_after(MtmRefreshClusterStatusTimer, MtmHeartbeatSendTimeout);
+	}
 	MtmUnlock();
-
-	MtmSleep(MSEC_TO_USEC(MtmHeartbeatSendTimeout));
-	MtmRefreshClusterStatus(false);
 }
 
+/*
+ * This method is called when connection with node is reestablished
+ */
 void MtmOnNodeConnect(int nodeId)
 {
 	MtmLock(LW_EXCLUSIVE);	
@@ -2093,6 +2146,9 @@ void MtmOnNodeConnect(int nodeId)
 	MtmUnlock();
 }
 
+/*
+ * Set reconnect mask to force reconnection attempt to the node
+ */
 void MtmReconnectNode(int nodeId)
 {
 	MtmLock(LW_EXCLUSIVE);	
@@ -2108,7 +2164,11 @@ void MtmReconnectNode(int nodeId)
  * -------------------------------------------
  */
 
-
+/*
+ * Initialize Xid2State hash table to obtain status of transaction by its local XID. 
+ * Size of this hash table should be limited by MtmAdjustOldestXid function which performs cleanup
+ * of transaction list and from the list and from the hash table transactions which XIDs are not used in any snapshot at any node
+ */
 static HTAB* 
 MtmCreateXidMap(void)
 {
@@ -2127,6 +2187,11 @@ MtmCreateXidMap(void)
 	return htab;
 }
 
+/*
+ * Initialize Gid2State hash table to obtain status of transaction by GID. 
+ * Size of this hash table should be limited by MtmAdjustOldestXid function which performs cleanup
+ * of transaction list and from the list and from the hash table transactions which XIDs are not used in any snapshot at any node
+ */
 static HTAB* 
 MtmCreateGidMap(void)
 {
@@ -2144,6 +2209,9 @@ MtmCreateGidMap(void)
 	return htab;
 }
 
+/* 
+ * Initialize hash table used to mark local (not distributed) tables
+ */
 static HTAB* 
 MtmCreateLocalTableMap(void)
 {
@@ -2208,6 +2276,13 @@ static void MtmLoadLocalTables(void)
 	}
 }
 
+/*
+ * Multimaster control file is used to prevent erroneous inclusion of node in the cluster.
+ * It contains cluster name (any user defined identifier) and node id.
+ * In case of creating new cluster node using pg_basebackup this file is copied together will
+ * all other PostgreSQL files and so new node will know ID of the cluster node from which it
+ * is cloned. It is necessary to complete synchronization of new node with the rest of the cluster.
+ */
 static void MtmCheckControlFile(void)
 {
 	char controlFilePath[MAXPGPATH];
@@ -2242,7 +2317,10 @@ static void MtmCheckControlFile(void)
 	}
 }
 
-
+/* 
+ * Perform initialization of multimaster state. 
+ * This function is called from shared memory startup hook (after completion of initialization of shared memory)
+ */
 static void MtmInitialize()
 {
 	bool found;
@@ -2311,6 +2389,7 @@ static void MtmInitialize()
 		RegisterXactCallback(MtmXactCallback, NULL);
 		MtmTx.snapshot = INVALID_CSN;
 		MtmTx.xid = InvalidTransactionId;		
+		MtmRefreshClusterStatusTimer = RegisterTimeout(USER_TIMEOUT, MtmRefreshClusterStatus);
 	}
 	MtmXid2State = MtmCreateXidMap();
 	MtmGid2State = MtmCreateGidMap();
@@ -2331,6 +2410,10 @@ MtmShmemStartup(void)
 	MtmInitialize();
 }
 
+/*
+ * Parse node connection string.
+ * This function is called at cluster startup and while adding new cluster node
+ */
 void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 {
 	char const* host;
@@ -2371,6 +2454,10 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 	elog(WARNING, "Using arbiter port: %d", conn->arbiterPort);
 }
 
+/*
+ * Parse "multimaster.conn_strings" configuration parameter and 
+ * set connection string for each node using MtmUpdateNodeConnectionInfo
+ */
 static void MtmSplitConnStrs(void)
 {
 	int i;
@@ -2494,6 +2581,9 @@ static void MtmSplitConnStrs(void)
 	MemoryContextSwitchTo(old_context);
 }
 
+/*
+ * Check correctness of multimaster configuration
+ */
 static bool ConfigIsSane(void)
 {
 	bool ok = true;
@@ -2991,6 +3081,11 @@ void MtmReceiverStarted(int nodeId)
 	MtmUnlock();
 }
 
+/* 
+ * Recovery slot is node ID from which new or crash node is performing recovery.
+ * This function is called in case of logical receiver error to make it possible to try to perform
+ * recovery from some other node
+ */
 void MtmReleaseRecoverySlot(int nodeId)
 {
 	if (Mtm->recoverySlot == nodeId) { 
@@ -2998,6 +3093,10 @@ void MtmReleaseRecoverySlot(int nodeId)
 	}
 }		
 
+/* 
+ * Rollback transaction originated from the specified node.
+ * This function is called either for commit logical message with AbortPrepared flag either for abort prepared logical message.
+ */
 void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 {
 	XidStatus status = MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED);
@@ -3021,8 +3120,10 @@ void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 }	
 
 /*
- * This function is call with MTM mutex locked.
- * It shoudl unlock mutex before calling FinishPreparedTransaction to avoid deadlocks.
+ * Wrapper arround FinishPreparedTransaction function.
+ * This function shoudl proper context for invocation of this function.
+ * This function is called with MTM mutex locked.
+ * It should unlock mutex before calling FinishPreparedTransaction to avoid deadlocks.
  * ts object is pinned to prevent deallocation while lock is released.
  */
 void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
@@ -3095,6 +3196,7 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 				Mtm->recoveryCount += 1;
 				Mtm->pglogicalReceiverMask = 0;
 				Mtm->pglogicalSenderMask = 0;
+				MtmPollStatusOfPreparedTransactions();
 				MtmUnlock();
 				return REPLMODE_RECOVERY;
 			}

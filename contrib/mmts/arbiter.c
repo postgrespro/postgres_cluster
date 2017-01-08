@@ -817,7 +817,7 @@ static void MtmMonitor(Datum arg)
 		if (rc & WL_POSTMASTER_DEATH) { 
 			break;
 		}
-		MtmRefreshClusterStatus(true);
+		MtmRefreshClusterStatus();
 	}
 }
 
@@ -1160,7 +1160,7 @@ static void MtmReceiver(Datum arg)
 				}
 				if (Mtm->disabledNodeMask != 0) { 
 					/* If timeout is expired and there are disabled nodes, then recheck cluster's state */
-					MtmRefreshClusterStatus(false);
+					MtmRefreshClusterStatus();
 				}
 			} else {
 				if (now > lastHeartbeatCheck + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) { 
