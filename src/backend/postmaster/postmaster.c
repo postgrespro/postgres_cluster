@@ -392,6 +392,7 @@ static void HandleChildCrash(int pid, int exitstatus, const char *procname);
 static void LogChildExit(int lev, const char *procname,
 			 int pid, int exitstatus);
 static void PostmasterStateMachine(void);
+static int RsocketInitialize(Port *port);
 static void BackendInitialize(Port *port);
 static void BackendRun(Port *port) pg_attribute_noreturn();
 static void ExitPostmaster(int status) pg_attribute_noreturn();
@@ -3985,6 +3986,7 @@ BackendStartup(Port *port)
 {
 	Backend    *bn;				/* for backend cleanup */
 	pid_t		pid;
+	int			ret;
 
 	/*
 	 * Create backend data structure.  Better before the fork() so we can
@@ -4042,6 +4044,11 @@ BackendStartup(Port *port)
 
 		/* Close the postmaster's sockets */
 		ClosePostmasterPorts(false);
+
+		/* Rsocket doesn't support forks. Initialize new rsocket connection. */
+		ret = RsocketInitialize(port);
+		if (ret != STATUS_OK)
+			return ret;
 
 		/* Perform additional initialization and collect startup packet */
 		BackendInitialize(port);
@@ -4115,6 +4122,146 @@ report_fork_failure_to_client(Port *port, int errnum)
 	{
 		rc = pg_send(port->sock, buffer, strlen(buffer) + 1, 0, port->isRsocket);
 	} while (rc < 0 && errno == EINTR);
+}
+
+
+static int
+RsocketInitialize(Port *port)
+{
+	pgsocket	fd;
+	const SockAddr local_addr = port->laddr;
+	char		local_addr_s[NI_MAXHOST];
+	char		local_port[NI_MAXSERV];
+	struct addrinfo *addr = NULL,
+				hint;
+	int			ret;
+	int			err;
+	int			maxconn;
+
+#if !defined(WIN32) || defined(IPV6_V6ONLY)
+	int			one = 1;
+#endif
+
+	StreamClose(port->sock, false);
+
+	pg_getnameinfo_all(&local_addr.addr, local_addr.salen,
+					   local_addr_s, sizeof(local_addr_s),
+					   local_port, sizeof(local_port),
+					   NI_NUMERICSERV);
+
+	MemSet(&hint, 0, sizeof(hint));
+	hint.ai_family = local_addr.addr.ss_family;
+	hint.ai_flags = AI_PASSIVE;
+	hint.ai_socktype = SOCK_STREAM;
+
+	ret = pg_getaddrinfo_all(local_addr_s, local_port, &hint, &addr);
+	if (ret || !addr)
+	{
+		ereport(LOG,
+				(errmsg("could not translate host name \"%s\", service \"%s\" to address: %s",
+						local_addr_s, local_port, gai_strerror(ret))));
+		if (addr)
+			pg_freeaddrinfo_all(hint.ai_family, addr);
+		return STATUS_ERROR;
+	}
+
+	if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, port->isRsocket))
+		 == PGINVALID_SOCKET)
+	{
+		ereport(LOG,
+				(errcode_for_socket_access(),
+				 errmsg("could not create socket: %m")));
+		pg_freeaddrinfo_all(hint.ai_family, addr);
+		return STATUS_ERROR;
+	}
+
+#ifndef WIN32
+	/*
+	 * Without the SO_REUSEADDR flag, a new postmaster can't be started
+	 * right away after a stop or crash, giving "address already in use"
+	 * error on TCP ports.
+	 *
+	 * On win32, however, this behavior only happens if the
+	 * SO_EXLUSIVEADDRUSE is set. With SO_REUSEADDR, win32 allows multiple
+	 * servers to listen on the same address, resulting in unpredictable
+	 * behavior. With no flags at all, win32 behaves as Unix with
+	 * SO_REUSEADDR.
+	 */
+	if ((pg_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
+					   (char *) &one, sizeof(one), port->isRsocket)) == -1)
+	{
+		ereport(LOG,
+				(errcode_for_socket_access(),
+				 errmsg("setsockopt(SO_REUSEADDR) failed: %m")));
+		pg_freeaddrinfo_all(hint.ai_family, addr);
+		pg_closesocket(fd, port->isRsocket);
+		return STATUS_ERROR;
+	}
+#endif
+
+#ifdef IPV6_V6ONLY
+	if (addr->ai_family == AF_INET6)
+	{
+		if (pg_setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
+						  (char *) &one, sizeof(one), port->isRsocket) == -1)
+		{
+			ereport(LOG,
+					(errcode_for_socket_access(),
+					 errmsg("setsockopt(IPV6_V6ONLY) failed: %m")));
+			pg_freeaddrinfo_all(hint.ai_family, addr);
+			pg_closesocket(fd, port->isRsocket);
+			return STATUS_ERROR;
+		}
+	}
+#endif
+
+	/*
+	 * Note: This might fail on some OS's, like Linux older than
+	 * 2.4.21-pre3, that don't have the IPV6_V6ONLY socket option, and map
+	 * ipv4 addresses to ipv6.  It will show ::ffff:ipv4 for all ipv4
+	 * connections.
+	 */
+	printf("bind\n");
+	err = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, port->isRsocket);
+	if (err < 0)
+	{
+		ereport(LOG,
+				(errcode_for_socket_access(),
+				 errmsg("could not bind socket: %m"),
+			  errhint("Is another postmaster already running on port %s?"
+					  " If not, wait a few seconds and retry.",
+					  local_port)));
+		pg_freeaddrinfo_all(hint.ai_family, addr);
+		pg_closesocket(fd, port->isRsocket);
+		return STATUS_ERROR;
+	}
+	printf("after bind\n");
+
+	/*
+	 * Select appropriate accept-queue length limit.  PG_SOMAXCONN is only
+	 * intended to provide a clamp on the request on platforms where an
+	 * overly large request provokes a kernel error (are there any?).
+	 */
+	maxconn = MaxBackends * 2;
+	if (maxconn > PG_SOMAXCONN)
+		maxconn = PG_SOMAXCONN;
+
+	err = pg_listen(fd, maxconn, port->isRsocket);
+	if (err < 0)
+	{
+		ereport(LOG,
+				(errcode_for_socket_access(),
+				 errmsg("could not listen on socket: %m")));
+		pg_freeaddrinfo_all(hint.ai_family, addr);
+		pg_closesocket(fd, port->isRsocket);
+		return STATUS_ERROR;
+	}
+
+	pg_freeaddrinfo_all(hint.ai_family, addr);
+
+	pg_closesocket(fd, port->isRsocket);
+
+	return STATUS_OK;
 }
 
 

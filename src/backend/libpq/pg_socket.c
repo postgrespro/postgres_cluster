@@ -158,8 +158,8 @@ pg_setsockopt(int socket, int level, int optname,
 	if (isRsocket)
 		return rsetsockopt(socket, level, optname, optval, optlen);
 	else
-		return setsockopt(socket, level, optname, optval, optlen);
 #endif
+		return setsockopt(socket, level, optname, optval, optlen);
 }
 
 int
@@ -170,6 +170,6 @@ pg_getsockopt(int socket, int level, int optname,
 	if (isRsocket)
 		return rgetsockopt(socket, level, optname, optval, optlen);
 	else
-		return getsockopt(socket, level, optname, optval, optlen);
 #endif
+		return getsockopt(socket, level, optname, optval, optlen);
 }

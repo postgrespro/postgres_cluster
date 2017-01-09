@@ -53,12 +53,12 @@ pg_set_block(pgsocket sock, bool isRsocket)
 			return false;
 	}
 	else
+#endif
 	{
 		flags = fcntl(sock, F_GETFL);
 		if (flags < 0 || fcntl(sock, F_SETFL, (long) (flags & ~O_NONBLOCK)))
 			return false;
 	}
-#endif
 	return true;
 #else
 	unsigned long ioctlsocket_ret = 0;
