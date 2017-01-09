@@ -2388,10 +2388,12 @@ alter_table_cmd:
 					n->def = (Node *)$1;
 					$$ = (Node *) n;
 				}
-
-			| ADD_P PARTITION OptRangePartitionsListElement
+			| ADD_P OptRangePartitionsListElement
 				{
-					$$ = NULL;
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_AddPartition;
+					n->partition = $2;
+					$$ = (Node *) n;
 				}
 			| MERGE PARTITIONS qualified_name ',' qualified_name
 				{
@@ -2971,6 +2973,7 @@ OptRangePartitionsList:
 /*OptHashPartitions: ;*/
 		/* PARTITION '(' AexprConst ')' */
 
+		/*PARTITION qualified_name VALUES LESS THAN '(' b_expr ')'*/
 OptRangePartitionsListElement:
 		PARTITION qualified_name VALUES LESS THAN '(' b_expr ')'
 			{
@@ -14106,7 +14109,6 @@ unreserved_keyword:
 			| PARALLEL
 			| PARSER
 			| PARTIAL
-			| PARTITION
 			| PARTITIONS
 			| PASSING
 			| PASSWORD
@@ -14382,6 +14384,7 @@ reserved_keyword:
 			| ONLY
 			| OR
 			| ORDER
+			| PARTITION
 			| PLACING
 			| PRIMARY
 			| REFERENCES

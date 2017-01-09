@@ -40,6 +40,10 @@ void FreeFuncArgs(FuncArgs *funcargs);
 const char *get_pathman_schema_name();
 Oid get_pathman_schema(void);
 
+void pm_get_part_range(Oid relid, int partpos, Oid atttype, Datum *min, Datum *max);
+Oid pm_get_partition_key_type(Oid relid);
+char *pm_get_partition_key(Oid relid);
+
 void pm_create_hash_partitions(Oid relid,
 						  const char *attname,
 						  uint32_t partitions_count);

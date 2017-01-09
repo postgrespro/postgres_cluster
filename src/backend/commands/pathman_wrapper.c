@@ -46,6 +46,42 @@ pathman_invoke(const char *func, const FuncArgs *args)
 	return ret == SPI_OK_SELECT;
 }
 
+static bool
+pathman_invoke_return_value(const char *func,
+							const FuncArgs *args,
+							Datum *value,
+							bool *isnull)
+{
+	char   *sql;
+	int		ret;
+
+	sql = psprintf("SELECT %s.%s",
+				   get_pathman_schema_name(),
+				   func);
+
+	ret = SPI_execute_with_args(sql,
+								args->nargs,
+								args->types,
+								args->values,
+								args->nulls,
+								false,
+								0);
+
+	if (SPI_processed != 1)
+		elog(ERROR, "%s function failed", func);
+
+	if (ret > 0 && SPI_tuptable != NULL)
+	{
+		TupleDesc	   tupdesc = SPI_tuptable->tupdesc;
+		SPITupleTable *tuptable = SPI_tuptable;
+		HeapTuple tuple = tuptable->vals[0];
+
+		*value = SPI_getbinval(tuple, tupdesc, 1, isnull);
+	}
+
+	return ret == SPI_OK_SELECT;
+}
+
 void
 InitFuncArgs(FuncArgs *funcargs, uint32 size)
 {
@@ -118,6 +154,126 @@ const char *
 get_pathman_schema_name()
 {
 	return get_namespace_name(get_pathman_schema());
+}
+
+/* TODO: Probably remove this */
+Oid
+pm_get_attribute_type(Oid relid, const char *attname)
+{
+	FuncArgs		args;
+	bool			isnull;
+	Datum			atttype;
+	bool			ret;
+
+	InitFuncArgs(&args, 3);
+	PG_SETARG_DATUM(&args, 0, OIDOID, ObjectIdGetDatum(relid));
+	PG_SETARG_DATUM(&args, 1, TEXTOID, CStringGetTextDatum(attname));
+	ret = pathman_invoke_return_value("get_attribute_type($1, $2)",
+									  &args,
+									  &atttype,
+									  &isnull);
+
+	if (!ret)
+		elog(ERROR, "Cannot retrieve attribute type");
+
+	FreeFuncArgs(&args);
+
+	return !isnull ? DatumGetObjectId(atttype) : InvalidOid;
+}
+
+char *
+pm_get_partition_key(Oid relid)
+{
+	FuncArgs		args;
+	bool			isnull;
+	Datum			attname;
+	bool			ret;
+
+	InitFuncArgs(&args, 1);
+	PG_SETARG_DATUM(&args, 0, OIDOID, ObjectIdGetDatum(relid));
+	ret = pathman_invoke_return_value("get_partition_key($1)",
+									  &args,
+									  &attname,
+									  &isnull);
+
+	if (!ret)
+		elog(ERROR, "Cannot retrieve attribute type");
+
+	if (isnull)
+		elog(ERROR,
+			 "Table '%s' isn't partitioned by pg_pathman",
+			 get_rel_name(relid));
+
+	FreeFuncArgs(&args);
+
+	return TextDatumGetCString(attname);
+}
+
+Oid
+pm_get_partition_key_type(Oid relid)
+{
+	FuncArgs		args;
+	bool			isnull;
+	Datum			atttype;
+	bool			ret;
+
+	InitFuncArgs(&args, 1);
+	PG_SETARG_DATUM(&args, 0, OIDOID, ObjectIdGetDatum(relid));
+	ret = pathman_invoke_return_value("get_partition_key_type($1)",
+									  &args,
+									  &atttype,
+									  &isnull);
+
+	if (!ret)
+		elog(ERROR, "Cannot retrieve partition key type");
+
+	FreeFuncArgs(&args);
+
+	return !isnull ? DatumGetObjectId(atttype) : InvalidOid;
+}
+
+/*
+ * TODO: add null parameters
+ */
+void pm_get_part_range(Oid relid, int partnum, Oid atttype, Datum *min, Datum *max)
+{
+	FuncArgs		args;
+	Datum			arr_datum;
+	bool			isnull;
+	ArrayType	   *arr;
+	bool			ret;
+
+	/* deconstruct_array params */
+	Datum		   *elems;
+	int				nelems;
+	bool		   *nulls;
+	int16			typlen;
+	bool			typbyval;
+	char			typalign;
+
+	InitFuncArgs(&args, 3);
+	PG_SETARG_DATUM(&args, 0, OIDOID, relid);
+	PG_SETARG_DATUM(&args, 1, INT4OID, partnum);
+	PG_SETARG_NULL(&args, 2, atttype);
+	ret = pathman_invoke_return_value("get_part_range($1, $2, $3)",
+									  &args,
+									  &arr_datum,
+									  &isnull);
+
+	if (!ret)
+		elog(ERROR, "Cannot retrieve partition range");
+	FreeFuncArgs(&args);
+
+	/* Now we have datum. Let's extract array from it */
+	arr = DatumGetArrayTypeP(arr_datum);
+	get_typlenbyvalalign(atttype, &typlen, &typbyval, &typalign);
+	deconstruct_array(arr, atttype, 
+					  typlen, typbyval, typalign,
+					  &elems, &nulls, &nelems);
+
+	Assert(nelems == 2);
+	*min = elems[0];
+	*max = elems[1];
 }
 
 /*

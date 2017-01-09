@@ -153,6 +153,56 @@ create_range_partitions(CreateStmt *stmt, Oid relid, const char *attname)
 	}
 }
 
+void
+add_range_partition(Oid parent, RangePartitionInfo *rpinfo)
+{
+	char	   *attname;
+	AttrNumber	attnum;
+	Oid			atttype;
+	int32		atttypmod;
+	Datum		lower,
+				upper;
+
+	/* Parsing upper bound */
+	ParseState *pstate = make_parsestate(NULL);
+	Node	   *bound_expr;
+	// Node	   *orig_bound_expr = (Node *) p->upper_bound;
+
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "could not connect using SPI");
+
+	// atttype = pm_get_partition_key_type(parent);
+
+	/* Partitioning attribute parameters */
+	attname = pm_get_partition_key(parent);
+	attnum = get_attnum(parent, attname);
+	atttype = get_atttype(parent, attnum);
+	atttypmod = get_atttypmod(parent, attnum);
+
+	Assert(atttype != InvalidOid);
+
+	bound_expr = cookDefault(pstate,
+							 (Node *) rpinfo->upper_bound,
+							 atttype,
+							 atttypmod,
+							 attname);
+
+	if (!IsA(bound_expr, Const))
+		elog(ERROR, "Constant expected");
+
+	pm_get_part_range(parent, -1, atttype, &lower, &upper);
+	pm_add_range_partition(parent,
+						   atttype,
+						   rpinfo->relation ? rpinfo->relation->relname : NULL,
+						   upper,
+						   ((Const *) bound_expr)->constvalue,
+						   false,
+						   false,
+						   rpinfo->tablespace);
+
+	SPI_finish();
+}
+
 
 void
 merge_range_partitions(List *partitions)

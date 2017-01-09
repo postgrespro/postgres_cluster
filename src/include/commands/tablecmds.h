@@ -88,5 +88,6 @@ extern void RangeVarCallbackOwnsTable(const RangeVar *relation,
 extern void RangeVarCallbackOwnsRelation(const RangeVar *relation,
 							 Oid relId, Oid oldRelId, void *noCatalogs);
 extern void AtExecMergePartitions(Relation rel, List *partitions);
+extern void AtExecAddRangePartition(Oid relid, RangePartitionInfo *pinfo);
 
 #endif   /* TABLECMDS_H */

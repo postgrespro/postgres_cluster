@@ -1428,6 +1428,36 @@ typedef enum ObjectType
 } ObjectType;
 
 /* ----------------------
+ *		///
+ *
+ * Partition type defines is it HASH or RANGE partition, partitioning key,
+ * interval (for RANGE) or partitions count (for HASH)
+ * ----------------------
+ */
+
+typedef enum PartitionType
+{
+	P_HASH = 1,
+	P_RANGE
+} PartitionType;
+
+typedef struct PartitionInfo
+{
+	PartitionType	partition_type;		/* partition type */
+	Node		   *key;				/* ColumnRef (Expr in future) */
+	uint32			partitions_count;	/* for PT_HASH only */
+	Node		   *interval;			/* for PT_RANGE only */
+	List		   *partitions;			/* List of RangePartitionInfo */
+} PartitionInfo;
+
+typedef struct RangePartitionInfo
+{
+	RangeVar	   *relation;
+	Node		   *upper_bound;
+	char		   *tablespace;
+} RangePartitionInfo;
+
+/* ----------------------
  *		Create Schema Statement
  *
  * NOTE: the schemaElts list contains raw parsetrees for component statements
@@ -1553,6 +1583,7 @@ typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
 	bool		missing_ok;		/* skip error if missing? */
 
 	List	   *partitions;		/* For partitions commands */
+	RangePartitionInfo *partition;
 } AlterTableCmd;
 
 
@@ -1740,36 +1771,6 @@ typedef struct VariableShowStmt
 	char	   *name;
 } VariableShowStmt;
 
-
-/* ----------------------
- *		///
- *
- * Partition type defines is it HASH or RANGE partition, partitioning key,
- * interval (for RANGE) or partitions count (for HASH)
- * ----------------------
- */
-
-typedef enum PartitionType
-{
-	P_HASH = 1,
-	P_RANGE
-} PartitionType;
-
-typedef struct PartitionInfo
-{
-	PartitionType	partition_type;		/* partition type */
-	Node		   *key;				/* ColumnRef (Expr in future) */
-	uint32			partitions_count;	/* for PT_HASH only */
-	Node		   *interval;			/* for PT_RANGE only */
-	List		   *partitions;			/* List of RangePartitionInfo */
-} PartitionInfo;
-
-typedef struct RangePartitionInfo
-{
-	RangeVar	   *relation;
-	Node		   *upper_bound;
-	char		   *tablespace;
-} RangePartitionInfo;
 
 /* ----------------------
  *		Create Table Statement

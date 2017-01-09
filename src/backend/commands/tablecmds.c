@@ -3100,6 +3100,7 @@ AlterTableGetLockLevel(List *cmds)
 				break;
 
 			/* TODO: determine lockmode */
+			case AT_AddPartition:
 			case AT_MergePartitions:
 				break;
 
@@ -3428,9 +3429,12 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
 			break;
+
+		case AT_AddPartition:
 		case AT_MergePartitions:
 			pass = AT_PASS_MISC;
 			break;
+
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);
@@ -3752,6 +3756,9 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			break;
 		case AT_GenericOptions:
 			ATExecGenericOptions(rel, (List *) cmd->def);
+			break;
+		case AT_AddPartition:
+			AtExecAddRangePartition(rel->rd_id, cmd->partition);
 			break;
 		case AT_MergePartitions:
 			AtExecMergePartitions(rel, cmd->partitions);
@@ -12272,4 +12279,10 @@ void
 AtExecMergePartitions(Relation rel, List *partitions)
 {
 	merge_range_partitions(partitions);
+}
+
+void
+AtExecAddRangePartition(Oid relid, RangePartitionInfo *pinfo)
+{
+	add_range_partition(relid, pinfo);
 }

@@ -2856,6 +2856,10 @@ _copyAlterTableCmd(const AlterTableCmd *from)
 	COPY_SCALAR_FIELD(behavior);
 	COPY_SCALAR_FIELD(missing_ok);
 	COPY_NODE_FIELD(partitions);
+	if (from->partition)
+		COPY_POINTER_FIELD(partition, sizeof(RangePartitionInfo));
+	else
+		newnode->partition = NULL;
 
 	return newnode;
 }
