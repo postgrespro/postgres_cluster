@@ -6230,7 +6230,7 @@ SELECT regexp_matches('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
       <para>
        Here is a more
        complex example:
-       <literal>to_timestamp('15:12:02.020.001230', 'HH:MI:SS.MS.US')</literal>
+       <literal>to_timestamp('15:12:02.020.001230', 'HH24:MI:SS.MS.US')</literal>
        is 15 hours, 12 minutes, and 2 seconds + 20 milliseconds +
        1230 microseconds = 2.021230 seconds.
       </para>
@@ -13699,9 +13699,6 @@ SELECT xmlagg(x) FROM (SELECT x FROM test ORDER BY y DESC) AS tab;
        <indexterm>
         <primary>percentile</primary>
         <secondary>continuous</secondary>
-       </indexterm>
-       <indexterm>
-        <primary>median</primary>
        </indexterm>
        <function>percentile_cont(<replaceable class="parameter">fraction</replaceable>) WITHIN GROUP (ORDER BY <replaceable class="parameter">sort_expression</replaceable>)</function>
       </entry>

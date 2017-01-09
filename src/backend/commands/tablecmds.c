@@ -10330,6 +10330,39 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 		}
 	}
 
+	/*
+	 * If the parent has an OID column, so must the child, and we'd better
+	 * update the child's attinhcount and attislocal the same as for normal
+	 * columns.  We needn't check data type or not-nullness though.
+	 */
+	if (tupleDesc->tdhasoid)
+	{
+		/*
+		 * Here we match by column number not name; the match *must* be the
+		 * system column, not some random column named "oid".
+		 */
+		tuple = SearchSysCacheCopy2(ATTNUM,
+							   ObjectIdGetDatum(RelationGetRelid(child_rel)),
+									Int16GetDatum(ObjectIdAttributeNumber));
+		if (HeapTupleIsValid(tuple))
+		{
+			Form_pg_attribute childatt = (Form_pg_attribute) GETSTRUCT(tuple);
+
+			/* See comments above; these changes should be the same */
+			childatt->attinhcount++;
+			simple_heap_update(attrrel, &tuple->t_self, tuple);
+			CatalogUpdateIndexes(attrrel, tuple);
+			heap_freetuple(tuple);
+		}
+		else
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_DATATYPE_MISMATCH),
+					 errmsg("child table is missing column \"%s\"",
+							"oid")));
+		}
+	}
+
 	heap_close(attrrel, RowExclusiveLock);
 }
 
@@ -11280,6 +11313,12 @@ ATExecGenericOptions(Relation rel, List *options)
 
 	simple_heap_update(ftrel, &tuple->t_self, tuple);
 	CatalogUpdateIndexes(ftrel, tuple);
+
+	/*
+	 * Invalidate relcache so that all sessions will refresh any cached plans
+	 * that might depend on the old options.
+	 */
+	CacheInvalidateRelcache(rel);
 
 	InvokeObjectPostAlterHook(ForeignTableRelationId,
 							  RelationGetRelid(rel), 0);
