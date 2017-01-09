@@ -121,6 +121,12 @@ CopyPlanFields(const Plan *from, Plan *newnode)
 	COPY_NODE_FIELD(lefttree);
 	COPY_NODE_FIELD(righttree);
 	COPY_NODE_FIELD(initPlan);
+	COPY_SCALAR_FIELD(had_path);
+	COPY_NODE_FIELD(path_clauses);
+	COPY_NODE_FIELD(path_relids);
+	COPY_SCALAR_FIELD(path_jointype);
+	COPY_SCALAR_FIELD(path_parallel_workers);
+	COPY_SCALAR_FIELD(was_parametrized);
 	COPY_BITMAPSET_FIELD(extParam);
 	COPY_BITMAPSET_FIELD(allParam);
 }

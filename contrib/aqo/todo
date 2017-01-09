@@ -1,0 +1,35 @@
+Roadmap:
+1. Make learn query utility.
+2. Make intelligent mode more intelligent.
+3. Further research.
+
+Todo, ideas:
+1a. set_baserel_size_estimates needs to be splitted for the beauty of code
+1b. set_baserel_rows_estimates sounds not good
+2. More pain: call_default MACROS
+3. Avoid memory leaks.
+4. clausesel.c orclause case to be fixed
+5. Where to write about hook on copy_generic_path_info?
+6. Do we need initPlan in collect_planstat?
+7. Problems with pfree when aqo_K changed during operation (impossbile?)
+8. GUC for ml parameters?
+9. object_max_distance (prediction refusal)?
+10. Append and MergeAppend paths - what with them?
+	ResultsPath MinMaxAgrrPath RecursiveUnionPath
+11. ModifyTablePath!
+12. Better to store floats, not doubles.
+13. Intelligence mode is better to have optimization sandbox.
+14. For intelligent mode: provide a sandbox to train unstable query types.
+15. For intelligent mode: provide a possibility (and mechanism) for running
+	queries on ours own wish for learning purposes.
+16. Views with the same names.
+17. Maybe hotfix for completely text-equal queries? What with constants
+	in this case?
+
+Code sketches:
+#include "utils/lsyscache.h"
+int16 typlen;
+bool typbyval;
+char typalign;
+get_typlenbyvalalign(FLOAT8OID, &typlen, &typbyval, &typalign);
+elog(WARNING, "%d %d %c", (int) typlen, (int) typbyval, typalign);
