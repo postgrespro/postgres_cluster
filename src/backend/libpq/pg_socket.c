@@ -14,8 +14,6 @@
 /* This is intended to be used in both frontend and backend, so use c.h */
 #include "c.h"
 
-#include <unistd.h>
-
 #include "pg_socket.h"
 
 int
@@ -105,6 +103,17 @@ pg_send(int socket, const void *buf, size_t len, int flags, bool isRsocket)
 	else
 #endif
 		return send(socket, buf, len, flags);
+}
+
+ssize_t
+pg_sendmsg(int socket, const struct msghdr *msg, int flags, bool isRsocket)
+{
+#ifdef WITH_RSOCKET
+	if (isRsocket)
+		return rsendmsg(socket, msg, flags);
+	else
+#endif
+		return sendmsg(socket, msg, flags);
 }
 
 int

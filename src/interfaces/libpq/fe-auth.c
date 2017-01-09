@@ -553,7 +553,7 @@ pg_local_sendauth(PGconn *conn)
 	cmsg->cmsg_level = SOL_SOCKET;
 	cmsg->cmsg_type = SCM_CREDS;
 
-	if (sendmsg(conn->sock, &msg, 0) == -1)
+	if (pg_sendmsg(conn->sock, &msg, 0, conn->isRsocket) == -1)
 	{
 		char		sebuf[256];
 

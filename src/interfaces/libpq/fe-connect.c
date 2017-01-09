@@ -6346,6 +6346,14 @@ PQsocket(const PGconn *conn)
 	return (conn->sock != PGINVALID_SOCKET) ? conn->sock : -1;
 }
 
+bool
+PQisRsocket(const PGconn *conn)
+{
+	if (!conn)
+		return false;
+	return (conn->sock != PGINVALID_SOCKET) ? conn->isRsocket : false;
+}
+
 int
 PQbackendPID(const PGconn *conn)
 {

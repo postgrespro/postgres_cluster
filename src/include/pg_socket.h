@@ -15,6 +15,20 @@
 
 #include "pg_config.h"
 
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#ifdef HAVE_POLL_H
+#include <poll.h>
+#endif
+#ifdef HAVE_SYS_POLL_H
+#include <sys/poll.h>
+#endif
+#ifdef HAVE_SYS_SELECT_H
+#include <sys/select.h>
+#endif
+
 #ifdef WITH_RSOCKET
 #include <rdma/rsocket.h>
 #endif
@@ -34,6 +48,8 @@ extern ssize_t pg_recv(int socket, void *buf, size_t len, int flags,
 					   bool isRsocket);
 extern ssize_t pg_send(int socket, const void *buf, size_t len, int flags,
 					   bool isRsocket);
+extern ssize_t pg_sendmsg(int socket, const struct msghdr *msg, int flags,
+						   bool isRsocket);
 
 extern int pg_poll(struct pollfd *fds, nfds_t nfds, int timeout,
 				   bool isRsocket);

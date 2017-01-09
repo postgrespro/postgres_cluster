@@ -323,6 +323,7 @@ extern int	PQprotocolVersion(const PGconn *conn);
 extern int	PQserverVersion(const PGconn *conn);
 extern char *PQerrorMessage(const PGconn *conn);
 extern int	PQsocket(const PGconn *conn);
+extern bool	PQisRsocket(const PGconn *conn);
 extern int	PQbackendPID(const PGconn *conn);
 extern int	PQconnectionNeedsPassword(const PGconn *conn);
 extern int	PQconnectionUsedPassword(const PGconn *conn);

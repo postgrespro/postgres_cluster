@@ -1172,8 +1172,8 @@ pqSocketPoll(int sock, int forRead, int forWrite, time_t end_time,
 		ptr_timeout = &timeout;
 	}
 
-	return select(sock + 1, &input_mask, &output_mask,
-				  &except_mask, ptr_timeout);
+	return pg_select(sock + 1, &input_mask, &output_mask,
+					 &except_mask, ptr_timeout, isRsocket);
 #endif   /* HAVE_POLL */
 }
 

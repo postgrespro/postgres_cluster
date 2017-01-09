@@ -26,15 +26,7 @@
 #include "replication/walreceiver.h"
 #include "utils/builtins.h"
 
-#ifdef HAVE_POLL_H
-#include <poll.h>
-#endif
-#ifdef HAVE_SYS_POLL_H
-#include <sys/poll.h>
-#endif
-#ifdef HAVE_SYS_SELECT_H
-#include <sys/select.h>
-#endif
+#include "pg_socket.h"
 
 PG_MODULE_MAGIC;
 
@@ -395,7 +387,7 @@ libpq_select(int timeout_ms)
 		input_fd.events = POLLIN | POLLERR;
 		input_fd.revents = 0;
 
-		ret = poll(&input_fd, 1, timeout_ms);
+		ret = pg_poll(&input_fd, 1, timeout_ms, PQisRsocket(streamConn));
 #else							/* !HAVE_POLL */
 
 		fd_set		input_mask;
@@ -414,8 +406,8 @@ libpq_select(int timeout_ms)
 			ptr_timeout = &timeout;
 		}
 
-		ret = select(PQsocket(streamConn) + 1, &input_mask,
-					 NULL, NULL, ptr_timeout);
+		ret = pg_select(PQsocket(streamConn) + 1, &input_mask,
+						NULL, NULL, ptr_timeout, PQisRsocket(streamConn));
 #endif   /* HAVE_POLL */
 	}
 
