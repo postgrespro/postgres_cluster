@@ -43,6 +43,8 @@ class TestHelper(object):
 
         time.sleep(TEST_WARMING_TIME)
          
+        print('Simulate failure at ',datetime.datetime.utcnow())
+
         failure.start()
 
         self.client.clean_aggregates()
@@ -50,6 +52,8 @@ class TestHelper(object):
         aggs_failure = self.client.get_aggregates()
 
         failure.stop()
+
+        print('Eliminate failure at ',datetime.datetime.utcnow())
 
         self.client.clean_aggregates()
         time.sleep(TEST_RECOVERY_TIME)
@@ -62,7 +66,7 @@ class RecoveryTest(unittest.TestCase, TestHelper):
 
     def setUp(self):
         time.sleep(20)
-        print('Start new test at ',datetime.datetime.now())
+        print('Start new test at ',datetime.datetime.utcnow())
         warnings.simplefilter("ignore", ResourceWarning)
         self.client = MtmClient([
             "dbname=regression user=postgres host=127.0.0.1 port=15432",
@@ -72,7 +76,7 @@ class RecoveryTest(unittest.TestCase, TestHelper):
         self.client.bgrun()
 
     def tearDown(self):
-        print('Finish test at ',datetime.datetime.now())
+        print('Finish test at ',datetime.datetime.utcnow())
         self.client.stop()
 
 

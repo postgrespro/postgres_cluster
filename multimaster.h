@@ -81,14 +81,15 @@
 #define Anum_mtm_local_tables_rel_name	 2
 
 #define Natts_mtm_cluster_state 16
-#define Natts_mtm_nodes_state   13
+#define Natts_mtm_nodes_state   14
 #define Natts_mtm_trans_state   14
 
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
 
-
 typedef char pgid_t[MULTIMASTER_MAX_GID_SIZE];
+
+#define SELF_CONNECTIVITY_MASK  (Mtm->nodes[MtmNodeId-1].connectivityMask)
 
 typedef enum
 { 
@@ -263,7 +264,6 @@ typedef struct
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
-	nodemask_t connectivityMask;       /* bitmask of disconnected nodes */
 	nodemask_t pglogicalReceiverMask;  /* bitmask of started pglogic receivers */
 	nodemask_t pglogicalSenderMask;    /* bitmask of started pglogic senders */
 	nodemask_t walSenderLockerMask;    /* Mask of WAL-senders IDs locking the cluster */
@@ -339,6 +339,7 @@ extern IndexStmt*  MtmIndexStmt;
 extern DropStmt*   MtmDropStmt;
 extern MemoryContext MtmApplyContext;
 extern XLogRecPtr MtmSenderWalEnd;
+extern timestamp_t MtmRefreshClusterStatusSchedule;
 
 
 extern void  MtmArbiterInitialize(void);

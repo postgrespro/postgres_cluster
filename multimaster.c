@@ -173,9 +173,7 @@ static bool MtmIsRecoverySession;
 static MtmConnectionInfo* MtmConnections;
 
 static MtmCurrentTrans MtmTx;
-static TimeoutId MtmRefreshClusterStatusTimer;
 static dlist_head MtmLsnMapping = DLIST_STATIC_INIT(MtmLsnMapping);
-static bool MtmRefreshClusterStatusTimerCocked;
 
 static TransactionManager MtmTM = { 
 	PgTransactionIdGetStatus, 
@@ -974,6 +972,14 @@ void MtmPrecommitTransaction(char const* gid)
 static bool 
 MtmVotingCompleted(MtmTransState* ts)
 {
+	nodemask_t  liveNodesMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask & ~((nodemask_t)1 << (MtmNodeId-1));
+	if (!ts->isPrepared && ts->participantsMask != liveNodesMask) 
+	{ 
+		elog(WARNING, "Abort transaction %d (%s) because cluster configuration is changed from %lx to %lx since transaction start", 
+			 ts->xid, ts->gid, ts->participantsMask, liveNodesMask);
+		MtmAbortTransaction(ts);
+		return true;
+	}
 	if (ts->votingCompleted) { 
 		return true;
 	}
@@ -1015,28 +1021,16 @@ static void
 Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 {
 	int result = 0;
-	int nConfigChanges = Mtm->nConfigChanges;
 	timestamp_t prepareTime = ts->csn - ts->snapshot;
 	timestamp_t timeout = Max(prepareTime + MSEC_TO_USEC(MtmMin2PCTimeout), prepareTime*MtmMax2PCRatio/100);
 	timestamp_t start = MtmGetSystemTime();
 	timestamp_t deadline = start + timeout;
 	timestamp_t now;
-	nodemask_t  liveNodesMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask & ~((nodemask_t)1 << (MtmNodeId-1));
 
 	Assert(ts->csn > ts->snapshot);
 
-	if (ts->participantsMask != liveNodesMask) 
-	{ 
-		elog(WARNING, "Abort transaction %d (%s) because cluster configuration is changed from %lx to %lx since transaction start", 
-			 ts->xid, ts->gid, ts->participantsMask, liveNodesMask);
-		MtmAbortTransaction(ts);
-		x->status = TRANSACTION_STATUS_ABORTED;
-		return;
-	}
-
 	/* Wait votes from all nodes until: */
-	while (!MtmVotingCompleted(ts)
-		   && (ts->isPrepared || nConfigChanges == Mtm->nConfigChanges))
+	while (!MtmVotingCompleted(ts))
 	{ 
 		MtmUnlock();
 		MTM_TXTRACE(x, "PostPrepareTransaction WaitLatch Start");
@@ -1053,9 +1047,7 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 		MtmLock(LW_EXCLUSIVE);
 		if (now > deadline) { 
 			if (ts->isPrepared) { 
-				/* resend precommit message */
-				// MtmSend2PCMessage(ts, MSG_PRECOMMIT);
-				elog(LOG, "Distributed transaction is not committed in %ld msec", USEC_TO_MSEC(now - start));
+				elog(LOG, "Distributed transaction %s (%d) is not committed in %ld msec", ts->gid, ts->xid, USEC_TO_MSEC(now - start));
 			} else {
 				elog(WARNING, "Commit of distributed transaction %s (%d) is canceled because of %ld msec timeout expiration", 
 					 ts->gid, ts->xid, USEC_TO_MSEC(timeout));
@@ -1354,7 +1346,7 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 	msg.sxid = ts->xid;
 	msg.csn  = ts->csn;
 	msg.disabledNodeMask = Mtm->disabledNodeMask;
-	msg.connectivityMask = Mtm->connectivityMask;
+	msg.connectivityMask = SELF_CONNECTIVITY_MASK;
 	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
 	memcpy(msg.gid, ts->gid, MULTIMASTER_MAX_GID_SIZE);
 
@@ -1390,7 +1382,7 @@ static void MtmBroadcastPollMessage(MtmTransState* ts)
 	MtmArbiterMessage msg;
 	msg.code = MSG_POLL_REQUEST;
 	msg.disabledNodeMask = Mtm->disabledNodeMask;
-	msg.connectivityMask = Mtm->connectivityMask;
+	msg.connectivityMask = SELF_CONNECTIVITY_MASK;
 	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
 	memcpy(msg.gid, ts->gid, MULTIMASTER_MAX_GID_SIZE);
 	ts->votedMask = 0;
@@ -1675,7 +1667,7 @@ static void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeI
 				MtmBroadcastPollMessage(ts);
 			}
 		} else {
-			MTM_LOG2("Skip transaction %d (%s) with status %s gtid.node=%d gtid.xid=%d votedMask=%lx", 
+			MTM_LOG1("Skip transaction %d (%s) with status %s gtid.node=%d gtid.xid=%d votedMask=%lx", 
 					 ts->xid, ts->gid, MtmTxnStatusMnem[ts->status], ts->gtid.node, ts->gtid.xid, ts->votedMask);
 		}
 	}
@@ -1750,12 +1742,13 @@ void MtmRecoveryCompleted(void)
 {
 	int i;
 	MTM_LOG1("Recovery of node %d is completed, disabled mask=%llx, connectivity mask=%llx, endLSN=%lx, live nodes=%d",
-			 MtmNodeId, (long long) Mtm->disabledNodeMask, (long long) Mtm->connectivityMask, GetXLogInsertRecPtr(), Mtm->nLiveNodes);
+			 MtmNodeId, (long long) Mtm->disabledNodeMask, 
+			 (long long)SELF_CONNECTIVITY_MASK, GetXLogInsertRecPtr(), Mtm->nLiveNodes);
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
 	Mtm->recoveredLSN = GetXLogInsertRecPtr();
 	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
-	Mtm->reconnectMask |= Mtm->connectivityMask; /* try to reestablish all connections */
+	Mtm->reconnectMask |= SELF_CONNECTIVITY_MASK; /* try to reestablish all connections */
 	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	for (i = 0; i < Mtm->nAllNodes; i++) { 
 		Mtm->nodes[i].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
@@ -1956,23 +1949,14 @@ MtmCheckClusterLock()
 /**
  * Build internode connectivity mask. 1 - means that node is disconnected.
  */
-static bool 
+static void
 MtmBuildConnectivityMatrix(nodemask_t* matrix)
 {
 	int i, j, n = Mtm->nAllNodes;
 	bool changed = false;
 
 	for (i = 0; i < n; i++) { 
-		if (i+1 != MtmNodeId) { 
-			void *data = &Mtm->nodes[i].connectivityMask;
-			if (data == NULL) { 
-				return false;
-			}
-			matrix[i] = *(nodemask_t*)data;
-		} else { 
-			matrix[i] = Mtm->connectivityMask;
-		}
-
+		matrix[i] = Mtm->nodes[i].connectivityMask;
 		if (lastKnownMatrix[i] != matrix[i])
 		{
 			changed = true;
@@ -2001,34 +1985,41 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 		}
 		matrix[i] &= ~((nodemask_t)1 << i);
 	}
-
-	return true;
 }
 
 
 /**
  * Build connectivity graph, find clique in it and extend disabledNodeMask by nodes not included in clique.
+ * This fnuctions is called by arbiter monitor process with period MtmHeartbeatSendTimeout
  */
 void MtmRefreshClusterStatus()
 {
-	nodemask_t mask, clique, disabled;
+	nodemask_t mask, newClique, disabled;
 	nodemask_t matrix[MAX_NODES];
-	int clique_size;
+	int cliqueSize;
+	nodemask_t oldClique = ~Mtm->disabledNodeMask & (((nodemask_t)1 << Mtm->nAllNodes)-1);
 	int i;
 
-	MtmRefreshClusterStatusTimerCocked = false;
+	MtmBuildConnectivityMatrix(matrix);
+	newClique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &cliqueSize);
 
-	if (!MtmBuildConnectivityMatrix(matrix)) { 
+	if (newClique == oldClique) {
+		/* Nothing is changed */
 		return;
 	}
 
-	clique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &clique_size);
+	do {
+		/* Otherwise make sure that all nodes have a chance to replicate their connectivity mask and we have the "consistent" picture.
+		 * Obviously we can not get true consistent snapshot, but at least try to wait heartbeat send timeout is expired and
+		 * connectivity graph is stabilized.
+		 */
+		oldClique = newClique;		
+		MtmSleep(MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2); /* double timeout to condider worst case when heartbeat send interval is added with refresh cluster status interval */
+		MtmBuildConnectivityMatrix(matrix);
+		newClique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &cliqueSize);
+	} while (newClique != oldClique);
 
-	if ( clique == (~Mtm->disabledNodeMask & (((nodemask_t)1 << Mtm->nAllNodes)-1)) ) 
-		/* Nothing is changed */
-		return;
-
-	if (clique_size >= Mtm->nAllNodes/2+1) { /* have quorum */
+	if (cliqueSize >= Mtm->nAllNodes/2+1) { /* have quorum */
 		fprintf(stderr, "Old mask: ");
 		for (i = 0; i <  Mtm->nAllNodes; i++) { 
 			putc(BIT_CHECK(Mtm->disabledNodeMask, i) ? '-' : '+', stderr);
@@ -2036,13 +2027,13 @@ void MtmRefreshClusterStatus()
 		putc('\n', stderr);
 		fprintf(stderr, "New mask: ");
 		for (i = 0; i <  Mtm->nAllNodes; i++) { 
-			putc(BIT_CHECK(clique, i) ? '+' : '-', stderr);
+			putc(BIT_CHECK(newClique, i) ? '+' : '-', stderr);
 		}
 		putc('\n', stderr);
 
-		MTM_LOG1("Find clique %lx, disabledNodeMask %lx", (long) clique, (long) Mtm->disabledNodeMask);
+		MTM_LOG1("Find clique %lx, disabledNodeMask %lx", (long)newClique, (long)Mtm->disabledNodeMask);
 		MtmLock(LW_EXCLUSIVE);
-		disabled = ~clique & (((nodemask_t)1 << Mtm->nAllNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
+		disabled = ~newClique & (((nodemask_t)1 << Mtm->nAllNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
 		
 		if (disabled) { 
 			timestamp_t now = MtmGetSystemTime();
@@ -2080,7 +2071,7 @@ void MtmRefreshClusterStatus()
 			MtmStartRecovery();
 		}
 	} else { 
-		MTM_LOG1("Clique %lx has no quorum", (long) clique);
+		MTM_LOG1("Clique %lx has no quorum", (long)newClique);
 		MtmSwitchClusterMode(MTM_IN_MINORITY);
 	}
 }
@@ -2113,24 +2104,22 @@ void MtmCheckQuorum(void)
  */
 void MtmOnNodeDisconnect(int nodeId)
 { 
+	timestamp_t now = MtmGetSystemTime();
 	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))
 	{
 		/* Node is already disabled */
 		return;
 	}
-	if (Mtm->nodes[nodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) > MtmGetSystemTime()) 
+	if (Mtm->nodes[nodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) > now) 
 	{ 
 		/* Avoid false detection of node failure and prevent node status blinking */
 		return;
 	}
 	MtmLock(LW_EXCLUSIVE);
-	BIT_SET(Mtm->connectivityMask, nodeId-1);
+	BIT_SET(SELF_CONNECTIVITY_MASK, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
-	elog(LOG, "Disconnect node %d connectivity mask %llx", nodeId, (long long) Mtm->connectivityMask);
-	if (!MtmRefreshClusterStatusTimerCocked) {
-		MtmRefreshClusterStatusTimerCocked = true;
-		enable_timeout_after(MtmRefreshClusterStatusTimer, MtmHeartbeatSendTimeout);
-	}
+	elog(LOG, "Disconnect node %d connectivity mask %llx", 
+		 nodeId, (long long)SELF_CONNECTIVITY_MASK);
 	MtmUnlock();
 }
 
@@ -2140,8 +2129,8 @@ void MtmOnNodeDisconnect(int nodeId)
 void MtmOnNodeConnect(int nodeId)
 {
 	MtmLock(LW_EXCLUSIVE);	
-	elog(LOG, "Connect node %d connectivity mask %llx", nodeId, (long long) Mtm->connectivityMask);
-	BIT_CLEAR(Mtm->connectivityMask, nodeId-1);
+	elog(LOG, "Connect node %d connectivity mask %llx", nodeId, (long long)SELF_CONNECTIVITY_MASK);
+	BIT_CLEAR(SELF_CONNECTIVITY_MASK, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1); /* force sender to reestablish connection and send heartbeat */
 	MtmUnlock();
 }
@@ -2339,7 +2328,6 @@ static void MtmInitialize()
         Mtm->nLiveNodes = MtmNodes;
         Mtm->nAllNodes = MtmNodes;
 		Mtm->disabledNodeMask = 0;
-		Mtm->connectivityMask = 0;
 		Mtm->pglogicalReceiverMask = 0;
 		Mtm->pglogicalSenderMask = 0;
 		Mtm->walSenderLockerMask = 0;
@@ -2389,7 +2377,6 @@ static void MtmInitialize()
 		RegisterXactCallback(MtmXactCallback, NULL);
 		MtmTx.snapshot = INVALID_CSN;
 		MtmTx.xid = InvalidTransactionId;		
-		MtmRefreshClusterStatusTimer = RegisterTimeout(USER_TIMEOUT, MtmRefreshClusterStatus);
 	}
 	MtmXid2State = MtmCreateXidMap();
 	MtmGid2State = MtmCreateGidMap();
@@ -3753,7 +3740,7 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	}
 	usrfctx->values[0] = Int32GetDatum(usrfctx->nodeId);
 	usrfctx->values[1] = BoolGetDatum(BIT_CHECK(Mtm->disabledNodeMask, usrfctx->nodeId-1));
-	usrfctx->values[2] = BoolGetDatum(BIT_CHECK(Mtm->connectivityMask, usrfctx->nodeId-1));
+	usrfctx->values[2] = BoolGetDatum(BIT_CHECK(SELF_CONNECTIVITY_MASK, usrfctx->nodeId-1));
 	usrfctx->values[3] = BoolGetDatum(BIT_CHECK(Mtm->nodeLockerMask, usrfctx->nodeId-1));
 	lag = MtmGetSlotLag(usrfctx->nodeId);
 	usrfctx->values[4] = Int64GetDatum(lag);
@@ -3766,6 +3753,7 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	usrfctx->values[10] = Int32GetDatum(Mtm->nodes[usrfctx->nodeId-1].receiverPid);
 	usrfctx->values[11] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].receiverStartTime/USECS_PER_SEC));   
 	usrfctx->values[12] = CStringGetTextDatum(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
+	usrfctx->values[13] = Int64GetDatum(Mtm->nodes[usrfctx->nodeId-1].connectivityMask);
 	usrfctx->nodeId += 1;
 
 	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(heap_form_tuple(usrfctx->desc, usrfctx->values, usrfctx->nulls)));
@@ -3864,7 +3852,7 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 
 	values[0] = CStringGetTextDatum(MtmNodeStatusMnem[Mtm->status]);
 	values[1] = Int64GetDatum(Mtm->disabledNodeMask);
-	values[2] = Int64GetDatum(Mtm->connectivityMask);
+	values[2] = Int64GetDatum(SELF_CONNECTIVITY_MASK);
 	values[3] = Int64GetDatum(Mtm->nodeLockerMask);
 	values[4] = Int32GetDatum(Mtm->nLiveNodes);
 	values[5] = Int32GetDatum(Mtm->nAllNodes);
