@@ -1783,7 +1783,7 @@ ServerLoop(void)
 					{
 						BackendStartup(port,
 #ifdef WITH_RSOCKET
-									   ListenRdma[i],
+									   ListenRdma[i]
 #else
 									   false
 #endif
@@ -4249,8 +4249,6 @@ RsocketInitialize(Port *port)
 		pg_closesocket(fd, port->isRsocket);
 		return STATUS_ERROR;
 	}
-
-	remote_addr.salen = sizeof(remote_addr.addr);
 
 	/*
 	 * Send to client message that postmaster ready to accept rsocket
