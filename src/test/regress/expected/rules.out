@@ -1410,7 +1410,7 @@ pg_prepared_xacts| SELECT p.transaction,
     p.prepared,
     u.rolname AS owner,
     d.datname AS database,
-    p.state3pc            
+    p.state3pc
    FROM ((pg_prepared_xact() p(transaction, gid, prepared, ownerid, dbid, state3pc)
      LEFT JOIN pg_authid u ON ((p.ownerid = u.oid)))
      LEFT JOIN pg_database d ON ((p.dbid = d.oid)));

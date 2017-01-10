@@ -339,7 +339,7 @@ WHERE 'cstring'::regtype = ANY (p1.proargtypes)
     AND p1.oid != 'shell_in(cstring)'::regprocedure
 ORDER BY 1;
  oid  |        proname        
-------+--------------
+------+-----------------------
  2293 | cstring_out
  2501 | cstring_send
  3445 | pg_precommit_prepared

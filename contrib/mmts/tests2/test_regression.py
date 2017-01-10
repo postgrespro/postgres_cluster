@@ -7,15 +7,15 @@ class RecoveryTest(unittest.TestCase):
     @classmethod
     def setUpClass(self):
         print('setUp')
-        subprocess.check_call(['docker-compose','up',
-           '--force-recreate',
-           '--build',
-           '-d'])
+#        subprocess.check_call(['docker-compose','up',
+#           '--force-recreate',
+#           '--build',
+#           '-d'])
 
     @classmethod
     def tearDownClass(self):
         print('tearDown')
-        subprocess.check_call(['docker-compose','down'])
+#        subprocess.check_call(['docker-compose','down'])
 
     def test_regression(self):
         # XXX: make smth clever here
