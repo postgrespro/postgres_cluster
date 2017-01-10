@@ -304,8 +304,10 @@ struct pg_conn
 								 * which the server is running.  Takes
 								 * precedence over above. */
 	char	   *pgport;			/* the server's communication port number */
+#ifdef WITH_RSOCKET
 	char	   *rsocket_pgport;	/* the server's communication port number using
 								 * rsocket */
+#endif
 	char	   *pgunixsocket;	/* the directory of the server's Unix-domain
 								 * socket; if NULL, use DEFAULT_PGSOCKET_DIR */
 	char	   *pgtty;			/* tty on which the backend messages is
@@ -317,7 +319,9 @@ struct pg_conn
 	char	   *fbappname;		/* fallback application name */
 	char	   *dbName;			/* database name */
 	char	   *replication;	/* connect as the replication standby? */
+#ifdef WITH_RSOCKET
 	char	   *with_rsocket;	/* connect using rsocket? */
+#endif
 	char	   *pguser;			/* Postgres username and password, if any */
 	char	   *pgpass;
 	char	   *keepalives;		/* use TCP keepalives? */
@@ -390,6 +394,10 @@ struct pg_conn
 
 	/* Transient state needed while establishing connection */
 	struct addrinfo *addrlist;	/* list of possible backend addresses */
+#ifdef WITH_RSOCKET
+	struct addrinfo *rsocket_addrlist;	/* list of possible backend addresses
+										 * for rsocket connection */
+#endif
 	struct addrinfo *addr_cur;	/* the one currently being tried */
 	int			addrlist_family;	/* needed to know how to free addrlist */
 	time_t		failover_finish_time;	/* how long to retry host list waiting

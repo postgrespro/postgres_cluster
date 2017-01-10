@@ -394,7 +394,7 @@ static void LogChildExit(int lev, const char *procname,
 			 int pid, int exitstatus);
 static void PostmasterStateMachine(void);
 #ifdef WITH_RSOCKET
-static int RsocketInitialize(Port *port);
+static void RsocketInitialize(Port *port);
 #endif
 static void BackendInitialize(Port *port);
 static void BackendRun(Port *port) pg_attribute_noreturn();
@@ -4032,11 +4032,7 @@ BackendStartup(Port *port, bool isRsocket)
 		/* Rsocket doesn't support forks. Initialize new rsocket connection. */
 #ifdef WITH_RSOCKET
 		if (isRsocket)
-		{
-			int			ret = RsocketInitialize(port);
-			if (ret != STATUS_OK)
-				return ret;
-		}
+			RsocketInitialize(port);
 #endif
 
 		/* Perform additional initialization and collect startup packet */
@@ -4115,7 +4111,7 @@ report_fork_failure_to_client(Port *port, int errnum)
 
 
 #ifdef WITH_RSOCKET
-static int
+static void
 RsocketInitialize(Port *port)
 {
 	pgsocket	fd,
@@ -4150,22 +4146,20 @@ RsocketInitialize(Port *port)
 	ret = pg_getaddrinfo_all(local_addr_s, local_port, &hint, &addr);
 	if (ret || !addr)
 	{
-		ereport(LOG,
-				(errmsg("could not translate host name \"%s\", service \"%s\" to address: %s",
-						local_addr_s, local_port, gai_strerror(ret))));
 		if (addr)
 			pg_freeaddrinfo_all(hint.ai_family, addr);
-		return STATUS_ERROR;
+		ereport(FATAL,
+				(errmsg("could not translate host name \"%s\", service \"%s\" to address: %s",
+						local_addr_s, local_port, gai_strerror(ret))));
 	}
 
 	if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, port->isRsocket))
 		 == PGINVALID_SOCKET)
 	{
-		ereport(LOG,
+		pg_freeaddrinfo_all(hint.ai_family, addr);
+		ereport(FATAL,
 				(errcode_for_socket_access(),
 				 errmsg("could not create socket: %m")));
-		pg_freeaddrinfo_all(hint.ai_family, addr);
-		return STATUS_ERROR;
 	}
 
 #ifndef WIN32
@@ -4183,12 +4177,11 @@ RsocketInitialize(Port *port)
 	if ((pg_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
 					   (char *) &one, sizeof(one), port->isRsocket)) == -1)
 	{
-		ereport(LOG,
-				(errcode_for_socket_access(),
-				 errmsg("setsockopt(SO_REUSEADDR) failed: %m")));
 		pg_freeaddrinfo_all(hint.ai_family, addr);
 		pg_closesocket(fd, port->isRsocket);
-		return STATUS_ERROR;
+		ereport(FATAL,
+				(errcode_for_socket_access(),
+				 errmsg("setsockopt(SO_REUSEADDR) failed: %m")));
 	}
 #endif
 
@@ -4198,12 +4191,11 @@ RsocketInitialize(Port *port)
 		if (pg_setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
 						  (char *) &one, sizeof(one), port->isRsocket) == -1)
 		{
-			ereport(LOG,
-					(errcode_for_socket_access(),
-					 errmsg("setsockopt(IPV6_V6ONLY) failed: %m")));
 			pg_freeaddrinfo_all(hint.ai_family, addr);
 			pg_closesocket(fd, port->isRsocket);
-			return STATUS_ERROR;
+			ereport(FATAL,
+					(errcode_for_socket_access(),
+					 errmsg("setsockopt(IPV6_V6ONLY) failed: %m")));
 		}
 	}
 #endif
@@ -4218,15 +4210,14 @@ RsocketInitialize(Port *port)
 	err = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, port->isRsocket);
 	if (err < 0)
 	{
-		ereport(LOG,
+		pg_freeaddrinfo_all(hint.ai_family, addr);
+		pg_closesocket(fd, port->isRsocket);
+		ereport(FATAL,
 				(errcode_for_socket_access(),
 				 errmsg("could not bind socket: %m"),
 			  errhint("Is another postmaster already running on port %s?"
 					  " If not, wait a few seconds and retry.",
 					  local_port)));
-		pg_freeaddrinfo_all(hint.ai_family, addr);
-		pg_closesocket(fd, port->isRsocket);
-		return STATUS_ERROR;
 	}
 	printf("after bind\n");
 	pg_freeaddrinfo_all(hint.ai_family, addr);
@@ -4243,11 +4234,10 @@ RsocketInitialize(Port *port)
 	err = pg_listen(fd, maxconn, port->isRsocket);
 	if (err < 0)
 	{
-		ereport(LOG,
+		pg_closesocket(fd, port->isRsocket);
+		ereport(FATAL,
 				(errcode_for_socket_access(),
 				 errmsg("could not listen on socket: %m")));
-		pg_closesocket(fd, port->isRsocket);
-		return STATUS_ERROR;
 	}
 
 	/*
@@ -4257,10 +4247,10 @@ RsocketInitialize(Port *port)
 	RsocketOk = 'R';
 	if (pg_send(port->sock, &RsocketOk, 1, 0, port->isRsocket) != 1)
 	{
-		ereport(COMMERROR,
+		pg_closesocket(fd, port->isRsocket);
+		ereport(FATAL,
 				(errcode_for_socket_access(),
 				 errmsg("failed to send SSL negotiation response: %m")));
-		return STATUS_ERROR;	/* close the connection */
 	}
 
 	/* accept connection and fill in the client (remote) address */
@@ -4269,11 +4259,10 @@ RsocketInitialize(Port *port)
 						 (struct sockaddr *) &port->raddr.addr,
 						 &port->raddr.salen, port->isRsocket)) == PGINVALID_SOCKET)
 	{
-		ereport(LOG,
+		pg_closesocket(fd, port->isRsocket);
+		ereport(FATAL,
 				(errcode_for_socket_access(),
 				 errmsg("could not accept new connection: %m")));
-		pg_closesocket(fd, port->isRsocket);
-		return STATUS_ERROR;
 	}
 
 	/* Replace port->sock with rsocket descriptor */
@@ -4287,8 +4276,8 @@ RsocketInitialize(Port *port)
 					   (struct sockaddr *) & port->laddr.addr,
 					   &port->laddr.salen, port->isRsocket) < 0)
 	{
-		elog(LOG, "getsockname() failed: %m");
-		return STATUS_ERROR;
+		pg_closesocket(port->sock, port->isRsocket);
+		elog(FATAL, "getsockname() failed: %m");
 	}
 
 	/* select NODELAY and KEEPALIVE options */
@@ -4297,16 +4286,16 @@ RsocketInitialize(Port *port)
 	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_NODELAY,
 					  (char *) &on, sizeof(on), port->isRsocket) < 0)
 	{
-		elog(LOG, "setsockopt(TCP_NODELAY) failed: %m");
-		return STATUS_ERROR;
+		pg_closesocket(port->sock, port->isRsocket);
+		elog(FATAL, "setsockopt(TCP_NODELAY) failed: %m");
 	}
 #endif
 	on = 1;
 	if (pg_setsockopt(port->sock, SOL_SOCKET, SO_KEEPALIVE,
 					  (char *) &on, sizeof(on), port->isRsocket) < 0)
 	{
-		elog(LOG, "setsockopt(SO_KEEPALIVE) failed: %m");
-		return STATUS_ERROR;
+		pg_closesocket(port->sock, port->isRsocket);
+		elog(FATAL, "setsockopt(SO_KEEPALIVE) failed: %m");
 	}
 
 	/*
@@ -4319,8 +4308,6 @@ RsocketInitialize(Port *port)
 	(void) pq_setkeepalivesidle(tcp_keepalives_idle, port);
 	(void) pq_setkeepalivesinterval(tcp_keepalives_interval, port);
 	(void) pq_setkeepalivescount(tcp_keepalives_count, port);
-
-	return STATUS_OK;
 }
 #endif
 

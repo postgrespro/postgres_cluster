@@ -204,9 +204,11 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"Database-Port", "", 6,
 	offsetof(struct pg_conn, pgport)},
 
+#ifdef WITH_RSOCKET
 	{"rsocket_port", "RSOCKET_PGPORT", DEF_RSOCKET_PGPORT_STR, NULL,
 		"Database-Rsocket-Port", "", 6,
 	offsetof(struct pg_conn, rsocket_pgport)},
+#endif
 
 	{"client_encoding", "PGCLIENTENCODING", NULL, NULL,
 		"Client-Encoding", "", 10,
@@ -314,9 +316,11 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"Failover Timeout", "", 10,
 	offsetof(struct pg_conn, failover_timeout)},
 
+#ifdef WITH_RSOCKET
 	{"with_rsocket", NULL, NULL, NULL,
 		"WithRsocket", "D", 5,
 	offsetof(struct pg_conn, with_rsocket)},
+#endif
 
 	/* Terminating entry --- MUST BE LAST */
 	{NULL, NULL, NULL, NULL,
@@ -561,6 +565,7 @@ PQping(const char *conninfo)
 	return ret;
 }
 
+#ifdef WITH_RSOCKET
 static bool
 parse_bool(const char *value, bool *result)
 {
@@ -644,6 +649,7 @@ parse_bool(const char *value, bool *result)
 		*result = false;		/* suppress compiler warning */
 	return false;
 }
+#endif
 
 /*
  *		PQconnectStartParams
@@ -712,6 +718,7 @@ PQconnectStartParams(const char *const * keywords,
 	if (!connectOptions2(conn))
 		return conn;
 
+#ifdef WITH_RSOCKET
 	if (conn->with_rsocket && conn->with_rsocket[0] != '\0')
 	{
 		bool		isRsocket;
@@ -728,6 +735,7 @@ PQconnectStartParams(const char *const * keywords,
 
 		conn->isPreRsocket = isRsocket;
 	}
+#endif
 	/*
 	 * Connect to the database
 	 */
@@ -1538,6 +1546,11 @@ connectDBStart(PGconn *conn)
 	int			portnum;
 	char		portstr[MAXPGPATH];
 	struct addrinfo *addrs = NULL;
+#ifdef WITH_RSOCKET
+	int			rportnum;
+	char		rportstr[MAXPGPATH];
+	struct addrinfo *raddrs = NULL;
+#endif
 	struct addrinfo hint;
 	struct nodeinfo *nodes,
 			   *node;
@@ -1578,6 +1591,24 @@ connectDBStart(PGconn *conn)
 	else
 		portnum = DEF_PGPORT;
 	snprintf(portstr, sizeof(portstr), "%d", portnum);
+
+#ifdef WITH_RSOCKET
+	if (conn->rsocket_pgport != NULL && conn->rsocket_pgport[0] != '\0')
+	{
+		rportnum = atoi(conn->rsocket_pgport);
+		if (rportnum < 1 || rportnum > 65535)
+		{
+			appendPQExpBuffer(&conn->errorMessage,
+							  libpq_gettext("invalid port number: \"%s\"\n"),
+							  conn->rsocket_pgport);
+			conn->options_valid = false;
+			goto connect_errReturn;
+		}
+	}
+	else
+		rportnum = DEF_PGPORT;
+	snprintf(rportstr, sizeof(rportstr), "%d", rportnum);
+#endif
 
 	if (conn->pghostaddr != NULL && conn->pghostaddr[0] != '\0')
 	{
@@ -1875,6 +1906,26 @@ connectDBStart(PGconn *conn)
 		conn->options_valid = false;
 		goto connect_errReturn;
 	}
+
+#ifdef WITH_RSOCKET
+	ret = pg_getaddrinfo_all(node, rportstr, &hint, &raddrs);
+	if (ret || !raddrs)
+	{
+		if (node)
+			appendPQExpBuffer(&conn->errorMessage,
+							  libpq_gettext("could not translate host name \"%s\" to address: %s\n"),
+							  node, gai_strerror(ret));
+		else
+			appendPQExpBuffer(&conn->errorMessage,
+							  libpq_gettext("could not translate Unix-domain socket path \"%s\" to address: %s\n"),
+							  rportstr, gai_strerror(ret));
+		if (raddrs)
+			pg_freeaddrinfo_all(hint.ai_family, raddrs);
+		conn->options_valid = false;
+		goto connect_errReturn;
+	}
+#endif
+
 #ifdef USE_SSL
 	/* setup values based on SSL mode */
 	if (conn->sslmode[0] == 'd')	/* "disable" */
@@ -1894,6 +1945,9 @@ connectDBStart(PGconn *conn)
 	 */
 	conn->addr_cur = NULL;
 	try_next_address(conn);
+#ifdef WITH_RSOCKET
+	conn->rsocket_addrlist = raddrs;
+#endif
 	conn->addrlist_family = hint.ai_family;
 	conn->pversion = PG_PROTOCOL(3, 0);
 	conn->send_appname = true;
@@ -2232,12 +2286,14 @@ keep_going:						/* We will come back to here until there is
 	{
 		case CONNECTION_NEEDED:
 			{
+#ifdef WITH_RSOCKET
 				/* Close previous connection */
 				if (conn->isPreRsocket && conn->isRsocket)
 				{
 					pqDropConnection(conn, true);
 					conn->isPreRsocket = false;
 				}
+#endif
 
 				/*
 				 * Try to initiate a connection to one of the addresses
@@ -2502,6 +2558,7 @@ keep_going:						/* We will come back to here until there is
 					goto error_return;
 				}
 
+#ifdef WITH_RSOCKET
 				/* Make rsocket connection */
 				if (conn->isPreRsocket)
 				{
@@ -2509,6 +2566,7 @@ keep_going:						/* We will come back to here until there is
 					conn->status = CONNECTION_NEEDED;
 					return PGRES_POLLING_READING;
 				}
+#endif
 
 				/* Fill in the client address */
 				conn->laddr.salen = sizeof(conn->laddr.addr);
@@ -3212,6 +3270,13 @@ keep_going:						/* We will come back to here until there is
 					goto error_return;
 				}
 
+#ifdef WITH_RSOCKET
+				if (conn->rsocket_addrlist)
+				{
+					pg_freeaddrinfo_all(conn->addrlist_family, conn->rsocket_addrlist);
+					conn->rsocket_addrlist = NULL;
+				}
+#endif
 
 				/* Fire up post-connection housekeeping if needed */
 				if (PG_PROTOCOL_MAJOR(conn->pversion) < 3)
@@ -3763,6 +3828,13 @@ closePGconn(PGconn *conn)
 
 	pg_freeaddrinfo_all(conn->addrlist_family, conn->addrlist);
 	conn->addrlist = NULL;
+#ifdef WITH_RSOCKET
+	if (conn->rsocket_addrlist)
+	{
+		pg_freeaddrinfo_all(conn->addrlist_family, conn->rsocket_addrlist);
+		conn->rsocket_addrlist = NULL;
+	}
+#endif
 	conn->addr_cur = NULL;
 	notify = conn->notifyHead;
 	while (notify != NULL)
