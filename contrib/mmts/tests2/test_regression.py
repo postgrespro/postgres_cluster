@@ -19,7 +19,7 @@ class RecoveryTest(unittest.TestCase):
 
     def test_regression(self):
         # XXX: make smth clever here
-        # time.sleep(31)
+        time.sleep(31)
         subprocess.check_call(['docker', 'exec',
             'node1',
             '/pg/mmts/tests2/support/docker-regress.sh',
