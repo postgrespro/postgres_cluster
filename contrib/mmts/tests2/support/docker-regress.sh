@@ -17,9 +17,9 @@ SQL
 
 STATUS=$?
 
-if [ -f "regression.diffs" ]
-then
-	cat regression.diffs
-fi
+#if [ -f "regression.diffs" ]
+#then
+#	cat regression.diffs
+#fi
 
 exit $STATUS

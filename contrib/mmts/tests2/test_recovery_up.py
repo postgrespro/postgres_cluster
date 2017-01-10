@@ -64,10 +64,8 @@ class TestHelper(object):
 
 class RecoveryTest(unittest.TestCase, TestHelper):
 
-    def setUp(self):
-        time.sleep(20)
-        print('Start new test at ',datetime.datetime.utcnow())
-        warnings.simplefilter("ignore", ResourceWarning)
+    @classmethod
+    def setUpClass(self):
         self.client = MtmClient([
             "dbname=regression user=postgres host=127.0.0.1 port=15432",
             "dbname=regression user=postgres host=127.0.0.1 port=15433",
@@ -75,10 +73,18 @@ class RecoveryTest(unittest.TestCase, TestHelper):
         ], n_accounts=1000)
         self.client.bgrun()
 
-    def tearDown(self):
-        print('Finish test at ',datetime.datetime.utcnow())
+    @classmethod
+    def tearDownClass(self):
+        print('tearDown')
         self.client.stop()
 
+    def setUp(self):
+        warnings.simplefilter("ignore", ResourceWarning)
+        time.sleep(20)
+        print('Start new test at ',datetime.datetime.utcnow())
+
+    def tearDown(self):
+        print('Finish test at ',datetime.datetime.utcnow())
 
     def test_normal_operations(self):
         print('### test_normal_operations ###')

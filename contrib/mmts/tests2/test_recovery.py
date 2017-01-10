@@ -12,8 +12,10 @@ import warnings
 from lib.bank_client import MtmClient
 from lib.failure_injector import *
 
+TEST_WARMING_TIME = 5
 TEST_DURATION = 10
-TEST_RECOVERY_TIME = 20
+TEST_RECOVERY_TIME = 30
+TEST_SETUP_TIME = 20
 
 class TestHelper(object):
 
@@ -39,6 +41,11 @@ class TestHelper(object):
             raise AssertionError('There are commits during aggregation interval')
 
     def performFailure(self, failure):
+
+        time.sleep(TEST_WARMING_TIME)
+         
+        print('Simulate failure at ',datetime.datetime.utcnow())
+
         failure.start()
 
         self.client.clean_aggregates()
@@ -46,6 +53,8 @@ class TestHelper(object):
         aggs_failure = self.client.get_aggregates()
 
         failure.stop()
+
+        print('Eliminate failure at ',datetime.datetime.utcnow())
 
         self.client.clean_aggregates()
         time.sleep(TEST_RECOVERY_TIME)
@@ -60,11 +69,12 @@ class RecoveryTest(unittest.TestCase, TestHelper):
     def setUpClass(self):
         subprocess.check_call(['docker-compose','up',
             '--force-recreate',
+            '--build',
             '-d'])
 
         # XXX: add normal wait here
-        time.sleep(20)
-        print('started')
+        time.sleep(TEST_SETUP_TIME)
+
         self.client = MtmClient([
             "dbname=regression user=postgres host=127.0.0.1 port=15432",
             "dbname=regression user=postgres host=127.0.0.1 port=15433",
@@ -81,6 +91,11 @@ class RecoveryTest(unittest.TestCase, TestHelper):
 
     def setUp(self):
         warnings.simplefilter("ignore", ResourceWarning)
+        time.sleep(20)
+        print('Start new test at ',datetime.datetime.utcnow())
+
+    def tearDown(self):
+        print('Finish test at ',datetime.datetime.utcnow())
 
     def test_normal_operations(self):
         print('### test_normal_operations ###')
@@ -121,8 +136,6 @@ class RecoveryTest(unittest.TestCase, TestHelper):
 
     def test_node_restart(self):
         print('### test_node_restart ###')
-
-        time.sleep(3)
 
         aggs_failure, aggs = self.performFailure(RestartNode('node3'))
 
