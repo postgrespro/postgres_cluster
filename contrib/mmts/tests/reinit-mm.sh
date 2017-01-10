@@ -1,5 +1,5 @@
 n_nodes=3
-export PATH=~/code/postgres_cluster/install/bin/:$PATH
+export PATH=~/code/postgres_cluster/tmp_install/bin/:$PATH
 ulimit -c unlimited
 pkill -9 postgres
 pkill -9 arbiter
@@ -19,7 +19,7 @@ do
     port=$((5431 + i))
 	raft_port=$((6665 + i))
     arbiter_port=$((7000 + i))
-    conn_str="$conn_str${sep}dbname=regression user=stas host=127.0.0.1 port=$port arbiterport=$arbiter_port sslmode=disable"
+    conn_str="$conn_str${sep}dbname=regression user=stas host=127.0.0.1 port=$port arbiter_port=$arbiter_port sslmode=disable"
 	raft_conn_str="$raft_conn_str${sep}${i}:localhost:$raft_port"
     sep=","
     initdb node$i
@@ -46,7 +46,7 @@ do
         max_worker_processes = 15
         max_replication_slots = 10
         max_wal_senders = 10
-        shared_preload_libraries = 'raftable,multimaster'
+        shared_preload_libraries = 'multimaster'
         default_transaction_isolation = 'repeatable read'
 
         multimaster.workers = 1
@@ -70,6 +70,6 @@ SQL
 done
 
 sleep 10
-psql regression < ../../../regress.sql
+psql regression < regress.sql
 
 echo Done
