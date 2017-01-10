@@ -2562,7 +2562,10 @@ keep_going:						/* We will come back to here until there is
 				/* Make rsocket connection */
 				if (conn->isPreRsocket)
 				{
+					Assert(conn->rsocket_addrlist);
+
 					conn->isRsocket = true;
+					conn->addr_cur = conn->rsocket_addrlist;
 					conn->status = CONNECTION_NEEDED;
 					return PGRES_POLLING_READING;
 				}
