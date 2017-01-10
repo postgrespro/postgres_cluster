@@ -1459,11 +1459,12 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 						change->data.tp.newtuple == NULL &&
 						change->data.tp.oldtuple == NULL)
 						goto change_done;
-					else if (reloid == InvalidOid)
+					else if (reloid == InvalidOid) {
+						Assert(reloid != InvalidOid);
 						elog(ERROR, "could not map filenode \"%s\" to relation OID",
 							 relpathperm(change->data.tp.relnode,
 										 MAIN_FORKNUM));
-
+					}
 					relation = RelationIdGetRelation(reloid);
 
 					if (relation == NULL)
