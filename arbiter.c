@@ -1065,7 +1065,10 @@ static void MtmReceiver(Datum arg)
 										Assert(replorigin_session_origin == InvalidRepOriginId);
 										MTM_LOG2("SetPreparedTransactionState for %s", ts->gid);
 										MtmUnlock();
+										MtmResetTransaction();
+										StartTransactionCommand();
 										SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);	
+										CommitTransactionCommand();
 										MtmLock(LW_EXCLUSIVE);						
 									} else { 
 										ts->status = TRANSACTION_STATUS_UNKNOWN;

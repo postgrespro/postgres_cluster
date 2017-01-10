@@ -956,7 +956,14 @@ void MtmPrecommitTransaction(char const* gid)
 				}
 				MtmUnlock();
 				Assert(replorigin_session_origin != InvalidRepOriginId);
-				SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
+				if (!IsTransactionState()) {
+					MtmResetTransaction();
+					StartTransactionCommand();
+					SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
+					CommitTransactionCommand();
+				} else { 
+					SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
+				}
 			} else {
 				elog(WARNING, "MtmPrecommitTransaction: transaction '%s' is already in %s state", gid, MtmTxnStatusMnem[ts->status]);
 				MtmUnlock();
