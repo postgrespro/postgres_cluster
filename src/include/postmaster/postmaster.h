@@ -19,6 +19,7 @@
 extern bool EnableSSL;
 extern int	ReservedBackends;
 extern int	PostPortNumber;
+extern int	RsocketPostPortNumber;
 extern int	Unix_socket_permissions;
 extern char *Unix_socket_group;
 extern char *Unix_socket_directories;

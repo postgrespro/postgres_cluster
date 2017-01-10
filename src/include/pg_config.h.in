@@ -48,6 +48,15 @@
 /* Define to the default TCP port number as a string constant. */
 #undef DEF_PGPORT_STR
 
+/* Define to the default TCP port number on which the server listens and to
+   which clients will try to connect using rsocket. This can be overridden at
+   run-time, but it's convenient if your clients have the right default
+   compiled in. (--with-rsocket-pgport=PORTNUM) */
+#undef DEF_RSOCKET_PGPORT
+
+/* Define to the default rsocket TCP port number as a string constant. */
+#undef DEF_RSOCKET_PGPORT_STR
+
 /* Define to build with GSSAPI support. (--with-gssapi) */
 #undef ENABLE_GSS
 

@@ -187,6 +187,35 @@ elif test "$default_port" -lt "1" -o "$default_port" -gt "65535"; then
 fi
 
 #
+# Default port number (--with-rsocket-pgport), default 5433
+#
+AC_MSG_CHECKING([for default rsocket port number])
+PGAC_ARG_REQ(with, rsocket-pgport, [PORTNUM], [set default rsocket port number [5433]],
+             [default_rsocket_port=$withval],
+             [default_rsocket_port=5433])
+AC_MSG_RESULT([$default_rsocket_port])
+# Need both of these because some places want an integer and some a string
+AC_DEFINE_UNQUOTED(DEF_RSOCKET_PGPORT, ${default_rsocket_port},
+[Define to the default TCP port number on which the server listens and
+to which clients will try to connect using rsocket.  This can be overridden at run-time,
+but it's convenient if your clients have the right default compiled in.
+(--with-rsocket-pgport=PORTNUM)])
+AC_DEFINE_UNQUOTED(DEF_RSOCKET_PGPORT_STR, "${default_rsocket_port}",
+                   [Define to the default rsocket TCP port number as a string constant.])
+AC_SUBST(default_rsocket_port)
+
+# It's worth validating port; you can get very confusing errors otherwise
+if test x"$default_rsocket_port" = x""; then
+  AC_MSG_ERROR([invalid --with-rsocket-pgport specification: empty string])
+elif test ! x`echo "$default_rsocket_port" | sed -e 's/[[0-9]]*//'` = x""; then
+  AC_MSG_ERROR([invalid --with-rsocket-pgport specification: must be a number])
+elif test ! x`echo "$default_rsocket_port" | sed -e 's/^0.//'` = x"$default_rsocket_port"; then
+  AC_MSG_ERROR([invalid --with-rsocket-pgport specification: must not have leading 0])
+elif test "$default_rsocket_port" -lt "1" -o "$default_rsocket_port" -gt "65535"; then
+  AC_MSG_ERROR([invalid --with-rsocket-pgport specification: must be between 1 and 65535])
+fi
+
+#
 # '-rpath'-like feature can be disabled
 #
 PGAC_ARG_BOOL(enable, rpath, yes,

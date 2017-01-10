@@ -745,6 +745,7 @@ LCOV
 GCOV
 enable_debug
 enable_rpath
+default_rsocket_port
 default_port
 WANTED_LANGUAGES
 enable_nls
@@ -810,6 +811,7 @@ with_libs
 enable_integer_datetimes
 enable_nls
 with_pgport
+with_rsocket_pgport
 enable_rpath
 enable_spinlocks
 enable_atomics
@@ -1510,6 +1512,8 @@ Optional Packages:
   --with-libraries=DIRS   look for additional libraries in DIRS
   --with-libs=DIRS        alternative spelling of --with-libraries
   --with-pgport=PORTNUM   set default port number [5432]
+  --with-rsocket-pgport=PORTNUM
+                          set default rsocket port number [5433]
   --with-blocksize=BLOCKSIZE
                           set table block size in kB [8]
   --with-segsize=SEGSIZE  set table segment size in GB [1]
@@ -3145,6 +3149,60 @@ elif test ! x`echo "$default_port" | sed -e 's/^0.//'` = x"$default_port"; then
   as_fn_error $? "invalid --with-pgport specification: must not have leading 0" "$LINENO" 5
 elif test "$default_port" -lt "1" -o "$default_port" -gt "65535"; then
   as_fn_error $? "invalid --with-pgport specification: must be between 1 and 65535" "$LINENO" 5
+fi
+
+#
+# Default port number (--with-rsocket-pgport), default 5433
+#
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for default rsocket port number" >&5
+$as_echo_n "checking for default rsocket port number... " >&6; }
+
+
+
+# Check whether --with-rsocket-pgport was given.
+if test "${with_rsocket_pgport+set}" = set; then :
+  withval=$with_rsocket_pgport;
+  case $withval in
+    yes)
+      as_fn_error $? "argument required for --with-rsocket-pgport option" "$LINENO" 5
+      ;;
+    no)
+      as_fn_error $? "argument required for --with-rsocket-pgport option" "$LINENO" 5
+      ;;
+    *)
+      default_rsocket_port=$withval
+      ;;
+  esac
+
+else
+  default_rsocket_port=5433
+fi
+
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $default_rsocket_port" >&5
+$as_echo "$default_rsocket_port" >&6; }
+# Need both of these because some places want an integer and some a string
+
+cat >>confdefs.h <<_ACEOF
+#define DEF_RSOCKET_PGPORT ${default_rsocket_port}
+_ACEOF
+
+
+cat >>confdefs.h <<_ACEOF
+#define DEF_RSOCKET_PGPORT_STR "${default_rsocket_port}"
+_ACEOF
+
+
+
+# It's worth validating port; you can get very confusing errors otherwise
+if test x"$default_rsocket_port" = x""; then
+  as_fn_error $? "invalid --with-rsocket-pgport specification: empty string" "$LINENO" 5
+elif test ! x`echo "$default_rsocket_port" | sed -e 's/[0-9]*//'` = x""; then
+  as_fn_error $? "invalid --with-rsocket-pgport specification: must be a number" "$LINENO" 5
+elif test ! x`echo "$default_rsocket_port" | sed -e 's/^0.//'` = x"$default_rsocket_port"; then
+  as_fn_error $? "invalid --with-rsocket-pgport specification: must not have leading 0" "$LINENO" 5
+elif test "$default_rsocket_port" -lt "1" -o "$default_rsocket_port" -gt "65535"; then
+  as_fn_error $? "invalid --with-rsocket-pgport specification: must be between 1 and 65535" "$LINENO" 5
 fi
 
 #

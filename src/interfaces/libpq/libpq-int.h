@@ -304,6 +304,8 @@ struct pg_conn
 								 * which the server is running.  Takes
 								 * precedence over above. */
 	char	   *pgport;			/* the server's communication port number */
+	char	   *rsocket_pgport;	/* the server's communication port number using
+								 * rsocket */
 	char	   *pgunixsocket;	/* the directory of the server's Unix-domain
 								 * socket; if NULL, use DEFAULT_PGSOCKET_DIR */
 	char	   *pgtty;			/* tty on which the backend messages is
@@ -374,6 +376,7 @@ struct pg_conn
 	pgsocket	sock;			/* FD for socket, PGINVALID_SOCKET if
 								 * unconnected */
 	bool		isRsocket;		/* Is sock rsocket */
+	bool		isPreRsocket;	/* Is auxiliary socket for rsocket connection */
 	SockAddr	laddr;			/* Local address */
 	SockAddr	raddr;			/* Remote address */
 	ProtocolVersion pversion;	/* FE/BE protocol version in use */

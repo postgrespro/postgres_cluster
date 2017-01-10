@@ -434,7 +434,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				break;
 		}
 
-		if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, isRsocket))
+		if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, false))
 			 == PGINVALID_SOCKET)
 		{
 			ereport(LOG,
@@ -461,12 +461,12 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		if (!IS_AF_UNIX(addr->ai_family))
 		{
 			if ((pg_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-							   (char *) &one, sizeof(one), isRsocket)) == -1)
+							   (char *) &one, sizeof(one), false)) == -1)
 			{
 				ereport(LOG,
 						(errcode_for_socket_access(),
 						 errmsg("setsockopt(SO_REUSEADDR) failed: %m")));
-				pg_closesocket(fd, isRsocket);
+				pg_closesocket(fd, false);
 				continue;
 			}
 		}
@@ -476,12 +476,12 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		if (addr->ai_family == AF_INET6)
 		{
 			if (pg_setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
-							  (char *) &one, sizeof(one), isRsocket) == -1)
+							  (char *) &one, sizeof(one), false) == -1)
 			{
 				ereport(LOG,
 						(errcode_for_socket_access(),
 						 errmsg("setsockopt(IPV6_V6ONLY) failed: %m")));
-				pg_closesocket(fd, isRsocket);
+				pg_closesocket(fd, false);
 				continue;
 			}
 		}
@@ -493,7 +493,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		 * ipv4 addresses to ipv6.  It will show ::ffff:ipv4 for all ipv4
 		 * connections.
 		 */
-		err = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, isRsocket);
+		err = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, false);
 		if (err < 0)
 		{
 			ereport(LOG,
@@ -508,7 +508,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				  errhint("Is another postmaster already running on port %d?"
 						  " If not, wait a few seconds and retry.",
 						  (int) portNumber)));
-			pg_closesocket(fd, isRsocket);
+			pg_closesocket(fd, false);
 			continue;
 		}
 
@@ -517,7 +517,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		{
 			if (Setup_AF_UNIX(service) != STATUS_OK)
 			{
-				pg_closesocket(fd, isRsocket);
+				pg_closesocket(fd, false);
 				break;
 			}
 		}
@@ -532,7 +532,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		if (maxconn > PG_SOMAXCONN)
 			maxconn = PG_SOMAXCONN;
 
-		err = pg_listen(fd, maxconn, isRsocket);
+		err = pg_listen(fd, maxconn, false);
 		if (err < 0)
 		{
 			ereport(LOG,
@@ -540,7 +540,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 			/* translator: %s is IPv4, IPv6, or Unix */
 					 errmsg("could not listen on %s socket: %m",
 							familyDesc)));
-			pg_closesocket(fd, isRsocket);
+			pg_closesocket(fd, false);
 			continue;
 		}
 		ListenSocket[listen_index] = fd;

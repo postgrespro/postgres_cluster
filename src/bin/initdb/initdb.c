@@ -1236,6 +1236,11 @@ setup_config(void)
 	conflines = replace_token(conflines, "#port = 5432", repltok);
 #endif
 
+#if DEF_RSOCKET_PGPORT != 5433
+	snprintf(repltok, sizeof(repltok), "#rsocket_port = %d", DEF_RSOCKET_PGPORT);
+	conflines = replace_token(conflines, "#rsocket_port = 5433", repltok);
+#endif
+
 	snprintf(repltok, sizeof(repltok), "lc_messages = '%s'",
 			 escape_quotes(lc_messages));
 	conflines = replace_token(conflines, "#lc_messages = 'C'", repltok);

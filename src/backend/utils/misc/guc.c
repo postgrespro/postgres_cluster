@@ -1923,6 +1923,16 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"rsocket_port", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
+			gettext_noop("Sets the rsocket TCP port the server listens on."),
+			NULL
+		},
+		&RsocketPostPortNumber,
+		DEF_RSOCKET_PGPORT, 1, 65535,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"unix_socket_permissions", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the access permissions of the Unix-domain socket."),
 			gettext_noop("Unix-domain sockets use the usual Unix file system "

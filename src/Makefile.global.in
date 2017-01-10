@@ -433,6 +433,7 @@ endif
 # Feature settings
 
 DEF_PGPORT = @default_port@
+DEF_RSOCKET_PGPORT = @default_rsocket_port@
 WANTED_LANGUAGES = @WANTED_LANGUAGES@
 
 

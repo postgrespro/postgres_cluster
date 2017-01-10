@@ -191,6 +191,7 @@ BackgroundWorker *MyBgworkerEntry = NULL;
 
 /* The socket number we are listening for connections on */
 int			PostPortNumber;
+int			RsocketPostPortNumber;
 
 /* The directory names for Unix socket(s) */
 char	   *Unix_socket_directories;
@@ -376,7 +377,7 @@ static void CloseServerPorts(int status, Datum arg);
 static void unlink_external_pid_file(int status, Datum arg);
 static void getInstallationPaths(const char *argv0);
 static void checkDataDir(void);
-static Port *ConnCreate(int serverFd, bool isRsocket);
+static Port *ConnCreate(int serverFd);
 static void ConnFree(Port *port);
 static void reset_shared(int port);
 static void SIGHUP_handler(SIGNAL_ARGS);
@@ -392,12 +393,14 @@ static void HandleChildCrash(int pid, int exitstatus, const char *procname);
 static void LogChildExit(int lev, const char *procname,
 			 int pid, int exitstatus);
 static void PostmasterStateMachine(void);
+#ifdef WITH_RSOCKET
 static int RsocketInitialize(Port *port);
+#endif
 static void BackendInitialize(Port *port);
 static void BackendRun(Port *port) pg_attribute_noreturn();
 static void ExitPostmaster(int status) pg_attribute_noreturn();
 static int	ServerLoop(void);
-static int	BackendStartup(Port *port);
+static int	BackendStartup(Port *port, bool isRsocket);
 static int	ProcessStartupPacket(Port *port, bool SSLdone);
 static void processCancelRequest(Port *port, void *pkt);
 static int	initMasks(fd_set *rmask);
@@ -1406,13 +1409,7 @@ CloseServerPorts(int status, Datum arg)
 	{
 		if (ListenSocket[i] != PGINVALID_SOCKET)
 		{
-			StreamClose(ListenSocket[i],
-#ifdef WITH_RSOCKET
-						ListenRdma[i]
-#else
-						false
-#endif
-						);
+			StreamClose(ListenSocket[i], false);
 			ListenSocket[i] = PGINVALID_SOCKET;
 #ifdef WITH_RSOCKET
 			ListenRdma[i] = false;
@@ -1781,28 +1778,22 @@ ServerLoop(void)
 				{
 					Port	   *port;
 
-					port = ConnCreate(ListenSocket[i],
-#ifdef WITH_RSOCKET
-									  ListenRdma[i]
-#else
-									  false
-#endif
-									  );
+					port = ConnCreate(ListenSocket[i]);
 					if (port)
 					{
-						BackendStartup(port);
+						BackendStartup(port,
+#ifdef WITH_RSOCKET
+									   ListenRdma[i],
+#else
+									   false
+#endif
+									   );
 
 						/*
 						 * We no longer need the open socket or port structure
 						 * in this process
 						 */
-						StreamClose(port->sock,
-#ifdef WITH_RSOCKET
-									ListenRdma[i]
-#else
-									false
-#endif
-									);
+						StreamClose(port->sock, false);
 						ConnFree(port);
 					}
 				}
@@ -2422,7 +2413,7 @@ canAcceptConnections(void)
  * Returns NULL on failure, other than out-of-memory which is fatal.
  */
 static Port *
-ConnCreate(int serverFd, bool isRsocket)
+ConnCreate(int serverFd)
 {
 	Port	   *port;
 
@@ -2434,7 +2425,7 @@ ConnCreate(int serverFd, bool isRsocket)
 		ExitPostmaster(1);
 	}
 
-	port->isRsocket = isRsocket;
+	port->isRsocket = false;
 
 	if (StreamConnection(serverFd, port) != STATUS_OK)
 	{
@@ -2513,13 +2504,7 @@ ClosePostmasterPorts(bool am_syslogger)
 	{
 		if (ListenSocket[i] != PGINVALID_SOCKET)
 		{
-			StreamClose(ListenSocket[i],
-#ifdef WITH_RSOCKET
-						ListenRdma[i]
-#else
-						false
-#endif
-						);
+			StreamClose(ListenSocket[i], false);
 			ListenSocket[i] = PGINVALID_SOCKET;
 #ifdef WITH_RSOCKET
 			ListenRdma[i] = false;
@@ -3982,11 +3967,10 @@ TerminateChildren(int signal)
  * Note: if you change this code, also consider StartAutovacuumWorker.
  */
 static int
-BackendStartup(Port *port)
+BackendStartup(Port *port, bool isRsocket)
 {
 	Backend    *bn;				/* for backend cleanup */
 	pid_t		pid;
-	int			ret;
 
 	/*
 	 * Create backend data structure.  Better before the fork() so we can
@@ -4046,9 +4030,14 @@ BackendStartup(Port *port)
 		ClosePostmasterPorts(false);
 
 		/* Rsocket doesn't support forks. Initialize new rsocket connection. */
-		ret = RsocketInitialize(port);
-		if (ret != STATUS_OK)
-			return ret;
+#ifdef WITH_RSOCKET
+		if (isRsocket)
+		{
+			int			ret = RsocketInitialize(port);
+			if (ret != STATUS_OK)
+				return ret;
+		}
+#endif
 
 		/* Perform additional initialization and collect startup packet */
 		BackendInitialize(port);
@@ -4125,29 +4114,33 @@ report_fork_failure_to_client(Port *port, int errnum)
 }
 
 
+#ifdef WITH_RSOCKET
 static int
 RsocketInitialize(Port *port)
 {
-	pgsocket	fd;
+	pgsocket	fd,
+				sfd;
 	const SockAddr local_addr = port->laddr;
 	char		local_addr_s[NI_MAXHOST];
 	char		local_port[NI_MAXSERV];
 	struct addrinfo *addr = NULL,
 				hint;
+	char		RsocketOk;
 	int			ret;
 	int			err;
 	int			maxconn;
+	int			on;
 
 #if !defined(WIN32) || defined(IPV6_V6ONLY)
 	int			one = 1;
 #endif
 
-	StreamClose(port->sock, false);
-
 	pg_getnameinfo_all(&local_addr.addr, local_addr.salen,
 					   local_addr_s, sizeof(local_addr_s),
-					   local_port, sizeof(local_port),
+					   NULL, 0,
 					   NI_NUMERICSERV);
+
+	snprintf(local_port, sizeof(local_port), "%d", RsocketPostPortNumber);
 
 	MemSet(&hint, 0, sizeof(hint));
 	hint.ai_family = local_addr.addr.ss_family;
@@ -4236,6 +4229,7 @@ RsocketInitialize(Port *port)
 		return STATUS_ERROR;
 	}
 	printf("after bind\n");
+	pg_freeaddrinfo_all(hint.ai_family, addr);
 
 	/*
 	 * Select appropriate accept-queue length limit.  PG_SOMAXCONN is only
@@ -4252,17 +4246,85 @@ RsocketInitialize(Port *port)
 		ereport(LOG,
 				(errcode_for_socket_access(),
 				 errmsg("could not listen on socket: %m")));
-		pg_freeaddrinfo_all(hint.ai_family, addr);
 		pg_closesocket(fd, port->isRsocket);
 		return STATUS_ERROR;
 	}
 
-	pg_freeaddrinfo_all(hint.ai_family, addr);
+	remote_addr.salen = sizeof(remote_addr.addr);
 
-	pg_closesocket(fd, port->isRsocket);
+	/*
+	 * Send to client message that postmaster ready to accept rsocket
+	 * connection.
+	 */
+	RsocketOk = 'R';
+	if (pg_send(port->sock, &RsocketOk, 1, 0, port->isRsocket) != 1)
+	{
+		ereport(COMMERROR,
+				(errcode_for_socket_access(),
+				 errmsg("failed to send SSL negotiation response: %m")));
+		return STATUS_ERROR;	/* close the connection */
+	}
+
+	/* accept connection and fill in the client (remote) address */
+	port->raddr.salen = sizeof(port->raddr.addr);
+	if ((sfd = pg_accept(fd,
+						 (struct sockaddr *) &port->raddr.addr,
+						 &port->raddr.salen, port->isRsocket)) == PGINVALID_SOCKET)
+	{
+		ereport(LOG,
+				(errcode_for_socket_access(),
+				 errmsg("could not accept new connection: %m")));
+		pg_closesocket(fd, port->isRsocket);
+		return STATUS_ERROR;
+	}
+
+	/* Replace port->sock with rsocket descriptor */
+	StreamClose(port->sock, port->isRsocket);
+
+	port->sock = sfd;
+	port->isRsocket = true;
+	/* fill in the server (local) address */
+	port->laddr.salen = sizeof(port->laddr.addr);
+	if (pg_getsockname(port->sock,
+					   (struct sockaddr *) & port->laddr.addr,
+					   &port->laddr.salen, port->isRsocket) < 0)
+	{
+		elog(LOG, "getsockname() failed: %m");
+		return STATUS_ERROR;
+	}
+
+	/* select NODELAY and KEEPALIVE options */
+#ifdef	TCP_NODELAY
+	on = 1;
+	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_NODELAY,
+					  (char *) &on, sizeof(on), port->isRsocket) < 0)
+	{
+		elog(LOG, "setsockopt(TCP_NODELAY) failed: %m");
+		return STATUS_ERROR;
+	}
+#endif
+	on = 1;
+	if (pg_setsockopt(port->sock, SOL_SOCKET, SO_KEEPALIVE,
+					  (char *) &on, sizeof(on), port->isRsocket) < 0)
+	{
+		elog(LOG, "setsockopt(SO_KEEPALIVE) failed: %m");
+		return STATUS_ERROR;
+	}
+
+	/*
+	 * Also apply the current keepalive parameters.  If we fail to set a
+	 * parameter, don't error out, because these aren't universally
+	 * supported.  (Note: you might think we need to reset the GUC
+	 * variables to 0 in such a case, but it's not necessary because the
+	 * show hooks for these variables report the truth anyway.)
+	 */
+	(void) pq_setkeepalivesidle(tcp_keepalives_idle, port);
+	(void) pq_setkeepalivesinterval(tcp_keepalives_interval, port);
+	(void) pq_setkeepalivescount(tcp_keepalives_count, port);
 
 	return STATUS_OK;
 }
+#endif
 
 
 /*

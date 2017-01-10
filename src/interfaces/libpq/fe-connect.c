@@ -204,6 +204,10 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"Database-Port", "", 6,
 	offsetof(struct pg_conn, pgport)},
 
+	{"rsocket_port", "RSOCKET_PGPORT", DEF_RSOCKET_PGPORT_STR, NULL,
+		"Database-Rsocket-Port", "", 6,
+	offsetof(struct pg_conn, rsocket_pgport)},
+
 	{"client_encoding", "PGCLIENTENCODING", NULL, NULL,
 		"Client-Encoding", "", 10,
 	offsetof(struct pg_conn, client_encoding_initial)},
@@ -722,10 +726,8 @@ PQconnectStartParams(const char *const * keywords,
 			return conn;
 		}
 
-		conn->isRsocket = isRsocket;
+		conn->isPreRsocket = isRsocket;
 	}
-	else
-		conn->isRsocket = false;
 	/*
 	 * Connect to the database
 	 */
@@ -2493,6 +2495,16 @@ keep_going:						/* We will come back to here until there is
 					goto error_return;
 				}
 
+				/* Make rsocket connection */
+				if (conn->isPreRsocket)
+				{
+					pqDropConnection(conn, true);
+
+					conn->isRsocket = true;
+					conn->status = CONNECTION_NEEDED;
+					return PGRES_POLLING_READING;
+				}
+
 				/* Fill in the client address */
 				conn->laddr.salen = sizeof(conn->laddr.addr);
 				if (pg_getsockname(conn->sock,
@@ -3515,6 +3527,7 @@ makeEmptyPGconn(void)
 	conn->show_context = PQSHOW_CONTEXT_ERRORS;
 	conn->sock = PGINVALID_SOCKET;
 	conn->isRsocket = false;
+	conn->isPreRsocket = false;
 	conn->auth_req_received = false;
 	conn->password_needed = false;
 	conn->dot_pgpass_used = false;
