@@ -90,7 +90,7 @@ static void MtmSender(Datum arg);
 static void MtmReceiver(Datum arg);
 static void MtmMonitor(Datum arg);
 static void MtmSendHeartbeat(void);
-static bool MtmSendToNode(int node, void const* buf, int size);
+static bool MtmSendToNode(int node, void const* buf, int size, time_t reconnectTimeout);
 
 char const* const MtmMessageKindMnem[] = 
 {
@@ -214,7 +214,7 @@ static void MtmDisconnect(int node)
 	MtmOnNodeDisconnect(node+1);
 }
 
-static int MtmWaitSocket(int sd, bool forWrite, time_t timeoutMsec)
+static int MtmWaitSocket(int sd, bool forWrite, timestamp_t timeoutMsec)
 {	
 	struct timeval tv;
 	fd_set set;
@@ -227,7 +227,7 @@ static int MtmWaitSocket(int sd, bool forWrite, time_t timeoutMsec)
 		MtmCheckHeartbeat();
 		now = MtmGetSystemTime();
 		if (now > deadline) { 
-			return 0;
+			now = deadline;
 		}
 		tv.tv_sec = (deadline - now)/USECS_PER_SEC; 
 		tv.tv_usec = (deadline - now)%USECS_PER_SEC;
@@ -355,7 +355,7 @@ static void MtmSendHeartbeat()
 	timestamp_t now = MtmGetSystemTime();
 	msg.code = MSG_HEARTBEAT;
 	msg.disabledNodeMask = Mtm->disabledNodeMask;
-	msg.connectivityMask = Mtm->connectivityMask;
+	msg.connectivityMask = SELF_CONNECTIVITY_MASK;
 	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
 	msg.node = MtmNodeId;
 	msg.csn = now;
@@ -373,7 +373,7 @@ static void MtmSendHeartbeat()
 					|| !BIT_CHECK(Mtm->disabledNodeMask, i)
 					|| BIT_CHECK(Mtm->reconnectMask, i)))
 			{ 
-				if (!MtmSendToNode(i, &msg, sizeof(msg))) { 
+				if (!MtmSendToNode(i, &msg, sizeof(msg), MtmHeartbeatSendTimeout)) { 
 					elog(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
 				} else {
 					if (last_heartbeat_to_node[i] + MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2 < now) { 
@@ -381,7 +381,7 @@ static void MtmSendHeartbeat()
 					}
 					last_heartbeat_to_node[i] = now;
 					/* Connectivity mask can be cleared by MtmWatchdog: in this case sockets[i] >= 0 */
-					if (BIT_CHECK(Mtm->connectivityMask, i)) { 
+					if (BIT_CHECK(SELF_CONNECTIVITY_MASK, i)) { 
 						MTM_LOG1("Force reconnect to node %d", i+1);    
 						close(sockets[i]);
 						sockets[i] = -1;
@@ -411,7 +411,7 @@ void MtmCheckHeartbeat()
 }
 
 
-static int MtmConnectSocket(int node, int port, int timeout)
+static int MtmConnectSocket(int node, int port, time_t timeout)
 {
     struct sockaddr_in sock_inet;
     unsigned addrs[MAX_ROUTES];
@@ -422,6 +422,8 @@ static int MtmConnectSocket(int node, int port, int timeout)
 	timestamp_t start = MtmGetSystemTime();
 	char const* host = Mtm->nodes[node].con.hostName;
 	nodemask_t save_mask = busy_mask;
+	timestamp_t afterWait;
+	timestamp_t beforeWait;
 
     sock_inet.sin_family = AF_INET;
 	sock_inet.sin_port = htons(port);
@@ -435,7 +437,6 @@ static int MtmConnectSocket(int node, int port, int timeout)
   Retry:
     while (1) {
 		int rc = -1;
-
 		sd = socket(AF_INET, SOCK_STREAM, 0);
 		if (sd < 0) {
 			elog(LOG, "Arbiter failed to create socket: %d", errno);
@@ -461,7 +462,8 @@ static int MtmConnectSocket(int node, int port, int timeout)
 		if (rc == 0) {
 			break;
 		}
-		if (errno != EINPROGRESS || start  + MSEC_TO_USEC(timeout) < MtmGetSystemTime()) {
+		beforeWait = MtmGetSystemTime();
+		if (errno != EINPROGRESS || start + MSEC_TO_USEC(timeout) < beforeWait ) {
 			elog(WARNING, "Arbiter failed to connect to %s:%d: error=%d", host, port, errno);
 			close(sd);
 			busy_mask = save_mask;
@@ -485,8 +487,10 @@ static int MtmConnectSocket(int node, int port, int timeout)
 				elog(WARNING, "Arbiter waiting socket to %s:%d: rc=%d, error=%d", host, port, rc, errno);
 			}
 			close(sd);
-			MtmCheckHeartbeat();
-			MtmSleep(MSEC_TO_USEC(MtmHeartbeatSendTimeout));
+			afterWait = MtmGetSystemTime();
+			if (afterWait < beforeWait + MSEC_TO_USEC(MtmHeartbeatSendTimeout)) {
+				MtmSleep(beforeWait + MSEC_TO_USEC(MtmHeartbeatSendTimeout) - afterWait);
+			}
 		}
 	}
 	MtmSetSocketOptions(sd);
@@ -496,7 +500,7 @@ static int MtmConnectSocket(int node, int port, int timeout)
 	req.hdr.sxid = ShmemVariableCache->nextXid;
 	req.hdr.csn  = MtmGetCurrentTime();
 	req.hdr.disabledNodeMask = Mtm->disabledNodeMask;
-	req.hdr.connectivityMask = Mtm->connectivityMask;
+	req.hdr.connectivityMask = SELF_CONNECTIVITY_MASK;
 	strcpy(req.connStr, Mtm->nodes[MtmNodeId-1].con.connStr);
 	if (!MtmWriteSocket(sd, &req, sizeof req)) { 
 		elog(WARNING, "Arbiter failed to send handshake message to %s:%d: %d", host, port, errno);
@@ -553,7 +557,7 @@ static void MtmOpenConnections()
 }
 
 
-static bool MtmSendToNode(int node, void const* buf, int size)
+static bool MtmSendToNode(int node, void const* buf, int size, time_t reconnectTimeout)
 {	
 	bool result = true;
 	nodemask_t save_mask = busy_mask;
@@ -580,7 +584,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 				close(sockets[node]);
 				sockets[node] = -1;
 			}
-			sockets[node] = MtmConnectSocket(node, Mtm->nodes[node].con.arbiterPort, MtmReconnectTimeout);
+			sockets[node] = MtmConnectSocket(node, Mtm->nodes[node].con.arbiterPort, reconnectTimeout);
 			if (sockets[node] < 0) { 
 				MtmOnNodeDisconnect(node+1);
 				result = false;
@@ -634,7 +638,7 @@ static void MtmAcceptOneConnection()
 
 			resp.code = MSG_STATUS;
 			resp.disabledNodeMask = Mtm->disabledNodeMask;
-			resp.connectivityMask = Mtm->connectivityMask;
+			resp.connectivityMask = SELF_CONNECTIVITY_MASK;
 			resp.dxid = HANDSHAKE_MAGIC;
 			resp.sxid = ShmemVariableCache->nextXid;
 			resp.csn  = MtmGetCurrentTime();
@@ -759,7 +763,7 @@ static void MtmSender(Datum arg)
 
 		for (i = 0; i < Mtm->nAllNodes; i++) { 
 			if (txBuffer[i].used != 0) { 
-				MtmSendToNode(i, txBuffer[i].data, txBuffer[i].used*sizeof(MtmArbiterMessage));
+				MtmSendToNode(i, txBuffer[i].data, txBuffer[i].used*sizeof(MtmArbiterMessage), MtmReconnectTimeout);
 				txBuffer[i].used = 0;
 			}
 		}		
@@ -813,7 +817,7 @@ static void MtmMonitor(Datum arg)
 	BackgroundWorkerInitializeConnection(MtmDatabaseName, NULL);
 
 	while (!stop) {
-		int rc = WaitLatch(&MyProc->procLatch, WL_TIMEOUT | WL_POSTMASTER_DEATH, MtmHeartbeatRecvTimeout);
+		int rc = WaitLatch(&MyProc->procLatch, WL_TIMEOUT | WL_POSTMASTER_DEATH, MtmHeartbeatSendTimeout);
 		if (rc & WL_POSTMASTER_DEATH) { 
 			break;
 		}
@@ -951,7 +955,7 @@ static void MtmReceiver(Datum arg)
 							MTM_LOG1("Send response %s for transaction %s to node %d", MtmTxnStatusMnem[msg->status], msg->gid, msg->node);
 						}
 						msg->disabledNodeMask = Mtm->disabledNodeMask;
-						msg->connectivityMask = Mtm->connectivityMask;
+						msg->connectivityMask = SELF_CONNECTIVITY_MASK;
 						msg->oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
 						msg->code = MSG_POLL_STATUS;	
 						MtmSendMessage(msg);
@@ -1142,10 +1146,10 @@ static void MtmReceiver(Datum arg)
 			}
 		}
 		if (Mtm->status == MTM_ONLINE) { 
-			/* Check for hearbeat only in case of timeout expiration: it means that we do not have unproceeded events.
+			now = MtmGetSystemTime();
+			/* Check for heartbeats only in case of timeout expiration: it means that we do not have unproceeded events.
 			 * It helps to avoid false node failure detection because of blocking receiver.
 			 */
-			now = MtmGetSystemTime();
 			if (n == 0) {
 				selectTimeout = MtmHeartbeatRecvTimeout; /* restore select timeout */ 
 				if (now > lastHeartbeatCheck + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) { 
@@ -1157,10 +1161,6 @@ static void MtmReceiver(Datum arg)
 						}
 					}
 					lastHeartbeatCheck = now;
-				}
-				if (Mtm->disabledNodeMask != 0) { 
-					/* If timeout is expired and there are disabled nodes, then recheck cluster's state */
-					MtmRefreshClusterStatus();
 				}
 			} else {
 				if (now > lastHeartbeatCheck + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) { 
