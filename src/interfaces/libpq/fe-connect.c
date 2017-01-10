@@ -2232,6 +2232,13 @@ keep_going:						/* We will come back to here until there is
 	{
 		case CONNECTION_NEEDED:
 			{
+				/* Close previous connection */
+				if (conn->isPreRsocket && conn->isRsocket)
+				{
+					pqDropConnection(conn, true);
+					conn->isPreRsocket = false;
+				}
+
 				/*
 				 * Try to initiate a connection to one of the addresses
 				 * returned by pg_getaddrinfo_all().  conn->addr_cur is the
@@ -2498,8 +2505,6 @@ keep_going:						/* We will come back to here until there is
 				/* Make rsocket connection */
 				if (conn->isPreRsocket)
 				{
-					pqDropConnection(conn, true);
-
 					conn->isRsocket = true;
 					conn->status = CONNECTION_NEEDED;
 					return PGRES_POLLING_READING;
