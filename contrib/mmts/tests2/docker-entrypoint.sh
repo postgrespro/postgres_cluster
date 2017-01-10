@@ -58,7 +58,7 @@ if [ "$1" = 'postgres' ]; then
 			default_transaction_isolation = 'repeatable read'
             log_line_prefix = '%t: '
 
-			multimaster.workers = 4
+			multimaster.workers = 16
 			multimaster.max_nodes = 3
 			multimaster.volkswagen_mode = 1
 			multimaster.queue_size=52857600
