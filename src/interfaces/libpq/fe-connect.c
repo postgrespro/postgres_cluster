@@ -2342,7 +2342,8 @@ keep_going:						/* We will come back to here until there is
 							continue;
 						}
 					}
-					if (!pg_set_noblock(conn->sock, conn->isRsocket))
+					if (!conn->isRsocket &&
+						!pg_set_noblock(conn->sock, conn->isRsocket))
 					{
 						appendPQExpBuffer(&conn->errorMessage,
 										  libpq_gettext("could not set socket to nonblocking mode: %s\n"),
