@@ -45,7 +45,7 @@ LANGUAGE C;
 CREATE TYPE mtm.cluster_state AS ("status" text, "disabledNodeMask" bigint, "disconnectedNodeMask" bigint, "catchUpNodeMask" bigint, "liveNodes" integer, "allNodes" integer, "nActiveQueries" integer, "nPendingQueries" integer, "queueSize" bigint, "transCount" bigint, "timeShift" bigint, "recoverySlot" integer,
 "xidHashSize" bigint, "gidHashSize" bigint, "oldestXid" integer, "configChanges" integer);
 
-CREATE TYPE mtm.trans_state AS ("status" text, "gid" text, "xid" integer, "coordinator" integer, "gxid" integer, "csn" timestamp, "snapshot" timestamp, "local" boolean, "prepared" boolean, "active" boolean, "twophase" boolean, "votingCompleted" boolean, "participants" bigint, "voted" bigint);
+CREATE TYPE mtm.trans_state AS ("status" text, "gid" text, "xid" integer, "coordinator" integer, "gxid" integer, "csn" timestamp, "snapshot" timestamp, "local" boolean, "prepared" boolean, "active" boolean, "twophase" boolean, "votingCompleted" boolean, "participants" bigint, "voted" bigint, "configChanges" integer);
 
 CREATE FUNCTION mtm.get_trans_by_gid(git text) RETURNS mtm.trans_state
 AS 'MODULE_PATHNAME','mtm_get_trans_by_gid'
