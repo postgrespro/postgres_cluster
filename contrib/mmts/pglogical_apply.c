@@ -337,13 +337,11 @@ process_remote_begin(StringInfo s)
 {
 	GlobalTransactionId gtid;
 	csn_t snapshot;
-	char const* gucCtx;
 	int rc;
 
 	gtid.node = pq_getmsgint(s, 4); 
 	gtid.xid = pq_getmsgint(s, 4); 
 	snapshot = pq_getmsgint64(s);    
-	gucCtx = pq_getmsgstring(s);
 
 	Assert(gtid.node > 0);
 
@@ -359,19 +357,13 @@ process_remote_begin(StringInfo s)
 	StartTransactionCommand();
     MtmJoinTransaction(&gtid, snapshot);
 
-	if (*gucCtx || GucAltered) {
+	if (GucAltered) {
 		SPI_connect();
-		if (GucAltered) { 
-			GucAltered = *gucCtx != '\0';
-			gucCtx = psprintf("RESET SESSION AUTHORIZATION; reset all; %s", gucCtx);
-		} else { 
-			GucAltered = true;
-		}
-		ActivePortal->sourceText = gucCtx;
-		rc = SPI_execute(gucCtx, false, 0);
+		GucAltered = false;
+		rc = SPI_execute("RESET SESSION AUTHORIZATION; reset all;", false, 0);
 		SPI_finish();
 		if (rc < 0) { 
-			elog(ERROR, "Failed to set GUC context %s: %d", gucCtx, rc);
+			elog(ERROR, "Failed to set reset context: %d", rc);
 		}
 	}
 
@@ -399,6 +391,7 @@ process_remote_message(StringInfo s)
 		case 'D':
 		{
 			int rc;
+			GucAltered = true;
 			MTM_LOG1("%d: Executing utility statement %s", MyProcPid, messageBody);
 			SPI_connect();
 			ActivePortal->sourceText = messageBody;

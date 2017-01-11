@@ -131,7 +131,6 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 		pq_sendint(out, MtmNodeId, 4);
 		pq_sendint(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
 		pq_sendint64(out, csn);
-		pq_sendstring(out, MtmGucSerialize());
 
 		MtmTransactionRecords = 0;
 	}

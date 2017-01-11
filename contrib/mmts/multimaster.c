@@ -156,7 +156,7 @@ static void MtmShmemStartup(void);
 static BgwPool* MtmPoolConstructor(void);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
-static bool MtmProcessDDLCommand(char const* queryString, bool transactional);
+static void MtmProcessDDLCommand(char const* queryString, bool transactional);
 
 MtmState* Mtm;
 
@@ -175,7 +175,8 @@ static MtmConnectionInfo* MtmConnections;
 static MtmCurrentTrans MtmTx;
 static dlist_head MtmLsnMapping = DLIST_STATIC_INIT(MtmLsnMapping);
 
-static TransactionManager MtmTM = { 
+static TransactionManager MtmTM = 
+{ 
 	PgTransactionIdGetStatus, 
 	PgTransactionIdSetTreeStatus,
 	MtmGetSnapshot, 
@@ -4431,18 +4432,29 @@ char* MtmGucSerialize(void)
  * -------------------------------------------
  */
 
-static bool MtmProcessDDLCommand(char const* queryString, bool transactional)
+static void MtmProcessDDLCommand(char const* queryString, bool transactional)
 {
+	char* gucCtx = MtmGucSerialize();
+	if (*gucCtx) {
+		queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s; %s", gucCtx, queryString);
+	} else { 
+		queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s", queryString);
+	}
 	MTM_LOG3("Sending utility: %s", queryString);
 	if (transactional) {
 		/* DDL */
 		LogLogicalMessage("D", queryString, strlen(queryString) + 1, true);
 		MtmTx.containsDML = true;
-	} else {
+	} else {		
+		char* gucCtx = MtmGucSerialize();
+		return;
+		if (*gucCtx) {
+			queryString = psprintf("%s; %s", gucCtx, queryString);
+		}
 		/* CONCURRENT DDL */
 		XLogFlush(LogLogicalMessage("C", queryString, strlen(queryString) + 1, false));
 	}
-	return false;
+	return;
 }
 
 static void MtmFinishDDLCommand()
@@ -4530,16 +4542,18 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 
 		case T_VacuumStmt:
 		  skipCommand = true;		  
-		//   if (context == PROCESS_UTILITY_TOPLEVEL) {			  
-		// 	  MtmProcessDDLCommand(queryString, false, true);
-		// 	  MtmTx.isDistributed = false;
-		//   } else if (MtmApplyContext != NULL) {
-		// 	  MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
-		// 	  Assert(oldContext != MtmApplyContext);
-		// 	  MtmVacuumStmt = (VacuumStmt*)copyObject(parsetree);
-		// 	  MemoryContextSwitchTo(oldContext);
-		// 	  return;
-		//   }
+#if 0
+		  if (context == PROCESS_UTILITY_TOPLEVEL) {			  
+			  MtmProcessDDLCommand(queryString, false);
+			  MtmTx.isDistributed = false;
+		  } else if (MtmApplyContext != NULL) {
+			  MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
+			  Assert(oldContext != MtmApplyContext);
+			  MtmVacuumStmt = (VacuumStmt*)copyObject(parsetree);
+			  MemoryContextSwitchTo(oldContext);
+			  return;
+		  }
+#endif
 		  break;
 
 		case T_CreateDomainStmt:
@@ -4634,7 +4648,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				if (indexStmt->concurrent) 
 				{
 					 if (context == PROCESS_UTILITY_TOPLEVEL) {
-						//  MtmProcessDDLCommand(queryString, false, true);
+						 MtmProcessDDLCommand(queryString, false);
 						 MtmTx.isDistributed = false;
 						 skipCommand = true;
 						 /* 
@@ -4661,7 +4675,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				if (stmt->removeType == OBJECT_INDEX && stmt->concurrent)
 				{
 					if (context == PROCESS_UTILITY_TOPLEVEL) {
-						// MtmProcessDDLCommand(queryString, false, true);
+						MtmProcessDDLCommand(queryString, false);
 						MtmTx.isDistributed = false;
 						skipCommand = true;
 					} else if (MtmApplyContext != NULL) {
