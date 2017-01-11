@@ -85,10 +85,8 @@ PlannedStmt *sr_planner(Query *parse,
 	/* First check existance of "sr_plans" table */
 	sr_plans_oid = RangeVarGetRelid(sr_plans_table_rv, heap_lock, true);
 	if (!OidIsValid(sr_plans_oid))
-	{
-		elog(WARNING, "Not found sr_plans table");
+		/* Just call standard_planner() if table doesn't exist. */
 		return standard_planner(parse, cursorOptions, boundParams);
-	}
 
 	/* Table "sr_plans" exists */
 	sr_plans_heap = heap_open(sr_plans_oid, NoLock);
