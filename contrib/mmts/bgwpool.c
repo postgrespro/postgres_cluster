@@ -205,7 +205,7 @@ void BgwPoolExecute(BgwPool* pool, void* work, size_t size)
             SpinLockAcquire(&pool->lock);
         } else {
             pool->pending += 1;
-			if (pool->active == pool->nWorkers) { 
+			if (pool->active + pool->pending > pool->nWorkers) { 
 				BgwStartExtraWorker(pool);				
 			}
 			if (pool->lastPeakTime == 0 && pool->active == pool->nWorkers && pool->pending != 0) {
