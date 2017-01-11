@@ -351,6 +351,9 @@ typedef struct xl_xact_parsed_abort
 
 	TransactionId twophase_xid; /* only for 2PC */
 	char 		twophase_gid[GIDSIZE];
+
+	XLogRecPtr	origin_lsn;
+	TimestampTz origin_timestamp;
 } xl_xact_parsed_abort;
 
 

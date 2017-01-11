@@ -156,7 +156,7 @@ static void MtmShmemStartup(void);
 static BgwPool* MtmPoolConstructor(void);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
-static bool MtmProcessDDLCommand(char const* queryString, bool transactional, bool contextFree);
+static bool MtmProcessDDLCommand(char const* queryString, bool transactional);
 
 MtmState* Mtm;
 
@@ -885,6 +885,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	ts->procno = MyProc->pgprocno;
 	ts->votingCompleted = false;
 	ts->participantsMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask & ~((nodemask_t)1 << (MtmNodeId-1));
+	ts->nConfigChanges = Mtm->nConfigChanges;
 	ts->votedMask = 0;
 	ts->nSubxids = xactGetCommittedChildren(&subxids);
 	if (!ts->isActive) {
@@ -979,14 +980,20 @@ void MtmPrecommitTransaction(char const* gid)
 static bool 
 MtmVotingCompleted(MtmTransState* ts)
 {
-	nodemask_t  liveNodesMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask & ~((nodemask_t)1 << (MtmNodeId-1));
-	if (!ts->isPrepared && ts->participantsMask != liveNodesMask) 
-	{ 
-		elog(WARNING, "Abort transaction %d (%s) because cluster configuration is changed from %lx to %lx since transaction start", 
-			 ts->xid, ts->gid, ts->participantsMask, liveNodesMask);
-		MtmAbortTransaction(ts);
-		return true;
+	nodemask_t liveNodesMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask & ~((nodemask_t)1 << (MtmNodeId-1));
+
+	if (!ts->isPrepared) { /* We can not just abort precommitted transactions */
+		if (ts->nConfigChanges != Mtm->nConfigChanges)
+		{ 
+			elog(WARNING, "Abort transaction %s (%d) because cluster configuration is changed from %lx to %lx since transaction start", 
+				 ts->gid, ts->xid, ts->participantsMask, liveNodesMask);
+			MtmAbortTransaction(ts);
+			return true;
+		}
+		/* If cluster configuration was not changed, then node mask should not changed as well */
+		Assert(ts->participantsMask == liveNodesMask);
 	}
+	
 	if (ts->votingCompleted) { 
 		return true;
 	}
@@ -1071,9 +1078,9 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 			x->isSuspended = true;
 		} else { 
 			if (Mtm->status != MTM_ONLINE) { 
-				elog(WARNING, "Commit of distributed transaction is canceled because node is switched to %s mode", MtmNodeStatusMnem[Mtm->status]);
+				elog(WARNING, "Commit of distributed transaction %s (%d) is canceled because node is switched to %s mode", ts->gid, ts->xid, MtmNodeStatusMnem[Mtm->status]);
 			} else { 
-				elog(WARNING, "Commit of distributed transaction is canceled because cluster configuration was changed");
+				elog(WARNING, "Commit of distributed transaction %s (%d) is canceled because cluster configuration was changed", ts->gid, ts->xid);
 			} 
 			MtmAbortTransaction(ts);
 		}
@@ -1201,7 +1208,7 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 		MtmUnlock();
 		x->status = TRANSACTION_STATUS_ABORTED;
 	} else { 
-		MTM_LOG1("Transaction %d with gid='%s' is already aborted", x->xid, x->gid);
+		MTM_LOG1("Transaction %s (%d) is already aborted", x->gid, x->xid);
 	}
 }
 
@@ -1262,7 +1269,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				Mtm->nActiveTransactions -= 1;
 				MtmAdjustSubtransactions(ts);
 			} else { 
-				MTM_LOG1("%d: abort transaction %d gid='%s' is called from MtmEndTransaction", MyProcPid, x->xid, x->gid);
+				MTM_LOG1("%d: abort transaction %s (%d) is called from MtmEndTransaction", MyProcPid, x->gid, x->xid);
 				MtmAbortTransaction(ts);
 			}
 		}
@@ -1272,7 +1279,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			 * Send notification only if ABORT happens during transaction processing at replicas, 
 			 * do not send notification if ABORT is received from master 
 			 */
-			MTM_LOG1("%d: send ABORT notification for transaction %d (%s) to coordinator %d", MyProcPid, x->gtid.xid, x->gid, x->gtid.node);
+			MTM_LOG1("%d: send ABORT notification for transaction %d (%s) local xid=%d to coordinator %d", MyProcPid, x->gtid.xid, x->gid, x->xid, x->gtid.node);
 			if (ts == NULL) { 
 				bool found;
 				Assert(TransactionIdIsValid(x->xid));
@@ -1441,6 +1448,7 @@ static void	MtmLoadPreparedTransactions(void)
 			ts->nSubxids = 0;
 			ts->votingCompleted = true;
 			ts->participantsMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask & ~((nodemask_t)1 << (MtmNodeId-1));
+			ts->nConfigChanges = Mtm->nConfigChanges;
 			ts->votedMask = 0;
 			strcpy(ts->gid, gid);
 			MtmTransactionListAppend(ts);			
@@ -1601,9 +1609,9 @@ void MtmAbortTransaction(MtmTransState* ts)
 	Assert(MtmLockCount != 0); /* should be invoked with exclsuive lock */
 	if (ts->status != TRANSACTION_STATUS_ABORTED) { 
 		if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
-			elog(LOG, "Attempt to rollback already committed transaction %d (%s)", ts->xid, ts->gid);
+			elog(LOG, "Attempt to rollback already committed transaction %s (%d)", ts->gid, ts->xid);
 		} else { 
-			MTM_LOG1("Rollback active transaction %d:%d (local xid %d) status %s", ts->gtid.node, ts->gtid.xid, ts->xid, MtmTxnStatusMnem[ts->status]);
+			MTM_LOG1("Rollback active transaction %s (%d) %d:%d status %s", ts->gid, ts->xid, ts->gtid.node, ts->gtid.xid, MtmTxnStatusMnem[ts->status]);
 			ts->status = TRANSACTION_STATUS_ABORTED;
 			MtmAdjustSubtransactions(ts);
 			if (ts->isActive) {
@@ -3094,9 +3102,9 @@ void MtmReleaseRecoverySlot(int nodeId)
 void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 {
 	XidStatus status = MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED);
-	MTM_LOG1("Abort prepared transaction %s status %s", gid, MtmTxnStatusMnem[status]);
+	MTM_LOG1("Abort prepared transaction %s status %s from node %d originId=%d", gid, MtmTxnStatusMnem[status], nodeId, Mtm->nodes[nodeId-1].originId);
 	if (status == TRANSACTION_STATUS_UNKNOWN) { 
-		MTM_LOG2("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
+		MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
 		MtmResetTransaction();
 		StartTransactionCommand();
 		MtmBeginSession(nodeId);
@@ -3806,6 +3814,7 @@ mtm_get_trans_by_gid(PG_FUNCTION_ARGS)
 		values[11] = BoolGetDatum(ts->votingCompleted);
 		values[12] = Int64GetDatum(ts->participantsMask);
 		values[13] = Int64GetDatum(ts->votedMask);
+		values[14] = Int32GetDatum(ts->nConfigChanges);
 	}
 	MtmUnlock();
 
@@ -4246,12 +4255,12 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 		} else { 	
 			CommitTransactionCommand();
 			if (x->isSuspended) { 
-				elog(WARNING, "Transaction %s is left in prepared state because coordinator node is not online", x->gid);
+				elog(WARNING, "Transaction %s (%d) is left in prepared state because coordinator node is not online", x->gid, x->xid);
 			} else { 				
 				StartTransactionCommand();
 				if (x->status == TRANSACTION_STATUS_ABORTED) { 
 					FinishPreparedTransaction(x->gid, false);
-					elog(ERROR, "Transaction aborted by DTM");
+					elog(ERROR, "Transaction %s (%d) is aborted by DTM", x->gid, x->xid);
 				} else {
 					FinishPreparedTransaction(x->gid, true);
 				}
@@ -4382,14 +4391,13 @@ static void MtmGucSet(VariableSetStmt *stmt, const char *queryStr)
 	MemoryContextSwitchTo(oldcontext);
 }
 
-static char * MtmGucSerialize(void)
+char* MtmGucSerialize(void)
 {
 	StringInfo serialized_gucs;
 	dlist_iter iter;
 	int nvars = 0;
 
 	serialized_gucs = makeStringInfo();
-	appendStringInfoString(serialized_gucs, "RESET SESSION AUTHORIZATION; reset all; ");
 
 	dlist_foreach(iter, &MtmGucList)
 	{
@@ -4423,30 +4431,16 @@ static char * MtmGucSerialize(void)
  * -------------------------------------------
  */
 
-static bool MtmProcessDDLCommand(char const* queryString, bool transactional, bool contextFree)
+static bool MtmProcessDDLCommand(char const* queryString, bool transactional)
 {
-	char	   *queryWithContext = (char *) queryString;
-	char	   *gucContext;
-
-	if (!contextFree) { 
-		/* Append global GUC to utility stmt. */
-		gucContext = MtmGucSerialize();
-		if (gucContext)
-		{
-			queryWithContext = palloc(strlen(gucContext) + strlen(queryString) +  1);
-			strcpy(queryWithContext, gucContext);
-			strcat(queryWithContext, queryString);
-		}
-	}
-
-	MTM_LOG3("Sending utility: %s", queryWithContext);
+	MTM_LOG3("Sending utility: %s", queryString);
 	if (transactional) {
 		/* DDL */
-		LogLogicalMessage("D", queryWithContext, strlen(queryWithContext) + 1, true);
+		LogLogicalMessage("D", queryString, strlen(queryString) + 1, true);
 		MtmTx.containsDML = true;
 	} else {
 		/* CONCURRENT DDL */
-		XLogFlush(LogLogicalMessage("C", queryWithContext, strlen(queryWithContext) + 1, false));
+		XLogFlush(LogLogicalMessage("C", queryString, strlen(queryString) + 1, false));
 	}
 	return false;
 }
@@ -4718,9 +4712,9 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		MtmUtilityProcessedInXid = GetCurrentTransactionId();
 
 		if (context == PROCESS_UTILITY_TOPLEVEL)
-			MtmProcessDDLCommand(queryString, true, false);
+			MtmProcessDDLCommand(queryString, true);
 		else
-			MtmProcessDDLCommand(ActivePortal->sourceText, true, false);
+			MtmProcessDDLCommand(ActivePortal->sourceText, true);
 
 		executed = true;
 	}
@@ -4776,7 +4770,7 @@ MtmExecutorStart(QueryDesc *queryDesc, int eflags)
 	}
 
 	if (ddl_generating_call && !MtmTx.isReplicated)
-		MtmProcessDDLCommand(ActivePortal->sourceText, true, false);
+		MtmProcessDDLCommand(ActivePortal->sourceText, true);
 
 	if (PreviousExecutorStartHook != NULL)
 		PreviousExecutorStartHook(queryDesc, eflags);

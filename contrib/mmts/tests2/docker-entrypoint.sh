@@ -56,7 +56,7 @@ if [ "$1" = 'postgres' ]; then
 			max_wal_senders = 10
 			shared_preload_libraries = 'multimaster'
 			default_transaction_isolation = 'repeatable read'
-            log_line_prefix = '%t: '
+            log_line_prefix = '%m: '
 
 			multimaster.workers = 4
 			multimaster.max_workers = 16
@@ -68,7 +68,7 @@ if [ "$1" = 'postgres' ]; then
 			multimaster.conn_strings = '$CONNSTRS'
 			multimaster.heartbeat_recv_timeout = 1100
 			multimaster.heartbeat_send_timeout = 250
-			multimaster.min_2pc_timeout = 40000
+			multimaster.min_2pc_timeout = 100000
 		EOF
 
 		cat $PGDATA/postgresql.conf

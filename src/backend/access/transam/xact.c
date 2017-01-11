@@ -5268,6 +5268,7 @@ XactLogAbortRecord(TimestampTz abort_time,
 	xl_xact_relfilenodes xl_relfilenodes;
 	xl_xact_twophase xl_twophase;
 	xl_xact_dbinfo xl_dbinfo;
+	xl_xact_origin xl_origin;
 
 	uint8		info;
 
@@ -5312,6 +5313,14 @@ XactLogAbortRecord(TimestampTz abort_time,
 		xl_dbinfo.tsId = MyDatabaseTableSpace;
 	}
 
+	/* dump transaction origin information */
+	if (replorigin_session_origin != InvalidRepOriginId)
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_ORIGIN;
+		xl_origin.origin_lsn = replorigin_session_origin_lsn;
+		xl_origin.origin_timestamp = replorigin_session_origin_timestamp;
+	}
+
 	if (xl_xinfo.xinfo != 0)
 		info |= XLOG_XACT_HAS_INFO;
 
@@ -5351,6 +5360,11 @@ XactLogAbortRecord(TimestampTz abort_time,
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_DBINFO)
 		XLogRegisterData((char *) (&xl_dbinfo), sizeof(xl_dbinfo));
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_ORIGIN)
+		XLogRegisterData((char *) (&xl_origin), sizeof(xl_xact_origin));
+
+	XLogIncludeOrigin();
 
 	return XLogInsert(RM_XACT_ID, info);
 }
@@ -5530,7 +5544,10 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
  * because subtransaction commit is never WAL logged.
  */
 static void
-xact_redo_abort(xl_xact_parsed_abort *parsed, TransactionId xid)
+xact_redo_abort(xl_xact_parsed_abort *parsed, 
+				TransactionId xid,
+				XLogRecPtr lsn,
+				RepOriginId origin_id)
 {
 	int			i;
 	TransactionId max_xid;
@@ -5593,6 +5610,13 @@ xact_redo_abort(xl_xact_parsed_abort *parsed, TransactionId xid)
 		StandbyReleaseLockTree(xid, parsed->nsubxacts, parsed->subxacts);
 	}
 
+	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
+	{
+		/* recover apply progress */
+		replorigin_advance(origin_id, parsed->origin_lsn, lsn,
+						   false /* backward */ , false /* WAL */ );
+	}
+
 	/* Make sure files supposed to be dropped are dropped */
 	for (i = 0; i < parsed->nrels; i++)
 	{
@@ -5647,12 +5671,14 @@ xact_redo(XLogReaderState *record)
 		if (info == XLOG_XACT_ABORT)
 		{
 			Assert(!TransactionIdIsValid(parsed.twophase_xid));
-			xact_redo_abort(&parsed, XLogRecGetXid(record));
+			xact_redo_abort(&parsed, XLogRecGetXid(record),
+							record->EndRecPtr, XLogRecGetOrigin(record));
 		}
 		else
 		{
 			Assert(TransactionIdIsValid(parsed.twophase_xid));
-			xact_redo_abort(&parsed, parsed.twophase_xid);
+			xact_redo_abort(&parsed, parsed.twophase_xid,
+							record->EndRecPtr, XLogRecGetOrigin(record));
 			RemoveTwoPhaseFile(parsed.twophase_xid, false);
 		}
 	}

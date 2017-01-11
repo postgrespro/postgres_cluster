@@ -81,8 +81,8 @@
 #define Anum_mtm_local_tables_rel_name	 2
 
 #define Natts_mtm_cluster_state 16
+#define Natts_mtm_trans_state   15
 #define Natts_mtm_nodes_state   14
-#define Natts_mtm_trans_state   14
 
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
@@ -243,6 +243,7 @@ typedef struct MtmTransState
 	bool           isActive;           /* Transaction is active */
 	bool           isTwoPhase;         /* User level 2PC */
 	bool           isPinned;           /* Transaction oid potected from GC */
+	int            nConfigChanges;     /* Number of cluster configuration changes at moment of transaction start */
 	nodemask_t     participantsMask;   /* Mask of nodes involved in transaction */
 	nodemask_t     votedMask;          /* Mask of voted nodes */
 	TransactionId  xids[1];            /* [Mtm->nAllNodes]: transaction ID at replicas */
@@ -398,5 +399,5 @@ extern void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit);
 extern void MtmRollbackPreparedTransaction(int nodeId, char const* gid);
 extern bool MtmFilterTransaction(char* record, int size);
 extern void MtmPrecommitTransaction(char const* gid);
-
+extern char* MtmGucSerialize(void);
 #endif

@@ -1043,8 +1043,8 @@ static void MtmReceiver(Datum arg)
 							if ((~msg->disabledNodeMask & Mtm->disabledNodeMask) != 0) { 
 								/* Coordinator's disabled mask is wider than of this node: so reject such transaction to avoid 
 								   commit on smaller subset of nodes */
-								elog(WARNING, "Coordinator of distributed transaction see less nodes than node %d: %llx instead of %llx",
-									 node, (long long) Mtm->disabledNodeMask, (long long) msg->disabledNodeMask);
+								elog(WARNING, "Coordinator of distributed transaction %s (%d) see less nodes than node %d: %llx instead of %llx",
+									 ts->gid, ts->xid, node, (long long) Mtm->disabledNodeMask, (long long) msg->disabledNodeMask);
 								MtmAbortTransaction(ts);
 							}
 							if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
@@ -1084,6 +1084,7 @@ static void MtmReceiver(Datum arg)
 								continue;
 							}
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
+								MTM_LOG1("Arbiter receive abort message for transaction %s (%d)", ts->gid, ts->xid);
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 								MtmAbortTransaction(ts);
 							}

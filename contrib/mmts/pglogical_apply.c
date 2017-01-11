@@ -80,6 +80,7 @@ static void process_remote_update(StringInfo s, Relation rel);
 static void process_remote_delete(StringInfo s, Relation rel);
 
 static MemoryContext TopContext;
+static bool          GucAltered; /* transaction is setting some GUC variables */
 
 /*
  * Search the index 'idxrel' for a tuple identified by 'skey' in 'rel'.
@@ -336,10 +337,13 @@ process_remote_begin(StringInfo s)
 {
 	GlobalTransactionId gtid;
 	csn_t snapshot;
+	char const* gucCtx;
+	int rc;
 
 	gtid.node = pq_getmsgint(s, 4); 
 	gtid.xid = pq_getmsgint(s, 4); 
 	snapshot = pq_getmsgint64(s);    
+	gucCtx = pq_getmsgstring(s);
 
 	Assert(gtid.node > 0);
 
@@ -354,6 +358,22 @@ process_remote_begin(StringInfo s)
     SetCurrentStatementStartTimestamp();     
 	StartTransactionCommand();
     MtmJoinTransaction(&gtid, snapshot);
+
+	if (*gucCtx || GucAltered) {
+		SPI_connect();
+		if (GucAltered) { 
+			GucAltered = *gucCtx != '\0';
+			gucCtx = psprintf("RESET SESSION AUTHORIZATION; reset all; %s", gucCtx);
+		} else { 
+			GucAltered = true;
+		}
+		ActivePortal->sourceText = gucCtx;
+		rc = SPI_execute(gucCtx, false, 0);
+		SPI_finish();
+		if (rc < 0) { 
+			elog(ERROR, "Failed to set GUC context %s: %d", gucCtx, rc);
+		}
+	}
 
 	return true;
 }
@@ -438,9 +458,9 @@ process_remote_message(StringInfo s)
 				msg->origin_lsn = MtmSenderWalEnd;
 			}
 			if (Mtm->nodes[origin_node-1].restartLSN < msg->origin_lsn) { 
-				MTM_LOG2("[restartlsn] node %d: %lx -> %lx (MtmFilterTransaction)", origin_node, Mtm->nodes[origin_node-1].restartLSN, msg->origin_lsn);
+				MTM_LOG1("Receive logical abort message for transaction %s from node %d: %lx < %lx", msg->gid, origin_node, Mtm->nodes[origin_node-1].restartLSN, msg->origin_lsn);
 				Mtm->nodes[origin_node-1].restartLSN = msg->origin_lsn;
-				replorigin_session_origin_lsn = msg->origin_lsn; 
+				replorigin_session_origin_lsn = msg->origin_lsn; 				
 				MtmRollbackPreparedTransaction(origin_node, msg->gid);
 			} else { 
 				if (msg->origin_lsn != InvalidXLogRecPtr) { 
@@ -702,6 +722,7 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			gid = pq_getmsgstring(in);
 			/* MtmRollbackPreparedTransaction will set origin session itself */
+			MTM_LOG1("Receive ABORT_PREPARED logical message for transaction %s from node %d", gid, origin_node);
 			MtmRollbackPreparedTransaction(origin_node, gid);
 			break;
 		}
