@@ -4116,41 +4116,56 @@ RsocketInitialize(Port *port)
 {
 	pgsocket	fd,
 				sfd;
-	const SockAddr local_addr = port->laddr;
-	char		local_addr_s[NI_MAXHOST];
+	char		local_addr[NI_MAXHOST];
 	char		local_port[NI_MAXSERV];
 	struct addrinfo *addr = NULL,
 				hint;
-	char		RsocketOk;
-	int			ret;
-	int			err;
-	int			maxconn;
-	int			on;
 
-#if !defined(WIN32) || defined(IPV6_V6ONLY)
-	int			one = 1;
+	struct sockaddr_in *addr_in;
+#ifdef HAVE_IPV6
+	struct sockaddr_in6 *addr_in6;
 #endif
 
-	pg_getnameinfo_all(&local_addr.addr, local_addr.salen,
-					   local_addr_s, sizeof(local_addr_s),
-					   NULL, 0,
-					   AI_NUMERICHOST);
+	char		RsocketOk;
+	int			ret;
+	int			maxconn;
+	int			one = 1;
+
+	switch (port->laddr.addr.ss_family)
+	{
+		case AF_INET:
+			addr_in = (struct sockaddr_in *) &port->laddr.addr;
+			inet_ntop(AF_INET, &(addr_in->sin_addr), local_addr,
+					  sizeof(local_addr));
+			break;
+#ifdef HAVE_IPV6
+		case AF_INET6:
+			addr_in6 = (struct sockaddr_in6 *) &port->laddr.addr;
+			inet_ntop(AF_INET6, &(addr_in6->sin6_addr), local_addr,
+					  sizeof(local_addr));
+			break;
+#endif
+		default:
+			ereport(FATAL,
+					(errmsg("unrecognized address family %d",
+							port->laddr.addr.ss_family)));
+	}
 
 	snprintf(local_port, sizeof(local_port), "%d", RsocketPostPortNumber);
 
 	MemSet(&hint, 0, sizeof(hint));
-	hint.ai_family = local_addr.addr.ss_family;
+	hint.ai_family = port->laddr.addr.ss_family;
 	hint.ai_flags = AI_NUMERICHOST;
 	hint.ai_socktype = SOCK_STREAM;
 
-	ret = pg_getaddrinfo_all(local_addr_s, local_port, &hint, &addr);
+	ret = pg_getaddrinfo_all(local_addr, local_port, &hint, &addr);
 	if (ret || !addr)
 	{
 		if (addr)
 			pg_freeaddrinfo_all(hint.ai_family, addr);
 		ereport(FATAL,
 				(errmsg("could not translate host name \"%s\", service \"%s\" to address: %s",
-						local_addr_s, local_port, gai_strerror(ret))));
+						local_addr, local_port, gai_strerror(ret))));
 	}
 
 	if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, true))
@@ -4207,8 +4222,8 @@ RsocketInitialize(Port *port)
 	 * connections.
 	 */
 	printf("bind\n");
-	err = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, true);
-	if (err < 0)
+	ret = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, true);
+	if (ret < 0)
 	{
 		pg_freeaddrinfo_all(hint.ai_family, addr);
 		pg_closesocket(fd, true);
@@ -4231,8 +4246,8 @@ RsocketInitialize(Port *port)
 	if (maxconn > PG_SOMAXCONN)
 		maxconn = PG_SOMAXCONN;
 
-	err = pg_listen(fd, maxconn, true);
-	if (err < 0)
+	ret = pg_listen(fd, maxconn, true);
+	if (ret < 0)
 	{
 		pg_closesocket(fd, true);
 		ereport(FATAL,
@@ -4283,17 +4298,17 @@ RsocketInitialize(Port *port)
 
 	/* select NODELAY and KEEPALIVE options */
 #ifdef	TCP_NODELAY
-	on = 1;
+	one = 1;
 	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_NODELAY,
-					  (char *) &on, sizeof(on), port->isRsocket) < 0)
+					  (char *) &one, sizeof(one), port->isRsocket) < 0)
 	{
 		pg_closesocket(port->sock, port->isRsocket);
 		elog(FATAL, "setsockopt(TCP_NODELAY) failed: %m");
 	}
 #endif
-	on = 1;
+	one = 1;
 	if (pg_setsockopt(port->sock, SOL_SOCKET, SO_KEEPALIVE,
-					  (char *) &on, sizeof(on), port->isRsocket) < 0)
+					  (char *) &one, sizeof(one), port->isRsocket) < 0)
 	{
 		pg_closesocket(port->sock, port->isRsocket);
 		elog(FATAL, "setsockopt(SO_KEEPALIVE) failed: %m");
