@@ -1207,14 +1207,63 @@ backup_files(void *arg)
 			}
 
 			/* copy the file into backup */
-			if (!(file->is_datafile
-					? backup_data_file(arguments->from_root, arguments->to_root, file, arguments->lsn)
-					: copy_file(arguments->from_root, arguments->to_root, file)))
+			if (file->is_datafile)
 			{
-				/* record as skipped file in file_xxx.txt */
-				file->write_size = BYTES_INVALID;
-				elog(LOG, "skip");
-				continue;
+				if (!backup_data_file(arguments->from_root,
+									  arguments->to_root, file,
+									  arguments->lsn))
+				{
+					/* record as skipped file in file_xxx.txt */
+					file->write_size = BYTES_INVALID;
+					elog(LOG, "skip");
+					continue;
+				}
+			}
+			else
+			{
+				/* Check if the file is a cfs relation's segment */
+				bool is_cfs_relation_segment = false;
+				pgFile tmp_file;
+				pgFile **pre_search_file;
+				tmp_file.path = psprintf("%s.cfm", file->path);
+				pre_search_file = (pgFile **) parray_bsearch(arguments->files, &tmp_file, pgFileComparePath);
+				if (pre_search_file != NULL)
+				{
+					is_cfs_relation_segment = true;
+					/* TODO If we don't have ptrack simply copy the file */
+					if (file->pagemap.bitmapsize == 0)
+					{
+						is_cfs_relation_segment = false;
+						elog(NOTICE, "1 file '%s' is a cfs relation's segment, bitmapsize == 0 \n", file->path);
+					}
+				}
+				pg_free(tmp_file.path);
+
+
+				if (is_cfs_relation_segment)
+				{
+					/*
+					 * TODO backup cfs segment
+					 * see backup_data_file()
+					 */
+					elog(NOTICE, "2 file '%s' is a cfs relation's segment \n", file->path);
+					elog(NOTICE, "2 file->pagemap.bitmapsize = %d", file->pagemap.bitmapsize);
+					datapagemap_iterator_t *iter;
+					BlockNumber			blknum = 0;
+
+					iter = datapagemap_iterate(&file->pagemap);
+					while(datapagemap_next(iter, &blknum))
+						elog(NOTICE, "2 blknum %u", blknum);
+				}
+				else if (!copy_file(arguments->from_root,
+							   arguments->to_root,
+							   file))
+				{
+					/* record as skipped file in file_xxx.txt */
+					file->write_size = BYTES_INVALID;
+					elog(LOG, "skip");
+					continue;
+				}
 			}
 
 			elog(LOG, "copied %lu", (unsigned long) file->write_size);
@@ -1314,7 +1363,10 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 		{
 			if (current.backup_mode == BACKUP_MODE_DIFF_PTRACK ||
 				current.backup_mode == BACKUP_MODE_DIFF_PAGE)
-				elog(ERROR, "You can't use incremental backup with compress tablespace");
+			{
+				elog(NOTICE, "You can't use incremental backup with compress tablespace");
+				/* TODO Add here incremental backup for compressed tablespaces */
+			}
 			continue;
 		}
 
@@ -1351,6 +1403,9 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 	}
 
 	/* mark cfs relations as not data */
+	/* TODO
+	 * Don't mark cfs relations as not_datafile?
+	 * We can use similar code to check if the file is compressed  */
 	for (i = 0; i < (int) parray_num(list_file); i++)
 	{
 		pgFile *file = (pgFile *) parray_get(list_file, i);
