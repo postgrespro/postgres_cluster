@@ -4134,13 +4134,13 @@ RsocketInitialize(Port *port)
 	pg_getnameinfo_all(&local_addr.addr, local_addr.salen,
 					   local_addr_s, sizeof(local_addr_s),
 					   NULL, 0,
-					   NI_NUMERICSERV);
+					   AI_NUMERICHOST);
 
 	snprintf(local_port, sizeof(local_port), "%d", RsocketPostPortNumber);
 
 	MemSet(&hint, 0, sizeof(hint));
 	hint.ai_family = local_addr.addr.ss_family;
-	hint.ai_flags = AI_PASSIVE;
+	hint.ai_flags = AI_NUMERICHOST;
 	hint.ai_socktype = SOCK_STREAM;
 
 	ret = pg_getaddrinfo_all(local_addr_s, local_port, &hint, &addr);
@@ -4153,7 +4153,7 @@ RsocketInitialize(Port *port)
 						local_addr_s, local_port, gai_strerror(ret))));
 	}
 
-	if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, port->isRsocket))
+	if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, true))
 		 == PGINVALID_SOCKET)
 	{
 		pg_freeaddrinfo_all(hint.ai_family, addr);
@@ -4175,10 +4175,10 @@ RsocketInitialize(Port *port)
 	 * SO_REUSEADDR.
 	 */
 	if ((pg_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-					   (char *) &one, sizeof(one), port->isRsocket)) == -1)
+					   (char *) &one, sizeof(one), true)) == -1)
 	{
 		pg_freeaddrinfo_all(hint.ai_family, addr);
-		pg_closesocket(fd, port->isRsocket);
+		pg_closesocket(fd, true);
 		ereport(FATAL,
 				(errcode_for_socket_access(),
 				 errmsg("setsockopt(SO_REUSEADDR) failed: %m")));
@@ -4189,10 +4189,10 @@ RsocketInitialize(Port *port)
 	if (addr->ai_family == AF_INET6)
 	{
 		if (pg_setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
-						  (char *) &one, sizeof(one), port->isRsocket) == -1)
+						  (char *) &one, sizeof(one), true) == -1)
 		{
 			pg_freeaddrinfo_all(hint.ai_family, addr);
-			pg_closesocket(fd, port->isRsocket);
+			pg_closesocket(fd, true);
 			ereport(FATAL,
 					(errcode_for_socket_access(),
 					 errmsg("setsockopt(IPV6_V6ONLY) failed: %m")));
@@ -4207,11 +4207,11 @@ RsocketInitialize(Port *port)
 	 * connections.
 	 */
 	printf("bind\n");
-	err = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, port->isRsocket);
+	err = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, true);
 	if (err < 0)
 	{
 		pg_freeaddrinfo_all(hint.ai_family, addr);
-		pg_closesocket(fd, port->isRsocket);
+		pg_closesocket(fd, true);
 		ereport(FATAL,
 				(errcode_for_socket_access(),
 				 errmsg("could not bind socket: %m"),
@@ -4231,10 +4231,10 @@ RsocketInitialize(Port *port)
 	if (maxconn > PG_SOMAXCONN)
 		maxconn = PG_SOMAXCONN;
 
-	err = pg_listen(fd, maxconn, port->isRsocket);
+	err = pg_listen(fd, maxconn, true);
 	if (err < 0)
 	{
-		pg_closesocket(fd, port->isRsocket);
+		pg_closesocket(fd, true);
 		ereport(FATAL,
 				(errcode_for_socket_access(),
 				 errmsg("could not listen on socket: %m")));
@@ -4247,19 +4247,20 @@ RsocketInitialize(Port *port)
 	RsocketOk = 'R';
 	if (pg_send(port->sock, &RsocketOk, 1, 0, port->isRsocket) != 1)
 	{
-		pg_closesocket(fd, port->isRsocket);
+		pg_closesocket(fd, true);
 		ereport(FATAL,
 				(errcode_for_socket_access(),
 				 errmsg("failed to send SSL negotiation response: %m")));
 	}
 
+	printf("accept\n");
 	/* accept connection and fill in the client (remote) address */
 	port->raddr.salen = sizeof(port->raddr.addr);
 	if ((sfd = pg_accept(fd,
 						 (struct sockaddr *) &port->raddr.addr,
-						 &port->raddr.salen, port->isRsocket)) == PGINVALID_SOCKET)
+						 &port->raddr.salen, true)) == PGINVALID_SOCKET)
 	{
-		pg_closesocket(fd, port->isRsocket);
+		pg_closesocket(fd, true);
 		ereport(FATAL,
 				(errcode_for_socket_access(),
 				 errmsg("could not accept new connection: %m")));
