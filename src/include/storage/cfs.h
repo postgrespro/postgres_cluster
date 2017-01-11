@@ -17,6 +17,9 @@
 #define CFS_MAX_COMPRESSED_SIZE(size) ((size)*2)
 #define CFS_MIN_COMPRESSED_SIZE(size) ((size)*2/3)
 
+/*
+ * FIXME 
+ */
 #define LZ_COMPRESSOR     1
 #define ZLIB_COMPRESSOR   2
 #define LZ4_COMPRESSOR    3
@@ -24,10 +27,15 @@
 #define LCFSE_COMPRESSOR  5
 #define ZSTD_COMPRESSOR   6
 
+/*
+ * Set CFS_COMPRESSOR to one of the names above
+ * to compile postgres with chosen compression algorithm
+ */
 #ifndef CFS_COMPRESSOR 
 #define CFS_COMPRESSOR ZLIB_COMPRESSOR
 #endif
 
+/* Encryption related variables*/
 #define CFS_RC4_DROP_N 3072 
 #define CFS_CIPHER_KEY_SIZE 256
 
@@ -54,6 +62,7 @@ typedef struct
 	uint64 processedBytes;
 } CfsStatistic;
 
+/* TODO Add comments */
 typedef struct
 {
 	pg_atomic_flag gc_started;
@@ -62,7 +71,7 @@ typedef struct
 	int            max_iterations;
 	bool           gc_enabled;
 	CfsStatistic   gc_stat;
-	uint8          rc4_init_state[CFS_CIPHER_KEY_SIZE];
+	uint8          cipher_key[CFS_CIPHER_KEY_SIZE]; /* FIXME Is it the key itself? Or some modification?*/ 
 } CfsState;
 
 typedef struct 
@@ -91,13 +100,14 @@ void     cfs_decrypt(void* block, uint32 offs, uint32 size);
 
 extern CfsState* cfs_state;
 
+extern int cfs_level;
+extern bool cfs_encryption;
+extern bool cfs_gc_verify_file;
+
 extern int cfs_gc_delay;
 extern int cfs_gc_period;
 extern int cfs_gc_workers;
 extern int cfs_gc_threshold;
-extern int cfs_level;
-extern bool cfs_gc_verify_file;
-extern bool cfs_encryption;
 #endif
 
 

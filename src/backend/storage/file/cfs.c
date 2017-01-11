@@ -11,13 +11,16 @@
  *
  * NOTES:
  *
- * This file implemets compression of file pages.
+ * This file implements compression of file pages.
  * Updated compressed pages are always appended to the end of file segment.
- * Garbage collector is used to shrink files when them become tool large.
- * GC is spawned as one or more background workers. Them recursively traverse all tablespace directories, 
- * find out *.cfm files are if logical size of the file is twice larger than physical size of the file 
- * performs compactification. Locking implemented using atomic operations is used to eliminate race 
- * conditions.
+ * Garbage collector is used to reclaim storage occupied by outdated versions of pages.
+ * GC runs one or more background workers which recursively traverse all tablespace
+ * directories. If worker finds out that logical size of the file is twice as large as
+ * physical size of the file, it performs compactification.
+ * To eliminate race conditions, files are locked during compacification.
+ * Locks are implemented with atomic operations.
+ *
+ * TODO Write a note about *.cfm files.
  */
 
 #include "postgres.h"
@@ -51,13 +54,37 @@
 #include "utils/resowner_private.h"
 #include "postmaster/bgworker.h"
 
-int cfs_gc_workers;
-int cfs_gc_threshold;
-int cfs_gc_period;
-int cfs_gc_delay;
+/*
+ * GUC variable that defines compression level.
+ * 0 - no compression, 1 - max speed,
+ * other possible values depend on the specific algorithm.
+ * Default value is 1.
+ */
 int cfs_level;
+/*
+ * GUC variable that defines if encryption of compressed pages is enabled.
+ * Default value is false.
+ */
 bool cfs_encryption;
+/*
+ * GUC variable - Verify correctness of data written by GC.
+ * TODO add description and documentation.
+ */
 bool cfs_gc_verify_file;
+
+/* GUC variable - Number of garbage collection background workers. Default = 1 */
+int cfs_gc_workers;
+/*
+ * GUC variable - Specifies the minimum percent of garbage blocks
+ * needed to trigger a GC of the file. Default = 50
+ */
+int cfs_gc_threshold;
+/* GUC variable - Time to sleep between GC runs in milliseconds. Default = 5000 */
+int cfs_gc_period;
+/* GUC variable - Delay in milliseconds between files defragmentation. Default = 0
+ * TODO What is the purpose of this variable?
+ */
+int cfs_gc_delay;
 
 static bool cfs_read_file(int fd, void* data, uint32 size);
 static bool cfs_write_file(int fd, void const* data, uint32 size);
@@ -68,7 +95,68 @@ CfsState* cfs_state;
 static bool cfs_stop;
 static int  cfs_processed_segments;
 
-#if CFS_COMPRESSOR == SNAPPY_COMPRESSOR
+
+/* ----------------------------------------------------------------
+ *	Section 1: Various compression algorithms.
+ * CFS_COMPRESSOR variable can be set at compile time.
+ * One should define CFS_COMPRESSOR in cfs.h
+ * Availiable options are:
+ * - LZ_COMPRESSOR // FIXME. No actual implementation.
+ * - ZLIB_COMPRESSOR
+ * - LZ4_COMPRESSOR
+ * - SNAPPY_COMPRESSOR
+ * - LCFSE_COMPRESSOR
+ * - ZSTD_COMPRESSOR
+ *
+ * If none of options is chosen, use standard pglz_compress FIXME?, which is
+ * slow and non-efficient in comparison with others, but doesn't requre
+ * any extra libraries.
+ * ----------------------------------------------------------------
+ */
+
+#if CFS_COMPRESSOR == ZLIB_COMPRESSOR
+
+#include <zlib.h>
+
+size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size)
+{
+    uLongf compressed_size = dst_size;
+    int rc = compress2(dst, &compressed_size, src, src_size, cfs_level);
+	return rc == Z_OK ? compressed_size : rc;
+}
+
+size_t cfs_decompress(void* dst, size_t dst_size, void const* src, size_t src_size)
+{
+    uLongf dest_len = dst_size;
+    int rc = uncompress(dst, &dest_len, src, src_size);
+	return rc == Z_OK ? dest_len : rc;
+}
+
+char const* cfs_algorithm()
+{
+	return "zlib";
+}
+
+#elif CFS_COMPRESSOR == LZ4_COMPRESSOR
+
+#include <lz4.h>
+
+size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size)
+{
+    return LZ4_compress(src, dst, src_size);
+}
+
+size_t cfs_decompress(void* dst, size_t dst_size, void const* src, size_t src_size)
+{
+    return LZ4_decompress_safe(src, dst, src_size, dst_size);
+}
+
+char const* cfs_algorithm()
+{
+	return "lz4";
+}
+
+#elif CFS_COMPRESSOR == SNAPPY_COMPRESSOR
 
 #include <snappy-c.h>
 
@@ -112,48 +200,6 @@ char const* cfs_algorithm()
 	return "lcfse";
 }
 
-#elif CFS_COMPRESSOR == LZ4_COMPRESSOR
-
-#include <lz4.h>
-
-size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size)
-{
-    return LZ4_compress(src, dst, src_size);
-}
-
-size_t cfs_decompress(void* dst, size_t dst_size, void const* src, size_t src_size)
-{
-    return LZ4_decompress_safe(src, dst, src_size, dst_size);
-}
-
-char const* cfs_algorithm()
-{
-	return "lz4";
-}
-
-#elif CFS_COMPRESSOR == ZLIB_COMPRESSOR
-
-#include <zlib.h>
-
-size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size)
-{
-    uLongf compressed_size = dst_size;
-    int rc = compress2(dst, &compressed_size, src, src_size, cfs_level);
-	return rc == Z_OK ? compressed_size : rc;
-}
-
-size_t cfs_decompress(void* dst, size_t dst_size, void const* src, size_t src_size)
-{
-    uLongf dest_len = dst_size;
-    int rc = uncompress(dst, &dest_len, src, src_size);
-	return rc == Z_OK ? dest_len : rc;
-}
-
-char const* cfs_algorithm()
-{
-	return "zlib";
-}
-
 #elif CFS_COMPRESSOR == ZSTD_COMPRESSOR
 
 #include <zstd.h>
@@ -195,6 +241,15 @@ char const* cfs_algorithm()
 #endif
 
 
+/* ----------------------------------------------------------------
+ *	Section 2: Encryption related functionality.
+ *
+ * TODO
+ * - replace rc4 algrithm with something more appropriate
+ * - add more comments
+ * - what does 'offs' variable for?
+ * ----------------------------------------------------------------
+ */
 static void cfs_rc4_encrypt_block(void* block, uint32 offs, uint32 block_size)
 {
 	uint32 i;
@@ -205,7 +260,7 @@ static void cfs_rc4_encrypt_block(void* block, uint32 offs, uint32 block_size)
     int x = 0, y = 0;
 	uint32 skip = (offs / BLCKSZ + block_size) % CFS_CIPHER_KEY_SIZE;
 
-	memcpy(state, cfs_state->rc4_init_state, CFS_CIPHER_KEY_SIZE);
+	memcpy(state, cfs_state->cipher_key, CFS_CIPHER_KEY_SIZE);
     for (i = 0; i < skip; i++) {
         x = (x + 1) % CFS_CIPHER_KEY_SIZE;
         y = (y + state[x]) % CFS_CIPHER_KEY_SIZE;
@@ -224,7 +279,12 @@ static void cfs_rc4_encrypt_block(void* block, uint32 offs, uint32 block_size)
     }
 }
 
-static void cfs_rc4_init(void)
+/*
+ * Get env variable PG_CIPHER_KEY and initialize encryption state.
+ * Unset variable afterward.
+ * Now implements cf4.
+ */
+static void cfs_encrypt_init(void)
 {
     int index1 = 0;
     int index2 = 0;
@@ -233,13 +293,13 @@ static void cfs_rc4_init(void)
     int key_length;
     int x = 0, y = 0;
 	char* cipher_key;
-	uint8* rc4_init_state = cfs_state->rc4_init_state;
+	uint8* rc4_init_state = cfs_state->cipher_key;
 
 	cipher_key = getenv("PG_CIPHER_KEY");
 	if (cipher_key == NULL) { 
 		elog(ERROR, "PG_CIPHER_KEY environment variable is not set");
 	} 
-	unsetenv("PG_CIPHER_KEY"); /* make it not possible to inspect this environment variable through plperl */
+	unsetenv("PG_CIPHER_KEY"); /* disable inspection of this environment variable */
     key_length = strlen(cipher_key);
 	for (i = 0; i < CFS_CIPHER_KEY_SIZE; ++i) {
         rc4_init_state[i] = (uint8)i;
@@ -263,20 +323,21 @@ static void cfs_rc4_init(void)
 void cfs_encrypt(void* block, uint32 offs, uint32 size)
 {
 	if (cfs_encryption) 
-	{
 		cfs_rc4_encrypt_block(block, offs, size);
-	}
 }
 
 void cfs_decrypt(void* block, uint32 offs, uint32 size)
 {
 	if (cfs_encryption) 
-	{
 		cfs_rc4_encrypt_block(block, offs, size);
-	}
 }
 
-	
+/* ----------------------------------------------------------------
+ *	Section 3: Compression implementation.
+ *
+ * TODO add description
+ * ----------------------------------------------------------------
+ */
 void cfs_initialize()
 {
 	cfs_state = (CfsState*)ShmemAlloc(sizeof(CfsState));
@@ -287,9 +348,9 @@ void cfs_initialize()
 	cfs_state->gc_enabled = true;
 	cfs_state->max_iterations = 0;
 	
-	if (cfs_encryption) { 
-		cfs_rc4_init();
-	}
+	if (cfs_encryption)
+		cfs_encrypt_init();
+
 	elog(LOG, "Start CFS version %s compression algorithm %s encryption %s", 
 		 CFS_VERSION, cfs_algorithm(), cfs_encryption ? "enabled" : "disabled");
 }
@@ -463,6 +524,12 @@ static int cfs_cmp_page_offs(void const* p1, void const* p2)
 	return o1 < o2 ? -1 : o1 == o2 ? 0 : 1;
 }
 
+/* ----------------------------------------------------------------
+ *	Section 4: Garbage collection functionality.
+ *
+ * TODO add description. reorder functions.
+ * ----------------------------------------------------------------
+ */
 /*
  * Perform garbage collection (if required) of file
  * @param map_path path to file map file (*.cfm). 

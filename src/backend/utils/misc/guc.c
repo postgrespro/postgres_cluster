@@ -2825,7 +2825,7 @@ static struct config_int ConfigureNamesInt[] =
 
 	{
 		{"cfs_gc_threshold", PGC_USERSET, UNGROUPED,
-		 gettext_noop("Percent of garbage in file after file is comactified"),
+		 gettext_noop("Minimum percent of garbage blocks in the file prior to garbage collection"),
 		 NULL,
 		 0
         },
@@ -2837,7 +2837,7 @@ static struct config_int ConfigureNamesInt[] =
 
 	{
 		{"cfs_gc_period", PGC_USERSET, UNGROUPED,
-		 gettext_noop("Interval in milliseconds between CFS garbage collection iterations"),
+		 gettext_noop("Time to sleep between GC runs in milliseconds"),
 		 NULL,
 		 GUC_UNIT_MS
         },
