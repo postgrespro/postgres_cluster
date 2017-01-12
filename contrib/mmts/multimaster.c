@@ -133,7 +133,7 @@ static void MtmBeginTransaction(MtmCurrentTrans* x);
 static void MtmPrePrepareTransaction(MtmCurrentTrans* x);
 static void MtmPostPrepareTransaction(MtmCurrentTrans* x);
 static void MtmAbortPreparedTransaction(MtmCurrentTrans* x);
-static void MtmCommitPreparedTransaction(MtmCurrentTrans* x);
+static void MtmPreCommitPreparedTransaction(MtmCurrentTrans* x);
 static void MtmEndTransaction(MtmCurrentTrans* x, bool commit);
 static bool MtmTwoPhaseCommit(MtmCurrentTrans* x);
 static TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum);
@@ -705,8 +705,8 @@ MtmXactCallback(XactEvent event, void *arg)
 	  case XACT_EVENT_ABORT_PREPARED:
 		MtmAbortPreparedTransaction(&MtmTx);
 		break;
-	  case XACT_EVENT_COMMIT_PREPARED:
-		MtmCommitPreparedTransaction(&MtmTx);
+	  case XACT_EVENT_PRE_COMMIT_PREPARED:
+		MtmPreCommitPreparedTransaction(&MtmTx);
 		break;
 	  case XACT_EVENT_COMMIT:
 		MtmEndTransaction(&MtmTx, true);
@@ -1149,7 +1149,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 }
 
 static void 
-MtmCommitPreparedTransaction(MtmCurrentTrans* x)
+MtmPreCommitPreparedTransaction(MtmCurrentTrans* x)
 {
     MtmTransMap* tm;
 	MtmTransState* ts;
@@ -1181,6 +1181,7 @@ MtmCommitPreparedTransaction(MtmCurrentTrans* x)
 		Mtm2PCVoting(x, ts);
 
 		x->xid = ts->xid;
+		x->csn = ts->csn;
 		x->isPrepared = true;
 	}
 	MtmUnlock();
@@ -3529,6 +3530,7 @@ bool MtmFilterTransaction(char* record, int size)
 	}
 	restart_lsn = origin_node == MtmReplicationNodeId ? end_lsn : origin_lsn;
     if (Mtm->nodes[origin_node-1].restartLSN < restart_lsn) {
+		Assert(restart_lsn != InvalidXLogRecPtr);
 		MTM_LOG2("[restartlsn] node %d: %lx -> %lx (MtmFilterTransaction)", MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, restart_lsn);
 		Mtm->nodes[origin_node-1].restartLSN = restart_lsn;
     } else {
@@ -4442,19 +4444,14 @@ static void MtmProcessDDLCommand(char const* queryString, bool transactional)
 	}
 	MTM_LOG3("Sending utility: %s", queryString);
 	if (transactional) {
-		/* DDL */
+		/* Transactional DDL */
 		LogLogicalMessage("D", queryString, strlen(queryString) + 1, true);
 		MtmTx.containsDML = true;
-	} else {		
-		char* gucCtx = MtmGucSerialize();
-		return;
-		if (*gucCtx) {
-			queryString = psprintf("%s; %s", gucCtx, queryString);
-		}
-		/* CONCURRENT DDL */
+	} else {	
+		MTM_LOG1("Execute concurrent DDL: %s", queryString);
+		/* Concurrent DDL */
 		XLogFlush(LogLogicalMessage("C", queryString, strlen(queryString) + 1, false));
 	}
-	return;
 }
 
 static void MtmFinishDDLCommand()
@@ -4542,7 +4539,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 
 		case T_VacuumStmt:
 		  skipCommand = true;		  
-#if 0
 		  if (context == PROCESS_UTILITY_TOPLEVEL) {			  
 			  MtmProcessDDLCommand(queryString, false);
 			  MtmTx.isDistributed = false;
@@ -4553,7 +4549,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			  MemoryContextSwitchTo(oldContext);
 			  return;
 		  }
-#endif
 		  break;
 
 		case T_CreateDomainStmt:

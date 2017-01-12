@@ -1555,6 +1555,12 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	SharedInvalidationMessage *invalmsgs;
 	int			i;
 
+
+	if (isCommit) 
+	{ 
+		CallXactCallbacks(XACT_EVENT_PRE_COMMIT_PREPARED);
+	}		
+
 	/*
 	 * Validate the GID, and lock the GXACT to ensure that two backends do not
 	 * try to commit the same GID at once.
