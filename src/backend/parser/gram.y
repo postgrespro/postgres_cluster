@@ -3043,7 +3043,8 @@ OptRangePartitionsList:
 OptRangePartitionsListElement:
 			PARTITION qualified_name VALUES LESS THAN '(' b_expr ')' OptTableSpace
 				{
-					RangePartitionInfo *n = (RangePartitionInfo *) palloc(sizeof(RangePartitionInfo));
+					//RangePartitionInfo *n = (RangePartitionInfo *) palloc(sizeof(RangePartitionInfo));
+					RangePartitionInfo *n = makeNode(RangePartitionInfo);
 					n->relation = $2;
 					n->upper_bound = $7;
 					n->tablespace = $9;
