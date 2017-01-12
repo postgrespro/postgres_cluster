@@ -746,7 +746,7 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			xl_xact_parsed_abort *parsed, TransactionId xid)
 {
 	int			i;
-	XLogRecPtr	origin_lsn = InvalidXLogRecPtr;
+	XLogRecPtr	origin_lsn = parsed->origin_lsn;
 	XLogRecPtr	commit_time = InvalidXLogRecPtr;
 	RepOriginId	origin_id = XLogRecGetOrigin(buf->record);
 
