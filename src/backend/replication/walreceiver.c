@@ -400,6 +400,7 @@ WalReceiverMain(void)
 				int			len;
 				bool		endofwal = false;
 				pgsocket	wait_fd = PGINVALID_SOCKET;
+				bool		isRsocket = false;
 				int			rc;
 
 				/*
@@ -421,7 +422,7 @@ WalReceiverMain(void)
 				}
 
 				/* See if we can read data immediately */
-				len = walrcv_receive(&buf, &wait_fd);
+				len = walrcv_receive(&buf, &wait_fd, &isRsocket);
 				if (len != 0)
 				{
 					/*
@@ -452,7 +453,7 @@ WalReceiverMain(void)
 							endofwal = true;
 							break;
 						}
-						len = walrcv_receive(&buf, &wait_fd);
+						len = walrcv_receive(&buf, &wait_fd, &isRsocket);
 					}
 
 					/* Let the master know that we received some data. */
@@ -486,6 +487,9 @@ WalReceiverMain(void)
 								   WL_POSTMASTER_DEATH | WL_SOCKET_READABLE |
 									   WL_TIMEOUT | WL_LATCH_SET,
 									   wait_fd,
+#ifdef WITH_RSOCKET
+									   isRsocket,
+#endif
 									   NAPTIME_PER_CYCLE);
 				if (rc & WL_LATCH_SET)
 				{

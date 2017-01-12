@@ -152,7 +152,8 @@ extern PGDLLIMPORT walrcv_startstreaming_type walrcv_startstreaming;
 typedef void (*walrcv_endstreaming_type) (TimeLineID *next_tli);
 extern PGDLLIMPORT walrcv_endstreaming_type walrcv_endstreaming;
 
-typedef int (*walrcv_receive_type) (char **buffer, pgsocket *wait_fd);
+typedef int (*walrcv_receive_type) (char **buffer, pgsocket *wait_fd,
+									bool *isRsocket);
 extern PGDLLIMPORT walrcv_receive_type walrcv_receive;
 
 typedef void (*walrcv_send_type) (const char *buffer, int nbytes);

@@ -46,7 +46,7 @@ static void libpqrcv_readtimelinehistoryfile(TimeLineID tli, char **filename, ch
 static bool libpqrcv_startstreaming(TimeLineID tli, XLogRecPtr startpoint,
 						char *slotname);
 static void libpqrcv_endstreaming(TimeLineID *next_tli);
-static int	libpqrcv_receive(char **buffer, pgsocket *wait_fd);
+static int	libpqrcv_receive(char **buffer, pgsocket *wait_fd, bool *isRsocket);
 static void libpqrcv_send(const char *buffer, int nbytes);
 static void libpqrcv_disconnect(void);
 
@@ -524,7 +524,7 @@ libpqrcv_disconnect(void)
  * ereports on error.
  */
 static int
-libpqrcv_receive(char **buffer, pgsocket *wait_fd)
+libpqrcv_receive(char **buffer, pgsocket *wait_fd, bool *isRsocket)
 {
 	int			rawlen;
 
@@ -548,6 +548,7 @@ libpqrcv_receive(char **buffer, pgsocket *wait_fd)
 		{
 			/* Tell caller to try again when our socket is ready. */
 			*wait_fd = PQsocket(streamConn);
+			*isRsocket = PQsocket(streamConn);
 			return 0;
 		}
 	}

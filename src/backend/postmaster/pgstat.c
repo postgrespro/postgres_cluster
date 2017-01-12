@@ -3690,6 +3690,9 @@ PgstatCollectorMain(int argc, char *argv[])
 		wr = WaitLatchOrSocket(MyLatch,
 					 WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_READABLE,
 							   pgStatSock,
+#ifdef WITH_RSOCKET
+							   false,
+#endif
 							   -1L);
 #else
 

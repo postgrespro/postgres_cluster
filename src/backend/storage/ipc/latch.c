@@ -44,17 +44,9 @@
 #ifdef HAVE_SYS_EPOLL_H
 #include <sys/epoll.h>
 #endif
-#ifdef HAVE_POLL_H
-#include <poll.h>
-#endif
-#ifdef HAVE_SYS_POLL_H
-#include <sys/poll.h>
-#endif
-#ifdef HAVE_SYS_SELECT_H
-#include <sys/select.h>
-#endif
 
 #include "miscadmin.h"
+#include "pg_socket.h"
 #include "portability/instr_time.h"
 #include "postmaster/postmaster.h"
 #include "storage/barrier.h"
@@ -104,6 +96,11 @@ struct WaitEventSet
 	Latch	   *latch;
 	int			latch_pos;
 
+#if defined (WITH_RSOCKET)
+	/* rpoll expects events to be waited on every rpoll() call, prepare once */
+	struct pollfd *rpollfds;
+#endif
+
 #if defined(WAIT_USE_EPOLL)
 	int			epoll_fd;
 	/* epoll_wait returns events in a user provided arrays, allocate once */
@@ -142,9 +139,16 @@ static void WaitEventAdjustPoll(WaitEventSet *set, WaitEvent *event);
 #elif defined(WAIT_USE_WIN32)
 static void WaitEventAdjustWin32(WaitEventSet *set, WaitEvent *event);
 #endif
+#if defined (WITH_RSOCKET)
+static void WaitEventAdjustRpoll(WaitEventSet *set, WaitEvent *event);
+#endif
 
 static inline int WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 					  WaitEvent *occurred_events, int nevents);
+#if defined (WITH_RSOCKET)
+static inline int WaitEventSetWaitBlockForRsocket(WaitEventSet *set,
+					  int cur_timeout, WaitEvent *occurred_events, int nevents);
+#endif
 
 /*
  * Initialize the process-local latch infrastructure.
@@ -299,7 +303,11 @@ DisownLatch(volatile Latch *latch)
 int
 WaitLatch(volatile Latch *latch, int wakeEvents, long timeout)
 {
-	return WaitLatchOrSocket(latch, wakeEvents, PGINVALID_SOCKET, timeout);
+	return WaitLatchOrSocket(latch, wakeEvents, PGINVALID_SOCKET,
+#if defined (WITH_RSOCKET)
+							 false,
+#endif
+							 timeout);
 }
 
 /*
@@ -316,12 +324,22 @@ WaitLatch(volatile Latch *latch, int wakeEvents, long timeout)
  */
 int
 WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
+#if defined (WITH_RSOCKET)
+				  bool isRsocket,
+#endif
 				  long timeout)
 {
 	int			ret = 0;
 	int			rc;
 	WaitEvent	event;
-	WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, 3);
+	WaitEventSet *set;
+
+#if defined (WITH_RSOCKET)
+	if (isRsocket)
+		set = CreateWaitEventSetForRsocket(CurrentMemoryContext, 3);
+	else
+#endif
+		set = CreateWaitEventSet(CurrentMemoryContext, 3);
 
 	if (wakeEvents & WL_TIMEOUT)
 		Assert(timeout >= 0);
@@ -547,6 +565,49 @@ CreateWaitEventSet(MemoryContext context, int nevents)
 	return set;
 }
 
+#if defined (WITH_RSOCKET)
+/*
+ * Create a WaitEventSet with space for nevents different events to wait for.
+ *
+ * These events can then be efficiently waited upon together, using
+ * WaitEventSetWait().
+ */
+WaitEventSet *
+CreateWaitEventSetForRsocket(MemoryContext context, int nevents)
+{
+	WaitEventSet *set;
+	char	   *data;
+	Size		sz = 0;
+
+	/*
+	 * Use MAXALIGN size/alignment to guarantee that later uses of memory are
+	 * aligned correctly. E.g. epoll_event might need 8 byte alignment on some
+	 * platforms, but earlier allocations like WaitEventSet and WaitEvent
+	 * might not sized to guarantee that when purely using sizeof().
+	 */
+	sz += MAXALIGN(sizeof(WaitEventSet));
+	sz += MAXALIGN(sizeof(WaitEvent) * nevents);
+
+	sz += MAXALIGN(sizeof(struct pollfd) * nevents);
+
+	data = (char *) MemoryContextAllocZero(context, sz);
+
+	set = (WaitEventSet *) data;
+	data += MAXALIGN(sizeof(WaitEventSet));
+
+	set->events = (WaitEvent *) data;
+	data += MAXALIGN(sizeof(WaitEvent) * nevents);
+
+	set->rpollfds = (struct pollfd *) data;
+	data += MAXALIGN(sizeof(struct pollfd) * nevents);
+
+	set->latch = NULL;
+	set->nevents_space = nevents;
+
+	return set;
+}
+#endif
+
 /*
  * Free a previously created WaitEventSet.
  */
@@ -554,7 +615,9 @@ void
 FreeWaitEventSet(WaitEventSet *set)
 {
 #if defined(WAIT_USE_EPOLL)
-	close(set->epoll_fd);
+	/* If socket wasn't rsocket */
+	if (set->epoll_fd)
+		close(set->epoll_fd);
 #elif defined(WAIT_USE_WIN32)
 	WaitEvent  *cur_event;
 
@@ -660,6 +723,16 @@ AddWaitEventToSet(WaitEventSet *set, uint32 events, pgsocket fd, Latch *latch,
 	}
 
 	/* perform wait primitive specific initialization, if needed */
+
+#if defined (WITH_RSOCKET)
+	/* If socket is rsocket */
+	if (set->rpollfds)
+	{
+		WaitEventAdjustRpoll(set, event);
+		return event->pos;
+	}
+#endif
+
 #if defined(WAIT_USE_EPOLL)
 	WaitEventAdjustEpoll(set, event, EPOLL_CTL_ADD);
 #elif defined(WAIT_USE_POLL)
@@ -717,6 +790,15 @@ ModifyWaitEvent(WaitEventSet *set, int pos, uint32 events, Latch *latch)
 	{
 		set->latch = latch;
 	}
+
+#if defined (WITH_RSOCKET)
+	/* If socket is rsocket */
+	if (set->rpollfds)
+	{
+		WaitEventAdjustRpoll(set, event);
+		return;
+	}
+#endif
 
 #if defined(WAIT_USE_EPOLL)
 	WaitEventAdjustEpoll(set, event, EPOLL_CTL_MOD);
@@ -852,6 +934,39 @@ WaitEventAdjustWin32(WaitEventSet *set, WaitEvent *event)
 }
 #endif
 
+#if defined (WITH_RSOCKET)
+static void
+WaitEventAdjustRpoll(WaitEventSet *set, WaitEvent *event)
+{
+	struct pollfd *pollfd = &set->rpollfds[event->pos];
+
+	pollfd->revents = 0;
+	pollfd->fd = event->fd;
+
+	/* prepare pollfd entry once */
+	if (event->events == WL_LATCH_SET)
+	{
+		Assert(set->latch != NULL);
+		pollfd->events = POLLIN;
+	}
+	else if (event->events == WL_POSTMASTER_DEATH)
+	{
+		pollfd->events = POLLIN;
+	}
+	else
+	{
+		Assert(event->events & (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE));
+		pollfd->events = 0;
+		if (event->events & WL_SOCKET_READABLE)
+			pollfd->events |= POLLIN;
+		if (event->events & WL_SOCKET_WRITEABLE)
+			pollfd->events |= POLLOUT;
+	}
+
+	Assert(event->fd != PGINVALID_SOCKET);
+}
+#endif
+
 /*
  * Wait for events added to the set to happen, or until the timeout is
  * reached.  At most nevents occurred events are returned.
@@ -941,8 +1056,14 @@ WaitEventSetWait(WaitEventSet *set, long timeout,
 		 * this file. If -1 is returned, a timeout has occurred, if 0 we have
 		 * to retry, everything >= 1 is the number of returned events.
 		 */
-		rc = WaitEventSetWaitBlock(set, cur_timeout,
-								   occurred_events, nevents);
+#if defined (WITH_RSOCKET)
+		if (set->rpollfds)
+			rc = WaitEventSetWaitBlockForRsocket(set, cur_timeout,
+												 occurred_events, nevents);
+		else
+#endif
+			rc = WaitEventSetWaitBlock(set, cur_timeout,
+									   occurred_events, nevents);
 
 		if (rc == -1)
 			break;				/* timeout occurred */
@@ -1514,6 +1635,124 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 		}
 	}
 
+	return returned_events;
+}
+#endif
+
+#if defined (WITH_RSOCKET)
+
+/*
+ * Wait using rpoll().
+ *
+ * This allows to receive readiness notifications for several events at once,
+ * but requires iterating through all of set->rpollfds.
+ */
+static inline int
+WaitEventSetWaitBlockForRsocket(WaitEventSet *set, int cur_timeout,
+								WaitEvent *occurred_events, int nevents)
+{
+	int			returned_events = 0;
+	int			rc;
+	WaitEvent  *cur_event;
+	struct pollfd *cur_pollfd;
+
+	/* Sleep */
+	rc = pg_poll(set->rpollfds, set->nevents, (int) cur_timeout, true);
+
+	/* Check return code */
+	if (rc < 0)
+	{
+		/* EINTR is okay, otherwise complain */
+		if (errno != EINTR)
+		{
+			waiting = false;
+			ereport(ERROR,
+					(errcode_for_socket_access(),
+					 errmsg("poll() failed: %m")));
+		}
+		return 0;
+	}
+	else if (rc == 0)
+	{
+		/* timeout exceeded */
+		return -1;
+	}
+
+	for (cur_event = set->events, cur_pollfd = set->rpollfds;
+		 cur_event < (set->events + set->nevents) &&
+		 returned_events < nevents;
+		 cur_event++, cur_pollfd++)
+	{
+		/* no activity on this FD, skip */
+		if (cur_pollfd->revents == 0)
+			continue;
+
+		occurred_events->pos = cur_event->pos;
+		occurred_events->user_data = cur_event->user_data;
+		occurred_events->events = 0;
+
+		if (cur_event->events == WL_LATCH_SET &&
+			(cur_pollfd->revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL)))
+		{
+			/* There's data in the self-pipe, clear it. */
+			drainSelfPipe();
+
+			if (set->latch->is_set)
+			{
+				occurred_events->fd = PGINVALID_SOCKET;
+				occurred_events->events = WL_LATCH_SET;
+				occurred_events++;
+				returned_events++;
+			}
+		}
+		else if (cur_event->events == WL_POSTMASTER_DEATH &&
+			 (cur_pollfd->revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL)))
+		{
+			/*
+			 * We expect an POLLHUP when the remote end is closed, but because
+			 * we don't expect the pipe to become readable or to have any
+			 * errors either, treat those cases as postmaster death, too.
+			 *
+			 * As explained in the WAIT_USE_SELECT implementation, select(2)
+			 * may spuriously return. Be paranoid about that here too, a
+			 * spurious WL_POSTMASTER_DEATH would be painful.
+			 */
+			if (!PostmasterIsAlive())
+			{
+				occurred_events->fd = PGINVALID_SOCKET;
+				occurred_events->events = WL_POSTMASTER_DEATH;
+				occurred_events++;
+				returned_events++;
+			}
+		}
+		else if (cur_event->events & (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE))
+		{
+			int			errflags = POLLHUP | POLLERR | POLLNVAL;
+
+			Assert(cur_event->fd >= PGINVALID_SOCKET);
+
+			if ((cur_event->events & WL_SOCKET_READABLE) &&
+				(cur_pollfd->revents & (POLLIN | errflags)))
+			{
+				/* data available in socket, or EOF */
+				occurred_events->events |= WL_SOCKET_READABLE;
+			}
+
+			if ((cur_event->events & WL_SOCKET_WRITEABLE) &&
+				(cur_pollfd->revents & (POLLOUT | errflags)))
+			{
+				/* writeable, or EOF */
+				occurred_events->events |= WL_SOCKET_WRITEABLE;
+			}
+
+			if (occurred_events->events != 0)
+			{
+				occurred_events->fd = cur_event->fd;
+				occurred_events++;
+				returned_events++;
+			}
+		}
+	}
 	return returned_events;
 }
 #endif

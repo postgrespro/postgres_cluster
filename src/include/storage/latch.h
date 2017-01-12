@@ -153,6 +153,10 @@ extern void SetLatch(volatile Latch *latch);
 extern void ResetLatch(volatile Latch *latch);
 
 extern WaitEventSet *CreateWaitEventSet(MemoryContext context, int nevents);
+#if defined (WITH_RSOCKET)
+extern WaitEventSet *CreateWaitEventSetForRsocket(MemoryContext context,
+												  int nevents);
+#endif
 extern void FreeWaitEventSet(WaitEventSet *set);
 extern int AddWaitEventToSet(WaitEventSet *set, uint32 events, pgsocket fd,
 				  Latch *latch, void *user_data);
@@ -161,7 +165,11 @@ extern void ModifyWaitEvent(WaitEventSet *set, int pos, uint32 events, Latch *la
 extern int	WaitEventSetWait(WaitEventSet *set, long timeout, WaitEvent *occurred_events, int nevents);
 extern int	WaitLatch(volatile Latch *latch, int wakeEvents, long timeout);
 extern int WaitLatchOrSocket(volatile Latch *latch, int wakeEvents,
-				  pgsocket sock, long timeout);
+				  pgsocket sock,
+#if defined (WITH_RSOCKET)
+				  bool isRsocket,
+#endif
+				  long timeout);
 
 /*
  * Unix implementation uses SIGUSR1 for inter-process signaling.
