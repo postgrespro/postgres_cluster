@@ -1469,6 +1469,7 @@ static void MtmStartRecovery()
 {
 	MtmLock(LW_EXCLUSIVE);
 	BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
+	Mtm->nConfigChanges += 1;
 	MtmSwitchClusterMode(MTM_RECOVERY);
 	Mtm->recoveredLSN = InvalidXLogRecPtr;
 	MtmUnlock();
@@ -1724,6 +1725,7 @@ static void MtmDisableNode(int nodeId)
 	elog(WARNING, "Disable node %d at xlog position %lx, last status change time %d msec ago", nodeId, GetXLogInsertRecPtr(), 
 		 (int)USEC_TO_MSEC(now - Mtm->nodes[nodeId-1].lastStatusChangeTime));
 	BIT_SET(Mtm->disabledNodeMask, nodeId-1);
+	Mtm->nConfigChanges += 1;
 	Mtm->nodes[nodeId-1].timeline += 1;
 	Mtm->nodes[nodeId-1].lastStatusChangeTime = now;
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
@@ -1744,6 +1746,7 @@ static void MtmEnableNode(int nodeId)
 { 
 	BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
 	BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
+	Mtm->nConfigChanges += 1;
 	Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 	if (nodeId != MtmNodeId) { 
@@ -1765,6 +1768,7 @@ void MtmRecoveryCompleted(void)
 	Mtm->recoverySlot = 0;
 	Mtm->recoveredLSN = GetXLogInsertRecPtr();
 	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
+	Mtm->nConfigChanges += 1;
 	Mtm->reconnectMask |= SELF_CONNECTIVITY_MASK; /* try to reestablish all connections */
 	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	for (i = 0; i < Mtm->nAllNodes; i++) { 
@@ -1868,7 +1872,6 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 				/* We are lucky: caught-up without locking cluster! */
 			}
 			MtmEnableNode(nodeId);
-			Mtm->nConfigChanges += 1;
 			caughtUp = true;
 		} else if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
 				   && slotLSN + MtmMinRecoveryLag > walLSN) 
@@ -1953,6 +1956,7 @@ MtmCheckClusterLock()
 				Assert(Mtm->walSenderLockerMask == 0);
 				Assert((Mtm->nodeLockerMask & Mtm->disabledNodeMask) == Mtm->nodeLockerMask);
 				Mtm->disabledNodeMask &= ~Mtm->nodeLockerMask;
+				Mtm->nConfigChanges += 1;
 				Mtm->nLiveNodes += Mtm->nLockers;
 				Mtm->nLockers = 0;
 				Mtm->nodeLockerMask = 0;
@@ -2098,7 +2102,6 @@ void MtmRefreshClusterStatus()
  */
 void MtmCheckQuorum(void)
 {
-	Mtm->nConfigChanges += 1;
 	if (Mtm->nLiveNodes < Mtm->nAllNodes/2+1) {
 		if (Mtm->status == MTM_ONLINE) { /* out of quorum */
 			elog(WARNING, "Node is in minority: disabled mask %lx", (long) Mtm->disabledNodeMask);
@@ -3655,6 +3658,7 @@ mtm_add_node(PG_FUNCTION_ARGS)
 		Mtm->nodes[nodeId].oldestSnapshot = 0;
 
 		BIT_SET(Mtm->disabledNodeMask, nodeId);
+		Mtm->nConfigChanges += 1;
 		Mtm->nAllNodes += 1;
 		MtmUnlock();
 
