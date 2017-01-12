@@ -145,6 +145,32 @@ insert into d values('test','one','two','three');
 alter table a alter column aa type integer using bit_length(aa);
 select * from d;
 
+-- check that oid column is handled properly during alter table inherit
+create table oid_parent (a int) with oids;
+
+create table oid_child () inherits (oid_parent);
+select attinhcount, attislocal from pg_attribute
+  where attrelid = 'oid_child'::regclass and attname = 'oid';
+drop table oid_child;
+
+create table oid_child (a int) without oids;
+alter table oid_child inherit oid_parent;  -- fail
+alter table oid_child set with oids;
+select attinhcount, attislocal from pg_attribute
+  where attrelid = 'oid_child'::regclass and attname = 'oid';
+alter table oid_child inherit oid_parent;
+select attinhcount, attislocal from pg_attribute
+  where attrelid = 'oid_child'::regclass and attname = 'oid';
+alter table oid_child set without oids;  -- fail
+alter table oid_parent set without oids;
+select attinhcount, attislocal from pg_attribute
+  where attrelid = 'oid_child'::regclass and attname = 'oid';
+alter table oid_child set without oids;
+select attinhcount, attislocal from pg_attribute
+  where attrelid = 'oid_child'::regclass and attname = 'oid';
+
+drop table oid_parent cascade;
+
 -- Test non-inheritable parent constraints
 create table p1(ff1 int);
 alter table p1 add constraint p1chk check (ff1 > 0) no inherit;
@@ -156,6 +182,9 @@ select pc.relname, pgc.conname, pgc.contype, pgc.conislocal, pgc.coninhcount, pg
 create table c1 () inherits (p1);
 \d p1
 \d c1
+
+-- Test that child does not override inheritable constraints of the parent
+create table c2 (constraint p2chk check (ff1 > 10) no inherit) inherits (p1);	--fails
 
 drop table p1 cascade;
 
