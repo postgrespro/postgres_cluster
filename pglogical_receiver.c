@@ -543,9 +543,13 @@ pglogical_receiver_main(Datum main_arg)
 						MtmSpillToFile(spill_file, buf.data, buf.used);
 						ByteBufferReset(&buf);
 					}
-					if (stmt[0] == 'M' && (stmt[1] == 'L' || stmt[1] == 'A')) {
+					if (stmt[0] == 'M' && (stmt[1] == 'L' || stmt[1] == 'A' || stmt[1] == 'C')) {
 						MTM_LOG3("Process '%c' message from %d", stmt[1], nodeId);
-						MtmExecutor(stmt, rc - hdr_len);
+						if ( stmt[1] == 'C') { /* concurrent DDL */
+							MtmExecute(stmt, rc - hdr_len);
+						} else {
+							MtmExecutor(stmt, rc - hdr_len);
+						}
 					} else { 
 						ByteBufferAppend(&buf, stmt, rc - hdr_len);
 						if (stmt[0] == 'C') /* commit */
