@@ -376,7 +376,6 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				relation_expr_list dostmt_opt_list
 				transform_element_list transform_type_list
 				optcincluding opt_c_including
-				OptRangePartitionsList OptRangePartitions
 
 %type <list>	group_by_list
 %type <node>	group_by_item empty_grouping_set rollup_clause cube_clause
@@ -547,7 +546,10 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <boolean> opt_if_not_exists
 
 %type <partinfo> partitionType;
-%type <rangeinfo> OptRangePartitionsListElement;
+%type <rangeinfo> OptRangePartitionsListElement PartitionNameTablespace OptIntoSinglePartition;
+%type <list>	OptRangePartitionsList OptRangePartitions PartitionNameTablespaceList
+				OptIntoPartitions
+%type <node>	OptRangePartitionsInterval
 
 /*
  * Non-keyword token types.  These are hard-wired into the "flex" lexer.
@@ -637,7 +639,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 	SAVEPOINT SCHEMA SCROLL SEARCH SECOND_P SECURITY SELECT SEQUENCE SEQUENCES
 	SERIALIZABLE SERVER SESSION SESSION_USER SET SETS SETOF SHARE SHOW
-	SIMILAR SIMPLE SKIP SMALLINT SNAPSHOT SOME SQL_P STABLE STANDALONE_P START
+	SIMILAR SIMPLE SKIP SMALLINT SNAPSHOT SOME SPLIT SQL_P STABLE STANDALONE_P START
 	STATEMENT STATISTICS STDIN STDOUT STORAGE STRICT_P STRIP_P SUBSTRING
 	SYMMETRIC SYSID SYSTEM_P
 
@@ -2392,14 +2394,42 @@ alter_table_cmd:
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					n->subtype = AT_AddPartition;
-					n->partition = $2;
+					n->partitions = list_make1($2);
 					$$ = (Node *) n;
 				}
-			| MERGE PARTITIONS qualified_name ',' qualified_name
+			| MERGE PARTITIONS qualified_name ',' qualified_name OptIntoSinglePartition
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					n->subtype = AT_MergePartitions;
 					n->partitions = list_make2($3, $5);
+
+					if ($6 != NULL)
+						n->partitions = lappend(n->partitions, $6);
+
+					$$ = (Node *) n;
+				}
+			| SPLIT PARTITION qualified_name AT '(' b_expr ')' OptIntoPartitions
+				{
+					RangePartitionInfo *orig = makeNode(RangePartitionInfo);
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					List *into_partitions = $8;
+
+					n->subtype = AT_SplitPartition;
+					n->partitions = list_make1(orig);
+
+					orig->relation = $3;
+
+					if (into_partitions != NIL
+						&& list_length(into_partitions) != 2)
+					{
+						elog(ERROR,
+							 "INTO clause must contain exactly two partitions");
+					 }
+
+					//((RangePartitionInfo *) linitial(into_partitions))->upper_bound = $6;
+					n->def = $6;
+					n->partitions = list_concat(n->partitions, into_partitions);
+
 					$$ = (Node *) n;
 				}
 		;
@@ -2495,6 +2525,49 @@ reloption_elem:
 				{
 					$$ = makeDefElemExtended($1, $3, NULL, DEFELEM_UNSPEC);
 				}
+		;
+
+OptIntoSinglePartition:
+			INTO PartitionNameTablespace
+			{
+				$$ = $2;
+			}
+			| /* EMPTY */
+			{
+				$$ = NULL;
+			}
+		;
+
+OptIntoPartitions:
+			INTO '(' PartitionNameTablespaceList ')'
+			{
+				$$ = $3;
+			}
+			| /* EMPTY */
+			{
+				$$ = NIL;
+			}
+		;
+
+PartitionNameTablespaceList:
+			PartitionNameTablespace
+			{
+				$$ = list_make1($1);
+			}
+			| PartitionNameTablespaceList ',' PartitionNameTablespace
+			{
+				$$ = lappend($1, $3);
+			}
+		;
+
+PartitionNameTablespace:
+			PARTITION qualified_name OptTableSpace
+			{
+				RangePartitionInfo *n = makeNode(RangePartitionInfo);
+				n->relation = $2;
+				n->tablespace = $3;
+				$$ = n;
+			}
 		;
 
 
@@ -2932,7 +3005,6 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 				}
 		;
 
-/*partitionType:	HASH '(' columnref ')' PARTITIONS '(' Iconst ')'*/
 partitionType:	HASH '(' a_expr ')' PARTITIONS '(' Iconst ')'
 					{
 						PartitionInfo *n = (PartitionInfo *) palloc(sizeof(PartitionInfo));
@@ -2941,57 +3013,47 @@ partitionType:	HASH '(' a_expr ')' PARTITIONS '(' Iconst ')'
 						n->partitions_count = $7;
 						$$ = (PartitionInfo *)n;
 					}
-				| RANGE '(' columnref ')' INTERVAL '(' AexprConst ')' OptRangePartitions
+				| RANGE '(' columnref ')' OptRangePartitionsInterval OptRangePartitions
 					{
 						PartitionInfo *n = (PartitionInfo *) palloc(sizeof(PartitionInfo));
 						n->partition_type = P_RANGE;
 						n->key = $3;
-						n->interval = $7;
-						n->partitions = $9;
+						n->interval = $5;
+						n->partitions = $6;
 						$$ = (PartitionInfo *)n;
 					}
 		;
 
-OptRangePartitions: '(' OptRangePartitionsList ')'
-			{
-				$$ = $2;
-			}
-		| /*EMPTY*/			{ $$ = NIL; }
+OptRangePartitions:
+			'(' OptRangePartitionsList ')'	{ $$ = $2; }
+			| /*EMPTY*/						{ $$ = NIL; }
 		;
 
 OptRangePartitionsList:
-		OptRangePartitionsListElement
-			{
-				$$ = list_make1($1);
-			}
-		| OptRangePartitionsList ',' OptRangePartitionsListElement
-			{
-				$$ = lappend($1, $3);
-			}
+			OptRangePartitionsListElement
+				{
+					$$ = list_make1($1);
+				}
+			| OptRangePartitionsList ',' OptRangePartitionsListElement
+				{
+					$$ = lappend($1, $3);
+				}
 		;
 
-/*OptHashPartitions: ;*/
-		/* PARTITION '(' AexprConst ')' */
-
-		/*PARTITION qualified_name VALUES LESS THAN '(' b_expr ')'*/
 OptRangePartitionsListElement:
-		PARTITION qualified_name VALUES LESS THAN '(' b_expr ')'
-			{
-				RangePartitionInfo *n = (RangePartitionInfo *) palloc(sizeof(RangePartitionInfo));
-				n->relation = $2;
-				n->upper_bound = $7;
-				n->tablespace = NULL;
-				$$ = (RangePartitionInfo *)n;
-			}
+			PARTITION qualified_name VALUES LESS THAN '(' b_expr ')' OptTableSpace
+				{
+					RangePartitionInfo *n = (RangePartitionInfo *) palloc(sizeof(RangePartitionInfo));
+					n->relation = $2;
+					n->upper_bound = $7;
+					n->tablespace = $9;
+					$$ = (RangePartitionInfo *)n;
+				}
+		;
 
-		| PARTITION qualified_name VALUES LESS THAN '(' b_expr ')' TABLESPACE name
-			{
-				RangePartitionInfo *n = (RangePartitionInfo *) palloc(sizeof(RangePartitionInfo));
-				n->relation = $2;
-				n->upper_bound = $7;
-				n->tablespace = $10;
-				$$ = (RangePartitionInfo *)n;
-			}
+OptRangePartitionsInterval:
+			INTERVAL '(' AexprConst ')'		{ $$ = $3; }
+			| /* EMPTY */					{ $$ = NULL; }
 		;
 
 /*
@@ -14166,6 +14228,7 @@ unreserved_keyword:
 			| SIMPLE
 			| SKIP
 			| SNAPSHOT
+			| SPLIT
 			| SQL_P
 			| STABLE
 			| STANDALONE_P

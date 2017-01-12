@@ -2848,6 +2848,7 @@ static AlterTableCmd *
 _copyAlterTableCmd(const AlterTableCmd *from)
 {
 	AlterTableCmd *newnode = makeNode(AlterTableCmd);
+	ListCell *lc;
 
 	COPY_SCALAR_FIELD(subtype);
 	COPY_STRING_FIELD(name);
@@ -2856,8 +2857,13 @@ _copyAlterTableCmd(const AlterTableCmd *from)
 	COPY_SCALAR_FIELD(behavior);
 	COPY_SCALAR_FIELD(missing_ok);
 	COPY_NODE_FIELD(partitions);
+
+	/* TODO: write a decent copy func */
+	// newnode->partitions = from->partitions;
+
 	if (from->partition)
-		COPY_POINTER_FIELD(partition, sizeof(RangePartitionInfo));
+		// COPY_POINTER_FIELD(partition, sizeof(RangePartitionInfo));
+		COPY_NODE_FIELD(partition);
 	else
 		newnode->partition = NULL;
 
@@ -4280,6 +4286,18 @@ _copyForeignKeyCacheInfo(const ForeignKeyCacheInfo *from)
 }
 
 
+static RangePartitionInfo *
+_copyRangePartitionInfo(const RangePartitionInfo *from)
+{
+	RangePartitionInfo *newnode = makeNode(RangePartitionInfo);
+
+	COPY_NODE_FIELD(relation);
+	COPY_NODE_FIELD(upper_bound);
+	COPY_STRING_FIELD(tablespace);
+
+	return newnode;
+}
+
 /*
  * copyObject
  *
@@ -5083,6 +5101,10 @@ copyObject(const void *from)
 			 */
 		case T_ForeignKeyCacheInfo:
 			retval = _copyForeignKeyCacheInfo(from);
+			break;
+
+		case T_RangePartitionInfo:
+			retval = _copyRangePartitionInfo(from);
 			break;
 
 		default:

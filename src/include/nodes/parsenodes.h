@@ -1452,6 +1452,7 @@ typedef struct PartitionInfo
 
 typedef struct RangePartitionInfo
 {
+	NodeTag			type;
 	RangeVar	   *relation;
 	Node		   *upper_bound;
 	char		   *tablespace;
@@ -1560,7 +1561,8 @@ typedef enum AlterTableType
 	AT_GenericOptions,			/* OPTIONS (...) */
 
 	AT_AddPartition,			/* ADD PARTITION */
-	AT_MergePartitions			/* MERGE PARTITIONS */
+	AT_MergePartitions,			/* MERGE PARTITIONS */
+	AT_SplitPartition			/* SPLIT PARTITION */
 } AlterTableType;
 
 typedef struct ReplicaIdentityStmt

@@ -306,7 +306,8 @@ pm_create_range_partitions(Oid relid,
 						const char *attname,
 						Oid atttype,
 						Datum interval,
-						Oid interval_type)
+						Oid interval_type,
+						bool interval_isnull)
 {
 	FuncArgs		args;
 	int				ret;
@@ -316,7 +317,11 @@ pm_create_range_partitions(Oid relid,
 	PG_SETARG_DATUM(&args, 1, TEXTOID, PointerGetDatum(cstring_to_text(attname)));
 	/* TODO: get value from first partition */
 	PG_SETARG_DATUM(&args, 2, atttype, Int32GetDatum(0));
-	PG_SETARG_DATUM(&args, 3, interval_type, interval);
+
+	if (!interval_isnull)
+		PG_SETARG_DATUM(&args, 3, interval_type, interval);
+	else
+		PG_SETARG_NULL(&args, 3, interval_type);
 
 	/* Zero partitions */
 	PG_SETARG_DATUM(&args, 4, INT4OID, Int32GetDatum(0));
@@ -410,4 +415,65 @@ pm_merge_range_partitions(Oid relid1, Oid relid2)
 
 	if (!ret)
 		elog(ERROR, "Unable to merge partitions");
+}
+
+/*
+ * Split partition
+ */
+void
+pm_split_range_partition(Oid part_relid,
+						 Datum split_value,
+						 Oid split_value_type,
+						 const char *relname,
+						 const char *tablespace)
+{
+	FuncArgs	args;
+	bool		ret;
+
+	InitFuncArgs(&args, 4);
+	PG_SETARG_DATUM(&args, 0, OIDOID, part_relid);
+	PG_SETARG_DATUM(&args, 1, split_value_type, split_value);
+
+	/* Set partition name if provided */
+	if (relname)
+		PG_SETARG_DATUM(&args, 2, TEXTOID, CStringGetTextDatum(relname));
+	else
+		PG_SETARG_NULL(&args, 2, TEXTOID);
+
+	/* Set tablespace if provided */
+	if (tablespace)
+		PG_SETARG_DATUM(&args, 3, TEXTOID, CStringGetTextDatum(tablespace));
+	else
+		PG_SETARG_NULL(&args, 3, TEXTOID);
+
+	ret = pathman_invoke("split_range_partition($1, $2, $3, $4)", &args);
+	FreeFuncArgs(&args);
+
+	if (!ret)
+		elog(ERROR, "Unable to split partition '%s'", get_rel_name(part_relid));
+}
+
+void pm_alter_partition(Oid relid,
+						const char *new_relname,
+						Oid new_namespace,
+						const char *new_tablespace)
+{
+	FuncArgs	args;
+	bool		ret;
+
+	InitFuncArgs(&args, 4);
+	PG_SETARG_DATUM(&args, 0, OIDOID, relid);
+	PG_SETARG_DATUM(&args, 1, TEXTOID, CStringGetTextDatum(new_relname));
+	PG_SETARG_DATUM(&args, 2, OIDOID, new_namespace);
+
+	if (new_tablespace != NULL)
+		PG_SETARG_DATUM(&args, 3, TEXTOID, CStringGetTextDatum(new_tablespace));
+	else
+		PG_SETARG_NULL(&args, 3, TEXTOID);
+
+	ret = pathman_invoke("alter_partition($1, $2, $3, $4)", &args);
+	FreeFuncArgs(&args);
+
+	if (!ret)
+		elog(ERROR, "Unable to alter partition '%s'", get_rel_name(relid));
 }
