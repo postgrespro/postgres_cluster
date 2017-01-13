@@ -550,9 +550,7 @@ convert_sourcefiles_in(char *source_subdir, char *dest_dir, char *dest_subdir, c
 		while (fgets(line, sizeof(line), infile))
 		{
 			replace_string(line, "@abs_srcdir@", inputdir);
-			// replace_string(line, "@abs_srcdir@", "/pg/src/src/test/regress");
 			replace_string(line, "@abs_builddir@", outputdir);
-			// replace_string(line, "@abs_builddir@", "/pg/src/src/test/regress");
 			replace_string(line, "@testtablespace@", testtablespace);
 			replace_string(line, "@libdir@", dlpath);
 			replace_string(line, "@DLSUFFIX@", DLSUFFIX);

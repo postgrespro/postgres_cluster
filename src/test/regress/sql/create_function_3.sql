@@ -88,7 +88,7 @@ SELECT proname, proleakproof FROM pg_proc
        WHERE oid in ('functext_E_1'::regproc,
                      'functext_E_2'::regproc) ORDER BY proname;
 
-ALTER FUNCTION functext_E_2(int) NOT LEAKPROOF;	-- remove leakproof attribute
+ALTER FUNCTION functext_E_2(int) NOT LEAKPROOF;	-- remove leakproog attribute
 SELECT proname, proleakproof FROM pg_proc
        WHERE oid in ('functext_E_1'::regproc,
                      'functext_E_2'::regproc) ORDER BY proname;

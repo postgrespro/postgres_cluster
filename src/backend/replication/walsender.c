@@ -992,8 +992,6 @@ StartLogicalReplication(StartReplicationCmd *cmd)
 	 * Initialize position to the last ack'ed one, then the xlog records begin
 	 * to be shipped from that position.
 	 */
-	elog(WARNING, "%d: StartLogicalReplication for slot %s startpoint %lx", MyProcPid, NameStr(MyReplicationSlot->data.name), cmd->startpoint);
-
 	logical_decoding_ctx = CreateDecodingContext(
 											   cmd->startpoint, cmd->options,
 												 logical_read_xlog_page,

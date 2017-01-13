@@ -603,9 +603,8 @@ LocalExecuteInvalidationMessage(SharedInvalidationMessage *msg)
 		else if (msg->rm.dbId == MyDatabaseId)
 			InvalidateCatalogSnapshot();
 	}
-	else { 
+	else
 		elog(FATAL, "unrecognized SI message ID: %d", msg->id);
-	}
 }
 
 /*

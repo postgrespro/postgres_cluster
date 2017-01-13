@@ -248,11 +248,10 @@ ReplicationSlotCreate(const char *name, bool db_specific,
 	{
 		ReplicationSlot *s = &ReplicationSlotCtl->replication_slots[i];
 
-		if (s->in_use && strcmp(name, NameStr(s->data.name)) == 0) {
+		if (s->in_use && strcmp(name, NameStr(s->data.name)) == 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_DUPLICATE_OBJECT),
 					 errmsg("replication slot \"%s\" already exists", name)));
-		}
 		if (!s->in_use && slot == NULL)
 			slot = s;
 	}

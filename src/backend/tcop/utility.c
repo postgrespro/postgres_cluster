@@ -1359,7 +1359,7 @@ ProcessUtilitySlow(Node *parsetree,
 				break;
 
 			case T_AlterEnumStmt:		/* ALTER TYPE (enum) */
-				address = AlterEnum((AlterEnumStmt *) parsetree);
+				address = AlterEnum((AlterEnumStmt *) parsetree, isTopLevel);
 				break;
 
 			case T_ViewStmt:	/* CREATE VIEW */
@@ -2353,7 +2353,7 @@ CreateCommandTag(Node *parsetree)
 			tag = "ALTER DATABASE";
 			break;
 
-	  case T_AlterDatabaseSetStmt:
+		case T_AlterDatabaseSetStmt:
 			tag = "ALTER DATABASE";
 			break;
 

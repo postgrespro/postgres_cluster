@@ -301,7 +301,7 @@
 /*
  * Enable debugging print statements for lock-related operations.
  */
-#define LOCK_DEBUG
+/* #define LOCK_DEBUG */
 
 /*
  * Enable debugging print statements for WAL-related operations; see
