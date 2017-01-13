@@ -1,4 +1,5 @@
 #include "postgres.h"
+#include "port.h"
 
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
@@ -380,7 +381,7 @@ pg_scheduler_startup(void)
 {
 	BackgroundWorker worker;
 
-	elog(LOG, "Start PostgresPro scheduler");
+	elog(LOG, "Start PostgresPro scheduler.");
 
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
