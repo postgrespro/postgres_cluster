@@ -252,7 +252,7 @@ xact_desc_commit(StringInfo buf, uint8 info, xl_xact_commit *xlrec, RepOriginId 
 }
 
 static void
-xact_desc_abort(StringInfo buf, uint8 info, xl_xact_abort *xlrec)
+xact_desc_abort(StringInfo buf, uint8 info, xl_xact_abort *xlrec, RepOriginId origin_id)
 {
 	xl_xact_parsed_abort parsed;
 	int			i;
@@ -281,6 +281,14 @@ xact_desc_abort(StringInfo buf, uint8 info, xl_xact_abort *xlrec)
 		appendStringInfoString(buf, "; subxacts:");
 		for (i = 0; i < parsed.nsubxacts; i++)
 			appendStringInfo(buf, " %u", parsed.subxacts[i]);
+	}
+	if (parsed.xinfo & XACT_XINFO_HAS_ORIGIN)
+	{
+		appendStringInfo(buf, "; origin: node %u, lsn %X/%X, at %s",
+						 origin_id,
+						 (uint32) (parsed.origin_lsn >> 32),
+						 (uint32) parsed.origin_lsn,
+						 timestamptz_to_str(parsed.origin_timestamp));
 	}
 }
 
@@ -312,7 +320,8 @@ xact_desc(StringInfo buf, XLogReaderState *record)
 	{
 		xl_xact_abort *xlrec = (xl_xact_abort *) rec;
 
-		xact_desc_abort(buf, XLogRecGetInfo(record), xlrec);
+		xact_desc_abort(buf, XLogRecGetInfo(record), xlrec,
+						XLogRecGetOrigin(record));
 	}
 	else if (info == XLOG_XACT_ASSIGNMENT)
 	{
