@@ -3106,9 +3106,11 @@ void MtmReleaseRecoverySlot(int nodeId)
  */
 void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 {
+	char state3pc[MAX_3PC_STATE_SIZE];
 	XidStatus status = MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_ABORTED);
 	MTM_LOG1("Abort prepared transaction %s status %s from node %d originId=%d", gid, MtmTxnStatusMnem[status], nodeId, Mtm->nodes[nodeId-1].originId);
-	if (status == TRANSACTION_STATUS_UNKNOWN) { 
+	if (status == TRANSACTION_STATUS_UNKNOWN || (status == TRANSACTION_STATUS_IN_PROGRESS && GetPreparedTransactionState(gid, state3pc))) 
+	{ 
 		MTM_LOG1("PGLOGICAL_ABORT_PREPARED commit: gid=%s #2", gid);
 		MtmResetTransaction();
 		StartTransactionCommand();
@@ -3118,8 +3120,6 @@ void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 		CommitTransactionCommand();
 		MtmEndSession(nodeId, true);
 	} else if (status == TRANSACTION_STATUS_IN_PROGRESS) {
-		char state3pc[MAX_3PC_STATE_SIZE];
-		Assert(!GetPreparedTransactionState(gid, state3pc));
 		MtmBeginSession(nodeId);
 		MtmLogAbortLogicalMessage(nodeId, gid);
 		MtmEndSession(nodeId, true);
