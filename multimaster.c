@@ -4252,7 +4252,7 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 	if (!x->isReplicated && x->isDistributed && x->containsDML) {
 		MtmGenerateGid(x->gid);
 		if (!x->isTransactionBlock) { 
-			BeginTransactionBlock();
+			BeginTransactionBlock(false);
 			x->isTransactionBlock = true;
 			CommitTransactionCommand();
 			StartTransactionCommand();

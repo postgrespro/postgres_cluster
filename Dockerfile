@@ -1,4 +1,4 @@
-FROM kelvich/postgres_cluster
+FROM pgproent
 
 RUN mkdir /pg/mmts
 COPY ./ /pg/mmts/

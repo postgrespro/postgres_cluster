@@ -673,7 +673,7 @@ process_remote_commit(StringInfo in)
 			} else { 				
 				/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
 				MTM_LOG2("PGLOGICAL_PREPARE commit: gid=%s", gid);
-				BeginTransactionBlock();
+				BeginTransactionBlock(false);
 				CommitTransactionCommand();
 				StartTransactionCommand();
 				
