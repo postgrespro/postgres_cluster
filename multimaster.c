@@ -3320,6 +3320,8 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 				MTM_LOG1("Recovered position of node %d is %lx", MtmReplicationNodeId, recoveredLSN); 
 				if (Mtm->nodes[MtmReplicationNodeId-1].restartLSN < recoveredLSN) { 
 					MTM_LOG2("[restartlsn] node %d: %lx -> %lx (MtmReplicationStartupHook)", MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, recoveredLSN);
+					Assert(Mtm->nodes[MtmReplicationNodeId-1].restartLSN == InvalidXLogRecPtr 
+						   || recoveredLSN < Mtm->nodes[MtmReplicationNodeId-1].restartLSN + MtmMaxRecoveryLag);
 					Mtm->nodes[MtmReplicationNodeId-1].restartLSN = recoveredLSN;
 				}
 			} else { 
@@ -3533,7 +3535,8 @@ bool MtmFilterTransaction(char* record, int size)
 	}
 	restart_lsn = origin_node == MtmReplicationNodeId ? end_lsn : origin_lsn;
     if (Mtm->nodes[origin_node-1].restartLSN < restart_lsn) {
-		Assert(restart_lsn != InvalidXLogRecPtr);
+		Assert(Mtm->nodes[origin_node-1].restartLSN == InvalidXLogRecPtr 
+			   || restart_lsn < Mtm->nodes[origin_node-1].restartLSN + MtmMaxRecoveryLag);
 		MTM_LOG2("[restartlsn] node %d: %lx -> %lx (MtmFilterTransaction)", MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, restart_lsn);
 		Mtm->nodes[origin_node-1].restartLSN = restart_lsn;
     } else {
