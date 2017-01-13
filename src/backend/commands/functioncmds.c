@@ -1120,6 +1120,10 @@ RemoveFunctionById(Oid funcOid)
 	Relation	relation;
 	HeapTuple	tup;
 	bool		isagg;
+	Oid language_oid;
+	HeapTuple languageTuple;
+	Form_pg_language languageStruct;
+	Oid	languageValidator;
 
 	/*
 	 * Delete the pg_proc tuple.
@@ -1131,6 +1135,18 @@ RemoveFunctionById(Oid funcOid)
 		elog(ERROR, "cache lookup failed for function %u", funcOid);
 
 	isagg = ((Form_pg_proc) GETSTRUCT(tup))->proisagg;
+
+	/*
+	 * MTM-CRUTCH: We need to know wheteher our function had
+	 * accessed temp relation or not. So validate function body
+	 * again -- that will set MyXactAccessedTempRel.
+	 */
+	language_oid = ((Form_pg_proc) GETSTRUCT(tup))->prolang;
+	languageTuple = SearchSysCache1(LANGOID, language_oid);
+	languageStruct = (Form_pg_language) GETSTRUCT(languageTuple);
+	languageValidator = languageStruct->lanvalidator;
+	OidFunctionCall1(languageValidator, ObjectIdGetDatum(funcOid));
+	ReleaseSysCache(languageTuple);
 
 	simple_heap_delete(relation, &tup->t_self);
 

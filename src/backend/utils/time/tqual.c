@@ -66,6 +66,7 @@
 #include "access/subtrans.h"
 #include "access/transam.h"
 #include "access/xact.h"
+#include "access/xtm.h"
 #include "access/xlog.h"
 #include "storage/bufmgr.h"
 #include "storage/procarray.h"
@@ -984,8 +985,9 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 			{
 				if (TransactionIdDidCommit(xvac))
 				{
-					SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
-								InvalidTransactionId);
+					if (!TransactionIdIsInProgress(xvac))
+						SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
+									InvalidTransactionId);
 					return false;
 				}
 				SetHintBits(tuple, buffer, HEAP_XMIN_COMMITTED,
@@ -1006,8 +1008,9 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 								InvalidTransactionId);
 				else
 				{
-					SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
-								InvalidTransactionId);
+					if (!TransactionIdIsInProgress(xvac))
+						SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
+									InvalidTransactionId);
 					return false;
 				}
 			}
@@ -1062,8 +1065,9 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		else
 		{
 			/* it must have aborted or crashed */
-			SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
-						InvalidTransactionId);
+			if (!TransactionIdIsInProgress(HeapTupleGetRawXmin(htup)))
+				SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
+							InvalidTransactionId);
 			return false;
 		}
 	}
@@ -1126,8 +1130,9 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		if (!TransactionIdDidCommit(HeapTupleGetRawXmax(htup)))
 		{
 			/* it must have aborted or crashed */
-			SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
-						InvalidTransactionId);
+			if (!TransactionIdIsInProgress(HeapTupleGetRawXmax(htup)))
+				SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
+							InvalidTransactionId);
 			return true;
 		}
 
@@ -1266,8 +1271,9 @@ HeapTupleSatisfiesVacuum(HeapTuple htup, TransactionId OldestXmin,
 	 * Okay, the inserter committed, so it was good at some point.  Now what
 	 * about the deleting transaction?
 	 */
-	if (tuple->t_infomask & HEAP_XMAX_INVALID)
+	if (tuple->t_infomask & HEAP_XMAX_INVALID) {
 		return HEAPTUPLE_LIVE;
+	}
 
 	if (HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask))
 	{
@@ -1450,6 +1456,12 @@ HeapTupleIsSurelyDead(HeapTuple htup, TransactionId OldestXmin)
 	return TransactionIdPrecedes(HeapTupleGetRawXmax(htup), OldestXmin);
 }
 
+bool
+XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
+{
+	return TM->IsInSnapshot(xid, snapshot);
+}
+
 /*
  * XidInMVCCSnapshot
  *		Is the given XID still-in-progress according to the snapshot?
@@ -1460,8 +1472,8 @@ HeapTupleIsSurelyDead(HeapTuple htup, TransactionId OldestXmin)
  * TransactionIdIsCurrentTransactionId first, except for known-committed
  * XIDs which could not be ours anyway.
  */
-static bool
-XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
+bool
+PgXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 {
 	uint32		i;
 

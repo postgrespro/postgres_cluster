@@ -70,7 +70,7 @@ extern bool SnapBuildXactNeedsSkip(SnapBuild *snapstate, XLogRecPtr ptr);
 
 extern void SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn,
 				   TransactionId xid, int nsubxacts,
-				   TransactionId *subxacts);
+				   TransactionId *subxacts, bool isCommit);
 extern void SnapBuildAbortTxn(SnapBuild *builder, XLogRecPtr lsn,
 				  TransactionId xid, int nsubxacts,
 				  TransactionId *subxacts);

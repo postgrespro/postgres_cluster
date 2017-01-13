@@ -24,6 +24,9 @@
  *
  * -------------------------------------------------------------------------
  */
+#include <sys/time.h>
+#include <time.h>
+
 #include "postgres.h"
 
 #include "access/heapam.h"
@@ -34,6 +37,7 @@
 #include "access/xlogutils.h"
 #include "access/xlogreader.h"
 #include "access/xlogrecord.h"
+#include "access/twophase.h"
 
 #include "catalog/pg_control.h"
 
@@ -71,7 +75,9 @@ static void DecodeSpecConfirm(LogicalDecodingContext *ctx, XLogRecordBuffer *buf
 static void DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			 xl_xact_parsed_commit *parsed, TransactionId xid);
 static void DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
-			xl_xact_parsed_abort *parsed, TransactionId xid);
+			 xl_xact_parsed_abort *parsed, TransactionId xid);
+static void DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
+			 xl_xact_parsed_prepare *parsed);
 
 /* common function to decode tuples */
 static void DecodeXLogTuple(char *data, Size len, ReorderBufferTupleBuf *tup);
@@ -221,6 +227,8 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT)
 		return;
 
+	reorder->xact_action = info;
+
 	switch (info)
 	{
 		case XLOG_XACT_COMMIT:
@@ -277,17 +285,24 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 				break;
 			}
 		case XLOG_XACT_PREPARE:
+			{
+				xl_xact_parsed_prepare parsed;
 
-			/*
-			 * Currently decoding ignores PREPARE TRANSACTION and will just
-			 * decode the transaction when the COMMIT PREPARED is sent or
-			 * throw away the transaction's contents when a ROLLBACK PREPARED
-			 * is received. In the future we could add code to expose prepared
-			 * transactions in the changestream allowing for a kind of
-			 * distributed 2PC.
-			 */
-			ReorderBufferProcessXid(reorder, XLogRecGetXid(r), buf->origptr);
-			break;
+				ParsePrepareRecord(XLogRecGetInfo(buf->record), XLogRecGetData(buf->record), &parsed);
+				DecodePrepare(ctx, buf, &parsed);
+
+				/*
+				 * Currently decoding ignores PREPARE TRANSACTION and will just
+				 * decode the transaction when the COMMIT PREPARED is sent or
+				 * throw away the transaction's contents when a ROLLBACK PREPARED
+				 * is received. In the future we could add code to expose prepared
+				 * transactions in the changestream allowing for a kind of
+				 * distributed 2PC.
+				 */
+				//ReorderBufferProcessXid(reorder, XLogRecGetXid(r), buf->origptr);
+				break;
+
+			}
 		default:
 			elog(ERROR, "unexpected RM_XACT_ID record type: %u", info);
 	}
@@ -560,7 +575,7 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	}
 
 	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
-					   parsed->nsubxacts, parsed->subxacts);
+					   parsed->nsubxacts, parsed->subxacts, true);
 
 	/* ----
 	 * Check whether we are interested in this specific transaction, and tell
@@ -591,6 +606,18 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		(parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) ||
 		FilterByOrigin(ctx, origin_id))
 	{
+		if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr)) {
+			elog(DEBUG1, "Skip transaction %ld at %lx because it's origptr %lx is not in snapshot", 
+				 xid, buf->endptr, buf->origptr);
+		}
+		if (parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) {
+			elog(DEBUG1, "Skip transaction %ld at %lx because database id is not matched", 
+				 xid, buf->endptr);
+		}
+		if (FilterByOrigin(ctx, origin_id)) { 
+			elog(DEBUG1, "Skip transaction %ld at %lx is filtered by origin_id %d", 
+				 xid, buf->endptr, origin_id);
+		}
 		for (i = 0; i < parsed->nsubxacts; i++)
 		{
 			ReorderBufferForget(ctx->reorder, parsed->subxacts[i], buf->origptr);
@@ -607,9 +634,107 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 								 buf->origptr, buf->endptr);
 	}
 
-	/* replay actions of all transaction + subtransactions in order */
-	ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
-						commit_time, origin_id, origin_lsn);
+	if (TransactionIdIsValid(parsed->twophase_xid)) {
+		/*
+		 * We are processing COMMIT PREPARED and know that reorder buffer is
+		 * empty. So we can skip use shortcut for coomiting bare xact.
+		 */
+		strcpy(ctx->reorder->gid, parsed->twophase_gid);
+		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
+							commit_time, origin_id, origin_lsn);
+	} else {
+		/* replay actions of all transaction + subtransactions in order */
+		ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
+							commit_time, origin_id, origin_lsn);
+		*ctx->reorder->gid = '\0';
+	}
+	*ctx->reorder->state_3pc = '\0';
+}
+
+static void
+DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
+			 xl_xact_parsed_prepare *parsed)
+{
+	XLogRecPtr	origin_lsn = InvalidXLogRecPtr;
+	TimestampTz	commit_time = 0;
+	RepOriginId	origin_id = XLogRecGetOrigin(buf->record);
+	int			i;
+	TransactionId xid = parsed->twophase_xid;
+	ReorderBuffer *rb = ctx->reorder;
+
+	// struct timeval tv;
+	// int64 ts;
+
+	// gettimeofday(&tv, NULL);
+	// ts = (int64)tv.tv_sec*USECS_PER_SEC + tv.tv_usec;
+
+	// fprintf(stderr, "[MTM_TXTRACE], %s, %lld, DecodePrepare Started\n",
+	//								parsed->twophase_gid, (long long) ts);
+
+	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
+	{
+		origin_lsn = parsed->origin_lsn;
+		commit_time = parsed->origin_timestamp;
+	} else { 
+		Assert(origin_id == InvalidRepOriginId);
+	}
+
+	strcpy(rb->gid, parsed->twophase_gid);
+	strcpy(rb->state_3pc, parsed->state_3pc);
+
+	/*
+	 * Process invalidation messages, even if we're not interested in the
+	 * transaction's contents, since the various caches need to always be
+	 * consistent.
+	 */
+	if (parsed->nmsgs > 0 && *rb->state_3pc == '\0')
+	{
+		ReorderBufferAddInvalidations(rb, xid, buf->origptr,
+									  parsed->nmsgs, parsed->msgs);
+		ReorderBufferXidSetCatalogChanges(rb, xid, buf->origptr);
+	}
+
+	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
+					   parsed->nsubxacts, parsed->subxacts, false);
+
+	if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) ||
+		(parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) ||
+		FilterByOrigin(ctx, origin_id))
+	{
+		for (i = 0; i < parsed->nsubxacts; i++)
+		{
+			ReorderBufferForget(rb, parsed->subxacts[i], buf->origptr);
+		}
+		ReorderBufferForget(rb, xid, buf->origptr);
+
+		return;
+	}
+
+	if (*parsed->state_3pc != '\0') { 
+		ReorderBufferTXN txn;
+		txn.xid = xid;
+		txn.first_lsn = buf->origptr;
+		txn.final_lsn = buf->origptr;
+		txn.end_lsn = buf->endptr;
+		txn.commit_time = commit_time;
+		txn.origin_id = origin_id;
+		txn.origin_lsn = origin_lsn;
+		txn.xact_action = rb->xact_action;
+		strcpy(txn.gid, rb->gid);
+		strcpy(txn.state_3pc, rb->state_3pc);		
+		rb->commit(rb, &txn, buf->origptr);
+	} else { 
+		/* tell the reorderbuffer about the surviving subtransactions */
+		for (i = 0; i < parsed->nsubxacts; i++)
+		{
+			ReorderBufferCommitChild(ctx->reorder, xid, parsed->subxacts[i],
+									 buf->origptr, buf->endptr);
+		}
+		
+		/* replay actions of all transaction + subtransactions in order */
+		ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
+							commit_time, origin_id, origin_lsn);
+	}
 }
 
 /*
@@ -621,6 +746,30 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			xl_xact_parsed_abort *parsed, TransactionId xid)
 {
 	int			i;
+	XLogRecPtr	origin_lsn = parsed->origin_lsn;
+	XLogRecPtr	commit_time = InvalidXLogRecPtr;
+	RepOriginId	origin_id = XLogRecGetOrigin(buf->record);
+
+	/*
+	 * If that is ROLLBACK PREPARED than send that to callbacks.
+	 */
+
+	if (TransactionIdIsValid(parsed->twophase_xid)) {
+		fprintf(stderr, "(!) db_id=%d, gid=%s\n", parsed->dbId, parsed->twophase_gid);
+	}
+
+	if (TransactionIdIsValid(parsed->twophase_xid)
+			&& (parsed->dbId == ctx->slot->data.database)) {
+
+		strcpy(ctx->reorder->gid, parsed->twophase_gid);
+		*ctx->reorder->state_3pc = '\0';
+
+		fprintf(stderr, "(!)	aborting: db_id=%d, gid=%s\n", parsed->dbId, parsed->twophase_gid);
+
+		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
+							commit_time, origin_id, origin_lsn);
+		return;
+	}
 
 	SnapBuildAbortTxn(ctx->snapshot_builder, buf->record->EndRecPtr, xid,
 					  parsed->nsubxacts, parsed->subxacts);
@@ -713,12 +862,13 @@ DecodeUpdate(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 
 	/* only interested in our database */
 	XLogRecGetBlockTag(r, 0, &target_node, NULL, NULL);
-	if (target_node.dbNode != ctx->slot->data.database)
+	if (target_node.dbNode != ctx->slot->data.database) 
 		return;
 
 	/* output plugin doesn't look for this origin, no need to queue */
-	if (FilterByOrigin(ctx, XLogRecGetOrigin(r)))
+	if (FilterByOrigin(ctx, XLogRecGetOrigin(r))) {
 		return;
+	}
 
 	change = ReorderBufferGetChange(ctx->reorder);
 	change->action = REORDER_BUFFER_CHANGE_UPDATE;
