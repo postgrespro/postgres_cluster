@@ -384,6 +384,7 @@ process_remote_message(StringInfo s)
 		{
 			MTM_LOG1("%d: Executing non-tx utility statement %s", MyProcPid, messageBody);
 			SetCurrentStatementStartTimestamp();
+			MtmResetTransaction();
 			StartTransactionCommand();
 			standalone = true;
 			/* intentional falldown to the next case */
@@ -413,7 +414,6 @@ process_remote_message(StringInfo s)
 														 false, false,
 														 NULL,
 														 NULL);
-					
 					/* Run parse analysis ... */
 					MtmIndexStmt = transformIndexStmt(relid, MtmIndexStmt, messageBody);
 

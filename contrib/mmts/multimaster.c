@@ -133,7 +133,7 @@ static void MtmBeginTransaction(MtmCurrentTrans* x);
 static void MtmPrePrepareTransaction(MtmCurrentTrans* x);
 static void MtmPostPrepareTransaction(MtmCurrentTrans* x);
 static void MtmAbortPreparedTransaction(MtmCurrentTrans* x);
-static void MtmCommitPreparedTransaction(MtmCurrentTrans* x);
+static void MtmPreCommitPreparedTransaction(MtmCurrentTrans* x);
 static void MtmEndTransaction(MtmCurrentTrans* x, bool commit);
 static bool MtmTwoPhaseCommit(MtmCurrentTrans* x);
 static TransactionId MtmGetOldestXmin(Relation rel, bool ignoreVacuum);
@@ -705,8 +705,8 @@ MtmXactCallback(XactEvent event, void *arg)
 	  case XACT_EVENT_ABORT_PREPARED:
 		MtmAbortPreparedTransaction(&MtmTx);
 		break;
-	  case XACT_EVENT_COMMIT_PREPARED:
-		MtmCommitPreparedTransaction(&MtmTx);
+	  case XACT_EVENT_PRE_COMMIT_PREPARED:
+		MtmPreCommitPreparedTransaction(&MtmTx);
 		break;
 	  case XACT_EVENT_COMMIT:
 		MtmEndTransaction(&MtmTx, true);
@@ -1149,7 +1149,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 }
 
 static void 
-MtmCommitPreparedTransaction(MtmCurrentTrans* x)
+MtmPreCommitPreparedTransaction(MtmCurrentTrans* x)
 {
     MtmTransMap* tm;
 	MtmTransState* ts;
@@ -1181,6 +1181,7 @@ MtmCommitPreparedTransaction(MtmCurrentTrans* x)
 		Mtm2PCVoting(x, ts);
 
 		x->xid = ts->xid;
+		x->csn = ts->csn;
 		x->isPrepared = true;
 	}
 	MtmUnlock();
@@ -1468,6 +1469,7 @@ static void MtmStartRecovery()
 {
 	MtmLock(LW_EXCLUSIVE);
 	BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
+	Mtm->nConfigChanges += 1;
 	MtmSwitchClusterMode(MTM_RECOVERY);
 	Mtm->recoveredLSN = InvalidXLogRecPtr;
 	MtmUnlock();
@@ -1723,6 +1725,7 @@ static void MtmDisableNode(int nodeId)
 	elog(WARNING, "Disable node %d at xlog position %lx, last status change time %d msec ago", nodeId, GetXLogInsertRecPtr(), 
 		 (int)USEC_TO_MSEC(now - Mtm->nodes[nodeId-1].lastStatusChangeTime));
 	BIT_SET(Mtm->disabledNodeMask, nodeId-1);
+	Mtm->nConfigChanges += 1;
 	Mtm->nodes[nodeId-1].timeline += 1;
 	Mtm->nodes[nodeId-1].lastStatusChangeTime = now;
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
@@ -1743,6 +1746,7 @@ static void MtmEnableNode(int nodeId)
 { 
 	BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
 	BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
+	Mtm->nConfigChanges += 1;
 	Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 	if (nodeId != MtmNodeId) { 
@@ -1764,6 +1768,7 @@ void MtmRecoveryCompleted(void)
 	Mtm->recoverySlot = 0;
 	Mtm->recoveredLSN = GetXLogInsertRecPtr();
 	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
+	Mtm->nConfigChanges += 1;
 	Mtm->reconnectMask |= SELF_CONNECTIVITY_MASK; /* try to reestablish all connections */
 	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	for (i = 0; i < Mtm->nAllNodes; i++) { 
@@ -1867,7 +1872,6 @@ bool MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN)
 				/* We are lucky: caught-up without locking cluster! */
 			}
 			MtmEnableNode(nodeId);
-			Mtm->nConfigChanges += 1;
 			caughtUp = true;
 		} else if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
 				   && slotLSN + MtmMinRecoveryLag > walLSN) 
@@ -1952,6 +1956,7 @@ MtmCheckClusterLock()
 				Assert(Mtm->walSenderLockerMask == 0);
 				Assert((Mtm->nodeLockerMask & Mtm->disabledNodeMask) == Mtm->nodeLockerMask);
 				Mtm->disabledNodeMask &= ~Mtm->nodeLockerMask;
+				Mtm->nConfigChanges += 1;
 				Mtm->nLiveNodes += Mtm->nLockers;
 				Mtm->nLockers = 0;
 				Mtm->nodeLockerMask = 0;
@@ -2097,7 +2102,6 @@ void MtmRefreshClusterStatus()
  */
 void MtmCheckQuorum(void)
 {
-	Mtm->nConfigChanges += 1;
 	if (Mtm->nLiveNodes < Mtm->nAllNodes/2+1) {
 		if (Mtm->status == MTM_ONLINE) { /* out of quorum */
 			elog(WARNING, "Node is in minority: disabled mask %lx", (long) Mtm->disabledNodeMask);
@@ -3316,6 +3320,8 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 				MTM_LOG1("Recovered position of node %d is %lx", MtmReplicationNodeId, recoveredLSN); 
 				if (Mtm->nodes[MtmReplicationNodeId-1].restartLSN < recoveredLSN) { 
 					MTM_LOG2("[restartlsn] node %d: %lx -> %lx (MtmReplicationStartupHook)", MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, recoveredLSN);
+					Assert(Mtm->nodes[MtmReplicationNodeId-1].restartLSN == InvalidXLogRecPtr 
+						   || recoveredLSN < Mtm->nodes[MtmReplicationNodeId-1].restartLSN + MtmMaxRecoveryLag);
 					Mtm->nodes[MtmReplicationNodeId-1].restartLSN = recoveredLSN;
 				}
 			} else { 
@@ -3529,6 +3535,8 @@ bool MtmFilterTransaction(char* record, int size)
 	}
 	restart_lsn = origin_node == MtmReplicationNodeId ? end_lsn : origin_lsn;
     if (Mtm->nodes[origin_node-1].restartLSN < restart_lsn) {
+		Assert(Mtm->nodes[origin_node-1].restartLSN == InvalidXLogRecPtr 
+			   || restart_lsn < Mtm->nodes[origin_node-1].restartLSN + MtmMaxRecoveryLag);
 		MTM_LOG2("[restartlsn] node %d: %lx -> %lx (MtmFilterTransaction)", MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, restart_lsn);
 		Mtm->nodes[origin_node-1].restartLSN = restart_lsn;
     } else {
@@ -3653,6 +3661,7 @@ mtm_add_node(PG_FUNCTION_ARGS)
 		Mtm->nodes[nodeId].oldestSnapshot = 0;
 
 		BIT_SET(Mtm->disabledNodeMask, nodeId);
+		Mtm->nConfigChanges += 1;
 		Mtm->nAllNodes += 1;
 		MtmUnlock();
 
@@ -4442,19 +4451,14 @@ static void MtmProcessDDLCommand(char const* queryString, bool transactional)
 	}
 	MTM_LOG3("Sending utility: %s", queryString);
 	if (transactional) {
-		/* DDL */
+		/* Transactional DDL */
 		LogLogicalMessage("D", queryString, strlen(queryString) + 1, true);
 		MtmTx.containsDML = true;
-	} else {		
-		char* gucCtx = MtmGucSerialize();
-		return;
-		if (*gucCtx) {
-			queryString = psprintf("%s; %s", gucCtx, queryString);
-		}
-		/* CONCURRENT DDL */
+	} else {	
+		MTM_LOG1("Execute concurrent DDL: %s", queryString);
+		/* Concurrent DDL */
 		XLogFlush(LogLogicalMessage("C", queryString, strlen(queryString) + 1, false));
 	}
-	return;
 }
 
 static void MtmFinishDDLCommand()
@@ -4542,7 +4546,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 
 		case T_VacuumStmt:
 		  skipCommand = true;		  
-#if 0
 		  if (context == PROCESS_UTILITY_TOPLEVEL) {			  
 			  MtmProcessDDLCommand(queryString, false);
 			  MtmTx.isDistributed = false;
@@ -4553,7 +4556,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			  MemoryContextSwitchTo(oldContext);
 			  return;
 		  }
-#endif
 		  break;
 
 		case T_CreateDomainStmt:

@@ -5358,9 +5358,6 @@ XactLogAbortRecord(TimestampTz abort_time,
 		XLogRegisterData((char *) twophase_gid, xl_twophase.gidlen);
 	}
 
-	if (xl_xinfo.xinfo & XACT_XINFO_HAS_DBINFO)
-		XLogRegisterData((char *) (&xl_dbinfo), sizeof(xl_dbinfo));
-
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_ORIGIN)
 		XLogRegisterData((char *) (&xl_origin), sizeof(xl_xact_origin));
 
