@@ -153,7 +153,13 @@ get_pathman_schema(void)
 const char *
 get_pathman_schema_name()
 {
-	return get_namespace_name(get_pathman_schema());
+	Oid schema_oid = get_pathman_schema();
+
+	if (schema_oid == InvalidOid)
+		elog(ERROR,
+			 "pg_pathman module isn't installed");
+
+	return get_namespace_name(schema_oid);
 }
 
 /* TODO: Probably remove this */
