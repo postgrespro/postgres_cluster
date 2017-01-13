@@ -19,7 +19,7 @@ export PGPORT
 ./.ci/make_test_base $PGDATA
 #run checks
 set +e
-make installcheck-world  prefix=`pwd`/tmp_install
+make installcheck-world  prefix=`pwd`/tmp_install NO_LOCALE=1
 code=$?
 pg_ctl stop -D $PGDATA
 exit $code

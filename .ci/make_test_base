@@ -19,8 +19,10 @@ if os.access(datadir,os.R_OK):
     import shutil
     shutil.rmtree(datadir)
 os.mkdir(datadir)
+env=os.environ.copy()
+env["LANG"]="C"
 with open("initdb.log","w") as f:
-    exitcode=subprocess.call(["initdb","-E","UTF8",datadir],stdout=f,stderr=subprocess.STDOUT)
+    exitcode=subprocess.call(["initdb","-E","UTF8",datadir],env=env,stdout=f,stderr=subprocess.STDOUT)
 if exitcode:
     sys.exit(exitcode)
 # Collect extra config option
@@ -59,7 +61,7 @@ if addopts:
         for opt,value in addopts.items():
             print >> f,"%s=%s"%(opt,value)
 with open("initdb.log","a") as f:
-    exitcode=subprocess.call(["pg_ctl","start","-D",datadir,"-l",datadir+"/postmaster.log"],stdout=f,stderr=subprocess.STDOUT)
+    exitcode=subprocess.call(["pg_ctl","start","-D",datadir,"-l",datadir+"/postmaster.log"],env=env,stdout=f,stderr=subprocess.STDOUT)
 if exitcode:
     sys.exit(exitcode)
 

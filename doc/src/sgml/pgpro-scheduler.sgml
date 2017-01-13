@@ -43,19 +43,8 @@
    </para>
 
    <para>
-    To build extension from the source, make sure that the environment variable
-    <envar>PATH</envar> includes path to <application>pg_config</application> utility.
-    Also make sure that you have developer version of
-    <productname>&productname;</productname> installed or
-    <productname>&productname;</productname> was built from source code.
-   </para>
-
-   <para>
     Install extension as follows:
 <screen>
-$ cd pgpro_scheduler
-$ make USE_PGXS=1
-$ sudo make USE_PGXS=1 install
 $ psql <replaceable>dbname</replaceable> -c "CREATE EXTENSION pgpro_scheduler"
 </screen>
    </para>
