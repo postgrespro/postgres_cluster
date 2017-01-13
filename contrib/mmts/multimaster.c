@@ -486,7 +486,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
                 MTM_LOG4("%d: tuple with xid=%d(csn=%ld) is invisibile in snapshot %ld",
 						 MyProcPid, xid, ts->csn, MtmTx.snapshot);
 				if (MtmGetSystemTime() - start > USECS_PER_SEC) { 
-					elog(WARNING, "Backend %d waits for transaction %u status %ld usecs", MyProcPid, xid, MtmGetSystemTime() - start);
+					elog(WARNING, "Backend %d waits for transaction %s (%lu) status %ld usecs", MyProcPid, ts->gid, (long)xid, MtmGetSystemTime() - start);
 				}
 				MtmUnlock();
                 return true;
@@ -528,7 +528,8 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 						 MyProcPid, xid, ts->csn, invisible ? "rollbacked" : "committed", MtmTx.snapshot);
                 MtmUnlock();
 				if (MtmGetSystemTime() - start > USECS_PER_SEC) { 
-					elog(WARNING, "Backend %d waits for %s transaction %u %ld usecs", MyProcPid, invisible ? "rollbacked" : "committed", xid, MtmGetSystemTime() - start);
+					elog(WARNING, "Backend %d waits for %s transaction %s (%lu) %ld usecs", MyProcPid, invisible ? "rollbacked" : "committed", 
+						 ts->gid, (long)xid, MtmGetSystemTime() - start);
 				}
                 return invisible;
             }
@@ -541,7 +542,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         }
     }
 	MtmUnlock();
-	elog(ERROR, "Failed to get status of XID %d in %ld usec", xid, MtmGetSystemTime() - start);
+	elog(ERROR, "Failed to get status of XID %lu in %ld usec", (long)xid, MtmGetSystemTime() - start);
 	return true;
 }    
 
@@ -860,7 +861,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 
 	if (Mtm->inject2PCError == 1) { 
 		Mtm->inject2PCError = 0;
-		elog(ERROR, "ERROR INJECTION for transaction %d (%s)", x->xid, x->gid);
+		elog(ERROR, "ERROR INJECTION for transaction %s (%lu)", x->gid, (long)x->xid);
 	}
 	x->xid = GetCurrentTransactionId();
 	Assert(TransactionIdIsValid(x->xid));
@@ -871,7 +872,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	}
 	if (TransactionIdIsValid(x->gtid.xid) && BIT_CHECK(Mtm->disabledNodeMask, x->gtid.node-1)) {
 		/* Coordinator of transaction is disabled: just abort transaction without any further steps */
-		elog(ERROR, "Abort transaction %d because it's coordinator %d was disabled", x->xid, x->gtid.node);
+		elog(ERROR, "Abort transaction %s (%lu) because it's coordinator %d was disabled", x->gid, (long)x->xid, x->gtid.node);
 	}
 
 	MtmLock(LW_EXCLUSIVE);
@@ -986,8 +987,8 @@ MtmVotingCompleted(MtmTransState* ts)
 	if (!ts->isPrepared) { /* We can not just abort precommitted transactions */
 		if (ts->nConfigChanges != Mtm->nConfigChanges)
 		{ 
-			elog(WARNING, "Abort transaction %s (%d) because cluster configuration is changed from %lx to %lx since transaction start", 
-				 ts->gid, ts->xid, ts->participantsMask, liveNodesMask);
+			elog(WARNING, "Abort transaction %s (%lu) because cluster configuration is changed from %lx to %lx since transaction start", 
+				 ts->gid, (long)ts->xid, ts->participantsMask, liveNodesMask);
 			MtmAbortTransaction(ts);
 			return true;
 		}
@@ -1062,10 +1063,10 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 		MtmLock(LW_EXCLUSIVE);
 		if (now > deadline) { 
 			if (ts->isPrepared) { 
-				elog(LOG, "Distributed transaction %s (%d) is not committed in %ld msec", ts->gid, ts->xid, USEC_TO_MSEC(now - start));
+				elog(LOG, "Distributed transaction %s (%lu) is not committed in %ld msec", ts->gid, (long)ts->xid, USEC_TO_MSEC(now - start));
 			} else {
-				elog(WARNING, "Commit of distributed transaction %s (%d) is canceled because of %ld msec timeout expiration", 
-					 ts->gid, ts->xid, USEC_TO_MSEC(timeout));
+				elog(WARNING, "Commit of distributed transaction %s (%lu) is canceled because of %ld msec timeout expiration", 
+					 ts->gid, (long)ts->xid, USEC_TO_MSEC(timeout));
 				MtmAbortTransaction(ts);
 				break;
 			}
@@ -1079,9 +1080,11 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 			x->isSuspended = true;
 		} else { 
 			if (Mtm->status != MTM_ONLINE) { 
-				elog(WARNING, "Commit of distributed transaction %s (%d) is canceled because node is switched to %s mode", ts->gid, ts->xid, MtmNodeStatusMnem[Mtm->status]);
+				elog(WARNING, "Commit of distributed transaction %s (%lu) is canceled because node is switched to %s mode", 
+					 ts->gid, (long)ts->xid, MtmNodeStatusMnem[Mtm->status]);
 			} else { 
-				elog(WARNING, "Commit of distributed transaction %s (%d) is canceled because cluster configuration was changed", ts->gid, ts->xid);
+				elog(WARNING, "Commit of distributed transaction %s (%lu) is canceled because cluster configuration was changed", 
+					 ts->gid, (long)ts->xid);
 			} 
 			MtmAbortTransaction(ts);
 		}
@@ -1103,7 +1106,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 
 	if (Mtm->inject2PCError == 2) { 
 		Mtm->inject2PCError = 0;
-		elog(ERROR, "ERROR INJECTION for transaction %d (%s)", x->xid, x->gid);
+		elog(ERROR, "ERROR INJECTION for transaction %s (%lu)", x->gid, (long)x->xid);
 	}
 	MtmLock(LW_EXCLUSIVE);
 	ts = (MtmTransState*)hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
@@ -1142,7 +1145,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	//if (x->gid[0]) MTM_LOG1("Prepared transaction %d (%s) csn=%ld at %ld: %d", x->xid, x->gid, ts->csn, MtmGetCurrentTime(), ts->status);
 	if (Mtm->inject2PCError == 3) { 
 		Mtm->inject2PCError = 0;
-		elog(ERROR, "ERROR INJECTION for transaction %d (%s)", x->xid, x->gid);
+		elog(ERROR, "ERROR INJECTION for transaction %s (%lu)", x->gid, (long)x->xid);
 	}
 
 	MTM_TXTRACE(x, "PostPrepareTransaction Finish");
@@ -1204,13 +1207,13 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 			elog(WARNING, "Global transaciton ID '%s' is not found", x->gid);
 		} else { 
 			Assert(tm->state != NULL);
-			MTM_LOG1("Abort prepared transaction %d with gid='%s'", x->xid, x->gid);
+			MTM_LOG1("Abort prepared transaction %s (%lu)", x->gid, (long)x->xid);
 			MtmAbortTransaction(tm->state);
 		}
 		MtmUnlock();
 		x->status = TRANSACTION_STATUS_ABORTED;
 	} else { 
-		MTM_LOG1("Transaction %s (%d) is already aborted", x->gid, x->xid);
+		MTM_LOG1("Transaction %s (%lu) is already aborted", x->gid, (long)x->xid);
 	}
 }
 
@@ -1255,8 +1258,8 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				if (!(ts->status == TRANSACTION_STATUS_UNKNOWN 
 					  || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)))  
 				{
-					elog(ERROR, "Attempt to commit %s transaction %d (%s)", 
-						 MtmTxnStatusMnem[ts->status], ts->xid, ts->gid);
+					elog(ERROR, "Attempt to commit %s transaction %s (%lu)", 
+						 MtmTxnStatusMnem[ts->status], ts->gid, (long)ts->xid);
 				}
 				if (x->csn > ts->csn || Mtm->status == MTM_RECOVERY) {
 					Assert(x->csn != INVALID_CSN);
@@ -1271,7 +1274,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				Mtm->nActiveTransactions -= 1;
 				MtmAdjustSubtransactions(ts);
 			} else { 
-				MTM_LOG1("%d: abort transaction %s (%d) is called from MtmEndTransaction", MyProcPid, x->gid, x->xid);
+				MTM_LOG1("%d: abort transaction %s (%lu) is called from MtmEndTransaction", MyProcPid, x->gid, (long)x->xid);
 				MtmAbortTransaction(ts);
 			}
 		}
@@ -1281,7 +1284,8 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 			 * Send notification only if ABORT happens during transaction processing at replicas, 
 			 * do not send notification if ABORT is received from master 
 			 */
-			MTM_LOG1("%d: send ABORT notification for transaction %d (%s) local xid=%d to coordinator %d", MyProcPid, x->gtid.xid, x->gid, x->xid, x->gtid.node);
+			MTM_LOG1("%d: send ABORT notification for transaction %s (%lu) local xid=%lu to coordinator %d", 
+					 MyProcPid, x->gid, (long)x->gtid.xid, (long)x->xid, x->gtid.node);
 			if (ts == NULL) { 
 				bool found;
 				Assert(TransactionIdIsValid(x->xid));
@@ -1432,7 +1436,7 @@ static void	MtmLoadPreparedTransactions(void)
 		if (!found || tm->state == NULL) {
 			TransactionId xid = GetNewTransactionId(false);
 			MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_ENTER, &found);
-			MTM_LOG1("Recover prepared transaction %s xid=%d state=%s", gid, xid, pxacts[i].state_3pc);
+			MTM_LOG1("Recover prepared transaction %s (%lu) state=%s", gid, (long)xid, pxacts[i].state_3pc);
 			MyPgXact->xid = InvalidTransactionId; /* dirty hack:((( */
 			Assert(!found);
 			Mtm->nActiveTransactions += 1;
@@ -1612,9 +1616,9 @@ void MtmAbortTransaction(MtmTransState* ts)
 	Assert(MtmLockCount != 0); /* should be invoked with exclsuive lock */
 	if (ts->status != TRANSACTION_STATUS_ABORTED) { 
 		if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
-			elog(LOG, "Attempt to rollback already committed transaction %s (%d)", ts->gid, ts->xid);
+			elog(LOG, "Attempt to rollback already committed transaction %s (%lu)", ts->gid, (long)ts->xid);
 		} else { 
-			MTM_LOG1("Rollback active transaction %s (%d) %d:%d status %s", ts->gid, ts->xid, ts->gtid.node, ts->gtid.xid, MtmTxnStatusMnem[ts->status]);
+			MTM_LOG1("Rollback active transaction %s (%lu) %d:%lu status %s", ts->gid, (long)ts->xid, ts->gtid.node, (long)ts->gtid.xid, MtmTxnStatusMnem[ts->status]);
 			ts->status = TRANSACTION_STATUS_ABORTED;
 			MtmAdjustSubtransactions(ts);
 			if (ts->isActive) {
@@ -1681,12 +1685,12 @@ static void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeI
 				elog(LOG, "Abort transaction %s because its coordinator is disabled and it is not prepared at node %d", ts->gid, MtmNodeId);
 				MtmFinishPreparedTransaction(ts, false);
 			} else {
-				MTM_LOG1("Poll state of transaction %d (%s)", ts->xid, ts->gid);				
+				MTM_LOG1("Poll state of transaction %s (%lu)", ts->gid, (long)ts->xid);				
 				MtmBroadcastPollMessage(ts);
 			}
 		} else {
-			MTM_LOG1("Skip transaction %d (%s) with status %s gtid.node=%d gtid.xid=%d votedMask=%lx", 
-					 ts->xid, ts->gid, MtmTxnStatusMnem[ts->status], ts->gtid.node, ts->gtid.xid, ts->votedMask);
+			MTM_LOG1("Skip transaction %s (%lu) with status %s gtid.node=%d gtid.xid=%lu votedMask=%lx", 
+					 ts->gid, (long)ts->xid, MtmTxnStatusMnem[ts->status], ts->gtid.node, (long)ts->gtid.xid, ts->votedMask);
 		}
 	}
 }
@@ -1705,11 +1709,11 @@ static void MtmPollStatusOfPreparedTransactions()
 			&& (ts->status == TRANSACTION_STATUS_UNKNOWN || ts->status == TRANSACTION_STATUS_IN_PROGRESS)) 
 		{
 			Assert(ts->gid[0]);
-			MTM_LOG1("Poll state of transaction %d (%s) from node %d", ts->xid, ts->gid, ts->gtid.node);				
+			MTM_LOG1("Poll state of transaction %s (%lu) from node %d", ts->gid, (long)ts->xid, ts->gtid.node);				
 			MtmBroadcastPollMessage(ts);
 		} else {
-			MTM_LOG2("Skip prepared transaction %d (%s) with status %s gtid.node=%d gtid.xid=%d votedMask=%lx", 
-					 ts->xid, ts->gid, MtmTxnStatusMnem[ts->status], ts->gtid.node, ts->gtid.xid, ts->votedMask);
+			MTM_LOG2("Skip prepared transaction %s (%d) with status %s gtid.node=%d gtid.xid=%lu votedMask=%lx", 
+					 ts->gid, (long)ts->xid, MtmTxnStatusMnem[ts->status], ts->gtid.node, (long)ts->gtid.xid, ts->votedMask);
 		}
 	}
 }
@@ -3717,7 +3721,7 @@ mtm_get_last_csn(PG_FUNCTION_ARGS)
 Datum
 mtm_get_csn(PG_FUNCTION_ARGS)
 {
-	TransactionId xid = PG_GETARG_INT32(0);
+	TransactionId xid = PG_GETARG_INT64(0);
 	MtmTransState* ts;
 	csn_t csn = INVALID_CSN;
 
@@ -3812,9 +3816,9 @@ mtm_get_trans_by_gid(PG_FUNCTION_ARGS)
 		}
 	} else { 
 		values[0] = CStringGetTextDatum(MtmTxnStatusMnem[ts->status]);		
-		values[2] = Int32GetDatum(ts->xid);
+		values[2] = Int64GetDatum(ts->xid);
 		values[3] = Int32GetDatum(ts->gtid.node);
-		values[4] = Int32GetDatum(ts->gtid.xid);
+		values[4] = Int64GetDatum(ts->gtid.xid);
 		values[5] = TimestampTzGetDatum(time_t_to_timestamptz(ts->csn/USECS_PER_SEC));  
 		values[6] = TimestampTzGetDatum(time_t_to_timestamptz(ts->snapshot/USECS_PER_SEC));  
 		values[7] = BoolGetDatum(ts->isLocal);
@@ -3838,7 +3842,7 @@ mtm_get_trans_by_xid(PG_FUNCTION_ARGS)
 	TupleDesc desc;
     Datum     values[Natts_mtm_trans_state];
     bool      nulls[Natts_mtm_trans_state] = {false};
-	TransactionId xid = PG_GETARG_INT32(0);
+	TransactionId xid = PG_GETARG_INT64(0);
 	MtmTransState* ts;
 
 	MtmLock(LW_SHARED);
@@ -3850,9 +3854,9 @@ mtm_get_trans_by_xid(PG_FUNCTION_ARGS)
 
 	values[0] = CStringGetTextDatum(MtmTxnStatusMnem[ts->status]);		
 	values[1] = CStringGetTextDatum(ts->gid);	
-	values[2] = Int32GetDatum(ts->xid);
+	values[2] = Int64GetDatum(ts->xid);
 	values[3] = Int32GetDatum(ts->gtid.node);
-	values[4] = Int32GetDatum(ts->gtid.xid);
+	values[4] = Int64GetDatum(ts->gtid.xid);
 	values[5] = TimestampTzGetDatum(time_t_to_timestamptz(ts->csn/USECS_PER_SEC));  
 	values[6] = TimestampTzGetDatum(time_t_to_timestamptz(ts->snapshot/USECS_PER_SEC));  
 	values[7] = BoolGetDatum(ts->isLocal);
@@ -3890,7 +3894,7 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 	values[11] = Int32GetDatum(Mtm->recoverySlot);
 	values[12] = Int64GetDatum(hash_get_num_entries(MtmXid2State));
 	values[13] = Int64GetDatum(hash_get_num_entries(MtmGid2State));
-	values[14] = Int32GetDatum(Mtm->oldestXid);
+	values[14] = Int64GetDatum(Mtm->oldestXid);
 	values[15] = Int32GetDatum(Mtm->nConfigChanges);
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
@@ -4043,10 +4047,10 @@ Datum mtm_dump_lock_graph(PG_FUNCTION_ARGS)
 			appendStringInfo(s, "node-%d lock graph: ", i+1);
 			while (gtid != last) { 
 				GlobalTransactionId *src = gtid++;
-				appendStringInfo(s, "%d:%d -> ", src->node, src->xid);
+				appendStringInfo(s, "%d:%lu -> ", src->node, (long)src->xid);
 				while (gtid->node != 0) {
 					GlobalTransactionId *dst = gtid++;
-					appendStringInfo(s, "%d:%d, ", dst->node, dst->xid);
+					appendStringInfo(s, "%d:%lu, ", dst->node, (long)dst->xid);
 				}
 				gtid += 1;
 			}
@@ -4265,12 +4269,12 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 		} else { 	
 			CommitTransactionCommand();
 			if (x->isSuspended) { 
-				elog(WARNING, "Transaction %s (%d) is left in prepared state because coordinator node is not online", x->gid, x->xid);
+				elog(WARNING, "Transaction %s (%lu) is left in prepared state because coordinator node is not online", x->gid, (long)x->xid);
 			} else { 				
 				StartTransactionCommand();
 				if (x->status == TRANSACTION_STATUS_ABORTED) { 
 					FinishPreparedTransaction(x->gid, false);
-					elog(ERROR, "Transaction %s (%d) is aborted by DTM", x->gid, x->xid);
+					elog(ERROR, "Transaction %s (%lu) is aborted by DTM", x->gid, (long)x->xid);
 				} else {
 					FinishPreparedTransaction(x->gid, true);
 				}
@@ -4899,8 +4903,7 @@ MtmSerializeLock(PROCLOCK* proclock, void* arg)
 
 			MtmGetGtid(srcPgXact->xid, &gtid);  /* waiting transaction */
 			
-            ByteBufferAppendInt32(buf, gtid.node);
-            ByteBufferAppendInt32(buf, gtid.xid); 
+            ByteBufferAppend(buf, &gtid, sizeof(gtid));
 
             proclock = (PROCLOCK *) SHMQueueNext(procLocks, procLocks,
                                                  offsetof(PROCLOCK, lockLink));
@@ -4916,8 +4919,7 @@ MtmSerializeLock(PROCLOCK* proclock, void* arg)
                             {
                                 MTM_LOG3("%d: %u(%u) waits for %u(%u)", MyProcPid, srcPgXact->xid, proc->pid, dstPgXact->xid, proclock->tag.myProc->pid);
                                 MtmGetGtid(dstPgXact->xid, &gtid); /* transaction holding lock */
-								ByteBufferAppendInt32(buf, gtid.node); 
-								ByteBufferAppendInt32(buf, gtid.xid); 
+								ByteBufferAppend(buf, &gtid, sizeof(gtid)); 
                                 break;
                             }
                         }
@@ -4926,8 +4928,9 @@ MtmSerializeLock(PROCLOCK* proclock, void* arg)
                 proclock = (PROCLOCK *) SHMQueueNext(procLocks, &proclock->lockLink,
                                                      offsetof(PROCLOCK, lockLink));
             }
-            ByteBufferAppendInt32(buf, 0); /* end of lock owners list */
-            ByteBufferAppendInt32(buf, 0); /* end of lock owners list */
+			gtid.node = 0;
+			gtid.xid = 0;
+            ByteBufferAppend(buf, &gtid, sizeof(gtid)); /* end of lock owners list */
         }
     }
 }
@@ -4970,7 +4973,7 @@ MtmDetectGlobalDeadLockForXid(TransactionId xid)
 		}
 		MtmGetGtid(xid, &gtid);
 		hasDeadlock = MtmGraphFindLoop(&graph, &gtid);
-		elog(LOG, "Distributed deadlock check by backend %d for %u:%u = %d", MyProcPid, gtid.node, gtid.xid, hasDeadlock);
+		elog(LOG, "Distributed deadlock check by backend %d for %u:%lu = %d", MyProcPid, gtid.node, (long)gtid.xid, hasDeadlock);
 		if (!hasDeadlock) { 
 			/* There is no deadlock loop in graph, but deadlock can be caused by lack of apply workers: if all of them are busy, then some transactions
 			 * can not be appied just because there are no vacant workers and it cause additional dependency between transactions which is not 
@@ -4982,7 +4985,7 @@ MtmDetectGlobalDeadLockForXid(TransactionId xid)
 				elog(WARNING, "Apply workers were blocked more than %d msec", 
 					 (int)USEC_TO_MSEC(MtmGetSystemTime() - lastPeekTime));
 			} else { 
-				MTM_LOG1("Enable deadlock timeout in backend %d for transaction %d", MyProcPid, xid);
+				MTM_LOG1("Enable deadlock timeout in backend %d for transaction %lu", MyProcPid, (long)xid);
 				enable_timeout_after(DEADLOCK_TIMEOUT, DeadlockTimeout);
 			}
 		}
@@ -4995,13 +4998,13 @@ MtmDetectGlobalDeadLock(PGPROC* proc)
 {
     PGXACT* pgxact = &ProcGlobal->allPgXact[proc->pgprocno];
 
-	MTM_LOG1("Detect global deadlock for %d by backend %d", pgxact->xid, MyProcPid);
+	MTM_LOG1("Detect global deadlock for %lu by backend %d", (long)pgxact->xid, MyProcPid);
 
     return MtmDetectGlobalDeadLockForXid(pgxact->xid);
 }
 
 Datum mtm_check_deadlock(PG_FUNCTION_ARGS)
 {
-	TransactionId xid = PG_GETARG_INT32(0);
+	TransactionId xid = PG_GETARG_INT64(0);
     PG_RETURN_BOOL(MtmDetectGlobalDeadLockForXid(xid));
 }
