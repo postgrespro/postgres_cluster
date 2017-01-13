@@ -349,7 +349,7 @@ process_remote_begin(StringInfo s)
 	MtmResetTransaction();		
 #if 1
 	if (BIT_CHECK(Mtm->disabledNodeMask, gtid.node-1)) { 
-		elog(WARNING, "Ignore transaction %d from disabled node %d", gtid.xid, gtid.node);
+		elog(WARNING, "Ignore transaction %lu from disabled node %d", (long)gtid.xid, gtid.node);
 		return false;
 	}
 #endif
@@ -1132,10 +1132,10 @@ void MtmExecutor(void* work, size_t size)
 		MemoryContextSwitchTo(oldcontext);
 		EmitErrorReport();
         FlushErrorState();
-		MTM_LOG1("%d: REMOTE begin abort transaction %d", MyProcPid, MtmGetCurrentTransactionId());
+		MTM_LOG1("%d: REMOTE begin abort transaction %lu", MyProcPid, (long)MtmGetCurrentTransactionId());
 		MtmEndSession(MtmReplicationNodeId, false);
         AbortCurrentTransaction();
-		MTM_LOG2("%d: REMOTE end abort transaction %d", MyProcPid, MtmGetCurrentTransactionId());
+		MTM_LOG2("%d: REMOTE end abort transaction %lu", MyProcPid, (long)MtmGetCurrentTransactionId());
     }
     PG_END_TRY();
 	if (spill_file >= 0) { 

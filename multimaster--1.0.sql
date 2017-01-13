@@ -27,7 +27,7 @@ CREATE FUNCTION mtm.get_snapshot() RETURNS bigint
 AS 'MODULE_PATHNAME','mtm_get_snapshot'
 LANGUAGE C;
 
-CREATE FUNCTION mtm.get_csn(xid integer) RETURNS bigint
+CREATE FUNCTION mtm.get_csn(xid bigint) RETURNS bigint
 AS 'MODULE_PATHNAME','mtm_get_csn'
 LANGUAGE C;
 
@@ -43,15 +43,15 @@ AS 'MODULE_PATHNAME','mtm_get_nodes_state'
 LANGUAGE C;
 
 CREATE TYPE mtm.cluster_state AS ("status" text, "disabledNodeMask" bigint, "disconnectedNodeMask" bigint, "catchUpNodeMask" bigint, "liveNodes" integer, "allNodes" integer, "nActiveQueries" integer, "nPendingQueries" integer, "queueSize" bigint, "transCount" bigint, "timeShift" bigint, "recoverySlot" integer,
-"xidHashSize" bigint, "gidHashSize" bigint, "oldestXid" integer, "configChanges" integer);
+"xidHashSize" bigint, "gidHashSize" bigint, "oldestXid" bigint, "configChanges" integer);
 
-CREATE TYPE mtm.trans_state AS ("status" text, "gid" text, "xid" integer, "coordinator" integer, "gxid" integer, "csn" timestamp, "snapshot" timestamp, "local" boolean, "prepared" boolean, "active" boolean, "twophase" boolean, "votingCompleted" boolean, "participants" bigint, "voted" bigint, "configChanges" integer);
+CREATE TYPE mtm.trans_state AS ("status" text, "gid" text, "xid" bigint, "coordinator" integer, "gxid" bigint, "csn" timestamp, "snapshot" timestamp, "local" boolean, "prepared" boolean, "active" boolean, "twophase" boolean, "votingCompleted" boolean, "participants" bigint, "voted" bigint, "configChanges" integer);
 
 CREATE FUNCTION mtm.get_trans_by_gid(git text) RETURNS mtm.trans_state
 AS 'MODULE_PATHNAME','mtm_get_trans_by_gid'
 LANGUAGE C;
 
-CREATE FUNCTION mtm.get_trans_by_xid(xid integer) RETURNS mtm.trans_state
+CREATE FUNCTION mtm.get_trans_by_xid(xid bigint) RETURNS mtm.trans_state
 AS 'MODULE_PATHNAME','mtm_get_trans_by_xid'
 LANGUAGE C;
 
@@ -79,7 +79,7 @@ CREATE FUNCTION mtm.inject_2pc_error(stage integer) RETURNS void
 AS 'MODULE_PATHNAME','mtm_inject_2pc_error'
 LANGUAGE C;
 
-CREATE FUNCTION mtm.check_deadlock(xid integer) RETURNS boolean
+CREATE FUNCTION mtm.check_deadlock(xid bigint) RETURNS boolean
 AS 'MODULE_PATHNAME','mtm_check_deadlock'
 LANGUAGE C;
 

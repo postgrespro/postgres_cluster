@@ -216,12 +216,12 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 					 flags, txn->gid, txn->xid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
 		}
 		if (flags == PGLOGICAL_ABORT_PREPARED) { 
-			MTM_LOG1("Send ABORT_PREPARED for transaction %d (%s) end_lsn=%lx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%ld", 
-					 txn->xid, txn->gid, txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
+			MTM_LOG1("Send ABORT_PREPARED for transaction %s (%lu) end_lsn=%lx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%ld", 
+					 txn->gid, (long)txn->xid, txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
 		}
 		if (flags == PGLOGICAL_PRECOMMIT_PREPARED) { 
-			MTM_LOG2("Send PGLOGICAL_PRECOMMIT_PREPARED for transaction %d (%s) end_lsn=%lx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%ld", 
-					 txn->xid, txn->gid, txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
+			MTM_LOG2("Send PGLOGICAL_PRECOMMIT_PREPARED for transaction %s (%lu) end_lsn=%lx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%ld", 
+					 txn->gid, (long)txn->xid, txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
 		}
 		if (MtmRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn)) { 
 			MTM_LOG1("wal-sender complete recovery of node %d at LSN(commit %lx, end %lx, log %lx) in transaction %s event %d", MtmReplicationNodeId, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr(), txn->gid, flags);
