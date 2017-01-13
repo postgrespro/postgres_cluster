@@ -1151,6 +1151,7 @@ if test "$with_openssl" = yes ; then
 fi
 
 if test "$with_icu" = yes ; then
+ AC_SEARCH_LIBS(ucol_open_58, [icui18n icuin], [], [
  AC_SEARCH_LIBS(ucol_open_57, [icui18n icuin], [], [
  AC_SEARCH_LIBS(ucol_open_56, [icui18n icuin], [], [
  AC_SEARCH_LIBS(ucol_open_55, [icui18n icuin], [], [
@@ -1184,6 +1185,8 @@ if test "$with_icu" = yes ; then
  ])
  ])
  ])
+])
+ AC_CHECK_LIB(icuuc, ucnv_fromUChars_58, [], [
  AC_CHECK_LIB(icuuc, ucnv_fromUChars_57, [], [
  AC_CHECK_LIB(icuuc, ucnv_fromUChars_56, [], [
  AC_CHECK_LIB(icuuc, ucnv_fromUChars_55, [], [
@@ -1217,6 +1220,7 @@ if test "$with_icu" = yes ; then
  ])
  ])
  ])
+])
 fi
 
 if test "$with_pam" = yes ; then
