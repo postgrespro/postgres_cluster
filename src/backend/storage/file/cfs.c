@@ -1053,7 +1053,7 @@ bool cfs_control_gc(bool enabled)
 /* ----------------------------------------------------------------
  *	Section 5: Garbage collection user's functions.
  *
- * TODO add description. reorder functions.
+ * TODO add descriptions
  * ----------------------------------------------------------------
  */
 PG_FUNCTION_INFO_V1(cfs_start_gc);
@@ -1083,7 +1083,8 @@ Datum cfs_start_gc(PG_FUNCTION_ARGS)
 		cfs_state->n_workers = PG_GETARG_INT32(0);
 		handles = (BackgroundWorkerHandle**)palloc(cfs_state->n_workers*sizeof(BackgroundWorkerHandle*));		
 
-		for (i = 0; i < cfs_state->n_workers; i++) {
+		for (i = 0; i < cfs_state->n_workers; i++)
+		{
 			BackgroundWorker worker;
 			MemSet(&worker, 0, sizeof(worker));
 			sprintf(worker.bgw_name, "cfs-worker-%d", i);
@@ -1092,13 +1093,12 @@ Datum cfs_start_gc(PG_FUNCTION_ARGS)
 			worker.bgw_restart_time = BGW_NEVER_RESTART;
 			worker.bgw_main = cfs_gc_bgworker_main;
 			worker.bgw_main_arg = Int32GetDatum(i);
-			if (!RegisterDynamicBackgroundWorker(&worker, &handles[i])) { 
+			if (!RegisterDynamicBackgroundWorker(&worker, &handles[i]))
 				break;
-			}
 		}
-		for (j = 0; j < i; j++) {
+		for (j = 0; j < i; j++)
 			WaitForBackgroundWorkerShutdown(handles[j]);
-		}
+
 		pfree(handles);
 		pg_atomic_clear_flag(&cfs_state->gc_started);
 	}
@@ -1122,35 +1122,41 @@ Datum cfs_estimate(PG_FUNCTION_ARGS)
 	Relation rel = try_relation_open(oid, AccessShareLock);
 	double avgRatio = 0.0;
 
-	if (rel != NULL) { 
+	if (rel != NULL)
+	{
 		char* path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
 		int fd = open(path, O_RDONLY|PG_BINARY, 0);
-		if (fd >= 0) { 
+
+		if (fd >= 0)
+		{
 			int i;
 			char origBuffer[BLCKSZ];
 			char compressedBuffer[CFS_MAX_COMPRESSED_SIZE(BLCKSZ)];
 			uint32 compressedSize;
 			off_t rc = lseek(fd, 0, SEEK_END);
-			if (rc >= 0) { 
+
+			if (rc >= 0)
+			{
 				off_t step = rc / BLCKSZ / CFS_ESTIMATE_PROBES * BLCKSZ;
-				for (i = 0; i < CFS_ESTIMATE_PROBES; i++) {
+				for (i = 0; i < CFS_ESTIMATE_PROBES; i++)
+				{
 					rc = lseek(fd, step*i, SEEK_SET); 
-					if (rc < 0) {
+					if (rc < 0)
 						break;
-					}
-					if (!cfs_read_file(fd, origBuffer, BLCKSZ)) { 
+
+					if (!cfs_read_file(fd, origBuffer, BLCKSZ))
 						break;
-					}
-					compressedSize = (uint32)cfs_compress(compressedBuffer, sizeof(compressedBuffer), origBuffer, BLCKSZ);				
-					if (compressedSize > 0 && compressedSize < CFS_MIN_COMPRESSED_SIZE(BLCKSZ)) { 
+
+					compressedSize = (uint32)cfs_compress(compressedBuffer,
+														  sizeof(compressedBuffer),origBuffer, BLCKSZ);
+					if (compressedSize > 0 && compressedSize < CFS_MIN_COMPRESSED_SIZE(BLCKSZ))
 						avgRatio += (double)BLCKSZ/compressedSize;
-					} else { 
+					else
 						avgRatio += 1;
-					}
 				}
-				if (i != 0) { 
+
+				if (i != 0)
 					avgRatio /= i;
-				}
 			}
 			close(fd);
 		}
@@ -1166,39 +1172,43 @@ Datum cfs_compression_ratio(PG_FUNCTION_ARGS)
 	uint64 virtSize = 0;
 	uint64 physSize = 0;
 
-    if (rel != NULL) {
+    if (rel != NULL)
+	{
         char* path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
         char* map_path = (char*)palloc(strlen(path) + 16);
         int i = 0;
 
-        while (true) {
+        while (true)
+		{
             int md;
 			FileMap* map;
 
-            if (i == 0) {
-                sprintf(map_path, "%s.cfm", path);
-            } else {
-                sprintf(map_path, "%s.%u.cfm", path, i);
-            }
+			if (i == 0)
+				sprintf(map_path, "%s.cfm", path);
+			else
+				sprintf(map_path, "%s.%u.cfm", path, i);
+
 			md = open(map_path, O_RDWR|PG_BINARY, 0);
-            if (md < 0) {
+
+			if (md < 0)
 				break;
-			}
+
 			map = cfs_mmap(md);
-			if (map == MAP_FAILED) {
+			if (map == MAP_FAILED)
+			{
 				elog(LOG, "cfs_compression_ration failed to map file %s: %m", map_path);
 				close(md);
 				break;
 			}
+
 			virtSize += pg_atomic_read_u32(&map->virtSize);
 			physSize += pg_atomic_read_u32(&map->physSize);
 			
-			if (cfs_munmap(map) < 0) {
+			if (cfs_munmap(map) < 0)
 				elog(LOG, "CFS failed to unmap file %s: %m", map_path);
-			}
-			if (close(md) < 0) {
+			if (close(md) < 0)
 				elog(LOG, "CFS failed to close file %s: %m", map_path);
-			}
+
 			i += 1;
 		}
 		pfree(path);
@@ -1215,26 +1225,29 @@ Datum cfs_fragmentation(PG_FUNCTION_ARGS)
 	uint64 usedSize = 0;
 	uint64 physSize = 0;
 
-    if (rel != NULL) {
+    if (rel != NULL)
+	{
         char* path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
         char* map_path = (char*)palloc(strlen(path) + 16);
         int i = 0;
 
-        while (true) {
+        while (true)
+		{
             int md;
 			FileMap* map;
 
-            if (i == 0) {
-                sprintf(map_path, "%s.cfm", path);
-            } else {
-                sprintf(map_path, "%s.%u.cfm", path, i);
-            }
+			if (i == 0)
+				sprintf(map_path, "%s.cfm", path);
+			else
+				sprintf(map_path, "%s.%u.cfm", path, i);
+
 			md = open(map_path, O_RDWR|PG_BINARY, 0);
-            if (md < 0) {
+            if (md < 0)
 				break;
-			}
+
 			map = cfs_mmap(md);
-			if (map == MAP_FAILED) {
+			if (map == MAP_FAILED)
+			{
 				elog(LOG, "cfs_compression_ration failed to map file %s: %m", map_path);
 				close(md);
 				break;
@@ -1242,12 +1255,11 @@ Datum cfs_fragmentation(PG_FUNCTION_ARGS)
 			usedSize += pg_atomic_read_u32(&map->usedSize);
 			physSize += pg_atomic_read_u32(&map->physSize);
 			
-			if (cfs_munmap(map) < 0) {
+			if (cfs_munmap(map) < 0)
 				elog(LOG, "CFS failed to unmap file %s: %m", map_path);
-			}
-			if (close(md) < 0) {
+			if (close(md) < 0)
 				elog(LOG, "CFS failed to close file %s: %m", map_path);
-			}
+
 			i += 1;
 		}
 		pfree(path);
@@ -1261,21 +1273,22 @@ Datum cfs_gc_relation(PG_FUNCTION_ARGS)
 {
 	cfs_gc_processed_segments = 0;
 
-	if (cfs_gc_workers == 0 && pg_atomic_test_set_flag(&cfs_state->gc_started)) 
+	if (cfs_gc_workers == 0 && pg_atomic_test_set_flag(&cfs_state->gc_started))
 	{
 		Oid oid =  PG_GETARG_OID(0);
 		Relation rel = try_relation_open(oid, AccessShareLock);
 				
-		if (rel != NULL) {
+		if (rel != NULL)
+		{
 			char* path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
 			char* map_path = (char*)palloc(strlen(path) + 16);
 			int i = 0;
 			sprintf(map_path, "%s.cfm", path);
 			
-			while (true) {
-				if (!cfs_gc_file(map_path)) { 
+			while (true)
+			{
+				if (!cfs_gc_file(map_path))
 					break;
-				}
 				sprintf(map_path, "%s.%u.cfm", path, ++i);
 			}
 			pfree(path);
