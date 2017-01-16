@@ -41,7 +41,7 @@ fs_distance(double *a, double *b, int len)
 double
 fs_similarity(double dist)
 {
-	return 1.0 / (0.1 + dist);
+	return 1.0 / (0.001 + dist);
 }
 
 /*
