@@ -18,7 +18,7 @@
 #define CFS_MIN_COMPRESSED_SIZE(size) ((size)*2/3)
 
 /*
- * FIXME 
+ * FIXME
  */
 #define LZ_COMPRESSOR     1
 #define ZLIB_COMPRESSOR   2
@@ -71,7 +71,7 @@ typedef struct
 	int            max_iterations;
 	bool           gc_enabled;
 	CfsStatistic   gc_stat;
-	uint8          cipher_key[CFS_CIPHER_KEY_SIZE]; /* FIXME Is it the key itself? Or some modification?*/ 
+	uint8          cipher_key[CFS_CIPHER_KEY_SIZE];
 } CfsState;
 
 typedef struct 

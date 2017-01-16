@@ -1227,11 +1227,11 @@ movedb(const char *dbname, const char *tblspcname)
 		/*
 		 * Copy files from the old tablespace to the new one
 		 */
-		if (src_compressed ^ dst_compressed) { 
+		if (src_compressed ^ dst_compressed)
 			copyzipdir(src_dbpath, src_compressed, dst_dbpath, dst_compressed);
-		} else { 
+		else
 			copydir(src_dbpath, dst_dbpath, false);
-		}
+
 
 		/*
 		 * Record the filesystem change in XLOG

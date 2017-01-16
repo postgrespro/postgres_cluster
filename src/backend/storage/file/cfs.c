@@ -807,6 +807,7 @@ static bool cfs_gc_file(char* map_path)
 					Assert(rc);
 					cfs_decrypt(block, (off_t)i*BLCKSZ, size);
 					res = cfs_decompress(decomressedBlock, BLCKSZ, block, size);
+
 					if (res != BLCKSZ)
 					{
 						pg_atomic_fetch_sub_u32(&map->lock, CFS_GC_LOCK); /* release lock */

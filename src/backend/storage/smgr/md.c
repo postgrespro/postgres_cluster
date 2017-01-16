@@ -211,7 +211,7 @@ typedef struct
 
 static bool md_use_compression(RelFileNodeBackend rnode, ForkNumber forknum)
 {
-	static HTAB* tblspaceMap; 
+	static HTAB* tblspaceMap;
 	char* compressionFilePath;
 	FILE* compressionFile;
 	bool found;
@@ -222,39 +222,43 @@ static bool md_use_compression(RelFileNodeBackend rnode, ForkNumber forknum)
 		|| rnode.node.spcNode == DEFAULTTABLESPACE_OID 
 		|| rnode.node.spcNode == GLOBALTABLESPACE_OID
 		|| rnode.node.relNode < FirstNormalObjectId)
-	{
 		return false;
-	}
-	if (tblspaceMap == NULL) { 
+
+	if (tblspaceMap == NULL)
+	{
 		HASHCTL ctl = {0};
 		ctl.keysize = sizeof(Oid);
 		ctl.entrysize = sizeof(TablespaceStatus);
 		tblspaceMap = hash_create("tablespace_map", 256, &ctl, HASH_ELEM);
 	}
+
 	ts = hash_search(tblspaceMap, &rnode.node.spcNode, HASH_ENTER, &found);
-	if (!found) { 
+
+	if (!found)
+	{
 		compressionFilePath = psprintf("pg_tblspc/%u/%s/pg_compression", 
 									   rnode.node.spcNode,
 									   TABLESPACE_VERSION_DIRECTORY);
 		compressionFile = fopen(compressionFilePath, "r");
-		if (compressionFile != NULL)  { 
+
+		if (compressionFile != NULL)
+		{
 			char algorithm[64];
-			if (fgets(algorithm, sizeof algorithm, compressionFile) == NULL) { 
+			if (fgets(algorithm, sizeof algorithm, compressionFile) == NULL)
 				elog(ERROR, "Failed to read compression info file %s: %m", compressionFilePath);
-			}
-			if (strcmp(algorithm, cfs_algorithm()) != 0) { 
+
+			if (strcmp(algorithm, cfs_algorithm()) != 0)
 				elog(ERROR, "Tablespace was compressed using %s algorithm, but %s is currently used", 
 					 algorithm, cfs_algorithm());
-			}
+
 			fclose(compressionFile);
 			ts->compressed = true;
-		} else { 
-			ts->compressed = false;
 		}
+		else
+			ts->compressed = false;
 	}
 	return ts->compressed;
 }
-
 
 /*
  *	mdinit() -- Initialize private state for magnetic disk storage manager.
@@ -358,9 +362,7 @@ mdcreate(SMgrRelation reln, ForkNumber forkNum, bool isRedo)
 		return;					/* created and opened already... */
 
 	if (md_use_compression(reln->smgr_rnode, forkNum))
-	{
 		flags |= PG_COMPRESSION;
-	}
 
 	Assert(reln->md_fd[forkNum] == NULL);
 
@@ -490,9 +492,9 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 			ereport(WARNING,
 					(errcode_for_file_access(),
 					 errmsg("could not remove file \"%s\": %m", path)));
-		} 
-		else if (forkNum == MAIN_FORKNUM) 
-		{ 	
+		}
+		else if (forkNum == MAIN_FORKNUM)
+		{
 			sprintf(segpath, "%s.cfm", path);
 			unlink(segpath);
 		}
@@ -502,9 +504,11 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 		if (md_use_compression(rnode, forkNum))
 		{
 			File file = PathNameOpenFile(path, O_RDWR | PG_BINARY | PG_COMPRESSION, 0);
-			if (file >= 0) {
+			if (file >= 0)
+			{
 				elog(LOG, "Truncate file %s", path);
-				if (FileTruncate(file, 0) < 0) { 
+				if (FileTruncate(file, 0) < 0)
+				{
 					ereport(WARNING,
 							(errcode_for_file_access(),
 							 errmsg("could not truncate file \"%s\": %m", path)));
@@ -520,12 +524,12 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 			fd = OpenTransientFile(path, O_RDWR | PG_BINARY, 0);
 			if (fd >= 0)
 			{
-				int                     save_errno;
-				
+				int save_errno;
+
 				ret = ftruncate(fd, 0);
 				save_errno = errno;
 				CloseTransientFile(fd);
-				errno = save_errno;					   
+				errno = save_errno;
 			}
 			else
 				ret = -1;
@@ -544,7 +548,6 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 	if (ret >= 0)
 	{
 		BlockNumber segno;
-
 		/*
 		 * Note that because we loop until getting ENOENT, we will correctly
 		 * remove all inactive segments as well as active ones.
@@ -561,7 +564,8 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 					   errmsg("could not remove file \"%s\": %m", segpath)));
 				break;
 			}
-			if (forkNum == MAIN_FORKNUM) { 	
+			if (forkNum == MAIN_FORKNUM)
+			{
 				sprintf(segpath, "%s.%u.cfm", path, segno);
 				unlink(segpath);
 			}
@@ -674,9 +678,7 @@ mdopen(SMgrRelation reln, ForkNumber forknum, int behavior)
 	path = relpath(reln->smgr_rnode, forknum);
 
 	if (md_use_compression(reln->smgr_rnode, forknum))
-	{
 		flags |= PG_COMPRESSION;
-	}
 
 	fd = PathNameOpenFile(path, flags, 0600);
 
@@ -1488,13 +1490,12 @@ mdpostckpt(void)
 						(errcode_for_file_access(),
 						 errmsg("could not remove file \"%s\": %m", path)));
 		}
-		/* 
-		 * Remove compression map if any 
-		 */
+
+		/* Remove compression map if any. */
 		map_path = psprintf("%s.cfm", path);
 		unlink(map_path);
 		pfree(map_path);
-		
+
 		pfree(path);
 
 		/* And remove the list entry */
@@ -1849,9 +1850,7 @@ _mdfd_openseg(SMgrRelation reln, ForkNumber forknum, BlockNumber segno,
 	char	   *fullpath;
 
 	if (md_use_compression(reln->smgr_rnode, forknum))
-	{
 		oflags |= PG_COMPRESSION;
-	}
 
 	fullpath = _mdfd_segpath(reln, forknum, segno);
 

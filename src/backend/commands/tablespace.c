@@ -1062,21 +1062,26 @@ AlterTableSpaceOptions(AlterTableSpaceOptionsStmt *stmt)
 	/* If tablespace should be compressed */
 	compressed = getBoolOption(stmt->options, "compression", false);
 	
-	if (compressed ^ is_tablespace_compressed(tablespaceoid)) {
+	if (compressed ^ is_tablespace_compressed(tablespaceoid))
+	{
 		char* tbsdir = psprintf("pg_tblspc/%u/%s", tablespaceoid, TABLESPACE_VERSION_DIRECTORY);
-		if (!directory_is_empty(tbsdir)) {
+
+		if (!directory_is_empty(tbsdir))
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("It is not possible to toggle compression option for tablespace")));
-		} else { 
+		else
+		{
 			char* compressionFilePath = psprintf("%s/pg_compression", tbsdir);
-			if (compressed) { 
+
+			if (compressed)
+			{
 				FILE* comp = fopen(compressionFilePath, "w");
 				fputs(cfs_algorithm(), comp);
 				fclose(comp);
-			} else {
-				unlink(compressionFilePath);
 			}
+			else
+				unlink(compressionFilePath);
 		}
 	}
 
