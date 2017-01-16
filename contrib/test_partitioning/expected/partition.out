@@ -75,3 +75,16 @@ SELECT * FROM pathman_partition_list;
  abc    | abc_3     |        1 | id       |           | 
 (4 rows)
 
+DROP TABLE abc CASCADE;
+NOTICE:  drop cascades to 4 other objects
+/* Create hash partitioned table */
+CREATE TABLE abc(id serial)
+PARTITION BY HASH (id) PARTITIONS (3);
+SELECT * FROM pathman_partition_list;
+ parent | partition | parttype | partattr | range_min | range_max 
+--------+-----------+----------+----------+-----------+-----------
+ abc    | abc_0     |        1 | id       |           | 
+ abc    | abc_1     |        1 | id       |           | 
+ abc    | abc_2     |        1 | id       |           | 
+(3 rows)
+
