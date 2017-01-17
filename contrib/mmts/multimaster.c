@@ -1133,7 +1133,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		MTM_TXTRACE(x, "recovery? 5");
 		MtmResetTransaction();
 		MTM_TXTRACE(x, "recovery? 6");
-	} else { 
+	} else if (!ts->isLocal)  { 
 		MTM_TXTRACE(x, "not recovery?");
 		Mtm2PCVoting(x, ts);
 		MtmUnlock();
@@ -1170,18 +1170,19 @@ MtmPreCommitPreparedTransaction(MtmCurrentTrans* x)
 		ts = tm->state;
 
 		Assert(MtmIsCoordinator(ts));
+		if (!ts->isLocal) { 
+			ts->votingCompleted = false;
+			ts->votedMask = 0;
+			ts->procno = MyProc->pgprocno;
+			MTM_LOG2("Coordinator of transaction %s sends MSG_PRECOMMIT", ts->gid);
+			Assert(replorigin_session_origin == InvalidRepOriginId);
+			MtmUnlock();
+			SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
+			//MtmSend2PCMessage(ts, MSG_PRECOMMIT);
+			MtmLock(LW_EXCLUSIVE);
 
-		ts->votingCompleted = false;
-		ts->votedMask = 0;
-		ts->procno = MyProc->pgprocno;
-		MTM_LOG2("Coordinator of transaction %s sends MSG_PRECOMMIT", ts->gid);
-		Assert(replorigin_session_origin == InvalidRepOriginId);
-		MtmUnlock();
-		SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
-		//MtmSend2PCMessage(ts, MSG_PRECOMMIT);
-		MtmLock(LW_EXCLUSIVE);
-
-		Mtm2PCVoting(x, ts);
+			Mtm2PCVoting(x, ts);
+		}
 
 		x->xid = ts->xid;
 		x->csn = ts->csn;
