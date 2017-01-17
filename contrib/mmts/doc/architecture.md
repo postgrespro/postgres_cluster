@@ -15,7 +15,7 @@ To be able to deal with crashes E3PC commit protocol was used [1][2]. Main idea 
 
 This process summarized on following diagram:
 
-![](mmts_commit.svg)
+![](mmts_commit.svg?raw=true)
 
 Here user, connected to a backend (BE) decides to commit his transaction. Multi-master extension hooks that commit and changes it to a PREPARE statement. During transaction execution walsender process (WS) already started to decode transaction to "reorder buffer", and by the time when PREPARE statement happend WS starting sending our transaction to all neighbouring nodes (cohort). Then cohort nodes applies that transaction in walreceiver process (WR) and, after succes, signaling arbbiter process (Arb on diagram, custom background worker implemented in multimaster) to send vote for transaction (prepared) on initiating node.
 Arbiter process on initiating node wait until all nodes from cohort will send vote for transaction; after that he send "precommit" messages and waits till all nodes will respond to that with "precommited" message.
