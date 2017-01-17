@@ -2432,6 +2432,14 @@ alter_table_cmd:
 
 					$$ = (Node *) n;
 				}
+			| RENAME PARTITION relation_expr TO name
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_RenamePartition;
+					n->partitions = list_make1($3);
+					n->name = $5;
+					$$ = (Node *)n;
+				}
 		;
 
 alter_column_default:

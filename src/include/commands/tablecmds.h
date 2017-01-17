@@ -90,5 +90,6 @@ extern void RangeVarCallbackOwnsRelation(const RangeVar *relation,
 extern void AtExecMergePartitions(Relation rel, List *partitions);
 extern void AtExecAddRangePartition(Oid relid, AlterTableCmd *cmd);
 extern void AtExecSplitPartition(Oid relid, AlterTableCmd *cmd);
+extern void AtExecRenamePartition(Oid relid, AlterTableCmd *cmd);
 
 #endif   /* TABLECMDS_H */

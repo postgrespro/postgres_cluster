@@ -378,3 +378,35 @@ RangeVarGetNamespaceId(const RangeVar *rangevar)
 
 	return namespace_id;
 }
+
+/*
+ * Rename partition is just a rename table statement with additional
+ * checks
+ */
+void
+rename_partition(Oid parent, AlterTableCmd *cmd)
+{
+	Oid		partition;
+
+	/* TODO: Check that parent is an actual parent of partition */
+
+	Assert(list_length(cmd->partitions) == 1);
+
+	partition = RangeVarGetRelid((RangeVar *) linitial(cmd->partitions),
+								 NoLock,
+								 false);
+
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "could not connect using SPI");
+
+	/*
+	 * We cannot just execute RenameStmt because in this case EventTrigger
+	 * won't fire. And pg_pathman relies on it
+	 *
+	 * XXX: Probably we could invoke even trigger from here. Need to be
+	 * considered more thoroughly.
+	 */
+	pm_alter_partition(partition, cmd->name, InvalidOid, NULL);
+
+	SPI_finish();
+}

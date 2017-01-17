@@ -2861,11 +2861,11 @@ _copyAlterTableCmd(const AlterTableCmd *from)
 	/* TODO: write a decent copy func */
 	// newnode->partitions = from->partitions;
 
-	if (from->partition)
-		// COPY_POINTER_FIELD(partition, sizeof(RangePartitionInfo));
-		COPY_NODE_FIELD(partition);
-	else
-		newnode->partition = NULL;
+	// if (from->partition)
+	// 	// COPY_POINTER_FIELD(partition, sizeof(RangePartitionInfo));
+	// 	COPY_NODE_FIELD(partition);
+	// else
+	// 	newnode->partition = NULL;
 
 	return newnode;
 }

@@ -1562,7 +1562,10 @@ typedef enum AlterTableType
 
 	AT_AddPartition,			/* ADD PARTITION */
 	AT_MergePartitions,			/* MERGE PARTITIONS */
-	AT_SplitPartition			/* SPLIT PARTITION */
+	AT_SplitPartition,			/* SPLIT PARTITION */
+	AT_RenamePartition,			/* RENAME PARTITION */
+	AT_DropPartition,			/* DROP PARTITION */
+	AT_MovePartition			/* MOVE PARTITION */
 } AlterTableType;
 
 typedef struct ReplicaIdentityStmt
@@ -1585,7 +1588,7 @@ typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
 	bool		missing_ok;		/* skip error if missing? */
 
 	List	   *partitions;		/* For partitions commands */
-	RangePartitionInfo *partition;
+	// RangePartitionInfo *partition;
 } AlterTableCmd;
 
 
