@@ -2447,6 +2447,14 @@ alter_table_cmd:
 					n->partitions = list_make1($3);
 					$$ = (Node *)n;
 				}
+			| MOVE PARTITION qualified_name TABLESPACE name
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_MovePartition;
+					n->partitions = list_make1($3);
+					n->name = $5;
+					$$ = (Node *)n;
+				}
 		;
 
 alter_column_default:

@@ -469,13 +469,20 @@ void pm_alter_partition(Oid relid,
 
 	InitFuncArgs(&args, 4);
 	PG_SETARG_DATUM(&args, 0, OIDOID, relid);
-	PG_SETARG_DATUM(&args, 1, TEXTOID, CStringGetTextDatum(new_relname));
 
+	/* Set name if needed */
+	if (new_relname)
+		PG_SETARG_DATUM(&args, 1, TEXTOID, CStringGetTextDatum(new_relname));
+	else
+		PG_SETARG_NULL(&args, 1, TEXTOID);
+
+	/* Set schema */
 	if (new_namespace != InvalidOid)
 		PG_SETARG_DATUM(&args, 2, OIDOID, new_namespace);
 	else
 		PG_SETARG_NULL(&args, 2, OIDOID);
 
+	/* Set tablespace */
 	if (new_tablespace != NULL)
 		PG_SETARG_DATUM(&args, 3, TEXTOID, CStringGetTextDatum(new_tablespace));
 	else

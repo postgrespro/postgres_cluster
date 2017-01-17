@@ -16,6 +16,7 @@
 #include "commands/partition.h"
 #include "commands/pathman_wrapper.h"
 #include "commands/tablecmds.h"
+#include "commands/event_trigger.h"
 #include "executor/spi.h"
 #include "nodes/value.h"
 #include "utils/builtins.h"
@@ -406,6 +407,55 @@ drop_partition(Oid parent, AlterTableCmd *cmd)
 
 	RemoveRelations(n);
 }
+
+
+/*
+ * Set a new tablespace for partition
+ */
+void
+move_partition(Oid parent, AlterTableCmd *cmd)
+{
+	Oid				partition;
+
+	/* TODO: Consider possibility to run SET TABLESPACE command */
+	// AlterTableStmt *ts_stmt;
+	// AlterTableCmd  *ts_cmd;
+	// Oid				partition;
+
+	// Assert(list_length(cmd->partitions) == 1);
+
+	// partition = RangeVarGetRelid((RangeVar *) linitial(cmd->partitions),
+	// 							 NoLock,
+	// 							 false);
+
+	// ts_cmd = makeNode(AlterTableCmd);
+	// ts_cmd->subtype = AT_SetTableSpace;
+	// ts_cmd->name = cmd->name;
+
+	// ts_stmt = makeNode(AlterTableStmt);
+	// ts_stmt->relation = (RangeVar *) linitial(cmd->partitions);
+	// ts_stmt->cmds = list_make1(ts_cmd);
+	// ts_stmt->relkind = OBJECT_TABLE;
+	// ts_stmt->missing_ok = false;
+
+	// EventTriggerAlterTableStart((Node *) ts_stmt);
+	// AlterTableInternal(partition, list_make1(ts_cmd), false);
+	// EventTriggerAlterTableEnd();
+
+	Assert(list_length(cmd->partitions) == 1);
+
+	partition = RangeVarGetRelid((RangeVar *) linitial(cmd->partitions),
+								 NoLock,
+								 false);
+
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "could not connect using SPI");
+
+	pm_alter_partition(partition, NULL, InvalidOid, cmd->name);
+
+	SPI_finish();
+}
+
 
 static char *
 RangeVarGetString(const RangeVar *rangevar)
