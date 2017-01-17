@@ -3777,6 +3777,9 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		case AT_RenamePartition:
 			rename_partition(rel->rd_id, cmd);
 			break;
+		case AT_DropPartition:
+			drop_partition(rel->rd_id, cmd);
+			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);

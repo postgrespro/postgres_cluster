@@ -2440,6 +2440,13 @@ alter_table_cmd:
 					n->name = $5;
 					$$ = (Node *)n;
 				}
+			| DROP PARTITION qualified_name
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_DropPartition;
+					n->partitions = list_make1($3);
+					$$ = (Node *)n;
+				}
 		;
 
 alter_column_default:

@@ -29,7 +29,7 @@ static void create_range_partitions(CreateStmt *stmt, Oid relid, const char *att
 static Node *cookPartitionKeyValue(Oid relid, const char *raw, Node *raw_value);
 static char *RangeVarGetString(const RangeVar *rangevar);
 static Oid RangeVarGetNamespaceId(const RangeVar *rangevar);
-
+static List* makeNameListFromRangeVar(const RangeVar *rangevar);
 
 #define equalstr(a, b)	\
 	(((a) != NULL && (b) != NULL) ? (strcmp(a, b) == 0) : (a) == (b))
@@ -352,33 +352,6 @@ split_range_partition(Oid parent,
 }
 
 
-static char *
-RangeVarGetString(const RangeVar *rangevar)
-{
-	if (!rangevar->schemaname)
-		return rangevar->relname;
-	else
-		return psprintf("%s.%s", rangevar->schemaname, rangevar->relname);
-}
-
-static Oid
-RangeVarGetNamespaceId(const RangeVar *rangevar)
-{
-	Oid		namespace_id;
-
-	if (rangevar->schemaname == NULL)
-	{
-		List	   *search_path = fetch_search_path(false);
-
-		namespace_id = linitial_oid(search_path);
-		list_free(search_path);
-	}
-	else
-		namespace_id = get_namespace_oid(rangevar->schemaname, false);
-
-	return namespace_id;
-}
-
 /*
  * Rename partition is just a rename table statement with additional
  * checks
@@ -400,13 +373,77 @@ rename_partition(Oid parent, AlterTableCmd *cmd)
 		elog(ERROR, "could not connect using SPI");
 
 	/*
-	 * We cannot just execute RenameStmt because in this case EventTrigger
-	 * won't fire. And pg_pathman relies on it
-	 *
-	 * XXX: Probably we could invoke even trigger from here. Need to be
-	 * considered more thoroughly.
+	 * We cannot just execute RenameStmt because in this case
+	 * process_utility_hook won't be called. And pg_pathman relies on this
 	 */
 	pm_alter_partition(partition, cmd->name, InvalidOid, NULL);
 
 	SPI_finish();
+}
+
+
+/*
+ * Drop partition
+ */
+void
+drop_partition(Oid parent, AlterTableCmd *cmd)
+{
+	DropStmt *n = makeNode(DropStmt);
+	RangeVar *partition;
+
+	/* TODO: Check that parent is an actual parent of partition */
+
+	Assert(list_length(cmd->partitions) == 1);
+
+	partition = (RangeVar *) linitial(cmd->partitions);
+
+	n->removeType = OBJECT_TABLE;
+	n->missing_ok = false;
+	n->objects = list_make1(makeNameListFromRangeVar(partition));
+	n->arguments = NIL;
+	n->behavior = DROP_RESTRICT;  // default behaviour
+	n->concurrent = false;
+
+	RemoveRelations(n);
+}
+
+static char *
+RangeVarGetString(const RangeVar *rangevar)
+{
+	if (!rangevar->schemaname)
+		return rangevar->relname;
+	else
+		return psprintf("%s.%s", rangevar->schemaname, rangevar->relname);
+}
+
+
+static Oid
+RangeVarGetNamespaceId(const RangeVar *rangevar)
+{
+	Oid		namespace_id;
+
+	if (rangevar->schemaname == NULL)
+	{
+		List	   *search_path = fetch_search_path(false);
+
+		namespace_id = linitial_oid(search_path);
+		list_free(search_path);
+	}
+	else
+		namespace_id = get_namespace_oid(rangevar->schemaname, false);
+
+	return namespace_id;
+}
+
+
+/*
+ * This is the inverse function for makeRangeVarFromNameList()
+ */
+static List*
+makeNameListFromRangeVar(const RangeVar *rangevar)
+{
+	Oid		namespace_id = RangeVarGetNamespaceId(rangevar);
+
+	return list_make2(makeString(get_namespace_name(namespace_id)),
+					  makeString(rangevar->relname));
 }

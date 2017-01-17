@@ -8,8 +8,8 @@
  *-------------------------------------------------------------------------
  */
 
-// #ifndef PARTITION_H
-// #define PARTITION_H
+#ifndef PARTITION_H
+#define PARTITION_H
 
 #include "postgres.h"
 #include "nodes/parsenodes.h"
@@ -20,4 +20,4 @@ extern void add_range_partition(Oid parent, RangePartitionInfo *rpinfo);
 extern void split_range_partition(Oid relid, AlterTableCmd *cmd);
 extern void rename_partition(Oid parent, AlterTableCmd *cmd);
 
-// #endif /* PARTITION_H */
+#endif /* PARTITION_H */
