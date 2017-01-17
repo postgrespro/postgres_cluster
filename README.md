@@ -65,7 +65,8 @@ cd ../../contrib/mmts && make install
 
 ### Docker
 
-Directory contrib/mmts also includes docker-compose.yml that is capable of building multi-master and starting 3 node cluster.
+Directory contrib/mmts also includes docker-compose.yml that is capable of building multi-master and starting 
+3 node cluster.
 
 ```sh
 cd contrib/mmts
@@ -136,7 +137,7 @@ Read description of all management functions at [functions](/contrib/mmts/doc/fu
 
 * Commit latency.
 Current implementation of logical replication sends data to subscriber nodes only after local commit, so in case of
-heavy-write transaction user will wait for transaction processing two times: on local node and al other nodes
+heavy-write transaction user will wait for transaction processing two times: on local node and on all other nodes
 (simultaneosly). We have plans to address this issue in future.
 
 * DDL replication.
