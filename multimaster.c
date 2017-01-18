@@ -1111,38 +1111,31 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 	MtmLock(LW_EXCLUSIVE);
 	ts = (MtmTransState*)hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
 	Assert(ts != NULL);
-	//if (x->gid[0]) MTM_LOG1("Preparing transaction %d (%s) at %ld", x->xid, x->gid, MtmGetCurrentTime());
 	if (!MtmIsCoordinator(ts) || Mtm->status == MTM_RECOVERY) {
-		MTM_TXTRACE(x, "recovery?");
 		MTM_LOG3("Preparing transaction %d (%s) at %ld", x->xid, x->gid, MtmGetCurrentTime());
 		Assert(x->gid[0]);
 		ts->votingCompleted = true;
-		MTM_TXTRACE(x, "recovery? 1");
 		if (Mtm->status != MTM_RECOVERY/* || Mtm->recoverySlot != MtmReplicationNodeId*/) {
-			MTM_TXTRACE(x, "recovery? 2"); 
 			MtmSend2PCMessage(ts, MSG_PREPARED); /* send notification to coordinator */
 			if (!MtmUseDtm) { 
 				ts->status = TRANSACTION_STATUS_UNKNOWN;
 			}
 		} else {
-			MTM_TXTRACE(x, "recovery? 3");
 			ts->status = TRANSACTION_STATUS_UNKNOWN;
 		}
-		MTM_TXTRACE(x, "recovery? 4");
 		MtmUnlock();
-		MTM_TXTRACE(x, "recovery? 5");
 		MtmResetTransaction();
-		MTM_TXTRACE(x, "recovery? 6");
-	} else if (!ts->isLocal)  { 
-		MTM_TXTRACE(x, "not recovery?");
-		Mtm2PCVoting(x, ts);
+	} else { 
+		if (!ts->isLocal)  { 
+			Mtm2PCVoting(x, ts);
+		} else { 
+			ts->votingCompleted = true;
+		}
 		MtmUnlock();
 		if (x->isTwoPhase) { 
 			MtmResetTransaction();
 		}
 	}
-	MTM_TXTRACE(x, "recovery? 7");
-	//if (x->gid[0]) MTM_LOG1("Prepared transaction %d (%s) csn=%ld at %ld: %d", x->xid, x->gid, ts->csn, MtmGetCurrentTime(), ts->status);
 	if (Mtm->inject2PCError == 3) { 
 		Mtm->inject2PCError = 0;
 		elog(ERROR, "ERROR INJECTION for transaction %s (%lu)", x->gid, (long)x->xid);
@@ -1182,6 +1175,8 @@ MtmPreCommitPreparedTransaction(MtmCurrentTrans* x)
 			MtmLock(LW_EXCLUSIVE);
 
 			Mtm2PCVoting(x, ts);
+		} else { 
+			ts->status = TRANSACTION_STATUS_UNKNOWN;
 		}
 
 		x->xid = ts->xid;
