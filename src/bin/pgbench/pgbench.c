@@ -43,9 +43,6 @@
 #include <math.h>
 #include <signal.h>
 #include <sys/time.h>
-#ifdef HAVE_SYS_SELECT_H
-#include <sys/select.h>
-#endif
 
 #ifdef HAVE_SYS_RESOURCE_H
 #include <sys/resource.h>		/* for getrlimit */
@@ -56,6 +53,7 @@
 #endif
 
 #include "pgbench.h"
+#include "pg_socket.h"
 
 #define ERRCODE_UNDEFINED_TABLE  "42P01"
 
@@ -4339,10 +4337,10 @@ threadRun(void *arg)
 
 				timeout.tv_sec = min_usec / 1000000;
 				timeout.tv_usec = min_usec % 1000000;
-				nsocks = select(maxsock + 1, &input_mask, NULL, NULL, &timeout);
+				nsocks = pg_select(maxsock + 1, &input_mask, NULL, NULL, &timeout);
 			}
 			else
-				nsocks = select(maxsock + 1, &input_mask, NULL, NULL, NULL);
+				nsocks = pg_select(maxsock + 1, &input_mask, NULL, NULL, NULL);
 			if (nsocks < 0)
 			{
 				if (errno == EINTR)
