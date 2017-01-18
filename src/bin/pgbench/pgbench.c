@@ -811,21 +811,21 @@ doConnect(void)
 		values[4] = dbName;
 		keywords[5] = "fallback_application_name";
 		values[5] = progname;
-		keywords[6] = NULL;
-		values[6] = NULL;
 
 #ifdef WITH_RSOCKET
 		if (isRsocket)
 		{
-			keywords[7] = "with_rsocket";
-			values[7] = "true";
+			keywords[6] = "with_rsocket";
+			values[6] = "true";
+			keywords[7] = NULL;
+			values[7] = NULL;
 		}
 		else
-		{
-			keywords[7] = "with_rsocket";
-			values[7] = "false";
-		}
 #endif
+		{
+			keywords[6] = NULL;
+			values[6] = NULL;
+		}
 
 		new_pass = false;
 
