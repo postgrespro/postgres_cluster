@@ -182,6 +182,10 @@ char	   *login = NULL;
 char	   *dbName;
 const char *progname;
 
+#ifdef WITH_RSOCKET
+bool		isRsocket = false;
+#endif
+
 #define WSEP '@'				/* weight separator */
 
 volatile bool timer_exceeded = false;	/* flag from signal handler */
@@ -446,6 +450,9 @@ usage(void)
 	  "  -h, --host=HOSTNAME      database server host or socket directory\n"
 		   "  -p, --port=PORT          database server port number\n"
 		   "  -U, --username=USERNAME  connect as specified database user\n"
+#ifdef WITH_RSOCKET
+		  "      --with-rsocket       use rsocket instead of socket\n"
+#endif
 		 "  -V, --version            output version information, then exit\n"
 		   "  -?, --help               show this help, then exit\n"
 		   "\n"
@@ -783,7 +790,11 @@ doConnect(void)
 	 */
 	do
 	{
+#ifdef WITH_RSOCKET
+#define PARAMS_ARRAY_SIZE	8
+#else
 #define PARAMS_ARRAY_SIZE	7
+#endif
 
 		const char *keywords[PARAMS_ARRAY_SIZE];
 		const char *values[PARAMS_ARRAY_SIZE];
@@ -802,6 +813,19 @@ doConnect(void)
 		values[5] = progname;
 		keywords[6] = NULL;
 		values[6] = NULL;
+
+#ifdef WITH_RSOCKET
+		if (isRsocket)
+		{
+			keywords[7] = "with_rsocket";
+			values[7] = "true";
+		}
+		else
+		{
+			keywords[7] = "with_rsocket";
+			values[7] = "false";
+		}
+#endif
 
 		new_pass = false;
 
@@ -3403,6 +3427,9 @@ main(int argc, char **argv)
 		{"sampling-rate", required_argument, NULL, 4},
 		{"aggregate-interval", required_argument, NULL, 5},
 		{"progress-timestamp", no_argument, NULL, 6},
+#ifdef WITH_RSOCKET
+		{"with-rsocket", no_argument, NULL, 7},
+#endif
 		{NULL, 0, NULL, 0}
 	};
 
@@ -3750,6 +3777,11 @@ main(int argc, char **argv)
 				progress_timestamp = true;
 				benchmarking_option_set = true;
 				break;
+#ifdef WITH_RSOCKET
+			case 7:
+				isRsocket = true;
+				break;
+#endif
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 				exit(1);
