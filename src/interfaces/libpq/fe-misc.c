@@ -725,6 +725,7 @@ retry3:
 		 * the message "long" once we have acquired 32k ...
 		 */
 		if (conn->inEnd > 32768 &&
+			nread >= 8192 &&
 			(conn->inBufSize - conn->inEnd) >= 8192)
 		{
 			someread = 1;
