@@ -2342,6 +2342,11 @@ keep_going:						/* We will come back to here until there is
 							continue;
 						}
 					}
+
+					/*
+					 * Do not use nonblock mode for rsocket. We set nonblock
+					 * mode for rsocket after rconnect().
+					 */
 					if (!conn->isRsocket &&
 						!pg_set_noblock(conn->sock, conn->isRsocket))
 					{
@@ -2479,6 +2484,20 @@ keep_going:						/* We will come back to here until there is
 					}
 					else
 					{
+						/*
+						 * Set nonblock mode for rsocket. We didn't set it
+						 * before.
+						 */
+						if (conn->isRsocket &&
+							!pg_set_noblock(conn->sock, conn->isRsocket))
+						{
+							appendPQExpBuffer(&conn->errorMessage,
+											  libpq_gettext("could not set socket to nonblocking mode: %s\n"),
+								SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
+							pqDropConnection(conn, true);
+							conn->addr_cur = addr_cur->ai_next;
+							continue;
+						}
 						/*
 						 * Hm, we're connected already --- seems the "nonblock
 						 * connection" wasn't.  Advance the state machine and
