@@ -17,9 +17,9 @@
 ```multimaster.ignore_tables_without_pk``` Do not replicate tables withpout primary key. Boolean.
 
 
-## Questinable
+## Questionable
 
-(probably we will delete that variables, most of them useful only for development purposes --stas)
+(probably we will delete that variables, most of them are useful only for development purposes --stas)
 
 ```multimaster.cluster_name``` Name of the cluster, desn't affect anything. Just in case.
 
