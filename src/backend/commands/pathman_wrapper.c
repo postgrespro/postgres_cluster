@@ -23,6 +23,8 @@
 #include "utils/lsyscache.h"
 
 
+static Datum construct_text_array(char **arr, int nelem);
+
 /*
  * Make pg_pathman's function call
  */
@@ -287,22 +289,54 @@ void pm_get_part_range(Oid relid, int partnum, Oid atttype, Datum *min, Datum *m
 void
 pm_create_hash_partitions(Oid relid,
 						  const char *attname,
-						  uint32_t partitions_count)
+						  uint32_t partitions_count,
+						  char **relnames,
+						  char **tablespaces)
 {
 	FuncArgs		args;
 	bool			ret;
 
-	InitFuncArgs(&args, 3);
+	InitFuncArgs(&args, 5);
 	PG_SETARG_DATUM(&args, 0, OIDOID, ObjectIdGetDatum(relid));
 	PG_SETARG_DATUM(&args, 1, TEXTOID, CStringGetTextDatum(attname));
 	PG_SETARG_DATUM(&args, 2, INT4OID, ObjectIdGetDatum(UInt32GetDatum(partitions_count)));
+	PG_SETARG_DATUM(&args, 3, BOOLOID, BoolGetDatum(false));
 
-	ret = pathman_invoke("create_hash_partitions($1, $2, $3)", &args);
+	if (relnames != NULL)
+		PG_SETARG_DATUM(&args, 4, TEXTARRAYOID,
+						construct_text_array(relnames, partitions_count));
+	else
+		PG_SETARG_NULL(&args, 4, TEXTARRAYOID);
+
+	ret = pathman_invoke("create_hash_partitions($1, $2, $3, $4, $5)", &args);
 	FreeFuncArgs(&args);
 
 	if (!ret)
 		elog(ERROR, "Hash partitions creation failed");
 }
+
+
+static Datum
+construct_text_array(char **arr, int nelem)
+{
+	Datum	   *datums = palloc(sizeof(Datum) * nelem);
+	int			i;
+	int16		elemlen;
+	bool		elembyval;
+	char		elemalign;
+	ArrayType  *at;
+
+	for (i = 0; i < nelem; i++)
+		datums[i] = CStringGetTextDatum(arr[i]);
+
+	get_typlenbyvalalign(TEXTOID, &elemlen, &elembyval, &elemalign);
+
+	at = construct_array(datums, nelem, TEXTOID,
+						 elemlen, elembyval, elemalign);
+
+	return PointerGetDatum(at);
+}
+
 
 /*
  *

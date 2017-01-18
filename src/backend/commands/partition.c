@@ -26,6 +26,7 @@
 #include "access/htup_details.h"
 
 
+static void create_hash_partitions(CreateStmt *stmt, Oid relid, const char* attname);
 static void create_range_partitions(CreateStmt *stmt, Oid relid, const char *attname);
 static Node *cookPartitionKeyValue(Oid relid, const char *raw, Node *raw_value);
 static char *RangeVarGetString(const RangeVar *rangevar);
@@ -49,9 +50,7 @@ create_partitions(CreateStmt *stmt, Oid relid)
 	{
 		case P_HASH:
 			{
-				pm_create_hash_partitions(relid,
-										  strVal(attname),
-										  pinfo->partitions_count);
+				create_hash_partitions(stmt, relid, strVal(attname));
 				break;
 			}
 		case P_RANGE:
@@ -63,6 +62,39 @@ create_partitions(CreateStmt *stmt, Oid relid)
 
 	SPI_finish(); /* close SPI connection */
 }
+
+
+static void
+create_hash_partitions(CreateStmt *stmt, Oid relid, const char* attname)
+{
+	PartitionInfo *pinfo = (PartitionInfo *) stmt->partition_info;
+	char		 **relnames = NULL;
+
+	if (pinfo->partitions_count > 0)
+	{
+		ListCell   *lc;
+		int			i = 0;
+
+		/* Convert RangeVars into cstrings */
+		relnames = palloc(sizeof(char *) * pinfo->partitions_count);
+		foreach(lc, pinfo->partitions)
+		{
+			RangePartitionInfo *p = (RangePartitionInfo *) lfirst(lc);
+
+			relnames[i] = RangeVarGetString(p->relation);
+			i++;
+		}
+	}
+
+	pm_create_hash_partitions(relid,
+							  attname,
+							  pinfo->partitions_count,
+							  relnames,
+							  NULL);
+
+	pfree(relnames);
+}
+
 
 /*
  * Extracts partitioning parameters from statement, creates partitioned table

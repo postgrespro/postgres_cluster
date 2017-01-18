@@ -546,9 +546,10 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <boolean> opt_if_not_exists
 
 %type <partinfo> partitionType;
-%type <rangeinfo> OptRangePartitionsListElement PartitionNameTablespace OptIntoSinglePartition;
-%type <list>	OptRangePartitionsList OptRangePartitions PartitionNameTablespaceList
-				OptIntoPartitions
+%type <rangeinfo> OptRangePartitionsListElement OptHashPartitionsListElement
+				PartitionNameTablespace OptIntoSinglePartition;
+%type <list>	OptRangePartitionsList OptHashPartitionsList OptRangePartitions
+				PartitionNameTablespaceList OptIntoPartitions
 %type <node>	OptRangePartitionsInterval
 
 /*
@@ -3036,6 +3037,15 @@ partitionType:	HASH '(' a_expr ')' PARTITIONS '(' Iconst ')'
 						n->partitions_count = $7;
 						$$ = (PartitionInfo *)n;
 					}
+				| HASH '(' a_expr ')' '(' OptHashPartitionsList ')'
+					{
+						PartitionInfo *n = (PartitionInfo *) palloc(sizeof(PartitionInfo));
+						n->partition_type = P_HASH;
+						n->key = $3;
+						n->partitions = $6;
+						n->partitions_count = list_length(n->partitions);
+						$$ = (PartitionInfo *)n;
+					}
 				| RANGE '(' columnref ')' OptRangePartitionsInterval OptRangePartitions
 					{
 						PartitionInfo *n = (PartitionInfo *) palloc(sizeof(PartitionInfo));
@@ -3066,11 +3076,31 @@ OptRangePartitionsList:
 OptRangePartitionsListElement:
 			PARTITION qualified_name VALUES LESS THAN '(' b_expr ')' OptTableSpace
 				{
-					//RangePartitionInfo *n = (RangePartitionInfo *) palloc(sizeof(RangePartitionInfo));
 					RangePartitionInfo *n = makeNode(RangePartitionInfo);
 					n->relation = $2;
 					n->upper_bound = $7;
 					n->tablespace = $9;
+					$$ = (RangePartitionInfo *)n;
+				}
+		;
+
+OptHashPartitionsList:
+			OptHashPartitionsListElement
+				{
+					$$ = list_make1($1);
+				}
+			| OptHashPartitionsList ',' OptHashPartitionsListElement
+				{
+					$$ = lappend($1, $3);
+				}
+		;
+
+OptHashPartitionsListElement:
+			PARTITION qualified_name OptTableSpace
+				{
+					RangePartitionInfo *n = makeNode(RangePartitionInfo);
+					n->relation = $2;
+					n->tablespace = $3;
 					$$ = (RangePartitionInfo *)n;
 				}
 		;

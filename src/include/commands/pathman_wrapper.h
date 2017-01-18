@@ -46,7 +46,9 @@ char *pm_get_partition_key(Oid relid);
 
 void pm_create_hash_partitions(Oid relid,
 						  const char *attname,
-						  uint32_t partitions_count);
+						  uint32_t partitions_count,
+						  char **relnames,
+						  char **tablespaces);
 void pm_create_range_partitions(Oid relid,
 						const char *attname,
 						Oid atttype,
