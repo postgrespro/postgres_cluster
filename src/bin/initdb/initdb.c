@@ -1538,7 +1538,7 @@ bootstrap_template1(void)
 	unsetenv("PGCLIENTENCODING");
 
 	snprintf(cmd, sizeof(cmd),
-			 "\"%s\" --boot -x1 %s %s %lx %s %lx %s %lx %s %s",
+			 "\"%s\" --boot -x1 %s %s %lx %s %lx %s %ld %s %s",
 			 backend_exec,
 			 data_checksums ? "-k" : "",
 			 "-X", start_xid,
@@ -2705,7 +2705,7 @@ usage(const char *progname)
 	printf(_("  -n, --noclean             do not clean up after errors\n"));
 	printf(_("  -N, --nosync              do not wait for changes to be written safely to disk\n"));
 	printf(_("  -o, --multixact-offset=START_MX_OFFSET\n"
-			 "                            specify start multixact offset value in hex format for new db instance\n"
+			 "                            specify start multixact offset value in decimal format for new db instance\n"
 			 "                            to test 64-bit xids, default value is 0\n"));
 	printf(_("  -s, --show                show internal settings\n"));
 	printf(_("  -S, --sync-only           only sync data directory\n"));
@@ -3483,9 +3483,9 @@ main(int argc, char *argv[])
 				do_sync = false;
 				break;
 			case 'o':
-				if (sscanf(optarg, "%lx", &start_mx_offset) != 1)
+				if (sscanf(optarg, "%ld", &start_mx_offset) != 1)
 				{
-					fprintf(stderr, "%s: invalid hex value of multixact-offset\n", progname);
+					fprintf(stderr, "%s: invalid decimal value of multixact-offset\n", progname);
 					exit(1);
 				}
 				break;

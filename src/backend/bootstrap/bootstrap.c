@@ -257,9 +257,9 @@ AuxiliaryProcessMain(int argc, char *argv[])
 				}
 				break;
 			case 'o':
-				if (sscanf(optarg, "%lx", &start_mx_offset) != 1)
+				if (sscanf(optarg, "%ld", &start_mx_offset) != 1)
 				{
-					fprintf(stderr, "%s: invalid hex value of multixact-offset\n", progname);
+					fprintf(stderr, "%s: invalid decimal value of multixact-offset\n", progname);
 					exit(1);
 				}
 				break;
