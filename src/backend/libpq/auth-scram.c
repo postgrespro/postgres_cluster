@@ -968,5 +968,26 @@ generate_nonce(char *result, int len)
 {
 	/* Use the salt generated for SASL authentication */
 	memset(result, 0, len);
-	memcpy(result, MyProcPort->SASLSalt, Min(sizeof(MyProcPort->SASLSalt), len));
+	if (MyProcPort == NULL) { 
+		int count;
+		/* compute the salt to use for computing responses */
+		while (count < sizeof(MyProcPort->SASLSalt) && count < len)
+		{
+			char	byte;			
+			if (!pg_strong_random(&byte, 1))
+			{
+				elog(ERROR, "Could not generate random salt");
+			}			
+			/*
+			 * Only ASCII printable characters, except commas are accepted in
+			 * the nonce.
+			 */
+			if (byte < '!' || byte > '~' || byte == ',')
+				continue;
+			
+			result[count++] = byte;
+		}
+	} else { 		
+		memcpy(result, MyProcPort->SASLSalt, Min(sizeof(MyProcPort->SASLSalt), len));
+	}
 }

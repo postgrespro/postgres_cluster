@@ -11,7 +11,7 @@ psql -U postgres regression <<-SQL
 SQL
 
 ./pg_regress --use-existing \
-    --schedule=parallel_schedule \
+    --schedule=serial_schedule \
     --host=node1 \
     --user=postgres
 
