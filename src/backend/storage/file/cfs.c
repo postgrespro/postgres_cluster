@@ -842,7 +842,7 @@ static bool cfs_gc_file(char* map_path)
 		pg_atomic_write_u32(&map->usedSize, newSize);
 		pg_atomic_write_u32(&map->physSize, newSize);
 		map->generation += 1; /* force all backends to reopen the file */
-		
+
 		/* Before removing backup files and releasing locks
 		 * we need to flush updated map file */
 		if (cfs_msync(map) < 0)
@@ -906,7 +906,7 @@ static bool cfs_gc_file(char* map_path)
 	else if (cfs_state->max_iterations == 1)
 		elog(LOG, "%d: file %.*s: physical size %d, logical size %d, used %d, compression ratio %f",
 			 MyProcPid, suf, map_path, physSize, virtSize, usedSize, (double)virtSize/physSize);
-	
+
 	if (cfs_munmap(map) < 0)
 	{
 		elog(LOG, "CFS failed to unmap file %s: %m", map_path);
@@ -1204,7 +1204,7 @@ Datum cfs_compression_ratio(PG_FUNCTION_ARGS)
 
 			virtSize += pg_atomic_read_u32(&map->virtSize);
 			physSize += pg_atomic_read_u32(&map->physSize);
-			
+
 			if (cfs_munmap(map) < 0)
 				elog(LOG, "CFS failed to unmap file %s: %m", map_path);
 			if (close(md) < 0)
@@ -1255,7 +1255,7 @@ Datum cfs_fragmentation(PG_FUNCTION_ARGS)
 			}
 			usedSize += pg_atomic_read_u32(&map->usedSize);
 			physSize += pg_atomic_read_u32(&map->physSize);
-			
+
 			if (cfs_munmap(map) < 0)
 				elog(LOG, "CFS failed to unmap file %s: %m", map_path);
 			if (close(md) < 0)

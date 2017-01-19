@@ -20,6 +20,16 @@
 #include "storage/procarray.h"
 #include "storage/smgr.h"
 #include "utils/rel.h"
+#include "storage/cfs.h"
+#ifndef WIN32
+#include <sys/mman.h>
+#endif
+#include <sys/file.h>
+#include <sys/param.h>
+#include <sys/stat.h>
+#include <limits.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 PG_MODULE_MAGIC;
 
@@ -746,4 +756,54 @@ tuple_all_visible(HeapTuple tup, TransactionId OldestXmin, Buffer buffer)
 		return false;			/* xmin not old enough for all to see */
 
 	return true;
+}
+
+PG_FUNCTION_INFO_V1(pg_cfm);
+
+Datum
+pg_cfm(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	int32		segno = PG_GETARG_INT32(1);
+	Relation	rel = relation_open(relid, AccessShareLock);
+	char* path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
+	char* map_path = (char*)palloc(strlen(path) + 16);
+	int md;
+	FileMap* map;
+	TupleDesc tupdesc;
+	Datum		values[4];
+	bool		nulls[4];
+
+	if (segno == 0)
+		sprintf(map_path, "%s.cfm", path);
+	else
+		sprintf(map_path, "%s.%u.cfm", path, segno);
+
+	md = open(map_path, O_RDWR|PG_BINARY, 0);
+
+	map = cfs_mmap(md);
+	if (map == MAP_FAILED)
+		elog(ERROR, "pg_cfm failed to read map file %s: %m", map_path);
+
+	tupdesc = CreateTemplateTupleDesc(4, false);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "physSize", INT4OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "virtSize", INT4OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 3, "usedSize", INT4OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 4, "generation", INT8OID, -1, 0);
+	tupdesc = BlessTupleDesc(tupdesc);
+
+	MemSet(nulls, 0, sizeof(nulls));
+	values[0] = UInt32GetDatum(pg_atomic_read_u32(&map->physSize));
+	values[1] = UInt32GetDatum(pg_atomic_read_u32(&map->virtSize));
+	values[2] = UInt32GetDatum(pg_atomic_read_u32(&map->usedSize));
+	values[3] = UInt64GetDatum(map->generation);
+
+
+	if (cfs_munmap(map) < 0)
+		elog(ERROR, "pg_cfm failed to unmap file %s: %m", map_path);
+	if (close(md) < 0)
+		elog(ERROR, "pg_cfm failed to close file %s: %m", map_path);
+	relation_close(rel, AccessShareLock);
+
+	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));
 }

@@ -35,7 +35,9 @@
 #define CFS_COMPRESSOR ZLIB_COMPRESSOR
 #endif
 
-/* Encryption related variables*/
+/* Encryption related variables.
+ * TODO We're going to change this algorithm till PGPROEE2_0
+ */
 #define CFS_RC4_DROP_N 3072 
 #define CFS_CIPHER_KEY_SIZE 256
 

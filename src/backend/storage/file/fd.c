@@ -1665,6 +1665,7 @@ FileLock(File file)
 
 	cfs_lock_file(vfdP->map, vfdP->fileName); /* protect file from GC */
 	
+	/* Reopen file, because it was rewritten by gc */
 	if (vfdP->generation != vfdP->map->generation)
 	{
 		close(vfdP->fd);
