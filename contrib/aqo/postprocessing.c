@@ -423,7 +423,7 @@ learn_query_stat(QueryDesc *queryDesc)
 									  stat->planning_time_without_aqo,
 									  &stat->planning_time_without_aqo_size,
 									  stat->cardinality_error_without_aqo,
-								   &stat->cardinality_error_without_aqo_size,
+									  &stat->cardinality_error_without_aqo_size,
 									  query_planning_time,
 									  totaltime - query_planning_time,
 									  cardinality_error,
