@@ -16,12 +16,11 @@
 
 ```multimaster.ignore_tables_without_pk``` Do not replicate tables withpout primary key. Boolean.
 
+```multimaster.cluster_name``` Name of the cluster, desn't affect anything. Just in case. If set that mmts will check name correspondence.
 
 ## Questionable
 
 (probably we will delete that variables, most of them are useful only for development purposes --stas)
-
-```multimaster.cluster_name``` Name of the cluster, desn't affect anything. Just in case.
 
 ```multimaster.min_2pc_timeout``` Minimal timeout between receiving PREPARED message from nodes participated in transaction to coordinator (milliseconds). Default = 2000, /* 2 seconds */.
 
@@ -29,17 +28,17 @@
 
 ```multimaster.queue_size``` Multimaster queue size. default = 256*1024*1024,
 
+```multimaster.trans_spill_threshold``` Maximal size (Mb) of transaction after which transaction is written to the disk. Default = 1000, /* 1Gb */ (istm reorderbuffer also can do that, isn't it?)
+
 ```multimaster.vacuum_delay``` Minimal age of records which can be vacuumed (seconds). default = 1.
 
 ```multimaster.worker``` Number of multimaster executor workers. Default = 8. (use dynamic workers with some timeout to die?)
 
 ```multimaster.max_worker``` Maximal number of multimaster dynamic executor workers. (set this to max_conn?) Default = 100.
 
-```multimaster.gc_period```  Number of distributed transactions after which garbage collection is started. Multimaster is building xid->csn hash map which has to be cleaned to avoid hash overflow. This parameter specifies interval of invoking garbage collector for this map. default = MTM_HASH_SIZE/10
+```multimaster.gc_period``` Number of distributed transactions after which garbage collection is started. Multimaster is building xid->csn hash map which has to be cleaned to avoid hash overflow. This parameter specifies interval of invoking garbage collector for this map. default = MTM_HASH_SIZE/10
 
 ```multimaster.max_node``` Maximal number of cluster nodes. This parameters allows to add new nodes to the cluster, default value 0 restricts number of nodes to one specified in multimaster.conn_strings (May be just set that to 64 and allow user to add node when trey need without restart?) default = 0
-
-```multimaster.trans_spill_threshold``` Maximal size (Mb) of transaction after which transaction is written to the disk. Default = 1000, /* 1Gb */ (istm reorderbuffer also can do that, isn't it?)
 
 ```multimaster.node_disable_delay``` Minimal amount of time (msec) between node status change. This delay is used to avoid false detection of node failure and to prevent blinking of node status node. default = 2000. (We can just increase heartbeat_recv_timeout)
 
