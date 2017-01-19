@@ -34,34 +34,107 @@
 #endif
 #include <sys/socket.h>
 
-extern int pg_socket(int domain, int type, int protocol, bool isRsocket);
-extern int pg_bind(int socket, const struct sockaddr *addr, socklen_t addrlen,
-				   bool isRsocket);
-extern int pg_listen(int socket, int backlog, bool isRsocket);
-extern int pg_accept(int socket, struct sockaddr *addr, socklen_t *addrlen,
-					 bool isRsocket);
-extern int pg_connect(int socket, const struct sockaddr *addr,
-					  socklen_t addrlen, bool isRsocket);
-extern int pg_closesocket(int socket, bool isRsocket);
+#ifdef WITH_RSOCKET
 
-extern ssize_t pg_recv(int socket, void *buf, size_t len, int flags,
-					   bool isRsocket);
-extern ssize_t pg_send(int socket, const void *buf, size_t len, int flags,
-					   bool isRsocket);
-extern ssize_t pg_sendmsg(int socket, const struct msghdr *msg, int flags,
-						   bool isRsocket);
+#define pg_socket(domain, type, protocol, isRsocket) \
+	((isRsocket) ? rsocket(domain, type, protocol) : \
+		socket(domain, type, protocol))
 
-extern int pg_poll(struct pollfd *fds, nfds_t nfds, int timeout,
-				   bool isRsocket);
-extern int pg_select(int nfds, fd_set *readfds, fd_set *writefds,
-				   fd_set *exceptfds, struct timeval *timeout);
+#define pg_bind(socket, addr, addrlen, isRsocket) \
+	((isRsocket) ? rbind(socket, addr, addrlen) : \
+		bind(socket, addr, addrlen))
 
-extern int pg_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen,
-						  bool isRsocket);
+#define pg_listen(socket, backlog, isRsocket) \
+	((isRsocket) ? rlisten(socket, backlog) : \
+		listen(socket, backlog))
 
-extern int pg_setsockopt(int socket, int level, int optname,
-						 const void *optval, socklen_t optlen, bool isRsocket);
-extern int pg_getsockopt(int socket, int level, int optname,
-						 void *optval, socklen_t *optlen, bool isRsocket);
+#define pg_accept(socket, addr, addrlen, isRsocket) \
+	((isRsocket) ? raccept(socket, addr, addrlen) : \
+		accept(socket, addr, addrlen))
+
+#define pg_connect(socket, addr, addrlen, isRsocket) \
+	((isRsocket) ? rconnect(socket, addr, addrlen) : \
+		connect(socket, addr, addrlen))
+
+#define pg_closesocket(socket, isRsocket) \
+	((isRsocket) ? rclose(socket) : \
+		close(socket))
+
+#define pg_recv(socket, buf, len, flags, isRsocket) \
+	((isRsocket) ? rrecv(socket, buf, len, flags) : \
+		recv(socket, buf, len, flags))
+
+#define pg_send(socket, buf, len, flags, isRsocket) \
+	((isRsocket) ? rsend(socket, buf, len, flags) : \
+		send(socket, buf, len, flags))
+
+#define pg_sendmsg(socket, msg, flags, isRsocket) \
+	((isRsocket) ? rsendmsg(socket, msg, flags) : \
+		sendmsg(socket, msg, flags))
+
+#define pg_poll(fds, nfds, timeout, isRsocket) \
+	((isRsocket) ? rpoll(fds, nfds, timeout) : \
+		poll(fds, nfds, timeout))
+
+#define pg_select(nfds, readfds, writefds, exceptfds, timeout) \
+	rselect(nfds, readfds, writefds, exceptfds, timeout)
+
+#define pg_getsockname(socket, addr, addrlen, isRsocket) \
+	((isRsocket) ? rgetsockname(socket, addr, addrlen) : \
+		getsockname(socket, addr, addrlen))
+
+#define pg_setsockopt(socket, level, optname, optval, optlen, isRsocket) \
+	((isRsocket) ? rsetsockopt(socket, level, optname, optval, optlen) : \
+		setsockopt(socket, level, optname, optval, optlen))
+
+#define pg_getsockopt(socket, level, optname, optval, optlen, isRsocket) \
+	((isRsocket) ? rgetsockopt(socket, level, optname, optval, optlen) : \
+		getsockopt(socket, level, optname, optval, optlen))
+
+#else
+
+#define pg_socket(domain, type, protocol, isRsocket) \
+	socket(domain, type, protocol))
+
+#define pg_bind(socket, addr, addrlen, isRsocket) \
+	bind(socket, addr, addrlen)
+
+#define pg_listen(socket, backlog, isRsocket) \
+	listen(socket, backlog)
+
+#define pg_accept(socket, addr, addrlen, isRsocket) \
+	accept(socket, addr, addrlen)
+
+#define pg_connect(socket, addr, addrlen, isRsocket) \
+	connect(socket, addr, addrlen)
+
+#define pg_closesocket(socket, isRsocket) \
+	close(socket)
+
+#define pg_recv(socket, buf, len, flags, isRsocket) \
+	recv(socket, buf, len, flags)
+
+#define pg_send(socket, buf, len, flags, isRsocket) \
+	send(socket, buf, len, flags)
+
+#define pg_sendmsg(socket, msg, flags, isRsocket) \
+	sendmsg(socket, msg, flags)
+
+#define pg_poll(fds, nfds, timeout, isRsocket) \
+	poll(fds, nfds, timeout)
+
+#define pg_select(nfds, readfds, writefds, exceptfds, timeout) \
+	select(nfds, readfds, writefds, exceptfds, timeout)
+
+#define pg_getsockname(socket, addr, addrlen, isRsocket) \
+	getsockname(socket, addr, addrlen)
+
+#define pg_setsockopt(socket, level, optname, optval, optlen, isRsocket) \
+	setsockopt(socket, level, optname, optval, optlen)
+
+#define pg_getsockopt(socket, level, optname, optval, optlen, isRsocket) \
+	getsockopt(socket, level, optname, optval, optlen)
+
+#endif   /* WITH_RSOCKET */
 
 #endif   /* PG_SOCKET_H */

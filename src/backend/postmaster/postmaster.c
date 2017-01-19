@@ -4324,6 +4324,9 @@ RsocketInitialize(Port *port)
 	(void) pq_setkeepalivesidle(tcp_keepalives_idle, port);
 	(void) pq_setkeepalivesinterval(tcp_keepalives_interval, port);
 	(void) pq_setkeepalivescount(tcp_keepalives_count, port);
+
+	/* Close listened socket */
+	pg_closesocket(fd, true);
 }
 #endif
 
