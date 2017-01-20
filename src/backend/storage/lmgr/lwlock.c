@@ -890,6 +890,8 @@ LWLockAttemptLock(LWLock *lock, LWLockMode mode)
 	pg_unreachable();
 }
 
+#endif
+
 /*
  * Lock the LWLock's wait list against concurrent activity.
  *
@@ -959,8 +961,6 @@ LWLockWaitListUnlock(LWLock *lock)
 
 	Assert(old_state & LW_FLAG_LOCKED);
 }
-
-#endif
 
 /*
  * Wakeup all the lockers that currently have a chance to acquire the lock.
