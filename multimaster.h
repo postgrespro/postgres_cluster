@@ -80,9 +80,9 @@
 #define Anum_mtm_local_tables_rel_schema 1
 #define Anum_mtm_local_tables_rel_name	 2
 
-#define Natts_mtm_cluster_state 16
 #define Natts_mtm_trans_state   15
-#define Natts_mtm_nodes_state   14
+#define Natts_mtm_nodes_state   16
+#define Natts_mtm_cluster_state 18
 
 typedef uint64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
@@ -99,11 +99,6 @@ typedef enum
 	PGLOGICAL_ABORT_PREPARED,
 	PGLOGICAL_PRECOMMIT_PREPARED
 } PGLOGICAL_EVENT;
-
-#define PGLOGICAL_XACT_EVENT(flags)	(flags & 0x07)
-
-#define PGLOGICAL_CAUGHT_UP	        0x08
-
 
 /* Identifier of global transaction */
 typedef struct 
@@ -199,6 +194,7 @@ typedef struct
 	char hostName[MULTIMASTER_MAX_HOST_NAME_SIZE];
 	char connStr[MULTIMASTER_MAX_CONN_STR_SIZE];
 	int arbiterPort;
+	int postmasterPort;
 } MtmConnectionInfo;
 
 
@@ -265,6 +261,8 @@ typedef struct
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
+	nodemask_t stalledNodeMask;        /* bitmask of stalled nodes (node with dropped relication slot which makes it not possible automatic recovery of such node) */
+	nodemask_t stoppedNodeMask;        /* Bitmask of stopped (permanently disabled nodes) */
 	nodemask_t pglogicalReceiverMask;  /* bitmask of started pglogic receivers */
 	nodemask_t pglogicalSenderMask;    /* bitmask of started pglogic senders */
 	nodemask_t walSenderLockerMask;    /* Mask of WAL-senders IDs locking the cluster */
@@ -361,7 +359,7 @@ extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
 extern void  MtmLockNode(int nodeId, LWLockMode mode);
 extern void  MtmUnlockNode(int nodeId);
-extern void  MtmDropNode(int nodeId, bool dropSlot);
+extern void  MtmStopNode(int nodeId, bool dropSlot);
 extern void  MtmReconnectNode(int nodeId);
 extern void  MtmRecoverNode(int nodeId);
 extern void  MtmOnNodeDisconnect(int nodeId);
@@ -381,7 +379,8 @@ extern void  MtmSwitchClusterMode(MtmNodeStatus mode);
 extern void  MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr);
 extern void  MtmSetupReplicationHooks(struct PGLogicalHooks* hooks);
 extern void  MtmCheckQuorum(void);
-extern bool  MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN);
+extern bool  MtmRecoveryCaughtUp(int nodeId, XLogRecPtr walEndPtr);
+extern void  MtmCheckRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN);
 extern void  MtmRecoveryCompleted(void);
 extern void  MtmMakeTableLocal(char* schema, char* name);
 extern void  MtmHandleApplyError(void);

@@ -65,6 +65,10 @@ static char decide_datum_transfer(Form_pg_attribute att,
 								  bool allow_internal_basetypes,
 								  bool allow_binary_basetypes);
 
+static void pglogical_write_caughtup(StringInfo out, PGLogicalOutputData *data,
+									 XLogRecPtr wal_end_ptr);
+
+
 /*
  * Write relation description to the output stream.
  */
@@ -176,24 +180,24 @@ static void
 pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 					   ReorderBufferTXN *txn, XLogRecPtr commit_lsn)
 {
-    uint8 flags = 0;
+    uint8 event = 0;
 	
-	MTM_LOG3("%d: pglogical_write_commit XID=%d node=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
-			 MyProcPid, txn->xid, MtmReplicationNodeId, txn->restart_decoding_lsn, txn->first_lsn, txn->end_lsn, MyReplicationSlot->data.confirmed_flush);
+	MTM_LOG1("%d: pglogical_write_commit XID=%ld node=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
+			 MyProcPid, (long)txn->xid, MtmReplicationNodeId, txn->restart_decoding_lsn, txn->first_lsn, txn->end_lsn, MyReplicationSlot->data.confirmed_flush);
 
 
     if (txn->xact_action == XLOG_XACT_COMMIT) 
-    	flags = PGLOGICAL_COMMIT;
+    	event = PGLOGICAL_COMMIT;
 	else if (txn->xact_action == XLOG_XACT_PREPARE)
-    	flags = *txn->state_3pc ? PGLOGICAL_PRECOMMIT_PREPARED : PGLOGICAL_PREPARE;
+    	event = *txn->state_3pc ? PGLOGICAL_PRECOMMIT_PREPARED : PGLOGICAL_PREPARE;
 	else if (txn->xact_action == XLOG_XACT_COMMIT_PREPARED)
-    	flags = PGLOGICAL_COMMIT_PREPARED;
+    	event = PGLOGICAL_COMMIT_PREPARED;
 	else if (txn->xact_action == XLOG_XACT_ABORT_PREPARED)
-    	flags = PGLOGICAL_ABORT_PREPARED;
+    	event = PGLOGICAL_ABORT_PREPARED;
 	else
     	Assert(false);
 
-	if (flags == PGLOGICAL_COMMIT || flags == PGLOGICAL_PREPARE) {
+	if (event == PGLOGICAL_COMMIT || event == PGLOGICAL_PREPARE) {
 		/* COMMIT and PREPARE are preceded by BEGIN, which set MtmIsFilteredTxn flag */
 		if (MtmIsFilteredTxn) { 
 			Assert(MtmTransactionRecords == 0);
@@ -203,9 +207,9 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 		csn_t csn = MtmTransactionSnapshot(txn->xid);
 		bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
 
-		if (!isRecovery && csn == INVALID_CSN && (flags != PGLOGICAL_ABORT_PREPARED || txn->origin_id != InvalidRepOriginId))
+		if (!isRecovery && csn == INVALID_CSN && (event != PGLOGICAL_ABORT_PREPARED || txn->origin_id != InvalidRepOriginId))
 		{
-			if (flags == PGLOGICAL_ABORT_PREPARED) { 
+			if (event == PGLOGICAL_ABORT_PREPARED) { 
 				MTM_LOG1("Skip ABORT_PREPARED for transaction %s to node %d", txn->gid, MtmReplicationNodeId);
 			}
 			Assert(MtmTransactionRecords == 0);
@@ -213,28 +217,25 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 		}
 		if (isRecovery) { 
 			MTM_LOG2("PGLOGICAL_SEND recover transaction: event=%d, gid=%s, xid=%d, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", 
-					 flags, txn->gid, txn->xid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
+					 event, txn->gid, txn->xid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
 		}
-		if (flags == PGLOGICAL_ABORT_PREPARED) { 
+		if (event == PGLOGICAL_ABORT_PREPARED) { 
 			MTM_LOG1("Send ABORT_PREPARED for transaction %s (%lu) end_lsn=%lx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%ld", 
 					 txn->gid, (long)txn->xid, txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
 		}
-		if (flags == PGLOGICAL_PRECOMMIT_PREPARED) { 
+		if (event == PGLOGICAL_PRECOMMIT_PREPARED) { 
 			MTM_LOG2("Send PGLOGICAL_PRECOMMIT_PREPARED for transaction %s (%lu) end_lsn=%lx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%ld", 
 					 txn->gid, (long)txn->xid, txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
 		}
-		if (MtmRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn)) { 
-			MTM_LOG1("wal-sender complete recovery of node %d at LSN(commit %lx, end %lx, log %lx) in transaction %s event %d", MtmReplicationNodeId, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr(), txn->gid, flags);
-			flags |= PGLOGICAL_CAUGHT_UP;
-		}
+		MtmCheckRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn);
 	}
 
     pq_sendbyte(out, 'C');		/* sending COMMIT */
 
-	MTM_LOG2("PGLOGICAL_SEND commit: event=%d, gid=%s, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", flags, txn->gid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
+	MTM_LOG2("PGLOGICAL_SEND commit: event=%d, gid=%s, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", event, txn->gid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
 
-    /* send the flags field */
-    pq_sendbyte(out, flags);
+    /* send the event field */
+    pq_sendbyte(out, event);
     pq_sendbyte(out, MtmNodeId);
 
     /* send fixed fields */
@@ -267,6 +268,17 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 
 	MtmTransactionRecords = 0;
 	MTM_TXTRACE(txn, "pglogical_write_commit Finish");
+}
+
+/* 
+ * WAL sender caught up 
+ */
+void pglogical_write_caughtup(StringInfo out, PGLogicalOutputData *data,
+							  XLogRecPtr wal_end_ptr)
+{
+	if (MtmRecoveryCaughtUp(MtmReplicationNodeId, wal_end_ptr)) { 
+		pq_sendbyte(out, 'Z');		/* sending CAUGHT-UP */
+	}
 }
 
 /*
@@ -562,6 +574,7 @@ pglogical_init_api(PGLogicalProtoType typ)
     res->write_insert = pglogical_write_insert;
     res->write_update = pglogical_write_update;
     res->write_delete = pglogical_write_delete;
+    res->write_caughtup = pglogical_write_caughtup;
 	res->setup_hooks = MtmSetupReplicationHooks;
     res->write_startup_message = write_startup_message;
     return res;

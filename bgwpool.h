@@ -8,6 +8,7 @@
 typedef void(*BgwPoolExecutor)(void* work, size_t size);
 
 typedef uint64 timestamp_t;
+typedef long long long64; /* we are not using int64 here because we want to use %lld format for this type */
 
 #define MAX_DBNAME_LEN 30
 #define MAX_DBUSER_LEN 30
