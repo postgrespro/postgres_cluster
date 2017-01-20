@@ -25,6 +25,11 @@
 #include "storage/block.h"
 #include "storage/checksum.h"
 
+#include "portability/mem.h"
+#ifndef WIN32
+#include <sys/mman.h>
+#endif
+
 /* Query to fetch current transaction ID */
 #define TXID_CURRENT_SQL	"SELECT txid_current();"
 #define TXID_CURRENT_IF_SQL	"SELECT txid_snapshot_xmax(txid_current_snapshot());"
@@ -66,6 +71,9 @@ typedef struct pgFile
 	char	*path;			/* path of the file */
 	char	*ptrack_path;
 	int		segno;			/* Segment number for ptrack */
+	int		generation;		/* Generation of compressed file.
+							 * -1 for non-compressed files */
+	uint32 last_backup_write_size; /* for compressed file */
 	volatile uint32 lock;
 	datapagemap_t pagemap;
 } pgFile;
@@ -172,6 +180,23 @@ typedef union DataPage
 	PageHeaderData	page_data;
 	char			data[BLCKSZ];
 } DataPage;
+
+
+typedef struct 
+{
+	uint32 physSize;
+	uint32 virtSize;
+	uint32 usedSize;
+	uint32 lock;
+	pid_t	postmasterPid;
+	uint64	generation;
+	uint32	last_backup_write_size;
+	uint64	inodes[RELSEG_SIZE];
+} FileMap;
+
+extern FileMap* cfs_mmap(int md);
+extern int cfs_munmap(FileMap* map);
+extern int cfs_msync(FileMap* map);
 
 /*
  * return pointer that exceeds the length of prefix from character string.
@@ -297,6 +322,8 @@ extern void restore_data_file(const char *from_root, const char *to_root,
 							  pgFile *file, pgBackup *backup);
 extern bool copy_file(const char *from_root, const char *to_root,
 					  pgFile *file);
+extern bool copy_file_partly(const char *from_root, const char *to_root,
+				 pgFile *file, size_t skip_size);
 
 extern bool calc_file(pgFile *file);
 

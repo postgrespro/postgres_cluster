@@ -73,6 +73,7 @@ typedef struct
 	pg_atomic_uint32 lock;
 	pid_t            postmasterPid;
 	uint64           generation;
+	size_t			 last_backup_write_size;
 	inode_t          inodes[RELSEG_SIZE];
 } FileMap;
 
@@ -82,8 +83,8 @@ uint32   cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize);
 void     cfs_extend(FileMap* map, uint32 pos);
 bool     cfs_control_gc(bool enabled);
 int      cfs_msync(FileMap* map);
-FileMap* cfs_mmap(int md);
-int      cfs_munmap(FileMap* map);
+extern FileMap* cfs_mmap(int md);
+extern int      cfs_munmap(FileMap* map);
 void     cfs_initialize(void);
 
 void     cfs_encrypt(void* block, uint32 offs, uint32 size);

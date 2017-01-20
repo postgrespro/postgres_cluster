@@ -1110,6 +1110,27 @@ backup_cleanup(bool fatal, void *userdata)
 }
 
 /*
+ * Count bytes in file
+ */
+static long
+file_size(const char *file)
+{
+	long		r;
+	FILE	   *f = fopen(file, "r");
+
+	if (!f)
+	{
+		fprintf(stderr, _("%s: could not open file \"%s\" for reading: %s\n"),
+				progname, file, strerror(errno));
+		return -1;
+	}
+	fseek(f, 0, SEEK_END);
+	r = ftell(f);
+	fclose(f);
+	return r;
+}
+
+/*
  * Take differential backup at page level.
  */
 static void
@@ -1117,7 +1138,6 @@ backup_files(void *arg)
 {
 	int				i;
 	struct timeval	tv;
-
 	backup_files_args *arguments = (backup_files_args *) arg;
 
 	gettimeofday(&tv, NULL);
@@ -1221,20 +1241,39 @@ backup_files(void *arg)
 			}
 			else
 			{
-				/* Check if the file is a cfs relation's segment */
+				/* Check first if the file is a cfs relation's segment */
 				bool is_cfs_relation_segment = false;
 				pgFile tmp_file;
 				pgFile **pre_search_file;
+				pgFile *prev_file = NULL;
+
 				tmp_file.path = psprintf("%s.cfm", file->path);
 				pre_search_file = (pgFile **) parray_bsearch(arguments->files, &tmp_file, pgFileComparePath);
 				if (pre_search_file != NULL)
 				{
-					is_cfs_relation_segment = true;
-					/* TODO If we don't have ptrack simply copy the file */
-					if (file->pagemap.bitmapsize == 0)
+					/* Now check if it's generation has changed since last backup */
+					if (arguments->prev_files)
 					{
-						is_cfs_relation_segment = false;
-						elog(NOTICE, "1 file '%s' is a cfs relation's segment, bitmapsize == 0 \n", file->path);
+						pgFile **p = (pgFile **) parray_bsearch(arguments->prev_files, file, pgFileComparePath);
+						if (p)
+							prev_file = *p;
+						elog(NOTICE, "file '%s' is a cfs relation's segment generation prev %d, now %d",
+								file->path, prev_file->generation, file->generation);
+
+						if (prev_file && prev_file->generation == file->generation)
+						{
+							elog(NOTICE, "prev->write_size %lu, file_size %lu", prev_file->write_size, file_size(file->path));
+							if (prev_file->write_size == file_size(file->path))
+							{
+								elog(NOTICE, "File hasn't changed since last backup. Don't copy at all");
+								is_cfs_relation_segment = true;
+							}
+							else
+							{
+								elog(NOTICE, "Backup part of the file. %s", file->path);
+								is_cfs_relation_segment = true;
+							}
+						}
 					}
 				}
 				pg_free(tmp_file.path);
@@ -1242,18 +1281,16 @@ backup_files(void *arg)
 
 				if (is_cfs_relation_segment)
 				{
-					/*
-					 * TODO backup cfs segment
-					 * see backup_data_file()
-					 */
-					elog(NOTICE, "2 file '%s' is a cfs relation's segment \n", file->path);
-					elog(NOTICE, "2 file->pagemap.bitmapsize = %d", file->pagemap.bitmapsize);
-					datapagemap_iterator_t *iter;
-					BlockNumber			blknum = 0;
-
-					iter = datapagemap_iterate(&file->pagemap);
-					while(datapagemap_next(iter, &blknum))
-						elog(NOTICE, "2 blknum %u", blknum);
+					/* backup cfs segment partly */
+					if (!copy_file_partly(arguments->from_root,
+							   arguments->to_root,
+							   file, prev_file->write_size))
+					{
+						/* record as skipped file in file_xxx.txt */
+						file->write_size = BYTES_INVALID;
+						elog(LOG, "skip");
+						continue;
+					}
 				}
 				else if (!copy_file(arguments->from_root,
 							   arguments->to_root,
@@ -1338,16 +1375,32 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 					sprintf(tmp_file.path+path_len-7, ".%d", segno);
 				else
 					tmp_file.path[path_len-7] = '\0';
+
 				pre_search_file = (pgFile **) parray_bsearch(list_file, &tmp_file, pgFileComparePath);
-				if (pre_search_file != NULL)
+				/* Use another scheme for compressed files */
+				pgFile map_file;
+				pgFile **map_search_file;
+				map_file.path = pg_strdup(file->path);
+				if (segno > 0)
+					sprintf(map_file.path+path_len-7, ".%d.cfm", segno);
+				else
+					sprintf(map_file.path+path_len-7, ".cfm");
+				map_search_file = (pgFile **) parray_bsearch(list_file, &map_file, pgFileComparePath);
+
+				if (pre_search_file != NULL
+					&& map_search_file == NULL)
 				{
 					search_file = *pre_search_file;
 					search_file->ptrack_path = pg_strdup(file->path);
 					search_file->segno = segno;
-				} else {
+				}
+				else
+				{
 					pg_free(tmp_file.path);
+					pg_free(map_file.path);
 					break;
 				}
+				pg_free(map_file.path);
 				pg_free(tmp_file.path);
 				segno++;
 			}
@@ -1361,12 +1414,9 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 		/* compress map file it is not data file */
 		if (path_len > 4 && strncmp(file->path+(path_len-4), ".cfm", 4) == 0)
 		{
-			if (current.backup_mode == BACKUP_MODE_DIFF_PTRACK ||
-				current.backup_mode == BACKUP_MODE_DIFF_PAGE)
-			{
-				elog(NOTICE, "You can't use incremental backup with compress tablespace");
-				/* TODO Add here incremental backup for compressed tablespaces */
-			}
+			if (current.backup_mode == BACKUP_MODE_DIFF_PAGE)
+				elog(ERROR, "You can't use PAGE mode backup with compressed tablespace.\n"
+							"Try PTRACK mode instead.");
 			continue;
 		}
 
@@ -1420,8 +1470,34 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 			pre_search_file = (pgFile **) parray_bsearch(list_file, &tmp_file, pgFileComparePath);
 			if (pre_search_file != NULL)
 			{
+				FileMap* map;
+				int md = open(file->path, O_RDWR|PG_BINARY, 0);
+				if (md < 0)
+					elog(ERROR, "add_files(). cannot open cfm file '%s'", file->path);
+
+				map = cfs_mmap(md);
+				if (map == MAP_FAILED)
+				{
+					elog(LOG, "add_files(). cfs_compression_ration failed to map file %s: %m", file->path);
+					close(md);
+					break;
+				}
+
+				(*pre_search_file)->last_backup_write_size = map->last_backup_write_size;
+				(*pre_search_file)->generation = map->generation;
 				(*pre_search_file)->is_datafile = false;
+				map->last_backup_write_size = map->physSize;
+
+				if (cfs_msync(map) < 0)
+					elog(LOG, "add_files(). CFS failed to sync map %s: %m", file->path);
+				if (cfs_munmap(map) < 0)
+					elog(LOG, "add_files(). CFS failed to unmap file %s: %m", file->path);
+				if (close(md) < 0)
+					elog(LOG, "add_files(). CFS failed to close file %s: %m", file->path);
 			}
+			else
+				elog(ERROR, "corresponding segment '%s' is not found", tmp_file.path);
+
 			pg_free(tmp_file.path);
 		}
 	}
@@ -1692,4 +1768,43 @@ StreamLog(void *arg)
 
 	PQfinish(conn);
 	conn = NULL;
+}
+
+
+FileMap* cfs_mmap(int md)
+{
+	FileMap* map;
+#ifdef WIN32
+    HANDLE mh = CreateFileMapping(_get_osfhandle(md), NULL, PAGE_READWRITE, 
+								  0, (DWORD)sizeof(FileMap), NULL);
+    if (mh == NULL) { 
+        return (FileMap*)MAP_FAILED;
+    }
+    map = (FileMap*)MapViewOfFile(mh, FILE_MAP_ALL_ACCESS, 0, 0, 0); 
+	CloseHandle(mh);
+    if (map == NULL) { 
+        return (FileMap*)MAP_FAILED;
+    }
+#else
+	map = (FileMap*)mmap(NULL, sizeof(FileMap), PROT_WRITE | PROT_READ, MAP_SHARED, md, 0);
+#endif
+	return map;
+}
+
+int cfs_munmap(FileMap* map)
+{
+#ifdef WIN32
+	return UnmapViewOfFile(map) ? 0 : -1;
+#else
+	return munmap(map, sizeof(FileMap));
+#endif
+}
+
+int cfs_msync(FileMap* map)
+{
+#ifdef WIN32
+	return FlushViewOfFile(map, sizeof(FileMap)) ? 0 : -1;
+#else
+	return msync(map, sizeof(FileMap), MS_SYNC);
+#endif
 }

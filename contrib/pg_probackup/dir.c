@@ -92,6 +92,7 @@ pgFileNew(const char *path, bool omit_symlink)
 	file->ptrack_path = NULL;
 	file->segno = 0;
 	file->path = pgut_malloc(strlen(path) + 1);
+	file->generation = -1;
 	strcpy(file->path, path);		/* enough buffer size guaranteed */
 
 	return file;
@@ -510,17 +511,19 @@ dir_print_file_list(FILE *out, const parray *files, const char *root, const char
 			type = '?';
 
 		fprintf(out, "%s %c %lu %u 0%o", path, type,
-			(unsigned long) file->write_size,
-			file->crc, file->mode & (S_IRWXU | S_IRWXG | S_IRWXO));
+				(unsigned long) file->write_size,
+				file->crc, file->mode & (S_IRWXU | S_IRWXG | S_IRWXO));
 
 		if (S_ISLNK(file->mode))
-			fprintf(out, " %s\n", file->linked);
+			fprintf(out, " %s", file->linked);
 		else
 		{
 			char timestamp[20];
 			time2iso(timestamp, 20, file->mtime);
-			fprintf(out, " %s\n", timestamp);
+			fprintf(out, " %s", timestamp);
 		}
+
+		fprintf(out, " %d\n", file->generation);
 	}
 }
 
@@ -546,6 +549,7 @@ dir_read_file_list(const char *root, const char *file_txt)
 	{
 		char			path[MAXPGPATH];
 		char			type;
+		int				generation;
 		unsigned long	write_size;
 		pg_crc32		crc;
 		unsigned int	mode;	/* bit length of mode_t depends on platforms */
@@ -553,10 +557,11 @@ dir_read_file_list(const char *root, const char *file_txt)
 		pgFile			*file;
 
 		memset(&tm, 0, sizeof(tm));
-		if (sscanf(buf, "%s %c %lu %u %o %d-%d-%d %d:%d:%d",
+		if (sscanf(buf, "%s %c %lu %u %o %d-%d-%d %d:%d:%d %d",
 			path, &type, &write_size, &crc, &mode,
 			&tm.tm_year, &tm.tm_mon, &tm.tm_mday,
-			&tm.tm_hour, &tm.tm_min, &tm.tm_sec) != 11)
+			&tm.tm_hour, &tm.tm_min, &tm.tm_sec,
+			&generation) != 12)
 		{
 			elog(ERROR, "invalid format found in \"%s\"",
 				file_txt);
@@ -581,6 +586,7 @@ dir_read_file_list(const char *root, const char *file_txt)
 		file->mode = mode |
 			((type == 'f' || type == 'F') ? S_IFREG :
 			 type == 'd' ? S_IFDIR : type == 'l' ? S_IFLNK : 0);
+		file->generation = generation;
 		file->size = 0;
 		file->read_size = 0;
 		file->write_size = write_size;
