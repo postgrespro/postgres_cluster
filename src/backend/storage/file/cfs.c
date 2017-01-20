@@ -719,7 +719,6 @@ static bool cfs_gc_file(char* map_path)
 		pg_atomic_write_u32(&map->usedSize, newSize);
 		pg_atomic_write_u32(&map->physSize, newSize);
 		map->generation += 1; /* force all backends to reopen the file */
-		map->last_backup_write_size = 0; /* reset this value after each gc defragmentation */
 		
 		/* Before removing backup files and releasing locks we need to flush updated map file */
 		if (cfs_msync(map) < 0) {

@@ -113,12 +113,6 @@ backup_data_file(const char *from_root, const char *to_root,
 	/* confirm server version */
 	check_server_version();
 
-	/* TODO If file is the segment of compressed table,
-	 * read its generation from cfm,
-	 * compare this generation with one in the file_database.txt and
-	 * respectively backup all file or just changed part.
-	 */
-
 	/*
 	 * Read each page and write the page excluding hole. If it has been
 	 * determined that the page can be copied safely, but no page map
@@ -418,6 +412,144 @@ backup_data_file(const char *from_root, const char *to_root,
 	return true;
 }
 
+
+static void
+restore_file_partly(const char *from_root,const char *to_root, pgFile *file)
+{
+	FILE	   *in;
+	FILE	   *out;
+	size_t		read_len = 0;
+	int			errno_tmp;
+	struct stat	st;
+	char		to_path[MAXPGPATH];
+	char		buf[8192];
+	size_t write_size = 0;
+
+	join_path_components(to_path, to_root, file->path + strlen(from_root) + 1);
+	/* open backup mode file for read */
+	in = fopen(file->path, "r");
+	if (in == NULL)
+	{
+		elog(ERROR, "cannot open backup file \"%s\": %s", file->path,
+			strerror(errno));
+	}
+	out = fopen(to_path, "r+");
+
+	/* stat source file to change mode of destination file */
+	if (fstat(fileno(in), &st) == -1)
+	{
+		fclose(in);
+		fclose(out);
+		elog(ERROR, "cannot stat \"%s\": %s", file->path,
+			 strerror(errno));
+	}
+
+	if (fseek(out, 0, SEEK_END) < 0)
+		elog(ERROR, "cannot seek END of \"%s\": %s",
+				to_path, strerror(errno));
+
+	/* copy everything from backup to the end of the file */
+	for (;;)
+	{
+		if ((read_len = fread(buf, 1, sizeof(buf), in)) != sizeof(buf))
+			break;
+
+		if (fwrite(buf, 1, read_len, out) != read_len)
+		{
+			errno_tmp = errno;
+			/* oops */
+			fclose(in);
+			fclose(out);
+			elog(ERROR, "cannot write to \"%s\": %s", to_path,
+				 strerror(errno_tmp));
+		}
+		write_size += read_len;
+	}
+
+	errno_tmp = errno;
+	if (!feof(in))
+	{
+		fclose(in);
+		fclose(out);
+		elog(ERROR, "cannot read backup mode file \"%s\": %s",
+			 file->path, strerror(errno_tmp));
+	}
+
+	/* copy odd part. */
+	if (read_len > 0)
+	{
+		if (fwrite(buf, 1, read_len, out) != read_len)
+		{
+			errno_tmp = errno;
+			/* oops */
+			fclose(in);
+			fclose(out);
+			elog(ERROR, "cannot write to \"%s\": %s", to_path,
+				 strerror(errno_tmp));
+		}
+
+		write_size += read_len;
+	}
+
+	elog(NOTICE, "write_size %lu, file->write_size %lu", write_size, file->write_size);
+
+	/* update file permission */
+	if (chmod(to_path, file->mode) == -1)
+	{
+		int errno_tmp = errno;
+
+		fclose(in);
+		fclose(out);
+		elog(ERROR, "cannot change mode of \"%s\": %s", to_path,
+			strerror(errno_tmp));
+	}
+
+	fclose(in);
+	fclose(out);
+}
+
+static void
+restore_compressed_file(const char *from_root,
+						const char *to_root,
+						pgFile *file)
+{
+	char	to_path[MAXPGPATH];
+	pgFile tmp_file;
+
+	join_path_components(to_path, to_root, file->path + strlen(from_root) + 1);
+	tmp_file.path = psprintf("%s.cfm", to_path);
+
+	FileMap* map;
+	int md = open(tmp_file.path, O_RDWR|PG_BINARY, 0);
+	if (md < 0)
+	{
+		elog(LOG, "restore_compressed_file(). cannot open cfm file '%s'", tmp_file.path);
+		copy_file(from_root, to_root, file);
+		pfree(tmp_file.path);
+		return;
+	}
+
+	map = cfs_mmap(md);
+	if (map == MAP_FAILED)
+	{
+		elog(LOG, "restore_compressed_file(). cfs_compression_ration failed to map file %s: %m", tmp_file.path);
+		close(md);
+	}
+	elog(LOG, "restore_compressed_file(). %s", to_path);
+
+
+	if (map->generation != file->generation)
+		copy_file(from_root, to_root, file);
+	else
+		restore_file_partly(from_root, to_root, file);
+
+	if (cfs_munmap(map) < 0)
+		elog(LOG, "restore_compressed_file(). CFS failed to unmap file %s: %m", tmp_file.path);
+	if (close(md) < 0)
+		elog(LOG, "restore_compressed_file(). CFS failed to close file %s: %m", tmp_file.path);
+	pfree(tmp_file.path);
+}
+
 /*
  * Restore files in the from_root directory to the to_root directory with
  * same relative path.
@@ -437,8 +569,17 @@ restore_data_file(const char *from_root,
 	/* If the file is not a datafile, just copy it. */
 	if (!file->is_datafile)
 	{
-		copy_file(from_root, to_root, file);
-		return;
+		if (file->generation == -1)
+		{
+			copy_file(from_root, to_root, file);
+			return;
+		}
+		else
+		{
+			/* It is compressed file */
+			restore_compressed_file(from_root, to_root, file);
+			return;
+		}
 	}
 
 	/* open backup mode file for read */
@@ -555,6 +696,23 @@ restore_data_file(const char *from_root,
 
 	fclose(in);
 	fclose(out);
+}
+
+
+bool
+is_compressed_data_file(pgFile *file, parray *file_list)
+{
+	pgFile map_file;
+	pgFile **pre_search_file;
+
+	map_file.path = psprintf("%s.cfm", file->path);
+	pre_search_file = (pgFile **) parray_bsearch(file_list, &map_file, pgFileComparePath);
+	pg_free(map_file.path);
+
+	if (pre_search_file != NULL)
+		return true;
+
+	return false;
 }
 
 bool
@@ -798,9 +956,9 @@ copy_file_partly(const char *from_root, const char *to_root,
 	}
 
 	elog(NOTICE, "copy_file_partly(). %s file->write_size %lu", to_path, file->write_size);
-	pgFile newfile;
-	newfile.path = pg_strdup(to_path);
-	file->crc = pgFileGetCRC(&newfile);
+// 	pgFile newfile;
+// 	newfile.path = pg_strdup(to_path);
+// 	file->crc = pgFileGetCRC(&newfile);
 
 	fclose(in);
 	fclose(out);

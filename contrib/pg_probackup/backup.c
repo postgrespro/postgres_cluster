@@ -1109,9 +1109,7 @@ backup_cleanup(bool fatal, void *userdata)
 	}
 }
 
-/*
- * Count bytes in file
- */
+/* Count bytes in file */
 static long
 file_size(const char *file)
 {
@@ -1120,14 +1118,63 @@ file_size(const char *file)
 
 	if (!f)
 	{
-		fprintf(stderr, _("%s: could not open file \"%s\" for reading: %s\n"),
-				progname, file, strerror(errno));
+		elog(ERROR, "pg_probackup: could not open file \"%s\" for reading: %s\n",
+				file, strerror(errno));
 		return -1;
 	}
 	fseek(f, 0, SEEK_END);
 	r = ftell(f);
 	fclose(f);
 	return r;
+}
+
+bool
+backup_compressed_file_partially(pgFile *file, void *arg, size_t *skip_size)
+{
+	bool result = false;
+	pgFile *prev_file = NULL;
+	size_t current_file_size;
+	backup_files_args *arguments = (backup_files_args *) arg;
+
+	if (arguments->prev_files)
+	{
+		pgFile **p = (pgFile **) parray_bsearch(arguments->prev_files,
+												file, pgFileComparePath);
+		if (p)
+			prev_file = *p;
+
+		elog(NOTICE, "file '%s' generation: prev %d, now %d",
+				file->path, prev_file->generation, file->generation);
+
+		/* If file's gc generation has changed since last backup, just copy it*/
+		if (prev_file
+			&& prev_file->generation == file->generation)
+		{
+			current_file_size = file_size(file->path);
+
+			elog(NOTICE, "prev->write_size %lu, current_file_size %lu",
+				 prev_file->write_size, current_file_size);
+
+			if (prev_file->write_size == BYTES_INVALID)
+				return false;
+
+			*skip_size = prev_file->write_size;
+
+			if (current_file_size >= prev_file->write_size)
+			{
+				elog(NOTICE, "Backup part of the file. %s : %lu",
+					 file->path, current_file_size - *skip_size);
+				result = true;
+			}
+			else
+				elog(ERROR, "Something went wrong. current_file_size %lu, prev %lu",
+					current_file_size, prev_file->write_size);
+		}
+		else
+			elog(NOTICE, "Copy full file. Generations are different");
+	}
+
+	return result;
 }
 
 /*
@@ -1138,6 +1185,7 @@ backup_files(void *arg)
 {
 	int				i;
 	struct timeval	tv;
+
 	backup_files_args *arguments = (backup_files_args *) arg;
 
 	gettimeofday(&tv, NULL);
@@ -1239,52 +1287,15 @@ backup_files(void *arg)
 					continue;
 				}
 			}
-			else
+			else if (is_compressed_data_file(file, arguments->files))
 			{
-				/* Check first if the file is a cfs relation's segment */
-				bool is_cfs_relation_segment = false;
-				pgFile tmp_file;
-				pgFile **pre_search_file;
-				pgFile *prev_file = NULL;
-
-				tmp_file.path = psprintf("%s.cfm", file->path);
-				pre_search_file = (pgFile **) parray_bsearch(arguments->files, &tmp_file, pgFileComparePath);
-				if (pre_search_file != NULL)
-				{
-					/* Now check if it's generation has changed since last backup */
-					if (arguments->prev_files)
-					{
-						pgFile **p = (pgFile **) parray_bsearch(arguments->prev_files, file, pgFileComparePath);
-						if (p)
-							prev_file = *p;
-						elog(NOTICE, "file '%s' is a cfs relation's segment generation prev %d, now %d",
-								file->path, prev_file->generation, file->generation);
-
-						if (prev_file && prev_file->generation == file->generation)
-						{
-							elog(NOTICE, "prev->write_size %lu, file_size %lu", prev_file->write_size, file_size(file->path));
-							if (prev_file->write_size == file_size(file->path))
-							{
-								elog(NOTICE, "File hasn't changed since last backup. Don't copy at all");
-								is_cfs_relation_segment = true;
-							}
-							else
-							{
-								elog(NOTICE, "Backup part of the file. %s", file->path);
-								is_cfs_relation_segment = true;
-							}
-						}
-					}
-				}
-				pg_free(tmp_file.path);
-
-
-				if (is_cfs_relation_segment)
+				size_t skip_size = 0;
+				if (backup_compressed_file_partially(file, arguments, &skip_size))
 				{
 					/* backup cfs segment partly */
 					if (!copy_file_partly(arguments->from_root,
 							   arguments->to_root,
-							   file, prev_file->write_size))
+							   file, skip_size))
 					{
 						/* record as skipped file in file_xxx.txt */
 						file->write_size = BYTES_INVALID;
@@ -1301,6 +1312,15 @@ backup_files(void *arg)
 					elog(LOG, "skip");
 					continue;
 				}
+			}
+			else if (!copy_file(arguments->from_root,
+							   arguments->to_root,
+							   file))
+			{
+				/* record as skipped file in file_xxx.txt */
+				file->write_size = BYTES_INVALID;
+				elog(LOG, "skip");
+				continue;
 			}
 
 			elog(LOG, "copied %lu", (unsigned long) file->write_size);
@@ -1377,30 +1397,23 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 					tmp_file.path[path_len-7] = '\0';
 
 				pre_search_file = (pgFile **) parray_bsearch(list_file, &tmp_file, pgFileComparePath);
-				/* Use another scheme for compressed files */
-				pgFile map_file;
-				pgFile **map_search_file;
-				map_file.path = pg_strdup(file->path);
-				if (segno > 0)
-					sprintf(map_file.path+path_len-7, ".%d.cfm", segno);
-				else
-					sprintf(map_file.path+path_len-7, ".cfm");
-				map_search_file = (pgFile **) parray_bsearch(list_file, &map_file, pgFileComparePath);
 
-				if (pre_search_file != NULL
-					&& map_search_file == NULL)
+				if (is_compressed_data_file(&tmp_file, list_file))
+				{
+					elog(NOTICE, "file %s is compressed, don't remove it from list", tmp_file.path);
+					pg_free(tmp_file.path);
+					break;
+				}
+
+				if (pre_search_file != NULL)
 				{
 					search_file = *pre_search_file;
 					search_file->ptrack_path = pg_strdup(file->path);
 					search_file->segno = segno;
-				}
-				else
-				{
+				} else {
 					pg_free(tmp_file.path);
-					pg_free(map_file.path);
 					break;
 				}
-				pg_free(map_file.path);
 				pg_free(tmp_file.path);
 				segno++;
 			}
@@ -1453,9 +1466,6 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 	}
 
 	/* mark cfs relations as not data */
-	/* TODO
-	 * Don't mark cfs relations as not_datafile?
-	 * We can use similar code to check if the file is compressed  */
 	for (i = 0; i < (int) parray_num(list_file); i++)
 	{
 		pgFile *file = (pgFile *) parray_get(list_file, i);
@@ -1467,7 +1477,8 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 			pgFile tmp_file;
 			tmp_file.path = pg_strdup(file->path);
 			tmp_file.path[path_len-4] = '\0';
-			pre_search_file = (pgFile **) parray_bsearch(list_file, &tmp_file, pgFileComparePath);
+			pre_search_file = (pgFile **) parray_bsearch(list_file,
+														 &tmp_file, pgFileComparePath);
 			if (pre_search_file != NULL)
 			{
 				FileMap* map;
@@ -1483,13 +1494,9 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 					break;
 				}
 
-				(*pre_search_file)->last_backup_write_size = map->last_backup_write_size;
 				(*pre_search_file)->generation = map->generation;
 				(*pre_search_file)->is_datafile = false;
-				map->last_backup_write_size = map->physSize;
 
-				if (cfs_msync(map) < 0)
-					elog(LOG, "add_files(). CFS failed to sync map %s: %m", file->path);
 				if (cfs_munmap(map) < 0)
 					elog(LOG, "add_files(). CFS failed to unmap file %s: %m", file->path);
 				if (close(md) < 0)
@@ -1797,14 +1804,5 @@ int cfs_munmap(FileMap* map)
 	return UnmapViewOfFile(map) ? 0 : -1;
 #else
 	return munmap(map, sizeof(FileMap));
-#endif
-}
-
-int cfs_msync(FileMap* map)
-{
-#ifdef WIN32
-	return FlushViewOfFile(map, sizeof(FileMap)) ? 0 : -1;
-#else
-	return msync(map, sizeof(FileMap), MS_SYNC);
 #endif
 }

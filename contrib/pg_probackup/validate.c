@@ -199,7 +199,9 @@ pgBackupValidateFiles(void *arg)
 			elog(ERROR, "interrupted during validate");
 
 		/* skipped backup while differential backup */
-		if (file->write_size == BYTES_INVALID || !S_ISREG(file->mode))
+		if (file->write_size == BYTES_INVALID
+			|| !S_ISREG(file->mode)
+			|| file->generation != -1)
 			continue;
 
 		/* print progress */

@@ -73,7 +73,6 @@ typedef struct pgFile
 	int		segno;			/* Segment number for ptrack */
 	int		generation;		/* Generation of compressed file.
 							 * -1 for non-compressed files */
-	uint32 last_backup_write_size; /* for compressed file */
 	volatile uint32 lock;
 	datapagemap_t pagemap;
 } pgFile;
@@ -190,13 +189,11 @@ typedef struct
 	uint32 lock;
 	pid_t	postmasterPid;
 	uint64	generation;
-	uint32	last_backup_write_size;
 	uint64	inodes[RELSEG_SIZE];
 } FileMap;
 
 extern FileMap* cfs_mmap(int md);
 extern int cfs_munmap(FileMap* map);
-extern int cfs_msync(FileMap* map);
 
 /*
  * return pointer that exceeds the length of prefix from character string.
@@ -320,6 +317,10 @@ extern bool backup_data_file(const char *from_root, const char *to_root,
 							 pgFile *file, const XLogRecPtr *lsn);
 extern void restore_data_file(const char *from_root, const char *to_root,
 							  pgFile *file, pgBackup *backup);
+extern bool is_compressed_data_file(pgFile *file, parray *file_list);
+extern bool backup_compressed_file_partially(pgFile *file,
+											 void *arg,
+											 size_t *skip_size);
 extern bool copy_file(const char *from_root, const char *to_root,
 					  pgFile *file);
 extern bool copy_file_partly(const char *from_root, const char *to_root,
