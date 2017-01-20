@@ -619,14 +619,14 @@ read_rel(StringInfo s, LOCKMODE mode)
 static void
 process_remote_commit(StringInfo in)
 {
-	uint8 		flags;
+	uint8 		event;
 	csn_t       csn;
 	const char *gid = NULL;	
 	XLogRecPtr  end_lsn;
 	XLogRecPtr  origin_lsn;
 	int         origin_node;
-	/* read flags */
-	flags = pq_getmsgbyte(in);
+	/* read event */
+	event = pq_getmsgbyte(in);
 	MtmReplicationNodeId = pq_getmsgbyte(in);
 
 	/* read fields */
@@ -640,7 +640,7 @@ process_remote_commit(StringInfo in)
 	replorigin_session_origin_lsn = origin_node == MtmReplicationNodeId ? end_lsn : origin_lsn;
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 
-	switch (PGLOGICAL_XACT_EVENT(flags))
+	switch (event)
 	{
 	    case PGLOGICAL_PRECOMMIT_PREPARED:
 		{
@@ -723,12 +723,9 @@ process_remote_commit(StringInfo in)
 			Assert(false);
 	}
 	if (Mtm->status == MTM_RECOVERY) { 
-		MTM_LOG1("Recover transaction %s flags=%d", gid,  flags);
+		MTM_LOG1("Recover transaction %s event=%d", gid,  event);
 	}
 	MtmUpdateLsnMapping(MtmReplicationNodeId, end_lsn);
-	if (flags & PGLOGICAL_CAUGHT_UP) {
-		MtmRecoveryCompleted();
-	}
 }
 
 static void
@@ -1117,6 +1114,11 @@ void MtmExecutor(void* work, size_t size)
 				if (process_remote_message(&s)) { 
 					break;
 				}
+				continue;
+			}
+			case 'Z':
+			{
+				MtmRecoveryCompleted();
 				continue;
 			}
             default:
