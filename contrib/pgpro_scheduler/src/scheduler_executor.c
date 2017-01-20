@@ -30,6 +30,8 @@
 #include "memutils.h"
 #include "utils/elog.h"
 
+#include "port.h"
+
 extern volatile sig_atomic_t got_sighup;
 extern volatile sig_atomic_t got_sigterm;
 
@@ -462,7 +464,7 @@ int push_executor_error(executor_error_t *e, char *fmt, ...)
 	int len;
 
 	va_start(arglist, fmt);
-	len = vsnprintf(buf, 1024, fmt, arglist);
+	len = pvsnprintf(buf, 1024, fmt, arglist);
 	va_end(arglist);
 
 	if(e->n == 0)
