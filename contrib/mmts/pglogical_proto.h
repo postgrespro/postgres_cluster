@@ -37,6 +37,9 @@ typedef void (*pglogical_write_update_fn)(StringInfo out, struct PGLogicalOutput
 typedef void (*pglogical_write_delete_fn)(StringInfo out, struct PGLogicalOutputData *data,
 							 Relation rel, HeapTuple oldtuple);
 
+typedef void (*pglogical_write_caughtup_fn)(StringInfo out, struct PGLogicalOutputData *data,
+											XLogRecPtr wal_end_ptr);
+
 typedef void (*write_startup_message_fn)(StringInfo out, List *msg);
 
 typedef void (*pglogical_setup_hooks_fn)(struct PGLogicalHooks* hooks);
@@ -51,6 +54,7 @@ typedef struct PGLogicalProtoAPI
 	pglogical_write_insert_fn	write_insert;
 	pglogical_write_update_fn	write_update;
 	pglogical_write_delete_fn	write_delete;
+	pglogical_write_caughtup_fn	write_caughtup;
 	pglogical_setup_hooks_fn    setup_hooks;
 	write_startup_message_fn	write_startup_message;
 } PGLogicalProtoAPI;

@@ -746,6 +746,35 @@ message_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 	error_context_stack = errcallback.previous;
 }
 
+void LogicalDecodingCaughtUp(LogicalDecodingContext *ctx)
+{
+	LogicalErrorCallbackState state;
+	ErrorContextCallback errcallback;
+
+	if (ctx->callbacks.caughtup_cb == NULL)
+		return;
+
+	/* Push callback + info on the error context stack */
+	state.ctx = ctx;
+	state.callback_name = "caughtup";
+	state.report_location = ctx->reader->EndRecPtr;
+	errcallback.callback = output_plugin_error_callback;
+	errcallback.arg = (void *) &state;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
+	/* set output state */
+	ctx->accept_writes = true;
+	ctx->write_xid = InvalidTransactionId;
+	ctx->write_location = ctx->reader->EndRecPtr;
+
+	/* do the actual work: call callback */
+	ctx->callbacks.caughtup_cb(ctx);
+
+	/* Pop the error context stack */
+	error_context_stack = errcallback.previous;
+}	
+
 /*
  * Set the required catalog xmin horizon for historic snapshots in the current
  * replication slot.
