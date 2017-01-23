@@ -2219,7 +2219,7 @@ KnownPreparedAdd(XLogReaderState *record)
 	xact->prepare_start_lsn = record->ReadRecPtr;
 	xact->prepare_end_lsn = record->EndRecPtr;
 
-	dlist_push_tail(&KnownPreparedList, &xact->list_node);
+	dlist_push_head(&KnownPreparedList, &xact->list_node);
 }
 
 /*
