@@ -491,7 +491,7 @@ restore_file_partly(const char *from_root,const char *to_root, pgFile *file)
 		write_size += read_len;
 	}
 
-	elog(NOTICE, "write_size %lu, file->write_size %lu", write_size, file->write_size);
+	elog(NOTICE, "restore_file_partly(). write_size %lu, file->write_size %lu", write_size, file->write_size);
 
 	/* update file permission */
 	if (chmod(to_path, file->mode) == -1)
@@ -529,14 +529,16 @@ restore_compressed_file(const char *from_root,
 		return;
 	}
 
+	elog(NOTICE, "restore_compressed_file(). map %s", tmp_file.path);
 	map = cfs_mmap(md);
 	if (map == MAP_FAILED)
 	{
 		elog(LOG, "restore_compressed_file(). cfs_compression_ration failed to map file %s: %m", tmp_file.path);
-		close(md);
+		if (close(md) < 0)
+			elog(LOG, "restore_compressed_file(). CFS failed to close file %s: %m", tmp_file.path);
+		pfree(tmp_file.path);
+		return;
 	}
-	elog(LOG, "restore_compressed_file(). %s", to_path);
-
 
 	if (map->generation != file->generation)
 		copy_file(from_root, to_root, file);

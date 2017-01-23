@@ -1113,19 +1113,23 @@ backup_cleanup(bool fatal, void *userdata)
 static long
 file_size(const char *file)
 {
-	long		r;
-	FILE	   *f = fopen(file, "r");
-
-	if (!f)
-	{
-		elog(ERROR, "pg_probackup: could not open file \"%s\" for reading: %s\n",
-				file, strerror(errno));
-		return -1;
-	}
-	fseek(f, 0, SEEK_END);
-	r = ftell(f);
-	fclose(f);
-	return r;
+	struct stat st;
+	stat(file, &st);
+	elog(NOTICE, "file_size(). %lu", st.st_size);
+	return st.st_size;
+// 	long		r;
+// 	FILE	   *f = fopen(file, "r");
+//
+// 	if (!f)
+// 	{
+// 		elog(ERROR, "pg_probackup: could not open file \"%s\" for reading: %s\n",
+// 				file, strerror(errno));
+// 		return -1;
+// 	}
+// 	fseek(f, 0, SEEK_END);
+// 	r = ftell(f);
+// 	fclose(f);
+// 	return r;
 }
 
 bool
