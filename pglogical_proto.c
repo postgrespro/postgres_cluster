@@ -182,7 +182,7 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 {
     uint8 event = 0;
 	
-	MTM_LOG1("%d: pglogical_write_commit XID=%ld node=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
+	MTM_LOG2("%d: pglogical_write_commit XID=%ld node=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
 			 MyProcPid, (long)txn->xid, MtmReplicationNodeId, txn->restart_decoding_lsn, txn->first_lsn, txn->end_lsn, MyReplicationSlot->data.confirmed_flush);
 
 
