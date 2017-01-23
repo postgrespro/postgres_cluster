@@ -17,10 +17,13 @@ static const struct config_enum_entry format_options[] = {
 };
 
 /* Parameters of autotuning */
-int			aqo_stat_size = 10;
+int			aqo_stat_size = 20;
 int			auto_tuning_window_size = 5;
 double		auto_tuning_exploration = 0.1;
 int			auto_tuning_max_iterations = 50;
+int			auto_tuning_infinite_loop = 8;
+
+/* stat_size > infinite_loop + window_size + 3 is required for auto_tuning*/
 
 /* Machine learning parameters */
 double		object_selection_prediction_threshold = 0.3;

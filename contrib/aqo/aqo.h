@@ -30,7 +30,7 @@
  * "intelligent" mode tries to automatically tune AQO settings for the current
  * workload. It creates separate feature space for each new type of query
  * and then tries to improve the performance of such query type execution.
- * The automatic tuning may be manually deactivated for the given queries.
+ * The automatic tuning may be manually deactivated for some queries.
  * "forced" mode makes no difference between query types and use AQO for them
  * all in the similar way. It considers each new query type as linked to special
  * feature space called COMMON with hash 0.
@@ -174,6 +174,7 @@ extern int	aqo_stat_size;
 extern int	auto_tuning_window_size;
 extern double auto_tuning_exploration;
 extern int	auto_tuning_max_iterations;
+extern int	auto_tuning_infinite_loop;
 
 /* Machine learning parameters */
 extern double object_selection_prediction_threshold;
