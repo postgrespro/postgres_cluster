@@ -660,11 +660,11 @@ EXPLAIN SELECT * FROM t_pg_class t1, t_pg_class t2 WHERE t1.oid = t2.oid;
 \! sql/maskout.sh results/ut-R.tmpout
                                   QUERY PLAN                                  
 ------------------------------------------------------------------------------
- Hash Join  (cost=xxx rows=360 width=xxx)
+ Hash Join  (cost=xxx rows=340 width=xxx)
    Hash Cond: (t1.oid = t2.oid)
-   ->  Seq Scan on t_pg_class t1  (cost=xxx rows=360 width=xxx)
-   ->  Hash  (cost=xxx rows=360 width=xxx)
-         ->  Seq Scan on t_pg_class t2  (cost=xxx rows=360 width=xxx)
+   ->  Seq Scan on t_pg_class t1  (cost=xxx rows=340 width=xxx)
+   ->  Hash  (cost=xxx rows=340 width=xxx)
+         ->  Seq Scan on t_pg_class t2  (cost=xxx rows=340 width=xxx)
 (5 rows)
 
 \o results/ut-R.tmpout
@@ -683,9 +683,9 @@ error hint:
 ------------------------------------------------------------------------------
  Hash Join  (cost=xxx rows=1 width=xxx)
    Hash Cond: (t1.oid = t2.oid)
-   ->  Seq Scan on t_pg_class t1  (cost=xxx rows=360 width=xxx)
-   ->  Hash  (cost=xxx rows=360 width=xxx)
-         ->  Seq Scan on t_pg_class t2  (cost=xxx rows=360 width=xxx)
+   ->  Seq Scan on t_pg_class t1  (cost=xxx rows=340 width=xxx)
+   ->  Hash  (cost=xxx rows=340 width=xxx)
+         ->  Seq Scan on t_pg_class t2  (cost=xxx rows=340 width=xxx)
 (5 rows)
 
 -- No. R-1-6-6

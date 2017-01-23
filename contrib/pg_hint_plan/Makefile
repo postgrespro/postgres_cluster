@@ -15,6 +15,8 @@ REGRESS_OPTS = --encoding=UTF8
 
 EXTENSION = pg_hint_plan
 DATA = pg_hint_plan--1.1.3.sql
+EXTRA_REGRESS_OPTS=--temp-config=$(top_srcdir)/$(subdir)/conf.add
+EXTRA_INSTALL=contrib/pg_stat_statements contrib/btree_gist contrib/btree_gin contrib/file_fdw
 
 EXTRA_CLEAN = sql/ut-fdw.sql expected/ut-fdw.out
 
@@ -28,7 +30,7 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 override CFLAGS += -I$(top_srcdir)/src/pl/plpgsql/src
-REGRESS = init base_plan
+#REGRESS = init base_plan
 endif
 
 STARBALL96 = pg_hint_plan96-$(HINTPLANVER).tar.gz
