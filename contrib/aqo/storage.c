@@ -728,7 +728,7 @@ deform_matrix(Datum datum, double **matrix)
 				j;
 
 	deconstruct_array(array,
-					  FLOAT8OID, 8, true, 'd',
+					  FLOAT8OID, 8, FLOAT8PASSBYVAL, 'd',
 					  &values, NULL, &nelems);
 	rows = ARR_DIMS(array)[0];
 	cols = ARR_DIMS(array)[1];
@@ -751,7 +751,7 @@ deform_vector(Datum datum, double *vector, int *nelems)
 	int			i;
 
 	deconstruct_array(array,
-					  FLOAT8OID, 8, true, 'd',
+					  FLOAT8OID, 8, FLOAT8PASSBYVAL, 'd',
 					  &values, NULL, nelems);
 	for (i = 0; i < *nelems; ++i)
 		vector[i] = DatumGetFloat8(values[i]);
@@ -780,7 +780,7 @@ form_matrix(double **matrix, int nrows, int ncols)
 		for (j = 0; j < ncols; ++j)
 			elems[i * ncols + j] = Float8GetDatum(matrix[i][j]);
 	array = construct_md_array(elems, NULL, 2, dims, lbs,
-							   FLOAT8OID, 8, true, 'd');
+							   FLOAT8OID, 8, FLOAT8PASSBYVAL, 'd');
 	pfree(elems);
 	return array;
 }
@@ -803,7 +803,7 @@ form_vector(double *vector, int nrows)
 	for (i = 0; i < nrows; ++i)
 		elems[i] = Float8GetDatum(vector[i]);
 	array = construct_md_array(elems, NULL, 1, dims, lbs,
-							   FLOAT8OID, 8, true, 'd');
+							   FLOAT8OID, 8, FLOAT8PASSBYVAL, 'd');
 	pfree(elems);
 	return array;
 }
