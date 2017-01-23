@@ -1119,7 +1119,7 @@ void MtmExecutor(void* work, size_t size)
 			case 'Z':
 			{
 				MtmRecoveryCompleted();
-				continue;
+				break;
 			}
             default:
                 elog(ERROR, "unknown action of type %c", action);

@@ -3298,6 +3298,7 @@ void MtmRecoverNode(int nodeId)
 	{
 		Assert(BIT_CHECK(Mtm->disabledNodeMask, nodeId-1));
 		BIT_CLEAR(Mtm->stoppedNodeMask, nodeId-1);
+		BIT_CLEAR(Mtm->stalledNodeMask, nodeId-1);
 	}
 	MtmUnlock();
 		
@@ -3556,8 +3557,8 @@ MtmReplicationRowFilterHook(struct PGLogicalRowFilterArgs* args)
  * Filter received transactions at destination side.
  * This function is executed by receiver, 
  * so there are no race conditions and it is possible to update nodes[i].restartLSN without lock. 
- * It is more efficient to filter records at senders size (done by MtmReplicationTxnFilterHook) to avoid sending useless data through network. But asynchronous nature of 
- * logical replications makes it not possible to guarantee (at least I failed to do it)
+ * It is more efficient to filter records at senders size (done by MtmReplicationTxnFilterHook) to avoid sending useless data through network. 
+ * But asynchronous nature of logical replications makes it not possible to guarantee (at least I failed to do it)
  * that replica do not receive deteriorated data.
  */
 bool MtmFilterTransaction(char* record, int size)
