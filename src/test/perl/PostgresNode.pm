@@ -19,7 +19,7 @@ PostgresNode - class representing PostgreSQL server instance
 
   # Change a setting and restart
   $node->append_conf('postgresql.conf', 'hot_standby = on');
-  $node->restart('fast');
+  $node->restart();
 
   # run a query with psql, like:
   #   echo 'SELECT 1' | psql -qAXt postgres -v ON_ERROR_STOP=1
@@ -380,7 +380,9 @@ WAL archiving can be enabled on this node by passing the keyword parameter
 has_archiving => 1. This is disabled by default.
 
 postgresql.conf can be set up for replication by passing the keyword
-parameter allows_streaming => 1. This is disabled by default.
+parameter allows_streaming => 'logical' or 'physical' (passing 1 will also
+suffice for physical replication) depending on type of replication that
+should be enabled. This is disabled by default.
 
 The new node is set up in a fast but unsafe configuration where fsync is
 disabled.
@@ -415,14 +417,27 @@ sub init
 
 	if ($params{allows_streaming})
 	{
-		print $conf "wal_level = replica\n";
+		if ($params{allows_streaming} eq "logical")
+		{
+			print $conf "wal_level = logical\n";
+		}
+		else
+		{
+			print $conf "wal_level = replica\n";
+		}
 		print $conf "max_wal_senders = 5\n";
+		print $conf "max_replication_slots = 5\n";
 		print $conf "wal_keep_segments = 20\n";
 		print $conf "max_wal_size = 128MB\n";
 		print $conf "shared_buffers = 1MB\n";
 		print $conf "wal_log_hints = on\n";
 		print $conf "hot_standby = on\n";
 		print $conf "max_connections = 10\n";
+	}
+	else
+	{
+		print $conf "wal_level = minimal\n";
+		print $conf "max_wal_senders = 0\n";
 	}
 
 	if ($TestLib::windows_os)
@@ -632,7 +647,7 @@ port = $port
 
 =item $node->start()
 
-Wrapper for pg_ctl -w start
+Wrapper for pg_ctl start
 
 Start the node and wait until it is ready to accept connections.
 
@@ -645,7 +660,7 @@ sub start
 	my $pgdata = $self->data_dir;
 	my $name   = $self->name;
 	print("### Starting node \"$name\"\n");
-	my $ret = TestLib::system_log('pg_ctl', '-w', '-D', $self->data_dir, '-l',
+	my $ret = TestLib::system_log('pg_ctl', '-D', $self->data_dir, '-l',
 		$self->logfile, 'start');
 
 	if ($ret != 0)
@@ -702,7 +717,7 @@ sub reload
 
 =item $node->restart()
 
-Wrapper for pg_ctl -w restart
+Wrapper for pg_ctl restart
 
 =cut
 
@@ -714,7 +729,7 @@ sub restart
 	my $logfile = $self->logfile;
 	my $name    = $self->name;
 	print "### Restarting node \"$name\"\n";
-	TestLib::system_log('pg_ctl', '-D', $pgdata, '-w', '-l', $logfile,
+	TestLib::system_log('pg_ctl', '-D', $pgdata, '-l', $logfile,
 		'restart');
 	$self->_update_pid;
 }
@@ -723,7 +738,7 @@ sub restart
 
 =item $node->promote()
 
-Wrapper for pg_ctl promote -w
+Wrapper for pg_ctl promote
 
 =cut
 
@@ -735,7 +750,7 @@ sub promote
 	my $logfile = $self->logfile;
 	my $name    = $self->name;
 	print "### Promoting node \"$name\"\n";
-	TestLib::system_log('pg_ctl', '-D', $pgdata, '-w', '-l', $logfile,
+	TestLib::system_log('pg_ctl', '-D', $pgdata, '-l', $logfile,
 		'promote');
 }
 

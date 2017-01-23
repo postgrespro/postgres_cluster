@@ -1324,7 +1324,6 @@ ExecuteTruncate(TruncateStmt *stmt)
 		InitResultRelInfo(resultRelInfo,
 						  rel,
 						  0,	/* dummy rangetable index */
-						  false,
 						  NULL,
 						  0);
 		resultRelInfo++;
@@ -4461,8 +4460,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 
 					values[ex->attnum - 1] = ExecEvalExpr(ex->exprstate,
 														  econtext,
-													 &isnull[ex->attnum - 1],
-														  NULL);
+													 &isnull[ex->attnum - 1]);
 				}
 
 				/*
@@ -9285,7 +9283,8 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, char *cmd,
 	querytree_list = NIL;
 	foreach(list_item, raw_parsetree_list)
 	{
-		Node	   *stmt = (Node *) lfirst(list_item);
+		RawStmt    *rs = (RawStmt *) lfirst(list_item);
+		Node	   *stmt = rs->stmt;
 
 		if (IsA(stmt, IndexStmt))
 			querytree_list = lappend(querytree_list,
@@ -12057,6 +12056,18 @@ ATPrepChangePersistence(Relation rel, bool toLogged)
 	}
 
 	/*
+	 * Check that the table is not part any publication when changing to
+	 * UNLOGGED as UNLOGGED tables can't be published.
+	 */
+	if (!toLogged &&
+		list_length(GetRelationPublications(RelationGetRelid(rel))) > 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("cannot change table \"%s\" to unlogged because it is part of a publication",
+						RelationGetRelationName(rel)),
+				 errdetail("Unlogged relations cannot be replicated.")));
+
+	/*
 	 * Check existing foreign key constraints to preserve the invariant that
 	 * permanent tables cannot reference unlogged ones.  Self-referencing
 	 * foreign keys can safely be ignored.
@@ -13429,6 +13440,7 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd)
 			Oid			part_relid = lfirst_oid(lc);
 			Relation	part_rel;
 			Expr	   *constr;
+			List	   *my_constr;
 
 			/* Lock already taken */
 			if (part_relid != RelationGetRelid(attachRel))
@@ -13451,8 +13463,11 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd)
 			tab = ATGetQueueEntry(wqueue, part_rel);
 
 			constr = linitial(partConstraint);
-			tab->partition_constraint = make_ands_implicit((Expr *) constr);
-
+			my_constr = make_ands_implicit((Expr *) constr);
+			tab->partition_constraint = map_partition_varattnos(my_constr,
+																1,
+																part_rel,
+																rel);
 			/* keep our lock until commit */
 			if (part_rel != attachRel)
 				heap_close(part_rel, NoLock);

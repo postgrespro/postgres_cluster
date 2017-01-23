@@ -199,6 +199,8 @@ typedef enum AclObjectKind
 	ACL_KIND_FOREIGN_SERVER,	/* pg_foreign_server */
 	ACL_KIND_EVENT_TRIGGER,		/* pg_event_trigger */
 	ACL_KIND_EXTENSION,			/* pg_extension */
+	ACL_KIND_PUBLICATION,		/* pg_publication */
+	ACL_KIND_SUBSCRIPTION,		/* pg_subscription */
 	MAX_ACL_KIND				/* MUST BE LAST */
 } AclObjectKind;
 
@@ -241,20 +243,6 @@ extern void select_best_grantor(Oid roleId, AclMode privileges,
 					Oid *grantorId, AclMode *grantOptions);
 
 extern void initialize_acl(void);
-
-/*
- * SQL functions (from acl.c)
- */
-extern Datum aclitemin(PG_FUNCTION_ARGS);
-extern Datum aclitemout(PG_FUNCTION_ARGS);
-extern Datum aclinsert(PG_FUNCTION_ARGS);
-extern Datum aclremove(PG_FUNCTION_ARGS);
-extern Datum aclcontains(PG_FUNCTION_ARGS);
-extern Datum makeaclitem(PG_FUNCTION_ARGS);
-extern Datum aclitem_eq(PG_FUNCTION_ARGS);
-extern Datum hash_aclitem(PG_FUNCTION_ARGS);
-extern Datum acldefault_sql(PG_FUNCTION_ARGS);
-extern Datum aclexplode(PG_FUNCTION_ARGS);
 
 /*
  * prototypes for functions in aclchk.c
@@ -332,6 +320,8 @@ extern bool pg_foreign_data_wrapper_ownercheck(Oid srv_oid, Oid roleid);
 extern bool pg_foreign_server_ownercheck(Oid srv_oid, Oid roleid);
 extern bool pg_event_trigger_ownercheck(Oid et_oid, Oid roleid);
 extern bool pg_extension_ownercheck(Oid ext_oid, Oid roleid);
+extern bool pg_publication_ownercheck(Oid pub_oid, Oid roleid);
+extern bool pg_subscription_ownercheck(Oid sub_oid, Oid roleid);
 extern bool has_createrole_privilege(Oid roleid);
 extern bool has_bypassrls_privilege(Oid roleid);
 

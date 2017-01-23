@@ -72,6 +72,7 @@ main(int argc, char **argv)
 	char	   *inputFileSpec;
 	static int	disable_triggers = 0;
 	static int	enable_row_security = 0;
+	static int	include_subscriptions = 0;
 	static int	if_exists = 0;
 	static int	no_data_for_failed_tables = 0;
 	static int	outputNoTablespaces = 0;
@@ -116,6 +117,7 @@ main(int argc, char **argv)
 		{"disable-triggers", no_argument, &disable_triggers, 1},
 		{"enable-row-security", no_argument, &enable_row_security, 1},
 		{"if-exists", no_argument, &if_exists, 1},
+		{"include-subscriptions", no_argument, &include_subscriptions, 1},
 		{"no-data-for-failed-tables", no_argument, &no_data_for_failed_tables, 1},
 		{"no-tablespaces", no_argument, &outputNoTablespaces, 1},
 		{"role", required_argument, NULL, 2},
@@ -330,6 +332,22 @@ main(int argc, char **argv)
 		exit_nicely(1);
 	}
 
+	if (numWorkers <= 0)
+	{
+		fprintf(stderr, _("%s: invalid number of parallel jobs\n"), progname);
+		exit(1);
+	}
+
+	/* See comments in pg_dump.c */
+#ifdef WIN32
+	if (numWorkers > MAXIMUM_WAIT_OBJECTS)
+	{
+		fprintf(stderr, _("%s: maximum number of parallel jobs is %d\n"),
+				progname, MAXIMUM_WAIT_OBJECTS);
+		exit(1);
+	}
+#endif
+
 	/* Can't do single-txn mode with multiple connections */
 	if (opts->single_txn && numWorkers > 1)
 	{
@@ -340,6 +358,7 @@ main(int argc, char **argv)
 
 	opts->disable_triggers = disable_triggers;
 	opts->enable_row_security = enable_row_security;
+	opts->include_subscriptions = include_subscriptions;
 	opts->noDataForFailedTables = no_data_for_failed_tables;
 	opts->noTablespace = outputNoTablespaces;
 	opts->use_setsessauth = use_setsessauth;
@@ -401,16 +420,6 @@ main(int argc, char **argv)
 
 	if (opts->tocFile)
 		SortTocFromFile(AH);
-
-	/* See comments in pg_dump.c */
-#ifdef WIN32
-	if (numWorkers > MAXIMUM_WAIT_OBJECTS)
-	{
-		fprintf(stderr, _("%s: maximum number of parallel jobs is %d\n"),
-				progname, MAXIMUM_WAIT_OBJECTS);
-		exit(1);
-	}
-#endif
 
 	AH->numWorkers = numWorkers;
 

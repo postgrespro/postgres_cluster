@@ -40,7 +40,7 @@
 #include "nodes/makefuncs.h"
 #include "parser/parse_type.h"
 #include "parser/scansup.h"
-#include "utils/int8.h"
+#include "utils/builtins.h"
 
 /*
  * Extract a string value (otherwise uninterpreted) from a DefElem.
@@ -318,4 +318,32 @@ defGetTypeLength(DefElem *def)
 			 errmsg("invalid argument for %s: \"%s\"",
 					def->defname, defGetString(def))));
 	return 0;					/* keep compiler quiet */
+}
+
+/*
+ * Extract a list of string values (otherwise uninterpreted) from a DefElem.
+ */
+List *
+defGetStringList(DefElem *def)
+{
+	ListCell   *cell;
+
+	if (def->arg == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("%s requires a parameter",
+						def->defname)));
+	if (nodeTag(def->arg) != T_List)
+		elog(ERROR, "unrecognized node type: %d", (int) nodeTag(def->arg));
+
+	foreach(cell, (List *)def->arg)
+	{
+		Node	   *str = (Node *) lfirst(cell);
+
+		if (!IsA(str, String))
+			elog(ERROR, "unexpected node type in name list: %d",
+				 (int) nodeTag(str));
+	}
+
+	return (List *) def->arg;
 }

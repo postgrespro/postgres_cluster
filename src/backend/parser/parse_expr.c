@@ -1797,6 +1797,7 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 		case EXPR_KIND_OFFSET:
 		case EXPR_KIND_RETURNING:
 		case EXPR_KIND_VALUES:
+		case EXPR_KIND_VALUES_SINGLE:
 			/* okay */
 			break;
 		case EXPR_KIND_CHECK_CONSTRAINT:
@@ -1848,12 +1849,11 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 	qtree = parse_sub_analyze(sublink->subselect, pstate, NULL, false);
 
 	/*
-	 * Check that we got something reasonable.  Many of these conditions are
-	 * impossible given restrictions of the grammar, but check 'em anyway.
+	 * Check that we got a SELECT.  Anything else should be impossible given
+	 * restrictions of the grammar, but check anyway.
 	 */
 	if (!IsA(qtree, Query) ||
-		qtree->commandType != CMD_SELECT ||
-		qtree->utilityStmt != NULL)
+		qtree->commandType != CMD_SELECT)
 		elog(ERROR, "unexpected non-SELECT command in SubLink");
 
 	sublink->subselect = (Node *) qtree;
@@ -3411,6 +3411,7 @@ ParseExprKindName(ParseExprKind exprKind)
 		case EXPR_KIND_RETURNING:
 			return "RETURNING";
 		case EXPR_KIND_VALUES:
+		case EXPR_KIND_VALUES_SINGLE:
 			return "VALUES";
 		case EXPR_KIND_CHECK_CONSTRAINT:
 		case EXPR_KIND_DOMAIN_CHECK:

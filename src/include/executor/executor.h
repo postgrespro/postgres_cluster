@@ -70,8 +70,8 @@
  * now it's just a macro invoking the function pointed to by an ExprState
  * node.  Beware of double evaluation of the ExprState argument!
  */
-#define ExecEvalExpr(expr, econtext, isNull, isDone) \
-	((*(expr)->evalfunc) (expr, econtext, isNull, isDone))
+#define ExecEvalExpr(expr, econtext, isNull) \
+	((*(expr)->evalfunc) (expr, econtext, isNull))
 
 
 /* Hook for plugins to get control in ExecutorStart() */
@@ -189,7 +189,6 @@ extern void CheckValidResultRel(Relation resultRel, CmdType operation);
 extern void InitResultRelInfo(ResultRelInfo *resultRelInfo,
 				  Relation resultRelationDesc,
 				  Index resultRelationIndex,
-				  bool load_partition_check,
 				  Relation partition_root,
 				  int instrument_options);
 extern ResultRelInfo *ExecGetTriggerResultRel(EState *estate, Oid relid);
@@ -253,15 +252,18 @@ extern Tuplestorestate *ExecMakeTableFunctionResult(ExprState *funcexpr,
 							MemoryContext argContext,
 							TupleDesc expectedDesc,
 							bool randomAccess);
+extern Datum ExecMakeFunctionResultSet(FuncExprState *fcache,
+						  ExprContext *econtext,
+						  bool *isNull,
+						  ExprDoneCond *isDone);
 extern Datum ExecEvalExprSwitchContext(ExprState *expression, ExprContext *econtext,
-						  bool *isNull, ExprDoneCond *isDone);
+						  bool *isNull);
 extern ExprState *ExecInitExpr(Expr *node, PlanState *parent);
 extern ExprState *ExecPrepareExpr(Expr *node, EState *estate);
 extern bool ExecQual(List *qual, ExprContext *econtext, bool resultForNull);
 extern int	ExecTargetListLength(List *targetlist);
 extern int	ExecCleanTargetListLength(List *targetlist);
-extern TupleTableSlot *ExecProject(ProjectionInfo *projInfo,
-			ExprDoneCond *isDone);
+extern TupleTableSlot *ExecProject(ProjectionInfo *projInfo);
 
 /*
  * prototypes from functions in execScan.c
@@ -389,6 +391,23 @@ extern void check_exclusion_constraint(Relation heap, Relation index,
 						   ItemPointer tupleid,
 						   Datum *values, bool *isnull,
 						   EState *estate, bool newIndex);
+
+/*
+ * prototypes from functions in execReplication.c
+ */
+extern bool RelationFindReplTupleByIndex(Relation rel, Oid idxoid,
+							 LockTupleMode lockmode,
+							 TupleTableSlot *searchslot,
+							 TupleTableSlot *outslot);
+extern bool RelationFindReplTupleSeq(Relation rel, LockTupleMode lockmode,
+						 TupleTableSlot *searchslot, TupleTableSlot *outslot);
+
+extern void ExecSimpleRelationInsert(EState *estate, TupleTableSlot *slot);
+extern void ExecSimpleRelationUpdate(EState *estate, EPQState *epqstate,
+						 TupleTableSlot *searchslot, TupleTableSlot *slot);
+extern void ExecSimpleRelationDelete(EState *estate, EPQState *epqstate,
+						 TupleTableSlot *searchslot);
+extern void CheckCmdReplicaIdentity(Relation rel, CmdType cmd);
 
 
 #endif   /* EXECUTOR_H  */

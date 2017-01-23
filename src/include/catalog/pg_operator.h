@@ -709,6 +709,10 @@ DATA(insert OID = 908 (  "*"	   PGNSP PGUID b f f	790  701	790 916   0 cash_mul_
 DESCR("multiply");
 DATA(insert OID = 909 (  "/"	   PGNSP PGUID b f f	790  701	790   0   0 cash_div_flt8 - - ));
 DESCR("divide");
+DATA(insert OID = 3346 (  "*"	   PGNSP PGUID b f f	790  20		790 3349  0 cash_mul_int8 - - ));
+DESCR("multiply");
+DATA(insert OID = 3347 (  "/"	   PGNSP PGUID b f f	790  20		790   0   0 cash_div_int8 - - ));
+DESCR("divide");
 DATA(insert OID = 912 (  "*"	   PGNSP PGUID b f f	790  23		790 917   0 cash_mul_int4 - - ));
 DESCR("multiply");
 DATA(insert OID = 913 (  "/"	   PGNSP PGUID b f f	790  23		790   0   0 cash_div_int4 - - ));
@@ -718,6 +722,8 @@ DESCR("multiply");
 DATA(insert OID = 915 (  "/"	   PGNSP PGUID b f f	790  21		790   0   0 cash_div_int2 - - ));
 DESCR("divide");
 DATA(insert OID = 916 (  "*"	   PGNSP PGUID b f f	701  790	790 908   0 flt8_mul_cash - - ));
+DESCR("multiply");
+DATA(insert OID = 3349 (  "*"	   PGNSP PGUID b f f	20	790		790 3346  0 int8_mul_cash - - ));
 DESCR("multiply");
 DATA(insert OID = 917 (  "*"	   PGNSP PGUID b f f	23	790		790 912   0 int4_mul_cash - - ));
 DESCR("multiply");
@@ -1820,6 +1826,8 @@ DATA(insert OID = 3284 (  "||"	   PGNSP PGUID b f f 3802 3802 3802 0 0 jsonb_con
 DESCR("concatenate");
 DATA(insert OID = 3285 (  "-"	   PGNSP PGUID b f f 3802 25 3802 0 0 3302 - - ));
 DESCR("delete object field");
+DATA(insert OID = 3398 (  "-"      PGNSP PGUID b f f 3802 1009 3802 0 0 3343 - -));
+DESCR("delete object fields");
 DATA(insert OID = 3286 (  "-"	   PGNSP PGUID b f f 3802 23 3802 0 0 3303 - - ));
 DESCR("delete array element");
 DATA(insert OID = 3287 (  "#-"	   PGNSP PGUID b f f 3802 1009 3802 0 0 jsonb_delete_path - - ));

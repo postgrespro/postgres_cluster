@@ -522,8 +522,9 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 		if (funcrettype == OPAQUEOID)
 		{
 			ereport(WARNING,
-					(errmsg("changing return type of function %s from \"opaque\" to \"trigger\"",
-							NameListToString(stmt->funcname))));
+				 (errmsg("changing return type of function %s from %s to %s",
+						 NameListToString(stmt->funcname),
+						 "opaque", "trigger")));
 			SetFunctionReturnType(funcoid, TRIGGEROID);
 		}
 		else
@@ -1078,6 +1079,7 @@ ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid)
 		AlterTableStmt *atstmt = makeNode(AlterTableStmt);
 		AlterTableCmd *atcmd = makeNode(AlterTableCmd);
 		Constraint *fkcon = makeNode(Constraint);
+		PlannedStmt *wrapper = makeNode(PlannedStmt);
 
 		ereport(NOTICE,
 				(errmsg("converting trigger group into constraint \"%s\" %s",
@@ -1167,8 +1169,15 @@ ConvertTriggerToFK(CreateTrigStmt *stmt, Oid funcoid)
 		fkcon->skip_validation = false;
 		fkcon->initially_valid = true;
 
+		/* finally, wrap it in a dummy PlannedStmt */
+		wrapper->commandType = CMD_UTILITY;
+		wrapper->canSetTag = false;
+		wrapper->utilityStmt = (Node *) atstmt;
+		wrapper->stmt_location = -1;
+		wrapper->stmt_len = -1;
+
 		/* ... and execute it */
-		ProcessUtility((Node *) atstmt,
+		ProcessUtility(wrapper,
 					   "(generated ALTER TABLE ADD FOREIGN KEY command)",
 					   PROCESS_UTILITY_SUBCOMMAND, NULL,
 					   None_Receiver, NULL);
