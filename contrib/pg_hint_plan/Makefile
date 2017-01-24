@@ -30,8 +30,13 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 override CFLAGS += -I$(top_srcdir)/src/pl/plpgsql/src
-#REGRESS = init base_plan
 endif
+ifneq ($(USE_MODULE_DB),)
+  PGDATABASE=$(CONTRIB_TESTDB_MODULE)
+else
+  PGDATABASE=$(CONTRIB_TESTDB)
+endif
+export PGDATABASE
 
 STARBALL96 = pg_hint_plan96-$(HINTPLANVER).tar.gz
 STARBALLS = $(STARBALL96)
