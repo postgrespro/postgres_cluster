@@ -654,8 +654,9 @@ EXPLAIN (COSTS false) SELECT c2 FROM s1.ti1 WHERE ti1.c2 >= 1;
 ----
 ---- No. S-3-4 index type
 ----
-
+SET client_min_messages TO INFO;
 \d s1.ti1
+SET client_min_messages TO LOG;
 EXPLAIN (COSTS false) SELECT * FROM s1.ti1 WHERE c1 < 100 AND c2 = 1 AND lower(c4) = '1' AND to_tsvector('english', c4) @@ 'a & b' AND ctid = '(1,1)';
 
 -- No. S-3-4-1
