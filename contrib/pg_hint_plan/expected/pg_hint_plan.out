@@ -2,6 +2,7 @@ SET search_path TO public;
 SET client_min_messages TO log;
 \set SHOW_CONTEXT always
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
               QUERY PLAN              
 --------------------------------------
  Merge Join
@@ -11,6 +12,7 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 (4 rows)
 
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.val = t2.val;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.val = t2.val;
                 QUERY PLAN                 
 -------------------------------------------
  Merge Join
@@ -21,8 +23,11 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.val = t2.val;
 (5 rows)
 
 LOAD 'pg_hint_plan';
+LOG:  statement: LOAD 'pg_hint_plan';
 SET pg_hint_plan.debug_print TO on;
+LOG:  statement: SET pg_hint_plan.debug_print TO on;
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
               QUERY PLAN              
 --------------------------------------
  Merge Join
@@ -32,6 +37,7 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 (4 rows)
 
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.val = t2.val;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.val = t2.val;
                 QUERY PLAN                 
 -------------------------------------------
  Merge Join
@@ -42,6 +48,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.val = t2.val;
 (5 rows)
 
 /*+ Test (t1 t2) */
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+ Test (t1 t2) */
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 INFO:  pg_hint_plan: hint syntax error at or near "Test (t1 t2) "
 DETAIL:  Unrecognized hint keyword "Test".
@@ -54,7 +62,10 @@ DETAIL:  Unrecognized hint keyword "Test".
 (4 rows)
 
 SET pg_hint_plan.enable_hint TO off;
+LOG:  statement: SET pg_hint_plan.enable_hint TO off;
 /*+ Test (t1 t2) */
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+ Test (t1 t2) */
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
               QUERY PLAN              
 --------------------------------------
@@ -65,7 +76,10 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 (4 rows)
 
 SET pg_hint_plan.enable_hint TO on;
+LOG:  statement: SET pg_hint_plan.enable_hint TO on;
 /*Set(enable_indexscan off)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*Set(enable_indexscan off)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
               QUERY PLAN              
 --------------------------------------
@@ -77,6 +91,7 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 
 --+Set(enable_indexscan off)
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
               QUERY PLAN              
 --------------------------------------
  Merge Join
@@ -86,6 +101,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 (4 rows)
 
 /*+Set(enable_indexscan off) /* nest comment */ */
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+Set(enable_indexscan off) /* nest comment */ */
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 INFO:  pg_hint_plan: hint syntax error at or near "/* nest comment */ */
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;"
@@ -99,6 +116,8 @@ DETAIL:  Nested block comments are not supported.
 (4 rows)
 
 /*+Set(enable_indexscan off)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+Set(enable_indexscan off)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -118,6 +137,8 @@ error hint:
 
 EXPLAIN (COSTS false) /*+Set(enable_indexscan off)*/
  SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: EXPLAIN (COSTS false) /*+Set(enable_indexscan off)*/
+ SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
 Set(enable_indexscan off)
@@ -135,6 +156,8 @@ error hint:
 (5 rows)
 
 /*+ Set(enable_indexscan off) Set(enable_hashjoin off) */
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+ Set(enable_indexscan off) Set(enable_hashjoin off) */
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -158,6 +181,8 @@ error hint:
 
 /*+ 	 Set 	 ( 	 enable_indexscan 	 off 	 ) 	 */
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+ 	 Set 	 ( 	 enable_indexscan 	 off 	 ) 	 */
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
 Set(enable_indexscan off)
@@ -175,6 +200,14 @@ error hint:
 (5 rows)
 
 /*+ 	 
+	 	Set 	 
+	 	( 	 
+	 	enable_indexscan 	 
+	 	off 	 
+	 	) 	 
+	 	*/	 	
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+ 	 
 	 	Set 	 
 	 	( 	 
 	 	enable_indexscan 	 
@@ -202,6 +235,10 @@ error hint:
 	 	Set(enable_seqscan off)
 	 	*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+ Set(enable_indexscan off)Set(enable_nestloop off)Set(enable_mergejoin off)	 	
+	 	Set(enable_seqscan off)
+	 	*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
 Set(enable_indexscan off)
@@ -223,6 +260,8 @@ error hint:
 
 /*+Set(work_mem "1M")*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+Set(work_mem "1M")*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 INFO:  invalid value for parameter "work_mem": "1M"
 HINT:  Valid units for this parameter are "kB", "MB", "GB", and "TB".
 LOG:  pg_hint_plan:
@@ -242,6 +281,8 @@ Set(work_mem 1M)
 
 /*+Set(work_mem "1MB")*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+Set(work_mem "1MB")*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
 Set(work_mem 1MB)
@@ -258,6 +299,8 @@ error hint:
 (4 rows)
 
 /*+Set(work_mem TO "1MB")*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+Set(work_mem TO "1MB")*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 INFO:  pg_hint_plan: hint syntax error at or near "Set(work_mem TO "1MB")"
 DETAIL:  Set hint requires name and value of GUC parameter.
@@ -278,6 +321,8 @@ Set(work_mem TO 1MB)
 
 /*+SeqScan(t1 t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+SeqScan(t1 t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 INFO:  pg_hint_plan: hint syntax error at or near ""
 DETAIL:  SeqScan hint accepts only one relation.
 LOG:  pg_hint_plan:
@@ -297,6 +342,8 @@ SeqScan(t1 t2)
 
 /*+SeqScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+SeqScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t1)
@@ -314,6 +361,8 @@ error hint:
 (5 rows)
 
 /*+SeqScan(t1)IndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+SeqScan(t1)IndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -334,6 +383,8 @@ error hint:
 
 /*+BitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+BitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
 BitmapScan(t2)
@@ -352,6 +403,8 @@ error hint:
 (6 rows)
 
 /*+BitmapScan(t2)NoSeqScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+BitmapScan(t2)NoSeqScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -373,6 +426,8 @@ error hint:
 
 /*+NoIndexScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+NoIndexScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
 NoIndexScan(t1)
@@ -391,6 +446,8 @@ error hint:
 
 /*+NoBitmapScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t4 WHERE t1.val < 10;
+LOG:  statement: /*+NoBitmapScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t4 WHERE t1.val < 10;
 LOG:  pg_hint_plan:
 used hint:
 NoBitmapScan(t1)
@@ -408,6 +465,8 @@ error hint:
 (5 rows)
 
 /*+TidScan(t4)*/
+EXPLAIN (COSTS false) SELECT * FROM t3, t4 WHERE t3.id = t4.id AND t4.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(t4)*/
 EXPLAIN (COSTS false) SELECT * FROM t3, t4 WHERE t3.id = t4.id AND t4.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -429,6 +488,8 @@ error hint:
 
 /*+NoTidScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)';
+LOG:  statement: /*+NoTidScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoTidScan(t1)
@@ -446,6 +507,8 @@ error hint:
 (5 rows)
 
 /*+HashJoin(t1 t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+HashJoin(t1 t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -465,6 +528,8 @@ error hint:
 
 /*+NestLoop(t1 t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+NestLoop(t1 t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
 NestLoop(t1 t2)
@@ -481,6 +546,8 @@ error hint:
 (4 rows)
 
 /*+NoMergeJoin(t1 t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+NoMergeJoin(t1 t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -499,6 +566,8 @@ error hint:
 (5 rows)
 
 /*+MergeJoin(t1 t3)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t3 WHERE t1.val = t3.val;
+LOG:  statement: /*+MergeJoin(t1 t3)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t3 WHERE t1.val = t3.val;
 LOG:  pg_hint_plan:
 used hint:
@@ -519,6 +588,8 @@ error hint:
 
 /*+NestLoop(t1 t3)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t3 WHERE t1.val = t3.val;
+LOG:  statement: /*+NestLoop(t1 t3)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t3 WHERE t1.val = t3.val;
 LOG:  pg_hint_plan:
 used hint:
 NestLoop(t1 t3)
@@ -536,6 +607,8 @@ error hint:
 
 /*+NoHashJoin(t1 t3)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t3 WHERE t1.val = t3.val;
+LOG:  statement: /*+NoHashJoin(t1 t3)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t3 WHERE t1.val = t3.val;
 LOG:  pg_hint_plan:
 used hint:
 NoHashJoin(t1 t3)
@@ -552,6 +625,8 @@ error hint:
 (4 rows)
 
 /*+MergeJoin(t4 t1 t2 t3)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
+LOG:  statement: /*+MergeJoin(t4 t1 t2 t3)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -579,6 +654,8 @@ error hint:
 
 /*+HashJoin(t3 t4 t1 t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
+LOG:  statement: /*+HashJoin(t3 t4 t1 t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
 LOG:  pg_hint_plan:
 used hint:
 HashJoin(t1 t2 t3 t4)
@@ -604,6 +681,8 @@ error hint:
 (13 rows)
 
 /*+NestLoop(t2 t3 t4 t1) IndexScan(t3)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
+LOG:  statement: /*+NestLoop(t2 t3 t4 t1) IndexScan(t3)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -631,6 +710,8 @@ error hint:
 
 /*+NoNestLoop(t4 t1 t3 t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
+LOG:  statement: /*+NoNestLoop(t4 t1 t3 t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
 LOG:  pg_hint_plan:
 used hint:
 NoNestLoop(t1 t2 t3 t4)
@@ -657,6 +738,8 @@ error hint:
 
 /*+Leading( */
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
+LOG:  statement: /*+Leading( */
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
 INFO:  pg_hint_plan: hint syntax error at or near ""
 DETAIL:  Closing parenthesis is necessary.
                     QUERY PLAN                    
@@ -676,6 +759,8 @@ DETAIL:  Closing parenthesis is necessary.
 (12 rows)
 
 /*+Leading( )*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
+LOG:  statement: /*+Leading( )*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
 INFO:  pg_hint_plan: hint syntax error at or near "Leading( )"
 DETAIL:  Leading hint requires at least two relations.
@@ -704,6 +789,8 @@ Leading()
 
 /*+Leading( t3 )*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
+LOG:  statement: /*+Leading( t3 )*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
 INFO:  pg_hint_plan: hint syntax error at or near "Leading( t3 )"
 DETAIL:  Leading hint requires at least two relations.
 LOG:  pg_hint_plan:
@@ -731,6 +818,8 @@ Leading(t3)
 
 /*+Leading( t3 t4 )*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
+LOG:  statement: /*+Leading( t3 t4 )*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
 LOG:  pg_hint_plan:
 used hint:
 Leading(t3 t4)
@@ -755,6 +844,8 @@ error hint:
 (12 rows)
 
 /*+Leading(t3 t4 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
+LOG:  statement: /*+Leading(t3 t4 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -781,6 +872,8 @@ error hint:
 
 /*+Leading(t3 t4 t1 t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
+LOG:  statement: /*+Leading(t3 t4 t1 t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
 LOG:  pg_hint_plan:
 used hint:
 Leading(t3 t4 t1 t2)
@@ -805,6 +898,8 @@ error hint:
 (12 rows)
 
 /*+Leading(t3 t4 t1 t2 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
+LOG:  statement: /*+Leading(t3 t4 t1 t2 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
 INFO:  pg_hint_plan: hint syntax error at or near "Leading(t3 t4 t1 t2 t1)"
 DETAIL:  Relation name "t1" is duplicated.
@@ -833,6 +928,8 @@ Leading(t3 t4 t1 t2 t1)
 
 /*+Leading(t3 t4 t4)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
+LOG:  statement: /*+Leading(t3 t4 t4)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id;
 INFO:  pg_hint_plan: hint syntax error at or near "Leading(t3 t4 t4)"
 DETAIL:  Relation name "t4" is duplicated.
 LOG:  pg_hint_plan:
@@ -859,6 +956,7 @@ Leading(t3 t4 t4)
 (12 rows)
 
 EXPLAIN (COSTS false) SELECT * FROM t1, (VALUES(1,1),(2,2),(3,3)) AS t2(id,val) WHERE t1.id = t2.id;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, (VALUES(1,1),(2,2),(3,3)) AS t2(id,val) WHERE t1.id = t2.id;
                   QUERY PLAN                   
 -----------------------------------------------
  Nested Loop
@@ -868,6 +966,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, (VALUES(1,1),(2,2),(3,3)) AS t2(id,val) 
 (4 rows)
 
 /*+HashJoin(t1 t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, (VALUES(1,1),(2,2),(3,3)) AS t2(id,val) WHERE t1.id = t2.id;
+LOG:  statement: /*+HashJoin(t1 t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, (VALUES(1,1),(2,2),(3,3)) AS t2(id,val) WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -886,6 +986,8 @@ error hint:
 
 /*+HashJoin(t1 *VALUES*)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, (VALUES(1,1),(2,2),(3,3)) AS t2(id,val) WHERE t1.id = t2.id;
+LOG:  statement: /*+HashJoin(t1 *VALUES*)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, (VALUES(1,1),(2,2),(3,3)) AS t2(id,val) WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
 HashJoin(*VALUES* t1)
@@ -903,6 +1005,8 @@ error hint:
 (5 rows)
 
 /*+HashJoin(t1 *VALUES*) IndexScan(t1) IndexScan(*VALUES*)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, (VALUES(1,1),(2,2),(3,3)) AS t2(id,val) WHERE t1.id = t2.id;
+LOG:  statement: /*+HashJoin(t1 *VALUES*) IndexScan(t1) IndexScan(*VALUES*)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, (VALUES(1,1),(2,2),(3,3)) AS t2(id,val) WHERE t1.id = t2.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -924,6 +1028,7 @@ error hint:
 
 -- single table scan hint test
 EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
+LOG:  statement: EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
                                QUERY PLAN                               
 ------------------------------------------------------------------------
  Index Only Scan using t1_pkey on t1
@@ -943,6 +1048,8 @@ EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM
 (14 rows)
 
 /*+BitmapScan(v_1)*/
+EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
+LOG:  statement: /*+BitmapScan(v_1)*/
 EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
 LOG:  pg_hint_plan:
 used hint:
@@ -971,6 +1078,8 @@ error hint:
 
 /*+BitmapScan(v_2)*/
 EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
+LOG:  statement: /*+BitmapScan(v_2)*/
+EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
 LOG:  pg_hint_plan:
 used hint:
 BitmapScan(v_2)
@@ -997,6 +1106,8 @@ error hint:
 (14 rows)
 
 /*+BitmapScan(t1)*/
+EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
+LOG:  statement: /*+BitmapScan(t1)*/
 EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
 LOG:  pg_hint_plan:
 used hint:
@@ -1027,6 +1138,8 @@ error hint:
 
 /*+BitmapScan(v_1)BitmapScan(v_2)*/
 EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
+LOG:  statement: /*+BitmapScan(v_1)BitmapScan(v_2)*/
+EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
 LOG:  pg_hint_plan:
 used hint:
 BitmapScan(v_1)
@@ -1054,6 +1167,8 @@ error hint:
 (14 rows)
 
 /*+BitmapScan(v_1)BitmapScan(t1)*/
+EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
+LOG:  statement: /*+BitmapScan(v_1)BitmapScan(t1)*/
 EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
 LOG:  pg_hint_plan:
 used hint:
@@ -1085,6 +1200,8 @@ error hint:
 
 /*+BitmapScan(v_2)BitmapScan(t1)*/
 EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
+LOG:  statement: /*+BitmapScan(v_2)BitmapScan(t1)*/
+EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
 LOG:  pg_hint_plan:
 used hint:
 BitmapScan(t1)
@@ -1114,6 +1231,8 @@ error hint:
 (16 rows)
 
 /*+BitmapScan(v_1)BitmapScan(v_2)BitmapScan(t1)*/
+EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
+LOG:  statement: /*+BitmapScan(v_1)BitmapScan(v_2)BitmapScan(t1)*/
 EXPLAIN (COSTS false) SELECT (SELECT max(id) FROM t1 v_1 WHERE id < 10), id FROM v1 WHERE v1.id = (SELECT max(id) FROM t1 v_2 WHERE id < 10);
 LOG:  pg_hint_plan:
 used hint:
@@ -1146,6 +1265,7 @@ error hint:
 
 -- full scan hint pattern test
 EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
             QUERY PLAN             
 -----------------------------------
  Tid Scan on t1
@@ -1154,6 +1274,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
 (3 rows)
 
 /*+SeqScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1170,6 +1292,8 @@ error hint:
 
 /*+IndexScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(t1)
@@ -1185,6 +1309,8 @@ error hint:
 (3 rows)
 
 /*+BitmapScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1204,6 +1330,8 @@ error hint:
 
 /*+TidScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
+LOG:  statement: /*+TidScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 TidScan(t1)
@@ -1219,6 +1347,8 @@ error hint:
 (3 rows)
 
 /*+NoSeqScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
+LOG:  statement: /*+NoSeqScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1236,6 +1366,8 @@ error hint:
 
 /*+NoIndexScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
+LOG:  statement: /*+NoIndexScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoIndexScan(t1)
@@ -1251,6 +1383,8 @@ error hint:
 (3 rows)
 
 /*+NoBitmapScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
+LOG:  statement: /*+NoBitmapScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1268,6 +1402,8 @@ error hint:
 
 /*+NoTidScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
+LOG:  statement: /*+NoTidScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1 WHERE id < 10 AND ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoTidScan(t1)
@@ -1283,6 +1419,7 @@ error hint:
 (3 rows)
 
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
                QUERY PLAN                
 -----------------------------------------
  Nested Loop
@@ -1294,6 +1431,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1
 (6 rows)
 
 /*+SeqScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1314,6 +1453,8 @@ error hint:
 
 /*+SeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t2)
@@ -1332,6 +1473,8 @@ error hint:
 (6 rows)
 
 /*+SeqScan(t1) SeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(t1) SeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1353,6 +1496,8 @@ error hint:
 
 /*+SeqScan(t1) IndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(t1) IndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t1)
@@ -1372,6 +1517,8 @@ error hint:
 (6 rows)
 
 /*+SeqScan(t1) BitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(t1) BitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1395,6 +1542,8 @@ error hint:
 
 /*+SeqScan(t1) TidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(t1) TidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t1)
@@ -1414,6 +1563,8 @@ error hint:
 (6 rows)
 
 /*+SeqScan(t1) NoSeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(t1) NoSeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1435,6 +1586,8 @@ error hint:
 
 /*+SeqScan(t1) NoIndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(t1) NoIndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t1)
@@ -1454,6 +1607,8 @@ error hint:
 (6 rows)
 
 /*+SeqScan(t1) NoBitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(t1) NoBitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1475,6 +1630,8 @@ error hint:
 
 /*+SeqScan(t1) NoTidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(t1) NoTidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t1)
@@ -1495,6 +1652,8 @@ error hint:
 
 /*+IndexScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(t1)
@@ -1514,6 +1673,8 @@ error hint:
 
 /*+IndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(t2)
@@ -1532,6 +1693,8 @@ error hint:
 (6 rows)
 
 /*+IndexScan(t1) SeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(t1) SeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1553,6 +1716,8 @@ error hint:
 
 /*+IndexScan(t1) IndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(t1) IndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(t1)
@@ -1572,6 +1737,8 @@ error hint:
 (6 rows)
 
 /*+IndexScan(t1) BitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(t1) BitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1595,6 +1762,8 @@ error hint:
 
 /*+IndexScan(t1) TidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(t1) TidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(t1)
@@ -1614,6 +1783,8 @@ error hint:
 (6 rows)
 
 /*+IndexScan(t1) NoSeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(t1) NoSeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1635,6 +1806,8 @@ error hint:
 
 /*+IndexScan(t1) NoIndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(t1) NoIndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(t1)
@@ -1654,6 +1827,8 @@ error hint:
 (6 rows)
 
 /*+IndexScan(t1) NoBitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(t1) NoBitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1675,6 +1850,8 @@ error hint:
 
 /*+IndexScan(t1) NoTidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(t1) NoTidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(t1)
@@ -1694,6 +1871,8 @@ error hint:
 (6 rows)
 
 /*+BitmapScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1716,6 +1895,8 @@ error hint:
 
 /*+BitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 BitmapScan(t2)
@@ -1737,6 +1918,8 @@ error hint:
 
 /*+BitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 BitmapScan(t2)
@@ -1757,6 +1940,8 @@ error hint:
 (8 rows)
 
 /*+BitmapScan(t1) SeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(t1) SeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1780,6 +1965,8 @@ error hint:
 
 /*+BitmapScan(t1) IndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(t1) IndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 BitmapScan(t1)
@@ -1801,6 +1988,8 @@ error hint:
 (8 rows)
 
 /*+BitmapScan(t1) BitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(t1) BitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1824,6 +2013,8 @@ error hint:
 
 /*+BitmapScan(t1) TidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(t1) TidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 BitmapScan(t1)
@@ -1845,6 +2036,8 @@ error hint:
 (8 rows)
 
 /*+BitmapScan(t1) NoSeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(t1) NoSeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1868,6 +2061,8 @@ error hint:
 
 /*+BitmapScan(t1) NoIndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(t1) NoIndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 BitmapScan(t1)
@@ -1889,6 +2084,8 @@ error hint:
 (8 rows)
 
 /*+BitmapScan(t1) NoBitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(t1) NoBitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1912,6 +2109,8 @@ error hint:
 
 /*+BitmapScan(t1) NoTidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(t1) NoTidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 BitmapScan(t1)
@@ -1934,6 +2133,8 @@ error hint:
 
 /*+TidScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 TidScan(t1)
@@ -1953,6 +2154,8 @@ error hint:
 
 /*+TidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 TidScan(t2)
@@ -1971,6 +2174,8 @@ error hint:
 (6 rows)
 
 /*+TidScan(t1) SeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(t1) SeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -1992,6 +2197,8 @@ error hint:
 
 /*+TidScan(t1) IndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(t1) IndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 TidScan(t1)
@@ -2011,6 +2218,8 @@ error hint:
 (6 rows)
 
 /*+TidScan(t1) BitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(t1) BitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2034,6 +2243,8 @@ error hint:
 
 /*+TidScan(t1) TidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(t1) TidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 TidScan(t1)
@@ -2053,6 +2264,8 @@ error hint:
 (6 rows)
 
 /*+TidScan(t1) NoSeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(t1) NoSeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2074,6 +2287,8 @@ error hint:
 
 /*+TidScan(t1) NoIndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(t1) NoIndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 TidScan(t1)
@@ -2093,6 +2308,8 @@ error hint:
 (6 rows)
 
 /*+TidScan(t1) NoBitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(t1) NoBitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2114,6 +2331,8 @@ error hint:
 
 /*+TidScan(t1) NoTidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(t1) NoTidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 TidScan(t1)
@@ -2134,6 +2353,8 @@ error hint:
 
 /*+NoSeqScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoSeqScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoSeqScan(t1)
@@ -2153,6 +2374,8 @@ error hint:
 
 /*+NoSeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoSeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoSeqScan(t2)
@@ -2171,6 +2394,8 @@ error hint:
 (6 rows)
 
 /*+NoSeqScan(t1) SeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoSeqScan(t1) SeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2192,6 +2417,8 @@ error hint:
 
 /*+NoSeqScan(t1) IndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoSeqScan(t1) IndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoSeqScan(t1)
@@ -2211,6 +2438,8 @@ error hint:
 (6 rows)
 
 /*+NoSeqScan(t1) BitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoSeqScan(t1) BitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2234,6 +2463,8 @@ error hint:
 
 /*+NoSeqScan(t1) TidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoSeqScan(t1) TidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoSeqScan(t1)
@@ -2253,6 +2484,8 @@ error hint:
 (6 rows)
 
 /*+NoSeqScan(t1) NoSeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoSeqScan(t1) NoSeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2274,6 +2507,8 @@ error hint:
 
 /*+NoSeqScan(t1) NoIndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoSeqScan(t1) NoIndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoSeqScan(t1)
@@ -2293,6 +2528,8 @@ error hint:
 (6 rows)
 
 /*+NoSeqScan(t1) NoBitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoSeqScan(t1) NoBitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2314,6 +2551,8 @@ error hint:
 
 /*+NoSeqScan(t1) NoTidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoSeqScan(t1) NoTidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoSeqScan(t1)
@@ -2334,6 +2573,8 @@ error hint:
 
 /*+NoIndexScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoIndexScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoIndexScan(t1)
@@ -2353,6 +2594,8 @@ error hint:
 
 /*+NoIndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoIndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoIndexScan(t2)
@@ -2371,6 +2614,8 @@ error hint:
 (6 rows)
 
 /*+NoIndexScan(t1) SeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoIndexScan(t1) SeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2392,6 +2637,8 @@ error hint:
 
 /*+NoIndexScan(t1) IndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoIndexScan(t1) IndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoIndexScan(t1)
@@ -2411,6 +2658,8 @@ error hint:
 (6 rows)
 
 /*+NoIndexScan(t1) BitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoIndexScan(t1) BitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2434,6 +2683,8 @@ error hint:
 
 /*+NoIndexScan(t1) TidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoIndexScan(t1) TidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoIndexScan(t1)
@@ -2453,6 +2704,8 @@ error hint:
 (6 rows)
 
 /*+NoIndexScan(t1) NoSeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoIndexScan(t1) NoSeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2474,6 +2727,8 @@ error hint:
 
 /*+NoIndexScan(t1) NoIndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoIndexScan(t1) NoIndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoIndexScan(t1)
@@ -2493,6 +2748,8 @@ error hint:
 (6 rows)
 
 /*+NoIndexScan(t1) NoBitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoIndexScan(t1) NoBitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2514,6 +2771,8 @@ error hint:
 
 /*+NoIndexScan(t1) NoTidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoIndexScan(t1) NoTidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoIndexScan(t1)
@@ -2534,6 +2793,8 @@ error hint:
 
 /*+NoBitmapScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoBitmapScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoBitmapScan(t1)
@@ -2553,6 +2814,8 @@ error hint:
 
 /*+NoBitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoBitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoBitmapScan(t2)
@@ -2571,6 +2834,8 @@ error hint:
 (6 rows)
 
 /*+NoBitmapScan(t1) SeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoBitmapScan(t1) SeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2592,6 +2857,8 @@ error hint:
 
 /*+NoBitmapScan(t1) IndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoBitmapScan(t1) IndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoBitmapScan(t1)
@@ -2611,6 +2878,8 @@ error hint:
 (6 rows)
 
 /*+NoBitmapScan(t1) BitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoBitmapScan(t1) BitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2634,6 +2903,8 @@ error hint:
 
 /*+NoBitmapScan(t1) TidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoBitmapScan(t1) TidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoBitmapScan(t1)
@@ -2653,6 +2924,8 @@ error hint:
 (6 rows)
 
 /*+NoBitmapScan(t1) NoSeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoBitmapScan(t1) NoSeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2674,6 +2947,8 @@ error hint:
 
 /*+NoBitmapScan(t1) NoIndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoBitmapScan(t1) NoIndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoBitmapScan(t1)
@@ -2693,6 +2968,8 @@ error hint:
 (6 rows)
 
 /*+NoBitmapScan(t1) NoBitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoBitmapScan(t1) NoBitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2714,6 +2991,8 @@ error hint:
 
 /*+NoBitmapScan(t1) NoTidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoBitmapScan(t1) NoTidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoBitmapScan(t1)
@@ -2734,6 +3013,8 @@ error hint:
 
 /*+NoTidScan(t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoTidScan(t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoTidScan(t1)
@@ -2753,6 +3034,8 @@ error hint:
 
 /*+NoTidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoTidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoTidScan(t2)
@@ -2771,6 +3054,8 @@ error hint:
 (6 rows)
 
 /*+NoTidScan(t1) SeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoTidScan(t1) SeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2792,6 +3077,8 @@ error hint:
 
 /*+NoTidScan(t1) IndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoTidScan(t1) IndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoTidScan(t1)
@@ -2811,6 +3098,8 @@ error hint:
 (6 rows)
 
 /*+NoTidScan(t1) BitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoTidScan(t1) BitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2834,6 +3123,8 @@ error hint:
 
 /*+NoTidScan(t1) TidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoTidScan(t1) TidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoTidScan(t1)
@@ -2853,6 +3144,8 @@ error hint:
 (6 rows)
 
 /*+NoTidScan(t1) NoSeqScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoTidScan(t1) NoSeqScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2874,6 +3167,8 @@ error hint:
 
 /*+NoTidScan(t1) NoIndexScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoTidScan(t1) NoIndexScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoTidScan(t1)
@@ -2893,6 +3188,8 @@ error hint:
 (6 rows)
 
 /*+NoTidScan(t1) NoBitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoTidScan(t1) NoBitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -2914,6 +3211,8 @@ error hint:
 
 /*+NoTidScan(t1) NoTidScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+NoTidScan(t1) NoTidScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 NoTidScan(t1)
@@ -2934,6 +3233,7 @@ error hint:
 
 -- additional test
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)' AND t1.id < 10 AND t2.id < 10;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)' AND t1.id < 10 AND t2.id < 10;
                QUERY PLAN                
 -----------------------------------------
  Nested Loop
@@ -2947,6 +3247,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1
 (8 rows)
 
 /*+BitmapScan(t1) BitmapScan(t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)' AND t1.id < 10 AND t2.id < 10;
+LOG:  statement: /*+BitmapScan(t1) BitmapScan(t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)' AND t1.id < 10 AND t2.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -2973,6 +3275,7 @@ error hint:
 
 -- outer join test
 EXPLAIN (COSTS false) SELECT * FROM t1 FULL OUTER JOIN  t2 ON (t1.id = t2.id);
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1 FULL OUTER JOIN  t2 ON (t1.id = t2.id);
           QUERY PLAN          
 ------------------------------
  Hash Full Join
@@ -2983,6 +3286,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1 FULL OUTER JOIN  t2 ON (t1.id = t2.id);
 (5 rows)
 
 /*+MergeJoin(t1 t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1 FULL OUTER JOIN  t2 ON (t1.id = t2.id);
+LOG:  statement: /*+MergeJoin(t1 t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1 FULL OUTER JOIN  t2 ON (t1.id = t2.id);
 LOG:  pg_hint_plan:
 used hint:
@@ -3000,6 +3305,8 @@ error hint:
 (4 rows)
 
 /*+NestLoop(t1 t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1 FULL OUTER JOIN  t2 ON (t1.id = t2.id);
+LOG:  statement: /*+NestLoop(t1 t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1 FULL OUTER JOIN  t2 ON (t1.id = t2.id);
 LOG:  pg_hint_plan:
 used hint:
@@ -3019,7 +3326,9 @@ error hint:
 
 -- inheritance tables test
 SET constraint_exclusion TO off;
+LOG:  statement: SET constraint_exclusion TO off;
 EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
                               QUERY PLAN                               
 -----------------------------------------------------------------------
  Append
@@ -3044,7 +3353,9 @@ EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid =
 (19 rows)
 
 SET constraint_exclusion TO on;
+LOG:  statement: SET constraint_exclusion TO on;
 EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
                               QUERY PLAN                               
 -----------------------------------------------------------------------
  Append
@@ -3059,7 +3370,10 @@ EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid =
 (9 rows)
 
 SET constraint_exclusion TO off;
+LOG:  statement: SET constraint_exclusion TO off;
 /*+SeqScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -3092,6 +3406,8 @@ error hint:
 (19 rows)
 
 /*+IndexScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -3133,6 +3449,8 @@ error hint:
 (28 rows)
 
 /*+BitmapScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -3193,6 +3511,8 @@ error hint:
 
 /*+TidScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 TidScan(p1)
@@ -3233,7 +3553,10 @@ error hint:
 (28 rows)
 
 SET constraint_exclusion TO on;
+LOG:  statement: SET constraint_exclusion TO on;
 /*+SeqScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -3256,6 +3579,8 @@ error hint:
 (9 rows)
 
 /*+IndexScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -3282,6 +3607,8 @@ error hint:
 (13 rows)
 
 /*+BitmapScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -3317,6 +3644,8 @@ error hint:
 
 /*+TidScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 TidScan(p1)
@@ -3342,7 +3671,9 @@ error hint:
 (13 rows)
 
 SET constraint_exclusion TO off;
+LOG:  statement: SET constraint_exclusion TO off;
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
                                     QUERY PLAN                                     
 -----------------------------------------------------------------------------------
  Merge Join
@@ -3373,7 +3704,9 @@ EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND
 (25 rows)
 
 SET constraint_exclusion TO on;
+LOG:  statement: SET constraint_exclusion TO on;
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
                                     QUERY PLAN                                     
 -----------------------------------------------------------------------------------
  Merge Join
@@ -3394,7 +3727,10 @@ EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND
 (15 rows)
 
 SET constraint_exclusion TO off;
+LOG:  statement: SET constraint_exclusion TO off;
 /*+SeqScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+SeqScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -3434,6 +3770,8 @@ error hint:
 
 /*+IndexScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+IndexScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(p1)
@@ -3472,6 +3810,8 @@ error hint:
 
 /*+BitmapScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+BitmapScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 BitmapScan(p1)
@@ -3509,6 +3849,8 @@ error hint:
 (25 rows)
 
 /*+TidScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+TidScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -3548,6 +3890,8 @@ error hint:
 
 /*+NestLoop(p1 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+NestLoop(p1 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 NestLoop(p1 t1)
@@ -3584,6 +3928,8 @@ error hint:
 (24 rows)
 
 /*+MergeJoin(p1 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+MergeJoin(p1 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -3622,6 +3968,8 @@ error hint:
 (25 rows)
 
 /*+HashJoin(p1 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+HashJoin(p1 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -3659,7 +4007,10 @@ error hint:
 (24 rows)
 
 SET constraint_exclusion TO on;
+LOG:  statement: SET constraint_exclusion TO on;
 /*+SeqScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+SeqScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -3689,6 +4040,8 @@ error hint:
 
 /*+IndexScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+IndexScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(p1)
@@ -3716,6 +4069,8 @@ error hint:
 (15 rows)
 
 /*+BitmapScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+BitmapScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -3745,6 +4100,8 @@ error hint:
 
 /*+TidScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+TidScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 TidScan(p1)
@@ -3772,6 +4129,8 @@ error hint:
 (15 rows)
 
 /*+NestLoop(p1 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+NestLoop(p1 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -3800,6 +4159,8 @@ error hint:
 
 /*+MergeJoin(p1 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+MergeJoin(p1 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 MergeJoin(p1 t1)
@@ -3828,6 +4189,8 @@ error hint:
 
 /*+HashJoin(p1 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+HashJoin(p1 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 HashJoin(p1 t1)
@@ -3854,7 +4217,9 @@ error hint:
 (14 rows)
 
 SET constraint_exclusion TO off;
+LOG:  statement: SET constraint_exclusion TO off;
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
                            QUERY PLAN                            
 -----------------------------------------------------------------
  Seq Scan on p1
@@ -3862,7 +4227,9 @@ EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.c
 (2 rows)
 
 SET constraint_exclusion TO on;
+LOG:  statement: SET constraint_exclusion TO on;
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
                            QUERY PLAN                            
 -----------------------------------------------------------------
  Seq Scan on p1
@@ -3870,7 +4237,10 @@ EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.c
 (2 rows)
 
 SET constraint_exclusion TO off;
+LOG:  statement: SET constraint_exclusion TO off;
 /*+SeqScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -3887,6 +4257,8 @@ error hint:
 
 /*+IndexScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(p1)
@@ -3902,6 +4274,8 @@ error hint:
 (3 rows)
 
 /*+BitmapScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -3921,6 +4295,8 @@ error hint:
 
 /*+TidScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 TidScan(p1)
@@ -3936,6 +4312,8 @@ error hint:
 (3 rows)
 
 /*+NestLoop(p1 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+NestLoop(p1 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -3954,6 +4332,8 @@ error hint:
 (5 rows)
 
 /*+MergeJoin(p1 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+MergeJoin(p1 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -3976,6 +4356,8 @@ error hint:
 
 /*+HashJoin(p1 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+HashJoin(p1 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 HashJoin(p1 t1)
@@ -3995,7 +4377,10 @@ error hint:
 (7 rows)
 
 SET constraint_exclusion TO on;
+LOG:  statement: SET constraint_exclusion TO on;
 /*+SeqScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -4012,6 +4397,8 @@ error hint:
 
 /*+IndexScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(p1)
@@ -4027,6 +4414,8 @@ error hint:
 (3 rows)
 
 /*+BitmapScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+BitmapScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
@@ -4046,6 +4435,8 @@ error hint:
 
 /*+TidScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
+LOG:  statement: /*+TidScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1 WHERE id >= 50 AND id <= 51 AND p1.ctid = '(1,1)';
 LOG:  pg_hint_plan:
 used hint:
 TidScan(p1)
@@ -4061,6 +4452,8 @@ error hint:
 (3 rows)
 
 /*+NestLoop(p1 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+NestLoop(p1 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -4079,6 +4472,8 @@ error hint:
 (5 rows)
 
 /*+MergeJoin(p1 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+MergeJoin(p1 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -4101,6 +4496,8 @@ error hint:
 
 /*+HashJoin(p1 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+HashJoin(p1 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 HashJoin(p1 t1)
@@ -4120,7 +4517,9 @@ error hint:
 (7 rows)
 
 SET constraint_exclusion TO off;
+LOG:  statement: SET constraint_exclusion TO off;
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
                               QUERY PLAN                               
 -----------------------------------------------------------------------
  Nested Loop
@@ -4131,7 +4530,9 @@ EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 5
 (5 rows)
 
 SET constraint_exclusion TO on;
+LOG:  statement: SET constraint_exclusion TO on;
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
                               QUERY PLAN                               
 -----------------------------------------------------------------------
  Nested Loop
@@ -4142,7 +4543,10 @@ EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 5
 (5 rows)
 
 SET constraint_exclusion TO off;
+LOG:  statement: SET constraint_exclusion TO off;
 /*+SeqScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+SeqScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -4161,6 +4565,8 @@ error hint:
 (5 rows)
 
 /*+IndexScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+IndexScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -4180,6 +4586,8 @@ error hint:
 (6 rows)
 
 /*+BitmapScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+BitmapScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -4201,6 +4609,8 @@ error hint:
 (8 rows)
 
 /*+TidScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+TidScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -4220,7 +4630,10 @@ error hint:
 (6 rows)
 
 SET constraint_exclusion TO on;
+LOG:  statement: SET constraint_exclusion TO on;
 /*+SeqScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+SeqScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -4240,6 +4653,8 @@ error hint:
 
 /*+IndexScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+IndexScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(p1)
@@ -4258,6 +4673,8 @@ error hint:
 (6 rows)
 
 /*+BitmapScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+BitmapScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -4279,6 +4696,8 @@ error hint:
 (8 rows)
 
 /*+TidScan(p1)*/
+EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
+LOG:  statement: /*+TidScan(p1)*/
 EXPLAIN (COSTS false) SELECT * FROM ONLY p1, t1 WHERE p1.id >= 50 AND p1.id <= 51 AND p1.ctid = '(1,1)' AND p1.id = t1.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -4299,6 +4718,8 @@ error hint:
 
 -- quote test
 /*+SeqScan("""t1 )	")IndexScan("t	2 """)HashJoin("""t1 )	"T3"t	2 """)Leading("""t1 )	"T3"t	2 """)Set(application_name"a	a	a""	a	A")*/
+EXPLAIN (COSTS false) SELECT * FROM t1 """t1 )	", t2 "t	2 """, t3 "T3" WHERE """t1 )	".id = "t	2 """.id AND """t1 )	".id = "T3".id;
+LOG:  statement: /*+SeqScan("""t1 )	")IndexScan("t	2 """)HashJoin("""t1 )	"T3"t	2 """)Leading("""t1 )	"T3"t	2 """)Set(application_name"a	a	a""	a	A")*/
 EXPLAIN (COSTS false) SELECT * FROM t1 """t1 )	", t2 "t	2 """, t3 "T3" WHERE """t1 )	".id = "t	2 """.id AND """t1 )	".id = "T3".id;
 LOG:  pg_hint_plan:
 used hint:
@@ -4326,6 +4747,8 @@ error hint:
 
 -- duplicate hint test
 /*+SeqScan(t1)SeqScan(t2)IndexScan(t1)IndexScan(t2)BitmapScan(t1)BitmapScan(t2)TidScan(t1)TidScan(t2)HashJoin(t1 t2)NestLoop(t2 t1)MergeJoin(t1 t2)Leading(t1 t2)Leading(t2 t1)Set(enable_seqscan off)Set(enable_mergejoin on)Set(enable_seqscan on)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
+LOG:  statement: /*+SeqScan(t1)SeqScan(t2)IndexScan(t1)IndexScan(t2)BitmapScan(t1)BitmapScan(t2)TidScan(t1)TidScan(t2)HashJoin(t1 t2)NestLoop(t2 t1)MergeJoin(t1 t2)Leading(t1 t2)Leading(t2 t1)Set(enable_seqscan off)Set(enable_mergejoin on)Set(enable_seqscan on)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.ctid = '(1,1)' AND t2.ctid = '(1,1)';
 INFO:  pg_hint_plan: hint syntax error at or near "SeqScan(t1)SeqScan(t2)IndexScan(t1)IndexScan(t2)BitmapScan(t1)BitmapScan(t2)TidScan(t1)TidScan(t2)HashJoin(t1 t2)NestLoop(t2 t1)MergeJoin(t1 t2)Leading(t1 t2)Leading(t2 t1)Set(enable_seqscan off)Set(enable_mergejoin on)Set(enable_seqscan on)"
 DETAIL:  Conflict scan method hint.
@@ -4385,8 +4808,21 @@ error hint:
 
 -- sub query Leading hint test
 SET from_collapse_limit TO 100;
+LOG:  statement: SET from_collapse_limit TO 100;
 SET geqo_threshold TO 100;
+LOG:  statement: SET geqo_threshold TO 100;
 EXPLAIN (COSTS false)
+WITH c1_1(id) AS (
+SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
+)
+SELECT t1_1.id, (
+SELECT max(t1_2.id) FROM t1 t1_2, t2 t2_2, t3 t3_2 WHERE t1_2.id = t2_2.id AND t2_2.id = t3_2.id
+) FROM t1 t1_1, t2 t2_1, t3 t3_1, (
+SELECT t1_3.id FROM t1 t1_3, t2 t2_3, t3 t3_3 WHERE t1_3.id = t2_3.id AND t2_3.id = t3_3.id
+) v1_1(id), c1_1 WHERE t1_1.id = t2_1.id AND t2_1.id = t3_1.id AND t2_1.id = v1_1.id AND v1_1.id = c1_1.id AND t1_1.id = (
+SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t2_4.id = t3_4.id 
+);
+LOG:  statement: EXPLAIN (COSTS false)
 WITH c1_1(id) AS (
 SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
 )
@@ -4455,6 +4891,18 @@ SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t
 (53 rows)
 
 /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)*/
+EXPLAIN (COSTS false)
+WITH c1_1(id) AS (
+SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
+)
+SELECT t1_1.id, (
+SELECT max(t1_2.id) FROM t1 t1_2, t2 t2_2, t3 t3_2 WHERE t1_2.id = t2_2.id AND t2_2.id = t3_2.id
+) FROM t1 t1_1, t2 t2_1, t3 t3_1, (
+SELECT t1_3.id FROM t1 t1_3, t2 t2_3, t3 t3_3 WHERE t1_3.id = t2_3.id AND t2_3.id = t3_3.id
+) v1_1(id), c1_1 WHERE t1_1.id = t2_1.id AND t2_1.id = t3_1.id AND t2_1.id = v1_1.id AND v1_1.id = c1_1.id AND t1_1.id = (
+SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t2_4.id = t3_4.id 
+);
+LOG:  statement: /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)*/
 EXPLAIN (COSTS false)
 WITH c1_1(id) AS (
 SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
@@ -4535,6 +4983,18 @@ error hint:
 (53 rows)
 
 /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)Leading(a t1_1 t1_2 t1_4 t1_5)*/
+EXPLAIN (COSTS false)
+WITH c1_1(id) AS (
+SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
+)
+SELECT t1_1.id, (
+SELECT max(t1_2.id) FROM t1 t1_2, t2 t2_2, t3 t3_2 WHERE t1_2.id = t2_2.id AND t2_2.id = t3_2.id
+) FROM t1 t1_1, t2 t2_1, t3 t3_1, (
+SELECT t1_3.id FROM t1 t1_3, t2 t2_3, t3 t3_3 WHERE t1_3.id = t2_3.id AND t2_3.id = t3_3.id
+) v1_1(id), c1_1 WHERE t1_1.id = t2_1.id AND t2_1.id = t3_1.id AND t2_1.id = v1_1.id AND v1_1.id = c1_1.id AND t1_1.id = (
+SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t2_4.id = t3_4.id 
+);
+LOG:  statement: /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)Leading(a t1_1 t1_2 t1_4 t1_5)*/
 EXPLAIN (COSTS false)
 WITH c1_1(id) AS (
 SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
@@ -4627,6 +5087,18 @@ SELECT t1_3.id FROM t1 t1_3, t2 t2_3, t3 t3_3 WHERE t1_3.id = t2_3.id AND t2_3.i
 ) v1_1(id), c1_1 WHERE t1_1.id = t2_1.id AND t2_1.id = t3_1.id AND t2_1.id = v1_1.id AND v1_1.id = c1_1.id AND t1_1.id = (
 SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t2_4.id = t3_4.id 
 );
+LOG:  statement: /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)Leading(a t3_2 t3_5 t2_2 c1_1 t3_4 t3_3 t2_3 t2_4 t1_3 t2_5 t1_2 t3_1 t1_4 t2_1 t1_5 t1_1)*/
+EXPLAIN (COSTS false)
+WITH c1_1(id) AS (
+SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
+)
+SELECT t1_1.id, (
+SELECT max(t1_2.id) FROM t1 t1_2, t2 t2_2, t3 t3_2 WHERE t1_2.id = t2_2.id AND t2_2.id = t3_2.id
+) FROM t1 t1_1, t2 t2_1, t3 t3_1, (
+SELECT t1_3.id FROM t1 t1_3, t2 t2_3, t3 t3_3 WHERE t1_3.id = t2_3.id AND t2_3.id = t3_3.id
+) v1_1(id), c1_1 WHERE t1_1.id = t2_1.id AND t2_1.id = t3_1.id AND t2_1.id = v1_1.id AND v1_1.id = c1_1.id AND t1_1.id = (
+SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t2_4.id = t3_4.id 
+);
 LOG:  pg_hint_plan:
 used hint:
 HashJoin(t1_1 t3_1)
@@ -4697,6 +5169,18 @@ error hint:
 (53 rows)
 
 /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)Leading(t3_5 t2_5 t1_5)Leading(t3_2 t2_2 t1_2)Leading(t3_4 t2_4 t1_4)Leading(c1_1 t3_3 t2_3 t1_3 t3_1 t2_1 t1_1)*/
+EXPLAIN (COSTS false)
+WITH c1_1(id) AS (
+SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
+)
+SELECT t1_1.id, (
+SELECT max(t1_2.id) FROM t1 t1_2, t2 t2_2, t3 t3_2 WHERE t1_2.id = t2_2.id AND t2_2.id = t3_2.id
+) FROM t1 t1_1, t2 t2_1, t3 t3_1, (
+SELECT t1_3.id FROM t1 t1_3, t2 t2_3, t3 t3_3 WHERE t1_3.id = t2_3.id AND t2_3.id = t3_3.id
+) v1_1(id), c1_1 WHERE t1_1.id = t2_1.id AND t2_1.id = t3_1.id AND t2_1.id = v1_1.id AND v1_1.id = c1_1.id AND t1_1.id = (
+SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t2_4.id = t3_4.id 
+);
+LOG:  statement: /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)Leading(t3_5 t2_5 t1_5)Leading(t3_2 t2_2 t1_2)Leading(t3_4 t2_4 t1_4)Leading(c1_1 t3_3 t2_3 t1_3 t3_1 t2_1 t1_1)*/
 EXPLAIN (COSTS false)
 WITH c1_1(id) AS (
 SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
@@ -4781,7 +5265,19 @@ error hint:
 (53 rows)
 
 SET from_collapse_limit TO 1;
+LOG:  statement: SET from_collapse_limit TO 1;
 EXPLAIN (COSTS false)
+WITH c1_1(id) AS (
+SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
+)
+SELECT t1_1.id, (
+SELECT max(t1_2.id) FROM t1 t1_2, t2 t2_2, t3 t3_2 WHERE t1_2.id = t2_2.id AND t2_2.id = t3_2.id
+) FROM t1 t1_1, t2 t2_1, t3 t3_1, (
+SELECT t1_3.id FROM t1 t1_3, t2 t2_3, t3 t3_3 WHERE t1_3.id = t2_3.id AND t2_3.id = t3_3.id
+) v1_1(id), c1_1 WHERE t1_1.id = t2_1.id AND t2_1.id = t3_1.id AND t2_1.id = v1_1.id AND v1_1.id = c1_1.id AND t1_1.id = (
+SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t2_4.id = t3_4.id 
+);
+LOG:  statement: EXPLAIN (COSTS false)
 WITH c1_1(id) AS (
 SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
 )
@@ -4850,6 +5346,18 @@ SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t
 (53 rows)
 
 /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)*/
+EXPLAIN (COSTS false)
+WITH c1_1(id) AS (
+SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
+)
+SELECT t1_1.id, (
+SELECT max(t1_2.id) FROM t1 t1_2, t2 t2_2, t3 t3_2 WHERE t1_2.id = t2_2.id AND t2_2.id = t3_2.id
+) FROM t1 t1_1, t2 t2_1, t3 t3_1, (
+SELECT t1_3.id FROM t1 t1_3, t2 t2_3, t3 t3_3 WHERE t1_3.id = t2_3.id AND t2_3.id = t3_3.id
+) v1_1(id), c1_1 WHERE t1_1.id = t2_1.id AND t2_1.id = t3_1.id AND t2_1.id = v1_1.id AND v1_1.id = c1_1.id AND t1_1.id = (
+SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t2_4.id = t3_4.id 
+);
+LOG:  statement: /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)*/
 EXPLAIN (COSTS false)
 WITH c1_1(id) AS (
 SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
@@ -4930,6 +5438,18 @@ error hint:
 (53 rows)
 
 /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)Leading(a t1_1 t1_2 t1_4 t1_5)*/
+EXPLAIN (COSTS false)
+WITH c1_1(id) AS (
+SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
+)
+SELECT t1_1.id, (
+SELECT max(t1_2.id) FROM t1 t1_2, t2 t2_2, t3 t3_2 WHERE t1_2.id = t2_2.id AND t2_2.id = t3_2.id
+) FROM t1 t1_1, t2 t2_1, t3 t3_1, (
+SELECT t1_3.id FROM t1 t1_3, t2 t2_3, t3 t3_3 WHERE t1_3.id = t2_3.id AND t2_3.id = t3_3.id
+) v1_1(id), c1_1 WHERE t1_1.id = t2_1.id AND t2_1.id = t3_1.id AND t2_1.id = v1_1.id AND v1_1.id = c1_1.id AND t1_1.id = (
+SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t2_4.id = t3_4.id 
+);
+LOG:  statement: /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)Leading(a t1_1 t1_2 t1_4 t1_5)*/
 EXPLAIN (COSTS false)
 WITH c1_1(id) AS (
 SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
@@ -5022,6 +5542,18 @@ SELECT t1_3.id FROM t1 t1_3, t2 t2_3, t3 t3_3 WHERE t1_3.id = t2_3.id AND t2_3.i
 ) v1_1(id), c1_1 WHERE t1_1.id = t2_1.id AND t2_1.id = t3_1.id AND t2_1.id = v1_1.id AND v1_1.id = c1_1.id AND t1_1.id = (
 SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t2_4.id = t3_4.id 
 );
+LOG:  statement: /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)Leading(a t3_2 t3_5 t2_2 c1_1 t3_4 t3_3 t2_3 t2_4 t1_3 t2_5 t1_2 t3_1 t1_4 t2_1 t1_5 t1_1)*/
+EXPLAIN (COSTS false)
+WITH c1_1(id) AS (
+SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
+)
+SELECT t1_1.id, (
+SELECT max(t1_2.id) FROM t1 t1_2, t2 t2_2, t3 t3_2 WHERE t1_2.id = t2_2.id AND t2_2.id = t3_2.id
+) FROM t1 t1_1, t2 t2_1, t3 t3_1, (
+SELECT t1_3.id FROM t1 t1_3, t2 t2_3, t3 t3_3 WHERE t1_3.id = t2_3.id AND t2_3.id = t3_3.id
+) v1_1(id), c1_1 WHERE t1_1.id = t2_1.id AND t2_1.id = t3_1.id AND t2_1.id = v1_1.id AND v1_1.id = c1_1.id AND t1_1.id = (
+SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t2_4.id = t3_4.id 
+);
 LOG:  pg_hint_plan:
 used hint:
 HashJoin(t1_1 t3_1)
@@ -5092,6 +5624,18 @@ error hint:
 (53 rows)
 
 /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)Leading(t3_5 t2_5 t1_5)Leading(t3_2 t2_2 t1_2)Leading(t3_4 t2_4 t1_4)Leading(c1_1 t3_3 t2_3 t1_3 t3_1 t2_1 t1_1)*/
+EXPLAIN (COSTS false)
+WITH c1_1(id) AS (
+SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
+)
+SELECT t1_1.id, (
+SELECT max(t1_2.id) FROM t1 t1_2, t2 t2_2, t3 t3_2 WHERE t1_2.id = t2_2.id AND t2_2.id = t3_2.id
+) FROM t1 t1_1, t2 t2_1, t3 t3_1, (
+SELECT t1_3.id FROM t1 t1_3, t2 t2_3, t3 t3_3 WHERE t1_3.id = t2_3.id AND t2_3.id = t3_3.id
+) v1_1(id), c1_1 WHERE t1_1.id = t2_1.id AND t2_1.id = t3_1.id AND t2_1.id = v1_1.id AND v1_1.id = c1_1.id AND t1_1.id = (
+SELECT max(t1_4.id) FROM t1 t1_4, t2 t2_4, t3 t3_4 WHERE t1_4.id = t2_4.id AND t2_4.id = t3_4.id 
+);
+LOG:  statement: /*+HashJoin(t1_1 t3_1)MergeJoin(t1_3 t3_3)NestLoop(t1_2 t2_2)NestLoop(t1_4 t2_4)NestLoop(t1_5 t2_5)Leading(t3_5 t2_5 t1_5)Leading(t3_2 t2_2 t1_2)Leading(t3_4 t2_4 t1_4)Leading(c1_1 t3_3 t2_3 t1_3 t3_1 t2_1 t1_1)*/
 EXPLAIN (COSTS false)
 WITH c1_1(id) AS (
 SELECT max(t1_5.id) FROM t1 t1_5, t2 t2_5, t3 t3_5 WHERE t1_5.id = t2_5.id AND t2_5.id = t3_5.id
@@ -5177,6 +5721,7 @@ error hint:
 
 -- ambigous error
 EXPLAIN (COSTS false) SELECT * FROM t1, s0.t1, t2 WHERE public.t1.id = s0.t1.id AND public.t1.id = t2.id;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, s0.t1, t2 WHERE public.t1.id = s0.t1.id AND public.t1.id = t2.id;
                    QUERY PLAN                    
 -------------------------------------------------
  Merge Join
@@ -5189,6 +5734,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, s0.t1, t2 WHERE public.t1.id = s0.t1.id 
 (7 rows)
 
 /*+NestLoop(t1 t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, s0.t1, t2 WHERE public.t1.id = s0.t1.id AND public.t1.id = t2.id;
+LOG:  statement: /*+NestLoop(t1 t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, s0.t1, t2 WHERE public.t1.id = s0.t1.id AND public.t1.id = t2.id;
 INFO:  pg_hint_plan: hint syntax error at or near "NestLoop(t1 t2)"
 DETAIL:  Relation name "t1" is ambiguous.
@@ -5212,6 +5759,8 @@ NestLoop(t1 t2)
 
 /*+Leading(t1 t2 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, s0.t1, t2 WHERE public.t1.id = s0.t1.id AND public.t1.id = t2.id;
+LOG:  statement: /*+Leading(t1 t2 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, s0.t1, t2 WHERE public.t1.id = s0.t1.id AND public.t1.id = t2.id;
 INFO:  pg_hint_plan: hint syntax error at or near "Leading(t1 t2 t1)"
 DETAIL:  Relation name "t1" is ambiguous.
 LOG:  pg_hint_plan:
@@ -5234,6 +5783,7 @@ Leading(t1 t2 t1)
 
 -- identifier length test
 EXPLAIN (COSTS false) SELECT * FROM t1 "123456789012345678901234567890123456789012345678901234567890123" JOIN t2 ON ("123456789012345678901234567890123456789012345678901234567890123".id = t2.id) JOIN t3 ON (t2.id = t3.id);
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1 "123456789012345678901234567890123456789012345678901234567890123" JOIN t2 ON ("123456789012345678901234567890123456789012345678901234567890123".id = t2.id) JOIN t3 ON (t2.id = t3.id);
                                                   QUERY PLAN                                                  
 --------------------------------------------------------------------------------------------------------------
  Merge Join
@@ -5248,6 +5798,13 @@ EXPLAIN (COSTS false) SELECT * FROM t1 "1234567890123456789012345678901234567890
 (9 rows)
 
 /*+
+Leading(123456789012345678901234567890123456789012345678901234567890123 t2 t3)
+SeqScan(123456789012345678901234567890123456789012345678901234567890123)
+MergeJoin(123456789012345678901234567890123456789012345678901234567890123 t2)
+Set(123456789012345678901234567890123456789012345678901234567890123 1)
+*/
+EXPLAIN (COSTS false) SELECT * FROM t1 "123456789012345678901234567890123456789012345678901234567890123" JOIN t2 ON ("123456789012345678901234567890123456789012345678901234567890123".id = t2.id) JOIN t3 ON (t2.id = t3.id);
+LOG:  statement: /*+
 Leading(123456789012345678901234567890123456789012345678901234567890123 t2 t3)
 SeqScan(123456789012345678901234567890123456789012345678901234567890123)
 MergeJoin(123456789012345678901234567890123456789012345678901234567890123 t2)
@@ -5290,6 +5847,14 @@ Set(cursor_tuple_fraction 0.1234567890123456789012345678901234567890123456789012
 EXPLAIN (COSTS false) SELECT * FROM t1 "1234567890123456789012345678901234567890123456789012345678901234" JOIN t2 ON ("1234567890123456789012345678901234567890123456789012345678901234".id = t2.id) JOIN t3 ON (t2.id = t3.id);
 NOTICE:  identifier "1234567890123456789012345678901234567890123456789012345678901234" will be truncated to "123456789012345678901234567890123456789012345678901234567890123"
 NOTICE:  identifier "1234567890123456789012345678901234567890123456789012345678901234" will be truncated to "123456789012345678901234567890123456789012345678901234567890123"
+LOG:  statement: /*+
+Leading(1234567890123456789012345678901234567890123456789012345678901234 t2 t3)
+SeqScan(1234567890123456789012345678901234567890123456789012345678901234)
+MergeJoin(1234567890123456789012345678901234567890123456789012345678901234 t2)
+Set(1234567890123456789012345678901234567890123456789012345678901234 1)
+Set(cursor_tuple_fraction 0.1234567890123456789012345678901234567890123456789012345678901234)
+*/
+EXPLAIN (COSTS false) SELECT * FROM t1 "1234567890123456789012345678901234567890123456789012345678901234" JOIN t2 ON ("1234567890123456789012345678901234567890123456789012345678901234".id = t2.id) JOIN t3 ON (t2.id = t3.id);
 NOTICE:  identifier "1234567890123456789012345678901234567890123456789012345678901234" will be truncated to "123456789012345678901234567890123456789012345678901234567890123"
 NOTICE:  identifier "1234567890123456789012345678901234567890123456789012345678901234" will be truncated to "123456789012345678901234567890123456789012345678901234567890123"
 NOTICE:  identifier "1234567890123456789012345678901234567890123456789012345678901234" will be truncated to "123456789012345678901234567890123456789012345678901234567890123"
@@ -5322,14 +5887,19 @@ Set(123456789012345678901234567890123456789012345678901234567890123 1)
 (11 rows)
 
 SET "123456789012345678901234567890123456789012345678901234567890123" TO 1;
+LOG:  statement: SET "123456789012345678901234567890123456789012345678901234567890123" TO 1;
 ERROR:  unrecognized configuration parameter "123456789012345678901234567890123456789012345678901234567890123"
 SET "1234567890123456789012345678901234567890123456789012345678901234" TO 1;
 NOTICE:  identifier "1234567890123456789012345678901234567890123456789012345678901234" will be truncated to "123456789012345678901234567890123456789012345678901234567890123"
+LOG:  statement: SET "1234567890123456789012345678901234567890123456789012345678901234" TO 1;
 ERROR:  unrecognized configuration parameter "123456789012345678901234567890123456789012345678901234567890123"
 SET cursor_tuple_fraction TO 1234567890123456789012345678901234567890123456789012345678901234;
+LOG:  statement: SET cursor_tuple_fraction TO 1234567890123456789012345678901234567890123456789012345678901234;
 ERROR:  1.23457e+63 is outside the valid range for parameter "cursor_tuple_fraction" (0 .. 1)
 -- multi error
 /*+ Set(enable_seqscan 100)Set(seq_page_cost on)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
+LOG:  statement: /*+ Set(enable_seqscan 100)Set(seq_page_cost on)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id;
 INFO:  parameter "enable_seqscan" requires a Boolean value
 INFO:  parameter "seq_page_cost" requires a numeric value
@@ -5351,6 +5921,7 @@ Set(seq_page_cost on)
 
 -- debug log of candidate index to use IndexScan
 EXPLAIN (COSTS false) SELECT * FROM t5 WHERE t5.id = 1;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t5 WHERE t5.id = 1;
                                        QUERY PLAN                                       
 ----------------------------------------------------------------------------------------
  Index Scan using t5_idaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa on t5
@@ -5358,6 +5929,8 @@ EXPLAIN (COSTS false) SELECT * FROM t5 WHERE t5.id = 1;
 (2 rows)
 
 /*+IndexScan(t5 t5_id2)*/
+EXPLAIN (COSTS false) SELECT * FROM t5 WHERE t5.id = 1;
+LOG:  statement: /*+IndexScan(t5 t5_id2)*/
 EXPLAIN (COSTS false) SELECT * FROM t5 WHERE t5.id = 1;
 LOG:  available indexes for IndexScan(t5): t5_id2
 LOG:  pg_hint_plan:
@@ -5375,6 +5948,8 @@ error hint:
 
 /*+IndexScan(t5 no_exist)*/
 EXPLAIN (COSTS false) SELECT * FROM t5 WHERE t5.id = 1;
+LOG:  statement: /*+IndexScan(t5 no_exist)*/
+EXPLAIN (COSTS false) SELECT * FROM t5 WHERE t5.id = 1;
 LOG:  available indexes for IndexScan(t5):
 LOG:  pg_hint_plan:
 used hint:
@@ -5390,6 +5965,8 @@ error hint:
 (2 rows)
 
 /*+IndexScan(t5 t5_id1 t5_id2)*/
+EXPLAIN (COSTS false) SELECT * FROM t5 WHERE t5.id = 1;
+LOG:  statement: /*+IndexScan(t5 t5_id1 t5_id2)*/
 EXPLAIN (COSTS false) SELECT * FROM t5 WHERE t5.id = 1;
 LOG:  available indexes for IndexScan(t5): t5_id2 t5_id1
 LOG:  pg_hint_plan:
@@ -5407,6 +5984,8 @@ error hint:
 
 /*+IndexScan(t5 no_exist t5_id2)*/
 EXPLAIN (COSTS false) SELECT * FROM t5 WHERE t5.id = 1;
+LOG:  statement: /*+IndexScan(t5 no_exist t5_id2)*/
+EXPLAIN (COSTS false) SELECT * FROM t5 WHERE t5.id = 1;
 LOG:  available indexes for IndexScan(t5): t5_id2
 LOG:  pg_hint_plan:
 used hint:
@@ -5422,6 +6001,8 @@ error hint:
 (2 rows)
 
 /*+IndexScan(t5 no_exist5 no_exist2)*/
+EXPLAIN (COSTS false) SELECT * FROM t5 WHERE t5.id = 1;
+LOG:  statement: /*+IndexScan(t5 no_exist5 no_exist2)*/
 EXPLAIN (COSTS false) SELECT * FROM t5 WHERE t5.id = 1;
 LOG:  available indexes for IndexScan(t5):
 LOG:  pg_hint_plan:
@@ -5439,6 +6020,7 @@ error hint:
 
 -- outer inner
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
                        QUERY PLAN                       
 --------------------------------------------------------
  Hash Join
@@ -5454,6 +6036,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = 
 (10 rows)
 
 /*+Leading((t1))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading((t1))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 INFO:  pg_hint_plan: hint syntax error at or near "Leading((t1))"
 DETAIL:  Leading hint requires two sets of relations when parentheses nests.
@@ -5480,6 +6064,8 @@ Leading((t1))
 
 /*+Leading((t1 t2))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading((t1 t2))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 Leading((t1 t2))
@@ -5501,6 +6087,8 @@ error hint:
 (9 rows)
 
 /*+Leading((t1 t2 t3))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading((t1 t2 t3))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 INFO:  pg_hint_plan: hint syntax error at or near "Leading((t1 t2 t3))"
 DETAIL:  Leading hint requires two sets of relations when parentheses nests.
@@ -5526,6 +6114,7 @@ Leading((t1 t2 t3))
 (10 rows)
 
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.id < 10;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.id < 10;
                  QUERY PLAN                 
 --------------------------------------------
  Hash Join
@@ -5537,6 +6126,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.id < 10;
 (6 rows)
 
 /*+Leading((t1 t2))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.id < 10;
+LOG:  statement: /*+Leading((t1 t2))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2 WHERE t1.id = t2.id AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -5556,6 +6147,7 @@ error hint:
 (6 rows)
 
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
                        QUERY PLAN                       
 --------------------------------------------------------
  Hash Join
@@ -5571,6 +6163,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = 
 (10 rows)
 
 /*+Leading(((t1 t2) t3))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading(((t1 t2) t3))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -5593,6 +6187,7 @@ error hint:
 (9 rows)
 
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
                        QUERY PLAN                       
 --------------------------------------------------------
  Nested Loop
@@ -5612,6 +6207,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id
 (14 rows)
 
 /*+Leading((((t1 t2) t3) t4))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading((((t1 t2) t3) t4))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -5637,6 +6234,7 @@ error hint:
 (12 rows)
 
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
                        QUERY PLAN                       
 --------------------------------------------------------
  Hash Join
@@ -5652,6 +6250,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = 
 (10 rows)
 
 /*+Leading(((t1 t2) t3))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading(((t1 t2) t3))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -5675,6 +6275,8 @@ error hint:
 
 /*+Leading((t1 (t2 t3)))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading((t1 (t2 t3)))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 Leading((t1 (t2 t3)))
@@ -5697,6 +6299,7 @@ error hint:
 (10 rows)
 
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
                        QUERY PLAN                       
 --------------------------------------------------------
  Nested Loop
@@ -5716,6 +6319,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id
 (14 rows)
 
 /*+Leading(((t1 t2) (t3 t4)))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading(((t1 t2) (t3 t4)))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -5743,6 +6348,7 @@ error hint:
 (14 rows)
 
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < ( SELECT t1_2.id FROM t1 t1_2, t2 t2_2 WHERE t1_2.id = t2_2.id AND t2_2.val > 100 ORDER BY t1_2.id LIMIT 1);
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < ( SELECT t1_2.id FROM t1 t1_2, t2 t2_2 WHERE t1_2.id = t2_2.id AND t2_2.val > 100 ORDER BY t1_2.id LIMIT 1);
                              QUERY PLAN                             
 --------------------------------------------------------------------
  Hash Join
@@ -5766,6 +6372,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = 
 (18 rows)
 
 /*+Leading(((t1 t2) t3)) Leading(((t3 t1) t2))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t1.val = t3.val AND t1.id < ( SELECT t1_2.id FROM t1 t1_2, t2 t2_2 WHERE t1_2.id = t2_2.id AND t2_2.val > 100 ORDER BY t1_2.id LIMIT 1);
+LOG:  statement: /*+Leading(((t1 t2) t3)) Leading(((t3 t1) t2))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t1.val = t3.val AND t1.id < ( SELECT t1_2.id FROM t1 t1_2, t2 t2_2 WHERE t1_2.id = t2_2.id AND t2_2.val > 100 ORDER BY t1_2.id LIMIT 1);
 INFO:  pg_hint_plan: hint syntax error at or near "Leading(((t1 t2) t3)) Leading(((t3 t1) t2))"
 DETAIL:  Conflict leading hint.
@@ -5802,6 +6410,8 @@ error hint:
 
 /*+Leading(((t1 t2) t3)) Leading((t1_2 t2_2))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < ( SELECT t1_2.id FROM t1 t1_2, t2 t2_2 WHERE t1_2.id = t2_2.id AND t2_2.val > 100 ORDER BY t1_2.id LIMIT 1);
+LOG:  statement: /*+Leading(((t1 t2) t3)) Leading((t1_2 t2_2))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < ( SELECT t1_2.id FROM t1 t1_2, t2 t2_2 WHERE t1_2.id = t2_2.id AND t2_2.val > 100 ORDER BY t1_2.id LIMIT 1);
 LOG:  pg_hint_plan:
 used hint:
 Leading(((t1 t2) t3))
@@ -5833,6 +6443,8 @@ error hint:
 (18 rows)
 
 /*+Leading(((((t1 t2) t3) t1_2) t2_2))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < ( SELECT t1_2.id FROM t1 t1_2, t2 t2_2 WHERE t1_2.id = t2_2.id AND t2_2.val > 100 ORDER BY t1_2.id LIMIT 1);
+LOG:  statement: /*+Leading(((((t1 t2) t3) t1_2) t2_2))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < ( SELECT t1_2.id FROM t1 t1_2, t2 t2_2 WHERE t1_2.id = t2_2.id AND t2_2.val > 100 ORDER BY t1_2.id LIMIT 1);
 LOG:  pg_hint_plan:
 used hint:
@@ -5866,6 +6478,8 @@ error hint:
 -- Specified outer/inner leading hint and join method hint at the same time
 /*+Leading(((t1 t2) t3))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading(((t1 t2) t3))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 Leading(((t1 t2) t3))
@@ -5888,6 +6502,8 @@ error hint:
 
 /*+Leading(((t1 t2) t3)) MergeJoin(t1 t2)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading(((t1 t2) t3)) MergeJoin(t1 t2)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 MergeJoin(t1 t2)
@@ -5909,6 +6525,8 @@ error hint:
 (8 rows)
 
 /*+Leading(((t1 t2) t3)) MergeJoin(t1 t2 t3)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading(((t1 t2) t3)) MergeJoin(t1 t2 t3)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -5937,6 +6555,8 @@ error hint:
 
 /*+Leading(((t1 t2) t3)) MergeJoin(t1 t3)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading(((t1 t2) t3)) MergeJoin(t1 t3)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 Leading(((t1 t2) t3))
@@ -5959,6 +6579,7 @@ error hint:
 (9 rows)
 
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
                        QUERY PLAN                       
 --------------------------------------------------------
  Nested Loop
@@ -5978,6 +6599,8 @@ EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id
 (14 rows)
 
 /*+Leading(((t1 t2) t3)) MergeJoin(t3 t4)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading(((t1 t2) t3)) MergeJoin(t3 t4)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -6004,6 +6627,8 @@ error hint:
 (12 rows)
 
 /*+Leading(((t1 t2) t3)) MergeJoin(t1 t2 t3 t4)*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading(((t1 t2) t3)) MergeJoin(t1 t2 t3 t4)*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4 WHERE t1.id = t2.id AND t3.id = t4.id AND t1.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -6035,6 +6660,8 @@ error hint:
 
 /*+ Leading ( ( t1 ( t2 t3 ) ) ) */
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+ Leading ( ( t1 ( t2 t3 ) ) ) */
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 Leading((t1 (t2 t3)))
@@ -6057,6 +6684,8 @@ error hint:
 (10 rows)
 
 /*+Leading((t1(t2 t3)))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading((t1(t2 t3)))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -6081,6 +6710,8 @@ error hint:
 
 /*+Leading(("t1(t2" "t3)"))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading(("t1(t2" "t3)"))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 not used hint:
@@ -6104,6 +6735,8 @@ error hint:
 
 /*+ Leading ( ( ( t1 t2 ) t3 ) ) */
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+ Leading ( ( ( t1 t2 ) t3 ) ) */
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 Leading(((t1 t2) t3))
@@ -6125,6 +6758,8 @@ error hint:
 (9 rows)
 
 /*+Leading(((t1 t2)t3))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading(((t1 t2)t3))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
@@ -6148,6 +6783,8 @@ error hint:
 
 /*+Leading(("(t1" "t2)t3"))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
+LOG:  statement: /*+Leading(("(t1" "t2)t3"))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3 WHERE t1.id = t2.id AND t2.val = t3.val AND t1.id < 10;
 LOG:  pg_hint_plan:
 used hint:
 not used hint:
@@ -6170,6 +6807,8 @@ error hint:
 (10 rows)
 
 /*+Leading((t1(t2(t3(t4 t5)))))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
+LOG:  statement: /*+Leading((t1(t2(t3(t4 t5)))))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -6199,6 +6838,8 @@ error hint:
 (16 rows)
 
 /*+Leading((t5(t4(t3(t2 t1)))))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
+LOG:  statement: /*+Leading((t5(t4(t3(t2 t1)))))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -6233,6 +6874,8 @@ error hint:
 
 /*+Leading(((((t1 t2)t3)t4)t5))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
+LOG:  statement: /*+Leading(((((t1 t2)t3)t4)t5))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
 LOG:  pg_hint_plan:
 used hint:
 Leading(((((t1 t2) t3) t4) t5))
@@ -6262,6 +6905,8 @@ error hint:
 (17 rows)
 
 /*+Leading(((((t5 t4)t3)t2)t1))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
+LOG:  statement: /*+Leading(((((t5 t4)t3)t2)t1))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -6293,6 +6938,8 @@ error hint:
 
 /*+Leading(((t1 t2)(t3(t4 t5))))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
+LOG:  statement: /*+Leading(((t1 t2)(t3(t4 t5))))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
 LOG:  pg_hint_plan:
 used hint:
 Leading(((t1 t2) (t3 (t4 t5))))
@@ -6320,6 +6967,8 @@ error hint:
 (15 rows)
 
 /*+Leading(((t5 t4)(t3(t2 t1))))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
+LOG:  statement: /*+Leading(((t5 t4)(t3(t2 t1))))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -6353,6 +7002,8 @@ error hint:
 
 /*+Leading((((t1 t2)t3)(t4 t5)))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
+LOG:  statement: /*+Leading((((t1 t2)t3)(t4 t5)))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
 LOG:  pg_hint_plan:
 used hint:
 Leading((((t1 t2) t3) (t4 t5)))
@@ -6381,6 +7032,8 @@ error hint:
 (16 rows)
 
 /*+Leading((((t5 t4)t3)(t2 t1)))*/
+EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
+LOG:  statement: /*+Leading((((t5 t4)t3)(t2 t1)))*/
 EXPLAIN (COSTS false) SELECT * FROM t1, t2, t3, t4, t5 WHERE t1.id = t2.id AND t1.id = t3.id AND t1.id = t4.id AND t1.id = t5.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -6411,6 +7064,7 @@ error hint:
 
 -- inherite table test to specify the index's name
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
                               QUERY PLAN                               
 -----------------------------------------------------------------------
  Append
@@ -6425,6 +7079,8 @@ EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid =
 (9 rows)
 
 /*+IndexScan(p2 p2_pkey)*/
+EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_pkey)*/
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_pkey
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_pkey
@@ -6461,6 +7117,8 @@ error hint:
 
 /*+IndexScan(p2 p2_id_val_idx)*/
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_id_val_idx)*/
+EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_id_val_idx
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_id_val_idx
 LOG:  available indexes for IndexScan(p2_c2): p2_c2_id_val_idx
@@ -6496,6 +7154,8 @@ error hint:
 
 /*+IndexScan(p2 p2_val_id_idx)*/
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_val_id_idx)*/
+EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_val_id_idx
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_val_id_idx
 LOG:  available indexes for IndexScan(p2_c2): p2_c2_val_id_idx
@@ -6530,6 +7190,7 @@ error hint:
 (13 rows)
 
 EXPLAIN (COSTS false) SELECT val FROM p2 WHERE val >= '50' AND val <= '51' AND p2.ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) SELECT val FROM p2 WHERE val >= '50' AND val <= '51' AND p2.ctid = '(1,1)';
                                        QUERY PLAN                                        
 -----------------------------------------------------------------------------------------
  Append
@@ -6554,6 +7215,8 @@ EXPLAIN (COSTS false) SELECT val FROM p2 WHERE val >= '50' AND val <= '51' AND p
 (19 rows)
 
 /*+IndexScan(p2 p2_val)*/
+EXPLAIN (COSTS false) SELECT val FROM p2 WHERE val >= '50' AND val <= '51' AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_val)*/
 EXPLAIN (COSTS false) SELECT val FROM p2 WHERE val >= '50' AND val <= '51' AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2):
 LOG:  available indexes for IndexScan(p2_c1):
@@ -6596,6 +7259,8 @@ error hint:
 
 /*+IndexScan(p2 p2_pkey)*/
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_pkey)*/
+EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_pkey
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_pkey
 LOG:  available indexes for IndexScan(p2_c2): p2_c2_pkey
@@ -6631,6 +7296,8 @@ error hint:
 
 /*+IndexScan(p2 p2_id2_val)*/
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_id2_val)*/
+EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_id2_val
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_id2_val
 LOG:  available indexes for IndexScan(p2_c2): p2_c2_id2_val
@@ -6664,6 +7331,8 @@ error hint:
 
 /*+IndexScan(p2 p2_val2_id)*/
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_val2_id)*/
+EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_val2_id
 LOG:  available indexes for IndexScan(p2_c1):
 LOG:  available indexes for IndexScan(p2_c2):
@@ -6695,6 +7364,8 @@ error hint:
 (10 rows)
 
 /*+IndexScan(p2 p2_pkey)*/
+EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_pkey)*/
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_pkey
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_pkey
@@ -6731,6 +7402,8 @@ error hint:
 
 /*+IndexScan(p2 p2_c1_id_val_idx)*/
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_c1_id_val_idx)*/
+EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2):
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_id_val_idx
 LOG:  available indexes for IndexScan(p2_c2):
@@ -6763,6 +7436,8 @@ error hint:
 
 /*+IndexScan(p2 no_exist)*/
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 no_exist)*/
+EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2):
 LOG:  available indexes for IndexScan(p2_c1):
 LOG:  available indexes for IndexScan(p2_c2):
@@ -6793,6 +7468,8 @@ error hint:
 (9 rows)
 
 /*+IndexScan(p2 p2_pkey p2_c1_id_val_idx)*/
+EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_pkey p2_c1_id_val_idx)*/
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_pkey
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_id_val_idx p2_c1_pkey
@@ -6829,6 +7506,8 @@ error hint:
 
 /*+IndexScan(p2 p2_pkey no_exist)*/
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_pkey no_exist)*/
+EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_pkey
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_pkey
 LOG:  available indexes for IndexScan(p2_c2): p2_c2_pkey
@@ -6864,6 +7543,8 @@ error hint:
 
 /*+IndexScan(p2 p2_c1_id_val_idx no_exist)*/
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_c1_id_val_idx no_exist)*/
+EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2):
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_id_val_idx
 LOG:  available indexes for IndexScan(p2_c2):
@@ -6895,6 +7576,8 @@ error hint:
 (10 rows)
 
 /*+IndexScan(p2 p2_pkey p2_c1_id_val_idx no_exist)*/
+EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_pkey p2_c1_id_val_idx no_exist)*/
 EXPLAIN (COSTS false) SELECT * FROM p2 WHERE id >= 50 AND id <= 51 AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_pkey
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_id_val_idx p2_c1_pkey
@@ -6930,6 +7613,8 @@ error hint:
 (13 rows)
 
 /*+IndexScan(p2 p2_val_idx)*/
+EXPLAIN (COSTS false) SELECT val FROM p2 WHERE val >= '50' AND val <= '51' AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_val_idx)*/
 EXPLAIN (COSTS false) SELECT val FROM p2 WHERE val >= '50' AND val <= '51' AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_val_idx
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_val_idx
@@ -6981,6 +7666,8 @@ error hint:
 
 /*+IndexScan(p2 p2_expr)*/
 EXPLAIN (COSTS false) SELECT val FROM p2 WHERE val >= '50' AND val <= '51' AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_expr)*/
+EXPLAIN (COSTS false) SELECT val FROM p2 WHERE val >= '50' AND val <= '51' AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_expr
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_expr_idx
 LOG:  available indexes for IndexScan(p2_c2): p2_c2_expr_idx
@@ -7022,6 +7709,8 @@ error hint:
 
 /*+IndexScan(p2 p2_val_idx6)*/
 EXPLAIN (COSTS false) SELECT val FROM p2 WHERE val >= '50' AND val <= '51' AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_val_idx6)*/
+EXPLAIN (COSTS false) SELECT val FROM p2 WHERE val >= '50' AND val <= '51' AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_val_idx6
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_val_idx6
 LOG:  available indexes for IndexScan(p2_c2): p2_c2_val_idx6
@@ -7062,6 +7751,8 @@ error hint:
 (19 rows)
 
 /*+IndexScan(p2 p2_val_idx p2_val_idx6)*/
+EXPLAIN (COSTS false) SELECT val FROM p2 WHERE val >= '50' AND val <= '51' AND p2.ctid = '(1,1)';
+LOG:  statement: /*+IndexScan(p2 p2_val_idx p2_val_idx6)*/
 EXPLAIN (COSTS false) SELECT val FROM p2 WHERE val >= '50' AND val <= '51' AND p2.ctid = '(1,1)';
 LOG:  available indexes for IndexScan(p2): p2_val_idx6 p2_val_idx
 LOG:  available indexes for IndexScan(p2_c1): p2_c1_val_idx6 p2_c1_val_idx
@@ -7114,6 +7805,7 @@ error hint:
 -- regular expression
 -- ordinary table
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
                                          QUERY PLAN                                          
 ---------------------------------------------------------------------------------------------
  Index Only Scan using t5_idaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa on t5
@@ -7121,6 +7813,8 @@ EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 (2 rows)
 
 /*+ IndexScanRegexp(t5 t5_[^i].*)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ IndexScanRegexp(t5 t5_[^i].*)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for IndexScanRegexp(t5): t5_val t5_pkey
 LOG:  pg_hint_plan:
@@ -7138,6 +7832,8 @@ error hint:
 
 /*+ IndexScanRegexp(t5 t5_id[0-9].*)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ IndexScanRegexp(t5 t5_id[0-9].*)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for IndexScanRegexp(t5): t5_id3 t5_id2 t5_id1
 LOG:  pg_hint_plan:
 used hint:
@@ -7153,6 +7849,8 @@ error hint:
 (2 rows)
 
 /*+ IndexScanRegexp(t5 t5[^_].*)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ IndexScanRegexp(t5 t5[^_].*)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for IndexScanRegexp(t5):
 LOG:  pg_hint_plan:
@@ -7170,6 +7868,8 @@ error hint:
 
 /*+ IndexScanRegexp(t5 ^.*t5_idaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ IndexScanRegexp(t5 ^.*t5_idaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for IndexScanRegexp(t5):
 LOG:  pg_hint_plan:
 used hint:
@@ -7185,6 +7885,8 @@ error hint:
 (2 rows)
 
 /*+ IndexScan(t5 t5_id[0-9].*)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ IndexScan(t5 t5_id[0-9].*)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for IndexScan(t5):
 LOG:  pg_hint_plan:
@@ -7202,6 +7904,8 @@ error hint:
 
 /*+ IndexOnlyScanRegexp(t5 t5_[^i].*)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ IndexOnlyScanRegexp(t5 t5_[^i].*)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for IndexOnlyScanRegexp(t5): t5_val t5_pkey
 LOG:  pg_hint_plan:
 used hint:
@@ -7217,6 +7921,8 @@ error hint:
 (2 rows)
 
 /*+ IndexOnlyScanRegexp(t5 t5_id[0-9].*)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ IndexOnlyScanRegexp(t5 t5_id[0-9].*)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for IndexOnlyScanRegexp(t5): t5_id3 t5_id2 t5_id1
 LOG:  pg_hint_plan:
@@ -7234,6 +7940,8 @@ error hint:
 
 /*+ IndexOnlyScanRegexp(t5 t5[^_].*)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ IndexOnlyScanRegexp(t5 t5[^_].*)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for IndexOnlyScanRegexp(t5):
 LOG:  pg_hint_plan:
 used hint:
@@ -7249,6 +7957,8 @@ error hint:
 (2 rows)
 
 /*+ IndexOnlyScanRegexp(t5 ^.*t5_idaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ IndexOnlyScanRegexp(t5 ^.*t5_idaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for IndexOnlyScanRegexp(t5):
 LOG:  pg_hint_plan:
@@ -7266,6 +7976,8 @@ error hint:
 
 /*+ IndexOnlyScan(t5 t5_id[0-9].*)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ IndexOnlyScan(t5 t5_id[0-9].*)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for IndexOnlyScan(t5):
 LOG:  pg_hint_plan:
 used hint:
@@ -7281,6 +7993,8 @@ error hint:
 (2 rows)
 
 /*+ BitmapScanRegexp(t5 t5_[^i].*)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ BitmapScanRegexp(t5 t5_[^i].*)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for BitmapScanRegexp(t5): t5_val t5_pkey
 LOG:  pg_hint_plan:
@@ -7300,6 +8014,8 @@ error hint:
 
 /*+ BitmapScanRegexp(t5 t5_id[0-9].*)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ BitmapScanRegexp(t5 t5_id[0-9].*)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for BitmapScanRegexp(t5): t5_id3 t5_id2 t5_id1
 LOG:  pg_hint_plan:
 used hint:
@@ -7318,6 +8034,8 @@ error hint:
 
 /*+ BitmapScanRegexp(t5 t5[^_].*)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ BitmapScanRegexp(t5 t5[^_].*)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for BitmapScanRegexp(t5):
 LOG:  pg_hint_plan:
 used hint:
@@ -7333,6 +8051,8 @@ error hint:
 (2 rows)
 
 /*+ BitmapScanRegexp(t5 ^.*t5_idaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ BitmapScanRegexp(t5 ^.*t5_idaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for BitmapScanRegexp(t5):
 LOG:  pg_hint_plan:
@@ -7350,6 +8070,8 @@ error hint:
 
 /*+ BitmapScan(t5 t5_id[0-9].*)*/
 EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
+LOG:  statement: /*+ BitmapScan(t5 t5_id[0-9].*)*/
+EXPLAIN (COSTS false) SELECT id FROM t5 WHERE id = 1;
 LOG:  available indexes for BitmapScan(t5):
 LOG:  pg_hint_plan:
 used hint:
@@ -7366,6 +8088,7 @@ error hint:
 
 -- Inheritance
 EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
+LOG:  statement: EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
          QUERY PLAN         
 ----------------------------
  Append
@@ -7390,6 +8113,8 @@ EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
 (19 rows)
 
 /*+ IndexScanRegexp(p1 p1_.*[^0-9]$)*/
+EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
+LOG:  statement: /*+ IndexScanRegexp(p1 p1_.*[^0-9]$)*/
 EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
 LOG:  available indexes for IndexScanRegexp(p1): p1_pkey
 LOG:  available indexes for IndexScanRegexp(p1_c1): p1_c1_pkey
@@ -7432,6 +8157,8 @@ error hint:
 
 /*+ IndexScanRegexp(p1 p1_.*val2.*)*/
 EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
+LOG:  statement: /*+ IndexScanRegexp(p1 p1_.*val2.*)*/
+EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
 LOG:  available indexes for IndexScanRegexp(p1): p1_val2
 LOG:  available indexes for IndexScanRegexp(p1_c1): p1_c1_val2
 LOG:  available indexes for IndexScanRegexp(p1_c2): p1_c2_val2
@@ -7472,6 +8199,8 @@ error hint:
 (19 rows)
 
 /*+ IndexScanRegexp(p1 p1[^_].*)*/
+EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
+LOG:  statement: /*+ IndexScanRegexp(p1 p1[^_].*)*/
 EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
 LOG:  available indexes for IndexScanRegexp(p1):
 LOG:  available indexes for IndexScanRegexp(p1_c1):
@@ -7514,6 +8243,8 @@ error hint:
 
 /*+ IndexScan(p1 p1_.*val2.*)*/
 EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
+LOG:  statement: /*+ IndexScan(p1 p1_.*val2.*)*/
+EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
 LOG:  available indexes for IndexScan(p1):
 LOG:  available indexes for IndexScan(p1_c1):
 LOG:  available indexes for IndexScan(p1_c2):
@@ -7554,6 +8285,8 @@ error hint:
 (19 rows)
 
 /*+ IndexOnlyScanRegexp(p1 p1_.*[^0-9]$)*/
+EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
+LOG:  statement: /*+ IndexOnlyScanRegexp(p1 p1_.*[^0-9]$)*/
 EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
 LOG:  available indexes for IndexOnlyScanRegexp(p1): p1_pkey
 LOG:  available indexes for IndexOnlyScanRegexp(p1_c1): p1_c1_pkey
@@ -7596,6 +8329,8 @@ error hint:
 
 /*+ IndexOnlyScanRegexp(p1 p1_.*val2.*)*/
 EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
+LOG:  statement: /*+ IndexOnlyScanRegexp(p1 p1_.*val2.*)*/
+EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
 LOG:  available indexes for IndexOnlyScanRegexp(p1): p1_val2
 LOG:  available indexes for IndexOnlyScanRegexp(p1_c1): p1_c1_val2
 LOG:  available indexes for IndexOnlyScanRegexp(p1_c2): p1_c2_val2
@@ -7636,6 +8371,8 @@ error hint:
 (19 rows)
 
 /*+ IndexOnlyScanRegexp(p1 p1[^_].*)*/
+EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
+LOG:  statement: /*+ IndexOnlyScanRegexp(p1 p1[^_].*)*/
 EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
 LOG:  available indexes for IndexOnlyScanRegexp(p1):
 LOG:  available indexes for IndexOnlyScanRegexp(p1_c1):
@@ -7678,6 +8415,8 @@ error hint:
 
 /*+ IndexOnlyScan(p1 p1_.*val2.*)*/
 EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
+LOG:  statement: /*+ IndexOnlyScan(p1 p1_.*val2.*)*/
+EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
 LOG:  available indexes for IndexOnlyScan(p1):
 LOG:  available indexes for IndexOnlyScan(p1_c1):
 LOG:  available indexes for IndexOnlyScan(p1_c2):
@@ -7719,6 +8458,8 @@ error hint:
 
 /*+ BitmapScanRegexp(p1 p1_.*[^0-9]$)*/
 EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
+LOG:  statement: /*+ BitmapScanRegexp(p1 p1_.*[^0-9]$)*/
+EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
 LOG:  available indexes for BitmapScanRegexp(p1): p1_pkey
 LOG:  available indexes for BitmapScanRegexp(p1_c1): p1_c1_pkey
 LOG:  available indexes for BitmapScanRegexp(p1_c2): p1_c2_pkey
@@ -7759,6 +8500,8 @@ error hint:
 (19 rows)
 
 /*+ BitmapScanRegexp(p1 p1_.*val2.*)*/
+EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
+LOG:  statement: /*+ BitmapScanRegexp(p1 p1_.*val2.*)*/
 EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
 LOG:  available indexes for BitmapScanRegexp(p1): p1_val2
 LOG:  available indexes for BitmapScanRegexp(p1_c1): p1_c1_val2
@@ -7819,6 +8562,8 @@ error hint:
 
 /*+ BitmapScanRegexp(p1 p1[^_].*)*/
 EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
+LOG:  statement: /*+ BitmapScanRegexp(p1 p1[^_].*)*/
+EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
 LOG:  available indexes for BitmapScanRegexp(p1):
 LOG:  available indexes for BitmapScanRegexp(p1_c1):
 LOG:  available indexes for BitmapScanRegexp(p1_c2):
@@ -7859,6 +8604,8 @@ error hint:
 (19 rows)
 
 /*+ BitmapScan(p1 p1_.*val2.*)*/
+EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
+LOG:  statement: /*+ BitmapScan(p1 p1_.*val2.*)*/
 EXPLAIN (COSTS false) SELECT val FROM p1 WHERE val = 1;
 LOG:  available indexes for BitmapScan(p1):
 LOG:  available indexes for BitmapScan(p1_c1):
@@ -7901,9 +8648,13 @@ error hint:
 
 -- search from hint table
 INSERT INTO hint_plan.hints (norm_query_string, application_name, hints) VALUES ('EXPLAIN (COSTS false) SELECT * FROM t1 WHERE t1.id = ?;', '', 'SeqScan(t1)');
+LOG:  statement: INSERT INTO hint_plan.hints (norm_query_string, application_name, hints) VALUES ('EXPLAIN (COSTS false) SELECT * FROM t1 WHERE t1.id = ?;', '', 'SeqScan(t1)');
 INSERT INTO hint_plan.hints (norm_query_string, application_name, hints) VALUES ('EXPLAIN (COSTS false) SELECT id FROM t1 WHERE t1.id = ?;', '', 'IndexScan(t1)');
+LOG:  statement: INSERT INTO hint_plan.hints (norm_query_string, application_name, hints) VALUES ('EXPLAIN (COSTS false) SELECT id FROM t1 WHERE t1.id = ?;', '', 'IndexScan(t1)');
 INSERT INTO hint_plan.hints (norm_query_string, application_name, hints) VALUES ('EXPLAIN SELECT * FROM t1 WHERE t1.id = ?;', '', 'BitmapScan(t1)');
+LOG:  statement: INSERT INTO hint_plan.hints (norm_query_string, application_name, hints) VALUES ('EXPLAIN SELECT * FROM t1 WHERE t1.id = ?;', '', 'BitmapScan(t1)');
 SELECT * FROM hint_plan.hints ORDER BY id;
+LOG:  statement: SELECT * FROM hint_plan.hints ORDER BY id;
  id |                    norm_query_string                     | application_name |     hints      
 ----+----------------------------------------------------------+------------------+----------------
   1 | EXPLAIN (COSTS false) SELECT * FROM t1 WHERE t1.id = ?;  |                  | SeqScan(t1)
@@ -7912,7 +8663,9 @@ SELECT * FROM hint_plan.hints ORDER BY id;
 (3 rows)
 
 SET pg_hint_plan.enable_hint_table = on;
+LOG:  statement: SET pg_hint_plan.enable_hint_table = on;
 EXPLAIN (COSTS false) SELECT * FROM t1 WHERE t1.id = 1;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1 WHERE t1.id = 1;
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t1)
@@ -7927,7 +8680,9 @@ error hint:
 (2 rows)
 
 SET pg_hint_plan.enable_hint_table = off;
+LOG:  statement: SET pg_hint_plan.enable_hint_table = off;
 EXPLAIN (COSTS false) SELECT * FROM t1 WHERE t1.id = 1;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM t1 WHERE t1.id = 1;
            QUERY PLAN           
 --------------------------------
  Index Scan using t1_pkey on t1
@@ -7935,9 +8690,12 @@ EXPLAIN (COSTS false) SELECT * FROM t1 WHERE t1.id = 1;
 (2 rows)
 
 TRUNCATE hint_plan.hints;
+LOG:  statement: TRUNCATE hint_plan.hints;
 VACUUM ANALYZE hint_plan.hints;
+LOG:  statement: VACUUM ANALYZE hint_plan.hints;
 -- plpgsql test
 EXPLAIN (COSTS false) SELECT id FROM t1 WHERE t1.id = 1;
+LOG:  statement: EXPLAIN (COSTS false) SELECT id FROM t1 WHERE t1.id = 1;
              QUERY PLAN              
 -------------------------------------
  Index Only Scan using t1_pkey on t1
@@ -7953,7 +8711,16 @@ BEGIN
   RETURN ret;
 END;
 $$ LANGUAGE plpgsql;
+LOG:  statement: CREATE FUNCTION testfunc() RETURNS RECORD AS $$
+DECLARE
+  ret record;
+BEGIN
+  SELECT /*+ SeqScan(t1) */ * INTO ret FROM t1 LIMIT 1;
+  RETURN ret;
+END;
+$$ LANGUAGE plpgsql;
 SELECT testfunc();
+LOG:  statement: SELECT testfunc();
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t1)
@@ -7970,12 +8737,19 @@ PL/pgSQL function testfunc() line 5 at SQL statement
 
 -- dynamic function
 DROP FUNCTION testfunc();
+LOG:  statement: DROP FUNCTION testfunc();
 CREATE FUNCTION testfunc() RETURNS void AS $$
 BEGIN
   EXECUTE format('/*+ SeqScan(t1) */ SELECT * FROM t1');
 END;
 $$ LANGUAGE plpgsql;
+LOG:  statement: CREATE FUNCTION testfunc() RETURNS void AS $$
+BEGIN
+  EXECUTE format('/*+ SeqScan(t1) */ SELECT * FROM t1');
+END;
+$$ LANGUAGE plpgsql;
 SELECT testfunc();
+LOG:  statement: SELECT testfunc();
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t1)
@@ -7992,6 +8766,7 @@ PL/pgSQL function testfunc() line 3 at EXECUTE
 
 -- This should not use SeqScan(t1)
 /*+ IndexScan(t1) */ SELECT * from t1 LIMIT 1;
+LOG:  statement: /*+ IndexScan(t1) */ SELECT * from t1 LIMIT 1;
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(t1)
@@ -8006,12 +8781,19 @@ error hint:
 
 -- Perform
 DROP FUNCTION testfunc();
+LOG:  statement: DROP FUNCTION testfunc();
 CREATE FUNCTION testfunc() RETURNS void AS $$
 BEGIN
   PERFORM  1, /*+ SeqScan(t1) */ * from t1;
 END;
 $$ LANGUAGE plpgsql;
+LOG:  statement: CREATE FUNCTION testfunc() RETURNS void AS $$
+BEGIN
+  PERFORM  1, /*+ SeqScan(t1) */ * from t1;
+END;
+$$ LANGUAGE plpgsql;
 SELECT testfunc();
+LOG:  statement: SELECT testfunc();
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t1)
@@ -8028,6 +8810,7 @@ PL/pgSQL function testfunc() line 3 at PERFORM
 
 -- FOR loop
 DROP FUNCTION testfunc();
+LOG:  statement: DROP FUNCTION testfunc();
 CREATE FUNCTION testfunc() RETURNS int AS $$
 DECLARE
   sum int;
@@ -8040,7 +8823,20 @@ BEGIN
   RETURN v;
 END;
 $$ LANGUAGE plpgsql;
+LOG:  statement: CREATE FUNCTION testfunc() RETURNS int AS $$
+DECLARE
+  sum int;
+  v int;
+BEGIN
+  sum := 0;
+  FOR v IN SELECT /*+ SeqScan(t1) */ v FROM t1 ORDER BY id LOOP
+    sum := sum + v;
+  END LOOP;
+  RETURN v;
+END;
+$$ LANGUAGE plpgsql;
 SELECT testfunc();
+LOG:  statement: SELECT testfunc();
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t1)
@@ -8057,6 +8853,7 @@ PL/pgSQL function testfunc() line 7 at FOR over SELECT rows
 
 -- Dynamic FOR loop
 DROP FUNCTION testfunc();
+LOG:  statement: DROP FUNCTION testfunc();
 CREATE FUNCTION testfunc() RETURNS int AS $$
 DECLARE
   sum int;
@@ -8070,7 +8867,21 @@ BEGIN
   RETURN v;
 END;
 $$ LANGUAGE plpgsql;
+LOG:  statement: CREATE FUNCTION testfunc() RETURNS int AS $$
+DECLARE
+  sum int;
+  v int;
+  i   int;
+BEGIN
+  sum := 0;
+  FOR v IN EXECUTE 'SELECT /*+ SeqScan(t1) */ val FROM t1 ORDER BY id' LOOP
+    sum := sum + v;
+  END LOOP;
+  RETURN v;
+END;
+$$ LANGUAGE plpgsql;
 SELECT testfunc();
+LOG:  statement: SELECT testfunc();
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t1)
@@ -8087,6 +8898,7 @@ PL/pgSQL function testfunc() line 8 at FOR over EXECUTE statement
 
 -- Cursor FOR loop
 DROP FUNCTION testfunc();
+LOG:  statement: DROP FUNCTION testfunc();
 CREATE FUNCTION testfunc() RETURNS int AS $$
 DECLARE
   ref CURSOR FOR SELECT /*+ SeqScan(t1) */ * FROM t1 ORDER BY id;
@@ -8099,7 +8911,20 @@ BEGIN
   RETURN sum;
 END;
 $$ LANGUAGE plpgsql;
+LOG:  statement: CREATE FUNCTION testfunc() RETURNS int AS $$
+DECLARE
+  ref CURSOR FOR SELECT /*+ SeqScan(t1) */ * FROM t1 ORDER BY id;
+  rec record;
+  sum int := 0;
+BEGIN
+  FOR rec IN ref LOOP
+    sum := sum + rec.val;
+  END LOOP;
+  RETURN sum;
+END;
+$$ LANGUAGE plpgsql;
 SELECT testfunc();
+LOG:  statement: SELECT testfunc();
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t1)
@@ -8116,12 +8941,19 @@ PL/pgSQL function testfunc() line 7 at FOR over cursor
 
 -- RETURN QUERY
 DROP FUNCTION testfunc();
+LOG:  statement: DROP FUNCTION testfunc();
 CREATE FUNCTION testfunc() RETURNS SETOF t1 AS $$
 BEGIN
   RETURN QUERY SELECT /*+ SeqScan(t1) */ * FROM t1 ORDER BY id;
 END;
 $$ LANGUAGE plpgsql;
+LOG:  statement: CREATE FUNCTION testfunc() RETURNS SETOF t1 AS $$
+BEGIN
+  RETURN QUERY SELECT /*+ SeqScan(t1) */ * FROM t1 ORDER BY id;
+END;
+$$ LANGUAGE plpgsql;
 SELECT * FROM testfunc() LIMIT 1;
+LOG:  statement: SELECT * FROM testfunc() LIMIT 1;
 LOG:  pg_hint_plan:
 used hint:
 SeqScan(t1)
@@ -8138,12 +8970,19 @@ PL/pgSQL function testfunc() line 3 at RETURN QUERY
 
 -- Test for error exit from inner SQL statement.
 DROP FUNCTION testfunc();
+LOG:  statement: DROP FUNCTION testfunc();
 CREATE FUNCTION testfunc() RETURNS SETOF t1 AS $$
 BEGIN
   RETURN QUERY SELECT /*+ SeqScan(t1) */ * FROM ttx ORDER BY id;
 END;
 $$ LANGUAGE plpgsql;
+LOG:  statement: CREATE FUNCTION testfunc() RETURNS SETOF t1 AS $$
+BEGIN
+  RETURN QUERY SELECT /*+ SeqScan(t1) */ * FROM ttx ORDER BY id;
+END;
+$$ LANGUAGE plpgsql;
 SELECT * FROM testfunc() LIMIT 1;
+LOG:  statement: SELECT * FROM testfunc() LIMIT 1;
 ERROR:  relation "ttx" does not exist
 LINE 1: SELECT /*+ SeqScan(t1) */ * FROM ttx ORDER BY id
                                          ^
@@ -8151,6 +8990,7 @@ QUERY:  SELECT /*+ SeqScan(t1) */ * FROM ttx ORDER BY id
 CONTEXT:  PL/pgSQL function testfunc() line 3 at RETURN QUERY
 -- this should not use SeqScan(t1) hint.
 /*+ IndexScan(t1) */ SELECT * from t1 LIMIT 1;
+LOG:  statement: /*+ IndexScan(t1) */ SELECT * from t1 LIMIT 1;
 LOG:  pg_hint_plan:
 used hint:
 IndexScan(t1)
@@ -8164,7 +9004,9 @@ error hint:
 (1 row)
 
 DROP FUNCTION testfunc();
+LOG:  statement: DROP FUNCTION testfunc();
 DROP EXTENSION pg_hint_plan;
+LOG:  statement: DROP EXTENSION pg_hint_plan;
 --
 -- Rows hint tests
 --
@@ -8174,6 +9016,7 @@ DROP EXTENSION pg_hint_plan;
 -- value types
 \o results/pg_hint_plan.tmpout
 EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
+LOG:  statement: EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
 \o
 \! sql/maskout.sh results/pg_hint_plan.tmpout
                                   QUERY PLAN                                  
@@ -8186,6 +9029,8 @@ EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
 
 \o results/pg_hint_plan.tmpout
 /*+ Rows(t1 t2 #99) */
+EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
+LOG:  statement: /*+ Rows(t1 t2 #99) */
 EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
 LOG:  pg_hint_plan:
 used hint:
@@ -8207,6 +9052,8 @@ error hint:
 \o results/pg_hint_plan.tmpout
 /*+ Rows(t1 t2 +99) */
 EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
+LOG:  statement: /*+ Rows(t1 t2 +99) */
+EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
 LOG:  pg_hint_plan:
 used hint:
 Rows(t1 t2 +99)
@@ -8226,6 +9073,8 @@ error hint:
 
 \o results/pg_hint_plan.tmpout
 /*+ Rows(t1 t2 -99) */
+EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
+LOG:  statement: /*+ Rows(t1 t2 -99) */
 EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
 LOG:  pg_hint_plan:
 used hint:
@@ -8247,6 +9096,8 @@ error hint:
 \o results/pg_hint_plan.tmpout
 /*+ Rows(t1 t2 *99) */
 EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
+LOG:  statement: /*+ Rows(t1 t2 *99) */
+EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
 LOG:  pg_hint_plan:
 used hint:
 Rows(t1 t2 *99)
@@ -8266,6 +9117,8 @@ error hint:
 
 \o results/pg_hint_plan.tmpout
 /*+ Rows(t1 t2 *0.01) */
+EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
+LOG:  statement: /*+ Rows(t1 t2 *0.01) */
 EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
 LOG:  pg_hint_plan:
 used hint:
@@ -8287,6 +9140,8 @@ error hint:
 \o results/pg_hint_plan.tmpout
 /*+ Rows(t1 t2 #aa) */
 EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id); -- ERROR
+LOG:  statement: /*+ Rows(t1 t2 #aa) */
+EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
 INFO:  pg_hint_plan: hint syntax error at or near "aa"
 DETAIL:  Rows hint requires valid number as rows estimation.
 LOG:  pg_hint_plan:
@@ -8309,6 +9164,8 @@ Rows(t1 t2 #aa)
 \o results/pg_hint_plan.tmpout
 /*+ Rows(t1 t2 /99) */
 EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id); -- ERROR
+LOG:  statement: /*+ Rows(t1 t2 /99) */
+EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
 INFO:  pg_hint_plan: hint syntax error at or near "/99"
 DETAIL:  Unrecognized rows value type notation.
 LOG:  pg_hint_plan:
@@ -8332,6 +9189,8 @@ Rows(t1 t2 /99)
 \o results/pg_hint_plan.tmpout
 /*+ Rows(t1 t2 -99999) */
 EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
+LOG:  statement: /*+ Rows(t1 t2 -99999) */
+EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id);
 WARNING:  Force estimate to be at least one row, to avoid possible divide-by-zero when interpolating costs : Rows(t1 t2 -99999) 
 LOG:  pg_hint_plan:
 used hint:
@@ -8353,6 +9212,7 @@ error hint:
 -- complex join tree
 \o results/pg_hint_plan.tmpout
 EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id) JOIN t3 ON (t3.id = t2.id);
+LOG:  statement: EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id) JOIN t3 ON (t3.id = t2.id);
 \o
 \! sql/maskout.sh results/pg_hint_plan.tmpout
                                      QUERY PLAN                                     
@@ -8370,6 +9230,8 @@ EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id) JOIN t3 ON (t3.id = t2.id);
 
 \o results/pg_hint_plan.tmpout
 /*+ Rows(t1 t2 #22) */
+EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id) JOIN t3 ON (t3.id = t2.id);
+LOG:  statement: /*+ Rows(t1 t2 #22) */
 EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id) JOIN t3 ON (t3.id = t2.id);
 LOG:  pg_hint_plan:
 used hint:
@@ -8395,6 +9257,8 @@ error hint:
 
 \o results/pg_hint_plan.tmpout
 /*+ Rows(t1 t3 *10) */
+EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id) JOIN t3 ON (t3.id = t2.id);
+LOG:  statement: /*+ Rows(t1 t3 *10) */
 EXPLAIN SELECT * FROM t1 JOIN t2 ON (t1.id = t2.id) JOIN t3 ON (t3.id = t2.id);
 LOG:  pg_hint_plan:
 used hint:
