@@ -25,7 +25,6 @@
 #include "storage/block.h"
 #include "storage/checksum.h"
 
-#include "portability/mem.h"
 #ifndef WIN32
 #include <sys/mman.h>
 #endif
@@ -183,7 +182,12 @@ typedef union DataPage
 } DataPage;
 
 
-typedef struct 
+/*
+ * This struct definition mirrors one from cfs.h,
+ * but doesn't use atomic variables, since they are not allowed in
+ * frontend code.
+ */
+typedef struct
 {
 	uint32 physSize;
 	uint32 virtSize;

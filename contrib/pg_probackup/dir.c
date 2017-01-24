@@ -550,8 +550,8 @@ dir_read_file_list(const char *root, const char *file_txt)
 	{
 		char			path[MAXPGPATH];
 		char			type;
-		int				generation;
-		int				is_partial_copy;
+		int				generation = -1;
+		int				is_partial_copy = 0;
 		unsigned long	write_size;
 		pg_crc32		crc;
 		unsigned int	mode;	/* bit length of mode_t depends on platforms */
@@ -565,9 +565,17 @@ dir_read_file_list(const char *root, const char *file_txt)
 			&tm.tm_hour, &tm.tm_min, &tm.tm_sec,
 			&generation, &is_partial_copy) != 13)
 		{
-			elog(ERROR, "invalid format found in \"%s\"",
-				file_txt);
+			/* Maybe the file_list we're trying to recovery is in old format */
+			if (sscanf(buf, "%s %c %lu %u %o %d-%d-%d %d:%d:%d",
+				path, &type, &write_size, &crc, &mode,
+				&tm.tm_year, &tm.tm_mon, &tm.tm_mday,
+				&tm.tm_hour, &tm.tm_min, &tm.tm_sec) != 11)
+			{
+				elog(ERROR, "invalid format found in \"%s\"",
+					file_txt);
+			}
 		}
+
 		if (type != 'f' && type != 'F' && type != 'd' && type != 'l')
 		{
 			elog(ERROR, "invalid type '%c' found in \"%s\"",

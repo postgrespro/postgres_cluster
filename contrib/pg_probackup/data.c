@@ -412,7 +412,10 @@ backup_data_file(const char *from_root, const char *to_root,
 	return true;
 }
 
-
+/*
+ * Restore compressed file that was backed up partly.
+ * 
+ */
 static void
 restore_file_partly(const char *from_root,const char *to_root, pgFile *file)
 {
@@ -491,7 +494,8 @@ restore_file_partly(const char *from_root,const char *to_root, pgFile *file)
 		write_size += read_len;
 	}
 
-	elog(NOTICE, "restore_file_partly(). write_size %lu, file->write_size %lu", write_size, file->write_size);
+// 	elog(LOG, "restore_file_partly(). %s write_size %lu, file->write_size %lu",
+// 			   file->path, write_size, file->write_size);
 
 	/* update file permission */
 	if (chmod(to_path, file->mode) == -1)
@@ -518,7 +522,8 @@ restore_compressed_file(const char *from_root,
 	else if (file->is_partial_copy == 1)
 		restore_file_partly(from_root, to_root, file);
 	else
-		elog(ERROR, "restore_compressed_file()");
+		elog(ERROR, "restore_compressed_file(). Unknown is_partial_copy value %d",
+					file->is_partial_copy);
 }
 
 /*
@@ -537,20 +542,18 @@ restore_data_file(const char *from_root,
 	BackupPageHeader	header;
 	BlockNumber			blknum;
 
-	/* If the file is not a datafile, just copy it. */
 	if (!file->is_datafile)
 	{
+		/*
+		 * If the file is not a datafile and not compressed file,
+		 * just copy it.
+		 */
 		if (file->generation == -1)
-		{
 			copy_file(from_root, to_root, file);
-			return;
-		}
 		else
-		{
-			/* It is compressed file */
 			restore_compressed_file(from_root, to_root, file);
-			return;
-		}
+
+		return;
 	}
 
 	/* open backup mode file for read */
@@ -808,6 +811,11 @@ copy_file(const char *from_root, const char *to_root, pgFile *file)
 	return true;
 }
 
+/*
+ * Save part of the file into backup.
+ * skip_size - size of the file in previous backup. We can skip it
+ *			   and copy just remaining part of the file
+ */
 bool
 copy_file_partly(const char *from_root, const char *to_root,
 				 pgFile *file, size_t skip_size)
@@ -841,6 +849,7 @@ copy_file_partly(const char *from_root, const char *to_root,
 		snprintf(to_path, lengthof(to_path), "%s/tmp", backup_path);
 	else
 		join_path_components(to_path, to_root, file->path + strlen(from_root) + 1);
+
 	out = fopen(to_path, "w");
 	if (out == NULL)
 	{
@@ -863,7 +872,10 @@ copy_file_partly(const char *from_root, const char *to_root,
 		elog(ERROR, "cannot seek %lu of \"%s\": %s",
 				skip_size, file->path, strerror(errno));
 
-	/* copy content and calc CRC */
+	/*
+	 * copy content
+	 * NOTE: Now CRC is not computed for compressed files now.
+	 */
 	for (;;)
 	{
 		if ((read_len = fread(buf, 1, sizeof(buf), in)) != sizeof(buf))
@@ -919,8 +931,10 @@ copy_file_partly(const char *from_root, const char *to_root,
 			 strerror(errno_tmp));
 	}
 
+	/* add meta information needed for recovery */
 	file->is_partial_copy = 1;
-	elog(NOTICE, "copy_file_partly(). %s file->write_size %lu", to_path, file->write_size);
+
+//	elog(LOG, "copy_file_partly(). %s file->write_size %lu", to_path, file->write_size);
 
 	fclose(in);
 	fclose(out);

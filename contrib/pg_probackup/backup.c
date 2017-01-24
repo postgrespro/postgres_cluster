@@ -1132,6 +1132,9 @@ file_size(const char *file)
  * Find corresponding file in previous backup.
  * Compare generations and return true if we don't need full copy
  * of the file, but just part of it.
+ *
+ * skip_size - size of the file in previous backup. We can skip it
+ *			   and copy just remaining part of the file.
  */
 bool
 backup_compressed_file_partially(pgFile *file, void *arg, size_t *skip_size)
@@ -1423,7 +1426,7 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 		{
 			if (current.backup_mode == BACKUP_MODE_DIFF_PAGE)
 				elog(ERROR, "You can't use PAGE mode backup with compressed tablespace.\n"
-							"Try PTRACK mode instead.");
+							"Try FULL or PTRACK mode instead.");
 			continue;
 		}
 
@@ -1776,18 +1779,19 @@ FileMap* cfs_mmap(int md)
 {
 	FileMap* map;
 #ifdef WIN32
-    HANDLE mh = CreateFileMapping(_get_osfhandle(md), NULL, PAGE_READWRITE, 
+    HANDLE mh = CreateFileMapping(_get_osfhandle(md), NULL, PAGE_READWRITE,
 								  0, (DWORD)sizeof(FileMap), NULL);
-    if (mh == NULL) { 
+    if (mh == NULL)
         return (FileMap*)MAP_FAILED;
-    }
-    map = (FileMap*)MapViewOfFile(mh, FILE_MAP_ALL_ACCESS, 0, 0, 0); 
+
+    map = (FileMap*)MapViewOfFile(mh, FILE_MAP_ALL_ACCESS, 0, 0, 0);
 	CloseHandle(mh);
-    if (map == NULL) { 
+    if (map == NULL)
         return (FileMap*)MAP_FAILED;
-    }
+
 #else
-	map = (FileMap*)mmap(NULL, sizeof(FileMap), PROT_WRITE | PROT_READ, MAP_SHARED, md, 0);
+	map = (FileMap*)mmap(NULL, sizeof(FileMap),
+						 PROT_WRITE | PROT_READ, MAP_SHARED, md, 0);
 #endif
 	return map;
 }
