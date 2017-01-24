@@ -2,6 +2,19 @@
 # Makes temporary installation and runs installcheck-world on it
 # Should be run as non-privileged user.
 # Exit on all errors
+# If run without arguments, makes installcheck-world
+# Otherwise first argument is interpreted as subdirectory 
+# to change before runnning make installchedk
+# i.e
+#    run_install_check . 
+# test core only
+#    run_install_check contrib
+# tests contrib only
+# etc.
+# All other arguments are passed to Makefile intact
+# To make possible pass arguments to installcheck-world
+#    run_install_check world
+# does the same as no args
 set -e
 # Install
 make install prefix=`pwd`/tmp_install
@@ -19,7 +32,7 @@ export PGPORT
 ./.ci/make_test_base $PGDATA
 #run checks
 set +e
-if [  -z "$1" ]; then
+if [  -z "$1" -o "$1" = "world" ]; then
 make installcheck-world  prefix=`pwd`/tmp_install NO_LOCALE=1
 else
 dir=$1
