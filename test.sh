@@ -39,12 +39,15 @@ make install
 echo 'local   replication     stas                                trust' >> ./tmp_install/data1/pg_hba.conf
 echo 'host   replication     all              ::1/128           trust' >> ./tmp_install/data1/pg_hba.conf
 echo 'host    all             all             ::1/128                 trust' >> ./tmp_install/data1/pg_hba.conf
+echo 'host   replication     all              127.0.0.1/32           trust' >> ./tmp_install/data1/pg_hba.conf
+echo 'host    all             all             127.0.0.1/32                 trust' >> ./tmp_install/data1/pg_hba.conf
+
 echo 'max_wal_senders = 10' >> ./tmp_install/data1/postgresql.conf
 echo 'wal_level = replica' >> ./tmp_install/data1/postgresql.conf
 echo 'max_prepared_transactions = 100' >> tmp_install/data1/postgresql.conf 
 ./tmp_install/bin/pg_ctl -w -D ./tmp_install/data1 -l logfile start
-createdb
-pgbench -i
+createdb -h localhost
+pgbench -i -h localhost
 
 
 mkdir ./tmp_install/wals
@@ -55,6 +58,7 @@ mkdir ./tmp_install/wals
 echo 'port = 5433' >> ./tmp_install/data_bb/postgresql.conf
 echo "restore_command = 'cp /Users/stas/code/postgres_cluster/tmp_install/wals/%f \"%p\"'" > ./tmp_install/data_bb/recovery.conf
 
+echo "restore_command = 'cp /home/stas/postgres_cluster/tmp_install/wals/%f \"%p\"'" > ./tmp_install/data_bb/recovery.conf
 
 
 
@@ -582,6 +586,395 @@ cp: /Users/stas/code/postgres_cluster/tmp_install/wals/000000010000000000000045:
 
 
 
+
+
+
+
+====================
+
+br/patched2/no_cache_drop
+
+
+
+stas@bladerunner:~/postgres_cluster$ ./tmp_install/bin/postgres -D tmp_install/data_bb_1
+2017-01-24 11:51:28.134 MSK [13711] LOG:  database system was interrupted; last known up at 2017-01-24 11:28:36 MSK
+2017-01-24 11:51:31.282 MSK [13711] LOG:  starting archive recovery
+cp: cannot stat ‘/Users/stas/code/postgres_cluster/tmp_install/wals/000000010000000000000005’: No such file or directory
+2017-01-24 11:51:31.474 MSK [13711] LOG:  redo starts at 0/5000028
+2017-01-24 11:51:31.515 MSK [13711] LOG:  consistent recovery state reached at 0/5000130
+cp: cannot stat ‘/Users/stas/code/postgres_cluster/tmp_install/wals/000000010000000000000006’: No such file or directory
+2017-01-24 11:51:31.518 MSK [13711] LOG:  redo done at 0/5000130
+cp: cannot stat ‘/Users/stas/code/postgres_cluster/tmp_install/wals/000000010000000000000005’: No such file or directory
+cp: cannot stat ‘/Users/stas/code/postgres_cluster/tmp_install/wals/00000002.history’: No such file or directory
+2017-01-24 11:51:31.532 MSK [13711] LOG:  selected new timeline ID: 2
+cp: cannot stat ‘/Users/stas/code/postgres_cluster/tmp_install/wals/00000001.history’: No such file or directory
+2017-01-24 11:51:32.043 MSK [13711] LOG:  archive recovery complete
+2017-01-24 11:51:32.244 MSK [13711] LOG:  MultiXact member wraparound protections are now enabled
+2017-01-24 11:51:32.264 MSK [13710] LOG:  database system is ready to accept connections
+2017-01-24 11:51:32.264 MSK [13725] LOG:  autovacuum launcher started
+2017-01-24 11:51:32.266 MSK [13727] LOG:  logical replication launcher started
+^C2017-01-24 11:51:59.250 MSK [13710] LOG:  received fast shutdown request
+2017-01-24 11:51:59.250 MSK [13710] LOG:  aborting any active transactions
+2017-01-24 11:51:59.250 MSK [13727] LOG:  logical replication launcher shutting down
+2017-01-24 11:51:59.251 MSK [13725] LOG:  autovacuum launcher shutting down
+2017-01-24 11:51:59.251 MSK [13714] LOG:  shutting down
+2017-01-24 11:51:59.531 MSK [13710] LOG:  database system is shut down
+stas@bladerunner:~/postgres_cluster$ echo "restore_command = 'cp /home/stas/postgres_cluster/tmp_install/wals/%f \"%p\"'" > ./tmp_install/data_bb/recovery.conf
+stas@bladerunner:~/postgres_cluster$ rm -rf ./tmp_install/data_bb_1/ && cp -R ./tmp_install/data_bb/ ./tmp_install/data_bb_1/
+stas@bladerunner:~/postgres_cluster$ ./tmp_install/bin/postgres -D tmp_install/data_bb_1
+2017-01-24 11:52:44.353 MSK [13738] LOG:  database system was interrupted; last known up at 2017-01-24 11:28:36 MSK
+2017-01-24 11:52:44.413 MSK [13738] LOG:  starting archive recovery
+2017-01-24 11:52:44.443 MSK [13738] LOG:  restored log file "000000010000000000000005" from archive
+2017-01-24 11:52:44.867 MSK [13738] LOG:  redo starts at 0/5000028
+2017-01-24 11:52:44.868 MSK [13738] LOG:  consistent recovery state reached at 0/5000130
+2017-01-24 11:52:44.899 MSK [13738] LOG:  restored log file "000000010000000000000006" from archive
+2017-01-24 11:52:45.847 MSK [13738] LOG:  restored log file "000000010000000000000007" from archive
+2017-01-24 11:52:46.738 MSK [13738] LOG:  restored log file "000000010000000000000008" from archive
+2017-01-24 11:52:47.698 MSK [13738] LOG:  restored log file "000000010000000000000009" from archive
+2017-01-24 11:52:48.543 MSK [13738] LOG:  restored log file "00000001000000000000000A" from archive
+2017-01-24 11:52:49.470 MSK [13738] LOG:  restored log file "00000001000000000000000B" from archive
+2017-01-24 11:52:50.160 MSK [13738] LOG:  restored log file "00000001000000000000000C" from archive
+2017-01-24 11:52:51.145 MSK [13738] LOG:  restored log file "00000001000000000000000D" from archive
+2017-01-24 11:52:51.964 MSK [13738] LOG:  restored log file "00000001000000000000000E" from archive
+2017-01-24 11:52:52.998 MSK [13738] LOG:  restored log file "00000001000000000000000F" from archive
+2017-01-24 11:52:53.750 MSK [13738] LOG:  restored log file "000000010000000000000010" from archive
+2017-01-24 11:52:54.533 MSK [13738] LOG:  restored log file "000000010000000000000011" from archive
+2017-01-24 11:52:55.284 MSK [13738] LOG:  restored log file "000000010000000000000012" from archive
+2017-01-24 11:52:55.994 MSK [13738] LOG:  restored log file "000000010000000000000013" from archive
+2017-01-24 11:52:57.210 MSK [13738] LOG:  restored log file "000000010000000000000014" from archive
+2017-01-24 11:52:57.948 MSK [13738] LOG:  restored log file "000000010000000000000015" from archive
+2017-01-24 11:52:58.730 MSK [13738] LOG:  restored log file "000000010000000000000016" from archive
+2017-01-24 11:52:59.435 MSK [13738] LOG:  restored log file "000000010000000000000017" from archive
+2017-01-24 11:53:00.130 MSK [13738] LOG:  restored log file "000000010000000000000018" from archive
+2017-01-24 11:53:01.038 MSK [13738] LOG:  restored log file "000000010000000000000019" from archive
+2017-01-24 11:53:02.150 MSK [13738] LOG:  restored log file "00000001000000000000001A" from archive
+2017-01-24 11:53:02.933 MSK [13738] LOG:  restored log file "00000001000000000000001B" from archive
+2017-01-24 11:53:03.644 MSK [13738] LOG:  restored log file "00000001000000000000001C" from archive
+2017-01-24 11:53:04.752 MSK [13738] LOG:  restored log file "00000001000000000000001D" from archive
+2017-01-24 11:53:05.822 MSK [13738] LOG:  restored log file "00000001000000000000001E" from archive
+2017-01-24 11:53:07.045 MSK [13738] LOG:  restored log file "00000001000000000000001F" from archive
+2017-01-24 11:53:08.726 MSK [13738] LOG:  restored log file "000000010000000000000020" from archive
+2017-01-24 11:53:10.041 MSK [13738] LOG:  restored log file "000000010000000000000021" from archive
+2017-01-24 11:53:11.145 MSK [13738] LOG:  restored log file "000000010000000000000022" from archive
+2017-01-24 11:53:12.354 MSK [13738] LOG:  restored log file "000000010000000000000023" from archive
+2017-01-24 11:53:14.225 MSK [13738] LOG:  restored log file "000000010000000000000024" from archive
+2017-01-24 11:53:15.369 MSK [13738] LOG:  restored log file "000000010000000000000025" from archive
+2017-01-24 11:53:16.793 MSK [13738] LOG:  restored log file "000000010000000000000026" from archive
+2017-01-24 11:53:17.656 MSK [13738] LOG:  restored log file "000000010000000000000027" from archive
+2017-01-24 11:53:18.430 MSK [13738] LOG:  restored log file "000000010000000000000028" from archive
+2017-01-24 11:53:19.580 MSK [13738] LOG:  restored log file "000000010000000000000029" from archive
+2017-01-24 11:53:20.325 MSK [13738] LOG:  restored log file "00000001000000000000002A" from archive
+2017-01-24 11:53:21.271 MSK [13738] LOG:  restored log file "00000001000000000000002B" from archive
+2017-01-24 11:53:22.167 MSK [13738] LOG:  restored log file "00000001000000000000002C" from archive
+2017-01-24 11:53:23.467 MSK [13738] LOG:  restored log file "00000001000000000000002D" from archive
+2017-01-24 11:53:24.928 MSK [13738] LOG:  restored log file "00000001000000000000002E" from archive
+2017-01-24 11:53:26.161 MSK [13738] LOG:  restored log file "00000001000000000000002F" from archive
+2017-01-24 11:53:27.200 MSK [13738] LOG:  restored log file "000000010000000000000030" from archive
+2017-01-24 11:53:28.513 MSK [13738] LOG:  restored log file "000000010000000000000031" from archive
+2017-01-24 11:53:29.707 MSK [13738] LOG:  restored log file "000000010000000000000032" from archive
+2017-01-24 11:53:30.898 MSK [13738] LOG:  restored log file "000000010000000000000033" from archive
+2017-01-24 11:53:32.306 MSK [13738] LOG:  restored log file "000000010000000000000034" from archive
+2017-01-24 11:53:33.018 MSK [13738] LOG:  restored log file "000000010000000000000035" from archive
+2017-01-24 11:53:33.916 MSK [13738] LOG:  restored log file "000000010000000000000036" from archive
+2017-01-24 11:53:34.739 MSK [13738] LOG:  restored log file "000000010000000000000037" from archive
+2017-01-24 11:53:35.628 MSK [13738] LOG:  restored log file "000000010000000000000038" from archive
+2017-01-24 11:53:36.484 MSK [13738] LOG:  restored log file "000000010000000000000039" from archive
+2017-01-24 11:53:37.927 MSK [13738] LOG:  restored log file "00000001000000000000003A" from archive
+2017-01-24 11:53:38.738 MSK [13738] LOG:  restored log file "00000001000000000000003B" from archive
+2017-01-24 11:53:39.511 MSK [13738] LOG:  restored log file "00000001000000000000003C" from archive
+2017-01-24 11:53:40.325 MSK [13738] LOG:  restored log file "00000001000000000000003D" from archive
+2017-01-24 11:53:41.071 MSK [13738] LOG:  restored log file "00000001000000000000003E" from archive
+2017-01-24 11:53:41.876 MSK [13738] LOG:  restored log file "00000001000000000000003F" from archive
+2017-01-24 11:53:43.172 MSK [13738] LOG:  restored log file "000000010000000000000040" from archive
+2017-01-24 11:53:44.235 MSK [13738] LOG:  restored log file "000000010000000000000041" from archive
+2017-01-24 11:53:45.650 MSK [13738] LOG:  restored log file "000000010000000000000042" from archive
+2017-01-24 11:53:46.966 MSK [13738] LOG:  restored log file "000000010000000000000043" from archive
+2017-01-24 11:53:49.792 MSK [13738] LOG:  restored log file "000000010000000000000044" from archive
+2017-01-24 11:53:51.115 MSK [13738] LOG:  restored log file "000000010000000000000045" from archive
+2017-01-24 11:53:52.367 MSK [13738] LOG:  restored log file "000000010000000000000046" from archive
+2017-01-24 11:53:53.097 MSK [13738] LOG:  restored log file "000000010000000000000047" from archive
+cp: cannot stat ‘/home/stas/postgres_cluster/tmp_install/wals/000000010000000000000048’: No such file or directory
+2017-01-24 11:53:53.769 MSK [13738] LOG:  redo done at 0/47FFFFA8
+2017-01-24 11:53:53.769 MSK [13738] LOG:  last completed transaction was at log time 2017-01-24 11:48:41.515145+03
+2017-01-24 11:53:53.839 MSK [13738] LOG:  restored log file "000000010000000000000047" from archive
+cp: cannot stat ‘/home/stas/postgres_cluster/tmp_install/wals/00000002.history’: No such file or directory
+2017-01-24 11:53:54.552 MSK [13738] LOG:  selected new timeline ID: 2
+cp: cannot stat ‘/home/stas/postgres_cluster/tmp_install/wals/00000001.history’: No such file or directory
+2017-01-24 11:53:55.712 MSK [13738] LOG:  archive recovery complete
+2017-01-24 11:53:58.562 MSK [13738] LOG:  MultiXact member wraparound protections are now enabled
+2017-01-24 11:53:58.562 MSK [13738] LOG:  recovering prepared transaction 1479981
+2017-01-24 11:53:58.563 MSK [13738] LOG:  recovering prepared transaction 1479982
+2017-01-24 11:53:58.694 MSK [13884] LOG:  autovacuum launcher started
+2017-01-24 11:53:58.695 MSK [13737] LOG:  database system is ready to accept connections
+2017-01-24 11:53:58.695 MSK [13886] LOG:  logical replication launcher started
+
+
+
+
+br/patched2/cache_drop
+
+
+stas@bladerunner:~/postgres_cluster$ 
+stas@bladerunner:~/postgres_cluster$ ./tmp_install/bin/postgres -D tmp_install/data_bb_1
+2017-01-24 11:55:52.974 MSK [13977] LOG:  database system was shut down at 2017-01-24 11:54:05 MSK
+2017-01-24 11:55:53.190 MSK [13977] LOG:  MultiXact member wraparound protections are now enabled
+2017-01-24 11:55:53.190 MSK [13977] LOG:  recovering prepared transaction 1479981
+2017-01-24 11:55:53.190 MSK [13977] LOG:  recovering prepared transaction 1479982
+2017-01-24 11:55:53.226 MSK [13981] LOG:  autovacuum launcher started
+2017-01-24 11:55:53.226 MSK [13976] LOG:  database system is ready to accept connections
+2017-01-24 11:55:53.226 MSK [13983] LOG:  logical replication launcher started
+^C2017-01-24 11:56:06.354 MSK [13976] LOG:  received fast shutdown request
+2017-01-24 11:56:06.354 MSK [13976] LOG:  aborting any active transactions
+2017-01-24 11:56:06.354 MSK [13983] LOG:  logical replication launcher shutting down
+2017-01-24 11:56:06.355 MSK [13981] LOG:  autovacuum launcher shutting down
+2017-01-24 11:56:06.356 MSK [13978] LOG:  shutting down
+2017-01-24 11:56:06.888 MSK [13976] LOG:  database system is shut down
+stas@bladerunner:~/postgres_cluster$ rm -rf ./tmp_install/data_bb_1/ && cp -R ./tmp_install/data_bb/ ./tmp_install/data_bb_1/
+stas@bladerunner:~/postgres_cluster$ ./tmp_install/bin/postgres -D tmp_install/data_bb_1
+2017-01-24 11:56:24.386 MSK [13987] LOG:  database system was interrupted; last known up at 2017-01-24 11:28:36 MSK
+2017-01-24 11:56:27.084 MSK [13987] LOG:  starting archive recovery
+2017-01-24 11:56:27.600 MSK [13987] LOG:  restored log file "000000010000000000000005" from archive
+2017-01-24 11:56:28.030 MSK [13987] LOG:  redo starts at 0/5000028
+2017-01-24 11:56:28.075 MSK [13987] LOG:  consistent recovery state reached at 0/5000130
+2017-01-24 11:56:28.193 MSK [13987] LOG:  restored log file "000000010000000000000006" from archive
+2017-01-24 11:56:28.888 MSK [13987] LOG:  restored log file "000000010000000000000007" from archive
+2017-01-24 11:56:29.600 MSK [13987] LOG:  restored log file "000000010000000000000008" from archive
+2017-01-24 11:56:30.336 MSK [13987] LOG:  restored log file "000000010000000000000009" from archive
+2017-01-24 11:56:31.019 MSK [13987] LOG:  restored log file "00000001000000000000000A" from archive
+2017-01-24 11:56:31.752 MSK [13987] LOG:  restored log file "00000001000000000000000B" from archive
+2017-01-24 11:56:32.610 MSK [13987] LOG:  restored log file "00000001000000000000000C" from archive
+2017-01-24 11:56:33.470 MSK [13987] LOG:  restored log file "00000001000000000000000D" from archive
+2017-01-24 11:56:34.242 MSK [13987] LOG:  restored log file "00000001000000000000000E" from archive
+2017-01-24 11:56:35.075 MSK [13987] LOG:  restored log file "00000001000000000000000F" from archive
+2017-01-24 11:56:35.902 MSK [13987] LOG:  restored log file "000000010000000000000010" from archive
+2017-01-24 11:56:36.770 MSK [13987] LOG:  restored log file "000000010000000000000011" from archive
+2017-01-24 11:56:37.670 MSK [13987] LOG:  restored log file "000000010000000000000012" from archive
+2017-01-24 11:56:38.493 MSK [13987] LOG:  restored log file "000000010000000000000013" from archive
+2017-01-24 11:56:39.072 MSK [13987] LOG:  restored log file "000000010000000000000014" from archive
+2017-01-24 11:56:39.822 MSK [13987] LOG:  restored log file "000000010000000000000015" from archive
+2017-01-24 11:56:40.647 MSK [13987] LOG:  restored log file "000000010000000000000016" from archive
+2017-01-24 11:56:41.621 MSK [13987] LOG:  restored log file "000000010000000000000017" from archive
+2017-01-24 11:56:42.493 MSK [13987] LOG:  restored log file "000000010000000000000018" from archive
+2017-01-24 11:56:43.368 MSK [13987] LOG:  restored log file "000000010000000000000019" from archive
+2017-01-24 11:56:44.180 MSK [13987] LOG:  restored log file "00000001000000000000001A" from archive
+2017-01-24 11:56:45.228 MSK [13987] LOG:  restored log file "00000001000000000000001B" from archive
+2017-01-24 11:56:45.996 MSK [13987] LOG:  restored log file "00000001000000000000001C" from archive
+2017-01-24 11:56:47.045 MSK [13987] LOG:  restored log file "00000001000000000000001D" from archive
+2017-01-24 11:56:48.179 MSK [13987] LOG:  restored log file "00000001000000000000001E" from archive
+2017-01-24 11:56:49.314 MSK [13987] LOG:  restored log file "00000001000000000000001F" from archive
+2017-01-24 11:56:50.534 MSK [13987] LOG:  restored log file "000000010000000000000020" from archive
+2017-01-24 11:56:51.677 MSK [13987] LOG:  restored log file "000000010000000000000021" from archive
+2017-01-24 11:56:52.970 MSK [13987] LOG:  restored log file "000000010000000000000022" from archive
+2017-01-24 11:56:54.144 MSK [13987] LOG:  restored log file "000000010000000000000023" from archive
+2017-01-24 11:56:55.080 MSK [13987] LOG:  restored log file "000000010000000000000024" from archive
+2017-01-24 11:56:56.062 MSK [13987] LOG:  restored log file "000000010000000000000025" from archive
+2017-01-24 11:56:57.183 MSK [13987] LOG:  restored log file "000000010000000000000026" from archive
+2017-01-24 11:56:57.994 MSK [13987] LOG:  restored log file "000000010000000000000027" from archive
+2017-01-24 11:56:59.966 MSK [13987] LOG:  restored log file "000000010000000000000028" from archive
+2017-01-24 11:57:00.975 MSK [13987] LOG:  restored log file "000000010000000000000029" from archive
+2017-01-24 11:57:01.927 MSK [13987] LOG:  restored log file "00000001000000000000002A" from archive
+2017-01-24 11:57:03.543 MSK [13987] LOG:  restored log file "00000001000000000000002B" from archive
+2017-01-24 11:57:04.750 MSK [13987] LOG:  restored log file "00000001000000000000002C" from archive
+2017-01-24 11:57:05.903 MSK [13987] LOG:  restored log file "00000001000000000000002D" from archive
+2017-01-24 11:57:07.135 MSK [13987] LOG:  restored log file "00000001000000000000002E" from archive
+2017-01-24 11:57:08.354 MSK [13987] LOG:  restored log file "00000001000000000000002F" from archive
+2017-01-24 11:57:09.842 MSK [13987] LOG:  restored log file "000000010000000000000030" from archive
+2017-01-24 11:57:11.070 MSK [13987] LOG:  restored log file "000000010000000000000031" from archive
+2017-01-24 11:57:12.811 MSK [13987] LOG:  restored log file "000000010000000000000032" from archive
+2017-01-24 11:57:13.903 MSK [13987] LOG:  restored log file "000000010000000000000033" from archive
+2017-01-24 11:57:14.924 MSK [13987] LOG:  restored log file "000000010000000000000034" from archive
+2017-01-24 11:57:15.641 MSK [13987] LOG:  restored log file "000000010000000000000035" from archive
+2017-01-24 11:57:16.507 MSK [13987] LOG:  restored log file "000000010000000000000036" from archive
+2017-01-24 11:57:17.375 MSK [13987] LOG:  restored log file "000000010000000000000037" from archive
+2017-01-24 11:57:18.495 MSK [13987] LOG:  restored log file "000000010000000000000038" from archive
+2017-01-24 11:57:19.734 MSK [13987] LOG:  restored log file "000000010000000000000039" from archive
+2017-01-24 11:57:20.803 MSK [13987] LOG:  restored log file "00000001000000000000003A" from archive
+2017-01-24 11:57:21.653 MSK [13987] LOG:  restored log file "00000001000000000000003B" from archive
+2017-01-24 11:57:22.459 MSK [13987] LOG:  restored log file "00000001000000000000003C" from archive
+2017-01-24 11:57:23.451 MSK [13987] LOG:  restored log file "00000001000000000000003D" from archive
+2017-01-24 11:57:24.503 MSK [13987] LOG:  restored log file "00000001000000000000003E" from archive
+2017-01-24 11:57:25.460 MSK [13987] LOG:  restored log file "00000001000000000000003F" from archive
+2017-01-24 11:57:26.430 MSK [13987] LOG:  restored log file "000000010000000000000040" from archive
+2017-01-24 11:57:27.789 MSK [13987] LOG:  restored log file "000000010000000000000041" from archive
+2017-01-24 11:57:29.039 MSK [13987] LOG:  restored log file "000000010000000000000042" from archive
+2017-01-24 11:57:30.924 MSK [13987] LOG:  restored log file "000000010000000000000043" from archive
+2017-01-24 11:57:32.222 MSK [13987] LOG:  restored log file "000000010000000000000044" from archive
+2017-01-24 11:57:34.026 MSK [13987] LOG:  restored log file "000000010000000000000045" from archive
+2017-01-24 11:57:35.679 MSK [13987] LOG:  restored log file "000000010000000000000046" from archive
+2017-01-24 11:57:36.598 MSK [13987] LOG:  restored log file "000000010000000000000047" from archive
+cp: cannot stat ‘/home/stas/postgres_cluster/tmp_install/wals/000000010000000000000048’: No such file or directory
+2017-01-24 11:57:37.222 MSK [13987] LOG:  redo done at 0/47FFFFA8
+2017-01-24 11:57:37.222 MSK [13987] LOG:  last completed transaction was at log time 2017-01-24 11:48:41.515145+03
+2017-01-24 11:57:37.306 MSK [13987] LOG:  restored log file "000000010000000000000047" from archive
+cp: cannot stat ‘/home/stas/postgres_cluster/tmp_install/wals/00000002.history’: No such file or directory
+2017-01-24 11:57:37.721 MSK [13987] LOG:  selected new timeline ID: 2
+cp: cannot stat ‘/home/stas/postgres_cluster/tmp_install/wals/00000001.history’: No such file or directory
+2017-01-24 11:57:37.908 MSK [13987] LOG:  archive recovery complete
+2017-01-24 11:57:40.904 MSK [13987] LOG:  MultiXact member wraparound protections are now enabled
+2017-01-24 11:57:40.904 MSK [13987] LOG:  recovering prepared transaction 1479981
+2017-01-24 11:57:40.904 MSK [13987] LOG:  recovering prepared transaction 1479982
+2017-01-24 11:57:40.959 MSK [13986] LOG:  database system is ready to accept connections
+2017-01-24 11:57:40.960 MSK [14133] LOG:  autovacuum launcher started
+2017-01-24 11:57:40.960 MSK [14135] LOG:  logical replication launcher started
+
+
+
+
+
+
+-======-
+
+
+
+br/master:
+
+
+stas@bladerunner:~/postgres_cluster$ ./tmp_install/bin/postgres -D tmp_install/data_bb_1
+2017-01-24 12:19:44.736 MSK [10291] LOG:  database system was interrupted; last known up at 2017-01-24 11:28:36 MSK
+2017-01-24 12:19:48.507 MSK [10291] LOG:  starting archive recovery
+2017-01-24 12:19:48.992 MSK [10291] LOG:  restored log file "000000010000000000000005" from archive
+2017-01-24 12:19:49.438 MSK [10291] LOG:  redo starts at 0/5000028
+2017-01-24 12:19:49.460 MSK [10291] LOG:  consistent recovery state reached at 0/5000130
+2017-01-24 12:19:49.778 MSK [10291] LOG:  restored log file "000000010000000000000006" from archive
+2017-01-24 12:21:00.611 MSK [10291] LOG:  restored log file "000000010000000000000007" from archive
+2017-01-24 12:24:56.584 MSK [10291] LOG:  restored log file "000000010000000000000008" from archive
+2017-01-24 12:28:46.448 MSK [10291] LOG:  restored log file "000000010000000000000009" from archive
+2017-01-24 12:33:57.447 MSK [10291] LOG:  restored log file "00000001000000000000000A" from archive
+2017-01-24 12:37:39.667 MSK [10291] LOG:  restored log file "00000001000000000000000B" from archive
+2017-01-24 12:42:55.757 MSK [10291] LOG:  restored log file "00000001000000000000000C" from archive
+2017-01-24 12:46:44.064 MSK [10291] LOG:  restored log file "00000001000000000000000D" from archive
+2017-01-24 12:51:49.276 MSK [10291] LOG:  restored log file "00000001000000000000000E" from archive
+2017-01-24 12:55:39.223 MSK [10291] LOG:  restored log file "00000001000000000000000F" from archive
+2017-01-24 13:00:12.866 MSK [10291] LOG:  restored log file "000000010000000000000010" from archive
+2017-01-24 13:04:44.064 MSK [10291] LOG:  restored log file "000000010000000000000011" from archive
+2017-01-24 13:08:33.809 MSK [10291] LOG:  restored log file "000000010000000000000012" from archive
+2017-01-24 13:13:44.329 MSK [10291] LOG:  restored log file "000000010000000000000013" from archive
+2017-01-24 13:15:42.392 MSK [10291] LOG:  restored log file "000000010000000000000014" from archive
+2017-01-24 13:18:14.447 MSK [10291] LOG:  restored log file "000000010000000000000015" from archive
+2017-01-24 13:23:19.442 MSK [10291] LOG:  restored log file "000000010000000000000016" from archive
+2017-01-24 13:26:58.993 MSK [10291] LOG:  restored log file "000000010000000000000017" from archive
+2017-01-24 13:32:09.781 MSK [10291] LOG:  restored log file "000000010000000000000018" from archive
+2017-01-24 13:35:48.063 MSK [10291] LOG:  restored log file "000000010000000000000019" from archive
+2017-01-24 13:40:11.284 MSK [10291] LOG:  restored log file "00000001000000000000001A" from archive
+2017-01-24 13:44:46.497 MSK [10291] LOG:  restored log file "00000001000000000000001B" from archive
+2017-01-24 13:48:33.396 MSK [10291] LOG:  restored log file "00000001000000000000001C" from archive
+2017-01-24 13:53:42.415 MSK [10291] LOG:  restored log file "00000001000000000000001D" from archive
+2017-01-24 13:57:23.400 MSK [10291] LOG:  restored log file "00000001000000000000001E" from archive
+2017-01-24 14:02:47.834 MSK [10291] LOG:  restored log file "00000001000000000000001F" from archive
+2017-01-24 14:06:38.703 MSK [10291] LOG:  restored log file "000000010000000000000020" from archive
+2017-01-24 14:11:52.299 MSK [10291] LOG:  restored log file "000000010000000000000021" from archive
+2017-01-24 14:15:40.883 MSK [10291] LOG:  restored log file "000000010000000000000022" from archive
+2017-01-24 14:20:03.170 MSK [10291] LOG:  restored log file "000000010000000000000023" from archive
+2017-01-24 14:24:42.778 MSK [10291] LOG:  restored log file "000000010000000000000024" from archive
+2017-01-24 14:28:26.734 MSK [10291] LOG:  restored log file "000000010000000000000025" from archive
+2017-01-24 14:33:42.389 MSK [10291] LOG:  restored log file "000000010000000000000026" from archive
+2017-01-24 14:37:27.530 MSK [10291] LOG:  restored log file "000000010000000000000027" from archive
+2017-01-24 14:38:18.485 MSK [10291] LOG:  restored log file "000000010000000000000028" from archive
+2017-01-24 14:43:17.821 MSK [10291] LOG:  restored log file "000000010000000000000029" from archive
+^C2017-01-24 14:44:48.876 MSK [10277] LOG:  received fast shutdown request
+2017-01-24 14:44:48.894 MSK [10312] LOG:  shutting down
+2017-01-24 14:44:48.977 MSK [10277] LOG:  database system is shut down
+
+
+
+
+
+
+patched/cache_drop_loop
+
+stas@bladerunner:~/postgres_cluster$ ./tmp_install/bin/postgres -D tmp_install/data_bb_1
+2017-01-24 15:15:32.810 MSK [11633] LOG:  database system was interrupted; last known up at 2017-01-24 11:28:36 MSK
+2017-01-24 15:15:36.182 MSK [11633] LOG:  starting archive recovery
+2017-01-24 15:15:36.595 MSK [11633] LOG:  restored log file "000000010000000000000005" from archive
+2017-01-24 15:15:37.673 MSK [11633] LOG:  redo starts at 0/5000028
+2017-01-24 15:15:37.695 MSK [11633] LOG:  consistent recovery state reached at 0/5000130
+2017-01-24 15:15:37.842 MSK [11633] LOG:  restored log file "000000010000000000000006" from archive
+2017-01-24 15:15:38.951 MSK [11633] LOG:  restored log file "000000010000000000000007" from archive
+2017-01-24 15:15:40.281 MSK [11633] LOG:  restored log file "000000010000000000000008" from archive
+2017-01-24 15:15:41.000 MSK [11633] LOG:  restored log file "000000010000000000000009" from archive
+2017-01-24 15:15:42.749 MSK [11633] LOG:  restored log file "00000001000000000000000A" from archive
+2017-01-24 15:15:43.564 MSK [11633] LOG:  restored log file "00000001000000000000000B" from archive
+2017-01-24 15:15:44.448 MSK [11633] LOG:  restored log file "00000001000000000000000C" from archive
+2017-01-24 15:15:45.332 MSK [11633] LOG:  restored log file "00000001000000000000000D" from archive
+2017-01-24 15:15:46.194 MSK [11633] LOG:  restored log file "00000001000000000000000E" from archive
+2017-01-24 15:15:47.005 MSK [11633] LOG:  restored log file "00000001000000000000000F" from archive
+2017-01-24 15:15:47.956 MSK [11633] LOG:  restored log file "000000010000000000000010" from archive
+2017-01-24 15:15:49.006 MSK [11633] LOG:  restored log file "000000010000000000000011" from archive
+2017-01-24 15:15:49.959 MSK [11633] LOG:  restored log file "000000010000000000000012" from archive
+2017-01-24 15:15:50.852 MSK [11633] LOG:  restored log file "000000010000000000000013" from archive
+2017-01-24 15:15:52.970 MSK [11633] LOG:  restored log file "000000010000000000000014" from archive
+2017-01-24 15:15:53.872 MSK [11633] LOG:  restored log file "000000010000000000000015" from archive
+2017-01-24 15:15:54.791 MSK [11633] LOG:  restored log file "000000010000000000000016" from archive
+2017-01-24 15:15:55.691 MSK [11633] LOG:  restored log file "000000010000000000000017" from archive
+2017-01-24 15:15:56.628 MSK [11633] LOG:  restored log file "000000010000000000000018" from archive
+2017-01-24 15:15:57.565 MSK [11633] LOG:  restored log file "000000010000000000000019" from archive
+2017-01-24 15:15:58.430 MSK [11633] LOG:  restored log file "00000001000000000000001A" from archive
+2017-01-24 15:15:59.285 MSK [11633] LOG:  restored log file "00000001000000000000001B" from archive
+2017-01-24 15:16:00.194 MSK [11633] LOG:  restored log file "00000001000000000000001C" from archive
+2017-01-24 15:16:01.120 MSK [11633] LOG:  restored log file "00000001000000000000001D" from archive
+2017-01-24 15:16:02.447 MSK [11633] LOG:  restored log file "00000001000000000000001E" from archive
+2017-01-24 15:16:03.839 MSK [11633] LOG:  restored log file "00000001000000000000001F" from archive
+2017-01-24 15:16:05.488 MSK [11633] LOG:  restored log file "000000010000000000000020" from archive
+2017-01-24 15:16:06.605 MSK [11633] LOG:  restored log file "000000010000000000000021" from archive
+2017-01-24 15:16:08.305 MSK [11633] LOG:  restored log file "000000010000000000000022" from archive
+2017-01-24 15:16:10.363 MSK [11633] LOG:  restored log file "000000010000000000000023" from archive
+2017-01-24 15:16:13.363 MSK [11633] LOG:  restored log file "000000010000000000000024" from archive
+2017-01-24 15:16:16.124 MSK [11633] LOG:  restored log file "000000010000000000000025" from archive
+2017-01-24 15:16:17.873 MSK [11633] LOG:  restored log file "000000010000000000000026" from archive
+2017-01-24 15:16:19.351 MSK [11633] LOG:  restored log file "000000010000000000000027" from archive
+2017-01-24 15:16:20.137 MSK [11633] LOG:  restored log file "000000010000000000000028" from archive
+2017-01-24 15:16:21.571 MSK [11633] LOG:  restored log file "000000010000000000000029" from archive
+2017-01-24 15:16:23.521 MSK [11633] LOG:  restored log file "00000001000000000000002A" from archive
+2017-01-24 15:16:26.741 MSK [11633] LOG:  restored log file "00000001000000000000002B" from archive
+2017-01-24 15:16:28.532 MSK [11633] LOG:  restored log file "00000001000000000000002C" from archive
+2017-01-24 15:16:30.099 MSK [11633] LOG:  restored log file "00000001000000000000002D" from archive
+2017-01-24 15:16:32.395 MSK [11633] LOG:  restored log file "00000001000000000000002E" from archive
+2017-01-24 15:16:34.582 MSK [11633] LOG:  restored log file "00000001000000000000002F" from archive
+2017-01-24 15:16:36.766 MSK [11633] LOG:  restored log file "000000010000000000000030" from archive
+2017-01-24 15:16:38.503 MSK [11633] LOG:  restored log file "000000010000000000000031" from archive
+2017-01-24 15:16:40.929 MSK [11633] LOG:  restored log file "000000010000000000000032" from archive
+2017-01-24 15:16:42.510 MSK [11633] LOG:  restored log file "000000010000000000000033" from archive
+2017-01-24 15:16:43.491 MSK [11633] LOG:  restored log file "000000010000000000000034" from archive
+2017-01-24 15:16:46.391 MSK [11633] LOG:  restored log file "000000010000000000000035" from archive
+2017-01-24 15:16:47.727 MSK [11633] LOG:  restored log file "000000010000000000000036" from archive
+2017-01-24 15:16:48.691 MSK [11633] LOG:  restored log file "000000010000000000000037" from archive
+2017-01-24 15:16:49.859 MSK [11633] LOG:  restored log file "000000010000000000000038" from archive
+2017-01-24 15:16:51.629 MSK [11633] LOG:  restored log file "000000010000000000000039" from archive
+2017-01-24 15:16:52.765 MSK [11633] LOG:  restored log file "00000001000000000000003A" from archive
+2017-01-24 15:16:53.884 MSK [11633] LOG:  restored log file "00000001000000000000003B" from archive
+2017-01-24 15:16:54.758 MSK [11633] LOG:  restored log file "00000001000000000000003C" from archive
+2017-01-24 15:16:56.367 MSK [11633] LOG:  restored log file "00000001000000000000003D" from archive
+2017-01-24 15:16:57.770 MSK [11633] LOG:  restored log file "00000001000000000000003E" from archive
+2017-01-24 15:16:58.742 MSK [11633] LOG:  restored log file "00000001000000000000003F" from archive
+2017-01-24 15:17:00.460 MSK [11633] LOG:  restored log file "000000010000000000000040" from archive
+2017-01-24 15:17:02.695 MSK [11633] LOG:  restored log file "000000010000000000000041" from archive
+2017-01-24 15:17:04.108 MSK [11633] LOG:  restored log file "000000010000000000000042" from archive
+2017-01-24 15:17:05.395 MSK [11633] LOG:  restored log file "000000010000000000000043" from archive
+2017-01-24 15:17:06.999 MSK [11633] LOG:  restored log file "000000010000000000000044" from archive
+2017-01-24 15:17:08.810 MSK [11633] LOG:  restored log file "000000010000000000000045" from archive
+2017-01-24 15:17:10.278 MSK [11633] LOG:  restored log file "000000010000000000000046" from archive
+2017-01-24 15:17:11.261 MSK [11633] LOG:  restored log file "000000010000000000000047" from archive
+cp: cannot stat ‘/home/stas/postgres_cluster/tmp_install/wals/000000010000000000000048’: No such file or directory
+2017-01-24 15:17:11.858 MSK [11633] LOG:  redo done at 0/47FFFFA8
+2017-01-24 15:17:11.906 MSK [11633] LOG:  last completed transaction was at log time 2017-01-24 11:48:41.515145+03
+2017-01-24 15:17:12.095 MSK [11633] LOG:  restored log file "000000010000000000000047" from archive
+cp: cannot stat ‘/home/stas/postgres_cluster/tmp_install/wals/00000002.history’: No such file or directory
+2017-01-24 15:17:12.687 MSK [11633] LOG:  selected new timeline ID: 2
+cp: cannot stat ‘/home/stas/postgres_cluster/tmp_install/wals/00000001.history’: No such file or directory
+2017-01-24 15:17:13.360 MSK [11633] LOG:  archive recovery complete
+2017-01-24 15:17:18.725 MSK [11633] LOG:  MultiXact member wraparound protections are now enabled
+2017-01-24 15:17:18.725 MSK [11633] LOG:  recovering prepared transaction 1479981
+2017-01-24 15:17:18.725 MSK [11633] LOG:  recovering prepared transaction 1479982
+2017-01-24 15:17:18.866 MSK [11631] LOG:  database system is ready to accept connections
+2017-01-24 15:17:18.866 MSK [11882] LOG:  autovacuum launcher started
+2017-01-24 15:17:18.895 MSK [11884] LOG:  logical replication launcher started
+2017-01-24 15:15:58.430 MSK [11633] LOG:  restored log file "00000001000000000000001A" from archive
+^C2017-01-24 15:21:27.058 MSK [11631] LOG:  received fast shutdown request
+2017-01-24 15:21:27.058 MSK [11631] LOG:  aborting any active transactions
+2017-01-24 15:21:27.058 MSK [11884] LOG:  logical replication launcher shutting down
+2017-01-24 15:21:27.058 MSK [11882] LOG:  autovacuum launcher shutting down
+2017-01-24 15:21:27.080 MSK [11641] LOG:  shutting down
+2017-01-24 15:21:27.634 MSK [11631] LOG:  database system is shut down
 
 
 
