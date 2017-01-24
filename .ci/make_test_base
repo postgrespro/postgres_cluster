@@ -9,11 +9,11 @@ On success, starts database
 """
 import os,sys,subprocess,glob,re,os.path,time
 
-datadir=sys.argv[1]
-
-if not datadir:
-    print >>sys.stderr,"Usage %s directory"%sys.argv[0]
+if len(sys.argv)!=2:
+    print >>sys.stderr,"Usage %s data-directory" % sys.argv[0]
     sys.exit(1)
+
+datadir=sys.argv[1]
 
 if os.access(datadir,os.R_OK):
     import shutil

@@ -3,11 +3,13 @@ SET pg_hint_plan.enable_hint TO on;
 SET pg_hint_plan.debug_print TO on;
 SET client_min_messages TO LOG;
 SET search_path TO public;
+LOG:  statement: SET search_path TO public;
 ----
 ---- No. G-1-1 RULE definition table
 ----
 -- No. G-1-1-1
 EXPLAIN (COSTS false) UPDATE s1.r1 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) UPDATE s1.r1 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
                            QUERY PLAN                            
 -----------------------------------------------------------------
  Aggregate
@@ -32,6 +34,10 @@ EXPLAIN (COSTS false) UPDATE s1.r1 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
 (19 rows)
 
 /*+
+Set(enable_tidscan off)Set(enable_nestloop off)
+*/
+EXPLAIN (COSTS false) UPDATE s1.r1 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
+LOG:  statement: /*+
 Set(enable_tidscan off)Set(enable_nestloop off)
 */
 EXPLAIN (COSTS false) UPDATE s1.r1 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
@@ -69,6 +75,7 @@ error hint:
 (21 rows)
 
 EXPLAIN (COSTS false) UPDATE s1.r1_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) UPDATE s1.r1_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
                            QUERY PLAN                            
 -----------------------------------------------------------------
  Aggregate
@@ -93,6 +100,10 @@ EXPLAIN (COSTS false) UPDATE s1.r1_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
 (19 rows)
 
 /*+
+Set(enable_tidscan off)Set(enable_nestloop off)
+*/
+EXPLAIN (COSTS false) UPDATE s1.r1_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
+LOG:  statement: /*+
 Set(enable_tidscan off)Set(enable_nestloop off)
 */
 EXPLAIN (COSTS false) UPDATE s1.r1_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
@@ -131,6 +142,7 @@ error hint:
 
 -- No. G-1-1-2
 EXPLAIN (COSTS false) UPDATE s1.r2 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) UPDATE s1.r2 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
                            QUERY PLAN                            
 -----------------------------------------------------------------
  Aggregate
@@ -175,6 +187,10 @@ EXPLAIN (COSTS false) UPDATE s1.r2 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
 (39 rows)
 
 /*+
+Set(enable_tidscan off)Set(enable_nestloop off)
+*/
+EXPLAIN (COSTS false) UPDATE s1.r2 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
+LOG:  statement: /*+
 Set(enable_tidscan off)Set(enable_nestloop off)
 */
 EXPLAIN (COSTS false) UPDATE s1.r2 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
@@ -242,6 +258,7 @@ error hint:
 (43 rows)
 
 EXPLAIN (COSTS false) UPDATE s1.r2_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) UPDATE s1.r2_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
                            QUERY PLAN                            
 -----------------------------------------------------------------
  Aggregate
@@ -286,6 +303,10 @@ EXPLAIN (COSTS false) UPDATE s1.r2_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
 (39 rows)
 
 /*+
+Set(enable_tidscan off)Set(enable_nestloop off)
+*/
+EXPLAIN (COSTS false) UPDATE s1.r2_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
+LOG:  statement: /*+
 Set(enable_tidscan off)Set(enable_nestloop off)
 */
 EXPLAIN (COSTS false) UPDATE s1.r2_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
@@ -354,6 +375,7 @@ error hint:
 
 -- No. G-1-1-3
 EXPLAIN (COSTS false) UPDATE s1.r3 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) UPDATE s1.r3 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
                            QUERY PLAN                            
 -----------------------------------------------------------------
  Aggregate
@@ -418,6 +440,10 @@ EXPLAIN (COSTS false) UPDATE s1.r3 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
 (59 rows)
 
 /*+
+Set(enable_tidscan off)Set(enable_nestloop off)
+*/
+EXPLAIN (COSTS false) UPDATE s1.r3 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
+LOG:  statement: /*+
 Set(enable_tidscan off)Set(enable_nestloop off)
 */
 EXPLAIN (COSTS false) UPDATE s1.r3 SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
@@ -515,6 +541,7 @@ error hint:
 (65 rows)
 
 EXPLAIN (COSTS false) UPDATE s1.r3_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
+LOG:  statement: EXPLAIN (COSTS false) UPDATE s1.r3_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
                            QUERY PLAN                            
 -----------------------------------------------------------------
  Aggregate
@@ -579,6 +606,10 @@ EXPLAIN (COSTS false) UPDATE s1.r3_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
 (59 rows)
 
 /*+
+Set(enable_tidscan off)Set(enable_nestloop off)
+*/
+EXPLAIN (COSTS false) UPDATE s1.r3_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
+LOG:  statement: /*+
 Set(enable_tidscan off)Set(enable_nestloop off)
 */
 EXPLAIN (COSTS false) UPDATE s1.r3_ SET c1 = c1 WHERE c1 = 1 AND ctid = '(1,1)';
@@ -676,6 +707,7 @@ error hint:
 (65 rows)
 
 RESET client_min_messages;
+LOG:  statement: RESET client_min_messages;
 ----
 ---- No. G-2-1 GUC parameter
 ----
@@ -778,6 +810,8 @@ SET client_min_messages TO LOG;
 -- No. G-2-3-1
 /*+Set(enable_indexscan on)Set(enable_indexscan off)*/
 SELECT * FROM s1.t1 WHERE false;
+LOG:  statement: /*+Set(enable_indexscan on)Set(enable_indexscan off)*/
+SELECT * FROM s1.t1 WHERE false;
 INFO:  pg_hint_plan: hint syntax error at or near "Set(enable_indexscan on)Set(enable_indexscan off)"
 DETAIL:  Conflict set hint.
 LOG:  pg_hint_plan:
@@ -794,6 +828,8 @@ error hint:
 
 -- No. G-2-3-2
 /*+Set(client_min_messages DEBUG5)Set(client_min_messages WARNING)Set(client_min_messages DEBUG2)*/
+SELECT * FROM s1.t1 WHERE false;
+LOG:  statement: /*+Set(client_min_messages DEBUG5)Set(client_min_messages WARNING)Set(client_min_messages DEBUG2)*/
 SELECT * FROM s1.t1 WHERE false;
 INFO:  pg_hint_plan: hint syntax error at or near "Set(client_min_messages DEBUG5)Set(client_min_messages WARNING)Set(client_min_messages DEBUG2)"
 DETAIL:  Conflict set hint.
@@ -815,6 +851,8 @@ error hint:
 -- No. G-2-3-3
 /*+Set(enable_indexscan on)Set(enable_indexscan o)*/
 SELECT * FROM s1.t1 WHERE false;
+LOG:  statement: /*+Set(enable_indexscan on)Set(enable_indexscan o)*/
+SELECT * FROM s1.t1 WHERE false;
 INFO:  pg_hint_plan: hint syntax error at or near "Set(enable_indexscan on)Set(enable_indexscan o)"
 DETAIL:  Conflict set hint.
 INFO:  parameter "enable_indexscan" requires a Boolean value
@@ -832,6 +870,8 @@ Set(enable_indexscan o)
 
 -- No. G-2-3-4
 /*+Set(client_min_messages DEBUG5)Set(client_min_messages WARNING)Set(client_min_messages DEBU)*/
+SELECT * FROM s1.t1 WHERE false;
+LOG:  statement: /*+Set(client_min_messages DEBUG5)Set(client_min_messages WARNING)Set(client_min_messages DEBU)*/
 SELECT * FROM s1.t1 WHERE false;
 INFO:  pg_hint_plan: hint syntax error at or near "Set(client_min_messages DEBUG5)Set(client_min_messages WARNING)Set(client_min_messages DEBU)"
 DETAIL:  Conflict set hint.
@@ -857,6 +897,8 @@ Set(client_min_messages DEBU)
 ----
 -- No. G-2-4-1
 /*+SeqScan(a)IndexScan(a)SeqScan(c)NestLoop(a) */
+SELECT * FROM s1.t1 a, s1.t2 b WHERE false;
+LOG:  statement: /*+SeqScan(a)IndexScan(a)SeqScan(c)NestLoop(a) */
 SELECT * FROM s1.t1 a, s1.t2 b WHERE false;
 INFO:  pg_hint_plan: hint syntax error at or near " "
 DETAIL:  NestLoop hint requires at least two relations.
