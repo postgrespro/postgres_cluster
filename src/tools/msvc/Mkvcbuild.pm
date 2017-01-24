@@ -51,6 +51,7 @@ my @contrib_excludes = (
 	'sepgsql',         'brin',
 	'test_extensions', 'test_pg_dump',
 	'pg_probackup',
+	'mmts',
 	'snapshot_too_old');
 
 # Set of variables for frontend modules
