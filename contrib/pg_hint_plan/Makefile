@@ -31,13 +31,13 @@ include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 override CFLAGS += -I$(top_srcdir)/src/pl/plpgsql/src
 endif
-ifneq ($(USE_MODULE_DB),)
-  PGDATABASE=$(CONTRIB_TESTDB_MODULE)
-else
-  PGDATABASE=$(CONTRIB_TESTDB)
-endif
-export PGDATABASE
 
+ifneq ($(USE_MODULE_DB),)
+PGHPBASE=$(CONTRIB_TESTDB_MODULE)
+else
+PGHPBASE=$(CONTRIB_TESTDB)
+endif
+export PGHPBASE
 STARBALL96 = pg_hint_plan96-$(HINTPLANVER).tar.gz
 STARBALLS = $(STARBALL96)
 
@@ -66,5 +66,3 @@ $(STARBALLS): $(TARSOURCES)
 
 rpm96: $(STARBALL96)
 	MAKE_ROOT=`pwd` rpmbuild -bb SPECS/pg_hint_plan96.spec
-
-
