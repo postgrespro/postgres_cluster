@@ -12296,9 +12296,16 @@ RangeVarCallbackForAlterRelation(const RangeVar *rv, Oid relid, Oid oldrelid,
  *
  */
 void
-AtExecMergePartitions(Relation rel, List *partitions)
+AtExecMergePartitions(Relation rel, List *rangevars)
 {
-	merge_range_partitions(partitions);
+	/*
+	 * The first element is a tablename to merge all partitions into. The rest
+	 * are partitions themselves
+	 */
+	RangePartitionInfo *into = linitial(rangevars);
+	List *partitions = list_copy_tail(rangevars, 1);
+
+	merge_range_partitions(partitions, into);
 }
 
 void

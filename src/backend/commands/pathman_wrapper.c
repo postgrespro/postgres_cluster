@@ -296,7 +296,7 @@ pm_create_hash_partitions(Oid relid,
 	FuncArgs		args;
 	bool			ret;
 
-	InitFuncArgs(&args, 5);
+	InitFuncArgs(&args, 6);
 	PG_SETARG_DATUM(&args, 0, OIDOID, ObjectIdGetDatum(relid));
 	PG_SETARG_DATUM(&args, 1, TEXTOID, CStringGetTextDatum(attname));
 	PG_SETARG_DATUM(&args, 2, INT4OID, ObjectIdGetDatum(UInt32GetDatum(partitions_count)));
@@ -308,7 +308,13 @@ pm_create_hash_partitions(Oid relid,
 	else
 		PG_SETARG_NULL(&args, 4, TEXTARRAYOID);
 
-	ret = pathman_invoke("create_hash_partitions($1, $2, $3, $4, $5)", &args);
+	if (tablespaces != NULL)
+		PG_SETARG_DATUM(&args, 5, TEXTARRAYOID,
+						construct_text_array(tablespaces, partitions_count));
+	else
+		PG_SETARG_NULL(&args, 5, TEXTARRAYOID);
+
+	ret = pathman_invoke("create_hash_partitions($1, $2, $3, $4, $5, $6)", &args);
 	FreeFuncArgs(&args);
 
 	if (!ret)
@@ -441,16 +447,32 @@ pm_add_range_partition(Oid relid,
  * Merge partitions
  */
 void
-pm_merge_range_partitions(Oid relid1, Oid relid2)
+pm_merge_range_partitions(List *relids)
 {
+	/* Array constructor variables */
+	Datum	   *datums = palloc(sizeof(Datum) * list_length(relids));
+	int16		elemlen;
+	bool		elembyval;
+	char		elemalign;
+	ArrayType  *at;
+	int			i = 0;
+	ListCell   *lc;
+
+	/* Function call variables */
 	FuncArgs	args;
 	bool		ret;
 
-	InitFuncArgs(&args, 2);
-	PG_SETARG_DATUM(&args, 0, OIDOID, relid1);
-	PG_SETARG_DATUM(&args, 1, OIDOID, relid2);
+	foreach(lc, relids)
+		datums[i++] = ObjectIdGetDatum(lfirst_oid(lc));
 
-	ret = pathman_invoke("merge_range_partitions($1, $2)", &args);
+	get_typlenbyvalalign(REGCLASSOID, &elemlen, &elembyval, &elemalign);
+	at = construct_array(datums, list_length(relids), REGCLASSOID,
+						 elemlen, elembyval, elemalign);
+
+	InitFuncArgs(&args, 1);
+	PG_SETARG_DATUM(&args, 0, OIDARRAYOID, PointerGetDatum(at));
+
+	ret = pathman_invoke("merge_range_partitions($1)", &args);
 	FreeFuncArgs(&args);
 
 	if (!ret)

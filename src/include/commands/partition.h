@@ -15,7 +15,7 @@
 #include "nodes/parsenodes.h"
 
 extern void create_partitions(CreateStmt *stmt, Oid relid);
-extern void merge_range_partitions(List *partitions);
+extern void merge_range_partitions(List *partitions, RangePartitionInfo *into);
 extern void add_range_partition(Oid parent, RangePartitionInfo *rpinfo);
 extern void split_range_partition(Oid relid, AlterTableCmd *cmd);
 extern void rename_partition(Oid parent, AlterTableCmd *cmd);

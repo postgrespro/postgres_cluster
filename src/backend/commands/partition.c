@@ -9,6 +9,9 @@
  */
 
 #include "postgres.h"
+#include "miscadmin.h"
+
+#include "access/htup_details.h"
 #include "catalog/heap.h"
 #include "catalog/namespace.h"
 #include "catalog/dependency.h"
@@ -17,13 +20,13 @@
 #include "commands/pathman_wrapper.h"
 #include "commands/tablecmds.h"
 #include "commands/event_trigger.h"
+#include "commands/tablespace.h"
 #include "executor/spi.h"
 #include "nodes/value.h"
+#include "parser/parse_node.h"
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
 #include "utils/lsyscache.h"
-#include "parser/parse_node.h"
-#include "access/htup_details.h"
 
 
 static void create_hash_partitions(CreateStmt *stmt, Oid relid, const char* attname);
@@ -69,6 +72,7 @@ create_hash_partitions(CreateStmt *stmt, Oid relid, const char* attname)
 {
 	PartitionInfo *pinfo = (PartitionInfo *) stmt->partition_info;
 	char		 **relnames = NULL;
+	char		 **tablespaces = NULL;
 
 	if (pinfo->partitions_count > 0)
 	{
@@ -77,11 +81,15 @@ create_hash_partitions(CreateStmt *stmt, Oid relid, const char* attname)
 
 		/* Convert RangeVars into cstrings */
 		relnames = palloc(sizeof(char *) * pinfo->partitions_count);
+		tablespaces = palloc(sizeof(char *) * pinfo->partitions_count);
 		foreach(lc, pinfo->partitions)
 		{
 			RangePartitionInfo *p = (RangePartitionInfo *) lfirst(lc);
 
 			relnames[i] = RangeVarGetString(p->relation);
+			tablespaces[i] = p->tablespace ?
+					p->tablespace :
+					get_tablespace_name(MyDatabaseTableSpace);
 			i++;
 		}
 	}
@@ -90,7 +98,7 @@ create_hash_partitions(CreateStmt *stmt, Oid relid, const char* attname)
 							  attname,
 							  pinfo->partitions_count,
 							  relnames,
-							  NULL);
+							  tablespaces);
 
 	pfree(relnames);
 }
@@ -267,35 +275,36 @@ add_range_partition(Oid parent, RangePartitionInfo *rpinfo)
 
 
 void
-merge_range_partitions(List *partitions)
+merge_range_partitions(List *partitions, RangePartitionInfo *into)
 {
-	Oid			p1_relid,
-				p2_relid;
+	List	   *relids = NIL;
+	ListCell   *lc;
 
 	/*
-	 * There could be two or three partitions: two partitions are input ones
-	 * and the last is the output one. If the last is absent then partitions
-	 * are merged into the first one
+	 * There should be at least two partitions
 	 */
-	Assert(list_length(partitions) >= 2);
+	if (list_length(partitions) < 2)
+		elog(ERROR, "There must be at least two partitions to merge");
 
 	if (SPI_connect() != SPI_OK_CONNECT)
 		elog(ERROR, "could not connect using SPI");
 
 	/* Convert rangevars to relids */
-	p1_relid = RangeVarGetRelid(linitial(partitions), NoLock, false);
-	p2_relid = RangeVarGetRelid(lsecond(partitions), NoLock, false);
+	foreach(lc, partitions)
+	{
+		RangeVar   *rv = (RangeVar *) lfirst(lc);
+		Oid			relid = RangeVarGetRelid(rv, NoLock, false);
+
+		relids = lappend_oid(relids, relid);
+	}
 
 	/* Merge */
-	pm_merge_range_partitions(p1_relid,
-							  p2_relid);
+	pm_merge_range_partitions(relids);
 
 	/* Handle INTO clause (if there is one) */
-	if (list_length(partitions) > 2)
+	if (into)
 	{
-		/* Last object in the list is the output partition */
-		RangePartitionInfo *output = (RangePartitionInfo *) lthird(partitions);
-		Oid		new_namespace = RangeVarGetNamespaceId(output->relation);
+		Oid		new_namespace = RangeVarGetNamespaceId(into->relation);
 
 		/*
 		 * When merging data pg_pathman copies data to the first partition.
@@ -303,10 +312,10 @@ merge_range_partitions(List *partitions)
 		 * merges all data there. So to simulate this behaviour we are renaming
 		 * and (if needed) moving the first partition to a new tablespace
 		 */
-		pm_alter_partition(p1_relid,
-						   output->relation->relname,
+		pm_alter_partition(linitial_oid(relids),
+						   into->relation->relname,
 						   new_namespace,
-						   output->tablespace);
+						   into->tablespace);
 	}
 
 	SPI_finish();

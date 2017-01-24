@@ -547,7 +547,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <partinfo> partitionType;
 %type <rangeinfo> OptRangePartitionsListElement OptHashPartitionsListElement
-				PartitionNameTablespace OptIntoSinglePartition;
+				PartitionNameTablespace
 %type <list>	OptRangePartitionsList OptHashPartitionsList OptRangePartitions
 				PartitionNameTablespaceList OptIntoPartitions
 %type <node>	OptRangePartitionsInterval
@@ -2398,14 +2398,22 @@ alter_table_cmd:
 					n->partitions = list_make1($2);
 					$$ = (Node *) n;
 				}
-			| MERGE PARTITIONS qualified_name ',' qualified_name OptIntoSinglePartition
+			| MERGE PARTITIONS qualified_name_list INTO PartitionNameTablespace
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					n->subtype = AT_MergePartitions;
-					n->partitions = list_make2($3, $5);
 
-					if ($6 != NULL)
-						n->partitions = lappend(n->partitions, $6);
+					/*
+					 * The first element in partitions list is a partition name
+					 * to merge all partitions into
+					 */
+					if ($5 != NULL)
+						n->partitions = list_make1($5);
+					else
+						n->partitions = list_make1(NULL);
+
+					/* The rest elements are partitions to merge */
+					n->partitions = list_concat(n->partitions, $3);
 
 					$$ = (Node *) n;
 				}
@@ -2427,7 +2435,6 @@ alter_table_cmd:
 							 "INTO clause must contain exactly two partitions");
 					 }
 
-					//((RangePartitionInfo *) linitial(into_partitions))->upper_bound = $6;
 					n->def = $6;
 					n->partitions = list_concat(n->partitions, into_partitions);
 
@@ -2551,47 +2558,36 @@ reloption_elem:
 				}
 		;
 
-OptIntoSinglePartition:
-			INTO PartitionNameTablespace
-			{
-				$$ = $2;
-			}
-			| /* EMPTY */
-			{
-				$$ = NULL;
-			}
-		;
-
 OptIntoPartitions:
 			INTO '(' PartitionNameTablespaceList ')'
-			{
-				$$ = $3;
-			}
+				{
+					$$ = $3;
+				}
 			| /* EMPTY */
-			{
-				$$ = NIL;
-			}
+				{
+					$$ = NIL;
+				}
 		;
 
 PartitionNameTablespaceList:
 			PartitionNameTablespace
-			{
-				$$ = list_make1($1);
-			}
+				{
+					$$ = list_make1($1);
+				}
 			| PartitionNameTablespaceList ',' PartitionNameTablespace
-			{
-				$$ = lappend($1, $3);
-			}
+				{
+					$$ = lappend($1, $3);
+				}
 		;
 
 PartitionNameTablespace:
 			PARTITION qualified_name OptTableSpace
-			{
-				RangePartitionInfo *n = makeNode(RangePartitionInfo);
-				n->relation = $2;
-				n->tablespace = $3;
-				$$ = n;
-			}
+				{
+					RangePartitionInfo *n = makeNode(RangePartitionInfo);
+					n->relation = $2;
+					n->tablespace = $3;
+					$$ = n;
+				}
 		;
 
 
