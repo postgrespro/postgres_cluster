@@ -1286,7 +1286,7 @@ backup_files(void *arg)
 					continue;
 				}
 			}
-			else if (is_compressed_data_file(file, arguments->files))
+			else if (is_compressed_data_file(file))
 			{
 				size_t skip_size = 0;
 				if (backup_compressed_file_partially(file, arguments, &skip_size))
@@ -1397,13 +1397,6 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 					tmp_file.path[path_len-7] = '\0';
 
 				pre_search_file = (pgFile **) parray_bsearch(list_file, &tmp_file, pgFileComparePath);
-
-// 				if (is_compressed_data_file(&tmp_file, list_file))
-// 				{
-// 					elog(NOTICE, "file %s is compressed, don't remove it from list", tmp_file.path);
-// 					pg_free(tmp_file.path);
-// 					break;
-// 				}
 
 				if (pre_search_file != NULL)
 				{

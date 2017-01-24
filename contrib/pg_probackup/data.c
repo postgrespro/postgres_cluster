@@ -513,43 +513,12 @@ restore_compressed_file(const char *from_root,
 						const char *to_root,
 						pgFile *file)
 {
-	char	to_path[MAXPGPATH];
-	pgFile tmp_file;
-
-	join_path_components(to_path, to_root, file->path + strlen(from_root) + 1);
-	tmp_file.path = psprintf("%s.cfm", to_path);
-
-	FileMap* map;
-	int md = open(tmp_file.path, O_RDWR|PG_BINARY, 0);
-	if (md < 0)
-	{
-		elog(LOG, "restore_compressed_file(). cannot open cfm file '%s'", tmp_file.path);
+	if (file->is_partial_copy == 0)
 		copy_file(from_root, to_root, file);
-		pfree(tmp_file.path);
-		return;
-	}
-
-	elog(NOTICE, "restore_compressed_file(). map %s", tmp_file.path);
-	map = cfs_mmap(md);
-	if (map == MAP_FAILED)
-	{
-		elog(LOG, "restore_compressed_file(). cfs_compression_ration failed to map file %s: %m", tmp_file.path);
-		if (close(md) < 0)
-			elog(LOG, "restore_compressed_file(). CFS failed to close file %s: %m", tmp_file.path);
-		pfree(tmp_file.path);
-		return;
-	}
-
-	if (map->generation != file->generation)
-		copy_file(from_root, to_root, file);
-	else
+	else if (file->is_partial_copy == 1)
 		restore_file_partly(from_root, to_root, file);
-
-	if (cfs_munmap(map) < 0)
-		elog(LOG, "restore_compressed_file(). CFS failed to unmap file %s: %m", tmp_file.path);
-	if (close(md) < 0)
-		elog(LOG, "restore_compressed_file(). CFS failed to close file %s: %m", tmp_file.path);
-	pfree(tmp_file.path);
+	else
+		elog(ERROR, "restore_compressed_file()");
 }
 
 /*
@@ -700,22 +669,14 @@ restore_data_file(const char *from_root,
 	fclose(out);
 }
 
-/*  */
+/* If someone's want to use this function before correct
+ * generation values is set, he can look up for corresponding
+ * .cfm file in the file_list
+ */
 bool
-is_compressed_data_file(pgFile *file, parray *file_list)
+is_compressed_data_file(pgFile *file)
 {
-//	return (file->generation != -1);
-	pgFile map_file;
-	pgFile **pre_search_file;
-
-	map_file.path = psprintf("%s.cfm", file->path);
-	pre_search_file = (pgFile **) parray_bsearch(file_list, &map_file, pgFileComparePath);
-	pg_free(map_file.path);
-
-	if (pre_search_file != NULL)
-		return true;
-
-	return false;
+	return (file->generation != -1);
 }
 
 bool
@@ -958,10 +919,8 @@ copy_file_partly(const char *from_root, const char *to_root,
 			 strerror(errno_tmp));
 	}
 
+	file->is_partial_copy = 1;
 	elog(NOTICE, "copy_file_partly(). %s file->write_size %lu", to_path, file->write_size);
-// 	pgFile newfile;
-// 	newfile.path = pg_strdup(to_path);
-// 	file->crc = pgFileGetCRC(&newfile);
 
 	fclose(in);
 	fclose(out);

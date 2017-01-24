@@ -73,6 +73,8 @@ typedef struct pgFile
 	int		segno;			/* Segment number for ptrack */
 	int		generation;		/* Generation of compressed file.
 							 * -1 for non-compressed files */
+	int	is_partial_copy; /* for compressed files.
+						  * 1 if backed up via copy_file_partly()  */
 	volatile uint32 lock;
 	datapagemap_t pagemap;
 } pgFile;
@@ -317,7 +319,7 @@ extern bool backup_data_file(const char *from_root, const char *to_root,
 							 pgFile *file, const XLogRecPtr *lsn);
 extern void restore_data_file(const char *from_root, const char *to_root,
 							  pgFile *file, pgBackup *backup);
-extern bool is_compressed_data_file(pgFile *file, parray *file_list);
+extern bool is_compressed_data_file(pgFile *file);
 extern bool backup_compressed_file_partially(pgFile *file,
 											 void *arg,
 											 size_t *skip_size);
