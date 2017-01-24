@@ -700,10 +700,11 @@ restore_data_file(const char *from_root,
 	fclose(out);
 }
 
-
+/*  */
 bool
 is_compressed_data_file(pgFile *file, parray *file_list)
 {
+//	return (file->generation != -1);
 	pgFile map_file;
 	pgFile **pre_search_file;
 

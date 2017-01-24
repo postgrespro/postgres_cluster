@@ -1113,25 +1113,26 @@ backup_cleanup(bool fatal, void *userdata)
 static long
 file_size(const char *file)
 {
-	struct stat st;
-	stat(file, &st);
-	elog(NOTICE, "file_size(). %lu", st.st_size);
-	return st.st_size;
-// 	long		r;
-// 	FILE	   *f = fopen(file, "r");
-//
-// 	if (!f)
-// 	{
-// 		elog(ERROR, "pg_probackup: could not open file \"%s\" for reading: %s\n",
-// 				file, strerror(errno));
-// 		return -1;
-// 	}
-// 	fseek(f, 0, SEEK_END);
-// 	r = ftell(f);
-// 	fclose(f);
-// 	return r;
+	long		r;
+	FILE	   *f = fopen(file, "r");
+
+	if (!f)
+	{
+		elog(ERROR, "pg_probackup: could not open file \"%s\" for reading: %s\n",
+				file, strerror(errno));
+		return -1;
+	}
+	fseek(f, 0, SEEK_END);
+	r = ftell(f);
+	fclose(f);
+	return r;
 }
 
+/*
+ * Find corresponding file in previous backup.
+ * Compare generations and return true if we don't need full copy
+ * of the file, but just part of it.
+ */
 bool
 backup_compressed_file_partially(pgFile *file, void *arg, size_t *skip_size)
 {
@@ -1147,17 +1148,10 @@ backup_compressed_file_partially(pgFile *file, void *arg, size_t *skip_size)
 		if (p)
 			prev_file = *p;
 
-		elog(NOTICE, "file '%s' generation: prev %d, now %d",
-				file->path, prev_file->generation, file->generation);
-
 		/* If file's gc generation has changed since last backup, just copy it*/
-		if (prev_file
-			&& prev_file->generation == file->generation)
+		if (prev_file && prev_file->generation == file->generation)
 		{
 			current_file_size = file_size(file->path);
-
-			elog(NOTICE, "prev->write_size %lu, current_file_size %lu",
-				 prev_file->write_size, current_file_size);
 
 			if (prev_file->write_size == BYTES_INVALID)
 				return false;
@@ -1166,16 +1160,17 @@ backup_compressed_file_partially(pgFile *file, void *arg, size_t *skip_size)
 
 			if (current_file_size >= prev_file->write_size)
 			{
-				elog(NOTICE, "Backup part of the file. %s : %lu",
-					 file->path, current_file_size - *skip_size);
+				elog(LOG, "Backup file %s partially: prev_size %lu, current_size  %lu",
+					 file->path, prev_file->write_size, current_file_size);
 				result = true;
 			}
 			else
-				elog(ERROR, "Something went wrong. current_file_size %lu, prev %lu",
-					current_file_size, prev_file->write_size);
+				elog(ERROR, "Something is wrong with %s. current_file_size %lu, prev %lu",
+					file->path, current_file_size, prev_file->write_size);
 		}
 		else
-			elog(NOTICE, "Copy full file. Generations are different");
+			elog(LOG, "Copy full %s. Generations are different: old=%d; new=%d",
+				file->path, prev_file->generation, file->generation);
 	}
 
 	return result;
@@ -1368,14 +1363,14 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 		relative = file->path + strlen(root) + 1;
 		if (is_pgdata &&
 			!path_is_prefix_of_path("base", relative) &&
-			/*!path_is_prefix_of_path("global", relative) &&*/
+			/*!path_is_prefix_of_path("global", relative) &&*/ //TODO What's wrong with this line?
 			!path_is_prefix_of_path("pg_tblspc", relative))
 			continue;
 
 		/* Get file name from path */
 		fname = last_dir_separator(relative);
 
-		/* Remove temp tables */
+		/* Remove temp tables from the list */
 		if (fname[0] == 't' && isdigit(fname[1]))
 		{
 			pgFileFree(file);
@@ -1385,7 +1380,7 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 		}
 
 		path_len = strlen(file->path);
-		/* Get link ptrack file to realations files */
+		/* Get link ptrack file to relations files */
 		if (path_len > 6 && strncmp(file->path+(path_len-6), "ptrack", 6) == 0)
 		{
 			pgFile *search_file;
@@ -1394,7 +1389,8 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 			while(true) {
 				pgFile tmp_file;
 				tmp_file.path = pg_strdup(file->path);
-				/* I hope segno not more than 999999 */
+
+				/* Segno fits into 6 digits since it is not more than 4000 */
 				if (segno > 0)
 					sprintf(tmp_file.path+path_len-7, ".%d", segno);
 				else
@@ -1402,12 +1398,12 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 
 				pre_search_file = (pgFile **) parray_bsearch(list_file, &tmp_file, pgFileComparePath);
 
-				if (is_compressed_data_file(&tmp_file, list_file))
-				{
-					elog(NOTICE, "file %s is compressed, don't remove it from list", tmp_file.path);
-					pg_free(tmp_file.path);
-					break;
-				}
+// 				if (is_compressed_data_file(&tmp_file, list_file))
+// 				{
+// 					elog(NOTICE, "file %s is compressed, don't remove it from list", tmp_file.path);
+// 					pg_free(tmp_file.path);
+// 					break;
+// 				}
 
 				if (pre_search_file != NULL)
 				{
@@ -1422,6 +1418,7 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 				segno++;
 			}
 
+			/* Remove ptrack file itself from backup list */
 			pgFileFree(file);
 			parray_remove(list_file, i);
 			i--;
