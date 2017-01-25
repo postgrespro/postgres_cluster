@@ -164,30 +164,6 @@ get_pathman_schema_name()
 	return get_namespace_name(schema_oid);
 }
 
-/* TODO: Probably remove this */
-Oid
-pm_get_attribute_type(Oid relid, const char *attname)
-{
-	FuncArgs		args;
-	bool			isnull;
-	Datum			atttype;
-	bool			ret;
-
-	InitFuncArgs(&args, 3);
-	PG_SETARG_DATUM(&args, 0, OIDOID, ObjectIdGetDatum(relid));
-	PG_SETARG_DATUM(&args, 1, TEXTOID, CStringGetTextDatum(attname));
-	ret = pathman_invoke_return_value("get_attribute_type($1, $2)",
-									  &args,
-									  &atttype,
-									  &isnull);
-
-	if (!ret)
-		elog(ERROR, "Cannot retrieve attribute type");
-
-	FreeFuncArgs(&args);
-
-	return !isnull ? DatumGetObjectId(atttype) : InvalidOid;
-}
 
 char *
 pm_get_partition_key(Oid relid)
@@ -515,10 +491,15 @@ pm_split_range_partition(Oid part_relid,
 		elog(ERROR, "Unable to split partition '%s'", get_rel_name(part_relid));
 }
 
-void pm_alter_partition(Oid relid,
-						const char *new_relname,
-						Oid new_namespace,
-						const char *new_tablespace)
+
+/*
+ * Change name, schema or tablespace
+ */
+void
+pm_alter_partition(Oid relid,
+				   const char *new_relname,
+				   Oid new_namespace,
+				   const char *new_tablespace)
 {
 	FuncArgs	args;
 	bool		ret;
@@ -549,4 +530,21 @@ void pm_alter_partition(Oid relid,
 
 	if (!ret)
 		elog(ERROR, "Unable to alter partition '%s'", get_rel_name(relid));
+}
+
+
+void
+pm_drop_range_partition_expand_next(Oid relid)
+{
+	FuncArgs	args;
+	bool		ret;
+
+	InitFuncArgs(&args, 1);
+	PG_SETARG_DATUM(&args, 0, OIDOID, relid);
+
+	ret = pathman_invoke("drop_range_partition_expand_next($1)", &args);
+	FreeFuncArgs(&args);
+
+	if (!ret)
+		elog(ERROR, "Unable to drop partition '%s'", get_rel_name(relid));
 }

@@ -430,23 +430,17 @@ rename_partition(Oid parent, AlterTableCmd *cmd)
 void
 drop_partition(Oid parent, AlterTableCmd *cmd)
 {
-	DropStmt *n = makeNode(DropStmt);
 	RangeVar *partition;
 
-	/* TODO: Check that parent is an actual parent of partition */
-
 	Assert(list_length(cmd->partitions) == 1);
-
 	partition = (RangeVar *) linitial(cmd->partitions);
 
-	n->removeType = OBJECT_TABLE;
-	n->missing_ok = false;
-	n->objects = list_make1(makeNameListFromRangeVar(partition));
-	n->arguments = NIL;
-	n->behavior = DROP_RESTRICT;  // default behaviour
-	n->concurrent = false;
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "could not connect using SPI");
 
-	RemoveRelations(n);
+	pm_drop_range_partition_expand_next(RangeVarGetRelid(partition, NoLock, false));
+
+	SPI_finish();
 }
 
 

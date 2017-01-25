@@ -71,3 +71,4 @@ void pm_split_range_partition(Oid part_relid,
 						 const char *relname,
 						 const char *tablespace);
 void pm_alter_partition(Oid relid, const char *new_relname, Oid new_namespace, const char *new_tablespace);
+void pm_drop_range_partition_expand_next(Oid relid);
