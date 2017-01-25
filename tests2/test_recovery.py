@@ -31,6 +31,8 @@ class TestHelper(object):
         for conn_id, agg in enumerate(aggs):
             commits = commits and 'commit' in agg['transfer']['finish']
         if not commits:
+            print('No commits during aggregation interval')
+            time.sleep(100000)
             raise AssertionError('No commits during aggregation interval')
 
     def assertNoCommits(self, aggs):

@@ -854,6 +854,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	MtmTransState* ts;
 	MtmTransMap* tm;
 	TransactionId* subxids;
+	bool found;
 	MTM_TXTRACE(x, "PrePrepareTransaction Start");
 
 	if (!x->isDistributed) {
@@ -869,7 +870,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 
 	if (!IsBackgroundWorker && Mtm->status != MTM_ONLINE) { 
 		/* Do not take in account bg-workers which are performing recovery */
-		elog(ERROR, "Abort current transaction because this cluster node is in %s status", MtmNodeStatusMnem[Mtm->status]);			
+		elog(ERROR, "Abort transaction %s (%llu)  because this cluster node is in %s status", x->gid, (long64)x->xid, MtmNodeStatusMnem[Mtm->status]);			
 	}
 	if (TransactionIdIsValid(x->gtid.xid) && BIT_CHECK(Mtm->disabledNodeMask, x->gtid.node-1)) {
 		/* Coordinator of transaction is disabled: just abort transaction without any further steps */
@@ -877,6 +878,14 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	}
 
 	MtmLock(LW_EXCLUSIVE);
+
+	Assert(*x->gid != '\0');
+	tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, &found);
+	if (found && tm->status != TRANSACTION_STATUS_IN_PROGRESS) { 
+		Assert(tm->status == TRANSACTION_STATUS_ABORTED);
+		MtmUnlock();
+		elog(ERROR, "Skip already aborted transaction %s (%llu) from node %d", x->gid, (long64)x->xid, x->gtid.node);			
+	}
 
 	ts = MtmCreateTransState(x);
 	/* 
@@ -898,8 +907,6 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	x->isPrepared = true;
 	x->csn = ts->csn;
 	
-	Assert(*x->gid != '\0');
-	tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_ENTER, NULL);
 	tm->state = ts;
 	tm->status = TRANSACTION_STATUS_IN_PROGRESS;
 	MTM_LOG2("Prepare transaction %s", x->gid);
