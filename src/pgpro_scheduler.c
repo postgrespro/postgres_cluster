@@ -1,4 +1,5 @@
 #include "postgres.h"
+#include "port.h"
 
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
@@ -11,20 +12,19 @@
 #include "storage/shm_toc.h"
 
 #include "pg_config.h"
-#include "pgtime.h"
 #include "fmgr.h"
 #include "pgstat.h"
-#include "utils/builtins.h"
 #include "executor/spi.h"
 #include "tcop/utility.h"
 #include "lib/stringinfo.h"
+#include "catalog/pg_type.h"
 #include "access/xact.h"
 #include "utils/snapmgr.h"
 #include "utils/datetime.h"
+#include "utils/builtins.h"
 #include "catalog/pg_db_role_setting.h"
 #include "commands/dbcommands.h"
 
-#include "port.h"
 
 #include "char_array.h"
 #include "sched_manager_poll.h"
@@ -282,6 +282,7 @@ void parent_scheduler_main(Datum arg)
 	bool refresh = false;
 
 	init_worker_mem_ctx("Parent scheduler context");
+	elog(LOG, "Start PostgresPro scheduler."); 
 
 	/*CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");*/
 	SetConfigOption("application_name", "pgp-s supervisor", PGC_USERSET, PGC_S_SESSION);
@@ -383,8 +384,6 @@ pg_scheduler_startup(void)
 {
 	BackgroundWorker worker;
 
-	elog(LOG, "Start PostgresPro scheduler.");
-
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
@@ -483,52 +482,6 @@ void _PG_init(void)
 		NULL
 	);
 	pg_scheduler_startup();
-}
-
-PG_FUNCTION_INFO_V1(temp_now);
-Datum
-temp_now(PG_FUNCTION_ARGS)
-{
-	TimestampTz ts;
-	struct pg_tm info;
-	struct pg_tm cp;
-	int tz;
-	fsec_t fsec;
-	const char *tzn;
-	long int toff = 0;
-
-	if(!PG_ARGISNULL(0))
-	{
-		ts = PG_GETARG_TIMESTAMPTZ(0);
-	}
-	else
-	{
-		ts = GetCurrentTimestamp();
-	}
-
-	timestamp2tm(ts, &tz, &info, &fsec, &tzn, session_timezone );
-	info.tm_wday = j2day(date2j(info.tm_year, info.tm_mon, info.tm_mday));
-
-/*	elog(NOTICE, "WDAY: %d, MON: %d, MDAY: %d, HOUR: %d, MIN: %d, YEAR: %d (%ld)", 
-		info.tm_wday, info.tm_mon, info.tm_mday, info.tm_hour, info.tm_min,
-		info.tm_year, info.tm_gmtoff);
-	elog(NOTICE, "TZP: %d, ZONE: %s", tz, tzn); */
-
-	cp.tm_mon = info.tm_mon;
-	cp.tm_mday = info.tm_mday;
-	cp.tm_hour = info.tm_hour;
-	cp.tm_min = info.tm_min;
-	cp.tm_year = info.tm_year;
-	cp.tm_sec = info.tm_sec;
-
-	toff = DetermineTimeZoneOffset(&cp, session_timezone);
-/*	elog(NOTICE, "Detect: offset = %ld", toff); */
-
-	cp.tm_gmtoff = -toff;
-	tm2timestamp(&cp, 0, &tz, &ts);
-
-
-	PG_RETURN_TIMESTAMPTZ(ts);
 }
 
 PG_FUNCTION_INFO_V1(cron_string_to_json_text);
