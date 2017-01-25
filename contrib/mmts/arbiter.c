@@ -258,7 +258,7 @@ static int MtmReadSocket(int sd, void* buf, int buf_size)
 {
 	int rc;
 	while ((rc = recv(sd, buf, buf_size, 0)) < 0 && errno == EINTR);			
-	if (rc < 0 && errno == EAGAIN) { 
+	if (rc <= 0 && errno == EAGAIN) { 
 		rc = MtmWaitSocket(sd, false, MtmHeartbeatSendTimeout);
 		if (rc == 1) { 
 			while ((rc = recv(sd, buf, buf_size, 0)) < 0 && errno == EINTR);			
