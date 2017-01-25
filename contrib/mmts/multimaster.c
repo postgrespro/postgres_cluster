@@ -1778,6 +1778,10 @@ void MtmRecoveryCompleted(void)
 	MTM_LOG1("Recovery of node %d is completed, disabled mask=%llx, connectivity mask=%llx, endLSN=%lx, live nodes=%d",
 			 MtmNodeId, (long long) Mtm->disabledNodeMask, 
 			 (long long)SELF_CONNECTIVITY_MASK, GetXLogInsertRecPtr(), Mtm->nLiveNodes);
+	if (Mtm->nAllNodes >= 3) { 
+		elog(WARNING, "restartLSNs at the end of recovery: {%lx, %lx, %lx}", 
+			 Mtm->nodes[0].restartLSN, Mtm->nodes[1].restartLSN, Mtm->nodes[2].restartLSN);
+	}
 	MtmLock(LW_EXCLUSIVE);
 	Mtm->recoverySlot = 0;
 	Mtm->recoveredLSN = GetXLogInsertRecPtr();
@@ -3249,7 +3253,12 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 				|| Mtm->recoverySlot == nodeId) 
 			{ 
 				/* Choose for recovery first available slot or slot of donor node (if any) */
-				elog(WARNING, "Process %d starts recovery from node %d", MyProcPid, nodeId);
+				if (Mtm->nAllNodes >= 3) { 
+					elog(WARNING, "Process %d starts recovery from node %d restartLSNs={%lx, %lx, %lx}", 
+						 MyProcPid, nodeId, Mtm->nodes[0].restartLSN, Mtm->nodes[1].restartLSN, Mtm->nodes[2].restartLSN);
+				} else {
+					elog(WARNING, "Process %d starts recovery from node %d", MyProcPid, nodeId);
+				}
 				Mtm->recoverySlot = nodeId;
 				Mtm->nReceivers = 0;
 				Mtm->nSenders = 0;
@@ -3388,7 +3397,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 				sscanf(strVal(elem->arg), "%lx", &recoveredLSN);
 				MTM_LOG1("Recovered position of node %d is %lx", MtmReplicationNodeId, recoveredLSN); 
 				if (Mtm->nodes[MtmReplicationNodeId-1].restartLSN < recoveredLSN) { 
-					MTM_LOG2("[restartlsn] node %d: %lx -> %lx (MtmReplicationStartupHook)", MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, recoveredLSN);
+					MTM_LOG1("Advance restartLSN for node %d from %lx to %lx (MtmReplicationStartupHook)", MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, recoveredLSN);
 					Assert(Mtm->nodes[MtmReplicationNodeId-1].restartLSN == InvalidXLogRecPtr 
 						   || recoveredLSN < Mtm->nodes[MtmReplicationNodeId-1].restartLSN + MtmMaxRecoveryLag);
 					Mtm->nodes[MtmReplicationNodeId-1].restartLSN = recoveredLSN;
@@ -3592,9 +3601,13 @@ bool MtmFilterTransaction(char* record, int size)
 	origin_node = pq_getmsgbyte(&s);
 	origin_lsn = pq_getmsgint64(&s);
 
-	Assert(replication_node == MtmReplicationNodeId && 
-		   origin_node != 0 &&
-		   (Mtm->status == MTM_RECOVERY || origin_node == replication_node));	
+	Assert(replication_node == MtmReplicationNodeId);
+	if (!(origin_node != 0 &&
+		  (Mtm->status == MTM_RECOVERY || origin_node == replication_node)))
+	{
+		elog(WARNING, "Receive redirected commit event %d from node %d origin node %d origin LSN %lx in %s mode",
+			 event, replication_node, origin_node, origin_lsn, MtmNodeStatusMnem[Mtm->status]);
+	}
 
     switch (event)
     {
@@ -3621,8 +3634,8 @@ bool MtmFilterTransaction(char* record, int size)
 	}
 
 	if (duplicate) {
-		MTM_LOG1("Ignore transaction %s from node %d event=%x because our LSN position %lx for origin node %d is greater or equal than LSN %lx of this transaction (end_lsn=%lx, origin_lsn=%lx)", 
-				 gid, replication_node, event, Mtm->nodes[origin_node-1].restartLSN, origin_node, restart_lsn, end_lsn, origin_lsn);
+		MTM_LOG1("Ignore transaction %s from node %d event=%x because our LSN position %lx for origin node %d is greater or equal than LSN %lx of this transaction (end_lsn=%lx, origin_lsn=%lx) mode %s", 
+				 gid, replication_node, event, Mtm->nodes[origin_node-1].restartLSN, origin_node, restart_lsn, end_lsn, origin_lsn, MtmNodeStatusMnem[Mtm->status]);
 	} else {
 		MTM_LOG2("Apply transaction %s from node %d lsn %lx, event=%x, origin node %d, original lsn=%lx, current lsn=%lx", 
 				 gid, replication_node, end_lsn, event, origin_node, origin_lsn, restart_lsn);
