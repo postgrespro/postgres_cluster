@@ -80,7 +80,8 @@ After things go more stable we will release prebuilt packages for major platform
 ## Configuration
 
 1. Add these required options to the `postgresql.conf` of each instance in the cluster.
-```sh
+
+```
 wal_level = logical        # multimaster is build on top of
                         # logical replication and will not work otherwise
 max_connections = 100
@@ -105,6 +106,7 @@ multimaster.node_id = 1    # the 1-based index of the node in the cluster
 multimaster.conn_strings = 'dbname=mydb host=node1.mycluster, ...'
                         # comma-separated list of connection strings to neighbour nodes.
 ```
+
 2. Allow replication in `pg_hba.conf`.
 
 Read description of all configuration params at [configuration](/contrib/mmts/doc/configuration.md)
