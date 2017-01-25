@@ -1922,6 +1922,7 @@ static struct config_int ConfigureNamesInt[] =
 		NULL, NULL, NULL
 	},
 
+#ifdef WITH_RSOCKET
 	{
 		{"rsocket_port", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the rsocket TCP port the server listens on."),
@@ -1931,6 +1932,7 @@ static struct config_int ConfigureNamesInt[] =
 		DEF_RSOCKET_PGPORT, 1, 65535,
 		NULL, NULL, NULL
 	},
+#endif
 
 	{
 		{"unix_socket_permissions", PGC_POSTMASTER, CONN_AUTH_SETTINGS,

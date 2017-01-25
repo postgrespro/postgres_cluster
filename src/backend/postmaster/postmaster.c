@@ -191,7 +191,9 @@ BackgroundWorker *MyBgworkerEntry = NULL;
 
 /* The socket number we are listening for connections on */
 int			PostPortNumber;
+#ifdef WITH_RSOCKET
 int			RsocketPostPortNumber;
+#endif
 
 /* The directory names for Unix socket(s) */
 char	   *Unix_socket_directories;
@@ -4221,7 +4223,6 @@ RsocketInitialize(Port *port)
 	 * ipv4 addresses to ipv6.  It will show ::ffff:ipv4 for all ipv4
 	 * connections.
 	 */
-	printf("bind\n");
 	ret = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, true);
 	if (ret < 0)
 	{
@@ -4234,7 +4235,6 @@ RsocketInitialize(Port *port)
 					  " If not, wait a few seconds and retry.",
 					  local_port)));
 	}
-	printf("after bind\n");
 	pg_freeaddrinfo_all(hint.ai_family, addr);
 
 	/*
@@ -4268,7 +4268,6 @@ RsocketInitialize(Port *port)
 				 errmsg("failed to send SSL negotiation response: %m")));
 	}
 
-	printf("accept\n");
 	/* accept connection and fill in the client (remote) address */
 	port->raddr.salen = sizeof(port->raddr.addr);
 	if ((sfd = pg_accept(fd,
