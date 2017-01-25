@@ -567,6 +567,7 @@ cron_string_to_json_text(PG_FUNCTION_ARGS)
 			elog(ERROR, "unknown error: %d", cps_error);
 		}
 	}
+	PG_RETURN_NULL();
 }
 
 
