@@ -453,7 +453,7 @@ XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 
 				xlrec = (xl_xact_commit *) XLogRecGetData(record);
 				ParseCommitRecord(info, xlrec, &parsed);
-				printf("origin_id=%d, origin_lsn=%llx, ", XLogRecGetOrigin(record), (long long)parsed.origin_lsn);
+				printf("gid=%s, origin_id=%d, origin_lsn=%llx, ", parsed.twophase_gid, XLogRecGetOrigin(record), (long long)parsed.origin_lsn);
 				break;
 			}
 		case XLOG_XACT_ABORT:
@@ -465,7 +465,7 @@ XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 				xlrec = (xl_xact_abort *) XLogRecGetData(record);
 				ParseAbortRecord(info, xlrec, &parsed);
 
-				printf("origin_id=%d, origin_lsn=%llx, ", XLogRecGetOrigin(record), (long long)parsed.origin_lsn);
+				printf("gid=%s, origin_id=%d, origin_lsn=%llx, ", parsed.twophase_gid, XLogRecGetOrigin(record), (long long)parsed.origin_lsn);
 				break;
 			}
 		}

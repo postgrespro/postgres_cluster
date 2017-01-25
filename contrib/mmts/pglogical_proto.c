@@ -127,8 +127,9 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	} else {
 		MtmCurrentXid = txn->xid;
 		MtmIsFilteredTxn = false;
-		MTM_LOG3("%d: pglogical_write_begin XID=%d node=%d CSN=%ld recovery=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
-				 MyProcPid, txn->xid, MtmReplicationNodeId, csn, isRecovery, txn->restart_decoding_lsn, txn->first_lsn, txn->end_lsn, MyReplicationSlot->data.confirmed_flush);
+		MTM_LOG3("%d: pglogical_write_begin XID=%d node=%d CSN=%lld recovery=%d restart_decoding_lsn=%llx first_lsn=%llx end_lsn=%llx confirmed_flush=%llx", 
+				 MyProcPid, txn->xid, MtmReplicationNodeId, csn, isRecovery,
+				 (long64)txn->restart_decoding_lsn, (long64)txn->first_lsn, (long64)txn->end_lsn, (long64)MyReplicationSlot->data.confirmed_flush);
 		
 		MTM_LOG3("%d: pglogical_write_begin XID=%d sent", MyProcPid, txn->xid);
 		pq_sendbyte(out, 'B');		/* BEGIN */
@@ -182,8 +183,8 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 {
     uint8 event = 0;
 	
-	MTM_LOG2("%d: pglogical_write_commit XID=%ld node=%d restart_decoding_lsn=%lx first_lsn=%lx end_lsn=%lx confirmed_flush=%lx", 
-			 MyProcPid, (long)txn->xid, MtmReplicationNodeId, txn->restart_decoding_lsn, txn->first_lsn, txn->end_lsn, MyReplicationSlot->data.confirmed_flush);
+	MTM_LOG2("%d: pglogical_write_commit XID=%lld node=%d restart_decoding_lsn=%llx first_lsn=%llx end_lsn=%llx confirmed_flush=%llx", 
+			 MyProcPid, (long64)txn->xid, MtmReplicationNodeId, txn->restart_decoding_lsn, txn->first_lsn, txn->end_lsn, MyReplicationSlot->data.confirmed_flush);
 
 
     if (txn->xact_action == XLOG_XACT_COMMIT) 
@@ -216,23 +217,24 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 			return;
 		}
 		if (isRecovery) { 
-			MTM_LOG2("PGLOGICAL_SEND recover transaction: event=%d, gid=%s, xid=%d, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", 
+			MTM_LOG2("PGLOGICAL_SEND recover transaction: event=%d, gid=%s, xid=%d, commit_lsn=%llx, txn->end_lsn=%llx, xlog=%llx", 
 					 event, txn->gid, txn->xid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
 		}
 		if (event == PGLOGICAL_ABORT_PREPARED) { 
-			MTM_LOG1("Send ABORT_PREPARED for transaction %s (%lu) end_lsn=%lx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%ld", 
-					 txn->gid, (long)txn->xid, txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
+			MTM_LOG1("Send ABORT_PREPARED for transaction %s (%llu) end_lsn=%llx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%lld", 
+					 txn->gid, (long64)txn->xid, (long64)txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
 		}
 		if (event == PGLOGICAL_PRECOMMIT_PREPARED) { 
-			MTM_LOG2("Send PGLOGICAL_PRECOMMIT_PREPARED for transaction %s (%lu) end_lsn=%lx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%ld", 
-					 txn->gid, (long)txn->xid, txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
+			MTM_LOG2("Send PGLOGICAL_PRECOMMIT_PREPARED for transaction %s (%llu) end_lsn=%llx to node %d, isRecovery=%d, txn->origin_id=%d, csn=%lld", 
+					 txn->gid, (long64)txn->xid, (long64)txn->end_lsn, MtmReplicationNodeId, isRecovery, txn->origin_id, csn);
 		}
 		MtmCheckRecoveryCaughtUp(MtmReplicationNodeId, txn->end_lsn);
 	}
 
     pq_sendbyte(out, 'C');		/* sending COMMIT */
 
-	MTM_LOG2("PGLOGICAL_SEND commit: event=%d, gid=%s, commit_lsn=%lx, txn->end_lsn=%lx, xlog=%lx", event, txn->gid, commit_lsn, txn->end_lsn, GetXLogInsertRecPtr());
+	MTM_LOG2("PGLOGICAL_SEND commit: event=%d, gid=%s, commit_lsn=%llx, txn->end_lsn=%llx, xlog=%llx",
+			 event, txn->gid, (long64)commit_lsn, (long64)txn->end_lsn, (long64)GetXLogInsertRecPtr());
 
     /* send the event field */
     pq_sendbyte(out, event);
@@ -323,7 +325,7 @@ pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 
 	MtmTransactionRecords += 1;
 
-	MTM_LOG3("%d: pglogical_write_update confirmed_flush=%lx", MyProcPid, MyReplicationSlot->data.confirmed_flush);
+	MTM_LOG3("%d: pglogical_write_update confirmed_flush=%llx", MyProcPid, (long64)MyReplicationSlot->data.confirmed_flush);
 
 	pq_sendbyte(out, 'U');		/* action UPDATE */
 	/* FIXME support whole tuple (O tuple type) */
