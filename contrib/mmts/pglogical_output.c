@@ -70,6 +70,7 @@ static void pg_decode_message(LogicalDecodingContext *ctx,
 							  ReorderBufferTXN *txn, XLogRecPtr message_lsn,
 							  bool transactional, const char *prefix,
 							  Size sz, const char *message);
+static void pg_decode_caughtup(LogicalDecodingContext *ctx);
 
 static void send_startup_message(LogicalDecodingContext *ctx,
 		PGLogicalOutputData *data, bool last_message);
@@ -89,6 +90,7 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	cb->filter_by_origin_cb = pg_decode_origin_filter;
 	cb->shutdown_cb = pg_decode_shutdown;
 	cb->message_cb = pg_decode_message;
+	cb->caughtup_cb = pg_decode_caughtup;
 }
 
 static bool
@@ -411,6 +413,19 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 		OutputPluginWrite(ctx, true);
 	}
 }
+
+void
+pg_decode_caughtup(LogicalDecodingContext *ctx)
+{
+	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
+
+	if (data->api) { 
+		OutputPluginPrepareWrite(ctx, true);
+		data->api->write_caughtup(ctx->out, data, ctx->reader->EndRecPtr);
+		OutputPluginWrite(ctx, true);
+	}
+}
+
 
 /*
  * COMMIT callback

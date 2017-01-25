@@ -4,10 +4,12 @@
 #include "storage/s_lock.h"
 #include "storage/spin.h"
 #include "storage/pg_sema.h"
+#include "bkb.h"
 
 typedef void(*BgwPoolExecutor)(void* work, size_t size);
 
-typedef uint64 timestamp_t;
+typedef ulong64 timestamp_t;
+
 
 #define MAX_DBNAME_LEN 30
 #define MAX_DBUSER_LEN 30

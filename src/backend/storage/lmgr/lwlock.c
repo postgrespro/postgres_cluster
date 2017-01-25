@@ -890,6 +890,8 @@ LWLockAttemptLock(LWLock *lock, LWLockMode mode)
 	pg_unreachable();
 }
 
+#endif
+
 /*
  * Lock the LWLock's wait list against concurrent activity.
  *
@@ -959,8 +961,6 @@ LWLockWaitListUnlock(LWLock *lock)
 
 	Assert(old_state & LW_FLAG_LOCKED);
 }
-
-#endif
 
 /*
  * Wakeup all the lockers that currently have a chance to acquire the lock.
@@ -1833,15 +1833,14 @@ LWLockRelease(LWLock *lock)
 	 * be the latest-acquired lock; so search array backwards.
 	 */
 	for (i = num_held_lwlocks; --i >= 0;)
-	{
 		if (lock == held_lwlocks[i].lock)
-		{
-			mode = held_lwlocks[i].mode;
 			break;
-		}
-	}
+
 	if (i < 0)
 		elog(ERROR, "lock %s %d is not held", T_NAME(lock), T_ID(lock));
+
+	mode = held_lwlocks[i].mode;
+
 	num_held_lwlocks--;
 	for (; i < num_held_lwlocks; i++)
 		held_lwlocks[i] = held_lwlocks[i + 1];

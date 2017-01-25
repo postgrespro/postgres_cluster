@@ -80,12 +80,15 @@
 #define Anum_mtm_local_tables_rel_schema 1
 #define Anum_mtm_local_tables_rel_name	 2
 
-#define Natts_mtm_cluster_state 16
 #define Natts_mtm_trans_state   15
-#define Natts_mtm_nodes_state   14
+#define Natts_mtm_nodes_state   16
+#define Natts_mtm_cluster_state 18
 
-typedef uint64 csn_t; /* commit serial number */
+typedef ulong64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
+
+typedef ulong64 lsn_t;
+#define INVALID_LSN  InvalidXLogRecPtr
 
 typedef char pgid_t[MULTIMASTER_MAX_GID_SIZE];
 
@@ -99,11 +102,6 @@ typedef enum
 	PGLOGICAL_ABORT_PREPARED,
 	PGLOGICAL_PRECOMMIT_PREPARED
 } PGLOGICAL_EVENT;
-
-#define PGLOGICAL_XACT_EVENT(flags)	(flags & 0x07)
-
-#define PGLOGICAL_CAUGHT_UP	        0x08
-
 
 /* Identifier of global transaction */
 typedef struct 
@@ -170,9 +168,9 @@ typedef struct
  */
 typedef struct MtmAbortLogicalMessage
 {
-	pgid_t         gid;
-	int            origin_node;
-	XLogRecPtr     origin_lsn;
+	pgid_t    gid;
+	int       origin_node;
+	lsn_t     origin_lsn;
 } MtmAbortLogicalMessage;
 
 typedef struct MtmMessageQueue
@@ -199,6 +197,7 @@ typedef struct
 	char hostName[MULTIMASTER_MAX_HOST_NAME_SIZE];
 	char connStr[MULTIMASTER_MAX_CONN_STR_SIZE];
 	int arbiterPort;
+	int postmasterPort;
 } MtmConnectionInfo;
 
 
@@ -214,9 +213,9 @@ typedef struct
 	nodemask_t  connectivityMask;      /* Connectivity mask at this node */
 	int         senderPid;
 	int         receiverPid;
-	XLogRecPtr  flushPos;
+	lsn_t       flushPos;
 	csn_t       oldestSnapshot;        /* Oldest snapshot used by active transactions at this node */	
-	XLogRecPtr  restartLSN;
+	lsn_t       restartLSN;
 	RepOriginId originId;
 	int         timeline;
 	void*       lockGraphData;
@@ -265,6 +264,8 @@ typedef struct
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
+	nodemask_t stalledNodeMask;        /* bitmask of stalled nodes (node with dropped relication slot which makes it not possible automatic recovery of such node) */
+	nodemask_t stoppedNodeMask;        /* Bitmask of stopped (permanently disabled nodes) */
 	nodemask_t pglogicalReceiverMask;  /* bitmask of started pglogic receivers */
 	nodemask_t pglogicalSenderMask;    /* bitmask of started pglogic senders */
 	nodemask_t walSenderLockerMask;    /* Mask of WAL-senders IDs locking the cluster */
@@ -292,11 +293,11 @@ typedef struct
 									 	  It is cleanup by MtmGetOldestXmin */
     MtmTransState** transListTail;     /* Tail of L1 list of all finished transactionds, used to append new elements.
 								  		  This list is expected to be in CSN ascending order, by strict order may be violated */
-	uint64 transCount;                 /* Counter of transactions perfromed by this node */	
-	uint64 gcCount;                    /* Number of global transactions performed since last GC */
+	ulong64 transCount;                /* Counter of transactions perfromed by this node */	
+	ulong64 gcCount;                   /* Number of global transactions performed since last GC */
 	MtmMessageQueue* sendQueue;        /* Messages to be sent by arbiter sender */
 	MtmMessageQueue* freeQueue;        /* Free messages */
-	XLogRecPtr recoveredLSN;           /* LSN at the moment of recovery completion */
+	lsn_t recoveredLSN;           /* LSN at the moment of recovery completion */
 	BgwPool pool;                      /* Pool of background workers for applying logical replication patches */
 	MtmNodeInfo nodes[1];              /* [Mtm->nAllNodes]: per-node data */ 
 } MtmState;
@@ -305,8 +306,8 @@ typedef struct MtmFlushPosition
 {
 	dlist_node node;
 	int        node_id;
-	XLogRecPtr local_end;
-	XLogRecPtr remote_end;
+	lsn_t      local_end;
+	lsn_t      remote_end;
 } MtmFlushPosition;
 
 
@@ -339,7 +340,7 @@ extern VacuumStmt* MtmVacuumStmt;
 extern IndexStmt*  MtmIndexStmt;
 extern DropStmt*   MtmDropStmt;
 extern MemoryContext MtmApplyContext;
-extern XLogRecPtr MtmSenderWalEnd;
+extern lsn_t MtmSenderWalEnd;
 extern timestamp_t MtmRefreshClusterStatusSchedule;
 
 
@@ -361,7 +362,7 @@ extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
 extern void  MtmLockNode(int nodeId, LWLockMode mode);
 extern void  MtmUnlockNode(int nodeId);
-extern void  MtmDropNode(int nodeId, bool dropSlot);
+extern void  MtmStopNode(int nodeId, bool dropSlot);
 extern void  MtmReconnectNode(int nodeId);
 extern void  MtmRecoverNode(int nodeId);
 extern void  MtmOnNodeDisconnect(int nodeId);
@@ -381,12 +382,13 @@ extern void  MtmSwitchClusterMode(MtmNodeStatus mode);
 extern void  MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr);
 extern void  MtmSetupReplicationHooks(struct PGLogicalHooks* hooks);
 extern void  MtmCheckQuorum(void);
-extern bool  MtmRecoveryCaughtUp(int nodeId, XLogRecPtr slotLSN);
+extern bool  MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr);
+extern void  MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN);
 extern void  MtmRecoveryCompleted(void);
 extern void  MtmMakeTableLocal(char* schema, char* name);
 extern void  MtmHandleApplyError(void);
-extern void  MtmUpdateLsnMapping(int nodeId, XLogRecPtr endLsn);
-extern XLogRecPtr MtmGetFlushPosition(int nodeId);
+extern void  MtmUpdateLsnMapping(int nodeId, lsn_t endLsn);
+extern lsn_t MtmGetFlushPosition(int nodeId);
 extern bool MtmWatchdog(timestamp_t now);
 extern void MtmCheckHeartbeat(void);
 extern void MtmResetTransaction(void);

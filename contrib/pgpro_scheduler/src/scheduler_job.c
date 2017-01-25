@@ -9,6 +9,7 @@
 #include "utils/timestamp.h"
 #include "utils/builtins.h"
 #include "memutils.h"
+#include "port.h"
 
 job_t *init_scheduler_job(job_t *j)
 {
@@ -100,7 +101,7 @@ job_t *set_job_error(job_t *j, const char *fmt, ...)
 	char buf[1024];
 
 	va_start(arglist, fmt);
-	vsnprintf(buf, 1024, fmt, arglist);
+	pvsnprintf(buf, 1024, fmt, arglist);
 	va_end(arglist);
 
 	if(j->error) pfree(j->error);
