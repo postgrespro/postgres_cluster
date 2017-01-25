@@ -27,7 +27,7 @@ other nodes. This is done by using 3 phase commit protocol and heartbeats for fa
 brought back to cluster can be fast-forwaded to actual state automatically in case when transactions log still
 exists since the time when node was excluded from cluster (this depends on checkpoint configuration in postgres).
 
-Read more about internals on [architecture](/contrib/mmts/doc/architecture.md) page.
+Read more about internals on [architecture](doc/architecture.md) page.
 
 
 
@@ -43,24 +43,24 @@ Ensure that following prerequisites are installed:
 
 for Debian based linux:
 
-```sh
+```
 apt-get install -y git make gcc libreadline-dev bison flex zlib1g-dev
 ```
 
 for RedHat based linux:
 
-```sh
+```
 yum groupinstall 'Development Tools'
 yum install git, automake, libtool, bison, flex readline-devel
 ```
 
 After that everything is ready to install postgres along with extensions
 
-```sh
+```
 git clone https://github.com/postgrespro/postgres_cluster.git
 cd postgres_cluster
 ./configure && make && make -j 4 install
-cd ../../contrib/mmts && make install
+cd contrib/mmts && make install
 ```
 
 ### Docker
@@ -68,7 +68,7 @@ cd ../../contrib/mmts && make install
 Directory contrib/mmts also includes docker-compose.yml that is capable of building multi-master and starting 
 3 node cluster.
 
-```sh
+```
 cd contrib/mmts
 docker-compose up
 ```
@@ -81,35 +81,35 @@ After things go more stable we will release prebuilt packages for major platform
 
 1. Add these required options to the `postgresql.conf` of each instance in the cluster.
 
-```
-wal_level = logical        # multimaster is build on top of
-                        # logical replication and will not work otherwise
-max_connections = 100
-max_prepared_transactions = 300 # all transactions are implicitly two-phase, so that's
-                                # a good idea to set this equal to max_connections*N_nodes.
-max_wal_senders = 10       # at least the number of nodes
-max_replication_slots = 10 # at least the number of nodes
-max_worker_processes = 250 # Each node has:
-                        #   N_nodes-1 receiver
-                        #   N_nodes-1 sender
-                        #   1 mtm-sender
-                        #   1 mtm-receiver
-                        # Also transactions executed at neighbour nodes can cause spawn of
-                        # background pool worker at our node. At max this will be equal to
-                        # sum of max_connections on neighbour nodes.
+    ```
+    wal_level = logical     # multimaster is build on top of
+                            # logical replication and will not work otherwise
+    max_connections = 100
+    max_prepared_transactions = 300 # all transactions are implicitly two-phase, so that's
+                                    # a good idea to set this equal to max_connections*N_nodes.
+    max_wal_senders = 10       # at least the number of nodes
+    max_replication_slots = 10 # at least the number of nodes
+    max_worker_processes = 250 # Each node has:
+                            #   N_nodes-1 receiver
+                            #   N_nodes-1 sender
+                            #   1 mtm-sender
+                            #   1 mtm-receiver
+                            # Also transactions executed at neighbour nodes can cause spawn of
+                            # background pool worker at our node. At max this will be equal to
+                            # sum of max_connections on neighbour nodes.
 
 
 
-shared_preload_libraries = 'multimaster'
-multimaster.max_nodes = 3  # cluster size
-multimaster.node_id = 1    # the 1-based index of the node in the cluster
-multimaster.conn_strings = 'dbname=mydb host=node1.mycluster, ...'
-                        # comma-separated list of connection strings to neighbour nodes.
-```
+    shared_preload_libraries = 'multimaster'
+    multimaster.max_nodes = 3  # cluster size
+    multimaster.node_id = 1    # the 1-based index of the node in the cluster
+    multimaster.conn_strings = 'dbname=mydb host=node1.mycluster, ...'
+                               # comma-separated list of connection strings to neighbour nodes.
+    ```
 
 2. Allow replication in `pg_hba.conf`.
 
-Read description of all configuration params at [configuration](/contrib/mmts/doc/configuration.md)
+Read description of all configuration params at [configuration](doc/configuration.md)
 
 ## Management
 
@@ -120,7 +120,7 @@ Read description of all configuration params at [configuration](/contrib/mmts/do
 * `mtm.get_cluster_info()` -- print some debug info
 * `mtm.make_table_local(relation regclass)` -- stop replication for a given table
 
-Read description of all management functions at [functions](/contrib/mmts/doc/functions.md)
+Read description of all management functions at [functions](doc/functions.md)
 
 
 
