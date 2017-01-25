@@ -1,5 +1,4 @@
 #include "postgres.h"
-#include "port.h"
 
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
@@ -12,6 +11,7 @@
 #include "storage/shm_toc.h"
 
 #include "pg_config.h"
+#include "pgtime.h"
 #include "fmgr.h"
 #include "pgstat.h"
 #include "utils/builtins.h"
@@ -23,6 +23,8 @@
 #include "utils/datetime.h"
 #include "catalog/pg_db_role_setting.h"
 #include "commands/dbcommands.h"
+
+#include "port.h"
 
 #include "char_array.h"
 #include "sched_manager_poll.h"
