@@ -313,7 +313,6 @@ sub subdircheck
 	{
 		return;
 	}
-
 	chdir $module;
 	my @tests = fetchTests();
 	my @opts  = fetchRegressOpts();
@@ -375,6 +374,7 @@ sub contribcheck
 		next if ($module eq "ltree_plpython"  && !defined($config->{python}));
 		next if ($module eq "sepgsql");
 		next if ($module eq "pg_probackup");
+		next if ($module eq "pg_hint_plan");
 		# Need database with UTF8 encoding, not SQL_ASCII
 		next if ($module eq "hunspell_ru_ru");
 
