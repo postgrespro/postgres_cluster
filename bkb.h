@@ -6,7 +6,11 @@
 
 #define MAX_NODES 64
 
-typedef uint64_t nodemask_t;
+typedef long long long64; /* we are not using int64 here because we want to use %lld format for this type */
+typedef unsigned long long ulong64; /* we are not using uint64 here because we want to use %lld format for this type */
+
+typedef ulong64 nodemask_t;
+
 #define BIT_CHECK(mask, bit) (((mask) & ((nodemask_t)1 << (bit))) != 0)
 #define BIT_CLEAR(mask, bit) (mask &= ~((nodemask_t)1 << (bit)))
 #define BIT_SET(mask, bit)   (mask |= ((nodemask_t)1 << (bit)))

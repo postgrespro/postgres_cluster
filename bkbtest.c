@@ -11,7 +11,7 @@ int main() {
 	matrix[2] = 1;
 	matrix[4] = 3;
 	clique = MtmFindMaxClique(matrix, 64, &clique_size);
-	printf("Clique=%lx\n", clique);
+	printf("Clique=%llx\n", clique);
 	return 0;
 }
 	
