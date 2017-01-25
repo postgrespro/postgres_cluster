@@ -342,11 +342,11 @@ pglogical_receiver_main(Datum main_arg)
 				 * Them are either empty, either new node is synchronized using base_backup.
 				 * So we assume that LSNs are the same for local and remote node
 				 */
-				originStartPos = Mtm->status == MTM_RECOVERY && Mtm->donorNodeId == nodeId ? GetXLogInsertRecPtr() : InvalidXLogRecPtr;
+				originStartPos = (Mtm->status == MTM_RECOVERY && Mtm->donorNodeId == nodeId) ? GetXLogInsertRecPtr() : InvalidXLogRecPtr;
 				MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, nodeId);
 			} else { 
 				if (Mtm->nodes[nodeId-1].restartLSN < originStartPos) { 
-					MTM_LOG2("[restartlsn] node %d: %lx -> %lx (pglogical_receiver_mains)", nodeId, Mtm->nodes[nodeId-1].restartLSN, originStartPos);
+					MTM_LOG1("Advance restartLSN for node %d: from %lx to %lx (pglogical_receiver_main)", nodeId, Mtm->nodes[nodeId-1].restartLSN, originStartPos);
 					Mtm->nodes[nodeId-1].restartLSN = originStartPos;
 				}
 				MTM_LOG1("Restart logical receiver at position %lx with origin=%d from node %d", originStartPos, originId, nodeId);
@@ -545,16 +545,17 @@ pglogical_receiver_main(Datum main_arg)
 					}
 					if (stmt[0] == 'Z' || (stmt[0] == 'M' && (stmt[1] == 'L' || stmt[1] == 'A' || stmt[1] == 'C'))) {
 						MTM_LOG3("Process '%c' message from %d", stmt[1], nodeId);
-						if ( stmt[1] == 'C') { /* concurrent DDL */
+						if (stmt[0] == 'M' && stmt[1] == 'C') { /* concurrent DDL should be executed by parallel workers */
 							MtmExecute(stmt, rc - hdr_len);
 						} else {
-							MtmExecutor(stmt, rc - hdr_len);
+							MtmExecutor(stmt, rc - hdr_len); /* all other messages can be processed by receiver itself */
 						}
 					} else { 
 						ByteBufferAppend(&buf, stmt, rc - hdr_len);
 						if (stmt[0] == 'C') /* commit */
 						{
-							if (!MtmFilterTransaction(stmt, rc - hdr_len)) { 
+							if (!MtmFilterTransaction(stmt, rc - hdr_len)) 
+							{ 
 								if (spill_file >= 0) { 
 									ByteBufferAppend(&buf, ")", 1);
 									pq_sendbyte(&spill_info, '(');
@@ -574,6 +575,7 @@ pglogical_receiver_main(Datum main_arg)
 											elog(WARNING, "Commit of prepared transaction takes %ld usec, flags=%x", stop - start, stmt[1]);
 										}
 									} else {
+										Assert(stmt[1] == PGLOGICAL_PREPARE || stmt[1] == PGLOGICAL_COMMIT); /* all other commits should be applied in place */
 										MtmExecute(buf.data, buf.used);
 									}
 								}
