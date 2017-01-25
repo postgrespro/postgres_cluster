@@ -80,30 +80,30 @@ After things go more stable we will release prebuilt packages for major platform
 ## Configuration
 
 1. Add these required options to the `postgresql.conf` of each instance in the cluster.
- ```sh
- wal_level = logical        # multimaster is build on top of
-                            # logical replication and will not work otherwise
- max_connections = 100
- max_prepared_transactions = 300 # all transactions are implicitly two-phase, so that's
-                                 # a good idea to set this equal to max_connections*N_nodes.
- max_wal_senders = 10       # at least the number of nodes
- max_replication_slots = 10 # at least the number of nodes
- max_worker_processes = 250 # Each node has:
-                            #   N_nodes-1 receiver
-                            #   N_nodes-1 sender
-                            #   1 mtm-sender
-                            #   1 mtm-receiver
-                            # Also transactions executed at neighbour nodes can cause spawn of
-                            # background pool worker at our node. At max this will be equal to
-                            # sum of max_connections on neighbour nodes.
+```sh
+wal_level = logical        # multimaster is build on top of
+                        # logical replication and will not work otherwise
+max_connections = 100
+max_prepared_transactions = 300 # all transactions are implicitly two-phase, so that's
+                                # a good idea to set this equal to max_connections*N_nodes.
+max_wal_senders = 10       # at least the number of nodes
+max_replication_slots = 10 # at least the number of nodes
+max_worker_processes = 250 # Each node has:
+                        #   N_nodes-1 receiver
+                        #   N_nodes-1 sender
+                        #   1 mtm-sender
+                        #   1 mtm-receiver
+                        # Also transactions executed at neighbour nodes can cause spawn of
+                        # background pool worker at our node. At max this will be equal to
+                        # sum of max_connections on neighbour nodes.
 
 
 
- shared_preload_libraries = 'multimaster'
- multimaster.max_nodes = 3  # cluster size
- multimaster.node_id = 1    # the 1-based index of the node in the cluster
- multimaster.conn_strings = 'dbname=mydb host=node1.mycluster, ...'
-                            # comma-separated list of connection strings to neighbour nodes.
+shared_preload_libraries = 'multimaster'
+multimaster.max_nodes = 3  # cluster size
+multimaster.node_id = 1    # the 1-based index of the node in the cluster
+multimaster.conn_strings = 'dbname=mydb host=node1.mycluster, ...'
+                        # comma-separated list of connection strings to neighbour nodes.
 ```
 2. Allow replication in `pg_hba.conf`.
 
