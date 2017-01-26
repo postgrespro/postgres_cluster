@@ -327,9 +327,10 @@ static void MtmCheckResponse(MtmArbiterMessage* resp)
 	{ 
 		elog(WARNING, "Node %d thinks that I am dead, while I am %s (message %s)", resp->node, MtmNodeStatusMnem[Mtm->status], MtmMessageKindMnem[resp->code]);
 		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
+		Mtm->nConfigChanges += 1;
 		MtmSwitchClusterMode(MTM_RECOVERY);
 	} else if (BIT_CHECK(Mtm->disabledNodeMask, resp->node-1) && sockets[resp->node-1] < 0) { 
-		/* We receive heartbeat from dsiable node with 
+		/* We receive heartbeat from disabled node.
 		 * Looks like it is restarted.
 		 * Try to reconnect to it.
 		 */
@@ -1040,6 +1041,8 @@ static void MtmReceiver(Datum arg)
 							Mtm->nodes[node-1].transDelay += MtmGetCurrentTime() - ts->csn;
 							ts->xids[node-1] = msg->sxid;
 							
+#if 0
+							/* This code seems to be deteriorated because now checking that distributed transaction involves all live nodes is done at replica while applying PREPARE */
 							if ((~msg->disabledNodeMask & Mtm->disabledNodeMask) != 0) { 
 								/* Coordinator's disabled mask is wider than of this node: so reject such transaction to avoid 
 								   commit on smaller subset of nodes */
@@ -1047,6 +1050,7 @@ static void MtmReceiver(Datum arg)
 									 ts->gid, (long64)ts->xid, node, Mtm->disabledNodeMask, msg->disabledNodeMask);
 								MtmAbortTransaction(ts);
 							}
+#endif
 							if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
 								/* All nodes are finished their transactions */
 								if (ts->status == TRANSACTION_STATUS_ABORTED) { 

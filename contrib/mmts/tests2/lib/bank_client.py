@@ -167,8 +167,8 @@ class MtmClient(object):
                 # back to event loop and block it
                 yield from asyncio.sleep(0.01)
             except BaseException as e:
+                print('Catch exception: ', e)
                 agg.finish_tx(str(e).strip())
-                print('Catch exception ', e)
                 # Give evloop some free time.
                 # In case of continuous excetions we can loop here without returning
                 # back to event loop and block it
