@@ -1056,11 +1056,6 @@ CREATE FUNCTION schedule.cron2jsontext(CSTRING)
   AS 'MODULE_PATHNAME', 'cron_string_to_json_text'
   LANGUAGE C IMMUTABLE;
 
-CREATE FUNCTION temp_now(timestamp with time zone)
-  RETURNS timestamp with time zone 
-  AS 'MODULE_PATHNAME', 'temp_now'
-  LANGUAGE C IMMUTABLE;
-
 --------------
 -- TRIGGERS --
 --------------
