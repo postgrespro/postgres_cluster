@@ -15,33 +15,32 @@ PARTITION BY RANGE(id) INTERVAL (100)
 NOTICE:  sequence "abc_seq" does not exist, skipping
 ALTER TABLE abc ADD PARTITION abc_200 VALUES LESS THAN (400);
 ALTER TABLE abc SPLIT PARTITION abc_200 AT (300) INTO (PARTITION abc_200, PARTITION abc_300);
-ALTER TABLE abc MERGE PARTITIONS abc_200, abc_300 INTO PARTITION abc_200;
+ALTER TABLE abc MERGE PARTITIONS abc_100, abc_200, abc_300 INTO PARTITION abc_100;
 SELECT * FROM pathman_partition_list;
  parent | partition | parttype | partattr | range_min | range_max 
 --------+-----------+----------+----------+-----------+-----------
  abc    | abc_inf   |        2 | id       | NULL      | 100
- abc    | abc_100   |        2 | id       | 100       | 200
- abc    | abc_200   |        2 | id       | 200       | 400
-(3 rows)
+ abc    | abc_100   |        2 | id       | 100       | 400
+(2 rows)
 
+/* Drop partition should shift next partition's lower bound */
 ALTER TABLE abc ADD PARTITION abc_400 VALUES LESS THAN (500);
-ALTER TABLE abc DROP PARTITION abc_200;
+ALTER TABLE abc DROP PARTITION abc_100;
 SELECT * FROM pathman_partition_list;
  parent | partition | parttype | partattr | range_min | range_max 
 --------+-----------+----------+----------+-----------+-----------
  abc    | abc_inf   |        2 | id       | NULL      | 100
- abc    | abc_100   |        2 | id       | 100       | 200
- abc    | abc_400   |        2 | id       | 200       | 500
-(3 rows)
+ abc    | abc_400   |        2 | id       | 100       | 500
+(2 rows)
 
 /* Inserting values into area not covered by partitions should create new partition */
-INSERT INTO abc VALUES (450);
+INSERT INTO abc VALUES (550);
 SELECT * FROM pathman_partition_list;
  parent | partition | parttype | partattr | range_min | range_max 
 --------+-----------+----------+----------+-----------+-----------
  abc    | abc_inf   |        2 | id       | NULL      | 100
- abc    | abc_100   |        2 | id       | 100       | 200
- abc    | abc_400   |        2 | id       | 200       | 500
+ abc    | abc_400   |        2 | id       | 100       | 500
+ abc    | abc_1     |        2 | id       | 500       | 600
 (3 rows)
 
 DROP TABLE abc CASCADE;

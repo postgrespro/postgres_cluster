@@ -17,15 +17,18 @@ PARTITION BY RANGE(id) INTERVAL (100)
 
 ALTER TABLE abc ADD PARTITION abc_200 VALUES LESS THAN (400);
 ALTER TABLE abc SPLIT PARTITION abc_200 AT (300) INTO (PARTITION abc_200, PARTITION abc_300);
-ALTER TABLE abc MERGE PARTITIONS abc_200, abc_300 INTO PARTITION abc_200;
+ALTER TABLE abc MERGE PARTITIONS abc_100, abc_200, abc_300 INTO PARTITION abc_100;
 SELECT * FROM pathman_partition_list;
 
+/* Drop partition should shift next partition's lower bound */
 ALTER TABLE abc ADD PARTITION abc_400 VALUES LESS THAN (500);
-ALTER TABLE abc DROP PARTITION abc_200;
+ALTER TABLE abc DROP PARTITION abc_100;
 SELECT * FROM pathman_partition_list;
+
+
 
 /* Inserting values into area not covered by partitions should create new partition */
-INSERT INTO abc VALUES (450);
+INSERT INTO abc VALUES (550);
 SELECT * FROM pathman_partition_list;
 
 DROP TABLE abc CASCADE;
