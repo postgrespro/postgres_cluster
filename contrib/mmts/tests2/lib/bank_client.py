@@ -109,6 +109,24 @@ class MtmClient(object):
         cur.close()
         conn.close()
 
+    def is_data_identic(self):
+        hashes = set()
+
+        for dsn in self.dsns:
+            con = psycopg2.connect(dsn)
+            cur = con.cursor()
+            cur.execute("""
+                select
+                    md5('(' || string_agg(uid::text || ', ' || amount::text , '),(') || ')')
+                from
+                    (select * from bank_test order by uid) t;""")
+            hashes.add(cur.fetchone()[0])
+            cur.close()
+            con.close()
+
+        print(hashes)
+        return (len(hashes) == 1)
+
     @asyncio.coroutine
     def status(self):
         while self.running:
@@ -167,7 +185,7 @@ class MtmClient(object):
                 # back to event loop and block it
                 yield from asyncio.sleep(0.01)
             except BaseException as e:
-                print('Catch exception: ', e)
+                print('Catch exception: ', str(e).strip())
                 agg.finish_tx(str(e).strip())
                 # Give evloop some free time.
                 # In case of continuous excetions we can loop here without returning
