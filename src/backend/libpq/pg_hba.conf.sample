@@ -79,10 +79,15 @@
 @remove-line-for-nolocal@# "local" is for Unix domain socket connections only
 @remove-line-for-nolocal@local   all             all                                     @authmethodlocal@
 # IPv4 local connections:
-#host    all             all             127.0.0.1/32            @authmethodhost@
-host    all             all             0.0.0.0/0            @authmethodhost@
+host    all             all             127.0.0.1/32            @authmethodhost@
 # IPv6 local connections:
 host    all             all             ::1/128                 @authmethodhost@
+# IPv4 remote commections:
+# Uncomment following line to allow network access. You'll also need to
+# add listen_addresses='*' into your postgresql.conf file
+# host    all             all             0.0.0.0/0            @authmethodhost@
+# IPv6 remote connections:
+# host    all             all             ::/0                 @authmethodhost@
 # Allow replication connections from localhost, by a user with the
 # replication privilege.
 @remove-line-for-nolocal@#local   replication     @default_username@                                @authmethodlocal@
