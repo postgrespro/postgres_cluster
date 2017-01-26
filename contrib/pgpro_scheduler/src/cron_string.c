@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include "cron_string.h"
 #include "postgres.h"
+#include "c.h"
 #include "port.h"
 
 
