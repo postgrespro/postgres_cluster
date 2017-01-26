@@ -37,6 +37,8 @@
 #include "memutils.h"
 #include "scheduler_executor.h"
 
+#include "port.h"
+
 #define REALLOC_STEP	40
 
 extern volatile sig_atomic_t got_sighup;
@@ -1368,7 +1370,7 @@ void manager_fatal_error(scheduler_manager_ctx_t *ctx, int ecode, char *message,
     dsm_detach(ctx->seg);
 
 	va_start(arglist, message);
-	vsnprintf(buf, 1024, message, arglist);
+	pvsnprintf(buf, 1024, message, arglist);
 	va_end(arglist);
 
 

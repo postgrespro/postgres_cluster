@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include "cron_string.h"
 #include "postgres.h"
+#include "port.h"
 
 
 char *cps_month_subst_data[12] = { "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC" };
@@ -18,7 +19,7 @@ void _cps_set_error(int num, const char *message, ...)
 
 	cps_error = num;
 	va_start(arglist, message);
-	vsnprintf(cps_error_buffer, 512, message, arglist);
+	pvsnprintf(cps_error_buffer, 512, message, arglist);
 	va_end(arglist);
 }
 
