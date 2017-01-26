@@ -60,6 +60,7 @@ PlannedStmt *sr_planner(Query *parse,
 	bool find_ok = false;
 	LOCKMODE heap_lock = AccessShareLock;
 	Oid query_index_rel_oid;
+	Oid			sr_plans_oid;
 	IndexScanDesc query_index_scan;
 	ScanKeyData key;
 
@@ -81,11 +82,19 @@ PlannedStmt *sr_planner(Query *parse,
 	sr_query_walker((Query *)parse, NULL);
 
 	sr_plans_table_rv = makeRangeVar("public", "sr_plans", -1);
-	sr_plans_heap = heap_openrv(sr_plans_table_rv, heap_lock);
+	/* First check existance of "sr_plans" table */
+	sr_plans_oid = RangeVarGetRelid(sr_plans_table_rv, heap_lock, true);
+	if (!OidIsValid(sr_plans_oid))
+		/* Just call standard_planner() if table doesn't exist. */
+		return standard_planner(parse, cursorOptions, boundParams);
+
+	/* Table "sr_plans" exists */
+	sr_plans_heap = heap_open(sr_plans_oid, NoLock);
 
 	query_index_rel_oid = DatumGetObjectId(DirectFunctionCall1(to_regclass, PointerGetDatum(cstring_to_text("sr_plans_query_hash_idx"))));
 	if (query_index_rel_oid == InvalidOid)
 	{
+		heap_close(sr_plans_heap, heap_lock);
 		elog(WARNING, "Not found sr_plans_query_hash_idx index");
 		return standard_planner(parse, cursorOptions, boundParams);
 	}
