@@ -119,7 +119,8 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 					  ReorderBufferTXN *txn)
 {
 	bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
-	csn_t csn = MtmTransactionSnapshot(txn->xid);
+	nodemask_t participantsMask;
+	csn_t csn = MtmDistributedTransactionSnapshot(txn->xid, MtmReplicationNodeId, &participantsMask);
 
 	if (!isRecovery && csn == INVALID_CSN) { 
 		MtmIsFilteredTxn = true;
@@ -136,6 +137,7 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 		pq_sendint(out, MtmNodeId, 4);
 		pq_sendint(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
 		pq_sendint64(out, csn);
+		pq_sendint64(out, participantsMask);
 
 		MtmTransactionRecords = 0;
 	}
@@ -205,7 +207,8 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 			return;
 		}
 	} else { 
-		csn_t csn = MtmTransactionSnapshot(txn->xid);
+		nodemask_t partisipantsMask;
+		csn_t csn = MtmDistributedTransactionSnapshot(txn->xid, MtmReplicationNodeId, &partisipantsMask);
 		bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
 
 		if (!isRecovery && csn == INVALID_CSN && (event != PGLOGICAL_ABORT_PREPARED || txn->origin_id != InvalidRepOriginId))

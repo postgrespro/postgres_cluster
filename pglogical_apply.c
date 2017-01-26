@@ -337,22 +337,21 @@ process_remote_begin(StringInfo s)
 {
 	GlobalTransactionId gtid;
 	csn_t snapshot;
+	nodemask_t participantsMask;
 	int rc;
 
 	gtid.node = pq_getmsgint(s, 4); 
 	gtid.xid = pq_getmsgint(s, 4); 
 	snapshot = pq_getmsgint64(s);    
-
+	participantsMask = pq_getmsgint64(s);
 	Assert(gtid.node > 0);
 
-	MTM_LOG2("REMOTE begin node=%d xid=%d snapshot=%lld", gtid.node, gtid.xid, snapshot);
+	MTM_LOG2("REMOTE begin node=%d xid=%lu snapshot=%lld participantsMask=%llx", gtid.node, (long64)gtid.xid, snapshot, participantsMask);
 	MtmResetTransaction();		
-#if 1
-	if (BIT_CHECK(Mtm->disabledNodeMask, gtid.node-1)) { 
-		elog(WARNING, "Ignore transaction %llu from disabled node %d", (long64)gtid.xid, gtid.node);
+
+	if (!MtmCheckParticipants(&gtid, participantsMask)) {
 		return false;
 	}
-#endif
     SetCurrentStatementStartTimestamp();     
 	StartTransactionCommand();
     MtmJoinTransaction(&gtid, snapshot);

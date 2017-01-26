@@ -246,6 +246,7 @@ static int   MtmGcPeriod;
 static bool  MtmIgnoreTablesWithoutPk;
 static int   MtmLockCount;
 static bool  MtmMajorNode;
+static bool  MtmBreakConnection;
 
 static ExecutorStart_hook_type PreviousExecutorStartHook;
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
@@ -418,16 +419,27 @@ MtmInitializeSequence(int64* start, int64* step)
  * -------------------------------------------
  */
 
-csn_t MtmTransactionSnapshot(TransactionId xid)
+/* 
+ * Get snapshot of transaction proceed by WAL sender pglogical plugin.
+ * If it is local transaction or replication node is not in participant mask, then return INVALID_CSN.
+ * Transaction should be skept by WAL sender in the following cases:
+ *   1. Transaction was replicated from some other node and it is not a recovery process.
+ *   2. State of transaction is unknown
+ *   3. Replication node is not participated in transaction
+ */
+csn_t MtmDistributedTransactionSnapshot(TransactionId xid, int nodeId, nodemask_t* participantsMask)
 {
 	csn_t snapshot = INVALID_CSN;
-	
+	*participantsMask = 0;
 	MtmLock(LW_SHARED);
 	if (Mtm->status == MTM_ONLINE) {
 		MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-		if (ts != NULL && !ts->isLocal) { 
-			snapshot = ts->snapshot;
-			Assert(ts->gtid.node == MtmNodeId || MtmIsRecoverySession); 		
+		if (ts != NULL) { 
+			*participantsMask = ts->participantsMask;
+			if (!ts->isLocal && BIT_CHECK(ts->participantsMask, nodeId-1)) { 
+				snapshot = ts->snapshot;
+				Assert(ts->gtid.node == MtmNodeId || MtmIsRecoverySession); 		
+			}
 		}
 	}
 	MtmUnlock();
@@ -621,6 +633,9 @@ MtmAdjustOldestXid(TransactionId xid)
     return xid;
 }
 
+
+
+
 /*
  * -------------------------------------------
  * Transaction list manipulation.
@@ -789,7 +804,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 			 * Allow execution of transaction by bg-workers to make it possible to perform recovery.
 			 */
 			MtmUnlock();			
-			elog(ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
+			elog(MtmBreakConnection ? FATAL : ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
 		}
 		x->containsDML = false;
         x->snapshot = MtmAssignCSN();	
@@ -799,10 +814,8 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 
 		/*
 		 * Check if there is global multimaster lock preventing new transaction from commit to make a chance to wal-senders to caught-up.
-		 * Only "own" transactions are blocked. Transactions replicated from other nodes (including recovered transaction) should be proceeded
-		 * and should not cause cluster status change.
 		 */
-		if (x->isDistributed/* && x->isReplicated*/) { 
+		if (x->isDistributed) { 
 			MtmCheckClusterLock();
 		}
 
@@ -1141,6 +1154,9 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		}
 		MtmUnlock();
 		if (x->isTwoPhase) { 
+			if (x->status == TRANSACTION_STATUS_ABORTED) { 
+				elog(ERROR, "Prepare of user's 2PC transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
+			}
 			MtmResetTransaction();
 		}
 	}
@@ -2198,7 +2214,29 @@ void MtmReconnectNode(int nodeId)
 	MtmUnlock();
 }
 
-
+/*
+ * Check particioants of replicated transaction. This function is called by receiver at start of replicated transaction to
+ * check that all live nodes are participated in it.
+ */
+bool MtmCheckParticipants(GlobalTransactionId* gtid, nodemask_t participantsMask)
+{
+	bool result = true;
+	MtmLock(LW_EXCLUSIVE);		
+	if (BIT_CHECK(Mtm->disabledNodeMask, gtid->node-1)) { 
+		elog(WARNING, "Ignore transaction %llu from disabled node %d", (long64)gtid->xid, gtid->node);
+		result = false;
+	} else { 
+		nodemask_t liveMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask;
+		BIT_SET(participantsMask, gtid->node-1);
+		if (liveMask & ~participantsMask) { 
+			elog(WARNING, "Ignore transaction %llu from node %d because some of live nodes (%llx) are not participated in it (%llx)", 
+				 (long64)gtid->xid, gtid->node, liveMask, participantsMask);
+			result = false;
+		}
+	}
+	MtmUnlock();
+	return result;
+}
 
 /*
  * -------------------------------------------
@@ -2836,6 +2874,18 @@ _PG_init(void)
 		NULL
 	);
 
+	DefineCustomBoolVariable(
+		"multimaster.break_connection",
+		"Break connection with client when node is no online",
+		NULL,
+		&MtmBreakConnection,
+		false,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
 	DefineCustomBoolVariable(
 		"multimaster.major_node",
 		"Node which forms a majority in case of partitioning in cliques with equal number of nodes",
@@ -4358,8 +4408,8 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 		}
 		if (!PrepareTransactionBlock(x->gid))
 		{
-			if (!MtmVolksWagenMode)
-				elog(WARNING, "Failed to prepare transaction %s", x->gid);
+			//if (!MtmVolksWagenMode)
+			elog(WARNING, "Failed to prepare transaction %s (%llu)", x->gid, (long64)x->xid);
 			/* ??? Should we do explicit rollback */
 		} else { 	
 			CommitTransactionCommand();

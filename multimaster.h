@@ -347,7 +347,7 @@ extern timestamp_t MtmRefreshClusterStatusSchedule;
 extern void  MtmArbiterInitialize(void);
 extern void  MtmStartReceivers(void);
 extern void  MtmStartReceiver(int nodeId, bool dynamic);
-extern csn_t MtmTransactionSnapshot(TransactionId xid);
+extern csn_t MtmDistributedTransactionSnapshot(TransactionId xid, int nodeId, nodemask_t* participantsMask);
 extern csn_t MtmAssignCSN(void);
 extern csn_t MtmSyncClock(csn_t csn);
 extern void  MtmJoinTransaction(GlobalTransactionId* gtid, csn_t snapshot);
@@ -402,4 +402,6 @@ extern void MtmRollbackPreparedTransaction(int nodeId, char const* gid);
 extern bool MtmFilterTransaction(char* record, int size);
 extern void MtmPrecommitTransaction(char const* gid);
 extern char* MtmGucSerialize(void);
+extern bool MtmCheckParticipants(GlobalTransactionId* gtid, nodemask_t participants);
+
 #endif
