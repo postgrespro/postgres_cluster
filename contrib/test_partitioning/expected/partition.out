@@ -24,15 +24,14 @@ SELECT * FROM pathman_partition_list;
  abc    | abc_200   |        2 | id       | 200       | 400
 (3 rows)
 
-/* Check that we can omit optional INTO parameter */
-ALTER TABLE abc SPLIT PARTITION abc_200 AT (300);
-ALTER TABLE abc MERGE PARTITIONS abc_200, abc_1;
+ALTER TABLE abc ADD PARTITION abc_400 VALUES LESS THAN (500);
+ALTER TABLE abc DROP PARTITION abc_200;
 SELECT * FROM pathman_partition_list;
  parent | partition | parttype | partattr | range_min | range_max 
 --------+-----------+----------+----------+-----------+-----------
  abc    | abc_inf   |        2 | id       | NULL      | 100
  abc    | abc_100   |        2 | id       | 100       | 200
- abc    | abc_200   |        2 | id       | 200       | 400
+ abc    | abc_400   |        2 | id       | 200       | 500
 (3 rows)
 
 /* Inserting values into area not covered by partitions should create new partition */
@@ -42,12 +41,11 @@ SELECT * FROM pathman_partition_list;
 --------+-----------+----------+----------+-----------+-----------
  abc    | abc_inf   |        2 | id       | NULL      | 100
  abc    | abc_100   |        2 | id       | 100       | 200
- abc    | abc_200   |        2 | id       | 200       | 400
- abc    | abc_2     |        2 | id       | 400       | 500
-(4 rows)
+ abc    | abc_400   |        2 | id       | 200       | 500
+(3 rows)
 
 DROP TABLE abc CASCADE;
-NOTICE:  drop cascades to 4 other objects
+NOTICE:  drop cascades to 3 other objects
 /*
  * Create range partitioned table (in contrast to interval-partitioned in terms
  * of Oracle)
@@ -58,7 +56,7 @@ PARTITION BY RANGE(id)
     PARTITION abc_inf VALUES LESS THAN (100),
     PARTITION abc_100 VALUES LESS THAN (200)
 );
-/* Inserting should produce an error */
+/* Inserting should produce an error because interval hasn't been set */
 INSERT INTO abc VALUES (250);
 ERROR:  could not create new partitions for relation "abc"
 DROP TABLE abc CASCADE;

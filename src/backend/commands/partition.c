@@ -34,7 +34,6 @@ static void create_range_partitions(CreateStmt *stmt, Oid relid, const char *att
 static Node *cookPartitionKeyValue(Oid relid, const char *raw, Node *raw_value);
 static char *RangeVarGetString(const RangeVar *rangevar);
 static Oid RangeVarGetNamespaceId(const RangeVar *rangevar);
-static List* makeNameListFromRangeVar(const RangeVar *rangevar);
 
 #define equalstr(a, b)	\
 	(((a) != NULL && (b) != NULL) ? (strcmp(a, b) == 0) : (a) == (b))
@@ -74,7 +73,7 @@ create_hash_partitions(CreateStmt *stmt, Oid relid, const char* attname)
 	char		 **relnames = NULL;
 	char		 **tablespaces = NULL;
 
-	if (pinfo->partitions_count > 0)
+	if (list_length(pinfo->partitions) > 0)
 	{
 		ListCell   *lc;
 		int			i = 0;
@@ -100,7 +99,11 @@ create_hash_partitions(CreateStmt *stmt, Oid relid, const char* attname)
 							  relnames,
 							  tablespaces);
 
-	pfree(relnames);
+	/* Free allocated resources */
+	if (relnames)
+		pfree(relnames);
+	if (tablespaces)
+		pfree(tablespaces);
 }
 
 
@@ -518,17 +521,4 @@ RangeVarGetNamespaceId(const RangeVar *rangevar)
 		namespace_id = get_namespace_oid(rangevar->schemaname, false);
 
 	return namespace_id;
-}
-
-
-/*
- * This is the inverse function for makeRangeVarFromNameList()
- */
-static List*
-makeNameListFromRangeVar(const RangeVar *rangevar)
-{
-	Oid		namespace_id = RangeVarGetNamespaceId(rangevar);
-
-	return list_make2(makeString(get_namespace_name(namespace_id)),
-					  makeString(rangevar->relname));
 }

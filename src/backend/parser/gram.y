@@ -3030,6 +3030,7 @@ partitionType:	HASH '(' a_expr ')' PARTITIONS '(' Iconst ')'
 						PartitionInfo *n = (PartitionInfo *) palloc(sizeof(PartitionInfo));
 						n->partition_type = P_HASH;
 						n->key = $3;
+						n->partitions = NIL;
 						n->partitions_count = $7;
 						$$ = (PartitionInfo *)n;
 					}

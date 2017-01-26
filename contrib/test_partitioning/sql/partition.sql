@@ -20,9 +20,8 @@ ALTER TABLE abc SPLIT PARTITION abc_200 AT (300) INTO (PARTITION abc_200, PARTIT
 ALTER TABLE abc MERGE PARTITIONS abc_200, abc_300 INTO PARTITION abc_200;
 SELECT * FROM pathman_partition_list;
 
-/* Check that we can omit optional INTO parameter */
-ALTER TABLE abc SPLIT PARTITION abc_200 AT (300);
-ALTER TABLE abc MERGE PARTITIONS abc_200, abc_1;
+ALTER TABLE abc ADD PARTITION abc_400 VALUES LESS THAN (500);
+ALTER TABLE abc DROP PARTITION abc_200;
 SELECT * FROM pathman_partition_list;
 
 /* Inserting values into area not covered by partitions should create new partition */
@@ -42,7 +41,7 @@ PARTITION BY RANGE(id)
     PARTITION abc_100 VALUES LESS THAN (200)
 );
 
-/* Inserting should produce an error */
+/* Inserting should produce an error because interval hasn't been set */
 INSERT INTO abc VALUES (250);
 DROP TABLE abc CASCADE;
 
