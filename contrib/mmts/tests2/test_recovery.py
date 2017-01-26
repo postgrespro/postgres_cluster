@@ -68,7 +68,7 @@ class TestHelper(object):
 class RecoveryTest(unittest.TestCase, TestHelper):
 
     @classmethod
-    def setUpClass(self):
+    def setUpClass(cls):
         subprocess.check_call(['docker-compose','up',
             '--force-recreate',
             '--build',
@@ -77,17 +77,21 @@ class RecoveryTest(unittest.TestCase, TestHelper):
         # XXX: add normal wait here
         time.sleep(TEST_SETUP_TIME)
 
-        self.client = MtmClient([
+        cls.client = MtmClient([
             "dbname=regression user=postgres host=127.0.0.1 port=15432",
             "dbname=regression user=postgres host=127.0.0.1 port=15433",
             "dbname=regression user=postgres host=127.0.0.1 port=15434"
         ], n_accounts=1000)
-        self.client.bgrun()
+        cls.client.bgrun()
 
     @classmethod
-    def tearDownClass(self):
+    def tearDownClass(cls):
         print('tearDown')
-        self.client.stop()
+        cls.client.stop()
+
+        if not cls.client.is_data_identic():
+            raise AssertionError('Different data on nodes')
+
         # XXX: check nodes data identity here
 #        subprocess.check_call(['docker-compose','down'])
 
