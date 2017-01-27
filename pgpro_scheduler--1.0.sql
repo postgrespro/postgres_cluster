@@ -804,7 +804,7 @@ $BODY$
 LANGUAGE plpgsql
    SECURITY DEFINER;
 
-CREATE FUNCTION schedule.get_user_owned_cron() RETURNS SETOF schedule.cron_rec AS
+CREATE FUNCTION schedule.get_owned_cron() RETURNS SETOF schedule.cron_rec AS
 $BODY$
 DECLARE
 	ii schedule.cron;
@@ -820,7 +820,8 @@ $BODY$
 LANGUAGE plpgsql
    SECURITY DEFINER;
 
-CREATE FUNCTION schedule.get_user_owned_cron(usename text) RETURNS SETOF schedule.cron_rec AS
+
+CREATE FUNCTION schedule.get_owned_cron(usename text) RETURNS SETOF schedule.cron_rec AS
 $BODY$
 DECLARE
 	ii schedule.cron;
@@ -839,6 +840,26 @@ END
 $BODY$
 LANGUAGE plpgsql
    SECURITY DEFINER;
+
+CREATE FUNCTION schedule.get_user_owned_cron() RETURNS SETOF schedule.cron_rec AS
+$BODY$
+BEGIN
+	RETURN QUERY  SELECT * from schedule.get_owned_cron();
+END
+$BODY$
+LANGUAGE plpgsql
+   SECURITY DEFINER;
+
+CREATE FUNCTION schedule.get_user_owned_cron(usename text) RETURNS SETOF schedule.cron_rec AS
+$BODY$
+BEGIN
+	RETURN QUERY SELECT * from  schedule.get_owned_cron(usename);
+END
+$BODY$
+LANGUAGE plpgsql
+   SECURITY DEFINER;
+
+
 
 CREATE FUNCTION schedule.get_user_cron() RETURNS SETOF schedule.cron_rec AS
 $BODY$
@@ -905,6 +926,16 @@ BEGIN
 		RETURN NEXT oo;
 	END LOOP;
 	RETURN;
+END
+$BODY$
+LANGUAGE plpgsql
+   SECURITY DEFINER;
+
+CREATE FUNCTION schedule.get_active_jobs(usename text) RETURNS SETOF schedule.cron_job AS
+$BODY$
+DECLARE
+BEGIN
+	RETURN QUERY  SELECT * FROM schedule.get_user_active_jobs(usename);
 END
 $BODY$
 LANGUAGE plpgsql
@@ -982,6 +1013,15 @@ END
 $BODY$
 LANGUAGE plpgsql
    SECURITY DEFINER;
+
+CREATE FUNCTION schedule.get_log(usename text) RETURNS SETOF schedule.cron_job AS
+$BODY$
+BEGIN
+ 	RETURN QUERY SELECT * FROM schedule.get_user_log(usename);
+END
+$BODY$
+LANGUAGE plpgsql
+	SECURITY DEFINER;
 
 CREATE FUNCTION schedule.get_log() RETURNS SETOF schedule.cron_job AS
 $BODY$
