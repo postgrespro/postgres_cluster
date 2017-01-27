@@ -283,7 +283,7 @@ BEGIN
 	END IF;
 	
 	clean_cron := '{}'::jsonb;
-	FOR name IN SELECT * FROM unnest('{dates, crontab, onstart, days, hours, wdays, mounths, minutes}'::text[])
+	FOR name IN SELECT * FROM unnest('{dates, crontab, onstart, days, hours, wdays, months, minutes}'::text[])
 	LOOP
 		IF cron?name THEN
 			clean_cron := jsonb_set(clean_cron, array_append('{}'::text[], name), cron->name);
