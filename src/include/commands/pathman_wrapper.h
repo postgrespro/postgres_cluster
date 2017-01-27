@@ -37,7 +37,7 @@ typedef struct FuncArgs
 void InitFuncArgs(FuncArgs *funcargs, uint32 size);
 void FreeFuncArgs(FuncArgs *funcargs);
 
-const char *get_pathman_schema_name();
+const char *get_pathman_schema_name(void);
 Oid get_pathman_schema(void);
 
 void pm_get_part_range(Oid relid, int partpos, Oid atttype, Datum *min, Datum *max);
@@ -47,14 +47,17 @@ char *pm_get_partition_key(Oid relid);
 void pm_create_hash_partitions(Oid relid,
 						  const char *attname,
 						  uint32_t partitions_count,
+						  bool partition_data,
 						  char **relnames,
 						  char **tablespaces);
 void pm_create_range_partitions(Oid relid,
 						const char *attname,
 						Oid atttype,
+						Datum start_from,
 						Datum interval,
 						Oid interval_type,
-						bool interval_isnull);
+						bool interval_isnull,
+						bool partition_data);
 
 void pm_add_range_partition(Oid relid,
 					Oid type,

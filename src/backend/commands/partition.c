@@ -29,8 +29,11 @@
 #include "utils/lsyscache.h"
 
 
-static void create_hash_partitions(CreateStmt *stmt, Oid relid, const char* attname);
-static void create_range_partitions(CreateStmt *stmt, Oid relid, const char *attname);
+static void create_hash_partitions(PartitionInfo *pinfo,
+								   Oid relid,
+								   const char* attname,
+								   bool partition_data);
+static void create_range_partitions(PartitionInfo *pinfo, Oid relid, const char *attname, bool partition_data);
 static Node *cookPartitionKeyValue(Oid relid, const char *raw, Node *raw_value);
 static char *RangeVarGetString(const RangeVar *rangevar);
 static Oid RangeVarGetNamespaceId(const RangeVar *rangevar);
@@ -40,9 +43,8 @@ static Oid RangeVarGetNamespaceId(const RangeVar *rangevar);
 
 
 void
-create_partitions(CreateStmt *stmt, Oid relid)
+create_partitions(PartitionInfo *pinfo, Oid relid, bool partition_data)
 {
-	PartitionInfo *pinfo = (PartitionInfo *) stmt->partition_info;
 	Value  *attname = (Value *) linitial(((ColumnRef *) pinfo->key)->fields);
 
 	if (SPI_connect() != SPI_OK_CONNECT)
@@ -52,12 +54,12 @@ create_partitions(CreateStmt *stmt, Oid relid)
 	{
 		case P_HASH:
 			{
-				create_hash_partitions(stmt, relid, strVal(attname));
+				create_hash_partitions(pinfo, relid, strVal(attname), partition_data);
 				break;
 			}
 		case P_RANGE:
 			{
-				create_range_partitions(stmt, relid, strVal(attname));
+				create_range_partitions(pinfo, relid, strVal(attname), partition_data);
 				break;
 			}
 	}
@@ -67,11 +69,13 @@ create_partitions(CreateStmt *stmt, Oid relid)
 
 
 static void
-create_hash_partitions(CreateStmt *stmt, Oid relid, const char* attname)
+create_hash_partitions(PartitionInfo *pinfo,
+					   Oid relid,
+					   const char* attname,
+					   bool partition_data)
 {
-	PartitionInfo *pinfo = (PartitionInfo *) stmt->partition_info;
-	char		 **relnames = NULL;
-	char		 **tablespaces = NULL;
+	char **relnames = NULL;
+	char **tablespaces = NULL;
 
 	if (list_length(pinfo->partitions) > 0)
 	{
@@ -96,6 +100,7 @@ create_hash_partitions(CreateStmt *stmt, Oid relid, const char* attname)
 	pm_create_hash_partitions(relid,
 							  attname,
 							  pinfo->partitions_count,
+							  partition_data,
 							  relnames,
 							  tablespaces);
 
@@ -112,34 +117,34 @@ create_hash_partitions(CreateStmt *stmt, Oid relid, const char* attname)
  * and all partitions via pg_pathman's wrapper functions
  */
 static void
-create_range_partitions(CreateStmt *stmt, Oid relid, const char *attname)
+create_range_partitions(PartitionInfo *pinfo,
+						Oid relid,
+						const char *attname,
+						bool partition_data)
 {
 	ListCell	   *lc;
 	Datum			last_bound = (Datum) 0;
 	bool			last_bound_is_null = true;
-	PartitionInfo  *pinfo = (PartitionInfo *) stmt->partition_info;
 
 	/* partitioning key */
-	AttrNumber	attnum = get_attnum(relid, attname);
-	Oid			atttype;
-	int32		atttypmod;
+	AttrNumber		attnum = get_attnum(relid, attname);
+	Oid				atttype;
+	int32			atttypmod;
+	Datum			start_value;
 
 	/* parameters */
-	Datum		interval_datum = (Datum) 0;
-	Oid			interval_type;
-
-	/* for parsing interval */
-	Const	   *interval_const;
-	ParseState *pstate = make_parsestate(NULL);
+	Datum			interval_datum = (Datum) 0;
+	Oid				interval_type;
+	Const		   *interval_const;
+	ParseState	   *pstate = make_parsestate(NULL);
 
 	if (!attnum)
-		elog(ERROR,
-			 "Unknown attribute '%s'",
-			 attname);
+		elog(ERROR, "Unknown attribute '%s'", attname);
+
 	atttype = get_atttype(relid, attnum);
 	atttypmod = get_atttypmod(relid, attnum);
 
-	/* Convert interval to Const node */
+	/* If interval is set then convert it to a suitable Datum value */
 	if (pinfo->interval != NULL)
 	{
 		if (IsA(pinfo->interval, A_Const))
@@ -152,44 +157,75 @@ create_range_partitions(CreateStmt *stmt, Oid relid, const char *attname)
 		else
 			elog(ERROR, "Constant interval value is expected");
 
-		/* If attribute is of type DATE or TIMESTAMP then convert interval to Interval type */
-		if (atttype == DATEOID || atttype == TIMESTAMPOID || atttype == TIMESTAMPTZOID)
+		/*
+		 * If attribute is of type DATE or TIMESTAMP then convert interval to
+		 * Interval type
+		 */
+		switch (atttype)
 		{
-			char	   *interval_literal;
+			case DATEOID:
+			case TIMESTAMPOID:
+			case TIMESTAMPTZOID:
+				{
+					char	   *interval_literal;
 
-			/* We should get an UNKNOWN type here */
-			if (interval_const->consttype != UNKNOWNOID)
-				elog(ERROR, "Expected a literal as an interval value");
+					/* We should get an UNKNOWN type here */
+					if (interval_const->consttype != UNKNOWNOID)
+						elog(ERROR, "Expected a literal as an interval value");
 
-			/* Get a text representation of the interval */
-			interval_literal = DatumGetCString(interval_const->constvalue);
-			interval_datum = DirectFunctionCall3(interval_in,
-												 CStringGetDatum(interval_literal),
-												 ObjectIdGetDatum(InvalidOid),
-												 Int32GetDatum(-1));
-			interval_type = INTERVALOID;
-		}
-		else
-		{
-			interval_datum = interval_const->constvalue;
-			interval_type = interval_const->consttype;
+					/* Get a text representation of the interval */
+					interval_literal = DatumGetCString(interval_const->constvalue);
+					interval_datum = DirectFunctionCall3(interval_in,
+														 CStringGetDatum(interval_literal),
+														 ObjectIdGetDatum(InvalidOid),
+														 Int32GetDatum(-1));
+					interval_type = INTERVALOID;
+				}
+				break;
+			default:
+				interval_datum = interval_const->constvalue;
+				interval_type = interval_const->consttype;
 		}
 	}
 	else /* If interval is not set  */
 	{
-		if (atttype == DATEOID || atttype == TIMESTAMPOID || atttype == TIMESTAMPTZOID)
-			interval_type = INTERVALOID;
-		else
-			interval_type = atttype;
+		switch (atttype)
+		{
+			case DATEOID:
+			case TIMESTAMPOID:
+			case TIMESTAMPTZOID:
+				interval_type = INTERVALOID;
+			default:
+				interval_type = atttype;
+		}
 	}
+
+	/*
+	 * Start value. It is always non-NULL whenever partition_data = True.
+	 * Otherwise the actual start value doesn't matter
+	 */
+	Assert( (pinfo->start_value != NULL) == partition_data );
+	if (pinfo->start_value)
+	{
+		Node *n = cookPartitionKeyValue(relid,
+										 attname,
+										 (Node *) pinfo->start_value);
+		if (!IsA(n, Const))
+			elog(ERROR, "Start value must be a constatnt");
+		start_value = ((Const *) n)->constvalue;
+	}
+	else
+		start_value = (Datum) 0;
 
 	/* Invoke pg_pathman's wrapper */
 	pm_create_range_partitions(relid,
 							   attname,
 							   atttype,
+							   start_value,
 							   interval_datum,
 							   interval_type,
-							   pinfo->interval == NULL);
+							   pinfo->interval == NULL,
+							   partition_data);
 
 	/* Add partitions */
 	foreach(lc, pinfo->partitions)
@@ -521,4 +557,10 @@ RangeVarGetNamespaceId(const RangeVar *rangevar)
 		namespace_id = get_namespace_oid(rangevar->schemaname, false);
 
 	return namespace_id;
+}
+
+void
+partition_existing_table(Oid relid, AlterTableCmd *cmd)
+{
+
 }

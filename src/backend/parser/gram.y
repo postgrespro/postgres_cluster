@@ -545,7 +545,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <str>		opt_existing_window_name
 %type <boolean> opt_if_not_exists
 
-%type <partinfo> partitionType;
+%type <partinfo> createPartitionType alterPartitionType;
 %type <rangeinfo> OptRangePartitionsListElement OptHashPartitionsListElement
 				PartitionNameTablespace
 %type <list>	OptRangePartitionsList OptHashPartitionsList OptRangePartitions
@@ -2463,6 +2463,13 @@ alter_table_cmd:
 					n->name = $5;
 					$$ = (Node *)n;
 				}
+			| PARTITION BY alterPartitionType
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_PartitionBy;
+					n->def = (Node *) $3;
+					$$ = (Node *)n;
+				}
 		;
 
 alter_column_default:
@@ -2587,6 +2594,28 @@ PartitionNameTablespace:
 					n->relation = $2;
 					n->tablespace = $3;
 					$$ = n;
+				}
+		;
+
+alterPartitionType:
+			HASH '(' a_expr ')' PARTITIONS '(' Iconst ')'
+				{
+					PartitionInfo *n = makeNode(PartitionInfo);
+					n->partition_type = P_HASH;
+					n->key = $3;
+					n->partitions = NIL;
+					n->partitions_count = $7;
+					$$ = (PartitionInfo *)n;
+				}
+			| RANGE '(' columnref ')' START FROM '(' b_expr ')' INTERVAL '(' AexprConst ')'
+				{
+					PartitionInfo *n = makeNode(PartitionInfo);
+					n->partition_type = P_RANGE;
+					n->key = $3;
+					n->start_value = $8;
+					n->interval = $12;
+					n->partitions = NIL;
+					$$ = (PartitionInfo *)n;
 				}
 		;
 
@@ -3007,7 +3036,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 				}
 		| CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 			OptInherit OptWith OnCommitOption OptTableSpace
-			PARTITION BY partitionType
+			PARTITION BY createPartitionType
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 					$4->relpersistence = $2;
@@ -3025,9 +3054,9 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 				}
 		;
 
-partitionType:	HASH '(' a_expr ')' PARTITIONS '(' Iconst ')'
+createPartitionType:	HASH '(' a_expr ')' PARTITIONS '(' Iconst ')'
 					{
-						PartitionInfo *n = (PartitionInfo *) palloc(sizeof(PartitionInfo));
+						PartitionInfo *n = makeNode(PartitionInfo);
 						n->partition_type = P_HASH;
 						n->key = $3;
 						n->partitions = NIL;
@@ -3036,7 +3065,7 @@ partitionType:	HASH '(' a_expr ')' PARTITIONS '(' Iconst ')'
 					}
 				| HASH '(' a_expr ')' '(' OptHashPartitionsList ')'
 					{
-						PartitionInfo *n = (PartitionInfo *) palloc(sizeof(PartitionInfo));
+						PartitionInfo *n = makeNode(PartitionInfo);
 						n->partition_type = P_HASH;
 						n->key = $3;
 						n->partitions = $6;
@@ -3045,7 +3074,7 @@ partitionType:	HASH '(' a_expr ')' PARTITIONS '(' Iconst ')'
 					}
 				| RANGE '(' columnref ')' OptRangePartitionsInterval OptRangePartitions
 					{
-						PartitionInfo *n = (PartitionInfo *) palloc(sizeof(PartitionInfo));
+						PartitionInfo *n = makeNode(PartitionInfo);
 						n->partition_type = P_RANGE;
 						n->key = $3;
 						n->interval = $5;

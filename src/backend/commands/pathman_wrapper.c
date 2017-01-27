@@ -153,7 +153,7 @@ get_pathman_schema(void)
 
 
 const char *
-get_pathman_schema_name()
+get_pathman_schema_name(void)
 {
 	Oid schema_oid = get_pathman_schema();
 
@@ -266,6 +266,7 @@ void
 pm_create_hash_partitions(Oid relid,
 						  const char *attname,
 						  uint32_t partitions_count,
+						  bool partition_data,
 						  char **relnames,
 						  char **tablespaces)
 {
@@ -276,7 +277,7 @@ pm_create_hash_partitions(Oid relid,
 	PG_SETARG_DATUM(&args, 0, OIDOID, ObjectIdGetDatum(relid));
 	PG_SETARG_DATUM(&args, 1, TEXTOID, CStringGetTextDatum(attname));
 	PG_SETARG_DATUM(&args, 2, INT4OID, ObjectIdGetDatum(UInt32GetDatum(partitions_count)));
-	PG_SETARG_DATUM(&args, 3, BOOLOID, BoolGetDatum(false));
+	PG_SETARG_DATUM(&args, 3, BOOLOID, BoolGetDatum(partition_data));
 
 	if (relnames != NULL)
 		PG_SETARG_DATUM(&args, 4, TEXTARRAYOID,
@@ -327,28 +328,39 @@ void
 pm_create_range_partitions(Oid relid,
 						const char *attname,
 						Oid atttype,
+						Datum start_from,
 						Datum interval,
 						Oid interval_type,
-						bool interval_isnull)
+						bool interval_isnull,
+						bool partition_data)
 {
 	FuncArgs		args;
 	int				ret;
 
-	InitFuncArgs(&args, 5);
+	InitFuncArgs(&args, 6);
 	PG_SETARG_DATUM(&args, 0, OIDOID, relid);
 	PG_SETARG_DATUM(&args, 1, TEXTOID, PointerGetDatum(cstring_to_text(attname)));
-	/* TODO: get value from first partition */
-	PG_SETARG_DATUM(&args, 2, atttype, Int32GetDatum(0));
+	PG_SETARG_DATUM(&args, 2, atttype, start_from);
 
 	if (!interval_isnull)
 		PG_SETARG_DATUM(&args, 3, interval_type, interval);
 	else
 		PG_SETARG_NULL(&args, 3, interval_type);
 
-	/* Zero partitions */
-	PG_SETARG_DATUM(&args, 4, INT4OID, Int32GetDatum(0));
+	/*
+	 * If we want to migrate data right away then we need to prepopulate
+	 * partitions. In this case we set partitions count as NULL so that
+	 * pg_pathman would calculate it based on table data. Otherwise set
+	 * partitions count to zero assuming that new partitions will be added
+	 * explicitly by invoking pm_add_range_partition()
+	 */
+	if (partition_data)
+		PG_SETARG_NULL(&args, 4, INT4OID);
+	else
+		PG_SETARG_DATUM(&args, 4, INT4OID, Int32GetDatum(0));
+	PG_SETARG_DATUM(&args, 5, BOOLOID, BoolGetDatum(partition_data));
 
-	ret = pathman_invoke("create_range_partitions($1, $2, $3, $4, $5)", &args);
+	ret = pathman_invoke("create_range_partitions($1, $2, $3, $4, $5, $6)", &args);
 	FreeFuncArgs(&args);
 
 	if (!ret)

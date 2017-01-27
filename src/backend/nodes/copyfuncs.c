@@ -2848,7 +2848,6 @@ static AlterTableCmd *
 _copyAlterTableCmd(const AlterTableCmd *from)
 {
 	AlterTableCmd *newnode = makeNode(AlterTableCmd);
-	ListCell *lc;
 
 	COPY_SCALAR_FIELD(subtype);
 	COPY_STRING_FIELD(name);
@@ -2857,15 +2856,6 @@ _copyAlterTableCmd(const AlterTableCmd *from)
 	COPY_SCALAR_FIELD(behavior);
 	COPY_SCALAR_FIELD(missing_ok);
 	COPY_NODE_FIELD(partitions);
-
-	/* TODO: write a decent copy func */
-	// newnode->partitions = from->partitions;
-
-	// if (from->partition)
-	// 	// COPY_POINTER_FIELD(partition, sizeof(RangePartitionInfo));
-	// 	COPY_NODE_FIELD(partition);
-	// else
-	// 	newnode->partition = NULL;
 
 	return newnode;
 }
@@ -4298,6 +4288,21 @@ _copyRangePartitionInfo(const RangePartitionInfo *from)
 	return newnode;
 }
 
+static PartitionInfo *
+_copyPartitionInfo(const PartitionInfo *from)
+{
+	PartitionInfo *newnode = makeNode(PartitionInfo);
+
+	COPY_SCALAR_FIELD(partition_type);
+	COPY_NODE_FIELD(key);
+	COPY_SCALAR_FIELD(partitions_count);
+	COPY_NODE_FIELD(interval);
+	COPY_NODE_FIELD(partitions);
+	COPY_NODE_FIELD(start_value);
+
+	return newnode;
+}
+
 /*
  * copyObject
  *
@@ -5102,10 +5107,13 @@ copyObject(const void *from)
 		case T_ForeignKeyCacheInfo:
 			retval = _copyForeignKeyCacheInfo(from);
 			break;
-
+		case T_PartitionInfo:
+			retval = _copyPartitionInfo(from);
+			break;
 		case T_RangePartitionInfo:
 			retval = _copyRangePartitionInfo(from);
 			break;
+
 
 		default:
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(from));

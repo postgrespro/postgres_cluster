@@ -1443,10 +1443,12 @@ typedef enum PartitionType
 
 typedef struct PartitionInfo
 {
+	NodeTag			type;
 	PartitionType	partition_type;		/* partition type */
 	Node		   *key;				/* ColumnRef (Expr in future) */
 	uint32			partitions_count;	/* for PT_HASH only */
 	Node		   *interval;			/* for PT_RANGE only */
+	Node		   *start_value;		/* for PT_RANGE only */
 	List		   *partitions;			/* List of RangePartitionInfo */
 } PartitionInfo;
 
@@ -1454,7 +1456,7 @@ typedef struct RangePartitionInfo
 {
 	NodeTag			type;
 	RangeVar	   *relation;
-	Node		   *upper_bound;
+	Node		   *upper_bound;		/* For RANGE partitions only */
 	char		   *tablespace;
 } RangePartitionInfo;
 
@@ -1565,7 +1567,8 @@ typedef enum AlterTableType
 	AT_SplitPartition,			/* SPLIT PARTITION */
 	AT_RenamePartition,			/* RENAME PARTITION */
 	AT_DropPartition,			/* DROP PARTITION */
-	AT_MovePartition			/* MOVE PARTITION */
+	AT_MovePartition,			/* MOVE PARTITION */
+	AT_PartitionBy				/* PARTITION BY RANGE/HASH */
 } AlterTableType;
 
 typedef struct ReplicaIdentityStmt

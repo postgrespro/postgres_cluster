@@ -14,12 +14,13 @@
 #include "postgres.h"
 #include "nodes/parsenodes.h"
 
-extern void create_partitions(CreateStmt *stmt, Oid relid);
+extern void create_partitions(PartitionInfo *pinfo, Oid relid, bool partition_data);
 extern void merge_range_partitions(List *partitions, RangePartitionInfo *into);
 extern void add_range_partition(Oid parent, RangePartitionInfo *rpinfo);
 extern void split_range_partition(Oid relid, AlterTableCmd *cmd);
 extern void rename_partition(Oid parent, AlterTableCmd *cmd);
 extern void drop_partition(Oid parent, AlterTableCmd *cmd);
 extern void move_partition(Oid parent, AlterTableCmd *cmd);
+extern void partition_existing_table(Oid relid, AlterTableCmd *cmd);
 
 #endif /* PARTITION_H */
