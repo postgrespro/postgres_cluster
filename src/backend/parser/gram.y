@@ -673,7 +673,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
  * as NOT, at least with respect to their left-hand subexpression.
  * NULLS_LA and WITH_LA are needed to make the grammar LALR(1).
  */
-%token		NOT_LA NULLS_LA WITH_LA
+%token		NOT_LA NULLS_LA WITH_LA ADD_PARTITION DROP_PARTITION RENAME_PARTITION
 
 
 /* Precedence: lowest to highest */
@@ -2391,7 +2391,7 @@ alter_table_cmd:
 					n->def = (Node *)$1;
 					$$ = (Node *) n;
 				}
-			| ADD_P OptRangePartitionsListElement
+			| ADD_PARTITION OptRangePartitionsListElement
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					n->subtype = AT_AddPartition;
@@ -2440,7 +2440,7 @@ alter_table_cmd:
 
 					$$ = (Node *) n;
 				}
-			| RENAME PARTITION relation_expr TO name
+			| RENAME_PARTITION PARTITION relation_expr TO name
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					n->subtype = AT_RenamePartition;
@@ -2448,7 +2448,7 @@ alter_table_cmd:
 					n->name = $5;
 					$$ = (Node *)n;
 				}
-			| DROP PARTITION qualified_name
+			| DROP_PARTITION PARTITION qualified_name
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					n->subtype = AT_DropPartition;
@@ -14251,6 +14251,7 @@ unreserved_keyword:
 			| PARALLEL
 			| PARSER
 			| PARTIAL
+			| PARTITION
 			| PARTITIONS
 			| PASSING
 			| PASSWORD
@@ -14527,7 +14528,6 @@ reserved_keyword:
 			| ONLY
 			| OR
 			| ORDER
-			| PARTITION
 			| PLACING
 			| PRIMARY
 			| REFERENCES
