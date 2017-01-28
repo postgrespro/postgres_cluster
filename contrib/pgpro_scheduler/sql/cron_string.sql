@@ -35,6 +35,7 @@ select schedule.create_job(
 	}'
 );
 
-select * from schedule.cron order by id;
+select id,node,name,rule,do_sql,same_transaction, postpone,retry from schedule.cron order by id;
+
 
 drop user __temp_robot;
