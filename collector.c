@@ -356,7 +356,7 @@ collector_main(Datum main_arg)
 					profile_period - (int)profile_diff));
 
 		if (rc & WL_POSTMASTER_DEATH)
-			exit(1);
+			proc_exit(1);
 
 		ResetLatch(&MyProc->procLatch);
 
