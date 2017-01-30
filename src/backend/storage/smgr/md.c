@@ -504,6 +504,7 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 		if (md_use_compression(rnode, forkNum))
 		{
 			File file = PathNameOpenFile(path, O_RDWR | PG_BINARY | PG_COMPRESSION, 0);
+			ret = -1;
 			if (file >= 0)
 			{
 				elog(LOG, "Truncate file %s", path);
@@ -512,11 +513,12 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 					ereport(WARNING,
 							(errcode_for_file_access(),
 							 errmsg("could not truncate file \"%s\": %m", path)));
-				}
+				} else
+					ret = 0;
 			}
 			FileClose(file);
 		}
-		else 
+		else
 		{
 			/* truncate(2) would be easier here, but Windows hasn't got it */
 			int                     fd;

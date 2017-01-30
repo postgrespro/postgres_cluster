@@ -670,6 +670,8 @@ static bool cfs_gc_file(char* map_path)
 						close(md2);
 						md2 = -1;
 						newSize = pg_atomic_read_u32(&newMap->usedSize);
+						virtSize = pg_atomic_read_u32(&newMap->virtSize);
+						n_pages = virtSize / BLCKSZ;
 						remove_backups = false;
 						goto ReplaceMap;
 					}

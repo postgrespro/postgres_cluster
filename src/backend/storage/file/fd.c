@@ -2166,7 +2166,9 @@ FileTruncate(File file, off_t offset)
 		pg_atomic_write_u32(&map->virtSize, offset);
 		pg_atomic_fetch_sub_u32(&map->usedSize, released);
 		cfs_unlock_file(map);
-		returnCode = 0;
+
+		/* We can truncate compressed file only with zero offset */
+		returnCode = (offset == 0) ? ftruncate(VfdCache[file].fd, 0) : 0;
 	}
 	else
 		returnCode = ftruncate(VfdCache[file].fd, offset);

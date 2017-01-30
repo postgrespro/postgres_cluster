@@ -2754,7 +2754,7 @@ else
 fi
 
 
-PGPRO_VERSION="$PACKAGE_VERSION.2"
+PGPRO_VERSION="$PACKAGE_VERSION.3"
 PGPRO_PACKAGE_NAME="PostgresPro"
 PGPRO_EDITION="enterprise"
 
@@ -9898,6 +9898,62 @@ done
 fi
 
 if test "$with_icu" = yes ; then
+ { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open" >&5
+$as_echo_n "checking for library containing ucol_open... " >&6; }
+if ${ac_cv_search_ucol_open+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char ucol_open ();
+int
+main ()
+{
+return ucol_open ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' icui18n icuin; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_ucol_open=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if ${ac_cv_search_ucol_open+:} false; then :
+  break
+fi
+done
+if ${ac_cv_search_ucol_open+:} false; then :
+
+else
+  ac_cv_search_ucol_open=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_ucol_open" >&5
+$as_echo "$ac_cv_search_ucol_open" >&6; }
+ac_res=$ac_cv_search_ucol_open
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+else
+
  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_57" >&5
 $as_echo_n "checking for library containing ucol_open_57... " >&6; }
 if ${ac_cv_search_ucol_open_57+:} false; then :
@@ -10900,6 +10956,54 @@ fi
 
 fi
 
+
+fi
+
+ { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars in -licuuc" >&5
+$as_echo_n "checking for ucnv_fromUChars in -licuuc... " >&6; }
+if ${ac_cv_lib_icuuc_ucnv_fromUChars+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-licuuc  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char ucnv_fromUChars ();
+int
+main ()
+{
+return ucnv_fromUChars ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_icuuc_ucnv_fromUChars=yes
+else
+  ac_cv_lib_icuuc_ucnv_fromUChars=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_icuuc_ucnv_fromUChars" >&5
+$as_echo "$ac_cv_lib_icuuc_ucnv_fromUChars" >&6; }
+if test "x$ac_cv_lib_icuuc_ucnv_fromUChars" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LIBICUUC 1
+_ACEOF
+
+  LIBS="-licuuc $LIBS"
+
+else
+
  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_57 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_57 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_57+:} false; then :
@@ -11665,6 +11769,9 @@ _ACEOF
 
 else
   as_fn_error $? "library 'icuuc' is required for ICU" "$LINENO" 5
+fi
+
+
 fi
 
 

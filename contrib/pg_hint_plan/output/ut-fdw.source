@@ -3,12 +3,18 @@ SET search_path TO public;
 SET pg_hint_plan.debug_print TO on;
 SET client_min_messages TO LOG;
 SET pg_hint_plan.enable_hint TO on;
+LOG:  statement: SET pg_hint_plan.enable_hint TO on;
 CREATE EXTENSION file_fdw;
+LOG:  statement: CREATE EXTENSION file_fdw;
 CREATE SERVER file_server FOREIGN DATA WRAPPER file_fdw;
+LOG:  statement: CREATE SERVER file_server FOREIGN DATA WRAPPER file_fdw;
 CREATE USER MAPPING FOR PUBLIC SERVER file_server;
+LOG:  statement: CREATE USER MAPPING FOR PUBLIC SERVER file_server;
 CREATE FOREIGN TABLE ft1 (id int, val int) SERVER file_server OPTIONS (format 'csv', filename '@abs_srcdir@/data/data.csv');
+LOG:  statement: CREATE FOREIGN TABLE ft1 (id int, val int) SERVER file_server OPTIONS (format 'csv', filename '@abs_srcdir@/data/data.csv');
 -- foreign table test
 SELECT * FROM ft1;
+LOG:  statement: SELECT * FROM ft1;
  id | val 
 ----+-----
   1 |   1
@@ -25,6 +31,7 @@ SELECT * FROM ft1;
 
 \t
 EXPLAIN (COSTS false) SELECT * FROM s1.t1, ft1 ft_1, ft1 ft_2 WHERE t1.c1 = ft_1.id AND t1.c1 = ft_2.id;
+LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM s1.t1, ft1 ft_1, ft1 ft_2 WHERE t1.c1 = ft_1.id AND t1.c1 = ft_2.id;
  Nested Loop
    Join Filter: (t1.c1 = ft_2.id)
    ->  Nested Loop
@@ -40,6 +47,8 @@ EXPLAIN (COSTS false) SELECT * FROM s1.t1, ft1 ft_1, ft1 ft_2 WHERE t1.c1 = ft_1
 ----
 -- No. S-1-5-6
 /*+SeqScan(t1)SeqScan(ft_1)SeqScan(ft_2)*/
+EXPLAIN (COSTS false) SELECT * FROM s1.t1, ft1 ft_1, ft1 ft_2 WHERE t1.c1 = ft_1.id AND t1.c1 = ft_2.id;
+LOG:  statement: /*+SeqScan(t1)SeqScan(ft_1)SeqScan(ft_2)*/
 EXPLAIN (COSTS false) SELECT * FROM s1.t1, ft1 ft_1, ft1 ft_2 WHERE t1.c1 = ft_1.id AND t1.c1 = ft_2.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -66,6 +75,8 @@ error hint:
 ----
 -- No. J-1-6-6
 /*+MergeJoin(ft_1 ft_2)Leading(ft_1 ft_2 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM s1.t1, ft1 ft_1, ft1 ft_2 WHERE t1.c1 = ft_1.id AND t1.c1 = ft_2.id;
+LOG:  statement: /*+MergeJoin(ft_1 ft_2)Leading(ft_1 ft_2 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM s1.t1, ft1 ft_1, ft1 ft_2 WHERE t1.c1 = ft_1.id AND t1.c1 = ft_2.id;
 LOG:  pg_hint_plan:
 used hint:
@@ -95,6 +106,8 @@ error hint:
 -- No. L-1-6-6
 /*+Leading(ft_1 ft_2 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM s1.t1, ft1 ft_1, ft1 ft_2 WHERE t1.c1 = ft_1.id AND t1.c1 = ft_2.id;
+LOG:  statement: /*+Leading(ft_1 ft_2 t1)*/
+EXPLAIN (COSTS false) SELECT * FROM s1.t1, ft1 ft_1, ft1 ft_2 WHERE t1.c1 = ft_1.id AND t1.c1 = ft_2.id;
 LOG:  pg_hint_plan:
 used hint:
 Leading(ft_1 ft_2 t1)
@@ -118,6 +131,8 @@ error hint:
 -- No. R-1-6-6
 \o results/ut-fdw.tmpout
 /*+Rows(ft_1 ft_2 #1)Leading(ft_1 ft_2 t1)*/
+EXPLAIN SELECT * FROM s1.t1, ft1 ft_1, ft1 ft_2 WHERE t1.c1 = ft_1.id AND t1.c1 = ft_2.id;
+LOG:  statement: /*+Rows(ft_1 ft_2 #1)Leading(ft_1 ft_2 t1)*/
 EXPLAIN SELECT * FROM s1.t1, ft1 ft_1, ft1 ft_2 WHERE t1.c1 = ft_1.id AND t1.c1 = ft_2.id;
 LOG:  pg_hint_plan:
 used hint:
