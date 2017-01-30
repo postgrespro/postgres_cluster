@@ -1,12 +1,12 @@
 # `Administration`
 
-1. [Installation](doc/administration.md)
-1. [Setting up empty cluster](doc/administration.md)
-1. [Setting up cluster from pre-existing database](doc/administration.md)
-1. [Tuning configuration params](doc/administration.md)
-1. [Monitoring](doc/administration.md)
-1. [Adding nodes to cluster](doc/administration.md)
-1. [Excluding nodes from cluster](doc/administration.md)
+1. [Installation](#installation)
+1. [Setting up empty cluster](#setting-up-empty-cluster)
+1. [Setting up cluster from pre-existing database](#setting-up-cluster-from-pre-existing-database)
+1. [Tuning configuration params](#tuning-configuration-params)
+1. [Monitoring](#monitoring)
+1. [Adding nodes to cluster](#adding-nodes-to-cluster)
+1. [Excluding nodes from cluster](#excluding-nodes-from-cluster)
 
 
 
