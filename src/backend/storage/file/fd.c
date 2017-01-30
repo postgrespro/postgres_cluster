@@ -2146,7 +2146,6 @@ FileTruncate(File file, off_t offset)
 	if (returnCode < 0)
 		return returnCode;
 
-	/* TODO Why don't we truncate compressed files here? */
 	if (VfdCache[file].fileFlags & PG_COMPRESSION)
 	{
 		int i;
