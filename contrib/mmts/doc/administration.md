@@ -1,12 +1,12 @@
 # `Administration`
 
-1. [Installation](doc/administration.md)
-1. [Setting up empty cluster](doc/administration.md)
-1. [Setting up cluster from pre-existing database](doc/administration.md)
-1. [Tuning configuration params](doc/administration.md)
-1. [Monitoring](doc/administration.md)
-1. [Adding nodes to cluster](doc/administration.md)
-1. [Excluding nodes from cluster](doc/administration.md)
+1. [Installation](#installation)
+1. [Setting up empty cluster](#setting-up-empty-cluster)
+1. [Setting up cluster from pre-existing database](#setting-up-cluster-from-pre-existing-database)
+1. [Tuning configuration params](#tuning-configuration-params)
+1. [Monitoring](#monitoring)
+1. [Adding nodes to cluster](#adding-nodes-to-cluster)
+1. [Excluding nodes from cluster](#excluding-nodes-from-cluster)
 
 
 
@@ -52,8 +52,14 @@ cd contrib/mmts && make install
 
 ### Docker
 
-Directory contrib/mmts also includes docker-compose.yml that is capable of building multi-master and starting 3 node cluster listening on port 15432, 15433 and 15434.
+Directory contrib/mmts also includes docker-compose.yml that is capable of building multi-master and starting 3 node cluster.
 
+First of all we need to build PGPro EE docker image (We will remove this step when we'll merge _MULTIMASTER branch and start building packages). In the repo root run:
+```
+docker build -t pgproent
+```
+
+Then following command will start cluster of 3 docker nodes listening on port 15432, 15433 and 15434 (edit docker-compose.yml to change start params):
 ```
 cd contrib/mmts
 docker-compose up
@@ -65,7 +71,7 @@ When things go more stable we will release prebuilt packages for major platforms
 
 
 
-## Configuration
+## Setting up empty cluster
 
 After installing software on all cluster nodes we can configure our cluster. Here we describe how to set up multimaster consisting of 3 nodes with empty database. Suppose our nodes accesible via domain names ```node1```, ```node2``` and ```node3```. Perform following steps on each node (sequentially or in parallel – doesn't matter):
 
@@ -149,13 +155,32 @@ After installing software on all cluster nodes we can configure our cluster. Her
 
 
 ## Setting up cluster from pre-existing database
+
+In case of preexisting database setup would be slightly different. Suppose we have running database on server ```node1``` and wan't to turn it to a multimaster by adding two new nodes ```node2``` and ```node3```. Instead of initializing new directory and creating database and user through a temporary launch, one need to initialize new node through pg_basebackup from working node.
+
+1. On each new node run:
+
+    ```
+    pg_basebackup -D ./datadir -h node1 mydb
+    ```
+
+After that configure and atart multimaster from step 3 of previous section. See deteailed description of pg_basebackup options in the official [documentation](https://www.postgresql.org/docs/9.6/static/app-pgbasebackup.html).
+
+
 ## Tuning configuration params
+
+While multimaster is usable with default configuration optins several params may require tuning.
+
+* Hearbeat timeouts — multimaster periodically send heartbeat packets to check availability of neighbour nodes. ```multimaster.heartbeat_send_timeout``` defines amount of time between sending heartbeats, while ```multimaster.heartbeat_recv_timeout``` sets amount of time following which node assumed to be disconnected if no hearbeats were received during this time. It's good idea to set ```multimaster.heartbeat_send_timeout``` based on typical ping latencies between you nodes. Small recv/senv ratio decraeases time of failure detection, but increases probability of false positive failure detection, so tupical packet loss ratio between nodes should be taken into account.
+
+* Min/max recovery lag — when node is disconnected from the cluster other nodes will keep to collect WAL logs for disconnected node until size of WAL log will grow to ```multimaster.max_recovery_lag```. Upon reaching this threshold WAL logs for disconnected node will be deleted, automatic recovery will be no longer possible and disconnected node should be cloned manually from one of alive node by ```pg_basebackup```. Increasing ```multimaster.max_recovery_lag``` increases amount of time while automatic recovery is possible, but also increasing maximum disk usage during WAL collection. On the other hand ```multimaster.min_recovery_lag``` sets difference between acceptor and donor nodes before switching ordanary recovery to exclusive mode, when commits on donor node are stopped. This step is necessary to ensure that no new commits will happend during node promotion from recovery state to online state and nodes will be at sync after that.
+
+
 ## Monitoring
 
 * `mtm.get_nodes_state()` -- show status of nodes on cluster
 * `mtm.get_cluster_state()` -- show whole cluster status
 * `mtm.get_cluster_info()` -- print some debug info
-* `mtm.make_table_local(relation regclass)` -- stop replication for a given table
 
 Read description of all management functions at [functions](doc/functions.md)
 
