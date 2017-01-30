@@ -52,8 +52,14 @@ cd contrib/mmts && make install
 
 ### Docker
 
-Directory contrib/mmts also includes docker-compose.yml that is capable of building multi-master and starting 3 node cluster listening on port 15432, 15433 and 15434.
+Directory contrib/mmts also includes docker-compose.yml that is capable of building multi-master and starting 3 node cluster.
 
+First of all we need to build PGPro EE docker image (We will remove this step when we'll merge _MULTIMASTER branch and start building packages). In the repo root run:
+```
+docker build -t pgproent
+```
+
+Then following command will start cluster of 3 docker nodes listening on port 15432, 15433 and 15434 (edit docker-compose.yml to change start params):
 ```
 cd contrib/mmts
 docker-compose up
