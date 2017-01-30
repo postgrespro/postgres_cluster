@@ -236,7 +236,7 @@ static bool md_use_compression(RelFileNodeBackend rnode, ForkNumber forknum)
 
 	if (!found)
 	{
-		compressionFilePath = psprintf("pg_tblspc/%u/%s/pg_compression", 
+		compressionFilePath = psprintf("pg_tblspc/%u/%s/pg_compression",
 									   rnode.node.spcNode,
 									   TABLESPACE_VERSION_DIRECTORY);
 		compressionFile = fopen(compressionFilePath, "r");
@@ -515,12 +515,12 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 				}
 			}
 			FileClose(file);
-		} 
+		}
 		else 
 		{
 			/* truncate(2) would be easier here, but Windows hasn't got it */
 			int                     fd;
- 
+
 			fd = OpenTransientFile(path, O_RDWR | PG_BINARY, 0);
 			if (fd >= 0)
 			{

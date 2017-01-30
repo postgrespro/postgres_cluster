@@ -17,10 +17,11 @@
  * GC runs one or more background workers which recursively traverse all tablespace
  * directories. If worker finds out that logical size of the file is twice as large as
  * physical size of the file, it performs compactification.
- * To eliminate race conditions, files are locked during compacification.
- * Locks are implemented with atomic operations.
  *
- * TODO Write a note about *.cfm files.
+ * Separate page map is constructed for each file.
+ * It has a name rel_file_name.cfm.
+ * To eliminate race conditions, map files are locked during compacification.
+ * Locks are implemented with atomic operations.
  */
 
 #include "postgres.h"
@@ -67,8 +68,9 @@ int cfs_level;
  */
 bool cfs_encryption;
 /*
- * GUC variable - Verify correctness of data written by GC.
- * TODO add description and documentation.
+ * GUC variable - Verify correctness of the data written by GC.
+ * This variable exists mostly for debugging purposes.
+ * Default value is false.
  */
 bool cfs_gc_verify_file;
 
@@ -81,8 +83,10 @@ int cfs_gc_workers;
 int cfs_gc_threshold;
 /* GUC variable - Time to sleep between GC runs in milliseconds. Default = 5000 */
 int cfs_gc_period;
-/* GUC variable - Delay in milliseconds between files defragmentation. Default = 0
- * TODO What is the purpose of this variable?
+/*
+ * GUC variable - Delay in milliseconds between files defragmentation. Default = 0
+ * This variable can be used to slow down garbage collection under the
+ * load with high concurrency.
  */
 int cfs_gc_delay;
 
@@ -98,10 +102,13 @@ static int  cfs_gc_processed_segments;
 
 /* ----------------------------------------------------------------
  *	Section 1: Various compression algorithms.
- * CFS_COMPRESSOR variable can be set at compile time.
+ * We decided to hide this choice from user, because of issues with
+ * dependencies of compression libraries. ZLIB algorithm shows best results
+ * on many datasets.
+ * But CFS_COMPRESSOR variable can be set at compile time.
  * One should define CFS_COMPRESSOR in cfs.h
  * Availiable options are:
- * - ZLIB_COMPRESSOR
+ * - ZLIB_COMPRESSOR - default choice
  * - LZ4_COMPRESSOR
  * - SNAPPY_COMPRESSOR
  * - LCFSE_COMPRESSOR
@@ -118,15 +125,15 @@ static int  cfs_gc_processed_segments;
 
 size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size)
 {
-    uLongf compressed_size = dst_size;
-    int rc = compress2(dst, &compressed_size, src, src_size, cfs_level);
+	uLongf compressed_size = dst_size;
+	int rc = compress2(dst, &compressed_size, src, src_size, cfs_level);
 	return rc == Z_OK ? compressed_size : rc;
 }
 
 size_t cfs_decompress(void* dst, size_t dst_size, void const* src, size_t src_size)
 {
-    uLongf dest_len = dst_size;
-    int rc = uncompress(dst, &dest_len, src, src_size);
+	uLongf dest_len = dst_size;
+	int rc = uncompress(dst, &dest_len, src, src_size);
 	return rc == Z_OK ? dest_len : rc;
 }
 
@@ -141,12 +148,12 @@ char const* cfs_algorithm()
 
 size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size)
 {
-    return LZ4_compress(src, dst, src_size);
+	return LZ4_compress(src, dst, src_size);
 }
 
 size_t cfs_decompress(void* dst, size_t dst_size, void const* src, size_t src_size)
 {
-    return LZ4_decompress_safe(src, dst, src_size, dst_size);
+	return LZ4_decompress_safe(src, dst, src_size, dst_size);
 }
 
 char const* cfs_algorithm()
@@ -160,12 +167,12 @@ char const* cfs_algorithm()
 
 size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size)
 {
-    return snappy_compress(src, src_size, dst, &dst_size) == SNAPPY_OK ? dst_size : 0;
+	return snappy_compress(src, src_size, dst, &dst_size) == SNAPPY_OK ? dst_size : 0;
 }
 
 size_t cfs_decompress(void* dst, size_t dst_size, void const* src, size_t src_size)
 {
-    return snappy_uncompress(src, src_size, dst, &dst_size) == SNAPPY_OK ? dst_size : 0;
+	return snappy_uncompress(src, src_size, dst, &dst_size) == SNAPPY_OK ? dst_size : 0;
 }
 
 char const* cfs_algorithm()
@@ -180,7 +187,7 @@ char const* cfs_algorithm()
 size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size)
 {
 	char* scratch_buf = palloc(lcfse_encode_scratch_size());
-    size_t rc = lcfse_encode_buffer(dst, dst_size, src, src_size, scratch_buf);
+	size_t rc = lcfse_encode_buffer(dst, dst_size, src, src_size, scratch_buf);
 	pfree(scratch_buf);
 	return rc;
 }
@@ -188,7 +195,7 @@ size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size
 size_t cfs_decompress(void* dst, size_t dst_size, void const* src, size_t src_size)
 {
 	char* scratch_buf = palloc(lcfse_encode_scratch_size());
-    size_t rc = lcfse_decode_buffer(dst, dst_size, src, src_size, scratch_buf);
+	size_t rc = lcfse_decode_buffer(dst, dst_size, src, src_size, scratch_buf);
 	pfree(scratch_buf);
 	return rc;
 }
@@ -245,7 +252,6 @@ char const* cfs_algorithm()
  * TODO
  * - replace rc4 algrithm with something more appropriate
  * - add more comments
- * - what does 'offs' variable for?
  * ----------------------------------------------------------------
  */
 static void cfs_rc4_encrypt_block(void* block, uint32 offs, uint32 block_size)
@@ -320,20 +326,18 @@ static void cfs_encrypt_init(void)
 
 void cfs_encrypt(void* block, uint32 offs, uint32 size)
 {
-	if (cfs_encryption) 
+	if (cfs_encryption)
 		cfs_rc4_encrypt_block(block, offs, size);
 }
 
 void cfs_decrypt(void* block, uint32 offs, uint32 size)
 {
-	if (cfs_encryption) 
+	if (cfs_encryption)
 		cfs_rc4_encrypt_block(block, offs, size);
 }
 
 /* ----------------------------------------------------------------
  *	Section 3: Compression implementation.
- *
- * TODO add description
  * ----------------------------------------------------------------
  */
 void cfs_initialize()
@@ -366,20 +370,22 @@ FileMap* cfs_mmap(int md)
 {
 	FileMap* map;
 #ifdef WIN32
-    HANDLE mh = CreateFileMapping(_get_osfhandle(md), NULL, PAGE_READWRITE, 
+	HANDLE mh = CreateFileMapping(_get_osfhandle(md), NULL, PAGE_READWRITE, 
 								  0, (DWORD)sizeof(FileMap), NULL);
-    if (mh == NULL) { 
-        return (FileMap*)MAP_FAILED;
-    }
-    map = (FileMap*)MapViewOfFile(mh, FILE_MAP_ALL_ACCESS, 0, 0, 0); 
+	if (mh == NULL)
+		return (FileMap*)MAP_FAILED;
+
+	map = (FileMap*)MapViewOfFile(mh, FILE_MAP_ALL_ACCESS, 0, 0, 0); 
 	CloseHandle(mh);
-    if (map == NULL) { 
-        return (FileMap*)MAP_FAILED;
-    }
+
+	if (map == NULL)
+		return (FileMap*)MAP_FAILED;
+
 #else
 	map = (FileMap*)mmap(NULL, sizeof(FileMap), PROT_WRITE | PROT_READ, MAP_SHARED, md, 0);
 #endif
-	if (map != MAP_FAILED && map->postmasterPid != PostmasterPid) { 
+	if (map != MAP_FAILED && map->postmasterPid != PostmasterPid)
+	{
 		map->postmasterPid = PostmasterPid;
 		pg_atomic_write_u32(&map->lock, 0);
 	}
@@ -419,15 +425,16 @@ void cfs_extend(FileMap* map, uint32 newSize)
 static bool cfs_read_file(int fd, void* data, uint32 size)
 {
 	uint32 offs = 0;
-	do { 
+	do {
 		int rc = (int)read(fd, (char*)data + offs, size - offs);
-		if (rc <= 0) { 
-			if (errno != EINTR) { 
+
+		if (rc <= 0)
+		{
+			if (errno != EINTR)
 				return false;
-			}
-		} else { 
-			offs += rc;
 		}
+		else
+			offs += rc;
 	} while (offs < size);
 	
 	return true;
@@ -439,15 +446,15 @@ static bool cfs_read_file(int fd, void* data, uint32 size)
 static bool cfs_write_file(int fd, void const* data, uint32 size)
 {
 	uint32 offs = 0;
-	do { 
+	do {
 		int rc = (int)write(fd, (char const*)data + offs, size - offs);
-		if (rc <= 0) { 
-			if (errno != EINTR) { 
+		if (rc <= 0)
+		{
+			if (errno != EINTR)
 				return false;
-			}
-		} else { 
-			offs += rc;
 		}
+		else
+			offs += rc;
 	} while (offs < size);
 	
 	return true;
@@ -456,7 +463,20 @@ static bool cfs_write_file(int fd, void const* data, uint32 size)
 /* ----------------------------------------------------------------
  *	Section 4: Garbage collection functionality.
  *
- * TODO add description. reorder functions.
+ * Garbage collection in CFS is perform by several background workers.
+ * They proceed each data file separately. The files are blocked for access
+ * during garbage collection, but relation is not blocked.
+ *
+ * To ensure data consistency GC creates copies of original data and map files.
+ * Once they are flushed to the disk, new version of data file is renamed to
+ * original file name. And then new page map data is copied to memory-mapped
+ * file and backup file for page map is removed. In case of recovery after
+ * crash we at first inspect if there is a backup of data file. If such file
+ * exists, then original file is not yet updated and we can safely remove
+ * backup files. If such file doesn't exist, then we check for presence of map
+ * file backup. If it exists, then defragmentation of this file was not
+ * completed because of crash and we complete this operation by copying map
+ * from backup file.
  * ----------------------------------------------------------------
  */
 /*
@@ -465,7 +485,7 @@ static bool cfs_write_file(int fd, void const* data, uint32 size)
 void cfs_lock_file(FileMap* map, char const* file_path)
 {
 	long delay = CFS_LOCK_MIN_TIMEOUT;
-		
+
 	while (true)
 	{
 		uint64 count = pg_atomic_fetch_add_u32(&map->lock, 1);
@@ -486,8 +506,8 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 				/* There is no backup file: new map should be constructed */
 				int md2 = open(map_bck_path, O_RDWR|PG_BINARY, 0);
 				if (md2 >= 0)
-				{ 
-					/* Recover map. TODO shouldn't it be error? */
+				{
+					/* Recover map. */
 					if (!cfs_read_file(md2, map, sizeof(FileMap)))
 						elog(LOG, "CFS failed to read file %s: %m", map_bck_path);
 
@@ -495,7 +515,7 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 				}
 			}
 			else
-			{ 
+			{
 				/* Presence of backup file means that we still have
 				 * unchanged data and map files. Just remove backup files,
 				 * grab lock and continue processing
@@ -596,8 +616,8 @@ static bool cfs_gc_file(char* map_path)
 
 	/* do we need to perform defragmentation? */
 	if ((physSize - usedSize)*100 > physSize*cfs_gc_threshold)
-	{ 
-		long delay = CFS_LOCK_MIN_TIMEOUT;		
+	{
+		long delay = CFS_LOCK_MIN_TIMEOUT;
 		char* file_path = (char*)palloc(suf+1);
 		char* map_bck_path = (char*)palloc(suf+10);
 		char* file_bck_path = (char*)palloc(suf+5);
@@ -610,7 +630,7 @@ static bool cfs_gc_file(char* map_path)
 		long secs;
 		int usecs;
 		int i;
-		
+
 		startTime = GetCurrentTimestamp();
 
 		memcpy(file_path, map_path, suf);
@@ -625,7 +645,7 @@ static bool cfs_gc_file(char* map_path)
 				break;
 
 			if (cfs_gc_stop)
-			{ 
+			{
 				succeed = false;
 				goto FinishGC;
 			}
@@ -637,7 +657,7 @@ static bool cfs_gc_file(char* map_path)
 				 */
 				if (access(file_bck_path, R_OK) != 0)
 				{
-					/* There is no backup file: new map should be constructed */					
+					/* There is no backup file: new map should be constructed */
 					md2 = open(map_bck_path, O_RDWR|PG_BINARY, 0);
 					if (md2 >= 0)
 					{
@@ -671,7 +691,7 @@ static bool cfs_gc_file(char* map_path)
 				delay *= 2;
 		}
 
-		/* Reread variables after lockign file */
+		/* Reread variables after locking file */
 		usedSize = pg_atomic_read_u32(&map->usedSize);
 		physSize = pg_atomic_read_u32(&map->physSize);
 		virtSize = pg_atomic_read_u32(&map->virtSize);
@@ -708,7 +728,7 @@ static bool cfs_gc_file(char* map_path)
 				char block[BLCKSZ];
 				off_t rc PG_USED_FOR_ASSERTS_ONLY;
 				uint32 offs = CFS_INODE_OFFS(*inodes[i]);
-				Assert(size <= BLCKSZ);	
+				Assert(size <= BLCKSZ);
 				rc = lseek(fd, offs, SEEK_SET);
 				Assert(rc == offs);
 
@@ -718,7 +738,7 @@ static bool cfs_gc_file(char* map_path)
 							   i, file_path, offs, size);
 					goto Cleanup;
 				}
-				
+
 				if (!cfs_write_file(fd2, block, size))
 				{
 					elog(LOG, "CFS failed to write file %s: %m", file_bck_path);
@@ -877,7 +897,7 @@ static bool cfs_gc_file(char* map_path)
 			elog(LOG, "CFS failed to unlink file %s: %m", map_bck_path);
 			succeed = false;
 		}
-		
+
 		endTime = GetCurrentTimestamp();
 		TimestampDifference(startTime, endTime, &secs, &usecs);
 
@@ -893,7 +913,7 @@ static bool cfs_gc_file(char* map_path)
 		pfree(map_bck_path);
 		pfree(inodes);
 		pfree(newMap);
-		
+
 		if (cfs_gc_delay != 0)
 		{
 			int rc = WaitLatch(MyLatch,
@@ -918,7 +938,7 @@ static bool cfs_gc_file(char* map_path)
 		succeed = false;
 	}
 
-  FinishGC:	
+  FinishGC:
 	pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
 	return succeed;
 }
@@ -946,11 +966,11 @@ static bool cfs_gc_directory(int worker_id, char const* path)
 
 			len = snprintf(file_path, sizeof(file_path), "%s/%s", path, entry->d_name);
 
-			/* If we found a map file, run gc worker on it.
+			/* If we have found a map file, run gc worker on it.
 			 * Otherwise, try to gc the directory recursively.
 			 */
 			if (len > 4 && 
-				strcmp(file_path + len - 4, ".cfm") == 0) 
+				strcmp(file_path + len - 4, ".cfm") == 0)
 			{
 				if (entry->d_ino % cfs_state->n_workers == worker_id
 					&& !cfs_gc_file(file_path))
@@ -976,12 +996,14 @@ static void cfs_gc_cancel(int sig)
 	cfs_gc_stop = true;
 }
 
-/* TODO do we need this function? */
+/*
+ * Now compression can be applied only to the tablespace
+ * in general, so gc workers traverse pg_tblspc directory.
+ */
 static bool cfs_gc_scan_tablespace(int worker_id)
 {
 	return cfs_gc_directory(worker_id, "pg_tblspc");
 }
-
 
 static void cfs_gc_bgworker_main(Datum arg)
 {
@@ -991,8 +1013,8 @@ static void cfs_gc_bgworker_main(Datum arg)
     pqsignal(SIGQUIT, cfs_gc_cancel);
     pqsignal(SIGTERM, cfs_gc_cancel);
 
-    /* We're now ready to receive signals */
-    BackgroundWorkerUnblockSignals();
+	/* We're now ready to receive signals */
+	BackgroundWorkerUnblockSignals();
 
 	elog(INFO, "Start CFS garbage collector %d", MyProcPid);
 
@@ -1032,6 +1054,7 @@ void cfs_gc_start_bgworkers()
 	elog(LOG, "Start %d background garbage collection workers for CFS", i);
 }
 
+/* Enable/disable garbage colection. */
 bool cfs_control_gc(bool enabled) 
 {
 	bool was_enabled = cfs_state->gc_enabled;	
@@ -1053,8 +1076,6 @@ bool cfs_control_gc(bool enabled)
 
 /* ----------------------------------------------------------------
  *	Section 5: Garbage collection user's functions.
- *
- * TODO add descriptions
  * ----------------------------------------------------------------
  */
 PG_FUNCTION_INFO_V1(cfs_start_gc);
@@ -1078,11 +1099,11 @@ Datum cfs_start_gc(PG_FUNCTION_ARGS)
 		int j;
 		BackgroundWorkerHandle** handles;
 
-		cfs_gc_stop = true; /* do just one iteration */	   
+		cfs_gc_stop = true; /* do just one iteration */
 
 		cfs_state->max_iterations = 1;
 		cfs_state->n_workers = PG_GETARG_INT32(0);
-		handles = (BackgroundWorkerHandle**)palloc(cfs_state->n_workers*sizeof(BackgroundWorkerHandle*));		
+		handles = (BackgroundWorkerHandle**)palloc(cfs_state->n_workers*sizeof(BackgroundWorkerHandle*));
 
 		for (i = 0; i < cfs_state->n_workers; i++)
 		{
@@ -1097,6 +1118,7 @@ Datum cfs_start_gc(PG_FUNCTION_ARGS)
 			if (!RegisterDynamicBackgroundWorker(&worker, &handles[i]))
 				break;
 		}
+
 		for (j = 0; j < i; j++)
 			WaitForBackgroundWorkerShutdown(handles[j]);
 
@@ -1106,10 +1128,9 @@ Datum cfs_start_gc(PG_FUNCTION_ARGS)
 	PG_RETURN_INT32(i);
 }
 
-
 Datum cfs_enable_gc(PG_FUNCTION_ARGS)
 {
-	PG_RETURN_BOOL(cfs_control_gc(PG_GETARG_BOOL(0)));											
+	PG_RETURN_BOOL(cfs_control_gc(PG_GETARG_BOOL(0)));
 }
 
 Datum cfs_version(PG_FUNCTION_ARGS)
@@ -1168,20 +1189,20 @@ Datum cfs_estimate(PG_FUNCTION_ARGS)
 
 Datum cfs_compression_ratio(PG_FUNCTION_ARGS)
 {
-    Oid oid =  PG_GETARG_OID(0);
-    Relation rel = try_relation_open(oid, AccessShareLock);
+	Oid oid =  PG_GETARG_OID(0);
+	Relation rel = try_relation_open(oid, AccessShareLock);
 	uint64 virtSize = 0;
 	uint64 physSize = 0;
 
     if (rel != NULL)
 	{
-        char* path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
-        char* map_path = (char*)palloc(strlen(path) + 16);
-        int i = 0;
+		char* path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
+		char* map_path = (char*)palloc(strlen(path) + 16);
+		int i = 0;
 
-        while (true)
+		while (true)
 		{
-            int md;
+			int md;
 			FileMap* map;
 
 			if (i == 0)
@@ -1221,20 +1242,20 @@ Datum cfs_compression_ratio(PG_FUNCTION_ARGS)
 
 Datum cfs_fragmentation(PG_FUNCTION_ARGS)
 {
-    Oid oid =  PG_GETARG_OID(0);
-    Relation rel = try_relation_open(oid, AccessShareLock);
+	Oid oid =  PG_GETARG_OID(0);
+	Relation rel = try_relation_open(oid, AccessShareLock);
 	uint64 usedSize = 0;
 	uint64 physSize = 0;
 
-    if (rel != NULL)
+	if (rel != NULL)
 	{
-        char* path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
-        char* map_path = (char*)palloc(strlen(path) + 16);
-        int i = 0;
+		char* path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
+		char* map_path = (char*)palloc(strlen(path) + 16);
+		int i = 0;
 
         while (true)
 		{
-            int md;
+			int md;
 			FileMap* map;
 
 			if (i == 0)
@@ -1243,7 +1264,7 @@ Datum cfs_fragmentation(PG_FUNCTION_ARGS)
 				sprintf(map_path, "%s.%u.cfm", path, i);
 
 			md = open(map_path, O_RDWR|PG_BINARY, 0);
-            if (md < 0)
+			if (md < 0)
 				break;
 
 			map = cfs_mmap(md);
@@ -1296,7 +1317,7 @@ Datum cfs_gc_relation(PG_FUNCTION_ARGS)
 			pfree(map_path);
 			relation_close(rel, AccessShareLock);
 		}
-		pg_atomic_clear_flag(&cfs_state->gc_started);		
+		pg_atomic_clear_flag(&cfs_state->gc_started);
 	}
 	PG_RETURN_INT32(cfs_gc_processed_segments);
 }

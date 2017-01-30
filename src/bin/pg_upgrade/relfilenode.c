@@ -127,7 +127,7 @@ static void transfer_compression_files(FileNameMap *map)
 {
 	char		old_file[MAXPGPATH];
 	char		new_file[MAXPGPATH];
-	struct stat statbuf;		
+	struct stat statbuf;
 
 	snprintf(old_file, sizeof(old_file), "%s%s/pg_compression",
 			 map->old_tablespace,
@@ -135,7 +135,7 @@ static void transfer_compression_files(FileNameMap *map)
 	snprintf(new_file, sizeof(new_file), "%s%s/pg_compression",
 			 map->new_tablespace,
 			 map->new_tablespace_suffix);
-	
+
 	if (stat(old_file, &statbuf) == 0)
 	{
 		unlink(new_file);
@@ -143,16 +143,12 @@ static void transfer_compression_files(FileNameMap *map)
 		if (user_opts.transfer_mode == TRANSFER_MODE_COPY)
 		{
 			pg_log(PG_VERBOSE, "copying \"%s\" to \"%s\"\n", old_file, new_file);
-
 			copyFile(old_file, new_file, map->nspname, map->relname);
-
 		}
 		else
 		{
 			pg_log(PG_VERBOSE, "linking \"%s\" to \"%s\"\n", old_file, new_file);
-
 			linkFile(old_file, new_file, map->nspname, map->relname);
-
 		}
 
 		transfer_relfile(map, ".cfm", false);
@@ -225,8 +221,8 @@ transfer_relfile(FileNameMap *map, const char *type_suffix, bool vm_must_add_fro
 	char		new_file[MAXPGPATH];
 	int			segno;
 	char		extent_suffix[65];
-	struct stat statbuf;		
-		
+	struct stat statbuf;
+
 	/*
 	 * Now copy/link any related segments as well. Remember, PG breaks large
 	 * files into 1GB segments, the first segment has no extension, subsequent

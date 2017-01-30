@@ -1125,7 +1125,7 @@ movedb(const char *dbname, const char *tblspcname)
 									 AccessExclusiveLock);
 		return;
 	}
-	
+
 	src_compressed = is_tablespace_compressed(src_tblspcoid);
 	dst_compressed = is_tablespace_compressed(dst_tblspcoid);
 
@@ -1231,7 +1231,6 @@ movedb(const char *dbname, const char *tblspcname)
 			copyzipdir(src_dbpath, src_compressed, dst_dbpath, dst_compressed);
 		else
 			copydir(src_dbpath, dst_dbpath, false);
-
 
 		/*
 		 * Record the filesystem change in XLOG

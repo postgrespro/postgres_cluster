@@ -380,7 +380,8 @@ CreateTableSpace(CreateTableSpaceStmt *stmt)
 	/* Post creation hook for new tablespace */
 	InvokeObjectPostCreateHook(TableSpaceRelationId, tablespaceoid, 0);
 
-	create_tablespace_directories(location, tablespaceoid, getBoolOption(stmt->options, "compression", false));
+	create_tablespace_directories(location, tablespaceoid,
+								  getBoolOption(stmt->options, "compression", false));
 
 	/* Record the filesystem change in XLOG */
 	{
@@ -587,7 +588,8 @@ DropTableSpace(DropTableSpaceStmt *stmt)
  *	to the specified directory
  */
 static void
-create_tablespace_directories(const char *location, const Oid tablespaceoid, bool compressed)
+create_tablespace_directories(const char *location,
+							  const Oid tablespaceoid, bool compressed)
 {
 	char	   *linkloc;
 	char	   *location_with_version_dir;
@@ -1064,7 +1066,8 @@ AlterTableSpaceOptions(AlterTableSpaceOptionsStmt *stmt)
 	
 	if (compressed ^ is_tablespace_compressed(tablespaceoid))
 	{
-		char* tbsdir = psprintf("pg_tblspc/%u/%s", tablespaceoid, TABLESPACE_VERSION_DIRECTORY);
+		char* tbsdir = psprintf("pg_tblspc/%u/%s",
+								tablespaceoid, TABLESPACE_VERSION_DIRECTORY);
 
 		if (!directory_is_empty(tbsdir))
 			ereport(ERROR,

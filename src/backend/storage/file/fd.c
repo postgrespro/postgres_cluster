@@ -995,6 +995,7 @@ LruDelete(File file)
 		Assert(vfdP->seekPos != (off_t) -1);
 		nfile -= 1;
 	}
+
 	/* close the file */
 	if (close(vfdP->fd))
 		elog(ERROR, "could not close file \"%s\": %m", vfdP->fileName);
@@ -1071,7 +1072,7 @@ LruInsert(File file)
 			}
 
 			vfdP->map = cfs_mmap(vfdP->md);
-			if (vfdP->map == MAP_FAILED) 
+			if (vfdP->map == MAP_FAILED)
 			{
 				elog(LOG, "RE_MAP FAILED: %d", errno);
 				close(vfdP->fd);
@@ -1306,6 +1307,7 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
 		errno = save_errno;
 		return -1;
 	}
+
 	if (fileFlags & PG_COMPRESSION)
 	{
 		char* mapFileName = psprintf("%s.cfm", fileName);
@@ -1515,7 +1517,7 @@ FileClose(File file)
 		{
 			if (cfs_munmap(vfdP->map))
 				elog(ERROR, "could not unmap file \"%s.cfm\": %m", vfdP->fileName);
-			
+
 			if (close(vfdP->md))
 				elog(ERROR, "could not close map file \"%s.cfm\": %m", vfdP->fileName);
 			--nfile;
@@ -1657,14 +1659,19 @@ FileWriteback(File file, off_t offset, off_t nbytes)
 	pg_flush_data(VfdCache[file].fd, offset, nbytes);
 }
 
-/* TODO add comments */
+/*
+ * Safely open compressed file.
+ * Lock it to protect from conncurent garbage collection.
+ * If it was updated by GC, reopen the file.
+ */
 static bool
 FileLock(File file)
 {
 	Vfd *vfdP = &VfdCache[file];
 
-	cfs_lock_file(vfdP->map, vfdP->fileName); /* protect file from GC */
-	
+	 /* protect file from GC */
+	cfs_lock_file(vfdP->map, vfdP->fileName);
+
 	/* Reopen file, because it was rewritten by gc */
 	if (vfdP->generation != vfdP->map->generation)
 	{
@@ -1678,7 +1685,7 @@ FileLock(File file)
 		vfdP->generation = vfdP->map->generation;
 	}
 	return true;
-}	
+}
 
 int
 FileRead(File file, char *buffer, int amount)
@@ -1756,7 +1763,7 @@ FileRead(File file, char *buffer, int amount)
 			cfs_decrypt(compressedBuffer, VfdCache[file].seekPos, amount);
 
 			returnCode = cfs_decompress(buffer, BLCKSZ, compressedBuffer, amount);
-			if (returnCode != BLCKSZ) 
+			if (returnCode != BLCKSZ)
 			{
 				pg_crc32 crc;
 				INIT_TRADITIONAL_CRC32(crc);
@@ -1814,6 +1821,7 @@ FileRead(File file, char *buffer, int amount)
 		/* Trouble, so assume we don't know the file position anymore */
 		VfdCache[file].seekPos = FileUnknownPos;
 	}
+
 	if (VfdCache[file].fileFlags & PG_COMPRESSION) 
 	{
 		cfs_unlock_file(VfdCache[file].map);
@@ -1873,19 +1881,23 @@ FileWrite(File file, char *buffer, int amount)
 		uint32   compressedSize;
 		Assert(amount == BLCKSZ);
 
-		compressedSize = (uint32)cfs_compress(compressedBuffer, sizeof(compressedBuffer), buffer, BLCKSZ);
+		compressedSize = (uint32)cfs_compress(compressedBuffer,
+											  sizeof(compressedBuffer),
+											  buffer, BLCKSZ);
 
 		if (!FileLock(file))
 			return -1;
 
 		inode = map->inodes[VfdCache[file].seekPos / BLCKSZ];
-		/*prev_inode = inode;*/
+
 		if (compressedSize > 0 && compressedSize < CFS_MIN_COMPRESSED_SIZE(BLCKSZ))
 		{
 			Assert((VfdCache[file].seekPos & (BLCKSZ-1)) == 0);
-			/* Do not check that new image of compressed page fits into 
-			 * old space because we want to write all updated pages sequentially */
-			pos = cfs_alloc_page(map, CFS_INODE_SIZE(inode), compressedSize);						
+			/*
+			 * Do not check that new image of compressed page fits into old space
+			 * because we want to write all updated pages sequentially
+			 */
+			pos = cfs_alloc_page(map, CFS_INODE_SIZE(inode), compressedSize);
 			inode = CFS_INODE(compressedSize, pos);
 			buffer = compressedBuffer;
 			amount = compressedSize;
@@ -1902,7 +1914,7 @@ FileWrite(File file, char *buffer, int amount)
 
 			if (CFS_INODE_SIZE(inode) != BLCKSZ)
 			{
-				pos = cfs_alloc_page(map, CFS_INODE_SIZE(inode), BLCKSZ);						
+				pos = cfs_alloc_page(map, CFS_INODE_SIZE(inode), BLCKSZ);
 				inode = CFS_INODE(BLCKSZ, pos);
 			}
 			else
@@ -1934,21 +1946,22 @@ retry:
 		{
 			if (returnCode == amount)
 			{	
-                /* Verify that there is no race condition 
+                /* TODO. Is this comment still actual?
+				 * Verify that there is no race condition 
 				bool rc = pg_atomic_compare_exchange_u64((pg_atomic_uint64*)&VfdCache[file].map->inodes[VfdCache[file].seekPos / BLCKSZ],
 														 &prev_inode, inode);
 				Assert(rc);
 				*/
 				VfdCache[file].map->inodes[VfdCache[file].seekPos / BLCKSZ] = inode;
-				/**/
 				VfdCache[file].seekPos += BLCKSZ;
 				cfs_extend(VfdCache[file].map, VfdCache[file].seekPos);
 				returnCode = BLCKSZ;
 			}
 			else
 			{
-				elog(LOG, "Write to file %s block %u position %u size %u failed with code %d: %m", 
-					 VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ), (uint32)seekPos, amount, returnCode);
+				elog(LOG, "Write to file %s block %u position %u size %u failed with code %d: %m",
+					 VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ),
+					 (uint32)seekPos, amount, returnCode);
 				returnCode = 0;
 			}
 		}
@@ -2133,6 +2146,7 @@ FileTruncate(File file, off_t offset)
 	if (returnCode < 0)
 		return returnCode;
 
+	/* TODO Why don't we truncate compressed files here? */
 	if (VfdCache[file].fileFlags & PG_COMPRESSION)
 	{
 		int i;
