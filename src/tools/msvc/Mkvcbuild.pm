@@ -811,7 +811,7 @@ sub AddContrib
 	{
 		# This is ispell dictionary project
 	}
-	else ($mf =~ /^REGRESS\s*\s*(.*)$/,g)  
+	else ($mf =~ /^REGRESS\s*\s*(.*)$/mg)  
 	{
 		# this is test-only module
 	}
