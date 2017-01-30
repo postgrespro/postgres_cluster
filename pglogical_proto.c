@@ -122,9 +122,11 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	nodemask_t participantsMask;
 	csn_t csn = MtmDistributedTransactionSnapshot(txn->xid, MtmReplicationNodeId, &participantsMask);
 
+	Assert(isRecovery || txn->origin_id == InvalidRepOriginId);
+
 	if (!isRecovery && csn == INVALID_CSN) { 
 		MtmIsFilteredTxn = true;
-		MTM_LOG3("%d: pglogical_write_begin XID=%d filtered", MyProcPid, txn->xid);
+		MTM_LOG2("%d: pglogical_write_begin XID=%lld filtered", MyProcPid, (long64)txn->xid);
 	} else {
 		MtmCurrentXid = txn->xid;
 		MtmIsFilteredTxn = false;
@@ -132,7 +134,7 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 				 MyProcPid, txn->xid, MtmReplicationNodeId, csn, isRecovery,
 				 (long64)txn->restart_decoding_lsn, (long64)txn->first_lsn, (long64)txn->end_lsn, (long64)MyReplicationSlot->data.confirmed_flush);
 		
-		MTM_LOG3("%d: pglogical_write_begin XID=%d sent", MyProcPid, txn->xid);
+		MTM_LOG2("%d: pglogical_write_begin XID=%lld sent", MyProcPid, (long64)txn->xid);
 		pq_sendbyte(out, 'B');		/* BEGIN */
 		pq_sendint(out, MtmNodeId, 4);
 		pq_sendint(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
@@ -208,13 +210,15 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 		}
 	} else { 
 		nodemask_t partisipantsMask;
-		csn_t csn = MtmDistributedTransactionSnapshot(txn->xid, MtmReplicationNodeId, &partisipantsMask);
 		bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
+		csn_t csn = MtmDistributedTransactionSnapshot(txn->xid, MtmReplicationNodeId, &partisipantsMask);
 
-		if (!isRecovery && csn == INVALID_CSN && (event != PGLOGICAL_ABORT_PREPARED || txn->origin_id != InvalidRepOriginId))
+		Assert(isRecovery || txn->origin_id == InvalidRepOriginId);
+
+		if (!isRecovery && csn == INVALID_CSN)
 		{
 			if (event == PGLOGICAL_ABORT_PREPARED) { 
-				MTM_LOG1("Skip ABORT_PREPARED for transaction %s to node %d", txn->gid, MtmReplicationNodeId);
+				MTM_LOG1("Skip ABORT_PREPARED for transaction %s to node %d origin %d", txn->gid, MtmReplicationNodeId, txn->origin_id);
 			}
 			Assert(MtmTransactionRecords == 0);
 			return;

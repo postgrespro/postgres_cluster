@@ -150,6 +150,7 @@ typedef struct
 {
 	MtmMessageCode code;   /* Message code: MSG_PREPARE, MSG_PRECOMMIT, MSG_COMMIT, MSG_ABORT,... */
     int            node;   /* Sender node ID */	
+	bool           lockReq;/* Whether sender node needs to lock cluster tpo et wal-sender caught-up and complete recovery */
 	TransactionId  dxid;   /* Transaction ID at destination node */
 	TransactionId  sxid;   /* Transaction ID at sender node */  
     XidStatus      status; /* Transaction status */	
@@ -223,6 +224,12 @@ typedef struct
 	int         lockGraphUsed;
 } MtmNodeInfo;
 
+typedef struct MtmL2List
+{
+	struct MtmL2List* next;
+	struct MtmL2List* prev;
+} MtmL2List;
+
 typedef struct MtmTransState
 {
     TransactionId  xid;
@@ -235,6 +242,7 @@ typedef struct MtmTransState
 							              used to notify coordinator by arbiter */
 	int            nSubxids;           /* Number of subtransanctions */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
+	MtmL2List      activeList;         /* L2-list of active transactions */
 	bool           votingCompleted;    /* 2PC voting is completed */
 	bool           isLocal;            /* Transaction is either replicated, either doesn't contain DML statements, so it shoudl be ignored by pglogical replication */
 	bool           isEnqueued;         /* Transaction is inserted in queue */
@@ -269,6 +277,7 @@ typedef struct
 	nodemask_t pglogicalReceiverMask;  /* bitmask of started pglogic receivers */
 	nodemask_t pglogicalSenderMask;    /* bitmask of started pglogic senders */
 	nodemask_t walSenderLockerMask;    /* Mask of WAL-senders IDs locking the cluster */
+	nodemask_t globalLockerMask;       /* Global cluster mask of locked nodes to perform caught-up (updated using heartbeats) */
 	nodemask_t nodeLockerMask;         /* Mask of node IDs which WAL-senders are locking the cluster */
 	nodemask_t reconnectMask; 	       /* Mask of nodes connection to which has to be reestablished by sender */
 	int        lastLockHolder;         /* PID of process last obtaning the node lock */
@@ -293,6 +302,7 @@ typedef struct
 									 	  It is cleanup by MtmGetOldestXmin */
     MtmTransState** transListTail;     /* Tail of L1 list of all finished transactionds, used to append new elements.
 								  		  This list is expected to be in CSN ascending order, by strict order may be violated */
+	MtmL2List activeTransList;         /* List of active transactions */
 	ulong64 transCount;                /* Counter of transactions perfromed by this node */	
 	ulong64 gcCount;                   /* Number of global transactions performed since last GC */
 	MtmMessageQueue* sendQueue;        /* Messages to be sent by arbiter sender */
@@ -350,7 +360,7 @@ extern void  MtmStartReceiver(int nodeId, bool dynamic);
 extern csn_t MtmDistributedTransactionSnapshot(TransactionId xid, int nodeId, nodemask_t* participantsMask);
 extern csn_t MtmAssignCSN(void);
 extern csn_t MtmSyncClock(csn_t csn);
-extern void  MtmJoinTransaction(GlobalTransactionId* gtid, csn_t snapshot);
+extern void  MtmJoinTransaction(GlobalTransactionId* gtid, csn_t snapshot, nodemask_t participantsMask);
 extern void  MtmReceiverStarted(int nodeId);
 extern MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shutdown);
 extern void  MtmExecute(void* work, int size);
@@ -402,6 +412,7 @@ extern void MtmRollbackPreparedTransaction(int nodeId, char const* gid);
 extern bool MtmFilterTransaction(char* record, int size);
 extern void MtmPrecommitTransaction(char const* gid);
 extern char* MtmGucSerialize(void);
-extern bool MtmCheckParticipants(GlobalTransactionId* gtid, nodemask_t participants);
+extern bool MtmTransIsActive(void);
+extern MtmTransState* MtmGetActiveTransaction(MtmL2List* list);
 
 #endif

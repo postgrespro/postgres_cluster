@@ -346,15 +346,12 @@ process_remote_begin(StringInfo s)
 	participantsMask = pq_getmsgint64(s);
 	Assert(gtid.node > 0);
 
-	MTM_LOG2("REMOTE begin node=%d xid=%lu snapshot=%lld participantsMask=%llx", gtid.node, (long64)gtid.xid, snapshot, participantsMask);
+	MTM_LOG2("REMOTE begin node=%d xid=%llu snapshot=%lld participantsMask=%llx", gtid.node, (long64)gtid.xid, snapshot, participantsMask);
 	MtmResetTransaction();		
 
-	if (!MtmCheckParticipants(&gtid, participantsMask)) {
-		return false;
-	}
     SetCurrentStatementStartTimestamp();     
 	StartTransactionCommand();
-    MtmJoinTransaction(&gtid, snapshot);
+    MtmJoinTransaction(&gtid, snapshot, participantsMask);
 
 	if (GucAltered) {
 		SPI_connect();
@@ -688,6 +685,7 @@ process_remote_commit(StringInfo in)
 					MtmSetCurrentTransactionGID(gid);
 					FinishPreparedTransaction(gid, false);
 					CommitTransactionCommand();					
+					Assert(!MtmTransIsActive());
 				}	
 				MtmEndSession(origin_node, true);
 			}
@@ -706,6 +704,7 @@ process_remote_commit(StringInfo in)
 			MtmSetCurrentTransactionGID(gid);
 			FinishPreparedTransaction(gid, true);
 			CommitTransactionCommand();
+			Assert(!MtmTransIsActive());
 			MtmEndSession(origin_node, true);
 			break;
 		}
@@ -1136,6 +1135,7 @@ void MtmExecutor(void* work, size_t size)
 		MTM_LOG1("%d: REMOTE begin abort transaction %llu", MyProcPid, (long64)MtmGetCurrentTransactionId());
 		MtmEndSession(MtmReplicationNodeId, false);
         AbortCurrentTransaction();
+		Assert(!MtmTransIsActive());
 		MTM_LOG2("%d: REMOTE end abort transaction %llu", MyProcPid, (long64)MtmGetCurrentTransactionId());
     }
     PG_END_TRY();
