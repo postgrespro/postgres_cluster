@@ -83,6 +83,7 @@ typedef struct {
 	bool  isSuspended;    /* prepared transaction is suspended because coordinator node is switch to offline */
     bool  isTransactionBlock; /* is transaction block */
 	bool  containsDML;    /* transaction contains DML statements */
+	bool  isActive;       /* transaction is active (nActiveTransaction counter is incremented) */
 	XidStatus status;     /* transaction status */
     csn_t snapshot;       /* transaction snaphsot */
 	csn_t csn;            /* CSN */
@@ -436,9 +437,13 @@ csn_t MtmDistributedTransactionSnapshot(TransactionId xid, int nodeId, nodemask_
 		MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
 		if (ts != NULL) { 
 			*participantsMask = ts->participantsMask;
-			if (!ts->isLocal && BIT_CHECK(ts->participantsMask, nodeId-1)) { 
+			/* If node is disables, then we in process of recovring this node */
+			if (!ts->isLocal && BIT_CHECK(ts->participantsMask|Mtm->disabledNodeMask, nodeId-1)) { 
 				snapshot = ts->snapshot;
 				Assert(ts->gtid.node == MtmNodeId || MtmIsRecoverySession); 		
+			} else { 
+				MTM_LOG1("Do not send transaction %s (%llu) to node %d participants mask %llx", 
+						 ts->gid, (long64)ts->xid, nodeId, ts->participantsMask);
 			}
 		}
 	}
@@ -605,6 +610,7 @@ MtmAdjustOldestXid(TransactionId xid)
 				 && TransactionIdPrecedes(ts->xid, xid);
 			 prev = ts, ts = ts->next) 
 		{ 
+			Assert(!ts->isActive);
 			if (prev != NULL) { 
 				/* Remove information about too old transactions */
 				hash_search(MtmXid2State, &prev->xid, HASH_REMOVE, NULL);
@@ -765,6 +771,7 @@ MtmResetTransaction()
 	x->isDistributed = false;
 	x->isPrepared = false;
 	x->isSuspended = false;
+	x->isActive = false;
 	x->isTwoPhase = false;
 	x->csn = INVALID_CSN;
 	x->status = TRANSACTION_STATUS_UNKNOWN;
@@ -780,12 +787,19 @@ static const char* const isoLevelStr[] =
 	"serializable"
 };
 
+bool MtmTransIsActive(void)
+{
+	return MtmTx.isActive;
+}
+
+
 static void 
 MtmBeginTransaction(MtmCurrentTrans* x)
 {
     if (x->snapshot == INVALID_CSN) { 
 		TransactionId xmin = (Mtm->gcCount >= MtmGcPeriod) ? PgGetOldestXmin(NULL, false) : InvalidTransactionId; /* Get oldest xmin outside critical section */
 
+		Assert(!x->isActive);
 		MtmLock(LW_EXCLUSIVE);	
 		if (TransactionIdIsValid(xmin) && Mtm->gcCount >= MtmGcPeriod) {
 			MtmAdjustOldestXid(xmin);
@@ -814,8 +828,10 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 
 		/*
 		 * Check if there is global multimaster lock preventing new transaction from commit to make a chance to wal-senders to caught-up.
+		 * Allow applying of replicated transactions to avoid deadlock (to caught-up we need active transaction counter to become zero).
+		 * Also allow user to complete explicit 2PC transactions.
 		 */
-		if (x->isDistributed) { 
+		if (x->isDistributed && !x->isReplicated && x->isTwoPhase && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
 			MtmCheckClusterLock();
 		}
 
@@ -852,11 +868,37 @@ MtmCreateTransState(MtmCurrentTrans* x)
 		ts->gtid.node = MtmNodeId;
 	}
 	strcpy(ts->gid, x->gid);
+	x->isActive = true;
 	return ts;
 }
 
-	
-	
+static void MtmActivateTransaction(MtmTransState* ts)
+{
+	if (!ts->isActive) {
+		ts->activeList.next = Mtm->activeTransList.next;
+		ts->activeList.prev = &Mtm->activeTransList;
+		Mtm->activeTransList.next = Mtm->activeTransList.next->prev = &ts->activeList;
+		ts->isActive = true;
+		Mtm->nActiveTransactions += 1;
+	}
+}
+
+static void MtmDeactivateTransaction(MtmTransState* ts)
+{
+	if (ts->isActive) {
+		ts->activeList.prev->next = ts->activeList.next;
+		ts->activeList.next->prev = ts->activeList.prev;
+		ts->isActive = false;
+		Assert(Mtm->nActiveTransactions != 0);
+		Mtm->nActiveTransactions -= 1;
+	}
+}
+
+MtmTransState* MtmGetActiveTransaction(MtmL2List* list) 
+{ 
+	return (MtmTransState*)((char*)list - offsetof(MtmTransState, activeList));
+}
+
 /* 
  * Prepare transaction for two-phase commit.
  * This code is executed by PRE_PREPARE hook before PREPARE message is sent to replicas by logical replication
@@ -913,10 +955,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	ts->nConfigChanges = Mtm->nConfigChanges;
 	ts->votedMask = 0;
 	ts->nSubxids = xactGetCommittedChildren(&subxids);
-	if (!ts->isActive) {
-		ts->isActive = true;
-		Mtm->nActiveTransactions += 1;
-	}
+	MtmActivateTransaction(ts);
 	x->isPrepared = true;
 	x->csn = ts->csn;
 	
@@ -1008,8 +1047,8 @@ MtmVotingCompleted(MtmTransState* ts)
 	if (!ts->isPrepared) { /* We can not just abort precommitted transactions */
 		if (ts->nConfigChanges != Mtm->nConfigChanges)
 		{ 
-			elog(WARNING, "Abort transaction %s (%llu) because cluster configuration is changed from %llx to %llx since transaction start", 
-				 ts->gid, (long64)ts->xid, ts->participantsMask, liveNodesMask);
+			elog(WARNING, "Abort transaction %s (%llu) because cluster configuration is changed from %d to %d (old mask %llx, new mask %llx) since transaction start", 
+				 ts->gid, (long64)ts->xid, ts->nConfigChanges,  Mtm->nConfigChanges, ts->participantsMask, liveNodesMask);
 			MtmAbortTransaction(ts);
 			return true;
 		}
@@ -1080,6 +1119,7 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 		if (result & WL_LATCH_SET) { 
 			ResetLatch(&MyProc->procLatch);			
 		}
+		CHECK_FOR_INTERRUPTS();
 		now = MtmGetSystemTime();
 		MtmLock(LW_EXCLUSIVE);
 		if (now > deadline) { 
@@ -1214,15 +1254,10 @@ static void
 MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 {
 	MtmTransMap* tm;
-#if 0
-	if (Mtm->status == MTM_RECOVERY) { 
-		return;
-	}
-#endif
 	if (x->status != TRANSACTION_STATUS_ABORTED) { 
 		MtmLock(LW_EXCLUSIVE);
-		//tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_FIND, NULL);
-		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
+		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_FIND, NULL);
+		//tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
 		if (tm == NULL) { 
 			elog(WARNING, "Global transaciton ID '%s' is not found", x->gid);
 		} else { 
@@ -1250,12 +1285,14 @@ MtmLogAbortLogicalMessage(int nodeId, char const* gid)
 	MTM_LOG1("MtmLogAbortLogicalMessage node=%d transaction=%s lsn=%llx", nodeId, gid, lsn);
 }
 
+
 static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
 	MTM_LOG2("%d: End transaction %d, prepared=%d, replicated=%d, distributed=%d, 2pc=%d, gid=%s -> %s", 
 			 MyProcPid, x->xid, x->isPrepared, x->isReplicated, x->isDistributed, x->isTwoPhase, x->gid, commit ? "commit" : "abort");
-	if (x->status != TRANSACTION_STATUS_ABORTED && x->isDistributed && (x->isPrepared || x->isReplicated) && !x->isTwoPhase) {
+	commit &= (x->status != TRANSACTION_STATUS_ABORTED);
+	if (x->isDistributed && (x->isPrepared || x->isReplicated) && !x->isTwoPhase) {
 		MtmTransState* ts = NULL;
 		MtmLock(LW_EXCLUSIVE);
 		if (x->isPrepared) { 
@@ -1288,16 +1325,15 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				}
 				Mtm->lastCsn = ts->csn;
 				ts->status = TRANSACTION_STATUS_COMMITTED;
-				Assert(ts->isActive);
-				ts->isActive = false;
-				Assert(Mtm->nActiveTransactions != 0);
-				Mtm->nActiveTransactions -= 1;
 				MtmAdjustSubtransactions(ts);
 			} else { 
 				MTM_LOG1("%d: abort transaction %s (%llu) is called from MtmEndTransaction", MyProcPid, x->gid, (long64)x->xid);
 				MtmAbortTransaction(ts);
 			}
-		}
+			MtmDeactivateTransaction(ts);
+		} 
+		x->isActive = false;
+
 		if (!commit && x->isReplicated && TransactionIdIsValid(x->gtid.xid)) { 
 			Assert(Mtm->status != MTM_RECOVERY || Mtm->recoverySlot != MtmNodeId);
 			/* 
@@ -1325,22 +1361,22 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				ts->nSubxids = 0;
 				ts->votingCompleted = true;
 				strcpy(ts->gid, x->gid);
-				if (ts->isActive) { 
-					ts->isActive = false;
-					Assert(Mtm->nActiveTransactions != 0);
-					Mtm->nActiveTransactions -= 1;
-				}
 				MtmTransactionListAppend(ts);
 				if (*x->gid) { 
 					replorigin_session_origin_lsn = INVALID_LSN;
 					MTM_TXTRACE(x, "MtmEndTransaction/MtmLogAbortLogicalMessage");
 					MtmLogAbortLogicalMessage(MtmNodeId, x->gid);
 				}
+				MtmDeactivateTransaction(ts);
+				x->isActive = false;
 			}
 			MtmSend2PCMessage(ts, MSG_ABORTED); /* send notification to coordinator */
+#if 0
 		} else if (x->status == TRANSACTION_STATUS_ABORTED && x->isReplicated && !x->isPrepared) {
 			hash_search(MtmXid2State, &x->xid, HASH_REMOVE, NULL);
+#endif
 		}
+		Assert(!x->isActive);
 		MtmUnlock();
 	}
 	MtmResetTransaction();
@@ -1388,6 +1424,7 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 	msg.disabledNodeMask = Mtm->disabledNodeMask;
 	msg.connectivityMask = SELF_CONNECTIVITY_MASK;
 	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
+	msg.lockReq = Mtm->nodeLockerMask != 0;
 	memcpy(msg.gid, ts->gid, MULTIMASTER_MAX_GID_SIZE);
 
 	if (MtmIsCoordinator(ts)) {
@@ -1424,6 +1461,7 @@ static void MtmBroadcastPollMessage(MtmTransState* ts)
 	msg.disabledNodeMask = Mtm->disabledNodeMask;
 	msg.connectivityMask = SELF_CONNECTIVITY_MASK;
 	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
+	msg.lockReq = Mtm->nodeLockerMask != 0;
 	memcpy(msg.gid, ts->gid, MULTIMASTER_MAX_GID_SIZE);
 	ts->votedMask = 0;
 
@@ -1459,9 +1497,9 @@ static void	MtmLoadPreparedTransactions(void)
 			MTM_LOG1("Recover prepared transaction %s (%llu) state=%s", gid, (long64)xid, pxacts[i].state_3pc);
 			MyPgXact->xid = InvalidTransactionId; /* dirty hack:((( */
 			Assert(!found);
-			Mtm->nActiveTransactions += 1;
 			ts->isEnqueued = false;
-			ts->isActive = true;
+			ts->isActive = false;
+			MtmActivateTransaction(ts);
 			ts->status = strcmp(pxacts[i].state_3pc, MULTIMASTER_PRECOMMITTED) == 0 ? TRANSACTION_STATUS_UNKNOWN : TRANSACTION_STATUS_IN_PROGRESS;
 			ts->isLocal = true;
 			ts->isPrepared = true;
@@ -1509,10 +1547,13 @@ static void MtmDropSlot(int nodeId)
 }
 	
 /*
- * Prepare context for applying transaction at replica
+ * Prepare context for applying transaction at replica.
+ * It also checks that coordinator of tranaction is not disabled and all live nodes are participated in this trqansaction.
  */
-void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
+void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot, nodemask_t participantsMask)
 {
+	nodemask_t liveMask;
+
 	MtmTx.gtid = *gtid;
 	MtmTx.xid = GetCurrentTransactionId();
 	MtmTx.isReplicated = true;
@@ -1521,14 +1562,25 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot)
 
 	if (globalSnapshot != INVALID_CSN) {
 		MtmLock(LW_EXCLUSIVE);
+
+		if (BIT_CHECK(Mtm->disabledNodeMask, gtid->node-1)) { 
+			MtmUnlock();			
+			elog(ERROR, "Ignore transaction %llu from disabled node %d", (long64)gtid->xid, gtid->node);
+		}
+
+		liveMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask;
+		BIT_SET(participantsMask, gtid->node-1);
+		if (liveMask & ~participantsMask) { 
+			MtmUnlock();			
+			elog(ERROR, "Ignore transaction %llu from node %d because some of live nodes (%llx) are not participated in it (%llx)", 
+				 (long64)gtid->xid, gtid->node, liveMask, participantsMask);
+		}
+
 		MtmSyncClock(globalSnapshot);	
 		MtmTx.snapshot = globalSnapshot;	
 		if (Mtm->status != MTM_RECOVERY) { 
 			MtmTransState* ts = MtmCreateTransState(&MtmTx); /* we need local->remote xid mapping for deadlock detection */
-			if (!ts->isActive) { 
-				ts->isActive = true;
-				Mtm->nActiveTransactions += 1;
-			}
+			MtmActivateTransaction(ts);
 		}
 		MtmUnlock();
 	} else { 
@@ -1649,11 +1701,6 @@ void MtmAbortTransaction(MtmTransState* ts)
 			MTM_LOG1("Rollback active transaction %s (%llu) %d:%llu status %s", ts->gid, (long64)ts->xid, ts->gtid.node, (long64)ts->gtid.xid, MtmTxnStatusMnem[ts->status]);
 			ts->status = TRANSACTION_STATUS_ABORTED;
 			MtmAdjustSubtransactions(ts);
-			if (ts->isActive) {
-				ts->isActive = false;
-				Assert(Mtm->nActiveTransactions != 0);
-				Mtm->nActiveTransactions -= 1;
-			}
 		}
 	}
 }
@@ -1814,7 +1861,19 @@ void MtmRecoveryCompleted(void)
 	}
 	/* Mode will be changed to online once all logical receiver are connected */
 	elog(LOG, "Recovery completed with %d active receivers and %d started senders from %d", Mtm->nReceivers, Mtm->nSenders, Mtm->nLiveNodes-1);
-	MtmSwitchClusterMode(Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1 ? MTM_ONLINE : MTM_CONNECTED);
+	if (Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1)
+	{ 
+		MtmSwitchClusterMode(MTM_ONLINE);
+	} else { 
+		/* Delay switching mode to online mode and keep cluster lock to make it possible to all other nodes restablish
+		 * locagical replication connections with this node.
+		 * Under the intensive workload start of logical replication can be dealys for unpredicatable amount of time
+		 */
+		BIT_SET(Mtm->nodeLockerMask, MtmNodeId-1); /* it is trik: this mask was originally use by WAL senders performing recovery, but here we are in opposite (recovered) side:
+											   * if this mask is not zero loadReq will be broadcasted to all other nodes by heartbeat, suspending their activity
+											   */
+		MtmSwitchClusterMode(MTM_CONNECTED);  
+	}
 	MtmUnlock();
 }
 
@@ -1971,7 +2030,7 @@ MtmCheckClusterLock()
 	while (true)
 	{
 		nodemask_t mask = Mtm->walSenderLockerMask;
-		if (mask != 0) {
+		if (Mtm->globalLockerMask | mask) {
 			if (Mtm->nActiveTransactions == 0) { 
 				lsn_t currLogPos = GetXLogInsertRecPtr();
 				int i;
@@ -1988,7 +2047,7 @@ MtmCheckClusterLock()
 					}
 				}
 			}
-			if (mask != 0) { 
+			if (Mtm->globalLockerMask | mask) { 
 				/* some "almost cautch-up" wal-senders are still working. */
 				/* Do not start new transactions until them are completed. */
 				MtmUnlock();
@@ -2215,30 +2274,6 @@ void MtmReconnectNode(int nodeId)
 }
 
 /*
- * Check particioants of replicated transaction. This function is called by receiver at start of replicated transaction to
- * check that all live nodes are participated in it.
- */
-bool MtmCheckParticipants(GlobalTransactionId* gtid, nodemask_t participantsMask)
-{
-	bool result = true;
-	MtmLock(LW_EXCLUSIVE);		
-	if (BIT_CHECK(Mtm->disabledNodeMask, gtid->node-1)) { 
-		elog(WARNING, "Ignore transaction %llu from disabled node %d", (long64)gtid->xid, gtid->node);
-		result = false;
-	} else { 
-		nodemask_t liveMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask;
-		BIT_SET(participantsMask, gtid->node-1);
-		if (liveMask & ~participantsMask) { 
-			elog(WARNING, "Ignore transaction %llu from node %d because some of live nodes (%llx) are not participated in it (%llx)", 
-				 (long64)gtid->xid, gtid->node, liveMask, participantsMask);
-			result = false;
-		}
-	}
-	MtmUnlock();
-	return result;
-}
-
-/*
  * -------------------------------------------
  * Node initialization
  * -------------------------------------------
@@ -2424,6 +2459,7 @@ static void MtmInitialize()
 		Mtm->pglogicalReceiverMask = 0;
 		Mtm->pglogicalSenderMask = 0;
 		Mtm->walSenderLockerMask = 0;
+		Mtm->globalLockerMask = 0;
 		Mtm->nodeLockerMask = 0;
 		Mtm->reconnectMask = 0;
 		Mtm->recoveredLSN = INVALID_LSN;
@@ -2432,6 +2468,7 @@ static void MtmInitialize()
 		Mtm->votingTransactions = NULL;
         Mtm->transListHead = NULL;
         Mtm->transListTail = &Mtm->transListHead;		
+		Mtm->activeTransList.next = Mtm->activeTransList.prev = &Mtm->activeTransList;
         Mtm->nReceivers = 0;
         Mtm->nSenders = 0;
 		Mtm->timeShift = 0;		
@@ -3193,6 +3230,7 @@ void MtmReceiverStarted(int nodeId)
 		}
 		elog(LOG, "Start %d receivers and %d senders from %d cluster status %s", Mtm->nReceivers+1, Mtm->nSenders, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
 		if (++Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->status == MTM_CONNECTED) { 
+			BIT_CLEAR(Mtm->nodeLockerMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
 			MtmSwitchClusterMode(MTM_ONLINE);
 		}
 	}
@@ -3228,7 +3266,9 @@ void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 		MtmBeginSession(nodeId);
 		MtmSetCurrentTransactionGID(gid);
 		FinishPreparedTransaction(gid, false);
+		MtmTx.isActive = true;
 		CommitTransactionCommand();
+		Assert(!MtmTx.isActive);
 		MtmEndSession(nodeId, true);
 	} else if (status == TRANSACTION_STATUS_IN_PROGRESS) {
 		MtmBeginSession(nodeId);
@@ -3260,10 +3300,12 @@ void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
 	}
 	MtmSetCurrentTransactionCSN(ts->csn);
 	MtmSetCurrentTransactionGID(ts->gid);
+	MtmTx.isActive = true;
 	FinishPreparedTransaction(ts->gid, commit);
 	
 	if (!insideTransaction) { 
 		CommitTransactionCommand();
+		Assert(!MtmTx.isActive);
 		Assert(ts->status == commit ? TRANSACTION_STATUS_COMMITTED : TRANSACTION_STATUS_ABORTED);
 	}
 
@@ -3500,6 +3542,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 		BIT_SET(Mtm->pglogicalSenderMask, MtmReplicationNodeId-1);
 		if (++Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->status == MTM_CONNECTED) { 
 			/* All logical replication connections from and to this node are established, so we can switch cluster to online mode */
+			BIT_CLEAR(Mtm->nodeLockerMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
 			MtmSwitchClusterMode(MTM_ONLINE);
 		}
 	}
@@ -4417,6 +4460,7 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 				elog(WARNING, "Transaction %s (%llu) is left in prepared state because coordinator node is not online", x->gid, (long64)x->xid);
 			} else { 				
 				StartTransactionCommand();
+				Assert(x->isActive);
 				if (x->status == TRANSACTION_STATUS_ABORTED) { 
 					FinishPreparedTransaction(x->gid, false);
 					elog(ERROR, "Transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
@@ -4664,6 +4708,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				case TRANS_STMT_ROLLBACK_PREPARED:
 				    Assert(!MtmTx.isTwoPhase);
   				    strcpy(MtmTx.gid, stmt->gid);
+					MtmTx.isTwoPhase = true;
 					break;
 				default:
 					break;

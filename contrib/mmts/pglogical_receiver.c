@@ -302,9 +302,10 @@ pglogical_receiver_main(Datum main_arg)
 		if ((mode == REPLMODE_OPEN_EXISTED && timeline != Mtm->nodes[nodeId-1].timeline)
 			|| mode == REPLMODE_CREATE_NEW) 
 		{ /* recreate slot */
-			elog(LOG, "Recreate replication slot %s", slotName);
+			timestamp_t start = MtmGetSystemTime();
 			appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", slotName);
 			res = PQexec(conn, query->data);
+			elog(LOG, "Recreate replication slot %s: %ld millisconds", slotName, (long)USEC_TO_MSEC(MtmGetSystemTime() - start));
 			PQclear(res);
 			resetPQExpBuffer(query);
 			timeline = Mtm->nodes[nodeId-1].timeline;
@@ -314,6 +315,7 @@ pglogical_receiver_main(Datum main_arg)
 		 * So let's try to recreate slot always. */
 		/* if (mode != REPLMODE_REPLICATION) */
 		{ 
+			timestamp_t start = MtmGetSystemTime();
 			appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", slotName, MULTIMASTER_NAME);
 			res = PQexec(conn, query->data);
 			if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -322,12 +324,12 @@ pglogical_receiver_main(Datum main_arg)
 				if (!sqlstate || strcmp(sqlstate, ERRCODE_DUPLICATE_OBJECT_STR) != 0)
 				{
 					PQclear(res);
-					ereport(ERROR, (errmsg("%s: Could not create logical slot",
-										   worker_proc)));
+					ereport(ERROR, (errmsg("%s: Could not create logical slot", worker_proc)));
 					
 					goto OnError;
 				}
-			}
+			}	
+			elog(LOG, "Recreate replication slot %s: %ld milliseconds", slotName, (long)USEC_TO_MSEC(MtmGetSystemTime() - start));
 			PQclear(res);
 			resetPQExpBuffer(query);
 		}

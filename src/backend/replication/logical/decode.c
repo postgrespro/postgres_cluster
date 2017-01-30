@@ -761,13 +761,20 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	if (TransactionIdIsValid(parsed->twophase_xid)
 			&& (parsed->dbId == ctx->slot->data.database)) {
 
-		strcpy(ctx->reorder->gid, parsed->twophase_gid);
-		*ctx->reorder->state_3pc = '\0';
-
-		fprintf(stderr, "(!)	aborting: db_id=%d, gid=%s\n", parsed->dbId, parsed->twophase_gid);
-
-		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
-							commit_time, origin_id, origin_lsn);
+		if (FilterByOrigin(ctx, origin_id))
+		{
+			for (i = 0; i < parsed->nsubxacts; i++)
+			{
+				ReorderBufferForget(ctx->reorder, parsed->subxacts[i], buf->record->EndRecPtr);
+			}
+			ReorderBufferForget(ctx->reorder, xid, buf->record->EndRecPtr);
+		} else { 
+			strcpy(ctx->reorder->gid, parsed->twophase_gid);
+			*ctx->reorder->state_3pc = '\0';
+			
+			ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
+										commit_time, origin_id, origin_lsn);
+		}
 		return;
 	}
 
@@ -779,7 +786,6 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		ReorderBufferAbort(ctx->reorder, parsed->subxacts[i],
 						   buf->record->EndRecPtr);
 	}
-
 	ReorderBufferAbort(ctx->reorder, xid, buf->record->EndRecPtr);
 }
 

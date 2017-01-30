@@ -320,6 +320,11 @@ static void MtmSetSocketOptions(int sd)
 
 static void MtmCheckResponse(MtmArbiterMessage* resp)
 {
+	if (resp->lockReq) {
+		BIT_SET(Mtm->globalLockerMask, resp->node-1);
+	} else { 
+		BIT_CLEAR(Mtm->globalLockerMask, resp->node-1);
+	}
 	if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) 
 		&& !BIT_CHECK(Mtm->disabledNodeMask, resp->node-1)
 		&& Mtm->status != MTM_RECOVERY
@@ -358,6 +363,7 @@ static void MtmSendHeartbeat()
 	msg.disabledNodeMask = Mtm->disabledNodeMask;
 	msg.connectivityMask = SELF_CONNECTIVITY_MASK;
 	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
+	msg.lockReq = Mtm->nodeLockerMask != 0;
 	msg.node = MtmNodeId;
 	msg.csn = now;
 	if (last_sent_heartbeat != 0 && last_sent_heartbeat + MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2 < now) { 
@@ -1073,6 +1079,7 @@ static void MtmReceiver(Datum arg)
 										StartTransactionCommand();
 										SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);	
 										CommitTransactionCommand();
+										Assert(!MtmTransIsActive());
 										MtmLock(LW_EXCLUSIVE);						
 									} else { 
 										ts->status = TRANSACTION_STATUS_UNKNOWN;
@@ -1088,7 +1095,7 @@ static void MtmReceiver(Datum arg)
 								continue;
 							}
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
-								MTM_LOG1("Arbiter receive abort message for transaction %s (%llu)", ts->gid, (long64)ts->xid);
+								MTM_LOG1("Arbiter receive abort message for transaction %s (%llu) from node %d", ts->gid, (long64)ts->xid, node);
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 								MtmAbortTransaction(ts);
 							}

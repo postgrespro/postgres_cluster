@@ -424,7 +424,8 @@ static void
 XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 {
 	const char *id;
-	const RmgrDescData *desc = &RmgrDescTable[XLogRecGetRmid(record)];
+	int rmid = XLogRecGetRmid(record);
+	const RmgrDescData *desc = &RmgrDescTable[rmid];
 	RelFileNode rnode;
 	ForkNumber	forknum;
 	BlockNumber blk;
@@ -443,7 +444,7 @@ XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 		   (uint32) (record->ReadRecPtr >> 32), (uint32) record->ReadRecPtr,
 		   (uint32) (xl_prev >> 32), (uint32) xl_prev);
 
-	if (config->dump_origin && XLogRecGetOrigin(record) != InvalidRepOriginId) { 
+	if (config->dump_origin && rmid == RM_XACT_ID) {
 		switch (info & XLOG_XACT_OPMASK) { 
 		case XLOG_XACT_COMMIT:
 		case XLOG_XACT_COMMIT_PREPARED:

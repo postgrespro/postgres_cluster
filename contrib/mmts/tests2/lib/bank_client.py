@@ -162,7 +162,7 @@ class MtmClient(object):
                         # enable_hstore tries to perform select from database
                         # which in case of select's failure will lead to exception
                         # and stale connection to the database
-                        conn = yield from aiopg.connect(dsn, enable_hstore=False)
+                        conn = yield from aiopg.connect(dsn, enable_hstore=False, timeout=3600)
                         print("reconnected")
 
                 if (not cur) or cur.closed:
@@ -179,13 +179,17 @@ class MtmClient(object):
                 agg.finish_tx('commit')
 
             except psycopg2.Error as e:
-                agg.finish_tx(str(e).strip())
+                msg = str(e).strip()
+                agg.finish_tx(msg)
                 # Give evloop some free time.
                 # In case of continuous excetions we can loop here without returning
                 # back to event loop and block it
-                yield from asyncio.sleep(0.01)
+                if "Multimaster node is not online" in msg:
+                    yield from asyncio.sleep(1.00)
+                else:
+                    yield from asyncio.sleep(0.01)
             except BaseException as e:
-                print('Catch exception: ', str(e).strip())
+                print('Catch exception ', type(e))
                 agg.finish_tx(str(e).strip())
                 # Give evloop some free time.
                 # In case of continuous excetions we can loop here without returning

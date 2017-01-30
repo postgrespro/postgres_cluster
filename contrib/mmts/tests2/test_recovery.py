@@ -16,6 +16,7 @@ TEST_WARMING_TIME = 5
 TEST_DURATION = 10
 TEST_RECOVERY_TIME = 30
 TEST_SETUP_TIME = 20
+TEST_STOP_DELAY = 5
 
 class TestHelper(object):
 
@@ -89,8 +90,11 @@ class RecoveryTest(unittest.TestCase, TestHelper):
         print('tearDown')
         cls.client.stop()
 
+        time.sleep(TEST_STOP_DELAY)
+
         if not cls.client.is_data_identic():
             raise AssertionError('Different data on nodes')
+            
 
         # XXX: check nodes data identity here
 #        subprocess.check_call(['docker-compose','down'])
