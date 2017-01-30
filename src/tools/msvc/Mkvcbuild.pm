@@ -811,6 +811,10 @@ sub AddContrib
 	{
 		# This is ispell dictionary project
 	}
+	else ($mf =~ /^REGRESS\s*\s*(.*)$/,g)  
+	{
+		# this is test-only module
+	}
 	else
 	{
 		croak "Could not determine contrib module type for $n\n";
