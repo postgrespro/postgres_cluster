@@ -125,6 +125,16 @@ typedef struct Plan
 								 * subselects) */
 
 	/*
+	 * information for adaptive query optimization
+	 */
+	bool		had_path;
+	List	   *path_clauses;
+	List	   *path_relids;
+	JoinType	path_jointype;
+	int			path_parallel_workers;
+	bool		was_parametrized;
+
+	/*
 	 * Information for management of parameter-change-driven rescanning
 	 *
 	 * extParam includes the paramIDs of all external PARAM_EXEC params

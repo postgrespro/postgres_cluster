@@ -100,6 +100,10 @@
 
 #define LOG2(x)  (log(x) / 0.693147180559945)
 
+set_baserel_rows_estimate_hook_type set_baserel_rows_estimate_hook = NULL;
+get_parameterized_baserel_size_hook_type get_parameterized_baserel_size_hook = NULL;
+get_parameterized_joinrel_size_hook_type get_parameterized_joinrel_size_hook = NULL;
+set_joinrel_size_estimates_hook_type set_joinrel_size_estimates_hook = NULL;
 
 double		seq_page_cost = DEFAULT_SEQ_PAGE_COST;
 double		random_page_cost = DEFAULT_RANDOM_PAGE_COST;
@@ -161,6 +165,7 @@ static Selectivity get_foreign_key_join_selectivity(PlannerInfo *root,
 static void set_rel_width(PlannerInfo *root, RelOptInfo *rel);
 static double relation_byte_size(double tuples, int width);
 static double page_size(double tuples, int width);
+static double get_parallel_divisor(Path *path);
 
 
 /*
@@ -238,32 +243,7 @@ cost_seqscan(Path *path, PlannerInfo *root,
 	/* Adjust costing for parallelism, if used. */
 	if (path->parallel_workers > 0)
 	{
-		double		parallel_divisor = path->parallel_workers;
-		double		leader_contribution;
-
-		/*
-		 * Early experience with parallel query suggests that when there is
-		 * only one worker, the leader often makes a very substantial
-		 * contribution to executing the parallel portion of the plan, but as
-		 * more workers are added, it does less and less, because it's busy
-		 * reading tuples from the workers and doing whatever non-parallel
-		 * post-processing is needed.  By the time we reach 4 workers, the
-		 * leader no longer makes a meaningful contribution.  Thus, for now,
-		 * estimate that the leader spends 30% of its time servicing each
-		 * worker, and the remainder executing the parallel plan.
-		 */
-		leader_contribution = 1.0 - (0.3 * path->parallel_workers);
-		if (leader_contribution > 0)
-			parallel_divisor += leader_contribution;
-
-		/*
-		 * In the case of a parallel plan, the row count needs to represent
-		 * the number of tuples processed per worker.  Otherwise, higher-level
-		 * plan nodes that appear below the gather will be costed incorrectly,
-		 * because they'll anticipate receiving more rows than any given copy
-		 * will actually get.
-		 */
-		path->rows = clamp_row_est(path->rows / parallel_divisor);
+		double		parallel_divisor = get_parallel_divisor(path);
 
 		/* The CPU cost is divided among all the workers. */
 		cpu_run_cost /= parallel_divisor;
@@ -274,6 +254,12 @@ cost_seqscan(Path *path, PlannerInfo *root,
 		 * prefetching.  For now, we assume that the disk run cost can't be
 		 * amortized at all.
 		 */
+
+		/*
+		 * In the case of a parallel plan, the row count needs to represent
+		 * the number of tuples processed per worker.
+		 */
+		path->rows = clamp_row_est(path->rows / parallel_divisor);
 	}
 
 	path->startup_cost = startup_cost;
@@ -2014,6 +2000,10 @@ final_cost_nestloop(PlannerInfo *root, NestPath *path,
 	else
 		path->path.rows = path->path.parent->rows;
 
+	/* For partial paths, scale row estimate. */
+	if (path->path.parallel_workers > 0)
+		path->path.rows /= get_parallel_divisor(&path->path);
+
 	/*
 	 * We could include disable_cost in the preliminary estimate, but that
 	 * would amount to optimizing for the case where the join method is
@@ -2432,6 +2422,10 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	else
 		path->jpath.path.rows = path->jpath.path.parent->rows;
 
+	/* For partial paths, scale row estimate. */
+	if (path->jpath.path.parallel_workers > 0)
+		path->jpath.path.rows /= get_parallel_divisor(&path->jpath.path);
+
 	/*
 	 * We could include disable_cost in the preliminary estimate, but that
 	 * would amount to optimizing for the case where the join method is
@@ -2810,6 +2804,10 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		path->jpath.path.rows = path->jpath.path.param_info->ppi_rows;
 	else
 		path->jpath.path.rows = path->jpath.path.parent->rows;
+
+	/* For partial paths, scale row estimate. */
+	if (path->jpath.path.parallel_workers > 0)
+		path->jpath.path.rows /= get_parallel_divisor(&path->jpath.path);
 
 	/*
 	 * We could include disable_cost in the preliminary estimate, but that
@@ -3754,6 +3752,49 @@ approx_tuple_count(PlannerInfo *root, JoinPath *path, List *quals)
 
 
 /*
+ * set_baserel_rows_estimate
+ *		Set the rows estimate for the given base relation.
+ *
+ * Rows is the estimated number of output tuples after applying
+ * restriction clauses.
+ *
+ * To support loadable plugins that monitor or modify cardinality estimation,
+ * we provide a hook variable that lets a plugin get control before and
+ * after the cardinality estimation.
+ * The hook must set rel->rows.
+ */
+void
+set_baserel_rows_estimate(PlannerInfo *root, RelOptInfo *rel)
+{
+	if (set_baserel_rows_estimate_hook)
+		(*set_baserel_rows_estimate_hook) (root, rel);
+	else
+		set_baserel_rows_estimate_standard(root, rel);
+}
+
+/*
+ * set_baserel_rows_estimate
+ *		Set the rows estimate for the given base relation.
+ *
+ * Rows is the estimated number of output tuples after applying
+ * restriction clauses.
+ */
+void
+set_baserel_rows_estimate_standard(PlannerInfo *root, RelOptInfo *rel)
+{
+	double		nrows;
+
+	nrows = rel->tuples *
+		clauselist_selectivity(root,
+							   rel->baserestrictinfo,
+							   0,
+							   JOIN_INNER,
+							   NULL);
+
+	rel->rows = clamp_row_est(nrows);
+}
+
+/*
  * set_baserel_size_estimates
  *		Set the size estimates for the given base relation.
  *
@@ -3769,19 +3810,10 @@ approx_tuple_count(PlannerInfo *root, JoinPath *path, List *quals)
 void
 set_baserel_size_estimates(PlannerInfo *root, RelOptInfo *rel)
 {
-	double		nrows;
-
 	/* Should only be applied to base relations */
 	Assert(rel->relid > 0);
 
-	nrows = rel->tuples *
-		clauselist_selectivity(root,
-							   rel->baserestrictinfo,
-							   0,
-							   JOIN_INNER,
-							   NULL);
-
-	rel->rows = clamp_row_est(nrows);
+	set_baserel_rows_estimate(root, rel);
 
 	cost_qual_eval(&rel->baserestrictcost, rel->baserestrictinfo, root);
 
@@ -3792,13 +3824,33 @@ set_baserel_size_estimates(PlannerInfo *root, RelOptInfo *rel)
  * get_parameterized_baserel_size
  *		Make a size estimate for a parameterized scan of a base relation.
  *
+ * To support loadable plugins that monitor or modify cardinality estimation,
+ * we provide a hook variable that lets a plugin get control before and
+ * after the cardinality estimation.
+ */
+double
+get_parameterized_baserel_size(PlannerInfo *root, RelOptInfo *rel,
+							   List *param_clauses)
+{
+	if (get_parameterized_baserel_size_hook)
+		return (*get_parameterized_baserel_size_hook) (root, rel,
+													   param_clauses);
+	else
+		return get_parameterized_baserel_size_standard(root, rel,
+													   param_clauses);
+}
+
+/*
+ * get_parameterized_baserel_size_standard
+ *		Make a size estimate for a parameterized scan of a base relation.
+ *
  * 'param_clauses' lists the additional join clauses to be used.
  *
  * set_baserel_size_estimates must have been applied already.
  */
 double
-get_parameterized_baserel_size(PlannerInfo *root, RelOptInfo *rel,
-							   List *param_clauses)
+get_parameterized_baserel_size_standard(PlannerInfo *root, RelOptInfo *rel,
+										List *param_clauses)
 {
 	List	   *allclauses;
 	double		nrows;
@@ -3828,6 +3880,36 @@ get_parameterized_baserel_size(PlannerInfo *root, RelOptInfo *rel,
  * set_joinrel_size_estimates
  *		Set the size estimates for the given join relation.
  *
+ * To support loadable plugins that monitor or modify cardinality estimation,
+ * we provide a hook variable that lets a plugin get control before and
+ * after the cardinality estimation.
+ * The hook must set rel->rows value.
+ */
+void
+set_joinrel_size_estimates(PlannerInfo *root, RelOptInfo *rel,
+						   RelOptInfo *outer_rel,
+						   RelOptInfo *inner_rel,
+						   SpecialJoinInfo *sjinfo,
+						   List *restrictlist)
+{
+	if (set_joinrel_size_estimates_hook)
+		(*set_joinrel_size_estimates_hook) (root, rel,
+											outer_rel,
+											inner_rel,
+											sjinfo,
+											restrictlist);
+	else
+		set_joinrel_size_estimates_standard(root, rel,
+											outer_rel,
+											inner_rel,
+											sjinfo,
+											restrictlist);
+}
+
+/*
+ * set_joinrel_size_estimates_standard
+ *		Set the size estimates for the given join relation.
+ *
  * The rel's targetlist must have been constructed already, and a
  * restriction clause list that matches the given component rels must
  * be provided.
@@ -3847,11 +3929,11 @@ get_parameterized_baserel_size(PlannerInfo *root, RelOptInfo *rel,
  * build_joinrel_tlist, and baserestrictcost is not used for join rels.
  */
 void
-set_joinrel_size_estimates(PlannerInfo *root, RelOptInfo *rel,
-						   RelOptInfo *outer_rel,
-						   RelOptInfo *inner_rel,
-						   SpecialJoinInfo *sjinfo,
-						   List *restrictlist)
+set_joinrel_size_estimates_standard(PlannerInfo *root, RelOptInfo *rel,
+									RelOptInfo *outer_rel,
+									RelOptInfo *inner_rel,
+									SpecialJoinInfo *sjinfo,
+									List *restrictlist)
 {
 	rel->rows = calc_joinrel_size_estimate(root,
 										   outer_rel,
@@ -3866,6 +3948,35 @@ set_joinrel_size_estimates(PlannerInfo *root, RelOptInfo *rel,
  * get_parameterized_joinrel_size
  *		Make a size estimate for a parameterized scan of a join relation.
  *
+ * To support loadable plugins that monitor or modify cardinality estimation,
+ * we provide a hook variable that lets a plugin get control before and
+ * after the cardinality estimation.
+ */
+double
+get_parameterized_joinrel_size(PlannerInfo *root, RelOptInfo *rel,
+							   Path *outer_path,
+							   Path *inner_path,
+							   SpecialJoinInfo *sjinfo,
+							   List *restrict_clauses)
+{
+	if (get_parameterized_joinrel_size_hook)
+		return (*get_parameterized_joinrel_size_hook) (root, rel,
+													   outer_path,
+													   inner_path,
+													   sjinfo,
+													   restrict_clauses);
+	else
+		return get_parameterized_joinrel_size_standard(root, rel,
+													   outer_path,
+													   inner_path,
+													   sjinfo,
+													   restrict_clauses);
+}
+
+/*
+ * get_parameterized_joinrel_size_standard
+ *		Make a size estimate for a parameterized scan of a join relation.
+ *
  * 'rel' is the joinrel under consideration.
  * 'outer_path', 'inner_path' are (probably also parameterized) Paths that
  *		produce the relations being joined.
@@ -3878,11 +3989,11 @@ set_joinrel_size_estimates(PlannerInfo *root, RelOptInfo *rel,
  * set_joinrel_size_estimates must have been applied already.
  */
 double
-get_parameterized_joinrel_size(PlannerInfo *root, RelOptInfo *rel,
-							   Path *outer_path,
-							   Path *inner_path,
-							   SpecialJoinInfo *sjinfo,
-							   List *restrict_clauses)
+get_parameterized_joinrel_size_standard(PlannerInfo *root, RelOptInfo *rel,
+										Path *outer_path,
+										Path *inner_path,
+										SpecialJoinInfo *sjinfo,
+										List *restrict_clauses)
 {
 	double		nrows;
 
@@ -4086,6 +4197,7 @@ get_foreign_key_join_selectivity(PlannerInfo *root,
 	{
 		ForeignKeyOptInfo *fkinfo = (ForeignKeyOptInfo *) lfirst(lc);
 		bool		ref_is_outer;
+		bool		use_smallest_selectivity = false;
 		List	   *removedlist;
 		ListCell   *cell;
 		ListCell   *prev;
@@ -4206,9 +4318,9 @@ get_foreign_key_join_selectivity(PlannerInfo *root,
 		 * be double-counting the null fraction, and (2) it's not very clear
 		 * how to combine null fractions for multiple referencing columns.
 		 *
-		 * In the first branch of the logic below, null derating is done
-		 * implicitly by relying on clause_selectivity(); in the other two
-		 * paths, we do nothing for now about correcting for nulls.
+		 * In the use_smallest_selectivity code below, null derating is done
+		 * implicitly by relying on clause_selectivity(); in the other cases,
+		 * we do nothing for now about correcting for nulls.
 		 *
 		 * XXX another point here is that if either side of an FK constraint
 		 * is an inheritance parent, we estimate as though the constraint
@@ -4231,28 +4343,41 @@ get_foreign_key_join_selectivity(PlannerInfo *root,
 			 * the smallest per-column selectivity, instead.  (This should
 			 * correspond to the FK column with the most nulls.)
 			 */
-			Selectivity thisfksel = 1.0;
-
-			foreach(cell, removedlist)
-			{
-				RestrictInfo *rinfo = (RestrictInfo *) lfirst(cell);
-				Selectivity csel;
-
-				csel = clause_selectivity(root, (Node *) rinfo,
-										  0, jointype, sjinfo);
-				thisfksel = Min(thisfksel, csel);
-			}
-			fkselec *= thisfksel;
+			use_smallest_selectivity = true;
 		}
 		else if (jointype == JOIN_SEMI || jointype == JOIN_ANTI)
 		{
 			/*
 			 * For JOIN_SEMI and JOIN_ANTI, the selectivity is defined as the
-			 * fraction of LHS rows that have matches.  If the referenced
-			 * table is on the inner side, that means the selectivity is 1.0
-			 * (modulo nulls, which we're ignoring for now).  We already
-			 * covered the other case, so no work here.
+			 * fraction of LHS rows that have matches.  The referenced table
+			 * is on the inner side (we already handled the other case above),
+			 * so the FK implies that every LHS row has a match *in the
+			 * referenced table*.  But any restriction or join clauses below
+			 * here will reduce the number of matches.
 			 */
+			if (bms_membership(inner_relids) == BMS_SINGLETON)
+			{
+				/*
+				 * When the inner side of the semi/anti join is just the
+				 * referenced table, we may take the FK selectivity as equal
+				 * to the selectivity of the table's restriction clauses.
+				 */
+				RelOptInfo *ref_rel = find_base_rel(root, fkinfo->ref_relid);
+				double		ref_tuples = Max(ref_rel->tuples, 1.0);
+
+				fkselec *= ref_rel->rows / ref_tuples;
+			}
+			else
+			{
+				/*
+				 * When the inner side of the semi/anti join is itself a join,
+				 * it's hard to guess what fraction of the referenced table
+				 * will get through the join.  But we still don't want to
+				 * multiply per-column estimates together.  Take the smallest
+				 * per-column selectivity, instead.
+				 */
+				use_smallest_selectivity = true;
+			}
 		}
 		else
 		{
@@ -4265,6 +4390,26 @@ get_foreign_key_join_selectivity(PlannerInfo *root,
 			double		ref_tuples = Max(ref_rel->tuples, 1.0);
 
 			fkselec *= 1.0 / ref_tuples;
+		}
+
+		/*
+		 * Common code for cases where we should use the smallest selectivity
+		 * that would be computed for any one of the FK's clauses.
+		 */
+		if (use_smallest_selectivity)
+		{
+			Selectivity thisfksel = 1.0;
+
+			foreach(cell, removedlist)
+			{
+				RestrictInfo *rinfo = (RestrictInfo *) lfirst(cell);
+				Selectivity csel;
+
+				csel = clause_selectivity(root, (Node *) rinfo,
+										  0, jointype, sjinfo);
+				thisfksel = Min(thisfksel, csel);
+			}
+			fkselec *= thisfksel;
 		}
 	}
 
@@ -4764,4 +4909,32 @@ static double
 page_size(double tuples, int width)
 {
 	return ceil(relation_byte_size(tuples, width) / BLCKSZ);
+}
+
+/*
+ * Estimate the fraction of the work that each worker will do given the
+ * number of workers budgeted for the path.
+ */
+static double
+get_parallel_divisor(Path *path)
+{
+	double		parallel_divisor = path->parallel_workers;
+	double		leader_contribution;
+
+	/*
+	 * Early experience with parallel query suggests that when there is only
+	 * one worker, the leader often makes a very substantial contribution to
+	 * executing the parallel portion of the plan, but as more workers are
+	 * added, it does less and less, because it's busy reading tuples from the
+	 * workers and doing whatever non-parallel post-processing is needed.  By
+	 * the time we reach 4 workers, the leader no longer makes a meaningful
+	 * contribution.  Thus, for now, estimate that the leader spends 30% of
+	 * its time servicing each worker, and the remainder executing the
+	 * parallel plan.
+	 */
+	leader_contribution = 1.0 - (0.3 * path->parallel_workers);
+	if (leader_contribution > 0)
+		parallel_divisor += leader_contribution;
+
+	return parallel_divisor;
 }

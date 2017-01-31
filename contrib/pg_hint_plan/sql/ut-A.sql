@@ -70,8 +70,9 @@ EXPLAIN (COSTS false) SELECT * /*+SeqScan(t1)*/ FROM s1.t1 WHERE t1.c1 = 1;
 
 SET pg_hint_plan.enable_hint_table TO on;
 -- No. A-6-1-1
+SET client_min_messages TO INFO;
 \d hint_plan.hints
-
+SET client_min_messages TO LOG;
 ----
 ---- No. A-6-2 search condition
 ----

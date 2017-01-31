@@ -236,7 +236,6 @@ CREATE ROLE <replaceable class="PARAMETER">name</replaceable> [ [ WITH ] <replac
         password string).  This allows reloading of encrypted passwords
         during dump/restore.
        </para>
-
        <para>
         Note that older clients might lack support for the MD5 or SCRAM
         authentication mechanism that is needed to work with passwords

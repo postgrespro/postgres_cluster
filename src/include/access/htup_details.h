@@ -237,8 +237,8 @@ struct HeapTupleHeaderData
  */
 #define HEAP_LOCKED_UPGRADED(infomask) \
 ( \
-	 ((infomask) & HEAP_XMAX_IS_MULTI) && \
-	 ((infomask) & HEAP_XMAX_LOCK_ONLY) && \
+	 ((infomask) & HEAP_XMAX_IS_MULTI) != 0 && \
+	 ((infomask) & HEAP_XMAX_LOCK_ONLY) != 0 && \
 	 (((infomask) & (HEAP_XMAX_EXCL_LOCK | HEAP_XMAX_KEYSHR_LOCK)) == 0) \
 )
 
@@ -340,7 +340,7 @@ struct HeapTupleHeaderData
 
 #define HeapTupleHeaderXminCommitted(tup) \
 ( \
-	(tup)->t_infomask & HEAP_XMIN_COMMITTED \
+	((tup)->t_infomask & HEAP_XMIN_COMMITTED) != 0 \
 )
 
 #define HeapTupleHeaderXminInvalid(tup) \
@@ -544,7 +544,7 @@ do { \
 
 #define HeapTupleHeaderIsHeapOnly(tup) \
 ( \
-  (tup)->t_infomask2 & HEAP_ONLY_TUPLE \
+  ((tup)->t_infomask2 & HEAP_ONLY_TUPLE) != 0 \
 )
 
 #define HeapTupleHeaderSetHeapOnly(tup) \
@@ -559,7 +559,7 @@ do { \
 
 #define HeapTupleHeaderHasMatch(tup) \
 ( \
-  (tup)->t_infomask2 & HEAP_TUPLE_HAS_MATCH \
+  ((tup)->t_infomask2 & HEAP_TUPLE_HAS_MATCH) != 0 \
 )
 
 #define HeapTupleHeaderSetMatch(tup) \
