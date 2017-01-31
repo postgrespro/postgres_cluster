@@ -1230,14 +1230,14 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 			edata = CopyErrorData();
 			FlushErrorState();
 
+			estate->eval_econtext = old_eval_econtext;
+
 			plpgsql_destroy_econtext(estate);
 
 			old_shared_estate = shared_simple_eval_estate;
 			shared_simple_eval_estate = NULL;
 			AbortCurrentTransaction();
 			shared_simple_eval_estate = old_shared_estate;
-
-			estate->eval_econtext = old_eval_econtext;
 
 			if (block->exceptions)
 			{
