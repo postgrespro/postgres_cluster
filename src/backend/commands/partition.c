@@ -179,7 +179,7 @@ create_range_partitions(PartitionInfo *pinfo,
 	 * Start value. It is always non-NULL whenever partition_data = True.
 	 * Otherwise the actual start value doesn't matter
 	 */
-	Assert(pinfo->start_value != NULL && partition_data != PDT_NONE);
+	Assert((pinfo->start_value == NULL) == (partition_data == PDT_NONE));
 	if (pinfo->start_value)
 	{
 		Node *n = cookPartitionKeyValue(relid,
@@ -234,7 +234,6 @@ create_range_partitions(PartitionInfo *pinfo,
 	 */
 	if (pinfo->start_value)
 	{
-
 		pm_add_range_partition(relid,
 							   atttype,
 							   NULL,
@@ -248,7 +247,7 @@ create_range_partitions(PartitionInfo *pinfo,
 
 
 /*
- * Converts 
+ * Converts interval from Value
  */
 static void
 read_interval_value(PartitionInfo *pinfo,

@@ -61,3 +61,17 @@ CREATE TABLE abc(id serial)
 PARTITION BY HASH (id) PARTITIONS (3);
 
 SELECT * FROM pathman_partition_list;
+
+DROP TABLE abc CASCADE;
+
+CREATE TABLE abc(id serial);
+INSERT INTO abc SELECT generate_series(1, 1000);
+
+ALTER TABLE abc PARTITION BY RANGE (id) START FROM (1) INTERVAL (100);
+SELECT * FROM pathman_partition_list;
+SELECT drop_partitions('abc');
+
+ALTER TABLE abc PARTITION BY HASH (id) PARTITIONS (3);
+SELECT * FROM pathman_partition_list;
+
+DROP TABLE abc CASCADE;
