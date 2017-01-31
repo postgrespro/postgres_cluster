@@ -8,7 +8,6 @@
  *-------------------------------------------------------------------------
  */
 
-#include <stdint.h>
 #include "postgres.h"
 #include "fmgr.h"
 #include "nodes/parsenodes.h"
