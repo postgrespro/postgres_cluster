@@ -14,7 +14,14 @@
 #include "postgres.h"
 #include "nodes/parsenodes.h"
 
-extern void create_partitions(PartitionInfo *pinfo, Oid relid, bool partition_data);
+typedef enum PartitionDataType
+{
+	PDT_NONE = 0,
+	PDT_REGULAR,
+	PDT_CONCURRENT
+} PartitionDataType;
+
+extern void create_partitions(PartitionInfo *pinfo, Oid relid, PartitionDataType partition_data);
 extern void merge_range_partitions(List *partitions, RangePartitionInfo *into);
 extern void add_range_partition(Oid parent, RangePartitionInfo *rpinfo);
 extern void split_range_partition(Oid relid, AlterTableCmd *cmd);

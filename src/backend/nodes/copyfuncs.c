@@ -4303,6 +4303,18 @@ _copyPartitionInfo(const PartitionInfo *from)
 	return newnode;
 }
 
+static PartitionStmt *
+_copyPartitionStmt(const PartitionStmt* from)
+{
+	PartitionStmt *newnode = makeNode(PartitionStmt);
+
+	COPY_NODE_FIELD(relation);
+	COPY_NODE_FIELD(pinfo);
+	COPY_SCALAR_FIELD(concurrent);
+
+	return newnode;
+}
+
 /*
  * copyObject
  *
@@ -5106,6 +5118,9 @@ copyObject(const void *from)
 			 */
 		case T_ForeignKeyCacheInfo:
 			retval = _copyForeignKeyCacheInfo(from);
+			break;
+		case T_PartitionStmt:
+			retval = _copyPartitionStmt(from);
 			break;
 		case T_PartitionInfo:
 			retval = _copyPartitionInfo(from);

@@ -1568,7 +1568,6 @@ typedef enum AlterTableType
 	AT_RenamePartition,			/* RENAME PARTITION */
 	AT_DropPartition,			/* DROP PARTITION */
 	AT_MovePartition,			/* MOVE PARTITION */
-	AT_PartitionBy				/* PARTITION BY RANGE/HASH */
 } AlterTableType;
 
 typedef struct ReplicaIdentityStmt
@@ -1591,7 +1590,6 @@ typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
 	bool		missing_ok;		/* skip error if missing? */
 
 	List	   *partitions;		/* For partitions commands */
-	// RangePartitionInfo *partition;
 } AlterTableCmd;
 
 
@@ -3164,5 +3162,16 @@ typedef struct WaitLSNStmt
 	char	   *lsn;			/* Taraget LSN to wait for */
 	int			delay;			/* Delay to wait for LSN*/
 } WaitLSNStmt;
+
+/*
+ * ALTER TABLE ... PARTITION BY statement
+ */
+typedef struct PartitionStmt
+{
+	NodeTag		type;
+	RangeVar   *relation;
+	PartitionInfo *pinfo;
+	bool		concurrent;
+} PartitionStmt;
 
 #endif   /* PARSENODES_H */

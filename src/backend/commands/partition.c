@@ -11,6 +11,7 @@
 #include "postgres.h"
 #include "miscadmin.h"
 
+#include "access/xact.h"
 #include "access/htup_details.h"
 #include "catalog/heap.h"
 #include "catalog/namespace.h"
@@ -27,13 +28,21 @@
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
 #include "utils/lsyscache.h"
+#include "utils/snapmgr.h"
 
 
 static void create_hash_partitions(PartitionInfo *pinfo,
 								   Oid relid,
 								   const char* attname,
-								   bool partition_data);
-static void create_range_partitions(PartitionInfo *pinfo, Oid relid, const char *attname, bool partition_data);
+								   PartitionDataType partition_data);
+static void create_range_partitions(PartitionInfo *pinfo,
+									Oid relid,
+									const char *attname,
+									PartitionDataType partition_data);
+static void read_interval_value(PartitionInfo *pinfo,
+								Oid atttype,
+								Oid *interval_type,
+								Datum *interval_datum);
 static Node *cookPartitionKeyValue(Oid relid, const char *raw, Node *raw_value);
 static char *RangeVarGetString(const RangeVar *rangevar);
 static Oid RangeVarGetNamespaceId(const RangeVar *rangevar);
@@ -43,7 +52,7 @@ static Oid RangeVarGetNamespaceId(const RangeVar *rangevar);
 
 
 void
-create_partitions(PartitionInfo *pinfo, Oid relid, bool partition_data)
+create_partitions(PartitionInfo *pinfo, Oid relid, PartitionDataType partition_data)
 {
 	Value  *attname = (Value *) linitial(((ColumnRef *) pinfo->key)->fields);
 
@@ -64,7 +73,27 @@ create_partitions(PartitionInfo *pinfo, Oid relid, bool partition_data)
 			}
 	}
 
-	SPI_finish(); /* close SPI connection */
+	SPI_finish();
+
+	/* Start concurrent partitioning if needed */
+	if (partition_data == PDT_CONCURRENT)
+	{
+		/*
+		 * We must commit current transaction to make partitions visible to the
+		 * worker
+		 */
+		PopActiveSnapshot();
+		CommitTransactionCommand();
+		StartTransactionCommand();
+
+		if (SPI_connect() != SPI_OK_CONNECT)
+			elog(ERROR, "could not connect using SPI");
+
+		/* Start worker */
+		pm_partition_table_concurrently(relid);
+
+		SPI_finish();
+	}
 }
 
 
@@ -72,10 +101,10 @@ static void
 create_hash_partitions(PartitionInfo *pinfo,
 					   Oid relid,
 					   const char* attname,
-					   bool partition_data)
+					   PartitionDataType partition_data)
 {
-	char **relnames = NULL;
-	char **tablespaces = NULL;
+	char  **relnames = NULL;
+	char  **tablespaces = NULL;
 
 	if (list_length(pinfo->partitions) > 0)
 	{
@@ -100,7 +129,7 @@ create_hash_partitions(PartitionInfo *pinfo,
 	pm_create_hash_partitions(relid,
 							  attname,
 							  pinfo->partitions_count,
-							  partition_data,
+							  partition_data == PDT_REGULAR,
 							  relnames,
 							  tablespaces);
 
@@ -120,7 +149,7 @@ static void
 create_range_partitions(PartitionInfo *pinfo,
 						Oid relid,
 						const char *attname,
-						bool partition_data)
+						PartitionDataType partition_data)
 {
 	ListCell	   *lc;
 	Datum			last_bound = (Datum) 0;
@@ -133,9 +162,8 @@ create_range_partitions(PartitionInfo *pinfo,
 	Datum			start_value;
 
 	/* parameters */
-	Datum			interval_datum = (Datum) 0;
+	Datum			interval_datum;
 	Oid				interval_type;
-	Const		   *interval_const;
 	ParseState	   *pstate = make_parsestate(NULL);
 
 	if (!attnum)
@@ -144,9 +172,100 @@ create_range_partitions(PartitionInfo *pinfo,
 	atttype = get_atttype(relid, attnum);
 	atttypmod = get_atttypmod(relid, attnum);
 
+	/* Interval */
+	read_interval_value(pinfo, atttype, &interval_type, &interval_datum);
+
+	/*
+	 * Start value. It is always non-NULL whenever partition_data = True.
+	 * Otherwise the actual start value doesn't matter
+	 */
+	Assert(pinfo->start_value != NULL && partition_data != PDT_NONE);
+	if (pinfo->start_value)
+	{
+		Node *n = cookPartitionKeyValue(relid,
+										 attname,
+										 (Node *) pinfo->start_value);
+		if (!IsA(n, Const))
+			elog(ERROR, "Start value must be a constatnt");
+		start_value = ((Const *) n)->constvalue;
+	}
+	else
+		start_value = (Datum) 0;
+
+	/* Invoke pg_pathman's wrapper */
+	pm_create_range_partitions(relid,
+							   attname,
+							   atttype,
+							   start_value,
+							   interval_datum,
+							   interval_type,
+							   pinfo->interval == NULL,
+							   partition_data == PDT_REGULAR,
+							   partition_data == PDT_CONCURRENT);
+
+	/* Add partitions */
+	foreach(lc, pinfo->partitions)
+	{
+		RangePartitionInfo *p = (RangePartitionInfo *) lfirst(lc);
+		Node *orig = (Node *) p->upper_bound;
+		Node *bound_expr;
+
+		/* Transform raw expression */
+		bound_expr = cookDefault(pstate, orig, atttype, atttypmod, (char *) attname);
+
+		if (!IsA(bound_expr, Const))
+			elog(ERROR, "Constant expected");
+
+		pm_add_range_partition(relid,
+							((Const *) bound_expr)->consttype,
+							p->relation ? p->relation->relname : NULL,
+							last_bound,
+							((Const *) bound_expr)->constvalue,
+							last_bound_is_null,
+							false,
+							p->tablespace);
+		last_bound = ((Const *) bound_expr)->constvalue;
+		last_bound_is_null = false;
+	}
+
+	/*
+	 * Add semi-infinite partition to the left (only for ALTER TABLE ...
+	 * PARTITION BY), i.e. when start value is set
+	 */
+	if (pinfo->start_value)
+	{
+
+		pm_add_range_partition(relid,
+							   atttype,
+							   NULL,
+							   (Datum) 0,	/* it doesn't matter */
+							   start_value,
+							   true,
+							   false,
+							   NULL);
+	}
+}
+
+
+/*
+ * Converts 
+ */
+static void
+read_interval_value(PartitionInfo *pinfo,
+					Oid atttype,
+					Oid *interval_type,
+					Datum *interval_datum)
+{
+	ParseState	   *pstate = make_parsestate(NULL);
+
+	/* Default value */
+	*interval_datum = (Datum) 0;
+
 	/* If interval is set then convert it to a suitable Datum value */
 	if (pinfo->interval != NULL)
 	{
+		Const		   *interval_const;
+
 		if (IsA(pinfo->interval, A_Const))
 		{
 			A_Const    *con = (A_Const *) pinfo->interval;
@@ -175,16 +294,16 @@ create_range_partitions(PartitionInfo *pinfo,
 
 					/* Get a text representation of the interval */
 					interval_literal = DatumGetCString(interval_const->constvalue);
-					interval_datum = DirectFunctionCall3(interval_in,
+					*interval_datum = DirectFunctionCall3(interval_in,
 														 CStringGetDatum(interval_literal),
 														 ObjectIdGetDatum(InvalidOid),
 														 Int32GetDatum(-1));
-					interval_type = INTERVALOID;
+					*interval_type = INTERVALOID;
 				}
 				break;
 			default:
-				interval_datum = interval_const->constvalue;
-				interval_type = interval_const->consttype;
+				*interval_datum = interval_const->constvalue;
+				*interval_type = interval_const->consttype;
 		}
 	}
 	else /* If interval is not set  */
@@ -194,62 +313,10 @@ create_range_partitions(PartitionInfo *pinfo,
 			case DATEOID:
 			case TIMESTAMPOID:
 			case TIMESTAMPTZOID:
-				interval_type = INTERVALOID;
+				*interval_type = INTERVALOID;
 			default:
-				interval_type = atttype;
+				*interval_type = atttype;
 		}
-	}
-
-	/*
-	 * Start value. It is always non-NULL whenever partition_data = True.
-	 * Otherwise the actual start value doesn't matter
-	 */
-	Assert( (pinfo->start_value != NULL) == partition_data );
-	if (pinfo->start_value)
-	{
-		Node *n = cookPartitionKeyValue(relid,
-										 attname,
-										 (Node *) pinfo->start_value);
-		if (!IsA(n, Const))
-			elog(ERROR, "Start value must be a constatnt");
-		start_value = ((Const *) n)->constvalue;
-	}
-	else
-		start_value = (Datum) 0;
-
-	/* Invoke pg_pathman's wrapper */
-	pm_create_range_partitions(relid,
-							   attname,
-							   atttype,
-							   start_value,
-							   interval_datum,
-							   interval_type,
-							   pinfo->interval == NULL,
-							   partition_data);
-
-	/* Add partitions */
-	foreach(lc, pinfo->partitions)
-	{
-		RangePartitionInfo *p = (RangePartitionInfo *) lfirst(lc);
-		Node *orig = (Node *) p->upper_bound;
-		Node *bound_expr;
-
-		/* Transform raw expression */
-		bound_expr = cookDefault(pstate, orig, atttype, atttypmod, (char *) attname);
-
-		if (!IsA(bound_expr, Const))
-			elog(ERROR, "Constant expected");
-
-		pm_add_range_partition(relid,
-							((Const *) bound_expr)->consttype,
-							p->relation ? p->relation->relname : NULL,
-							last_bound,
-							((Const *) bound_expr)->constvalue,
-							last_bound_is_null,
-							false,
-							p->tablespace);
-		last_bound = ((Const *) bound_expr)->constvalue;
-		last_bound_is_null = false;
 	}
 }
 

@@ -322,7 +322,18 @@ construct_text_array(char **arr, int nelem)
 
 
 /*
+ * Adds record for a RANGE partitioned table to pg_pathman's config and
+ * optionally creates partitions (see below)
  *
+ * Behaviour:
+ * - partition_data=true
+ *		creates partitions and moves all the data;
+ * - prepopulate_partitions=true and partition_data=false
+ *		creates partitions but no data moved. It is useful if data migration
+ *		will be done later (for example, concurrent partitioning);
+ * - prepopulate_partitions=true and partition_data=false
+ *		only pg_pathman updated, but no partitions created. Partitions will
+ *		be created manually later by invoking pm_add_partition()
  */
 void
 pm_create_range_partitions(Oid relid,
@@ -332,7 +343,8 @@ pm_create_range_partitions(Oid relid,
 						Datum interval,
 						Oid interval_type,
 						bool interval_isnull,
-						bool partition_data)
+						bool partition_data,
+						bool prepopulate_partitions)
 {
 	FuncArgs		args;
 	int				ret;
@@ -354,7 +366,7 @@ pm_create_range_partitions(Oid relid,
 	 * partitions count to zero assuming that new partitions will be added
 	 * explicitly by invoking pm_add_range_partition()
 	 */
-	if (partition_data)
+	if (prepopulate_partitions || partition_data)
 		PG_SETARG_NULL(&args, 4, INT4OID);
 	else
 		PG_SETARG_DATUM(&args, 4, INT4OID, Int32GetDatum(0));
@@ -559,4 +571,24 @@ pm_drop_range_partition_expand_next(Oid relid)
 
 	if (!ret)
 		elog(ERROR, "Unable to drop partition '%s'", get_rel_name(relid));
+}
+
+
+/*
+ * Start concurrent data mirgration
+ */
+void
+pm_partition_table_concurrently(Oid relid)
+{
+	FuncArgs	args;
+	bool		ret;
+
+	InitFuncArgs(&args, 1);
+	PG_SETARG_DATUM(&args, 0, OIDOID, relid);
+
+	ret = pathman_invoke("partition_table_concurrently($1)", &args);
+	FreeFuncArgs(&args);
+
+	if (!ret)
+		elog(ERROR, "Unable to start concurrent data migration");
 }

@@ -723,7 +723,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	/* Handle partitioning */
 	if (stmt->partition_info)
 	{
-		(void) create_partitions(stmt->partition_info, rel->rd_id, false);
+		(void) create_partitions(stmt->partition_info, rel->rd_id, PDT_NONE);
 	}
 
 	return address;
@@ -3073,7 +3073,6 @@ AlterTableGetLockLevel(List *cmds)
 			case AT_RenamePartition:
 			case AT_DropPartition:
 			case AT_MovePartition:
-			case AT_PartitionBy:
 				break;
 
 			default:			/* oops */
@@ -3408,7 +3407,6 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_RenamePartition:
 		case AT_DropPartition:
 		case AT_MovePartition:
-		case AT_PartitionBy:
 			pass = AT_PASS_MISC;
 			break;
 
@@ -3751,9 +3749,6 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			break;
 		case AT_MovePartition:
 			move_partition(rel->rd_id, cmd);
-			break;
-		case AT_PartitionBy:
-			create_partitions((PartitionInfo *) cmd->def, rel->rd_id, true);
 			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",

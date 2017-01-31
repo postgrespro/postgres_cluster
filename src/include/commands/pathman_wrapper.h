@@ -57,7 +57,8 @@ void pm_create_range_partitions(Oid relid,
 						Datum interval,
 						Oid interval_type,
 						bool interval_isnull,
-						bool partition_data);
+						bool partition_data,
+						bool prepopulate_partitions);
 
 void pm_add_range_partition(Oid relid,
 					Oid type,
@@ -75,3 +76,4 @@ void pm_split_range_partition(Oid part_relid,
 						 const char *tablespace);
 void pm_alter_partition(Oid relid, const char *new_relname, Oid new_namespace, const char *new_tablespace);
 void pm_drop_range_partition_expand_next(Oid relid);
+void pm_partition_table_concurrently(Oid relid);

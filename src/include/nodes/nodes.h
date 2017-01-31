@@ -486,6 +486,7 @@ typedef enum NodeTag
 	/*
 	 * TAGS FOR PARTITIONING
 	 */
+	T_PartitionStmt,
 	T_PartitionInfo,
 	T_RangePartitionInfo
 } NodeTag;

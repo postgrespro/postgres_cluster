@@ -1800,6 +1800,14 @@ AlterTableStmt:
 					n->missing_ok = true;
 					$$ = (Node *)n;
 				}
+		|	ALTER TABLE relation_expr PARTITION BY alterPartitionType opt_concurrently
+				{
+					PartitionStmt *n = makeNode(PartitionStmt);
+					n->relation = $3;
+					n->pinfo = $6;
+					n->concurrent = $7;
+					$$ = (Node *)n;
+				}
 		|	ALTER TABLE ALL IN_P TABLESPACE name SET TABLESPACE name opt_nowait
 				{
 					AlterTableMoveAllStmt *n =
@@ -2461,13 +2469,6 @@ alter_table_cmd:
 					n->subtype = AT_MovePartition;
 					n->partitions = list_make1($3);
 					n->name = $5;
-					$$ = (Node *)n;
-				}
-			| PARTITION BY alterPartitionType
-				{
-					AlterTableCmd *n = makeNode(AlterTableCmd);
-					n->subtype = AT_PartitionBy;
-					n->def = (Node *) $3;
 					$$ = (Node *)n;
 				}
 		;
