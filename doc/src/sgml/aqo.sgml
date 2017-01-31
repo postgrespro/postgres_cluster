@@ -52,12 +52,11 @@
           <filename>postgresql.conf</filename> file:
         </para>
         <programlisting>
-shared_preload_libraries = 'aqo.so'
+shared_preload_libraries = 'aqo'
 </programlisting>
         <para>
-          You must preload the <filename>aqo.so</filename> library at the server startup,
-          since adaptive query optimization needs to be enabled per
-          database.
+          You should preload the `aqo` library at the server startup, since
+ adaptive query optimization needs to be enabled per database, not per connection. Otherwise, all the collected statistics will be lost when the session ends.
         </para>
       </listitem>
       <listitem>
@@ -314,7 +313,7 @@ DELETE FROM aqo_data WHERE fspace_hash = (SELECT fspace_hash FROM aqo_queries
       query planner, run:
     </para>
     <programlisting>
-UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;s
+UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;
 </programlisting>
     </sect3>
   </sect2>
@@ -322,31 +321,36 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;s
     <title>Reference</title>
       <sect3 id="aqo-variables">
       <title>Configuration Variables</title>
-      <para>The aqo extension provides the following configuration variables:
-      </para>
         <sect4 id="aqo-mode">
         <title>aqo.mode</title>
         <para>Defines the <filename>aqo</filename> optimization modes. 
         </para>
-        <para><emphasis role="strong">Options:</emphasis>
-        </para>
-        <itemizedlist spacing="compact">
-          <listitem>
-            <para>
-              <literal>intelligent</literal> - auto-tunes your queries based on statistics collected per query type.
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>forced</literal> - optimizes all queries together, regardless of the query type.
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>manual</literal> (default) - uses the default planner for all new queries, but can reuse the collected statistics for already known query types, if any.
-            </para>
-          </listitem>
-        </itemizedlist>
+        
+ <table id="aqo-mode-options">
+  <title>aqo.mode Options</title>
+  <tgroup cols="2">
+   <thead>
+    <row><entry>Option</entry> <entry>Description</entry>
+    </row>
+   </thead>
+
+   <tbody>
+    <row>
+     <entry><literal>intelligent</literal></entry>
+     <entry>Auto-tunes your queries based on statistics collected per query type.</entry>
+     
+    </row>
+    <row>
+     <entry><literal>forced</literal></entry>
+     <entry>Optimizes all queries together, regardless of the query type.</entry>
+    </row>
+    <row>
+     <entry><literal>manual</literal></entry>
+     <entry><emphasis role="strong">Default.</emphasis> Uses the default planner for all new queries, but can reuse the collected statistics for already known query types, if any.</entry>
+    </row>
+   </tbody>
+  </tgroup>
+ </table>
         </sect4>
 
   
@@ -357,54 +361,67 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;s
         <title>aqo_query_texts Table</title>
         <para>
           The <literal>aqo_query_texts</literal> table classifies all
-          the query types processed by <filename>aqo</filename>. This
-          table includes the following columns:
+          the query types processed by <filename>aqo</filename>. 
         </para>
-        <itemizedlist spacing="compact">
-          <listitem>
-            <para>
-              <literal>query_hash</literal> stores the hash value that
-              uniquely identifies the query type.
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>query_text</literal> provides a sample query of
-              the given type.
-            </para>
-          </listitem>
-        </itemizedlist>
+         <table id="aqo-query-texts-ref">
+         <title>aqo_query_texts Table</title>
+  <tgroup cols="2">
+   <thead>
+    <row><entry>Column Name</entry> <entry>Description</entry>
+    </row>
+   </thead>
+
+   <tbody>
+    <row>
+     <entry><literal>query_hash</literal></entry>
+     <entry>Stores the hash value that uniquely identifies the query type.</entry>  
+    </row>
+    <row>
+     <entry><literal>query_text</literal></entry>
+     <entry>Provides a sample query of
+              the given type.</entry>
+    </row>
+
+   </tbody>
+  </tgroup>
+ </table>
       </sect4>
       <sect4 id="aqo-queries-table">
         <title>aqo_queries Table</title>
         <para>
           The <literal>aqo_queries</literal> table stores optimization
-          settings for different query types:
+          settings for different query types.
         </para>
-        <itemizedlist spacing="compact">
-          <listitem>
-            <para>
-              <literal>query_hash</literal> stores the hash value that
-              uniquely identifies the query type.
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>learn_aqo</literal> enables statistics collection
-              for this query type.
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>use_aqo</literal> enables AQO cardinality
+
+ <table id="aqo-queries-table-ref">
+ <title>aqo_queries Table</title>
+  <tgroup cols="2">
+   <thead>
+    <row><entry>Setting</entry><entry>Description</entry>
+    </row>
+   </thead>
+
+   <tbody>
+    <row>
+     <entry><literal>query_hash</literal></entry>
+     <entry>Stores the hash value that uniquely identifies the query type.</entry>
+     
+    </row>
+    <row>
+     <entry><literal>learn_aqo</literal></entry>
+     <entry>Enables statistics collection
+              for this query type.</entry>
+    </row>
+    <row>
+     <entry><literal>use_aqo</literal></entry>
+     <entry>Enables <filename>aqo</filename> cardinality
               prediction for the next execution of this query type. If
               cost estimation model is incomplete, this may slow down
-              query execution.
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>fspace_hash</literal> is a unique identifier of
+              query execution.</entry>
+    </row>
+    <row>
+     <entry><literal>fspace_hash</literal></entry>
+     <entry>Provides a unique identifier of
               the separate space in which the data for this query type
               is collected. By default, <literal>fspace_hash</literal>
               is equal to <literal>query_hash</literal>. Using this
@@ -413,21 +430,21 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;s
               amount of memory for models and even improve query
               execution performance. However, changing this setting may
               cause unexpected <filename>aqo</filename> behavior, so make sure to use it only
-              if you know what you are doing.
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>auto_tuning</literal> shows whether
+              if you know what you are doing.</entry>
+    </row>
+    <row>
+     <entry><literal>auto_tuning</literal></entry>
+     <entry>Shows whether
               <filename>aqo</filename> tries to tune other settings for
               the given query. By default, auto-tuning in enabled in the
               intelligent mode. In other modes, new queries are not
               appended to <literal>aqo_queries</literal> automatically.
               You can change this behavior by setting the
-              <literal>auto_tuning</literal> variable to TRUE.
-            </para>
-          </listitem>
-        </itemizedlist>
+              <literal>auto_tuning</literal> variable to TRUE.</entry>
+    </row>
+   </tbody>
+  </tgroup>
+ </table>
       </sect4>
       <sect4 id="aqo-data-table">
         <title>aqo_data Table</title>
@@ -469,5 +486,12 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;s
         </para>
       </sect4>
     </sect3>
+  </sect2>
+  <sect2 id="aqo-authors">
+    <title>Authors</title>
+    <para>
+    Oleg Ivanov <email>o.ivanov@postgrespro.ru</email>,
+    Postgres Professional, Moscow, Russia
+    </para>
   </sect2>
 </sect1>
