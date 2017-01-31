@@ -23,7 +23,8 @@ sub _new
 		VisualStudioVersion        => undef,
 		MinimumVisualStudioVersion => undef,
 		vcver                      => undef,
-		platform                   => undef, };
+		platform                   => undef, 
+		have_stdint_h			   => 0};
 	bless($self, $classname);
 
 	$self->DeterminePlatform();
@@ -172,6 +173,7 @@ sub GenerateFiles
 			s{#define PGPRO_VERSION_STR "[^"]+"}{#define PGPRO_VERSION_STR PGPRO_PACKAGE_STR " compiled by Visual C++ build" __STRINGIFY2(_MSC_VER) ", $bits-bit"};
 			print O;
 		}
+		print O "#define HAVE_STDINT_H\n" if $self->{have_stdint_h};
 		print O "#define PG_MAJORVERSION \"$self->{majorver}\"\n";
 		print O "#define LOCALEDIR \"/share/locale\"\n"
 		  if ($self->{options}->{nls});
@@ -255,14 +257,7 @@ sub GenerateFiles
 		{
 			print O "#define USE_ICU\n";
 		}
-		if ($self->{options}->{libedit})
-		{
-			print O "#define HAVE_EDITLINE_READLINE_H\n";
-			print O "#define HAVE_LIBREADLINE\n";
-			print O "#define HAVE_WIN32_LIBEDIT\n";
-			print O "#define HAVE_RL_FILENAME_COMPLETION_FUNCTION\n";
-			print O "#define HAVE_RL_COMPLETION_MATCHES\n";
-		}
+	
 		print O "#define VAL_CONFIGURE \""
 		  . $self->GetFakeConfigure() . "\"\n";
 		print O "#endif /* IGNORE_CONFIGURED_SETTINGS */\n";
@@ -761,7 +756,6 @@ sub new
 	$self->{solutionFileVersion} = '10.00';
 	$self->{vcver}               = '9.00';
 	$self->{visualStudioName}    = 'Visual Studio 2008';
-
 	return $self;
 }
 
@@ -785,6 +779,7 @@ sub new
 	$self->{solutionFileVersion} = '11.00';
 	$self->{vcver}               = '10.00';
 	$self->{visualStudioName}    = 'Visual Studio 2010';
+	$self->{have_stdint_h} = 1;
 
 	return $self;
 }
@@ -809,6 +804,7 @@ sub new
 	$self->{solutionFileVersion} = '12.00';
 	$self->{vcver}               = '11.00';
 	$self->{visualStudioName}    = 'Visual Studio 2012';
+	$self->{have_stdint_h} 		        = 1;
 
 	return $self;
 }
@@ -835,6 +831,7 @@ sub new
 	$self->{visualStudioName}           = 'Visual Studio 2013';
 	$self->{VisualStudioVersion}        = '12.0.21005.1';
 	$self->{MinimumVisualStudioVersion} = '10.0.40219.1';
+	$self->{have_stdint_h} 		        = 1;
 
 	return $self;
 }
@@ -861,6 +858,7 @@ sub new
 	$self->{visualStudioName}           = 'Visual Studio 2015';
 	$self->{VisualStudioVersion}        = '14.0.24730.2';
 	$self->{MinimumVisualStudioVersion} = '10.0.40219.1';
+	$self->{have_stdint_h} 		        = 1;
 
 	return $self;
 }
