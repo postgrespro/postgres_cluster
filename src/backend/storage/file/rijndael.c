@@ -44,7 +44,7 @@ Mean:		   500 cycles =    51.2 mbits/sec
 #include <string.h>
 #include <stdint.h>
 
-#include "crypto/rijndael.h"
+#include "storage/rijndael.h"
 
 #define PRE_CALC_TABLES
 #define LARGE_TABLES
