@@ -169,21 +169,77 @@ After that configure and atart multimaster from step 3 of previous section. See 
 
 ## Tuning configuration params
 
-While multimaster is usable with default configuration optins several params may require tuning.
+While multimaster is usable with default configuration, several params may require tuning.
 
-* Hearbeat timeouts — multimaster periodically send heartbeat packets to check availability of neighbour nodes. ```multimaster.heartbeat_send_timeout``` defines amount of time between sending heartbeats, while ```multimaster.heartbeat_recv_timeout``` sets amount of time following which node assumed to be disconnected if no hearbeats were received during this time. It's good idea to set ```multimaster.heartbeat_send_timeout``` based on typical ping latencies between you nodes. Small recv/senv ratio decraeases time of failure detection, but increases probability of false positive failure detection, so tupical packet loss ratio between nodes should be taken into account.
+* Hearbeat timeouts — multimaster periodically send heartbeat packets to check availability of neighbour nodes. ```multimaster.heartbeat_send_timeout``` defines amount of time between sending heartbeats, while ```multimaster.heartbeat_recv_timeout``` sets amount of time following which node assumed to be disconnected if no hearbeats were received during this time. It's good idea to set ```multimaster.heartbeat_send_timeout``` based on typical ping latencies between you nodes. Small recv/senv ratio decreases time of failure detection, but increases probability of false positive failure detection, so tupical packet loss ratio between nodes should be taken into account.
 
-* Min/max recovery lag — when node is disconnected from the cluster other nodes will keep to collect WAL logs for disconnected node until size of WAL log will grow to ```multimaster.max_recovery_lag```. Upon reaching this threshold WAL logs for disconnected node will be deleted, automatic recovery will be no longer possible and disconnected node should be cloned manually from one of alive node by ```pg_basebackup```. Increasing ```multimaster.max_recovery_lag``` increases amount of time while automatic recovery is possible, but also increasing maximum disk usage during WAL collection. On the other hand ```multimaster.min_recovery_lag``` sets difference between acceptor and donor nodes before switching ordanary recovery to exclusive mode, when commits on donor node are stopped. This step is necessary to ensure that no new commits will happend during node promotion from recovery state to online state and nodes will be at sync after that.
+* Min/max recovery lag — when node is disconnected from the cluster other nodes will keep to collect WAL logs for disconnected node until size of WAL log will grow to ```multimaster.max_recovery_lag```. Upon reaching this threshold WAL logs for disconnected node will be deleted, automatic recovery will be no longer possible and disconnected node should be cloned manually from one of alive nodes by ```pg_basebackup```. Increasing ```multimaster.max_recovery_lag``` increases amount of time while automatic recovery is possible, but also increasing maximum disk usage during WAL collection. On the other hand ```multimaster.min_recovery_lag``` sets difference between acceptor and donor nodes before switching ordanary recovery to exclusive mode, when commits on donor node are stopped. This step is necessary to ensure that no new commits will happend during node promotion from recovery state to online state and nodes will be at sync after that.
 
 
 ## Monitoring
 
-* `mtm.get_nodes_state()` -- show status of nodes on cluster
-* `mtm.get_cluster_state()` -- show whole cluster status
-* `mtm.get_cluster_info()` -- print some debug info
+Multimaster provides several views to check current cluster state. To access this functions ```multimaster``` extension should be created explicitely. Run in psql:
 
-Read description of all management functions at [functions](doc/functions.md)
+    ```sql
+    CREATE EXTENSION multimaster;
+    ```
+
+Then it is possible to check nodes specific information via ```mtm.get_nodes_state()```:
+
+    ```sql
+    select * from mtm.get_nodes_state();
+    ```
+
+and status of whole cluster can bee seen through:
+
+    ```sql
+    select * from mtm.get_cluster_state();
+    ```
+
+Read description of all monitoring functions at [functions](doc/functions.md)
 
 ## Adding nodes to cluster
+
+Mulmimaster is able to add/drop cluster nodes without restart. To add new node one should change cluster configuration on alive nodes, than load data to a new node using ```pg_basebackup``` and start node.
+
+Suppose we have working cluster of three nodes (```node1```, ```node2```, ```node3```) and want to add new ```node4``` to the cluster.
+
+1. First we need to figure out connection string that will be used to access new server. Let's assume that in our case that will be "dbname=mydb user=myuser host=node4". Run in psql connected to any live node:
+
+    ```sql
+    select * from mtm.add_node('dbname=mydb user=myuser host=node4');
+    ```
+
+    this will change cluster configuration on all nodes and start replication slots for a new node.
+
+1. After calling ```mtm.add_node()``` we can copy data from alive node on new node:
+
+    ```
+    node4> pg_basebackup -D ./datadir -h node1 -x
+    ```
+
+1. ```pg_basebackup``` will copy entire data directory from ```node1``` among with configs. So we need to change ```postgresql.conf``` for ```node4```:
+
+    ```
+    multimaster.max_nodes = 4
+    multimaster.node_id = 4
+    multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user=myuser host=node2, dbname=mydb user=myuser host=node3, dbname=mydb user=myuser host=node4'
+    ```
+
+1. Now we can just start postgres on new node:
+
+    ```
+    node4> pg_ctl -D ./datadir -l ./pg.log start
+    ```
+
+    After switching on node will recover recent transaction and change state to ONLINE. Node status can be checked via ```mtm.get_nodes_state()``` view on any cluster node.
+
+1. Now cluster is using new node, but we also should change ```multimaster.conn_strings``` and ```multimaster.max_nodes``` on old nodes to ensure that right configuration will be loaded in case of postgres restart.
+
+
 ## Excluding nodes from cluster
+
+
+
+
 
