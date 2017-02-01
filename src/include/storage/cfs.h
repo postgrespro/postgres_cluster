@@ -4,6 +4,7 @@
 #include "pg_config.h"
 
 #include "port/atomics.h"
+#include "storage/rijndael.h"
 
 #define CFS_VERSION "0.22"
 
