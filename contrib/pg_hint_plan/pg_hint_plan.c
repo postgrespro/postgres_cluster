@@ -90,7 +90,7 @@ PG_MODULE_MAGIC;
 			 errdetail detail))
 
 #define skip_space(str) \
-	while (isspace(*str)) \
+	while (isspace(*str) && (*str &0x80)== 0) \
 		str++;
 
 enum
