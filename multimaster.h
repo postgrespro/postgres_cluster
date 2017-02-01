@@ -133,6 +133,7 @@ typedef enum
 	MTM_CONNECTED,      /* Arbiter is established connections with other nodes */
 	MTM_ONLINE,         /* Ready to receive client's queries */
 	MTM_RECOVERY,       /* Node is in recovery process */
+	MTM_RECOVERED,      /* Node is recovered by is not yet switched to ONLINE because not all sender/receivers are restarted */
 	MTM_IN_MINORITY,    /* Node is out of quorum */
 	MTM_OUT_OF_SERVICE  /* Node is not avaiable to to critical, non-recoverable error */
 } MtmNodeStatus;
