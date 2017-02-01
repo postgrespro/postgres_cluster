@@ -305,7 +305,7 @@ pglogical_receiver_main(Datum main_arg)
 			timestamp_t start = MtmGetSystemTime();
 			appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", slotName);
 			res = PQexec(conn, query->data);
-			elog(LOG, "Recreate replication slot %s: %ld millisconds", slotName, (long)USEC_TO_MSEC(MtmGetSystemTime() - start));
+			elog(LOG, "Drop replication slot %s: %ld milliseconds", slotName, (long)USEC_TO_MSEC(MtmGetSystemTime() - start));
 			PQclear(res);
 			resetPQExpBuffer(query);
 			timeline = Mtm->nodes[nodeId-1].timeline;

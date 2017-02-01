@@ -243,6 +243,9 @@ static bool MtmWriteSocket(int sd, void const* buf, int size)
 		if (rc == 1) { 
 			while ((rc = send(sd, src, size, 0)) < 0 && errno == EINTR);			
 			if (rc < 0) {
+				if (errno == EINPROGRESS) { 
+					continue;
+				}
 				return false;
 			}
 			size -= rc;
@@ -258,7 +261,7 @@ static int MtmReadSocket(int sd, void* buf, int buf_size)
 {
 	int rc;
 	while ((rc = recv(sd, buf, buf_size, 0)) < 0 && errno == EINTR);			
-	if (rc <= 0 && errno == EAGAIN) { 
+	if (rc <= 0 && (errno == EAGAIN || errno == EINPROGRESS)) { 
 		rc = MtmWaitSocket(sd, false, MtmHeartbeatSendTimeout);
 		if (rc == 1) { 
 			while ((rc = recv(sd, buf, buf_size, 0)) < 0 && errno == EINTR);			
@@ -328,6 +331,7 @@ static void MtmCheckResponse(MtmArbiterMessage* resp)
 	if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) 
 		&& !BIT_CHECK(Mtm->disabledNodeMask, resp->node-1)
 		&& Mtm->status != MTM_RECOVERY
+		&& Mtm->status != MTM_RECOVERED
 		&& Mtm->nodes[MtmNodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < MtmGetSystemTime()) 
 	{ 
 		elog(WARNING, "Node %d thinks that I am dead, while I am %s (message %s)", resp->node, MtmNodeStatusMnem[Mtm->status], MtmMessageKindMnem[resp->code]);

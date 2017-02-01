@@ -201,6 +201,7 @@ char const* const MtmNodeStatusMnem[] =
 	"Connected",
 	"Online",
 	"Recovery",
+	"Recovered",
 	"InMinor",
 	"OutOfService"
 };
@@ -831,7 +832,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		 * Allow applying of replicated transactions to avoid deadlock (to caught-up we need active transaction counter to become zero).
 		 * Also allow user to complete explicit 2PC transactions.
 		 */
-		if (x->isDistributed && !x->isReplicated && x->isTwoPhase && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
+		if (x->isDistributed && !x->isReplicated && !x->isTwoPhase && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
 			MtmCheckClusterLock();
 		}
 
@@ -1872,7 +1873,7 @@ void MtmRecoveryCompleted(void)
 		BIT_SET(Mtm->nodeLockerMask, MtmNodeId-1); /* it is trik: this mask was originally use by WAL senders performing recovery, but here we are in opposite (recovered) side:
 											   * if this mask is not zero loadReq will be broadcasted to all other nodes by heartbeat, suspending their activity
 											   */
-		MtmSwitchClusterMode(MTM_CONNECTED);  
+		MtmSwitchClusterMode(MTM_RECOVERED);  
 	}
 	MtmUnlock();
 }
@@ -2029,35 +2030,17 @@ MtmCheckClusterLock()
 	timestamp_t delay = MIN_WAIT_TIMEOUT;
 	while (true)
 	{
-		nodemask_t mask = Mtm->walSenderLockerMask;
-		if (Mtm->globalLockerMask | mask) {
-			if (Mtm->nActiveTransactions == 0) { 
-				lsn_t currLogPos = GetXLogInsertRecPtr();
-				int i;
-				for (i = 0; mask != 0; i++, mask >>= 1) { 
-					if (mask & 1) { 
-						if (WalSndCtl->walsnds[i].sentPtr != currLogPos) {
-							/* recovery is in progress */
-							break;
-						} else { 
-							/* recovered replica caught up with master */
-							MTM_LOG1("WAL-sender %d complete recovery", i);
-							BIT_CLEAR(Mtm->walSenderLockerMask, i);
-						}
-					}
-				}
+		if (Mtm->globalLockerMask | Mtm->walSenderLockerMask) {
+			/* some "almost cautch-up" wal-senders are still working. */
+			/* Do not start new transactions until them are completed. */
+			MtmUnlock();
+			MtmSleep(delay);
+			if (delay*2 <= MAX_WAIT_TIMEOUT) { 
+				delay *= 2;
 			}
-			if (Mtm->globalLockerMask | mask) { 
-				/* some "almost cautch-up" wal-senders are still working. */
-				/* Do not start new transactions until them are completed. */
-				MtmUnlock();
-				MtmSleep(delay);
-				if (delay*2 <= MAX_WAIT_TIMEOUT) { 
-					delay *= 2;
-				}
-				MtmLock(LW_EXCLUSIVE);
-				continue;
-			} else {  
+			MtmLock(LW_EXCLUSIVE);
+		} else { 
+			if (Mtm->nodeLockerMask != 0) {  
 				/* All lockers have synchronized their logs */
 				/* Remove lock and mark them as recovered */
 				MTM_LOG1("Complete recovery of %d nodes (node mask %llx)", Mtm->nLockers, Mtm->nodeLockerMask);
@@ -2070,8 +2053,8 @@ MtmCheckClusterLock()
 				Mtm->nodeLockerMask = 0;
 				MtmCheckQuorum();
 			}
+			break;
 		}
-		break;
 	}
 }	
 
@@ -3229,7 +3212,9 @@ void MtmReceiverStarted(int nodeId)
 			MtmCheckQuorum();
 		}
 		elog(LOG, "Start %d receivers and %d senders from %d cluster status %s", Mtm->nReceivers+1, Mtm->nSenders, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
-		if (++Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->status == MTM_CONNECTED) { 
+		if (++Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1 
+			&& (Mtm->status == MTM_RECOVERED || Mtm->status == MTM_CONNECTED)) 
+		{ 
 			BIT_CLEAR(Mtm->nodeLockerMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
 			MtmSwitchClusterMode(MTM_ONLINE);
 		}
@@ -3331,7 +3316,8 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 		Mtm->preparedTransactionsLoaded = true;
 	}
 
-	while ((Mtm->status != MTM_CONNECTED && Mtm->status != MTM_ONLINE) || BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) 
+	while ((Mtm->status != MTM_CONNECTED && Mtm->status != MTM_RECOVERED && Mtm->status != MTM_ONLINE) 
+		   || BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) 
 	{ 	
 		if (*shutdown) 
 		{ 
@@ -3540,7 +3526,9 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	if (!BIT_CHECK(Mtm->pglogicalSenderMask, MtmReplicationNodeId-1)) { 
 		elog(LOG, "Start %d senders and %d receivers from %d cluster status %s", Mtm->nSenders+1, Mtm->nReceivers, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
 		BIT_SET(Mtm->pglogicalSenderMask, MtmReplicationNodeId-1);
-		if (++Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->status == MTM_CONNECTED) { 
+		if (++Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->nReceivers == Mtm->nLiveNodes-1
+			&& (Mtm->status == MTM_RECOVERED || Mtm->status == MTM_CONNECTED)) 
+		{ 
 			/* All logical replication connections from and to this node are established, so we can switch cluster to online mode */
 			BIT_CLEAR(Mtm->nodeLockerMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
 			MtmSwitchClusterMode(MTM_ONLINE);
