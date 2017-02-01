@@ -46,6 +46,8 @@ static void read_interval_value(PartitionInfo *pinfo,
 static Node *cookPartitionKeyValue(Oid relid, const char *raw, Node *raw_value);
 static char *RangeVarGetString(const RangeVar *rangevar);
 static Oid RangeVarGetNamespaceId(const RangeVar *rangevar);
+static char *generate_unique_child_relname(Oid relid, const char *prefix);
+
 
 #define equalstr(a, b)	\
 	(((a) != NULL && (b) != NULL) ? (strcmp(a, b) == 0) : (a) == (b))
@@ -234,14 +236,19 @@ create_range_partitions(PartitionInfo *pinfo,
 	 */
 	if (pinfo->start_value)
 	{
+		char *relname = psprintf("%s_inf", get_rel_name(relid));
+		char *unique_relname = generate_unique_child_relname(relid, relname);
+
 		pm_add_range_partition(relid,
 							   atttype,
-							   NULL,
+							   unique_relname,
 							   (Datum) 0,	/* it doesn't matter */
 							   start_value,
 							   true,
 							   false,
 							   NULL);
+		pfree(relname);
+		pfree(unique_relname);
 	}
 }
 
@@ -317,6 +324,36 @@ read_interval_value(PartitionInfo *pinfo,
 				*interval_type = atttype;
 		}
 	}
+}
+
+
+static char *
+generate_unique_child_relname(Oid relid, const char *prefix)
+{
+	Oid			namespace = get_rel_namespace(relid);
+	uint32_t	cnt = 0;
+	char	   *relname;
+
+	/* Try till we get a unique name */
+	while (true)
+	{
+		/* First try if prefix itself is unique enough */
+		relname = cnt ?
+			psprintf("%s_%u", prefix, DatumGetInt32(cnt))
+			: pstrdup(prefix);
+
+		/*
+		 * If we found a unique name or attemps number exceeds some reasonable
+		 * value then we quit
+		 */
+		if (get_relname_relid(relname, namespace) == InvalidOid || cnt >= 1000)
+			break;
+
+		pfree(relname);
+		cnt++;
+	}
+
+	return (char *) quote_identifier(relname);
 }
 
 
