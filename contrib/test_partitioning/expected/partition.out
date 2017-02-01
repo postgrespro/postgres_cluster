@@ -93,7 +93,7 @@ ALTER TABLE abc PARTITION BY RANGE (id) START FROM (1) INTERVAL (100);
 SELECT * FROM pathman_partition_list;
  parent | partition | parttype | partattr | range_min | range_max 
 --------+-----------+----------+----------+-----------+-----------
- abc    | abc_11    |        2 | id       | NULL      | 1
+ abc    | abc_inf   |        2 | id       | NULL      | 1
  abc    | abc_1     |        2 | id       | 1         | 101
  abc    | abc_2     |        2 | id       | 101       | 201
  abc    | abc_3     |        2 | id       | 201       | 301
@@ -118,7 +118,7 @@ NOTICE:  100 rows copied from abc_7
 NOTICE:  100 rows copied from abc_8
 NOTICE:  100 rows copied from abc_9
 NOTICE:  100 rows copied from abc_10
-NOTICE:  0 rows copied from abc_11
+NOTICE:  0 rows copied from abc_inf
  drop_partitions 
 -----------------
               11
