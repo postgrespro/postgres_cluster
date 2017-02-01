@@ -116,7 +116,7 @@ create_hash_partitions(PartitionInfo *pinfo,
 		tablespaces = palloc(sizeof(char *) * pinfo->partitions_count);
 		foreach(lc, pinfo->partitions)
 		{
-			RangePartitionInfo *p = (RangePartitionInfo *) lfirst(lc);
+			PartitionNode *p = (PartitionNode *) lfirst(lc);
 
 			relnames[i] = RangeVarGetString(p->relation);
 			tablespaces[i] = p->tablespace ?
@@ -206,9 +206,9 @@ create_range_partitions(PartitionInfo *pinfo,
 	/* Add partitions */
 	foreach(lc, pinfo->partitions)
 	{
-		RangePartitionInfo *p = (RangePartitionInfo *) lfirst(lc);
-		Node *orig = (Node *) p->upper_bound;
-		Node *bound_expr;
+		PartitionNode  *p = (PartitionNode *) lfirst(lc);
+		Node		   *orig = (Node *) p->upper_bound;
+		Node		   *bound_expr;
 
 		/* Transform raw expression */
 		bound_expr = cookDefault(pstate, orig, atttype, atttypmod, (char *) attname);
@@ -343,7 +343,7 @@ cookPartitionKeyValue(Oid relid, const char *attname, Node *raw_value)
 
 
 void
-add_range_partition(Oid parent, RangePartitionInfo *rpinfo)
+add_range_partition(Oid parent, PartitionNode *rpinfo)
 {
 	char	   *attname;
 	AttrNumber	attnum;
@@ -380,7 +380,7 @@ add_range_partition(Oid parent, RangePartitionInfo *rpinfo)
 
 
 void
-merge_range_partitions(List *partitions, RangePartitionInfo *into)
+merge_range_partitions(List *partitions, PartitionNode *into)
 {
 	List	   *relids = NIL;
 	ListCell   *lc;
@@ -431,12 +431,12 @@ void
 split_range_partition(Oid parent,
 					  AlterTableCmd *cmd)
 {
-	Node	   *split_value;
-	RangePartitionInfo *orig, *p1, *p2;
-	char	   *attname;
-	Oid			partition_relid;
-	char	   *p2_relname = NULL;
-	char	   *p2_tablespace = NULL;
+	Node		   *split_value;
+	PartitionNode  *orig, *p1, *p2;
+	char		   *attname;
+	Oid				partition_relid;
+	char		   *p2_relname = NULL;
+	char		   *p2_tablespace = NULL;
 
 	/*
 	 * partitions list should contain at least one element -- the relation
@@ -451,7 +451,7 @@ split_range_partition(Oid parent,
 	attname = pm_get_partition_key(parent);
 
 	/* Split value is stored in def attribute */
-	orig = (RangePartitionInfo *) linitial(cmd->partitions);
+	orig = (PartitionNode *) linitial(cmd->partitions);
 	split_value = cookPartitionKeyValue(parent, attname, (Node *) cmd->def);
 
 	partition_relid = RangeVarGetRelid(orig->relation, NoLock, false);
@@ -470,8 +470,8 @@ split_range_partition(Oid parent,
 	 */
 	if (list_length(cmd->partitions) == 3)
 	{
-		p1 = (RangePartitionInfo *) lsecond(cmd->partitions);
-		p2 = (RangePartitionInfo *) lthird(cmd->partitions);
+		p1 = (PartitionNode *) lsecond(cmd->partitions);
+		p2 = (PartitionNode *) lthird(cmd->partitions);
 
 		p2_relname = RangeVarGetString(p2->relation);
 		p2_tablespace = p2->tablespace;

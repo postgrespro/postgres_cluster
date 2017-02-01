@@ -228,7 +228,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	InsertStmt			*istmt;
 	VariableSetStmt		*vsetstmt;
 	PartitionInfo		*partinfo;
-	RangePartitionInfo	*rangeinfo;
+	PartitionNode		*rangeinfo;
 }
 
 %type <node>	stmt schema_stmt
@@ -2427,7 +2427,7 @@ alter_table_cmd:
 				}
 			| SPLIT PARTITION qualified_name AT '(' b_expr ')' OptIntoPartitions
 				{
-					RangePartitionInfo *orig = makeNode(RangePartitionInfo);
+					PartitionNode *orig = makeNode(PartitionNode);
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					List *into_partitions = $8;
 
@@ -2591,7 +2591,7 @@ PartitionNameTablespaceList:
 PartitionNameTablespace:
 			PARTITION qualified_name OptTableSpace
 				{
-					RangePartitionInfo *n = makeNode(RangePartitionInfo);
+					PartitionNode *n = makeNode(PartitionNode);
 					n->relation = $2;
 					n->tablespace = $3;
 					$$ = n;
@@ -3103,11 +3103,11 @@ OptRangePartitionsList:
 OptRangePartitionsListElement:
 			PARTITION qualified_name VALUES LESS THAN '(' b_expr ')' OptTableSpace
 				{
-					RangePartitionInfo *n = makeNode(RangePartitionInfo);
+					PartitionNode *n = makeNode(PartitionNode);
 					n->relation = $2;
 					n->upper_bound = $7;
 					n->tablespace = $9;
-					$$ = (RangePartitionInfo *)n;
+					$$ = (PartitionNode *)n;
 				}
 		;
 
@@ -3125,10 +3125,10 @@ OptHashPartitionsList:
 OptHashPartitionsListElement:
 			PARTITION qualified_name OptTableSpace
 				{
-					RangePartitionInfo *n = makeNode(RangePartitionInfo);
+					PartitionNode *n = makeNode(PartitionNode);
 					n->relation = $2;
 					n->tablespace = $3;
-					$$ = (RangePartitionInfo *)n;
+					$$ = (PartitionNode *)n;
 				}
 		;
 

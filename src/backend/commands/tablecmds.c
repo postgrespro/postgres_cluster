@@ -12366,8 +12366,8 @@ AtExecMergePartitions(Relation rel, List *rangevars)
 	 * The first element is a tablename to merge all partitions into. The rest
 	 * are partitions themselves
 	 */
-	RangePartitionInfo *into = linitial(rangevars);
-	List *partitions = list_copy_tail(rangevars, 1);
+	PartitionNode  *into = linitial(rangevars);
+	List		   *partitions = list_copy_tail(rangevars, 1);
 
 	merge_range_partitions(partitions, into);
 }

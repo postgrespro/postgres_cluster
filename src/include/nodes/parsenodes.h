@@ -1449,16 +1449,16 @@ typedef struct PartitionInfo
 	uint32			partitions_count;	/* for PT_HASH only */
 	Node		   *interval;			/* for PT_RANGE only */
 	Node		   *start_value;		/* for PT_RANGE only */
-	List		   *partitions;			/* List of RangePartitionInfo */
+	List		   *partitions;			/* List of PartitionNodes */
 } PartitionInfo;
 
-typedef struct RangePartitionInfo
+typedef struct PartitionNode
 {
 	NodeTag			type;
 	RangeVar	   *relation;
 	Node		   *upper_bound;		/* For RANGE partitions only */
 	char		   *tablespace;
-} RangePartitionInfo;
+} PartitionNode;
 
 /* ----------------------
  *		Create Schema Statement

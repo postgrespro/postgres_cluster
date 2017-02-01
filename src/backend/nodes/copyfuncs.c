@@ -4282,10 +4282,10 @@ _copyForeignKeyCacheInfo(const ForeignKeyCacheInfo *from)
 }
 
 
-static RangePartitionInfo *
-_copyRangePartitionInfo(const RangePartitionInfo *from)
+static PartitionNode *
+_copyPartitionNode(const PartitionNode *from)
 {
-	RangePartitionInfo *newnode = makeNode(RangePartitionInfo);
+	PartitionNode *newnode = makeNode(PartitionNode);
 
 	COPY_NODE_FIELD(relation);
 	COPY_NODE_FIELD(upper_bound);
@@ -5131,8 +5131,8 @@ copyObject(const void *from)
 		case T_PartitionInfo:
 			retval = _copyPartitionInfo(from);
 			break;
-		case T_RangePartitionInfo:
-			retval = _copyRangePartitionInfo(from);
+		case T_PartitionNode:
+			retval = _copyPartitionNode(from);
 			break;
 
 
