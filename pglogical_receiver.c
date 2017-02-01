@@ -714,7 +714,9 @@ void MtmStartReceiver(int nodeId, bool dynamic)
 	worker.bgw_main_arg = Int32GetDatum(nodeId);
 	if (dynamic) { 
 		BackgroundWorkerHandle *handle;
-		RegisterDynamicBackgroundWorker(&worker, &handle);
+		if (!RegisterDynamicBackgroundWorker(&worker, &handle)) { 
+			elog(WARNING, "Failed to start background worker, please increase max_worker_processes configuration parameter (current value is %d)", max_worker_processes);
+		}
 	} else {
 		RegisterBackgroundWorker(&worker);
 	}

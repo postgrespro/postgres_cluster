@@ -342,6 +342,7 @@ void MtmSleep(timestamp_t interval)
 
     while (nanosleep(&ts, &rem) < 0) { 
         Assert(errno == EINTR);
+		CHECK_FOR_INTERRUPTS();
         ts = rem;
     }
 }
