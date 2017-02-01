@@ -1901,11 +1901,12 @@ FileWrite(File file, char *buffer, int amount)
 			inode = CFS_INODE(compressedSize, pos);
 			buffer = compressedBuffer;
 			amount = compressedSize;
+			/* cfs_encrypt will check if encryption is actually needed */
 			cfs_encrypt(buffer, VfdCache[file].seekPos, amount);
 		}
 		else
 		{
-			if (cfs_encryption)
+			if (cfs_encryption) /* we need to use buffer to perform encryption, so check if it is required */
 			{
 				memcpy(compressedBuffer, buffer, BLCKSZ);
 				buffer = compressedBuffer;
@@ -1946,12 +1947,6 @@ retry:
 		{
 			if (returnCode == amount)
 			{	
-                /* TODO. Is this comment still actual?
-				 * Verify that there is no race condition 
-				bool rc = pg_atomic_compare_exchange_u64((pg_atomic_uint64*)&VfdCache[file].map->inodes[VfdCache[file].seekPos / BLCKSZ],
-														 &prev_inode, inode);
-				Assert(rc);
-				*/
 				VfdCache[file].map->inodes[VfdCache[file].seekPos / BLCKSZ] = inode;
 				VfdCache[file].seekPos += BLCKSZ;
 				cfs_extend(VfdCache[file].map, VfdCache[file].seekPos);
