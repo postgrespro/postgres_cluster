@@ -5,7 +5,7 @@
 
 #include "port/atomics.h"
 
-#define CFS_VERSION "0.21"
+#define CFS_VERSION "0.22"
 
 #define CFS_GC_LOCK  0x10000000
 
