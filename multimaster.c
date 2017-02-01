@@ -1895,7 +1895,8 @@ MtmCheckSlots()
 			if (slot->in_use 
 				&& sscanf(slot->data.name.data, MULTIMASTER_SLOT_PATTERN, &nodeId) == 1
 				&& BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)
-				&& slot->data.confirmed_flush + MtmMaxRecoveryLag < GetXLogInsertRecPtr()) 
+				&& slot->data.confirmed_flush + MtmMaxRecoveryLag < GetXLogInsertRecPtr()
+				&& slot->data.confirmed_flush != 0)
 			{
 				elog(WARNING, "Drop slot for node %d which lag %lld is larger than threshold %d", 
 					 nodeId,
