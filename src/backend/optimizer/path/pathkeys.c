@@ -451,7 +451,7 @@ build_index_pathkeys(PlannerInfo *root,
 		PathKey    *cpathkey;
 
 		/*
-		 * INCLUDING columns are stored in index unordered,
+		 * INCLUDE columns are stored in index unordered,
 		 * so they don't support ordered index scan.
 		 */
 		if(i >= index->nkeycolumns)

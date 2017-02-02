@@ -1970,7 +1970,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 		index->indexParams = lappend(index->indexParams, iparam);
 	}
 
-	/* Here is some ugly code duplication. But we do need it. */
+	/* Here is some code duplication. But we do need it. */
 	foreach(lc, constraint->including)
 	{
 		char	   *key = strVal(lfirst(lc));

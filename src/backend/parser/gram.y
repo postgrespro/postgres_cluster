@@ -595,7 +595,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 	HANDLER HAVING HEADER_P HOLD HOUR_P
 
-	IDENTITY_P IF_P ILIKE IMMEDIATE IMMUTABLE IMPLICIT_P IMPORT_P IN_P
+	IDENTITY_P IF_P ILIKE IMMEDIATE IMMUTABLE IMPLICIT_P IMPORT_P IN_P INCLUDE
 	INCLUDING INCREMENT INDEX INDEXES INHERIT INHERITS INITIALLY INLINE_P
 	INNER_P INOUT INPUT_P INSENSITIVE INSERT INSTEAD INT_P INTEGER
 	INTERSECT INTERVAL INTO INVOKER IS ISNULL ISOLATION
@@ -3280,7 +3280,7 @@ ConstraintElem:
 					$$ = (Node *)n;
 				}
 			| EXCLUDE access_method_clause '(' ExclusionConstraintList ')'
-				opt_definition OptConsTableSpace ExclusionWhereClause
+				opt_c_including opt_definition OptConsTableSpace ExclusionWhereClause
 				ConstraintAttributeSpec
 				{
 					Constraint *n = makeNode(Constraint);
@@ -3288,11 +3288,12 @@ ConstraintElem:
 					n->location = @1;
 					n->access_method	= $2;
 					n->exclusions		= $4;
-					n->options			= $6;
+					n->including		= $6;
+					n->options			= $7;
 					n->indexname		= NULL;
-					n->indexspace		= $7;
-					n->where_clause		= $8;
-					processCASbits($9, @9, "EXCLUDE",
+					n->indexspace		= $8;
+					n->where_clause		= $9;
+					processCASbits($10, @10, "EXCLUDE",
 								   &n->deferrable, &n->initdeferred, NULL,
 								   NULL, yyscanner);
 					$$ = (Node *)n;
@@ -3338,11 +3339,16 @@ columnElem: ColId
 				}
 		;
 
-opt_c_including:	INCLUDING optcincluding			{ $$ = $2; }
+opt_c_including:	include_keyword optcincluding			{ $$ = $2; }
 			 |		/* EMPTY */						{ $$ = NIL; }
 		;
 
 optcincluding : '(' columnList ')'		{ $$ = $2; }
+		;
+
+include_keyword:
+		INCLUDE									{}
+		| INCLUDING /* Deprecated. Only in early versions of PGPRO. */	{}
 		;
 
 key_match:  MATCH FULL
@@ -6761,7 +6767,7 @@ index_elem:	ColId opt_collate opt_class opt_asc_desc opt_nulls_order
 
 optincluding : '(' index_including_params ')'		{ $$ = $2; }
 		;
-opt_including:		INCLUDING optincluding			{ $$ = $2; }
+opt_including:		include_keyword optincluding			{ $$ = $2; }
 			 |		/* EMPTY */						{ $$ = NIL; }
 		;
 
@@ -13851,6 +13857,7 @@ unreserved_keyword:
 			| IMMUTABLE
 			| IMPLICIT_P
 			| IMPORT_P
+			| INCLUDE
 			| INCLUDING
 			| INCREMENT
 			| INDEX

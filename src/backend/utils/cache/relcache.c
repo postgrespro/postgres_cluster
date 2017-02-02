@@ -1259,7 +1259,9 @@ RelationInitIndexAccessInfo(Relation relation)
 	InitIndexAmRoutine(relation);
 
 	/*
-	 * Allocate arrays to hold data
+	 * Allocate arrays to hold data.
+	 * Opclasses are not used for included columns, so
+	 * allocate them for indnkeyatts only.
 	 */
 	relation->rd_opfamily = (Oid *)
 		MemoryContextAllocZero(indexcxt, indnkeyatts * sizeof(Oid));
