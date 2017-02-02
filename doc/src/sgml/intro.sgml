@@ -214,7 +214,7 @@
      <simpara><application>fulleq</application> module provides additional equivalence operator to compatibility with Microsoft SQL Server.</simpara>
     </listitem>
     <listitem>
-     <simpara><application>fasttrun</application> module provides transaction unsafe function to truncate tempory tables without growing pg_class size.</simpara>
+     <simpara><application>fasttrun</application> module provides transaction unsafe function to truncate temporary tables without growing pg_class size.</simpara>
     </listitem>
     <listitem>
      <simpara><application>online_analyze</application> module provides set of
