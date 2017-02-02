@@ -239,7 +239,15 @@ Suppose we have working cluster of three nodes (```node1```, ```node2```, ```nod
 
 ## Excluding nodes from cluster
 
+Generally it is okay to just shutdown cluster node but all transaction in cluster will be freezed while other nodes will detect that node is gone (this period is controlled by the ```multimaster.heartbeat_recv_timeout``` parameter). To avoid such situation it is possible to exclude node from cluster in advance. 
 
+For example to stop node 3 run on any other node:
+
+    ```
+    select mtm.stop_node(3);
+    ```
+
+This will disable node 3 on all cluster nodes.
 
 
 
