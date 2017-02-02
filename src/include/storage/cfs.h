@@ -73,7 +73,7 @@ typedef struct
 	uint64 processedBytes;
 } CfsStatistic;
 
-/* CFS control state (maintained in shared memory) *.
+/* CFS control state (maintained in shared memory) */
 typedef struct
 {
 	/* Flag indicating that GC is in progress. It is used to prevent more than one GC. */
