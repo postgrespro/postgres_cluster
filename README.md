@@ -4,6 +4,8 @@
 
 The **pg_tsparser** module is the modified default text search parser from
 PostgreSQL 9.6.
+The difference between **tsparser** and **default** parsers is that **tsparser**
+gives also unbroken words by underscore character.
 
 ## License
 
@@ -41,10 +43,7 @@ ALTER TEXT SEARCH CONFIGURATION english_ts
 
 ## Examples
 
-The difference between **tsparser** and **default** parsers is that **tsparser**
-gives also unbroken words by underscore character.
-
-For example:
+Example of difference between **tsparser** and **default**:
 
 ```sql
 SELECT to_tsvector('english_ts', 'pg_trgm');
