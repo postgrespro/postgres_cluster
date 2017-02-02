@@ -175,3 +175,21 @@ SELECT * FROM ts_parse('tsparser', '345 qwe@efd.r '' http://www.com/ http://aew.
      1 | qwerty
 (139 rows)
 
+-- Test text search configuration with parser
+CREATE TEXT SEARCH CONFIGURATION english_ts (
+    PARSER = tsparser
+);
+ALTER TEXT SEARCH CONFIGURATION english_ts
+    ADD MAPPING FOR email, file, float, host, hword_numpart, int,
+    numhword, numword, sfloat, uint, url, url_path, version
+    WITH simple;
+ALTER TEXT SEARCH CONFIGURATION english_ts
+    ADD MAPPING FOR asciiword, asciihword, hword_asciipart,
+    word, hword, hword_part
+    WITH english_stem;
+SELECT to_tsvector('english_ts', 'pg_trgm');
+         to_tsvector         
+-----------------------------
+ 'pg':2 'pg_trgm':1 'trgm':3
+(1 row)
+
