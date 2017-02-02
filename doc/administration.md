@@ -15,26 +15,27 @@
 Multi-master consist of patched version of postgres and extension mmts, that provides most of the functionality, but depends on several modifications to postgres core.
 
 
-### Sources
+### Building multimaster from Source Code
 
-Ensure that following prerequisites are installed: 
+1. Depending on your operating system, ensure that the following prerequisites are installed.
 
-for Debian based linux:
+For Debian based Linux:
 
 ```
 apt-get install -y git make gcc libreadline-dev bison flex zlib1g-dev
 ```
 
-for RedHat based linux:
+For Red Hat based Linux:
 
 ```
 yum groupinstall 'Development Tools'
 yum install git, automake, libtool, bison, flex readline-devel
 ```
 
-on mac OS it enough to have XCode command line tools installed.
+For macOS systems:
+Make sure you have XCode command-line tools installed.
 
-After that everything is ready to install postgres along with multimaster extension.
+2. Install PostgreSQL with the multimaster extension:
 
 ```
 git clone https://github.com/postgrespro/postgres_cluster.git
@@ -43,7 +44,7 @@ cd postgres_cluster
 cd contrib/mmts && make install
 ```
 
-```./configure``` here is standard postgres autotools script, so it possible to specify [any options](https://www.postgresql.org/docs/9.6/static/install-procedure.html) available in postgres. Also please ensure that /path/to/install/bin is enlisted in ```PATH``` environment variable for current user:
+In this command, ```./configure``` is a standard PostgreSQL autotools script, so you can specify [any options](https://www.postgresql.org/docs/9.6/static/install-procedure.html) available in PostgreSQL. Make sure that /path/to/install/bin is specified in the ```PATH``` environment variable for the current user:
 
 ```
     export PATH=$PATH:/path/to/install/bin
@@ -67,8 +68,7 @@ docker-compose up
 
 ### PgPro packages
 
-When things go more stable we will release prebuilt packages for major platforms.
-
+PostgresPro Enterprise have all necessary dependencies and extensions included, so it is enough just install packages.
 
 
 ## Setting up empty cluster
@@ -90,37 +90,38 @@ After installing software on all cluster nodes we can configure our cluster. Her
     pg_ctl -D ./datadir -l ./pg.log stop
     ```
 
-1. To be able to run multimaster we need following changes to ```postgresql.conf```:
+1. Modify the ```postgresql.conf``` configuration file, as follows:
 
-    ```
-    ### General postgres option to let multimaster work
+    * Set up PostgreSQL parameters related to replication.
 
-    wal_level = logical     # multimaster is build on top of
-                            # logical replication and will not work otherwise
-    max_connections = 100
-    max_prepared_transactions = 300 # all transactions are implicitly two-phase, so that's
-                                    # a good idea to set this equal to max_connections*N_nodes.
-    max_wal_senders = 10       # at least the number of nodes
-    max_replication_slots = 10 # at least the number of nodes
-    max_worker_processes = 250 # Each node has:
-                            #   N_nodes-1 receiver
-                            #   N_nodes-1 sender
-                            #   1 mtm-sender
-                            #   1 mtm-receiver
-                            # Also transactions executed at neighbour nodes can cause spawn of
-                            # background pool worker at our node. At max this will be equal to
-                            # sum of max_connections on neighbour nodes.
+        ```
+        wal_level = logical
+        max_connections = 100
+        max_prepared_transactions = 300
+        max_wal_senders = 10       # at least the number of nodes
+        max_replication_slots = 10 # at least the number of nodes
+        ```
+        You must change the replication level to `logical` as multimaster relies on logical replication. For a cluster of N nodes,and enable at least N WAL sender processes and replication slots. Since multimaster implicitly adds a PREPARE phase to each COMMIT transaction, make sure to set the number of prepared transactions to N*max_connections. Otherwise, prepared transactions may be queued.
 
-    ### Multimaster-specific options
+    * Make sure you have enough background workers allocated for each node:
 
-    shared_preload_libraries = 'multimaster'
-    multimaster.max_nodes = 3  # cluster size
-    multimaster.node_id = 1    # the 1-based index of the node in the cluster
-    multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user=myuser host=node2, dbname=mydb user=myuser host=node3'
-                               # comma-separated list of connection strings to neighbour nodes.
-    ```
+        ```
+        max_worker_processes = 250
+        ```
+        For example, for a three-node cluster with max_connections = 100, multimaster may need up to 206 background workers at peak times: 200 workers for connections from the neighbour nodes, two workers for walsender processes, two workers for walreceiver processes, and two workers for the arbiter wender and receiver processes. When setting this parameter, remember that other modules may also use backround workers at the same time.
 
-    Full description of all configuration parameters available in section [configuration](doc/configuration.md). Depending on network environment and expected usage patterns one can want to tweak parameters.
+    * Add multimaster-specific options:
+
+        ```
+        multimaster.max_nodes = 3  # cluster size
+        multimaster.node_id = 1    # the 1-based index of the node in the cluster
+        multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user=myuser host=node2, dbname=mydb user=myuser host=node3'
+                                # comma-separated list of connection strings to neighbour nodes
+        ```
+
+        > **Important:** The `node_id` variable takes natural numbers starting from 1, without any gaps in numbering. For example, for a cluster of five nodes, set node IDs to 1, 2, 3, 4, and 5. In the `conn_strings` variable, make sure to list the nodes in the order of their IDs. Thus, the `conn_strings` variable must be the same on all nodes.
+
+    Depending on your network environment and usage patterns, you may want to tune other multimaster parameters. For details on all configuration parameters available, see [Tuning configuration params](#tuning-configuration-params).
 
 1. Allow replication in `pg_hba.conf`:
 
