@@ -775,6 +775,9 @@
 /* A string containing the version number of Postgres Pro */
 #undef PGPRO_VERSION_STR
 
+/* PostgresPro edition */
+#undef PGPRO_EDITION
+
 /* Define to 1 to allow profiling output to be saved separately for each
    process. */
 #undef PROFILE_PID_DIR

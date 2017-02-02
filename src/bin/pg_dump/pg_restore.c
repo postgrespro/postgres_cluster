@@ -325,6 +325,22 @@ main(int argc, char **argv)
 		exit_nicely(1);
 	}
 
+	if (numWorkers <= 0)
+	{
+		fprintf(stderr, _("%s: invalid number of parallel jobs\n"), progname);
+		exit(1);
+	}
+
+	/* See comments in pg_dump.c */
+#ifdef WIN32
+	if (numWorkers > MAXIMUM_WAIT_OBJECTS)
+	{
+		fprintf(stderr, _("%s: maximum number of parallel jobs is %d\n"),
+				progname, MAXIMUM_WAIT_OBJECTS);
+		exit(1);
+	}
+#endif
+
 	/* Can't do single-txn mode with multiple connections */
 	if (opts->single_txn && numWorkers > 1)
 	{
@@ -396,16 +412,6 @@ main(int argc, char **argv)
 
 	if (opts->tocFile)
 		SortTocFromFile(AH);
-
-	/* See comments in pg_dump.c */
-#ifdef WIN32
-	if (numWorkers > MAXIMUM_WAIT_OBJECTS)
-	{
-		fprintf(stderr, _("%s: maximum number of parallel jobs is %d\n"),
-				progname, MAXIMUM_WAIT_OBJECTS);
-		exit(1);
-	}
-#endif
 
 	AH->numWorkers = numWorkers;
 
@@ -490,5 +496,5 @@ usage(const char *progname)
 			 "The options -I, -n, -P, -t, -T, and --section can be combined and specified\n"
 			 "multiple times to select multiple objects.\n"));
 	printf(_("\nIf no input file name is supplied, then standard input is used.\n\n"));
-	printf(_("Report bugs to <pgsql-bugs@postgresql.org>.\n"));
+	printf(_("Report bugs to <" PACKAGE_BUGREPORT ">.\n"));
 }

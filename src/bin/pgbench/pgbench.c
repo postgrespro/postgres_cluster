@@ -449,7 +449,7 @@ usage(void)
 		 "  -V, --version            output version information, then exit\n"
 		   "  -?, --help               show this help, then exit\n"
 		   "\n"
-		   "Report bugs to <pgsql-bugs@postgresql.org>.\n",
+		   "Report bugs to <" PACKAGE_BUGREPORT ">.\n",
 		   progname, progname);
 }
 

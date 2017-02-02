@@ -38,3 +38,9 @@ lib*.pc
 /Debug/
 /Release/
 /tmp_install/
+
+# Contrib
+/contrib/*/log/
+/contrib/*/results/
+/contrib/*/tmp_check/
+/contrib/pg_query_state/isolation_output/

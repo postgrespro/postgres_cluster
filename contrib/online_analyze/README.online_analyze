@@ -1,0 +1,36 @@
+Module makes an analyze call immediately after INSERT/UPDATE/DELETE/SELECT INTO
+for affected table(s).
+
+Supported versions of PostgreSQL: 8.4.*, 9.0.*, 9.1.*, 9.2.*, 9.3.*, 9.4*
+
+Usage: LOAD 'online_analyze';
+
+Custom variables (defaults values are shown):
+online_analyze.enable = on  
+	Enables on-line analyze
+
+online_analyze.verbose = on
+	Execute ANALYZE VERBOSE
+
+online_analyze.scale_factor = 0.1
+	Fraction of table size to start on-line analyze (similar to
+	autovacuum_analyze_scale_factor)
+
+online_analyze.threshold = 50
+	Min number of row updates before on-line analyze (similar to
+	autovacuum_analyze_threshold)
+
+online_analyze.min_interval = 10000
+    Minimum time interval between analyze call per table (in milliseconds)
+
+online_analyze.table_type = "all"
+	Type(s) of table for online analyze: all, persistent, temporary, none
+
+online_analyze.exclude_tables = ""
+	List of tables which will not online analyze
+
+online_analyze.include_tables = ""
+	List of tables which will online analyze
+	online_analyze.include_tables overwrites online_analyze.exclude_tables.
+
+Author: Teodor Sigaev <teodor@sigaev.ru>

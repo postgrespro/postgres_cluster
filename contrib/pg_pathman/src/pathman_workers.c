@@ -15,6 +15,7 @@
  */
 
 #include "init.h"
+#include "partition_creation.h"
 #include "pathman_workers.h"
 #include "relation_info.h"
 #include "utils.h"
@@ -29,6 +30,7 @@
 #include "storage/dsm.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
+#include "storage/proc.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/memutils.h"
@@ -45,14 +47,18 @@ PG_FUNCTION_INFO_V1( show_concurrent_part_tasks_internal );
 PG_FUNCTION_INFO_V1( stop_concurrent_part_task );
 
 
+/*
+ * Dynamically resolve functions (for BGW API).
+ */
+extern PGDLLEXPORT void bgw_main_spawn_partitions(Datum main_arg);
+extern PGDLLEXPORT void bgw_main_concurrent_part(Datum main_arg);
+
+
 static void handle_sigterm(SIGNAL_ARGS);
 static void bg_worker_load_config(const char *bgw_name);
 static void start_bg_worker(const char bgworker_name[BGW_MAXLEN],
-							bgworker_main_type bgw_main_func,
+							const char bgworker_proc[BGW_MAXLEN],
 							Datum bgw_arg, bool wait_for_shutdown);
-
-static void bgw_main_spawn_partitions(Datum main_arg);
-static void bgw_main_concurrent_part(Datum main_arg);
 
 
 /*
@@ -155,7 +161,7 @@ bg_worker_load_config(const char *bgw_name)
  */
 static void
 start_bg_worker(const char bgworker_name[BGW_MAXLEN],
-				bgworker_main_type bgw_main_func,
+				const char bgworker_proc[BGW_MAXLEN],
 				Datum bgw_arg, bool wait_for_shutdown)
 {
 #define HandleError(condition, new_state) \
@@ -177,12 +183,16 @@ start_bg_worker(const char bgworker_name[BGW_MAXLEN],
 
 	/* Initialize worker struct */
 	memcpy(worker.bgw_name, bgworker_name, BGW_MAXLEN);
-	worker.bgw_flags		= BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-	worker.bgw_start_time	= BgWorkerStart_RecoveryFinished;
-	worker.bgw_restart_time	= BGW_NEVER_RESTART;
-	worker.bgw_main			= bgw_main_func;
-	worker.bgw_main_arg		= bgw_arg;
-	worker.bgw_notify_pid	= MyProcPid;
+	memcpy(worker.bgw_function_name, bgworker_proc, BGW_MAXLEN);
+	memcpy(worker.bgw_library_name, "pg_pathman", BGW_MAXLEN);
+
+	worker.bgw_flags			= BGWORKER_SHMEM_ACCESS |
+									BGWORKER_BACKEND_DATABASE_CONNECTION;
+	worker.bgw_start_time		= BgWorkerStart_RecoveryFinished;
+	worker.bgw_restart_time		= BGW_NEVER_RESTART;
+	worker.bgw_main				= NULL;
+	worker.bgw_main_arg			= bgw_arg;
+	worker.bgw_notify_pid		= MyProcPid;
 
 	/* Start dynamic worker */
 	bgw_started = RegisterDynamicBackgroundWorker(&worker, &bgw_handle);
@@ -213,7 +223,7 @@ handle_exec_state:
 		case BGW_PM_DIED:
 			ereport(ERROR,
 					(errmsg("Postmaster died during the pg_pathman background worker process"),
-					errhint("More details may be available in the server log.")));
+					 errhint("More details may be available in the server log.")));
 			break;
 
 		default:
@@ -251,11 +261,16 @@ create_partitions_bg_worker_segment(Oid relid, Datum value, Oid value_type)
 	/* Initialize BGW args */
 	args = (SpawnPartitionArgs *) dsm_segment_address(segment);
 
-	args->userid = GetAuthenticatedUserId();
-
+	args->userid = GetUserId();
 	args->result = InvalidOid;
 	args->dbid = MyDatabaseId;
 	args->partitioned_table = relid;
+
+#if PG_VERSION_NUM >= 90600
+	/* Initialize args for BecomeLockGroupMember() */
+	args->parallel_master_pgproc = MyProc;
+	args->parallel_master_pid = MyProcPid;
+#endif
 
 	/* Write value-related stuff */
 	args->value_type = value_type;
@@ -275,7 +290,7 @@ create_partitions_bg_worker_segment(Oid relid, Datum value, Oid value_type)
  * NB: This function should not be called directly, use create_partitions() instead.
  */
 Oid
-create_partitions_bg_worker(Oid relid, Datum value, Oid value_type)
+create_partitions_for_value_bg_worker(Oid relid, Datum value, Oid value_type)
 {
 	dsm_segment			   *segment;
 	dsm_handle				segment_handle;
@@ -287,9 +302,14 @@ create_partitions_bg_worker(Oid relid, Datum value, Oid value_type)
 	segment_handle = dsm_segment_handle(segment);
 	bgw_args = (SpawnPartitionArgs *) dsm_segment_address(segment);
 
+#if PG_VERSION_NUM >= 90600
+	/* Become locking group leader */
+	BecomeLockGroupLeader();
+#endif
+
 	/* Start worker and wait for it to finish */
 	start_bg_worker(spawn_partitions_bgw,
-					bgw_main_spawn_partitions,
+					CppAsString(bgw_main_spawn_partitions),
 					UInt32GetDatum(segment_handle),
 					true);
 
@@ -300,9 +320,10 @@ create_partitions_bg_worker(Oid relid, Datum value, Oid value_type)
 	dsm_detach(segment);
 
 	if (child_oid == InvalidOid)
-		elog(ERROR,
-			 "Attempt to append new partitions to relation \"%s\" failed",
-			 get_rel_name_or_relid(relid));
+		ereport(ERROR,
+				(errmsg("Attempt to spawn new partitions of relation \"%s\" failed",
+						get_rel_name_or_relid(relid)),
+				 errhint("See server log for more details.")));
 
 	return child_oid;
 }
@@ -310,7 +331,7 @@ create_partitions_bg_worker(Oid relid, Datum value, Oid value_type)
 /*
  * Entry point for SpawnPartitionsWorker's process.
  */
-static void
+void
 bgw_main_spawn_partitions(Datum main_arg)
 {
 	dsm_handle				handle = DatumGetUInt32(main_arg);
@@ -337,6 +358,13 @@ bgw_main_spawn_partitions(Datum main_arg)
 			 spawn_partitions_bgw, MyProcPid);
 	args = dsm_segment_address(segment);
 
+#if PG_VERSION_NUM >= 90600
+	/* Join locking group. If we can't join the group, quit */
+	if (!BecomeLockGroupMember(args->parallel_master_pgproc,
+							   args->parallel_master_pid))
+		return;
+#endif
+
 	/* Establish connection and start transaction */
 	BackgroundWorkerInitializeConnectionByOid(args->dbid, args->userid);
 
@@ -360,9 +388,9 @@ bgw_main_spawn_partitions(Datum main_arg)
 #endif
 
 	/* Create partitions and save the Oid of the last one */
-	args->result = create_partitions_internal(args->partitioned_table,
-											  value, /* unpacked Datum */
-											  args->value_type);
+	args->result = create_partitions_for_value_internal(args->partitioned_table,
+														value, /* unpacked Datum */
+														args->value_type);
 
 	/* Finish transaction in an appropriate way */
 	if (args->result == InvalidOid)
@@ -383,7 +411,7 @@ bgw_main_spawn_partitions(Datum main_arg)
 /*
  * Entry point for ConcurrentPartWorker's process.
  */
-static void
+void
 bgw_main_concurrent_part(Datum main_arg)
 {
 	int					rows;
@@ -540,7 +568,7 @@ bgw_main_concurrent_part(Datum main_arg)
 			part_slot->total_rows += rows;
 /* Report debug message */
 #ifdef USE_ASSERT_CHECKING
-			elog(DEBUG1, "%s: relocated %d rows, total: %lu [%u]",
+			elog(DEBUG1, "%s: relocated %d rows, total: " UINT64_FORMAT " [%u]",
 				 concurrent_part_bgw, rows, part_slot->total_rows, MyProcPid);
 #endif
 			SpinLockRelease(&part_slot->mutex);
@@ -574,13 +602,24 @@ Datum
 partition_table_concurrently(PG_FUNCTION_ARGS)
 {
 	Oid		relid = PG_GETARG_OID(0);
+	int32	batch_size = PG_GETARG_INT32(1);
+	float8	sleep_time = PG_GETARG_FLOAT8(2);
 	int		empty_slot_idx = -1,		/* do we have a slot for BGWorker? */
 			i;
+
+	/* Check batch_size */
+	if (batch_size < 1 || batch_size > 10000)
+		elog(ERROR, "\"batch_size\" should not be less than 1 "
+					"or greater than 10000");
+
+	/* Check sleep_time */
+	if (sleep_time < 0.5)
+		elog(ERROR, "\"sleep_time\" should not be less than 0.5");
 
 	/* Check if relation is a partitioned table */
 	shout_if_prel_is_invalid(relid,
 							 /* We also lock the parent relation */
-							 get_pathman_relation_info_after_lock(relid, true),
+							 get_pathman_relation_info_after_lock(relid, true, NULL),
 							 /* Partitioning type does not matter here */
 							 PT_INDIFFERENT);
 	/*
@@ -631,8 +670,8 @@ partition_table_concurrently(PG_FUNCTION_ARGS)
 	{
 		/* Initialize concurrent part slot */
 		InitConcurrentPartSlot(&concurrent_part_slots[empty_slot_idx],
-							   GetAuthenticatedUserId(), CPS_WORKING,
-							   MyDatabaseId, relid, 1000, 1.0);
+							   GetUserId(), CPS_WORKING, MyDatabaseId,
+							   relid, batch_size, sleep_time);
 
 		/* Now we can safely unlock slot for new BGWorker */
 		SpinLockRelease(&concurrent_part_slots[empty_slot_idx].mutex);
@@ -640,7 +679,7 @@ partition_table_concurrently(PG_FUNCTION_ARGS)
 
 	/* Start worker (we should not wait) */
 	start_bg_worker(concurrent_part_bgw,
-					bgw_main_concurrent_part,
+					CppAsString(bgw_main_concurrent_part),
 					Int32GetDatum(empty_slot_idx),
 					false);
 

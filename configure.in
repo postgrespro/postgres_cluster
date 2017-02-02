@@ -17,7 +17,7 @@ dnl Read the Autoconf manual for details.
 dnl
 m4_pattern_forbid(^PGAC_)dnl to catch undefined macros
 
-AC_INIT([PostgreSQL], [9.6.0], [bugs@postgrespro.ru],[postgrespro])
+AC_INIT([PostgreSQL], [9.6.1], [bugs@postgrespro.ru],[postgrespro])
 PACKAGE_TARNAME=postgrespro
 
 m4_if(m4_defn([m4_PACKAGE_VERSION]), [2.69], [], [m4_fatal([Autoconf version 2.69 is required.
@@ -38,11 +38,14 @@ AC_DEFINE_UNQUOTED(PG_MAJORVERSION, "$PG_MAJORVERSION", [PostgreSQL major versio
 PGAC_ARG_REQ(with, extra-version, [STRING], [append STRING to version],
              [PG_VERSION="$PACKAGE_VERSION$withval"],
              [PG_VERSION="$PACKAGE_VERSION"])
-PGPRO_VERSION="$PACKAGE_VERSION.1"
+PGPRO_VERSION="$PACKAGE_VERSION.3"
 PGPRO_PACKAGE_NAME="PostgresPro"
+PGPRO_EDITION="standard"
 AC_SUBST(PGPRO_PACKAGE_NAME)
+AC_SUBST(PGPRO_EDITION)
 AC_DEFINE_UNQUOTED(PG_VERSION, "$PG_VERSION", [PostgreSQL version as a string])
 AC_DEFINE_UNQUOTED(PGPRO_PACKAGE_NAME, "$PGPRO_PACKAGE_NAME", [PostgresPro name as a string])            
+AC_DEFINE_UNQUOTED(PGPRO_EDITION,"$PGPRO_EDITION",[PostgresPro edition])
 AC_DEFINE_UNQUOTED(PGPRO_VERSION, "$PGPRO_VERSION", [PostgresPro version as a string])
 
 AC_CANONICAL_HOST
@@ -1148,6 +1151,7 @@ if test "$with_openssl" = yes ; then
 fi
 
 if test "$with_icu" = yes ; then
+ AC_SEARCH_LIBS(ucol_open, [icui18n icuin], [], [
  AC_SEARCH_LIBS(ucol_open_57, [icui18n icuin], [], [
  AC_SEARCH_LIBS(ucol_open_56, [icui18n icuin], [], [
  AC_SEARCH_LIBS(ucol_open_55, [icui18n icuin], [], [
@@ -1181,6 +1185,8 @@ if test "$with_icu" = yes ; then
  ])
  ])
  ])
+])
+ AC_CHECK_LIB(icuuc, ucnv_fromUChars, [], [
  AC_CHECK_LIB(icuuc, ucnv_fromUChars_57, [], [
  AC_CHECK_LIB(icuuc, ucnv_fromUChars_56, [], [
  AC_CHECK_LIB(icuuc, ucnv_fromUChars_55, [], [
@@ -1214,6 +1220,7 @@ if test "$with_icu" = yes ; then
  ])
  ])
  ])
+])
 fi
 
 if test "$with_pam" = yes ; then

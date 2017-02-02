@@ -17,11 +17,12 @@
 #include "catalog/heap.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_extension.h"
-#include "catalog/pg_proc.h"
+#include "catalog/pg_operator.h"
+#include "catalog/pg_inherits.h"
 #include "commands/extension.h"
 #include "miscadmin.h"
 #include "optimizer/var.h"
-#include "optimizer/restrictinfo.h"
+#include "parser/parse_coerce.h"
 #include "parser/parse_oper.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -30,16 +31,7 @@
 #include "utils/typcache.h"
 
 
-#define TABLEOID_STR(subst) ( "pathman_tableoid" subst )
-#define TABLEOID_STR_BASE_LEN ( sizeof(TABLEOID_STR("")) - 1 )
-
-
 static bool clause_contains_params_walker(Node *node, void *context);
-static void change_varnos_in_restrinct_info(RestrictInfo *rinfo,
-											change_varno_context *context);
-static bool change_varno_walker(Node *node, change_varno_context *context);
-static List *get_tableoids_list(List *tlist);
-static void lock_rows_visitor(Plan *plan, void *context);
 
 
 /*
@@ -66,197 +58,47 @@ clause_contains_params_walker(Node *node, void *context)
 }
 
 /*
- * Extract target entries with resnames beginning with TABLEOID_STR
- * and var->varoattno == TableOidAttributeNumber
- */
-static List *
-get_tableoids_list(List *tlist)
-{
-	List	   *result = NIL;
-	ListCell   *lc;
-
-	foreach (lc, tlist)
-	{
-		TargetEntry	   *te = (TargetEntry *) lfirst(lc);
-		Var			   *var = (Var *) te->expr;
-
-		if (!IsA(var, Var))
-			continue;
-
-		/* Check that column name begins with TABLEOID_STR & it's tableoid */
-		if (var->varoattno == TableOidAttributeNumber &&
-			(te->resname && strlen(te->resname) > TABLEOID_STR_BASE_LEN) &&
-			0 == strncmp(te->resname, TABLEOID_STR(""), TABLEOID_STR_BASE_LEN))
-		{
-			result = lappend(result, te);
-		}
-	}
-
-	return result;
-}
-
-/*
- * Find 'TABLEOID_STR%u' attributes that were manually
- * created for partitioned tables and replace Oids
- * (used for '%u') with expected rc->rowmarkIds
- */
-static void
-lock_rows_visitor(Plan *plan, void *context)
-{
-	List		   *rtable = (List *) context;
-	LockRows	   *lock_rows = (LockRows *) plan;
-	Plan		   *lock_child = outerPlan(plan);
-	List		   *tableoids;
-	ListCell	   *lc;
-
-	if (!IsA(lock_rows, LockRows))
-		return;
-
-	Assert(rtable && IsA(rtable, List) && lock_child);
-
-	/* Select tableoid attributes that must be renamed */
-	tableoids = get_tableoids_list(lock_child->targetlist);
-	if (!tableoids)
-		return; /* this LockRows has nothing to do with partitioned table */
-
-	foreach (lc, lock_rows->rowMarks)
-	{
-		PlanRowMark	   *rc = (PlanRowMark *) lfirst(lc);
-		Oid				parent_oid = getrelid(rc->rti, rtable);
-		ListCell	   *mark_lc;
-		List		   *finished_tes = NIL; /* postprocessed target entries */
-
-		foreach (mark_lc, tableoids)
-		{
-			TargetEntry	   *te = (TargetEntry *) lfirst(mark_lc);
-			const char	   *cur_oid_str = &(te->resname[TABLEOID_STR_BASE_LEN]);
-			Datum			cur_oid_datum;
-
-			cur_oid_datum = DirectFunctionCall1(oidin, CStringGetDatum(cur_oid_str));
-
-			if (DatumGetObjectId(cur_oid_datum) == parent_oid)
-			{
-				char resname[64];
-
-				/* Replace 'TABLEOID_STR:Oid' with 'tableoid:rowmarkId' */
-				snprintf(resname, sizeof(resname), "tableoid%u", rc->rowmarkId);
-				te->resname = pstrdup(resname);
-
-				finished_tes = lappend(finished_tes, te);
-			}
-		}
-
-		/* Remove target entries that have been processed in this step */
-		foreach (mark_lc, finished_tes)
-			tableoids = list_delete_ptr(tableoids, lfirst(mark_lc));
-
-		if (list_length(tableoids) == 0)
-			break; /* nothing to do */
-	}
-}
-
-/*
- * Print Bitmapset as cstring.
- */
-#ifdef __GNUC__
-__attribute__((unused))
-#endif
-static char *
-bms_print(Bitmapset *bms)
-{
-  StringInfoData str;
-  int x;
-
-  initStringInfo(&str);
-  x = -1;
-  while ((x = bms_next_member(bms, x)) >= 0)
-	appendStringInfo(&str, " %d", x);
-
-  return str.data;
-}
-
-/*
- * Copied from util/plancat.c
- *
- * Build a targetlist representing the columns of the specified index.
- */
-List *
-build_index_tlist(PlannerInfo *root, IndexOptInfo *index,
-				  Relation heapRelation)
-{
-	List	   *tlist = NIL;
-	Index		varno = index->rel->relid;
-	ListCell   *indexpr_item;
-	int			i;
-
-	indexpr_item = list_head(index->indexprs);
-	for (i = 0; i < index->ncolumns; i++)
-	{
-		int			indexkey = index->indexkeys[i];
-		Expr	   *indexvar;
-
-		if (indexkey != 0)
-		{
-			/* simple column */
-			Form_pg_attribute att_tup;
-
-			if (indexkey < 0)
-				att_tup = SystemAttributeDefinition(indexkey,
-										   heapRelation->rd_rel->relhasoids);
-			else
-				att_tup = heapRelation->rd_att->attrs[indexkey - 1];
-
-			indexvar = (Expr *) makeVar(varno,
-										indexkey,
-										att_tup->atttypid,
-										att_tup->atttypmod,
-										att_tup->attcollation,
-										0);
-		}
-		else
-		{
-			/* expression column */
-			if (indexpr_item == NULL)
-				elog(ERROR, "wrong number of index expressions");
-			indexvar = (Expr *) lfirst(indexpr_item);
-			indexpr_item = lnext(indexpr_item);
-		}
-
-		tlist = lappend(tlist,
-						makeTargetEntry(indexvar,
-										i + 1,
-										NULL,
-										false));
-	}
-	if (indexpr_item != NULL)
-		elog(ERROR, "wrong number of index expressions");
-
-	return tlist;
-}
-
-/*
  * Get BTORDER_PROC for two types described by Oids
  */
 void
 fill_type_cmp_fmgr_info(FmgrInfo *finfo, Oid type1, Oid type2)
 {
 	Oid				cmp_proc_oid;
-	TypeCacheEntry *tce;
+	TypeCacheEntry *tce_1,
+				   *tce_2;
 
-	tce = lookup_type_cache(type1, TYPECACHE_BTREE_OPFAMILY);
+	/* Check type compatibility */
+	if (IsBinaryCoercible(type1, type2))
+		type1 = type2;
 
-	cmp_proc_oid = get_opfamily_proc(tce->btree_opf,
-									 type1,
-									 type2,
+	else if (IsBinaryCoercible(type2, type1))
+		type2 = type1;
+
+	tce_1 = lookup_type_cache(type1, TYPECACHE_BTREE_OPFAMILY);
+	tce_2 = lookup_type_cache(type2, TYPECACHE_BTREE_OPFAMILY);
+
+	/* Both types should belong to the same opfamily */
+	if (tce_1->btree_opf != tce_2->btree_opf)
+		goto fill_type_cmp_fmgr_info_error;
+
+	cmp_proc_oid = get_opfamily_proc(tce_1->btree_opf,
+									 tce_1->btree_opintype,
+									 tce_2->btree_opintype,
 									 BTORDER_PROC);
 
-	if (cmp_proc_oid == InvalidOid)
-		elog(ERROR, "missing comparison function for types %s & %s",
-			 format_type_be(type1), format_type_be(type2));
+	/* No such function, emit ERROR */
+	if (!OidIsValid(cmp_proc_oid))
+		goto fill_type_cmp_fmgr_info_error;
 
+	/* Fill FmgrInfo struct */
 	fmgr_info(cmp_proc_oid, finfo);
 
-	return;
+	return; /* everything is OK */
+
+/* Handle errors (no such function) */
+fill_type_cmp_fmgr_info_error:
+	elog(ERROR, "missing comparison function for types %s & %s",
+		 format_type_be(type1), format_type_be(type2));
 }
 
 List *
@@ -270,258 +112,6 @@ list_reverse(List *l)
 		result = lcons(lfirst(lc), result);
 	}
 	return result;
-}
-
-/*
- * Changes varno attribute in all variables nested in the node
- */
-void
-change_varnos(Node *node, Oid old_varno, Oid new_varno)
-{
-	change_varno_context context;
-	context.old_varno = old_varno;
-	context.new_varno = new_varno;
-
-	change_varno_walker(node, &context);
-}
-
-static bool
-change_varno_walker(Node *node, change_varno_context *context)
-{
-	ListCell   *lc;
-	Var		   *var;
-	EquivalenceClass *ec;
-	EquivalenceMember *em;
-
-	if (node == NULL)
-		return false;
-
-	switch(node->type)
-	{
-		case T_Var:
-			var = (Var *) node;
-			if (var->varno == context->old_varno)
-			{
-				var->varno = context->new_varno;
-				var->varnoold = context->new_varno;
-			}
-			return false;
-
-		case T_RestrictInfo:
-			change_varnos_in_restrinct_info((RestrictInfo *) node, context);
-			return false;
-
-		case T_PathKey:
-			change_varno_walker((Node *) ((PathKey *) node)->pk_eclass, context);
-			return false;
-
-		case T_EquivalenceClass:
-			ec = (EquivalenceClass *) node;
-
-			foreach(lc, ec->ec_members)
-				change_varno_walker((Node *) lfirst(lc), context);
-			foreach(lc, ec->ec_derives)
-				change_varno_walker((Node *) lfirst(lc), context);
-			return false;
-
-		case T_EquivalenceMember:
-			em = (EquivalenceMember *) node;
-			change_varno_walker((Node *) em->em_expr, context);
-			if (bms_is_member(context->old_varno, em->em_relids))
-			{
-				em->em_relids = bms_del_member(em->em_relids, context->old_varno);
-				em->em_relids = bms_add_member(em->em_relids, context->new_varno);
-			}
-			return false;
-
-		case T_TargetEntry:
-			change_varno_walker((Node *) ((TargetEntry *) node)->expr, context);
-			return false;
-
-		case T_List:
-			foreach(lc, (List *) node)
-				change_varno_walker((Node *) lfirst(lc), context);
-			return false;
-
-		default:
-			break;
-	}
-
-	/* Should not find an unplanned subquery */
-	Assert(!IsA(node, Query));
-
-	return expression_tree_walker(node, change_varno_walker, (void *) context);
-}
-
-static void
-change_varnos_in_restrinct_info(RestrictInfo *rinfo, change_varno_context *context)
-{
-	ListCell *lc;
-
-	change_varno_walker((Node *) rinfo->clause, context);
-	if (rinfo->left_em)
-		change_varno_walker((Node *) rinfo->left_em->em_expr, context);
-
-	if (rinfo->right_em)
-		change_varno_walker((Node *) rinfo->right_em->em_expr, context);
-
-	if (rinfo->orclause)
-		foreach(lc, ((BoolExpr *) rinfo->orclause)->args)
-		{
-			Node *node = (Node *) lfirst(lc);
-			change_varno_walker(node, context);
-		}
-
-	if (bms_is_member(context->old_varno, rinfo->clause_relids))
-	{
-		rinfo->clause_relids = bms_del_member(rinfo->clause_relids, context->old_varno);
-		rinfo->clause_relids = bms_add_member(rinfo->clause_relids, context->new_varno);
-	}
-	if (bms_is_member(context->old_varno, rinfo->left_relids))
-	{
-		rinfo->left_relids = bms_del_member(rinfo->left_relids, context->old_varno);
-		rinfo->left_relids = bms_add_member(rinfo->left_relids, context->new_varno);
-	}
-	if (bms_is_member(context->old_varno, rinfo->right_relids))
-	{
-		rinfo->right_relids = bms_del_member(rinfo->right_relids, context->old_varno);
-		rinfo->right_relids = bms_add_member(rinfo->right_relids, context->new_varno);
-	}
-}
-
-/*
- * Basic plan tree walker
- *
- * 'visitor' is applied right before return
- */
-void
-plan_tree_walker(Plan *plan,
-				 void (*visitor) (Plan *plan, void *context),
-				 void *context)
-{
-	ListCell   *l;
-
-	if (plan == NULL)
-		return;
-
-	check_stack_depth();
-
-	/* Plan-type-specific fixes */
-	switch (nodeTag(plan))
-	{
-		case T_SubqueryScan:
-			plan_tree_walker(((SubqueryScan *) plan)->subplan, visitor, context);
-			break;
-
-		case T_CustomScan:
-			foreach(l, ((CustomScan *) plan)->custom_plans)
-				plan_tree_walker((Plan *) lfirst(l), visitor, context);
-			break;
-
-		case T_ModifyTable:
-			foreach (l, ((ModifyTable *) plan)->plans)
-				plan_tree_walker((Plan *) lfirst(l), visitor, context);
-			break;
-
-		/* Since they look alike */
-		case T_MergeAppend:
-		case T_Append:
-			foreach(l, ((Append *) plan)->appendplans)
-				plan_tree_walker((Plan *) lfirst(l), visitor, context);
-			break;
-
-		case T_BitmapAnd:
-			foreach(l, ((BitmapAnd *) plan)->bitmapplans)
-				plan_tree_walker((Plan *) lfirst(l), visitor, context);
-			break;
-
-		case T_BitmapOr:
-			foreach(l, ((BitmapOr *) plan)->bitmapplans)
-				plan_tree_walker((Plan *) lfirst(l), visitor, context);
-			break;
-
-		default:
-			break;
-	}
-
-	plan_tree_walker(plan->lefttree, visitor, context);
-	plan_tree_walker(plan->righttree, visitor, context);
-
-	/* Apply visitor to the current node */
-	visitor(plan, context);
-}
-
-/*
- * Add missing 'TABLEOID_STR%u' junk attributes for inherited partitions
- *
- * This is necessary since preprocess_targetlist() heavily
- * depends on the 'inh' flag which we have to unset.
- *
- * postprocess_lock_rows() will later transform 'TABLEOID_STR:Oid'
- * relnames into 'tableoid:rowmarkId'.
- */
-void
-rowmark_add_tableoids(Query *parse)
-{
-	ListCell *lc;
-
-	check_stack_depth();
-
-	foreach(lc, parse->rtable)
-	{
-		RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
-
-		switch(rte->rtekind)
-		{
-			case RTE_SUBQUERY:
-				rowmark_add_tableoids(rte->subquery);
-				break;
-
-			default:
-				break;
-		}
-	}
-
-	/* Generate 'tableoid' for partitioned table rowmark */
-	foreach (lc, parse->rowMarks)
-	{
-		RowMarkClause  *rc = (RowMarkClause *) lfirst(lc);
-		Oid				parent = getrelid(rc->rti, parse->rtable);
-		Var			   *var;
-		TargetEntry	   *tle;
-		char			resname[64];
-
-		/* Check that table is partitioned */
-		if (!get_pathman_relation_info(parent))
-			continue;
-
-		var = makeVar(rc->rti,
-					  TableOidAttributeNumber,
-					  OIDOID,
-					  -1,
-					  InvalidOid,
-					  0);
-
-		/* Use parent's Oid as TABLEOID_STR's key (%u) */
-		snprintf(resname, sizeof(resname), TABLEOID_STR("%u"), parent);
-
-		tle = makeTargetEntry((Expr *) var,
-							  list_length(parse->targetList) + 1,
-							  pstrdup(resname),
-							  true);
-
-		/* There's no problem here since new attribute is junk */
-		parse->targetList = lappend(parse->targetList, tle);
-	}
-}
-
-/*
- * Final rowmark processing for partitioned tables
- */
-void
-postprocess_lock_rows(List *rtable, Plan *plan)
-{
-	plan_tree_walker(plan, lock_rows_visitor, rtable);
 }
 
 /*
@@ -580,38 +170,33 @@ is_date_type_internal(Oid typid)
 		   typid == DATEOID;
 }
 
-/*
- * Check if this is a string type.
- */
-bool
-is_string_type_internal(Oid typid)
-{
-	return typid == TEXTOID ||
-		   typid == CSTRINGOID;
-}
-
 
 /*
  * Try to find binary operator.
  *
  * Returns operator function's Oid or throws an ERROR on InvalidOid.
  */
-Oid
-get_binary_operator_oid(char *oprname, Oid arg1, Oid arg2)
+Operator
+get_binary_operator(char *oprname, Oid arg1, Oid arg2)
 {
-	Oid			funcid = InvalidOid;
-	Operator	op;
+	Operator op;
 
-	op = oper(NULL, list_make1(makeString(oprname)), arg1, arg2, true, -1);
-	if (op)
-	{
-		funcid = oprfuncid(op);
-		ReleaseSysCache(op);
-	}
-	else
+	op = compatible_oper(NULL, list_make1(makeString(oprname)),
+						 arg1, arg2, true, -1);
+
+	if (!op)
 		elog(ERROR, "Cannot find operator \"%s\"(%u, %u)", oprname, arg1, arg2);
 
-	return funcid;
+	return op;
+}
+
+/* Get operator's result type */
+Oid
+get_operator_ret_type(Operator op)
+{
+	Form_pg_operator pgopform = (Form_pg_operator) GETSTRUCT(op);
+
+	return pgopform->oprresult;
 }
 
 /*
@@ -649,20 +234,6 @@ get_rel_name_or_relid(Oid relid)
 	return relname;
 }
 
-/*
- * Try to get opname or at least opid as cstring.
- */
-char *
-get_op_name_or_opid(Oid opid)
-{
-	char *opname = get_opname(opid);
-
-	if (!opname)
-		return DatumGetCString(DirectFunctionCall1(oidout,
-												   ObjectIdGetDatum(opid)));
-	return opname;
-}
-
 
 #if PG_VERSION_NUM < 90600
 /*
@@ -690,36 +261,153 @@ get_rel_persistence(Oid relid)
 #endif
 
 /*
- * Checks that callback function meets specific requirements.
- * It must have the only JSONB argument and BOOL return type.
+ * Get relation owner.
+ */
+Oid
+get_rel_owner(Oid relid)
+{
+	HeapTuple	tp;
+	Oid 		owner;
+
+	tp = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_class reltup = (Form_pg_class) GETSTRUCT(tp);
+
+		owner = reltup->relowner;
+		ReleaseSysCache(tp);
+
+		return owner;
+	}
+
+	return InvalidOid;
+}
+
+/*
+ * Get type of column by its name.
+ */
+Oid
+get_attribute_type(Oid relid, const char *attname, bool missing_ok)
+{
+	Oid			result;
+	HeapTuple	tp;
+
+	/* NOTE: for now it's the most efficient way */
+	tp = SearchSysCacheAttName(relid, attname);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_attribute att_tup = (Form_pg_attribute) GETSTRUCT(tp);
+		result = att_tup->atttypid;
+		ReleaseSysCache(tp);
+
+		return result;
+	}
+
+	if (!missing_ok)
+		elog(ERROR, "cannot find type name for attribute \"%s\" "
+					"of relation \"%s\"",
+			 attname, get_rel_name_or_relid(relid));
+
+	return InvalidOid;
+}
+
+/*
+ * Check if user can alter/drop specified relation. This function is used to
+ * make sure that current user can change pg_pathman's config. Returns true
+ * if user can manage relation, false otherwise.
+ *
+ * XXX currently we just check if user is a table owner. Probably it's
+ * better to check user permissions in order to let other users participate.
  */
 bool
-validate_on_part_init_cb(Oid procid, bool emit_error)
+check_security_policy_internal(Oid relid, Oid role)
 {
-	HeapTuple		tp;
-	Form_pg_proc	functup;
-	bool			is_ok = true;
+	Oid owner;
 
-	if (procid == InvalidOid)
+	/* Superuser is allowed to do anything */
+	if (superuser())
 		return true;
 
-	tp = SearchSysCache1(PROCOID, ObjectIdGetDatum(procid));
-	if (!HeapTupleIsValid(tp))
-		elog(ERROR, "cache lookup failed for function %u", procid);
+	/* Fetch the owner */
+	owner = get_rel_owner(relid);
 
-	functup = (Form_pg_proc) GETSTRUCT(tp);
+	/*
+	 * Sometimes the relation doesn't exist anymore but there is still
+	 * a record in config. For instance, it happens in DDL event trigger.
+	 * Still we should be able to remove this record.
+	 */
+	if (owner == InvalidOid)
+		return true;
 
-	if (functup->pronargs != 1 ||
-		functup->proargtypes.values[0] != JSONBOID ||
-		functup->prorettype != VOIDOID)
-		is_ok = false;
+	/* Check if current user is the owner of the relation */
+	if (owner != role)
+		return false;
 
-	ReleaseSysCache(tp);
+	return true;
+}
 
-	if (emit_error && !is_ok)
-		elog(ERROR,
-			 "Callback function must have the following signature: "
-			 "callback(arg JSONB) RETURNS VOID");
+/*
+ * Try casting value of type 'in_type' to 'out_type'.
+ *
+ * This function might emit ERROR.
+ */
+Datum
+perform_type_cast(Datum value, Oid in_type, Oid out_type, bool *success)
+{
+	CoercionPathType	ret;
+	Oid					castfunc = InvalidOid;
 
-	return is_ok;
+	/* Speculative success */
+	if (success) *success = true;
+
+	/* Fast and trivial path */
+	if (in_type == out_type)
+		return value;
+
+	/* Check that types are binary coercible */
+	if (IsBinaryCoercible(in_type, out_type))
+		return value;
+
+	/* If not, try to perfrom a type cast */
+	ret = find_coercion_pathway(out_type, in_type,
+								COERCION_EXPLICIT,
+								&castfunc);
+
+	/* Handle coercion paths */
+	switch (ret)
+	{
+		/* There's a function */
+		case COERCION_PATH_FUNC:
+			{
+				/* Perform conversion */
+				Assert(castfunc != InvalidOid);
+				return OidFunctionCall1(castfunc, value);
+			}
+
+		/* Types are binary compatible (no implicit cast) */
+		case COERCION_PATH_RELABELTYPE:
+			{
+				/* We don't perform any checks here */
+				return value;
+			}
+
+		/* TODO: implement these casts if needed */
+		case COERCION_PATH_ARRAYCOERCE:
+		case COERCION_PATH_COERCEVIAIO:
+
+		/* There's no cast available */
+		case COERCION_PATH_NONE:
+		default:
+			{
+				/* Oops, something is wrong */
+				if (success)
+					*success = false;
+				else
+					elog(ERROR, "cannot cast %s to %s",
+						 format_type_be(in_type),
+						 format_type_be(out_type));
+
+				return (Datum) 0;
+			}
+	}
 }

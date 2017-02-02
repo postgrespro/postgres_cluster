@@ -935,8 +935,12 @@ ReorderBufferIterTXNInit(ReorderBuffer *rb, ReorderBufferTXN *txn)
 		ReorderBufferChange *cur_change;
 
 		if (txn->nentries != txn->nentries_mem)
+		{
+			/* serialize remaining changes */
+			ReorderBufferSerializeTXN(rb, txn);
 			ReorderBufferRestoreChanges(rb, txn, &state->entries[off].fd,
 										&state->entries[off].segno);
+		}
 
 		cur_change = dlist_head_element(ReorderBufferChange, node,
 										&txn->changes);
@@ -960,10 +964,13 @@ ReorderBufferIterTXNInit(ReorderBuffer *rb, ReorderBufferTXN *txn)
 			ReorderBufferChange *cur_change;
 
 			if (cur_txn->nentries != cur_txn->nentries_mem)
+			{
+				/* serialize remaining changes */
+				ReorderBufferSerializeTXN(rb, cur_txn);
 				ReorderBufferRestoreChanges(rb, cur_txn,
 											&state->entries[off].fd,
 											&state->entries[off].segno);
-
+			}
 			cur_change = dlist_head_element(ReorderBufferChange, node,
 											&cur_txn->changes);
 
@@ -1368,10 +1375,6 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 	txn->commit_time = commit_time;
 	txn->origin_id = origin_id;
 	txn->origin_lsn = origin_lsn;
-
-	/* serialize the last bunch of changes if we need start earlier anyway */
-	if (txn->nentries_mem != txn->nentries)
-		ReorderBufferSerializeTXN(rb, txn);
 
 	/*
 	 * If this transaction didn't have any real changes in our database, it's
@@ -2252,6 +2255,9 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 
 				data = ((char *) rb->outbuf) + sizeof(ReorderBufferDiskChange);
 
+				/* might have been reallocated above */
+				ondisk = (ReorderBufferDiskChange *) rb->outbuf;
+
 				/* write the prefix including the size */
 				memcpy(data, &prefix_size, sizeof(Size));
 				data += sizeof(Size);
@@ -2548,7 +2554,7 @@ ReorderBufferRestoreChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 				Assert(change->data.msg.prefix[prefix_size - 1] == '\0');
 				data += prefix_size;
 
-				/* read the messsage */
+				/* read the message */
 				memcpy(&change->data.msg.message_size, data, sizeof(Size));
 				data += sizeof(Size);
 				change->data.msg.message = MemoryContextAlloc(rb->context,

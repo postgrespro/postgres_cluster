@@ -318,8 +318,19 @@ format_numeric_locale(const char *my_str)
 static void
 fputnbytes(FILE *f, const char *str, size_t n)
 {
+
+#ifdef HAVE_WIN32_LIBEDIT
+	char buffer[1024];
+	char *buf = buffer;
+	if (n>1023) buf=malloc(n+1);
+	strncpy(buf,str,n);
+	buf[n]=0;
+	fputs(buf,f);
+	if (n>1023) free(buf);
+#else
 	while (n-- > 0)
 		fputc(*str++, f);
+#endif		
 }
 
 
@@ -2874,10 +2885,18 @@ PageOutput(int lines, const printTableOpt *topt)
 			pagerprog = getenv("PAGER");
 			if (!pagerprog)
 				pagerprog = DEFAULT_PAGER;
+			else
+			{
+				/* if PAGER is empty or all-white-space, don't use pager */
+				if (strspn(pagerprog, " \t\r\n") == strlen(pagerprog))
+					return stdout;
+			}
 			disable_sigpipe_trap();
 			pagerpipe = popen(pagerprog, "w");
 			if (pagerpipe)
 				return pagerpipe;
+			/* if popen fails, silently proceed without pager */
+			restore_sigpipe_trap();
 		}
 	}
 

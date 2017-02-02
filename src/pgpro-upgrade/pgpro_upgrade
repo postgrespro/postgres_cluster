@@ -68,7 +68,7 @@ for i in "$DIR"/*.test; do
 done
 if [ -n "$check" ]; then
 	if [ $need_upgrade -eq 0 ]; then
-		echo "All Postgres Pro specific updates are appied" 1>&2
+		echo "All Postgres Pro specific updates are applied" 1>&2
 	else
 		echo "Database needs upgrade"
 	fi

@@ -45,7 +45,9 @@ extern PGDLLIMPORT int XactIsoLevel;
 
 /* Xact read-only state */
 extern bool DefaultXactReadOnly;
-extern bool XactReadOnly;
+
+#define PGPRO_PATHMAN_AWARE_COPY
+extern PGDLLIMPORT bool XactReadOnly;
 
 /*
  * Xact is deferrable -- only meaningful (currently) for read only
@@ -225,7 +227,6 @@ typedef struct xl_xact_twophase
 {
 	TransactionId xid;
 } xl_xact_twophase;
-#define MinSizeOfXactInvals offsetof(xl_xact_invals, msgs)
 
 typedef struct xl_xact_origin
 {

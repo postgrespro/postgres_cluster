@@ -21,7 +21,7 @@
         Note that the definition of the
         <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
         table might change occasionally, which means that generated dump might be incompatible
-        with future releases of <productname>PostgreSQL</productname>.
+        with future releases of <productname>&productname;</productname>.
     </para>
 
     <sect2>

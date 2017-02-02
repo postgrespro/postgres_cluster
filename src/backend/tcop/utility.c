@@ -54,6 +54,7 @@
 #include "commands/user.h"
 #include "commands/vacuum.h"
 #include "commands/view.h"
+#include "commands/waitlsn.h"
 #include "miscadmin.h"
 #include "parser/parse_utilcmd.h"
 #include "postmaster/bgwriter.h"
@@ -902,6 +903,20 @@ standard_ProcessUtility(Node *parsetree,
 				break;
 			}
 
+		case T_WaitLSNStmt:
+			{
+				WaitLSNStmt *stmt = (WaitLSNStmt *) parsetree;
+				if (!RecoveryInProgress())
+				{
+					ereport(ERROR,(errcode(ERRCODE_READ_ONLY_SQL_TRANSACTION), 
+							errmsg("cannot execute %s not during recovery",
+							"WaitLSN")));
+				}
+				else
+					WaitLSNUtility(stmt->lsn, stmt->delay);
+			}
+			break;
+
 		default:
 			/* All other statement types have event trigger support */
 			ProcessUtilitySlow(parsetree, queryString,
@@ -1467,7 +1482,13 @@ ProcessUtilitySlow(Node *parsetree,
 				break;
 
 			case T_AlterTSConfigurationStmt:
-				address = AlterTSConfiguration((AlterTSConfigurationStmt *) parsetree);
+				AlterTSConfiguration((AlterTSConfigurationStmt *) parsetree);
+				/*
+				 * Commands are stashed in MakeConfigurationMapping and
+				 * DropConfigurationMapping, which are called from
+				 * AlterTSConfiguration
+				 */
+				commandCollected = true;
 				break;
 
 			case T_AlterTableMoveAllStmt:
@@ -2359,6 +2380,10 @@ CreateCommandTag(Node *parsetree)
 			tag = "NOTIFY";
 			break;
 
+		case T_WaitLSNStmt:
+			tag = "WAITLSN";
+			break;
+
 		case T_ListenStmt:
 			tag = "LISTEN";
 			break;
@@ -2948,6 +2973,10 @@ GetCommandLogLevel(Node *parsetree)
 			break;
 
 		case T_NotifyStmt:
+			lev = LOGSTMT_ALL;
+			break;
+
+		case T_WaitLSNStmt:
 			lev = LOGSTMT_ALL;
 			break;
 

@@ -1,0 +1,108 @@
+<!--
+doc/src/sgml/ref/waitlsn.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="SQL-WAITLSN">
+ <indexterm zone="sql-waitlsn">
+  <primary>WAITLSN</primary>
+ </indexterm>
+
+ <refmeta>
+  <refentrytitle>WAITLSN</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>SQL - Language Statements</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>WAITLSN</refname>
+  <refpurpose>wait when target <acronym>LSN</> been replayed</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>
+WAITLSN <replaceable class="PARAMETER">'LSN'</replaceable> [ , <replaceable class="PARAMETER">delay</replaceable> ]
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Description</title>
+
+  <para>
+   The <command>WAITLSN</command> wait till target <acronym>LSN</> will
+   be replayed with an optional <quote>delay</> (milliseconds by default
+   infinity) to be wait for LSN to replayed.
+  </para>
+
+  <para>
+   <command>WAITLSN</command> provides a simple
+   interprocess <acronym>LSN</> wait mechanism for a backends on slave
+   in master-slave replication scheme on <productname>PostgreSQL</productname> database.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Parameters</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="PARAMETER">LSN</replaceable></term>
+    <listitem>
+     <para>
+      Target log sequence number to be wait for.
+     </para>
+    </listitem>
+   </varlistentry>
+   <varlistentry>
+    <term><replaceable class="PARAMETER">delay</replaceable></term>
+    <listitem>
+     <para>
+      Time in miliseconds to waiting for LSN to be replayed.
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Notes</title>
+
+  <para>
+   Delay time to waiting for LSN to be replayed must be integer. For
+   default it is infinity. Waiting can be interupped using Ctl+C, or
+   by Postmaster death.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Examples</title>
+
+  <para>
+   Configure and execute a waitlsn from
+   <application>psql</application>:
+
+<programlisting>
+WAITLSN '0/3F07A6B1', 10000;
+NOTICE:  LSN is not reached. Try to make bigger delay.
+WAITLSN
+
+WAITLSN '0/3F07A611';
+WAITLSN
+
+WAITLSN '0/3F0FF791', 500000;
+^CCancel request sent
+NOTICE:  LSN is not reached. Try to make bigger delay.
+ERROR:  canceling statement due to user request
+</programlisting>
+</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Compatibility</title>
+
+  <para>
+   There is no <command>WAITLSN</command> statement in the SQL
+   standard.
+  </para>
+ </refsect1>
+</refentry>

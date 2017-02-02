@@ -6469,13 +6469,13 @@ EXEC SQL END DECLARE SECTION;
     ECPGdebug(1, stderr);
 
     EXEC SQL CONNECT TO :dbname USER :user;
-    EXEC SQL SELECT version() INTO :ver;
+    EXEC SQL SELECT pgpro_version() INTO :ver;
     EXEC SQL DISCONNECT;
 
     printf("version: %s\n", ver);
 
     EXEC SQL CONNECT TO :connection USER :user;
-    EXEC SQL SELECT version() INTO :ver;
+    EXEC SQL SELECT pgpro_version() INTO :ver;
     EXEC SQL DISCONNECT;
 
     printf("version: %s\n", ver);
@@ -6651,14 +6651,14 @@ DECLARE <replaceable class="PARAMETER">cursor_name</replaceable> [ BINARY ] [ IN
 <programlisting>
 EXEC SQL DECLARE C CURSOR FOR SELECT * FROM My_Table;
 EXEC SQL DECLARE C CURSOR FOR SELECT Item1 FROM T;
-EXEC SQL DECLARE cur1 CURSOR FOR SELECT version();
+EXEC SQL DECLARE cur1 CURSOR FOR SELECT pgpro_version();
 </programlisting>
     </para>
 
     <para>
      An example declaring a cursor for a prepared statement:
 <programlisting>
-EXEC SQL PREPARE stmt1 AS SELECT version();
+EXEC SQL PREPARE stmt1 AS SELECT pgpro_version();
 EXEC SQL DECLARE cur1 CURSOR FOR stmt1;
 </programlisting>
     </para>

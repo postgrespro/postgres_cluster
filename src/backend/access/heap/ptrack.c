@@ -276,14 +276,15 @@ ptrack_get_and_clear(Oid tablespace_oid, Oid table_oid)
 {
 	bytea *result = NULL;
 	BlockNumber nblock;
+
+	Relation rel = RelationIdGetRelation(RelidByRelfilenode(tablespace_oid,
+															table_oid));
+
 	if (table_oid == InvalidOid)
 	{
 		elog(WARNING, "InvalidOid");
 		goto full_end;
 	}
-
-	Relation rel = RelationIdGetRelation(RelidByRelfilenode(tablespace_oid,
-															table_oid));
 
 	if (rel == InvalidRelation)
 	{
@@ -349,12 +350,16 @@ SetPtrackClearLSN(bool set_invalid)
 {
 	int			fd;
 	XLogRecPtr	ptr;
+	char		file_path[MAXPGPATH];
 	if (set_invalid)
 		ptr = InvalidXLogRecPtr;
 	else
 		ptr = GetXLogInsertRecPtr();
-	//LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
-	fd = BasicOpenFile("global/ptrack_control",
+
+	join_path_components(file_path, DataDir, "global/ptrack_control");
+	canonicalize_path(file_path);
+
+	fd = BasicOpenFile(file_path,
 					   O_RDWR | O_CREAT | PG_BINARY,
 					   S_IRUSR | S_IWUSR);
 	if (fd < 0)
@@ -383,7 +388,6 @@ SetPtrackClearLSN(bool set_invalid)
 		ereport(PANIC,
 				(errcode_for_file_access(),
 				 errmsg("could not close ptrack control file: %m")));
-	//LWLockRelease(ControlFileLock);
 }
 
 /* Test ptrack file */
@@ -495,10 +499,12 @@ pg_ptrack_test(PG_FUNCTION_ARGS)
 			if(ptrack_control_lsn < main_page_lsn)
 			{
 				necessary_data_counter++;
-				elog(WARNING, "Block %ud not track. Ptrack lsn:%lx page lsn:%lx",
+				elog(WARNING, "Block %ud not track. Ptrack lsn:%X/%X page lsn:%X/%X",
 					nblock,
-					ptrack_control_lsn,
-					main_page_lsn);
+					(uint32) (ptrack_control_lsn >> 32),
+					(uint32) ptrack_control_lsn,
+					(uint32) (main_page_lsn >> 32),
+					(uint32) main_page_lsn);
 			}
 			else
 				continue;
@@ -513,20 +519,24 @@ pg_ptrack_test(PG_FUNCTION_ARGS)
 			if (ptrack_control_lsn >= main_page_lsn)
 			{
 				excess_data_counter++;
-				elog(WARNING, "Block %ud not needed. Ptrack lsn:%lx page lsn:%lx",
+				elog(WARNING, "Block %ud not needed. Ptrack lsn:%X/%X page lsn:%X/%X",
 					nblock,
-					ptrack_control_lsn,
-					main_page_lsn);
+					(uint32) (ptrack_control_lsn >> 32),
+					(uint32) ptrack_control_lsn,
+					(uint32) (main_page_lsn >> 32),
+					(uint32) main_page_lsn);
 			}
 		}
 		/* not tracked data */
 		else if (ptrack_control_lsn < main_page_lsn)
 		{
 			necessary_data_counter++;
-			elog(WARNING, "Block %ud not tracked. Ptrack lsn:%lx page lsn:%lx",
+			elog(WARNING, "Block %ud not tracked. Ptrack lsn:%X/%X page lsn:%X/%X",
 				nblock,
-				ptrack_control_lsn,
-				main_page_lsn);
+				 (uint32) (ptrack_control_lsn >> 32),
+				 (uint32) ptrack_control_lsn,
+				 (uint32) (main_page_lsn >> 32),
+				 (uint32) main_page_lsn);
 		}
 		LockBuffer(ptrack_buf, BUFFER_LOCK_UNLOCK);
 	}

@@ -23,4 +23,4 @@ endif
 
 genparser:
 #	test -d sr_plan_env ||  
-	python gen_parser.py nodes.h `pg_config --includedir-server`
+	python gen_parser.py nodes.h `$(PG_CONFIG) --includedir-server`

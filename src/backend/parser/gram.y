@@ -265,7 +265,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 		DeallocateStmt PrepareStmt ExecuteStmt
 		DropOwnedStmt ReassignOwnedStmt
 		AlterTSConfigurationStmt AlterTSDictionaryStmt
-		CreateMatViewStmt RefreshMatViewStmt CreateAmStmt
+		CreateMatViewStmt RefreshMatViewStmt CreateAmStmt WaitLSNStmt
 
 %type <node>	select_no_parens select_with_parens select_clause
 				simple_select values_clause
@@ -304,7 +304,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <list>	OptSchemaEltList
 
 %type <boolean> TriggerForSpec TriggerForType
-%type <ival>	TriggerActionTime
+%type <ival>	TriggerActionTime WaitDelay
 %type <list>	TriggerEvents TriggerOneEvent
 %type <value>	TriggerFuncArg
 %type <node>	TriggerWhen
@@ -565,7 +565,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 /* ordinary key words in alphabetical order */
 %token <keyword> ABORT_P ABSOLUTE_P ACCESS ACTION ADD_P ADMIN AFTER
-	AGGREGATE ALL ALSO ALTER ALWAYS ANALYSE ANALYZE AND ANY ARRAY AS ASC
+	AGGREGATE ALL ALSO ALTER ALWAYS ANALYSE ANALYZE AND ANY APPLICATION ARRAY AS ASC
 	ASSERTION ASSIGNMENT ASYMMETRIC AT ATTRIBUTE AUTHORIZATION
 
 	BACKWARD BEFORE BEGIN_P BETWEEN BIGINT BINARY BIT
@@ -644,7 +644,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	VACUUM VALID VALIDATE VALIDATOR VALUE_P VALUES VARCHAR VARIADIC VARYING
 	VERBOSE VERSION_P VIEW VIEWS VOLATILE
 
-	WHEN WHERE WHITESPACE_P WINDOW WITH WITHIN WITHOUT WORK WRAPPER WRITE
+	WAITLSN WHEN WHERE WHITESPACE_P WINDOW WITH WITHIN WITHOUT WORK WRAPPER WRITE
 
 	XML_P XMLATTRIBUTES XMLCONCAT XMLELEMENT XMLEXISTS XMLFOREST XMLPARSE
 	XMLPI XMLROOT XMLSERIALIZE
@@ -882,6 +882,7 @@ stmt :
 			| VariableSetStmt
 			| VariableShowStmt
 			| ViewStmt
+			| WaitLSNStmt
 			| /*EMPTY*/
 				{ $$ = NULL; }
 		;
@@ -3948,7 +3949,16 @@ alter_extension_opt_item:
  *****************************************************************************/
 
 AlterExtensionContentsStmt:
-			ALTER EXTENSION name add_drop AGGREGATE func_name aggr_args
+			ALTER EXTENSION name add_drop ACCESS METHOD name
+				{
+					AlterExtensionContentsStmt *n = makeNode(AlterExtensionContentsStmt);
+					n->extname = $3;
+					n->action = $4;
+					n->objtype = OBJECT_ACCESS_METHOD;
+					n->objname = list_make1(makeString($7));
+					$$ = (Node *)n;
+				}
+			| ALTER EXTENSION name add_drop AGGREGATE func_name aggr_args
 				{
 					AlterExtensionContentsStmt *n = makeNode(AlterExtensionContentsStmt);
 					n->extname = $3;
@@ -9823,6 +9833,8 @@ opt_lock:	IN_P lock_type MODE				{ $$ = $2; }
 lock_type:	ACCESS SHARE					{ $$ = AccessShareLock; }
 			| ROW SHARE						{ $$ = RowShareLock; }
 			| ROW EXCLUSIVE					{ $$ = RowExclusiveLock; }
+			| APPLICATION SHARE             { $$ = ApplicationShareLock; }
+			| APPLICATION EXCLUSIVE         { $$ = ApplicationExclusiveLock; }
 			| SHARE UPDATE EXCLUSIVE		{ $$ = ShareUpdateExclusiveLock; }
 			| SHARE							{ $$ = ShareLock; }
 			| SHARE ROW EXCLUSIVE			{ $$ = ShareRowExclusiveLock; }
@@ -11680,7 +11692,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr LIKE a_expr ESCAPE a_expr					%prec LIKE
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("like_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("like_escape")),
 											   list_make2($3, $5),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_LIKE, "~~",
@@ -11693,7 +11705,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr NOT_LA LIKE a_expr ESCAPE a_expr			%prec NOT_LA
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("like_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("like_escape")),
 											   list_make2($4, $6),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_LIKE, "!~~",
@@ -11706,7 +11718,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr ILIKE a_expr ESCAPE a_expr					%prec ILIKE
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("like_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("like_escape")),
 											   list_make2($3, $5),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_ILIKE, "~~*",
@@ -11719,7 +11731,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr NOT_LA ILIKE a_expr ESCAPE a_expr			%prec NOT_LA
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("like_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("like_escape")),
 											   list_make2($4, $6),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_ILIKE, "!~~*",
@@ -11728,7 +11740,7 @@ a_expr:		c_expr									{ $$ = $1; }
 
 			| a_expr SIMILAR TO a_expr							%prec SIMILAR
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("similar_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("similar_escape")),
 											   list_make2($4, makeNullAConst(-1)),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_SIMILAR, "~",
@@ -11736,7 +11748,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr SIMILAR TO a_expr ESCAPE a_expr			%prec SIMILAR
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("similar_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("similar_escape")),
 											   list_make2($4, $6),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_SIMILAR, "~",
@@ -11744,7 +11756,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr NOT_LA SIMILAR TO a_expr					%prec NOT_LA
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("similar_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("similar_escape")),
 											   list_make2($5, makeNullAConst(-1)),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_SIMILAR, "!~",
@@ -11752,7 +11764,7 @@ a_expr:		c_expr									{ $$ = $1; }
 				}
 			| a_expr NOT_LA SIMILAR TO a_expr ESCAPE a_expr		%prec NOT_LA
 				{
-					FuncCall *n = makeFuncCall(SystemFuncName("similar_escape"),
+					FuncCall *n = makeFuncCall(list_make1(makeString("similar_escape")),
 											   list_make2($5, $7),
 											   @2);
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_SIMILAR, "!~",
@@ -12961,7 +12973,26 @@ frame_bound:
 				}
 		;
 
+/*****************************************************************************
+ *
+ *		QUERY:
+ *				WAITLSN <LSN> can appear as a query-level command
+ *
+ *
+ *****************************************************************************/
 
+WaitLSNStmt: WAITLSN Sconst WaitDelay
+				{
+					WaitLSNStmt *n = makeNode(WaitLSNStmt);
+					n->lsn = $2;
+					n->delay = $3;
+					$$ = (Node *)n;
+				}
+		;
+WaitDelay:
+			',' Iconst							{ $$ = $2; }
+			| /*EMPTY*/							{ $$ = 0; }
+		;
 /*
  * Supporting nonterminals for expressions.
  */
@@ -13767,6 +13798,7 @@ unreserved_keyword:
 			| ALSO
 			| ALTER
 			| ALWAYS
+			| APPLICATION
 			| ASSERTION
 			| ASSIGNMENT
 			| AT
@@ -14018,6 +14050,7 @@ unreserved_keyword:
 			| VIEW
 			| VIEWS
 			| VOLATILE
+			| WAITLSN
 			| WHITESPACE_P
 			| WITHIN
 			| WITHOUT

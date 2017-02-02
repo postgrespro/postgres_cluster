@@ -326,7 +326,7 @@ or\n"), old_cluster.port, new_cluster.port, os_info.user);
   C:\\> set PGBINNEW=newCluster/bin\n\
   C:\\> pg_upgrade\n"));
 #endif
-	printf(_("\nReport bugs to <pgsql-bugs@postgresql.org>.\n"));
+	printf(_("\nReport bugs to <" PACKAGE_BUGREPORT ">.\n"));
 }
 
 
@@ -422,8 +422,8 @@ adjust_data_dir(ClusterInfo *cluster)
 
 	if ((output = popen(cmd, "r")) == NULL ||
 		fgets(cmd_output, sizeof(cmd_output), output) == NULL)
-		pg_fatal("Could not get data directory using %s: %s\n",
-				 cmd, getErrorText());
+		pg_fatal("could not get data directory using %s: %s\n",
+				 cmd, strerror(errno));
 
 	pclose(output);
 
