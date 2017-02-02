@@ -1132,6 +1132,8 @@ static const TParserStateActionItem actionTPS_InUnsignedInt[] = {
 	{p_iseqC, '-', A_PUSH, TPS_InHostFirstAN, 0, NULL},
 	{p_iseqC, '_', A_PUSH, TPS_InHostFirstAN, 0, NULL},
 	{p_iseqC, '@', A_PUSH, TPS_InEmail, 0, NULL},
+	{p_iseqC, '-', A_PUSH, TPS_InHyphenNumWordFirst, 0, NULL},
+	{p_iseqC, '_', A_PUSH, TPS_InHyphenNumWordFirst, 0, NULL},
 	{p_isasclet, 0, A_PUSH, TPS_InHost, 0, NULL},
 	{p_isalpha, 0, A_NEXT, TPS_InNumWord, 0, NULL},
 	{p_isspecial, 0, A_NEXT, TPS_InNumWord, 0, NULL},
@@ -1658,7 +1660,7 @@ static const TParserStateActionItem actionTPS_InParseHyphen[] = {
 	{p_isEOF, 0, A_RERUN, TPS_Base, 0, NULL},
 	{p_isasclet, 0, A_NEXT, TPS_InHyphenAsciiWordPart, 0, NULL},
 	{p_isalpha, 0, A_NEXT, TPS_InHyphenWordPart, 0, NULL},
-	{p_isdigit, 0, A_PUSH, TPS_InHyphenUnsignedInt, 0, NULL},
+	{p_isdigit, 0, A_PUSH, TPS_InHyphenNumWordPart, 0, NULL},
 	{p_iseqC, '-', A_PUSH, TPS_InParseHyphenHyphen, 0, NULL},
 	{p_iseqC, '_', A_PUSH, TPS_InParseHyphenHyphen, 0, NULL},
 	{NULL, 0, A_RERUN, TPS_Base, 0, NULL}

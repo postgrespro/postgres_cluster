@@ -193,3 +193,15 @@ SELECT to_tsvector('english_ts', 'pg_trgm');
  'pg':2 'pg_trgm':1 'trgm':3
 (1 row)
 
+SELECT to_tsvector('english_ts', '12_abc');
+        to_tsvector        
+---------------------------
+ '12':2 '12_abc':1 'abc':3
+(1 row)
+
+SELECT to_tsvector('english_ts', '12-abc');
+        to_tsvector        
+---------------------------
+ '12':2 '12-abc':1 'abc':3
+(1 row)
+
