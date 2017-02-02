@@ -82,7 +82,7 @@
 
 #define Natts_mtm_trans_state   15
 #define Natts_mtm_nodes_state   16
-#define Natts_mtm_cluster_state 18
+#define Natts_mtm_cluster_state 19
 
 typedef ulong64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
