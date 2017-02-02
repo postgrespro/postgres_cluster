@@ -2128,7 +2128,7 @@ void MtmRefreshClusterStatus()
 		 * connectivity graph is stabilized.
 		 */
 		oldClique = newClique;		
-		MtmSleep(MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2); /* double timeout to condider worst case when heartbeat send interval is added with refresh cluster status interval */
+		MtmSleep(MSEC_TO_USEC(MtmHeartbeatRecvTimeout)*2); /* double timeout to consider the worst case when heartbeat receive interval is added with refresh cluster status interval */
 		MtmBuildConnectivityMatrix(matrix);
 		newClique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &cliqueSize);
 	} while (newClique != oldClique);
@@ -2232,7 +2232,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	BIT_SET(SELF_CONNECTIVITY_MASK, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	elog(LOG, "Disconnect node %d connectivity mask %llx", 
-		 nodeId, (long long)SELF_CONNECTIVITY_MASK);
+		 nodeId, SELF_CONNECTIVITY_MASK);
 	MtmUnlock();
 }
 
@@ -2242,7 +2242,7 @@ void MtmOnNodeDisconnect(int nodeId)
 void MtmOnNodeConnect(int nodeId)
 {
 	MtmLock(LW_EXCLUSIVE);	
-	elog(LOG, "Connect node %d connectivity mask %llx", nodeId, (long long)SELF_CONNECTIVITY_MASK);
+	elog(LOG, "Connect node %d connectivity mask %llx", nodeId, SELF_CONNECTIVITY_MASK);
 	BIT_CLEAR(SELF_CONNECTIVITY_MASK, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1); /* force sender to reestablish connection and send heartbeat */
 	MtmUnlock();
@@ -2254,6 +2254,7 @@ void MtmOnNodeConnect(int nodeId)
 void MtmReconnectNode(int nodeId)
 {
 	MtmLock(LW_EXCLUSIVE);	
+	elog(LOG, "Reconnect node %d connectivity mask %llx", nodeId, SELF_CONNECTIVITY_MASK);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	MtmUnlock();
 }
@@ -3289,7 +3290,9 @@ void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
 	MtmSetCurrentTransactionGID(ts->gid);
 	MtmTx.isActive = true;
 	FinishPreparedTransaction(ts->gid, commit);
-	
+	if (commit) { 
+		MTM_LOG1("Distributed transaction %s is committed", ts->gid);
+	}
 	if (!insideTransaction) { 
 		CommitTransactionCommand();
 		Assert(!MtmTx.isActive);
@@ -3326,15 +3329,21 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 			MtmUnlock();
 			return REPLMODE_EXIT;
 		}
-		/* We are not interested in receiving any deteriorated logical messages from recovered node, do recreate slot */
+		/* We are not interested in receiving any deteriorated logical messages from recovered node, so recreate slot */
 		if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
 			mode = REPLMODE_CREATE_NEW;
 		}
 		MTM_LOG2("%d: receiver slot mode %s", MyProcPid, MtmNodeStatusMnem[Mtm->status]);
 		if (Mtm->status == MTM_RECOVERY) { 
 			mode = REPLMODE_RECOVERED;
-			if ((Mtm->recoverySlot == 0 && (Mtm->donorNodeId == MtmNodeId || Mtm->donorNodeId == nodeId))
-				|| Mtm->recoverySlot == nodeId) 
+			/* Choose node for recovery if 
+			 * 1. It is not chosen yet or the same node was chosen before
+			 * 2. It is donor node or there is no donor node
+			 * 3. Connections with all other live nodes were established
+			 */
+			if ((Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId)
+				&& (Mtm->donorNodeId == MtmNodeId || Mtm->donorNodeId == nodeId)
+				&& (SELF_CONNECTIVITY_MASK & ~Mtm->disabledNodeMask) == 0)
 			{ 
 				/* Choose for recovery first available slot or slot of donor node (if any) */
 				if (Mtm->nAllNodes >= 3) { 
@@ -3354,6 +3363,8 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 				return REPLMODE_RECOVERY;
 			}
 		}
+		MTM_LOG1("Replication to node %d is pending: recovery node=%d, donor node=%d, connectivity mask=%llx, disabled mask=%llx", 
+				 nodeId, Mtm->recoverySlot, Mtm->donorNodeId, SELF_CONNECTIVITY_MASK, Mtm->disabledNodeMask);
 		MtmUnlock();
 		/* delay opening of other slots until recovery is completed */
 		MtmSleep(STATUS_POLL_DELAY);
@@ -3492,6 +3503,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			}
 		}
 	}
+	MTM_LOG1("Startup of logical replication to node %d", MtmReplicationNodeId);
 	MtmLock(LW_EXCLUSIVE);
 	if (BIT_CHECK(Mtm->stoppedNodeMask, MtmReplicationNodeId-1)) {		
 		elog(WARNING, "Stopped node %d tries to initiate recovery", MtmReplicationNodeId);
@@ -4074,6 +4086,7 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 	values[15] = Int32GetDatum(Mtm->nConfigChanges);
 	values[16] = Int64GetDatum(Mtm->stalledNodeMask);
 	values[17] = Int64GetDatum(Mtm->stoppedNodeMask);
+	values[18] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[MtmNodeId-1].lastStatusChangeTime/USECS_PER_SEC));
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
 }
@@ -4456,6 +4469,7 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 					elog(ERROR, "Transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
 				} else {
 					FinishPreparedTransaction(x->gid, true);
+					MTM_LOG1("Distributed transaction %s is committed", x->gid);
 				}
 			}
 		}
