@@ -90,7 +90,7 @@ PG_MODULE_MAGIC;
 			 errdetail detail))
 
 #define skip_space(str) \
-	while (isspace(*str) && (*str &0x80)== 0) \
+	while (isspace(*str) && (*str & 0x80)== 0) \
 		str++;
 
 enum
@@ -901,7 +901,7 @@ quote_value(StringInfo buf, const char *value)
 
 	for (str = value; *str != '\0'; str++)
 	{
-		if (isspace(*str) || *str == '(' || *str == ')' || *str == '"')
+		if ((isspace(*str) && (((*str) & 0x80)==0)) || *str == '(' || *str == ')' || *str == '"')
 		{
 			need_quote = true;
 			appendStringInfoCharMacro(buf, '"');
@@ -1249,7 +1249,7 @@ parse_keyword(const char *str, StringInfo buf)
 {
 	skip_space(str);
 
-	while (!isspace(*str) && *str != '(' && *str != '\0')
+	while (!(isspace(*str)&&(*str & 0x80)==0) && *str != '(' && *str != '\0')
 		appendStringInfoCharMacro(buf, *str++);
 
 	return str;
@@ -1329,7 +1329,7 @@ parse_quoted_value(const char *str, char **word, bool truncate)
 					break;
 			}
 		}
-		else if (isspace(*str) || *str == '(' || *str == ')' || *str == '"' ||
+		else if ((isspace(*str)&&((*str & 0x80)==0)) || *str == '(' || *str == ')' || *str == '"' ||
 				 *str == '\0')
 			break;
 
@@ -1699,7 +1699,7 @@ get_hints_from_comment(const char *p)
 		if (!(*p >= '0' && *p <= '9') &&
 			!(*p >= 'A' && *p <= 'Z') &&
 			!(*p >= 'a' && *p <= 'z') &&
-			!isspace(*p) &&
+			(!isspace(*p)|| (*p &0x80)) &&
 			*p != '_' &&
 			*p != ',' &&
 			*p != '(' && *p != ')')
