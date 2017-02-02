@@ -5026,7 +5026,7 @@ error hint:
 ---- No. S-3-5 not used index
 ----
 -- No. S-3-5-1
-\! psql ${PGHPBASE} -c "/*+IndexScan(ti1 ti1_pred)*/ EXPLAIN (COSTS true) SELECT * FROM s1.ti1 WHERE c1 = 100" | grep -v "Planning time:"
+\! psql ${PGHPBASE} -X -c "/*+IndexScan(ti1 ti1_pred)*/ EXPLAIN (COSTS true) SELECT * FROM s1.ti1 WHERE c1 = 100" | grep -v "Planning time:"
 LOG:  statement: /*+IndexScan(ti1 ti1_pred)*/ EXPLAIN (COSTS true) SELECT * FROM s1.ti1 WHERE c1 = 100
 LOG:  available indexes for IndexScan(ti1): ti1_pred
 LOG:  pg_hint_plan:
@@ -5043,7 +5043,7 @@ error hint:
 (2 rows)
 
 -- No. S-3-5-2
-\! psql ${PGHPBASE} -c "/*+BitmapScan(ti1 ti1_pred)*/ EXPLAIN (COSTS true) SELECT * FROM s1.ti1 WHERE c1 = 100" | grep -v "Planning time:"
+\! psql ${PGHPBASE} -X -c "/*+BitmapScan(ti1 ti1_pred)*/ EXPLAIN (COSTS true) SELECT * FROM s1.ti1 WHERE c1 = 100" | grep -v "Planning time:"
 LOG:  statement: /*+BitmapScan(ti1 ti1_pred)*/ EXPLAIN (COSTS true) SELECT * FROM s1.ti1 WHERE c1 = 100
 LOG:  available indexes for BitmapScan(ti1): ti1_pred
 LOG:  pg_hint_plan:
@@ -5060,7 +5060,7 @@ error hint:
 (2 rows)
 
 -- No. S-3-5-3
-\! psql ${PGHPBASE} -c "/*+IndexOnlyScan(ti1 ti1_pred)*/ EXPLAIN (COSTS true) SELECT c1 FROM s1.ti1 WHERE c1 = 100" | grep -v "Planning time:"
+\! psql ${PGHPBASE} -X -c "/*+IndexOnlyScan(ti1 ti1_pred)*/ EXPLAIN (COSTS true) SELECT c1 FROM s1.ti1 WHERE c1 = 100" | grep -v "Planning time:"
 LOG:  statement: /*+IndexOnlyScan(ti1 ti1_pred)*/ EXPLAIN (COSTS true) SELECT c1 FROM s1.ti1 WHERE c1 = 100
 LOG:  available indexes for IndexOnlyScan(ti1): ti1_pred
 LOG:  pg_hint_plan:
@@ -5077,7 +5077,7 @@ error hint:
 (2 rows)
 
 -- No. S-3-5-4
-\! psql ${PGHPBASE} -c "/*+IndexScan(ti1 not_exist)*/ EXPLAIN (COSTS true) SELECT * FROM s1.ti1 WHERE c1 = 100" | grep -v "Planning time:"
+\! psql ${PGHPBASE} -X -c "/*+IndexScan(ti1 not_exist)*/ EXPLAIN (COSTS true) SELECT * FROM s1.ti1 WHERE c1 = 100" | grep -v "Planning time:"
 LOG:  statement: /*+IndexScan(ti1 not_exist)*/ EXPLAIN (COSTS true) SELECT * FROM s1.ti1 WHERE c1 = 100
 LOG:  available indexes for IndexScan(ti1):
 LOG:  pg_hint_plan:
@@ -5094,7 +5094,7 @@ error hint:
 (2 rows)
 
 -- No. S-3-5-5
-\! psql ${PGHPBASE} -c "/*+BitmapScan(ti1 not_exist)*/ EXPLAIN (COSTS true) SELECT * FROM s1.ti1 WHERE c1 = 100" | grep -v "Planning time:"
+\! psql ${PGHPBASE} -X -c "/*+BitmapScan(ti1 not_exist)*/ EXPLAIN (COSTS true) SELECT * FROM s1.ti1 WHERE c1 = 100" | grep -v "Planning time:"
 LOG:  statement: /*+BitmapScan(ti1 not_exist)*/ EXPLAIN (COSTS true) SELECT * FROM s1.ti1 WHERE c1 = 100
 LOG:  available indexes for BitmapScan(ti1):
 LOG:  pg_hint_plan:
@@ -5110,8 +5110,9 @@ error hint:
    Filter: (c1 = 100)
 (2 rows)
 
+ 
 -- No. S-3-5-6
-\! psql ${PGHPBASE} -c "/*+IndexOnlyScan(ti1 not_exist)*/ EXPLAIN (COSTS true) SELECT c1 FROM s1.ti1 WHERE c1 = 100" | grep -v "Planning time:"
+\! psql ${PGHPBASE} -X -c "/*+IndexOnlyScan(ti1 not_exist)*/ EXPLAIN (COSTS true) SELECT c1 FROM s1.ti1 WHERE c1 = 100" | grep -v "Planning time:"
 LOG:  statement: /*+IndexOnlyScan(ti1 not_exist)*/ EXPLAIN (COSTS true) SELECT c1 FROM s1.ti1 WHERE c1 = 100
 LOG:  available indexes for IndexOnlyScan(ti1):
 LOG:  pg_hint_plan:
@@ -5136,7 +5137,7 @@ LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM s1.t1 WHERE t1.c1 = 1;
    Index Cond: (c1 = 1)
 (2 rows)
 
-\! psql ${PGHPBASE} -c "/*+TidScan(t1)*/ EXPLAIN (COSTS true) SELECT * FROM s1.t1 WHERE t1.c1 = 1" | grep -v "Planning time:"
+\! psql ${PGHPBASE} -X -c "/*+TidScan(t1)*/ EXPLAIN (COSTS true) SELECT * FROM s1.t1 WHERE t1.c1 = 1" | grep -v "Planning time:"
 LOG:  statement: /*+TidScan(t1)*/ EXPLAIN (COSTS true) SELECT * FROM s1.t1 WHERE t1.c1 = 1
 LOG:  pg_hint_plan:
 used hint:
