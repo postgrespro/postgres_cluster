@@ -16,7 +16,7 @@ Multi-master is an extension and set of patches to a Postegres database, that tu
 
 Multi-master replicates same database to all nodes in cluster and allows writes to each node. Transaction isolation is enforced cluster-wide, so in case of concurrent updates on different nodes database will use the same conflict resolution rules (mvcc with repeatable read isolation level) as single node uses for concurrent backends and always stays in consistent state. Any writing transaction will write to all nodes, hence increasing commit latency for amount of time proportional to roundtrip between nodes nedded for synchronization. Read only transactions and queries executed locally without measurable overhead. Replication mechanism itself based on logical decoding and earlier version of pglogical extension provided for community by 2ndQuadrant team.
 
-Cluster consisting of N nodes can continue to work while majority of initial nodes are alive and reachable by other nodes. This is done by using 3 phase commit protocol and heartbeats for failure discovery. Node that is brought back to cluster can be fast-forwaded to actual state automatically in case when transactions log still exists since the time when node was excluded from cluster (this depends on checkpoint configuration in postgres).
+Cluster consisting of N nodes can continue to work while majority of initial nodes are alive and reachable by other nodes. This is done by using 3 phase commit protocol and heartbeats for failure discovery. Node that is brought back to cluster can be fast-forwaded to actual state automatically in case when transactions log still exists since the time when node was excluded from cluster (that is configurable).
 
 
 ## Documentation
@@ -51,7 +51,7 @@ Cluster consisting of N nodes can continue to work while majority of initial nod
 Current implementation of logical replication sends data to subscriber nodes only after local commit, so in case of heavy-write transaction user will wait for transaction processing two times: on local node and on all other nodes (simultaneosly). We have plans to address this issue in future.
 
 * DDL replication.
-While data is replicated on logical level, DDL replicated by statements performing distributed commit with the same statement. Some complex DDL scenarious including stored procedures and temp temp tables aren't working properly. We are working right now on proving full compatibility with ordinary postgres. Currently we are passing 141 of 164 postgres regression tests.
+While data is replicated on logical level, DDL replicated by statements performing distributed commit with the same statement. Some complex DDL scenarious including stored procedures and temp temp tables can work differently comparing to standalone postgres. We are working right now on proving full compatibility with ordinary postgres. Currently we are passing 162 of 166 postgres regression tests.
 
 * Isolation level.
 Multimaster currently support only _repeatable_ _read_ isolation level. This is stricter than default _read_ _commited_, but also increases probability of serialization failure during commit. _Serializable_ level isn't supported yet.
