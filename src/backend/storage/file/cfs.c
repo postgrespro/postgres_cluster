@@ -265,7 +265,9 @@ assign_part2:
 /* Encryption and decryption using AES in CTR mode */
 static void cfs_aes_crypt_block(const char* fname, void* block, uint32 offs, uint32 size)
 {
-#define AES_DEBUG 1 // AALEKSEEV TODO: 0
+/*
+#define AES_DEBUG 1
+*/
 	uint32 aes_in[4]; /* 16 bytes, 128 bits */
 	uint32 aes_out[4];
 	uint8* plaintext = (uint8*)block;
