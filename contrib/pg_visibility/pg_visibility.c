@@ -24,6 +24,7 @@
 #ifndef WIN32
 #include <sys/mman.h>
 #endif
+#include "portability/mem.h"
 #include <sys/file.h>
 #include <sys/param.h>
 #include <sys/stat.h>
