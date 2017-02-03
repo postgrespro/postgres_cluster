@@ -152,12 +152,16 @@ SELECT * FROM ts_parse('tsparser', '345 qwe@efd.r '' http://www.com/ http://aew.
     12 | . 
     20 | 4.2
     12 | , 
-     1 | readline
-    20 | -4.2
+    15 | readline-4.2
+    11 | readline
+    12 | -
+     9 | 4.2
     12 |  
-     1 | readline
-    20 | -4.2
-    12 | . 
+    15 | readline-4.2
+    11 | readline
+    12 | -
+     9 | 4.2.
+    12 |  
     22 | 234
     12 |                                     +
        | 
@@ -173,7 +177,7 @@ SELECT * FROM ts_parse('tsparser', '345 qwe@efd.r '' http://www.com/ http://aew.
     12 |  
     12 | <> 
      1 | qwerty
-(139 rows)
+(143 rows)
 
 -- Test text search configuration with parser
 CREATE TEXT SEARCH CONFIGURATION english_ts (

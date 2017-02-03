@@ -23,6 +23,13 @@ SELECT to_tsvector('english', '123-abc') as def_parser,
 -----------------+-----------------------------
  '123':1 'abc':2 | '123':2 '123-abc':1 'abc':3
 (1 row)
+
+SELECT to_tsvector('english', 'rel-3.2-A') as def_parser,
+       to_tsvector('english_ts', 'rel-3.2-A')  as new_parser;
+    def_parser    |          new_parser
+------------------+-------------------------------
+ '-3.2':2 'rel':1 | '3.2':3 'rel':2 'rel-3.2-a':1
+(1 row)
 ```
 
 ## License

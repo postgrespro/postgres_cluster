@@ -1600,7 +1600,7 @@ static const TParserStateActionItem actionTPS_InHyphenAsciiWordFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isasclet, 0, A_NEXT, TPS_InHyphenAsciiWord, 0, NULL},
 	{p_isalpha, 0, A_NEXT, TPS_InHyphenWord, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenDigitLookahead, 0, NULL},
+	{p_isdigit, 0, A_NEXT, TPS_InHyphenNumWord, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
@@ -1618,7 +1618,7 @@ static const TParserStateActionItem actionTPS_InHyphenAsciiWord[] = {
 static const TParserStateActionItem actionTPS_InHyphenWordFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isalpha, 0, A_NEXT, TPS_InHyphenWord, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenDigitLookahead, 0, NULL},
+	{p_isdigit, 0, A_NEXT, TPS_InHyphenNumWord, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
@@ -1635,7 +1635,7 @@ static const TParserStateActionItem actionTPS_InHyphenWord[] = {
 static const TParserStateActionItem actionTPS_InHyphenNumWordFirst[] = {
 	{p_isEOF, 0, A_POP, TPS_Null, 0, NULL},
 	{p_isalpha, 0, A_NEXT, TPS_InHyphenNumWord, 0, NULL},
-	{p_isdigit, 0, A_NEXT, TPS_InHyphenDigitLookahead, 0, NULL},
+	{p_isdigit, 0, A_NEXT, TPS_InHyphenNumWord, 0, NULL},
 	{NULL, 0, A_POP, TPS_Null, 0, NULL}
 };
 
@@ -1643,6 +1643,7 @@ static const TParserStateActionItem actionTPS_InHyphenNumWord[] = {
 	{p_isEOF, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, NUMHWORD, SpecialHyphen},
 	{p_isalnum, 0, A_NEXT, TPS_InHyphenNumWord, 0, NULL},
 	{p_isspecial, 0, A_NEXT, TPS_InHyphenNumWord, 0, NULL},
+	{p_iseqC, '.', A_PUSH, TPS_InHyphenNumWordFirst, 0, NULL},
 	{p_iseqC, '-', A_PUSH, TPS_InHyphenNumWordFirst, 0, NULL},
 	{p_iseqC, '_', A_PUSH, TPS_InHyphenNumWordFirst, 0, NULL},
 	{NULL, 0, A_BINGO | A_CLRALL, TPS_InParseHyphen, NUMHWORD, SpecialHyphen}
@@ -1694,6 +1695,7 @@ static const TParserStateActionItem actionTPS_InHyphenNumWordPart[] = {
 	{p_isEOF, 0, A_BINGO, TPS_Base, NUMPARTHWORD, NULL},
 	{p_isalnum, 0, A_NEXT, TPS_InHyphenNumWordPart, 0, NULL},
 	{p_isspecial, 0, A_NEXT, TPS_InHyphenNumWordPart, 0, NULL},
+	{p_iseqC, '.', A_NEXT, TPS_InHyphenNumWordPart, 0, NULL},
 	{NULL, 0, A_BINGO, TPS_InParseHyphen, NUMPARTHWORD, NULL}
 };
 
