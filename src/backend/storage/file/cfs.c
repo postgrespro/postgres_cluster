@@ -195,7 +195,7 @@ char const* cfs_algorithm()
 #endif
 
 
-static void cfs_rc4_encrypt_block(void* block, uint32 offs, uint32 block_size)
+static void cfs_rc4_encrypt_block(void* block, uint32 offs, uint32 block_size) // AALEKSEEV TODO: DELETE THIS
 {
 	uint32 i;
     uint8 temp;
@@ -318,17 +318,24 @@ assign_part2:
 	return 0;
 }
 
+/* Encryption and decryption using AES in CTR mode */
+static void cfs_aes_crypt_block(const char* fname, void* block, uint32 offs, uint32 size)
+{
+	unsigned int fname_part1, fname_part2, fname_part3;
+	if(extract_fname_parts(fname, &fname_part1, &fname_part2, &fname_part3) < 0)
+		fname_part1 = fname_part2 = fname_part3 = 0;
+
+	elog(LOG, "cfs_aes_crypt_block, fname = %s, part1 = %d, part2 = %d, part3 = %d, offs = %d, size = %d",
+		fname, fname_part1, fname_part2, fname_part3, offs, size);
+
+}
+
 void cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size)
 {
 	if (cfs_encryption) 
 	{
-		unsigned int fname_part1, fname_part2, fname_part3;
-		if(extract_fname_parts(fname, &fname_part1, &fname_part2, &fname_part3) < 0)
-			fname_part1 = fname_part2 = fname_part3 = 0;
-
-		elog(LOG, "cfs_encrypt, fname = %s, part1 = %d, part2 = %d, part3 = %d, offs = %d, size = %d",
-			fname, fname_part1, fname_part2, fname_part3, offs, size);
-		cfs_rc4_encrypt_block(block, offs, size);
+		cfs_rc4_encrypt_block(block, offs, size); // AALEKSEEV TODO DELETE
+		cfs_aes_crypt_block(fname, block, offs, size);
 	}
 }
 
@@ -336,13 +343,8 @@ void cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size)
 {
 	if (cfs_encryption) 
 	{
-		unsigned int fname_part1, fname_part2, fname_part3;
-		if(extract_fname_parts(fname, &fname_part1, &fname_part2, &fname_part3) < 0)
-			fname_part1 = fname_part2 = fname_part3 = 0;
-
-		elog(LOG, "cfs_decrypt, fname = %s, part1 = %d, part2 = %d, part3 = %d, offs = %d, size = %d",
-			fname, fname_part1, fname_part2, fname_part3, offs, size);
-		cfs_rc4_encrypt_block(block, offs, size);
+		cfs_rc4_encrypt_block(block, offs, size); // AALEKSEEV TODO DELETE
+		cfs_aes_crypt_block(fname, block, offs, size);
 	}
 }
 
