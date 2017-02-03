@@ -260,11 +260,62 @@ static void cfs_rc4_init(void)
     }
 }
 
+/*
+ * For a file name like 'path/to/16384/16401[.123]' return part1 = 16384, part2 = 16401 and part3 = 123.
+ * Returns 0 on success and negative value on error.
+ */
+static int extract_fname_parts(const char* fname, unsigned int* part1, unsigned int* part2, unsigned int* part3)
+{
+	int idx = strlen(fname);
+	if(idx == 0)
+		return -1;
+	idx--;
+
+	while(idx >= 0 && isdigit(fname[idx]))
+		idx--;
+
+	if(idx == 0)
+		return -2;
+
+	if(fname[idx] != '.')
+	{
+		*part3 = 0;
+		goto assign_part2;
+	}
+
+	*part3 = atoi(&fname[idx+1]);
+
+	idx--;
+	while(idx >= 0 && isdigit(fname[idx]))
+		idx--;
+
+	if(idx == 0)
+		return -3;
+
+assign_part2:
+	*part2 = atoi(&fname[idx+1]);
+
+	idx--;
+	while(idx >= 0 && isdigit(fname[idx]))
+		idx--;
+
+	if(idx == 0)
+		return -4;
+
+	*part1 = atoi(&fname[idx+1]);
+	return 0;
+}
+
 void cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size)
 {
 	if (cfs_encryption) 
 	{
-		elog(LOG, "cfs_encrypt, fname = %s, offs = %d, size = %d", fname, offs, size);
+		unsigned int fname_part1, fname_part2, fname_part3;
+		if(extract_fname_parts(fname, &fname_part1, &fname_part2, &fname_part3) < 0)
+			fname_part1 = fname_part2 = fname_part3 = 0;
+
+		elog(LOG, "cfs_encrypt, fname = %s, part1 = %d, part2 = %d, part3 = %d, offs = %d, size = %d",
+			fname, fname_part1, fname_part2, fname_part3, offs, size);
 		cfs_rc4_encrypt_block(block, offs, size);
 	}
 }
@@ -273,7 +324,12 @@ void cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size)
 {
 	if (cfs_encryption) 
 	{
-		elog(LOG, "cfs_decrypt, fname = %s, offs = %d, size = %d", fname, offs, size);
+		unsigned int fname_part1, fname_part2, fname_part3;
+		if(extract_fname_parts(fname, &fname_part1, &fname_part2, &fname_part3) < 0)
+			fname_part1 = fname_part2 = fname_part3 = 0;
+
+		elog(LOG, "cfs_decrypt, fname = %s, part1 = %d, part2 = %d, part3 = %d, offs = %d, size = %d",
+			fname, fname_part1, fname_part2, fname_part3, offs, size);
 		cfs_rc4_encrypt_block(block, offs, size);
 	}
 }
