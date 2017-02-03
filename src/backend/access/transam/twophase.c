@@ -631,6 +631,14 @@ LockGXact(const char *gid, Oid user)
 		before_shmem_exit(AtProcExit_Twophase, 0);
 		twophaseExitRegistered = true;
 	}
+
+	/* here we know in advance that there are no prepared transactions */
+	if (max_prepared_xacts == 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+			errmsg("prepared transaction with identifier \"%s\" does not exist",
+					gid)));
+
 	MyLockedGxact = NULL;
 	i = string_hash(gid, 0) % max_prepared_xacts;
   Retry:
