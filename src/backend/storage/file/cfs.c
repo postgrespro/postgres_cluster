@@ -194,47 +194,11 @@ char const* cfs_algorithm()
 
 #endif
 
-
-static void cfs_rc4_encrypt_block(void* block, uint32 offs, uint32 block_size) // AALEKSEEV TODO: DELETE THIS
-{
-	uint32 i;
-    uint8 temp;
-	uint8* dst = (uint8*)block;
-	int   next_state;
-	uint8 state[CFS_CIPHER_KEY_SIZE];
-    int x = 0, y = 0;
-	uint32 skip = (offs / BLCKSZ + block_size) % CFS_CIPHER_KEY_SIZE;
-
-	memcpy(state, cfs_state->rc4_init_state, CFS_CIPHER_KEY_SIZE);
-    for (i = 0; i < skip; i++) {
-        x = (x + 1) % CFS_CIPHER_KEY_SIZE;
-        y = (y + state[x]) % CFS_CIPHER_KEY_SIZE;
-        temp = state[x];
-        state[x] = state[y];
-        state[y] = temp;
-    }
-    for (i = 0; i < block_size; i++) {
-        x = (x + 1) % CFS_CIPHER_KEY_SIZE;
-        y = (y + state[x]) % CFS_CIPHER_KEY_SIZE;
-        temp = state[x];
-        state[x] = state[y];
-        state[y] = temp;
-        next_state = (state[x] + state[y]) % CFS_CIPHER_KEY_SIZE;
-        dst[i] ^= state[next_state];
-    }
-}
-
 static void cfs_crypto_init(void)
 {
-    int index1 = 0;
-    int index2 = 0;
-    int i;
-    uint8 temp;
     int key_length;
-    int x = 0, y = 0;
 	char* cipher_key;
 	uint8 aes_key[32] = {0}; /* at most 256 bits */
-	uint8* rc4_init_state = cfs_state->rc4_init_state;
 
 	cipher_key = getenv("PG_CIPHER_KEY");
 	if (cipher_key == NULL) { 
@@ -242,26 +206,6 @@ static void cfs_crypto_init(void)
 	} 
 	unsetenv("PG_CIPHER_KEY"); /* make it not possible to inspect this environment variable through plperl */
     key_length = strlen(cipher_key);
-
-////// AALEKSEEV TODO GET RID OF THIS
-	for (i = 0; i < CFS_CIPHER_KEY_SIZE; ++i) {
-        rc4_init_state[i] = (uint8)i;
-    }
-    for (i = 0; i < CFS_CIPHER_KEY_SIZE; ++i) {
-        index2 = (cipher_key[index1] + rc4_init_state[i] + index2) % CFS_CIPHER_KEY_SIZE;
-        temp = rc4_init_state[i];
-        rc4_init_state[i] = rc4_init_state[index2];
-        rc4_init_state[index2] = temp;
-        index1 = (index1 + 1) % key_length;
-    }
-    for (i = 0; i < CFS_RC4_DROP_N; i++) {
-        x = (x + 1) % CFS_CIPHER_KEY_SIZE;
-        y = (y + rc4_init_state[x]) % CFS_CIPHER_KEY_SIZE;
-        temp = rc4_init_state[x];
-        rc4_init_state[x] = rc4_init_state[y];
-        rc4_init_state[y] = temp;
-    }
-//////
 
 	memcpy(&aes_key, cipher_key, key_length > sizeof(aes_key) ? sizeof(aes_key) : key_length);
 	rijndael_set_key(
@@ -321,11 +265,11 @@ assign_part2:
 /* Encryption and decryption using AES in CTR mode */
 static void cfs_aes_crypt_block(const char* fname, void* block, uint32 offs, uint32 size)
 {
-#define AES_DEBUG 1
+#define AES_DEBUG 1 // AALEKSEEV TODO: 0
 	uint32 aes_in[4]; /* 16 bytes, 128 bits */
 	uint32 aes_out[4];
 	uint8* plaintext = (uint8*)block;
-	uint8* pgamma = (uint8*)&aes_out;
+	uint8* gamma = (uint8*)&aes_out;
 	uint32 i, fname_part1, fname_part2, fname_part3;
 
 	if(extract_fname_parts(fname, &fname_part1, &fname_part2, &fname_part3) < 0)
@@ -350,7 +294,7 @@ static void cfs_aes_crypt_block(const char* fname, void* block, uint32 offs, uin
 
 	for(i = 0; i < size; i++)
 	{
-		plaintext[i] ^= pgamma[offs & 0xF];
+		plaintext[i] ^= gamma[offs & 0xF];
 		offs++;
 		if((offs & 0xF) == 0)
 		{
@@ -371,7 +315,6 @@ void cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size)
 {
 	if (cfs_encryption) 
 	{
-		cfs_rc4_encrypt_block(block, offs, size); // AALEKSEEV TODO DELETE
 		cfs_aes_crypt_block(fname, block, offs, size);
 	}
 }
@@ -380,7 +323,6 @@ void cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size)
 {
 	if (cfs_encryption) 
 	{
-		cfs_rc4_encrypt_block(block, offs, size); // AALEKSEEV TODO DELETE
 		cfs_aes_crypt_block(fname, block, offs, size);
 	}
 }
