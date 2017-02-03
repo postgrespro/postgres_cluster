@@ -276,7 +276,7 @@ static void cfs_crypto_init(void)
  * For a file name like 'path/to/16384/16401[.123]' return part1 = 16384, part2 = 16401 and part3 = 123.
  * Returns 0 on success and negative value on error.
  */
-static int extract_fname_parts(const char* fname, unsigned int* part1, unsigned int* part2, unsigned int* part3)
+static int extract_fname_parts(const char* fname, uint32* part1, uint32* part2, uint32* part3)
 {
 	int idx = strlen(fname);
 	if(idx == 0)
@@ -321,13 +321,36 @@ assign_part2:
 /* Encryption and decryption using AES in CTR mode */
 static void cfs_aes_crypt_block(const char* fname, void* block, uint32 offs, uint32 size)
 {
-	unsigned int fname_part1, fname_part2, fname_part3;
+	uint32 aes_in[4]; /* 16 bytes, 128 bits */
+	uint32 aes_out[4];
+	uint8* plaintext = (uint8*)block;
+	uint8* pgamma = (uint8*)&aes_out;
+	uint32 i, fname_part1, fname_part2, fname_part3;
+
 	if(extract_fname_parts(fname, &fname_part1, &fname_part2, &fname_part3) < 0)
 		fname_part1 = fname_part2 = fname_part3 = 0;
 
+	// AALEKSEEV TODO MAKE DEBUG4
 	elog(LOG, "cfs_aes_crypt_block, fname = %s, part1 = %d, part2 = %d, part3 = %d, offs = %d, size = %d",
 		fname, fname_part1, fname_part2, fname_part3, offs, size);
 
+	aes_in[0] = fname_part1;
+	aes_in[1] = fname_part2;
+	aes_in[2] = fname_part3;
+	aes_in[3] = offs & 0xFFFFFFF0;
+	rijndael_encrypt(&cfs_state->aes_context, (u4byte*)&aes_in, (u4byte*)&aes_out);
+
+	for(i = 0; i < size; i++)
+	{
+		plaintext[i] ^= aes_out[offs & 0xF];
+		offs++;
+		if((offs & 0xF) == 0)
+		{
+			/* Prepare next gamma part */
+			aes_in[3] = offs;
+			rijndael_encrypt(&cfs_state->aes_context, (u4byte*)&aes_in, (u4byte*)&aes_out);
+		}
+	}
 }
 
 void cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size)
