@@ -8,9 +8,6 @@ DATA = multimaster--1.0.sql
 
 all: multimaster.so
 
-tests/dtmbench:
-	make -C tests
-
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK = $(libpq)
 
@@ -24,7 +21,3 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
-
-check:
-	env DESTDIR='$(abs_top_builddir)'/tmp_install make install
-	$(prove_check)
