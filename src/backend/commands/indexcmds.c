@@ -350,12 +350,12 @@ DefineIndex(Oid relationId,
 	numberOfKeyAttributes = list_length(stmt->indexParams);
 
 	/*
-	 * We append any INCLUDING columns onto the indexParams list so that
+	 * We append any INCLUDE columns onto the indexParams list so that
 	 * we have one list with all columns. Later we can determine which of these
-	 * are key columns, and which are just part of the INCLUDING list by check
+	 * are key columns, and which are just part of the INCLUDE list by checking
 	 * the list position. A list item in a position less than
 	 * ii_NumIndexKeyAttrs is part of the key columns, and anything equal to
-	 * and over is part of the INCLUDING columns.
+	 * and over is part of the INCLUDE columns.
 	 */
 	stmt->indexParams = list_concat(stmt->indexParams,
 									stmt->indexIncludingParams);

@@ -2042,7 +2042,7 @@ CommitTransaction(void)
 		 * If there weren't any, we are done ... otherwise loop back to check
 		 * if they queued deferred triggers.  Lather, rinse, repeat.
 		 */
-		if (!PreCommit_Portals(false))
+		if (getNestLevelATX() != 0 || !PreCommit_Portals(false))
 			break;
 	}
 
@@ -2282,7 +2282,7 @@ PrepareTransaction(void)
 		 * If there weren't any, we are done ... otherwise loop back to check
 		 * if they queued deferred triggers.  Lather, rinse, repeat.
 		 */
-		if (!PreCommit_Portals(true))
+		if (getNestLevelATX() != 0 || !PreCommit_Portals(false))
 			break;
 	}
 
