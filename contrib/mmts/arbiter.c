@@ -220,18 +220,20 @@ static int MtmWaitSocket(int sd, bool forWrite, timestamp_t timeoutMsec)
 	fd_set set;
 	int rc;
 	timestamp_t deadline = MtmGetSystemTime() + MSEC_TO_USEC(timeoutMsec);
-    FD_ZERO(&set); 
-    FD_SET(sd, &set); 
+
 	do { 
 		timestamp_t now;
 		MtmCheckHeartbeat();
-		now = MtmGetSystemTime();
-		if (now > deadline) { 
+        now = MtmGetSystemTime();
+        if (now > deadline) { 
 			now = deadline;
 		}
+		FD_ZERO(&set); 
+		FD_SET(sd, &set); 
 		tv.tv_sec = (deadline - now)/USECS_PER_SEC; 
 		tv.tv_usec = (deadline - now)%USECS_PER_SEC;
 	} while ((rc = select(sd+1, forWrite ? NULL : &set, forWrite ? &set : NULL, NULL, &tv)) < 0 && errno == EINTR);
+
 	return rc;
 }
 
@@ -384,7 +386,7 @@ static void MtmSendHeartbeat()
 					|| !BIT_CHECK(Mtm->disabledNodeMask, i)
 					|| BIT_CHECK(Mtm->reconnectMask, i)))
 			{ 
-				if (!MtmSendToNode(i, &msg, sizeof(msg), MtmHeartbeatSendTimeout)) { 
+				if (!MtmSendToNode(i, &msg, sizeof(msg), MtmHeartbeatRecvTimeout)) { 
 					elog(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
 				} else {
 					if (last_heartbeat_to_node[i] + MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2 < now) { 
@@ -402,7 +404,7 @@ static void MtmSendHeartbeat()
 					MTM_LOG4("Send heartbeat to node %d with timestamp %lld", i+1, now);    
 				}
 			} else { 
-				MTM_LOG2("Do not send heartbeat to node %d, busy mask %lld, status %s", i+1, (long long) busy_mask, MtmNodeStatusMnem[Mtm->status]);
+				MTM_LOG2("Do not send heartbeat to node %d, busy mask %lld, status %s", i+1, busy_mask, MtmNodeStatusMnem[Mtm->status]);
 			}
 		}
 	}
@@ -828,7 +830,7 @@ static void MtmMonitor(Datum arg)
 	BackgroundWorkerInitializeConnection(MtmDatabaseName, NULL);
 
 	while (!stop) {
-		int rc = WaitLatch(&MyProc->procLatch, WL_TIMEOUT | WL_POSTMASTER_DEATH, MtmHeartbeatSendTimeout);
+		int rc = WaitLatch(&MyProc->procLatch, WL_TIMEOUT | WL_POSTMASTER_DEATH, MtmHeartbeatRecvTimeout);
 		if (rc & WL_POSTMASTER_DEATH) { 
 			break;
 		}
@@ -938,7 +940,7 @@ static void MtmReceiver(Datum arg)
 					Assert(node > 0 && node <= nNodes && node != MtmNodeId);
 
 					if (Mtm->nodes[node-1].connectivityMask != msg->connectivityMask) { 
-						elog(LOG, "Node %d changes it connectivity mask from %llx to %llx", node, (long long)Mtm->nodes[node-1].connectivityMask, (long long)msg->connectivityMask);
+						elog(LOG, "Node %d changes it connectivity mask from %llx to %llx", node, Mtm->nodes[node-1].connectivityMask, msg->connectivityMask);
 					}
 
 					Mtm->nodes[node-1].oldestSnapshot = msg->oldestSnapshot;
@@ -1002,11 +1004,11 @@ static void MtmReceiver(Datum arg)
 										replorigin_session_origin = InvalidRepOriginId;
 									} else { 
 										MTM_LOG1("Receive response for transaction %s -> %s, participants=%llx, voted=%llx", 
-												 msg->gid, MtmTxnStatusMnem[msg->status], (long long)ts->participantsMask, (long long)ts->votedMask);		
+												 msg->gid, MtmTxnStatusMnem[msg->status], ts->participantsMask, ts->votedMask);		
 									}
 								} else {
 									elog(LOG, "Receive response %s for transaction %s for node %d, votedMask %llx, participantsMask %llx",
-										 MtmTxnStatusMnem[msg->status], msg->gid, node, (long long)ts->votedMask, (long long)(ts->participantsMask & ~Mtm->disabledNodeMask));
+										 MtmTxnStatusMnem[msg->status], msg->gid, node, ts->votedMask, ts->participantsMask & ~Mtm->disabledNodeMask);
 									continue;
 								}
 							} else if (ts->status == TRANSACTION_STATUS_ABORTED && msg->status == TRANSACTION_STATUS_COMMITTED) {
@@ -1015,7 +1017,7 @@ static void MtmReceiver(Datum arg)
 								elog(WARNING, "Transaction %s is committed at node %d but aborted at node %d", msg->gid, MtmNodeId, node);
 							} else { 
 								elog(LOG, "Receive response %s for transaction %s status %s for node %d, votedMask %llx, participantsMask %llx",
-									 MtmTxnStatusMnem[msg->status], msg->gid, MtmTxnStatusMnem[ts->status], node, (long long)ts->votedMask, (long long)(ts->participantsMask & ~Mtm->disabledNodeMask) );
+									 MtmTxnStatusMnem[msg->status], msg->gid, MtmTxnStatusMnem[ts->status], node, ts->votedMask, ts->participantsMask & ~Mtm->disabledNodeMask);
 							}
 						}
 						continue;

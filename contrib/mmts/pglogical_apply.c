@@ -703,6 +703,7 @@ process_remote_commit(StringInfo in)
 			MtmSetCurrentTransactionCSN(csn);
 			MtmSetCurrentTransactionGID(gid);
 			FinishPreparedTransaction(gid, true);
+			MTM_LOG1("Distributed transaction %s is committed", gid);
 			CommitTransactionCommand();
 			Assert(!MtmTransIsActive());
 			MtmEndSession(origin_node, true);
