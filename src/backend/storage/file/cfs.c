@@ -224,7 +224,7 @@ static void cfs_rc4_encrypt_block(void* block, uint32 offs, uint32 block_size)
     }
 }
 
-static void cfs_rc4_init(void)
+static void cfs_crypto_init(void)
 {
     int index1 = 0;
     int index2 = 0;
@@ -233,6 +233,7 @@ static void cfs_rc4_init(void)
     int key_length;
     int x = 0, y = 0;
 	char* cipher_key;
+	uint8 aes_key[32] = {0}; /* at most 256 bits */
 	uint8* rc4_init_state = cfs_state->rc4_init_state;
 
 	cipher_key = getenv("PG_CIPHER_KEY");
@@ -241,6 +242,8 @@ static void cfs_rc4_init(void)
 	} 
 	unsetenv("PG_CIPHER_KEY"); /* make it not possible to inspect this environment variable through plperl */
     key_length = strlen(cipher_key);
+
+////// AALEKSEEV TODO GET RID OF THIS
 	for (i = 0; i < CFS_CIPHER_KEY_SIZE; ++i) {
         rc4_init_state[i] = (uint8)i;
     }
@@ -258,6 +261,15 @@ static void cfs_rc4_init(void)
         rc4_init_state[x] = rc4_init_state[y];
         rc4_init_state[y] = temp;
     }
+//////
+
+	memcpy(&aes_key, cipher_key, key_length > sizeof(aes_key) ? sizeof(aes_key) : key_length);
+	rijndael_set_key(
+		&cfs_state->aes_context, /* context */
+		(u4byte*)&aes_key,       /* key */
+		sizeof(aes_key) * 8      /* key size in bits */,
+		1                        /* for CTR mode we need only encryption */
+	);
 }
 
 /*
@@ -346,7 +358,7 @@ void cfs_initialize()
 	cfs_state->max_iterations = 0;
 	
 	if (cfs_encryption) { 
-		cfs_rc4_init();
+		cfs_crypto_init();
 	}
 	elog(LOG, "Start CFS version %s compression algorithm %s encryption %s", 
 		 CFS_VERSION, cfs_algorithm(), cfs_encryption ? "enabled" : "disabled");

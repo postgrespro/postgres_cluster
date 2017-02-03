@@ -29,8 +29,8 @@
 #define CFS_COMPRESSOR ZLIB_COMPRESSOR
 #endif
 
-#define CFS_RC4_DROP_N 3072 
-#define CFS_CIPHER_KEY_SIZE 256
+#define CFS_RC4_DROP_N 3072  // AALEKSEEV TODO GET RID OF THIS
+#define CFS_CIPHER_KEY_SIZE 256 // AALEKSEEV TODO GET RID OF THIS
 
 typedef uint64 inode_t;
 
@@ -64,6 +64,7 @@ typedef struct
 	bool           gc_enabled;
 	CfsStatistic   gc_stat;
 	uint8          rc4_init_state[CFS_CIPHER_KEY_SIZE];
+	rijndael_ctx   aes_context;
 } CfsState;
 
 typedef struct 
