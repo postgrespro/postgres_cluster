@@ -3828,6 +3828,7 @@ mtm_add_node(PG_FUNCTION_ARGS)
 	}
 	if (!MtmIsBroadcast())
 	{
+		MtmBroadcastUtilityStmt(psprintf("select pg_create_logical_replication_slot('" MULTIMASTER_SLOT_PATTERN "', '" MULTIMASTER_NAME "')", Mtm->nAllNodes+1), true);
 		MtmBroadcastUtilityStmt(psprintf("select mtm.add_node('%s')", connStr), true);
 	} 
 	else 

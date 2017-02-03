@@ -344,7 +344,7 @@ pglogical_receiver_main(Datum main_arg)
 				 * Them are either empty, either new node is synchronized using base_backup.
 				 * So we assume that LSNs are the same for local and remote node
 				 */
-				originStartPos = (Mtm->status == MTM_RECOVERY && Mtm->donorNodeId == nodeId) ? GetXLogInsertRecPtr() : INVALID_LSN;
+				originStartPos = INVALID_LSN;
 				MTM_LOG1("Start logical receiver at position %llx from node %d", originStartPos, nodeId);
 			} else { 
 				if (Mtm->nodes[nodeId-1].restartLSN < originStartPos) { 
