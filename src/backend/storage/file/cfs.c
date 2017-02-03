@@ -321,34 +321,50 @@ assign_part2:
 /* Encryption and decryption using AES in CTR mode */
 static void cfs_aes_crypt_block(const char* fname, void* block, uint32 offs, uint32 size)
 {
+#define AES_DEBUG 1
 	uint32 aes_in[4]; /* 16 bytes, 128 bits */
 	uint32 aes_out[4];
 	uint8* plaintext = (uint8*)block;
 	uint8* pgamma = (uint8*)&aes_out;
+    rijndael_ctx temp_ctx = cfs_state->aes_context;
 	uint32 i, fname_part1, fname_part2, fname_part3;
 
 	if(extract_fname_parts(fname, &fname_part1, &fname_part2, &fname_part3) < 0)
 		fname_part1 = fname_part2 = fname_part3 = 0;
 
-	// AALEKSEEV TODO MAKE DEBUG4
+#ifdef AES_DEBUG
 	elog(LOG, "cfs_aes_crypt_block, fname = %s, part1 = %d, part2 = %d, part3 = %d, offs = %d, size = %d",
 		fname, fname_part1, fname_part2, fname_part3, offs, size);
+#endif
 
-	aes_in[0] = fname_part1;
-	aes_in[1] = fname_part2;
-	aes_in[2] = fname_part3;
+	aes_in[0] = 0; // fname_part1;
+	aes_in[1] = 0; // fname_part2;
+	aes_in[2] = 0; // fname_part3;
 	aes_in[3] = offs & 0xFFFFFFF0;
-	rijndael_encrypt(&cfs_state->aes_context, (u4byte*)&aes_in, (u4byte*)&aes_out);
+	rijndael_encrypt(&temp_ctx, (u4byte*)&aes_in, (u4byte*)&aes_out);
+
+#ifdef AES_DEBUG
+	elog(LOG, "cfs_aes_crypt_block, in = %08X %08X %08X %08X, out = %08X %08X %08X %08X",
+		aes_in[0], aes_in[1], aes_in[2], aes_in[3],
+		aes_out[0], aes_out[1], aes_out[2], aes_out[3]);
+#endif
 
 	for(i = 0; i < size; i++)
 	{
-		plaintext[i] ^= aes_out[offs & 0xF];
+		plaintext[i] ^= pgamma[offs & 0xF];
 		offs++;
 		if((offs & 0xF) == 0)
 		{
 			/* Prepare next gamma part */
 			aes_in[3] = offs;
-			rijndael_encrypt(&cfs_state->aes_context, (u4byte*)&aes_in, (u4byte*)&aes_out);
+    		temp_ctx = cfs_state->aes_context;
+			rijndael_encrypt(&temp_ctx, (u4byte*)&aes_in, (u4byte*)&aes_out);
+
+#ifdef AES_DEBUG
+			elog(LOG, "cfs_aes_crypt_block, in = %08X %08X %08X %08X, out = %08X %08X %08X %08X",
+				aes_in[0], aes_in[1], aes_in[2], aes_in[3],
+				aes_out[0], aes_out[1], aes_out[2], aes_out[3]);
+#endif
 		}
 	}
 }
