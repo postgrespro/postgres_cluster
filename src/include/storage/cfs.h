@@ -87,8 +87,8 @@ FileMap* cfs_mmap(int md);
 int      cfs_munmap(FileMap* map);
 void     cfs_initialize(void);
 
-void     cfs_encrypt(void* block, uint32 offs, uint32 size);
-void     cfs_decrypt(void* block, uint32 offs, uint32 size);
+void     cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size);
+void     cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size);
 
 extern CfsState* cfs_state;
 

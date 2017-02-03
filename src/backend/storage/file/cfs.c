@@ -260,18 +260,20 @@ static void cfs_rc4_init(void)
     }
 }
 
-void cfs_encrypt(void* block, uint32 offs, uint32 size)
+void cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size)
 {
 	if (cfs_encryption) 
 	{
+		elog(LOG, "cfs_encrypt, fname = %s, offs = %d, size = %d", fname, offs, size);
 		cfs_rc4_encrypt_block(block, offs, size);
 	}
 }
 
-void cfs_decrypt(void* block, uint32 offs, uint32 size)
+void cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size)
 {
 	if (cfs_encryption) 
 	{
+		elog(LOG, "cfs_decrypt, fname = %s, offs = %d, size = %d", fname, offs, size);
 		cfs_rc4_encrypt_block(block, offs, size);
 	}
 }
@@ -693,7 +695,7 @@ static bool cfs_gc_file(char* map_path)
 					Assert(res == (off_t)CFS_INODE_OFFS(inode));
 					rc = cfs_read_file(fd, block, size);
 					Assert(rc);
-					cfs_decrypt(block, (off_t)i*BLCKSZ, size);
+					cfs_decrypt(file_bck_path, block, (off_t)i*BLCKSZ, size);
 					res = cfs_decompress(decomressedBlock, BLCKSZ, block, size);
 					if (res != BLCKSZ) { 
 						pg_atomic_fetch_sub_u32(&map->lock, CFS_GC_LOCK); /* release lock */

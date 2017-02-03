@@ -1742,7 +1742,7 @@ FileRead(File file, char *buffer, int amount)
 				}
 			} while (size != 0);
 
-			cfs_decrypt(compressedBuffer, VfdCache[file].seekPos, amount);
+			cfs_decrypt(VfdCache[file].fileName, compressedBuffer, VfdCache[file].seekPos, amount);
 
 			returnCode = cfs_decompress(buffer, BLCKSZ, compressedBuffer, amount);
 			if (returnCode != BLCKSZ) 
@@ -1769,7 +1769,7 @@ FileRead(File file, char *buffer, int amount)
 	{
 		if (VfdCache[file].fileFlags & PG_COMPRESSION) 
 		{
-			cfs_decrypt(buffer, VfdCache[file].seekPos, amount);
+			cfs_decrypt(VfdCache[file].fileName, buffer, VfdCache[file].seekPos, amount);
 		}
 		VfdCache[file].seekPos += returnCode;
 	}
@@ -1877,12 +1877,12 @@ FileWrite(File file, char *buffer, int amount)
 			inode = CFS_INODE(compressedSize, pos);
 			buffer = compressedBuffer;
 			amount = compressedSize;
-			cfs_encrypt(buffer, VfdCache[file].seekPos, amount);
+			cfs_encrypt(VfdCache[file].fileName, buffer, VfdCache[file].seekPos, amount);
 		} else { 	
 			if (cfs_encryption) { 
 				memcpy(compressedBuffer, buffer, BLCKSZ);
 				buffer = compressedBuffer;
-				cfs_encrypt(buffer, VfdCache[file].seekPos, amount);
+				cfs_encrypt(VfdCache[file].fileName, buffer, VfdCache[file].seekPos, amount);
 			}
 			if (CFS_INODE_SIZE(inode) != BLCKSZ) { 
 				pos = cfs_alloc_page(map, CFS_INODE_SIZE(inode), BLCKSZ);						
