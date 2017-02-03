@@ -640,15 +640,16 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		 * empty. So we can skip use shortcut for coomiting bare xact.
 		 */
 		strcpy(ctx->reorder->gid, parsed->twophase_gid);
+		*ctx->reorder->state_3pc = '\0';
 		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
 							commit_time, origin_id, origin_lsn);
 	} else {
+		*ctx->reorder->gid = '\0';
+		*ctx->reorder->state_3pc = '\0';
 		/* replay actions of all transaction + subtransactions in order */
 		ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
 							commit_time, origin_id, origin_lsn);
-		*ctx->reorder->gid = '\0';
 	}
-	*ctx->reorder->state_3pc = '\0';
 }
 
 static void
