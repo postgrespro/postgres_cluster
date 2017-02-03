@@ -57,7 +57,7 @@ extern unsigned long UsedShmemSegID;
 #else
 extern HANDLE UsedShmemSegID;
 #endif
-extern void *UsedShmemSegAddr;
+extern PGDLLIMPORT void *UsedShmemSegAddr;
 
 #ifdef EXEC_BACKEND
 extern void PGSharedMemoryReAttach(void);

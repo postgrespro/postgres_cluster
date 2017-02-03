@@ -64,6 +64,14 @@ AS 'MODULE_PATHNAME', 'pg_truncate_visibility_map'
 LANGUAGE C STRICT
 PARALLEL UNSAFE;  -- let's not make this any more dangerous
 
+-- Show visibility map and page-level visibility information.
+CREATE FUNCTION pg_cfm(regclass, segno int,
+					   physSize OUT int, virtSize OUT int,
+					   usedSize OUT int, generation OUT bigint)
+RETURNS record
+AS 'MODULE_PATHNAME', 'pg_cfm'
+LANGUAGE C STRICT;
+
 -- Don't want these to be available to public.
 REVOKE ALL ON FUNCTION pg_visibility_map(regclass, bigint) FROM PUBLIC;
 REVOKE ALL ON FUNCTION pg_visibility(regclass, bigint) FROM PUBLIC;
