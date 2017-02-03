@@ -248,9 +248,8 @@ char const* cfs_algorithm()
 /*
  * Get env variable PG_CIPHER_KEY and initialize encryption state.
  * Unset variable afterward.
- * Now implements cf4.
  */
-static void cfs_encrypt_init(void)
+static void cfs_crypto_init(void)
 {
     int key_length;
 	char* cipher_key;
