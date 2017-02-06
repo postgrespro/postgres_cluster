@@ -2616,7 +2616,7 @@ alterPartitionType:
 					n->partitions_count = $7;
 					$$ = (PartitionInfo *)n;
 				}
-			| RANGE '(' columnref ')' START FROM '(' b_expr ')' INTERVAL '(' AexprConst ')'
+			| RANGE '(' columnref ')' START FROM '(' b_expr ')' INTERVAL '(' b_expr ')'
 				{
 					PartitionInfo *n = makeNode(PartitionInfo);
 					n->partition_type = P_RANGE;
@@ -3141,7 +3141,7 @@ OptHashPartitionsListElement:
 		;
 
 OptRangePartitionsInterval:
-			INTERVAL '(' AexprConst ')'		{ $$ = $3; }
+			INTERVAL '(' b_expr ')'			{ $$ = $3; }
 			| /* EMPTY */					{ $$ = NULL; }
 		;
 

@@ -24,6 +24,10 @@
 #include "commands/tablespace.h"
 #include "executor/spi.h"
 #include "nodes/value.h"
+#include "nodes/nodeFuncs.h"
+#include "optimizer/clauses.h"
+#include "parser/parse_coerce.h"
+#include "parser/parse_expr.h"
 #include "parser/parse_node.h"
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
@@ -41,9 +45,11 @@ static void create_range_partitions(PartitionInfo *pinfo,
 									PartitionDataType partition_data);
 static void read_interval_value(Node *raw_interval,
 								Oid atttype,
+								int32 atttypmod,
 								Oid *interval_type,
 								Datum *interval_datum);
-static Node *cookPartitionKeyValue(Oid relid, const char *raw, Node *raw_value);
+static Node *cookPartitionKeyValue(Oid relid, const char *attname, Node *raw_value);
+static Const *cookInterval(Node *raw_interval, Oid interval_type, int32 interval_typmod);
 static char *RangeVarGetString(const RangeVar *rangevar);
 static Oid RangeVarGetNamespaceId(const RangeVar *rangevar);
 static char *generate_unique_child_relname(Oid relid, const char *prefix);
@@ -166,7 +172,6 @@ create_range_partitions(PartitionInfo *pinfo,
 	/* parameters */
 	Datum			interval_datum;
 	Oid				interval_type;
-	ParseState	   *pstate = make_parsestate(NULL);
 
 	if (!attnum)
 		elog(ERROR, "Unknown attribute '%s'", attname);
@@ -175,7 +180,7 @@ create_range_partitions(PartitionInfo *pinfo,
 	atttypmod = get_atttypmod(relid, attnum);
 
 	/* Interval */
-	read_interval_value(pinfo->interval, atttype, &interval_type, &interval_datum);
+	read_interval_value(pinfo->interval, atttype, atttypmod, &interval_type, &interval_datum);
 
 	/*
 	 * Start value. It is always non-NULL whenever partition_data = True.
@@ -185,10 +190,10 @@ create_range_partitions(PartitionInfo *pinfo,
 	if (pinfo->start_value)
 	{
 		Node *n = cookPartitionKeyValue(relid,
-										 attname,
-										 (Node *) pinfo->start_value);
+										attname,
+										(Node *) pinfo->start_value);
 		if (!IsA(n, Const))
-			elog(ERROR, "Start value must be a constatnt");
+			elog(ERROR, "Start value should be a constant expression");
 		start_value = ((Const *) n)->constvalue;
 	}
 	else
@@ -213,7 +218,8 @@ create_range_partitions(PartitionInfo *pinfo,
 		Node		   *bound_expr;
 
 		/* Transform raw expression */
-		bound_expr = cookDefault(pstate, orig, atttype, atttypmod, (char *) attname);
+		// bound_expr = cookDefault(pstate, orig, atttype, atttypmod, (char *) attname);
+		bound_expr = cookPartitionKeyValue(relid, attname, orig);
 
 		if (!IsA(bound_expr, Const))
 			elog(ERROR, "Constant expected");
@@ -259,70 +265,35 @@ create_range_partitions(PartitionInfo *pinfo,
 static void
 read_interval_value(Node *raw_interval,
 					Oid atttype,
+					int32 atttypmod,
 					Oid *interval_type,
 					Datum *interval_datum)
 {
-	ParseState	   *pstate = make_parsestate(NULL);
+	int32			interval_typmod;
 
 	/* Default value */
 	*interval_datum = (Datum) 0;
 
-	/* If interval is set then convert it to a suitable Datum value */
-	if (raw_interval != NULL)
+	/* Determine an interval type */
+	switch (atttype)
 	{
-		Const		   *interval_const;
-
-		if (IsA(raw_interval, A_Const))
-		{
-			A_Const    *con = (A_Const *) raw_interval;
-			Value	   *val = &con->val;
-
-			interval_const = make_const(pstate, val, con->location);
-		}
-		else
-			elog(ERROR, "Constant interval value is expected");
-
-		/*
-		 * If attribute is of type DATE or TIMESTAMP then convert interval to
-		 * Interval type
-		 */
-		switch (atttype)
-		{
-			case DATEOID:
-			case TIMESTAMPOID:
-			case TIMESTAMPTZOID:
-				{
-					char	   *interval_literal;
-
-					/* We should get an UNKNOWN type here */
-					if (interval_const->consttype != UNKNOWNOID)
-						elog(ERROR, "Expected a literal as an interval value");
-
-					/* Get a text representation of the interval */
-					interval_literal = DatumGetCString(interval_const->constvalue);
-					*interval_datum = DirectFunctionCall3(interval_in,
-														 CStringGetDatum(interval_literal),
-														 ObjectIdGetDatum(InvalidOid),
-														 Int32GetDatum(-1));
-					*interval_type = INTERVALOID;
-				}
-				break;
-			default:
-				*interval_datum = interval_const->constvalue;
-				*interval_type = interval_const->consttype;
-		}
+		case DATEOID:
+		case TIMESTAMPOID:
+		case TIMESTAMPTZOID:
+			*interval_type = INTERVALOID;
+			interval_typmod = -1;
+			break;
+		default:
+			*interval_type = atttype;
+			interval_typmod = atttypmod;
 	}
-	else /* If interval is not set  */
+
+	/* If interval is set then convert it to a suitable Datum value */
+	if (raw_interval)
 	{
-		switch (atttype)
-		{
-			case DATEOID:
-			case TIMESTAMPOID:
-			case TIMESTAMPTZOID:
-				*interval_type = INTERVALOID;
-			default:
-				*interval_type = atttype;
-		}
+		Const *interval = cookInterval(raw_interval, *interval_type, interval_typmod);
+
+		*interval_datum = interval->constvalue;
 	}
 }
 
@@ -375,7 +346,49 @@ cookPartitionKeyValue(Oid relid, const char *attname, Node *raw_value)
 						 atttypmod,
 						 (char *) attname);
 
+	/* Simplify expression */
+	cookie = eval_const_expressions(NULL, cookie);
+
 	return cookie;
+}
+
+
+static Const *
+cookInterval(Node *raw_interval, Oid interval_type, int32 interval_typmod)
+{
+	ParseState *pstate = make_parsestate(NULL);
+	Node	   *cookie;
+
+	cookie = transformExpr(pstate, raw_interval, EXPR_KIND_OTHER);
+
+	/*
+	 * Coerce the expression to the correct type
+	 */
+	if (OidIsValid(interval_type))
+	{
+		Oid			type_id = exprType(cookie);
+
+		cookie = coerce_to_target_type(pstate, cookie, type_id,
+									   interval_type, interval_typmod,
+									   COERCION_ASSIGNMENT,
+									   COERCE_IMPLICIT_CAST,
+									   -1);
+		if (cookie == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATATYPE_MISMATCH),
+					 errmsg("Interval is of type '%s'"
+							" but is should be of type '%s'",
+							format_type_be(type_id),
+							format_type_be(interval_type))));
+	}
+
+	/* Simplify expression */
+	cookie = eval_const_expressions(NULL, cookie);
+
+	if (!IsA(cookie, Const))
+		elog(ERROR, "Interval must be a constant expression");
+
+	return (Const *) cookie;
 }
 
 
@@ -400,7 +413,7 @@ add_range_partition(Oid parent, PartitionNode *rpinfo)
 	bound = cookPartitionKeyValue(parent, attname, (Node *) rpinfo->upper_bound);
 
 	if (!IsA(bound, Const))
-		elog(ERROR, "Constant expected");
+		elog(ERROR, "Upper bound should be a constant expression");
 
 	pm_get_part_range(parent, -1, atttype, &lower, &upper);
 	pm_add_range_partition(parent,
@@ -486,12 +499,14 @@ split_range_partition(Oid parent,
 		elog(ERROR, "could not connect using SPI");
 
 	attname = pm_get_partition_key(parent);
+	orig = (PartitionNode *) linitial(cmd->partitions);
+	partition_relid = RangeVarGetRelid(orig->relation, NoLock, false);
 
 	/* Split value is stored in def attribute */
-	orig = (PartitionNode *) linitial(cmd->partitions);
 	split_value = cookPartitionKeyValue(parent, attname, (Node *) cmd->def);
 
-	partition_relid = RangeVarGetRelid(orig->relation, NoLock, false);
+	if (!IsA(split_value, Const))
+		elog(ERROR, "Upper bound should be a constant expression");
 
 	/*
 	 * When splitting partition pg_pathman leaves first partition name and
@@ -669,6 +684,7 @@ partitioned_table_set_interval(Oid relid, AlterTableCmd *cmd)
 	const char	   *attname;
 	AttrNumber		attnum;
 	Oid				atttype;
+	int32			atttypmod;
 	Datum			interval_datum;
 	Oid				interval_type;
 	bool			interval_isnull = (cmd->def == NULL);
@@ -680,10 +696,12 @@ partitioned_table_set_interval(Oid relid, AlterTableCmd *cmd)
 	attname = pm_get_partition_key(relid);
 	attnum = get_attnum(relid, attname);
 	atttype = get_atttype(relid, attnum);
+	atttypmod = get_atttypmod(relid, attnum);
 
 	/* Convert A_Const to Datum */
 	read_interval_value(cmd->def,
 						atttype,
+						atttypmod,
 						&interval_type,
 						&interval_datum);
 

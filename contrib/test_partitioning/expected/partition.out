@@ -74,19 +74,21 @@ SELECT * FROM pathman_partition_list;
 
 DROP TABLE abc CASCADE;
 NOTICE:  drop cascades to 4 other objects
-/* Create hash partitioned table */
 CREATE TABLE abc(id serial)
-PARTITION BY HASH (id) PARTITIONS (3);
+PARTITION BY HASH (id)
+(
+	PARTITION abc_first,
+	PARTITION abc_second
+);
 SELECT * FROM pathman_partition_list;
- parent | partition | parttype | partattr | range_min | range_max 
---------+-----------+----------+----------+-----------+-----------
- abc    | abc_0     |        1 | id       |           | 
- abc    | abc_1     |        1 | id       |           | 
- abc    | abc_2     |        1 | id       |           | 
-(3 rows)
+ parent | partition  | parttype | partattr | range_min | range_max 
+--------+------------+----------+----------+-----------+-----------
+ abc    | abc_first  |        1 | id       |           | 
+ abc    | abc_second |        1 | id       |           | 
+(2 rows)
 
 DROP TABLE abc CASCADE;
-NOTICE:  drop cascades to 3 other objects
+NOTICE:  drop cascades to 2 other objects
 CREATE TABLE abc(id serial);
 INSERT INTO abc SELECT generate_series(1, 1000);
 ALTER TABLE abc PARTITION BY RANGE (id) START FROM (1) INTERVAL (100);
