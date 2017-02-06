@@ -42,7 +42,6 @@ Mean:		   500 cycles =    51.2 mbits/sec
 
 #include <sys/param.h>
 #include <string.h>
-#include <stdint.h>
 
 #include "storage/rijndael.h"
 
@@ -500,23 +499,23 @@ rijndael_decrypt(rijndael_ctx *ctx, const u4byte *in_blk, u4byte *out_blk)
  */
 
 void
-aes_set_key(rijndael_ctx *ctx, const uint8_t *key, unsigned keybits, int enc)
+aes_set_key(rijndael_ctx *ctx, const uint8 *key, unsigned keybits, int enc)
 {
-	uint32_t	   *k;
+	uint32	   *k;
 
-	k = (uint32_t *) key;
+	k = (uint32 *) key;
 	rijndael_set_key(ctx, k, keybits, enc);
 }
 
 void
-aes_ecb_encrypt(rijndael_ctx *ctx, uint8_t *data, unsigned len)
+aes_ecb_encrypt(rijndael_ctx *ctx, uint8 *data, unsigned len)
 {
 	unsigned	bs = 16;
-	uint32_t	   *d;
+	uint32	   *d;
 
 	while (len >= bs)
 	{
-		d = (uint32_t *) data;
+		d = (uint32 *) data;
 		rijndael_encrypt(ctx, d, d);
 
 		len -= bs;
@@ -525,14 +524,14 @@ aes_ecb_encrypt(rijndael_ctx *ctx, uint8_t *data, unsigned len)
 }
 
 void
-aes_ecb_decrypt(rijndael_ctx *ctx, uint8_t *data, unsigned len)
+aes_ecb_decrypt(rijndael_ctx *ctx, uint8 *data, unsigned len)
 {
 	unsigned	bs = 16;
-	uint32_t	   *d;
+	uint32	   *d;
 
 	while (len >= bs)
 	{
-		d = (uint32_t *) data;
+		d = (uint32 *) data;
 		rijndael_decrypt(ctx, d, d);
 
 		len -= bs;
@@ -541,10 +540,10 @@ aes_ecb_decrypt(rijndael_ctx *ctx, uint8_t *data, unsigned len)
 }
 
 void
-aes_cbc_encrypt(rijndael_ctx *ctx, uint8_t *iva, uint8_t *data, unsigned len)
+aes_cbc_encrypt(rijndael_ctx *ctx, uint8 *iva, uint8 *data, unsigned len)
 {
-	uint32_t	   *iv = (uint32_t *) iva;
-	uint32_t	   *d = (uint32_t *) data;
+	uint32	   *iv = (uint32 *) iva;
+	uint32	   *d = (uint32 *) data;
 	unsigned	bs = 16;
 
 	while (len >= bs)
@@ -563,11 +562,11 @@ aes_cbc_encrypt(rijndael_ctx *ctx, uint8_t *iva, uint8_t *data, unsigned len)
 }
 
 void
-aes_cbc_decrypt(rijndael_ctx *ctx, uint8_t *iva, uint8_t *data, unsigned len)
+aes_cbc_decrypt(rijndael_ctx *ctx, uint8 *iva, uint8 *data, unsigned len)
 {
-	uint32_t	   *d = (uint32_t *) data;
+	uint32	   *d = (uint32 *) data;
 	unsigned	bs = 16;
-	uint32_t		buf[4],
+	uint32		buf[4],
 				iv[4];
 
 	memcpy(iv, iva, bs);
@@ -604,7 +603,7 @@ aes_cbc_decrypt(rijndael_ctx *ctx, uint8_t *iva, uint8_t *data, unsigned len)
 #ifdef PRINT_TABS
 
 static void
-show256u8(char *name, uint8_t *data)
+show256u8(char *name, uint8 *data)
 {
 	int			i;
 
@@ -620,7 +619,7 @@ show256u8(char *name, uint8_t *data)
 
 
 static void
-show4x256u32(char *name, uint32_t data[4][256])
+show4x256u32(char *name, uint32 data[4][256])
 {
 	int			i,
 				j;

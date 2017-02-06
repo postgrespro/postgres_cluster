@@ -20,17 +20,15 @@
 #ifndef _RIJNDAEL_H_
 #define _RIJNDAEL_H_
 
-#include <stdint.h>
-
 /* 1. Standard types for AES cryptography source code				*/
 
-typedef uint8_t u1byte;			/* an 8 bit unsigned character type */
-typedef uint16_t u2byte;			/* a 16 bit unsigned integer type	*/
-typedef uint32_t u4byte;			/* a 32 bit unsigned integer type	*/
+typedef uint8 u1byte;			/* an 8 bit unsigned character type */
+typedef uint16 u2byte;			/* a 16 bit unsigned integer type	*/
+typedef uint32 u4byte;			/* a 32 bit unsigned integer type	*/
 
-typedef int8_t s1byte;			/* an 8 bit signed character type	*/
-typedef int16_t s2byte;			/* a 16 bit signed integer type		*/
-typedef int32_t s4byte;			/* a 32 bit signed integer type		*/
+typedef int8 s1byte;			/* an 8 bit signed character type	*/
+typedef int16 s2byte;			/* a 16 bit signed integer type		*/
+typedef int32 s4byte;			/* a 32 bit signed integer type		*/
 
 typedef struct _rijndael_ctx
 {
@@ -53,10 +51,10 @@ void		rijndael_decrypt(rijndael_ctx *, const u4byte *, u4byte *);
 
 /* conventional interface */
 
-void		aes_set_key(rijndael_ctx *ctx, const uint8_t *key, unsigned keybits, int enc);
-void		aes_ecb_encrypt(rijndael_ctx *ctx, uint8_t *data, unsigned len);
-void		aes_ecb_decrypt(rijndael_ctx *ctx, uint8_t *data, unsigned len);
-void		aes_cbc_encrypt(rijndael_ctx *ctx, uint8_t *iva, uint8_t *data, unsigned len);
-void		aes_cbc_decrypt(rijndael_ctx *ctx, uint8_t *iva, uint8_t *data, unsigned len);
+void		aes_set_key(rijndael_ctx *ctx, const uint8 *key, unsigned keybits, int enc);
+void		aes_ecb_encrypt(rijndael_ctx *ctx, uint8 *data, unsigned len);
+void		aes_ecb_decrypt(rijndael_ctx *ctx, uint8 *data, unsigned len);
+void		aes_cbc_encrypt(rijndael_ctx *ctx, uint8 *iva, uint8 *data, unsigned len);
+void		aes_cbc_decrypt(rijndael_ctx *ctx, uint8 *iva, uint8 *data, unsigned len);
 
 #endif   /* _RIJNDAEL_H_ */
