@@ -4,8 +4,9 @@
 #include "pg_config.h"
 
 #include "port/atomics.h"
+#include "storage/rijndael.h"
 
-#define CFS_VERSION "0.21"
+#define CFS_VERSION "0.23"
 
 #define CFS_GC_LOCK  0x10000000
 
@@ -40,12 +41,6 @@
 #ifndef CFS_COMPRESSOR 
 #define CFS_COMPRESSOR ZLIB_COMPRESSOR
 #endif
-
-/* Encryption related variables.
- * TODO We're going to change this algorithm in PGPROEE2_0
- */
-#define CFS_RC4_DROP_N		3072
-#define CFS_CIPHER_KEY_SIZE 256
 
 /* Inode type is 64 bit word storing offset and compressed size of the page. Size of Postgres segment is 1Gb, so using 32 bit offset is enough even through
  * with compression size of compressed file can become larger than 1Gb if GC id disabled for long time */
@@ -90,8 +85,7 @@ typedef struct
 	bool           gc_enabled;
 	/* CFS GC statatistic */
 	CfsStatistic   gc_stat;
-	/* Encryption key */
-	uint8          cipher_key[CFS_CIPHER_KEY_SIZE];
+	rijndael_ctx   aes_context;
 } CfsState;
 
 
@@ -125,8 +119,8 @@ FileMap* cfs_mmap(int md);
 int      cfs_munmap(FileMap* map);
 void     cfs_initialize(void);
 
-void     cfs_encrypt(void* block, uint32 offs, uint32 size);
-void     cfs_decrypt(void* block, uint32 offs, uint32 size);
+void     cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size);
+void     cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size);
 
 extern CfsState* cfs_state;
 
