@@ -1,18 +1,17 @@
 # `Administration`
 
 1. [Installation](#installation)
-1. [Setting up empty cluster](#setting-up-empty-cluster)
-1. [Setting up cluster from pre-existing database](#setting-up-cluster-from-pre-existing-database)
-1. [Tuning configuration params](#tuning-configuration-params)
-1. [Monitoring](#monitoring)
-1. [Adding nodes to cluster](#adding-nodes-to-cluster)
-1. [Excluding nodes from cluster](#excluding-nodes-from-cluster)
+1. [Setting up a Multi-Master Cluster](#setting-up-a-multi-master-cluster)
+1. [Tuning Configuration Parameterss](#tuning-configuration-parameters)
+1. [Monitoring Cluster Status](#monitoring-cluster-status)
+1. [Adding New Nodes to the Cluster](#adding-nodes-to-cluster)
+1. [Excluding Nodes from the Cluster](#excluding-nodes-from-cluster)
 
 
 
 ## Installation
 
-Multi-master consist of patched version of postgres and extension mmts, that provides most of the functionality, but depends on several modifications to postgres core.
+Multi-master consists of a patched version of PostgreSQL and the `mmts` extension that provide most of the functionality, but depend on several modifications to PostgreSQL core.
 
 
 ### Building multimaster from Source Code
@@ -53,14 +52,14 @@ In this command, ```./configure``` is a standard PostgreSQL autotools script, so
 
 ### Docker
 
-Directory contrib/mmts also includes docker-compose.yml that is capable of building multi-master and starting 3 node cluster.
+The contrib/mmts directory also includes docker-compose.yml that is capable of building `multimaster` and starting a three-node cluster.
 
-First of all we need to build PGPro EE docker image (We will remove this step when we'll merge _MULTIMASTER branch and start building packages). In the repo root run:
+First of all we need to build PGPro EE docker image (We will remove this step when we'll merge _MULTIMASTER branch and start building packages). In the repo root, run:
 ```
 docker build -t pgproent
 ```
 
-Then following command will start cluster of 3 docker nodes listening on port 15432, 15433 and 15434 (edit docker-compose.yml to change start params):
+Then following command will start a cluster of 3 docker nodes listening on ports 15432, 15433 and 15434 (edit docker-compose.yml to change start params):
 ```
 cd contrib/mmts
 docker-compose up
@@ -68,30 +67,32 @@ docker-compose up
 
 ### PgPro packages
 
-PostgresPro Enterprise have all necessary dependencies and extensions included, so it is enough just install packages.
+To use `multimaster`, you need to install Postgres Pro Enterprise on all nodes of your cluster. Postgres Pro Enterprise includes all the required dependencies and extensions.
 
 
-## Setting up empty cluster
+## Setting up a Multi-Master Cluster
 
-After installing software on all cluster nodes we can configure our cluster. Here we describe how to set up multimaster consisting of 3 nodes with empty database. Suppose our nodes accesible via domain names ```node1```, ```node2``` and ```node3```. Perform following steps on each node (sequentially or in parallel – doesn't matter):
+After installing Postgres Pro Enterprise on all nodes, you need to configure the cluster with `multimaster`. Suppose you are setting up a cluster of three nodes, with ```node1```, ```node2```, and ```node3``` domain names.
+To configure your cluster with `multimaster`, complete these steps on each cluster node:
 
-1. As with usual postgres first of all we need to initialize directiory where postgres will store it files:
+1. Set up the database to be replicated with `multimaster`:
+
+    * If you are starting from scratch, initialize a cluster, create an empty database `mydb` and a new user `myuser`, as usual:
     ```
     initdb -D ./datadir
-    ```
-    In that directory we are interested in files ```postgresql.conf``` and ```pg_hba.conf``` that are responsible for a general and security configuration consequently.
-
-1. Create database that will be used with multimaster. This will require intermediate launch of postgres.
-
-    ```
     pg_ctl -D ./datadir -l ./pg.log start
     createdb myuser -h localhost
     createdb mydb -O myuser -h localhost
     pg_ctl -D ./datadir -l ./pg.log stop
     ```
 
-1. Modify the ```postgresql.conf``` configuration file, as follows:
+    * If you already have a database `mydb` running on the `node1` server, initialize new nodes from the working node using `pg_basebackup`. On each cluster node you are going to add, run:
+    ```
+    pg_basebackup -D ./datadir -h node1 mydb
+    ```
+    For details, on `pg_basebackup`, see [pg_basebackup](https://www.postgresql.org/docs/9.6/static/app-pgbasebackup.html).
 
+1. Modify the ```postgresql.conf``` configuration file, as follows:
     * Set up PostgreSQL parameters related to replication.
 
         ```
@@ -101,27 +102,27 @@ After installing software on all cluster nodes we can configure our cluster. Her
         max_wal_senders = 10       # at least the number of nodes
         max_replication_slots = 10 # at least the number of nodes
         ```
-        You must change the replication level to `logical` as multimaster relies on logical replication. For a cluster of N nodes,and enable at least N WAL sender processes and replication slots. Since multimaster implicitly adds a PREPARE phase to each COMMIT transaction, make sure to set the number of prepared transactions to N*max_connections. Otherwise, prepared transactions may be queued.
+        You must change the replication level to `logical` as `multimaster` relies on logical replication. For a cluster of N nodes, enable at least N WAL sender processes and replication slots. Since `multimaster` implicitly adds a `PREPARE` phase to each `COMMIT` transaction, make sure to set the number of prepared transactions to N*max_connections. Otherwise, prepared transactions may be queued.
 
     * Make sure you have enough background workers allocated for each node:
 
         ```
         max_worker_processes = 250
         ```
-        For example, for a three-node cluster with max_connections = 100, multimaster may need up to 206 background workers at peak times: 200 workers for connections from the neighbour nodes, two workers for walsender processes, two workers for walreceiver processes, and two workers for the arbiter wender and receiver processes. When setting this parameter, remember that other modules may also use backround workers at the same time.
+        For example, for a three-node cluster with `max_connections` = 100, `multimaster` may need up to 206 background workers at peak times: 200 workers for connections from the neighbor nodes, two workers for walsender processes, two workers for walreceiver processes, and two workers for the arbiter sender and receiver processes. When setting this parameter, remember that other modules may also use backround workers at the same time.
 
-    * Add multimaster-specific options:
+    * Add `multimaster`-specific options:
 
-        ```
+        ```postgres
         multimaster.max_nodes = 3  # cluster size
         multimaster.node_id = 1    # the 1-based index of the node in the cluster
         multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user=myuser host=node2, dbname=mydb user=myuser host=node3'
-                                # comma-separated list of connection strings to neighbour nodes
+                                # comma-separated list of connection strings to neighbor nodes
         ```
 
-        > **Important:** The `node_id` variable takes natural numbers starting from 1, without any gaps in numbering. For example, for a cluster of five nodes, set node IDs to 1, 2, 3, 4, and 5. In the `conn_strings` variable, make sure to list the nodes in the order of their IDs. Thus, the `conn_strings` variable must be the same on all nodes.
+        > **Important:** The `node_id` variable takes natural numbers starting from 1, without any gaps in numbering. For example, for a cluster of five nodes, set node IDs to 1, 2, 3, 4, and 5. In the `conn_strings` variable, make sure to list the nodes in the order of their IDs. The `conn_strings` variable must be the same on all nodes.
 
-    Depending on your network environment and usage patterns, you may want to tune other multimaster parameters. For details on all configuration parameters available, see [Tuning configuration params](#tuning-configuration-params).
+    Depending on your network environment and usage patterns, you may want to tune other `multimaster` parameters. For details on all configuration parameters available, see [Tuning Configuration Parameters](#tuning-configuration-parameters).
 
 1. Allow replication in `pg_hba.conf`:
 
@@ -134,92 +135,91 @@ After installing software on all cluster nodes we can configure our cluster. Her
     host replication all node3 trust
     ```
 
-1. Finally start postgres:
+1. Start PostgreSQL:
 
     ```
     pg_ctl -D ./datadir -l ./pg.log start
     ```
 
-1. When postgres is started on all nodes you can connect to any node and create multimaster extention to get acces to monitoring functions:
+1. When PostgreSQL is started on all nodes, connect to any node and create the `multimaster` extension:
     ```
     psql -h node1
     > CREATE EXTENSION multimaster;
     ```
 
-    To enshure that everything is working check multimaster view ```mtm.get_cluster_state()```:
-
-    ```
-    > select * from mtm.get_cluster_state();
-    ```
-
-    Check that liveNodes in this view is equal to allNodes.
-
-
-## Setting up cluster from pre-existing database
-
-In case of preexisting database setup would be slightly different. Suppose we have running database on server ```node1``` and wan't to turn it to a multimaster by adding two new nodes ```node2``` and ```node3```. Instead of initializing new directory and creating database and user through a temporary launch, one need to initialize new node through pg_basebackup from working node.
-
-1. On each new node run:
-
-    ```
-    pg_basebackup -D ./datadir -h node1 mydb
-    ```
-
-After that configure and atart multimaster from step 3 of previous section. See deteailed description of pg_basebackup options in the official [documentation](https://www.postgresql.org/docs/9.6/static/app-pgbasebackup.html).
+To ensure that `multimaster` is enabled, check the ```mtm.get_cluster_state()``` view:
+```
+> select * from mtm.get_cluster_state();
+```
+If `liveNodes` is equal to `allNodes`, you cluster is successfully configured and ready to use.
+See Also
+[Tuning Configuration Parameters](#tuning-configuration-parameters)
 
 
-## Tuning configuration params
+While you can use `multimaster` with the default configuration, you may want to tune several parameters for faster failure detection or more reliable automatic recovery.
 
-While multimaster is usable with default configuration, several params may require tuning.
+### Setting Timeout for Failure Detection
+To check availability of neighbour nodes, `multimaster` periodically sends heartbeat packets to all nodes: 
 
-* Hearbeat timeouts — multimaster periodically send heartbeat packets to check availability of neighbour nodes. ```multimaster.heartbeat_send_timeout``` defines amount of time between sending heartbeats, while ```multimaster.heartbeat_recv_timeout``` sets amount of time following which node assumed to be disconnected if no hearbeats were received during this time. It's good idea to set ```multimaster.heartbeat_send_timeout``` based on typical ping latencies between you nodes. Small recv/senv ratio decreases time of failure detection, but increases probability of false positive failure detection, so tupical packet loss ratio between nodes should be taken into account.
+* The ```multimaster.heartbeat_send_timeout``` variable defines the time interval between sending the heartbeats. By default, this variable is set to 1000ms. 
+* The ```multimaster.heartbeat_recv_timeout``` variable sets the timeout after which If no hearbeats were received during this time, the node is assumed to be disconnected and is excluded from the cluster. By default, this variable is set to 10000 ms. 
 
-* Min/max recovery lag — when node is disconnected from the cluster other nodes will keep to collect WAL logs for disconnected node until size of WAL log will grow to ```multimaster.max_recovery_lag```. Upon reaching this threshold WAL logs for disconnected node will be deleted, automatic recovery will be no longer possible and disconnected node should be cloned manually from one of alive nodes by ```pg_basebackup```. Increasing ```multimaster.max_recovery_lag``` increases amount of time while automatic recovery is possible, but also increasing maximum disk usage during WAL collection. On the other hand ```multimaster.min_recovery_lag``` sets difference between acceptor and donor nodes before switching ordanary recovery to exclusive mode, when commits on donor node are stopped. This step is necessary to ensure that no new commits will happend during node promotion from recovery state to online state and nodes will be at sync after that.
+It's good idea to set ```multimaster.heartbeat_send_timeout``` based on typical ping latencies between you nodes. Small recv/send ratio decreases the time of failure detection, but increases the probability of false-positive failure detection. When setting this parameter, take into account the typical packet loss ratio between your cluster nodes.
+
+### Configuring Automatic Recovery Parameters
+
+If one of your node fails, `multimaster` can automatically restore the node based on the WAL logs collected on other cluster nodes. To control the recovery, use the following variables:
+
+* ```multimaster.max_recovery_lag``` - sets the maximum size of WAL logs. Upon reaching the ```multimaster.max_recovery_lag``` threshold, WAL logs for the disconnected node are deleted. At this point, automatic recovery is no longer possible. If you need to restore the disconnected node, you have to clone it manually from one of the alive nodes using ```pg_basebackup```.
+* ```multimaster.min_recovery_lag``` - sets the difference between the acceptor and donor nodes. When the disconnected node is fast-forwarded up to the ```multimaster.min_recovery_lag``` threshold, `multimaster` stops all new commits to the alive nodes to allow the node to fully catch up with the rest of the cluster. When the data is fully synchronized, the disconnected node is promoted to the online state, and the cluster resumes its work.
+
+By default, ```multimaster.max_recovery_lag``` is set to 1GB. Setting  ```multimaster.max_recovery_lag``` to a larger value increases the timeframe for automatic recovery, but requires more disk space for WAL collection. 
+
+## Monitoring Cluster Status
+
+`multimaster` provides several views to check the current cluster state. 
 
 
-## Monitoring
-
-Multimaster provides several views to check current cluster state. To access this functions ```multimaster``` extension should be created explicitely. Run in psql:
-
-    ```sql
-    CREATE EXTENSION multimaster;
-    ```
-
-Then it is possible to check nodes specific information via ```mtm.get_nodes_state()```:
+To check node-specific information, use the ```mtm.get_nodes_state()```:
 
     ```sql
     select * from mtm.get_nodes_state();
     ```
 
-and status of whole cluster can bee seen through:
+To check the status of the whole cluster, use the ```mtm.get_cluster_state()``` view:
 
     ```sql
     select * from mtm.get_cluster_state();
     ```
 
-Read description of all monitoring functions at [functions](doc/functions.md)
+For details on all the returned information, see [functions](doc/functions.md)
 
-## Adding nodes to cluster
 
-Mulmimaster is able to add/drop cluster nodes without restart. To add new node one should change cluster configuration on alive nodes, than load data to a new node using ```pg_basebackup``` and start node.
+## Adding New Nodes to the Cluster
 
-Suppose we have working cluster of three nodes (```node1```, ```node2```, ```node3```) and want to add new ```node4``` to the cluster.
+With mulmimaster, you can add or drop cluster nodes without restart. To add a new node, you need to change cluster configuration on alive nodes, load data to the new node using ```pg_basebackup```, and start the node.
 
-1. First we need to figure out connection string that will be used to access new server. Let's assume that in our case that will be "dbname=mydb user=myuser host=node4". Run in psql connected to any live node:
+Suppose we have a working cluster of three nodes, with ```node1```, ```node2```, and ```node3``` domain names. To add ```node4```, follow these steps:
+
+1. Figure out the required connection string that will be used to access the new node. For example, for the database `mydb`, user `myuser`, and the new node `node4`, the connection string is "dbname=mydb user=myuser host=node4". 
+
+1. In `psql` connected to any live node, run:
 
     ```sql
     select * from mtm.add_node('dbname=mydb user=myuser host=node4');
     ```
 
-    this will change cluster configuration on all nodes and start replication slots for a new node.
+    This command changes the cluster configuration on all nodes and starts replication slots for a new node.
 
-1. After calling ```mtm.add_node()``` we can copy data from alive node on new node:
+1. Copy all data from one of the alive nodes to the new node:
 
     ```
     node4> pg_basebackup -D ./datadir -h node1 -x
     ```
 
-1. ```pg_basebackup``` will copy entire data directory from ```node1``` among with configs. So we need to change ```postgresql.conf``` for ```node4```:
+    ```pg_basebackup``` copies the entire data directory from ```node1```, together with configuration settings. 
+
+1. Update ```postgresql.conf``` settings on ```node4```:
 
     ```
     multimaster.max_nodes = 4
@@ -227,28 +227,35 @@ Suppose we have working cluster of three nodes (```node1```, ```node2```, ```nod
     multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user=myuser host=node2, dbname=mydb user=myuser host=node3, dbname=mydb user=myuser host=node4'
     ```
 
-1. Now we can just start postgres on new node:
+1. Start PostgreSQL on the new node:
 
     ```
     node4> pg_ctl -D ./datadir -l ./pg.log start
     ```
 
-    After switching on node will recover recent transaction and change state to ONLINE. Node status can be checked via ```mtm.get_nodes_state()``` view on any cluster node.
+    When switched on, the node recovers the recent transaction and changes its state to `online`. Now the cluster is using the new node. 
 
-1. Now cluster is using new node, but we also should change ```multimaster.conn_strings``` and ```multimaster.max_nodes``` on old nodes to ensure that right configuration will be loaded in case of postgres restart.
+1. Update configuration settings on all cluster nodes to ensure that the right configuration is loaded in case of PostgreSQL restart:
+* Change ```multimaster.conn_strings``` and ```multimaster.max_nodes``` on old nodes
+* Make sure the `pg_hba.conf` files allows replication to the new node.
+
+**See Also**
+[Setting up a Multi-Master Cluster](#setting-up-a-multi-master-cluster)
+[Monitoring Cluster Status](#monitoring-cluster-status)
 
 
-## Excluding nodes from cluster
+## Excluding Nodes from the Cluster
 
-Generally it is okay to just shutdown cluster node but all transaction in cluster will be freezed while other nodes will detect that node is gone (this period is controlled by the ```multimaster.heartbeat_recv_timeout``` parameter). To avoid such situation it is possible to exclude node from cluster in advance. 
-
-For example to stop node 3 run on any other node:
+To exclude a node from the cluster, use the `mtm.stop_node()` function. For example, to exclude node 3, run the following command on any other node:
 
     ```
     select mtm.stop_node(3);
     ```
 
-This will disable node 3 on all cluster nodes.
+This disables node 3 on all cluster nodes and stops replication to this node.
+
+In general, if you simply shutdown a node, it will be excluded from the cluster as well. However, all transactions in the cluster will be frozen until other nodes detect the node offline status. This timeframe is defined by the ```multimaster.heartbeat_recv_timeout``` parameter. 
+
 
 
 
