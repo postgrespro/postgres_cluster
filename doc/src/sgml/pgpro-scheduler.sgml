@@ -595,7 +595,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &
           </para>
         </listitem>
       </itemizedlist></para>
-          <para>To learn more about each function, see <xref linkend="pgpro-scheduler-functions">.
+          <para>To learn more about each function, see <xref linkend="pgpro-scheduler-functions">.</para>
           </sect3>
    </sect2>
    <sect2 id="pgpro-scheduler-reference">
@@ -1391,8 +1391,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
        You must have superuser rights to retrieve jobs executed by another user.</para>
      </listitem>
      </itemizedlist>
-      </para>
-      <para>
+      </para><para>
        For details on the <type>cron_rec</type> type, see <xref linkend="pgpro-scheduler-sql-types">.
       </para>
      </listitem>
@@ -1408,24 +1407,20 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
      </term>
      <listitem>
       <para>
-       Return values:
-        <itemizedlist>
-        <listitem>
-         <para>The list of jobs currently being executed by the specified user.</para></listitem></itemizedlist>
+       Returns the list of jobs currently being executed by the specified user.
       </para>
       <para>
-       Arguments:
+       Arguments:</para>
        <itemizedlist>
         <listitem>
          <para><parameter>username</parameter> &mdash; username, optional.</para></listitem>
        </itemizedlist>
-      </para>
       <para>
        If <parameter>username</parameter> is omitted, the session username is used.
        You must have superuser rights to retrieve jobs executed by another user.
       </para>
       <para>
-       Return values:
+       Return values:</para>
         <itemizedlist>
         <listitem>
          <para>A set of records of type <type>cron_job</type>.</para></listitem></itemizedlist>
