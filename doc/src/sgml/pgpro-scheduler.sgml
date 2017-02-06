@@ -214,54 +214,54 @@ SELECT <function>pg_reload_conf()</>;
       <itemizedlist>
         <listitem>
           <para>
-            <literal>dates</literal> &mdash a single date or an array of
+            <literal>dates</literal> &mdash; a single date or an array of
             dates, in the <type>timestamp with time zone</type> format
           </para>
         </listitem>
         <listitem>
           <para>
-            <literal>cron</literal> &mdash a string, in the <type>crontab</type> format
+            <literal>cron</literal> &mdash; a string, in the <type>crontab</type> format
           </para>
         </listitem>
         <listitem>
           <para>
-            <literal>rule</literal> &mdash a <type>jsonb</type> object that includes one
+            <literal>rule</literal> &mdash; a <type>jsonb</type> object that includes one
             or more of the following keys:
           </para>
         <itemizedlist>
         <listitem>
           <para>
-            <literal>minutes</literal> &mdash minutes; an array of integers
+            <literal>minutes</literal> &mdash; minutes; an array of integers
             in range [0, 59]
           </para>
         </listitem>
         <listitem>
           <para>
-            <literal>hours</literal> &mdash hours; an array of integers in
+            <literal>hours</literal> &mdash; hours; an array of integers in
             range [0, 23]
           </para>
         </listitem>
         <listitem>
           <para>
-            <literal>days</literal> &mdash days of the month; an array of
+            <literal>days</literal> &mdash; days of the month; an array of
             integers in range [1, 31]
           </para>
         </listitem>
         <listitem>
           <para>
-            <literal>months</literal> &mdash months; an array of integers in
+            <literal>months</literal> &mdash; months; an array of integers in
             range [1, 12]
           </para>
         </listitem>
         <listitem>
           <para>
-            <literal>wdays</literal> &mdash days of the week; an array of
+            <literal>wdays</literal> &mdash; days of the week; an array of
             integers in range [0, 6], where 0 is Sunday.
           </para>
         </listitem>
         <listitem>
           <para>
-            <literal>onstart</literal> &mdash integer value 0 or 1. If
+            <literal>onstart</literal> &mdash; integer value 0 or 1. If
             <literal>onstart</literal> is set to 1, the job is executed
             only once when <filename>pgpro_scheduler</filename> is
             started.
@@ -555,43 +555,43 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &
       <itemizedlist>
         <listitem>
           <para>
-            <function>get_job()</function> &mdash retrieves information about
+            <function>get_job()</function> &mdash; retrieves information about
             the job.
           </para>
         </listitem>
         <listitem>
           <para>
-            <function>get_owned_cron()</function> &mdash retrieves job list
+            <function>get_owned_cron()</function> &mdash; retrieves job list
             owned by user.
           </para>
         </listitem>
         <listitem>
           <para>
-            <function>get_cron()</function> &mdash retrieves job list executed
+            <function>get_cron()</function> &mdash; retrieves job list executed
             as user.
           </para>
         </listitem>
         <listitem>
           <para>
-            <function>get_active_jobs()</function> &mdash returns the list of
+            <function>get_active_jobs()</function> &mdash; returns the list of
             jobs executed at the moment of the function call.
           </para>
         </listitem>
         <listitem>
           <para>
-            <function>get_log()</function> &mdash returns the list of all
+            <function>get_log()</function> &mdash; returns the list of all
             completed jobs.
           </para>
         </listitem>
         <listitem>
           <para>
-            <function>get_user_log()</function> &mdash returns list of the
+            <function>get_user_log()</function> &mdash; returns list of the
             completed jobs executed by the specified user.
           </para>
         </listitem>
         <listitem>
           <para>
-            <function>clean_log()</function> &mdash deletes all records with
+            <function>clean_log()</function> &mdash; deletes all records with
             information about completed jobs.
           </para>
         </listitem>
@@ -694,14 +694,14 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &
                 calculating the next job start time. Possible values
                 are: 
                 <itemizedlist><listitem>
-          <para><literal>success</literal> &mdash transaction has finished successfully.
+          <para><literal>success</literal> &mdash; transaction has finished successfully.
           </para></listitem><listitem>
-          <para><literal>failure</literal> &mdash transaction has failed to finish;.
+          <para><literal>failure</literal> &mdash; transaction has failed to finish;.
           </para></listitem><listitem>
           <para><literal>running</literal> &mdash
                 transaction is in progress. </para></listitem>
                 <listitem>
-          <para><literal>undefined</literal> &mdash transaction has
+          <para><literal>undefined</literal> &mdash; transaction has
                 not started yet. The last two values should not appear
                 inside the user procedure. If you see them, they may
                 indicate an internal <filename>pgpro_scheduler</filename>
@@ -843,27 +843,27 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
 <para>Arguments:</para>
    <itemizedlist>
     <listitem>
-    <para><parameter>data</parameter> &mdash a <type>jsonb</type> object defining all the job properties. You do not need to define other parameters if the <parameter>data</parameter> is set. All the
+    <para><parameter>data</parameter> &mdash; a <type>jsonb</type> object defining all the job properties. You do not need to define other parameters if the <parameter>data</parameter> is set. All the
             available <type>jsonb</type> keys are listed in <xref linkend="pgpro-scheduler-jsonb-keys">.</para>
     <para>Type: <type>jsonb</type></para>
     </listitem>
     <listitem>
-    <para><parameter>cron</parameter> &mdash a crontab-like string defining the job schedule.</para>
+    <para><parameter>cron</parameter> &mdash; a crontab-like string defining the job schedule.</para>
     <para>Type: <type>text</type></para>
     </listitem>
     <listitem>
-    <para><parameter>dates</parameter> &mdash the exact date or an array of dates for job execution.</para>
+    <para><parameter>dates</parameter> &mdash; the exact date or an array of dates for job execution.</para>
     <para>Type: <type>timestamp with time zone</type>, <type>timestamp with time zone[]</type></para>
     </listitem>
     <listitem>
-    <para><parameter>commands</parameter> &mdash <acronym>SQL</acronym> statements to execute. You can pass one or more <acronym>SQL</acronym>
+    <para><parameter>commands</parameter> &mdash; <acronym>SQL</acronym> statements to execute. You can pass one or more <acronym>SQL</acronym>
             statements separated by semicolons, or an array of <acronym>SQL</acronym>
             statements. When passed as an array, <acronym>SQL</acronym> statements are
             executed in separate transactions.</para>
             <para>Type: <type>text</type>, <type>text[]</type></para>
     </listitem>
     <listitem>
-    <para><parameter>node</parameter> &mdash the name of the node on which the scheduled jobs
+    <para><parameter>node</parameter> &mdash; the name of the node on which the scheduled jobs
             run. Optional. You may need to specify this argument if you are
             scheduling jobs on a multi-master cluster.</para>
             <para>Type: <type>text</type></para>
@@ -934,21 +934,21 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
                 includes one or more of the following keys:
                <itemizedlist>
                <listitem>
-                <para><literal>minutes</literal> &mdash minutes; an array of
+                <para><literal>minutes</literal> &mdash; minutes; an array of
                 integers in range [0, 59] 
                 </para></listitem><listitem><para>
                 <literal>hours</literal> &mdash
                 hours; an array of integers in range [0, 23]
                 </para></listitem><listitem><para>
-                <literal>days</literal> &mdash days of the month; an array of
+                <literal>days</literal> &mdash; days of the month; an array of
                 integers in range [1, 31]
                 </para></listitem><listitem><para><literal>months</literal> &mdash
                 months; an array of integers in range [1, 12]
                 </para></listitem><listitem><para>
-                <literal>wdays</literal> &mdash days of the week; an array of
+                <literal>wdays</literal> &mdash; days of the week; an array of
                 integers in range [0, 6], where 0 is Sunday.
                 </para></listitem><listitem><para>
-                <literal>onstart</literal> &mdash integer value 0 or 1. If
+                <literal>onstart</literal> &mdash; integer value 0 or 1. If
                 <literal>onstart</literal> is set to 1, the job is
                 executed only once when
                 <filename>pgpro_scheduler</filename> is started.</para></listitem></itemizedlist></para>
@@ -1418,8 +1418,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
        Arguments:
        <itemizedlist>
         <listitem>
-         <para><parameter>username</parameter> &mdash; username, optional.</para>
-        </listitem>
+         <para><parameter>username</parameter> &mdash; username, optional.</para></listitem>
        </itemizedlist>
       </para>
       <para>
