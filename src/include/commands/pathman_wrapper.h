@@ -77,3 +77,4 @@ void pm_split_range_partition(Oid part_relid,
 void pm_alter_partition(Oid relid, const char *new_relname, Oid new_namespace, const char *new_tablespace);
 void pm_drop_range_partition_expand_next(Oid relid);
 void pm_partition_table_concurrently(Oid relid);
+void pm_set_interval(Oid relid, Datum interval, Oid interval_type, bool interval_isnull);

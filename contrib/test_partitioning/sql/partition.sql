@@ -56,9 +56,12 @@ SELECT * FROM pathman_partition_list;
 
 DROP TABLE abc CASCADE;
 
-/* Create hash partitioned table */
 CREATE TABLE abc(id serial)
-PARTITION BY HASH (id) PARTITIONS (3);
+PARTITION BY HASH (id)
+(
+	PARTITION abc_first,
+	PARTITION abc_second
+);
 
 SELECT * FROM pathman_partition_list;
 

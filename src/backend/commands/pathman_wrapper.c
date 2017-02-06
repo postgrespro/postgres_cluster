@@ -592,3 +592,28 @@ pm_partition_table_concurrently(Oid relid)
 	if (!ret)
 		elog(ERROR, "Unable to start concurrent data migration");
 }
+
+
+/*
+ *
+ */
+void
+pm_set_interval(Oid relid, Datum interval, Oid interval_type, bool interval_isnull)
+{
+	FuncArgs	args;
+	bool		ret;
+
+	InitFuncArgs(&args, 2);
+	PG_SETARG_DATUM(&args, 0, OIDOID, relid);
+
+	if (interval_isnull)
+		PG_SETARG_NULL(&args, 1, interval_type);
+	else
+		PG_SETARG_DATUM(&args, 1, interval_type, interval);
+
+	ret = pathman_invoke("set_interval($1, $2)", &args);
+	FreeFuncArgs(&args);
+
+	if (!ret)
+		elog(ERROR, "Unable to set interval");
+}

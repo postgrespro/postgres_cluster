@@ -2340,6 +2340,14 @@ alter_table_cmd:
 					n->name = $3;
 					$$ = (Node *)n;
 				}
+			/* ALTER TABLE <name> SET INTERVAL <const> */
+			| SET INTERVAL '(' b_expr ')'
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_SetInterval;
+					n->def = $4;
+					$$ = (Node *)n;
+				}
 			/* ALTER TABLE <name> SET (...) */
 			| SET reloptions
 				{

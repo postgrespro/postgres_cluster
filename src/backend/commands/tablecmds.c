@@ -3074,6 +3074,7 @@ AlterTableGetLockLevel(List *cmds)
 			case AT_RenamePartition:
 			case AT_DropPartition:
 			case AT_MovePartition:
+			case AT_SetInterval:
 				break;
 
 			default:			/* oops */
@@ -3408,6 +3409,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_RenamePartition:
 		case AT_DropPartition:
 		case AT_MovePartition:
+		case AT_SetInterval:
 			pass = AT_PASS_MISC;
 			break;
 
@@ -3750,6 +3752,9 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			break;
 		case AT_MovePartition:
 			move_partition(rel->rd_id, cmd);
+			break;
+		case AT_SetInterval:
+			partitioned_table_set_interval(rel->rd_id, cmd);
 			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",

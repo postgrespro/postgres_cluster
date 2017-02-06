@@ -39,7 +39,7 @@ static void create_range_partitions(PartitionInfo *pinfo,
 									Oid relid,
 									const char *attname,
 									PartitionDataType partition_data);
-static void read_interval_value(PartitionInfo *pinfo,
+static void read_interval_value(Node *raw_interval,
 								Oid atttype,
 								Oid *interval_type,
 								Datum *interval_datum);
@@ -175,7 +175,7 @@ create_range_partitions(PartitionInfo *pinfo,
 	atttypmod = get_atttypmod(relid, attnum);
 
 	/* Interval */
-	read_interval_value(pinfo, atttype, &interval_type, &interval_datum);
+	read_interval_value(pinfo->interval, atttype, &interval_type, &interval_datum);
 
 	/*
 	 * Start value. It is always non-NULL whenever partition_data = True.
@@ -257,7 +257,7 @@ create_range_partitions(PartitionInfo *pinfo,
  * Converts interval from Value
  */
 static void
-read_interval_value(PartitionInfo *pinfo,
+read_interval_value(Node *raw_interval,
 					Oid atttype,
 					Oid *interval_type,
 					Datum *interval_datum)
@@ -268,13 +268,13 @@ read_interval_value(PartitionInfo *pinfo,
 	*interval_datum = (Datum) 0;
 
 	/* If interval is set then convert it to a suitable Datum value */
-	if (pinfo->interval != NULL)
+	if (raw_interval != NULL)
 	{
 		Const		   *interval_const;
 
-		if (IsA(pinfo->interval, A_Const))
+		if (IsA(raw_interval, A_Const))
 		{
-			A_Const    *con = (A_Const *) pinfo->interval;
+			A_Const    *con = (A_Const *) raw_interval;
 			Value	   *val = &con->val;
 
 			interval_const = make_const(pstate, val, con->location);
@@ -662,8 +662,32 @@ RangeVarGetNamespaceId(const RangeVar *rangevar)
 	return namespace_id;
 }
 
-void
-partition_existing_table(Oid relid, AlterTableCmd *cmd)
-{
 
+void
+partitioned_table_set_interval(Oid relid, AlterTableCmd *cmd)
+{
+	const char	   *attname;
+	AttrNumber		attnum;
+	Oid				atttype;
+	Datum			interval_datum;
+	Oid				interval_type;
+	bool			interval_isnull = (cmd->def == NULL);
+
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "could not connect using SPI");
+
+	/* Partitioning attribute parameters */
+	attname = pm_get_partition_key(relid);
+	attnum = get_attnum(relid, attname);
+	atttype = get_atttype(relid, attnum);
+
+	/* Convert A_Const to Datum */
+	read_interval_value(cmd->def,
+						atttype,
+						&interval_type,
+						&interval_datum);
+
+	pm_set_interval(relid, interval_datum, interval_type, interval_isnull);
+
+	SPI_finish();
 }

@@ -1568,6 +1568,7 @@ typedef enum AlterTableType
 	AT_RenamePartition,			/* RENAME PARTITION */
 	AT_DropPartition,			/* DROP PARTITION */
 	AT_MovePartition,			/* MOVE PARTITION */
+	AT_SetInterval				/* SET INTERVAL (...) */
 } AlterTableType;
 
 typedef struct ReplicaIdentityStmt
