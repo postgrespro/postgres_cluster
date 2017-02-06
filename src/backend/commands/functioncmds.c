@@ -1124,6 +1124,7 @@ RemoveFunctionById(Oid funcOid)
 	HeapTuple languageTuple;
 	Form_pg_language languageStruct;
 	Oid	languageValidator;
+	bool save_check_function_bodies;
 
 	/*
 	 * Delete the pg_proc tuple.
@@ -1141,12 +1142,15 @@ RemoveFunctionById(Oid funcOid)
 	 * accessed temp relation or not. So validate function body
 	 * again -- that will set MyXactAccessedTempRel.
 	 */
+	save_check_function_bodies = check_function_bodies;
+	check_function_bodies = false;
 	language_oid = ((Form_pg_proc) GETSTRUCT(tup))->prolang;
 	languageTuple = SearchSysCache1(LANGOID, language_oid);
 	languageStruct = (Form_pg_language) GETSTRUCT(languageTuple);
 	languageValidator = languageStruct->lanvalidator;
 	OidFunctionCall1(languageValidator, ObjectIdGetDatum(funcOid));
 	ReleaseSysCache(languageTuple);
+	check_function_bodies = save_check_function_bodies;
 
 	simple_heap_delete(relation, &tup->t_self);
 
