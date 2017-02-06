@@ -1,5 +1,4 @@
 #include "postgres.h"
-#include "port.h"
 
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
@@ -43,12 +42,12 @@ volatile sig_atomic_t got_sighup = false;
 volatile sig_atomic_t got_sigterm = false;
 
 /* Custom GUC variables */
-static char *scheduler_databases = NULL;
-static char *scheduler_nodename = NULL;
-static char *scheduler_transaction_state = NULL;
-static int  scheduler_max_workers = 2;
-static bool scheduler_service_enabled = false;
-static char *scheduler_schema = NULL;
+char *scheduler_databases = NULL;
+char *scheduler_nodename = NULL;
+char *scheduler_transaction_state = NULL;
+int  scheduler_max_workers = 2;
+bool scheduler_service_enabled = false;
+char *scheduler_schema = NULL;
 /* Custom GUC done */
 
 extern void
@@ -281,10 +280,11 @@ void parent_scheduler_main(Datum arg)
 	schd_manager_share_t *shared;
 	bool refresh = false;
 
+	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
+
 	init_worker_mem_ctx("Parent scheduler context");
 	elog(LOG, "Start PostgresPro scheduler."); 
 
-	/*CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");*/
 	SetConfigOption("application_name", "pgp-s supervisor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "Initialize");
 	pqsignal(SIGHUP, worker_spi_sighup);
@@ -388,13 +388,13 @@ pg_scheduler_startup(void)
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
-	worker.bgw_main = parent_scheduler_main;
+	worker.bgw_main = NULL;
 	worker.bgw_notify_pid = 0;
-	worker.bgw_main_arg = 0;
-	strcpy(worker.bgw_name, "pgpro scheduler");
-
-	/* elog(LOG, "Register WORKER"); */
-
+	worker.bgw_main_arg = Int32GetDatum(0);
+	worker.bgw_extra[0] = 0;
+	memcpy(worker.bgw_function_name, "parent_scheduler_main", 22);
+	memcpy(worker.bgw_library_name, "pgpro_scheduler", 16);
+	memcpy(worker.bgw_name, "pgpro scheduler", 16);
 
 	RegisterBackgroundWorker(&worker); 
 }

@@ -29,9 +29,8 @@ void pg_scheduler_startup(void);
 char_array_t *readBasesToCheck(void);
 extern Datum cron_string_to_json_text(PG_FUNCTION_ARGS);
 void _PG_init(void);
-void parent_scheduler_main(Datum) pg_attribute_noreturn();
+extern PGDLLEXPORT void parent_scheduler_main(Datum) pg_attribute_noreturn();
 int checkSchedulerNamespace(void);
-void manager_worker_main(Datum arg);
 pid_t registerManagerWorker(schd_manager_t *man);
 
 void reload_db_role_config(char *dbname);
