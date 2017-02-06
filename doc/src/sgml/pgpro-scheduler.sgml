@@ -71,7 +71,7 @@
       </para>
     <para>
       To complete the installation of
-      <filename>pgpro_scheduler</filename>: 
+      <filename>pgpro_scheduler</filename>:</para> 
      <orderedlist>
       <listitem>
         <para>Modify the <filename>postgresql.conf</filename> file by adding
@@ -437,7 +437,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT random()&quot;, 
         <title>Setting Additional Conditions for Job Execution</title>
         <para>
           The <filename>pgpro_scheduler</filename> extension enables you
-          to define additional conditions for task execution: 
+          to define additional conditions for task execution:</para> 
         <itemizedlist>
         <listitem>
           <para>
@@ -463,7 +463,8 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT random()&quot;, 
         </listitem>
         </itemizedlist>
         <para>
-          <emphasis role="strong">Examples:</emphasis> </para><para>To limit job
+          <emphasis role="strong">Examples:</emphasis> </para>
+          <para>To limit job
           execution to 5 seconds:
         <programlisting>
 SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT pg_sleep(10)&quot;, &quot;cron&quot;: &quot;15 */10 * * *&quot;, &quot;max_run_time&quot;: &quot;5 seconds&quot; }');
@@ -698,7 +699,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &
           </para></listitem><listitem>
           <para><literal>failure</literal> &mdash; transaction has failed to finish;.
           </para></listitem><listitem>
-          <para><literal>running</literal> &mdash
+          <para><literal>running</literal> &mdash;
                 transaction is in progress. </para></listitem>
                 <listitem>
           <para><literal>undefined</literal> &mdash; transaction has
@@ -937,12 +938,12 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
                 <para><literal>minutes</literal> &mdash; minutes; an array of
                 integers in range [0, 59] 
                 </para></listitem><listitem><para>
-                <literal>hours</literal> &mdash
+                <literal>hours</literal> &mdash;
                 hours; an array of integers in range [0, 23]
                 </para></listitem><listitem><para>
                 <literal>days</literal> &mdash; days of the month; an array of
                 integers in range [1, 31]
-                </para></listitem><listitem><para><literal>months</literal> &mdash
+                </para></listitem><listitem><para><literal>months</literal> &mdash;
                 months; an array of integers in range [1, 12]
                 </para></listitem><listitem><para>
                 <literal>wdays</literal> &mdash; days of the week; an array of
