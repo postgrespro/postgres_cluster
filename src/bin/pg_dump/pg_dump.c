@@ -16277,7 +16277,7 @@ dumpConstraint(Archive *fout, ConstraintInfo *coninfo)
 			}
 
 			if (indxinfo->indnkeyattrs < indxinfo->indnattrs)
-				appendPQExpBuffer(q, ") INCLUDING (");
+				appendPQExpBuffer(q, ") INCLUDE (");
 
 			for (k = indxinfo->indnkeyattrs; k < indxinfo->indnattrs; k++)
 			{

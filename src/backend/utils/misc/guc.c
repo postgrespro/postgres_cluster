@@ -1681,23 +1681,23 @@ static struct config_bool ConfigureNamesBool[] =
 
 	{
 		{"cfs_encryption", PGC_POSTMASTER, UNGROUPED,
-		 gettext_noop("Encrypt CFS pages"),
+		 gettext_noop("Enable encryption of compressed pages"),
 		 NULL,
-        },
+		},
 		&cfs_encryption,
-        false,
-        NULL, NULL, NULL
-    },	
+		false,
+		NULL, NULL, NULL
+	},
 
 	{
 		{"cfs_gc_verify_file", PGC_USERSET, UNGROUPED,
 		 gettext_noop("Verify correctness of data written by GC"),
 		 NULL,
-        },
+		},
 		&cfs_gc_verify_file,
-        false,
-        NULL, NULL, NULL
-    },	
+		false,
+		NULL, NULL, NULL
+	},
 
 	/* End-of-list marker */
 	{
@@ -2806,58 +2806,58 @@ static struct config_int ConfigureNamesInt[] =
 		 gettext_noop("Number of CFS background garbage collection workers"),
 		 NULL,
 		 0
-        },
+		},
 		&cfs_gc_workers,
-        1, 0, 100,
-        NULL, NULL, NULL
-    },
+		1, 0, 100,
+		NULL, NULL, NULL
+	},
 
 	{
 		{"cfs_level", PGC_USERSET, UNGROUPED,
-		 gettext_noop("CFS compression level (0 - no compression, 1 - maximal speed,...)"),
+		 gettext_noop("CFS compression level: 0 - no compression, 1 - maximal speed,"
+					  "other possible values depend on the specific algorithm."),
 		 NULL,
 		 0
-        },
+		},
 		&cfs_level,
-        1, 0, 100,
-        NULL, NULL, NULL
+		1, 0, 100,
+		NULL, NULL, NULL
     },
 
 	{
 		{"cfs_gc_threshold", PGC_USERSET, UNGROUPED,
-		 gettext_noop("Percent of garbage in file after file is comactified"),
+		 gettext_noop("Minimum percent of garbage blocks in the file prior to garbage collection"),
 		 NULL,
 		 0
-        },
+		},
 		&cfs_gc_threshold,
-        50, 0, 100,
-        NULL, NULL, NULL
-    },
-
+		50, 0, 100,
+		NULL, NULL, NULL
+	},
 
 	{
 		{"cfs_gc_period", PGC_USERSET, UNGROUPED,
-		 gettext_noop("Interval in milliseconds between CFS garbage collection iterations"),
+		 gettext_noop("Time to sleep between GC runs in milliseconds"),
 		 NULL,
 		 GUC_UNIT_MS
-        },
+		},
 		&cfs_gc_period,
-        5000, 0, INT_MAX,
-        NULL, NULL, NULL
-    },
+		5000, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
 
 	{
 		{"cfs_gc_delay", PGC_USERSET, UNGROUPED,
 		 gettext_noop("Delay in milliseconds between files defragmentation"),
 		 NULL,
 		 GUC_UNIT_MS
-        },
+	},
 		&cfs_gc_delay,
-        0, 0, 10000,
-        NULL, NULL, NULL
-    },
+		0, 0, 10000,
+		NULL, NULL, NULL
+	},
 
-    /* End-of-list marker */
+	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, 0, 0, 0, NULL, NULL, NULL
 	}
