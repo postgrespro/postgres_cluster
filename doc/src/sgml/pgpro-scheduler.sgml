@@ -77,10 +77,9 @@
         <para>Modify the <filename>postgresql.conf</filename> file by adding
       <filename>pgpro_scheduler</filename> to the
       <varname>shared_preload_libraries</varname> variable:
-    </para>
     <programlisting>
 shared_preload_libraries = 'pgpro_scheduler'
-</programlisting>
+</programlisting></para>
       </listitem>
       <listitem>
         <para>
@@ -88,8 +87,7 @@ shared_preload_libraries = 'pgpro_scheduler'
         <programlisting>
 $ psql -d <replaceable>dbname</replaceable> -c &quot;CREATE EXTENSION pgpro_scheduler;&quot;
 </programlisting>
-where <replaceable>dbname</replaceable> is the name of the database for which you would like to use <filename>pgpro_scheduler</filename>. Make sure to create the <filename>pgpro_scheduler</filename> extension for each database you are planning to use.
-        </para>
+where <replaceable>dbname</replaceable> is the name of the database for which you would like to use <filename>pgpro_scheduler</filename>. Make sure to create the <filename>pgpro_scheduler</filename> extension for each database you are planning to use.</para>
       </listitem>
     </orderedlist>
     <para>
