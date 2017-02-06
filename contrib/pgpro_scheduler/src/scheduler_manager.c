@@ -1292,6 +1292,7 @@ void manager_worker_main(Datum arg)
 	pfree(aname);
 
 	BackgroundWorkerInitializeConnection(database, NULL);
+	elog(LOG, "Started scheduler manager for '%s'", database);
 
 	if(!checkSchedulerNamespace())
 	{
