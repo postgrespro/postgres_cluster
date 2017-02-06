@@ -195,7 +195,7 @@ BEGIN
       'dates', 'Set of exact dates when comman will be executed',
       'use_same_transaction', 'if set of commans should be executed within the same transaction',
       'last_start_available', 'for how long could command execution be postponed in  format of interval type' ,
-      'max_run_time', 'how long task could be executed, NULL - infinite',
+      'max_run_time', 'how long job could be executed, NULL - infinite',
       'max_instances', 'the number of instances run at the same time',
       'onrollback', 'statement to be executed after rollback if one occured',
       'next_time_statement', 'statement to be executed last to calc next execution time'
@@ -241,48 +241,85 @@ LANGUAGE plpgsql;
 CREATE FUNCTION schedule._get_cron_from_attrs(params jsonb) RETURNS jsonb AS
 $BODY$
 DECLARE
-   tdates text[];
-   dates text[];
-   cron jsonb;
+	dates text[];
+	cron jsonb;
+	clean_cron jsonb;
+	N integer;
+	name text;
 BEGIN
 
-   IF params?'cron' THEN 
-      EXECUTE 'SELECT schedule.cron2jsontext($1::cstring)::jsonb' 
-         INTO cron
-	 USING params->>'cron';
-   ELSIF params?'rule' THEN
-      cron := params->'rule';
-   ELSIF NOT params?'date' AND NOT params?'dates' THEN
-      RAISE  EXCEPTION 'There is no information about task''s schedule'
-         USING HINT = 'Use ''cron'' - cron string, ''rule'' - json to set schedule rules or ''date'' and ''dates'' to set exact date(s)';
-   END IF;
+	IF params?'cron' THEN 
+		EXECUTE 'SELECT schedule.cron2jsontext($1::cstring)::jsonb' 
+			INTO cron
+			USING params->>'cron';
+	ELSIF params?'rule' THEN
+		cron := params->'rule';
+	ELSIF NOT params?'date' AND NOT params?'dates' THEN
+		RAISE  EXCEPTION 'There is no information about job''s schedule'
+			USING HINT = 'Use ''cron'' - cron string, ''rule'' - json to set schedule rules or ''date'' and ''dates'' to set exact date(s)';
+	END IF;
 
-   IF cron IS NOT NULL AND cron?'dates' THEN
-      EXECUTE 'SELECT array_agg(value)::text[] from jsonb_array_elements_text($1) as X'
-         INTO tdates
-	 USING cron->'dates';
-   ELSE
-      tdates := '{}'::text[];
-   END IF;
+	IF cron IS NOT NULL THEN
+		IF cron?'date' THEN
+			dates := schedule._get_array_from_jsonb(dates, cron->'date');
+		END IF;
+		IF cron?'dates' THEN
+			dates := schedule._get_array_from_jsonb(dates, cron->'dates');
+		END IF;
+	END IF;
 
-   IF params?'date' THEN
-     tdates := array_append(tdates, params->>'date');
-   END IF;
+	IF params?'date' THEN
+		dates := schedule._get_array_from_jsonb(dates, params->'date');
+	END IF;
+	IF params?'dates' THEN
+		dates := schedule._get_array_from_jsonb(dates, params->'dates');
+	END IF;
+	N := array_length(dates, 1);
+	
+	IF N > 0 THEN
+		EXECUTE 'SELECT array_agg(lll) FROM (SELECT distinct(date_trunc(''min'', unnest::timestamp with time zone)) as lll FROM unnest($1) ORDER BY date_trunc(''min'', unnest::timestamp with time zone)) as Z'
+			INTO dates USING dates;
+		cron := COALESCE(cron, '{}'::jsonb) || json_build_object('dates', array_to_json(dates))::jsonb;
+	END IF;
+	
+	clean_cron := '{}'::jsonb;
+	FOR name IN SELECT * FROM unnest('{dates, crontab, onstart, days, hours, wdays, months, minutes}'::text[])
+	LOOP
+		IF cron?name THEN
+			clean_cron := jsonb_set(clean_cron, array_append('{}'::text[], name), cron->name);
+		END IF;
+	END LOOP;
+	RETURN clean_cron;
+END
+$BODY$
+LANGUAGE plpgsql;
 
-   IF params?'dates' THEN
-     EXECUTE 'SELECT array_agg(value)::text[] from jsonb_array_elements_text($1) as X'
-       INTO dates
-       USING params->'dates';
-     tdates := array_cat(tdates, dates);
-   END IF;
+CREATE FUNCTION schedule._get_array_from_jsonb(dst text[], value jsonb) RETURNS text[] AS
+$BODY$
+DECLARE
+	vtype text;
+BEGIN
+	IF value IS NULL THEN
+		RETURN dst;
+	END IF;
 
-   IF tdates IS NOT NULL AND array_length(tdates, 1) > 0 THEN
-     EXECUTE 'SELECT array_agg(lll) FROM (SELECT distinct(date_trunc(''min'', unnest::timestamp with time zone)) as lll FROM unnest($1) ORDER BY date_trunc(''min'', unnest::timestamp with time zone)) as Z'
-       INTO dates
-       USING tdates;
-     cron := COALESCE(cron, '{}'::jsonb) || json_build_object('dates', array_to_json(dates))::jsonb;
-   END IF;
-   RETURN cron;
+	EXECUTE 'SELECT jsonb_typeof($1)'
+		INTO vtype
+		USING value;
+	IF vtype = 'string' THEN
+		-- EXECUTE 'SELECT array_append($1, jsonb_set(''{"a":""}''::jsonb, ''{a}'', $2)->>''a'')'
+		EXECUTE 'SELECT array_append($1, $2->>0)'
+			INTO dst
+			USING dst, value;
+	ELSIF vtype = 'array' THEN
+		EXECUTE 'SELECT $1 || array_agg(value)::text[] from jsonb_array_elements_text($2)'
+			INTO dst
+			USING dst, value;
+	ELSE
+		RAISE EXCEPTION 'The value could be only ''string'' or ''array'' type';
+	END IF;
+
+	RETURN dst;
 END
 $BODY$
 LANGUAGE plpgsql;
@@ -290,19 +327,22 @@ LANGUAGE plpgsql;
 CREATE FUNCTION schedule._get_commands_from_attrs(params jsonb) RETURNS text[] AS
 $BODY$
 DECLARE
-   commands text[];
+	commands text[];
+	N integer;
 BEGIN
-   IF params?'command' THEN
-      EXECUTE 'SELECT array_append(''{}''::text[], $1)'
-         INTO commands
-         USING params->>'command';
-   ELSIF params?'commands' THEN
-      EXECUTE 'SELECT array_agg(value)::text[] from jsonb_array_elements_text($1) as X'
-         INTO commands
-	 USING params->'commands';
-   ELSE
-      RAISE EXCEPTION 'There is no information about what task to execute'
-         USING HINT = 'Use ''command'' or ''commands'' key to transmit information';
+	N := 0;
+	IF params?'command' THEN
+		commands := schedule._get_array_from_jsonb(commands, params->'command');
+	END IF;
+
+	IF params?'commands' THEN
+		commands := schedule._get_array_from_jsonb(commands, params->'commands');
+	END IF;
+
+	N := array_length(commands, 1);
+	IF N is NULL or N = 0 THEN
+		RAISE EXCEPTION 'There is no information about what job to execute'
+			USING HINT = 'Use ''command'' or ''commands'' key to transmit information';
    END IF;
 
    RETURN commands;
@@ -764,7 +804,7 @@ $BODY$
 LANGUAGE plpgsql
    SECURITY DEFINER;
 
-CREATE FUNCTION schedule.get_user_owned_cron() RETURNS SETOF schedule.cron_rec AS
+CREATE FUNCTION schedule.get_owned_cron() RETURNS SETOF schedule.cron_rec AS
 $BODY$
 DECLARE
 	ii schedule.cron;
@@ -780,7 +820,8 @@ $BODY$
 LANGUAGE plpgsql
    SECURITY DEFINER;
 
-CREATE FUNCTION schedule.get_user_owned_cron(usename text) RETURNS SETOF schedule.cron_rec AS
+
+CREATE FUNCTION schedule.get_owned_cron(usename text) RETURNS SETOF schedule.cron_rec AS
 $BODY$
 DECLARE
 	ii schedule.cron;
@@ -799,6 +840,26 @@ END
 $BODY$
 LANGUAGE plpgsql
    SECURITY DEFINER;
+
+CREATE FUNCTION schedule.get_user_owned_cron() RETURNS SETOF schedule.cron_rec AS
+$BODY$
+BEGIN
+	RETURN QUERY  SELECT * from schedule.get_owned_cron();
+END
+$BODY$
+LANGUAGE plpgsql
+   SECURITY DEFINER;
+
+CREATE FUNCTION schedule.get_user_owned_cron(usename text) RETURNS SETOF schedule.cron_rec AS
+$BODY$
+BEGIN
+	RETURN QUERY SELECT * from  schedule.get_owned_cron(usename);
+END
+$BODY$
+LANGUAGE plpgsql
+   SECURITY DEFINER;
+
+
 
 CREATE FUNCTION schedule.get_user_cron() RETURNS SETOF schedule.cron_rec AS
 $BODY$
@@ -865,6 +926,16 @@ BEGIN
 		RETURN NEXT oo;
 	END LOOP;
 	RETURN;
+END
+$BODY$
+LANGUAGE plpgsql
+   SECURITY DEFINER;
+
+CREATE FUNCTION schedule.get_active_jobs(usename text) RETURNS SETOF schedule.cron_job AS
+$BODY$
+DECLARE
+BEGIN
+	RETURN QUERY  SELECT * FROM schedule.get_user_active_jobs(usename);
 END
 $BODY$
 LANGUAGE plpgsql
@@ -942,6 +1013,15 @@ END
 $BODY$
 LANGUAGE plpgsql
    SECURITY DEFINER;
+
+CREATE FUNCTION schedule.get_log(usename text) RETURNS SETOF schedule.cron_job AS
+$BODY$
+BEGIN
+ 	RETURN QUERY SELECT * FROM schedule.get_user_log(usename);
+END
+$BODY$
+LANGUAGE plpgsql
+	SECURITY DEFINER;
 
 CREATE FUNCTION schedule.get_log() RETURNS SETOF schedule.cron_job AS
 $BODY$

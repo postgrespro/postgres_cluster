@@ -1,4 +1,8 @@
 create user __temp_robot;
+create user __temp_root WITH  SUPERUSER;
+
+SET SESSION AUTHORIZATION __temp_root;
+
 select schedule.create_job(
     '{
         "name": "Test @reboot",
@@ -37,4 +41,6 @@ select schedule.create_job(
 
 select * from schedule.cron order by id;
 
+RESET SESSION AUTHORIZATION;
+drop user __temp_root;
 drop user __temp_robot;
