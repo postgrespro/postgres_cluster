@@ -36,7 +36,7 @@
   <itemizedlist>
     <listitem>
       <para>
-        With <filename>pgpro_scheduler</filename> enabled, any user can
+        Any user can
         schedule jobs independently.
       </para>
     </listitem>
@@ -56,7 +56,7 @@
     </listitem>
     <listitem>
       <para>
-        Each database has its own "supervisor" scheduler, with each
+        Each database has its own <quote>supervisor</quote> scheduler, with each
         scheduled job executed by a separate background worker for
         enhanced stability.
       </para>
@@ -74,9 +74,8 @@
       <filename>pgpro_scheduler</filename>:</para> 
      <orderedlist>
       <listitem>
-        <para>Modify the <filename>postgresql.conf</filename> file by adding
-      <filename>pgpro_scheduler</filename> to the
-      <varname>shared_preload_libraries</varname> variable:
+        <para>Add <filename>pgpro_scheduler</filename> to the
+      <varname>shared_preload_libraries</varname> variable in the <filename>postgresql.conf</filename> file:
     <programlisting>
 shared_preload_libraries = 'pgpro_scheduler'
 </programlisting></para>
@@ -305,8 +304,8 @@ For details, see <xref linkend="schedule-create-job"> function description.</par
         <emphasis role="strong">Examples:</emphasis>
       </para>
       <para>
-        To run the job every day at 3 pm, and, additionally, on December
-        31, 2017 at 7 pm , and on April 4, 2020 at 1 pm:
+        To run the job every day at 3pm, and, additionally, on December
+        31, 2017 at 7pm , and on April 4, 2020 at 1pm:
       </para>
       <programlisting>
 SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT 15&quot;, &quot;cron&quot;: &quot;0 15 * * *&quot;, &quot;dates&quot;: [ &quot;2017-12-31 19:00&quot;, &quot;2020-04-04 13:00&quot; ]}');
@@ -326,7 +325,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT pg_sleep(100)&qu
           ensure that <filename>pgpro_scheduler</filename> only executes
           the job within the specified time window, define the
           <literal>start_date</literal> and <literal>end_date</literal>
-          keys, in the timestamp with time zone format. You can set one
+          keys, in the <type>timestamp with time zone format</type>. You can set one
           of these keys only to limit the start or the end time,
           respectively. If you define a time window for the job,
           <filename>pgpro_scheduler</filename> will only schedule this job
@@ -344,8 +343,8 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT now()&quot;, &qu
 </programlisting>
         </para>
         <para>
-          To schedule the job in the timeframe from 11am on May 1 till
-          15pm on June 4, 2017:
+          To schedule the job in the timeframe from 11am on May 1 to
+          3pm on June 4, 2017:
         <programlisting>
 SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT now()&quot;, &quot;cron&quot;: &quot;2 17 * * *&quot;, &quot;start_date&quot;: &quot;2017-05-01 11:00&quot;, &quot;end_date&quot;: &quot;2017-06-04 15:00&quot; }');
 </programlisting>
@@ -367,7 +366,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT now()&quot;, &qu
           <emphasis role="strong">Examples:</emphasis>
         </para>
         <para>
-          To run the whole job in the same transaction:
+          To run the whole job in a single transaction:
         </para>
         <programlisting>
 SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT 1; SELECT 2; SELECT 3;&quot;, &quot;cron&quot;: &quot;23 23 */2 * *&quot; }');
@@ -379,7 +378,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: [ &quot;SELECT 1&quot;, &quot
 </programlisting>
         </para>
         <para>
-          To run the whole job in the same transaction when passing the
+          To run the whole job in a single transaction when passing the
           commands as an array:
         <programlisting>
 SELECT schedule.create_job('{&quot;commands&quot;: [ &quot;SELECT 1&quot;, &quot;SELECT 2&quot;, &quot;SELECT 3&quot; ], &quot;cron&quot;: &quot;23 23 */2 * *&quot;, &quot;use_same_transaction&quot;: true }');
@@ -399,8 +398,8 @@ SELECT schedule.create_job('{&quot;commands&quot;: [ &quot;SELECT 1&quot;, &quot
           After the job run completes,
           <filename>pgpro_scheduler</filename> executes the <acronym>SQL</acronym> statement
           in the <literal>next_time_statement</literal> key to calculate
-          the next start time and returns the result, in the timestamp
-          with time zone type. If the return value is of a different
+          the next start time and returns the result, in the <type>timestamp
+          with time zone type</type>. If the return value is of a different
           type or an error occurs, <filename>pgpro_scheduler</filename>
           marks the job as broken and cancels any further execution.
           This process is repeated for each successive job run.</para>
@@ -408,7 +407,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: [ &quot;SELECT 1&quot;, &quot
           completes, <filename>pgpro_scheduler</filename> sets the
           transaction status in the
           <varname>schedule.transaction_state</varname> variable, in the
-          string format. You can use this variable in your
+          <type>text</type> format. You can use this variable in your
           <literal>next_time_statement</literal> to dynamically
           calculate the next start time depending on the transaction
           status. At the time of the
@@ -483,7 +482,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT session_user&quo
 </programlisting>
         </para>
         <para>
-          To define a backup <acronym>SQL</acronym> command in case of a rollback:
+          To define a fallback <acronym>SQL</acronym> command in case of a rollback:
         <programlisting>
 SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &quot;cron&quot;: &quot;55 */12 * * *&quot;, &quot;on_rollback&quot;: &quot;SELECT ''An error occurred''&quot; }');
 </programlisting>
@@ -494,11 +493,11 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &
       <title>Changing and Removing Scheduled Jobs</title>
       <para>
         When you create a new job with the
-        <literal>create_job()</literal> function, the job is active and
-        waiting for execution based on the specified schedule. Using the
+        <literal>create_job()</literal> function, the job becomes active and
+        waits for execution based on the specified schedule. Using the
         job ID returned by the <function>create_job()</function> function,
         you can change the scheduling settings or remove the job from
-        the schedule altogether. To change the specified schedule for
+        the schedule. To change the specified schedule for
         the jobs, use <function>set_job_attribute()</function> or
         <function>set_job_attributes()</function> functions: </para>
         <itemizedlist>
@@ -528,7 +527,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &
 </programlisting>
       </para>
       <para>
-        In this case, you can re-activate the job later by running the
+        You can re-activate the job later by running the
         <function>activate_job()</function> function:
       <programlisting>
 <function>schedule.activate_job(<parameter>job_id</parameter> <type>integer</type>)</function>
@@ -560,14 +559,14 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &
         </listitem>
         <listitem>
           <para>
-            <function>get_owned_cron()</function> &mdash; retrieves job list
+            <function>get_owned_cron()</function> &mdash; retrieves the list of jobs
             owned by user.
           </para>
         </listitem>
         <listitem>
           <para>
-            <function>get_cron()</function> &mdash; retrieves job list executed
-            as user.
+            <function>get_cron()</function> &mdash; retrieves the list of jobs executed
+            by user.
           </para>
         </listitem>
         <listitem>
@@ -611,7 +610,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &
      </term>
      <listitem>
       <para>
-       Specifies whether the scheduler is enabled on our system.</para>
+       Specifies whether the scheduler is enabled on your system.</para>
        <para>Default: <literal>false</literal>.
       </para>
      </listitem>
@@ -702,7 +701,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &
                 <listitem>
           <para><literal>undefined</literal> &mdash; transaction has
                 not started yet. The last two values should not appear
-                inside the user procedure. If you see them, they may
+                inside the user procedure. If you see them, it may
                 indicate an internal <filename>pgpro_scheduler</filename>
                 error.</para></listitem></itemizedlist>
       </para>
@@ -958,7 +957,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
                 <literal>commands</literal>
               </entry>
               <entry>
-                <type>text</type>, <type>text []</type>
+                <type>text</type>, <type>text[]</type>
               </entry>
               <entry>
                 <acronym>SQL</acronym> statements to execute. You can pass one or more <acronym>SQL</acronym>
@@ -1074,7 +1073,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
                 <type>interval</type>
               </entry>
               <entry>
-                Optional.The maximal time interval during which the
+                Optional. The maximal time interval during which the
                 scheduled job can be executed. If this key is NULL or
                 not set, there are no time limits. Default: NULL.
               </entry>
