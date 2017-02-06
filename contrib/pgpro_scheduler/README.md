@@ -38,7 +38,7 @@ help to handle scheduler configuration.
 * 	**schedule.database** - text, list of database names on which scheduler 
 	is enabled. Database names should be separated by comma.
 	Default value: empty string.
-*	**schedule.scheme** - text, the `scheme` name where scheduler store its
+*	**schedule.schema** - text, the `schema` name where scheduler store its
 	tables and functions. To change this value restart required. Normally
 	you should not change this variable but it could be useful if you 
 	want run scheduled jobs on hot-standby database. So you can define 
@@ -114,7 +114,7 @@ where:
 
 ## SQL Scheme
 
-The extension uses SQL scheme `schedule` to store its internal tables and
+The extension uses SQL schema `schedule` to store its internal tables and
 functions. Direct access to tables is forbidden. All manipulations should
 be performed by means of functions defined by extension.
 
