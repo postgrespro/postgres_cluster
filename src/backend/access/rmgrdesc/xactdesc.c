@@ -79,10 +79,8 @@ ParseCommitRecord(uint8 info, xl_xact_commit *xlrec, xl_xact_parsed_commit *pars
 		uint8 gidlen = xl_twophase->gidlen;
 
 		parsed->twophase_xid = xl_twophase->xid;
-		data += MAXALIGN(MinSizeOfXactTwophase);
-
-		strcpy(parsed->twophase_gid, data);
-		data += MAXALIGN(gidlen);
+		strcpy(parsed->twophase_gid, xl_twophase->gid);
+		data += INTALIGN(MinSizeOfXactTwophase + gidlen);
 	}
 
 	if (parsed->xinfo & XACT_XINFO_HAS_RELFILENODES)
@@ -169,10 +167,8 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 		uint8 gidlen = xl_twophase->gidlen;
 
 		parsed->twophase_xid = xl_twophase->xid;
-		data += MAXALIGN(MinSizeOfXactTwophase);
-
-		strcpy(parsed->twophase_gid, data);
-		data += MAXALIGN(gidlen);
+		strcpy(parsed->twophase_gid, xl_twophase->gid);
+		data += INTALIGN(MinSizeOfXactTwophase + gidlen);
 	}
 
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)

@@ -233,7 +233,7 @@ typedef struct xl_xact_twophase
 	 * Gid and gidlen will be set only with wal_level=logical.
 	 * See details in XactLogCommitRecord().
 	 */
-	uint8 gidlen;
+	int  gidlen;
 	char gid[GIDSIZE];
 } xl_xact_twophase;
 #define MinSizeOfXactTwophase offsetof(xl_xact_twophase, gid)
