@@ -40,6 +40,8 @@ Mean:		   500 cycles =    51.2 mbits/sec
 
 */
 
+#include "postgres.h"
+
 #include <sys/param.h>
 #include <string.h>
 
