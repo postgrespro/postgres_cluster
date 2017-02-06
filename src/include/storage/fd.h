@@ -41,6 +41,7 @@
 
 #include <dirent.h>
 
+/* TODO Add comment */
 #define PG_COMPRESSION 0100000000
 
 /*
