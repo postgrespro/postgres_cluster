@@ -204,12 +204,6 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"Database-Port", "", 6,
 	offsetof(struct pg_conn, pgport)},
 
-#ifdef WITH_RSOCKET
-	{"rsocket_port", "RSOCKET_PGPORT", DEF_RSOCKET_PGPORT_STR, NULL,
-		"Database-Rsocket-Port", "", 6,
-	offsetof(struct pg_conn, rsocket_pgport)},
-#endif
-
 	{"client_encoding", "PGCLIENTENCODING", NULL, NULL,
 		"Client-Encoding", "", 10,
 	offsetof(struct pg_conn, client_encoding_initial)},

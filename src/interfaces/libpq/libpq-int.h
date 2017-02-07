@@ -304,10 +304,6 @@ struct pg_conn
 								 * which the server is running.  Takes
 								 * precedence over above. */
 	char	   *pgport;			/* the server's communication port number */
-#ifdef WITH_RSOCKET
-	char	   *rsocket_pgport;	/* the server's communication port number using
-								 * rsocket */
-#endif
 	char	   *pgunixsocket;	/* the directory of the server's Unix-domain
 								 * socket; if NULL, use DEFAULT_PGSOCKET_DIR */
 	char	   *pgtty;			/* tty on which the backend messages is

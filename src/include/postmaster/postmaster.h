@@ -19,9 +19,6 @@
 extern bool EnableSSL;
 extern int	ReservedBackends;
 extern int	PostPortNumber;
-#ifdef WITH_RSOCKET
-extern int	RsocketPostPortNumber;
-#endif
 extern int	Unix_socket_permissions;
 extern char *Unix_socket_group;
 extern char *Unix_socket_directories;

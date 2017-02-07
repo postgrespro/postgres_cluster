@@ -692,16 +692,6 @@ su - postgres
       </varlistentry>
 
       <varlistentry>
-       <term><option>--with-rsocket-pgport=<replaceable>NUMBER</></option></term>
-       <listitem>
-        <para>
-         Set <replaceable>NUMBER</> as the default port number for
-         server and clients using rsocket. The default is 5433.
-        </para>
-       </listitem>
-      </varlistentry>
-
-      <varlistentry>
        <term><option>--with-perl</option></term>
        <listitem>
         <para>

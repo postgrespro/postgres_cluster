@@ -191,9 +191,6 @@ BackgroundWorker *MyBgworkerEntry = NULL;
 
 /* The socket number we are listening for connections on */
 int			PostPortNumber;
-#ifdef WITH_RSOCKET
-int			RsocketPostPortNumber;
-#endif
 
 /* The directory names for Unix socket(s) */
 char	   *Unix_socket_directories;
@@ -202,6 +199,9 @@ char	   *Unix_socket_directories;
 char	   *ListenAddresses;
 #ifdef WITH_RSOCKET
 char	   *ListenRdmaAddresses;
+
+/* Port counter for rdma connections */
+static int	RsocketPortCounter = PGINVALID_SOCKET;
 #endif
 
 /*
@@ -967,6 +967,11 @@ PostmasterMain(int argc, char *argv[])
 	}
 
 	on_proc_exit(CloseServerPorts, 0);
+
+#ifdef WITH_RSOCKET
+	/* Rsocket ports start from PostPortNumber + 1 */
+	RsocketPortCounter = PostPortNumber + 1;
+#endif
 
 	if (ListenAddresses)
 	{
@@ -4065,6 +4070,9 @@ BackendStartup(Port *port, bool isRsocket)
 			(errmsg_internal("forked new backend, pid=%d socket=%d",
 							 (int) pid, (int) port->sock)));
 
+	/* Increment rsocket port number for next connection */
+	RsocketPortCounter++;
+
 	/*
 	 * Everything's been successful, it's safe to add this backend to our list
 	 * of backends.
@@ -4153,7 +4161,7 @@ RsocketInitialize(Port *port)
 							port->laddr.addr.ss_family)));
 	}
 
-	snprintf(local_port, sizeof(local_port), "%d", RsocketPostPortNumber);
+	snprintf(local_port, sizeof(local_port), "%d", RsocketPortCounter);
 
 	MemSet(&hint, 0, sizeof(hint));
 	hint.ai_family = port->laddr.addr.ss_family;
