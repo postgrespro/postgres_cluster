@@ -105,43 +105,53 @@ datarootdir := @datarootdir@
 bindir := @bindir@
 
 datadir := @datadir@
+ifeq "$(findstring pgpro, $(datadir))" ""
 ifeq "$(findstring pgsql, $(datadir))" ""
 ifeq "$(findstring postgres, $(datadir))" ""
 override datadir := $(datadir)/postgresql
 endif
 endif
+endif
 
 sysconfdir := @sysconfdir@
+ifeq "$(findstring pgpro, $(sysconfdir))" ""
 ifeq "$(findstring pgsql, $(sysconfdir))" ""
 ifeq "$(findstring postgres, $(sysconfdir))" ""
 override sysconfdir := $(sysconfdir)/postgresql
+endif
 endif
 endif
 
 libdir := @libdir@
 
 pkglibdir = $(libdir)
+ifeq "$(findstring pgpro, $(pkglibdir))" ""
 ifeq "$(findstring pgsql, $(pkglibdir))" ""
 ifeq "$(findstring postgres, $(pkglibdir))" ""
 override pkglibdir := $(pkglibdir)/postgresql
+endif
 endif
 endif
 
 includedir := @includedir@
 
 pkgincludedir = $(includedir)
+ifeq "$(findstring pgpro, $(pkgincludedir))" ""
 ifeq "$(findstring pgsql, $(pkgincludedir))" ""
 ifeq "$(findstring postgres, $(pkgincludedir))" ""
 override pkgincludedir := $(pkgincludedir)/postgresql
+endif
 endif
 endif
 
 mandir := @mandir@
 
 docdir := @docdir@
+ifeq "$(findstring pgpro, $(docdir))" ""
 ifeq "$(findstring pgsql, $(docdir))" ""
 ifeq "$(findstring postgres, $(docdir))" ""
 override docdir := $(docdir)/postgresql
+endif
 endif
 endif
 
