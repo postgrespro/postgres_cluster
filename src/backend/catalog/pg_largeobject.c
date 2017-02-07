@@ -63,10 +63,8 @@ LargeObjectCreate(Oid loid)
 	if (OidIsValid(loid))
 		HeapTupleSetOid(ntup, loid);
 
-	loid_new = simple_heap_insert(pg_lo_meta, ntup);
+	loid_new = CatalogTupleInsert(pg_lo_meta, ntup);
 	Assert(!OidIsValid(loid) || loid == loid_new);
-
-	CatalogUpdateIndexes(pg_lo_meta, ntup);
 
 	heap_freetuple(ntup);
 
@@ -112,7 +110,7 @@ LargeObjectDrop(Oid loid)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", loid)));
 
-	simple_heap_delete(pg_lo_meta, &tuple->t_self);
+	CatalogTupleDelete(pg_lo_meta, &tuple->t_self);
 
 	systable_endscan(scan);
 
@@ -129,7 +127,7 @@ LargeObjectDrop(Oid loid)
 							  NULL, 1, skey);
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		simple_heap_delete(pg_largeobject, &tuple->t_self);
+		CatalogTupleDelete(pg_largeobject, &tuple->t_self);
 	}
 
 	systable_endscan(scan);

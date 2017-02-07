@@ -263,7 +263,7 @@ ExecInsert(ModifyTableState *mtstate,
 	Oid			newId;
 	List	   *recheckIndexes = NIL;
 	TupleTableSlot *oldslot = slot,
-				   *result = NULL;
+			   *result = NULL;
 
 	/*
 	 * get the heap tuple out of the tuple table slot, making sure we have a
@@ -279,19 +279,19 @@ ExecInsert(ModifyTableState *mtstate,
 	/* Determine the partition to heap_insert the tuple into */
 	if (mtstate->mt_partition_dispatch_info)
 	{
-		int		leaf_part_index;
+		int			leaf_part_index;
 		TupleConversionMap *map;
 
 		/*
 		 * Away we go ... If we end up not finding a partition after all,
 		 * ExecFindPartition() does not return and errors out instead.
-		 * Otherwise, the returned value is to be used as an index into
-		 * arrays mt_partitions[] and mt_partition_tupconv_maps[] that
-		 * will get us the ResultRelInfo and TupleConversionMap for the
-		 * partition, respectively.
+		 * Otherwise, the returned value is to be used as an index into arrays
+		 * mt_partitions[] and mt_partition_tupconv_maps[] that will get us
+		 * the ResultRelInfo and TupleConversionMap for the partition,
+		 * respectively.
 		 */
 		leaf_part_index = ExecFindPartition(resultRelInfo,
-										mtstate->mt_partition_dispatch_info,
+										 mtstate->mt_partition_dispatch_info,
 											slot,
 											estate);
 		Assert(leaf_part_index >= 0 &&
@@ -308,7 +308,7 @@ ExecInsert(ModifyTableState *mtstate,
 		if (resultRelInfo->ri_FdwRoutine)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("cannot route inserted tuples to a foreign table")));
+				 errmsg("cannot route inserted tuples to a foreign table")));
 
 		/* For ExecInsertIndexTuples() to work on the partition's indexes */
 		estate->es_result_relation_info = resultRelInfo;
@@ -320,14 +320,14 @@ ExecInsert(ModifyTableState *mtstate,
 		map = mtstate->mt_partition_tupconv_maps[leaf_part_index];
 		if (map)
 		{
-			Relation partrel = resultRelInfo->ri_RelationDesc;
+			Relation	partrel = resultRelInfo->ri_RelationDesc;
 
 			tuple = do_convert_tuple(tuple, map);
 
 			/*
-			 * We must use the partition's tuple descriptor from this
-			 * point on, until we're finished dealing with the partition.
-			 * Use the dedicated slot for that.
+			 * We must use the partition's tuple descriptor from this point
+			 * on, until we're finished dealing with the partition. Use the
+			 * dedicated slot for that.
 			 */
 			slot = mtstate->mt_partition_tuple_slot;
 			Assert(slot != NULL);
@@ -1730,12 +1730,12 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 	if (operation == CMD_INSERT &&
 		rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
 	{
-		PartitionDispatch  *partition_dispatch_info;
-		ResultRelInfo	   *partitions;
+		PartitionDispatch *partition_dispatch_info;
+		ResultRelInfo *partitions;
 		TupleConversionMap **partition_tupconv_maps;
-		TupleTableSlot	   *partition_tuple_slot;
-		int					num_parted,
-							num_partitions;
+		TupleTableSlot *partition_tuple_slot;
+		int			num_parted,
+					num_partitions;
 
 		ExecSetupPartitionTupleRouting(rel,
 									   &partition_dispatch_info,
@@ -1778,13 +1778,53 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 	}
 
 	/*
+	 * Build WITH CHECK OPTION constraints for each leaf partition rel.
+	 * Note that we didn't build the withCheckOptionList for each partition
+	 * within the planner, but simple translation of the varattnos for each
+	 * partition will suffice.  This only occurs for the INSERT case;
+	 * UPDATE/DELETE cases are handled above.
+	 */
+	if (node->withCheckOptionLists != NIL && mtstate->mt_num_partitions > 0)
+	{
+		List		*wcoList;
+
+		Assert(operation == CMD_INSERT);
+		resultRelInfo = mtstate->mt_partitions;
+		wcoList = linitial(node->withCheckOptionLists);
+		for (i = 0; i < mtstate->mt_num_partitions; i++)
+		{
+			Relation	partrel = resultRelInfo->ri_RelationDesc;
+			List	   *mapped_wcoList;
+			List	   *wcoExprs = NIL;
+			ListCell   *ll;
+
+			/* varno = node->nominalRelation */
+			mapped_wcoList = map_partition_varattnos(wcoList,
+													 node->nominalRelation,
+													 partrel, rel);
+			foreach(ll, mapped_wcoList)
+			{
+				WithCheckOption *wco = (WithCheckOption *) lfirst(ll);
+				ExprState  *wcoExpr = ExecInitExpr((Expr *) wco->qual,
+											   mtstate->mt_plans[i]);
+
+				wcoExprs = lappend(wcoExprs, wcoExpr);
+			}
+
+			resultRelInfo->ri_WithCheckOptions = mapped_wcoList;
+			resultRelInfo->ri_WithCheckOptionExprs = wcoExprs;
+			resultRelInfo++;
+		}
+	}
+
+	/*
 	 * Initialize RETURNING projections if needed.
 	 */
 	if (node->returningLists)
 	{
 		TupleTableSlot *slot;
 		ExprContext *econtext;
-		List		*returningList;
+		List	   *returningList;
 
 		/*
 		 * Initialize result tuple slot and assign its rowtype using the first
@@ -1821,9 +1861,9 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 		/*
 		 * Build a projection for each leaf partition rel.  Note that we
 		 * didn't build the returningList for each partition within the
-		 * planner, but simple translation of the varattnos for each
-		 * partition will suffice.  This only occurs for the INSERT case;
-		 * UPDATE/DELETE are handled above.
+		 * planner, but simple translation of the varattnos for each partition
+		 * will suffice.  This only occurs for the INSERT case; UPDATE/DELETE
+		 * are handled above.
 		 */
 		resultRelInfo = mtstate->mt_partitions;
 		returningList = linitial(node->returningLists);
@@ -1918,10 +1958,8 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 	 */
 	foreach(l, node->rowMarks)
 	{
-		PlanRowMark *rc = (PlanRowMark *) lfirst(l);
+		PlanRowMark *rc = castNode(PlanRowMark, lfirst(l));
 		ExecRowMark *erm;
-
-		Assert(IsA(rc, PlanRowMark));
 
 		/* ignore "parent" rowmarks; they are irrelevant at runtime */
 		if (rc->isParent)
@@ -2095,7 +2133,8 @@ ExecEndModifyTable(ModifyTableState *node)
 														   resultRelInfo);
 	}
 
-	/* Close all the partitioned tables, leaf partitions, and their indices
+	/*
+	 * Close all the partitioned tables, leaf partitions, and their indices
 	 *
 	 * Remember node->mt_partition_dispatch_info[0] corresponds to the root
 	 * partitioned table, which we must not try to close, because it is the

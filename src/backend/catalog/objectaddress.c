@@ -729,7 +729,7 @@ static ObjectAddress get_object_address_opf_member(ObjectType objtype,
 static ObjectAddress get_object_address_usermapping(List *objname,
 							   List *objargs, bool missing_ok);
 static ObjectAddress get_object_address_publication_rel(List *objname,
-								   List *objargs, Relation *relation,
+								   List *objargs, Relation *relp,
 								   bool missing_ok);
 static ObjectAddress get_object_address_defacl(List *objname, List *objargs,
 						  bool missing_ok);
@@ -770,7 +770,7 @@ static void getRelationIdentity(StringInfo buffer, Oid relid, List **objname);
  *
  * Note: If the object is not found, we don't give any indication of the
  * reason.  (It might have been a missing schema if the name was qualified, or
- * an inexistant type name in case of a cast, function or operator; etc).
+ * a nonexistent type name in case of a cast, function or operator; etc).
  * Currently there is only one caller that might be interested in such info, so
  * we don't spend much effort here.  If more callers start to care, it might be
  * better to add some support for that in this function.
@@ -1815,15 +1815,16 @@ get_object_address_usermapping(List *objname, List *objargs, bool missing_ok)
  */
 static ObjectAddress
 get_object_address_publication_rel(List *objname, List *objargs,
-								   Relation *relation, bool missing_ok)
+								   Relation *relp, bool missing_ok)
 {
 	ObjectAddress address;
+	Relation	relation;
 	char	   *pubname;
 	Publication *pub;
 
 	ObjectAddressSet(address, PublicationRelRelationId, InvalidOid);
 
-	*relation = relation_openrv_extended(makeRangeVarFromNameList(objname),
+	relation = relation_openrv_extended(makeRangeVarFromNameList(objname),
 										 AccessShareLock, missing_ok);
 	if (!relation)
 		return address;
@@ -1839,7 +1840,7 @@ get_object_address_publication_rel(List *objname, List *objargs,
 	/* Find the publication relation mapping in syscache. */
 	address.objectId =
 		GetSysCacheOid2(PUBLICATIONRELMAP,
-						ObjectIdGetDatum(RelationGetRelid(*relation)),
+						ObjectIdGetDatum(RelationGetRelid(relation)),
 						ObjectIdGetDatum(pub->oid));
 	if (!OidIsValid(address.objectId))
 	{
@@ -1847,10 +1848,11 @@ get_object_address_publication_rel(List *objname, List *objargs,
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_OBJECT),
 					 errmsg("publication relation \"%s\" in publication \"%s\" does not exist",
-							RelationGetRelationName(*relation), pubname)));
+							RelationGetRelationName(relation), pubname)));
 		return address;
 	}
 
+	*relp = relation;
 	return address;
 }
 
@@ -3839,7 +3841,7 @@ getObjectTypeDescription(const ObjectAddress *object)
 			break;
 
 		case OCLASS_PUBLICATION_REL:
-			appendStringInfoString(&buffer, "publication table");
+			appendStringInfoString(&buffer, "publication relation");
 			break;
 
 		case OCLASS_SUBSCRIPTION:
@@ -4844,7 +4846,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 				prform = (Form_pg_publication_rel) GETSTRUCT(tup);
 				pubname = get_publication_name(prform->prpubid);
 
-				appendStringInfo(&buffer, _("publication table %s in publication %s"),
+				appendStringInfo(&buffer, _("%s in publication %s"),
 								 get_rel_name(prform->prrelid), pubname);
 
 				if (objname)

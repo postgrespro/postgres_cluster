@@ -58,8 +58,7 @@ RangeCreate(Oid rangeTypeOid, Oid rangeSubType, Oid rangeCollation,
 
 	tup = heap_form_tuple(RelationGetDescr(pg_range), values, nulls);
 
-	simple_heap_insert(pg_range, tup);
-	CatalogUpdateIndexes(pg_range, tup);
+	CatalogTupleInsert(pg_range, tup);
 	heap_freetuple(tup);
 
 	/* record type's dependencies on range-related items */
@@ -130,7 +129,7 @@ RangeDelete(Oid rangeTypeOid)
 
 	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{
-		simple_heap_delete(pg_range, &tup->t_self);
+		CatalogTupleDelete(pg_range, &tup->t_self);
 	}
 
 	systable_endscan(scan);

@@ -1159,9 +1159,7 @@ postgresGetForeignPlan(PlannerInfo *root,
 	 */
 	foreach(lc, scan_clauses)
 	{
-		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
-
-		Assert(IsA(rinfo, RestrictInfo));
+		RestrictInfo *rinfo = castNode(RestrictInfo, lfirst(lc));
 
 		/* Ignore any pseudoconstants, they're dealt with elsewhere */
 		if (rinfo->pseudoconstant)
@@ -4218,7 +4216,7 @@ foreign_join_ok(PlannerInfo *root, RelOptInfo *joinrel, JoinType jointype,
 	/*
 	 * If user is willing to estimate cost for a scan of either of the joining
 	 * relations using EXPLAIN, he intends to estimate scans on that relation
-	 * more accurately. Then, it makes sense to estimate the cost the join
+	 * more accurately. Then, it makes sense to estimate the cost of the join
 	 * with that relation more accurately using EXPLAIN.
 	 */
 	fpinfo->use_remote_estimate = fpinfo_o->use_remote_estimate ||
@@ -4958,14 +4956,12 @@ conversion_error_callback(void *arg)
 	{
 		/* error occurred in a scan against a foreign join */
 		ForeignScanState *fsstate = errpos->fsstate;
-		ForeignScan *fsplan = (ForeignScan *) fsstate->ss.ps.plan;
+		ForeignScan *fsplan = castNode(ForeignScan, fsstate->ss.ps.plan);
 		EState	   *estate = fsstate->ss.ps.state;
 		TargetEntry *tle;
 
-		Assert(IsA(fsplan, ForeignScan));
-		tle = (TargetEntry *) list_nth(fsplan->fdw_scan_tlist,
-									   errpos->cur_attno - 1);
-		Assert(IsA(tle, TargetEntry));
+		tle = castNode(TargetEntry, list_nth(fsplan->fdw_scan_tlist,
+											 errpos->cur_attno - 1));
 
 		/*
 		 * Target list can have Vars and expressions.  For Vars, we can get

@@ -163,10 +163,9 @@ typedef struct CopyStateData
 	List	   *range_table;
 
 	PartitionDispatch *partition_dispatch_info;
-	int			num_dispatch;		/* Number of entries in the above array */
-	int			num_partitions;		/* Number of members in the following
-									 * arrays */
-	ResultRelInfo  *partitions;		/* Per partition result relation */
+	int			num_dispatch;	/* Number of entries in the above array */
+	int			num_partitions; /* Number of members in the following arrays */
+	ResultRelInfo *partitions;	/* Per partition result relation */
 	TupleConversionMap **partition_tupconv_maps;
 	TupleTableSlot *partition_tuple_slot;
 
@@ -1027,7 +1026,7 @@ ProcessCopyOptions(ParseState *pstate,
 	/* Extract options from the statement node tree */
 	foreach(option, options)
 	{
-		DefElem    *defel = (DefElem *) lfirst(option);
+		DefElem    *defel = castNode(DefElem, lfirst(option));
 
 		if (strcmp(defel->defname, "format") == 0)
 		{
@@ -1140,7 +1139,7 @@ ProcessCopyOptions(ParseState *pstate,
 						 errmsg("conflicting or redundant options"),
 						 parser_errposition(pstate, defel->location)));
 			if (defel->arg && IsA(defel->arg, List))
-				cstate->force_notnull = (List *) defel->arg;
+				cstate->force_notnull = castNode(List, defel->arg);
 			else
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -1155,7 +1154,7 @@ ProcessCopyOptions(ParseState *pstate,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("conflicting or redundant options")));
 			if (defel->arg && IsA(defel->arg, List))
-				cstate->force_null = (List *) defel->arg;
+				cstate->force_null = castNode(List, defel->arg);
 			else
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -1177,7 +1176,7 @@ ProcessCopyOptions(ParseState *pstate,
 						 parser_errposition(pstate, defel->location)));
 			cstate->convert_selectively = true;
 			if (defel->arg == NULL || IsA(defel->arg, List))
-				cstate->convert_select = (List *) defel->arg;
+				cstate->convert_select = castNode(List, defel->arg);
 			else
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -1416,12 +1415,12 @@ BeginCopy(ParseState *pstate,
 		/* Initialize state for CopyFrom tuple routing. */
 		if (is_from && rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
 		{
-			PartitionDispatch  *partition_dispatch_info;
-			ResultRelInfo	   *partitions;
+			PartitionDispatch *partition_dispatch_info;
+			ResultRelInfo *partitions;
 			TupleConversionMap **partition_tupconv_maps;
-			TupleTableSlot	   *partition_tuple_slot;
-			int					num_parted,
-								num_partitions;
+			TupleTableSlot *partition_tuple_slot;
+			int			num_parted,
+						num_partitions;
 
 			ExecSetupPartitionTupleRouting(rel,
 										   &partition_dispatch_info,
@@ -1480,7 +1479,7 @@ BeginCopy(ParseState *pstate,
 			/* examine queries to determine which error message to issue */
 			foreach(lc, rewritten)
 			{
-				Query	   *q = (Query *) lfirst(lc);
+				Query	   *q = castNode(Query, lfirst(lc));
 
 				if (q->querySource == QSRC_QUAL_INSTEAD_RULE)
 					ereport(ERROR,
@@ -1497,7 +1496,7 @@ BeginCopy(ParseState *pstate,
 					 errmsg("multi-statement DO INSTEAD rules are not supported for COPY")));
 		}
 
-		query = (Query *) linitial(rewritten);
+		query = castNode(Query, linitial(rewritten));
 
 		/* The grammar allows SELECT INTO, but we don't support that */
 		if (query->utilityStmt != NULL &&
@@ -2307,6 +2306,7 @@ CopyFrom(CopyState cstate)
 	uint64		processed = 0;
 	bool		useHeapMultiInsert;
 	int			nBufferedTuples = 0;
+	int			prev_leaf_part_index = -1;
 
 #define MAX_BUFFERED_TUPLES 1000
 	HeapTuple  *bufferedTuples = NULL;	/* initialize to silence warning */
@@ -2498,7 +2498,7 @@ CopyFrom(CopyState cstate)
 	for (;;)
 	{
 		TupleTableSlot *slot,
-					   *oldslot;
+				   *oldslot;
 		bool		skip_tuple;
 		Oid			loaded_oid = InvalidOid;
 
@@ -2560,6 +2560,17 @@ CopyFrom(CopyState cstate)
 												estate);
 			Assert(leaf_part_index >= 0 &&
 				   leaf_part_index < cstate->num_partitions);
+
+			/*
+			 * If this tuple is mapped to a partition that is not same as the
+			 * previous one, we'd better make the bulk insert mechanism gets a
+			 * new buffer.
+			 */
+			if (prev_leaf_part_index != leaf_part_index)
+			{
+				ReleaseBulkInsertStatePin(bistate);
+				prev_leaf_part_index = leaf_part_index;
+			}
 
 			/*
 			 * Save the old ResultRelInfo and switch to the one corresponding

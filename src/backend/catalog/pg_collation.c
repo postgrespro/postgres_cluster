@@ -134,11 +134,8 @@ CollationCreate(const char *collname, Oid collnamespace,
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* insert a new tuple */
-	oid = simple_heap_insert(rel, tup);
+	oid = CatalogTupleInsert(rel, tup);
 	Assert(OidIsValid(oid));
-
-	/* update the index if any */
-	CatalogUpdateIndexes(rel, tup);
 
 	/* set up dependencies for the new collation */
 	myself.classId = CollationRelationId;
@@ -194,7 +191,7 @@ RemoveCollationById(Oid collationOid)
 	tuple = systable_getnext(scandesc);
 
 	if (HeapTupleIsValid(tuple))
-		simple_heap_delete(rel, &tuple->t_self);
+		CatalogTupleDelete(rel, &tuple->t_self);
 	else
 		elog(ERROR, "could not find tuple for collation %u", collationOid);
 

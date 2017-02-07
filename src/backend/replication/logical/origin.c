@@ -299,8 +299,7 @@ replorigin_create(char *roname)
 			values[Anum_pg_replication_origin_roname - 1] = roname_d;
 
 			tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
-			simple_heap_insert(rel, tuple);
-			CatalogUpdateIndexes(rel, tuple);
+			CatalogTupleInsert(rel, tuple);
 			CommandCounterIncrement();
 			break;
 		}
@@ -378,7 +377,7 @@ replorigin_drop(RepOriginId roident)
 		elog(ERROR, "cache lookup failed for replication origin with oid %u",
 			 roident);
 
-	simple_heap_delete(rel, &tuple->t_self);
+	CatalogTupleDelete(rel, &tuple->t_self);
 	ReleaseSysCache(tuple);
 
 	CommandCounterIncrement();
@@ -1251,7 +1250,7 @@ pg_replication_origin_session_is_setup(PG_FUNCTION_ARGS)
  * Return the replication progress for origin setup in the current session.
  *
  * If 'flush' is set to true it is ensured that the returned value corresponds
- * to a local transaction that has been flushed. this is useful if asychronous
+ * to a local transaction that has been flushed. this is useful if asynchronous
  * commits are used when replaying replicated transactions.
  */
 Datum
@@ -1337,7 +1336,7 @@ pg_replication_origin_advance(PG_FUNCTION_ARGS)
  * Return the replication progress for an individual replication origin.
  *
  * If 'flush' is set to true it is ensured that the returned value corresponds
- * to a local transaction that has been flushed. this is useful if asychronous
+ * to a local transaction that has been flushed. this is useful if asynchronous
  * commits are used when replaying replicated transactions.
  */
 Datum

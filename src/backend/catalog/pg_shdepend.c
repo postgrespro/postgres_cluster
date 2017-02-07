@@ -249,7 +249,7 @@ shdepChangeDep(Relation sdepRel,
 	{
 		/* No new entry needed, so just delete existing entry if any */
 		if (oldtup)
-			simple_heap_delete(sdepRel, &oldtup->t_self);
+			CatalogTupleDelete(sdepRel, &oldtup->t_self);
 	}
 	else if (oldtup)
 	{
@@ -260,10 +260,7 @@ shdepChangeDep(Relation sdepRel,
 		shForm->refclassid = refclassid;
 		shForm->refobjid = refobjid;
 
-		simple_heap_update(sdepRel, &oldtup->t_self, oldtup);
-
-		/* keep indexes current */
-		CatalogUpdateIndexes(sdepRel, oldtup);
+		CatalogTupleUpdate(sdepRel, &oldtup->t_self, oldtup);
 	}
 	else
 	{
@@ -287,10 +284,7 @@ shdepChangeDep(Relation sdepRel,
 		 * it's certainly a new tuple
 		 */
 		oldtup = heap_form_tuple(RelationGetDescr(sdepRel), values, nulls);
-		simple_heap_insert(sdepRel, oldtup);
-
-		/* keep indexes current */
-		CatalogUpdateIndexes(sdepRel, oldtup);
+		CatalogTupleInsert(sdepRel, oldtup);
 	}
 
 	if (oldtup)
@@ -759,10 +753,7 @@ copyTemplateDependencies(Oid templateDbId, Oid newDbId)
 		HeapTuple	newtup;
 
 		newtup = heap_modify_tuple(tup, sdepDesc, values, nulls, replace);
-		simple_heap_insert(sdepRel, newtup);
-
-		/* Keep indexes current */
-		CatalogIndexInsert(indstate, newtup);
+		CatalogTupleInsertWithInfo(sdepRel, newtup, indstate);
 
 		heap_freetuple(newtup);
 	}
@@ -804,7 +795,7 @@ dropDatabaseDependencies(Oid databaseId)
 
 	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{
-		simple_heap_delete(sdepRel, &tup->t_self);
+		CatalogTupleDelete(sdepRel, &tup->t_self);
 	}
 
 	systable_endscan(scan);
@@ -882,10 +873,7 @@ shdepAddDependency(Relation sdepRel,
 
 	tup = heap_form_tuple(sdepRel->rd_att, values, nulls);
 
-	simple_heap_insert(sdepRel, tup);
-
-	/* keep indexes current */
-	CatalogUpdateIndexes(sdepRel, tup);
+	CatalogTupleInsert(sdepRel, tup);
 
 	/* clean up */
 	heap_freetuple(tup);
@@ -960,7 +948,7 @@ shdepDropDependency(Relation sdepRel,
 			continue;
 
 		/* OK, delete it */
-		simple_heap_delete(sdepRel, &tup->t_self);
+		CatalogTupleDelete(sdepRel, &tup->t_self);
 	}
 
 	systable_endscan(scan);

@@ -578,9 +578,8 @@ update_proconfig_value(ArrayType *a, List *set_items)
 
 	foreach(l, set_items)
 	{
-		VariableSetStmt *sstmt = (VariableSetStmt *) lfirst(l);
+		VariableSetStmt *sstmt = castNode(VariableSetStmt, lfirst(l));
 
-		Assert(IsA(sstmt, VariableSetStmt));
 		if (sstmt->kind == VAR_RESET_ALL)
 			a = NULL;
 		else
@@ -971,9 +970,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 	{
 		ListCell   *lc;
 
-		Assert(IsA(transformDefElem, List));
-
-		foreach(lc, (List *) transformDefElem)
+		foreach(lc, castNode(List, transformDefElem))
 		{
 			Oid			typeid = typenameTypeId(NULL, lfirst(lc));
 			Oid			elt = get_base_element_type(typeid);
@@ -1043,7 +1040,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 	}
 	else
 	{
-		/* store SQL NULL instead of emtpy array */
+		/* store SQL NULL instead of empty array */
 		trftypes = NULL;
 	}
 
@@ -1134,7 +1131,7 @@ RemoveFunctionById(Oid funcOid)
 
 	isagg = ((Form_pg_proc) GETSTRUCT(tup))->proisagg;
 
-	simple_heap_delete(relation, &tup->t_self);
+	CatalogTupleDelete(relation, &tup->t_self);
 
 	ReleaseSysCache(tup);
 
@@ -1151,7 +1148,7 @@ RemoveFunctionById(Oid funcOid)
 		if (!HeapTupleIsValid(tup))		/* should not happen */
 			elog(ERROR, "cache lookup failed for pg_aggregate tuple for function %u", funcOid);
 
-		simple_heap_delete(relation, &tup->t_self);
+		CatalogTupleDelete(relation, &tup->t_self);
 
 		ReleaseSysCache(tup);
 
@@ -1295,8 +1292,7 @@ AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
 		procForm->proparallel = interpret_func_parallel(parallel_item);
 
 	/* Do the update */
-	simple_heap_update(rel, &tup->t_self, tup);
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleUpdate(rel, &tup->t_self, tup);
 
 	InvokeObjectPostAlterHook(ProcedureRelationId, funcOid, 0);
 
@@ -1336,9 +1332,7 @@ SetFunctionReturnType(Oid funcOid, Oid newRetType)
 	procForm->prorettype = newRetType;
 
 	/* update the catalog and its indexes */
-	simple_heap_update(pg_proc_rel, &tup->t_self, tup);
-
-	CatalogUpdateIndexes(pg_proc_rel, tup);
+	CatalogTupleUpdate(pg_proc_rel, &tup->t_self, tup);
 
 	heap_close(pg_proc_rel, RowExclusiveLock);
 }
@@ -1371,9 +1365,7 @@ SetFunctionArgType(Oid funcOid, int argIndex, Oid newArgType)
 	procForm->proargtypes.values[argIndex] = newArgType;
 
 	/* update the catalog and its indexes */
-	simple_heap_update(pg_proc_rel, &tup->t_self, tup);
-
-	CatalogUpdateIndexes(pg_proc_rel, tup);
+	CatalogTupleUpdate(pg_proc_rel, &tup->t_self, tup);
 
 	heap_close(pg_proc_rel, RowExclusiveLock);
 }
@@ -1449,7 +1441,7 @@ CreateCast(CreateCastStmt *stmt)
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("cast will be ignored because the target data type is a domain")));
 
-	/* Detemine the cast method */
+	/* Determine the cast method */
 	if (stmt->func != NULL)
 		castmethod = COERCION_METHOD_FUNCTION;
 	else if (stmt->inout)
@@ -1659,9 +1651,7 @@ CreateCast(CreateCastStmt *stmt)
 
 	tuple = heap_form_tuple(RelationGetDescr(relation), values, nulls);
 
-	castid = simple_heap_insert(relation, tuple);
-
-	CatalogUpdateIndexes(relation, tuple);
+	castid = CatalogTupleInsert(relation, tuple);
 
 	/* make dependency entries */
 	myself.classId = CastRelationId;
@@ -1745,7 +1735,7 @@ DropCastById(Oid castOid)
 	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "could not find tuple for cast %u", castOid);
-	simple_heap_delete(relation, &tuple->t_self);
+	CatalogTupleDelete(relation, &tuple->t_self);
 
 	systable_endscan(scan);
 	heap_close(relation, RowExclusiveLock);
@@ -1924,7 +1914,7 @@ CreateTransform(CreateTransformStmt *stmt)
 		replaces[Anum_pg_transform_trftosql - 1] = true;
 
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation), values, nulls, replaces);
-		simple_heap_update(relation, &newtuple->t_self, newtuple);
+		CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
 
 		transformid = HeapTupleGetOid(tuple);
 		ReleaseSysCache(tuple);
@@ -1933,11 +1923,9 @@ CreateTransform(CreateTransformStmt *stmt)
 	else
 	{
 		newtuple = heap_form_tuple(RelationGetDescr(relation), values, nulls);
-		transformid = simple_heap_insert(relation, newtuple);
+		transformid = CatalogTupleInsert(relation, newtuple);
 		is_replace = false;
 	}
-
-	CatalogUpdateIndexes(relation, newtuple);
 
 	if (is_replace)
 		deleteDependencyRecordsFor(TransformRelationId, transformid, true);
@@ -2033,7 +2021,7 @@ DropTransformById(Oid transformOid)
 	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "could not find tuple for transform %u", transformOid);
-	simple_heap_delete(relation, &tuple->t_self);
+	CatalogTupleDelete(relation, &tuple->t_self);
 
 	systable_endscan(scan);
 	heap_close(relation, RowExclusiveLock);

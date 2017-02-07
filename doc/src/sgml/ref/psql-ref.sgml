@@ -455,8 +455,8 @@ EOF
       any, by an equal sign on the command line. To unset a variable,
       leave off the equal sign. To set a variable with an empty value,
       use the equal sign but leave off the value. These assignments are
-      done during a very early stage of start-up, so variables reserved
-      for internal purposes might get overwritten later.
+      done during command line processing, so variables that reflect
+      connection state will get overwritten later.
       </para>
       </listitem>
     </varlistentry>
@@ -2692,7 +2692,7 @@ lo_import 152801
         class="parameter">name</replaceable> to <replaceable
         class="parameter">value</replaceable>, or if more than one value
         is given, to the concatenation of all of them. If only one
-        argument is given, the variable is set with an empty value. To
+        argument is given, the variable is set to an empty-string value. To
         unset a variable, use the <command>\unset</command> command.
         </para>
 
@@ -2709,9 +2709,11 @@ lo_import 152801
         </para>
 
         <para>
-        Although you are welcome to set any variable to anything you
-        want, <application>psql</application> treats several variables
-        as special. They are documented in the section about variables.
+        Certain variables are special, in that they
+        control <application>psql</application>'s behavior or are
+        automatically set to reflect connection state.  These variables are
+        documented in <xref linkend="APP-PSQL-variables"
+        endterm="APP-PSQL-variables-title">, below.
         </para>
 
         <note>
@@ -2834,6 +2836,14 @@ testdb=&gt; <userinput>\setenv LESS -imx4F</userinput>
         <para>
         Unsets (deletes) the <application>psql</> variable <replaceable
         class="parameter">name</replaceable>.
+        </para>
+
+        <para>
+        Most variables that control <application>psql</application>'s behavior
+        cannot be unset; instead, an <literal>\unset</> command is interpreted
+        as setting them to their default values.
+        See <xref linkend="APP-PSQL-variables"
+        endterm="APP-PSQL-variables-title">, below.
         </para>
         </listitem>
       </varlistentry>
@@ -3053,7 +3063,7 @@ bar
 
     <para>
     If you call <command>\set</command> without a second argument, the
-    variable is set, with an empty string as value. To unset (i.e., delete)
+    variable is set to an empty-string value. To unset (i.e., delete)
     a variable, use the command <command>\unset</command>.  To show the
     values of all variables, call <command>\set</command> without any argument.
     </para>
@@ -3078,14 +3088,27 @@ bar
     by <application>psql</application>. They represent certain option
     settings that can be changed at run time by altering the value of
     the variable, or in some cases represent changeable state of
-    <application>psql</application>. Although
-    you can use these variables for other purposes, this is not
-    recommended, as the program behavior might grow really strange
-    really quickly. By convention, all specially treated variables' names
+    <application>psql</application>.
+    By convention, all specially treated variables' names
     consist of all upper-case ASCII letters (and possibly digits and
     underscores). To ensure maximum compatibility in the future, avoid
-    using such variable names for your own purposes. A list of all specially
-    treated variables follows.
+    using such variable names for your own purposes.
+   </para>
+
+   <para>
+    Variables that control <application>psql</application>'s behavior
+    generally cannot be unset or set to invalid values.  An <literal>\unset</>
+    command is allowed but is interpreted as setting the variable to its
+    default value.  A <literal>\set</> command without a second argument is
+    interpreted as setting the variable to <literal>on</>, for control
+    variables that accept that value, and is rejected for others.  Also,
+    control variables that accept the values <literal>on</>
+    and <literal>off</> will also accept other common spellings of Boolean
+    values, such as <literal>true</> and <literal>false</>.
+   </para>
+
+   <para>
+    The specially treated variables are:
    </para>
 
     <variablelist>
@@ -3155,7 +3178,7 @@ bar
         <para>
         The name of the database you are currently connected to. This is
         set every time you connect to a database (including program
-        start-up), but can be unset.
+        start-up), but can be changed or unset.
         </para>
         </listitem>
       </varlistentry>
@@ -3170,12 +3193,11 @@ bar
         start-up, use the switch <option>-a</option>. If set to
         <literal>queries</literal>,
         <application>psql</application> prints each query to standard output
-        as it is sent to the server. The switch for this is
+        as it is sent to the server. The switch to select this behavior is
         <option>-e</option>. If set to <literal>errors</literal>, then only
         failed queries are displayed on standard error output. The switch
-        for this is <option>-b</option>. If unset, or if set to
-        <literal>none</literal> (or any other value than those above) then
-        no queries are displayed.
+        for this behavior is <option>-b</option>. If set to
+        <literal>none</literal> (the default), then no queries are displayed.
         </para>
         </listitem>
       </varlistentry>
@@ -3190,8 +3212,9 @@ bar
         <productname>PostgreSQL</productname> internals and provide
         similar functionality in your own programs. (To select this behavior
         on program start-up, use the switch <option>-E</option>.)  If you set
-        the variable to the value <literal>noexec</literal>, the queries are
+        this variable to the value <literal>noexec</literal>, the queries are
         just shown but are not actually sent to the server and executed.
+        The default value is <literal>off</>.
         </para>
         </listitem>
       </varlistentry>
@@ -3201,6 +3224,9 @@ bar
         <listitem>
         <para>
         The current client character set encoding.
+        This is set every time you connect to a database (including
+        program start-up), and when you change the encoding
+        with <literal>\encoding</>, but it can be changed or unset.
         </para>
         </listitem>
       </varlistentry>
@@ -3209,7 +3235,7 @@ bar
         <term><varname>FETCH_COUNT</varname></term>
         <listitem>
         <para>
-        If this variable is set to an integer value &gt; 0,
+        If this variable is set to an integer value greater than zero,
         the results of <command>SELECT</command> queries are fetched
         and displayed in groups of that many rows, rather than the
         default behavior of collecting the entire result set before
@@ -3220,6 +3246,7 @@ bar
         Keep in mind that when using this feature, a query might
         fail after having already displayed some rows.
         </para>
+
         <tip>
         <para>
         Although you can use any output format with this feature,
@@ -3241,9 +3268,8 @@ bar
          list. If set to a value of <literal>ignoredups</literal>, lines
          matching the previous history line are not entered. A value of
          <literal>ignoreboth</literal> combines the two options. If
-         unset, or if set to <literal>none</literal> (or any other value
-         than those above), all lines read in interactive mode are
-         saved on the history list.
+         set to <literal>none</literal> (the default), all lines
+         read in interactive mode are saved on the history list.
         </para>
         <note>
         <para>
@@ -3258,8 +3284,12 @@ bar
         <term><varname>HISTFILE</varname></term>
         <listitem>
         <para>
-        The file name that will be used to store the history list. The default
-        value is <filename>~/.psql_history</filename>.  For example, putting:
+        The file name that will be used to store the history list.  If unset,
+        the file name is taken from the <envar>PSQL_HISTORY</envar>
+        environment variable.  If that is not set either, the default
+        is <filename>~/.psql_history</filename>,
+        or <filename>%APPDATA%\postgresql\psql_history</filename> on Windows.
+        For example, putting:
 <programlisting>
 \set HISTFILE ~/.psql_history- :DBNAME
 </programlisting>
@@ -3280,8 +3310,8 @@ bar
         <term><varname>HISTSIZE</varname></term>
         <listitem>
         <para>
-        The number of commands to store in the command history. The
-        default value is 500.
+        The maximum number of commands to store in the command history
+        (default 500).  If set to a negative value, no limit is applied.
         </para>
         <note>
         <para>
@@ -3298,7 +3328,7 @@ bar
         <para>
         The database server host you are currently connected to. This is
         set every time you connect to a database (including program
-        start-up), but can be unset.
+        start-up), but can be changed or unset.
         </para>
         </listitem>
       </varlistentry>
@@ -3307,13 +3337,13 @@ bar
         <term><varname>IGNOREEOF</varname></term>
         <listitem>
         <para>
-         If unset, sending an <acronym>EOF</> character (usually
+         If set to 1 or less, sending an <acronym>EOF</> character (usually
          <keycombo action="simul"><keycap>Control</><keycap>D</></>)
          to an interactive session of <application>psql</application>
-         will terminate the application. If set to a numeric value,
-         that many <acronym>EOF</> characters are ignored before the
-         application terminates.  If the variable is set but has no
-         numeric value, the default is 10.
+         will terminate the application.  If set to a larger numeric value,
+         that many consecutive <acronym>EOF</> characters must be typed to
+         make an interactive session terminate.  If the variable is set to a
+         non-numeric value, it is interpreted as 10.
         </para>
         <note>
         <para>
@@ -3351,7 +3381,7 @@ bar
         generates an error, the error is ignored and the transaction
         continues. When set to <literal>interactive</>, such errors are only
         ignored in interactive sessions, and not when reading script
-        files. When unset or set to <literal>off</>, a statement in a
+        files. When set to <literal>off</> (the default), a statement in a
         transaction block that generates an error aborts the entire
         transaction. The error rollback mode works by issuing an
         implicit <command>SAVEPOINT</> for you, just before each command
@@ -3386,7 +3416,7 @@ bar
         <para>
         The database server port to which you are currently connected.
         This is set every time you connect to a database (including
-        program start-up), but can be unset.
+        program start-up), but can be changed or unset.
         </para>
         </listitem>
       </varlistentry>
@@ -3459,7 +3489,7 @@ bar
         <para>
         The database user you are currently connected as. This is set
         every time you connect to a database (including program
-        start-up), but can be unset.
+        start-up), but can be changed or unset.
         </para>
         </listitem>
       </varlistentry>
@@ -3473,6 +3503,16 @@ bar
         of error reports.
         (See also <command>\errverbose</>, for use when you want a verbose
         version of the error you just got.)
+        </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>VERSION</varname></term>
+        <listitem>
+        <para>
+        This variable is set at program start-up to
+        reflect <application>psql</>'s version.  It can be changed or unset.
         </para>
         </listitem>
       </varlistentry>
@@ -4006,6 +4046,7 @@ PSQL_EDITOR_LINENUMBER_ARG='--line '
     </para>
     <para>
      The location of the history file can be set explicitly via
+     the <varname>HISTFILE</varname> <application>psql</> variable or
      the <envar>PSQL_HISTORY</envar> environment variable.
     </para>
    </listitem>

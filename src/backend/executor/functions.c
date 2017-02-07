@@ -479,18 +479,16 @@ init_execution_state(List *queryTree_list,
 
 	foreach(lc1, queryTree_list)
 	{
-		List	   *qtlist = (List *) lfirst(lc1);
+		List	   *qtlist = castNode(List, lfirst(lc1));
 		execution_state *firstes = NULL;
 		execution_state *preves = NULL;
 		ListCell   *lc2;
 
 		foreach(lc2, qtlist)
 		{
-			Query	   *queryTree = (Query *) lfirst(lc2);
+			Query	   *queryTree = castNode(Query, lfirst(lc2));
 			PlannedStmt *stmt;
 			execution_state *newes;
-
-			Assert(IsA(queryTree, Query));
 
 			/* Plan the query if needed */
 			if (queryTree->commandType == CMD_UTILITY)
@@ -709,7 +707,7 @@ init_sql_fcache(FmgrInfo *finfo, Oid collation, bool lazyEvalOK)
 	flat_query_list = NIL;
 	foreach(lc, raw_parsetree_list)
 	{
-		RawStmt    *parsetree = (RawStmt *) lfirst(lc);
+		RawStmt    *parsetree = castNode(RawStmt, lfirst(lc));
 		List	   *queryTree_sublist;
 
 		queryTree_sublist = pg_analyze_and_rewrite_params(parsetree,
@@ -1553,7 +1551,7 @@ check_sql_fn_retval(Oid func_id, Oid rettype, List *queryTreeList,
 	parse = NULL;
 	foreach(lc, queryTreeList)
 	{
-		Query	   *q = (Query *) lfirst(lc);
+		Query	   *q = castNode(Query, lfirst(lc));
 
 		if (q->canSetTag)
 			parse = q;

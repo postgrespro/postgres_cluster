@@ -622,8 +622,6 @@ partition_bounds_equal(PartitionKey key,
 
 		for (j = 0; j < key->partnatts; j++)
 		{
-			int32		cmpval;
-
 			/* For range partitions, the bounds might not be finite. */
 			if (b1->content != NULL)
 			{
@@ -639,12 +637,20 @@ partition_bounds_equal(PartitionKey key,
 					continue;
 			}
 
-			/* Compare the actual values */
-			cmpval = DatumGetInt32(FunctionCall2Coll(&key->partsupfunc[j],
-													 key->partcollation[j],
-													 b1->datums[i][j],
-													 b2->datums[i][j]));
-			if (cmpval != 0)
+			/*
+			 * Compare the actual values. Note that it would be both incorrect
+			 * and unsafe to invoke the comparison operator derived from the
+			 * partitioning specification here.  It would be incorrect because
+			 * we want the relcache entry to be updated for ANY change to the
+			 * partition bounds, not just those that the partitioning operator
+			 * thinks are significant.  It would be unsafe because we might
+			 * reach this code in the context of an aborted transaction, and
+			 * an arbitrary partitioning operator might not be safe in that
+			 * context.  datumIsEqual() should be simple enough to be safe.
+			 */
+			if (!datumIsEqual(b1->datums[i][j], b2->datums[i][j],
+							  key->parttypbyval[j],
+							  key->parttyplen[j]))
 				return false;
 		}
 
@@ -1063,7 +1069,7 @@ RelationGetPartitionDispatchInfo(Relation rel, int lockmode,
 		Relation	partrel = lfirst(lc1);
 		Relation	parent = lfirst(lc2);
 		PartitionKey partkey = RelationGetPartitionKey(partrel);
-		TupleDesc	 tupdesc = RelationGetDescr(partrel);
+		TupleDesc	tupdesc = RelationGetDescr(partrel);
 		PartitionDesc partdesc = RelationGetPartitionDesc(partrel);
 		int			j,
 					m;
@@ -1076,17 +1082,17 @@ RelationGetPartitionDispatchInfo(Relation rel, int lockmode,
 		if (parent != NULL)
 		{
 			/*
-			 * For every partitioned table other than root, we must store
-			 * a tuple table slot initialized with its tuple descriptor and
-			 * a tuple conversion map to convert a tuple from its parent's
-			 * rowtype to its own. That is to make sure that we are looking
-			 * at the correct row using the correct tuple descriptor when
+			 * For every partitioned table other than root, we must store a
+			 * tuple table slot initialized with its tuple descriptor and a
+			 * tuple conversion map to convert a tuple from its parent's
+			 * rowtype to its own. That is to make sure that we are looking at
+			 * the correct row using the correct tuple descriptor when
 			 * computing its partition key for tuple routing.
 			 */
 			pd[i]->tupslot = MakeSingleTupleTableSlot(tupdesc);
 			pd[i]->tupmap = convert_tuples_by_name(RelationGetDescr(parent),
 												   tupdesc,
-								gettext_noop("could not convert row type"));
+								 gettext_noop("could not convert row type"));
 		}
 		else
 		{
@@ -1568,10 +1574,10 @@ generate_partition_qual(Relation rel)
 		result = my_qual;
 
 	/*
-	 * Change Vars to have partition's attnos instead of the parent's.
-	 * We do this after we concatenate the parent's quals, because
-	 * we want every Var in it to bear this relation's attnos.
-	 * It's safe to assume varno = 1 here.
+	 * Change Vars to have partition's attnos instead of the parent's. We do
+	 * this after we concatenate the parent's quals, because we want every Var
+	 * in it to bear this relation's attnos. It's safe to assume varno = 1
+	 * here.
 	 */
 	result = map_partition_varattnos(result, 1, rel, parent);
 
@@ -1673,7 +1679,10 @@ get_partition_for_tuple(PartitionDispatch *pd,
 	bool		isnull[PARTITION_MAX_KEYS];
 	int			cur_offset,
 				cur_index;
-	int			i;
+	int			i,
+				result;
+	ExprContext *ecxt = GetPerTupleExprContext(estate);
+	TupleTableSlot *ecxt_scantuple_old = ecxt->ecxt_scantuple;
 
 	/* start with the root partitioned table */
 	parent = pd[0];
@@ -1691,18 +1700,25 @@ get_partition_for_tuple(PartitionDispatch *pd,
 			return -1;
 		}
 
-		if (myslot != NULL)
+		if (myslot != NULL && map != NULL)
 		{
 			HeapTuple	tuple = ExecFetchSlotTuple(slot);
 
 			ExecClearTuple(myslot);
-			Assert(map != NULL);
 			tuple = do_convert_tuple(tuple, map);
 			ExecStoreTuple(tuple, myslot, InvalidBuffer, true);
 			slot = myslot;
 		}
 
-		/* Extract partition key from tuple */
+		/*
+		 * Extract partition key from tuple. Expression evaluation machinery
+		 * that FormPartitionKeyDatum() invokes expects ecxt_scantuple to
+		 * point to the correct tuple slot.  The slot might have changed from
+		 * what was used for the parent table if the table of the current
+		 * partitioning level has different tuple descriptor from the parent.
+		 * So update ecxt_scantuple accordingly.
+		 */
+		ecxt->ecxt_scantuple = slot;
 		FormPartitionKeyDatum(parent, slot, estate, values, isnull);
 
 		if (key->strategy == PARTITION_STRATEGY_RANGE)
@@ -1757,16 +1773,21 @@ get_partition_for_tuple(PartitionDispatch *pd,
 		 */
 		if (cur_index < 0)
 		{
+			result = -1;
 			*failed_at = RelationGetRelid(parent->reldesc);
-			return -1;
-		}
-		else if (parent->indexes[cur_index] < 0)
-			parent = pd[-parent->indexes[cur_index]];
-		else
 			break;
+		}
+		else if (parent->indexes[cur_index] >= 0)
+		{
+			result = parent->indexes[cur_index];
+			break;
+		}
+		else
+			parent = pd[-parent->indexes[cur_index]];
 	}
 
-	return parent->indexes[cur_index];
+	ecxt->ecxt_scantuple = ecxt_scantuple_old;
+	return result;
 }
 
 /*

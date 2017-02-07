@@ -1433,7 +1433,7 @@ RelationInitPhysicalAddr(Relation relation)
 		 * points to the current file since the older file will be gone (or
 		 * truncated). The new file will still contain older rows so lookups
 		 * in them will work correctly. This wouldn't work correctly if
-		 * rewrites were allowed to change the schema in a noncompatible way,
+		 * rewrites were allowed to change the schema in an incompatible way,
 		 * but those are prevented both on catalog tables and on user tables
 		 * declared as additional catalog tables.
 		 */
@@ -3484,8 +3484,7 @@ RelationSetNewRelfilenode(Relation relation, char persistence,
 	classform->relminmxid = minmulti;
 	classform->relpersistence = persistence;
 
-	simple_heap_update(pg_class, &tuple->t_self, tuple);
-	CatalogUpdateIndexes(pg_class, tuple);
+	CatalogTupleUpdate(pg_class, &tuple->t_self, tuple);
 
 	heap_freetuple(tuple);
 
@@ -4328,9 +4327,10 @@ RelationGetFKeyList(Relation relation)
  * it is the pg_class OID of a unique index on OID when the relation has one,
  * and InvalidOid if there is no such index.
  *
- * In exactly the same way, we update rd_replidindex, which is the pg_class
- * OID of an index to be used as the relation's replication identity index,
- * or InvalidOid if there is no such index.
+ * In exactly the same way, we update rd_pkindex, which is the OID of the
+ * relation's primary key index if any, else InvalidOid; and rd_replidindex,
+ * which is the pg_class OID of an index to be used as the relation's
+ * replication identity index, or InvalidOid if there is no such index.
  */
 List *
 RelationGetIndexList(Relation relation)
@@ -4747,8 +4747,10 @@ RelationGetIndexPredicate(Relation relation)
  * we can include system attributes (e.g., OID) in the bitmap representation.
  *
  * Caller had better hold at least RowExclusiveLock on the target relation
- * to ensure that it has a stable set of indexes.  This also makes it safe
- * (deadlock-free) for us to take locks on the relation's indexes.
+ * to ensure it is safe (deadlock-free) for us to take locks on the relation's
+ * indexes.  Note that since the introduction of CREATE INDEX CONCURRENTLY,
+ * that lock level doesn't guarantee a stable set of indexes, so we have to
+ * be prepared to retry here in case of a change in the set of indexes.
  *
  * The returned result is palloc'd in the caller's memory context and should
  * be bms_free'd when not needed anymore.
@@ -4761,6 +4763,7 @@ RelationGetIndexAttrBitmap(Relation relation, IndexAttrBitmapKind attrKind)
 	Bitmapset  *pkindexattrs;	/* columns in the primary index */
 	Bitmapset  *idindexattrs;	/* columns in the replica identity */
 	List	   *indexoidlist;
+	List	   *newindexoidlist;
 	Oid			relpkindex;
 	Oid			relreplindex;
 	ListCell   *l;
@@ -4789,8 +4792,9 @@ RelationGetIndexAttrBitmap(Relation relation, IndexAttrBitmapKind attrKind)
 		return NULL;
 
 	/*
-	 * Get cached list of index OIDs
+	 * Get cached list of index OIDs. If we have to start over, we do so here.
 	 */
+restart:
 	indexoidlist = RelationGetIndexList(relation);
 
 	/* Fall out if no indexes (but relhasindex was set) */
@@ -4798,12 +4802,11 @@ RelationGetIndexAttrBitmap(Relation relation, IndexAttrBitmapKind attrKind)
 		return NULL;
 
 	/*
-	 * Copy the rd_pkindex and rd_replidindex value computed by
+	 * Copy the rd_pkindex and rd_replidindex values computed by
 	 * RelationGetIndexList before proceeding.  This is needed because a
 	 * relcache flush could occur inside index_open below, resetting the
-	 * fields managed by RelationGetIndexList. (The values we're computing
-	 * will still be valid, assuming that caller has a sufficient lock on
-	 * the relation.)
+	 * fields managed by RelationGetIndexList.  We need to do the work with
+	 * stable values of these fields.
 	 */
 	relpkindex = relation->rd_pkindex;
 	relreplindex = relation->rd_replidindex;
@@ -4881,7 +4884,33 @@ RelationGetIndexAttrBitmap(Relation relation, IndexAttrBitmapKind attrKind)
 		index_close(indexDesc, AccessShareLock);
 	}
 
-	list_free(indexoidlist);
+	/*
+	 * During one of the index_opens in the above loop, we might have received
+	 * a relcache flush event on this relcache entry, which might have been
+	 * signaling a change in the rel's index list.  If so, we'd better start
+	 * over to ensure we deliver up-to-date attribute bitmaps.
+	 */
+	newindexoidlist = RelationGetIndexList(relation);
+	if (equal(indexoidlist, newindexoidlist) &&
+		relpkindex == relation->rd_pkindex &&
+		relreplindex == relation->rd_replidindex)
+	{
+		/* Still the same index set, so proceed */
+		list_free(newindexoidlist);
+		list_free(indexoidlist);
+	}
+	else
+	{
+		/* Gotta do it over ... might as well not leak memory */
+		list_free(newindexoidlist);
+		list_free(indexoidlist);
+		bms_free(uindexattrs);
+		bms_free(pkindexattrs);
+		bms_free(idindexattrs);
+		bms_free(indexattrs);
+
+		goto restart;
+	}
 
 	/* Don't leak the old values of these bitmaps, if any */
 	bms_free(relation->rd_indexattr);

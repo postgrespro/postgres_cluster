@@ -938,7 +938,7 @@ CREATE TABLE shoe_data (
 	shoename   char(10),      -- primary key
 	sh_avail   integer,       -- available # of pairs
 	slcolor    char(10),      -- preferred shoelace color
-	slminlen   float,         -- miminum shoelace length
+	slminlen   float,         -- minimum shoelace length
 	slmaxlen   float,         -- maximum shoelace length
 	slunit     char(8)        -- length unit
 );
@@ -1338,6 +1338,16 @@ pg_group| SELECT pg_authid.rolname AS groname,
           WHERE (pg_auth_members.roleid = pg_authid.oid)) AS grolist
    FROM pg_authid
   WHERE (NOT pg_authid.rolcanlogin);
+pg_hba_file_rules| SELECT a.line_number,
+    a.type,
+    a.database,
+    a.user_name,
+    a.address,
+    a.netmask,
+    a.auth_method,
+    a.options,
+    a.error
+   FROM pg_hba_file_rules() a(line_number, type, database, user_name, address, netmask, auth_method, options, error);
 pg_indexes| SELECT n.nspname AS schemaname,
     c.relname AS tablename,
     i.relname AS indexname,
@@ -1637,7 +1647,10 @@ pg_sequences| SELECT n.nspname AS schemaname,
     s.seqincrement AS increment_by,
     s.seqcycle AS cycle,
     s.seqcache AS cache_size,
-    pg_sequence_last_value((c.oid)::regclass) AS last_value
+        CASE
+            WHEN has_sequence_privilege(c.oid, 'SELECT,USAGE'::text) THEN pg_sequence_last_value((c.oid)::regclass)
+            ELSE NULL::bigint
+        END AS last_value
    FROM ((pg_sequence s
      JOIN pg_class c ON ((c.oid = s.seqrelid)))
      LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace)))

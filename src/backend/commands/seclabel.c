@@ -293,13 +293,13 @@ SetSharedSecurityLabel(const ObjectAddress *object,
 	if (HeapTupleIsValid(oldtup))
 	{
 		if (label == NULL)
-			simple_heap_delete(pg_shseclabel, &oldtup->t_self);
+			CatalogTupleDelete(pg_shseclabel, &oldtup->t_self);
 		else
 		{
 			replaces[Anum_pg_shseclabel_label - 1] = true;
 			newtup = heap_modify_tuple(oldtup, RelationGetDescr(pg_shseclabel),
 									   values, nulls, replaces);
-			simple_heap_update(pg_shseclabel, &oldtup->t_self, newtup);
+			CatalogTupleUpdate(pg_shseclabel, &oldtup->t_self, newtup);
 		}
 	}
 	systable_endscan(scan);
@@ -309,15 +309,11 @@ SetSharedSecurityLabel(const ObjectAddress *object,
 	{
 		newtup = heap_form_tuple(RelationGetDescr(pg_shseclabel),
 								 values, nulls);
-		simple_heap_insert(pg_shseclabel, newtup);
+		CatalogTupleInsert(pg_shseclabel, newtup);
 	}
 
-	/* Update indexes, if necessary */
 	if (newtup != NULL)
-	{
-		CatalogUpdateIndexes(pg_shseclabel, newtup);
 		heap_freetuple(newtup);
-	}
 
 	heap_close(pg_shseclabel, RowExclusiveLock);
 }
@@ -384,13 +380,13 @@ SetSecurityLabel(const ObjectAddress *object,
 	if (HeapTupleIsValid(oldtup))
 	{
 		if (label == NULL)
-			simple_heap_delete(pg_seclabel, &oldtup->t_self);
+			CatalogTupleDelete(pg_seclabel, &oldtup->t_self);
 		else
 		{
 			replaces[Anum_pg_seclabel_label - 1] = true;
 			newtup = heap_modify_tuple(oldtup, RelationGetDescr(pg_seclabel),
 									   values, nulls, replaces);
-			simple_heap_update(pg_seclabel, &oldtup->t_self, newtup);
+			CatalogTupleUpdate(pg_seclabel, &oldtup->t_self, newtup);
 		}
 	}
 	systable_endscan(scan);
@@ -400,15 +396,12 @@ SetSecurityLabel(const ObjectAddress *object,
 	{
 		newtup = heap_form_tuple(RelationGetDescr(pg_seclabel),
 								 values, nulls);
-		simple_heap_insert(pg_seclabel, newtup);
+		CatalogTupleInsert(pg_seclabel, newtup);
 	}
 
 	/* Update indexes, if necessary */
 	if (newtup != NULL)
-	{
-		CatalogUpdateIndexes(pg_seclabel, newtup);
 		heap_freetuple(newtup);
-	}
 
 	heap_close(pg_seclabel, RowExclusiveLock);
 }
@@ -439,7 +432,7 @@ DeleteSharedSecurityLabel(Oid objectId, Oid classId)
 	scan = systable_beginscan(pg_shseclabel, SharedSecLabelObjectIndexId, true,
 							  NULL, 2, skey);
 	while (HeapTupleIsValid(oldtup = systable_getnext(scan)))
-		simple_heap_delete(pg_shseclabel, &oldtup->t_self);
+		CatalogTupleDelete(pg_shseclabel, &oldtup->t_self);
 	systable_endscan(scan);
 
 	heap_close(pg_shseclabel, RowExclusiveLock);
@@ -490,7 +483,7 @@ DeleteSecurityLabel(const ObjectAddress *object)
 	scan = systable_beginscan(pg_seclabel, SecLabelObjectIndexId, true,
 							  NULL, nkeys, skey);
 	while (HeapTupleIsValid(oldtup = systable_getnext(scan)))
-		simple_heap_delete(pg_seclabel, &oldtup->t_self);
+		CatalogTupleDelete(pg_seclabel, &oldtup->t_self);
 	systable_endscan(scan);
 
 	heap_close(pg_seclabel, RowExclusiveLock);

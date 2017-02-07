@@ -181,7 +181,7 @@ static void dumpOpr(Archive *fout, OprInfo *oprinfo);
 static void dumpAccessMethod(Archive *fout, AccessMethodInfo *oprinfo);
 static void dumpOpclass(Archive *fout, OpclassInfo *opcinfo);
 static void dumpOpfamily(Archive *fout, OpfamilyInfo *opfinfo);
-static void dumpCollation(Archive *fout, CollInfo *convinfo);
+static void dumpCollation(Archive *fout, CollInfo *collinfo);
 static void dumpConversion(Archive *fout, ConvInfo *convinfo);
 static void dumpRule(Archive *fout, RuleInfo *rinfo);
 static void dumpAgg(Archive *fout, AggInfo *agginfo);
@@ -3360,15 +3360,6 @@ getPublications(Archive *fout)
 
 	ntups = PQntuples(res);
 
-	if (ntups == 0)
-	{
-		/*
-		 * There are no publications defined. Clean up and return.
-		 */
-		PQclear(res);
-		return;
-	}
-
 	i_tableoid = PQfnumber(res, "tableoid");
 	i_oid = PQfnumber(res, "oid");
 	i_pubname = PQfnumber(res, "pubname");
@@ -3509,7 +3500,7 @@ getPublicationTables(Archive *fout, TableInfo tblinfo[], int numTables)
 
 		resetPQExpBuffer(query);
 
-		/* Get the publication memebership for the table. */
+		/* Get the publication membership for the table. */
 		appendPQExpBuffer(query,
 						  "SELECT pr.tableoid, pr.oid, p.pubname "
 						  "FROM pg_catalog.pg_publication_rel pr,"
@@ -3636,15 +3627,6 @@ getSubscriptions(Archive *fout)
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
 
 	ntups = PQntuples(res);
-
-	if (ntups == 0)
-	{
-		/*
-		 * There are no subscriptions defined. Clean up and return.
-		 */
-		PQclear(res);
-		return;
-	}
 
 	i_tableoid = PQfnumber(res, "tableoid");
 	i_oid = PQfnumber(res, "oid");
@@ -8701,6 +8683,9 @@ getDefaultACLs(Archive *fout, int *numDefaultACLs)
 	int			i_defaclnamespace;
 	int			i_defaclobjtype;
 	int			i_defaclacl;
+	int			i_rdefaclacl;
+	int			i_initdefaclacl;
+	int			i_initrdefaclacl;
 	int			i,
 				ntups;
 
@@ -8715,13 +8700,50 @@ getDefaultACLs(Archive *fout, int *numDefaultACLs)
 	/* Make sure we are in proper schema */
 	selectSourceSchema(fout, "pg_catalog");
 
-	appendPQExpBuffer(query, "SELECT oid, tableoid, "
-					  "(%s defaclrole) AS defaclrole, "
-					  "defaclnamespace, "
-					  "defaclobjtype, "
-					  "defaclacl "
-					  "FROM pg_default_acl",
-					  username_subquery);
+	if (fout->remoteVersion >= 90600)
+	{
+		PQExpBuffer acl_subquery = createPQExpBuffer();
+		PQExpBuffer racl_subquery = createPQExpBuffer();
+		PQExpBuffer initacl_subquery = createPQExpBuffer();
+		PQExpBuffer initracl_subquery = createPQExpBuffer();
+
+		buildACLQueries(acl_subquery, racl_subquery, initacl_subquery,
+						initracl_subquery, "defaclacl", "defaclrole",
+						"CASE WHEN defaclobjtype = 'S' THEN 's' ELSE defaclobjtype END::\"char\"",
+						dopt->binary_upgrade);
+
+		appendPQExpBuffer(query, "SELECT d.oid, d.tableoid, "
+						  "(%s d.defaclrole) AS defaclrole, "
+						  "d.defaclnamespace, "
+						  "d.defaclobjtype, "
+						  "%s AS defaclacl, "
+						  "%s AS rdefaclacl, "
+						  "%s AS initdefaclacl, "
+						  "%s AS initrdefaclacl "
+						  "FROM pg_default_acl d "
+						  "LEFT JOIN pg_init_privs pip ON "
+						  "(d.oid = pip.objoid "
+						  "AND pip.classoid = 'pg_default_acl'::regclass "
+						  "AND pip.objsubid = 0) ",
+						  username_subquery,
+						  acl_subquery->data,
+						  racl_subquery->data,
+						  initacl_subquery->data,
+						  initracl_subquery->data);
+	}
+	else
+	{
+		appendPQExpBuffer(query, "SELECT oid, tableoid, "
+						  "(%s defaclrole) AS defaclrole, "
+						  "defaclnamespace, "
+						  "defaclobjtype, "
+						  "defaclacl, "
+						  "NULL AS rdefaclacl, "
+						  "NULL AS initdefaclacl, "
+						  "NULL AS initrdefaclacl "
+						  "FROM pg_default_acl",
+						  username_subquery);
+	}
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
 
@@ -8736,6 +8758,9 @@ getDefaultACLs(Archive *fout, int *numDefaultACLs)
 	i_defaclnamespace = PQfnumber(res, "defaclnamespace");
 	i_defaclobjtype = PQfnumber(res, "defaclobjtype");
 	i_defaclacl = PQfnumber(res, "defaclacl");
+	i_rdefaclacl = PQfnumber(res, "rdefaclacl");
+	i_initdefaclacl = PQfnumber(res, "initdefaclacl");
+	i_initrdefaclacl = PQfnumber(res, "initrdefaclacl");
 
 	for (i = 0; i < ntups; i++)
 	{
@@ -8756,6 +8781,9 @@ getDefaultACLs(Archive *fout, int *numDefaultACLs)
 		daclinfo[i].defaclrole = pg_strdup(PQgetvalue(res, i, i_defaclrole));
 		daclinfo[i].defaclobjtype = *(PQgetvalue(res, i, i_defaclobjtype));
 		daclinfo[i].defaclacl = pg_strdup(PQgetvalue(res, i, i_defaclacl));
+		daclinfo[i].rdefaclacl = pg_strdup(PQgetvalue(res, i, i_rdefaclacl));
+		daclinfo[i].initdefaclacl = pg_strdup(PQgetvalue(res, i, i_initdefaclacl));
+		daclinfo[i].initrdefaclacl = pg_strdup(PQgetvalue(res, i, i_initrdefaclacl));
 
 		/* Decide whether we want to dump it */
 		selectDumpableDefaultACL(&(daclinfo[i]), dopt);
@@ -11461,7 +11489,7 @@ dumpCast(Archive *fout, CastInfo *cast)
 	{
 		funcInfo = findFuncByOid(cast->castfunc);
 		if (funcInfo == NULL)
-			exit_horribly(NULL, "unable to find function definition for OID %u",
+			exit_horribly(NULL, "could not find function definition for function with OID %u\n",
 						  cast->castfunc);
 	}
 
@@ -11571,14 +11599,14 @@ dumpTransform(Archive *fout, TransformInfo *transform)
 	{
 		fromsqlFuncInfo = findFuncByOid(transform->trffromsql);
 		if (fromsqlFuncInfo == NULL)
-			exit_horribly(NULL, "unable to find function definition for OID %u",
+			exit_horribly(NULL, "could not find function definition for function with OID %u\n",
 						  transform->trffromsql);
 	}
 	if (OidIsValid(transform->trftosql))
 	{
 		tosqlFuncInfo = findFuncByOid(transform->trftosql);
 		if (tosqlFuncInfo == NULL)
-			exit_horribly(NULL, "unable to find function definition for OID %u",
+			exit_horribly(NULL, "could not find function definition for function with OID %u\n",
 						  transform->trftosql);
 	}
 
@@ -14056,6 +14084,9 @@ dumpDefaultACL(Archive *fout, DefaultACLInfo *daclinfo)
 								 daclinfo->dobj.namespace != NULL ?
 								 daclinfo->dobj.namespace->dobj.name : NULL,
 								 daclinfo->defaclacl,
+								 daclinfo->rdefaclacl,
+								 daclinfo->initdefaclacl,
+								 daclinfo->initrdefaclacl,
 								 daclinfo->defaclrole,
 								 fout->remoteVersion,
 								 q))
@@ -15891,14 +15922,14 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 	PQExpBuffer delqry = createPQExpBuffer();
 	PQExpBuffer labelq = createPQExpBuffer();
 
-	/* Make sure we are in proper schema */
-	selectSourceSchema(fout, tbinfo->dobj.namespace->dobj.name);
-
-	snprintf(bufm, sizeof(bufm), INT64_FORMAT, SEQ_MINVALUE);
-	snprintf(bufx, sizeof(bufx), INT64_FORMAT, SEQ_MAXVALUE);
+	snprintf(bufm, sizeof(bufm), INT64_FORMAT, PG_INT64_MIN);
+	snprintf(bufx, sizeof(bufx), INT64_FORMAT, PG_INT64_MAX);
 
 	if (fout->remoteVersion >= 100000)
 	{
+		/* Make sure we are in proper schema */
+		selectSourceSchema(fout, "pg_catalog");
+
 		appendPQExpBuffer(query,
 						  "SELECT seqstart, seqincrement, "
 						  "CASE WHEN seqincrement > 0 AND seqmax = %s THEN NULL "
@@ -15912,12 +15943,20 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 						  "seqcache, seqcycle "
 						  "FROM pg_class c "
 						  "JOIN pg_sequence s ON (s.seqrelid = c.oid) "
-						  "WHERE relname = ",
-						  bufx, bufm);
-		appendStringLiteralAH(query, tbinfo->dobj.name, fout);
+						  "WHERE c.oid = '%u'::oid",
+						  bufx, bufm,
+						  tbinfo->dobj.catId.oid);
 	}
 	else if (fout->remoteVersion >= 80400)
 	{
+		/*
+		 * Before PostgreSQL 10, sequence metadata is in the sequence itself,
+		 * so switch to the sequence's schema instead of pg_catalog.
+		 */
+
+		/* Make sure we are in proper schema */
+		selectSourceSchema(fout, tbinfo->dobj.namespace->dobj.name);
+
 		appendPQExpBuffer(query,
 						  "SELECT start_value, increment_by, "
 				   "CASE WHEN increment_by > 0 AND max_value = %s THEN NULL "
@@ -15934,6 +15973,9 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 	}
 	else
 	{
+		/* Make sure we are in proper schema */
+		selectSourceSchema(fout, tbinfo->dobj.namespace->dobj.name);
+
 		appendPQExpBuffer(query,
 						  "SELECT 0 AS start_value, increment_by, "
 				   "CASE WHEN increment_by > 0 AND max_value = %s THEN NULL "

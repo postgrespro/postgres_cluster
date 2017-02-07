@@ -224,8 +224,7 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt, const char *queryString,
 	 * executed repeatedly.  (See also the same hack in DECLARE CURSOR and
 	 * PREPARE.)  XXX FIXME someday.
 	 */
-	Assert(IsA(stmt->query, Query));
-	rewritten = QueryRewrite((Query *) copyObject(stmt->query));
+	rewritten = QueryRewrite(castNode(Query, copyObject(stmt->query)));
 
 	/* emit opening boilerplate */
 	ExplainBeginOutput(es);
@@ -246,7 +245,7 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt, const char *queryString,
 		/* Explain every plan */
 		foreach(l, rewritten)
 		{
-			ExplainOneQuery((Query *) lfirst(l),
+			ExplainOneQuery(castNode(Query, lfirst(l)),
 							CURSOR_OPT_PARALLEL_OK, NULL, es,
 							queryString, params);
 
@@ -395,10 +394,9 @@ ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es,
 		CreateTableAsStmt *ctas = (CreateTableAsStmt *) utilityStmt;
 		List	   *rewritten;
 
-		Assert(IsA(ctas->query, Query));
-		rewritten = QueryRewrite((Query *) copyObject(ctas->query));
+		rewritten = QueryRewrite(castNode(Query, copyObject(ctas->query)));
 		Assert(list_length(rewritten) == 1);
-		ExplainOneQuery((Query *) linitial(rewritten),
+		ExplainOneQuery(castNode(Query, linitial(rewritten)),
 						0, ctas->into, es,
 						queryString, params);
 	}
@@ -415,10 +413,9 @@ ExplainOneUtility(Node *utilityStmt, IntoClause *into, ExplainState *es,
 		DeclareCursorStmt *dcs = (DeclareCursorStmt *) utilityStmt;
 		List	   *rewritten;
 
-		Assert(IsA(dcs->query, Query));
-		rewritten = QueryRewrite((Query *) copyObject(dcs->query));
+		rewritten = QueryRewrite(castNode(Query, copyObject(dcs->query)));
 		Assert(list_length(rewritten) == 1);
-		ExplainOneQuery((Query *) linitial(rewritten),
+		ExplainOneQuery(castNode(Query, linitial(rewritten)),
 						dcs->options, NULL, es,
 						queryString, params);
 	}
@@ -1493,25 +1490,25 @@ ExplainNode(PlanState *planstate, List *ancestors,
 										   planstate, es);
 			break;
 		case T_Agg:
-			show_agg_keys((AggState *) planstate, ancestors, es);
+			show_agg_keys(castNode(AggState, planstate), ancestors, es);
 			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			break;
 		case T_Group:
-			show_group_keys((GroupState *) planstate, ancestors, es);
+			show_group_keys(castNode(GroupState, planstate), ancestors, es);
 			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			break;
 		case T_Sort:
-			show_sort_keys((SortState *) planstate, ancestors, es);
-			show_sort_info((SortState *) planstate, es);
+			show_sort_keys(castNode(SortState, planstate), ancestors, es);
+			show_sort_info(castNode(SortState, planstate), es);
 			break;
 		case T_MergeAppend:
-			show_merge_append_keys((MergeAppendState *) planstate,
+			show_merge_append_keys(castNode(MergeAppendState, planstate),
 								   ancestors, es);
 			break;
 		case T_Result:
@@ -1523,11 +1520,11 @@ ExplainNode(PlanState *planstate, List *ancestors,
 										   planstate, es);
 			break;
 		case T_ModifyTable:
-			show_modifytable_info((ModifyTableState *) planstate, ancestors,
+			show_modifytable_info(castNode(ModifyTableState, planstate), ancestors,
 								  es);
 			break;
 		case T_Hash:
-			show_hash_info((HashState *) planstate, es);
+			show_hash_info(castNode(HashState, planstate), es);
 			break;
 		default:
 			break;
@@ -2183,7 +2180,6 @@ show_tablesample(TableSampleClause *tsc, PlanState *planstate,
 static void
 show_sort_info(SortState *sortstate, ExplainState *es)
 {
-	Assert(IsA(sortstate, SortState));
 	if (es->analyze && sortstate->sort_Done &&
 		sortstate->tuplesortstate != NULL)
 	{
@@ -2217,7 +2213,6 @@ show_hash_info(HashState *hashstate, ExplainState *es)
 {
 	HashJoinTable hashtable;
 
-	Assert(IsA(hashstate, HashState));
 	hashtable = hashstate->hashtable;
 
 	if (hashtable)
@@ -3406,7 +3401,7 @@ ExplainYAMLLineStarting(ExplainState *es)
 }
 
 /*
- * YAML is a superset of JSON; unfortuantely, the YAML quoting rules are
+ * YAML is a superset of JSON; unfortunately, the YAML quoting rules are
  * ridiculously complicated -- as documented in sections 5.3 and 7.3.3 of
  * http://yaml.org/spec/1.2/spec.html -- so we chose to just quote everything.
  * Empty strings, strings with leading or trailing whitespace, and strings

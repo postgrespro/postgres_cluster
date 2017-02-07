@@ -30,9 +30,15 @@ typedef struct ResultRelInfo *CatalogIndexState;
  */
 extern CatalogIndexState CatalogOpenIndexes(Relation heapRel);
 extern void CatalogCloseIndexes(CatalogIndexState indstate);
-extern void CatalogIndexInsert(CatalogIndexState indstate,
-				   HeapTuple heapTuple);
-extern void CatalogUpdateIndexes(Relation heapRel, HeapTuple heapTuple);
+extern Oid	CatalogTupleInsert(Relation heapRel, HeapTuple tup);
+extern Oid CatalogTupleInsertWithInfo(Relation heapRel, HeapTuple tup,
+						   CatalogIndexState indstate);
+extern void CatalogTupleUpdate(Relation heapRel, ItemPointer otid,
+				   HeapTuple tup);
+extern void CatalogTupleUpdateWithInfo(Relation heapRel,
+						   ItemPointer otid, HeapTuple tup,
+						   CatalogIndexState indstate);
+extern void CatalogTupleDelete(Relation heapRel, ItemPointer tid);
 
 
 /*
@@ -323,7 +329,7 @@ DECLARE_UNIQUE_INDEX(pg_replication_origin_roname_index, 6002, on pg_replication
 #define ReplicationOriginNameIndex 6002
 
 DECLARE_UNIQUE_INDEX(pg_partitioned_table_partrelid_index, 3351, on pg_partitioned_table using btree(partrelid oid_ops));
-#define PartitionedRelidIndexId          3351
+#define PartitionedRelidIndexId			 3351
 
 DECLARE_UNIQUE_INDEX(pg_publication_oid_index, 6110, on pg_publication using btree(oid oid_ops));
 #define PublicationObjectIndexId 6110

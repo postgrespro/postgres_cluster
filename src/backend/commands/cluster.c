@@ -523,8 +523,7 @@ mark_index_clustered(Relation rel, Oid indexOid, bool is_internal)
 		if (indexForm->indisclustered)
 		{
 			indexForm->indisclustered = false;
-			simple_heap_update(pg_index, &indexTuple->t_self, indexTuple);
-			CatalogUpdateIndexes(pg_index, indexTuple);
+			CatalogTupleUpdate(pg_index, &indexTuple->t_self, indexTuple);
 		}
 		else if (thisIndexOid == indexOid)
 		{
@@ -532,8 +531,7 @@ mark_index_clustered(Relation rel, Oid indexOid, bool is_internal)
 			if (!IndexIsValid(indexForm))
 				elog(ERROR, "cannot cluster on invalid index %u", indexOid);
 			indexForm->indisclustered = true;
-			simple_heap_update(pg_index, &indexTuple->t_self, indexTuple);
-			CatalogUpdateIndexes(pg_index, indexTuple);
+			CatalogTupleUpdate(pg_index, &indexTuple->t_self, indexTuple);
 		}
 
 		InvokeObjectPostAlterHookArg(IndexRelationId, thisIndexOid, 0,
@@ -1143,7 +1141,6 @@ swap_relation_files(Oid r1, Oid r2, bool target_is_pg_class,
 				relfilenode2;
 	Oid			swaptemp;
 	char		swptmpchr;
-	CatalogIndexState indstate;
 
 	/* We need writable copies of both pg_class tuples. */
 	relRelation = heap_open(RelationRelationId, RowExclusiveLock);
@@ -1287,13 +1284,13 @@ swap_relation_files(Oid r1, Oid r2, bool target_is_pg_class,
 	 */
 	if (!target_is_pg_class)
 	{
-		simple_heap_update(relRelation, &reltup1->t_self, reltup1);
-		simple_heap_update(relRelation, &reltup2->t_self, reltup2);
+		CatalogIndexState indstate;
 
-		/* Keep system catalogs current */
 		indstate = CatalogOpenIndexes(relRelation);
-		CatalogIndexInsert(indstate, reltup1);
-		CatalogIndexInsert(indstate, reltup2);
+		CatalogTupleUpdateWithInfo(relRelation, &reltup1->t_self, reltup1,
+								   indstate);
+		CatalogTupleUpdateWithInfo(relRelation, &reltup2->t_self, reltup2,
+								   indstate);
 		CatalogCloseIndexes(indstate);
 	}
 	else
@@ -1558,8 +1555,7 @@ finish_heap_swap(Oid OIDOldHeap, Oid OIDNewHeap,
 		relform->relfrozenxid = frozenXid;
 		relform->relminmxid = cutoffMulti;
 
-		simple_heap_update(relRelation, &reltup->t_self, reltup);
-		CatalogUpdateIndexes(relRelation, reltup);
+		CatalogTupleUpdate(relRelation, &reltup->t_self, reltup);
 
 		heap_close(relRelation, RowExclusiveLock);
 	}

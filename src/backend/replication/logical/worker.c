@@ -2,7 +2,7 @@
  * worker.c
  *	   PostgreSQL logical replication worker (apply)
  *
- * Copyright (c) 2012-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2016-2017, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/replication/logical/worker.c
@@ -327,7 +327,7 @@ slot_store_cstrings(TupleTableSlot *slot, LogicalRepRelMapEntry *rel,
 /*
  * Modify slot with user data provided as C strigs.
  * This is somewhat similar to heap_modify_tuple but also calls the type
- * input fuction on the user data as the input is the text representation
+ * input function on the user data as the input is the text representation
  * of the types.
  */
 static void
@@ -1219,6 +1219,22 @@ reread_subscription(void)
 	newsub = GetSubscription(MyLogicalRepWorker->subid, true);
 
 	/*
+	 * Exit if the subscription was removed.
+	 * This normally should not happen as the worker gets killed
+	 * during DROP SUBSCRIPTION.
+	 */
+	if (!newsub)
+	{
+		ereport(LOG,
+				(errmsg("logical replication worker for subscription \"%s\" will "
+						"stop because the subscription was removed",
+						MySubscription->name)));
+
+		walrcv_disconnect(wrconn);
+		proc_exit(0);
+	}
+
+	/*
 	 * Exit if connection string was changed. The launcher will start
 	 * new worker.
 	 */
@@ -1242,22 +1258,6 @@ reread_subscription(void)
 		ereport(LOG,
 				(errmsg("logical replication worker for subscription \"%s\" will "
 						"restart because subscription's publications were changed",
-						MySubscription->name)));
-
-		walrcv_disconnect(wrconn);
-		proc_exit(0);
-	}
-
-	/*
-	 * Exit if the subscription was removed.
-	 * This normally should not happen as the worker gets killed
-	 * during DROP SUBSCRIPTION.
-	 */
-	if (!newsub)
-	{
-		ereport(LOG,
-				(errmsg("logical replication worker for subscription \"%s\" will "
-						"stop because the subscription was removed",
 						MySubscription->name)));
 
 		walrcv_disconnect(wrconn);

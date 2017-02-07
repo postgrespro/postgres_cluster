@@ -3,7 +3,8 @@
  * pg_publication.c
  *		publication C API manipulation
  *
- * Copyright (c) 2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
  *		pg_publication.c
@@ -148,8 +149,7 @@ publication_add_relation(Oid pubid, Relation targetrel,
 	tup = heap_form_tuple(RelationGetDescr(rel), values, nulls);
 
 	/* Insert tuple into catalog. */
-	prrelid = simple_heap_insert(rel, tup);
-	CatalogUpdateIndexes(rel, tup);
+	prrelid = CatalogTupleInsert(rel, tup);
 	heap_freetuple(tup);
 
 	ObjectAddressSet(myself, PublicationRelRelationId, prrelid);

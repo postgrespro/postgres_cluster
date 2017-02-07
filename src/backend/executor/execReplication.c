@@ -3,7 +3,7 @@
  * execReplication.c
  *	  miscellaneous executor routines for logical replication
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -391,7 +391,7 @@ ExecSimpleRelationInsert(EState *estate, TupleTableSlot *slot)
 		if (rel->rd_att->constr)
 			ExecConstraints(resultRelInfo, slot, slot, estate);
 
-		/* Store the slot into tuple that we can insett. */
+		/* Store the slot into tuple that we can inspect. */
 		tuple = ExecMaterializeSlot(slot);
 
 		/* OK, store the tuple and create index entries for it */

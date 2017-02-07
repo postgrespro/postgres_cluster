@@ -368,7 +368,7 @@ RemoveOperatorById(Oid operOid)
 		}
 	}
 
-	simple_heap_delete(relation, &tup->t_self);
+	CatalogTupleDelete(relation, &tup->t_self);
 
 	ReleaseSysCache(tup);
 
@@ -518,8 +518,7 @@ AlterOperator(AlterOperatorStmt *stmt)
 	tup = heap_modify_tuple(tup, RelationGetDescr(catalog),
 							values, nulls, replaces);
 
-	simple_heap_update(catalog, &tup->t_self, tup);
-	CatalogUpdateIndexes(catalog, tup);
+	CatalogTupleUpdate(catalog, &tup->t_self, tup);
 
 	address = makeOperatorDependencies(tup, true);
 

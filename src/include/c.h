@@ -527,6 +527,9 @@ typedef NameData *Name;
 #define PointerIsAligned(pointer, type) \
 		(((uintptr_t)(pointer) % (sizeof (type))) == 0)
 
+#define OffsetToPointer(base, offset) \
+		((void *)((char *) base + offset))
+
 #define OidIsValid(objectId)  ((bool) ((objectId) != InvalidOid))
 
 #define RegProcedureIsValid(p)	OidIsValid(p)
@@ -986,7 +989,7 @@ typedef NameData *Name;
 /* gettext domain name mangling */
 
 /*
- * To better support parallel installations of major PostgeSQL
+ * To better support parallel installations of major PostgreSQL
  * versions as well as parallel installations of major library soname
  * versions, we mangle the gettext domain name by appending those
  * version numbers.  The coding rule ought to be that wherever the

@@ -3,7 +3,8 @@
  * subscriptioncmds.c
  *		subscription catalog manipulation functions
  *
- * Copyright (c) 2015, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
  *		subscriptioncmds.c
@@ -276,8 +277,7 @@ CreateSubscription(CreateSubscriptionStmt *stmt)
 	tup = heap_form_tuple(RelationGetDescr(rel), values, nulls);
 
 	/* Insert tuple into catalog. */
-	subid = simple_heap_insert(rel, tup);
-	CatalogUpdateIndexes(rel, tup);
+	subid = CatalogTupleInsert(rel, tup);
 	heap_freetuple(tup);
 
 	recordDependencyOnOwner(SubscriptionRelationId, subid, owner);
@@ -301,10 +301,20 @@ CreateSubscription(CreateSubscriptionStmt *stmt)
 			ereport(ERROR,
 					(errmsg("could not connect to the publisher: %s", err)));
 
-		walrcv_create_slot(wrconn, slotname, false, &lsn);
-		ereport(NOTICE,
-				(errmsg("created replication slot \"%s\" on publisher",
-						slotname)));
+		PG_TRY();
+		{
+			walrcv_create_slot(wrconn, slotname, false, &lsn);
+			ereport(NOTICE,
+					(errmsg("created replication slot \"%s\" on publisher",
+							slotname)));
+		}
+		PG_CATCH();
+		{
+			/* Close the connection in case of failure. */
+			walrcv_disconnect(wrconn);
+			PG_RE_THROW();
+		}
+		PG_END_TRY();
 
 		/* And we are done with the remote side. */
 		walrcv_disconnect(wrconn);
@@ -397,8 +407,7 @@ AlterSubscription(AlterSubscriptionStmt *stmt)
 							replaces);
 
 	/* Update the catalog. */
-	simple_heap_update(rel, &tup->t_self, tup);
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleUpdate(rel, &tup->t_self, tup);
 
 	ObjectAddressSet(myself, SubscriptionRelationId, subid);
 
@@ -465,7 +474,7 @@ DropSubscription(DropSubscriptionStmt *stmt)
 	InvokeObjectDropHook(SubscriptionRelationId, subid, 0);
 
 	/*
-	 * Lock the subscription so noboby else can do anything with it
+	 * Lock the subscription so nobody else can do anything with it
 	 * (including the replication workers).
 	 */
 	LockSharedObject(SubscriptionRelationId, subid, 0, AccessExclusiveLock);
@@ -492,7 +501,7 @@ DropSubscription(DropSubscriptionStmt *stmt)
 	EventTriggerSQLDropAddObject(&myself, true, true);
 
 	/* Remove the tuple from catalog. */
-	simple_heap_delete(rel, &tup->t_self);
+	CatalogTupleDelete(rel, &tup->t_self);
 
 	ReleaseSysCache(tup);
 
@@ -504,6 +513,8 @@ DropSubscription(DropSubscriptionStmt *stmt)
 
 	/* Kill the apply worker so that the slot becomes accessible. */
 	logicalrep_worker_stop(subid);
+
+	LWLockRelease(LogicalRepLauncherLock);
 
 	/* Remove the origin tracking if exists. */
 	snprintf(originname, sizeof(originname), "pg_%u", subid);
@@ -577,8 +588,7 @@ AlterSubscriptionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 			 errhint("The owner of an subscription must be a superuser.")));
 
 	form->subowner = newOwnerId;
-	simple_heap_update(rel, &tup->t_self, tup);
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleUpdate(rel, &tup->t_self, tup);
 
 	/* Update owner dependency reference */
 	changeDependencyOnOwner(SubscriptionRelationId,

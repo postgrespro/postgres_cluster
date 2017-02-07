@@ -828,7 +828,7 @@ StoreQueryTuple(const PGresult *result)
 			char	   *varname;
 			char	   *value;
 
-			/* concate prefix and column name */
+			/* concatenate prefix and column name */
 			varname = psprintf("%s%s", pset.gset_prefix, colname);
 
 			if (!PQgetisnull(result, 0, i))
@@ -841,7 +841,6 @@ StoreQueryTuple(const PGresult *result)
 
 			if (!SetVariable(pset.vars, varname, value))
 			{
-				psql_error("could not set variable \"%s\"\n", varname);
 				free(varname);
 				success = false;
 				break;

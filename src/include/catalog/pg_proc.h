@@ -1982,7 +1982,7 @@ DATA(insert OID = 1642 (  pg_get_userbyid	   PGNSP PGUID 12 1 0 0 0 f f f f t f 
 DESCR("role name by OID (with fallback)");
 DATA(insert OID = 1643 (  pg_get_indexdef	   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 25 "26" _null_ _null_ _null_ _null_ _null_ pg_get_indexdef _null_ _null_ _null_ ));
 DESCR("index description");
-DATA(insert OID = 3352 (  pg_get_partkeydef	   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 25 "26" _null_ _null_ _null_ _null_ _null_ pg_get_partkeydef _null_ _null_ _null_ ));
+DATA(insert OID = 3352 (  pg_get_partkeydef    PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 25 "26" _null_ _null_ _null_ _null_ _null_ pg_get_partkeydef _null_ _null_ _null_ ));
 DESCR("partition key description");
 DATA(insert OID = 1662 (  pg_get_triggerdef    PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 25 "26" _null_ _null_ _null_ _null_ _null_ pg_get_triggerdef _null_ _null_ _null_ ));
 DESCR("trigger description");
@@ -3076,6 +3076,8 @@ DATA(insert OID = 2084 (  pg_show_all_settings	PGNSP PGUID 12 1 1000 0 0 f f f f
 DESCR("SHOW ALL as a function");
 DATA(insert OID = 3329 (  pg_show_all_file_settings PGNSP PGUID 12 1 1000 0 0 f f f f t t v s 0 0 2249 "" "{25,23,23,25,25,16,25}" "{o,o,o,o,o,o,o}" "{sourcefile,sourceline,seqno,name,setting,applied,error}" _null_ _null_ show_all_file_settings _null_ _null_ _null_ ));
 DESCR("show config file settings");
+DATA(insert OID = 3401 (  pg_hba_file_rules PGNSP PGUID 12 1 1000 0 0 f f f f t t v s 0 0 2249 "" "{23,25,1009,1009,25,25,25,1009,25}" "{o,o,o,o,o,o,o,o,o}" "{line_number,type,database,user_name,address,netmask,auth_method,options,error}" _null_ _null_ pg_hba_file_rules _null_ _null_ _null_ ));
+DESCR("show pg_hba.conf rules");
 DATA(insert OID = 1371 (  pg_lock_status   PGNSP PGUID 12 1 1000 0 0 f f f f t t v s 0 0 2249 "" "{25,26,26,23,21,25,28,26,26,21,25,23,25,16,16}" "{o,o,o,o,o,o,o,o,o,o,o,o,o,o,o}" "{locktype,database,relation,page,tuple,virtualxid,transactionid,classid,objid,objsubid,virtualtransaction,pid,mode,granted,fastpath}" _null_ _null_ pg_lock_status _null_ _null_ _null_ ));
 DESCR("view system lock information");
 DATA(insert OID = 2561 (  pg_blocking_pids PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 1007 "23" _null_ _null_ _null_ _null_ _null_ pg_blocking_pids _null_ _null_ _null_ ));
@@ -5321,7 +5323,7 @@ DATA(insert OID = 6011 ( pg_replication_origin_xact_reset PGNSP PGUID 12 1 0 0 0
 DESCR("reset the transaction's origin lsn and timestamp");
 
 DATA(insert OID = 6012 ( pg_replication_origin_advance PGNSP PGUID 12 1 0 0 0 f f f f t f v u 2 0 2278 "25 3220" _null_ _null_ _null_ _null_ _null_ pg_replication_origin_advance _null_ _null_ _null_ ));
-DESCR("advance replication itentifier to specific location");
+DESCR("advance replication identifier to specific location");
 
 DATA(insert OID = 6013 ( pg_replication_origin_progress PGNSP PGUID 12 1 0 0 0 f f f f t f v u 2 0 3220 "25 16" _null_ _null_ _null_ _null_ _null_ pg_replication_origin_progress _null_ _null_ _null_ ));
 DESCR("get an individual replication origin's replication progress");

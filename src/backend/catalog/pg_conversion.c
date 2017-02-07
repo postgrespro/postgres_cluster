@@ -105,10 +105,7 @@ ConversionCreate(const char *conname, Oid connamespace,
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* insert a new tuple */
-	simple_heap_insert(rel, tup);
-
-	/* update the index if any */
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleInsert(rel, tup);
 
 	myself.classId = ConversionRelationId;
 	myself.objectId = HeapTupleGetOid(tup);
@@ -168,7 +165,7 @@ RemoveConversionById(Oid conversionOid)
 
 	/* search for the target tuple */
 	if (HeapTupleIsValid(tuple = heap_getnext(scan, ForwardScanDirection)))
-		simple_heap_delete(rel, &tuple->t_self);
+		CatalogTupleDelete(rel, &tuple->t_self);
 	else
 		elog(ERROR, "could not find tuple for conversion %u", conversionOid);
 	heap_endscan(scan);

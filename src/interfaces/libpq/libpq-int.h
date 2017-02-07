@@ -309,7 +309,7 @@ typedef struct pg_conn_host
 	char	   *host;			/* host name or address, or socket path */
 	pg_conn_host_type type;		/* type of host */
 	char	   *port;			/* port number for this host; if not NULL,
-								 * overrrides the PGConn's pgport */
+								 * overrides the PGConn's pgport */
 	char	   *password;		/* password for this host, read from the
 								 * password file.  only set if the PGconn's
 								 * pgpass field is NULL. */
@@ -343,6 +343,7 @@ struct pg_conn
 	char	   *replication;	/* connect as the replication standby? */
 	char	   *pguser;			/* Postgres username and password, if any */
 	char	   *pgpass;
+	char	   *pgpassfile;		/* path to a file containing password(s) */
 	char	   *keepalives;		/* use TCP keepalives? */
 	char	   *keepalives_idle;	/* time between TCP keepalives */
 	char	   *keepalives_interval;	/* time between TCP keepalive
@@ -407,7 +408,7 @@ struct pg_conn
 	bool		auth_req_received;		/* true if any type of auth req
 										 * received */
 	bool		password_needed;	/* true if server demanded a password */
-	bool		dot_pgpass_used;	/* true if used .pgpass */
+	bool		pgpassfile_used;	/* true if password is from pgpassfile */
 	bool		sigpipe_so;		/* have we masked SIGPIPE via SO_NOSIGPIPE? */
 	bool		sigpipe_flag;	/* can we mask SIGPIPE via MSG_NOSIGNAL? */
 
@@ -665,7 +666,7 @@ extern void pq_reset_sigpipe(sigset_t *osigset, bool sigpipe_pending,
 #endif
 
 /*
- * The SSL implementatation provides these functions (fe-secure-openssl.c)
+ * The SSL implementation provides these functions (fe-secure-openssl.c)
  */
 extern void pgtls_init_library(bool do_ssl, int do_crypto);
 extern int	pgtls_init(PGconn *conn);

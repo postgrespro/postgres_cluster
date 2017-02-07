@@ -193,7 +193,7 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is a partitioned table",
 							RelationGetRelationName(rel)),
-					 errdetail("Partitioned tables cannot have ROW triggers.")));
+				 errdetail("Partitioned tables cannot have ROW triggers.")));
 	}
 	else if (rel->rd_rel->relkind == RELKIND_VIEW)
 	{
@@ -340,9 +340,7 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 
 		foreach(lc, varList)
 		{
-			TriggerTransition   *tt = (TriggerTransition *) lfirst(lc);
-
-			Assert(IsA(tt, TriggerTransition));
+			TriggerTransition   *tt = castNode(TriggerTransition, lfirst(lc));
 
 			if (!(tt->isTable))
 				ereport(ERROR,
@@ -775,9 +773,7 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	/*
 	 * Insert tuple into pg_trigger.
 	 */
-	simple_heap_insert(tgrel, tuple);
-
-	CatalogUpdateIndexes(tgrel, tuple);
+	CatalogTupleInsert(tgrel, tuple);
 
 	heap_freetuple(tuple);
 	heap_close(tgrel, RowExclusiveLock);
@@ -804,9 +800,7 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 
 	((Form_pg_class) GETSTRUCT(tuple))->relhastriggers = true;
 
-	simple_heap_update(pgrel, &tuple->t_self, tuple);
-
-	CatalogUpdateIndexes(pgrel, tuple);
+	CatalogTupleUpdate(pgrel, &tuple->t_self, tuple);
 
 	heap_freetuple(tuple);
 	heap_close(pgrel, RowExclusiveLock);
@@ -1244,7 +1238,7 @@ RemoveTriggerById(Oid trigOid)
 	/*
 	 * Delete the pg_trigger tuple.
 	 */
-	simple_heap_delete(tgrel, &tup->t_self);
+	CatalogTupleDelete(tgrel, &tup->t_self);
 
 	systable_endscan(tgscan);
 	heap_close(tgrel, RowExclusiveLock);
@@ -1446,10 +1440,7 @@ renametrig(RenameStmt *stmt)
 		namestrcpy(&((Form_pg_trigger) GETSTRUCT(tuple))->tgname,
 				   stmt->newname);
 
-		simple_heap_update(tgrel, &tuple->t_self, tuple);
-
-		/* keep system catalog indexes current */
-		CatalogUpdateIndexes(tgrel, tuple);
+		CatalogTupleUpdate(tgrel, &tuple->t_self, tuple);
 
 		InvokeObjectPostAlterHook(TriggerRelationId,
 								  HeapTupleGetOid(tuple), 0);
@@ -1562,10 +1553,7 @@ EnableDisableTrigger(Relation rel, const char *tgname,
 
 			newtrig->tgenabled = fires_when;
 
-			simple_heap_update(tgrel, &newtup->t_self, newtup);
-
-			/* Keep catalog indexes current */
-			CatalogUpdateIndexes(tgrel, newtup);
+			CatalogTupleUpdate(tgrel, &newtup->t_self, newtup);
 
 			heap_freetuple(newtup);
 

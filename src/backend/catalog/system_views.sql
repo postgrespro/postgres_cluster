@@ -175,7 +175,11 @@ CREATE OR REPLACE VIEW pg_sequences AS
         S.seqincrement AS increment_by,
         S.seqcycle AS cycle,
         S.seqcache AS cache_size,
-        pg_sequence_last_value(C.oid) AS last_value
+        CASE
+            WHEN has_sequence_privilege(C.oid, 'SELECT,USAGE'::text)
+                THEN pg_sequence_last_value(C.oid)
+            ELSE NULL
+        END AS last_value
     FROM pg_sequence S JOIN pg_class C ON (C.oid = S.seqrelid)
          LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
     WHERE NOT pg_is_other_temp_schema(N.oid)
@@ -458,6 +462,12 @@ CREATE VIEW pg_file_settings AS
 
 REVOKE ALL on pg_file_settings FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION pg_show_all_file_settings() FROM PUBLIC;
+
+CREATE VIEW pg_hba_file_rules AS
+   SELECT * FROM pg_hba_file_rules() AS A;
+
+REVOKE ALL on pg_hba_file_rules FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION pg_hba_file_rules() FROM PUBLIC;
 
 CREATE VIEW pg_timezone_abbrevs AS
     SELECT * FROM pg_timezone_abbrevs();

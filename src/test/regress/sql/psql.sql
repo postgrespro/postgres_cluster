@@ -3,6 +3,24 @@
 -- specific server features
 --
 
+-- \set
+
+-- fail: invalid name
+\set invalid/name foo
+-- fail: invalid value for special variable
+\set AUTOCOMMIT foo
+\set FETCH_COUNT foo
+-- check handling of built-in boolean variable
+\echo :ON_ERROR_ROLLBACK
+\set ON_ERROR_ROLLBACK
+\echo :ON_ERROR_ROLLBACK
+\set ON_ERROR_ROLLBACK foo
+\echo :ON_ERROR_ROLLBACK
+\set ON_ERROR_ROLLBACK on
+\echo :ON_ERROR_ROLLBACK
+\unset ON_ERROR_ROLLBACK
+\echo :ON_ERROR_ROLLBACK
+
 -- \gset
 
 select 10 as test01, 20 as test02, 'Hello' as test03 \gset pref01_

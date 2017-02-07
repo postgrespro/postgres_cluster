@@ -236,8 +236,7 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 	pgs_values[Anum_pg_sequence_seqcache - 1] = Int64GetDatumFast(seqform.seqcache);
 
 	tuple = heap_form_tuple(tupDesc, pgs_values, pgs_nulls);
-	simple_heap_insert(rel, tuple);
-	CatalogUpdateIndexes(rel, tuple);
+	CatalogTupleInsert(rel, tuple);
 
 	heap_freetuple(tuple);
 	heap_close(rel, RowExclusiveLock);
@@ -504,8 +503,7 @@ AlterSequence(ParseState *pstate, AlterSeqStmt *stmt)
 
 	relation_close(seqrel, NoLock);
 
-	simple_heap_update(rel, &tuple->t_self, tuple);
-	CatalogUpdateIndexes(rel, tuple);
+	CatalogTupleUpdate(rel, &tuple->t_self, tuple);
 	heap_close(rel, RowExclusiveLock);
 
 	return address;
@@ -523,7 +521,7 @@ DeleteSequenceTuple(Oid relid)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for sequence %u", relid);
 
-	simple_heap_delete(rel, &tuple->t_self);
+	CatalogTupleDelete(rel, &tuple->t_self);
 
 	ReleaseSysCache(tuple);
 	heap_close(rel, RowExclusiveLock);
@@ -1353,7 +1351,7 @@ init_params(ParseState *pstate, List *options, bool isInit,
 	else if (isInit || max_value != NULL)
 	{
 		if (seqform->seqincrement > 0)
-			seqform->seqmax = SEQ_MAXVALUE;		/* ascending seq */
+			seqform->seqmax = PG_INT64_MAX;		/* ascending seq */
 		else
 			seqform->seqmax = -1;	/* descending seq */
 		seqdataform->log_cnt = 0;
@@ -1370,7 +1368,7 @@ init_params(ParseState *pstate, List *options, bool isInit,
 		if (seqform->seqincrement > 0)
 			seqform->seqmin = 1; /* ascending seq */
 		else
-			seqform->seqmin = SEQ_MINVALUE;		/* descending seq */
+			seqform->seqmin = PG_INT64_MIN;		/* descending seq */
 		seqdataform->log_cnt = 0;
 	}
 

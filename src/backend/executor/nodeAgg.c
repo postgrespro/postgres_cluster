@@ -304,7 +304,7 @@ typedef struct AggStatePerTransData
 	/*
 	 * Slots for holding the evaluated input arguments.  These are set up
 	 * during ExecInitAgg() and then used for each input row requiring
-	 * procesessing besides what's done in AggState->evalproj.
+	 * processing besides what's done in AggState->evalproj.
 	 */
 	TupleTableSlot *sortslot;	/* current input tuple */
 	TupleTableSlot *uniqslot;	/* used for multi-column DISTINCT */
@@ -2572,9 +2572,8 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 
 		if (phase > 0)
 		{
-			aggnode = list_nth(node->chain, phase - 1);
-			sortnode = (Sort *) aggnode->plan.lefttree;
-			Assert(IsA(sortnode, Sort));
+			aggnode = castNode(Agg, list_nth(node->chain, phase - 1));
+			sortnode = castNode(Sort, aggnode->plan.lefttree);
 		}
 		else
 		{
@@ -3010,10 +3009,9 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 		 */
 		foreach(arg, pertrans->aggref->args)
 		{
-			TargetEntry *source_tle = (TargetEntry *) lfirst(arg);
+			TargetEntry *source_tle = castNode(TargetEntry, lfirst(arg));
 			TargetEntry *tle;
 
-			Assert(IsA(source_tle, TargetEntry));
 			tle = flatCopyTargetEntry(source_tle);
 			tle->resno += column_offset;
 

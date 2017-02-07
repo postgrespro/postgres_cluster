@@ -199,6 +199,14 @@ CREATE TABLE array_index_op_test (
 CREATE TABLE testjsonb (
        j jsonb
 );
+CREATE TABLE unknowntab (
+	u unknown    -- fail
+);
+ERROR:  column "u" has pseudo-type unknown
+CREATE TYPE unknown_comptype AS (
+	u unknown    -- fail
+);
+ERROR:  column "u" has pseudo-type unknown
 CREATE TABLE IF NOT EXISTS test_tsvector(
 	t text,
 	a tsvector
@@ -416,7 +424,7 @@ DROP FUNCTION plusone(int);
 ERROR:  cannot drop function plusone(integer) because other objects depend on it
 DETAIL:  table partitioned depends on function plusone(integer)
 HINT:  Use DROP ... CASCADE to drop the dependent objects too.
--- partitioned table cannot partiticipate in regular inheritance
+-- partitioned table cannot participate in regular inheritance
 CREATE TABLE partitioned2 (
 	a int
 ) PARTITION BY LIST ((a+1));

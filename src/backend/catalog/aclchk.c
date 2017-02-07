@@ -27,7 +27,10 @@
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/objectaccess.h"
+#include "catalog/pg_aggregate.h"
+#include "catalog/pg_am.h"
 #include "catalog/pg_authid.h"
+#include "catalog/pg_cast.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_conversion.h"
 #include "catalog/pg_database.h"
@@ -50,6 +53,9 @@
 #include "catalog/pg_type.h"
 #include "catalog/pg_ts_config.h"
 #include "catalog/pg_ts_dict.h"
+#include "catalog/pg_ts_parser.h"
+#include "catalog/pg_ts_template.h"
+#include "catalog/pg_transform.h"
 #include "commands/dbcommands.h"
 #include "commands/event_trigger.h"
 #include "commands/extension.h"
@@ -131,6 +137,8 @@ static AclMode pg_aclmask(AclObjectKind objkind, Oid table_oid, AttrNumber attnu
 		   Oid roleid, AclMode mask, AclMaskHow how);
 static void recordExtensionInitPriv(Oid objoid, Oid classoid, int objsubid,
 						Acl *new_acl);
+static void recordExtensionInitPrivWorker(Oid objoid, Oid classoid, int objsubid,
+							  Acl *new_acl);
 
 
 #ifdef ACLDEBUG
@@ -1244,7 +1252,7 @@ SetDefaultACL(InternalDefaultACL *iacls)
 			values[Anum_pg_default_acl_defaclacl - 1] = PointerGetDatum(new_acl);
 
 			newtuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
-			simple_heap_insert(rel, newtuple);
+			CatalogTupleInsert(rel, newtuple);
 		}
 		else
 		{
@@ -1254,11 +1262,8 @@ SetDefaultACL(InternalDefaultACL *iacls)
 
 			newtuple = heap_modify_tuple(tuple, RelationGetDescr(rel),
 										 values, nulls, replaces);
-			simple_heap_update(rel, &newtuple->t_self, newtuple);
+			CatalogTupleUpdate(rel, &newtuple->t_self, newtuple);
 		}
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(rel, newtuple);
 
 		/* these dependencies don't change in an update */
 		if (isNew)
@@ -1465,7 +1470,7 @@ RemoveDefaultACLById(Oid defaclOid)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "could not find tuple for default ACL %u", defaclOid);
 
-	simple_heap_delete(rel, &tuple->t_self);
+	CatalogTupleDelete(rel, &tuple->t_self);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -1689,10 +1694,7 @@ ExecGrant_Attribute(InternalGrant *istmt, Oid relOid, const char *relname,
 		newtuple = heap_modify_tuple(attr_tuple, RelationGetDescr(attRelation),
 									 values, nulls, replaces);
 
-		simple_heap_update(attRelation, &newtuple->t_self, newtuple);
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(attRelation, newtuple);
+		CatalogTupleUpdate(attRelation, &newtuple->t_self, newtuple);
 
 		/* Update initial privileges for extensions */
 		recordExtensionInitPriv(relOid, RelationRelationId, attnum,
@@ -1955,10 +1957,7 @@ ExecGrant_Relation(InternalGrant *istmt)
 			newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation),
 										 values, nulls, replaces);
 
-			simple_heap_update(relation, &newtuple->t_self, newtuple);
-
-			/* keep the catalog indexes up to date */
-			CatalogUpdateIndexes(relation, newtuple);
+			CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
 
 			/* Update initial privileges for extensions */
 			recordExtensionInitPriv(relOid, RelationRelationId, 0, new_acl);
@@ -2148,10 +2147,7 @@ ExecGrant_Database(InternalGrant *istmt)
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation), values,
 									 nulls, replaces);
 
-		simple_heap_update(relation, &newtuple->t_self, newtuple);
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(relation, newtuple);
+		CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
 
 		/* Update the shared dependency ACL info */
 		updateAclDependencies(DatabaseRelationId, HeapTupleGetOid(tuple), 0,
@@ -2273,10 +2269,7 @@ ExecGrant_Fdw(InternalGrant *istmt)
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation), values,
 									 nulls, replaces);
 
-		simple_heap_update(relation, &newtuple->t_self, newtuple);
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(relation, newtuple);
+		CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
 
 		/* Update initial privileges for extensions */
 		recordExtensionInitPriv(fdwid, ForeignDataWrapperRelationId, 0,
@@ -2402,10 +2395,7 @@ ExecGrant_ForeignServer(InternalGrant *istmt)
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation), values,
 									 nulls, replaces);
 
-		simple_heap_update(relation, &newtuple->t_self, newtuple);
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(relation, newtuple);
+		CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
 
 		/* Update initial privileges for extensions */
 		recordExtensionInitPriv(srvid, ForeignServerRelationId, 0, new_acl);
@@ -2529,10 +2519,7 @@ ExecGrant_Function(InternalGrant *istmt)
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation), values,
 									 nulls, replaces);
 
-		simple_heap_update(relation, &newtuple->t_self, newtuple);
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(relation, newtuple);
+		CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
 
 		/* Update initial privileges for extensions */
 		recordExtensionInitPriv(funcId, ProcedureRelationId, 0, new_acl);
@@ -2663,10 +2650,7 @@ ExecGrant_Language(InternalGrant *istmt)
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation), values,
 									 nulls, replaces);
 
-		simple_heap_update(relation, &newtuple->t_self, newtuple);
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(relation, newtuple);
+		CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
 
 		/* Update initial privileges for extensions */
 		recordExtensionInitPriv(langId, LanguageRelationId, 0, new_acl);
@@ -2805,10 +2789,7 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation),
 									 values, nulls, replaces);
 
-		simple_heap_update(relation, &newtuple->t_self, newtuple);
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(relation, newtuple);
+		CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
 
 		/* Update initial privileges for extensions */
 		recordExtensionInitPriv(loid, LargeObjectRelationId, 0, new_acl);
@@ -2933,10 +2914,7 @@ ExecGrant_Namespace(InternalGrant *istmt)
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation), values,
 									 nulls, replaces);
 
-		simple_heap_update(relation, &newtuple->t_self, newtuple);
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(relation, newtuple);
+		CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
 
 		/* Update initial privileges for extensions */
 		recordExtensionInitPriv(nspid, NamespaceRelationId, 0, new_acl);
@@ -3060,10 +3038,7 @@ ExecGrant_Tablespace(InternalGrant *istmt)
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation), values,
 									 nulls, replaces);
 
-		simple_heap_update(relation, &newtuple->t_self, newtuple);
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(relation, newtuple);
+		CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
 
 		/* Update the shared dependency ACL info */
 		updateAclDependencies(TableSpaceRelationId, tblId, 0,
@@ -3197,10 +3172,7 @@ ExecGrant_Type(InternalGrant *istmt)
 		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation), values,
 									 nulls, replaces);
 
-		simple_heap_update(relation, &newtuple->t_self, newtuple);
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(relation, newtuple);
+		CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
 
 		/* Update initial privileges for extensions */
 		recordExtensionInitPriv(typId, TypeRelationId, 0, new_acl);
@@ -3345,6 +3317,10 @@ static const char *const no_priv_msg[MAX_ACL_KIND] =
 	gettext_noop("permission denied for event trigger %s"),
 	/* ACL_KIND_EXTENSION */
 	gettext_noop("permission denied for extension %s"),
+	/* ACL_KIND_PUBLICATION */
+	gettext_noop("permission denied for publication %s"),
+	/* ACL_KIND_SUBSCRIPTION */
+	gettext_noop("permission denied for subscription %s"),
 };
 
 static const char *const not_owner_msg[MAX_ACL_KIND] =
@@ -5284,10 +5260,367 @@ get_user_default_acl(GrantObjectType objtype, Oid ownerId, Oid nsp_oid)
 }
 
 /*
- * Record initial ACL for an extension object
+ * Record initial privileges for the top-level object passed in.
  *
- * This will perform a wholesale replacement of the entire ACL for the object
- * passed in, therefore be sure to pass in the complete new ACL to use.
+ * For the object passed in, this will record its ACL (if any) and the ACLs of
+ * any sub-objects (eg: columns) into pg_init_privs.
+ *
+ * Any new kinds of objects which have ACLs associated with them and can be
+ * added to an extension should be added to the if-else tree below.
+ */
+void
+recordExtObjInitPriv(Oid objoid, Oid classoid)
+{
+	/*
+	 * pg_class / pg_attribute
+	 *
+	 * If this is a relation then we need to see if there are any sub-objects
+	 * (eg: columns) for it and, if so, be sure to call
+	 * recordExtensionInitPrivWorker() for each one.
+	 */
+	if (classoid == RelationRelationId)
+	{
+		Form_pg_class pg_class_tuple;
+		Datum		aclDatum;
+		bool		isNull;
+		HeapTuple	tuple;
+
+		tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(objoid));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for relation %u", objoid);
+		pg_class_tuple = (Form_pg_class) GETSTRUCT(tuple);
+
+		/* Indexes don't have permissions */
+		if (pg_class_tuple->relkind == RELKIND_INDEX)
+			return;
+
+		/* Composite types don't have permissions either */
+		if (pg_class_tuple->relkind == RELKIND_COMPOSITE_TYPE)
+			return;
+
+		/*
+		 * If this isn't a sequence, index, or composite type then it's
+		 * possibly going to have columns associated with it that might have
+		 * ACLs.
+		 */
+		if (pg_class_tuple->relkind != RELKIND_SEQUENCE)
+		{
+			AttrNumber	curr_att;
+			AttrNumber	nattrs = pg_class_tuple->relnatts;
+
+			for (curr_att = 1; curr_att <= nattrs; curr_att++)
+			{
+				HeapTuple	attTuple;
+				Datum		attaclDatum;
+
+				attTuple = SearchSysCache2(ATTNUM,
+										   ObjectIdGetDatum(objoid),
+										   Int16GetDatum(curr_att));
+
+				if (!HeapTupleIsValid(attTuple))
+					continue;
+
+				/* ignore dropped columns */
+				if (((Form_pg_attribute) GETSTRUCT(attTuple))->attisdropped)
+				{
+					ReleaseSysCache(attTuple);
+					continue;
+				}
+
+				attaclDatum = SysCacheGetAttr(ATTNUM, attTuple,
+											  Anum_pg_attribute_attacl,
+											  &isNull);
+
+				/* no need to do anything for a NULL ACL */
+				if (isNull)
+				{
+					ReleaseSysCache(attTuple);
+					continue;
+				}
+
+				recordExtensionInitPrivWorker(objoid, classoid, curr_att,
+											  DatumGetAclP(attaclDatum));
+
+				ReleaseSysCache(attTuple);
+			}
+		}
+
+		aclDatum = SysCacheGetAttr(RELOID, tuple, Anum_pg_class_relacl,
+								   &isNull);
+
+		/* Add the record, if any, for the top-level object */
+		if (!isNull)
+			recordExtensionInitPrivWorker(objoid, classoid, 0,
+										  DatumGetAclP(aclDatum));
+
+		ReleaseSysCache(tuple);
+	}
+	/* pg_foreign_data_wrapper */
+	else if (classoid == ForeignDataWrapperRelationId)
+	{
+		Datum		aclDatum;
+		bool		isNull;
+		HeapTuple	tuple;
+
+		tuple = SearchSysCache1(FOREIGNDATAWRAPPEROID,
+								ObjectIdGetDatum(objoid));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for foreign data wrapper %u",
+				 objoid);
+
+		aclDatum = SysCacheGetAttr(FOREIGNDATAWRAPPEROID, tuple,
+								   Anum_pg_foreign_data_wrapper_fdwacl,
+								   &isNull);
+
+		/* Add the record, if any, for the top-level object */
+		if (!isNull)
+			recordExtensionInitPrivWorker(objoid, classoid, 0,
+										  DatumGetAclP(aclDatum));
+
+		ReleaseSysCache(tuple);
+	}
+	/* pg_foreign_server */
+	else if (classoid == ForeignServerRelationId)
+	{
+		Datum		aclDatum;
+		bool		isNull;
+		HeapTuple	tuple;
+
+		tuple = SearchSysCache1(FOREIGNSERVEROID, ObjectIdGetDatum(objoid));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for foreign data wrapper %u",
+				 objoid);
+
+		aclDatum = SysCacheGetAttr(FOREIGNSERVEROID, tuple,
+								   Anum_pg_foreign_server_srvacl,
+								   &isNull);
+
+		/* Add the record, if any, for the top-level object */
+		if (!isNull)
+			recordExtensionInitPrivWorker(objoid, classoid, 0,
+										  DatumGetAclP(aclDatum));
+
+		ReleaseSysCache(tuple);
+	}
+	/* pg_language */
+	else if (classoid == LanguageRelationId)
+	{
+		Datum		aclDatum;
+		bool		isNull;
+		HeapTuple	tuple;
+
+		tuple = SearchSysCache1(LANGOID, ObjectIdGetDatum(objoid));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for language %u", objoid);
+
+		aclDatum = SysCacheGetAttr(LANGOID, tuple, Anum_pg_language_lanacl,
+								   &isNull);
+
+		/* Add the record, if any, for the top-level object */
+		if (!isNull)
+			recordExtensionInitPrivWorker(objoid, classoid, 0,
+										  DatumGetAclP(aclDatum));
+
+		ReleaseSysCache(tuple);
+	}
+	/* pg_largeobject_metadata */
+	else if (classoid == LargeObjectMetadataRelationId)
+	{
+		Datum		aclDatum;
+		bool		isNull;
+		HeapTuple	tuple;
+		ScanKeyData entry[1];
+		SysScanDesc scan;
+		Relation	relation;
+
+		relation = heap_open(LargeObjectMetadataRelationId, RowExclusiveLock);
+
+		/* There's no syscache for pg_largeobject_metadata */
+		ScanKeyInit(&entry[0],
+					ObjectIdAttributeNumber,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(objoid));
+
+		scan = systable_beginscan(relation,
+								  LargeObjectMetadataOidIndexId, true,
+								  NULL, 1, entry);
+
+		tuple = systable_getnext(scan);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for large object %u", objoid);
+
+		aclDatum = heap_getattr(tuple,
+								Anum_pg_largeobject_metadata_lomacl,
+								RelationGetDescr(relation), &isNull);
+
+		/* Add the record, if any, for the top-level object */
+		if (!isNull)
+			recordExtensionInitPrivWorker(objoid, classoid, 0,
+										  DatumGetAclP(aclDatum));
+
+		systable_endscan(scan);
+	}
+	/* pg_namespace */
+	else if (classoid == NamespaceRelationId)
+	{
+		Datum		aclDatum;
+		bool		isNull;
+		HeapTuple	tuple;
+
+		tuple = SearchSysCache1(NAMESPACEOID, ObjectIdGetDatum(objoid));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for function %u", objoid);
+
+		aclDatum = SysCacheGetAttr(NAMESPACEOID, tuple,
+								   Anum_pg_namespace_nspacl, &isNull);
+
+		/* Add the record, if any, for the top-level object */
+		if (!isNull)
+			recordExtensionInitPrivWorker(objoid, classoid, 0,
+										  DatumGetAclP(aclDatum));
+
+		ReleaseSysCache(tuple);
+	}
+	/* pg_proc */
+	else if (classoid == ProcedureRelationId)
+	{
+		Datum		aclDatum;
+		bool		isNull;
+		HeapTuple	tuple;
+
+		tuple = SearchSysCache1(PROCOID, ObjectIdGetDatum(objoid));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for function %u", objoid);
+
+		aclDatum = SysCacheGetAttr(PROCOID, tuple, Anum_pg_proc_proacl,
+								   &isNull);
+
+		/* Add the record, if any, for the top-level object */
+		if (!isNull)
+			recordExtensionInitPrivWorker(objoid, classoid, 0,
+										  DatumGetAclP(aclDatum));
+
+		ReleaseSysCache(tuple);
+	}
+	/* pg_type */
+	else if (classoid == TypeRelationId)
+	{
+		Datum		aclDatum;
+		bool		isNull;
+		HeapTuple	tuple;
+
+		tuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(objoid));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for function %u", objoid);
+
+		aclDatum = SysCacheGetAttr(TYPEOID, tuple, Anum_pg_type_typacl,
+								   &isNull);
+
+		/* Add the record, if any, for the top-level object */
+		if (!isNull)
+			recordExtensionInitPrivWorker(objoid, classoid, 0,
+										  DatumGetAclP(aclDatum));
+
+		ReleaseSysCache(tuple);
+	}
+	else if (classoid == AccessMethodRelationId ||
+			 classoid == AggregateRelationId ||
+			 classoid == CastRelationId ||
+			 classoid == CollationRelationId ||
+			 classoid == ConversionRelationId ||
+			 classoid == EventTriggerRelationId ||
+			 classoid == OperatorRelationId ||
+			 classoid == OperatorClassRelationId ||
+			 classoid == OperatorFamilyRelationId ||
+			 classoid == NamespaceRelationId ||
+			 classoid == TSConfigRelationId ||
+			 classoid == TSDictionaryRelationId ||
+			 classoid == TSParserRelationId ||
+			 classoid == TSTemplateRelationId ||
+			 classoid == TransformRelationId
+		)
+	{
+		/* no ACL for these object types, so do nothing. */
+	}
+
+	/*
+	 * complain if we are given a class OID for a class that extensions don't
+	 * support or that we don't recognize.
+	 */
+	else
+	{
+		elog(ERROR, "unrecognized or unsupported class OID: %u", classoid);
+	}
+}
+
+/*
+ * For the object passed in, remove its ACL and the ACLs of any object subIds
+ * from pg_init_privs (via recordExtensionInitPrivWorker()).
+ */
+void
+removeExtObjInitPriv(Oid objoid, Oid classoid)
+{
+	/*
+	 * If this is a relation then we need to see if there are any sub-objects
+	 * (eg: columns) for it and, if so, be sure to call
+	 * recordExtensionInitPrivWorker() for each one.
+	 */
+	if (classoid == RelationRelationId)
+	{
+		Form_pg_class pg_class_tuple;
+		HeapTuple	tuple;
+
+		tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(objoid));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for relation %u", objoid);
+		pg_class_tuple = (Form_pg_class) GETSTRUCT(tuple);
+
+		/* Indexes don't have permissions */
+		if (pg_class_tuple->relkind == RELKIND_INDEX)
+			return;
+
+		/* Composite types don't have permissions either */
+		if (pg_class_tuple->relkind == RELKIND_COMPOSITE_TYPE)
+			return;
+
+		/*
+		 * If this isn't a sequence, index, or composite type then it's
+		 * possibly going to have columns associated with it that might have
+		 * ACLs.
+		 */
+		if (pg_class_tuple->relkind != RELKIND_SEQUENCE)
+		{
+			AttrNumber	curr_att;
+			AttrNumber	nattrs = pg_class_tuple->relnatts;
+
+			for (curr_att = 1; curr_att <= nattrs; curr_att++)
+			{
+				HeapTuple	attTuple;
+
+				attTuple = SearchSysCache2(ATTNUM,
+										   ObjectIdGetDatum(objoid),
+										   Int16GetDatum(curr_att));
+
+				if (!HeapTupleIsValid(attTuple))
+					continue;
+
+				/* when removing, remove all entires, even dropped columns */
+
+				recordExtensionInitPrivWorker(objoid, classoid, curr_att, NULL);
+
+				ReleaseSysCache(attTuple);
+			}
+		}
+
+		ReleaseSysCache(tuple);
+	}
+
+	/* Remove the record, if any, for the top-level object */
+	recordExtensionInitPrivWorker(objoid, classoid, 0, NULL);
+}
+
+/*
+ * Record initial ACL for an extension object
  *
  * Can be called at any time, we check if 'creating_extension' is set and, if
  * not, exit immediately.
@@ -5306,12 +5639,6 @@ get_user_default_acl(GrantObjectType objtype, Oid ownerId, Oid nsp_oid)
 static void
 recordExtensionInitPriv(Oid objoid, Oid classoid, int objsubid, Acl *new_acl)
 {
-	Relation	relation;
-	ScanKeyData key[3];
-	SysScanDesc scan;
-	HeapTuple	tuple;
-	HeapTuple	oldtuple;
-
 	/*
 	 * Generally, we only record the initial privileges when an extension is
 	 * being created, but because we don't actually use CREATE EXTENSION
@@ -5322,6 +5649,30 @@ recordExtensionInitPriv(Oid objoid, Oid classoid, int objsubid, Acl *new_acl)
 	 */
 	if (!creating_extension && !binary_upgrade_record_init_privs)
 		return;
+
+	recordExtensionInitPrivWorker(objoid, classoid, objsubid, new_acl);
+}
+
+/*
+ * Record initial ACL for an extension object, worker.
+ *
+ * This will perform a wholesale replacement of the entire ACL for the object
+ * passed in, therefore be sure to pass in the complete new ACL to use.
+ *
+ * Generally speaking, do *not* use this function directly but instead use
+ * recordExtensionInitPriv(), which checks if 'creating_extension' is set.
+ * This function does *not* check if 'creating_extension' is set as it is also
+ * used when an object is added to or removed from an extension via ALTER
+ * EXTENSION ... ADD/DROP.
+ */
+static void
+recordExtensionInitPrivWorker(Oid objoid, Oid classoid, int objsubid, Acl *new_acl)
+{
+	Relation	relation;
+	ScanKeyData key[3];
+	SysScanDesc scan;
+	HeapTuple	tuple;
+	HeapTuple	oldtuple;
 
 	relation = heap_open(InitPrivsRelationId, RowExclusiveLock);
 
@@ -5364,39 +5715,44 @@ recordExtensionInitPriv(Oid objoid, Oid classoid, int objsubid, Acl *new_acl)
 			oldtuple = heap_modify_tuple(oldtuple, RelationGetDescr(relation),
 										 values, nulls, replace);
 
-			simple_heap_update(relation, &oldtuple->t_self, oldtuple);
-
-			/* keep the catalog indexes up to date */
-			CatalogUpdateIndexes(relation, oldtuple);
+			CatalogTupleUpdate(relation, &oldtuple->t_self, oldtuple);
 		}
 		else
+		{
 			/* new_acl is NULL, so delete the entry we found. */
-			simple_heap_delete(relation, &oldtuple->t_self);
+			CatalogTupleDelete(relation, &oldtuple->t_self);
+		}
 	}
 	else
 	{
-		/* No entry found, so add it. */
 		Datum		values[Natts_pg_init_privs];
 		bool		nulls[Natts_pg_init_privs];
 
-		MemSet(nulls, false, sizeof(nulls));
+		/*
+		 * Only add a new entry if the new ACL is non-NULL.
+		 *
+		 * If we are passed in a NULL ACL and no entry exists, we can just
+		 * fall through and do nothing.
+		 */
+		if (new_acl)
+		{
+			/* No entry found, so add it. */
+			MemSet(nulls, false, sizeof(nulls));
 
-		values[Anum_pg_init_privs_objoid - 1] = ObjectIdGetDatum(objoid);
-		values[Anum_pg_init_privs_classoid - 1] = ObjectIdGetDatum(classoid);
-		values[Anum_pg_init_privs_objsubid - 1] = Int32GetDatum(objsubid);
+			values[Anum_pg_init_privs_objoid - 1] = ObjectIdGetDatum(objoid);
+			values[Anum_pg_init_privs_classoid - 1] = ObjectIdGetDatum(classoid);
+			values[Anum_pg_init_privs_objsubid - 1] = Int32GetDatum(objsubid);
 
-		/* This function only handles initial privileges of extensions */
-		values[Anum_pg_init_privs_privtype - 1] =
-			CharGetDatum(INITPRIVS_EXTENSION);
+			/* This function only handles initial privileges of extensions */
+			values[Anum_pg_init_privs_privtype - 1] =
+				CharGetDatum(INITPRIVS_EXTENSION);
 
-		values[Anum_pg_init_privs_privs - 1] = PointerGetDatum(new_acl);
+			values[Anum_pg_init_privs_privs - 1] = PointerGetDatum(new_acl);
 
-		tuple = heap_form_tuple(RelationGetDescr(relation), values, nulls);
+			tuple = heap_form_tuple(RelationGetDescr(relation), values, nulls);
 
-		simple_heap_insert(relation, tuple);
-
-		/* keep the catalog indexes up to date */
-		CatalogUpdateIndexes(relation, tuple);
+			CatalogTupleInsert(relation, tuple);
+		}
 	}
 
 	systable_endscan(scan);

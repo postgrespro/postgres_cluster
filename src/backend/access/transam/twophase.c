@@ -421,6 +421,7 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	proc->backendId = InvalidBackendId;
 	proc->databaseId = databaseid;
 	proc->roleId = owner;
+	proc->isBackgroundWorker = false;
 	proc->lwWaiting = false;
 	proc->lwWaitMode = 0;
 	proc->waitLock = NULL;
@@ -1683,7 +1684,7 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
 	if (log_checkpoints && serialized_xacts > 0)
 		ereport(LOG,
 				(errmsg_plural("%u two-phase state file was written "
-							   "for long-running prepared transactions",
+							   "for a long-running prepared transaction",
 							   "%u two-phase state files were written "
 							   "for long-running prepared transactions",
 							   serialized_xacts,

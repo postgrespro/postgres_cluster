@@ -236,6 +236,14 @@ CREATE TABLE testjsonb (
        j jsonb
 );
 
+CREATE TABLE unknowntab (
+	u unknown    -- fail
+);
+
+CREATE TYPE unknown_comptype AS (
+	u unknown    -- fail
+);
+
 CREATE TABLE IF NOT EXISTS test_tsvector(
 	t text,
 	a tsvector
@@ -410,7 +418,7 @@ SELECT attname, attnotnull FROM pg_attribute
 -- prevent a function referenced in partition key from being dropped
 DROP FUNCTION plusone(int);
 
--- partitioned table cannot partiticipate in regular inheritance
+-- partitioned table cannot participate in regular inheritance
 CREATE TABLE partitioned2 (
 	a int
 ) PARTITION BY LIST ((a+1));

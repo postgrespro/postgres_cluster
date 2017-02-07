@@ -2,7 +2,7 @@
  * launcher.c
  *	   PostgreSQL logical replication worker launcher process
  *
- * Copyright (c) 2012-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2016-2017, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/replication/logical/launcher.c
@@ -73,7 +73,7 @@ static void logicalrep_worker_onexit(int code, Datum arg);
 static void logicalrep_worker_detach(void);
 
 bool		got_SIGTERM = false;
-static bool	on_commit_laucher_wakeup = false;
+static bool	on_commit_launcher_wakeup = false;
 
 Datum pg_stat_get_subscription(PG_FUNCTION_ARGS);
 
@@ -170,7 +170,7 @@ WaitForReplicationWorkerAttach(LogicalRepWorker *worker,
 
 		/*
 		 * Worker started and attached to our shmem. This check is safe
-		 * because only laucher ever starts the workers, so nobody can steal
+		 * because only launcher ever starts the workers, so nobody can steal
 		 * the worker slot.
 		 */
 		if (status == BGWH_STARTED && worker->proc)
@@ -180,7 +180,7 @@ WaitForReplicationWorkerAttach(LogicalRepWorker *worker,
 			return false;
 
 		/*
-		 * We need timeout because we generaly don't get notified via latch
+		 * We need timeout because we generally don't get notified via latch
 		 * about the worker attach.
 		 */
 		rc = WaitLatch(MyLatch,
@@ -261,6 +261,7 @@ logicalrep_worker_launch(Oid dbid, Oid subid, const char *subname, Oid userid)
 	/* Bail if not found */
 	if (worker == NULL)
 	{
+		LWLockRelease(LogicalRepWorkerLock);
 		ereport(WARNING,
 				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
 				 errmsg("out of logical replication workers slots"),
@@ -349,10 +350,21 @@ logicalrep_worker_stop(Oid subid)
 
 		ResetLatch(&MyProc->procLatch);
 
-		/* Check if the worker has started. */
+		/* Check worker status. */
 		LWLockAcquire(LogicalRepWorkerLock, LW_SHARED);
-		worker = logicalrep_worker_find(subid);
-		if (!worker || worker->proc)
+
+		/*
+		 * Worker is no longer associated with subscription.  It must have
+		 * exited, nothing more for us to do.
+		 */
+		if (worker->subid == InvalidOid)
+		{
+			LWLockRelease(LogicalRepWorkerLock);
+			return;
+		}
+
+		/* Worker has assigned proc, so it has started. */
+		if (worker->proc)
 			break;
 	}
 
@@ -514,22 +526,22 @@ ApplyLauncherShmemInit(void)
 void
 AtCommit_ApplyLauncher(void)
 {
-	if (on_commit_laucher_wakeup)
+	if (on_commit_launcher_wakeup)
 		ApplyLauncherWakeup();
 }
 
 /*
  * Request wakeup of the launcher on commit of the transaction.
  *
- * This is used to send launcher signal to stop sleeping and proccess the
+ * This is used to send launcher signal to stop sleeping and process the
  * subscriptions when current transaction commits. Should be used when new
  * tuple was added to the pg_subscription catalog.
 */
 void
 ApplyLauncherWakeupAtCommit(void)
 {
-	if (!on_commit_laucher_wakeup)
-		on_commit_laucher_wakeup = true;
+	if (!on_commit_launcher_wakeup)
+		on_commit_launcher_wakeup = true;
 }
 
 void
@@ -626,7 +638,7 @@ ApplyLauncherMain(Datum main_arg)
 		else
 		{
 			/*
-			 * The wait in previous cycle was interruped in less than
+			 * The wait in previous cycle was interrupted in less than
 			 * wal_retrieve_retry_interval since last worker was started,
 			 * this usually means crash of the worker, so we should retry
 			 * in wal_retrieve_retry_interval again.
