@@ -1,7 +1,7 @@
 /*
  * psql - the PostgreSQL interactive terminal
  *
- * Copyright (c) 2000-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2017, PostgreSQL Global Development Group
  *
  * src/bin/psql/command.c
  */
@@ -500,6 +500,22 @@ exec_command(const char *cmd,
 				}
 				else
 					success = PSQL_CMD_UNKNOWN;
+				break;
+			case 'R':
+				switch (cmd[2])
+				{
+					case 'p':
+						if (show_verbose)
+							success = describePublications(pattern);
+						else
+							success = listPublications(pattern);
+						break;
+					case 's':
+						success = describeSubscriptions(pattern, show_verbose);
+						break;
+					default:
+						status = PSQL_CMD_UNKNOWN;
+				}
 				break;
 			case 'u':
 				success = describeRoles(pattern, show_verbose, show_system);

@@ -4,7 +4,7 @@
  *	  Post-processing of a completed plan tree: fix references to subplan
  *	  vars, compute regproc values for operators, etc
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -732,6 +732,9 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 				splan->resconstantqual =
 					fix_scan_expr(root, splan->resconstantqual, rtoffset);
 			}
+			break;
+		case T_ProjectSet:
+			set_upper_references(root, plan, rtoffset);
 			break;
 		case T_ModifyTable:
 			{

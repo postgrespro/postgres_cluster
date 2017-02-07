@@ -4,7 +4,7 @@
  *	  storage manager switch public interface declarations.
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/storage/smgr.h
@@ -143,11 +143,5 @@ extern void RememberFsyncRequest(RelFileNode rnode, ForkNumber forknum,
 					 BlockNumber segno);
 extern void ForgetRelationFsyncRequests(RelFileNode rnode, ForkNumber forknum);
 extern void ForgetDatabaseFsyncRequests(Oid dbid);
-
-/* smgrtype.c */
-extern Datum smgrout(PG_FUNCTION_ARGS);
-extern Datum smgrin(PG_FUNCTION_ARGS);
-extern Datum smgreq(PG_FUNCTION_ARGS);
-extern Datum smgrne(PG_FUNCTION_ARGS);
 
 #endif   /* SMGR_H */

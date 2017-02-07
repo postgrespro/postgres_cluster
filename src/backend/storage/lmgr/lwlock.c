@@ -20,7 +20,7 @@
  * appropriate value for a free lock.  The meaning of the variable is up to
  * the caller, the lightweight lock code just assigns and compares it.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -508,6 +508,8 @@ RegisterLWLockTranches(void)
 	LWLockRegisterTranche(LWTRANCHE_LOCK_MANAGER, "lock_manager");
 	LWLockRegisterTranche(LWTRANCHE_PREDICATE_LOCK_MANAGER,
 						  "predicate_lock_manager");
+	LWLockRegisterTranche(LWTRANCHE_PARALLEL_QUERY_DSA,
+						  "parallel_query_dsa");
 
 	/* Register named tranches. */
 	for (i = 0; i < NamedLWLockTrancheRequests; i++)
@@ -951,7 +953,7 @@ LWLockWakeup(LWLock *lock)
 		 * that happens before the list unlink happens, the list would end up
 		 * being corrupted.
 		 *
-		 * The barrier pairs with the LWLockWaitListLock() when enqueing for
+		 * The barrier pairs with the LWLockWaitListLock() when enqueueing for
 		 * another lock.
 		 */
 		pg_write_barrier();
@@ -1185,7 +1187,7 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 		 * Instead add us to the queue and try to grab the lock again. If we
 		 * succeed we need to revert the queuing and be happy, otherwise we
 		 * recheck the lock. If we still couldn't grab it, we know that the
-		 * other lock will see our queue entries when releasing since they
+		 * other locker will see our queue entries when releasing since they
 		 * existed before we checked for the lock.
 		 */
 

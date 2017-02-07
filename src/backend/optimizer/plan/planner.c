@@ -3,7 +3,7 @@
  * planner.c
  *	  The query optimizer external interface.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -153,6 +153,8 @@ static List *make_pathkeys_for_window(PlannerInfo *root, WindowClause *wc,
 static PathTarget *make_sort_input_target(PlannerInfo *root,
 					   PathTarget *final_target,
 					   bool *have_postponed_srfs);
+static void adjust_paths_for_srfs(PlannerInfo *root, RelOptInfo *rel,
+					  List *targets, List *targets_contain_srfs);
 
 
 /*****************************************************************************
@@ -192,11 +194,6 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	Plan	   *top_plan;
 	ListCell   *lp,
 			   *lr;
-
-	/* Cursor options may come from caller or from DECLARE CURSOR stmt */
-	if (parse->utilityStmt &&
-		IsA(parse->utilityStmt, DeclareCursorStmt))
-		cursorOptions |= ((DeclareCursorStmt *) parse->utilityStmt)->options;
 
 	/*
 	 * Set up global state for this planner invocation.  This data is needed
@@ -246,7 +243,6 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 		IsUnderPostmaster &&
 		dynamic_shared_memory_type != DSM_IMPL_NONE &&
 		parse->commandType == CMD_SELECT &&
-		parse->utilityStmt == NULL &&
 		!parse->hasModifyingCTE &&
 		max_parallel_workers_per_gather > 0 &&
 		!IsParallelWorker() &&
@@ -421,13 +417,16 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	result->planTree = top_plan;
 	result->rtable = glob->finalrtable;
 	result->resultRelations = glob->resultRelations;
-	result->utilityStmt = parse->utilityStmt;
 	result->subplans = glob->subplans;
 	result->rewindPlanIDs = glob->rewindPlanIDs;
 	result->rowMarks = glob->finalrowmarks;
 	result->relationOids = glob->relationOids;
 	result->invalItems = glob->invalItems;
 	result->nParamExec = glob->nParamExec;
+	/* utilityStmt should be null, but we might as well copy it */
+	result->utilityStmt = parse->utilityStmt;
+	result->stmt_location = parse->stmt_location;
+	result->stmt_len = parse->stmt_len;
 
 	return result;
 }
@@ -493,6 +492,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	root->processed_tlist = NIL;
 	root->grouping_map = NULL;
 	root->minmax_aggs = NIL;
+	root->qual_security_level = 0;
 	root->hasInheritedTarget = false;
 	root->hasRecursion = hasRecursion;
 	if (hasRecursion)
@@ -672,6 +672,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	{
 		RangeTblEntry *rte = (RangeTblEntry *) lfirst(l);
 		int			kind;
+		ListCell   *lcsq;
 
 		if (rte->rtekind == RTE_RELATION)
 		{
@@ -706,6 +707,19 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 			kind = rte->lateral ? EXPRKIND_VALUES_LATERAL : EXPRKIND_VALUES;
 			rte->values_lists = (List *)
 				preprocess_expression(root, (Node *) rte->values_lists, kind);
+		}
+
+		/*
+		 * Process each element of the securityQuals list as if it were a
+		 * separate qual expression (as indeed it is).  We need to do it this
+		 * way to get proper canonicalization of AND/OR structure.  Note that
+		 * this converts each element into an implicit-AND sublist.
+		 */
+		foreach(lcsq, rte->securityQuals)
+		{
+			lfirst(lcsq) = preprocess_expression(root,
+												 (Node *) lfirst(lcsq),
+												 EXPRKIND_QUAL);
 		}
 	}
 
@@ -981,7 +995,6 @@ inheritance_planner(PlannerInfo *root)
 {
 	Query	   *parse = root->parse;
 	int			parentRTindex = parse->resultRelation;
-	Bitmapset  *resultRTindexes;
 	Bitmapset  *subqueryRTindexes;
 	Bitmapset  *modifiableARIindexes;
 	int			nominalRelation = -1;
@@ -1015,26 +1028,7 @@ inheritance_planner(PlannerInfo *root)
 	 * at least O(N^3) work expended here; and (2) would greatly complicate
 	 * management of the rowMarks list.
 	 *
-	 * Note that any RTEs with security barrier quals will be turned into
-	 * subqueries during planning, and so we must create copies of them too,
-	 * except where they are target relations, which will each only be used in
-	 * a single plan.
-	 *
-	 * To begin with, we'll need a bitmapset of the target relation relids.
-	 */
-	resultRTindexes = bms_make_singleton(parentRTindex);
-	foreach(lc, root->append_rel_list)
-	{
-		AppendRelInfo *appinfo = (AppendRelInfo *) lfirst(lc);
-
-		if (appinfo->parent_relid == parentRTindex)
-			resultRTindexes = bms_add_member(resultRTindexes,
-											 appinfo->child_relid);
-	}
-
-	/*
-	 * Now, generate a bitmapset of the relids of the subquery RTEs, including
-	 * security-barrier RTEs that will become subqueries, as just explained.
+	 * To begin with, generate a bitmapset of the relids of the subquery RTEs.
 	 */
 	subqueryRTindexes = NULL;
 	rti = 1;
@@ -1042,9 +1036,7 @@ inheritance_planner(PlannerInfo *root)
 	{
 		RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
 
-		if (rte->rtekind == RTE_SUBQUERY ||
-			(rte->securityQuals != NIL &&
-			 !bms_is_member(rti, resultRTindexes)))
+		if (rte->rtekind == RTE_SUBQUERY)
 			subqueryRTindexes = bms_add_member(subqueryRTindexes, rti);
 		rti++;
 	}
@@ -1082,6 +1074,8 @@ inheritance_planner(PlannerInfo *root)
 	{
 		AppendRelInfo *appinfo = (AppendRelInfo *) lfirst(lc);
 		PlannerInfo *subroot;
+		RangeTblEntry *parent_rte;
+		RangeTblEntry *child_rte;
 		RelOptInfo *sub_final_rel;
 		Path	   *subpath;
 
@@ -1106,6 +1100,15 @@ inheritance_planner(PlannerInfo *root)
 			adjust_appendrel_attrs(root,
 								   (Node *) parse,
 								   appinfo);
+
+		/*
+		 * If there are securityQuals attached to the parent, move them to the
+		 * child rel (they've already been transformed properly for that).
+		 */
+		parent_rte = rt_fetch(parentRTindex, subroot->parse->rtable);
+		child_rte = rt_fetch(appinfo->child_relid, subroot->parse->rtable);
+		child_rte->securityQuals = parent_rte->securityQuals;
+		parent_rte->securityQuals = NIL;
 
 		/*
 		 * The rowMarks list might contain references to subquery RTEs, so
@@ -1154,11 +1157,11 @@ inheritance_planner(PlannerInfo *root)
 
 		/*
 		 * If this isn't the first child Query, generate duplicates of all
-		 * subquery (or subquery-to-be) RTEs, and adjust Var numbering to
-		 * reference the duplicates.  To simplify the loop logic, we scan the
-		 * original rtable not the copy just made by adjust_appendrel_attrs;
-		 * that should be OK since subquery RTEs couldn't contain any
-		 * references to the target rel.
+		 * subquery RTEs, and adjust Var numbering to reference the
+		 * duplicates. To simplify the loop logic, we scan the original rtable
+		 * not the copy just made by adjust_appendrel_attrs; that should be OK
+		 * since subquery RTEs couldn't contain any references to the target
+		 * rel.
 		 */
 		if (final_rtable != NIL && subqueryRTindexes != NULL)
 		{
@@ -1175,9 +1178,9 @@ inheritance_planner(PlannerInfo *root)
 
 					/*
 					 * The RTE can't contain any references to its own RT
-					 * index, except in the security barrier quals, so we can
-					 * save a few cycles by applying ChangeVarNodes before we
-					 * append the RTE to the rangetable.
+					 * index, except in its securityQuals, so we can save a
+					 * few cycles by applying ChangeVarNodes to the rest of
+					 * the rangetable before we append the RTE to it.
 					 */
 					newrti = list_length(subroot->parse->rtable) + 1;
 					ChangeVarNodes((Node *) subroot->parse, rti, newrti, 0);
@@ -1214,12 +1217,6 @@ inheritance_planner(PlannerInfo *root)
 
 		/* Generate Path(s) for accessing this result relation */
 		grouping_planner(subroot, true, 0.0 /* retrieve all tuples */ );
-
-		/*
-		 * Planning may have modified the query result relation (if there were
-		 * security barrier quals on the result RTE).
-		 */
-		appinfo->child_relid = subroot->parse->resultRelation;
 
 		/*
 		 * We'll use the first child relation (even if it's excluded) as the
@@ -1259,41 +1256,9 @@ inheritance_planner(PlannerInfo *root)
 		if (final_rtable == NIL)
 			final_rtable = subroot->parse->rtable;
 		else
-		{
-			List	   *tmp_rtable = NIL;
-			ListCell   *cell1,
-					   *cell2;
-
-			/*
-			 * Check to see if any of the original RTEs were turned into
-			 * subqueries during planning.  Currently, this should only ever
-			 * happen due to securityQuals being involved which push a
-			 * relation down under a subquery, to ensure that the security
-			 * barrier quals are evaluated first.
-			 *
-			 * When this happens, we want to use the new subqueries in the
-			 * final rtable.
-			 */
-			forboth(cell1, final_rtable, cell2, subroot->parse->rtable)
-			{
-				RangeTblEntry *rte1 = (RangeTblEntry *) lfirst(cell1);
-				RangeTblEntry *rte2 = (RangeTblEntry *) lfirst(cell2);
-
-				if (rte1->rtekind == RTE_RELATION &&
-					rte2->rtekind == RTE_SUBQUERY)
-				{
-					/* Should only be when there are securityQuals today */
-					Assert(rte1->securityQuals != NIL);
-					tmp_rtable = lappend(tmp_rtable, rte2);
-				}
-				else
-					tmp_rtable = lappend(tmp_rtable, rte1);
-			}
-
-			final_rtable = list_concat(tmp_rtable,
+			final_rtable = list_concat(final_rtable,
 									   list_copy_tail(subroot->parse->rtable,
 												 list_length(final_rtable)));
-		}
 
 		/*
 		 * We need to collect all the RelOptInfos from all child plans into
@@ -1437,8 +1402,9 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 	int64		count_est = 0;
 	double		limit_tuples = -1.0;
 	bool		have_postponed_srfs = false;
-	double		tlist_rows;
 	PathTarget *final_target;
+	List	   *final_targets;
+	List	   *final_targets_contain_srfs;
 	RelOptInfo *current_rel;
 	RelOptInfo *final_rel;
 	ListCell   *lc;
@@ -1501,6 +1467,10 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 		/* Also extract the PathTarget form of the setop result tlist */
 		final_target = current_rel->cheapest_total_path->pathtarget;
 
+		/* The setop result tlist couldn't contain any SRFs */
+		Assert(!parse->hasTargetSRFs);
+		final_targets = final_targets_contain_srfs = NIL;
+
 		/*
 		 * Can't handle FOR [KEY] UPDATE/SHARE here (parser should have
 		 * checked already, but let's make sure).
@@ -1526,8 +1496,14 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 	{
 		/* No set operations, do regular planning */
 		PathTarget *sort_input_target;
+		List	   *sort_input_targets;
+		List	   *sort_input_targets_contain_srfs;
 		PathTarget *grouping_target;
+		List	   *grouping_targets;
+		List	   *grouping_targets_contain_srfs;
 		PathTarget *scanjoin_target;
+		List	   *scanjoin_targets;
+		List	   *scanjoin_targets_contain_srfs;
 		bool		have_grouping;
 		AggClauseCosts agg_costs;
 		WindowFuncLists *wflists = NULL;
@@ -1636,12 +1612,6 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 				preprocess_onconflict_targetlist(parse->onConflict->onConflictSet,
 												 parse->resultRelation,
 												 parse->rtable);
-
-		/*
-		 * Expand any rangetable entries that have security barrier quals.
-		 * This may add new security barrier subquery RTEs to the rangetable.
-		 */
-		expand_security_quals(root, tlist);
 
 		/*
 		 * We are now done hacking up the query's targetlist.  Most of the
@@ -1778,8 +1748,50 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 			scanjoin_target = grouping_target;
 
 		/*
-		 * Forcibly apply scan/join target to all the Paths for the scan/join
-		 * rel.
+		 * If there are any SRFs in the targetlist, we must separate each of
+		 * these PathTargets into SRF-computing and SRF-free targets.  Replace
+		 * each of the named targets with a SRF-free version, and remember the
+		 * list of additional projection steps we need to add afterwards.
+		 */
+		if (parse->hasTargetSRFs)
+		{
+			/* final_target doesn't recompute any SRFs in sort_input_target */
+			split_pathtarget_at_srfs(root, final_target, sort_input_target,
+									 &final_targets,
+									 &final_targets_contain_srfs);
+			final_target = (PathTarget *) linitial(final_targets);
+			Assert(!linitial_int(final_targets_contain_srfs));
+			/* likewise for sort_input_target vs. grouping_target */
+			split_pathtarget_at_srfs(root, sort_input_target, grouping_target,
+									 &sort_input_targets,
+									 &sort_input_targets_contain_srfs);
+			sort_input_target = (PathTarget *) linitial(sort_input_targets);
+			Assert(!linitial_int(sort_input_targets_contain_srfs));
+			/* likewise for grouping_target vs. scanjoin_target */
+			split_pathtarget_at_srfs(root, grouping_target, scanjoin_target,
+									 &grouping_targets,
+									 &grouping_targets_contain_srfs);
+			grouping_target = (PathTarget *) linitial(grouping_targets);
+			Assert(!linitial_int(grouping_targets_contain_srfs));
+			/* scanjoin_target will not have any SRFs precomputed for it */
+			split_pathtarget_at_srfs(root, scanjoin_target, NULL,
+									 &scanjoin_targets,
+									 &scanjoin_targets_contain_srfs);
+			scanjoin_target = (PathTarget *) linitial(scanjoin_targets);
+			Assert(!linitial_int(scanjoin_targets_contain_srfs));
+		}
+		else
+		{
+			/* initialize lists, just to keep compiler quiet */
+			final_targets = final_targets_contain_srfs = NIL;
+			sort_input_targets = sort_input_targets_contain_srfs = NIL;
+			grouping_targets = grouping_targets_contain_srfs = NIL;
+			scanjoin_targets = scanjoin_targets_contain_srfs = NIL;
+		}
+
+		/*
+		 * Forcibly apply SRF-free scan/join target to all the Paths for the
+		 * scan/join rel.
 		 *
 		 * In principle we should re-run set_cheapest() here to identify the
 		 * cheapest path, but it seems unlikely that adding the same tlist
@@ -1850,6 +1862,12 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 			current_rel->partial_pathlist = NIL;
 		}
 
+		/* Now fix things up if scan/join target contains SRFs */
+		if (parse->hasTargetSRFs)
+			adjust_paths_for_srfs(root, current_rel,
+								  scanjoin_targets,
+								  scanjoin_targets_contain_srfs);
+
 		/*
 		 * Save the various upper-rel PathTargets we just computed into
 		 * root->upper_targets[].  The core code doesn't use this, but it
@@ -1874,6 +1892,11 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 												&agg_costs,
 												rollup_lists,
 												rollup_groupclauses);
+			/* Fix things up if grouping_target contains SRFs */
+			if (parse->hasTargetSRFs)
+				adjust_paths_for_srfs(root, current_rel,
+									  grouping_targets,
+									  grouping_targets_contain_srfs);
 		}
 
 		/*
@@ -1889,6 +1912,11 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 											  tlist,
 											  wflists,
 											  activeWindows);
+			/* Fix things up if sort_input_target contains SRFs */
+			if (parse->hasTargetSRFs)
+				adjust_paths_for_srfs(root, current_rel,
+									  sort_input_targets,
+									  sort_input_targets_contain_srfs);
 		}
 
 		/*
@@ -1917,40 +1945,11 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 										   final_target,
 										   have_postponed_srfs ? -1.0 :
 										   limit_tuples);
-	}
-
-	/*
-	 * If there are set-returning functions in the tlist, scale up the output
-	 * rowcounts of all surviving Paths to account for that.  Note that if any
-	 * SRFs appear in sorting or grouping columns, we'll have underestimated
-	 * the numbers of rows passing through earlier steps; but that's such a
-	 * weird usage that it doesn't seem worth greatly complicating matters to
-	 * account for it.
-	 */
-	if (parse->hasTargetSRFs)
-		tlist_rows = tlist_returns_set_rows(tlist);
-	else
-		tlist_rows = 1;
-
-	if (tlist_rows > 1)
-	{
-		foreach(lc, current_rel->pathlist)
-		{
-			Path	   *path = (Path *) lfirst(lc);
-
-			/*
-			 * We assume that execution costs of the tlist as such were
-			 * already accounted for.  However, it still seems appropriate to
-			 * charge something more for the executor's general costs of
-			 * processing the added tuples.  The cost is probably less than
-			 * cpu_tuple_cost, though, so we arbitrarily use half of that.
-			 */
-			path->total_cost += path->rows * (tlist_rows - 1) *
-				cpu_tuple_cost / 2;
-
-			path->rows *= tlist_rows;
-		}
-		/* No need to run set_cheapest; we're keeping all paths anyway. */
+		/* Fix things up if final_target contains SRFs */
+		if (parse->hasTargetSRFs)
+			adjust_paths_for_srfs(root, current_rel,
+								  final_targets,
+								  final_targets_contain_srfs);
 	}
 
 	/*
@@ -2300,17 +2299,8 @@ select_rowmark_type(RangeTblEntry *rte, LockClauseStrength strength)
 
 				/*
 				 * We don't need a tuple lock, only the ability to re-fetch
-				 * the row.  Regular tables support ROW_MARK_REFERENCE, but if
-				 * this RTE has security barrier quals, it will be turned into
-				 * a subquery during planning, so use ROW_MARK_COPY.
-				 *
-				 * This is only necessary for LCS_NONE, since real tuple locks
-				 * on an RTE with security barrier quals are supported by
-				 * pushing the lock down into the subquery --- see
-				 * expand_security_qual.
+				 * the row.
 				 */
-				if (rte->securityQuals != NIL)
-					return ROW_MARK_COPY;
 				return ROW_MARK_REFERENCE;
 				break;
 			case LCS_FORKEYSHARE:
@@ -5151,6 +5141,109 @@ get_cheapest_fractional_path(RelOptInfo *rel, double tuple_fraction)
 	}
 
 	return best_path;
+}
+
+/*
+ * adjust_paths_for_srfs
+ *		Fix up the Paths of the given upperrel to handle tSRFs properly.
+ *
+ * The executor can only handle set-returning functions that appear at the
+ * top level of the targetlist of a ProjectSet plan node.  If we have any SRFs
+ * that are not at top level, we need to split up the evaluation into multiple
+ * plan levels in which each level satisfies this constraint.  This function
+ * modifies each Path of an upperrel that (might) compute any SRFs in its
+ * output tlist to insert appropriate projection steps.
+ *
+ * The given targets and targets_contain_srfs lists are from
+ * split_pathtarget_at_srfs().  We assume the existing Paths emit the first
+ * target in targets.
+ */
+static void
+adjust_paths_for_srfs(PlannerInfo *root, RelOptInfo *rel,
+					  List *targets, List *targets_contain_srfs)
+{
+	ListCell   *lc;
+
+	Assert(list_length(targets) == list_length(targets_contain_srfs));
+	Assert(!linitial_int(targets_contain_srfs));
+
+	/* If no SRFs appear at this plan level, nothing to do */
+	if (list_length(targets) == 1)
+		return;
+
+	/*
+	 * Stack SRF-evaluation nodes atop each path for the rel.
+	 *
+	 * In principle we should re-run set_cheapest() here to identify the
+	 * cheapest path, but it seems unlikely that adding the same tlist eval
+	 * costs to all the paths would change that, so we don't bother. Instead,
+	 * just assume that the cheapest-startup and cheapest-total paths remain
+	 * so.  (There should be no parameterized paths anymore, so we needn't
+	 * worry about updating cheapest_parameterized_paths.)
+	 */
+	foreach(lc, rel->pathlist)
+	{
+		Path	   *subpath = (Path *) lfirst(lc);
+		Path	   *newpath = subpath;
+		ListCell   *lc1,
+				   *lc2;
+
+		Assert(subpath->param_info == NULL);
+		forboth(lc1, targets, lc2, targets_contain_srfs)
+		{
+			PathTarget *thistarget = (PathTarget *) lfirst(lc1);
+			bool		contains_srfs = (bool) lfirst_int(lc2);
+
+			/* If this level doesn't contain SRFs, do regular projection */
+			if (contains_srfs)
+				newpath = (Path *) create_set_projection_path(root,
+															  rel,
+															  newpath,
+															  thistarget);
+			else
+				newpath = (Path *) apply_projection_to_path(root,
+															rel,
+															newpath,
+															thistarget);
+		}
+		lfirst(lc) = newpath;
+		if (subpath == rel->cheapest_startup_path)
+			rel->cheapest_startup_path = newpath;
+		if (subpath == rel->cheapest_total_path)
+			rel->cheapest_total_path = newpath;
+	}
+
+	/* Likewise for partial paths, if any */
+	foreach(lc, rel->partial_pathlist)
+	{
+		Path	   *subpath = (Path *) lfirst(lc);
+		Path	   *newpath = subpath;
+		ListCell   *lc1,
+				   *lc2;
+
+		Assert(subpath->param_info == NULL);
+		forboth(lc1, targets, lc2, targets_contain_srfs)
+		{
+			PathTarget *thistarget = (PathTarget *) lfirst(lc1);
+			bool		contains_srfs = (bool) lfirst_int(lc2);
+
+			/* If this level doesn't contain SRFs, do regular projection */
+			if (contains_srfs)
+				newpath = (Path *) create_set_projection_path(root,
+															  rel,
+															  newpath,
+															  thistarget);
+			else
+			{
+				/* avoid apply_projection_to_path, in case of multiple refs */
+				newpath = (Path *) create_projection_path(root,
+														  rel,
+														  newpath,
+														  thistarget);
+			}
+		}
+		lfirst(lc) = newpath;
+	}
 }
 
 /*

@@ -11,7 +11,7 @@
  *			- Add a pgstat config column to pg_database, so this
  *			  entire thing can be enabled/disabled on a per db basis.
  *
- *	Copyright (c) 2001-2016, PostgreSQL Global Development Group
+ *	Copyright (c) 2001-2017, PostgreSQL Global Development Group
  *
  *	src/backend/postmaster/pgstat.c
  * ----------
@@ -3302,6 +3302,12 @@ pgstat_get_wait_activity(WaitEventActivity w)
 			break;
 		case WAIT_EVENT_WAL_WRITER_MAIN:
 			event_name = "WalWriterMain";
+			break;
+		case WAIT_EVENT_LOGICAL_LAUNCHER_MAIN:
+			event_name = "LogicalLauncherMain";
+			break;
+		case WAIT_EVENT_LOGICAL_APPLY_MAIN:
+			event_name = "LogicalApplyMain";
 			break;
 		/* no default case, so that compiler will warn */
 	}

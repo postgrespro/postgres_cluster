@@ -3,7 +3,7 @@
  * postgres_fdw.c
  *		  Foreign-data wrapper for remote PostgreSQL servers
  *
- * Portions Copyright (c) 2012-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2012-2017, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		  contrib/postgres_fdw/postgres_fdw.c
@@ -3444,7 +3444,7 @@ process_query_params(ExprContext *econtext,
 		bool		isNull;
 
 		/* Evaluate the parameter expression */
-		expr_value = ExecEvalExpr(expr_state, econtext, &isNull, NULL);
+		expr_value = ExecEvalExpr(expr_state, econtext, &isNull);
 
 		/*
 		 * Get string representation of each parameter value by invoking

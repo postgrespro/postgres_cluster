@@ -6,7 +6,7 @@
  *	   logical replication slots via SQL.
  *
  *
- * Copyright (c) 2012-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2012-2017, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/replication/logicalfuncs.c
@@ -37,6 +37,7 @@
 #include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/pg_lsn.h"
+#include "utils/regproc.h"
 #include "utils/resowner.h"
 #include "utils/lsyscache.h"
 

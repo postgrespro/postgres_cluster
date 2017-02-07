@@ -3,7 +3,7 @@
  * nodeFunctionscan.c
  *	  Support routines for scanning RangeFunctions (functions in rangetable).
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -330,8 +330,6 @@ ExecInitFunctionScan(FunctionScan *node, EState *estate, int eflags)
 	 * create expression context for node
 	 */
 	ExecAssignExprContext(estate, &scanstate->ss.ps);
-
-	scanstate->ss.ps.ps_TupFromTlist = false;
 
 	/*
 	 * tuple table initialization

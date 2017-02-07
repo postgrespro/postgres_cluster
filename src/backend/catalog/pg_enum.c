@@ -3,7 +3,7 @@
  * pg_enum.c
  *	  routines to support manipulation of the pg_enum relation
  *
- * Copyright (c) 2006-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2006-2017, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -24,6 +24,7 @@
 #include "catalog/pg_type.h"
 #include "storage/lmgr.h"
 #include "miscadmin.h"
+#include "nodes/value.h"
 #include "utils/builtins.h"
 #include "utils/catcache.h"
 #include "utils/fmgroids.h"

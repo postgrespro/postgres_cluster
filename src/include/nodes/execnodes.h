@@ -4,7 +4,7 @@
  *	  definitions for executor state nodes
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/nodes/execnodes.h
@@ -156,7 +156,8 @@ typedef struct ExprContext
 } ExprContext;
 
 /*
- * Set-result status returned by ExecEvalExpr()
+ * Set-result status used when evaluating functions potentially returning a
+ * set.
  */
 typedef enum
 {
@@ -228,7 +229,6 @@ typedef struct ReturnSetInfo
  *		targetlist		target list for projection (non-Var expressions only)
  *		exprContext		expression context in which to evaluate targetlist
  *		slot			slot to place projection result in
- *		itemIsDone		workspace array for ExecProject
  *		directMap		true if varOutputCols[] is an identity map
  *		numSimpleVars	number of simple Vars found in original tlist
  *		varSlotOffsets	array indicating which slot each simple Var is from
@@ -245,7 +245,6 @@ typedef struct ProjectionInfo
 	List	   *pi_targetlist;
 	ExprContext *pi_exprContext;
 	TupleTableSlot *pi_slot;
-	ExprDoneCond *pi_itemIsDone;
 	bool		pi_directMap;
 	int			pi_numSimpleVars;
 	int		   *pi_varSlotOffsets;
@@ -349,6 +348,7 @@ typedef struct ResultRelInfo
 	List	   *ri_onConflictSetWhere;
 	List	   *ri_PartitionCheck;
 	List	   *ri_PartitionCheckExpr;
+	Relation	ri_PartitionRoot;
 } ResultRelInfo;
 
 /* ----------------
@@ -383,9 +383,6 @@ typedef struct EState
 	TupleTableSlot *es_trig_tuple_slot; /* for trigger output tuples */
 	TupleTableSlot *es_trig_oldtup_slot;		/* for TriggerEnabled */
 	TupleTableSlot *es_trig_newtup_slot;		/* for TriggerEnabled */
-
-	/* Slot used to manipulate a tuple after it is routed to a partition */
-	TupleTableSlot *es_partition_tuple_slot;
 
 	/* Parameter info: */
 	ParamListInfo es_param_list_info;	/* values of external params */
@@ -588,8 +585,7 @@ typedef struct ExprState ExprState;
 
 typedef Datum (*ExprStateEvalFunc) (ExprState *expression,
 												ExprContext *econtext,
-												bool *isNull,
-												ExprDoneCond *isDone);
+												bool *isNull);
 
 struct ExprState
 {
@@ -698,7 +694,7 @@ typedef struct FuncExprState
 	/*
 	 * Function manager's lookup info for the target function.  If func.fn_oid
 	 * is InvalidOid, we haven't initialized it yet (nor any of the following
-	 * fields).
+	 * fields, except funcReturnsSet).
 	 */
 	FmgrInfo	func;
 
@@ -719,6 +715,12 @@ typedef struct FuncExprState
 										 * NULL */
 
 	/*
+	 * Remember whether the function is declared to return a set.  This is set
+	 * by ExecInitExpr, and is valid even before the FmgrInfo is set up.
+	 */
+	bool		funcReturnsSet;
+
+	/*
 	 * setArgsValid is true when we are evaluating a set-returning function
 	 * that uses value-per-call mode and we are in the middle of a call
 	 * series; we want to pass the same argument values to the function again
@@ -726,13 +728,6 @@ typedef struct FuncExprState
 	 * fcinfo_data already contains valid argument data.
 	 */
 	bool		setArgsValid;
-
-	/*
-	 * Flag to remember whether we found a set-valued argument to the
-	 * function. This causes the function result to be a set as well. Valid
-	 * only when setArgsValid is true or funcResultStore isn't NULL.
-	 */
-	bool		setHasSetArg;	/* some argument returns a set */
 
 	/*
 	 * Flag to remember whether we have registered a shutdown callback for
@@ -1077,8 +1072,6 @@ typedef struct PlanState
 	TupleTableSlot *ps_ResultTupleSlot; /* slot for my result tuples */
 	ExprContext *ps_ExprContext;	/* node's expression-evaluation context */
 	ProjectionInfo *ps_ProjInfo;	/* info for doing tuple projection */
-	bool		ps_TupFromTlist;/* state flag for processing set-valued
-								 * functions in targetlist */
 } PlanState;
 
 /* ----------------
@@ -1132,6 +1125,18 @@ typedef struct ResultState
 } ResultState;
 
 /* ----------------
+ *	 ProjectSetState information
+ * ----------------
+ */
+typedef struct ProjectSetState
+{
+	PlanState	ps;				/* its first field is NodeTag */
+	ExprDoneCond *elemdone;		/* array of per-SRF is-done states */
+	int			nelems;			/* length of elemdone[] array */
+	bool		pending_srf_tuples;		/* still evaluating srfs in tlist? */
+} ProjectSetState;
+
+/* ----------------
  *	 ModifyTableState information
  * ----------------
  */
@@ -1165,6 +1170,7 @@ typedef struct ModifyTableState
 	ResultRelInfo  *mt_partitions;	/* Per partition result relation */
 	TupleConversionMap **mt_partition_tupconv_maps;
 									/* Per partition tuple conversion map */
+	TupleTableSlot *mt_partition_tuple_slot;
 } ModifyTableState;
 
 /* ----------------

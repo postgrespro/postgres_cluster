@@ -2,7 +2,7 @@
  *
  * walmethods.h
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		  src/bin/pg_basebackup/walmethods.h
@@ -41,7 +41,8 @@ struct WalWriteMethod
  *						   (only implements the methods required for pg_basebackup,
  *						   not all those required for pg_receivexlog)
  */
-WalWriteMethod *CreateWalDirectoryMethod(const char *basedir, bool sync);
+WalWriteMethod *CreateWalDirectoryMethod(const char *basedir,
+										 int compression, bool sync);
 WalWriteMethod *CreateWalTarMethod(const char *tarbase, int compression, bool sync);
 
 /* Cleanup routines for previously-created methods */

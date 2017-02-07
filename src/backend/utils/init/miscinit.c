@@ -3,7 +3,7 @@
  * miscinit.c
  *	  miscellaneous initialization support stuff
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -48,6 +48,7 @@
 #include "utils/guc.h"
 #include "utils/memutils.h"
 #include "utils/syscache.h"
+#include "utils/varlena.h"
 
 
 #define DIRECTORY_LOCK_FILE		"postmaster.pid"

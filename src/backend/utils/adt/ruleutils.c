@@ -4,7 +4,7 @@
  *	  Functions to convert stored expressions/querytrees back to
  *	  source text
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -67,6 +67,7 @@
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 #include "utils/typcache.h"
+#include "utils/varlena.h"
 #include "utils/xml.h"
 
 

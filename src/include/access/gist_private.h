@@ -4,7 +4,7 @@
  *	  private declarations for GiST -- declarations related to the
  *	  internal implementation of GiST, not the public API
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/gist_private.h
@@ -423,7 +423,6 @@ typedef struct GiSTOptions
 } GiSTOptions;
 
 /* gist.c */
-extern Datum gisthandler(PG_FUNCTION_ARGS);
 extern void gistbuildempty(Relation index);
 extern bool gistinsert(Relation r, Datum *values, bool *isnull,
 		   ItemPointer ht_ctid, Relation heapRel,

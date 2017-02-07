@@ -3,7 +3,7 @@
  * nodeWorktablescan.c
  *	  routines to handle WorkTableScan nodes.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -173,8 +173,6 @@ ExecInitWorkTableScan(WorkTableScan *node, EState *estate, int eflags)
 	 * Initialize result tuple type, but not yet projection info.
 	 */
 	ExecAssignResultTypeFromTL(&scanstate->ss.ps);
-
-	scanstate->ss.ps.ps_TupFromTlist = false;
 
 	return scanstate;
 }

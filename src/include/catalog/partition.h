@@ -4,7 +4,7 @@
  *		Header file for structures and utility functions related to
  *		partitioning
  *
- * Copyright (c) 2007-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2007-2017, PostgreSQL Global Development Group
  *
  * src/include/catalog/partition.h
  *
@@ -77,7 +77,9 @@ extern bool partition_bounds_equal(PartitionKey key,
 extern void check_new_partition_bound(char *relname, Relation parent, Node *bound);
 extern Oid get_partition_parent(Oid relid);
 extern List *get_qual_from_partbound(Relation rel, Relation parent, Node *bound);
-extern List *RelationGetPartitionQual(Relation rel, bool recurse);
+extern List *map_partition_varattnos(List *expr, int target_varno,
+						Relation partrel, Relation parent);
+extern List *RelationGetPartitionQual(Relation rel);
 
 /* For tuple routing */
 extern PartitionDispatch *RelationGetPartitionDispatchInfo(Relation rel,

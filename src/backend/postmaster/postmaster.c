@@ -32,7 +32,7 @@
  *	  clients.
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -113,6 +113,7 @@
 #include "postmaster/pgarch.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
+#include "replication/logicallauncher.h"
 #include "replication/walsender.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -126,6 +127,7 @@
 #include "utils/memutils.h"
 #include "utils/ps_status.h"
 #include "utils/timeout.h"
+#include "utils/varlena.h"
 
 #ifdef EXEC_BACKEND
 #include "storage/spin.h"
@@ -366,6 +368,11 @@ static volatile bool HaveCrashedWorker = false;
  */
 static unsigned int random_seed = 0;
 static struct timeval random_start_time;
+#endif
+
+#ifdef USE_SSL
+/* Set when and if SSL has been initialized properly */
+static bool LoadedSSL = false;
 #endif
 
 #ifdef USE_BONJOUR
@@ -930,8 +937,19 @@ PostmasterMain(int argc, char *argv[])
 	 */
 #ifdef USE_SSL
 	if (EnableSSL)
-		secure_initialize();
+	{
+		(void) secure_initialize(true);
+		LoadedSSL = true;
+	}
 #endif
+
+	/*
+	 * Register the apply launcher.  Since it registers a background worker,
+	 * it needs to be called before InitializeMaxBackends(), and it's probably
+	 * a good idea to call it before any modules had chance to take the
+	 * background worker slots.
+	 */
+	ApplyLauncherRegister();
 
 	/*
 	 * process any libraries that should be preloaded at postmaster start
@@ -1961,7 +1979,7 @@ ProcessStartupPacket(Port *port, bool SSLdone)
 
 #ifdef USE_SSL
 		/* No SSL when disabled or on Unix sockets */
-		if (!EnableSSL || IS_AF_UNIX(port->laddr.addr.ss_family))
+		if (!LoadedSSL || IS_AF_UNIX(port->laddr.addr.ss_family))
 			SSLok = 'N';
 		else
 			SSLok = 'S';		/* Support for SSL */
@@ -2498,12 +2516,29 @@ SIGHUP_handler(SIGNAL_ARGS)
 
 		/* Reload authentication config files too */
 		if (!load_hba())
-			ereport(WARNING,
-					(errmsg("pg_hba.conf not reloaded")));
+			ereport(LOG,
+					(errmsg("pg_hba.conf was not reloaded")));
 
 		if (!load_ident())
-			ereport(WARNING,
-					(errmsg("pg_ident.conf not reloaded")));
+			ereport(LOG,
+					(errmsg("pg_ident.conf was not reloaded")));
+
+#ifdef USE_SSL
+		/* Reload SSL configuration as well */
+		if (EnableSSL)
+		{
+			if (secure_initialize(false) == 0)
+				LoadedSSL = true;
+			else
+				ereport(LOG,
+						(errmsg("SSL configuration was not reloaded")));
+		}
+		else
+		{
+			secure_destroy();
+			LoadedSSL = false;
+		}
+#endif
 
 #ifdef EXEC_BACKEND
 		/* Update the starting-point file for future children */
@@ -4733,12 +4768,22 @@ SubPostmasterMain(int argc, char *argv[])
 		 * context structures contain function pointers and cannot be passed
 		 * through the parameter file.
 		 *
+		 * If for some reason reload fails (maybe the user installed broken
+		 * key files), soldier on without SSL; that's better than all
+		 * connections becoming impossible.
+		 *
 		 * XXX should we do this in all child processes?  For the moment it's
 		 * enough to do it in backend children.
 		 */
 #ifdef USE_SSL
 		if (EnableSSL)
-			secure_initialize();
+		{
+			if (secure_initialize(false) == 0)
+				LoadedSSL = true;
+			else
+				ereport(LOG,
+						(errmsg("SSL configuration could not be loaded in child process")));
+		}
 #endif
 
 		/*

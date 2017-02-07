@@ -4,7 +4,7 @@
  *
  * See src/backend/access/brin/README for details.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -28,6 +28,7 @@
 #include "pgstat.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
+#include "utils/builtins.h"
 #include "utils/index_selfuncs.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"

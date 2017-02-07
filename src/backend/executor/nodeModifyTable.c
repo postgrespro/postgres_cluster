@@ -3,7 +3,7 @@
  * nodeModifyTable.c
  *	  routines to handle ModifyTable nodes.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -175,7 +175,7 @@ ExecProcessReturning(ResultRelInfo *resultRelInfo,
 	econtext->ecxt_outertuple = planSlot;
 
 	/* Compute the RETURNING expressions */
-	return ExecProject(projectReturning, NULL);
+	return ExecProject(projectReturning);
 }
 
 /*
@@ -262,7 +262,8 @@ ExecInsert(ModifyTableState *mtstate,
 	Relation	resultRelationDesc;
 	Oid			newId;
 	List	   *recheckIndexes = NIL;
-	TupleTableSlot *oldslot = NULL;
+	TupleTableSlot *oldslot = slot,
+				   *result = NULL;
 
 	/*
 	 * get the heap tuple out of the tuple table slot, making sure we have a
@@ -328,8 +329,7 @@ ExecInsert(ModifyTableState *mtstate,
 			 * point on, until we're finished dealing with the partition.
 			 * Use the dedicated slot for that.
 			 */
-			oldslot = slot;
-			slot = estate->es_partition_tuple_slot;
+			slot = mtstate->mt_partition_tuple_slot;
 			Assert(slot != NULL);
 			ExecSetSlotDescriptor(slot, RelationGetDescr(partrel));
 			ExecStoreTuple(tuple, slot, InvalidBuffer, true);
@@ -434,7 +434,7 @@ ExecInsert(ModifyTableState *mtstate,
 		 * Check the constraints of the tuple
 		 */
 		if (resultRelationDesc->rd_att->constr || resultRelInfo->ri_PartitionCheck)
-			ExecConstraints(resultRelInfo, slot, estate);
+			ExecConstraints(resultRelInfo, slot, oldslot, estate);
 
 		if (onconflict != ONCONFLICT_NONE && resultRelInfo->ri_NumIndices > 0)
 		{
@@ -575,16 +575,6 @@ ExecInsert(ModifyTableState *mtstate,
 
 	list_free(recheckIndexes);
 
-	if (saved_resultRelInfo)
-	{
-		resultRelInfo = saved_resultRelInfo;
-		estate->es_result_relation_info = resultRelInfo;
-
-		/* Switch back to the slot corresponding to the root table */
-		Assert(oldslot != NULL);
-		slot = oldslot;
-	}
-
 	/*
 	 * Check any WITH CHECK OPTION constraints from parent views.  We are
 	 * required to do this after testing all constraints and uniqueness
@@ -602,9 +592,12 @@ ExecInsert(ModifyTableState *mtstate,
 
 	/* Process RETURNING if present */
 	if (resultRelInfo->ri_projectReturning)
-		return ExecProcessReturning(resultRelInfo, slot, planSlot);
+		result = ExecProcessReturning(resultRelInfo, slot, planSlot);
 
-	return NULL;
+	if (saved_resultRelInfo)
+		estate->es_result_relation_info = saved_resultRelInfo;
+
+	return result;
 }
 
 /* ----------------------------------------------------------------
@@ -994,10 +987,12 @@ lreplace:;
 								 resultRelInfo, slot, estate);
 
 		/*
-		 * Check the constraints of the tuple
+		 * Check the constraints of the tuple.  Note that we pass the same
+		 * slot for the orig_slot argument, because unlike ExecInsert(), no
+		 * tuple-routing is performed here, hence the slot remains unchanged.
 		 */
 		if (resultRelationDesc->rd_att->constr || resultRelInfo->ri_PartitionCheck)
-			ExecConstraints(resultRelInfo, slot, estate);
+			ExecConstraints(resultRelInfo, slot, slot, estate);
 
 		/*
 		 * replace the heap tuple
@@ -1305,7 +1300,7 @@ ExecOnConflictUpdate(ModifyTableState *mtstate,
 	}
 
 	/* Project the new tuple version */
-	ExecProject(resultRelInfo->ri_onConflictSetProj, NULL);
+	ExecProject(resultRelInfo->ri_onConflictSetProj);
 
 	/*
 	 * Note that it is possible that the target tuple has been modified in
@@ -1738,6 +1733,7 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 		PartitionDispatch  *partition_dispatch_info;
 		ResultRelInfo	   *partitions;
 		TupleConversionMap **partition_tupconv_maps;
+		TupleTableSlot	   *partition_tuple_slot;
 		int					num_parted,
 							num_partitions;
 
@@ -1745,21 +1741,15 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 									   &partition_dispatch_info,
 									   &partitions,
 									   &partition_tupconv_maps,
+									   &partition_tuple_slot,
 									   &num_parted, &num_partitions);
 		mtstate->mt_partition_dispatch_info = partition_dispatch_info;
 		mtstate->mt_num_dispatch = num_parted;
 		mtstate->mt_partitions = partitions;
 		mtstate->mt_num_partitions = num_partitions;
 		mtstate->mt_partition_tupconv_maps = partition_tupconv_maps;
-
-		/*
-		 * Initialize a dedicated slot to manipulate tuples of any given
-		 * partition's rowtype.
-		 */
-		estate->es_partition_tuple_slot = ExecInitExtraTupleSlot(estate);
+		mtstate->mt_partition_tuple_slot = partition_tuple_slot;
 	}
-	else
-		estate->es_partition_tuple_slot = NULL;
 
 	/*
 	 * Initialize any WITH CHECK OPTION constraints if needed.
@@ -1794,6 +1784,7 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 	{
 		TupleTableSlot *slot;
 		ExprContext *econtext;
+		List		*returningList;
 
 		/*
 		 * Initialize result tuple slot and assign its rowtype using the first
@@ -1820,6 +1811,32 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 			List	   *rlist = (List *) lfirst(l);
 			List	   *rliststate;
 
+			rliststate = (List *) ExecInitExpr((Expr *) rlist, &mtstate->ps);
+			resultRelInfo->ri_projectReturning =
+				ExecBuildProjectionInfo(rliststate, econtext, slot,
+									 resultRelInfo->ri_RelationDesc->rd_att);
+			resultRelInfo++;
+		}
+
+		/*
+		 * Build a projection for each leaf partition rel.  Note that we
+		 * didn't build the returningList for each partition within the
+		 * planner, but simple translation of the varattnos for each
+		 * partition will suffice.  This only occurs for the INSERT case;
+		 * UPDATE/DELETE are handled above.
+		 */
+		resultRelInfo = mtstate->mt_partitions;
+		returningList = linitial(node->returningLists);
+		for (i = 0; i < mtstate->mt_num_partitions; i++)
+		{
+			Relation	partrel = resultRelInfo->ri_RelationDesc;
+			List	   *rlist,
+					   *rliststate;
+
+			/* varno = node->nominalRelation */
+			rlist = map_partition_varattnos(returningList,
+											node->nominalRelation,
+											partrel, rel);
 			rliststate = (List *) ExecInitExpr((Expr *) rlist, &mtstate->ps);
 			resultRelInfo->ri_projectReturning =
 				ExecBuildProjectionInfo(rliststate, econtext, slot,
@@ -2099,6 +2116,10 @@ ExecEndModifyTable(ModifyTableState *node)
 		ExecCloseIndices(resultRelInfo);
 		heap_close(resultRelInfo->ri_RelationDesc, NoLock);
 	}
+
+	/* Release the standalone partition tuple descriptor, if any */
+	if (node->mt_partition_tuple_slot)
+		ExecDropSingleTupleTableSlot(node->mt_partition_tuple_slot);
 
 	/*
 	 * Free the exprcontext

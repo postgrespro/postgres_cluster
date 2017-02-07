@@ -4,7 +4,7 @@
  *	  interface routines for the postgres GiST index access method.
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -18,6 +18,7 @@
 #include "access/gistscan.h"
 #include "catalog/pg_collation.h"
 #include "miscadmin.h"
+#include "utils/builtins.h"
 #include "utils/index_selfuncs.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"

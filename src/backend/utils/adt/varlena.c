@@ -3,7 +3,7 @@
  * varlena.c
  *	  Functions for the variable-length built-in types.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -34,6 +34,7 @@
 #include "utils/memutils.h"
 #include "utils/pg_locale.h"
 #include "utils/sortsupport.h"
+#include "utils/varlena.h"
 
 
 /* GUC variable */
@@ -294,7 +295,7 @@ byteain(PG_FUNCTION_ARGS)
 			 */
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
-					 errmsg("invalid input syntax for type bytea")));
+					 errmsg("invalid input syntax for type %s", "bytea")));
 		}
 	}
 
@@ -335,7 +336,7 @@ byteain(PG_FUNCTION_ARGS)
 			 */
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
-					 errmsg("invalid input syntax for type bytea")));
+					 errmsg("invalid input syntax for type %s", "bytea")));
 		}
 	}
 

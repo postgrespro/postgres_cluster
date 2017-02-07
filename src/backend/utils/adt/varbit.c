@@ -5,7 +5,7 @@
  *
  * Code originally contributed by Adriaan Joubert.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -20,6 +20,7 @@
 #include "libpq/pqformat.h"
 #include "nodes/nodeFuncs.h"
 #include "utils/array.h"
+#include "utils/builtins.h"
 #include "utils/varbit.h"
 
 #define HEXDIG(z)	 ((z)<10 ? ((z)+'0') : ((z)-10+'A'))

@@ -3,7 +3,7 @@
  * tablecmds.c
  *	  Commands for creating and altering table structures and settings
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -20,6 +20,7 @@
 #include "access/reloptions.h"
 #include "access/relscan.h"
 #include "access/sysattr.h"
+#include "access/tupconvert.h"
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "catalog/catalog.h"
@@ -1323,7 +1324,7 @@ ExecuteTruncate(TruncateStmt *stmt)
 		InitResultRelInfo(resultRelInfo,
 						  rel,
 						  0,	/* dummy rangetable index */
-						  false,
+						  NULL,
 						  0);
 		resultRelInfo++;
 	}
@@ -1604,8 +1605,8 @@ MergeAttributes(List *schema, List *supers, char relpersistence,
 	 * execute if the user attempts to create a table with hundreds of
 	 * thousands of columns.
 	 *
-	 * Note that we also need to check that we do not exceed this figure
-	 * after including columns from inherited relations.
+	 * Note that we also need to check that we do not exceed this figure after
+	 * including columns from inherited relations.
 	 */
 	if (list_length(schema) > MaxHeapAttributeNumber)
 		ereport(ERROR,
@@ -4459,8 +4460,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 
 					values[ex->attnum - 1] = ExecEvalExpr(ex->exprstate,
 														  econtext,
-													 &isnull[ex->attnum - 1],
-														  NULL);
+													 &isnull[ex->attnum - 1]);
 				}
 
 				/*
@@ -8539,12 +8539,69 @@ ATPrepAlterColumnType(List **wqueue,
 	ReleaseSysCache(tuple);
 
 	/*
-	 * The recursion case is handled by ATSimpleRecursion.  However, if we are
-	 * told not to recurse, there had better not be any child tables; else the
-	 * alter would put them out of step.
+	 * Recurse manually by queueing a new command for each child, if
+	 * necessary. We cannot apply ATSimpleRecursion here because we need to
+	 * remap attribute numbers in the USING expression, if any.
+	 *
+	 * If we are told not to recurse, there had better not be any child
+	 * tables; else the alter would put them out of step.
 	 */
 	if (recurse)
-		ATSimpleRecursion(wqueue, rel, cmd, recurse, lockmode);
+	{
+		Oid			relid = RelationGetRelid(rel);
+		ListCell   *child;
+		List	   *children;
+
+		children = find_all_inheritors(relid, lockmode, NULL);
+
+		/*
+		 * find_all_inheritors does the recursive search of the inheritance
+		 * hierarchy, so all we have to do is process all of the relids in the
+		 * list that it returns.
+		 */
+		foreach(child, children)
+		{
+			Oid			childrelid = lfirst_oid(child);
+			Relation	childrel;
+
+			if (childrelid == relid)
+				continue;
+
+			/* find_all_inheritors already got lock */
+			childrel = relation_open(childrelid, NoLock);
+			CheckTableNotInUse(childrel, "ALTER TABLE");
+
+			/*
+			 * Remap the attribute numbers.  If no USING expression was
+			 * specified, there is no need for this step.
+			 */
+			if (def->cooked_default)
+			{
+				AttrNumber *attmap;
+				bool		found_whole_row;
+
+				/* create a copy to scribble on */
+				cmd = copyObject(cmd);
+
+				attmap = convert_tuples_by_name_map(RelationGetDescr(childrel),
+													RelationGetDescr(rel),
+								 gettext_noop("could not convert row type"));
+				((ColumnDef *) cmd->def)->cooked_default =
+					map_variable_attnos(def->cooked_default,
+										1, 0,
+										attmap, RelationGetDescr(rel)->natts,
+										&found_whole_row);
+				if (found_whole_row)
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						  errmsg("cannot convert whole-row table reference"),
+							 errdetail("USING expression contains a whole-row table reference.")));
+				pfree(attmap);
+			}
+			ATPrepCmd(wqueue, childrel, cmd, false, true, lockmode);
+			relation_close(childrel, NoLock);
+		}
+	}
 	else if (!recursing &&
 			 find_inheritance_children(RelationGetRelid(rel), NoLock) != NIL)
 		ereport(ERROR,
@@ -9226,7 +9283,8 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, char *cmd,
 	querytree_list = NIL;
 	foreach(list_item, raw_parsetree_list)
 	{
-		Node	   *stmt = (Node *) lfirst(list_item);
+		RawStmt    *rs = (RawStmt *) lfirst(list_item);
+		Node	   *stmt = rs->stmt;
 
 		if (IsA(stmt, IndexStmt))
 			querytree_list = lappend(querytree_list,
@@ -10901,6 +10959,46 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 		}
 	}
 
+	/*
+	 * If the parent has an OID column, so must the child, and we'd better
+	 * update the child's attinhcount and attislocal the same as for normal
+	 * columns.  We needn't check data type or not-nullness though.
+	 */
+	if (tupleDesc->tdhasoid)
+	{
+		/*
+		 * Here we match by column number not name; the match *must* be the
+		 * system column, not some random column named "oid".
+		 */
+		tuple = SearchSysCacheCopy2(ATTNUM,
+							   ObjectIdGetDatum(RelationGetRelid(child_rel)),
+									Int16GetDatum(ObjectIdAttributeNumber));
+		if (HeapTupleIsValid(tuple))
+		{
+			Form_pg_attribute childatt = (Form_pg_attribute) GETSTRUCT(tuple);
+
+			/* See comments above; these changes should be the same */
+			childatt->attinhcount++;
+
+			if (child_is_partition)
+			{
+				Assert(childatt->attinhcount == 1);
+				childatt->attislocal = false;
+			}
+
+			simple_heap_update(attrrel, &tuple->t_self, tuple);
+			CatalogUpdateIndexes(attrrel, tuple);
+			heap_freetuple(tuple);
+		}
+		else
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_DATATYPE_MISMATCH),
+					 errmsg("child table is missing column \"%s\"",
+							"oid")));
+		}
+	}
+
 	heap_close(attrrel, RowExclusiveLock);
 }
 
@@ -11899,6 +11997,12 @@ ATExecGenericOptions(Relation rel, List *options)
 	simple_heap_update(ftrel, &tuple->t_self, tuple);
 	CatalogUpdateIndexes(ftrel, tuple);
 
+	/*
+	 * Invalidate relcache so that all sessions will refresh any cached plans
+	 * that might depend on the old options.
+	 */
+	CacheInvalidateRelcache(rel);
+
 	InvokeObjectPostAlterHook(ForeignTableRelationId,
 							  RelationGetRelid(rel), 0);
 
@@ -11950,6 +12054,18 @@ ATPrepChangePersistence(Relation rel, bool toLogged)
 				return false;
 			break;
 	}
+
+	/*
+	 * Check that the table is not part any publication when changing to
+	 * UNLOGGED as UNLOGGED tables can't be published.
+	 */
+	if (!toLogged &&
+		list_length(GetRelationPublications(RelationGetRelid(rel))) > 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("cannot change table \"%s\" to unlogged because it is part of a publication",
+						RelationGetRelationName(rel)),
+				 errdetail("Unlogged relations cannot be replicated.")));
 
 	/*
 	 * Check existing foreign key constraints to preserve the invariant that
@@ -13150,7 +13266,7 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd)
 	 */
 	partConstraint = list_concat(get_qual_from_partbound(attachRel, rel,
 														 cmd->bound),
-								 RelationGetPartitionQual(rel, true));
+								 RelationGetPartitionQual(rel));
 	partConstraint = (List *) eval_const_expressions(NULL,
 													 (Node *) partConstraint);
 	partConstraint = (List *) canonicalize_qual((Expr *) partConstraint);
@@ -13324,6 +13440,7 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd)
 			Oid			part_relid = lfirst_oid(lc);
 			Relation	part_rel;
 			Expr	   *constr;
+			List	   *my_constr;
 
 			/* Lock already taken */
 			if (part_relid != RelationGetRelid(attachRel))
@@ -13346,8 +13463,11 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd)
 			tab = ATGetQueueEntry(wqueue, part_rel);
 
 			constr = linitial(partConstraint);
-			tab->partition_constraint = make_ands_implicit((Expr *) constr);
-
+			my_constr = make_ands_implicit((Expr *) constr);
+			tab->partition_constraint = map_partition_varattnos(my_constr,
+																1,
+																part_rel,
+																rel);
 			/* keep our lock until commit */
 			if (part_rel != attachRel)
 				heap_close(part_rel, NoLock);

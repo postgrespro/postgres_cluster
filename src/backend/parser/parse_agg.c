@@ -3,7 +3,7 @@
  * parse_agg.c
  *	  handle aggregates and window functions in parser
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -447,6 +447,7 @@ check_agglevels_and_constraints(ParseState *pstate, Node *expr)
 			errkind = true;
 			break;
 		case EXPR_KIND_VALUES:
+		case EXPR_KIND_VALUES_SINGLE:
 			errkind = true;
 			break;
 		case EXPR_KIND_CHECK_CONSTRAINT:
@@ -840,6 +841,7 @@ transformWindowFuncCall(ParseState *pstate, WindowFunc *wfunc,
 			errkind = true;
 			break;
 		case EXPR_KIND_VALUES:
+		case EXPR_KIND_VALUES_SINGLE:
 			errkind = true;
 			break;
 		case EXPR_KIND_CHECK_CONSTRAINT:

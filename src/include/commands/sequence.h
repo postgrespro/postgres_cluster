@@ -3,7 +3,7 @@
  * sequence.h
  *	  prototypes for sequence.c.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/commands/sequence.h
@@ -52,14 +52,6 @@ typedef struct xl_seq_rec
 } xl_seq_rec;
 
 extern Datum nextval(PG_FUNCTION_ARGS);
-extern Datum nextval_oid(PG_FUNCTION_ARGS);
-extern Datum currval_oid(PG_FUNCTION_ARGS);
-extern Datum setval_oid(PG_FUNCTION_ARGS);
-extern Datum setval3_oid(PG_FUNCTION_ARGS);
-extern Datum lastval(PG_FUNCTION_ARGS);
-
-extern Datum pg_sequence_parameters(PG_FUNCTION_ARGS);
-extern Datum pg_sequence_last_value(PG_FUNCTION_ARGS);
 
 extern ObjectAddress DefineSequence(ParseState *pstate, CreateSeqStmt *stmt);
 extern ObjectAddress AlterSequence(ParseState *pstate, AlterSeqStmt *stmt);

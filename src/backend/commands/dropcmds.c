@@ -3,7 +3,7 @@
  * dropcmds.c
  *	  handle various "DROP" operations
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -440,6 +440,10 @@ does_not_exist_skipping(ObjectType objtype, List *objname, List *objargs)
 					args = strVal(linitial(objname));
 				}
 			}
+			break;
+		case OBJECT_PUBLICATION:
+			msg = gettext_noop("publication \"%s\" does not exist, skipping");
+			name = NameListToString(objname);
 			break;
 		default:
 			elog(ERROR, "unrecognized object type: %d", (int) objtype);

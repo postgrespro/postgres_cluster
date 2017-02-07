@@ -2,7 +2,7 @@
  * slot.h
  *	   Replication slot management.
  *
- * Copyright (c) 2012-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2012-2017, PostgreSQL Global Development Group
  *
  *-------------------------------------------------------------------------
  */
@@ -182,11 +182,5 @@ extern void StartupReplicationSlots(void);
 extern void CheckPointReplicationSlots(void);
 
 extern void CheckSlotRequirements(void);
-
-/* SQL callable functions */
-extern Datum pg_create_physical_replication_slot(PG_FUNCTION_ARGS);
-extern Datum pg_create_logical_replication_slot(PG_FUNCTION_ARGS);
-extern Datum pg_drop_replication_slot(PG_FUNCTION_ARGS);
-extern Datum pg_get_replication_slots(PG_FUNCTION_ARGS);
 
 #endif   /* SLOT_H */

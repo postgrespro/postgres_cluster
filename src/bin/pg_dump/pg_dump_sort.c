@@ -4,7 +4,7 @@
  *	  Sort the items of a dump into a safe order for dumping
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -71,7 +71,10 @@ static const int dbObjectTypePriority[] =
 	26,							/* DO_POST_DATA_BOUNDARY */
 	33,							/* DO_EVENT_TRIGGER */
 	34,							/* DO_REFRESH_MATVIEW */
-	35							/* DO_POLICY */
+	35,							/* DO_POLICY */
+	36,							/* DO_PUBLICATION */
+	37,							/* DO_PUBLICATION_REL */
+	38							/* DO_SUBSCRIPTION */
 };
 
 static DumpId preDataBoundId;
@@ -1395,6 +1398,21 @@ describeDumpableObject(DumpableObject *obj, char *buf, int bufsize)
 		case DO_POLICY:
 			snprintf(buf, bufsize,
 					 "POLICY (ID %d OID %u)",
+					 obj->dumpId, obj->catId.oid);
+			return;
+		case DO_PUBLICATION:
+			snprintf(buf, bufsize,
+					 "PUBLICATION (ID %d OID %u)",
+					 obj->dumpId, obj->catId.oid);
+			return;
+		case DO_PUBLICATION_REL:
+			snprintf(buf, bufsize,
+					 "PUBLICATION TABLE (ID %d OID %u)",
+					 obj->dumpId, obj->catId.oid);
+			return;
+		case DO_SUBSCRIPTION:
+			snprintf(buf, bufsize,
+					 "SUBSCRIPTION (ID %d OID %u)",
 					 obj->dumpId, obj->catId.oid);
 			return;
 		case DO_PRE_DATA_BOUNDARY:

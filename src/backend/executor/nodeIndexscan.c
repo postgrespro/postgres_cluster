@@ -3,7 +3,7 @@
  * nodeIndexscan.c
  *	  Routines to support indexed scans of relations
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -336,8 +336,7 @@ EvalOrderByExpressions(IndexScanState *node, ExprContext *econtext)
 
 		node->iss_OrderByValues[i] = ExecEvalExpr(orderby,
 												  econtext,
-												  &node->iss_OrderByNulls[i],
-												  NULL);
+												  &node->iss_OrderByNulls[i]);
 		i++;
 	}
 
@@ -590,8 +589,7 @@ ExecIndexEvalRuntimeKeys(ExprContext *econtext,
 		 */
 		scanvalue = ExecEvalExpr(key_expr,
 								 econtext,
-								 &isNull,
-								 NULL);
+								 &isNull);
 		if (isNull)
 		{
 			scan_key->sk_argument = scanvalue;
@@ -648,8 +646,7 @@ ExecIndexEvalArrayKeys(ExprContext *econtext,
 		 */
 		arraydatum = ExecEvalExpr(array_expr,
 								  econtext,
-								  &isNull,
-								  NULL);
+								  &isNull);
 		if (isNull)
 		{
 			result = false;
@@ -836,8 +833,6 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	 * create expression context for node
 	 */
 	ExecAssignExprContext(estate, &indexstate->ss.ps);
-
-	indexstate->ss.ps.ps_TupFromTlist = false;
 
 	/*
 	 * initialize child expressions

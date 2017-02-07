@@ -4,7 +4,7 @@
  *	  Public header file for SP-GiST access method.
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/spgist.h
@@ -183,7 +183,6 @@ typedef struct spgLeafConsistentOut
 
 
 /* spgutils.c */
-extern Datum spghandler(PG_FUNCTION_ARGS);
 extern bytea *spgoptions(Datum reloptions, bool validate);
 
 /* spginsert.c */

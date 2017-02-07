@@ -4,7 +4,7 @@
  *	  XML data type support.
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/backend/utils/adt/xml.c
@@ -603,7 +603,7 @@ xmlelement(XmlExprState *xmlExpr, ExprContext *econtext)
 		bool		isnull;
 		char	   *str;
 
-		value = ExecEvalExpr(e, econtext, &isnull, NULL);
+		value = ExecEvalExpr(e, econtext, &isnull);
 		if (isnull)
 			str = NULL;
 		else
@@ -620,7 +620,7 @@ xmlelement(XmlExprState *xmlExpr, ExprContext *econtext)
 		bool		isnull;
 		char	   *str;
 
-		value = ExecEvalExpr(e, econtext, &isnull, NULL);
+		value = ExecEvalExpr(e, econtext, &isnull);
 		/* here we can just forget NULL elements immediately */
 		if (!isnull)
 		{

@@ -5,7 +5,7 @@
  *
  * Access-method specific inspection functions are in separate files.
  *
- * Copyright (c) 2007-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2007-2017, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  contrib/pageinspect/rawpage.c
@@ -25,6 +25,7 @@
 #include "utils/builtins.h"
 #include "utils/pg_lsn.h"
 #include "utils/rel.h"
+#include "utils/varlena.h"
 
 PG_MODULE_MAGIC;
 

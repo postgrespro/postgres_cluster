@@ -6,7 +6,7 @@
  * See src/backend/utils/misc/README for more information.
  *
  *
- * Copyright (c) 2000-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2017, PostgreSQL Global Development Group
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
@@ -59,6 +59,7 @@
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
 #include "postmaster/walwriter.h"
+#include "replication/logicallauncher.h"
 #include "replication/slot.h"
 #include "replication/syncrep.h"
 #include "replication/walreceiver.h"
@@ -83,6 +84,7 @@
 #include "utils/rls.h"
 #include "utils/snapmgr.h"
 #include "utils/tzparser.h"
+#include "utils/varlena.h"
 #include "utils/xml.h"
 
 #ifndef PG_KRB_SRVTAB
@@ -934,7 +936,7 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
-		{"ssl", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		{"ssl", PGC_SIGHUP, CONN_AUTH_SECURITY,
 			gettext_noop("Enables SSL connections."),
 			NULL
 		},
@@ -943,7 +945,7 @@ static struct config_bool ConfigureNamesBool[] =
 		check_ssl, NULL, NULL
 	},
 	{
-		{"ssl_prefer_server_ciphers", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		{"ssl_prefer_server_ciphers", PGC_SIGHUP, CONN_AUTH_SECURITY,
 			gettext_noop("Give priority to server ciphersuite order."),
 			NULL
 		},
@@ -2304,7 +2306,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_XBLOCKS
 		},
 		&WalWriterFlushAfter,
-		(1024*1024) / XLOG_BLCKSZ, 0, INT_MAX,
+		(1024 * 1024) / XLOG_BLCKSZ, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
 
@@ -2315,7 +2317,7 @@ static struct config_int ConfigureNamesInt[] =
 			NULL
 		},
 		&max_wal_senders,
-		0, 0, MAX_BACKENDS,
+		10, 0, MAX_BACKENDS,
 		NULL, NULL, NULL
 	},
 
@@ -2326,7 +2328,7 @@ static struct config_int ConfigureNamesInt[] =
 			NULL
 		},
 		&max_replication_slots,
-		0, 0, MAX_BACKENDS /* XXX? */ ,
+		10, 0, MAX_BACKENDS /* XXX? */ ,
 		NULL, NULL, NULL
 	},
 
@@ -2469,6 +2471,18 @@ static struct config_int ConfigureNamesInt[] =
 		&max_worker_processes,
 		8, 0, MAX_BACKENDS,
 		check_max_worker_processes, NULL, NULL
+	},
+
+	{
+		{"max_logical_replication_workers",
+			PGC_POSTMASTER,
+			RESOURCES_ASYNCHRONOUS,
+			gettext_noop("Maximum number of logical replication worker processes."),
+			NULL,
+		},
+		&max_logical_replication_workers,
+		4, 0, MAX_BACKENDS,
+		NULL, NULL, NULL
 	},
 
 	{
@@ -3435,7 +3449,7 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"ssl_cert_file", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		{"ssl_cert_file", PGC_SIGHUP, CONN_AUTH_SECURITY,
 			gettext_noop("Location of the SSL server certificate file."),
 			NULL
 		},
@@ -3445,7 +3459,7 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"ssl_key_file", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		{"ssl_key_file", PGC_SIGHUP, CONN_AUTH_SECURITY,
 			gettext_noop("Location of the SSL server private key file."),
 			NULL
 		},
@@ -3455,7 +3469,7 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"ssl_ca_file", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		{"ssl_ca_file", PGC_SIGHUP, CONN_AUTH_SECURITY,
 			gettext_noop("Location of the SSL certificate authority file."),
 			NULL
 		},
@@ -3465,7 +3479,7 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"ssl_crl_file", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		{"ssl_crl_file", PGC_SIGHUP, CONN_AUTH_SECURITY,
 			gettext_noop("Location of the SSL certificate revocation list file."),
 			NULL
 		},
@@ -3507,7 +3521,7 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"ssl_ciphers", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		{"ssl_ciphers", PGC_SIGHUP, CONN_AUTH_SECURITY,
 			gettext_noop("Sets the list of allowed SSL ciphers."),
 			NULL,
 			GUC_SUPERUSER_ONLY
@@ -3522,7 +3536,7 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"ssl_ecdh_curve", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		{"ssl_ecdh_curve", PGC_SIGHUP, CONN_AUTH_SECURITY,
 			gettext_noop("Sets the curve to use for ECDH."),
 			NULL,
 			GUC_SUPERUSER_ONLY
@@ -3749,7 +3763,7 @@ static struct config_enum ConfigureNamesEnum[] =
 			NULL
 		},
 		&wal_level,
-		WAL_LEVEL_MINIMAL, wal_level_options,
+		WAL_LEVEL_REPLICA, wal_level_options,
 		NULL, NULL, NULL
 	},
 

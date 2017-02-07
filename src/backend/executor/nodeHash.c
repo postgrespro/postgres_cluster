@@ -3,7 +3,7 @@
  * nodeHash.c
  *	  Routines to hash relations for hashjoin
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -959,7 +959,7 @@ ExecHashGetHashValue(HashJoinTable hashtable,
 		/*
 		 * Get the join attribute value of the tuple
 		 */
-		keyval = ExecEvalExpr(keyexpr, econtext, &isNull, NULL);
+		keyval = ExecEvalExpr(keyexpr, econtext, &isNull);
 
 		/*
 		 * If the attribute is NULL, and the join operator is strict, then

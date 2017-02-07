@@ -3,7 +3,7 @@
  * proclang.c
  *	  PostgreSQL PROCEDURAL LANGUAGE support code.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -278,8 +278,9 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 			{
 				ereport(WARNING,
 						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("changing return type of function %s from \"opaque\" to \"language_handler\"",
-								NameListToString(stmt->plhandler))));
+				  errmsg("changing return type of function %s from %s to %s",
+						 NameListToString(stmt->plhandler),
+						 "opaque", "language_handler")));
 				SetFunctionReturnType(handlerOid, LANGUAGE_HANDLEROID);
 			}
 			else

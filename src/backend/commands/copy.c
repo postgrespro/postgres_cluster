@@ -3,7 +3,7 @@
  * copy.c
  *		Implements the COPY utility command
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -161,11 +161,14 @@ typedef struct CopyStateData
 	ExprState **defexprs;		/* array of default att expressions */
 	bool		volatile_defexprs;		/* is any of defexprs volatile? */
 	List	   *range_table;
+
 	PartitionDispatch *partition_dispatch_info;
-	int			num_dispatch;
-	int			num_partitions;
-	ResultRelInfo *partitions;
+	int			num_dispatch;		/* Number of entries in the above array */
+	int			num_partitions;		/* Number of members in the following
+									 * arrays */
+	ResultRelInfo  *partitions;		/* Per partition result relation */
 	TupleConversionMap **partition_tupconv_maps;
+	TupleTableSlot *partition_tuple_slot;
 
 	/*
 	 * These variables are used to reduce overhead in textual COPY FROM.
@@ -284,13 +287,13 @@ static const char BinarySignature[11] = "PGCOPY\n\377\r\n\0";
 
 
 /* non-export function prototypes */
-static CopyState BeginCopy(ParseState *pstate, bool is_from, Relation rel, Node *raw_query,
-		  const Oid queryRelId, List *attnamelist,
+static CopyState BeginCopy(ParseState *pstate, bool is_from, Relation rel,
+		  RawStmt *raw_query, Oid queryRelId, List *attnamelist,
 		  List *options);
 static void EndCopy(CopyState cstate);
 static void ClosePipeToProgram(CopyState cstate);
-static CopyState BeginCopyTo(ParseState *pstate, Relation rel, Node *query,
-			const Oid queryRelId, const char *filename, bool is_program,
+static CopyState BeginCopyTo(ParseState *pstate, Relation rel, RawStmt *query,
+			Oid queryRelId, const char *filename, bool is_program,
 			List *attnamelist, List *options);
 static void EndCopyTo(CopyState cstate);
 static uint64 DoCopyTo(CopyState cstate);
@@ -767,15 +770,17 @@ CopyLoadRawBuf(CopyState cstate)
  * Do not allow the copy if user doesn't have proper permission to access
  * the table or the specifically requested columns.
  */
-Oid
-DoCopy(ParseState *pstate, const CopyStmt *stmt, uint64 *processed)
+void
+DoCopy(ParseState *pstate, const CopyStmt *stmt,
+	   int stmt_location, int stmt_len,
+	   uint64 *processed)
 {
 	CopyState	cstate;
 	bool		is_from = stmt->is_from;
 	bool		pipe = (stmt->filename == NULL);
 	Relation	rel;
 	Oid			relid;
-	Node	   *query = NULL;
+	RawStmt    *query = NULL;
 	List	   *range_table = NIL;
 
 	/* Disallow COPY to/from file or program except to superusers. */
@@ -926,7 +931,10 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt, uint64 *processed)
 			select->targetList = targetList;
 			select->fromClause = list_make1(from);
 
-			query = (Node *) select;
+			query = makeNode(RawStmt);
+			query->stmt = (Node *) select;
+			query->stmt_location = stmt_location;
+			query->stmt_len = stmt_len;
 
 			/*
 			 * Close the relation for now, but keep the lock on it to prevent
@@ -942,7 +950,11 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt, uint64 *processed)
 	{
 		Assert(stmt->query);
 
-		query = stmt->query;
+		query = makeNode(RawStmt);
+		query->stmt = stmt->query;
+		query->stmt_location = stmt_location;
+		query->stmt_len = stmt_len;
+
 		relid = InvalidOid;
 		rel = NULL;
 	}
@@ -978,8 +990,6 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt, uint64 *processed)
 	 */
 	if (rel != NULL)
 		heap_close(rel, (is_from ? NoLock : AccessShareLock));
-
-	return relid;
 }
 
 /*
@@ -1361,8 +1371,8 @@ static CopyState
 BeginCopy(ParseState *pstate,
 		  bool is_from,
 		  Relation rel,
-		  Node *raw_query,
-		  const Oid queryRelId,
+		  RawStmt *raw_query,
+		  Oid queryRelId,
 		  List *attnamelist,
 		  List *options)
 {
@@ -1409,6 +1419,7 @@ BeginCopy(ParseState *pstate,
 			PartitionDispatch  *partition_dispatch_info;
 			ResultRelInfo	   *partitions;
 			TupleConversionMap **partition_tupconv_maps;
+			TupleTableSlot	   *partition_tuple_slot;
 			int					num_parted,
 								num_partitions;
 
@@ -1416,12 +1427,14 @@ BeginCopy(ParseState *pstate,
 										   &partition_dispatch_info,
 										   &partitions,
 										   &partition_tupconv_maps,
+										   &partition_tuple_slot,
 										   &num_parted, &num_partitions);
 			cstate->partition_dispatch_info = partition_dispatch_info;
 			cstate->num_dispatch = num_parted;
 			cstate->partitions = partitions;
 			cstate->num_partitions = num_partitions;
 			cstate->partition_tupconv_maps = partition_tupconv_maps;
+			cstate->partition_tuple_slot = partition_tuple_slot;
 		}
 	}
 	else
@@ -1450,7 +1463,7 @@ BeginCopy(ParseState *pstate,
 		 * function and is executed repeatedly.  (See also the same hack in
 		 * DECLARE CURSOR and PREPARE.)  XXX FIXME someday.
 		 */
-		rewritten = pg_analyze_and_rewrite((Node *) copyObject(raw_query),
+		rewritten = pg_analyze_and_rewrite((RawStmt *) copyObject(raw_query),
 										   pstate->p_sourcetext, NULL, 0);
 
 		/* check that we got back something we can work with */
@@ -1741,8 +1754,8 @@ EndCopy(CopyState cstate)
 static CopyState
 BeginCopyTo(ParseState *pstate,
 			Relation rel,
-			Node *query,
-			const Oid queryRelId,
+			RawStmt *query,
+			Oid queryRelId,
 			const char *filename,
 			bool is_program,
 			List *attnamelist,
@@ -2419,7 +2432,7 @@ CopyFrom(CopyState cstate)
 	InitResultRelInfo(resultRelInfo,
 					  cstate->rel,
 					  1,		/* dummy rangetable index */
-					  true,		/* do load partition check expression */
+					  NULL,
 					  0);
 
 	ExecOpenIndices(resultRelInfo, false);
@@ -2434,15 +2447,6 @@ CopyFrom(CopyState cstate)
 	ExecSetSlotDescriptor(myslot, tupDesc);
 	/* Triggers might need a slot as well */
 	estate->es_trig_tuple_slot = ExecInitExtraTupleSlot(estate);
-
-	/*
-	 * Initialize a dedicated slot to manipulate tuples of any given
-	 * partition's rowtype.
-	 */
-	if (cstate->partition_dispatch_info)
-		estate->es_partition_tuple_slot = ExecInitExtraTupleSlot(estate);
-	else
-		estate->es_partition_tuple_slot = NULL;
 
 	/*
 	 * It's more efficient to prepare a bunch of tuples for insertion, and
@@ -2494,7 +2498,7 @@ CopyFrom(CopyState cstate)
 	for (;;)
 	{
 		TupleTableSlot *slot,
-					   *oldslot = NULL;
+					   *oldslot;
 		bool		skip_tuple;
 		Oid			loaded_oid = InvalidOid;
 
@@ -2536,6 +2540,7 @@ CopyFrom(CopyState cstate)
 		ExecStoreTuple(tuple, slot, InvalidBuffer, false);
 
 		/* Determine the partition to heap_insert the tuple into */
+		oldslot = slot;
 		if (cstate->partition_dispatch_info)
 		{
 			int			leaf_part_index;
@@ -2590,8 +2595,7 @@ CopyFrom(CopyState cstate)
 				 * point on.  Use a dedicated slot from this point on until
 				 * we're finished dealing with the partition.
 				 */
-				oldslot = slot;
-				slot = estate->es_partition_tuple_slot;
+				slot = cstate->partition_tuple_slot;
 				Assert(slot != NULL);
 				ExecSetSlotDescriptor(slot, RelationGetDescr(partrel));
 				ExecStoreTuple(tuple, slot, InvalidBuffer, true);
@@ -2627,7 +2631,7 @@ CopyFrom(CopyState cstate)
 				/* Check the constraints of the tuple */
 				if (cstate->rel->rd_att->constr ||
 					resultRelInfo->ri_PartitionCheck)
-					ExecConstraints(resultRelInfo, slot, estate);
+					ExecConstraints(resultRelInfo, slot, oldslot, estate);
 
 				if (useHeapMultiInsert)
 				{
@@ -2689,10 +2693,6 @@ CopyFrom(CopyState cstate)
 			{
 				resultRelInfo = saved_resultRelInfo;
 				estate->es_result_relation_info = resultRelInfo;
-
-				/* Switch back to the slot corresponding to the root table */
-				Assert(oldslot != NULL);
-				slot = oldslot;
 			}
 		}
 	}
@@ -2756,6 +2756,9 @@ CopyFrom(CopyState cstate)
 			ExecCloseIndices(resultRelInfo);
 			heap_close(resultRelInfo->ri_RelationDesc, NoLock);
 		}
+
+		/* Release the standalone partition tuple descriptor */
+		ExecDropSingleTupleTableSlot(cstate->partition_tuple_slot);
 	}
 
 	FreeExecutorState(estate);
@@ -3391,7 +3394,7 @@ NextCopyFrom(CopyState cstate, ExprContext *econtext,
 		Assert(CurrentMemoryContext == econtext->ecxt_per_tuple_memory);
 
 		values[defmap[i]] = ExecEvalExpr(defexprs[i], econtext,
-										 &nulls[defmap[i]], NULL);
+										 &nulls[defmap[i]]);
 	}
 
 	return true;

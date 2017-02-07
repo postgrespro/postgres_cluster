@@ -3,7 +3,7 @@
  * explain.h
  *	  prototypes for explain.c
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994-5, Regents of the University of California
  *
  * src/include/commands/explain.h
@@ -49,6 +49,7 @@ typedef struct ExplainState
 
 /* Hook for plugins to get control in ExplainOneQuery() */
 typedef void (*ExplainOneQuery_hook_type) (Query *query,
+													   int cursorOptions,
 													   IntoClause *into,
 													   ExplainState *es,
 													 const char *queryString,

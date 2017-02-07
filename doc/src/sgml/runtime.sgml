@@ -2162,6 +2162,10 @@ pg_dumpall -p 5432 | psql -d postgres -p 5433
    If the private key is protected with a passphrase, the
    server will prompt for the passphrase and will not start until it has
    been entered.
+   Using a passphrase also disables the ability to change the server's SSL
+   configuration without a server restart.
+   Furthermore, passphrase-protected private keys cannot be used at all
+   on Windows.
   </para>
 
   <para>
@@ -2285,11 +2289,20 @@ pg_dumpall -p 5432 | psql -d postgres -p 5433
   </table>
 
    <para>
-    The files <filename>server.key</>, <filename>server.crt</>,
-    <filename>root.crt</filename>, and <filename>root.crl</filename>
-    (or their configured alternative names)
-    are only examined during server start; so you must restart
-    the server for changes in them to take effect.
+    The server reads these files at server start and whenever the server
+    configuration is reloaded.  On <systemitem class="osname">Windows</>
+    systems, they are also re-read whenever a new backend process is spawned
+    for a new client connection.
+   </para>
+
+   <para>
+    If an error in these files is detected at server start, the server will
+    refuse to start.  But if an error is detected during a configuration
+    reload, the files are ignored and the old SSL configuration continues to
+    be used.  On <systemitem class="osname">Windows</> systems, if an error in
+    these files is detected at backend start, that backend will be unable to
+    establish an SSL connection.  In all these cases, the error condition is
+    reported in the server log.
    </para>
   </sect2>
 
@@ -2306,8 +2319,8 @@ openssl req -new -text -out server.req
     you enter the local host name as <quote>Common Name</>; the challenge
     password can be left blank. The program will generate a key that is
     passphrase protected; it will not accept a passphrase that is less
-    than four characters long. To remove the passphrase (as you must if
-    you want automatic start-up of the server), run the commands:
+    than four characters long.  To remove the passphrase again (as you must
+    if you want automatic start-up of the server), next run the commands:
 <programlisting>
 openssl rsa -in privkey.pem -out server.key
 rm privkey.pem

@@ -3,7 +3,7 @@
  * outfuncs.c
  *	  Output functions for Postgres tree nodes.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -252,13 +252,15 @@ _outPlannedStmt(StringInfo str, const PlannedStmt *node)
 	WRITE_NODE_FIELD(planTree);
 	WRITE_NODE_FIELD(rtable);
 	WRITE_NODE_FIELD(resultRelations);
-	WRITE_NODE_FIELD(utilityStmt);
 	WRITE_NODE_FIELD(subplans);
 	WRITE_BITMAPSET_FIELD(rewindPlanIDs);
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_NODE_FIELD(relationOids);
 	WRITE_NODE_FIELD(invalItems);
 	WRITE_INT_FIELD(nParamExec);
+	WRITE_NODE_FIELD(utilityStmt);
+	WRITE_LOCATION_FIELD(stmt_location);
+	WRITE_LOCATION_FIELD(stmt_len);
 }
 
 /*
@@ -322,6 +324,14 @@ _outResult(StringInfo str, const Result *node)
 	_outPlanInfo(str, (const Plan *) node);
 
 	WRITE_NODE_FIELD(resconstantqual);
+}
+
+static void
+_outProjectSet(StringInfo str, const ProjectSet *node)
+{
+	WRITE_NODE_TYPE("PROJECTSET");
+
+	_outPlanInfo(str, (const Plan *) node);
 }
 
 static void
@@ -1806,6 +1816,16 @@ _outProjectionPath(StringInfo str, const ProjectionPath *node)
 }
 
 static void
+_outProjectSetPath(StringInfo str, const ProjectSetPath *node)
+{
+	WRITE_NODE_TYPE("PROJECTSETPATH");
+
+	_outPathInfo(str, (const Path *) node);
+
+	WRITE_NODE_FIELD(subpath);
+}
+
+static void
 _outSortPath(StringInfo str, const SortPath *node)
 {
 	WRITE_NODE_TYPE("SORTPATH");
@@ -2057,6 +2077,7 @@ _outPlannerInfo(StringInfo str, const PlannerInfo *node)
 	WRITE_FLOAT_FIELD(total_table_pages, "%.0f");
 	WRITE_FLOAT_FIELD(tuple_fraction, "%.4f");
 	WRITE_FLOAT_FIELD(limit_tuples, "%.0f");
+	WRITE_UINT_FIELD(qual_security_level);
 	WRITE_BOOL_FIELD(hasInheritedTarget);
 	WRITE_BOOL_FIELD(hasJoinRTEs);
 	WRITE_BOOL_FIELD(hasLateralRTEs);
@@ -2110,6 +2131,7 @@ _outRelOptInfo(StringInfo str, const RelOptInfo *node)
 	WRITE_BOOL_FIELD(useridiscurrent);
 	/* we don't try to print fdwroutine or fdw_private */
 	WRITE_NODE_FIELD(baserestrictinfo);
+	WRITE_UINT_FIELD(baserestrict_min_security);
 	WRITE_NODE_FIELD(joininfo);
 	WRITE_BOOL_FIELD(has_eclass_joins);
 }
@@ -2193,6 +2215,8 @@ _outEquivalenceClass(StringInfo str, const EquivalenceClass *node)
 	WRITE_BOOL_FIELD(ec_below_outer_join);
 	WRITE_BOOL_FIELD(ec_broken);
 	WRITE_UINT_FIELD(ec_sortref);
+	WRITE_UINT_FIELD(ec_min_security);
+	WRITE_UINT_FIELD(ec_max_security);
 }
 
 static void
@@ -2259,6 +2283,8 @@ _outRestrictInfo(StringInfo str, const RestrictInfo *node)
 	WRITE_BOOL_FIELD(outerjoin_delayed);
 	WRITE_BOOL_FIELD(can_join);
 	WRITE_BOOL_FIELD(pseudoconstant);
+	WRITE_BOOL_FIELD(leakproof);
+	WRITE_UINT_FIELD(security_level);
 	WRITE_BITMAPSET_FIELD(clause_relids);
 	WRITE_BITMAPSET_FIELD(required_relids);
 	WRITE_BITMAPSET_FIELD(outer_relids);
@@ -2705,6 +2731,9 @@ _outQuery(StringInfo str, const Query *node)
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_NODE_FIELD(setOperations);
 	WRITE_NODE_FIELD(constraintDeps);
+	/* withCheckOptions intentionally omitted, see comment in parsenodes.h */
+	WRITE_LOCATION_FIELD(stmt_location);
+	WRITE_LOCATION_FIELD(stmt_len);
 }
 
 static void
@@ -3356,6 +3385,9 @@ outNode(StringInfo str, const void *obj)
 			case T_Result:
 				_outResult(str, obj);
 				break;
+			case T_ProjectSet:
+				_outProjectSet(str, obj);
+				break;
 			case T_ModifyTable:
 				_outModifyTable(str, obj);
 				break;
@@ -3667,6 +3699,9 @@ outNode(StringInfo str, const void *obj)
 				break;
 			case T_ProjectionPath:
 				_outProjectionPath(str, obj);
+				break;
+			case T_ProjectSetPath:
+				_outProjectSetPath(str, obj);
 				break;
 			case T_SortPath:
 				_outSortPath(str, obj);

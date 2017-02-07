@@ -3,7 +3,7 @@
  * nodeCtescan.c
  *	  routines to handle CteScan nodes.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -268,8 +268,6 @@ ExecInitCteScan(CteScan *node, EState *estate, int eflags)
 	 */
 	ExecAssignResultTypeFromTL(&scanstate->ss.ps);
 	ExecAssignScanProjectionInfo(&scanstate->ss);
-
-	scanstate->ss.ps.ps_TupFromTlist = false;
 
 	return scanstate;
 }

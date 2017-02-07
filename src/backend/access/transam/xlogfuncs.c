@@ -7,7 +7,7 @@
  * This file contains WAL control and information functions.
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/backend/access/transam/xlogfuncs.c
@@ -18,7 +18,6 @@
 
 #include "access/htup_details.h"
 #include "access/xlog.h"
-#include "access/xlog_fn.h"
 #include "access/xlog_internal.h"
 #include "access/xlogutils.h"
 #include "catalog/catalog.h"

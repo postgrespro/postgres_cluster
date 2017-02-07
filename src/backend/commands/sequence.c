@@ -3,7 +3,7 @@
  * sequence.c
  *	  PostgreSQL sequences support code.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -41,6 +41,7 @@
 #include "utils/lsyscache.h"
 #include "utils/resowner.h"
 #include "utils/syscache.h"
+#include "utils/varlena.h"
 
 
 /*

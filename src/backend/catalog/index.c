@@ -3,7 +3,7 @@
  * index.c
  *	  code to create and destroy POSTGRES index relations
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -1805,8 +1805,7 @@ FormIndexDatum(IndexInfo *indexInfo,
 				elog(ERROR, "wrong number of index expressions");
 			iDatum = ExecEvalExprSwitchContext((ExprState *) lfirst(indexpr_item),
 											   GetPerTupleExprContext(estate),
-											   &isNull,
-											   NULL);
+											   &isNull);
 			indexpr_item = lnext(indexpr_item);
 		}
 		values[i] = iDatum;

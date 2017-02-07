@@ -17,7 +17,7 @@
  * any database access.
  *
  *
- * Copyright (c) 2006-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2006-2017, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/utils/cache/ts_cache.c
@@ -45,6 +45,7 @@
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/regproc.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 

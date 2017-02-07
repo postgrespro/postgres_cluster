@@ -3,7 +3,7 @@
  * amapi.h
  *	  API for Postgres index access methods.
  *
- * Copyright (c) 2015-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2015-2017, PostgreSQL Global Development Group
  *
  * src/include/access/amapi.h
  *
@@ -202,7 +202,5 @@ typedef struct IndexAmRoutine
 /* Functions in access/index/amapi.c */
 extern IndexAmRoutine *GetIndexAmRoutine(Oid amhandler);
 extern IndexAmRoutine *GetIndexAmRoutineByAmId(Oid amoid, bool noerror);
-
-extern Datum amvalidate(PG_FUNCTION_ARGS);
 
 #endif   /* AMAPI_H */

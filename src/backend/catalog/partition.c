@@ -3,7 +3,7 @@
  * partition.c
  *		  Partitioning related data structures and functions.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -122,7 +122,7 @@ static List *get_qual_for_list(PartitionKey key, PartitionBoundSpec *spec);
 static List *get_qual_for_range(PartitionKey key, PartitionBoundSpec *spec);
 static Oid get_partition_operator(PartitionKey key, int col,
 					   StrategyNumber strategy, bool *need_relabel);
-static List *generate_partition_qual(Relation rel, bool recurse);
+static List *generate_partition_qual(Relation rel);
 
 static PartitionRangeBound *make_one_range_bound(PartitionKey key, int index,
 					 List *datums, bool lower);
@@ -200,6 +200,8 @@ RelationBuildPartitionDesc(Relation rel)
 		Node	   *boundspec;
 
 		tuple = SearchSysCache1(RELOID, inhrelid);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for relation %u", inhrelid);
 
 		/*
 		 * It is possible that the pg_class tuple of a partition has not been
@@ -622,15 +624,27 @@ partition_bounds_equal(PartitionKey key,
 		{
 			int32		cmpval;
 
+			/* For range partitions, the bounds might not be finite. */
+			if (b1->content != NULL)
+			{
+				/*
+				 * A finite bound always differs from an infinite bound, and
+				 * different kinds of infinities differ from each other.
+				 */
+				if (b1->content[i][j] != b2->content[i][j])
+					return false;
+
+				/* Non-finite bounds are equal without further examination. */
+				if (b1->content[i][j] != RANGE_DATUM_FINITE)
+					continue;
+			}
+
+			/* Compare the actual values */
 			cmpval = DatumGetInt32(FunctionCall2Coll(&key->partsupfunc[j],
 													 key->partcollation[j],
 													 b1->datums[i][j],
 													 b2->datums[i][j]));
 			if (cmpval != 0)
-				return false;
-
-			/* Range partitions can have infinite datums */
-			if (b1->content != NULL && b1->content[i][j] != b2->content[i][j])
 				return false;
 		}
 
@@ -739,37 +753,68 @@ check_new_partition_bound(char *relname, Relation parent, Node *bound)
 						   boundinfo->strategy == PARTITION_STRATEGY_RANGE);
 
 					/*
-					 * Find the greatest index of a range bound that is less
-					 * than or equal with the new lower bound.
+					 * Firstly, find the greatest range bound that is less
+					 * than or equal to the new lower bound.
 					 */
 					off1 = partition_bound_bsearch(key, boundinfo, lower, true,
 												   &equal);
 
 					/*
-					 * If equal has been set to true, that means the new lower
-					 * bound is found to be equal with the bound at off1,
-					 * which clearly means an overlap with the partition at
-					 * index off1+1).
-					 *
-					 * Otherwise, check if there is a "gap" that could be
-					 * occupied by the new partition.  In case of a gap, the
-					 * new upper bound should not cross past the upper
-					 * boundary of the gap, that is, off2 == off1 should be
-					 * true.
+					 * off1 == -1 means that all existing bounds are greater
+					 * than the new lower bound.  In that case and the case
+					 * where no partition is defined between the bounds at
+					 * off1 and off1 + 1, we have a "gap" in the range that
+					 * could be occupied by the new partition.  We confirm if
+					 * so by checking whether the new upper bound is confined
+					 * within the gap.
 					 */
 					if (!equal && boundinfo->indexes[off1 + 1] < 0)
 					{
 						off2 = partition_bound_bsearch(key, boundinfo, upper,
 													   true, &equal);
 
+						/*
+						 * If the new upper bound is returned to be equal to
+						 * the bound at off2, the latter must be the upper
+						 * bound of some partition with which the new
+						 * partition clearly overlaps.
+						 *
+						 * Also, if bound at off2 is not same as the one
+						 * returned for the new lower bound (IOW, off1 !=
+						 * off2), then the new partition overlaps at least one
+						 * partition.
+						 */
 						if (equal || off1 != off2)
 						{
 							overlap = true;
-							with = boundinfo->indexes[off2 + 1];
+
+							/*
+							 * The bound at off2 could be the lower bound of
+							 * the partition with which the new partition
+							 * overlaps.  In that case, use the upper bound
+							 * (that is, the bound at off2 + 1) to get the
+							 * index of that partition.
+							 */
+							if (boundinfo->indexes[off2] < 0)
+								with = boundinfo->indexes[off2 + 1];
+							else
+								with = boundinfo->indexes[off2];
 						}
 					}
 					else
 					{
+						/*
+						 * Equal has been set to true and there is no "gap"
+						 * between the bound at off1 and that at off1 + 1, so
+						 * the new partition will overlap some partition. In
+						 * the former case, the new lower bound is found to be
+						 * equal to the bound at off1, which could only ever
+						 * be true if the latter is the lower bound of some
+						 * partition.  It's clear in such a case that the new
+						 * partition overlaps that partition, whose index we
+						 * get using its upper bound (that is, using the bound
+						 * at off1 + 1).
+						 */
 						overlap = true;
 						with = boundinfo->indexes[off1 + 1];
 					}
@@ -850,10 +895,6 @@ get_qual_from_partbound(Relation rel, Relation parent, Node *bound)
 	PartitionBoundSpec *spec = (PartitionBoundSpec *) bound;
 	PartitionKey key = RelationGetPartitionKey(parent);
 	List	   *my_qual = NIL;
-	TupleDesc	parent_tupdesc = RelationGetDescr(parent);
-	AttrNumber	parent_attno;
-	AttrNumber *partition_attnos;
-	bool		found_whole_row;
 
 	Assert(key != NULL);
 
@@ -874,38 +915,39 @@ get_qual_from_partbound(Relation rel, Relation parent, Node *bound)
 				 (int) key->strategy);
 	}
 
-	/*
-	 * Translate vars in the generated expression to have correct attnos. Note
-	 * that the vars in my_qual bear attnos dictated by key which carries
-	 * physical attnos of the parent.  We must allow for a case where physical
-	 * attnos of a partition can be different from the parent.
-	 */
-	partition_attnos = (AttrNumber *)
-		palloc0(parent_tupdesc->natts * sizeof(AttrNumber));
-	for (parent_attno = 1; parent_attno <= parent_tupdesc->natts;
-		 parent_attno++)
-	{
-		Form_pg_attribute attribute = parent_tupdesc->attrs[parent_attno - 1];
-		char	   *attname = NameStr(attribute->attname);
-		AttrNumber	partition_attno;
+	return my_qual;
+}
 
-		if (attribute->attisdropped)
-			continue;
+/*
+ * map_partition_varattnos - maps varattno of any Vars in expr from the
+ * parent attno to partition attno.
+ *
+ * We must allow for a case where physical attnos of a partition can be
+ * different from the parent's.
+ */
+List *
+map_partition_varattnos(List *expr, int target_varno,
+						Relation partrel, Relation parent)
+{
+	AttrNumber *part_attnos;
+	bool		found_whole_row;
 
-		partition_attno = get_attnum(RelationGetRelid(rel), attname);
-		partition_attnos[parent_attno - 1] = partition_attno;
-	}
+	if (expr == NIL)
+		return NIL;
 
-	my_qual = (List *) map_variable_attnos((Node *) my_qual,
-										   1, 0,
-										   partition_attnos,
-										   parent_tupdesc->natts,
-										   &found_whole_row);
-	/* there can never be a whole-row reference here */
+	part_attnos = convert_tuples_by_name_map(RelationGetDescr(partrel),
+											 RelationGetDescr(parent),
+								 gettext_noop("could not convert row type"));
+	expr = (List *) map_variable_attnos((Node *) expr,
+										target_varno, 0,
+										part_attnos,
+										RelationGetDescr(parent)->natts,
+										&found_whole_row);
+	/* There can never be a whole-row reference here */
 	if (found_whole_row)
 		elog(ERROR, "unexpected whole-row reference found in partition key");
 
-	return my_qual;
+	return expr;
 }
 
 /*
@@ -914,13 +956,13 @@ get_qual_from_partbound(Relation rel, Relation parent, Node *bound)
  * Returns a list of partition quals
  */
 List *
-RelationGetPartitionQual(Relation rel, bool recurse)
+RelationGetPartitionQual(Relation rel)
 {
 	/* Quick exit */
 	if (!rel->rd_rel->relispartition)
 		return NIL;
 
-	return generate_partition_qual(rel, recurse);
+	return generate_partition_qual(rel);
 }
 
 /*
@@ -1328,7 +1370,7 @@ get_qual_for_range(PartitionKey key, PartitionBoundSpec *spec)
 			test_exprstate = ExecInitExpr(test_expr, NULL);
 			test_result = ExecEvalExprSwitchContext(test_exprstate,
 											  GetPerTupleExprContext(estate),
-													&isNull, NULL);
+													&isNull);
 			MemoryContextSwitchTo(oldcxt);
 			FreeExecutorState(estate);
 
@@ -1480,7 +1522,7 @@ get_partition_operator(PartitionKey key, int col, StrategyNumber strategy,
  * into cache memory.
  */
 static List *
-generate_partition_qual(Relation rel, bool recurse)
+generate_partition_qual(Relation rel)
 {
 	HeapTuple	tuple;
 	MemoryContext oldcxt;
@@ -1494,28 +1536,20 @@ generate_partition_qual(Relation rel, bool recurse)
 	/* Guard against stack overflow due to overly deep partition tree */
 	check_stack_depth();
 
+	/* Quick copy */
+	if (rel->rd_partcheck != NIL)
+		return copyObject(rel->rd_partcheck);
+
 	/* Grab at least an AccessShareLock on the parent table */
 	parent = heap_open(get_partition_parent(RelationGetRelid(rel)),
 					   AccessShareLock);
 
-	/* Quick copy */
-	if (rel->rd_partcheck)
-	{
-		if (parent->rd_rel->relispartition && recurse)
-			result = list_concat(generate_partition_qual(parent, true),
-								 copyObject(rel->rd_partcheck));
-		else
-			result = copyObject(rel->rd_partcheck);
-
-		heap_close(parent, AccessShareLock);
-		return result;
-	}
-
 	/* Get pg_class.relpartbound */
-	if (!rel->rd_rel->relispartition)	/* should not happen */
-		elog(ERROR, "relation \"%s\" has relispartition = false",
-			 RelationGetRelationName(rel));
 	tuple = SearchSysCache1(RELOID, RelationGetRelid(rel));
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation %u",
+			 RelationGetRelid(rel));
+
 	boundDatum = SysCacheGetAttr(RELOID, tuple,
 								 Anum_pg_class_relpartbound,
 								 &isnull);
@@ -1527,20 +1561,23 @@ generate_partition_qual(Relation rel, bool recurse)
 
 	my_qual = get_qual_from_partbound(rel, parent, bound);
 
-	/* If requested, add parent's quals to the list (if any) */
-	if (parent->rd_rel->relispartition && recurse)
-	{
-		List	   *parent_check;
-
-		parent_check = generate_partition_qual(parent, true);
-		result = list_concat(parent_check, my_qual);
-	}
+	/* Add the parent's quals to the list (if any) */
+	if (parent->rd_rel->relispartition)
+		result = list_concat(generate_partition_qual(parent), my_qual);
 	else
 		result = my_qual;
 
-	/* Save a copy of my_qual in the relcache */
+	/*
+	 * Change Vars to have partition's attnos instead of the parent's.
+	 * We do this after we concatenate the parent's quals, because
+	 * we want every Var in it to bear this relation's attnos.
+	 * It's safe to assume varno = 1 here.
+	 */
+	result = map_partition_varattnos(result, 1, rel, parent);
+
+	/* Save a copy in the relcache */
 	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
-	rel->rd_partcheck = copyObject(my_qual);
+	rel->rd_partcheck = copyObject(result);
 	MemoryContextSwitchTo(oldcxt);
 
 	/* Keep the parent locked until commit */
@@ -1605,8 +1642,7 @@ FormPartitionKeyDatum(PartitionDispatch pd,
 				elog(ERROR, "wrong number of partition key expressions");
 			datum = ExecEvalExprSwitchContext((ExprState *) lfirst(partexpr_item),
 											  GetPerTupleExprContext(estate),
-											  &isNull,
-											  NULL);
+											  &isNull);
 			partexpr_item = lnext(partexpr_item);
 		}
 		values[i] = datum;
@@ -1950,8 +1986,8 @@ partition_bound_cmp(PartitionKey key, PartitionBoundInfo boundinfo,
 }
 
 /*
- * Binary search on a collection of partition bounds. Returns greatest index
- * of bound in array boundinfo->datums which is less or equal with *probe.
+ * Binary search on a collection of partition bounds. Returns greatest
+ * bound in array boundinfo->datums which is less than or equal to *probe
  * If all bounds in the array are greater than *probe, -1 is returned.
  *
  * *probe could either be a partition bound or a Datum array representing
@@ -1983,6 +2019,9 @@ partition_bound_bsearch(PartitionKey key, PartitionBoundInfo boundinfo,
 		{
 			lo = mid;
 			*is_equal = (cmpval == 0);
+
+			if (*is_equal)
+				break;
 		}
 		else
 			hi = mid - 1;

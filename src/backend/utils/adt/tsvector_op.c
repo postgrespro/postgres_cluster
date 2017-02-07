@@ -3,7 +3,7 @@
  * tsvector_op.c
  *	  operations over tsvector
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -27,6 +27,7 @@
 #include "tsearch/ts_utils.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
+#include "utils/regproc.h"
 #include "utils/rel.h"
 
 

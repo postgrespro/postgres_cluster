@@ -32,7 +32,7 @@
  * happen, it would tie up KnownAssignedXids indefinitely, so we protect
  * ourselves by pruning the array when a valid list of running XIDs arrives.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -484,7 +484,6 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 	volatile PROC_HDR *procglobal = ProcGlobal;
 	uint32		nextidx;
 	uint32		wakeidx;
-	int			extraWaits = -1;
 
 	/* We should definitely have an XID to clear. */
 	Assert(TransactionIdIsValid(allPgXact[proc->pgprocno].xid));
@@ -511,6 +510,8 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 	 */
 	if (nextidx != INVALID_PGPROCNO)
 	{
+		int			extraWaits = 0;
+
 		/* Sleep until the leader clears our XID. */
 		for (;;)
 		{

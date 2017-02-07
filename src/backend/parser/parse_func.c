@@ -3,7 +3,7 @@
  * parse_func.c
  *		handle function calls in parser
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -2141,7 +2141,12 @@ check_srf_call_placement(ParseState *pstate, int location)
 			errkind = true;
 			break;
 		case EXPR_KIND_VALUES:
-			/* okay */
+			/* SRFs are presently not supported by nodeValuesscan.c */
+			errkind = true;
+			break;
+		case EXPR_KIND_VALUES_SINGLE:
+			/* okay, since we process this like a SELECT tlist */
+			pstate->p_hasTargetSRFs = true;
 			break;
 		case EXPR_KIND_CHECK_CONSTRAINT:
 		case EXPR_KIND_DOMAIN_CHECK:

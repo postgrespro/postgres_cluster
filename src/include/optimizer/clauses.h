@@ -4,7 +4,7 @@
  *	  prototypes for clauses.c.
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/optimizer/clauses.h
@@ -54,7 +54,6 @@ extern bool contain_window_function(Node *clause);
 extern WindowFuncLists *find_window_functions(Node *clause, Index maxWinRef);
 
 extern double expression_returns_set_rows(Node *clause);
-extern double tlist_returns_set_rows(List *tlist);
 
 extern bool contain_subplans(Node *clause);
 

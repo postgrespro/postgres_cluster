@@ -3,7 +3,7 @@
  * jsonb_util.c
  *	  converting between Jsonb and JsonbValues, and iterating.
  *
- * Copyright (c) 2014-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2014-2017, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -19,6 +19,7 @@
 #include "utils/builtins.h"
 #include "utils/jsonb.h"
 #include "utils/memutils.h"
+#include "utils/varlena.h"
 
 /*
  * Maximum number of elements in an array (or key/value pairs in an object).

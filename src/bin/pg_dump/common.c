@@ -4,7 +4,7 @@
  *	Catalog routines used by pg_dump; long ago these were shared
  *	by another dump tool, but not anymore.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -291,6 +291,18 @@ getSchemaData(Archive *fout, int *numTablesPtr)
 	if (g_verbose)
 		write_msg(NULL, "reading partition key information for interesting tables\n");
 	getTablePartitionKeyInfo(fout, tblinfo, numTables);
+
+	if (g_verbose)
+		write_msg(NULL, "reading publications\n");
+	getPublications(fout);
+
+	if (g_verbose)
+		write_msg(NULL, "reading publication membership\n");
+	getPublicationTables(fout, tblinfo, numTables);
+
+	if (g_verbose)
+		write_msg(NULL, "reading subscriptions\n");
+	getSubscriptions(fout);
 
 	*numTablesPtr = numTables;
 	return tblinfo;

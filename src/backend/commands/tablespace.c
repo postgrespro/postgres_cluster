@@ -35,7 +35,7 @@
  * and munge the system catalogs of the new database.
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -82,6 +82,7 @@
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/tqual.h"
+#include "utils/varlena.h"
 
 
 /* GUC variables */

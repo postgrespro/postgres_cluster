@@ -8,7 +8,7 @@
  *	  Structs that need to be client-visible are in pqcomm.h.
  *
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/libpq/libpq-be.h
@@ -199,7 +199,8 @@ typedef struct Port
  * These functions are implemented by the glue code specific to each
  * SSL implementation (e.g. be-secure-openssl.c)
  */
-extern void be_tls_init(void);
+extern int	be_tls_init(bool isServerStart);
+extern void be_tls_destroy(void);
 extern int	be_tls_open_server(Port *port);
 extern void be_tls_close(Port *port);
 extern ssize_t be_tls_read(Port *port, void *ptr, size_t len, int *waitfor);

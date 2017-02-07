@@ -3,7 +3,7 @@
  * rewriteDefine.c
  *	  routines for defining a rewrite rule
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -330,8 +330,7 @@ DefineQueryRewrite(char *rulename,
 		 */
 		query = (Query *) linitial(action);
 		if (!is_instead ||
-			query->commandType != CMD_SELECT ||
-			query->utilityStmt != NULL)
+			query->commandType != CMD_SELECT)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("rules on SELECT must have action INSTEAD SELECT")));

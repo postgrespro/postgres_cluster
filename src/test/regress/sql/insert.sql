@@ -167,9 +167,29 @@ insert into list_parted values ('EE', 1);
 insert into part_ee_ff values ('EE', 10);
 select tableoid::regclass, * from list_parted;
 
+-- some more tests to exercise tuple-routing with multi-level partitioning
+create table part_gg partition of list_parted for values in ('gg') partition by range (b);
+create table part_gg1 partition of part_gg for values from (unbounded) to (1);
+create table part_gg2 partition of part_gg for values from (1) to (10) partition by range (b);
+create table part_gg2_1 partition of part_gg2 for values from (1) to (5);
+create table part_gg2_2 partition of part_gg2 for values from (5) to (10);
+
+create table part_ee_ff3 partition of part_ee_ff for values from (20) to (30) partition by range (b);
+create table part_ee_ff3_1 partition of part_ee_ff3 for values from (20) to (25);
+create table part_ee_ff3_2 partition of part_ee_ff3 for values from (25) to (30);
+
+truncate list_parted;
+insert into list_parted values ('aa'), ('cc');
+insert into list_parted select 'Ff', s.a from generate_series(1, 29) s(a);
+insert into list_parted select 'gg', s.a from generate_series(1, 9) s(a);
+insert into list_parted (b) values (1);
+select tableoid::regclass::text, a, min(b) as min_b, max(b) as max_b from list_parted group by 1, 2 order by 1;
+
 -- cleanup
-drop table range_parted cascade;
-drop table list_parted cascade;
+drop table part1, part2, part3, part4, range_parted;
+drop table part_ee_ff3_1, part_ee_ff3_2, part_ee_ff1, part_ee_ff2, part_ee_ff3;
+drop table part_ee_ff, part_gg2_2, part_gg2_1, part_gg2, part_gg1, part_gg;
+drop table part_aa_bb, part_cc_dd, part_null, list_parted;
 
 -- more tests for certain multi-level partitioning scenarios
 create table p (a int, b int) partition by range (a, b);
@@ -185,7 +205,8 @@ from pg_attribute
 where attname = 'a'
  and (attrelid = 'p'::regclass
    or attrelid = 'p1'::regclass
-   or attrelid = 'p11'::regclass);
+   or attrelid = 'p11'::regclass)
+order by attrelid::regclass::text;
 
 alter table p1 attach partition p11 for values from (2) to (5);
 alter table p attach partition p1 for values from (1, 2) to (1, 10);
@@ -194,5 +215,30 @@ alter table p attach partition p1 for values from (1, 2) to (1, 10);
 insert into p values (1, 2);
 select tableoid::regclass, * from p;
 
+truncate p;
+alter table p add constraint check_b check (b = 3);
+-- check that correct input row is shown when constraint check_b fails on p11
+-- after "(1, 2)" is routed to it
+insert into p values (1, 2);
+
+-- check that inserting into an internal partition successfully results in
+-- checking its partition constraint before inserting into the leaf partition
+-- selected by tuple-routing
+insert into p1 (a, b) values (2, 3);
+
+-- check that RETURNING works correctly with tuple-routing
+alter table p drop constraint check_b;
+create table p12 partition of p1 for values from (5) to (10);
+create table p2 (b int not null, a int not null);
+alter table p attach partition p2 for values from (1, 10) to (1, 20);
+create table p3 partition of p for values from (1, 20) to (1, 30);
+create table p4 (like p);
+alter table p4 drop a;
+alter table p4 add a int not null;
+alter table p attach partition p4 for values from (1, 30) to (1, 40);
+with ins (a, b, c) as
+  (insert into p (b, a) select s.a, 1 from generate_series(2, 39) s(a) returning tableoid::regclass, *)
+  select a, b, min(c), max(c) from ins group by a, b order by 1;
+
 -- cleanup
-drop table p cascade;
+drop table p, p1, p11, p12, p2, p3, p4;

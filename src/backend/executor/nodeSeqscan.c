@@ -3,7 +3,7 @@
  * nodeSeqscan.c
  *	  Support routines for sequential scans of relations.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -205,8 +205,6 @@ ExecInitSeqScan(SeqScan *node, EState *estate, int eflags)
 	 * initialize scan relation
 	 */
 	InitScanRelation(scanstate, estate, eflags);
-
-	scanstate->ss.ps.ps_TupFromTlist = false;
 
 	/*
 	 * Initialize result tuple type and projection info.

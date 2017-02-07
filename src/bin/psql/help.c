@@ -1,7 +1,7 @@
 /*
  * psql - the PostgreSQL interactive terminal
  *
- * Copyright (c) 2000-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2017, PostgreSQL Global Development Group
  *
  * src/bin/psql/help.c
  */
@@ -241,6 +241,8 @@ slashUsage(unsigned short int pager)
 	fprintf(output, _("  \\dO[S+] [PATTERN]      list collations\n"));
 	fprintf(output, _("  \\dp     [PATTERN]      list table, view, and sequence access privileges\n"));
 	fprintf(output, _("  \\drds [PATRN1 [PATRN2]] list per-database role settings\n"));
+	fprintf(output, _("  \\dRp[+] [PATTERN]      list replication publications\n"));
+	fprintf(output, _("  \\dRs[+] [PATTERN]      list replication subscriptions\n"));
 	fprintf(output, _("  \\ds[S+] [PATTERN]      list sequences\n"));
 	fprintf(output, _("  \\dt[S+] [PATTERN]      list tables\n"));
 	fprintf(output, _("  \\dT[S+] [PATTERN]      list data types\n"));
@@ -572,7 +574,7 @@ print_copyright(void)
 	puts(
 		 "PostgreSQL Database Management System\n"
 		 "(formerly known as Postgres, then as Postgres95)\n\n"
-		 "Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group\n\n"
+		 "Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group\n\n"
 		 "Portions Copyright (c) 1994, The Regents of the University of California\n\n"
 	"Permission to use, copy, modify, and distribute this software and its\n"
 		 "documentation for any purpose, without fee, and without a written agreement\n"

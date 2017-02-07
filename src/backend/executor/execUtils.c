@@ -3,7 +3,7 @@
  * execUtils.c
  *	  miscellaneous executor utility routines
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -585,12 +585,6 @@ ExecBuildProjectionInfo(List *targetList,
 	projInfo->pi_targetlist = exprlist;
 	projInfo->pi_numSimpleVars = numSimpleVars;
 	projInfo->pi_directMap = directMap;
-
-	if (exprlist == NIL)
-		projInfo->pi_itemIsDone = NULL; /* not needed */
-	else
-		projInfo->pi_itemIsDone = (ExprDoneCond *)
-			palloc(len * sizeof(ExprDoneCond));
 
 	return projInfo;
 }

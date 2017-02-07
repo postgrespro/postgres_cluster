@@ -2,7 +2,7 @@
 #
 # Makefile for src/bin/pg_basebackup
 #
-# Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+# Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
 # Portions Copyright (c) 1994, Regents of the University of California
 #
 # src/bin/pg_basebackup/Makefile
@@ -11,6 +11,8 @@
 
 PGFILEDESC = "pg_basebackup/pg_receivexlog/pg_recvlogical - streaming WAL and backup receivers"
 PGAPPICON=win32
+
+EXTRA_INSTALL=contrib/test_decoding
 
 subdir = src/bin/pg_basebackup
 top_builddir = ../../..

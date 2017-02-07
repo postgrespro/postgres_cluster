@@ -8,7 +8,7 @@
  *
  * This code is released under the terms of the PostgreSQL License.
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/test/regress/pg_regress.c
@@ -265,7 +265,7 @@ stop_postmaster(void)
 		fflush(stderr);
 
 		snprintf(buf, sizeof(buf),
-				 "\"%s%spg_ctl\" stop -D \"%s/data\" -s -m fast",
+				 "\"%s%spg_ctl\" stop -D \"%s/data\" -s",
 				 bindir ? bindir : "",
 				 bindir ? "/" : "",
 				 temp_instance);

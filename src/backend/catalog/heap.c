@@ -3,7 +3,7 @@
  * heap.c
  *	  code to create and destroy POSTGRES heap relations
  *
- * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -498,7 +498,7 @@ CheckAttributeType(const char *attname,
 		 */
 		ereport(WARNING,
 				(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-				 errmsg("column \"%s\" has type \"unknown\"", attname),
+				 errmsg("column \"%s\" has type %s", attname, "unknown"),
 				 errdetail("Proceeding with relation creation anyway.")));
 	}
 	else if (att_typtype == TYPTYPE_PSEUDO)
@@ -3248,6 +3248,10 @@ StorePartitionBound(Relation rel, Relation parent, Node *bound)
 	classRel = heap_open(RelationRelationId, RowExclusiveLock);
 	tuple = SearchSysCacheCopy1(RELOID,
 								ObjectIdGetDatum(RelationGetRelid(rel)));
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation %u",
+			 RelationGetRelid(rel));
+
 #ifdef USE_ASSERT_CHECKING
 	{
 		Form_pg_class	classForm;

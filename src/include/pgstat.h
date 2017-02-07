@@ -3,7 +3,7 @@
  *
  *	Definitions for the PostgreSQL statistics collector daemon.
  *
- *	Copyright (c) 2001-2016, PostgreSQL Global Development Group
+ *	Copyright (c) 2001-2017, PostgreSQL Global Development Group
  *
  *	src/include/pgstat.h
  * ----------
@@ -745,7 +745,9 @@ typedef enum
 	WAIT_EVENT_SYSLOGGER_MAIN,
 	WAIT_EVENT_WAL_RECEIVER_MAIN,
 	WAIT_EVENT_WAL_SENDER_MAIN,
-	WAIT_EVENT_WAL_WRITER_MAIN
+	WAIT_EVENT_WAL_WRITER_MAIN,
+	WAIT_EVENT_LOGICAL_LAUNCHER_MAIN,
+	WAIT_EVENT_LOGICAL_APPLY_MAIN
 } WaitEventActivity;
 
 /* ----------

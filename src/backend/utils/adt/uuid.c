@@ -3,7 +3,7 @@
  * uuid.c
  *	  Functions for the built-in type "uuid".
  *
- * Copyright (c) 2007-2016, PostgreSQL Global Development Group
+ * Copyright (c) 2007-2017, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/utils/adt/uuid.c
@@ -133,8 +133,8 @@ string_to_uuid(const char *source, pg_uuid_t *uuid)
 syntax_error:
 	ereport(ERROR,
 			(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
-			 errmsg("invalid input syntax for uuid: \"%s\"",
-					source)));
+			 errmsg("invalid input syntax for type %s: \"%s\"",
+					"uuid", source)));
 }
 
 Datum

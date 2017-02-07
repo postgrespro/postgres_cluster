@@ -3,7 +3,7 @@
  *
  *	database server functions
  *
- *	Copyright (c) 2010-2016, PostgreSQL Global Development Group
+ *	Copyright (c) 2010-2017, PostgreSQL Global Development Group
  *	src/bin/pg_upgrade/server.c
  */
 
@@ -320,7 +320,7 @@ stop_postmaster(bool fast)
 			  "\"%s/pg_ctl\" -w -D \"%s\" -o \"%s\" %s stop",
 			  cluster->bindir, cluster->pgconfig,
 			  cluster->pgopts ? cluster->pgopts : "",
-			  fast ? "-m fast" : "");
+			  fast ? "-m fast" : "-m smart");
 
 	os_info.running_cluster = NULL;
 }
