@@ -245,59 +245,15 @@ char const* cfs_algorithm()
 
 #endif
 
-
-/* ----------------------------------------------------------------
- *	Section 2: Encryption related functionality.
- *
- * TODO
- * - replace rc4 algrithm with something more appropriate
- * - add more comments
- * ----------------------------------------------------------------
- */
-static void cfs_rc4_encrypt_block(void* block, uint32 offs, uint32 block_size)
-{
-	uint32 i;
-    uint8 temp;
-	uint8* dst = (uint8*)block;
-	int   next_state;
-	uint8 state[CFS_CIPHER_KEY_SIZE];
-    int x = 0, y = 0;
-	uint32 skip = (offs / BLCKSZ + block_size) % CFS_CIPHER_KEY_SIZE;
-
-	memcpy(state, cfs_state->cipher_key, CFS_CIPHER_KEY_SIZE);
-    for (i = 0; i < skip; i++) {
-        x = (x + 1) % CFS_CIPHER_KEY_SIZE;
-        y = (y + state[x]) % CFS_CIPHER_KEY_SIZE;
-        temp = state[x];
-        state[x] = state[y];
-        state[y] = temp;
-    }
-    for (i = 0; i < block_size; i++) {
-        x = (x + 1) % CFS_CIPHER_KEY_SIZE;
-        y = (y + state[x]) % CFS_CIPHER_KEY_SIZE;
-        temp = state[x];
-        state[x] = state[y];
-        state[y] = temp;
-        next_state = (state[x] + state[y]) % CFS_CIPHER_KEY_SIZE;
-        dst[i] ^= state[next_state];
-    }
-}
-
 /*
  * Get env variable PG_CIPHER_KEY and initialize encryption state.
  * Unset variable afterward.
- * Now implements cf4.
  */
-static void cfs_encrypt_init(void)
+static void cfs_crypto_init(void)
 {
-    int index1 = 0;
-    int index2 = 0;
-    int i;
-    uint8 temp;
     int key_length;
-    int x = 0, y = 0;
 	char* cipher_key;
-	uint8* rc4_init_state = cfs_state->cipher_key;
+	uint8 aes_key[32] = {0}; /* at most 256 bits */
 
 	cipher_key = getenv("PG_CIPHER_KEY");
 	if (cipher_key == NULL) { 
@@ -305,35 +261,127 @@ static void cfs_encrypt_init(void)
 	} 
 	unsetenv("PG_CIPHER_KEY"); /* disable inspection of this environment variable */
     key_length = strlen(cipher_key);
-	for (i = 0; i < CFS_CIPHER_KEY_SIZE; ++i) {
-        rc4_init_state[i] = (uint8)i;
-    }
-    for (i = 0; i < CFS_CIPHER_KEY_SIZE; ++i) {
-        index2 = (cipher_key[index1] + rc4_init_state[i] + index2) % CFS_CIPHER_KEY_SIZE;
-        temp = rc4_init_state[i];
-        rc4_init_state[i] = rc4_init_state[index2];
-        rc4_init_state[index2] = temp;
-        index1 = (index1 + 1) % key_length;
-    }
-    for (i = 0; i < CFS_RC4_DROP_N; i++) {
-        x = (x + 1) % CFS_CIPHER_KEY_SIZE;
-        y = (y + rc4_init_state[x]) % CFS_CIPHER_KEY_SIZE;
-        temp = rc4_init_state[x];
-        rc4_init_state[x] = rc4_init_state[y];
-        rc4_init_state[y] = temp;
-    }
+
+	memcpy(&aes_key, cipher_key, key_length > sizeof(aes_key) ? sizeof(aes_key) : key_length);
+	rijndael_set_key(
+		&cfs_state->aes_context, /* context */
+		(u4byte*)&aes_key,       /* key */
+		sizeof(aes_key) * 8      /* key size in bits */,
+		1                        /* for CTR mode we need only encryption */
+	);
 }
 
-void cfs_encrypt(void* block, uint32 offs, uint32 size)
+/*
+ * For a file name like 'path/to/16384/16401[.123]' return part1 = 16384, part2 = 16401 and part3 = 123.
+ * Returns 0 on success and negative value on error.
+ */
+static int extract_fname_parts(const char* fname, uint32* part1, uint32* part2, uint32* part3)
 {
-	if (cfs_encryption)
-		cfs_rc4_encrypt_block(block, offs, size);
+	int idx = strlen(fname);
+	if(idx == 0)
+		return -1;
+	idx--;
+
+	while(idx >= 0 && isdigit(fname[idx]))
+		idx--;
+
+	if(idx == 0)
+		return -2;
+
+	if(fname[idx] != '.')
+	{
+		*part3 = 0;
+		goto assign_part2;
+	}
+
+	*part3 = atoi(&fname[idx+1]);
+
+	idx--;
+	while(idx >= 0 && isdigit(fname[idx]))
+		idx--;
+
+	if(idx == 0)
+		return -3;
+
+assign_part2:
+	*part2 = atoi(&fname[idx+1]);
+
+	idx--;
+	while(idx >= 0 && isdigit(fname[idx]))
+		idx--;
+
+	if(idx == 0)
+		return -4;
+
+	*part1 = atoi(&fname[idx+1]);
+	return 0;
 }
 
-void cfs_decrypt(void* block, uint32 offs, uint32 size)
+/* Encryption and decryption using AES in CTR mode */
+static void cfs_aes_crypt_block(const char* fname, void* block, uint32 offs, uint32 size)
+{
+/*
+#define AES_DEBUG 1
+*/
+	uint32 aes_in[4]; /* 16 bytes, 128 bits */
+	uint32 aes_out[4];
+	uint8* plaintext = (uint8*)block;
+	uint8* gamma = (uint8*)&aes_out;
+	uint32 i, fname_part1, fname_part2, fname_part3;
+
+	if(extract_fname_parts(fname, &fname_part1, &fname_part2, &fname_part3) < 0)
+		fname_part1 = fname_part2 = fname_part3 = 0;
+
+#ifdef AES_DEBUG
+	elog(LOG, "cfs_aes_crypt_block, fname = %s, part1 = %d, part2 = %d, part3 = %d, offs = %d, size = %d",
+		fname, fname_part1, fname_part2, fname_part3, offs, size);
+#endif
+
+	aes_in[0] = fname_part1;
+	aes_in[1] = fname_part2;
+	aes_in[2] = fname_part3;
+	aes_in[3] = offs & 0xFFFFFFF0;
+	rijndael_encrypt(&cfs_state->aes_context, (u4byte*)&aes_in, (u4byte*)&aes_out);
+
+#ifdef AES_DEBUG
+	elog(LOG, "cfs_aes_crypt_block, in = %08X %08X %08X %08X, out = %08X %08X %08X %08X",
+		aes_in[0], aes_in[1], aes_in[2], aes_in[3],
+		aes_out[0], aes_out[1], aes_out[2], aes_out[3]);
+#endif
+
+	for(i = 0; i < size; i++)
+	{
+		plaintext[i] ^= gamma[offs & 0xF];
+		offs++;
+		if((offs & 0xF) == 0)
+		{
+			/* Prepare next gamma part */
+			aes_in[3] = offs;
+			rijndael_encrypt(&cfs_state->aes_context, (u4byte*)&aes_in, (u4byte*)&aes_out);
+
+#ifdef AES_DEBUG
+			elog(LOG, "cfs_aes_crypt_block, in = %08X %08X %08X %08X, out = %08X %08X %08X %08X",
+				aes_in[0], aes_in[1], aes_in[2], aes_in[3],
+				aes_out[0], aes_out[1], aes_out[2], aes_out[3]);
+#endif
+		}
+	}
+}
+
+void cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size)
 {
 	if (cfs_encryption)
-		cfs_rc4_encrypt_block(block, offs, size);
+	{
+		cfs_aes_crypt_block(fname, block, offs, size);
+	}
+}
+
+void cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size)
+{
+	if (cfs_encryption)
+	{
+		cfs_aes_crypt_block(fname, block, offs, size);
+	}
 }
 
 /* ----------------------------------------------------------------
@@ -351,7 +399,7 @@ void cfs_initialize()
 	cfs_state->max_iterations = 0;
 	
 	if (cfs_encryption)
-		cfs_encrypt_init();
+		cfs_crypto_init();
 
 	elog(LOG, "Start CFS version %s compression algorithm %s encryption %s", 
 		 CFS_VERSION, cfs_algorithm(), cfs_encryption ? "enabled" : "disabled");
@@ -827,7 +875,7 @@ static bool cfs_gc_file(char* map_path)
 					Assert(res == (off_t)CFS_INODE_OFFS(inode));
 					rc = cfs_read_file(fd, block, size);
 					Assert(rc);
-					cfs_decrypt(block, (off_t)i*BLCKSZ, size);
+					cfs_decrypt(file_bck_path, block, (off_t)i*BLCKSZ, size);
 					res = cfs_decompress(decomressedBlock, BLCKSZ, block, size);
 
 					if (res != BLCKSZ)

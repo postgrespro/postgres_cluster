@@ -38,7 +38,7 @@ typedef struct {
 	char **errors;
 } executor_error_t;
 
-void executor_worker_main(Datum arg);
+extern PGDLLEXPORT void executor_worker_main(Datum arg);
 job_t *initializeExecutorJob(schd_executor_share_t *data);
 void set_shared_message(schd_executor_share_t *shared, executor_error_t *ee);
 TimestampTz get_next_excution_time(char *sql, executor_error_t *ee);
