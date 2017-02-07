@@ -49,6 +49,12 @@ typedef struct {
 } scheduler_manager_slot_t;
 
 typedef struct {
+	int free;
+	int len;
+	scheduler_manager_slot_t **slots;
+} scheduler_manager_pool_t
+
+typedef struct {
 	char *database;
 	char *nodename;
 
@@ -56,9 +62,8 @@ typedef struct {
 	TimestampTz next_checkjob_time;
 	TimestampTz next_expire_time;
 	
-	int free_slots;
-	int slots_len;
-	scheduler_manager_slot_t **slots;
+	scheduler_manager_pool_t cron;
+	scheduler_manager_pool_t at;
 
 	dsm_segment *seg;
 } scheduler_manager_ctx_t;
@@ -81,11 +86,11 @@ void fill_cron_array_from_rule(Jsonb *J, const char *name, bit_array_t *ce, int 
 bool is_cron_fit_timestamp(bit_array_t *cron, TimestampTz timestamp);
 char **get_dates_array_from_rule(scheduler_task_t *task, int *num);
 int get_integer_from_jsonbval(JsonbValue *ai, int def);
-int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx);
+int scheduler_vanish_expired_cron_jobs(scheduler_manager_ctx_t *ctx);
 int how_many_instances_on_work(scheduler_manager_ctx_t *ctx, int cron_id);
 int insert_at_record(char *nodename, int cron_id, TimestampTz start_at, TimestampTz postpone, char **error);
 int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job);
-int scheduler_start_jobs(scheduler_manager_ctx_t *ctx);
+int scheduler_start_cron_jobs(scheduler_manager_ctx_t *ctx);
 int scheduler_check_slots(scheduler_manager_ctx_t *ctx);
 void destroy_slot_item(scheduler_manager_slot_t *item);
 int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_t *item);

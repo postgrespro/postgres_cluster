@@ -3,6 +3,29 @@
 CREATE SCHEMA IF NOT EXISTS schedule;
 
 CREATE TYPE schedule.job_status AS ENUM ('working', 'done', 'error');
+CREATE TYPE schedule.at_job_status AS ENUM ('submitted', 'working', 'done', 'error');
+
+CREATE TABLE schedule.at_jobs(
+   id SERIAL PRIMARY KEY,
+   node text,
+   name text,
+   comments text,
+   at timestamp with time zone default now(),
+   do_sql text[],
+   same_transaction boolean DEFAULT false,
+   onrollback_statement text,
+   executor text,
+   owner text,
+   postpone interval,
+   max_run_time	interval,
+   max_instances integer default 1,
+   status at_job_status default 'submited',
+   submit_time timestamp with time zone default now(),
+   started timestamp with time zone,
+   finished timestamp with time zone,
+   reason text
+);
+CREATE INDEX at_jobs_status_node_at_idx on schedule.at (status, node,  at);
 
 CREATE TABLE schedule.cron(
    id SERIAL PRIMARY KEY,

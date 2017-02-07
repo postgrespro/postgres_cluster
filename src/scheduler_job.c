@@ -11,11 +11,12 @@
 #include "memutils.h"
 #include "port.h"
 
-job_t *init_scheduler_job(job_t *j)
+job_t *init_scheduler_job(job_t *j, unsigned char type)
 {
 	if(j == NULL) j = worker_alloc(sizeof(job_t));
 	memset(j, 0, sizeof(job_t));
 	j->is_active = false;
+	j->type = type;
 
 	return j;
 }
@@ -61,7 +62,41 @@ job_t *get_jobs_to_do(char *nodename, int *n, int *is_error)
 	return jobs;
 }
 
-job_t *get_expired_jobs(char *nodename, int *n, int *is_error)
+job_t *get_expired_at_jobs(char *nodename, int *n, int *is_error)
+{
+	StringInfoData sql;
+	job_t *jobs = NULL;
+	int ret, got, i;
+	
+	*n = *is_error = 0;
+	initStringInfo(&sql);
+	appendStringInfo(&sql, "select at, last_start_available, id from at_jobs where last_start_available < 'now' and status = 'submitted' and node = '%s'", nodename);
+	ret = SPI_execute(sql.data, true, 0);
+	if(ret == SPI_OK_SELECT)
+	{
+		got  = SPI_processed;
+		if(got > 0)
+		{
+			*n = got;
+			jobs = worker_alloc(sizeof(job_t) * got);
+			for(i=0; i < got; i++)
+			{
+				init_scheduler_job(&(jobs[i]), 2);
+				jobs[i].start_at = get_timestamp_from_spi(i, 1, 0);
+				jobs[i].last_start_avail = get_timestamp_from_spi(i, 2, 0);
+				jobs[i].cron_id = get_int_from_spi(i, 3, 0);
+				jobs[i].node = _copy_string(nodename);
+			}
+		}
+	}
+	else
+	{
+		*is_error = 1;
+	}
+	return jobs;
+}
+
+job_t *get_expired_cron_jobs(char *nodename, int *n, int *is_error)
 {
 	StringInfoData sql;
 	job_t *jobs = NULL;
@@ -80,7 +115,7 @@ job_t *get_expired_jobs(char *nodename, int *n, int *is_error)
 			jobs = worker_alloc(sizeof(job_t) * got);
 			for(i=0; i < got; i++)
 			{
-				init_scheduler_job(&(jobs[i]));
+				init_scheduler_job(&(jobs[i]), 1);
 				jobs[i].start_at = get_timestamp_from_spi(i, 1, 0);
 				jobs[i].last_start_avail = get_timestamp_from_spi(i, 2, 0);
 				jobs[i].cron_id = get_int_from_spi(i, 3, 0);

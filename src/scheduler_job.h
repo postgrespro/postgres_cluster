@@ -11,6 +11,7 @@
 #include "port.h"
 
 typedef struct {
+	unsigned char type; /* 1 - cron job, 2 - at job */
 	int cron_id;
 	TimestampTz start_at;
 	char *node;
@@ -30,7 +31,7 @@ typedef struct {
 } job_t;
 
 job_t *init_scheduler_job(job_t *j);
-job_t *get_expired_jobs(char *nodename, int *n, int *is_error);
+job_t *get_expired_cron_jobs(char *nodename, int *n, int *is_error);
 job_t *get_jobs_to_do(char *nodename, int *n, int *is_error);
 job_t *set_job_error(job_t *j, const char *fmt, ...) pg_attribute_printf(2, 3);
 int move_job_to_log(job_t *j, bool status);
