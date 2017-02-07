@@ -120,7 +120,7 @@ ALTER SYSTEM SET <varname>schedule.database</> = '<replaceable>database1</>,<rep
       </listitem>
       <listitem>
         <para>
-          To control the workload in your system, set the maximal number
+          To control the workload in your system, set the maximum number
           of background workers that can run simultaneously on each
           database:
         </para>
@@ -159,7 +159,7 @@ SELECT <function>pg_reload_conf()</>;
         The <filename>pgpro_scheduler</filename> extension starts a
         separate background worker for the system, each database, and
         each monitored job. For example, if you work with two databases
-        and set the maximal number of workers to 5,
+        and set the maximum number of workers to 5,
         <filename>pgpro_scheduler</filename> can use up to 13 workers at
         peak times: one worker is supervising the system, two workers
         are monitoring the two databases, and 10 workers can be started
@@ -172,7 +172,7 @@ SELECT <function>pg_reload_conf()</>;
     <para>
       Alternatively, you can modify <filename>pgpro_scheduler</filename>
       settings in the <filename>postgresql.conf</filename> file. In this
-      case, all databases will have the same maximal number of
+      case, all databases will have the same maximum number of
       background workers:
     </para>
     <programlisting>
@@ -295,7 +295,7 @@ For details, see <xref linkend="schedule-create-job"> function description.</par
         If all background workers are busy at the specified time, the
         job waits for the next available worker. By default, the
         <filename>pgpro_scheduler</filename> can wait forever. You can
-        limit the maximal wait time by setting the
+        limit the maximum wait time by setting the
         <literal>last_start_available</literal> key, in the <link linkend="datatype-datetime">time interval</link> format.
         If the timeout is reached, <filename>pgpro_scheduler</filename>
         cancels the job execution.
@@ -444,7 +444,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT random()&quot;, 
           </para>
         </listitem>
                 <listitem>
-          <para>Define the maximal wait time before the function gets
+          <para>Define the maximum wait time before the function gets
           executed using the <literal>last_start_available</literal>
           key. If the timeout is reached, <filename>pgpro_scheduler</filename> cancels the job.
           </para>
@@ -600,7 +600,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &
    <sect2 id="pgpro-scheduler-reference">
    <title>Reference</title>
        <sect3 id="pgpro-scheduler-guc-variables">
-      <title>Variables</title>
+      <title>GUC Variables</title>
    <variablelist>
     <varlistentry id="pgpro-scheduler-schedule-enable" xreflabel="schedule.enable">
      <term><varname>schedule.enable</varname> (<type>boolean</type>)
@@ -672,7 +672,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &
      </term>
      <listitem>
       <para>
-      Specifies the maximal number of simultaneously running jobs in one database.</para>
+      Specifies the maximum number of simultaneously running jobs in one database.</para>
        <para>Default: <literal>2</literal>.
       </para>
      </listitem>
@@ -751,12 +751,12 @@ CREATE TYPE schedule.cron_rec AS(
     use_same_transaction boolean,   -- true if an array of SQL 
                                     -- commands will be executed 
                                     -- in a single transaction
-    last_start_available interval,  -- maximal wait time for 
+    last_start_available interval,  -- maximum wait time for 
                                     -- the scheduled job if all 
                                     -- allowed workers are busy
-    max_instances int,      -- maximal number of simultaneously 
+    max_instances int,      -- maximum number of simultaneously 
                             -- running job instances
-    max_run_time interval,  -- maximal execution time
+    max_run_time interval,  -- maximum execution time
     onrollback text,        -- SQL statement to execute 
                             -- if the main transaction fails
 
@@ -791,12 +791,12 @@ CREATE TYPE schedule.cron_job AS(
                                     -- commands will be executed
                                     -- in a single transaction
     started timestamp,      -- timestamp of the job execution start
-    last_start_available timestamp, -- maximal wait time for 
+    last_start_available timestamp, -- maximum wait time for 
                                     -- the scheduled job if all 
                                     -- allowed workers are busy
     finished timestamp,     -- timestamp of the job
                             -- execution finish
-    max_run_time interval,  -- maximal execution time
+    max_run_time interval,  -- maximum execution time
     max_instances int,      -- the number of simultaneously 
                             -- running job instances 
     onrollback text,        -- SQL statement to execute if the main
@@ -1057,8 +1057,8 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
                 <type>interval</type>
               </entry>
               <entry>
-                Optional. The maximal time interval to postpone the job
-                execution if the maximal number of allowed workers
+                Optional. The maximum time interval to postpone the job
+                execution if the maximum number of allowed workers
                 reached at the scheduled moment. For example, if this
                 key is set to '00:02:34', the job will wait for 2
                 minutes 34 seconds. If this key is NULL or not set, the
@@ -1073,7 +1073,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
                 <type>interval</type>
               </entry>
               <entry>
-                Optional. The maximal time interval during which the
+                Optional. The maximum time interval during which the
                 scheduled job can be executed. If this key is NULL or
                 not set, there are no time limits. Default: NULL.
               </entry>
@@ -1259,7 +1259,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
        Return values: 
        <itemizedlist>
         <listitem><para><literal>true</literal> &mdash; the job was activated successfully.</para></listitem>
-        <listitem><para><literal>false</literal> &mdash; job activaction failed.</para></listitem>
+        <listitem><para><literal>false</literal> &mdash; job activation failed.</para></listitem>
        </itemizedlist>
       </para>
      </listitem>
