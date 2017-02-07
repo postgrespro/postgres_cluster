@@ -574,9 +574,9 @@
 
 #define PGPRO_EDITION "standard"
 
-#define PGPRO_VERSION "9.6.1.1"
+#define PGPRO_VERSION "9.6.2.1"
 
-#define PGPRO_PACKAGE_STR "PostgresPro 9.6.1.1"
+#define PGPRO_PACKAGE_STR "PostgresPro 9.6.2.1"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "postgresql"
