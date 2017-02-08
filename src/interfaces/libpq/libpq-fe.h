@@ -67,6 +67,7 @@ typedef enum
 								 * connection acceptable */
 	CONNECTION_CHECK_RW,		/* Internal state: waiting that server replies
 								 * if it is in recovery */
+	CONNECTION_RSOCKET_NEEDED	/* Wait for rsocket port from backend */
 } ConnStatusType;
 
 typedef enum

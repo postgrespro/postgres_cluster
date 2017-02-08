@@ -4136,7 +4136,7 @@ RsocketInitialize(Port *port)
 	struct sockaddr_in6 *addr_in6;
 #endif
 
-	char		RsocketOk;
+//	char		RsocketOk;
 	int			ret;
 	int			maxconn;
 	int			one = 1;
@@ -4263,17 +4263,15 @@ RsocketInitialize(Port *port)
 				 errmsg("could not listen on socket: %m")));
 	}
 
-	/*
-	 * Send to client message that postmaster ready to accept rsocket
-	 * connection.
-	 */
-	RsocketOk = 'R';
-	if (pg_send(port->sock, &RsocketOk, 1, 0, port->isRsocket) != 1)
+	/* Send to client rsocket port */
+//	RsocketOk = 'R';
+	if (pg_send(port->sock, local_port, strlen(local_port), 0,
+				port->isRsocket)!= 1)
 	{
 		pg_closesocket(fd, true);
 		ereport(FATAL,
 				(errcode_for_socket_access(),
-				 errmsg("failed to send SSL negotiation response: %m")));
+				 errmsg("failed to send rsocket port: %m")));
 	}
 
 	/* accept connection and fill in the client (remote) address */
