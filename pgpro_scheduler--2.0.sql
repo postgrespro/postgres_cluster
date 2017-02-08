@@ -3,9 +3,8 @@
 CREATE SCHEMA IF NOT EXISTS schedule;
 
 CREATE TYPE schedule.job_status AS ENUM ('working', 'done', 'error');
-CREATE TYPE schedule.at_job_status AS ENUM ('submitted', 'working', 'done', 'error');
 
-CREATE TABLE schedule.at_jobs(
+CREATE TABLE schedule.at_jobs_submitted(
    id SERIAL PRIMARY KEY,
    node text,
    name text,
@@ -16,16 +15,27 @@ CREATE TABLE schedule.at_jobs(
    onrollback_statement text,
    executor text,
    owner text,
+   last_start_available timestamp with time zone,
    postpone interval,
    max_run_time	interval,
    max_instances integer default 1,
-   status at_job_status default 'submited',
-   submit_time timestamp with time zone default now(),
-   started timestamp with time zone,
-   finished timestamp with time zone,
-   reason text
+   submit_time timestamp with time zone default now()
 );
-CREATE INDEX at_jobs_status_node_at_idx on schedule.at (status, node,  at);
+CREATE INDEX at_jobs_submitted_node_at_idx on schedule.at_jobs_submitted (node,  at);
+
+CREATE TABLE schedule.at_jobs_process(
+	start_time timestamp with time zone default now()
+) INHERITS (schedule.at_jobs_submitted);
+
+CREATE INDEX at_jobs_process_node_at_idx on schedule.at_jobs_process (node,  at);
+
+CREATE TABLE schedule.at_jobs_done(
+	status boolean,
+	reason text,
+	done_time timestamp with time zone default now()
+) INHERITS (schedule.at_jobs_process);
+
+CREATE INDEX at_jobs_done_node_at_idx on schedule.at_jobs_done (node,  at);
 
 CREATE TABLE schedule.cron(
    id SERIAL PRIMARY KEY,

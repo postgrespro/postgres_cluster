@@ -389,72 +389,30 @@ void set_pg_var(bool result, executor_error_t *ee)
 
 job_t *initializeExecutorJob(schd_executor_share_t *data)
 {
-	const char *sql = "select at.last_start_available, cron.same_transaction, cron.do_sql, cron.executor, cron.postpone, cron.max_run_time as time_limit, cron.max_instances, cron.onrollback_statement , cron.next_time_statement from schedule.at at, schedule.cron cron where start_at = $1 and  at.active and at.cron = cron.id AND cron.node = $2 AND cron.id = $3";
-	Oid argtypes[3] = { TIMESTAMPTZOID, TEXTOID, INT4OID};
-	Datum args[3];
 	job_t *J;
-	int ret;
 	char *error = NULL;
-	char *ts;
 
-	args[0] = TimestampTzGetDatum(data->start_at);
-	args[1] = PointerGetDatum(cstring_to_text(data->nodename));
-	args[2] = Int32GetDatum(data->cron_id);
-
-	START_SPI_SNAP();
-	ret = execute_spi_sql_with_args(sql, 3, argtypes, args, NULL, &error);
+	J = data->type == CronJob ?
+		get_cron_job(data->cron_id, data->start_at, data->nodename, &error):
+		get_at_job(data->cron_id, data->nodename, &error);
 
 	if(error)
 	{
-		snprintf(data->message,
-			PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
-			"cannot retrive job: %s", error);
+		snprintf(data->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
+			"%s", error);
 		elog(LOG, "EXECUTOR: %s", data->message);
 		pfree(error);
-		PopActiveSnapshot();
-		AbortCurrentTransaction();
-		SPI_finish();
+		return NULL;
+	}
+	if(!J)
+	{
+		snprintf(data->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
+			"unknown error get job");
+		elog(LOG, "EXECUTOR: %s", data->message);
 		return NULL;
 	}
 
-	if(ret == SPI_OK_SELECT)
-	{
-		if(SPI_processed == 0)
-		{
-			STOP_SPI_SNAP();
-			ts = make_date_from_timestamp(data->start_at);
-			snprintf(data->message,
-				PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
-				"cannot find job: %d @ %s [%s]",
-				data->cron_id, ts, data->nodename);
-			elog(LOG, "EXECUTOR: %s", data->message);
-			pfree(ts);
-			return NULL;
-		}
-		J = worker_alloc(sizeof(job_t));
-
-		J->cron_id = data->cron_id;
-		J->start_at = data->start_at;
-		J->node = _copy_string(data->nodename);
-		J->same_transaction = get_boolean_from_spi(0, 2, false);
-		J->dosql = get_textarray_from_spi(0, 3, &J->dosql_n);
-		J->executor = get_text_from_spi(0, 4);
-		J->onrollback = get_text_from_spi(0, 8);
-		J->next_time_statement = get_text_from_spi(0, 9);
-
-		STOP_SPI_SNAP();
-
-		return J;
-	}
-	snprintf(data->message,
-		PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
-		"error while retrive job information: %d", ret);
-	elog(LOG, "EXECUTOR: %s", data->message);
-
-	PopActiveSnapshot();
-	AbortCurrentTransaction();
-	SPI_finish();
-	return NULL;
+	return J;
 }
 
 int push_executor_error(executor_error_t *e, char *fmt, ...)

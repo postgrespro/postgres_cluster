@@ -20,6 +20,7 @@ typedef struct {
 	char user[NAMEDATALEN];
 
 	int cron_id;
+	task_type_t type;
 	TimestampTz start_at;
 
 	schd_executor_status_t status;

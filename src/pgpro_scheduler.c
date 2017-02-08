@@ -46,6 +46,7 @@ char *scheduler_databases = NULL;
 char *scheduler_nodename = NULL;
 char *scheduler_transaction_state = NULL;
 int  scheduler_max_workers = 2;
+int  scheduler_at_max_workers = 2;
 bool scheduler_service_enabled = false;
 char *scheduler_schema = NULL;
 /* Custom GUC done */
@@ -109,17 +110,18 @@ int get_integer_from_string(char *s, int start, int len)
 	return atoi(buff);
 }
 
-char *make_date_from_timestamp(TimestampTz ts)
+char *make_date_from_timestamp(TimestampTz ts, bool hires)
 {
 	struct pg_tm dt;
-	char *str = worker_alloc(sizeof(char) * 17);
+	char *str = worker_alloc(sizeof(char) * 19);
 	int tz;
 	fsec_t fsec;
 	const char *tzn;
 
 	timestamp2tm(ts, &tz, &dt, &fsec, &tzn, NULL ); 
-	sprintf(str, "%04d-%02d-%02d %02d:%02d", dt.tm_year , dt.tm_mon,
-			dt.tm_mday, dt.tm_hour, dt.tm_min);
+	sprintf(str, "%04d-%02d-%02d %02d:%02d:%02d", dt.tm_year , dt.tm_mon,
+			dt.tm_mday, dt.tm_hour, dt.tm_min, dt.tm_sec);
+	if(!hires) str[16] = 0;
 	return str;
 }
 
@@ -457,9 +459,23 @@ void _PG_init(void)
 	);
 	DefineCustomIntVariable(
 		"schedule.max_workers",
-		"How much workers can serve scheduler on one database",
+		"How much workers can serve scheduled jobs on one database",
 		NULL,
 		&scheduler_max_workers,
+		2,
+		1,
+		100,
+		PGC_SUSET,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+	DefineCustomIntVariable(
+		"schedule.at_max_workers",
+		"How much workers can serve at jobs on one database",
+		NULL,
+		&scheduler_at_max_workers,
 		2,
 		1,
 		100,
