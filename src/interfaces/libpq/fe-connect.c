@@ -1540,11 +1540,6 @@ connectDBStart(PGconn *conn)
 	int			portnum;
 	char		portstr[MAXPGPATH];
 	struct addrinfo *addrs = NULL;
-#ifdef WITH_RSOCKET
-//	int			rportnum;
-//	char		rportstr[MAXPGPATH];
-//	struct addrinfo *raddrs = NULL;
-#endif
 	struct addrinfo hint;
 	struct nodeinfo *nodes,
 			   *node;
@@ -1585,24 +1580,6 @@ connectDBStart(PGconn *conn)
 	else
 		portnum = DEF_PGPORT;
 	snprintf(portstr, sizeof(portstr), "%d", portnum);
-
-#ifdef WITH_RSOCKET
-//	if (conn->rsocket_pgport != NULL && conn->rsocket_pgport[0] != '\0')
-//	{
-//		rportnum = atoi(conn->rsocket_pgport);
-//		if (rportnum < 1 || rportnum > 65535)
-//		{
-//			appendPQExpBuffer(&conn->errorMessage,
-//							  libpq_gettext("invalid port number: \"%s\"\n"),
-//							  conn->rsocket_pgport);
-//			conn->options_valid = false;
-//			goto connect_errReturn;
-//		}
-//	}
-//	else
-//		rportnum = DEF_PGPORT;
-//	snprintf(rportstr, sizeof(rportstr), "%d", rportnum);
-#endif
 
 	if (conn->pghostaddr != NULL && conn->pghostaddr[0] != '\0')
 	{
@@ -1901,25 +1878,6 @@ connectDBStart(PGconn *conn)
 		goto connect_errReturn;
 	}
 
-#ifdef WITH_RSOCKET
-//	ret = pg_getaddrinfo_all(node, rportstr, &hint, &raddrs);
-//	if (ret || !raddrs)
-//	{
-//		if (node)
-//			appendPQExpBuffer(&conn->errorMessage,
-//							  libpq_gettext("could not translate host name \"%s\" to address: %s\n"),
-//							  node, gai_strerror(ret));
-//		else
-//			appendPQExpBuffer(&conn->errorMessage,
-//							  libpq_gettext("could not translate Unix-domain socket path \"%s\" to address: %s\n"),
-//							  rportstr, gai_strerror(ret));
-//		if (raddrs)
-//			pg_freeaddrinfo_all(hint.ai_family, raddrs);
-//		conn->options_valid = false;
-//		goto connect_errReturn;
-//	}
-#endif
-
 #ifdef USE_SSL
 	/* setup values based on SSL mode */
 	if (conn->sslmode[0] == 'd')	/* "disable" */
@@ -1939,9 +1897,6 @@ connectDBStart(PGconn *conn)
 	 */
 	conn->addr_cur = NULL;
 	try_next_address(conn);
-#ifdef WITH_RSOCKET
-//	conn->rsocket_addrlist = raddrs;
-#endif
 	conn->addrlist_family = hint.ai_family;
 	conn->pversion = PG_PROTOCOL(3, 0);
 	conn->send_appname = true;
@@ -2344,8 +2299,7 @@ keep_going:						/* We will come back to here until there is
 					 * Do not use nonblock mode for rsocket. We set nonblock
 					 * mode for rsocket after rconnect().
 					 */
-					if (/*!conn->isRsocket &&
-						*/!pg_set_noblock(conn->sock, conn->isRsocket))
+					if (!pg_set_noblock(conn->sock, conn->isRsocket))
 					{
 						appendPQExpBuffer(&conn->errorMessage,
 										  libpq_gettext("could not set socket to nonblocking mode: %s\n"),
@@ -2482,20 +2436,6 @@ keep_going:						/* We will come back to here until there is
 					else
 					{
 						/*
-						 * Set nonblock mode for rsocket. We didn't set it
-						 * before.
-						 */
-//						if (conn->isRsocket &&
-//							!pg_set_noblock(conn->sock, conn->isRsocket))
-//						{
-//							appendPQExpBuffer(&conn->errorMessage,
-//											  libpq_gettext("could not set socket to nonblocking mode: %s\n"),
-//								SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
-//							pqDropConnection(conn, true);
-//							conn->addr_cur = addr_cur->ai_next;
-//							continue;
-//						}
-						/*
 						 * Hm, we're connected already --- seems the "nonblock
 						 * connection" wasn't.  Advance the state machine and
 						 * go do the next stuff.
@@ -2612,17 +2552,6 @@ keep_going:						/* We will come back to here until there is
 				struct addrinfo *raddrs = NULL;
 				int			ret;
 
-//				ret = pqReadData(conn);
-//				if (ret < 0)
-//				{
-//					/* errorMessage is already filled in */
-//					goto error_return;
-//				}
-//				if (ret == 0)
-//				{
-//					/* caller failed to wait for data */
-//					return PGRES_POLLING_READING;
-//				}
 				if (pqGets(&conn->workBuffer, conn) < 0)
 				{
 					/* should not happen really */

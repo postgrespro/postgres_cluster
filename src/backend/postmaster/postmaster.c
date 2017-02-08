@@ -4136,7 +4136,6 @@ RsocketInitialize(Port *port)
 	struct sockaddr_in6 *addr_in6;
 #endif
 
-//	char		RsocketOk;
 	ssize_t		len;
 	int			ret;
 	int			maxconn;
