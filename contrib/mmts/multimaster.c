@@ -4740,6 +4740,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_LockStmt:
 		case T_CheckPointStmt:
 		case T_ReindexStmt:
+		case T_ExplainStmt:
 			skipCommand = true;
 			break;
 
@@ -4795,25 +4796,25 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			}
 			break;
 
-		case T_ExplainStmt:
-			/*
-			 * EXPLAIN ANALYZE can create side-effects.
-			 * Better to catch that by some general mechanism of detecting
-			 * catalog and heap writes.
-			 */
-			{
-				ExplainStmt *stmt = (ExplainStmt *) parsetree;
-				ListCell   *lc;
+		// case T_ExplainStmt:
+		// 	/*
+		// 	 * EXPLAIN ANALYZE can create side-effects.
+		// 	 * Better to catch that by some general mechanism of detecting
+		// 	 * catalog and heap writes.
+		// 	 */
+		// 	{
+		// 		ExplainStmt *stmt = (ExplainStmt *) parsetree;
+		// 		ListCell   *lc;
 
-				skipCommand = true;
-				foreach(lc, stmt->options)
-				{
-					DefElem    *opt = (DefElem *) lfirst(lc);
-					if (strcmp(opt->defname, "analyze") == 0)
-						skipCommand = false;
-				}
-			}
-			break;
+		// 		skipCommand = true;
+		// 		foreach(lc, stmt->options)
+		// 		{
+		// 			DefElem    *opt = (DefElem *) lfirst(lc);
+		// 			if (strcmp(opt->defname, "analyze") == 0)
+		// 				skipCommand = false;
+		// 		}
+		// 	}
+		// 	break;
 
 		/* Save GUC context for consequent DDL execution */
 		case T_DiscardStmt:
