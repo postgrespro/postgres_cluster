@@ -4137,6 +4137,7 @@ RsocketInitialize(Port *port)
 #endif
 
 //	char		RsocketOk;
+	ssize_t		len;
 	int			ret;
 	int			maxconn;
 	int			one = 1;
@@ -4264,9 +4265,8 @@ RsocketInitialize(Port *port)
 	}
 
 	/* Send to client rsocket port */
-//	RsocketOk = 'R';
-	if (pg_send(port->sock, local_port, strlen(local_port), 0,
-				port->isRsocket)!= 1)
+	len = strlen(local_port) + 1;
+	if (pg_send(port->sock, local_port, len, 0, port->isRsocket) != len)
 	{
 		pg_closesocket(fd, true);
 		ereport(FATAL,

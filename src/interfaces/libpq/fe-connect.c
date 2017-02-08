@@ -2235,6 +2235,7 @@ PQconnectPoll(PGconn *conn)
 			/* These are reading states */
 		case CONNECTION_AWAITING_RESPONSE:
 		case CONNECTION_AUTH_OK:
+		case CONNECTION_RSOCKET_NEEDED:
 			{
 				/* Load waiting data */
 				int			n = pqReadData(conn);
@@ -2611,17 +2612,17 @@ keep_going:						/* We will come back to here until there is
 				struct addrinfo *raddrs = NULL;
 				int			ret;
 
-				ret = pqReadData(conn);
-				if (ret < 0)
-				{
-					/* errorMessage is already filled in */
-					goto error_return;
-				}
-				if (ret == 0)
-				{
-					/* caller failed to wait for data */
-					return PGRES_POLLING_READING;
-				}
+//				ret = pqReadData(conn);
+//				if (ret < 0)
+//				{
+//					/* errorMessage is already filled in */
+//					goto error_return;
+//				}
+//				if (ret == 0)
+//				{
+//					/* caller failed to wait for data */
+//					return PGRES_POLLING_READING;
+//				}
 				if (pqGets(&conn->workBuffer, conn) < 0)
 				{
 					/* should not happen really */
