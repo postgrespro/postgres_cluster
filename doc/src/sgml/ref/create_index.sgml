@@ -166,7 +166,7 @@ CREATE [ UNIQUE ] INDEX [ CONCURRENTLY ] [ [ IF NOT EXISTS ] <replaceable class=
        </para>
         <note>
 		<para>
-		First versions of this feture used keyword INCLUDING, which is still supported,
+		First versions of this feature used keyword INCLUDING, which is still supported,
 		but deprecated now.
 		</para>
 		</note>
