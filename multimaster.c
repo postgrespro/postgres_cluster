@@ -457,7 +457,9 @@ csn_t MtmDistributedTransactionSnapshot(TransactionId xid, int nodeId, nodemask_
 Snapshot MtmGetSnapshot(Snapshot snapshot)
 {
     snapshot = PgGetSnapshotData(snapshot);
-	RecentGlobalDataXmin = RecentGlobalXmin = Mtm->oldestXid;
+	if (snapshot != &CatalogSnapshotData) {
+		RecentGlobalDataXmin = RecentGlobalXmin = Mtm->oldestXid;
+	}
     return snapshot;
 }
 
