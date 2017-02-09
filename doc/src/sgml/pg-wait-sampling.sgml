@@ -472,21 +472,21 @@ SELECT * FROM pg_wait_sampling_get_profile();
     </listitem>
     </itemizedlist></listitem>
     </varlistentry>
-        <varlistentry>
+    <varlistentry>
     <term><function>pg_wait_sampling_get_history()</function>
     <indexterm><primary><function>pg_wait_sampling_get_history</></primary>
     </indexterm>
     </term>
-    <listitem><para>Returns the <literal>pg_wait_sampling_history</literal> view with the list of wait events for recent processes, with timestamps.</para>
+    <listitem><para>Returns the <literal>pg_wait_sampling_history</literal> view with the list of wait events for recent processes, with timestamps.</para></listitem>
     </varlistentry>
-        <varlistentry>
+    <varlistentry>
     <term><function>pg_wait_sampling_get_profile()</function>
     <indexterm><primary><function>pg_wait_sampling_get_profile</function></primary>
     </indexterm>
     </term>
-    <listitem><para>Returns the profile of wait events.</para>
+    <listitem><para>Returns the profile of wait events.</para></listitem>
     </varlistentry>
-        <varlistentry>
+    <varlistentry>
     <term><function>pg_wait_sampling_reset_profile()</function>
     <indexterm><primary><function>pg_wait_sampling_reset_profile</function></primary>
     </indexterm>
