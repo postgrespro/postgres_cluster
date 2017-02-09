@@ -63,8 +63,6 @@
 shared_preload_libraries = 'pg_wait_sampling'
 </programlisting>
       </listitem>
-    </orderedlist>
-    <orderedlist>
       <listitem>
         <para>
           From the command line, run the following query:
