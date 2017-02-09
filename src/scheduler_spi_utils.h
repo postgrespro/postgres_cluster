@@ -23,6 +23,7 @@ Datum select_onedatumvalue_sql(const char *sql, bool *is_null);
 int select_count_with_args(const char *sql, int n, Oid *argtypes, Datum *values, char *nulls);
 long int get_interval_seconds_from_spi(int row_n, int pos, long def);
 char **get_textarray_from_spi(int row_n, int pos, int *N);
+int64 *get_int64array_from_spi(int row_n, int pos, int *N);
 bool get_boolean_from_spi(int row_n, int pos, bool def);
 char *get_text_from_spi(int row_n, int pos);
 Oid get_oid_from_spi(int row_n, int pos, Oid def);

@@ -48,6 +48,9 @@ void set_pg_var(bool resulti, executor_error_t *ee);
 int push_executor_error(executor_error_t *e, char *fmt, ...)  pg_attribute_printf(2, 3);
 int set_session_authorization(char *username, char **error);
 
+extern Datum get_self_id(PG_FUNCTION_ARGS);
+extern Datum resubmit(PG_FUNCTION_ARGS);
+
 
 #endif
 

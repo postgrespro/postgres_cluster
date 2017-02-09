@@ -24,6 +24,10 @@ typedef struct {
 	bool same_transaction;
 	int dosql_n;
 	char **dosql;
+	int sql_params_n;
+	char **sql_params;
+	int depends_on_n;
+	int64 *depends_on;
 	TimestampTz postpone;
 	char *executor;
 	char *owner;

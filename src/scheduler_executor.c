@@ -35,6 +35,9 @@
 extern volatile sig_atomic_t got_sighup;
 extern volatile sig_atomic_t got_sigterm;
 
+static int64 current_job_id = -1;
+static int resubmit_current_job = 0;
+
 static void handle_sigterm(SIGNAL_ARGS);
 
 static void
@@ -85,6 +88,8 @@ void executor_worker_main(Datum arg)
 			 errmsg("executor corrupted dynamic shared memory segment")));
 	}
 	status = shared->status = SchdExecutorWork;
+	shared->message[0] = 0;
+
 	SetConfigOption("application_name", "pgp-s executor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "initialize");
 	init_worker_mem_ctx("ExecutorMemoryContext");
@@ -94,13 +99,16 @@ void executor_worker_main(Datum arg)
 	job = initializeExecutorJob(shared);
 	if(!job)
 	{
-		snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX, 
+		if(shared->message[0] == 0)
+			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX, 
 											"Cannot retrive job information");
 		shared->status = SchdExecutorError;
 		delete_worker_mem_ctx();
 		dsm_detach(seg);
 		proc_exit(0);
 	}
+	current_job_id = job->cron_id;
+	pgstat_report_activity(STATE_RUNNING, "job initialized");
 
 	if(set_session_authorization(job->executor, &error) < 0)
 	{
@@ -195,6 +203,7 @@ void executor_worker_main(Datum arg)
 			sprintf(shared->set_invalid_reason, "unable to execute next time statement");
 		}
 	}
+	current_job_id = -1;
 	pgstat_report_activity(STATE_RUNNING, "finish job processing");
 
 	if(EE.n > 0)
@@ -391,10 +400,18 @@ job_t *initializeExecutorJob(schd_executor_share_t *data)
 {
 	job_t *J;
 	char *error = NULL;
+	const char *schema;
+	const char *old_path;
+
+	old_path = GetConfigOption("search_path", false, true);
+	schema = GetConfigOption("schedule.schema", false, true);
+	SetConfigOption("search_path", schema, PGC_USERSET, PGC_S_SESSION);
 
 	J = data->type == CronJob ?
 		get_cron_job(data->cron_id, data->start_at, data->nodename, &error):
 		get_at_job(data->cron_id, data->nodename, &error);
+
+	SetConfigOption("search_path", old_path, PGC_USERSET, PGC_S_SESSION);
 
 	if(error)
 	{
@@ -440,4 +457,26 @@ int push_executor_error(executor_error_t *e, char *fmt, ...)
 	e->n++;
 
 	return e->n;
+}
+
+PG_FUNCTION_INFO_V1(get_self_id);
+Datum 
+get_self_id(PG_FUNCTION_ARGS)
+{
+	if(current_job_id == -1)
+	{
+		elog(ERROR, "There is no active job in progress");	
+	}
+	PG_RETURN_INT64(current_job_id);
+}
+
+PG_FUNCTION_INFO_V1(resubmit);
+Datum 
+resubmit(PG_FUNCTION_ARGS)
+{
+	if(current_job_id == -1)
+	{
+		elog(ERROR, "There is no active job in progress");	
+	}
+	PG_RETURN_BOOL(true);
 }

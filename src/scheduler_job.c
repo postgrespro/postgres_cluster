@@ -25,7 +25,7 @@ job_t *init_scheduler_job(job_t *j, unsigned char type)
 job_t *get_at_job(int cron_id, char *nodename, char **perror)
 {
 	job_t *j;
-	const char *sql = "select last_start_available, same_transaction, do_sql, executor, postpone, max_run_time as time_limit, max_instances, onrollback_statement, start_at from at_process where node = $1 and id = $2";
+	const char *sql = "select last_start_available, array_append('{}'::text[], do_sql)::text[], executor, postpone, max_run_time as time_limit, at, params, depends_on from ONLY at_jobs_process where node = $1 and id = $2";
 	Oid argtypes[2] = { TEXTOID, INT4OID};
 	Datum args[2];
 	int ret;
@@ -60,15 +60,16 @@ job_t *get_at_job(int cron_id, char *nodename, char **perror)
 			*perror = _copy_string(buffer);
 			return NULL;
 		}
-		STOP_SPI_SNAP();
 
 		j = init_scheduler_job(NULL, AtJob);
 		j->node = _copy_string(nodename);
-		j->same_transaction = get_boolean_from_spi(0, 2, false);
-		j->dosql = get_textarray_from_spi(0, 3, &j->dosql_n);
-		j->executor = get_text_from_spi(0, 4);
-		j->onrollback = get_text_from_spi(0, 8);
-		j->start_at = get_timestamp_from_spi(0, 9, 0);
+		j->dosql = get_textarray_from_spi(0, 2, &j->dosql_n);
+		j->executor = get_text_from_spi(0, 3);
+		j->start_at = get_timestamp_from_spi(0, 6, 0);
+		j->sql_params = get_textarray_from_spi(0, 7, &j->sql_params_n);
+		j->depends_on = get_int64array_from_spi(0, 8, &j->depends_on_n);
+
+		STOP_SPI_SNAP();
 
 		*perror = NULL;
 		return j;
@@ -125,7 +126,6 @@ job_t *get_cron_job(int cron_id, TimestampTz start_at, char *nodename, char **pe
 			pfree(ts);
 			return NULL;
 		}
-		STOP_SPI_SNAP();
 
 		j = init_scheduler_job(NULL, CronJob);
 		j->start_at = start_at;
@@ -135,6 +135,7 @@ job_t *get_cron_job(int cron_id, TimestampTz start_at, char *nodename, char **pe
 		j->executor = get_text_from_spi(0, 4);
 		j->onrollback = get_text_from_spi(0, 8);
 		j->next_time_statement = get_text_from_spi(0, 9);
+		STOP_SPI_SNAP();
 
 		*perror = NULL;
 		return j;
@@ -167,7 +168,7 @@ job_t *_at_get_jobs_to_do(char *nodename, int *n, int *is_error, int limit)
 	*is_error = *n = 0;
 	START_SPI_SNAP();
 	values[0] = CStringGetTextDatum(nodename);
-	values[1] = Int32GetDatum(limit);
+	values[1] = Int32GetDatum(limit+1);
 	ret = SPI_execute_with_args(get_job_sql, 2, argtypes, values, NULL, true, 0);
 	if(ret == SPI_OK_SELECT)
 	{
@@ -208,7 +209,7 @@ job_t *_cron_get_jobs_to_do(char *nodename, int *n, int *is_error, int limit)
 	*is_error = *n = 0;
 	START_SPI_SNAP();
 	values[0] = CStringGetTextDatum(nodename);
-	values[1] = Int32GetDatum(limit);
+	values[1] = Int32GetDatum(limit + 1);
 	ret = SPI_execute_with_args(get_job_sql, 2, argtypes, values, NULL, true, 0);
 	if(ret == SPI_OK_SELECT)
 	{
@@ -409,6 +410,15 @@ void destroy_job(job_t *j, int selfdestroy)
 		}
 		pfree(j->dosql);
 	}
+	if(j->sql_params_n && j->sql_params)
+	{
+		for(i=0; i < j->sql_params_n; i++)
+		{
+			if(j->sql_params[i]) pfree(j->sql_params[i]);
+		}
+		pfree(j->sql_params);
+	}
+	if(j->depends_on_n && j->depends_on) pfree(j->depends_on);
 
 	if(selfdestroy) pfree(j);
 }

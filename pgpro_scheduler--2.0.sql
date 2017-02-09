@@ -1,43 +1,43 @@
 \echo Use "CREATE EXTENSION pgpro_scheduler" to load this file. \quit
 
 CREATE SCHEMA IF NOT EXISTS schedule;
+SET search_path TO schedule;
 
-CREATE TYPE schedule.job_status AS ENUM ('working', 'done', 'error');
+CREATE TYPE job_status AS ENUM ('working', 'done', 'error');
 
-CREATE TABLE schedule.at_jobs_submitted(
+CREATE TABLE at_jobs_submitted(
    id SERIAL PRIMARY KEY,
    node text,
    name text,
    comments text,
-   at timestamp with time zone default now(),
-   do_sql text[],
-   same_transaction boolean DEFAULT false,
-   onrollback_statement text,
+   at timestamp with time zone,
+   do_sql text,
+   params text[],
+   depends_on bigint[],
    executor text,
    owner text,
    last_start_available timestamp with time zone,
    postpone interval,
    max_run_time	interval,
-   max_instances integer default 1,
    submit_time timestamp with time zone default now()
 );
-CREATE INDEX at_jobs_submitted_node_at_idx on schedule.at_jobs_submitted (node,  at);
+CREATE INDEX at_jobs_submitted_node_at_idx on at_jobs_submitted (node,  at);
 
-CREATE TABLE schedule.at_jobs_process(
+CREATE TABLE at_jobs_process(
 	start_time timestamp with time zone default now()
-) INHERITS (schedule.at_jobs_submitted);
+) INHERITS (at_jobs_submitted);
 
-CREATE INDEX at_jobs_process_node_at_idx on schedule.at_jobs_process (node,  at);
+CREATE INDEX at_jobs_process_node_at_idx on at_jobs_process (node,  at);
 
-CREATE TABLE schedule.at_jobs_done(
+CREATE TABLE at_jobs_done(
 	status boolean,
 	reason text,
 	done_time timestamp with time zone default now()
-) INHERITS (schedule.at_jobs_process);
+) INHERITS (at_jobs_process);
 
-CREATE INDEX at_jobs_done_node_at_idx on schedule.at_jobs_done (node,  at);
+CREATE INDEX at_jobs_done_node_at_idx on at_jobs_done (node,  at);
 
-CREATE TABLE schedule.cron(
+CREATE TABLE cron(
    id SERIAL PRIMARY KEY,
    node text,
    name text,
@@ -61,18 +61,18 @@ CREATE TABLE schedule.cron(
    _next_exec_time timestamp with time zone
 );
 
-CREATE TABLE schedule.at(
+CREATE TABLE at(
    start_at timestamp with time zone,
    last_start_available timestamp with time zone,
    retry integer,
-   cron integer REFERENCES schedule.cron (id),
+   cron integer REFERENCES cron (id),
    node text,
    started timestamp with time zone,
    active boolean
 );
-CREATE INDEX at_cron_start_at_idx on schedule.at (cron, start_at);
+CREATE INDEX at_cron_start_at_idx on at (cron, start_at);
 
-CREATE TABLE schedule.log(
+CREATE TABLE log(
    start_at timestamp with time zone,
    last_start_available timestamp with time zone,
    retry integer,
@@ -83,14 +83,14 @@ CREATE TABLE schedule.log(
    status boolean,
    message text
 );
-CREATE INDEX log_cron_idx on schedule.log (cron);
-CREATE INDEX log_cron_start_at_idx on schedule.log (cron, node, start_at);
+CREATE INDEX log_cron_idx on log (cron);
+CREATE INDEX log_cron_start_at_idx on log (cron, node, start_at);
 
 ---------------
 --   TYPES   --
 ---------------
 
-CREATE TYPE schedule.cron_rec AS(
+CREATE TYPE cron_rec AS(
 	id integer,				-- job record id
 	node text,				-- node name
 	name text,				-- name of the job
@@ -118,7 +118,7 @@ CREATE TYPE schedule.cron_rec AS(
 	broken boolean			-- if job is broken
 );
 
-CREATE TYPE schedule.cron_job AS(
+CREATE TYPE cron_job AS(
 	cron integer,			-- job record id
 	node text,				-- node name 
 	scheduled_at timestamp with time zone,	-- scheduled job time
@@ -136,7 +136,7 @@ CREATE TYPE schedule.cron_job AS(
 	onrollback text,		-- statement on ROLLBACK
 	next_time_statement text,	-- statement to calculate next start time
 	max_instances int,		-- the number of instances run at the same time
-	status schedule.job_status,	-- status of job
+	status job_status,	-- status of job
 	message text			-- error message if one
 );
 
@@ -144,7 +144,90 @@ CREATE TYPE schedule.cron_job AS(
 -- FUNCTIONS --
 ---------------
 
-CREATE FUNCTION schedule.onlySuperUser() RETURNS boolean  AS
+------------------------------
+-- -- AT EXECUTOR FUNCTIONS --
+------------------------------
+
+CREATE FUNCTION get_self_id()
+  RETURNS bigint 
+  AS 'MODULE_PATHNAME', 'get_self_id'
+  LANGUAGE C IMMUTABLE;
+
+CREATE FUNCTION resubmit()
+  RETURNS boolean 
+  AS 'MODULE_PATHNAME', 'resubmit'
+  LANGUAGE C IMMUTABLE;
+
+CREATE FUNCTION submit_job(
+	query text,
+	params text[] default NULL,
+	run_after timestamp with time zone default NULL,
+	node text default NULL,
+	max_duration interval default NULL,
+	max_wait_interval interval default NULL,
+	run_as text default NULL,
+	depends_on bigint[] default NULL,
+	name text default NULL,
+	comments text default NULL
+) RETURNS bigint AS
+$BODY$
+DECLARE
+	last_avail timestamp with time zone;
+	executor text;
+	rec record;
+	job_id bigint;
+BEGIN
+	IF query IS NULL THEN
+		RAISE EXCEPTION 'there is no ''query'' parameter';
+	END IF;
+
+	IF run_after IS NULL AND depends_on IS NULL THEN
+		run_after := now();
+	END IF;
+	IF run_after IS NOT NULL AND depends_on IS NOT NULL THEN
+		RAISE EXCEPTION 'conflict in start time'
+			USING HINT = 'you cannot use ''run_after'' and ''depends_on'' parameters at the same time';
+	END IF;
+
+	IF max_wait_interval IS NOT NULL AND run_after IS NULL THEN
+		last_avail := run_after + max_wait_interval;
+	ELSE
+		last_avail := NULL;
+	END IF;
+
+	IF run_as IS NOT NULL AND run_as <> session_user THEN
+		executor := run_as;
+		BEGIN
+			SELECT * INTO STRICT rec FROM pg_roles WHERE rolname = executor;
+			EXCEPTION
+				WHEN NO_DATA_FOUND THEN
+			RAISE EXCEPTION 'there is no such user %', executor;
+			SET SESSION AUTHORIZATION executor; 
+			RESET SESSION AUTHORIZATION;
+		END;
+	ELSE
+		executor := session_user;
+	END IF;
+
+	INSERT INTO at_jobs_submitted
+		(node, at, do_sql, owner, executor, name, comments, max_run_time,
+		 postpone, last_start_available, depends_on)
+	VALUES
+		(node, run_after, query, session_user, executor,  name, comments,
+		 max_duration, max_wait_interval, last_avail, depends_on)
+	RETURNING id INTO job_id;
+
+	RETURN job_id;
+END
+$BODY$
+LANGUAGE plpgsql
+   SECURITY DEFINER set search_path FROM CURRENT;
+
+------------------------------------
+-- -- SHEDULER EXECUTOR FUNCTIONS --
+------------------------------------
+
+CREATE FUNCTION onlySuperUser() RETURNS boolean  AS
 $BODY$
 DECLARE
 	is_superuser boolean;
@@ -156,40 +239,40 @@ BEGIN
 	END IF;
 	RETURN TRUE;
 END
-$BODY$  LANGUAGE plpgsql;
+$BODY$  LANGUAGE plpgsql set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.on_cron_update() RETURNS TRIGGER
+CREATE FUNCTION on_cron_update() RETURNS TRIGGER
 AS $BODY$
 DECLARE
   cron_id INTEGER;
 BEGIN
   cron_id := NEW.id; 
   IF NOT NEW.active OR NEW.broken OR NEW.rule <> OLD.rule OR NEW.postpone <> OLD.postpone  THEN
-     DELETE FROM schedule.at WHERE cron = cron_id AND active = false;
+     DELETE FROM at WHERE cron = cron_id AND active = false;
   END IF;
   RETURN OLD;
 END
-$BODY$  LANGUAGE plpgsql;
+$BODY$  LANGUAGE plpgsql set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.on_cron_delete() RETURNS TRIGGER
+CREATE FUNCTION on_cron_delete() RETURNS TRIGGER
 AS $BODY$
 DECLARE
   cron_id INTEGER;
 BEGIN
   cron_id := OLD.id; 
-  DELETE FROM schedule.at WHERE cron = cron_id;
+  DELETE FROM at WHERE cron = cron_id;
   RETURN OLD;
 END
-$BODY$  LANGUAGE plpgsql;
+$BODY$  LANGUAGE plpgsql set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule._is_job_editable(jobId integer) RETURNS boolean AS
+CREATE FUNCTION _is_job_editable(jobId integer) RETURNS boolean AS
 $BODY$
 DECLARE
    is_superuser boolean;
    job record;
 BEGIN
    BEGIN
-      SELECT * INTO STRICT job FROM schedule.cron WHERE id = jobId;
+      SELECT * INTO STRICT job FROM cron WHERE id = jobId;
       EXCEPTION
          WHEN NO_DATA_FOUND THEN
 	    RAISE EXCEPTION 'there is no such job with id %', jobId;
@@ -208,9 +291,9 @@ BEGIN
    RETURN false;
 END
 $BODY$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule._possible_args() RETURNS jsonb AS
+CREATE FUNCTION _possible_args() RETURNS jsonb AS
 $BODY$
 BEGIN 
    RETURN json_build_object(
@@ -235,17 +318,17 @@ BEGIN
    );
 END
 $BODY$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql set search_path FROM CURRENT;
 
 
-CREATE FUNCTION schedule._get_excess_keys(params jsonb) RETURNS text[] AS
+CREATE FUNCTION _get_excess_keys(params jsonb) RETURNS text[] AS
 $BODY$
 DECLARE
    excess text[];
    possible jsonb;
    key record;
 BEGIN
-   possible := schedule._possible_args();
+   possible := _possible_args();
 
    FOR key IN SELECT * FROM  jsonb_object_keys(params) AS name LOOP
       IF NOT possible?key.name THEN
@@ -258,9 +341,9 @@ BEGIN
    RETURN excess;
 END
 $BODY$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule._string_or_null(str text) RETURNS text AS
+CREATE FUNCTION _string_or_null(str text) RETURNS text AS
 $BODY$
 BEGIN
    IF lower(str) = 'null' OR str = '' THEN
@@ -269,9 +352,9 @@ BEGIN
    RETURN quote_literal(str);
 END
 $BODY$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule._get_cron_from_attrs(params jsonb) RETURNS jsonb AS
+CREATE FUNCTION _get_cron_from_attrs(params jsonb) RETURNS jsonb AS
 $BODY$
 DECLARE
 	dates text[];
@@ -282,7 +365,7 @@ DECLARE
 BEGIN
 
 	IF params?'cron' THEN 
-		EXECUTE 'SELECT schedule.cron2jsontext($1::cstring)::jsonb' 
+		EXECUTE 'SELECT cron2jsontext($1::cstring)::jsonb' 
 			INTO cron
 			USING params->>'cron';
 	ELSIF params?'rule' THEN
@@ -294,18 +377,18 @@ BEGIN
 
 	IF cron IS NOT NULL THEN
 		IF cron?'date' THEN
-			dates := schedule._get_array_from_jsonb(dates, cron->'date');
+			dates := _get_array_from_jsonb(dates, cron->'date');
 		END IF;
 		IF cron?'dates' THEN
-			dates := schedule._get_array_from_jsonb(dates, cron->'dates');
+			dates := _get_array_from_jsonb(dates, cron->'dates');
 		END IF;
 	END IF;
 
 	IF params?'date' THEN
-		dates := schedule._get_array_from_jsonb(dates, params->'date');
+		dates := _get_array_from_jsonb(dates, params->'date');
 	END IF;
 	IF params?'dates' THEN
-		dates := schedule._get_array_from_jsonb(dates, params->'dates');
+		dates := _get_array_from_jsonb(dates, params->'dates');
 	END IF;
 	N := array_length(dates, 1);
 	
@@ -325,9 +408,9 @@ BEGIN
 	RETURN clean_cron;
 END
 $BODY$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule._get_array_from_jsonb(dst text[], value jsonb) RETURNS text[] AS
+CREATE FUNCTION _get_array_from_jsonb(dst text[], value jsonb) RETURNS text[] AS
 $BODY$
 DECLARE
 	vtype text;
@@ -355,9 +438,9 @@ BEGIN
 	RETURN dst;
 END
 $BODY$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule._get_commands_from_attrs(params jsonb) RETURNS text[] AS
+CREATE FUNCTION _get_commands_from_attrs(params jsonb) RETURNS text[] AS
 $BODY$
 DECLARE
 	commands text[];
@@ -365,11 +448,11 @@ DECLARE
 BEGIN
 	N := 0;
 	IF params?'command' THEN
-		commands := schedule._get_array_from_jsonb(commands, params->'command');
+		commands := _get_array_from_jsonb(commands, params->'command');
 	END IF;
 
 	IF params?'commands' THEN
-		commands := schedule._get_array_from_jsonb(commands, params->'commands');
+		commands := _get_array_from_jsonb(commands, params->'commands');
 	END IF;
 
 	N := array_length(commands, 1);
@@ -381,10 +464,10 @@ BEGIN
    RETURN commands;
 END
 $BODY$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql set search_path FROM CURRENT;
 
 
-CREATE FUNCTION schedule._get_executor_from_attrs(params jsonb) RETURNS text AS
+CREATE FUNCTION _get_executor_from_attrs(params jsonb) RETURNS text AS
 $BODY$
 DECLARE
    rec record;
@@ -407,10 +490,10 @@ BEGIN
    RETURN executor;
 END
 $BODY$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql set search_path FROM CURRENT;
    
 
-CREATE FUNCTION schedule.create_job(params jsonb) RETURNS integer AS
+CREATE FUNCTION create_job(params jsonb) RETURNS integer AS
 $BODY$
 DECLARE 
    cron jsonb;
@@ -432,16 +515,16 @@ DECLARE
    node text;
    mi int;
 BEGIN
-   EXECUTE 'SELECT schedule._get_excess_keys($1)'
+   EXECUTE 'SELECT _get_excess_keys($1)'
       INTO excess
       USING params;
    IF array_length(excess,1) > 0 THEN
       RAISE WARNING 'You used excess keys in params: %.', array_to_string(excess, ', ');
    END IF;
 
-   cron := schedule._get_cron_from_attrs(params);
-   commands := schedule._get_commands_from_attrs(params);
-   executor := schedule._get_executor_from_attrs(params);
+   cron := _get_cron_from_attrs(params);
+   commands := _get_commands_from_attrs(params);
+   executor := _get_executor_from_attrs(params);
    node := 'master';
    mi := 1;
 
@@ -491,7 +574,7 @@ BEGIN
       mi := (params->>'max_instances')::int;
    END IF;
 
-   INSERT INTO schedule.cron
+   INSERT INTO cron
      (node, rule, do_sql, owner, executor,start_date, end_date, name, comments,
       max_run_time, same_transaction, active, onrollback_statement,
 	  next_time_statement, postpone, max_instances)
@@ -505,80 +588,80 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.create_job(cron text, command text, node text DEFAULT NULL) RETURNS integer AS
+CREATE FUNCTION create_job(cron text, command text, node text DEFAULT NULL) RETURNS integer AS
 $BODY$
 BEGIN
-	RETURN schedule.create_job(json_build_object('cron', cron, 'command', command, 'node', node)::jsonb);
+	RETURN create_job(json_build_object('cron', cron, 'command', command, 'node', node)::jsonb);
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.create_job(dt timestamp with time zone, command text, node text DEFAULT NULL) RETURNS integer AS
+CREATE FUNCTION create_job(dt timestamp with time zone, command text, node text DEFAULT NULL) RETURNS integer AS
 $BODY$
 BEGIN
-	RETURN schedule.create_job(json_build_object('date', dt::text, 'command', command, 'node', node)::jsonb);
+	RETURN create_job(json_build_object('date', dt::text, 'command', command, 'node', node)::jsonb);
 END
 $BODY$
 LANGUAGE plpgsql
-	SECURITY DEFINER;
+	SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.create_job(dts timestamp with time zone[], command text, node text DEFAULT NULL) RETURNS integer AS
+CREATE FUNCTION create_job(dts timestamp with time zone[], command text, node text DEFAULT NULL) RETURNS integer AS
 $BODY$
 BEGIN
-	RETURN schedule.create_job(json_build_object('dates', array_to_json(dts), 'command', command, 'node', node)::jsonb);
+	RETURN create_job(json_build_object('dates', array_to_json(dts), 'command', command, 'node', node)::jsonb);
 END
 $BODY$
 LANGUAGE plpgsql
-	SECURITY DEFINER;
+	SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.create_job(cron text, commands text[], node text DEFAULT NULL) RETURNS integer AS
+CREATE FUNCTION create_job(cron text, commands text[], node text DEFAULT NULL) RETURNS integer AS
 $BODY$
 BEGIN
-	RETURN schedule.create_job(json_build_object('cron', cron, 'commands', array_to_json(commands), 'node', node)::jsonb);
+	RETURN create_job(json_build_object('cron', cron, 'commands', array_to_json(commands), 'node', node)::jsonb);
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.create_job(dt timestamp with time zone, commands text[], node text DEFAULT NULL) RETURNS integer AS
+CREATE FUNCTION create_job(dt timestamp with time zone, commands text[], node text DEFAULT NULL) RETURNS integer AS
 $BODY$
 BEGIN
-	RETURN schedule.create_job(json_build_object('date', dt::text, 'commands', array_to_json(commands), 'node', node)::jsonb);
+	RETURN create_job(json_build_object('date', dt::text, 'commands', array_to_json(commands), 'node', node)::jsonb);
 END
 $BODY$
 LANGUAGE plpgsql
-	SECURITY DEFINER;
+	SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.create_job(dts timestamp with time zone[], commands text[], node text DEFAULT NULL) RETURNS integer AS
+CREATE FUNCTION create_job(dts timestamp with time zone[], commands text[], node text DEFAULT NULL) RETURNS integer AS
 $BODY$
 BEGIN
-	RETURN schedule.create_job(json_build_object('dates', array_to_json(dts), 'commands', array_to_json(commands), 'node', node)::jsonb);
+	RETURN create_job(json_build_object('dates', array_to_json(dts), 'commands', array_to_json(commands), 'node', node)::jsonb);
 END
 $BODY$
 LANGUAGE plpgsql
-	SECURITY DEFINER;
+	SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.set_job_attributes(jobId integer, attrs jsonb) RETURNS boolean AS
+CREATE FUNCTION set_job_attributes(jobId integer, attrs jsonb) RETURNS boolean AS
 $BODY$
 DECLARE
    job record;
    cmd text;
    excess text[];
 BEGIN
-   IF NOT schedule._is_job_editable(jobId) THEN 
+   IF NOT _is_job_editable(jobId) THEN 
       RAISE EXCEPTION 'permission denied';
    END IF;
-   EXECUTE 'SELECT schedule._get_excess_keys($1)'
+   EXECUTE 'SELECT _get_excess_keys($1)'
       INTO excess
       USING attrs;
    IF array_length(excess,1) > 0 THEN
       RAISE WARNING 'You used excess keys in params: %.', array_to_string(excess, ', ');
    END IF;
 
-   EXECUTE 'SELECT * FROM schedule.cron WHERE id = $1'
+   EXECUTE 'SELECT * FROM cron WHERE id = $1'
       INTO job
       USING jobId;
 
@@ -586,57 +669,57 @@ BEGIN
 
    IF attrs?'cron' OR attrs?'date' OR attrs?'dates' OR attrs?'rule' THEN
       cmd := cmd || 'rule = ' ||
-        quote_literal(schedule._get_cron_from_attrs(attrs)) || '::jsonb, ';
+        quote_literal(_get_cron_from_attrs(attrs)) || '::jsonb, ';
    END IF;
 
    IF attrs?'command' OR attrs?'commands' THEN
       cmd := cmd || 'do_sql = ' ||
-        quote_literal(schedule._get_commands_from_attrs(attrs)) || '::text[], ';
+        quote_literal(_get_commands_from_attrs(attrs)) || '::text[], ';
    END IF;
 
    IF attrs?'run_as' THEN
       cmd := cmd || 'executor = ' ||
-        quote_literal(schedule._get_executor_from_attrs(attrs)) || ', ';
+        quote_literal(_get_executor_from_attrs(attrs)) || ', ';
    END IF;
 
    IF attrs?'start_date' THEN
       cmd := cmd || 'start_date = ' ||
-        schedule._string_or_null(attrs->>'start_date') || '::timestamp with time zone, ';
+        _string_or_null(attrs->>'start_date') || '::timestamp with time zone, ';
    END IF;
 
    IF attrs?'end_date' THEN
       cmd := cmd || 'end_date = ' ||
-        schedule._string_or_null(attrs->>'end_date') || '::timestamp with time zone, ';
+        _string_or_null(attrs->>'end_date') || '::timestamp with time zone, ';
    END IF;
 
    IF attrs?'name' THEN
       cmd := cmd || 'name = ' ||
-        schedule._string_or_null(attrs->>'name') || ', ';
+        _string_or_null(attrs->>'name') || ', ';
    END IF;
 
    IF attrs?'node' THEN
       cmd := cmd || 'node = ' ||
-        schedule._string_or_null(attrs->>'node') || ', ';
+        _string_or_null(attrs->>'node') || ', ';
    END IF;
 
    IF attrs?'comments' THEN
       cmd := cmd || 'comments = ' ||
-        schedule._string_or_null(attrs->>'comments') || ', ';
+        _string_or_null(attrs->>'comments') || ', ';
    END IF;
 
    IF attrs?'max_run_time' THEN
       cmd := cmd || 'max_run_time = ' ||
-        schedule._string_or_null(attrs->>'max_run_time') || '::interval, ';
+        _string_or_null(attrs->>'max_run_time') || '::interval, ';
    END IF;
 
    IF attrs?'onrollback' THEN
       cmd := cmd || 'onrollback_statement = ' ||
-        schedule._string_or_null(attrs->>'onrollback') || ', ';
+        _string_or_null(attrs->>'onrollback') || ', ';
    END IF;
 
    IF attrs?'next_time_statement' THEN
       cmd := cmd || 'next_time_statement = ' ||
-        schedule._string_or_null(attrs->>'next_time_statement') || ', ';
+        _string_or_null(attrs->>'next_time_statement') || ', ';
    END IF;
 
    IF attrs?'use_same_transaction' THEN
@@ -646,7 +729,7 @@ BEGIN
 
    IF attrs?'last_start_available' THEN
       cmd := cmd || 'postpone = ' ||
-        schedule._string_or_null(attrs->>'last_start_available') || '::interval, ';
+        _string_or_null(attrs->>'last_start_available') || '::interval, ';
    END IF; 
 
    IF attrs?'max_instances' AND attrs->>'max_instances' IS NOT NULL AND (attrs->>'max_instances')::int > 0 THEN
@@ -660,7 +743,7 @@ BEGIN
       RETURN false;
    END IF;
 
-   cmd := 'UPDATE schedule.cron SET ' || cmd || ' where id = $1';
+   cmd := 'UPDATE cron SET ' || cmd || ' where id = $1';
 
    EXECUTE cmd
      USING jobId;
@@ -669,22 +752,22 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.set_job_attribute(jobId integer, name text, value anyarray) RETURNS boolean AS
+CREATE FUNCTION set_job_attribute(jobId integer, name text, value anyarray) RETURNS boolean AS
 $BODY$
 BEGIN
    IF name <> 'dates' AND name <> 'commands' THEN
       RAISE EXCEPTION 'key % cannot have an array value. Only dates, commands allowed', name;
    END IF;
 
-   RETURN schedule.set_job_attributes(jobId, json_build_object(name, array_to_json(value))::jsonb);
+   RETURN set_job_attributes(jobId, json_build_object(name, array_to_json(value))::jsonb);
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.set_job_attribute(jobId integer, name text, value text) RETURNS boolean AS
+CREATE FUNCTION set_job_attribute(jobId integer, name text, value text) RETURNS boolean AS
 $BODY$
 DECLARE
    attrs jsonb;
@@ -694,61 +777,61 @@ BEGIN
    ELSE
       attrs := json_build_object(name, value);
    END IF;
-   RETURN schedule.set_job_attributes(jobId, attrs);
+   RETURN set_job_attributes(jobId, attrs);
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.drop_job(jobId integer) RETURNS boolean AS
+CREATE FUNCTION drop_job(jobId integer) RETURNS boolean AS
 $BODY$
 BEGIN
-   IF NOT schedule._is_job_editable(jobId) THEN 
+   IF NOT _is_job_editable(jobId) THEN 
       RAISE EXCEPTION 'permission denied';
    END IF;
 
-   DELETE FROM schedule.cron WHERE id = jobId;
+   DELETE FROM cron WHERE id = jobId;
 
    RETURN true;
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.deactivate_job(jobId integer) RETURNS boolean AS
+CREATE FUNCTION deactivate_job(jobId integer) RETURNS boolean AS
 $BODY$
 BEGIN
-   IF NOT schedule._is_job_editable(jobId) THEN 
+   IF NOT _is_job_editable(jobId) THEN 
       RAISE EXCEPTION 'permission denied';
    END IF;
 
-   UPDATE schedule.cron SET active = false WHERE id = jobId;
+   UPDATE cron SET active = false WHERE id = jobId;
 
    RETURN true;
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.activate_job(jobId integer) RETURNS boolean AS
+CREATE FUNCTION activate_job(jobId integer) RETURNS boolean AS
 $BODY$
 BEGIN
-   IF NOT schedule._is_job_editable(jobId) THEN 
+   IF NOT _is_job_editable(jobId) THEN 
       RAISE EXCEPTION 'Permission denied';
    END IF;
 
-   UPDATE schedule.cron SET active = true WHERE id = jobId;
+   UPDATE cron SET active = true WHERE id = jobId;
 
    RETURN true;
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule._make_cron_job(ii schedule.cron) RETURNS schedule.cron_job AS
+CREATE FUNCTION _make_cron_job(ii cron) RETURNS cron_job AS
 $BODY$
 DECLARE
-	oo schedule.cron_job;
+	oo cron_job;
 BEGIN
 	oo.cron := ii.id;
 
@@ -756,12 +839,12 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-	SECURITY DEFINER;
+	SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule._make_cron_rec(ii schedule.cron) RETURNS schedule.cron_rec AS
+CREATE FUNCTION _make_cron_rec(ii cron) RETURNS cron_rec AS
 $BODY$
 DECLARE
-	oo schedule.cron_rec;
+	oo cron_rec;
 BEGIN
 	oo.id := ii.id;
 	oo.name := ii.name;
@@ -785,158 +868,158 @@ BEGIN
 	RETURN oo;
 END
 $BODY$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.clean_log() RETURNS INT  AS
+CREATE FUNCTION clean_log() RETURNS INT  AS
 $BODY$
 DECLARE
 	cnt integer;
 BEGIN
-    PERFORM schedule.onlySuperUser();
+    PERFORM onlySuperUser();
 
-	WITH a AS (DELETE FROM schedule.log RETURNING 1)
+	WITH a AS (DELETE FROM log RETURNING 1)
 		SELECT count(*) INTO cnt FROM a;
 
 	RETURN cnt;
 END
 $BODY$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql set search_path FROM CURRENT;
 
-create FUNCTION schedule.get_job(jobId int) RETURNS schedule.cron_rec AS
+create FUNCTION get_job(jobId int) RETURNS cron_rec AS
 $BODY$
 DECLARE
-	job schedule.cron;
+	job cron;
 BEGIN
-	IF NOT schedule._is_job_editable(jobId) THEN 
+	IF NOT _is_job_editable(jobId) THEN 
 		RAISE EXCEPTION 'permission denied';
 	END IF;
-	EXECUTE 'SELECT * FROM schedule.cron WHERE id = $1'
+	EXECUTE 'SELECT * FROM cron WHERE id = $1'
 		INTO job
 		USING jobId;
-	RETURN schedule._make_cron_rec(job);
+	RETURN _make_cron_rec(job);
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.get_cron() RETURNS SETOF schedule.cron_rec AS
+CREATE FUNCTION get_cron() RETURNS SETOF cron_rec AS
 $BODY$
 DECLARE
-	ii schedule.cron;
-	oo schedule.cron_rec;
+	ii cron;
+	oo cron_rec;
 BEGIN
-    PERFORM schedule.onlySuperUser();
+    PERFORM onlySuperUser();
 
-	FOR ii IN SELECT * FROM schedule.cron LOOP
-		oo := schedule._make_cron_rec(ii);
+	FOR ii IN SELECT * FROM cron LOOP
+		oo := _make_cron_rec(ii);
 		RETURN NEXT oo;
 	END LOOP;
 	RETURN;
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.get_owned_cron() RETURNS SETOF schedule.cron_rec AS
+CREATE FUNCTION get_owned_cron() RETURNS SETOF cron_rec AS
 $BODY$
 DECLARE
-	ii schedule.cron;
-	oo schedule.cron_rec;
+	ii cron;
+	oo cron_rec;
 BEGIN
-	FOR ii IN SELECT * FROM schedule.cron WHERE owner = session_user LOOP
-		oo := schedule._make_cron_rec(ii);
+	FOR ii IN SELECT * FROM cron WHERE owner = session_user LOOP
+		oo := _make_cron_rec(ii);
 		RETURN NEXT oo;
 	END LOOP;
 	RETURN;
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
 
-CREATE FUNCTION schedule.get_owned_cron(usename text) RETURNS SETOF schedule.cron_rec AS
+CREATE FUNCTION get_owned_cron(usename text) RETURNS SETOF cron_rec AS
 $BODY$
 DECLARE
-	ii schedule.cron;
-	oo schedule.cron_rec;
+	ii cron;
+	oo cron_rec;
 BEGIN
 	IF usename <> session_user THEN
-    	PERFORM schedule.onlySuperUser();
+    	PERFORM onlySuperUser();
 	END IF;
 
-	FOR ii IN SELECT * FROM schedule.cron WHERE owner = usename LOOP
-		oo := schedule._make_cron_rec(ii);
+	FOR ii IN SELECT * FROM cron WHERE owner = usename LOOP
+		oo := _make_cron_rec(ii);
 		RETURN NEXT oo;
 	END LOOP;
 	RETURN;
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.get_user_owned_cron() RETURNS SETOF schedule.cron_rec AS
+CREATE FUNCTION get_user_owned_cron() RETURNS SETOF cron_rec AS
 $BODY$
 BEGIN
-	RETURN QUERY  SELECT * from schedule.get_owned_cron();
+	RETURN QUERY  SELECT * from get_owned_cron();
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.get_user_owned_cron(usename text) RETURNS SETOF schedule.cron_rec AS
+CREATE FUNCTION get_user_owned_cron(usename text) RETURNS SETOF cron_rec AS
 $BODY$
 BEGIN
-	RETURN QUERY SELECT * from  schedule.get_owned_cron(usename);
+	RETURN QUERY SELECT * from  get_owned_cron(usename);
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
 
 
-CREATE FUNCTION schedule.get_user_cron() RETURNS SETOF schedule.cron_rec AS
+CREATE FUNCTION get_user_cron() RETURNS SETOF cron_rec AS
 $BODY$
 DECLARE
-	ii schedule.cron;
-	oo schedule.cron_rec;
+	ii cron;
+	oo cron_rec;
 BEGIN
-	FOR ii IN SELECT * FROM schedule.cron WHERE executor = session_user LOOP
-		oo := schedule._make_cron_rec(ii);
+	FOR ii IN SELECT * FROM cron WHERE executor = session_user LOOP
+		oo := _make_cron_rec(ii);
 		RETURN NEXT oo;
 	END LOOP;
 	RETURN;
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.get_user_cron(usename text) RETURNS SETOF schedule.cron_rec AS
+CREATE FUNCTION get_user_cron(usename text) RETURNS SETOF cron_rec AS
 $BODY$
 DECLARE
-	ii schedule.cron;
-	oo schedule.cron_rec;
+	ii cron;
+	oo cron_rec;
 BEGIN
 	IF usename <> session_user THEN
-    	PERFORM schedule.onlySuperUser();
+    	PERFORM onlySuperUser();
 	END IF;
 
-	FOR ii IN SELECT * FROM schedule.cron WHERE executor = usename LOOP
-		oo := schedule._make_cron_rec(ii);
+	FOR ii IN SELECT * FROM cron WHERE executor = usename LOOP
+		oo := _make_cron_rec(ii);
 		RETURN NEXT oo;
 	END LOOP;
 	RETURN;
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.get_user_active_jobs() RETURNS SETOF schedule.cron_job AS
+CREATE FUNCTION get_user_active_jobs() RETURNS SETOF cron_job AS
 $BODY$
 DECLARE
 	ii record;
-	oo schedule.cron_job;
+	oo cron_job;
 BEGIN
-	FOR ii IN SELECT * FROM schedule.at as at, schedule.cron as cron WHERE cron.executor = session_user AND cron.id = at.cron AND at.active LOOP
+	FOR ii IN SELECT * FROM at as at, cron as cron WHERE cron.executor = session_user AND cron.id = at.cron AND at.active LOOP
 		oo.cron = ii.id;
 		oo.node = ii.node;
 		oo.scheduled_at = ii.start_at;
@@ -962,26 +1045,26 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.get_active_jobs(usename text) RETURNS SETOF schedule.cron_job AS
+CREATE FUNCTION get_active_jobs(usename text) RETURNS SETOF cron_job AS
 $BODY$
 DECLARE
 BEGIN
-	RETURN QUERY  SELECT * FROM schedule.get_user_active_jobs(usename);
+	RETURN QUERY  SELECT * FROM get_user_active_jobs(usename);
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.get_active_jobs() RETURNS SETOF schedule.cron_job AS
+CREATE FUNCTION get_active_jobs() RETURNS SETOF cron_job AS
 $BODY$
 DECLARE
 	ii record;
-	oo schedule.cron_job;
+	oo cron_job;
 BEGIN
-    PERFORM schedule.onlySuperUser();
-	FOR ii IN SELECT * FROM schedule.at as at, schedule.cron as cron WHERE cron.id = at.cron AND at.active LOOP
+    PERFORM onlySuperUser();
+	FOR ii IN SELECT * FROM at as at, cron as cron WHERE cron.id = at.cron AND at.active LOOP
 		oo.cron = ii.id;
 		oo.node = ii.node;
 		oo.scheduled_at = ii.start_at;
@@ -1007,19 +1090,19 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.get_user_active_jobs(usename text) RETURNS SETOF schedule.cron_job AS
+CREATE FUNCTION get_user_active_jobs(usename text) RETURNS SETOF cron_job AS
 $BODY$
 DECLARE
 	ii record;
-	oo schedule.cron_job;
+	oo cron_job;
 BEGIN
 	IF usename <> session_user THEN
-    	PERFORM schedule.onlySuperUser();
+    	PERFORM onlySuperUser();
 	END IF;
 
-	FOR ii IN SELECT * FROM schedule.at as at, schedule.cron as cron WHERE cron.executor = usename AND cron.id = at.cron AND at.active LOOP
+	FOR ii IN SELECT * FROM at, cron WHERE cron.executor = usename AND cron.id = at.cron AND at.active LOOP
 		oo.cron = ii.id;
 		oo.node = ii.node;
 		oo.scheduled_at = ii.start_at;
@@ -1045,50 +1128,50 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.get_log(usename text) RETURNS SETOF schedule.cron_job AS
+CREATE FUNCTION get_log(usename text) RETURNS SETOF cron_job AS
 $BODY$
 BEGIN
- 	RETURN QUERY SELECT * FROM schedule.get_user_log(usename);
+ 	RETURN QUERY SELECT * FROM get_user_log(usename);
 END
 $BODY$
 LANGUAGE plpgsql
-	SECURITY DEFINER;
+	SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.get_log() RETURNS SETOF schedule.cron_job AS
+CREATE FUNCTION get_log() RETURNS SETOF cron_job AS
 $BODY$
 BEGIN
- 	RETURN QUERY SELECT * FROM schedule.get_user_log('___all___');
+ 	RETURN QUERY SELECT * FROM get_user_log('___all___');
 END
 $BODY$
 LANGUAGE plpgsql
-	SECURITY DEFINER;
+	SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.get_user_log() RETURNS SETOF schedule.cron_job AS
+CREATE FUNCTION get_user_log() RETURNS SETOF cron_job AS
 $BODY$
 BEGIN
- 	RETURN QUERY SELECT * FROM schedule.get_user_log(session_user);
+ 	RETURN QUERY SELECT * FROM get_user_log(session_user);
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION schedule.get_user_log(usename text) RETURNS SETOF schedule.cron_job AS
+CREATE FUNCTION get_user_log(usename text) RETURNS SETOF cron_job AS
 $BODY$
 DECLARE
 	ii record;
-	oo schedule.cron_job;
+	oo cron_job;
 	sql_cmd text;
 BEGIN
 	IF usename <> session_user THEN
-    	PERFORM schedule.onlySuperUser();
+    	PERFORM onlySuperUser();
 	END IF;
 
 	IF usename = '___all___' THEN
-		sql_cmd := 'SELECT * FROM schedule.log as l , schedule.cron as cron WHERE cron.id = l.cron';
+		sql_cmd := 'SELECT * FROM log as l , cron as cron WHERE cron.id = l.cron';
 	ELSE
-		sql_cmd := 'SELECT * FROM schedule.log as l , schedule.cron as cron WHERE cron.executor = ''' || usename || ''' AND cron.id = l.cron';
+		sql_cmd := 'SELECT * FROM log as l , cron as cron WHERE cron.executor = ''' || usename || ''' AND cron.id = l.cron';
 	END IF;
 
 	FOR ii IN EXECUTE sql_cmd LOOP
@@ -1126,19 +1209,19 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER;
+   SECURITY DEFINER set search_path FROM CURRENT;
 
--- CREATE FUNCTION schedule.enable() RETURNS boolean AS 
+-- CREATE FUNCTION enable() RETURNS boolean AS 
 -- $BODY$
 -- DECLARE
 -- 	value text;
 -- BEGIN
--- 	EXECUTE 'show schedule.enabled' INTO value; 
+-- 	EXECUTE 'show enabled' INTO value; 
 -- 	IF value = 'on' THEN
 -- 		RAISE NOTICE 'Scheduler already enabled';
 -- 		RETURN false;
 -- 	ELSE 
--- 		ALTER SYSTEM SET schedule.enabled = true;
+-- 		ALTER SYSTEM SET enabled = true;
 -- 		SELECT pg_reload_conf();
 -- 	END IF;
 -- 	RETURN true;
@@ -1146,17 +1229,17 @@ LANGUAGE plpgsql
 -- $BODY$
 -- LANGUAGE plpgsql;
 -- 
--- CREATE FUNCTION schedule.disable() RETURNS boolean AS 
+-- CREATE FUNCTION disable() RETURNS boolean AS 
 -- $BODY$
 -- DECLARE
 -- 	value text;
 -- BEGIN
--- 	EXECUTE 'show schedule.enabled' INTO value; 
+-- 	EXECUTE 'show enabled' INTO value; 
 -- 	IF value = 'off' THEN
 -- 		RAISE NOTICE 'Scheduler already disabled';
 -- 		RETURN false;
 -- 	ELSE 
--- 		ALTER SYSTEM SET schedule.enabled = false;
+-- 		ALTER SYSTEM SET enabled = false;
 -- 		SELECT pg_reload_conf();
 -- 	END IF;
 -- 	RETURN true;
@@ -1164,7 +1247,7 @@ LANGUAGE plpgsql
 -- $BODY$
 -- LANGUAGE plpgsql;
 
-CREATE FUNCTION schedule.cron2jsontext(CSTRING)
+CREATE FUNCTION cron2jsontext(CSTRING)
   RETURNS text 
   AS 'MODULE_PATHNAME', 'cron_string_to_json_text'
   LANGUAGE C IMMUTABLE;
@@ -1174,12 +1257,12 @@ CREATE FUNCTION schedule.cron2jsontext(CSTRING)
 --------------
 
 CREATE TRIGGER cron_delete_trigger 
-BEFORE DELETE ON schedule.cron 
-   FOR EACH ROW EXECUTE PROCEDURE schedule.on_cron_delete();
+BEFORE DELETE ON cron 
+   FOR EACH ROW EXECUTE PROCEDURE on_cron_delete();
 
 CREATE TRIGGER cron_update_trigger 
-AFTER UPDATE ON schedule.cron 
-   FOR EACH ROW EXECUTE PROCEDURE schedule.on_cron_update();
+AFTER UPDATE ON cron 
+   FOR EACH ROW EXECUTE PROCEDURE on_cron_update();
 
 -----------
 -- GRANT --
@@ -1187,3 +1270,5 @@ AFTER UPDATE ON schedule.cron
 
 GRANT USAGE ON SCHEMA schedule TO public;
 
+
+RESET search_path;

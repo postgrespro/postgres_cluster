@@ -810,12 +810,11 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 		interval = 2;
 	}
 
-
-	if(*check_time > GetCurrentTimestamp()) return -1;
+	if(*check_time > GetCurrentTimestamp()) return 0;
 	if(p->free == 0)
 	{
-		*check_time = timestamp_add_seconds(0, 1);
-		return -2;
+		if(type == CronJob) *check_time = timestamp_add_seconds(0, 1);
+		return 1;
 	}
 
 	jobs = get_jobs_to_do(ctx->nodename, type, &njobs, &is_error, p->free);
@@ -825,7 +824,7 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 	{
 		*check_time = timestamp_add_seconds(0, interval);
 		elog(LOG, "Error while retrieving jobs");
-		return -3;
+		return 0;
 	}
 	if(nwaiting == 0)
 	{
@@ -897,7 +896,7 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 
 	if(nwaiting > 0)
 	{
-		interval = 1;
+		interval = type == CronJob ? 1: 0;
 	}
 	else
 	{
@@ -917,7 +916,7 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 	}
 
 	*check_time = timestamp_add_seconds(0, interval);
-	return 1;
+	return nwaiting;
 }
 
 void destroy_slot_item(scheduler_manager_slot_t *item)
@@ -1396,6 +1395,8 @@ void manager_worker_main(Datum arg)
 	schd_manager_share_t *shared;
 	dsm_segment *seg;
 	scheduler_manager_ctx_t *ctx;
+	int wait = 0;
+	int terminate_main_loop = 0;
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
 	seg = dsm_attach(DatumGetInt32(arg));
@@ -1469,35 +1470,31 @@ void manager_worker_main(Datum arg)
 			}
 			if(!got_sighup && !got_sigterm)
 			{
-				if(rc & WL_LATCH_SET)
+				terminate_main_loop = 0;
+				while(1)
 				{
-					_pdebug("got latch from some bgworker");
-					if(check_parent_stop_signal(ctx)) break;
-					scheduler_start_jobs(ctx, AtJob);
-					scheduler_check_slots(ctx, &(ctx->cron));
-					scheduler_check_slots(ctx, &(ctx->at));
-					set_slots_stat_report(ctx);
-					_pdebug("quit got latch");
-				}
-				else if(rc & WL_TIMEOUT)
-				{
-					scheduler_make_atcron_record(ctx);
-					/* if there are any expired jobs to get rid of */
-					scheduler_vanish_expired_jobs(ctx, AtJob);
-					scheduler_vanish_expired_jobs(ctx, CronJob);
-					/* start jobs */
-					scheduler_start_jobs(ctx, AtJob);
-					scheduler_start_jobs(ctx, CronJob);
-					/* check slots, first "at" 'cause them faster */
+					wait = 0;
+					if(check_parent_stop_signal(ctx))
+					{
+						terminate_main_loop = 1;
+						break;
+					}
+					wait += scheduler_start_jobs(ctx, AtJob);
+					wait += scheduler_start_jobs(ctx, CronJob);
 					scheduler_check_slots(ctx, &(ctx->at));
 					scheduler_check_slots(ctx, &(ctx->cron));
-					/* set statistics of working slots */
 					set_slots_stat_report(ctx);
+					if(wait == 0) break;
 				}
+				if(terminate_main_loop) break;
+				scheduler_make_atcron_record(ctx);
+				/* if there are any expired jobs to get rid of */
+				scheduler_vanish_expired_jobs(ctx, AtJob);
+				scheduler_vanish_expired_jobs(ctx, CronJob);
 			}
 		}
 		rc = WaitLatch(MyLatch,
-			WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1000L);
+			WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 500L);
 		ResetLatch(MyLatch);
 	}
 	scheduler_manager_stop(ctx);

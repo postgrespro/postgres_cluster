@@ -113,7 +113,7 @@ int get_integer_from_string(char *s, int start, int len)
 char *make_date_from_timestamp(TimestampTz ts, bool hires)
 {
 	struct pg_tm dt;
-	char *str = worker_alloc(sizeof(char) * 19);
+	char *str = worker_alloc(sizeof(char) * 20);
 	int tz;
 	fsec_t fsec;
 	const char *tzn;
