@@ -49,6 +49,8 @@
 #include "utils/typcache.h"
 #include "miscadmin.h"
 
+#include "multimaster.h"
+
 extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
 
 /* These must be available to pg_dlsym() */
@@ -211,19 +213,19 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		if (params_format != 1)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("client sent startup parameters in format %d but we only support format 1",
+				 MTM_ERRMSG("client sent startup parameters in format %d but we only support format 1",
 					params_format)));
 
 		if (data->client_min_proto_version > PG_LOGICAL_PROTO_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("client sent min_proto_version=%d but we only support protocol %d or lower",
+				 MTM_ERRMSG("client sent min_proto_version=%d but we only support protocol %d or lower",
 					 data->client_min_proto_version, PG_LOGICAL_PROTO_VERSION_NUM)));
 
 		if (data->client_max_proto_version < PG_LOGICAL_PROTO_MIN_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("client sent max_proto_version=%d but we only support protocol %d or higher",
+				 MTM_ERRMSG("client sent max_proto_version=%d but we only support protocol %d or higher",
 				 	data->client_max_proto_version, PG_LOGICAL_PROTO_MIN_VERSION_NUM)));
 
 		/*
@@ -255,7 +257,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		{
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("client requested protocol %s but only \"json\" or \"native\" are supported",
+				 MTM_ERRMSG("client requested protocol %s but only \"json\" or \"native\" are supported",
 				 	data->client_protocol_format)));
 		}
 
@@ -268,7 +270,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			if (wanted_encoding == -1)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("unrecognised encoding name %s passed to expected_encoding",
+						 MTM_ERRMSG("unrecognised encoding name %s passed to expected_encoding",
 								data->client_expected_encoding)));
 
 			if (opt->output_type == OUTPUT_PLUGIN_TEXTUAL_OUTPUT)
@@ -281,7 +283,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				if (wanted_encoding != pg_get_client_encoding())
 					ereport(ERROR,
 							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-							 errmsg("expected_encoding must be unset or match client_encoding in text protocols")));
+							 MTM_ERRMSG("expected_encoding must be unset or match client_encoding in text protocols")));
 			}
 			else
 			{
@@ -293,7 +295,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				if (wanted_encoding != GetDatabaseEncoding())
 					ereport(ERROR,
 							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-							 errmsg("encoding conversion for binary datum not supported yet"),
+							 MTM_ERRMSG("encoding conversion for binary datum not supported yet"),
 							 errdetail("expected_encoding %s must be unset or match server_encoding %s",
 								 data->client_expected_encoding, GetDatabaseEncodingName())));
 			}
@@ -338,7 +340,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			{
 				ereport(DEBUG1,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("Cannot disable changeset forwarding on PostgreSQL 9.4")));
+						 MTM_ERRMSG("Cannot disable changeset forwarding on PostgreSQL 9.4")));
 			}
 		}
 		else if (data->client_forward_changesets_set

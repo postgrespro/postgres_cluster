@@ -11,15 +11,19 @@
 #include "libpq-fe.h"
 
 #ifndef DEBUG_LEVEL
-#define  DEBUG_LEVEL 0
+#define DEBUG_LEVEL 0
 #endif
 
 #ifndef MTM_TRACE
-#define  MTM_TRACE   0
+#define MTM_TRACE   0
 #endif
 
+#define MTM_TAG "[MTM] "
+#define MTM_ELOG(level,fmt,...) elog(level, MTM_TAG fmt, ## __VA_ARGS__)
+#define MTM_ERRMSG(fmt,...)     errmsg(MTM_TAG fmt, ## __VA_ARGS__)
+
 #if DEBUG_LEVEL == 0
-#define MTM_LOG1(fmt, ...) elog(LOG, fmt, ## __VA_ARGS__) 
+#define MTM_LOG1(fmt, ...) elog(LOG, "[MTM] " fmt, ## __VA_ARGS__) 
 #define MTM_LOG2(fmt, ...) 
 #define MTM_LOG3(fmt, ...) 
 #define MTM_LOG4(fmt, ...) 
@@ -44,12 +48,11 @@
 #define MTM_TXTRACE(tx, event)
 #else
 #define MTM_TXTRACE(tx, event) \
-		fprintf(stderr, "[MTM_TXTRACE], %s, %lld, %s, %d\n", tx->gid, (long long)MtmGetSystemTime(), event, MyProcPid)
+		fprintf(stderr, MTM_TAG "%s, %lld, %s, %d\n", tx->gid, (long long)MtmGetSystemTime(), event, MyProcPid)
 #endif
 
 #define MULTIMASTER_NAME                "multimaster"
 #define MULTIMASTER_SCHEMA_NAME         "mtm"
-#define MULTIMASTER_DDL_TABLE           "ddl_log"
 #define MULTIMASTER_LOCAL_TABLES_TABLE  "local_tables"
 #define MULTIMASTER_SLOT_PATTERN        "mtm_slot_%d"
 #define MULTIMASTER_MIN_PROTO_VERSION   1

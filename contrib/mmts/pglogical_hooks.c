@@ -17,6 +17,8 @@
 #include "pglogical_hooks.h"
 #include "pglogical_output.h"
 
+#include "multimaster.h"
+
 /*
  * Returns Oid of the hooks function specified in funcname.
  *
@@ -39,7 +41,7 @@ get_hooks_function_oid(List *funcname)
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("function %s must return void",
+				 MTM_ERRMSG("function %s must return void",
 						NameListToString(funcname))));
 	}
 
@@ -47,7 +49,7 @@ get_hooks_function_oid(List *funcname)
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("function %s must not be VOLATILE",
+				 MTM_ERRMSG("function %s must not be VOLATILE",
 						NameListToString(funcname))));
 	}
 
@@ -61,7 +63,7 @@ get_hooks_function_oid(List *funcname)
 #endif
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("current user %s does not have permission to call function %s",
+				 MTM_ERRMSG("current user %s does not have permission to call function %s",
 					 username, NameListToString(funcname))));
 	}
 

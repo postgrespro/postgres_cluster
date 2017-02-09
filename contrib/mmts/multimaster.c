@@ -508,7 +508,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
                 MTM_LOG4("%d: tuple with xid=%d(csn=%lld) is invisibile in snapshot %lld",
 						 MyProcPid, xid, ts->csn, MtmTx.snapshot);
 				if (MtmGetSystemTime() - start > USECS_PER_SEC) { 
-					elog(WARNING, "Backend %d waits for transaction %s (%llu) status %lld usecs", MyProcPid, ts->gid, (long64)xid, MtmGetSystemTime() - start);
+					MTM_ELOG(WARNING, "Backend %d waits for transaction %s (%llu) status %lld usecs", MyProcPid, ts->gid, (long64)xid, MtmGetSystemTime() - start);
 				}
 				MtmUnlock();
                 return true;
@@ -550,7 +550,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 						 MyProcPid, xid, ts->csn, invisible ? "rollbacked" : "committed", MtmTx.snapshot);
                 MtmUnlock();
 				if (MtmGetSystemTime() - start > USECS_PER_SEC) { 
-					elog(WARNING, "Backend %d waits for %s transaction %s (%llu) %lld usecs", MyProcPid, invisible ? "rollbacked" : "committed", 
+					MTM_ELOG(WARNING, "Backend %d waits for %s transaction %s (%llu) %lld usecs", MyProcPid, invisible ? "rollbacked" : "committed", 
 						 ts->gid, (long64)xid, MtmGetSystemTime() - start);
 				}
                 return invisible;
@@ -564,7 +564,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         }
     }
 	MtmUnlock();
-	elog(ERROR, "Failed to get status of XID %llu in %lld usec", (long64)xid, MtmGetSystemTime() - start);
+	MTM_ELOG(ERROR, "Failed to get status of XID %llu in %lld usec", (long64)xid, MtmGetSystemTime() - start);
 	return true;
 }    
 
@@ -822,7 +822,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 			 * Allow execution of transaction by bg-workers to make it possible to perform recovery.
 			 */
 			MtmUnlock();			
-			elog(MtmBreakConnection ? FATAL : ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
+			MTM_ELOG(MtmBreakConnection ? FATAL : ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
 		}
 		x->containsDML = false;
         x->snapshot = MtmAssignCSN();	
@@ -922,18 +922,18 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 
 	if (Mtm->inject2PCError == 1) { 
 		Mtm->inject2PCError = 0;
-		elog(ERROR, "ERROR INJECTION for transaction %s (%llu)", x->gid, (long64)x->xid);
+		MTM_ELOG(ERROR, "ERROR INJECTION for transaction %s (%llu)", x->gid, (long64)x->xid);
 	}
 	x->xid = GetCurrentTransactionId();
 	Assert(TransactionIdIsValid(x->xid));
 
 	if (!IsBackgroundWorker && Mtm->status != MTM_ONLINE) { 
 		/* Do not take in account bg-workers which are performing recovery */
-		elog(ERROR, "Abort transaction %s (%llu)  because this cluster node is in %s status", x->gid, (long64)x->xid, MtmNodeStatusMnem[Mtm->status]);			
+		MTM_ELOG(ERROR, "Abort transaction %s (%llu)  because this cluster node is in %s status", x->gid, (long64)x->xid, MtmNodeStatusMnem[Mtm->status]);			
 	}
 	if (TransactionIdIsValid(x->gtid.xid) && BIT_CHECK(Mtm->disabledNodeMask, x->gtid.node-1)) {
 		/* Coordinator of transaction is disabled: just abort transaction without any further steps */
-		elog(ERROR, "Abort transaction %s (%llu) because it's coordinator %d was disabled", x->gid, (long64)x->xid, x->gtid.node);
+		MTM_ELOG(ERROR, "Abort transaction %s (%llu) because it's coordinator %d was disabled", x->gid, (long64)x->xid, x->gtid.node);
 	}
 
 	MtmLock(LW_EXCLUSIVE);
@@ -943,7 +943,7 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	if (found && tm->status != TRANSACTION_STATUS_IN_PROGRESS) { 
 		Assert(tm->status == TRANSACTION_STATUS_ABORTED);
 		MtmUnlock();
-		elog(ERROR, "Skip already aborted transaction %s (%llu) from node %d", x->gid, (long64)x->xid, x->gtid.node);			
+		MTM_ELOG(ERROR, "Skip already aborted transaction %s (%llu) from node %d", x->gid, (long64)x->xid, x->gtid.node);			
 	}
 
 	ts = MtmCreateTransState(x);
@@ -990,7 +990,7 @@ bool MtmWatchdog(timestamp_t now)
 			if (Mtm->nodes[i].lastHeartbeat != 0
 				&& now > Mtm->nodes[i].lastHeartbeat + MSEC_TO_USEC(MtmHeartbeatRecvTimeout)) 
 			{ 
-				elog(WARNING, "Heartbeat is not received from node %d during %d msec", 
+				MTM_ELOG(WARNING, "Heartbeat is not received from node %d during %d msec", 
 					 i+1, (int)USEC_TO_MSEC(now - Mtm->nodes[i].lastHeartbeat));
 				MtmOnNodeDisconnect(i+1);				
 				allAlive = false;
@@ -1010,7 +1010,7 @@ void MtmPrecommitTransaction(char const* gid)
 		MtmTransMap* tm = (MtmTransMap*)hash_search(MtmGid2State, gid, HASH_FIND, NULL);
 		if (tm == NULL) {
 			MtmUnlock();
-			elog(WARNING, "MtmPrecommitTransaction: transaction '%s' is not found", gid);
+			MTM_ELOG(WARNING, "MtmPrecommitTransaction: transaction '%s' is not found", gid);
 		} else { 
 			MtmTransState* ts = tm->state;
 			Assert(ts != NULL);
@@ -1032,7 +1032,7 @@ void MtmPrecommitTransaction(char const* gid)
 					SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
 				}
 			} else {
-				elog(WARNING, "MtmPrecommitTransaction: transaction '%s' is already in %s state", gid, MtmTxnStatusMnem[ts->status]);
+				MTM_ELOG(WARNING, "MtmPrecommitTransaction: transaction '%s' is already in %s state", gid, MtmTxnStatusMnem[ts->status]);
 				MtmUnlock();
 			}
 		}
@@ -1051,7 +1051,7 @@ MtmVotingCompleted(MtmTransState* ts)
 	if (!ts->isPrepared) { /* We can not just abort precommitted transactions */
 		if (ts->nConfigChanges != Mtm->nConfigChanges)
 		{ 
-			elog(WARNING, "Abort transaction %s (%llu) because cluster configuration is changed from %d to %d (old mask %llx, new mask %llx) since transaction start", 
+			MTM_ELOG(WARNING, "Abort transaction %s (%llu) because cluster configuration is changed from %d to %d (old mask %llx, new mask %llx) since transaction start", 
 				 ts->gid, (long64)ts->xid, ts->nConfigChanges,  Mtm->nConfigChanges, ts->participantsMask, liveNodesMask);
 			MtmAbortTransaction(ts);
 			return true;
@@ -1084,7 +1084,6 @@ MtmVotingCompleted(MtmTransState* ts)
 				MtmUnlock();
 				SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);	
 				MtmLock(LW_EXCLUSIVE);
-				//MtmSend2PCMessage(ts, MSG_PRECOMMIT);
 				return false;
 			} else {
 				ts->status = TRANSACTION_STATUS_UNKNOWN;
@@ -1128,9 +1127,9 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 		MtmLock(LW_EXCLUSIVE);
 		if (now > deadline) { 
 			if (ts->isPrepared) { 
-				elog(LOG, "Distributed transaction %s (%llu) is not committed in %lld msec", ts->gid, (long64)ts->xid, USEC_TO_MSEC(now - start));
+				MTM_ELOG(LOG, "Distributed transaction %s (%llu) is not committed in %lld msec", ts->gid, (long64)ts->xid, USEC_TO_MSEC(now - start));
 			} else {
-				elog(WARNING, "Commit of distributed transaction %s (%llu) is canceled because of %lld msec timeout expiration", 
+				MTM_ELOG(WARNING, "Commit of distributed transaction %s (%llu) is canceled because of %lld msec timeout expiration", 
 					 ts->gid, (long64)ts->xid, USEC_TO_MSEC(timeout));
 				MtmAbortTransaction(ts);
 				break;
@@ -1139,16 +1138,14 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 	}
 	if (ts->status != TRANSACTION_STATUS_ABORTED && !ts->votingCompleted) { 
 		if (ts->isPrepared) { 
-			// GetNewTransactionId(false); /* force increment of transaction counter */
-			// elog(ERROR, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);
-			elog(WARNING, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);				
+			MTM_ELOG(WARNING, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);				
 			x->isSuspended = true;
 		} else { 
 			if (Mtm->status != MTM_ONLINE) { 
-				elog(WARNING, "Commit of distributed transaction %s (%llu) is canceled because node is switched to %s mode", 
+				MTM_ELOG(WARNING, "Commit of distributed transaction %s (%llu) is canceled because node is switched to %s mode", 
 					 ts->gid, (long64)ts->xid, MtmNodeStatusMnem[Mtm->status]);
 			} else { 
-				elog(WARNING, "Commit of distributed transaction %s (%llu) is canceled because cluster configuration was changed", 
+				MTM_ELOG(WARNING, "Commit of distributed transaction %s (%llu) is canceled because cluster configuration was changed", 
 					 ts->gid, (long64)ts->xid);
 			} 
 			MtmAbortTransaction(ts);
@@ -1171,7 +1168,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 
 	if (Mtm->inject2PCError == 2) { 
 		Mtm->inject2PCError = 0;
-		elog(ERROR, "ERROR INJECTION for transaction %s (%llu)", x->gid, (long64)x->xid);
+		MTM_ELOG(ERROR, "ERROR INJECTION for transaction %s (%llu)", x->gid, (long64)x->xid);
 	}
 	MtmLock(LW_EXCLUSIVE);
 	ts = (MtmTransState*)hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
@@ -1199,14 +1196,14 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		MtmUnlock();
 		if (x->isTwoPhase) { 
 			if (x->status == TRANSACTION_STATUS_ABORTED) { 
-				elog(ERROR, "Prepare of user's 2PC transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
+				MTM_ELOG(ERROR, "Prepare of user's 2PC transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
 			}
 			MtmResetTransaction();
 		}
 	}
 	if (Mtm->inject2PCError == 3) { 
 		Mtm->inject2PCError = 0;
-		elog(ERROR, "ERROR INJECTION for transaction %s (%llu)", x->gid, (long64)x->xid);
+		MTM_ELOG(ERROR, "ERROR INJECTION for transaction %s (%llu)", x->gid, (long64)x->xid);
 	}
 
 	MTM_TXTRACE(x, "PostPrepareTransaction Finish");
@@ -1224,7 +1221,7 @@ MtmPreCommitPreparedTransaction(MtmCurrentTrans* x)
 	MtmLock(LW_EXCLUSIVE);
 	tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_FIND, NULL);
 	if (tm == NULL) {
-		elog(WARNING, "Global transaciton ID '%s' is not found", x->gid);
+		MTM_ELOG(WARNING, "Global transaciton ID '%s' is not found", x->gid);
 	} else {
  		Assert(tm->state != NULL);
 		MTM_LOG3("Commit prepared transaction %d with gid='%s'", x->xid, x->gid);
@@ -1239,7 +1236,6 @@ MtmPreCommitPreparedTransaction(MtmCurrentTrans* x)
 			Assert(replorigin_session_origin == InvalidRepOriginId);
 			MtmUnlock();
 			SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
-			//MtmSend2PCMessage(ts, MSG_PRECOMMIT);
 			MtmLock(LW_EXCLUSIVE);
 
 			Mtm2PCVoting(x, ts);
@@ -1263,7 +1259,7 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_FIND, NULL);
 		//tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
 		if (tm == NULL) { 
-			elog(WARNING, "Global transaciton ID '%s' is not found", x->gid);
+			MTM_ELOG(WARNING, "Global transaciton ID '%s' is not found", x->gid);
 		} else { 
 			Assert(tm->state != NULL);
 			MTM_LOG1("Abort prepared transaction %s (%llu)", x->gid, (long64)x->xid);
@@ -1319,7 +1315,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				if (!(ts->status == TRANSACTION_STATUS_UNKNOWN 
 					  || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)))  
 				{
-					elog(ERROR, "Attempt to commit %s transaction %s (%llu)", 
+					MTM_ELOG(ERROR, "Attempt to commit %s transaction %s (%llu)", 
 						 MtmTxnStatusMnem[ts->status], ts->gid, (long64)ts->xid);
 				}
 				if (x->csn > ts->csn || Mtm->status == MTM_RECOVERY) {
@@ -1569,14 +1565,14 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot, nodemas
 
 		if (BIT_CHECK(Mtm->disabledNodeMask, gtid->node-1)) { 
 			MtmUnlock();			
-			elog(ERROR, "Ignore transaction %llu from disabled node %d", (long64)gtid->xid, gtid->node);
+			MTM_ELOG(ERROR, "Ignore transaction %llu from disabled node %d", (long64)gtid->xid, gtid->node);
 		}
 
 		liveMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask;
 		BIT_SET(participantsMask, gtid->node-1);
 		if (liveMask & ~participantsMask) { 
 			MtmUnlock();			
-			elog(ERROR, "Ignore transaction %llu from node %d because some of live nodes (%llx) are not participated in it (%llx)", 
+			MTM_ELOG(ERROR, "Ignore transaction %llu from node %d because some of live nodes (%llx) are not participated in it (%llx)", 
 				 (long64)gtid->xid, gtid->node, liveMask, participantsMask);
 		}
 
@@ -1593,7 +1589,7 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot, nodemas
 	if (!TransactionIdIsValid(gtid->xid)) { 
 		/* In case of recovery InvalidTransactionId is passed */
 		if (Mtm->status != MTM_RECOVERY) { 
-			elog(WARNING, "Node %d tries to recover node %d which is in %s mode", gtid->node, MtmNodeId,  MtmNodeStatusMnem[Mtm->status]);
+			MTM_ELOG(WARNING, "Node %d tries to recover node %d which is in %s mode", gtid->node, MtmNodeId,  MtmNodeStatusMnem[Mtm->status]);
 			MtmStartRecovery();
 		}
 	} else if (Mtm->status == MTM_RECOVERY) { 
@@ -1700,7 +1696,7 @@ void MtmAbortTransaction(MtmTransState* ts)
 	Assert(MtmLockCount != 0); /* should be invoked with exclsuive lock */
 	if (ts->status != TRANSACTION_STATUS_ABORTED) { 
 		if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
-			elog(LOG, "Attempt to rollback already committed transaction %s (%llu)", ts->gid, (long64)ts->xid);
+			MTM_ELOG(LOG, "Attempt to rollback already committed transaction %s (%llu)", ts->gid, (long64)ts->xid);
 		} else { 
 			MTM_LOG1("Rollback active transaction %s (%llu) %d:%llu status %s", ts->gid, (long64)ts->xid, ts->gtid.node, (long64)ts->gtid.xid, MtmTxnStatusMnem[ts->status]);
 			ts->status = TRANSACTION_STATUS_ABORTED;
@@ -1734,7 +1730,7 @@ void MtmHandleApplyError(void)
 		case ERRCODE_INTERNAL_ERROR:
 		case ERRCODE_OUT_OF_MEMORY:
 		  */
-			elog(WARNING, "Node is excluded from cluster because of non-recoverable error %d, %s, pid=%u",
+			MTM_ELOG(WARNING, "Node is excluded from cluster because of non-recoverable error %d, %s, pid=%u",
 				edata->sqlerrcode, edata->message, getpid());
 			MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
 			kill(PostmasterPid, SIGQUIT);
@@ -1761,7 +1757,7 @@ static void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeI
 		{
 			Assert(ts->gid[0]);
 			if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
-				elog(LOG, "Abort transaction %s because its coordinator is disabled and it is not prepared at node %d", ts->gid, MtmNodeId);
+				MTM_ELOG(LOG, "Abort transaction %s because its coordinator is disabled and it is not prepared at node %d", ts->gid, MtmNodeId);
 				MtmFinishPreparedTransaction(ts, false);
 			} else {
 				MTM_LOG1("Poll state of transaction %s (%llu)", ts->gid, (long64)ts->xid);				
@@ -1805,7 +1801,7 @@ static void MtmPollStatusOfPreparedTransactions()
 static void MtmDisableNode(int nodeId)
 {
 	timestamp_t now = MtmGetSystemTime();
-	elog(WARNING, "Disable node %d at xlog position %llx, last status change time %d msec ago", nodeId, (long64)GetXLogInsertRecPtr(), 
+	MTM_ELOG(WARNING, "Disable node %d at xlog position %llx, last status change time %d msec ago", nodeId, (long64)GetXLogInsertRecPtr(), 
 		 (int)USEC_TO_MSEC(now - Mtm->nodes[nodeId-1].lastStatusChangeTime));
 	BIT_SET(Mtm->disabledNodeMask, nodeId-1);
 	Mtm->nConfigChanges += 1;
@@ -1836,7 +1832,7 @@ static void MtmEnableNode(int nodeId)
 		if (nodeId != MtmNodeId) { 
 			Mtm->nLiveNodes += 1;			
 		}
-		elog(WARNING, "Enable node %d at xlog position %llx", nodeId, (long64)GetXLogInsertRecPtr());
+		MTM_ELOG(WARNING, "Enable node %d at xlog position %llx", nodeId, (long64)GetXLogInsertRecPtr());
 	}
 }
 
@@ -1850,7 +1846,7 @@ void MtmRecoveryCompleted(void)
 			 MtmNodeId, Mtm->disabledNodeMask, 
 			 SELF_CONNECTIVITY_MASK, (long64)GetXLogInsertRecPtr(), Mtm->nLiveNodes);
 	if (Mtm->nAllNodes >= 3) { 
-		elog(WARNING, "restartLSNs at the end of recovery: {%llx, %llx, %llx}", 
+		MTM_ELOG(WARNING, "restartLSNs at the end of recovery: {%llx, %llx, %llx}", 
 			 Mtm->nodes[0].restartLSN, Mtm->nodes[1].restartLSN, Mtm->nodes[2].restartLSN);
 	}
 	MtmLock(LW_EXCLUSIVE);
@@ -1864,7 +1860,7 @@ void MtmRecoveryCompleted(void)
 		Mtm->nodes[i].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 	}
 	/* Mode will be changed to online once all logical receiver are connected */
-	elog(LOG, "Recovery completed with %d active receivers and %d started senders from %d", Mtm->nReceivers, Mtm->nSenders, Mtm->nLiveNodes-1);
+	MTM_ELOG(LOG, "Recovery completed with %d active receivers and %d started senders from %d", Mtm->nReceivers, Mtm->nSenders, Mtm->nLiveNodes-1);
 	if (Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1)
 	{ 
 		MtmSwitchClusterMode(MTM_ONLINE);
@@ -1902,7 +1898,7 @@ MtmCheckSlots()
 				&& slot->data.confirmed_flush + MtmMaxRecoveryLag < GetXLogInsertRecPtr()
 				&& slot->data.confirmed_flush != 0)
 			{
-				elog(WARNING, "Drop slot for node %d which lag %lld is larger than threshold %d", 
+				MTM_ELOG(WARNING, "Drop slot for node %d which lag %lld is larger than threshold %d", 
 					 nodeId,
 					 (long64)(GetXLogInsertRecPtr() - slot->data.restart_lsn),
 					 MtmMaxRecoveryLag);
@@ -1941,7 +1937,7 @@ bool MtmIsRecoveredNode(int nodeId)
 {
 	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) { 
 		if (!MtmIsRecoverySession) { 
-			elog(ERROR, "Node %d is marked as disabled but is not in recovery mode", nodeId);
+			MTM_ELOG(ERROR, "Node %d is marked as disabled but is not in recovery mode", nodeId);
 		}
 		return true;
 	} else { 
@@ -2083,14 +2079,19 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 	/* Print matrix if changed */
 	if (changed)
 	{
-		fprintf(stderr, "Connectivity matrix:\n");
+		char matrix_dump[MAX_NODES*(MAX_NODES+1)+1];
+		int p = 0;
 		for (i = 0; i < n; i++)
 		{
 			for (j = 0; j < n; j++)
-				putc(BIT_CHECK(matrix[i], j) ? 'X' : '+', stderr);
-			putc('\n', stderr);
+			{
+				matrix_dump[p++] = BIT_CHECK(matrix[i], j) ? 'X' : '+';
+			}
+			matrix_dump[p++] = '\n';
 		}
-		fputs("-----------------------\n", stderr);
+		matrix_dump[p] = '\0';
+		MTM_ELOG(LOG, "Connectivity matrix:\n%s\n------------------------", 
+				 matrix_dump);
 	}
 
 	/* make matrix symetric: required for Bron–Kerbosch algorithm */
@@ -2204,7 +2205,7 @@ void MtmCheckQuorum(void)
 		}
 	} else {
 		if (Mtm->status == MTM_ONLINE) { /* out of quorum */
-			elog(WARNING, "Node is in minority: disabled mask %llx", Mtm->disabledNodeMask);
+			MTM_ELOG(WARNING, "Node is in minority: disabled mask %llx", Mtm->disabledNodeMask);
 			MtmSwitchClusterMode(MTM_IN_MINORITY);
 		}
 	}
@@ -2233,7 +2234,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	MtmLock(LW_EXCLUSIVE);
 	BIT_SET(SELF_CONNECTIVITY_MASK, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
-	elog(LOG, "Disconnect node %d connectivity mask %llx", 
+	MTM_ELOG(LOG, "Disconnect node %d connectivity mask %llx", 
 		 nodeId, SELF_CONNECTIVITY_MASK);
 	MtmUnlock();
 }
@@ -2244,7 +2245,7 @@ void MtmOnNodeDisconnect(int nodeId)
 void MtmOnNodeConnect(int nodeId)
 {
 	MtmLock(LW_EXCLUSIVE);	
-	elog(LOG, "Connect node %d connectivity mask %llx", nodeId, SELF_CONNECTIVITY_MASK);
+	MTM_ELOG(LOG, "Connect node %d connectivity mask %llx", nodeId, SELF_CONNECTIVITY_MASK);
 	BIT_CLEAR(SELF_CONNECTIVITY_MASK, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1); /* force sender to reestablish connection and send heartbeat */
 	MtmUnlock();
@@ -2256,7 +2257,7 @@ void MtmOnNodeConnect(int nodeId)
 void MtmReconnectNode(int nodeId)
 {
 	MtmLock(LW_EXCLUSIVE);	
-	elog(LOG, "Reconnect node %d connectivity mask %llx", nodeId, SELF_CONNECTIVITY_MASK);
+	MTM_ELOG(LOG, "Reconnect node %d connectivity mask %llx", nodeId, SELF_CONNECTIVITY_MASK);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	MtmUnlock();
 }
@@ -2396,14 +2397,14 @@ static void MtmCheckControlFile(void)
 	if (f != NULL && fgets(buf, sizeof buf, f)) {
 		char* sep = strchr(buf, ':');
 		if (sep == NULL) {
-			elog(FATAL, "File mmts_control doesn't contain cluster name");
+			MTM_ELOG(FATAL, "File mmts_control doesn't contain cluster name");
 		}
 		*sep = '\0';
 		if (strcmp(buf, MtmClusterName) != 0) { 
-			elog(FATAL, "Database belongs to some other cluster %s rather than %s", buf, MtmClusterName);
+			MTM_ELOG(FATAL, "Database belongs to some other cluster %s rather than %s", buf, MtmClusterName);
 		}
 		if (sscanf(sep+1, "%d", &Mtm->donorNodeId) != 1) { 
-			elog(FATAL, "File mmts_control doesn't contain node id");
+			MTM_ELOG(FATAL, "File mmts_control doesn't contain node id");
 		}
 		fclose(f);
 	} else { 
@@ -2412,7 +2413,7 @@ static void MtmCheckControlFile(void)
 		}
 		f = fopen(controlFilePath, "w");
 		if (f == NULL) { 
-			elog(FATAL, "Failed to create mmts_control file: %m");
+			MTM_ELOG(FATAL, "Failed to create mmts_control file: %m");
 		}
 		Mtm->donorNodeId = MtmNodeId;
 		fprintf(f, "%s:%d\n", MtmClusterName, Mtm->donorNodeId);
@@ -2528,20 +2529,20 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 	int         connStrLen = (int)strlen(connStr);
 
 	if (connStrLen >= MULTIMASTER_MAX_CONN_STR_SIZE) {
-		elog(ERROR, "Too long (%d) connection string '%s': limit is %d", 
+		MTM_ELOG(ERROR, "Too long (%d) connection string '%s': limit is %d", 
 			 connStrLen, connStr, MULTIMASTER_MAX_CONN_STR_SIZE-1);
 	}
 	strcpy(conn->connStr, connStr);
 
 	host = strstr(connStr, "host=");
 	if (host == NULL) {
-		elog(ERROR, "Host not specified in connection string: '%s'", connStr);
+		MTM_ELOG(ERROR, "Host not specified in connection string: '%s'", connStr);
 	}
 	host += 5;
 	for (end = host; *end != ' ' && *end != '\0'; end++);
 	hostLen = end - host;
 	if (hostLen >= MULTIMASTER_MAX_HOST_NAME_SIZE) {
-		elog(ERROR, "Too long (%d) host name '%.*s': limit is %d", 
+		MTM_ELOG(ERROR, "Too long (%d) host name '%.*s': limit is %d", 
 			 hostLen, hostLen, host, MULTIMASTER_MAX_HOST_NAME_SIZE-1);
 	}
 	memcpy(conn->hostName, host, hostLen);
@@ -2550,12 +2551,12 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 	port = strstr(connStr, "arbiter_port=");
 	if (port != NULL) {
 		if (sscanf(port+13, "%d", &conn->arbiterPort) != 1) {
-			elog(ERROR, "Invalid arbiter port: %s", port+13);
+			MTM_ELOG(ERROR, "Invalid arbiter port: %s", port+13);
 		}
 	} else { 
 		conn->arbiterPort = MULTIMASTER_DEFAULT_ARBITER_PORT;
 	}
-	elog(WARNING, "Using arbiter port: %d", conn->arbiterPort);
+	MTM_ELOG(WARNING, "Using arbiter port: %d", conn->arbiterPort);
 
 	port = strstr(connStr, " port=");
 	if (port == NULL && strncmp(connStr, "port=", 5) == 0) {
@@ -2563,7 +2564,7 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 	}
 	if (port != NULL) {
 		if (sscanf(port+6, "%d", &conn->postmasterPort) != 1) {
-			elog(ERROR, "Invalid postmaster port: %s", port+6);
+			MTM_ELOG(ERROR, "Invalid postmaster port: %s", port+6);
 		}
 	} else { 
 		conn->postmasterPort = DEF_PGPORT;
@@ -2585,7 +2586,7 @@ static void MtmSplitConnStrs(void)
 		f = fopen(MtmConnStrs+1, "r");
 		for (i = 0; fgets(buf, sizeof buf, f) != NULL; i++) {
 			if (strlen(buf) <= 1) {
-				elog(ERROR, "Empty lines are not allowed in %s file", MtmConnStrs+1);
+				MTM_ELOG(ERROR, "Empty lines are not allowed in %s file", MtmConnStrs+1);
 			}
 		}
 	} else { 
@@ -2599,15 +2600,15 @@ static void MtmSplitConnStrs(void)
 	}
 			
 	if (i > MAX_NODES) { 
-		elog(ERROR, "Multimaster with more than %d nodes is not currently supported", MAX_NODES);
+		MTM_ELOG(ERROR, "Multimaster with more than %d nodes is not currently supported", MAX_NODES);
 	}
 	if (i < 2) { 
-        elog(ERROR, "Multimaster should have at least two nodes");
+        MTM_ELOG(ERROR, "Multimaster should have at least two nodes");
 	}	
 	if (MtmMaxNodes == 0) {
 		MtmMaxNodes = i;
 	} else if (MtmMaxNodes < i) { 
-        elog(ERROR, "More than %d nodes are specified", MtmMaxNodes);
+        MTM_ELOG(ERROR, "More than %d nodes are specified", MtmMaxNodes);
 	}			
 	MtmNodes = i;
 	MtmConnections = (MtmConnectionInfo*)palloc(MtmMaxNodes*sizeof(MtmConnectionInfo));
@@ -2640,7 +2641,7 @@ static void MtmSplitConnStrs(void)
 	}
 	if (MtmNodeId == INT_MAX) { 
 		if (gethostname(buf, sizeof buf) != 0) {
-			elog(ERROR, "Failed to get host name: %m");
+			MTM_ELOG(ERROR, "Failed to get host name: %m");
 		}
 		for (i = 0; i < MtmNodes; i++) {
 			if ((strcmp(MtmConnections[i].hostName, buf) == 0 || strcmp(MtmConnections[i].hostName, "localhost") == 0) 
@@ -2649,15 +2650,15 @@ static void MtmSplitConnStrs(void)
 				if (MtmNodeId == INT_MAX) { 
 					MtmNodeId = i+1;
 				} else {
-					elog(ERROR, "multimaster.node_id is not explicitly specified and more than one nodes are configured for host %s port %d", buf, PostPortNumber);
+					MTM_ELOG(ERROR, "multimaster.node_id is not explicitly specified and more than one nodes are configured for host %s port %d", buf, PostPortNumber);
 				}
 			}
 		}
 		if (MtmNodeId == INT_MAX) { 
-			elog(ERROR, "multimaster.node_id and host name %s can not be located in connection strings list", buf);
+			MTM_ELOG(ERROR, "multimaster.node_id and host name %s can not be located in connection strings list", buf);
 		}
 	} else if (MtmNodeId > i) {
-		elog(ERROR, "Multimaster node id %d is out of range [%d..%d]", MtmNodeId, 1, MtmNodes);
+		MTM_ELOG(ERROR, "Multimaster node id %d is out of range [%d..%d]", MtmNodeId, 1, MtmNodes);
 	}
 	{
 		char* connStr = MtmConnections[MtmNodeId-1].connStr;
@@ -2667,16 +2668,16 @@ static void MtmSplitConnStrs(void)
 		size_t len;
 		
 		if (dbName == NULL)
-			elog(ERROR, "Database is not specified in connection string: '%s'", connStr);
+			MTM_ELOG(ERROR, "Database is not specified in connection string: '%s'", connStr);
 		
 		if (dbUser == NULL)
 		{
 			char *errstr;
 			const char *username = get_user_name(&errstr);
 			if (!username)
-				elog(FATAL, "Database user is not specified in connection string '%s', fallback failed: %s", connStr, errstr);
+				MTM_ELOG(FATAL, "Database user is not specified in connection string '%s', fallback failed: %s", connStr, errstr);
 			else
-				elog(WARNING, "Database user is not specified in connection string '%s', fallback to '%s'", connStr, username);
+				MTM_ELOG(WARNING, "Database user is not specified in connection string '%s', fallback to '%s'", connStr, username);
 			MtmDatabaseUser = pstrdup(username);
 		}
 		else
@@ -2708,19 +2709,19 @@ static bool ConfigIsSane(void)
 
 	if (DefaultXactIsoLevel != XACT_REPEATABLE_READ)
 	{
-		elog(WARNING, "multimaster requires default_transaction_isolation = 'repeatable read'");
+		MTM_ELOG(WARNING, "multimaster requires default_transaction_isolation = 'repeatable read'");
 		ok = false;
 	}
 
 	if (MtmMaxNodes < 1)
 	{
-		elog(WARNING, "multimaster requires multimaster.max_nodes > 0");
+		MTM_ELOG(WARNING, "multimaster requires multimaster.max_nodes > 0");
 		ok = false;
 	}
 
 	if (max_prepared_xacts < 1)
 	{
-		elog(WARNING,
+		MTM_ELOG(WARNING,
 			 "multimaster requires max_prepared_transactions > 0, "
 			 "because all transactions are implicitly two-phase");
 		ok = false;
@@ -2730,7 +2731,7 @@ static bool ConfigIsSane(void)
 		int workers_required = 2 * MtmMaxNodes + MtmWorkers + 1;
 		if (max_worker_processes < workers_required)
 		{
-			elog(WARNING,
+			MTM_ELOG(WARNING,
 				 "multimaster requires max_worker_processes >= %d",
 				 workers_required);
 			ok = false;
@@ -2739,7 +2740,7 @@ static bool ConfigIsSane(void)
 
 	if (wal_level != WAL_LEVEL_LOGICAL)
 	{
-		elog(WARNING,
+		MTM_ELOG(WARNING,
 			 "multimaster requires wal_level = 'logical', "
 			 "because it is build on top of logical replication");
 		ok = false;
@@ -2747,7 +2748,7 @@ static bool ConfigIsSane(void)
 
 	if (max_wal_senders < MtmMaxNodes)
 	{
-		elog(WARNING,
+		MTM_ELOG(WARNING,
 			 "multimaster requires max_wal_senders >= %d (multimaster.max_nodes), ",
 			 MtmMaxNodes);
 		ok = false;
@@ -2755,7 +2756,7 @@ static bool ConfigIsSane(void)
 
 	if (max_replication_slots < MtmMaxNodes)
 	{
-		elog(WARNING,
+		MTM_ELOG(WARNING,
 			 "multimaster requires max_replication_slots >= %d (multimaster.max_nodes), ",
 			 MtmMaxNodes);
 		ok = false;
@@ -3154,7 +3155,7 @@ _PG_init(void)
 	);
 
 	if (!ConfigIsSane()) {
-		elog(ERROR, "Multimaster config is insane, refusing to work");
+		MTM_ELOG(ERROR, "Multimaster config is insane, refusing to work");
 	}
 
 	/* This will also perform some checks on connection strings */
@@ -3216,7 +3217,7 @@ void MtmReceiverStarted(int nodeId)
 			MtmEnableNode(nodeId);
 			MtmCheckQuorum();
 		}
-		elog(LOG, "Start %d receivers and %d senders from %d cluster status %s", Mtm->nReceivers+1, Mtm->nSenders, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
+		MTM_ELOG(LOG, "Start %d receivers and %d senders from %d cluster status %s", Mtm->nReceivers+1, Mtm->nSenders, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
 		if (++Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1 
 			&& (Mtm->status == MTM_RECOVERED || Mtm->status == MTM_CONNECTED)) 
 		{ 
@@ -3293,7 +3294,7 @@ void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
 	MtmTx.isActive = true;
 	FinishPreparedTransaction(ts->gid, commit);
 	if (commit) { 
-		MTM_LOG1("Distributed transaction %s is committed", ts->gid);
+		MTM_LOG2("Distributed transaction %s is committed", ts->gid);
 	}
 	if (!insideTransaction) { 
 		CommitTransactionCommand();
@@ -3349,10 +3350,10 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 			{ 
 				/* Choose for recovery first available slot or slot of donor node (if any) */
 				if (Mtm->nAllNodes >= 3) { 
-					elog(WARNING, "Process %d starts recovery from node %d restartLSNs={%llx, %llx, %llx}", 
+					MTM_ELOG(WARNING, "Process %d starts recovery from node %d restartLSNs={%llx, %llx, %llx}", 
 						 MyProcPid, nodeId, Mtm->nodes[0].restartLSN, Mtm->nodes[1].restartLSN, Mtm->nodes[2].restartLSN);
 				} else {
-					elog(WARNING, "Process %d starts recovery from node %d", MyProcPid, nodeId);
+					MTM_ELOG(WARNING, "Process %d starts recovery from node %d", MyProcPid, nodeId);
 				}
 				Mtm->recoverySlot = nodeId;
 				Mtm->nReceivers = 0;
@@ -3397,7 +3398,7 @@ void MtmRecoverNode(int nodeId)
 {
 	if (nodeId <= 0 || nodeId > Mtm->nAllNodes) 
 	{ 
-		elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nAllNodes);
+		MTM_ELOG(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nAllNodes);
 	}
 	MtmLock(LW_EXCLUSIVE);
 	if (BIT_SET(Mtm->stoppedNodeMask, nodeId-1))
@@ -3423,7 +3424,7 @@ void MtmStopNode(int nodeId, bool dropSlot)
 {
 	if (nodeId <= 0 || nodeId > Mtm->nAllNodes) 
 	{ 
-		elog(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nAllNodes);
+		MTM_ELOG(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nAllNodes);
 	}
 
 	MtmLock(LW_EXCLUSIVE);
@@ -3477,16 +3478,16 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 				} else if (strcmp(strVal(elem->arg), "recovered") == 0) { 
 					recoveryCompleted = true;
 				} else if (strcmp(strVal(elem->arg), "open_existed") != 0 && strcmp(strVal(elem->arg), "create_new") != 0) { 
-					elog(ERROR, "Illegal recovery mode %s", strVal(elem->arg));
+					MTM_ELOG(ERROR, "Illegal recovery mode %s", strVal(elem->arg));
 				}
 			} else { 
-				elog(ERROR, "Replication mode is not specified");
+				MTM_ELOG(ERROR, "Replication mode is not specified");
 			}				
 		} else if (strcmp("mtm_restart_pos", elem->defname) == 0) { 
 			if (elem->arg != NULL && strVal(elem->arg) != NULL) {
 				sscanf(strVal(elem->arg), "%llx", &recoveryStartPos);
 			} else { 
-				elog(ERROR, "Restart position is not specified");
+				MTM_ELOG(ERROR, "Restart position is not specified");
 			}
 		} else if (strcmp("mtm_recovered_pos", elem->defname) == 0) { 
 			if (elem->arg != NULL && strVal(elem->arg) != NULL) {
@@ -3501,14 +3502,14 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 					Mtm->nodes[MtmReplicationNodeId-1].restartLSN = recoveredLSN;
 				}
 			} else { 
-				elog(ERROR, "Recovered position is not specified");
+				MTM_ELOG(ERROR, "Recovered position is not specified");
 			}
 		}
 	}
 	MTM_LOG1("Startup of logical replication to node %d", MtmReplicationNodeId);
 	MtmLock(LW_EXCLUSIVE);
 	if (BIT_CHECK(Mtm->stoppedNodeMask, MtmReplicationNodeId-1)) {		
-		elog(WARNING, "Stopped node %d tries to initiate recovery", MtmReplicationNodeId);
+		MTM_ELOG(WARNING, "Stopped node %d tries to initiate recovery", MtmReplicationNodeId);
 		do { 
 			MtmUnlock();
 			MtmSleep(STATUS_POLL_DELAY);
@@ -3519,7 +3520,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 		MTM_LOG1("%d: Node %d start recovery of node %d at position %llx", MyProcPid, MtmNodeId, MtmReplicationNodeId, recoveryStartPos);
 		Assert(MyReplicationSlot != NULL);
 		if (recoveryStartPos < MyReplicationSlot->data.restart_lsn) { 
-			elog(WARNING, "Specified recovery start position %llx is beyond restart lsn %llx", recoveryStartPos, (long64)MyReplicationSlot->data.restart_lsn);
+			MTM_ELOG(WARNING, "Specified recovery start position %llx is beyond restart lsn %llx", recoveryStartPos, (long64)MyReplicationSlot->data.restart_lsn);
 		}
 		if (!BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
 			MtmDisableNode(MtmReplicationNodeId);
@@ -3534,13 +3535,13 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			/* Force arbiter to reestablish connection with this node, send heartbeat to inform this node that it was disabled and should perform recovery */
 			BIT_SET(Mtm->reconnectMask, MtmReplicationNodeId-1);
 			MtmUnlock();
-			elog(ERROR, "Disabled node %d tries to reconnect without recovery", MtmReplicationNodeId); 
+			MTM_ELOG(ERROR, "Disabled node %d tries to reconnect without recovery", MtmReplicationNodeId); 
 		}
 	} else {
 		MTM_LOG1("Node %d start logical replication to node %d in normal mode", MtmNodeId, MtmReplicationNodeId); 
 	}
 	if (!BIT_CHECK(Mtm->pglogicalSenderMask, MtmReplicationNodeId-1)) { 
-		elog(LOG, "Start %d senders and %d receivers from %d cluster status %s", Mtm->nSenders+1, Mtm->nReceivers, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
+		MTM_ELOG(LOG, "Start %d senders and %d receivers from %d cluster status %s", Mtm->nSenders+1, Mtm->nReceivers, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
 		BIT_SET(Mtm->pglogicalSenderMask, MtmReplicationNodeId-1);
 		if (++Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->nReceivers == Mtm->nLiveNodes-1
 			&& (Mtm->status == MTM_RECOVERED || Mtm->status == MTM_CONNECTED)) 
@@ -3707,7 +3708,7 @@ bool MtmFilterTransaction(char* record, int size)
 	if (!(origin_node != 0 &&
 		  (Mtm->status == MTM_RECOVERY || origin_node == replication_node)))
 	{
-		elog(WARNING, "Receive redirected commit event %d from node %d origin node %d origin LSN %llx in %s mode",
+		MTM_ELOG(WARNING, "Receive redirected commit event %d from node %d origin node %d origin LSN %llx in %s mode",
 			 event, replication_node, origin_node, origin_lsn, MtmNodeStatusMnem[Mtm->status]);
 	}
 
@@ -3727,8 +3728,6 @@ bool MtmFilterTransaction(char* record, int size)
 	}
 	restart_lsn = origin_node == MtmReplicationNodeId ? end_lsn : origin_lsn;
     if (Mtm->nodes[origin_node-1].restartLSN < restart_lsn) {
-		// Assert(Mtm->nodes[origin_node-1].restartLSN == INVALID_LSN 
-		// 	   || restart_lsn < Mtm->nodes[origin_node-1].restartLSN + MtmMaxRecoveryLag);
 		MTM_LOG2("[restartlsn] node %d: %llx -> %llx (MtmFilterTransaction)", MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, restart_lsn);
 		Mtm->nodes[origin_node-1].restartLSN = restart_lsn;
     } else {
@@ -3826,7 +3825,7 @@ mtm_add_node(PG_FUNCTION_ARGS)
 	char *connStr = text_to_cstring(PG_GETARG_TEXT_PP(0));
 
 	if (Mtm->nAllNodes == MtmMaxNodes) { 
-		elog(ERROR, "Maximal number of nodes %d is reached", MtmMaxNodes);
+		MTM_ELOG(ERROR, "Maximal number of nodes %d is reached", MtmMaxNodes);
 	}
 	if (!MtmIsBroadcast())
 	{
@@ -3838,7 +3837,7 @@ mtm_add_node(PG_FUNCTION_ARGS)
 		int nodeId;
 		MtmLock(LW_EXCLUSIVE);	
 		nodeId = Mtm->nAllNodes;
-		elog(NOTICE, "Add node %d: '%s'", nodeId+1, connStr);
+		MTM_ELOG(NOTICE, "Add node %d: '%s'", nodeId+1, connStr);
 
 		MtmUpdateNodeConnectionInfo(&Mtm->nodes[nodeId].con, connStr);
 
@@ -4159,12 +4158,12 @@ mtm_get_cluster_info(PG_FUNCTION_ARGS)
 	}	
 	conn = PQconnectdb_safe(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
 	if (PQstatus(conn) != CONNECTION_OK) {
-		elog(ERROR, "Failed to establish connection '%s' to node %d: error = %s", Mtm->nodes[usrfctx->nodeId-1].con.connStr, usrfctx->nodeId, PQerrorMessage(conn));
+		MTM_ELOG(ERROR, "Failed to establish connection '%s' to node %d: error = %s", Mtm->nodes[usrfctx->nodeId-1].con.connStr, usrfctx->nodeId, PQerrorMessage(conn));
 	}
 	result = PQexec(conn, "select * from mtm.get_cluster_state()");
 
 	if (PQresultStatus(result) != PGRES_TUPLES_OK || PQntuples(result) != 1) { 
-		elog(ERROR, "Failed to receive data from %d", usrfctx->nodeId);
+		MTM_ELOG(ERROR, "Failed to receive data from %d", usrfctx->nodeId);
 	}
 
 	for (i = 0; i < Natts_mtm_cluster_state; i++) { 
@@ -4308,18 +4307,18 @@ MtmNoticeReceiver(void *i, const PGresult *res)
 	{
 		/* Strip "NOTICE:  " from beginning and "\n" from end of error string */
 		strncpy(stripped_notice, notice + 9, len - 1 - 9);
-		elog(NOTICE, "%s", stripped_notice);
+		MTM_ELOG(NOTICE, "%s", stripped_notice);
 	}
 	else if (*notice == 'W')
 	{
 		/* Strip "WARNING:  " from beginning and "\n" from end of error string */
 		strncpy(stripped_notice, notice + 10, len - 1 - 10);
-		elog(WARNING, "%s", stripped_notice);
+		MTM_ELOG(WARNING, "%s", stripped_notice);
 	}
 	else
 	{
 		stripped_notice = notice;
-		elog(WARNING, "%s", stripped_notice);
+		MTM_ELOG(WARNING, "%s", stripped_notice);
 	}
 
 	MTM_LOG1("%s", stripped_notice);
@@ -4352,7 +4351,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 					do { 
 						PQfinish(conns[i]);
 					} while (--i >= 0);                             
-					elog(ERROR, "Failed to establish connection '%s' to node %d, error = %s", Mtm->nodes[failedNode].con.connStr, failedNode+1, PQerrorMessage(conns[i]));
+					MTM_ELOG(ERROR, "Failed to establish connection '%s' to node %d, error = %s", Mtm->nodes[failedNode].con.connStr, failedNode+1, PQerrorMessage(conns[i]));
 				}
 			}
 			PQsetNoticeReceiver(conns[i], MtmNoticeReceiver, &i);
@@ -4366,18 +4365,18 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 		{
 			if (!MtmRunUtilityStmt(conns[i], "BEGIN TRANSACTION", &utility_errmsg) && !ignoreError)
 			{
-				errorMsg = "Failed to start transaction at node %d";
+				errorMsg = MTM_TAG "Failed to start transaction at node %d";
 				failedNode = i;
 				break;
 			}
 			if (!MtmRunUtilityStmt(conns[i], sql, &utility_errmsg) && !ignoreError)
 			{
 				if (i + 1 == MtmNodeId)
-					errorMsg = utility_errmsg;
+					errorMsg = psprintf(MTM_TAG "%s", utility_errmsg);
 				else
 				{
-					elog(ERROR, "%s", utility_errmsg);
-					errorMsg = "Failed to run command at node %d";
+					MTM_ELOG(ERROR, "%s", utility_errmsg);
+					errorMsg = MTM_TAG "Failed to run command at node %d";
 				}
 
 				failedNode = i;
@@ -4399,7 +4398,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 		{ 
 			if (conns[i] && !MtmRunUtilityStmt(conns[i], "COMMIT TRANSACTION", &utility_errmsg) && !ignoreError) 
 			{ 
-				errorMsg = "Commit failed at node %d";
+				errorMsg = MTM_TAG "Commit failed at node %d";
 				failedNode = i;
 			}
 		}
@@ -4434,19 +4433,6 @@ MtmGenerateGid(char* gid)
  */
 static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 {
-	// if (MyXactAccessedTempRel)
-	// {
-	// 	/*
-	// 	 * XXX: this tx anyway goes to subscribers later, but without
-	// 	 * surrounding begin/commit. Now it will be filtered out on receiver side.
-	// 	 * Probably there is more clever way to do that.
-	// 	 */
-	// 	x->isDistributed = false;
-	// 	if (!MtmVolksWagenMode)
-	// 		elog(NOTICE, "MTM: Transaction was not replicated as it accesed temporary relation");
-	// 	return false;
-	// }
-
 	if (!x->isReplicated && x->isDistributed && x->containsDML) {
 		MtmGenerateGid(x->gid);
 		if (!x->isTransactionBlock) { 
@@ -4457,22 +4443,20 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 		}
 		if (!PrepareTransactionBlock(x->gid))
 		{
-			//if (!MtmVolksWagenMode)
-			elog(WARNING, "Failed to prepare transaction %s (%llu)", x->gid, (long64)x->xid);
-			/* ??? Should we do explicit rollback */
+			MTM_ELOG(WARNING, "Failed to prepare transaction %s (%llu)", x->gid, (long64)x->xid);
 		} else { 	
 			CommitTransactionCommand();
 			if (x->isSuspended) { 
-				elog(WARNING, "Transaction %s (%llu) is left in prepared state because coordinator node is not online", x->gid, (long64)x->xid);
+				MTM_ELOG(WARNING, "Transaction %s (%llu) is left in prepared state because coordinator node is not online", x->gid, (long64)x->xid);
 			} else { 				
 				StartTransactionCommand();
 				Assert(x->isActive);
 				if (x->status == TRANSACTION_STATUS_ABORTED) { 
 					FinishPreparedTransaction(x->gid, false);
-					elog(ERROR, "Transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
+					MTM_ELOG(ERROR, "Transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
 				} else {
 					FinishPreparedTransaction(x->gid, true);
-					MTM_LOG1("Distributed transaction %s is committed", x->gid);
+					MTM_LOG2("Distributed transaction %s is committed", x->gid);
 				}
 			}
 		}
@@ -4948,7 +4932,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 								params, dest, completionTag);
 	}
     if (!MtmVolksWagenMode && MtmTx.isDistributed && XactIsoLevel != XACT_REPEATABLE_READ) { 
-		elog(ERROR, "Isolation level %s is not supported by multimaster", isoLevelStr[XactIsoLevel]);
+		MTM_ELOG(ERROR, "Isolation level %s is not supported by multimaster", isoLevelStr[XactIsoLevel]);
 	}
 
 	if (MyXactAccessedTempRel)
@@ -5171,7 +5155,7 @@ MtmDetectGlobalDeadLockForXid(TransactionId xid)
 		}
 		MtmGetGtid(xid, &gtid);
 		hasDeadlock = MtmGraphFindLoop(&graph, &gtid);
-		elog(LOG, "Distributed deadlock check by backend %d for %u:%llu = %d", MyProcPid, gtid.node, (long64)gtid.xid, hasDeadlock);
+		MTM_ELOG(LOG, "Distributed deadlock check by backend %d for %u:%llu = %d", MyProcPid, gtid.node, (long64)gtid.xid, hasDeadlock);
 		if (!hasDeadlock) { 
 			/* There is no deadlock loop in graph, but deadlock can be caused by lack of apply workers: if all of them are busy, then some transactions
 			 * can not be appied just because there are no vacant workers and it cause additional dependency between transactions which is not 
@@ -5180,7 +5164,7 @@ MtmDetectGlobalDeadLockForXid(TransactionId xid)
 			timestamp_t lastPeekTime = BgwGetLastPeekTime(&Mtm->pool);
 			if (lastPeekTime != 0 && MtmGetSystemTime() - lastPeekTime >= MSEC_TO_USEC(DeadlockTimeout)) { 
 				hasDeadlock = true;
-				elog(WARNING, "Apply workers were blocked more than %d msec", 
+				MTM_ELOG(WARNING, "Apply workers were blocked more than %d msec", 
 					 (int)USEC_TO_MSEC(MtmGetSystemTime() - lastPeekTime));
 			} else { 
 				MTM_LOG1("Enable deadlock timeout in backend %d for transaction %llu", MyProcPid, (long64)xid);

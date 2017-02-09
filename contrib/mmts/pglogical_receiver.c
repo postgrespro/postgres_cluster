@@ -111,7 +111,7 @@ sendFeedback(PGconn *conn, int64 now, int node_id)
 
 	if (PQputCopyData(conn, replybuf, len) <= 0 || PQflush(conn))
 	{
-		ereport(LOG, (errmsg("%s: could not send feedback packet: %s",
+		ereport(LOG, (MTM_ERRMSG("%s: could not send feedback packet: %s",
 							 worker_proc, PQerrorMessage(conn))));
 		return false;
 	}
@@ -293,7 +293,7 @@ pglogical_receiver_main(Datum main_arg)
 		status = PQstatus(conn);
 		if (status != CONNECTION_OK)
 		{
-			ereport(WARNING, (errmsg("%s: Could not establish connection to remote server (%s), status = %d, error = %s",
+			ereport(WARNING, (MTM_ERRMSG("%s: Could not establish connection to remote server (%s), status = %d, error = %s",
 									 worker_proc, connString, status, PQerrorMessage(conn))));
 			goto OnError;
 		}
@@ -324,7 +324,7 @@ pglogical_receiver_main(Datum main_arg)
 				if (!sqlstate || strcmp(sqlstate, ERRCODE_DUPLICATE_OBJECT_STR) != 0)
 				{
 					PQclear(res);
-					ereport(ERROR, (errmsg("%s: Could not create logical slot", worker_proc)));
+					ereport(ERROR, (MTM_ERRMSG("%s: Could not create logical slot", worker_proc)));
 					
 					goto OnError;
 				}
@@ -372,7 +372,7 @@ pglogical_receiver_main(Datum main_arg)
 		if (PQresultStatus(res) != PGRES_COPY_BOTH)
 		{
 			PQclear(res);
-			ereport(WARNING, (errmsg("%s: Could not start logical replication",
+			ereport(WARNING, (MTM_ERRMSG("%s: Could not start logical replication",
 								 worker_proc)));
 			goto OnError;
 		}
@@ -395,13 +395,13 @@ pglogical_receiver_main(Datum main_arg)
 				/* Process config file */
 				ProcessConfigFile(PGC_SIGHUP);
 				got_sighup = false;
-				ereport(LOG, (errmsg("%s: processed SIGHUP", worker_proc)));
+				ereport(LOG, (MTM_ERRMSG("%s: processed SIGHUP", worker_proc)));
 			}
 			
 			if (got_sigterm)
 			{
 				/* Simply exit */
-				ereport(LOG, (errmsg("%s: processed SIGTERM", worker_proc)));
+				ereport(LOG, (MTM_ERRMSG("%s: processed SIGTERM", worker_proc)));
 				proc_exit(0);
 			}
 			
@@ -411,16 +411,16 @@ pglogical_receiver_main(Datum main_arg)
 			
 			if (Mtm->status == MTM_OFFLINE || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId)) 
 			{
-				ereport(LOG, (errmsg("%s: restart WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
+				ereport(LOG, (MTM_ERRMSG("%s: restart WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
 				break;
 			}
 			if (count != Mtm->recoveryCount) { 				
-				ereport(LOG, (errmsg("%s: restart WAL receiver because node was recovered", worker_proc)));
+				ereport(LOG, (MTM_ERRMSG("%s: restart WAL receiver because node was recovered", worker_proc)));
 				break;
 			}
 			
 			if (timeline != Mtm->nodes[nodeId-1].timeline) {
-                ereport(LOG, (errmsg("%s: restart WAL receiver because node %d timeline is changed", worker_proc, nodeId)));
+                ereport(LOG, (MTM_ERRMSG("%s: restart WAL receiver because node %d timeline is changed", worker_proc, nodeId)));
                 break;
             }
 				
@@ -470,7 +470,7 @@ pglogical_receiver_main(Datum main_arg)
 					pos += 8;	/* skip sendTime */
 					if (rc < pos + 1)
 					{
-						ereport(LOG, (errmsg("%s: streaming header too small: %d",
+						ereport(LOG, (MTM_ERRMSG("%s: streaming header too small: %d",
 											 worker_proc, rc)));
 						goto OnError;
 					}
@@ -500,7 +500,7 @@ pglogical_receiver_main(Datum main_arg)
 				}
 				else if (copybuf[0] != 'w')
 				{
-					ereport(LOG, (errmsg("%s: Incorrect streaming header",
+					ereport(LOG, (MTM_ERRMSG("%s: Incorrect streaming header",
 										 worker_proc)));
 					goto OnError;
 				}
@@ -516,7 +516,7 @@ pglogical_receiver_main(Datum main_arg)
 				/* WAL position of the end of this message at WAL sender */
 				MtmSenderWalEnd = walEnd;
 
-				/*ereport(LOG, (errmsg("%s: receive message %c length %d", worker_proc, copybuf[hdr_len], rc - hdr_len)));*/
+				/*ereport(LOG, (MTM_ERRMSG("%s: receive message %c length %d", worker_proc, copybuf[hdr_len], rc - hdr_len)));*/
 
 				Assert(rc >= hdr_len);
 
@@ -652,7 +652,7 @@ pglogical_receiver_main(Datum main_arg)
 				}
 				else if (r < 0)
 				{
-					ereport(LOG, (errmsg("%s: Incorrect status received.",
+					ereport(LOG, (MTM_ERRMSG("%s: Incorrect status received.",
 										 worker_proc)));
 					
 					goto OnError;
@@ -661,7 +661,7 @@ pglogical_receiver_main(Datum main_arg)
 				/* Else there is actually data on the socket */
 				if (PQconsumeInput(conn) == 0)
 				{
-					ereport(LOG, (errmsg("%s: Data remaining on the socket.",
+					ereport(LOG, (MTM_ERRMSG("%s: Data remaining on the socket.",
 										 worker_proc)));
 					goto OnError;
 				}
@@ -671,7 +671,7 @@ pglogical_receiver_main(Datum main_arg)
 			/* End of copy stream */
 			if (rc == -1)
 			{
-				ereport(LOG, (errmsg("%s: COPY Stream has abruptly ended...",
+				ereport(LOG, (MTM_ERRMSG("%s: COPY Stream has abruptly ended...",
 									 worker_proc)));
 				goto OnError;
 			}
@@ -679,7 +679,7 @@ pglogical_receiver_main(Datum main_arg)
 			/* Failure when reading copy stream, leave */
 			if (rc == -2)
 			{
-				ereport(LOG, (errmsg("%s: Failure while receiving changes...",
+				ereport(LOG, (MTM_ERRMSG("%s: Failure while receiving changes...",
 									 worker_proc)));
 				goto OnError;
 			}
