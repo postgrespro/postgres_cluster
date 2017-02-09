@@ -2,10 +2,10 @@
 
 1. [Installation](#installation)
 1. [Setting up a Multi-Master Cluster](#setting-up-a-multi-master-cluster)
-1. [Tuning Configuration Parameterss](#tuning-configuration-parameters)
+1. [Tuning Configuration Parameters](#tuning-configuration-parameters)
 1. [Monitoring Cluster Status](#monitoring-cluster-status)
-1. [Adding New Nodes to the Cluster](#adding-nodes-to-cluster)
-1. [Excluding Nodes from the Cluster](#excluding-nodes-from-cluster)
+1. [Adding New Nodes to the Cluster](#adding-new-nodes-to-the-cluster)
+1. [Excluding Nodes from the Cluster](#excluding-nodes-from-the-cluster)
 
 
 
@@ -109,7 +109,7 @@ To configure your cluster with `multimaster`, complete these steps on each clust
         ```
         max_worker_processes = 250
         ```
-        For example, for a three-node cluster with `max_connections` = 100, `multimaster` may need up to 206 background workers at peak times: 200 workers for connections from the neighbor nodes, two workers for walsender processes, two workers for walreceiver processes, and two workers for the arbiter sender and receiver processes. When setting this parameter, remember that other modules may also use backround workers at the same time.
+        For example, for a three-node cluster with `max_connections` = 100, `multimaster` may need up to 206 background workers at peak times: 200 workers for connections from the neighbor nodes, two workers for walsender processes, two workers for walreceiver processes, and two workers for the arbiter sender and receiver processes. When setting this parameter, remember that other modules may also use background workers at the same time.
 
     * Add `multimaster`-specific options:
 
@@ -155,14 +155,14 @@ If `liveNodes` is equal to `allNodes`, you cluster is successfully configured an
 See Also
 [Tuning Configuration Parameters](#tuning-configuration-parameters)
 
-
+## Tuning Configuration Parameters
 While you can use `multimaster` with the default configuration, you may want to tune several parameters for faster failure detection or more reliable automatic recovery.
 
 ### Setting Timeout for Failure Detection
-To check availability of neighbour nodes, `multimaster` periodically sends heartbeat packets to all nodes: 
+To check availability of neighbor nodes, `multimaster` periodically sends heartbeat packets to all nodes: 
 
 * The ```multimaster.heartbeat_send_timeout``` variable defines the time interval between sending the heartbeats. By default, this variable is set to 1000ms. 
-* The ```multimaster.heartbeat_recv_timeout``` variable sets the timeout after which If no hearbeats were received during this time, the node is assumed to be disconnected and is excluded from the cluster. By default, this variable is set to 10000 ms. 
+* The ```multimaster.heartbeat_recv_timeout``` variable sets the timeout after which If no heartbeats were received during this time, the node is assumed to be disconnected and is excluded from the cluster. By default, this variable is set to 10000 ms. 
 
 It's good idea to set ```multimaster.heartbeat_send_timeout``` based on typical ping latencies between you nodes. Small recv/send ratio decreases the time of failure detection, but increases the probability of false-positive failure detection. When setting this parameter, take into account the typical packet loss ratio between your cluster nodes.
 
@@ -197,7 +197,7 @@ For details on all the returned information, see [functions](doc/functions.md)
 
 ## Adding New Nodes to the Cluster
 
-With mulmimaster, you can add or drop cluster nodes without restart. To add a new node, you need to change cluster configuration on alive nodes, load data to the new node using ```pg_basebackup```, and start the node.
+With multimaster, you can add or drop cluster nodes without restart. To add a new node, you need to change cluster configuration on alive nodes, load data to the new node using ```pg_basebackup```, and start the node.
 
 Suppose we have a working cluster of three nodes, with ```node1```, ```node2```, and ```node3``` domain names. To add ```node4```, follow these steps:
 

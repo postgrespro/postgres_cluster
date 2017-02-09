@@ -2,25 +2,33 @@
 
 ## Intro
 
-Multi-master consists of two major subsystems: synchronous logical replication and arbiter process that is
-respostible for health checks and cluster recovery automation.
+Multi-master consists of two major subsystems: synchronous logical replication and an arbiter process that performs health checks and enables cluster recovery automation.
 
 ## Replication
 
-When postgres loads multi-master shared library it sets up [[logical replication|logrep doc link]] producer an consumer to each node in the cluster and hooks into transaction commit pipeline. Since each server can accept writes it is possible that any server can abort transaction due to concurrent update - in the same way as it happens on a single server between different backends. Usual way of dealing with such situations is to perform transaction in two steps: first try to ensure that commit is possible (PREPARE stage) and if all nodes acknowledged that then we can finally commit. Postgres support such [[two-phase commit|https://www.postgresql.org/docs/9.6/static/sql-prepare-transaction.html]] procedure. So multi-master captures each commit statement and implicitly transforms it to PREPARE, waits when cohort (all nodes except our) will get that transaction via replication protocol and only after successfull responses from cohort finally commit it.
+Since each server can accept writes, any server can abort a transaction because of a concurrent update - in the same way as it happens on a single server between different backends. To ensure high availability and data consistency on all cluster nodes, `multimaster` uses [[logical replication|logrep doc link]] and three-phase E3PC commit protocol [1][2].  
 
-Also to be able to resist node crashes and network failures ordinary two-phase commit (2PC) is insufficient. When failure happens between PREPARE and COMMIT survived nodes may not have enough information to decide what to do with prepared transaction -- crashed node can already commit or abort that transaction, but didn't notified other nodes about that and such transaction will block resouces (hold locks) until recovery of crashed node. Otherwise if we decide to commit/abort transaction without knowing faled node's decision then we can end up with data inconsistencies in database when failed node will be recovered (e.g. failed node committed transaction but survived node aborted it).
+When PostgeSQL loads the `multimaster` shared library, `multimaster` sets up a logical replication producer and consumer for each node, and hooks into the transaction commit pipeline. The typical data replication workflow consists of the following phases:
 
-To be able to deal with crashes E3PC commit protocol was used [1][2]. Main idea of 3PC-like protocols is to write intention to commit transaction before actual commit, introducing new message (PRECOMMIT) in protocol between PREPARE and COMMIT messages. That message is not used during normal work, but in case of failure all nodes have enough information to decide what to do with transaction using quorum-based voting procedure. For voting to complete protocol requires majority of nodes to be presenet, hence the rule that cluster of 2N+1 can tolerate N simultaneous failures.
+1. `PREPARE` phase: `multimaster` captures and implicitly transforms each `COMMIT` statement to a `PREPARE` statement. All the nodes that get the transaction via the replication protocol (*the cohort nodes*) send their vote for approving or declining the transaction to the arbiter process on the initiating node. This ensures that all the cohort can accept the transaction, and no write conflicts occur. For details on `PREPARE` transactions support in PostgreSQL, see the [PREPARE TRANSACTION](https://postgrespro.com/docs/postgresproee/9.6/sql-prepare-transaction) topic.
+2. `PRECOMMIT` phase:  If all the cohort approves the transaction, the arbiter process sends a `PRECOMMIT` message to all the cohort nodes to express an intention to commit the transaction. The cohort nodes respond to the arbiter with the `PRECOMMITTED` message. In case of a failure, all the nodes can use this information to complete the transaction using a quorum-based voting procedure. 
+3. `COMMIT` phase: If `PRECOMMIT` is successful, the arbiter commits the transaction to all nodes. 
 
-This process summarized on following diagram:
+If a node crashes or gets disconnected from the cluster between the `PREPARE` and `COMMIT` phases, the `PRECOMMIT` phase ensures that the survived nodes have enough information to complete the prepared transaction. The `PRECOMMITTED` messages help you avoid the situation when the crashed node have already committed or aborted the transaction, but have not notified other nodes about the transaction status. In a two-phase commit (2PC), such a transaction would block resources (hold locks) until the recovery of the crashed node. Otherwise, you could get data inconsistencies in the database when the failed node is recovered. For example, if the failed node committed the transaction but the survived node aborted it.
+
+To complete the transaction, the arbiter must receive a response from the majority of the nodes. For example, for a cluster of 2N + 1 nodes, at least N+1 responses are required to complete the transaction. Thus, `multimaster` ensures that your cluster is available for reads and writes while the majority of the nodes are connected, and no data inconsistencies occur in case of a node or connection failure. 
+For details on the failure detection mechanism, see [Failure Detection and Recovery](#failure-detection-and-recovery). 
+
+This replication process is illustrated in the following diagram:
 
 ![](https://cdn.rawgit.com/postgrespro/postgres_cluster/fac1e9fa/contrib/mmts/doc/mmts_commit.svg)
 
-Here user, connected to a backend (BE) decides to commit his transaction. Multi-master extension hooks that commit and changes it to a PREPARE statement. During transaction execution walsender process (WS) already started to decode transaction to "reorder buffer", and by the time when PREPARE statement happend WS starting sending our transaction to all neighbouring nodes (cohort). Then cohort nodes applies that transaction in walreceiver process (WR) and, after succes, signaling arbbiter process (Arb on diagram, custom background worker implemented in multimaster) to send vote for transaction (prepared) on initiating node.
-Arbiter process on initiating node wait until all nodes from cohort will send vote for transaction; after that he send "precommit" messages and waits till all nodes will respond to that with "precommited" message.
-When all participating sites answered with "precommited" message arbiter signalling backend to stop waiting and commit our prepared transaction.
-After that commit WAL record reaches cohort nodes via walsender/walreceiver connections.
+1. When a user connected to a backend (**BE**) decides to commit a transaction, `multimaster` hooks the `COMMIT` and changes the `COMMIT` statement to a `PREPARE` statement. 
+2. During the transaction execution, the `walsender` process (**WS**) starts to decode the transaction to "reorder buffer". By the time the `PREPARE` statement happens, **WS** starts sending the transaction to all the cohort nodes. 
+3. The cohort nodes apply the transaction in the walreceiver process (**WR**). After success, votes for prepared transaction are sent to the initiating node by the arbiter process (**Arb**) - a custom background worker implemented in `multimaster`.
+4. The arbiter process on the initiating node waits for all the cohort nodes to send their votes for transaction. After that, the arbiter sends `PRECOMMIT` messages and waits until all the nodes respond with the `PRECOMMITTED` message.
+5. When all participating nodes answered with the `PRECOMMITTED` message, the arbiter signals the backend to stop waiting and commit the prepared transaction.
+6. The `walsender`/`walreceiver` connections transmit the commit WAL records to the cohort nodes.
 
 [1] Idit Keidar, Danny Dolev. Increasing the Resilience of Distributed and Replicated Database Systems. http://dx.doi.org/10.1006/jcss.1998.1566
 
@@ -37,10 +45,22 @@ Multi-master replicates such statements on statement-based level wrapping them a
 
 -->
 
-## Failure detection and recovery
+## Failure Detection and Recovery
 
-While multi-master allows writes to each node it waits responses about transaction acknowledgement from all other nodes, so without special actions in case of failure of any node each commit will wait until failed node recovery. To deal with such kind of situations multi-master periodically send heartbeats to check health and connectivity between nodes. When several hearbeats to the node are lost in a row (see configuration parameters ```multimaster.heartbeat_recv_timeout``` and ```multimaster.heartbeat_send_timeout```) that node can be kicked out the cluster to allow writes to alive nodes.
+Since `multimaster` allows writes to each node, it has to wait for responses about transaction acknowledgement from all the other nodes. Without special actions in case of a node failure, each commit would have to wait until the failed node recovery. To deal with such situations, `multimaster` periodically sends heartbeats to check the node status and connectivity between nodes. When several heartbeats to the node are lost in a row, this node is kicked out of the cluster to allow writes to the remaining alive nodes. You can configure the heartbeat frequency and the response timeout in the ```multimaster.heartbeat_send_timeout``` and ```multimaster.heartbeat_recv_timeout``` parameters, respectively. 
 
-For alive nodes there is no way to distinguish between faled node that stopped serving requests and network-partitioned node that isn't reacheable by other nodes, but can be reacheble by database users. So to protect from split-brain situations (conflicting writes to nodes in different network partitions) in case pf failure multi-master allow writes only to nodes that sees majority of other nodes. For example when 5-node multi-master cluster experienced failure that splitted network into two isolated subnets with 2 and 3 cluster nodes then multi-master based on heartbeats propagation info will continue to accept writes at each node in bigger patition and deny all writes in smaller one. Speking generaly cluster consisting from 2N+1 can tolerate N node failures and will be alive if any N+1 alive and connected to each other. In case of partial network split, when different nodes have different connectivity (for example in 3-node cluster when node B can't access node C, but node A can access both B and C) multi-master will find fully-connected subset of nodes and switch off other nodes. Each node maintance data structure that keeps status of all nodes from this node's point of view, that is accessible through ```mtm.get_nodes_state()``` system view.
+For alive nodes, there is no way to distinguish between a failed node that stopped serving requests and a network-partitioned node that can be accessed by database users, but is unreachable for other nodes. To avoid conflicting writes to nodes in different network partitions, `multimaster` only allows writes to the nodes that see the majority of other nodes. 
 
-When failed node connects back to the cluster recovery process is started. Recovering node will select one of the cluster nodes to apply changes that were made while node was offline. That process will continue till recovering catches up to ```multimaster.min_recovery_lag``` WAL lag (default: 100kB). After that all cluster locks for writes to allow recovery process to finish. After recovery is done returned node is promoted to online status and returned back to replication scheme as it was before failure. Such automatic recovery only possible when failed node WAL lag behind the working ones is not more then ```multimaster.max_recovery_lag```. When failed node's lag is bigger ```multimaster.max_recovery_lag``` then node should be manually recovered using pg_basebackup from one of the working nodes.
+For example, suppose a five-node multi-master cluster experienced a network failure that split the network into two isolated subnets, with two and three cluster nodes. Based on heartbeats propagation information, `multimaster` will continue to accept writes at each node in the bigger partition, and deny all writes in the smaller one. Thus, a cluster consisting of 2N+1 nodes can tolerate N node failures and stay alive if any N+1 nodes are alive and connected to each other. 
+
+In case of a partial network split when different nodes have different connectivity, `multimaster` finds a fully connected subset of nodes and switches off other nodes. For example, in a three-node cluster, if node A can access both B and C, but node B cannot access node C, `multimaster` isolates node C to ensure data consistency on nodes A and B.  
+
+Each node maintains a data structure that keeps the status of all nodes in relation to this node. You can get this status in the ```mtm.get_nodes_state()``` system view.
+
+When a failed node connects back to the cluster, `multimaster` starts the automatic recovery process: 
+
+1. The reconnected node selects a random cluster node and starts catching up with the current state of the cluster based on the Write-Ahead Log (WAL).  
+2. When the node gets synchronized up to the minimum recovery lag, all cluster nodes get locked for writes to allow the recovery process to finish. By default, the minimum recovery lag is 100kB. You can change this value in the ```multimaster.min_recovery_lag``` variable. 
+3. When the recovery is complete, `multimaster` promotes the reconnected node to the online status and includes it into the replication scheme. 
+
+Automatic recovery is only possible if the failed node WAL lag behind the working ones does not exceed the ```multimaster.max_recovery_lag``` value. When the WAL lag is bigger than ```multimaster.max_recovery_lag```, you can manually restore the node from one of the working nodes using `pg_basebackup`.
