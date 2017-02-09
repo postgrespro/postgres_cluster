@@ -149,6 +149,7 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &pgtrgm;
  &pgvariables;
  &pgvisibility;
+ &pg-wait-sampling;
  &plantuner; 
  &postgres-fdw;
  &rum;
