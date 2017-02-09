@@ -1,6 +1,6 @@
-# `Postgresql multi-master`
+# `PostgreSQL multimaster`
 
-Multi-master is an extension and set of patches to a Postegres database, that turns Postgres into a synchronous shared-nothing cluster to provide OLTP scalability and high availability with automatic disaster recovery.
+`multimaster` is a PostgreSQL extension with a set of patches that turns PostgreSQL into a synchronous shared-nothing cluster to provide Online Transaction Processing (OLTP) scalability and high availability with automatic disaster recovery.
 
 
 ## Features
@@ -14,24 +14,24 @@ Multi-master is an extension and set of patches to a Postegres database, that tu
 
 ## Overview
 
-Multi-master replicates same database to all nodes in cluster and allows writes to each node. Transaction isolation is enforced cluster-wide, so in case of concurrent updates on different nodes database will use the same conflict resolution rules (mvcc with repeatable read isolation level) as single node uses for concurrent backends and always stays in consistent state. Any writing transaction will write to all nodes, hence increasing commit latency for amount of time proportional to roundtrip between nodes nedded for synchronization. Read only transactions and queries executed locally without measurable overhead. Replication mechanism itself based on logical decoding and earlier version of pglogical extension provided for community by 2ndQuadrant team.
+The `multimaster` extension replicates the same database to all nodes of the cluster and allows write transactions on each node. To ensure data consistency in the case of concurrent updates, `multimaster` enforces transaction isolation cluster-wide, using multiversion concurrency control (MVCC) at the repeatable read isolation level. Any write transaction is synchronously replicated to all nodes, which increases commit latency for the time required for synchronization. Read-only transactions and queries are executed locally, without any measurable overhead.  
 
-Cluster consisting of N nodes can continue to work while majority of initial nodes are alive and reachable by other nodes. This is done by using 3 phase commit protocol and heartbeats for failure discovery. Node that is brought back to cluster can be fast-forwaded to actual state automatically in case when transactions log still exists since the time when node was excluded from cluster (that is configurable).
+To ensure high availability and fault tolerance of the cluster, `multimaster` uses three-phase commit protocol and heartbeats for failure discovery. A multi-master cluster of N nodes can continue working while the majority of the nodes are alive and reachable by other nodes. When the node is reconnected to the cluster, `multimaster` can automatically fast-forward the node to the actual state based on the transactions log (WAL). If WAL is no longer available for the time when the node was excluded from the cluster, you can restore the node using `pg_basebackup`.
 
+For details on the `multimaster` internals, see the [Architecture](/contrib/mmts/doc/architecture.md) page.
 
 ## Documentation
 
 1. [Administration](doc/administration.md)
     1. [Installation](doc/administration.md#installation)
-    1. [Setting up empty cluster](doc/administration.md#setting-up-empty-cluster)
-    1. [Setting up cluster from pre-existing database](doc/administration.md#setting-up-cluster-from-pre-existing-database)
-    1. [Tuning configuration params](doc/administration.md#tuning-configuration-params)
-    1. [Monitoring](doc/administration.md#monitoring)
-    1. [Adding nodes to cluster](doc/administration.md#adding-nodes-to-cluster)
-    1. [Excluding nodes from cluster](doc/administration.md#excluding-nodes-from-cluster)
-1. [Architecture and internals](doc/architecture.md)
-1. [List of configuration variables](doc/configuration.md)
-1. [Built-in functions and views](doc/configuration.md)
+    1. [Setting up a Multi-Master Cluster](doc/administration.md#setting-up-a-multi-master-cluster)
+    1. [Tuning configuration params](doc/administration.md#tuning-configuration-parameters)
+    1. [Monitoring Cluster Status](doc/administration.md#monitoring-cluster-status)
+    1. [Adding New Nodes to the Cluster](doc/administration.md#adding-new-nodes-to-the-cluster)
+    1. [Excluding Nodes from the Cluster](doc/administration.md#excluding-nodes-from-the-cluster)
+1. [Architecture](doc/architecture.md)
+1. [Configuration Variables](doc/configuration.md)
+1. [Built-in Functions and Views](doc/functions.md)
 
 
 ## Tests
@@ -47,18 +47,26 @@ Cluster consisting of N nodes can continue to work while majority of initial nod
 
 ## Limitations
 
-* Commit latency.
-Current implementation of logical replication sends data to subscriber nodes only after local commit, so in case of heavy-write transaction user will wait for transaction processing two times: on local node and on all other nodes (simultaneosly). We have plans to address this issue in future.
+* `multimaster` can only replicate one database per cluster.
+
+* The replicated tables must have primary keys. Otherwise, `multimaster` cannot perform logical replication. 
 
 * DDL replication.
-While data is replicated on logical level, DDL replicated by statements performing distributed commit with the same statement. Some complex DDL scenarious including stored procedures and temp temp tables can work differently comparing to standalone postgres. We are working right now on proving full compatibility with ordinary postgres. Currently we are passing 162 of 166 postgres regression tests.
+While `multimaster` replicates data on the logical level, DDL is replicated on the statement level, which causes distributed commits of the same statement on different nodes. As a result, complex DDL scenarios, such as stored procedures and temporary tables, may work differently as compared to the standard PostgreSQL. 
+
+* Commit latency.
+The current implementation of logical replication sends data to subscriber nodes only after the local commit. In case of a heavy-write transaction, you have to wait for transaction processing twice: on the local node and on all the other nodes (simultaneously). 
 
 * Isolation level.
-Multimaster currently support only _repeatable_ _read_ isolation level. This is stricter than default _read_ _commited_, but also increases probability of serialization failure during commit. _Serializable_ level isn't supported yet.
-
-* One database per cluster.
+The `multimaster` extenstion currently supports only the _repeatable_ _read_ isolation level. This is stricter than the default _read_ _commited_ level, but also increases probability of serialization failure during commit. _Serializable_ level is not supported yet.
 
 
-## Credits and Licence
+## Compatibility 
+The `multimaster` extension currently passes 162 of 166 postgres regression tests. We are working right now on proving full compatibility with the standard PostgreSQL. 
 
-Multi-master developed by the PostgresPro team.
+## Authors
+
+Postgres Professional, Moscow, Russia. 
+
+### Credits
+The replication mechanism is based on logical decoding and an earlier version of the `pglogical` extension provided for community by the 2ndQuadrant team.
