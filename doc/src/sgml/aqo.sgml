@@ -105,7 +105,7 @@ DROP EXTENSION aqo;
         </listitem>
         <listitem>
           <para>
-         <varname>aqo.mode</varname> = <literal>'forced'</literal> &mdash 
+         <varname>aqo.mode</varname> = <literal>'forced'</literal> &mdash;  
         this mode tries to optimize all queries together, regardless of
         the query type.
           </para>
