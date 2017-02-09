@@ -87,7 +87,7 @@ call_default_planner(Query *parse,
  * This hook computes query_hash, and sets values of learn_aqo,
  * use_aqo and is_common flags for given query.
  * Creates an entry in aqo_queries for new type of query if it is
- * necessary, i. e. AQO mode is not "manual".
+ * necessary, i. e. AQO mode is "intelligent".
  */
 PlannedStmt *
 aqo_planner(Query *parse,
@@ -105,7 +105,8 @@ aqo_planner(Query *parse,
 		strncmp(query_text, CREATE_EXTENSION_STARTSTRING_0,
 				strlen(CREATE_EXTENSION_STARTSTRING_0)) == 0 ||
 		strncmp(query_text, CREATE_EXTENSION_STARTSTRING_1,
-				strlen(CREATE_EXTENSION_STARTSTRING_1)) == 0)
+				strlen(CREATE_EXTENSION_STARTSTRING_1)) == 0 ||
+		aqo_mode == AQO_MODE_DISABLED)
 	{
 		disable_aqo_for_query();
 		return call_default_planner(parse, cursorOptions, boundParams);
@@ -148,6 +149,9 @@ aqo_planner(Query *parse,
 				learn_aqo = false;
 				use_aqo = false;
 				collect_stat = false;
+				break;
+			case AQO_MODE_DISABLED:
+				/* Should never happen */
 				break;
 			default:
 				elog(WARNING,

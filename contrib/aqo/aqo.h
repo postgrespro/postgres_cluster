@@ -148,6 +148,8 @@ typedef enum
 	AQO_MODE_FORCED,
 	/* New query types are not linked with any feature space */
 	AQO_MODE_MANUAL,
+	/* Aqo is disabled for all queries */
+	AQO_MODE_DISABLED,
 }	AQO_MODE;
 extern int	aqo_mode;
 
