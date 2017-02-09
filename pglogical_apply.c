@@ -154,10 +154,10 @@ retry:
 				/* XXX: Improve handling here */
 				ereport(LOG,
 						(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
-						 errmsg("concurrent update, retrying")));
+						 MTM_ERRMSG("concurrent update, retrying")));
 				goto retry;
 			default:
-				elog(ERROR, "unexpected HTSU_Result after locking: %u", res);
+				MTM_ELOG(ERROR, "unexpected HTSU_Result after locking: %u", res);
 				break;
 		}
 	}
@@ -253,7 +253,7 @@ build_index_scan_key(ScanKey skey, Relation rel, Relation idxrel, TupleData *tup
 									   BTEqualStrategyNumber);
 
 		if (!OidIsValid(operator))
-			elog(ERROR,
+			MTM_ELOG(ERROR,
 				 "could not lookup equality operator for type %u, optype %u in opfamily %u",
 				 atttype, optype, opfamily);
 
@@ -305,7 +305,7 @@ UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
 		if (recheckIndexes != NIL)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("bdr doesn't support index rechecks")));
+					 MTM_ERRMSG("bdr doesn't support index rechecks")));
 	}
 
 	/* FIXME: recheck the indexes */
@@ -359,7 +359,7 @@ process_remote_begin(StringInfo s)
 		rc = SPI_execute("RESET SESSION AUTHORIZATION; reset all;", false, 0);
 		SPI_finish();
 		if (rc < 0) { 
-			elog(ERROR, "Failed to set reset context: %d", rc);
+			MTM_ELOG(ERROR, "Failed to set reset context: %d", rc);
 		}
 	}
 
@@ -398,7 +398,7 @@ process_remote_message(StringInfo s)
 			rc = SPI_execute(messageBody, false, 0);
 			SPI_finish();
 			if (rc < 0) { 
-				elog(ERROR, "Failed to execute utility statement %s", messageBody);
+				MTM_ELOG(ERROR, "Failed to execute utility statement %s", messageBody);
 			} else { 
 				PushActiveSnapshot(GetTransactionSnapshot());
 
@@ -483,7 +483,7 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 	action = pq_getmsgbyte(s);
 
 	if (action != 'T')
-		elog(ERROR, "expected TUPLE, got %c", action);
+		MTM_ELOG(ERROR, "expected TUPLE, got %c", action);
 
 	memset(tup->isnull, 1, sizeof(tup->isnull));
 	memset(tup->changed, 1, sizeof(tup->changed));
@@ -491,7 +491,7 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 	rnatts = pq_getmsgint(s, 2);
 
 	if (desc->natts < rnatts)
-		elog(ERROR, "tuple natts mismatch, %u vs %u", desc->natts, rnatts);
+		MTM_ELOG(ERROR, "tuple natts mismatch, %u vs %u", desc->natts, rnatts);
 
 	/* FIXME: unaligned data accesses */
 
@@ -555,7 +555,7 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 					if (buf.len != buf.cursor)
 						ereport(ERROR,
 								(errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
-								 errmsg("incorrect binary data format")));
+								 MTM_ERRMSG("incorrect binary data format")));
 					break;
 				}
 			case 't': /* text format */
@@ -574,11 +574,11 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 				}
 				break;
 			default:
-				elog(ERROR, "unknown column type '%c'", kind);
+				MTM_ELOG(ERROR, "unknown column type '%c'", kind);
 		}
 
 		if (att->attisdropped && !tup->isnull[i])
-			elog(ERROR, "data for dropped column");
+			MTM_ELOG(ERROR, "data for dropped column");
 	}
 }
 
@@ -703,7 +703,7 @@ process_remote_commit(StringInfo in)
 			MtmSetCurrentTransactionCSN(csn);
 			MtmSetCurrentTransactionGID(gid);
 			FinishPreparedTransaction(gid, true);
-			MTM_LOG1("Distributed transaction %s is committed", gid);
+			MTM_LOG2("Distributed transaction %s is committed", gid);
 			CommitTransactionCommand();
 			Assert(!MtmTransIsActive());
 			MtmEndSession(origin_node, true);
@@ -755,7 +755,7 @@ process_remote_insert(StringInfo s, Relation rel)
 	}
 
 	// if (rel->rd_rel->relkind != RELKIND_RELATION) // RELKIND_MATVIEW
-	// 	elog(ERROR, "unexpected relkind '%c' rel \"%s\"",
+	// 	MTM_ELOG(ERROR, "unexpected relkind '%c' rel \"%s\"",
 	// 		 rel->rd_rel->relkind, RelationGetRelationName(rel));
 
 	/* debug output */
@@ -804,7 +804,7 @@ process_remote_insert(StringInfo s, Relation rel)
 			/* TODO: Report tuple identity in log */
 			ereport(ERROR,
                     (errcode(ERRCODE_UNIQUE_VIOLATION),
-                     errmsg("Unique constraints violated by remotely INSERTed tuple"),
+                     MTM_ERRMSG("Unique constraints violated by remotely INSERTed tuple"),
                      errdetail("Cannot apply transaction because remotely INSERTed tuple conflicts with a local tuple on UNIQUE constraint and/or PRIMARY KEY")));
 		}
 		CHECK_FOR_INTERRUPTS();
@@ -851,7 +851,7 @@ process_remote_update(StringInfo s, Relation rel)
 
 	/* old key present, identifying key changed */
 	if (action != 'K' && action != 'N')
-		elog(ERROR, "expected action 'N' or 'K', got %c",
+		MTM_ELOG(ERROR, "expected action 'N' or 'K', got %c",
 			 action);
 
 	estate = create_rel_estate(rel);
@@ -871,11 +871,11 @@ process_remote_update(StringInfo s, Relation rel)
 
 	/* check for new  tuple */
 	if (action != 'N')
-		elog(ERROR, "expected action 'N', got %c",
+		MTM_ELOG(ERROR, "expected action 'N', got %c",
 			 action);
 
 	if (rel->rd_rel->relkind != RELKIND_RELATION)
-		elog(ERROR, "unexpected relkind '%c' rel \"%s\"",
+		MTM_ELOG(ERROR, "unexpected relkind '%c' rel \"%s\"",
 			 rel->rd_rel->relkind, RelationGetRelationName(rel));
 
 	/* read new tuple */
@@ -887,7 +887,7 @@ process_remote_update(StringInfo s, Relation rel)
 	idxoid = rel->rd_replidindex;
 	if (!OidIsValid(idxoid))
 	{
-		elog(ERROR, "could not find primary key for table with oid %u",
+		MTM_ELOG(ERROR, "could not find primary key for table with oid %u",
 			 RelationGetRelid(rel));
 		return;
 	}
@@ -936,7 +936,7 @@ process_remote_update(StringInfo s, Relation rel)
 	{
         ereport(ERROR,
                 (errcode(ERRCODE_NO_DATA_FOUND),
-                 errmsg("Record with specified key can not be located at this node"),
+                 MTM_ERRMSG("Record with specified key can not be located at this node"),
                  errdetail("Most likely we have DELETE-UPDATE conflict")));
 
 	}
@@ -976,7 +976,7 @@ process_remote_delete(StringInfo s, Relation rel)
 	idxoid = rel->rd_replidindex;
 	if (!OidIsValid(idxoid))
 	{
-		elog(ERROR, "could not find primary key for table with oid %u",
+		MTM_ELOG(ERROR, "could not find primary key for table with oid %u",
 			 RelationGetRelid(rel));
 		return;
 	}
@@ -985,7 +985,7 @@ process_remote_delete(StringInfo s, Relation rel)
 	idxrel = index_open(idxoid, RowExclusiveLock);
 
 	if (rel->rd_rel->relkind != RELKIND_RELATION)
-		elog(ERROR, "unexpected relkind '%c' rel \"%s\"",
+		MTM_ELOG(ERROR, "unexpected relkind '%c' rel \"%s\"",
 			 rel->rd_rel->relkind, RelationGetRelationName(rel));
 
 #ifdef VERBOSE_DELETE
@@ -1013,7 +1013,7 @@ process_remote_delete(StringInfo s, Relation rel)
 	{
         ereport(ERROR,
                 (errcode(ERRCODE_NO_DATA_FOUND),
-                 errmsg("Record with specified key can not be located at this node"),
+                 MTM_ERRMSG("Record with specified key can not be located at this node"),
                  errdetail("Most likely we have DELETE-DELETE conflict")));
 	}
 
@@ -1127,7 +1127,7 @@ void MtmExecutor(void* work, size_t size)
 				break;
 			}
             default:
-                elog(ERROR, "unknown action of type %c", action);
+                MTM_ELOG(ERROR, "unknown action of type %c", action);
             }        
             break;
         }
