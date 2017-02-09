@@ -457,7 +457,7 @@ SELECT * FROM pg_wait_sampling_get_profile();
         </table>
       </sect4>
     </sect3>
-    <sect3>
+    <sect3 id="pg-wait-sampling-functions">
     <title>Functions</title>
     <variablelist>
     <varlistentry>
