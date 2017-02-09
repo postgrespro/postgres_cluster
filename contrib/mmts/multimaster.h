@@ -396,7 +396,7 @@ extern void  MtmCheckQuorum(void);
 extern bool  MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr);
 extern void  MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN);
 extern void  MtmRecoveryCompleted(void);
-extern void  MtmMakeTableLocal(char* schema, char* name);
+extern void  MtmMakeRelationLocal(Oid relid);
 extern void  MtmHandleApplyError(void);
 extern void  MtmUpdateLsnMapping(int nodeId, lsn_t endLsn);
 extern lsn_t MtmGetFlushPosition(int nodeId);

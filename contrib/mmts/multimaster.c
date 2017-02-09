@@ -2331,7 +2331,7 @@ MtmCreateLocalTableMap(void)
 	return htab;
 }
 
-static void MtmMakeRelationLocal(Oid relid)
+void MtmMakeRelationLocal(Oid relid)
 {
 	if (OidIsValid(relid)) { 
 		MtmLock(LW_EXCLUSIVE);		
@@ -2341,7 +2341,7 @@ static void MtmMakeRelationLocal(Oid relid)
 }	
 
 
-void MtmMakeTableLocal(char* schema, char* name)
+static void MtmMakeTableLocal(char* schema, char* name)
 {
 	RangeVar* rv = makeRangeVar(schema, name, -1);
 	Oid relid = RangeVarGetRelid(rv, NoLock, true);
@@ -4179,7 +4179,7 @@ mtm_get_cluster_info(PG_FUNCTION_ARGS)
 
 Datum mtm_make_table_local(PG_FUNCTION_ARGS)
 {
-	Oid	reloid = PG_GETARG_OID(1);
+	Oid	reloid = PG_GETARG_OID(0);
 	RangeVar   *rv;
 	Relation	rel;
 	TupleDesc	tupDesc;
@@ -4192,8 +4192,8 @@ Datum mtm_make_table_local(PG_FUNCTION_ARGS)
 	rv = makeRangeVar(MULTIMASTER_SCHEMA_NAME, MULTIMASTER_LOCAL_TABLES_TABLE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	if (rel != NULL) {
-		char* tableName = get_rel_name(reloid);
-		Oid   schemaid = get_rel_namespace(reloid);
+		char* tableName = RelationGetRelationName(rel);
+		Oid   schemaid = RelationGetNamespace(rel);
 		char* schemaName = get_namespace_name(schemaid);
 
 		tupDesc = RelationGetDescr(rel);

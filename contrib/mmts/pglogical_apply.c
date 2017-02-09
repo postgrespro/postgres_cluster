@@ -818,10 +818,16 @@ process_remote_insert(StringInfo s, Relation rel)
 	if (ActiveSnapshotSet())
 		PopActiveSnapshot();
 
+	if (strcmp(RelationGetRelationName(rel), MULTIMASTER_LOCAL_TABLES_TABLE) == 0 &&
+		strcmp(get_namespace_name(RelationGetNamespace(rel)), MULTIMASTER_SCHEMA_NAME) == 0)
+	{
+		MtmMakeRelationLocal(RelationGetRelid(rel));
+	}
+		
     heap_close(rel, NoLock);
     ExecResetTupleTable(estate->es_tupleTable, true);
     FreeExecutorState(estate);
-
+	   
 	CommandCounterIncrement();
 }
 
