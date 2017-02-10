@@ -4487,10 +4487,12 @@ typedef struct MtmGucEntry
 
 static HTAB *MtmGucHash = NULL;
 static dlist_head MtmGucList = DLIST_STATIC_INIT(MtmGucList);
+static inline void MtmGucUpdate(const char *key, char *value);
 
 static void MtmGucInit(void)
 {
 	HASHCTL		hash_ctl;
+	char	   *current_role;
 
 	MemSet(&hash_ctl, 0, sizeof(hash_ctl));
 	hash_ctl.keysize = GUC_KEY_MAXLEN;
@@ -4500,6 +4502,14 @@ static void MtmGucInit(void)
 						MTM_GUC_HASHSIZE,
 						&hash_ctl,
 						HASH_ELEM | HASH_CONTEXT);
+
+	/*
+	 * If current role is not equal to MtmDatabaseUser, than set it bofore
+	 * any other GUC vars.
+	 */
+	current_role = GetConfigOptionByName("session_authorization", NULL, false);
+	if (strcmp(MtmDatabaseUser, current_role) != 0)
+		MtmGucUpdate("session_authorization", current_role);
 }
 
 static void MtmGucDiscard()
@@ -4592,6 +4602,9 @@ char* MtmGucSerialize(void)
 	StringInfo serialized_gucs;
 	dlist_iter iter;
 	int nvars = 0;
+
+	if (!MtmGucHash)
+		MtmGucInit();
 
 	serialized_gucs = makeStringInfo();
 
