@@ -162,17 +162,26 @@ refresh_pathman_relation_info(Oid relid,
 	{
 		/* If there's no children at all, remove this entry */
 		case FCS_NO_CHILDREN:
+			elog(DEBUG2, "refresh: relation %u has no children [%u]",
+						 relid, MyProcPid);
+
 			UnlockRelationOid(relid, lockmode);
 			remove_pathman_relation_info(relid);
 			return NULL; /* exit */
 
 		/* If can't lock children, leave an invalid entry */
 		case FCS_COULD_NOT_LOCK:
+			elog(DEBUG2, "refresh: cannot lock children of relation %u [%u]",
+						 relid, MyProcPid);
+
 			UnlockRelationOid(relid, lockmode);
 			return NULL; /* exit */
 
 		/* Found some children, just unlock parent */
 		case FCS_FOUND:
+			elog(DEBUG2, "refresh: found children of relation %u [%u]",
+						 relid, MyProcPid);
+
 			UnlockRelationOid(relid, lockmode);
 			break; /* continue */
 
@@ -188,7 +197,9 @@ refresh_pathman_relation_info(Oid relid,
 	 * will try to refresh it again (and again), until the error is fixed
 	 * by user manually (i.e. invalid check constraints etc).
 	 */
-	fill_prel_with_partitions(prel_children, prel_children_count, prel);
+	fill_prel_with_partitions(prel_children,
+							  prel_children_count,
+							  part_column_name, prel);
 
 	/* Peform some actions for each child */
 	for (i = 0; i < prel_children_count; i++)
@@ -200,7 +211,8 @@ refresh_pathman_relation_info(Oid relid,
 		UnlockRelationOid(prel_children[i], lockmode);
 	}
 
-	pfree(prel_children);
+	if (prel_children)
+		pfree(prel_children);
 
 	/* Read additional parameters ('enable_parent' and 'auto' at the moment) */
 	if (read_pathman_params(relid, param_values, param_isnull))
@@ -284,13 +296,21 @@ get_pathman_relation_info(Oid relid)
 			/* TODO: possible refactoring, pass found 'prel' instead of searching */
 			prel = refresh_pathman_relation_info(relid, part_type, attname, false);
 		}
+
 		/* Else clear remaining cache entry */
-		else remove_pathman_relation_info(relid);
+		else
+		{
+			remove_pathman_relation_info(relid);
+			prel = NULL; /* don't forget to reset 'prel' */
+		}
 	}
 
 	elog(DEBUG2,
 		 "Fetching %s record for relation %u from pg_pathman's cache [%u]",
 		 (prel ? "live" : "NULL"), relid, MyProcPid);
+
+	/* Make sure that 'prel' is valid */
+	Assert(!prel || PrelIsValid(prel));
 
 	return prel;
 }
@@ -402,7 +422,7 @@ finish_delayed_invalidation(void)
 
 			/* Check that PATHMAN_CONFIG table has indeed been dropped */
 			if (cur_pathman_config_relid == InvalidOid ||
-				cur_pathman_config_relid != get_pathman_config_relid())
+				cur_pathman_config_relid != get_pathman_config_relid(true))
 			{
 				/* Ok, let's unload pg_pathman's config */
 				unload_config();

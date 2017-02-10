@@ -400,6 +400,11 @@ SELECT pathman.prepend_range_partition('test.num_range_rel');
 EXPLAIN (COSTS OFF) SELECT * FROM test.num_range_rel WHERE id < 0;
 SELECT pathman.drop_range_partition('test.num_range_rel_7');
 
+SELECT pathman.drop_range_partition_expand_next('test.num_range_rel_4');
+SELECT * FROM pathman.pathman_partition_list WHERE parent = 'test.num_range_rel'::regclass;
+SELECT pathman.drop_range_partition_expand_next('test.num_range_rel_6');
+SELECT * FROM pathman.pathman_partition_list WHERE parent = 'test.num_range_rel'::regclass;
+
 SELECT pathman.append_range_partition('test.range_rel');
 SELECT pathman.prepend_range_partition('test.range_rel');
 EXPLAIN (COSTS OFF) SELECT * FROM test.range_rel WHERE dt BETWEEN '2014-12-15' AND '2015-01-15';
@@ -424,6 +429,20 @@ CREATE TABLE test.range_rel_test2 (
 	id  SERIAL PRIMARY KEY,
 	dt  TIMESTAMP);
 SELECT pathman.attach_range_partition('test.range_rel', 'test.range_rel_test2', '2013-01-01'::DATE, '2014-01-01'::DATE);
+
+/* Half open ranges */
+SELECT pathman.add_range_partition('test.range_rel', NULL, '2014-12-01'::DATE, 'test.range_rel_minus_infinity');
+SELECT pathman.add_range_partition('test.range_rel', '2015-06-01'::DATE, NULL, 'test.range_rel_plus_infinity');
+SELECT pathman.append_range_partition('test.range_rel');
+SELECT pathman.prepend_range_partition('test.range_rel');
+DROP TABLE test.range_rel_minus_infinity;
+CREATE TABLE test.range_rel_minus_infinity (LIKE test.range_rel INCLUDING ALL);
+SELECT pathman.attach_range_partition('test.range_rel', 'test.range_rel_minus_infinity', NULL, '2014-12-01'::DATE);
+SELECT * FROM pathman.pathman_partition_list WHERE parent = 'test.range_rel'::REGCLASS;
+INSERT INTO test.range_rel (dt) VALUES ('2012-06-15');
+INSERT INTO test.range_rel (dt) VALUES ('2015-12-15');
+EXPLAIN (COSTS OFF) SELECT * FROM test.range_rel WHERE dt < '2015-01-01';
+EXPLAIN (COSTS OFF) SELECT * FROM test.range_rel WHERE dt >= '2015-05-01';
 
 /*
  * Zero partitions count and adding partitions with specified name
@@ -659,6 +678,42 @@ SELECT append_range_partition('test.index_on_childs', 'test.index_on_childs_4k_5
 SELECT set_enable_parent('test.index_on_childs', true);
 VACUUM ANALYZE test.index_on_childs;
 EXPLAIN (COSTS OFF) SELECT * FROM test.index_on_childs WHERE c1 > 100 AND c1 < 2500 AND c2 = 500;
+
+/* Test recursive CTE */
+CREATE TABLE test.recursive_cte_test_tbl(id INT NOT NULL, name TEXT NOT NULL);
+SELECT * FROM create_hash_partitions('test.recursive_cte_test_tbl', 'id', 2);
+INSERT INTO test.recursive_cte_test_tbl (id, name) SELECT id, 'name'||id FROM generate_series(1,100) f(id);
+INSERT INTO test.recursive_cte_test_tbl (id, name) SELECT id, 'name'||(id + 1) FROM generate_series(1,100) f(id);
+INSERT INTO test.recursive_cte_test_tbl (id, name) SELECT id, 'name'||(id + 2) FROM generate_series(1,100) f(id);
+SELECT * FROM test.recursive_cte_test_tbl WHERE id = 5;
+
+WITH RECURSIVE test AS (
+	SELECT min(name) AS name
+	FROM test.recursive_cte_test_tbl
+	WHERE id = 5
+	UNION ALL
+	SELECT (SELECT min(name)
+			FROM test.recursive_cte_test_tbl
+			WHERE id = 5 AND name > test.name)
+	FROM test
+	WHERE name IS NOT NULL)
+SELECT * FROM test;
+
+
+/* Test create_range_partitions() + relnames */
+CREATE TABLE test.provided_part_names(id INT NOT NULL);
+INSERT INTO test.provided_part_names SELECT generate_series(1, 10);
+SELECT create_hash_partitions('test.provided_part_names', 'id', 2,
+							  relnames := ARRAY[]::TEXT[]);				/* not ok */
+SELECT create_hash_partitions('test.provided_part_names', 'id', 2,
+							  relnames := ARRAY['p1', 'p2']::TEXT[]);	/* ok */
+/* list partitions */
+SELECT partition FROM pathman_partition_list
+WHERE parent = 'test.provided_part_names'::REGCLASS
+ORDER BY partition;
+
+DROP TABLE test.provided_part_names CASCADE;
+
 
 DROP SCHEMA test CASCADE;
 DROP EXTENSION pg_pathman CASCADE;
