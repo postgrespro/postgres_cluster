@@ -166,7 +166,8 @@ job_t *_at_get_jobs_to_do(char *nodename, int *n, int *is_error, int limit)
 	int ret, got, i;
 	Oid argtypes[2] = { TEXTOID, INT4OID };
 	Datum values[2];
-	const char *get_job_sql = "select id, at, last_start_available, max_run_time,  executor from ONLY at_jobs_submitted where at <= 'now' and (last_start_available is NULL OR last_start_available > 'now') AND node = $1 order by at,  submit_time limit $2";
+	/* const char *get_job_sql = "select id, at, last_start_available, max_run_time,  executor from ONLY at_jobs_submitted where at <= 'now' and (last_start_available is NULL OR last_start_available > 'now') AND node = $1 order by at,  submit_time limit $2"; */
+	const char *get_job_sql = "select id, at, last_start_available, max_run_time,  executor from ONLY at_jobs_submitted s where ((not exists ( select * from ONLY at_jobs_submitted s2 where s2.id = any(s.depends_on)) AND not exists ( select * from ONLY at_jobs_process p where p.id = any(s.depends_on)) AND s.depends_on is NOT NULL and s.at IS NULL) OR ( s.at IS NOT NULL AND  at <= 'now' and (last_start_available is NULL OR last_start_available > 'now'))) and node = $1 order by at,  submit_time limit $2";
 
 	*is_error = *n = 0;
 	START_SPI_SNAP();

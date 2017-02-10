@@ -1210,7 +1210,7 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type
 			}
 			else
 			{
-				set_job_error(&expired[i], "job start time %s expired", ts);
+				set_job_error(&expired[i], "job expired");
 			}
 
 			move_ret  = move_job_to_log(&expired[i], 0, false);
