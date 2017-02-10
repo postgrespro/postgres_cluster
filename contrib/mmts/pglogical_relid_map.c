@@ -58,7 +58,7 @@ bool pglogical_relid_map_put(Oid remote_relid, Oid local_relid)
     }
     entry = hash_search(relid_map, &remote_relid, HASH_ENTER, &found);
   	if (found) {
-	    Assert(entry->local_relid == local_relid);
+	    entry->local_relid = local_relid;
 		return false;	    
     }
     entry->local_relid = local_relid;
