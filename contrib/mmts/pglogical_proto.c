@@ -42,6 +42,7 @@ static int MtmTransactionRecords;
 static bool MtmIsFilteredTxn;
 static TransactionId MtmCurrentXid;
 static bool DDLInProgress = false;
+static Oid MtmSenderTID; /* transaction identifier for WAL sender */
 
 static void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel);
 
@@ -80,6 +81,7 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
 	const char *relname;
 	uint8		relnamelen;
 	Oid         relid;
+	Oid         tid;
 
 	if (MtmIsFilteredTxn) {
 		MTM_LOG2("%d: pglogical_write_message filtered", MyProcPid);
@@ -92,23 +94,32 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
 	}
 
 	relid = RelationGetRelid(rel);
+
 	pq_sendbyte(out, 'R');		/* sending RELATION */	
 	pq_sendint(out, relid, sizeof relid); /* use Oid as relation identifier */
 	
-	nspname = get_namespace_name(rel->rd_rel->relnamespace);
-	if (nspname == NULL)
-		elog(ERROR, "cache lookup failed for namespace %u",
+	Assert(MtmSenderTID != InvalidOid);
+	tid = pglogical_relid_map_get(relid);
+	if (tid == MtmSenderTID) { /* this relation was already sent in this transaction */
+		pq_sendbyte(out, 0); /* do not need to send relation namespace and name in this case */
+		pq_sendbyte(out, 0);
+	} else { 
+		pglogical_relid_map_put(relid, MtmSenderTID);
+		nspname = get_namespace_name(rel->rd_rel->relnamespace);
+		if (nspname == NULL)
+			elog(ERROR, "cache lookup failed for namespace %u",
 				 rel->rd_rel->relnamespace);
-	nspnamelen = strlen(nspname) + 1;
-	
-	relname = NameStr(rel->rd_rel->relname);
-	relnamelen = strlen(relname) + 1;
-	
-	pq_sendbyte(out, nspnamelen);		/* schema name length */
-	pq_sendbytes(out, nspname, nspnamelen);
-	
-	pq_sendbyte(out, relnamelen);		/* table name length */
-	pq_sendbytes(out, relname, relnamelen);
+		nspnamelen = strlen(nspname) + 1;
+		
+		relname = NameStr(rel->rd_rel->relname);
+		relnamelen = strlen(relname) + 1;
+		
+		pq_sendbyte(out, nspnamelen);		/* schema name length */
+		pq_sendbytes(out, nspname, nspnamelen);
+		
+		pq_sendbyte(out, relnamelen);		/* table name length */
+		pq_sendbytes(out, relname, relnamelen);
+	}
 }
 
 /*
@@ -128,6 +139,10 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 		MtmIsFilteredTxn = true;
 		MTM_LOG2("%d: pglogical_write_begin XID=%lld filtered", MyProcPid, (long64)txn->xid);
 	} else {
+		if (++MtmSenderTID == InvalidOid) { 
+			pglogical_relid_map_reset();
+			MtmSenderTID += 1; /* skip InvalidOid */
+		}
 		MtmCurrentXid = txn->xid;
 		MtmIsFilteredTxn = false;
 		MTM_LOG3("%d: pglogical_write_begin XID=%d node=%d CSN=%lld recovery=%d restart_decoding_lsn=%llx first_lsn=%llx end_lsn=%llx confirmed_flush=%llx", 
