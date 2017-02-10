@@ -46,6 +46,12 @@
  *
  *****************************************************************************/
 
+#define CREATE_EXTENSION_STARTSTRING_0 \
+"-- complain if script is sourced in psql, rather than via CREATE EXTENSION"
+#define CREATE_EXTENSION_STARTSTRING_1 \
+"SELECT 1 FROM ONLY \"public\".\"aqo_queries\" x WHERE \"query_hash\"\
+ OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x"
+
 static const char *query_text;
 
 /*
@@ -94,8 +100,12 @@ aqo_planner(Query *parse,
 
 	selectivity_cache_clear();
 
-	if (parse->commandType != CMD_SELECT && parse->commandType != CMD_INSERT &&
-		parse->commandType != CMD_UPDATE && parse->commandType != CMD_DELETE)
+	if ((parse->commandType != CMD_SELECT && parse->commandType != CMD_INSERT &&
+	 parse->commandType != CMD_UPDATE && parse->commandType != CMD_DELETE) ||
+		strncmp(query_text, CREATE_EXTENSION_STARTSTRING_0,
+				strlen(CREATE_EXTENSION_STARTSTRING_0)) == 0 ||
+		strncmp(query_text, CREATE_EXTENSION_STARTSTRING_1,
+				strlen(CREATE_EXTENSION_STARTSTRING_1)) == 0)
 	{
 		disable_aqo_for_query();
 		return call_default_planner(parse, cursorOptions, boundParams);
