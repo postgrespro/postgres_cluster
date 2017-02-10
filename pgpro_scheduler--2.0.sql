@@ -3,7 +3,8 @@
 CREATE SCHEMA IF NOT EXISTS schedule;
 SET search_path TO schedule;
 
-CREATE TYPE job_status AS ENUM ('working', 'done', 'error');
+CREATE TYPE job_status_t AS ENUM ('working', 'done', 'error');
+CREATE TYPE job_at_status_t AS ENUM ('submitted', 'processing', 'done');
 
 CREATE TABLE at_jobs_submitted(
    id SERIAL PRIMARY KEY,
@@ -138,7 +139,7 @@ CREATE TYPE cron_job AS(
 	onrollback text,		-- statement on ROLLBACK
 	next_time_statement text,	-- statement to calculate next start time
 	max_instances int,		-- the number of instances run at the same time
-	status job_status,	-- status of job
+	status job_status_t,	-- status of job
 	message text			-- error message if one
 );
 
@@ -1272,12 +1273,75 @@ BEFORE DELETE ON cron
 CREATE TRIGGER cron_update_trigger 
 AFTER UPDATE ON cron 
    FOR EACH ROW EXECUTE PROCEDURE on_cron_update();
+ 
+----------
+-- VIEW --
+----------
+
+CREATE VIEW job_status AS 
+	SELECT 
+		id, node, name, comments, at as run_after,
+		do_sql as query, params, depends_on, executor as run_as, attempt, 
+		resubmit_limit, postpone as max_wait_interval,
+		max_run_time as max_duration, submit_time,
+		start_time, status as is_success, reason as error, done_time,
+		'done'::job_at_status_t status
+	FROM schedule.at_jobs_done where owner = session_user
+		UNION 
+	SELECT
+		id, node, name, comments, at as run_after,
+		do_sql as query, params, depends_on, executor as run_as, attempt, 
+		resubmit_limit, postpone as max_wait_interval,
+		max_run_time as max_duration, submit_time, start_time,
+		NULL as is_success, NULL as error, NULL as done_time,
+		'processing'::job_at_status_t status
+	FROM ONLY schedule.at_jobs_process where owner = session_user
+		UNION
+	SELECT
+		id, node, name, comments, at as run_after,
+		do_sql as query, params, depends_on, executor as run_as, attempt, 
+		resubmit_limit, postpone as max_wait_interval,
+		max_run_time as max_duration, submit_time, 
+		NULL as start_time, NULL as is_success, NULL as error,
+		NULL as done_time,
+		'submitted'::job_at_status_t status
+	FROM ONLY schedule.at_jobs_submitted where owner = session_user;
+
+CREATE VIEW all_job_status AS 
+	SELECT 
+		id, node, name, comments, at as run_after,
+		do_sql as query, params, depends_on, executor as run_as, owner,
+		attempt, resubmit_limit, postpone as max_wait_interval,
+		max_run_time as max_duration, submit_time,
+		start_time, status as is_success, reason as error, done_time,
+		'processing'::job_at_status_t status
+	FROM schedule.at_jobs_done 
+		UNION 
+	SELECT
+		id, node, name, comments, at as run_after,
+		do_sql as query, params, depends_on, executor as run_as, owner,
+		attempt, resubmit_limit, postpone as max_wait_interval,
+		max_run_time as max_duration, submit_time, start_time,
+		NULL as is_success, NULL as error, NULL as done_time,
+		'processing'::job_at_status_t status
+	FROM ONLY schedule.at_jobs_process 
+		UNION
+	SELECT
+		id, node, name, comments, at as run_after,
+		do_sql as query, params, depends_on, executor as run_as, owner,
+		attempt, resubmit_limit, postpone as max_wait_interval,
+		max_run_time as max_duration, submit_time, 
+		NULL as start_time, NULL as is_success, NULL as error,
+		NULL as done_time,
+		'submitted'::job_at_status_t status
+	FROM ONLY schedule.at_jobs_submitted;
 
 -----------
 -- GRANT --
 -----------
 
 GRANT USAGE ON SCHEMA schedule TO public;
+GRANT SELECT ON schedule.job_status TO public;
 
 
 RESET search_path;
