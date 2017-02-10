@@ -4493,6 +4493,7 @@ static void MtmGucInit(void)
 {
 	HASHCTL		hash_ctl;
 	char	   *current_role;
+	MemoryContext oldcontext;
 
 	MemSet(&hash_ctl, 0, sizeof(hash_ctl));
 	hash_ctl.keysize = GUC_KEY_MAXLEN;
@@ -4507,9 +4508,11 @@ static void MtmGucInit(void)
 	 * If current role is not equal to MtmDatabaseUser, than set it bofore
 	 * any other GUC vars.
 	 */
+	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 	current_role = GetConfigOptionByName("session_authorization", NULL, false);
 	if (strcmp(MtmDatabaseUser, current_role) != 0)
 		MtmGucUpdate("session_authorization", current_role);
+	MemoryContextSwitchTo(oldcontext);
 }
 
 static void MtmGucDiscard()
