@@ -1177,8 +1177,13 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type
 	int move_ret;
 	char *ts;
 	bool ts_hires = false;
+	TimestampTz *check_time;
+	int interval;
 
-	if(ctx->next_expire_time > GetCurrentTimestamp()) return -1;
+	check_time = type == CronJob ? &(ctx->next_expire_time): &(ctx->next_at_expire_time);
+	interval = type == CronJob ? 30: 25;
+
+	if(*check_time > GetCurrentTimestamp()) return -1;
 	pgstat_report_activity(STATE_RUNNING, "vanish expired tasks");
 	START_SPI_SNAP();
 	expired = type == CronJob ? 
@@ -1227,7 +1232,7 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type
 		ret = 0;
 	}
 	STOP_SPI_SNAP();
-	ctx->next_expire_time = timestamp_add_seconds(0, 30);
+	*check_time = timestamp_add_seconds(0, interval);
 	pgstat_report_activity(STATE_IDLE, "vanish expired tasks done");
 
 	return ret;

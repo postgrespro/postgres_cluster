@@ -192,7 +192,7 @@ BEGIN
 			USING HINT = 'you cannot use ''run_after'' and ''depends_on'' parameters at the same time';
 	END IF;
 
-	IF max_wait_interval IS NOT NULL AND run_after IS NULL THEN
+	IF max_wait_interval IS NOT NULL AND run_after IS NOT NULL THEN
 		last_avail := run_after + max_wait_interval;
 	ELSE
 		last_avail := NULL;
