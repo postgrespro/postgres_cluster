@@ -64,3 +64,11 @@ bool pglogical_relid_map_put(Oid remote_relid, Oid local_relid)
     entry->local_relid = local_relid;
 	return true;
 }
+
+void pglogical_relid_map_reset(void)
+{
+	if (relid_map != NULL) { 
+		hash_destroy(relid_map);
+		relid_map = NULL;
+	}
+}

@@ -10,5 +10,5 @@ typedef struct PGLRelidMapEntry {
 
 extern Oid  pglogical_relid_map_get(Oid relid);
 extern bool pglogical_relid_map_put(Oid remote_relid, Oid local_relid);
-
+extern void pglogical_relid_map_reset(void);
 #endif
