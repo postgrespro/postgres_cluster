@@ -230,6 +230,17 @@ int get_int_from_spi(int row_n, int pos, int def)
 	return (int)DatumGetInt32(datum);
 }
 
+int64 get_int64_from_spi(int row_n, int pos, int def)
+{
+	Datum datum;
+	bool is_null;
+
+	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
+	                        pos, &is_null);
+	if(is_null) return def;
+	return (int64)DatumGetInt64(datum);
+}
+
 Datum select_onedatumvalue_sql(const char *sql, bool *is_null)
 {
 	int ret;

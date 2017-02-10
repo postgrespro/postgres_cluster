@@ -11,6 +11,7 @@ typedef enum {
 	SchdExecutorInit,
 	SchdExecutorWork,
 	SchdExecutorDone,
+	SchdExecutorResubmit,
 	SchdExecutorError
 } schd_executor_status_t;
 

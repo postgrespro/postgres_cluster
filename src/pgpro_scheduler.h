@@ -34,7 +34,7 @@ int checkSchedulerNamespace(void);
 pid_t registerManagerWorker(schd_manager_t *man);
 
 void reload_db_role_config(char *dbname);
-TimestampTz timestamp_add_seconds(TimestampTz to, int add);
+TimestampTz timestamp_add_seconds(TimestampTz to, int64 add);
 char *make_date_from_timestamp(TimestampTz ts, bool hires);
 int get_integer_from_string(char *s, int start, int len);
 TimestampTz get_timestamp_from_string(char *str);

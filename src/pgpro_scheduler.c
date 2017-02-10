@@ -92,7 +92,7 @@ void reload_db_role_config(char *dbname)
 	CommitTransactionCommand();
 }
 
-TimestampTz timestamp_add_seconds(TimestampTz to, int add)
+TimestampTz timestamp_add_seconds(TimestampTz to, int64 add)
 {
 	if(to == 0) to = GetCurrentTimestamp();
 #ifdef HAVE_INT64_TIMESTAMP

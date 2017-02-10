@@ -28,6 +28,7 @@ typedef enum {
 	RmTimeout,
 	RmWaitWorker,
 	RmError,
+	RmDoneResubmit,
 	RmDone
 } schd_remove_reason_t;
 

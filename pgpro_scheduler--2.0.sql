@@ -17,6 +17,8 @@ CREATE TABLE at_jobs_submitted(
    executor text,
    owner text,
    last_start_available timestamp with time zone,
+   attempt bigint default 0,
+   resubmit_limit bigint default 100,
    postpone interval,
    max_run_time	interval,
    submit_time timestamp with time zone default now()
@@ -153,8 +155,8 @@ CREATE FUNCTION get_self_id()
   AS 'MODULE_PATHNAME', 'get_self_id'
   LANGUAGE C IMMUTABLE;
 
-CREATE FUNCTION resubmit()
-  RETURNS boolean 
+CREATE FUNCTION resubmit(run_after interval default NULL)
+  RETURNS bigint 
   AS 'MODULE_PATHNAME', 'resubmit'
   LANGUAGE C IMMUTABLE;
 
@@ -168,7 +170,8 @@ CREATE FUNCTION submit_job(
 	run_as text default NULL,
 	depends_on bigint[] default NULL,
 	name text default NULL,
-	comments text default NULL
+	comments text default NULL,
+	resubmit_limit bigint default 100
 ) RETURNS bigint AS
 $BODY$
 DECLARE
@@ -215,10 +218,12 @@ BEGIN
 
 	INSERT INTO at_jobs_submitted
 		(node, at, do_sql, owner, executor, name, comments, max_run_time,
-		 postpone, last_start_available, depends_on, params)
+		 postpone, last_start_available, depends_on, params,
+		 attempt, resubmit_limit)
 	VALUES
 		(node, run_after, query, session_user, executor,  name, comments,
-		 max_duration, max_wait_interval, last_avail, depends_on, params)
+		 max_duration, max_wait_interval, last_avail, depends_on, params,
+		 0, resubmit_limit)
 	RETURNING id INTO job_id;
 
 	RETURN job_id;

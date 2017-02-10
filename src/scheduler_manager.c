@@ -972,6 +972,12 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 				toremove[nremove].reason = shm_data->status == SchdExecutorDone ? RmDone: RmError;
 				nremove++;
 			}
+			else if(shm_data->status == SchdExecutorResubmit)
+			{
+				toremove[nremove].pos = i;
+				toremove[nremove].reason = RmDoneResubmit;
+				nremove++;
+			}
 		}
 	}
 	if(nremove)
@@ -995,6 +1001,11 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 					removeJob = false;
 					item->wait_worker_to_die = true;
 				}
+			}
+			else if(toremove[i].reason == RmDoneResubmit)
+			{
+				removeJob = true;
+				job_status = true;
 			}
 			else if(toremove[i].reason == RmWaitWorker) /* wait worker to die */
 			{
@@ -1066,7 +1077,22 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 						}
 					}
 				}
-				move_job_to_log(item->job, job_status, true);
+				if(toremove[i].reason == RmDoneResubmit)
+				{
+					if(item->job->type == AtJob)
+					{
+						resubmit_at_job(item->job, shm_data->next_time);
+					}
+					else
+					{
+						set_job_error(item->job, "cannot resubmit Cron job");
+						move_job_to_log(item->job, false, true);
+					}
+				}
+				else
+				{
+					move_job_to_log(item->job, job_status, true);
+				}
 				STOP_SPI_SNAP();
 
 				last  = p->len - p->free - 1;

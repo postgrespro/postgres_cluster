@@ -36,6 +36,8 @@ typedef struct {
 	char *onrollback;
 	char *next_time_statement;
 	bool is_active;
+	int64 attempt;
+	int64 resubmit_limit;
 	char *error;
 } job_t;
 
@@ -52,6 +54,7 @@ job_t *get_at_job(int cron_id, char *nodename, char **perror);
 job_t *get_cron_job(int cron_id, TimestampTz start_at, char *nodename, char **perror);
 int _cron_move_job_to_log(job_t *j, bool status);
 int _at_move_job_to_log(job_t *j, bool status, bool processed);
+int resubmit_at_job(job_t *j, TimestampTz next);
 
 #endif
 

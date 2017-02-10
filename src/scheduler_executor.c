@@ -36,7 +36,7 @@ extern volatile sig_atomic_t got_sighup;
 extern volatile sig_atomic_t got_sigterm;
 
 static int64 current_job_id = -1;
-static int resubmit_current_job = 0;
+static int64 resubmit_current_job = 0;
 
 static void handle_sigterm(SIGNAL_ARGS);
 
@@ -193,7 +193,24 @@ void executor_worker_main(Datum arg)
 		{
 			STOP_SPI_SNAP();
 		}
-		status = SchdExecutorDone;
+		if(job->type == AtJob && resubmit_current_job > 0)
+		{
+			if(job->attempt >= job->resubmit_limit)
+			{
+				status = SchdExecutorError;
+				push_executor_error(&EE, "Cannot resubmit: limit reached (%ld)", job->resubmit_limit);
+				resubmit_current_job = 0;
+			}
+			else
+			{
+				status = SchdExecutorResubmit;
+			}
+		}
+		else
+		{
+			status = SchdExecutorDone;
+		}
+
 		SetConfigOption("schedule.transaction_state", "success", PGC_INTERNAL, PGC_S_SESSION);
 	}
 	if(job->next_time_statement)
@@ -218,6 +235,11 @@ void executor_worker_main(Datum arg)
 		set_shared_message(shared, &EE);
 	}
 	shared->status = status;
+	if(status == SchdExecutorResubmit)
+	{
+		shared->next_time = timestamp_add_seconds(0, resubmit_current_job);
+		resubmit_current_job = 0;
+	}
 
 	delete_worker_mem_ctx();
 	dsm_detach(seg);
@@ -481,9 +503,28 @@ PG_FUNCTION_INFO_V1(resubmit);
 Datum 
 resubmit(PG_FUNCTION_ARGS)
 {
+	Interval *interval;	
+
 	if(current_job_id == -1)
 	{
 		elog(ERROR, "There is no active job in progress");	
 	}
-	PG_RETURN_BOOL(true);
+	if(PG_ARGISNULL(0))
+	{
+		resubmit_current_job = 1;		
+		PG_RETURN_INT64(1);
+	}
+	interval = PG_GETARG_INTERVAL_P(0);
+#ifdef HAVE_INT64_TIMESTAMP 
+    resubmit_current_job = interval->time / 1000000.0;
+#else
+    resubmit_current_job = interval->time;
+#endif
+	resubmit_current_job +=
+		(DAYS_PER_YEAR * SECS_PER_DAY) * (interval->month / MONTHS_PER_YEAR);
+	resubmit_current_job +=
+		(DAYS_PER_MONTH * SECS_PER_DAY) * (interval->month % MONTHS_PER_YEAR);
+	resubmit_current_job += SECS_PER_DAY * interval->day;
+
+	PG_RETURN_INT64(resubmit_current_job);
 }

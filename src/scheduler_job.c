@@ -25,7 +25,7 @@ job_t *init_scheduler_job(job_t *j, unsigned char type)
 job_t *get_at_job(int cron_id, char *nodename, char **perror)
 {
 	job_t *j;
-	const char *sql = "select last_start_available, array_append('{}'::text[], do_sql)::text[], executor, postpone, max_run_time as time_limit, at, params, depends_on from ONLY at_jobs_process where node = $1 and id = $2";
+	const char *sql = "select last_start_available, array_append('{}'::text[], do_sql)::text[], executor, postpone, max_run_time as time_limit, at, params, depends_on, attempt, resubmit_limit from ONLY at_jobs_process where node = $1 and id = $2";
 	Oid argtypes[2] = { TEXTOID, INT4OID};
 	Datum args[2];
 	int ret;
@@ -69,6 +69,8 @@ job_t *get_at_job(int cron_id, char *nodename, char **perror)
 		j->start_at = get_timestamp_from_spi(0, 6, 0);
 		j->sql_params = get_textarray_from_spi(0, 7, &j->sql_params_n);
 		j->depends_on = get_int64array_from_spi(0, 8, &j->depends_on_n);
+		j->attempt = get_int64_from_spi(0, 9, 0);
+		j->resubmit_limit = get_int64_from_spi(0, 10, 0);
 
 		STOP_SPI_SNAP();
 
@@ -333,7 +335,7 @@ int _at_move_job_to_log(job_t *j, bool status, bool process)
 {
 	Datum values[3];	
 	char  nulls[3] = { ' ', ' ', ' ' };	
-	Oid argtypes[4] = { INT4OID, BOOLOID, TEXTOID };
+	Oid argtypes[3] = { INT4OID, BOOLOID, TEXTOID };
 	int ret;
 	const char *sql_process = "WITH moved_rows AS (DELETE from ONLY at_jobs_process a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_done SELECT *, $2 as status, $3 as reason FROM moved_rows";
 	const char *sql_submitted = "WITH moved_rows AS (DELETE from ONLY at_jobs_submitted a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_done SELECT *, NULL as start_time, $2 as status, $3 as reason FROM moved_rows";
@@ -352,6 +354,20 @@ int _at_move_job_to_log(job_t *j, bool status, bool process)
 		nulls[2] = 'n'; 
 	}
 	ret = SPI_execute_with_args(sql, 3, argtypes, values, nulls, false, 0);
+
+	return ret > 0 ? 1: ret;
+}
+
+int resubmit_at_job(job_t *j, TimestampTz next)
+{
+	Datum values[2];	
+	Oid argtypes[2] = { INT4OID, TIMESTAMPTZOID };
+	int ret;
+	const char *sql = "WITH moved_rows AS (DELETE from ONLY at_jobs_process a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_submitted SELECT id, node, name, comments, $2, do_sql, params, depends_on, executor, owner, last_start_available, attempt +1 , resubmit_limit, postpone, max_run_time, submit_time FROM moved_rows";
+
+	values[0] = Int32GetDatum(j->cron_id);
+	values[1] = TimestampTzGetDatum(next);
+	ret = SPI_execute_with_args(sql, 2, argtypes, values, NULL, false, 0);
 
 	return ret > 0 ? 1: ret;
 }
