@@ -62,6 +62,7 @@ job_t *get_at_job(int cron_id, char *nodename, char **perror)
 		}
 
 		j = init_scheduler_job(NULL, AtJob);
+		j->cron_id = cron_id;
 		j->node = _copy_string(nodename);
 		j->dosql = get_textarray_from_spi(0, 2, &j->dosql_n);
 		j->executor = get_text_from_spi(0, 3);
@@ -163,7 +164,7 @@ job_t *_at_get_jobs_to_do(char *nodename, int *n, int *is_error, int limit)
 	int ret, got, i;
 	Oid argtypes[2] = { TEXTOID, INT4OID };
 	Datum values[2];
-	const char *get_job_sql = "select id, at, last_start_available, max_run_time, max_instances, executor from ONLY at_jobs_submitted where at <= 'now' and (last_start_available is NULL OR last_start_available > 'now') AND node = $1 order by at,  submit_time limit $2";
+	const char *get_job_sql = "select id, at, last_start_available, max_run_time,  executor from ONLY at_jobs_submitted where at <= 'now' and (last_start_available is NULL OR last_start_available > 'now') AND node = $1 order by at,  submit_time limit $2";
 
 	*is_error = *n = 0;
 	START_SPI_SNAP();
@@ -184,9 +185,8 @@ job_t *_at_get_jobs_to_do(char *nodename, int *n, int *is_error, int limit)
 				jobs[i].start_at = get_timestamp_from_spi(i, 2, 0);
 				jobs[i].last_start_avail = get_timestamp_from_spi(i, 3, 0);
 				jobs[i].timelimit = get_interval_seconds_from_spi(i, 4, 0);
-				jobs[i].max_instances = get_int_from_spi(i, 5, 1);
 				jobs[i].node = _copy_string(nodename);
-				jobs[i].executor = get_text_from_spi(i, 6);
+				jobs[i].executor = get_text_from_spi(i, 5);
 			}
 		}
 	}
@@ -323,19 +323,23 @@ job_t *set_job_error(job_t *j, const char *fmt, ...)
 	return j;
 }
 
-int move_job_to_log(job_t *j, bool status)
+int move_job_to_log(job_t *j, bool status, bool process)
 {
 	if(j->type == CronJob) _cron_move_job_to_log(j, status);
-	return _at_move_job_to_log(j, status);
+	return _at_move_job_to_log(j, status, process);
 }
 
-int _at_move_job_to_log(job_t *j, bool status)
+int _at_move_job_to_log(job_t *j, bool status, bool process)
 {
 	Datum values[3];	
 	char  nulls[3] = { ' ', ' ', ' ' };	
 	Oid argtypes[4] = { INT4OID, BOOLOID, TEXTOID };
 	int ret;
-	const char *sql = "WITH moved_rows AS (DELETE from ONLY at_jobs_process a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_done SELECT *, $2 as status, $3 as reason FROM moved_rows";
+	const char *sql_process = "WITH moved_rows AS (DELETE from ONLY at_jobs_process a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_done SELECT *, $2 as status, $3 as reason FROM moved_rows";
+	const char *sql_submitted = "WITH moved_rows AS (DELETE from ONLY at_jobs_submitted a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_done SELECT *, NULL as start_time, $2 as status, $3 as reason FROM moved_rows";
+	const char *sql;
+
+	sql = process ? sql_process: sql_submitted;
 
 	values[0] = Int32GetDatum(j->cron_id);
 	values[1] = BoolGetDatum(status);

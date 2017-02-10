@@ -840,12 +840,13 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 
 		for(i = start_i; i < N + start_i; i++)
 		{
-			ni = how_many_instances_on_work(ctx, &(jobs[i]));
-			if(ni >= jobs[i].max_instances)
+			ni = type == CronJob ?
+				how_many_instances_on_work(ctx, &(jobs[i])): 100000;
+			if(type == CronJob && ni >= jobs[i].max_instances)
 			{
 				START_SPI_SNAP();
 				set_job_error(&jobs[i], "max instances limit reached");
-				move_job_to_log(&jobs[i], false);
+				move_job_to_log(&jobs[i], false, false);
 				destroy_job(&jobs[i], 0);
 				STOP_SPI_SNAP();
 				jobs[i].cron_id = -1;
@@ -867,9 +868,11 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 						set_job_error(&jobs[i],
 								"Cannot set at job %d to worker",
 								 			jobs[i].cron_id);
+						elog(ERROR, "Cannot set job to free slot type=%d, id=%d", 
+									jobs[i].type, jobs[i].cron_id);
 					}
 					START_SPI_SNAP();
-					move_job_to_log(&jobs[i], false);
+					move_job_to_log(&jobs[i], false, false);
 					destroy_job(&jobs[i], 0);
 					jobs[i].cron_id = -1;
 					STOP_SPI_SNAP();
@@ -1063,7 +1066,7 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 						}
 					}
 				}
-				move_job_to_log(item->job, job_status);
+				move_job_to_log(item->job, job_status, true);
 				STOP_SPI_SNAP();
 
 				last  = p->len - p->free - 1;
@@ -1179,7 +1182,7 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type
 				set_job_error(&expired[i], "job start time %s expired", ts);
 			}
 
-			move_ret  = move_job_to_log(&expired[i], 0);
+			move_ret  = move_job_to_log(&expired[i], 0, false);
 			if(move_ret < 0)
 			{
 				elog(LOG, "Scheduler manager %s: cannot move %s job %d@%s%s to log",

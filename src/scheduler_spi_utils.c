@@ -351,4 +351,87 @@ int execute_spi(const char *sql, char **error)
 	return execute_spi_sql_with_args(sql, 0, NULL, NULL, NULL, error);
 }
 
+int execute_spi_params_prepared(const char *sql, int nparams, char **params, char **error)
+{
+	int ret = -100;
+	ErrorData *edata;
+	MemoryContext old;
+	int errorSet = 0;
+	char other[100];
+	SPIPlanPtr plan;
+	Oid *paramtypes;
+	Datum *values;
+	int i;
 
+	*error = NULL;
+
+	paramtypes = worker_alloc(sizeof(Oid) * nparams);
+	values = worker_alloc(sizeof(Datum) * nparams);
+	for(i=0; i < nparams; i++)
+	{
+		paramtypes[i] = TEXTOID;
+		values[i] = CStringGetTextDatum(params[i]);
+	}
+
+	PG_TRY();
+	{
+		plan = SPI_prepare(sql, nparams, paramtypes);
+		if(plan)
+		{
+			ret = SPI_execute_plan(plan, values, NULL, false, 0);
+		}
+	}
+	PG_CATCH();
+	{
+		old = switch_to_worker_context();
+
+		edata = CopyErrorData();
+		if(edata->message)
+		{
+			*error = _copy_string(edata->message);
+		}
+		else if(edata->detail)
+		{
+			*error = _copy_string(edata->detail);
+		}
+		else
+		{
+			*error = _copy_string("unknown error");
+		}
+		errorSet = 1;
+		FreeErrorData(edata);
+		MemoryContextSwitchTo(old);
+		FlushErrorState();
+	}
+	PG_END_TRY();
+
+	pfree(values);
+	pfree(paramtypes);
+
+	if(!errorSet && ret < 0)
+	{
+		if(ret == SPI_ERROR_CONNECT)
+		{
+			*error = _copy_string("Connection error");
+		}
+		else if(ret == SPI_ERROR_COPY)
+		{
+			*error = _copy_string("COPY error");
+		}
+		else if(ret == SPI_ERROR_OPUNKNOWN)
+		{
+			*error = _copy_string("SPI_ERROR_OPUNKNOWN");
+		}
+		else if(ret == SPI_ERROR_UNCONNECTED)
+		{
+			*error = _copy_string("Unconnected call");
+		}
+		else
+		{
+			sprintf(other, "error number: %d", ret);
+			*error = _copy_string(other);
+		}
+	}
+
+	return ret;
+}

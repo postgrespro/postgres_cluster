@@ -46,12 +46,12 @@ job_t *_cron_get_jobs_to_do(char *nodename, int *n, int *is_error, int limit);
 job_t *_at_get_jobs_to_do(char *nodename, int *n, int *is_error, int limit);
 job_t *get_jobs_to_do(char *nodename, task_type_t type, int *n, int *is_error, int limit);
 job_t *set_job_error(job_t *j, const char *fmt, ...) pg_attribute_printf(2, 3);
-int move_job_to_log(job_t *j, bool status);
+int move_job_to_log(job_t *j, bool status, bool processed);
 void destroy_job(job_t *j, int selfdestroy);
 job_t *get_at_job(int cron_id, char *nodename, char **perror);
 job_t *get_cron_job(int cron_id, TimestampTz start_at, char *nodename, char **perror);
 int _cron_move_job_to_log(job_t *j, bool status);
-int _at_move_job_to_log(job_t *j, bool status);
+int _at_move_job_to_log(job_t *j, bool status, bool processed);
 
 #endif
 

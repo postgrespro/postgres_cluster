@@ -29,5 +29,6 @@ char *get_text_from_spi(int row_n, int pos);
 Oid get_oid_from_spi(int row_n, int pos, Oid def);
 int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *values, char *nulls, char **error);
 int execute_spi(const char *sql, char **error);
+int execute_spi_params_prepared(const char *sql, int nparams, char **params, char **error);
 
 #endif

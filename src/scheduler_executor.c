@@ -150,7 +150,14 @@ void executor_worker_main(Datum arg)
 		{
 			START_SPI_SNAP();
 		}
-		ret = execute_spi(job->dosql[i], &error);
+		if(job->type == AtJob && i == 0 && job->sql_params_n > 0)
+		{
+			ret = execute_spi_params_prepared(job->dosql[i], job->sql_params_n, job->sql_params, &error);
+		}
+		else
+		{
+			ret = execute_spi(job->dosql[i], &error);
+		}
 		if(ret < 0)
 		{
 			/* success = false; */

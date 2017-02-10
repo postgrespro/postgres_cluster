@@ -195,6 +195,10 @@ BEGIN
 		last_avail := NULL;
 	END IF;
 
+	IF node IS NULL THEN
+		node := 'master';
+	END IF;
+
 	IF run_as IS NOT NULL AND run_as <> session_user THEN
 		executor := run_as;
 		BEGIN
@@ -211,10 +215,10 @@ BEGIN
 
 	INSERT INTO at_jobs_submitted
 		(node, at, do_sql, owner, executor, name, comments, max_run_time,
-		 postpone, last_start_available, depends_on)
+		 postpone, last_start_available, depends_on, params)
 	VALUES
 		(node, run_after, query, session_user, executor,  name, comments,
-		 max_duration, max_wait_interval, last_avail, depends_on)
+		 max_duration, max_wait_interval, last_avail, depends_on, params)
 	RETURNING id INTO job_id;
 
 	RETURN job_id;
