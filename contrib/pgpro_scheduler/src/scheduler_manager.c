@@ -1492,6 +1492,7 @@ void manager_worker_main(Datum arg)
 	ctx = initialize_scheduler_manager_context(database, seg);
 	clean_at_table(ctx);
 	set_slots_stat_report(ctx);
+	SetConfigOption("enable_seqscan", "off", PGC_USERSET, PGC_S_SESSION);
 
 	while(!got_sigterm)
 	{
@@ -1509,7 +1510,7 @@ void manager_worker_main(Datum arg)
 			if(!got_sighup && !got_sigterm)
 			{
 				terminate_main_loop = 0;
-				while(1)
+				while(!got_sighup && !got_sigterm)
 				{
 					wait = 0;
 					if(check_parent_stop_signal(ctx))
@@ -1521,11 +1522,12 @@ void manager_worker_main(Datum arg)
 					wait += scheduler_start_jobs(ctx, CronJob);
 					scheduler_check_slots(ctx, &(ctx->at));
 					scheduler_check_slots(ctx, &(ctx->cron));
-					set_slots_stat_report(ctx);
+					scheduler_make_atcron_record(ctx);
+					/* set_slots_stat_report(ctx); */
 					if(wait == 0) break;
 				}
 				if(terminate_main_loop) break;
-				scheduler_make_atcron_record(ctx);
+				set_slots_stat_report(ctx); 
 				/* if there are any expired jobs to get rid of */
 				scheduler_vanish_expired_jobs(ctx, AtJob);
 				scheduler_vanish_expired_jobs(ctx, CronJob);
