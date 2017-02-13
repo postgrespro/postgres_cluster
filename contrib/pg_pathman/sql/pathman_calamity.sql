@@ -37,9 +37,34 @@ DELETE FROM calamity.part_test;
 
 /* test function create_hash_partitions() */
 SELECT create_hash_partitions('calamity.part_test', 'val', 2,
-							  relnames := ARRAY['calamity.p1']::TEXT[]);
+							  partition_names := ARRAY[]::TEXT[]); /* not ok */
+
 SELECT create_hash_partitions('calamity.part_test', 'val', 2,
-							  tablespaces := ARRAY['abcd']::TEXT[]);
+							  partition_names := ARRAY[ 'p1', NULL ]::TEXT[]); /* not ok */
+
+SELECT create_hash_partitions('calamity.part_test', 'val', 2,
+							  partition_names := ARRAY[ ['p1'], ['p2'] ]::TEXT[]); /* not ok */
+
+SELECT create_hash_partitions('calamity.part_test', 'val', 2,
+							  partition_names := ARRAY['calamity.p1']::TEXT[]); /* not ok */
+
+SELECT create_hash_partitions('calamity.part_test', 'val', 2,
+							  tablespaces := ARRAY['abcd']::TEXT[]); /* not ok */
+
+
+/* test case when naming sequence does not exist */
+CREATE TABLE calamity.no_naming_seq(val INT4 NOT NULL);
+SELECT add_to_pathman_config('calamity.no_naming_seq', 'val', '100');
+select add_range_partition(' calamity.no_naming_seq', 10, 20);
+DROP TABLE calamity.no_naming_seq CASCADE;
+
+
+/* test (-inf, +inf) partition creation */
+CREATE TABLE calamity.double_inf(val INT4 NOT NULL);
+SELECT add_to_pathman_config('calamity.double_inf', 'val', '10');
+select add_range_partition('calamity.double_inf', NULL::INT4, NULL::INT4,
+						   partition_name := 'double_inf_part');
+DROP TABLE calamity.double_inf CASCADE;
 
 
 /* test stub 'enable_parent' value for PATHMAN_CONFIG_PARAMS */
@@ -140,10 +165,12 @@ SELECT invoke_on_partition_created_callback(NULL, 'calamity.part_test', 1);
 SELECT invoke_on_partition_created_callback('calamity.part_test', NULL, 1);
 
 /* check function add_to_pathman_config() -- PHASE #1 */
-SELECT add_to_pathman_config('calamity.part_test', NULL);
-SELECT add_to_pathman_config('calamity.part_test', 'val');
+SELECT add_to_pathman_config(NULL, 'val');						/* no table */
+SELECT add_to_pathman_config('calamity.part_test', NULL);		/* no column */
+SELECT add_to_pathman_config('calamity.part_test', 'V_A_L');	/* wrong column */
+SELECT add_to_pathman_config('calamity.part_test', 'val');		/* OK */
 SELECT disable_pathman_for('calamity.part_test');
-SELECT add_to_pathman_config('calamity.part_test', 'val', '10');
+SELECT add_to_pathman_config('calamity.part_test', 'val', '10'); /* OK */
 SELECT disable_pathman_for('calamity.part_test');
 
 
