@@ -26,6 +26,7 @@ CREATE TABLE at_jobs_submitted(
    submit_time timestamp with time zone default now()
 );
 CREATE INDEX ON at_jobs_submitted(at,submit_time);
+CREATE INDEX ON at_jobs_submitted (last_start_available, node);
 
 CREATE TABLE at_jobs_process(
 	start_time timestamp with time zone default now()
@@ -66,6 +67,7 @@ CREATE TABLE cron(
    reason text,
    _next_exec_time timestamp with time zone
 );
+create index on cron (node);
 
 CREATE TABLE at(
    start_at timestamp with time zone,
