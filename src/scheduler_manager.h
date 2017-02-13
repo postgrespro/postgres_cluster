@@ -9,6 +9,7 @@
 #include "utils/memutils.h"
 #include "bit_array.h"
 #include "scheduler_job.h"
+#include "scheduler_executor.h"
 
 #define CEO_MIN_POS	0
 #define CEO_HRS_POS	1
@@ -35,9 +36,13 @@ typedef enum {
 typedef struct {
 	int pos;
 	schd_remove_reason_t reason;  
+	bool vanish_item;
 } scheduler_rm_item_t;
 
 typedef struct {  
+	TimestampTz worker_started;
+	bool is_free;
+
 	TimestampTz started;
 	TimestampTz stop_it;
 
@@ -110,5 +115,6 @@ int set_at_job_started(job_t *job);
 int init_manager_pool(scheduler_manager_pool_t *p, int N);
 int refresh_manager_pool(const char *database, const char *name, scheduler_manager_pool_t *p, int N);
 void destroy_scheduler_manager_pool(scheduler_manager_pool_t *p);
+void init_executor_shared_data(schd_executor_share_t *data, scheduler_manager_ctx_t *ctx, job_t *job);
 
 #endif

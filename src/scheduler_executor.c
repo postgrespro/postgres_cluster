@@ -61,17 +61,9 @@ void executor_worker_main(Datum arg)
 {
 	schd_executor_share_t *shared;
 	dsm_segment *seg;
-	job_t *job;
-	int i;
-	executor_error_t EE;
-	int ret;
-	char *error = NULL;
-	/* bool use_pg_vars = true; */
-	/* bool success = true; */
-	schd_executor_status_t status;
-
-	EE.n = 0;
-	EE.errors = NULL;
+	int result;
+	int64 jobs_done = 0;
+	int64 worker_jobs_limit = 1;
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_executor");
 	seg = dsm_attach(DatumGetInt32(arg));
@@ -87,13 +79,44 @@ void executor_worker_main(Datum arg)
 			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			 errmsg("executor corrupted dynamic shared memory segment")));
 	}
-	status = shared->status = SchdExecutorWork;
-	shared->message[0] = 0;
 
 	SetConfigOption("application_name", "pgp-s executor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "initialize");
 	init_worker_mem_ctx("ExecutorMemoryContext");
 	BackgroundWorkerInitializeConnection(shared->database, NULL);
+/* TODO check latch, wait signals, die */
+	while(1)
+	{
+		result = do_one_job(shared);
+		if(result < 0)
+		{
+			delete_worker_mem_ctx();
+			dsm_detach(seg);
+			proc_exit(0);
+		}
+		if(++jobs_done >= worker_jobs_limit) break;
+	}
+
+	shared->worker_exit = true;
+
+	delete_worker_mem_ctx();
+	dsm_detach(seg);
+	proc_exit(0);
+}
+
+int do_one_job(schd_executor_share_t *shared)
+{
+	executor_error_t EE;
+	char *error = NULL;
+	schd_executor_status_t status;
+	int i;
+	job_t *job;
+	int ret;
+
+	EE.n = 0;
+	EE.errors = NULL;
+	status = shared->status = SchdExecutorWork;
+	shared->message[0] = 0;
 
 	pgstat_report_activity(STATE_RUNNING, "initialize job");
 	job = initializeExecutorJob(shared);
@@ -103,9 +126,9 @@ void executor_worker_main(Datum arg)
 			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX, 
 											"Cannot retrive job information");
 		shared->status = SchdExecutorError;
-		delete_worker_mem_ctx();
-		dsm_detach(seg);
-		proc_exit(0);
+		shared->worker_exit = true;
+
+		return -1;
 	}
 	current_job_id = job->cron_id;
 	pgstat_report_activity(STATE_RUNNING, "job initialized");
@@ -124,9 +147,8 @@ void executor_worker_main(Datum arg)
 				"Cannot set session auth: unknown error");
 		}
 		shared->status = SchdExecutorError;
-		delete_worker_mem_ctx();
-		dsm_detach(seg);
-		proc_exit(0);
+		shared->worker_exit = true;
+		return -2;
 	}
 
 	pqsignal(SIGTERM, handle_sigterm);
@@ -198,7 +220,11 @@ void executor_worker_main(Datum arg)
 			if(job->attempt >= job->resubmit_limit)
 			{
 				status = SchdExecutorError;
+#ifdef HAVE_INT64
 				push_executor_error(&EE, "Cannot resubmit: limit reached (%ld)", job->resubmit_limit);
+#else
+				push_executor_error(&EE, "Cannot resubmit: limit reached (%lld)", job->resubmit_limit);
+#endif
 				resubmit_current_job = 0;
 			}
 			else
@@ -215,11 +241,6 @@ void executor_worker_main(Datum arg)
 	}
 	if(job->next_time_statement)
 	{
-/*		if(use_pg_vars)  
-		{
-			set_pg_var(success, &EE);
-		}
-*/
 		shared->next_time = get_next_excution_time(job->next_time_statement, &EE);
 		if(shared->next_time == 0)
 		{
@@ -240,11 +261,11 @@ void executor_worker_main(Datum arg)
 		shared->next_time = timestamp_add_seconds(0, resubmit_current_job);
 		resubmit_current_job = 0;
 	}
+	destroy_job(job, 1);
 
-	delete_worker_mem_ctx();
-	dsm_detach(seg);
-	proc_exit(0);
+	return 1;
 }
+	
 
 int set_session_authorization(char *username, char **error)
 {

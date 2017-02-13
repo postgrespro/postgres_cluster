@@ -33,6 +33,8 @@ typedef struct {
 
 	bool set_invalid;
 	char set_invalid_reason[PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX];
+
+	bool worker_exit;
 } schd_executor_share_t;
 
 typedef struct {
@@ -48,6 +50,7 @@ int executor_onrollback(job_t *job, executor_error_t *ee);
 void set_pg_var(bool resulti, executor_error_t *ee);
 int push_executor_error(executor_error_t *e, char *fmt, ...)  pg_attribute_printf(2, 3);
 int set_session_authorization(char *username, char **error);
+int do_one_job(schd_executor_share_t *shared);
 
 extern Datum get_self_id(PG_FUNCTION_ARGS);
 extern Datum resubmit(PG_FUNCTION_ARGS);

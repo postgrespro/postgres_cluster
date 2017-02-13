@@ -680,6 +680,9 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 	scheduler_manager_pool_t *p;
 	scheduler_manager_slot_t *item;
 	int ret;
+	int idx;
+	schd_executor_share_t *sdata;
+	PGPROC *worker;
 
 	p = job->type == CronJob ? &(ctx->cron) : &(ctx->at);
 	if(p->free == 0)
@@ -691,27 +694,52 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 		set_cron_job_started(job): set_at_job_started(job);
 	if(ret)
 	{
-		item = worker_alloc(sizeof(scheduler_manager_slot_t));
-		item->job = worker_alloc(sizeof(job_t));
-		memcpy(item->job, job, sizeof(job_t));
+		idx = p->len - p->free;  /* next free slot */
 
-		item->started  = GetCurrentTimestamp();
-		item->wait_worker_to_die = false;
-		item->stop_it = job->timelimit ?
+		if(p->slots[idx] && p->slots[idx]->is_free)
+		{
+			item = p->slots[idx];
+			item->job = worker_alloc(sizeof(job_t));
+			memcpy(item->job, job, sizeof(job_t));
+			item->started  = GetCurrentTimestamp();
+			item->wait_worker_to_die = false;
+			item->stop_it = job->timelimit ?
+						timestamp_add_seconds(0, job->timelimit): 0;
+			sdata = dsm_segment_address(item->shared);
+
+			init_executor_shared_data(sdata, ctx, item->job);
+			worker = BackendPidGetProc(item->pid);
+			if(worker)
+			{
+				item->is_free = false;
+				SetLatch(&worker->procLatch);
+			}
+			else
+			{
+				return 0;
+			}
+		}
+		else
+		{
+			/* need to launch new worker to process job */
+			item = worker_alloc(sizeof(scheduler_manager_slot_t));
+			item->job = worker_alloc(sizeof(job_t));
+			memcpy(item->job, job, sizeof(job_t));
+
+			item->started  = item->worker_started = GetCurrentTimestamp();
+			item->wait_worker_to_die = false;
+			item->stop_it = job->timelimit ?
 						timestamp_add_seconds(0, job->timelimit): 0;
 
-		if(launch_executor_worker(ctx, item) == 0)
-		{
-			pfree(item->job);
-			pfree(item);
-			return 0;
+			if(launch_executor_worker(ctx, item) == 0)
+			{
+				pfree(item->job);
+				pfree(item);
+				return 0;
+			}
+			p->slots[idx] = item;
 		}
-
-/*		rrr = rand() % 30;
-		elog(LOG, " -- set timeout in %d sec", rrr);
-		item->stop_it = timestamp_add_seconds(0, rrr); */
-
-		p->slots[p->len - (p->free--)] = item;
+		p->free--;
 		job->cron_id = -1;  /* job copied to slot - no need to be destroyed */
 
 		return 1;
@@ -739,17 +767,7 @@ int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_
 	item->shared = seg;
 	shm_data = dsm_segment_address(item->shared);
 
-	shm_data->status = SchdExecutorInit;
-	memcpy(shm_data->database, ctx->database, strlen(ctx->database));
-	memcpy(shm_data->nodename, ctx->nodename, strlen(ctx->nodename));
-	memcpy(shm_data->user, item->job->executor, NAMEDATALEN);
-	shm_data->cron_id = item->job->cron_id;
-	shm_data->start_at = item->job->start_at;
-	shm_data->type = item->job->type;
-	shm_data->message[0] = 0;
-	shm_data->next_time = 0;
-	shm_data->set_invalid = false;
-	shm_data->set_invalid_reason[0] = 0;
+	init_executor_shared_data(shm_data, ctx, item->job);
 
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
 					BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -781,6 +799,21 @@ int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_
 	}
 	MemoryContextSwitchTo(old);
 	return item->pid;
+}
+
+void init_executor_shared_data(schd_executor_share_t *data, scheduler_manager_ctx_t *ctx, job_t *job)
+{
+	data->status = SchdExecutorInit;
+	memcpy(data->database, ctx->database, strlen(ctx->database));
+	memcpy(data->nodename, ctx->nodename, strlen(ctx->nodename));
+	memcpy(data->user, job->executor, NAMEDATALEN);
+	data->cron_id = job->cron_id;
+	data->start_at = job->start_at;
+	data->type = job->type;
+	data->message[0] = 0;
+	data->next_time = 0;
+	data->set_invalid = false;
+	data->set_invalid_reason[0] = 0;
 }
 
 int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
@@ -955,12 +988,14 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 		{
 			toremove[nremove].pos = i;
 			toremove[nremove].reason = RmWaitWorker;
+			toremove[nremove].vanish_item = true;
 			nremove++;
 		}
 		else if(item->stop_it && item->stop_it < GetCurrentTimestamp())
 		{
 			toremove[nremove].pos = i;
 			toremove[nremove].reason = RmTimeout;
+			toremove[nremove].vanish_item = true;
 			nremove++;
 		}
 		else
@@ -970,12 +1005,14 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 			{
 				toremove[nremove].pos = i;
 				toremove[nremove].reason = shm_data->status == SchdExecutorDone ? RmDone: RmError;
+				toremove[nremove].vanish_item = shm_data->worker_exit;
 				nremove++;
 			}
 			else if(shm_data->status == SchdExecutorResubmit)
 			{
 				toremove[nremove].pos = i;
 				toremove[nremove].reason = RmDoneResubmit;
+				toremove[nremove].vanish_item = shm_data->worker_exit;
 				nremove++;
 			}
 		}
@@ -1100,13 +1137,28 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 				STOP_SPI_SNAP();
 
 				last  = p->len - p->free - 1;
-				destroy_slot_item(item);
+				if(toremove[i].vanish_item)
+				{
+					destroy_slot_item(item);
+				}
+				else
+				{
+					item->is_free = true;
+				}
 
 				if(toremove[i].pos != last)
 				{
 					_pdebug("--- move from %d to %d", last, toremove[i].pos);
 					p->slots[toremove[i].pos] = p->slots[last];
-					p->slots[last] = NULL;
+					if(toremove[i].vanish_item)
+					{
+						p->slots[last] = NULL;
+					}
+					else
+					{
+						p->slots[last] = item;
+					}
+
 					for(j=i+1; j < nremove; j++)
 					{
 						if(toremove[j].pos == last) 
