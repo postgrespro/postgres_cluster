@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 28;
+use Test::More tests => 29;
 
 # Initialize master node
 
@@ -228,6 +228,7 @@ sub psql_conninfo
 {
 	my ($connstr) = shift;
 	my ($timed_out);
+	diag("connect string: $connstr");
 	my ($retcode, $stdout, $stderr) =
 	  psql($connstr, '\conninfo', timed_out => \$timed_out);
 	if ($retcode == 0 && $stdout =~ /on host "([^"]*)" at port "([^"]*)"/s)
@@ -352,7 +353,7 @@ is($conninfo, get_host_port($node_standby_1), "master second, ro conninfo");
 # at least once
 
 my %conncount = ();
-for (my $i = 0; $i < 9; $i++)
+for (my $i = 0; $i < 15; $i++)
 {
 	my $conn = psql_conninfo(
 		multiconnstring(
@@ -363,6 +364,17 @@ for (my $i = 0; $i < 9; $i++)
 }
 is(scalar(keys(%conncount)), 3, 'random order, readonly connect');
 
+%conncount = ();
+for (my $i = 0; $i < 15; $i++)
+{
+	my $conn = psql_conninfo(
+		connstring2(
+			[ $node_master, $node_standby_1, $node_standby_2 ],
+			undef,
+			{ target_server_type => 'any', hostorder => 'random' }));
+	$conncount{$conn}++;
+}
+is(scalar(keys(%conncount)), 3, 'random order, readonly connect, old style connect string');
 # Test 7.2 - alternate (jdbc compatible) syntax for randomized hosts
 
 for (my $i = 0; $i < 6; $i++)
