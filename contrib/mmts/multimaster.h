@@ -84,7 +84,7 @@
 #define Anum_mtm_local_tables_rel_name	 2
 
 #define Natts_mtm_trans_state   15
-#define Natts_mtm_nodes_state   16
+#define Natts_mtm_nodes_state   17
 #define Natts_mtm_cluster_state 19
 
 typedef ulong64 csn_t; /* commit serial number */
@@ -226,6 +226,7 @@ typedef struct
 	void*       lockGraphData;
 	int         lockGraphAllocated;
 	int         lockGraphUsed;
+	uint64      nHeartbeats;
 } MtmNodeInfo;
 
 typedef struct MtmL2List
