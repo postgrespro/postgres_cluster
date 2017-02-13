@@ -22,6 +22,7 @@ CREATE TABLE at_jobs_submitted(
    resubmit_limit bigint default 100,
    postpone interval,
    max_run_time	interval,
+   canceled boolean default false,
    submit_time timestamp with time zone default now()
 );
 CREATE INDEX at_jobs_submitted_node_at_idx on at_jobs_submitted (node,  at);
@@ -160,6 +161,31 @@ CREATE FUNCTION resubmit(run_after interval default NULL)
   RETURNS bigint 
   AS 'MODULE_PATHNAME', 'resubmit'
   LANGUAGE C IMMUTABLE;
+
+CREATE FUNCTION cancel_job(job_id bigint)  RETURNS boolean AS
+$BODY$
+DECLARE
+	s_count int;
+BEGIN
+	EXECUTE 'SELECT count(*)  FROM at_jobs_submitted WHERE owner  = session_user AND id = $1' INTO s_count USING job_id;
+	IF s_count > 0 THEN
+		UPDATE at_jobs_submitted SET canceled = true WHERE "id" = job_id;
+		WITH moved_rows AS (DELETE from ONLY at_jobs_submitted a WHERE a.id = job_id RETURNING a.*) INSERT INTO at_jobs_done SELECT *, NULL as start_time, false as status, 'job was canceled' as reason FROM moved_rows;
+		RETURN true;
+	ELSE
+		EXECUTE 'SELECT count(*)  FROM at_jobs_process WHERE owner  = session_user AND id = $1' INTO s_count USING job_id;
+		IF s_count > 0 THEN
+			UPDATE at_jobs_process SET canceled = true WHERE "id" = job_id;
+			RETURN true;
+		END IF;
+	END IF;
+
+	RETURN false;
+END
+$BODY$
+LANGUAGE plpgsql
+   SECURITY DEFINER set search_path FROM CURRENT;
+
 
 CREATE FUNCTION submit_job(
 	query text,
@@ -1283,7 +1309,7 @@ CREATE VIEW job_status AS
 		id, node, name, comments, at as run_after,
 		do_sql as query, params, depends_on, executor as run_as, attempt, 
 		resubmit_limit, postpone as max_wait_interval,
-		max_run_time as max_duration, submit_time,
+		max_run_time as max_duration, submit_time, canceled,
 		start_time, status as is_success, reason as error, done_time,
 		'done'::job_at_status_t status
 	FROM schedule.at_jobs_done where owner = session_user
@@ -1292,7 +1318,7 @@ CREATE VIEW job_status AS
 		id, node, name, comments, at as run_after,
 		do_sql as query, params, depends_on, executor as run_as, attempt, 
 		resubmit_limit, postpone as max_wait_interval,
-		max_run_time as max_duration, submit_time, start_time,
+		max_run_time as max_duration, submit_time, canceled, start_time, 
 		NULL as is_success, NULL as error, NULL as done_time,
 		'processing'::job_at_status_t status
 	FROM ONLY schedule.at_jobs_process where owner = session_user
@@ -1301,7 +1327,7 @@ CREATE VIEW job_status AS
 		id, node, name, comments, at as run_after,
 		do_sql as query, params, depends_on, executor as run_as, attempt, 
 		resubmit_limit, postpone as max_wait_interval,
-		max_run_time as max_duration, submit_time, 
+		max_run_time as max_duration, submit_time, canceled, 
 		NULL as start_time, NULL as is_success, NULL as error,
 		NULL as done_time,
 		'submitted'::job_at_status_t status

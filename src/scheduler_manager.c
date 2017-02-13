@@ -1081,7 +1081,11 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 				{
 					if(item->job->type == AtJob)
 					{
-						resubmit_at_job(item->job, shm_data->next_time);
+						if(resubmit_at_job(item->job, shm_data->next_time) == -2)
+						{
+							set_job_error(item->job, "was canceled while processing");
+							move_job_to_log(item->job, false, true);
+						}
 					}
 					else
 					{

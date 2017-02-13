@@ -167,7 +167,7 @@ job_t *_at_get_jobs_to_do(char *nodename, int *n, int *is_error, int limit)
 	Oid argtypes[2] = { TEXTOID, INT4OID };
 	Datum values[2];
 	/* const char *get_job_sql = "select id, at, last_start_available, max_run_time,  executor from ONLY at_jobs_submitted where at <= 'now' and (last_start_available is NULL OR last_start_available > 'now') AND node = $1 order by at,  submit_time limit $2"; */
-	const char *get_job_sql = "select id, at, last_start_available, max_run_time,  executor from ONLY at_jobs_submitted s where ((not exists ( select * from ONLY at_jobs_submitted s2 where s2.id = any(s.depends_on)) AND not exists ( select * from ONLY at_jobs_process p where p.id = any(s.depends_on)) AND s.depends_on is NOT NULL and s.at IS NULL) OR ( s.at IS NOT NULL AND  at <= 'now' and (last_start_available is NULL OR last_start_available > 'now'))) and node = $1 order by at,  submit_time limit $2";
+	const char *get_job_sql = "select id, at, last_start_available, max_run_time,  executor from ONLY at_jobs_submitted s where ((not exists ( select * from ONLY at_jobs_submitted s2 where s2.id = any(s.depends_on)) AND not exists ( select * from ONLY at_jobs_process p where p.id = any(s.depends_on)) AND s.depends_on is NOT NULL and s.at IS NULL) OR ( s.at IS NOT NULL AND  at <= 'now' and (last_start_available is NULL OR last_start_available > 'now'))) and node = $1 and not canceled order by at,  submit_time limit $2";
 
 	*is_error = *n = 0;
 	START_SPI_SNAP();
@@ -366,9 +366,17 @@ int resubmit_at_job(job_t *j, TimestampTz next)
 	int ret;
 	const char *sql = "WITH moved_rows AS (DELETE from ONLY at_jobs_process a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_submitted SELECT id, node, name, comments, $2, do_sql, params, depends_on, executor, owner, last_start_available, attempt +1 , resubmit_limit, postpone, max_run_time, submit_time FROM moved_rows";
 
+
 	values[0] = Int32GetDatum(j->cron_id);
 	values[1] = TimestampTzGetDatum(next);
-	ret = SPI_execute_with_args(sql, 2, argtypes, values, NULL, false, 0);
+	if(select_count_with_args("SELECT count(*) FROM at_jobs_process WHERE NOT canceled and id = $1", 1, argtypes, values, NULL))
+	{
+		ret = SPI_execute_with_args(sql, 2, argtypes, values, NULL, false, 0);
+	}
+	else
+	{
+		return -2;
+	}
 
 	return ret > 0 ? 1: ret;
 }
