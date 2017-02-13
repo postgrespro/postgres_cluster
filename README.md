@@ -1,16 +1,13 @@
 # `PostgreSQL multimaster`
 
-`multimaster` is a PostgreSQL extension with a set of patches that turns PostgreSQL into a synchronous shared-nothing cluster to provide Online Transaction Processing (OLTP) scalability and high availability with automatic disaster recovery.
-
-
-## Features
+`multimaster` is a PostgreSQL extension with a set of patches that turns PostgreSQL into a synchronous shared-nothing cluster to provide Online Transaction Processing (OLTP) scalability and high availability with automatic disaster recovery. As compared to a standard PostgreSQL master-slave cluster, a cluster configured with the `multimaster` extension offers the following benefits:
 
 * Cluster-wide transaction isolation
-* Synchronous logical replication
-* DDL Replication
-* Fault tolerance
-* Automatic node recovery
-
+* Synchronous logical replication 
+* DDL replication
+* Working with temporary tables on each cluster node
+* Fault tolerance and automatic node recovery
+* PostgreSQL online upgrades
 
 ## Overview
 
@@ -49,7 +46,10 @@ For details on the `multimaster` internals, see the [Architecture](/contrib/mmts
 
 * `multimaster` can only replicate one database per cluster.
 
-* The replicated tables must have primary keys. Otherwise, `multimaster` cannot perform logical replication. 
+* The replicated tables must have primary keys or replica identity. Otherwise, `multimaster` cannot perform logical replication. Unlogged tables are not replicated, as in the standard PostgreSQL.
+
+* Sequence generation. 
+To avoid conflicts between unique identifiers on different nodes, `multimaster` modifies the default behavior of sequence generators. For each node, ID generation is started with the node number and is incremented by the number of nodes in each iteration. For example, in a three-node cluster, 1, 4, and 7 IDs are allocated to the objects written onto the first node, while 2, 5, and 8 IDs are reserved for the second node. 
 
 * DDL replication.
 While `multimaster` replicates data on the logical level, DDL is replicated on the statement level, which causes distributed commits of the same statement on different nodes. As a result, complex DDL scenarios, such as stored procedures and temporary tables, may work differently as compared to the standard PostgreSQL. 
