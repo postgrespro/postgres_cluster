@@ -2487,6 +2487,7 @@ static void MtmInitialize()
 			Mtm->nodes[i].restartLSN = INVALID_LSN;
 			Mtm->nodes[i].originId = InvalidRepOriginId;
 			Mtm->nodes[i].timeline = 0;
+			Mtm->nodes[i].nHeartbeats = 0;
 		}
 		Mtm->nodes[MtmNodeId-1].originId = DoNotReplicateId;
 		/* All transaction originated from the current node should be ignored during recovery */
@@ -3975,6 +3976,7 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	usrfctx->values[13] = Int64GetDatum(Mtm->nodes[usrfctx->nodeId-1].connectivityMask);
 	usrfctx->values[14] = BoolGetDatum(BIT_CHECK(Mtm->stalledNodeMask, usrfctx->nodeId-1));
 	usrfctx->values[15] = BoolGetDatum(BIT_CHECK(Mtm->stoppedNodeMask, usrfctx->nodeId-1));
+	usrfctx->values[16] = Int64GetDatum(Mtm->nodes[usrfctx->nodeId-1].nHeartbeats);
 	usrfctx->nodeId += 1;
 
 	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(heap_form_tuple(usrfctx->desc, usrfctx->values, usrfctx->nulls)));

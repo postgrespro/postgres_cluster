@@ -949,13 +949,14 @@ static void MtmReceiver(Datum arg)
 					Mtm->nodes[node-1].lastHeartbeat = MtmGetSystemTime();
 
 					MtmCheckResponse(msg);
-					MTM_LOG2("Receive response %s for transaction %s from node %d", MtmMessageKindMnem[msg->code], msg->gid, msg->node);
+					MTM_LOG2("Receive response %s for transaction %s from node %d", MtmMessageKindMnem[msg->code], msg->gid, node);
 
 					switch (msg->code) {
 					  case MSG_HEARTBEAT:
 						MTM_LOG4("Receive HEARTBEAT from node %d with timestamp %lld delay %lld", 
 								 node, msg->csn, USEC_TO_MSEC(MtmGetSystemTime() - msg->csn)); 
-						continue;
+						Mtm->nodes[node-1].nHeartbeats += 1;
+						continue;						
 					  case MSG_POLL_REQUEST:
 						Assert(*msg->gid);
 						tm = (MtmTransMap*)hash_search(MtmGid2State, msg->gid, HASH_FIND, NULL);
@@ -965,7 +966,7 @@ static void MtmReceiver(Datum arg)
 						} else {
 							msg->status = tm->state->status;
 							msg->csn = tm->state->csn;
-							MTM_LOG1("Send response %s for transaction %s to node %d", MtmTxnStatusMnem[msg->status], msg->gid, msg->node);
+							MTM_LOG1("Send response %s for transaction %s to node %d", MtmTxnStatusMnem[msg->status], msg->gid, node);
 						}
 						msg->disabledNodeMask = Mtm->disabledNodeMask;
 						msg->connectivityMask = SELF_CONNECTIVITY_MASK;
