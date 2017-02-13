@@ -25,12 +25,13 @@ CREATE TABLE at_jobs_submitted(
    canceled boolean default false,
    submit_time timestamp with time zone default now()
 );
-CREATE INDEX at_jobs_submitted_node_at_idx on at_jobs_submitted (node,  at);
+CREATE INDEX ON at_jobs_submitted(at,submit_time);
 
 CREATE TABLE at_jobs_process(
 	start_time timestamp with time zone default now()
 ) INHERITS (at_jobs_submitted);
 
+ALTER TABLE at_jobs_process ADD  primary key (id);
 CREATE INDEX at_jobs_process_node_at_idx on at_jobs_process (node,  at);
 
 CREATE TABLE at_jobs_done(
@@ -39,6 +40,7 @@ CREATE TABLE at_jobs_done(
 	done_time timestamp with time zone default now()
 ) INHERITS (at_jobs_process);
 
+ALTER TABLE at_jobs_done ADD  primary key (id);
 CREATE INDEX at_jobs_done_node_at_idx on at_jobs_done (node,  at);
 
 CREATE TABLE cron(
