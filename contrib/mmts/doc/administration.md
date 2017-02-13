@@ -72,12 +72,13 @@ To use `multimaster`, you need to install Postgres Pro Enterprise on all nodes o
 
 ## Setting up a Multi-Master Cluster
 
+You must have superuser rights to set up a multi-master cluster.
+
 After installing Postgres Pro Enterprise on all nodes, you need to configure the cluster with `multimaster`. Suppose you are setting up a cluster of three nodes, with ```node1```, ```node2```, and ```node3``` domain names.
 To configure your cluster with `multimaster`, complete these steps on each cluster node:
 
 1. Set up the database to be replicated with `multimaster`:
-
-    * If you are starting from scratch, initialize a cluster, create an empty database `mydb` and a new user `myuser`, as usual:
+  * If you are starting from scratch, initialize a cluster, create an empty database `mydb` and a new user `myuser`, as usual:
     ```
     initdb -D ./datadir
     pg_ctl -D ./datadir -l ./pg.log start
@@ -85,47 +86,43 @@ To configure your cluster with `multimaster`, complete these steps on each clust
     createdb mydb -O myuser -h localhost
     pg_ctl -D ./datadir -l ./pg.log stop
     ```
-
-    * If you already have a database `mydb` running on the `node1` server, initialize new nodes from the working node using `pg_basebackup`. On each cluster node you are going to add, run:
+  * If you already have a database `mydb` running on the `node1` server, initialize new nodes from the working node using `pg_basebackup`. On each cluster node you are going to add, run:
     ```
     pg_basebackup -D ./datadir -h node1 mydb
     ```
-    For details, on `pg_basebackup`, see [pg_basebackup](https://www.postgresql.org/docs/9.6/static/app-pgbasebackup.html).
+    For details, see [pg_basebackup](https://www.postgresql.org/docs/9.6/static/app-pgbasebackup.html).
 
-1. Modify the ```postgresql.conf``` configuration file, as follows:
-    * Set up PostgreSQL parameters related to replication.
-
-        ```
-        wal_level = logical
-        max_connections = 100
-        max_prepared_transactions = 300
-        max_wal_senders = 10       # at least the number of nodes
-        max_replication_slots = 10 # at least the number of nodes
-        ```
-        You must change the replication level to `logical` as `multimaster` relies on logical replication. For a cluster of N nodes, enable at least N WAL sender processes and replication slots. Since `multimaster` implicitly adds a `PREPARE` phase to each `COMMIT` transaction, make sure to set the number of prepared transactions to N*max_connections. Otherwise, prepared transactions may be queued.
-
-    * Make sure you have enough background workers allocated for each node:
-
-        ```
-        max_worker_processes = 250
-        ```
-        For example, for a three-node cluster with `max_connections` = 100, `multimaster` may need up to 206 background workers at peak times: 200 workers for connections from the neighbor nodes, two workers for walsender processes, two workers for walreceiver processes, and two workers for the arbiter sender and receiver processes. When setting this parameter, remember that other modules may also use background workers at the same time.
-
-    * Add `multimaster`-specific options:
-
-        ```postgres
-        multimaster.max_nodes = 3  # cluster size
-        multimaster.node_id = 1    # the 1-based index of the node in the cluster
-        multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user=myuser host=node2, dbname=mydb user=myuser host=node3'
+2. Modify the ```postgresql.conf``` configuration file, as follows:
+  * Change the isolation level for transactions to `repeatable read`:
+    ```
+    default_transaction_isolation = "repeatable read"
+    ```
+    `multimaster` supports only the `repeatable read` isolation level. You cannot set up `multimaster` with the default `read committed` level.
+  * Set up PostgreSQL parameters related to replication.
+    ```
+    wal_level = logical
+    max_connections = 100
+    max_prepared_transactions = 300
+    max_wal_senders = 10       # at least the number of nodes
+    max_replication_slots = 10 # at least the number of nodes
+    ```
+    You must change the replication level to `logical` as `multimaster` relies on logical replication. For a cluster of N nodes, enable at least N WAL sender processes and replication slots. Since `multimaster` implicitly adds a `PREPARE` phase to each `COMMIT` transaction, make sure to set the number of prepared transactions to N*max_connections. Otherwise, prepared transactions may be queued.
+  * Make sure you have enough background workers allocated for each node:
+    ```
+    max_worker_processes = 250
+    ```
+    For example, for a three-node cluster with `max_connections` = 100, `multimaster` may need up to 206 background workers at peak times: 200 workers for connections from the neighbor nodes, two workers for walsender processes, two workers for walreceiver processes, and two workers for the arbiter sender and receiver processes. When setting this parameter, remember that other modules may also use background workers at the same time.
+  * Add `multimaster`-specific options:
+    ```postgres
+    multimaster.max_nodes = 3  # cluster size
+    multimaster.node_id = 1    # the 1-based index of the node in the cluster
+    multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user=myuser host=node2, dbname=mydb user=myuser host=node3'
                                 # comma-separated list of connection strings to neighbor nodes
-        ```
-
-        > **Important:** The `node_id` variable takes natural numbers starting from 1, without any gaps in numbering. For example, for a cluster of five nodes, set node IDs to 1, 2, 3, 4, and 5. In the `conn_strings` variable, make sure to list the nodes in the order of their IDs. The `conn_strings` variable must be the same on all nodes.
-
+    ```
+    > **Important:** The `node_id` variable takes natural numbers starting from 1, without any gaps in numbering. For example, for a cluster of five nodes, set node IDs to 1, 2, 3, 4, and 5. In the `conn_strings` variable, make sure to list the nodes in the order of their IDs. The `conn_strings` variable must be the same on all nodes.
     Depending on your network environment and usage patterns, you may want to tune other `multimaster` parameters. For details on all configuration parameters available, see [Tuning Configuration Parameters](#tuning-configuration-parameters).
 
-1. Allow replication in `pg_hba.conf`:
-
+3. Allow replication in `pg_hba.conf`:
     ```
     host myuser all node1 trust
     host myuser all node2 trust
@@ -135,17 +132,18 @@ To configure your cluster with `multimaster`, complete these steps on each clust
     host replication all node3 trust
     ```
 
-1. Start PostgreSQL:
+4. Start PostgreSQL:
 
     ```
     pg_ctl -D ./datadir -l ./pg.log start
     ```
 
-1. When PostgreSQL is started on all nodes, connect to any node and create the `multimaster` extension:
+When PostgreSQL is started on all nodes, connect to any node and create the `multimaster` extension:
     ```
     psql -h node1
     > CREATE EXTENSION multimaster;
     ```
+    The `CREATE EXTENSION` query is replicated to all the cluster nodes. 
 
 To ensure that `multimaster` is enabled, check the ```mtm.get_cluster_state()``` view:
 ```
@@ -240,7 +238,9 @@ Suppose we have a working cluster of three nodes, with ```node1```, ```node2```,
 * Make sure the `pg_hba.conf` files allows replication to the new node.
 
 **See Also**
+
 [Setting up a Multi-Master Cluster](#setting-up-a-multi-master-cluster)
+
 [Monitoring Cluster Status](#monitoring-cluster-status)
 
 
