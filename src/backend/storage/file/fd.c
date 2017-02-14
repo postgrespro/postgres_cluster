@@ -1322,9 +1322,6 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
 			goto io_error;
 		}
 
-		if (ftruncate(vfdP->md, sizeof(FileMap)) != 0)
-			elog(LOG, "OPEN MAP ftruncate FAILED: %d", errno);
-
 		vfdP->map = cfs_mmap(vfdP->md);
 		if (vfdP->map == MAP_FAILED)
 		{
