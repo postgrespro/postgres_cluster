@@ -18,6 +18,8 @@ AS (
 CREATE INDEX aqo_test1_idx_a ON aqo_test1 (a);
 ANALYZE aqo_test1;
 
+SET aqo.mode = 'disabled';
+
 CREATE TABLE tmp1 AS SELECT * FROM aqo_test0
 WHERE a < 3 AND b < 3 AND c < 3 AND d < 3;
 SELECT count(*) FROM tmp1;

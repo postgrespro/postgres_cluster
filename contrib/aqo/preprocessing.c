@@ -99,6 +99,7 @@ aqo_planner(Query *parse,
 	bool		query_nulls[5] = {false, false, false, false, false};
 
 	selectivity_cache_clear();
+	explain_aqo = false;
 
 	if ((parse->commandType != CMD_SELECT && parse->commandType != CMD_INSERT &&
 	 parse->commandType != CMD_UPDATE && parse->commandType != CMD_DELETE) ||
@@ -176,8 +177,26 @@ aqo_planner(Query *parse,
 		if (!collect_stat)
 			add_deactivated_query(query_hash);
 	}
+	explain_aqo = use_aqo;
 
 	return call_default_planner(parse, cursorOptions, boundParams);
+}
+
+/*
+ * Prints if the plan was constructed with AQO.
+ */
+void print_into_explain(PlannedStmt *plannedstmt, IntoClause *into,
+			   ExplainState *es, const char *queryString,
+			   ParamListInfo params, const instr_time *planduration)
+{
+	if (prev_ExplainOnePlan_hook)
+		prev_ExplainOnePlan_hook(plannedstmt, into, es, queryString,
+								params, planduration);
+	if (explain_aqo)
+	{
+		ExplainPropertyBool("Using aqo", true, es);
+		explain_aqo = false;
+	}
 }
 
 /*
