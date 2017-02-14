@@ -1147,9 +1147,11 @@ void MtmExecutor(void* work, size_t size)
 		MTM_LOG2("%d: REMOTE end abort transaction %llu", MyProcPid, (long64)MtmGetCurrentTransactionId());
     }
     PG_END_TRY();
+#if 0 /* spill file is expecrted to be closed by tranaction commit or rollback */
 	if (spill_file >= 0) { 
 		MtmCloseSpillFile(spill_file);
 	}
+#endif
     MemoryContextResetAndDeleteChildren(MtmApplyContext);
 }
     
