@@ -53,7 +53,8 @@ do
         multimaster.node_id = $i
         multimaster.max_nodes = 4
         multimaster.arbiter_port = $arbiter_port
-        multimaster.min_2pc_timeout = 100000
+        multimaster.min_2pc_timeout = 10000000
+        multimaster.trans_spill_threshold = 100
 SQL
     cp pg_hba.conf node$i
     pg_ctl -w -D node$i -l node$i.log start
