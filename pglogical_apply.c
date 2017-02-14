@@ -1097,7 +1097,7 @@ void MtmExecutor(void* work, size_t size)
 			}
  		    case '(':
 			{
-			    int64 size = pq_getmsgint(&s, 4);    
+			    size_t size = pq_getmsgint(&s, 4);    
 				s.data = palloc(size);
 				save_cursor = s.cursor;
 				save_len = s.len;

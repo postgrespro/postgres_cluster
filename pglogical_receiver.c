@@ -583,6 +583,7 @@ pglogical_receiver_main(Datum main_arg)
 								}
 							} else if (spill_file >= 0) { 
 								MtmCloseSpillFile(spill_file);
+								resetStringInfo(&spill_info);
 								spill_file = -1;
 							}
 							ByteBufferReset(&buf);
