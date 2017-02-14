@@ -662,7 +662,7 @@ process_remote_commit(StringInfo in)
 		case PGLOGICAL_PREPARE:
 		{
 			Assert(IsTransactionState() && TransactionIdIsValid(MtmGetCurrentTransactionId()));
-			gid = pq_getmsgstring(in);
+			gid = pstrdup(pq_getmsgstring(in)); /* in case of spilling large transaction to the file, message body will be deallocated, so copy it */
 			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_IN_PROGRESS) == TRANSACTION_STATUS_ABORTED) { 
 				MTM_LOG1("Avoid prepare of previously aborted global transaction %s", gid);	
 				AbortCurrentTransaction();
