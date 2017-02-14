@@ -79,7 +79,6 @@ static void process_remote_insert(StringInfo s, Relation rel);
 static void process_remote_update(StringInfo s, Relation rel);
 static void process_remote_delete(StringInfo s, Relation rel);
 
-static MemoryContext TopContext;
 static bool          GucAltered; /* transaction is setting some GUC variables */
 
 /*
@@ -662,7 +661,7 @@ process_remote_commit(StringInfo in)
 		case PGLOGICAL_PREPARE:
 		{
 			Assert(IsTransactionState() && TransactionIdIsValid(MtmGetCurrentTransactionId()));
-			gid = pstrdup(pq_getmsgstring(in)); /* in case of spilling large transaction to the file, message body will be deallocated, so copy it */
+			gid = pq_getmsgstring(in);
 			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_IN_PROGRESS) == TRANSACTION_STATUS_ABORTED) { 
 				MTM_LOG1("Avoid prepare of previously aborted global transaction %s", gid);	
 				AbortCurrentTransaction();
@@ -1047,7 +1046,7 @@ void MtmExecutor(void* work, size_t size)
 												ALLOCSET_DEFAULT_INITSIZE,
 												ALLOCSET_DEFAULT_MAXSIZE);
     }
-    TopContext = MemoryContextSwitchTo(MtmApplyContext);
+    TopMemoryContext = MemoryContextSwitchTo(MtmApplyContext);
 	replorigin_session_origin = InvalidRepOriginId;
     PG_TRY();
     {    
