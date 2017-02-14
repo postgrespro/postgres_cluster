@@ -2848,9 +2848,9 @@ _PG_init(void)
 		&MtmTransSpillThreshold,
 		1000, /* 1Gb */
 		0,
-		INT_MAX,
+		(MaxAllocSize-1)/MB,
 		PGC_BACKEND,
-		0,\
+		0,
 		NULL,
 		NULL,
 		NULL

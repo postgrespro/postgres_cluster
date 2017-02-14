@@ -70,7 +70,7 @@
 
 #define MULTIMASTER_DEFAULT_ARBITER_PORT 5433
 
-#define MB (1024*1024L)
+#define MB ((size_t)1024*1024)
 
 #define USEC_TO_MSEC(t) ((t)/1000)
 #define MSEC_TO_USEC(t) ((timestamp_t)(t)*1000)
