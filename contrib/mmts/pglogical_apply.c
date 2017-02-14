@@ -616,10 +616,10 @@ process_remote_commit(StringInfo in)
 {
 	uint8 		event;
 	csn_t       csn;
-	const char *gid = NULL;	
 	lsn_t       end_lsn;
 	lsn_t       origin_lsn;
 	int         origin_node;
+	char        gid[MULTIMASTER_MAX_GID_SIZE];
 	/* read event */
 	event = pq_getmsgbyte(in);
 	MtmReplicationNodeId = pq_getmsgbyte(in);
@@ -640,7 +640,7 @@ process_remote_commit(StringInfo in)
 	    case PGLOGICAL_PRECOMMIT_PREPARED:
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
-			gid = pq_getmsgstring(in);
+			strcpy(gid, pq_getmsgstring(in));
 			MTM_LOG2("%d: PGLOGICAL_PRECOMMIT_PREPARED %s", MyProcPid, gid);
 			MtmBeginSession(origin_node);
 			MtmPrecommitTransaction(gid);
@@ -661,7 +661,7 @@ process_remote_commit(StringInfo in)
 		case PGLOGICAL_PREPARE:
 		{
 			Assert(IsTransactionState() && TransactionIdIsValid(MtmGetCurrentTransactionId()));
-			gid = pq_getmsgstring(in);
+			strcpy(gid, pq_getmsgstring(in));
 			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_IN_PROGRESS) == TRANSACTION_STATUS_ABORTED) { 
 				MTM_LOG1("Avoid prepare of previously aborted global transaction %s", gid);	
 				AbortCurrentTransaction();
@@ -694,7 +694,7 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			csn = pq_getmsgint64(in); 
-			gid = pq_getmsgstring(in);
+			strcpy(gid, pq_getmsgstring(in));
 			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%lld, gid=%s, lsn=%llx", csn, gid, end_lsn);
 			MtmResetTransaction();
 			StartTransactionCommand();
@@ -711,7 +711,7 @@ process_remote_commit(StringInfo in)
 		case PGLOGICAL_ABORT_PREPARED:
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
-			gid = pq_getmsgstring(in);
+			strcpy(gid, pq_getmsgstring(in));
 			/* MtmRollbackPreparedTransaction will set origin session itself */
 			MTM_LOG1("Receive ABORT_PREPARED logical message for transaction %s from node %d", gid, origin_node);
 			MtmRollbackPreparedTransaction(origin_node, gid);
@@ -1034,11 +1034,12 @@ void MtmExecutor(void* work, size_t size)
 	int spill_file = -1;
 	int save_cursor = 0;
 	int save_len = 0;
+
     s.data = work;
     s.len = size;
     s.maxlen = -1;
 	s.cursor = 0;
-
+	
     if (MtmApplyContext == NULL) {
         MtmApplyContext = AllocSetContextCreate(TopMemoryContext,
 												"ApplyContext",
@@ -1046,7 +1047,8 @@ void MtmExecutor(void* work, size_t size)
 												ALLOCSET_DEFAULT_INITSIZE,
 												ALLOCSET_DEFAULT_MAXSIZE);
     }
-    TopMemoryContext = MemoryContextSwitchTo(MtmApplyContext);
+	MemoryContextSwitchTo(MtmApplyContext);
+
 	replorigin_session_origin = InvalidRepOriginId;
     PG_TRY();
     {    
