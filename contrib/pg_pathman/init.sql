@@ -251,7 +251,7 @@ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION @extschema@.show_partition_list()
 RETURNS TABLE (
 	 parent			REGCLASS,
-	 "partition"	REGCLASS,
+	 partition		REGCLASS,
 	 parttype		INT4,
 	 partattr		TEXT,
 	 range_min		TEXT,
@@ -880,7 +880,7 @@ LANGUAGE C STRICT;
  */
 CREATE OR REPLACE FUNCTION @extschema@.invoke_on_partition_created_callback(
 	parent_relid	REGCLASS,
-	"partition"		REGCLASS,
+	partition_relid	REGCLASS,
 	init_callback	REGPROCEDURE,
 	start_value		ANYELEMENT,
 	end_value		ANYELEMENT)
@@ -892,7 +892,7 @@ LANGUAGE C;
  */
 CREATE OR REPLACE FUNCTION @extschema@.invoke_on_partition_created_callback(
 	parent_relid	REGCLASS,
-	"partition"		REGCLASS,
+	partition_relid	REGCLASS,
 	init_callback	REGPROCEDURE)
 RETURNS VOID AS 'pg_pathman', 'invoke_on_partition_created_callback'
 LANGUAGE C;

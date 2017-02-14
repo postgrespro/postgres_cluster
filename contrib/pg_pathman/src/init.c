@@ -105,6 +105,37 @@ static uint32 build_sql_facade_version(char *version_cstr);
 static uint32 get_sql_facade_version(void);
 static void validate_sql_facade_version(uint32 ver);
 
+
+/*
+ * Safe hash search (takes care of disabled pg_pathman).
+ */
+void *
+pathman_cache_search_relid(HTAB *cache_table,
+						   Oid relid,
+						   HASHACTION action,
+						   bool *found)
+{
+	/* Table is NULL, take some actions */
+	if (cache_table == NULL)
+		switch (action)
+		{
+			case HASH_FIND:
+			case HASH_ENTER:
+			case HASH_REMOVE:
+				elog(ERROR, "pg_pathman is not initialized yet");
+				break;
+
+			/* Something strange has just happened */
+			default:
+				elog(ERROR, "unexpected action in function "
+					 CppAsString(pathman_cache_search_relid));
+				break;
+		}
+
+	/* Everything is fine */
+	return hash_search(cache_table, (const void *) &relid, action, found);
+}
+
 /*
  * Save and restore main init state.
  */
@@ -278,6 +309,10 @@ static void
 init_local_cache(void)
 {
 	HASHCTL ctl;
+
+	/* Destroy caches, just in case */
+	hash_destroy(partitioned_rels);
+	hash_destroy(parent_cache);
 
 	memset(&ctl, 0, sizeof(ctl));
 	ctl.keysize = sizeof(Oid);

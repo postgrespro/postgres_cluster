@@ -530,6 +530,15 @@ $$
 LANGUAGE plpgsql;
 
 /*
+ * Merge multiple partitions. All data will be copied to the first one.
+ * The rest of partitions will be dropped.
+ */
+CREATE OR REPLACE FUNCTION @extschema@.merge_range_partitions(
+	partitions		REGCLASS[])
+RETURNS VOID AS 'pg_pathman', 'merge_range_partitions'
+LANGUAGE C STRICT;
+
+/*
  * The special case of merging two partitions
  */
 CREATE OR REPLACE FUNCTION @extschema@.merge_range_partitions(
@@ -944,7 +953,7 @@ LANGUAGE plpgsql;
  * Detach range partition
  */
 CREATE OR REPLACE FUNCTION @extschema@.detach_range_partition(
-	partition_relid		REGCLASS)
+	partition_relid	REGCLASS)
 RETURNS TEXT AS
 $$
 DECLARE
@@ -1081,15 +1090,6 @@ $$ LANGUAGE plpgsql;
 
 
 /*
- * Merge multiple partitions. All data will be copied to the first one.
- * The rest of partitions will be dropped.
- */
-CREATE OR REPLACE FUNCTION @extschema@.merge_range_partitions(
-	partitions		REGCLASS[])
-RETURNS VOID AS 'pg_pathman', 'merge_range_partitions'
-LANGUAGE C STRICT;
-
-/*
  * Drops partition and expands the next partition so that it cover dropped
  * one
  *
@@ -1098,7 +1098,7 @@ LANGUAGE C STRICT;
  * partition is dropped the next one automatically covers freed range
  */
 CREATE OR REPLACE FUNCTION @extschema@.drop_range_partition_expand_next(
-	partition		REGCLASS)
+	partition_relid		REGCLASS)
 RETURNS VOID AS 'pg_pathman', 'drop_range_partition_expand_next'
 LANGUAGE C STRICT;
 
