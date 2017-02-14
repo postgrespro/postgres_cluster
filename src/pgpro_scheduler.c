@@ -47,6 +47,7 @@ char *scheduler_nodename = NULL;
 char *scheduler_transaction_state = NULL;
 int  scheduler_max_workers = 2;
 int  scheduler_at_max_workers = 2;
+int  scheduler_worker_job_limit = 1;
 bool scheduler_service_enabled = false;
 char *scheduler_schema = NULL;
 /* Custom GUC done */
@@ -492,6 +493,20 @@ void _PG_init(void)
 		&scheduler_service_enabled,
 		false,
 		PGC_SIGHUP,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+	DefineCustomIntVariable(
+		"schedule.worker_job_limit",
+		"How much job can worker serve before shutdown",
+		NULL,
+		&scheduler_worker_job_limit,
+		1,
+		1,
+		20000,
+		PGC_SUSET,
 		0,
 		NULL,
 		NULL,

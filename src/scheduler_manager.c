@@ -24,6 +24,7 @@
 #include "utils/snapmgr.h"
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
+#include <sys/time.h>
 
 #include "char_array.h"
 #include "sched_manager_poll.h"
@@ -650,9 +651,7 @@ int set_at_job_started(job_t *job)
 	int ret;
 
 	values[0] = Int32GetDatum(job->cron_id);
-	START_SPI_SNAP();
 	ret = SPI_execute_with_args(sql, 1, argtypes, values, NULL, false, 0);
-	STOP_SPI_SNAP();
 	return ret > 0 ? 1: 0;
 }
 
@@ -670,7 +669,6 @@ int set_cron_job_started(job_t *job)
 
 	ret = SPI_execute_with_args(sql, 2, argtypes, values, NULL, false, 0);
 	my_ret = ret == SPI_OK_UPDATE ? 1: 0;
-	STOP_SPI_SNAP();
 
 	return my_ret;
 }
@@ -683,6 +681,9 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 	int idx;
 	schd_executor_share_t *sdata;
 	PGPROC *worker;
+	bool started = false;
+	struct timeval tv; 
+	double begin, elapsed;
 
 	p = job->type == CronJob ? &(ctx->cron) : &(ctx->at);
 	if(p->free == 0)
@@ -690,36 +691,70 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 		return -1;
 	}
 
+	SetCurrentStatementStartTimestamp();
+
+	gettimeofday(&tv, NULL);
+	begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
+
+	StartTransactionCommand();
+	PushActiveSnapshot(GetTransactionSnapshot());
+	SPI_connect();
 	ret = job->type == CronJob ?
 		set_cron_job_started(job): set_at_job_started(job);
+	SPI_finish();
+	PopActiveSnapshot();
+
+	gettimeofday(&tv, NULL);
+	elapsed = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
+	elog(LOG, "move job %f", elapsed);
+	CommitTransactionCommand();
+
+
 	if(ret)
 	{
 		idx = p->len - p->free;  /* next free slot */
+		started = false;
 
-		if(p->slots[idx] && p->slots[idx]->is_free)
+		if(p->slots[idx])
 		{
 			item = p->slots[idx];
-			item->job = worker_alloc(sizeof(job_t));
-			memcpy(item->job, job, sizeof(job_t));
-			item->started  = GetCurrentTimestamp();
-			item->wait_worker_to_die = false;
-			item->stop_it = job->timelimit ?
-						timestamp_add_seconds(0, job->timelimit): 0;
+			if(!item->is_free)
+			{
+				elog(LOG, "Worker on slot %d is not free", idx);
+				return 0;
+			}
 			sdata = dsm_segment_address(item->shared);
 
-			init_executor_shared_data(sdata, ctx, item->job);
-			worker = BackendPidGetProc(item->pid);
-			if(worker)
+			if(sdata->status == SchdExecutorLimitReached)
 			{
-				item->is_free = false;
-				SetLatch(&worker->procLatch);
+				destroy_slot_item(item);
+				p->slots[idx] = NULL;
 			}
 			else
 			{
-				return 0;
+				item->job = worker_alloc(sizeof(job_t));
+				memcpy(item->job, job, sizeof(job_t));
+				item->started  = GetCurrentTimestamp();
+				item->wait_worker_to_die = false;
+				item->stop_it = job->timelimit ?
+					timestamp_add_seconds(0, job->timelimit): 0;
+
+				init_executor_shared_data(sdata, ctx, item->job);
+				worker = BackendPidGetProc(item->pid);
+				if(worker)
+				{
+					item->is_free = false;
+					SetLatch(&worker->procLatch);
+					started = true;
+				}
+				else
+				{
+					pfree(item->job);
+					return 0;
+				}
 			}
 		}
-		else
+		if(!started)
 		{
 			/* need to launch new worker to process job */
 			item = worker_alloc(sizeof(scheduler_manager_slot_t));
@@ -807,6 +842,7 @@ void init_executor_shared_data(schd_executor_share_t *data, scheduler_manager_ct
 	memcpy(data->database, ctx->database, strlen(ctx->database));
 	memcpy(data->nodename, ctx->nodename, strlen(ctx->nodename));
 	memcpy(data->user, job->executor, NAMEDATALEN);
+	data->new_job = true;
 	data->cron_id = job->cron_id;
 	data->start_at = job->start_at;
 	data->type = job->type;
@@ -814,6 +850,7 @@ void init_executor_shared_data(schd_executor_share_t *data, scheduler_manager_ct
 	data->next_time = 0;
 	data->set_invalid = false;
 	data->set_invalid_reason[0] = 0;
+	data->worker_exit = false;
 }
 
 int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
@@ -830,6 +867,8 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 	char *ts;
 	scheduler_manager_pool_t *p;
 	TimestampTz *check_time;
+	struct timeval tv;
+	double begin, elapsed;
 
 	if(type == CronJob)
 	{
@@ -850,7 +889,15 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 		return 1;
 	}
 
+	gettimeofday(&tv, NULL);
+	begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
+
 	jobs = get_jobs_to_do(ctx->nodename, type, &njobs, &is_error, p->free);
+
+	gettimeofday(&tv, NULL);
+	elapsed = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
+	elog(LOG, "get todo %d = %f", type, elapsed);
+
 
 	nwaiting = njobs;
 	if(is_error)
@@ -871,17 +918,19 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 		N = p->free;
 		if(N > nwaiting) N = nwaiting; 
 
+		/* START_SPI_SNAP(); */
+
 		for(i = start_i; i < N + start_i; i++)
 		{
 			ni = type == CronJob ?
 				how_many_instances_on_work(ctx, &(jobs[i])): 100000;
 			if(type == CronJob && ni >= jobs[i].max_instances)
 			{
-				START_SPI_SNAP();
+				/* START_SPI_SNAP(); */
 				set_job_error(&jobs[i], "max instances limit reached");
 				move_job_to_log(&jobs[i], false, false);
 				destroy_job(&jobs[i], 0);
-				STOP_SPI_SNAP();
+				/* STOP_SPI_SNAP(); */
 				jobs[i].cron_id = -1;
 			}
 			else
@@ -904,14 +953,20 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 						elog(ERROR, "Cannot set job to free slot type=%d, id=%d", 
 									jobs[i].type, jobs[i].cron_id);
 					}
-					START_SPI_SNAP();
+		/*			START_SPI_SNAP(); */
 					move_job_to_log(&jobs[i], false, false);
 					destroy_job(&jobs[i], 0);
 					jobs[i].cron_id = -1;
-					STOP_SPI_SNAP();
+					/* STOP_SPI_SNAP(); */
 				}
+	gettimeofday(&tv, NULL);
+	elapsed = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
+	elog(LOG, "get todo %d set one job = %f", type, elapsed);
 			}
 		}
+
+		/* STOP_SPI_SNAP(); */
+
 
 		if(N < nwaiting)
 		{
@@ -923,12 +978,12 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 			nwaiting = 0;
 		}
 	}
+
 	for(i = 0; i < njobs; i++)
 	{
 		if(jobs[i].cron_id != -1) destroy_job(&jobs[i], 0);
 	}
 	pfree(jobs);
-
 
 	if(nwaiting > 0)
 	{
@@ -1015,6 +1070,13 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 				toremove[nremove].vanish_item = shm_data->worker_exit;
 				nremove++;
 			}
+			else if(shm_data->status == SchdExecutorLimitReached)
+			{
+				toremove[nremove].pos = i;
+				toremove[nremove].reason = RmFreeSlot;
+				toremove[nremove].vanish_item = true;
+				nremove++;
+			}
 		}
 	}
 	if(nremove)
@@ -1073,6 +1135,14 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 					set_job_error(item->job, "unknown error occured" );
 				}
 			}
+			else if(toremove[i].reason == RmFreeSlot)
+			{
+				/* Just free slot - worker exited cause it achived max job
+				   limit without job execution due to config change
+				*/
+				removeJob = true;
+				job_status = true;
+			}
 			else
 			{
 				set_job_error(item->job, "reason: %d", toremove[i].reason);
@@ -1080,61 +1150,64 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 
 			if(removeJob)
 			{
-				START_SPI_SNAP();
 				shm_data = dsm_segment_address(item->shared);
+				if(toremove[i].reason != RmFreeSlot)
+				{
+					START_SPI_SNAP();
 
-				if(shm_data->set_invalid)
-				{
-					if(item->job->type == CronJob)
+					if(shm_data->set_invalid)
 					{
-						mark_job_broken(ctx, item->job->cron_id,
-											shm_data->set_invalid_reason);
-					}
-					else
-					{
-						elog(WARNING, "MANAGER %s: attempt to set at job broken",
-										ctx->database);
-					}
-				}
-				if(item->job->next_time_statement)
-				{
-					if(shm_data->next_time > 0)
-					{
-						next_time = _round_timestamp_to_minute(shm_data->next_time);
-						next_time_str = make_date_from_timestamp(next_time, false);
-						if(insert_at_record(ctx->nodename, item->job->cron_id, next_time, 0, &error) < 0)
+						if(item->job->type == CronJob)
 						{
-							manager_fatal_error(ctx, 0, "Cannot insert next time at record: %s", error ? error: "unknown error");
+							mark_job_broken(ctx, item->job->cron_id,
+									shm_data->set_invalid_reason);
 						}
-						update_cron_texttime(ctx,item->job->cron_id, next_time);
-						if(!item->job->error)
+						else
 						{
-							set_job_error(item->job, "set next exec time: %s", next_time_str);
-							pfree(next_time_str);
+							elog(WARNING, "MANAGER %s: attempt to set at job broken",
+									ctx->database);
 						}
 					}
-				}
-				if(toremove[i].reason == RmDoneResubmit)
-				{
-					if(item->job->type == AtJob)
+					if(item->job->next_time_statement)
 					{
-						if(resubmit_at_job(item->job, shm_data->next_time) == -2)
+						if(shm_data->next_time > 0)
 						{
-							set_job_error(item->job, "was canceled while processing");
+							next_time = _round_timestamp_to_minute(shm_data->next_time);
+							next_time_str = make_date_from_timestamp(next_time, false);
+							if(insert_at_record(ctx->nodename, item->job->cron_id, next_time, 0, &error) < 0)
+							{
+								manager_fatal_error(ctx, 0, "Cannot insert next time at record: %s", error ? error: "unknown error");
+							}
+							update_cron_texttime(ctx,item->job->cron_id, next_time);
+							if(!item->job->error)
+							{
+								set_job_error(item->job, "set next exec time: %s", next_time_str);
+								pfree(next_time_str);
+							}
+						}
+					}
+					if(toremove[i].reason == RmDoneResubmit)
+					{
+						if(item->job->type == AtJob)
+						{
+							if(resubmit_at_job(item->job, shm_data->next_time) == -2)
+							{
+								set_job_error(item->job, "was canceled while processing");
+								move_job_to_log(item->job, false, true);
+							}
+						}
+						else
+						{
+							set_job_error(item->job, "cannot resubmit Cron job");
 							move_job_to_log(item->job, false, true);
 						}
 					}
 					else
 					{
-						set_job_error(item->job, "cannot resubmit Cron job");
-						move_job_to_log(item->job, false, true);
+						move_job_to_log(item->job, job_status, true);
 					}
+					STOP_SPI_SNAP();
 				}
-				else
-				{
-					move_job_to_log(item->job, job_status, true);
-				}
-				STOP_SPI_SNAP();
 
 				last  = p->len - p->free - 1;
 				if(toremove[i].vanish_item)
@@ -1167,6 +1240,10 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 							break;
 						}
 					}
+				}
+				else
+				{
+					if(toremove[i].vanish_item) p->slots[last] = NULL;
 				}
 				p->free++;
 				_pdebug("--- free slots: %d", p->free);
@@ -1449,11 +1526,8 @@ void clean_at_table(scheduler_manager_ctx_t *ctx)
 	STOP_SPI_SNAP();
 }
 
-bool check_parent_stop_signal(scheduler_manager_ctx_t *ctx)
+bool check_parent_stop_signal(scheduler_manager_ctx_t *ctx, schd_manager_share_t *shared)
 {
-	schd_manager_share_t *shared;
-
-	shared = dsm_segment_address(ctx->seg);
 	if(shared->setbyparent)
 	{
 		shared->setbyparent = false;
@@ -1486,7 +1560,10 @@ void manager_worker_main(Datum arg)
 	dsm_segment *seg;
 	scheduler_manager_ctx_t *ctx;
 	int wait = 0;
-	int terminate_main_loop = 0;
+	schd_manager_share_t *parent_shared;
+	double begin, start_at, start_cron, check_slots_at, check_slots_cron;
+	struct timeval tv;
+
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
 	seg = dsm_attach(DatumGetInt32(arg));
@@ -1538,6 +1615,7 @@ void manager_worker_main(Datum arg)
 	pqsignal(SIGTERM, worker_spi_sigterm);
 	BackgroundWorkerUnblockSignals();
 
+	parent_shared = dsm_segment_address(seg);
 	pgstat_report_activity(STATE_RUNNING, "initialize context");
 	changeChildBgwState(shared, SchdManagerConnected);
 	init_worker_mem_ctx("WorkerMemoryContext");
@@ -1559,34 +1637,50 @@ void manager_worker_main(Datum arg)
 				refresh_scheduler_manager_context(ctx);
 				set_slots_stat_report(ctx);
 			}
-			if(!got_sighup && !got_sigterm)
+			if(!got_sigterm)
 			{
-				terminate_main_loop = 0;
-				while(!got_sighup && !got_sigterm)
-				{
-					wait = 0;
-					if(check_parent_stop_signal(ctx))
-					{
-						terminate_main_loop = 1;
-						break;
-					}
-					wait += scheduler_start_jobs(ctx, AtJob);
-					wait += scheduler_start_jobs(ctx, CronJob);
-					scheduler_check_slots(ctx, &(ctx->at));
-					scheduler_check_slots(ctx, &(ctx->cron));
-					scheduler_make_atcron_record(ctx);
-					/* set_slots_stat_report(ctx); */
-					if(wait == 0) break;
-				}
-				if(terminate_main_loop) break;
+				wait = 0;
+				if(check_parent_stop_signal(ctx, parent_shared))  break; 
+				/** start at jobs **/	
+				gettimeofday(&tv, NULL);
+				begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
+				wait += scheduler_start_jobs(ctx, AtJob);
+				gettimeofday(&tv, NULL);
+				start_at = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
+
+				/** start cron jobs **/	
+				gettimeofday(&tv, NULL);
+				begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
+				wait += scheduler_start_jobs(ctx, CronJob); 
+				gettimeofday(&tv, NULL);
+				start_cron = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
+
+				/** check at slots **/	
+				gettimeofday(&tv, NULL);
+				begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
+				scheduler_check_slots(ctx, &(ctx->at));
+				gettimeofday(&tv, NULL);
+				check_slots_at = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
+
+				/** check cron slots **/	
+				gettimeofday(&tv, NULL);
+				begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
+				scheduler_check_slots(ctx, &(ctx->cron));
+				gettimeofday(&tv, NULL);
+				check_slots_cron = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
+
+				scheduler_make_atcron_record(ctx); 
 				set_slots_stat_report(ctx); 
 				/* if there are any expired jobs to get rid of */
 				scheduler_vanish_expired_jobs(ctx, AtJob);
-				scheduler_vanish_expired_jobs(ctx, CronJob);
+				scheduler_vanish_expired_jobs(ctx, CronJob); 
+				elog(LOG, "ITERATION2 %f, %f, %f, %f, %s",
+					start_at, start_cron, check_slots_at,
+					check_slots_cron, wait > 0 ? "yes": "no");
 			}
 		}
 		rc = WaitLatch(MyLatch,
-			WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 500L);
+			WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1500L);
 		ResetLatch(MyLatch);
 	}
 	scheduler_manager_stop(ctx);

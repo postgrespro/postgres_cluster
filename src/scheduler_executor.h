@@ -12,10 +12,13 @@ typedef enum {
 	SchdExecutorWork,
 	SchdExecutorDone,
 	SchdExecutorResubmit,
-	SchdExecutorError
+	SchdExecutorError,
+	SchdExecutorLimitReached
 } schd_executor_status_t;
 
 typedef struct {
+	bool new_job;
+
 	char database[PGPRO_SCHEDULER_DBNAME_MAX];
 	char nodename[PGPRO_SCHEDULER_NODENAME_MAX];
 	char user[NAMEDATALEN];
@@ -50,7 +53,8 @@ int executor_onrollback(job_t *job, executor_error_t *ee);
 void set_pg_var(bool resulti, executor_error_t *ee);
 int push_executor_error(executor_error_t *e, char *fmt, ...)  pg_attribute_printf(2, 3);
 int set_session_authorization(char *username, char **error);
-int do_one_job(schd_executor_share_t *shared);
+int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status);
+int read_worker_job_limit(void);
 
 extern Datum get_self_id(PG_FUNCTION_ARGS);
 extern Datum resubmit(PG_FUNCTION_ARGS);

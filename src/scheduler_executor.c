@@ -56,6 +56,16 @@ handle_sigterm(SIGNAL_ARGS)
 	errno = save_errno;
 }
 
+int read_worker_job_limit(void)
+{
+	const char *opt;
+	int var;
+
+	opt = GetConfigOption("schedule.worker_job_limit", false, false);
+	if(opt == NULL) return 1;
+	var = atoi(opt);
+	return var;
+}
 
 void executor_worker_main(Datum arg)
 {
@@ -64,6 +74,9 @@ void executor_worker_main(Datum arg)
 	int result;
 	int64 jobs_done = 0;
 	int64 worker_jobs_limit = 1;
+	int rc = 0;
+	schd_executor_status_t status;
+	PGPROC *parent;
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_executor");
 	seg = dsm_attach(DatumGetInt32(arg));
@@ -72,6 +85,7 @@ void executor_worker_main(Datum arg)
 			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			 errmsg("executor unable to map dynamic shared memory segment")));
 	shared = dsm_segment_address(seg);
+	parent = BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid);
 
 	if(shared->status != SchdExecutorInit)
 	{
@@ -84,38 +98,77 @@ void executor_worker_main(Datum arg)
 	pgstat_report_activity(STATE_RUNNING, "initialize");
 	init_worker_mem_ctx("ExecutorMemoryContext");
 	BackgroundWorkerInitializeConnection(shared->database, NULL);
-/* TODO check latch, wait signals, die */
+	worker_jobs_limit = read_worker_job_limit();
+
+	pqsignal(SIGTERM, handle_sigterm);
+	pqsignal(SIGHUP, worker_spi_sighup);
+	BackgroundWorkerUnblockSignals();
+
 	while(1)
 	{
-		result = do_one_job(shared);
-		if(result < 0)
+		/* we need it if idle worker recieve SIGHUP an realize that it done
+		   too mach */
+		status = SchdExecutorLimitReached;
+
+		if(got_sighup)
+		{
+			got_sighup = false;
+			ProcessConfigFile(PGC_SIGHUP);
+			worker_jobs_limit = read_worker_job_limit();
+		}
+		result = do_one_job(shared, &status);
+		if(result > 0)
+		{
+			if(++jobs_done >= worker_jobs_limit)
+			{
+				shared->worker_exit = true;
+				shared->status = status;
+				break;
+			}
+			else
+			{
+				shared->status = status;
+			}
+			SetLatch(&parent->procLatch);
+		}
+		else if(result < 0)
 		{
 			delete_worker_mem_ctx();
 			dsm_detach(seg);
 			proc_exit(0);
 		}
-		if(++jobs_done >= worker_jobs_limit) break;
-	}
 
-	shared->worker_exit = true;
+		pgstat_report_activity(STATE_IDLE, "waiting for a job");
+		rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0L);
+		ResetLatch(MyLatch);
+		if(rc && rc & WL_POSTMASTER_DEATH) break;
+	}
 
 	delete_worker_mem_ctx();
 	dsm_detach(seg);
 	proc_exit(0);
 }
 
-int do_one_job(schd_executor_share_t *shared)
+int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 {
 	executor_error_t EE;
 	char *error = NULL;
-	schd_executor_status_t status;
 	int i;
 	job_t *job;
 	int ret;
 
 	EE.n = 0;
 	EE.errors = NULL;
-	status = shared->status = SchdExecutorWork;
+	if(shared->new_job)
+	{
+		shared->new_job = false;
+	}
+	else
+	{
+		return 0;
+	}
+
+	*status = shared->status = SchdExecutorWork;
 	shared->message[0] = 0;
 
 	pgstat_report_activity(STATE_RUNNING, "initialize job");
@@ -125,8 +178,8 @@ int do_one_job(schd_executor_share_t *shared)
 		if(shared->message[0] == 0)
 			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX, 
 											"Cannot retrive job information");
-		shared->status = SchdExecutorError;
 		shared->worker_exit = true;
+		*status = shared->status = SchdExecutorError;
 
 		return -1;
 	}
@@ -146,13 +199,10 @@ int do_one_job(schd_executor_share_t *shared)
 			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
 				"Cannot set session auth: unknown error");
 		}
+		*status = shared->worker_exit = true;
 		shared->status = SchdExecutorError;
-		shared->worker_exit = true;
 		return -2;
 	}
-
-	pqsignal(SIGTERM, handle_sigterm);
-	BackgroundWorkerUnblockSignals();
 
 	pgstat_report_activity(STATE_RUNNING, "process job");
 	CHECK_FOR_INTERRUPTS();
@@ -183,7 +233,7 @@ int do_one_job(schd_executor_share_t *shared)
 		if(ret < 0)
 		{
 			/* success = false; */
-			status = SchdExecutorError;
+			*status = SchdExecutorError;
 			if(error)
 			{
 				push_executor_error(&EE, "error in command #%d: %s",
@@ -209,7 +259,7 @@ int do_one_job(schd_executor_share_t *shared)
 			}
 		}
 	}
-	if(status != SchdExecutorError)
+	if(*status != SchdExecutorError)
 	{
 		if(job->same_transaction)
 		{
@@ -219,8 +269,8 @@ int do_one_job(schd_executor_share_t *shared)
 		{
 			if(job->attempt >= job->resubmit_limit)
 			{
-				status = SchdExecutorError;
-#ifdef HAVE_INT64
+				*status = SchdExecutorError;
+#ifdef HAVE_LONG_INT_64
 				push_executor_error(&EE, "Cannot resubmit: limit reached (%ld)", job->resubmit_limit);
 #else
 				push_executor_error(&EE, "Cannot resubmit: limit reached (%lld)", job->resubmit_limit);
@@ -229,12 +279,12 @@ int do_one_job(schd_executor_share_t *shared)
 			}
 			else
 			{
-				status = SchdExecutorResubmit;
+				*status = SchdExecutorResubmit;
 			}
 		}
 		else
 		{
-			status = SchdExecutorDone;
+			*status = SchdExecutorDone;
 		}
 
 		SetConfigOption("schedule.transaction_state", "success", PGC_INTERNAL, PGC_S_SESSION);
@@ -255,8 +305,7 @@ int do_one_job(schd_executor_share_t *shared)
 	{
 		set_shared_message(shared, &EE);
 	}
-	shared->status = status;
-	if(status == SchdExecutorResubmit)
+	if(*status == SchdExecutorResubmit)
 	{
 		shared->next_time = timestamp_add_seconds(0, resubmit_current_job);
 		resubmit_current_job = 0;
