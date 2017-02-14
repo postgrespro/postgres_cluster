@@ -522,8 +522,10 @@ pglogical_receiver_main(Datum main_arg)
 
 				if (rc > hdr_len)
 				{
+					int msg_len = rc - hdr_len;
 					stmt = copybuf + hdr_len;
 					if (mode == REPLMODE_RECOVERED) {
+						/* Ingore all incompleted transactions from recovered node */
 						if (stmt[0] != 'B') {
 							output_written_lsn = Max(walEnd, output_written_lsn);
 							continue;
@@ -531,7 +533,7 @@ pglogical_receiver_main(Datum main_arg)
 						mode = REPLMODE_OPEN_EXISTED;
 					}
 					MTM_LOG3("Receive message %c from node %d", stmt[0], nodeId);
-					if (buf.used >= MtmTransSpillThreshold*MB) { 
+					if (buf.used + msg_len + 1 >= MtmTransSpillThreshold*MB) { 
 						if (spill_file < 0) {
 							int file_id;
 							spill_file = MtmCreateSpillFile(nodeId, &file_id);
@@ -548,15 +550,15 @@ pglogical_receiver_main(Datum main_arg)
 					if (stmt[0] == 'Z' || (stmt[0] == 'M' && (stmt[1] == 'L' || stmt[1] == 'A' || stmt[1] == 'C'))) {
 						MTM_LOG3("Process '%c' message from %d", stmt[1], nodeId);
 						if (stmt[0] == 'M' && stmt[1] == 'C') { /* concurrent DDL should be executed by parallel workers */
-							MtmExecute(stmt, rc - hdr_len);
+							MtmExecute(stmt, msg_len);
 						} else {
-							MtmExecutor(stmt, rc - hdr_len); /* all other messages can be processed by receiver itself */
+							MtmExecutor(stmt, msg_len); /* all other messages can be processed by receiver itself */
 						}
 					} else { 
-						ByteBufferAppend(&buf, stmt, rc - hdr_len);
+						ByteBufferAppend(&buf, stmt, msg_len);
 						if (stmt[0] == 'C') /* commit */
 						{
-							if (!MtmFilterTransaction(stmt, rc - hdr_len)) 
+							if (!MtmFilterTransaction(stmt, msg_len)) 
 							{ 
 								if (spill_file >= 0) { 
 									ByteBufferAppend(&buf, ")", 1);
@@ -568,7 +570,7 @@ pglogical_receiver_main(Datum main_arg)
 									spill_file = -1;
 									resetStringInfo(&spill_info);
 								} else { 
-									if (MtmPreserveCommitOrder && buf.used == rc - hdr_len) {
+									if (MtmPreserveCommitOrder && buf.used == msg_len) {
 										/* Perform commit-prepared and rollback-prepared requested directly in receiver */
 										timestamp_t stop, start = MtmGetSystemTime();
 										MtmExecutor(buf.data, buf.used);
