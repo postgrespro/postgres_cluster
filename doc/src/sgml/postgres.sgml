@@ -15,8 +15,8 @@
  <title>&productname; &version; Documentation</title>
 
  <bookinfo>
+  <corpauthor>The PostgreSQL Global Development Group</corpauthor>   
   <corpauthor>Postgres Professional</corpauthor>
-  <corpauthor>The PostgreSQL Global Development Group</corpauthor>
   <productname>&productname;</productname>
   <productnumber>&version;</productnumber>
   &legal;
