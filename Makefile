@@ -6,6 +6,8 @@ DATA = multimaster--1.0.sql
 
 .PHONY: all
 
+EXTRA_INSTALL=contrib/mmts
+
 all: multimaster.so
 
 PG_CPPFLAGS = -I$(libpq_srcdir)
@@ -21,3 +23,7 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
+
+check: temp-install
+	$(prove_check)
+
