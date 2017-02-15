@@ -1127,7 +1127,7 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 		CHECK_FOR_INTERRUPTS();
 		now = MtmGetSystemTime();
 		MtmLock(LW_EXCLUSIVE);
-		if (now > deadline) { 
+		if (MtmMin2PCTimeout != 0 && now > deadline) { 
 			if (ts->isPrepared) { 
 				MTM_ELOG(LOG, "Distributed transaction %s (%llu) is not committed in %lld msec", ts->gid, (long64)ts->xid, USEC_TO_MSEC(now - start));
 			} else {
@@ -2846,7 +2846,7 @@ _PG_init(void)
 		"Maximal size (Mb) of transaction after which transaction is written to the disk",
 		NULL,
 		&MtmTransSpillThreshold,
-		1000, /* 1Gb */
+		100, /* 100Mb */
 		0,
 		MaxAllocSize/MB,
 		PGC_BACKEND,
@@ -3030,8 +3030,8 @@ _PG_init(void)
 		"Minimal timeout between receiving PREPARED message from nodes participated in transaction to coordinator (milliseconds)",
 		NULL,
 		&MtmMin2PCTimeout,
-		2000, /* 2 seconds */
-		1,
+		0, /* disabled */
+		0,
 		INT_MAX,
 		PGC_BACKEND,
 		0,

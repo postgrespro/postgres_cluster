@@ -79,6 +79,26 @@ static void send_startup_message(LogicalDecodingContext *ctx,
 
 static bool startup_message_sent = false;
 
+#define OUTPUT_BUFFER_SIZE (16*1024*1024) 
+
+static void MtmOutputPluginWrite(LogicalDecodingContext *ctx, bool last_write, bool flush)
+{
+	if (flush) {
+		OutputPluginWrite(ctx, last_write);
+	}
+}
+
+static void MtmOutputPluginPrepareWrite(LogicalDecodingContext *ctx, bool last_write, bool flush)
+{
+	if (!ctx->prepared_write) { 
+		OutputPluginPrepareWrite(ctx, last_write);
+	} else if (flush || ctx->out->len > OUTPUT_BUFFER_SIZE) {
+		OutputPluginWrite(ctx, false);
+		OutputPluginPrepareWrite(ctx, last_write);
+	}
+}
+
+
 /* specify output plugin callbacks */
 void
 _PG_output_plugin_init(OutputPluginCallbacks *cb)
@@ -388,7 +408,7 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 	send_replication_origin &= txn->origin_id != InvalidRepOriginId;
 
 	if (data->api) { 
-		OutputPluginPrepareWrite(ctx, !send_replication_origin);
+		MtmOutputPluginPrepareWrite(ctx, !send_replication_origin, true);
 		data->api->write_begin(ctx->out, data, txn);
 
 		if (send_replication_origin)
@@ -396,8 +416,8 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 			char *origin;
 			
 			/* Message boundary */
-			OutputPluginWrite(ctx, false);
-			OutputPluginPrepareWrite(ctx, true);
+			MtmOutputPluginWrite(ctx, false, false);
+			MtmOutputPluginPrepareWrite(ctx, true, false);
 			
 			/*
 			 * XXX: which behaviour we want here?
@@ -412,7 +432,7 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 				replorigin_by_oid(txn->origin_id, true, &origin))
 			data->api->write_origin(ctx->out, origin, txn->origin_lsn);
 		}
-		OutputPluginWrite(ctx, true);
+		MtmOutputPluginWrite(ctx, true, false);
 	}
 }
 
@@ -422,9 +442,9 @@ pg_decode_caughtup(LogicalDecodingContext *ctx)
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 
 	if (data->api) { 
-		OutputPluginPrepareWrite(ctx, true);
+		MtmOutputPluginPrepareWrite(ctx, true, true);
 		data->api->write_caughtup(ctx->out, data, ctx->reader->EndRecPtr);
-		OutputPluginWrite(ctx, true);
+		MtmOutputPluginWrite(ctx, true, true);
 	}
 }
 
@@ -439,9 +459,9 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 
 	if (data->api) { 
-		OutputPluginPrepareWrite(ctx, true);
+		MtmOutputPluginPrepareWrite(ctx, true, true);
 		data->api->write_commit(ctx->out, data, txn, commit_lsn);
-		OutputPluginWrite(ctx, true);
+		MtmOutputPluginWrite(ctx, true, true);
 	}
 }
 
@@ -462,38 +482,38 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	/* TODO: add caching (send only if changed) */
 	if (data->api->write_rel)
 	{
-		OutputPluginPrepareWrite(ctx, false);
+		MtmOutputPluginPrepareWrite(ctx, false, false);
 		data->api->write_rel(ctx->out, data, relation);
-		OutputPluginWrite(ctx, false);
+		MtmOutputPluginWrite(ctx, false, false);
 	}
 
 	/* Send the data */
 	switch (change->action)
 	{
 		case REORDER_BUFFER_CHANGE_INSERT:
-			OutputPluginPrepareWrite(ctx, true);
+			MtmOutputPluginPrepareWrite(ctx, true, false);
 			data->api->write_insert(ctx->out, data, relation,
 									&change->data.tp.newtuple->tuple);
-			OutputPluginWrite(ctx, true);
+			MtmOutputPluginWrite(ctx, true, false);
 			break;
 		case REORDER_BUFFER_CHANGE_UPDATE:
 			{
 				HeapTuple oldtuple = change->data.tp.oldtuple ?
 					&change->data.tp.oldtuple->tuple : NULL;
 
-				OutputPluginPrepareWrite(ctx, true);
+				MtmOutputPluginPrepareWrite(ctx, true, false);
 				data->api->write_update(ctx->out, data, relation, oldtuple,
 										&change->data.tp.newtuple->tuple);
-				OutputPluginWrite(ctx, true);
+				MtmOutputPluginWrite(ctx, true, false);
 				break;
 			}
 		case REORDER_BUFFER_CHANGE_DELETE:
 			if (change->data.tp.oldtuple)
 			{
-				OutputPluginPrepareWrite(ctx, true);
+				MtmOutputPluginPrepareWrite(ctx, true, false);
 				data->api->write_delete(ctx->out, data, relation,
 										&change->data.tp.oldtuple->tuple);
-				OutputPluginWrite(ctx, true);
+				MtmOutputPluginWrite(ctx, true, false);
 			}
 			else
 				elog(DEBUG1, "didn't send DELETE change because of missing oldtuple");
@@ -536,9 +556,9 @@ pg_decode_message(LogicalDecodingContext *ctx,
 {
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 
-	OutputPluginPrepareWrite(ctx, true);
+	MtmOutputPluginPrepareWrite(ctx, true, !transactional);
 	data->api->write_message(ctx->out, prefix, sz, message);
-	OutputPluginWrite(ctx, true);
+	MtmOutputPluginWrite(ctx, true, !transactional);
 }
 
 static void
@@ -559,9 +579,9 @@ send_startup_message(LogicalDecodingContext *ctx,
 	 */
 
 	if (data->api) {
-		OutputPluginPrepareWrite(ctx, last_message);
+		MtmOutputPluginPrepareWrite(ctx, last_message, true);
 		data->api->write_startup_message(ctx->out, msg);
-		OutputPluginWrite(ctx, last_message);
+		MtmOutputPluginWrite(ctx, last_message, true);
 	}
 
 	pfree(msg);
