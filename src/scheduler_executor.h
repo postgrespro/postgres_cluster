@@ -13,7 +13,8 @@ typedef enum {
 	SchdExecutorDone,
 	SchdExecutorResubmit,
 	SchdExecutorError,
-	SchdExecutorLimitReached
+	SchdExecutorLimitReached,
+	SchdExecutorIdling
 } schd_executor_status_t;
 
 typedef struct {
@@ -55,6 +56,9 @@ int push_executor_error(executor_error_t *e, char *fmt, ...)  pg_attribute_print
 int set_session_authorization(char *username, char **error);
 int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status);
 int read_worker_job_limit(void);
+void at_executor_worker_main(Datum arg);
+int process_one_job(schd_executor_share_t *shared, schd_executor_status_t *status);
+Oid set_session_authorization_by_name(char *rolename, char **error);
 
 extern Datum get_self_id(PG_FUNCTION_ARGS);
 extern Datum resubmit(PG_FUNCTION_ARGS);

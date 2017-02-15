@@ -19,6 +19,7 @@ typedef struct {
 	task_type_t type;
 	int cron_id;
 	TimestampTz start_at;
+	TimestampTz started;
 	char *node;
 	TimestampTz last_start_avail;
 	bool same_transaction;
@@ -31,7 +32,7 @@ typedef struct {
 	TimestampTz postpone;
 	char *executor;
 	char *owner;
-	long int timelimit;
+	int64 timelimit;
 	int max_instances;
 	char *onrollback;
 	char *next_time_statement;
@@ -55,6 +56,8 @@ job_t *get_cron_job(int cron_id, TimestampTz start_at, char *nodename, char **pe
 int _cron_move_job_to_log(job_t *j, bool status);
 int _at_move_job_to_log(job_t *j, bool status, bool processed);
 int resubmit_at_job(job_t *j, TimestampTz next);
+job_t *get_next_at_job_with_lock(char *nodename, char **error);
+int set_at_job_done(job_t *job, char *error, int64 resubmit);
 
 #endif
 

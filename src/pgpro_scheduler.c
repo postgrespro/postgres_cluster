@@ -164,6 +164,29 @@ bool is_scheduler_enabled(void)
 	return false;
 }
 
+char *set_schema(const char *name, bool get_old)
+{
+	char *schema_name = NULL;
+	char *current = NULL;
+	bool free_name = false;
+
+	if(get_old)
+		current = _copy_string((char *)GetConfigOption("search_path", true, false));
+	if(name)
+	{
+		schema_name = (char *)name;
+	}
+	else
+	{
+		schema_name = _copy_string((char *)GetConfigOption("schedule.schema", true, false));	
+		free_name = true;
+	}
+	SetConfigOption("search_path", schema_name,  PGC_USERSET, PGC_S_SESSION);
+	if(free_name) pfree(schema_name);
+
+	return current;
+}
+
 
 /** END of SOME UTILS **/
 

@@ -196,12 +196,12 @@ char *get_text_from_spi(int row_n, int pos)
 	return _copy_string(TextDatumGetCString(datum));
 }
 
-long int get_interval_seconds_from_spi(int row_n, int pos, long def)
+int64 get_interval_seconds_from_spi(int row_n, int pos, long def)
 {
 	Datum datum;
 	bool is_null;
 	Interval *interval;
-	long result = 0;
+	int64 result = 0;
 
 	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
 	                        pos, &is_null);

@@ -292,18 +292,17 @@ int scheduler_manager_stop(scheduler_manager_ctx_t *ctx)
 
 	for(pi = 0; pi < 2; pi++)
 	{
-		onwork = pools[pi]->len - pools[pi]->free;
-		if(onwork == 0) continue;
-
 		pgstat_report_activity(STATE_RUNNING, "stop executors");
-		for(i=0; i < onwork; i++)
+		for(i=0; i < pools[pi]->len; i++)
 		{
-			elog(LOG, "Schedule manager: terminate bgworker %d",
+			if(pools[pi]->slots[i])
+			{
+				elog(LOG, "Schedule manager: terminate bgworker %d",
 												pools[pi]->slots[i]->pid);
-			TerminateBackgroundWorker(pools[pi]->slots[i]->handler);
+				TerminateBackgroundWorker(pools[pi]->slots[i]->handler);
+			}
 		}
 		working += onwork;
-
 	}
 	return working;
 }
@@ -841,11 +840,23 @@ void init_executor_shared_data(schd_executor_share_t *data, scheduler_manager_ct
 	data->status = SchdExecutorInit;
 	memcpy(data->database, ctx->database, strlen(ctx->database));
 	memcpy(data->nodename, ctx->nodename, strlen(ctx->nodename));
-	memcpy(data->user, job->executor, NAMEDATALEN);
 	data->new_job = true;
-	data->cron_id = job->cron_id;
-	data->start_at = job->start_at;
-	data->type = job->type;
+
+	if(job)
+	{
+		memcpy(data->user, job->executor, NAMEDATALEN);
+		data->cron_id = job->cron_id;
+		data->start_at = job->start_at;
+		data->type = job->type;
+	}
+	else
+	{
+		data->cron_id = 0;
+		data->start_at = 0;
+		data->type = 0;
+		data->user[0] = 0;
+	}
+
 	data->message[0] = 0;
 	data->next_time = 0;
 	data->set_invalid = false;
@@ -1550,6 +1561,90 @@ void set_slots_stat_report(scheduler_manager_ctx_t *ctx)
 	pgstat_report_activity(STATE_RUNNING, state);
 }
 
+int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
+{
+	BackgroundWorker worker;
+	dsm_segment *seg;
+	Size segsize;
+	schd_executor_share_t *shm_data;
+	BgwHandleStatus status;
+	MemoryContext old;
+	scheduler_manager_slot_t *item;
+
+	item = worker_alloc(sizeof(scheduler_manager_slot_t));
+	item->job = NULL;
+	item->started  = item->worker_started = GetCurrentTimestamp();
+	item->wait_worker_to_die = false;
+	item->stop_it = 0;
+
+	pgstat_report_activity(STATE_RUNNING, "register scheduler at executor");
+
+	segsize = (Size)sizeof(schd_executor_share_t);
+
+	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
+	old = MemoryContextSwitchTo(SchedulerWorkerContext);
+	seg = dsm_create(segsize, 0);
+
+	item->shared = seg;
+	shm_data = dsm_segment_address(item->shared);
+	init_executor_shared_data(shm_data, ctx, NULL);
+
+	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
+					BGWORKER_BACKEND_DATABASE_CONNECTION;
+	worker.bgw_start_time = BgWorkerStart_ConsistentState;
+	worker.bgw_restart_time = BGW_NEVER_RESTART;
+	worker.bgw_main = NULL;
+	worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
+	sprintf(worker.bgw_library_name, "pgpro_scheduler");
+	sprintf(worker.bgw_function_name, "at_executor_worker_main");
+	snprintf(worker.bgw_name, BGW_MAXLEN, "scheduler executor %s", shm_data->database);
+	worker.bgw_notify_pid = MyProcPid;
+
+	if(!RegisterDynamicBackgroundWorker(&worker, &(item->handler)))
+	{
+		elog(LOG, "Cannot register AT executor worker for db: %s",
+									shm_data->database);
+		dsm_detach(item->shared);
+		MemoryContextSwitchTo(old);
+		pfree(item);
+		return 0;
+	}
+	status = WaitForBackgroundWorkerStartup(item->handler, &(item->pid));
+	if(status != BGWH_STARTED)
+	{
+		elog(LOG, "Cannot start AT executor worker for db: %s, status: %d",
+							shm_data->database,  status);
+		dsm_detach(item->shared);
+		MemoryContextSwitchTo(old);
+		pfree(item);
+		return 0;
+	}
+	MemoryContextSwitchTo(old);
+	ctx->at.slots[pos] = item;
+
+	return item->pid;
+}
+
+void start_at_workers(scheduler_manager_ctx_t *ctx, schd_manager_share_t *shared)
+{
+	int i;
+
+	if(ctx->at.len > 0) 
+	{
+		for(i=0 ; i < ctx->at.len; i++)
+		{
+			if(start_at_worker(ctx, i) == 0)
+			{
+				scheduler_manager_stop(ctx);
+				delete_worker_mem_ctx();
+				changeChildBgwState(shared, SchdManagerDie);
+				dsm_detach(ctx->seg);
+				proc_exit(0);
+			}
+		}
+	}
+}
+
 void manager_worker_main(Datum arg)
 {
 	char *database;
@@ -1561,8 +1656,6 @@ void manager_worker_main(Datum arg)
 	scheduler_manager_ctx_t *ctx;
 	int wait = 0;
 	schd_manager_share_t *parent_shared;
-	double begin, start_at, start_cron, check_slots_at, check_slots_cron;
-	struct timeval tv;
 
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
@@ -1620,6 +1713,7 @@ void manager_worker_main(Datum arg)
 	changeChildBgwState(shared, SchdManagerConnected);
 	init_worker_mem_ctx("WorkerMemoryContext");
 	ctx = initialize_scheduler_manager_context(database, seg);
+	start_at_workers(ctx, shared);
 	clean_at_table(ctx);
 	set_slots_stat_report(ctx);
 	SetConfigOption("enable_seqscan", "off", PGC_USERSET, PGC_S_SESSION);
@@ -1642,41 +1736,22 @@ void manager_worker_main(Datum arg)
 				wait = 0;
 				if(check_parent_stop_signal(ctx, parent_shared))  break; 
 				/** start at jobs **/	
-				gettimeofday(&tv, NULL);
-				begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
-				wait += scheduler_start_jobs(ctx, AtJob);
-				gettimeofday(&tv, NULL);
-				start_at = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
+				/**** wait += scheduler_start_jobs(ctx, AtJob); */
 
 				/** start cron jobs **/	
-				gettimeofday(&tv, NULL);
-				begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
 				wait += scheduler_start_jobs(ctx, CronJob); 
-				gettimeofday(&tv, NULL);
-				start_cron = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
 
 				/** check at slots **/	
-				gettimeofday(&tv, NULL);
-				begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
-				scheduler_check_slots(ctx, &(ctx->at));
-				gettimeofday(&tv, NULL);
-				check_slots_at = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
+				/**** scheduler_check_slots(ctx, &(ctx->at)); */
 
 				/** check cron slots **/	
-				gettimeofday(&tv, NULL);
-				begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
 				scheduler_check_slots(ctx, &(ctx->cron));
-				gettimeofday(&tv, NULL);
-				check_slots_cron = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
 
 				scheduler_make_atcron_record(ctx); 
 				set_slots_stat_report(ctx); 
 				/* if there are any expired jobs to get rid of */
 				scheduler_vanish_expired_jobs(ctx, AtJob);
 				scheduler_vanish_expired_jobs(ctx, CronJob); 
-				elog(LOG, "ITERATION2 %f, %f, %f, %f, %s",
-					start_at, start_cron, check_slots_at,
-					check_slots_cron, wait > 0 ? "yes": "no");
 			}
 		}
 		rc = WaitLatch(MyLatch,

@@ -160,6 +160,48 @@ job_t *get_jobs_to_do(char *nodename, task_type_t type, int *n, int *is_error, i
 	return _at_get_jobs_to_do(nodename, n, is_error, limit);
 }
 
+job_t *get_next_at_job_with_lock(char *nodename, char **error)
+{
+	job_t *job = NULL;
+	int ret, got;
+	Oid argtypes[1] = { TEXTOID };
+	Datum values[1];
+	char *oldpath;
+
+	const char *get_job_sql = "select id, at, array_append('{}'::text[], do_sql)::text[], params, executor, attempt, resubmit_limit, max_run_time from ONLY at_jobs_submitted s where ((not exists ( select * from ONLY at_jobs_submitted s2 where s2.id = any(s.depends_on)) AND not exists ( select * from ONLY at_jobs_process p where p.id = any(s.depends_on)) AND s.depends_on is NOT NULL and s.at IS NULL) OR ( s.at IS NOT NULL AND  at <= 'now' and (last_start_available is NULL OR last_start_available > 'now'))) and node = $1 and not canceled order by at,  submit_time limit 1 FOR UPDATE SKIP LOCKED";
+	oldpath = set_schema(NULL, true);
+	*error = NULL;
+	values[0] = CStringGetTextDatum(nodename);
+
+	ret = execute_spi_sql_with_args(get_job_sql, 1,
+										argtypes, values, NULL, error);
+
+	set_schema(oldpath, false);
+	pfree(oldpath);
+	if(ret == SPI_OK_SELECT)
+	{
+		got  = SPI_processed;
+		if(got > 0)
+		{
+			job = worker_alloc(sizeof(job_t));
+			init_scheduler_job(job, AtJob);
+
+			job->cron_id = get_int_from_spi(0, 1, 0);
+			job->start_at = get_timestamp_from_spi(0, 2, 0);
+			job->dosql = get_textarray_from_spi(0, 3, &job->dosql_n);
+			job->sql_params = get_textarray_from_spi(0, 4, &job->sql_params_n);
+			job->executor = get_text_from_spi(0, 5);
+			job->attempt = get_int64_from_spi(0, 6, 0);
+			job->resubmit_limit = get_int64_from_spi(0, 7, 0);
+			job->timelimit = get_interval_seconds_from_spi(0, 8, 0);
+			job->node = _copy_string(nodename);
+
+			return job;
+		}
+	}
+	return NULL;
+}
+
 job_t *_at_get_jobs_to_do(char *nodename, int *n, int *is_error, int limit)
 {
 	job_t *jobs = NULL;
@@ -355,6 +397,66 @@ int _at_move_job_to_log(job_t *j, bool status, bool process)
 		nulls[2] = 'n'; 
 	}
 	ret = SPI_execute_with_args(sql, 3, argtypes, values, nulls, false, 0);
+
+	return ret > 0 ? 1: ret;
+}
+
+int set_at_job_done(job_t *job, char *error, int64 resubmit)
+{
+	char *this_error = NULL;
+	Datum values[3];	
+	char  nulls[3] = { ' ', ' ', ' ' };	
+	Oid argtypes[3] = { INT4OID, BOOLOID, TEXTOID };
+	int ret;
+	char *oldpath;
+	const char *sql;
+	int n = 3;
+
+	const char *sql_submitted = "WITH moved_rows AS (DELETE from ONLY at_jobs_submitted a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_done SELECT *, NULL as start_time, $2 as status, $3 as reason FROM moved_rows";
+	const char *resubmit_sql = "update ONLY at_jobs_submitted SET attempt = attempt + 1, at = $2 WHERE id = $1";
+
+	values[0] = Int32GetDatum(job->cron_id);
+
+	if(resubmit)
+	{
+		if(job->attempt + 1 < job->resubmit_limit)
+		{
+			sql = resubmit_sql;
+			values[1] = TimestampTzGetDatum(timestamp_add_seconds(0, resubmit));
+			argtypes[1] = TIMESTAMPTZOID;
+			n = 2;
+		}
+		else
+		{
+			this_error = _copy_string("resubmit limit reached");
+			sql = sql_submitted;
+			values[1] = BoolGetDatum(false);
+			values[2] = CStringGetTextDatum(this_error);
+		}
+	}
+	else
+	{
+		sql = sql_submitted;
+		if(error)
+		{
+			values[1] = BoolGetDatum(false);
+			values[2] = CStringGetTextDatum(error);
+		}
+		else
+		{
+			values[1] = BoolGetDatum(true);
+			nulls[2] = 'n'; 
+		}
+	}
+
+
+	oldpath = set_schema(NULL, true);
+
+	ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, false, 0);
+
+	set_schema(oldpath, false);
+	pfree(oldpath);
+	if(this_error) pfree(this_error);
 
 	return ret > 0 ? 1: ret;
 }

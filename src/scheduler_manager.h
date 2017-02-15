@@ -117,5 +117,7 @@ int init_manager_pool(scheduler_manager_pool_t *p, int N);
 int refresh_manager_pool(const char *database, const char *name, scheduler_manager_pool_t *p, int N);
 void destroy_scheduler_manager_pool(scheduler_manager_pool_t *p);
 void init_executor_shared_data(schd_executor_share_t *data, scheduler_manager_ctx_t *ctx, job_t *job);
+int start_at_worker(scheduler_manager_ctx_t *ctx, int pos);
+void start_at_workers(scheduler_manager_ctx_t *ctx, schd_manager_share_t *shared);
 
 #endif
