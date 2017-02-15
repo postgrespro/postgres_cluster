@@ -140,7 +140,7 @@ CREATE EXTENSION pg_pathman;
     <itemizedlist spacing="compact">
       <listitem>
         <para>
-          Install the latest _stable_ release of pg_pathman.
+          Install the latest <emphasis role="strong">stable</emphasis> release of pg_pathman.
         </para>
       </listitem>
       <listitem>
@@ -153,10 +153,10 @@ CREATE EXTENSION pg_pathman;
           Execute the following queries:
         </para>
         <programlisting>
-          /* replace X.Y with the version number, e.g. 1.3 */
-          ALTER EXTENSION pg_pathman UPDATE TO "X.Y";
-          SET pg_pathman.enable = t;
-        </programlisting>
+/* replace X.Y with the version number, e.g. 1.3 */
+ALTER EXTENSION pg_pathman UPDATE TO "X.Y";
+SET pg_pathman.enable = t;
+</programlisting>
       </listitem>
     </itemizedlist>
   </sect2>
@@ -395,7 +395,7 @@ drop_partitions(parent      REGCLASS,
       <title>Additional parameters</title>
       <programlisting>
         set_interval(relation REGCLASS, value ANYELEMENT)
-      </programlisting>
+</programlisting>
       <para>
         Update RANGE partitioned table interval. Note that interval must not
         be negative and it must not be trivial, i.e. its value should be
