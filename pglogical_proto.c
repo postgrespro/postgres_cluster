@@ -43,6 +43,7 @@ static bool MtmIsFilteredTxn;
 static TransactionId MtmCurrentXid;
 static bool DDLInProgress = false;
 static Oid MtmSenderTID; /* transaction identifier for WAL sender */
+static Oid MtmLastRelId; /* last relation ID sent to the receiver in this transaction */
 
 static void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel);
 
@@ -95,6 +96,11 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
 
 	relid = RelationGetRelid(rel);
 
+	if (relid == MtmLastRelId) { 
+		return;
+	}
+	MtmLastRelId = relid;
+
 	pq_sendbyte(out, 'R');		/* sending RELATION */	
 	pq_sendint(out, relid, sizeof relid); /* use Oid as relation identifier */
 	
@@ -143,6 +149,7 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 			pglogical_relid_map_reset();
 			MtmSenderTID += 1; /* skip InvalidOid */
 		}
+		MtmLastRelId = InvalidOid;
 		MtmCurrentXid = txn->xid;
 		MtmIsFilteredTxn = false;
 		MTM_LOG3("%d: pglogical_write_begin XID=%d node=%d CSN=%lld recovery=%d restart_decoding_lsn=%llx first_lsn=%llx end_lsn=%llx confirmed_flush=%llx", 

@@ -62,6 +62,7 @@ typedef struct TupleData
 	bool		changed[MaxTupleAttributeNumber];
 } TupleData;
 
+
 static Relation read_rel(StringInfo s, LOCKMODE mode);
 static void read_tuple_parts(StringInfo s, Relation rel, TupleData *tup);
 static EState* create_rel_estate(Relation rel);
@@ -581,6 +582,15 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 	}
 }
 
+static void
+close_rel(Relation rel)
+{
+	if (rel != NULL) 
+	{
+		heap_close(rel, NoLock);	   
+	} 		
+}
+
 static Relation 
 read_rel(StringInfo s, LOCKMODE mode)
 {
@@ -823,7 +833,6 @@ process_remote_insert(StringInfo s, Relation rel)
 		MtmMakeRelationLocal(RelationGetRelid(rel));
 	}
 		
-    heap_close(rel, NoLock);
     ExecResetTupleTable(estate->es_tupleTable, true);
     FreeExecutorState(estate);
 	   
@@ -944,7 +953,6 @@ process_remote_update(StringInfo s, Relation rel)
     
 	/* release locks upon commit */
 	index_close(idxrel, NoLock);
-	heap_close(rel, NoLock);
     
 	ExecResetTupleTable(estate->es_tupleTable, true);
 	FreeExecutorState(estate);
@@ -1019,7 +1027,6 @@ process_remote_delete(StringInfo s, Relation rel)
 	PopActiveSnapshot();
 
 	index_close(idxrel, NoLock);
-	heap_close(rel, NoLock);
 
 	ExecResetTupleTable(estate->es_tupleTable, true);
 	FreeExecutorState(estate);
@@ -1071,6 +1078,7 @@ void MtmExecutor(void* work, size_t size)
 				}
                 /* COMMIT */
             case 'C':
+  			    close_rel(rel);
                 process_remote_commit(&s);
                 break;
                 /* INSERT */
@@ -1086,6 +1094,7 @@ void MtmExecutor(void* work, size_t size)
                 process_remote_delete(&s, rel);
                 continue;
             case 'R':
+  			    close_rel(rel);
                 rel = read_rel(&s, RowExclusiveLock);
                 continue;
 			case 'F':
