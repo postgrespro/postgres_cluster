@@ -1031,7 +1031,7 @@ static void MtmReceiver(Datum arg)
 					}
 					ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);
 					if (ts == NULL) { 
-						MTM_ELOG(WARNING, "Ignore response for unexisted transaction %llu from node %d", (long64)msg->dxid, node);
+						MTM_ELOG(WARNING, "Ignore response for non-existing transaction %llu from node %d", (long64)msg->dxid, node);
 						continue;
 					}
 					Assert(msg->code == MSG_ABORTED || strcmp(msg->gid, ts->gid) == 0);
