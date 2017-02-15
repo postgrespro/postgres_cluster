@@ -978,7 +978,7 @@ static void MtmReceiver(Datum arg)
 						Assert(*msg->gid);
 						tm = (MtmTransMap*)hash_search(MtmGid2State, msg->gid, HASH_FIND, NULL);
 						if (tm == NULL || tm->state == NULL) { 
-							MTM_ELOG(WARNING, "Response for unexisted transaction %s from node %d", msg->gid, node);
+							MTM_ELOG(WARNING, "Response for non-existing transaction %s from node %d", msg->gid, node);
 						} else {
 							ts = tm->state;
 							BIT_SET(ts->votedMask, node-1);
