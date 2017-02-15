@@ -671,12 +671,12 @@ void at_executor_worker_main(Datum arg)
 
 		if(lets_sleep)
 		{
-			elog(LOG, "sleeping");
 			pgstat_report_activity(STATE_IDLE, "waiting for a job");
 			rc = WaitLatch(MyLatch,
 				WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_TIMEOUT, 1000L);
 			ResetLatch(MyLatch);
 			if(rc && rc & WL_POSTMASTER_DEATH) break;
+			lets_sleep = false;
 		}
 	}
 
@@ -711,15 +711,17 @@ int process_one_job(schd_executor_share_t *shared, schd_executor_status_t *statu
 
 	if(!job)
 	{
-		STOP_SPI_SNAP();
 		if(error)
 		{
 			shared->status = SchdExecutorIdling;
 			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
 				"Cannot get job: %s", error);
+			elog(LOG, "AT EXECUTOR: ERROR: %s", error);
 			pfree(error);
+			ABORT_SPI_SNAP();
 			return -1;
 		}
+		STOP_SPI_SNAP();
 		shared->status = SchdExecutorIdling;
 		return 0;
 	}
@@ -784,7 +786,6 @@ int process_one_job(schd_executor_share_t *shared, schd_executor_status_t *statu
 			sprintf(buff, "error in command: code: %d", ret);
 			set_at_job_done(job, buff, resubmit_current_job);
 		}
-		
 	}
 	else
 	{

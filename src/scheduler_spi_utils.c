@@ -246,6 +246,7 @@ Datum select_onedatumvalue_sql(const char *sql, bool *is_null)
 	int ret;
 	Datum datum = 0;
 
+	SetCurrentStatementStartTimestamp();
 	ret = SPI_execute(sql, true, 0);
 	if(ret == SPI_OK_SELECT)
 	{
@@ -266,6 +267,7 @@ int select_count_with_args(const char *sql, int n, Oid *argtypes, Datum *values,
 	Datum datum;
 	bool is_null;
 
+	SetCurrentStatementStartTimestamp();
 	ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, true, 0);
 	if(ret == SPI_OK_SELECT)
 	{
@@ -303,6 +305,7 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 
 	PG_TRY();
 	{
+		SetCurrentStatementStartTimestamp();
 		ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, false, 0);
 	}
 	PG_CATCH();
@@ -389,6 +392,7 @@ int execute_spi_params_prepared(const char *sql, int nparams, char **params, cha
 		plan = SPI_prepare(sql, nparams, paramtypes);
 		if(plan)
 		{
+			SetCurrentStatementStartTimestamp();
 			ret = SPI_execute_plan(plan, values, NULL, false, 0);
 		}
 	}

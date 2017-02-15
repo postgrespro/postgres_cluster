@@ -681,8 +681,6 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 	schd_executor_share_t *sdata;
 	PGPROC *worker;
 	bool started = false;
-	struct timeval tv; 
-	double begin, elapsed;
 
 	p = job->type == CronJob ? &(ctx->cron) : &(ctx->at);
 	if(p->free == 0)
@@ -690,24 +688,12 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 		return -1;
 	}
 
-	SetCurrentStatementStartTimestamp();
+	START_SPI_SNAP();
 
-	gettimeofday(&tv, NULL);
-	begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
-
-	StartTransactionCommand();
-	PushActiveSnapshot(GetTransactionSnapshot());
-	SPI_connect();
 	ret = job->type == CronJob ?
 		set_cron_job_started(job): set_at_job_started(job);
-	SPI_finish();
-	PopActiveSnapshot();
 
-	gettimeofday(&tv, NULL);
-	elapsed = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
-	elog(LOG, "move job %f", elapsed);
-	CommitTransactionCommand();
-
+	START_SPI_SNAP();
 
 	if(ret)
 	{
@@ -878,8 +864,6 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 	char *ts;
 	scheduler_manager_pool_t *p;
 	TimestampTz *check_time;
-	struct timeval tv;
-	double begin, elapsed;
 
 	if(type == CronJob)
 	{
@@ -900,15 +884,8 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 		return 1;
 	}
 
-	gettimeofday(&tv, NULL);
-	begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
 
 	jobs = get_jobs_to_do(ctx->nodename, type, &njobs, &is_error, p->free);
-
-	gettimeofday(&tv, NULL);
-	elapsed = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
-	elog(LOG, "get todo %d = %f", type, elapsed);
-
 
 	nwaiting = njobs;
 	if(is_error)
@@ -929,7 +906,6 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 		N = p->free;
 		if(N > nwaiting) N = nwaiting; 
 
-		/* START_SPI_SNAP(); */
 
 		for(i = start_i; i < N + start_i; i++)
 		{
@@ -937,11 +913,9 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 				how_many_instances_on_work(ctx, &(jobs[i])): 100000;
 			if(type == CronJob && ni >= jobs[i].max_instances)
 			{
-				/* START_SPI_SNAP(); */
 				set_job_error(&jobs[i], "max instances limit reached");
 				move_job_to_log(&jobs[i], false, false);
 				destroy_job(&jobs[i], 0);
-				/* STOP_SPI_SNAP(); */
 				jobs[i].cron_id = -1;
 			}
 			else
@@ -964,20 +938,12 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 						elog(ERROR, "Cannot set job to free slot type=%d, id=%d", 
 									jobs[i].type, jobs[i].cron_id);
 					}
-		/*			START_SPI_SNAP(); */
 					move_job_to_log(&jobs[i], false, false);
 					destroy_job(&jobs[i], 0);
 					jobs[i].cron_id = -1;
-					/* STOP_SPI_SNAP(); */
 				}
-	gettimeofday(&tv, NULL);
-	elapsed = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
-	elog(LOG, "get todo %d set one job = %f", type, elapsed);
 			}
 		}
-
-		/* STOP_SPI_SNAP(); */
-
 
 		if(N < nwaiting)
 		{
@@ -1597,7 +1563,7 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 	worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
 	sprintf(worker.bgw_library_name, "pgpro_scheduler");
 	sprintf(worker.bgw_function_name, "at_executor_worker_main");
-	snprintf(worker.bgw_name, BGW_MAXLEN, "scheduler executor %s", shm_data->database);
+	snprintf(worker.bgw_name, BGW_MAXLEN, "scheduler at-executor %s", shm_data->database);
 	worker.bgw_notify_pid = MyProcPid;
 
 	if(!RegisterDynamicBackgroundWorker(&worker, &(item->handler)))
