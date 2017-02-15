@@ -145,7 +145,7 @@ CREATE EXTENSION pg_pathman;
       </listitem>
       <listitem>
         <para>
-          Restart your PostgreSQL cluster.
+          Restart your <productname>&productname;</productname> cluster.
         </para>
       </listitem>
       <listitem>
