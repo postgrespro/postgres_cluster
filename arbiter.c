@@ -336,7 +336,7 @@ static void MtmCheckResponse(MtmArbiterMessage* resp)
 		&& Mtm->status != MTM_RECOVERED
 		&& Mtm->nodes[MtmNodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < MtmGetSystemTime()) 
 	{ 
-		MTM_ELOG(WARNING, "Node %d thinks that I am dead, while I am %s (message %s)", resp->node, MtmNodeStatusMnem[Mtm->status], MtmMessageKindMnem[resp->code]);
+		MTM_ELOG(WARNING, "Node %d thinks that I'm dead, while I'm %s (message %s)", resp->node, MtmNodeStatusMnem[Mtm->status], MtmMessageKindMnem[resp->code]);
 		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
 		Mtm->nConfigChanges += 1;
 		MtmSwitchClusterMode(MTM_RECOVERY);
