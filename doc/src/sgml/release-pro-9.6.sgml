@@ -15,7 +15,8 @@
     
     <itemizedlist>
       <listitem>
-        <para>Module <application>pg_pathman</application> has been updated to version 1.3 (See <xref linkend="pg-pathman">).</para>
+        <para>Module <application>pg_pathman</application> has been updated to
+        version 1.3 (See <xref linkend="pg-pathman"> and <xref linkend="pg-pathman-how-to-update">).</para>
       </listitem>
       <listitem>
         <para>The <application>sr_plan</application> module is now initialized independently for each database instance (See <xref linkend="sr-plan">).</para>

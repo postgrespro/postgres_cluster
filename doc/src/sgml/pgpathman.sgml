@@ -132,6 +132,34 @@ CREATE EXTENSION pg_pathman;
       </para>
     </blockquote>
   </sect2>
+  <sect2 id="pg-pathman-how-to-update">
+    <title>How to update</title>
+    <para>
+      In order to update pg_pathman:
+    </para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          Install the latest _stable_ release of pg_pathman.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          Restart your PostgreSQL cluster.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          Execute the following queries:
+        </para>
+        <programlisting>
+          /* replace X.Y with the version number, e.g. 1.3 */
+          ALTER EXTENSION pg_pathman UPDATE TO "X.Y";
+          SET pg_pathman.enable = t;
+        </programlisting>
+      </listitem>
+    </itemizedlist>
+  </sect2>
   <sect2 id="available-functions">
     <title>Available functions</title>
     <sect3 id="partition-creation">
