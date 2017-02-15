@@ -1169,7 +1169,7 @@ static void MtmReceiver(Datum arg)
 		}
 		if (Mtm->status == MTM_ONLINE) { 
 			now = MtmGetSystemTime();
-			/* Check for heartbeats only in case of timeout expiration: it means that we do not have unproceeded events.
+			/* Check for heartbeats only in case of timeout expiration: it means that we do not have non-processed events.
 			 * It helps to avoid false node failure detection because of blocking receiver.
 			 */
 			if (n == 0) {
