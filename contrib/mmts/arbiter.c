@@ -336,7 +336,7 @@ static void MtmCheckResponse(MtmArbiterMessage* resp)
 		&& Mtm->status != MTM_RECOVERED
 		&& Mtm->nodes[MtmNodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < MtmGetSystemTime()) 
 	{ 
-		MTM_ELOG(WARNING, "Node %d thinks that I am dead, while I am %s (message %s)", resp->node, MtmNodeStatusMnem[Mtm->status], MtmMessageKindMnem[resp->code]);
+		MTM_ELOG(WARNING, "Node %d thinks that I'm dead, while I'm %s (message %s)", resp->node, MtmNodeStatusMnem[Mtm->status], MtmMessageKindMnem[resp->code]);
 		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
 		Mtm->nConfigChanges += 1;
 		MtmSwitchClusterMode(MTM_RECOVERY);
@@ -411,8 +411,8 @@ static void MtmSendHeartbeat()
 	
 }
 
-/* This function shoudl be called from all places where sender can be blocked.
- * It checks send_heartbeat flag set by timer and if it is set hthen sends heartbeats to all alive nodes 
+/* This function should be called from all places where sender can be blocked.
+ * It checks send_heartbeat flag set by timer and if it is set then sends heartbeats to all alive nodes 
  */
 void MtmCheckHeartbeat()
 {
@@ -577,8 +577,8 @@ static bool MtmSendToNode(int node, void const* buf, int size, time_t reconnectT
 	BIT_SET(busy_mask, node);
 	while (true) {
 #if 0
-		/* Original intention was to reestablish connectect when reconnet mask is set to avoid hanged-up connection.
-		 * But reconnectMask is set not only when connection is broken, so breaking connection in all this cases cause avalunch of connection failures.
+		/* Original intention was to reestablish connection when reconnect mask is set to avoid hanged-up connection.
+		 * But reconnectMask is set not only when connection is broken, so breaking connection in all this cases cause avalanche of connection failures.
 		 */
 		if (sockets[node] >= 0 && BIT_CHECK(Mtm->reconnectMask, node)) {
 			MTM_ELOG(WARNING, "Arbiter is forced to reconnect to node %d", node+1); 
@@ -978,7 +978,7 @@ static void MtmReceiver(Datum arg)
 						Assert(*msg->gid);
 						tm = (MtmTransMap*)hash_search(MtmGid2State, msg->gid, HASH_FIND, NULL);
 						if (tm == NULL || tm->state == NULL) { 
-							MTM_ELOG(WARNING, "Response for unexisted transaction %s from node %d", msg->gid, node);
+							MTM_ELOG(WARNING, "Response for non-existing transaction %s from node %d", msg->gid, node);
 						} else {
 							ts = tm->state;
 							BIT_SET(ts->votedMask, node-1);
@@ -1031,7 +1031,7 @@ static void MtmReceiver(Datum arg)
 					}
 					ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);
 					if (ts == NULL) { 
-						MTM_ELOG(WARNING, "Ignore response for unexisted transaction %llu from node %d", (long64)msg->dxid, node);
+						MTM_ELOG(WARNING, "Ignore response for non-existing transaction %llu from node %d", (long64)msg->dxid, node);
 						continue;
 					}
 					Assert(msg->code == MSG_ABORTED || strcmp(msg->gid, ts->gid) == 0);
@@ -1130,7 +1130,7 @@ static void MtmReceiver(Datum arg)
 							} else { 
 								Assert(ts->status == TRANSACTION_STATUS_ABORTED);
 								MTM_ELOG(WARNING, "Receive PRECOMMITTED response for aborted transaction %s (%llu) from node %d", 
-									 ts->gid, (long64)ts->xid, node); // How it can happen? SHould we use assert here?
+									 ts->gid, (long64)ts->xid, node); // How it can happen? Should we use assert here?
 								if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
 									MtmWakeUpBackend(ts);
 								}
@@ -1169,7 +1169,7 @@ static void MtmReceiver(Datum arg)
 		}
 		if (Mtm->status == MTM_ONLINE) { 
 			now = MtmGetSystemTime();
-			/* Check for heartbeats only in case of timeout expiration: it means that we do not have unproceeded events.
+			/* Check for heartbeats only in case of timeout expiration: it means that we do not have non-processed events.
 			 * It helps to avoid false node failure detection because of blocking receiver.
 			 */
 			if (n == 0) {
