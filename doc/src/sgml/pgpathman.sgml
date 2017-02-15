@@ -190,14 +190,14 @@ create_hash_partitions(relation         REGCLASS,
 create_range_partitions(relation       REGCLASS,
                         attribute      TEXT,
                         start_value    ANYELEMENT,
-                        interval       ANYELEMENT,
+                        p_interval     ANYELEMENT,
                         count          INTEGER DEFAULT NULL
                         partition_data BOOLEAN DEFAULT TRUE)
 
 create_range_partitions(relation       REGCLASS,
                         attribute      TEXT,
                         start_value    ANYELEMENT,
-                        interval       INTERVAL,
+                        p_interval     INTERVAL,
                         count          INTEGER DEFAULT NULL,
                         partition_data BOOLEAN DEFAULT TRUE)
 </programlisting>
@@ -221,14 +221,14 @@ create_partitions_from_range(relation       REGCLASS,
                              attribute      TEXT,
                              start_value    ANYELEMENT,
                              end_value      ANYELEMENT,
-                             interval       ANYELEMENT,
+                             p_interval     ANYELEMENT,
                              partition_data BOOLEAN DEFAULT TRUE)
 
 create_partitions_from_range(relation       REGCLASS,
                              attribute      TEXT,
                              start_value    ANYELEMENT,
                              end_value      ANYELEMENT,
-                             interval       INTERVAL,
+                             p_interval     INTERVAL,
                              partition_data BOOLEAN DEFAULT TRUE)
 </programlisting>
       <para>
@@ -400,8 +400,8 @@ drop_partitions(parent      REGCLASS,
         Update RANGE partitioned table interval. Note that interval must not
         be negative and it must not be trivial, i.e. its value should be
         greater than zero for numeric types, at least 1 microsecond for
-        <literal>TIMESTAMP</literal> and at least 1 day
-        for <literal>DATE</literal>.
+        <literal>timestamp</literal> and at least 1 day
+        for <literal>date</literal>.
       </para>      
       <programlisting>
 set_enable_parent(relation REGCLASS, value BOOLEAN)
