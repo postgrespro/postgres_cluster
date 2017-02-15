@@ -577,8 +577,8 @@ static bool MtmSendToNode(int node, void const* buf, int size, time_t reconnectT
 	BIT_SET(busy_mask, node);
 	while (true) {
 #if 0
-		/* Original intention was to reestablish connectect when reconnet mask is set to avoid hanged-up connection.
-		 * But reconnectMask is set not only when connection is broken, so breaking connection in all this cases cause avalunch of connection failures.
+		/* Original intention was to reestablish connection when reconnect mask is set to avoid hanged-up connection.
+		 * But reconnectMask is set not only when connection is broken, so breaking connection in all this cases cause avalanche of connection failures.
 		 */
 		if (sockets[node] >= 0 && BIT_CHECK(Mtm->reconnectMask, node)) {
 			MTM_ELOG(WARNING, "Arbiter is forced to reconnect to node %d", node+1); 
