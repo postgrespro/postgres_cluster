@@ -411,8 +411,8 @@ static void MtmSendHeartbeat()
 	
 }
 
-/* This function shoudl be called from all places where sender can be blocked.
- * It checks send_heartbeat flag set by timer and if it is set hthen sends heartbeats to all alive nodes 
+/* This function should be called from all places where sender can be blocked.
+ * It checks send_heartbeat flag set by timer and if it is set then sends heartbeats to all alive nodes 
  */
 void MtmCheckHeartbeat()
 {
