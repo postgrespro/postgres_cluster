@@ -318,7 +318,7 @@ extern RelFileMap* fillRelFileMapSeq(Archive *fout, int *nrels,
 							 const char *dbname, const char *tblname);
 extern RelFileMap * fillRelFileMapToast(Archive *fout, RelFileMap *map,
 										int nrels, int ntoastrels);
-extern void transfer_relfile(RelFileMap *map, const char *type_suffix,
+extern void transfer_relfile(RelFileMap *map, const char *type_suffix, const char *cfm_suffix,
 							 const char *transfer_dir, bool is_restore,
 							 bool is_copy_mode, bool is_verbose);
 extern void transferCheckControlData(Archive *fout, const char *transfer_dir, bool isRestore);

@@ -626,11 +626,13 @@ doTransferRelRestore(ArchiveHandle *AH, TocEntry *te)
 	{
 		ahprintf(AH, "SELECT pg_transfer_cleanup_shmem(%u::oid);", (&map[i])->reloid);
 
-		transfer_relfile(&map[i], "", ropt->transfer_dir,
+		transfer_relfile(&map[i], "", "", ropt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
-		transfer_relfile(&map[i], "_fsm", ropt->transfer_dir,
+		transfer_relfile(&map[i], "", ".cfm", ropt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
-		transfer_relfile(&map[i], "_vm", ropt->transfer_dir,
+		transfer_relfile(&map[i], "_fsm", "", ropt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&map[i], "_vm", "", ropt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
 		if (ropt->generate_wal)
 			ahprintf(AH, "SELECT pg_transfer_wal(%u::oid);", (&map[i])->reloid);
@@ -641,7 +643,9 @@ doTransferRelRestore(ArchiveHandle *AH, TocEntry *te)
 	{
 		ahprintf(AH, "SELECT pg_transfer_cleanup_shmem(%u::oid);", (&sequencemap[i])->reloid);
 
-		transfer_relfile(&sequencemap[i], "", ropt->transfer_dir,
+		transfer_relfile(&sequencemap[i], "", "",  ropt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&sequencemap[i], "", ".cfm",  ropt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
 		if (ropt->generate_wal)
 			ahprintf(AH, "SELECT pg_transfer_wal(%u::oid);", (&sequencemap[i])->reloid);
@@ -652,11 +656,13 @@ doTransferRelRestore(ArchiveHandle *AH, TocEntry *te)
 	{
 		ahprintf(AH, "SELECT pg_transfer_cleanup_shmem(%u::oid);", (&toastmap[i])->reloid);
 
-		transfer_relfile(&toastmap[i], "", ropt->transfer_dir,
+		transfer_relfile(&toastmap[i], "", "", ropt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
-		transfer_relfile(&toastmap[i], "_fsm", ropt->transfer_dir,
+		transfer_relfile(&toastmap[i], "", ".cfm", ropt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
-		transfer_relfile(&toastmap[i], "_vm", ropt->transfer_dir,
+		transfer_relfile(&toastmap[i], "_fsm", "", ropt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&toastmap[i], "_vm", "", ropt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
 		if (ropt->generate_wal)
 			ahprintf(AH, "SELECT pg_transfer_wal(%u::oid);", (&toastmap[i])->reloid);
@@ -1241,6 +1247,7 @@ win32_pghardlink(const char *src, const char *dst)
  */
 void
 transfer_relfile(RelFileMap *map, const char *type_suffix,
+				 const char *cfm_suffix,
 				 const char *transfer_dir, bool is_restore,
 				 bool is_copy_mode, bool is_verbose)
 {
@@ -1262,18 +1269,20 @@ transfer_relfile(RelFileMap *map, const char *type_suffix,
 		else
 			snprintf(extent_suffix, sizeof(extent_suffix), ".%d", segno);
 
-		snprintf(db_file, sizeof(db_file), "%s%s/%u/%u%s%s",
+		snprintf(db_file, sizeof(db_file), "%s%s/%u/%u%s%s%s",
 				 map->datadir,
 				 map->tablespace,
 				 map->db_oid,
 				 map->relfilenode,
 				 type_suffix,
-				 extent_suffix);
-		snprintf(transfer_file, sizeof(transfer_file), "%s%s%s%s",
+				 extent_suffix,
+				 cfm_suffix);
+		snprintf(transfer_file, sizeof(transfer_file), "%s%s%s%s%s",
 				 transfer_dir,
 				 map->relname,
 				 type_suffix,
-				 extent_suffix);
+				 extent_suffix,
+				 cfm_suffix);
 
 		/* Did file open fail? */
 		if (!is_restore)
@@ -1281,10 +1290,12 @@ transfer_relfile(RelFileMap *map, const char *type_suffix,
 			if (stat(db_file, &statbuf) != 0)
 			{
 				/*
-				 * vm or fsm or non-first segment file does not exist?
+				 * vm, fsm, cfm or non-first segment file does not exist?
 				 * That's OK, just return
 				 */
-				if (type_suffix[0] != '\0' || segno != 0)
+				if (type_suffix[0] != '\0'
+					|| cfm_suffix[0] != '\0'
+					|| segno != 0)
 				{
 					if (errno == ENOENT)
 						return;
@@ -1298,10 +1309,12 @@ transfer_relfile(RelFileMap *map, const char *type_suffix,
 			if (stat(transfer_file, &statbuf) != 0)
 			{
 				/*
-				 * vm or fsm or non-first segment file does not exist?
+				 * vm, fsm, cfm or non-first segment file does not exist?
 				 * That's OK, just return
 				 */
-				if (type_suffix[0] != '\0' || segno != 0)
+				if (type_suffix[0] != '\0'
+					|| cfm_suffix[0] != '\0'
+					|| segno != 0)
 				{
 					if (errno == ENOENT)
 						return;
