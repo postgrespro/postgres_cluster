@@ -3257,11 +3257,11 @@ void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 }	
 
 /*
- * Wrapper arround FinishPreparedTransaction function.
- * This function shoudl proper context for invocation of this function.
+ * Wrapper around FinishPreparedTransaction function.
+ * A proper context is required for invocation of this function.
  * This function is called with MTM mutex locked.
  * It should unlock mutex before calling FinishPreparedTransaction to avoid deadlocks.
- * ts object is pinned to prevent deallocation while lock is released.
+ * `ts` object is pinned to prevent deallocation while lock is released.
  */
 void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
 {
