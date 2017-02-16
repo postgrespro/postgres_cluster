@@ -2941,7 +2941,7 @@ _PG_init(void)
 
 	DefineCustomBoolVariable(
 		"multimaster.preserve_commit_order",
-		"Transactions from one node will be committed in same order al all nodes",
+		"Transactions from one node will be committed in same order on all nodes",
 		NULL,
 		&MtmPreserveCommitOrder,
 		true,
