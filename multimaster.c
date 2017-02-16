@@ -2094,7 +2094,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 
 /**
  * Build connectivity graph, find clique in it and extend disabledNodeMask by nodes not included in clique.
- * This fnuctions is called by arbiter monitor process with period MtmHeartbeatSendTimeout
+ * This function is called by arbiter monitor process with period MtmHeartbeatSendTimeout
  */
 void MtmRefreshClusterStatus()
 {
