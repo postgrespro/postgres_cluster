@@ -1970,7 +1970,8 @@ void MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN)
 
 /* 
  * Notification about node recovery completion.
- * If recovery is in progess and WAL sender replays all records in WAL, then enable recovered node and send notificatoin to it about end of recovery. 
+ * If recovery is in progress and WAL sender replays all records in WAL,
+ * then enable recovered node and send notification to it about end of recovery. 
  */
 bool MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr)
 {
