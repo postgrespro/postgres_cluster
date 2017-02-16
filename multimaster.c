@@ -1851,11 +1851,11 @@ void MtmRecoveryCompleted(void)
 	{ 
 		MtmSwitchClusterMode(MTM_ONLINE);
 	} else { 
-		/* Delay switching mode to online mode and keep cluster lock to make it possible to all other nodes restablish
-		 * locagical replication connections with this node.
-		 * Under the intensive workload start of logical replication can be dealys for unpredicatable amount of time
+		/* Delay switching mode to online mode and keep cluster lock to make it possible to all other nodes reestablish
+		 * logical replication connections with this node.
+		 * Under the intensive workload start of logical replication can be delayed for unpredictable amount of time
 		 */
-		BIT_SET(Mtm->nodeLockerMask, MtmNodeId-1); /* it is trik: this mask was originally use by WAL senders performing recovery, but here we are in opposite (recovered) side:
+		BIT_SET(Mtm->nodeLockerMask, MtmNodeId-1); /* it is trick: this mask was originally used by WAL senders performing recovery, but here we are in opposite (recovered) side:
 											   * if this mask is not zero loadReq will be broadcasted to all other nodes by heartbeat, suspending their activity
 											   */
 		MtmSwitchClusterMode(MTM_RECOVERED);  
