@@ -1410,7 +1410,7 @@ void MtmSendMessage(MtmArbiterMessage* msg)
 
 /*
  * Send arbiter's 2PC message. Right now only responses to coordinates are 
- * sent through arbiter. Brodcasts from coordinator to noes are done 
+ * sent through arbiter. Broadcasts from coordinator to noes are done 
  * using logical decoding.
  */
 void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
