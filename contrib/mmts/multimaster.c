@@ -814,7 +814,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		x->isSuspended = false;
 		x->isTwoPhase = false;
 		x->isTransactionBlock = IsTransactionBlock();
-		/* Application name can be changed usnig PGAPPNAME environment variable */
+		/* Application name can be changed using PGAPPNAME environment variable */
 		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
 			/* Reject all user's transactions at offline cluster. 
 			 * Allow execution of transaction by bg-workers to make it possible to perform recovery.
@@ -1022,8 +1022,6 @@ void MtmPrecommitTransaction(char const* gid)
 				MtmUnlock();
 				Assert(replorigin_session_origin != InvalidRepOriginId);
 				if (!IsTransactionState()) {
-					MtmResetTransaction();
-					StartTransactionCommand();
 					SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
 					CommitTransactionCommand();
 				} else { 
@@ -1219,7 +1217,7 @@ MtmPreCommitPreparedTransaction(MtmCurrentTrans* x)
 	MtmLock(LW_EXCLUSIVE);
 	tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_FIND, NULL);
 	if (tm == NULL) {
-		MTM_ELOG(WARNING, "Global transaciton ID '%s' is not found", x->gid);
+		MTM_ELOG(WARNING, "Global transaction ID '%s' is not found", x->gid);
 	} else {
  		Assert(tm->state != NULL);
 		MTM_LOG3("Commit prepared transaction %d with gid='%s'", x->xid, x->gid);
