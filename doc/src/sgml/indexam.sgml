@@ -110,7 +110,7 @@ typedef struct IndexAmRoutine
     bool        amclusterable;
     /* does AM handle predicate locks? */
     bool        ampredlocks;
-    /* does AM support columns included with clause INCLUDING? */
+    /* does AM support columns included with clause INCLUDE? */
     bool    amcaninclude;
     /* type of data stored in index, or InvalidOid if variable */
     Oid         amkeytype;
@@ -906,7 +906,7 @@ amrestrpos (IndexScanDesc scan);
    multiple entries with identical keys.  An access method that supports this
    feature sets <structfield>amcanunique</> true.
    (At present, only b-tree supports it.) Columns which are present in the
-   <literal>INCLUDING</> clause are not used to enforce uniqueness.
+   <literal>INCLUDE</> clause are not used to enforce uniqueness.
   </para>
 
   <para>

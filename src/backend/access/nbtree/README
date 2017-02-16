@@ -676,3 +676,15 @@ Also, index searches using a key of a different datatype require comparisons
 to behave sanely across two datatypes.  The extensions to three or more
 datatypes within a family are not strictly required by the btree index
 mechanism itself, but the planner relies on them for optimization purposes.
+
+Included attributes in B-tree indexes
+-------------------------------------
+
+Since 10.0 there is an optional INCLUDE clause, that allows to add
+a portion of non-key attributes to index. They exist to allow more queries
+to benefit from index-only scans. We never use included attributes in
+ScanKeys, neither for search nor for inserts. That allows us to include
+into B-tree any datatypes, even those which don't have suitable opclass.
+Included columns only stored in regular items on leaf pages. All inner
+keys and high keys are truncated and contain only key attributes.
+That helps to reduce the size of index.

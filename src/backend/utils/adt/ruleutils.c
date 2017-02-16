@@ -1255,7 +1255,7 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 		/* Report the INCLUDED attributes, if any. */
 		if ((!attrsOnly) && keyno == idxrec->indnkeyatts)
 		{
-				appendStringInfoString(&buf, ") INCLUDING (");
+				appendStringInfoString(&buf, ") INCLUDE (");
 				sep = "";
 		}
 
@@ -1665,7 +1665,7 @@ pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 									  Anum_pg_constraint_conincluding, &isnull);
 				if (!isnull)
 				{
-					appendStringInfoString(&buf, " INCLUDING (");
+					appendStringInfoString(&buf, " INCLUDE (");
 
 					decompile_column_index_array(val, conForm->conrelid, &buf);
 

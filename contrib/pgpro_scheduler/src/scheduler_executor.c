@@ -35,6 +35,9 @@
 extern volatile sig_atomic_t got_sighup;
 extern volatile sig_atomic_t got_sigterm;
 
+static int64 current_job_id = -1;
+static int64 resubmit_current_job = 0;
+
 static void handle_sigterm(SIGNAL_ARGS);
 
 static void
@@ -85,6 +88,8 @@ void executor_worker_main(Datum arg)
 			 errmsg("executor corrupted dynamic shared memory segment")));
 	}
 	status = shared->status = SchdExecutorWork;
+	shared->message[0] = 0;
+
 	SetConfigOption("application_name", "pgp-s executor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "initialize");
 	init_worker_mem_ctx("ExecutorMemoryContext");
@@ -94,13 +99,16 @@ void executor_worker_main(Datum arg)
 	job = initializeExecutorJob(shared);
 	if(!job)
 	{
-		snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX, 
+		if(shared->message[0] == 0)
+			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX, 
 											"Cannot retrive job information");
 		shared->status = SchdExecutorError;
 		delete_worker_mem_ctx();
 		dsm_detach(seg);
 		proc_exit(0);
 	}
+	current_job_id = job->cron_id;
+	pgstat_report_activity(STATE_RUNNING, "job initialized");
 
 	if(set_session_authorization(job->executor, &error) < 0)
 	{
@@ -142,7 +150,14 @@ void executor_worker_main(Datum arg)
 		{
 			START_SPI_SNAP();
 		}
-		ret = execute_spi(job->dosql[i], &error);
+		if(job->type == AtJob && i == 0 && job->sql_params_n > 0)
+		{
+			ret = execute_spi_params_prepared(job->dosql[i], job->sql_params_n, job->sql_params, &error);
+		}
+		else
+		{
+			ret = execute_spi(job->dosql[i], &error);
+		}
 		if(ret < 0)
 		{
 			/* success = false; */
@@ -178,7 +193,24 @@ void executor_worker_main(Datum arg)
 		{
 			STOP_SPI_SNAP();
 		}
-		status = SchdExecutorDone;
+		if(job->type == AtJob && resubmit_current_job > 0)
+		{
+			if(job->attempt >= job->resubmit_limit)
+			{
+				status = SchdExecutorError;
+				push_executor_error(&EE, "Cannot resubmit: limit reached (%ld)", job->resubmit_limit);
+				resubmit_current_job = 0;
+			}
+			else
+			{
+				status = SchdExecutorResubmit;
+			}
+		}
+		else
+		{
+			status = SchdExecutorDone;
+		}
+
 		SetConfigOption("schedule.transaction_state", "success", PGC_INTERNAL, PGC_S_SESSION);
 	}
 	if(job->next_time_statement)
@@ -195,6 +227,7 @@ void executor_worker_main(Datum arg)
 			sprintf(shared->set_invalid_reason, "unable to execute next time statement");
 		}
 	}
+	current_job_id = -1;
 	pgstat_report_activity(STATE_RUNNING, "finish job processing");
 
 	if(EE.n > 0)
@@ -202,6 +235,11 @@ void executor_worker_main(Datum arg)
 		set_shared_message(shared, &EE);
 	}
 	shared->status = status;
+	if(status == SchdExecutorResubmit)
+	{
+		shared->next_time = timestamp_add_seconds(0, resubmit_current_job);
+		resubmit_current_job = 0;
+	}
 
 	delete_worker_mem_ctx();
 	dsm_detach(seg);
@@ -389,72 +427,38 @@ void set_pg_var(bool result, executor_error_t *ee)
 
 job_t *initializeExecutorJob(schd_executor_share_t *data)
 {
-	const char *sql = "select at.last_start_available, cron.same_transaction, cron.do_sql, cron.executor, cron.postpone, cron.max_run_time as time_limit, cron.max_instances, cron.onrollback_statement , cron.next_time_statement from schedule.at at, schedule.cron cron where start_at = $1 and  at.active and at.cron = cron.id AND cron.node = $2 AND cron.id = $3";
-	Oid argtypes[3] = { TIMESTAMPTZOID, TEXTOID, INT4OID};
-	Datum args[3];
 	job_t *J;
-	int ret;
 	char *error = NULL;
-	char *ts;
+	const char *schema;
+	const char *old_path;
 
-	args[0] = TimestampTzGetDatum(data->start_at);
-	args[1] = PointerGetDatum(cstring_to_text(data->nodename));
-	args[2] = Int32GetDatum(data->cron_id);
+	old_path = GetConfigOption("search_path", false, true);
+	schema = GetConfigOption("schedule.schema", false, true);
+	SetConfigOption("search_path", schema, PGC_USERSET, PGC_S_SESSION);
 
-	START_SPI_SNAP();
-	ret = execute_spi_sql_with_args(sql, 3, argtypes, args, NULL, &error);
+	J = data->type == CronJob ?
+		get_cron_job(data->cron_id, data->start_at, data->nodename, &error):
+		get_at_job(data->cron_id, data->nodename, &error);
+
+	SetConfigOption("search_path", old_path, PGC_USERSET, PGC_S_SESSION);
 
 	if(error)
 	{
-		snprintf(data->message,
-			PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
-			"cannot retrive job: %s", error);
+		snprintf(data->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
+			"%s", error);
 		elog(LOG, "EXECUTOR: %s", data->message);
 		pfree(error);
-		PopActiveSnapshot();
-		AbortCurrentTransaction();
-		SPI_finish();
+		return NULL;
+	}
+	if(!J)
+	{
+		snprintf(data->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
+			"unknown error get job");
+		elog(LOG, "EXECUTOR: %s", data->message);
 		return NULL;
 	}
 
-	if(ret == SPI_OK_SELECT)
-	{
-		if(SPI_processed == 0)
-		{
-			STOP_SPI_SNAP();
-			ts = make_date_from_timestamp(data->start_at);
-			snprintf(data->message,
-				PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
-				"cannot find job: %d @ %s [%s]",
-				data->cron_id, ts, data->nodename);
-			elog(LOG, "EXECUTOR: %s", data->message);
-			pfree(ts);
-			return NULL;
-		}
-		J = worker_alloc(sizeof(job_t));
-
-		J->cron_id = data->cron_id;
-		J->start_at = data->start_at;
-		J->node = _copy_string(data->nodename);
-		J->same_transaction = get_boolean_from_spi(0, 2, false);
-		J->dosql = get_textarray_from_spi(0, 3, &J->dosql_n);
-		J->executor = get_text_from_spi(0, 4);
-		J->onrollback = get_text_from_spi(0, 8);
-		J->next_time_statement = get_text_from_spi(0, 9);
-
-		STOP_SPI_SNAP();
-
-		return J;
-	}
-	snprintf(data->message,
-		PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
-		"error while retrive job information: %d", ret);
-	elog(LOG, "EXECUTOR: %s", data->message);
-
-	PopActiveSnapshot();
-	AbortCurrentTransaction();
-	SPI_finish();
-	return NULL;
+	return J;
 }
 
 int push_executor_error(executor_error_t *e, char *fmt, ...)
@@ -482,4 +486,45 @@ int push_executor_error(executor_error_t *e, char *fmt, ...)
 	e->n++;
 
 	return e->n;
+}
+
+PG_FUNCTION_INFO_V1(get_self_id);
+Datum 
+get_self_id(PG_FUNCTION_ARGS)
+{
+	if(current_job_id == -1)
+	{
+		elog(ERROR, "There is no active job in progress");	
+	}
+	PG_RETURN_INT64(current_job_id);
+}
+
+PG_FUNCTION_INFO_V1(resubmit);
+Datum 
+resubmit(PG_FUNCTION_ARGS)
+{
+	Interval *interval;	
+
+	if(current_job_id == -1)
+	{
+		elog(ERROR, "There is no active job in progress");	
+	}
+	if(PG_ARGISNULL(0))
+	{
+		resubmit_current_job = 1;		
+		PG_RETURN_INT64(1);
+	}
+	interval = PG_GETARG_INTERVAL_P(0);
+#ifdef HAVE_INT64_TIMESTAMP 
+    resubmit_current_job = interval->time / 1000000.0;
+#else
+    resubmit_current_job = interval->time;
+#endif
+	resubmit_current_job +=
+		(DAYS_PER_YEAR * SECS_PER_DAY) * (interval->month / MONTHS_PER_YEAR);
+	resubmit_current_job +=
+		(DAYS_PER_MONTH * SECS_PER_DAY) * (interval->month % MONTHS_PER_YEAR);
+	resubmit_current_job += SECS_PER_DAY * interval->day;
+
+	PG_RETURN_INT64(resubmit_current_job);
 }

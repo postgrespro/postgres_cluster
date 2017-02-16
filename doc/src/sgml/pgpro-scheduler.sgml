@@ -6,58 +6,601 @@
   <indexterm zone="pgpro-scheduler">
    <primary>pgpro_scheduler</primary>
   </indexterm>
+  <para>
+    <filename>pgpro_scheduler</filename> is an internal <productname>&productname;</productname> extension that enables you to schedule, monitor, and
+    manage job execution within the <productname>&productname;</productname> database. With
+    <filename>pgpro_scheduler</filename>, you can:
+  </para>
+  <itemizedlist>
+    <listitem>
+      <para>
+        set advanced schedules using <type>jsonb</type> objects or <type>crontab</type> strings
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        dynamically calculate the next execution time for repeated jobs
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        execute <acronym>SQL</acronym> commands of the job in a single transaction or in
+        different transactions, depending on your needs
+      </para>
+    </listitem>
+  </itemizedlist>
+  <para>
+    Unlike external scheduling daemons,
+    <filename>pgpro_scheduler</filename> offers the following benefits:
+  </para>
+  <itemizedlist>
+    <listitem>
+      <para>
+        Any user can
+        schedule jobs independently.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        You can manage job scheduling on the fly without restarting your
+        database.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        Scheduling solution is very lightweight since
+        <filename>pgpro_scheduler</filename> uses background workers to
+        schedule, monitor, and manage job execution. At the same time,
+        you do not use any client connections for scheduling.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        Each database has its own <quote>supervisor</quote> scheduler, with each
+        scheduled job executed by a separate background worker for
+        enhanced stability.
+      </para>
+    </listitem>
+  </itemizedlist>
 
-  <sect2>
-    <title>
-     <filename>pgpro_scheduler</filename> &mdash;
-     <productname>&productname;</productname> extension for job scheduling
-    </title>
-
+  <sect2 id="pgpro-scheduler-installation">
+    <title>Installation</title>
+      <para>
+        <emphasis>Prerequisites:</emphasis> You must install <productname>&productname;</productname> to use <filename>pgpro_scheduler</filename>
+        extension.
+      </para>
     <para>
-     <filename>pgpro_scheduler</filename> allows to schedule jobs execution and
-     control their activity in <productname>&productname;</productname> database.
-    </para>
-
+      To complete the installation of
+      <filename>pgpro_scheduler</filename>:</para> 
+     <orderedlist>
+      <listitem>
+        <para>Add <filename>pgpro_scheduler</filename> to the
+      <varname>shared_preload_libraries</varname> variable in the <filename>postgresql.conf</filename> file:
+    <programlisting>
+shared_preload_libraries = 'pgpro_scheduler'
+</programlisting></para>
+      </listitem>
+      <listitem>
+        <para>
+          From the command line, run the following query:
+        <programlisting>
+$ psql -d <replaceable>dbname</replaceable> -c &quot;CREATE EXTENSION pgpro_scheduler;&quot;
+</programlisting>
+where <replaceable>dbname</replaceable> is the name of the database for which you would like to use <filename>pgpro_scheduler</filename>. Make sure to create the <filename>pgpro_scheduler</filename> extension for each database you are planning to use.</para>
+      </listitem>
+    </orderedlist>
     <para>
-     The job is a set of <acronym>SQL</acronym> commands. Schedule table
-     could be described as a <filename>crontab</filename>-like string or
-     as a JSON object. It's possible to use combination of both methods
-     for scheduling settings.
-    </para>
-
-    <para>
-     Each job could calculate its next start time. The set of
-     <acronym>SQL</acronym> commands could be executed in a single transaction
-     or each command could be executed in individual one.
-     It's possible to set an <acronym>SQL</acronym> statement to be executed
-     on failure of main job transaction.
+      Once you complete the installation, configure
+      <filename>pgpro_scheduler</filename> for your database.
     </para>
   </sect2>
 
-  <sect2>
-   <title>Installation</title>
-
-   <para>
-    <filename>pgpro_scheduler</filename> is a <productname>&productname;</productname>
-    extension and it has no special prerequisites.
-   </para>
-
-   <para>
-    Install extension as follows:
-<screen>
-$ psql <replaceable>dbname</replaceable> -c "CREATE EXTENSION pgpro_scheduler"
-</screen>
-   </para>
-  </sect2>
-
-  <sect2>
+  <sect2 id="pgpro-scheduler-configuration">
    <title>Configuration</title>
+          <para>You must have superuser rights to configure <filename>pgpro_scheduler</filename>.</para>
+    <para>
+      To dynamically configure <filename>pgpro_scheduler</filename>:
+    </para>
+    <orderedlist>
+      <listitem>
+        <para>
+          Enable <filename>pgpro_scheduler</filename> for your system.
+        <programlisting>
+ALTER SYSTEM SET <varname>schedule.enable</> = <literal>true</>;
+</programlisting></para>
+      </listitem>
+      <listitem>
+        <para>
+          Specify the names of the databases for which you need to
+          schedule jobs, in the comma-separated format.
 
-   <para>
-    The extension defines a number of <productname>&productname;</productname>
-    variables (GUC). These variables help to handle scheduler configuration.
-   </para>
+        <programlisting>
+ALTER SYSTEM SET <varname>schedule.database</> = '<replaceable>database1</>,<replaceable>database2</>';
+</programlisting></para>
+      </listitem>
+      <listitem>
+        <para>
+          To control the workload in your system, set the maximum number
+          of background workers that can run simultaneously on each
+          database:
+        </para>
+        <programlisting>
+ALTER DATABASE <replaceable>database1</> SET <varname>schedule.max_workers</> = 5;
+ALTER DATABASE <replaceable>database2</> SET <varname>schedule.max_workers</> = 3;
+</programlisting>
+        <para>
+          You can also set the same number of background workers for all
+          databases at once:
+        </para>
+        <programlisting>
+ALTER SYSTEM SET <varname>schedule.max_workers</> = 5;
+</programlisting>
+      </listitem>
+      <listitem>
+        <para>
+          Run <function>pg_reload_conf()</function> for the changes to
+          take effect:
+        </para>
+        <programlisting>
+SELECT <function>pg_reload_conf()</>;
+</programlisting>
+      </listitem>
+    </orderedlist>
+        <important>
+        <para>When setting the
+        <varname>schedule.max_workers</> variable, make sure to
+        leave enough workers for the rest of the system as other
+        subsystems may also use background workers. The
+        <varname>schedule.max_workers</> value cannot exceed the
+        total number of workers enabled by the
+        <varname>max_worker_processes</> <productname>PostgreSQL</productname> variable.
+      </para>
+      <para>
+        The <filename>pgpro_scheduler</filename> extension starts a
+        separate background worker for the system, each database, and
+        each monitored job. For example, if you work with two databases
+        and set the maximum number of workers to 5,
+        <filename>pgpro_scheduler</filename> can use up to 13 workers at
+        peak times: one worker is supervising the system, two workers
+        are monitoring the two databases, and 10 workers can be started
+        for job scheduling, five for each database.
+      </para>
+      <para>
+        If required, you can later change the number of workers. The
+        running jobs will not be affected.
+      </para></important>
+    <para>
+      Alternatively, you can modify <filename>pgpro_scheduler</filename>
+      settings in the <filename>postgresql.conf</filename> file. In this
+      case, all databases will have the same maximum number of
+      background workers:
+    </para>
+    <programlisting>
+<varname>schedule.enable</varname> = <literal>on</literal>
+<varname>schedule.database</varname> = '<replaceable>database1</>,<replaceable>database2</>'
+<varname>schedule.max_workers</varname> = 5
+</programlisting>
+    <para>
+      Once the <filename>pgpro_scheduler</filename> is configured, you can
+      start scheduling jobs.
+    </para>
+    <para>
+      <emphasis role="strong">See Also</emphasis>
+    </para>
+    <para><xref linkend="pgpro-scheduler-guc-variables">
+    </para>
+  </sect2>
+   <sect2 id="pgpro-scheduler-usage">
+   <title>Usage</title>
+  <sect3 id= "pgpro-scheduler-creating-scheduled-jobs">
+        <title>Creating Scheduled Jobs</title>
+      <para>
+        To create and schedule a job, run the
+        <function>create_job()</function> function that takes scheduling
+        options as a <type>jsonb</type> object:
 
+      <programlisting>
+<function>schedule.create_job(<parameter>data</parameter> <type>jsonb</type>)</function>
+</programlisting>
+      </para>
+      <para>
+        In the <type>jsonb</type> object, you must specify one or more <acronym>SQL</acronym> commands
+        in the <literal>commands</literal> key, and set the job schedule
+        with at least one of the following keys:
+      </para>
+      <itemizedlist>
+        <listitem>
+          <para>
+            <literal>dates</literal> &mdash; a single date or an array of
+            dates, in the <type>timestamp with time zone</type> format
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <literal>cron</literal> &mdash; a string, in the <type>crontab</type> format
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <literal>rule</literal> &mdash; a <type>jsonb</type> object that includes one
+            or more of the following keys:
+          </para>
+        <itemizedlist>
+        <listitem>
+          <para>
+            <literal>minutes</literal> &mdash; minutes; an array of integers
+            in range [0, 59]
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <literal>hours</literal> &mdash; hours; an array of integers in
+            range [0, 23]
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <literal>days</literal> &mdash; days of the month; an array of
+            integers in range [1, 31]
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <literal>months</literal> &mdash; months; an array of integers in
+            range [1, 12]
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <literal>wdays</literal> &mdash; days of the week; an array of
+            integers in range [0, 6], where 0 is Sunday.
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <literal>onstart</literal> &mdash; integer value 0 or 1. If
+            <literal>onstart</literal> is set to 1, the job is executed
+            only once when <filename>pgpro_scheduler</filename> is
+            started.
+          </para>
+        </listitem>
+        </itemizedlist>
+      </listitem>
+      </itemizedlist>
+
+      <para>
+        You can combine <literal>dates</literal>,
+        <literal>cron</literal>, and <literal>rule</literal> scheduling
+        keys for advanced use cases.
+      </para>
+
+      <para>
+        As a result, <filename>pgpro_scheduler</filename> creates an
+        active job with the specified schedule and returns the job ID.
+      </para>
+        <tip><para>
+          For simple job schedules, you can use the following shortcut syntax:
+<programlisting>
+schedule.create_job(<parameter>cron</parameter>, <parameter>commands</parameter>)
+schedule.create_job(<parameter>dates</parameter>, <parameter>commands</parameter>)
+</programlisting>
+For details, see <xref linkend="schedule-create-job"> function description.</para>
+      </tip>
+      <para>
+        If required, you can later modify one or more scheduling options
+        with the <function>set_job_attribute()</function> or
+        <function>set_job_attributes()</function> functions, respectively.
+      </para>
+      <para>
+        If all background workers are busy at the specified time, the
+        job waits for the next available worker. By default, the
+        <filename>pgpro_scheduler</filename> can wait forever. You can
+        limit the maximum wait time by setting the
+        <literal>last_start_available</literal> key, in the <link linkend="datatype-datetime">time interval</link> format.
+        If the timeout is reached, <filename>pgpro_scheduler</filename>
+        cancels the job execution.
+      </para>
+      <para>
+        <emphasis role="strong">Examples:</emphasis>
+      </para>
+      <para>
+        To run the job every day at 3pm, and, additionally, on December
+        31, 2017 at 7pm , and on April 4, 2020 at 1pm:
+      </para>
+      <programlisting>
+SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT 15&quot;, &quot;cron&quot;: &quot;0 15 * * *&quot;, &quot;dates&quot;: [ &quot;2017-12-31 19:00&quot;, &quot;2020-04-04 13:00&quot; ]}');
+</programlisting>
+      <para>
+        To limit the wait time for job execution to 30 seconds after the
+        scheduled time:
+      </para>
+      <programlisting>
+SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT pg_sleep(100)&quot;, &quot;cron&quot;: &quot;15 */2 * * *&quot;, &quot;last_start_available&quot;: &quot;30 seconds&quot; }');
+</programlisting>    
+      <sect4 id="pgpro-scheduler-time-window">
+        <title>Specifying the Time Window for Job Execution</title>
+        <para>
+          In addition to the general schedule, you can specify the
+          timeframe during which the scheduled job can be executed. To
+          ensure that <filename>pgpro_scheduler</filename> only executes
+          the job within the specified time window, define the
+          <literal>start_date</literal> and <literal>end_date</literal>
+          keys, in the <type>timestamp with time zone format</type>. You can set one
+          of these keys only to limit the start or the end time,
+          respectively. If you define a time window for the job,
+          <filename>pgpro_scheduler</filename> will only schedule this job
+          within this time window. If the started job is incomplete when
+          the specified time window ends,
+          <filename>pgpro_scheduler</filename> completes the job and then
+          excludes the job from further scheduling.
+        </para>
+        <para>
+          <emphasis role="strong">Examples:</emphasis> </para>
+          <para>To start
+          scheduling the job only after 11am on May 1, 2017:
+        <programlisting>
+SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT now()&quot;, &quot;cron&quot;: &quot;2 17 * * *&quot;, &quot;start_date&quot;: &quot;2017-05-01 11:00&quot; }');
+</programlisting>
+        </para>
+        <para>
+          To schedule the job in the timeframe from 11am on May 1 to
+          3pm on June 4, 2017:
+        <programlisting>
+SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT now()&quot;, &quot;cron&quot;: &quot;2 17 * * *&quot;, &quot;start_date&quot;: &quot;2017-05-01 11:00&quot;, &quot;end_date&quot;: &quot;2017-06-04 15:00&quot; }');
+</programlisting>
+        </para>
+</sect4>
+      <sect4 id="pgpro-scheduler-separate-transactions">
+        <title>Running <acronym>SQL</acronym> Commands in Separate Transactions</title>
+        <para>
+          The <literal>commands</literal> key can take values of text
+          and array types. If you specify several <acronym>SQL</acronym> commands as text
+          separated by semicolons, the whole job is executed in the same
+          transaction. If it is critical to perform each <acronym>SQL</acronym> command in
+          a separate transaction, pass the <acronym>SQL</acronym> commands as an array. You
+          can modify this behavior by setting the
+          <literal>use_same_transaction</literal> key to <type>true</type>. In this
+          case, <acronym>SQL</acronym> commands in the array are executed in the same transaction.
+        </para>
+        <para>
+          <emphasis role="strong">Examples:</emphasis>
+        </para>
+        <para>
+          To run the whole job in a single transaction:
+        </para>
+        <programlisting>
+SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT 1; SELECT 2; SELECT 3;&quot;, &quot;cron&quot;: &quot;23 23 */2 * *&quot; }');
+</programlisting>
+        <para>
+          To run commands in separate transactions:
+        <programlisting>
+SELECT schedule.create_job('{&quot;commands&quot;: [ &quot;SELECT 1&quot;, &quot;SELECT 2&quot;, &quot;SELECT 3&quot; ], &quot;cron&quot;: &quot;23 23 */2 * *&quot; }');
+</programlisting>
+        </para>
+        <para>
+          To run the whole job in a single transaction when passing the
+          commands as an array:
+        <programlisting>
+SELECT schedule.create_job('{&quot;commands&quot;: [ &quot;SELECT 1&quot;, &quot;SELECT 2&quot;, &quot;SELECT 3&quot; ], &quot;cron&quot;: &quot;23 23 */2 * *&quot;, &quot;use_same_transaction&quot;: true }');
+</programlisting>
+        </para>
+      </sect4>
+            <sect4 id="pgpro-scheduler-next-start-time">
+        <title>Calculating the Job Start Time</title>
+        <para>
+          For repeated jobs, you can calculate the next start time by
+          defining the corresponding <acronym>SQL</acronym> statement in the
+          <literal>next_time_statement</literal> key. In this case, the
+          first job starts on schedule, while all successive job
+          executions depend on the result of the <acronym>SQL</acronym> statement.
+        </para>
+        <para>
+          After the job run completes,
+          <filename>pgpro_scheduler</filename> executes the <acronym>SQL</acronym> statement
+          in the <literal>next_time_statement</literal> key to calculate
+          the next start time and returns the result, in the <type>timestamp
+          with time zone type</type>. If the return value is of a different
+          type or an error occurs, <filename>pgpro_scheduler</filename>
+          marks the job as broken and cancels any further execution.
+          This process is repeated for each successive job run.</para>
+          <tip><para>When the job run
+          completes, <filename>pgpro_scheduler</filename> sets the
+          transaction status in the
+          <varname>schedule.transaction_state</varname> variable, in the
+          <type>text</type> format. You can use this variable in your
+          <literal>next_time_statement</literal> to dynamically
+          calculate the next start time depending on the transaction
+          status. At the time of the
+          <literal>next_time_statement</literal> execution, the
+          <literal>schedule.transaction_state</literal> variable must
+          contain either <literal>success</literal> or
+          <literal>failure</literal> status for the main transaction.
+          Other status values indicate an internal
+          <filename>pgpro_scheduler</filename> error.
+        </para></tip>
+        <para>
+          <emphasis role="strong">Examples:</emphasis>
+        </para>
+        <para>
+          To start the next job executions based on the result of the
+          command specified in the
+          <literal>next_time_statement</literal> key:
+        <programlisting>
+SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT random()&quot;, &quot;cron&quot;: &quot;45 10 * * *&quot;, &quot;next_time_statement&quot;: &quot;SELECT now() + ''1 day''::interval&quot; }');
+</programlisting>
+        </para>
+      </sect4>
+            <sect4 id="pgpro-scheduler-additional-conditions">
+        <title>Setting Additional Conditions for Job Execution</title>
+        <para>
+          The <filename>pgpro_scheduler</filename> extension enables you
+          to define additional conditions for task execution:</para> 
+        <itemizedlist>
+        <listitem>
+          <para>
+          Set time limits for job execution with the
+          <literal>max_run_time</literal> key. If the execution time is
+          exceeded, <filename>pgpro_scheduler</filename> cancels the job.
+          </para>
+        </listitem>
+                <listitem>
+          <para>Define the maximum wait time before the function gets
+          executed using the <literal>last_start_available</literal>
+          key. If the timeout is reached, <filename>pgpro_scheduler</filename> cancels the job.
+          </para>
+        </listitem>
+        <listitem>
+          <para>Schedule a job on behalf of a different user with the
+          <literal>run_as</literal> key.
+          </para>
+        </listitem>
+        <listitem>
+          <para>Define an <acronym>SQL</acronym> command to execute if the main transaction fails using the <literal>on_rollback</literal> key.
+          </para>
+        </listitem>
+        </itemizedlist>
+        <para>
+          <emphasis role="strong">Examples:</emphasis> </para>
+          <para>To limit job
+          execution to 5 seconds:
+        <programlisting>
+SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT pg_sleep(10)&quot;, &quot;cron&quot;: &quot;15 */10 * * *&quot;, &quot;max_run_time&quot;: &quot;5 seconds&quot; }');
+</programlisting>
+        </para>
+        <para>
+          To limit the wait time for job execution to 30 seconds after
+          the scheduled time:
+        <programlisting>
+SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT pg_sleep(100)&quot;, &quot;cron&quot;: &quot;15 */2 * * *&quot;, &quot;last_start_available&quot;: &quot;30 seconds&quot; }');
+</programlisting>
+        </para>
+        <para>
+          To start the job on behalf of the <literal>robot</literal>
+          user:
+        <programlisting>
+SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT session_user&quot;, &quot;cron&quot;: &quot;5 */5 * * *&quot;, &quot;run_as&quot;: &quot;robot&quot; }');
+</programlisting>
+        </para>
+        <para>
+          To define a fallback <acronym>SQL</acronym> command in case of a rollback:
+        <programlisting>
+SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &quot;cron&quot;: &quot;55 */12 * * *&quot;, &quot;on_rollback&quot;: &quot;SELECT ''An error occurred''&quot; }');
+</programlisting>
+        </para>
+      </sect4>
+  </sect3>
+      <sect3 id="pgpro-scheduler-changing-and-removing-jobs">
+      <title>Changing and Removing Scheduled Jobs</title>
+      <para>
+        When you create a new job with the
+        <literal>create_job()</literal> function, the job becomes active and
+        waits for execution based on the specified schedule. Using the
+        job ID returned by the <function>create_job()</function> function,
+        you can change the scheduling settings or remove the job from
+        the schedule. To change the specified schedule for
+        the jobs, use <function>set_job_attribute()</function> or
+        <function>set_job_attributes()</function> functions: </para>
+        <itemizedlist>
+        <listitem>
+          <para>To modify a
+        single property of the job, run the
+        <function>set_job_attribute()</function> function with the job ID,
+        the property name to change, and the new value for this
+        property.
+          </para>
+        </listitem>
+        <listitem>
+          <para>To modify more than one property of the job, run the
+        <function>set_job_attributes()</function> function instead. In
+        this case, you can specify all the job properties at once in a
+        JSONB object. For details on all the keys available for job
+        scheduling, see the <function>create_job()</function> function
+        description.
+          </para>
+        </listitem>
+        </itemizedlist>
+      <para>
+        To temporarily exclude the job from scheduling, run the
+        <function>deactivate_job()</function> function:
+      <programlisting>
+<function>schedule.deactivate_job(<parameter>job_id</parameter> <type>integer</type>)</function>
+</programlisting>
+      </para>
+      <para>
+        You can re-activate the job later by running the
+        <function>activate_job()</function> function:
+      <programlisting>
+<function>schedule.activate_job(<parameter>job_id</parameter> <type>integer</type>)</function>
+</programlisting>
+      </para>
+      <para>
+        To permanently remove the job from the schedule, run the
+        <function>drop_job()</function> function:
+      <programlisting>
+<function>schedule.drop_job(<parameter>job_id</parameter> <type>integer</type>)</function>
+</programlisting>
+      </para>
+    </sect3>
+        <sect3 id="pgpro-scheduler-monitoring-jobs">
+      <title>Monitoring Job Execution</title>
+        <para>You must have
+          superuser rights to monitor job execution for the whole
+          system. Otherwise, you can only monitor the jobs that you own.
+          To monitor scheduled jobs, <filename>pgpro_scheduler</filename>
+          provides multiple functions that return the information in the
+          <type>cron_rec</type> or <type>cron_job</type>
+          types:
+      <itemizedlist>
+        <listitem>
+          <para>
+            <function>get_job()</function> &mdash; retrieves information about
+            the job.
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <function>get_owned_cron()</function> &mdash; retrieves the list of jobs
+            owned by user.
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <function>get_cron()</function> &mdash; retrieves the list of jobs executed
+            by user.
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <function>get_active_jobs()</function> &mdash; returns the list of
+            jobs executed at the moment of the function call.
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <function>get_log()</function> &mdash; returns the list of all
+            completed jobs.
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <function>get_user_log()</function> &mdash; returns list of the
+            completed jobs executed by the specified user.
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <function>clean_log()</function> &mdash; deletes all records with
+            information about completed jobs.
+          </para>
+        </listitem>
+      </itemizedlist></para>
+          <para>To learn more about each function, see <xref linkend="pgpro-scheduler-functions">.</para>
+          </sect3>
+   </sect2>
+   <sect2 id="pgpro-scheduler-reference">
+   <title>Reference</title>
+       <sect3 id="pgpro-scheduler-guc-variables">
+      <title>GUC Variables</title>
    <variablelist>
     <varlistentry id="pgpro-scheduler-schedule-enable" xreflabel="schedule.enable">
      <term><varname>schedule.enable</varname> (<type>boolean</type>)
@@ -67,8 +610,8 @@ $ psql <replaceable>dbname</replaceable> -c "CREATE EXTENSION pgpro_scheduler"
      </term>
      <listitem>
       <para>
-       This parameter specifies, whether the scheduler is enabled in this system.
-       Default value: <literal>false</literal>.
+       Specifies whether the scheduler is enabled on your system.</para>
+       <para>Default: <literal>false</literal>.
       </para>
      </listitem>
     </varlistentry>
@@ -81,27 +624,25 @@ $ psql <replaceable>dbname</replaceable> -c "CREATE EXTENSION pgpro_scheduler"
      </term>
      <listitem>
       <para>
-       This parameter specifies list of database names on which the scheduler is enabled.
-       Database names should be separated by commas. Default value: empty string.
+       Specifies the list of databases for which the scheduler is enabled. Database names must be separated by commas.</para><para>Default: empty string.
       </para>
      </listitem>
     </varlistentry>
 
-    <varlistentry id="pgpro-scheduler-schedule-scheme" xreflabel="schedule.scheme">
-     <term><varname>schedule.scheme</varname> (<type>text</type>)
+    <varlistentry id="pgpro-scheduler-schedule-schema" xreflabel="schedule.schema">
+     <term><varname>schedule.schema</varname> (<type>text</type>)
      <indexterm>
-       <primary><varname>schedule.scheme</> pgpro-scheduler parameter</primary>
+       <primary><varname>schedule.schema</> pgpro-scheduler parameter</primary>
      </indexterm>
      </term>
      <listitem>
       <para>
-       This parameter specifies the name of a scheme where the scheduler stores
-       its tables and functions. Changing this parameter requires a server restart.
-       Normally you should not change this parameter but it could be useful
-       if you want to run scheduled jobs on a hot-standby database.
-       So you can define foreign data wrapper on master system
-       to wrap default scheduler schema to another one and use it on replica.
-       Default value: <literal>schedule</literal>.
+      Specifies the name of a schema where the scheduler
+       stores its tables and functions. Normally, you should
+       not change this variable. This
+      variable may be useful if you run <filename>pgpro_scheduler</filename>
+      on a multi-master cluster.</para>
+       <para>Default: <literal>schedule</literal>. 
       </para>
      </listitem>
     </varlistentry>
@@ -114,10 +655,11 @@ $ psql <replaceable>dbname</replaceable> -c "CREATE EXTENSION pgpro_scheduler"
      </term>
      <listitem>
       <para>
-       This parameter specifies a node name of this instance.
-       Default value is <literal>master</literal>. You should not change or use it
-       if you run single server configuration. But it is necessary to change this name
-       if you run scheduler on hot-standby database.
+      Specifies the node name of your <productname>&productname;</productname> instance. Do
+      not change or use this variable if you run a single server configuration. This
+      variable may be useful if you run <filename>pgpro_scheduler</filename>
+      on a multi-master cluster.</para>
+       <para>Default: <literal>master</literal>. 
       </para>
      </listitem>
     </varlistentry>
@@ -130,8 +672,8 @@ $ psql <replaceable>dbname</replaceable> -c "CREATE EXTENSION pgpro_scheduler"
      </term>
      <listitem>
       <para>
-       This parameter specifies max number of simultaneously running jobs for one database.
-       Default value: <literal>2</literal>.
+      Specifies the maximum number of simultaneously running jobs in one database.</para>
+       <para>Default: <literal>2</literal>.
       </para>
      </listitem>
     </varlistentry>
@@ -145,137 +687,41 @@ $ psql <replaceable>dbname</replaceable> -c "CREATE EXTENSION pgpro_scheduler"
      </term>
      <listitem>
       <para>
-       This is internal parameter. It contains state of executed job.
-       This parameter was designed to use with a next job start time
-       calculation procedure. Possible values are:
-        <itemizedlist>
-         <listitem>
-          <para>
-          <literal>success</literal> &mdash; transaction has finished successfully
-          </para>
-         </listitem>
-         <listitem>
-          <para>
-          <literal>failure</literal> &mdash; transaction has failed to finish
-          </para>
-         </listitem>
-         <listitem>
-          <para>
-          <literal>running</literal> &mdash; transaction is in progress
-          </para>
-         </listitem>
-         <listitem>
-          <para>
-          <literal>undefined</literal> &mdash; transaction has not started yet
-          </para>
-         </listitem>
-        </itemizedlist>
-       The last two values normally should not appear inside the user procedure.
-       If you got them probably it indicates an internal scheduler error.
+       An internal variable containing the state of the
+                executed job. You can use this parameter when
+                calculating the next job start time. Possible values
+                are: 
+                <itemizedlist><listitem>
+          <para><literal>success</literal> &mdash; transaction has finished successfully.
+          </para></listitem><listitem>
+          <para><literal>failure</literal> &mdash; transaction has failed to finish.
+          </para></listitem><listitem>
+          <para><literal>running</literal> &mdash;
+                transaction is in progress. </para></listitem>
+                <listitem>
+          <para><literal>undefined</literal> &mdash; transaction has
+                not started yet. The last two values should not appear
+                inside the user procedure. If you see them, it may
+                indicate an internal <filename>pgpro_scheduler</filename>
+                error.</para></listitem></itemizedlist>
       </para>
      </listitem>
     </varlistentry>
    </variablelist>
-  </sect2>
 
-  <sect2>
-   <title>Managing scheduler</title>
+    </sect3>
+<sect3 id="pgpro-scheduler-sql-schema">
+   <title><acronym>SQL</acronym> Schema</title>
 
-   <para>
-    You could control the scheduler's behavior by means of
-    <productname>&productname;</productname> variables described above.
-   </para>
-
-   <para>
-    For example, suppose we have a fresh <productname>&productname;</productname>
-    installation with the <filename>scheduler</filename> extension installed.
-    We are going to use the scheduler with databases named
-    <literal>database1</literal> and <literal>database2</literal>.
-    We want <literal>database1</literal> to be capable
-    to run 5 jobs in parallel and <literal>database2</literal> &mdash; 3 jobs.
-   </para>
-
-   <para>
-    Put the following string in your <filename>postgresql.conf</filename>:
-<programlisting>
-shared_preload_libraries = 'pgpro_scheduler'
-</programlisting>
-   </para>
-
-   <para>
-    Then start <application>psql</application> and execute the following commands:
-<programlisting>
-ALTER SYSTEM SET schedule.enable = true;
-ALTER SYSTEM SET schedule.database = 'database1,database2';
-ALTER DATABASE database1 SET schedule.max_workers = 5;
-ALTER DATABASE database2 SET schedule.max_workers = 3;
-SELECT pg_reload_conf();
-</programlisting>
-   </para>
-
-   <para>
-    If you do not need the different values in <varname>max_workers</varname>
-    you could store the same in configuration file.
-    Then ask server to reload configuration. There is no need to restart.
-   </para>
-
-   <para>
-    Here is an example of <filename>postgresql.conf</filename>:
-<programlisting>
-shared_preload_libraries = 'pgpro_scheduler'
-schedule.enable = on
-schedule.database = 'database1,database2'
-schedule.max_workers = 5
-</programlisting>
-   </para>
-
-   <para>
-    The scheduler is implemented as background worker which dynamically starts
-    another bgworkers. That's why you should care about proper value in
-    the <varname>max_worker_processes</varname> variable.
-    The minimal acceptable value could be calculated using the following formula:
-<programlisting>
-min_processes = 1 + num_databases  + max_workers[1] + ... + max_workers[num_databases]
-</programlisting>
-    where:
-    <itemizedlist>
-     <listitem>
       <para>
-       <literal>min_processes</literal> &mdash; the minimal acceptable amount
-       of bgworkers in the system. Note, that other subsystems (e.g. subqueries) need
-       to start background workers too. So you need to adjust the value to
-       take their needs into account.
+        To store its internal tables and functions,
+        <filename>pgpro_scheduler</filename> uses the
+        <literal>schedule</literal> <acronym>SQL</acronym> schema. Direct access to tables is forbidden. To manage job scheduling, use the functions
+        defined by the <filename>pgpro_scheduler</filename> extension.
       </para>
-     </listitem>
+  </sect3>
 
-     <listitem>
-      <para>
-       <literal>num_databases</literal> &mdash; the number of databases the scheduler
-       works with
-      </para>
-     </listitem>
-
-     <listitem>
-      <para>
-       <literal>max_workers</literal> &mdash; the value of <varname>schedule.max_workers</varname>
-       variable in context of each database
-      </para>
-     </listitem>
-     </itemizedlist>
-   </para>
-  </sect2>
-
-  <sect2>
-   <title><acronym>SQL</acronym> Scheme</title>
-
-   <para>
-    The extension uses <acronym>SQL</acronym> scheme <literal>schedule</literal> to store
-    its internal tables and functions. Direct access to tables is forbidden.
-    All manipulations should be performed by means of functions defined by extension.
-   </para>
-  </sect2>
-
-  <sect2 id="pgpro-scheduler-sql-types">
+  <sect3 id="pgpro-scheduler-sql-types">
    <title><acronym>SQL</acronym> Types</title>
 
    <para>
@@ -283,322 +729,93 @@ min_processes = 1 + num_databases  + max_workers[1] + ... + max_workers[num_data
     types for return values for some of its functions.
    </para>
 
-   <sect3>
+   <sect4>
     <title>cron_rec</title>
-
     <para>
-     This type contains information about the job to be scheduled.
+     This type contains information about the scheduled job.
 <programlisting>
 CREATE TYPE schedule.cron_rec AS(
-    id integer,             -- job id
-    node text,              -- node name to be executed on
+    id integer,             -- job ID
+    node text,              -- name of the node
+                               on which to execute the job
     name text,              -- job name
-    comments text,          -- job's comments
+    comments text,          -- comments about the job
     rule jsonb,             -- scheduling rules
     commands text[],        -- SQL commands to be executed
-    run_as text,            -- name of executor user
-    owner text,             -- name of owner user
-    start_date timestamp,   -- lower bound of execution window
+    run_as text,            -- username of the job executor
+    owner text,             -- username of the job owner
+    start_date timestamp,   -- lower bound of the execution window;
                             -- NULL if unbound
-    end_date timestamp,     -- upper bound of execution window
+    end_date timestamp,     -- upper bound of the execution window;
                             -- NULL if unbound
-    use_same_transaction boolean,   -- true if the set of SQL commands
-                                    -- will be executed in a single transaction
-    last_start_available interval,  -- max time till scheduled job
-                                    -- can wait for execution if all allowed
-                                    -- workers are busy
-    max_instances int,      -- max number of simultaneous running instances
-                            -- of this job
-    max_run_time interval,  -- max execution time
-    onrollback text,        -- SQL command to be performed on transaction
-                            -- failure
-    next_time_statement text,   -- SQL command to execute on main
-                                -- transaction end to calculate next
-                                -- start time
-    active boolean,         -- true if job could be scheduled
-    broken boolean          -- true if job has errors in configuration
-                            -- that prevent it's further execution
+    use_same_transaction boolean,   -- true if an array of SQL 
+                                    -- commands will be executed 
+                                    -- in a single transaction
+    last_start_available interval,  -- maximum wait time for 
+                                    -- the scheduled job if all 
+                                    -- allowed workers are busy
+    max_instances int,      -- maximum number of simultaneously 
+                            -- running job instances
+    max_run_time interval,  -- maximum execution time
+    onrollback text,        -- SQL statement to execute 
+                            -- if the main transaction fails
+
+    next_time_statement text,   -- SQL statement to calculate 
+                                -- the next start time
+    active boolean,         -- true if job is scheduled 
+                            -- successfully
+    broken boolean          -- true if job has errors in 
+                            -- configuration that prevented 
+                            -- its further execution
 );
 </programlisting>
     </para>
-   </sect3>
+   </sect4>
 
-   <sect3>
+   <sect4>
     <title>cron_job</title>
-
     <para>
-     This type contains information about job scheduled execution.
+     This type contains information about a particular job execution.
 <programlisting>
 CREATE TYPE schedule.cron_job AS(
     cron integer,           -- job id
-    node text,              -- node name to be executed on
+    node text,              -- name of the node
+                            -- on which to execute the job
     scheduled_at timestamp, -- scheduled execution time
     name text,              -- job name
-    comments text,          -- job's comments
-    commands text[],        -- SQL commands to be executed
-    run_as text,            -- name of executor user
-    owner text,             -- name of owner user
-    use_same_transaction boolean,   -- true if the set of sql commands
-                                    -- will be executed in a single transaction
-    started timestamp,      -- timestamp of this job execution started
-    last_start_available timestamp, -- time until job must be started
-    finished timestamp,     -- timestamp of this job execution finished
-    max_run_time interval,  -- max execution time
-    max_instances int,      -- the number of instances run at the same time
-    onrollback text,        -- statement on ROLLBACK
-    next_time_statement text,   -- statement to calculate next start time
-    status text,            -- status of this task: working, done, error
+    comments text,          -- comments about the job
+    commands text[],        -- SQL statement to be executed
+    run_as text,            -- username of the job executor
+    owner text,             -- username of the job owner
+    use_same_transaction boolean,   -- true if an array of SQL 
+                                    -- commands will be executed
+                                    -- in a single transaction
+    started timestamp,      -- timestamp of the job execution start
+    last_start_available timestamp, -- maximum wait time for 
+                                    -- the scheduled job if all 
+                                    -- allowed workers are busy
+    finished timestamp,     -- timestamp of the job
+                            -- execution finish
+    max_run_time interval,  -- maximum execution time
+    max_instances int,      -- the number of simultaneously 
+                            -- running job instances 
+    onrollback text,        -- SQL statement to execute if the main
+                            -- transaction fails
+    next_time_statement text,   -- SQL statement to calculate 
+                                -- the next start time
+    status text,            -- status of the task: working, done,
+                            -- or error
     message text            -- error message
 );
 </programlisting>
     </para>
-   </sect3>
-  </sect2>
+   </sect4>
+  </sect3>
 
-  <sect2>
+  <sect3 id="pgpro-scheduler-functions">
    <title>Functions</title>
-
    <variablelist>
-    <varlistentry>
-     <term>
-      <function>schedule.create_job(<parameter>cron</parameter> <type>text</type>,
-       <parameter>sql</parameter> <type>text</type>, <parameter>node</parameter> <type>text</type>)
-      </function>
-      <indexterm>
-       <primary><function>schedule.create_job</></primary>
-      </indexterm>
-     </term>
-     <listitem>
-      <para>
-       Creates job and sets it active.
-      </para>
-      <para>
-       Arguments:
-       <itemizedlist>
-        <listitem>
-         <para>
-         <parameter>cron</parameter> &mdash; <filename>crontab</filename>-like string to set schedule
-         </para>
-        </listitem>
-        <listitem>
-         <para>
-          <parameter>sql</parameter> &mdash; SQL statement to execute
-         </para>
-        </listitem>
-        <listitem>
-         <para>
-          <parameter>node</parameter> &mdash; node name, optional
-         </para>
-        </listitem>
-       </itemizedlist>
-      </para>
-      <para>
-       Returns id of the created job.
-      </para>
-     </listitem>
-    </varlistentry>
-
-    <varlistentry>
-     <term>
-      <function>schedule.create_job(<parameter>cron</parameter> <type>text</type>,
-       <parameter>sqls</parameter> <type>text[]</type>, <parameter>node</parameter> <type>text</type>)
-      </function>
-      <indexterm>
-       <primary><function>schedule.create_job</></primary>
-      </indexterm>
-     </term>
-     <listitem>
-      <para>
-      Creates job and sets it active.
-      </para>
-      <para>
-       Arguments:
-       <itemizedlist>
-        <listitem>
-         <para>
-         <parameter>cron</parameter> &mdash; <filename>crontab</filename>-like string to set schedule
-         </para>
-        </listitem>
-        <listitem>
-         <para>
-          <parameter>sqls</parameter> &mdash; set of SQL statements to execute
-         </para>
-        </listitem>
-        <listitem>
-         <para>
-          <parameter>node</parameter> &mdash; node name, optional
-         </para>
-        </listitem>
-       </itemizedlist>
-      </para>
-      <para>
-       Returns id of the created job.
-      </para>
-     </listitem>
-    </varlistentry>
-
-    <varlistentry>
-     <term>
-      <function>schedule.create_job(<parameter>date</parameter> <type>timestamp with time zone</type>,
-       <parameter>sql</parameter> <type>text</type>,
-       <parameter>node</parameter> <type>text</type>)
-      </function>
-      <indexterm>
-       <primary><function>schedule.create_job</></primary>
-      </indexterm>
-     </term>
-     <listitem>
-      <para>
-       Creates job and sets it active.
-      </para>
-      <para>
-       Arguments:
-       <itemizedlist>
-        <listitem>
-         <para>
-          <parameter>date</parameter> &mdash; exact date of execution
-         </para>
-        </listitem>
-        <listitem>
-         <para>
-          <parameter>sql</parameter> &mdash; SQL statement to execute
-         </para>
-        </listitem>
-        <listitem>
-         <para>
-          <parameter>node</parameter> &mdash; node name, optional
-         </para>
-        </listitem>
-       </itemizedlist>
-      </para>
-      <para>
-       Returns id of the created job.
-      </para>
-     </listitem>
-    </varlistentry>
-
-    <varlistentry>
-     <term>
-      <function>schedule.create_job(<parameter>date</parameter> <type>timestamp with time zone</type>,
-       <parameter>sqls</parameter> <type>text[]</type>,
-       <parameter>node</parameter> <type>text</type>)
-      </function>
-      <indexterm>
-       <primary><function>schedule.create_job</></primary>
-      </indexterm>
-     </term>
-     <listitem>
-      <para>
-       Creates job and sets it active.
-      </para>
-      <para>
-       Arguments:
-       <itemizedlist>
-        <listitem>
-         <para>
-          <parameter>date</parameter> &mdash; exact date of execution
-         </para>
-        </listitem>
-        <listitem>
-         <para>
-          <parameter>sqls</parameter> &mdash; set of SQL statements to execute
-         </para>
-        </listitem>
-        <listitem>
-         <para>
-          <parameter>node</parameter> &mdash; node name, optional
-         </para>
-        </listitem>
-       </itemizedlist>
-      </para>
-      <para>
-       Returns id of the created job.
-      </para>
-     </listitem>
-    </varlistentry>
-
-    <varlistentry>
-     <term>
-      <function>schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[]</type>,
-       <parameter>sql</parameter> <type>text</type>,
-       <parameter>node</parameter> <type>text</type>)
-      </function>
-      <indexterm>
-       <primary><function>schedule.create_job</></primary>
-      </indexterm>
-     </term>
-     <listitem>
-      <para>
-       Creates job and sets it active.
-      </para>
-      <para>
-       Arguments:
-       <itemizedlist>
-        <listitem>
-         <para>
-          <parameter>dates</parameter> &mdash; set of execution dates
-         </para>
-        </listitem>
-        <listitem>
-         <para>
-          <parameter>sql</parameter> &mdash; SQL statement to execute
-         </para>
-        </listitem>
-        <listitem>
-         <para>
-          <parameter>node</parameter> &mdash; node name, optional
-         </para>
-        </listitem>
-       </itemizedlist>
-      </para>
-      <para>
-       Returns id of the created job.
-      </para>
-     </listitem>
-    </varlistentry>
-
-
-    <varlistentry>
-     <term>
-      <function>schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[]</type>,
-       <parameter>sqls</parameter> <type>text[]</type>,
-       <parameter>node</parameter> <type>text</type>)
-      </function>
-      <indexterm>
-       <primary><function>schedule.create_job</></primary>
-      </indexterm>
-     </term>
-     <listitem>
-      <para>
-       Creates job and sets it active.
-      </para>
-      <para>
-       Arguments:
-       <itemizedlist>
-        <listitem>
-         <para>
-          <parameter>dates</parameter> &mdash; set of execution dates
-         </para>
-        </listitem>
-        <listitem>
-         <para>
-          <parameter>sqls</parameter> &mdash; set of SQL statements to execute
-         </para>
-        </listitem>
-        <listitem>
-         <para>
-          <parameter>node</parameter> &mdash; node name, optional
-         </para>
-        </listitem>
-       </itemizedlist>
-      </para>
-      <para>
-       Returns id of the created job.
-      </para>
-     </listitem>
-    </varlistentry>
-
-    <varlistentry id="schedule-create-job" xreflabel="schedule.create_job">
+    <varlistentry id="schedule-create-job" xreflabel="schedule.create_job()">
      <term>
       <function>schedule.create_job(<parameter>data</parameter> <type>jsonb</type>)
       </function>
@@ -608,153 +825,286 @@ CREATE TYPE schedule.cron_job AS(
      </term>
      <listitem>
       <para>
-       Creates job and sets it active.
+       Creates an active job and returns the job ID.
       </para>
-      <para>
-       The only argument is a JSONB object with information about job.
-      </para>
-      <para>
-       The object can contain the following keys, some of them can be omitted:
-       <itemizedlist>
-        <listitem>
-         <para><literal>name</literal> &mdash; job name;</para>
-        </listitem>
-        <listitem>
-         <para><literal>node</literal> &mdash; node name;</para>
-        </listitem>
-        <listitem>
-         <para><literal>comments</literal> &mdash; job's comments;</para>
-        </listitem>
-        <listitem>
-         <para><literal>cron</literal> &mdash; <filename>crontab</filename>-like string for scheduling settings;</para>
-        </listitem>
-        <listitem>
-         <para><literal>rule</literal> &mdash; scheduling settings as JSONB object (see description below);</para>
-        </listitem>
-        <listitem>
-         <para><literal>command</literal> &mdash; SQL statement to be executed;</para>
-        </listitem>
-        <listitem>
-         <para><literal>commands</literal> &mdash; a set of SQL statements to be executed as an array;</para>
-        </listitem>
-        <listitem>
-         <para><literal>run_as</literal> &mdash; user to execute command(s);</para>
-        </listitem>
-        <listitem>
-         <para><literal>start_date</literal> &mdash; start of interval when scheduled command can be executed, could be NULL;</para>
-        </listitem>
-        <listitem>
-         <para><literal>end_date</literal> &mdash; end of interval when scheduled command can be executed, could be NULL;</para>
-        </listitem>
-        <listitem>
-         <para><literal>date</literal> &mdash; exact date when command will be executed;</para>
-        </listitem>
-        <listitem>
-         <para><literal>dates</literal> &mdash; set of exact dates when command will be executed;</para>
-        </listitem>
-        <listitem>
-         <para><literal>use_same_transaction</literal> &mdash; <literal>true</literal> if set of commands will be executed within a single transaction.
-          Default: <literal>false</literal>;</para>
-        </listitem>
-        <listitem>
-         <para><literal>last_start_available</literal> &mdash; for how long command execution could be postponed
-          if maximum number of allowed workers reached at the scheduled moment.
-          Time set in format of <type>interval</type>. E.g. with '00:02:34' it is possible to wait for
-          2 minutes 34 seconds. If time is NULL or not set then wait forever. Default value is NULL;</para>
-        </listitem>
-        <listitem>
-         <para><literal>max_run_time</literal> &mdash; how long scheduled job can be executed. Format: <type>interval</type>.
-          If NULL or not set then there is no time limits. Default: NULL;</para>
-        </listitem>
-        <listitem>
-         <para><literal>onrollback</literal> &mdash; SQL statement to be executed on ROLLBACK if main transaction fails.
-          Default: not defined;</para>
-        </listitem>
-        <listitem>
-         <para><literal>next_time_statement</literal> &mdash; SQL statement to calculate next start time.</para>
-        </listitem>
-       </itemizedlist>
-      </para>
-      <para>
-       The rules of scheduling could be set as <filename>crontab</filename>-like string (key <literal>cron</literal>)
-       and also as JSONB object (key <literal>rule</literal>).
-      </para>
-      <para>
-       This object can contain the following keys:
-       <itemizedlist>
-        <listitem>
-         <para><literal>minutes</literal> &mdash; minutes; array of integers in range 0 .. 59;</para>
-        </listitem>
-        <listitem>
-         <para><literal>hours</literal> &mdash; hours; array of integers in range 0 .. 23;</para>
-        </listitem>
-        <listitem>
-         <para><literal>days</literal> &mdash; days of month; array of integers in range 1 .. 31;</para>
-        </listitem>
-        <listitem>
-         <para><literal>months</literal> &mdash; months; array of integers in range 1 .. 12;</para>
-        </listitem>
-        <listitem>
-         <para><literal>wdays</literal> &mdash; days of week; array of integers in range 0 .. 6 (0 is Sunday);</para>
-        </listitem>
-        <listitem>
-         <para><literal>onstart</literal> &mdash; integer value 0 or 1; if value equals to 1
-          then the job will be executed on scheduler start only once;</para>
-        </listitem>
-       </itemizedlist>
-      </para>
-      <para>
-       The job also could be scheduled on exact date or set of dates.
-       Use <literal>date</literal> and <literal>dates</literal> keys accordingly.
-      </para>
-      <para>
-       All scheduling methods could be combined but the use of at least one of them is mandatory.
-      </para>
-      <para>
-       The <literal>next_time_statement</literal> field may contain SQL statement to be executed
-       after the main transaction to calculate next start time. If the key is defined,
-       the first start time will be calculated by methods described above but
-       successive start times will be derived from this statement. The statement must
-       return record with the first field containing value of type <type>timestamp with time zone</type>.
-       If returning value be of the different type or statement execution produce an error
-       the job will be marked as broken and further execution will be cancelled.
-      </para>
-      <para>
-       This statement will be executed in spite of main transaction execution state.
-       It's possible to get state of main transaction
-       from <productname>&productname;</productname> variable
-       <varname>schedule.transaction_state</varname>.
-      </para>
-      <para>
-       The possible values are:
-       <itemizedlist>
-        <listitem>
-         <para><literal>success</literal> &mdash; transaction is successful</para>
-        </listitem>
-        <listitem>
-         <para><literal>failure</literal> &mdash; transaction is failed</para>
-        </listitem>
-        <listitem>
-         <para><literal>running</literal> &mdash; transaction is in progress</para>
-        </listitem>
-        <listitem>
-         <para><literal>undefined</literal> &mdash; transaction has not been started yet</para>
-        </listitem>
-       </itemizedlist>
-      </para>
-      <para>
-       The last two values should not appear within user procedure specified in the <literal>next_time_statement</literal> key.
-      </para>
-      <para>
-       SQL statement to be executed could be set in <literal>command</literal> or <literal>commands</literal> key.
-       The first one specifies the single statement, the second &mdash; the set of statements.
-       In fact the first key can contain the set of commands in one string separated by semicolons.
-       In this case they all will be executed in a single transaction in spite of the value <varname>use_same_transaction</varname>.
-       So for a set of the statements is better to use the <literal>commands</literal> key as you get more control on execution.
-      </para>
-      <para>
-       Returns id of the created job.
-      </para>
+        <para>
+    <emphasis role="strong">Alternative Syntax:</emphasis>
+  </para>
+  <programlisting>
+schedule.create_job(<parameter>cron</parameter> <type>text</type>, <parameter>commands</parameter> <type>text</type> [, <parameter>node</parameter> <type>text</type>])
+schedule.create_job(<parameter>cron</parameter> <type>text</type>, <parameter>commands</parameter> <type>text</type>[] [, <parameter>node</parameter> <type>text</type>])
+schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone</type>, <parameter>commands</parameter> <type>text</type> [, <parameter>node</parameter> <type>text</type>])
+schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone</type>, commands <type>text[]</type> [, <parameter>node</parameter> <type>text</type>])
+schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[]</type>, <parameter>commands</parameter> <type>text</type> [, <parameter>node</parameter> <type>text</type>])
+schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[]</type>, <parameter>commands</parameter> <type>text[]</type> [, <parameter>node</parameter> <type>text</type>])
+</programlisting>
+<para>Arguments:</para>
+   <itemizedlist>
+    <listitem>
+    <para><parameter>data</parameter> &mdash; a <type>jsonb</type> object defining all the job properties. You do not need to define other parameters if the <parameter>data</parameter> is set. All the
+            available <type>jsonb</type> keys are listed in <xref linkend="pgpro-scheduler-jsonb-keys">.</para>
+    <para>Type: <type>jsonb</type></para>
+    </listitem>
+    <listitem>
+    <para><parameter>cron</parameter> &mdash; a crontab-like string defining the job schedule.</para>
+    <para>Type: <type>text</type></para>
+    </listitem>
+    <listitem>
+    <para><parameter>dates</parameter> &mdash; the exact date or an array of dates for job execution.</para>
+    <para>Type: <type>timestamp with time zone</type>, <type>timestamp with time zone[]</type></para>
+    </listitem>
+    <listitem>
+    <para><parameter>commands</parameter> &mdash; <acronym>SQL</acronym> statements to execute. You can pass one or more <acronym>SQL</acronym>
+            statements separated by semicolons, or an array of <acronym>SQL</acronym>
+            statements. When passed as an array, <acronym>SQL</acronym> statements are
+            executed in separate transactions.</para>
+            <para>Type: <type>text</type>, <type>text[]</type></para>
+    </listitem>
+    <listitem>
+    <para><parameter>node</parameter> &mdash; the name of the node on which the scheduled jobs
+            run. Optional. You may need to specify this argument if you are
+            scheduling jobs on a multi-master cluster.</para>
+            <para>Type: <type>text</type></para>
+    </listitem>
+    </itemizedlist>
+  <para>
+    Return values:
+<itemizedlist><listitem><para>
+    ID of the created job.</para></listitem></itemizedlist>
+  </para>
+      <table id="pgpro-scheduler-jsonb-keys">
+      <title><type>jsonb</type> Keys for Job Scheduling</title>
+        <tgroup cols="3">
+          <thead>
+            <row>
+              <entry>
+                Key
+              </entry>
+              <entry>
+                Type
+              </entry>
+              <entry>
+                Description
+              </entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry>
+                <literal>cron</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>
+                A crontab-like string defining the job schedule. You can
+                combine <literal>cron</literal> with
+                <literal>rule</literal> and <literal>dates</literal>
+                keys, but at least one of them is mandatory.
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>dates</literal>
+              </entry>
+              <entry>
+                <type>timestamp with time zone</type>, <type>timestamp with time zone[]</type>
+              </entry>
+              <entry>
+                The exact date or an array of dates when the scheduled
+                job will be executed. You can combine
+                <literal>dates</literal> with <literal>rule</literal>
+                and <literal>cron</literal> keys, but at least one of
+                them is mandatory.
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>rule</literal>
+              </entry>
+              <entry>
+                <type>jsonb</type>
+              </entry>
+              <entry><para>
+                A <type>jsonb</type> object defining the job schedule. Mandatory, if
+                both <literal>cron</literal> and
+                <literal>dates</literal> keys are undefined. The <literal>rule</literal> object 
+                includes one or more of the following keys:
+               <itemizedlist>
+               <listitem>
+                <para><literal>minutes</literal> &mdash; minutes; an array of
+                integers in range [0, 59] 
+                </para></listitem><listitem><para>
+                <literal>hours</literal> &mdash;
+                hours; an array of integers in range [0, 23]
+                </para></listitem><listitem><para>
+                <literal>days</literal> &mdash; days of the month; an array of
+                integers in range [1, 31]
+                </para></listitem><listitem><para><literal>months</literal> &mdash;
+                months; an array of integers in range [1, 12]
+                </para></listitem><listitem><para>
+                <literal>wdays</literal> &mdash; days of the week; an array of
+                integers in range [0, 6], where 0 is Sunday.
+                </para></listitem><listitem><para>
+                <literal>onstart</literal> &mdash; integer value 0 or 1. If
+                <literal>onstart</literal> is set to 1, the job is
+                executed only once when
+                <filename>pgpro_scheduler</filename> is started.</para></listitem></itemizedlist></para>
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>commands</literal>
+              </entry>
+              <entry>
+                <type>text</type>, <type>text[]</type>
+              </entry>
+              <entry>
+                <acronym>SQL</acronym> statements to execute. You can pass one or more <acronym>SQL</acronym>
+                statements separated by semicolons, or an array of <acronym>SQL</acronym>
+                statements. When passed as an array, <acronym>SQL</acronym> statements are
+                executed in separate transactions by default. You can
+                change this behavior by setting the
+                <literal>use_same_transaction</literal> key.
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>name</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>
+                Optional. Job name.
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>node</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>
+                Optional. The name of the node on which the scheduled
+                jobs run. You may need to specify this argument if you
+                are scheduling jobs on a multi-master cluster.
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>comments</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>
+                Optional. Comments about the scheduled job.
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>run_as</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>
+                Optional. The user to execute command(s).
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>start_date</literal>
+              </entry>
+              <entry>
+                <type>timestamp with time zone</type>
+              </entry>
+              <entry>
+                Optional. The start of the timeframe when the scheduled
+                job can be executed. This key can be NULL.
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>end_date</literal>
+              </entry>
+              <entry>
+                <type>timestamp with time zone</type>
+              </entry>
+              <entry>
+                Optional. The end of the timeframe when the scheduled
+                job can be executed. This key can be NULL.
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>use_same_transaction</literal>
+              </entry>
+              <entry></entry>
+              <entry>
+                Optional. If set to true, forces an array of <acronym>SQL</acronym>
+                statements to be executed in the same transaction.
+                Default: <literal>false</literal>
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>last_start_available</literal>
+              </entry>
+              <entry>
+                <type>interval</type>
+              </entry>
+              <entry>
+                Optional. The maximum time interval to postpone the job
+                execution if the maximum number of allowed workers
+                reached at the scheduled moment. For example, if this
+                key is set to '00:02:34', the job will wait for 2
+                minutes 34 seconds. If this key is NULL or not set, the
+                job can wait forever. Default: NULL.
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>max_run_time</literal>
+              </entry>
+              <entry>
+                <type>interval</type>
+              </entry>
+              <entry>
+                Optional. The maximum time interval during which the
+                scheduled job can be executed. If this key is NULL or
+                not set, there are no time limits. Default: NULL.
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>on_rollback</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>
+                Optional. <acronym>SQL</acronym> statement to be executed if
+                the main transaction fails.
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>next_time_statement</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>
+                Optional. <acronym>SQL</acronym> statement to calculate the start time for
+                the next job execution. For details, see <xref linkend="pgpro-scheduler-next-start-time">.
+              </entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
      </listitem>
     </varlistentry>
 
@@ -775,28 +1125,28 @@ CREATE TYPE schedule.cron_job AS(
        Arguments:
        <itemizedlist>
         <listitem>
-         <para><parameter>job_id</parameter> &mdash; identifier of the existing job;</para>
+         <para><parameter>job_id</parameter> &mdash; identifier of the existing job.</para>
         </listitem>
         <listitem>
-         <para><parameter>data</parameter> &mdash; JSONB object with properties to be edited.
-          The keys and their structure shown in the <xref linkend="schedule-create-job">
-          function description.</para>
+         <para><parameter>data</parameter> &mdash; a <type>jsonb</type> object with properties to be edited.
+          For the list of keys and their structure, see <xref linkend="pgpro-scheduler-jsonb-keys">.
+          </para>
         </listitem>
        </itemizedlist>
       </para>
       <para>
-       The function returns boolean value:
+       Return values:
        <itemizedlist>
         <listitem>
-         <para><parameter>true</parameter> &mdash;  properties updated successfully;</para>
+         <para><parameter>true</parameter> &mdash;  job properties were updated successfully.</para>
         </listitem>
         <listitem>
-         <para><parameter>false</parameter> &mdash; properties not updated.</para>
+         <para><parameter>false</parameter> &mdash; job properties were not updated.</para>
         </listitem>
        </itemizedlist>
       </para>
       <para>
-       To update the properties of the job, the user must be superuser or the the owner of the job.
+       To update the job properties, you must be the owner of the job or have superuser rights.
       </para>
      </listitem>
     </varlistentry>
@@ -808,7 +1158,7 @@ CREATE TYPE schedule.cron_job AS(
        <parameter>value</parameter> <type>text</type> || <type>anyarray</type>)
       </function>
       <indexterm>
-       <primary><function>schedule.set_job_attributes</></primary>
+       <primary><function>schedule.set_job_attribute</></primary>
       </indexterm>
      </term>
      <listitem>
@@ -819,27 +1169,34 @@ CREATE TYPE schedule.cron_job AS(
        Arguments:
        <itemizedlist>
         <listitem>
-         <para><parameter>job_id</parameter> &mdash; identifier of the existing job;</para>
+         <para><parameter>job_id</parameter> &mdash; identifier of the existing job.</para>
         </listitem>
         <listitem>
-         <para><parameter>name</parameter> &mdash; property name</para>
+         <para><parameter>name</parameter> &mdash; property name.</para>
         </listitem>
         <listitem>
-         <para><parameter>value</parameter> &mdash; property value</para>
+         <para><parameter>value</parameter> &mdash; property value.</para>
         </listitem>
        </itemizedlist>
       </para>
       <para>
-       The full list of the properties could be found in <xref linkend="schedule-create-job"> function description.
-       Some values are of array types. They should be passed as an array,
-       but if the value could not be an array, the exception will be raised.
+       See <xref linkend="pgpro-scheduler-jsonb-keys"> for the list of properties you can update.
+       Some values are of array types. They should be passed as an array.
+       If you pass a value of the wrong type, an exception will be raised.
       </para>
       <para>
-       This function returns boolean value &mdash; <literal>true</literal> on success
-       and <literal>false</literal> on failure.
+       Return values:
+       <itemizedlist>
+        <listitem>
+         <para><parameter>true</parameter> &mdash;  job property was updated successfully.</para>
+        </listitem>
+        <listitem>
+         <para><parameter>false</parameter> &mdash; job property was not updated.</para>
+        </listitem>
+       </itemizedlist>
       </para>
       <para>
-       To update the properties of the job, the user must be superuser or the the owner of the job.
+       To update the job properties, you must be the owner of the job or have superuser rights.
       </para>
      </listitem>
     </varlistentry>
@@ -854,18 +1211,26 @@ CREATE TYPE schedule.cron_job AS(
      </term>
      <listitem>
       <para>
-      Deactivates job and suspends its further scheduling and execution.
+      Deactivates the job and suspends its further scheduling and execution.
       </para>
       <para>
        Arguments:
        <itemizedlist>
         <listitem>
-         <para><parameter>job_id</parameter> &mdash; identifier of the existing job;</para>
+         <para><parameter>job_id</parameter> &mdash; identifier of the existing job.</para>
         </listitem>
        </itemizedlist>
       </para>
       <para>
-       Returns <literal>true</literal> on success, <literal>false</literal> on failure.
+       Return values:
+       <itemizedlist>
+        <listitem><para>
+       <literal>true</literal> - the job is deactivated successfully.
+        </para></listitem>
+       <listitem><para>
+       <literal>false</literal> - job deactivation failed.
+        </para></listitem>
+       </itemizedlist>       
       </para>
      </listitem>
     </varlistentry>
@@ -880,18 +1245,22 @@ CREATE TYPE schedule.cron_job AS(
      </term>
      <listitem>
       <para>
-      Activates job and starts its scheduling and execution.
+      Activates a job and starts its scheduling and execution.
       </para>
       <para>
        Arguments:
        <itemizedlist>
         <listitem>
-         <para><parameter>job_id</parameter> &mdash; identifier of the existing job;</para>
+         <para><parameter>job_id</parameter> &mdash; identifier of the existing job.</para>
         </listitem>
        </itemizedlist>
       </para>
       <para>
-       Returns <literal>true</literal> on success, <literal>false</literal> on failure.
+       Return values: 
+       <itemizedlist>
+        <listitem><para><literal>true</literal> &mdash; the job was activated successfully.</para></listitem>
+        <listitem><para><literal>false</literal> &mdash; job activation failed.</para></listitem>
+       </itemizedlist>
       </para>
      </listitem>
     </varlistentry>
@@ -912,12 +1281,16 @@ CREATE TYPE schedule.cron_job AS(
        Arguments:
        <itemizedlist>
         <listitem>
-         <para><parameter>job_id</parameter> &mdash; identifier of the existing job;</para>
+         <para><parameter>job_id</parameter> &mdash; identifier of the existing job.</para>
         </listitem>
        </itemizedlist>
       </para>
       <para>
-       Returns <literal>true</literal> on success, <literal>false</literal> on failure.
+       Return values: 
+       <itemizedlist>
+        <listitem><para><literal>true</literal> &mdash; the job was deleted successfully.</para></listitem>
+        <listitem><para><literal>false</literal> &mdash; job was not deleted.</para></listitem>
+       </itemizedlist>
       </para>
      </listitem>
     </varlistentry>
@@ -932,114 +1305,123 @@ CREATE TYPE schedule.cron_job AS(
      </term>
      <listitem>
       <para>
-       Deletes a job.
+       Returns information about the specified job.
       </para>
       <para>
        Arguments:
        <itemizedlist>
         <listitem>
-         <para><parameter>job_id</parameter> &mdash; identifier of the existing job;</para>
+         <para><parameter>job_id</parameter> &mdash; identifier of the existing job.</para>
         </listitem>
        </itemizedlist>
       </para>
       <para>
-       The return value is of type <type>cron_rec</type>.
-       Description of the type can be found in <xref linkend="pgpro-scheduler-sql-types">.
+       Return values: 
+       <itemizedlist>
+        <listitem>
+         <para>An object of type <type>cron_rec</type>. </para>
+        </listitem>
+       </itemizedlist>
+      </para>
+      <para>For details on the <type>cron_rec</type> type, see <xref linkend="pgpro-scheduler-sql-types">.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.get_owned_cron(<parameter>username</parameter> <type>text</type>)
+      </function>
+     <indexterm>
+       <primary><function>schedule.get_owned_cron</></primary>
+     </indexterm>
+     </term>
+     <listitem>
+      <para>
+       Retrieves the list of jobs owned by the specified user.
+      </para>
+      <para>
+       Arguments:</para>
+       <itemizedlist>
+        <listitem>
+         <para><parameter>username</parameter> &mdash; username, optional.</para>
+        </listitem>
+       </itemizedlist>
+      <para>Return values:</para>
+      <itemizedlist>
+        <listitem><para>
+       A set of records of type <type>cron_rec</type>.
+       These records contain information about all jobs owned by the specified user.
+       If the <parameter>username</parameter> is omitted, the session username is used.
+       You must have superuser rights to retrieve jobs owned by another user.
+      </para></listitem>
+       </itemizedlist>     
+      <para>For details on the <type>cron_rec</type> type, see <xref linkend="pgpro-scheduler-sql-types">.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.get_cron(<parameter>username</parameter> <type>text</type>)
+      </function>
+     <indexterm>
+       <primary><function>schedule.get_cron</></primary>
+     </indexterm>
+     </term>
+     <listitem>
+      <para>
+       Retrieves the list of jobs executed by the specified user.
+      </para>
+      <para>
+       Arguments:</para>
+       <itemizedlist>
+        <listitem>
+         <para><parameter>username</parameter> &mdash; username, optional.</para>
+        </listitem>
+       </itemizedlist>
+      <para>
+       Return values:</para>
+        <itemizedlist>
+        <listitem>
+         <para>A set of records of type <type>cron_rec</type>.
+       These records contain information about all jobs executed by the specified user.
+       If <parameter>username</parameter> is omitted, the session username is used.
+       You must have superuser rights to retrieve jobs executed by another user.</para>
+     </listitem>
+     </itemizedlist>
+      <para>
+       For details on the <type>cron_rec</type> type, see <xref linkend="pgpro-scheduler-sql-types">.
       </para>
      </listitem>
     </varlistentry>
 
     <varlistentry>
      <term>
-      <function>schedule.get_user_owned_cron(<parameter>username</parameter> <type>text</type>)
+      <function>schedule.get_active_jobs(<parameter>username</parameter> <type>text</type>)
       </function>
      <indexterm>
-       <primary><function>schedule.get_user_owned_cron</></primary>
+       <primary><function>schedule.get_active_jobs</></primary>
      </indexterm>
      </term>
      <listitem>
       <para>
-       Retrieves list of jobs owned by the specified user.
+       Returns the list of jobs currently being executed by the specified user.
       </para>
       <para>
-       Arguments:
+       Arguments:</para>
        <itemizedlist>
         <listitem>
-         <para><parameter>username</parameter> &mdash; user name, optional</para>
-        </listitem>
+         <para><parameter>username</parameter> &mdash; username, optional.</para></listitem>
        </itemizedlist>
+      <para>
+       If <parameter>username</parameter> is omitted, the session username is used.
+       You must have superuser rights to retrieve jobs executed by another user.
       </para>
       <para>
-       Returns a set of records of type <type>cron_rec</type>.
-       These records contain information about jobs owned by user.
-       If user name is omitted the session user name is used.
-       Only superuser can retrieve jobs owned by another user.
-      </para>
-      <para>
-       Description of the <type>cron_rec</type> type can be found in <xref linkend="pgpro-scheduler-sql-types">.
-      </para>
-     </listitem>
-    </varlistentry>
-
-    <varlistentry>
-     <term>
-      <function>schedule.get_user_cron(<parameter>username</parameter> <type>text</type>)
-      </function>
-     <indexterm>
-       <primary><function>schedule.get_user_cron</></primary>
-     </indexterm>
-     </term>
-     <listitem>
-      <para>
-       Retrieves list of jobs executed by the specified user.
-      </para>
-      <para>
-       Arguments:
-       <itemizedlist>
+       Return values:</para>
+        <itemizedlist>
         <listitem>
-         <para><parameter>username</parameter> &mdash; user name, optional</para>
-        </listitem>
-       </itemizedlist>
-      </para>
-      <para>
-       Returns a set of records of type <type>cron_rec</type>.
-       These records contain information about jobs executed by user.
-       If user name is omitted the session user name is used.
-       Only superuser can retrieve jobs executed by another user.
-      </para>
-      <para>
-       Description of the <type>cron_rec</type> type can be found in <xref linkend="pgpro-scheduler-sql-types">.
-      </para>
-     </listitem>
-    </varlistentry>
-
-    <varlistentry>
-     <term>
-      <function>schedule.get_user_active_jobs(<parameter>username</parameter> <type>text</type>)
-      </function>
-     <indexterm>
-       <primary><function>schedule.get_user_active_jobs</></primary>
-     </indexterm>
-     </term>
-     <listitem>
-      <para>
-       Returns a list of jobs executed in this very moment by the specified user.
-      </para>
-      <para>
-       Arguments:
-       <itemizedlist>
-        <listitem>
-         <para><parameter>username</parameter> &mdash; user name, optional</para>
-        </listitem>
-       </itemizedlist>
-      </para>
-      <para>
-       If user name is omitted then the session user name is used.
-       Only superuser can retrieve jobs executed by another user.
-      </para>
-      <para>
-       The return value is a set of records of type <type>cron_job</type>.
-       Description of the type can be found in <xref linkend="pgpro-scheduler-sql-types">.
+         <para>A set of records of type <type>cron_job</type>.</para></listitem></itemizedlist>
+       <para>For details on the <type>cron_job</type> type, see <xref linkend="pgpro-scheduler-sql-types">.
       </para>
      </listitem>
     </varlistentry>
@@ -1054,12 +1436,14 @@ CREATE TYPE schedule.cron_job AS(
      </term>
      <listitem>
       <para>
-       Returns a list of jobs being executed at that very moment.
-       Only superuser can call this function.
+       Returns the list of jobs being currently executed.
+       You must have superuser rights to call this function.
       </para>
       <para>
-       The return value is a set of records of type <type>cron_job</type>.
-       Description of the type can be found in <xref linkend="pgpro-scheduler-sql-types">.
+       Return values:</para>
+       <itemizedlist>
+        <listitem><para>A set of records of type <type>cron_job</type>.</para></listitem></itemizedlist>
+       <para>For details on the <type>cron_job</type> type, see <xref linkend="pgpro-scheduler-sql-types">.
       </para>
      </listitem>
     </varlistentry>
@@ -1074,13 +1458,14 @@ CREATE TYPE schedule.cron_job AS(
      </term>
      <listitem>
       <para>
-       Returns a list of all the completed jobs.
-       Only superuser can call this function.
+       Returns the list of all completed jobs.
+       You must have superuser rights to call this function.
       </para>
-      <para>
-       The return value is a set of records of type <type>cron_job</type>.
-       Description of the type can be found in <xref linkend="pgpro-scheduler-sql-types">.
-      </para>
+      <para>Return values:</para>
+        <itemizedlist>
+        <listitem>
+         <para>A set of records of type <type>cron_job</type>.</para></listitem></itemizedlist>
+       <para>For details on the <type>cron_job</type> type, see <xref linkend="pgpro-scheduler-sql-types">.</para>
      </listitem>
     </varlistentry>
 
@@ -1094,24 +1479,24 @@ CREATE TYPE schedule.cron_job AS(
      </term>
      <listitem>
       <para>
-       Returns a list of the completed jobs executed by the specified user.
+       Returns the list of completed jobs executed by the specified user.
       </para>
       <para>
-       Arguments:
+       Arguments:</para>
        <itemizedlist>
         <listitem>
-         <para><parameter>username</parameter> &mdash; user name, optional</para>
+         <para><parameter>username</parameter> &mdash; username, optional.</para>
         </listitem>
        </itemizedlist>
-      </para>
       <para>
-       If user name is omitted then the session user name is used.
-       Only superuser can retrieve list of jobs executed by another user.
+       If <parameter>username</parameter> is omitted, the session username is used.
+      You must have superuser rights to retrieve the list of jobs executed by another user.
       </para>
-      <para>
-       The return value is a set of records of type <type>cron_job</type>.
-       Description of the type can be found in <xref linkend="pgpro-scheduler-sql-types">.
-      </para>
+      <para>Return values:</para>
+        <itemizedlist>
+        <listitem>
+         <para>A set of records of type <type>cron_job</type>.</para></listitem></itemizedlist>
+       <para>For details on the <type>cron_job</type> type, see <xref linkend="pgpro-scheduler-sql-types">.</para>
      </listitem>
     </varlistentry>
 
@@ -1125,15 +1510,22 @@ CREATE TYPE schedule.cron_job AS(
      </term>
      <listitem>
       <para>
-      Deletes all records with information about completed jobs.
-      Only superuser can call this function.
+      Deletes all records with information about the completed jobs.
+      You must have superuser rights to call this function.
       </para>
       <para>
-       Returns the number of records deleted.
-      </para>
+       Return values:</para>
+       <itemizedlist>
+        <listitem>
+         <para>The number of records deleted.</para></listitem></itemizedlist>
      </listitem>
     </varlistentry>
    </variablelist>
+   </sect3>
+  </sect2>
+  <sect2>
+  <title>Authors</title>
+  <para>Vladimir Ershov <email>v.ershov@postgrespro.ru</email>, Postgres Professional, Moscow, Russia</para>
   </sect2>
 
 </sect1>

@@ -646,3 +646,24 @@ max_locks_per_transaction = 150		# min 10
 #online_analyze.min_interval = 10000 
 #online_analyze.table_type = 'temporary'
 #plantuner.fix_empty_table = false
+
+
+#------------------------------------------------------------------------------
+# COMPRESSION SETTINGS
+#------------------------------------------------------------------------------
+
+#cfs_level = 1			# Compression level. Current algorithm is ZLIB, so options are:
+						#Z_NO_COMPRESSION         0
+						#Z_BEST_SPEED             1
+						#Z_BEST_COMPRESSION       9
+						#Z_DEFAULT_COMPRESSION  (-1)
+#cfs_encryption = false # enable encryption of compressed pages
+
+#cfs_gc_workers = 1 	# Number of CFS background garbage collection workers. max=100
+#cfs_gc_threshold = 50  # Minimum percent of garbage blocks in the file prior to garbage collection
+#cfs_gc_period = 5000	# interval in milliseconds
+						# between CFS garbage collection iterations
+#cfs_gc_delay = 0		# delay in milliseconds between files defragmentation
+
+#cfs_gc_verify_file = false # Verify correctness of the data written by GC.
+							# This setting exists mostly for debugging purposes.
