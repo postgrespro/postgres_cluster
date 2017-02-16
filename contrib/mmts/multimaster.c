@@ -3406,8 +3406,8 @@ void MtmRecoverNode(int nodeId)
 }
 	
 /*
- * Permantently exclude node from the cluster. Node will not participate in voting and can not be automantically recovered 
- * until MtmRecoverNode is invoked 
+ * Permanently exclude node from the cluster. Node will not participate in voting and can not be automatically recovered 
+ * until MtmRecoverNode is invoked.
  */
 void MtmStopNode(int nodeId, bool dropSlot)
 {
