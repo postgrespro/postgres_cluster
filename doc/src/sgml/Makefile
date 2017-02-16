@@ -54,7 +54,7 @@ ifndef XSLTPROC
 XSLTPROC = $(missing) xsltproc
 endif
 
-override XSLTPROCFLAGS += --stringparam pg.version '$(PGPRO_VERSION)' --stringparam pg.productname '$(PRODUCTNAME)'
+override XSLTPROCFLAGS += --stringparam pg.version '$(PGPRO_VERSION)' --stringparam pg.productname '$(PRODUCT_NAME)'
 
 
 GENERATED_SGML = bookindex.sgml version.sgml \
