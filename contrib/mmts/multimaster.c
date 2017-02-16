@@ -3368,7 +3368,7 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 	} else { 
 		MTM_LOG1("%d: Continue replication from node %d", MyProcPid, nodeId);
 	}
-	BIT_SET(Mtm->reconnectMask, nodeId-1); /* arbiter should try to reestblish connection with this node */
+	BIT_SET(Mtm->reconnectMask, nodeId-1); /* arbiter should try to reestablish connection with this node */
 	MtmUnlock();
 	return mode;		
 }
