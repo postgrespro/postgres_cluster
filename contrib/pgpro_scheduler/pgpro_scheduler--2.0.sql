@@ -28,21 +28,15 @@ CREATE TABLE at_jobs_submitted(
 CREATE INDEX ON at_jobs_submitted(at,submit_time);
 CREATE INDEX ON at_jobs_submitted (last_start_available, node);
 
-CREATE TABLE at_jobs_process(
-	start_time timestamp with time zone default now()
-) INHERITS (at_jobs_submitted);
+CREATE TABLE at_jobs_process  (like at_jobs_submitted including all);
+ALTER TABLE at_jobs_process ADD start_time timestamp with time zone default now();
+ CREATE INDEX at_jobs_process_node_at_idx on at_jobs_process (node,  at);
 
-ALTER TABLE at_jobs_process ADD  primary key (id);
-CREATE INDEX at_jobs_process_node_at_idx on at_jobs_process (node,  at);
+CREATE TABLE at_jobs_done  (like at_jobs_process including all);
+ALTER TABLE at_jobs_done ADD status boolean;
+ALTER TABLE at_jobs_done ADD reason text;
+ALTER TABLE at_jobs_done ADD done_time timestamp with time zone default now();
 
-CREATE TABLE at_jobs_done(
-	status boolean,
-	reason text,
-	done_time timestamp with time zone default now()
-) INHERITS (at_jobs_process);
-
-ALTER TABLE at_jobs_done ADD  primary key (id);
-CREATE INDEX at_jobs_done_node_at_idx on at_jobs_done (node,  at);
 
 CREATE TABLE cron(
    id SERIAL PRIMARY KEY,

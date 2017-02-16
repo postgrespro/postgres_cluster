@@ -40,5 +40,6 @@ int get_integer_from_string(char *s, int start, int len);
 TimestampTz get_timestamp_from_string(char *str);
 TimestampTz _round_timestamp_to_minute(TimestampTz ts);
 bool is_scheduler_enabled(void);
+char *set_schema(const char *name, bool get_old);
 
 #endif

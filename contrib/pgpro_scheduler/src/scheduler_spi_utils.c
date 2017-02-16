@@ -196,12 +196,12 @@ char *get_text_from_spi(int row_n, int pos)
 	return _copy_string(TextDatumGetCString(datum));
 }
 
-long int get_interval_seconds_from_spi(int row_n, int pos, long def)
+int64 get_interval_seconds_from_spi(int row_n, int pos, long def)
 {
 	Datum datum;
 	bool is_null;
 	Interval *interval;
-	long result = 0;
+	int64 result = 0;
 
 	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
 	                        pos, &is_null);
@@ -246,6 +246,7 @@ Datum select_onedatumvalue_sql(const char *sql, bool *is_null)
 	int ret;
 	Datum datum = 0;
 
+	SetCurrentStatementStartTimestamp();
 	ret = SPI_execute(sql, true, 0);
 	if(ret == SPI_OK_SELECT)
 	{
@@ -266,6 +267,7 @@ int select_count_with_args(const char *sql, int n, Oid *argtypes, Datum *values,
 	Datum datum;
 	bool is_null;
 
+	SetCurrentStatementStartTimestamp();
 	ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, true, 0);
 	if(ret == SPI_OK_SELECT)
 	{
@@ -300,10 +302,13 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 
 	*error = NULL;
 
-
+	SetCurrentStatementStartTimestamp();
+	BeginInternalSubTransaction(NULL);
 	PG_TRY();
 	{
 		ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, false, 0);
+		ReleaseCurrentSubTransaction();
+		SPI_restore_connection();
 	}
 	PG_CATCH();
 	{
@@ -323,6 +328,8 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 			*error = _copy_string("unknown error");
 		}
 		errorSet = 1;
+		RollbackAndReleaseCurrentSubTransaction(); 
+		SPI_restore_connection();
 		FreeErrorData(edata);
 		MemoryContextSwitchTo(old);
 		FlushErrorState();
@@ -384,13 +391,19 @@ int execute_spi_params_prepared(const char *sql, int nparams, char **params, cha
 		values[i] = CStringGetTextDatum(params[i]);
 	}
 
+	SetCurrentStatementStartTimestamp();
+	BeginInternalSubTransaction(NULL);
+
 	PG_TRY();
 	{
 		plan = SPI_prepare(sql, nparams, paramtypes);
 		if(plan)
 		{
+			SetCurrentStatementStartTimestamp();
 			ret = SPI_execute_plan(plan, values, NULL, false, 0);
 		}
+		ReleaseCurrentSubTransaction();
+		SPI_restore_connection();
 	}
 	PG_CATCH();
 	{
@@ -413,6 +426,8 @@ int execute_spi_params_prepared(const char *sql, int nparams, char **params, cha
 		FreeErrorData(edata);
 		MemoryContextSwitchTo(old);
 		FlushErrorState();
+		RollbackAndReleaseCurrentSubTransaction(); 
+		SPI_restore_connection();
 	}
 	PG_END_TRY();
 
