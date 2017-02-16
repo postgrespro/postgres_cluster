@@ -3296,8 +3296,8 @@ void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
 
 /* 
  * Determine when and how we should open replication slot.
- * Druing recovery we need to open only one replication slot from which node should receive all transactions.
- * Slots at other nodes should be removed 
+ * During recovery we need to open only one replication slot from which node should receive all transactions.
+ * Slots at other nodes should be removed.
  */
 MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shutdown)
 {
