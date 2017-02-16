@@ -3193,7 +3193,7 @@ _PG_fini(void)
 
 /*
  * This functions is called by pglogical receiver main function when receiver background worker is started.
- * We switch to ONLINE mode when all receviers are connected.
+ * We switch to ONLINE mode when all receivers are connected.
  * As far as background worker can be restarted multiple times, use node bitmask.
  */
 void MtmReceiverStarted(int nodeId)
