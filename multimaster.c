@@ -2915,7 +2915,7 @@ _PG_init(void)
 
 	DefineCustomBoolVariable(
 		"multimaster.ignore_tables_without_pk",
-		"Do not replicate tables withpout primary key",
+		"Do not replicate tables without primary key",
 		NULL,
 		&MtmIgnoreTablesWithoutPk,
 		false,
