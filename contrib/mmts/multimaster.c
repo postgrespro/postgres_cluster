@@ -233,7 +233,7 @@ int   MtmMin2PCTimeout;
 int   MtmMax2PCRatio;
 bool  MtmUseDtm;
 bool  MtmPreserveCommitOrder;
-bool  MtmVolksWagenMode;
+bool  MtmVolksWagenMode; /* Pretend to be normal postgres. This means skip some NOTICE's and use local sequences */
 
 TransactionId  MtmUtilityProcessedInXid;
 
@@ -263,6 +263,23 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag);
 
+static bool MtmAtExitHookRegistered = false;
+
+/*
+ * Release multimaster main lock if been hold.
+ * This function is called when backend is terminated because of critical error or when error is catched 
+ * by FINALLY block 
+ */
+void MtmReleaseLock(void)
+{
+	if (MtmLockCount != 0) { 
+		Assert(Mtm->lastLockHolder == MyProcPid);
+		MtmLockCount = 0;
+		Mtm->lastLockHolder = 0;
+		LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
+	}
+}
+		
 /*
  * -------------------------------------------
  * Synchronize access to MTM structures.
@@ -276,8 +293,13 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 void MtmLock(LWLockMode mode)
 {
 	timestamp_t start, stop;
+	if (!MtmAtExitHookRegistered) { 
+		atexit(MtmReleaseLock);
+		MtmAtExitHookRegistered = true;
+	}
 	if (mode == LW_EXCLUSIVE || MtmLockCount != 0) { 
 		if (MtmLockCount++ != 0) { 
+			Assert(Mtm->lastLockHolder == MyProcPid);
 			return;
 		}
 	}
@@ -293,6 +315,7 @@ void MtmLock(LWLockMode mode)
 void MtmUnlock(void)
 {
 	if (MtmLockCount != 0 && --MtmLockCount != 0) { 
+		Assert(Mtm->lastLockHolder == MyProcPid);
 		return;
 	}
 	LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
@@ -2421,6 +2444,7 @@ static void MtmInitialize()
 	Mtm = (MtmState*)ShmemInitStruct(MULTIMASTER_NAME, sizeof(MtmState) + sizeof(MtmNodeInfo)*(MtmMaxNodes-1), &found);
 	if (!found)
 	{
+		MemSet(Mtm, 0, sizeof(MtmState) + sizeof(MtmNodeInfo)*(MtmMaxNodes-1));
 		Mtm->status = MTM_INITIALIZATION;
 		Mtm->recoverySlot = 0;
 		Mtm->locks = GetNamedLWLockTranche(MULTIMASTER_NAME);

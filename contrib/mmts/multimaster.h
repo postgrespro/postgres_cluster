@@ -419,5 +419,6 @@ extern void MtmPrecommitTransaction(char const* gid);
 extern char* MtmGucSerialize(void);
 extern bool MtmTransIsActive(void);
 extern MtmTransState* MtmGetActiveTransaction(MtmL2List* list);
+extern void MtmReleaseLock(void);
 
 #endif
