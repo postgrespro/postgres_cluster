@@ -454,6 +454,7 @@ int set_at_job_done(job_t *job, char *error, int64 resubmit)
 
 	ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, false, 0);
 
+
 	set_schema(oldpath, false);
 	pfree(oldpath);
 	if(this_error) pfree(this_error);

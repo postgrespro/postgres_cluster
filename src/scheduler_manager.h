@@ -119,5 +119,6 @@ void destroy_scheduler_manager_pool(scheduler_manager_pool_t *p);
 void init_executor_shared_data(schd_executor_share_t *data, scheduler_manager_ctx_t *ctx, job_t *job);
 int start_at_worker(scheduler_manager_ctx_t *ctx, int pos);
 void start_at_workers(scheduler_manager_ctx_t *ctx, schd_manager_share_t *shared);
+int refresh_manager_at_pool(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t *p, int N);
 
 #endif

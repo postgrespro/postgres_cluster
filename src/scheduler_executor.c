@@ -15,6 +15,7 @@
 #include "catalog/pg_authid.h"
 #include "utils/syscache.h"
 #include "access/htup_details.h"
+#include "utils/timeout.h"
 
 #include "pgstat.h"
 #include "fmgr.h"
@@ -316,6 +317,9 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 	}
 	destroy_job(job, 1);
 
+	SetSessionAuthorization(BOOTSTRAP_SUPERUSERID, true);
+	ResetAllOptions();
+
 	return 1;
 }
 	
@@ -607,15 +611,13 @@ resubmit(PG_FUNCTION_ARGS)
 
 void at_executor_worker_main(Datum arg)
 {
-	schd_executor_share_t *shared;
+	schd_executor_share_state_t *shared;
 	dsm_segment *seg;
 	int result;
 	int rc = 0;
 	schd_executor_status_t status;
 	bool lets_sleep = false;
 	/* PGPROC *parent; */
-	double begin, elapsed;
-	struct timeval tv;
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_executor");
 	seg = dsm_attach(DatumGetInt32(arg));
@@ -632,6 +634,7 @@ void at_executor_worker_main(Datum arg)
 			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			 errmsg("executor corrupted dynamic shared memory segment")));
 	}
+	shared->start_at = GetCurrentTimestamp();
 
 	SetConfigOption("application_name", "pgp-s at executor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "initialize");
@@ -644,18 +647,14 @@ void at_executor_worker_main(Datum arg)
 
 	while(1)
 	{
+		if(shared->stop_worker) break; 
 		if(got_sighup)
 		{
 			got_sighup = false;
 			ProcessConfigFile(PGC_SIGHUP);
 		}
 		CHECK_FOR_INTERRUPTS();
-		gettimeofday(&tv, NULL);
-		begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
 		result = process_one_job(shared, &status);
-		gettimeofday(&tv, NULL);
-		elapsed = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
-		elog(LOG, "job done %d = %f", result, elapsed);
 
 		if(result == 0) 
 		{
@@ -680,42 +679,35 @@ void at_executor_worker_main(Datum arg)
 		}
 	}
 
+	if(shared->stop_worker)
+	{
+		elog(LOG, "at worker stopped by parent signal");
+	}
+
 	delete_worker_mem_ctx();
 	dsm_detach(seg);
 	proc_exit(0);
 }
 
-int process_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
+int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t *status)
 {
 	char *error = NULL;
 	job_t *job;
 	int ret;
 	char buff[512];
-	double begin, elapsed;
-	struct timeval tv;
 
 	*status = shared->status = SchdExecutorWork;
-	shared->message[0] = 0;
 
 	pgstat_report_activity(STATE_RUNNING, "initialize job");
 	START_SPI_SNAP();
 
-	gettimeofday(&tv, NULL);
-	begin = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000;
-
 	job = get_next_at_job_with_lock(shared->nodename, &error);
-
-	gettimeofday(&tv, NULL);
-	elapsed = ((double)tv.tv_sec)*1000 + ((double)tv.tv_usec)/1000 - begin;
-	elog(LOG, "got jobs = %f", elapsed);
 
 	if(!job)
 	{
 		if(error)
 		{
 			shared->status = SchdExecutorIdling;
-			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
-				"Cannot get job: %s", error);
 			elog(LOG, "AT EXECUTOR: ERROR: %s", error);
 			pfree(error);
 			ABORT_SPI_SNAP();
@@ -734,15 +726,11 @@ int process_one_job(schd_executor_share_t *shared, schd_executor_status_t *statu
 		if(error)
 		{
 			set_at_job_done(job, error, 0);
-			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
-				"Cannot set session auth: %s", error);
 			pfree(error);
 		}
 		else
 		{
 			set_at_job_done(job, "Unknown set session auth error", 0);
-			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
-				"Cannot set session auth: unknown error");
 		}
 		shared->status = SchdExecutorIdling;
 		STOP_SPI_SNAP();
@@ -761,6 +749,7 @@ int process_one_job(schd_executor_share_t *shared, schd_executor_status_t *statu
 		sprintf(buff, "%lld", job->timelimit * 1000);
 #endif
 		SetConfigOption("statement_timeout", buff,  PGC_SUSET, PGC_S_OVERRIDE);
+		enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout);
 	}
 
 	if(job->sql_params_n > 0)
@@ -770,6 +759,10 @@ int process_one_job(schd_executor_share_t *shared, schd_executor_status_t *statu
 	else
 	{
 		ret = execute_spi(job->dosql[0], &error);
+	}
+	if(job->timelimit)
+	{
+		disable_timeout(STATEMENT_TIMEOUT, false);
 	}
 	ResetAllOptions();
 	SetConfigOption("enable_seqscan", "off", PGC_USERSET, PGC_S_SESSION);

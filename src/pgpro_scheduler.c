@@ -46,7 +46,7 @@ char *scheduler_databases = NULL;
 char *scheduler_nodename = NULL;
 char *scheduler_transaction_state = NULL;
 int  scheduler_max_workers = 2;
-int  scheduler_at_max_workers = 2;
+int  scheduler_max_parallel_workers = 2;
 int  scheduler_worker_job_limit = 1;
 bool scheduler_service_enabled = false;
 char *scheduler_schema = NULL;
@@ -496,10 +496,10 @@ void _PG_init(void)
 		NULL
 	);
 	DefineCustomIntVariable(
-		"schedule.at_max_workers",
+		"schedule.max_parallel_workers",
 		"How much workers can serve at jobs on one database",
 		NULL,
-		&scheduler_at_max_workers,
+		&scheduler_max_parallel_workers,
 		2,
 		1,
 		100,

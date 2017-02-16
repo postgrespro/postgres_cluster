@@ -302,11 +302,13 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 
 	*error = NULL;
 
-
+	SetCurrentStatementStartTimestamp();
+	BeginInternalSubTransaction(NULL);
 	PG_TRY();
 	{
-		SetCurrentStatementStartTimestamp();
 		ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, false, 0);
+		ReleaseCurrentSubTransaction();
+		SPI_restore_connection();
 	}
 	PG_CATCH();
 	{
@@ -326,6 +328,8 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 			*error = _copy_string("unknown error");
 		}
 		errorSet = 1;
+		RollbackAndReleaseCurrentSubTransaction(); 
+		SPI_restore_connection();
 		FreeErrorData(edata);
 		MemoryContextSwitchTo(old);
 		FlushErrorState();
@@ -387,6 +391,9 @@ int execute_spi_params_prepared(const char *sql, int nparams, char **params, cha
 		values[i] = CStringGetTextDatum(params[i]);
 	}
 
+	SetCurrentStatementStartTimestamp();
+	BeginInternalSubTransaction(NULL);
+
 	PG_TRY();
 	{
 		plan = SPI_prepare(sql, nparams, paramtypes);
@@ -395,6 +402,8 @@ int execute_spi_params_prepared(const char *sql, int nparams, char **params, cha
 			SetCurrentStatementStartTimestamp();
 			ret = SPI_execute_plan(plan, values, NULL, false, 0);
 		}
+		ReleaseCurrentSubTransaction();
+		SPI_restore_connection();
 	}
 	PG_CATCH();
 	{
@@ -417,6 +426,8 @@ int execute_spi_params_prepared(const char *sql, int nparams, char **params, cha
 		FreeErrorData(edata);
 		MemoryContextSwitchTo(old);
 		FlushErrorState();
+		RollbackAndReleaseCurrentSubTransaction(); 
+		SPI_restore_connection();
 	}
 	PG_END_TRY();
 

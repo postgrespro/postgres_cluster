@@ -116,7 +116,7 @@ int get_scheduler_at_max_workers(void)
 	const char *opt;
 	int var;
 
-	opt = GetConfigOption("schedule.at_max_workers", false, false);
+	opt = GetConfigOption("schedule.max_parallel_workers", false, false);
 	if(opt == NULL)
 	{
 		return 2;
@@ -173,6 +173,66 @@ scheduler_manager_ctx_t *initialize_scheduler_manager_context(char *dbname, dsm_
 	return ctx;
 }
 
+int refresh_manager_at_pool(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t *p, int N)
+{
+	int i;
+	scheduler_manager_slot_t **old;
+	schd_executor_share_state_t *shared;
+
+
+	if(N == p->len) return 0; /* we have nothing to change */
+
+	elog(LOG, "Scheduler Manager %s: Change available AT workers number %d => %d", ctx->database,  p->len, N);
+	if(N > p->len)
+	{
+		pgstat_report_activity(STATE_RUNNING, "extend the number of AT workers");
+
+		old = p->slots;
+		p->slots = worker_alloc(sizeof(scheduler_manager_slot_t *) * N);
+		for(i=0; i < N; i++)
+		{
+			p->slots[i] = NULL;
+		}
+		for(i=0; i < p->len; i++)
+		{ 
+			p->slots[i] = old[i];
+		}
+		pfree(old);
+
+		for(i=p->len; i < N; i++)
+		{
+			start_at_worker(ctx, i);
+		}
+		p->free = 0;
+		p->len = N;
+	}
+	else if(N < p->len)
+	{
+		pgstat_report_activity(STATE_RUNNING, "shrink the number of workers");
+
+		old = p->slots;
+		p->slots = worker_alloc(sizeof(scheduler_manager_slot_t *) * N);
+		for(i=0; i < N; i++)
+		{
+			p->slots[i] = old[i];
+		}
+		for(;i < p->len; i++)
+		{
+			if(old[i])
+			{
+				shared = dsm_segment_address(old[i]->shared);
+				shared->stop_worker = true;
+				destroy_slot_item(old[i]);
+			}
+		}
+
+		p->len = N;
+		p->free = 0;
+		pfree(old);
+	}
+	return 0;
+}
+
 int refresh_manager_pool(const char *database, const char *name, scheduler_manager_pool_t *p, int N)
 {
 	int i, busy;
@@ -222,18 +282,17 @@ int refresh_scheduler_manager_context(scheduler_manager_ctx_t *ctx)
 {
 	int rc = 0;
 	int Ncron, Nat;
-	int waitCron = 1, waitAt = 1;
+	int waitCron = 1 ;
 
 	Ncron = get_scheduler_maxworkers();
 	Nat = get_scheduler_at_max_workers();
 
+	refresh_manager_at_pool(ctx, &(ctx->at), Nat);
 	while(1)
 	{
 		if(waitCron > 0)
 			waitCron = refresh_manager_pool(ctx->database, "cron", &(ctx->cron), Ncron);
-		if(waitAt > 0)
-			waitAt = refresh_manager_pool(ctx->database, "at", &(ctx->at), Nat);
-		if(waitCron == 0 && waitAt == 0) break;
+		if(waitCron == 0) break;
 
 		pgstat_report_activity(STATE_RUNNING, "wait for some workers free slots");
 		CHECK_FOR_INTERRUPTS();
@@ -664,7 +723,6 @@ int set_cron_job_started(job_t *job)
 
 	values[0] = Int32GetDatum(job->cron_id);
 	values[1] = TimestampTzGetDatum(job->start_at);
-	START_SPI_SNAP();
 
 	ret = SPI_execute_with_args(sql, 2, argtypes, values, NULL, false, 0);
 	my_ret = ret == SPI_OK_UPDATE ? 1: 0;
@@ -693,7 +751,7 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 	ret = job->type == CronJob ?
 		set_cron_job_started(job): set_at_job_started(job);
 
-	START_SPI_SNAP();
+	STOP_SPI_SNAP();
 
 	if(ret)
 	{
@@ -914,7 +972,9 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 			if(type == CronJob && ni >= jobs[i].max_instances)
 			{
 				set_job_error(&jobs[i], "max instances limit reached");
+				START_SPI_SNAP();
 				move_job_to_log(&jobs[i], false, false);
+				STOP_SPI_SNAP();
 				destroy_job(&jobs[i], 0);
 				jobs[i].cron_id = -1;
 			}
@@ -938,7 +998,9 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 						elog(ERROR, "Cannot set job to free slot type=%d, id=%d", 
 									jobs[i].type, jobs[i].cron_id);
 					}
+					START_SPI_SNAP();
 					move_job_to_log(&jobs[i], false, false);
+					STOP_SPI_SNAP();
 					destroy_job(&jobs[i], 0);
 					jobs[i].cron_id = -1;
 				}
@@ -989,7 +1051,7 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 
 void destroy_slot_item(scheduler_manager_slot_t *item)
 {
-	destroy_job(item->job, 1);
+	if(item->job) destroy_job(item->job, 1);
 	dsm_detach(item->shared);
 	pfree(item);
 }
@@ -1295,6 +1357,7 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type
 
 	if(*check_time > GetCurrentTimestamp()) return -1;
 	pgstat_report_activity(STATE_RUNNING, "vanish expired tasks");
+
 	START_SPI_SNAP();
 	expired = type == CronJob ? 
 		get_expired_cron_jobs(ctx->nodename, &nexpired, &is_error):
@@ -1308,6 +1371,7 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type
 	}
 	else if(nexpired > 0)
 	{
+		elog(LOG, "found expired");
 		ret = nexpired;
 		for(i=0; i < nexpired; i++)
 		{
@@ -1532,7 +1596,7 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 	BackgroundWorker worker;
 	dsm_segment *seg;
 	Size segsize;
-	schd_executor_share_t *shm_data;
+	schd_executor_share_state_t *shm_data;
 	BgwHandleStatus status;
 	MemoryContext old;
 	scheduler_manager_slot_t *item;
@@ -1545,7 +1609,7 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 
 	pgstat_report_activity(STATE_RUNNING, "register scheduler at executor");
 
-	segsize = (Size)sizeof(schd_executor_share_t);
+	segsize = (Size)sizeof(schd_executor_share_state_t);
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
 	old = MemoryContextSwitchTo(SchedulerWorkerContext);
@@ -1553,7 +1617,12 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 
 	item->shared = seg;
 	shm_data = dsm_segment_address(item->shared);
-	init_executor_shared_data(shm_data, ctx, NULL);
+
+	memcpy(shm_data->database, ctx->database, strlen(ctx->database));
+	memcpy(shm_data->nodename, ctx->nodename, strlen(ctx->nodename));
+	shm_data->stop_worker  = false;
+	shm_data->status  = SchdExecutorInit;
+	shm_data->start_at  = 0;
 
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
 					BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -1573,6 +1642,7 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 		dsm_detach(item->shared);
 		MemoryContextSwitchTo(old);
 		pfree(item);
+		ctx->at.slots[pos] = NULL;
 		return 0;
 	}
 	status = WaitForBackgroundWorkerStartup(item->handler, &(item->pid));
@@ -1583,6 +1653,7 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 		dsm_detach(item->shared);
 		MemoryContextSwitchTo(old);
 		pfree(item);
+		ctx->at.slots[pos] = NULL;
 		return 0;
 	}
 	MemoryContextSwitchTo(old);

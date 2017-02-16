@@ -42,6 +42,16 @@ typedef struct {
 } schd_executor_share_t;
 
 typedef struct {
+	char database[PGPRO_SCHEDULER_DBNAME_MAX];
+	char nodename[PGPRO_SCHEDULER_NODENAME_MAX];
+	TimestampTz start_at;
+
+	schd_executor_status_t status;
+
+	bool stop_worker;
+} schd_executor_share_state_t;
+
+typedef struct {
 	int n;
 	char **errors;
 } executor_error_t;
@@ -57,7 +67,7 @@ int set_session_authorization(char *username, char **error);
 int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status);
 int read_worker_job_limit(void);
 void at_executor_worker_main(Datum arg);
-int process_one_job(schd_executor_share_t *shared, schd_executor_status_t *status);
+int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t *status);
 Oid set_session_authorization_by_name(char *rolename, char **error);
 
 extern Datum get_self_id(PG_FUNCTION_ARGS);
