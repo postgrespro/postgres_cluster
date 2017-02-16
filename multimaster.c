@@ -1534,7 +1534,7 @@ static void MtmDropSlot(int nodeId)
 	
 /*
  * Prepare context for applying transaction at replica.
- * It also checks that coordinator of tranaction is not disabled and all live nodes are participated in this trqansaction.
+ * It also checks that coordinator of transaction is not disabled and all live nodes are participated in this transaction.
  */
 void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot, nodemask_t participantsMask)
 {
