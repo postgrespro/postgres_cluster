@@ -86,28 +86,25 @@ sub configure
 			listen_addresses = '$host'
 			unix_socket_directories = ''
 			port = $pgport
-			max_prepared_transactions = 200
-			max_connections = 200
-			max_worker_processes = 100
+			max_prepared_transactions = 10
+			max_connections = 10
+			max_worker_processes = 10
 			wal_level = logical
-			fsync = off	
-			max_wal_senders = 10
+			max_wal_senders = 5
 			wal_sender_timeout = 0
 			default_transaction_isolation = 'repeatable read'
-			max_replication_slots = 10
+			max_replication_slots = 5
 			shared_preload_libraries = 'multimaster'
 
 			multimaster.arbiter_port = $arbiter_port
-			multimaster.workers = 10
-			multimaster.queue_size = 10485760 # 10mb
+			multimaster.workers = 1
 			multimaster.node_id = $id
 			multimaster.conn_strings = '$connstr'
-			multimaster.heartbeat_recv_timeout = 1000
-			multimaster.heartbeat_send_timeout = 250
+			multimaster.heartbeat_recv_timeout = 2050
+			multimaster.heartbeat_send_timeout = 500
 			multimaster.max_nodes = $nnodes
 			multimaster.ignore_tables_without_pk = true
-			multimaster.twopc_min_timeout = 50000
-			multimaster.min_2pc_timeout = 50000
+			multimaster.min_2pc_timeout = 150000
 			log_line_prefix = '%t: '
 		));
 
