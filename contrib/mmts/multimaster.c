@@ -3028,7 +3028,7 @@ _PG_init(void)
 	DefineCustomIntVariable(
 		"multimaster.max_2pc_ratio",
 		"Maximal ratio (in percents) between prepare time at different nodes: if T is time of preparing transaction at some node,"
-			" then transaction can be aborted if prepared responce was not received in T*MtmMax2PCRatio/100",
+			" then transaction can be aborted if prepared response was not received in T*MtmMax2PCRatio/100",
 		NULL,
 		&MtmMax2PCRatio,
 		200, /* 2 times */
