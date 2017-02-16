@@ -79,13 +79,13 @@ typedef struct {
 	bool  isTwoPhase;     /* user level 2PC */
 	bool  isReplicated;   /* transaction on replica */
 	bool  isDistributed;  /* transaction performed INSERT/UPDATE/DELETE and has to be replicated to other nodes */
-	bool  isPrepared;     /* transaction is perpared at first stage of 2PC */
+	bool  isPrepared;     /* transaction is prepared at first stage of 2PC */
 	bool  isSuspended;    /* prepared transaction is suspended because coordinator node is switch to offline */
     bool  isTransactionBlock; /* is transaction block */
 	bool  containsDML;    /* transaction contains DML statements */
 	bool  isActive;       /* transaction is active (nActiveTransaction counter is incremented) */
 	XidStatus status;     /* transaction status */
-    csn_t snapshot;       /* transaction snaphsot */
+    csn_t snapshot;       /* transaction snapshot */
 	csn_t csn;            /* CSN */
 	pgid_t gid;           /* global transaction identifier (used by 2pc) */
 } MtmCurrentTrans;
@@ -425,7 +425,7 @@ MtmInitializeSequence(int64* start, int64* step)
 /* 
  * Get snapshot of transaction proceed by WAL sender pglogical plugin.
  * If it is local transaction or replication node is not in participant mask, then return INVALID_CSN.
- * Transaction should be skept by WAL sender in the following cases:
+ * Transaction should be skipped by WAL sender in the following cases:
  *   1. Transaction was replicated from some other node and it is not a recovery process.
  *   2. State of transaction is unknown
  *   3. Replication node is not participated in transaction
@@ -439,7 +439,7 @@ csn_t MtmDistributedTransactionSnapshot(TransactionId xid, int nodeId, nodemask_
 		MtmTransState* ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
 		if (ts != NULL) { 
 			*participantsMask = ts->participantsMask;
-			/* If node is disables, then we in process of recovring this node */
+			/* If node is disables, then we are in a process of recovery of this node */
 			if (!ts->isLocal && BIT_CHECK(ts->participantsMask|Mtm->disabledNodeMask, nodeId-1)) { 
 				snapshot = ts->snapshot;
 				Assert(ts->gtid.node == MtmNodeId || MtmIsRecoverySession); 		
@@ -503,7 +503,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         if (ts != NULL /*&& ts->status != TRANSACTION_STATUS_IN_PROGRESS*/)
         {
             if (ts->csn > MtmTx.snapshot) { 
-                MTM_LOG4("%d: tuple with xid=%d(csn=%lld) is invisibile in snapshot %lld",
+                MTM_LOG4("%d: tuple with xid=%d(csn=%lld) is invisible in snapshot %lld",
 						 MyProcPid, xid, ts->csn, MtmTx.snapshot);
 				if (MtmGetSystemTime() - start > USECS_PER_SEC) { 
 					MTM_ELOG(WARNING, "Backend %d waits for transaction %s (%llu) status %lld usecs", MyProcPid, ts->gid, (long64)xid, MtmGetSystemTime() - start);
@@ -556,7 +556,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         }
         else
         {
-            MTM_LOG4("%d: visibility check is skept for transaction %u in snapshot %llu", MyProcPid, xid, MtmTx.snapshot);
+            MTM_LOG4("%d: visibility check is skipped for transaction %u in snapshot %llu", MyProcPid, xid, MtmTx.snapshot);
 			MtmUnlock();
 			return PgXidInMVCCSnapshot(xid, snapshot);
         }
@@ -570,7 +570,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 
 /*
  * There can be different oldest XIDs at different cluster node.
- * We collest oldest CSNs from all nodes and choose minimum from them.
+ * We collect oldest CSNs from all nodes and choose minimum from them.
  * If no such XID can be located, then return previously observed oldest XID
  */
 static TransactionId 
