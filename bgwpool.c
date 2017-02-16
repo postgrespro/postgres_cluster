@@ -31,7 +31,6 @@ static void BgwPoolMainLoop(BgwPool* pool)
     int size;
     void* work;
 	static PortalData fakePortal;
-	sigset_t sset;
 
 	MtmIsLogicalReceiver = true;
 	MtmPool = pool;
@@ -39,9 +38,6 @@ static void BgwPoolMainLoop(BgwPool* pool)
 	signal(SIGINT, BgwShutdownWorker);
 	signal(SIGQUIT, BgwShutdownWorker);
 	signal(SIGTERM, BgwShutdownWorker);
-
-	sigfillset(&sset);
-	sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
     BackgroundWorkerUnblockSignals();
 	BackgroundWorkerInitializeConnection(pool->dbname, pool->dbuser);
@@ -57,7 +53,7 @@ static void BgwPoolMainLoop(BgwPool* pool)
 		}
         size = *(int*)&pool->queue[pool->head];
         Assert(size < pool->size);
-        work = malloc(size);
+        work = palloc(size);
         pool->pending -= 1;
         pool->active += 1;
 		if (pool->lastPeakTime == 0 && pool->active == pool->nWorkers && pool->pending != 0) {
@@ -80,7 +76,7 @@ static void BgwPoolMainLoop(BgwPool* pool)
         }
         SpinLockRelease(&pool->lock);
         pool->executor(work, size);
-        free(work);
+        pfree(work);
         SpinLockAcquire(&pool->lock);
         pool->active -= 1;
 		pool->lastPeakTime = 0;
@@ -93,6 +89,9 @@ void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname,  c
 {
 	MtmPool = pool;
     pool->queue = (char*)ShmemAlloc(queueSize);
+	if (pool->queue == NULL) { 
+		elog(PANIC, "Failed to allocate memory for background workers pool: %lld bytes requested", (long64)queueSize);
+	}
     pool->executor = executor;
     PGSemaphoreCreate(&pool->available);
     PGSemaphoreCreate(&pool->overflow);
