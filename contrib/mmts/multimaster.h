@@ -138,16 +138,16 @@ typedef enum
 	MTM_RECOVERY,       /* Node is in recovery process */
 	MTM_RECOVERED,      /* Node is recovered by is not yet switched to ONLINE because not all sender/receivers are restarted */
 	MTM_IN_MINORITY,    /* Node is out of quorum */
-	MTM_OUT_OF_SERVICE  /* Node is not avaiable to to critical, non-recoverable error */
+	MTM_OUT_OF_SERVICE  /* Node is not available to to critical, non-recoverable error */
 } MtmNodeStatus;
 
 typedef enum
 {
 	REPLMODE_EXIT,         /* receiver should exit */
 	REPLMODE_RECOVERED,    /* recovery of receiver node is completed so drop old slot and restart replication from the current position in WAL */
-	REPLMODE_RECOVERY,     /* perform recorvery of the node by applying all data from the slot from specified point */
+	REPLMODE_RECOVERY,     /* perform recovery of the node by applying all data from the slot from specified point */
 	REPLMODE_CREATE_NEW,   /* destination node is recovered: drop old slot and restart from roveredLsn position */
-	REPLMODE_OPEN_EXISTED  /* normal mode: use existed slot or create new one and start receiving data from it from the rememered position */
+	REPLMODE_OPEN_EXISTED  /* normal mode: use existed slot or create new one and start receiving data from it from the remembered position */
 } MtmReplicationMode;
 
 typedef struct
@@ -161,7 +161,7 @@ typedef struct
 	csn_t          csn;    /* Local CSN in case of sending data from replica to master, global CSN master->replica */
 	csn_t          oldestSnapshot; /* Oldest snapshot used by active transactions at this node */
 	nodemask_t     disabledNodeMask; /* Bitmask of disabled nodes at the sender of message */
-	nodemask_t     connectivityMask; /* Connectivity bittmask at the sender of message */
+	nodemask_t     connectivityMask; /* Connectivity bitmask at the sender of message */
 	pgid_t         gid;    /* Global transaction identifier */
 } MtmArbiterMessage;
 
@@ -249,12 +249,12 @@ typedef struct MtmTransState
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
 	MtmL2List      activeList;         /* L2-list of active transactions */
 	bool           votingCompleted;    /* 2PC voting is completed */
-	bool           isLocal;            /* Transaction is either replicated, either doesn't contain DML statements, so it shoudl be ignored by pglogical replication */
+	bool           isLocal;            /* Transaction is either replicated, either doesn't contain DML statements, so it should be ignored by pglogical replication */
 	bool           isEnqueued;         /* Transaction is inserted in queue */
 	bool           isPrepared;         /* Transaction is prepared: now it is safe to commit transaction */
 	bool           isActive;           /* Transaction is active */
 	bool           isTwoPhase;         /* User level 2PC */
-	bool           isPinned;           /* Transaction oid potected from GC */
+	bool           isPinned;           /* Transaction oid protected from GC */
 	int            nConfigChanges;     /* Number of cluster configuration changes at moment of transaction start */
 	nodemask_t     participantsMask;   /* Mask of nodes involved in transaction */
 	nodemask_t     votedMask;          /* Mask of voted nodes */
@@ -277,7 +277,7 @@ typedef struct
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
-	nodemask_t stalledNodeMask;        /* bitmask of stalled nodes (node with dropped relication slot which makes it not possible automatic recovery of such node) */
+	nodemask_t stalledNodeMask;        /* bitmask of stalled nodes (node with dropped replication slot which makes it not possible automatic recovery of such node) */
 	nodemask_t stoppedNodeMask;        /* Bitmask of stopped (permanently disabled nodes) */
 	nodemask_t pglogicalReceiverMask;  /* bitmask of started pglogic receivers */
 	nodemask_t pglogicalSenderMask;    /* bitmask of started pglogic senders */
@@ -285,30 +285,30 @@ typedef struct
 	nodemask_t globalLockerMask;       /* Global cluster mask of locked nodes to perform caught-up (updated using heartbeats) */
 	nodemask_t nodeLockerMask;         /* Mask of node IDs which WAL-senders are locking the cluster */
 	nodemask_t reconnectMask; 	       /* Mask of nodes connection to which has to be reestablished by sender */
-	int        lastLockHolder;         /* PID of process last obtaning the node lock */
+	int        lastLockHolder;         /* PID of process last obtaining the node lock */
 	bool   localTablesHashLoaded;      /* Whether data from local_tables table is loaded in shared memory hash table */
 	bool   preparedTransactionsLoaded; /* GIDs of prepared transactions are loaded at startup */
 	int    inject2PCError;             /* Simulate error during 2PC commit at this node */
     int    nLiveNodes;                 /* Number of active nodes */
-    int    nAllNodes;                  /* Total numbber of nodes */
-    int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when intialization/recovery is completed) */
+    int    nAllNodes;                  /* Total number of nodes */
+    int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when initialization/recovery is completed) */
     int    nSenders;                   /* Number of started WAL senders (used to determine moment when recovery) */
 	int    nLockers;                   /* Number of lockers */
-	int    nActiveTransactions;        /* Nunmber of active 2PC transactions */
+	int    nActiveTransactions;        /* Number of active 2PC transactions */
 	int    nConfigChanges;             /* Number of cluster configuration changes */
 	int    recoveryCount;              /* Number of completed recoveries */
 	int    donorNodeId;               /* Cluster node from which this node was populated */
 	int64  timeShift;                  /* Local time correction */
-	csn_t  csn;                        /* Last obtained timestamp: used to provide unique acending CSNs based on system time */
+	csn_t  csn;                        /* Last obtained timestamp: used to provide unique ascending CSNs based on system time */
 	csn_t  lastCsn;                    /* CSN of last committed transaction */
-	MtmTransState* votingTransactions; /* L1-list of replicated transactions sendings notifications to coordinator.
+	MtmTransState* votingTransactions; /* L1-list of replicated transactions notifications to coordinator.
 									 	 This list is used to pass information to mtm-sender BGW */
     MtmTransState* transListHead;      /* L1 list of all finished transactions present in xid2state hash.
 									 	  It is cleanup by MtmGetOldestXmin */
-    MtmTransState** transListTail;     /* Tail of L1 list of all finished transactionds, used to append new elements.
+    MtmTransState** transListTail;     /* Tail of L1 list of all finished transactions, used to append new elements.
 								  		  This list is expected to be in CSN ascending order, by strict order may be violated */
 	MtmL2List activeTransList;         /* List of active transactions */
-	ulong64 transCount;                /* Counter of transactions perfromed by this node */	
+	ulong64 transCount;                /* Counter of transactions performed by this node */	
 	ulong64 gcCount;                   /* Number of global transactions performed since last GC */
 	MtmMessageQueue* sendQueue;        /* Messages to be sent by arbiter sender */
 	MtmMessageQueue* freeQueue;        /* Free messages */
