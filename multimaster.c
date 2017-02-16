@@ -1401,7 +1401,7 @@ void MtmSendMessage(MtmArbiterMessage* msg)
 		mq->next = sendQueue;
 		Mtm->sendQueue = mq;
 		if (sendQueue == NULL) { 
-			/* singal semaphore only once for the whole list */
+			/* signal semaphore only once for the whole list */
 			PGSemaphoreUnlock(&Mtm->sendSemaphore);
 		}
 	}
