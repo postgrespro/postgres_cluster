@@ -35,7 +35,12 @@ void MtmCreateSpillDirectory(int node_id)
 	mkdir(path, S_IRWXU);
 
 	spill_dir = AllocateDir(path);
-
+	if (spill_dir == NULL) { 
+		ereport(PANIC,
+				(errcode_for_file_access(),
+				 MTM_ERRMSG("pglogical_receiver failed to create spill directory \"%s\": %m",
+							path)));
+	}		
 	while ((spill_de = ReadDir(spill_dir, path)) != NULL)
 	{
 		if (strncmp(spill_de->d_name, "txn", 3) == 0)
@@ -90,7 +95,11 @@ int MtmOpenSpillFile(int node_id, int file_id)
 				 MTM_ERRMSG("pglogical_apply could not open spill file \"%s\": %m",
 						path)));
 	}
-	unlink(path); /* Should remove file on close */
+	if (unlink(path) < 0) { /* Should remove file on close */
+		ereport(LOG,
+				(errcode_for_file_access(),
+				 MTM_ERRMSG("pglogical_apply failed to unlink spill file: %m")));
+	}
 	return fd;
 }
 

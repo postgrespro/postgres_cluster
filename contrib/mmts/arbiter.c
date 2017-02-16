@@ -56,6 +56,7 @@
 #include "replication/slot.h"
 #include "port/atomics.h"
 #include "tcop/utility.h"
+#include "libpq/ip.h"
 
 #ifndef USE_EPOLL
 #ifdef __linux__
@@ -137,31 +138,6 @@ void MtmArbiterInitialize(void)
 	RegisterBackgroundWorker(&MtmSenderWorker);
 	RegisterBackgroundWorker(&MtmRecevierWorker);
 	RegisterBackgroundWorker(&MtmMonitorWorker);
-}
-
-static int 
-MtmResolveHostByName(const char *hostname, unsigned* addrs, unsigned* n_addrs)
-{
-    struct sockaddr_in sin;
-    struct hostent* hp;
-    unsigned i;
-
-    sin.sin_addr.s_addr = inet_addr(hostname);
-    if (sin.sin_addr.s_addr != INADDR_NONE) {
-        memcpy(&addrs[0], &sin.sin_addr.s_addr, sizeof(sin.sin_addr.s_addr));
-        *n_addrs = 1;
-        return 1;
-    }
-
-    hp = gethostbyname(hostname);
-    if (hp == NULL || hp->h_addrtype != AF_INET) {
-        return 0;
-    }
-    for (i = 0; hp->h_addr_list[i] != NULL && i < *n_addrs; i++) {
-        memcpy(&addrs[i], hp->h_addr_list[i], sizeof(addrs[i]));
-    }
-    *n_addrs = i;
-    return 1;
 }
 
 static int stop = 0;
@@ -352,7 +328,6 @@ static void MtmCheckResponse(MtmArbiterMessage* resp)
 
 static void MtmScheduleHeartbeat()
 {
-//	Assert(!last_sent_heartbeat || last_sent_heartbeat + MSEC_TO_USEC(MtmHeartbeatRecvTimeout) >= MtmGetSystemTime());
 	if (!stop) { 
 		enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 		send_heartbeat = true;
@@ -399,7 +374,6 @@ static void MtmSendHeartbeat()
 						close(sockets[i]);
 						sockets[i] = -1;
 						MtmReconnectNode(i+1); /* set reconnect mask to force node reconnent */
-						//MtmOnNodeConnect(i+1);
 					}
 					MTM_LOG4("Send heartbeat to node %d with timestamp %lld", i+1, now);    
 				}
@@ -426,23 +400,31 @@ void MtmCheckHeartbeat()
 
 static int MtmConnectSocket(int node, int port, time_t timeout)
 {
-    struct sockaddr_in sock_inet;
-    unsigned addrs[MAX_ROUTES];
-    unsigned i, n_addrs = sizeof(addrs) / sizeof(addrs[0]);
+ 	struct addrinfo *addrs = NULL;
+	struct addrinfo *addr;
+	struct addrinfo hint;
+	char portstr[MAXPGPATH];
 	MtmHandshakeMessage req;
 	MtmArbiterMessage   resp;
 	int sd;
+	int ret;
 	timestamp_t start = MtmGetSystemTime();
 	char const* host = Mtm->nodes[node].con.hostName;
 	nodemask_t save_mask = busy_mask;
 	timestamp_t afterWait;
 	timestamp_t beforeWait;
 
-    sock_inet.sin_family = AF_INET;
-	sock_inet.sin_port = htons(port);
+	/* Initialize hint structure */
+	MemSet(&hint, 0, sizeof(hint));
+	hint.ai_socktype = SOCK_STREAM;
+	hint.ai_family = AF_UNSPEC;
 
-	if (!MtmResolveHostByName(host, addrs, &n_addrs)) {
-		MTM_ELOG(LOG, "Arbiter failed to resolve host '%s' by name", host);
+	snprintf(portstr, sizeof(portstr), "%d", port);
+
+	ret = pg_getaddrinfo_all(host, portstr, &hint, &addrs);
+	if (ret != 0) 
+	{
+		MTM_ELOG(LOG, "Arbiter failed to resolve host '%s' by name: %s", host, gai_strerror(ret));
 		return -1;
 	}
 	BIT_SET(busy_mask, node);
@@ -459,13 +441,14 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 		rc = fcntl(sd, F_SETFL, O_NONBLOCK);
 		if (rc < 0) {
 			MTM_ELOG(LOG, "Arbiter failed to switch socket to non-blocking mode: %d", errno);
+			close(sd);
 			busy_mask = save_mask;
 			return -1;
 		}
-		for (i = 0; i < n_addrs; ++i) {
-			memcpy(&sock_inet.sin_addr, &addrs[i], sizeof sock_inet.sin_addr);
+		for (addr = addrs; addr != NULL; addr = addr->ai_next)
+		{
 			do {
-				rc = connect(sd, (struct sockaddr*)&sock_inet, sizeof(sock_inet));
+				rc = connect(sd, addr->ai_addr, addr->ai_addrlen);
 			} while (rc < 0 && errno == EINTR);
 
 			if (rc >= 0 || errno == EINPROGRESS) {
@@ -638,6 +621,7 @@ static void MtmAcceptOneConnection()
 		rc = MtmReadSocket(fd, &req, sizeof req);
 		if (rc < sizeof(req)) { 
 			MTM_ELOG(WARNING, "Arbiter failed to handshake socket: %d, errno=%d", rc, errno);
+			close(fd);
 		} else if (req.hdr.code != MSG_HANDSHAKE && req.hdr.dxid != HANDSHAKE_MAGIC) { 
 			MTM_ELOG(WARNING, "Arbiter get unexpected handshake message %d", req.hdr.code);
 			close(fd);
@@ -693,7 +677,9 @@ static void MtmAcceptIncomingConnections()
 	if (gateway < 0) {
 		MTM_ELOG(ERROR, "Arbiter failed to create socket: %d", errno);
 	}
-    setsockopt(gateway, SOL_SOCKET, SO_REUSEADDR, (char*)&on, sizeof on);
+    if (setsockopt(gateway, SOL_SOCKET, SO_REUSEADDR, (char*)&on, sizeof on) < 0) {
+		MTM_ELOG(ERROR, "Arbiter failed to set options for socket: %d", errno);
+	}			
 
     if (bind(gateway, (struct sockaddr*)&sock_inet, sizeof(sock_inet)) < 0) {
 		MTM_ELOG(ERROR, "Arbiter failed to bind socket: %d", errno);
@@ -726,7 +712,6 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, MtmArbiterMessage* msg)
 
 static void MtmSender(Datum arg)
 {
-	sigset_t sset;
 	int nNodes = MtmMaxNodes;
 	int i;
 
@@ -737,8 +722,6 @@ static void MtmSender(Datum arg)
 	signal(SIGINT, SetStop);
 	signal(SIGQUIT, SetStop);
 	signal(SIGTERM, SetStop);
-	sigfillset(&sset);
-	sigprocmask(SIG_UNBLOCK, &sset, NULL);
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -815,13 +798,9 @@ static bool MtmRecovery()
 
 static void MtmMonitor(Datum arg)
 {
-	sigset_t sset;
-
 	signal(SIGINT, SetStop);
 	signal(SIGQUIT, SetStop);
 	signal(SIGTERM, SetStop);
-	sigfillset(&sset);
-	sigprocmask(SIG_UNBLOCK, &sset, NULL);
 	
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -840,7 +819,6 @@ static void MtmMonitor(Datum arg)
 
 static void MtmReceiver(Datum arg)
 {
-	sigset_t sset;
 	int nNodes = MtmMaxNodes;
 	int nResponses;
 	int i, j, n, rc;
@@ -860,8 +838,6 @@ static void MtmReceiver(Datum arg)
 	signal(SIGINT, SetStop);
 	signal(SIGQUIT, SetStop);
 	signal(SIGTERM, SetStop);
-	sigfillset(&sset);
-	sigprocmask(SIG_UNBLOCK, &sset, NULL);
 	
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -1078,7 +1054,6 @@ static void MtmReceiver(Datum arg)
 									} else if (MtmUseDtm) { 
 										ts->votedMask = 0;
 										MTM_TXTRACE(ts, "MtmTransReceiver send MSG_PRECOMMIT");
-										//MtmSend2PCMessage(ts, MSG_PRECOMMIT);	
 										Assert(replorigin_session_origin == InvalidRepOriginId);
 										MTM_LOG2("SetPreparedTransactionState for %s", ts->gid);
 										MtmUnlock();
@@ -1130,7 +1105,7 @@ static void MtmReceiver(Datum arg)
 							} else { 
 								Assert(ts->status == TRANSACTION_STATUS_ABORTED);
 								MTM_ELOG(WARNING, "Receive PRECOMMITTED response for aborted transaction %s (%llu) from node %d", 
-									 ts->gid, (long64)ts->xid, node); // How it can happen? Should we use assert here?
+										 ts->gid, (long64)ts->xid, node); 
 								if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
 									MtmWakeUpBackend(ts);
 								}
@@ -1140,23 +1115,7 @@ static void MtmReceiver(Datum arg)
 							Assert(false);
 						} 
 					} else { 
-						switch (msg->code) { 
-						  case MSG_PRECOMMIT:
-							Assert(false); // Now sent through pglogical 
-							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
-								ts->status = TRANSACTION_STATUS_UNKNOWN;
-								ts->csn = MtmAssignCSN();
-								MtmAdjustSubtransactions(ts);
-								MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
-							} else if (ts->status == TRANSACTION_STATUS_ABORTED) {
-								MtmSend2PCMessage(ts, MSG_ABORTED);
-							} else { 
-								MTM_ELOG(WARNING, "Transaction %s is already %s", ts->gid, MtmTxnStatusMnem[ts->status]);
-							}
-							break;
-						  default:
-							Assert(false);
-						} 
+						Assert(false); /* All broadcasts are now sent through pglogical */
 					}
 				}
 				MtmUnlock();

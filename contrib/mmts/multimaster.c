@@ -1255,7 +1255,6 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 	if (x->status != TRANSACTION_STATUS_ABORTED) { 
 		MtmLock(LW_EXCLUSIVE);
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_FIND, NULL);
-		//tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_REMOVE, NULL);
 		if (tm == NULL) { 
 			MTM_ELOG(WARNING, "Global transaciton ID '%s' is not found", x->gid);
 		} else { 
@@ -1394,6 +1393,9 @@ void MtmSendMessage(MtmArbiterMessage* msg)
 		MtmMessageQueue* sendQueue = Mtm->sendQueue;
 		if (mq == NULL) {
 			mq = (MtmMessageQueue*)ShmemAlloc(sizeof(MtmMessageQueue));
+			if (mq == NULL) { 
+				elog(PANIC, "Failed to allocate shared memory for message queue");
+			}
 		} else { 
 			Mtm->freeQueue = mq->next;
 		}
@@ -1425,20 +1427,8 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 	msg.lockReq = Mtm->nodeLockerMask != 0;
 	memcpy(msg.gid, ts->gid, MULTIMASTER_MAX_GID_SIZE);
 
-	if (MtmIsCoordinator(ts)) {
-		int i;
-		Assert(false); // All broadcasts are now done through logical decoding
-		for (i = 0; i < Mtm->nAllNodes; i++)
-		{
-			if (BIT_CHECK(ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask, i))
-			{
-				Assert(TransactionIdIsValid(ts->xids[i]));
-				msg.node = i+1;
-				msg.dxid = ts->xids[i];
-				MtmSendMessage(&msg);
-			}
-		}
-	} else if (!BIT_CHECK(Mtm->disabledNodeMask, ts->gtid.node-1)) {
+	Assert(!MtmIsCoordinator(ts));  /* All broadcasts are now done through logical decoding */
+	if (!BIT_CHECK(Mtm->disabledNodeMask, ts->gtid.node-1)) {
 		MTM_LOG2("Send %s message to node %d xid=%d gid=%s", MtmMessageKindMnem[cmd], ts->gtid.node, ts->gtid.xid, ts->gid);
 		msg.node = ts->gtid.node;
 		msg.dxid = ts->gtid.xid;
@@ -4674,6 +4664,10 @@ void MtmUpdateLockGraph(int nodeId, void const* messageBody, int messageSize)
 	if (messageSize > allocated) { 
 		allocated = Max(Max(MULTIMASTER_LOCK_BUF_INIT_SIZE, allocated*2), messageSize);
 		Mtm->nodes[nodeId-1].lockGraphData = ShmemAlloc(allocated);
+		if (Mtm->nodes[nodeId-1].lockGraphData == NULL) { 
+			elog(PANIC, "Failed to allocate shared memory for lock graph: %d bytes requested",
+				 allocated);
+		}
 		Mtm->nodes[nodeId-1].lockGraphAllocated = allocated;
 	}
 	memcpy(Mtm->nodes[nodeId-1].lockGraphData, messageBody, messageSize);
