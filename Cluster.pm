@@ -95,6 +95,7 @@ sub configure
 			default_transaction_isolation = 'repeatable read'
 			max_replication_slots = 5
 			shared_preload_libraries = 'multimaster'
+			shared_buffers = 16MB
 
 			multimaster.arbiter_port = $arbiter_port
 			multimaster.workers = 1
@@ -104,6 +105,7 @@ sub configure
 			multimaster.heartbeat_send_timeout = 250
 			multimaster.max_nodes = $nnodes
 			multimaster.ignore_tables_without_pk = true
+			multimaster.queue_size = 4194304
 			multimaster.min_2pc_timeout = 150000
 			log_line_prefix = '%t: '
 		));
