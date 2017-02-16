@@ -88,7 +88,7 @@ sub configure
 			port = $pgport
 			max_prepared_transactions = 10
 			max_connections = 10
-			max_worker_processes = 10
+			max_worker_processes = 40
 			wal_level = logical
 			max_wal_senders = 5
 			wal_sender_timeout = 0
@@ -100,8 +100,8 @@ sub configure
 			multimaster.workers = 1
 			multimaster.node_id = $id
 			multimaster.conn_strings = '$connstr'
-			multimaster.heartbeat_recv_timeout = 2050
-			multimaster.heartbeat_send_timeout = 500
+			multimaster.heartbeat_recv_timeout = 1050
+			multimaster.heartbeat_send_timeout = 250
 			multimaster.max_nodes = $nnodes
 			multimaster.ignore_tables_without_pk = true
 			multimaster.min_2pc_timeout = 150000
