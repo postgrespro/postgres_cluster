@@ -2081,7 +2081,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 				 matrix_dump);
 	}
 
-	/* make matrix symetric: required for Bron–Kerbosch algorithm */
+	/* make matrix symmetric: required for Bron–Kerbosch algorithm */
 	for (i = 0; i < n; i++) { 
 		for (j = 0; j < i; j++) { 
 			matrix[i] |= ((matrix[j] >> i) & 1) << j;
