@@ -3380,7 +3380,8 @@ static bool MtmIsBroadcast()
 
 /*
  * Recover node is needed to return stopped and newly added node to the cluster. 
- * This functions create logical replication slot for the node which will collect all changes which should be sent to this node from this moment.
+ * This function creates logical replication slot for the node which will collect
+ * all changes which should be sent to this node from this moment.
  */
 void MtmRecoverNode(int nodeId)
 {
