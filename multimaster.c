@@ -1781,7 +1781,7 @@ static void MtmPollStatusOfPreparedTransactions()
 
 /*
  * Node is disabled if it is not part of clique built using connectivity masks of all nodes.
- * There is no warranty that all noeds will make the same decision about clique, but as far as we want to avoid
+ * There is no warranty that all nodes will make the same decision about clique, but as far as we want to avoid
  * some global coordinator (which will be SPOF), we have to rely on Bron–Kerbosch algorithm locating maximum clique in graph
  */
 static void MtmDisableNode(int nodeId)
