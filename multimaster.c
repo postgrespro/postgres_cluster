@@ -1435,7 +1435,7 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 }
 
 /* 
- * Broadcase poll state message to all nodes. 
+ * Broadcast poll state message to all nodes. 
  * This function is used to gather information about state of prepared transaction
  * at node startup or after crash of some node.
  */
