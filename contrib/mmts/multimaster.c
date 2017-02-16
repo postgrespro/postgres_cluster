@@ -1804,7 +1804,7 @@ static void MtmDisableNode(int nodeId)
 } 
 
 /* 
- * Node is anabled when it's recovery is completed.
+ * Node is enabled when it's recovery is completed.
  * This why node is mostly marked as recovered when logical sender/receiver to this node is (re)started.
  */
 static void MtmEnableNode(int nodeId)
