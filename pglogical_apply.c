@@ -1041,6 +1041,7 @@ void MtmExecutor(void* work, size_t size)
 	int spill_file = -1;
 	int save_cursor = 0;
 	int save_len = 0;
+	MemoryContext topContext;
 
     s.data = work;
     s.len = size;
@@ -1054,7 +1055,7 @@ void MtmExecutor(void* work, size_t size)
 												ALLOCSET_DEFAULT_INITSIZE,
 												ALLOCSET_DEFAULT_MAXSIZE);
     }
-	MemoryContextSwitchTo(MtmApplyContext);
+	topContext = MemoryContextSwitchTo(MtmApplyContext);
 
 	replorigin_session_origin = InvalidRepOriginId;
     PG_TRY();
@@ -1144,7 +1145,9 @@ void MtmExecutor(void* work, size_t size)
     }
     PG_CATCH();
     {
-		MemoryContext oldcontext = MemoryContextSwitchTo(MtmApplyContext);
+		MemoryContext oldcontext;
+		MtmReleaseLock();
+		oldcontext = MemoryContextSwitchTo(MtmApplyContext);
 		MtmHandleApplyError();
 		MemoryContextSwitchTo(oldcontext);
 		EmitErrorReport();
@@ -1162,5 +1165,6 @@ void MtmExecutor(void* work, size_t size)
 	}
 #endif
     MemoryContextResetAndDeleteChildren(MtmApplyContext);
+	MemoryContextSwitchTo(topContext);
 }
     

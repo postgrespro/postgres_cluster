@@ -406,7 +406,7 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 	char portstr[MAXPGPATH];
 	MtmHandshakeMessage req;
 	MtmArbiterMessage   resp;
-	int sd;
+	int sd = -1;
 	int ret;
 	timestamp_t start = MtmGetSystemTime();
 	char const* host = Mtm->nodes[node].con.hostName;
@@ -424,7 +424,7 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 	ret = pg_getaddrinfo_all(host, portstr, &hint, &addrs);
 	if (ret != 0) 
 	{
-		MTM_ELOG(LOG, "Arbiter failed to resolve host '%s' by name: %s", host, gai_strerror(ret));
+		MTM_ELOG(LOG, "Arbiter failed to resolve host '%s' by name: (%d) %s", host, ret, gai_strerror(ret));
 		return -1;
 	}
 	BIT_SET(busy_mask, node);
@@ -435,15 +435,12 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 		sd = socket(AF_INET, SOCK_STREAM, 0);
 		if (sd < 0) {
 			MTM_ELOG(LOG, "Arbiter failed to create socket: %d", errno);
-			busy_mask = save_mask;
-			return -1;
+			goto Error;
 		}
 		rc = fcntl(sd, F_SETFL, O_NONBLOCK);
 		if (rc < 0) {
 			MTM_ELOG(LOG, "Arbiter failed to switch socket to non-blocking mode: %d", errno);
-			close(sd);
-			busy_mask = save_mask;
-			return -1;
+			goto Error;
 		}
 		for (addr = addrs; addr != NULL; addr = addr->ai_next)
 		{
@@ -461,18 +458,14 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 		beforeWait = MtmGetSystemTime();
 		if (errno != EINPROGRESS || start + MSEC_TO_USEC(timeout) < beforeWait ) {
 			MTM_ELOG(WARNING, "Arbiter failed to connect to %s:%d: error=%d", host, port, errno);
-			close(sd);
-			busy_mask = save_mask;
-			return -1;
+			goto Error;
 		} else {
 			rc = MtmWaitSocket(sd, true, MtmHeartbeatSendTimeout);
 			if (rc == 1) {
 				socklen_t optlen = sizeof(int); 
 				if (getsockopt(sd, SOL_SOCKET, SO_ERROR, (void*)&rc, &optlen) < 0) { 
 					MTM_ELOG(WARNING, "Arbiter failed to getsockopt for %s:%d: error=%d", host, port, errno);
-					close(sd);
-					busy_mask = save_mask;
-					return -1;
+					goto Error;
 				}
 				if (rc == 0) { 
 					break;
@@ -513,7 +506,9 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 		close(sd);
 		goto Retry;
 	}
-	
+	if (addrs)
+		pg_freeaddrinfo_all(hint.ai_family, addrs);
+
 	MtmLock(LW_EXCLUSIVE);
 	MtmCheckResponse(&resp);
 	MtmUnlock();
@@ -521,8 +516,18 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 	MtmOnNodeConnect(node+1);
 
 	busy_mask = save_mask;
-
+	
 	return sd;
+
+  Error:
+	busy_mask = save_mask;
+	if (sd >= 0) { 
+		close(sd);
+	}
+	if (addrs) {
+		pg_freeaddrinfo_all(hint.ai_family, addrs);
+	}
+	return -1;
 }
 
 
