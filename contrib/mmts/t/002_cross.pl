@@ -8,7 +8,7 @@ use IPC::Run qw(start finish);
 use Cwd;
 
 my $nnodes = 2;
-my $nclients = 5;
+my $nclients = 2;
 my $nkeys = $nnodes * $nclients;
 my $cluster = new Cluster($nnodes);
 
