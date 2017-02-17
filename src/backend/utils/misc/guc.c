@@ -5719,7 +5719,7 @@ parse_int64(const char *value, int64 *result, int flags, const char **hintmsg)
 	if (errno == ERANGE)
 	{
 		if (hintmsg)
-			*hintmsg = gettext_noop("Value exceeds integer range.");
+			*hintmsg = gettext_noop("Value exceeds integer64 range.");
 		return false;
 	}
 
