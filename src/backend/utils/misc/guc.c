@@ -5949,7 +5949,7 @@ parse_and_validate_value(struct config_generic * record,
 					return false;
 				}
 
-				if (newval->intval < conf->min || newval->intval > conf->max)
+				if (newval->int64val < conf->min || newval->int64val > conf->max)
 				{
 					ereport(elevel,
 							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
