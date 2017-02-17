@@ -340,10 +340,12 @@ CREATE OPERATOR FAMILY alt_opf9 USING gist;
 ALTER OPERATOR FAMILY alt_opf9 USING gist ADD OPERATOR 1 < (int4, int4) FOR ORDER BY float_ops;
 DROP OPERATOR FAMILY alt_opf9 USING gist;
 
--- Should fail. Ensure correct ordering methods in ALTER OPERATOR FAMILY ... ADD OPERATOR .. FOR ORDER BY
+-- Should work. Ensure correct ordering methods in ALTER OPERATOR FAMILY ... ADD OPERATOR .. FOR ORDER BY
+BEGIN TRANSACTION;
 CREATE OPERATOR FAMILY alt_opf10 USING btree;
 ALTER OPERATOR FAMILY alt_opf10 USING btree ADD OPERATOR 1 < (int4, int4) FOR ORDER BY float_ops;
 DROP OPERATOR FAMILY alt_opf10 USING btree;
+ROLLBACK;
 
 -- Should work. Textbook case of ALTER OPERATOR FAMILY ... ADD OPERATOR with FOR ORDER BY
 CREATE OPERATOR FAMILY alt_opf11 USING gist;

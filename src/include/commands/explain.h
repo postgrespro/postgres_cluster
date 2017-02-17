@@ -60,6 +60,12 @@ extern PGDLLIMPORT ExplainOneQuery_hook_type ExplainOneQuery_hook;
 typedef const char *(*explain_get_index_name_hook_type) (Oid indexId);
 extern PGDLLIMPORT explain_get_index_name_hook_type explain_get_index_name_hook;
 
+/* Hook for plugins to get control in ExplainOnePlan() */
+typedef void (*ExplainOnePlan_hook_type) (PlannedStmt *plannedstmt, IntoClause *into,
+			   ExplainState *es, const char *queryString,
+			   ParamListInfo params, const instr_time *planduration);
+extern PGDLLIMPORT ExplainOnePlan_hook_type ExplainOnePlan_hook;
+
 
 extern void ExplainQuery(ExplainStmt *stmt, const char *queryString,
 			 ParamListInfo params, DestReceiver *dest);

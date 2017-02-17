@@ -380,7 +380,8 @@ CreateTableSpace(CreateTableSpaceStmt *stmt)
 	/* Post creation hook for new tablespace */
 	InvokeObjectPostCreateHook(TableSpaceRelationId, tablespaceoid, 0);
 
-	create_tablespace_directories(location, tablespaceoid, getBoolOption(stmt->options, "compression", false));
+	create_tablespace_directories(location, tablespaceoid,
+								  getBoolOption(stmt->options, "compression", false));
 
 	/* Record the filesystem change in XLOG */
 	{
@@ -587,7 +588,8 @@ DropTableSpace(DropTableSpaceStmt *stmt)
  *	to the specified directory
  */
 static void
-create_tablespace_directories(const char *location, const Oid tablespaceoid, bool compressed)
+create_tablespace_directories(const char *location,
+							  const Oid tablespaceoid, bool compressed)
 {
 	char	   *linkloc;
 	char	   *location_with_version_dir;
@@ -1062,21 +1064,27 @@ AlterTableSpaceOptions(AlterTableSpaceOptionsStmt *stmt)
 	/* If tablespace should be compressed */
 	compressed = getBoolOption(stmt->options, "compression", false);
 	
-	if (compressed ^ is_tablespace_compressed(tablespaceoid)) {
-		char* tbsdir = psprintf("pg_tblspc/%u/%s", tablespaceoid, TABLESPACE_VERSION_DIRECTORY);
-		if (!directory_is_empty(tbsdir)) {
+	if (compressed ^ is_tablespace_compressed(tablespaceoid))
+	{
+		char* tbsdir = psprintf("pg_tblspc/%u/%s",
+								tablespaceoid, TABLESPACE_VERSION_DIRECTORY);
+
+		if (!directory_is_empty(tbsdir))
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("It is not possible to toggle compression option for tablespace")));
-		} else { 
+		else
+		{
 			char* compressionFilePath = psprintf("%s/pg_compression", tbsdir);
-			if (compressed) { 
+
+			if (compressed)
+			{
 				FILE* comp = fopen(compressionFilePath, "w");
 				fputs(cfs_algorithm(), comp);
 				fclose(comp);
-			} else {
-				unlink(compressionFilePath);
 			}
+			else
+				unlink(compressionFilePath);
 		}
 	}
 

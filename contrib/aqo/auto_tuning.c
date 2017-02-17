@@ -85,7 +85,7 @@ converged_cq(double *elems, int nelems)
 bool
 is_in_infinite_loop_cq(double *elems, int nelems)
 {
-	if (nelems - auto_tuning_infinite_loop > auto_tuning_window_size + 2)
+	if (nelems - auto_tuning_infinite_loop < auto_tuning_window_size + 2)
 		return false;
 
 	return !converged_cq(elems, nelems) &&

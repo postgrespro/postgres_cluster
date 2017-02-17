@@ -121,6 +121,7 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_operator.h"
+#include "commands/explain.h"
 #include "executor/executor.h"
 #include "executor/execdesc.h"
 #include "nodes/makefuncs.h"
@@ -148,6 +149,8 @@ typedef enum
 	AQO_MODE_FORCED,
 	/* New query types are not linked with any feature space */
 	AQO_MODE_MANUAL,
+	/* Aqo is disabled for all queries */
+	AQO_MODE_DISABLED,
 }	AQO_MODE;
 extern int	aqo_mode;
 
@@ -193,6 +196,7 @@ extern bool auto_tuning;
 extern bool collect_stat;
 extern bool adding_query;
 extern bool explain_only;
+extern bool explain_aqo;
 
 /* Query execution time */
 extern instr_time query_starttime;
@@ -213,6 +217,7 @@ extern		get_parameterized_joinrel_size_hook_type
 			prev_get_parameterized_joinrel_size_hook;
 extern		copy_generic_path_info_hook_type
 			prev_copy_generic_path_info_hook;
+extern ExplainOnePlan_hook_type prev_ExplainOnePlan_hook;
 
 
 /* Hash functions */
@@ -252,6 +257,9 @@ PlannedStmt *call_default_planner(Query *parse,
 PlannedStmt *aqo_planner(Query *parse,
 			int cursorOptions,
 			ParamListInfo boundParams);
+void print_into_explain(PlannedStmt *plannedstmt, IntoClause *into,
+			   ExplainState *es, const char *queryString,
+			   ParamListInfo params, const instr_time *planduration);
 void		disable_aqo_for_query(void);
 
 /* Cardinality estimation hooks */

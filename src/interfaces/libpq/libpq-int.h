@@ -334,7 +334,12 @@ struct pg_conn
 #if defined(ENABLE_GSS) || defined(ENABLE_SSPI)
 	char	   *krbsrvname;		/* Kerberos service name */
 #endif
-
+	char	   *hostorder;		/* How to handle multiple hosts */
+	char	   *target_server_type;		/* If "any" could work with readonly
+										 * standby server. Otherwise should be
+										 * "master" */
+	char	   *failover_timeout;		/* If no usable server found, how long
+										 * to wait before retry */
 	/* Optional file to write trace info to */
 	FILE	   *Pfdebug;
 
@@ -382,6 +387,11 @@ struct pg_conn
 	struct addrinfo *addrlist;	/* list of possible backend addresses */
 	struct addrinfo *addr_cur;	/* the one currently being tried */
 	int			addrlist_family;	/* needed to know how to free addrlist */
+	time_t		failover_finish_time;	/* how long to retry host list waiting
+										 * for new master to appear */
+	char	   *actualhost;		/* Name of host we are actually connected to
+								 * (if there is list in the pghost) */
+	char	   *actualport;		/* Port number we are actually connected to */
 	PGSetenvStatusType setenv_state;	/* for 2.0 protocol only */
 	const PQEnvironmentOption *next_eo;
 	bool		send_appname;	/* okay to send application_name? */
@@ -472,6 +482,7 @@ struct pg_conn
 
 	/* Buffer for receiving various parts of messages */
 	PQExpBufferData workBuffer; /* expansible string */
+
 };
 
 /* PGcancel stores all data necessary to cancel a connection. A copy of this

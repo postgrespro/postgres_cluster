@@ -5314,12 +5314,12 @@ write_relcache_init_file(bool shared)
 
 			/* next, write the vector of opfamily OIDs */
 			write_item(rel->rd_opfamily,
-					   relform->relnatts * sizeof(Oid),
+					   rel->rd_index->indnkeyatts * sizeof(Oid),
 					   fp);
 
 			/* next, write the vector of opcintype OIDs */
 			write_item(rel->rd_opcintype,
-					   relform->relnatts * sizeof(Oid),
+					   rel->rd_index->indnkeyatts * sizeof(Oid),
 					   fp);
 
 			/* next, write the vector of support procedure OIDs */
