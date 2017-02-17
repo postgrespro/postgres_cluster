@@ -13,6 +13,7 @@ static const struct config_enum_entry format_options[] = {
 	{"intelligent", AQO_MODE_INTELLIGENT, false},
 	{"forced", AQO_MODE_FORCED, false},
 	{"manual", AQO_MODE_MANUAL, false},
+	{"disabled", AQO_MODE_DISABLED, false},
 	{NULL, 0, false}
 };
 
@@ -42,6 +43,7 @@ bool		auto_tuning;
 bool		collect_stat;
 bool		adding_query;
 bool		explain_only;
+bool		explain_aqo;
 
 /* Query execution time */
 instr_time	query_starttime;
@@ -57,6 +59,7 @@ get_parameterized_baserel_size_hook_type prev_get_parameterized_baserel_size_hoo
 set_joinrel_size_estimates_hook_type prev_set_joinrel_size_estimates_hook;
 get_parameterized_joinrel_size_hook_type prev_get_parameterized_joinrel_size_hook;
 copy_generic_path_info_hook_type prev_copy_generic_path_info_hook;
+ExplainOnePlan_hook_type prev_ExplainOnePlan_hook;
 
 /*****************************************************************************
  *
@@ -101,6 +104,8 @@ _PG_init(void)
 		&aqo_get_parameterized_joinrel_size;
 	prev_copy_generic_path_info_hook = copy_generic_path_info_hook;
 	copy_generic_path_info_hook = &aqo_copy_generic_path_info;
+	prev_ExplainOnePlan_hook = ExplainOnePlan_hook;
+	ExplainOnePlan_hook = print_into_explain;
 	init_deactivated_queries_storage();
 }
 
@@ -118,6 +123,7 @@ _PG_fini(void)
 	get_parameterized_joinrel_size_hook =
 		prev_get_parameterized_joinrel_size_hook;
 	copy_generic_path_info_hook = prev_copy_generic_path_info_hook;
+	ExplainOnePlan_hook = prev_ExplainOnePlan_hook;
 	fini_deactivated_queries_storage();
 }
 

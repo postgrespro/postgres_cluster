@@ -46,6 +46,9 @@ ExplainOneQuery_hook_type ExplainOneQuery_hook = NULL;
 /* Hook for plugins to get control in explain_get_index_name() */
 explain_get_index_name_hook_type explain_get_index_name_hook = NULL;
 
+/* Hook for plugins to get control in ExplainOnePlan() */
+ExplainOnePlan_hook_type ExplainOnePlan_hook = NULL;
+
 
 /* OR-able flags for ExplainXMLTag() */
 #define X_OPENING 0
@@ -557,6 +560,10 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
 			ExplainPropertyFloat("Execution Time", 1000.0 * totaltime,
 								 3, es);
 	}
+
+	if (ExplainOnePlan_hook)
+		ExplainOnePlan_hook(plannedstmt, into, es,
+							queryString, params, planduration);
 
 	ExplainCloseGroup("Query", NULL, true, es);
 }
