@@ -46,7 +46,8 @@ char *scheduler_databases = NULL;
 char *scheduler_nodename = NULL;
 char *scheduler_transaction_state = NULL;
 int  scheduler_max_workers = 2;
-int  scheduler_at_max_workers = 2;
+int  scheduler_max_parallel_workers = 2;
+int  scheduler_worker_job_limit = 1;
 bool scheduler_service_enabled = false;
 char *scheduler_schema = NULL;
 /* Custom GUC done */
@@ -161,6 +162,29 @@ bool is_scheduler_enabled(void)
 	opt = GetConfigOption("schedule.enabled", false, true);
 	if(memcmp(opt, "on", 2) == 0) return true;
 	return false;
+}
+
+char *set_schema(const char *name, bool get_old)
+{
+	char *schema_name = NULL;
+	char *current = NULL;
+	bool free_name = false;
+
+	if(get_old)
+		current = _copy_string((char *)GetConfigOption("search_path", true, false));
+	if(name)
+	{
+		schema_name = (char *)name;
+	}
+	else
+	{
+		schema_name = _copy_string((char *)GetConfigOption("schedule.schema", true, false));	
+		free_name = true;
+	}
+	SetConfigOption("search_path", schema_name,  PGC_USERSET, PGC_S_SESSION);
+	if(free_name) pfree(schema_name);
+
+	return current;
 }
 
 
@@ -472,10 +496,10 @@ void _PG_init(void)
 		NULL
 	);
 	DefineCustomIntVariable(
-		"schedule.at_max_workers",
+		"schedule.max_parallel_workers",
 		"How much workers can serve at jobs on one database",
 		NULL,
-		&scheduler_at_max_workers,
+		&scheduler_max_parallel_workers,
 		2,
 		1,
 		100,
@@ -492,6 +516,20 @@ void _PG_init(void)
 		&scheduler_service_enabled,
 		false,
 		PGC_SIGHUP,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+	DefineCustomIntVariable(
+		"schedule.worker_job_limit",
+		"How much job can worker serve before shutdown",
+		NULL,
+		&scheduler_worker_job_limit,
+		1,
+		1,
+		20000,
+		PGC_SUSET,
 		0,
 		NULL,
 		NULL,

@@ -12,6 +12,10 @@
 #include "storage/procarray.h"
 #include "storage/shm_toc.h"
 #include "catalog/pg_type.h"
+#include "catalog/pg_authid.h"
+#include "utils/syscache.h"
+#include "access/htup_details.h"
+#include "utils/timeout.h"
 
 #include "pgstat.h"
 #include "fmgr.h"
@@ -54,24 +58,30 @@ handle_sigterm(SIGNAL_ARGS)
 	}
 
 	errno = save_errno;
+	proc_exit(0);
 }
 
+int read_worker_job_limit(void)
+{
+	const char *opt;
+	int var;
+
+	opt = GetConfigOption("schedule.worker_job_limit", false, false);
+	if(opt == NULL) return 1;
+	var = atoi(opt);
+	return var;
+}
 
 void executor_worker_main(Datum arg)
 {
 	schd_executor_share_t *shared;
 	dsm_segment *seg;
-	job_t *job;
-	int i;
-	executor_error_t EE;
-	int ret;
-	char *error = NULL;
-	/* bool use_pg_vars = true; */
-	/* bool success = true; */
+	int result;
+	int64 jobs_done = 0;
+	int64 worker_jobs_limit = 1;
+	int rc = 0;
 	schd_executor_status_t status;
-
-	EE.n = 0;
-	EE.errors = NULL;
+	PGPROC *parent;
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_executor");
 	seg = dsm_attach(DatumGetInt32(arg));
@@ -80,6 +90,7 @@ void executor_worker_main(Datum arg)
 			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			 errmsg("executor unable to map dynamic shared memory segment")));
 	shared = dsm_segment_address(seg);
+	parent = BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid);
 
 	if(shared->status != SchdExecutorInit)
 	{
@@ -87,13 +98,83 @@ void executor_worker_main(Datum arg)
 			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			 errmsg("executor corrupted dynamic shared memory segment")));
 	}
-	status = shared->status = SchdExecutorWork;
-	shared->message[0] = 0;
 
 	SetConfigOption("application_name", "pgp-s executor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "initialize");
 	init_worker_mem_ctx("ExecutorMemoryContext");
 	BackgroundWorkerInitializeConnection(shared->database, NULL);
+	worker_jobs_limit = read_worker_job_limit();
+
+	pqsignal(SIGTERM, handle_sigterm);
+	pqsignal(SIGHUP, worker_spi_sighup);
+	BackgroundWorkerUnblockSignals();
+
+	while(1)
+	{
+		/* we need it if idle worker recieve SIGHUP an realize that it done
+		   too mach */
+		status = SchdExecutorLimitReached;
+
+		if(got_sighup)
+		{
+			got_sighup = false;
+			ProcessConfigFile(PGC_SIGHUP);
+			worker_jobs_limit = read_worker_job_limit();
+		}
+		result = do_one_job(shared, &status);
+		if(result > 0)
+		{
+			if(++jobs_done >= worker_jobs_limit)
+			{
+				shared->worker_exit = true;
+				shared->status = status;
+				break;
+			}
+			else
+			{
+				shared->status = status;
+			}
+			SetLatch(&parent->procLatch);
+		}
+		else if(result < 0)
+		{
+			delete_worker_mem_ctx();
+			dsm_detach(seg);
+			proc_exit(0);
+		}
+
+		pgstat_report_activity(STATE_IDLE, "waiting for a job");
+		rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0L);
+		ResetLatch(MyLatch);
+		if(rc && rc & WL_POSTMASTER_DEATH) break;
+	}
+
+	delete_worker_mem_ctx();
+	dsm_detach(seg);
+	proc_exit(0);
+}
+
+int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
+{
+	executor_error_t EE;
+	char *error = NULL;
+	int i;
+	job_t *job;
+	int ret;
+
+	EE.n = 0;
+	EE.errors = NULL;
+	if(shared->new_job)
+	{
+		shared->new_job = false;
+	}
+	else
+	{
+		return 0;
+	}
+
+	*status = shared->status = SchdExecutorWork;
+	shared->message[0] = 0;
 
 	pgstat_report_activity(STATE_RUNNING, "initialize job");
 	job = initializeExecutorJob(shared);
@@ -102,10 +183,10 @@ void executor_worker_main(Datum arg)
 		if(shared->message[0] == 0)
 			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX, 
 											"Cannot retrive job information");
-		shared->status = SchdExecutorError;
-		delete_worker_mem_ctx();
-		dsm_detach(seg);
-		proc_exit(0);
+		shared->worker_exit = true;
+		*status = shared->status = SchdExecutorError;
+
+		return -1;
 	}
 	current_job_id = job->cron_id;
 	pgstat_report_activity(STATE_RUNNING, "job initialized");
@@ -123,14 +204,10 @@ void executor_worker_main(Datum arg)
 			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
 				"Cannot set session auth: unknown error");
 		}
+		*status = shared->worker_exit = true;
 		shared->status = SchdExecutorError;
-		delete_worker_mem_ctx();
-		dsm_detach(seg);
-		proc_exit(0);
+		return -2;
 	}
-
-	pqsignal(SIGTERM, handle_sigterm);
-	BackgroundWorkerUnblockSignals();
 
 	pgstat_report_activity(STATE_RUNNING, "process job");
 	CHECK_FOR_INTERRUPTS();
@@ -161,7 +238,7 @@ void executor_worker_main(Datum arg)
 		if(ret < 0)
 		{
 			/* success = false; */
-			status = SchdExecutorError;
+			*status = SchdExecutorError;
 			if(error)
 			{
 				push_executor_error(&EE, "error in command #%d: %s",
@@ -187,7 +264,7 @@ void executor_worker_main(Datum arg)
 			}
 		}
 	}
-	if(status != SchdExecutorError)
+	if(*status != SchdExecutorError)
 	{
 		if(job->same_transaction)
 		{
@@ -197,29 +274,28 @@ void executor_worker_main(Datum arg)
 		{
 			if(job->attempt >= job->resubmit_limit)
 			{
-				status = SchdExecutorError;
+				*status = SchdExecutorError;
+#ifdef HAVE_LONG_INT_64
 				push_executor_error(&EE, "Cannot resubmit: limit reached (%ld)", job->resubmit_limit);
+#else
+				push_executor_error(&EE, "Cannot resubmit: limit reached (%lld)", job->resubmit_limit);
+#endif
 				resubmit_current_job = 0;
 			}
 			else
 			{
-				status = SchdExecutorResubmit;
+				*status = SchdExecutorResubmit;
 			}
 		}
 		else
 		{
-			status = SchdExecutorDone;
+			*status = SchdExecutorDone;
 		}
 
 		SetConfigOption("schedule.transaction_state", "success", PGC_INTERNAL, PGC_S_SESSION);
 	}
 	if(job->next_time_statement)
 	{
-/*		if(use_pg_vars)  
-		{
-			set_pg_var(success, &EE);
-		}
-*/
 		shared->next_time = get_next_excution_time(job->next_time_statement, &EE);
 		if(shared->next_time == 0)
 		{
@@ -234,17 +310,19 @@ void executor_worker_main(Datum arg)
 	{
 		set_shared_message(shared, &EE);
 	}
-	shared->status = status;
-	if(status == SchdExecutorResubmit)
+	if(*status == SchdExecutorResubmit)
 	{
 		shared->next_time = timestamp_add_seconds(0, resubmit_current_job);
 		resubmit_current_job = 0;
 	}
+	destroy_job(job, 1);
 
-	delete_worker_mem_ctx();
-	dsm_detach(seg);
-	proc_exit(0);
+	SetSessionAuthorization(BOOTSTRAP_SUPERUSERID, true);
+	ResetAllOptions();
+
+	return 1;
 }
+	
 
 int set_session_authorization(char *username, char **error)
 {
@@ -528,3 +606,212 @@ resubmit(PG_FUNCTION_ARGS)
 
 	PG_RETURN_INT64(resubmit_current_job);
 }
+
+/* main procedure for at command workers  */
+
+void at_executor_worker_main(Datum arg)
+{
+	schd_executor_share_state_t *shared;
+	dsm_segment *seg;
+	int result;
+	int rc = 0;
+	schd_executor_status_t status;
+	bool lets_sleep = false;
+	/* PGPROC *parent; */
+
+	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_executor");
+	seg = dsm_attach(DatumGetInt32(arg));
+	if(seg == NULL)
+		ereport(ERROR,
+			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+			 errmsg("executor unable to map dynamic shared memory segment")));
+	shared = dsm_segment_address(seg);
+	/* parent = BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid); */
+
+	if(shared->status != SchdExecutorInit)
+	{
+		ereport(ERROR,
+			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+			 errmsg("executor corrupted dynamic shared memory segment")));
+	}
+	shared->start_at = GetCurrentTimestamp();
+
+	SetConfigOption("application_name", "pgp-s at executor", PGC_USERSET, PGC_S_SESSION);
+	pgstat_report_activity(STATE_RUNNING, "initialize");
+	init_worker_mem_ctx("ExecutorMemoryContext");
+	BackgroundWorkerInitializeConnection(shared->database, NULL);
+
+	pqsignal(SIGTERM, handle_sigterm);
+	pqsignal(SIGHUP, worker_spi_sighup);
+	BackgroundWorkerUnblockSignals();
+
+	while(1)
+	{
+		if(shared->stop_worker) break; 
+		if(got_sighup)
+		{
+			got_sighup = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
+		CHECK_FOR_INTERRUPTS();
+		result = process_one_job(shared, &status);
+
+		if(result == 0) 
+		{
+			lets_sleep = true;
+		}
+		else if(result < 0)
+		{
+			delete_worker_mem_ctx();
+			dsm_detach(seg);
+			proc_exit(1);
+		}
+		CHECK_FOR_INTERRUPTS();
+
+		if(lets_sleep)
+		{
+			pgstat_report_activity(STATE_IDLE, "waiting for a job");
+			rc = WaitLatch(MyLatch,
+				WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_TIMEOUT, 1000L);
+			ResetLatch(MyLatch);
+			if(rc && rc & WL_POSTMASTER_DEATH) break;
+			lets_sleep = false;
+		}
+	}
+
+	if(shared->stop_worker)
+	{
+		elog(LOG, "at worker stopped by parent signal");
+	}
+
+	delete_worker_mem_ctx();
+	dsm_detach(seg);
+	proc_exit(0);
+}
+
+int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t *status)
+{
+	char *error = NULL;
+	job_t *job;
+	int ret;
+	char buff[512];
+
+	*status = shared->status = SchdExecutorWork;
+
+	pgstat_report_activity(STATE_RUNNING, "initialize job");
+	START_SPI_SNAP();
+
+	job = get_next_at_job_with_lock(shared->nodename, &error);
+
+	if(!job)
+	{
+		if(error)
+		{
+			shared->status = SchdExecutorIdling;
+			elog(LOG, "AT EXECUTOR: ERROR: %s", error);
+			pfree(error);
+			ABORT_SPI_SNAP();
+			return -1;
+		}
+		STOP_SPI_SNAP();
+		shared->status = SchdExecutorIdling;
+		return 0;
+	}
+	current_job_id = job->cron_id;
+	pgstat_report_activity(STATE_RUNNING, "job initialized");
+
+	ResetAllOptions();
+	if(set_session_authorization_by_name(job->executor, &error) == InvalidOid)
+	{
+		if(error)
+		{
+			set_at_job_done(job, error, 0);
+			pfree(error);
+		}
+		else
+		{
+			set_at_job_done(job, "Unknown set session auth error", 0);
+		}
+		shared->status = SchdExecutorIdling;
+		STOP_SPI_SNAP();
+		return 1;
+	}
+
+	pgstat_report_activity(STATE_RUNNING, "process job");
+	CHECK_FOR_INTERRUPTS();
+	SetConfigOption("schedule.transaction_state", "running", PGC_INTERNAL, PGC_S_SESSION);
+
+	if(job->timelimit)
+	{
+#ifdef HAVE_LONG_INT_64
+		sprintf(buff, "%ld", job->timelimit * 1000);
+#else 
+		sprintf(buff, "%lld", job->timelimit * 1000);
+#endif
+		SetConfigOption("statement_timeout", buff,  PGC_SUSET, PGC_S_OVERRIDE);
+		enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout);
+	}
+
+	if(job->sql_params_n > 0)
+	{
+		ret = execute_spi_params_prepared(job->dosql[0], job->sql_params_n, job->sql_params, &error);
+	}
+	else
+	{
+		ret = execute_spi(job->dosql[0], &error);
+	}
+	if(job->timelimit)
+	{
+		disable_timeout(STATEMENT_TIMEOUT, false);
+	}
+	ResetAllOptions();
+	SetConfigOption("enable_seqscan", "off", PGC_USERSET, PGC_S_SESSION);
+	SetSessionAuthorization(BOOTSTRAP_SUPERUSERID, true);
+	if(ret < 0)
+	{
+		if(error)
+		{
+			set_at_job_done(job, error, resubmit_current_job);
+			pfree(error);
+		}
+		else
+		{
+			sprintf(buff, "error in command: code: %d", ret);
+			set_at_job_done(job, buff, resubmit_current_job);
+		}
+	}
+	else
+	{
+		set_at_job_done(job, NULL, resubmit_current_job);
+	}
+	STOP_SPI_SNAP();
+	
+	resubmit_current_job = 0;
+	current_job_id = -1;
+	pgstat_report_activity(STATE_RUNNING, "finish job processing");
+
+	return 1;
+}
+
+Oid set_session_authorization_by_name(char *rolename, char **error)
+{
+	HeapTuple   roleTup;
+	Form_pg_authid rform;
+	char buffer[512];
+	Oid roleoid;
+
+	roleTup = SearchSysCache1(AUTHNAME, PointerGetDatum(rolename));
+	if(!HeapTupleIsValid(roleTup))
+	{
+		snprintf(buffer, 512, "There is no user name: %s", rolename);
+		*error = _copy_string(buffer);
+		return InvalidOid;
+	}
+	rform = (Form_pg_authid) GETSTRUCT(roleTup);
+	roleoid = HeapTupleGetOid(roleTup);
+	SetSessionAuthorization(roleoid, rform->rolsuper);
+	ReleaseSysCache(roleTup);
+
+	return roleoid;
+}
+
