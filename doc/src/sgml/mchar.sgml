@@ -38,7 +38,7 @@
     </listitem>
     <listitem>
     <para>
-    These types are always stored as two-byte unicode value regradless
+    These types are always stored as two-byte unicode value regardless
     of database encoding.
     </para>
     </listitem>

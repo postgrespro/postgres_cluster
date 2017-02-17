@@ -77,15 +77,24 @@ static int cmp_range_entries(const void *p1, const void *p2, void *arg);
 
 static bool validate_range_constraint(const Expr *expr,
 									  const PartRelationInfo *prel,
-									  Datum *min,
-									  Datum *max);
+									  const AttrNumber part_attno,
+									  Datum *lower, Datum *upper,
+									  bool *lower_null, bool *upper_null);
+static bool validate_range_opexpr(const Expr *expr,
+								  const PartRelationInfo *prel,
+								  const TypeCacheEntry *tce,
+								  const AttrNumber part_attno,
+								  Datum *lower, Datum *upper,
+								  bool *lower_null, bool *upper_null);
 
 static bool validate_hash_constraint(const Expr *expr,
 									 const PartRelationInfo *prel,
+									 const AttrNumber part_attno,
 									 uint32 *part_hash);
 
 static bool read_opexpr_const(const OpExpr *opexpr,
 							  const PartRelationInfo *prel,
+							  const AttrNumber part_attno,
 							  Datum *val);
 
 static int oid_cmp(const void *p1, const void *p2);
@@ -95,6 +104,37 @@ static int oid_cmp(const void *p1, const void *p2);
 static uint32 build_sql_facade_version(char *version_cstr);
 static uint32 get_sql_facade_version(void);
 static void validate_sql_facade_version(uint32 ver);
+
+
+/*
+ * Safe hash search (takes care of disabled pg_pathman).
+ */
+void *
+pathman_cache_search_relid(HTAB *cache_table,
+						   Oid relid,
+						   HASHACTION action,
+						   bool *found)
+{
+	/* Table is NULL, take some actions */
+	if (cache_table == NULL)
+		switch (action)
+		{
+			case HASH_FIND:
+			case HASH_ENTER:
+			case HASH_REMOVE:
+				elog(ERROR, "pg_pathman is not initialized yet");
+				break;
+
+			/* Something strange has just happened */
+			default:
+				elog(ERROR, "unexpected action in function "
+					 CppAsString(pathman_cache_search_relid));
+				break;
+		}
+
+	/* Everything is fine */
+	return hash_search(cache_table, (const void *) &relid, action, found);
+}
 
 /*
  * Save and restore main init state.
@@ -270,6 +310,10 @@ init_local_cache(void)
 {
 	HASHCTL ctl;
 
+	/* Destroy caches, just in case */
+	hash_destroy(partitioned_rels);
+	hash_destroy(parent_cache);
+
 	memset(&ctl, 0, sizeof(ctl));
 	ctl.keysize = sizeof(Oid);
 	ctl.entrysize = sizeof(PartRelationInfo);
@@ -347,6 +391,7 @@ init_shmem_config(void)
 void
 fill_prel_with_partitions(const Oid *partitions,
 						  const uint32 parts_count,
+						  const char *part_column_name,
 						  PartRelationInfo *prel)
 {
 	uint32			i;
@@ -361,7 +406,18 @@ fill_prel_with_partitions(const Oid *partitions,
 
 	for (i = 0; i < PrelChildrenCount(prel); i++)
 	{
-		con_expr = get_partition_constraint_expr(partitions[i], prel->attnum);
+		AttrNumber part_attno;
+
+		/* NOTE: Partitions may have different TupleDescs */
+		part_attno = get_attnum(partitions[i], part_column_name);
+
+		/* Raise ERROR if there's no such column */
+		if (part_attno == InvalidAttrNumber)
+			elog(ERROR, "partition \"%s\" has no column \"%s\"",
+				 get_rel_name_or_relid(partitions[i]),
+				 part_column_name);
+
+		con_expr = get_partition_constraint_expr(partitions[i], part_attno);
 
 		/* Perform a partitioning_type-dependent task */
 		switch (prel->parttype)
@@ -370,13 +426,13 @@ fill_prel_with_partitions(const Oid *partitions,
 				{
 					uint32	hash; /* hash value < parts_count */
 
-					if (validate_hash_constraint(con_expr, prel, &hash))
+					if (validate_hash_constraint(con_expr, prel, part_attno, &hash))
 						prel->children[hash] = partitions[i];
 					else
 					{
 						DisablePathman(); /* disable pg_pathman since config is broken */
 						ereport(ERROR,
-								(errmsg("Wrong constraint format for HASH partition \"%s\"",
+								(errmsg("wrong constraint format for HASH partition \"%s\"",
 										get_rel_name_or_relid(partitions[i])),
 								 errhint(INIT_ERROR_HINT)));
 					}
@@ -385,20 +441,28 @@ fill_prel_with_partitions(const Oid *partitions,
 
 			case PT_RANGE:
 				{
-					Datum	range_min, range_max;
+					Datum	lower, upper;
+					bool	lower_null, upper_null;
 
-					if (validate_range_constraint(con_expr, prel,
-												  &range_min, &range_max))
+					if (validate_range_constraint(con_expr, prel, part_attno,
+												  &lower, &upper,
+												  &lower_null, &upper_null))
 					{
-						prel->ranges[i].child_oid	= partitions[i];
-						prel->ranges[i].min			= range_min;
-						prel->ranges[i].max			= range_max;
+						prel->ranges[i].child_oid = partitions[i];
+
+						prel->ranges[i].min = lower_null ?
+													MakeBoundInf(MINUS_INFINITY) :
+													MakeBound(lower);
+
+						prel->ranges[i].max = upper_null ?
+													MakeBoundInf(PLUS_INFINITY) :
+													MakeBound(upper);
 					}
 					else
 					{
 						DisablePathman(); /* disable pg_pathman since config is broken */
 						ereport(ERROR,
-								(errmsg("Wrong constraint format for RANGE partition \"%s\"",
+								(errmsg("wrong constraint format for RANGE partition \"%s\"",
 										get_rel_name_or_relid(partitions[i])),
 								 errhint(INIT_ERROR_HINT)));
 					}
@@ -420,11 +484,15 @@ fill_prel_with_partitions(const Oid *partitions,
 	if (prel->parttype == PT_RANGE)
 	{
 		MemoryContext	old_mcxt;
+		FmgrInfo		flinfo;
+
+		/* Prepare function info */
+		fmgr_info(prel->cmp_proc, &flinfo);
 
 		/* Sort partitions by RangeEntry->min asc */
 		qsort_arg((void *) prel->ranges, PrelChildrenCount(prel),
 				  sizeof(RangeEntry), cmp_range_entries,
-				  (void *) &prel->cmp_proc);
+				  (void *) &flinfo);
 
 		/* Initialize 'prel->children' array */
 		for (i = 0; i < PrelChildrenCount(prel); i++)
@@ -434,16 +502,15 @@ fill_prel_with_partitions(const Oid *partitions,
 		old_mcxt = MemoryContextSwitchTo(TopMemoryContext);
 		for (i = 0; i < PrelChildrenCount(prel); i++)
 		{
-			prel->ranges[i].max = datumCopy(prel->ranges[i].max,
+			prel->ranges[i].min = CopyBound(&prel->ranges[i].min,
 											prel->attbyval,
 											prel->attlen);
 
-			prel->ranges[i].min = datumCopy(prel->ranges[i].min,
+			prel->ranges[i].max = CopyBound(&prel->ranges[i].max,
 											prel->attbyval,
 											prel->attlen);
 		}
 		MemoryContextSwitchTo(old_mcxt);
-
 	}
 
 #ifdef USE_ASSERT_CHECKING
@@ -486,25 +553,28 @@ find_inheritance_children_array(Oid parentrelId,
 	SysScanDesc scan;
 	ScanKeyData key[1];
 	HeapTuple	inheritsTuple;
-	Oid			inhrelid;
+
 	Oid		   *oidarr;
 	uint32		maxoids,
-				numoids,
-				i;
+				numoids;
+
+	Oid		   *result = NULL;
+	uint32		nresult = 0;
+
+	uint32		i;
+
+	Assert(lockmode != NoLock);
+
+	/* Init safe return values */
+	*children_size = 0;
+	*children = NULL;
 
 	/*
-	 * Can skip the scan if pg_class shows the relation has never had a
-	 * subclass.
+	 * Can skip the scan if pg_class shows the
+	 * relation has never had a subclass.
 	 */
 	if (!has_subclass(parentrelId))
-	{
-		/* Init return values */
-		*children_size = 0;
-		children = NULL;
-
-		/* Ok, could not find any children */
 		return FCS_NO_CHILDREN;
-	}
 
 	/*
 	 * Scan pg_inherits and build a working array of subclass OIDs.
@@ -525,6 +595,8 @@ find_inheritance_children_array(Oid parentrelId,
 
 	while ((inheritsTuple = systable_getnext(scan)) != NULL)
 	{
+		Oid inhrelid;
+
 		inhrelid = ((Form_pg_inherits) GETSTRUCT(inheritsTuple))->inhrelid;
 		if (numoids >= maxoids)
 		{
@@ -547,12 +619,10 @@ find_inheritance_children_array(Oid parentrelId,
 	if (numoids > 1)
 		qsort(oidarr, numoids, sizeof(Oid), oid_cmp);
 
-	/*
-	 * Acquire locks and build the result list.
-	 */
+	/* Acquire locks and build the result list */
 	for (i = 0; i < numoids; i++)
 	{
-		inhrelid = oidarr[i];
+		Oid inhrelid = oidarr[i];
 
 		if (lockmode != NoLock)
 		{
@@ -567,9 +637,7 @@ find_inheritance_children_array(Oid parentrelId,
 					for (j = 0; j < i; j++)
 						UnlockRelationOid(oidarr[j], lockmode);
 
-					/* Init return values */
-					*children_size = numoids;
-					*children = oidarr;
+					pfree(oidarr);
 
 					/* We couldn't lock this child, retreat! */
 					return FCS_COULD_NOT_LOCK;
@@ -586,18 +654,28 @@ find_inheritance_children_array(Oid parentrelId,
 			{
 				/* Release useless lock */
 				UnlockRelationOid(inhrelid, lockmode);
+
 				/* And ignore this relation */
 				continue;
 			}
 		}
+
+		/* Alloc array if it's the first time */
+		if (nresult == 0)
+			result = palloc(numoids * sizeof(Oid));
+
+		/* Save Oid of the existing relation */
+		result[nresult++] = inhrelid;
 	}
 
-	/* Init return values */
-	*children_size = numoids;
-	*children = oidarr;
+	/* Set return values */
+	*children_size = nresult;
+	*children = result;
 
-	/* Ok, we have children */
-	return FCS_FOUND;
+	pfree(oidarr);
+
+	/* Do we have children? */
+	return nresult > 0 ? FCS_FOUND : FCS_NO_CHILDREN;
 }
 
 /*
@@ -650,7 +728,7 @@ pathman_config_contains_relation(Oid relid, Datum *values, bool *isnull,
 				ObjectIdGetDatum(relid));
 
 	/* Open PATHMAN_CONFIG with latest snapshot available */
-	rel = heap_open(get_pathman_config_relid(), AccessShareLock);
+	rel = heap_open(get_pathman_config_relid(false), AccessShareLock);
 
 	/* Check that 'partrel' column is if regclass type */
 	Assert(RelationGetDescr(rel)->
@@ -724,7 +802,7 @@ read_pathman_params(Oid relid, Datum *values, bool *isnull)
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(relid));
 
-	rel = heap_open(get_pathman_config_params_relid(), AccessShareLock);
+	rel = heap_open(get_pathman_config_params_relid(false), AccessShareLock);
 	snapshot = RegisterSnapshot(GetLatestSnapshot());
 	scan = heap_beginscan(rel, snapshot, 1, key);
 
@@ -739,7 +817,6 @@ read_pathman_params(Oid relid, Datum *values, bool *isnull)
 		Assert(!isnull[Anum_pathman_config_params_partrel - 1]);
 		Assert(!isnull[Anum_pathman_config_params_enable_parent - 1]);
 		Assert(!isnull[Anum_pathman_config_params_auto - 1]);
-		Assert(!isnull[Anum_pathman_config_params_init_callback - 1]);
 		Assert(!isnull[Anum_pathman_config_params_spawn_using_bgw - 1]);
 	}
 
@@ -763,7 +840,7 @@ read_pathman_config(void)
 	HeapTuple		htup;
 
 	/* Open PATHMAN_CONFIG with latest snapshot available */
-	rel = heap_open(get_pathman_config_relid(), AccessShareLock);
+	rel = heap_open(get_pathman_config_relid(false), AccessShareLock);
 
 	/* Check that 'partrel' column is if regclass type */
 	Assert(RelationGetDescr(rel)->
@@ -803,7 +880,7 @@ read_pathman_config(void)
 		{
 			DisablePathman(); /* disable pg_pathman since config is broken */
 			ereport(ERROR,
-					(errmsg("Table \"%s\" contains nonexistent relation %u",
+					(errmsg("table \"%s\" contains nonexistent relation %u",
 							PATHMAN_CONFIG, relid),
 					 errhint(INIT_ERROR_HINT)));
 		}
@@ -878,64 +955,121 @@ cmp_range_entries(const void *p1, const void *p2, void *arg)
 {
 	const RangeEntry   *v1 = (const RangeEntry *) p1;
 	const RangeEntry   *v2 = (const RangeEntry *) p2;
+	FmgrInfo		   *flinfo = (FmgrInfo *) arg;
 
-	Oid					cmp_proc_oid = *(Oid *) arg;
-
-	return OidFunctionCall2(cmp_proc_oid, v1->min, v2->min);
+	return cmp_bounds(flinfo, &v1->min, &v2->min);
 }
 
-/*
- * Validates range constraint. It MUST have this exact format:
- *
- *		VARIABLE >= CONST AND VARIABLE < CONST
- *
- * Writes 'min' & 'max' values on success.
- */
+/* Validates a single expression of kind VAR >= CONST or VAR < CONST */
 static bool
-validate_range_constraint(const Expr *expr,
-						  const PartRelationInfo *prel,
-						  Datum *min,
-						  Datum *max)
+validate_range_opexpr(const Expr *expr,
+					  const PartRelationInfo *prel,
+					  const TypeCacheEntry *tce,
+					  const AttrNumber part_attno,
+					  Datum *lower, Datum *upper,
+					  bool *lower_null, bool *upper_null)
 {
-	const TypeCacheEntry   *tce;
-	const BoolExpr		   *boolexpr = (const BoolExpr *) expr;
-	const OpExpr		   *opexpr;
-	int						strategy;
+	const OpExpr   *opexpr;
+	Datum			val;
 
 	if (!expr)
 		return false;
 
-	/* it should be an AND operator on top */
-	if (!and_clause((Node *) expr))
+	/* Fail fast if it's not an OpExpr node */
+	if(!IsA(expr, OpExpr))
 		return false;
 
+	/* Perform cast */
+	opexpr = (const OpExpr *) expr;
+
+	/* Try reading Const value */
+	if (!read_opexpr_const(opexpr, prel, part_attno, &val))
+		return false;
+
+	/* Examine the strategy (expect '>=' OR '<') */
+	switch (get_op_opfamily_strategy(opexpr->opno, tce->btree_opf))
+	{
+		case BTGreaterEqualStrategyNumber:
+			{
+				/* Bound already exists */
+				if (*lower_null == false)
+					return false;
+
+				*lower_null = false;
+				*lower = val;
+
+				return true;
+			}
+
+		case BTLessStrategyNumber:
+			{
+				/* Bound already exists */
+				if (*upper_null == false)
+					return false;
+
+				*upper_null = false;
+				*upper = val;
+
+				return true;
+			}
+
+		default:
+			return false;
+	}
+}
+
+
+/*
+ * Validates range constraint. It MUST have one of the following formats:
+ *
+ *		VARIABLE >= CONST AND VARIABLE < CONST
+ *		VARIABLE >= CONST
+ *		VARIABLE < CONST
+ *
+ * Writes 'lower' & 'upper' and 'lower_null' & 'upper_null' values on success.
+ */
+static bool
+validate_range_constraint(const Expr *expr,
+						  const PartRelationInfo *prel,
+						  const AttrNumber part_attno,
+						  Datum *lower, Datum *upper,
+						  bool *lower_null, bool *upper_null)
+{
+	const TypeCacheEntry *tce;
+
+	if (!expr)
+		return false;
+
+	/* Set default values */
+	*lower_null = *upper_null = true;
+
+	/* Find type cache entry for partitioned column's type */
 	tce = lookup_type_cache(prel->atttype, TYPECACHE_BTREE_OPFAMILY);
 
-	/* check that left operand is >= operator */
-	opexpr = (OpExpr *) linitial(boolexpr->args);
-	strategy = get_op_opfamily_strategy(opexpr->opno, tce->btree_opf);
-
-	if (strategy == BTGreaterEqualStrategyNumber)
+	/* Is it an AND clause? */
+	if (and_clause((Node *) expr))
 	{
-		if (!read_opexpr_const(opexpr, prel, min))
-			return false;
+		const BoolExpr *boolexpr = (const BoolExpr *) expr;
+		ListCell	   *lc;
+
+		/* Walk through boolexpr's args */
+		foreach (lc, boolexpr->args)
+		{
+			const OpExpr *opexpr = (const OpExpr *) lfirst(lc);
+
+			/* Exit immediately if something is wrong */
+			if (!validate_range_opexpr((const Expr *) opexpr, prel, tce, part_attno,
+									   lower, upper, lower_null, upper_null))
+				return false;
+		}
+
+		/* Everything seems to be fine */
+		return true;
 	}
-	else
-		return false;
 
-	/* check that right operand is < operator */
-	opexpr = (OpExpr *) lsecond(boolexpr->args);
-	strategy = get_op_opfamily_strategy(opexpr->opno, tce->btree_opf);
-
-	if (strategy == BTLessStrategyNumber)
-	{
-		if (!read_opexpr_const(opexpr, prel, max))
-			return false;
-	}
-	else
-		return false;
-
-	return true;
+	/* It might be just an OpExpr clause */
+	else return validate_range_opexpr(expr, prel, tce, part_attno,
+									  lower, upper, lower_null, upper_null);
 }
 
 /*
@@ -946,6 +1080,7 @@ validate_range_constraint(const Expr *expr,
 static bool
 read_opexpr_const(const OpExpr *opexpr,
 				  const PartRelationInfo *prel,
+				  const AttrNumber part_attno,
 				  Datum *val)
 {
 	const Node	   *left;
@@ -979,7 +1114,7 @@ read_opexpr_const(const OpExpr *opexpr,
 	else return false;
 
 	/* VAR.attno == partitioned attribute number */
-	if (part_attr->varoattno != prel->attnum)
+	if (part_attr->varoattno != part_attno)
 		return false;
 
 	/* CONST is NOT NULL */
@@ -1015,6 +1150,7 @@ read_opexpr_const(const OpExpr *opexpr,
 static bool
 validate_hash_constraint(const Expr *expr,
 						 const PartRelationInfo *prel,
+						 const AttrNumber part_attno,
 						 uint32 *part_hash)
 {
 	const TypeCacheEntry   *tce;
@@ -1068,7 +1204,7 @@ validate_hash_constraint(const Expr *expr,
 			var = (Var *) linitial(type_hash_proc_expr->args);
 
 		/* Check that 'var' is the partitioning key attribute */
-		if (var->varoattno != prel->attnum)
+		if (var->varoattno != part_attno)
 			return false;
 
 		/* Check that PARTITIONS_COUNT is equal to total amount of partitions */

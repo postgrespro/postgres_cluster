@@ -444,7 +444,7 @@ CopyIndexTuple(IndexTuple source)
 }
 
 /*
- * Reform index tuple. Truncate nonkey (INCLUDING) attributes.
+ * Reform index tuple. Truncate nonkey (INCLUDE) attributes.
  */
 IndexTuple
 index_truncate_tuple(Relation idxrel, IndexTuple olditup)

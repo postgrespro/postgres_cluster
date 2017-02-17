@@ -81,9 +81,9 @@ refresh_pathman_relation_info(Oid relid,
 	Datum					param_values[Natts_pathman_config_params];
 	bool					param_isnull[Natts_pathman_config_params];
 
-	prel = (PartRelationInfo *) hash_search(partitioned_rels,
-											(const void *) &relid,
-											HASH_ENTER, &found_entry);
+	prel = (PartRelationInfo *) pathman_cache_search_relid(partitioned_rels,
+														   relid, HASH_ENTER,
+														   &found_entry);
 	elog(DEBUG2,
 		 found_entry ?
 			 "Refreshing record for relation %u in pg_pathman's cache [%u]" :
@@ -162,17 +162,26 @@ refresh_pathman_relation_info(Oid relid,
 	{
 		/* If there's no children at all, remove this entry */
 		case FCS_NO_CHILDREN:
+			elog(DEBUG2, "refresh: relation %u has no children [%u]",
+						 relid, MyProcPid);
+
 			UnlockRelationOid(relid, lockmode);
 			remove_pathman_relation_info(relid);
 			return NULL; /* exit */
 
 		/* If can't lock children, leave an invalid entry */
 		case FCS_COULD_NOT_LOCK:
+			elog(DEBUG2, "refresh: cannot lock children of relation %u [%u]",
+						 relid, MyProcPid);
+
 			UnlockRelationOid(relid, lockmode);
 			return NULL; /* exit */
 
 		/* Found some children, just unlock parent */
 		case FCS_FOUND:
+			elog(DEBUG2, "refresh: found children of relation %u [%u]",
+						 relid, MyProcPid);
+
 			UnlockRelationOid(relid, lockmode);
 			break; /* continue */
 
@@ -188,7 +197,9 @@ refresh_pathman_relation_info(Oid relid,
 	 * will try to refresh it again (and again), until the error is fixed
 	 * by user manually (i.e. invalid check constraints etc).
 	 */
-	fill_prel_with_partitions(prel_children, prel_children_count, prel);
+	fill_prel_with_partitions(prel_children,
+							  prel_children_count,
+							  part_column_name, prel);
 
 	/* Peform some actions for each child */
 	for (i = 0; i < prel_children_count; i++)
@@ -200,7 +211,8 @@ refresh_pathman_relation_info(Oid relid,
 		UnlockRelationOid(prel_children[i], lockmode);
 	}
 
-	pfree(prel_children);
+	if (prel_children)
+		pfree(prel_children);
 
 	/* Read additional parameters ('enable_parent' and 'auto' at the moment) */
 	if (read_pathman_params(relid, param_values, param_isnull))
@@ -227,9 +239,9 @@ invalidate_pathman_relation_info(Oid relid, bool *found)
 	HASHACTION			action = found ? HASH_FIND : HASH_ENTER;
 	PartRelationInfo   *prel;
 
-	prel = hash_search(partitioned_rels,
-					   (const void *) &relid,
-					   action, &prel_found);
+	prel = pathman_cache_search_relid(partitioned_rels,
+									  relid, action,
+									  &prel_found);
 
 	if ((action == HASH_FIND ||
 		(action == HASH_ENTER && prel_found)) && PrelIsValid(prel))
@@ -260,10 +272,9 @@ invalidate_pathman_relation_info(Oid relid, bool *found)
 const PartRelationInfo *
 get_pathman_relation_info(Oid relid)
 {
-	const PartRelationInfo *prel = hash_search(partitioned_rels,
-											   (const void *) &relid,
-											   HASH_FIND, NULL);
-
+	const PartRelationInfo *prel = pathman_cache_search_relid(partitioned_rels,
+															  relid, HASH_FIND,
+															  NULL);
 	/* Refresh PartRelationInfo if needed */
 	if (prel && !PrelIsValid(prel))
 	{
@@ -284,13 +295,21 @@ get_pathman_relation_info(Oid relid)
 			/* TODO: possible refactoring, pass found 'prel' instead of searching */
 			prel = refresh_pathman_relation_info(relid, part_type, attname, false);
 		}
+
 		/* Else clear remaining cache entry */
-		else remove_pathman_relation_info(relid);
+		else
+		{
+			remove_pathman_relation_info(relid);
+			prel = NULL; /* don't forget to reset 'prel' */
+		}
 	}
 
 	elog(DEBUG2,
 		 "Fetching %s record for relation %u from pg_pathman's cache [%u]",
 		 (prel ? "live" : "NULL"), relid, MyProcPid);
+
+	/* Make sure that 'prel' is valid */
+	Assert(!prel || PrelIsValid(prel));
 
 	return prel;
 }
@@ -325,10 +344,10 @@ get_pathman_relation_info_after_lock(Oid relid,
 void
 remove_pathman_relation_info(Oid relid)
 {
-	PartRelationInfo *prel = hash_search(partitioned_rels,
-										 (const void *) &relid,
-										 HASH_FIND, NULL);
-	if (prel && PrelIsValid(prel))
+	PartRelationInfo *prel = pathman_cache_search_relid(partitioned_rels,
+														relid, HASH_FIND,
+														NULL);
+	if (PrelIsValid(prel))
 	{
 		/* Free these arrays iff they're not NULL */
 		FreeChildrenArray(prel);
@@ -336,9 +355,8 @@ remove_pathman_relation_info(Oid relid)
 	}
 
 	/* Now let's remove the entry completely */
-	hash_search(partitioned_rels,
-				(const void *) &relid,
-				HASH_REMOVE, NULL);
+	pathman_cache_search_relid(partitioned_rels, relid,
+							   HASH_REMOVE, NULL);
 
 	elog(DEBUG2,
 		 "Removing record for relation %u in pg_pathman's cache [%u]",
@@ -402,7 +420,7 @@ finish_delayed_invalidation(void)
 
 			/* Check that PATHMAN_CONFIG table has indeed been dropped */
 			if (cur_pathman_config_relid == InvalidOid ||
-				cur_pathman_config_relid != get_pathman_config_relid())
+				cur_pathman_config_relid != get_pathman_config_relid(true))
 			{
 				/* Ok, let's unload pg_pathman's config */
 				unload_config();
@@ -489,10 +507,10 @@ cache_parent_of_partition(Oid partition, Oid parent)
 	bool			found;
 	PartParentInfo *ppar;
 
-	ppar = hash_search(parent_cache,
-					   (const void *) &partition,
-					   HASH_ENTER, &found);
-
+	ppar = pathman_cache_search_relid(parent_cache,
+									  partition,
+									  HASH_ENTER,
+									  &found);
 	elog(DEBUG2,
 		 found ?
 			 "Refreshing record for child %u in pg_pathman's cache [%u]" :
@@ -531,10 +549,10 @@ get_parent_of_partition_internal(Oid partition,
 {
 	const char	   *action_str; /* "Fetching"\"Resetting" */
 	Oid				parent;
-	PartParentInfo *ppar = hash_search(parent_cache,
-									   (const void *) &partition,
-									   HASH_FIND, NULL);
-
+	PartParentInfo *ppar = pathman_cache_search_relid(parent_cache,
+													  partition,
+													  HASH_FIND,
+													  NULL);
 	/* Set 'action_str' */
 	switch (action)
 	{
@@ -561,9 +579,8 @@ get_parent_of_partition_internal(Oid partition,
 
 		/* Remove entry if necessary */
 		if (action == HASH_REMOVE)
-			hash_search(parent_cache,
-						(const void *) &partition,
-						HASH_REMOVE, NULL);
+			pathman_cache_search_relid(parent_cache, partition,
+									   HASH_REMOVE, NULL);
 	}
 	/* Try fetching parent from syscache if 'status' is provided */
 	else if (status)

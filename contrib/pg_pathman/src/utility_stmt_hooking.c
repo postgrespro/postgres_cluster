@@ -58,9 +58,10 @@ static uint64 PathmanCopyFrom(CopyState cstate,
 							  List *range_table,
 							  bool old_protocol);
 
-static void prepare_rri_fdw_for_copy(EState *estate,
-									 ResultRelInfoHolder *rri_holder,
-									 void *arg);
+static void prepare_rri_for_copy(EState *estate,
+								 ResultRelInfoHolder *rri_holder,
+								 const ResultPartsStorage *rps_storage,
+								 void *arg);
 
 
 /*
@@ -501,7 +502,7 @@ PathmanCopyFrom(CopyState cstate, Relation parent_rel,
 	/* Initialize ResultPartsStorage */
 	init_result_parts_storage(&parts_storage, estate, false,
 							  ResultPartsStorageStandard,
-							  prepare_rri_fdw_for_copy, NULL);
+							  prepare_rri_for_copy, NULL);
 	parts_storage.saved_rel_info = parent_result_rel;
 
 	/* Set up a tuple slot too */
@@ -533,7 +534,7 @@ PathmanCopyFrom(CopyState cstate, Relation parent_rel,
 		Oid						tuple_oid = InvalidOid;
 
 		const PartRelationInfo *prel;
-		ResultRelInfoHolder	   *rri_holder_child;
+		ResultRelInfoHolder	   *rri_holder;
 		ResultRelInfo		   *child_result_rel;
 
 		CHECK_FOR_INTERRUPTS();
@@ -553,14 +554,26 @@ PathmanCopyFrom(CopyState cstate, Relation parent_rel,
 			elog(ERROR, ERR_PART_ATTR_NULL);
 
 		/* Search for a matching partition */
-		rri_holder_child = select_partition_for_insert(prel, &parts_storage,
-													   values[prel->attnum - 1],
-													   prel->atttype, estate);
-		child_result_rel = rri_holder_child->result_rel_info;
+		rri_holder = select_partition_for_insert(prel, &parts_storage,
+												 values[prel->attnum - 1],
+												 prel->atttype, estate);
+		child_result_rel = rri_holder->result_rel_info;
 		estate->es_result_relation_info = child_result_rel;
 
 		/* And now we can form the input tuple. */
 		tuple = heap_form_tuple(tupDesc, values, nulls);
+
+		/* If there's a transform map, rebuild the tuple */
+		if (rri_holder->tuple_map)
+		{
+			HeapTuple tuple_old;
+
+			/* TODO: use 'tuple_map' directly instead of do_convert_tuple() */
+			tuple_old = tuple;
+			tuple = do_convert_tuple(tuple, rri_holder->tuple_map);
+			heap_freetuple(tuple_old);
+		}
+
 		if (tuple_oid != InvalidOid)
 			HeapTupleSetOid(tuple, tuple_oid);
 
@@ -657,9 +670,10 @@ PathmanCopyFrom(CopyState cstate, Relation parent_rel,
  * COPY FROM does not support FDWs, emit ERROR.
  */
 static void
-prepare_rri_fdw_for_copy(EState *estate,
-						 ResultRelInfoHolder *rri_holder,
-						 void *arg)
+prepare_rri_for_copy(EState *estate,
+					 ResultRelInfoHolder *rri_holder,
+					 const ResultPartsStorage *rps_storage,
+					 void *arg)
 {
 	ResultRelInfo  *rri = rri_holder->result_rel_info;
 	FdwRoutine	   *fdw_routine = rri->ri_FdwRoutine;
