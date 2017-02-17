@@ -1045,6 +1045,8 @@ void MtmPrecommitTransaction(char const* gid)
 				MtmUnlock();
 				Assert(replorigin_session_origin != InvalidRepOriginId);
 				if (!IsTransactionState()) {
+					MtmResetTransaction();
+					StartTransactionCommand();
 					SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
 					CommitTransactionCommand();
 				} else { 
