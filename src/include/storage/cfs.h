@@ -15,6 +15,15 @@
 #define CFS_DISABLE_TIMEOUT  1000   /* milliseconds */
 #define CFS_ESTIMATE_PROBES  10
 
+/* 
+ * Maximal number of attempts backend should perform to lock file segment.
+ * If during all this attempts gc_started flag is not set (it means that no GC is active at this moment),
+ * then it means that for some reasons GC process was crashed (may be together with other postgres processes or even OS)
+ * without releasing lock. And for some reasons recovery was not performed and this page left locked. Цe should revoke this lock
+ * to allow access to this database segment.
+ */
+#define MAX_LOCK_ATTEMPTS 100
+
 /* Maximal size of buffer for compressing (size) bytes where (size) is equal to PostgreSQL page size.
  * Some compression algorithms requires to provide buffer large enough for worst case and immediately returns error is buffer is not enough.
  * Accurate calculation of required buffer size is not needed here and doubling buffer size works for all used compression algorithms. */

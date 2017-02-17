@@ -55,6 +55,7 @@
 #include "utils/resowner_private.h"
 #include "postmaster/bgworker.h"
 
+
 /*
  * GUC variable that defines compression level.
  * 0 - no compression, 1 - max speed,
@@ -417,15 +418,21 @@ int cfs_msync(FileMap* map)
 FileMap* cfs_mmap(int md)
 {
 	FileMap* map;
-#ifdef WIN32
-	HANDLE mh = CreateFileMapping(_get_osfhandle(md), NULL, PAGE_READWRITE, 
-								  0, (DWORD)sizeof(FileMap), NULL);
-	if (mh == NULL)
+	if (ftruncate(md, sizeof(FileMap)) != 0) 
+	{
 		return (FileMap*)MAP_FAILED;
+	}
+	
+#ifdef WIN32
+	{
+		HANDLE mh = CreateFileMapping(_get_osfhandle(md), NULL, PAGE_READWRITE, 
+								  0, (DWORD)sizeof(FileMap), NULL);
+		if (mh == NULL)
+			return (FileMap*)MAP_FAILED;
 
-	map = (FileMap*)MapViewOfFile(mh, FILE_MAP_ALL_ACCESS, 0, 0, 0); 
-	CloseHandle(mh);
-
+		map = (FileMap*)MapViewOfFile(mh, FILE_MAP_ALL_ACCESS, 0, 0, 0); 
+		CloseHandle(mh);
+	}
 	if (map == NULL)
 		return (FileMap*)MAP_FAILED;
 
@@ -533,17 +540,44 @@ static bool cfs_write_file(int fd, void const* data, uint32 size)
 void cfs_lock_file(FileMap* map, char const* file_path)
 {
 	long delay = CFS_LOCK_MIN_TIMEOUT;
+	int n_attempts = 0;
 
 	while (true)
 	{
 		uint64 count = pg_atomic_fetch_add_u32(&map->lock, 1);
+		bool revokeLock = false;
 
 		if (count < CFS_GC_LOCK)
 			break;
-
-		if (InRecovery)
+		
+		if (InRecovery) 
 		{
-			/* Uhhh... looks like last GC was interrupted.
+			revokeLock = true;
+		} 
+		else 
+		{
+			if (!pg_atomic_unlocked_test_flag(&cfs_state->gc_started))
+			{
+				if (++n_attempts > MAX_LOCK_ATTEMPTS) 
+				{
+					/* So there is GC lock, but no active GC process during MAX_LOCK_ATTEMPTS.
+					 * Most likely it means that GC is crashed (may be together with other postgres processes or even OS)
+					 * without releasing lock. And for some reasons recovery was not performed and this page left locked.
+					 * We should revoke the the lock to allow access to this segment.
+					 */
+					revokeLock = true;
+				}
+			}
+			else
+			{
+				n_attempts = 0; /* Reset counter of attempts because GC is in progress */
+			}
+		}
+		if (revokeLock 
+            /* use gc_started flag to prevent race condition with other backends and GC */
+			&& pg_atomic_test_set_flag(&cfs_state->gc_started)) 
+		{
+			/* Ugggh... looks like last GC was interrupted.
 			 * Try to recover the file.
 			 */
 			char* map_bck_path = psprintf("%s.cfm.bck", file_path);
@@ -565,18 +599,20 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 			else
 			{
 				/* Presence of backup file means that we still have
-				 * unchanged data and map files. Just remove backup files,
-				 * grab lock and continue processing
+				 * unchanged data and map files. Just remove backup files and 
+				 * revoke GC lock.
 				 */
 				unlink(file_bck_path);
 				unlink(map_bck_path);
 			}
 
+			pg_atomic_clear_flag(&cfs_state->gc_started);
+			count = pg_atomic_fetch_sub_u32(&map->lock, CFS_GC_LOCK); /* revoke GC lock */
+			Assert((int)count > 0);
 			pfree(file_bck_path);
 			pfree(map_bck_path);
 			break;
-		}
-
+		} 
 		pg_atomic_fetch_sub_u32(&map->lock, 1);
 		pg_usleep(delay);
 		if (delay < CFS_LOCK_MAX_TIMEOUT)

@@ -25,9 +25,9 @@
 #include "utils/memutils.h"
 
 static void ResetUnloggedRelationsInTablespaceDir(const char *tsdirname,
-									  int op);
+												  int op, bool compressed);
 static void ResetUnloggedRelationsInDbspaceDir(const char *dbspacedirname,
-								   int op);
+											   int op, bool compressed);
 static bool parse_filename_for_nontemp_relation(const char *name,
 									int *oidchars, ForkNumber *fork);
 
@@ -71,7 +71,7 @@ ResetUnloggedRelations(int op)
 	/*
 	 * First process unlogged files in pg_default ($PGDATA/base)
 	 */
-	ResetUnloggedRelationsInTablespaceDir("base", op);
+	ResetUnloggedRelationsInTablespaceDir("base", op, false);
 
 	/*
 	 * Cycle through directories for all non-default tablespaces.
@@ -80,13 +80,25 @@ ResetUnloggedRelations(int op)
 
 	while ((spc_de = ReadDir(spc_dir, "pg_tblspc")) != NULL)
 	{
+		FILE* compressionFile;
+
 		if (strcmp(spc_de->d_name, ".") == 0 ||
 			strcmp(spc_de->d_name, "..") == 0)
 			continue;
 
+		snprintf(temp_path, sizeof(temp_path), "pg_tblspc/%s/%s/pg_compression",
+				 spc_de->d_name, TABLESPACE_VERSION_DIRECTORY);
+		
+		compressionFile = fopen(temp_path, "r");
+		if (compressionFile) 
+		{ 
+			fclose(compressionFile);
+		}
+		
 		snprintf(temp_path, sizeof(temp_path), "pg_tblspc/%s/%s",
 				 spc_de->d_name, TABLESPACE_VERSION_DIRECTORY);
-		ResetUnloggedRelationsInTablespaceDir(temp_path, op);
+
+		ResetUnloggedRelationsInTablespaceDir(temp_path, op, compressionFile != NULL);
 	}
 
 	FreeDir(spc_dir);
@@ -100,7 +112,7 @@ ResetUnloggedRelations(int op)
 
 /* Process one tablespace directory for ResetUnloggedRelations */
 static void
-ResetUnloggedRelationsInTablespaceDir(const char *tsdirname, int op)
+ResetUnloggedRelationsInTablespaceDir(const char *tsdirname, int op, bool compressed)
 {
 	DIR		   *ts_dir;
 	struct dirent *de;
@@ -133,7 +145,7 @@ ResetUnloggedRelationsInTablespaceDir(const char *tsdirname, int op)
 
 		snprintf(dbspace_path, sizeof(dbspace_path), "%s/%s",
 				 tsdirname, de->d_name);
-		ResetUnloggedRelationsInDbspaceDir(dbspace_path, op);
+		ResetUnloggedRelationsInDbspaceDir(dbspace_path, op, compressed);
 	}
 
 	FreeDir(ts_dir);
@@ -141,7 +153,7 @@ ResetUnloggedRelationsInTablespaceDir(const char *tsdirname, int op)
 
 /* Process one per-dbspace directory for ResetUnloggedRelations */
 static void
-ResetUnloggedRelationsInDbspaceDir(const char *dbspacedirname, int op)
+ResetUnloggedRelationsInDbspaceDir(const char *dbspacedirname, int op, bool compressed)
 {
 	DIR		   *dbspace_dir;
 	struct dirent *de;
@@ -332,8 +344,13 @@ ResetUnloggedRelationsInDbspaceDir(const char *dbspacedirname, int op)
 					 strlen(forkNames[INIT_FORKNUM]));
 
 			/* OK, we're ready to perform the actual copy. */
-			elog(DEBUG2, "copying %s to %s", srcpath, dstpath);
-			copy_file(srcpath, dstpath);
+			if (compressed) { 
+				elog(DEBUG2, "copying %s to %s with compression", srcpath, dstpath);
+				copy_zip_file(srcpath, false, dstpath, true);
+			} else { 
+				elog(DEBUG2, "copying %s to %s", srcpath, dstpath);
+				copy_file(srcpath, dstpath);
+			}
 		}
 
 		FreeDir(dbspace_dir);
