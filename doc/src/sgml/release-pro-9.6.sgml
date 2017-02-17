@@ -22,7 +22,7 @@
         <para>The <application>sr_plan</application> module is now initialized independently for each database instance (See <xref linkend="sr-plan">).</para>
       </listitem>
       <listitem>
-        <para>Applied fixes for including indexes.</para>
+        <para>Applied fixes for covering indexes.</para>
       </listitem>
       <listitem>
         <para>RHEL-based distributions are installed in a separate location,
