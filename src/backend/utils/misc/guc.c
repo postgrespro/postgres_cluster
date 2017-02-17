@@ -3033,7 +3033,7 @@ static struct config_int64 ConfigureNamesInt64[] =
 			NULL
 		},
 		&vacuum_freeze_min_age,
-		INT64CONST(50000000), INT64CONST(0), INT64CONST(1000000000),
+		INT64CONST(50000000), INT64CONST(0), INT64CONST(0x7FFFFFFFFFFFFFFF),
 		NULL, NULL, NULL
 	},
 
@@ -3043,7 +3043,7 @@ static struct config_int64 ConfigureNamesInt64[] =
 			NULL
 		},
 		&vacuum_freeze_table_age,
-		INT64CONST(150000000), INT64CONST(0), INT64CONST(2000000000),
+		INT64CONST(150000000), INT64CONST(0), INT64CONST(0x7FFFFFFFFFFFFFFF),
 		NULL, NULL, NULL
 	},
 
@@ -3053,7 +3053,7 @@ static struct config_int64 ConfigureNamesInt64[] =
 			NULL
 		},
 		&vacuum_multixact_freeze_min_age,
-		INT64CONST(5000000), INT64CONST(0), INT64CONST(1000000000),
+		INT64CONST(5000000), INT64CONST(0), INT64CONST(0x7FFFFFFFFFFFFFFF),
 		NULL, NULL, NULL
 	},
 
@@ -3063,7 +3063,7 @@ static struct config_int64 ConfigureNamesInt64[] =
 			NULL
 		},
 		&vacuum_multixact_freeze_table_age,
-		INT64CONST(150000000), INT64CONST(0), INT64CONST(2000000000),
+		INT64CONST(150000000), INT64CONST(0), INT64CONST(0x7FFFFFFFFFFFFFFF),
 		NULL, NULL, NULL
 	},
 
