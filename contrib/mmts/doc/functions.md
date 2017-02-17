@@ -2,8 +2,8 @@
 
 ## Cluster information functions
 
-* `mtm.get_nodes_state()` — show status of nodes in cluster. Returns tuple of following values:
-    * id, integer
+* `mtm.get_nodes_state()` — Shows the status of all nodes in the cluster. 
+    * id, integer 
     * disabled, bool
     * disconnected, bool
     * catchUp, bool
@@ -18,7 +18,7 @@
     * connStr text
     * connectivityMask bigint
 
-* `mtm.get_cluster_state()` -- show whole cluster status
+* `mtm.get_cluster_state()` -- Shows the status of the whole cluster. 
     * status, text
     * disabledNodeMask, bigint
     * disconnectedNodeMask, bigint
@@ -39,14 +39,26 @@
 
 ## Node management functions
 
-* `mtm.add_node(conn_str text)` -- add node to the cluster.
-* `mtm.drop_node(node integer, drop_slot bool default false)` -- exclude node from the cluster.
-* `mtm.poll_node(nodeId integer, noWait boolean default FALSE)` -- wait for node to become online.
-* `mtm.recover_node(node integer)` -- create replication slot for the node which was previously dropped together with it's slot.
+* `mtm.add_node(conn_str text)` -- Adds a new node to the cluster.
+    * `conn_str` - Connection string for the new node. For example, for the database `mydb`, user `myuser`, and the new node `node4`, the connection string is `"dbname=mydb user=myuser host=node4"`. Type: `text`
+
+
+* `mtm.drop_node(node integer, drop_slot bool default false)` -- Excludes a node from the cluster.
+    * `node` - ID of the node to be dropped that you specified in the `multimaster.node_id` variable. Type: `integer`
+    * `drop_slot` - Optional. Defines whether the replication slot should be dropped together with the node. Set this option to true if you do not plan to restore the node in the future. Type: `boolean` Default: `false`
+
+
+* `mtm.recover_node(node integer)` -- Creates a replication slot for the node that was previously dropped together with its slot.
+    * `node` - ID of the node to be restored. 
+
+
+* `mtm.poll_node(nodeId integer, noWait boolean default FALSE)` -- Waits for the node to become online.
+
 
 ## Data management functions
 
-* `mtm.make_table_local(relation regclass)` -- stop replication for a given table
+* `mtm.make_table_local(relation regclass)` -- Stops replication for the specified table.
+    * `relation` - The table you would like to exclude from the replication scheme. Type: `regclass`
 
 ## Debug functions
 
