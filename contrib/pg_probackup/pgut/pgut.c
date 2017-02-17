@@ -10,7 +10,7 @@
 #include "postgres_fe.h"
 #include "libpq/pqsignal.h"
 
-#include <getopt.h>
+#include "getopt.h"
 #include <limits.h>
 #include <time.h>
 #include <unistd.h>
@@ -71,15 +71,15 @@ static const char *get_username(void);
 
 static pgut_option default_options[] =
 {
-	{ 's', 'd', "dbname"	, &pgut_dbname },
-	{ 's', 'h', "host"		, &host },
-	{ 's', 'p', "port"		, &port },
-	{ 'b', 'q', "quiet"		, &quiet },
-	{ 's', 'U', "username"	, &username },
-	{ 'b', 'v', "verbose"	, &verbose },
+	{ 's', 'd', "dbname"	, &pgut_dbname, SOURCE_CMDLINE },
+	{ 's', 'h', "host"		, &host, SOURCE_CMDLINE },
+	{ 's', 'p', "port"		, &port, SOURCE_CMDLINE },
+	{ 'b', 'q', "quiet"		, &quiet, SOURCE_CMDLINE },
+	{ 's', 'U', "username"	, &username, SOURCE_CMDLINE },
+	{ 'b', 'v', "verbose"	, &verbose, SOURCE_CMDLINE },
 #ifndef PGUT_NO_PROMPT
-	{ 'Y', 'w', "no-password"	, &prompt_password },
-	{ 'y', 'W', "password"		, &prompt_password },
+	{ 'Y', 'w', "no-password"	, &prompt_password, SOURCE_CMDLINE },
+	{ 'y', 'W', "password"		, &prompt_password, SOURCE_CMDLINE },
 #endif
 	{ 0 }
 };
@@ -576,8 +576,7 @@ option_from_env(pgut_option options[])
 		const char	   *s;
 		const char	   *value;
 
-		if (opt->source > SOURCE_ENV ||
-			opt->allowed == SOURCE_DEFAULT || opt->allowed > SOURCE_ENV)
+		if (opt->source > SOURCE_ENV || opt->allowed < SOURCE_ENV)
 			continue;
 
 		for (s = opt->lname, j = 0; *s && j < lengthof(name) - 1; s++, j++)
@@ -632,6 +631,10 @@ pgut_getopt(int argc, char **argv, pgut_option options[])
 	while ((c = getopt_long(argc, argv, optstring, longopts, &optindex)) != -1)
 	{
 		opt = option_find(c, default_options, options);
+		if (opt && opt->allowed < SOURCE_CMDLINE)
+			elog(ERROR, "option %s cannot be specified in command line",
+				 opt->lname);
+		/* Check 'opt == NULL' is performed in assign_option() */
 		assign_option(opt, optarg, SOURCE_CMDLINE);
 	}
 
@@ -698,8 +701,8 @@ pgut_readopt(const char *path, pgut_option options[], int elevel)
 
 				if (key_equals(key, opt->lname))
 				{
-					if (opt->allowed == SOURCE_DEFAULT ||
-						opt->allowed > SOURCE_FILE)
+					if (opt->allowed < SOURCE_FILE &&
+						opt->allowed != SOURCE_FILE_STRICT)
 						elog(elevel, "option %s cannot specified in file", opt->lname);
 					else if (opt->source <= SOURCE_FILE)
 						assign_option(opt, value, SOURCE_FILE);
@@ -827,7 +830,7 @@ parse_pair(const char buffer[], char key[], char value[])
 	if (end - start <= 0)
 	{
 		if (*start == '=')
-			elog(WARNING, "syntax error in \"%s\"", buffer);
+			elog(ERROR, "syntax error in \"%s\"", buffer);
 		return false;
 	}
 
@@ -841,7 +844,7 @@ parse_pair(const char buffer[], char key[], char value[])
 
 	if (*start != '=')
 	{
-		elog(WARNING, "syntax error in \"%s\"", buffer);
+		elog(ERROR, "syntax error in \"%s\"", buffer);
 		return false;
 	}
 
@@ -858,7 +861,7 @@ parse_pair(const char buffer[], char key[], char value[])
 
 	if (*start != '\0' && *start != '#')
 	{
-		elog(WARNING, "syntax error in \"%s\"", buffer);
+		elog(ERROR, "syntax error in \"%s\"", buffer);
 		return false;
 	}
 
