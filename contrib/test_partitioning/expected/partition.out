@@ -57,7 +57,7 @@ PARTITION BY RANGE(id)
 );
 /* Inserting should produce an error because interval hasn't been set */
 INSERT INTO abc VALUES (250);
-ERROR:  could not create new partitions for relation "abc"
+ERROR:  cannot find appropriate partition for key '250'
 DROP TABLE abc CASCADE;
 NOTICE:  drop cascades to 2 other objects
 /* Create hash partitioned table */

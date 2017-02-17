@@ -1,6 +1,6 @@
 REGRESS = partition
 EXTRA_REGRESS_OPTS=--temp-config=$(top_srcdir)/$(subdir)/pg_pathman.add
-
+EXTRA_INSTALL=contrib/pg_pathman
 ifdef USE_PGXS
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
