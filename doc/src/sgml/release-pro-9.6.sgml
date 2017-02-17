@@ -35,7 +35,7 @@
           Windows systems.</para>
       </listitem>
       <listitem>
-        <para>The <application>pg_probackup</application> fixes and new features:</para>
+        <para>Updated the <application>pg_probackup</application> backup manager:</para>
         <itemizedlist>
           <listitem>
             <para>
@@ -46,15 +46,15 @@
           </listitem>
           <listitem>
             <para>
-              Added support of incremental backup of compressed page
-              files. Compressed files is the feature of the
+              Added support for incremental backup of compressed page
+              files. Compressed files are the feature of the
               <productname>Postgres Pro Enterprise</productname>.
             </para>
           </listitem>
           <listitem>
             <para>
               Fixed <emphasis role="strong">validate</emphasis> command.
-              <emphasis role="strong">backup-ID</emphasis> parameter is
+              The <emphasis role="strong">backup-ID</emphasis> parameter is
               optional now.
             </para>
           </listitem>
