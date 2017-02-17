@@ -48,10 +48,10 @@
       distribution.
     </para>
 
-    <para>Before running script, you should stop postgres service. Script
-      should be run as user, owning the database (typically postgres) and
-      PGDATA environment variable should be set to the directory where
-      database resides.
+    <para>Before running the script, you should stop postgres service.
+      Script should be run on behalf of the user owning the database
+      (typically postgres) and PGDATA environment variable should be
+      set to the directory where database resides.
     </para>
   </sect2>
 </sect1>

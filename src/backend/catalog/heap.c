@@ -2683,6 +2683,80 @@ cookConstraint(ParseState *pstate,
 
 
 /*
+ * Take a raw PARTITION LESS THAN expression and convert it to a cooked format
+ * ready for storage.
+ */
+// Node *
+// cookBound(ParseState *pstate,
+// 		  Node *raw_default,
+// 		  Oid atttypid,
+// 		  int32 atttypmod,
+// 		  char *attname)
+// {
+// 	Node	   *expr;
+
+// 	Assert(raw_default != NULL);
+
+// 	/*
+// 	 * Transform raw parsetree to executable expression.
+// 	 */
+// 	expr = transformExpr(pstate, raw_default, EXPR_KIND_COLUMN_DEFAULT);
+
+// 	/*
+// 	 * Make sure default expr does not refer to any vars (we need this check
+// 	 * since the pstate includes the target table).
+// 	 */
+// 	if (contain_var_clause(expr))
+// 		ereport(ERROR,
+// 				(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+// 			  errmsg("cannot use column references in default expression")));
+
+// 	/*
+// 	 * transformExpr() should have already rejected subqueries, aggregates,
+// 	 * and window functions, based on the EXPR_KIND_ for a default expression.
+// 	 *
+// 	 * It can't return a set either.
+// 	 */
+// 	if (expression_returns_set(expr))
+// 		ereport(ERROR,
+// 				(errcode(ERRCODE_DATATYPE_MISMATCH),
+// 				 errmsg("default expression must not return a set")));
+
+// 	/*
+// 	 * Coerce the expression to the correct type and typmod, if given. This
+// 	 * should match the parser's processing of non-defaulted expressions ---
+// 	 * see transformAssignedExpr().
+// 	 */
+// 	if (OidIsValid(atttypid))
+// 	{
+// 		Oid			type_id = exprType(expr);
+
+// 		expr = coerce_to_target_type(pstate, expr, type_id,
+// 									 atttypid, atttypmod,
+// 									 COERCION_ASSIGNMENT,
+// 									 COERCE_IMPLICIT_CAST,
+// 									 -1);
+// 		if (expr == NULL)
+// 			ereport(ERROR,
+// 					(errcode(ERRCODE_DATATYPE_MISMATCH),
+// 					 errmsg("column \"%s\" is of type %s"
+// 							" but default expression is of type %s",
+// 							attname,
+// 							format_type_be(atttypid),
+// 							format_type_be(type_id)),
+// 			   errhint("You will need to rewrite or cast the expression.")));
+// 	}
+
+// 	/*
+// 	 * Finally, take care of collations in the finished expression.
+// 	 */
+// 	assign_expr_collations(pstate, expr);
+
+// 	return expr;
+// }
+
+
+/*
  * RemoveStatistics --- remove entries in pg_statistic for a rel or column
  *
  * If attnum is zero, remove all entries for rel; else remove only the one(s)

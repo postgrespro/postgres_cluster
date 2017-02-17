@@ -58,6 +58,7 @@
 #include "commands/trigger.h"
 #include "commands/typecmds.h"
 #include "commands/user.h"
+#include "commands/partition.h"
 #include "executor/executor.h"
 #include "foreign/foreign.h"
 #include "miscadmin.h"
@@ -719,6 +720,12 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	 * visible to anyone else anyway, until commit).
 	 */
 	relation_close(rel, NoLock);
+
+	/* Handle partitioning */
+	if (stmt->partition_info)
+	{
+		(void) create_partitions(stmt->partition_info, rel->rd_id, PDT_NONE);
+	}
 
 	return address;
 }
@@ -3060,6 +3067,16 @@ AlterTableGetLockLevel(List *cmds)
 				cmd_lockmode = AlterTableGetRelOptionsLockLevel((List *) cmd->def);
 				break;
 
+			/* TODO: determine lockmode */
+			case AT_AddPartition:
+			case AT_MergePartitions:
+			case AT_SplitPartition:
+			case AT_RenamePartition:
+			case AT_DropPartition:
+			case AT_MovePartition:
+			case AT_SetInterval:
+				break;
+
 			default:			/* oops */
 				elog(ERROR, "unrecognized alter table type: %d",
 					 (int) cmd->subtype);
@@ -3385,6 +3402,17 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
 			break;
+
+		case AT_AddPartition:
+		case AT_MergePartitions:
+		case AT_SplitPartition:
+		case AT_RenamePartition:
+		case AT_DropPartition:
+		case AT_MovePartition:
+		case AT_SetInterval:
+			pass = AT_PASS_MISC;
+			break;
+
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);
@@ -3706,6 +3734,27 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			break;
 		case AT_GenericOptions:
 			ATExecGenericOptions(rel, (List *) cmd->def);
+			break;
+		case AT_AddPartition:
+			AtExecAddRangePartition(rel->rd_id, cmd);
+			break;
+		case AT_MergePartitions:
+			AtExecMergePartitions(rel, cmd->partitions);
+			break;
+		case AT_SplitPartition:
+			AtExecSplitPartition(rel->rd_id, cmd);
+			break;
+		case AT_RenamePartition:
+			rename_partition(rel->rd_id, cmd);
+			break;
+		case AT_DropPartition:
+			drop_partition(rel->rd_id, cmd);
+			break;
+		case AT_MovePartition:
+			move_partition(rel->rd_id, cmd);
+			break;
+		case AT_SetInterval:
+			partitioned_table_set_interval(rel->rd_id, cmd);
 			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
@@ -6207,7 +6256,7 @@ ATAddCheckConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 	/*
 	 * Check if ONLY was specified with ALTER TABLE.  If so, allow the
-	 * contraint creation only if there are no children currently.  Error out
+	 * constraint creation only if there are no children currently.  Error out
 	 * otherwise.
 	 */
 	if (!recurse && children != NIL)
@@ -12310,4 +12359,34 @@ RangeVarCallbackForAlterRelation(const RangeVar *rv, Oid relid, Oid oldrelid,
 						rv->relname)));
 
 	ReleaseSysCache(tuple);
+}
+
+/*
+ *
+ */
+void
+AtExecMergePartitions(Relation rel, List *rangevars)
+{
+	/*
+	 * The first element is a tablename to merge all partitions into. The rest
+	 * are partitions themselves
+	 */
+	PartitionNode  *into = linitial(rangevars);
+	List		   *partitions = list_copy_tail(rangevars, 1);
+
+	merge_range_partitions(partitions, into);
+}
+
+void
+AtExecAddRangePartition(Oid relid, AlterTableCmd *cmd)
+{
+	Assert(list_length(cmd->partitions) == 1);
+
+	add_range_partition(relid, linitial(cmd->partitions));
+}
+
+void
+AtExecSplitPartition(Oid relid, AlterTableCmd *cmd)
+{
+	split_range_partition(relid, cmd);
 }
