@@ -65,8 +65,8 @@ sub writer
 {
 	my ($node, $inref, $outref) = @_;
 
-	my $clients = 10;
-	my $jobs = 10;
+	my $clients = 5;
+	my $jobs = 1;
 	my $seconds = 30;
 	my @argv = (
 		'pgbench',
