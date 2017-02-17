@@ -48,12 +48,10 @@ my $started = time();
 while (time() - $started < $seconds)
 {
 	($rc, $out, $err) = $cluster->psql(2, 'postgres', "vacuum full;");
-	if ($rc != 0)
-	{
-		BAIL_OUT("vacuum full failed");
-	}
+	sleep(1);
 }
 
 finish($bench_run) || BAIL_OUT("pgbench exited with $?");
+sleep(1);
 ok($cluster->stop('fast'), "cluster stops");
 1;
