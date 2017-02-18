@@ -1338,7 +1338,7 @@ CREATE VIEW all_job_status AS
 		attempt, resubmit_limit, postpone as max_wait_interval,
 		max_run_time as max_duration, submit_time,
 		start_time, status as is_success, reason as error, done_time,
-		'processing'::job_at_status_t status
+		'done'::job_at_status_t status
 	FROM schedule.at_jobs_done 
 		UNION 
 	SELECT

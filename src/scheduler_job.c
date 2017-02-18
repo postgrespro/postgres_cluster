@@ -168,16 +168,15 @@ job_t *get_next_at_job_with_lock(char *nodename, char **error)
 	Datum values[1];
 	char *oldpath;
 
-	const char *get_job_sql = "select id, at, array_append('{}'::text[], do_sql)::text[], params, executor, attempt, resubmit_limit, max_run_time from ONLY at_jobs_submitted s where ((not exists ( select * from ONLY at_jobs_submitted s2 where s2.id = any(s.depends_on)) AND not exists ( select * from ONLY at_jobs_process p where p.id = any(s.depends_on)) AND s.depends_on is NOT NULL and s.at IS NULL) OR ( s.at IS NOT NULL AND  at <= 'now' and (last_start_available is NULL OR last_start_available > 'now'))) and node = $1 and not canceled order by at,  submit_time limit 1 FOR UPDATE SKIP LOCKED";
-	oldpath = set_schema(NULL, true);
+	const char *get_job_sql = "select id, at, array_append('{}'::text[], do_sql)::text[], params, executor, attempt, resubmit_limit, max_run_time from ONLY at_jobs_submitted s where ((not exists ( select * from ONLY at_jobs_submitted s2 where s2.id = any(s.depends_on)) AND not exists ( select * from ONLY at_jobs_process p where p.id = any(s.depends_on)) AND s.depends_on is NOT NULL and s.at IS NULL) OR ( s.at IS NOT NULL AND  at <= 'now' and (last_start_available is NULL OR last_start_available > 'now'))) and node = $1 and not canceled order by at,  submit_time limit 1 FOR UPDATE SKIP LOCKED";  
+	oldpath = set_schema(NULL, true); 
 	*error = NULL;
 	values[0] = CStringGetTextDatum(nodename);
 
-	ret = execute_spi_sql_with_args(get_job_sql, 1,
+	ret = execute_spi_sql_with_args(get_job_sql, 1, 
 										argtypes, values, NULL, error);
-
 	set_schema(oldpath, false);
-	pfree(oldpath);
+	pfree(oldpath); 
 	if(ret == SPI_OK_SELECT)
 	{
 		got  = SPI_processed;
@@ -401,6 +400,22 @@ int _at_move_job_to_log(job_t *j, bool status, bool process)
 	return ret > 0 ? 1: ret;
 }
 
+int move_at_job_process(int job_id)
+{
+	const char *sql = "WITH moved_rows AS (DELETE from ONLY at_jobs_submitted a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_process SELECT * FROM moved_rows";
+	Datum values[1];	
+	Oid argtypes[1] = { INT4OID };
+	int ret;
+	char *oldpath;
+	
+	values[0] = Int32GetDatum(job_id);
+	oldpath = set_schema(NULL, true);
+	ret = SPI_execute_with_args(sql, 1, argtypes, values, NULL, false, 0);
+	set_schema(oldpath, false);
+	pfree(oldpath);
+	return ret > 0 ? 1: ret;
+}
+
 int set_at_job_done(job_t *job, char *error, int64 resubmit)
 {
 	char *this_error = NULL;
@@ -412,8 +427,9 @@ int set_at_job_done(job_t *job, char *error, int64 resubmit)
 	const char *sql;
 	int n = 3;
 
-	const char *sql_submitted = "WITH moved_rows AS (DELETE from ONLY at_jobs_submitted a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_done SELECT *, NULL as start_time, $2 as status, $3 as reason FROM moved_rows";
-	const char *resubmit_sql = "update ONLY at_jobs_submitted SET attempt = attempt + 1, at = $2 WHERE id = $1";
+	const char *sql_submitted = "WITH moved_rows AS (DELETE from ONLY at_jobs_process a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_done SELECT *, $2 as status, $3 as reason FROM moved_rows";
+	/* const char *resubmit_sql = "update ONLY at_jobs_submitted SET attempt = attempt + 1, at = $2 WHERE id = $1"; */
+	const char *resubmit_sql = "WITH moved_rows AS (DELETE from ONLY at_jobs_process a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_submitted SELECT id, node, name, comments, $2, do_sql, params, depends_on, executor, owner, last_start_available, attempt +1 , resubmit_limit, postpone, max_run_time, canceled, submit_time FROM moved_rows";
 
 	values[0] = Int32GetDatum(job->cron_id);
 

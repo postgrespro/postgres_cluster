@@ -296,23 +296,27 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 {
 	int ret = -100;
 	ErrorData *edata;
-	MemoryContext old;
 	int errorSet = 0;
 	char other[100];
+	ResourceOwner oldowner = CurrentResourceOwner;
 
 	*error = NULL;
 
 	SetCurrentStatementStartTimestamp();
 	BeginInternalSubTransaction(NULL);
+	switch_to_worker_context();
+
 	PG_TRY();
 	{
 		ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, false, 0);
 		ReleaseCurrentSubTransaction();
-		SPI_restore_connection();
+		switch_to_worker_context();
+		CurrentResourceOwner = oldowner;
+		SPI_restore_connection(); 
 	}
 	PG_CATCH();
 	{
-		old = switch_to_worker_context();
+		switch_to_worker_context();
 
 		edata = CopyErrorData();
 		if(edata->message)
@@ -329,9 +333,10 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 		}
 		errorSet = 1;
 		RollbackAndReleaseCurrentSubTransaction(); 
-		SPI_restore_connection();
+		switch_to_worker_context();
+		CurrentResourceOwner = oldowner;
+		SPI_restore_connection(); 
 		FreeErrorData(edata);
-		MemoryContextSwitchTo(old);
 		FlushErrorState();
 	}
 	PG_END_TRY();
@@ -373,13 +378,13 @@ int execute_spi_params_prepared(const char *sql, int nparams, char **params, cha
 {
 	int ret = -100;
 	ErrorData *edata;
-	MemoryContext old;
 	int errorSet = 0;
 	char other[100];
 	SPIPlanPtr plan;
 	Oid *paramtypes;
 	Datum *values;
 	int i;
+	ResourceOwner oldowner = CurrentResourceOwner;
 
 	*error = NULL;
 
@@ -393,6 +398,7 @@ int execute_spi_params_prepared(const char *sql, int nparams, char **params, cha
 
 	SetCurrentStatementStartTimestamp();
 	BeginInternalSubTransaction(NULL);
+	switch_to_worker_context();
 
 	PG_TRY();
 	{
@@ -403,11 +409,13 @@ int execute_spi_params_prepared(const char *sql, int nparams, char **params, cha
 			ret = SPI_execute_plan(plan, values, NULL, false, 0);
 		}
 		ReleaseCurrentSubTransaction();
+		switch_to_worker_context();
+		CurrentResourceOwner = oldowner;
 		SPI_restore_connection();
 	}
 	PG_CATCH();
 	{
-		old = switch_to_worker_context();
+		switch_to_worker_context();
 
 		edata = CopyErrorData();
 		if(edata->message)
@@ -424,9 +432,10 @@ int execute_spi_params_prepared(const char *sql, int nparams, char **params, cha
 		}
 		errorSet = 1;
 		FreeErrorData(edata);
-		MemoryContextSwitchTo(old);
 		FlushErrorState();
 		RollbackAndReleaseCurrentSubTransaction(); 
+		CurrentResourceOwner = oldowner;
+		switch_to_worker_context();
 		SPI_restore_connection();
 	}
 	PG_END_TRY();
