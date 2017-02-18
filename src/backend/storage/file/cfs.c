@@ -646,8 +646,9 @@ static int cfs_cmp_page_offs(void const* p1, void const* p2)
 /*
  * Perform garbage collection (if required) on the file
  * @param map_path - path to the map file (*.cfm).
+ * @param noerror - surpress error message (when this function is called by cfs_gc_relation until there are available segments)
  */
-static bool cfs_gc_file(char* map_path)
+static bool cfs_gc_file(char* map_path, bool noerror)
 {
 	int md = open(map_path, O_RDWR|PG_BINARY, 0);
 	FileMap* map;
@@ -679,7 +680,9 @@ static bool cfs_gc_file(char* map_path)
 
 	if (md < 0)
 	{ 
-		elog(LOG, "CFS failed to open map file %s: %m", map_path);
+		if (!noerror) { 
+			elog(LOG, "CFS failed to open map file %s: %m", map_path);
+		}
 		goto FinishGC;
 	}
 
@@ -1059,7 +1062,7 @@ static bool cfs_gc_directory(int worker_id, char const* path)
 				strcmp(file_path + len - 4, ".cfm") == 0)
 			{
 				if (entry->d_ino % cfs_state->n_workers == worker_id
-					&& !cfs_gc_file(file_path))
+					&& !cfs_gc_file(file_path, false))
 				{
 					success = false;
 					break;
@@ -1395,7 +1398,7 @@ Datum cfs_gc_relation(PG_FUNCTION_ARGS)
 			
 			while (true)
 			{
-				if (!cfs_gc_file(map_path))
+				if (!cfs_gc_file(map_path, true))
 					break;
 				sprintf(map_path, "%s.%u.cfm", path, ++i);
 			}
