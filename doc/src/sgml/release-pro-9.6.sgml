@@ -3,7 +3,7 @@
   <title>&productname; 9.6.1.2</title>
   <note>
     <title>Release Date</title>
-    <simpara>2016-12-15</simpara>
+    <simpara>2017-02-22</simpara>
   </note>
   <sect2>
     <title>Overview</title>
@@ -26,6 +26,54 @@
     <para>Lazy placement of temporary tables on disk</para>
     <para>Consistent read on slaves (wait for WAL apply, see <xref linkend="sql-waitlsn">)</para>
     <para>Utility <application>pg_repack</application> has been added (See <xref linkend="app-pgrepack">)</para>
+    <itemizedlist>
+      <listitem>
+        <para>Module <application>pg_pathman</application> has been updated to
+        version 1.3 (See <xref linkend="pg-pathman"> and <xref linkend="pg-pathman-how-to-update">).</para>
+      </listitem>
+      <listitem>
+        <para>The <application>sr_plan</application> module is now initialized independently for each database instance (See <xref linkend="sr-plan">).</para>
+      </listitem>
+      <listitem>
+        <para>Applied fixes for covering indexes.</para>
+      </listitem>
+      <listitem>
+        <para>RHEL-based distributions are installed in a separate location,
+          so the product can be installed in parallel with an existing
+          <productname>PostgreSQL</productname>.</para>
+      </listitem>
+      <listitem>
+        <para>Improved the algorithm of automatic TCP-port selection for the case
+          of parallel installation of different versions of the product on
+          Windows systems.</para>
+      </listitem>
+      <listitem>
+        <para>Updated the <application>pg_probackup</application> backup manager:</para>
+        <itemizedlist>
+          <listitem>
+            <para>
+              Added <emphasis role="strong">retention show</emphasis> and
+              <emphasis role="strong">retention purge</emphasis> commands to
+              implement retention policy.
+            </para>
+          </listitem>
+          <listitem>
+            <para>
+              Added support for incremental backup of compressed page
+              files. Compressed files are the feature of the
+              <productname>Postgres Pro Enterprise</productname>.
+            </para>
+          </listitem>
+          <listitem>
+            <para>
+              Fixed <emphasis role="strong">validate</emphasis> command.
+              The <emphasis role="strong">backup-ID</emphasis> parameter is
+              optional now.
+            </para>
+          </listitem>
+        </itemizedlist>
+      </listitem>
+    </itemizedlist>
   </sect2>
   <sect2>
     <title>Migration to Version &productname; 9.6.1.2</title>
