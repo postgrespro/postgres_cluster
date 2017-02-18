@@ -101,13 +101,15 @@ void executor_worker_main(Datum arg)
 
 	SetConfigOption("application_name", "pgp-s executor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "initialize");
-	init_worker_mem_ctx("ExecutorMemoryContext");
 	BackgroundWorkerInitializeConnection(shared->database, NULL);
-	worker_jobs_limit = read_worker_job_limit();
 
 	pqsignal(SIGTERM, handle_sigterm);
 	pqsignal(SIGHUP, worker_spi_sighup);
 	BackgroundWorkerUnblockSignals();
+
+	init_worker_mem_ctx("ExecutorMemoryContext");
+	switch_to_worker_context();
+	worker_jobs_limit = read_worker_job_limit();
 
 	while(1)
 	{
@@ -619,7 +621,7 @@ void at_executor_worker_main(Datum arg)
 	bool lets_sleep = false;
 	/* PGPROC *parent; */
 
-	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_executor");
+	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_at_executor");
 	seg = dsm_attach(DatumGetInt32(arg));
 	if(seg == NULL)
 		ereport(ERROR,
@@ -638,12 +640,14 @@ void at_executor_worker_main(Datum arg)
 
 	SetConfigOption("application_name", "pgp-s at executor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "initialize");
-	init_worker_mem_ctx("ExecutorMemoryContext");
 	BackgroundWorkerInitializeConnection(shared->database, NULL);
 
 	pqsignal(SIGTERM, handle_sigterm);
 	pqsignal(SIGHUP, worker_spi_sighup);
 	BackgroundWorkerUnblockSignals();
+
+	init_worker_mem_ctx("ExecutorMemoryContext");
+	switch_to_worker_context();
 
 	while(1)
 	{
@@ -698,7 +702,7 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 
 	*status = shared->status = SchdExecutorWork;
 
-	pgstat_report_activity(STATE_RUNNING, "initialize job");
+	pgstat_report_activity(STATE_RUNNING, "initialize at job");
 	START_SPI_SNAP();
 
 	job = get_next_at_job_with_lock(shared->nodename, &error);
@@ -718,6 +722,15 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 		return 0;
 	}
 	current_job_id = job->cron_id;
+	if(!move_at_job_process(job->cron_id))
+	{
+		elog(LOG, "AT EXECUTOR: error move to process");
+		ABORT_SPI_SNAP();
+		return -1;
+	}
+	STOP_SPI_SNAP(); /* Commit changes */
+
+	START_SPI_SNAP();
 	pgstat_report_activity(STATE_RUNNING, "job initialized");
 
 	ResetAllOptions();
@@ -743,13 +756,7 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 
 	if(job->timelimit)
 	{
-#ifdef HAVE_LONG_INT_64
-		sprintf(buff, "%ld", job->timelimit * 1000);
-#else 
-		sprintf(buff, "%lld", job->timelimit * 1000);
-#endif
-		SetConfigOption("statement_timeout", buff,  PGC_SUSET, PGC_S_OVERRIDE);
-		enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout);
+		enable_timeout_after(STATEMENT_TIMEOUT, job->timelimit * 1000);
 	}
 
 	if(job->sql_params_n > 0)

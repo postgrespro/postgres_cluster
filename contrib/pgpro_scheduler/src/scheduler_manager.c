@@ -1601,20 +1601,18 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 	MemoryContext old;
 	scheduler_manager_slot_t *item;
 
+	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
+
+	pgstat_report_activity(STATE_RUNNING, "register scheduler at executor");
+	segsize = (Size)sizeof(schd_executor_share_state_t);
+	seg = dsm_create(segsize, 0);
+
+	old = MemoryContextSwitchTo(SchedulerWorkerContext);
 	item = worker_alloc(sizeof(scheduler_manager_slot_t));
 	item->job = NULL;
 	item->started  = item->worker_started = GetCurrentTimestamp();
 	item->wait_worker_to_die = false;
 	item->stop_it = 0;
-
-	pgstat_report_activity(STATE_RUNNING, "register scheduler at executor");
-
-	segsize = (Size)sizeof(schd_executor_share_state_t);
-
-	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
-	old = MemoryContextSwitchTo(SchedulerWorkerContext);
-	seg = dsm_create(segsize, 0);
-
 	item->shared = seg;
 	shm_data = dsm_segment_address(item->shared);
 
@@ -1640,9 +1638,9 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 		elog(LOG, "Cannot register AT executor worker for db: %s",
 									shm_data->database);
 		dsm_detach(item->shared);
-		MemoryContextSwitchTo(old);
 		pfree(item);
 		ctx->at.slots[pos] = NULL;
+		MemoryContextSwitchTo(old);
 		return 0;
 	}
 	status = WaitForBackgroundWorkerStartup(item->handler, &(item->pid));
@@ -1651,13 +1649,13 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 		elog(LOG, "Cannot start AT executor worker for db: %s, status: %d",
 							shm_data->database,  status);
 		dsm_detach(item->shared);
-		MemoryContextSwitchTo(old);
 		pfree(item);
 		ctx->at.slots[pos] = NULL;
+		MemoryContextSwitchTo(old);
 		return 0;
 	}
-	MemoryContextSwitchTo(old);
 	ctx->at.slots[pos] = item;
+	MemoryContextSwitchTo(old);
 
 	return item->pid;
 }
