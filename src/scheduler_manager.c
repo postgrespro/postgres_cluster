@@ -1709,6 +1709,7 @@ void manager_worker_main(Datum arg)
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("corrupted dynamic shared memory segment")));
 	}
+	init_worker_mem_ctx("manager worker context");
 	shared->setbyparent = false;
 
 	SetConfigOption("application_name", "pgp-s manager", PGC_USERSET, PGC_S_SESSION);
@@ -1716,11 +1717,11 @@ void manager_worker_main(Datum arg)
 
 	database_len = strlen(MyBgworkerEntry->bgw_extra);
 	if(BGW_EXTRALEN < database_len +1) database_len = BGW_EXTRALEN - 1;
-	database  = palloc(sizeof(char) * (database_len+1));
+	database  = worker_alloc(sizeof(char) * (database_len+1));
 	memcpy(database, MyBgworkerEntry->bgw_extra, database_len);
 	database[database_len] = 0;
 
-	aname = palloc(sizeof(char) * ( 16 + database_len + 1 ));
+	aname = worker_alloc(sizeof(char) * ( 16 + database_len + 1 ));
 	sprintf(aname, "pgp-s manager [%s]", database);
 	SetConfigOption("application_name", aname, PGC_USERSET, PGC_S_SESSION);
 	pfree(aname);
@@ -1746,7 +1747,6 @@ void manager_worker_main(Datum arg)
 	parent_shared = dsm_segment_address(seg);
 	pgstat_report_activity(STATE_RUNNING, "initialize context");
 	changeChildBgwState(shared, SchdManagerConnected);
-	init_worker_mem_ctx("WorkerMemoryContext");
 	ctx = initialize_scheduler_manager_context(database, seg);
 	start_at_workers(ctx, shared);
 	clean_at_table(ctx);
@@ -1794,9 +1794,9 @@ void manager_worker_main(Datum arg)
 		ResetLatch(MyLatch);
 	}
 	scheduler_manager_stop(ctx);
-	delete_worker_mem_ctx();
 	changeChildBgwState(shared, SchdManagerDie);
 	pfree(database);
+	delete_worker_mem_ctx();
     dsm_detach(seg);
 	proc_exit(0);
 }

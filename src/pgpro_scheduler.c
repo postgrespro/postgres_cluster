@@ -276,6 +276,7 @@ char_array_t *readBasesToCheck(void)
 		SPI_finish();
 		PopActiveSnapshot();
 		CommitTransactionCommand();
+		elog(ERROR, "cannot select from pg_database");
 	}
 	destroyCharArray(names);
 	processed  = SPI_processed;

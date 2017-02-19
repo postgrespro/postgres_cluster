@@ -160,6 +160,89 @@ job_t *get_jobs_to_do(char *nodename, task_type_t type, int *n, int *is_error, i
 	return _at_get_jobs_to_do(nodename, n, is_error, limit);
 }
 
+job_t *get_at_job_for_process(char *nodename, char **error)
+{
+	job_t *job = NULL;
+	Oid argtypes[17] = { TEXTOID };
+	Datum values[17];
+	bool nulls[17];
+	int ret, got, i;
+	char *oldpath;
+	bool is_null;
+	const char *get_job_sql = "select * from at_jobs_submitted s where ((not exists ( select * from at_jobs_submitted s2 where s2.id = any(s.depends_on)) AND not exists ( select * from at_jobs_process p where p.id = any(s.depends_on)) AND s.depends_on is NOT NULL and s.at IS NULL) OR ( s.at IS NOT NULL AND  at <= 'now' and (last_start_available is NULL OR last_start_available > 'now'))) and node = $1 and not canceled order by at,  submit_time limit 1 FOR UPDATE SKIP LOCKED";  
+	const char *insert_sql = "insert into at_jobs_process values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)";
+
+	oldpath = set_schema(NULL, true); 
+	*error = NULL;
+	values[0] = CStringGetTextDatum(nodename);
+
+	ret = execute_spi_sql_with_args(get_job_sql, 1, 
+										argtypes, values, NULL, error);
+	if(ret != SPI_OK_SELECT)
+	{
+		set_schema(oldpath, false);
+		pfree(oldpath); 
+		return NULL;
+	}
+	got  = SPI_processed;
+	if(got == 0)
+	{
+		set_schema(oldpath, false);
+		pfree(oldpath); 
+		return NULL;
+	}
+	job = worker_alloc(sizeof(job_t));
+	init_scheduler_job(job, AtJob);
+	job->dosql = worker_alloc(sizeof(char *) * 1);
+
+	job->cron_id = get_int_from_spi(0, 1, 0);
+	job->start_at = get_timestamp_from_spi(0, 5, 0);
+	job->dosql[0] = get_text_from_spi(0, 6);
+	job->sql_params = get_textarray_from_spi(0, 7, &job->sql_params_n);
+	job->executor = get_text_from_spi(0, 9);
+	job->attempt = get_int64_from_spi(0, 12, 0);
+	job->resubmit_limit = get_int64_from_spi(0, 13, 0);
+	job->timelimit = get_interval_seconds_from_spi(0, 15, 0);
+	job->node = _copy_string(nodename);
+
+	for(i=0; i < 17; i++)
+	{
+		argtypes[i] = SPI_gettypeid(SPI_tuptable->tupdesc, i+1);
+		values[i] = SPI_getbinval(SPI_tuptable->vals[0],
+						SPI_tuptable->tupdesc, i+1, &is_null);
+		nulls[i] = is_null ? 'n': ' ';
+	}
+	*error = NULL;
+	ret = execute_spi_sql_with_args(insert_sql, 17, 
+										argtypes, values, nulls, error);
+	if(ret != SPI_OK_INSERT)
+	{
+		set_schema(oldpath, false);
+		pfree(oldpath); 
+		destroy_job(job, 1);
+		elog(LOG, "NOT INSERTED: %d", ret);
+		return NULL;
+	}
+	*error = NULL;
+	argtypes[0] = INT4OID;
+	values[0] = Int32GetDatum(job->cron_id);
+	ret = execute_spi_sql_with_args(
+				"delete from at_jobs_submitted where id = $1", 1,
+				argtypes, values, NULL, error);
+
+	set_schema(oldpath, false);
+	pfree(oldpath); 
+
+	if(ret != SPI_OK_DELETE)
+	{
+		destroy_job(job, 1);
+		elog(LOG, "NOT deleted: %d", ret);
+		return NULL;
+	}
+	
+	return job;
+}
+
 job_t *get_next_at_job_with_lock(char *nodename, char **error)
 {
 	job_t *job = NULL;
@@ -416,7 +499,122 @@ int move_at_job_process(int job_id)
 	return ret > 0 ? 1: ret;
 }
 
-int set_at_job_done(job_t *job, char *error, int64 resubmit)
+
+int set_at_job_done(job_t *job, char *error, int64 resubmit, char **set_error)
+{
+	char *this_error = NULL;
+	Datum values[20];	
+	char  nulls[20];
+	Oid argtypes[20] = { INT4OID };
+	bool canceled = false;
+	int ret, i;
+	char *oldpath;
+	bool is_null;
+	const char *sql;
+	char buff[200];
+	int n = 1;
+	const char *get_sql = "select * from at_jobs_process where id = $1";
+	const char *insert_sql = "insert into at_jobs_done values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)";
+	const char *delete_sql = "delete from at_jobs_process where id = $1";
+	const char *resubmit_sql = "insert into at_jobs_submitted values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)";
+
+	oldpath = set_schema(NULL, true);
+
+	values[0] = Int32GetDatum(job->cron_id);
+	ret = execute_spi_sql_with_args(get_sql, 1, argtypes, values, NULL, set_error);
+	if(ret != SPI_OK_SELECT)
+	{
+		set_schema(oldpath, false);
+		pfree(oldpath);
+		return -1;
+	}
+	if(SPI_processed <= 0)
+	{
+		snprintf(buff, 200, "Cannot find job to move: %d", job->cron_id);
+		*set_error = _copy_string(buff);
+		set_schema(oldpath, false);
+		pfree(oldpath);
+		return -1;
+	}
+	for(i=0; i < 18; i++)
+	{
+		argtypes[i] = SPI_gettypeid(SPI_tuptable->tupdesc, i+1);
+		values[i] = SPI_getbinval(SPI_tuptable->vals[0],
+						SPI_tuptable->tupdesc, i+1, &is_null);
+		nulls[i] = is_null ? 'n': ' ';
+	}
+	argtypes[18] = BOOLOID;
+	argtypes[19] = TEXTOID;
+	nulls[18] = ' ';
+	nulls[19] = ' ';
+
+	canceled = nulls[15] == 'n' ? false: DatumGetBool(values[15]);
+
+	if(resubmit)
+	{
+		if(canceled)
+		{
+			this_error = _copy_string("job was canceled while processing: cannot resubmit");
+			sql = insert_sql;
+			n = 20;
+
+			values[18] = BoolGetDatum(false);
+			values[19] = CStringGetTextDatum(this_error);
+		}
+		else if(job->attempt + 1 < job->resubmit_limit)
+		{
+			sql = resubmit_sql;
+			values[4] = TimestampTzGetDatum(timestamp_add_seconds(0, resubmit));
+			values[11] = Int64GetDatum(job->attempt + 1);
+			n = 17;
+		}
+		else
+		{
+			this_error = _copy_string("resubmit limit reached");
+			sql = insert_sql;
+			n = 20;
+
+			values[18] = BoolGetDatum(false);
+			values[19] = CStringGetTextDatum(this_error);
+		}
+	}
+	else
+	{
+		n = 20;
+		sql = insert_sql;
+		if(error)
+		{
+			values[18] = BoolGetDatum(false);
+			values[19] = CStringGetTextDatum(error);
+		}
+		else
+		{
+			values[18] = BoolGetDatum(true);
+			nulls[19] = 'n'; 
+		}
+	}
+	ret = execute_spi_sql_with_args(sql, n, argtypes, values, nulls, set_error);
+	if(this_error) pfree(this_error);
+	if(ret != SPI_OK_INSERT)
+	{
+		set_schema(oldpath, false);
+		pfree(oldpath);
+		return -1;
+	}
+
+	ret = execute_spi_sql_with_args(delete_sql, 1, argtypes, values, NULL, set_error);
+	set_schema(oldpath, false);
+	pfree(oldpath);
+
+	if(ret != SPI_OK_DELETE)
+	{
+		return -1;
+	}
+
+	return 1;
+}
+
+int _v1_set_at_job_done(job_t *job, char *error, int64 resubmit)
 {
 	char *this_error = NULL;
 	Datum values[3];	

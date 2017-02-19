@@ -696,8 +696,9 @@ void at_executor_worker_main(Datum arg)
 int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t *status)
 {
 	char *error = NULL;
+	char *set_error = NULL;
 	job_t *job;
-	int ret;
+	int ret, set_ret;
 	char buff[512];
 
 	*status = shared->status = SchdExecutorWork;
@@ -705,14 +706,14 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 	pgstat_report_activity(STATE_RUNNING, "initialize at job");
 	START_SPI_SNAP();
 
-	job = get_next_at_job_with_lock(shared->nodename, &error);
-
+	/* job = get_next_at_job_with_lock(shared->nodename, &error); */
+	job = get_at_job_for_process(shared->nodename, &error);
 	if(!job)
 	{
 		if(error)
 		{
 			shared->status = SchdExecutorIdling;
-			elog(LOG, "AT EXECUTOR: ERROR: %s", error);
+			elog(LOG, "AT EXECUTOR ERROR: get job: %s", error);
 			pfree(error);
 			ABORT_SPI_SNAP();
 			return -1;
@@ -722,30 +723,35 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 		return 0;
 	}
 	current_job_id = job->cron_id;
-	if(!move_at_job_process(job->cron_id))
+/*	if(!move_at_job_process(job->cron_id))
 	{
 		elog(LOG, "AT EXECUTOR: error move to process");
 		ABORT_SPI_SNAP();
 		return -1;
-	}
+	} */
 	STOP_SPI_SNAP(); /* Commit changes */
-
-	START_SPI_SNAP();
 	pgstat_report_activity(STATE_RUNNING, "job initialized");
+	START_SPI_SNAP();
 
 	ResetAllOptions();
 	if(set_session_authorization_by_name(job->executor, &error) == InvalidOid)
 	{
 		if(error)
 		{
-			set_at_job_done(job, error, 0);
+			set_ret = set_at_job_done(job, error, 0, &set_error);
 			pfree(error);
 		}
 		else
 		{
-			set_at_job_done(job, "Unknown set session auth error", 0);
+			set_ret = set_at_job_done(job, "Unknown set session auth error", 0, &set_error);
 		}
 		shared->status = SchdExecutorIdling;
+		if(set_ret < 0)
+		{
+			elog(LOG, "AT-EXECUTOR ERROR: move after auth: %s", set_error);
+			ABORT_SPI_SNAP();
+			return -1;
+		}
 		STOP_SPI_SNAP();
 		return 1;
 	}
@@ -778,26 +784,40 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 	{
 		if(error)
 		{
-			set_at_job_done(job, error, resubmit_current_job);
+			set_ret = set_at_job_done(job, error, resubmit_current_job, &set_error);
 			pfree(error);
 		}
 		else
 		{
 			sprintf(buff, "error in command: code: %d", ret);
-			set_at_job_done(job, buff, resubmit_current_job);
+			set_ret = set_at_job_done(job, buff, resubmit_current_job, &set_error);
 		}
 	}
 	else
 	{
-		set_at_job_done(job, NULL, resubmit_current_job);
+		set_ret = set_at_job_done(job, NULL, resubmit_current_job, &set_error);
 	}
-	STOP_SPI_SNAP();
 	
 	resubmit_current_job = 0;
 	current_job_id = -1;
 	pgstat_report_activity(STATE_RUNNING, "finish job processing");
+	if(set_ret > 0)
+	{
+		STOP_SPI_SNAP();
+		return 1;
+	}
+	if(set_error)
+	{
+		elog(LOG, "AT_EXECUTOR ERROR: set log: %s", set_error);
+		pfree(set_error);
+	}
+	else
+	{
+		elog(LOG, "AT_EXECUTOR ERROR: set log: unknown error");
+	}
+	ABORT_SPI_SNAP();
 
-	return 1;
+	return -1;
 }
 
 Oid set_session_authorization_by_name(char *rolename, char **error)
