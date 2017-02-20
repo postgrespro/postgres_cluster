@@ -101,7 +101,7 @@ sub configure
 			multimaster.workers = 1
 			multimaster.node_id = $id
 			multimaster.conn_strings = '$connstr'
-			multimaster.heartbeat_recv_timeout = 1050
+			multimaster.heartbeat_recv_timeout = 2050
 			multimaster.heartbeat_send_timeout = 250
 			multimaster.max_nodes = $nnodes
 			multimaster.ignore_tables_without_pk = true
