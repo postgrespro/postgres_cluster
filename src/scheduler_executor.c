@@ -108,7 +108,6 @@ void executor_worker_main(Datum arg)
 	BackgroundWorkerUnblockSignals();
 
 	init_worker_mem_ctx("ExecutorMemoryContext");
-	switch_to_worker_context();
 	worker_jobs_limit = read_worker_job_limit();
 
 	while(1)
@@ -626,7 +625,7 @@ void at_executor_worker_main(Datum arg)
 	if(seg == NULL)
 		ereport(ERROR,
 			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-			 errmsg("executor unable to map dynamic shared memory segment")));
+			 errmsg("at-executor unable to map dynamic shared memory segment")));
 	shared = dsm_segment_address(seg);
 	/* parent = BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid); */
 
@@ -634,7 +633,7 @@ void at_executor_worker_main(Datum arg)
 	{
 		ereport(ERROR,
 			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-			 errmsg("executor corrupted dynamic shared memory segment")));
+			 errmsg("at-executor corrupted dynamic shared memory segment")));
 	}
 	shared->start_at = GetCurrentTimestamp();
 
@@ -647,7 +646,6 @@ void at_executor_worker_main(Datum arg)
 	BackgroundWorkerUnblockSignals();
 
 	init_worker_mem_ctx("ExecutorMemoryContext");
-	switch_to_worker_context();
 
 	while(1)
 	{
@@ -730,6 +728,7 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 		return -1;
 	} */
 	STOP_SPI_SNAP(); /* Commit changes */
+	elog(LOG, "JOB MOVED TO PROCESSED");
 	pgstat_report_activity(STATE_RUNNING, "job initialized");
 	START_SPI_SNAP();
 
@@ -753,6 +752,7 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 			return -1;
 		}
 		STOP_SPI_SNAP();
+	elog(LOG, "JOB MOVED TO DONE");
 		return 1;
 	}
 

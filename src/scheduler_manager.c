@@ -58,15 +58,14 @@ int checkSchedulerNamespace(void)
 
 	schema = GetConfigOption("schedule.schema", false, true);
 
-	StartTransactionCommand();
-	SPI_connect();
-	PushActiveSnapshot(GetTransactionSnapshot());
+	START_SPI_SNAP(); 
 
 	values[0] = CStringGetTextDatum(schema);
 	count = select_count_with_args(sql, 1, argtypes, values, NULL);
 
 	if(count == -1)
 	{
+		STOP_SPI_SNAP();
 		elog(ERROR, "Scheduler manager: %s: cannot check namespace: sql error",
 													MyBgworkerEntry->bgw_name); 
 	}
@@ -82,13 +81,12 @@ int checkSchedulerNamespace(void)
 	}
 	else if(count != 1)
 	{
+		STOP_SPI_SNAP();
 		elog(ERROR, "Scheduler manager: %s: cannot check namespace: "
 					"unknown error %d", MyBgworkerEntry->bgw_name, count); 
 	}
+	STOP_SPI_SNAP();
 
-	SPI_finish();
-	PopActiveSnapshot();
-	CommitTransactionCommand();
 	if(count) {
 		SetConfigOption("search_path", schema, PGC_USERSET, PGC_S_SESSION);
 	}
@@ -1762,7 +1760,7 @@ void manager_worker_main(Datum arg)
 			{
 				got_sighup = false;
 				ProcessConfigFile(PGC_SIGHUP);
-				reload_db_role_config(database);
+				reload_db_role_config(database); 
 				refresh_scheduler_manager_context(ctx);
 				set_slots_stat_report(ctx);
 			}

@@ -297,14 +297,8 @@ int addManagerToPoll(schd_managers_poll_t *poll, char *name, int sort)
 	schd_manager_t *man;
 	schd_manager_share_t *shm_data;
 	Size segsize;
-/*	shm_toc_estimator e;
-	shm_toc *toc; */
 	dsm_segment *seg;
 
-/*	shm_toc_initialize_estimator(&e);
-	shm_toc_estimate_chunk(&e, sizeof(schd_manager_share_t));
-	shm_toc_estimate_keys(&e, 1);
-	segsize = shm_toc_estimate(&e); */
 	segsize = (Size)sizeof(schd_manager_share_t);
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
@@ -315,11 +309,6 @@ int addManagerToPoll(schd_managers_poll_t *poll, char *name, int sort)
 	man->connected = false;
 	memcpy(man->dbname, name, strlen(name) + 1);
 	man->shared = seg;
-/*	toc = shm_toc_create(PGPRO_SHM_TOC_MAGIC, dsm_segment_address(man->shared),
-	                         segsize);
-
-	shm_data = shm_toc_allocate(toc, sizeof(schd_manager_share_t));
-	shm_toc_insert(toc, 0, shm_data); */
 	shm_data = dsm_segment_address(man->shared);
 
 	shm_data->setbyparent = true;
