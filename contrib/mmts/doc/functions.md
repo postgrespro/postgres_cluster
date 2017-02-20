@@ -3,20 +3,23 @@
 ## Cluster information functions
 
 * `mtm.get_nodes_state()` — Shows the status of all nodes in the cluster. 
-    * id, integer 
-    * disabled, bool
-    * disconnected, bool
-    * catchUp, bool
-    * slotLag, bigint
-    * avgTransDelay, bigint
-    * lastStatusChange, timestamp
-    * oldestSnapshot, bigint
-    * SenderPid integer
-    * SenderStartTime timestamp
-    * ReceiverPid integer
-    * ReceiverStartTime timestamp
-    * connStr text
-    * connectivityMask bigint
+    * id, integer - node ID.
+    * enabled, bool - shows whether node was excluded from cluster. Node can only be disabled due to missing responses to heartbeats during `heartbeat_recv_timeout`. When node will start responding to hearbeats it will be recovered and turned back to enabled state. Automatic recovery only possible when replication slot is active. Otherwise see section [manual node recovery].
+    * connected, bool - shows that node connected to our walsender.
+    * slot_active, bool - node has active replication slot. For a disabled node slot will be active until `max_recovery_lag` will be reached.
+    * stopped, bool - shows whether replication to this node was stopped by `mtm.stop_node()` function. Stopped node acts as a disabled one, but will not be automatically recovered. Call `mtm.recover_node()` to enable it again.
+    * catchUp - during recovery shows that node recovered till `min_recovery_lag`.
+    * slotLag - amount of WALs that replication slot holds for disabled/stoped node. Slot will be dropped whne slotLag reaches `max_recovery_lag`.
+    * avgTransDelay - average delay to transaction commit imposed by this node, usecs.
+    * lastStatusChange - last time when node changed it's status (enabled/disabled).
+    * oldestSnapshot - oldest global snapshot existing on this node.
+    * SenderPid - pid of WALSender.
+    * SenderStartTime - time when WALSender was started.
+    * ReceiverPid - pid of WALReceiver.
+    * ReceiverStartTime - time when WALReceiver was started.
+    * connStr - connection string to this node.
+    * connectivityMask - bitmask representing connectivity to neighbor nodes. Each bit means connection to node.
+    * nHeartbeats - number of hearbeat responses received from that node.
 
 * `mtm.get_cluster_state()` -- Shows the status of the whole cluster. 
     * status, text
@@ -43,7 +46,7 @@
     * `conn_str` - Connection string for the new node. For example, for the database `mydb`, user `myuser`, and the new node `node4`, the connection string is `"dbname=mydb user=myuser host=node4"`. Type: `text`
 
 
-* `mtm.drop_node(node integer, drop_slot bool default false)` -- Excludes a node from the cluster.
+* `mtm.stop_node(node integer, drop_slot bool default false)` -- Excludes a node from the cluster.
     * `node` - ID of the node to be dropped that you specified in the `multimaster.node_id` variable. Type: `integer`
     * `drop_slot` - Optional. Defines whether the replication slot should be dropped together with the node. Set this option to true if you do not plan to restore the node in the future. Type: `boolean` Default: `false`
 
