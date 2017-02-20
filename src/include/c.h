@@ -407,6 +407,7 @@ typedef uint64 SubTransactionId;
 #define TopSubTransactionId			((SubTransactionId) 1)
 
 #define XID_FMT UINT64_FORMAT
+#define HEX_XID_FMT "%" INT64_MODIFIER "x"
 
 /* MultiXactId must be equivalent to TransactionId, to fit in t_xmax */
 typedef TransactionId MultiXactId;

@@ -250,14 +250,14 @@ AuxiliaryProcessMain(int argc, char *argv[])
 				bootstrap_data_checksum_version = PG_DATA_CHECKSUM_VERSION;
 				break;
 			case 'm':
-				if (sscanf(optarg, "%lx", &start_mx_id) != 1)
+				if (sscanf(optarg, HEX_XID_FMT, &start_mx_id) != 1)
 				{
 					fprintf(stderr, "%s: invalid hex value of multixact-id\n", progname);
 					exit(1);
 				}
 				break;
 			case 'o':
-				if (sscanf(optarg, "%ld", &start_mx_offset) != 1)
+				if (sscanf(optarg, XID_FMT, &start_mx_offset) != 1)
 				{
 					fprintf(stderr, "%s: invalid decimal value of multixact-offset\n", progname);
 					exit(1);
@@ -267,7 +267,7 @@ AuxiliaryProcessMain(int argc, char *argv[])
 				strlcpy(OutputFileName, optarg, MAXPGPATH);
 				break;
 			case 'X':
-				if (sscanf(optarg, "%lx", &start_xid) != 1)
+				if (sscanf(optarg, HEX_XID_FMT, &start_xid) != 1)
 				{
 					fprintf(stderr, "%s: invalid hex value of xid\n", progname);
 					exit(1);

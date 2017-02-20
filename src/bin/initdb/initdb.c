@@ -1538,7 +1538,7 @@ bootstrap_template1(void)
 	unsetenv("PGCLIENTENCODING");
 
 	snprintf(cmd, sizeof(cmd),
-			 "\"%s\" --boot -x1 %s %s %lx %s %lx %s %ld %s %s",
+			 "\"%s\" --boot -x1 %s %s " HEX_XID_FMT " %s " HEX_XID_FMT " %s " XID_FMT " %s %s",
 			 backend_exec,
 			 data_checksums ? "-k" : "",
 			 "-X", start_xid,
@@ -3469,7 +3469,7 @@ main(int argc, char *argv[])
 				printf(_("Running in debug mode.\n"));
 				break;
 			case 'm':
-				if (sscanf(optarg, "%lx", &start_mx_id) != 1)
+				if (sscanf(optarg, HEX_XID_FMT, &start_mx_id) != 1)
 				{
 					fprintf(stderr, "%s: invalid hex value of multixact-id\n", progname);
 					exit(1);
@@ -3483,7 +3483,7 @@ main(int argc, char *argv[])
 				do_sync = false;
 				break;
 			case 'o':
-				if (sscanf(optarg, "%ld", &start_mx_offset) != 1)
+				if (sscanf(optarg, XID_FMT, &start_mx_offset) != 1)
 				{
 					fprintf(stderr, "%s: invalid decimal value of multixact-offset\n", progname);
 					exit(1);
@@ -3535,7 +3535,7 @@ main(int argc, char *argv[])
 				xlog_dir = pg_strdup(optarg);
 				break;
 			case 'x':
-				if (sscanf(optarg, "%lx", &start_xid) != 1)
+				if (sscanf(optarg, HEX_XID_FMT, &start_xid) != 1)
 				{
 					fprintf(stderr, "%s: invalid hex value of xid\n", progname);
 					exit(1);
