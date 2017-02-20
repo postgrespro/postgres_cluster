@@ -2,7 +2,7 @@
 
 ## Cluster information functions
 
-* `mtm.get_nodes_state()` — Shows the status of all nodes in the cluster. 
+* `mtm.get_nodes_state()` — Shows the status of nodes in the cluster. 
     * id, integer - node ID.
     * enabled, bool - shows whether node was excluded from cluster. Node can only be disabled due to missing responses to heartbeats during `heartbeat_recv_timeout`. When node will start responding to hearbeats it will be recovered and turned back to enabled state. Automatic recovery only possible when replication slot is active. Otherwise see section [manual node recovery].
     * connected, bool - shows that node connected to our walsender.
@@ -21,23 +21,28 @@
     * connectivityMask - bitmask representing connectivity to neighbor nodes. Each bit means connection to node.
     * nHeartbeats - number of hearbeat responses received from that node.
 
-* `mtm.get_cluster_state()` -- Shows the status of the whole cluster. 
-    * status, text
-    * disabledNodeMask, bigint
-    * disconnectedNodeMask, bigint
-    * catchUpNodeMask, bigint
-    * liveNodes, integer
-    * allNodes, integer
-    * nActiveQueries, integer
-    * nPendingQueries, integer
-    * queueSize, bigint
-    * transCount, bigint
-    * timeShift, bigint
-    * recoverySlot, integer
-    * xidHashSize, bigint
-    * gidHashSize, bigint
-    * oldestXid, bigint
-    * configChanges, integer
+* `mtm.collect_cluster_state()` - Collects output of `mtm.get_cluster_state()` from all available nodes. Note: for this function to work pg_hba should also allow ordinary connections (in addition to replication) to node with specified connstring.
+
+* `mtm.get_cluster_state()` - Get info about interanal state of multimaster extension. 
+    * status - Node status. Can be "Initialization", "Offline", "Connected", "Online", "Recovery", "Recovered", "InMinor", "OutOfService".
+    * disabledNodeMask - bitmask of disabled nodes.
+    * disconnectedNodeMask - bitmask of disconnected nodes.
+    * catchUpNodeMask - bitmask of nodes that completed their recovery.
+    * liveNodes - number of enabled nodes.
+    * allNodes - number of all nodes added to cluster. Decisions about majority of alive nodes based on that parameter.
+    * nActiveQueries - number of queries being currently processed on this node.
+    * nPendingQueries - number of queries avaiting their turn on this node.
+    * queueSize - size of pending queue in bytes.
+    * transCount - total amount of replicated transactions processed by this node.
+    * timeShift - global snapshot shit due to unsynchronized clocks on nodes, usec.
+    * recoverySlot - during recovery procedure node grabs changes from this node.
+    * xidHashSize - size of xid2state hash.
+    * gidHashSize - size of gid2state hash.
+    * oldestXid - oldest xid on this node.
+    * configChanges - number of state changes (enabled/disabled) since last reboot.
+    * stalledNodeMask - bitmask of nodes for which replication slot was dropped.
+    * stoppedNodeMask - bitmask of nodes that were stopped by `mtm.stop_node()`.
+    * lastStatusChange - timestamp when last state change happend.
 
 
 ## Node management functions
